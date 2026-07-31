@@ -5,6 +5,14 @@ SaaS multi-empresa de gestão de locação de imóveis. Backend em Node/NestJS/P
 `/opt/frappe` e que será desinstalado ao fim do projeto.
 
 > **Idioma**: toda interação, documentação e mensagem de commit em **português brasileiro**.
+>
+> **Modelo**: este projeto roda **exclusivamente em Opus**. Decisão do usuário, sem negociação.
+> Vale para a sessão principal **e** para todo subagente despachado por qualquer skill do
+> framework agent-spec — executor, `agent-spec-qa-validator` e
+> `agent-spec-staff-architecture-review` inclusive. **Sonnet e Haiku estão proibidos**, mesmo
+> quando a skill os recomenda no próprio `SKILL.md` ou quando a heurística de `gates`/`model` do
+> `agent-spec-workflow-rules.md` os sugeriria. Onde a regra do framework mandar `sonnet`, leia
+> `opus`; onde já mandar `opus[xhigh]`, mantenha.
 
 ---
 
