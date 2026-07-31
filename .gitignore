@@ -19,6 +19,11 @@ out/
 *.key
 secrets/
 
+# Dados efêmeros da verificação automatizada (ADR-0006)
+# As instâncias próprias de banco e de fila da suíte nascem e morrem a cada
+# execução; nada do que elas produzem pode chegar à árvore versionada.
+.verificacao/
+
 # Dados locais de desenvolvimento
 .data/
 *.sqlite

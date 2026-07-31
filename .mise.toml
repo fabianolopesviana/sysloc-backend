@@ -1,0 +1,24 @@
+# Ferramental do monorepo Sysloc — fonte única das versões.
+#
+# Qualquer máquina que rode `mise install` na raiz do repositório passa a ter
+# exatamente estas versões, independente do que já exista instalada no sistema.
+# Versões são fixadas por completo (major.minor.patch) de propósito: faixa aberta
+# reproduz "a versão de hoje", não "a versão do commit".
+#
+# O que NÃO entra aqui: ferramenta distribuída como pacote npm (turbo, biome,
+# typescript). Essas vivem em `devDependencies` do `package.json` e são travadas
+# pelo `pnpm-lock.yaml` — declarar em dois lugares criaria duas fontes de verdade.
+#
+# Uso: mise install
+
+[tools]
+# Runtime da aplicação — Node 24 LTS (decisao-e-stack.md §4).
+node = "24.18.1"
+
+# Gerenciador de pacotes do workspace. Deve casar com o campo `packageManager`
+# do `package.json`: o pnpm recusa executar se as duas declarações divergirem.
+pnpm = "11.18.0"
+
+# Multiplexador de processos do ciclo de desenvolvimento (`pnpm dev`).
+# O `mprocs.yaml` que ele lê nasce em T7, junto dos processos que há para orquestrar.
+mprocs = "0.9.6"

@@ -1,0 +1,9 @@
+# Membros do workspace.
+#
+# Os dois diretórios existem e estão vazios: `apps/` recebe o serviço de aplicação
+# e o processador; `packages/` recebe os pacotes compartilhados. Glob sem nenhum
+# pacote correspondente é tolerado pelo pnpm — o workspace instala com o pacote
+# privado da raiz apenas, que é o estado desta fatia.
+packages:
+  - "apps/*"
+  - "packages/*"

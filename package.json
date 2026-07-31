@@ -1,0 +1,22 @@
+{
+  "name": "@sysloc/monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Raiz do monorepo do backend Sysloc — SaaS multi-empresa de gestão de locação de imóveis",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@11.18.0",
+  "engines": {
+    "node": ">=24.18.1 <25"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "biome check . && turbo run lint",
+    "dev": "mprocs"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.6",
+    "turbo": "2.10.7",
+    "typescript": "7.0.2"
+  }
+}

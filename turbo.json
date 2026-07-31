@@ -1,0 +1,61 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "stream",
+
+  // CAUSA-RAIZ (P3): esta lista foi preenchida com os arquivos de configuração
+  // consumidos por ferramentas DENTRO do build (`tsconfig.base.json`, `biome.json`)
+  // e o raciocínio parou aí — não alcançou o arquivo que decide QUAL runtime
+  // executa o build. O Turborepo inclui no hash global, por conta própria, apenas
+  // o `package.json` da raiz e o arquivo de bloqueio; o `.mise.toml` ficava de
+  // fora, e um bump de Node 24.x -> 24.y reaproveitaria `dist/` produzido pelo
+  // runtime anterior, em silêncio. Como o `.mise.toml` se declara "fonte única
+  // das versões", ele pertence a esta lista pelo mesmo critério que os outros dois.
+  "globalDependencies": [".mise.toml", "tsconfig.base.json", "biome.json"],
+
+  // CAUSA-RAIZ (P1): as tarefas foram declaradas descrevendo apenas o grafo e as
+  // saídas de cache, sem considerar que o Turborepo 2.x roda em Strict Environment
+  // Mode por padrão — variável NÃO declarada é REMOVIDA do ambiente entregue à
+  // tarefa. Ela não chega vazia: chega AUSENTE. Como esta mesma task versiona um
+  // `.env.example` com cinco variáveis, os dois entregáveis ficavam incoerentes —
+  // o arquivo documentava exatamente o que o orquestrador de build apagava.
+  //
+  // A decisão é explícita: as cinco variáveis do `.env.example` são declaradas,
+  // mas NÃO no mesmo lugar. `NODE_ENV` é global porque muda o que é produzido, e
+  // não apenas como o processo se comporta em runtime.
+  //
+  // O CT-002 (cenário D) prova este contrato: as declaradas chegam à tarefa com o
+  // valor exato e uma variável de controle, não declarada, não chega.
+  "globalEnv": ["NODE_ENV"],
+
+  "tasks": {
+    // `build` recebe apenas o `globalEnv`. As variáveis de conexão ficam de fora
+    // DE PROPÓSITO: compilar não pode depender de para qual banco ou fila o
+    // processo vai apontar. Declará-las aqui acoplaria o cache de build a
+    // configuração de runtime — trocar `DATABASE_URL` passaria a invalidar um
+    // artefato byte a byte idêntico.
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "*.tsbuildinfo"]
+    },
+
+    // `test` recebe as quatro variáveis de runtime restantes. Sem esta linha, a
+    // suíte de T4 as veria AUSENTES sob `turbo run test` e presentes sob invocação
+    // direta — o mesmo código com dois comportamentos, e o CA-15 do scope ("o
+    // processo falha na partida nomeando a variável ausente") com duas verdades.
+    // Declarar aqui NÃO obriga a suíte a consumi-las: os helpers efêmeros de T4
+    // seguem ignorando-as por desenho (ADR-0006). O que a declaração garante é que
+    // o ambiente sob `turbo` seja o mesmo de fora dele.
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"],
+      "cache": false,
+      "env": ["DATABASE_URL", "REDIS_URL", "PORT", "LOG_LEVEL"]
+    },
+
+    // `lint` não lê ambiente da aplicação — o Biome opera sobre arquivos.
+    "lint": {
+      "dependsOn": [],
+      "outputs": []
+    }
+  }
+}

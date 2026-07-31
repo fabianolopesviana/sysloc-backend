@@ -1,0 +1,3 @@
+# Mantém `apps/` na árvore versionada enquanto ainda não há nenhum pacote dentro.
+# O workspace declara `apps/*`; o diretório precisa existir no clone para que a
+# tolerância a membro vazio seja verificável. Remova quando o primeiro pacote nascer.
