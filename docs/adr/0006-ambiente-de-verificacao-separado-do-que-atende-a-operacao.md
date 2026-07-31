@@ -43,3 +43,5 @@ A suíte de verificação nunca executa contra o ambiente que atende a operaçã
 ## Applied in
 
 - `saas-multi-empresa (v1)` — docs/specs/features/saas-multi-empresa/v1/tech-alignment.md (decisão D5)
+- `fundacao-stack-nativa (v1)` — docs/specs/features/fundacao-stack-nativa/v1/tasks/T2.md (guarda `recusar_bateria_em_producao` + marcador `/etc/sysloc/producao`; a criação do marcador é item do gate de desinstalação da §F7 do plano de execução)
+- `fundacao-stack-nativa (v1)` — docs/specs/features/fundacao-stack-nativa/v1/tasks/T4.md (materialização: instâncias efêmeras próprias de banco e fila, `embedded-postgres`)

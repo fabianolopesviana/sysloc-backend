@@ -4,7 +4,10 @@ SaaS multi-empresa de gestão de locação de imóveis. Backend em Node/NestJS/P
 **nativo, sem Docker**. Substitui integralmente o backend Frappe/ERPNext que vive em
 `/opt/frappe` e que será desinstalado ao fim do projeto.
 
-> **Idioma**: toda interação, documentação e mensagem de commit em **português brasileiro**.
+> **Idioma**: **português brasileiro em tudo**, sem exceção. Vale para as **respostas no terminal**,
+> perguntas de `AskUserQuestion`, raciocínio exibido, documentação, artefatos de spec, comentários
+> de código e mensagens de commit. Decisão do usuário, sem negociação. Aplica-se à sessão principal
+> **e** a todo subagente despachado por qualquer skill do framework agent-spec.
 >
 > **Modelo**: este projeto roda **exclusivamente em Opus**. Decisão do usuário, sem negociação.
 > Vale para a sessão principal **e** para todo subagente despachado por qualquer skill do
@@ -35,10 +38,19 @@ pelo número, e sem os dois arquivos de `.claude/plans/` essas referências fica
 | 3 | `.claude/plans/plano-saas-decisoes.md` | As **40 decisões fechadas** — o plano de execução as cita por número |
 | 4 | `.claude/plans/plano-saas.md` | Arquitetura-alvo, os 3 perfis, as **10 telas × 7 ações sensíveis**, a especificação do webhook Sicoob |
 | 5 | `docs/plano-backend-novo/levantamento-frontend.md` | O frontend React: inventário dos **35 endpoints**, o **modelo de domínio que a API deve falar**, os acoplamentos a remover |
-| 6 | `docs/adr/` | ADRs. **A ADR-0001 (modelo canônico de cobrança com adaptador por provedor) sobrevive inteira.** As 0002, 0003 e 0006 morreram com o Frappe |
+| 6 | `docs/adr/` | ADRs. **A ADR-0001 (modelo canônico de cobrança com adaptador por provedor) e a ADR-0006 (ambiente de verificação separado do que atende a operação) sobrevivem inteiras.** As 0002 e 0003 morreram com o Frappe |
 
 Por fase: a **F4** exige `docs/specs/features/integracao-bancaria-configuravel/`; a **F6** exige
 o levantamento do frontend (item 5).
+
+**O critério que separa a ADR que morre da que sobrevive é o substrato.** A 0002 e a 0003 nomeiam
+primitivas do Frappe — DocType, fixture, `Custom DocPerm` — e vão junto com elas. A 0006 não nomeia
+mecanismo nenhum: a decisão é *"a suíte de verificação nunca executa contra o ambiente que atende a
+operação; qual ambiente concreto cumpre o papel varia ao longo do tempo — o invariante é a separação,
+não um servidor específico"*, e uma das alternativas que ela rejeita **antecipa literalmente esta
+migração**. Ela é o que a **T4 da F0 materializa** (instâncias efêmeras próprias, `embedded-postgres`)
+e o que impede a suíte de tocar o banco que opera enquanto `/opt/frappe` seguir de pé. Não superseder:
+uma ADR nova com a mesma decisão seria churn.
 
 ---
 
