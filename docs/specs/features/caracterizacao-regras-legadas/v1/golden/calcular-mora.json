@@ -1,0 +1,187 @@
+{
+  "casos": [
+    {
+      "descricao": "2000, multa 2%, juros 1%/mês, 52 dias -> 2.074,67.",
+      "id": "exemplo_canonico_2074_67",
+      "invocacoes": [
+        {
+          "entrada": {
+            "dias_atraso": 52,
+            "juros_percentual": 1,
+            "multa_percentual": 2,
+            "valor_original": 2000.0
+          },
+          "saida": {
+            "valor_juros": 34.67,
+            "valor_multa": 40.0,
+            "valor_total": 2074.67
+          }
+        }
+      ],
+      "teste_fonte": "TestCalcularMora.test_exemplo_canonico_2074_67"
+    },
+    {
+      "descricao": "30 dias a 1%/mês = 1% do valor original; 60 dias = o dobro.",
+      "id": "juros_um_mes_e_exatamente_a_taxa_mensal",
+      "invocacoes": [
+        {
+          "entrada": {
+            "dias_atraso": 30,
+            "juros_percentual": 1,
+            "multa_percentual": 2,
+            "valor_original": 2000.0
+          },
+          "saida": {
+            "valor_juros": 20.0,
+            "valor_multa": 40.0,
+            "valor_total": 2060.0
+          }
+        },
+        {
+          "entrada": {
+            "dias_atraso": 60,
+            "juros_percentual": 1,
+            "multa_percentual": 2,
+            "valor_original": 2000.0
+          },
+          "saida": {
+            "valor_juros": 40.0,
+            "valor_multa": 40.0,
+            "valor_total": 2080.0
+          }
+        }
+      ],
+      "teste_fonte": "TestCalcularMora.test_juros_um_mes_e_exatamente_a_taxa_mensal"
+    },
+    {
+      "descricao": "Dobrar os dias dobra o juros — regime simples, sem juros sobre juros.",
+      "id": "juros_lineares_sem_composicao",
+      "invocacoes": [
+        {
+          "entrada": {
+            "dias_atraso": 30,
+            "juros_percentual": 1,
+            "multa_percentual": 2,
+            "valor_original": 2000.0
+          },
+          "saida": {
+            "valor_juros": 20.0,
+            "valor_multa": 40.0,
+            "valor_total": 2060.0
+          }
+        },
+        {
+          "entrada": {
+            "dias_atraso": 60,
+            "juros_percentual": 1,
+            "multa_percentual": 2,
+            "valor_original": 2000.0
+          },
+          "saida": {
+            "valor_juros": 40.0,
+            "valor_multa": 40.0,
+            "valor_total": 2080.0
+          }
+        }
+      ],
+      "teste_fonte": "TestCalcularMora.test_juros_lineares_sem_composicao"
+    },
+    {
+      "descricao": "Multa de 2% ou de 50% produz o mesmo juros — a base é o valor original.",
+      "id": "juros_nao_incidem_sobre_a_multa",
+      "invocacoes": [
+        {
+          "entrada": {
+            "dias_atraso": 52,
+            "juros_percentual": 1,
+            "multa_percentual": 2,
+            "valor_original": 2000.0
+          },
+          "saida": {
+            "valor_juros": 34.67,
+            "valor_multa": 40.0,
+            "valor_total": 2074.67
+          }
+        },
+        {
+          "entrada": {
+            "dias_atraso": 52,
+            "juros_percentual": 1,
+            "multa_percentual": 50,
+            "valor_original": 2000.0
+          },
+          "saida": {
+            "valor_juros": 34.67,
+            "valor_multa": 1000.0,
+            "valor_total": 3034.67
+          }
+        }
+      ],
+      "teste_fonte": "TestCalcularMora.test_juros_nao_incidem_sobre_a_multa"
+    },
+    {
+      "descricao": "A multa é aplicada uma vez: a mesma para 5 ou para 500 dias.",
+      "id": "multa_unica_independe_dos_dias",
+      "invocacoes": [
+        {
+          "entrada": {
+            "dias_atraso": 5,
+            "juros_percentual": 1,
+            "multa_percentual": 2,
+            "valor_original": 2000.0
+          },
+          "saida": {
+            "valor_juros": 3.33,
+            "valor_multa": 40.0,
+            "valor_total": 2043.33
+          }
+        },
+        {
+          "entrada": {
+            "dias_atraso": 500,
+            "juros_percentual": 1,
+            "multa_percentual": 2,
+            "valor_original": 2000.0
+          },
+          "saida": {
+            "valor_juros": 333.33,
+            "valor_multa": 40.0,
+            "valor_total": 2373.33
+          }
+        }
+      ],
+      "teste_fonte": "TestCalcularMora.test_multa_unica_independe_dos_dias"
+    },
+    {
+      "descricao": "O total é a soma do valor original com multa e juros, arredondada.",
+      "id": "total_e_soma_das_partes",
+      "invocacoes": [
+        {
+          "entrada": {
+            "dias_atraso": 17,
+            "juros_percentual": 1,
+            "multa_percentual": 2,
+            "valor_original": 1234.56
+          },
+          "saida": {
+            "valor_juros": 7.0,
+            "valor_multa": 24.69,
+            "valor_total": 1266.25
+          }
+        }
+      ],
+      "teste_fonte": "TestCalcularMora.test_total_e_soma_das_partes"
+    }
+  ],
+  "formula": {
+    "arredondamento": "Decimal ROUND_HALF_UP, 2 casas",
+    "base_mes_comercial_dias": 30,
+    "juros": "arredondar(valor_original * (juros_percentual / 100) / 30 * dias_atraso)",
+    "multa": "arredondar(valor_original * multa_percentual / 100)",
+    "total": "arredondar(valor_original + multa + juros)"
+  },
+  "funcao": "_calcular_mora",
+  "modulo": "locacao_automation.cobranca_atraso.service",
+  "origem": "locacao_automation/tests/test_cobranca_atraso.py::TestCalcularMora",
+  "portado_sem_reexecucao": true
+}

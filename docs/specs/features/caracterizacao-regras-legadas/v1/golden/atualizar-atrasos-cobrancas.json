@@ -1,0 +1,153 @@
+{
+  "configuracao_atraso": {
+    "juros_percentual": 1.0,
+    "multa_percentual": 2.0
+  },
+  "entrada": {
+    "cobrancas": [
+      {
+        "name": "COB-CARACT-AAC-01",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Vencida",
+        "valor_juros": 0.0,
+        "valor_multa": 0.0,
+        "valor_original": 2000.0,
+        "vencimento_offset_dias": -52
+      },
+      {
+        "name": "COB-CARACT-AAC-02",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Vencida",
+        "valor_juros": 0.0,
+        "valor_multa": 0.0,
+        "valor_original": 1234.56,
+        "vencimento_offset_dias": -5
+      },
+      {
+        "name": "COB-CARACT-AAC-03",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Vencida",
+        "valor_juros": 3.33,
+        "valor_multa": 7.77,
+        "valor_original": 1500.0,
+        "vencimento_offset_dias": 7
+      },
+      {
+        "name": "COB-CARACT-AAC-04",
+        "pagamento_confirmado": 1,
+        "status_cobranca": "Vencida",
+        "valor_juros": 0.0,
+        "valor_multa": 0.0,
+        "valor_original": 900.0,
+        "vencimento_offset_dias": -20
+      },
+      {
+        "name": "COB-CARACT-AAC-05",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Pendente",
+        "valor_juros": 0.0,
+        "valor_multa": 0.0,
+        "valor_original": 800.0,
+        "vencimento_offset_dias": -30
+      }
+    ]
+  },
+  "estado_resultante": {
+    "cobrancas": [
+      {
+        "data_inicio_atraso": "<DATA_EXECUCAO>",
+        "data_ultima_atualizacao_atraso": "<DATA_EXECUCAO>",
+        "name": "COB-CARACT-AAC-01",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Vencida",
+        "valor_juros": 34.67,
+        "valor_multa": 40.0,
+        "valor_original": 2000.0,
+        "valor_total": 2074.67,
+        "vencimento_offset_dias": -52
+      },
+      {
+        "data_inicio_atraso": "<DATA_EXECUCAO>",
+        "data_ultima_atualizacao_atraso": "<DATA_EXECUCAO>",
+        "name": "COB-CARACT-AAC-02",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Vencida",
+        "valor_juros": 2.06,
+        "valor_multa": 24.69,
+        "valor_original": 1234.56,
+        "valor_total": 1261.31,
+        "vencimento_offset_dias": -5
+      },
+      {
+        "data_inicio_atraso": null,
+        "data_ultima_atualizacao_atraso": null,
+        "name": "COB-CARACT-AAC-03",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Vencida",
+        "valor_juros": 3.33,
+        "valor_multa": 7.77,
+        "valor_original": 1500.0,
+        "valor_total": 1511.1,
+        "vencimento_offset_dias": 7
+      },
+      {
+        "data_inicio_atraso": null,
+        "data_ultima_atualizacao_atraso": null,
+        "name": "COB-CARACT-AAC-04",
+        "pagamento_confirmado": 1,
+        "status_cobranca": "Vencida",
+        "valor_juros": 0.0,
+        "valor_multa": 0.0,
+        "valor_original": 900.0,
+        "valor_total": 900.0,
+        "vencimento_offset_dias": -20
+      },
+      {
+        "data_inicio_atraso": null,
+        "data_ultima_atualizacao_atraso": null,
+        "name": "COB-CARACT-AAC-05",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Pendente",
+        "valor_juros": 0.0,
+        "valor_multa": 0.0,
+        "valor_original": 800.0,
+        "valor_total": 800.0,
+        "vencimento_offset_dias": -30
+      }
+    ]
+  },
+  "modulo": "locacao_automation.cobranca_atraso.service",
+  "retorno": {
+    "data_execucao": "<DATA_EXECUCAO>",
+    "juros_percentual": 1.0,
+    "multa_percentual": 2.0,
+    "ok": true,
+    "resultados": [
+      {
+        "acao": "atualizada",
+        "dias_atraso": 52,
+        "name": "COB-CARACT-AAC-01",
+        "valor_juros": 34.67,
+        "valor_multa": 40.0,
+        "valor_total": 2074.67
+      },
+      {
+        "acao": "atualizada",
+        "dias_atraso": 5,
+        "name": "COB-CARACT-AAC-02",
+        "valor_juros": 2.06,
+        "valor_multa": 24.69,
+        "valor_total": 1261.31
+      },
+      {
+        "acao": "ignorada",
+        "motivo": "vencimento_futuro",
+        "name": "COB-CARACT-AAC-03"
+      }
+    ],
+    "total_atualizadas": 2,
+    "total_candidatas": 3,
+    "total_ignoradas": 1
+  },
+  "rotina": "atualizar_atrasos_cobrancas"
+}

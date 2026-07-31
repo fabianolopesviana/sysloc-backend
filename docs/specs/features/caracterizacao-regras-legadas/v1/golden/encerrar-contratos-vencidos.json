@@ -1,0 +1,114 @@
+{
+  "entrada": {
+    "contratos": [
+      {
+        "data_fim_locacao_offset_dias": -5,
+        "imovel": "IMOVEL-CARACT-ECV-01",
+        "name": "CTR-CARACT-ECV-01",
+        "status_contrato": "Ativo"
+      },
+      {
+        "data_fim_locacao_offset_dias": -9,
+        "imovel": "",
+        "name": "CTR-CARACT-ECV-02",
+        "status_contrato": "Ativo"
+      },
+      {
+        "data_fim_locacao_offset_dias": 20,
+        "imovel": "IMOVEL-CARACT-ECV-03",
+        "name": "CTR-CARACT-ECV-03",
+        "status_contrato": "Ativo"
+      },
+      {
+        "data_fim_locacao_offset_dias": -30,
+        "imovel": "IMOVEL-CARACT-ECV-04",
+        "name": "CTR-CARACT-ECV-04",
+        "status_contrato": "Encerrado"
+      }
+    ],
+    "imoveis": [
+      {
+        "contrato_ativo": "CTR-CARACT-ECV-01",
+        "name": "IMOVEL-CARACT-ECV-01",
+        "status_locacao": "Locado"
+      },
+      {
+        "contrato_ativo": "CTR-CARACT-ECV-03",
+        "name": "IMOVEL-CARACT-ECV-03",
+        "status_locacao": "Locado"
+      },
+      {
+        "contrato_ativo": "CTR-CARACT-ECV-04",
+        "name": "IMOVEL-CARACT-ECV-04",
+        "status_locacao": "Locado"
+      }
+    ]
+  },
+  "estado_resultante": {
+    "contratos": [
+      {
+        "data_fim_locacao_offset_dias": -5,
+        "imovel": "IMOVEL-CARACT-ECV-01",
+        "name": "CTR-CARACT-ECV-01",
+        "status_contrato": "Encerrado"
+      },
+      {
+        "data_fim_locacao_offset_dias": -9,
+        "imovel": "",
+        "name": "CTR-CARACT-ECV-02",
+        "status_contrato": "Ativo"
+      },
+      {
+        "data_fim_locacao_offset_dias": 20,
+        "imovel": "IMOVEL-CARACT-ECV-03",
+        "name": "CTR-CARACT-ECV-03",
+        "status_contrato": "Ativo"
+      },
+      {
+        "data_fim_locacao_offset_dias": -30,
+        "imovel": "IMOVEL-CARACT-ECV-04",
+        "name": "CTR-CARACT-ECV-04",
+        "status_contrato": "Encerrado"
+      }
+    ],
+    "imoveis": [
+      {
+        "contrato_ativo": "",
+        "name": "IMOVEL-CARACT-ECV-01",
+        "status_locacao": "Disponível"
+      },
+      {
+        "contrato_ativo": "CTR-CARACT-ECV-03",
+        "name": "IMOVEL-CARACT-ECV-03",
+        "status_locacao": "Locado"
+      },
+      {
+        "contrato_ativo": "CTR-CARACT-ECV-04",
+        "name": "IMOVEL-CARACT-ECV-04",
+        "status_locacao": "Locado"
+      }
+    ]
+  },
+  "modulo": "locacao_automation.contrato_encerramento.service",
+  "retorno": {
+    "data_execucao": "<DATA_EXECUCAO>",
+    "ok": true,
+    "resultados": [
+      {
+        "acao": "ignorado",
+        "motivo": "contrato_sem_imovel",
+        "name": "CTR-CARACT-ECV-02"
+      },
+      {
+        "acao": "encerrado",
+        "imovel": "IMOVEL-CARACT-ECV-01",
+        "name": "CTR-CARACT-ECV-01",
+        "status_contrato": "Encerrado"
+      }
+    ],
+    "total_candidatos": 2,
+    "total_encerrados": 1,
+    "total_ignorados": 1
+  },
+  "rotina": "encerrar_contratos_vencidos"
+}

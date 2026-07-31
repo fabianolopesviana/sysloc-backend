@@ -1,0 +1,73 @@
+{
+  "entrada": {
+    "cobrancas": [
+      {
+        "name": "COB-CARACT-MCV-01",
+        "pagamento_confirmado": 1,
+        "status_cobranca": "Pendente",
+        "valor_original": 1500.0,
+        "vencimento_offset_dias": -12
+      },
+      {
+        "name": "COB-CARACT-MCV-02",
+        "pagamento_confirmado": 1,
+        "status_cobranca": "Pendente",
+        "valor_original": 980.5,
+        "vencimento_offset_dias": -3
+      },
+      {
+        "name": "COB-CARACT-MCV-03",
+        "pagamento_confirmado": 1,
+        "status_cobranca": "Pendente",
+        "valor_original": 1200.0,
+        "vencimento_offset_dias": 15
+      },
+      {
+        "name": "COB-CARACT-MCV-04",
+        "pagamento_confirmado": 1,
+        "status_cobranca": "Paga",
+        "valor_original": 700.0,
+        "vencimento_offset_dias": -40
+      }
+    ]
+  },
+  "estado_resultante": {
+    "cobrancas": [
+      {
+        "name": "COB-CARACT-MCV-01",
+        "status_cobranca": "Vencida",
+        "valor_original": 1500.0,
+        "vencimento_offset_dias": -12
+      },
+      {
+        "name": "COB-CARACT-MCV-02",
+        "status_cobranca": "Vencida",
+        "valor_original": 980.5,
+        "vencimento_offset_dias": -3
+      },
+      {
+        "name": "COB-CARACT-MCV-03",
+        "status_cobranca": "Pendente",
+        "valor_original": 1200.0,
+        "vencimento_offset_dias": 15
+      },
+      {
+        "name": "COB-CARACT-MCV-04",
+        "status_cobranca": "Paga",
+        "valor_original": 700.0,
+        "vencimento_offset_dias": -40
+      }
+    ]
+  },
+  "modulo": "locacao_automation.cobranca_vencimento.service",
+  "retorno": {
+    "cobrancas": [
+      "COB-CARACT-MCV-01",
+      "COB-CARACT-MCV-02"
+    ],
+    "data_execucao": "<DATA_EXECUCAO>",
+    "ok": true,
+    "total_atualizadas": 2
+  },
+  "rotina": "marcar_cobrancas_vencidas"
+}

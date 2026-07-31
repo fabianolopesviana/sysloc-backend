@@ -1,0 +1,103 @@
+{
+  "campo_agregado": "metragem_total",
+  "cenarios": {
+    "sem_comodo": {
+      "comodos_entrada": [],
+      "comodos_persistidos": [],
+      "imovel_ref": "IMOVEL-CARACT-MET-SEM-COMODO",
+      "valor_agregado": 0.0
+    },
+    "um_comodo": {
+      "comodos_entrada": [
+        {
+          "metragem": 25.5,
+          "nome_comodo": "Sala"
+        }
+      ],
+      "comodos_persistidos": [
+        {
+          "idx": 1,
+          "metragem": 25.5,
+          "nome_comodo": "Sala"
+        }
+      ],
+      "imovel_ref": "IMOVEL-CARACT-MET-UM-COMODO",
+      "valor_agregado": 25.5
+    },
+    "varios_comodos": {
+      "comodos_entrada": [
+        {
+          "metragem": 25.5,
+          "nome_comodo": "Sala"
+        },
+        {
+          "metragem": 30.25,
+          "nome_comodo": "Quarto"
+        },
+        {
+          "metragem": 12.0,
+          "nome_comodo": "Cozinha"
+        }
+      ],
+      "comodos_persistidos": [
+        {
+          "idx": 1,
+          "metragem": 25.5,
+          "nome_comodo": "Sala"
+        },
+        {
+          "idx": 2,
+          "metragem": 30.25,
+          "nome_comodo": "Quarto"
+        },
+        {
+          "idx": 3,
+          "metragem": 12.0,
+          "nome_comodo": "Cozinha"
+        }
+      ],
+      "imovel_ref": "IMOVEL-CARACT-MET-VARIOS-COMODOS",
+      "valor_agregado": 67.75
+    },
+    "varios_comodos_com_metragem_nula": {
+      "comodos_entrada": [
+        {
+          "metragem": 40.0,
+          "nome_comodo": "Sala"
+        },
+        {
+          "metragem": null,
+          "nome_comodo": "Deposito"
+        },
+        {
+          "metragem": 18.5,
+          "nome_comodo": "Quarto"
+        }
+      ],
+      "comodos_persistidos": [
+        {
+          "idx": 1,
+          "metragem": 40.0,
+          "nome_comodo": "Sala"
+        },
+        {
+          "idx": 2,
+          "metragem": 0.0,
+          "nome_comodo": "Deposito"
+        },
+        {
+          "idx": 3,
+          "metragem": 18.5,
+          "nome_comodo": "Quarto"
+        }
+      ],
+      "imovel_ref": "IMOVEL-CARACT-MET-VARIOS-COMODOS-METRAGEM-NULA",
+      "valor_agregado": 58.5
+    }
+  },
+  "doctype": "Imovel",
+  "evento": "Before Save",
+  "regra": "Cálculo metragem imóvel",
+  "tipo": "Server Script (DocType Event)",
+  "valor_sentinela_de_entrada": -1.0
+}
