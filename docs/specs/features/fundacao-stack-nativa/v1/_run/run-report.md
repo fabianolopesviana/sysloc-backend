@@ -4,14 +4,17 @@
 
 ## 1. Resumo do Run
 
-Status: 2/7 tasks concluídas · T1 verde em 62 asserções · T2 verde em 5/5 casos e 69 asserções, provada por 5 execuções assistidas no servidor real
+Status: 3/7 tasks concluídas · T1 verde em 62 asserções · T2 verde em 5/5 casos e 69 asserções, provada por 5 execuções assistidas no servidor real · T3 verde em 66 casos de Vitest, com 4 vazamentos de segredo encontrados e fechados
 
 | Task | Nome | Modelo | Arquivos | QA | Tech Review |
 |------|------|--------|----------|-----|-------------|
 | T1 | Fundação do monorepo — ferramental fixado e workspace construível | opus | 11 criados, 1 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
 | T2 | Provisionamento dos serviços de base por script idempotente | opus | 2 criados, 2 mod | ✅ APROVADO | ⚠️ PARCIAL (P9 aceito como débito por decisão do usuário) |
+| T3 | Pacote compartilhado — contrato de erro e registro estruturado | opus | 11 criados, 1 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
 
-**T3 a T7 pendentes.** Nenhuma bloqueada.
+**T4 a T7 pendentes.** Nenhuma bloqueada — T4 está desbloqueada.
+
+**Sobre o custo de T3**: quatro rodadas, com o limite de 3 estendido uma vez por decisão do usuário. O Gate 1 rejeitou uma vez e o Gate 2, duas. **O mesmo vazamento de segredo foi redescoberto quatro vezes, por quatro portas diferentes** no mesmo arquivo — objeto com `toJSON`, herança da própria propriedade `toJSON` na cópia redigida, promoção de `err.message` para a chave de topo, e a posição raiz do evento. Cada rodada fechou o caminho apontado e a seguinte encontrou outro, porque a redação estava *instalada em pontos* em vez de ter *entrada única de despacho*. A rodada 4 atacou a estrutura, e o Gate 2 confirmou o fechamento **por topologia**, não por amostragem: pela API que `criarLogger` expõe, todo dado do chamador chega à linha por três escritas, e as três estão interceptadas. Nenhuma das três rejeições foi burocrática — todas pegaram vazamento real, provado por sonda contra o artefato compilado.
 
 **Sobre o custo de T2**: cinco tentativas, com o limite de 3 estendido duas vezes por decisão do usuário. O Gate 1 rejeitou três vezes e o Gate 2, duas. Nenhuma rejeição foi trivial — as duas primeiras pegaram defeitos de segurança que teriam chegado a T7 (a senha do banco sendo rebaixada silenciosamente, e a credencial viva no `argv` de um processo filho), e as três últimas pegaram testes que não podiam falhar pelo defeito que perseguiam. T2 é a única task da fatia que altera o sistema operacional de um servidor que atende a operação hoje, e roda com `risk: high`.
 
@@ -107,6 +110,62 @@ Status: 2/7 tasks concluídas · T1 verde em 62 asserções · T2 verde em 5/5 c
 - **Impacto:** inofensivo na prática (o card é a especificação canônica), mas o cenário D — a prova que fecha o achado do `turbo.json` — fica invisível para quem não descer até a §5.6.
 - **O que fazer:** atualizar o rótulo nas duas tabelas para "(parametrizado, 4 cenários)" e cortar as colunas em fronteira de palavra.
 
+### ~~D15 · baixo · error_handling · T3 · Tech Review~~ — ✅ **RESOLVIDO na rodada 4**
+- **Onde:** `packages/shared/src/log.ts:336-352`
+- **Problema:** `redigirErro` descarta os sub-erros de `AggregateError` — a varredura usa `Object.keys`, e `AggregateError.errors` é própria **não-enumerável**.
+- **Impacto:** diagnóstico, não segurança. `AggregateError` é o que `Promise.any` e conexões multi-host produzem; perder os sub-erros deixa o journal só com "agregado", contrariando o "mascarar não é apagar" que o arquivo repete três vezes. O serializador padrão do pino trata o caso; `redigirErro` o substitui de propósito. Baixo hoje porque a F0 não tem código que os produza.
+- **O que fazer:** após a pilha, `if (Array.isArray((erro as AggregateError).errors)) { saida.erros = (erro as AggregateError).errors.map((e) => redigirValor(e, emVisita)); }`.
+
+### D16 · baixo · project_pattern · T3 · Tech Review — **tem gatilho: antes de T4 começar**
+- **Onde:** `.claude/rules/testing-stack.md`
+- **Problema:** três afirmações da rule ficaram falsas por causa desta task — "a frente TypeScript está declarada e ainda não instalada", "nenhum pacote declara a tarefa `test`… o QA não deve reportar `discovery_needed` por causa disso" e "**Config**: `vitest.config.ts` na raiz do monorepo". Além disso, a correção do P3 previa registrar ali o padrão de `tsconfig.test.json` "para T4 herdar"; o código foi feito, o registro não.
+- **Impacto:** a rule é fonte de verdade **consumida pelos gates**. O QA de T4/T5/T6 lê que a frente TypeScript não existe e que a config vive na raiz, e pode aceitar como esperado um pacote sem `tsconfig.test.json` — reabrindo exatamente o furo do P3 (nenhum teste sob verificação de tipos) num pacote novo.
+- **O que fazer:** atualizar via `/agent-spec-testing-stack-bootstrap` — marcar a frente TypeScript como instalada a partir de T3, registrar `tsconfig.test.json` por pacote como padrão obrigatório, e substituir "config na raiz" pela regra de dois níveis (agregada na raiz a partir de T4 + preparação local por pacote quando ele compilar a si mesmo).
+
+### D17 · baixo · project_pattern · T3 · Tech Review — **endereço definido: T4**
+- **Onde:** `turbo.json` (tarefa `lint`) e `packages/shared/package.json`
+- **Problema:** `turbo run lint` executa **0 tarefas** porque nenhum pacote declara script `lint`; toda a cobertura vem do `biome check .` da raiz.
+- **Impacto:** nenhum funcional. O Gate 2 **decidiu o mérito**: o padrão do monorepo **não** deve exigir script `lint` por pacote — o Biome tem configuração única na raiz, sem override por pacote, e N invocações do mesmo binário sobre subconjuntos do mesmo conjunto seriam mais lentas e divergiriam em flags. O pacote está certo em não declarar. O resíduo é a **declaração órfã** herdada de T1, que sugere ao próximo autor de pacote que ele deve implementá-la.
+- **O que fazer:** remover a tarefa `lint` do `turbo.json` e reduzir o script da raiz a `biome check .`; ou mantê-la com comentário registrando que existe para uma frente futura (o `turbo.json` já usa comentários com esse propósito). Pertence à T4, que revisita o ferramental da raiz.
+
+### ~~D18 · baixo · tests · T3 · QA~~ — ✅ **RESOLVIDO na rodada 4** (texto livre e interpolação ganharam falsificador; o mutante M7 passou a reprovar 4 casos, contra 2 antes)
+- **Onde:** `packages/shared/test/log.spec.ts:398`
+- **Problema:** das três origens da mensagem que o cabeçalho declara cobrir — texto livre, interpolação e promoção de `erro.message` —, só a terceira tem falsificador. As três foram sondadas e de fato mascaram, mas a suíte só exercita a via da exceção.
+- **Impacto:** as três convergem numa única linha nossa (`serializers[CHAVE_DA_MENSAGEM]`), o que limita o risco; mas a aplicação do serializador à mensagem **interpolada** é propriedade do pino, não nossa. Um bump que deixasse de aplicar serializador ao resultado do `format()` faria segredo interpolado voltar a sair cru com a suíte verde.
+- **O que fazer:** acrescentar duas emissões sem exceção ao caso que já existe — `logger.info('conectado a ' + CADEIA_CRUA)` e `logger.info('conectado a %s', CADEIA_CRUA)` — asserindo que o conteúdo integral do arquivo não contém a sentinela.
+
+### ~~D19 · baixo · code_quality · T3 · QA~~ — ✅ **RESOLVIDO na rodada 4** (helper `loggerEmArquivo`)
+- **Onde:** `packages/shared/test/log.spec.ts:71` (e 97, 127, 250, 288, 323, 347, 365, 418, 449, 489)
+- **Problema:** o par `const destino = join(diretorio, 'eventos.log'); const logger = criarLogger({ nivel: 'info', destino });` aparece literalmente em **11 casos**, com o mesmo nome de arquivo repetido em todos (AP-19, `magic_strings`).
+- **Impacto:** inofensivo hoje — nenhum caso depende do nome. Mas trocar o destino ou o nível padrão obriga a editar onze lugares, e um ficar para trás não produz falha visível.
+- **O que fazer:** extrair um helper local ao lado de `esvaziar`/`linhasNaoVazias` — `function loggerEmArquivo(nivel: NivelDeLog = 'info'): { logger: Logger; destino: string }` — e uma constante única para o nome do arquivo. Não abstrair além disso.
+
+### D20 · baixo · security · T3 · Tech Review — **tem gatilho: T5, quando acrescentar contexto de processo**
+- **Onde:** `packages/shared/src/log.ts:200` (bloco `formatters`) e a afirmação de `log.ts:29`
+- **Problema:** existe uma **quarta escrita** no pino — `base` / `formatters.bindings` — que não atravessa `formatters.log` e portanto **contorna o redator**. Sonda do Gate 2 confirma: `pino({ base: { segredoDeBase: 'X' }, formatters: { log: … } })` emite `segredoDeBase` cru.
+- **Impacto:** nenhum hoje — a porta é **inalcançável pela API atual**, porque `OpcoesDeLogger` expõe só `nivel` e `destino` e o objeto de opções é literal dentro de `criarLogger`. Está trancada **por omissão, não por construção**, e o cabeçalho afirma o absoluto "não há segunda porta a fechar depois" justamente para quem vai editar esta fábrica. O risco é de edição futura: T5 acrescenta `base: { servico, versao }` sem perceber que essa opção não passa pelo redator, e o próximo campo que alguém puser ali sai cru.
+- **O que fazer:** uma linha fecha por construção — acrescentar `bindings: redigirRegistro` ao bloco `formatters`. É idempotente com o embrulho de `child` (reaplicar a redação sobre uma cópia já redigida não muda nada) e torna a afirmação de `log.ts:29` literalmente verdadeira em vez de condicionalmente verdadeira.
+- **Gatilho:** **antes de T5 acrescentar qualquer campo a `base`.**
+
+### D21 · baixo · code_quality · T3 · Tech Review
+- **Onde:** `packages/shared/src/log.ts:104` (comentário) e `:56` (cabeçalho); asserções em `test/log.spec.ts:343,350`
+- **Problema:** a chave de embrulho do valor avulso tem **duas formas** e o comentário nega uma colisão que existe. (a) `redigirValor` de uma visão de memória devolve `{tipo, bytes}`, que **é** objeto literal e portanto passa em `ehRegistroDeCampos` e é **espalhado no topo** em vez de embrulhado em `valor` — o pacote escreve cinco chaves (`nivel`, `mensagem`, `valor`, `tipo`, `bytes`), não três. (b) `logger.child({ valor: 'DO-FILHO' }).info(new Date(…))` emite **chave duplicada**, porque os vínculos entram por `asChindings`, que o pino concatena antes das chaves do evento. (c) Combinado: `logger.child({tipo, bytes}).info(buffer)` produz **duas** chaves duplicadas de uma vez, e `tipo` é nome de vínculo inteiramente plausível num código em pt-BR.
+- **Impacto:** sem vazamento (ambos os lados passam pela redação) e sem perda de correlação (`idCorrelacao` nunca colide). O dano é perda silenciosa do vínculo do chamador por parsers de último-ganha, e um envelope com dois lugares para o mesmo conceito — herdado por T4/T5/T6, o que torna a mudança posterior uma quebra de formato para quem já consome o journal.
+- **Causa-raiz** (nomeada pelo Gate 2): `ehRegistroDeCampos` classifica pela **forma da saída** (o protótipo do que o despacho devolveu), não pelo **ramo** que o despacho tomou — e o resumo de bytes é indistinguível de um registro de campos do chamador.
+- **O que fazer:** fazer o resumo de visão de memória devolver **cadeia** (`` `${valor.constructor.name}(${valor.byteLength} bytes)` ``) em vez de objeto. O resumo deixa de passar em `ehRegistroDeCampos`, é embrulhado em `valor` como qualquer avulso, `tipo`/`bytes` somem do topo, e o contrato do envelope vira exatamente o que o cabeçalho já promete. Ajustar as duas asserções junto e corrigir `log.ts:104` para dizer o que sobra: a colisão residual é com um vínculo literalmente chamado `valor`.
+
+### D22 · baixo · project_pattern · T3 · Tech Review — **puramente documental, custo de minutos**
+- **Onde:** `docs/specs/features/fundacao-stack-nativa/v1/tasks/T3.md:190` e `:201`
+- **Problema:** o card do CT-003 na §5.6 continua declarando o invariante **antigo** ("e todo valor do enum casa `^[A-Z][A-Z0-9_]*$`") e o companheiro negativo antigo, contradizendo a §6 nova e o teste entregue. A §6 foi acrescentada, a §5.6 não foi atualizada.
+- **Impacto:** documental, mas no ponto exato que quatro rodadas discutiram. Quem reabrir a T3 lê um invariante que o teste não satisfaz — e é a incoerência que faz uma asserção deliberadamente reduzida **parecer** contorno de gate quando alguém reler daqui a três fatias.
+- **O que fazer:** reescrever `:190` para "…e os quatro valores fixados casam `^[A-Z][A-Z0-9_]*$`; a grafia dos códigos de negócio que chegam em F4 é decisão de F4 (ver §6)" e ajustar `:201` para descrever o companheiro negativo que o teste de fato tem (valor fixado renomeado ou regrafado em minúsculo). Nenhuma mudança de código.
+
+### D23 · baixo · code_quality · T3 · Tech Review — **endereço definido: cleanup de T5**
+- **Onde:** `packages/shared/src/log.ts` (447 linhas)
+- **Problema:** o arquivo carrega **duas responsabilidades separáveis** — a fábrica (opções, destino, ciclo de vida do filho, ~80 linhas) e o motor de redação (radicais, padrão de credencial, despacho por tipo, erro, ciclo; ~90 linhas de código e ~200 de prosa). Cerca de dois terços do arquivo é comentário, misturando dois gêneros: contrato de consumo (a fronteira do mascaramento, a convenção que T5 herda) e **arqueologia das quatro rodadas**.
+- **Impacto:** custo de leitura, nenhum defeito funcional. O veredito do Gate 2 sobre a pergunta "virou colcha de retalhos?" foi explícito: **o código melhorou** (11 funções pequenas, `redigirValor` é escada linear de complexidade ~10) — *"ainda é coeso, mas está no limite"*. O que inchou foi a prosa, e o lugar da arqueologia é a mensagem de commit ou uma ADR, não o topo do módulo que toda fatia importa.
+- **O que fazer:** extrair `packages/shared/src/redacao.ts` (não exportado por `index.ts`) com `redigirRegistro`, `redigirValor`, `redigirObjeto`, `redigirErro`, `ehRegistroDeCampos`, `ehChaveSensivel`, `mascararCredencial`, `mascararMensagem` e as constantes. `log.ts` fica com ~80 linhas. Ganhos: a redação passa a ter arquivo de teste próprio, exercitável sem montar logger e arquivo; a lista de radicais cresce sem tocar a fábrica; a arqueologia fica confinada onde é pertinente. **O próprio Gate 2 recomendou não fazer agora** se implicar mais uma rodada.
+
 ### Débito residual abaixo do limiar de finding
 
 - `verificar-workspace.sh:63` — `STATUS_INICIAL` no escopo de arquivo embora só usado dentro de `ct_004`; poderia ser `local`.
@@ -114,7 +173,7 @@ Status: 2/7 tasks concluídas · T1 verde em 62 asserções · T2 verde em 5/5 c
 
 ## 3. Tasks Bloqueadas
 
-✅ Nenhuma task bloqueada. T2 chegou a ser marcada `Bloqueado` ao esgotar as 3 tentativas, e o usuário estendeu o limite duas vezes; o bloqueio foi revertido e as dependentes (T4–T7) desbloqueadas.
+✅ Nenhuma task bloqueada. **Duas chegaram a ser marcadas `Bloqueado` ao esgotar as 3 tentativas** — T2 (limite estendido duas vezes, fechou em 5 rodadas) e T3 (estendido uma vez, fechou em 4) — e nos dois casos o bloqueio foi revertido por decisão do usuário e a task fechou nos dois gates. **Toda extensão concedida até agora pegou defeito real**, nenhuma foi burocracia.
 
 ## 4. Notas para Revisão Humana
 
@@ -136,4 +195,12 @@ Dois efeitos colaterais que valem mais que a rule em si: (a) ela registra que `p
 
 **8. Consumo de disco.** O servidor saiu de 79% para 83% durante o run (6,1 → ~5,1 GiB livres). Origem legítima e esperada: toolchain do `mise` (565 MB), `node_modules` (137 MB), store do pnpm (171 MB) e os três serviços provisionados (~134 MB medidos pelo CT-005). Sem vazamento — nenhum clone efêmero, `node_modules` ou resguardo órfão sobrou. **Vale acompanhar**: T4 sobe instâncias efêmeras de banco a cada execução da suíte.
 
-**9. Nada foi commitado.** T1 e T2 estão **staged** (14 arquivos, ~4.000 linhas). O `HEAD` segue em `540c6d9`. A decisão de quando agrupar num commit é sua.
+**9. Estado do git.** T1 e T2 estão **commitadas** (`0ff5492` e `d967169`). **T3 está staged, não commitada** — 11 arquivos de `packages/shared/` mais o `pnpm-lock.yaml`, 1775 linhas. O `HEAD` segue em `e10488c`. A decisão de commitar é sua; **vale fazê-lo antes da T4**, porque a T4 modifica `packages/shared/package.json` e, sem o commit, o `base_sha` dela arrastaria a T3 inteira para dentro dos gates.
+
+**10. O padrão de T3: o mesmo defeito redescoberto quatro vezes por quatro portas — e fechado na quinta por mudança estrutural.** Cada rodada fechou exatamente o caminho apontado e a seguinte encontrou outro — objeto com `toJSON`, herança da própria propriedade `toJSON` na cópia redigida, promoção de `err.message` para a chave de topo, posição raiz do evento. Vale registrar três coisas que isso ensina:
+
+- **Corrigir o caso apontado não é corrigir a classe.** O executor acertou cada fix e mesmo assim o vazamento sobreviveu, porque a redação foi *instalada em pontos* em vez de ter *uma entrada única de despacho*. O Gate 2 nomeou isso na terceira passagem, depois de ler o caminho de escrita do pino inteiro e declarar a topologia fechada. **A rodada 4 atacou a estrutura e fechou** — o executor foi obrigado a escrever uma linha `POR QUE ISTO FECHA A CLASSE:` antes de editar, com a advertência de que, se não conseguisse escrevê-la com convicção, o fix ainda seria pontual. Essa exigência é barata e vale repetir sempre que um defeito reaparecer por caminho novo.
+- **Os gates funcionaram, e não por sorte.** O QA achou o que encaminhou; o Gate 2 confirmou por sonda em vez de aceitar de palavra; o QA da rodada 2 achou a **causa-raiz** de por que o defeito atravessara os dois gates (a posição `objeto_de_erro` do CT-008 anexava o sentinela como propriedade da exceção, com mensagem inócua — o vetor nunca era exercitado); e o executor achou sozinho um corolário que nenhum gate tinha visto. Nenhuma das três rejeições foi burocrática.
+- **A prova de falsificação pagou.** Foi ela que transformou "as duas linhas de `mascararCredencial` em `redigirErro`" de código-de-segurança-sem-rede em código-de-segurança-com-rede: o mutante que as removia mantinha a suíte 52/52 verde, e hoje reprova. É a mesma regra que a nota 7 já apontava como a mais valiosa do run.
+
+**11. Um achado de T3 que alcança a F4 e a F6.** O comentário do enum de códigos afirma continuidade com os símbolos que o cliente já trata (`sem_certificado_proprio`, `requer_decisao`, `sem_config_ativa`) — mas esses são **minúsculo-com-sublinhado**, e o enum nasceu `MAIÚSCULO_COM_SUBLINHADO` porque a §4 da T3 mandou. O `levantamento-frontend.md:466` lista `campo_invalido`, que é o mesmo código que aqui virou `CAMPO_INVALIDO`. Não é violação da ADR-0007 (o `Decision` fixa "enum fechado", não a grafia), mas a asserção de grafia em `erros.spec.ts:167` roda sobre o enum **inteiro** — então quem acrescentar os códigos do Sicoob em F4 escolhe entre quebrar o `switch` do cliente ou enfraquecer um teste de contrato. **A decisão de mapeamento precisa ser tomada antes de F4 publicar os códigos**, e o lugar natural do adaptador é a ADR-0001.

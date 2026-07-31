@@ -276,3 +276,217 @@
 - `[run] a rule resolve a causa das 6 sinalizações de `discovery_needed` deste run: registra que `pnpm test` não resolver hoje é ESPERADO até T4 (apps/ e packages/ vazios), não lacuna de stack.`
 - `[run] a rule põe em contrato escrito, ANTES de T4 começar, a recomendação carry-forward do Gate 2 de T1: o helper de embedded-postgres deve ignorar process.env.DATABASE_URL POR CONSTRUÇÃO, com a prova positiva descrita (caso que exporta DATABASE_URL para destino impossível e prova que a suíte subiu a efêmera assim mesmo).`
 - `[run] a seção de falsificação carrega os TRÊS casos concretos que derrubaram T2, com o padrão nomeado — "provou-se o que era fácil provar (predicado, posição, texto) e deixou-se sem asserção o que era difícil (a combinação que discrimina, e o efeito terminal)".`
+
+---
+
+## Run 3 — T3 (Pacote compartilhado — contrato de erro e registro estruturado)
+
+### Inicialização
+
+- `[run] executor resolvido: __default__ (origem: descoberta interativa — .claude/agents/ contém apenas os 3 agentes reservados aos gates (agent-spec-qa-validator, agent-spec-staff-architecture-review, agent-spec-qa-test-generator); zero especialistas de stack candidatos, logo o default é a única resolução possível e a pergunta seria degenerada).`
+- `[run] executor_discipline injetado (fonte: references/executor-discipline.md)`
+- `[run] modelo: TODOS os papéis em opus por decisão de projeto (CLAUDE.md — "Sonnet e Haiku estão proibidos, mesmo quando a skill os recomenda"). A heurística de config.md que sugeriria sonnet para os gates é sobrescrita.`
+- `[run] resume: NÃO aplicável — nenhuma task em "Em Progresso" no início, _run/tmp/ vazio, git status limpo.`
+- `[run] cleanup idempotente: _run/tmp/ vazio, nada com idade > 24h. .gitignore já cobre docs/specs/**/_run/tmp/ (linha 45).`
+- `[run] qa_context.md: mtime 08:32 > scope.md 08:29 — NÃO stale, confiável neste run.`
+
+### T3 — pré-execução
+
+- `[T3] base_sha=e10488c7ca96143b05a1d61eeaae0aff2288a0f9`
+- `[T3] executor: opus (declarado no frontmatter)  ·  gates: [qa, tech_review] (declarado)  ·  risk: medium`
+- `[T3] ADRs injetadas no executor: ADR-0007 (fonte: task §6 — "ADRs Aplicáveis nesta Task")`
+- `[T3] critical_paths: nenhum match. packages/shared/src/{erros,log}.ts não bate com auth/security/crypto/db_migrations/secrets/api_contracts. Escalação de gate por critical_path NÃO se aplica — os gates rodam em opus por decisão de projeto, não por heurística.`
+
+### T3 — CONFLITO DE ESCOPO resolvido pelo usuário ANTES da execução
+
+- `[T3] CONFLITO detectado na pré-execução: a T3 traz 9 CTs obrigatórios e o Gate 1 é o gate que EXECUTA a suíte, mas o `vitest.config.ts` e a instalação da engine estão declarados como entrega da **T4** (T4 §3.1), e a T3 §3.2 declara "nenhum arquivo a modificar". Hoje `pnpm test` → `turbo run test` sem nenhum pacote declarando a tarefa `test`. Sem resolução prévia, o executor cairia no gatilho da Iron Rule #4 ("engine de teste ausente → PAUSE e pergunte") no meio da implementação.`
+- `[T3] DECISÃO DO USUÁRIO: **T3 instala o mínimo próprio.** A T3 acrescenta `vitest` como devDependency de `packages/shared`, declara a tarefa `test` no manifesto do pacote e cria a configuração mínima DENTRO do pacote. O `vitest.config.ts` da RAIZ (workspace agregado) permanece entrega da T4, que passará a agregar o que já existe em vez de criar do zero.`
+- `[T3] Consequência para os gates: a suíte de T3 é EXECUTÁVEL — o QA deve reportar `executou_testes: true`. `packages/shared/package.json` (que a T3 já cria) e `pnpm-lock.yaml` entram no diff legitimamente; o lock NÃO é scope_deviation nesta task.`
+- `[T3] Consequência para T4: o entregável `vitest.config.ts` da raiz muda de natureza (criar do zero → agregar o projeto que já existe). Nenhuma edição na T4.md foi feita — alterar spec exige ordem explícita do usuário.`
+
+### T3 — executor concluído (tentativa 1)
+
+- `[T3] executor (opus, general-purpose): 9 arquivos criados, 2 modificados (pnpm-lock.yaml, tasks/T3.md). 9/9 CTs implementados em vitest 4.1.10 — 42 casos em 3 arquivos. Executor reporta `pnpm lint`, `pnpm build` e `pnpm test` da raiz com saída 0.`
+- `[T3] executor — achado próprio: vazamento real no pino. O formatador de vínculos é ZERADO ao criar logger filho, então `formatters.bindings` nunca alcança `logger.child({...})` — que é exatamente o caminho por onde T5 vai carregar o contexto da requisição. Fechado envolvendo `child` (redação do argumento + reenvolvimento do filho, com o método original repassado para o neto não nascer vinculado ao avô). Dois casos novos provam os dois lados.`
+- `[T3] executor — CT-009 resolve o especificador público por AUTO-REFERÊNCIA do próprio pacote, em subprocesso Node real, não pelo resolvedor do Vitest. Justificativa declarada: a raiz não resolve `@sysloc/shared` porque nenhum pacote o declara como dependência ainda, e declará-lo na raiz seria vínculo que só existiria para o teste (Iron Law #6). A resolução a partir de OUTRO pacote passa a ser exercida em T5/T6. **Ponto a auditar nos gates** — é a única alínea em que o executor se afastou da letra do card (que dizia "a partir do contexto da raiz do workspace").`
+- `[T3] executor — falsificação por mutante manual declarada para todos os defeitos perseguidos: redação desligada (15 falhas), corpo serializando a exceção inteira (8), nível ignorado (1), caminho profundo exposto no exports (1), envelope ingênuo de child (1). **A verificar no Gate 1** — a rule testing-stack exige a prova, e o QA deve reproduzi-la, não aceitá-la de palavra.`
+- `[T3] executor — `packages/shared/test` roda `tsc --build && vitest run` porque CT-009 exercita o artefato de `dist/`. Versões fixadas por completo como a raiz: pino 10.3.1, vitest 4.1.10, @types/node 24.13.3. `typescript` NÃO redeclarado no pacote.`
+- `[T3] git add -N escopado aplicado nos 9 arquivos declarados. `.turbo/` já ignorado (.gitignore:10) — não entrou.`
+- `[T3] arquivos criados FORA do escopo declarado: **nenhum**. `packages/shared/vitest.config.ts` e `pnpm-lock.yaml` estão cobertos pela decisão de escopo do usuário registrada acima — os gates NÃO devem tratá-los como scope_deviation.`
+- `[T3] diff vs base_sha: 10 arquivos, 1781 inserções, 0 remoções (puramente aditivo).`
+
+### ⏸️ RUN PAUSADO PELO USUÁRIO — retomar em nova sessão
+
+**Ponto exato de parada**: T3 com o executor concluído e **os dois gates ainda não executados**.
+
+Estado deixado no disco:
+
+- `tasks/T3.md` e `task_plan.md` com Status **Em Progresso** — é o sinal que a FASE 0 (item 6.1) usa para detectar a interrupção.
+- `base_sha=e10488c7ca96143b05a1d61eeaae0aff2288a0f9` persistido acima (HEAD intacto, nada commitado).
+- Working tree com os 9 arquivos em `git add -N` (visíveis ao `git diff`, não staged de verdade) + `pnpm-lock.yaml` modificado.
+- `_run/tmp/` vazio — **não há memória lazy**, porque não houve rejeição de gate.
+- `minispec_state.yaml` segue `execution: in_progress`, `tasks_completed: 2` (T3 ainda não conta).
+
+**Como retomar**: rodar `/agent-spec-minispec-run-tasks docs/specs/features/fundacao-stack-nativa/v1/` de novo. Na pergunta de resume, escolher **(a) Retomar nos gates** — o código está íntegro e a reexecução do zero jogaria fora ~20 min de execução em opus sem motivo. O `base_sha` para o filtro do diff é o desta seção.
+
+**O que a nova sessão precisa saber e não está em nenhum outro arquivo:**
+
+1. **A decisão de escopo do usuário** (T3 instala o mínimo próprio de engine) está registrada duas seções acima. Sem ela, os gates vão reprovar `packages/shared/vitest.config.ts`, a devDependency de vitest e o `pnpm-lock.yaml` como desvio de escopo — a T3 §3.2 diz literalmente "nenhum arquivo a modificar".
+2. **O executor é `general-purpose` em opus** (não há especialista de stack em `.claude/agents/`; o `CLAUDE.md` proíbe Sonnet e Haiku em todo papel, gates inclusive).
+3. **Dois pontos merecem escrutínio nos gates**, ambos anotados acima: o desvio do CT-009 (auto-referência em vez do contexto da raiz) e a prova de falsificação por mutante, que a `.claude/rules/testing-stack.md` exige que seja **reproduzida** pelo QA, não aceita de palavra.
+4. **Risco residual herdado do Gate 2 de T2, que alcança T4** (não T3): a T4 sobe instâncias efêmeras e precisa de porta FORA de `PORTAS_NOVAS=(6380 1025 8025)` — uma efêmera em 6380 sequestraria a fila provisionada. Fixar a faixa na T4.
+
+### ▶️ RUN RETOMADO — nova invocação da skill
+
+- `[run] FASE 0 reexecutada. Estado do disco CONFERE com o registrado na pausa: HEAD=e10488c intacto, 9 arquivos de packages/shared em add -N, pnpm-lock.yaml modificado, _run/tmp/ vazio, T3 "Em Progresso" nos dois lugares.`
+- `[run] resume: sinal detectado (T3 com Status "Em Progresso" no task_plan.md + diff em paths declarados de task não-Concluído).`
+- `[T3] DECISÃO DO USUÁRIO: **(a) Retomar nos gates.** base_sha recuperado do workflow-report (linha 295) — a memória lazy não existe porque não houve rejeição de gate. Executor NÃO será redespachado.`
+- `[run] executor resolvido: __default__ (general-purpose) — inalterado. Gates em opus por decisão de projeto (CLAUDE.md).`
+
+### T3 — Gate 1 (tentativa 1) — APROVADO_COM_OBSERVACOES
+
+- `[T3] QA (opus): **APROVADO_COM_OBSERVACOES** — 0 críticos, 0 altos, 0 médios, **1 baixo** (BAIXO-001, categoria tests). criterios 17/17, rastreabilidade 9/9 CTs sem lacuna, adr_compliance sem violação, escopo_declarado íntegro (5 arquivos da §3.1 + 8 subtasks da §4 com evidência).`
+- `[T3] QA executou_testes: **true** / escopo **SUITE_COMPLETA** / tocou_area_critica: true. pnpm test → 3 arquivos, 42/42 verdes em 1,23s; pnpm lint (Biome, 13 arquivos) e pnpm build limpos.`
+- `[T3] QA — security_flags: **["redaction_bypass_via_tojson"]** (não vazio → escalaria tech_model para opus por regra; já é opus por decisão de projeto).`
+- `[T3] QA REPRODUZIU a prova de falsificação em vez de aceitá-la de palavra — 9 mutantes, restaurados e conferidos por md5. Os 5 declarados pelo executor bateram (redação desligada: QA obteve 20 falhas contra 15 declaradas, desvio A FAVOR do teste porque o mutante dele alcançou também os vínculos de logger filho; corpo serializando a exceção: 8; nível ignorado: 1; caminho profundo no exports: 1; envelope ingênuo de child: 1).`
+- `[T3] QA acrescentou 4 mutantes próprios. O mais relevante: acrescentar ao enum um valor fora da grafia mantém o companheiro de superconjunto VERDE e reprova só na regex — provando que a assimetria deliberada do CT-003 funciona nos dois sentidos (acrescentar é retrocompatível, renomear não é). Renomear CAMPO_INVALIDO produz 4 falhas; trocar 422 por 200 produz 3.`
+- `[T3] QA — desvio do CT-009 JULGADO PROCEDENTE. Verificou factualmente que node_modules/@sysloc não existe na raiz e que o package.json da raiz não declara dependência alguma, logo declarar @sysloc/shared lá seria vínculo test-only (Iron Law #6). O invariante do card NÃO ficou sem prova: a auto-referência aplica o mesmo algoritmo de `exports` que um consumidor externo, e os dois lados foram falsificados. O que resta sem exercício é o symlink de workspace do pnpm — comportamento de terceiro (AP-20), legitimamente adiado para T5/T6.`
+- `[T3] QA — Camada 5 sem antipadrão: zero mocks, zero sleep (espera por logger.flush com callback), zero skip/todo/only, zero Date.now/Math.random, zero snapshot. AP-16/AP-25 afastados (todo positivo tem companheiro negativo); AP-26 investigado par a par e afastado; AP-18 impossível (mkdtemp por caso).`
+- `[T3] QA — DOIS achados de segurança de superfície NÃO-bloqueantes, encaminhados ao Gate 2: (a) `redigirValor` (src/log.ts:166) devolve INTACTO qualquer objeto com `toJSON` de função, sem descer nele — objeto de domínio com toJSON próprio carregando campo sensível sob chave não-sensível escapa do mascaramento; (b) o mascaramento é por CHAVE, então segredo em mensagem de texto livre não é redigido. Nenhum dos dois é defeito contra a spec da task; ambos crescem em T5+.`
+- `[T3] ⚠️ INCIDENTE DE PROCEDIMENTO NO HARNESS DO QA: um `git checkout --` dele zerou packages/shared/src/index.ts — os arquivos estão no índice como `git add -N` (intent-to-add, blob vazio e69de29), então restaurar pelo git devolve VAZIO em vez do original. O QA reescreveu o arquivo e validou. **Orquestrador conferiu de forma independente**: index.ts íntegro e coerente (10 linhas, comentário de superfície + 2 reexports), suíte 42/42, lint e build limpos, git status idêntico. Risco residual: o conteúdo é reconstrução, não o original byte a byte — o Gate 2 recebe instrução explícita de auditar este arquivo com atenção redobrada no diff.`
+- `[T3] LIÇÃO DE PIPELINE (vale para T4-T7): `git add -N` + `git checkout --` = perda silenciosa de arquivo novo. Todo agente que mutar arquivo para prova de falsificação deve restaurar por CÓPIA DE BACKUP, nunca por git, enquanto a task não estiver staged de verdade.`
+
+### T3 — Gate 2 (tentativa 1) — PARCIAL
+
+- `[T3] Tech Review (opus): **PARCIAL** — 0 críticos, **1 ALTO** (P1 security), **2 MEDIOS** (P2 security, P3 testability), 5 BAIXOS (P4 code_quality, P5 performance, P6 error_handling, P7/P8 project_pattern).`
+- `[T3] TR consultou: ADR-0007, ADR-0006 — nenhuma violação. ADR-0007 confrontada literalmente: CorpoErro com os 4 campos exatos, enum congelado, status semântico FORA do corpo. Nota carry-forward: a ADR cita os símbolos do cliente em MINÚSCULO (sem_certificado_proprio); a §4 da T3 mandou MAIÚSCULO_COM_SUBLINHADO. Não é violação (casing não está no Decision), mas quando os códigos de negócio entrarem no enum na fatia dominio-locacao será preciso decidir o mapeamento — e a religação do frontend (F6) depende dele.`
+- `[T3] P1 (ALTO) — o TR NÃO aceitou o encaminhamento do QA de palavra: rodou sonda dirigida em subprocesso Node contra dist/ e CONFIRMOU o vazamento, achando MAIS do que fora pedido. Três provas: (a) objeto de domínio com toJSON() próprio emitiu senha e cpf legíveis; (b) `new URL('postgres://usuario:SEGREDO@host/db')` emitiu o href COM a credencial — e URL é um dos três tipos que o próprio comentário do código cita como razão da exceção; (c) Buffer.from() emitiu os bytes completos, que é o caminho pelo qual o .pfx do Sicoob sairia inteiro no journal (invariante 3 do CLAUDE.md).`
+- `[T3] P1 — o TR também FALSEOU uma suspeita própria: o caminho `Error` como primeiro argumento, que ele imaginava contornar o formatador, saiu corretamente com `senha: "[REDIGIDO]"`. Registrado porque distingue investigação de especulação.`
+- `[T3] P2 (MEDIO) — vazamento independente: CHAVES_SENSIVEIS casa nomes de chave, mas a senha de banco deste projeto vive DENTRO de DATABASE_URL (formato documentado no .env.example versionado e declarado no turbo.json como env da tarefa test). Sonda confirmou emissão em texto claro. O comentário do código AFIRMA cobrir "senha de banco" — a divergência entre o que promete e o que faz é o que torna o achado médio e não baixo.`
+- `[T3] P3 (MEDIO) — achado estrutural que alcança as 4 tasks seguintes: NENHUM arquivo de teste do repositório passa por verificação de tipos. tsconfig.json:12 restringe include a src/**; não há tsconfig na raiz, o Biome não tipa, o Vitest não roda typecheck. Como este é o primeiro pacote e o molde declarado de T4/T5/T6, a lacuna se propagaria — inclusive aos testes de embedded-postgres de T4, onde conversão desatualizada sobre o cliente de banco passa despercebida.`
+- `[T3] TR — pontos 3 e 4 do escrutínio do orquestrador RESOLVIDOS SEM ACHADO. (3) index.ts reconstruído auditado símbolo a símbolo: superfície completa e correta, STATUS_POR_CODIGO e os 10 símbolos internos do log.ts não vazaram. (4) envelope de child julgado "estruturalmente certo e a parte mais bem pensada do diff" — o TR rastreou a recursão e confirmou que capturar criarFilho uma vez do protótipo é o que impede o neto de nascer vinculado ao avô.`
+- `[T3] TR — anti-gaming sem achado (todos os arquivos novos, nenhuma suíte preexistente a remover). Iron Law #6 sem achado: log.spec.ts REDECLARA a sentinela em vez de importá-la, que é a disciplina correta.`
+
+### T3 — retry classification
+
+- attempt: 1
+- problemas_por_categoria: { security: 2, testability: 1, code_quality: 1, performance: 1, error_handling: 1, project_pattern: 2 }
+- overrides_ativos: [tocou_area_critica: **true**, task_risk: medium, qa_security_flags: **["redaction_bypass_via_tojson"]**, diff_stat_changed: false]
+- requires_qa_revalidation: **true**
+- decisao: RE-QA obrigatório (próxima rodada: Gate 1 → Gate 2)
+- justificativa: "os três bloqueantes estão em categorias revalidation_required (security ×2, testability ×1); além disso DOIS overrides estão ativos de forma independente e qualquer um já forçaria true sozinho"
+
+### T3 — escalonamento de modelo
+
+- `[T3] auto-escalate NÃO aplicável: a regra escala sonnet→opus[xhigh], e o executor já roda em opus por declaração da task + decisão de projeto (CLAUDE.md). Tentativa 2 segue em opus.`
+- `[T3] memória lazy criada em _run/tmp/T3.md (attempt_count=1, last_severity=ALTO).`
+
+### T3 — executor (correção, tentativa 2)
+
+- `[T3] executor (opus): P1, P2, P3 corrigidos + TODOS os 6 baixos (P4-P8 + BAIXO-001). 2 arquivos criados (tsconfig.test.json, test/preparar-artefato.ts), 6 modificados. Suíte 42 → 52 casos. lint (15 arquivos) e build limpos.`
+- `[T3] executor — COROLÁRIO DE P1 QUE NENHUM GATE TINHA VISTO: a cópia redigida copiava a própria propriedade `toJSON` (função), e o JSON.stringify do pino chamava de volta o serializador do objeto ORIGINAL sobre a saída já mascarada — desfazendo a redação inteira na última etapa. Corrigir só o duck-typing (o que o TR pediu) teria deixado o vazamento de pé. Função agora é descartada na redação.`
+- `[T3] executor — P2 resolvido por FORMA do valor, não por nome de chave: regex de credencial aplicada a toda cadeia do evento, inclusive message/stack de exceção. Esquema, usuário, host e banco sobrevivem; sai só a senha.`
+- `[T3] executor — P3: tsconfig.test.json encadeado em `tsc --build && tsc -p tsconfig.test.json && vitest run`.`
+
+### T3 — Gate 1 (tentativa 2) — REJEITADO
+
+- `[T3] QA (opus): **REJEITADO** — 0 críticos, **2 ALTOS**, **1 MEDIO**, 2 baixos. criterios 14/17 (três em PARCIAL, todos apontando para CT-008).`
+- `[T3] QA — ALTO-001 (security): **o vazamento voltou por outra porta**. O pino promove `err.message` para a chave de topo `mensagem` (messageKey) quando o merge traz `err` sem mensagem explícita — e essa promoção NÃO atravessa `formatters.log`, logo não passa por redigirRegistro nem por mascararCredencial. Sonda: a MESMA linha carrega `err.mensagem` mascarado E a mensagem crua com a senha legível. Ocorre em `logger.error({ err })` e `logger.error(err)`; NÃO ocorre com mensagem explícita — o que torna o defeito silencioso e dependente do estilo de chamada.`
+- `[T3] QA — ALTO-001 é agravado por documentação falsa: o cabeçalho de log.ts:22-23 afirma literalmente que "a message de uma exceção é caso diferente — ela viaja como campo e é redigida". A afirmação é falsa no caso canônico, e um autor de T5 que confie nela registra a falha de conexão do banco com a senha dentro.`
+- `[T3] QA — ALTO-002 (tests): **a causa-raiz de por que ALTO-001 atravessou DOIS gates**. Mutante próprio do QA: remover as duas chamadas de `mascararCredencial` em `redigirErro` deixa a suíte 52/52 VERDE. Duas linhas de código de segurança, escritas com justificativa explícita no comentário, sem asserção capaz de reprová-las. A causa é a forma da posição `objeto_de_erro` do CT-008: ela anexa o sentinela como propriedade PRÓPRIA da exceção e usa mensagem inócua — o segredo nunca entra na `message`, então o vetor nunca é exercitado.`
+- `[T3] QA — MED-001 (data_handling): a regex de credencial MUTILA URL legítima quando a autoridade é seguida de query em vez de caminho. `http://localhost:8080?redirect=user@example.com` vira `http://localhost:[REDIGIDO]@example.com` — perde a porta, perde o parâmetro e INVENTA um hospedeiro. Não vaza, mas corrompe em silêncio o dado de diagnóstico. Plausível neste projeto: better-auth está na stack e URL de callback com redirect= é o caso normal.`
+- `[T3] QA REPRODUZIU 6 mutantes e confirmou os 3 principais do executor (P1-a: 7 falhas; P1-b corolário: 5; P2: 2). **Divergência informativa no M4 (P3)**: com asserção que também quebra em runtime obteve vitest com 4 falhas, contra "verde" anunciado; refez com a variante que é o falso-verde de verdade (`expect(x.codigoo).toBe(undefined)`, que passa porque propriedade inexistente é undefined) e aí bateu exatamente. O projeto de tipos alcança test/** e o encadeamento no script não é pulável.`
+- `[T3] QA — comparação 42 → 52 fecha exatamente, SEM AP-24: erros.spec 17→19 (+2 casos de `causa`), log.spec 23→31 (+5 da posição objeto_com_toJSON × 5 campos, +3 dos casos de cadeia/URL/Buffer), superficie 2→2. Nenhuma asserção preexistente trocada por forma mais frouxa.`
+- `[T3] QA — o eixo por forma (P2) foi auditado a fundo e NÃO criou risco de custo nem de ReDoS (casamento linear, sem quantificador aninhado ambíguo). Abrangência verificada em amqp://, mongodb+srv://, esquema maiúsculo e senha percent-encoded — todos mascarados corretamente. O único problema é o falso-positivo do MED-001.`
+- `[T3] QA — correção de precisão no comentário: o código afirma que a senha do Redis chega dentro de REDIS_URL, mas o .env.example:50 documenta `redis://HOSPEDEIRO:PORTA`, SEM credencial. A afirmação sobre DATABASE_URL (.env.example:40) está correta.`
+- `[T3] QA — security_flags: ["credencial_em_texto_claro_na_mensagem_promovida_de_excecao", "redacao_por_nome_de_chave_por_igualdade_exata"].`
+
+### T3 — escalonamento (tentativa 3, ÚLTIMA do limite)
+
+- `[T3] attempt_count=2 → a regra de auto-escalate dispararia sonnet→opus[xhigh]. Executor já roda em opus por declaração da task + decisão de projeto; o incremento de effort não é expressável na invocação. Tentativa 3 segue em opus, com o prompt carregando explicitamente o diagnóstico de causa-raiz do QA (ALTO-002) para que a correção ataque a origem, não o sintoma.`
+
+### T3 — executor (correção, tentativa 3)
+
+- `[T3] executor (opus): ALTO-001, ALTO-002 e MED-001 corrigidos + BAIXO-001, BAIXO-002 e o comentário de REDIS_URL. 0 criados, 4 modificados. Suíte 52 → 57.`
+- `[T3] executor — DIVERGIU da correção sugerida pelo QA com argumento técnico: adotou `serializers[CHAVE_DA_MENSAGEM]` em vez de `hooks.logMethod`. Razão: o logMethod intercepta ANTES da montagem, obrigaria o pacote a reimplementar as regras internas de promoção do pino (_obj instanceof Error, msg === undefined && _obj[errorKey]) e PERDERIA a interpolação (`'conectado a %s', dsn`), que só existe depois do format(). CHAVE_DA_MENSAGEM é constante única usada em messageKey e no serializador, porque divergirem desligaria a máscara em silêncio.`
+- `[T3] executor — ordem "teste antes do fix" cumprida e declarada: o caso do ALTO-002 foi escrito e executado ANTES da correção, reprovando 3 casos contra o código então vigente.`
+
+### T3 — Gate 1 (tentativa 3) — APROVADO_COM_OBSERVACOES
+
+- `[T3] QA (opus): **APROVADO_COM_OBSERVACOES** — 0 críticos, 0 altos, 0 médios, 2 baixos. **criterios 17/17** (os três PARCIAIS da rodada anterior fechados). rastreabilidade 9/9. **security_flags VAZIO** (eram 2 na rodada anterior).`
+- `[T3] QA — DESVIO DE PROJETO JULGADO PELO MÉRITO e APROVADO. O QA sondou as três origens da mensagem contra dist/ em vez de ler o código: texto livre, interpolação e promoção de erro.message — todas mascaram. **A interpolação é a prova de superioridade**: o serializador roda DEPOIS do format() e enxerga a cadeia montada; o hooks.logMethod que o próprio QA sugerira intercepta ANTES e a teria perdido. Nenhuma origem ficou descoberta.`
+- `[T3] QA — ALTO-002 CONFIRMADO FECHADO: A1 (remove mascararCredencial de erro.message) = 2 falhas, A2 (de erro.stack) = 3 falhas. Eram exatamente as duas linhas que na rodada anterior podiam ser removidas mantendo a suíte 52/52 VERDE. Os 5 mutantes da tabela do executor batem exatamente.`
+- `[T3] QA — ordem "teste antes do fix" VERIFICADA DE FORMA INDEPENDENTE: restaurou o src/log.ts da rodada 2 sob os testes da rodada 3 e obteve 4 falhas, corroborando a afirmação do executor (3 casos) mais o falsificador do BAIXO-001 anterior.`
+- `[T3] QA — cabeçalho HONESTO, com as afirmações NEGATIVAS também sondadas: `logger.info('senha do certificado: X')` vaza X (o cabeçalho diz que vaza) e chave sem radical conhecido vaza. Não promete a mais em ponto nenhum. A divergência doc↔mecanismo que gerou o P4 na rodada 1 e agravou o ALTO-001 na rodada 2 não existe mais.`
+- `[T3] QA — MED-001 fechado sem abrir buraco: 6 formas sondadas (amqp://, mongodb+srv://, esquema maiúsculo, senha percent-encoded, cadeia sem usuário, cadeia aninhada em query) todas mascaram. O companheiro de não-mutilação compara 5 URLs legítimas byte a byte e é o único falsificador do mutante C.`
+- `[T3] QA — decomposição 52 → 57 fecha exatamente e o diff de teste é PURAMENTE ADITIVO: erros.spec (19) e superficie-publica.spec (2) byte a byte idênticos; log.spec 31 → 36 (+1 composição de nome de chave, +2 formasDeChamada, +1 pilha, +1 não-mutilação). Zero remoções, zero asserções relaxadas — nenhum AP-24. Confirmado por diff -u contra o snapshot da rodada 2.`
+- `[T3] QA — AP-08 verificado empiricamente (caso isolado com -t passa sozinho: 1 passed, 56 skipped). Zero mocks, zero sleep, zero skip/todo/only, zero Date.now/Math.random.`
+- `[T3] QA — fronteira aceita, declarada ao Gate 2: segredo que só a mensagem nomeie SEM forma de URI reconhecível sai legível. É fronteira documentada e decidida, não brecha silenciosa — o QA deliberadamente NÃO abriu security_flag por isso.`
+- `[T3] QA — nota de ferramental: `turbo run lint` executa 0 tarefas porque @sysloc/shared não declara script `lint`; a cobertura vem inteira do `biome check .` da raiz (15 arquivos). Encaminhado ao Gate 2 decidir se o padrão do monorepo exige script por pacote.`
+
+### T3 — Gate 2 (tentativa 3) — PARCIAL · LIMITE DE 3 TENTATIVAS ESGOTADO
+
+- `[T3] Tech Review (opus, 2ª passagem): **PARCIAL** — 0 críticos, **1 ALTO** (P1 security), **3 MEDIOS** (P2 security, P3 adr_compliance, P4 project_pattern), 3 BAIXOS (P5 error_handling, P6/P7 project_pattern).`
+- `[T3] TR consultou: ADR-0007, ADR-0006, ADR-0001.`
+- `[T3] **P1 (ALTO) — QUARTO vazamento distinto no mesmo arquivo, agora na posição RAIZ.** `redigirRegistro` chama `redigirObjeto` DIRETAMENTE (log.ts:258), pulando `redigirValor` — onde mora TODA a lógica de tipo (lista fechada, mascaramento de cadeia, guarda de ciclo). Nada disso vale para o objeto que o chamador passa como primeiro argumento. Sonda: `logger.info(Buffer.from(...))` emitiu os bytes INTEIROS um por chave (`{"0":80,"1":70,...}`) — o mesmo despejo do .pfx que o CT-008 já persegue na posição aninhada. `logger.info(new URL('postgres://u:SEGREDO@h/db'))` não vaza mas APAGA o evento inteiro, contrariando o "mascarar não é apagar" que o arquivo repete.`
+- `[T3] P1 — calibração honesta do TR: "pino puro emite os mesmos bytes, então isto NÃO é regressão contra a biblioteca — é a garantia deste pacote que não se sustenta na profundidade 0". A garantia #1 do cabeçalho diz "em qualquer profundidade"; profundidade 0 é uma profundidade.`
+- `[T3] P1 — o fix não é trivial: `formatters.log` PRECISA devolver objeto, e `redigirValor` de um URL devolve string; delegar ingenuamente faria o `for...in` do pino iterar índices de caractere. Exige normalização do retorno.`
+- `[T3] P2 (MEDIO) — RADICAIS_SENSIVEIS tem `authorization` mas não `cookie`/`sessao`, com **better-auth** (sessão por cookie httpOnly) na stack declarada do CLAUDE.md. A assimetria é o argumento: `authorization`, `token`, `apikey` e `cpf` já entraram na lista ANTES de existir autenticação.`
+- `[T3] P3 (MEDIO, adr_compliance) — a nota carry-forward que o TR deixou na rodada 1 virou achado. O comentário de erros.ts:26 afirma que MAIÚSCULO_COM_SUBLINHADO é "continuidade com os símbolos que o cliente já trata (sem_certificado_proprio, ...)" — **a frase é falsa**: esses símbolos são minúsculos, e o levantamento-frontend.md:466 lista `campo_invalido`, que é o MESMO código que aqui nasce CAMPO_INVALIDO. Agravante: erros.spec.ts:167 asserta a regex de grafia sobre `Object.values(CodigoErro)` INTEIRO, virando invariante global — então em F4 quem acrescentar o código do Sicoob escolhe entre quebrar o `switch` do cliente ou **enfraquecer um teste de contrato**, que é exatamente o que a política anti-gaming existe para impedir.`
+- `[T3] P4 (MEDIO) — `typescript` é executado pelos scripts do pacote (`tsc --build`) e resolvido programaticamente por preparar-artefato.ts, mas declarado só na raiz; o importer `packages/shared` do lockfile não o traz. Funciona por hoistagem, não por contrato. Pesa porque este pacote é o MOLDE que T4/T5/T6 vão copiar.`
+- `[T3] TR — os 5 pontos de escrutínio do orquestrador RESPONDIDOS: (1) a decisão `serializers[messageKey]` está CERTA e por razão mais forte que a do executor — `pino/lib/tools.js:204` é literalmente `serializers[messageKey] ? serializers[messageKey](msg) : msg`, mecanismo de primeira classe no ponto único de escrita; o acoplamento é a uma OPÇÃO PÚBLICA, não a interno, e num bump o modo de falha é ruidoso. (2) **A topologia da redação está FECHADA** — o TR leu asJson + asChindings e enumerou tudo que chega à linha (chindings, obj, msg, level/time, base); não sobrou um quarto trilho, e o `mixin` que T5 possa trazer cai dentro de `obj`, já coberto. O que falta não é trilho, é UMA ENTRADA ÚNICA DE DESPACHO POR TIPO — daí o P1 ser estrutural. (3) preparar-artefato.ts sólido, deve SOBREVIVER a T4. (4) lint decidido: o padrão NÃO deve exigir script por pacote; o resíduo é a declaração órfã no turbo.json. (5) P4/P5/P6/P7/P8 da rodada 1 todos FECHADOS e conferidos no diff.`
+- `[T3] TR — anti-gaming SEM ACHADO nas três rodadas: 42 → 52 → 57, a posição `objeto_de_erro` do CT-008 foi PRESERVADA e complementada, nenhum teste removido ou enfraquecido, nenhum símbolo de produção só para teste.`
+
+### ⛔ T3 — LIMITE DE TENTATIVAS ESGOTADO — ESCALADO AO USUÁRIO
+
+- `[T3] Contador: **3 rejeições** (tentativa 1: TR PARCIAL · tentativa 2: QA REJEITADO · tentativa 3: TR PARCIAL). O limite compartilhado de 3 tentativas totais foi atingido.`
+- `[T3] Gate bloqueante: **Gate 2 (Tech Review)**. O Gate 1 aprovou na rodada 3 com 17/17 e security_flags vazio.`
+- `[T3] Status: aguardando decisão do usuário. **A task NÃO foi marcada Concluída.** Precedente na mesma fatia: a T2 esgotou o limite e o usuário o estendeu duas vezes, chegando a 5 rodadas — todas as extensões pegaram defeito real.`
+- `[T3] memória lazy PRESERVADA em _run/tmp/T3.md (attempt_count=3) — não deletada, porque a task não fechou.`
+- `[run] rule_candidates desta sessão: 4 sinais persistidos (qa=2 na rodada 1, staff=2 na rodada 3). Os 2 sinais do QA da rodada 3 (repeated_fixture / repeated_assertion_shape) foram DEDUPLICADOS — mesmo tema já registrado na rodada 1, com contagem de ocorrências maior.`
+- `[T3] **DECISÃO DO USUÁRIO: 4ª rodada autorizada** (limite de 3 estendido, mesmo precedente da T2). Escopo: P1 (ALTO) + P2, P3, P4 (MEDIOS). Bloqueio revertido; T3 volta a "Em Progresso".`
+- `[T3] Instrução diferencial desta rodada: atacar a ESTRUTURA, não o quarto caminho. O executor recebe explicitamente o diagnóstico do Gate 2 — a topologia está fechada, o que falta é UMA ENTRADA ÚNICA DE DESPACHO POR TIPO — e a armadilha do fix (formatters.log precisa devolver objeto; redigirValor de um URL devolve string).`
+
+### T3 — retry classification (tentativa 4)
+
+- attempt: 3 (limite estendido pelo usuário)
+- problemas_por_categoria: { security: 2, adr_compliance: 1, project_pattern: 1, error_handling: 1 }
+- overrides_ativos: [tocou_area_critica: true, task_risk: medium, qa_security_flags: [] (vazio na rodada 3), diff_stat_changed: true (lockfile + 66 casos)]
+- requires_qa_revalidation: **true**
+- decisao: RE-QA obrigatório (Gate 1 → Gate 2)
+- justificativa: "security e adr_compliance são revalidation_required; o override tocou_area_critica também força true de forma independente"
+
+### T3 — executor (correção, rodada 4)
+
+- `[T3] executor (opus): P1, P2, P3(a+b) e P4 corrigidos + P5, D18 e D19. 0 criados, 7 modificados. Suíte 57 → 66 casos.`
+- `[T3] executor — a linha "POR QUE ISTO FECHA A CLASSE" exigida pelo orquestrador foi escrita com convicção e é verificável: existe agora UM ÚNICO ponto de classificação por tipo (redigirValor); os dois trilhos que entregam campos à linha (formatters.log e vínculos de child) entram por redigirRegistro, que delega a ele; o resto é recursão da mesma função. A profundidade 0 deixou de ser caso especial — é a primeira chamada.`
+- `[T3] executor — 11 mutantes, com dois de valor especial: **M9** (código de F4 com grafia herdada minúscula) reprova **0 casos, como pretendido** — provando que a decisão de grafia ficou deliberadamente ABERTA para F4; e **M10** (o mesmo M9 sob a asserção ANTIGA) reprova 1 — provando que o alcance errado que o P3b removeu era real. M1 (reverte a delegação) reprova 5.`
+- `[T3] executor — M3 (sem normalização do retorno) reprova 3 por iteração de índice de caractere: a armadilha que o Tech Review antecipou é real e está coberta por teste.`
+
+### T3 — Gate 1 (rodada 4) — APROVADO_COM_OBSERVACOES
+
+- `[T3] QA (opus): **APROVADO_COM_OBSERVACOES** — 0 críticos, 0 altos, 0 médios, 2 baixos (documentation, code_quality). criterios 17/17, rastreabilidade 9/9, security_flags VAZIO.`
+- `[T3] QA — **A ALEGAÇÃO ESTRUTURAL É VERDADEIRA**, confirmada por sonda em processo Node contra dist/, não por leitura. DEZESSEIS formas exercitadas na profundidade 0: Buffer → {tipo,bytes}; Uint8Array → idem; URL credenciada → href mascarado; Date → ISO preservado; vetor → mascarado item a item; objeto com toJSON próprio → desce, mascara e preserva o inócuo; objeto CÍCLICO → '[CICLO]' (o guarda de ciclo vale na raiz); instância de classe e objeto sem protótipo → chave sensível mascarada; controle → campos no topo sem embrulho. **Nenhuma forma vazou, nenhuma apagou o evento.**`
+- `[T3] QA — M9/M10/M8 confirmados no harness, e são o trio que valida o P3b como cirúrgico: M9 (código de F4 com grafia minúscula) = **0 reprovações, como pretendido** — a decisão de F4 ficou aberta; M10 (o mesmo sob a asserção ANTIGA) = 1 — o alcance errado era real e foi removido; M8 (código FIXADO renomeado para minúsculo) = **5 reprovações, com a asserção REDUZIDA entre elas** — os quatro códigos desta fatia seguem protegidos. Redução de alcance legítima, NÃO é AP-24.`
+- `[T3] QA — SUT_IS_CORRECT_BECAUSE presente em erros.spec.ts:170-181, específico: nomeia o alcance errado, o consumidor concreto (switch do cliente sobre sem_certificado_proprio na tela de configuração bancária), as duas saídas em aberto para F4 e o que NÃO foi reduzido (unicidade e superconjunto seguem sobre o enum inteiro).`
+- `[T3] QA — decomposição 57 → 66 fecha exatamente: +6 (bloco posição raiz), +1 (AggregateError), +2 (texto livre e interpolação). Nenhum caso removido.`
+- `[T3] QA — 10 mutantes reproduzidos, com **duas divergências ante o executor, ambas para MAIS**: M2 reprova 2 (não 1) e M8 reprova 5 (não 4). Nenhuma para menos.`
+- `[T3] QA — nota de método valiosa: o M3 na forma literal do relato do executor NÃO chega a rodar a suíte — `noUnusedLocals` derruba o tsc antes do vitest. **O mutante que o build mata não mede a suíte**; o QA refez preservando a referência ao símbolo e aí obteve as 3 reprovações comportamentais.`
+- `[T3] QA — cabeçalho honesto nas afirmações positivas E negativas, todas sondadas. As duas imprecisões remanescentes viraram os baixos.`
+- `[T3] QA — P4 conferido: typescript 7.0.2 nas devDependencies do pacote, lockfile com o importer correto, diff de 863 inserções e ZERO remoções — nenhuma árvore de outro pacote alterada.`
+- `[T3] QA — casos-limite sondados e declarados NÃO-regressão: Map/Set/ArrayBuffer na raiz produzem linha só com envelope (JSON.stringify devolve {} para os três — comportamento idêntico ao pino sem o redator); getter que lança propaga a exceção igual ao baseline.`
+
+### T3 — Gate 2 (rodada 4) — APROVADO_COM_OBSERVACOES ✅ TASK CONCLUÍDA
+
+- `[T3] Tech Review (opus, 3ª passagem): **APROVADO_COM_OBSERVACOES** — 0 críticos, 0 altos, 0 médios, **5 BAIXOS** (P1 code_quality, P2 security, P3/P4 project_pattern, P5 code_quality). adrs_consultadas: ADR-0007, ADR-0001, ADR-0006.`
+- `[T3] TR — **A ALEGAÇÃO ESTRUTURAL RESISTE, confirmada por TOPOLOGIA e não por amostragem.** Pela API que criarLogger expõe, todo dado do chamador chega à linha por exatamente TRÊS escritas, e as três estão interceptadas: (1) o objeto de mesclagem — que absorve o mixin, o embrulho {err} de logger.error(err) e a reescrita mapHttpRequest/mapHttpResponse, todos ANTES de formatters.log — entra por redigirRegistro e delega a redigirValor; (2) os vínculos de filho, por comVinculosRedigidos; (3) a mensagem nas QUATRO origens (texto livre, interpolação, promoção de erro.message, msgPrefix), pelo serializador. **Não sobra um quinto trilho. A delegação fecha a classe.**`
+- `[T3] TR — sonda confirmou o elo que faltava provar: o `mixin` (que T5 vai usar) é mesclado ANTES de formatters.log, então entra pela mesma porta. Marcador injetado no formatador aparece na mesma linha que o campo vindo do mixin.`
+- `[T3] TR — P2 (BAIXO, security): existe uma QUARTA escrita — `base`/`formatters.bindings` — que de fato contorna o redator, mas é **inalcançável pela API atual** porque OpcoesDeLogger expõe só nivel e destino. Está trancada por OMISSÃO, não por construção. **Uma linha fecha por construção**: acrescentar `bindings: redigirRegistro` ao bloco formatters, idempotente com o embrulho de child. Risco é de EDIÇÃO FUTURA — T5 acrescentar `base: { servico, versao }` sem perceber.`
+- `[T3] TR — P1 (BAIXO): consolidou os dois baixos do QA sobre a chave de embrulho e ACHOU UMA AGRAVANTE que eles não tinham — a colisão não é só com `valor`: visão de memória na raiz espalha `tipo` e `bytes` NO TOPO, e `logger.child({tipo, bytes}).info(buffer)` produz DUAS chaves duplicadas. Causa-raiz única: `ehRegistroDeCampos` classifica pela FORMA DA SAÍDA, não pelo RAMO que o despacho tomou. Fix exato: resumo de bytes como CADEIA colapsa as duas formas em uma.`
+- `[T3] TR — P3b julgado **CIRÚRGICO**: a asserção reduzida busca o valor PELO NOME vindo de lista externa, então renome e regrafia dos quatro seguem reprovando. Não é porta de escape. A decisão de F4 está nos dois lugares que F4 abre (JSDoc do enum + §6 da task). **Porém** o card do CT-003 (T3.md:190,201) ficou com o invariante ANTIGO — única incoerência de registro da entrega, virou o P3.`
+- `[T3] TR — resposta ao ponto 5: `log.ts` **ainda é coeso, mas está no limite**. O CÓDIGO melhorou (11 funções pequenas, redigirValor é escada linear de complexidade ~10); o que inchou foi a PROSA — 447 linhas, dois terços comentário, misturando contrato de consumo com arqueologia das rodadas. Recomenda extrair `src/redacao.ts` como cleanup de T5, NÃO agora.`
+- `[T3] TR — anti-gaming sem achado nas quatro rodadas. Iron Law #6 sem achado.`
+- `[T3] TR — nota de procedimento legítima: tasks/T3.md aparecia modificado mas não constava da lista de MODIFICADOS que recebeu. Falha do orquestrador ao montar o prompt; o TR revisou assim mesmo e julgou corretamente que não é scope_deviation.`
+- `[T3] staged: packages/shared (11 arquivos), pnpm-lock.yaml, tasks/T3.md. **NÃO commitado.** HEAD segue em e10488c.`
+- `[T3] memória lazy deletada (cleanup_on_approval).`
+- `[T3] **CONCLUÍDA em 4 rodadas** (limite de 3 estendido uma vez pelo usuário). Gate 1 rejeitou 1x, Gate 2 rejeitou 2x. Quatro vazamentos de segredo distintos encontrados e fechados.`

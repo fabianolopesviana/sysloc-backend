@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // O `tsconfig.json` ao lado existe para EMITIR o pacote, e por isso seu `include` alcança
+    // só o que vira `dist/`. Verificar tipos é outro problema: o rigor de `tsconfig.base.json`
+    // (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noUnusedLocals`) precisa
+    // alcançar também o código que PROVA o pacote — as conversões deliberadas dos testes
+    // (`as ResolucaoBemSucedida`, `linhas[0] as string`) ficariam sem rede alguma, e uma
+    // conversão que deixou de valer compilaria, rodaria e passaria em silêncio.
+    //
+    // Daí um projeto separado em vez de alargar o `include` do outro: alargá-lo faria `tsc`
+    // emitir `dist/test/**` e publicá-lo junto do pacote.
+    "noEmit": true,
+    // `rootDir` volta à raiz do pacote porque `test/` está fora de `src/`; emissão está
+    // desligada, então as três opções de artefato abaixo só produziriam conflito de opção.
+    "rootDir": ".",
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

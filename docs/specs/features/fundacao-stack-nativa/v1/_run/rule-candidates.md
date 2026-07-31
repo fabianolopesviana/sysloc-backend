@@ -112,3 +112,47 @@
 - Sinal: `repeated_assertion_shape` · Origem: `agent-spec-qa-validator` · 2026-07-31
 
 ---
+
+## [repeated_fixture] Preparo de logger com destino em arquivo temporário
+
+**Regra que isto sugere:** centralizar o preparo do logger de teste com destino em arquivo num helper compartilhado da suíte.
+
+**O que ela faria (simples):** o mesmo par de linhas que monta o caminho do arquivo e cria o logger foi reescrito em quatro casos; uma regra apontando o helper evita que cada caso novo escolha um nome de arquivo ou um nível diferente por conta própria, e concentra num lugar só a mudança quando a fábrica ganhar parâmetro.
+
+- Evidência: setup `join(diretorio, 'eventos.log')` + `criarLogger({ nivel, destino })` repetido em 4 casos — `packages/shared/test/log.spec.ts:61` (também 87, 117, 211) — T3 / pacote compartilhado — registro estruturado
+- Sinal: `repeated_fixture` · Origem: `agent-spec-qa-validator` · 2026-07-31T18:33:00Z
+
+---
+
+## [repeated_assertion_shape] Leitura e parse das linhas do destino de log
+
+**Regra que isto sugere:** padronizar a leitura do destino de log como um helper que devolve os eventos já parseados.
+
+**O que ela faria (simples):** ler o arquivo, filtrar linhas vazias, contar e parsear a primeira aparece com a mesma forma em quatro asserções; uma regra fixando o helper faz a mensagem de falha nascer uniforme e impede que um caso futuro esqueça de checar a contagem de linhas antes de parsear.
+
+- Evidência: `linhasNaoVazias(await readFile(destino,'utf8'))` + `expect(linhas).toHaveLength(N)` + `JSON.parse(linhas[0])` em 4 asserções — `packages/shared/test/log.spec.ts:72` (também 97, 124, 223) — T3 / pacote compartilhado — registro estruturado
+- Sinal: `repeated_assertion_shape` · Origem: `agent-spec-qa-validator` · 2026-07-31T18:33:00Z
+
+---
+
+## [convention_drift] Dependência de ferramenta declarada por pacote
+
+**Regra que isto sugere:** toda ferramenta invocada pelos scripts de um pacote do workspace é declarada nas devDependencies desse pacote, na versão exata da raiz.
+
+**O que ela faria (simples):** o pacote roda `tsc` no `build` e no `test` e ainda resolve `typescript` em código, mas só a raiz declara a dependência — funciona por hoistagem, não por contrato. A regra evita que T4, T5 e T6 copiem o mesmo manifesto e herdem a dependência implícita.
+
+- Evidência: scripts `build`/`test` executam `tsc` e `preparar-artefato.ts` resolve `typescript/package.json`, ausente das devDependencies do pacote e do importer no lockfile — `packages/shared/package.json:24` — T3 / primeiro pacote do monorepo
+- Sinal: `convention_drift` · Origem: `staff-review` · 2026-07-31T19:40:00Z
+
+---
+
+## [convention_drift] Lint é invocação única da raiz
+
+**Regra que isto sugere:** lint no monorepo é uma única passada de Biome na raiz; pacotes não declaram script lint próprio.
+
+**O que ela faria (simples):** o `turbo.json` declara uma tarefa `lint` que nenhum pacote implementa, então cada autor de pacote novo precisa adivinhar se deve criar o script. Escrever a decisão evita N invocações redundantes do mesmo binário e a divergência de flags que viria junto.
+
+- Evidência: `turbo run lint` executa 0 tarefas; a cobertura real vem do `biome check .` da raiz, cujo includes já alcança `packages/**` — `turbo.json:55` — T3 / pacote compartilhado (molde para T4/T5/T6)
+- Sinal: `convention_drift` · Origem: `staff-review` · 2026-07-31T19:40:00Z
+
+---

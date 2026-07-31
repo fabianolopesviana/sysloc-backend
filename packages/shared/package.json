@@ -1,0 +1,29 @@
+{
+  "name": "@sysloc/shared",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Contratos transversais do backend Sysloc — corpo de erro da API (ADR-0007) e registro estruturado de eventos",
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "test": "tsc --build && tsc -p tsconfig.test.json && vitest run"
+  },
+  "dependencies": {
+    "pino": "10.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}
