@@ -1,0 +1,18 @@
+feature: contencao-credencial-exposta
+version: v2-debits
+variant: backend
+source: agent-spec-debt-resolution
+parent_version: v1
+current_step: execution
+steps:
+  intent:
+    status: completed
+  scope:
+    status: completed
+  tasks:
+    status: completed
+  execution:
+    status: completed
+    tasks_total: 2
+    tasks_completed: 2
+    summary: "2/2 tasks concluidas. T1 exigiu 3 tentativas (Tech Review levantou que o patch era one-shot); T2 aprovada na primeira."

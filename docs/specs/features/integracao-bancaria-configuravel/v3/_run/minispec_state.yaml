@@ -1,0 +1,21 @@
+feature: integracao-bancaria-configuravel
+version: v3
+variant: backend
+source: incidente-producao
+parent_version: v2-debits
+current_step: execution
+steps:
+  intent:
+    status: completed
+    summary: "Corrigir exposicao publica do certificado (PKCS#12) causada pelo hook attach_files_to_document do Frappe ao copiar `certificado_arquivo` entre registros no ciclo pendente/ativo. Incidente real em 2026-07-21, contido manualmente, bug ainda presente no codigo."
+  scope:
+    status: completed
+    summary: "1 arquivo de producao + 1 de teste. 4 pontos de disparo mapeados (salvar_configuracao, testar_conexao, enviar_certificado, remover_certificado). 3 direcoes de correcao levantadas, cada uma com efeito colateral; a escolha e do executor, com justificativa e prova por teste."
+  tasks:
+    status: completed
+    summary: "1 task (T1), model opus, risk high, gates [qa, tech_review] por Critical Path security+payments. Testes OBRIGATORIOS (CT-030 e CT-031) — diferente da v2-debits, que era cleanup sem testes."
+  execution:
+    status: completed
+    tasks_total: 1
+    tasks_completed: 1
+    summary: "1/1 task concluida. 3 tentativas (2 rejeicoes do QA: tautologia de setup; CRITICO de security por mutacao nao restaurada). TR aprovou com 4 observacoes BAIXO."

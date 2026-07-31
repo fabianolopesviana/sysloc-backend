@@ -1,0 +1,28 @@
+feature: "Integração bancária configurável pelo frontend"
+current_step: execution
+variant: backend
+source: "recommended"
+source_note: "pre-refinement.md secao 15.2 recomendou SDD; usuario seguiu a recomendacao"
+steps:
+  prd:
+    status: completed
+    summary: "14 US, 17 CA. Tornar a troca de conta, titular e certificado da cobranca bancaria uma operacao de tela, sem acesso ao servidor."
+  tech_alignment:
+    status: completed
+    summary: "7 decisoes tecnicas (D1-D7). Versionar estrutura em arquivo, cutover por estrangulamento comecando por consulta, contador sequencial com corte atomico. 1 candidata a ADR."
+  tech_spec:
+    status: completed
+    variant: backend
+    summary: "camada cobranca_bancaria (modelo/porta/registry/configuracao/certificado) + adaptador sicoob + integracao_bancaria_api; 5 metodos whitelisted novos; tabelas: Configuracao Integracao Bancaria, Auditoria Configuracao Bancaria; 30 CTs, 17/17 CA cobertos"
+
+  validation:
+    status: completed
+    summary: "challenge-spec: 4 questoes, 8 ajustes inline (2 patches de migracao, endpoint proprio de streaming, registro pendente com carimbo); glossario global e feature criados; 1 candidato a ADR parcial"
+  task_plan:
+    status: completed
+    summary: "13 tasks em 4 fases, 1 par paralelo (T6+T7). US cobertas: 14/14. 57 CTs distribuidos (30 tech_spec + 27 regressao/controller)."
+  execution:
+    status: completed
+    tasks_total: 13
+    tasks_completed: 13
+    summary: "13/13 tasks concluidas. 114 testes verdes (suite completa no site frontend). Estrangulamento fechado: 5 operacoes no canonico, corte do contador aplicado. Pendencia: docs reference/ nao atualizados (fora do escopo das tasks)."

@@ -1,0 +1,21 @@
+feature: integracao-bancaria-configuravel
+version: v6-debits
+variant: backend
+source: agent-spec-debt-resolution
+parent_version: v5
+current_step: tasks
+steps:
+  intent:
+    status: completed
+    summary: "Cleanup dos 2 debitos BAIXO da v5 (1 recomendado_corrigir + 1 perfumaria, incluida por decisao do usuario)."
+  scope:
+    status: completed
+    summary: "2 debitos. D-001 toca service.py (producao, Critical Path payments); D-002 so teste. Ambas escrevem em test_integracao_bancaria_api.py — sem paralelismo."
+  tasks:
+    status: completed
+    summary: "2 tasks. T1 com gates [qa, tech_review] (producao/payments); T2 com [qa] (so teste). Ponto nao-trivial de T1: filtrar as chaves de framework do form_dict para o log nao disparar em toda chamada legitima."
+  execution:
+    status: completed
+    tasks_total: 2
+    tasks_completed: 2
+    summary: "2/2 tasks concluidas. Nenhuma bloqueada. 139 testes OK. T1 exigiu 2 tentativas (QA reprovou assercao tautologica em CT-043); T2 aprovada de primeira. 2 debitos BAIXO novos anotados (ambos de T1, Tech Review) e RESOLVIDOS em 2026-07-22 por correcao direta, fora do framework." 

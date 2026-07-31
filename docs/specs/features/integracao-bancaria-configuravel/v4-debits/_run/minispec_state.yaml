@@ -1,0 +1,21 @@
+feature: integracao-bancaria-configuravel
+version: v4-debits
+variant: backend
+source: agent-spec-debt-resolution
+parent_version: v3
+current_step: execution
+steps:
+  intent:
+    status: completed
+    summary: "Cleanup COMPLETO: 4 de 4 debitos BAIXO coletados na v3 (3 recomendado_corrigir + 1 perfumaria, incluida por decisao do usuario)."
+  scope:
+    status: completed
+    summary: "4 debitos, todos em integracao_bancaria_api/service.py — nenhum paralelismo. Escopo de D-001 e D-002 REDUZIDO pelo especialista, que discordou da correcao proposta pelo Tech Review em ambos."
+  tasks:
+    status: completed
+    summary: "4 tasks, 1 por debito, sequenciais por colisao de arquivo, em ordem de risco crescente (T1 D-001, T2 D-002, T3 D-004, T4 D-003). Todas com gates [qa, tech_review] por Critical Path security+payments. T4 e excecao a politica de cleanup: exige testes (novo ramo de erro em funcao de seguranca)."
+  execution:
+    status: completed
+    tasks_total: 4
+    tasks_completed: 4
+    summary: "4/4 tasks concluidas. T4 em 3 tentativas (QA rejeitou por companion sem poder de deteccao; TR devolveu PARCIAL por pendente parcial commitado). 1 debito BAIXO anotado."

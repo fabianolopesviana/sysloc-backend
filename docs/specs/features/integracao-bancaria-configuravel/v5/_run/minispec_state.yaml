@@ -1,0 +1,21 @@
+feature: integracao-bancaria-configuravel
+version: v5
+variant: backend
+source: auditoria-handoff-frontend
+parent_version: v4-debits
+current_step: execution
+steps:
+  intent:
+    status: completed
+    summary: "Fechar RN-08/CA-08 (decisao explicita na troca com boletos em aberto) e RN-09/CA-10 (lista de ausentes chegando ao cliente) — requisitos ESPECIFICADOS no tech_spec da v1 e nao implementados."
+  scope:
+    status: completed
+    summary: "2 requisitos, 1 arquivo de producao + testes. Canal dos ausentes: endpoint JSON irmao (decisao do usuario), streaming mantido intacto. Contrato do RN-08 ja literal no tech_spec:285-290."
+  tasks:
+    status: completed
+    summary: "2 tasks sequenciais (T1 expõe apuracao/resumo; T2 implementa o fluxo de decisao e depende de T1). T2 opus/high por alterar salvar_configuracao. IDs de CT ocupados ate CT-036."
+  execution:
+    status: completed
+    tasks_total: 2
+    tasks_completed: 2
+    summary: "2/2 tasks concluidas na primeira tentativa. RN-08 e RN-09 fechados. 136 testes."

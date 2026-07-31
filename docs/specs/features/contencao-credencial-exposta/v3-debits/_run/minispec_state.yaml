@@ -1,0 +1,18 @@
+feature: contencao-credencial-exposta
+version: v3-debits
+variant: backend
+source: agent-spec-debt-resolution
+parent_version: v2-debits
+current_step: execution
+steps:
+  intent:
+    status: completed
+  scope:
+    status: completed
+  tasks:
+    status: completed
+  execution:
+    status: completed
+    tasks_total: 2
+    tasks_completed: 2
+    summary: "2/2 tasks concluidas, ambas aprovadas na primeira tentativa. Zero debito novo."

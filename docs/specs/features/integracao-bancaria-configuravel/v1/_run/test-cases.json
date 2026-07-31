@@ -1,0 +1,2736 @@
+[
+ {
+  "id": "CT-001",
+  "titulo": "Enum canônico de situação do boleto preserva o texto cru do provedor ao lado",
+  "tipo": "UNITARIO",
+  "categoria": "integridade_dados",
+  "invariant": "Para qualquer texto de situação devolvido pelo provedor, o mapeamento canônico produz exatamente um dos 6 valores do enum (EMITIDO, BAIXADO, LIQUIDADO, VENCIDO, CANCELADO, DESCONHECIDO) e preserva o texto cru original ao lado, sem perdê-lo nem sobrescrevê-lo — mesmo para texto não reconhecido.",
+  "owning_layer": "unit",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "none",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "texto de situação não mapeado (ex.: 'Protestado', string vazia, None)",
+   "assertion_esperada": "mapeamento cai em DESCONHECIDO (nunca lança exceção) e o campo de texto cru contém o valor original exatamente como recebido"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Modelo canônico (dataclass + função pura de mapeamento provedor→enum)",
+  "pre_condicoes": [
+   "Função de mapeamento canônico implementada e importável isoladamente do adaptador HTTP"
+  ],
+  "dados_entrada": {
+   "descricao": "Tabela parametrizada de textos crus do provedor Sicoob",
+   "valores": {
+    "casos": [
+     {
+      "texto_cru": "Em aberto",
+      "esperado_enum": "EMITIDO"
+     },
+     {
+      "texto_cru": "Baixado",
+      "esperado_enum": "BAIXADO"
+     },
+     {
+      "texto_cru": "Liquidado",
+      "esperado_enum": "LIQUIDADO"
+     },
+     {
+      "texto_cru": "Vencido",
+      "esperado_enum": "VENCIDO"
+     },
+     {
+      "texto_cru": "Cancelado",
+      "esperado_enum": "CANCELADO"
+     },
+     {
+      "texto_cru": "Protestado",
+      "esperado_enum": "DESCONHECIDO"
+     },
+     {
+      "texto_cru": "",
+      "esperado_enum": "DESCONHECIDO"
+     }
+    ]
+   }
+  },
+  "passos": [
+   "Para cada linha da tabela, invocar a função de mapeamento canônico com o texto_cru.",
+   "Capturar o par (enum_canonico, texto_cru_preservado) retornado."
+  ],
+  "resultado_esperado": "enum_canonico == esperado_enum da linha E texto_cru_preservado == texto_cru de entrada (idêntico, sem normalização que perca informação), para todas as 7 linhas.",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "NO_SUITE_FOUND: projeto não tem nenhum teste hoje. Arquivo proposto: locacao_automation/cobranca_bancaria/modelo_canonico/tests/test_situacao_boleto.py (módulo agnóstico ainda não criado, conforme ADR-0001).",
+  "task_id": "T1"
+ },
+ {
+  "id": "CT-002",
+  "titulo": "Registry resolve o adaptador correto para um provedor conhecido",
+  "tipo": "UNITARIO",
+  "categoria": "caminho_feliz",
+  "invariant": "Dado o nome de um provedor cadastrado no registry, a resolução retorna uma instância que implementa integralmente a porta AdaptadorCobrancaBancaria (obter_token, emitir, solicitar_baixa, confirmar_baixa, consultar).",
+  "owning_layer": "unit",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "none",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "CT-003",
+   "input_invalido": "nome de provedor não cadastrado",
+   "assertion_esperada": "erro explícito de provedor desconhecido, sem devolver adaptador parcial"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Porta + registry de adaptadores (ADR-0001)",
+  "pre_condicoes": [
+   "Registry populado com ao menos o adaptador Sicoob"
+  ],
+  "dados_entrada": {
+   "descricao": "Identificador de provedor 'sicoob'",
+   "valores": {
+    "provedor": "sicoob"
+   }
+  },
+  "passos": [
+   "Chamar a função de resolução do registry com provedor='sicoob'.",
+   "Verificar que o objeto retornado expõe os 5 métodos da porta."
+  ],
+  "resultado_esperado": "Retorna instância não-nula cujo tipo implementa AdaptadorCobrancaBancaria; hasattr(obter_token, emitir, solicitar_baixa, confirmar_baixa, consultar) == True para todos.",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "NO_SUITE_FOUND. Arquivo proposto: locacao_automation/cobranca_bancaria/adaptadores/tests/test_registry.py.",
+  "task_id": "T1"
+ },
+ {
+  "id": "CT-003",
+  "titulo": "Registry recusa provedor desconhecido com erro explícito",
+  "tipo": "UNITARIO",
+  "categoria": "teste_negativo",
+  "invariant": "Resolver um provedor não cadastrado no registry nunca retorna um adaptador parcial ou None silencioso — sempre lança/retorna um erro explícito nomeando o provedor.",
+  "owning_layer": "unit",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "none",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "provedor='banco_inexistente_xyz'",
+   "assertion_esperada": "erro contém o texto 'banco_inexistente_xyz' e nenhuma instância é retornada"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Porta + registry de adaptadores (ADR-0001)",
+  "pre_condicoes": [
+   "Registry populado apenas com 'sicoob'"
+  ],
+  "dados_entrada": {
+   "descricao": "Identificador de provedor inexistente",
+   "valores": {
+    "provedor": "banco_inexistente_xyz"
+   }
+  },
+  "passos": [
+   "Chamar a função de resolução do registry com provedor='banco_inexistente_xyz'."
+  ],
+  "resultado_esperado": "Levanta exceção/erro de negócio explícito citando 'banco_inexistente_xyz' como provedor desconhecido; nenhum objeto adaptador é construído.",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "NO_SUITE_FOUND. Sanidade Gate 7: remover a assertion de mensagem deixaria o teste verde mesmo com um `return None` silencioso — por isso a assertion cobre o conteúdo do erro, não apenas 'lançou algo'.",
+  "task_id": "T1"
+ },
+ {
+  "id": "CT-004",
+  "titulo": "Extração de metadados de certificado PKCS12 válido (titular, documento, validade, emissor, fingerprint)",
+  "tipo": "UNITARIO",
+  "categoria": "caminho_feliz",
+  "invariant": "Dado um arquivo PKCS12 válido e a senha correta, a extração de metadados retorna titular (CN), documento (CPF/CNPJ do padrão ICP-Brasil quando presente no CN), data de início e fim de validade, emissor e fingerprint SHA-256 — todos derivados do certificado, nunca da senha ou do conteúdo bruto.",
+  "owning_layer": "unit",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "none",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "CT-005",
+   "input_invalido": "arquivo corrompido / não-PKCS12",
+   "assertion_esperada": "erro de negócio claro, nenhum metadado parcial retornado"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Gestão de certificado (leitura de metadados via `cryptography`)",
+  "pre_condicoes": [
+   "Um .pfx de teste autoassinado gerado em memória com a biblioteca `cryptography` no setUp (CN, validade e senha conhecidos), sem depender de arquivo externo versionado"
+  ],
+  "dados_entrada": {
+   "descricao": "Bytes do PKCS12 de teste + senha correta",
+   "valores": {
+    "senha": "senha-de-teste-123",
+    "cn_esperado": "TITULAR TESTE LTDA",
+    "validade_dias": 365
+   }
+  },
+  "passos": [
+   "Gerar em memória (setUp) um certificado autoassinado + chave, empacotar em PKCS12 com senha conhecida usando `cryptography`.",
+   "Chamar a função de extração de metadados com os bytes do PKCS12 e a senha.",
+   "Calcular independentemente o SHA-256 esperado do certificado DER para comparação."
+  ],
+  "resultado_esperado": "Metadados retornados: titular == CN usado na geração; validade_inicio/validade_fim batem com o certificado gerado; fingerprint SHA-256 retornado == SHA-256 calculado independentemente pelo teste sobre os bytes DER do certificado (não sobre o PKCS12 inteiro nem sobre a senha).",
+  "criterios_aceitacao_validados": [
+   "CA-04",
+   "CA-11"
+  ],
+  "observacoes": "NO_SUITE_FOUND. `cryptography` já está disponível no venv do bench — teste 100% em memória, sem I/O de disco, por isso `real_execution_boundary: none` (é unitário mesmo usando uma lib real de parsing).",
+  "task_id": "T2"
+ },
+ {
+  "id": "CT-005",
+  "titulo": "Extração de metadados falha com erro de negócio claro para certificado corrompido ou não-PKCS12",
+  "tipo": "UNITARIO",
+  "categoria": "teste_negativo",
+  "invariant": "Bytes que não formam um PKCS12 válido (arquivo truncado, texto arbitrário, PDF renomeado) nunca produzem metadados parciais — sempre um erro de negócio explícito.",
+  "owning_layer": "unit",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "none",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "bytes de um PDF válido renomeado para .pfx; bytes truncados de um PKCS12 real",
+   "assertion_esperada": "erro de negócio ('certificado inválido' ou equivalente) sem vazar traceback técnico da lib cryptography; nenhum dict de metadados é retornado"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Gestão de certificado (leitura de metadados via `cryptography`)",
+  "pre_condicoes": [
+   "Bytes de PDF válido reaproveitados de fixture (ex.: cabeçalho %PDF) e bytes truncados de um PKCS12 real gerado em setUp"
+  ],
+  "dados_entrada": {
+   "descricao": "Dois cenários parametrizados de entrada inválida",
+   "valores": {
+    "casos": [
+     "bytes_de_pdf_renomeado",
+     "pkcs12_truncado_50_por_cento"
+    ]
+   }
+  },
+  "passos": [
+   "Para cada bytes inválido, chamar a função de extração de metadados com uma senha qualquer."
+  ],
+  "resultado_esperado": "Para ambos os casos: erro de negócio explícito é levantado/retornado (não uma exceção crua de `cryptography`), e nenhum metadado (titular/validade/fingerprint) é produzido.",
+  "criterios_aceitacao_validados": [
+   "CA-03"
+  ],
+  "observacoes": "NO_SUITE_FOUND. Complementa CT-006 (que cobre senha errada num PKCS12 estruturalmente válido) cobrindo o eixo 'arquivo em si é inválido'.",
+  "task_id": "T2"
+ },
+ {
+  "id": "CT-006",
+  "titulo": "Certificado recusado por senha incorreta, formato inválido ou tamanho fora da faixa aceitável",
+  "tipo": "UNITARIO",
+  "categoria": "teste_negativo",
+  "invariant": "RN-05: um certificado só é aceito se abrir com a senha informada e estiver dentro da faixa de tamanho aceitável; qualquer uma dessas violações recusa o envio sem persistir nada, com mensagem de negócio distinguível da causa.",
+  "owning_layer": "unit",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "none",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "senha errada num PKCS12 válido; arquivo 1 byte maior/menor que a faixa aceitável",
+   "assertion_esperada": "erro de negócio específico por causa (senha_incorreta vs tamanho_invalido), nunca uma exceção genérica"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Gestão de certificado (validação pré-persistência)",
+  "pre_condicoes": [
+   "PKCS12 de teste válido gerado em setUp com senha conhecida"
+  ],
+  "dados_entrada": {
+   "descricao": "Tabela parametrizada de violações de RN-05",
+   "valores": {
+    "casos": [
+     {
+      "cenario": "senha_incorreta",
+      "senha_usada": "senha-errada"
+     },
+     {
+      "cenario": "tamanho_abaixo_da_faixa",
+      "tamanho_bytes": 1
+     },
+     {
+      "cenario": "tamanho_acima_da_faixa",
+      "tamanho_bytes": "PLACEHOLDER_LIMITE_SUPERIOR+1"
+     }
+    ]
+   }
+  },
+  "passos": [
+   "Para 'senha_incorreta': chamar a validação com o PKCS12 válido e senha errada.",
+   "Para os cenários de tamanho: chamar a validação com bytes cujo tamanho está fora da faixa aceitável (placeholder até faixa ser definida)."
+  ],
+  "resultado_esperado": "Todos os 3 cenários retornam recusa (não exceção não tratada) com mensagem de negócio identificando a causa; nenhuma chamada de persistência é feita nesta camada (função pura de validação).",
+  "criterios_aceitacao_validados": [
+   "CA-03"
+  ],
+  "observacoes": "GAP sinalizado em stack_discovery: a faixa exata de tamanho não está definida no PRD/tech-alignment (`[DELEGAR_TECH_SPEC]`). Os valores de tamanho são placeholders — ajustar quando a faixa for decidida. Não bloqueia a geração do caso, mas o executor deve resolver o placeholder antes de codar.",
+  "task_id": "T2"
+ },
+ {
+  "id": "CT-007",
+  "titulo": "Cálculo de dias restantes até o vencimento do certificado nas fronteiras (vencido, vence hoje, vence no futuro)",
+  "tipo": "UNITARIO",
+  "categoria": "fronteira",
+  "invariant": "O cálculo de dias restantes para o vencimento do certificado é consistente com a data de referência: negativo/zero quando já vencido ou vence hoje, positivo quando no futuro — nunca lança exceção para nenhuma das três fronteiras.",
+  "owning_layer": "unit",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "clock",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "data_validade no passado (certificado já vencido)",
+   "assertion_esperada": "retorna valor <= 0, nunca exceção, e um indicador de 'vencido' == True"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Gestão de certificado (indicação de validade — CA-11)",
+  "pre_condicoes": [
+   "Data de referência ('hoje') injetada explicitamente na função, não lida de `datetime.now()` direto, para determinismo do teste"
+  ],
+  "dados_entrada": {
+   "descricao": "Tabela parametrizada de datas de validade vs. data de referência fixa 2026-07-20",
+   "valores": {
+    "casos": [
+     {
+      "data_validade": "2026-07-19",
+      "esperado_dias": -1,
+      "esperado_vencido": true
+     },
+     {
+      "data_validade": "2026-07-20",
+      "esperado_dias": 0,
+      "esperado_vencido": true
+     },
+     {
+      "data_validade": "2026-08-19",
+      "esperado_dias": 30,
+      "esperado_vencido": false
+     }
+    ]
+   }
+  },
+  "passos": [
+   "Para cada linha, chamar a função de cálculo com data_validade e data_referencia=2026-07-20 injetada."
+  ],
+  "resultado_esperado": "dias_restantes e vencido batem exatamente com esperado_dias/esperado_vencido de cada linha.",
+  "criterios_aceitacao_validados": [
+   "CA-11",
+   "CA-15"
+  ],
+  "observacoes": "NO_SUITE_FOUND. `real_execution_boundary: clock` (não conta como integração real per Gate 3 — é determinismo). Data injetada evita dependência de `datetime.now()`/RN de flakiness (Red Flag #12).",
+  "task_id": "T2"
+ },
+ {
+  "id": "CT-008",
+  "titulo": "Formatação do identificador sequencial: prefixo AAAAMM + 12 dígitos zero-padded, incluindo overflow",
+  "tipo": "UNITARIO",
+  "categoria": "fronteira",
+  "invariant": "O identificador sequencial sempre tem o formato AAAAMM seguido de exatamente 12 dígitos zero-padded; o incremento além de 999999999999 é recusado explicitamente, nunca produz um identificador malformado ou trunca silenciosamente.",
+  "owning_layer": "unit",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "none",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "sequencial anterior == 999999999999 (próximo excede o limite de 12 dígitos)",
+   "assertion_esperada": "erro de negócio explícito ('sequencial excedeu o limite'), nenhum identificador é produzido/persistido"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Contador sequencial — formatação pura (funções já existentes `_formatar_prefixo_aaaamm`/`_normalizar_sequencial_texto` em `sequencial.py`)",
+  "pre_condicoes": [
+   "Nenhuma — funções puras de formatação de string/data"
+  ],
+  "dados_entrada": {
+   "descricao": "Tabela parametrizada de valores de sequencial anterior",
+   "valores": {
+    "casos": [
+     {
+      "ultimo_sequencial": "000000000000",
+      "data_ref": "2026-07-20",
+      "esperado_prefixo": "202607",
+      "esperado_novo": "000000000001"
+     },
+     {
+      "ultimo_sequencial": "999999999998",
+      "data_ref": "2026-07-20",
+      "esperado_novo": "999999999999"
+     },
+     {
+      "ultimo_sequencial": "999999999999",
+      "data_ref": "2026-07-20",
+      "esperado_erro": true
+     }
+    ]
+   }
+  },
+  "passos": [
+   "Para cada linha, invocar a lógica de formatação/incremento pura com ultimo_sequencial e data_ref."
+  ],
+  "resultado_esperado": "Para as 2 primeiras linhas: seu_numero == esperado_prefixo + esperado_novo, sempre 18 caracteres (6+12). Para a 3ª linha: erro explícito de limite excedido, sem gerar string.",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "NO_SUITE_FOUND. Já existe hoje em `locacao_automation/cobranca_sicoob/sequencial.py` (`_formatar_prefixo_aaaamm`, `_normalizar_sequencial_texto`) — são funções puras isoláveis sem I/O; o teste isola-as da parte que faz `SELECT ... FOR UPDATE` (essa parte é coberta em CT-014/CT-015 como integração real).",
+  "task_id": "T10"
+ },
+ {
+  "id": "CT-009",
+  "titulo": "Sigilo: serialização de evento de auditoria nunca inclui senha nem bytes do certificado",
+  "tipo": "UNITARIO",
+  "categoria": "seguranca",
+  "invariant": "RN-06: para qualquer payload de entrada/configuração serializado num registro de evento ou de auditoria, os campos de senha e o conteúdo binário do certificado são sempre removidos/mascarados antes da serialização — nunca aparecem no JSON resultante, mesmo que estivessem presentes no dict original.",
+  "owning_layer": "unit",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "none",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "payload contendo chaves 'pfx_password', 'pfx_base64' e 'senha' com valores reais",
+   "assertion_esperada": "o JSON serializado não contém as strings dos valores originais em nenhuma posição (busca substring no texto serializado inteiro, não só nas chaves esperadas)"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Registro de auditoria dedicado (sanitização antes de persistir)",
+  "pre_condicoes": [
+   "Função de sanitização de payload para registro de evento/auditoria implementada"
+  ],
+  "dados_entrada": {
+   "descricao": "Dict de configuração completo incluindo campos sensíveis",
+   "valores": {
+    "payload": {
+     "client_id": "abc123",
+     "pfx_password": "SENHA_SECRETA_XYZ",
+     "pfx_base64": "TW9ja1BLQ1MxMkJ5dGVz",
+     "numero_conta_corrente": "12345"
+    }
+   }
+  },
+  "passos": [
+   "Chamar a função de sanitização/serialização com o payload contendo os campos sensíveis.",
+   "Buscar as substrings literais 'SENHA_SECRETA_XYZ' e 'TW9ja1BLQ1MxMkJ5dGVz' no texto JSON resultante inteiro."
+  ],
+  "resultado_esperado": "Nenhuma das duas substrings sensíveis aparece em nenhum ponto do JSON serializado; campos não-sensíveis (client_id, numero_conta_corrente) permanecem presentes e corretos.",
+  "criterios_aceitacao_validados": [
+   "CA-01",
+   "CA-14"
+  ],
+  "observacoes": "NO_SUITE_FOUND. Armadilha ativa documentada no contrato de invocação: hoje `_registrar_evento` em emissao.py/consulta.py/etc. serializa `payload_recebido`/`payload_processado` inteiros — este teste é o que garante que a nova sanitização realmente barra o vazamento, não apenas 'parece' barrar.",
+  "task_id": "T12"
+ },
+ {
+  "id": "CT-010",
+  "titulo": "Mapeamento canônico→provedor não expõe vocabulário do provedor no núcleo (campo sem equivalente vai para escape)",
+  "tipo": "UNITARIO",
+  "categoria": "integridade_dados",
+  "invariant": "ADR-0001: nenhum campo, URL ou vocabulário específico do provedor cruza a porta AdaptadorCobrancaBancaria; um campo canônico sem equivalente direto no provedor é roteado para o escape de parâmetros por provedor, nunca inventado nem descartado silenciosamente.",
+  "owning_layer": "unit",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "none",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "objeto canônico de boleto com um campo extra não mapeado para nenhuma chave do payload Sicoob",
+   "assertion_esperada": "o campo extra aparece apenas no escape de parâmetros por provedor do payload traduzido, e o núcleo (tipos canônicos) não referencia nenhuma chave em camelCase do Sicoob"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Adaptador Sicoob — tradução canônico→provedor",
+  "pre_condicoes": [
+   "Dataclass canônica de boleto com campo de escape de parâmetros por provedor já modelado"
+  ],
+  "dados_entrada": {
+   "descricao": "Boleto canônico com 1 campo core + 1 campo em escape_parametros_provedor",
+   "valores": {
+    "boleto_canonico": {
+     "valor": 1500.0,
+     "escape_parametros_provedor": {
+      "codigoNegativacao": 3
+     }
+    }
+   }
+  },
+  "passos": [
+   "Chamar a função de tradução canônico→payload do adaptador Sicoob com o boleto canônico.",
+   "Inspecionar o payload resultante."
+  ],
+  "resultado_esperado": "payload['valor'] == 1500.00 (traduzido do campo canônico) E payload['codigoNegativacao'] == 3 (originado do escape, não hardcoded no núcleo) — o tipo canônico do boleto não tem nenhum atributo chamado 'codigoNegativacao'.",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "NO_SUITE_FOUND. Valida a Consequência Neutra da ADR-0001 ('campos sem equivalente canônico ficam num escape de parâmetros por provedor').",
+  "task_id": "T5"
+ },
+ {
+  "id": "CT-011",
+  "titulo": "RN-01: existe no máximo uma configuração bancária ativa por provedor (zero ativas / mais de uma ativa retornam erro estruturado único)",
+  "tipo": "INTEGRACAO",
+  "categoria": "fronteira",
+  "invariant": "RN-01: nenhuma operação de cobrança ocorre sem exatamente uma configuração ativa; zero configurações ativas OU mais de uma configuração ativa para o mesmo provedor retornam o MESMO shape de erro estruturado (não mais a divergência dict-vs-string entre os 5 módulos).",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "0 registros ativos; 2 registros ativos simultaneamente",
+   "assertion_esperada": "erro estruturado {success: False, message: <texto>} em ambos os cenários, idêntico em shape entre si e entre os 5 pontos de consumo (auth/emissão/consulta/baixa/confirmação)"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Resolução de configuração unificada (fonte única, substitui as 5 cópias duplicadas)",
+  "pre_condicoes": [
+   "Site de teste do Frappe com a nova DocType de configuração canônica migrada (D1)"
+  ],
+  "dados_entrada": {
+   "descricao": "3 cenários de contagem de configuração ativa",
+   "valores": {
+    "casos": [
+     {
+      "cenario": "zero_ativas",
+      "qtd_ativas": 0
+     },
+     {
+      "cenario": "uma_ativa",
+      "qtd_ativas": 1
+     },
+     {
+      "cenario": "duas_ativas",
+      "qtd_ativas": 2
+     }
+    ]
+   }
+  },
+  "passos": [
+   "Inserir N registros de configuração (0, 1 ou 2) marcados como ativos no site de teste real.",
+   "Chamar a função unificada de resolução de configuração ativa."
+  ],
+  "resultado_esperado": "qtd_ativas=1: retorna a configuração sem erro. qtd_ativas=0 e qtd_ativas=2: retornam erro estruturado {success: False, message: ...} com o MESMO shape entre si.",
+  "criterios_aceitacao_validados": [
+   "CA-01",
+   "CA-05"
+  ],
+  "observacoes": "NO_SUITE_FOUND. Cobre a Regra 6 (Restrições e invariantes técnicas #1 do tech-alignment, aplicada à config) e a unificação do ponto em aberto D7. Real DB via FrappeTestCase (site de teste isolado).",
+  "task_id": "T4"
+ },
+ {
+  "id": "CT-012",
+  "titulo": "Certificado com senha incorreta é recusado e nada é gravado na configuração (observável em banco)",
+  "tipo": "INTEGRACAO",
+  "categoria": "seguranca",
+  "invariant": "RN-05: quando o envio de certificado é recusado por senha incorreta, a configuração ativa permanece byte-a-byte inalterada no banco — nenhum campo (fingerprint, titular, caminho do arquivo) é atualizado.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "CT-016",
+   "input_invalido": "n/a — este é o caso negativo de CT-016 (CA-02)",
+   "assertion_esperada": "config em banco idêntica ao snapshot pré-tentativa (comparação campo a campo)"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Serviço de envio de certificado (RN-05 + persistência)",
+  "pre_condicoes": [
+   "Configuração ativa pré-existente com um certificado válido já registrado (fingerprint/titular conhecidos)"
+  ],
+  "dados_entrada": {
+   "descricao": "Novo PKCS12 válido com senha incorreta informada",
+   "valores": {
+    "senha_informada": "senha-errada-999"
+   }
+  },
+  "passos": [
+   "Capturar snapshot completo da configuração ativa antes da tentativa (todos os campos + fingerprint).",
+   "Chamar o serviço de envio de certificado com senha incorreta.",
+   "Recarregar a configuração do banco (nova query, não do cache do objeto em memória) e comparar com o snapshot."
+  ],
+  "resultado_esperado": "Serviço retorna {success: False, message: <negócio>}; a configuração recarregada do banco é campo-a-campo idêntica ao snapshot (fingerprint, titular, caminho do arquivo inalterados).",
+  "criterios_aceitacao_validados": [
+   "CA-03"
+  ],
+  "observacoes": "NO_SUITE_FOUND. `real_execution_boundary: db` real via FrappeTestCase — a comparação é feita recarregando do banco, não do objeto em memória, para não mascarar um bug de 'assert em mock auto-setado' (Gate 6).",
+  "task_id": "T12"
+ },
+ {
+  "id": "CT-013",
+  "titulo": "Certificado materializado em arquivo temporário 0600 é removido no finally mesmo quando a chamada ao provedor falha",
+  "tipo": "INTEGRACAO",
+  "categoria": "tratamento_erro",
+  "invariant": "D4: o material do certificado materializado em disco para uma operação é sempre removido ao final dela, inclusive quando a chamada HTTP ao provedor lança exceção — nunca fica órfão em disco, e enquanto existe tem permissão restrita ao proprietário (0600).",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "filesystem",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "chamada HTTP ao provedor mockada para lançar `RequestException`",
+   "assertion_esperada": "arquivo temporário não existe mais no filesystem após a operação, mesmo tendo lançado exceção no meio"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Gestão de certificado — materialização por operação (D4)",
+  "pre_condicoes": [
+   "Configuração ativa com certificado válido armazenado como conteúdo no banco (não mais caminho fixo em disco)"
+  ],
+  "dados_entrada": {
+   "descricao": "2 cenários: chamada ao provedor bem-sucedida vs. lança exceção",
+   "valores": {
+    "casos": [
+     "sucesso",
+     "excecao_de_rede"
+    ]
+   }
+  },
+  "passos": [
+   "Interceptar (spy) a função de materialização para capturar o caminho do arquivo temporário criado.",
+   "Mockar a chamada HTTP do adaptador (`requests_pkcs12.post`) para o cenário: sucesso normal, ou lançar `RequestException`.",
+   "Executar a operação completa (ex.: emissão) através do serviço.",
+   "Verificar, após a operação retornar (sucesso ou erro), se o caminho capturado ainda existe no filesystem e quais são suas permissões enquanto existiu."
+  ],
+  "resultado_esperado": "Em AMBOS os cenários: `os.path.exists(caminho_temp) == False` após a operação retornar; durante a existência do arquivo (capturada via monkeypatch no ponto de criação), o modo de permissão era 0o600.",
+  "criterios_aceitacao_validados": [
+   "CA-16"
+  ],
+  "observacoes": "NO_SUITE_FOUND. Prioridade ALTA explícita nas instruções do orquestrador (remoção garantida do arquivo temporário em caminho de erro). `real_execution_boundary: filesystem` — usa tmpdir real, não mocka `os.remove`/`tempfile`.",
+  "task_id": "T2"
+ },
+ {
+  "id": "CT-014",
+  "titulo": "RN-03: contador sequencial sob concorrência nunca gera nosso_numero duplicado",
+  "tipo": "INTEGRACAO",
+  "categoria": "caso_extremo",
+  "invariant": "RN-03: o contador sequencial é único e contínuo; quando duas emissões concorrentes disputam o mesmo lock de linha (`SELECT ... FOR UPDATE`), cada uma recebe um sequencial estritamente distinto — nunca há duas emissões com o mesmo seu_numero/nosso_numero, independentemente de ordem de chegada.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "duas conexões de banco reais e concorrentes chamando `gerar_seu_numero` para a mesma configuração ativa, sem serialização externa",
+   "assertion_esperada": "os dois sequenciais retornados são diferentes e o valor final persistido é exatamente inicial+2 (nenhuma leitura perdida, nenhuma sobrescrita)"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Contador sequencial — `SELECT ... FOR UPDATE` mantido até o commit da emissão",
+  "pre_condicoes": [
+   "Configuração ativa real no banco de teste com ultimo_sequencial_seu_numero conhecido (ex.: '000000000010')",
+   "Duas conexões de banco distintas e reais (não a mesma sessão do Frappe), cada uma em sua própria transação"
+  ],
+  "dados_entrada": {
+   "descricao": "Duas threads/processos disparando gerar_seu_numero(data_emissao) concorrentemente para a mesma config",
+   "valores": {
+    "ultimo_sequencial_inicial": "000000000010",
+    "num_chamadas_concorrentes": 2
+   }
+  },
+  "passos": [
+   "Preparar a configuração ativa com ultimo_sequencial_seu_numero = '000000000010' e commitar.",
+   "Disparar 2 threads (ou 2 conexões de banco separadas) que chamam a função real de geração de sequencial quase simultaneamente, cada uma dentro de sua própria transação real com commit ao final.",
+   "Aguardar as duas terminarem e coletar os dois seu_numero retornados.",
+   "Recarregar a configuração do banco após ambas commitarem."
+  ],
+  "resultado_esperado": "Os dois seu_numero retornados são diferentes entre si (um é '...000011', outro '...000012', em qualquer ordem); o ultimo_sequencial_seu_numero final no banco é exatamente '000000000012' (nunca '000000000011' repetido, nunca um valor perdido).",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "NO_SUITE_FOUND. CRÍTICO — maior risco de corrupção da feature conforme o tech-alignment ('a existência simultânea de dois contadores é o principal risco'). Requer duas conexões de banco reais e transações reais commitando — mock aqui invalidaria completamente o teste (não exercitaria o `FOR UPDATE`). Guard de recursos de teste: se rodado em paralelo com outra suíte de integração, serializar (ver regras de execução paralela).",
+  "task_id": "T10"
+ },
+ {
+  "id": "CT-015",
+  "titulo": "RN-03: contador sequencial nunca reinicia ao trocar de conta bancária",
+  "tipo": "INTEGRACAO",
+  "categoria": "integridade_dados",
+  "invariant": "RN-03: trocar a conta bancária ativa não reinicia o contador sequencial — o próximo valor gerado após a troca é estritamente maior que o último valor gerado antes da troca, mesmo que a troca envolva desativar uma configuração e ativar outra.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "gerar sequencial na config A, trocar para config B, gerar novamente — assert de que NÃO reiniciou seria a falha",
+   "assertion_esperada": "o sequencial pós-troca é estritamente maior que o pré-troca; nunca reinicia para valores baixos"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Contador sequencial — origem única, sem reinício por troca de configuração",
+  "pre_condicoes": [
+   "Duas configurações no banco de teste (A ativa com sequencial em '000000000100', B inativa)"
+  ],
+  "dados_entrada": {
+   "descricao": "Sequência: gerar em A, desativar A e ativar B (preservando a origem única do contador), gerar novamente",
+   "valores": {
+    "sequencial_inicial_A": "000000000100"
+   }
+  },
+  "passos": [
+   "Gerar um seu_numero com a configuração A ativa; anotar o valor numérico.",
+   "Executar a troca de configuração ativa (desativar A, ativar B), preservando a origem única do contador conforme D3.",
+   "Gerar um novo seu_numero com B agora ativa."
+  ],
+  "resultado_esperado": "O valor numérico do segundo seu_numero é estritamente maior que o do primeiro (nunca reinicia para '000000000001' ou qualquer valor menor que o anterior).",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "NO_SUITE_FOUND. Valida RN-03 em conjunto com D3 (Restrição técnica #1 do tech-alignment: 'em nenhum instante pode existir mais de uma origem viva').",
+  "task_id": "T10"
+ },
+ {
+  "id": "CT-016",
+  "titulo": "CA-02: envio de certificado válido com senha correta é aceito e passa a ser a credencial da configuração",
+  "tipo": "INTEGRACAO",
+  "categoria": "caminho_feliz",
+  "invariant": "CA-02: um certificado válido enviado com a senha correta é aceito e a configuração passa a apresentá-lo (fingerprint, titular, validade) como a credencial em uso, persistido no banco.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "CT-012",
+   "input_invalido": "mesmo certificado, senha incorreta",
+   "assertion_esperada": "ver CT-012 — nada é gravado"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Serviço de envio de certificado",
+  "pre_condicoes": [
+   "Configuração ativa pré-existente sem certificado próprio (usando fallback legado)"
+  ],
+  "dados_entrada": {
+   "descricao": "PKCS12 válido gerado em setUp + senha correta",
+   "valores": {
+    "senha": "senha-de-teste-123"
+   }
+  },
+  "passos": [
+   "Chamar o serviço de envio de certificado com o PKCS12 válido e a senha correta.",
+   "Recarregar a configuração do banco."
+  ],
+  "resultado_esperado": "Serviço retorna {success: True, ...}; a configuração recarregada do banco tem fingerprint/titular/validade preenchidos batendo com o certificado enviado.",
+  "criterios_aceitacao_validados": [
+   "CA-02",
+   "CA-04"
+  ],
+  "observacoes": "NO_SUITE_FOUND.",
+  "task_id": "T12"
+ },
+ {
+  "id": "CT-017",
+  "titulo": "CA-05: alteração dos dados da conta é considerada nas próximas emissões; alteração inválida é recusada",
+  "tipo": "INTEGRACAO",
+  "categoria": "caminho_feliz",
+  "invariant": "CA-05: alterar e confirmar os dados da conta no provedor faz a configuração passar a considerar a nova conta para as próximas cobranças; dados incompletos/inválidos são recusados sem tocar a configuração vigente.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "numero_conta_corrente vazio ou não-numérico",
+   "assertion_esperada": "alteração recusada com erro de negócio; configuração recarregada do banco mantém os dados de conta anteriores"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Serviço de edição de dados da conta",
+  "pre_condicoes": [
+   "Configuração ativa com numero_conta_corrente = '111'"
+  ],
+  "dados_entrada": {
+   "descricao": "2 cenários: dados válidos ('222') vs. inválidos (vazio)",
+   "valores": {
+    "casos": [
+     {
+      "numero_conta_corrente": "222",
+      "esperado_sucesso": true
+     },
+     {
+      "numero_conta_corrente": "",
+      "esperado_sucesso": false
+     }
+    ]
+   }
+  },
+  "passos": [
+   "Para o cenário válido: chamar o serviço de edição com numero_conta_corrente='222' e confirmar.",
+   "Para o cenário inválido: chamar o serviço de edição com numero_conta_corrente=''.",
+   "Recarregar a configuração do banco após cada chamada."
+  ],
+  "resultado_esperado": "Cenário válido: configuração recarregada tem numero_conta_corrente == '222'. Cenário inválido: recusa com erro de negócio e numero_conta_corrente permanece '111' (inalterado).",
+  "criterios_aceitacao_validados": [
+   "CA-05"
+  ],
+  "observacoes": "NO_SUITE_FOUND.",
+  "task_id": "T11"
+ },
+ {
+  "id": "CT-018",
+  "titulo": "RN-04/CA-06/CA-07: configuração só entra em vigor após teste de conexão bem-sucedido; falha mantém a anterior operando",
+  "tipo": "INTEGRACAO",
+  "categoria": "fronteira",
+  "invariant": "RN-04: enquanto o teste de conexão com o banco não passar, a configuração anterior permanece em vigor; somente um teste de conexão bem-sucedido habilita a nova configuração a entrar em vigor.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "teste de conexão mockado para falhar (timeout/401 do provedor)",
+   "assertion_esperada": "configuração anterior permanece ativa == True; nova configuração pendente não é promovida a ativa"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Serviço de teste de conexão + promoção de configuração",
+  "pre_condicoes": [
+   "Configuração A ativa e válida no banco; configuração B pendente (rascunho) preenchida mas ainda não confirmada"
+  ],
+  "dados_entrada": {
+   "descricao": "2 cenários: chamada de teste de conexão mockada para sucesso vs. falha",
+   "valores": {
+    "casos": [
+     "sucesso_mock",
+     "falha_mock_timeout"
+    ]
+   }
+  },
+  "passos": [
+   "Mockar a chamada HTTP de obtenção de token/teste de conexão do adaptador para o cenário desejado.",
+   "Chamar o serviço de teste de conexão para a configuração B pendente.",
+   "Recarregar do banco qual configuração está marcada como ativa."
+  ],
+  "resultado_esperado": "Cenário sucesso: B passa a ser a ativa no banco, A é desativada. Cenário falha: A continua ativa no banco, B permanece pendente/inativa, mensagem de negócio em linguagem compreensível é retornada.",
+  "criterios_aceitacao_validados": [
+   "CA-06",
+   "CA-07"
+  ],
+  "observacoes": "NO_SUITE_FOUND. `real_execution_boundary: db` — a parte HTTP do teste de conexão é mockada na fronteira (não há mock server nem credencial de homologação confirmada, ver stack_discovery); a promoção/persistência da configuração é real.",
+  "task_id": "T11"
+ },
+ {
+  "id": "CT-019",
+  "titulo": "CA-08: boletos em aberto emitidos pela conta atual apresentam contagem e as três opções de decisão",
+  "tipo": "INTEGRACAO",
+  "categoria": "interacao_usuario",
+  "invariant": "RN-08: havendo boletos em aberto emitidos pela conta atual, a troca de configuração exige uma das três decisões explícitas do gestor (aceitar / não aceitar / aceitar com consolidado); cada caminho produz um efeito diferente e mutuamente exclusivo sobre a configuração.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "gestor escolhe 'não aceitar'",
+   "assertion_esperada": "operação cancelada por completo; configuração atual recarregada do banco permanece byte-a-byte inalterada"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Fluxo de confirmação de troca de configuração + RN-02 (filtro de boleto em aberto)",
+  "pre_condicoes": [
+   "3 registros de Cobranca no banco de teste com status_cobranca in ('Pendente','Vencida'), boleto_gerado=1, nosso_numero preenchido, vinculados à conta atual (reproduzindo o filtro de rotina_pagamentos.py:36-40)"
+  ],
+  "dados_entrada": {
+   "descricao": "3 cenários de decisão do gestor sobre a mesma troca pendente",
+   "valores": {
+    "casos": [
+     "aceitar",
+     "nao_aceitar",
+     "aceitar_com_consolidado"
+    ]
+   }
+  },
+  "passos": [
+   "Confirmar que a apuração retorna quantidade == 3 boletos em aberto antes de qualquer decisão.",
+   "Para cada cenário, invocar o serviço de confirmação de troca com a decisão correspondente.",
+   "Recarregar a configuração do banco após cada decisão."
+  ],
+  "resultado_esperado": "'aceitar': troca prossegue, nova config fica ativa. 'nao_aceitar': config inalterada, troca cancelada por completo. 'aceitar_com_consolidado': troca prossegue E o documento consolidado é gerado (delegunderado a CT-020) antes de confirmar.",
+  "criterios_aceitacao_validados": [
+   "CA-08"
+  ],
+  "observacoes": "NO_SUITE_FOUND. Reproduz o filtro RN-02 já existente em produção (`rotina_pagamentos.py:36-40`: status_cobranca in ['Pendente','Vencida'], boleto_gerado=1, nosso_numero preenchido) — a nova apuração deve preservar exatamente esse filtro (equivalência CA-17).",
+  "task_id": "T13"
+ },
+ {
+  "id": "CT-020",
+  "titulo": "CA-09/CA-10/RN-09: documento consolidado reúne boletos com PDF disponível e lista explicitamente os ausentes",
+  "tipo": "INTEGRACAO",
+  "categoria": "integridade_dados",
+  "invariant": "RN-09: o documento consolidado sempre reúne exatamente os boletos em aberto cujo PDF individual está disponível, e sempre informa explicitamente (por identificador) quais boletos ficaram de fora por falta de comprovante — nunca omite silenciosamente um boleto sem PDF.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "filesystem",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "nenhum dos boletos em aberto possui PDF disponível",
+   "assertion_esperada": "documento consolidado é gerado vazio/mínimo e a lista de ausentes contém os 3 identificadores de boleto, nenhum se perde"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Apuração de boletos em aberto + montagem do PDF consolidado (D6, pypdf real)",
+  "pre_condicoes": [
+   "3 Cobranca em aberto no banco: 2 com pdf_boleto_arquivo apontando para um PDF real salvo via `salvar_pdf_privado` (arquivo privado real no filesystem de teste), 1 sem PDF disponível"
+  ],
+  "dados_entrada": {
+   "descricao": "3 boletos em aberto, 2 com PDF real de 1 página cada, 1 sem PDF",
+   "valores": {
+    "boletos_com_pdf": 2,
+    "boletos_sem_pdf": 1
+   }
+  },
+  "passos": [
+   "Preparar os 2 PDFs reais (1 página cada, conteúdo mínimo válido gerado com reportlab) e salvá-los como arquivo privado real via `salvar_pdf_privado`.",
+   "Chamar o serviço de montagem do documento consolidado para os 3 boletos em aberto.",
+   "Abrir o PDF consolidado resultante com pypdf e contar páginas."
+  ],
+  "resultado_esperado": "PDF consolidado real tem exatamente 2 páginas (uma por boleto com PDF disponível); a lista de ausentes retornada contém exatamente o identificador do 3º boleto (sem PDF), nunca vazia quando há ausente.",
+  "criterios_aceitacao_validados": [
+   "CA-09",
+   "CA-10"
+  ],
+  "observacoes": "NO_SUITE_FOUND. `real_execution_boundary: filesystem` — usa pypdf/reportlab reais sobre arquivos reais (privados) em tmpdir de teste, não mocka a montagem do PDF (mockar aqui violaria Gate 3/9 — a montagem em memória com pypdf é justamente o D6 decidido).",
+  "task_id": "T13"
+ },
+ {
+  "id": "CT-021",
+  "titulo": "CA-12: remoção do certificado apaga a credencial e as informações derivadas; remoção sem certificado próprio é recusada",
+  "tipo": "INTEGRACAO",
+  "categoria": "caminho_feliz",
+  "invariant": "CA-12: solicitar a remoção de um certificado enviado pela tela apaga a credencial materializada e todas as informações dela derivadas (fingerprint, titular, validade), deixando a configuração sem certificado próprio; solicitar remoção quando não há certificado próprio enviado é recusado com erro de negócio, preservando o fallback legado intacto.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "filesystem",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "remoção solicitada quando a configuração nunca teve certificado próprio (apenas fallback legado)",
+   "assertion_esperada": "erro de negócio explícito; nenhuma alteração no fallback legado"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Serviço de remoção de certificado",
+  "pre_condicoes": [
+   "Configuração ativa com certificado próprio enviado (fingerprint/titular/validade preenchidos e arquivo privado real existente)"
+  ],
+  "dados_entrada": {
+   "descricao": "2 cenários: config com certificado próprio vs. config só com fallback legado",
+   "valores": {
+    "casos": [
+     "com_certificado_proprio",
+     "somente_fallback_legado"
+    ]
+   }
+  },
+  "passos": [
+   "Cenário 1: chamar o serviço de remoção sobre uma config com certificado próprio.",
+   "Recarregar a config do banco e verificar campos derivados e existência do arquivo privado.",
+   "Cenário 2: chamar o serviço de remoção sobre uma config sem certificado próprio (só fallback)."
+  ],
+  "resultado_esperado": "Cenário 1: fingerprint/titular/validade == None/vazio na config recarregada; arquivo privado do certificado não existe mais. Cenário 2: erro de negócio explícito, nenhuma mudança de estado.",
+  "criterios_aceitacao_validados": [
+   "CA-12"
+  ],
+  "observacoes": "NO_SUITE_FOUND.",
+  "task_id": "T12"
+ },
+ {
+  "id": "CT-022",
+  "titulo": "CA-13: alteração dos endereços de comunicação/ambiente em configurações avançadas passa a valer sem novo deploy",
+  "tipo": "INTEGRACAO",
+  "categoria": "caminho_feliz",
+  "invariant": "CA-13: alterar e confirmar os endereços de comunicação com o banco ou o ambiente de operação faz o sistema passar a usar os novos valores imediatamente — sem exigir reinício/deploy do código, e sem que a constante literal hoje repetida em 4 arquivos permaneça influenciando o comportamento.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "URL malformada (sem esquema http/https)",
+   "assertion_esperada": "alteração recusada com erro de negócio; URL anterior recarregada do banco permanece inalterada"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Serviço de configuração avançada (endereços/ambiente)",
+  "pre_condicoes": [
+   "Configuração ativa com boletos_url = 'https://api.sicoob.com.br/cobranca-bancaria/v3/boletos' (valor equivalente à constante hoje hardcoded)"
+  ],
+  "dados_entrada": {
+   "descricao": "2 cenários: nova URL válida de homologação vs. URL malformada",
+   "valores": {
+    "casos": [
+     {
+      "url": "https://sandbox.sicoob.com.br/v3/boletos",
+      "esperado_sucesso": true
+     },
+     {
+      "url": "nao-e-uma-url",
+      "esperado_sucesso": false
+     }
+    ]
+   }
+  },
+  "passos": [
+   "Chamar o serviço de configuração avançada com a nova URL válida e confirmar.",
+   "Chamar (numa segunda config independente) o serviço com a URL malformada.",
+   "Chamar a função de resolução de configuração unificada e inspecionar qual URL o adaptador usaria em seguida — sem reiniciar processo."
+  ],
+  "resultado_esperado": "Cenário válido: a próxima resolução de configuração retorna a nova URL, no MESMO processo de teste (sem restart). Cenário malformado: recusa com erro, URL anterior preservada.",
+  "criterios_aceitacao_validados": [
+   "CA-13"
+  ],
+  "observacoes": "NO_SUITE_FOUND. Valida a remoção da constante `SICOOB_BOLETOS_URL` hoje hardcoded em 4 arquivos (emissao.py, consulta.py, baixa.py, confirmacao_baixa.py) — o teste comprova que o valor passa a vir de dado, não de constante de módulo.",
+  "task_id": "T11"
+ },
+ {
+  "id": "CT-023",
+  "titulo": "CA-14/RN-12: toda alteração de configuração registra autor, data e identificação do certificado anterior e do novo",
+  "tipo": "INTEGRACAO",
+  "categoria": "integridade_dados",
+  "invariant": "RN-12: toda troca de certificado gera exatamente um registro de auditoria contendo autor (usuário autenticado que executou a ação), data/hora, e a identificação (fingerprint) do certificado anterior e do novo — nunca senha ou bytes do certificado (RN-06); uma tentativa recusada (ex.: teste de conexão falho) não deve gerar um registro de 'em vigor'.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "troca de certificado que falha no teste de conexão (RN-04) antes de entrar em vigor",
+   "assertion_esperada": "nenhum registro de auditoria de 'configuração alterada/em vigor' é criado para essa tentativa"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Registro de auditoria dedicado (trocas de configuração)",
+  "pre_condicoes": [
+   "Configuração ativa com certificado A (fingerprint conhecido); usuário de teste autenticado como administrador via `frappe.set_user`"
+  ],
+  "dados_entrada": {
+   "descricao": "Troca bem-sucedida de A para certificado B",
+   "valores": {
+    "usuario_autor": "admin-teste@example.com"
+   }
+  },
+  "passos": [
+   "Definir `frappe.session.user` para o usuário de teste administrador.",
+   "Executar a troca completa de certificado (envio + teste de conexão mockado com sucesso + confirmação).",
+   "Consultar no banco o(s) registro(s) de auditoria criados para essa troca."
+  ],
+  "resultado_esperado": "Exatamente 1 registro de auditoria com autor == 'admin-teste@example.com', data/hora preenchida, fingerprint_anterior == fingerprint de A, fingerprint_novo == fingerprint de B; nenhum campo de senha/bytes presente no registro.",
+  "criterios_aceitacao_validados": [
+   "CA-14"
+  ],
+  "observacoes": "NO_SUITE_FOUND. Complementa CT-009 (sigilo na serialização) verificando o registro persistido de ponta a ponta.",
+  "task_id": "T12"
+ },
+ {
+  "id": "CT-024",
+  "titulo": "CA-15/RN-07: emissão com certificado vencido é recusada com mensagem de negócio ANTES de qualquer chamada HTTP ao banco",
+  "tipo": "INTEGRACAO",
+  "categoria": "tratamento_erro",
+  "invariant": "RN-07: com o certificado em uso vencido, a emissão de boleto é recusada com mensagem de negócio explicando vencimento e ação necessária, e o cliente HTTP do adaptador NUNCA é invocado — a checagem de validade ocorre estritamente antes da tentativa de rede.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "n/a — este é o próprio caso negativo de uma emissão normal com certificado válido",
+   "assertion_esperada": "mock do cliente HTTP tem contador de chamadas == 0 após a tentativa de emissão"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Serviço de emissão — checagem de validade do certificado antes do handshake",
+  "pre_condicoes": [
+   "Configuração ativa com certificado cuja data de validade já expirou (fixture com validade no passado)",
+   "Cobranca válida e elegível para emissão no banco de teste"
+  ],
+  "dados_entrada": {
+   "descricao": "Cobranca elegível + configuração com certificado vencido",
+   "valores": {
+    "data_validade_certificado": "2026-01-01"
+   }
+  },
+  "passos": [
+   "Instrumentar (patch com contador de chamadas) o ponto de chamada HTTP do adaptador (`requests_pkcs12.post`) usado para obter token/emitir.",
+   "Chamar o serviço de emissão de boleto para a cobrança elegível.",
+   "Verificar o contador de chamadas do mock HTTP e a mensagem retornada."
+  ],
+  "resultado_esperado": "Retorno {success: False, message: <negócio, menciona vencimento e ação necessária>}; contador de chamadas do mock HTTP == 0 (nem obter_token nem emitir foram tentados).",
+  "criterios_aceitacao_validados": [
+   "CA-15"
+  ],
+  "observacoes": "NO_SUITE_FOUND. CRÍTICO — destacado explicitamente nas instruções do orquestrador. A asserção de contador de chamadas == 0 é o que distingue este teste de um teste fraco que só checa a mensagem de erro (Gate 6: a origem do expected value aqui é o próprio comportamento do SUT, não um valor auto-setado).",
+  "task_id": "T10"
+ },
+ {
+  "id": "CT-025",
+  "titulo": "CA-16/RN-10: enquanto nenhum certificado for enviado pela tela, emissão/baixa/consulta continuam operando com a credencial pré-existente",
+  "tipo": "INTEGRACAO",
+  "categoria": "caminho_feliz",
+  "invariant": "RN-10: antes do primeiro envio de credencial pela tela, a resolução de configuração cai no fallback do certificado legado (caminho fixo pré-existente) e as operações de cobrança continuam funcionando sem qualquer interrupção perceptível ao usuário.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "filesystem",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "arquivo do certificado legado ausente/corrompido no caminho fixo (cenário de falha do próprio fallback)",
+   "assertion_esperada": "erro de negócio claro orientando a situação, nunca uma exceção não tratada (traceback) vazando ao usuário"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Resolução de configuração unificada — fallback legado (D3)",
+  "pre_condicoes": [
+   "Configuração canônica migrada mas SEM certificado próprio enviado pela tela; arquivo de certificado legado real presente em caminho de teste simulando o caminho fixo pré-existente"
+  ],
+  "dados_entrada": {
+   "descricao": "2 cenários: fallback com arquivo legado presente vs. ausente",
+   "valores": {
+    "casos": [
+     "arquivo_legado_presente",
+     "arquivo_legado_ausente"
+    ]
+   }
+  },
+  "passos": [
+   "Cenário 1: com o arquivo legado presente, chamar a resolução de credenciais para uma operação (ex.: obter_token) mockando apenas a chamada de rede final.",
+   "Verificar que a credencial resolvida aponta para o arquivo legado.",
+   "Cenário 2: remover/corromper o arquivo legado e repetir a chamada."
+  ],
+  "resultado_esperado": "Cenário 1: resolução bem-sucedida usando o caminho legado, operação prossegue normalmente (equivalente ao comportamento anterior à feature). Cenário 2: erro de negócio claro, sem traceback cru.",
+  "criterios_aceitacao_validados": [
+   "CA-16"
+  ],
+  "observacoes": "NO_SUITE_FOUND. Prioridade ALTA explícita (fallback legado sem interrupção, CA-16 é invariante dura da feature).",
+  "task_id": "T4"
+ },
+ {
+  "id": "CT-026",
+  "titulo": "D3: patch de migração da configuração legada para a canônica é idempotente",
+  "tipo": "INTEGRACAO",
+  "categoria": "integridade_dados",
+  "invariant": "D3: executar o patch de migração da configuração mais de uma vez não duplica registros nem corrompe a configuração canônica já copiada — o resultado após 2 execuções é idêntico ao resultado após 1 execução.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "executar o patch uma segunda vez sobre um estado já migrado",
+   "assertion_esperada": "nenhum registro duplicado é criado; campos permanecem idênticos ao estado pós-primeira-execução"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Patch de migração (pre/post model sync, D1+D3)",
+  "pre_condicoes": [
+   "Configuração legada real no banco de teste (DocType `Configuracao Integracao Sicoob`) com dados completos"
+  ],
+  "dados_entrada": {
+   "descricao": "Execução do patch de migração duas vezes seguidas",
+   "valores": {}
+  },
+  "passos": [
+   "Executar o patch de migração da configuração uma primeira vez.",
+   "Capturar snapshot da configuração canônica resultante (contagem de registros + campos).",
+   "Executar o mesmo patch uma segunda vez.",
+   "Capturar novo snapshot e comparar."
+  ],
+  "resultado_esperado": "Contagem de registros da configuração canônica é idêntica antes e depois da 2ª execução; nenhum campo divergente entre os dois snapshots.",
+  "criterios_aceitacao_validados": [
+   "CA-16"
+  ],
+  "observacoes": "NO_SUITE_FOUND. Tech-alignment D3: 'patch idempotente copia a configuração legada'. Não existe precedente de patch no app — este é o primeiro, então não há suíte análoga a imitar.",
+  "task_id": "T6"
+ },
+ {
+  "id": "CT-027",
+  "titulo": "D3: contador sequencial migra em corte único e atômico, sem fallback de leitura para a origem legada",
+  "tipo": "INTEGRACAO",
+  "categoria": "caso_extremo",
+  "invariant": "D3 (exceção explícita ao fallback geral): após o corte de migração do contador sequencial, a geração de sequencial usa exclusivamente a nova origem — nenhuma leitura, nem mesmo em caminho de erro, recai sobre o campo legado `ultimo_sequencial_seu_numero` da configuração antiga.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "campo legado do contador é alterado manualmente após o corte (simulando uma leitura indevida da origem antiga)",
+   "assertion_esperada": "o próximo sequencial gerado ignora completamente o valor alterado no campo legado — prova de que não há fallback de leitura para o contador"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Contador sequencial — corte atômico de origem (D3)",
+  "pre_condicoes": [
+   "Migração de contador já executada (corte realizado); campo legado do contador ainda fisicamente presente na configuração antiga por herança de schema, mas não mais lido"
+  ],
+  "dados_entrada": {
+   "descricao": "Sequencial legado alterado para um valor visivelmente diferente após o corte",
+   "valores": {
+    "sequencial_legado_pos_corte": "000000000001",
+    "sequencial_canonico_real": "000000000500"
+   }
+  },
+  "passos": [
+   "Após simular o corte de migração, alterar diretamente (via `frappe.db.set_value`) o campo legado do contador para um valor baixo e distinto do canônico.",
+   "Chamar a função real de geração de sequencial."
+  ],
+  "resultado_esperado": "O sequencial gerado continua a partir do valor CANÔNICO (ex.: '000000000501'), nunca do valor legado alterado ('000000000002') — prova de que não existe leitura de fallback para o contador pós-corte.",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "NO_SUITE_FOUND. Distingue-se de CT-015 (que testa continuidade através da troca de conta) ao testar especificamente a AUSÊNCIA do fallback de leitura que D3 concede a todos os outros campos, mas nega ao contador.",
+  "task_id": "T10"
+ },
+ {
+  "id": "CT-028",
+  "titulo": "Resolução de configuração unificada produz erro estruturado idêntico nos 5 pontos de consumo (auth, emissão, consulta, baixa, confirmação)",
+  "tipo": "INTEGRACAO",
+  "categoria": "integridade_dados",
+  "invariant": "A fonte única de resolução de configuração (que substitui as 5 cópias hoje duplicadas — 1 estruturada, 4 em texto cru) produz o MESMO shape de erro para os 5 pontos de consumo do adaptador quando não há configuração ativa válida.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "zero configurações ativas, testado a partir de cada um dos 5 pontos de consumo",
+   "assertion_esperada": "todos os 5 pontos retornam erro estruturado com o MESMO conjunto de chaves (não mais 1 dict vs. 4 strings)"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Resolução de configuração unificada (fonte única, D2 + Pontos em aberto do tech-alignment)",
+  "pre_condicoes": [
+   "Nenhuma configuração ativa no banco de teste (site limpo desse aspecto)"
+  ],
+  "dados_entrada": {
+   "descricao": "As 5 operações do adaptador chamadas em sequência sobre o mesmo estado (config ausente)",
+   "valores": {
+    "operacoes": [
+     "obter_token",
+     "emitir",
+     "consultar",
+     "solicitar_baixa",
+     "confirmar_baixa"
+    ]
+   }
+  },
+  "passos": [
+   "Para cada uma das 5 operações do ponto de entrada (via o serviço/adaptador correspondente), invocar a operação sem nenhuma configuração ativa presente.",
+   "Coletar o erro retornado por cada uma."
+  ],
+  "resultado_esperado": "Os 5 erros retornados têm exatamente o mesmo conjunto de chaves top-level (ex.: {success, message, ...}) — nenhum devolve string crua onde os outros devolvem dict estruturado.",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "NO_SUITE_FOUND. Cobre diretamente o Ponto em Aberto do tech-alignment ('Unificação do tipo de erro na resolução de configuração: as cinco cópias divergem'). GAP sinalizado em stack_discovery: shape final ainda não decidido no tech-alignment — ajustar assertion de chaves quando a decisão for fechada.",
+  "task_id": "T10"
+ },
+ {
+  "id": "CT-029",
+  "titulo": "RN-11: acesso à configuração da integração bancária restrito a perfil administrativo",
+  "tipo": "SEGURANCA",
+  "categoria": "seguranca",
+  "invariant": "RN-11: qualquer método exposto de configuração da integração bancária (obter/salvar configuração, enviar/remover certificado, testar conexão) recusa acesso para um usuário autenticado sem perfil administrativo, e permite para um usuário com perfil administrativo.",
+  "owning_layer": "route-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "usuário autenticado sem role administrativa chamando o método whitelisted de configuração",
+   "assertion_esperada": "PermissionError/erro de acesso negado explícito, nenhum dado de configuração retornado"
+  },
+  "precondicao_privilegiada": {
+   "presente": true,
+   "descricao": "O teste precisa simular dois contextos de sessão autenticada distintos (usuário administrativo vs. usuário sem essa role) para exercitar o controle de acesso do método whitelisted — produção nunca expõe publicamente uma forma de 'virar' outro usuário.",
+   "caminho_legitimo": "Usar o mecanismo de teste NATIVO do próprio FrappeTestCase: criar dois usuários de teste reais via ORM (`frappe.get_doc({'doctype': 'User', ...}).insert(ignore_permissions=True)`, um com a role administrativa do app e outro sem) e alternar o contexto de execução com `frappe.set_user(<email>)` — API pública de teste do framework, não um símbolo criado só para este teste.",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Camada de acesso dos serviços de configuração expostos (`frappe.whitelist`)",
+  "pre_condicoes": [
+   "Dois usuários de teste reais criados no site de teste: 'admin-teste@example.com' (com role administrativa do app) e 'comum-teste@example.com' (sem essa role)"
+  ],
+  "dados_entrada": {
+   "descricao": "Chamada ao método whitelisted de obter configuração sob os dois contextos de usuário",
+   "valores": {
+    "usuarios": [
+     "admin-teste@example.com",
+     "comum-teste@example.com"
+    ]
+   }
+  },
+  "passos": [
+   "`frappe.set_user('comum-teste@example.com')`; chamar o método whitelisted de configuração.",
+   "Verificar que o acesso é recusado.",
+   "`frappe.set_user('admin-teste@example.com')`; chamar o mesmo método.",
+   "Verificar que o acesso é concedido."
+  ],
+  "resultado_esperado": "Usuário sem role administrativa: erro de permissão explícito, nenhum dado de configuração retornado. Usuário administrativo: chamada bem-sucedida, dados de configuração (sem segredos) retornados.",
+  "criterios_aceitacao_validados": [
+   "CA-01"
+  ],
+  "observacoes": "NO_SUITE_FOUND. Único caso desta geração com `precondicao_privilegiada.presente = true` — a simulação de usuário usa exclusivamente a API pública de teste do Frappe (`frappe.set_user`), nunca criação de símbolo de produção para bypass (Iron Law #6).",
+  "task_id": "T11"
+ },
+ {
+  "id": "CT-030",
+  "titulo": "CA-17: as chaves de resposta das 5 operações de cobrança permanecem equivalentes ao contrato observável anterior",
+  "tipo": "E2E",
+  "categoria": "integridade_dados",
+  "invariant": "CA-17: para as operações emitir, baixar, consultar, confirmar e sincronizar, o conjunto de chaves top-level do dict de resposta que o cliente já consome hoje permanece presente e com os mesmos nomes — o refactor interno (ADR-0001) não altera o contrato observável, só a implementação por trás dele.",
+  "owning_layer": "e2e",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "n/a — a assertion de conjunto de chaves É o teste negativo embutido: qualquer chave ausente ou renomeada falha o teste",
+   "assertion_esperada": "toda chave do contrato imutável está presente com o nome exato; nenhuma chave adicional obrigatória foi removida"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Contrato observável dos 5 métodos whitelisted de cobrança (black-box)",
+  "pre_condicoes": [
+   "Cobrança elegível para emissão real no banco de teste; chamada HTTP ao provedor mockada com uma resposta de sucesso representativa para cada uma das 5 operações"
+  ],
+  "dados_entrada": {
+   "descricao": "Conjunto de chaves contrato imutável declarado nas instruções do orquestrador",
+   "valores": {
+    "chaves_contrato": [
+     "success",
+     "cobranca_id",
+     "nosso_numero",
+     "codigo_barras",
+     "linha_digitavel",
+     "qr_code_pix",
+     "pdf_boleto_arquivo",
+     "pdf_boleto_url",
+     "boleto_gerado",
+     "situacao_boleto_sicoob",
+     "pagamento_confirmado",
+     "status_cobranca",
+     "valor_pago",
+     "data_pagamento"
+    ]
+   }
+  },
+  "passos": [
+   "Para cada uma das 5 operações (emitir, baixar, consultar, confirmar, sincronizar), mockar a resposta HTTP do provedor com um payload de sucesso mínimo e chamar o método whitelisted correspondente sobre uma cobrança real do banco de teste.",
+   "Coletar o dict de retorno de cada chamada.",
+   "Para cada chave da lista `chaves_contrato` que é semanticamente aplicável àquela operação, verificar presença no dict retornado."
+  ],
+  "resultado_esperado": "Nenhuma chave do contrato imutável aplicável a cada operação está ausente no dict retornado pós-refactor; os tipos (str/bool/float/None) de cada chave batem com o comportamento documentado hoje.",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "NO_SUITE_FOUND. Classificação Gate 5: o shape de resposta das 5 operações é PRODUCT_CONTRACT (explicitamente declarado imutável pelo CA-17 e pelas instruções do orquestrador) — por isso a comparação de chaves aqui é permitida e recomendada, diferente de um snapshot de IMPLEMENTATION_DETAIL. Este é o teste que sustenta a estratégia de cutover por estrangulamento (D2): deve passar em CADA etapa da migração operação-a-operação.",
+  "task_id": "T10"
+ },
+ {
+  "id": "CT-100",
+  "titulo": "Salvar única configuração ativa por provedor é aceito",
+  "tipo": "INTEGRACAO",
+  "categoria": "caminho_feliz",
+  "invariant": "Uma única Configuracao Integracao Bancaria com ativo=1 para um provedor é sempre aceita pelo validate() do controller.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "CT-101",
+   "input_invalido": "segunda Configuracao Integracao Bancaria com ativo=1 para o mesmo provedor, enquanto a primeira permanece ativa",
+   "assertion_esperada": "insert()/save() da segunda lança frappe.ValidationError e frappe.db.count(..., {'ativo':1,'provedor':'Sicoob'}) permanece 1"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Persistência",
+  "pre_condicoes": [
+   "Nenhuma Configuracao Integracao Bancaria Sicoob previamente cadastrada no site de teste"
+  ],
+  "dados_entrada": {
+   "descricao": "Documento com campos mínimos válidos para Sicoob",
+   "valores": {
+    "provedor": "Sicoob",
+    "ativo": 1,
+    "ambiente": "Producao",
+    "auth_url": "https://auth.sicoob.com.br/token",
+    "api_base_url": "https://api.sicoob.com.br/cobranca-bancaria/v3",
+    "client_id": "cli-123",
+    "numero_cliente": 1,
+    "numero_conta_corrente": 1,
+    "codigo_modalidade": 1
+   }
+  },
+  "passos": [
+   "Instanciar frappe.get_doc({'doctype': 'Configuracao Integracao Bancaria', ...campos válidos, ativo:1})",
+   "Chamar doc.insert(ignore_permissions=True)",
+   "Consultar frappe.db.count('Configuracao Integracao Bancaria', {'provedor':'Sicoob','ativo':1})"
+  ],
+  "resultado_esperado": "insert() completa sem exceção; frappe.db.count(...) == 1 imediatamente após o insert.",
+  "criterios_aceitacao_validados": [
+   "RN-01"
+  ],
+  "observacoes": "Baseline positivo que sustenta o companion negativo CT-101.",
+  "task_id": "T3"
+ },
+ {
+  "id": "CT-101",
+  "titulo": "Segunda configuração ativa para o mesmo provedor é recusada pelo validate()",
+  "tipo": "INTEGRACAO",
+  "categoria": "teste_negativo",
+  "invariant": "No máximo uma Configuracao Integracao Bancaria ativa por provedor; tentar ativar uma segunda com uma já ativa existente falha e não altera a primeira.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "este é o caso negativo (ver CT-100 para o positivo)",
+   "assertion_esperada": "ver resultado_esperado"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Persistência",
+  "pre_condicoes": [
+   "doc1 (Sicoob, ativo=1) já inserido no setUp deste teste"
+  ],
+  "dados_entrada": {
+   "descricao": "doc2 com mesmo provedor e ativo=1, campos válidos distintos de doc1 (client_id diferente)",
+   "valores": {
+    "provedor": "Sicoob",
+    "ativo": 1,
+    "client_id": "cli-456"
+   }
+  },
+  "passos": [
+   "Inserir doc1 (Sicoob, ativo=1) via insert(ignore_permissions=True)",
+   "Montar doc2 (Sicoob, ativo=1) com campos válidos distintos",
+   "Chamar doc2.insert(ignore_permissions=True) dentro de assertRaises",
+   "Consultar frappe.db.count('Configuracao Integracao Bancaria', {'provedor':'Sicoob','ativo':1}) após a exceção"
+  ],
+  "resultado_esperado": "doc2.insert() lança frappe.ValidationError; frappe.db.count(..., {'ativo':1,'provedor':'Sicoob'}) permanece 1 (doc2 não persistido; doc1 intocado).",
+  "criterios_aceitacao_validados": [
+   "RN-01"
+  ],
+  "observacoes": "Sanidade: remover o assertRaises e a asserção de contagem faz o teste passar mesmo se o validate() não bloquear nada — por isso ambas as asserções são obrigatórias.",
+  "task_id": "T3"
+ },
+ {
+  "id": "CT-102",
+  "titulo": "Editar a própria configuração ativa não dispara falso positivo de duplicidade",
+  "tipo": "INTEGRACAO",
+  "categoria": "fronteira",
+  "invariant": "A verificação de unicidade exclui o próprio documento (por name) da contagem de ativos concorrentes.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "CT-101",
+   "input_invalido": "documento diferente (name distinto) tentando ativo=1 para o mesmo provedor",
+   "assertion_esperada": "ver CT-101 — ValidationError e contagem de ativos permanece 1; aqui, ao contrário, o mesmo name deve ser aceito"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Persistência",
+  "pre_condicoes": [
+   "doc1 (Sicoob, ativo=1) já inserido"
+  ],
+  "dados_entrada": {
+   "descricao": "Reabrir o mesmo doc1 e alterar campo não relacionado à unicidade",
+   "valores": {
+    "scope": "boleto_alterado"
+   }
+  },
+  "passos": [
+   "frappe.get_doc('Configuracao Integracao Bancaria', doc1.name)",
+   "Alterar doc.scope mantendo ativo=1 e provedor=Sicoob (mesmo name)",
+   "Chamar doc.save()",
+   "Consultar frappe.db.count(..., {'ativo':1,'provedor':'Sicoob'})"
+  ],
+  "resultado_esperado": "save() completa sem exceção; frappe.db.count(..., {'ativo':1,'provedor':'Sicoob'}) == 1 (é o mesmo registro atualizado, não duplicado).",
+  "criterios_aceitacao_validados": [
+   "RN-01"
+  ],
+  "observacoes": "Bug comum: comparar 'existe outro ativo' sem excluir doc.name da query — este caso pega esse off-by-one.",
+  "task_id": "T3"
+ },
+ {
+  "id": "CT-103",
+  "titulo": "Carimbo de teste de conexão permanece intacto quando campo não-componente muda",
+  "tipo": "INTEGRACAO",
+  "categoria": "caminho_feliz",
+  "invariant": "Editar um campo que NÃO compõe a conexão (ex.: parametros_provedor) não invalida conexao_testada_em/conexao_testada_hash já preenchidos.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "CT-104",
+   "input_invalido": "alteração de um campo que COMPÕE a conexão (auth_url, api_base_url, client_id, scope, conta ou impressão digital do certificado)",
+   "assertion_esperada": "conexao_testada_em e conexao_testada_hash tornam-se None após o save()"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Persistência",
+  "pre_condicoes": [
+   "Registro pendente (ativo=0) com conexao_testada_em e conexao_testada_hash preenchidos, hash calculado pela mesma função interna do controller sobre os campos de conexão atuais"
+  ],
+  "dados_entrada": {
+   "descricao": "Alterar codigo_modalidade (campo não-componente da conexão)",
+   "valores": {
+    "codigo_modalidade": 2
+   }
+  },
+  "passos": [
+   "Criar/gravar o registro pendente com carimbo já preenchido (via fluxo real de teste de conexão simulado ou setUp equivalente)",
+   "Alterar apenas codigo_modalidade",
+   "Chamar doc.save()",
+   "Reler conexao_testada_em e conexao_testada_hash"
+  ],
+  "resultado_esperado": "Após save(), conexao_testada_em e conexao_testada_hash permanecem EXATAMENTE iguais aos valores gravados antes da alteração (comparação de igualdade estrita).",
+  "criterios_aceitacao_validados": [
+   "RN-04"
+  ],
+  "observacoes": "Baseline positivo do companion parametrizado CT-104.",
+  "task_id": "T3"
+ },
+ {
+  "id": "CT-104",
+  "titulo": "Carimbo é invalidado quando qualquer campo componente da conexão muda (parametrizado)",
+  "tipo": "INTEGRACAO",
+  "categoria": "teste_negativo",
+  "invariant": "Alterar qualquer campo que compõe a conexão (auth_url, api_base_url, client_id, scope, conta, impressão digital do certificado) após o teste limpa conexao_testada_em e conexao_testada_hash — trava estrutural de RN-04.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "este é o caso negativo (ver CT-103 para o positivo)",
+   "assertion_esperada": "ver resultado_esperado"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Persistência",
+  "pre_condicoes": [
+   "Registro pendente com carimbo válido preenchido (mesmo setup de CT-103), repetido a cada sub-caso parametrizado"
+  ],
+  "dados_entrada": {
+   "descricao": "Tabela de 6 sub-casos, um campo componente alterado por vez",
+   "valores": {
+    "campos_parametrizados": [
+     "auth_url",
+     "api_base_url",
+     "client_id",
+     "scope",
+     "numero_conta_corrente",
+     "certificado_impressao_digital"
+    ]
+   }
+  },
+  "passos": [
+   "Para cada campo da tabela: recriar o registro pendente com carimbo válido",
+   "Alterar SOMENTE aquele campo (reenvio de certificado simulado altera a impressão digital)",
+   "Chamar doc.save()",
+   "Reler conexao_testada_em e conexao_testada_hash"
+  ],
+  "resultado_esperado": "Para cada um dos 6 sub-casos: após save(), conexao_testada_em é None E conexao_testada_hash é None.",
+  "criterios_aceitacao_validados": [
+   "RN-04"
+  ],
+  "observacoes": "Implementar como teste parametrizado (subTest/@parameterized) — 1 método cobrindo os 6 campos, não 6 métodos separados (padrão #6 do catálogo).",
+  "task_id": "T3"
+ },
+ {
+  "id": "CT-105",
+  "titulo": "Registro de auditoria é criado e lido normalmente",
+  "tipo": "INTEGRACAO",
+  "categoria": "caminho_feliz",
+  "invariant": "Um registro de Auditoria Configuracao Bancaria pode ser inserido e relido sem bloqueio — a restrição é exclusiva de delete.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "CT-106",
+   "input_invalido": "tentativa de deletar o mesmo registro de auditoria",
+   "assertion_esperada": "delete() lança exceção e o registro permanece em frappe.db.exists(...)"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Persistência",
+  "pre_condicoes": [
+   "Configuracao Integracao Bancaria válida existente para servir de Link"
+  ],
+  "dados_entrada": {
+   "descricao": "Registro de auditoria mínimo válido",
+   "valores": {
+    "acao": "configuracao_alterada",
+    "autor": "Administrator",
+    "resultado": "sucesso",
+    "campos_alterados": "scope"
+   }
+  },
+  "passos": [
+   "frappe.get_doc({'doctype':'Auditoria Configuracao Bancaria', ...}).insert(ignore_permissions=True)",
+   "frappe.get_doc('Auditoria Configuracao Bancaria', doc.name)"
+  ],
+  "resultado_esperado": "insert() sem exceção; frappe.db.exists('Auditoria Configuracao Bancaria', doc.name) é True; campos relidos batem com os gravados.",
+  "criterios_aceitacao_validados": [
+   "RN-12"
+  ],
+  "observacoes": "Baseline positivo do companion CT-106.",
+  "task_id": "T3"
+ },
+ {
+  "id": "CT-106",
+  "titulo": "Registro de auditoria não pode ser deletado (somente-leitura)",
+  "tipo": "SEGURANCA",
+  "categoria": "seguranca",
+  "invariant": "O controller de Auditoria Configuracao Bancaria bloqueia delete estruturalmente, independente da permissão de DocType do usuário.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "este é o caso negativo (ver CT-105 para o positivo)",
+   "assertion_esperada": "ver resultado_esperado"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Persistência",
+  "pre_condicoes": [
+   "Registro de auditoria já inserido (mesmo do CT-105)"
+  ],
+  "dados_entrada": {
+   "descricao": "Tentativa de exclusão via API do doc",
+   "valores": {}
+  },
+  "passos": [
+   "Reobter o doc de auditoria",
+   "Chamar doc.delete() (ou frappe.delete_doc(..., ignore_permissions=True) para garantir que o bloqueio vem do controller e não da camada de permissão padrão) dentro de assertRaises",
+   "Verificar frappe.db.exists('Auditoria Configuracao Bancaria', doc.name) após a tentativa"
+  ],
+  "resultado_esperado": "delete() lança frappe.ValidationError (ou frappe.PermissionError, conforme implementação de on_trash); frappe.db.exists(...) continua True após a tentativa.",
+  "criterios_aceitacao_validados": [
+   "RN-12",
+   "11.2 (Auditoria é somente-leitura no Desk, sem delete)"
+  ],
+  "observacoes": "ignore_permissions=True no delete garante que o teste valida o bloqueio ESTRUTURAL do controller (on_trash), não apenas a permissão de DocType — evita falso-positivo caso o RBAC padrão já bloqueasse por outro motivo.",
+  "task_id": "T3"
+ },
+ {
+  "id": "CT-107",
+  "titulo": "consultar_boleto_sicoob — equivalência para situação 'EM ABERTO'",
+  "tipo": "INTEGRACAO",
+  "categoria": "caminho_feliz",
+  "invariant": "Dado o mesmo JSON cru do provedor com situacaoBoleto 'EM ABERTO', o resultado persistido na Cobranca e o conjunto de chaves da resposta de consultar_boleto_sicoob são idênticos ao comportamento pré-refactor.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "CT-110",
+   "input_invalido": "nenhuma configuração bancária ativa (nem canônica nem legada)",
+   "assertion_esperada": "success:False com error_code CONFIGURACAO_AUSENTE/CERTIFICADO_LEGADO_INDISPONIVEL, sem nenhuma chamada HTTP"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Aplicação",
+  "pre_condicoes": [
+   "Cobranca com numero_cliente_sicoob, codigo_modalidade_sicoob e nosso_numero preenchidos",
+   "Configuracao Integracao Bancaria ativa válida (ou fallback legado) presente",
+   "Certificado não vencido"
+  ],
+  "dados_entrada": {
+   "descricao": "Mock do cliente HTTP centralizado (cobranca_bancaria/adaptadores/sicoob/http.py) simulando token + consulta",
+   "valores": {
+    "token_response": {
+     "status_code": 200,
+     "json": {
+      "access_token": "tok123",
+      "expires_in": 3600
+     }
+    },
+    "consulta_response": {
+     "status_code": 200,
+     "json": {
+      "resultado": {
+       "situacaoBoleto": "EM ABERTO",
+       "nossoNumero": "00012345"
+      }
+     }
+    }
+   }
+  },
+  "passos": [
+   "Preparar fixtures (Cobranca, configuração ativa)",
+   "Patchar requests_pkcs12.post/get no módulo http.py do adaptador Sicoob",
+   "Chamar consultar_boleto_sicoob(cobranca.name)",
+   "Reler a Cobranca do banco"
+  ],
+  "resultado_esperado": "Retorno é um dict com EXATAMENTE as chaves {success, cobranca_id, situacao_boleto_sicoob, pagamento_confirmado, status_cobranca, valor_pago, data_pagamento, boleto_sicoob} (sem chave a mais/a menos); retorno['success'] is True; retorno['pagamento_confirmado'] is False; Cobranca recarregada tem pagamento_confirmado=0, status_cobranca em ('Pendente','Vencida') conforme data_vencimento, data_pagamento is None.",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "Fronteira HTTP é MOCKADA via unittest.mock.patch (o provedor não é chamado de verdade) — não conta como Real Execution para o Gate 3; a fronteira real deste caso é o DB (FrappeTestCase persiste Cobranca de verdade). Pós-port, o alvo do patch é o cliente centralizado adaptadores/sicoob/http.py, não mais os imports diretos pkcs12_get/pkcs12_post por módulo.",
+  "task_id": "T7"
+ },
+ {
+  "id": "CT-108",
+  "titulo": "consultar_boleto_sicoob — equivalência para situação 'LIQUIDADO' com dados completos",
+  "tipo": "INTEGRACAO",
+  "categoria": "caminho_feliz",
+  "invariant": "Dado JSON cru com situacaoBoleto 'LIQUIDADO' e valor/data diretos, os campos persistidos na Cobranca e as chaves da resposta são idênticos ao comportamento pré-refactor.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "CT-109",
+   "input_invalido": "situacaoBoleto 'LIQUIDADO' sem valor/data extraível em nenhum campo nem no histórico",
+   "assertion_esperada": "success:False; Cobranca não sofre alteração de pagamento_confirmado para 1"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Aplicação",
+  "pre_condicoes": [
+   "Mesmas do CT-107"
+  ],
+  "dados_entrada": {
+   "descricao": "Mock de consulta com situação liquidada e valores diretos",
+   "valores": {
+    "consulta_response": {
+     "resultado": {
+      "situacaoBoleto": "LIQUIDADO",
+      "valorPago": "150,00",
+      "dataPagamento": "2026-07-10"
+     }
+    }
+   }
+  },
+  "passos": [
+   "Preparar fixtures",
+   "Patchar cliente HTTP",
+   "Chamar consultar_boleto_sicoob(cobranca.name)",
+   "Reler a Cobranca"
+  ],
+  "resultado_esperado": "retorno['pagamento_confirmado'] is True; retorno['status_cobranca'] == 'Paga'; retorno['valor_pago'] == 150.00; retorno['data_pagamento'] == '2026-07-10'; Cobranca no banco reflete os mesmos valores.",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "Fronteira HTTP mockada (idem CT-107); real boundary = db.",
+  "task_id": "T7"
+ },
+ {
+  "id": "CT-109",
+  "titulo": "consultar_boleto_sicoob — 'LIQUIDADO' sem dado extraível bloqueia a persistência",
+  "tipo": "INTEGRACAO",
+  "categoria": "teste_negativo",
+  "invariant": "Situação 'LIQUIDADO' sem valor/data extraível (nem direto nem via histórico) nunca marca pagamento_confirmado=1 na Cobranca.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "este é o caso negativo (ver CT-108 para o positivo)",
+   "assertion_esperada": "ver resultado_esperado"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Aplicação",
+  "pre_condicoes": [
+   "Cobranca com pagamento_confirmado=0 antes da chamada"
+  ],
+  "dados_entrada": {
+   "descricao": "Mock de consulta liquidada sem valor/data em nenhum lugar",
+   "valores": {
+    "consulta_response": {
+     "resultado": {
+      "situacaoBoleto": "LIQUIDADO",
+      "listaHistorico": []
+     }
+    }
+   }
+  },
+  "passos": [
+   "Preparar fixtures",
+   "Patchar cliente HTTP",
+   "Chamar consultar_boleto_sicoob(cobranca.name)",
+   "Reler a Cobranca"
+  ],
+  "resultado_esperado": "retorno['success'] is False; Cobranca recarregada mantém pagamento_confirmado=0 (não vira 1); mock de GET foi chamado exatamente 1 vez (nenhuma segunda chamada disparada — consulta é leitura pura).",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "Fronteira HTTP mockada; real boundary = db.",
+  "task_id": "T7"
+ },
+ {
+  "id": "CT-110",
+  "titulo": "consultar_boleto_sicoob — sem configuração ativa nem fallback legado",
+  "tipo": "INTEGRACAO",
+  "categoria": "teste_negativo",
+  "invariant": "Sem configuração canônica ativa e sem fallback legado disponível, a consulta falha antes de qualquer chamada HTTP.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "este é o caso negativo (ver CT-107 para o positivo)",
+   "assertion_esperada": "ver resultado_esperado"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Aplicação",
+  "pre_condicoes": [
+   "Nenhuma Configuracao Integracao Bancaria ativa",
+   "Configuracao Integracao Sicoob legada ausente ou inativa"
+  ],
+  "dados_entrada": {
+   "descricao": "Nenhum mock HTTP configurado — nenhuma chamada deve ocorrer",
+   "valores": {}
+  },
+  "passos": [
+   "Preparar Cobranca válida sem nenhuma configuração ativa no site",
+   "Chamar consultar_boleto_sicoob(cobranca.name)",
+   "Verificar que o mock do cliente HTTP nunca foi chamado"
+  ],
+  "resultado_esperado": "retorno['success'] is False; error_code é 'CONFIGURACAO_AUSENTE' ou 'CERTIFICADO_LEGADO_INDISPONIVEL'; mock_http.assert_not_called() para post e get.",
+  "criterios_aceitacao_validados": [
+   "RN-01",
+   "RN-10",
+   "CA-17"
+  ],
+  "observacoes": "N/A",
+  "task_id": "T7"
+ },
+ {
+  "id": "CT-111",
+  "titulo": "consultar_boleto_sicoob — falha ao obter token não chama o endpoint de consulta",
+  "tipo": "INTEGRACAO",
+  "categoria": "teste_negativo",
+  "invariant": "Quando obter_token_sicoob falha, consultar_boleto_sicoob não chama o endpoint de consulta e registra o evento de erro com a idempotencia_chave correta.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "este é o caso negativo (companion implícito de CT-107/CT-108)",
+   "assertion_esperada": "ver resultado_esperado"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Aplicação",
+  "pre_condicoes": [
+   "Mesmas do CT-107"
+  ],
+  "dados_entrada": {
+   "descricao": "Mock do token retornando falha",
+   "valores": {
+    "token_response": {
+     "status_code": 401,
+     "json": {
+      "error": "invalid_client"
+     }
+    }
+   }
+  },
+  "passos": [
+   "Preparar fixtures",
+   "Patchar cliente HTTP para o token falhar",
+   "Chamar consultar_boleto_sicoob(cobranca.name)",
+   "Consultar Cobranca Integracao Sicoob criado"
+  ],
+  "resultado_esperado": "retorno['success'] is False; retorno['message'] menciona falha ao obter token; evento criado com idempotencia_chave == f'boleto_consultado:{cobranca_id}:{identificador_param}:{identificador_valor}' e status_processamento=='erro'; mock GET de consulta nunca chamado (assert_not_called()).",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "N/A",
+  "task_id": "T7"
+ },
+ {
+  "id": "CT-112",
+  "titulo": "consultar_boleto_sicoob — HTTP 204 é tratado como boleto não encontrado",
+  "tipo": "INTEGRACAO",
+  "categoria": "fronteira",
+  "invariant": "Resposta 204 No Content na consulta produz exatamente o mesmo shape de erro do comportamento pré-refactor.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "este é o caso negativo/de fronteira",
+   "assertion_esperada": "ver resultado_esperado"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Aplicação",
+  "pre_condicoes": [
+   "Mesmas do CT-107"
+  ],
+  "dados_entrada": {
+   "descricao": "Mock GET retorna status_code=204, corpo vazio",
+   "valores": {
+    "consulta_response": {
+     "status_code": 204,
+     "text": ""
+    }
+   }
+  },
+  "passos": [
+   "Preparar fixtures",
+   "Patchar cliente HTTP",
+   "Chamar consultar_boleto_sicoob(cobranca.name)"
+  ],
+  "resultado_esperado": "retorno == {'success': False, 'cobranca_id': cobranca_id, 'error_code': 'SICOOB_CONSULTA_ERRO', 'message': 'Boleto nao encontrado no Sicoob.', 'details': 'Sicoob retornou 204 No Content para a consulta do boleto.'} — comparação campo-a-campo.",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "Exceção deliberada ao Gate 5: aqui a mensagem é tratada como PRODUCT_CONTRACT desta suíte de regressão, porque CA-17 exige equivalência byte-a-byte do shape de resposta pré/pós-refactor. Fora desta suíte, mensagens de erro continuam IMPLEMENTATION_DETAIL (não devem ser snapshotadas em outros contextos).",
+  "task_id": "T7"
+ },
+ {
+  "id": "CT-113",
+  "titulo": "solicitar_baixa_boleto_sicoob — equivalência do caminho feliz",
+  "tipo": "INTEGRACAO",
+  "categoria": "caminho_feliz",
+  "invariant": "Dado 204 No Content do provedor, a resposta de solicitar_baixa_boleto_sicoob e o evento registrado são idênticos ao comportamento pré-refactor.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "CT-114",
+   "input_invalido": "resposta HTTP >= 400 na solicitação de baixa",
+   "assertion_esperada": "success:False, baixa_solicitada:False, status_code presente, evento com status_processamento='erro'"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Aplicação",
+  "pre_condicoes": [
+   "Cobranca com nosso_numero, numero_cliente_sicoob, codigo_modalidade_sicoob preenchidos",
+   "Configuração ativa válida"
+  ],
+  "dados_entrada": {
+   "descricao": "Mock token 200 + mock POST de baixa retornando 204",
+   "valores": {
+    "baixa_response": {
+     "status_code": 204,
+     "text": ""
+    }
+   }
+  },
+  "passos": [
+   "Preparar fixtures",
+   "Patchar cliente HTTP centralizado",
+   "Chamar solicitar_baixa_boleto_sicoob(cobranca.name)",
+   "Consultar o evento Cobranca Integracao Sicoob criado"
+  ],
+  "resultado_esperado": "retorno == {'success': True, 'cobranca_id': cobranca_id, 'nosso_numero': nosso_numero, 'baixa_solicitada': True} (chave-a-chave); evento com tipo_evento='boleto_baixa_solicitada', status_processamento='processado', idempotencia_chave == f'boleto_baixa_solicitada:{cobranca_id}:{nosso_numero}'.",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "Fronteira HTTP mockada (unittest.mock.patch em requests_pkcs12, via cliente centralizado do adaptador); real boundary = db.",
+  "task_id": "T8"
+ },
+ {
+  "id": "CT-114",
+  "titulo": "solicitar_baixa_boleto_sicoob — falha HTTP preserva shape de erro",
+  "tipo": "INTEGRACAO",
+  "categoria": "teste_negativo",
+  "invariant": "Resposta de erro do provedor na solicitação de baixa produz o mesmo shape de erro (incluindo status_code) do comportamento pré-refactor.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "este é o caso negativo (ver CT-113 para o positivo)",
+   "assertion_esperada": "ver resultado_esperado"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Aplicação",
+  "pre_condicoes": [
+   "Mesmas do CT-113"
+  ],
+  "dados_entrada": {
+   "descricao": "Mock POST de baixa retornando 422",
+   "valores": {
+    "baixa_response": {
+     "status_code": 422,
+     "json": {
+      "mensagem": "Boleto ja baixado"
+     }
+    }
+   }
+  },
+  "passos": [
+   "Preparar fixtures",
+   "Patchar cliente HTTP",
+   "Chamar solicitar_baixa_boleto_sicoob(cobranca.name)",
+   "Consultar o evento criado"
+  ],
+  "resultado_esperado": "retorno['success'] is False; retorno['baixa_solicitada'] is False; retorno['status_code'] == 422; evento com status_processamento='erro' e mesma idempotencia_chave de CT-113; mensagem de erro contém o texto do corpo retornado ('Boleto ja baixado').",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "Fronteira HTTP mockada; real boundary = db.",
+  "task_id": "T8"
+ },
+ {
+  "id": "CT-115",
+  "titulo": "solicitar_baixa_boleto_sicoob — recusa antes de qualquer HTTP sem nosso_numero",
+  "tipo": "INTEGRACAO",
+  "categoria": "fronteira",
+  "invariant": "Cobranca sem nosso_numero recusa a solicitação de baixa sem disparar nenhuma chamada HTTP.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "este é o caso de fronteira/negativo",
+   "assertion_esperada": "ver resultado_esperado"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Aplicação",
+  "pre_condicoes": [
+   "Cobranca sem nosso_numero preenchido"
+  ],
+  "dados_entrada": {
+   "descricao": "Nenhum mock HTTP configurado",
+   "valores": {}
+  },
+  "passos": [
+   "Preparar Cobranca sem nosso_numero",
+   "Chamar solicitar_baixa_boleto_sicoob(cobranca.name)",
+   "Verificar que o mock do cliente HTTP nunca foi chamado"
+  ],
+  "resultado_esperado": "retorno == {'success': False, 'cobranca_id': cobranca_id, 'baixa_solicitada': False, 'error_code': 'SICOOB_BAIXA_ERRO', 'message': 'A cobranca nao possui nosso_numero para baixa do boleto.', 'details': None}; mock_http.assert_not_called().",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "N/A",
+  "task_id": "T8"
+ },
+ {
+  "id": "CT-116",
+  "titulo": "confirmar_baixa_boleto_sicoob — equivalência do caminho feliz (situação BAIXADO)",
+  "tipo": "INTEGRACAO",
+  "categoria": "caminho_feliz",
+  "invariant": "Dado situacaoBoleto 'BAIXADO' na confirmação, a resposta, os updates na Cobranca e o evento registrado são idênticos ao comportamento pré-refactor.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "CT-118",
+   "input_invalido": "falha de token ou HTTP >= 400 na confirmação de baixa",
+   "assertion_esperada": "success:False, baixa_confirmada:False, evento com status_processamento='erro'"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Aplicação",
+  "pre_condicoes": [
+   "Cobranca com nosso_numero, numero_cliente_sicoob, codigo_modalidade_sicoob preenchidos",
+   "Configuração ativa válida"
+  ],
+  "dados_entrada": {
+   "descricao": "Mock GET de confirmação retornando situação baixada",
+   "valores": {
+    "confirmacao_response": {
+     "resultado": {
+      "situacaoBoleto": "BAIXADO",
+      "nossoNumero": "00012345"
+     }
+    }
+   }
+  },
+  "passos": [
+   "Preparar fixtures",
+   "Patchar cliente HTTP",
+   "Chamar confirmar_baixa_boleto_sicoob(cobranca.name)",
+   "Reler a Cobranca e o evento criado"
+  ],
+  "resultado_esperado": "retorno == {'success': True, 'cobranca_id': cobranca_id, 'baixa_confirmada': True, 'situacao_boleto_sicoob': 'BAIXADO'} (chave-a-chave); Cobranca com situacao_boleto_sicoob atualizado; evento com idempotencia_chave == f'boleto_baixa_confirmada:{cobranca_id}:{nosso_numero}', status_processamento='processado', mensagem_erro is None.",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "Fronteira HTTP mockada; real boundary = db.",
+  "task_id": "T8"
+ },
+ {
+  "id": "CT-117",
+  "titulo": "confirmar_baixa_boleto_sicoob — situação ainda 'EM ABERTO' retorna success:True com baixa_confirmada:False",
+  "tipo": "INTEGRACAO",
+  "categoria": "caso_extremo",
+  "invariant": "Quando a baixa ainda não refletiu no provedor (situação 'EM ABERTO'), a função retorna success:True e baixa_confirmada:False, registrando o evento com mensagem_erro preenchida mas status_processamento='processado' — nuance a preservar do comportamento pré-refactor.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "este é o caso de fronteira que documenta a nuance success:True + baixa_confirmada:False",
+   "assertion_esperada": "ver resultado_esperado"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Aplicação",
+  "pre_condicoes": [
+   "Mesmas do CT-116"
+  ],
+  "dados_entrada": {
+   "descricao": "Mock GET de confirmação retornando situação ainda em aberto",
+   "valores": {
+    "confirmacao_response": {
+     "resultado": {
+      "situacaoBoleto": "EM ABERTO"
+     }
+    }
+   }
+  },
+  "passos": [
+   "Preparar fixtures",
+   "Patchar cliente HTTP",
+   "Chamar confirmar_baixa_boleto_sicoob(cobranca.name)",
+   "Consultar o evento criado"
+  ],
+  "resultado_esperado": "retorno == {'success': True, 'cobranca_id': cobranca_id, 'baixa_confirmada': False, 'situacao_boleto_sicoob': 'EM ABERTO'}; evento com mensagem_erro == 'Baixa ainda nao refletiu no Sicoob.' e status_processamento == 'processado' (NÃO 'erro').",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "Este é o ponto mais sutil de regressão desta operação — fácil de quebrar ao refatorar (trocar 'processado' por 'erro' seria uma mudança de contrato silenciosa).",
+  "task_id": "T8"
+ },
+ {
+  "id": "CT-118",
+  "titulo": "confirmar_baixa_boleto_sicoob — falha de token/HTTP preserva shape de erro",
+  "tipo": "INTEGRACAO",
+  "categoria": "teste_negativo",
+  "invariant": "Falha de token ou HTTP >= 400 na confirmação de baixa produz success:False e baixa_confirmada:False, com evento de erro registrado.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "este é o caso negativo (ver CT-116 para o positivo)",
+   "assertion_esperada": "ver resultado_esperado"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Aplicação",
+  "pre_condicoes": [
+   "Mesmas do CT-116"
+  ],
+  "dados_entrada": {
+   "descricao": "Mock token retornando 401",
+   "valores": {
+    "token_response": {
+     "status_code": 401
+    }
+   }
+  },
+  "passos": [
+   "Preparar fixtures",
+   "Patchar cliente HTTP para o token falhar",
+   "Chamar confirmar_baixa_boleto_sicoob(cobranca.name)",
+   "Consultar o evento criado"
+  ],
+  "resultado_esperado": "retorno['success'] is False; retorno['baixa_confirmada'] is False; evento criado com status_processamento == 'erro' e idempotencia_chave == f'boleto_baixa_confirmada:{cobranca_id}:{nosso_numero}'.",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "Fronteira HTTP mockada; real boundary = db.",
+  "task_id": "T8"
+ },
+ {
+  "id": "CT-119",
+  "titulo": "Chave de idempotência de baixa/confirmação é determinística entre chamadas",
+  "tipo": "INTEGRACAO",
+  "categoria": "integridade_dados",
+  "invariant": "A idempotencia_chave dos eventos de solicitação e confirmação de baixa é função pura de (cobranca_id, nosso_numero) — não incorpora timestamp, uuid ou contador de tentativa.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "implementação alternativa hipotética que gerasse a chave via uuid/timestamp (não determinística)",
+   "assertion_esperada": "duas chamadas com os mesmos parâmetros produzem SEMPRE a mesma idempotencia_chave; a chave só muda se cobranca_id ou nosso_numero mudar"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Aplicação",
+  "pre_condicoes": [
+   "Cobranca válida com nosso_numero preenchido"
+  ],
+  "dados_entrada": {
+   "descricao": "Duas chamadas sucessivas de solicitar_baixa_boleto_sicoob e duas de confirmar_baixa_boleto_sicoob, mesma Cobranca/nosso_numero",
+   "valores": {}
+  },
+  "passos": [
+   "Mockar respostas de sucesso para ambas as chamadas",
+   "Chamar solicitar_baixa_boleto_sicoob(cobranca.name) duas vezes",
+   "Chamar confirmar_baixa_boleto_sicoob(cobranca.name) duas vezes",
+   "Consultar os 4 eventos Cobranca Integracao Sicoob criados"
+  ],
+  "resultado_esperado": "Os dois eventos de solicitação têm idempotencia_chave idêntica igual a 'boleto_baixa_solicitada:{cobranca_id}:{nosso_numero}'; os dois eventos de confirmação têm idempotencia_chave idêntica igual a 'boleto_baixa_confirmada:{cobranca_id}:{nosso_numero}'.",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "Fronteira HTTP mockada; real boundary = db.",
+  "task_id": "T8"
+ },
+ {
+  "id": "CT-120",
+  "titulo": "sincronizar_status_pagamento_sicoob — equivalência para 'em aberto'",
+  "tipo": "INTEGRACAO",
+  "categoria": "caminho_feliz",
+  "invariant": "O mapeamento de situação 'em aberto' sobre o resultado canônico produz os mesmos updates na Cobranca que a lógica atual sobre JSON cru.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "CT-126",
+   "input_invalido": "situacaoBoleto não mapeada para nenhuma regra interna (ex.: 'EM PROCESSAMENTO')",
+   "assertion_esperada": "warning específico é retornado e nenhum campo de pagamento é alterado"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Aplicação",
+  "pre_condicoes": [
+   "Cobranca existente com data_vencimento definida"
+  ],
+  "dados_entrada": {
+   "descricao": "resultado_consulta_boleto com situação em aberto",
+   "valores": {
+    "resultado_consulta_boleto": {
+     "resultado": {
+      "situacaoBoleto": "EM ABERTO"
+     }
+    }
+   }
+  },
+  "passos": [
+   "Chamar sincronizar_status_pagamento_sicoob(cobranca_id, resultado_consulta_boleto)",
+   "Reler a Cobranca"
+  ],
+  "resultado_esperado": "Cobranca atualizada com pagamento_confirmado=0, status_cobranca em ('Pendente','Vencida') conforme data_vencimento, data_pagamento=None, valor_pago=0; retorno['situacao_boleto_sicoob']=='EM ABERTO', retorno['pagamento_confirmado'] is False.",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "Sem chamada HTTP — resultado_consulta_boleto é passado diretamente ao método whitelisted (contrato preservado).",
+  "task_id": "T9"
+ },
+ {
+  "id": "CT-121",
+  "titulo": "sincronizar_status_pagamento_sicoob — equivalência para 'liquidado' com dados diretos",
+  "tipo": "INTEGRACAO",
+  "categoria": "caminho_feliz",
+  "invariant": "Situação 'liquidado' com valor e data diretos no resultado produz os mesmos updates que a lógica legada.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "CT-123",
+   "input_invalido": "situacaoBoleto 'liquidado' sem valor/data extraível em nenhum lugar",
+   "assertion_esperada": "success:False; nenhuma alteração é persistida na Cobranca"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Aplicação",
+  "pre_condicoes": [
+   "Cobranca existente"
+  ],
+  "dados_entrada": {
+   "descricao": "resultado com situação liquidada e valor/data diretos",
+   "valores": {
+    "resultado_consulta_boleto": {
+     "resultado": {
+      "situacaoBoleto": "LIQUIDADO",
+      "valorPago": "200,50",
+      "dataPagamento": "2026-07-15"
+     }
+    }
+   }
+  },
+  "passos": [
+   "Chamar sincronizar_status_pagamento_sicoob(cobranca_id, resultado_consulta_boleto)",
+   "Reler a Cobranca"
+  ],
+  "resultado_esperado": "Cobranca atualizada com pagamento_confirmado=1, status_cobranca=='Paga', data_pagamento=='2026-07-15', valor_pago==200.50; retorno espelha os mesmos valores nos campos correspondentes.",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "N/A",
+  "task_id": "T9"
+ },
+ {
+  "id": "CT-122",
+  "titulo": "sincronizar_status_pagamento_sicoob — extração de data de liquidação a partir do histórico",
+  "tipo": "INTEGRACAO",
+  "categoria": "caso_extremo",
+  "invariant": "Quando valor/data não estão diretos no resultado, a extração a partir de listaHistorico escolhe o item de liquidação mais relevante (tipoHistorico=6 mais recente), igual à lógica legada.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "CT-123",
+   "input_invalido": "listaHistorico sem nenhum item de liquidação reconhecível",
+   "assertion_esperada": "success:False; nenhuma alteração é persistida na Cobranca"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Aplicação",
+  "pre_condicoes": [
+   "Cobranca existente"
+  ],
+  "dados_entrada": {
+   "descricao": "resultado liquidado sem valor/data direto, histórico com 2 itens (1 antigo irrelevante, 1 recente de liquidação)",
+   "valores": {
+    "resultado_consulta_boleto": {
+     "resultado": {
+      "situacaoBoleto": "LIQUIDADO",
+      "listaHistorico": [
+       {
+        "tipoHistorico": "1",
+        "descricaoHistorico": "Boleto registrado",
+        "dataHistorico": "2026-06-01"
+       },
+       {
+        "tipoHistorico": "6",
+        "descricaoHistorico": "Liquidacao em cartorio - R$ 300,00",
+        "dataHistorico": "2026-07-12"
+       }
+      ]
+     }
+    }
+   }
+  },
+  "passos": [
+   "Chamar sincronizar_status_pagamento_sicoob(cobranca_id, resultado_consulta_boleto)",
+   "Reler a Cobranca"
+  ],
+  "resultado_esperado": "data_pagamento extraída == '2026-07-12' (item tipoHistorico=6, não o item antigo); valor_pago extraído == 300.00 (parseado da descrição monetária); Cobranca atualizada com esses valores.",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "Cobre a ordenação por tipo_liquidacao + data mais recente da função _historicos_liquidacao legada.",
+  "task_id": "T9"
+ },
+ {
+  "id": "CT-123",
+  "titulo": "sincronizar_status_pagamento_sicoob — 'liquidado' incompleto não persiste nada",
+  "tipo": "INTEGRACAO",
+  "categoria": "teste_negativo",
+  "invariant": "Situação 'liquidado' sem item de histórico claro e sem valor/data direto gera blocking_errors e a função retorna erro SEM aplicar nenhum db_set na Cobranca.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "este é o caso negativo (ver CT-121/CT-122 para os positivos)",
+   "assertion_esperada": "ver resultado_esperado"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Aplicação",
+  "pre_condicoes": [
+   "Cobranca existente com valores de campo conhecidos antes da chamada (para comparação byte-a-byte)"
+  ],
+  "dados_entrada": {
+   "descricao": "resultado liquidado sem histórico de liquidação e sem valor/data direto",
+   "valores": {
+    "resultado_consulta_boleto": {
+     "resultado": {
+      "situacaoBoleto": "LIQUIDADO",
+      "listaHistorico": []
+     }
+    }
+   }
+  },
+  "passos": [
+   "Capturar snapshot dos campos da Cobranca antes da chamada (frappe.db.get_value em lote)",
+   "Chamar sincronizar_status_pagamento_sicoob(cobranca_id, resultado_consulta_boleto)",
+   "Capturar snapshot dos mesmos campos depois da chamada"
+  ],
+  "resultado_esperado": "retorno['success'] is False; mensagem de erro concatena os itens de blocking_errors (contém 'data_pagamento' e/ou 'valor pago'); os dois snapshots da Cobranca (antes/depois) são IDÊNTICOS campo-a-campo — nenhum db_set foi executado, nem mesmo para nosso_numero/situacao_boleto_sicoob.",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "Este caso valida especificamente que o early-return por blocking_errors ocorre ANTES do loop de db_set — regressão crítica de integridade.",
+  "task_id": "T9"
+ },
+ {
+  "id": "CT-124",
+  "titulo": "sincronizar_status_pagamento_sicoob — equivalência para 'baixado'",
+  "tipo": "INTEGRACAO",
+  "categoria": "caminho_feliz",
+  "invariant": "Situação 'baixado' produz os mesmos updates de cancelamento que a lógica legada.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "CT-126",
+   "input_invalido": "situação não mapeada (compartilhado com CT-120)",
+   "assertion_esperada": "warning específico é retornado e nenhum campo de pagamento é alterado"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Aplicação",
+  "pre_condicoes": [
+   "Cobranca existente"
+  ],
+  "dados_entrada": {
+   "descricao": "resultado com situação baixada",
+   "valores": {
+    "resultado_consulta_boleto": {
+     "resultado": {
+      "situacaoBoleto": "BAIXADO"
+     }
+    }
+   }
+  },
+  "passos": [
+   "Chamar sincronizar_status_pagamento_sicoob(cobranca_id, resultado_consulta_boleto)",
+   "Reler a Cobranca"
+  ],
+  "resultado_esperado": "Cobranca atualizada com pagamento_confirmado=0, status_cobranca=='Cancelada', data_pagamento=None, valor_pago=0.",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "N/A",
+  "task_id": "T9"
+ },
+ {
+  "id": "CT-125",
+  "titulo": "sincronizar_status_pagamento_sicoob — sem mudança relevante não gera evento",
+  "tipo": "INTEGRACAO",
+  "categoria": "caso_extremo",
+  "invariant": "Quando o resultado recebido não muda nenhum campo relevante da Cobranca e não há warnings, nenhum novo evento Cobranca Integracao Sicoob é criado — equivalência com a otimização legada de _houve_mudanca_relevante.",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "N/A — caso de otimização/idempotência, não de input inválido",
+   "assertion_esperada": "ver resultado_esperado"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Aplicação",
+  "pre_condicoes": [
+   "Cobranca já com situacao_boleto_sicoob='EM ABERTO', pagamento_confirmado=0, status_cobranca='Pendente' (idêntico ao que o novo resultado produziria)"
+  ],
+  "dados_entrada": {
+   "descricao": "resultado idêntico ao estado atual da Cobranca",
+   "valores": {
+    "resultado_consulta_boleto": {
+     "resultado": {
+      "situacaoBoleto": "EM ABERTO"
+     }
+    }
+   }
+  },
+  "passos": [
+   "Contar eventos Cobranca Integracao Sicoob da cobranca antes da chamada",
+   "Chamar sincronizar_status_pagamento_sicoob(cobranca_id, resultado_consulta_boleto)",
+   "Contar eventos novamente"
+  ],
+  "resultado_esperado": "retorno['success'] is True; contagem de eventos antes e depois é IDÊNTICA (nenhum novo evento inserido).",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "N/A",
+  "task_id": "T9"
+ },
+ {
+  "id": "CT-126",
+  "titulo": "sincronizar_status_pagamento_sicoob — situação não mapeada gera warning sem alterar pagamento",
+  "tipo": "INTEGRACAO",
+  "categoria": "teste_negativo",
+  "invariant": "Uma situacaoBoleto fora do conjunto mapeado (em aberto/liquidado/baixado) gera warning explícito, não altera pagamento_confirmado/status_cobranca e ainda assim registra evento (por conter warning).",
+  "owning_layer": "service-integration",
+  "existing_suite": "NO_SUITE_FOUND",
+  "real_execution_boundary": "db",
+  "negative_companion": {
+   "presente": true,
+   "ct_id": "self",
+   "input_invalido": "este é o caso negativo (companion de CT-120 e CT-124)",
+   "assertion_esperada": "ver resultado_esperado"
+  },
+  "precondicao_privilegiada": {
+   "presente": false,
+   "descricao": "",
+   "caminho_legitimo": "",
+   "teste_analogo": "NENHUM"
+  },
+  "camada": "Aplicação",
+  "pre_condicoes": [
+   "Cobranca com pagamento_confirmado e status_cobranca conhecidos antes da chamada"
+  ],
+  "dados_entrada": {
+   "descricao": "resultado com situação desconhecida",
+   "valores": {
+    "resultado_consulta_boleto": {
+     "resultado": {
+      "situacaoBoleto": "EM PROCESSAMENTO"
+     }
+    }
+   }
+  },
+  "passos": [
+   "Capturar valores atuais de pagamento_confirmado/status_cobranca",
+   "Chamar sincronizar_status_pagamento_sicoob(cobranca_id, resultado_consulta_boleto)",
+   "Reler a Cobranca e o evento criado"
+  ],
+  "resultado_esperado": "retorno['success'] is True; retorno contém a chave 'warning' com texto contendo 'situacaoBoleto nao mapeada para regra interna: EM PROCESSAMENTO'; pagamento_confirmado e status_cobranca da Cobranca permanecem com os valores anteriores à chamada; evento registrado com status_processamento=='erro' (pois warnings não-vazio força o registro).",
+  "criterios_aceitacao_validados": [
+   "CA-17"
+  ],
+  "observacoes": "N/A",
+  "task_id": "T9"
+ }
+]

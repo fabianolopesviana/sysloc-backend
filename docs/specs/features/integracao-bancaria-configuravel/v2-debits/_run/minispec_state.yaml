@@ -1,0 +1,20 @@
+feature: integracao-bancaria-configuravel
+version: v2-debits
+variant: backend
+source: agent-spec-debt-resolution
+parent_version: v1
+current_step: execution
+steps:
+  intent:
+    status: completed
+    summary: "Cleanup COMPLETO: 9 de 9 debitos BAIXO coletados na v1 (5 recomendado_corrigir + 4 perfumaria, incluidos por decisao do usuario)."
+  scope:
+    status: completed
+    summary: "9 debitos incluidos (D-001..D-009); nenhum fora do escopo. Colisao de arquivo em modelo.py (T1/T4/T5), mapeamento.py (T2/T4) e boletos_abertos.py (T7/T8/T9)."
+  tasks:
+    status: completed
+    summary: "9 tasks, 1 por debito, em 3 fases (isolados / nucleo canonico / apuracao). 8 com gates [qa, tech_review] (critical path payments/db_migrations); T6 com [qa]. Paralelizaveis: apenas T3 e T6."
+  execution:
+    status: completed
+    tasks_total: 9
+    tasks_completed: 9

@@ -1,0 +1,576 @@
+{
+  "schema_version": 1,
+  "framework": "taskcard",
+  "feature": "contencao-credencial-exposta",
+  "version": "v1",
+  "atualizado_em": "2026-07-27",
+  "stack_discovery": {
+    "fonte": "code_signals",
+    "stack": "Frappe Framework (Python) — app `locacao_automation` sobre ERPNext/Frappe v14, site `frontend`",
+    "framework_teste": "unittest via `frappe.tests.utils.FrappeTestCase` (transação com rollback automático por teste)",
+    "comando_teste": "docker compose exec -T backend bench --site frontend run-tests --app locacao_automation",
+    "discovery_needed": false,
+    "lacunas": []
+  },
+  "erros_leitura": [
+    {
+      "arquivo": "/opt/react/sysloc/nginx/default.conf",
+      "impacto": "Não lido — caminho fora do repositório (host, não árvore git de /opt/frappe). Os CTs operacionais de allowlist/bundle (AC-01 a AC-05, AC-13) foram derivados apenas da seção 6.1/6.3/9 da TaskCard, que já traz a superfície completa (15 métodos + 9 DocTypes) e os comandos de verificação exatos; não há necessidade de ler o arquivo para gerar os casos, mas a execução real desses CTs depende dele existir e estar no estado descrito em 6.1."
+    }
+  ],
+  "resumo": {
+    "total_casos_teste": 21,
+    "por_tipo": { "unitario": 0, "integracao": 8, "componente": 0, "e2e": 1, "seguranca": 12, "acessibilidade": 0 }
+  },
+  "casos_teste": [
+    {
+      "task_id": "TC-001",
+      "id": "CT-001",
+      "titulo": "Patch cria o papel 'Servico App' e os 9 Custom DocPerm em uma única execução",
+      "tipo": "INTEGRACAO",
+      "categoria": "caminho_feliz",
+      "invariant": "Executar `execute()` do patch, partindo de um site sem o papel 'Servico App', cria exatamente 1 Role 'Servico App' e exatamente 9 Custom DocPerm (um por DocType da allowlist de negócio), nem a mais nem a menos.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-002",
+        "input_invalido": "estado onde o papel e os 9 DocPerm JÁ existem (patch reexecutado sobre si mesmo)",
+        "assertion_esperada": "contagem permanece exatamente 1 Role + 9 Custom DocPerm — nenhuma duplicata criada na reexecução"
+      },
+      "precondicao_privilegiada": { "presente": false, "descricao": "", "caminho_legitimo": "", "teste_analogo": "" },
+      "camada": "service-integration (patch de migração)",
+      "pre_condicoes": [
+        "Site de teste sem Role 'Servico App' (garantir com `frappe.delete_doc('Role', 'Servico App', ignore_permissions=True, force=True)` no setUp se existir)",
+        "Nenhum Custom DocPerm com role='Servico App' pré-existente"
+      ],
+      "dados_entrada": {
+        "descricao": "Nenhum dado externo — o patch não recebe parâmetros, opera sobre metadados do site",
+        "valores": { "doctypes_alvo": ["Atraso", "Cobranca", "Conjunto", "Contrato", "Fiador", "Imovel", "Locador", "Locatario", "Usuario"] }
+      },
+      "passos": [
+        "Importar `execute` de `locacao_automation.patches.v1_0.criar_papel_servico_app`",
+        "Chamar `execute()` uma vez",
+        "Consultar `frappe.db.exists('Role', 'Servico App')`",
+        "Consultar `frappe.get_all('Custom DocPerm', filters={'role': 'Servico App'}, fields=['parent'])`"
+      ],
+      "resultado_esperado": "`frappe.db.exists('Role', 'Servico App')` é truthy; a lista de Custom DocPerm com role='Servico App' tem `len == 9` e o conjunto de `parent` é exatamente `{'Atraso','Cobranca','Conjunto','Contrato','Fiador','Imovel','Locador','Locatario','Usuario'}` (sem duplicata, sem DocType a mais ou a menos)",
+      "criterios_aceitacao_validados": ["AC-09"],
+      "observacoes": "Arquivo novo `tests/test_patch_criar_papel_servico_app.py`, espelhando `test_patch_migracao_config.py` (docstring com rastreabilidade CA->CT, seção INVARIANTES, classe FrappeTestCase, setUp com rollback). Nenhuma suíte existente cobre criação de Role/Custom DocPerm — é a primeira feature do projeto a versionar estrutura de permissão via patch (ADR-0002)."
+    },
+    {
+      "task_id": "TC-001",
+      "id": "CT-002",
+      "titulo": "AC-09 — reexecução do patch não duplica papel nem DocPerms",
+      "tipo": "INTEGRACAO",
+      "categoria": "caso_extremo",
+      "invariant": "Chamar `execute()` duas vezes seguidas produz o mesmo estado final que chamar uma vez: exatamente 1 Role 'Servico App' e 9 Custom DocPerm, com os mesmos flags — reexecução é no-op observável.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": { "presente": true, "ct_id": "self", "input_invalido": "este é o caso negativo (idempotência) de CT-001", "assertion_esperada": "ver resultado_esperado" },
+      "precondicao_privilegiada": { "presente": false, "descricao": "", "caminho_legitimo": "", "teste_analogo": "" },
+      "camada": "service-integration (patch de migração)",
+      "pre_condicoes": ["Mesmas de CT-001"],
+      "dados_entrada": { "descricao": "Nenhum dado externo", "valores": {} },
+      "passos": [
+        "Chamar `execute()` (1ª vez)",
+        "Capturar snapshot: `frappe.db.count('Role', {'name': 'Servico App'})` e lista completa dos 9 Custom DocPerm com todos os flags, ordenada por `parent`",
+        "Chamar `execute()` (2ª vez)",
+        "Capturar o mesmo snapshot novamente"
+      ],
+      "resultado_esperado": "`frappe.db.count('Role', {'name': 'Servico App'}) == 1` após a 1ª e após a 2ª execução; a lista dos 9 Custom DocPerm (nome, role, parent, todos os flags) é BYTE-A-BYTE idêntica entre os dois snapshots — nenhuma linha nova, nenhum `name` de DocPerm diferente",
+      "criterios_aceitacao_validados": ["AC-09"],
+      "observacoes": "Espelha `test_ct026_reexecucao_e_idempotente` de `test_patch_migracao_config.py:143-165`. Este CT cobre a idempotência via chamada direta a `execute()`; a validação completa de AC-09 tal como escrita na TaskCard (`bench migrate` duas vezes) é adicionalmente confirmada operacionalmente no passo 8 da checklist (seção 8)."
+    },
+    {
+      "task_id": "TC-001",
+      "id": "CT-003",
+      "titulo": "Matriz de flags concedidos por DocType está correta (read/write/create/delete=1; submit=1 apenas em Contrato)",
+      "tipo": "INTEGRACAO",
+      "categoria": "fronteira",
+      "invariant": "Para cada um dos 9 DocTypes da allowlist, o Custom DocPerm de 'Servico App' tem read=1, write=1, create=1, delete=1; e submit=1 se e somente se o DocType for 'Contrato' (submit=0 nos outros 8).",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": { "presente": true, "ct_id": "CT-004", "input_invalido": "consulta dos flags NÃO declarados (report/export/import/share/print/email) nos mesmos 9 registros", "assertion_esperada": "todos os 6 flags não-declarados valem 0 nos 9 DocPerm" },
+      "precondicao_privilegiada": { "presente": false, "descricao": "", "caminho_legitimo": "", "teste_analogo": "" },
+      "camada": "service-integration (patch de migração)",
+      "pre_condicoes": ["`execute()` já chamado (setUp do teste chama uma vez)"],
+      "dados_entrada": {
+        "descricao": "Tabela parametrizada (subTest) por DocType — 8 sem submit, 1 (Contrato) com submit",
+        "valores": {
+          "sem_submit": ["Atraso", "Cobranca", "Conjunto", "Fiador", "Imovel", "Locador", "Locatario", "Usuario"],
+          "com_submit": ["Contrato"]
+        }
+      },
+      "passos": [
+        "Para cada DocType da tabela, ler `frappe.get_doc('Custom DocPerm', {'parent': doctype, 'role': 'Servico App'})`",
+        "Para cada um, ler os campos read, write, create, delete, submit"
+      ],
+      "resultado_esperado": "Para os 8 DocTypes sem submit: `(read, write, create, delete, submit) == (1, 1, 1, 1, 0)`. Para 'Contrato': `(read, write, create, delete, submit) == (1, 1, 1, 1, 1)`",
+      "criterios_aceitacao_validados": ["AC-07"],
+      "observacoes": "Table-driven (padrão #6): um único método de teste com `self.subTest(doctype=...)` por DocType, evitando 9 métodos quase-idênticos."
+    },
+    {
+      "task_id": "TC-001",
+      "id": "CT-004",
+      "titulo": "Nenhum flag além dos declarados é concedido (report/export/import/share/print/email permanecem 0)",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Nos 9 Custom DocPerm de 'Servico App', os flags report, export, import, share, print e email valem 0 em TODOS os registros — o patch nunca concede permissão além da declarada em 6.2 (guardrail 7.2).",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": { "presente": true, "ct_id": "CT-003", "input_invalido": "ver CT-003 (positivo, flags concedidos)", "assertion_esperada": "ver resultado_esperado" },
+      "precondicao_privilegiada": { "presente": false, "descricao": "", "caminho_legitimo": "", "teste_analogo": "" },
+      "camada": "service-integration (patch de migração)",
+      "pre_condicoes": ["`execute()` já chamado"],
+      "dados_entrada": {
+        "descricao": "Os 9 DocTypes × 6 flags não-declarados = 54 pontos de verificação",
+        "valores": { "flags_proibidos": ["report", "export", "import", "share", "print", "email"] }
+      },
+      "passos": [
+        "Para cada um dos 9 Custom DocPerm de 'Servico App', ler os 6 campos `flags_proibidos`",
+        "Agregar em uma única assertion por flag (ou subTest por combinação DocType×flag)"
+      ],
+      "resultado_esperado": "Para todos os 9 DocPerm e todos os 6 flags: valor == 0. Qualquer flag == 1 falha o teste com o nome do DocType e do flag no `subTest`",
+      "criterios_aceitacao_validados": ["AC-07"],
+      "observacoes": "Guarda contra regressão de escalonamento silencioso — se o Custom DocPerm herdar um default 1 do framework para algum flag e o patch esquecer de zerá-lo explicitamente, este teste pega. Complementa CT-003 (Gate 6: nenhuma das duas assertions é sobre valor que o teste plantou — os dados vêm da execução real do patch contra o DB)."
+    },
+    {
+      "task_id": "TC-001",
+      "id": "CT-005",
+      "titulo": "Os 9 Custom DocPerm apontam exatamente para o papel 'Servico App' — nenhum vazamento para 'All' ou papel administrativo",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "O campo `role` de cada um dos 9 Custom DocPerm criados pelo patch é exatamente a string 'Servico App' — nunca 'All', string vazia, 'System Manager' ou 'Administrator'.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": { "presente": true, "ct_id": "self", "input_invalido": "campo role apontando para 'All' ou 'System Manager' seria capturado pela mesma assertion de igualdade estrita", "assertion_esperada": "ver resultado_esperado" },
+      "precondicao_privilegiada": { "presente": false, "descricao": "", "caminho_legitimo": "", "teste_analogo": "" },
+      "camada": "service-integration (patch de migração)",
+      "pre_condicoes": ["`execute()` já chamado"],
+      "dados_entrada": { "descricao": "Os 9 Custom DocPerm criados", "valores": {} },
+      "passos": [
+        "`frappe.get_all('Custom DocPerm', filters={'parent': ['in', DOCTYPES_ALVO]}, fields=['parent', 'role'])`",
+        "Verificar que a lista tem 9 itens e que o campo `role` de cada item é exatamente 'Servico App'"
+      ],
+      "resultado_esperado": "9 registros retornados (nenhum DocPerm órfão criado para os 9 DocTypes sem role 'Servico App'); `role == 'Servico App'` (igualdade estrita) em todos — nenhum valor 'All', vazio ou administrativo",
+      "criterios_aceitacao_validados": ["AC-06"],
+      "observacoes": "Guardrail direto contra o NÃO-DEVE da seção 7.2 (nunca conceder System Manager/Administrator) na camada estrutural — se o campo `role` fosse gravado errado (ex.: copiar/colar de outro DocPerm), este teste pega antes de qualquer teste de permissão em runtime."
+    },
+    {
+      "task_id": "TC-001",
+      "id": "CT-006",
+      "titulo": "Execução do patch não altera papéis de usuários existentes (Administrator não ganha nem perde papel)",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Executar o patch cria a estrutura (Role + Custom DocPerm) mas não atribui o papel 'Servico App' a nenhum usuário existente — `frappe.get_roles('Administrator')` é idêntico antes e depois da execução, e 'Servico App' não está entre eles.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": { "presente": true, "ct_id": "self", "input_invalido": "estado de `frappe.get_roles('Administrator')` antes vs. depois do patch", "assertion_esperada": "conjuntos idênticos; 'Servico App' ausente em ambos" },
+      "precondicao_privilegiada": { "presente": false, "descricao": "", "caminho_legitimo": "", "teste_analogo": "" },
+      "camada": "service-integration (patch de migração)",
+      "pre_condicoes": ["Nenhuma — usa o usuário 'Administrator' já existente no site de teste"],
+      "dados_entrada": { "descricao": "Papéis do Administrator antes/depois", "valores": {} },
+      "passos": [
+        "Capturar `set(frappe.get_roles('Administrator'))` antes de `execute()`",
+        "Chamar `execute()`",
+        "Capturar `set(frappe.get_roles('Administrator'))` depois"
+      ],
+      "resultado_esperado": "Os dois conjuntos são idênticos (`assertEqual`); 'System Manager' presente nos dois; 'Servico App' ausente nos dois — o patch não amplia nem reduz papel de usuário nenhum, ele só cria a estrutura de permissão",
+      "criterios_aceitacao_validados": ["AC-06"],
+      "observacoes": "Cobre a metade estrutural de AC-06 na única parte automatizável: o PATCH em si nunca concede papel a usuário algum. A metade operacional (o usuário de serviço real, criado manualmente conforme 6.2, de fato não tem esses papéis) é verificação operacional."
+    },
+    {
+      "task_id": "TC-001",
+      "id": "CT-007",
+      "titulo": "Usuário real com papel único 'Servico App' possui permissão de leitura/escrita/criação/exclusão nos 9 DocTypes da allowlist",
+      "tipo": "INTEGRACAO",
+      "categoria": "caminho_feliz",
+      "invariant": "Um usuário cujo ÚNICO papel é 'Servico App' (sem System Manager) satisfaz `frappe.has_permission(doctype, ptype, user=usuario)` para ptype em {read, write, create, delete} em cada um dos 9 DocTypes da allowlist — a permissão concedida pelo Custom DocPerm é efetiva no motor de permissão do Frappe, não apenas um registro solto na tabela.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": { "presente": true, "ct_id": "CT-008", "input_invalido": "mesmo usuário, DocType 'User' (fora da allowlist) e ptypes report/export/import/share/print/email nos 9 DocTypes", "assertion_esperada": "has_permission retorna False/None em todos os casos" },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Contexto de sessão autenticado como um usuário comum (não Administrator) com papel 'Servico App' atribuído, para exercitar `frappe.has_permission` do ponto de vista desse usuário.",
+        "caminho_legitimo": "Criar um User real via `frappe.get_doc({'doctype': 'User', ...}).insert(ignore_permissions=True)`, atribuir o papel com `user.add_roles('Servico App')`, trocar a sessão do teste com `frappe.set_user(usuario)` e restaurar com `self.addCleanup(lambda: frappe.set_user('Administrator'))` — mecanismo nativo do framework de teste (FrappeTestCase roda em transação com rollback), nenhum símbolo de produção é criado/exportado só para o teste.",
+        "teste_analogo": "app-sync/locacao_automation/locacao_automation/tests/test_integracao_bancaria_api.py:452-476 (`TestSegurancaSystemManager._criar_usuario` + `frappe.set_user`)"
+      },
+      "camada": "service-integration (motor de permissão do Frappe)",
+      "pre_condicoes": ["`execute()` já chamado (Role + DocPerm existem)", "Usuário de teste criado com papel único 'Servico App'"],
+      "dados_entrada": {
+        "descricao": "Table-driven: 9 DocTypes × 4 ptypes (read, write, create, delete)",
+        "valores": { "doctypes": ["Atraso", "Cobranca", "Conjunto", "Contrato", "Fiador", "Imovel", "Locador", "Locatario", "Usuario"], "ptypes": ["read", "write", "create", "delete"] }
+      },
+      "passos": [
+        "Criar usuário de teste sem System Manager, com papel único 'Servico App'",
+        "`frappe.set_user(usuario)`",
+        "Para cada (doctype, ptype) da tabela: `frappe.has_permission(doctype, ptype)`"
+      ],
+      "resultado_esperado": "`frappe.has_permission(doctype, ptype)` retorna truthy (True) para os 36 pares (9 DocTypes × 4 ptypes)",
+      "criterios_aceitacao_validados": ["AC-07"],
+      "observacoes": "Este CT valida a PRECONDIÇÃO de permissão de AC-07 (o motor de permissão do Frappe concede acesso) através do caminho real do framework, não apenas lendo a linha do Custom DocPerm (que já é CT-003). O '200 via proxy' literal de AC-07 exige HTTP real através do nginx e é coberto operacionalmente (CT-021)."
+    },
+    {
+      "task_id": "TC-001",
+      "id": "CT-008",
+      "titulo": "Usuário 'Servico App' NÃO tem permissão em DocType fora da allowlist nem em ptype fora do declarado",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "O mesmo usuário com papel único 'Servico App' não satisfaz `frappe.has_permission('User', 'read')` (DocType 'User' — built-in, fora da allowlist), nem `frappe.has_permission(doctype, ptype)` para ptype em {report, export, import, share, print, email} em nenhum dos 9 DocTypes — o alcance da credencial fica restrito exatamente ao declarado em 6.2.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": { "presente": true, "ct_id": "CT-007", "input_invalido": "ver CT-007 (positivo)", "assertion_esperada": "ver resultado_esperado" },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Mesmo contexto de CT-007: usuário real autenticado com papel único 'Servico App'.",
+        "caminho_legitimo": "Idêntico a CT-007 — reusar o mesmo usuário/sessão de teste dentro da mesma classe.",
+        "teste_analogo": "app-sync/locacao_automation/locacao_automation/tests/test_integracao_bancaria_api.py:452-476"
+      },
+      "camada": "service-integration (motor de permissão do Frappe)",
+      "pre_condicoes": ["Mesmas de CT-007"],
+      "dados_entrada": {
+        "descricao": "DocType fora da allowlist ('User') + 6 ptypes não-declarados nos 9 DocTypes da allowlist",
+        "valores": { "doctype_fora_allowlist": "User", "ptypes_nao_declarados": ["report", "export", "import", "share", "print", "email"] }
+      },
+      "passos": [
+        "Com a sessão do usuário 'Servico App' ativa: `frappe.has_permission('User', 'read')`",
+        "Para cada um dos 9 DocTypes × 6 ptypes não-declarados: `frappe.has_permission(doctype, ptype)`"
+      ],
+      "resultado_esperado": "`frappe.has_permission('User', 'read')` é falsy; todos os 54 pares (9×6) de ptype não-declarado retornam falsy",
+      "criterios_aceitacao_validados": ["AC-07"],
+      "observacoes": "O DocType 'User' (built-in do Frappe) é distinto de 'Usuario' (custom da allowlist, nome muito parecido) — este CT garante que a semelhança de nomes não confundiu a criação do DocPerm. Relacionado ao raciocínio de AC-02 (bloqueio de /api/resource/User), mas validado na camada de permissão do backend, não no proxy."
+    },
+    {
+      "task_id": "TC-001",
+      "id": "CT-009",
+      "titulo": "Permissão de submit é exclusiva de 'Contrato' — nenhum outro DocType da allowlist aceita submit",
+      "tipo": "INTEGRACAO",
+      "categoria": "fronteira",
+      "invariant": "Um usuário com papel único 'Servico App' satisfaz `frappe.has_permission('Contrato', 'submit')`, mas não satisfaz `frappe.has_permission(doctype, 'submit')` para nenhum dos outros 8 DocTypes da allowlist — o bundle chama `frappe.client.submit` apenas para ativar contrato, e nenhum outro DocType deve aceitar submit.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": { "presente": true, "ct_id": "self", "input_invalido": "os outros 8 DocTypes consultados com ptype='submit'", "assertion_esperada": "has_permission falsy para os 8" },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Mesmo contexto de CT-007/CT-008: usuário real com papel único 'Servico App'.",
+        "caminho_legitimo": "Idêntico a CT-007.",
+        "teste_analogo": "app-sync/locacao_automation/locacao_automation/tests/test_integracao_bancaria_api.py:452-476"
+      },
+      "camada": "service-integration (motor de permissão do Frappe)",
+      "pre_condicoes": ["Mesmas de CT-007", "DocType 'Contrato' precisa ser `is_submittable` no site de teste (já é, é DocType de produção existente)"],
+      "dados_entrada": { "descricao": "9 DocTypes consultados com ptype='submit'", "valores": { "doctype_com_submit": "Contrato", "doctypes_sem_submit": ["Atraso", "Cobranca", "Conjunto", "Fiador", "Imovel", "Locador", "Locatario", "Usuario"] } },
+      "passos": [
+        "Com sessão do usuário 'Servico App': `frappe.has_permission('Contrato', 'submit')`",
+        "Para cada um dos outros 8 DocTypes: `frappe.has_permission(doctype, 'submit')`"
+      ],
+      "resultado_esperado": "`frappe.has_permission('Contrato', 'submit')` é truthy; `frappe.has_permission(doctype, 'submit')` é falsy para os outros 8",
+      "criterios_aceitacao_validados": ["AC-07"],
+      "observacoes": "Complementa CT-003 (que já valida o flag `submit` gravado no DocPerm) verificando que o flag é EFETIVO no motor de permissão, não apenas na tabela."
+    },
+    {
+      "task_id": "TC-001",
+      "id": "CT-010",
+      "titulo": "AC-08 — usuário com papel 'Servico App' é recusado por RN-11 ao chamar método de integracao_bancaria_api.service (mesmo com DocPerms amplos)",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Um usuário cujo único papel é 'Servico App' (com DocPerms amplos nos 9 DocTypes) continua recebendo `frappe.PermissionError` ao chamar `obter_configuracao` (e os demais métodos whitelisted de `integracao_bancaria_api.service`) — a verificação explícita de `_exigir_system_manager()` (RN-11) não é contornada por nenhum DocPerm de DocType, papel amplo, ou existência do papel 'Servico App'.",
+      "owning_layer": "service-integration",
+      "existing_suite": "app-sync/locacao_automation/locacao_automation/tests/test_integracao_bancaria_api.py",
+      "real_execution_boundary": "db",
+      "negative_companion": { "presente": true, "ct_id": "self", "input_invalido": "este é o caso negativo; a positiva análoga já existe em `test_ct029_com_role_administrativa_permitido` (System Manager permitido)", "assertion_esperada": "ver resultado_esperado" },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Usuário real autenticado, sem System Manager, com papel 'Servico App' explicitamente atribuído (distinto do caso já existente 'sem role nenhum' de CT-029) e uma configuração ativa (`_criar_active()`) para que o método chegue até o `_exigir_system_manager()` e não falhe antes por falta de dado.",
+        "caminho_legitimo": "Estender `TestSegurancaSystemManager` (mesma classe de CT-029) reusando `self._criar_active()` (herdado de `_BaseApiTest`) e um novo helper (ou parametrização de `_criar_usuario`) que atribui o papel 'Servico App' em vez de nenhum papel/System Manager; `frappe.set_user(usuario)` + `self.addCleanup(lambda: frappe.set_user('Administrator'))`, igual ao teste existente.",
+        "teste_analogo": "app-sync/locacao_automation/locacao_automation/tests/test_integracao_bancaria_api.py:452-482 (`TestSegurancaSystemManager.test_ct029_sem_role_administrativa_bloqueado`)"
+      },
+      "camada": "route-level (método whitelisted) sobre service-integration",
+      "pre_condicoes": ["Patch `criar_papel_servico_app` executado (papel 'Servico App' existe)", "`_criar_active()` chamada (configuração ativa existe)", "Usuário de teste com papel único 'Servico App'"],
+      "dados_entrada": { "descricao": "Chamada aos 3 métodos já cobertos por CT-029 (obter_configuracao, salvar_configuracao, testar_conexao) sob a nova sessão", "valores": {} },
+      "passos": [
+        "Criar/obter configuração ativa via `_criar_active()`",
+        "Criar usuário de teste com papel único 'Servico App' (sem System Manager)",
+        "`frappe.set_user(usuario)`",
+        "Para cada método em (obter_configuracao, salvar_configuracao, testar_conexao): chamar e capturar exceção"
+      ],
+      "resultado_esperado": "Os 3 métodos levantam `frappe.PermissionError` (mesma asserção de CT-029) — nenhum retorna 200/sucesso mesmo com o papel 'Servico App' tendo DocPerms amplos nos 9 DocTypes",
+      "criterios_aceitacao_validados": ["AC-08"],
+      "observacoes": "Estende `TestSegurancaSystemManager` — NÃO cria arquivo novo (Gate 2). Diferencia-se de CT-029 original: aquele prova que FALTA DE PAPEL bloqueia; este prova que TER um papel amplo e não-administrativo também não basta — fecha a lacuna específica que esta TaskCard introduz."
+    },
+    {
+      "task_id": "TC-001",
+      "id": "CT-011",
+      "titulo": "Nenhum Custom DocPerm é criado para o DocType built-in 'User' (distinto de 'Usuario')",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Após `execute()`, não existe nenhum Custom DocPerm com `parent='User'` e `role='Servico App'` — a semelhança de nome entre o DocType custom 'Usuario' (na allowlist) e o DocType built-in 'User' (explicitamente barrado por AC-02) nunca é confundida pelo patch.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": { "presente": true, "ct_id": "self", "input_invalido": "consulta por parent='User' (built-in) em vez de 'Usuario' (custom)", "assertion_esperada": "frappe.db.exists retorna False/None" },
+      "precondicao_privilegiada": { "presente": false, "descricao": "", "caminho_legitimo": "", "teste_analogo": "" },
+      "camada": "service-integration (patch de migração)",
+      "pre_condicoes": ["`execute()` já chamado"],
+      "dados_entrada": { "descricao": "Consulta pontual", "valores": { "doctype_builtin": "User", "doctype_custom_correto": "Usuario" } },
+      "passos": [
+        "`frappe.db.exists('Custom DocPerm', {'parent': 'User', 'role': 'Servico App'})`",
+        "`frappe.db.exists('Custom DocPerm', {'parent': 'Usuario', 'role': 'Servico App'})` (controle positivo)"
+      ],
+      "resultado_esperado": "O primeiro `exists` retorna falsy (nenhum DocPerm para 'User'); o segundo retorna truthy (DocPerm para 'Usuario' existe, conforme CT-001/CT-003)",
+      "criterios_aceitacao_validados": ["AC-06"],
+      "observacoes": "Blast radius alto e barato de testar: um erro de digitação ('User' em vez de 'Usuario') no patch daria ao usuário de serviço acesso de leitura/escrita à tabela de usuários do sistema inteiro, justamente o vetor que AC-02 tenta fechar no proxy — este CT fecha o mesmo vetor na camada de backend."
+    },
+    {
+      "task_id": "TC-001",
+      "id": "CT-012",
+      "titulo": "AC-01 (operacional) — credencial revogada do Administrator retorna 401 no proxy",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Após a revogação (passo 6.5), uma requisição autenticada com a credencial antiga do Administrator (`bc237221b65b5ed:d221c99298caf0a`) contra qualquer endpoint do proxy retorna 401 — a credencial pública vazada deixou de funcionar.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": { "presente": true, "ct_id": "self", "input_invalido": "este é o caso negativo (credencial inválida/revogada)", "assertion_esperada": "HTTP 401" },
+      "precondicao_privilegiada": { "presente": false, "descricao": "", "caminho_legitimo": "", "teste_analogo": "" },
+      "camada": "operacional — fora da suíte `bench run-tests`",
+      "pre_condicoes": ["Passos 6.1 a 6.5 da TaskCard já executados (allowlist, papel/usuário de serviço, bundle atualizado, validação, revogação)"],
+      "dados_entrada": { "descricao": "Requisição HTTP autenticada com a credencial antiga", "valores": { "header": "Authorization: token bc237221b65b5ed:d221c99298caf0a" } },
+      "passos": ["curl -i -H \"Authorization: token bc237221b65b5ed:d221c99298caf0a\" https://<host>/api/resource/Imovel"],
+      "resultado_esperado": "HTTP status 401",
+      "criterios_aceitacao_validados": ["AC-01"],
+      "observacoes": "Verificação operacional/manual — não é automatizável dentro de `bench --site frontend run-tests` (exige nginx real servindo o proxy do SPA e a credencial já revogada em produção). Registrar a evidência (status code) na checklist da seção 8."
+    },
+    {
+      "task_id": "TC-001",
+      "id": "CT-013",
+      "titulo": "AC-02 (operacional) — /api/resource/User é barrado pela allowlist do nginx (403 sem chegar ao Frappe)",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Uma requisição a `/api/resource/User` através do proxy do SPA retorna 403 do PRÓPRIO nginx (catch-all), sem repassar ao backend Frappe — o DocType built-in de usuários nunca é alcançável pelo SPA público.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": { "presente": true, "ct_id": "self", "input_invalido": "este é o caso negativo (endpoint fora da allowlist)", "assertion_esperada": "HTTP 403" },
+      "precondicao_privilegiada": { "presente": false, "descricao": "", "caminho_legitimo": "", "teste_analogo": "" },
+      "camada": "operacional — fora da suíte `bench run-tests`",
+      "pre_condicoes": ["Allowlist do nginx (6.1) aplicada e `nginx -t` validado"],
+      "dados_entrada": { "descricao": "Requisição a endpoint deliberadamente fora da allowlist", "valores": { "path": "/api/resource/User" } },
+      "passos": ["curl -i https://<host>/api/resource/User"],
+      "resultado_esperado": "HTTP status 403, retornado pelo bloco `location /api/` catch-all",
+      "criterios_aceitacao_validados": ["AC-02"],
+      "observacoes": "Verificação operacional/manual — exige nginx real. Complementa CT-008 (que já garante, na camada de permissão do backend, que mesmo SE a requisição chegasse ao Frappe ela seria negada) fechando a defesa em profundidade nas duas camadas."
+    },
+    {
+      "task_id": "TC-001",
+      "id": "CT-014",
+      "titulo": "AC-03 (operacional) — frappe.client.get_list barrado (403), frappe.client.submit não é barrado pela allowlist",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "`/api/method/frappe.client.get_list` retorna 403 do nginx; `/api/method/frappe.client.submit` NÃO é barrado pela allowlist (chega ao Frappe, que decide com base em permissão de DocType/RN-11 quando aplicável).",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": { "presente": true, "ct_id": "self", "input_invalido": "get_list (barrado) vs. submit (permitido) — par positivo/negativo do mesmo AC", "assertion_esperada": "ver resultado_esperado" },
+      "precondicao_privilegiada": { "presente": false, "descricao": "", "caminho_legitimo": "", "teste_analogo": "" },
+      "camada": "operacional — fora da suíte `bench run-tests`",
+      "pre_condicoes": ["Allowlist do nginx aplicada"],
+      "dados_entrada": { "descricao": "Dois métodos: um genérico do framework (barrado), um explicitamente whitelisted (permitido)", "valores": { "barrado": "frappe.client.get_list", "permitido": "frappe.client.submit" } },
+      "passos": [
+        "curl -i https://<host>/api/method/frappe.client.get_list",
+        "curl -i -H \"Authorization: token <servico>\" -X POST https://<host>/api/method/frappe.client.submit -d 'doctype=Contrato&name=<ct-teste>'"
+      ],
+      "resultado_esperado": "1ª chamada: HTTP 403 do nginx. 2ª chamada: NÃO retorna 403 do nginx (pode retornar 200, ou erro de negócio do Frappe — mas nunca o 403 genérico de allowlist)",
+      "criterios_aceitacao_validados": ["AC-03"],
+      "observacoes": "Verificação operacional/manual. O regex de allowlist deve escapar o ponto em `frappe\\.client\\.submit` (seção 6.1) — este teste também detecta erro de escaping."
+    },
+    {
+      "task_id": "TC-001",
+      "id": "CT-015",
+      "titulo": "AC-04 (operacional) — bundle publicado não contém mais a credencial do Administrator",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "O arquivo `main.3fb69968.js` servido publicamente não contém a string `bc237221b65b5ed` (api_key do Administrator) em nenhuma ocorrência.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": { "presente": true, "ct_id": "self", "input_invalido": "este é o caso negativo — busca pela credencial que deveria ter sido removida", "assertion_esperada": "contagem de ocorrências == 0" },
+      "precondicao_privilegiada": { "presente": false, "descricao": "", "caminho_legitimo": "", "teste_analogo": "" },
+      "camada": "operacional — fora da suíte `bench run-tests`",
+      "pre_condicoes": ["Passo 6.3 executado (substituição das duas credenciais no bundle)"],
+      "dados_entrada": { "descricao": "Grep literal no arquivo publicado", "valores": { "arquivo": "/opt/react/sysloc/html/static/js/main.3fb69968.js", "padrao": "bc237221b65b5ed" } },
+      "passos": ["grep -c \"bc237221b65b5ed\" /opt/react/sysloc/html/static/js/main.3fb69968.js"],
+      "resultado_esperado": "Saída do comando: `0`",
+      "criterios_aceitacao_validados": ["AC-04"],
+      "observacoes": "Verificação operacional/manual — comando exato já é o critério de aceite literal da TaskCard (AC-04). Recomenda-se rodar o mesmo grep para `d221c99298caf0a` (api_secret) como checagem adicional."
+    },
+    {
+      "task_id": "TC-001",
+      "id": "CT-016",
+      "titulo": "AC-05 (operacional) — nenhum source map publicado; requisição a .map retorna 404",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Nenhum arquivo `.map` existe sob `/opt/react/sysloc/html/static/` e uma requisição HTTP a `/static/js/main.3fb69968.js.map` através do proxy retorna 404 — o código TypeScript fonte não fica mais exposto via source map.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": { "presente": true, "ct_id": "self", "input_invalido": "este é o caso negativo — verifica ausência de artefato que vazava código-fonte", "assertion_esperada": "find retorna vazio; HTTP 404" },
+      "precondicao_privilegiada": { "presente": false, "descricao": "", "caminho_legitimo": "", "teste_analogo": "" },
+      "camada": "operacional — fora da suíte `bench run-tests`",
+      "pre_condicoes": ["3 arquivos `.map` apagados (passo 8 da checklist)"],
+      "dados_entrada": { "descricao": "Busca por extensão + requisição HTTP", "valores": { "diretorio": "/opt/react/sysloc/html/static/", "url": "/static/js/main.3fb69968.js.map" } },
+      "passos": [
+        "find /opt/react/sysloc/html/static/ -iname '*.map'",
+        "curl -i https://<host>/static/js/main.3fb69968.js.map"
+      ],
+      "resultado_esperado": "`find` não retorna nenhuma linha; `curl` retorna HTTP status 404",
+      "criterios_aceitacao_validados": ["AC-05"],
+      "observacoes": "Verificação operacional/manual — envolve filesystem do host e nginx real."
+    },
+    {
+      "task_id": "TC-001",
+      "id": "CT-017",
+      "titulo": "AC-10 (operacional) — developer_mode desligado no site_config.json de produção",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "O `site_config.json` do site `frontend` (dentro de `frappe-backend-1`) tem a chave `developer_mode` com valor `0` — o site de produção não roda mais em modo de desenvolvedor.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": { "presente": true, "ct_id": "self", "input_invalido": "este é o caso negativo — verifica que o flag de modo de risco foi desligado", "assertion_esperada": "developer_mode == 0" },
+      "precondicao_privilegiada": { "presente": false, "descricao": "", "caminho_legitimo": "", "teste_analogo": "" },
+      "camada": "operacional — fora da suíte `bench run-tests`",
+      "pre_condicoes": ["Passo 6.6 executado e backend reiniciado"],
+      "dados_entrada": { "descricao": "Leitura do arquivo de configuração do site", "valores": { "arquivo": "sites/frontend/site_config.json (dentro do container frappe-backend-1)" } },
+      "passos": ["docker compose exec -T backend cat sites/frontend/site_config.json | grep developer_mode"],
+      "resultado_esperado": "Saída contém `\"developer_mode\": 0`",
+      "criterios_aceitacao_validados": ["AC-10"],
+      "observacoes": "Verificação operacional/manual — checagem de configuração de infraestrutura, não de comportamento de código; não cabe em `bench run-tests`."
+    },
+    {
+      "task_id": "TC-001",
+      "id": "CT-018",
+      "titulo": "AC-11 (operacional) — api_key e api_secret de Administrator e api@dominio.com revogados",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Após a revogação (6.5), `api_key` de `Administrator` e de `api@dominio.com` está vazio, e não existe registro `api_secret` para nenhum dos dois em `__Auth`.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": { "presente": true, "ct_id": "self", "input_invalido": "este é o caso negativo — verifica ausência da credencial revogada", "assertion_esperada": "api_key vazio; __Auth sem api_secret" },
+      "precondicao_privilegiada": { "presente": false, "descricao": "", "caminho_legitimo": "", "teste_analogo": "" },
+      "camada": "operacional — fora da suíte `bench run-tests` (consulta ao site de PRODUÇÃO, não ao site de teste)",
+      "pre_condicoes": ["Passo 6.5 executado (revogação)", "AC-07/6.4 já confirmados 200 com credencial de serviço ANTES deste passo"],
+      "dados_entrada": { "descricao": "Consulta via bench console no site de produção", "valores": { "usuarios": ["Administrator", "api@dominio.com"] } },
+      "passos": [
+        "docker compose exec -T backend bench --site frontend console",
+        "No console: frappe.db.get_value('User', 'Administrator', 'api_key') e o mesmo para api@dominio.com",
+        "frappe.db.get_value('__Auth', {'doctype': 'User', 'name': 'Administrator', 'fieldname': 'api_secret'}, 'name') e o mesmo para api@dominio.com"
+      ],
+      "resultado_esperado": "`api_key` retorna vazio/None para os dois usuários; a consulta em `__Auth` retorna None (nenhum registro de api_secret) para os dois",
+      "criterios_aceitacao_validados": ["AC-11"],
+      "observacoes": "Verificação operacional/manual — deliberadamente NÃO automatizada como teste de suíte porque inspeciona dado do site de PRODUÇÃO (`frontend`) pós-revogação real. É o passo de maior risco da task (seção 11): só executar após CT-012 confirmar 401 e a validação de 6.4 ter passado."
+    },
+    {
+      "task_id": "TC-001",
+      "id": "CT-019",
+      "titulo": "AC-12 (operacional) — dumps removidos da raiz e SHA256SUMS sem referência órfã",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "Os 6 arquivos de dump/backup não existem mais na raiz de `/opt/frappe`, e `SHA256SUMS` (versionado) não referencia nenhum arquivo inexistente.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": { "presente": true, "ct_id": "self", "input_invalido": "este é o caso negativo — verifica ausência dos 6 arquivos e de referências órfãs", "assertion_esperada": "nenhum dos 6 arquivos existe; SHA256SUMS consistente" },
+      "precondicao_privilegiada": { "presente": false, "descricao": "", "caminho_legitimo": "", "teste_analogo": "" },
+      "camada": "operacional — fora da suíte `bench run-tests`",
+      "pre_condicoes": ["Passo 6.6 executado (remoção dos 6 dumps + atualização de SHA256SUMS)"],
+      "dados_entrada": { "descricao": "Lista dos 6 arquivos removidos", "valores": { "arquivos": ["mariadb_all.sql", "db-data.tar.gz", "sites.tar.gz", "redis-cache-data.tar.gz", "redis-queue-data.tar.gz", "logs.tar.gz"] } },
+      "passos": [
+        "for f in mariadb_all.sql db-data.tar.gz sites.tar.gz redis-cache-data.tar.gz redis-queue-data.tar.gz logs.tar.gz; do test -e \"/opt/frappe/$f\" && echo \"AINDA EXISTE: $f\"; done",
+        "Se SHA256SUMS ainda existir: sha256sum -c /opt/frappe/SHA256SUMS 2>&1 | grep -i 'no such file'"
+      ],
+      "resultado_esperado": "Primeiro comando não imprime nada (nenhum dos 6 arquivos existe); segundo comando não retorna nenhuma linha 'no such file' (ou SHA256SUMS foi removido por não ter mais entradas válidas)",
+      "criterios_aceitacao_validados": ["AC-12"],
+      "observacoes": "Verificação operacional/manual — filesystem do host, fora do escopo de `bench run-tests`."
+    },
+    {
+      "task_id": "TC-001",
+      "id": "CT-020",
+      "titulo": "AC-13 (operacional) — config versionada do nginx é idêntica à em uso",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "`deploy/nginx/react-default.conf` (versionado no repositório) existe e é byte-a-byte idêntico ao `default.conf` em uso pelo container do nginx do SPA — a allowlist tem histórico e sobrevive a recriação do container.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": { "presente": true, "ct_id": "self", "input_invalido": "este é o caso negativo — verifica ausência de divergência entre versionado e em produção", "assertion_esperada": "diff vazio" },
+      "precondicao_privilegiada": { "presente": false, "descricao": "", "caminho_legitimo": "", "teste_analogo": "" },
+      "camada": "operacional — fora da suíte `bench run-tests`",
+      "pre_condicoes": ["Passos 6.1 e a cópia para o repositório executados"],
+      "dados_entrada": { "descricao": "Comparação de dois arquivos", "valores": { "versionado": "deploy/nginx/react-default.conf", "em_uso": "/opt/react/sysloc/nginx/default.conf" } },
+      "passos": ["diff /opt/frappe/deploy/nginx/react-default.conf /opt/react/sysloc/nginx/default.conf"],
+      "resultado_esperado": "`diff` não produz nenhuma saída (arquivos idênticos) e retorna código de saída 0",
+      "criterios_aceitacao_validados": ["AC-13"],
+      "observacoes": "Verificação operacional/manual — compara arquivo do repositório (git) com arquivo do host servido pelo nginx."
+    },
+    {
+      "task_id": "TC-001",
+      "id": "CT-021",
+      "titulo": "AC-14 (operacional, smoke E2E) — SPA continua operacional de ponta a ponta após toda a contenção",
+      "tipo": "E2E",
+      "categoria": "interacao_usuario",
+      "invariant": "Após TODOS os passos da contenção (allowlist, credencial de serviço, revogação, developer_mode, limpeza), o SPA continua funcional para o fluxo completo do usuário: login, listagem de imóveis, abertura de contrato e emissão de boleto — a contenção de segurança não quebrou nenhuma funcionalidade de negócio.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": { "presente": true, "ct_id": "CT-002", "input_invalido": "ver CT-002 (garante que o papel/DocPerms subjacentes que sustentam este fluxo não regridem em reexecução do patch)", "assertion_esperada": "ver CT-002" },
+      "precondicao_privilegiada": { "presente": false, "descricao": "", "caminho_legitimo": "", "teste_analogo": "" },
+      "camada": "operacional — smoke test manual de ponta a ponta",
+      "pre_condicoes": ["Todos os passos 1-16 da checklist (seção 8) concluídos, incluindo revogação e developer_mode:0"],
+      "dados_entrada": { "descricao": "Navegação manual (ou script de smoke) pelo SPA publicado", "valores": { "fluxos": ["login", "listagem de imóveis", "abertura de contrato", "emissão de boleto"] } },
+      "passos": [
+        "Abrir o SPA publicado no navegador e fazer login",
+        "Navegar até a listagem de imóveis (all_imoveis)",
+        "Abrir um contrato existente (contrato_pdf.service.abrir_contrato)",
+        "Emitir um boleto (cobranca_boleto.service.abrir_boleto ou fluxo Sicoob)"
+      ],
+      "resultado_esperado": "Os 4 fluxos completam sem erro visível ao usuário (sem 401/403/500 na aba de rede do navegador); a interface responde normalmente em cada etapa",
+      "criterios_aceitacao_validados": ["AC-14"],
+      "observacoes": "Smoke test final e mais amplo da task. Executar IMEDIATAMENTE após 6.4 (antes da revogação) e novamente ao final (após 6.6), conforme a ordem de risco descrita na seção 11 da TaskCard."
+    }
+  ],
+  "cenarios_nao_cobertos": [
+    { "descricao": "Rebuild do bundle React a partir do fonte com GENERATE_SOURCEMAP=false", "motivo": "Fora do escopo desta task (seção 4.2) — fonte só existe na máquina local do usuário; é ação subsequente." },
+    { "descricao": "Alterar/relaxar `_exigir_system_manager()` (RN-11) para aceitar o papel 'Servico App'", "motivo": "Decisão explícita de NÃO fazer (seção 4.2 e Notas): a tela de Integrações fica indisponível até F3. CT-010 e o CT-029 existente garantem que a RN-11 permanece intacta." },
+    { "descricao": "Sessão real, guard de rota, tratamento de 401 no SPA", "motivo": "É F3 (`saas-multi-empresa/v2`), fora do escopo desta TaskCard." },
+    { "descricao": "Senha do MariaDB root em texto plano no `backup_frappe.sh`", "motivo": "Explicitamente fora do escopo desta task (seção 4.2) — não é superfície pública; tratar em F2." },
+    { "descricao": "Teste de carga/performance do proxy com a allowlist em regex", "motivo": "Fora da política do gerador (não gerar testes de performance/carga); sem evidência de risco real." },
+    { "descricao": "Teste de race condition na criação do papel via `bench migrate` concorrente", "motivo": "Baixa probabilidade (migrate é operação administrativa serializada) e a task já trata reexecução sequencial (AC-09); risco documentado, não testado." }
+  ],
+  "recomendacoes": [
+    "CT-002 valida idempotência chamando `execute()` diretamente, que é aproximação fiel mas não idêntica a `bench migrate` (que também grava `Patch Log` e roda dentro do pipeline de sync de schema). O passo 8 da checklist ('rodar `bench migrate` duas vezes e conferir') continua sendo a confirmação operacional final de AC-09, mesmo com CT-002 verde.",
+    "Considerar, em iteração futura fora desta TaskCard, extrair um helper de teste compartilhado `_criar_usuario_com_papel(email, roles)` a partir da duplicação já existente entre `test_integracao_bancaria_api.py`, `test_boletos_abertos.py` e `test_certificado_api.py` — não fazer agora para não expandir o escopo.",
+    "Os CTs operacionais (CT-012 a CT-021) devem ter execução e evidência (saída literal do comando) registradas na checklist da seção 8 antes de marcar a task como concluída — nenhum deles roda em `bench run-tests`.",
+    "Ao criar `test_patch_criar_papel_servico_app.py`, seguir a docstring com seção INVARIANTES e rastreabilidade `CA-xx -> CT-xxx` observada em `test_patch_migracao_config.py`, atribuindo os próximos números de CT sequenciais reais da suíte (os IDs CT-001..CT-011 aqui são locais a este documento, não os números globais da suíte)."
+  ],
+  "mock_budget_observado": true,
+  "gates_aplicados": [
+    "invariant_first",
+    "owning_layer",
+    "real_execution",
+    "failure_means_fix_production",
+    "no_snapshot_without_contract",
+    "no_self_set_mock_assertion",
+    "negative_companion"
+  ]
+}

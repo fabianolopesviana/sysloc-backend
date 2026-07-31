@@ -1,0 +1,48 @@
+# Dependências
+node_modules/
+.pnpm-store/
+
+# Build
+dist/
+build/
+out/
+*.tsbuildinfo
+.turbo/
+
+# Segredos — NADA aqui pode ser versionado
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.pem
+*.key
+secrets/
+
+# Dados locais de desenvolvimento
+.data/
+*.sqlite
+*.sqlite3
+
+# Testes
+coverage/
+.vitest/
+test-results/
+playwright-report/
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+pnpm-debug.log*
+
+# Artefatos efêmeros do pipeline agent-spec
+docs/specs/**/_run/tmp/
+
+# Sistema operacional / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json
