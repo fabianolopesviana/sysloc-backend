@@ -1,0 +1,26 @@
+feature: "fundacao-stack-nativa"
+source: "recommended"
+source_note: "O discovery vive no pré-refinamento do PROGRAMA (docs/specs/features/backend-nativo-sysloc/v1/pre-refinement.md), não sob esta feature. A §15.4 recomenda literalmente /agent-spec-minispec-generate-intent para esta fatia, e a tabela C2 (§4, ramo C) justifica o peso: 8 entregas com critérios de aceitação executáveis, mas zero persona e zero regra de negócio."
+current_step: execution
+variant: backend
+steps:
+  intent:
+    status: completed
+    summary: "Entregar uma base de execução nativa que sobe sozinha, se recupera de queda sem intervenção e é verificável automaticamente. Escopo: instalação da base, serviço de aplicação com verificação de saúde, processador de trabalho em segundo plano consumindo fila, contrato da aplicação publicado, verificação automatizada contra banco real e descartável, ciclo de trabalho do desenvolvedor, recuperação automática após queda de processo e após reinício completo do servidor. Fora: qualquer regra de negócio, estrutura de dados de domínio, isolamento entre empresas e identidade de usuário."
+  tech_alignment:
+    status: skipped
+  design:
+    status: skipped
+  scope:
+    status: completed
+    variant: backend
+    summary: "Componentes novos: apps/api (serviço de aplicação), apps/worker (processador de trabalho), packages/shared (tipos, erros e helpers de ambiente efêmero), deploy/systemd (2 unidades de serviço) e deploy/scripts/instalacao (4 scripts idempotentes). 3 endpoints: GET /saude (rasa), GET /saude/pronto (profunda), GET /docs (contrato publicado). Tabelas: nenhuma — estrutura de dados de domínio excluída por decisão, nasce após a fundação de isolamento entre empresas. 16 critérios de aceite técnicos (CA-1 a CA-16). ADRs confrontadas literalmente: 0005 (instalação idempotente), 0006 (instâncias efêmeras próprias de banco e fila) e 0007 (envelope de erro nascendo conforme). 1 candidato a ADR confirmado: provisionamento de serviço de base versionado e idempotente, que estende a 0005."
+  validation:
+    status: skipped
+  task_plan:
+    status: completed
+    summary: "7 tasks, 5 fases, 1 par paralelizável (T1 ∥ T2). 45 casos de teste gerados por 3 subagentes agrupados por camada (infra-base T1/T2/T7, infra-codigo T3/T4, integracao T5/T6). Todas as tasks em opus com gates [qa, tech_review]. T5 ∥ T6 marcado Não por contenção no arquivo de bloqueio do gerenciador de pacotes, apesar de independentes no grafo. Dependência T4→T6 descoberta na geração de testes e incorporada: redisEfemero precisa expor parar/religar preservando o diretório de dados, sem o que CA-10 é inverificável."
+  execution:
+    status: in_progress
+    tasks_total: 7
+    tasks_completed: 2

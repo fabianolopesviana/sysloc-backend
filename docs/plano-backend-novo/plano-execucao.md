@@ -6,16 +6,30 @@
 >
 > **Repositório**: `/opt/sysloc-backend`
 >
-> **Revisão de 2026-07-30 (a pedido do usuário)**: a ordem original punha a caracterização contra
+> **Revisão 1 de 2026-07-30 (a pedido do usuário)**: a ordem original punha a caracterização contra
 > o Frappe como primeiro passo e empacotava "instalar a stack" junto de "criar a fundação
 > multi-tenant" numa fase só. Reordenado: a **F0 agora é exclusivamente instalar e provar a
 > stack**, sem uma linha de regra de negócio; a fundação SaaS virou a **F1**; e a caracterização
 > saiu do caminho crítico e virou tarefa paralela.
+>
+> **Revisão 2 de 2026-07-30 — pré-refinamento**: este documento passou pelo brainstorm de entrega
+> registrado em `docs/specs/features/backend-nativo-sysloc/v1/pre-refinement.md`, que o validou
+> como recorte de feature/versão. Quatro mudanças: (1) **este arquivo deixa de ser o plano e passa
+> a ser o índice do programa** — cada fase aponta para uma feature do agent-spec (tabela abaixo);
+> (2) a **caracterização volta para o início** como fatia própria e **ampliada** — a revisão 1 a
+> tirou do caminho crítico por dependência, mas ela é o único ativo com **prazo de validade**;
+> (3) a **F6 deixa de ser fase com execução aqui** e vira handoff de contrato + especificação
+> executável, porque o fonte do React não vive neste servidor; (4) **cai a janela de rollback por
+> tempo da F7** — o Frappe é single-tenant e sua base congela na virada, então nunca foi destino
+> de rollback viável. Ver §F7.
 
 ---
 
 ## Princípio de ordenação
 
+0. **Antes de tudo, o que expira.** A caracterização das regras legadas depende de um sistema que
+   será desligado — é o único ativo do projeto com prazo de validade. Não bloqueia a F0 (são
+   independentes), mas é a primeira coisa a executar. Ver § Caracterização.
 1. **Primeiro a stack existe e se prova.** Instalada, funcional, reiniciando sozinha. Nenhum
    schema de domínio, nenhuma regra. O critério é operacional: dar `reboot` e tudo voltar.
 2. **Depois a fundação SaaS.** Multi-tenancy e identidade **antes** da primeira entidade de
@@ -28,6 +42,45 @@
 > camadas de enforcement e auditoria de 28 `ignore_permissions`. Aqui é a **F1**: a primeira
 > migration de domínio já encontra RLS e FK composta prontas, e **nenhuma entidade de negócio
 > consegue nascer sem tenant**.
+
+---
+
+## Recorte em features do agent-spec (índice do programa)
+
+Cada fase é **uma feature própria em `v1`**, com nome de capacidade — não de fase, para sobreviver
+a reordenação. Não existe feature guarda-chuva: `{version}` no agent-spec significa *nova iteração
+da mesma feature*, não *próxima fase*.
+
+| Fase | Feature (`docs/specs/features/…`) | Framework | Por quê |
+|---|---|---|---|
+| — | `caracterizacao-regras-legadas/v1` | **TaskCard** | 1 objetivo, só dev, sem decisão nova; a `T4.md` já existe quase pronta |
+| F0 | `fundacao-stack-nativa/v1` | **miniSpec** | 8 entregas com CA executáveis, zero persona, zero regra de negócio |
+| F1 | `fundacao-multitenancy-identidade/v1` | **SDD** | 3 perfis, matriz 10×7, RLS + FK composta + `AsyncLocalStorage` |
+| F2 | `dominio-locacao/v1` | **SDD** | 8 entidades, 3 regras portadas, primeiros contratos ts-rest |
+| F3 | `cobranca-mora-e-documentos/v1` | **SDD** | ciclo de cobrança, mora por empresa, régua, PDF de 752 linhas, carnê |
+| F4 | `integracao-bancaria-sicoob/v1` | **SDD** | mTLS, webhook, `seu_numero` único do SaaS; consome a ADR-0001 |
+| F5 | `automacoes-agendadas/v1` | **miniSpec** | porte com CA claros; o gatilho (systemd timers) já está decidido |
+| F6 | `frontend-religado/v1` | **handoff + spec executável** | o fonte do React não está neste servidor |
+| F7 | `virada-e-desinstalacao/v1` | **miniSpec** | backup/restore em TypeScript + checklist + desinstalação |
+
+O peso de cada fatia é **proposta, não decreto**: ao iniciar uma delas, roda-se um pré-refinamento
+curto que recalcula amplitude/personas/novidade com o que já foi construído e pode promover ou
+rebaixar o framework.
+
+**Gates**: F1 e F4 tocam `auth`/`security`/`crypto`/`db_migrations` — pela heurística de Critical
+Paths, `[qa, tech_review]` sempre, sem inferência para `[qa]`. E, pelo `CLAUDE.md`, **todo
+subagente roda em Opus**, inclusive onde a regra do framework resolveria `sonnet`.
+
+### Antes da primeira entidade de negócio: ADR de forma do contrato
+
+Decisão arquitetural transversal a todas as fatias de domínio, a ser registrada **antes da F1**:
+ID textual legível como chave exposta, corpo camelCase, `status` calculado no servidor, envelope de
+erro com **código estruturado** e forma de paginação.
+
+Motivo: `levantamento-frontend.md` §7.4 fecha com *"o maior risco não é técnico — é decidir o
+contrato da nova API antes de escrever qualquer linha"*. Hoje o frontend classifica erro do Sicoob
+**pelo prefixo do texto da mensagem** e extrai campo inválido por regex sobre `"O campo 'X'"`. Não
+é desenhar os 35 endpoints agora — é fixar a *forma*, que é transversal e cara de reverter.
 
 ---
 
@@ -261,6 +314,16 @@ B · rotina parada gera alerta · instalador roda duas vezes sem duplicar entrad
 
 ## F6 — Frontend religado
 
+> **Natureza distinta das demais fases (revisão 2).** O pipeline agent-spec executa tasks **neste
+> repositório**, e o fonte do React vive em `/home/fibron/dev/projetos/react/sysloc`, na máquina
+> local do usuário (decisão 4). Não há como rodar `/agent-spec-*-run-tasks` sobre ele daqui.
+>
+> Esta fatia **não tem execução aqui**. Ela entrega: o **handoff de contrato**
+> (`/agent-spec-backend-contract-handoff`), o **`@sysloc/contracts` publicado** e uma
+> **especificação executável por arquivo** — mudanças descritas com trechos prontos e lista de
+> verificação. A execução acontece na máquina local. Reavaliar depois do handoff se vale virar um
+> projeto agent-spec próprio no repositório do React.
+
 Dimensionado pelo relatório do frontend: **~24 arquivos de religação mecânica + ~12 de refatoração
 de vazamento + 10 fluxos redesenhados + 67 arquivos de teste com fixtures novas**.
 
@@ -291,35 +354,90 @@ de vazamento + 10 fluxos redesenhados + 67 arquivos de teste com fixtures novas*
 2. **Dados**: recadastro pelo app — o usuário confirmou que os dados atuais não estão em uso. Não
    há migração de dados a fazer.
 3. **Virada**: parar as rotinas do Frappe → apontar o CloudPanel para a API nova → checklist de
-   validação → manter a stack antiga **desligada e intacta por semanas** como rollback.
-4. **Só então, desinstalação**: contêineres, volumes, imagens, `/opt/frappe`, os `run-*.sh`, os
-   scripts em `/usr/local/bin` e as entradas de cron do root.
+   validação versionado em `deploy/scripts/virada.md`.
+4. **Desinstalação**: contêineres, volumes, imagens, `/opt/frappe`, os `run-*.sh`, os scripts em
+   `/usr/local/bin` e as entradas de cron do root — liberada pelo gate abaixo, **sem espera por
+   tempo**.
+
+### Sem janela de rollback por tempo (revisão 2)
+
+A versão anterior mandava manter a stack antiga *"desligada e intacta por semanas como rollback"*.
+**Isso cai.** Duas razões:
+
+- O Frappe é **single-tenant**. Voltar para ele é abandonar exatamente a capacidade que justificou
+  a troca total de backend — ele é inútil como destino de rollback de um produto multi-empresa.
+- **Não há migração de dados** (item 2 acima). No instante seguinte à virada as duas bases
+  **divergem**: reverter devolveria dados velhos.
+
+O valor residual do Frappe após a virada é **zero**. Como oráculo das regras legadas ele já foi
+substituído pelos golden files da fatia de caracterização; como rollback ele nunca serviu.
+
+**A rede de segurança deixa de ser uma stack de pé e passa a ser um dump preservado** — que não
+ocupa CPU, não ocupa RAM, não diverge, e continua consultável indefinidamente (relevante com o
+disco em 79%).
+
+**Gate de desinstalação — todos obrigatórios:**
+
+- [ ] Golden files capturados e commitados (metragem, texto do PDF de contrato, 3 rotinas de estado)
+- [ ] Dump final da base antiga **e** dos segredos preservado em `/opt/backups/sysloc/`
+- [ ] Checklist de virada executado e conferido
+- [ ] Backup do banco **novo** restaurado com sucesso num banco vazio (`pg_restore --list` + restore de teste)
+- [ ] `/etc/sysloc/producao` criado na instalação que passou a atender a operação — arma o guarda da ADR-0006 em `deploy/scripts/instalacao/verificar-provisionamento.sh`; enquanto o arquivo não existir, a bateria de verificação segue liberada a reiniciar a fila e a reexecutar o provisionamento contra produção
+
+**Consequência aceita**: a partir da virada, defeito no backend novo se corrige para a frente — não
+há para onde voltar. O risco desloca-se para a **qualidade dos CA antes da virada**: em particular,
+os golden files das rotinas de estado e a suíte da F5 precisam cobrir o ciclo mensal **antes** da
+virada, já que não haverá observação em produção com rede.
 
 **Pré-requisito**: ativos de planejamento já migrados para `/opt/sysloc-backend` — **feito**.
 
 **Decisões consumidas**: 32, 40.
 
-**Aceitação**: app funcionando integralmente contra o backend novo · backup restaurado com sucesso
-num banco vazio · a stack antiga volta a ser ativável até o momento da exclusão.
+**Aceitação**: app funcionando integralmente contra o backend novo · backup do banco novo restaurado
+com sucesso num banco vazio · os 5 itens do gate de desinstalação verificados antes de qualquer
+exclusão.
 
 ---
 
-## Caracterização — tarefa paralela, fora do caminho crítico
+## Caracterização — primeira fatia a executar (revisão 2)
 
-**Roda contra o Frappe ainda vivo. Obrigatória antes da F3, executável a qualquer momento antes
-disso.** Corresponde à **T4** da `saas-multi-empresa/v1`, já especificada em
-`docs/specs/features/saas-multi-empresa/v1/tasks/T4.md`.
+**Roda contra o Frappe ainda vivo, somente leitura.** Vira a feature
+`caracterizacao-regras-legadas/v1` (TaskCard). Aproveita a **T4** da `saas-multi-empresa/v1`, já
+especificada em `docs/specs/features/saas-multi-empresa/v1/tasks/T4.md`.
+
+**Escopo — o previsto na T4:**
 
 - Regra de agregação (metragem): valor produzido para imóvel sem cômodo, com um, com vários, e com
   metragem nula em algum.
 - Regra que gera documento (contrato, 752 linhas): **texto extraído** do PDF, nunca os bytes — o
   artefato carrega metadados de geração que variam a cada execução.
 
+**Escopo — ampliação da revisão 2:**
+
+- As **3 rotinas de estado idempotentes**: `marcar_cobrancas_vencidas`, `encerrar_contratos_vencidos`
+  e `_calcular_mora()`. Motivo: o achado 18 registra que as rotinas de cron do domínio **não têm
+  teste algum**; sem golden, a F5 porta comportamento que ninguém verificou, contra o requisito
+  declarado de que **todas** as automações devem funcionar corretamente. O custo é baixo — o próprio
+  código documenta `_calcular_mora()` como *"PURA (sem acesso a banco): recalculável e idempotente"*.
+- **Adiado**: caracterizar a régua de cobrança (`cobranca_automation`, ~700 LOC). Tem efeito
+  colateral de envio de e-mail, exigindo isolar o envio ao capturar contra produção. Reavaliar na
+  entrada da F3.
+
 **Por que existe**: é a especificação executável do que portar e a prova de equivalência do gerador
 de contrato. Sem ela, a F3 porta 752 linhas sem ter contra o que comparar.
 
-**Por que não é a F0**: o Frappe só é desligado na F7. A janela é larga. O que a torna obrigatória
-é a dependência da F3, não urgência de calendário.
+**Por que agora, e não "a qualquer momento antes da F3"**: é o **único ativo do projeto com prazo de
+validade** — depende de um sistema que será desligado. "Fora do caminho crítico" é verdade em
+dependência e falso em risco. Com o gate de desinstalação da F7 exigindo os golden files
+commitados, capturá-los cedo também é o que destrava o fim do programa.
+
+**Os três oráculos e onde cada um bloqueia:**
+
+| Oráculo | O que é | Onde é bloqueante |
+|---|---|---|
+| Golden files contra o Frappe | metragem, texto do PDF, 3 rotinas de estado | pré-condição de **F3** e **F5** |
+| Invariantes estruturais | teste-guarda de RLS, suíte de isolamento, Master vê vazio, `reboot` real | CA de **F0** e **F1** |
+| Paridade pelo frontend | 4 specs Playwright + 391 casos | CA de **F6** (executável só na máquina local) |
 
 ---
 
