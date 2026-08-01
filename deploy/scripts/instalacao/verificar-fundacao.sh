@@ -707,8 +707,33 @@ async function esperarConclusao(id, esperado) {
     const estado = await tarefa.getState();
     if (estado === 'completed') {
       process.stdout.write(`ESTADO=completed ID=${id}\n`);
-      if (tarefa.returnvalue !== esperado) {
-        process.stderr.write(`RETORNO divergente para a tarefa ${id}\n`);
+      // Releitura DELIBERADA, em vez do `tarefa.returnvalue` que já está à mão.
+      //
+      // `getJob()` devolve um RETRATO do registro no instante em que foi lido, e
+      // `getState()` consulta o servidor de novo: são duas leituras. A tarefa que
+      // conclui ENTRE elas produz estado fresco com valor obsoleto, e o caso
+      // reprova com "RETORNO divergente" enquanto o processador está correto. A
+      // janela não é hipotética — quando o processador volta de uma parada ele
+      // drena o acúmulo e conclui tarefas com milissegundos de diferença, que é
+      // exatamente o que a sequência (b) → (d) do CT-004 fabrica.
+      //
+      // A correção ordena a EMISSÃO das leituras, e não a espera entre elas:
+      // `completed` é terminal e o retorno é gravado na MESMA transação que
+      // conclui a tarefa, então toda leitura emitida DEPOIS de `completed` ter
+      // sido observado enxerga o valor final. Estado e valor passam a ser
+      // atômicos em relação à decisão. Esperar mais, ou repetir a comparação,
+      // mascararia a corrida em vez de fechá-la.
+      const concluida = await fila.eco.getJob(id);
+      if (concluida === undefined) {
+        process.stderr.write(`ESTADO=descartada-apos-conclusao ID=${id}\n`);
+        return 1;
+      }
+      if (concluida.returnvalue !== esperado) {
+        // Os dois valores no diagnóstico: sem eles, este era o rótulo que apontava
+        // para o processador quando o defeito estava na leitura.
+        process.stderr.write(
+          `RETORNO divergente para a tarefa ${id}: esperado [${esperado}], obtido [${concluida.returnvalue}]\n`,
+        );
         return 1;
       }
       return 0;

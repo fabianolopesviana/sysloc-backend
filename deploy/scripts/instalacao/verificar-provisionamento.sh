@@ -1316,20 +1316,62 @@ ct_003() {
 		"${PAPEL_DB}" "${credencial_sintetica}" "${BANCO_DB}" "${DIR_SOCKET_PG}" "${porta_pg_sonda}" \
 		"${PORTA_FILA}" "${PORTA_SMTP_CAPTURADOR}" >"${arq_migracao}"
 
+	# Processo NOVO (`bash -c`), e NÃO subshell `( )` — a mesma escolha, e pelo
+	# mesmo motivo, de `executar_guarda_isolado` no CT-005.
+	#
+	# CAUSA-RAIZ de não ser `( )`: a sonda precisa apontar `DONO_ARQ_AMBIENTE` para
+	# o dono do arquivo do sandbox, e essa constante é `readonly` no escopo deste
+	# arquivo. O atributo é HERDADO por subshell, e o bash recusa a atribuição
+	# mesmo quando o valor é idêntico ao declarado: `set -e` derruba o subshell
+	# ANTES de a migração acontecer, e quem reprova são as quatro asserções sobre o
+	# resultado — que passam a acusar a migração por um defeito da sonda. Foi
+	# exatamente o que aconteceu na execução privilegiada. Um processo novo não
+	# herda o atributo.
+	#
+	# A sonda devolve, na saída padrão, o dono que EFETIVAMENTE usou. É o que
+	# permite à primeira asserção do bloco NOMEAR a colisão se alguém reintroduzir
+	# a forma `( )`, em vez de deixar o diagnóstico por conta das asserções de
+	# resultado. As funções vêm do arquivo REAL, como nas outras sondas isoladas
+	# deste verificador — nenhum símbolo é acrescentado ao provisionamento por
+	# causa do teste.
+	#
+	# A credencial chega ao processo novo pela ENTRADA PADRÃO, nunca em `argv`: é o
+	# canal que a ADR-0005 fixa, e a sonda não abre exceção por o valor ser
+	# sintético — o caminho que ela exercita é o que reescreve a senha do banco, e
+	# uma sonda que modele o canal errado ensina o canal errado.
 	migrar_isolado() { # $1 arquivo · $2 porta · $3 credencial em mãos
-		(
-			senha_db="$3"
-			DONO_ARQ_AMBIENTE="$(stat -c '%U' "$1")"
+		printf '%s\n' "$3" | bash -c '
+			set -Eeuo pipefail
+			IFS= read -r senha_db
+			DONO_ARQ_AMBIENTE="$(stat -c "%U" "$1")"
+			PAPEL_DB="$4"; BANCO_DB="$5"; HOSPEDEIRO_DB="$6"; DIR_SOCKET_PG="$7"
 			abortar() {
-				printf 'ABORTOU: %s\n' "$1" >&2
+				printf "ABORTOU: %s\n" "$1" >&2
 				exit 9
 			}
-			migrar_database_url_de_socket "$1" "$2"
-		)
+			for fn in credencial_manuseavel montar_url_do_banco \
+				destino_anterior_por_socket migrar_database_url_de_socket; do
+				eval "$(sed -n "/^${fn}() {/,/^}/p" "$3")"
+				[[ "$(type -t "${fn}")" == "function" ]] || exit 8
+			done
+			codigo=0
+			migrar_database_url_de_socket "$1" "$2" || codigo=$?
+			printf "%s" "${DONO_ARQ_AMBIENTE}"
+			exit "${codigo}"
+		' _ "$1" "$2" "${SCRIPT_PROVISIONAR}" \
+			"${PAPEL_DB}" "${BANCO_DB}" "${HOSPEDEIRO_DB}" "${DIR_SOCKET_PG}"
 	}
 
-	local codigo_migracao=0
-	migrar_isolado "${arq_migracao}" "${porta_pg_sonda}" "${credencial_sintetica}" || codigo_migracao=$?
+	local dono_esperado dono_efetivo codigo_migracao=0
+	dono_esperado="$(stat -c '%U' "${arq_migracao}")"
+	dono_efetivo="$(migrar_isolado "${arq_migracao}" "${porta_pg_sonda}" "${credencial_sintetica}")" ||
+		codigo_migracao=$?
+	# PRIMEIRA do bloco de propósito: é a rede do defeito que fez esta sonda
+	# reprovar com diagnóstico enganoso. Se a sonda voltar a rodar num contexto que
+	# herda o `readonly` das constantes, ela morre na atribuição e não devolve dono
+	# nenhum — e a reprovação nomeia a colisão em vez de acusar a migração.
+	afirmar_igual "(n) a sonda sobrescreveu DONO_ARQ_AMBIENTE — sem isso a migração aborta e as asserções seguintes reprovam pelo motivo errado" \
+		"${dono_esperado}" "${dono_efetivo}"
 	afirmar_igual "(n) a migração reporta que houve mudança" "0" "${codigo_migracao}"
 	afirmar_igual "(n) a cadeia migrada é a forma gravada hoje, com a credencial PRESERVADA" \
 		"DATABASE_URL=postgresql://${PAPEL_DB}:${credencial_sintetica}@${HOSPEDEIRO_DB}:${porta_pg_sonda}/${BANCO_DB}" \
@@ -1344,7 +1386,8 @@ ct_003() {
 	# A segunda execução não tem o que fazer — é o que torna a migração idempotente
 	# em vez de uma reescrita a cada provisionamento.
 	local codigo_segunda=0
-	migrar_isolado "${arq_migracao}" "${porta_pg_sonda}" "${credencial_sintetica}" || codigo_segunda=$?
+	migrar_isolado "${arq_migracao}" "${porta_pg_sonda}" "${credencial_sintetica}" >/dev/null ||
+		codigo_segunda=$?
 	afirmar_igual "(n) a segunda migração não tem o que fazer" "1" "${codigo_segunda}"
 
 	# O companheiro negativo, e a razão de a migração ser reconhecida por igualdade
@@ -1357,7 +1400,8 @@ ct_003() {
 	local antes_nao_migravel
 	antes_nao_migravel="$(sha256sum "${arq_nao_migravel}" | cut -d' ' -f1)"
 	local codigo_nao_migravel=0
-	migrar_isolado "${arq_nao_migravel}" "${porta_pg_sonda}" "${credencial_sintetica}" || codigo_nao_migravel=$?
+	migrar_isolado "${arq_nao_migravel}" "${porta_pg_sonda}" "${credencial_sintetica}" >/dev/null ||
+		codigo_nao_migravel=$?
 	afirmar_igual "(n) socket com porta divergente da viva NÃO é migrado" "1" "${codigo_nao_migravel}"
 	afirmar_igual "(n) e o arquivo não migrável fica byte a byte intacto" \
 		"${antes_nao_migravel}" "$(sha256sum "${arq_nao_migravel}" | cut -d' ' -f1)"
@@ -1680,8 +1724,32 @@ ct_005() {
 	# escopo de `local` no shell é DINÂMICO, então um `local escuta` dentro do SUT
 	# sombreia a `escuta` da sonda e o dublê passa a ler o vazio do próprio SUT —
 	# um teste que falha sem que haja defeito. Nomes disjuntos evitam a colisão.
+	#
+	# DECISÃO FECHADA — T7 / 3ª bateria privilegiada · 2026-08-01
+	# O QUÊ: o contrato desta sonda é a SAÍDA PADRÃO — `ABORTA`, `ACEITA`,
+	#        `ABORTAACEITA` ou `SEM-SUT`. O código de saída dela é ruído e vale
+	#        SEMPRE 0, em qualquer desfecho, inclusive quando o processo interno
+	#        morre. Desfecho fora dos quatro vira o rótulo `SONDA-QUEBRADA[...]`,
+	#        que carrega o código e a saída bruta.
+	# POR QUÊ: enquanto o código do guarda vazava para fora, um sítio de chamada
+	#        em ATRIBUIÇÃO SIMPLES — `desfecho="$(sondar_guarda_de_porta ...)"` —
+	#        herdava o 1 do `abortar` do dublê, e o `set -Eeuo pipefail` do topo
+	#        deste arquivo matava o verificador EM SILÊNCIO no meio do CT-005: sem
+	#        as asserções (g), sem resumo, com a bateria agregadora reportando
+	#        apenas "saiu 1". Foi a TERCEIRA manifestação da mesma classe — as
+	#        opções e o escopo do próprio verificador interferindo na sonda que
+	#        carrega o SUT; antes foram o escopo dinâmico do `local` e o
+	#        `readonly` herdado por subshell. As duas anteriores foram fechadas
+	#        POR SÍTIO; esta é fechada no contrato, que é o que impede a quarta:
+	#        nenhum sítio de chamada, presente ou futuro, precisa lembrar de
+	#        `|| true` nem de `|| codigo=$?`, em posição sintática nenhuma.
+	# REVERTER EXIGE: provar que TODO sítio de chamada — inclusive os que ainda
+	#        não existem — está em posição onde o código de saída não alcança o
+	#        `set -e` (argumento de comando, condição de `if`, lado esquerdo de
+	#        `||`), e que nenhuma asserção observa o desfecho pelo código.
 	sondar_guarda_de_porta() { # $1 unidade ativa (1/0) · $2 listen_addresses · $3 porta viva · $4 prova de posse (ou vazio)
-		bash -c '
+		local desfecho_bruto="" codigo_bruto=0
+		desfecho_bruto="$(bash -c '
 			set -uo pipefail
 			SUT="$1" SONDA_UNIDADE_ATIVA="$2" SONDA_ESCUTA="$3" SONDA_PORTA_VIVA="$4" SONDA_PROVA="$5"
 			SONDA_PORTA=5432
@@ -1724,14 +1792,36 @@ ct_005() {
 				conferir_colisao_de_porta "${SONDA_PORTA}" "postgresql@18-main.service" "remedio" &&
 					printf "ACEITA"
 			fi
-		' _ "${SCRIPT_PROVISIONAR}" "$1" "$2" "$3" "$4"
+		' _ "${SCRIPT_PROVISIONAR}" "$1" "$2" "$3" "$4")" || codigo_bruto=$?
+
+		# Desfecho fora dos quatro conhecidos NÃO segue adiante como se fosse um
+		# deles: vira um rótulo que NOMEIA a causa. Sem isto, a sonda que morre
+		# antes de imprimir devolve cadeia vazia, e a asserção reprova comparando
+		# `[]` contra `[ABORTA]` — diagnóstico que não distingue "o guarda decidiu
+		# errado" de "a sonda nem chegou a rodar".
+		case "${desfecho_bruto}" in
+		ABORTA | ACEITA | ABORTAACEITA | SEM-SUT) printf '%s' "${desfecho_bruto}" ;;
+		*) printf 'SONDA-QUEBRADA[codigo=%s saida=%s]' "${codigo_bruto}" "${desfecho_bruto:-<vazia>}" ;;
+		esac
+		return 0
 	}
 
+	# A PRIMEIRA chamada usa unidade inativa de propósito: é a que confirma que o
+	# SUT foi carregado, e o desfecho dela decide se a tabela abaixo tem objeto.
 	local desfecho
 	desfecho="$(sondar_guarda_de_porta 0 "" "" cluster_escuta_na_porta)"
-	if [[ "${desfecho}" == "SEM-SUT" ]]; then
+	case "${desfecho}" in
+	SEM-SUT)
 		falhar "(g) não consegui carregar 'conferir_colisao_de_porta' e 'cluster_escuta_na_porta' de ${SCRIPT_PROVISIONAR} — sem elas a tabela ficaria sem SUT e passaria vazia"
-	else
+		;;
+	SONDA-QUEBRADA*)
+		# O ramo que existe para que o modo de falha SILENCIOSO nunca volte. Ele é
+		# alcançado quando a sonda não devolve nenhum dos quatro desfechos — foi
+		# exatamente o estado em que o `set -e` derrubava o verificador sem dizer
+		# por quê, deixando as pontas (g) sem imprimir e o resumo sem sair.
+		falhar "(g) a sonda do guarda de colisão não devolveu nenhum dos quatro desfechos conhecidos (ABORTA/ACEITA/ABORTAACEITA/SEM-SUT) — obtive ${desfecho}. O processo da sonda terminou antes de imprimir: releia o cabeçalho de 'sondar_guarda_de_porta' e o erro-padrão acima antes de mexer nas asserções abaixo"
+		;;
+	*)
 		ok "(g) guarda de colisão e prova de posse do cluster carregados de ${SCRIPT_PROVISIONAR##*/}"
 
 		# O ESTADO DA TRANSIÇÃO, e a razão de a ponta existir: unidade ativa e
@@ -1766,7 +1856,8 @@ ct_005() {
 			"ACEITA" "$(sondar_guarda_de_porta 1 "" "" "")"
 		afirmar_igual "(g) porta fixa, sem prova extra: unidade inativa continua abortando" \
 			"ABORTA" "$(sondar_guarda_de_porta 0 "" "" "")"
-	fi
+		;;
+	esac
 
 	unset -f sondar_guarda_de_porta
 
