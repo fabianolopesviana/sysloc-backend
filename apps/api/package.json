@@ -1,0 +1,34 @@
+{
+  "name": "@sysloc/api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Serviço de aplicação do backend Sysloc — verificações de saúde, contrato publicado e tratamento global de erro (ADR-0007)",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc --build",
+    "start": "node dist/main.js",
+    "test": "tsc --build && tsc -p tsconfig.test.json && vitest run"
+  },
+  "dependencies": {
+    "@fastify/static": "9.3.0",
+    "@nestjs/common": "11.1.28",
+    "@nestjs/core": "11.1.28",
+    "@nestjs/platform-fastify": "11.1.28",
+    "@nestjs/swagger": "11.4.6",
+    "@sysloc/shared": "workspace:*",
+    "fastify": "5.10.0",
+    "ioredis": "5.11.1",
+    "postgres": "3.4.9",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "11.1.28",
+    "@types/node": "24.13.3",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

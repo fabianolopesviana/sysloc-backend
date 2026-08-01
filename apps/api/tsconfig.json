@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "sourceMap": true,
+    "types": ["node"]
+  },
+  // `src/` importa `@sysloc/shared` pelo especificador público, e o `exports` daquele manifesto
+  // resolve só para `dist/` — que o `.gitignore` barra. Declarar a referência é o que faz o
+  // `tsc --build` dos scripts `build` e `test` deste pacote CONSTRUIR o irmão antes de compilar
+  // aqui: em árvore limpa o artefato passa a existir, e depois de uma alteração em
+  // `packages/shared/src/` ele passa a corresponder a ela. Sem isto, a ordenação existia apenas
+  // no grafo do Turborepo (`test.dependsOn: ["^build"]`), que `pnpm --filter @sysloc/api test`
+  // — a forma canônica de rodar um subset (`.claude/rules/testing-stack.md`) — não atravessa.
+  "references": [{ "path": "../../packages/shared" }],
+  "include": ["src/**/*.ts"]
+}

@@ -24,3 +24,8 @@ packages:
 # escopo possível: apenas o artefato que de fato precisa de preparação em disco.
 allowBuilds:
   '@embedded-postgres/linux-x64': true
+  # Dependência transitiva do framework do serviço de aplicação (T5). O script que ela
+  # executaria na instalação é de telemetria — envia dados do ambiente de quem instalou.
+  # Negado explicitamente, e não deixado em aberto: a linha declara a decisão para quem
+  # a reencontrar, em vez de a instalação voltar a perguntar a cada máquina.
+  '@scarf/scarf': false

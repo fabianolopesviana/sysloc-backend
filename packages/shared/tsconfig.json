@@ -2,6 +2,12 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    // Este pacote é REFERENCIADO por `apps/api` (`apps/api/tsconfig.json`), e uma referência de
+    // projeto só é aceita sobre um projeto composto. É o que faz `tsc --build` no pacote que
+    // consome construir este aqui ANTES de compilar a si mesmo — sem isso, o `dist/` que o
+    // `exports` do manifesto resolve pode não existir (árvore limpa) ou corresponder a um `src/`
+    // anterior, e a verificação do consumidor rodaria contra artefato que não é o do repositório.
+    "composite": true,
     "rootDir": "src",
     "outDir": "dist",
     "declaration": true,

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Mesmo arranjo de `packages/shared`: o `tsconfig.json` ao lado EMITE o serviço, e por isso
+    // seu `include` alcança só `src/`. Verificar tipos é outro problema — o rigor de
+    // `tsconfig.base.json` precisa alcançar também o código que PROVA o serviço, senão uma
+    // conversão deliberada do teste que deixou de valer compilaria e passaria em silêncio.
+    "noEmit": true,
+    // Os arquivos de `test/` alcançam o código sob teste e os helpers de instância efêmera de T4
+    // pelo caminho REAL (`../src/main.ts`, `.../test/postgres-efemero.ts`), como já fazem os
+    // testes de `packages/shared`. Só é aceito com emissão desligada, e aqui ela está.
+    "allowImportingTsExtensions": true,
+    // `rootDir` sobe até a raiz do repositório porque a verificação importa os helpers efêmeros
+    // de `packages/shared/test/`, que estão fora deste pacote. Emissão desligada, então as opções
+    // de artefato abaixo só produziriam conflito.
+    "rootDir": "../..",
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

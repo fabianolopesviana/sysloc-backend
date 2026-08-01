@@ -21,6 +21,11 @@
     // `rootDir` volta à raiz do pacote porque `test/` está fora de `src/`; emissão está
     // desligada, então as três opções de artefato abaixo só produziriam conflito de opção.
     "rootDir": ".",
+    // O `tsconfig.json` ao lado é COMPOSTO — é o que permite `apps/api` referenciá-lo e construí-lo
+    // por `tsc --build`. Projeto composto não pode desligar a emissão de declarações, e este aqui
+    // não emite nada: ele é o projeto de VERIFICAÇÃO DE TIPOS, não produz artefato e não é alvo de
+    // referência de ninguém. Desfazer a herança aqui é o que mantém as duas coisas verdadeiras.
+    "composite": false,
     "declaration": false,
     "declarationMap": false,
     "sourceMap": false
