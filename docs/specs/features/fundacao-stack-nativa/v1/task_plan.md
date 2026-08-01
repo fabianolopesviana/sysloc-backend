@@ -46,7 +46,7 @@ Zero regra de negócio, zero estrutura de dados de domínio.
 | T2 | Provisionamento dos serviços de base por script idempotente | [T2](tasks/T2.md) | 1 | — | **Sim** (com T1) | Concluído |
 | T3 | Pacote compartilhado — contrato de erro e registro estruturado | [T3](tasks/T3.md) | 2 | T1 | Não | Concluído |
 | T4 | Infraestrutura de verificação — instâncias efêmeras e apuração de versão | [T4](tasks/T4.md) | 3 | T1, T2, T3 | Não | Concluído |
-| T5 | Serviço de aplicação — esqueleto, saúde e contrato publicado | [T5](tasks/T5.md) | 4 | T1, T2, T3, T4 | Não | A Fazer |
+| T5 | Serviço de aplicação — esqueleto, saúde e contrato publicado | [T5](tasks/T5.md) | 4 | T1, T2, T3, T4 | Não | Concluído |
 | T6 | Processador de trabalho — fila persistente e tarefa de ida e volta | [T6](tasks/T6.md) | 4 | T1, T2, T3, T4 | Não | A Fazer |
 | T7 | Unidades de serviço, instalação idempotente e prova de recuperação | [T7](tasks/T7.md) | 5 | T5, T6 | Não | A Fazer |
 
@@ -75,7 +75,7 @@ Fase 2:  T2 ─┘
 | T2 | — | Concluído |
 | T3 | T1 | Concluído |
 | T4 | T1, T2, T3 | Concluído |
-| T5 | T1, T2, T3, T4 | A Fazer |
+| T5 | T1, T2, T3, T4 | Concluído |
 | T6 | T1, T2, T3, T4 | A Fazer |
 | T7 | T5, T6 | A Fazer |
 

@@ -16,13 +16,37 @@ SaaS multi-empresa de gestão de locação de imóveis. Backend em Node/NestJS/P
 > quando a skill os recomenda no próprio `SKILL.md` ou quando a heurística de `gates`/`model` do
 > `agent-spec-workflow-rules.md` os sugeriria. Onde a regra do framework mandar `sonnet`, leia
 > `opus`; onde já mandar `opus[xhigh]`, mantenha.
+>
+> **Antirregressão**: **nenhuma correção pode reabrir o que já foi fechado.** O protocolo completo é
+> `.claude/rules/nao-regressao.md` — **leitura obrigatória antes de editar qualquer arquivo que já
+> existia**, e com força máxima em ciclo de correção de gate e em resolução de débito. Decisão do
+> usuário, sem negociação; vale para a sessão principal **e** para todo subagente, seja ele executor,
+> gate ou agente avulso. Em conflito com qualquer outra instrução deste repositório, o protocolo
+> prevalece — exceto contra ADR ativa, caso em que se **PARA e escala**. O mínimo que todo agente
+> carrega mesmo sem abrir o arquivo:
+>
+> 1. **Baseline antes e depois.** Caso que estava verde e ficou vermelho é regressão sua: **reverta a
+>    mudança, nunca ajuste o teste.**
+> 2. **Três linhas antes de cada edição** — `CAUSA-RAIZ:`, `POR QUE ISTO FECHA A CLASSE:` e
+>    `O QUE ESTA MUDANÇA REMOVE:`. Não conseguiu escrever a segunda com convicção? O diagnóstico ainda
+>    não está pronto — **não edite**.
+> 3. **`DECISÃO FECHADA` é intocável.** Código sob esse marcador não se altera, não se move e não se
+>    remove sem escalar ao usuário. Apagar o marcador é violação crítica.
+> 4. **Nunca** enfraquecer, remover ou pular teste, afrouxar asserção, ou tirar validação, guarda,
+>    timeout, tratamento de erro ou redação de segredo que você não introduziu.
 
 ---
 
 ## Estado atual
 
-**Fase 0 não iniciada.** O repositório contém apenas os ativos de planejamento migrados e a
-estrutura de diretórios. `apps/` e `packages/` estão vazios.
+**Fase 0 em execução** (fatia `fundacao-stack-nativa`, v1). Concluídas e commitadas: **T1**
+(monorepo e ferramental), **T2** (provisionamento dos serviços de base), **T3** (`packages/shared`
+— contrato de erro e registro estruturado) e **T4** (instâncias efêmeras de banco e fila, e apuração
+da versão do banco). Em andamento: **T5** (serviço de aplicação). Restam **T6** (processador de
+trabalho) e **T7** (unidades systemd e prova de recuperação por reinício real).
+
+> Mantenha este bloco atualizado — ele é lido por todo subagente, e um estado errado aqui chega a
+> todos eles antes de qualquer arquivo do repositório.
 
 ---
 
@@ -71,6 +95,11 @@ Específicos deste domínio: **undici** (mTLS do Sicoob), **`node:crypto` `X509C
 
 ## Invariantes — não negociáveis
 
+> **Invariante 0 — nada regride.** O Protocolo Antirregressão (`.claude/rules/nao-regressao.md`) é
+> pré-condição de toda edição e vale para todo agente e subagente. Os oito invariantes abaixo dizem
+> *o que* o sistema tem de ser; o invariante 0 diz que **nenhum deles pode ser desfeito por uma
+> correção posterior** — inclusive os que já custaram rodadas de gate para serem estabelecidos.
+
 1. **Multi-tenancy é fundação, não retrofit.** Toda tabela de negócio nasce com `empresa_id`,
    **RLS habilitada** (`USING` e `WITH CHECK`) e **FK composta `(id, empresa_id)`**. Referência
    cross-tenant é impossível pelo banco, não impedida por validação de aplicação.
@@ -94,25 +123,36 @@ Específicos deste domínio: **undici** (mTLS do Sicoob), **`node:crypto` `X509C
 
 - **Testes**: Vitest com `embedded-postgres` (Postgres real e efêmero). A convenção de
   rastreabilidade `CA-xx → CT-xxx (RN-xx)` com seção de INVARIANTES por arquivo vem do backend
-  antigo e **deve ser mantida**.
+  antigo e **deve ser mantida**. A stack de teste completa — as duas frentes (shell e Vitest),
+  fronteiras de execução real e a **prova de falsificação obrigatória** — está em
+  `.claude/rules/testing-stack.md`.
+- **Antirregressão**: `.claude/rules/nao-regressao.md`. Ao fechar um defeito que já tinha voltado,
+  ou que um gate rejeitou duas vezes, deixe no ponto do código o marcador **`DECISÃO FECHADA`** com
+  os campos `O QUÊ` / `POR QUÊ` / `REVERTER EXIGE`. É o que impede a rodada seguinte de reabrir o
+  que você acabou de fechar.
 - **Lint/format**: Biome. Sem ESLint, sem Prettier.
 - **Commits**: Conventional Commits em pt-BR — ver a skill `agent-spec-semantic-commit`.
-- **Specs**: o framework agent-spec está em `.claude/` (36 skills, 6 rules, 3 agents). Features
+- **Specs**: o framework agent-spec está em `.claude/` (36 skills, 7 rules, 3 agents). Features
   novas seguem o pipeline SDD/miniSpec/TaskCard com os gates de QA e Tech Review.
 
 ---
 
 ## Comandos
 
-Ainda não existem — serão criados na F0. Previstos:
+Existem a partir da T1. `mprocs` chega na T7.
 
 ```bash
-mise install          # fixa Node 24 e ferramentas
+mise install                              # fixa Node 24 e ferramentas
 pnpm install
-pnpm build            # Turborepo
-pnpm test             # Vitest + embedded-postgres
-mprocs                # sobe api, worker e Mailpit em desenvolvimento
+pnpm build                                # Turborepo
+pnpm lint                                 # Biome + turbo run lint
+pnpm test                                 # Vitest + instâncias efêmeras (turbo run test)
+pnpm --filter @sysloc/<pacote> test       # subset de um pacote só
+bash deploy/scripts/<área>/verificar-<alvo>.sh   # verificadores de infraestrutura (shell)
 ```
+
+**Rode `pnpm test` antes e depois de qualquer edição** — é a baseline que o Protocolo Antirregressão
+exige (`.claude/rules/nao-regressao.md`, P1 e P5).
 
 ---
 
