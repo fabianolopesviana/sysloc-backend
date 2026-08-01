@@ -4,7 +4,7 @@
 
 ## 1. Resumo do Run
 
-Status: 5/7 tasks concluídas · **CA-14 fechada** (apuração privilegiada executada pelo operador em 2026-08-01: verificação 18.4 · operação 18.4, sem divergência) · T1 verde em 62 asserções · T2 verde em 5/5 casos e 69 asserções, provada por 5 execuções assistidas no servidor real · T3 verde em 66 casos de Vitest, com 4 vazamentos de segredo encontrados e fechados · T4 verde em 79 casos de Vitest e 76 asserções de shell · T5 verde em 20 casos de Vitest (**suíte total: 99 verdes**), com o serviço de aplicação de pé
+Status: 6/7 tasks concluídas · **CA-14 fechada** (apuração privilegiada executada pelo operador em 2026-08-01: verificação 18.4 · operação 18.4, sem divergência) · T1 verde em 62 asserções · T2 verde em 5/5 casos e 69 asserções, provada por 5 execuções assistidas no servidor real · T3 verde em 66 casos de Vitest, com 4 vazamentos de segredo encontrados e fechados · T4 verde em 79 casos de Vitest e 76 asserções de shell · T5 verde em 20 casos de Vitest, com o serviço de aplicação de pé · T6 verde em 16 casos, com o processador de trabalho consumindo fila persistente (**suíte total: 115 verdes**)
 
 | Task | Nome | Modelo | Arquivos | QA | Tech Review |
 |------|------|--------|----------|-----|-------------|
@@ -13,8 +13,17 @@ Status: 5/7 tasks concluídas · **CA-14 fechada** (apuração privilegiada exec
 | T3 | Pacote compartilhado — contrato de erro e registro estruturado | opus | 11 criados, 1 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
 | T4 | Infraestrutura de verificação — instâncias efêmeras e apuração de versão | opus | 9 criados, 6 mod | ✅ APROVADO | ✅ APROVADO_COM_OBSERVACOES |
 | T5 | Serviço de aplicação — esqueleto, saúde e contrato publicado | opus | 14 criados, 6 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
+| T6 | Processador de trabalho — fila persistente e tarefa de ida e volta | opus | 10 criados, 5 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
 
-**T6 e T7 pendentes.** Nenhuma bloqueada — T6 está desbloqueada; T7 depende de T6.
+**Só a T7 pendente.** Nenhuma bloqueada.
+
+**Sobre o custo de T6**: três rodadas, **dentro do limite** — a segunda seguida sem extensão. Cada gate rejeitou uma vez, e as duas rejeições foram da mesma família: **rede de proteção ausente sobre código que estava certo**. O Gate 2 pegou um desligamento gracioso que podia travar para sempre; o Gate 1 pegou, na rodada seguinte, que a correção desse defeito tinha sido provada **pela metade**.
+
+**O achado mais fino da fatia inteira está aqui.** O Gate 2 leu a biblioteca de fila instalada e descobriu que `Worker.close(false)` fecha uma conexão **duplicada por dentro**, com `shared: false`, cujo fechamento faz `quit()` — e que essa duplicata herda `maxRetriesPerRequest: null` e uma política de reconexão infinita. Com a fila fora do ar, o `QUIT` fica na fila de espera local e **nunca resolve**. O executor mediu: o processo **não terminava em 40 s**. O comentário que já existia no código identificava e resolvia exatamente esse cenário — para a conexão de topo. A proteção simplesmente não alcançava as duas esperas anteriores.
+
+**E o Gate 1 então mostrou que corrigir não é o mesmo que provar.** A correção tinha duas metades — limitar a espera, e **dizer a quem pediu que o desfecho foi anômalo**, que é o que faz o ponto de entrada terminar o processo. O teste novo cobria só a primeira: trocando o valor devolvido de `'PRAZO-ESTOURADO'` para `'RECURSOS-DEVOLVIDOS'`, a suíte ficava **16/16 verde** e o processo voltava a ficar pendurado, com o journal ainda por cima negando o estouro. É o padrão da §7 do Protocolo Antirregressão em estado puro, e desta vez foi pego **na rodada seguinte**, não na quinta.
+
+**Três gates fizeram trabalho que nenhum deles precisava fazer**: o Gate 1 rodou por iniciativa própria um **terceiro** mutante (`logger.error` → `logger.warn`) porque percebeu que, sob o primeiro, o caso reprovava antes de alcançar a asserção do journal — que permanecia, portanto, não-falsificada; o Gate 2 **foi ler o card do CT-003 da T7** e descobriu que ele não alcança o processador; e o Gate 1 **retificou uma afirmação própria** da passagem anterior em vez de defendê-la.
 
 **Sobre o custo de T5**: três rodadas, **dentro do limite** — a primeira task da fatia que não precisou de extensão. O Gate 1 aprovou nas três passagens e o Gate 2 rejeitou duas vezes, ambas por **rede de proteção ausente**, nunca por comportamento errado. É um padrão diferente do de T2/T3/T4 e vale registrar: o código esteve certo desde a primeira passada; o que faltava era o que impede alguém de desfazê-lo. A primeira rejeição foi o `dist/` de `@sysloc/shared` consumido sem *project reference* — em árvore limpa `pnpm --filter @sysloc/api test` abortava, e após editar `erros.ts` a api era verificada contra um artefato velho, o que faria a prova da ADR-0007 rodar contra uma versão que não é a do repositório. A segunda foi uma guarda de segurança correta e sem teste que a defendesse: reverter uma linha deixava os 98 casos verdes.
 
@@ -210,10 +219,50 @@ Status: 5/7 tasks concluídas · **CA-14 fechada** (apuração privilegiada exec
 - **Impacto:** ruído, não falta de detecção — o que separa isto do ALTO canônico de AP-29 é que a asserção plenamente discriminante está **imediatamente acima** e cobre a invariante inteira. Resíduo de valor não-vazio: ela afirma, de lambugem, que `carregarAmbiente` não escreveu em `process.env` durante a chamada.
 - **O que fazer:** remover a linha, ou trocar a comparação por uma constante nomeada no topo usada tanto no plantio quanto no comentário, sem reencenar a comparação como asserção.
 
+### D30 · baixo · architecture · T6 · Tech Review — **AÇÃO OBRIGATÓRIA ANTES DA T7**
+- **Onde:** `apps/worker/src/fila.ts:88-92` (marcador `DECISÃO FECHADA`) × `docs/specs/features/fundacao-stack-nativa/v1/tasks/T7.md`
+- **Problema:** o marcador afirma que a T7 "declara `TimeoutStopSec` com folga sobre este valor" (15 s). A T7 **não declara nada disso** — `grep TimeoutStopSec` no arquivo devolve zero, e nem a §3.1 nem a §4 trazem o item. Nesta máquina o par se sustenta **por acidente**: `DefaultTimeoutStopUSec` = 1min30s, e 15 s < 90 s. **Não é a decisão que segura o par — é o padrão da distribuição.**
+- **Impacto:** se o padrão do host for reduzido (ou as unidades forem instaladas onde ele seja menor que 15 s), o caminho gracioso perde para o `SIGKILL` e a unidade converge para `failed` — exatamente o que o **CT-006 da T7 reprova**. O custo de descobrir isso é a **janela de indisponibilidade inteira**, que não é repetível.
+- **O que fazer:** acrescentar à §4 da T7 o item "declarar `TimeoutStopSec` nas duas unidades, com folga sobre o `LIMITE_DE_DESLIGAMENTO_MS` de 15 s", citando o marcador literal como origem. **Já injetado no prompt do executor da T7 por este orquestrador.**
+
+### D31 · baixo · project_pattern · T6 · Tech Review
+- **Onde:** `apps/worker/src/fila.ts:148` (JSDoc) e `:222` (`encerrarUmaVez`)
+- **Problema:** o JSDoc de `Fila.encerrar` manda "ver a decisão fechada no topo do módulo", mas no topo está o marcador da **versão da biblioteca**; o que governa o prazo e o `finally` está ~150 linhas abaixo, no bloco de constantes. E `encerrarUmaVez` — a estrutura que o marcador existe para proteger — não aponta de volta a ele. A §3 do Protocolo Antirregressão é explícita: "a decisão precisa morar onde a tentação acontece".
+- **Impacto:** é a **R3** do protocolo — a regressão que nem compilador, nem suíte, nem gate pegam. Contido hoje porque o CT-003 e o CT-005 amarram os dois lados do discriminador; o que fica exposto é a próxima reescrita que **preserve o desfecho** e desfaça o `finally` ou o prazo por idiomatismo.
+- **O que fazer:** duas linhas — corrigir o JSDoc para nomear o marcador, e acrescentar em `encerrarUmaVez` um comentário apontando para ele. Não mover nem reescrever o marcador.
+
+### D32 · baixo · architecture · T6 · Tech Review — **decidir na primeira fatia de cobrança**
+- **Onde:** `apps/worker/src/fila.ts:140` (`Fila.eco`) e `:166` (`OPCOES_PADRAO_DA_TAREFA`)
+- **Problema:** o lado produtor mora dentro de `apps/worker`, que o primeiro produtor real **não poderá importar** — `apps/api` não pode depender de uma aplicação privada, sem `exports`. Ele terá de construir a própria fila e ou duplicar `attempts`/`backoff`/`removeOnComplete`/`removeOnFail`, ou ignorá-los: essas opções só valem para tarefas enfileiradas **pela instância que as declara**. O cabeçalho do módulo argumenta que a constante exportada do nome impede a divergência produtor/consumidor; **as opções têm o mesmo risco e nenhuma proteção equivalente**.
+- **Impacto:** hoje, uma fila ociosa no processo do processador. Depois, a política de repetição documentada como "a de produção" aplicada apenas no processo da verificação — e a decisão tomada **por omissão**.
+- **O que fazer:** nada nesta fatia (extrair um pacote de fila agora seria abstração antecipada, e a T6 proíbe tarefa de negócio). Na primeira fatia que enfileirar tarefa real: extrair nome + opções + tipos de carga para um pacote compartilhado, **ou** declarar a repetição deliberada com marcador nos dois lados.
+
+### D33 · baixo · project_pattern · T6 · Tech Review
+- **Onde:** `docs/specs/features/fundacao-stack-nativa/v1/tasks/T6.md` §5.5 e §5.6
+- **Problema:** a entrega tem **sete** casos identificados (CT-001 a CT-005 em `eco.spec.ts`, CT-006/CT-007 em `ambiente.spec.ts`), e a §5.5 mapeia quatro, a §5.6 traz quatro cards — mas a §7 marca os dois itens como preenchidos. Não é desvio do executor: ele seguiu a instrução literal do QA de "não mexer na §5", e a instrução cobriu só metade do problema (não enfraquecer os cards existentes **não implica** deixar os novos sem declaração). **A convenção `CA-xx → CT-xxx` está honrada nos arquivos de teste** — os dois trazem a tabela de INVARIANTES cobrindo os sete casos. O que está incompleto é o artefato de spec.
+- **Impacto:** quem abrir a T6 conclui que CT-005, CT-006 e CT-007 não existem — inclusive a T7, que precisa saber que o CA-15 já tem prova de unidade do lado do processador. Vale também para a colisão de identificador: a T7 declara um CT-006 próprio e a §5 da T6 não registra que o número já foi usado.
+- **O que fazer:** acrescentar à §5.5 as linhas `§4 (desligamento gracioso) → CT-005` e `CA-15 → CT-006, CT-007`, e um card curto por caso novo na §5.6 — adição pura, sem tocar nos quatro originais.
+
+### D34 · baixo · error_handling · T6 · Tech Review
+- **Onde:** `apps/worker/src/main.ts:169-173`
+- **Problema:** no caminho de falha de partida, `catch (erro) { await fila.encerrar(); throw erro; }` — se `fila.encerrar()` rejeitar, o `throw erro` **nunca executa** e o que sobe é a rejeição da limpeza. A mensagem que chega ao `stderr` passa a descrever a limpeza, não a causa. O cenário é real: neste ponto o cliente foi construído mas a conexão é assíncrona, e `close()` é exatamente a chamada que o P1 mostrou ser capaz de travar contra servidor inalcançável.
+- **Impacto:** diagnóstico perdido num caminho de partida, com o processo já saindo com código 1. Baixo por ser pouco frequentado — **mas é o caminho que a T7 vai exercitar quando a unidade subir antes da fila**.
+- **O que fazer:** uma linha — `await fila.encerrar().catch(() => undefined);` antes do `throw erro`, ou um `try` que registre a falha da limpeza e siga para o erro original.
+
+### D35 · baixo · tests · T6 · QA
+- **Onde:** `apps/worker/test/ambiente.spec.ts:194`
+- **Problema:** `expect(ambiente.nivelDeLog).not.toBe(process.env.LOG_LEVEL)` é implicada pela linha anterior (`toBe('warn')`, com `'trace'` plantado no processo) — nunca pode falhar sozinha.
+- **Impacto:** manutenibilidade, não detecção: a asserção infalível está **adjacente** à falível, não no lugar dela, e é a falível que mata o defeito perseguido. Mesmo padrão já anotado como D29 no lado da api.
+- **O que fazer:** remover a linha, ou trocar por um comentário que documente a divergência sem simular asserção.
+
 ### Débito residual abaixo do limiar de finding
 
 - `verificar-workspace.sh:63` — `STATUS_INICIAL` no escopo de arquivo embora só usado dentro de `ct_004`; poderia ser `local`.
 - `verificar-provisionamento.sh` — a detecção de "a `(f)5` falhou por motivo alheio ao guarda" depende **inteiramente** do companheiro positivo `(f)6`. Se alguém removê-lo, a `(f)5` sozinha volta a ser enganável.
+- **`pnpm lint` não executa tarefa nenhuma** — nenhum pacote declara a tarefa `lint` no Turbo, então o comando devolve "No tasks were executed" e sai verde. A análise estática só acontece invocando o Biome direto. Nas palavras do Gate 1: *"um gate que confie em `pnpm lint` recebe saída verde sem ter verificado nada"*. Corrigir declarando a tarefa nos três pacotes.
+- **Colisão de identificador de caso**: `apps/worker/test/ambiente.spec.ts` batizou CT-006 e CT-007, e a T7 declara um CT-006 próprio. Candidato a prefixo por task na convenção de rastreabilidade.
+- **`VARIAVEIS_EXIGIDAS` divergente entre espelho e original**: no worker é literal local do teste; na api é importado do esquema sob teste, justamente para que "variável nova passe a ser exercitada sem ninguém lembrar de acrescentá-la aqui". Se o processador ganhar uma terceira variável, a tabela não a exercitará e nada reprovará.
+- **`git checkout -- <arquivo>` é destrutivo nesta fatia**: os arquivos ficam no índice como blob vazio (`e69de29`) por causa do `git add -N` que o orquestrador aplica antes dos gates, então o checkout zera o arquivo em vez de restaurá-lo. Reverter mutante exige cópia de segurança e restauração por `cp`, conferida por `sha256sum`. Um executor já foi mordido por isso e recuperou pelo hash.
 
 ## 3. Tasks Bloqueadas
 
@@ -283,3 +332,14 @@ O que a regra instala, além dessas duas: a taxonomia das **três** regressões 
 
 - **Para T6**: ela é o **terceiro consumidor** dos helpers de `packages/shared/test/`. Se repetir o import relativo profundo, o D28 deixa de ser dois-pacotes-três-imports e vira padrão consolidado — considere promover a decisão (subpath export) antes, não depois. Ela também será a segunda a escrever teste de rota/fila com aplicação real: o arranjo aprovado em T5 é **passar as instâncias efêmeras na assinatura** da função que sobe a aplicação, o que transformou a ADR-0006 de convenção lembrada em impossibilidade de tipo — imite-o em vez de reinventar. E ela depende do `parar()`/`religar()` de `redisEfemero` **preservando o diretório de dados**, que T4 já entregou.
 - **Para T7**, os quatro requisitos executáveis já acumulados: (a) agregar `verificar-apuracao-versao.sh` **por texto**, não só pelo código de saída — a bateria sai `exit 0` por desenho, e qualquer linha que case `CA-14.*EM ABERTO` em **qualquer** dos dois canais é pendência de fatia; (b) **preservar a ordem** de invocação em `verificar-fundacao.sh` e não paralelizar, porque o CT-004 de T1 depende do CT-001; (c) honrar o contrato de agregação que `verificar-provisionamento.sh` declara no cabeçalho; (d) teto de **oito pontas** por CT — "uma nona pede um CT próprio, não mais uma sub-função". Acrescente-se um quinto: **`verificar-workspace.sh` (T1) reprova 4 asserções contra o HEAD atual** ("workspace com exatamente 1 pacote", "`apps/`/`packages/` sem `package.json`") — o verificador congelou o estado de T1 e o clone efêmero é de HEAD, que hoje já traz `packages/shared` e `apps/api`. T7 agrega esse verificador; **ele precisa ser atualizado antes**, e a atualização é legítima (o invariante que ele testa mudou de propósito), não um afrouxamento.
+
+**19. Requisitos que a T6 impôs à T7 — os quatro estão injetados no prompt do executor dela, mas ficam aqui porque a T7 consome uma janela não repetível.**
+
+1. **`TimeoutStopSec` (é o D30, e o mais caro).** O marcador `DECISÃO FECHADA` de `apps/worker/src/fila.ts` afirma que a T7 o declara com folga sobre os 15 s do `LIMITE_DE_DESLIGAMENTO_MS`. A T7 não o menciona em lugar nenhum. Neste host o par se sustenta pelo padrão da distribuição (90 s), não pela decisão.
+2. **Ordenação das unidades no desligamento.** O systemd para na ordem **inversa** de `After=`: declarar `After=` do serviço de fila na unidade do processador é o que faz o processador parar **antes** dela e tomar o caminho gracioso de ~2,6 s. Sem isso, todo `reboot` paga os 15 s do prazo e grava uma linha `error` no journal — a unidade **não** vai a `failed` (o processo sai com código 0 por decisão própria), mas o CT-006 fica com ruído permanente e cada desligamento fica 15 s mais lento por unidade.
+3. **O `EnvironmentFile` do processador precisa de `LOG_LEVEL` e `REDIS_URL` — e não de `DATABASE_URL` nem `PORT`.** O `.env.example` versionado documenta `LOG_LEVEL` sob o cabeçalho "Serviço de aplicação", o que era verdade até a T6 e deixou de ser. Como os dois gates concordaram em não tocar o `.env.example` nesta fatia, isso vira responsabilidade de quem escreve as unidades: uma unidade de processador apontada para um arquivo montado a partir daquela leitura sobe sem `REDIS_URL` e falha na partida — corretamente, mas consumindo a janela.
+4. **`ExecStart` depende de artefato construído.** `apps/worker/package.json` declara `main: ./dist/main.js`, e `dist/` é barrado pelo `.gitignore`. A unidade precisa de `pnpm build` antes de `systemctl start`, ou de um `ExecStartPre`.
+
+E o quinto, herdado da 1ª passagem do Gate 2 sobre a T6: **o card do CT-003 da T7 não alcança o processador.** Ele é escrito no singular, exemplifica `sysloc-api-prova-config.service` e usa como dado de entrada a remoção da "variável de conexão com o banco" — `DATABASE_URL` é justamente a que o processador **não lê**. Executado contra `sysloc-worker` com esse dado, o caso veria o processo subir e **provaria o contrário do que afirma**.
+
+**20. O Protocolo Antirregressão pagou pela segunda vez, e agora do lado do Gate 1.** Na T5 ele produziu os dois primeiros marcadores do repositório. Na T6 produziu mais dois — e, sobretudo, produziu o vocabulário que fez o Gate 1 nomear o defeito da rodada 2 com precisão: *"o buraco não é o prazo; é o discriminador de desfecho, que é o que o `main.ts` consome"*. É literalmente a distinção "fechar o caminho apontado × fechar a classe" da §7 da rule. Vale registrar o que mudou no comportamento dos gates depois que ela existiu: os três mutantes da T6 foram executados **pelos próprios gates**, não aceitos por declaração — e um deles foi de iniciativa própria do Gate 1, que percebeu que a asserção do journal permanecia não-falsificada porque o caso reprovava antes de alcançá-la.

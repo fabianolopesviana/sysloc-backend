@@ -60,8 +60,22 @@
 import { URL } from 'node:url';
 import pino from 'pino';
 
-/** Severidades aceitas pela variável `LOG_LEVEL` (ver `.env.example`). */
-export type NivelDeLog = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+/**
+ * Severidades aceitas pela variável `LOG_LEVEL` (ver `.env.example`), na ordem crescente.
+ *
+ * É a lista que as composições raiz do serviço de aplicação e do processador de trabalho validam
+ * — as duas a consomem daqui, e não de uma cópia própria: severidade nova acrescentada em um dos
+ * lados faria um processo subir e o outro recusar o mesmo `EnvironmentFile`.
+ */
+export const NIVEIS_DE_LOG = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'] as const;
+
+/**
+ * Severidade aceita pela variável `LOG_LEVEL`.
+ *
+ * Derivada da lista acima de propósito: é o que garante que o tipo e a validação de ambiente
+ * nunca digam coisas diferentes sobre o que é uma severidade válida.
+ */
+export type NivelDeLog = (typeof NIVEIS_DE_LOG)[number];
 
 /** O registrador devolvido por {@link criarLogger}. */
 export type Logger = pino.Logger;

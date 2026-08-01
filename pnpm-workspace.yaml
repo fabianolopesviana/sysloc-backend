@@ -29,3 +29,9 @@ allowBuilds:
   # Negado explicitamente, e não deixado em aberto: a linha declara a decisão para quem
   # a reencontrar, em vez de a instalação voltar a perguntar a cada máquina.
   '@scarf/scarf': false
+  # Dependência transitiva da biblioteca de fila do processador (T6): acelerador NATIVO,
+  # opcional, do empacotador binário que o BullMQ usa para serializar carga útil. O script
+  # que ele executaria na instalação compila código C++ na máquina. Negado pelo mesmo
+  # critério do anterior — a biblioteca opera em JavaScript puro quando ele não está
+  # presente, então o que se perde é desempenho de serialização, não capacidade.
+  'msgpackr-extract': false

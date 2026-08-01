@@ -35,14 +35,16 @@
  * segunda, e o `.env.example` documenta as duas.
  */
 
-import type { NivelDeLog } from '@sysloc/shared';
+import {
+  EXIGENCIA_DA_CADEIA_DE_FILA,
+  ehCadeiaDeFilaValida,
+  NIVEIS_DE_LOG,
+  type NivelDeLog,
+} from '@sysloc/shared';
 import { z } from 'zod';
 
 /** Ambientes de execução aceitos em `NODE_ENV` — os mesmos que o `.env.example` documenta. */
 const AMBIENTES = ['development', 'test', 'production'] as const;
-
-/** Severidades aceitas em `LOG_LEVEL` — a lista que o registro estruturado de T3 reconhece. */
-const NIVEIS_DE_LOG = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'] as const;
 
 /** Maior porta TCP existente. */
 const MAIOR_PORTA = 65_535;
@@ -68,10 +70,11 @@ const ESQUEMA = z.object({
     .string()
     .regex(/^postgresql:\/\//, 'deve começar com postgresql://')
     .refine(URL.canParse, 'não é uma cadeia de conexão interpretável'),
-  REDIS_URL: z
-    .string()
-    .regex(/^redis:\/\//, 'deve começar com redis://')
-    .refine(URL.canParse, 'não é uma cadeia de conexão interpretável'),
+  // A regra e o texto da exigência vêm do pacote compartilhado, e não de uma cópia local: o
+  // processador de trabalho valida a MESMA variável, do MESMO arquivo de ambiente, e duas
+  // definições independentes divergiriam em silêncio até um `EnvironmentFile` subir um processo
+  // e recusar o outro.
+  REDIS_URL: z.string().refine(ehCadeiaDeFilaValida, EXIGENCIA_DA_CADEIA_DE_FILA),
 });
 
 /**

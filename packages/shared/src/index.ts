@@ -6,5 +6,12 @@
  * propósito: exportá-lo convidaria a duplicar a decisão em vez de usá-la.
  */
 
+export { EXIGENCIA_DA_CADEIA_DE_FILA, ehCadeiaDeFilaValida } from './ambiente.js';
 export { CodigoErro, type CorpoErro, ErroDeAplicacao, type OpcoesDeErro } from './erros.js';
-export { criarLogger, type Logger, type NivelDeLog, type OpcoesDeLogger } from './log.js';
+export {
+  criarLogger,
+  type Logger,
+  NIVEIS_DE_LOG,
+  type NivelDeLog,
+  type OpcoesDeLogger,
+} from './log.js';

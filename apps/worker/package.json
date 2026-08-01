@@ -1,0 +1,24 @@
+{
+  "name": "@sysloc/worker",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Processador de trabalho em segundo plano do backend Sysloc — consome a fila persistente",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc --build",
+    "start": "node dist/main.js",
+    "test": "tsc --build && tsc -p tsconfig.test.json && vitest run"
+  },
+  "dependencies": {
+    "@sysloc/shared": "workspace:*",
+    "bullmq": "5.81.3",
+    "ioredis": "5.11.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}
