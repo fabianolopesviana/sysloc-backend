@@ -1,26 +1,36 @@
 /**
  * Configuração de teste do pacote compartilhado.
  *
- * Mínima e local de propósito: a configuração agregada do workspace (`vitest.config.ts` da
- * raiz) nasce em T4, junto das instâncias efêmeras de banco e fila que ela precisa orquestrar.
- * Até lá cada pacote executa a própria suíte, e `turbo run test` as agrega.
+ * Este arquivo é o projeto que a configuração da raiz (`vitest.config.ts`, nascida em T4)
+ * agrega, e é também o que `pnpm --filter @sysloc/shared test` usa diretamente. Por isso ele
+ * declara o ambiente de execução do pacote INTEIRO, e não apenas a diferença: as duas formas de
+ * invocar a verificação — `vitest` na raiz e `turbo run test` por pacote — precisam produzir o
+ * mesmo resultado, e só a segunda passa por aqui.
  *
- * **Destino deste arquivo** (`.claude/rules/testing-stack.md` manda "config na raiz"): quando
- * a config da raiz nascer em T4, este arquivo **é absorvido e removido** — `environment` e
- * `include` são idênticos ao que a raiz vai declarar para todo pacote. O que NÃO é absorvível
- * é o `globalSetup`: ele compila este pacote, e um pacote só sabe compilar a si mesmo. Se em
- * T4 a raiz não oferecer forma de declarar preparação por pacote, este arquivo sobrevive
- * reduzido a essa única linha.
+ * O `globalSetup` é o item que a raiz não teria como declarar: ele compila este pacote, e um
+ * pacote só sabe compilar a si mesmo. Ver o cabeçalho de `test/preparar-artefato.ts` para o
+ * defeito que ele impede.
  */
 
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    name: '@sysloc/shared',
     environment: 'node',
     include: ['test/**/*.spec.ts'],
-    // Garante que `dist/` — que CT-009 resolve pelo `exports` do manifesto — corresponde ao
-    // `src/` desta execução, inclusive quando a suíte é invocada fora do script `test`.
+    // Garante que `dist/` — que o CT-009 de T3 resolve pelo `exports` do manifesto —
+    // corresponde ao `src/` desta execução, inclusive quando a suíte é invocada fora do script
+    // `test`.
     globalSetup: ['./test/preparar-artefato.ts'],
+    // Os casos de T4 sobem instância real de banco e de fila; o teto padrão de 5 s do arcabouço
+    // reprovaria a subida antes de ela terminar. O teto de CASO fica no padrão de propósito: os
+    // oito casos de `ambiente-efemero.spec.ts` declaram o próprio limite, um por um, e afrouxá-lo
+    // aqui só alargaria o teto dos casos que não precisam dele — um caso travado passaria a levar
+    // 90 s para reprovar em vez de 5 s, sem que nada ganhasse com isso.
+    hookTimeout: 90_000,
+    // Descartar as instâncias efêmeras é trabalho de encerramento: teto curto aqui abortaria o
+    // descarte no meio e deixaria exatamente o resíduo que a CA-7 proíbe.
+    teardownTimeout: 60_000,
   },
 });

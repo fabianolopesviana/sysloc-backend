@@ -7,3 +7,20 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# Scripts de instalação autorizados a executar.
+#
+# O pnpm bloqueia, por padrão, todo script de ciclo de vida de dependência — postura
+# correta contra pacote que executa código arbitrário na instalação. A autorização
+# abaixo é NOMINAL e existe por necessidade técnica verificada: o pacote que empacota
+# o binário do banco efêmero (T4) distribui as bibliotecas compartilhadas sem as
+# ligações simbólicas de versão (`libicuuc.so.60` -> `libicuuc.so.60.2`), e as recria
+# no `postinstall`. Sem ele os binários existem e não executam:
+#
+#   initdb: error while loading shared libraries: libicuuc.so.60: cannot open shared
+#   object file: No such file or directory
+#
+# Autorizar o pacote da plataforma, e não o pacote-mãe, mantém o alcance no menor
+# escopo possível: apenas o artefato que de fato precisa de preparação em disco.
+allowBuilds:
+  '@embedded-postgres/linux-x64': true

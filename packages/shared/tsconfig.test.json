@@ -12,6 +12,12 @@
     // Daí um projeto separado em vez de alargar o `include` do outro: alargá-lo faria `tsc`
     // emitir `dist/test/**` e publicá-lo junto do pacote.
     "noEmit": true,
+    // Os arquivos de `test/` se importam entre si pelo caminho REAL (`./efemero-comum.ts`), e
+    // não pelo caminho do artefato compilado. É o que permite que o mesmo módulo seja carregado
+    // pelo arcabouço de verificação E por `node <arquivo>.ts` direto — que é como os cenários
+    // de subprocesso de T4 rodam, sem etapa de compilação intermediária. Só é aceito com
+    // emissão desligada, e aqui ela está.
+    "allowImportingTsExtensions": true,
     // `rootDir` volta à raiz do pacote porque `test/` está fora de `src/`; emissão está
     // desligada, então as três opções de artefato abaixo só produziriam conflito de opção.
     "rootDir": ".",

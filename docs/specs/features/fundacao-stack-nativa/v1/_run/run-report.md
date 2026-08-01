@@ -4,15 +4,18 @@
 
 ## 1. Resumo do Run
 
-Status: 3/7 tasks concluídas · T1 verde em 62 asserções · T2 verde em 5/5 casos e 69 asserções, provada por 5 execuções assistidas no servidor real · T3 verde em 66 casos de Vitest, com 4 vazamentos de segredo encontrados e fechados
+Status: 4/7 tasks concluídas · **CA-14 fechada** (apuração privilegiada executada pelo operador em 2026-08-01: verificação 18.4 · operação 18.4, sem divergência) · T1 verde em 62 asserções · T2 verde em 5/5 casos e 69 asserções, provada por 5 execuções assistidas no servidor real · T3 verde em 66 casos de Vitest, com 4 vazamentos de segredo encontrados e fechados · T4 verde em 79 casos de Vitest e 76 asserções de shell
 
 | Task | Nome | Modelo | Arquivos | QA | Tech Review |
 |------|------|--------|----------|-----|-------------|
 | T1 | Fundação do monorepo — ferramental fixado e workspace construível | opus | 11 criados, 1 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
 | T2 | Provisionamento dos serviços de base por script idempotente | opus | 2 criados, 2 mod | ✅ APROVADO | ⚠️ PARCIAL (P9 aceito como débito por decisão do usuário) |
 | T3 | Pacote compartilhado — contrato de erro e registro estruturado | opus | 11 criados, 1 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
+| T4 | Infraestrutura de verificação — instâncias efêmeras e apuração de versão | opus | 9 criados, 6 mod | ✅ APROVADO | ✅ APROVADO_COM_OBSERVACOES |
 
-**T4 a T7 pendentes.** Nenhuma bloqueada — T4 está desbloqueada.
+**T5 a T7 pendentes.** Nenhuma bloqueada — T5 e T6 estão desbloqueadas.
+
+**Sobre o custo de T4**: quatro rodadas, com o limite de 3 estendido uma vez. O Gate 1 rejeitou uma vez (1 crítico) e o Gate 2, duas. As três rejeições foram por classes diferentes, e a terceira é a mais instrutiva: **uma correção de severidade baixa que eu mandei aplicar virou um ALTO**. O guarda de alfabeto importou de `provisionar-base.sh` uma restrição cuja razão era outra — lá a credencial viaja dentro de uma URL, aqui vai para um arquivo de senha, e os dois formatos têm caracteres especiais diferentes. O resultado: o comando privilegiado que fecha o CA-14 abortava em **63,7% das execuções** (medido em 20.000 amostras), com uma mensagem que culpava o operador por uma credencial que o próprio helper gerou. Fechou por escape em vez de recusa, e a taxa foi a 0%.
 
 **Sobre o custo de T3**: quatro rodadas, com o limite de 3 estendido uma vez por decisão do usuário. O Gate 1 rejeitou uma vez e o Gate 2, duas. **O mesmo vazamento de segredo foi redescoberto quatro vezes, por quatro portas diferentes** no mesmo arquivo — objeto com `toJSON`, herança da própria propriedade `toJSON` na cópia redigida, promoção de `err.message` para a chave de topo, e a posição raiz do evento. Cada rodada fechou o caminho apontado e a seguinte encontrou outro, porque a redação estava *instalada em pontos* em vez de ter *entrada única de despacho*. A rodada 4 atacou a estrutura, e o Gate 2 confirmou o fechamento **por topologia**, não por amostragem: pela API que `criarLogger` expõe, todo dado do chamador chega à linha por três escritas, e as três estão interceptadas. Nenhuma das três rejeições foi burocrática — todas pegaram vazamento real, provado por sonda contra o artefato compilado.
 
@@ -166,6 +169,12 @@ Status: 3/7 tasks concluídas · T1 verde em 62 asserções · T2 verde em 5/5 c
 - **Impacto:** custo de leitura, nenhum defeito funcional. O veredito do Gate 2 sobre a pergunta "virou colcha de retalhos?" foi explícito: **o código melhorou** (11 funções pequenas, `redigirValor` é escada linear de complexidade ~10) — *"ainda é coeso, mas está no limite"*. O que inchou foi a prosa, e o lugar da arqueologia é a mensagem de commit ou uma ADR, não o topo do módulo que toda fatia importa.
 - **O que fazer:** extrair `packages/shared/src/redacao.ts` (não exportado por `index.ts`) com `redigirRegistro`, `redigirValor`, `redigirObjeto`, `redigirErro`, `ehRegistroDeCampos`, `ehChaveSensivel`, `mascararCredencial`, `mascararMensagem` e as constantes. `log.ts` fica com ~80 linhas. Ganhos: a redação passa a ter arquivo de teste próprio, exercitável sem montar logger e arquivo; a lista de radicais cresce sem tocar a fábrica; a arqueologia fica confinada onde é pertinente. **O próprio Gate 2 recomendou não fazer agora** se implicar mais uma rodada.
 
+### D24 · baixo · error_handling · T4 · Tech Review
+- **Onde:** `deploy/scripts/instalacao/apurar-versao-banco.sh:236-283` (`decompor_url`)
+- **Problema:** a remoção do guarda de alfabeto (que era o defeito ALTO da rodada 3) deixou a **codificação-percentual** sem defesa nem diagnóstico. `decompor_url` nunca decodificou `%XX`, e o guarda barrava o `%` por efeito colateral. Sem ele, `postgresql://papel:p%3Ass@host:5432/banco` — a **forma canônica de URI** para expressar `:` numa senha, e o que `postgres.js`/libpq decodificam — atravessa como o literal `p%3Ass`, o servidor recusa a autenticação, e o `abortar` diz "confirme que a instância daquele endereço e porta está de pé".
+- **Impacto:** é o diagnóstico que culpa o servidor por um defeito de configuração — exatamente o que o cabeçalho do arquivo declara existir para não produzir. A assimetria é o ponto: o procedimento hoje aceita `:` e `@` **crus** (fora do padrão de URI) e quebra em silêncio no `%` (dentro do padrão). **Sem alcance para T5/T6/T7 nem para o caminho privilegiado**: nem `provisionar-base.sh` (letras e números) nem `postgres-efemero.ts` (base64url) emitem `%`. O cenário é o arquivo de ambiente regravado à mão — que o próprio comentário do bloco de escape antecipa.
+- **O que fazer:** decodificar `%XX` nos campos de credencial antes de escapá-los (`printf '%b' "${valor//%/\\x}"` com validação prévia de `^([^%]|%[0-9A-Fa-f]{2})*$`), mais um caso na tabela do CT-007 com credencial percent-encoded. Alternativa mais barata: guarda que recusa `%` **nomeando a codificação-percentual como causa** e o valor cru como forma aceita.
+
 ### Débito residual abaixo do limiar de finding
 
 - `verificar-workspace.sh:63` — `STATUS_INICIAL` no escopo de arquivo embora só usado dentro de `ct_004`; poderia ser `local`.
@@ -203,4 +212,26 @@ Dois efeitos colaterais que valem mais que a rule em si: (a) ela registra que `p
 - **Os gates funcionaram, e não por sorte.** O QA achou o que encaminhou; o Gate 2 confirmou por sonda em vez de aceitar de palavra; o QA da rodada 2 achou a **causa-raiz** de por que o defeito atravessara os dois gates (a posição `objeto_de_erro` do CT-008 anexava o sentinela como propriedade da exceção, com mensagem inócua — o vetor nunca era exercitado); e o executor achou sozinho um corolário que nenhum gate tinha visto. Nenhuma das três rejeições foi burocrática.
 - **A prova de falsificação pagou.** Foi ela que transformou "as duas linhas de `mascararCredencial` em `redigirErro`" de código-de-segurança-sem-rede em código-de-segurança-com-rede: o mutante que as removia mantinha a suíte 52/52 verde, e hoje reprova. É a mesma regra que a nota 7 já apontava como a mais valiosa do run.
 
-**11. Um achado de T3 que alcança a F4 e a F6.** O comentário do enum de códigos afirma continuidade com os símbolos que o cliente já trata (`sem_certificado_proprio`, `requer_decisao`, `sem_config_ativa`) — mas esses são **minúsculo-com-sublinhado**, e o enum nasceu `MAIÚSCULO_COM_SUBLINHADO` porque a §4 da T3 mandou. O `levantamento-frontend.md:466` lista `campo_invalido`, que é o mesmo código que aqui virou `CAMPO_INVALIDO`. Não é violação da ADR-0007 (o `Decision` fixa "enum fechado", não a grafia), mas a asserção de grafia em `erros.spec.ts:167` roda sobre o enum **inteiro** — então quem acrescentar os códigos do Sicoob em F4 escolhe entre quebrar o `switch` do cliente ou enfraquecer um teste de contrato. **A decisão de mapeamento precisa ser tomada antes de F4 publicar os códigos**, e o lugar natural do adaptador é a ADR-0001.
+**11. ✅ CA-14 FECHADA — a ação privilegiada foi executada.** Era a pendência mais importante deste relatório e está resolvida. O operador rodou a apuração com privilégio em 2026-08-01, e o `VERSAO-BANCO.md` agora traz `Operação (instância provisionada)`, com configuração lida de `/etc/sysloc/backend.env` e destino `/var/run/postgresql:5432`. **Verificação = 18.4 · operação = 18.4 (Ubuntu 18.4-1.pgdg24.04+1) → sem divergência.**
+
+Três coisas que as quatro rodadas de gate compraram, e que só ficaram visíveis agora:
+
+- **O destino confirmou o diagnóstico do QA.** O cluster atende em `/var/run/postgresql:5432` — **socket unix**, não TCP. Foi exatamente com esse fato que o QA provou, na rodada 1, que o valor originalmente registrado *não podia* ter vindo do cluster provisionado.
+- **O texto derivado era derivado mesmo.** Depois do carimbo, `PENDENTE`, "Não trate esta apuração" e "indício favorável" caíram todos para **zero ocorrências**, sem ninguém editar o arquivo. É o que o QA previu ao simular o ramo privilegiado sem `sudo` na rodada 3 — e é o que impede o espelho do defeito original (um registro que dissesse "PENDENTE" depois de fechado).
+- **A bateria mudou de estado sozinha.** `grep -cE 'CA-14.*EM ABERTO'` = 0, e o resumo final passou a dizer *"lado da operação carimbado com instância provisionada — CA-14 fechada"*. O sinal condicional que o Gate 2 exigiu no P1 funciona nos dois estados, não só num.
+
+O andaime da execução (subir a efêmera pelo helper da suíte, gravar o `.env` 0600, chamar com privilégio, derrubar no `trap`) ficou no scratchpad da sessão de propósito — é ferramenta de operação, não entregável, e o repositório não deve carregá-lo.
+
+**Nota para quem tocar `apurar-versao-banco.sh`**: o cabeçalho documenta `sudo -E`, mas a execução que funcionou usou `sudo env VAR=... bash ...`. A forma com `-E` depende de `setenv`/`env_keep` no sudoers e **não foi exercitada** — não afirmo que falha, apenas que a documentada não é a testada.
+
+**12. Requisito que a T7 tem de cumprir — o Gate 2 pediu que ficasse registrado aqui.** A bateria `verificar-apuracao-versao.sh` sai `exit 0` **por desenho** mesmo com o CA-14 aberto, porque `aviso` não conta como falha. Então:
+
+> T7 deve agregar `verificar-apuracao-versao.sh` **por texto**, não só pelo código de saída: não silenciar stdout nem stderr do filho, e tratar qualquer linha que case `grep -E 'CA-14.*EM ABERTO'` em **qualquer** dos dois canais como pendência de fatia que impede declará-la fechada.
+
+O token `CA-14` + `EM ABERTO` é estável e casa as três emissões (o `aviso` da bateria, o do procedimento, e o bloco `ATENÇÃO` do resumo). A ressalva é emitida **nos dois canais de propósito**, o que fecha os quatro modos de agregação — só stdout, só stderr, fundidos, e código de saída, sendo este último o único que perde o sinal.
+
+**13. Orientação de tamanho para T7.** O `ct_007` foi extraído em seis sub-funções nesta task e o Gate 2 registrou o teto: **oito pontas é o limite** — "uma nona pede um CT próprio, não mais uma sub-função". Vale para os verificadores que T7 vai escrever.
+
+**14. `embedded-postgres` está fixado numa versão `-beta`** (`18.4.0-beta.17`), porque o pacote só publica betas. O Gate 2 julgou o risco aceitável — versão exata, lock com integridade por plataforma, alcance em devDependencies de um pacote, e superfície exercitada a cada execução por quatro CTs ("um beta que regrida quebra vermelho, não silencioso"). Mas registrou o gatilho: **a subida para o canal estável deve ser uma task deliberada, com reexecução da apuração de versão** — não um bump automático.
+
+**15. Um achado de T3 que alcança a F4 e a F6.** O comentário do enum de códigos afirma continuidade com os símbolos que o cliente já trata (`sem_certificado_proprio`, `requer_decisao`, `sem_config_ativa`) — mas esses são **minúsculo-com-sublinhado**, e o enum nasceu `MAIÚSCULO_COM_SUBLINHADO` porque a §4 da T3 mandou. O `levantamento-frontend.md:466` lista `campo_invalido`, que é o mesmo código que aqui virou `CAMPO_INVALIDO`. Não é violação da ADR-0007 (o `Decision` fixa "enum fechado", não a grafia), mas a asserção de grafia em `erros.spec.ts:167` roda sobre o enum **inteiro** — então quem acrescentar os códigos do Sicoob em F4 escolhe entre quebrar o `switch` do cliente ou enfraquecer um teste de contrato. **A decisão de mapeamento precisa ser tomada antes de F4 publicar os códigos**, e o lugar natural do adaptador é a ADR-0001.

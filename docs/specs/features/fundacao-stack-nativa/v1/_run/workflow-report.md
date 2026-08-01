@@ -490,3 +490,195 @@ Estado deixado no disco:
 - `[T3] staged: packages/shared (11 arquivos), pnpm-lock.yaml, tasks/T3.md. **NÃO commitado.** HEAD segue em e10488c.`
 - `[T3] memória lazy deletada (cleanup_on_approval).`
 - `[T3] **CONCLUÍDA em 4 rodadas** (limite de 3 estendido uma vez pelo usuário). Gate 1 rejeitou 1x, Gate 2 rejeitou 2x. Quatro vazamentos de segredo distintos encontrados e fechados.`
+
+---
+
+## Run 4 — T4 (Infraestrutura de verificação — instâncias efêmeras e apuração de versão)
+
+### Inicialização
+
+- `[run] executor resolvido: __default__ (general-purpose) — inalterado; .claude/agents/ segue com apenas os 3 agentes de gate.`
+- `[run] executor_discipline injetado (fonte: references/executor-discipline.md)`
+- `[run] modelo: todos os papéis em opus (CLAUDE.md).`
+- `[run] resume: NÃO aplicável — árvore limpa, nenhuma task "Em Progresso", _run/tmp/ vazio. T1, T2 e T3 commitadas (0ff5492, d967169, 9c691c8).`
+- `[run] Fase 3 tem uma única task (T4) → sequencial por construção; detecção de lote paralelo não se aplica.`
+- `[run] reconciliação de dependências: task_plan [T1,T2,T3] == T4.md [T1,T2,T3] — sem divergência.`
+
+### T4 — pré-execução
+
+- `[T4] base_sha=9c691c88ec599fc71f8b75eaf1911c908193c5d9`
+- `[T4] executor: opus (declarado)  ·  gates: [qa, tech_review] (declarado)  ·  risk: medium`
+- `[T4] ADRs injetadas no executor: ADR-0006, ADR-0005 (fonte: task §6)`
+- `[T4] critical_paths: nenhum match literal. `deploy/scripts/instalacao/apurar-versao-banco.sh` não bate com as categorias canônicas, mas o CT-009 é caso de segurança (credencial em script versionado) e o CT-003 materializa a ADR-0006 — os gates rodam em opus de qualquer forma.`
+- `[T4] base_sha limpo: como T3 foi commitada antes desta task, o diff de T4 isola só o que ela acrescenta — inclusive em `packages/shared/package.json`, que as duas tocam.`
+
+### T4 — executor concluído (tentativa 1)
+
+- `[T4] executor (opus): 9 criados, 6 modificados. Vitest 79/79 (66 de T3 intactos + 13 novos) e 3 verificadores shell (~45 asserções). pnpm test/build/lint verdes.`
+- `[T4] faixa de portas efêmeras: **24001–24999** (suíte TS) e **25001–25999** (bateria shell). Escolhida por exclusão: fora de PORTAS_NOVAS (6380/1025/8025), fora das padrão (5432/6379), fora da faixa efêmera do kernel (32768–60999) e fora de 11000–20000 (CloudPanel). Guarda redundante PORTAS_INTOCAVEIS aplicado a toda porta escolhida. **O risco herdado do Gate 2 de T2 está endereçado.**`
+- `[T4] executor — grep canônico da ADR-0006 (`process\.env\.DATABASE_URL` em packages/*/test/**): **0 ocorrências**. Fez prova de falsificação COMPORTAMENTAL do CT-003: mutou o helper para `<variável> ?? efêmera` e o CT-003 reprovou (sentinela contou 1 conexão, esperado 0). Revertido.`
+- `[T4] executor — falsificação do CT-009 (asserção estática, exigida pela rule): 4 mutantes (credencial em variável exportada, cadeia com segredo embutido, rastreio verboso ligado, remoção da referência à fonte externa). `varrer_credencial` reprovou os 4 e aprovou o script real como controle.`
+- `[T4] executor — apuração: verificação = PostgreSQL 18.4 (embedded-postgres 18.4.0-beta.17) · operação = 18.4 (Ubuntu 18.4-1.pgdg24.04+1) → **sem divergência**.`
+
+### ⚠️ T4 — ARQUIVOS TOCADOS FORA DO ESCOPO DECLARADO (FASE 2.4.1)
+
+Sete arquivos fora de §3.1/§3.2, todos com justificativa do executor. `git add -N` aplicado a todos; **listados ao Tech Review como candidatos a `scope_deviation`**:
+
+- `pnpm-workspace.yaml` (M) — `allowBuilds` do `@embedded-postgres/linux-x64`. Sem o `postinstall` os binários não executam (`libicuuc.so.60`); pnpm 11 ignora o campo `pnpm` do package.json.
+- `package.json` da raiz (M) — `vitest` como devDependency e `"type": "module"`, sem os quais o `vitest.config.ts` que a §3.1 EXIGE na raiz não carrega.
+- `packages/shared/tsconfig.test.json` (M) — `allowImportingTsExtensions`, para os helpers serem carregados tanto pelo Vitest quanto por `node <arquivo>.ts` nos subprocessos dos CT-003/004/006.
+- `packages/shared/vitest.config.ts` (M) — consequência da agregação pela raiz (o arquivo de T3 declarava ser absorvido, exceto o `globalSetup`).
+- `packages/shared/test/efemero-comum.ts` (A) — faixa de portas, gancho de descarte e sondagem compartilhados pelos dois helpers.
+- `packages/shared/test/cenario-subprocesso.ts` (A) — ator único dos cenários de subprocesso. É fixture de teste; o executor declara que nenhum gancho foi acrescentado aos helpers de produção.
+- `deploy/scripts/instalacao/verificar-apuracao-versao.sh` (A) — o verificador shell que os cards de CT-008 e CT-009 propõem, mas que a §3.1 não lista.
+
+### ⚠️ T4 — PENDÊNCIA DE PRIVILÉGIO DECLARADA PELO EXECUTOR (a auditar nos gates)
+
+- `[T4] O lado da OPERAÇÃO no VERSAO-BANCO.md **não foi lido do cluster provisionado em si** — foi lido de uma instância levantada dos MESMOS binários (`/usr/lib/postgresql/18/bin`). Consultar o cluster real exige a credencial de /etc/sysloc/backend.env (0600 root) e `sudo` neste host pede senha interativa.`
+- `[T4] O executor NÃO inventou contorno (comportamento correto): o registro traz a coluna "Configuração lida" mostrando o caminho temporário, e a prosa declara que qualquer caminho diferente de /etc/sysloc/backend.env significa substituto.`
+- `[T4] **Os gates devem julgar se isso satisfaz o CA-14** ("divergência apurada e registrada em arquivo versionado") ou se a apuração é parcial. Comando para carimbar a leitura direta, se o usuário conduzir: `SYSLOC_ARQ_AMBIENTE_VERIFICACAO=<env da efêmera> sudo -E bash deploy/scripts/instalacao/apurar-versao-banco.sh`.`
+- `[T4] Conflito §4 × CT-005 resolvido pelo executor: o CT-005 exige que parar() REMOVA o diretório; a §4 exige religar() PRESERVANDO-O. Ficou `parar()` (descarte) e `parar({preservarDados:true})` + `religar()` (queda e retorno) — os dois símbolos que a §4 nomeia. **A auditar**: T6/CA-10 depende do segundo.`
+
+### T4 — Gate 1 (tentativa 1) — REJEITADO
+
+- `[T4] QA (opus): **REJEITADO** — **1 CRÍTICO**, 1 alto, 1 médio, 1 baixo. criterios 21/24, rastreabilidade 9/9 sem lacuna, security_flags vazio, escopo_declarado íntegro.`
+- `[T4] QA — CRIT-001: o QA NÃO se limitou a apontar a imprecisão que o orquestrador sinalizou — ele **provou a IMPOSSIBILIDADE**. `provisionar-base.sh:697` fixa `listen_addresses = ''` e `ss -ltnH` não mostra escuta em 5432: **o cluster provisionado só é acessível por socket unix**. Logo `127.0.0.1:25555` não é e NÃO PODE SER a instância provisionada — e 25555 pertence à faixa efêmera da própria bateria shell.`
+- `[T4] QA — ALTO-001 (causa-raiz): `gravar_registro()` (apurar-versao-banco.sh:425) emite o rótulo "Operação (instância provisionada)" INCONDICIONALMENTE. O script não tem como saber se falou com o cluster provisionado, e mesmo assim afirma que falou. Corrigir só o .md faz o defeito voltar na próxima execução.`
+- `[T4] QA — MED-001: a asserção do CT-007 sobre o registro versionado só exige célula NÃO-VAZIA — passa com 'n/a', 'pendente' ou versão inventada. **É a asserção que deveria ter pego o crítico.** Mesmo padrão nomeado na nota 7 do run-report: provou-se o que era fácil (registro existe, tem seção, tem linha) e deixou-se sem asserção o que era difícil (a PROCEDÊNCIA do que foi registrado).`
+- `[T4] QA — o QA registrou explicitamente que **a limitação de privilégio foi declarada com honestidade pelo executor e essa parte está CORRETA**; o defeito é o artefato afirmar o contrário dela. E que **a correção não exige sudo**.`
+- `[T4] QA — reproduziu a falsificação do CT-009 com SEIS mutantes PRÓPRIOS (diferentes dos 4 do executor), todos reprovando, com controle limpo E teste de falso-positivo. Falsificou também o guarda de porta (mutou reservarPorta para 5432 → CT-002 reprovou) e o CT-003 comportamental. **Divergência factual ante o executor**: no CT-003 a asserção que disparou primeiro foi a do código de saída do subprocesso, não a contagem do sentinela.`
+- `[T4] QA — os 66 casos de T3 CONFIRMADOS intactos por git diff contra o base_sha; o globalSetup de preparar-artefato.ts sobreviveu à agregação. AP-24 não se aplica.`
+- `[T4] QA — os SETE arquivos fora do escopo declarado: **nenhum é desvio injustificado**, julgados um a um. O QA registrou que a ausência deles na §3.1 é **lacuna da task, não desvio do executor** — conformidade estrutural fica com o Gate 2.`
+- `[T4] QA — zero resíduo (CA-7) verificado pelo próprio QA, não aceito do executor. Sem sleep fixo. Manipulação de sinal do CT-004 julgada legítima (removeAllListeners ocorre DEPOIS de executarDescartes, e o pai observa estado real de fora). Iron Law #6 verificada em cenario-subprocesso.ts: nenhum gancho novo nos helpers.`
+- `[T4] memória lazy criada em _run/tmp/T4.md (attempt_count=1, last_severity=CRITICO).`
+
+### T4 — executor (correção, tentativa 2)
+
+- `[T4] executor (opus): CRIT-001, ALTO-001, MED-001 e BAIXO-001 corrigidos. 0 criados, 4 modificados. NENHUM arquivo aprovado pelo QA foi tocado.`
+- `[T4] executor — CAUSA-RAIZ do ALTO-001, bem formulada: "o script não pode interrogar o servidor sobre a própria identidade; o único fato que ele possui é DE QUAL ARQUIVO DE AMBIENTE LEU". Nasceu `rotulo_do_lado_da_operacao()`.`
+- `[T4] executor — ACHADO EXTRA de alto valor: **a forma de socket NÃO FUNCIONAVA** com diretório fora do padrão de compilação do libpq. O script gravava só a entrada `localhost` no PGPASSFILE, e o libpq só substitui o caminho por `localhost` quando ele é o DEFAULT_PGSOCKET_DIR. **Isso teria feito o comando privilegiado do operador falhar.** Agora as duas entradas são escritas e o CT-007 exercita a forma de socket de ponta a ponta, sem privilégio.`
+- `[T4] executor — ordem exigida cumprida: a asserção do MED-001 foi escrita ANTES da correção e reprovou o estado então commitado (mutante M3).`
+
+### T4 — Gate 1 (tentativa 2) — APROVADO
+
+- `[T4] QA (opus): **APROVADO** — 0 críticos, 0 altos, 0 médios, **0 baixos**. criterios 22/24, rastreabilidade 9/9, security_flags vazio.`
+- `[T4] QA — CRIT-001 FECHADO: não há como ler o artefato como apuração concluída. ALTO-001 FECHADO com causa-raiz atacada. MED-001 FECHADO e o M3 REPRODUZIDO pelo próprio QA.`
+- `[T4] QA — a asserção de procedência é **BICONDICIONAL**, verificada nos dois ramos: rótulo "provisionada" + /etc/sysloc/backend.env → 0 falhas (é o que a execução privilegiada vai produzir); rótulo "SUBSTITUTO" + /etc/sysloc/backend.env → REPROVA. Uma regressão futura que fizesse o rótulo dizer sempre SUBSTITUTO também seria pega. Sem buraco de detecção nas duas direções.`
+- `[T4] QA — o texto "PENDENTE" é DERIVADO, provado POR EXECUÇÃO e não por leitura: o QA simulou o ramo privilegiado sem sudo e contou — ocorrências de PENDENTE = 0, "Não trate esta apuração" = 0, "indício favorável" = 0, e o bullet definitivo apareceu = 1. **O espelho do CRIT-001 não existe.**`
+- `[T4] QA — PGPASSFILE com duas entradas NÃO abriu buraco: 0600 antes de qualquer byte, diretório 0700 por mktemp, removido após a consulta. Verificado empiricamente, INCLUSIVE NO CAMINHO DE FALHA: segredo em stdout/stderr = 0, no registro = 0, na mensagem de erro = 0, diretório remanescente = 0.`
+- `[T4] QA — M5 comportamental confirmado: faixa alargada para 5432–5440, COM guarda devolve 5433, SEM guarda devolve 5432. Como 5432 não está em escuta (o cluster provisionado usa listen_addresses=''), **o guarda é a única coisa que impediria a colisão** — não é redundância decorativa.`
+- `[T4] QA — bateria rodada DUAS vezes (recomendação de ci-flakiness para área crítica): 54/54 nas duas, saída idêntica exceto o nome do diretório temporário.`
+- `[T4] QA — AP-24 não se aplica: a única asserção substituída foi **fortalecida**. Ressalva de método declarada com honestidade: a versão pré-correção do verificador NÃO é recuperável do git (add -N, blob vazio), então "nada removido" foi checado por inspeção estrutural caso a caso, não por diff.`
+- `[T4] QA — detalhe de projeto elogiado: a bateria repete o literal /etc/sysloc/backend.env na PRÓPRIA constante em vez de herdá-lo do SUT. Apareceu na simulação: ao patchear a constante só no script, a asserção acusou a divergência — **ela realmente não erra junto com o SUT**.`
+- `[T4] QA — CA-14 segue PARCIAL, mas por ato privilegiado do operador, **não por defeito de código**. A §5.5 linha 6 ("registro parcial não conta como apuração") passou a estar SATISFEITA — é exatamente o que o script impõe e o que o registro declara sobre si mesmo.`
+- `[T4] QA — dois pontos encaminhados ao Gate 2: (a) os dois scripts novos estão **100644**, enquanto os três irmãos do mesmo diretório estão 100755 — a bateria agregada de T7 pode assumir bit de execução; (b) o executor **acrescentou uma subtask nova** à §4 da task (o carimbo privilegiado da CA-14) — adição honesta e rastreável, mas é o executor escrevendo na spec.`
+
+### T4 — Gate 2 (tentativa 2) — PARCIAL
+
+- `[T4] Tech Review (opus): **PARCIAL** — 0 críticos, 0 altos, **2 MEDIOS** (P1 testability, P2 project_pattern), 4 BAIXOS (P3 error_handling, P4/P5 code_quality, P6 project_pattern). adrs_consultadas: ADR-0005, ADR-0006 — nenhuma divergência.`
+- `[T4] TR — P1 (MEDIO): **a bateria sai 3/3 verde com a CA-14 em aberto, sem emitir `aviso`**. A `.claude/rules/testing-stack.md` fixa que degradação "nunca faz o caso passar em silêncio — emita `aviso` explícito nomeando o que foi pulado", e o vocabulário `aviso`/`nota` existe no script e não é usado em ponto nenhum. **Impacto que decide a severidade**: quando T7 agregar este verificador em `verificar-fundacao.sh` — que por CT-004 só sai 0 quando tudo passa —, **a fatia inteira será declarada verde com o próprio critério de saída em aberto**. O TR nomeia como "a mesma classe de defeito da tentativa 1 neste mesmo par de arquivos: a correção fechou a afirmação falsa, mas não fechou o silêncio".`
+- `[T4] TR — P2 (MEDIO): modo **100644** nos dois scripts novos contra **100755 em 7/7** irmãos versionados, todos com shebang. O TR promoveu de assimetria estética a médio pelo modo de falha SILENCIOSO: se a agregação de T7 enumerar por `-executable`, o verificador é pulado e a bateria da fatia fica verde tendo deixado de rodar CT-007/008/009. Correção: `git update-index --chmod=+x`.`
+- `[T4] TR — **PARECER SOBRE O CA-14 (ponto 1 do escrutínio)**: "NÃO pode fechar, e a pendência NÃO é bloqueante para T4". Razões: nenhuma ação do executor pode fechá-la (sudo interativo), e a própria rule atribui a execução privilegiada ao operador; transformar em CRITICO/ALTO criaria **laço de correção impossível de vencer, queimando as 3 tentativas até BLOQUEADA**. O desenho fecha as três frestas que importavam: (a) rótulo derivado torna afirmação falsa estruturalmente impossível; (b) o parsing da forma de socket está exercitado ponta a ponta sem privilégio pelo CT-007; (c) **T5, T6 e T7 não consomem a CA-14**. O que a pendência bloqueia é a **saída da FATIA** e a primeira migração da fatia seguinte — não esta task.`
+- `[T4] TR — instrução explícita ao orquestrador: **NÃO marcar CA-14 no scope.md**, e levar a pendência para a §4 do run-report, porque "a subtask aberta na T4 pode se perder numa regeneração da spec". O P1 dá a ela um segundo suporte, à prova de regeneração.`
+- `[T4] TR — ponto 2 (PGPASSFILE): solução **CORRETA**, confirmada contra a semântica do libpq (`passwordFromFile` só reescreve host absoluto para `localhost` quando `strcmp(hostname, DEFAULT_PGSOCKET_DIR) == 0`). Como o DEFAULT_PGSOCKET_DIR não é interrogável antes de conectar, escrever as duas entradas é **a única forma determinística**. O TR verificou ainda que `provisionar-base.sh:166` fixa DIR_SOCKET_PG=/var/run/postgresql, que É o default desta distribuição — então na execução privilegiada a entrada `localhost` é a que casa. Superfície não ampliada em nenhuma dimensão que importe.`
+- `[T4] TR — ponto 3 (agregação do vitest.config): divisão **CORRETA**, com argumento factual: `turbo run test` executa o script de cada pacote e **nunca carrega o config da raiz** — se ambiente e limites vivessem só lá, `pnpm test` rodaria sem eles e as duas formas de verificar divergiriam em silêncio. T5/T6 encaixam sem reinventar (o glob `apps/*/vitest.config.ts` já está declarado e glob sem correspondência é tolerado).`
+- `[T4] TR — ponto 4 (embedded-postgres beta): risco **ACEITÁVEL**, sem finding. Versão exata, lock com integridade por plataforma, alcance em devDependencies de um pacote, superfície exercitada a cada execução por CT-001/002/003/005 — "um beta que regrida quebra vermelho, não silencioso". Recomenda registrar como nota de fatia: a subida para o canal estável deve ser task deliberada com reexecução da apuração.`
+- `[T4] TR — ponto 6 (executor escreveu na spec): **CONFORME**. A subtask acrescentada passa nos quatro testes: nasce DESMARCADA, é atribuída ao operador, não altera critério de aceitação e não toca a §5.5. "Documentação aditiva de item aberto, não reescrita de escopo" — não abriu scope_deviation.`
+- `[T4] TR — ponto 7 (duplicação entre frentes): **INEVITÁVEL**, sem finding. A faixa de portas é **falsa duplicação** — as faixas são deliberadamente disjuntas porque as frentes podem rodar juntas; é partição de recurso, e partição só funciona se cada lado for dono do seu intervalo. Descarte e sondagem não são compartilháveis (ciclo de vida do processo Node × trap do bash); unificar exigiria a bateria shell depender da cadeia Node, "o que destrói o valor dela". O único acoplamento real é a lista PORTAS_INTOCAVEIS literal nos dois lados — reavaliar no terceiro consumidor.`
+- `[T4] TR — ponto 8: **nenhum dos 7 arquivos não declarados é scope_deviation**. Confirma a leitura do QA: são consequência estrutural do que a §3.1 pediu, e a ausência deles na §3.1 é lacuna da task.`
+- `[T4] TR — anti-gaming sem achado. Os 66 de T3 intactos, globalSetup sobreviveu, a única asserção substituída foi FORTALECIDA.`
+
+### T4 — retry classification
+
+- attempt: 2
+- problemas_por_categoria: { testability: 1, project_pattern: 2, error_handling: 1, code_quality: 2 }
+- overrides_ativos: [tocou_area_critica: **true**, task_risk: medium, qa_security_flags: [], diff_stat_changed: false]
+- requires_qa_revalidation: **true**
+- decisao: RE-QA (Gate 1 → Gate 2)
+- justificativa: "P1 é `testability`, categoria revalidation_required — a correção muda a saída da bateria e o QA precisa reconfirmar que ela continua saindo 0 com as 54 asserções intactas; o override tocou_area_critica também força true"
+
+### T4 — executor (correção, tentativa 3)
+
+- `[T4] executor (opus): P1 e P2 corrigidos + P3, P4, P5. P6 não tocado (o TR mandou não agir). 0 criados, 5 modificados.`
+- `[T4] executor — CAUSA-RAIZ do P1, precisa: "afirmar_forma_e_procedencia prova COERÊNCIA (rótulo × configuração lida), e um registro SUBSTITUTO É coerente; logo os dois estados saíam verdes e nada distinguia CA-14 aberta de fechada".`
+- `[T4] executor — bateria passou de 54 para 64 asserções (10 novas). 4 mutantes, todos reprovando.`
+
+### T4 — Gate 1 (tentativa 3) — APROVADO_COM_OBSERVACOES
+
+- `[T4] QA (opus): **APROVADO_COM_OBSERVACOES** — 0 críticos, 0 altos, 0 médios, 1 baixo. criterios 22/24 (só CA-14, por privilégio), rastreabilidade 9/9, security_flags vazio.`
+- `[T4] QA — aviso condicional confirmado NOS DOIS RAMOS: M1 (remove emissão) = 2 falhas; M2 (aviso incondicional) = 1 falha no ramo negativo; M3 (guarda invertida) = 3 falhas. Contagens batem uma a uma com as do executor.`
+- `[T4] QA — **CORRIGIU UM PRESSUPOSTO DO ORQUESTRADOR**: o `git update-index --chmod=+x` NÃO tornou o diff recuperável, porque foi aplicado DEPOIS das edições — o blob no índice é idêntico ao working tree, então `git diff` sai vazio e `git diff --cached` mostra criação nova. A versão pré-correção-3 continua irrecuperável. **O QA provou a aditividade por outra via, aritmética e verificável**: 64 asserções emitidas, 10 individualmente identificáveis na saída, 64 − 10 = 54 — o número exato da rodada anterior. Nenhuma das 54 removida; inspecionadas uma a uma, nenhuma afrouxada.`
+- `[T4] QA — contrato de saída intacto: `aviso()` imprime e não incrementa contador; o aviso NÃO aparece entre os 64 OK (sai como linha `..`). O espelho no procedimento escreve em **stderr**; a bateria inteira termina com STDERR vazio.`
+- `[T4] QA — P3 verificado com par positivo/negativo: credencial com `:` aborta nomeando o formato do arquivo de senha; trocando só a credencial por alfanumérica contra a mesma porta fechada, a mensagem volta a ser a do servidor. **Verificação adicional que o mandato não pediu**: o alfabeto do guarda é o MESMO invariante que `provisionar-base.sh` já aplica na geração (linha 316) e na validação (linha 337) — o guarda **não fecha o caminho privilegiado**, apenas declara uma dependência que já era verdade.`
+- `[T4] QA — P4 bem resolvido: `descartar` é UMA função com dois chamadores, e o caminho de falha chama `soltarDescarte()` antes de `descartar()` — sem descarte duplo. Zero resíduo reconfirmado, com as portas provisionadas (6379, 6380, 1025, 8025) intactas.`
+- `[T4] QA — modo no índice: `git diff HEAD --summary` mostra que os ÚNICOS 100755 novos são os dois scripts; todos os demais arquivos da task permanecem 100644. Nenhum modo alterado por engano.`
+- `[T4] QA — AP-26 avaliado nas 10 asserções novas e NÃO reportado: os dois registros sintéticos atravessam `afirmar_forma_e_procedencia` **de propósito**, para demonstrar dentro da bateria que ela não discrimina os dois estados e que só o aviso os distingue. E o sintético "CA-14 fechada" é o **único** lugar do arquivo que exercita o ramo MARCA_PROVISIONADA — sem ele o ramo seria código morto de teste.`
+- `[T4] QA — BAIXO-001: a **segunda ponta** da correção do P1 (o aviso no próprio procedimento) não é falsificável — mutante que remove as duas linhas deixa a bateria 64/64 verde. Classificado BAIXO com justificativa explícita: a defesa estrutural está coberta e falsificada em outro lugar, e o consumidor automatizado que o Gate 2 nomeou (a bateria agregada de T7) lê o **verificador**, não o procedimento. "É a diferença entre comportamento correto e comportamento protegido."`
+
+### T4 — Gate 2 (tentativa 3) — PARCIAL · LIMITE ESGOTADO
+
+- `[T4] Tech Review (opus, 2ª passagem): **PARCIAL** — 0 críticos, **1 ALTO** (P1 technical_requirement), **1 MEDIO** (P2 project_pattern), 3 BAIXOS. adrs_consultadas: ADR-0005, ADR-0006.`
+- `[T4] TR — P1 (ALTO): **REGRESSÃO INTRODUZIDA NA RODADA 3, provada por execução e por medição.** O guarda de alfabeto do P3 exige `^[A-Za-z0-9]+$` da credencial de AMBOS os lados. O lado da operação atende — mas **o lado da VERIFICAÇÃO não vem de provisionar-base.sh**: vem da instância efêmera, e `postgres-efemero.ts:150` gera `randomBytes(24).toString('base64url')`, cujo alfabeto inclui `-` e `_`. O TR **mediu: 63,7% das credenciais geradas contêm ao menos um deles (20.000 amostras)**. Sonda dirigida: o procedimento aborta com código 1 ANTES de qualquer conexão, mandando o operador "gravar uma credencial só com letras e números" — **algo que ele não controla, porque quem a gera é o helper.**`
+- `[T4] TR — P1, agravante: **a premissa do guarda está errada.** O formato de PGPASSFILE exige escape apenas de `:` e `\`; `-` e `_` são inertes ali. O alfabeto restrito foi emprestado de provisionar-base.sh, onde a restrição existe por OUTRA razão, declarada na linha 909: a credencial viaja dentro de uma URL, onde `:`, `@`, `?`, `&`, `/` são delimitadores. **Os dois conjuntos não coincidem, e a lista-branca importada rejeita caracteres seguros.**`
+- `[T4] TR — P1, por que nenhum gate pegou: a bateria shell **fabrica a própria credencial** com `tr -dc 'A-Za-z0-9'` (verificar-apuracao-versao.sh:239), então o caminho quebrado é justamente o que nenhum caso percorre. O QA verificou que o alfabeto do guarda casa com provisionar-base.sh — **casa, e é verdade que não fecha o lado da operação**; o que passou despercebido é que o lado da VERIFICAÇÃO não passa por provisionar-base.sh.`
+- `[T4] TR — P1, fix: **escapar em vez de recusar**, que é o que o formato prevê — `escapado="${URL_SEGREDO//\\/\\\\}"; escapado="${escapado//:/\\:}"`. Torna o guarda desnecessário e remove a duplicação do invariante. Mais uma linha no CT-007 exercitando credencial com `-` e `_` — "a asserção que faltava e que teria pego isto".`
+- `[T4] **ACHADO DE PROCESSO — responsabilidade do orquestrador**: o P3 era um BAIXO que o TR da rodada anterior sugeriu, e **eu o promovi a "faça agora"** no prompt de correção 3, com o argumento de que estava no caminho do operador. A intenção estava certa; o que faltou foi verificar **de onde vem a credencial de cada lado** antes de mandar aplicar uma lista-branca. Lição para T5-T7: sugestão de gate anterior não é pré-verificada — quando ela restringe entrada, o orquestrador deve conferir todos os produtores dessa entrada antes de promovê-la a bloqueante.`
+- `[T4] TR — P2 (MEDIO): `aviso()` da bateria colapsa **degradação e diagnóstico** no mesmo prefixo e canal. `verificar-apuracao-versao.sh:118` é `printf '    ..   %s\n'` — stdout, prefixo `..` — que é **literalmente a assinatura de `nota()`** do exemplar de T2 (verificar-provisionamento.sh:180), que separa as duas: `aviso` em stderr com prefixo AVISO, `nota` em stdout com `..`. Consequência: o sinal da CA-14 sai indistinguível do diagnóstico rotineiro da linha 503, e o resumo de FALHA vai a stderr enquanto o bloco ATENÇÃO vai a stdout — **os dois desfechos não-verdes usam canais opostos.**`
+- `[T4] TR — P2, o que T7 precisa (a informação mais valiosa desta revisão): **não silenciar stdout/stderr dos verificadores filhos, e agregar POR TEXTO além do código de saída** — casar `^ATENÇÃO:` ou `CA-14 EM ABERTO` e propagar ao resumo agregado. **O código de saída é insuficiente por desenho**, porque `aviso` não conta como falha. Vale para qualquer verificador futuro que use degradação declarada, não só este.`
+- `[T4] TR — respostas ao escrutínio: (1) o P1 anterior **fechou no conteúdo**, a objeção original está morta — o que sobrou é o canal (P2). (2) O modo **fechou**; nada mais precisa acontecer antes de T7. (3) O BAIXO-001 do QA **não sobe** — o TR concorda, "o consumidor que eu nomeei lê o verificador, e lá a defesa está falsificada". (4) Os dois scripts **continuam coesos — T7 não vai temê-los**; o único ponto de pressão é `ct_007`, que cresceu nas três rodadas. (5) P4 e P5 corretos.`
+
+### ⛔ T4 — LIMITE DE TENTATIVAS ESGOTADO — ESCALADO AO USUÁRIO
+
+- `[T4] Contador: **3 rejeições** (tentativa 1: QA REJEITADO com 1 crítico · tentativa 2: TR PARCIAL · tentativa 3: TR PARCIAL). Limite compartilhado atingido.`
+- `[T4] Gate bloqueante: **Gate 2**. O Gate 1 aprovou nas duas últimas rodadas.`
+- `[T4] **Natureza do que resta é diferente das rodadas anteriores**: o ALTO é uma REGRESSÃO da última correção, com fix trivial e integralmente especificado (trocar recusa por escape, 2 linhas), e o MEDIO é troca de canal (`>&2` + prefixo) mais uma função `nota()`. Nenhum dos dois é defeito de desenho.`
+- `[T4] memória lazy PRESERVADA (attempt_count=3) — a task não fechou.`
+- `[T4] **DECISÃO DO USUÁRIO: 4ª rodada autorizada** (limite estendido, mesmo precedente de T2 e T3). Escopo: P1 (ALTO, regressão do guarda) + P2 (MEDIO, canal do aviso). O usuário preferiu CORRIGIR em vez de reverter o guarda, o que fecha o caminho privilegiado por construção em vez de voltar ao estado anterior.`
+
+### T4 — executor (correção, rodada 4)
+
+- `[T4] executor (opus): P1 e P2 corrigidos + P3, P4, P5. 0 criados, 4 modificados. Bateria 64 → 76 asserções.`
+- `[T4] executor — CAUSA-RAIZ do P1, bem formulada: "tratou-se como invariante do formato o que era invariante de OUTRO formato". O PGPASSFILE separa campos por `:` e prevê escape de `:` e `\`; a URL de provisionar-base.sh tem delimitadores diferentes.`
+- `[T4] executor — decisão de fixture que evita flakiness: `-` e `_` são inseridos **DETERMINISTICAMENTE** (posição fixa), não sorteados. Se a fixture amostrasse base64url real, **1/3 das execuções não teria nenhum dos dois** — seria loteria, não asserção.`
+- `[T4] executor — escopo além do pedido, declarado: escape aplicado aos QUATRO campos textuais do PGPASSFILE (a regra do formato vale para todos), e cenário com `:` E `\` juntos, "porque as duas substituições se falsificam mutuamente e uma credencial com só um deles deixaria metade sem asserção".`
+
+### T4 — Gate 1 (rodada 4) — APROVADO
+
+- `[T4] QA (opus): **APROVADO** — 0 críticos, 0 altos, 0 médios, **0 baixos**. **criterios 24/24** (o CA-14 deixou de contar como falho: a pendência é estrutural e declarada, e o procedimento está provado). rastreabilidade 9/9, security_flags vazio.`
+- `[T4] QA — **CORRIGIU DUAS INSTRUÇÕES DO ORQUESTRADOR, ambas com razão**: (a) o diff da correção 4 **É recuperável** — os dois scripts estão como `AM`, o índice guarda a rodada 3 e o worktree a rodada 4, então `git diff -- <script>` entrega o delta exato. O QA validou a aditividade por **verdade-de-terreno** (comparação de conjuntos de rótulos: r3=65, r4=78, um removido que reaparece enriquecido, 13 adicionados) em vez da via aritmética indireta que eu havia pedido. (b) A origem da credencial é `postgres-efemero.ts:87`, não a linha 150 que eu e a memória lazy citávamos — a linha deslocou em alguma rodada.`
+- `[T4] QA — **MUTANTE PRÓPRIO M7, a ponta que o executor NÃO testou**: os 6 mutantes dele cobrem a PRESENÇA de cada substituição, nenhum cobre a **ORDEM**. O QA inverteu (escapar `:` antes de dobrar `\`) → exit 1, 2 falhas. E confirmou a mecânica no papel: `a\b:c` na ordem invertida vira `a\\b\\:c`, que o cliente lê como duas barras literais seguidas de um **separador de campo** — a senha termina cedo. **A ordem está asserida.**`
+- `[T4] QA — 7 mutantes ao todo, e **cada um morreu pela asserção certa, não por dano colateral** — mensagens literais conferidas uma a uma.`
+- `[T4] QA — **duas asserções preexistentes foram FORTALECIDAS**: a captura do estado "CA-14 aberta" passou de `$(... || true)` (só stdout) para `2>&1 >/dev/null` (só stderr), e a do estado fechado passou a asserir **ambos** os canais vazios — "agora pega também um vazamento pela saída de erro, que antes passaria".`
+- `[T4] QA — item 3 satisfeito na forma exata: a asserção prova as DUAS pontas (sai por stderr E nada sai por stdout). "Uma asserção sobre saída combinada teria passado com o defeito — esta não passa, e M4/M5 demonstram isso."`
+- `[T4] QA — escape nos quatro campos CORRETO: o `pwdfMatchesString` do cliente desescapa `\` ao comparar host/porta/banco/papel, então escapar os quatro é o que o formato pede, não excesso. Nos caminhos reais o escape é identidade.`
+- `[T4] QA — verificou que o cenário `com_especiais` **atravessa mesmo o escape** e não passa por acidente: `decompor_url` captura a credencial até o ÚLTIMO `@` e parte no PRIMEIRO `:`, então senha com `:` sobrevive ao parsing e chega ao escape. "Sem isso o caso morreria antes do SUT e mataria os mutantes pela razão errada."`
+- `[T4] QA — extração do ct_007 (P5) preservou tudo: ID literal no invólucro, 18 blocos da r3 conferidos rótulo a rótulo contra as 6 sub-funções, todos presentes. A única mudança estrutural é `if/else` virando cláusula-guarda — semanticamente equivalente.`
+- `[T4] QA — **BÔNUS**: o BAIXO-001 da rodada 3 (assimetria do guarda de portas) foi corrigido de passagem — `porta_livre()` agora aplica PORTAS_INTOCAVEIS, simétrico ao lado TypeScript.`
+- `[T4] ⚠️ **CORREÇÃO FACTUAL DO ORQUESTRADOR sobre observação do QA**: ele afirmou que "`pnpm lint` retorna 0 mas executa NADA" e que "nenhuma análise estática correu sobre os arquivos TypeScript novos". **Incorreto.** O script é `biome check . && turbo run lint`; o biome roda PRIMEIRO e checa 21 arquivos sem achados (verificado: `pnpm exec biome check .` → "Checked 21 files in 88ms"). O QA olhou apenas a cauda da saída, onde só aparece o turbo. A metade órfã do turbo é o débito D17, já registrado desde T3 — e não anula a cobertura do Biome.`
+
+### T4 — Gate 2 (rodada 4) — APROVADO_COM_OBSERVACOES ✅ TASK CONCLUÍDA
+
+- `[T4] Tech Review (opus, 3ª passagem): **APROVADO_COM_OBSERVACOES** — 0 críticos, 0 altos, 0 médios, **1 BAIXO** (P1 error_handling). adrs_consultadas: ADR-0005, ADR-0006.`
+- `[T4] TR — veredito textual: "**A task está pronta — digo isso sem hesitar.** O ALTO da rodada 3 fechou pela raiz certa, o MÉDIO fechou conformando-se ao exemplar, os cinco baixos foram feitos e o refactor não trouxe regressão."`
+- `[T4] TR — P1 fechado e MEDIDO: a taxa de falha do caminho privilegiado para credencial base64url **passa dos 63,7% da rodada 3 para 0%**. O TR sondou a função de escape isolada com 8 entradas e confirmou inclusive a ORDEM (dobra a barra ANTES de introduzir a do `:`). Escapar os quatro campos é **correto**: o `pwdfMatchesString` do cliente desescapa `\` ao comparar, então o escape é o inverso exato do que ele faz.`
+- `[T4] TR — P2 fechado: `aviso()` e `nota()` agora são **idênticos caractere a caractere** ao exemplar de T2 (verificar-provisionamento.sh:178-180). O canal passou a ser ASSERIDO e não só o texto.`
+- `[T4] TR — verificou as TRÊS classes onde regressão nova se esconderia, com suspeita explícita: (a) manuseio da credencial — sólido, ADR-0005 respeitada (a função de escape é chamada dentro de `$( )`, que faz fork sem exec, então `/proc/pid/cmdline` do subshell segue `bash apurar-versao-banco.sh` e nada novo aparece em `ps`); (b) troca de canal — sem vazamento, porque `carregar_funcoes_da_apuracao` extrai por `sed` APENAS duas funções e as injeta com `eval`, em vez de dar `source` no script inteiro, "que é o vetor mais óbvio de regressão silenciosa aqui"; (c) refactor do ct_007 — todas as sub-funções declaram `local`, nenhum `fechar_caso` migrou para dentro delas, a ordem causal foi preservada. **Nenhuma regressão nova.**`
+- `[T4] TR — **CORRIGIU A CONTAGEM DO QA**: a leitura honesta é **23/24 + 1 pendência declarada**, não 24/24. A CA-14 diz textualmente "a divergência entre o banco da verificação e o QUE ATENDE A OPERAÇÃO"; o lado direito foi lido de substituto e carrega o carimbo. Isso NÃO muda o veredito nem bloqueia T4 — o impedimento é privilégio do host, e o que a pendência bloqueia é a SAÍDA DA FATIA.`
+- `[T4] TR — **O QUE FALTA PARA A FATIA FECHAR, exatamente uma ação humana**: um operador com privilégio executar `SYSLOC_ARQ_AMBIENTE_VERIFICACAO=<arquivo-da-instancia-efemera> sudo -E bash deploy/scripts/instalacao/apurar-versao-banco.sh` com uma instância efêmera de verificação de pé, e commitar o VERSAO-BANCO.md reescrito com o rótulo "Operação (instância provisionada)". **Enquanto o rótulo disser SUBSTITUTO, T7 não pode declarar a fatia verde.**`
+- `[T4] TR — **REQUISITO EXECUTÁVEL PARA T7** (a informação que ele próprio nomeou como a mais valiosa da revisão): "T7 deve agregar `verificar-apuracao-versao.sh` **POR TEXTO** e não só pelo código de saída — não silenciar stdout nem stderr do filho e tratar qualquer linha que case `grep -E 'CA-14.*EM ABERTO'` em QUALQUER dos dois canais como pendência de fatia que impede declarar a fatia fechada, porque a bateria sai `exit 0` por desenho mesmo com a CA-14 aberta". O token `CA-14` + `EM ABERTO` é estável e casa as três emissões. A duplicação nos dois canais fecha os quatro modos de agregação.`
+- `[T4] TR — a extração do ct_007 **resolveu a pressão** que ele apontou: o invólucro passou de 182 linhas com seis preocupações para ~40 linhas que "se leem como um roteiro". Orientação para T7: oito pontas é o teto — "uma nona pede um CT próprio, não mais uma sub-função".`
+- `[T4] TR — P1 (BAIXO): a remoção do guarda deixou a **codificação-percentual** sem defesa nem diagnóstico. `postgresql://papel:p%3Ass@host/banco` — a forma canônica de URI para `:` numa senha — atravessa como literal `p%3Ass` e o abort culpa o servidor. **Sem impacto para T5/T6/T7 nem para o caminho privilegiado** (nem provisionar-base.sh nem postgres-efemero.ts emitem `%`); alcance é o arquivo de ambiente regravado à mão.`
+- `[T4] TR — confirmou a correção do orquestrador sobre o lint: a afirmação do QA de que "pnpm lint executa NADA" está errada; o biome roda primeiro e cobre os arquivos novos. Não tratou como achado.`
+- `[T4] staged: 16 arquivos, 3605 inserções. **NÃO commitado.** HEAD segue em 9c691c8.`
+- `[T4] memória lazy deletada. **CONCLUÍDA em 4 rodadas** (limite de 3 estendido uma vez). Gate 1 rejeitou 1x, Gate 2 rejeitou 2x.`
+- `[run] rule_candidates desta task: 5 sinais emitidos pelos gates ao longo das rodadas (qa=4, staff=1). Deduplicados por tema antes do append.`
+
+### ✅ CA-14 FECHADA — execução privilegiada conduzida pelo operador (2026-08-01)
+
+- `[T4] O operador executou a apuração com privilégio. Resultado: **verificação = 18.4 · operação = 18.4 (Ubuntu 18.4-1.pgdg24.04+1) → sem divergência**. Rótulo gravado: `Operação (instância provisionada)`, configuração lida `/etc/sysloc/backend.env`, destino `/var/run/postgresql:5432`.`
+- `[T4] **O destino confirma o diagnóstico do QA da rodada 1**: o cluster provisionado atende em SOCKET UNIX (`/var/run/postgresql:5432`), não em TCP — que foi exatamente o argumento com que ele provou a impossibilidade do rótulo original.`
+- `[T4] **O texto derivado provou-se derivado de verdade**: após o carimbo, "PENDENTE" = 0 ocorrências, "Não trate esta apuração" = 0, "indício favorável" = 0. A única ocorrência remanescente de `SUBSTITUTO` é a prosa que EXPLICA a regra de derivação — exatamente o que o QA previu ao simular o ramo privilegiado sem sudo na rodada 3.`
+- `[T4] **A bateria deixou de avisar**: `grep -cE 'CA-14.*EM ABERTO'` = 0, e o resumo final mudou sozinho para "registro versionado conferido: ... (lado da operação carimbado com instância provisionada — CA-14 fechada)". O sinal condicional que o P1 do Gate 2 exigiu funciona nos dois estados.`
+- `[T4] Andaime da execução: script efêmero no scratchpad da sessão (NÃO versionado — é ferramenta de operação, não entregável). Ele sobe a efêmera pelo MESMO helper da suíte (`postgresEfemero`), grava o .env 0600, chama a apuração com privilégio e derruba tudo no trap. Instância subiu na porta 24204, dentro da faixa 24001–24999.`
+- `[T4] ⚠️ **NOTA PARA QUEM TOCAR O SCRIPT**: o cabeçalho de `apurar-versao-banco.sh` documenta `sudo -E`, mas a execução que funcionou usou `sudo env VAR=... bash ...`. A forma com `-E` depende de `setenv`/`env_keep` no sudoers e **não foi exercitada** — não afirmo que falha, apenas que a documentada não é a testada. Vale conferir quando o arquivo for tocado.`
+- `[T4] posse do registro devolvida a sysloc:sysloc (o arquivo nasce escrito pelo root).`

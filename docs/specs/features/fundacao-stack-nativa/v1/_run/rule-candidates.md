@@ -156,3 +156,36 @@
 - Sinal: `convention_drift` · Origem: `staff-review` · 2026-07-31T19:40:00Z
 
 ---
+
+## [convention_drift] Bit de execução em script versionado
+
+**Regra que isto sugere:** script versionado em `deploy/scripts/` com shebang entra no índice como 100755.
+
+**O que ela faria (simples):** sete dos sete scripts já versionados são executáveis e os dois novos entraram 644, então quem agregar a bateria por listagem de executáveis pula um verificador sem que nada reprove; a regra fixa o modo no momento de criar o arquivo.
+
+- Evidência: modo 100644 em script com shebang, contra 100755 em 7/7 irmãos do mesmo diretório — `deploy/scripts/instalacao/apurar-versao-banco.sh:1` — T4 / apuração de versão do banco
+- Sinal: `convention_drift` · Origem: `staff-review` · 2026-08-01T02:10:00Z
+
+---
+
+## [convention_drift] Canal e prefixo de aviso versus nota em shell
+
+**Regra que isto sugere:** verificador shell emite degradação declarada por `aviso` em stderr com prefixo `AVISO`, e diagnóstico por `nota` em stdout com prefixo `..`.
+
+**O que ela faria (simples):** a rule de stack lista `aviso` e `nota` na mesma linha do vocabulário sem fixar canal nem prefixo, e o resultado foi que o segundo verificador da fatia usou o nome `aviso` com a forma de `nota` — mandando para stdout o único sinal de que o critério de saída estava aberto, misturado com diagnóstico rotineiro. A regra tornaria o canal previsível para a bateria agregada que vai consumir os dois verificadores lado a lado.
+
+- Evidência: `aviso()` sem `>&2` e com prefixo `..` em `deploy/scripts/instalacao/verificar-apuracao-versao.sh:118`, contra `aviso()` com `>&2` e prefixo `AVISO` em `verificar-provisionamento.sh:178` — T4 / bateria shell de apuração
+- Sinal: `convention_drift` · Origem: `staff-review` · 2026-08-01T02:10:00Z
+
+---
+
+## [repeated_fixture] Arquivo que recebe segredo nasce 0600
+
+**Regra que isto sugere:** todo arquivo temporário destinado a receber credencial é criado com `install -m 0600 /dev/null` antes do primeiro byte, nunca por redirecionamento seguido de `chmod`.
+
+**O que ela faria (simples):** o mesmo setup se repete em seis pontos dos dois scripts da task, sempre pelo mesmo motivo: criar o arquivo já com a permissão restrita elimina a janela em que o segredo existiria legível por outros usuários. Hoje isso é disciplina transmitida por imitação entre scripts; escrita como regra, sobrevive ao próximo autor que gravar a credencial com `> arquivo` e corrigir a permissão depois.
+
+- Evidência: `install -m 0600 /dev/null` antes de gravar credencial, em 6 pontos — `deploy/scripts/instalacao/apurar-versao-banco.sh:390` — T4 / apuração de versão e sua bateria
+- Sinal: `repeated_fixture` · Origem: `agent-spec-qa-validator` · 2026-08-01T02:10:00Z
+
+---
