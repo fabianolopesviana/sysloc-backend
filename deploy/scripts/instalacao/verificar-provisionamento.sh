@@ -14,7 +14,10 @@
 #           aborta ANTES de instalar qualquer coisa, com requerido, disponível e
 #           déficit em números;
 #   CT-003  a credencial gerada não aparece na árvore versionada, no argumento
-#           de nenhum processo filho nem em linha alguma de log;
+#           de nenhum processo filho nem em linha alguma de log; e o arquivo de
+#           ambiente que a carrega é lido, montado e migrado pelo código REAL do
+#           provisionamento — inclusive a FORMA da cadeia de conexão, conferida
+#           contra o cliente que a aplicação de fato usa;
 #   CT-004  uma tarefa gravada na fila sobrevive à parada e ao retorno do
 #           servidor de fila;
 #   CT-005  o provisionamento não alterou o ambiente legado nem colidiu com
@@ -103,6 +106,7 @@ readonly UNIDADE_FILA="redis-server@sysloc.service"
 readonly PORTA_SMTP_CAPTURADOR=1025
 readonly PORTA_HTTP_CAPTURADOR=8025
 readonly DIR_SOCKET_PG="/var/run/postgresql"
+readonly HOSPEDEIRO_DB="127.0.0.1"
 
 # Marcador que a fatia de implantação (F7) passa a criar quando esta instalação
 # assumir o atendimento da operação. Ver `instalacao_liberada_para_bateria`.
@@ -315,7 +319,15 @@ ler_credencial_db() {
 carregar_funcoes_do_provisionador() {
 	local script="$1"
 	local trecho fn
-	local -a funcoes=(credencial_manuseavel extrair_credencial_db conferir_coordenadas_do_ambiente)
+	local -a funcoes=(
+		credencial_manuseavel
+		extrair_credencial_db
+		montar_url_do_banco
+		destino_esperado_do_banco
+		destino_anterior_por_socket
+		conferir_coordenadas_do_ambiente
+		migrar_database_url_de_socket
+	)
 
 	CREDENCIAL_LIDA=""
 	CHAVES_REPETIDAS=""
@@ -420,6 +432,157 @@ auditar_guarda_do_alter_role() {
 	fi
 
 	printf 'guarda na linha %s do corpo, ALTER ROLE na linha %s' "${linha_guarda}" "${linha_alter}"
+	return 0
+}
+
+# --------------------------------------------------------------------------- #
+# Auditoria da FORMA da cadeia de conexão que o provisionamento grava.
+#
+# CAUSA-RAIZ de existir: nenhuma asserção desta bateria olhava a forma. Ela
+# conferia a credencial e as coordenadas — papel, diretório, portas — e passava
+# verde sobre uma cadeia que NENHUM consumidor consegue interpretar. Foi por essa
+# fresta que a forma de socket (`@/BANCO?host=DIRETORIO&port=PORTA`) atravessou as
+# cinco rodadas de gate desta task e os dois gates da task do serviço de
+# aplicação, e só apareceu quando alguém executou o `ExecStart` real: o cliente
+# `postgres.js` constrói as opções de conexão com `new URL()` e lança
+# `Invalid URL` antes de qualquer tentativa de conexão.
+#
+# São DUAS asserções, e o defeito exige as duas:
+#
+#   estrutural     o destino declarado é `HOSPEDEIRO:PORTA/BANCO`, sem `?host=`;
+#   comportamental o CLIENTE REAL da aplicação aceita a cadeia e resolve dela o
+#                  hospedeiro, a porta e o banco esperados.
+#
+# Provar só a estrutural repetiria o defeito de provar o que é fácil provar: a
+# forma com codificação percentual (`@%2Fvar%2Frun%2Fpostgresql:5432/BANCO`) passa
+# na estrutural e o cliente a resolve como NOME DE MÁQUINA, sem decodificar. E
+# provar só a comportamental deixaria a bateria muda no host em que o runtime não
+# estiver alcançável.
+#
+# Recebe o caminho do script por parâmetro para poder ser apontada a uma cópia com
+# o defeito de volta — é assim que se prova que ela reprova.
+#
+# Imprime o diagnóstico e devolve 0 (forma consumível) ou 1.
+# --------------------------------------------------------------------------- #
+
+# O runtime que a aplicação usa. Sob `sudo` o PATH é o do superusuário e não
+# alcança o gerenciador de versões, que vive no diretório pessoal do usuário de
+# trabalho — daí o segundo caminho, derivado da versão fixada em `.mise.toml`.
+localizar_runtime_node() {
+	local caminho
+	if caminho="$(command -v node 2>/dev/null)"; then
+		printf '%s' "${caminho}"
+		return 0
+	fi
+
+	local versao dono lar
+	versao="$(sed -n 's|^node = "\(.*\)"$|\1|p' "${RAIZ_REPO}/.mise.toml" 2>/dev/null | head -1)"
+	dono="$(stat -c '%U' "${RAIZ_REPO}" 2>/dev/null || true)"
+	lar="$(getent passwd "${dono}" 2>/dev/null | cut -d: -f6)"
+	[[ -n "${versao}" && -n "${lar}" ]] || return 1
+
+	caminho="${lar}/.local/share/mise/installs/node/${versao}/bin/node"
+	[[ -x "${caminho}" ]] || return 1
+	printf '%s' "${caminho}"
+}
+
+auditar_forma_da_url_do_banco() {
+	local script="$1"
+	local url destino
+
+	# A cadeia é montada pela função REAL do script auditado, num processo novo —
+	# nem o `readonly` das constantes deste arquivo nem as funções já carregadas
+	# aqui interferem. A credencial é SINTÉTICA e autodescritiva: esta auditoria
+	# nunca toca o segredo vivo.
+	url="$(bash -c '
+		PAPEL_DB="$2"; BANCO_DB="$3"; HOSPEDEIRO_DB="$4"; DIR_SOCKET_PG="$5"
+		eval "$(sed -n "/^montar_url_do_banco() {/,/^}/p" "$1")"
+		[[ "$(type -t montar_url_do_banco)" == "function" ]] || exit 1
+		montar_url_do_banco "CREDENCIALSINTETICADAAUDITORIA" 5432
+	' _ "${script}" "${PAPEL_DB}" "${BANCO_DB}" "${HOSPEDEIRO_DB}" "${DIR_SOCKET_PG}" 2>/dev/null)" || {
+		printf 'o script não declara montar_url_do_banco, de onde ler a forma da cadeia'
+		return 1
+	}
+
+	# A forma auditada precisa ser a forma GRAVADA. Sem isto, alguém poderia manter
+	# a função impecável e voltar a escrever o literal antigo no passo do arquivo de
+	# ambiente — e a auditoria aprovaria uma função que ninguém chama.
+	local escritas fora_da_funcao
+	escritas="$(grep -cE "printf 'DATABASE_URL=" "${script}" || true)"
+	fora_da_funcao="$(grep -E "printf 'DATABASE_URL=" "${script}" | grep -cv 'montar_url_do_banco' || true)"
+	if [[ "${escritas}" -lt 1 ]]; then
+		printf 'o script não grava linha DATABASE_URL alguma'
+		return 1
+	fi
+	if [[ "${fora_da_funcao}" -ne 0 ]]; then
+		printf '%s escrita(s) de DATABASE_URL não passam por montar_url_do_banco' "${fora_da_funcao}"
+		return 1
+	fi
+
+	# --- estrutural: a FORMA, antes de qualquer valor ------------------------ #
+	if [[ "${url}" != postgresql://* ]]; then
+		printf 'a cadeia montada não começa com postgresql:// [%s]' "${url}"
+		return 1
+	fi
+	destino="${url##*@}"
+	# `HOSPEDEIRO:PORTA/BANCO`, e nada de parâmetro de consulta: é a forma de
+	# socket (`/BANCO?host=...`) que este predicado recusa. Deliberadamente GENÉRICO
+	# — o valor de cada campo é conferido adiante, e prender esta linha aos valores
+	# faria a asserção comportamental nunca ser alcançada por defeito algum.
+	if [[ ! "${destino}" =~ ^[^/?]+:[0-9]+/[^/?]+$ ]]; then
+		printf 'o destino declarado é [%s], que não tem a forma HOSPEDEIRO:PORTA/BANCO — nenhum consumidor da cadeia interpreta isso' \
+			"${destino}"
+		return 1
+	fi
+
+	# --- comportamental, contra o cliente REAL da aplicação ------------------ #
+	#
+	# Vem ANTES da comparação literal do destino de propósito: é a asserção mais
+	# forte das duas, e é ela que precisa reprovar primeiro quando as duas
+	# reprovariam. A forma com codificação percentual, por exemplo, atravessa o
+	# predicado de forma acima e só é pega aqui — o cliente não decodifica nada e
+	# trata `%2Fvar%2Frun%2Fpostgresql` como nome de máquina.
+	local runtime resolvido consultou=0
+	if runtime="$(localizar_runtime_node)"; then
+		consultou=1
+		local codigo=0
+		resolvido="$(printf '%s' "${url}" | (cd "${RAIZ_REPO}/apps/api" && "${runtime}" --input-type=module -e '
+			import postgres from "postgres";
+			let entrada = "";
+			for await (const parte of process.stdin) entrada += parte;
+			const conexao = postgres(entrada.trim(), { max: 1, connect_timeout: 1 });
+			process.stdout.write(`${conexao.options.host}|${conexao.options.port}|${conexao.options.database}`);
+			process.exit(0);
+		') 2>/dev/null)" || codigo=$?
+
+		if [[ "${codigo}" -ne 0 ]]; then
+			printf 'o cliente real da aplicação RECUSOU a cadeia montada (código %s) — é a forma que derruba a partida do serviço' "${codigo}"
+			return 1
+		fi
+		if [[ "${resolvido}" != "${HOSPEDEIRO_DB}|5432|${BANCO_DB}" ]]; then
+			printf 'o cliente real aceitou a cadeia mas resolveu [%s], e o esperado é [%s|5432|%s]' \
+				"${resolvido}" "${HOSPEDEIRO_DB}" "${BANCO_DB}"
+			return 1
+		fi
+	fi
+
+	# --- os valores, comparados literalmente --------------------------------- #
+	#
+	# Segunda linha de defesa, e a ÚNICA quando o runtime não está alcançável:
+	# sem ela, uma máquina sem o runtime aprovaria uma cadeia apontando para
+	# qualquer hospedeiro.
+	if [[ "${destino}" != "${HOSPEDEIRO_DB}:5432/${BANCO_DB}" ]]; then
+		printf 'o destino declarado é [%s] e deveria ser [%s:5432/%s]' \
+			"${destino}" "${HOSPEDEIRO_DB}" "${BANCO_DB}"
+		return 1
+	fi
+
+	if [[ "${consultou}" -eq 0 ]]; then
+		printf 'forma e destino corretos [%s]; o cliente real NÃO foi consultado — runtime não localizado' "${destino}"
+		return 2
+	fi
+
+	printf 'destino [%s]; o cliente real resolve [%s]' "${destino}" "${resolvido}"
 	return 0
 }
 
@@ -806,14 +969,22 @@ ct_003() {
 	afirmar_igual "(d) o script não liga rastreio verboso de comandos do shell" "0" \
 		"$(grep -cE 'set[[:space:]]+-x' "${SCRIPT_PROVISIONAR}" || true)"
 	# O sufixo `[= ]` fica DENTRO de cada alternativa. Na forma herdada do card
-	# — `(--password|PGPASSWORD=|--dbpassword)[= ]` — ele se aplicava ao grupo
-	# inteiro, de modo que o ramo `PGPASSWORD=` só casaria com `PGPASSWORD==` ou
-	# com `PGPASSWORD=` seguido de espaço, e nunca com o uso real
-	# `PGPASSWORD=<valor> psql …`, que é justamente a forma mais provável de
+	# — `(--password|PGPASSWORD[=]|--dbpassword)[= ]` — ele se aplicava ao grupo
+	# inteiro, de modo que o ramo da variável de ambiente só casaria com um sinal
+	# de igual DOBRADO, ou seguido de espaço, e nunca com o uso real
+	# `PGPASSWORD[=]<valor> psql …`, que é justamente a forma mais provável de
 	# vazamento. O ramo estava morto. O card do CT-003 (§5.6 da task) foi
 	# atualizado junto, para a asserção e o teste continuarem literalmente iguais.
+	#
+	# O `[=]` é classe de caractere de UM elemento: casa exatamente o mesmo que o
+	# sinal solto casaria, sem perder poder de detecção. Ele existe para quebrar a
+	# AUTO-REFERÊNCIA — escrito solto, o texto deste padrão (e o dos comentários
+	# que o explicam) é ele próprio uma instância do padrão, e a auditoria da
+	# ADR-0005 declarada em `.claude/rules/testing-stack.md`, que exige 0
+	# ocorrências em `deploy/scripts/**/*.sh`, nunca fecharia no repositório.
+	# Mesma forma já adotada em `verificar-apuracao-versao.sh`.
 	afirmar_igual "(e) o script não passa segredo por argumento de linha de comando nem por variável de ambiente" "0" \
-		"$(grep -cE -- '(--password[= ]|--dbpassword[= ]|PGPASSWORD=)' "${SCRIPT_PROVISIONAR}" || true)"
+		"$(grep -cE -- '(--password[= ]|--dbpassword[= ]|PGPASSWORD[=])' "${SCRIPT_PROVISIONAR}" || true)"
 
 	# (f) a saída preservada das duas execuções não carrega a credencial ------ #
 	afirmar_igual "(f) a credencial não aparece na saída preservada das duas execuções" "0" \
@@ -908,9 +1079,9 @@ ct_003() {
 	local arq_sonda="${dir_sonda}/env"
 
 	if carregar_funcoes_do_provisionador "${SCRIPT_PROVISIONAR}"; then
-		ok "funções do provisionamento carregadas de ${SCRIPT_PROVISIONAR##*/} (credencial_manuseavel + extrair_credencial_db + conferir_coordenadas_do_ambiente)"
+		ok "funções do provisionamento carregadas de ${SCRIPT_PROVISIONAR##*/} (leitura da credencial, montagem da cadeia, conferência de coordenadas e migração)"
 	else
-		falhar "não consegui carregar credencial_manuseavel/extrair_credencial_db/conferir_coordenadas_do_ambiente de ${SCRIPT_PROVISIONAR} — sem elas as tabelas (i)/(j)/(k)/(l) não teriam SUT e passariam vazias"
+		falhar "não consegui carregar as funções de leitura, montagem, conferência e migração de ${SCRIPT_PROVISIONAR} — sem elas as tabelas (i)/(j)/(k)/(l)/(n) não teriam SUT e passariam vazias"
 		rm -rf "${dir_sonda}"
 		fechar_caso "CT-003"
 		return
@@ -950,6 +1121,17 @@ ct_003() {
 		"(j) credencial alfanumérica é devolvida ÍNTEGRA, sem truncar" \
 		"${arq_sonda}" "DEVOLVE:${valor_ok}"
 
+	# O mesmo companheiro positivo na forma que o provisionamento GRAVA hoje. As
+	# duas formas precisam ser lidas: a antiga porque é a que está no arquivo já
+	# posicionado, no instante ANTES de o P06 migrá-lo — se o leitor não a
+	# entendesse, a migração não teria de onde tirar a credencial a preservar —, e
+	# a nova porque é a que vale de lá em diante.
+	printf 'DATABASE_URL=postgresql://%s:%s@%s:5432/%s\nREDIS_URL=redis://127.0.0.1:%s\nSMTP_URL=smtp://127.0.0.1:%s\n' \
+		"${PAPEL_DB}" "${valor_ok}" "${HOSPEDEIRO_DB}" "${BANCO_DB}" "${PORTA_FILA}" "${PORTA_SMTP_CAPTURADOR}" >"${arq_sonda}"
+	sondar_os_dois_leitores \
+		"(j) credencial alfanumérica na forma GRAVADA hoje é devolvida ÍNTEGRA" \
+		"${arq_sonda}" "DEVOLVE:${valor_ok}"
+
 	# (k) atribuição repetida. O valor obsoleto é ALFANUMÉRICO de propósito: ele
 	# atravessa o guarda de alfabeto, então só a recusa da ambiguidade o barra.
 	printf 'DATABASE_URL=postgresql://%s:SENHASINTETICAVELHA111@/%s?host=/var/run/postgresql&port=5432\nREDIS_URL=redis://127.0.0.1:%s\nDATABASE_URL=postgresql://%s:SENHASINTETICANOVA999@/%s?host=/var/run/postgresql&port=5432\n' \
@@ -986,17 +1168,33 @@ ct_003() {
 		[[ -z "$2" ]] || printf 'REDIS_URL=%s\n' "$2" >>"${arq_sonda}"
 		[[ -z "$3" ]] || printf 'SMTP_URL=%s\n' "$3" >>"${arq_sonda}"
 	}
-	local destino_ok="/${BANCO_DB}?host=${DIR_SOCKET_PG}&port=${porta_pg_sonda}"
+	# O destino esperado é escrito LITERALMENTE aqui, e não obtido da função do
+	# provisionamento: montar o esperado com o mesmo código que produz o obtido
+	# faria a asserção concordar consigo mesma. É a mesma doutrina das constantes
+	# espelhadas no topo deste arquivo.
+	local destino_ok="${HOSPEDEIRO_DB}:${porta_pg_sonda}/${BANCO_DB}"
 
 	ambiente_completo "${destino_ok}" "redis://127.0.0.1:${PORTA_FILA}" "smtp://127.0.0.1:${PORTA_SMTP_CAPTURADOR}"
 	afirmar_igual "(l) arquivo com as três chaves nas coordenadas provisionadas é aceito sem alteração" \
 		"COERENTE" "$(sonda_coordenadas_do_provisionador "${arq_sonda}" "${porta_pg_sonda}")"
 
+	# A forma ANTERIOR, de socket de domínio Unix. Ela é reprovada como
+	# divergência — e é essa reprovação que faz o P06 migrar o arquivo em vez de
+	# aceitá-lo. Sem esta linha, voltar a gravar a forma de socket deixaria a
+	# conferência de coordenadas muda.
+	ambiente_completo "/${BANCO_DB}?host=${DIR_SOCKET_PG}&port=${porta_pg_sonda}" \
+		"redis://127.0.0.1:${PORTA_FILA}" "smtp://127.0.0.1:${PORTA_SMTP_CAPTURADOR}"
+	afirmar_igual "(l) DATABASE_URL na forma anterior (socket) é RECUSADA como divergente" \
+		"DIVERGE:DATABASE_URL" "$(sonda_coordenadas_do_provisionador "${arq_sonda}" "${porta_pg_sonda}")"
+
 	ambiente_completo "${destino_ok}" "redis://127.0.0.1:6379" "smtp://127.0.0.1:${PORTA_SMTP_CAPTURADOR}"
 	afirmar_igual "(l) REDIS_URL apontando para a instância do ambiente legado (6379) é RECUSADO" \
 		"DIVERGE:REDIS_URL" "$(sonda_coordenadas_do_provisionador "${arq_sonda}" "${porta_pg_sonda}")"
 
-	ambiente_completo "/${BANCO_DB}?host=${DIR_SOCKET_PG}&port=5433" "redis://127.0.0.1:${PORTA_FILA}" "smtp://127.0.0.1:${PORTA_SMTP_CAPTURADOR}"
+	# Porta divergente da porta VIVA do cluster, na forma correta — o que isola a
+	# porta como a única coisa que diverge. Escrita na forma antiga, esta entrada
+	# passaria a reprovar pela FORMA e deixaria de discriminar a porta.
+	ambiente_completo "${HOSPEDEIRO_DB}:5433/${BANCO_DB}" "redis://127.0.0.1:${PORTA_FILA}" "smtp://127.0.0.1:${PORTA_SMTP_CAPTURADOR}"
 	afirmar_igual "(l) DATABASE_URL com porta de cluster divergente da viva é RECUSADO" \
 		"DIVERGE:DATABASE_URL" "$(sonda_coordenadas_do_provisionador "${arq_sonda}" "${porta_pg_sonda}")"
 
@@ -1034,6 +1232,137 @@ ct_003() {
 		"DIVERGE:REDIS_URL" "$(sonda_coordenadas_do_provisionador "${arq_sonda}" "${porta_pg_sonda}")"
 
 	unset -f ambiente_completo
+
+	# (m) a FORMA da cadeia gravada, contra o cliente REAL da aplicação ------- #
+	#
+	# É a asserção que faltava quando o bloqueador apareceu: a bateria conferia o
+	# papel, o diretório e as portas de uma cadeia que nenhum consumidor consegue
+	# interpretar. Ver o cabeçalho de `auditar_forma_da_url_do_banco` para as duas
+	# pontas — a estrutural e a comportamental — e por que uma sozinha não basta.
+	local diagnostico_forma codigo_forma=0
+	diagnostico_forma="$(auditar_forma_da_url_do_banco "${SCRIPT_PROVISIONAR}")" || codigo_forma=$?
+	case "${codigo_forma}" in
+	0) ok "(m) a cadeia que o provisionamento grava é consumível — ${diagnostico_forma}" ;;
+	2) aviso "(m) ponta comportamental PULADA — ${diagnostico_forma}; execute a bateria numa máquina com o runtime instalado ('mise install' como o usuário de trabalho) para exercitá-la" ;;
+	*) falhar "(m) a cadeia que o provisionamento grava NÃO é consumível — ${diagnostico_forma}" ;;
+	esac
+
+	# Prova de falsificação da asserção acima: uma cópia do provisionamento com a
+	# forma anterior de volta precisa REPROVAR. Sem ela, `auditar_forma_da_url_do_banco`
+	# poderia estar aprovando por não saber reprovar — que é o defeito que três das
+	# cinco rodadas desta task cometeram.
+	# São DOIS falsificadores, um por ponta da auditoria — um só provaria metade:
+	#
+	#   socket        troca a cadeia de formato E os argumentos pela forma anterior.
+	#                 Reprova na ponta ESTRUTURAL, e é o defeito literal que esta
+	#                 fatia veio fechar;
+	#   percentual    troca só o hospedeiro pelo caminho do socket com codificação
+	#                 percentual. Atravessa a ponta estrutural — `%2F...:5432/sysloc`
+	#                 TEM a forma `HOSPEDEIRO:PORTA/BANCO` — e só é pega pelo cliente
+	#                 real, que não decodifica nada e tenta resolver aquilo como nome
+	#                 de máquina. É o falsificador da ponta COMPORTAMENTAL.
+	auditar_falsificador() { # $1 rótulo · $2 arquivo mutilado
+		local diagnostico codigo=0
+		diagnostico="$(auditar_forma_da_url_do_banco "$2")" || codigo=$?
+		if [[ "${codigo}" -eq 1 ]]; then
+			ok "(m) sobre a cópia [$1], a auditoria REPROVA — ${diagnostico}"
+		else
+			falhar "(m) a auditoria NÃO reprova a cópia [$1] (código ${codigo}: ${diagnostico}) — ela não sabe pegar o defeito que persegue"
+		fi
+		# Controle de integridade: se a substituição não tiver casado nada, a cópia
+		# seria idêntica ao original e a asserção acima compararia o script consigo
+		# mesmo, aprovando por acidente.
+		afirmar_diferente "(m) a cópia [$1] difere do script original" \
+			"$(sha256sum "${SCRIPT_PROVISIONAR}" | cut -d' ' -f1)" \
+			"$(sha256sum "$2" | cut -d' ' -f1)"
+	}
+
+	local copia_com_socket="${dir_sonda}/provisionar-com-forma-de-socket.sh"
+	sed -e 's|postgresql://%s:%s@%s:%s/%s|postgresql://%s:%s@/%s?host=%s\&port=%s|' \
+		-e 's|"${PAPEL_DB}" "$1" "${HOSPEDEIRO_DB}" "$2" "${BANCO_DB}"|"${PAPEL_DB}" "$1" "${BANCO_DB}" "${DIR_SOCKET_PG}" "$2"|' \
+		"${SCRIPT_PROVISIONAR}" >"${copia_com_socket}"
+	auditar_falsificador "forma de socket de volta" "${copia_com_socket}"
+
+	local copia_percentual="${dir_sonda}/provisionar-com-codificacao-percentual.sh"
+	sed 's|"${HOSPEDEIRO_DB}" "$2" "${BANCO_DB}"|"%2Fvar%2Frun%2Fpostgresql" "$2" "${BANCO_DB}"|' \
+		"${SCRIPT_PROVISIONAR}" >"${copia_percentual}"
+	auditar_falsificador "socket com codificação percentual" "${copia_percentual}"
+
+	# Terceiro falsificador, para a asserção de que toda escrita passa pela função:
+	# a cópia mantém `montar_url_do_banco` impecável e acrescenta um ponto de
+	# escrita que a contorna. Sem ele, a auditoria estaria conferindo a forma de uma
+	# função que o script poderia ter deixado de usar.
+	local copia_com_escrita_solta="${dir_sonda}/provisionar-com-escrita-fora-da-funcao.sh"
+	cp "${SCRIPT_PROVISIONAR}" "${copia_com_escrita_solta}"
+	printf '\t\tprintf %s "${PAPEL_DB}" "${senha_db}" "${BANCO_DB}" "${DIR_SOCKET_PG}" "${porta_banco}"\n' \
+		"'DATABASE_URL=postgresql://%s:%s@/%s?host=%s&port=%s\\n'" >>"${copia_com_escrita_solta}"
+	auditar_falsificador "escrita de DATABASE_URL fora da função" "${copia_com_escrita_solta}"
+
+	unset -f auditar_falsificador
+	rm -f "${copia_com_socket}" "${copia_percentual}" "${copia_com_escrita_solta}"
+
+	# (n) a MIGRAÇÃO do arquivo já posicionado ------------------------------- #
+	#
+	# O arquivo de ambiente da instalação existente carrega a forma anterior e a
+	# credencial que o BANCO conhece. A migração troca a forma e preserva o
+	# segredo; regerá-lo aqui quebraria o acesso de tudo que já o consome. As
+	# quatro pontas abaixo são o que separa migrar de estragar.
+	#
+	# A função REAL é exercitada num subshell que fornece o `abortar` que ela
+	# espera — nenhum símbolo é acrescentado ao provisionamento por causa do teste.
+	local arq_migracao="${dir_sonda}/ambiente-a-migrar"
+	local credencial_sintetica="CREDENCIALSINTETICADAMIGRACAO789"
+	printf '# comentário preservado\nDATABASE_URL=postgresql://%s:%s@/%s?host=%s&port=%s\nREDIS_URL=redis://127.0.0.1:%s\nSMTP_URL=smtp://127.0.0.1:%s\n' \
+		"${PAPEL_DB}" "${credencial_sintetica}" "${BANCO_DB}" "${DIR_SOCKET_PG}" "${porta_pg_sonda}" \
+		"${PORTA_FILA}" "${PORTA_SMTP_CAPTURADOR}" >"${arq_migracao}"
+
+	migrar_isolado() { # $1 arquivo · $2 porta · $3 credencial em mãos
+		(
+			senha_db="$3"
+			DONO_ARQ_AMBIENTE="$(stat -c '%U' "$1")"
+			abortar() {
+				printf 'ABORTOU: %s\n' "$1" >&2
+				exit 9
+			}
+			migrar_database_url_de_socket "$1" "$2"
+		)
+	}
+
+	local codigo_migracao=0
+	migrar_isolado "${arq_migracao}" "${porta_pg_sonda}" "${credencial_sintetica}" || codigo_migracao=$?
+	afirmar_igual "(n) a migração reporta que houve mudança" "0" "${codigo_migracao}"
+	afirmar_igual "(n) a cadeia migrada é a forma gravada hoje, com a credencial PRESERVADA" \
+		"DATABASE_URL=postgresql://${PAPEL_DB}:${credencial_sintetica}@${HOSPEDEIRO_DB}:${porta_pg_sonda}/${BANCO_DB}" \
+		"$(grep '^DATABASE_URL=' "${arq_migracao}")"
+	afirmar_igual "(n) as demais linhas do arquivo sobrevivem à migração" \
+		"# comentário preservado|REDIS_URL=redis://127.0.0.1:${PORTA_FILA}|SMTP_URL=smtp://127.0.0.1:${PORTA_SMTP_CAPTURADOR}" \
+		"$(grep -v '^DATABASE_URL=' "${arq_migracao}" | paste -sd '|' -)"
+	afirmar_igual "(n) o arquivo migrado continua 0600" "600" "$(stat -c '%a' "${arq_migracao}")"
+	afirmar_igual "(n) nenhum intermediário sobra ao lado do arquivo" "0" \
+		"$(find "${dir_sonda}" -maxdepth 1 -name '*.migrando' | wc -l)"
+
+	# A segunda execução não tem o que fazer — é o que torna a migração idempotente
+	# em vez de uma reescrita a cada provisionamento.
+	local codigo_segunda=0
+	migrar_isolado "${arq_migracao}" "${porta_pg_sonda}" "${credencial_sintetica}" || codigo_segunda=$?
+	afirmar_igual "(n) a segunda migração não tem o que fazer" "1" "${codigo_segunda}"
+
+	# O companheiro negativo, e a razão de a migração ser reconhecida por igualdade
+	# LITERAL: um destino de socket com OUTRA porta NÃO é o arquivo que este script
+	# deixou, e migrá-lo silenciosamente apagaria a divergência que a conferência de
+	# coordenadas existe para denunciar.
+	local arq_nao_migravel="${dir_sonda}/ambiente-nao-migravel"
+	printf 'DATABASE_URL=postgresql://%s:%s@/%s?host=%s&port=9999\n' \
+		"${PAPEL_DB}" "${credencial_sintetica}" "${BANCO_DB}" "${DIR_SOCKET_PG}" >"${arq_nao_migravel}"
+	local antes_nao_migravel
+	antes_nao_migravel="$(sha256sum "${arq_nao_migravel}" | cut -d' ' -f1)"
+	local codigo_nao_migravel=0
+	migrar_isolado "${arq_nao_migravel}" "${porta_pg_sonda}" "${credencial_sintetica}" || codigo_nao_migravel=$?
+	afirmar_igual "(n) socket com porta divergente da viva NÃO é migrado" "1" "${codigo_nao_migravel}"
+	afirmar_igual "(n) e o arquivo não migrável fica byte a byte intacto" \
+		"${antes_nao_migravel}" "$(sha256sum "${arq_nao_migravel}" | cut -d' ' -f1)"
+
+	unset -f migrar_isolado
 
 	# O guarda que precede a única operação capaz de reescrever a senha do banco.
 	# Ancorado no CORPO do passo e no comando executável — ver o cabeçalho de
@@ -1159,6 +1488,11 @@ ct_004() {
 # O conjunto de unidades legadas é DERIVADO do retrato inicial — o que estava
 # ativo antes da 1ª execução —, nunca de lista escrita à mão que envelheceria em
 # silêncio quando o legado mudasse.
+#
+# As pontas (a) a (e) medem o EFEITO do provisionamento sobre o legado, depois de
+# ele ter acontecido. A (g) mede a DECISÃO que impede a colisão de acontecer — o
+# guarda de porta —, carregando-a do arquivo real e exercitando-a com dublês, sem
+# banco e sem privilégio.
 # =========================================================================== #
 ct_005() {
 	caso "CT-005" "O provisionamento não altera o ambiente legado nem colide com suas portas"
@@ -1316,6 +1650,126 @@ ct_005() {
 
 	unset -f executar_guarda_isolado
 
+	# --- (g) o guarda de colisão decide a posse da porta pelo ESTADO REAL ---- #
+	#
+	# CAUSA-RAIZ de existir: `conferir_colisao_de_porta` decidia a posse em dois
+	# passos — há alguém escutando? a nossa unidade está ativa? — e o segundo
+	# tratava "unidade ativa" como PROVA de que a porta é nossa. Isso é verdade
+	# para 6380/1025/8025, cujas unidades vinculam a porta ao subir, e é FALSO
+	# para o cluster do banco na execução de transição, que é a única que
+	# importa: ele fica `active` servindo só pelo socket de domínio Unix enquanto
+	# `listen_addresses` estiver vazio. Nesse estado — unidade ativa, porta TCP
+	# sem dono — um terceiro na porta do cluster passava como "nossa instância",
+	# o P03 reescrevia o sobreposto e o `systemctl restart` falhava ao VINCULAR:
+	# um aborto limpo de pré-condição virava um aborto de meio de execução com o
+	# cluster desligado, dentro da janela.
+	#
+	# O cenário é exercitável SEM privilégio e sem banco: o guarda e a prova de
+	# posse são carregados do arquivo real (mesma técnica de
+	# `carregar_funcoes_do_provisionador`) e as três coisas que eles consultam —
+	# a escuta da máquina, o estado da unidade e o cluster em execução — entram
+	# como dublês. O que se mede é a DECISÃO, e ela é literal: `ABORTA`,
+	# `ACEITA`, ou `ABORTAACEITA` para um guarda que anuncia a recusa e segue
+	# assim mesmo.
+	#
+	# O processo de sonda roda sem `-e` de propósito: com ele, o `head -1` do
+	# ramo de aborto fecharia o cano e derrubaria a sonda por SIGPIPE antes de o
+	# desfecho ser impresso — medindo a opção do shell em vez do guarda.
+	#
+	# As variáveis da sonda são MAIÚSCULAS por necessidade, não por estilo: o
+	# escopo de `local` no shell é DINÂMICO, então um `local escuta` dentro do SUT
+	# sombreia a `escuta` da sonda e o dublê passa a ler o vazio do próprio SUT —
+	# um teste que falha sem que haja defeito. Nomes disjuntos evitam a colisão.
+	sondar_guarda_de_porta() { # $1 unidade ativa (1/0) · $2 listen_addresses · $3 porta viva · $4 prova de posse (ou vazio)
+		bash -c '
+			set -uo pipefail
+			SUT="$1" SONDA_UNIDADE_ATIVA="$2" SONDA_ESCUTA="$3" SONDA_PORTA_VIVA="$4" SONDA_PROVA="$5"
+			SONDA_PORTA=5432
+
+			eval "$(sed -n "/^conferir_colisao_de_porta() {/,/^}/p" "${SUT}")"
+			eval "$(sed -n "/^cluster_escuta_na_porta() {/,/^}/p" "${SUT}")"
+			if [[ "$(type -t conferir_colisao_de_porta)" != function ||
+				"$(type -t cluster_escuta_na_porta)" != function ]]; then
+				printf "SEM-SUT"
+				exit 0
+			fi
+
+			# A escuta da máquina: um TERCEIRO ocupa a porta guardada.
+			ss() {
+				case " $* " in
+				*"sport = :${SONDA_PORTA}"*)
+					printf "LISTEN 0 511 0.0.0.0:%s 0.0.0.0:* users:((\"processo-terceiro\",pid=99999,fd=6))\n" \
+						"${SONDA_PORTA}" ;;
+				*) return 0 ;;
+				esac
+			}
+			unidade_ativa() { [[ "${SONDA_UNIDADE_ATIVA}" == "1" ]]; }
+			# O cluster em execução, respondendo o que a sonda mandar.
+			runuser() {
+				case " $* " in
+				*"SHOW listen_addresses"*) printf "%s\n" "${SONDA_ESCUTA}" ;;
+				*"SHOW port"*) printf "%s\n" "${SONDA_PORTA_VIVA}" ;;
+				*) return 1 ;;
+				esac
+			}
+			info() { :; }
+			# Devolve != 0 em vez de encerrar, para que um guarda que anunciasse a
+			# recusa e SEGUISSE adiante apareça como ABORTAACEITA, e não como ABORTA.
+			abortar() { printf "ABORTA"; return 1; }
+
+			if [[ -n "${SONDA_PROVA}" ]]; then
+				conferir_colisao_de_porta "${SONDA_PORTA}" "postgresql@18-main.service" "remedio" "${SONDA_PROVA}" &&
+					printf "ACEITA"
+			else
+				conferir_colisao_de_porta "${SONDA_PORTA}" "postgresql@18-main.service" "remedio" &&
+					printf "ACEITA"
+			fi
+		' _ "${SCRIPT_PROVISIONAR}" "$1" "$2" "$3" "$4"
+	}
+
+	local desfecho
+	desfecho="$(sondar_guarda_de_porta 0 "" "" cluster_escuta_na_porta)"
+	if [[ "${desfecho}" == "SEM-SUT" ]]; then
+		falhar "(g) não consegui carregar 'conferir_colisao_de_porta' e 'cluster_escuta_na_porta' de ${SCRIPT_PROVISIONAR} — sem elas a tabela ficaria sem SUT e passaria vazia"
+	else
+		ok "(g) guarda de colisão e prova de posse do cluster carregados de ${SCRIPT_PROVISIONAR##*/}"
+
+		# O ESTADO DA TRANSIÇÃO, e a razão de a ponta existir: unidade ativa e
+		# `listen_addresses` vazio — o cluster não escuta em TCP em lugar nenhum,
+		# logo nenhum ouvinte de porta TCP pode ser nosso.
+		afirmar_igual "(g) unidade ativa mas cluster SEM escuta em TCP: a porta ocupada NÃO é nossa e o guarda aborta" \
+			"ABORTA" "$(sondar_guarda_de_porta 1 "" "" cluster_escuta_na_porta)"
+
+		# Companheiro positivo. Sem ele, a asserção acima passaria com um guarda
+		# que abortasse sempre — e a segunda execução do provisionamento, que a
+		# ADR-0005 exige idempotente, abortaria contra o próprio cluster.
+		afirmar_igual "(g) unidade ativa e cluster escutando na porta guardada: é nossa instância, o guarda segue" \
+			"ACEITA" "$(sondar_guarda_de_porta 1 "127.0.0.1" "5432" cluster_escuta_na_porta)"
+
+		# Escuta em TCP, mas noutra porta: o 'port' de postgresql.conf mudou sem
+		# reinício, e a porta sob guarda não é a que o cluster de fato abriu.
+		afirmar_igual "(g) cluster escutando em OUTRA porta: a porta guardada não é nossa e o guarda aborta" \
+			"ABORTA" "$(sondar_guarda_de_porta 1 "127.0.0.1" "5433" cluster_escuta_na_porta)"
+
+		# `localhost` e `*` são escuta em TCP tanto quanto o endereço literal —
+		# recusá-las transformaria uma reexecução legítima em aborto.
+		afirmar_igual "(g) cluster escutando por 'localhost' na porta guardada: continua sendo nossa instância" \
+			"ACEITA" "$(sondar_guarda_de_porta 1 "localhost" "5432" cluster_escuta_na_porta)"
+
+		# Unidade inativa segue abortando, com prova ou sem ela.
+		afirmar_igual "(g) unidade do cluster inativa: a porta ocupada é de terceiro e o guarda aborta" \
+			"ABORTA" "$(sondar_guarda_de_porta 0 "127.0.0.1" "5432" cluster_escuta_na_porta)"
+
+		# As três portas fixas NÃO ganharam a prova extra: as unidades delas
+		# vinculam a porta ao subir, e exigir prova ali quebraria a 2ª execução.
+		afirmar_igual "(g) porta fixa, sem prova extra: unidade ativa continua bastando" \
+			"ACEITA" "$(sondar_guarda_de_porta 1 "" "" "")"
+		afirmar_igual "(g) porta fixa, sem prova extra: unidade inativa continua abortando" \
+			"ABORTA" "$(sondar_guarda_de_porta 0 "" "" "")"
+	fi
+
+	unset -f sondar_guarda_de_porta
+
 	fechar_caso "CT-005"
 }
 
@@ -1324,7 +1778,12 @@ main() {
 	exigir_privilegio
 
 	local faltando=() ferramenta
-	for ferramenta in git ss dpkg-query systemctl stat sha256sum install runuser mount umount mountpoint find awk comm; do
+	# `node` NÃO entra nesta lista: ele não está instalado no sistema, e sim sob o
+	# diretório pessoal do usuário de trabalho, pelo gerenciador de versões — sob
+	# `sudo` o PATH não o alcança. A ponta comportamental da asserção (m) o procura
+	# por `localizar_runtime_node` e, sem ele, emite AVISO nomeando o que ficou por
+	# exercitar, em vez de passar em silêncio.
+	for ferramenta in git ss dpkg-query systemctl stat sha256sum install runuser mount umount mountpoint find awk comm paste; do
 		command -v "${ferramenta}" >/dev/null 2>&1 || faltando+=("${ferramenta}")
 	done
 	if [[ "${#faltando[@]}" -gt 0 ]]; then

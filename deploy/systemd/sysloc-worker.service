@@ -1,0 +1,118 @@
+# Unidade do processador de trabalho do backend Sysloc — T7 da fatia
+# `fundacao-stack-nativa`.
+#
+# Esta é a FONTE VERSIONADA. A cópia instalada em /etc/systemd/system/ é
+# derivada dela por `deploy/scripts/instalacao/instalar-unidades.sh`, que é
+# idempotente (ADR-0005). Editar a cópia instalada é perder a alteração na
+# próxima instalação — edite AQUI.
+#
+# ADR-0005, condição de entrada: NENHUMA credencial entra neste arquivo. Ver o
+# cabeçalho de `sysloc-api.service` para o arranjo completo — ele é o mesmo.
+#
+# ---------------------------------------------------------------------------
+# O conjunto de variáveis deste processo é PRÓPRIO, e menor
+# ---------------------------------------------------------------------------
+#
+# `apps/worker/src/main.ts` valida exatamente DUAS variáveis: `LOG_LEVEL` e
+# `REDIS_URL`. Ele não escuta porta e não fala com o banco nesta fatia, de modo
+# que `PORT` e `DATABASE_URL` não são exigidas aqui — e declará-las como se
+# fossem produziria diagnóstico enganoso no dia em que uma delas faltasse.
+#
+# A distinção não é acadêmica: o `.env.example` versionado documenta `LOG_LEVEL`
+# sob o cabeçalho "Serviço de aplicação", o que era verdade até T5 e deixou de
+# ser em T6. Uma unidade de processador montada a partir daquela leitura subiria
+# sem `REDIS_URL` e falharia na partida — corretamente, mas consumindo a janela
+# de indisponibilidade. `REDIS_URL` vem do arquivo de ambiente (é lá que
+# `provisionar-base.sh` a grava, apontando para a instância de fila própria) e
+# `LOG_LEVEL` vem da diretiva `Environment=` abaixo, como no serviço de
+# aplicação.
+#
+# ---------------------------------------------------------------------------
+# ExecStart depende de artefato CONSTRUÍDO
+# ---------------------------------------------------------------------------
+#
+# Mesma disciplina do serviço de aplicação: `dist/main.js` é produzido por
+# `pnpm build`, é barrado pelo `.gitignore`, e quem confere a sua presença é o
+# INSTALADOR — nunca um `ExecStartPre` de construção no caminho de reinício.
+
+[Unit]
+Description=Processador de trabalho em segundo plano do backend Sysloc
+Documentation=file:/opt/sysloc-backend/docs/specs/features/fundacao-stack-nativa/v1/scope.md
+
+# `After=redis-server@sysloc.service` resolve DUAS coisas, e a segunda é a menos
+# óbvia e a mais cara:
+#
+#   1. no arranque, o processador não tenta consumir antes de a fila responder;
+#   2. no DESLIGAMENTO, o systemd para na ordem inversa da declarada — esta
+#      unidade é encerrada ANTES da fila, e o encerramento gracioso encontra o
+#      servidor de pé. Sem esta linha, a fila poderia parar primeiro e o
+#      encerramento cairia no caminho que o marcador DECISÃO FECHADA de
+#      `apps/worker/src/fila.ts` descreve: a devolução da conexão não termina, o
+#      prazo interno de 15 s é pago por inteiro e uma linha de erro é gravada no
+#      journal a CADA desligamento do servidor.
+#
+# `Wants=` e não `Requires=`, pela mesma razão declarada em `sysloc-api.service`:
+# falha de dependência não é reiniciada por `Restart=always`.
+After=network.target redis-server@sysloc.service
+Wants=redis-server@sysloc.service
+
+# Guarda contra laço de reinício — ver `sysloc-api.service` para a aritmética.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=sysloc
+Group=sysloc
+WorkingDirectory=/opt/sysloc-backend/apps/worker
+
+# Segredos: apenas aqui, e apenas por referência. É o mesmo arquivo que o
+# serviço de aplicação consome; deste processo, só `REDIS_URL` é lida.
+EnvironmentFile=/etc/sysloc/backend.env
+
+# Coordenadas revisáveis — nenhuma delas é segredo. Sem `PORT` e sem
+# `DATABASE_URL`, ver o cabeçalho.
+Environment=NODE_ENV=production
+Environment=LOG_LEVEL=info
+
+ExecStart=/home/sysloc/.local/share/mise/installs/node/24.18.1/bin/node /opt/sysloc-backend/apps/worker/dist/main.js
+
+Restart=always
+RestartSec=5
+
+# Sinal de desligamento: o padrão, que é o que `apps/worker/src/main.ts` atende
+# para esperar a tarefa em andamento terminar antes de devolver a conexão.
+KillSignal=SIGTERM
+
+# Prazo do desligamento gracioso, DECLARADO em vez de herdado.
+#
+# Este é o valor que o marcador DECISÃO FECHADA de `apps/worker/src/fila.ts`
+# (T6 / Gate 2) cobra nominalmente de T7: o `REVERTER EXIGE` daquele marcador diz
+# que o `TimeoutStopSec` desta unidade é declarado "com folga sobre este valor",
+# sendo o valor o `LIMITE_DE_DESLIGAMENTO_MS` de 15 s do encerramento gracioso.
+# Quem desiste primeiro precisa ser o processo — ele explica no journal por que
+# desistiu —, e não o supervisor, que só sabe mandar SIGKILL e levar a unidade
+# para `failed` sem registro. Os 30 s dão o dobro do prazo interno e ficam bem
+# abaixo dos 90 s herdados do padrão da distribuição.
+TimeoutStopSec=30
+
+# Restrições de execução — idênticas às do serviço de aplicação. Ver o cabeçalho
+# daquele arquivo para a razão de `ProtectSystem=full`, `ProtectHome=read-only`
+# e da presença de AF_NETLINK.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

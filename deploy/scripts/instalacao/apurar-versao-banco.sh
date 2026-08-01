@@ -72,12 +72,16 @@
 #
 # O privilégio é exigido apenas para LER /etc/sysloc/backend.env, que é 0600 do superusuário.
 # NÃO é exigido para falar com o cluster: `provisionar-base.sh` o configura com
-# `listen_addresses = ''`, de modo que ele não escuta em porta TCP alguma e a conexão acontece
-# pelo socket de domínio Unix. É por isso que a forma
-# `postgresql://PAPEL:SEGREDO@/BANCO?host=DIRETORIO_DO_SOCKET&port=PORTA` — a que aquele arquivo
-# de ambiente usa — é aceita aqui em pé de igualdade com a forma de endereço e porta, e é a que
-# vale no caminho privilegiado. O caso CT-007 da verificação exercita essa forma de ponta a
-# ponta, contra instância própria por socket, sem privilégio nenhum.
+# `listen_addresses = '127.0.0.1'`, de modo que a conexão do caminho privilegiado acontece pelo
+# endereço de retorno, na forma `postgresql://PAPEL:SEGREDO@HOSPEDEIRO:PORTA/BANCO`.
+#
+# A forma de socket (`postgresql://PAPEL:SEGREDO@/BANCO?host=DIRETORIO&port=PORTA`) continua
+# aceita aqui em pé de igualdade, e o caso CT-007 da verificação continua exercitando-a de ponta a
+# ponta contra instância própria por socket: `psql` a alcança sem tradução, e uma instância
+# efêmera que só escute em socket é destino legítimo do lado da VERIFICAÇÃO. O que mudou é qual
+# das duas o arquivo de ambiente da operação carrega — e essa mudança tem causa: socket de domínio
+# Unix não cabe numa URL, e o cliente que a aplicação usa recusa a cadeia antes de conectar. Ver
+# o cabeçalho de `provisionar-base.sh`, seção "Por que o banco escuta em TCP".
 #
 # Executá-lo duas vezes seguidas termina com sucesso nas duas e deixa UMA seção de apuração: o
 # registro é reescrito por inteiro, não acumulado (CA-11). Quando qualquer um dos dois lados não
@@ -540,9 +544,8 @@ gravar_registro() {
 			printf '> ```\n'
 			printf '>\n'
 			printf '> Nada mais precisa ser informado: `SYSLOC_ARQ_AMBIENTE` já tem `%s`\n' "${ARQ_AMBIENTE_PADRAO}"
-			printf '> como padrão, e a cadeia de conexão daquele arquivo está na forma de socket\n'
-			printf '> (`postgresql://PAPEL:SEGREDO@/BANCO?host=DIRETORIO&port=PORTA`), que este\n'
-			printf '> procedimento aceita — o cluster provisionado não escuta em porta TCP.\n'
+			printf '> como padrão, e este procedimento aceita as duas formas de cadeia de conexão em\n'
+			printf '> uso nesta base — a de endereço e porta, que é a daquele arquivo, e a de socket.\n'
 			printf '> A execução reescreve este arquivo inteiro e o rótulo passa a dizer `instância\n'
 			printf '> provisionada` porque aí será verdade.\n\n'
 		fi

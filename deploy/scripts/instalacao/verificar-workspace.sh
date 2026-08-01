@@ -7,7 +7,8 @@
 # O que este script prova, em uma frase por caso:
 #
 #   CT-001  o repositório instala e constrói a partir de um clone limpo, sem
-#           passo manual e sem prompt, com `apps/` e `packages/` vazios;
+#           passo manual e sem prompt, com o conjunto EXATO de membros de
+#           workspace que a fatia entrega;
 #   CT-002  as portas de qualidade REPROVAM de fato — o `strict` do
 #           `tsconfig.base.json` chega ao pacote por herança e o `biome.json`
 #           está ligado ao script `lint`;
@@ -43,6 +44,42 @@ LIMITE_PNPM_BUILD=180
 LIMITE_PNPM_LINT=120
 LIMITE_PNPM_TEST=120
 LIMITE_CICLO_CT001=600
+
+# --------------------------------------------------------------------------- #
+# Membros do workspace, com o caminho de cada um relativo à raiz.
+#
+# CAUSA-RAIZ de esta lista existir (T7): as asserções deste caso congelavam o
+# estado de T1 — "`apps/` e `packages/` sem nenhum `package.json`" e "o workspace
+# lista exatamente 1 pacote". O invariante que elas guardavam era a tolerância do
+# ciclo a membro de workspace VAZIO, e esse invariante perdeu o objeto quando T4,
+# T5 e T6 criaram os três pacotes: o clone efêmero é do HEAD, e o HEAD da F0
+# fechada tem `packages/shared`, `apps/api` e `apps/worker`.
+#
+# POR QUE ISTO FECHA A CLASSE: a lista é ESPELHO, não piso. A contagem exigida é
+# a de membros declarados aqui, e cada um é conferido pelo nome E pelo caminho —
+# de modo que perder um pacote reprova, ganhar um pacote não declarado reprova, e
+# um pacote registrado no lugar errado reprova. Uma asserção que só contasse
+# `>= 1` envelheceria em silêncio na próxima fatia, que é exatamente o defeito
+# que esta correção fecha.
+#
+# O QUE ESTA MUDANÇA REMOVE: a prova de que o ciclo instala e constrói com
+# `apps/` e `packages/` vazios. É remoção de asserção SEM ALVO — os dois
+# diretórios não voltam a ficar vazios —, substituída por uma prova estritamente
+# mais forte sobre o conjunto real de membros.
+# --------------------------------------------------------------------------- #
+MEMBROS_DO_WORKSPACE=(
+	"@sysloc/monorepo:"
+	"@sysloc/shared:/packages/shared"
+	"@sysloc/api:/apps/api"
+	"@sysloc/worker:/apps/worker"
+)
+
+# Quantos pacotes cada diretório de membro hospeda. Contagem EXATA, pelo mesmo
+# motivo da lista acima.
+declare -A PACOTES_POR_DIRETORIO=(
+	[apps]=2
+	[packages]=1
+)
 
 # Variáveis obrigatórias no `.env.example`, com o papel que cada uma cumpre.
 VARIAVEIS_EXIGIDAS=(
@@ -222,16 +259,18 @@ ct_001() {
 	criar_clone_efemero
 	printf '    ..   clone efêmero: %s\n' "${DIR_CLONE}"
 
-	# Pré-condição do caso: os dois membros do workspace existem e estão vazios.
+	# Pré-condição do caso: os dois diretórios de membro existem e hospedam
+	# exatamente os pacotes que a fatia entrega. Ver `MEMBROS_DO_WORKSPACE`.
 	local dir
 	for dir in apps packages; do
 		if [[ -d "${DIR_CLONE}/${dir}" ]]; then
 			ok "${dir}/ presente no clone"
 		else
-			falhar "${dir}/ ausente no clone — o caso não prova tolerância a membro vazio"
+			falhar "${dir}/ ausente no clone — o caso não tem sobre o que construir"
 		fi
-		afirmar_igual "${dir}/ sem nenhum pacote (nenhum package.json dentro)" "0" \
-			"$(find "${DIR_CLONE}/${dir}" -name package.json 2>/dev/null | grep -c . || true)"
+		afirmar_igual "${dir}/ hospeda exatamente ${PACOTES_POR_DIRETORIO[${dir}]} pacote(s)" \
+			"${PACOTES_POR_DIRETORIO[${dir}]}" \
+			"$(find "${DIR_CLONE}/${dir}" -mindepth 2 -maxdepth 2 -name package.json 2>/dev/null | grep -c . || true)"
 	done
 
 	afirmar_igual "clone sem node_modules/ herdado da árvore de trabalho" "0" \
@@ -284,15 +323,24 @@ ct_001() {
 		pnpm -r list --depth -1 || codigo_list=$?
 	afirmar_igual "pnpm -r list --depth -1 sai 0" "0" "${codigo_list}"
 
-	# Uma entrada = uma linha `nome@versao /caminho`. Com `apps/` e `packages/`
-	# vazios, a única entrada possível é o pacote privado da raiz.
+	# Uma entrada = uma linha `nome@versao /caminho`. A contagem é EXATA e cada
+	# membro é conferido pelo nome E pelo caminho: perder um pacote reprova,
+	# ganhar um pacote não declarado reprova, e um pacote registrado no lugar
+	# errado reprova.
 	local entradas
 	entradas="$(grep -cE '^[^[:space:]]+@[^[:space:]]+[[:space:]]+/' \
 		"${DIR_SAIDAS}/pnpm-list.log" || true)"
-	afirmar_igual "o workspace lista exatamente 1 pacote (só a raiz)" "1" "${entradas}"
-	afirmar_igual "a única entrada é o pacote privado da raiz" "1" \
-		"$(grep -cE "^@sysloc/monorepo@[^[:space:]]+[[:space:]]+${DIR_CLONE}[[:space:]]+\(PRIVATE\)" \
-			"${DIR_SAIDAS}/pnpm-list.log" || true)"
+	afirmar_igual "o workspace lista exatamente ${#MEMBROS_DO_WORKSPACE[@]} pacotes" \
+		"${#MEMBROS_DO_WORKSPACE[@]}" "${entradas}"
+
+	local membro nome sufixo
+	for membro in "${MEMBROS_DO_WORKSPACE[@]}"; do
+		nome="${membro%%:*}"
+		sufixo="${membro#*:}"
+		afirmar_igual "o membro ${nome} está registrado exatamente uma vez, em ${sufixo:-a raiz}" "1" \
+			"$(grep -cE "^${nome}@[^[:space:]]+[[:space:]]+${DIR_CLONE}${sufixo}[[:space:]]+\(PRIVATE\)" \
+				"${DIR_SAIDAS}/pnpm-list.log" || true)"
+	done
 
 	# --- passo 4: pnpm build ------------------------------------------------- #
 	local codigo_build=0
@@ -491,7 +539,8 @@ TS
 	codigo=0
 	executar_no_clone "${LIMITE_PNPM_LIST}" "${DIR_SAIDAS}/ct002-list-final.log" \
 		pnpm -r list --depth -1 || codigo=$?
-	afirmar_igual "o clone volta ao estado do CT-001: 1 pacote no workspace" "1" \
+	afirmar_igual "o clone volta ao estado do CT-001: ${#MEMBROS_DO_WORKSPACE[@]} pacotes no workspace" \
+		"${#MEMBROS_DO_WORKSPACE[@]}" \
 		"$(grep -cE '^[^[:space:]]+@[^[:space:]]+[[:space:]]+/' \
 			"${DIR_SAIDAS}/ct002-list-final.log" || true)"
 

@@ -23,4 +23,5 @@ steps:
   execution:
     status: in_progress
     tasks_total: 7
-    tasks_completed: 6
+    tasks_completed: 7
+    summary: "7/7 tasks aprovadas nos dois gates. Nenhuma bloqueada. Implementação completa; a prova de aceitação privilegiada (CT-001 a CT-005) e a janela de reinício real (CT-006) dependem do operador — sudo neste host exige senha interativa."

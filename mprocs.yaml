@@ -1,0 +1,70 @@
+# Ciclo de trabalho do desenvolvedor — T7 da fatia `fundacao-stack-nativa`.
+#
+# `pnpm dev` invoca o multiplexador de processos (fixado em `.mise.toml`), que lê
+# este arquivo e abre um painel por processo. É o equivalente de
+# desenvolvimento das unidades de serviço em `deploy/systemd/`: os mesmos três
+# componentes, na mesma máquina, mas sob o olho de quem está escrevendo código em
+# vez de sob o supervisor do sistema operacional.
+#
+# ---------------------------------------------------------------------------
+# Os três painéis
+# ---------------------------------------------------------------------------
+#
+#   aplicacao     o serviço de aplicação (`apps/api`)
+#   processador   o processador de trabalho em segundo plano (`apps/worker`)
+#   capturador    o capturador de e-mail de desenvolvimento (Mailpit)
+#
+# O capturador NÃO é iniciado aqui: ele já roda como serviço do sistema
+# (`sysloc-mailpit.service`, posicionado por `provisionar-base.sh`) e escuta em
+# 127.0.0.1:1025 (SMTP) e 127.0.0.1:8025 (painel web). Subir uma segunda cópia
+# disputaria as duas portas com a primeira, e o painel ficaria alternando entre
+# um processo que sobe e outro que morre. O que este painel faz é ACOMPANHAR o
+# registro do serviço já em pé — que é o que se quer olhar durante o
+# desenvolvimento. Ler a mensagem capturada é no painel web.
+#
+# ---------------------------------------------------------------------------
+# A construção é PRÉ-CONDIÇÃO, não parte do painel
+# ---------------------------------------------------------------------------
+#
+# Os painéis executam o artefato construído (`dist/main.js`), e não o fonte. A
+# construção fica de fora de propósito, e é a mesma disciplina que as unidades de
+# serviço e o instalador aplicam: se cada painel disparasse a sua própria
+# construção, dois orquestradores de build concorreriam sobre o mesmo pacote
+# compartilhado a cada `pnpm dev`.
+#
+# Antes do primeiro `pnpm dev`, e depois de cada mudança de código:
+#
+#     pnpm build
+#
+# O `--watch` do runtime reinicia cada processo assim que o artefato dele é
+# reescrito, de modo que uma construção rodando num terminal ao lado
+# (`pnpm build`) se propaga aos painéis sem que ninguém precise reiniciá-los.
+#
+# ---------------------------------------------------------------------------
+# Configuração
+# ---------------------------------------------------------------------------
+#
+# Os dois processos leem as variáveis de `.env` na raiz do repositório, que o
+# `.gitignore` barra e que nasce de `cp .env.example .env`. O sufixo
+# `-if-exists` é deliberado: sem o arquivo, o processo ainda sobe e falha na
+# partida NOMEANDO a variável que falta (CA-15), que é um diagnóstico melhor do
+# que o runtime recusando o arquivo antes de a aplicação existir.
+#
+# Em operação nada disto vale: lá as variáveis vêm do `EnvironmentFile=` 0600 das
+# unidades de serviço, fora da árvore versionada (ADR-0005).
+
+procs:
+  aplicacao:
+    shell: 'node --watch --env-file-if-exists=.env apps/api/dist/main.js'
+    autorestart: false
+    stop: SIGTERM
+
+  processador:
+    shell: 'node --watch --env-file-if-exists=.env apps/worker/dist/main.js'
+    autorestart: false
+    stop: SIGTERM
+
+  capturador:
+    shell: 'journalctl --follow --lines=20 --output=cat --unit=sysloc-mailpit.service'
+    autorestart: false
+    stop: SIGTERM

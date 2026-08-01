@@ -186,9 +186,11 @@ function coordenadasProvisionadas(recurso: 'banco' | 'fila'): CoordenadasProvisi
     };
   }
 
-  // O provisionamento não abre porta TCP para o banco (`listen_addresses = ''`), então não há
-  // constante de porta a ler: o valor comparável é o padrão do serviço. O diretório de dados é
-  // o do empacotamento da distribuição, derivado da versão que o script fixa.
+  // O provisionamento abre porta TCP para o banco (`listen_addresses = '${HOSPEDEIRO_DB}'`, o
+  // endereço de retorno), mas não a FIXA: a porta é a que o empacotamento da distribuição declara
+  // no `postgresql.conf` do cluster. Não há, portanto, constante de porta a ler — o valor
+  // comparável é o padrão do serviço. O diretório de dados é o do empacotamento da distribuição,
+  // derivado da versão que o script fixa.
   const versao = constanteDoProvisionamento('VERSAO_POSTGRES');
   if (versao !== undefined) {
     return {

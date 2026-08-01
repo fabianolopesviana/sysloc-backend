@@ -9,9 +9,9 @@
 #   CT-007  uma execução bem-sucedida grava no registro a versão dos DOIS lados e UMA conclusão
 #           explícita sobre haver ou não divergência; executá-lo duas vezes seguidas termina com
 #           sucesso e mantém uma única seção de apuração; a procedência do lado da operação é
-#           DERIVADA do arquivo de ambiente lido, e não afirmada por literal; a forma de socket
-#           — a que `/etc/sysloc/backend.env` usa, e a única que o caminho privilegiado vai
-#           percorrer — é exercitada de ponta a ponta contra instância própria, sem privilégio; e
+#           DERIVADA do arquivo de ambiente lido, e não afirmada por literal; as DUAS formas de
+#           cadeia de conexão aceitas — endereço e porta, que é a de `/etc/sysloc/backend.env`, e
+#           socket — são exercitadas de ponta a ponta contra instância própria, sem privilégio; e
 #           o lado da verificação usa a credencial no alfabeto do helper de instância efêmera
 #           (base64url, com '-' e '_'), que é a que o caminho privilegiado de fato carrega, e uma
 #           credencial com ':' e '\' — os dois caracteres especiais do arquivo de senha do cliente
@@ -526,14 +526,19 @@ varrer_credencial() {
 # causa da divisão, e a rastreabilidade `CA-14 → CT-007` continua sendo a de UM caso.
 # =========================================================================== #
 
-# --- a forma de socket, que é a que o caminho privilegiado vai percorrer ---
+# --- a forma de socket, a SEGUNDA das duas que este procedimento aceita ---
 #
-# `/etc/sysloc/backend.env` expressa a conexão como
-# `postgresql://PAPEL:SEGREDO@/BANCO?host=DIRETORIO&port=PORTA`, porque o cluster provisionado
-# tem `listen_addresses = ''` e não escuta em porta TCP alguma. Se essa forma não fosse aceita, a
-# execução privilegiada que fecha a CA-14 falharia no parsing — e a descoberta viria no momento em
-# que já não dá para corrigir sem uma nova rodada. Aqui ela é exercitada de ponta a ponta contra a
-# instância própria da bateria, pelo socket dela, sem privilégio nenhum.
+# `/etc/sysloc/backend.env` passou a expressar a conexão por endereço e porta — o cluster
+# provisionado escuta em `127.0.0.1` porque socket de domínio Unix não cabe numa URL e o cliente
+# que a aplicação usa recusa a cadeia antes de conectar (ver o cabeçalho de `provisionar-base.sh`).
+# Essa forma é a que o restante desta bateria já exercita, no lado da verificação e no da operação.
+#
+# A forma de SOCKET continua aceita, e continua exercitada aqui, porque `psql` a alcança sem
+# tradução e ela segue sendo destino legítimo: instância efêmera que só escute em socket, ou
+# qualquer cluster apontado por `SYSLOC_ARQ_AMBIENTE` que não abra porta. Se ela deixasse de ser
+# aceita, o procedimento perderia um caminho de leitura que o cabeçalho dele promete — e a
+# descoberta viria de quem apontasse o procedimento para um cluster assim. Aqui ela é exercitada
+# de ponta a ponta contra a instância própria da bateria, pelo socket dela, sem privilégio nenhum.
 #
 # $1 = porta da instância do lado da operação · $2 = versão que aquela instância reporta
 ct_007_forma_de_socket() {

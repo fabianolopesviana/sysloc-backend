@@ -1,0 +1,160 @@
+# Unidade do serviço de aplicação do backend Sysloc — T7 da fatia
+# `fundacao-stack-nativa`.
+#
+# Esta é a FONTE VERSIONADA. A cópia instalada em /etc/systemd/system/ é
+# derivada dela por `deploy/scripts/instalacao/instalar-unidades.sh`, que é
+# idempotente (ADR-0005). Editar a cópia instalada é perder a alteração na
+# próxima instalação — edite AQUI.
+#
+# ADR-0005, condição de entrada: NENHUMA credencial entra neste arquivo. Os
+# segredos vivem em ${EnvironmentFile} abaixo — 0600, dono root, fora da árvore
+# versionada por construção —, gravado por `provisionar-base.sh` (T2). O systemd
+# lê esse arquivo como root, ANTES de descer para o usuário do serviço, de modo
+# que o processo da aplicação nunca precisa de permissão sobre ele.
+#
+# As diretivas `Environment=` abaixo carregam apenas COORDENADAS (ambiente,
+# porta, severidade de registro) — nada que seja segredo. Elas ficam aqui, e não
+# no arquivo de ambiente, justamente porque são revisáveis: mudar a porta em que
+# o serviço escuta passa por revisão de código, mudar a senha do banco não.
+#
+# ---------------------------------------------------------------------------
+# ExecStart depende de artefato CONSTRUÍDO
+# ---------------------------------------------------------------------------
+#
+# `dist/main.js` é produzido por `pnpm build` e barrado pelo `.gitignore` — ele
+# não existe num clone recém-feito. A construção NÃO acontece aqui de propósito:
+# com `Restart=always`, um `ExecStartPre` de construção transformaria cada
+# reinício numa compilação (dezenas de segundos no caminho de recuperação, que a
+# CA-8 exige em 60 s) e uma falha de compilação num laço de reinício. Quem
+# confere o artefato é o INSTALADOR, uma vez, com um humano olhando: ele se
+# recusa a habilitar a unidade sem `dist/main.js` presente e diz para executar
+# `pnpm build`.
+#
+# ---------------------------------------------------------------------------
+# Caminho absoluto do runtime
+# ---------------------------------------------------------------------------
+#
+# O `ExecStart` aponta para o binário concreto instalado pelo gerenciador de
+# versões, e não para o atalho que resolve a versão em tempo de execução: o
+# atalho depende de configuração no diretório pessoal do usuário e de escrita em
+# cache, e este é o caminho de arranque do servidor — quanto menos peça móvel,
+# melhor. O preço é que subir a versão do runtime exige editar esta linha; o
+# instalador cobra esse preço na hora certa, comparando a versão que este
+# binário reporta com a que o `.mise.toml` declara e abortando na divergência.
+
+[Unit]
+Description=Serviço de aplicação do backend Sysloc
+Documentation=file:/opt/sysloc-backend/docs/specs/features/fundacao-stack-nativa/v1/scope.md
+
+# Ordem de arranque e de desligamento. `After=` garante as duas: o systemd
+# inicia na ordem declarada e PARA na ordem inversa, de modo que esta unidade é
+# encerrada ANTES do banco e da fila — o desligamento gracioso da aplicação
+# devolve as conexões enquanto os dois ainda respondem.
+#
+# `Wants=` (e não `Requires=`) é deliberado: com `Requires=`, uma falha de
+# partida do banco propagaria para cá como falha de DEPENDÊNCIA, e falha de
+# dependência não é reiniciada por `Restart=always` — o serviço ficaria parado
+# até intervenção manual, que é exatamente o que a CA-9 proíbe. Com `Wants=` os
+# dois são puxados para o arranque, a ordem é respeitada, e uma dependência que
+# demore é tratada pela reconexão do cliente e pela rota de saúde profunda.
+After=network.target postgresql.service redis-server@sysloc.service
+Wants=postgresql.service redis-server@sysloc.service
+
+# Guarda contra laço de reinício. Os padrões da distribuição (5 partidas em 10 s)
+# NÃO fecham o laço com `RestartSec=5`: cada ciclo custa mais de 5 s, nunca se
+# chega a 5 partidas dentro de uma janela de 10 s, e uma unidade com configuração
+# inválida reiniciaria para sempre num servidor compartilhado. Com a janela em
+# 60 s, cinco partidas frustradas cabem nela e a sexta é recusada — a unidade
+# converge para `failed` com `Result=start-limit-hit`, que é o que a CA-15 e o
+# CT-003 cobram.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=sysloc
+Group=sysloc
+WorkingDirectory=/opt/sysloc-backend/apps/api
+
+# Segredos: apenas aqui, e apenas por referência.
+EnvironmentFile=/etc/sysloc/backend.env
+
+# Coordenadas revisáveis — nenhuma delas é segredo.
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=LOG_LEVEL=info
+
+ExecStart=/home/sysloc/.local/share/mise/installs/node/24.18.1/bin/node /opt/sysloc-backend/apps/api/dist/main.js
+
+Restart=always
+RestartSec=5
+
+# Sinal de desligamento: o padrão, que é o que `apps/api/src/main.ts` atende
+# para fechar o servidor sem cortar requisição em curso.
+KillSignal=SIGTERM
+
+# Prazo do desligamento gracioso, DECLARADO em vez de herdado.
+#
+# O padrão desta distribuição é 90 s e o par funciona por acidente. O processador
+# de trabalho declara, em `apps/worker/src/fila.ts`, um marcador DECISÃO FECHADA
+# (T6 / Gate 2) cujo `REVERTER EXIGE` diz literalmente que "T7 declara
+# `TimeoutStopSec` com folga sobre este valor" — o valor sendo o
+# `LIMITE_DE_DESLIGAMENTO_MS` de 15 s. Quem precisa desistir primeiro é o
+# processo, que sabe explicar no journal por que desistiu; o supervisor só sabe
+# mandar SIGKILL, que não deixa registro e leva a unidade para `failed`. Os 30 s
+# aqui dão o dobro do prazo interno e permanecem bem abaixo do padrão herdado, de
+# modo que um desligamento do servidor não paga 90 s por unidade. O valor é o
+# mesmo nas duas unidades de propósito: um prazo por unidade divergiria na
+# primeira edição de um dos lados.
+TimeoutStopSec=30
+
+# --------------------------------------------------------------------------- #
+# Restrições de execução. Deliberadamente as mesmas que `provisionar-base.sh`
+# aplica ao capturador de e-mail, com duas diferenças exigidas por este processo:
+#
+#   * ProtectSystem=full (e não `strict`): `full` deixa /usr, /boot e /etc
+#     somente para leitura — o runtime, o carregador dinâmico e a configuração do
+#     sistema —, que é onde a proteção importa aqui.
+#
+#     A razão ORIGINAL de recusar `strict` era o socket de domínio Unix do banco,
+#     e ela morreu NESTA MESMA ENTREGA: a aplicação alcança o banco por TCP no
+#     endereço de retorno. Quem quiser a história inteira lê o marcador DECISÃO
+#     FECHADA sobre `montar_url_do_banco`, em
+#     `deploy/scripts/instalacao/provisionar-base.sh` — ele registra as três
+#     grafias de socket exercitadas contra o cliente REAL e por que nenhuma
+#     serve. Nada nesta unidade depende de socket para falar com o banco.
+#
+#     O que sustenta `full` HOJE é outra coisa: `strict` torna a hierarquia
+#     INTEIRA somente para leitura — /opt, onde ficam o WorkingDirectory e o
+#     artefato construído, além de /var e /run — e obriga a declarar caso a caso
+#     cada caminho gravável em `ReadWritePaths=`. Esta unidade não declara
+#     nenhum, e a fatia ainda não tem execução privilegiada que prove que o
+#     processo não precisa de nenhum; a única gravação conhecida hoje é a de
+#     /tmp, já coberta por `PrivateTmp=yes`. Endurecer para `strict` é mudança
+#     que exige a bateria privilegiada rodando atrás dela — está registrada como
+#     pendência, não aplicada às cegas.
+#   * ProtectHome=read-only (e não `yes`): o runtime está instalado sob o
+#     diretório pessoal do usuário do serviço; escondê-lo por completo impediria
+#     o processo de existir.
+#
+# AF_NETLINK está na lista porque o runtime enumera interfaces de rede por ele
+# na partida; sem a família, a partida falha por motivo que nada tem a ver com a
+# configuração da aplicação.
+# --------------------------------------------------------------------------- #
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

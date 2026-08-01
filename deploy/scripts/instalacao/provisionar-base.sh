@@ -7,7 +7,9 @@
 # conteinerização, os três serviços de base:
 #
 #   1. PostgreSQL 18, do repositório oficial do fornecedor (PGDG), gerenciado
-#      pelo sistema operacional e escutando APENAS em socket de domínio Unix;
+#      pelo sistema operacional e escutando APENAS no endereço de retorno
+#      (127.0.0.1) e no socket de domínio Unix — nada dele é alcançável de fora
+#      desta máquina;
 #   2. uma INSTÂNCIA PRÓPRIA do Redis 7, com persistência em disco (AOF) ligada,
 #      em porta e diretório de dados próprios;
 #   3. o Mailpit, capturador de e-mail de desenvolvimento, preso ao endereço de
@@ -49,10 +51,15 @@
 #     INSTÂNCIA nomeada (`redis-server@sysloc`), com arquivo de configuração,
 #     diretório de dados, arquivo de log e porta próprios. Reiniciar a nossa
 #     instância — na verificação e na operação — nunca afeta a do legado.
-#   * O PostgreSQL não abre porta TCP alguma (`listen_addresses = ''`), o que
-#     torna colisão de porta estruturalmente impossível para ele. Se alguma
-#     fatia futura precisar de TCP, é uma linha no arquivo de sobreposição
-#     ${ARQ_PG_DROPIN} — e aí a porta passa a entrar no guarda abaixo.
+#   * O PostgreSQL escuta no endereço de retorno (`listen_addresses =
+#     '127.0.0.1'`) ALÉM do socket de domínio Unix — ver "Por que o banco
+#     escuta em TCP", adiante. Nada dele é alcançável de fora desta máquina, e a
+#     autenticação do papel da aplicação continua `scram-sha-256`, restrita ao
+#     banco da aplicação e à rede ${REDE_LOOPBACK_DB}. Como ele deixou de ser o
+#     único serviço sem porta, a porta do cluster ENTRA no guarda de colisão —
+#     derivada da configuração do próprio cluster, nunca fixada aqui. Era essa a
+#     condição que este cabeçalho registrava enquanto a escuta era nenhuma, e
+#     ela está cumprida.
 #   * As portas efetivamente ocupadas são DERIVADAS do estado real da máquina
 #     (`ss -ltn`), nunca de lista fixa. Se uma porta que este script pretende
 #     usar já estiver ocupada por outro processo, ele ABORTA nomeando a porta e
@@ -60,6 +67,36 @@
 #
 # O script também simula a instalação de pacotes antes de executá-la e aborta se
 # o gestor de pacotes pretender REMOVER qualquer coisa.
+#
+# ---------------------------------------------------------------------------
+# Por que o banco escuta em TCP, e não só no socket de domínio Unix
+# ---------------------------------------------------------------------------
+#
+# Porque `DATABASE_URL` precisa ser uma URL — e socket de domínio Unix não cabe
+# em uma. As três formas candidatas foram exercitadas contra o cliente que a
+# aplicação de fato usa (`postgres.js`, que constrói as opções de conexão com
+# `new URL()`), e nenhuma alcança o socket:
+#
+#   postgresql://u:p@/sysloc?host=/var/run/postgresql&port=5432
+#       não é URL válida — o interpretador do runtime a rejeita, e o cliente
+#       lança `Invalid URL` antes de qualquer tentativa de conexão;
+#   postgresql://u:p@%2Fvar%2Frun%2Fpostgresql:5432/sysloc
+#       é URL válida, mas o cliente NÃO decodifica a codificação percentual:
+#       tenta resolver `%2Fvar%2Frun%2Fpostgresql` como nome de máquina;
+#   postgresql://u:p@localhost:5432/sysloc?host=/var/run/postgresql
+#       é URL válida, mas o cliente IGNORA o `?host=` e vai para o endereço.
+#
+# Relaxar a validação de partida da aplicação não resolveria: o cliente só
+# alcança socket pelo OBJETO de opções (`host: '/var/run/postgresql'`), nunca
+# por URL. O processo passaria na partida e quebraria na primeira consulta.
+#
+# A alternativa — manter o socket e traduzir a cadeia dentro da aplicação — foi
+# descartada porque exigiria a mesma tradução em toda ferramenta futura
+# (migrador, cliente de linha de comando, apuração de versão) e faria
+# `DATABASE_URL` deixar de ser uma URL que outras ferramentas leem. Escutar em
+# `127.0.0.1` devolve uma cadeia que `psql`, `postgres.js` e o migrador da fatia
+# seguinte entendem sem tradução, ao custo de uma porta que não sai desta
+# máquina e de uma regra de `pg_hba` restrita a ela.
 #
 # ---------------------------------------------------------------------------
 # Parâmetros de operação (variáveis de ambiente)
@@ -124,6 +161,15 @@ readonly VERSAO_POSTGRES="18"
 readonly PAPEL_DB="sysloc_app"
 readonly BANCO_DB="sysloc"
 
+# Endereço em que o cluster escuta e que a cadeia de conexão declara. Endereço de
+# retorno literal, e não `localhost`: o nome resolve para 127.0.0.1 e ::1 conforme
+# a ordem de `/etc/hosts` e da resolução de nomes desta máquina, e uma cadeia de
+# conexão que às vezes vai para IPv6 é uma fonte de falha intermitente que a regra
+# de `pg_hba` abaixo não cobriria. A rede é a máscara correspondente, usada na
+# regra de autenticação — e não `0.0.0.0/0`, que abriria o banco à rede.
+readonly HOSPEDEIRO_DB="127.0.0.1"
+readonly REDE_LOOPBACK_DB="127.0.0.1/32"
+
 readonly INSTANCIA_FILA="sysloc"
 readonly PORTA_FILA=6380
 readonly ARQ_FILA_CONF="/etc/redis/redis-sysloc.conf"
@@ -167,9 +213,13 @@ readonly DIR_SOCKET_PG="/var/run/postgresql"
 readonly MARCADOR_HBA_INICIO="# >>> sysloc-backend (gerido por provisionar-base.sh) >>>"
 readonly MARCADOR_HBA_FIM="# <<< sysloc-backend <<<"
 
-# Portas que este script pretende abrir, com a unidade dona de cada uma. Serve
-# ao guarda de colisão: se a porta já estiver ocupada e a unidade dona não for a
-# nossa, o script aborta em vez de tomar a porta de alguém.
+# Portas FIXAS que este script pretende abrir, com a unidade dona de cada uma.
+# Serve ao guarda de colisão: se a porta já estiver ocupada e a unidade dona não
+# for a nossa, o script aborta em vez de tomar a porta de alguém.
+#
+# A lista não é exaustiva: a porta do cluster do banco também é guardada, e não
+# entra aqui porque não é fixa — ela é derivada da configuração do próprio
+# cluster em `porta_declarada_do_cluster`, junto ao guarda.
 declare -rA DONO_DA_PORTA=(
 	[6380]="redis-server@sysloc.service"
 	[1025]="sysloc-mailpit.service"
@@ -232,6 +282,14 @@ limpar() {
 	local codigo=$?
 	if [[ -n "${DIR_TEMPORARIO}" && -d "${DIR_TEMPORARIO}" ]]; then
 		rm -rf "${DIR_TEMPORARIO}"
+	fi
+	# O arquivo de ambiente é migrado por intermediário no mesmo diretório, com a
+	# credencial dentro. Se o procedimento morrer entre a escrita e a renomeação,
+	# ele não pode ficar ao lado do arquivo real: quem o encontrasse depois não
+	# teria como saber que é lixo de uma execução interrompida — e ele carrega
+	# segredo.
+	if [[ -f "${ARQ_AMBIENTE}.migrando" ]]; then
+		rm -f "${ARQ_AMBIENTE}.migrando"
 	fi
 	return "${codigo}"
 }
@@ -338,6 +396,68 @@ credencial_manuseavel() {
 	[[ "$1" =~ ^[A-Za-z0-9]+$ ]]
 }
 
+# A cadeia de conexão do banco, num lugar só — usada na CRIAÇÃO do arquivo de
+# ambiente (P06), na MIGRAÇÃO do arquivo já posicionado (P06) e na conferência de
+# coordenadas. Função em vez de literal repetido porque é ela que a bateria de
+# verificação carrega deste arquivo e submete ao cliente REAL da aplicação: com o
+# formato espalhado por três `printf`, a asserção provaria a forma de um deles e
+# os outros dois seguiriam livres.
+#
+# A forma é `postgresql://PAPEL:SEGREDO@HOSPEDEIRO:PORTA/BANCO`, e ela é o
+# assunto do bloco "Por que o banco escuta em TCP" no cabeçalho: é a ÚNICA que os
+# consumidores desta cadeia — o cliente da aplicação, o cliente de linha de
+# comando e o migrador da fatia seguinte — leem sem tradução. A forma de socket
+# (`@/BANCO?host=DIRETORIO&port=PORTA`) não é URL válida e nenhum deles a alcança;
+# reintroduzi-la volta a quebrar a partida do serviço de aplicação, e é o que a
+# ponta (m) do CT-003 da bateria reprova.
+#
+# O segredo entra como parâmetro posicional de uma função do próprio shell — sem
+# `exec`, sem linha de comando nova para `ps` mostrar e sem exportar nada.
+#
+# $1 = credencial · $2 = porta do cluster
+#
+# DECISÃO FECHADA — T7 / decidida com o usuário · 2026-08-01
+# O QUÊ: `DATABASE_URL` é gravada como URL de endereço de rede
+#        (`postgresql://PAPEL:SEGREDO@HOSPEDEIRO:PORTA/BANCO`), e o cluster escuta em
+#        TCP no endereço de retorno para atendê-la. A forma de socket de domínio Unix
+#        não volta.
+# POR QUÊ: a forma óbvia — socket, que dispensaria abrir porta — foi exercitada nas
+#          três grafias possíveis contra o cliente REAL da aplicação (`postgres.js`
+#          3.4.9, que monta as opções de conexão com `new URL()`), e NENHUMA conecta:
+#          `@/BANCO?host=DIR&port=PORTA` é recusada com `Invalid URL`; a grafia com
+#          codificação percentual do caminho passa em `URL.canParse` mas não é
+#          decodificada e vai a DNS (`getaddrinfo ENOTFOUND %2Fvar%2Frun%2Fpostgresql`);
+#          e `@localhost:PORTA/BANCO?host=DIR` passa em `URL.canParse` mas tem o
+#          `?host=` IGNORADO. O cliente só alcança socket pelo OBJETO de opções
+#          (`host: '/var/run/postgresql'`), nunca por URL — relaxar a validação de
+#          partida da aplicação apenas adiaria a quebra para a primeira consulta. Foi
+#          a recusa na partida do serviço de aplicação que revelou o vão.
+# REVERTER EXIGE: demonstrar que o cliente de banco desta stack passou a alcançar
+#                 socket de domínio Unix A PARTIR DE UMA URL — nomeando a versão de
+#                 `postgres` em que isso mudou e reproduzindo a conexão — e que `psql`
+#                 e o migrador leem a mesma cadeia sem tradução. Sem isso, voltar à
+#                 forma de socket quebra a partida do serviço de aplicação, e é o que a
+#                 ponta (m) do CT-003 de `verificar-provisionamento.sh` reprova.
+montar_url_do_banco() {
+	printf 'postgresql://%s:%s@%s:%s/%s' \
+		"${PAPEL_DB}" "$1" "${HOSPEDEIRO_DB}" "$2" "${BANCO_DB}"
+}
+
+# O destino que a cadeia declara — tudo depois do último '@'. Não carrega
+# credencial, e é por isso que as mensagens de divergência podem citá-lo.
+destino_esperado_do_banco() {
+	printf '%s:%s/%s' "${HOSPEDEIRO_DB}" "$1" "${BANCO_DB}"
+}
+
+# O destino que ESTE script gravava antes de o cluster passar a escutar em TCP.
+# Existe para uma coisa só: reconhecer, por igualdade LITERAL, o arquivo de
+# ambiente que a versão anterior deste procedimento deixou posicionado, para
+# migrá-lo preservando a credencial. Qualquer outro destino divergente continua
+# abortando o provisionamento — ver `passo_p06_arquivo_ambiente`.
+destino_anterior_por_socket() {
+	printf '/%s?host=%s&port=%s' "${BANCO_DB}" "${DIR_SOCKET_PG}" "$1"
+}
+
 # Resultados de `extrair_credencial_db`. Nenhum dos dois é exportado, e
 # `CREDENCIAL_LIDA` nunca é impressa.
 CREDENCIAL_LIDA=""
@@ -421,8 +541,8 @@ CHAVES_AUSENTES=""
 # não por um comando. As outras duas frestas eram `SMTP_URL` nunca exigida e o
 # `port=` de `DATABASE_URL` congelado no instante da criação, enquanto o P09
 # valida a credencial contra a porta VIVA do cluster — divergindo, o P09
-# imprimiria sucesso e as unidades de serviço apontariam para um socket
-# inexistente.
+# imprimiria sucesso e as unidades de serviço apontariam para uma porta de
+# ${HOSPEDEIRO_DB} em que o cluster não escuta.
 #
 # Sem efeito colateral, e a porta do cluster entra por parâmetro em vez de ser
 # descoberta aqui dentro: é o que a torna exercitável pela bateria sem banco e
@@ -446,7 +566,7 @@ conferir_coordenadas_do_ambiente() {
 	local papel destino destino_esperado
 	papel="$(sed -n 's|^DATABASE_URL=postgresql://\([^:/]*\):.*|\1|p' "${arquivo}" 2>/dev/null)"
 	destino="$(sed -n 's|^DATABASE_URL=postgresql://[^:/]*:.*@\(.*\)$|\1|p' "${arquivo}" 2>/dev/null)"
-	destino_esperado="/${BANCO_DB}?host=${DIR_SOCKET_PG}&port=${porta_pg}"
+	destino_esperado="$(destino_esperado_do_banco "${porta_pg}")"
 
 	if [[ -z "${papel}" ]]; then
 		ausentes="${ausentes}DATABASE_URL "
@@ -484,6 +604,68 @@ conferir_coordenadas_do_ambiente() {
 		CHAVES_AUSENTES="${ausentes% }"
 		return 2
 	fi
+	return 0
+}
+
+# --------------------------------------------------------------------------- #
+# MIGRAÇÃO do arquivo de ambiente posicionado pela versão anterior deste
+# procedimento, quando o cluster ainda não escutava em TCP.
+#
+# Reconhece o arquivo a migrar por igualdade LITERAL do destino com o que ESTE
+# script gravava — `/BANCO?host=DIRETORIO_DO_SOCKET&port=PORTA_VIVA` — e por nada
+# mais. Não é uma licença geral para reescrever `DATABASE_URL`: qualquer outro
+# destino divergente continua abortando o provisionamento em
+# `conferir_coordenadas_do_ambiente`, com a mensagem que manda o operador decidir.
+# Um destino de socket com OUTRA porta também diverge, e também aborta: porta
+# diferente da porta viva do cluster é o defeito que aquela conferência nasceu
+# para pegar, não um caso a migrar.
+#
+# A credencial NÃO é regerada. A que está no arquivo é a que o banco conhece —
+# gerá-la de novo aqui quebraria o acesso de tudo que já a consome, que é
+# exatamente o modo de falha que o reaproveitamento do arquivo existe para
+# impedir. Ela chega aqui já lida e validada por `extrair_credencial_db`, e o
+# guarda de formato é reafirmado no ponto da reescrita.
+#
+# A gravação é por arquivo intermediário no MESMO diretório do destino, seguida
+# de renomeação: a troca é atômica e o arquivo real nunca existe pela metade. O
+# intermediário nasce 0600 antes de qualquer byte de segredo, e o trap o remove
+# se o procedimento morrer no meio.
+#
+# Devolve 0 quando migrou (houve mudança) e 1 quando não havia o que migrar — por
+# isso é sempre chamada dentro de um `if`, nunca solta.
+#
+# $1 = arquivo de ambiente · $2 = porta viva do cluster
+migrar_database_url_de_socket() {
+	local arquivo="$1" porta_pg="$2"
+
+	local destino
+	destino="$(sed -n 's|^DATABASE_URL=postgresql://[^:/]*:.*@\(.*\)$|\1|p' "${arquivo}" 2>/dev/null)"
+	[[ "${destino}" == "$(destino_anterior_por_socket "${porta_pg}")" ]] || return 1
+
+	# Invariante afirmado NO PONTO da escrita, e não só na leitura lá atrás: esta
+	# é a única linha do script que reescreve a cadeia de conexão de um arquivo
+	# que já existe, e escrevê-la a partir de um valor lido pela metade gravaria
+	# uma credencial truncada sobre a boa — sem que nada reclamasse, porque o
+	# banco continuaria com a senha antiga e a falha só apareceria na partida do
+	# serviço.
+	if ! credencial_manuseavel "${senha_db}"; then
+		abortar "recusa de reescrever a DATABASE_URL de ${arquivo}: a credencial em mãos não passa na verificação de formato, e gravá-la assim deixaria o arquivo apontando para uma senha que o banco não conhece" \
+			"NADA foi alterado. Confira ${arquivo} — a credencial precisa conter apenas letras e números"
+	fi
+
+	local intermediario="${arquivo}.migrando"
+	install -m 0600 -o "${DONO_ARQ_AMBIENTE}" -g "${DONO_ARQ_AMBIENTE}" /dev/null "${intermediario}"
+
+	local linha
+	while IFS= read -r linha || [[ -n "${linha}" ]]; do
+		if [[ "${linha}" == DATABASE_URL=* ]]; then
+			printf 'DATABASE_URL=%s\n' "$(montar_url_do_banco "${senha_db}" "${porta_pg}")"
+		else
+			printf '%s\n' "${linha}"
+		fi
+	done <"${arquivo}" >"${intermediario}"
+
+	mv "${intermediario}" "${arquivo}"
 	return 0
 }
 
@@ -562,23 +744,94 @@ verificar_disco() {
 # Guarda de colisão de porta. As portas ocupadas são derivadas do estado real da
 # máquina, nunca de lista fixa — o ambiente legado muda sem avisar este script.
 # --------------------------------------------------------------------------- #
+# $1 porta · $2 unidade dona · $3 o que fazer · $4 prova extra de posse (opcional,
+# nome de função que recebe a porta e devolve 0 quando a porta é MESMO nossa)
+#
+# CAUSA-RAIZ de a prova extra existir: `unidade_ativa` sozinha responde "a nossa
+# unidade está de pé", e isso NÃO é o mesmo que "a porta é nossa". A equivalência
+# vale para as três portas fixas — as unidades de ${DONO_DA_PORTA} vinculam a porta
+# ao subir, então unidade ativa implica porta vinculada — e é FALSA para o cluster
+# do banco, que fica `active` servindo apenas pelo socket de domínio Unix enquanto
+# `listen_addresses` estiver vazio. Esse é precisamente o estado em que a execução
+# de transição encontra a máquina: unidade ativa, porta TCP sem dono. Com um
+# terceiro nessa porta, o guarda a anunciava como "nossa instância", o P03
+# reescrevia o sobreposto e o `systemctl restart` falhava ao VINCULAR — trocando um
+# aborto limpo de pré-condição, antes de qualquer escrita em /etc, por um aborto de
+# meio de execução com o cluster desligado dentro da janela.
+conferir_colisao_de_porta() {
+	local porta="$1" unidade="$2" remedio="$3" prova="${4:-}" dono
+
+	if ! ss -ltnH "sport = :${porta}" 2>/dev/null | grep -q .; then
+		return 0
+	fi
+
+	if unidade_ativa "${unidade}" && { [[ -z "${prova}" ]] || "${prova}" "${porta}"; }; then
+		info "porta ${porta} já em uso por ${unidade} (nossa instância)"
+		return 0
+	fi
+
+	dono="$(ss -ltnpH "sport = :${porta}" 2>/dev/null | sed -n 's/.*users:(("\([^"]*\)".*/\1/p' | head -1)"
+	abortar "a porta ${porta}, destinada a ${unidade}, já está ocupada pelo processo '${dono:-desconhecido}' — este script não toma porta de ninguém" \
+		"${remedio}"
+}
+
+# A prova de posse da porta do cluster, perguntada ao cluster EM EXECUÇÃO e não ao
+# arquivo de configuração: é o estado real que decide quem é o dono, do mesmo jeito
+# que a lista de portas ocupadas vem de `ss` e não de lista fixa.
+#
+# Duas condições, e as duas são necessárias:
+#
+#   * `listen_addresses` não vazio — se o cluster não escuta em TCP endereço
+#     nenhum, ele não escuta em porta nenhuma, e NENHUM ouvinte de porta TCP pode
+#     ser nosso. É a condição que a execução de transição falseia;
+#   * a porta viva do cluster é a porta sob guarda — o `port` de ${ARQ_PG_CONF}
+#     pode ter sido alterado sem reinício, e nesse caso a porta guardada não é a
+#     que o cluster de fato abriu.
+#
+# Não se compara `listen_addresses` com ${HOSPEDEIRO_DB}: o cluster pode
+# legitimamente escutar por `localhost`, `*` ou `0.0.0.0` antes de o P03 gravar o
+# sobreposto, e recusar essas formas transformaria uma reexecução legítima em
+# aborto. O que discrimina é escutar ou não escutar em TCP.
+#
+# Qualquer falha em consultar o cluster devolve "não é nossa" — a direção segura,
+# porque leva ao aborto ANTES de qualquer escrita em /etc.
+cluster_escuta_na_porta() {
+	local porta="$1" escuta viva
+	escuta="$(runuser -u postgres -- psql -X -q -A -t -c 'SHOW listen_addresses' 2>/dev/null)" || return 1
+	[[ -n "${escuta}" ]] || return 1
+	viva="$(runuser -u postgres -- psql -X -q -A -t -c 'SHOW port' 2>/dev/null)" || return 1
+	[[ "${viva}" == "${porta}" ]]
+}
+
+# A porta que o cluster do banco vai abrir. DERIVADA da configuração do próprio
+# cluster — o `pg_createcluster` escolhe a primeira livre a partir de 5432, e
+# fixar 5432 aqui guardaria uma porta que talvez não seja a nossa. Vazio quando o
+# banco ainda não foi instalado: não há porta a guardar, e o `pg_createcluster`
+# da instalação escolherá uma livre.
+porta_declarada_do_cluster() {
+	[[ -f "${ARQ_PG_CONF}" ]] || return 0
+	sed -n "s/^[[:space:]]*port[[:space:]]*=[[:space:]]*\([0-9]\{1,\}\).*/\1/p" "${ARQ_PG_CONF}" | head -1
+}
+
 verificar_portas() {
-	local porta unidade dono
+	local porta
 	for porta in "${!DONO_DA_PORTA[@]}"; do
-		if ! ss -ltnH "sport = :${porta}" 2>/dev/null | grep -q .; then
-			continue
-		fi
-
-		unidade="${DONO_DA_PORTA[${porta}]}"
-		if unidade_ativa "${unidade}"; then
-			info "porta ${porta} já em uso por ${unidade} (nossa instância)"
-			continue
-		fi
-
-		dono="$(ss -ltnpH "sport = :${porta}" 2>/dev/null | sed -n 's/.*users:(("\([^"]*\)".*/\1/p' | head -1)"
-		abortar "a porta ${porta}, destinada a ${unidade}, já está ocupada pelo processo '${dono:-desconhecido}' — este script não toma porta de ninguém" \
+		conferir_colisao_de_porta "${porta}" "${DONO_DA_PORTA[${porta}]}" \
 			"libere a porta ${porta}, ou altere a constante correspondente no topo deste script (e no verificador) para uma porta livre desta máquina"
 	done
+
+	# A porta do banco entra no guarda desde que o cluster passou a escutar em
+	# ${HOSPEDEIRO_DB}. Sem isto, a colisão apareceria como um `systemctl restart`
+	# que não volta no meio do P03 — com o cluster desligado e o ambiente legado no
+	# mesmo servidor. E é por isso que aqui — e SÓ aqui — a posse exige a prova
+	# extra: nesta porta, "a nossa unidade está ativa" não prova nada.
+	local porta_pg
+	porta_pg="$(porta_declarada_do_cluster)"
+	if [[ -n "${porta_pg}" ]]; then
+		conferir_colisao_de_porta "${porta_pg}" "postgresql@${VERSAO_POSTGRES}-main.service" \
+			"libere a porta ${porta_pg}, ou mova o cluster para uma porta livre ('port' em ${ARQ_PG_CONF}) e execute de novo" \
+			cluster_escuta_na_porta
+	fi
 }
 
 # =========================================================================== #
@@ -665,6 +918,74 @@ passo_p02_pacotes_banco() {
 	criado "P02" "pacotes do PostgreSQL ${VERSAO_POSTGRES} instalados (${pendentes[*]})"
 }
 
+# --------------------------------------------------------------------------- #
+# O bloco de regras de autenticação que este script mantém em ${ARQ_PG_HBA},
+# delimitado pelos dois marcadores. As três funções abaixo não têm efeito
+# colateral e recebem o arquivo por parâmetro — é o que permite exercitá-las na
+# bateria sem privilégio e sem cluster.
+#
+# São DUAS regras, uma por via de conexão que o cluster oferece:
+#
+#   local   pelo socket de domínio Unix. É por onde o superusuário da instância e
+#           o cliente de linha de comando conversam com o banco;
+#   host    pelo endereço de retorno. É por onde a APLICAÇÃO conversa: a cadeia
+#           de conexão precisa ser uma URL, e URL não alcança socket (ver o
+#           cabeçalho). Sem esta regra, a partida do serviço de aplicação falha
+#           na autenticação com o cluster de pé e a credencial correta.
+#
+# Nenhuma das duas alcança outro banco ou outro papel, e a rede da segunda é
+# ${REDE_LOOPBACK_DB} — uma única máquina, esta.
+# --------------------------------------------------------------------------- #
+bloco_hba_desejado() {
+	printf '%s\n' "${MARCADOR_HBA_INICIO}"
+	printf '# Autenticação por senha do papel da aplicação, pelas duas vias que o\n'
+	printf '# cluster oferece: o socket de domínio Unix e o endereço de retorno.\n'
+	printf '# Restritas ao banco "%s": nenhum outro banco desta instância é\n' "${BANCO_DB}"
+	printf '# alcançável por este papel, e nada aqui é alcançável de fora da máquina.\n'
+	printf 'local   %s   %s   scram-sha-256\n' "${BANCO_DB}" "${PAPEL_DB}"
+	printf 'host    %s   %s   %s   scram-sha-256\n' "${BANCO_DB}" "${PAPEL_DB}" "${REDE_LOOPBACK_DB}"
+	printf '%s\n' "${MARCADOR_HBA_FIM}"
+}
+
+# O bloco como está hoje no arquivo, ou vazio se ele ainda não existe. A
+# comparação é por linha inteira e literal (`$0 == ini`), nunca por expressão
+# regular: os marcadores contêm '>' e '(' e '.', que uma expressão trataria como
+# metacaracteres.
+bloco_hba_presente() {
+	[[ -f "$1" ]] || return 0
+	awk -v ini="${MARCADOR_HBA_INICIO}" -v fim="${MARCADOR_HBA_FIM}" '
+		$0 == ini { dentro = 1 }
+		dentro    { print }
+		$0 == fim { dentro = 0 }
+	' "$1"
+}
+
+# O arquivo sem o bloco gerido — o que precisa ser preservado ao reescrevê-lo.
+hba_sem_bloco() {
+	[[ -f "$1" ]] || return 0
+	awk -v ini="${MARCADOR_HBA_INICIO}" -v fim="${MARCADOR_HBA_FIM}" '
+		$0 == ini { dentro = 1; next }
+		$0 == fim { dentro = 0; next }
+		!dentro   { print }
+	' "$1"
+}
+
+# A postura de exposição do cluster, dita em VOZ ALTA — é a linha de auditoria
+# que o operador lê no terminal durante a janela, e o único lugar do fluxo
+# privilegiado onde essa postura é afirmada. Derivada das constantes que a
+# decidem, nunca escrita como literal.
+#
+# CAUSA-RAIZ de existir: as duas mensagens do P03 diziam "socket local, sem
+# escuta de rede" quarenta e poucas linhas ABAIXO de o mesmo passo gravar
+# `listen_addresses = '${HOSPEDEIRO_DB}'`. A frase nasceu verdadeira e não
+# acompanhou a mudança porque não dependia de nada — repetia em texto o que a
+# constante decide. Derivando, a próxima mudança de ${HOSPEDEIRO_DB} ou de
+# ${DIR_SOCKET_PG} reescreve a linha sozinha, em vez de vencê-la em silêncio.
+postura_de_escuta_do_cluster() {
+	printf 'escuta em %s e no socket de domínio Unix em %s; nada dele é alcançável de fora desta máquina' \
+		"${HOSPEDEIRO_DB}" "${DIR_SOCKET_PG}"
+}
+
 # =========================================================================== #
 # P03 — cluster do PostgreSQL configurado.
 #
@@ -688,13 +1009,17 @@ passo_p03_configuracao_banco() {
 		# Gerido por deploy/scripts/instalacao/provisionar-base.sh (backend Sysloc).
 		# Alteração manual aqui é sobrescrita na próxima execução do provisionamento.
 
-		# Sem porta TCP alguma. A aplicação e o processador conversam com o banco
-		# pelo socket de domínio Unix em ${DIR_SOCKET_PG}. Isso atende ao requisito
-		# de "escuta em socket local, sem exposição de rede" e, de quebra, torna
-		# colisão de porta com o ambiente legado estruturalmente impossível.
-		# Se alguma fatia futura precisar de TCP, troque para 'localhost' AQUI e
-		# acrescente a porta ao guarda de colisão no topo do script.
-		listen_addresses = ''
+		# Escuta no endereço de retorno, e SÓ nele: nada deste cluster é alcançável
+		# de fora desta máquina. O socket de domínio Unix continua existindo — as
+		# duas vias convivem, e o que muda é que a cadeia de conexão passa a poder
+		# ser uma URL de verdade (ver "Por que o banco escuta em TCP" no cabeçalho).
+		# Endereço literal, e não 'localhost': o nome resolveria também para ::1
+		# conforme a ordem da resolução de nomes, e a regra de ${ARQ_PG_HBA} abaixo
+		# é a de ${REDE_LOOPBACK_DB}.
+		# A porta usada é a do cluster, declarada pelo empacotamento da distribuição
+		# em ${ARQ_PG_CONF} — este arquivo não a redefine, e o guarda de colisão a
+		# lê de lá antes de qualquer alteração.
+		listen_addresses = '${HOSPEDEIRO_DB}'
 		unix_socket_directories = '${DIR_SOCKET_PG}'
 
 		# Verificador de senha moderno. Em 18 já é o padrão; declarado para que a
@@ -718,15 +1043,20 @@ passo_p03_configuracao_banco() {
 	# Regra de autenticação do papel da aplicação. Precede as regras `peer` do
 	# Debian de propósito: `peer` casaria o papel com um usuário do sistema
 	# homônimo, que não existe — a aplicação autentica por senha.
-	if ! grep -qF "${MARCADOR_HBA_INICIO}" "${ARQ_PG_HBA}"; then
+	#
+	# A decisão de reescrever compara o CONTEÚDO do bloco, e não a presença do
+	# marcador. CAUSA-RAIZ de ter mudado: com `grep -qF "${MARCADOR_HBA_INICIO}"`,
+	# uma máquina já provisionada tem o marcador e NENHUMA alteração de conteúdo
+	# do bloco chega até ela — o passo reportaria `JA-OK` sobre um arquivo
+	# desatualizado. Foi exatamente o que aconteceria com a regra `host` desta
+	# fatia, e aconteceria de novo com a próxima mudança do bloco.
+	if [[ "$(bloco_hba_presente "${ARQ_PG_HBA}")" != "$(bloco_hba_desejado)" ]]; then
 		{
-			printf '%s\n' "${MARCADOR_HBA_INICIO}"
-			printf '# Conexão local por socket do papel da aplicação, autenticada por senha.\n'
-			printf '# Restrita ao banco "%s": nenhum outro banco desta instância é\n' "${BANCO_DB}"
-			printf '# alcançável por este papel.\n'
-			printf 'local   %s   %s   scram-sha-256\n' "${BANCO_DB}" "${PAPEL_DB}"
-			printf '%s\n\n' "${MARCADOR_HBA_FIM}"
-			cat "${ARQ_PG_HBA}"
+			bloco_hba_desejado
+			printf '\n'
+			# Remove o bloco antigo (se houver) e as linhas em branco que sobrarem no
+			# topo, para que reescritas sucessivas não empilhem separadores.
+			hba_sem_bloco "${ARQ_PG_HBA}" | sed -e '/./,$!d'
 		} >"${DIR_TEMPORARIO}/pg_hba.conf"
 		install -m 0640 -o postgres -g postgres "${DIR_TEMPORARIO}/pg_hba.conf" "${ARQ_PG_HBA}"
 		mudancas=$((mudancas + 1))
@@ -735,9 +1065,9 @@ passo_p03_configuracao_banco() {
 	if [[ "${mudancas}" -gt 0 ]]; then
 		info "reiniciando o cluster para carregar a configuração"
 		systemctl restart "postgresql@${VERSAO_POSTGRES}-main.service"
-		criado "P03" "cluster ${VERSAO_POSTGRES}/main configurado (socket local, sem escuta de rede)"
+		criado "P03" "cluster ${VERSAO_POSTGRES}/main configurado ($(postura_de_escuta_do_cluster))"
 	else
-		ja_ok "P03" "cluster ${VERSAO_POSTGRES}/main já configurado (socket local, sem escuta de rede)"
+		ja_ok "P03" "cluster ${VERSAO_POSTGRES}/main já configurado ($(postura_de_escuta_do_cluster))"
 	fi
 }
 
@@ -800,9 +1130,9 @@ passo_p05_diretorio_config() {
 # consomem. É o modo de falha que a bateria de verificação caça explicitamente.
 # =========================================================================== #
 passo_p06_arquivo_ambiente() {
-	# Descoberta uma vez e reaproveitada por P09: o cliente do banco precisa da
-	# porta mesmo numa conexão por socket, porque é ela que nomeia o arquivo do
-	# socket (.s.PGSQL.<porta>).
+	# Descoberta uma vez e reaproveitada por P09: a porta entra na `DATABASE_URL`
+	# gravada logo abaixo e é por ela — em ${HOSPEDEIRO_DB}, o mesmo caminho que
+	# as unidades de serviço percorrem — que o P09 valida a credencial.
 	porta_banco="$(porta_do_cluster)"
 
 	if [[ -f "${ARQ_AMBIENTE}" ]]; then
@@ -837,6 +1167,20 @@ passo_p06_arquivo_ambiente() {
 		esac
 
 		local mudancas=0 detalhes=""
+
+		# MIGRAÇÃO da forma anterior, antes da conferência de coordenadas — porque é
+		# ela que decide se o arquivo está coerente, e um arquivo por migrar seria
+		# reprovado como divergente.
+		#
+		# O arquivo posicionado pela versão anterior deste procedimento declara o
+		# destino por socket, que nenhum consumidor da cadeia interpreta. A
+		# credencial que ele carrega é a que o BANCO conhece: regerá-la aqui
+		# quebraria o acesso. A reescrita troca só a linha da cadeia, preservando o
+		# segredo lido acima.
+		if migrar_database_url_de_socket "${ARQ_AMBIENTE}" "${porta_banco}"; then
+			detalhes="${detalhes}DATABASE_URL migrada da forma de socket para ${HOSPEDEIRO_DB}:${porta_banco} (credencial preservada); "
+			mudancas=$((mudancas + 1))
+		fi
 
 		# As COORDENADAS que o arquivo declara precisam ser as que este script
 		# provisiona. Divergência aborta; chave declarada e ausente é acrescentada,
@@ -914,8 +1258,7 @@ passo_p06_arquivo_ambiente() {
 		printf '#      usaria a última atribuição e o provisionamento se recusa a\n'
 		printf '#      adivinhar qual vale, então ele também aborta.\n'
 		printf '\n'
-		printf 'DATABASE_URL=postgresql://%s:%s@/%s?host=%s&port=%s\n' \
-			"${PAPEL_DB}" "${senha_db}" "${BANCO_DB}" "${DIR_SOCKET_PG}" "${porta_banco}"
+		printf 'DATABASE_URL=%s\n' "$(montar_url_do_banco "${senha_db}" "${porta_banco}")"
 		printf 'REDIS_URL=redis://127.0.0.1:%s\n' "${PORTA_FILA}"
 		printf 'SMTP_URL=smtp://127.0.0.1:%s\n' "${PORTA_SMTP_CAPTURADOR}"
 	} >"${ARQ_AMBIENTE}"
@@ -1013,8 +1356,8 @@ passo_p09_credencial_valida() {
 		"${PAPEL_DB}" "${senha_db}" | psql_admin >/dev/null
 
 	if ! credencial_conecta "${arq_senha}"; then
-		abortar "mesmo após ressincronizar a senha, o papel '${PAPEL_DB}' não conecta em '${BANCO_DB}' pelo socket ${DIR_SOCKET_PG}" \
-			"confira a regra do papel em ${ARQ_PG_HBA} (bloco '${MARCADOR_HBA_INICIO}') e o log em 'journalctl -u postgresql@${VERSAO_POSTGRES}-main -n 50'"
+		abortar "mesmo após ressincronizar a senha, o papel '${PAPEL_DB}' não conecta em '${BANCO_DB}' por ${HOSPEDEIRO_DB}:${porta_banco}" \
+			"confira a regra 'host' do papel em ${ARQ_PG_HBA} (bloco '${MARCADOR_HBA_INICIO}') e a linha 'listen_addresses' em ${ARQ_PG_DROPIN}; o log está em 'journalctl -u postgresql@${VERSAO_POSTGRES}-main -n 50'"
 	fi
 
 	criado "P09" "senha do papel '${PAPEL_DB}' ressincronizada com ${ARQ_AMBIENTE}"
@@ -1023,15 +1366,24 @@ passo_p09_credencial_valida() {
 escrever_pgpass() {
 	local destino="$1"
 	install -m 0600 -o root -g root /dev/null "${destino}"
-	# Curingas nos três primeiros campos: numa conexão por socket o libpq compara
-	# o campo de hospedeiro com o diretório do socket, e fixá-lo aqui só criaria
-	# uma forma a mais de errar.
+	# Curingas nos três primeiros campos: o cliente casa a entrada pelo hospedeiro
+	# que ele próprio resolveu, e fixá-lo aqui só criaria uma forma a mais de
+	# errar — a entrada deixaria de casar por um detalhe do lado do cliente e a
+	# falha apareceria como "senha errada".
 	printf '*:*:%s:%s:%s\n' "${BANCO_DB}" "${PAPEL_DB}" "${senha_db}" >"${destino}"
 }
 
+# A conexão é tentada pelo MESMO destino que a `DATABASE_URL` gravada declara —
+# o endereço de retorno, com a regra `host` do ${ARQ_PG_HBA} —, e não pelo socket.
+#
+# CAUSA-RAIZ de ter mudado: provar a credencial por um caminho que os serviços não
+# percorrem é provar outra coisa com o mesmo nome. Com a validação pelo socket, um
+# `pg_hba` sem a regra `host` ou um `listen_addresses` que não subiu deixavam este
+# passo VERDE, e a falha aparecia depois, na partida do serviço de aplicação — que
+# é a única coisa que este passo existe para antecipar.
 credencial_conecta() {
-	PGPASSFILE="$1" psql -X -q -A -t \
-		-h "${DIR_SOCKET_PG}" -p "${porta_banco}" -U "${PAPEL_DB}" -d "${BANCO_DB}" \
+	PGPASSFILE="$1" psql -X -q -A -t -w \
+		-h "${HOSPEDEIRO_DB}" -p "${porta_banco}" -U "${PAPEL_DB}" -d "${BANCO_DB}" \
 		-c 'SELECT 1' >/dev/null 2>&1
 }
 

@@ -30,9 +30,15 @@
  * `deploy/scripts/instalacao/provisionar-base.sh` ancora em `^DATABASE_URL=postgresql://` e
  * **recusa** um arquivo escrito com o outro. Aceitar as duas grafias aqui deixaria de pé um
  * arquivo de ambiente que a aplicação lê e o provisionamento rejeita — divergência que já foi
- * registrada como débito (D7) e cujo endereço de reconciliação é esta task. A forma (endereço de
- * rede ou socket de domínio Unix, este último com `?host=`) é livre: o provisionamento grava a
- * segunda, e o `.env.example` documenta as duas.
+ * registrada como débito (D7) e cujo endereço de reconciliação é esta task. A forma é
+ * `postgresql://PAPEL:SEGREDO@HOSPEDEIRO:PORTA/BANCO` — endereço de rede, e não socket de domínio
+ * Unix: é a única que o provisionamento grava e a única que o `.env.example` documenta.
+ *
+ * Por isso o `URL.canParse` desta validação não é formalidade. O cliente que a aplicação usa
+ * (`postgres.js`) constrói as opções de conexão com `new URL()` e só alcança socket de domínio
+ * Unix pelo OBJETO de opções, nunca por cadeia de conexão — uma `DATABASE_URL` de socket que
+ * passasse por aqui subiria o processo e quebraria na primeira consulta, que é exatamente o
+ * comportamento que esta validação existe para impedir.
  */
 
 import {

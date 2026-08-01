@@ -6,7 +6,7 @@
 - **Scope**: `docs/specs/features/fundacao-stack-nativa/v1/scope.md`
 - **Responsável**: sysloc
 - **Data**: 2026-07-31
-- **Status**: Rascunho
+- **Status**: Implementação concluída — 7/7 tasks aprovadas nos dois gates. Prova privilegiada (CT-001 a CT-005) e janela de reinício (CT-006) pendentes do operador.
 
 ---
 
@@ -48,7 +48,7 @@ Zero regra de negócio, zero estrutura de dados de domínio.
 | T4 | Infraestrutura de verificação — instâncias efêmeras e apuração de versão | [T4](tasks/T4.md) | 3 | T1, T2, T3 | Não | Concluído |
 | T5 | Serviço de aplicação — esqueleto, saúde e contrato publicado | [T5](tasks/T5.md) | 4 | T1, T2, T3, T4 | Não | Concluído |
 | T6 | Processador de trabalho — fila persistente e tarefa de ida e volta | [T6](tasks/T6.md) | 4 | T1, T2, T3, T4 | Não | Concluído |
-| T7 | Unidades de serviço, instalação idempotente e prova de recuperação | [T7](tasks/T7.md) | 5 | T5, T6 | Não | A Fazer |
+| T7 | Unidades de serviço, instalação idempotente e prova de recuperação | [T7](tasks/T7.md) | 5 | T5, T6 | Não | Concluído (prova privilegiada pendente) |
 
 **Derivação do flag (Regra 10d):**
 
@@ -77,7 +77,7 @@ Fase 2:  T2 ─┘
 | T4 | T1, T2, T3 | Concluído |
 | T5 | T1, T2, T3, T4 | Concluído |
 | T6 | T1, T2, T3, T4 | Concluído |
-| T7 | T5, T6 | A Fazer |
+| T7 | T5, T6 | Concluído (prova privilegiada pendente) |
 
 ---
 

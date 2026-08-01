@@ -4,7 +4,7 @@
 
 ## 1. Resumo do Run
 
-Status: 6/7 tasks concluídas · **CA-14 fechada** (apuração privilegiada executada pelo operador em 2026-08-01: verificação 18.4 · operação 18.4, sem divergência) · T1 verde em 62 asserções · T2 verde em 5/5 casos e 69 asserções, provada por 5 execuções assistidas no servidor real · T3 verde em 66 casos de Vitest, com 4 vazamentos de segredo encontrados e fechados · T4 verde em 79 casos de Vitest e 76 asserções de shell · T5 verde em 20 casos de Vitest, com o serviço de aplicação de pé · T6 verde em 16 casos, com o processador de trabalho consumindo fila persistente (**suíte total: 115 verdes**)
+Status: **7/7 tasks aprovadas nos dois gates** · implementação completa, prova privilegiada pendente do operador · **CA-14 fechada** (apuração privilegiada executada pelo operador em 2026-08-01: verificação 18.4 · operação 18.4, sem divergência) · T1 verde em 62 asserções · T2 verde em 5/5 casos e 69 asserções, provada por 5 execuções assistidas no servidor real · T3 verde em 66 casos de Vitest, com 4 vazamentos de segredo encontrados e fechados · T4 verde em 79 casos de Vitest e 76 asserções de shell · T5 verde em 20 casos de Vitest, com o serviço de aplicação de pé · T6 verde em 16 casos, com o processador consumindo fila persistente (**suíte total: 115 verdes**) · T7 com as duas unidades, o instalador idempotente e a bateria de 7 casos escritos e auditados sem privilégio
 
 | Task | Nome | Modelo | Arquivos | QA | Tech Review |
 |------|------|--------|----------|-----|-------------|
@@ -14,8 +14,17 @@ Status: 6/7 tasks concluídas · **CA-14 fechada** (apuração privilegiada exec
 | T4 | Infraestrutura de verificação — instâncias efêmeras e apuração de versão | opus | 9 criados, 6 mod | ✅ APROVADO | ✅ APROVADO_COM_OBSERVACOES |
 | T5 | Serviço de aplicação — esqueleto, saúde e contrato publicado | opus | 14 criados, 6 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
 | T6 | Processador de trabalho — fila persistente e tarefa de ida e volta | opus | 10 criados, 5 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
+| T7 | Unidades de serviço, instalação idempotente e prova de recuperação | opus | 5 criados, 8 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
 
-**Só a T7 pendente.** Nenhuma bloqueada.
+**7/7 aprovadas nos dois gates. Nenhuma bloqueada.** O que falta não é implementação: é a **execução privilegiada** (CT-001 a CT-005 e CT-007) e a **janela de reinício real** (CT-006), que dependem do operador porque `sudo` neste host exige senha interativa.
+
+**Sobre o custo de T7**: três rodadas, **dentro do limite** — a terceira seguida sem extensão. Cada gate rejeitou uma vez. Mas o número esconde o que ela realmente entregou: **a T7 encontrou um defeito que teria estourado dentro da janela de indisponibilidade não repetível**, e depois encontrou um segundo, do mesmo tipo, escondido na correção do primeiro.
+
+**O primeiro: `apps/api` recusava a `DATABASE_URL` que o provisionamento gravava.** O executor parou e escalou em vez de decidir — corretamente, porque as duas leituras possíveis viviam em arquivos de outras tasks. Investigando, o vão era maior do que ele viu: **nenhuma** forma de URL alcançava o cluster, porque o cliente da stack não decodifica percent-encoding, ignora `?host=` e usa `new URL()` internamente. Relaxar a validação — a saída óbvia — teria feito a aplicação **passar na partida e quebrar na primeira consulta**, que é exatamente o comportamento que a validação existe para impedir. O usuário decidiu abrir TCP em loopback; a cadeia virou uma URL de verdade, que o `psql` e o migrador da próxima fatia também leem sem tradução.
+
+**O segundo, e é o mais instrutivo da fatia inteira.** Ao corrigir, o executor pôs a porta do cluster num guarda de colisão e escreveu, no comentário, que ele existia para evitar "um `systemctl restart` que não volta no meio do P03". O Gate 2 foi conferir o **estado real do host** e descobriu que o guarda era **inerte exatamente na execução de transição** — ele tratava "a nossa unidade está ativa" como prova de posse da porta, o que vale para a fila e o capturador, mas é falso para o cluster antes de ele escutar em TCP. Unidade ativa, porta sem dono. Um terceiro qualquer com 5432 teria transformado um aborto limpo de pré-condição num **aborto de meio de execução com o cluster desligado, dentro da janela**.
+
+**Três correções, três achados que não estavam no enunciado.** Além dos dois acima: o bloco do `pg_hba` era idempotente **por presença do marcador**, de modo que a regra nova **nunca chegaria** a uma máquina já provisionada; e o P09 validava por um caminho que a aplicação não percorre — *o mesmo bloqueador deslocado uma casa*, que teria estourado igual.
 
 **Sobre o custo de T6**: três rodadas, **dentro do limite** — a segunda seguida sem extensão. Cada gate rejeitou uma vez, e as duas rejeições foram da mesma família: **rede de proteção ausente sobre código que estava certo**. O Gate 2 pegou um desligamento gracioso que podia travar para sempre; o Gate 1 pegou, na rodada seguinte, que a correção desse defeito tinha sido provada **pela metade**.
 
@@ -255,6 +264,36 @@ Status: 6/7 tasks concluídas · **CA-14 fechada** (apuração privilegiada exec
 - **Impacto:** manutenibilidade, não detecção: a asserção infalível está **adjacente** à falível, não no lugar dela, e é a falível que mata o defeito perseguido. Mesmo padrão já anotado como D29 no lado da api.
 - **O que fazer:** remover a linha, ou trocar por um comentário que documente a divergência sem simular asserção.
 
+### D36 · baixo · testability · T7 · Tech Review
+- **Onde:** `deploy/scripts/instalacao/verificar-provisionamento.sh:1765` × `provisionar-base.sh:816`
+- **Problema:** a ponta (g) prova a **decisão** do guarda de colisão, mas nenhuma asserção confere que `verificar_portas` o **liga** como declara — que a prova extra de posse aparece na chamada da porta do cluster e em nenhuma outra. É a única assimetria entre como o executor protegeu a decisão da cadeia de conexão e como protegeu a do guarda: a ponta (m) acrescentou exatamente essa garantia para o outro caso, contando as escritas que não passam por `montar_url_do_banco`.
+- **Impacto:** se a prova for acrescentada às três portas fixas, a 2ª execução aborta contra a nossa própria fila; se for removida da chamada do cluster, a porta perde a proteção **em silêncio**. Nos dois casos a ponta (g) permanece verde. Baixo porque o desfecho é alto e seguro — o guarda roda em pré-condições, então o aborto acontece antes de qualquer escrita em `/etc`, com a porta nomeada e o remédio impresso.
+- **O que fazer:** acrescentar à ponta (g) a contagem de invocações de `conferir_colisao_de_porta` que recebem o 4º argumento, exigindo exatamente 1, com o companheiro que conta as chamadas totais. **Não aplicar antes da janela** — é acréscimo de asserção sem efeito sobre o caminho privilegiado.
+
+### D37 · baixo · code_quality · T7 · Tech Review — **resíduo ACEITO, com gatilho**
+- **Onde:** `deploy/scripts/instalacao/provisionar-base.sh:798-805` (`cluster_escuta_na_porta`)
+- **Problema:** o guarda prova "escuta em TCP" e "porta viva == porta guardada", **mas não o endereço**. Um cluster escutando só em `::1`, somado a um terceiro em `127.0.0.1:5432`, passaria como "nossa instância".
+- **Impacto:** **nenhum na janela, e o Gate 2 verificou isso em vez de estimar**: `ss -lntH 'sport = :5432'` vazio, sobreposto com `listen_addresses = ''`, unidade `active`. Na 1ª execução o guarda retorna no **primeiro `ss`** e a prova **nunca é invocada**. Alcançar o resíduo exige editar à mão um arquivo que o script declara sobrescrever **somada** à ocupação simultânea do laço IPv4. A tolerância a `localhost`/`*`/`0.0.0.0` é deliberada e correta — recusá-los transformaria reexecução legítima em aborto.
+- **O que fazer:** aceitar `*`, `0.0.0.0`, `localhost` ou qualquer lista que **contenha** `${HOSPEDEIRO_DB}`, recusando apenas lista que nomeie exclusivamente outros endereços. **Gatilho**: quando alguma fatia precisar de `listen_addresses` diferente de `127.0.0.1` — aí o predicado deixa de ser tolerância e vira ambiguidade real.
+
+### D38 · baixo · security · T7 · Tech Review — **proposta ENCERRADA como rejeitada-por-ora**
+- **Onde:** `deploy/systemd/sysloc-api.service:147` e `sysloc-worker.service:105`
+- **Problema:** as unidades usam `ProtectSystem=full`, e `strict` seria plausivelmente viável — `apps/*/src` e `packages/*/src` não têm **nenhuma** escrita em filesystem e `PrivateTmp=yes` já cobre `/tmp`.
+- **Impacto:** nenhum. `full` já entrega `/usr`, `/boot` e `/etc` somente para leitura, sobre um processo que roda como `User=sysloc` sem privilégio, com `NoNewPrivileges=yes` e mais doze restrições ativas. O Gate 2 fechou a decisão: *"endurecer sem execução privilegiada atrás é apostar a falha modal da task — o servidor não bootar — contra ganho marginal"*.
+- **O que fazer:** aplicar **depois** da primeira execução privilegiada bem-sucedida, com a bateria rodando atrás, e derivar o `ReadWritePaths=` **de observação, não de suposição**.
+
+### D39 · baixo · security · T7 · Tech Review
+- **Onde:** `deploy/systemd/sysloc-worker.service:71`
+- **Problema:** o processador declara o mesmo `EnvironmentFile` do serviço de aplicação, que carrega a `DATABASE_URL` com o segredo — legível em `/proc/<pid>/environ`, embora ele valide e consuma apenas `LOG_LEVEL` e `REDIS_URL`. A unidade atende à **intenção** do requisito (não declara `DATABASE_URL` nem `PORT` em `Environment=`); o que não se cumpre é o **efeito**, porque o arquivo é compartilhado.
+- **Impacto:** nenhum hoje — as duas unidades rodam como `User=sysloc` e quem lê o `environ` de uma lê o da outra, então não é fronteira de privilégio. Passa a ser quando o processador ganhar identidade própria.
+- **O que fazer:** **gatilho**: quando o processador ganhar `User=` próprio, dividir em `/etc/sysloc/backend.env` e `/etc/sysloc/worker.env` (só `REDIS_URL`), ambos 0600. Toca o P06 do provisionador, o verificador dele e a ponta (c) do CT-005 — o Gate 2 classificou como "mudança grande demais para a véspera".
+
+### D40 · baixo · testability · T7 · Tech Review — **e traz um fortalecimento junto**
+- **Onde:** `apps/api/test/saude.e2e.spec.ts:597`
+- **Problema:** o comentário do CT-003 justifica a comparação dizendo que "a do banco não existe (o provisionamento não abre porta TCP)". A oração parentética **deixou de ser verdadeira nesta entrega**. É a quinta afirmação da mesma classe que a fatia produziu; as quatro anteriores foram fechadas.
+- **Impacto:** nenhum operacional — a conclusão da frase segue verdadeira (a porta não é **fixada** pelo script) e a asserção que ela acompanha manteve o poder discriminante. O risco é semente de R3: quem ler a premissa falsa pode concluir que colisão de porta do banco é impossível por construção e apagar a asserção de ADR-0006 como inútil.
+- **O que fazer:** reescrever o comentário na forma já adotada em `packages/shared/test/ambiente-efemero.spec.ts:189-193` — **e aproveitar o fortalecimento que ele agora habilita**, que o Gate 2 registrou e o QA não tinha visto: como o provisionamento **agora** abre 5432, passou a existir uma porta provisionada de banco comparável, e o caso pode assertar que a instância efêmera não é ela. Seria a prova positiva de ADR-0006 do lado TypeScript, hoje feita só para a fila.
+
 ### Débito residual abaixo do limiar de finding
 
 - `verificar-workspace.sh:63` — `STATUS_INICIAL` no escopo de arquivo embora só usado dentro de `ct_004`; poderia ser `local`.
@@ -343,3 +382,47 @@ O que a regra instala, além dessas duas: a taxonomia das **três** regressões 
 E o quinto, herdado da 1ª passagem do Gate 2 sobre a T6: **o card do CT-003 da T7 não alcança o processador.** Ele é escrito no singular, exemplifica `sysloc-api-prova-config.service` e usa como dado de entrada a remoção da "variável de conexão com o banco" — `DATABASE_URL` é justamente a que o processador **não lê**. Executado contra `sysloc-worker` com esse dado, o caso veria o processo subir e **provaria o contrário do que afirma**.
 
 **20. O Protocolo Antirregressão pagou pela segunda vez, e agora do lado do Gate 1.** Na T5 ele produziu os dois primeiros marcadores do repositório. Na T6 produziu mais dois — e, sobretudo, produziu o vocabulário que fez o Gate 1 nomear o defeito da rodada 2 com precisão: *"o buraco não é o prazo; é o discriminador de desfecho, que é o que o `main.ts` consome"*. É literalmente a distinção "fechar o caminho apontado × fechar a classe" da §7 da rule. Vale registrar o que mudou no comportamento dos gates depois que ela existiu: os três mutantes da T6 foram executados **pelos próprios gates**, não aceitos por declaração — e um deles foi de iniciativa própria do Gate 1, que percebeu que a asserção do journal permanecia não-falsificada porque o caso reprovava antes de alcançá-la.
+
+**21. O que falta para a fatia fechar — quatro comandos, e a janela.** A implementação está completa e auditada; o que resta exige `sudo`, que neste host pede senha interativa e nenhum subagente responde. Na ordem, sem pular nenhum:
+
+```bash
+# 1. Aplica o TCP em loopback e MIGRA a DATABASE_URL preservando a credencial já gerada.
+sudo bash deploy/scripts/instalacao/provisionar-base.sh
+
+# 2. Segunda execução — a prova de idempotência da ADR-0005. TUDO tem de sair "JA-OK".
+sudo bash deploy/scripts/instalacao/provisionar-base.sh
+
+# 3. Confere o destino (a credencial sai mascarada).
+sudo grep '^DATABASE_URL=' /etc/sysloc/backend.env | sed 's/:[^:@]*@/:***@/'
+
+# 4. Constrói o artefato, instala as unidades e roda a bateria.
+pnpm build
+sudo bash deploy/scripts/instalacao/instalar-unidades.sh
+sudo bash deploy/scripts/instalacao/verificar-fundacao.sh
+```
+
+**Antes de abrir a janela**, a mitigação que o Gate 2 pediu: conferir `ss -lntH 'sport = :5432'` **vazio**. É o que torna o resíduo do D37 inalcançável.
+
+**Só então a janela**, e ela é a última prova, nunca a primeira:
+
+```bash
+sudo bash deploy/scripts/instalacao/verificar-fundacao.sh reinicio-preparar
+sudo reboot
+# após o boot, SEM executar nenhum comando de partida:
+sudo bash deploy/scripts/instalacao/verificar-fundacao.sh reinicio-conferir
+```
+
+O `reinicio-preparar` **recusa** consumir a janela enquanto a bateria não sair 0 — ele a executa como subprocesso e aborta antes de capturar retrato, enfileirar tarefa ou parar o processador. E o `reinicio-conferir` compara o **`btime` do núcleo** com o do retrato, o que torna impossível substituir o reinício por `systemctl restart` e declarar o critério cumprido, como o card proíbe nominalmente.
+
+Tenha em mãos, antes de reiniciar: **acesso de console fora da rede** e o comando de desabilitação das unidades novas, para o caso de o boot não convergir.
+
+**22. O julgamento final de risco do Gate 2 sobre o `reboot`, que é o que autoriza a janela.** Ele auditou a cadeia de arranque inteira e não encontrou bloqueio:
+
+- **Aplicação × PostgreSQL**: `postgresql@.service` declara `Before=postgresql.service` e é `Type=forking` via `pg_ctlcluster`, que **espera o cluster aceitar conexão** — a ordenação carrega prontidão, não só sequência. Dupla segurança: a aplicação **não abre conexão com o banco na partida**.
+- **Processador × Redis**: `redis-server@sysloc.service` é `Type=notify` — mesma garantia. Dupla segurança: o cliente reconecta indefinidamente.
+- **Nenhuma das duas pode travar o boot**: `Type=simple` + `Wants=` (não `Requires=`) + `WantedBy=multi-user.target`, sem `Before=` sobre nada e **sem ciclo**.
+- **Ambiente legado intacto**: as unidades não declaram relação com o Docker/Frappe, e não há sobreposição de porta — 3306, 8300, 8200, 80/443 e 6379 seguem alheias; as nossas são 3000, 5432, 6380, 1025 e 8025.
+- **A porta 3000 está guardada** — o instalador a deriva do `Environment=PORT=` da própria unidade e aborta se um terceiro a detiver. Era a única lacuna que o Gate 2 suspeitava existir; não existe.
+- **A novidade da rodada no boot** — o cluster vinculando `127.0.0.1:5432` a cada arranque — foi conferida: com a pilha legada inteira de pé, **ninguém escuta em 5432**.
+
+> Nas palavras dele: *"Nada que eu tenha encontrado só apareceria no `reboot`. O gatilho do D37 é inalcançável na janela; o D36 falha alto e antes de qualquer escrita em `/etc`."*
