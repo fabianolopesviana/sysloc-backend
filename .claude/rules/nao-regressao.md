@@ -159,6 +159,88 @@ ignorar os marcadores que importam.
 
 ---
 
+## 3-B. Marcador `DÉBITO COM GATILHO` — como um débito sobrevive ao fim da fatia
+
+> **Por que `3-B` e não `4`**: as seções 4 a 7 já são citadas pelo número em relatórios de run
+> fechados (`_run/run-report.md`, `_run/workflow-report.md`), que são registro histórico e não se
+> reescrevem. Esta seção entra aqui porque é o complemento de §3, sem renumerar o resto.
+
+O débito de uma fatia é registrado na §2 do `run-report.md` dela. Isso basta enquanto a fatia está
+aberta, e **deixa de bastar no instante em que ela fecha**: uma sessão nova não carrega o relatório
+da fatia anterior — carrega o `CLAUDE.md` e as rules de `.claude/rules/`, e o **P2** acima manda
+grepar o `_run/` *da fatia corrente*. O débito que vai morder daqui a três fatias fica, portanto,
+escrito num arquivo que ninguém vai abrir na hora em que ele morde. Vale para o débito o mesmo que
+a §3 diz da decisão: **ele precisa morar onde a tentação acontece.**
+
+### Ele é o oposto de `DECISÃO FECHADA` — não os misture
+
+| | `DECISÃO FECHADA` (§3) | `DÉBITO COM GATILHO` |
+|---|---|---|
+| **Diz** | *isto está resolvido; não mexa* | *isto está aberto de propósito, e eis quando fecha* |
+| **Função** | **protege** — o código sob ele é intocável | **agenda** — o código sob ele vai mudar |
+| **Sai quando** | o `REVERTER EXIGE` for demonstrado | o gatilho chegar e o débito for fechado |
+
+Misturar os dois arruína os dois. Débito lido como decisão fechada **congela o que deveria mudar**;
+decisão fechada lida como débito **convida a rodada seguinte a reabrir o que custou rodadas para
+fechar**. A §3 já adverte que marcador em coisa trivial "ensina todo mundo a ignorar os marcadores
+que importam" — marcador de **natureza trocada** faz pior: ensina a ler errado os que estão certos.
+Por isso os dois nunca se substituem, e quando convivem no mesmo arquivo o texto de cada um tem de
+deixar óbvio o que ele alcança.
+
+### Forma canônica
+
+```ts
+// DÉBITO COM GATILHO — D25 · F0/T5 · registrado 2026-08-01
+// O QUÊ: <o que está incompleto, em uma frase>
+// QUANDO FECHA: <a condição concreta que obriga a agir — não "algum dia">
+// POR QUE NÃO AGORA: <por que adiar é a decisão certa hoje>
+// ÍNDICE: docs/specs/features/<fatia>/<versão>/_run/run-report.md §2, D25
+```
+
+Em shell, Python e afins, o mesmo conteúdo com o comentário da linguagem
+(`# DÉBITO COM GATILHO — …`). Os quatro campos são obrigatórios, mais o `ÍNDICE`: o marcador é um
+**ponteiro curto**, e o detalhe (impacto medido, o que fazer, prova de falsificação exigida) fica
+no relatório, que é onde ele já está escrito por extenso. Marcador que copia o relatório inteiro
+apodrece — o relatório é corrigido e a cópia não.
+
+### Quando emitir (e quando não)
+
+- **Só para débito com gatilho concreto** — uma condição que se possa *reconhecer quando chegar*
+  ("quando a fatia de autenticação entrar", "quando o terceiro consumidor importar X"). Débito sem
+  gatilho fica **só no relatório**: marcador para ele é ruído, e ruído desarma os que importam.
+- **Mora onde a tentação acontece** — no arquivo, e junto do símbolo, que a fatia futura vai abrir
+  para fazer exatamente a coisa que o débito condiciona. Não no relatório, não num índice avulso.
+- **Ao fechar o débito, o marcador sai junto**, no mesmo commit da correção. Marcador de débito já
+  resolvido é **pior que nenhum**: ele mente sobre o estado do código, e o próximo agente gasta uma
+  rodada reabrindo o que já estava fechado.
+- Ele **não protege nada**. Diferente de §3, editar o código sob um `DÉBITO COM GATILHO` é normal —
+  o que não se pode é editá-lo **sem ler o marcador**, porque ele diz o que ainda falta ali.
+
+### Ciclo de vida do índice no `CLAUDE.md`
+
+O bloco de débitos com gatilho do `CLAUDE.md` é **derivado destes marcadores**, nunca uma lista
+paralela — ele existe apenas porque uma sessão nova lê o `CLAUDE.md` antes de abrir qualquer
+arquivo, e precisa saber que os marcadores existem para procurá-los.
+
+- **Emitiu um marcador?** Acrescente a linha correspondente ao bloco.
+- **Fechou o débito e removeu o marcador?** Remova a linha.
+- **Removeu o último marcador?** **Apague o bloco inteiro do `CLAUDE.md`** — cabeçalho, aviso e
+  tabela. Um índice vazio, ou que aponte para marcador que não existe mais, é a mesma mentira do
+  marcador órfão, e chega a **todo** agente antes de qualquer arquivo do repositório.
+
+A condição é verificável numa linha, e ela tem de estar escrita **tanto aqui quanto no bloco**:
+
+```bash
+# vazio ⇒ o bloco do CLAUDE.md não deve mais existir
+grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
+```
+
+O `--exclude-dir=dist` não é ornamento: o `dist/` é saída de build (ignorada pelo git) e espelha o
+comentário do fonte, de modo que sem ele o mesmo marcador é contado duas vezes e o índice parece
+maior do que é.
+
+---
+
 ## 4. Proibições absolutas — sem julgamento, sem exceção contextual
 
 1. **Nunca enfraquecer, remover, pular (`skip`/`only`/`todo`) ou comentar um teste para fazer um gate

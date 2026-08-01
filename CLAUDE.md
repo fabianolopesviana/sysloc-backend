@@ -129,11 +129,35 @@ Específicos deste domínio: **undici** (mTLS do Sicoob), **`node:crypto` `X509C
 - **Antirregressão**: `.claude/rules/nao-regressao.md`. Ao fechar um defeito que já tinha voltado,
   ou que um gate rejeitou duas vezes, deixe no ponto do código o marcador **`DECISÃO FECHADA`** com
   os campos `O QUÊ` / `POR QUÊ` / `REVERTER EXIGE`. É o que impede a rodada seguinte de reabrir o
-  que você acabou de fechar.
+  que você acabou de fechar. O marcador **irmão e oposto** é o **`DÉBITO COM GATILHO`** (§3-B da
+  mesma rule): não protege, **agenda** — ver o bloco abaixo.
 - **Lint/format**: Biome. Sem ESLint, sem Prettier.
 - **Commits**: Conventional Commits em pt-BR — ver a skill `agent-spec-semantic-commit`.
 - **Specs**: o framework agent-spec está em `.claude/` (36 skills, 7 rules, 3 agents). Features
   novas seguem o pipeline SDD/miniSpec/TaskCard com os gates de QA e Tech Review.
+
+---
+
+## Débitos com gatilho ativo
+
+> **Bloco derivado e transitório** — espelha os marcadores `DÉBITO COM GATILHO` que existem hoje no
+> código (`.claude/rules/nao-regressao.md` §3-B). Fechou um débito? Remova o marcador **e** a linha
+> daqui. Removeu o último marcador? **Apague este bloco inteiro.** A condição é verificável:
+>
+> ```bash
+> # vazio ⇒ este bloco não deve mais existir (o `dist/` é build e espelharia o fonte)
+> grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
+> ```
+
+Três débitos da F0 têm gatilho que dispara numa fatia futura. O detalhe vive na §2 do
+`docs/specs/features/fundacao-stack-nativa/v1/_run/run-report.md`, para onde o `ÍNDICE` de cada
+marcador aponta.
+
+| Débito | Onde | Dispara quando |
+|---|---|---|
+| **D25** | `packages/shared/src/log.ts` | a fatia de **autenticação** entrar — o `better-auth` trafega `token` e `callbackURL` em cadeia de consulta, e a redação não alcança esse formato |
+| **D28** | `apps/api/test/saude.e2e.spec.ts` | um **quarto consumidor** importar `packages/shared/test/` por caminho relativo profundo |
+| **D32** | `apps/worker/src/fila.ts` | a **primeira fatia que enfileirar tarefa de negócio** — o lado produtor mora dentro de `apps/worker`, que `apps/api` não pode importar |
 
 ---
 

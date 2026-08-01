@@ -79,6 +79,24 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { Test } from '@nestjs/testing';
 import { CodigoErro, criarLogger } from '@sysloc/shared';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
+// DÉBITO COM GATILHO — D28 · F0/T5 · registrado 2026-08-01
+// (NÃO é uma `DECISÃO FECHADA`: as duas deste arquivo, mais abaixo, protegem código; esta agenda.)
+// O QUÊ: os três imports a seguir atravessam a fronteira de `@sysloc/shared` por CAMINHO DE ARQUIVO
+//        (`../../../packages/shared/test/*.ts`), fora do `exports` e do `files` do pacote — é o que
+//        obriga o `rootDir` de `apps/api/tsconfig.test.json` a subir até a raiz do repositório. A
+//        dependência de workspace está declarada, então não há dependência oculta; o que não existe
+//        é FRONTEIRA: `packages/shared/test/` virou superfície pública de fato, sem ser declarada.
+//        Mover ou renomear qualquer arquivo de lá quebra `apps/api` sem que ferramenta alguma do
+//        workspace enxergue o vínculo.
+// QUANDO FECHA: quando um QUARTO consumidor importar `packages/shared/test/` por caminho relativo
+//        profundo. (T6 foi o terceiro e repetiu o padrão; a decisão de promover ficou para o
+//        próximo.) Fechar declarando o subpath `"./test"` no `package.json` de `@sysloc/shared` e
+//        importando por `@sysloc/shared/test` — o que também dispensa o `rootDir` alargado —, ou
+//        extraindo um pacote `@sysloc/test-utils`.
+// POR QUE NÃO AGORA: impacto baixo enquanto o número de consumidores é pequeno, e declarar o
+//        subpath sem saber que forma os helpers terão nas fatias seguintes congelaria uma superfície
+//        pública cedo demais.
+// ÍNDICE: docs/specs/features/fundacao-stack-nativa/v1/_run/run-report.md §2, D28
 import { FAIXA_PORTAS_EFEMERAS } from '../../../packages/shared/test/efemero-comum.ts';
 import {
   type BancoEfemero,

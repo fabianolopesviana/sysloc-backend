@@ -294,6 +294,28 @@ function resolverDestino(destino: OpcoesDeLogger['destino']): pino.DestinationSt
   return destino;
 }
 
+// DÉBITO COM GATILHO — D25 · F0/T5 · registrado 2026-08-01
+// (NÃO é uma `DECISÃO FECHADA`: não congela nada aqui — diz o que ainda falta e quando.)
+// O QUÊ: falta a ESTA função — a entrada única de despacho que a T3 estabeleceu — um TERCEIRO eixo,
+//        por forma do valor, que mascare o valor de parâmetro de CADEIA DE CONSULTA cujo nome case
+//        os radicais sensíveis, preservando o nome do parâmetro e o resto do URI. Hoje
+//        `?token=SEGREDO` dentro de uma cadeia de caracteres não é alcançado: o eixo por nome casa
+//        CHAVES do evento, e o de forma casa só credencial embutida em cadeia de conexão. O
+//        vazamento foi capturado no journal pelo Gate 1 da T5 — o segredo sai quatro vezes numa
+//        linha só, pela mensagem que o arcabouço monta para rota não casada interpolando o alvo
+//        bruto. O dono NÃO é `apps/api/src/comum/filtro-excecao.ts`: fechar lá seria fechar mais um
+//        PONTO com a classe aberta, que é o padrão que custou quatro rodadas na T3.
+// QUANDO FECHA: quando a fatia de AUTENTICAÇÃO entrar. O `better-auth` carrega `token` e
+//        `callbackURL` em cadeia de consulta, e como o filtro de exceção é global e herdado, o
+//        vazamento nasceria já instalado em TODA rota dela.
+// POR QUE NÃO AGORA: exposição nula por construção na F0 — as rotas são `/saude`, `/saude/pronto` e
+//        `/docs`, nenhum segredo trafega em consulta e o corpo da resposta não vaza (CT-005/CT-006
+//        asserem o envelope); só o registro estruturado vazaria. E o padrão não se improvisa: o
+//        docblock de `CREDENCIAL_EM_CADEIA_DE_CONEXAO` acima registra que um padrão mal delimitado
+//        JÁ mutilou em silêncio, neste mesmo arquivo, URL legítima com `callbackURL=`. Fechar exige
+//        companheiro positivo e negativo, prova de falsificação, e a rede do CT-006 (b) estendida
+//        com a asserção de ausência sobre a linha do journal.
+// ÍNDICE: docs/specs/features/fundacao-stack-nativa/v1/_run/run-report.md §2, D25
 /** Mascara a senha de toda cadeia de conexão presente no texto, preservando esquema e usuário. */
 function mascararCredencial(texto: string): string {
   return texto.replace(CREDENCIAL_EM_CADEIA_DE_CONEXAO, `$1:${SENTINELA_REDIGIDO}@`);

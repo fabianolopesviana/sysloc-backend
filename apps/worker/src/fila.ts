@@ -162,6 +162,23 @@ const OPCOES_DE_CONEXAO = {
     Math.min(tentativa * PASSO_DE_RECONEXAO_MS, MAIOR_ESPERA_DE_RECONEXAO_MS),
 } as const;
 
+// DÉBITO COM GATILHO — D32 · F0/T6 · registrado 2026-08-01
+// (Natureza DIFERENTE das duas `DECISÃO FECHADA` deste arquivo — aquelas PROTEGEM o que está sob
+//  elas e não se alteram sem satisfazer o `REVERTER EXIGE`; esta AGENDA o que ainda vai mudar.)
+// O QUÊ: o lado produtor mora dentro de `apps/worker`, uma aplicação privada e sem `exports`, que o
+//        primeiro produtor real NÃO poderá importar — `apps/api` inclusive. Ele terá de construir a
+//        própria fila e ou duplicar as opções abaixo (`attempts`/`backoff`/`removeOnComplete`/
+//        `removeOnFail`), ou ignorá-las: `defaultJobOptions` só vale para tarefas enfileiradas PELA
+//        INSTÂNCIA que as declara. O cabeçalho deste módulo argumenta que exportar a constante do
+//        NOME impede a divergência produtor/consumidor; as OPÇÕES correm o mesmo risco e não têm
+//        proteção equivalente. Hoje o efeito é nulo: fila ociosa no processo do processador.
+// QUANDO FECHA: na PRIMEIRA fatia que enfileirar tarefa de negócio. Fechar extraindo nome, opções e
+//        tipos de carga para um pacote compartilhado, OU declarando a repetição como deliberada com
+//        marcador nos DOIS lados. Sem isso, a política de repetição documentada como "a de produção"
+//        vale só no processo da verificação, e a decisão terá sido tomada por omissão.
+// POR QUE NÃO AGORA: extrair um pacote de fila nesta fatia seria abstração antecipada — não há
+//        segundo produtor, e a T6 proíbe tarefa de negócio, então a forma da carga real é desconhecida.
+// ÍNDICE: docs/specs/features/fundacao-stack-nativa/v1/_run/run-report.md §2, D32
 /** Opções aplicadas a toda tarefa enfileirada. Ver o cabeçalho. */
 const OPCOES_PADRAO_DA_TAREFA = {
   attempts: TENTATIVAS_POR_TAREFA,
