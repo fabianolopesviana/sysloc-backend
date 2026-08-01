@@ -4,7 +4,7 @@
 
 ## 1. Resumo do Run
 
-Status: **7/7 tasks aprovadas nos dois gates** · implementação completa, prova privilegiada pendente do operador · **CA-14 fechada** (apuração privilegiada executada pelo operador em 2026-08-01: verificação 18.4 · operação 18.4, sem divergência) · T1 verde em 62 asserções · T2 verde em 5/5 casos e 69 asserções, provada por 5 execuções assistidas no servidor real · T3 verde em 66 casos de Vitest, com 4 vazamentos de segredo encontrados e fechados · T4 verde em 79 casos de Vitest e 76 asserções de shell · T5 verde em 20 casos de Vitest, com o serviço de aplicação de pé · T6 verde em 16 casos, com o processador consumindo fila persistente (**suíte total: 115 verdes**) · T7 com as duas unidades, o instalador idempotente e a bateria de 7 casos escritos e auditados sem privilégio
+Status: **FATIA CONCLUÍDA** · 7/7 tasks aprovadas nos dois gates · bateria de aceitação **7/7, código 0** · **CT-006 aprovado com reinício real do servidor em 2026-08-01T19:02:43** · **CA-14 fechada** (apuração privilegiada executada pelo operador em 2026-08-01: verificação 18.4 · operação 18.4, sem divergência) · T1 verde em 62 asserções · T2 verde em 5/5 casos e 69 asserções, provada por 5 execuções assistidas no servidor real · T3 verde em 66 casos de Vitest, com 4 vazamentos de segredo encontrados e fechados · T4 verde em 79 casos de Vitest e 76 asserções de shell · T5 verde em 20 casos de Vitest, com o serviço de aplicação de pé · T6 verde em 16 casos, com o processador consumindo fila persistente (**suíte total: 115 verdes**) · T7 com as duas unidades, o instalador idempotente e a bateria de 7 casos escritos e auditados sem privilégio
 
 | Task | Nome | Modelo | Arquivos | QA | Tech Review |
 |------|------|--------|----------|-----|-------------|
@@ -16,7 +16,7 @@ Status: **7/7 tasks aprovadas nos dois gates** · implementação completa, prov
 | T6 | Processador de trabalho — fila persistente e tarefa de ida e volta | opus | 10 criados, 5 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
 | T7 | Unidades de serviço, instalação idempotente e prova de recuperação | opus | 5 criados, 8 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
 
-**7/7 aprovadas nos dois gates. Nenhuma bloqueada.** O que falta não é implementação: é a **execução privilegiada** (CT-001 a CT-005 e CT-007) e a **janela de reinício real** (CT-006), que dependem do operador porque `sudo` neste host exige senha interativa.
+**7/7 aprovadas nos dois gates. Nenhuma bloqueada. A execução privilegiada e a janela foram consumidas, e a fatia está fechada.**
 
 **Sobre o custo de T7**: três rodadas, **dentro do limite** — a terceira seguida sem extensão. Cada gate rejeitou uma vez. Mas o número esconde o que ela realmente entregou: **a T7 encontrou um defeito que teria estourado dentro da janela de indisponibilidade não repetível**, e depois encontrou um segundo, do mesmo tipo, escondido na correção do primeiro.
 
@@ -426,3 +426,22 @@ Tenha em mãos, antes de reiniciar: **acesso de console fora da rede** e o coman
 - **A novidade da rodada no boot** — o cluster vinculando `127.0.0.1:5432` a cada arranque — foi conferida: com a pilha legada inteira de pé, **ninguém escuta em 5432**.
 
 > Nas palavras dele: *"Nada que eu tenha encontrado só apareceria no `reboot`. O gatilho do D37 é inalcançável na janela; o D36 falha alto e antes de qualquer escrita em `/etc`."*
+
+**23. A janela foi consumida, e o que ela cobrou.** Reinício real em **2026-08-01T19:02:43**, conduzido pelo operador com o orquestrador. Passaram de primeira: a convergência do sistema, as duas unidades novas, o conjunto de falhas vazio, as duas rotas de saúde com banco e fila alcançáveis, **a tarefa enfileirada antes do reinício consumida com o mesmo identificador** (a CA-10 provada ponta a ponta atravessando um boot), a bateria inteira saindo 0 depois, as 29 portas com o mesmo dono e o disco estável.
+
+Reprovou **uma** ponta: `polkit.service` em `inactive`. Investigado, era **falso positivo da asserção** — `polkit` é `Type=dbus`, ativado sob demanda, e estava rodando antes do reinício só porque a bateria tinha acabado de executar dezenas de comandos `systemctl`, que passam por ele. Provado na hora: uma introspecção D-Bus subiu a unidade de `inactive` para `active` sem nenhum comando de partida. A ponta `(c)` comparava "unidades rodando antes" com "rodando agora" **sem distinguir serviço persistente de serviço sob demanda**.
+
+A correção **não** foi isentar unidade inativa — isso teria matado o poder da asserção. Para unidade `Type=dbus` ociosa, ela agora **aciona o nome D-Bus e exige que a unidade suba dentro de um limite declarado**: prova o que a CA-9 realmente pede (que a unidade volta), pelo ciclo de vida real dela, e continua reprovando se a unidade estiver mascarada ou sem caminho de ativação. Levou a linha `SUT_IS_CORRECT_BECAUSE:` que o P5 exige, e falsificação em cinco cenários — incluindo a asserção **antiga** reprovando o mesmo caso.
+
+Das 45 unidades do retrato, **`polkit` é a única sob demanda**: `systemd-logind`, `systemd-networkd` e `systemd-resolved` casavam um filtro largo mas são `Type=notify*` persistentes. E **a reexecução não custou outra janela** — o `btime` do núcleo não mudou, então o retrato seguiu válido.
+
+**24. Três defeitos que só a execução privilegiada revelou, e o que eles ensinam sobre o pipeline.** Antes da janela, a bateria reprovou três vezes seguidas, e **nenhuma das falhas era do produto** — as três eram da camada de verificação, e as três são a mesma classe: **as opções e o escopo do próprio verificador interferindo na sonda que carrega o código real.** O escopo dinâmico de `local` sombreando a variável do dublê; o `readonly` herdado por subshell impedindo a sonda de reconfigurar o dono do arquivo; e o `set -e` sobre atribuição simples matando o script na primeira chamada da sonda — a que aborta de propósito para confirmar que o SUT carregou.
+
+**Por que os gates não pegaram nenhuma das três**: estes verificadores só rodam como `root`. O QA replicou a lógica num harness próprio — sem o `set -e` do arquivo, sem o `readonly` de escopo de arquivo, sem o `local` do SUT. **Uma sonda só é fielmente exercitada dentro do próprio verificador.** É uma lacuna estrutural do pipeline, não descuido de quem escreveu; a proposta de fechá-la (um caso de `verificar-workspace.sh`, que roda sem privilégio, exercitando cada sonda sob as mesmas opções de shell) está registrada como D36 e ficou para decisão futura.
+
+**25. A varredura da classe, pedida pelo usuário, e o que ela achou.** As duas classes foram **provadas empiricamente**, não inferidas: sob `set -Eeuo pipefail`, `x="$(grep sem-match arq)"` mata (1); a mesma substituição como **argumento** sobrevive; e `sed | head -1` sobre produtor volumoso mata por SIGPIPE (141), enquanto sobre arquivo pequeno sobrevive. Varredura ciente de continuação de linha em 8 scripts: **23 sítios estruturais**, dos quais **nenhum alcançável no estado atual**. Dois merecem correção futura:
+
+- **`verificar-workspace.sh:596`** — o ramo `falhar "variável exigida ausente do .env.example"` é **inalcançável**: se a variável sumir, o `grep` devolve 1 e o `set -e` mata o script antes. **O teste morre em vez de reprovar exatamente o que ele existe para pegar.** É guarda morta.
+- **`verificar-fundacao.sh:1184`** — `variavel_removida_de` devolve 1 para unidade fora das duas; dispara quando a próxima fatia acrescentar serviço.
+
+Nenhum dos dois foi corrigido na véspera da janela, pelo mesmo raciocínio com que o Gate 2 recusou o `ProtectSystem=strict`: mexer em verificador por defeito provadamente inalcançável, na véspera de uma janela não repetível, aposta a falha modal contra ganho marginal.

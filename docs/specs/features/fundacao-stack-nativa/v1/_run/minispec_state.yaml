@@ -21,7 +21,7 @@ steps:
     status: completed
     summary: "7 tasks, 5 fases, 1 par paralelizável (T1 ∥ T2). 45 casos de teste gerados por 3 subagentes agrupados por camada (infra-base T1/T2/T7, infra-codigo T3/T4, integracao T5/T6). Todas as tasks em opus com gates [qa, tech_review]. T5 ∥ T6 marcado Não por contenção no arquivo de bloqueio do gerenciador de pacotes, apesar de independentes no grafo. Dependência T4→T6 descoberta na geração de testes e incorporada: redisEfemero precisa expor parar/religar preservando o diretório de dados, sem o que CA-10 é inverificável."
   execution:
-    status: in_progress
+    status: completed
     tasks_total: 7
     tasks_completed: 7
-    summary: "7/7 tasks aprovadas nos dois gates. Nenhuma bloqueada. Implementação completa; a prova de aceitação privilegiada (CT-001 a CT-005) e a janela de reinício real (CT-006) dependem do operador — sudo neste host exige senha interativa."
+    summary: "7/7 tasks concluídas e aprovadas nos dois gates. Nenhuma bloqueada. Bateria de aceitação verde (7/7) e CT-006 aprovado com reinício real do servidor em 2026-08-01T19:02:43 — CA-9 e CA-16 provadas. 36 débitos anotados, 3 com marcador DÉBITO COM GATILHO no código."

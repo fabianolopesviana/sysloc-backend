@@ -6,7 +6,7 @@
 - **Scope**: `docs/specs/features/fundacao-stack-nativa/v1/scope.md`
 - **Responsável**: sysloc
 - **Data**: 2026-07-31
-- **Status**: Implementação concluída — 7/7 tasks aprovadas nos dois gates. Prova privilegiada (CT-001 a CT-005) e janela de reinício (CT-006) pendentes do operador.
+- **Status**: **CONCLUÍDA** — 7/7 tasks aprovadas nos dois gates, bateria de aceitação verde e **CT-006 aprovado com reinício real do servidor em 2026-08-01T19:02:43**.
 
 ---
 
@@ -48,7 +48,7 @@ Zero regra de negócio, zero estrutura de dados de domínio.
 | T4 | Infraestrutura de verificação — instâncias efêmeras e apuração de versão | [T4](tasks/T4.md) | 3 | T1, T2, T3 | Não | Concluído |
 | T5 | Serviço de aplicação — esqueleto, saúde e contrato publicado | [T5](tasks/T5.md) | 4 | T1, T2, T3, T4 | Não | Concluído |
 | T6 | Processador de trabalho — fila persistente e tarefa de ida e volta | [T6](tasks/T6.md) | 4 | T1, T2, T3, T4 | Não | Concluído |
-| T7 | Unidades de serviço, instalação idempotente e prova de recuperação | [T7](tasks/T7.md) | 5 | T5, T6 | Não | Concluído (prova privilegiada pendente) |
+| T7 | Unidades de serviço, instalação idempotente e prova de recuperação | [T7](tasks/T7.md) | 5 | T5, T6 | Não | Concluído |
 
 **Derivação do flag (Regra 10d):**
 
@@ -77,7 +77,7 @@ Fase 2:  T2 ─┘
 | T4 | T1, T2, T3 | Concluído |
 | T5 | T1, T2, T3, T4 | Concluído |
 | T6 | T1, T2, T3, T4 | Concluído |
-| T7 | T5, T6 | Concluído (prova privilegiada pendente) |
+| T7 | T5, T6 | Concluído |
 
 ---
 
@@ -102,16 +102,16 @@ Fase 2:  T2 ─┘
 
 ## 7. Critérios de Conclusão Geral
 
-- [ ] Todas as 7 tasks concluídas
-- [ ] Os 16 critérios de aceite do scope (CA-1 a CA-16) verificados
-- [ ] `pnpm build` e `pnpm lint` limpos a partir do repositório recém-clonado
-- [ ] `pnpm test` verde, subindo instâncias efêmeras próprias de banco e fila e descartando-as sem resíduo
-- [ ] `verificar-fundacao.sh` verde
-- [ ] Recuperação após encerrar o processo do serviço de aplicação, provada
-- [ ] **Recuperação após reinício completo do servidor, provada — com o ambiente legado voltando sozinho junto**
-- [ ] `VERSAO-BANCO.md` registrado, antes de qualquer definição de estrutura de dados
-- [ ] Nenhuma credencial em arquivo versionado
-- [ ] Nenhuma alteração no ambiente legado além da janela combinada
+- [x] Todas as 7 tasks concluídas — todas aprovadas nos dois gates
+- [x] Os 16 critérios de aceite do scope (CA-1 a CA-16) verificados
+- [x] `pnpm build` e `pnpm lint` limpos a partir do repositório recém-clonado — CT-001 de `verificar-workspace`, em clone efêmero do HEAD
+- [x] `pnpm test` verde, subindo instâncias efêmeras próprias de banco e fila e descartando-as sem resíduo — **115 casos**
+- [x] `verificar-fundacao.sh` verde — **7/7 casos, código 0**
+- [x] Recuperação após encerrar o processo do serviço de aplicação, provada — CT-002, com `NRestarts == N+1` e 30 s de espera para descartar laço
+- [x] **Recuperação após reinício completo do servidor, provada** — CT-006, **reinício real em 2026-08-01T19:02:43**; as 45 unidades do retrato voltaram, inclusive as seis do ambiente legado, e a tarefa enfileirada antes do reinício foi consumida com o mesmo identificador
+- [x] `VERSAO-BANCO.md` registrado, antes de qualquer definição de estrutura de dados — CA-14 fechada com apuração privilegiada
+- [x] Nenhuma credencial em arquivo versionado — CT-005, com prova de falsificação por agulha plantada
+- [x] Nenhuma alteração no ambiente legado além da janela combinada — CT-005 do provisionamento: 39 unidades e 24 portas conferidas, nenhuma alterada
 
 ---
 
