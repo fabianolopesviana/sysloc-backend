@@ -168,6 +168,12 @@ readonly LIMITE_CONSUMO_TAREFA_MS=20000
 # CT-006: quanto o servidor inteiro tem para convergir depois do boot.
 readonly LIMITE_RETORNO_APOS_REINICIO_S=300
 
+# CT-006, ponta (c): quanto uma unidade ATIVADA SOB DEMANDA tem para chegar a
+# `active` depois de o nome D-Bus dela ser acionado. É um limite curto de
+# propósito — o barramento já devolveu a resposta da ativação quando a sondagem
+# começa, e o que resta é o supervisor terminar a partida.
+readonly LIMITE_ATIVACAO_SOB_DEMANDA_S=30
+
 # Teto para cada consulta HTTP às rotas de saúde e ao contrato.
 readonly LIMITE_HTTP_S=10
 
@@ -1815,6 +1821,100 @@ ct_006_preparar() {
 	printf '        console: systemctl disable --now %s %s\n' "${UNIDADE_API}" "${UNIDADE_WORKER}"
 }
 
+# Pede ao barramento do sistema que ative um nome. É o MESMO caminho que qualquer
+# consumidor percorre ao falar com o serviço — e NÃO um comando de partida: quem
+# resolve o nome pelo arquivo de ativação e entrega a partida ao supervisor é o
+# próprio barramento. Não altera estado de unidade nenhuma além da que o nome
+# mapeia, e é idempotente (nome já servido devolve "já em execução").
+#
+# O tempo de espera da resposta é derivado da constante nomeada, nunca fixado
+# aqui: sem `--reply-timeout` a chamada herdaria o padrão da ferramenta e poderia
+# ficar pendurada além do limite que este caso declara.
+acionar_nome_dbus() {
+	dbus-send --system --print-reply \
+		--reply-timeout="$((LIMITE_ATIVACAO_SOB_DEMANDA_S * 1000))" \
+		--dest=org.freedesktop.DBus /org/freedesktop/DBus \
+		org.freedesktop.DBus.StartServiceByName "string:$1" uint32:0 >/dev/null 2>&1
+}
+
+# DECISÃO FECHADA — T7 / execução da janela de indisponibilidade · 2026-08-01
+# O QUÊ: unidade do retrato que esteja inativa e seja `Type=dbus` NÃO é isentada
+#        nem pulada — ela tem o nome D-Bus acionado, e a asserção passa a ser que
+#        ela chega a `active` dentro de LIMITE_ATIVACAO_SOB_DEMANDA_S.
+# POR QUÊ: a janela real de 2026-08-01 reprovou por `polkit.service`, que é
+#          ativado sob demanda (`Type=dbus`, `BusName=org.freedesktop.PolicyKit1`,
+#          `static`): antes do reinício ele estava de pé só porque a bateria
+#          acabara de rodar dezenas de `systemctl`, que passam por ele. O sistema
+#          estava correto; a asserção é que classificava toda unidade do retrato
+#          como persistente. A saída óbvia — isentar unidade inativa, ou pular
+#          `Type=dbus` — foi DESCARTADA: um polkit genuinamente quebrado
+#          (mascarado, arquivo de ativação removido) passaria a passar, e a ponta
+#          (c) perderia exatamente o poder que existe para ter. Acionar prova o
+#          que a CA-9 pede — que a unidade volta — pelo ciclo de vida real dela.
+# REVERTER EXIGE: provar que nenhuma unidade do retrato é ativada sob demanda, ou
+#                 exibir um critério que discrimine "sob demanda" de "persistente"
+#                 sem depender de acionamento — e demonstrar, com falsificação,
+#                 que o critério novo ainda reprova unidade mascarada e unidade
+#                 sem caminho de ativação.
+#
+# Veredito da ponta (c) do CT-006 para UMA unidade do retrato pré-reinício.
+# O motivo/diagnóstico sai pela saída padrão; o veredito, pelo código de retorno:
+#
+#   0  a unidade está `active` — voltou sozinha, nada a relatar
+#   2  a unidade é ativada sob demanda, estava ociosa, e VOLTOU ao ser acionada
+#   1  a unidade NÃO voltou — o motivo nomeia a unidade individualmente
+veredito_da_unidade_do_retrato() {
+	local unidade="$1" tipo nome_dbus
+
+	if unidade_ativa "${unidade}"; then
+		return 0
+	fi
+
+	# `Type=dbus` é o critério que discrimina — não "declara BusName", não é
+	# "static": `systemd-logind`, `systemd-networkd` e `systemd-resolved` casam
+	# esses dois filtros largos e são persistentes.
+	tipo="$(propriedade_da_unidade "${unidade}" Type)"
+	if [[ "${tipo}" != "dbus" ]]; then
+		printf 'unidade do retrato pré-reinício não voltou: %s — obtido [%s]' \
+			"${unidade}" "$(systemctl is-active "${unidade}" 2>/dev/null || true)"
+		return 1
+	fi
+
+	nome_dbus="$(propriedade_da_unidade "${unidade}" BusName)"
+	if [[ -z "${nome_dbus}" ]]; then
+		printf 'unidade do retrato pré-reinício não voltou: %s — é Type=dbus e não declara BusName legível, e sem o nome não existe caminho de ativação para exercitar — obtido [%s]' \
+			"${unidade}" "$(systemctl is-active "${unidade}" 2>/dev/null || true)"
+		return 1
+	fi
+
+	# Ferramenta ausente NUNCA faz o caso passar em silêncio: sem ela o retorno da
+	# unidade não pode ser provado, e o que não se prova reprova.
+	if ! command -v dbus-send >/dev/null 2>&1; then
+		printf 'unidade do retrato pré-reinício não voltou: %s — é ativada sob demanda (Type=dbus, %s), mas `dbus-send` não está no PATH e o acionamento não pôde ser exercitado — obtido [%s]' \
+			"${unidade}" "${nome_dbus}" \
+			"$(systemctl is-active "${unidade}" 2>/dev/null || true)"
+		return 1
+	fi
+
+	if ! acionar_nome_dbus "${nome_dbus}"; then
+		printf 'unidade do retrato pré-reinício não voltou: %s — o barramento RECUSOU ativar %s (nome sem arquivo de ativação, unidade mascarada, ou partida recusada) — obtido [%s]' \
+			"${unidade}" "${nome_dbus}" \
+			"$(systemctl is-active "${unidade}" 2>/dev/null || true)"
+		return 1
+	fi
+
+	if ! sondar_ate "${LIMITE_ATIVACAO_SOB_DEMANDA_S}" unidade_ativa "${unidade}"; then
+		printf 'unidade do retrato pré-reinício não voltou: %s — acionar %s não a trouxe a active em %ss — obtido [%s]' \
+			"${unidade}" "${nome_dbus}" "${LIMITE_ATIVACAO_SOB_DEMANDA_S}" \
+			"$(systemctl is-active "${unidade}" 2>/dev/null || true)"
+		return 1
+	fi
+
+	printf '%s estava ociosa por ser ativada sob demanda (Type=dbus, %s) — acionada pelo barramento, voltou a active' \
+		"${unidade}" "${nome_dbus}"
+	return 2
+}
+
 ct_006_conferir() {
 	caso "CT-006" "Após reinício completo do servidor, a base nova e o ambiente legado voltam sozinhos"
 
@@ -1866,17 +1966,30 @@ ct_006_conferir() {
 	# Inclui o ambiente legado (docker, mysql, clp-nginx, clp-php-fpm, memcached,
 	# containerd e o que mais estivesse de pé). Mensagem agregada reprovaria o
 	# próprio propósito do caso: saber QUAL não voltou.
-	local caidas=0 total=0
+	#
+	# O veredito por unidade está em `veredito_da_unidade_do_retrato`, junto do
+	# marcador DECISÃO FECHADA que explica por que a unidade ativada sob demanda é
+	# ACIONADA em vez de isentada. Aqui fica só a contabilidade.
+	local caidas=0 total=0 sob_demanda=0 motivo codigo
 	while IFS= read -r unidade; do
 		[[ -n "${unidade}" ]] || continue
 		total=$((total + 1))
-		if ! unidade_ativa "${unidade}"; then
-			falhar "(c) unidade do retrato pré-reinício não voltou: ${unidade} — obtido [$(systemctl is-active "${unidade}" 2>/dev/null || true)]"
+		codigo=0
+		motivo="$(veredito_da_unidade_do_retrato "${unidade}")" || codigo=$?
+		case "${codigo}" in
+		0) ;;
+		2)
+			sob_demanda=$((sob_demanda + 1))
+			nota "(c) ${motivo}"
+			;;
+		*)
+			falhar "(c) ${motivo}"
 			caidas=$((caidas + 1))
-		fi
+			;;
+		esac
 	done <"${DIR_REINICIO}/unidades-ativas.txt"
 	if [[ "${caidas}" -eq 0 ]]; then
-		ok "(c) as ${total} unidades que estavam em execução antes do reinício voltaram sozinhas"
+		ok "(c) as ${total} unidades que estavam em execução antes do reinício voltaram sozinhas (${sob_demanda} delas ativadas sob demanda, acionadas e de volta)"
 	fi
 
 	# --- (d) nenhuma unidade em estado de falha ------------------------------ #
