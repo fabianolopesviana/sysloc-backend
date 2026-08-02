@@ -34,6 +34,12 @@ SaaS multi-empresa de gestão de locação de imóveis. Backend em Node/NestJS/P
 >    remove sem escalar ao usuário. Apagar o marcador é violação crítica.
 > 4. **Nunca** enfraquecer, remover ou pular teste, afrouxar asserção, ou tirar validação, guarda,
 >    timeout, tratamento de erro ou redação de segredo que você não introduziu.
+>
+> **Fronteira**: **aqui só se faz backend.** Nenhum agente deste repositório escreve, edita ou
+> planeja código de frontend — o fonte do React vive na máquina local do usuário e será
+> implementado lá, por outro agente, a partir do handoff que esta base produz. Decisão do usuário,
+> sem negociação. O ponto exato onde o trabalho daqui termina está definido logo abaixo, e é
+> **gatilho de parada**: task que peça implementação de frontend, **PARE e escale**.
 
 ---
 
@@ -47,6 +53,48 @@ trabalho) e **T7** (unidades systemd e prova de recuperação por reinício real
 
 > Mantenha este bloco atualizado — ele é lido por todo subagente, e um estado errado aqui chega a
 > todos eles antes de qualquer arquivo do repositório.
+
+---
+
+## O ponto exato onde o trabalho deste repositório termina
+
+**MARCO DE ENTREGA DO BACKEND.** Alcançado o marco, gera-se o handoff e **encerra-se a construção
+aqui**. É a materialização da **Fronteira** declarada no topo, e a lista abaixo é a definição
+operacional dela — não uma meta aproximada.
+
+O marco está alcançado quando **todos** os sete itens forem verdadeiros:
+
+- [ ] **F1 a F5 concluídas** — todas as tasks aprovadas nos dois gates, suíte verde, critérios de
+      aceitação de cada fatia verificados
+- [ ] **Superfície da API congelada** — nenhuma fatia posterior acrescenta, remove ou altera rota;
+      o congelamento é o que torna o handoff confiável
+- [ ] **`@sysloc/contracts` publicado** no GitHub privado e versionado — é o artefato que o React
+      importa para trocar tipos e cliente ts-rest
+- [ ] **`handoff-frontend.md` gerado** por `/agent-spec-backend-contract-handoff`, carregando o
+      modelo de domínio camelCase, o envelope de erro da ADR-0007, a autenticação por sessão, o
+      objeto de sessão gorda com `versao_permissoes`, e o **mapa endpoint-a-endpoint** ligando cada
+      um dos 35 caminhos ERPNext antigos (`levantamento-frontend.md`) à rota nova
+- [ ] **Backup e restauração entregues e provados** — item 1 da F7: `pg_dump -Fc`, segredos em tar,
+      `.pgpass` 0600, timer das 02:30, e **restauração conferida num banco vazio**
+- [ ] **`deploy/scripts/virada.md` escrito**, com o gate de desinstalação de 5 itens
+- [ ] **`/opt/frappe` intacto e de pé** — a virada não acontece neste marco
+
+### O que **não** se faz aqui, em nenhuma hipótese
+
+Nenhum código React. Nenhum arquivo na máquina local do usuário. Nenhum dos ~100 arquivos de
+religação, vazamento, fluxo ou teste que a F6 dimensiona. Os 4 specs Playwright **rodam na máquina
+local**, não aqui. Roteiro por arquivo do fonte React também não: **este servidor não tem o fonte**,
+e escrever sobre código que não se pode ler é adivinhação com aparência de spec.
+
+### O que fica para depois do marco
+
+A **execução** da virada e a **desinstalação** do Frappe. As duas só podem acontecer neste servidor
+— é onde o `/opt/frappe` e o CloudPanel existem —, e as duas exigem o frontend já funcionando, pois
+o primeiro critério de aceitação da F7 é *"app funcionando integralmente contra o backend novo"*.
+
+Serão uma **sessão operacional futura** neste servidor, conduzida pelo runbook, nos moldes da janela
+de reinício da F0: horas, não dias; operação, não construção. **Isso não reabre a construção do
+backend** — defeito encontrado na virada se corrige como correção, não como fatia nova.
 
 ---
 

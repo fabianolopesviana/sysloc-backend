@@ -60,8 +60,8 @@ da mesma feature*, não *próxima fase*.
 | F3 | `cobranca-mora-e-documentos/v1` | **SDD** | ciclo de cobrança, mora por empresa, régua, PDF de 752 linhas, carnê |
 | F4 | `integracao-bancaria-sicoob/v1` | **SDD** | mTLS, webhook, `seu_numero` único do SaaS; consome a ADR-0001 |
 | F5 | `automacoes-agendadas/v1` | **miniSpec** | porte com CA claros; o gatilho (systemd timers) já está decidido |
-| F6 | `frontend-religado/v1` | **handoff + spec executável** | o fonte do React não está neste servidor |
-| F7 | `virada-e-desinstalacao/v1` | **miniSpec** | backup/restore em TypeScript + checklist + desinstalação |
+| F6 | `frontend-religado/v1` | **só handoff** (revisão 3) | o fonte do React não está neste servidor; a implementação inteira sai deste repositório |
+| F7 | `virada-e-desinstalacao/v1` | **miniSpec, partida em duas** (revisão 3) | backup/restore e runbook entram no marco de entrega; virada e desinstalação viram sessão operacional futura |
 
 O peso de cada fatia é **proposta, não decreto**: ao iniciar uma delas, roda-se um pré-refinamento
 curto que recalcula amplitude/personas/novidade com o que já foi construído e pode promover ou
@@ -324,6 +324,22 @@ B · rotina parada gera alerta · instalador roda duas vezes sem duplicar entrad
 > verificação. A execução acontece na máquina local. Reavaliar depois do handoff se vale virar um
 > projeto agent-spec próprio no repositório do React.
 
+> **Recorte fechado na revisão 3.** A "especificação executável por arquivo" **sai do escopo deste
+> repositório**. O que este servidor entrega é o **contrato mais o mapa de migração**: o
+> `handoff-frontend.md` com modelo de domínio camelCase, envelope de erro da ADR-0007, autenticação
+> por sessão e objeto de sessão gorda, somado ao **mapa endpoint-a-endpoint** dos 35 caminhos
+> ERPNext (§ do `levantamento-frontend.md`) para as rotas novas — tudo derivável do que existe aqui.
+>
+> **Por que o roteiro por arquivo cai**: escrevê-lo exigiria ler os ~100 arquivos do React, e este
+> servidor **não tem o fonte**. O que sairia seria um roteiro plausível redigido sobre um inventário,
+> não sobre o código — e o agente local teria de conferir arquivo por arquivo de qualquer forma,
+> agora com o risco extra de um roteiro desatualizado parecer autoridade. O agente da máquina local
+> lê o fonte e planeja a implementação em cima do contrato.
+>
+> Os itens 1 a 6 abaixo permanecem como **descrição do trabalho a ser feito na máquina local** —
+> são a entrada do agente de lá, não tarefa daqui. A aceitação (os 4 specs Playwright) é verificada
+> lá pelo mesmo motivo.
+
 Dimensionado pelo relatório do frontend: **~24 arquivos de religação mecânica + ~12 de refatoração
 de vazamento + 10 fluxos redesenhados + 67 arquivos de teste com fixtures novas**.
 
@@ -346,6 +362,24 @@ de vazamento + 10 fluxos redesenhados + 67 arquivos de teste com fixtures novas*
 ---
 
 ## F7 — Virada e desinstalação
+
+> **Partida em duas na revisão 3.** Os quatro itens abaixo não caem do mesmo lado da fronteira do
+> `CLAUDE.md`, e tratá-los como uma fatia só esconde uma dependência que não se pode dissolver.
+>
+> **Entram no marco de entrega do backend** (construção, sem depender de frontend algum): o **item 1
+> inteiro** — backup/restore, `.pgpass`, timer das 02:30 e a prova de restauração num banco vazio —
+> e a **redação** do `deploy/scripts/virada.md` com o gate de desinstalação. O item 2 não é trabalho:
+> não há migração de dados.
+>
+> **Ficam para uma sessão operacional futura neste servidor**: a **execução** da virada (item 3) e a
+> **desinstalação** (item 4). O motivo é o primeiro critério de aceitação desta própria fase —
+> *"app funcionando integralmente contra o backend novo"* —, que só é verificável com o frontend
+> pronto, e o frontend é implementado fora daqui. As duas exigem este servidor, porque é onde o
+> `/opt/frappe` e o CloudPanel existem.
+>
+> Essa sessão é **operação, não construção**: horas, não dias, nos moldes da janela de reinício da
+> F0 — o agente conduz pelo runbook e o operador executa. Defeito encontrado nela se corrige como
+> correção; **não reabre a construção do backend**.
 
 1. **Backup/restore novos**: `pg_dump -Fc` + tar dos segredos → `/opt/backups/sysloc/daily/`,
    autenticação por `.pgpass` 0600 (**nenhuma senha em script versionado** — corrige o achado 7 do
