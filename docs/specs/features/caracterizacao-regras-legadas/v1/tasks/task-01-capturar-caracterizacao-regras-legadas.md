@@ -18,7 +18,7 @@
 - **Símbolos consumidos de outras tasks**: N/A — card única
 - **Relacionados**:
   - `docs/specs/features/backend-nativo-sysloc/v1/pre-refinement.md` — ramos B (antecipação) e D (ampliação D1+)
-  - `docs/specs/features/saas-multi-empresa/v1/tasks/T4.md` — especificação original (backend Frappe), da qual esta task herda metragem e PDF
+  - _(a especificação original de metragem e PDF vinha da T4 do plano Frappe `saas-multi-empresa`, **excluído do repositório em 2026-08-01**; o que esta task herdava dela já está absorvido e ampliado aqui — ver §6.4, AC-2 e §7)_
   - `docs/plano-backend-novo/plano-execucao.md` — § Caracterização e § F7 (gate de desinstalação)
 
 ---
@@ -105,7 +105,7 @@ Legenda: `[N]` Novo &nbsp; `[M]` Modificado &nbsp; `[R]` Referência
 - `/opt/frappe/app-sync/locacao_automation/locacao_automation/cobranca_atraso/service.py` — 151 LOC. `_calcular_mora()` é declarada no próprio código como *"Funcao PURA (sem acesso a banco): recalculavel e idempotente"*; `atualizar_atrasos_cobrancas()` é o wrapper que lê a config `Atraso` e persiste. É o wrapper que não tem cobertura.
 - `/opt/frappe/app-sync/locacao_automation/locacao_automation/tests/test_cobranca_atraso.py` — 122 LOC. `TestCalcularMora` traz os **6 casos canônicos a portar**: exemplo canônico 2074,67 · juros de um mês igual à taxa mensal · juros lineares sem composição · juros não incidem sobre a multa · multa única independe dos dias · total é a soma das partes.
 - `/opt/frappe/docker-compose.yaml` — serviço `backend` (onde o bench roda) e a chave `MYSQL_ROOT_PASSWORD` no serviço `db`, necessária ao `bench new-site`. **Ler a chave do arquivo em runtime; nunca copiar o valor para código, log ou artefato versionado.**
-- `docs/specs/features/saas-multi-empresa/v1/tasks/T4.md` — especificação original de metragem e PDF; §3 fixa a forma de cada caracterização por natureza da regra.
+- _(a T4 do plano Frappe `saas-multi-empresa` fixava a forma de cada caracterização por natureza da regra — valor versionado para regra de agregação, texto extraído para regra que gera documento. O plano foi **excluído do repositório em 2026-08-01**; as duas formas estão fixadas aqui, na §6.4 e no AC-2, e não dependem mais dele.)_
 - `docs/adr/0006-ambiente-de-verificacao-separado-do-que-atende-a-operacao.md` — a decisão que obriga o site efêmero.
 
 ### 5.2 Arquivos a Criar

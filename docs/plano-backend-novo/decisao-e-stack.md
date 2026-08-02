@@ -34,9 +34,10 @@ Requisitos declarados pelo usuário, literalmente:
   token, sem sessão. Todo tráfego real usa **uma credencial de serviço compartilhada**, embutida
   no bundle público. O backend nunca soube quem está agindo. **Multi-tenancy é impossível sobre
   essa fundação** — o trabalho de reconstruir auth é pago nos dois caminhos.
-- A `saas-multi-empresa/v1` (10 tasks) existe apenas para tornar o metadado do Frappe
-  versionável. Após 2 tasks concluídas (uma parcial) e **9 rodadas de gate só na T1**, ela ainda
-  não termina — e não entrega multi-tenancy.
+- O refactory `saas-multi-empresa` (10 tasks) existia apenas para tornar o metadado do Frappe
+  versionável. Após 2 tasks concluídas (uma parcial) e **9 rodadas de gate só na T1**, não
+  terminou — e não entregava multi-tenancy. _(Abandonado, e excluído do repositório em
+  2026-08-01 — ver §9.)_
 - `bench migrate` pode **apagar silenciosamente a definição** dos cadastros por erro no nome
   derivado da classe do controller (`Verificar scheduler` → `Verificarscheduler`), saindo com
   exit 0.
@@ -51,8 +52,7 @@ Requisitos declarados pelo usuário, literalmente:
 |---|---|
 | `.claude/plans/plano-saas.md` (464 linhas) | Plano mestre: Parte 0 (espec. geral), Parte 1 (backend, F0–F8), Parte 2 (frontend) |
 | `.claude/plans/plano-saas-decisoes.md` (424 linhas) | **As 40 decisões fechadas**, com o histórico das 10 rodadas |
-| `docs/specs/features/saas-multi-empresa/v1/pre-refinement.md` | Tree-of-Thought, fatiamento A2/B3/C2/D1+D3/E2 |
-| `docs/prds/.../saas-multi-empresa/v1/prd.md` | 8 US, 11 CA |
+| ~~pré-refinamento e PRD do refactory Frappe~~ | Tree-of-Thought (fatiamento A2/B3/C2/D1+D3/E2), 8 US e 11 CA — **excluídos do repositório em 2026-08-01** (§9); o que sobreviveu está aqui e no `plano-execucao.md` |
 | `docs/adr/0001..0006` | ADRs (ver §6 — quais sobrevivem) |
 | Relatório do frontend (produzido pelo agente na máquina local do usuário) | 25.566 LOC TS, 22 páginas, inventário completo dos 35 endpoints, 15 arquivos com vazamento do Frappe |
 
@@ -282,25 +282,24 @@ docs/prds/ · docs/specs/                 ← PRDs, tech specs, pré-refinamento
 
 ---
 
-## 9. Estado do run interrompido (`saas-multi-empresa/v1`)
+## 9. O plano Frappe abandonado (`saas-multi-empresa`) — excluído do repositório
 
-O run da skill `/agent-spec-sdd-run-tasks` foi **interrompido pelo usuário** no meio da T1.
+O refactory sobre o Frappe existia para versionar o metadado do Frappe. Ele foi **abandonado com
+a decisão deste documento** e, em **2026-08-01, excluído por completo do repositório** — os três
+diretórios de spec (`v1`, `v2-debits`, `v3-debits`) e o PRD correspondente, por decisão do
+usuário: *plano legado sobre um backend que morre, que só pode contaminar o trabalho novo*. A
+exclusão foi por commit, sem reescrita de histórico; quem precisar do conteúdo o encontra no
+histórico do git.
 
-- **T1** — reaberta por decisão do usuário (contador zerado), executor rodou 2 vezes.
-  Rodada 1: QA `APROVADO_COM_OBSERVACOES` (7/7), Tech Review **REJEITADO** (1 CRÍTICO
-  `architecture`, 1 ALTO, 1 MÉDIO, 2 baixos). Rodada 2: executor corrigiu; **o Gate 1 foi
-  interrompido antes de emitir veredito.** `T1.md` está em 1169 linhas.
-- **Nada foi commitado.** Todo o trabalho está no working tree como *intent-to-add*.
-  `base_sha = 5a4e5197ee1d4e1cd262b6886c054ddf9a0da9b2` (HEAD inalterado).
-- Memória lazy preservada em `docs/specs/features/saas-multi-empresa/v1/_run/tmp/T1.md`;
-  telemetria completa em `_run/workflow-report.md`.
+**Nada dele foi perdido de valor.** O único ativo que sobrevivia à decisão era a caracterização
+das regras de negócio com o original ainda ativo, e ela já foi **capturada e concluída** na fatia
+`caracterizacao-regras-legadas/v1`, cujos 6 artefatos golden estão versionados em
+`docs/specs/features/caracterizacao-regras-legadas/v1/golden/`. É ela a especificação executável
+do que portar e a prova de equivalência do gerador de contrato de 752 linhas.
 
-**Com a decisão de abandonar o Frappe, a v1 inteira (T1, T2, T3, T5, T6, T7, T10) perde
-propósito** — ela existe para versionar metadado do Frappe. A exceção é a **T4**
-(capturar as caracterizações das 6 regras de negócio com o original ainda ativo): o valor dela
-**sobrevive à decisão** — vira a especificação executável do que portar e a prova de
-equivalência do gerador de contrato de 752 linhas. Recomendação registrada: rodar a T4 antes de
-desligar o Frappe.
+O que o run abandonado deixou como lição — e que continua valendo — está registrado na §1: 9
+rodadas de gate numa única task, sem entregar multi-tenancy, foi parte do argumento para trocar
+de fundação.
 
 ---
 

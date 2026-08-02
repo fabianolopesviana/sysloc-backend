@@ -339,9 +339,12 @@ raiz = Path(sys.argv[1])
 # diferente da listada também reprova:
 # é sinal de que a linha mudou e a baseline precisa ser reavaliada à mão.
 #
-# ATENÇÃO: `docs/specs/features/saas-multi-empresa/v1/tasks/T9.md` registra o valor
-# da credencial em texto claro. É exposição real, pré-existente e de outra feature —
-# fica documentada aqui, não silenciada.
+# ATENÇÃO: a `saas-multi-empresa` (plano Frappe abandonado) foi excluída da árvore em
+# 2026-08-01, e com ela as duas ocorrências da credencial em texto claro que este bloco
+# tolerava (`v1/tasks/T9.md:677` e `:932`). A exposição sai da árvore versionada, mas
+# **permanece no histórico do git** — a exclusão foi por commit, sem reescrita de
+# histórico. Rotacionar a credencial continua sendo a única correção real; segue como
+# pendência aberta no `CLAUDE.md`.
 PREEXISTENTES = {
     ".claude/skills/agent-spec-backend-contract-handoff/references/api-error-patterns.md:76",
     ".claude/skills/agent-spec-backend-contract-handoff/references/auth-and-permissions.md:51",
@@ -354,8 +357,6 @@ PREEXISTENTES = {
     "docs/specs/features/integracao-bancaria-configuravel/v1/handoff-frontend.md:659",
     "docs/specs/features/integracao-bancaria-configuravel/v1/handoff-frontend.md:1002",
     "docs/specs/features/integracao-bancaria-configuravel/v5/_run/rule-candidates.md:6",
-    "docs/specs/features/saas-multi-empresa/v1/tasks/T9.md:677",
-    "docs/specs/features/saas-multi-empresa/v1/tasks/T9.md:932",
 }
 
 agulha = sys.stdin.readline().rstrip("\n")

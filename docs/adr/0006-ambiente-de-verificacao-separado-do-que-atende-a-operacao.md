@@ -42,6 +42,6 @@ A suíte de verificação nunca executa contra o ambiente que atende a operaçã
 
 ## Applied in
 
-- `saas-multi-empresa (v1)` — docs/specs/features/saas-multi-empresa/v1/tech-alignment.md (decisão D5)
+- `saas-multi-empresa (v1)` — decisão D5 do tech-alignment daquela feature. **A feature foi excluída do repositório em 2026-08-01** (plano Frappe abandonado — ver `docs/plano-backend-novo/decisao-e-stack.md` §9); o registro de aplicação fica, o caminho não existe mais. **A decisão desta ADR segue ativa e inalterada.**
 - `fundacao-stack-nativa (v1)` — docs/specs/features/fundacao-stack-nativa/v1/tasks/T2.md (guarda `recusar_bateria_em_producao` + marcador `/etc/sysloc/producao`; a criação do marcador é item do gate de desinstalação da §F7 do plano de execução)
 - `fundacao-stack-nativa (v1)` — docs/specs/features/fundacao-stack-nativa/v1/tasks/T4.md (materialização: instâncias efêmeras próprias de banco e fila, `embedded-postgres`)

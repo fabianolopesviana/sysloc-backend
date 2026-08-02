@@ -42,4 +42,4 @@ Toda rotina operacional agendada — a definição de agendamento e os scripts q
 
 ## Applied in
 
-- `saas-multi-empresa (v1)` — docs/specs/features/saas-multi-empresa/v1/tech-alignment.md (decisão D3)
+- `saas-multi-empresa (v1)` — decisão D3 do tech-alignment daquela feature. **A feature foi excluída do repositório em 2026-08-01** (plano Frappe abandonado — ver `docs/plano-backend-novo/decisao-e-stack.md` §9); o registro de aplicação fica, o caminho não existe mais.

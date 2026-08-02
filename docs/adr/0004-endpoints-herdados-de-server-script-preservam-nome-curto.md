@@ -41,5 +41,5 @@ Os quatro endpoints herdados de Server Script preservam seus nomes curtos após 
 
 ## Applied in
 
-- `saas-multi-empresa (v1)` — docs/specs/features/saas-multi-empresa/v1/pre-refinement.md (seção 12.1.A)
+- `saas-multi-empresa (v1)` — seção 12.1.A do pré-refinamento daquela feature. **A feature foi excluída do repositório em 2026-08-01** (plano Frappe abandonado — ver `docs/plano-backend-novo/decisao-e-stack.md` §9); o registro de aplicação fica, o caminho não existe mais.
 - `contencao-credencial-exposta (v1)` — docs/specs/features/contencao-credencial-exposta/v1/tasks/task-01-contencao-credencial-exposta.md (allowlist do nginx cujos paths esta decisão preserva)

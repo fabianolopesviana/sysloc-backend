@@ -22,7 +22,7 @@
   - `docs/plano-backend-novo/decisao-e-stack.md` · `docs/plano-backend-novo/plano-execucao.md` · `docs/plano-backend-novo/levantamento-frontend.md`
   - `.claude/plans/plano-saas.md` · `.claude/plans/plano-saas-decisoes.md`
   - `docs/adr/0001-modelo-canonico-cobranca-bancaria-adaptador-por-provedor.md` (sobrevive inteira)
-  - **Histórico Frappe, não estado atual**: `docs/specs/features/{saas-multi-empresa, integracao-bancaria-configuravel, contencao-credencial-exposta}` e `docs/prds/features/*`
+  - **Histórico Frappe, não estado atual**: `docs/specs/features/{integracao-bancaria-configuravel, contencao-credencial-exposta}` e `docs/prds/features/*` _(a `saas-multi-empresa` também constava aqui; foi **excluída do repositório em 2026-08-01** — ver `decisao-e-stack.md` §9)_
 
 > **Escopo deste brainstorm**: o discovery de **produto** já estava resolvido (40 decisões fechadas + plano mestre). O que foi explorado aqui é **como entregar** — o recorte em features do agent-spec, a ordem, o peso do processo, a prova de equivalência e a virada.
 
@@ -69,7 +69,7 @@ Substituir integralmente o backend Frappe/ERPNext do sistema de locação de im�
     frontend-religado/v1                 (F6)
     virada-e-desinstalacao/v1            (F7)
     ```
-  - _Viabilidade:_ uso canônico do framework. Cada fatia cabe num pipeline completo, tem CA próprios e `_run/` coerente. Nomes de capacidade sobrevivem a reordenação. Nenhum colide com as três features Frappe existentes — por isso `fundacao-multitenancy-identidade` e não `saas-multi-empresa v2`. A cola cross-feature já existe: `docs/specs/domain-glossary.md` (global), as 40 decisões e as ADRs.
+  - _Viabilidade:_ uso canônico do framework. Cada fatia cabe num pipeline completo, tem CA próprios e `_run/` coerente. Nomes de capacidade sobrevivem a reordenação. Nenhum colide com as features Frappe que existiam à época deste brainstorm — por isso `fundacao-multitenancy-identidade` e não uma `v2` do refactory Frappe (que veio a ser excluído do repositório em 2026-08-01). A cola cross-feature já existe: `docs/specs/domain-glossary.md` (global), as 40 decisões e as ADRs.
 
 - **A3 — Por capacidade de domínio, ignorando as fases**: `multi-tenancy`, `identidade`, `cadastro-imobiliario`, `cobranca`, `banking`; a infra sai do framework.
   - _Exemplo:_ F0 (PostgreSQL, Redis, systemd, `reboot`) viraria `deploy/CHECKLIST-INFRA.md`, sem pipeline nem gates.
@@ -185,7 +185,7 @@ Substituir integralmente o backend Frappe/ERPNext do sistema de locação de im�
 ## 5. Problema
 
 - **Qual é a dor real hoje?** O backend Frappe/ERPNext não tem fundação para o que o produto precisa ser. **Não existe autenticação de usuário**: `isSignedIn()` é `localStorage.getItem('usuario') !== null`, e todo o tráfego real usa uma credencial de serviço compartilhada embutida no bundle público. O backend nunca soube quem está agindo — e sobre essa fundação **multi-tenancy é impossível**.
-- **Como o problema aparece no dia a dia?** 20 dos 22 DocTypes existem só no banco, sem `.json` versionado. `bench migrate` já apagou silenciosamente a definição de cadastros por erro no nome derivado da classe do controller, saindo com exit 0. A `saas-multi-empresa/v1` acumulou **9 rodadas de gate só na T1** e ainda não termina — e nem sequer entrega multi-tenancy. 10 fluxos do frontend foram desenhados em torno das limitações do Frappe (joins N+1 no cliente, transações multi-passo sem rollback na UI, `docstatus` como regra de negócio).
+- **Como o problema aparece no dia a dia?** 20 dos 22 DocTypes existem só no banco, sem `.json` versionado. `bench migrate` já apagou silenciosamente a definição de cadastros por erro no nome derivado da classe do controller, saindo com exit 0. O refactory Frappe acumulou **9 rodadas de gate só na T1** e nunca terminou — e nem sequer entregava multi-tenancy. 10 fluxos do frontend foram desenhados em torno das limitações do Frappe (joins N+1 no cliente, transações multi-passo sem rollback na UI, `docstatus` como regra de negócio).
 - **Quem sente o impacto?** O operador do SaaS (não consegue vender para uma segunda imobiliária), as imobiliárias clientes (dados sem isolamento provado), os locatários e locadores (dados pessoais sob uma credencial pública — LGPD) e o dev (todo trabalho de fundação é pago duas vezes).
 - **Por que resolver agora?** O trabalho de reconstruir autenticação é pago nos dois caminhos — permanecer no Frappe não o evita, só adia. A caracterização das regras legadas depende de um sistema que será desligado; adiar encarece.
 
@@ -248,7 +248,7 @@ Substituir integralmente o backend Frappe/ERPNext do sistema de locação de im�
 
 - **O que o projeto É** (`CLAUDE.md`): SaaS multi-empresa de gestão de locação de imóveis; backend Node/NestJS/PostgreSQL **nativo, sem Docker**; substitui integralmente o Frappe/ERPNext de `/opt/frappe`. Fase 0 não iniciada — `apps/` e `packages/` vazios; o repositório contém só os ativos de planejamento migrados.
 - **PRDs / specs existentes consultados** (`/docs/specs/**/*.md` + `/docs/prds/**/*.md`):
-  - `docs/specs/features/saas-multi-empresa/v1` (+ `docs/prds/.../saas-multi-empresa/v1/prd.md`, 8 US e 11 CA) — **histórico Frappe.** Existe para tornar o metadado do Frappe versionável; perde propósito com a decisão de abandonar o Frappe. **Exceção**: a `tasks/T4.md` (caracterização) sobrevive e vira a fatia `caracterizacao-regras-legadas/v1`.
+  - _o refactory Frappe (8 US, 11 CA) — **histórico Frappe.** Existia para tornar o metadado do Frappe versionável; perdeu propósito com a decisão de abandonar o Frappe e foi **excluído do repositório em 2026-08-01**. A **exceção** que este brainstorm identificou — a caracterização — sobreviveu e virou a fatia `caracterizacao-regras-legadas/v1`, já concluída._
   - `docs/specs/features/integracao-bancaria-configuravel/v1` (+ PRD) — **histórico Frappe.** Fonte de conhecimento de domínio para `integracao-bancaria-sicoob/v1`; a ADR-0001 é o elo vivo entre as duas.
   - `docs/specs/features/contencao-credencial-exposta/{v1, v2-debits, v3-debits}` — **histórico Frappe.** A credencial segue exposta enquanto o Frappe existir; pendência operacional, não fatia deste programa.
   - `docs/specs/domain-glossary.md` — glossário global; é a cola cross-feature das 9 fatias novas.

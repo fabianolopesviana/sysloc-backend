@@ -157,6 +157,19 @@ escrever a primeira migration).
 
 **É o ganho que justifica a troca total de backend.** Vem antes de qualquer entidade de negócio.
 
+> **Desdobrada em duas fatias** (pré-refinamento de 2026-08-01,
+> `docs/specs/features/fundacao-multitenancy-identidade/v1/pre-refinement.md`, ramo A / direção A3).
+> O corte **não** é isolamento × identidade — esse foi rebatido por atravessar a camada 5, cuja
+> fonte legítima de `empresa_id` é a sessão, o que obrigaria a inventar uma fonte provisória e
+> substituí-la depois (retrofit, contra o invariante 1). O corte é **depois da autenticação**:
+>
+> | Fatia | Itens desta seção | Framework |
+> |---|---|---|
+> | **`fundacao-multitenancy-identidade/v1`** | 1 a 8, mais os 3 perfis como rótulo (item 9 parcial) e a prova de que o Master vê vazio | SDD |
+> | **`autorizacao-e-ciclo-de-acesso/v1`** | 9 (matriz completa), 10, 11, 12, mais as rotas do Master para o ciclo de vida da empresa | SDD |
+>
+> Ao fim da **segunda** é que vale o *"o SaaS existe — vazio, mas completo"* do fim desta seção.
+
 ### Multi-tenancy
 
 1. `@sysloc/db`: `empresa`, `usuario`, `acesso_usuario_app`.
@@ -186,7 +199,11 @@ escrever a primeira migration).
    para Admin, trilha de auditoria de login.
 8. Perfis `Sysloc Master`, `Admin Empresa`, `Usuario Empresa`. O Master **não alcança dado de
    negócio por nenhum caminho** — e há teste que prova.
-9. Autorização própria em `@sysloc/auth`: matriz **10 telas × 7 ações sensíveis**.
+9. Autorização própria em `@sysloc/auth`: matriz **10 telas × 7 ações sensíveis**, com o **perfil
+   como default e ajuste por usuário** — a decisão 8 fecha *"3 perfis **+ permissões ajustáveis por
+   usuário**"*, e o efetivo de cada pessoa é o do perfil com os overrides dela aplicados. Isso
+   implica que `versao_permissoes` (item 10) muda também quando um override muda, não só quando
+   muda o perfil.
 10. **Objeto de sessão "gordo"** com empresa, perfil, telas e ações liberadas, mais
     `versao_permissoes` — o frontend detecta revogação sem esperar 8h.
 11. Onboarding com senha temporária e troca obrigatória; o Admin da empresa cria os demais pela
@@ -436,10 +453,11 @@ exclusão.
 ## Caracterização — primeira fatia a executar (revisão 2)
 
 **Roda contra o Frappe ainda vivo, somente leitura.** Vira a feature
-`caracterizacao-regras-legadas/v1` (TaskCard). Aproveita a **T4** da `saas-multi-empresa/v1`, já
-especificada em `docs/specs/features/saas-multi-empresa/v1/tasks/T4.md`.
+`caracterizacao-regras-legadas/v1` (TaskCard). O escopo abaixo veio da T4 do plano Frappe
+`saas-multi-empresa`, **excluído do repositório em 2026-08-01**; a especificação está integralmente
+absorvida em `docs/specs/features/caracterizacao-regras-legadas/v1/tasks/task-01-capturar-caracterizacao-regras-legadas.md`.
 
-**Escopo — o previsto na T4:**
+**Escopo:**
 
 - Regra de agregação (metragem): valor produzido para imóvel sem cômodo, com um, com vários, e com
   metragem nula em algum.

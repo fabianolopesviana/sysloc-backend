@@ -45,11 +45,22 @@ SaaS multi-empresa de gestão de locação de imóveis. Backend em Node/NestJS/P
 
 ## Estado atual
 
-**Fase 0 em execução** (fatia `fundacao-stack-nativa`, v1). Concluídas e commitadas: **T1**
-(monorepo e ferramental), **T2** (provisionamento dos serviços de base), **T3** (`packages/shared`
-— contrato de erro e registro estruturado) e **T4** (instâncias efêmeras de banco e fila, e apuração
-da versão do banco). Em andamento: **T5** (serviço de aplicação). Restam **T6** (processador de
-trabalho) e **T7** (unidades systemd e prova de recuperação por reinício real).
+**Fase 0 concluída e provada** (fatia `fundacao-stack-nativa`, v1) — as 7 tasks fechadas e
+commitadas, incluindo a **T7**, cuja recuperação foi provada por **reinício real** da máquina.
+A fatia `caracterizacao-regras-legadas` (v1) também está **concluída**: os 6 artefatos golden
+estão versionados e são o oráculo das regras legadas para a F3 e a F5.
+
+**Fase 1 em pré-refinamento** — `docs/specs/features/fundacao-multitenancy-identidade/v1/pre-refinement.md`.
+A F1 foi **desdobrada em duas fatias**, cortando *depois* da autenticação (o corte
+isolamento × identidade foi rebatido: ele atravessa a camada 5, e a fonte legítima do
+`empresa_id` é a sessão):
+
+1. **`fundacao-multitenancy-identidade` (v1)** — schema, RLS, FK composta, `SET LOCAL`,
+   `AsyncLocalStorage`+guard, teste-guarda, suíte de isolamento e `better-auth`. Ao fim dela dá
+   para logar e o isolamento está provado. **É a próxima a executar** (SDD).
+2. **`autorizacao-e-ciclo-de-acesso` (v1)** — matriz 10×7 com ajuste por usuário, sessão gorda com
+   `versao_permissoes`, invalidação de sessão por evento, onboarding com senha temporária e as
+   rotas do Master. Ganha pré-refinamento próprio na sua entrada.
 
 > Mantenha este bloco atualizado — ele é lido por todo subagente, e um estado errado aqui chega a
 > todos eles antes de qualquer arquivo do repositório.
@@ -234,8 +245,9 @@ exige (`.claude/rules/nao-regressao.md`, P1 e P5).
 (`docker compose exec -T backend bench --site frontend ...`), mas:
 
 - O site `frontend` é **produção**. Nada destrutivo.
-- A **caracterização das regras de negócio** (a T4, em
-  `docs/specs/features/saas-multi-empresa/v1/tasks/T4.md`) precisa rodar contra ele **antes da
-  F3** — é a prova de equivalência do gerador de contrato de 752 linhas.
+- A **caracterização das regras de negócio** (em
+  `docs/specs/features/caracterizacao-regras-legadas/v1/tasks/task-01-capturar-caracterizacao-regras-legadas.md`)
+  precisa rodar contra ele **antes da F3** — é a prova de equivalência do gerador de contrato de
+  752 linhas.
 - A credencial de API do ERPNext segue **exposta em texto claro** no bundle público da porta
   8300 enquanto ele existir. Pendência aberta.
