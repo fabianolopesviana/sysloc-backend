@@ -23,6 +23,7 @@
   - `docs/specs/features/fundacao-stack-nativa/v1/` — a F0, **concluída e provada** (7/7 tasks); é a base sobre a qual esta fatia nasce
   - _a tentativa desta mesma capacidade **no Frappe** (`saas-multi-empresa`) foi abandonada e **excluída do repositório em 2026-08-01**, por decisão do usuário: plano legado sobre um backend que morre só pode contaminar o trabalho novo. Ver `docs/plano-backend-novo/decisao-e-stack.md` §9_
   - `.claude/plans/plano-saas-decisoes.md` — decisões 2, 8, 11, 13, 14, 15, 16, 38, 39
+  - `docs/adr/0008-isolamento-multi-tenant-garantido-pelo-banco.md` — **ADR nascida deste pré-refinamento** (2026-08-01, `accepted`); fixa o tripé RLS + FK composta + `SET LOCAL` e é vinculante para esta fatia
   - `docs/adr/0006-ambiente-de-verificacao-separado-do-que-atende-a-operacao.md` — ADR ativa que a suíte de isolamento consome
   - `docs/adr/0007-forma-canonica-do-contrato-da-api.md` — ADR ativa que as rotas desta fatia consomem
 
@@ -226,7 +227,7 @@ Construir a fundação SaaS do backend nativo — isolamento entre empresas gara
   - **Persistência**: nenhuma ainda — não há schema, migration nem Drizzle no repositório. `@sysloc/db` **nasce nesta fatia**. A instância efêmera de teste (`embedded-postgres`) já existe, entregue pela T4 da F0.
   - **Autenticação / autorização**: **nenhuma**. `packages/shared/src/log.ts` já antecipa `better-auth` na redação de segredos, e é onde vive o débito **D25** — cujo gatilho é literalmente *"a fatia de autenticação entrar"*, ou seja, **esta**.
   - **Outros módulos internos**: `packages/shared` (contrato de erro `erros.ts`, registro estruturado `log.ts`, `ambiente.ts`), `apps/api` (NestJS+Fastify com `/health`, configuração, comum), `apps/worker` (BullMQ). `deploy/systemd/` com units e instalador idempotente.
-  - **ADRs ativas consumidas**: **ADR-0006** (a suíte de verificação nunca executa contra o ambiente que atende a operação — é o que a suíte de isolamento herda) e **ADR-0007** (forma canônica do contrato da API — vale para as rotas do Master e para o objeto de sessão).
+  - **ADRs ativas consumidas**: **ADR-0008** (isolamento multi-tenant garantido pelo banco — **nasceu desta fatia**, criada em 2026-08-01, e é vinculante para ela e para toda entidade de negócio das F2 a F5), **ADR-0006** (a suíte de verificação nunca executa contra o ambiente que atende a operação — é o que a suíte de isolamento herda) e **ADR-0007** (forma canônica do contrato da API — vale para as rotas do Master e para o objeto de sessão).
 - **Conflitos / sobreposições detectados**:
   - **Débito D25 dispara nesta fatia** — `packages/shared/src/log.ts` tem marcador `DÉBITO COM GATILHO` cujo gatilho é a entrada da autenticação: o `better-auth` trafega `token` e `callbackURL` em cadeia de consulta, e a redação atual não alcança esse formato. Entra como item de escopo da fatia 1.
   - **`CLAUDE.md` desatualizado** — o bloco "Estado atual" declara *"Em andamento: T5 … restam T6 e T7"*, mas a F0 está fechada (7/7, commit `9487c25`). Como esse bloco é lido por todo subagente antes de qualquer arquivo, corrigi-lo é pré-condição de iniciar a fatia. `[DÚVIDA 1]`
@@ -331,14 +332,17 @@ Dimensões avaliadas para a **fatia 1** (`fundacao-multitenancy-identidade/v1`),
 ### 15.4 Próximo Passo
 
 ```bash
-# 1. Registre a decisão arquitetural transversal ANTES do PRD:
-/agent-spec-adr-create "isolamento multi-tenant garantido pelo banco, nao pela aplicacao"
+# 1. ✅ FEITO em 2026-08-01 — a decisão arquitetural transversal virou a ADR-0008
+#    (docs/adr/0008-isolamento-multi-tenant-garantido-pelo-banco.md, accepted,
+#     tags architecture/security/data). Ela fixa o tripé — RLS com USING e WITH CHECK,
+#     FK composta (id, empresa_id) e SET LOCAL por transação — e registra que a camada
+#     de aplicação NÃO tem filtro por empresa equivalente: não há dois caminhos para o dado.
 
 # 2. Gere o PRD da fatia 1:
-/agent-spec-sdd-generate-prd "fundacao-multitenancy-identidade: isolamento por empresa garantido pelo banco (RLS com USING e WITH CHECK, FK composta, SET LOCAL por transacao, contexto em AsyncLocalStorage nunca lido do request) e identidade por sessao com better-auth (senha forte, lockout, sessao de 8h, 2FA obrigatorio para o Master), com os 3 perfis como rotulo e a prova de que o Master enxerga vazio"
+/agent-spec-sdd-generate-prd "fundacao-multitenancy-identidade: isolamento por empresa garantido pelo banco (RLS com USING e WITH CHECK, FK composta, SET LOCAL por transacao, contexto em AsyncLocalStorage nunca lido do request) e identidade por sessao com better-auth (senha forte, lockout, sessao de 8h, 2FA obrigatorio para o Master), com os 3 perfis como rotulo e a prova de que o Master enxerga vazio — consome a ADR-0008 (isolamento multi-tenant garantido pelo banco), que ja esta aceita e e vinculante para esta fatia"
 ```
 
-> Antes de qualquer um dos dois, resolva as dúvidas 1 e 2 da seção 13 — são correções de documento (`CLAUDE.md` e `plano-execucao.md`) que todo subagente lê antes de abrir arquivo.
+> As dúvidas 1 e 2 da seção 13 — correções no `CLAUDE.md` e no `plano-execucao.md`, que todo subagente lê antes de abrir arquivo — eram pré-condição do passo 2 e **já foram resolvidas em 2026-08-01**.
 >
 > A **fatia 2** entra depois, com pré-refinamento próprio (`/agent-spec-pre-refinement`) que reaproveita as direções B2, C2, D3+D2 e E1 já convergidas aqui.
 
