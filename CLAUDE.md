@@ -50,9 +50,10 @@ commitadas, incluindo a **T7**, cuja recuperação foi provada por **reinício r
 A fatia `caracterizacao-regras-legadas` (v1) também está **concluída**: os 6 artefatos golden
 estão versionados e são o oráculo das regras legadas para a F3 e a F5.
 
-A F1 foi **desdobrada em duas fatias**, cortando *depois* da autenticação (o corte
-isolamento × identidade foi rebatido: ele atravessa a camada 5, e a fonte legítima do `empresa_id`
-é a sessão). A primeira está fechada; a segunda é a próxima a executar:
+**Fase 1 EM ANDAMENTO — uma das duas fatias concluída.** A F1 foi **desdobrada em duas fatias**,
+cortando *depois* da autenticação (o corte isolamento × identidade foi rebatido: ele atravessa a
+camada 5, e a fonte legítima do `empresa_id` é a sessão). **Fatia concluída não é fase concluída**:
+a F1 só termina quando as duas fecharem.
 
 1. **`fundacao-multitenancy-identidade` (v1) — CONCLUÍDA e commitada.** As 11 tasks aprovadas nos
    dois gates. Dá para logar, e o isolamento entre empresas está provado: `empresa_id`, RLS
@@ -65,16 +66,22 @@ isolamento × identidade foi rebatido: ele atravessa a camada 5, e a fonte legí
    usuário, sessão gorda com `versao_permissoes`, invalidação de sessão por evento, onboarding com
    senha temporária e as rotas do Master. **Ganha pré-refinamento próprio na sua entrada.**
 
-**O que a F1 deixou aberto, e que a próxima sessão precisa saber** — os caminhos abaixo são
-relativos a `docs/specs/features/fundacao-multitenancy-identidade/v1/`:
+**O que a PRIMEIRA FATIA deixou aberto, e que a próxima sessão precisa saber** — os caminhos abaixo
+são relativos a `docs/specs/features/fundacao-multitenancy-identidade/v1/`:
 
-- **Baterias privilegiadas da T5 nunca executadas** (`CT-030`, `CT-031`, `CT-032`) — exigem `sudo`
-  interativo, que nenhum subagente roda. O agregador já as invoca:
-  `sudo bash deploy/scripts/instalacao/verificar-fundacao.sh`, com `pnpm build` antes. ⚠️ A primeira
-  execução reescreve o `pg_hba` e reinicia o cluster.
-- **`P-T6-1` e `P-T6-2`** (`tasks/T8.md` §7) seguem **abertos e sem dono**: o dono era a task de
-  fechamento da F1, e a intervenção não os cobriu. Exigem valor novo no enum `desfecho_tentativa`
-  mais uma migração `0003` — decisão registrada em `_run/workflow-report.md`, D-E3.
+- 🔴 **Baterias privilegiadas da T5 foram executadas pelo operador, e ao menos uma REPROVOU**
+  (`CT-030`, `CT-031`, `CT-032`). **É achado, não escrituração**: são as verificações de
+  infraestrutura contra o cluster real — papéis, propriedade dos schemas, cobertura de RLS e higiene
+  da credencial —, e a suíte automatizada não as substitui, porque roda contra instância efêmera
+  (ADR-0006). **O desfecho por caso ainda não está registrado em lugar nenhum**, e enquanto não
+  estiver, o que a fatia provou sobre o cluster que opera é desconhecido. Reexecução:
+  `sudo bash deploy/scripts/instalacao/verificar-fundacao.sh`, com `pnpm build` antes — o agregador
+  agora invoca as quatro baterias de uma vez. ⚠️ A execução reescreve o `pg_hba` e reinicia o
+  cluster.
+- **`P-T6-1` e `P-T6-2`** (`tasks/T8.md` §7) seguem **abertos e sem dono**: o dono era a "task de
+  fechamento da F1" — expressão que os artefatos da fatia usam para dizer *fechamento desta fatia*,
+  e não da fase —, e a intervenção não os cobriu. Exigem valor novo no enum `desfecho_tentativa`
+  mais uma migração `0003`; decisão registrada em `_run/workflow-report.md`, D-E3.
 - **As seis rotas de `/v1/auth` fora do documento OpenAPI** — dono precisado no código: a
   publicação do `@sysloc/contracts`, não uma task genérica.
 - **15 débitos abertos** na §2 do `_run/run-report.md` da fatia, cada um com razão registrada.

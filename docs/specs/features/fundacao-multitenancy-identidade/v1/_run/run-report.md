@@ -330,10 +330,21 @@ O que a intervenção entregou além da escrituração:
    no documento OpenAPI, cujo dono foi precisado no código: a **publicação do `@sysloc/contracts`**,
    porque declará-las antes produziria contrato que o congelamento reescreveria.
 
-**Continuam abertos e precisam de operador**: as baterias privilegiadas da T5 (`CT-030`, `CT-031`,
-`CT-032`) seguem **não executadas** — exigem `sudo` interativo. Agora que o agregador as invoca, o
-comando é um só: `sudo bash deploy/scripts/instalacao/verificar-fundacao.sh` (com `pnpm build` antes).
-⚠️ A primeira execução após a T5 reescreve o `pg_hba` e reinicia o cluster.
+🔴 **As baterias privilegiadas da T5 foram EXECUTADAS pelo operador, e ao menos uma REPROVOU.**
+Correção de fato registrada em 2026-08-02: a nota mais abaixo desta §4, escrita durante o run, diz
+que elas "não foram executadas" — era verdade quando o run fechou e **deixou de ser**. A intervenção
+de fechamento repetiu a afirmação vencida sem verificar, e isto a corrige.
+
+**É achado, não escrituração.** As três (`CT-030`, `CT-031`, `CT-032`) são a verificação de
+infraestrutura contra o **cluster real** — papéis, propriedade dos schemas, cobertura de RLS e
+higiene da credencial. A suíte automatizada não as substitui: ela roda contra instância efêmera por
+decisão da ADR-0006, e a §20 da tech spec registra a duplicação como deliberada justamente porque
+"a propriedade que interessa — o isolamento onde a operação acontece — só é observável ali".
+
+**O que falta para fechar**: o desfecho POR CASO não está registrado em lugar nenhum, e sem ele não
+se sabe o que a fatia provou sobre o cluster que opera. Reexecução:
+`sudo bash deploy/scripts/instalacao/verificar-fundacao.sh` (com `pnpm build` antes) — o agregador
+agora invoca as quatro baterias de uma vez. ⚠️ A execução reescreve o `pg_hba` e reinicia o cluster.
 
 **Também abertos, e fora do escopo desta intervenção**: `P-T6-1` e `P-T6-2` (§7 do card da T8) — o
 `ACESSO_RECUSADO` sobrecarregado exige valor novo no enum mais migração `0003`, e o blast radius
@@ -354,7 +365,9 @@ medido pela decisão D-E3 do `workflow-report.md` não cabia numa varredura de d
 
 **Pendências herdadas que ganharam dono explícito no card da T8** (§7, `P-T6-1` e `P-T6-2`), porque *"endereçar a pendência apenas na §7 do card de origem é pior que não registrá-la"*: o `ACESSO_RECUSADO` sobrecarregado (**a janela fecha na T7**, quando o volume nascer) e o limite de taxa/retenção de `tentativa_login` (vetor medido: e-mail cercado de espaços grava linha com `usuario_id` resolvido **sem pagar `scrypt`**).
 
-**A T5 tem baterias que exigem `sudo` interativo e não foram executadas** — `verificar-provisionamento.sh` (CT-030) e `verificar-migracao.sh` (CT-031, CT-032). É o papel do gate, não suíte pulada (`testing-stack.md`). **Precisam ser rodadas pelo operador**: `sudo bash provisionar-base.sh` (duas vezes), `sudo bash migrar-banco.sh`, `sudo bash verificar-provisionamento.sh`, `sudo bash verificar-migracao.sh`, com `pnpm build` antes. ⚠️ **A primeira execução após a T5 reescreve o `pg_hba` e reinicia o cluster** — comportamento projetado do P03, mas impacto operacional real.
+**A T5 tem baterias que exigem `sudo` interativo e não foram executadas** — ⚠️ **VENCIDA: elas foram executadas depois, e ao menos uma reprovou; ver o item em vermelho no topo desta §4.** Mantida como estava porque é o registro do que valia no fecho do run.
+
+**(Texto original.)** — `verificar-provisionamento.sh` (CT-030) e `verificar-migracao.sh` (CT-031, CT-032). É o papel do gate, não suíte pulada (`testing-stack.md`). **Precisam ser rodadas pelo operador**: `sudo bash provisionar-base.sh` (duas vezes), `sudo bash migrar-banco.sh`, `sudo bash verificar-provisionamento.sh`, `sudo bash verificar-migracao.sh`, com `pnpm build` antes. ⚠️ **A primeira execução após a T5 reescreve o `pg_hba` e reinicia o cluster** — comportamento projetado do P03, mas impacto operacional real.
 
 **A T7 reprovou por uma prova que não podia falhar — e o padrão é novo.** As reprovações anteriores desta fatia foram por *asserção* fraca. Aqui a asserção estava certa e a **procedência da referência** é que estava corrompida: o caso comparava a recusa da barreira contra "a recusa que o arcabouço emite", mas um caso anterior do mesmo `describe` havia desativado o sujeito e nunca o restaurou, então os dois lados da igualdade eram a mesma constante. O mutante `message: 'Credenciais invalidas'` **sobrevivia à suíte inteira** e só reprovava com o caso rodando isolado. Vale para quem escrever prova de indistinguibilidade daqui em diante — **a T11 (CT-016) é a próxima**: referência herdada de arranjo alheio é literal disfarçado.
 
