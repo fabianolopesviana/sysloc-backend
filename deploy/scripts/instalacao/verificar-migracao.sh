@@ -680,6 +680,53 @@ remover_retirada_na_criacao() {
 	sed 's|^\t\tREVOKE ALL ON TABLE ${TABELA_REGISTRO} FROM PUBLIC.*$|\t\t" >/dev/null|' "$1"
 }
 
+# --------------------------------------------------------------------------- #
+# Onde uma cópia EXECUTÁVEL de `migrar-banco.sh` tem de morar — e por quê
+#
+# CAUSA-RAIZ (achada na primeira execução desta bateria, 2026-08-02, em DOIS
+# sítios): o script sob teste deriva a raiz do repositório do PRÓPRIO caminho
+# (`migrar-banco.sh:72`, `dirname "${BASH_SOURCE[0]}"/../../..`) e é dali que
+# monta `DIR_MIGRACOES`. Cópia escrita direto em `${DIR_TEMPORARIO}` calcula
+# `RAIZ_REPO=/`, procura `//packages/db/migracoes`, não acha e ABORTA na
+# conferência do diretório — antes de tocar no banco.
+#
+# O efeito é pior que a falha, e é o que fez o defeito sobreviver aos dois
+# gates: em (h-bis) a asserção do aborto PASSAVA pelo motivo errado e deixava a
+# seguinte inalcançável; em (f) do CT-032 as duas cópias com vazamento plantado
+# abortavam antes de invocar o cliente, de modo que o rastreio não continha
+# credencial nenhuma e a asserção que exige o vazamento não tinha como passar.
+# Nos dois casos, uma prova que NÃO PODIA PASSAR — o espelho do padrão que a §7
+# do Protocolo Antirregressão registra.
+#
+# POR QUE O ESPELHO, e não reescrever `DIR_MIGRACOES` na cópia como faz
+# `apontar_migracoes_para` (bloco (i), que por isso nunca sofreu deste defeito):
+# as cópias de (f) são cobradas por uma asserção de que são BYTE A BYTE idênticas
+# ao original fora de `psql_migrador`. Reescrever conteúdo as invalidaria. O
+# espelho muda a LOCALIZAÇÃO, não os bytes.
+#
+# As migrações são COPIADAS, não ligadas por atalho: `find … -type f` não
+# enxerga atalho como arquivo comum, e uma ligação trocaria um aborto
+# ("diretório não existe") por outro ("nenhuma migração encontrada").
+#
+# Idempotente de propósito — é chamada em substituição de comando, portanto em
+# subshell, e não pode depender de estado que sobreviva à chamada.
+# --------------------------------------------------------------------------- #
+caminho_no_espelho() {
+	local espelho="${DIR_TEMPORARIO}/espelho-do-repo"
+	install -d -m 0700 \
+		"${espelho}/deploy/scripts/instalacao" "${espelho}/packages/db/migracoes"
+	cp "${DIR_MIGRACOES}"/*.sql "${espelho}/packages/db/migracoes/"
+	printf '%s/deploy/scripts/instalacao/%s' "${espelho}" "$1"
+}
+
+# A rede que impede o defeito de voltar em silêncio: qualquer mudança futura no
+# caminho de uma cópia executável faz esta asserção reprovar ANTES das que
+# dependem de o script ter chegado ao banco.
+afirmar_copia_enxerga_migracoes() {
+	afirmar_igual "$1" "1" \
+		"$([[ -d "$(cd "$(dirname "$2")/../../.." && pwd)/packages/db/migracoes" ]] && echo 1 || echo 0)"
+}
+
 # `CREATE SCHEMA` em CÓDIGO — comentário não conta.
 #
 # A exclusão de comentário não é zelo: o cabeçalho de `0000_fundacao.sql` cita as
@@ -991,39 +1038,14 @@ ct_031() {
 	# cópia sem a retirada na criação, 0 com o script atual, e nenhuma das duas
 	# emite linha alguma (o `REVOKE` no-op é silencioso porque quem o emite é o dono
 	# da tabela — não polui a saída que o CT-032 compara).
-	# A cópia vive num ESPELHO do repositório, e não num diretório temporário plano.
-	#
-	# CAUSA-RAIZ (achado na primeira execução desta bateria, 2026-08-02): o script
-	# sob teste deriva a raiz do repositório do PRÓPRIO caminho
-	# (`migrar-banco.sh:72`, `dirname "${BASH_SOURCE[0]}"/../../..`) e é de lá que
-	# ele monta `DIR_MIGRACOES`. Escrita direto em `${DIR_TEMPORARIO}`, a cópia
-	# calculava `RAIZ_REPO=/`, procurava `//packages/db/migracoes`, não achava e
-	# ABORTAVA na conferência do diretório — antes de `garantir_tabela_de_registro`.
-	#
-	# O efeito era pior que a falha: a asserção do aborto, logo abaixo, PASSAVA pelo
-	# motivo errado — o código de saída era o de "diretório de migrações inexistente"
-	# e não o da reaplicação do 0000 —, e a asserção seguinte ficava INALCANÇÁVEL. É
-	# o espelho do padrão que a §7 do Protocolo Antirregressão registra: aqui não era
-	# uma prova que não podia falhar, era uma que não podia passar, mascarada por uma
-	# vizinha que passava por outra razão.
-	#
-	# O espelho fecha a classe, e não a ocorrência: qualquer variante gerada daqui em
-	# diante resolve a mesma raiz que o original. As migrações são COPIADAS, não
-	# ligadas por atalho — `find … -type f` não enxerga atalho como arquivo comum, e
-	# uma ligação faria o script achar o diretório e não achar migração nenhuma,
-	# trocando um aborto por outro.
-	local espelho_do_repo="${DIR_TEMPORARIO}/espelho-do-repo"
-	install -d -m 0700 "${espelho_do_repo}/deploy/scripts/instalacao" "${espelho_do_repo}/packages/db"
-	cp -r "${DIR_MIGRACOES}" "${espelho_do_repo}/packages/db/migracoes"
-
-	local copia_sem_retirada_na_criacao="${espelho_do_repo}/deploy/scripts/instalacao/migrar-sem-retirada-na-criacao.sh"
+	# A cópia vive num ESPELHO do repositório — ver `caminho_no_espelho`.
+	local copia_sem_retirada_na_criacao
+	copia_sem_retirada_na_criacao="$(caminho_no_espelho migrar-sem-retirada-na-criacao.sh)"
 	remover_retirada_na_criacao "${SCRIPT_MIGRAR}" >"${copia_sem_retirada_na_criacao}"
 
-	# Sem isto, o defeito acima volta em silêncio: uma mudança futura no caminho da
-	# cópia faria o script abortar cedo de novo, e as duas asserções do laço
-	# continuariam "passando" e "reprovando" pelas razões erradas.
-	afirmar_igual "(h-bis) a cópia enxerga o mesmo diretório de migrações que o original" "1" \
-		"$([ -d "$(cd "$(dirname "${copia_sem_retirada_na_criacao}")/../../.." && pwd)/packages/db/migracoes" ] && echo 1 || echo 0)"
+	afirmar_copia_enxerga_migracoes \
+		"(h-bis) a cópia enxerga o mesmo diretório de migrações que o original" \
+		"${copia_sem_retirada_na_criacao}"
 
 	afirmar_igual "(h-bis) a cópia sem a retirada na criação é sintaticamente válida" "0" \
 		"$(bash -n "${copia_sem_retirada_na_criacao}" 2>/dev/null && echo 0 || echo 1)"
@@ -1098,6 +1120,12 @@ ct_031() {
 	printf 'SELECT 1 FROM tabela_que_nao_existe_ct031_i;\n' \
 		>"${dir_migracoes_falhando}/0002_falha_sintetica.sql"
 
+	# Estas duas ficam no temporário PLANO, e não no espelho, de propósito:
+	# `apontar_migracoes_para` reescreve `DIR_MIGRACOES` nelas para um caminho
+	# absoluto, então a raiz que o script deriva do próprio caminho deixa de
+	# importar. É por isso que este bloco nunca sofreu do defeito que
+	# `caminho_no_espelho` fecha — e é a razão de haver DOIS mecanismos: aqui o
+	# conteúdo pode ser reescrito; em (h-bis) e em (f) do CT-032, não.
 	local copia_abortando="${DIR_TEMPORARIO}/migrar-abortando.sh"
 	local copia_regredida="${DIR_TEMPORARIO}/migrar-abortando-sem-retirada-na-transacao.sh"
 	apontar_migracoes_para "${SCRIPT_MIGRAR}" "${dir_migracoes_falhando}" >"${copia_abortando}"
@@ -1383,8 +1411,15 @@ ct_032() {
 		# cliente. Ela roda contra o MESMO banco descartável, sob o MESMO rastreio,
 		# com as MESMAS opções, e é varrida pela MESMA função com a MESMA agulha — se
 		# o par não usasse tudo isso igual, provaria sobre outra coisa.
-		local copia_vazando="${DIR_TEMPORARIO}/migrar-vazando-em-argv.sh"
+		# No ESPELHO, e não em `${DIR_TEMPORARIO}`: fora dele a cópia aborta antes de
+		# invocar o cliente, o rastreio sai sem credencial e a asserção que exige o
+		# vazamento não tem como passar. Ver `caminho_no_espelho`.
+		local copia_vazando
+		copia_vazando="$(caminho_no_espelho migrar-vazando-em-argv.sh)"
 		substituir_psql_migrador_por_argv "${SCRIPT_MIGRAR}" >"${copia_vazando}"
+		afirmar_copia_enxerga_migracoes \
+			"(f) a cópia com o vazamento plantado enxerga o diretório de migrações" \
+			"${copia_vazando}"
 		afirmar_igual "(f) a cópia com o vazamento plantado é sintaticamente válida" "0" \
 			"$(bash -n "${copia_vazando}" 2>/dev/null && echo 0 || echo 1)"
 		afirmar_igual "(f) a cópia com o vazamento plantado entrega a cadeia inteira no argv do cliente" "1" \
@@ -1409,8 +1444,12 @@ ct_032() {
 		# exportada, visível em `/proc/PID/environ` — só é observável no rastreio com
 		# `-v`. Sem este mutante, remover o `-v` de ambas as invocações deixaria a
 		# bateria inteira verde e apagaria metade do invariante deste caso.
-		local copia_exportando="${DIR_TEMPORARIO}/migrar-exportando-em-ambiente.sh"
+		local copia_exportando
+		copia_exportando="$(caminho_no_espelho migrar-exportando-em-ambiente.sh)"
 		exportar_senha_em_variavel_de_ambiente "${SCRIPT_MIGRAR}" >"${copia_exportando}"
+		afirmar_copia_enxerga_migracoes \
+			"(f) a cópia que exporta o segredo enxerga o diretório de migrações" \
+			"${copia_exportando}"
 		afirmar_igual "(f) a cópia que exporta o segredo é sintaticamente válida" "0" \
 			"$(bash -n "${copia_exportando}" 2>/dev/null && echo 0 || echo 1)"
 		afirmar_igual "(f) a cópia que exporta o segredo o coloca no ambiente do processo filho" "1" \
