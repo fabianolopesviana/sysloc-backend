@@ -404,43 +404,81 @@ sonda_leitor_do_provisionador() {
 #
 # Imprime o diagnóstico e devolve 0 (guardado) ou 1 (desguardado).
 # --------------------------------------------------------------------------- #
+# Generalizada na fatia `fundacao-multitenancy-identidade` (F1). A versão anterior
+# exigia EXATAMENTE UM `ALTER ROLE` executável e o ancorava no corpo de
+# `passo_p09_credencial_valida`, por NOME. A F1/T5 acrescentou o segundo sítio —
+# `passo_p16_banco_preparado`, que ressincroniza a senha do papel de MIGRAÇÃO —,
+# igualmente guardado, e a bateria reprovou por contagem enquanto o invariante
+# seguia intacto.
+#
+# A correção não é subir o número para 2: isso adia o mesmo defeito para o
+# terceiro sítio. A auditoria passa a percorrer TODAS as ocorrências e a cobrar,
+# em cada uma, que o guarda seja sobre a MESMA credencial que aquele comando
+# escreve — o que a versão anterior não fazia nem para o sítio único. Ganhos:
+# sítio novo nasce auditado, e "guardar ${senha_a} e escrever ${senha_b}" passa a
+# reprovar.
 auditar_guarda_do_alter_role() {
 	local script="$1"
-	local corpo linha_guarda linha_alter total_alter
+	local -a linhas_alter=() auditados=()
+	local linha var fn corpo linha_alter linha_guarda
 
-	total_alter="$(grep -cF 'ALTER ROLE \"%s\" WITH PASSWORD' "${script}" || true)"
-	if [[ "${total_alter}" -ne 1 ]]; then
-		printf 'esperava exatamente 1 comando ALTER ROLE executável no script, e encontrei %s' "${total_alter}"
+	mapfile -t linhas_alter < <(grep -nF 'ALTER ROLE \"%s\" WITH PASSWORD' "${script}" | cut -d: -f1)
+
+	# Zero ocorrências é reprovação, e não aprovação por vacuidade: um script que
+	# tenha perdido o comando não é um script guardado.
+	if [[ "${#linhas_alter[@]}" -eq 0 ]]; then
+		printf 'não encontrei comando ALTER ROLE executável no script'
 		return 1
 	fi
 
-	corpo="$(sed -n '/^passo_p09_credencial_valida() {/,/^}/p' "${script}")"
-	if [[ -z "${corpo}" ]]; then
-		printf 'não encontrei o corpo de passo_p09_credencial_valida'
-		return 1
-	fi
+	for linha in "${linhas_alter[@]}"; do
+		# A credencial que ESTE comando escreve: o último `${...}` da linha de
+		# argumentos, logo abaixo do `printf`. É o que amarra guarda e escrita à
+		# mesma variável.
+		var="$(sed -n "$((linha + 1))p" "${script}" |
+			grep -oE '\$\{[A-Za-z_][A-Za-z0-9_]*\}' | tail -1 | tr -d '${}')"
+		if [[ -z "${var}" ]]; then
+			printf 'na linha %s não identifiquei a credencial que o ALTER ROLE escreve' "${linha}"
+			return 1
+		fi
 
-	linha_alter="$(printf '%s\n' "${corpo}" |
-		grep -nF 'ALTER ROLE \"%s\" WITH PASSWORD' | head -1 | cut -d: -f1)"
-	if [[ -z "${linha_alter}" ]]; then
-		printf 'o ALTER ROLE executável está fora de passo_p09_credencial_valida'
-		return 1
-	fi
+		# A função que contém a linha: a última definição em coluna 0 antes dela.
+		fn="$(awk -v alvo="${linha}" \
+			'NR < alvo && /^[A-Za-z_][A-Za-z0-9_]*\(\) \{/ { f = $1 } END { sub(/\(\).*/, "", f); print f }' \
+			"${script}")"
+		if [[ -z "${fn}" ]]; then
+			printf 'o ALTER ROLE da linha %s não está dentro de função nenhuma' "${linha}"
+			return 1
+		fi
 
-	linha_guarda="$(printf '%s\n' "${corpo}" |
-		grep -nF '! credencial_manuseavel "${senha_db}"' | head -1 | cut -d: -f1)"
-	if [[ -z "${linha_guarda}" ]]; then
-		printf 'passo_p09_credencial_valida NÃO afirma credencial_manuseavel antes de reescrever a senha'
-		return 1
-	fi
+		corpo="$(sed -n "/^${fn}() {/,/^}/p" "${script}")"
+		linha_alter="$(printf '%s\n' "${corpo}" |
+			grep -nF 'ALTER ROLE \"%s\" WITH PASSWORD' | head -1 | cut -d: -f1)"
+		if [[ -z "${linha_alter}" ]]; then
+			printf 'o ALTER ROLE da linha %s não caiu no corpo de %s — a apuração da função falhou' \
+				"${linha}" "${fn}"
+			return 1
+		fi
 
-	if [[ "${linha_guarda}" -ge "${linha_alter}" ]]; then
-		printf 'a afirmação de credencial_manuseavel (linha %s do corpo) não precede o ALTER ROLE (linha %s)' \
-			"${linha_guarda}" "${linha_alter}"
-		return 1
-	fi
+		linha_guarda="$(printf '%s\n' "${corpo}" |
+			grep -nF "! credencial_manuseavel \"\${${var}}\"" | head -1 | cut -d: -f1)"
+		if [[ -z "${linha_guarda}" ]]; then
+			printf '%s NÃO afirma credencial_manuseavel sobre ${%s} antes de reescrever a senha' \
+				"${fn}" "${var}"
+			return 1
+		fi
 
-	printf 'guarda na linha %s do corpo, ALTER ROLE na linha %s' "${linha_guarda}" "${linha_alter}"
+		if [[ "${linha_guarda}" -ge "${linha_alter}" ]]; then
+			printf 'em %s, a afirmação sobre ${%s} (linha %s do corpo) não precede o ALTER ROLE (linha %s)' \
+				"${fn}" "${var}" "${linha_guarda}" "${linha_alter}"
+			return 1
+		fi
+
+		auditados+=("${fn}(\${${var}})")
+	done
+
+	printf '%s sítio(s) de ALTER ROLE auditado(s), todos guardados: %s' \
+		"${#linhas_alter[@]}" "${auditados[*]}"
 	return 0
 }
 

@@ -67,9 +67,17 @@ LIMITE_CICLO_CT001=600
 # diretórios não voltam a ficar vazios —, substituída por uma prova estritamente
 # mais forte sobre o conjunto real de membros.
 # --------------------------------------------------------------------------- #
+# Atualizada na fatia `fundacao-multitenancy-identidade` (F1), que acrescentou
+# `@sysloc/db` e `@sysloc/auth`. A reprovação que isso causou foi o espelho
+# FUNCIONANDO — "ganhar um pacote não declarado reprova" —, e não expectativa
+# vencida: quem acrescenta membro ao workspace acrescenta a linha aqui, no mesmo
+# commit. Só não foi pega antes porque esta bateria não tinha agregador que a
+# invocasse (débito D6, fechado na mesma fatia).
 MEMBROS_DO_WORKSPACE=(
 	"@sysloc/monorepo:"
 	"@sysloc/shared:/packages/shared"
+	"@sysloc/db:/packages/db"
+	"@sysloc/auth:/packages/auth"
 	"@sysloc/api:/apps/api"
 	"@sysloc/worker:/apps/worker"
 )
@@ -78,7 +86,7 @@ MEMBROS_DO_WORKSPACE=(
 # motivo da lista acima.
 declare -A PACOTES_POR_DIRETORIO=(
 	[apps]=2
-	[packages]=1
+	[packages]=3
 )
 
 # Variáveis obrigatórias no `.env.example`, com o papel que cada uma cumpre.
