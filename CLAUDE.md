@@ -69,17 +69,15 @@ a F1 só termina quando as duas fecharem.
 **O que a PRIMEIRA FATIA deixou aberto, e que a próxima sessão precisa saber** — os caminhos abaixo
 são relativos a `docs/specs/features/fundacao-multitenancy-identidade/v1/`:
 
-- 🔴 **A bateria agregada foi executada e REPROVOU com 14 falhas — diagnóstico completo na §4 do
-  `_run/run-report.md`.** As 14 são **4 causas-raiz**, e a distinção importa: duas eram
-  verificadores da F0 que a F1 invalidou (contagem de membros do workspace, auditoria do
-  `ALTER ROLE`) e já estão **corrigidas e commitadas**; as outras duas são **estado operacional**,
-  não defeito — `BETTER_AUTH_SECRET` ausente em `/etc/sysloc/backend.env` (11 das 14 falhas, com a
-  API em `failed`) e a migração **nunca aplicada** ao banco `sysloc`. **Passos que faltam, nesta
-  ordem**: acrescentar a variável ao arquivo de ambiente e reiniciar `sysloc-api`; rodar
-  `sudo bash deploy/scripts/instalacao/migrar-banco.sh`; reexecutar
-  `sudo bash deploy/scripts/instalacao/verificar-fundacao.sh` (com `pnpm build` antes). ⚠️ A
-  execução reescreve o `pg_hba` e reinicia o cluster. **Enquanto os dois passos não rodarem, o que a
-  fatia provou sobre o cluster que opera continua não verificado.**
+- ✅ **A bateria agregada está VERDE no cluster real — `7/7 casos aprovados, 0 falhas`** (2026-08-03),
+  com as quatro sub-baterias e o `CT-030`/`CT-031`/`CT-032`. Chegou lá em quatro rodadas, de 14
+  falhas a zero; o diagnóstico das **6 causas-raiz** está na §4 do `_run/run-report.md`. Duas eram
+  estado operacional (a variável de ambiente nova e a migração não aplicada) e **quatro eram defeito
+  de verificador**, todos corrigidos e commitados. **Falta só o `CT-006`** — o reinício real do
+  servidor, que a bateria não executa por consumir janela de indisponibilidade:
+  `sudo bash …/verificar-fundacao.sh reinicio-preparar` → `sudo reboot` →
+  `sudo bash …/verificar-fundacao.sh reinicio-conferir`. ⚠️ O reinício derruba **também o
+  `/opt/frappe`**, que atende a operação.
 - **`P-T6-1` e `P-T6-2`** (`tasks/T8.md` §7) seguem **abertos e sem dono**: o dono era a "task de
   fechamento da F1" — expressão que os artefatos da fatia usam para dizer *fechamento desta fatia*,
   e não da fase —, e a intervenção não os cobriu. Exigem valor novo no enum `desfecho_tentativa`

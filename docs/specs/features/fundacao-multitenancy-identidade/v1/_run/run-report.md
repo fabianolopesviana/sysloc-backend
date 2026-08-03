@@ -339,7 +339,47 @@ O que a intervenção entregou além da escrituração:
    no documento OpenAPI, cujo dono foi precisado no código: a **publicação do `@sysloc/contracts`**,
    porque declará-las antes produziria contrato que o congelamento reescreveria.
 
-🔴 **As baterias privilegiadas da T5 foram EXECUTADAS pelo operador, e ao menos uma REPROVOU.**
+✅ **A BATERIA AGREGADA ESTÁ VERDE NO CLUSTER REAL (2026-08-03): `7/7 casos aprovados, 0 falhas`.**
+Quatro rodadas para chegar lá, de 14 falhas a zero. As 14 da primeira rodada eram **4 causas-raiz**,
+e as rodadas seguintes revelaram mais **2** — cada correção destravava casos que antes nem chegavam
+a executar. As seis, e a distinção que importa:
+
+**Estado operacional, não defeito (11 das 14 falhas iniciais):**
+1. `BETTER_AUTH_SECRET` ausente em `/etc/sysloc/backend.env`. A API recusava a partida nomeando a
+   variável, o supervisor tentava 5 vezes e desistia — **o fail-fast funcionando**. O defeito real
+   por trás disso é o **D39**, registrado na §2: o provisionamento não gera a chave, então instalação
+   do zero nasce quebrada. Contornado à mão nesta máquina; a bateria depois provou que o contorno
+   **sobrevive** a `provisionar-base.sh` rodando duas vezes (o SHA-256 do arquivo fica inalterado).
+2. Migração nunca aplicada ao banco `sysloc` — `tabelasExaminadas` voltava vazia, que a guarda
+   documenta como *"nada foi olhado, nunca aprovação"*.
+
+**Defeito de verificador — os quatro CERTOS em reprovar, e todos da F1 sem propagar:**
+3. `verificar-workspace.sh` — a lista de membros é espelho por desenho, e a F1 criou `@sysloc/db` e
+   `@sysloc/auth` sem declará-los.
+4. `verificar-provisionamento.sh` — auditava *"exatamente um `ALTER ROLE`"* e a F1/T5 acrescentou o
+   segundo. Generalizado para percorrer todos os sítios cobrando o guarda sobre a **mesma** credencial
+   que cada comando escreve — mais forte que a versão de um sítio só.
+5. e 6. **A mesma classe, em três sítios**: cópias executáveis de `migrar-banco.sh` escritas em
+   diretório temporário plano calculavam `RAIZ_REPO=/` e abortavam antes de tocar no banco. Em
+   `(h-bis)` isso tornava uma asserção **inalcançável**; em `(f)` do CT-032 as duas cópias com
+   vazamento plantado abortavam antes de invocar o cliente, de modo que a asserção que **exige** o
+   vazamento não tinha como passar. Nos três, uma prova que não podia passar, ao lado de vizinhas
+   que passavam por outra razão — o espelho do padrão da §7 do Protocolo. **A primeira correção
+   fechou só um sítio**, e o CT-032 (que só então conseguiu rodar) devolveu a mesma causa: a
+   assinatura exata do laço longo da §5. Fechado por auxiliar (`caminho_no_espelho`) com rede em cada
+   sítio.
+
+**Nenhum dos seis era alcançável pelos gates** — só a execução privilegiada revela, e ela nunca
+tinha rodado. É o **D6** cobrando o preço três vezes na mesma sessão, três fatias antes do que o
+débito previa.
+
+**O que falta:** o **`CT-006`**, reinício real do servidor, que a bateria não executa por consumir
+janela de indisponibilidade combinada. ⚠️ Derruba também o `/opt/frappe`.
+
+---
+
+**(Registro do que valia antes, 2026-08-02.)** As baterias privilegiadas da T5 foram executadas pelo
+operador e ao menos uma reprovou.
 Correção de fato registrada em 2026-08-02: a nota mais abaixo desta §4, escrita durante o run, diz
 que elas "não foram executadas" — era verdade quando o run fechou e **deixou de ser**. A intervenção
 de fechamento repetiu a afirmação vencida sem verificar, e isto a corrige.
