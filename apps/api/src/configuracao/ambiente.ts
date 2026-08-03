@@ -56,6 +56,40 @@ const AMBIENTES = ['development', 'test', 'production'] as const;
 const MAIOR_PORTA = 65_535;
 
 /**
+ * Comprimento mínimo do segredo de assinatura de sessão.
+ *
+ * Trinta e dois caracteres é o tamanho que o próprio arcabouço de identidade gera quando sorteia um
+ * segredo. Exigir o piso na partida é o que impede que um `EnvironmentFile` preenchido à mão com
+ * meia dúzia de caracteres suba um serviço cujas sessões são assináveis por força bruta — e a
+ * falha de partida é o único momento em que isso ainda é barato de descobrir.
+ */
+const COMPRIMENTO_MINIMO_DO_SEGREDO = 32;
+
+/**
+ * Endereço em que o serviço escuta.
+ *
+ * Somente o endereço de retorno: este servidor é compartilhado com o ambiente que ainda atende a
+ * operação, e escutar em toda interface publicaria o backend novo na internet antes da virada.
+ * A publicação externa é da fatia de virada, e passa por servidor de borda — que alcança este
+ * endereço sem que ele deixe de ser local.
+ *
+ * Mora aqui, e não no ponto de entrada, desde a T8: ele deixou de ter um consumidor só. Além do
+ * `listen`, é a partir deste endereço que se compõe o endereço base entregue ao arcabouço de
+ * identidade — que é o que ele usa para reconhecer a origem confiável das requisições com cookie.
+ * Duas cópias do literal poderiam divergir, e a divergência não quebra a partida: ela recusa,
+ * silenciosamente, toda requisição autenticada.
+ */
+export const ENDERECO_DE_ESCUTA = '127.0.0.1';
+
+/**
+ * Prefixo de versão de toda rota do produto (§15.1 da tech spec da fatia).
+ *
+ * Sem barra inicial porque é assim que a montagem da aplicação o consome. Quem precisa dele como
+ * caminho o compõe — ver `autenticacao.module.ts`.
+ */
+export const PREFIXO_DE_VERSAO = 'v1';
+
+/**
  * O esquema é a fonte única do que o processo exige. `VARIAVEIS_EXIGIDAS` deriva dele, de modo
  * que acrescentar variável aqui já a torna exigida, documentada na mensagem de falha e coberta
  * pela verificação — sem uma segunda lista para manter em dia.
@@ -81,6 +115,16 @@ const ESQUEMA = z.object({
   // definições independentes divergiriam em silêncio até um `EnvironmentFile` subir um processo
   // e recusar o outro.
   REDIS_URL: z.string().refine(ehCadeiaDeFilaValida, EXIGENCIA_DA_CADEIA_DE_FILA),
+  // O nome é o que o arcabouço de identidade lê por convenção própria, e o `.env.example` já o
+  // documenta com essa justificativa — uma segunda grafia para a mesma coisa só criaria dois
+  // arquivos de ambiente incompatíveis. A mensagem de falha nomeia a variável e o piso exigido, e
+  // NUNCA o valor recebido: ela vai para o journal, e este valor assina toda sessão em curso.
+  BETTER_AUTH_SECRET: z
+    .string()
+    .min(
+      COMPRIMENTO_MINIMO_DO_SEGREDO,
+      `deve ter ao menos ${COMPRIMENTO_MINIMO_DO_SEGREDO} caracteres`,
+    ),
 });
 
 /**
@@ -109,6 +153,13 @@ export interface Ambiente {
   readonly cadeiaConexaoBanco: string;
   /** Cadeia de conexão da fila, de `REDIS_URL`. */
   readonly cadeiaConexaoFila: string;
+  /**
+   * Segredo de assinatura de sessão, de `BETTER_AUTH_SECRET`.
+   *
+   * Trocá-lo invalida toda sessão em curso — é a alavanca de emergência para suspeita de
+   * vazamento, e é por isso que ele vive em `EnvironmentFile` 0600 fora da árvore (§11.6).
+   */
+  readonly segredoDeSessao: string;
 }
 
 /**
@@ -125,6 +176,33 @@ export const TOKEN_AMBIENTE = Symbol('Ambiente');
  * importação circular com o filtro de exceção, que o consome.
  */
 export const TOKEN_LOGGER = Symbol('Logger');
+
+/**
+ * Token de injeção da instância do arcabouço de identidade (T8).
+ *
+ * Mora aqui pela MESMA razão do token acima, e o precedente é o daquele comentário: declará-lo no
+ * módulo que o provê criaria importação circular com o controlador que o consome — o módulo declara
+ * o controlador, o controlador pede o token no decorador, e o decorador é avaliado enquanto o
+ * módulo ainda está sendo carregado. O símbolo não tem dependência alguma; este arquivo é o único
+ * do serviço que nenhum outro consome de volta.
+ */
+export const TOKEN_AUTENTICACAO = Symbol('Autenticacao');
+
+/**
+ * Token de injeção do acesso restrito ao schema `identidade` (T9).
+ *
+ * Nasceu privado em `autenticacao/autenticacao.module.ts` (T8) e mudou para cá quando ganhou o
+ * segundo consumidor: a guarda de contexto, que precisa dele para resolver a empresa da sessão —
+ * `perfil` e `empresa_id` são colunas do produto e não campos do modelo do arcabouço, como o débito
+ * **D7** registra — o marcador dele vive em `packages/auth/src/autenticacao.ts`.
+ *
+ * Declará-lo no módulo que o provê reproduziria a importação circular que os dois tokens acima já
+ * descrevem — o módulo declara a guarda, a guarda pede o token no construtor, e o construtor é
+ * avaliado enquanto o módulo ainda está sendo carregado. Mover para cá **não** o publica a outros
+ * módulos: ele continua fora do `exports` de `AutenticacaoModule`, e quem precisa de dado de
+ * identidade continua passando pelo arcabouço ou pela sessão.
+ */
+export const TOKEN_ACESSO_A_IDENTIDADE = Symbol('AcessoAIdentidade');
 
 /**
  * Lê e valida as variáveis de ambiente exigidas.
@@ -153,6 +231,7 @@ export function carregarAmbiente(fonte: FonteDeVariaveis): Ambiente {
     nivelDeLog: validado.LOG_LEVEL,
     cadeiaConexaoBanco: validado.DATABASE_URL,
     cadeiaConexaoFila: validado.REDIS_URL,
+    segredoDeSessao: validado.BETTER_AUTH_SECRET,
   };
 }
 

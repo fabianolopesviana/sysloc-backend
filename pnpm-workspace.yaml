@@ -29,6 +29,13 @@ allowBuilds:
   # Negado explicitamente, e não deixado em aberto: a linha declara a decisão para quem
   # a reencontrar, em vez de a instalação voltar a perguntar a cada máquina.
   '@scarf/scarf': false
+  # Dependência transitiva do gerador de migração (`drizzle-kit`, F1/T2), que o usa para
+  # carregar `drizzle.config.ts` sem etapa de compilação. O script que ele executaria na
+  # instalação baixa/valida o binário da plataforma — desnecessário aqui, porque sob pnpm o
+  # binário vem do pacote opcional `@esbuild/linux-x64`, já instalado. Negado pelo mesmo
+  # critério dos demais, e com verificação em mãos: `drizzle-kit generate` produziu
+  # `packages/db/migracoes/0000_fundacao.sql` com o script negado.
+  esbuild: false
   # Dependência transitiva da biblioteca de fila do processador (T6): acelerador NATIVO,
   # opcional, do empacotador binário que o BullMQ usa para serializar carga útil. O script
   # que ele executaria na instalação compila código C++ na máquina. Negado pelo mesmo

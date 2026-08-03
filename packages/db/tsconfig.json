@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Mesmo arranjo de `packages/shared`: este pacote será REFERENCIADO por `packages/auth` e por
+    // `apps/api` nas tasks seguintes, e referência de projeto só é aceita sobre projeto composto.
+    // É o que faz `tsc --build` do consumidor construir este aqui ANTES de compilar a si mesmo —
+    // sem isso, o `dist/` que o `exports` do manifesto resolve pode não existir (árvore limpa) ou
+    // corresponder a um `src/` anterior.
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"]
+}

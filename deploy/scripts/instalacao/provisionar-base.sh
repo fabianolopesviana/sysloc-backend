@@ -22,13 +22,18 @@
 # correta não é reescrita. Cada passo imprime `CRIADO` (mudou algo) ou `JA-OK`
 # (já estava correto), para que a segunda execução seja auditável linha a linha.
 #
-# ADR-0005, condição de entrada — NENHUMA credencial entra no repositório. A
-# credencial do banco é GERADA em tempo de execução, gravada exclusivamente em
-# ${ARQ_AMBIENTE} (fora da árvore versionada por construção, não por regra de
-# ignore) com modo 0600, e daí em diante apenas LIDA. Ela nunca é impressa,
-# nunca trafega por argumento de linha de comando e nunca é regravada quando já
-# existe — regerá-la a cada execução quebraria as unidades de serviço que a
-# consomem. Por isso o rastreio verboso de comandos do shell jamais é ligado
+# ADR-0005, condição de entrada — NENHUMA credencial entra no repositório. As
+# credenciais do banco — a do papel da aplicação e a do papel de migração — são
+# GERADAS em tempo de execução e gravadas exclusivamente em ${ARQ_AMBIENTE} e
+# ${ARQ_AMBIENTE_MIGRACAO} respectivamente (fora da árvore versionada por
+# construção, não por regra de ignore) com modo 0600, e daí em diante apenas
+# LIDAS. Os dois arquivos são separados de propósito: só o primeiro é
+# `EnvironmentFile=` de unidade de serviço, e a credencial do papel DONO das
+# tabelas não entra no ambiente do processo que atende requisição. Elas nunca
+# são impressas, nunca trafegam por argumento de linha de comando e nunca são
+# regravadas quando já existem — regerá-las a cada execução quebraria as
+# unidades de serviço e o script de migração que as consomem. Por isso o
+# rastreio verboso de comandos do shell jamais é ligado
 # aqui: ele ecoaria o valor no log da operação. A bateria de verificação confere
 # essa ausência de forma literal.
 #
@@ -161,6 +166,27 @@ readonly VERSAO_POSTGRES="18"
 readonly PAPEL_DB="sysloc_app"
 readonly BANCO_DB="sysloc"
 
+# Papel DONO dos objetos e único que aplica migração (D2 da fatia
+# `fundacao-multitenancy-identidade`). Ele não atende requisição, e o papel que
+# atende não pertence a ele: contornar o isolamento passa a exigir duas falhas
+# independentes em vez de uma. As restrições são as MESMAS do papel da aplicação
+# — ser dono das tabelas já é o poder que ele precisa ter, e nenhum a mais.
+readonly PAPEL_MIGRACAO="sysloc_migracao"
+
+# Banco DESCARTÁVEL que a bateria `verificar-migracao.sh` cria e remove para
+# exercitar o mutante de cobertura. Ele NÃO é criado aqui e não deve existir em
+# repouso; o nome mora nesta constante por um motivo só: a regra de autenticação
+# do papel de migração é declarada pelo bloco gerido de ${ARQ_PG_HBA}, e uma
+# regra que não o nomeasse obrigaria a bateria a editar aquele arquivo — o que
+# seria verificação alterando a configuração que ela deveria conferir.
+readonly BANCO_VERIFICACAO="sysloc_verificacao"
+
+# Os dois schemas da ADR-0009: `identidade` opera antes de existir contexto de
+# empresa; `negocio` tem toda tabela vinculada a empresa, com RLS forçada. Eles
+# nascem AQUI, e não na migração — ver `sql_preparar_banco_para_migracao`.
+readonly SCHEMA_IDENTIDADE="identidade"
+readonly SCHEMA_NEGOCIO="negocio"
+
 # Endereço em que o cluster escuta e que a cadeia de conexão declara. Endereço de
 # retorno literal, e não `localhost`: o nome resolve para 127.0.0.1 e ::1 conforme
 # a ordem de `/etc/hosts` e da resolução de nomes desta máquina, e uma cadeia de
@@ -189,6 +215,13 @@ readonly UNIDADE_BANCO="postgresql.service"
 
 readonly DIR_CONFIG="/etc/sysloc"
 readonly ARQ_AMBIENTE="/etc/sysloc/backend.env"
+# Arquivo de ambiente do MIGRADOR, separado do da aplicação de propósito
+# (§11.6 da tech spec da fatia `fundacao-multitenancy-identidade`): a credencial
+# de migração NÃO entra em ${ARQ_AMBIENTE}, que é o `EnvironmentFile=` das
+# unidades de serviço. Fossem o mesmo arquivo, o processo que atende requisição
+# passaria a carregar no ambiente a credencial do papel DONO das tabelas — que é
+# exatamente o poder que a separação de papéis existe para lhe negar.
+readonly ARQ_AMBIENTE_MIGRACAO="/etc/sysloc/migracao.env"
 # Dono do arquivo de ambiente. `root` é deliberado e é o mais restritivo
 # possível: o `EnvironmentFile=` das unidades de serviço (T7) é lido pelo
 # systemd, que roda como root, ANTES de descer para o usuário do serviço — o
@@ -245,6 +278,8 @@ CONFIGURACAO_FILA_MUDOU=0
 # Credencial do banco. Variável de shell comum, NUNCA exportada: exportá-la a
 # colocaria no ambiente de todo processo filho.
 senha_db=""
+# Credencial do papel de migração. Mesmo contrato da acima, pelo mesmo motivo.
+senha_migracao=""
 # Porta do cluster, descoberta em P06 a partir do estado real e consumida por P09.
 porta_banco=""
 
@@ -944,6 +979,20 @@ bloco_hba_desejado() {
 	printf '# alcançável por este papel, e nada aqui é alcançável de fora da máquina.\n'
 	printf 'local   %s   %s   scram-sha-256\n' "${BANCO_DB}" "${PAPEL_DB}"
 	printf 'host    %s   %s   %s   scram-sha-256\n' "${BANCO_DB}" "${PAPEL_DB}" "${REDE_LOOPBACK_DB}"
+	printf '#\n'
+	printf '# Autenticação por senha do papel de MIGRAÇÃO, pelo endereço de retorno — a\n'
+	printf '# mesma via que a cadeia de conexão dele declara. Só o script de migração\n'
+	printf '# (deploy/scripts/instalacao/migrar-banco.sh) conecta com este papel; nenhuma\n'
+	printf '# unidade de serviço o usa.\n'
+	printf '#\n'
+	printf '# A regra é declarada AQUI, e não deixada por conta da regra genérica que o\n'
+	printf '# empacotamento da distribuição instala: depender dela faria a autenticação do\n'
+	printf '# migrador desaparecer junto com qualquer endurecimento futuro deste arquivo,\n'
+	printf '# sem que este procedimento tivesse como acusar. Os bancos alcançáveis são\n'
+	printf '# nomeados — o da operação e o DESCARTÁVEL que a bateria de verificação de\n'
+	printf '# migração cria e remove —, nunca "all".\n'
+	printf 'host    %s,%s   %s   %s   scram-sha-256\n' \
+		"${BANCO_DB}" "${BANCO_VERIFICACAO}" "${PAPEL_MIGRACAO}" "${REDE_LOOPBACK_DB}"
 	printf '%s\n' "${MARCADOR_HBA_FIM}"
 }
 
@@ -1627,6 +1676,319 @@ esperar_capturador_responder() {
 }
 
 # =========================================================================== #
+# Topologia de dois papéis — P15 e P16.
+#
+# O papel que atende requisição NÃO é dono de nada, e o dono NÃO atende
+# requisição (ADR-0008 e decisão D2 da fatia `fundacao-multitenancy-identidade`).
+# Sem essa separação, `FORCE ROW LEVEL SECURITY` seria a única coisa entre o
+# processo da aplicação e a leitura de dado alheio; com ela, contornar o
+# isolamento exige duas falhas independentes.
+#
+# Estes dois passos são ACRESCENTADOS ao fim da sequência, e nenhum passo
+# anterior muda. O identificador cresce junto com a ordem de execução de
+# propósito: o CT-001 da bateria de provisionamento deriva a lista de passos da
+# própria saída, de modo que os dois entram na prova de idempotência sem que
+# nada precise ser acrescentado à mão lá.
+# =========================================================================== #
+
+# A cadeia de conexão do MIGRADOR, num lugar só. Mesma forma da cadeia da
+# aplicação — `postgresql://PAPEL:SEGREDO@HOSPEDEIRO:PORTA/BANCO` —, e pelo mesmo
+# motivo registrado na `DECISÃO FECHADA` de `montar_url_do_banco`: é a única
+# forma que `psql` e o script de migração leem sem tradução.
+#
+# O segredo entra como parâmetro posicional de uma função do próprio shell — sem
+# `exec`, sem linha de comando nova para `ps` mostrar e sem exportar nada.
+#
+# $1 = credencial · $2 = porta do cluster
+montar_url_de_migracao() {
+	printf 'postgresql://%s:%s@%s:%s/%s' \
+		"${PAPEL_MIGRACAO}" "$1" "${HOSPEDEIRO_DB}" "$2" "${BANCO_DB}"
+}
+
+# Resultado de `extrair_credencial_migracao`. Não é exportado e nunca é impresso.
+CREDENCIAL_MIGRACAO_LIDA=""
+CHAVES_REPETIDAS_MIGRACAO=""
+
+# O CAMINHO DE LEITURA do arquivo de ambiente do migrador, inteiro e sem efeito
+# colateral. Espelha `extrair_credencial_db` — e a repetição é deliberada: aquela
+# função é ancorada em `^DATABASE_URL=`, é carregada e exercitada pelo CT-003 a
+# partir deste arquivo, e generalizá-la por parâmetro mudaria a assinatura de um
+# símbolo que a bateria extrai por nome. O que NÃO se repete é o raciocínio, que
+# vive lá por extenso; aqui ficam as três propriedades que ele produziu:
+#
+#   1. atribuição repetida é AMBIGUIDADE e se recusa — o `EnvironmentFile=` do
+#      systemd resolve pela ÚLTIMA e um leitor ingênuo pela PRIMEIRA;
+#   2. a captura é GULOSA até o ÚLTIMO '@' — classe restrita dentro da expressão
+#      de extração não falha, ela TRUNCA, e o prefixo truncado atravessaria o
+#      guarda de formato;
+#   3. a validação de alfabeto é um passo SEPARADO da extração.
+#
+# Devolve, por código de saída:
+#   0  credencial íntegra em ${CREDENCIAL_MIGRACAO_LIDA}
+#   1  não consegui interpretar o arquivo
+#   2  atribuição repetida — ${CHAVES_REPETIDAS_MIGRACAO} nomeia as chaves
+#   3  interpretei, mas o valor está fora de [A-Za-z0-9]
+extrair_credencial_migracao() {
+	local arquivo="$1"
+	CREDENCIAL_MIGRACAO_LIDA=""
+	CHAVES_REPETIDAS_MIGRACAO=""
+
+	if [[ ! -f "${arquivo}" ]]; then
+		return 1
+	fi
+
+	local repetidas
+	repetidas="$(grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' "${arquivo}" 2>/dev/null |
+		sort | uniq -d | tr -d '=' | tr '\n' ' ' || true)"
+	if [[ -n "${repetidas// /}" ]]; then
+		CHAVES_REPETIDAS_MIGRACAO="${repetidas% }"
+		return 2
+	fi
+
+	local valor
+	valor="$(sed -n 's|^MIGRATION_DATABASE_URL=postgresql://[^:/]*:\(.*\)@.*$|\1|p' "${arquivo}")"
+	if [[ -z "${valor}" ]]; then
+		return 1
+	fi
+
+	if ! credencial_manuseavel "${valor}"; then
+		return 3
+	fi
+
+	CREDENCIAL_MIGRACAO_LIDA="${valor}"
+	return 0
+}
+
+# O SQL que prepara UM banco para receber as migrações, num lugar só.
+#
+# Ele é lido de VOLTA por `deploy/scripts/instalacao/verificar-migracao.sh`, que
+# o extrai deste arquivo e o aplica ao banco descartável do mutante. A razão é a
+# do antipadrão registrado em `.claude/rules/testing-stack.md`: um verificador
+# que reimplementasse esta preparação estaria provando o mutante contra um banco
+# montado de outro jeito, e a semelhança com o banco da operação seria
+# coincidência mantida à mão. Mudar a assinatura ou o nome desta função quebra a
+# extração lá — de forma ruidosa, que é como tem de ser.
+#
+# Por que os schemas nascem AQUI e não na migração (§7.3 da tech spec): criá-los
+# na migração exigiria conceder `CREATE` sobre o banco ao migrador, e transferir
+# propriedade depois exigiria `ALTER ... OWNER`, que só quem pertence ao papel de
+# destino pode executar — e esse pertencimento é justamente o que a suíte de
+# isolamento prova NÃO existir. Criando-os aqui, com privilégio administrativo
+# que este procedimento já tem, as tabelas nascem do migrador por consequência.
+#
+# Nenhuma linha emitida carrega segredo: são concessões e criação de schema.
+#
+# $1 = nome do banco
+sql_preparar_banco_para_migracao() {
+	local banco="$1"
+	printf 'GRANT CONNECT ON DATABASE "%s" TO "%s";\n' "${banco}" "${PAPEL_MIGRACAO}"
+	printf 'CREATE SCHEMA IF NOT EXISTS "%s" AUTHORIZATION "%s";\n' \
+		"${SCHEMA_IDENTIDADE}" "${PAPEL_MIGRACAO}"
+	printf 'CREATE SCHEMA IF NOT EXISTS "%s" AUTHORIZATION "%s";\n' \
+		"${SCHEMA_NEGOCIO}" "${PAPEL_MIGRACAO}"
+	printf 'GRANT USAGE ON SCHEMA "%s", "%s" TO "%s";\n' \
+		"${SCHEMA_IDENTIDADE}" "${SCHEMA_NEGOCIO}" "${PAPEL_DB}"
+}
+
+# Consulta de leitura DENTRO de um banco específico. `psql_consulta` conecta ao
+# banco padrão do superusuário, e as perguntas sobre schema e concessão só têm
+# resposta no banco em que os objetos vivem.
+#
+# $1 = banco · $2 = consulta (nenhuma consulta de leitura carrega segredo)
+psql_consulta_no_banco() {
+	runuser -u postgres -- psql -v ON_ERROR_STOP=1 -X -q -A -t -d "$1" -c "$2"
+}
+
+escrever_pgpass_migracao() {
+	local destino="$1"
+	install -m 0600 -o root -g root /dev/null "${destino}"
+	# Curingas nos três primeiros campos, pelo mesmo motivo de `escrever_pgpass`.
+	printf '*:*:%s:%s:%s\n' "${BANCO_DB}" "${PAPEL_MIGRACAO}" "${senha_migracao}" >"${destino}"
+}
+
+credencial_de_migracao_conecta() {
+	PGPASSFILE="$1" psql -X -q -A -t -w \
+		-h "${HOSPEDEIRO_DB}" -p "${porta_banco}" -U "${PAPEL_MIGRACAO}" -d "${BANCO_DB}" \
+		-c 'SELECT 1' >/dev/null 2>&1
+}
+
+# =========================================================================== #
+# P15 — papel de migração e a credencial dele.
+#
+# Mesmas restrições do papel da aplicação (P07), mais `NOBYPASSRLS` explícito.
+# O atributo já é o padrão, e declará-lo é deliberado: ele é o único que, ligado,
+# faria a política deixar de valer para o DONO das tabelas mesmo com `FORCE`, e o
+# CT-030 da bateria de provisionamento o afirma no catálogo. Propriedade que uma
+# asserção cobra merece estar escrita, não herdada de um padrão que pode mudar.
+#
+# A credencial é gerada em tempo de execução e NUNCA regerada: regerá-la a cada
+# execução deixaria o arquivo e o banco em desacordo a partir da segunda.
+# =========================================================================== #
+passo_p15_papel_migracao() {
+	local mudancas=0 detalhes=""
+
+	if [[ -f "${ARQ_AMBIENTE_MIGRACAO}" ]]; then
+		local codigo_leitura=0
+		extrair_credencial_migracao "${ARQ_AMBIENTE_MIGRACAO}" || codigo_leitura=$?
+		senha_migracao="${CREDENCIAL_MIGRACAO_LIDA}"
+
+		case "${codigo_leitura}" in
+		0) : ;;
+		1)
+			abortar "não consegui interpretar ${ARQ_AMBIENTE_MIGRACAO}: falta uma linha 'MIGRATION_DATABASE_URL=postgresql://USUARIO:SEGREDO@...' de onde ler a credencial do papel de migração" \
+				"salve uma cópia do arquivo em local seguro, remova o original e execute de novo — o script gerará uma credencial nova e a aplicará ao papel '${PAPEL_MIGRACAO}'"
+			;;
+		2)
+			abortar "${ARQ_AMBIENTE_MIGRACAO} atribui mais de uma vez a(s) chave(s): ${CHAVES_REPETIDAS_MIGRACAO} — o arquivo é ambíguo e este procedimento se recusa a escolher por você" \
+				"NADA foi alterado. Deixe exatamente UMA atribuição de cada chave em ${ARQ_AMBIENTE_MIGRACAO} (apague as linhas antigas em vez de acrescentar novas) e execute este script de novo"
+			;;
+		3)
+			senha_migracao=""
+			abortar "interpretei ${ARQ_AMBIENTE_MIGRACAO}, mas a credencial contém caractere fora de [A-Za-z0-9] — ela viaja dentro de uma URL de conexão, onde ':', '@', '?', '&' e '/' são delimitadores" \
+				"NADA foi alterado. Escolha uma credencial só com letras e números, grave-a em ${ARQ_AMBIENTE_MIGRACAO} E aplique-a no banco com ALTER ROLE \"${PAPEL_MIGRACAO}\" na MESMA janela; depois execute este script de novo"
+			;;
+		*)
+			abortar "a leitura de ${ARQ_AMBIENTE_MIGRACAO} devolveu o desfecho inesperado ${codigo_leitura}" \
+				"NADA foi alterado. Isto é defeito do próprio procedimento; reporte-o antes de prosseguir"
+			;;
+		esac
+
+		if [[ "$(stat -c '%a %U' "${ARQ_AMBIENTE_MIGRACAO}")" != "600 ${DONO_ARQ_AMBIENTE}" ]]; then
+			chmod 0600 "${ARQ_AMBIENTE_MIGRACAO}"
+			chown "${DONO_ARQ_AMBIENTE}:${DONO_ARQ_AMBIENTE}" "${ARQ_AMBIENTE_MIGRACAO}"
+			detalhes="${detalhes}permissão corrigida para 0600 ${DONO_ARQ_AMBIENTE}; "
+			mudancas=$((mudancas + 1))
+		fi
+	else
+		senha_migracao="$(gerar_segredo)"
+		if [[ "${#senha_migracao}" -ne 32 ]] || ! credencial_manuseavel "${senha_migracao}"; then
+			abortar "a geração da credencial de migração não produziu 32 caracteres alfanuméricos" \
+				"confira se /dev/urandom está acessível nesta máquina e execute de novo"
+		fi
+
+		# `install` cria o arquivo já com 0600 ANTES de qualquer byte de segredo
+		# entrar nele — não há janela em que o conteúdo exista com permissão frouxa.
+		install -m 0600 -o "${DONO_ARQ_AMBIENTE}" -g "${DONO_ARQ_AMBIENTE}" /dev/null "${ARQ_AMBIENTE_MIGRACAO}"
+		{
+			printf '# Arquivo de ambiente do MIGRADOR do backend Sysloc.\n'
+			printf '#\n'
+			printf '# GERADO por deploy/scripts/instalacao/provisionar-base.sh. Vive fora da\n'
+			printf '# árvore versionada por construção (ADR-0005, condição de entrada).\n'
+			printf '#\n'
+			printf '# Ele é SEPARADO de %s de propósito: aquele é o\n' "${ARQ_AMBIENTE}"
+			printf '# EnvironmentFile= das unidades de serviço, e a credencial abaixo é do papel\n'
+			printf '# DONO das tabelas. Juntá-las colocaria no ambiente do processo que atende\n'
+			printf '# requisição exatamente o poder que a separação de papéis lhe nega.\n'
+			printf '#\n'
+			printf '# Consumido apenas por deploy/scripts/instalacao/migrar-banco.sh, que a\n'
+			printf '# transporta ao cliente por PGPASSFILE — nunca por argumento de linha de\n'
+			printf '# comando nem por variável exportada.\n'
+			printf '#\n'
+			printf '# A credencial NÃO é regerada em execuções seguintes do provisionamento. Se\n'
+			printf '# precisar trocá-la, altere aqui E no banco (ALTER ROLE) na mesma janela,\n'
+			printf '# respeitando as mesmas duas regras do arquivo da aplicação: apenas letras e\n'
+			printf '# números, e UMA única atribuição por chave.\n'
+			printf '\n'
+			printf 'MIGRATION_DATABASE_URL=%s\n' \
+				"$(montar_url_de_migracao "${senha_migracao}" "${porta_banco}")"
+		} >"${ARQ_AMBIENTE_MIGRACAO}"
+		detalhes="${detalhes}arquivo ${ARQ_AMBIENTE_MIGRACAO} criado (0600 ${DONO_ARQ_AMBIENTE}, credencial gerada em tempo de execução); "
+		mudancas=$((mudancas + 1))
+	fi
+
+	if [[ "$(psql_consulta "SELECT count(*) FROM pg_roles WHERE rolname = '${PAPEL_MIGRACAO}'")" != "1" ]]; then
+		# O SQL trafega pela entrada padrão, com o registro de comandos desligado na
+		# própria sessão — mesmo cuidado do P07, pela mesma razão.
+		printf "SET log_statement = 'none';\nSET log_min_duration_statement = -1;\nCREATE ROLE \"%s\" WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '%s';\n" \
+			"${PAPEL_MIGRACAO}" "${senha_migracao}" | psql_admin >/dev/null
+		detalhes="${detalhes}papel '${PAPEL_MIGRACAO}' criado (sem privilégio administrativo na instância); "
+		mudancas=$((mudancas + 1))
+	fi
+
+	if [[ "${mudancas}" -gt 0 ]]; then
+		criado "P15" "papel de migração e credencial dele (${detalhes%; })"
+	else
+		ja_ok "P15" "papel de banco '${PAPEL_MIGRACAO}' já existe e ${ARQ_AMBIENTE_MIGRACAO} já está íntegro (credencial preservada)"
+	fi
+}
+
+# =========================================================================== #
+# P16 — banco preparado para a migração, e a credencial de migração validada.
+#
+# Sem a validação de ponta a ponta, este procedimento poderia terminar com
+# sucesso e a migração ainda não conseguir conectar: o arquivo de ambiente e o
+# papel podem ter nascido em execuções diferentes, com valores diferentes. É o
+# mesmo raciocínio do P09, aplicado ao segundo papel — e por isso a validação
+# percorre o MESMO caminho que `migrar-banco.sh` percorre, o endereço de retorno
+# com a regra `host` do ${ARQ_PG_HBA}, e não o socket.
+# =========================================================================== #
+passo_p16_banco_preparado() {
+	local mudancas=0
+
+	# Schema que já exista com outro dono não é corrigido em silêncio: `CREATE
+	# SCHEMA IF NOT EXISTS ... AUTHORIZATION` IGNORA a autorização quando o schema
+	# existe, de modo que o passo reportaria mudança para sempre sem nunca
+	# convergir. Trocar o dono é decisão com consequência sobre objeto já criado —
+	# ela é do operador, não deste script.
+	local schema dono
+	for schema in "${SCHEMA_IDENTIDADE}" "${SCHEMA_NEGOCIO}"; do
+		dono="$(psql_consulta_no_banco "${BANCO_DB}" \
+			"SELECT coalesce((SELECT r.rolname FROM pg_namespace n JOIN pg_roles r ON r.oid = n.nspowner WHERE n.nspname = '${schema}'), 'AUSENTE')")"
+		if [[ "${dono}" != "AUSENTE" && "${dono}" != "${PAPEL_MIGRACAO}" ]]; then
+			abortar "o schema '${schema}' do banco '${BANCO_DB}' pertence a '${dono}', e não a '${PAPEL_MIGRACAO}' — com o dono errado a RLS forçada deixa de valer para quem cria as tabelas, e o isolamento existiria só no papel" \
+				"NADA foi alterado. Decida o destino dos objetos que já vivem nele e, se a troca for deliberada, execute 'ALTER SCHEMA \"${schema}\" OWNER TO \"${PAPEL_MIGRACAO}\"' e 'REASSIGN OWNED' na mesma janela; depois execute este script de novo"
+		fi
+	done
+
+	local ja_preparado
+	ja_preparado="$(psql_consulta_no_banco "${BANCO_DB}" "
+		SELECT (
+			count(*) FILTER (WHERE r.rolname = '${PAPEL_MIGRACAO}') = 2
+			AND bool_and(has_schema_privilege('${PAPEL_DB}', n.nspname, 'USAGE'))
+			AND has_database_privilege('${PAPEL_MIGRACAO}', '${BANCO_DB}', 'CONNECT')
+		)
+		FROM pg_namespace n
+		JOIN pg_roles r ON r.oid = n.nspowner
+		WHERE n.nspname IN ('${SCHEMA_IDENTIDADE}', '${SCHEMA_NEGOCIO}')")"
+
+	if [[ "${ja_preparado}" != "t" ]]; then
+		sql_preparar_banco_para_migracao "${BANCO_DB}" | psql_admin -d "${BANCO_DB}" >/dev/null
+		mudancas=$((mudancas + 1))
+	fi
+
+	local arq_senha="${DIR_TEMPORARIO}/pgpass-migracao"
+	escrever_pgpass_migracao "${arq_senha}"
+
+	if ! credencial_de_migracao_conecta "${arq_senha}"; then
+		# Mesmo invariante afirmado NO PONTO da operação perigosa que o P09 instala
+		# para o papel da aplicação: o `ALTER ROLE` abaixo é a única linha deste
+		# passo que reescreve a senha do papel de migração, e reescrevê-la a partir
+		# de um valor lido pela metade rebaixaria a senha efetiva do banco enquanto
+		# ${ARQ_AMBIENTE_MIGRACAO} seguiria guardando o valor completo.
+		if ! credencial_manuseavel "${senha_migracao}"; then
+			abortar "recusa de reescrever a senha de '${PAPEL_MIGRACAO}': a credencial em mãos não passa na verificação de formato, e reescrever a partir dela rebaixaria a senha efetiva do banco" \
+				"confira ${ARQ_AMBIENTE_MIGRACAO} — a credencial precisa conter apenas letras e números; corrija-a lá e no banco (ALTER ROLE) na mesma janela"
+		fi
+
+		info "a credencial de migração não conectou — ressincronizando a senha do papel a partir de ${ARQ_AMBIENTE_MIGRACAO}"
+		printf "SET log_statement = 'none';\nSET log_min_duration_statement = -1;\nALTER ROLE \"%s\" WITH PASSWORD '%s';\n" \
+			"${PAPEL_MIGRACAO}" "${senha_migracao}" | psql_admin >/dev/null
+		mudancas=$((mudancas + 1))
+
+		if ! credencial_de_migracao_conecta "${arq_senha}"; then
+			abortar "mesmo após ressincronizar a senha, o papel '${PAPEL_MIGRACAO}' não conecta em '${BANCO_DB}' por ${HOSPEDEIRO_DB}:${porta_banco}" \
+				"confira a regra 'host' do papel em ${ARQ_PG_HBA} (bloco '${MARCADOR_HBA_INICIO}') e a concessão de CONNECT sobre '${BANCO_DB}'; o log está em 'journalctl -u postgresql@${VERSAO_POSTGRES}-main -n 50'"
+		fi
+	fi
+
+	if [[ "${mudancas}" -gt 0 ]]; then
+		criado "P16" "banco '${BANCO_DB}' preparado para a migração: schemas '${SCHEMA_IDENTIDADE}' e '${SCHEMA_NEGOCIO}' com dono '${PAPEL_MIGRACAO}', uso concedido a '${PAPEL_DB}', e a credencial de migração conecta"
+	else
+		ja_ok "P16" "banco '${BANCO_DB}' já preparado para a migração e a credencial de '${PAPEL_MIGRACAO}' conecta"
+	fi
+}
+
+# =========================================================================== #
 # Encerramento.
 # =========================================================================== #
 resumir() {
@@ -1645,6 +2007,7 @@ resumir() {
 	fi
 
 	info "credencial e cadeias de conexão em ${ARQ_AMBIENTE} (0600 ${DONO_ARQ_AMBIENTE}) — fora da árvore versionada"
+	info "credencial do papel de migração em ${ARQ_AMBIENTE_MIGRACAO} (0600 ${DONO_ARQ_AMBIENTE}) — separada da anterior, consumida só por migrar-banco.sh"
 	info "provisionamento concluído"
 }
 
@@ -1670,6 +2033,8 @@ main() {
 	passo_p12_servico_fila
 	passo_p13_binario_capturador
 	passo_p14_servico_capturador
+	passo_p15_papel_migracao
+	passo_p16_banco_preparado
 
 	resumir
 }

@@ -208,15 +208,31 @@ Específicos deste domínio: **undici** (mTLS do Sicoob), **`node:crypto` `X509C
 > grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 > ```
 
-Três débitos da F0 têm gatilho que dispara numa fatia futura. O detalhe vive na §2 do
-`docs/specs/features/fundacao-stack-nativa/v1/_run/run-report.md`, para onde o `ÍNDICE` de cada
-marcador aponta.
+Seis débitos têm gatilho que dispara fora da fatia que os criou: **D28** e **D32** vêm da F0; **D6**,
+**D7**, **D21** e **D23** nasceram na F1. **Dois já dispararam e seguem abertos** — o D28 (na F1/T2) e
+o D21 (na F1/T8, quando o encaminhador de `/v1/auth` montou `/change-password`).
+
+> **Esta tabela é um ÍNDICE, não um relatório.** Cada linha é um **ponteiro curto**; o detalhe —
+> impacto medido, o que fazer, prova exigida — vive **só** na §2 do `run-report.md` da fatia que
+> registrou o débito, para onde o `ÍNDICE` do marcador aponta: a F0 em
+> `docs/specs/features/fundacao-stack-nativa/v1/_run/`, a F1 em
+> `docs/specs/features/fundacao-multitenancy-identidade/v1/_run/`. É o que a §3-B manda
+> (*"marcador que copia o relatório inteiro apodrece — o relatório é corrigido e a cópia não"*), e
+> o motivo é medido: este arquivo entra no contexto da sessão principal **e de todo subagente**, em
+> toda task. **Linha que passar de ~150 caracteres deve ter o excedente movido para a §2.**
+
+> **O número sozinho não identifica um débito — o identificador é o par `Dnn · F{n}/T{n}` mais o
+> caminho do `ÍNDICE`.** A sequência `Dnn` corre **dentro da §2 do `run-report.md` da fatia que a
+> registrou**, então `D6` da F1 e `D6` da F0 são débitos diferentes e ambos legítimos.
 
 | Débito | Onde | Dispara quando |
 |---|---|---|
-| **D25** | `packages/shared/src/log.ts` | a fatia de **autenticação** entrar — o `better-auth` trafega `token` e `callbackURL` em cadeia de consulta, e a redação não alcança esse formato |
-| **D28** | `apps/api/test/saude.e2e.spec.ts` | um **quarto consumidor** importar `packages/shared/test/` por caminho relativo profundo |
-| **D32** | `apps/worker/src/fila.ts` | a **primeira fatia que enfileirar tarefa de negócio** — o lado produtor mora dentro de `apps/worker`, que `apps/api` não pode importar |
+| **D28** (F0/T5) | 3 arquivos de teste (`apps/api/test/`, `packages/db/test/`) | **JÁ DISPAROU (F1/T2)** — consumidor novo de `packages/shared/test/` por caminho relativo profundo |
+| **D32** (F0/T6) | `apps/worker/src/fila.ts` | a primeira fatia que **enfileirar tarefa de negócio** |
+| **D6** (F1/T5) | `deploy/scripts/instalacao/verificar-fundacao.sh` | a **task de fechamento da F1** — `verificar-migracao.sh` sem agregador |
+| **D7** (F1/T6) | `packages/auth/src/autenticacao.ts` | a **primeira rota de criação de pessoa** (fatia `autorizacao-e-ciclo-de-acesso`) |
+| **D21** (F1/T7) | `packages/auth/src/autenticacao.ts` | **JÁ DISPAROU (F1/T8)** — `/change-password` montado; a recusa da barreira não desfaz o que a rota já escreveu |
+| **D23** (F1/T8) | `apps/api/src/autenticacao/autenticacao.module.ts` | a **publicação atrás do servidor de borda na F7** — origem confiável derivada do endereço de retorno |
 
 ---
 

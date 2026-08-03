@@ -3,7 +3,7 @@
 # Verificação do provisionamento dos serviços de base — T2 da fatia
 # `fundacao-stack-nativa`.
 #
-# Casos cobertos: CT-001, CT-002, CT-003, CT-004, CT-005.
+# Casos cobertos: CT-001, CT-002, CT-003, CT-004, CT-005 e CT-030.
 #
 # O que este script prova, em uma frase por caso:
 #
@@ -21,7 +21,11 @@
 #   CT-004  uma tarefa gravada na fila sobrevive à parada e ao retorno do
 #           servidor de fila;
 #   CT-005  o provisionamento não alterou o ambiente legado nem colidiu com
-#           suas portas.
+#           suas portas;
+#   CT-030  no cluster real, os dois papéis — o da aplicação e o de migração —
+#           existem, nenhum deles tem privilégio capaz de contornar a política de
+#           linha, nenhum pertence ao outro, e os dois schemas pertencem ao papel
+#           de migração com uso concedido ao papel da aplicação.
 #
 # ---------------------------------------------------------------------------
 # Como esta bateria é executada
@@ -99,6 +103,11 @@ readonly ARQ_AMBIENTE="/etc/sysloc/backend.env"
 readonly DONO_ARQ_AMBIENTE="root"
 readonly PAPEL_DB="sysloc_app"
 readonly BANCO_DB="sysloc"
+# Acrescentados pela T5 da fatia `fundacao-multitenancy-identidade`, junto com os
+# passos P15 e P16 do provisionamento. Ver o CT-030.
+readonly PAPEL_MIGRACAO="sysloc_migracao"
+readonly SCHEMA_IDENTIDADE="identidade"
+readonly SCHEMA_NEGOCIO="negocio"
 readonly PORTA_FILA=6380
 readonly ARQ_FILA_CONF="/etc/redis/redis-sysloc.conf"
 readonly DIR_FILA_DADOS="/var/lib/redis/sysloc"
@@ -1865,6 +1874,93 @@ ct_005() {
 }
 
 # =========================================================================== #
+# CT-030 — No cluster real, os dois papéis existem e nenhum deles tem privilégio
+#          capaz de contornar o isolamento.
+#
+# O CT-001 da suíte de `packages/db` cobre a mesma classe de invariante contra uma
+# instância EFÊMERA (`embedded-postgres` em versão beta). Os dois são necessários,
+# e a duplicação está justificada na §20 da tech spec: o comportamento de uma
+# versão beta pode divergir do cluster real, e é no cluster real que a operação
+# acontece. Aqui, além disso, existe algo que não existe lá — o estado deixado
+# pelos passos P15 e P16 do provisionamento.
+#
+# A asserção é por ATRIBUTO e por PAPEL, e não por presença do papel. Não é a
+# existência que interessa: é a AUSÊNCIA de cada capacidade que faria a política
+# de linha deixar de valer — `rolsuper` (ignora sempre), `rolbypassrls` (ignora
+# sempre), `rolcreaterole` (concede a si mesmo o que quiser) e o pertencimento do
+# papel da aplicação ao papel dono (herdaria a propriedade das tabelas, e com ela
+# a isenção que só `FORCE` fecharia).
+#
+# Os schemas entram no mesmo caso porque nascem do MESMO par de passos e porque
+# a propriedade que interessa neles é a mesma: dono errado no schema faz as
+# tabelas nascerem do papel errado, e o isolamento volta a depender de com qual
+# papel alguém conectou.
+# =========================================================================== #
+ct_030() {
+	caso "CT-030" "No cluster real, os dois papéis existem e nenhum deles tem privilégio capaz de contornar o isolamento"
+
+	if ! command -v psql >/dev/null 2>&1 || ! getent passwd postgres >/dev/null 2>&1; then
+		falhar "o cliente do banco ou o usuário 'postgres' não existem nesta máquina — depois do provisionamento os dois têm de existir, e sem eles este caso não tem como consultar o catálogo"
+		fechar_caso "CT-030"
+		return
+	fi
+
+	# `-A -t` rende booleano como `t`/`f`. Nenhuma consulta aqui carrega segredo:
+	# são todas leituras do catálogo do sistema.
+	consulta_cluster() { runuser -u postgres -- psql -X -q -A -t -c "$1" 2>/dev/null || printf 'INDISPONIVEL'; }
+	consulta_banco() { runuser -u postgres -- psql -X -q -A -t -d "${BANCO_DB}" -c "$1" 2>/dev/null || printf 'INDISPONIVEL'; }
+
+	# (a) os dois papéis existem ---------------------------------------------- #
+	afirmar_igual "(a) contagem de papéis encontrados entre '${PAPEL_DB}' e '${PAPEL_MIGRACAO}'" "2" \
+		"$(consulta_cluster "SELECT count(*) FROM pg_roles WHERE rolname IN ('${PAPEL_DB}', '${PAPEL_MIGRACAO}')")"
+
+	# (b) nenhum atributo capaz de contornar a política ----------------------- #
+	#
+	# Uma asserção por PAPEL e por ATRIBUTO, e não uma linha inteira comparada de
+	# uma vez: com a comparação agregada, a reprovação diria "esperado f|f|f,
+	# obtido f|t|f" e o operador teria de contar colunas para saber o que está
+	# ligado. Assim o resumo em stderr já nomeia o papel e o atributo.
+	local papel atributo valor
+	for papel in "${PAPEL_DB}" "${PAPEL_MIGRACAO}"; do
+		for atributo in rolsuper rolbypassrls rolcreaterole; do
+			valor="$(consulta_cluster "SELECT ${atributo} FROM pg_roles WHERE rolname = '${papel}'")"
+			afirmar_igual "(b) ${papel}: ${atributo} desligado" "f" "${valor}"
+		done
+	done
+
+	# (c) o papel da aplicação não pertence ao papel dono --------------------- #
+	#
+	# Os dois sentidos são afirmados. O que importa de verdade é o primeiro — o
+	# papel que atende requisição herdando a propriedade das tabelas —, mas o
+	# inverso também quebraria a separação: o dono passaria a alcançar o que quer
+	# que seja concedido ao papel da aplicação, e a topologia de dois papéis
+	# viraria um papel com dois nomes.
+	afirmar_igual "(c) '${PAPEL_DB}' NÃO é membro de '${PAPEL_MIGRACAO}'" "f" \
+		"$(consulta_cluster "SELECT pg_has_role('${PAPEL_DB}', '${PAPEL_MIGRACAO}', 'MEMBER')")"
+	afirmar_igual "(c) '${PAPEL_MIGRACAO}' NÃO é membro de '${PAPEL_DB}'" "f" \
+		"$(consulta_cluster "SELECT pg_has_role('${PAPEL_MIGRACAO}', '${PAPEL_DB}', 'MEMBER')")"
+
+	# (d) os dois schemas, com dono e uso -------------------------------------- #
+	local schema
+	for schema in "${SCHEMA_IDENTIDADE}" "${SCHEMA_NEGOCIO}"; do
+		afirmar_igual "(d) o schema '${schema}' pertence a '${PAPEL_MIGRACAO}'" "${PAPEL_MIGRACAO}" \
+			"$(consulta_banco "SELECT coalesce((SELECT r.rolname FROM pg_namespace n JOIN pg_roles r ON r.oid = n.nspowner WHERE n.nspname = '${schema}'), 'AUSENTE')")"
+		afirmar_igual "(d) '${PAPEL_DB}' alcança o schema '${schema}'" "t" \
+			"$(consulta_banco "SELECT has_schema_privilege('${PAPEL_DB}', '${schema}', 'USAGE')")"
+		afirmar_igual "(d) '${PAPEL_DB}' NÃO cria objeto no schema '${schema}'" "f" \
+			"$(consulta_banco "SELECT has_schema_privilege('${PAPEL_DB}', '${schema}', 'CREATE')")"
+	done
+
+	# (e) o papel de migração alcança o banco --------------------------------- #
+	afirmar_igual "(e) '${PAPEL_MIGRACAO}' pode conectar em '${BANCO_DB}'" "t" \
+		"$(consulta_cluster "SELECT has_database_privilege('${PAPEL_MIGRACAO}', '${BANCO_DB}', 'CONNECT')")"
+
+	unset -f consulta_cluster consulta_banco
+
+	fechar_caso "CT-030"
+}
+
+# =========================================================================== #
 main() {
 	exigir_privilegio
 
@@ -1923,10 +2019,11 @@ main() {
 	ct_003
 	ct_004
 	ct_005
+	ct_030
 
 	printf '\n'
 	if [[ "${falhas_totais}" -eq 0 ]]; then
-		printf 'verificar-provisionamento: %d/%d casos aprovados (CT-001 a CT-005)\n' \
+		printf 'verificar-provisionamento: %d/%d casos aprovados (CT-001 a CT-005 e CT-030)\n' \
 			"${casos_aprovados}" "${casos_executados}"
 		exit 0
 	fi

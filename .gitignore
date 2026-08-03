@@ -51,3 +51,9 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Artefatos efêmeros das provas de falsificação de superfície (CT-012, F1/T3)
+# Nascem na raiz do pacote porque é de lá que `postgres` e `./dist` resolvem —
+# mover para fora exigiria plantar node_modules e trocaria fidelidade por asseio.
+# O `finally` os remove; esta linha cobre a queda dura entre o writeFile e o rm.
+packages/db/*-falsificad*.mjs

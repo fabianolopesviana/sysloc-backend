@@ -49,6 +49,42 @@ export const CodigoErro = Object.freeze({
   ERRO_INTERNO: 'ERRO_INTERNO',
   /** Dependência necessária indisponível. A operação pode ser repetida mais tarde. */
   SERVICO_INDISPONIVEL: 'SERVICO_INDISPONIVEL',
+
+  // -------------------------------------------------------------------------
+  // Identidade (F1) — os três da §10.1 da tech spec da fatia
+  // -------------------------------------------------------------------------
+  /**
+   * A tentativa de entrada não resultou em acesso.
+   *
+   * **Um código para quatro causas, de propósito** (RN-10): credencial incorreta, conta bloqueada,
+   * pessoa desativada e empresa suspensa produzem a MESMA resposta — mesmo status, mesmo código,
+   * mesma mensagem, mesmo conjunto de campos. Distinguir confirmaria ao atacante que a conta
+   * existe. Um código por causa seria a forma "mais informativa" e é justamente a que a decisão
+   * rejeita; quem precisa da causa é a trilha de auditoria, não o cliente.
+   */
+  CREDENCIAL_INVALIDA: 'CREDENCIAL_INVALIDA',
+  /** Não há sessão válida na requisição — ausente, encerrada ou vencida. */
+  NAO_AUTENTICADO: 'NAO_AUTENTICADO',
+  /** Há sessão válida, mas ela não alcança o que foi pedido. */
+  ACESSO_NEGADO: 'ACESSO_NEGADO',
+
+  /**
+   * A requisição foi recusada por quem a atendeu, e a causa **não tem nome neste vocabulário**.
+   *
+   * É o código do **fecho** da classificação, e não mais um código de negócio: existe para que
+   * uma recusa de CLIENTE emitida por um componente que não conhecemos — o arcabouço de
+   * identidade e as versões futuras dele — chegue ao cliente **como recusa**, com o status que
+   * quem recusou escolheu, em vez de ser reclassificada como falha do servidor. Sem ele, todo
+   * status fora da tabela do filtro global virava `500 ERRO_INTERNO`: resposta mentirosa para o
+   * cliente e, pior, uma linha de nível `error` no journal afirmando falha do serviço no exato
+   * instante em que o serviço estava se defendendo.
+   *
+   * **O status que acompanha este código é o de origem, não o desta tabela** — o `400` mapeado em
+   * {@link STATUS_POR_CODIGO} é apenas o padrão de quem o levantar diretamente como
+   * `ErroDeAplicacao`. Quem preserva o status de origem é `apps/api/src/comum/filtro-excecao.ts`,
+   * onde a decisão está registrada por extenso.
+   */
+  REQUISICAO_RECUSADA: 'REQUISICAO_RECUSADA',
 } as const);
 
 /** União fechada dos códigos acima. */
@@ -67,6 +103,17 @@ const STATUS_POR_CODIGO: Readonly<Record<CodigoErro, number>> = {
   [CodigoErro.RECURSO_NAO_ENCONTRADO]: 404,
   [CodigoErro.ERRO_INTERNO]: 500,
   [CodigoErro.SERVICO_INDISPONIVEL]: 503,
+  // Os dois `401` são o par "quem é você?" — a entrada que não foi aceita e a requisição sem
+  // sessão válida. O `403` é outra pergunta: a sessão existe e não alcança o pedido.
+  [CodigoErro.CREDENCIAL_INVALIDA]: 401,
+  [CodigoErro.NAO_AUTENTICADO]: 401,
+  [CodigoErro.ACESSO_NEGADO]: 403,
+  // `400` é o PADRÃO de quem levantar este código diretamente — a recusa de cliente mais genérica
+  // que existe. Ele **não** é o status que o filtro global responde quando traduz a recusa de um
+  // componente externo: ali o status de origem é preservado, justamente porque a razão de o código
+  // existir é não reclassificar a recusa alheia. Ver a decisão fechada em
+  // `apps/api/src/comum/filtro-excecao.ts`.
+  [CodigoErro.REQUISICAO_RECUSADA]: 400,
 };
 
 /**

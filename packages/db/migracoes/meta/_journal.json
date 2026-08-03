@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1785640327269,
+      "tag": "0000_fundacao",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785640361057,
+      "tag": "0001_seguranca",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785668792032,
+      "tag": "0002_campos_do_arcabouco",
+      "breakpoints": true
+    }
+  ]
+}

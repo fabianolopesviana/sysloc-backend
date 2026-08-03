@@ -4,6 +4,8 @@
  * Rastreabilidade: T3 §4 (registro estruturado, nível por ambiente, correlação por
  * requisição, campos sensíveis mascarados na origem) e CLAUDE.md invariante 3
  * → CT-006, CT-007, CT-008.
+ * Rastreabilidade: T1/F1 §4 (terceiro eixo de redação, por forma do valor, que fecha o débito
+ * D25) e CA-15 (nenhum segredo legível no registro interno) → CT-027, CT-028.
  *
  * INVARIANTES
  * - CT-006: cada evento chega ao destino como uma linha JSON única e parseável, carregando o
@@ -25,6 +27,18 @@
  * - CT-008 (não-mutilação): URL legítima **sem** credencial atravessa o registro byte a byte
  *   idêntica — inclusive a que traz `@` no query (`http://hospedeiro:porta?redirect=a@b`).
  *   Mascarar demais corrompe em silêncio o diagnóstico que o registro existe para preservar.
+ * - CT-027: o VALOR de parâmetro de endereço cujo nome case um radical sensível não chega ao
+ *   destino em forma legível — nem em campo, nem na mensagem, nem na pilha de uma exceção, nem
+ *   na posição raiz —, enquanto o separador, o nome do parâmetro, o esquema, o hospedeiro, a
+ *   porta, o caminho, o fragmento e os parâmetros não sensíveis atravessam intactos.
+ * - CT-027 (delimitação de `code`): o radical `code` torna sensível o NOME DE UM PARÂMETRO de
+ *   endereço e **nada além disso** — como chave do evento ele não mascara, e `statusCode` e
+ *   `errorCode` chegam ao destino com o valor informado. As duas metades convivem no mesmo
+ *   evento: sem a negativa, mover o radical para a lista de chaves não reprovaria nada.
+ * - CT-028: endereço legítimo, **sem** parâmetro sensível, atravessa byte a byte idêntico nas
+ *   três posições — inclusive com `@`, `=` ou `?` no valor de um parâmetro inocente, e com
+ *   `callbackURL`, que é alvo de retorno e não credencial. É o companheiro que cobre o endereço
+ *   sem parâmetro sensível nenhum, que o CT-027 nunca emite.
  *
  * Fronteira real exercida: filesystem. O destino é um arquivo em diretório temporário próprio,
  * criado pelo caminho legítimo — o mesmo parâmetro `destino` que a unidade systemd usa em
@@ -710,5 +724,306 @@ describe('CT-008 — segredo e dado pessoal registrados não chegam ao destino',
     for (const [chave, original] of Object.entries(intactas)) {
       expect(evento[chave], `URL mutilada em ${chave}`).toBe(original);
     }
+  });
+});
+
+/**
+ * O terceiro eixo da redação — **o valor de parâmetro de endereço** —, que fecha o débito D25.
+ *
+ * O que os dois eixos anteriores não alcançam: `?token=SEGREDO` dentro de uma cadeia de
+ * caracteres. O eixo por nome casa **chaves** do evento, e aqui o par `nome=valor` vive dentro
+ * de um texto; o eixo da cadeia de conexão casa `usuario:senha@`, que não é esta forma. O
+ * vazamento não é hipotético: foi medido no journal, e saiu **quatro vezes numa linha só** pela
+ * mensagem que o arcabouço monta para rota não casada interpolando o alvo bruto.
+ *
+ * Por que a matriz cobre as QUATRO posições em vez de só o campo: a classe já reapareceu por
+ * posição nova quatro vezes neste repositório, sempre com a correção anterior fechando com
+ * precisão o caminho apontado. Cobrir só o campo repetiria esse padrão.
+ *
+ * CT-027 e CT-028 são o par positivo/negativo do MESMO predicado, e nenhum dos dois vale
+ * sozinho. O que cada um pega, medido com o eixo mutilado numa cópia: um padrão largo demais
+ * (que redija QUALQUER parâmetro) reprova os dois — o CT-027 pela igualdade literal, que inclui
+ * os parâmetros inocentes de cada endereço. O que só o CT-028 alcança é o endereço **sem
+ * parâmetro sensível nenhum**, que o CT-027 nunca emite: é ali que moram `callbackURL`, o `@` do
+ * destino e o `?` dentro de um valor inocente — as três formas em que um aperto do padrão
+ * mutilaria endereço legítimo sem que caso positivo algum percebesse.
+ */
+describe('CT-027 — valor de parâmetro sensível em endereço é redigido, com o nome preservado', () => {
+  const EVENTO_BASE = { evento: 'rota_nao_encontrada', idCorrelacao: 'corr-seguranca-27' };
+  const HOSPEDEIRO = 'https://app.exemplo.com:8443';
+  const ALVO = `${HOSPEDEIRO}/entrar`;
+
+  /**
+   * Um portador por forma em que o parâmetro sensível aparece no endereço. Os valores são
+   * sentinela improvável — e não `123456`/`abc` como um literal curto —, porque a varredura é
+   * por substring sobre o arquivo inteiro: um literal curto pode coincidir com o horário ISO ou
+   * com o PID do envelope e tornar o caso instável exatamente na asserção que mais importa.
+   *
+   * O par `endereco`/`redigido` é escrito **literalmente** nos dois lados de propósito: derivar
+   * o esperado com um `replace` no próprio caso reimplementaria o SUT dentro do teste, e um
+   * defeito compartilhado passaria despercebido pelos dois.
+   */
+  const portadores = [
+    {
+      portador: 'token na consulta, com parâmetro inocente ao lado',
+      endereco: `${ALVO}?token=TOKEN-NAO-VAZAR-7b41&estado=ok`,
+      redigido: `${ALVO}?token=${SENTINELA_REDIGIDO}&estado=ok`,
+      segredo: 'TOKEN-NAO-VAZAR-7b41',
+      parametroRedigido: `token=${SENTINELA_REDIGIDO}`,
+      parametroIntacto: 'estado=ok',
+    },
+    {
+      portador: 'code — o código de autorização, credencial de uso único do fluxo OAuth',
+      endereco: `${ALVO}?code=CODE-NAO-VAZAR-51bc&pagina=2`,
+      redigido: `${ALVO}?code=${SENTINELA_REDIGIDO}&pagina=2`,
+      segredo: 'CODE-NAO-VAZAR-51bc',
+      parametroRedigido: `code=${SENTINELA_REDIGIDO}`,
+      parametroIntacto: 'pagina=2',
+    },
+    {
+      portador: 'SECRET em caixa alta, no segundo parâmetro — a grafia não decide o casamento',
+      endereco: `${ALVO}?pagina=2&SECRET=SEG-NAO-VAZAR-0e88`,
+      redigido: `${ALVO}?pagina=2&SECRET=${SENTINELA_REDIGIDO}`,
+      segredo: 'SEG-NAO-VAZAR-0e88',
+      parametroRedigido: `SECRET=${SENTINELA_REDIGIDO}`,
+      parametroIntacto: 'pagina=2',
+    },
+    {
+      portador: 'senha com fragmento logo após o valor — o `#` encerra o valor, e sobrevive',
+      endereco: `${ALVO}?estado=ok&senha=PWD-NAO-VAZAR-a1f0#secao`,
+      redigido: `${ALVO}?estado=ok&senha=${SENTINELA_REDIGIDO}#secao`,
+      segredo: 'PWD-NAO-VAZAR-a1f0',
+      parametroRedigido: `senha=${SENTINELA_REDIGIDO}`,
+      parametroIntacto: 'estado=ok',
+    },
+    {
+      portador: 'access_token no fragmento — a mesma forma fora da cadeia de consulta',
+      endereco: `${ALVO}#access_token=FRAG-NAO-VAZAR-c3d9&estado=ok`,
+      redigido: `${ALVO}#access_token=${SENTINELA_REDIGIDO}&estado=ok`,
+      segredo: 'FRAG-NAO-VAZAR-c3d9',
+      parametroRedigido: `access_token=${SENTINELA_REDIGIDO}`,
+      parametroIntacto: 'estado=ok',
+    },
+  ] as const;
+
+  /** A mensagem que o arcabouço monta para rota não casada — a forma exata do vazamento medido. */
+  const comoMensagem = (endereco: string): string => `Cannot GET ${endereco}`;
+
+  const comoPilha = (endereco: string): string =>
+    [
+      'Error: rota não encontrada',
+      '    at despachar (/opt/sysloc/apps/api/src/roteador.ts:31:7)',
+      `    at alvo [${endereco}]`,
+    ].join('\n');
+
+  /**
+   * As quatro posições em que o endereço chega à linha. A raiz usa `URL` porque é o portador de
+   * endereço na **profundidade 0**: uma cadeia de caracteres passada sozinha vira mensagem, e
+   * essa rota já é a segunda posição desta tabela.
+   */
+  const posicoes = [
+    {
+      posicao: 'campo',
+      montar: (endereco: string) => endereco,
+      emitir: (logger: Logger, endereco: string) => logger.info({ ...EVENTO_BASE, alvo: endereco }),
+      extrair: (evento: Record<string, unknown>) => evento.alvo,
+    },
+    {
+      posicao: 'mensagem',
+      montar: comoMensagem,
+      emitir: (logger: Logger, endereco: string) => logger.info(comoMensagem(endereco)),
+      extrair: (evento: Record<string, unknown>) => evento.mensagem,
+    },
+    {
+      posicao: 'pilha_de_excecao',
+      montar: comoPilha,
+      emitir: (logger: Logger, endereco: string) => {
+        const erro = new Error('rota não encontrada');
+        erro.stack = comoPilha(endereco);
+        logger.error({ ...EVENTO_BASE, err: erro }, 'rota não encontrada');
+      },
+      extrair: (evento: Record<string, unknown>) => (evento.err as Record<string, unknown>).pilha,
+    },
+    {
+      posicao: 'raiz',
+      montar: (endereco: string) => endereco,
+      emitir: (logger: Logger, endereco: string) => logger.info(new URL(endereco)),
+      extrair: (evento: Record<string, unknown>) => evento.valor,
+    },
+  ] as const;
+
+  const combinacoes = portadores.flatMap((portador) =>
+    posicoes.map((posicao) => ({ ...portador, ...posicao })),
+  );
+
+  it.each(combinacoes)(
+    '$portador — em $posicao',
+    async ({
+      endereco,
+      redigido,
+      segredo,
+      parametroRedigido,
+      parametroIntacto,
+      montar,
+      emitir,
+      extrair,
+    }) => {
+      const { logger, destino } = loggerEmArquivo('info');
+
+      emitir(logger, endereco);
+      await esvaziar(logger);
+
+      const conteudo = await readFile(destino, 'utf8');
+      // A varredura é sobre o arquivo INTEIRO, não sobre o campo escolhido: foi asserir só o
+      // campo que deixou a mensagem promovida vazar em silêncio na fatia anterior.
+      expect(conteudo, `segredo vazado: ${segredo}`).not.toContain(segredo);
+      expect(conteudo).not.toContain('NAO-VAZAR');
+
+      const linhas = linhasNaoVazias(conteudo);
+      expect(linhas).toHaveLength(1);
+      const evento = JSON.parse(linhas[0] as string) as Record<string, unknown>;
+
+      const extraido = extrair(evento);
+
+      // ORDEM DELIBERADA: as asserções nomeadas vêm ANTES da igualdade literal. O Vitest aborta
+      // o caso no primeiro `expect` que falha — postas depois do `toBe`, que já as implica
+      // caractere a caractere, elas nunca chegariam a ser avaliadas e seriam decorativas. Nesta
+      // posição cada uma reprova sozinha, com a mensagem que nomeia a metade quebrada; sem elas,
+      // uma falha diria apenas "cadeias diferentes".
+      expect(String(extraido), 'nome do parâmetro perdido').toContain(parametroRedigido);
+      expect(String(extraido), 'parâmetro inocente mutilado').toContain(parametroIntacto);
+
+      // Mascarar não é apagar: a linha continua carregando o evento, não só o envelope.
+      const conteudoProprio = Object.keys(evento).filter(
+        (chave) => !CHAVES_DO_ENVELOPE.includes(chave),
+      );
+      expect(conteudoProprio.length, 'evento apagado: sobrou só o envelope').toBeGreaterThan(0);
+
+      // Igualdade literal com o endereço inteiro, fechando atrás das nomeadas: prova, de uma vez,
+      // que o nome do parâmetro, o esquema, o hospedeiro, a porta, o caminho, o fragmento e os
+      // demais parâmetros atravessaram — e que só o valor sensível mudou.
+      expect(extraido).toBe(montar(redigido));
+    },
+  );
+
+  /**
+   * A METADE NEGATIVA da delimitação de `code` — a que a matriz acima não alcança.
+   *
+   * O radical `code` é acrescentado à lista do eixo de ENDEREÇO e **só** a ela: em cadeia de
+   * consulta ele é o código de autorização de um fluxo OAuth — credencial de uso único, trocável
+   * por sessão —, enquanto como CHAVE DE EVENTO ele casaria `statusCode` e `errorCode`, que são
+   * diagnóstico e não segredo. A matriz prova o lado fácil (que `code` É redigido no endereço), e
+   * medido: com o radical movido para a lista de chaves, ela segue inteira verde — a delimitação
+   * podia ser desfeita por qualquer agente futuro sem que a suíte percebesse, cegando toda linha
+   * de diagnóstico do serviço.
+   *
+   * Este caso emite num ÚNICO evento a combinação que discrimina os dois lados. Alargar o radical
+   * para as chaves reprova as duas igualdades de diagnóstico; estreitá-lo, tirando-o do endereço,
+   * reprova a igualdade do alvo. É o par que detecta, não a asserção isolada.
+   */
+  it('`code` é radical de PARÂMETRO de endereço, não de chave — `statusCode` e `errorCode` atravessam', async () => {
+    const { logger, destino } = loggerEmArquivo('info');
+    const codigoDeAutorizacao = 'CODE-NAO-VAZAR-9f22';
+
+    logger.info({
+      ...EVENTO_BASE,
+      statusCode: 404,
+      errorCode: 'ROTA_NAO_ENCONTRADA',
+      alvo: `${ALVO}?code=${codigoDeAutorizacao}`,
+    });
+    await esvaziar(logger);
+
+    const conteudo = await readFile(destino, 'utf8');
+    expect(conteudo, `segredo vazado: ${codigoDeAutorizacao}`).not.toContain(codigoDeAutorizacao);
+
+    const evento = JSON.parse(linhasNaoVazias(conteudo)[0] as string) as Record<string, unknown>;
+
+    // As duas chaves de diagnóstico, por igualdade literal com o valor informado — nunca o
+    // sentinela: mascará-las não tira segredo nenhum e apaga o status e o motivo da falha, que é
+    // o que o registro existe para preservar.
+    expect(evento.statusCode, '`statusCode` mascarado — é diagnóstico, não segredo').toBe(404);
+    expect(evento.errorCode, '`errorCode` mascarado — é diagnóstico, não segredo').toBe(
+      'ROTA_NAO_ENCONTRADA',
+    );
+
+    // E, no MESMO evento, o outro lado da delimitação: como nome de parâmetro, `code` é redigido.
+    expect(evento.alvo, 'código de autorização vazado no endereço').toBe(
+      `${ALVO}?code=${SENTINELA_REDIGIDO}`,
+    );
+  });
+});
+
+/**
+ * Companheiro negativo do CT-027 — a delimitação pelo NOME do parâmetro.
+ *
+ * O marcador do D25 registrava, antes desta task, que um padrão mal delimitado **já mutilou em
+ * silêncio** URL legítima neste mesmo arquivo. Este caso é a rede contra a repetição: ele
+ * reprova qualquer aperto do padrão que passe a redigir parâmetro que não é credencial.
+ *
+ * O endereço com `callbackURL` está aqui por decisão registrada em `log.ts` (marcador
+ * `DECISÃO FECHADA` de `redigirValorEmCadeiaDeConsulta`): alvo de retorno é diagnóstico, não
+ * segredo — redigi-lo apagaria para onde o usuário foi mandado sem tirar credencial nenhuma.
+ */
+describe('CT-028 — endereço legítimo sem parâmetro sensível atravessa byte a byte idêntico', () => {
+  const EVENTO_BASE = { evento: 'requisicao_concluida', idCorrelacao: 'corr-seguranca-28' };
+  const HOSPEDEIRO = 'https://app.exemplo.com:8443';
+
+  /** Endereços escolhidos para tentar o padrão largo demais em cada fronteira que ele tem. */
+  const legitimos = [
+    {
+      legitimo: 'consulta comum — nenhum nome casa radical sensível',
+      endereco: `${HOSPEDEIRO}/painel?ordenacao=nome&pagina=2`,
+    },
+    {
+      legitimo: 'alvo de retorno e destino com `@` — nenhum dos dois é credencial',
+      endereco: `${HOSPEDEIRO}/retorno?callbackURL=/painel&redirect=alguem@exemplo.com`,
+    },
+    {
+      legitimo: '`?` e `=` dentro do valor de um parâmetro inocente',
+      endereco: `${HOSPEDEIRO}/busca?termo=a?b=c&pagina=2`,
+    },
+  ] as const;
+
+  const posicoes = [
+    {
+      posicao: 'campo',
+      montar: (endereco: string) => endereco,
+      emitir: (logger: Logger, endereco: string) => logger.info({ ...EVENTO_BASE, alvo: endereco }),
+      extrair: (evento: Record<string, unknown>) => evento.alvo,
+    },
+    {
+      posicao: 'mensagem',
+      montar: (endereco: string) => `requisição concluída para ${endereco}`,
+      emitir: (logger: Logger, endereco: string) =>
+        logger.info(`requisição concluída para ${endereco}`),
+      extrair: (evento: Record<string, unknown>) => evento.mensagem,
+    },
+    {
+      posicao: 'raiz',
+      montar: (endereco: string) => endereco,
+      emitir: (logger: Logger, endereco: string) => logger.info(new URL(endereco)),
+      extrair: (evento: Record<string, unknown>) => evento.valor,
+    },
+  ] as const;
+
+  const combinacoes = legitimos.flatMap((legitimo) =>
+    posicoes.map((posicao) => ({ ...legitimo, ...posicao })),
+  );
+
+  it.each(combinacoes)('$legitimo — em $posicao', async ({ endereco, montar, emitir, extrair }) => {
+    const { logger, destino } = loggerEmArquivo('info');
+
+    emitir(logger, endereco);
+    await esvaziar(logger);
+
+    const conteudo = await readFile(destino, 'utf8');
+    // Nenhum sentinela em lugar nenhum da linha: o eixo não tocou este endereço.
+    expect(conteudo, 'sentinela introduzido em endereço legítimo').not.toContain(
+      SENTINELA_REDIGIDO,
+    );
+
+    const evento = JSON.parse(linhasNaoVazias(conteudo)[0] as string) as Record<string, unknown>;
+    // Igualdade literal com o que foi informado — caractere a caractere, sem exceção.
+    expect(extrair(evento), `endereço mutilado: ${endereco}`).toBe(montar(endereco));
   });
 });

@@ -16,6 +16,23 @@
  *   é decisão de F4 — ver o comentário do enum em `erros.ts`.
  * - CT-004: o status HTTP é derivado do código, não informado pelo chamador.
  * - CT-005: todo valor do enum tem status mapeado, inteiro, na faixa fechada [400, 599].
+ *
+ * Acrescentado pela T8 da fatia `fundacao-multitenancy-identidade` — os três códigos de identidade
+ * da §10.1 daquela tech spec. Os blocos abaixo são **novos**; nenhum caso acima foi alterado, e a
+ * assimetria que a CT-003 já registra (superconjunto, nunca igualdade) é exatamente o que torna o
+ * acréscimo retrocompatível pela ADR-0007.
+ *
+ * - CT-003 (b): `CREDENCIAL_INVALIDA`, `NAO_AUTENTICADO` e `ACESSO_NEGADO` existem no enum, com
+ *   grafia idêntica à fixada e na convenção maiúsculo-com-sublinhado.
+ * - CT-004 (b): o status de cada um é o semântico da §10.1 — `401`, `401` e `403` —, derivado do
+ *   código e não informado pelo chamador.
+ *
+ * Acrescentado no ciclo de correção da T8 (Gate 2, P1) — o código de fecho da classificação:
+ *
+ * - CT-003 (c): `REQUISICAO_RECUSADA` existe no enum, com grafia idêntica, e é código PRÓPRIO —
+ *   não um apelido de `ERRO_INTERNO`. É ele que impede uma recusa de CLIENTE emitida por
+ *   componente externo de sair como falha do SERVIDOR; a prova de comportamento do filtro que o
+ *   consome vive em `apps/api/test/autenticacao.e2e.spec.ts` (CT-018 (e)).
  */
 
 import { describe, expect, it } from 'vitest';
@@ -201,6 +218,105 @@ describe('CT-004 — status HTTP é determinado pelo código, não pelo chamador
     expect(erro.status).toBe(status);
     // Reforço cruzado com CT-002: o status acompanha a resposta, não o corpo.
     expect('status' in erro.paraCorpo()).toBe(false);
+  });
+});
+
+/**
+ * Os três códigos que a T8 acrescenta, escritos como literais pela mesma razão de `CODIGOS_FIXADOS`:
+ * derivá-los do enum tornaria o caso incapaz de detectar renomeação, que é o que a ADR-0007 declara
+ * incompatível. Lista SEPARADA, e não acréscimo à de cima, para que a distinção entre "o que a F0
+ * fixou" e "o que a F1 fixou" continue legível no dia em que uma delas mudar.
+ */
+const CODIGOS_DA_IDENTIDADE = ['CREDENCIAL_INVALIDA', 'NAO_AUTENTICADO', 'ACESSO_NEGADO'] as const;
+
+/**
+ * Tabela código → status semântico da §10.1 da tech spec da fatia. O valor esperado vem de fora do
+ * SUT: a construção da exceção informa apenas código e mensagem.
+ */
+const STATUS_SEMANTICO_DA_IDENTIDADE: ReadonlyArray<readonly [TipoCodigoErro, number]> = [
+  [CodigoErro.CREDENCIAL_INVALIDA, 401],
+  [CodigoErro.NAO_AUTENTICADO, 401],
+  [CodigoErro.ACESSO_NEGADO, 403],
+];
+
+describe('CT-003 (b) — os três códigos de identidade entram no enum fechado', () => {
+  it.each(CODIGOS_DA_IDENTIDADE)('mantém %s com grafia idêntica', (fixado) => {
+    expect(Object.values(CodigoErro)).toContain(fixado);
+  });
+
+  it('tem os três em maiúsculo-com-sublinhado, com nome e valor coincidentes', () => {
+    const porNome = CodigoErro as Record<string, string | undefined>;
+
+    for (const nome of CODIGOS_DA_IDENTIDADE) {
+      // O nome vem da lista externa e o valor vem do SUT — é essa distância que discrimina a
+      // entrada cujo VALOR diverge do nome, que é a forma que a grafia herdada tomaria.
+      expect(porNome[nome], `código fora da convenção de grafia: ${nome}`).toMatch(GRAFIA_DO_ENUM);
+      expect(porNome[nome]).toBe(nome);
+    }
+  });
+
+  it('não reaproveita os códigos da F0 para as recusas de identidade', () => {
+    // Companheiro negativo: sem ele, um enum que apontasse os três nomes novos para
+    // `ERRO_INTERNO` passaria nas asserções de presença acima — e o cliente perderia a
+    // classificação por `codigo` que a ADR-0007 comprou.
+    const daIdentidade = CODIGOS_DA_IDENTIDADE.map(
+      (nome) => (CodigoErro as Record<string, string | undefined>)[nome],
+    );
+
+    expect(new Set(daIdentidade).size).toBe(CODIGOS_DA_IDENTIDADE.length);
+    for (const codigo of daIdentidade) {
+      expect(CODIGOS_FIXADOS as readonly string[]).not.toContain(codigo);
+    }
+  });
+});
+
+describe('CT-004 (b) — status semântico dos códigos de identidade', () => {
+  it.each(STATUS_SEMANTICO_DA_IDENTIDADE)(
+    '%s devolve %i sem que o chamador informe status',
+    (codigo, status) => {
+      const erro = new ErroDeAplicacao(codigo, 'mensagem irrelevante para o status');
+
+      expect(erro.status).toBe(status);
+      expect('status' in erro.paraCorpo()).toBe(false);
+    },
+  );
+
+  it('separa "não sei quem é você" de "sei, e você não alcança isto"', () => {
+    // Os dois `401` são deliberadamente o mesmo status com códigos distintos; o `403` é status
+    // distinto. Um mapeamento que colapsasse os três em `401` — ou que promovesse a recusa de
+    // credencial a `403` — passaria nas asserções por par acima só se a tabela mudasse junto, e é
+    // esta comparação cruzada que amarra a relação entre eles.
+    expect(new ErroDeAplicacao(CodigoErro.CREDENCIAL_INVALIDA, 'x').status).toBe(
+      new ErroDeAplicacao(CodigoErro.NAO_AUTENTICADO, 'x').status,
+    );
+    expect(new ErroDeAplicacao(CodigoErro.ACESSO_NEGADO, 'x').status).not.toBe(
+      new ErroDeAplicacao(CodigoErro.NAO_AUTENTICADO, 'x').status,
+    );
+  });
+});
+
+describe('CT-003 (c) — o código de fecho da classificação entra no enum fechado', () => {
+  // Acrescentado no ciclo de correção da T8 (Gate 2, P1). Bloco NOVO: nenhum caso acima foi
+  // alterado, e a assimetria que a CT-003 registra — superconjunto, nunca igualdade — é o que
+  // torna o acréscimo retrocompatível pela ADR-0007.
+  it('mantém REQUISICAO_RECUSADA com grafia idêntica e nome coincidente com o valor', () => {
+    const porNome = CodigoErro as Record<string, string | undefined>;
+
+    expect(Object.values(CodigoErro)).toContain('REQUISICAO_RECUSADA');
+    expect(porNome.REQUISICAO_RECUSADA).toMatch(GRAFIA_DO_ENUM);
+    expect(porNome.REQUISICAO_RECUSADA).toBe('REQUISICAO_RECUSADA');
+  });
+
+  it('é código PRÓPRIO, e não um apelido de ERRO_INTERNO', () => {
+    // Companheiro negativo, e o eixo que importa: um enum que apontasse o nome novo para
+    // `ERRO_INTERNO` passaria na asserção de presença acima, e a recusa de cliente voltaria a
+    // sair com o código — e o status — de falha do servidor, que é exatamente o defeito que o
+    // código existe para fechar.
+    expect(CodigoErro.REQUISICAO_RECUSADA).not.toBe(CodigoErro.ERRO_INTERNO);
+    expect(new ErroDeAplicacao(CodigoErro.REQUISICAO_RECUSADA, 'x').status).toBe(400);
+    expect(new ErroDeAplicacao(CodigoErro.REQUISICAO_RECUSADA, 'x').status).not.toBe(
+      new ErroDeAplicacao(CodigoErro.ERRO_INTERNO, 'x').status,
+    );
   });
 });
 

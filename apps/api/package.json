@@ -17,6 +17,8 @@
     "@nestjs/core": "11.1.28",
     "@nestjs/platform-fastify": "11.1.28",
     "@nestjs/swagger": "11.4.6",
+    "@sysloc/auth": "workspace:*",
+    "@sysloc/db": "workspace:*",
     "@sysloc/shared": "workspace:*",
     "fastify": "5.10.0",
     "ioredis": "5.11.1",
@@ -28,6 +30,7 @@
   "devDependencies": {
     "@nestjs/testing": "11.1.28",
     "@types/node": "24.13.3",
+    "drizzle-orm": "0.45.2",
     "typescript": "7.0.2",
     "vitest": "4.1.10"
   }

@@ -113,6 +113,20 @@ readonly DIR_UNIDADES_INSTALADAS="/etc/systemd/system"
 #            Agregá-los sem baixar privilégio faria os dois reprovarem por um
 #            motivo que nada tem a ver com o que eles provam.
 # --------------------------------------------------------------------------- #
+# DÉBITO COM GATILHO — D6 · F1/T5 · registrado 2026-08-02
+# O QUÊ: este array agrega os três verificadores da F0. A quarta bateria da
+#        fatia, `deploy/scripts/instalacao/verificar-migracao.sh` (T5), não está
+#        aqui e não é invocada por agregador nenhum — hoje ela só roda se alguém
+#        lembrar do caminho completo.
+# QUANDO FECHA: quando a F1 (`fundacao-multitenancy-identidade`) ganhar sua task
+#        de fechamento. A ordem já está decidida: `verificar-migracao.sh` entra
+#        DEPOIS de `verificar-provisionamento.sh`, porque ela cria e remove banco
+#        no cluster e depende do estado que os passos P15/P16 do provisionamento
+#        deixam. As duas exigem `:root`.
+# POR QUE NÃO AGORA: acrescentá-la aqui está fora da §5.2 da T5, e a T5 não pode
+#        provar a agregação — os verificadores privilegiados exigem `sudo`
+#        interativo, que nenhum subagente executa.
+# ÍNDICE: docs/specs/features/fundacao-multitenancy-identidade/v1/_run/run-report.md §2, D6
 readonly VERIFICADORES_DA_FATIA=(
 	"deploy/scripts/instalacao/verificar-workspace.sh:usuario"
 	"deploy/scripts/instalacao/verificar-provisionamento.sh:root"

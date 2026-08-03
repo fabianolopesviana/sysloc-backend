@@ -15,9 +15,12 @@
  * 1. **Alcança os CAMPOS do evento, em qualquer profundidade — inclusive a 0.** Primeiro
  *    nível, objeto aninhado, item de vetor, propriedade de exceção, vínculo de logger filho
  *    e o **próprio objeto do evento** (`logger.info(buffer)`, `logger.info(url)`). O
- *    reconhecimento é por **nome de chave** ({@link RADICAIS_SENSIVEIS}) e por **forma do
- *    valor** ({@link CREDENCIAL_EM_CADEIA_DE_CONEXAO}), de modo que a senha embutida numa
- *    cadeia de conexão é mascarada mesmo sob uma chave de nome inocente.
+ *    reconhecimento é por **nome de chave** ({@link RADICAIS_SENSIVEIS}) e por duas **formas
+ *    do valor** — a credencial embutida numa cadeia de conexão
+ *    ({@link CREDENCIAL_EM_CADEIA_DE_CONEXAO}) e o valor de parâmetro de endereço cujo nome
+ *    case um radical sensível ({@link PARAMETRO_DE_ENDERECO}) —, de modo que a senha embutida
+ *    numa cadeia de conexão e o `?token=…` de um endereço são mascarados mesmo sob uma chave
+ *    de nome inocente.
  *
  *    "Qualquer profundidade" é propriedade de **estrutura**, não de cobertura: existe uma
  *    entrada única de despacho por tipo ({@link redigirValor}), e todo valor que vira campo
@@ -27,7 +30,7 @@
  *    fechava o caminho apontado e o seguinte aparecia noutro lugar. O que T5 vier a acrescentar
  *    ao evento — `mixin`, contexto de requisição — chega como parte do mesmo objeto e entra
  *    pela mesma porta; não há segunda porta a fechar depois.
- * 2. **Alcança a MENSAGEM do evento pelo eixo da forma do valor, e só por ele.** A mensagem
+ * 2. **Alcança a MENSAGEM do evento pelos eixos da forma do valor, e só por eles.** A mensagem
  *    não passa pelo formatador de campos — o pino a monta por rota própria —, então ela é
  *    interceptada onde é escrita ({@link CHAVE_DA_MENSAGEM}). Isso vale para as três formas
  *    em que ela nasce: texto livre (`logger.info('conectado a postgres://u:senha@h/db')`),
@@ -40,8 +43,9 @@
  * 3. **Nome de chave desconhecido não é adivinhado.** O casamento é por **radical** contido na
  *    chave normalizada ({@link RADICAIS_SENSIVEIS}), de modo que `novaSenha`, `senhaDoBanco` e
  *    `senha-atual` caem junto com `senha`; mas radical novo entra na lista junto com o recurso
- *    que o introduz. O segundo eixo (forma do valor) existe justamente para não depender só do
- *    acerto do nome.
+ *    que o introduz. O mesmo casamento por radical decide o **nome do parâmetro** no eixo de
+ *    endereço ({@link RADICAIS_SENSIVEIS_EM_ENDERECO}), para que radical novo entre num lugar
+ *    só. O eixo da cadeia de conexão existe justamente para não depender só do acerto do nome.
  *
  * ## Idioma do envelope
  *
@@ -198,6 +202,60 @@ const RADICAIS_SENSIVEIS: readonly string[] = [
  */
 const CREDENCIAL_EM_CADEIA_DE_CONEXAO = /\b([a-z][a-z0-9+.-]*:\/\/[^/@\s:?#]*):[^/@\s?#]*@/gi;
 
+/**
+ * Radicais que tornam sensível o **nome de um parâmetro de endereço** — os de
+ * {@link RADICAIS_SENSIVEIS} mais `code`.
+ *
+ * A lista é derivada, e não paralela: o nome de parâmetro é uma das formas em que o mesmo
+ * segredo é nomeado (`?token=`, `?senha=`, `?apiKey=`), e manter duas listas faria radical novo
+ * entrar num lado só. O acréscimo de `code` vale **apenas aqui** de propósito: em cadeia de
+ * consulta ele é o código de autorização de um fluxo OAuth — credencial de uso único, trocável
+ * por sessão —, enquanto como **chave de evento** ele casaria `statusCode` e `errorCode`, que
+ * são diagnóstico e não segredo. O identificador legível do produto (`codigo`, CLAUDE.md
+ * invariante 5) não contém o radical `code` e segue legível.
+ *
+ * **`callback` NÃO entra**, e a ausência é deliberada — ver a `DECISÃO FECHADA` de
+ * {@link redigirValorEmCadeiaDeConsulta}.
+ */
+const RADICAIS_SENSIVEIS_EM_ENDERECO: readonly string[] = [...RADICAIS_SENSIVEIS, 'code'];
+
+/**
+ * Terceiro eixo do reconhecimento: **o par `nome=valor` de um endereço**.
+ *
+ * Casa um parâmetro de cadeia de consulta (`?token=SEGREDO`, `&senha=SEGREDO`) e a mesma forma
+ * quando ela viaja no fragmento (`#access_token=SEGREDO`, o fluxo implícito). É o eixo que
+ * alcança o segredo do **arcabouço de identidade**: `token` e código de autorização viajam na
+ * consulta, e o vazamento medido não veio de campo nenhum — veio da mensagem que o arcabouço
+ * monta para rota não casada interpolando o alvo bruto (`Cannot GET /rota?token=…`), de onde o
+ * segredo saía quatro vezes numa linha só.
+ *
+ * Os três grupos existem para que a substituição alcance **só o valor**: o separador e o nome
+ * são devolvidos intactos, porque o diagnóstico depende de saber que houve um `token` — não do
+ * valor dele.
+ *
+ * A delimitação é o ponto de risco, e cada classe de caractere responde por uma fronteira:
+ *
+ * - **Início** — o par só é reconhecido depois de `?`, `&` ou `#`. Sem essa âncora, qualquer
+ *   `nome=valor` de texto livre seria redigido, e a mensagem viraria refém do acaso.
+ * - **Nome** — sem `?`, `&`, `#`, `=` nem espaço: são os delimitadores que **encerram** o nome.
+ * - **Valor** — as mesmas fronteiras, mais **todo caractere que um URI não pode carregar sem
+ *   codificação percentual**: os excluídos do RFC 3986 §2 (`"`, `<`, `>`, `\`, `^`, crase, `{`,
+ *   `|`, `}`) e os gen-delims `[` e `]`, que só são válidos dentro do hospedeiro. Excluir `?`
+ *   custa nada em endereço legítimo (o parâmetro seguinte é reconhecido no lugar) e impede que
+ *   um `?senha=` aninhado num valor escape por estar depois de um `?` já consumido.
+ *
+ *   **Esta fronteira não é ornamento**: sem ela o valor engolia o delimitador do TEXTO em volta
+ *   e o substituía junto — `at alvo [ENDERECO]` saía sem o `]`, que é a mutilação silenciosa
+ *   que o eixo da cadeia de conexão já custou uma rodada para aprender a evitar. Fazer o valor
+ *   terminar onde o próprio URI termina fecha a classe inteira, e não o colchete: nenhum
+ *   desses caracteres aparece num valor de parâmetro real sem estar codificado, de modo que a
+ *   exclusão não deixa para trás cauda de segredo nenhuma.
+ *
+ * O valor exige **ao menos um caractere**: `?token=` sem valor não carrega segredo, e trocá-lo
+ * pelo sentinela inventaria conteúdo onde não havia — mascarar não é apagar, nem preencher.
+ */
+const PARAMETRO_DE_ENDERECO = /([?&#])([^?&#=\s]+)=([^?&#\s"<>{}|\\^`[\]]+)/g;
+
 type Registro = Record<string, unknown>;
 
 /**
@@ -294,37 +352,66 @@ function resolverDestino(destino: OpcoesDeLogger['destino']): pino.DestinationSt
   return destino;
 }
 
-// DÉBITO COM GATILHO — D25 · F0/T5 · registrado 2026-08-01
-// (NÃO é uma `DECISÃO FECHADA`: não congela nada aqui — diz o que ainda falta e quando.)
-// O QUÊ: falta a ESTA função — a entrada única de despacho que a T3 estabeleceu — um TERCEIRO eixo,
-//        por forma do valor, que mascare o valor de parâmetro de CADEIA DE CONSULTA cujo nome case
-//        os radicais sensíveis, preservando o nome do parâmetro e o resto do URI. Hoje
-//        `?token=SEGREDO` dentro de uma cadeia de caracteres não é alcançado: o eixo por nome casa
-//        CHAVES do evento, e o de forma casa só credencial embutida em cadeia de conexão. O
-//        vazamento foi capturado no journal pelo Gate 1 da T5 — o segredo sai quatro vezes numa
-//        linha só, pela mensagem que o arcabouço monta para rota não casada interpolando o alvo
-//        bruto. O dono NÃO é `apps/api/src/comum/filtro-excecao.ts`: fechar lá seria fechar mais um
-//        PONTO com a classe aberta, que é o padrão que custou quatro rodadas na T3.
-// QUANDO FECHA: quando a fatia de AUTENTICAÇÃO entrar. O `better-auth` carrega `token` e
-//        `callbackURL` em cadeia de consulta, e como o filtro de exceção é global e herdado, o
-//        vazamento nasceria já instalado em TODA rota dela.
-// POR QUE NÃO AGORA: exposição nula por construção na F0 — as rotas são `/saude`, `/saude/pronto` e
-//        `/docs`, nenhum segredo trafega em consulta e o corpo da resposta não vaza (CT-005/CT-006
-//        asserem o envelope); só o registro estruturado vazaria. E o padrão não se improvisa: o
-//        docblock de `CREDENCIAL_EM_CADEIA_DE_CONEXAO` acima registra que um padrão mal delimitado
-//        JÁ mutilou em silêncio, neste mesmo arquivo, URL legítima com `callbackURL=`. Fechar exige
-//        companheiro positivo e negativo, prova de falsificação, e a rede do CT-006 (b) estendida
-//        com a asserção de ausência sobre a linha do journal.
-// ÍNDICE: docs/specs/features/fundacao-stack-nativa/v1/_run/run-report.md §2, D25
-/** Mascara a senha de toda cadeia de conexão presente no texto, preservando esquema e usuário. */
+/**
+ * **Entrada única do mascaramento por forma do valor.** Todo texto que vira campo, mensagem,
+ * pilha ou valor de raiz passa por aqui — nenhum eixo de forma mora num ponto de escrita.
+ *
+ * Os dois eixos são aplicados em ordem fixa: primeiro a credencial de cadeia de conexão, depois
+ * o parâmetro de endereço. A ordem é indiferente ao resultado (o primeiro produz
+ * `:[REDIGIDO]@`, que não contém `=`, e portanto não fabrica par para o segundo), e é fixada
+ * apenas para que a saída não dependa de detalhe de implementação.
+ */
 function mascararCredencial(texto: string): string {
-  return texto.replace(CREDENCIAL_EM_CADEIA_DE_CONEXAO, `$1:${SENTINELA_REDIGIDO}@`);
+  return redigirValorEmCadeiaDeConsulta(
+    texto.replace(CREDENCIAL_EM_CADEIA_DE_CONEXAO, `$1:${SENTINELA_REDIGIDO}@`),
+  );
+}
+
+// DECISÃO FECHADA — T1 (F1) / Gate 1 (CRIT-001) + decisão do usuário · 2026-08-02
+// O QUÊ: o eixo de endereço é delimitado pelo NOME do parâmetro, e `callback` NÃO é um nome
+//        sensível: `?callbackURL=…` atravessa o registro intacto.
+// POR QUÊ: decisão tomada por veredito explícito do Gate 1 (CRIT-001, 2026-08-02) e pelo
+//          usuário, e materializada na correção do cartão da T1 — `callbackURL` saiu do
+//          Invariant e do Resultado esperado do CT-027 (§6.2 e §6.6), com a razão registrada
+//          inline no arquivo da task. O mérito: `callbackURL` é ALVO DE RETORNO, não credencial
+//          — redigi-lo não tira segredo nenhum e apaga para onde o usuário foi mandado, que é
+//          justamente o diagnóstico que o registro existe para preservar. A credencial do fluxo
+//          é o `token` (e o `code`), e essas o eixo alcança. Duas asserções independentes
+//          sustentam a delimitação: o caso CT-008 da F0 exige, desde antes desta task, que
+//          `https://app.exemplo.com:8443?callbackURL=x#a@b` saia byte a byte idêntico — o
+//          mutante que inclui `callback` na lista o REPROVA, o que seria regressão R1 pelo
+//          Protocolo Antirregressão —, e o endereço 2 do CT-028 repete a exigência para o alvo
+//          de retorno ao lado de um destino com `@`.
+// REVERTER EXIGE: (1) demonstrar que o valor de `callbackURL` é credencial neste produto;
+//                 (2) escalar ao usuário por `AskUserQuestion` e obter nova decisão — a vigente
+//                 é dele, e nenhum agente a substitui sozinho; (3) retirar, ANTES de incluir o
+//                 radical, as duas asserções que a defendem — o caso CT-008 'não mutila URL
+//                 legítima sem credencial' (`packages/shared/test/log.spec.ts`) e o endereço 2
+//                 do CT-028 —, cada retirada acompanhada da linha `SUT_IS_CORRECT_BECAUSE:`
+//                 exigida pelo P5 da `.claude/rules/nao-regressao.md`.
+/**
+ * Substitui pelo sentinela o **valor** de parâmetro de endereço cujo nome case um radical de
+ * {@link RADICAIS_SENSIVEIS_EM_ENDERECO}, preservando o separador, o nome e todo o resto do
+ * endereço — esquema, hospedeiro, porta, caminho, fragmento e os parâmetros não sensíveis.
+ *
+ * Parâmetro de nome inocente é devolvido **verbatim**, e é isso que impede a mutilação: a
+ * varredura percorre todos os pares do endereço, mas só reescreve os que o nome denuncia.
+ */
+function redigirValorEmCadeiaDeConsulta(texto: string): string {
+  return texto.replace(
+    PARAMETRO_DE_ENDERECO,
+    (casamento: string, separador: string, nome: string) =>
+      contemRadicalSensivel(nome, RADICAIS_SENSIVEIS_EM_ENDERECO)
+        ? `${separador}${nome}=${SENTINELA_REDIGIDO}`
+        : casamento,
+  );
 }
 
 /**
- * Aplica o eixo por forma do valor à mensagem do evento.
+ * Aplica os eixos por forma do valor à mensagem do evento.
  *
- * Só o eixo por forma: a mensagem não tem chaves, então o eixo por nome não se aplica a ela.
+ * Só os eixos por forma: a mensagem não tem chaves, então o eixo por nome de chave não se aplica
+ * a ela — o nome que o eixo de endereço casa é o do **parâmetro**, que viaja dentro do texto.
  * Valor não textual atravessa intacto — o registrador aceita mensagem de outros tipos, e
  * convertê-la aqui mudaria o formato da linha sem ganho de segurança.
  */
@@ -478,6 +565,17 @@ function redigirErro(erro: Error, emVisita: WeakSet<object>): Registro {
 }
 
 function ehChaveSensivel(chave: string): boolean {
-  const normalizada = chave.toLowerCase().replace(/[^a-z0-9]/g, '');
-  return RADICAIS_SENSIVEIS.some((radical) => normalizada.includes(radical));
+  return contemRadicalSensivel(chave, RADICAIS_SENSIVEIS);
+}
+
+/**
+ * Normaliza o nome (minúscula, sem separador) e responde se ele contém algum dos radicais.
+ *
+ * É o **único** normalizador do projeto, compartilhado pela chave do evento e pelo nome do
+ * parâmetro de endereço: duas cópias divergiriam no dia em que um radical ganhasse hífen ou
+ * caixa, e a divergência só apareceria como vazamento.
+ */
+function contemRadicalSensivel(nome: string, radicais: readonly string[]): boolean {
+  const normalizado = nome.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return radicais.some((radical) => normalizado.includes(radical));
 }

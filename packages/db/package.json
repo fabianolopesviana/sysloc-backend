@@ -1,0 +1,35 @@
+{
+  "name": "@sysloc/db",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Camada de dados do backend Sysloc — os dois schemas (identidade sem tenant, negócio com RLS forçada), as migrações e a carga inicial",
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "migracoes"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "test": "tsc --build && tsc -p tsconfig.test.json && vitest run",
+    "gerar-migracao": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.2",
+    "postgres": "3.4.9"
+  },
+  "devDependencies": {
+    "@sysloc/shared": "workspace:*",
+    "@types/node": "24.13.3",
+    "drizzle-kit": "0.31.10",
+    "embedded-postgres": "18.4.0-beta.17",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

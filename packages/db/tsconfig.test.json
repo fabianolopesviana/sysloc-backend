@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // O `tsconfig.json` ao lado existe para EMITIR o pacote, e por isso seu `include` alcança só o
+    // que vira `dist/`. Verificar tipos é outro problema: o rigor de `tsconfig.base.json` precisa
+    // alcançar também o código que PROVA o pacote, senão uma conversão deliberada do teste que
+    // deixou de valer compilaria, rodaria e passaria em silêncio.
+    "noEmit": true,
+    // `test/banco-efemero.ts` alcança os helpers efêmeros de `packages/shared/test/` pelo caminho
+    // REAL, como já fazem `apps/api` e `apps/worker`. Só é aceito com emissão desligada.
+    "allowImportingTsExtensions": true,
+    // `rootDir` sobe até a raiz do repositório pelo mesmo motivo de `apps/api/tsconfig.test.json`:
+    // a verificação importa os helpers efêmeros de `packages/shared/test/`, fora deste pacote.
+    // Ver o débito D28 anotado em `test/banco-efemero.ts`. Emissão desligada, então as opções de
+    // artefato abaixo só produziriam conflito.
+    "rootDir": "../..",
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "drizzle.config.ts"]
+}

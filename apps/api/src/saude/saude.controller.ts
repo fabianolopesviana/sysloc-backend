@@ -35,6 +35,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { CodigoErro, ErroDeAplicacao } from '@sysloc/shared';
+import { RotaPublica } from '../autenticacao/rota-publica.decorator.js';
 import type { EstadoDasDependencias } from './saude.service.js';
 import { SaudeService } from './saude.service.js';
 
@@ -86,6 +87,11 @@ const ESQUEMA_DO_ERRO = {
   },
 };
 
+// As duas verificações são exceção EXPLÍCITA da guarda de contexto (T9), e não podem deixar de ser:
+// quem consulta a rasa é o supervisor do sistema operacional, e quem consulta a profunda é a prova
+// de aceitação do reinício — nenhum dos dois tem sessão, nem deveria ter. Sem a marca, as duas
+// responderiam `401` e o supervisor reiniciaria um serviço saudável em laço.
+@RotaPublica()
 @ApiTags('saude')
 @Controller('saude')
 export class SaudeController {

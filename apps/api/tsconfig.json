@@ -14,6 +14,13 @@
   // `packages/shared/src/` ele passa a corresponder a ela. Sem isto, a ordenação existia apenas
   // no grafo do Turborepo (`test.dependsOn: ["^build"]`), que `pnpm --filter @sysloc/api test`
   // — a forma canônica de rodar um subset (`.claude/rules/testing-stack.md`) — não atravessa.
-  "references": [{ "path": "../../packages/shared" }],
+  // As três referências pelo MESMO motivo, e `@sysloc/auth` traz `@sysloc/db` junto por ser ele
+  // próprio um consumidor declarado — mas as duas são declaradas aqui assim mesmo, porque `src/`
+  // importa as duas pelo especificador público e a referência é o que ordena a construção.
+  "references": [
+    { "path": "../../packages/shared" },
+    { "path": "../../packages/db" },
+    { "path": "../../packages/auth" }
+  ],
   "include": ["src/**/*.ts"]
 }

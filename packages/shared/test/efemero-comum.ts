@@ -9,7 +9,8 @@
  *      PROVISIONADA por `provisionar-base.sh` — o dano exato que a ADR-0006 existe para
  *      impedir. A faixa é fixada aqui, uma vez, e o guarda de portas intocáveis é aplicado a
  *      toda porta escolhida, mesmo sendo redundante com a faixa: é a redundância que sobrevive
- *      a alguém mexer nos limites sem ler o resto do arquivo.
+ *      a alguém mexer nos limites sem ler o resto do arquivo. A ESCOLHA dentro da faixa é
+ *      arbitrada pelo núcleo, não observada — ver o marcador de decisão em `reservarPorta`.
  *   2. **O descarte no caminho de FALHA.** Limpeza que só roda no caminho feliz deixa processo
  *      órfão e diretório de dados para trás quando a suíte quebra — e o disco desta máquina
  *      opera acima de 75%. O registro abaixo pendura o descarte no mecanismo de encerramento
@@ -21,7 +22,7 @@
  * do pacote alcança apenas `src/`) e nada em produção o importa.
  */
 
-import { createServer } from 'node:net';
+import { createServer, type Server } from 'node:net';
 
 /**
  * Faixa de portas das instâncias efêmeras.
@@ -52,6 +53,27 @@ const INTERVALO_SONDAGEM_MS = 50;
 
 /** Limite para uma porta candidata aceitar e liberar o soquete de teste. */
 const LIMITE_SONDA_DE_PORTA_MS = 2_000;
+
+/**
+ * Prefixo do nome que representa uma porta no espaço abstrato de soquetes de domínio Unix do
+ * núcleo (a barra invertida zero à esquerda é o que o torna abstrato: ele não existe no sistema
+ * de arquivos e o núcleo o recolhe sozinho quando o último processo que o amarrava morre).
+ *
+ * Este nome é a TRAVA da porta correspondente — ver `travarPorta` e o marcador de decisão em
+ * `reservarPorta`.
+ */
+const PREFIXO_TRAVA_DE_PORTA = '\0sysloc-porta-efemera-';
+
+/**
+ * Travas que ESTE processo detém, por porta.
+ *
+ * O mapa é apenas escrituração local e atalho de varredura: quem arbitra é o núcleo, e é por
+ * isso que a exclusão continua valendo entre processos separados (execuções concorrentes de
+ * `turbo run test`, subprocessos de cenário) e entre linhas de execução do mesmo processo (o
+ * arcabouço de verificação pode usar tanto processos quanto linhas para paralelizar, e cada uma
+ * enxerga o próprio registro de módulos — mas todas dividem o mesmo núcleo).
+ */
+const travasDePorta = new Map<number, Server>();
 
 /** Descarte síncrono de um recurso efêmero, executável de dentro do gancho de encerramento. */
 type Descarte = () => void;
@@ -151,12 +173,83 @@ function portaLivre(porta: number): Promise<boolean> {
 }
 
 /**
- * Escolhe uma porta livre dentro da faixa efêmera.
+ * Toma a trava de uma porta candidata, no núcleo.
  *
- * A varredura começa em posição sorteada, e não no início da faixa: arquivos de teste rodam em
- * paralelo, e começar sempre em 24001 faria dois processos disputarem a mesma porta a cada
- * execução. O sorteio não entra em nenhuma asserção — ele escolhe onde procurar, não o que
- * provar.
+ * Devolve `'obtida'` quando este processo passou a deter a porta, e `'de-outro'` quando alguém
+ * já a detinha. Qualquer outra falha ESTOURA em vez de virar `'de-outro'`: um espaço abstrato
+ * indisponível faria a varredura pular a faixa inteira e cair na mensagem de "nenhuma porta
+ * livre", que descreveria o sintoma errado — e, pior, uma degradação silenciosa aqui devolveria
+ * exatamente a corrida que a trava existe para eliminar.
+ */
+function travarPorta(porta: number): Promise<'obtida' | 'de-outro'> {
+  return new Promise((resolver, rejeitar) => {
+    const trava = createServer();
+
+    trava.once('error', (erro: NodeJS.ErrnoException) => {
+      if (erro.code === 'EADDRINUSE') {
+        resolver('de-outro');
+        return;
+      }
+      rejeitar(
+        new Error(
+          `a trava da porta ${porta} não pôde ser tomada no espaço abstrato de soquetes ` +
+            `(${erro.code ?? 'sem código'}): ${erro.message}`,
+        ),
+      );
+    });
+
+    trava.once('listening', () => {
+      // Sem isto, a trava — que só é solta no fim do processo — seguraria o laço de eventos e a
+      // suíte não terminaria sozinha.
+      trava.unref();
+      travasDePorta.set(porta, trava);
+      resolver('obtida');
+    });
+
+    trava.listen(`${PREFIXO_TRAVA_DE_PORTA}${porta}`);
+  });
+}
+
+/** Devolve ao núcleo a trava de uma porta que este processo tomou mas não vai usar. */
+function soltarTrava(porta: number): void {
+  const trava = travasDePorta.get(porta);
+  if (trava === undefined) {
+    return;
+  }
+  travasDePorta.delete(porta);
+  trava.close();
+}
+
+// DECISÃO FECHADA — intervenção dirigida / veredito do Gate 2 da T4 · 2026-08-02
+// O QUÊ: `reservarPorta` reserva tomando uma trava no NÚCLEO (um nome no espaço abstrato de
+//        soquetes de domínio Unix, um por porta), e não observando que a porta parece livre. A
+//        trava é tomada ANTES da sonda e mantida enquanto o processo viver — nem `parar()` a
+//        devolve. O sorteio do ponto de partida continua aqui, mas rebaixado a otimização.
+// POR QUÊ: a versão anterior sondava a porta abrindo e FECHANDO um soquete, e só devolvia o
+//          número; o serviço só a amarrava segundos depois, ao fim de `initialise()`+`start()`.
+//          Nessa janela outro processo sondava a mesma porta, encontrava-a livre e escolhia-a
+//          também, e uma das duas instâncias morria com "address already in use". Medido nesta
+//          máquina, com o sorteio intacto: 8 processos × 5 reservas devolveram porta repetida em
+//          4 de 6 rodadas, e a corrida derrubou o CT-001 numa execução real de `pnpm test`. O
+//          sorteio reduz a probabilidade; NÃO elimina a classe — só um árbitro atômico elimina,
+//          e o núcleo é o único árbitro disponível a processos que não se conhecem.
+// REVERTER EXIGE: exibir outro mecanismo em que duas reservas concorrentes — em processos
+//                 distintos, sem coordenação prévia, e com segundos entre a escolha e a
+//                 amarração real da porta — sejam IMPOSSIBILITADAS de coincidir, e não apenas
+//                 improváveis. Contagem de colisões observadas, faixa maior, sorteio melhor,
+//                 partição por identificador de trabalhador e nova tentativa após falha não
+//                 satisfazem isto: os quatro primeiros continuam podendo coincidir, e o último é
+//                 proibido pela política de instabilidade de `.claude/rules/testing-stack.md`.
+//                 A prova viva do contrário é o par CT-101 / CT-102 de `reserva-de-porta.spec.ts`.
+/**
+ * Escolhe uma porta livre dentro da faixa efêmera e a RESERVA para este processo.
+ *
+ * A varredura começa em posição sorteada, e não no início da faixa: é onde começar a procurar,
+ * para que processos concorrentes não disputem as mesmas primeiras portas e gastem voltas de
+ * varredura. Ele não entra em nenhuma asserção — e, desde a trava, não é o que impede a colisão.
+ *
+ * A trava vem ANTES da sonda de propósito: assim, no máximo um processo da suíte sonda uma dada
+ * porta por vez, e a sonda só precisa responder pelo que está fora da suíte.
  */
 export async function reservarPorta(): Promise<number> {
   const { primeira, ultima } = FAIXA_PORTAS_EFEMERAS;
@@ -168,14 +261,24 @@ export async function reservarPorta(): Promise<number> {
     if (PORTAS_INTOCAVEIS.includes(porta as (typeof PORTAS_INTOCAVEIS)[number])) {
       continue;
     }
+    if (travasDePorta.has(porta)) {
+      continue;
+    }
+    if ((await travarPorta(porta)) === 'de-outro') {
+      continue;
+    }
     if (await portaLivre(porta)) {
       return porta;
     }
+    // A porta está travada por nós mas ocupada por algo de fora da suíte. Devolver a trava é o
+    // que impede que uma varredura azarada marque para sempre uma porta que voltará a servir.
+    soltarTrava(porta);
   }
 
   throw new Error(
     `nenhuma porta livre na faixa efêmera ${primeira}-${ultima}: as ${total} portas da faixa ` +
-      'estão ocupadas nesta máquina',
+      `estão ocupadas nesta máquina ou reservadas por outra execução da verificação ` +
+      `(este processo detém ${travasDePorta.size})`,
   );
 }
 

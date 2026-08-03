@@ -37,7 +37,13 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { Logger } from '@sysloc/shared';
 import { AppModule } from './app.module.js';
-import { type Ambiente, TOKEN_AMBIENTE, TOKEN_LOGGER } from './configuracao/ambiente.js';
+import {
+  type Ambiente,
+  ENDERECO_DE_ESCUTA,
+  PREFIXO_DE_VERSAO,
+  TOKEN_AMBIENTE,
+  TOKEN_LOGGER,
+} from './configuracao/ambiente.js';
 
 /** Caminho da página navegável do contrato. */
 export const CAMINHO_DO_CONTRATO = 'docs';
@@ -49,21 +55,34 @@ export const CAMINHO_DO_CONTRATO = 'docs';
 export const CAMINHO_DO_DOCUMENTO = 'docs/json';
 
 /**
- * Endereço em que o serviço escuta.
+ * Rotas que ficam FORA do prefixo de versão. A exclusão é obrigatória, não preferência.
  *
- * Somente o endereço de retorno: este servidor é compartilhado com o ambiente que ainda atende a
- * operação, e escutar em toda interface publicaria o backend novo na internet antes da virada.
- * A publicação externa é da fatia de virada, e passa por servidor de borda — que alcança este
- * endereço sem que ele deixe de ser local.
+ * `deploy/scripts/instalacao/verificar-fundacao.sh` consulta `/saude`, `/saude/pronto`, `/docs` e
+ * `/docs/json` nesses endereços literais — inclusive na sub-bateria de recuperação após reinício
+ * real, que é critério de aceitação da F0. Movê-las para `/v1/…` tornaria vermelho um conjunto de
+ * casos que está verde, e o P5 de `.claude/rules/nao-regressao.md` classifica isso como regressão a
+ * reverter, não como teste a ajustar. A rasa é, além disso, consumida pelo supervisor do sistema
+ * operacional, cuja unidade também nomeia o endereço.
+ *
+ * A lista está escrita aqui, e não num comentário do `setGlobalPrefix`, para que uma rodada futura
+ * a leia como **decisão registrada** e não como esquecimento. O `CT-018 (b)` de
+ * `test/autenticacao.e2e.spec.ts` é a rede: ele extrai os endereços do próprio verificador shell e
+ * afirma que os quatro continuam respondendo, e que a versão prefixada deles NÃO existe.
+ *
+ * O caminho do contrato entra por completude do registro: `SwaggerModule.setup` publica a página e
+ * o documento fora do prefixo por padrão (`useGlobalPrefix` desligado), de modo que a entrada aqui
+ * não é o que os mantém no lugar — mas é o que faz o DOCUMENTO declará-los sem o prefixo, que é o
+ * endereço em que eles de fato atendem.
  */
-const ENDERECO_DE_ESCUTA = '127.0.0.1';
+const ROTAS_FORA_DO_PREFIXO = ['saude', 'saude/pronto', CAMINHO_DO_CONTRATO, CAMINHO_DO_DOCUMENTO];
 
 /**
  * Publica o contrato: a página navegável e o documento que a descreve.
  *
- * A versão declarada não é versão de API — o versionamento do contrato é decisão diferida
- * (`scope.md` §3.9), porque ainda não há recurso de negócio publicado. Aqui ela apenas acompanha
- * a versão do pacote.
+ * A versão declarada aqui **continua** não sendo a versão da API: ela acompanha a versão do pacote.
+ * O versionamento da API é o prefixo de caminho (`PREFIXO_DE_VERSAO`), decidido na T8 da fatia
+ * `fundacao-multitenancy-identidade` (§15.1 daquela tech spec) — até ali a decisão estava diferida
+ * porque nenhum recurso do produto havia sido publicado, e é essa condição que deixou de valer.
  */
 function publicarContrato(app: NestFastifyApplication): void {
   const documento = SwaggerModule.createDocument(
@@ -101,6 +120,11 @@ export async function criarAplicacao(): Promise<NestFastifyApplication> {
     // entregar. Com o aborto desligado, a exceção chega a quem chamou.
     abortOnError: false,
   });
+
+  // ANTES de publicar o contrato: o documento é gerado a partir das rotas já registradas, e o
+  // gerador aplica o prefixo global honrando esta mesma lista de exclusão. Publicar primeiro
+  // descreveria endereços que a aplicação não atende.
+  app.setGlobalPrefix(PREFIXO_DE_VERSAO, { exclude: ROTAS_FORA_DO_PREFIXO });
 
   publicarContrato(app);
   app.enableShutdownHooks();

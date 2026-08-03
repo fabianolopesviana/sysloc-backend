@@ -1,0 +1,1785 @@
+{
+  "schema_version": 1,
+  "framework": "sdd",
+  "feature": "fundacao-multitenancy-identidade",
+  "version": "v1",
+  "atualizado_em": "2026-08-01",
+  "stack_discovery": {
+    "fonte": "testing_stack_rule",
+    "stack": "TypeScript 7.0.2 sobre Node 24.18.1 (código de aplicação, monorepo pnpm 11 + Turborepo) · Bash para infraestrutura e instalação · PostgreSQL 18 · NestJS 11 + Fastify 5 · Drizzle 0.45.2 + postgres.js 3.4.9 · better-auth 1.6.25",
+    "framework_teste": "Vitest 4 com instância efêmera própria de PostgreSQL (`embedded-postgres` 18.4.0-beta.17) e servidor HTTP real em porta dinâmica; frente shell sem framework, com o vocabulário `caso`/`afirmar_igual`/`afirmar_diferente`/`fechar_caso` de `deploy/scripts/**/verificar-*.sh`",
+    "comando_teste": "pnpm test (→ turbo run test) · pnpm --filter @sysloc/<pacote> test · bash deploy/scripts/instalacao/verificar-<alvo>.sh",
+    "discovery_needed": false,
+    "lacunas": []
+  },
+  "casos_teste": [
+    {
+      "id": "CT-001",
+      "titulo": "A conexão que a suíte de isolamento usa não tem privilégio capaz de contornar a política",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "A conexão sobre a qual toda prova de isolamento roda pertence a um papel com `rolsuper = false`, `rolbypassrls = false`, sem pertencimento (direto ou herdado) ao papel dono, e que não é `tableowner` de nenhuma tabela do schema `negocio` — as quatro condições sob as quais o PostgreSQL ignoraria a RLS.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-002",
+        "input_invalido": "a mesma bateria de predicados executada sobre a conexão do papel dono/migrador (`sysloc_migracao`) e sobre a conexão do superusuário que a instância efêmera da F0 expõe",
+        "assertion_esperada": "cada um dos quatro predicados reprova com o valor obtido nomeado (`rolsuper=true`, `rolbypassrls=true`, `pg_has_role(...,'MEMBER')=true`, `tableowner=current_user`) — nenhum deles pode passar por verde"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "É preciso existir, na instância efêmera, o par de papéis `sysloc_migracao` (dono) e `sysloc_app` (aplicação, não dono, não superusuário) e a suíte precisa obter conexão pelo segundo — coisa que o helper efêmero da F0 não oferece, pois ele só expõe o papel superusuário do cluster.",
+        "caminho_legitimo": "(b) construir pelo caminho real do boundary: `packages/db/test/banco-efemero.ts` ENVOLVE `packages/shared/test/postgres-efemero.ts` sem alterá-lo (§3.7 da tech spec o marca 'não alterar'), usa a conexão superusuário que ele devolve APENAS para executar as mesmas migrações que `migrar-banco.sh` aplica em operação — incluindo `0001_seguranca.sql`, que cria os papéis, transfere a propriedade e concede privilégios — e devolve à suíte a cadeia de conexão do papel `sysloc_app`. A cadeia do papel privilegiado fica confinada ao helper e é oferecida por um acessório separado e nomeado (`conexaoDeMigracao()`), usado só pelos casos de mutante CT-002 e CT-007. Nenhum símbolo, bandeira ou ramo é acrescentado a `packages/db/src/**` para isso: os papéis nascem do SQL de produção, não de código de teste.",
+        "teste_analogo": "packages/shared/test/ambiente-efemero.spec.ts (padrão de assertar propriedade da própria instância efêmera) e packages/shared/test/postgres-efemero.ts (contrato do helper a envolver)"
+      },
+      "camada": "Dados — `packages/db`",
+      "pre_condicoes": [
+        "Instância efêmera de PostgreSQL de pé, com `0000_fundacao.sql` e `0001_seguranca.sql` aplicados pelo papel de migração",
+        "Suíte conectada por `banco-efemero.ts` com a cadeia do papel `sysloc_app`"
+      ],
+      "dados_entrada": {
+        "descricao": "Nenhuma entrada de negócio: as consultas são ao catálogo do sistema, sobre a identidade da própria conexão.",
+        "valores": {
+          "consulta_papel": "SELECT rolsuper, rolbypassrls, rolcreaterole FROM pg_roles WHERE rolname = current_user",
+          "consulta_pertencimento": "SELECT pg_has_role(current_user, 'sysloc_migracao', 'MEMBER')",
+          "consulta_propriedade": "SELECT tablename, tableowner FROM pg_tables WHERE schemaname = 'negocio'"
+        }
+      },
+      "passos": [
+        "Subir a instância efêmera e aplicar as duas migrações pelo papel de migração",
+        "Abrir conexão com a cadeia do papel da aplicação",
+        "Ler `current_user` e afirmar que é literalmente `sysloc_app`",
+        "Afirmar `rolsuper = false`, `rolbypassrls = false` e `rolcreaterole = false` para esse papel",
+        "Afirmar `pg_has_role(current_user, 'sysloc_migracao', 'MEMBER') = false`",
+        "Listar toda tabela de `negocio` e afirmar que `tableowner = 'sysloc_migracao'` em todas, e que nenhuma tem `tableowner = current_user`",
+        "Afirmar que a lista de tabelas lida não é vazia — bateria sobre conjunto vazio passaria por verde"
+      ],
+      "resultado_esperado": "`current_user = 'sysloc_app'`; `rolsuper = false`, `rolbypassrls = false`, `rolcreaterole = false`; `pg_has_role(current_user,'sysloc_migracao','MEMBER') = false`; `tableowner = 'sysloc_migracao'` para as 2 tabelas de `negocio` (`acesso_usuario_app`, `acesso_usuario_permissao`), e a contagem de tabelas lidas é exatamente 2.",
+      "criterios_aceitacao_validados": [
+        "CA-17"
+      ],
+      "observacoes": "Arquivo novo proposto: `packages/db/test/papel-de-conexao.spec.ts` (declarado na §3.4 da tech spec). Nenhuma suíte existente cobre a identidade da conexão — `packages/shared/test/ambiente-efemero.spec.ts` prova a separação de ambiente (ADR-0006), não o privilégio do papel. A asserção sobre a contagem de tabelas é deliberada: sem ela, um schema `negocio` vazio faria a bateria de propriedade passar sem examinar nada, que é o modo de falha descrito em `.claude/rules/testing-stack.md` ('provou-se o que era fácil provar').",
+      "task_id": "T2"
+    },
+    {
+      "id": "CT-002",
+      "titulo": "Execução privilegiada não passa por verde: com o papel dono, a bateria de papel e as provas de isolamento reprovam",
+      "tipo": "SEGURANCA",
+      "categoria": "caso_extremo",
+      "invariant": "Executada sobre uma conexão privilegiada (papel dono das tabelas, ou superusuário do cluster), a bateria do CT-001 reprova em cada predicado e a leitura cross-tenant do CT-003 devolve linhas da empresa B — provando que as asserções discriminam privilégio em vez de serem infalíveis.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — o mutante é a própria conexão privilegiada",
+        "assertion_esperada": "ver resultado_esperado"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "O caso precisa de uma conexão com o papel dono (`sysloc_migracao`) e de outra com o superusuário do cluster, exatamente as duas que o restante da suíte tem proibido usar.",
+        "caminho_legitimo": "(b) usar o acessório `conexaoDeMigracao()` do helper `packages/db/test/banco-efemero.ts` descrito no CT-001, e a cadeia superusuário que `postgresEfemero()` já devolve. Ambas ficam confinadas a este caso e ao CT-007; nenhuma bandeira de ambiente e nenhum ramo condicional é acrescentado ao código de produção para alternar papel. As afirmações do CT-001 são invocadas como função de asserção compartilhada do arquivo de teste (mesmo código, entrada diferente) — reimplementá-las aqui reproduziria o defeito registrado em `.claude/rules/testing-stack.md` (tabela que exercita a reimplementação do leitor no próprio verificador).",
+        "teste_analogo": "NENHUM — a receita completa é a acima; o helper `banco-efemero.ts` é a única fonte legítima das duas cadeias privilegiadas"
+      },
+      "camada": "Dados — `packages/db`",
+      "pre_condicoes": [
+        "Mesma instância efêmera do CT-001, com semente de duas empresas (A e B) e ao menos uma linha de `acesso_usuario_app` em cada"
+      ],
+      "dados_entrada": {
+        "descricao": "As mesmas consultas do CT-001 e do CT-003, com a conexão trocada por uma privilegiada.",
+        "valores": {
+          "conexao_1": "papel sysloc_migracao (dono das tabelas de negocio)",
+          "conexao_2": "papel superusuário do cluster efêmero",
+          "contexto_fixado": "app.empresa_id = <uuid da empresa A>"
+        }
+      },
+      "passos": [
+        "Aplicar a função de asserção do CT-001 sobre a conexão do papel dono e capturar o resultado em vez de deixá-lo abortar o caso",
+        "Afirmar que ela reprovou, e que reprovou pelo predicado de propriedade (`tableowner = current_user`)",
+        "Aplicar a mesma função sobre a conexão superusuário e afirmar que reprovou pelos predicados `rolsuper` e `rolbypassrls`",
+        "Abrir transação na conexão do papel dono, fixar `app.empresa_id` com o identificador da empresa A e ler `negocio.acesso_usuario_app`",
+        "Afirmar que a leitura devolveu também as linhas da empresa B — a política não alcança o dono sem `FORCE` aplicado à sessão do próprio dono"
+      ],
+      "resultado_esperado": "Sobre o papel dono: a bateria reprova nomeando `tableowner = 'sysloc_migracao' = current_user`. Sobre o superusuário: reprova nomeando `rolsuper = true` e `rolbypassrls = true`. E a leitura no contexto de A pela conexão do dono devolve o conjunto completo de linhas — contagem estritamente maior que a do CT-003 e contendo ao menos um identificador da empresa B —, demonstrando que a suíte do CT-003 só é significativa por causa do papel afirmado no CT-001.",
+      "criterios_aceitacao_validados": [
+        "CA-17",
+        "CA-03"
+      ],
+      "observacoes": "Mora em `packages/db/test/papel-de-conexao.spec.ts`, junto do CT-001. Este é o caso que atende ao risco 'suíte conectando com papel privilegiado — verde sem provar nada' (§20 da tech spec) e ao 'uma execução privilegiada não pode passar por verde' do CA-17. Note que o `FORCE ROW LEVEL SECURITY` faz a política valer para o dono; por isso o passo de leitura afirma o comportamento observado no cenário concreto da fatia: se `FORCE` estiver ativo e a leitura pelo dono também vier isolada, a asserção correta passa a ser a do predicado de propriedade (que continua reprovando), e o caso deve declarar isso explicitamente em vez de afrouxar — o eixo que não pode sumir é 'privilegiado reprova'.",
+      "task_id": "T2"
+    },
+    {
+      "id": "CT-003",
+      "titulo": "Consulta no contexto da empresa A devolve exatamente as linhas de A e nenhuma de B",
+      "tipo": "INTEGRACAO",
+      "categoria": "caminho_feliz",
+      "invariant": "Dentro de uma unidade de trabalho com `app.empresa_id` fixado na empresa A, toda leitura em `negocio` devolve o conjunto exato de identificadores de A e nenhum de B — sem que nenhum repositório aplique filtro por empresa.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-004",
+        "input_invalido": "gravação, no contexto de A, de linha com `empresa_id` da empresa B (aplicação contornada)",
+        "assertion_esperada": "erro do banco com SQLSTATE `42501` ('new row violates row-level security policy'), e a contagem de linhas de B lida em seguida no contexto de B permanece idêntica à de antes"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "As duas empresas, seus usuários e seus vínculos de acesso precisam existir antes do ato, e o contexto de tenant precisa estar fixado — estado que a produção não expõe por parâmetro de função.",
+        "caminho_legitimo": "(b) construir pelo caminho real: a carga inicial de `packages/db/src/semente.ts`, que é o mesmo caminho que a operação usa enquanto não há rotas de administração (§4.1 do PRD), executada pela conexão de migração do helper. O contexto vem exclusivamente da API pública de `@sysloc/db`: escrever no `AsyncLocalStorage` pelo mesmo escritor que a guarda usa e abrir a unidade de trabalho — nunca compondo `SET LOCAL` à mão no teste nem exportando símbolo novo de `packages/db/src/**` para injetar contexto.",
+        "teste_analogo": "NENHUM — primeira suíte de dados do repositório; a receita completa é a acima"
+      },
+      "camada": "Dados — `packages/db`",
+      "pre_condicoes": [
+        "Instância efêmera migrada, conexão pelo papel `sysloc_app`",
+        "Semente: empresas A e B, 2 vínculos de acesso em A e 3 em B, com identificadores conhecidos"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela de dois cenários simétricos, para que nenhum dos dois lados seja o 'lado privilegiado' do teste.",
+        "valores": {
+          "cenarios": [
+            {
+              "contexto": "empresa A",
+              "esperado": "os 2 identificadores de A"
+            },
+            {
+              "contexto": "empresa B",
+              "esperado": "os 3 identificadores de B"
+            }
+          ],
+          "tabelas": [
+            "negocio.acesso_usuario_app",
+            "negocio.acesso_usuario_permissao"
+          ]
+        }
+      },
+      "passos": [
+        "Para cada cenário da tabela, escrever o contexto da empresa no `AsyncLocalStorage` pelo escritor público",
+        "Abrir a unidade de trabalho e ler a tabela inteira, sem cláusula de empresa na consulta",
+        "Comparar o conjunto de identificadores devolvido com o conjunto esperado, por igualdade de conjunto (não por contagem)",
+        "Afirmar que a interseção entre o devolvido e os identificadores da outra empresa é vazia"
+      ],
+      "resultado_esperado": "No contexto de A: conjunto devolvido igual a `{acesso-A-1, acesso-A-2}`, interseção com `{acesso-B-1, acesso-B-2, acesso-B-3}` vazia. No contexto de B: conjunto igual a `{acesso-B-1, acesso-B-2, acesso-B-3}`, interseção com os de A vazia. Nenhuma consulta do caso contém a coluna `empresa_id` na cláusula de filtro.",
+      "criterios_aceitacao_validados": [
+        "CA-01"
+      ],
+      "observacoes": "Arquivo novo proposto: `packages/db/test/isolamento.spec.ts` (§3.4). Igualdade de CONJUNTO e não contagem: contagem igual com identificadores trocados passaria por verde. A ausência de filtro na consulta é parte da invariante (ADR-0008: não há dois caminhos para o dado) e é conferida por leitura do próprio SQL emitido, não por convenção.",
+      "task_id": "T3"
+    },
+    {
+      "id": "CT-004",
+      "titulo": "No contexto de A, gravar linha da empresa B é recusado pelo banco e nada é gravado",
+      "tipo": "INTEGRACAO",
+      "categoria": "teste_negativo",
+      "invariant": "Com o contexto fixado em A, `INSERT` com `empresa_id` de B é recusado por `WITH CHECK`, e `UPDATE`/`DELETE` sobre linha de B afetam zero linhas — o estado de B, lido em seguida no contexto de B, é bit a bit o mesmo de antes da tentativa.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — `empresa_id` de outra empresa na gravação, e alvo de outra empresa na atualização e na remoção",
+        "assertion_esperada": "ver resultado_esperado"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Mesmo estado do CT-003 (duas empresas semeadas) e contexto fixado em A.",
+        "caminho_legitimo": "(a) imitar o CT-003: mesma semente pelo caminho real e mesmo escritor público de contexto. A leitura de conferência do estado de B acontece numa unidade de trabalho SEPARADA, com o contexto de B — nunca por conexão privilegiada, para que a conferência não seja mais poderosa que o ato que ela audita.",
+        "teste_analogo": "CT-003, no mesmo arquivo `packages/db/test/isolamento.spec.ts`"
+      },
+      "camada": "Dados — `packages/db`",
+      "pre_condicoes": [
+        "Mesmas do CT-003",
+        "Snapshot do conjunto de linhas de B tomado antes da tentativa, no contexto de B"
+      ],
+      "dados_entrada": {
+        "descricao": "Três tentativas de escrita cruzada, parametrizadas.",
+        "valores": {
+          "tentativas": [
+            {
+              "operacao": "INSERT",
+              "alvo": "negocio.acesso_usuario_app com empresa_id = <empresa B>"
+            },
+            {
+              "operacao": "UPDATE",
+              "alvo": "linha acesso-B-1, mudando usuario_id"
+            },
+            {
+              "operacao": "DELETE",
+              "alvo": "linha acesso-B-1"
+            }
+          ]
+        }
+      },
+      "passos": [
+        "Tomar o snapshot do estado de B (conjunto de linhas completo) no contexto de B",
+        "Fixar o contexto em A e abrir a unidade de trabalho",
+        "Executar o `INSERT` com `empresa_id` de B e capturar o erro",
+        "Executar o `UPDATE` e o `DELETE` sobre a linha de B e capturar a contagem de linhas afetadas",
+        "Reabrir unidade de trabalho no contexto de B e comparar o estado atual com o snapshot"
+      ],
+      "resultado_esperado": "O `INSERT` levanta erro do banco com SQLSTATE `42501` e mensagem contendo 'row-level security policy'. O `UPDATE` afeta `0` linhas e o `DELETE` afeta `0` linhas, ambos sem levantar erro (a linha de B é invisível, não proibida). O estado de B relido é idêntico ao snapshot — mesmo conjunto de identificadores e mesmos valores de `usuario_id`.",
+      "criterios_aceitacao_validados": [
+        "CA-02"
+      ],
+      "observacoes": "Mora em `packages/db/test/isolamento.spec.ts`. A distinção entre 'erro no INSERT' e '0 linhas no UPDATE/DELETE' é o comportamento real do PostgreSQL sob RLS e precisa estar asserida assim: uma asserção que exigisse erro nos três reprovaria o SUT correto. A comparação com o snapshot é o eixo que impede a versão frouxa do caso ('a operação lançou erro') de passar sem provar que nada foi gravado.",
+      "task_id": "T3"
+    },
+    {
+      "id": "CT-005",
+      "titulo": "Sem empresa no contexto — o caso do Sysloc Master — toda leitura de negócio é vazia e toda gravação é recusada",
+      "tipo": "INTEGRACAO",
+      "categoria": "fronteira",
+      "invariant": "Quando o contexto não carrega empresa (`app.empresa_id` não fixado, ou fixado em cadeia vazia), `nullif(current_setting('app.empresa_id', true),'')::uuid` é nulo, nenhuma política casa: toda leitura em `negocio` devolve zero linhas sem erro, e toda gravação é recusada — sem que exista ramo de aplicação tratando o Master à parte.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-003",
+        "input_invalido": "contexto COM empresa (A), sobre exatamente as mesmas tabelas e a mesma semente",
+        "assertion_esperada": "conjunto não vazio e igual aos identificadores de A — se o CT-003 e o CT-005 devolvessem ambos vazio, o vazio do CT-005 não provaria nada"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "O contexto sem empresa é justamente o estado do Master, que a produção monta a partir de uma sessão cujo `empresaId` é nulo — não há parâmetro público que o represente diretamente.",
+        "caminho_legitimo": "(b) construir pelo boundary real: usar o mesmo escritor público do `AsyncLocalStorage` que a guarda usa, passando o contexto sem empresa que o tipo já admite (a §4.2 da tech spec declara `empresaId` nulo para o Master — é valor legítimo do domínio, não estado de teste). O segundo cenário (variável nunca fixada) é obtido abrindo a unidade de trabalho pelo caminho normal e afirmando o valor lido de `current_setting('app.empresa_id', true)` — nunca desligando o `SET LOCAL` por bandeira.",
+        "teste_analogo": "CT-003, no mesmo arquivo"
+      },
+      "camada": "Dados — `packages/db`",
+      "pre_condicoes": [
+        "Mesma semente do CT-003 (A com 2 linhas, B com 3)"
+      ],
+      "dados_entrada": {
+        "descricao": "Dois cenários de ausência de contexto, sobre as duas tabelas de negócio.",
+        "valores": {
+          "cenarios": [
+            {
+              "contexto": "Master — sessão sem empresa",
+              "app_empresa_id": "cadeia vazia"
+            },
+            {
+              "contexto": "contexto nunca fixado",
+              "app_empresa_id": "não definido na transação"
+            }
+          ]
+        }
+      },
+      "passos": [
+        "Para cada cenário, abrir a unidade de trabalho no contexto sem empresa",
+        "Ler `negocio.acesso_usuario_app` e `negocio.acesso_usuario_permissao` inteiras",
+        "Afirmar que ambas devolvem zero linhas e que nenhuma exceção foi levantada",
+        "Tentar `INSERT` em `negocio.acesso_usuario_app` com `empresa_id` da empresa A e capturar o erro",
+        "Afirmar, em unidade de trabalho separada no contexto de A, que a contagem de A continua 2"
+      ],
+      "resultado_esperado": "Leitura devolve `[]` (zero linhas) nas duas tabelas e nos dois cenários, com status de sucesso e sem exceção. O `INSERT` levanta SQLSTATE `42501`. A contagem em A permanece exatamente `2`. Nenhum arquivo de `packages/db/src` nem de `packages/auth/src` contém ramo condicional por perfil Master no caminho de dado.",
+      "criterios_aceitacao_validados": [
+        "CA-05",
+        "CA-02"
+      ],
+      "observacoes": "Mora em `packages/db/test/isolamento.spec.ts`. A última asserção (ausência de ramo por perfil) é asserção ESTÁTICA e portanto exige prova de falsificação por `.claude/rules/testing-stack.md`: gerar cópia com um `if (perfil === 'MASTER')` reintroduzido no caminho de dado e demonstrar que ela reprova, com o arquivo íntegro passando limpo no mesmo harness.",
+      "task_id": "T3"
+    },
+    {
+      "id": "CT-006",
+      "titulo": "Vincular informação de A a informação de B é recusado pela chave estrangeira composta",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "`negocio.acesso_usuario_permissao` só aceita `acesso_id` cujo par `(acesso_id, empresa_id)` exista em `negocio.acesso_usuario_app (id, empresa_id)`; apontar para um acesso de outra empresa viola a chave estrangeira composta, e não existe caminho pelo qual o vínculo cruzado seja aceito.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "`acesso_id` de um vínculo da empresa B gravado no contexto e com o `empresa_id` da empresa A",
+        "assertion_esperada": "erro do banco com SQLSTATE `23503` e o nome da restrição composta na mensagem; a contagem de `acesso_usuario_permissao` permanece `0`"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Exige um vínculo de acesso conhecido em cada empresa e o contexto fixado — mesmo estado do CT-003.",
+        "caminho_legitimo": "(a) imitar o CT-003: semente pelo caminho real e contexto pelo escritor público. O identificador do acesso de B é obtido lendo-o numa unidade de trabalho no contexto de B, não por consulta privilegiada — assim o caso prova também que conhecer o identificador alheio não basta para usá-lo.",
+        "teste_analogo": "CT-003, no mesmo arquivo `packages/db/test/isolamento.spec.ts`"
+      },
+      "camada": "Dados — `packages/db`",
+      "pre_condicoes": [
+        "Semente com acesso `acesso-A-1` na empresa A e `acesso-B-1` na empresa B",
+        "`negocio.acesso_usuario_permissao` vazia (nasce estrutural e vazia, §7.2)"
+      ],
+      "dados_entrada": {
+        "descricao": "Par de gravações: uma legítima (mesma empresa) e uma cruzada.",
+        "valores": {
+          "legitima": {
+            "empresa_id": "<A>",
+            "acesso_id": "acesso-A-1",
+            "tipo": "TELA",
+            "chave": "verificacao"
+          },
+          "cruzada": {
+            "empresa_id": "<A>",
+            "acesso_id": "acesso-B-1",
+            "tipo": "TELA",
+            "chave": "verificacao"
+          }
+        }
+      },
+      "passos": [
+        "Fixar o contexto em A e gravar a permissão legítima; afirmar que gravou",
+        "Ainda no contexto de A, gravar a permissão cruzada e capturar o erro",
+        "Afirmar o SQLSTATE e o nome da restrição violada",
+        "Afirmar que a tabela contém exatamente a linha legítima e nenhuma outra",
+        "Repetir a tentativa cruzada no contexto de B com `empresa_id` de B apontando para `acesso-A-1`, para provar a simetria"
+      ],
+      "resultado_esperado": "A gravação legítima resulta em 1 linha. A cruzada levanta erro com SQLSTATE `23503`, mensagem contendo o nome da restrição composta `(acesso_id, empresa_id)` referenciando `acesso_usuario_app`. Após as duas direções, `negocio.acesso_usuario_permissao` tem exatamente 1 linha — a legítima —, com `acesso_id = acesso-A-1`.",
+      "criterios_aceitacao_validados": [
+        "CA-04"
+      ],
+      "observacoes": "Mora em `packages/db/test/isolamento.spec.ts`. O par legítimo/cruzado é obrigatório: só a tentativa cruzada não distingue 'FK composta funcionando' de 'tabela que recusa qualquer gravação'. A simetria (as duas direções) fecha o caminho de a restrição estar declarada em apenas um sentido.",
+      "task_id": "T3"
+    },
+    {
+      "id": "CT-007",
+      "titulo": "Isolamento removido de propósito faz a suíte de isolamento REPROVAR",
+      "tipo": "INTEGRACAO",
+      "categoria": "caso_extremo",
+      "invariant": "Aplicado o mutante que remove o isolamento — política derrubada, ou `NO FORCE ROW LEVEL SECURITY` — os casos CT-003, CT-004, CT-005 e CT-006 reprovam; com o schema íntegro, os quatro passam. A suíte é demonstravelmente capaz de detectar a própria ausência.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este É o mutante; o controle é o schema íntegro, que deve passar limpo no mesmo harness",
+        "assertion_esperada": "ver resultado_esperado — mutante reprova em cada eixo nomeado, controle passa"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Aplicar o mutante exige alterar objeto de banco (DROP POLICY / ALTER TABLE ... NO FORCE), coisa que o papel da aplicação legitimamente não pode fazer.",
+        "caminho_legitimo": "(b) usar o acessório `conexaoDeMigracao()` do helper `banco-efemero.ts` (mesma origem do CT-002) numa instância efêmera DEDICADA a este caso, descartada ao fim — nunca mutando a instância que os demais casos compartilham, e nunca acrescentando bandeira, variável de ambiente ou ramo a `0001_seguranca.sql` para 'ligar/desligar' o isolamento. Os predicados exercitados são as MESMAS funções de asserção dos CT-003 a CT-006, invocadas com captura do resultado — reimplementá-las aqui reproduziria o defeito de 'reimplementação do leitor no próprio verificador' registrado em `.claude/rules/testing-stack.md`.",
+        "teste_analogo": "CT-002 (mesmo padrão de captura de reprovação em vez de deixá-la abortar o caso)"
+      },
+      "camada": "Dados — `packages/db`",
+      "pre_condicoes": [
+        "Instância efêmera dedicada, migrada e semeada igual à dos CT-003 a CT-006"
+      ],
+      "dados_entrada": {
+        "descricao": "Três mutantes independentes, cada um removendo um pedaço distinto da garantia.",
+        "valores": {
+          "mutantes": [
+            "DROP POLICY sobre negocio.acesso_usuario_app",
+            "ALTER TABLE negocio.acesso_usuario_app NO FORCE ROW LEVEL SECURITY (com a conexão do dono)",
+            "ALTER TABLE negocio.acesso_usuario_permissao DROP CONSTRAINT <fk composta>"
+          ]
+        }
+      },
+      "passos": [
+        "Rodar a bateria CT-003 a CT-006 sobre o schema íntegro, capturando resultados — controle",
+        "Aplicar o mutante 1 pela conexão de migração",
+        "Rodar a bateria de novo e capturar quais predicados reprovaram",
+        "Restaurar o schema (reaplicando `0001_seguranca.sql`) e repetir para os mutantes 2 e 3",
+        "Afirmar, mutante a mutante, o conjunto exato de predicados que reprovou"
+      ],
+      "resultado_esperado": "Controle: os 4 casos passam. Mutante 1 (política derrubada): o CT-003 reprova porque a leitura no contexto de A devolve também os 3 identificadores de B, e o CT-004 reprova porque o `INSERT` cruzado grava em vez de levantar `42501`. Mutante 2 (`NO FORCE`, avaliado pela conexão do dono): a leitura pelo dono devolve as duas empresas, reprovando o eixo de propriedade do CT-002. Mutante 3 (FK composta removida): o CT-006 reprova porque a gravação cruzada é aceita e a tabela passa a ter 2 linhas em vez de 1. Nenhum mutante deixa a bateria inteira verde.",
+      "criterios_aceitacao_validados": [
+        "CA-03"
+      ],
+      "observacoes": "Arquivo novo proposto: `packages/db/test/isolamento.spec.ts`, num bloco próprio de falsificação (ou arquivo irmão `isolamento-falsificacao.spec.ts` se o tempo de execução exigir instância separada). Este caso é a materialização direta do CA-03 e da política 'prova de falsificação obrigatória' de `.claude/rules/testing-stack.md`. Exigência de qualidade: o caso afirma QUAL predicado reprovou, não apenas 'a bateria reprovou' — reprovar por erro de conexão também deixaria 'a bateria reprovou' verde.",
+      "task_id": "T3"
+    },
+    {
+      "id": "CT-008",
+      "titulo": "Guarda de catálogo aprova o schema íntegro sem apontar exceção",
+      "tipo": "INTEGRACAO",
+      "categoria": "caminho_feliz",
+      "invariant": "Sobre o schema produzido por `0000_fundacao.sql` + `0001_seguranca.sql`, a consulta de cobertura devolve lista vazia de exceções, e a contagem de tabelas de `negocio` que ela examinou é maior que zero.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-009",
+        "input_invalido": "tabela criada em `negocio` sem `empresa_id`, sem RLS forçada ou sem a restrição única `(id, empresa_id)`",
+        "assertion_esperada": "a lista de exceções contém exatamente o nome dessa tabela e o motivo nomeado, e o processo de verificação sai com código diferente de zero"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Dados — `packages/db`",
+      "pre_condicoes": [
+        "Instância efêmera com as duas migrações aplicadas, sem nenhuma tabela extra"
+      ],
+      "dados_entrada": {
+        "descricao": "Nenhuma entrada — a consulta é sobre `pg_class`, `pg_policies` e `pg_constraint`.",
+        "valores": {}
+      },
+      "passos": [
+        "Aplicar as duas migrações na instância efêmera",
+        "Invocar a guarda de catálogo pela API pública de `@sysloc/db`",
+        "Afirmar que a lista de exceções é vazia",
+        "Afirmar que a lista de tabelas examinadas contém `acesso_usuario_app` e `acesso_usuario_permissao`, e nada além"
+      ],
+      "resultado_esperado": "Exceções: `[]`. Tabelas examinadas: conjunto exatamente igual a `{acesso_usuario_app, acesso_usuario_permissao}`. Guarda retorna o resultado sem levantar exceção.",
+      "criterios_aceitacao_validados": [
+        "CA-16"
+      ],
+      "observacoes": "Arquivo novo proposto: `packages/db/test/catalogo.spec.ts` (§3.4). A asserção sobre as tabelas EXAMINADAS é o que impede o modo de falha clássico da guarda: uma consulta que não encontra tabela nenhuma devolve lista vazia de exceções e passa por verde — 'nenhuma exceção' e 'nada foi olhado' são indistinguíveis sem ela.",
+      "task_id": "T4"
+    },
+    {
+      "id": "CT-009",
+      "titulo": "Tabela de negócio nascida sem isolamento faz a verificação reprovar apontando a tabela",
+      "tipo": "INTEGRACAO",
+      "categoria": "teste_negativo",
+      "invariant": "Criada em `negocio` uma tabela com qualquer um dos três defeitos — sem `empresa_id`, sem RLS forçada, sem a restrição única `(id, empresa_id)` — a guarda de catálogo devolve exceção nomeando aquela tabela e aquele motivo, e o verificador que a consome sai com código diferente de zero.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — tabela deliberadamente criada desprotegida, em três variantes",
+        "assertion_esperada": "ver resultado_esperado"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Criar tabela no schema `negocio` exige o papel dono, que o papel da aplicação não tem.",
+        "caminho_legitimo": "(b) usar `conexaoDeMigracao()` do helper `banco-efemero.ts`, numa instância efêmera dedicada a este caso e descartada ao fim. A tabela defeituosa é criada por DDL do próprio teste, num schema real — nunca por bandeira, semente condicional ou ramo de produção que 'pule' o isolamento.",
+        "teste_analogo": "CT-007 (mesma origem de conexão privilegiada e mesmo isolamento por instância dedicada)"
+      },
+      "camada": "Dados — `packages/db`",
+      "pre_condicoes": [
+        "Instância efêmera dedicada, migrada"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela de três defeitos, um por variante, todos no schema `negocio`.",
+        "valores": {
+          "variantes": [
+            {
+              "tabela": "negocio.sem_empresa",
+              "defeito": "sem coluna empresa_id",
+              "motivo_esperado": "SEM_COLUNA_EMPRESA"
+            },
+            {
+              "tabela": "negocio.sem_forca",
+              "defeito": "empresa_id presente, RLS habilitada mas não forçada",
+              "motivo_esperado": "RLS_NAO_FORCADA"
+            },
+            {
+              "tabela": "negocio.sem_chave_composta",
+              "defeito": "sem UNIQUE (id, empresa_id)",
+              "motivo_esperado": "SEM_CHAVE_COMPOSTA"
+            }
+          ]
+        }
+      },
+      "passos": [
+        "Para cada variante, criar a tabela defeituosa pela conexão de migração",
+        "Invocar a guarda de catálogo",
+        "Afirmar que a lista de exceções contém exatamente uma entrada, com o nome da tabela e o motivo esperado",
+        "Afirmar que as duas tabelas legítimas NÃO aparecem na lista",
+        "Remover a tabela defeituosa e afirmar que a guarda volta a devolver lista vazia"
+      ],
+      "resultado_esperado": "Variante 1: exceções = `[{ tabela: 'negocio.sem_empresa', motivo: 'SEM_COLUNA_EMPRESA' }]`. Variante 2: `[{ tabela: 'negocio.sem_forca', motivo: 'RLS_NAO_FORCADA' }]`. Variante 3: `[{ tabela: 'negocio.sem_chave_composta', motivo: 'SEM_CHAVE_COMPOSTA' }]`. Em todas, `acesso_usuario_app` e `acesso_usuario_permissao` ausentes da lista, e após a remoção da tabela defeituosa a lista volta a `[]`.",
+      "criterios_aceitacao_validados": [
+        "CA-16"
+      ],
+      "observacoes": "Mora em `packages/db/test/catalogo.spec.ts`, junto do CT-008. Os três defeitos são independentes de propósito: uma guarda que só olhasse `relrowsecurity` passaria a variante 3, e uma que só olhasse a coluna passaria a variante 2. O passo de remoção (volta ao vazio) é o que impede a guarda de reprovar por estado residual em vez de pelo defeito.",
+      "task_id": "T4"
+    },
+    {
+      "id": "CT-010",
+      "titulo": "Contexto de tenant não vaza entre requisições na conexão reaproveitada da reserva",
+      "tipo": "INTEGRACAO",
+      "categoria": "caso_extremo",
+      "invariant": "`SET LOCAL app.empresa_id` morre com a transação: numa segunda unidade de trabalho aberta sobre a MESMA conexão física, o valor lido de `current_setting('app.empresa_id', true)` não é o da unidade anterior, e a leitura de negócio reflete o contexto novo — nunca o antigo.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "segunda unidade de trabalho sem contexto nenhum, imediatamente após uma com o contexto de A, na mesma conexão",
+        "assertion_esperada": "`current_setting('app.empresa_id', true)` devolve cadeia vazia ou nulo — nunca o identificador de A — e a leitura devolve zero linhas"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "É preciso garantir que as duas unidades de trabalho correram sobre a MESMA conexão física da reserva — do contrário o caso passa por sorte, sem exercitar o reaproveitamento.",
+        "caminho_legitimo": "(b) provar pelo boundary real: reduzir a reserva de conexões do `postgres.js` a UMA (opção de configuração legítima, a mesma que a produção usa com valor maior — não é bandeira de teste) e afirmar, dentro de cada unidade, que `pg_backend_pid()` é o mesmo nas duas. Sem essa afirmação o caso não discrimina. Nenhum acesso ao cliente interno é necessário: `pg_backend_pid()` é lido por consulta comum dentro da própria unidade de trabalho.",
+        "teste_analogo": "NENHUM — a receita completa é a acima"
+      },
+      "camada": "Dados — `packages/db`",
+      "pre_condicoes": [
+        "Instância efêmera migrada e semeada (A com 2 linhas, B com 3)",
+        "Reserva de conexões configurada em 1"
+      ],
+      "dados_entrada": {
+        "descricao": "Três unidades de trabalho encadeadas na mesma conexão.",
+        "valores": {
+          "sequencia": [
+            {
+              "unidade": 1,
+              "contexto": "empresa A"
+            },
+            {
+              "unidade": 2,
+              "contexto": "nenhum"
+            },
+            {
+              "unidade": 3,
+              "contexto": "empresa B"
+            }
+          ]
+        }
+      },
+      "passos": [
+        "Abrir a unidade 1 no contexto de A, ler `pg_backend_pid()` e as linhas visíveis",
+        "Abrir a unidade 2 sem contexto, ler `pg_backend_pid()`, `current_setting('app.empresa_id', true)` e as linhas visíveis",
+        "Abrir a unidade 3 no contexto de B, ler `pg_backend_pid()` e as linhas visíveis",
+        "Afirmar que os três `pg_backend_pid()` são idênticos",
+        "Afirmar o conjunto de linhas de cada unidade"
+      ],
+      "resultado_esperado": "Os três `pg_backend_pid()` são o mesmo número. Unidade 1: `{acesso-A-1, acesso-A-2}`. Unidade 2: `current_setting` devolve cadeia vazia ou nulo e a leitura devolve `[]`. Unidade 3: `{acesso-B-1, acesso-B-2, acesso-B-3}` — em particular, nenhum identificador de A.",
+      "criterios_aceitacao_validados": [
+        "CA-01",
+        "CA-02"
+      ],
+      "observacoes": "Arquivo novo proposto: `packages/db/test/unidade-de-trabalho.spec.ts` (§3.4). Atende ao risco 'contexto vazando entre requisições pela reserva de conexões' (§20 da tech spec), classificado ali como probabilidade baixa e impacto crítico. A igualdade dos `pg_backend_pid()` é a asserção que transforma o caso de 'passou por sorte' em prova.",
+      "task_id": "T3"
+    },
+    {
+      "id": "CT-011",
+      "titulo": "Valor de contexto que não é UUID é recusado antes de compor o SET LOCAL",
+      "tipo": "UNITARIO",
+      "categoria": "seguranca",
+      "invariant": "A unidade de trabalho valida o identificador de empresa como UUID antes de compô-lo na instrução `SET LOCAL` (que não aceita parâmetro vinculado); valor que não seja UUID levanta erro nomeado e nenhuma instrução chega ao banco.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "`'00000000-0000-0000-0000-000000000000'; SET app.empresa_id = 'x'; --`, `''`, `'nao-e-uuid'`, `'0'.repeat(40)`",
+        "assertion_esperada": "erro com mensagem nomeando `app.empresa_id` e o valor recusado redigido, e zero instruções emitidas ao banco"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "O caso precisa observar que NENHUMA instrução foi emitida — observação que a produção não expõe por retorno de função.",
+        "caminho_legitimo": "(b) observar pelo boundary real, não por dublê: rodar contra a instância efêmera com `log_statement = 'all'` (parâmetro do próprio servidor, ajustável na instância descartável) e afirmar sobre o registro do servidor que nenhuma instrução `SET LOCAL` foi recebida na janela do caso. Alternativa igualmente legítima: afirmar sobre `pg_stat_activity`/contador de consultas do próprio cliente. **Não** acrescentar contador, gancho ou bandeira a `packages/db/src/unidade-de-trabalho.ts` para tornar isso observável.",
+        "teste_analogo": "apps/api/test/saude.e2e.spec.ts (padrão de observar o boundary real — sentinela na porta — em vez de instrumentar o SUT)"
+      },
+      "camada": "Dados — `packages/db`",
+      "pre_condicoes": [
+        "Instância efêmera de pé (usada apenas como observatório do que NÃO chega)"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela de valores inválidos, incluindo a tentativa de injeção, e um valor válido de controle.",
+        "valores": {
+          "invalidos": [
+            "00000000-0000-0000-0000-000000000000'; SET app.empresa_id = 'x'; --",
+            "",
+            "nao-e-uuid",
+            "0000000000000000000000000000000000000000"
+          ],
+          "valido_controle": "3f6c1b2a-9d4e-4a71-b8c2-5e0f7a1d2c33"
+        }
+      },
+      "passos": [
+        "Para cada valor inválido, escrever o contexto e tentar abrir a unidade de trabalho",
+        "Afirmar que a abertura levantou erro, com a mensagem esperada",
+        "Afirmar que nenhuma instrução foi emitida ao servidor nessa janela",
+        "Com o valor de controle, afirmar que a unidade abre e que a instrução `SET LOCAL` foi emitida exatamente uma vez"
+      ],
+      "resultado_esperado": "Nos quatro valores inválidos: erro cuja mensagem nomeia `app.empresa_id` e declara 'identificador de empresa inválido', com o valor recusado redigido; contagem de instruções emitidas ao servidor = `0`. No valor de controle: unidade abre e a contagem de `SET LOCAL` emitidos = `1`.",
+      "criterios_aceitacao_validados": [
+        "CA-02"
+      ],
+      "observacoes": "Mora em `packages/db/test/unidade-de-trabalho.spec.ts`. É a exceção auditada declarada na §11.4 da tech spec ('SET LOCAL não aceita parâmetro vinculado'), que a própria spec obriga a ter caso negativo dedicado. O par com o valor de controle é obrigatório: um validador que recusasse TUDO passaria o eixo negativo e quebraria a operação.",
+      "task_id": "T3"
+    },
+    {
+      "id": "CT-012",
+      "titulo": "`@sysloc/db` não oferece caminho de acesso a dado fora da unidade de trabalho",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "O índice público de `@sysloc/db` expõe um conjunto fechado e conhecido de símbolos, no qual não há cliente, reserva de conexões nem executor cru — escrever consulta sem contexto de tenant é impossível fora do pacote, não apenas desaconselhado.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "cópia do índice com `export { sql } from './conexao.js'` reintroduzido (o defeito exato que o caso persegue)",
+        "assertion_esperada": "a asserção reprova nomeando o símbolo excedente `sql`, e o índice íntegro passa limpo no mesmo harness"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Dados — `packages/db`",
+      "pre_condicoes": [
+        "Pacote `@sysloc/db` compilado"
+      ],
+      "dados_entrada": {
+        "descricao": "O conjunto de nomes exportados pelo índice, e o valor de cada um.",
+        "valores": {
+          "esperado": "conjunto fechado declarado no próprio caso, a partir da §3.3 da tech spec"
+        }
+      },
+      "passos": [
+        "Importar tudo o que o índice de `@sysloc/db` exporta",
+        "Afirmar igualdade de conjunto entre os nomes exportados e o conjunto esperado — não apenas contenção",
+        "Para cada valor exportado, afirmar que ele não expõe as marcas de um cliente `postgres.js` (`unsafe`, `begin`, `reserve`, `listen`) nem é invocável como executor de SQL",
+        "Gerar cópia do índice com o defeito reintroduzido e demonstrar que a asserção reprova"
+      ],
+      "resultado_esperado": "Conjunto exportado exatamente igual ao esperado (unidade de trabalho, escritor/leitor de contexto, guarda de catálogo, schema e tipos). Nenhum valor exportado possui as propriedades `unsafe`, `begin`, `reserve` ou `listen`. Sobre a cópia defeituosa, a asserção reprova nomeando `sql` como excedente; sobre o arquivo íntegro, passa limpo.",
+      "criterios_aceitacao_validados": [
+        "CA-02"
+      ],
+      "observacoes": "Mora em `packages/db/test/unidade-de-trabalho.spec.ts`. Asserção ESTÁTICA sobre superfície — por `.claude/rules/testing-stack.md` a prova de falsificação (último passo) é obrigatória, não opcional. Imitar `packages/shared/test/superficie-publica.spec.ts`, que já resolve esse padrão no repositório. Igualdade de CONJUNTO e não contenção: contenção deixaria passar export novo acrescentado por descuido, que é exatamente o defeito.",
+      "task_id": "T3"
+    },
+    {
+      "id": "CT-013",
+      "titulo": "Senha que satisfaz comprimento e força é aceita",
+      "tipo": "UNITARIO",
+      "categoria": "caminho_feliz",
+      "invariant": "Senha com 10 ou mais caracteres, que não contenha o nome nem a parte local do e-mail da pessoa, sem sequência de 4 caracteres consecutivos e sem repetição de 4 iguais, é aprovada pela política sem motivo de recusa.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-014",
+        "input_invalido": "senha de 9 caracteres, senha contendo a parte local do e-mail, senha com `abcd`, senha com `1111`",
+        "assertion_esperada": "aprovada = false e motivo igual ao rótulo específico de cada regra (`COMPRIMENTO_MINIMO`, `CONTEM_DADO_PESSOAL`, `SEQUENCIA_CONSECUTIVA`, `REPETICAO`)"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Identidade — `packages/auth`",
+      "pre_condicoes": [],
+      "dados_entrada": {
+        "descricao": "Senhas aprovadas, com a fronteira de comprimento incluída.",
+        "valores": {
+          "pessoa": {
+            "nome": "Marina Duarte",
+            "email": "marina.duarte@exemplo.com.br"
+          },
+          "aprovadas": [
+            "chuva7Longe!",
+            "K9mvt#Qzpr",
+            "vento-azul-72X"
+          ],
+          "fronteira": "K9mvt#Qzpr tem exatamente 10 caracteres"
+        }
+      },
+      "passos": [
+        "Para cada senha aprovada, invocar a política com a pessoa de referência",
+        "Afirmar que o resultado é aprovado e que a lista de motivos é vazia"
+      ],
+      "resultado_esperado": "Para as três senhas: `aprovada = true` e `motivos = []`. A senha de exatamente 10 caracteres é aprovada — a fronteira é `>= 10`, não `> 10`.",
+      "criterios_aceitacao_validados": [
+        "CA-07"
+      ],
+      "observacoes": "Arquivo novo proposto: `packages/auth/test/senha.spec.ts` (§3.4). Sem colaborador algum — função pura, sem rede por decisão (RN-05 e §8 da tech spec). A fronteira de 10 é o eixo que impede um `> 10` de passar por verde.",
+      "task_id": "T6"
+    },
+    {
+      "id": "CT-014",
+      "titulo": "Senha curta ou fraca é recusada com o motivo específico da regra violada",
+      "tipo": "UNITARIO",
+      "categoria": "teste_negativo",
+      "invariant": "Cada regra de força tem rótulo próprio no motivo devolvido: comprimento, dado pessoal, sequência consecutiva e repetição são distinguíveis por quem chama, e a senha reprovada não passa a valer.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — tabela de senhas reprovadas, uma por regra",
+        "assertion_esperada": "ver resultado_esperado"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Identidade — `packages/auth`",
+      "pre_condicoes": [],
+      "dados_entrada": {
+        "descricao": "Uma senha por regra, mais a fronteira de comprimento em 9.",
+        "valores": {
+          "pessoa": {
+            "nome": "Marina Duarte",
+            "email": "marina.duarte@exemplo.com.br"
+          },
+          "casos": [
+            {
+              "senha": "K9mvt#Qzp",
+              "motivo": "COMPRIMENTO_MINIMO"
+            },
+            {
+              "senha": "marina.duarte#77",
+              "motivo": "CONTEM_DADO_PESSOAL"
+            },
+            {
+              "senha": "Duarte#1977xy",
+              "motivo": "CONTEM_DADO_PESSOAL"
+            },
+            {
+              "senha": "zTq#abcd91K",
+              "motivo": "SEQUENCIA_CONSECUTIVA"
+            },
+            {
+              "senha": "zTq#1111x9K",
+              "motivo": "REPETICAO"
+            }
+          ]
+        }
+      },
+      "passos": [
+        "Para cada linha da tabela, invocar a política com a pessoa de referência",
+        "Afirmar `aprovada = false`",
+        "Afirmar que `motivos` contém exatamente o rótulo esperado daquela linha",
+        "Afirmar que o motivo devolvido não contém a senha informada"
+      ],
+      "resultado_esperado": "Nas cinco linhas: `aprovada = false` e `motivos` igual a `[<rótulo da linha>]` — em particular, `K9mvt#Qzp` (9 caracteres) devolve `COMPRIMENTO_MINIMO`, e nenhum motivo carrega a senha informada em forma legível.",
+      "criterios_aceitacao_validados": [
+        "CA-07"
+      ],
+      "observacoes": "Mora em `packages/auth/test/senha.spec.ts`. O rótulo EXATO por regra (e não 'algum motivo') é o que permite ao controlador preencher `detalhes` da ADR-0007 com o motivo, como exige a §6.1 da tech spec. A asserção de que a senha não aparece no motivo é a rede local da RN-12.",
+      "task_id": "T6"
+    },
+    {
+      "id": "CT-015",
+      "titulo": "Cinco falhas consecutivas gravam o bloqueio na conta; a quarta não bloqueia e o sucesso zera o contador",
+      "tipo": "INTEGRACAO",
+      "categoria": "fronteira",
+      "invariant": "O contador de tentativas vive na própria conta: após a 4ª falha consecutiva `bloqueado_ate` continua nulo; na 5ª ele recebe instante no futuro; uma entrada bem-sucedida zera `tentativas_falhas` e limpa `bloqueado_ate`.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-016",
+        "input_invalido": "6ª tentativa com a credencial CORRETA, sobre a conta já bloqueada",
+        "assertion_esperada": "resposta `401` com corpo idêntico ao da credencial incorreta e nenhuma linha nova em `identidade.sessao`"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Exige uma conta com credencial conhecida e a leitura das colunas `tentativas_falhas` e `bloqueado_ate`, que a API não expõe.",
+        "caminho_legitimo": "(b) construir pelo caminho real: a conta nasce da carga inicial `packages/db/src/semente.ts`, com a senha definida pelo mesmo caminho de derivação que a produção usa (a instância do arcabouço), nunca por escrita direta de derivação forjada. A leitura das duas colunas é feita por consulta ao schema `identidade` (que não tem RLS) na instância efêmera — observação do estado persistido, que é o próprio side-effect que a RN-06 exige, e não instrumentação do SUT.",
+        "teste_analogo": "NENHUM — a receita completa é a acima"
+      },
+      "camada": "Identidade — `packages/auth`",
+      "pre_condicoes": [
+        "Instância efêmera migrada e semeada",
+        "Pessoa ativa em empresa ativa, com senha conhecida"
+      ],
+      "dados_entrada": {
+        "descricao": "Sequência de tentativas com senha errada, seguida de uma correta.",
+        "valores": {
+          "email": "usuario.a@exemplo.com.br",
+          "senha_correta": "chuva7Longe!",
+          "senha_errada": "chuva7Longe?"
+        }
+      },
+      "passos": [
+        "Executar 4 tentativas com a senha errada, passando pela barreira de admissão",
+        "Ler `tentativas_falhas` e `bloqueado_ate` da conta",
+        "Executar a 5ª tentativa com a senha errada",
+        "Ler as duas colunas de novo",
+        "Desbloquear a conta pelo decurso do prazo (instante de liberação no passado, obtido pela mesma configuração de duração que a produção usa) e entrar com a senha correta",
+        "Ler as duas colunas uma última vez"
+      ],
+      "resultado_esperado": "Após a 4ª: `tentativas_falhas = 4` e `bloqueado_ate = null`. Após a 5ª: `tentativas_falhas = 5` e `bloqueado_ate` estritamente maior que o instante corrente. Após a entrada bem-sucedida: `tentativas_falhas = 0` e `bloqueado_ate = null`, e exatamente 1 linha nova em `identidade.sessao` para esse usuário.",
+      "criterios_aceitacao_validados": [
+        "CA-08"
+      ],
+      "observacoes": "Arquivo novo proposto: `packages/auth/test/bloqueio.spec.ts` (§3.4). A fronteira em 4 é o eixo que impede um limiar errado (bloquear na 4ª ou na 6ª) de passar por verde — provar só a 5ª deixa os dois vizinhos sem asserção. Corre contra banco real porque o estado é persistido na conta por decisão D5; um dublê aqui provaria a aritmética e não a persistência, que é o ponto.",
+      "task_id": "T6"
+    },
+    {
+      "id": "CT-016",
+      "titulo": "Conta bloqueada com credencial correta recebe recusa indistinguível da de credencial incorreta",
+      "tipo": "E2E",
+      "categoria": "seguranca",
+      "invariant": "A resposta a uma entrada com credencial correta sobre conta bloqueada é idêntica, campo a campo, à resposta a uma credencial incorreta — mesmo status, mesmo `codigo`, mesma `mensagem`, mesmo conjunto de chaves e ausência de cabeçalho de sessão — de modo que a resposta não confirma a existência da conta.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-018",
+        "input_invalido": "a mesma conta, desbloqueada, com a credencial correta",
+        "assertion_esperada": "`200` com cabeçalho `Set-Cookie` de sessão presente e corpo de sessão — a diferença observável só existe quando a admissão é legítima"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Exige uma conta em estado de bloqueio no instante da requisição.",
+        "caminho_legitimo": "(a) imitar o CT-015: chegar ao bloqueio pelas 5 tentativas malsucedidas reais, atravessando a rota HTTP — nunca escrevendo `bloqueado_ate` à mão no banco, o que provaria a leitura da coluna e não a regra que a preenche.",
+        "teste_analogo": "CT-015 (packages/auth/test/bloqueio.spec.ts) para a mecânica de chegar ao bloqueio; apps/api/test/saude.e2e.spec.ts para o servidor real em porta dinâmica"
+      },
+      "camada": "Apresentação — `apps/api`",
+      "pre_condicoes": [
+        "Servidor HTTP real em porta dinâmica, contra a instância efêmera migrada e semeada",
+        "Conta levada ao bloqueio por 5 tentativas malsucedidas reais"
+      ],
+      "dados_entrada": {
+        "descricao": "Quatro requisições cujas respostas são comparadas entre si.",
+        "valores": {
+          "baseline": {
+            "email": "usuario.a@exemplo.com.br",
+            "password": "senha-errada-qualquer"
+          },
+          "bloqueada_correta": {
+            "email": "usuario.a@exemplo.com.br",
+            "password": "chuva7Longe!"
+          },
+          "email_inexistente": {
+            "email": "ninguem@exemplo.com.br",
+            "password": "chuva7Longe!"
+          }
+        }
+      },
+      "passos": [
+        "Levar a conta ao bloqueio por 5 `POST /v1/auth/sign-in/email` com senha errada",
+        "Capturar a resposta da tentativa com credencial CORRETA sobre a conta bloqueada",
+        "Capturar a resposta de uma credencial incorreta sobre conta NÃO bloqueada (baseline)",
+        "Capturar a resposta de um e-mail inexistente",
+        "Comparar as três respostas por igualdade profunda de status, corpo e conjunto de chaves de cabeçalho relevante"
+      ],
+      "resultado_esperado": "As três respostas são iguais: status `401`, corpo exatamente `{ codigo: 'CREDENCIAL_INVALIDA', mensagem: <mesma cadeia nas três> }` no envelope da ADR-0007, sem `Set-Cookie`, e sem qualquer campo que diferencie os casos (`detalhes` ausente nas três). Nenhuma linha nova em `identidade.sessao`.",
+      "criterios_aceitacao_validados": [
+        "CA-08"
+      ],
+      "observacoes": "Arquivo novo proposto: `apps/api/test/autenticacao.e2e.spec.ts` (§3.4). Comparar as respostas ENTRE SI, e não cada uma contra um literal, é o que prova a indistinguibilidade: dois literais escritos à mão continuariam iguais mesmo se o SUT divergisse em ambos. Este é o ponto crítico 5 declarado na invocação e a §9 do PRD.",
+      "task_id": "T11"
+    },
+    {
+      "id": "CT-017",
+      "titulo": "Pessoa desativada e empresa suspensa recebem a mesma recusa, e nenhuma sessão é criada",
+      "tipo": "E2E",
+      "categoria": "seguranca",
+      "invariant": "Pessoa desativada e pessoa de empresa suspensa, ambas com credencial correta, recebem resposta idêntica à de credencial incorreta e não têm sessão criada — nem o corpo nem o tempo de resposta permitem distinguir qual predicado recusou.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-018",
+        "input_invalido": "a mesma pessoa, ativa e em empresa ativa, com a mesma credencial correta",
+        "assertion_esperada": "`200` com `Set-Cookie` e uma linha nova em `identidade.sessao` — o único eixo que muda é o estado da pessoa e da empresa"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Exige uma pessoa com `ativo = false` e outra pertencente a empresa com `suspensa_em` preenchido.",
+        "caminho_legitimo": "(b) construir pelo caminho real disponível nesta fatia: a carga inicial `packages/db/src/semente.ts`, que o PRD (§4.1, último item) declara ser o caminho legítimo enquanto as rotas de administração não existem — os dois estados são valores de domínio da semente, não estado forjado. Nada de rota, bandeira ou símbolo novo em produção para desativar pessoa ou suspender empresa: isso é a fatia seguinte.",
+        "teste_analogo": "CT-016 (mesmo arquivo, mesmo padrão de comparação entre respostas)"
+      },
+      "camada": "Apresentação — `apps/api`",
+      "pre_condicoes": [
+        "Servidor HTTP real em porta dinâmica",
+        "Semente com: pessoa ativa em empresa ativa; pessoa desativada em empresa ativa; pessoa ativa em empresa suspensa — as três com a MESMA senha conhecida"
+      ],
+      "dados_entrada": {
+        "descricao": "Três entradas com credencial correta, mais o baseline de credencial incorreta.",
+        "valores": {
+          "cenarios": [
+            {
+              "rotulo": "pessoa desativada",
+              "email": "desativada@exemplo.com.br",
+              "password": "chuva7Longe!"
+            },
+            {
+              "rotulo": "empresa suspensa",
+              "email": "suspensa@exemplo.com.br",
+              "password": "chuva7Longe!"
+            },
+            {
+              "rotulo": "baseline credencial incorreta",
+              "email": "usuario.a@exemplo.com.br",
+              "password": "senha-errada-qualquer"
+            }
+          ]
+        }
+      },
+      "passos": [
+        "Contar as linhas de `identidade.sessao` antes das requisições",
+        "Executar as três requisições",
+        "Comparar as respostas dos dois primeiros cenários com a do baseline, por igualdade profunda",
+        "Contar as linhas de `identidade.sessao` de novo",
+        "Afirmar que a trilha registrou as três tentativas com desfecho de recusa"
+      ],
+      "resultado_esperado": "As três respostas são iguais: `401` com corpo `{ codigo: 'CREDENCIAL_INVALIDA', mensagem: <mesma cadeia> }`, sem `Set-Cookie`. A contagem de `identidade.sessao` é idêntica antes e depois. `identidade.tentativa_login` ganhou exatamente 3 linhas, todas com desfecho de recusa.",
+      "criterios_aceitacao_validados": [
+        "CA-13"
+      ],
+      "observacoes": "Mora em `apps/api/test/autenticacao.e2e.spec.ts`. A asserção sobre a contagem de sessões é o que impede a versão frouxa ('respondeu 401') de passar enquanto uma sessão é criada em silêncio por caminho paralelo — o CT-026 fecha essa classe de forma estrutural.",
+      "task_id": "T11"
+    },
+    {
+      "id": "CT-018",
+      "titulo": "Pessoa ativa em empresa ativa entra, é identificada individualmente e tem a empresa fixada pela sessão",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "Credencial correta de pessoa ativa em empresa ativa produz sessão que identifica a pessoa e fixa a empresa: `GET /v1/sessao` devolve o usuário e a empresa dela, e uma leitura de negócio na mesma sessão devolve apenas dados dessa empresa — sem que o pedido carregue empresa alguma.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-017",
+        "input_invalido": "mesma credencial correta, com a pessoa desativada ou a empresa suspensa",
+        "assertion_esperada": "`401` com o envelope idêntico ao da credencial incorreta e nenhuma sessão criada"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Exige pessoa e empresa semeadas e, para o eixo de fixação da empresa, dados de negócio em duas empresas.",
+        "caminho_legitimo": "(a) imitar o CT-003 (semente pelo caminho real) e o CT-017. A sessão é obtida exclusivamente pela rota pública `POST /v1/auth/sign-in/email` e o cookie devolvido é reenviado como qualquer cliente faria — nunca forjando cookie, token de sessão ou contexto no `AsyncLocalStorage` a partir do teste.",
+        "teste_analogo": "apps/api/test/saude.e2e.spec.ts (servidor real em porta dinâmica e montagem do ambiente a partir do que os helpers devolvem)"
+      },
+      "camada": "Apresentação — `apps/api`",
+      "pre_condicoes": [
+        "Servidor HTTP real em porta dinâmica",
+        "Semente: empresas A e B com vínculos de acesso próprios; pessoa ativa em A"
+      ],
+      "dados_entrada": {
+        "descricao": "Uma entrada válida e a leitura subsequente.",
+        "valores": {
+          "credencial": {
+            "email": "usuario.a@exemplo.com.br",
+            "password": "chuva7Longe!"
+          },
+          "pedido_de_negocio": "sem nenhum campo de empresa no corpo nem na cadeia de consulta"
+        }
+      },
+      "passos": [
+        "Executar `POST /v1/auth/sign-in/email` com a credencial correta",
+        "Afirmar status e atributos do cookie devolvido",
+        "Reenviar o cookie em `GET /v1/sessao` e afirmar o corpo campo a campo",
+        "Com o mesmo cookie, executar a leitura de negócio disponível e afirmar o conjunto de identificadores devolvido",
+        "Repetir a leitura com uma sessão da empresa B e afirmar que o conjunto é o de B"
+      ],
+      "resultado_esperado": "Entrada: `200` com `Set-Cookie` marcado `HttpOnly`, `Secure` e `SameSite=Lax`. `GET /v1/sessao`: `200` com `{ usuarioId: <id da pessoa>, nome, email: 'usuario.a@exemplo.com.br', perfil: 'ADMIN_EMPRESA', empresaId: <id de A>, empresaNome: <nome de A>, senhaProvisoria: false, segundoFatorPendente: false }` — exatamente essas chaves, em camelCase. Leitura de negócio na sessão de A: conjunto igual aos identificadores de A, interseção vazia com os de B; na sessão de B, o simétrico.",
+      "criterios_aceitacao_validados": [
+        "CA-06",
+        "CA-01"
+      ],
+      "observacoes": "Mora em `apps/api/test/autenticacao.e2e.spec.ts`. O eixo de 'fixar a empresa' precisa da leitura de negócio: provar só o corpo de `/v1/sessao` demonstraria que a sessão CARREGA a empresa, não que ela GOVERNA o alcance do dado — que é o que o CA-06 pede e o que a ADR-0008 impõe.",
+      "task_id": "T8"
+    },
+    {
+      "id": "CT-019",
+      "titulo": "O Sysloc Master só conclui o acesso após o segundo fator; sem ele nenhuma sessão plena existe",
+      "tipo": "E2E",
+      "categoria": "seguranca",
+      "invariant": "Para o perfil Master, a senha correta sozinha não produz sessão plena: enquanto o segundo fator não é satisfeito, a sessão é restrita e qualquer rota fora do conjunto permitido responde `403`; com código TOTP válido a sessão passa a plena, e com código inválido ela permanece restrita.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "código TOTP de 6 dígitos incorreto, e código com formato inválido (5 dígitos, letras)",
+        "assertion_esperada": "`401` com `codigo: 'CREDENCIAL_INVALIDA'` para o código incorreto e `422` com `codigo: 'CAMPO_INVALIDO'` para o formato inválido; em ambos, a sessão permanece restrita e a rota de negócio segue respondendo `403`"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Exige um Master com segundo fator já configurado (segredo TOTP conhecido pelo teste, para derivar código válido) e um Master sem segundo fator configurado.",
+        "caminho_legitimo": "(b) construir pelo boundary real: o Master sem segundo fator nasce da carga inicial; a configuração do segundo fator é feita atravessando as rotas públicas `POST /v1/auth/two-factor/enable` e `POST /v1/auth/two-factor/verify-totp`, de onde o teste obtém o `totpURI` que a própria resposta devolve e dele deriva o código com a mesma biblioteca TOTP que o arcabouço usa. Nunca ler o segredo direto da tabela para derivar o código, nunca desligar a exigência por bandeira, nunca exportar caminho interno do arcabouço.",
+        "teste_analogo": "CT-018 (mesmo arquivo, mesma mecânica de cookie e servidor real)"
+      },
+      "camada": "Apresentação — `apps/api`",
+      "pre_condicoes": [
+        "Servidor HTTP real em porta dinâmica",
+        "Semente com um Sysloc Master (`empresa_id` nulo) e senha conhecida"
+      ],
+      "dados_entrada": {
+        "descricao": "Um Master percorrendo o fluxo, com os dois desfechos do desafio.",
+        "valores": {
+          "credencial": {
+            "email": "master@sysloc.com.br",
+            "password": "chuva7Longe!"
+          },
+          "codigos": [
+            "<válido derivado do totpURI>",
+            "000000",
+            "12a4"
+          ]
+        }
+      },
+      "passos": [
+        "Entrar com a senha correta do Master ainda sem segundo fator ativo",
+        "Afirmar que `GET /v1/sessao` responde `200` com `segundoFatorPendente: true` e que uma rota de negócio responde `403`",
+        "Configurar o segundo fator pelas rotas públicas e afirmar que a restrição cai",
+        "Encerrar a sessão e entrar de novo, agora com segundo fator ativo",
+        "Afirmar que a resposta é o desafio e que ainda não há sessão plena",
+        "Submeter o código inválido e depois o mal formatado, afirmando as recusas e a permanência da restrição",
+        "Submeter o código válido e afirmar que a sessão passou a plena"
+      ],
+      "resultado_esperado": "Antes do segundo fator: `GET /v1/sessao` = `200` com `segundoFatorPendente: true`; rota de negócio = `403` com `{ codigo: 'ACESSO_NEGADO', mensagem: <nomeia a exigência de segundo fator> }`. Código `000000`: `401` `CREDENCIAL_INVALIDA`, sessão ainda restrita. Código `12a4`: `422` `CAMPO_INVALIDO`, sessão ainda restrita. Código válido: `200`, e `GET /v1/sessao` passa a devolver `segundoFatorPendente: false`, com a rota de negócio deixando de responder `403`.",
+      "criterios_aceitacao_validados": [
+        "CA-09"
+      ],
+      "observacoes": "Mora em `apps/api/test/autenticacao.e2e.spec.ts`. Cobre o ponto em aberto 2 do tech-alignment (§5): a barreira marca o Master sem segundo fator como RESTRITO em vez de recusá-lo, o que resolve o impasse do primeiro acesso sem abrir janela de obrigatoriedade — e este caso é a prova de que a janela não existe, porque a sessão restrita não alcança dado de negócio.",
+      "task_id": "T10"
+    },
+    {
+      "id": "CT-020",
+      "titulo": "Sysloc Master autenticado consultando qualquer dado de negócio recebe vazio, não erro",
+      "tipo": "E2E",
+      "categoria": "seguranca",
+      "invariant": "Com sessão plena de Master, toda consulta a dado de negócio devolve `200` com conjunto vazio, em qualquer empresa e em qualquer tabela — sem mensagem que sugira existir algo do outro lado e sem ramo de aplicação que trate o Master à parte.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-018",
+        "input_invalido": "a MESMA rota, na sessão de uma pessoa de empresa — que devolve as linhas daquela empresa",
+        "assertion_esperada": "`200` com conjunto não vazio igual aos identificadores da empresa da sessão; sem esse par, o vazio do Master não distingue isolamento de rota quebrada"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Exige uma sessão plena de Master — que só existe depois do segundo fator — e dados de negócio existentes em duas empresas.",
+        "caminho_legitimo": "(a) imitar o CT-019 para chegar à sessão plena de Master pelas rotas públicas, e o CT-003 para a semente das duas empresas. O contexto do Master (sem empresa) nasce da própria sessão, pela guarda — nunca escrito pelo teste.",
+        "teste_analogo": "CT-019 e CT-018, no mesmo arquivo"
+      },
+      "camada": "Apresentação — `apps/api`",
+      "pre_condicoes": [
+        "Servidor HTTP real em porta dinâmica",
+        "Semente com empresas A e B povoadas e um Master com segundo fator ativo"
+      ],
+      "dados_entrada": {
+        "descricao": "As mesmas rotas de leitura de negócio, exercitadas em duas sessões distintas.",
+        "valores": {
+          "sessoes": [
+            "Master (empresaId nulo)",
+            "Admin da empresa A"
+          ],
+          "rotas": "toda rota de leitura de dado de negócio publicada nesta fatia"
+        }
+      },
+      "passos": [
+        "Obter sessão plena de Master",
+        "Consultar cada rota de leitura de negócio",
+        "Afirmar `200` e corpo vazio em todas",
+        "Afirmar que nenhum corpo de resposta contém mensagem de erro, código de erro ou indicação de existência",
+        "Repetir com a sessão do Admin de A e afirmar corpo não vazio igual aos identificadores de A"
+      ],
+      "resultado_esperado": "Master: `200` com corpo `[]` em todas as rotas de leitura de negócio, nenhum campo `codigo` nem `mensagem` presente. Admin de A: `200` com o conjunto exato dos identificadores de A na mesma rota. `GET /v1/sessao` do Master devolve `empresaId: null` e `empresaNome: null`.",
+      "criterios_aceitacao_validados": [
+        "CA-05"
+      ],
+      "observacoes": "Mora em `apps/api/test/autenticacao.e2e.spec.ts`. O CT-005 prova a mesma invariante na camada de dados; este a prova atravessando guarda, unidade de trabalho e política, que é onde o defeito 'ramo especial para o Master' se instalaria. Não é duplicação cross-layer: o CT-005 não passa pela guarda e não observa status HTTP.",
+      "task_id": "T9"
+    },
+    {
+      "id": "CT-021",
+      "titulo": "Senha provisória obriga a troca antes de qualquer outra ação, e após a troca deixa de valer",
+      "tipo": "E2E",
+      "categoria": "interacao_usuario",
+      "invariant": "Enquanto a senha em uso for provisória a sessão é restrita: apenas `GET /v1/sessao`, a troca de senha e a configuração do segundo fator respondem; toda outra rota responde `403` nomeando a exigência. Concluída a troca, a restrição cai sem novo login e a senha provisória não autentica mais.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-022",
+        "input_invalido": "troca obrigatória com senha nova de 9 caracteres ou reprovada na força",
+        "assertion_esperada": "`422` com `{ codigo: 'CAMPO_INVALIDO', campo: 'senha', detalhes: <motivo da regra violada> }`, a marca de senha provisória permanece e a rota de negócio continua respondendo `403`"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Exige uma pessoa cuja senha em uso está marcada como provisória — estado que, nesta fatia, nenhuma rota cria (a emissão da provisória é da fatia seguinte).",
+        "caminho_legitimo": "(b) construir pelo caminho real disponível: a carga inicial `packages/db/src/semente.ts` cria a pessoa já com `senha_provisoria = true`, exatamente como o PRD §4.1 prevê enquanto não há rotas de administração. A senha é derivada pelo mesmo caminho da produção (a instância do arcabouço), nunca por derivação forjada. Nenhuma rota, bandeira ou símbolo de produção é criado para 'marcar como provisória' — isso seria antecipar a fatia 2 e vazaria código test-only.",
+        "teste_analogo": "CT-017 (mesmo padrão de estado de domínio vindo da semente)"
+      },
+      "camada": "Apresentação — `apps/api`",
+      "pre_condicoes": [
+        "Servidor HTTP real em porta dinâmica",
+        "Semente com pessoa ativa, em empresa ativa, com `senha_provisoria = true` e senha conhecida"
+      ],
+      "dados_entrada": {
+        "descricao": "Fluxo completo da troca obrigatória, com a matriz de rotas permitidas e proibidas.",
+        "valores": {
+          "credencial_provisoria": {
+            "email": "novata@exemplo.com.br",
+            "password": "provisoria!7Ku"
+          },
+          "senha_nova": "vento-azul-72X",
+          "permitidas": [
+            "GET /v1/sessao",
+            "POST /v1/auth/change-password",
+            "POST /v1/auth/two-factor/enable"
+          ],
+          "proibidas": [
+            "toda rota de leitura de negócio publicada",
+            "POST /v1/auth/sign-out"
+          ]
+        }
+      },
+      "passos": [
+        "Entrar com a senha provisória e afirmar `200` com `senhaProvisoria: true`",
+        "Para cada rota permitida, afirmar que a resposta não é `403`",
+        "Para cada rota proibida, afirmar `403` com o envelope e a exigência nomeada",
+        "Trocar a senha pela rota de troca, com o MESMO cookie (sem novo login)",
+        "Afirmar que `GET /v1/sessao` passa a devolver `senhaProvisoria: false` e que as rotas antes proibidas respondem normalmente",
+        "Encerrar a sessão e tentar entrar de novo com a senha provisória antiga"
+      ],
+      "resultado_esperado": "Antes da troca: rotas proibidas respondem `403` com `{ codigo: 'ACESSO_NEGADO', mensagem: <nomeia a troca de senha pendente> }`; rotas permitidas não respondem `403`. Após a troca, com o mesmo cookie: `GET /v1/sessao` devolve `senhaProvisoria: false` e a leitura de negócio devolve `200` com os identificadores da empresa dela. Entrada com a senha provisória antiga: `401` com corpo idêntico ao da credencial incorreta; entrada com a senha nova: `200`.",
+      "criterios_aceitacao_validados": [
+        "CA-10"
+      ],
+      "observacoes": "Mora em `apps/api/test/autenticacao.e2e.spec.ts`. O eixo 'a provisória deixa de valer' precisa da tentativa de reentrada com a senha antiga — sem ela, a asserção provaria que a nova funciona, não que a velha morreu, que é a metade do CA-10 que importa em segurança. A queda da restrição SEM novo login é asserção explícita porque a §5.2 da tech spec a exige.",
+      "task_id": "T10"
+    },
+    {
+      "id": "CT-022",
+      "titulo": "Troca obrigatória com senha nova curta ou fraca é recusada com o motivo, e a exigência permanece",
+      "tipo": "E2E",
+      "categoria": "teste_negativo",
+      "invariant": "A troca obrigatória aplica a mesma política de força da definição de senha: senha nova reprovada devolve `422` com o motivo específico e não passa a valer — a pessoa permanece na sessão restrita e a senha provisória continua sendo a que autentica.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — senha nova de 9 caracteres, senha contendo a parte local do e-mail, senha com sequência de 4 consecutivos",
+        "assertion_esperada": "ver resultado_esperado"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Mesma do CT-021: pessoa com senha provisória em vigor e sessão restrita aberta.",
+        "caminho_legitimo": "(a) imitar o CT-021 integralmente — semente com `senha_provisoria = true` e sessão obtida pela rota pública.",
+        "teste_analogo": "CT-021, no mesmo arquivo"
+      },
+      "camada": "Apresentação — `apps/api`",
+      "pre_condicoes": [
+        "Mesmas do CT-021, com a sessão restrita já aberta"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela de senhas novas reprovadas, uma por regra.",
+        "valores": {
+          "tentativas": [
+            {
+              "novaSenha": "K9mvt#Qzp",
+              "motivo": "COMPRIMENTO_MINIMO"
+            },
+            {
+              "novaSenha": "novata#2026x",
+              "motivo": "CONTEM_DADO_PESSOAL"
+            },
+            {
+              "novaSenha": "zTq#abcd91K",
+              "motivo": "SEQUENCIA_CONSECUTIVA"
+            }
+          ]
+        }
+      },
+      "passos": [
+        "Para cada linha, chamar a rota de troca com o cookie da sessão restrita",
+        "Afirmar o status e o corpo da recusa",
+        "Após as três, afirmar que `GET /v1/sessao` ainda devolve `senhaProvisoria: true`",
+        "Afirmar que uma rota de negócio ainda responde `403`",
+        "Afirmar que a senha PROVISÓRIA ainda autentica numa nova entrada, e que nenhuma das três senhas recusadas autentica"
+      ],
+      "resultado_esperado": "Nas três linhas: `422` com corpo `{ codigo: 'CAMPO_INVALIDO', mensagem: <mensagem canônica>, campo: 'senha', detalhes: <objeto contendo o rótulo da linha> }`. Depois delas: `senhaProvisoria: true`, rota de negócio em `403`, entrada com a provisória em `200` e entrada com qualquer uma das três recusadas em `401`.",
+      "criterios_aceitacao_validados": [
+        "CA-10",
+        "CA-07"
+      ],
+      "observacoes": "Mora em `apps/api/test/autenticacao.e2e.spec.ts`. O último passo (nenhuma das recusadas autentica) é o que impede o defeito silencioso mais perigoso da troca: gravar a senha nova e SÓ DEPOIS reprovar a validação, devolvendo `422` com o estado já alterado. Sem ele, a resposta correta esconderia a persistência errada.",
+      "task_id": "T10"
+    },
+    {
+      "id": "CT-023",
+      "titulo": "Encerrar a sessão invalida o acesso imediatamente",
+      "tipo": "E2E",
+      "categoria": "interacao_usuario",
+      "invariant": "Depois de `POST /v1/auth/sign-out`, o mesmo cookie deixa de autenticar na requisição seguinte e a linha correspondente some de `identidade.sessao` — a invalidação é de estado no banco, não de expiração do cookie no cliente.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "reuso do cookie já encerrado, e uso de um cookie com token inexistente",
+        "assertion_esperada": "`401` com `{ codigo: 'NAO_AUTENTICADO', mensagem: 'sessão inválida ou expirada' }` nos dois, sem distinção entre 'encerrada' e 'nunca existiu'"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Exige uma sessão ativa e a leitura da tabela de sessões para provar a remoção.",
+        "caminho_legitimo": "(a) imitar o CT-018 para obter a sessão pela rota pública. A conferência da remoção é consulta ao schema `identidade` na instância efêmera — observação do side-effect persistido, não instrumentação do SUT.",
+        "teste_analogo": "CT-018, no mesmo arquivo"
+      },
+      "camada": "Apresentação — `apps/api`",
+      "pre_condicoes": [
+        "Servidor HTTP real em porta dinâmica",
+        "Sessão ativa obtida por entrada legítima"
+      ],
+      "dados_entrada": {
+        "descricao": "Uma sessão, encerrada e depois reutilizada.",
+        "valores": {
+          "cookie": "<devolvido pela entrada>",
+          "cookie_inexistente": "<token aleatório com o mesmo formato>"
+        }
+      },
+      "passos": [
+        "Afirmar que `GET /v1/sessao` com o cookie responde `200`",
+        "Contar as linhas de `identidade.sessao` do usuário",
+        "Executar `POST /v1/auth/sign-out` com o cookie",
+        "Repetir `GET /v1/sessao` com o MESMO cookie e afirmar a recusa",
+        "Contar de novo as linhas de `identidade.sessao`",
+        "Repetir com o cookie de token inexistente e comparar as duas respostas de recusa"
+      ],
+      "resultado_esperado": "Antes: `200` e 1 linha em `identidade.sessao`. Depois do encerramento: `GET /v1/sessao` = `401` com `{ codigo: 'NAO_AUTENTICADO', mensagem: 'sessão inválida ou expirada' }`, e 0 linhas em `identidade.sessao` para aquele usuário. A resposta ao cookie de token inexistente é idêntica, campo a campo, à do cookie encerrado.",
+      "criterios_aceitacao_validados": [
+        "CA-11"
+      ],
+      "observacoes": "Mora em `apps/api/test/autenticacao.e2e.spec.ts`. A contagem no banco é o que distingue 'invalidou' de 'apenas mandou o navegador esquecer o cookie' — a segunda passaria a asserção de status e deixaria a sessão viva para quem guardou o valor.",
+      "task_id": "T8"
+    },
+    {
+      "id": "CT-024",
+      "titulo": "Sessão sem atividade além do máximo é recusada e exige nova entrada; atividade dentro do prazo a renova",
+      "tipo": "E2E",
+      "categoria": "fronteira",
+      "invariant": "Passado o período máximo sem atividade, a próxima requisição com o cookie é recusada e exige nova entrada; uma requisição feita dentro do prazo renova a expiração persistida, adiando o vencimento.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "requisição feita DEPOIS do vencimento — este é o eixo negativo; o positivo é a requisição dentro do prazo, que renova",
+        "assertion_esperada": "`401` com `{ codigo: 'NAO_AUTENTICADO', mensagem: 'sessão inválida ou expirada' }` e a linha de sessão inutilizável; no positivo, `200` com o `expires_at` persistido estritamente maior que o anterior"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Exige que o tempo avance além da janela de inatividade — o produto declara 8 horas, e nenhuma suíte pode esperar 8 horas nem forçar o relógio do banco.",
+        "caminho_legitimo": "(b) construir pelo boundary real, por CONFIGURAÇÃO e não por relógio falso: instanciar o arcabouço nesta suíte com a MESMA opção de duração de sessão que a produção configura (a §11.1 fixa 8 h; a suíte a instancia com valor curto, ex.: 2 s), o que exercita o caminho real de expiração do arcabouço e do banco. A espera é por estado observável com limite declarado como constante nomeada no topo do arquivo, nunca `sleep` fixo (`.claude/rules/testing-stack.md`, política de flaky) — imite `sondarAte` de `packages/shared/test/efemero-comum.ts`. **Não** editar `expires_at` à mão no banco (provaria a leitura da coluna, não a regra) e **não** acrescentar bandeira de 'sessão curta' a `packages/auth/src/**`.",
+        "teste_analogo": "packages/shared/test/efemero-comum.ts (`sondarAte`) para a espera; CT-018 para a mecânica de sessão"
+      },
+      "camada": "Apresentação — `apps/api`",
+      "pre_condicoes": [
+        "Servidor HTTP real em porta dinâmica, com o arcabouço instanciado com duração de sessão curta pela opção de configuração legítima",
+        "Constante nomeada de limite de sondagem declarada no topo do arquivo"
+      ],
+      "dados_entrada": {
+        "descricao": "Duas linhas do tempo sobre a mesma sessão.",
+        "valores": {
+          "duracao_configurada": "2 s (mesma opção que a produção usa com 8 h)",
+          "linha_1": "requisição dentro do prazo → renova",
+          "linha_2": "nenhuma requisição até o vencimento → recusa"
+        }
+      },
+      "passos": [
+        "Entrar e capturar o `expires_at` persistido da sessão",
+        "Fazer uma requisição autenticada dentro do prazo e afirmar `200`",
+        "Reler o `expires_at` e afirmar que é estritamente maior que o anterior",
+        "Sondar, com o limite declarado, até que o `expires_at` corrente esteja no passado",
+        "Fazer nova requisição com o mesmo cookie e afirmar a recusa",
+        "Entrar de novo com a credencial correta e afirmar que a nova sessão funciona"
+      ],
+      "resultado_esperado": "Requisição dentro do prazo: `200`, e `expires_at` novo estritamente maior que o anterior. Após o vencimento: `401` com `{ codigo: 'NAO_AUTENTICADO', mensagem: 'sessão inválida ou expirada' }`. Nova entrada: `200`, com uma linha nova em `identidade.sessao`. Nenhuma espera de tempo fixo aparece no caso.",
+      "criterios_aceitacao_validados": [
+        "CA-12"
+      ],
+      "observacoes": "Mora em `apps/api/test/autenticacao.e2e.spec.ts`. O eixo de renovação é obrigatório: um SUT que expirasse a sessão em tempo absoluto desde a criação (sem renovar por atividade) passaria o eixo negativo e violaria a RN-07 em silêncio.",
+      "task_id": "T8"
+    },
+    {
+      "id": "CT-025",
+      "titulo": "Toda tentativa de entrada é registrada com autor, momento, origem e desfecho",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "Cada tentativa de entrada — sucesso, credencial incorreta, recusa por bloqueio e e-mail inexistente — grava exatamente uma linha em `identidade.tentativa_login`, com desfecho próprio, momento, origem de rede e autor quando identificável (nulo, e apenas nulo, quando o e-mail não existe).",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "e-mail inexistente e conta bloqueada — os dois desfechos em que o registro é mais fácil de esquecer",
+        "assertion_esperada": "uma linha para cada, com `usuario_id` nulo no primeiro e desfecho de bloqueio no segundo; nenhuma linha carrega senha nem token"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Exige uma conta em estado de bloqueio para cobrir o quarto desfecho, e a leitura da trilha, que não tem superfície de consulta nesta fatia (§4.2 do PRD).",
+        "caminho_legitimo": "(a) imitar o CT-015 para chegar ao bloqueio por tentativas reais. A leitura da trilha é consulta ao schema `identidade` na instância efêmera — o PRD proíbe superfície de CONSULTA no produto, não observação do estado persistido pela verificação.",
+        "teste_analogo": "CT-015 e CT-016"
+      },
+      "camada": "Identidade — `packages/auth` + `apps/api`",
+      "pre_condicoes": [
+        "Servidor HTTP real em porta dinâmica, contra instância efêmera migrada e semeada",
+        "`identidade.tentativa_login` vazia no início"
+      ],
+      "dados_entrada": {
+        "descricao": "Quatro tentativas, uma por desfecho.",
+        "valores": {
+          "tentativas": [
+            {
+              "rotulo": "sucesso",
+              "email": "usuario.a@exemplo.com.br",
+              "password": "chuva7Longe!"
+            },
+            {
+              "rotulo": "credencial incorreta",
+              "email": "usuario.a@exemplo.com.br",
+              "password": "errada"
+            },
+            {
+              "rotulo": "e-mail inexistente",
+              "email": "ninguem@exemplo.com.br",
+              "password": "errada"
+            },
+            {
+              "rotulo": "bloqueio",
+              "email": "<conta levada a 5 falhas>",
+              "password": "chuva7Longe!"
+            }
+          ]
+        }
+      },
+      "passos": [
+        "Executar as quatro tentativas pela rota HTTP",
+        "Ler a trilha inteira",
+        "Afirmar a contagem total de linhas, contando as 5 falhas usadas para produzir o bloqueio",
+        "Afirmar, linha a linha, o desfecho, o `email_informado`, o `usuario_id`, a `origem` e que `ocorrida_em` está dentro da janela do caso",
+        "Afirmar que nenhuma linha contém a senha, o token de sessão ou o código de segundo fator, em nenhuma coluna"
+      ],
+      "resultado_esperado": "Contagem total exata e conhecida (4 tentativas do caso + 5 falhas do preparo do bloqueio = 9 linhas). Desfechos distintos e nomeados para sucesso, credencial incorreta e bloqueio. `usuario_id` preenchido em todas menos na do e-mail inexistente, onde é `null`. `origem` preenchida com o endereço do cliente em todas. `ocorrida_em` entre o instante inicial e o final do caso. Nenhuma coluna de nenhuma linha contém `chuva7Longe!` nem valor de token.",
+      "criterios_aceitacao_validados": [
+        "CA-14"
+      ],
+      "observacoes": "Arquivo novo proposto: `packages/auth/test/admissao.spec.ts` ou, se preferido pela proximidade da rota, `apps/api/test/autenticacao.e2e.spec.ts`; o placement correto é onde o registro é escrito (`auditoria.ts`), atravessando a rota real. A contagem TOTAL (incluindo as 5 do preparo) é deliberada: contar só as 4 do caso deixaria passar um SUT que registrasse duas linhas por tentativa ou nenhuma no caminho de falha.",
+      "task_id": "T6"
+    },
+    {
+      "id": "CT-026",
+      "titulo": "Não existe caminho paralelo de emissão de sessão: todo caminho do arcabouço instalado passa pela barreira de admissão",
+      "tipo": "E2E",
+      "categoria": "seguranca",
+      "invariant": "Para um usuário que a barreira recusa, NENHUM dos caminhos de emissão de sessão publicados pelo arcabouço instalado produz linha em `identidade.sessao`; e o conjunto desses caminhos é fechado e conhecido, de modo que uma versão nova do arcabouço que acrescente um caminho faz a verificação reprovar.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "usuário recusado pela barreira (conta bloqueada, pessoa desativada, empresa suspensa) exercitado em cada caminho de emissão",
+        "assertion_esperada": "contagem de `identidade.sessao` inalterada após percorrer todos os caminhos, e recusa no envelope canônico em cada um"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Exige enumerar os caminhos de emissão de sessão do pacote instalado, o que tenta o executor a importar caminhos internos do arcabouço ou a exportá-los de `@sysloc/auth` só para o teste.",
+        "caminho_legitimo": "(b) enumerar pelo boundary real: o manipulador do arcabouço publica suas rotas, e o teste as obtém pela mesma superfície pública que `AutenticacaoModule` usa para montá-las (a lista de rotas do manipulador) ou pelo documento de contrato que a aplicação publica em `/docs/json`, já existente desde a F0. A partir dessa lista, exercitar por HTTP cada rota classificada como emissora. **Nunca** acrescentar export ao índice de `@sysloc/auth` para expor caminho interno do arcabouço — a §3.3 da tech spec declara essa não-exportação como invariante de compilação, e criá-la para o teste é violação da Iron Law #6.",
+        "teste_analogo": "apps/api/test/saude.e2e.spec.ts (CT-004: lê o documento de contrato publicado e afirma que ele descreve as rotas que a aplicação de fato expõe)"
+      },
+      "camada": "Identidade — `packages/auth` + `apps/api`",
+      "pre_condicoes": [
+        "Servidor HTTP real em porta dinâmica",
+        "Semente com um usuário para cada predicado de recusa da barreira"
+      ],
+      "dados_entrada": {
+        "descricao": "Produto cartesiano entre caminhos de emissão e usuários recusados.",
+        "valores": {
+          "caminhos_esperados": [
+            "POST /v1/auth/sign-in/email",
+            "POST /v1/auth/two-factor/verify-totp"
+          ],
+          "usuarios_recusados": [
+            "conta bloqueada",
+            "pessoa desativada",
+            "empresa suspensa"
+          ]
+        }
+      },
+      "passos": [
+        "Obter a lista de caminhos publicados pelo manipulador do arcabouço",
+        "Classificar quais emitem sessão e afirmar que o conjunto é exatamente o esperado — a lista é constante nomeada no topo do arquivo",
+        "Para cada par (caminho emissor × usuário recusado), executar a requisição com credencial correta",
+        "Contar `identidade.sessao` antes e depois do produto cartesiano inteiro",
+        "Afirmar que cada resposta é a recusa canônica",
+        "Gerar cópia com um caminho emissor acrescentado à superfície e demonstrar que a asserção de conjunto reprova"
+      ],
+      "resultado_esperado": "Conjunto de caminhos emissores exatamente igual à constante declarada. Contagem de `identidade.sessao` idêntica antes e depois de todas as combinações. Cada resposta é `401` com `{ codigo: 'CREDENCIAL_INVALIDA', mensagem: <a mesma cadeia do CT-016> }`. Sobre a cópia com caminho acrescentado, a asserção de conjunto reprova nomeando o caminho excedente; sobre a íntegra, passa limpo.",
+      "criterios_aceitacao_validados": [
+        "CA-06",
+        "CA-09",
+        "CA-13"
+      ],
+      "observacoes": "Arquivo novo proposto: `packages/auth/test/superficie-publica.spec.ts` para o eixo estático (conjunto fechado de caminhos e não-exportação dos internos) e `apps/api/test/autenticacao.e2e.spec.ts` para o eixo comportamental (produto cartesiano). Atende à obrigação de PROVA declarada em D6 do tech-alignment ('exige provar que o arcabouço não possui caminho paralelo de criação de sessão') e ao risco de mesmo nome na §20. O eixo estático é asserção sobre texto/superfície e portanto a prova de falsificação do último passo é obrigatória. É a forma que fecha a CLASSE — a alternativa 'um gancho por regra' é literalmente a topologia que produziu o defeito de quatro rodadas registrado em `.claude/rules/nao-regressao.md` §7.",
+      "task_id": "T7"
+    },
+    {
+      "id": "CT-027",
+      "titulo": "D25 — valor de parâmetro sensível em cadeia de consulta é redigido, preservando o nome do parâmetro e o resto do endereço",
+      "tipo": "INTEGRACAO",
+      "categoria": "seguranca",
+      "invariant": "O terceiro eixo da entrada única de despacho substitui pelo sentinela o VALOR de parâmetro de cadeia de consulta cujo nome case os radicais sensíveis (`token`, `callbackURL`, `code`, `secret`, `senha`), preservando o nome do parâmetro, o esquema, o hospedeiro, o caminho e os demais parâmetros — e vale em campo, em mensagem, em pilha de exceção e na posição raiz do evento.",
+      "owning_layer": "unit",
+      "existing_suite": "packages/shared/test/log.spec.ts",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-028",
+        "input_invalido": "endereço legítimo sem parâmetro sensível (`?ordenacao=nome&pagina=2`, `?redirect=a@b`)",
+        "assertion_esperada": "a linha do registro contém o endereço byte a byte idêntico ao informado — nenhum sentinela introduzido"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Compartilhado — `packages/shared`",
+      "pre_condicoes": [
+        "Registrador criado pelo caminho legítimo, com destino em arquivo de diretório temporário próprio (padrão já vigente em `log.spec.ts`)"
+      ],
+      "dados_entrada": {
+        "descricao": "Matriz: cada portador × cada forma de posicionamento do endereço no evento.",
+        "valores": {
+          "enderecos": [
+            "https://app.sysloc.com.br/v1/auth/callback?token=SEGREDO_LITERAL&estado=ok",
+            "https://app.sysloc.com.br/v1/auth/sign-in?callbackURL=https%3A%2F%2Falvo%2Fx&code=123456",
+            "/v1/auth/verify?SECRET=abc&pagina=2"
+          ],
+          "posicoes": [
+            "campo do evento sob chave neutra (`{ destino: <endereço> }`)",
+            "mensagem do evento (texto livre e interpolação)",
+            "mensagem e pilha de uma exceção (`logger.error(err)` e `logger.error({ err })`)",
+            "posição raiz (`logger.info(new URL(<endereço>))`)"
+          ]
+        }
+      },
+      "passos": [
+        "Para cada combinação de endereço e posição, emitir o evento e esvaziar pelo mecanismo do próprio registrador",
+        "Ler a linha JSON e afirmar que o literal do segredo não aparece em nenhum ponto da linha inteira",
+        "Afirmar que o nome do parâmetro continua presente e que o valor foi substituído pelo sentinela",
+        "Afirmar que esquema, hospedeiro, caminho e os parâmetros não sensíveis atravessaram intactos",
+        "Afirmar que o evento não foi apagado — a linha carrega mais que as chaves do envelope",
+        "Gerar cópia de `log.ts` com o terceiro eixo removido e demonstrar que todas as combinações reprovam"
+      ],
+      "resultado_esperado": "Em todas as combinações: a cadeia `SEGREDO_LITERAL`, o valor de `callbackURL`, `123456` e `abc` estão ausentes da linha inteira; a linha contém `token=[REDIGIDO]`, `callbackURL=[REDIGIDO]`, `code=[REDIGIDO]`, `SECRET=[REDIGIDO]`; `estado=ok` e `pagina=2` presentes e íntegros; esquema, hospedeiro e caminho idênticos aos informados; a linha tem chaves além de `nivel`/`time`/`pid`/`hostname`. Sobre a cópia sem o terceiro eixo, todas as combinações reprovam; a íntegra passa limpo.",
+      "criterios_aceitacao_validados": [
+        "CA-15"
+      ],
+      "observacoes": "ESTENDE a suíte existente `packages/shared/test/log.spec.ts` (Gate 2 — não criar arquivo novo). O bloco de INVARIANTES do topo do arquivo precisa ganhar a linha correspondente, na convenção já vigente ali. A cobertura das QUATRO posições não é excesso: o marcador D25 registra que o vazamento saiu 'quatro vezes numa linha só' e que a classe já reapareceu por posição nova quatro vezes no repositório — cobrir só o campo repetiria o padrão que custou as quatro rodadas.",
+      "task_id": "T1"
+    },
+    {
+      "id": "CT-028",
+      "titulo": "D25 — endereço legítimo sem parâmetro sensível atravessa o registro byte a byte idêntico",
+      "tipo": "INTEGRACAO",
+      "categoria": "teste_negativo",
+      "invariant": "O terceiro eixo é delimitado pelo NOME do parâmetro: endereço sem parâmetro sensível atravessa o registro sem alteração de um único byte, inclusive quando traz `@`, `=` ou `?` no valor de um parâmetro inocente.",
+      "owning_layer": "unit",
+      "existing_suite": "packages/shared/test/log.spec.ts",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o companheiro negativo do CT-027 — a mutilação por padrão largo demais é o defeito que ele persegue",
+        "assertion_esperada": "ver resultado_esperado"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Compartilhado — `packages/shared`",
+      "pre_condicoes": [
+        "Mesmo registrador e destino do CT-027"
+      ],
+      "dados_entrada": {
+        "descricao": "Endereços legítimos escolhidos para tentar o padrão largo demais.",
+        "valores": {
+          "legitimos": [
+            "https://app.sysloc.com.br/v1/imoveis?ordenacao=nome&pagina=2",
+            "http://hospedeiro:8080/x?redirect=a@b",
+            "https://app.sysloc.com.br/v1/relatorios?filtro=codigo%3DCTR-2026-0001"
+          ]
+        }
+      },
+      "passos": [
+        "Emitir cada endereço legítimo em campo, em mensagem e na posição raiz",
+        "Ler a linha e comparar o endereço extraído com o informado, por igualdade literal",
+        "Afirmar que o sentinela de redação NÃO aparece em nenhuma das linhas",
+        "Gerar cópia de `log.ts` com um padrão largo demais (que case qualquer parâmetro) e demonstrar que este caso reprova"
+      ],
+      "resultado_esperado": "Os três endereços atravessam idênticos, caractere a caractere, nas três posições; `[REDIGIDO]` ausente de todas as linhas. Sobre a cópia com o padrão largo demais, o caso reprova nomeando o endereço mutilado; sobre a íntegra, passa limpo.",
+      "criterios_aceitacao_validados": [
+        "CA-15"
+      ],
+      "observacoes": "ESTENDE `packages/shared/test/log.spec.ts`, ao lado do CT-027, e imita o caso já existente 'não mutila URL legítima sem credencial — ela atravessa byte a byte idêntica'. O próprio marcador D25 registra que um padrão mal delimitado JÁ mutilou em silêncio, neste mesmo arquivo, URL legítima com `callbackURL=` — este caso é a rede contra a repetição. Sem ele, o CT-027 sozinho premiaria um eixo que redigisse tudo.",
+      "task_id": "T1"
+    },
+    {
+      "id": "CT-029",
+      "titulo": "Nenhum segredo de autenticação legível no registro durante o fluxo real de entrada",
+      "tipo": "E2E",
+      "categoria": "seguranca",
+      "invariant": "Percorrido o fluxo real de autenticação — entrada bem-sucedida, entrada recusada, rota inexistente sob `/v1/auth` com segredo na cadeia de consulta — nenhuma linha do registro do processo contém senha, código de segundo fator, token de sessão ou código de recuperação em forma legível.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "requisição a rota inexistente `POST /v1/auth/inexistente?token=SEGREDO_LITERAL` — o caminho exato em que o arcabouço interpola o alvo bruto na mensagem, capturado no journal pelo Gate 1 da T5",
+        "assertion_esperada": "a linha do registro contém `token=[REDIGIDO]` e o literal `SEGREDO_LITERAL` está ausente da saída inteira"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Exige capturar o que o processo escreve no registro durante requisições reais.",
+        "caminho_legitimo": "(b) usar o mesmo parâmetro `destino` do registrador que a unidade systemd usa em operação, apontando para arquivo em diretório temporário próprio — é o caminho legítimo já estabelecido em `packages/shared/test/log.spec.ts` ('nenhuma bandeira, nenhum ramo e nenhum símbolo existe aqui só para o teste'). Não instalar transporte, gancho ou espião de registro.",
+        "teste_analogo": "packages/shared/test/log.spec.ts (montagem do destino) e apps/api/test/saude.e2e.spec.ts CT-006 (b) (asserção de ausência sobre a linha que o filtro grava)"
+      },
+      "camada": "Apresentação — `apps/api`",
+      "pre_condicoes": [
+        "Servidor HTTP real em porta dinâmica, com o registrador apontado a arquivo temporário próprio",
+        "Semente com pessoa ativa e senha conhecida"
+      ],
+      "dados_entrada": {
+        "descricao": "Quatro requisições que cobrem os formatos de tráfego de segredo desta fatia.",
+        "valores": {
+          "requisicoes": [
+            "POST /v1/auth/sign-in/email com senha correta",
+            "POST /v1/auth/sign-in/email com senha errada",
+            "POST /v1/auth/two-factor/verify-totp com código",
+            "POST /v1/auth/inexistente?token=SEGREDO_LITERAL&callbackURL=https%3A%2F%2Falvo"
+          ]
+        }
+      },
+      "passos": [
+        "Executar as quatro requisições",
+        "Esvaziar e ler o arquivo de registro inteiro",
+        "Afirmar a ausência literal da senha, do código de segundo fator, do valor do cookie de sessão e do literal do segredo na cadeia de consulta",
+        "Afirmar que as linhas correspondentes existem — que o registro não ficou mudo",
+        "Afirmar que a linha da rota inexistente carrega o nome do parâmetro com o valor redigido"
+      ],
+      "resultado_esperado": "Nenhuma ocorrência de `chuva7Longe!`, do código de segundo fator informado, do valor do cookie de sessão nem de `SEGREDO_LITERAL` no arquivo inteiro. Ao menos uma linha por requisição está presente, com nível e evento próprios (a recusa de admissão em `warn`, nomeando o predicado). A linha da rota inexistente contém `token=[REDIGIDO]` e `callbackURL=[REDIGIDO]`.",
+      "criterios_aceitacao_validados": [
+        "CA-15"
+      ],
+      "observacoes": "Arquivo novo proposto: `apps/api/test/autenticacao.e2e.spec.ts`. É a rede do P4 do Protocolo Antirregressão para o D25 fechado nesta fatia: o CT-027 prova o eixo na unidade, este prova que o eixo alcança o caminho real onde o vazamento foi observado. A asserção 'o registro não ficou mudo' é obrigatória — apagar o evento também faria a asserção de ausência passar, e o marcador D25 registra que mascarar não pode silenciar.",
+      "task_id": "T9"
+    },
+    {
+      "id": "CT-030",
+      "titulo": "No cluster real, os dois papéis existem e nenhum deles tem privilégio capaz de contornar o isolamento",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Depois do provisionamento, `sysloc_app` e `sysloc_migracao` existem, ambos com `rolsuper = f` e `rolbypassrls = f`, e `sysloc_app` não é membro de `sysloc_migracao` — no cluster real, não só na instância efêmera.",
+      "owning_layer": "service-integration",
+      "existing_suite": "deploy/scripts/instalacao/verificar-provisionamento.sh",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "papel ausente, papel com `rolsuper = t`, papel com `rolbypassrls = t`, ou `sysloc_app` membro de `sysloc_migracao`",
+        "assertion_esperada": "`afirmar_igual` reprova nomeando o papel e o atributo, `falhas_totais` incrementa e o script sai com código `1` e resumo em `stderr`"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Ler `pg_roles` no cluster real exige credencial administrativa do banco, e o script roda sob `sudo` interativo.",
+        "caminho_legitimo": "(c) mecanismo nativo já estabelecido no repositório: `provisionar-base.sh` transporta a credencial por `PGPASSFILE` (arquivo 0600), nunca por `argv` nem por variável exportada (ADR-0005). O verificador consulta `recusar_bateria_em_producao` antes do primeiro caso, como `.claude/rules/testing-stack.md` exige de todo verificador que toque o ambiente. Nenhum segredo novo é introduzido.",
+        "teste_analogo": "deploy/scripts/instalacao/verificar-provisionamento.sh (casos CT-001 a CT-005 e o vocabulário `caso`/`afirmar_igual`/`fechar_caso`)"
+      },
+      "camada": "Infraestrutura — `deploy/scripts/instalacao`",
+      "pre_condicoes": [
+        "`provisionar-base.sh` executado no host",
+        "Guarda `recusar_bateria_em_producao` consultada antes do primeiro caso"
+      ],
+      "dados_entrada": {
+        "descricao": "Consulta ao catálogo do cluster real, por papel.",
+        "valores": {
+          "consulta": "SELECT rolname, rolsuper, rolbypassrls, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname IN ('sysloc_app','sysloc_migracao')",
+          "pertencimento": "SELECT pg_has_role('sysloc_app','sysloc_migracao','MEMBER')"
+        }
+      },
+      "passos": [
+        "Abrir o caso com o identificador literal, no vocabulário do repositório",
+        "Consultar o catálogo transportando a credencial por `PGPASSFILE`",
+        "`afirmar_igual` para a existência dos dois papéis (contagem = 2)",
+        "`afirmar_igual` para `rolsuper = f` e `rolbypassrls = f` em cada um",
+        "`afirmar_igual` para `pg_has_role('sysloc_app','sysloc_migracao','MEMBER') = f`",
+        "Fechar o caso e conferir o código de saída"
+      ],
+      "resultado_esperado": "Contagem de papéis encontrados = `2`. Para `sysloc_app` e `sysloc_migracao`: `rolsuper = f`, `rolbypassrls = f`, `rolcreaterole = f`. `pg_has_role('sysloc_app','sysloc_migracao','MEMBER') = f`. `falhas_totais = 0` e código de saída `0`; com qualquer atributo divergente, código `1` e o resumo nomeando o papel e o atributo em `stderr`.",
+      "criterios_aceitacao_validados": [
+        "CA-17"
+      ],
+      "observacoes": "ESTENDE `deploy/scripts/instalacao/verificar-provisionamento.sh` com um caso novo (a §3.6 da tech spec declara essa modificação). Frente shell porque o invariante só é observável no cluster real do SO — o CT-001 cobre o mesmo invariante na instância efêmera, e os dois são necessários: a efêmera é `embedded-postgres` em versão beta, cujo comportamento pode divergir do cluster (risco declarado na §20). O QA reportará `executou_testes: false` para este caso: `sudo` neste host pede senha interativa e nenhum subagente consegue executá-lo (`.claude/rules/testing-stack.md`).",
+      "task_id": "T5"
+    },
+    {
+      "id": "CT-031",
+      "titulo": "No cluster real, toda tabela de negócio tem isolamento forçado e pertence ao papel de migração",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Aplicadas as migrações no cluster real, nenhuma tabela do schema `negocio` fica sem RLS habilitada e forçada, sem política com `USING` e `WITH CHECK`, sem `empresa_id` não nulo ou sem a restrição única `(id, empresa_id)`; e nenhuma delas pertence a `sysloc_app`. Encontrada uma exceção, o verificador sai com código diferente de zero nomeando a tabela.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "tabela criada em `negocio` sem `FORCE ROW LEVEL SECURITY`, num banco descartável do mesmo cluster",
+        "assertion_esperada": "o verificador sai com código `1` e a saída nomeia literalmente a tabela defeituosa e o motivo; com o schema íntegro, sai `0`"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Exige credencial administrativa para consultar o catálogo e, para o mutante, para criar tabela — e não pode tocar o banco que atende a operação.",
+        "caminho_legitimo": "(c) mesmo mecanismo do CT-030: `PGPASSFILE` 0600 e `recusar_bateria_em_producao` antes do primeiro caso (ADR-0005, ADR-0006). O mutante é criado num banco DESCARTÁVEL criado e removido pelo próprio caso, jamais no banco `sysloc` de operação — o padrão de sandbox descartável já exigido em `.claude/rules/testing-stack.md`.",
+        "teste_analogo": "deploy/scripts/instalacao/verificar-provisionamento.sh (CT-001, idempotência com sandbox; CT-003, higiene de segredo)"
+      },
+      "camada": "Infraestrutura — `deploy/scripts/instalacao`",
+      "pre_condicoes": [
+        "`migrar-banco.sh` executado no host",
+        "Guarda de recusa em produção consultada"
+      ],
+      "dados_entrada": {
+        "descricao": "Consulta de cobertura sobre o catálogo, mais o mutante em banco descartável.",
+        "valores": {
+          "eixos": [
+            "relrowsecurity",
+            "relforcerowsecurity",
+            "política com USING e WITH CHECK",
+            "empresa_id NOT NULL",
+            "UNIQUE (id, empresa_id)",
+            "tableowner"
+          ],
+          "mutante": "CREATE TABLE negocio.sem_forca (...) em banco descartável, com RLS habilitada e sem FORCE"
+        }
+      },
+      "passos": [
+        "Abrir o caso com o identificador literal",
+        "Consultar os seis eixos para toda tabela de `negocio` no banco `sysloc`",
+        "`afirmar_igual` para a contagem de exceções = 0 e para a contagem de tabelas examinadas > 0",
+        "`afirmar_igual` para `tableowner = sysloc_migracao` em todas",
+        "Criar banco descartável, aplicar as migrações e o mutante, rodar o verificador contra ele e capturar código de saída e saída",
+        "Afirmar código `1` e a presença literal do nome da tabela defeituosa na saída; remover o banco descartável"
+      ],
+      "resultado_esperado": "No banco `sysloc`: 0 exceções, 2 tabelas examinadas (`acesso_usuario_app`, `acesso_usuario_permissao`), `tableowner = sysloc_migracao` nas duas, código de saída `0`. Contra o banco descartável com o mutante: código de saída `1`, saída contendo literalmente `negocio.sem_forca` e o motivo `RLS_NAO_FORCADA`; com o banco descartável íntegro (sem mutante), código `0`.",
+      "criterios_aceitacao_validados": [
+        "CA-16"
+      ],
+      "observacoes": "Arquivo novo proposto: `deploy/scripts/instalacao/verificar-migracao.sh` (§3.5). Frente shell porque o invariante é do cluster real. A asserção 'tabelas examinadas > 0' e o mutante em banco descartável são exigência direta de `.claude/rules/testing-stack.md`: sem eles o verificador cai no padrão documentado de 'asserção que não podia falhar pelo defeito que perseguia'. O CT-009 cobre a mesma classe na frente Vitest; a duplicação é deliberada e está justificada na §20 da tech spec (`embedded-postgres` beta × cluster real). O QA reportará `executou_testes: false` (sudo interativo).",
+      "task_id": "T5"
+    },
+    {
+      "id": "CT-032",
+      "titulo": "`migrar-banco.sh` é idempotente e não expõe a credencial de migração",
+      "tipo": "INTEGRACAO",
+      "categoria": "seguranca",
+      "invariant": "Executado duas vezes seguidas, o script sai `0` nas duas e a segunda execução não altera nada; e em nenhuma delas a credencial do papel de migração aparece em `argv` de processo filho, em variável exportada, na saída do script ou na árvore versionada.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "segunda execução sobre banco já migrado; e varredura por `PGPASSWORD=`, `--password`, `--dbpassword` e `set -x` no fonte do script",
+        "assertion_esperada": "código `0` nas duas execuções com diferença vazia entre os dois estados do catálogo; contagem de ocorrências dos quatro padrões proibidos = `0`"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Exige credencial do papel de migração e um banco onde aplicar migração duas vezes.",
+        "caminho_legitimo": "(c) mesmo mecanismo já estabelecido: `PGPASSFILE` 0600 (ADR-0005) e banco descartável criado e removido pelo próprio caso, com `recusar_bateria_em_producao` antes do primeiro caso (ADR-0006). Nenhum segredo novo, nenhum caminho alternativo de autenticação criado para o teste.",
+        "teste_analogo": "deploy/scripts/instalacao/verificar-provisionamento.sh CT-001 (dupla execução com comparação de estado) e CT-003 (higiene de credencial: argv, log e árvore versionada)"
+      },
+      "camada": "Infraestrutura — `deploy/scripts/instalacao`",
+      "pre_condicoes": [
+        "Banco descartável criado no cluster real",
+        "Guarda de recusa em produção consultada"
+      ],
+      "dados_entrada": {
+        "descricao": "Duas execuções consecutivas e a varredura de higiene de segredo.",
+        "valores": {
+          "padroes_proibidos": [
+            "PGPASSWORD=",
+            "--password[= ]",
+            "--dbpassword[= ]",
+            "set[[:space:]]+-x"
+          ],
+          "estado_comparado": "instantâneo de pg_class + pg_policies + pg_constraint do schema negocio"
+        }
+      },
+      "passos": [
+        "Executar `migrar-banco.sh` contra o banco descartável e capturar código de saída e instantâneo do catálogo",
+        "Executar de novo e capturar código de saída e instantâneo",
+        "`afirmar_igual` para os dois códigos de saída = 0 e para os dois instantâneos idênticos",
+        "Vasculhar o fonte do script pelos quatro padrões proibidos e afirmar contagem 0",
+        "Observar `argv` dos processos filhos durante a execução e afirmar ausência do segredo",
+        "Afirmar que a saída das duas execuções não contém o segredo; remover o banco descartável"
+      ],
+      "resultado_esperado": "Códigos de saída `0` e `0`; instantâneos do catálogo idênticos entre a primeira e a segunda execução. Contagem `0` para cada um dos quatro padrões proibidos no fonte. Nenhum `argv` de processo filho e nenhuma linha de saída contendo o segredo. Nenhuma ocorrência do segredo na árvore versionada.",
+      "criterios_aceitacao_validados": [],
+      "observacoes": "Mora em `deploy/scripts/instalacao/verificar-migracao.sh`, junto do CT-031. Não valida CA do PRD: é a rede de conformidade com a ADR-0005 e com o padrão idempotente da §16.3 da tech spec, para um script NOVO que carrega uma credencial nova (a de migração, D2). Os quatro padrões são asserção ESTÁTICA sobre o texto do script — por `.claude/rules/testing-stack.md` exigem prova de falsificação: cópia com `PGPASSWORD=` reintroduzido deve reprovar, e o script íntegro passar limpo no mesmo harness. `.claude/rules/testing-stack.md` registra que uma asserção deste tipo já casou `ALTER ROLE` em comentário e passou verde num script sem guarda algum — a varredura precisa excluir comentários ou provar que não os casa. QA reportará `executou_testes: false` (sudo interativo).",
+      "task_id": "T5"
+    }
+  ],
+  "cenarios_nao_cobertos": [
+    {
+      "descricao": "Carga e concorrência sobre o contador de tentativas malsucedidas (duas requisições simultâneas na mesma conta)",
+      "motivo": "A §7.4 da tech spec resolve o problema por construção — o incremento acontece no próprio `UPDATE`, sem leitura prévia, o que o torna correto sob concorrência sem bloqueio explícito. Testar corrida aqui provaria o motor do banco, não o SUT. Registrado como risco conhecido, não como lacuna de prova."
+    },
+    {
+      "descricao": "Latência p95 da entrada (< 400 ms) e da requisição autenticada (< 80 ms), declaradas na §12.1",
+      "motivo": "Teste de desempenho está fora do escopo da geração de casos e a máquina de verificação não é a de operação. A meta de entrada é dominada pela derivação de senha, deliberadamente cara — medi-la numa máquina compartilhada produziria número sem significado e caso instável."
+    },
+    {
+      "descricao": "Encerramento imediato de sessões JÁ ABERTAS ao suspender empresa ou desativar pessoa",
+      "motivo": "Explicitamente fora do escopo pelo PRD §4.2 (decisão 11): esta fatia entrega a barreira na ENTRADA; derrubar sessão viva é da fatia `autorizacao-e-ciclo-de-acesso`. Gerar caso aqui anteciparia comportamento que o SUT não deve ter."
+    },
+    {
+      "descricao": "Emissão da senha provisória por quem cria a conta, e recuperação de senha esquecida",
+      "motivo": "Fora do escopo pelo PRD §4.2 — a emissão é da fatia seguinte e a recuperação depende de canal de e-mail, que nasce na Fase 3. Nesta fatia só existe a obrigação de trocar, coberta por CT-021 e CT-022."
+    },
+    {
+      "descricao": "Confidencialidade contra quem tem acesso administrativo ao servidor ou ao banco",
+      "motivo": "Limite declarado e aceito pela decisão 16 (PRD §9). É risco aceito e documentado, não defeito — e a §9 do PRD pede explicitamente que continue legível assim para não ser reaberto como problema em revisão futura."
+    },
+    {
+      "descricao": "Consulta ao registro de tentativas de entrada por superfície de produto",
+      "motivo": "O PRD §4.2 declara que a trilha não é consultável nesta fatia. O CT-025 observa o estado persistido pela verificação, o que é legítimo; testar uma rota de consulta seria testar recurso que não deve existir."
+    }
+  ],
+  "recomendacoes": [
+    "Resolver, antes da task de `senha.ts`, o ponto em aberto 1 do tech-alignment (§5): o critério concreto de força além do comprimento. Os CT-013/CT-014 estão escritos sobre as quatro regras que a §6.3 (RN-05) já fixa — comprimento, dado pessoal, sequência de 4 consecutivos, repetição de 4 iguais. Se o produto alterar o critério, os dois casos e a tabela de rótulos precisam ser reescritos ANTES da implementação, não depois.",
+    "O helper `packages/db/test/banco-efemero.ts` é o ponto de maior alavancagem desta fatia e o de maior risco: ele ENVOLVE `packages/shared/test/postgres-efemero.ts` (marcado 'não alterar' na §3.7) e é quem separa a cadeia do papel `sysloc_app` da cadeia privilegiada. Recomenda-se que ele seja a primeira task da fatia e que a conexão privilegiada seja oferecida por acessório com nome que denuncie o privilégio (`conexaoDeMigracao()`), de modo que qualquer uso indevido salte no diff — o CT-001 e o CT-002 dependem inteiramente dessa separação.",
+    "Preservar o `_run/test-cases.json` desta geração: os casos de mutante (CT-002, CT-007, CT-009, CT-031) e os de prova de falsificação (CT-012, CT-026, CT-027, CT-028, CT-032) são os primeiros candidatos a serem cortados por pressão de prazo, e são exatamente os que impedem o modo de falha que o usuário nomeou como o mais perigoso da fatia — uma suíte verde que não prova nada.",
+    "Os CT-030, CT-031 e CT-032 rodam na frente shell e exigem `sudo` interativo, que nenhum subagente executa (`.claude/rules/testing-stack.md`). Planejar a execução deles junto ao operador e preservar a saída para auditoria do gate; o QA reportará `executou_testes: false` para eles, o que reflete o papel do gate e não suíte pulada.",
+    "Registrar a linha de INVARIANTES do CT-027 e do CT-028 no bloco do topo de `packages/shared/test/log.spec.ts` no MESMO commit que remove o marcador `DÉBITO COM GATILHO` do D25 e a linha correspondente do índice do `CLAUDE.md` — a §3-B do Protocolo Antirregressão exige que os três saiam juntos, e o índice órfão é descrito ali como 'a mesma mentira do marcador órfão'.",
+    "Rodar `pnpm test` e registrar a contagem exata de casos verdes ANTES de tocar `packages/shared/src/log.ts` e `packages/shared/test/log.spec.ts` (P1 do Protocolo Antirregressão) e comparar caso a caso ao fim (P5). São os dois únicos arquivos existentes e provados que esta fatia modifica em conteúdo comportamental — a §20 da tech spec classifica a regressão neles como probabilidade média e impacto alto.",
+    "Os casos foram distribuídos assumindo os arquivos declarados na §3.4 da tech spec. Como nenhum deles existe ainda, todo `existing_suite` de `packages/db` e `packages/auth` traz `NO_SUITE_FOUND` com o arquivo proposto nomeado em `observacoes`; as duas exceções são `packages/shared/test/log.spec.ts` e `deploy/scripts/instalacao/verificar-provisionamento.sh`, que existem e devem ser ESTENDIDOS, nunca substituídos."
+  ],
+  "mock_budget_observado": true,
+  "gates_aplicados": [
+    "invariant_first",
+    "owning_layer",
+    "real_execution",
+    "failure_means_fix_production",
+    "no_snapshot_without_contract",
+    "no_self_set_mock_assertion",
+    "negative_companion"
+  ]
+}

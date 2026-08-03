@@ -33,6 +33,20 @@ const PORTA_EM_TEXTO = '31337';
 const SENHA_NA_CADEIA = 'segredoQueNaoPodeVazar';
 
 /**
+ * Segredo de assinatura de sessão válido — 32 caracteres, o piso que a partida exige.
+ *
+ * Distinguível de qualquer outro valor da tabela pelo mesmo motivo dos demais: com valores
+ * parecidos, um campo da configuração alimentado pela variável errada passaria despercebido.
+ */
+const SEGREDO_DE_SESSAO = 'segredoDeSessaoCom32Caracteres!!';
+
+/**
+ * Segredo curto demais, e igualmente distinguível: ele é o valor que a mensagem de falha NÃO pode
+ * conter. A mensagem vai para o journal, e este valor assina toda sessão em curso.
+ */
+const SEGREDO_CURTO = 'curtoDemaisParaAssinarSessao';
+
+/**
  * Ambiente completo e válido, com valor único por variável.
  *
  * Valores distinguíveis são o que permite afirmar que nenhum campo da configuração recebeu o
@@ -45,6 +59,7 @@ function ambienteCompleto(): Record<string, string> {
     LOG_LEVEL: 'warn',
     DATABASE_URL: `postgresql://usuarioct008:${SENHA_NA_CADEIA}@127.0.0.1:15433/bancoct008`,
     REDIS_URL: 'redis://127.0.0.1:16399',
+    BETTER_AUTH_SECRET: SEGREDO_DE_SESSAO,
   };
 }
 
@@ -117,6 +132,23 @@ describe('carregarAmbiente (T5 · CA-15)', () => {
     expect(falha.message).not.toContain(SENHA_NA_CADEIA);
   });
 
+  it('CT-007 — segredo de sessão curto demais falha nomeando a variável, sem ecoar o valor', () => {
+    // O par positivo/negativo desta variável: a ausência já é coberta pela tabela acima, que deriva
+    // do próprio esquema. O que falta é o valor PRESENTE e inaceitável — sem ele, um esquema que
+    // apenas exigisse a variável (sem piso de comprimento) passaria, e o serviço subiria assinando
+    // sessão com um segredo de meia dúzia de caracteres.
+    const fonte = { ...ambienteCompleto(), BETTER_AUTH_SECRET: SEGREDO_CURTO };
+
+    const falha = falhaDe(fonte);
+
+    expect(falha.message).toContain('BETTER_AUTH_SECRET');
+    expect(falha.message).toContain('caracteres');
+    // A mensagem vai para o journal; este valor assina toda sessão em curso.
+    expect(falha.message).not.toContain(SEGREDO_CURTO);
+    // E não é confundida com ausência: a variável foi preenchida, só que com valor inaceitável.
+    expect(falha.message).not.toContain('BETTER_AUTH_SECRET: ausente');
+  });
+
   it('CT-008 — com todas as variáveis presentes, devolve a configuração tipada com os valores lidos', () => {
     const fonte = ambienteCompleto();
 
@@ -134,6 +166,7 @@ describe('carregarAmbiente (T5 · CA-15)', () => {
     expect(ambiente.cadeiaConexaoBanco).toBe(fonte.DATABASE_URL);
     expect(ambiente.cadeiaConexaoFila).toBe(fonte.REDIS_URL);
     expect(ambiente.cadeiaConexaoBanco).not.toBe(ambiente.cadeiaConexaoFila);
+    expect(ambiente.segredoDeSessao).toBe(fonte.BETTER_AUTH_SECRET);
   });
 
   it('CT-008 — o ambiente do processo não é lido, e o que não é exigido não entra na configuração', () => {
@@ -163,12 +196,19 @@ describe('carregarAmbiente (T5 · CA-15)', () => {
     expect(ambiente.nivelDeLog).toBe('warn');
     expect(ambiente.nivelDeLog).not.toBe(process.env.LOG_LEVEL);
     expect(Object.values(ambiente)).not.toContain('nao-deve-atravessar');
+    // SUT_IS_CORRECT_BECAUSE: esta é uma ENUMERAÇÃO EXAUSTIVA dos campos de `Ambiente`, e a T8
+    // acrescenta um campo por especificação (§3.6 da tech spec da fatia: "nova variável exigida:
+    // segredo de assinatura de sessão"). O literal foi escrito contra um esquema de cinco
+    // variáveis; o código de produção está certo e o valor esperado tinha de crescer junto. A
+    // asserção NÃO foi afrouxada — segue sendo igualdade exata sobre o conjunto inteiro, com um
+    // elemento a mais, e continua reprovando qualquer campo que apareça sem ser declarado.
     expect(Object.keys(ambiente).sort()).toEqual([
       'ambiente',
       'cadeiaConexaoBanco',
       'cadeiaConexaoFila',
       'nivelDeLog',
       'porta',
+      'segredoDeSessao',
     ]);
   });
 });

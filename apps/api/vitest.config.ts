@@ -34,5 +34,24 @@ export default defineConfig({
     // Descartar as instâncias efêmeras é trabalho de encerramento: teto curto abortaria o descarte
     // no meio e deixaria exatamente o resíduo que a CA-7 proíbe.
     teardownTimeout: 60_000,
+    // -----------------------------------------------------------------------------------------
+    // Segredo de assinatura de sessão do PROCESSO DE VERIFICAÇÃO (T8)
+    // -----------------------------------------------------------------------------------------
+    //
+    // A partir da T8 a validação de partida exige `BETTER_AUTH_SECRET`, e todo caso que sobe a
+    // aplicação real passa por ela. Ele é declarado AQUI, e não em cada arquivo de verificação, por
+    // uma razão de disciplina: `test/saude.e2e.spec.ts` é a prova das rotas de saúde e da ADR-0007
+    // e não tem nada a ver com identidade — acrescentar a variável ao arranjo dele seria editar,
+    // por causa desta task, um arquivo que a task declara intocável.
+    //
+    // O valor é literal e ostensivamente inútil: ele assina sessões que morrem com a instância
+    // efêmera do caso. Isto NÃO enfraquece a exigência — quem prova que a variável é obrigatória é
+    // `test/ambiente.spec.ts`, que chama a validação com a fonte de variáveis por PARÂMETRO e
+    // demonstra a falha por ausência e por valor curto demais, sem depender do ambiente do
+    // processo. E não fere a ADR-0006: nada aqui é coordenada de conexão, e nada é lido do
+    // ambiente — o valor é fixado, não herdado.
+    env: {
+      BETTER_AUTH_SECRET: 'segredo-de-verificacao-sem-valor-operacional',
+    },
   },
 });

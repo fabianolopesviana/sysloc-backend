@@ -1,0 +1,28 @@
+feature: "fundacao-multitenancy-identidade"
+variant: backend
+current_step: task_plan
+source: "recommended"
+source_note: "pre-refinement.md §15.2 recomendou SDD; o comando invocado foi /agent-spec-sdd-generate-prd — aderente."
+steps:
+  prd:
+    status: completed
+    variant: backend
+    summary: "13 US, 17 CA. Isolamento entre empresas garantido estruturalmente e identidade por sessão, com os 3 perfis apenas como rótulo."
+  tech_alignment:
+    status: completed
+    summary: "7 decisões técnicas (D1-D7). 3 hipóteses do discovery refutadas por inspeção do terreno; 1 candidata a ADR confirmada (virou ADR-0009), 1 parcial."
+  tech_spec:
+    status: completed
+    variant: backend
+    summary: "@sysloc/db e @sysloc/auth novos; 7 rotas sob /v1; schemas identidade e negocio; tabelas: empresa, usuario, conta, sessao, verificacao, dois_fatores, tentativa_login, acesso_usuario_app, acesso_usuario_permissao. 32 casos de teste (3 unit, 13 integração, 11 E2E, 5 segurança)."
+  validation:
+    status: completed
+    summary: "challenge-spec: 7 questões, 9 ajustes inline. 3 achados de alta prioridade (regressão de /saude evitada, contradição da fronteira de @sysloc/db, erro de propriedade na migração). 7 termos canonizados."
+  task_plan:
+    status: completed
+    summary: "11 tasks, 3 fases, 4 paralelizáveis (T1‖T2, T4‖T5). US cobertas: 13/13. 32 CTs distribuídos, cada um em exatamente uma task."
+  execution:
+    status: completed
+    tasks_total: 11
+    tasks_completed: 11
+    summary: "11/11 tasks concluidas, todas aprovadas nos dois gates. Nenhuma bloqueada. Suite 260 verdes (baseline do run 115), build e lint verdes, zero regressao. 37 debitos BAIXO anotados na secao 2 do run-report."

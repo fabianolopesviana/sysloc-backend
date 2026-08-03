@@ -1,6 +1,6 @@
 # Architecture Decision Records — INDEX
 
-> Ultima atualizacao: 2026-08-02 (8 ADRs)
+> Ultima atualizacao: 2026-08-02 (9 ADRs)
 
 <!-- ADR-INDEX-START -->
 | ID | Titulo | Status | Tags | Problema (1-linha) | Decisao (1-linha) |
@@ -13,4 +13,5 @@
 | 0006 | Ambiente de verificação separado do ambiente que atende a operação | accepted | testing, architecture | A suíte de verificação executa contra o mesmo ambiente que atende a operação, porque nunca existi... | A suíte de verificação nunca executa contra o ambiente que atende a operação. Qual ambiente concr... |
 | 0007 | Forma canônica do contrato da API do backend novo | accepted | http, architecture, error-handling | A API do Frappe vazou sua forma para dentro do frontend: name é chave e rótulo exibido em 11 inte... | Todo recurso da API obedece a cinco regras de forma: a chave exposta é o código textual legível (... |
 | 0008 | Isolamento multi-tenant garantido pelo banco, não pela aplicação | accepted | architecture, security, data | O produto atende de 20 a 300 empresas sobre isolamento lógico — um banco só, com a coluna de | O isolamento entre empresas é propriedade do banco: toda tabela de negócio nasce com |
+| 0009 | Fronteira entre identidade e negócio por schema, com cobertura verificada no catálogo | accepted | architecture, security, data | A ADR-0008 fixa que o isolamento é propriedade do banco e que toda tabela de negócio nasce com | As tabelas ficam em dois schemas: identidade, sem noção de tenant; e negócio, onde toda tabela |
 <!-- ADR-INDEX-END -->

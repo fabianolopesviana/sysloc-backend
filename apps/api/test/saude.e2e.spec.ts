@@ -104,6 +104,7 @@ import {
 } from '../../../packages/shared/test/postgres-efemero.ts';
 import { type FilaEfemera, redisEfemero } from '../../../packages/shared/test/redis-efemero.ts';
 import { AppModule } from '../src/app.module.ts';
+import { RotaPublica } from '../src/autenticacao/rota-publica.decorator.ts';
 import { TOKEN_LOGGER } from '../src/configuracao/ambiente.ts';
 import { CAMINHO_DO_CONTRATO, CAMINHO_DO_DOCUMENTO, criarAplicacao } from '../src/main.ts';
 import { type EstadoDasDependencias, SaudeService } from '../src/saude/saude.service.ts';
@@ -804,6 +805,20 @@ describe('serviço de aplicação (T5)', () => {
 });
 
 /** Fixture de CT-006: uma rota que falha com exceção comum, carregando texto sensível. */
+//
+// SUT_IS_CORRECT_BECAUSE: a guarda de contexto global da T9 está CERTA ao recusar esta rota — ela é
+// uma rota como qualquer outra, e o default fechado que a task entrega manda que rota nova nasça
+// protegida por omissão. Sem a marca, o CT-006 e o CT-006 (b) passariam a receber `401` da guarda em
+// vez do `500`/`404` do filtro, e deixariam de exercitar o que existem para exercitar. A §7 do
+// cartão da T9 manda "corrigir a guarda, nunca o teste" **quando a guarda capturar as rotas de
+// saúde** — e ela não as capturou: `SaudeController` traz `@RotaPublica()`, e os CT-001 a CT-005
+// seguem verdes sem alteração alguma. O que ela capturou foi este CONTROLADOR-FIXTURE, que a §7 não
+// previa e cuja recusa é o comportamento correto, não regressão.
+//
+// A marca é o MENOR diff possível e **não enfraquece nada**: nenhum caso deste arquivo foi alterado,
+// nenhuma asserção foi afrouxada e a contagem de casos não mudou. Ela apenas declara, no fixture, o
+// que toda rota do produto passa a declarar — que aquela rota dispensa sessão.
+@RotaPublica()
 @Controller(CAMINHO_DO_GATILHO)
 class ControladorQueFalha {
   @Get()
