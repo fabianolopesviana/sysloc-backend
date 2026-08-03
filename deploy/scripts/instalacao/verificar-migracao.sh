@@ -991,8 +991,39 @@ ct_031() {
 	# cópia sem a retirada na criação, 0 com o script atual, e nenhuma das duas
 	# emite linha alguma (o `REVOKE` no-op é silencioso porque quem o emite é o dono
 	# da tabela — não polui a saída que o CT-032 compara).
-	local copia_sem_retirada_na_criacao="${DIR_TEMPORARIO}/migrar-sem-retirada-na-criacao.sh"
+	# A cópia vive num ESPELHO do repositório, e não num diretório temporário plano.
+	#
+	# CAUSA-RAIZ (achado na primeira execução desta bateria, 2026-08-02): o script
+	# sob teste deriva a raiz do repositório do PRÓPRIO caminho
+	# (`migrar-banco.sh:72`, `dirname "${BASH_SOURCE[0]}"/../../..`) e é de lá que
+	# ele monta `DIR_MIGRACOES`. Escrita direto em `${DIR_TEMPORARIO}`, a cópia
+	# calculava `RAIZ_REPO=/`, procurava `//packages/db/migracoes`, não achava e
+	# ABORTAVA na conferência do diretório — antes de `garantir_tabela_de_registro`.
+	#
+	# O efeito era pior que a falha: a asserção do aborto, logo abaixo, PASSAVA pelo
+	# motivo errado — o código de saída era o de "diretório de migrações inexistente"
+	# e não o da reaplicação do 0000 —, e a asserção seguinte ficava INALCANÇÁVEL. É
+	# o espelho do padrão que a §7 do Protocolo Antirregressão registra: aqui não era
+	# uma prova que não podia falhar, era uma que não podia passar, mascarada por uma
+	# vizinha que passava por outra razão.
+	#
+	# O espelho fecha a classe, e não a ocorrência: qualquer variante gerada daqui em
+	# diante resolve a mesma raiz que o original. As migrações são COPIADAS, não
+	# ligadas por atalho — `find … -type f` não enxerga atalho como arquivo comum, e
+	# uma ligação faria o script achar o diretório e não achar migração nenhuma,
+	# trocando um aborto por outro.
+	local espelho_do_repo="${DIR_TEMPORARIO}/espelho-do-repo"
+	install -d -m 0700 "${espelho_do_repo}/deploy/scripts/instalacao" "${espelho_do_repo}/packages/db"
+	cp -r "${DIR_MIGRACOES}" "${espelho_do_repo}/packages/db/migracoes"
+
+	local copia_sem_retirada_na_criacao="${espelho_do_repo}/deploy/scripts/instalacao/migrar-sem-retirada-na-criacao.sh"
 	remover_retirada_na_criacao "${SCRIPT_MIGRAR}" >"${copia_sem_retirada_na_criacao}"
+
+	# Sem isto, o defeito acima volta em silêncio: uma mudança futura no caminho da
+	# cópia faria o script abortar cedo de novo, e as duas asserções do laço
+	# continuariam "passando" e "reprovando" pelas razões erradas.
+	afirmar_igual "(h-bis) a cópia enxerga o mesmo diretório de migrações que o original" "1" \
+		"$([ -d "$(cd "$(dirname "${copia_sem_retirada_na_criacao}")/../../.." && pwd)/packages/db/migracoes" ] && echo 1 || echo 0)"
 
 	afirmar_igual "(h-bis) a cópia sem a retirada na criação é sintaticamente válida" "0" \
 		"$(bash -n "${copia_sem_retirada_na_criacao}" 2>/dev/null && echo 0 || echo 1)"
