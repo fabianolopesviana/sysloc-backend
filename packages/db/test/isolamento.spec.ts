@@ -66,7 +66,12 @@ import {
   USUARIO_MASTER,
 } from '../src/semente.ts';
 import { type AcessoAoBanco, abrirAcessoAoBanco } from '../src/unidade-de-trabalho.ts';
-import { type BancoMigrado, bancoEfemero, conexaoDeMigracao } from './banco-efemero.ts';
+import {
+  type BancoMigrado,
+  bancoEfemero,
+  conexaoDeMigracao,
+  conexaoSuperusuaria,
+} from './banco-efemero.ts';
 import { type VarreduraDeFontes, varrerArquivos } from './varredura-de-fontes.ts';
 
 // ---------------------------------------------------------------------------
@@ -1438,6 +1443,121 @@ describe('CT-007 — isolamento removido de propósito faz a suíte de isolament
           BATERIA_VERDE,
         );
         expect(predicadosReprovados(await rodarBateria(doDono))).toEqual(BATERIA_VERDE);
+      } finally {
+        await banco.parar();
+      }
+    },
+    LIMITE_DA_FALSIFICACAO_MS,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// CT-107 — o que `security_invoker` de fato faz, provado por COMPORTAMENTO
+// ---------------------------------------------------------------------------
+//
+// A guarda de catálogo (`catalogo.ts`) cobra `security_invoker = true` de toda visão em `negocio`,
+// e o CT-009 prova que ela cobra. **Isto é forma, não semântica** — e o cabeçalho daquela guarda é
+// explícito sobre a divisão: o conteúdo da política se prova aqui, exercitando o banco.
+//
+// Sem este caso, o critério inteiro repousaria numa afirmação de comentário sobre como o PostgreSQL
+// avalia a política de uma visão. É exatamente o padrão que a §7 do Protocolo Antirregressão
+// registra — *"provou-se o que era fácil provar"*: a presença da opção é trivial de asserir, e o
+// que discrimina (a linha que vaza, ou não vaza, para quem consulta) ficava sem asserção.
+//
+// O par é o que detecta, e cada perna morre sozinha:
+//
+//   * só a visão SEGURA provaria que a leitura respeita o contexto — mas não que a opção é
+//     NECESSÁRIA: uma visão comum sobre tabela com `FORCE` também respeita, quando a dona não
+//     contorna RLS, e foi essa coincidência que sustentou a exclusão de `v` até o D38;
+//   * só a visão VAZADA provaria que existe um caminho ruim — mas não que a opção o fecha.
+//
+// A dona da visão vazada é a SUPERUSUÁRIA, e essa é a única origem de privilégio deste arquivo além
+// da de migração. Não é conveniência de teste: é a reprodução exata da condição que o D38 mediu — a
+// política da origem sendo avaliada com os direitos de quem DONA a visão, e não de quem consulta.
+const VISAO_QUE_DELEGA = 'negocio.espelho_delegante';
+const VISAO_QUE_VAZA = 'negocio.espelho_vazante';
+
+/** A tabela tenantizada que as duas visões espelham — e a referência de comportamento do caso. */
+const TABELA_ESPELHADA = 'negocio.acesso_usuario_app';
+
+/**
+ * O corpo das duas visões, IDÊNTICO nas duas de propósito: o que as distingue é exclusivamente a
+ * opção e a dona. Se o corpo divergisse, o vazamento poderia ser atribuído à consulta.
+ */
+const CORPO_DAS_VISOES = `SELECT id, empresa_id FROM ${TABELA_ESPELHADA}`;
+
+/**
+ * O papel sem privilégio que a suíte usa — o mesmo que a aplicação usa. Escrito aqui porque a visão
+ * de dona privilegiada precisa CONCEDER leitura a ele: sem a concessão, o caso reprovaria por falta
+ * de permissão e não por ausência de vazamento, que é outra coisa.
+ */
+const PAPEL_DA_APLICACAO = 'sysloc_app';
+
+/** Lê identificadores de uma relação qualquer, pela conexão SEM privilégio, no contexto dado. */
+async function lerIdsDe(
+  acesso: AcessoAoBanco,
+  relacao: string,
+  contexto: Contexto | typeof SEM_CONTEXTO,
+): Promise<string[]> {
+  return noContexto(contexto, async () =>
+    acesso.emUnidadeDeTrabalho(async (tx) => {
+      const linhas = await tx.unsafe<{ id: string }[]>(`SELECT id FROM ${relacao} ORDER BY id`);
+      return linhas.map((linha) => linha.id);
+    }),
+  );
+}
+
+describe('CT-107 — `security_invoker` decide de QUEM é o privilégio que a visão empresta', () => {
+  it(
+    'CT-107 — a visão que delega respeita o contexto; a de dona privilegiada sem a opção vaza as duas empresas',
+    async () => {
+      // Instância DEDICADA, como o CT-007: as duas visões são DDL, e criá-las na instância que os
+      // demais casos compartilham mudaria o que eles examinam.
+      const banco = await bancoEfemero();
+
+      try {
+        const doDono = conexaoDeMigracao(banco);
+        const daSuperusuaria = conexaoSuperusuaria(banco);
+
+        // A que DELEGA é criada pelo papel de migração — `NOSUPERUSER … NOBYPASSRLS`. A que VAZA é
+        // criada pela superusuária, e é dela que herda o privilégio de contornar a política.
+        await executarPrivilegiado(doDono, [
+          `CREATE VIEW ${VISAO_QUE_DELEGA} WITH (security_invoker = true) AS ${CORPO_DAS_VISOES}`,
+        ]);
+        await executarPrivilegiado(daSuperusuaria, [
+          `CREATE VIEW ${VISAO_QUE_VAZA} AS ${CORPO_DAS_VISOES}`,
+          `GRANT SELECT ON ${VISAO_QUE_VAZA} TO ${PAPEL_DA_APLICACAO}`,
+        ]);
+
+        const acesso = abrir(banco.cadeiaConexao);
+
+        try {
+          // --- a tabela, como referência: é o comportamento que a visão não pode enfraquecer ---
+          expect(ordenado(await lerIdsDe(acesso, TABELA_ESPELHADA, CONTEXTO_DE_A))).toEqual(
+            ordenado(IDENTIFICADORES_DE_A),
+          );
+
+          // --- perna 1: COM a opção, a visão é tão forte quanto a tabela ---
+          const peloDelegante = await lerIdsDe(acesso, VISAO_QUE_DELEGA, CONTEXTO_DE_A);
+          expect(ordenado(peloDelegante)).toEqual(ordenado(IDENTIFICADORES_DE_A));
+          // Companheiro negativo explícito: nenhum identificador de B atravessou. A igualdade acima
+          // já o implica, mas é ESTA linha que nomeia o vazamento se ele voltar.
+          expect(intersecao(peloDelegante, IDENTIFICADORES_DE_B)).toEqual([]);
+
+          // --- perna 2: SEM a opção e com dona privilegiada, a mesma consulta vaza ---
+          const peloVazante = await lerIdsDe(acesso, VISAO_QUE_VAZA, CONTEXTO_DE_A);
+          expect(
+            intersecao(peloVazante, IDENTIFICADORES_DE_B),
+            'a visão de dona privilegiada deveria vazar B — se não vaza, a premissa do CT-107 ' +
+              'mudou e o critério de `catalogo.ts` precisa ser reavaliado, não o teste',
+          ).toEqual(ordenado(IDENTIFICADORES_DE_B));
+
+          // E o vazamento acontece com o MESMO contexto fixado que a perna 1 usou — não é ausência
+          // de contexto. É o que prova que a diferença está na visão, e não no chamador.
+          expect(ordenado(peloVazante)).not.toEqual(ordenado(peloDelegante));
+        } finally {
+          await acesso.encerrar();
+        }
       } finally {
         await banco.parar();
       }

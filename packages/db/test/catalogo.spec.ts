@@ -268,6 +268,40 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
     remover: ['DROP MATERIALIZED VIEW negocio.resumo_por_empresa'],
     examinadasEsperadas: [TABELA_DE_ACESSO, TABELA_DE_PERMISSAO, 'negocio.resumo_por_empresa'],
   },
+  {
+    // ---------------------------------------------------------------------------
+    // A visão SEM delegação — o buraco que o D38 registrou, fechado
+    // ---------------------------------------------------------------------------
+    //
+    // A visão era EXCLUÍDA do exame, sob a razão de que "reavalia a política da origem a cada
+    // consulta". A razão é condicional e a condição não estava escrita: o PostgreSQL avalia aquela
+    // política com os direitos da DONA da visão, não de quem consulta. Uma visão de dona que
+    // contorne RLS devolvia todas as empresas e **nem aparecia em `tabelasExaminadas`** — mesmo
+    // desfecho da visão materializada logo acima, por outra porta.
+    //
+    // O critério é `security_invoker = true`, e não a identidade da dona: com a opção, só o
+    // privilégio de QUEM CONSULTA conta, de modo que a visão deixa de poder ser caminho mais fraco
+    // que a tabela **seja quem for a dona**. Cobrar a dona seria cobrar propriedade de papel, que
+    // muda por instalação e não é desta guarda.
+    //
+    // A coluna `empresa_id` está presente pela mesma razão da variante acima: sem ela,
+    // `SEM_COLUNA_EMPRESA` também produziria exceção e o caso ficaria verde com o critério da visão
+    // em qualquer posição. Com ela, o único motivo possível é o afirmado aqui — o que mata o mutante
+    // que manda a visão para a lista de propriedades da TABELA (ali ela reprovaria por
+    // `OBJETO_SEM_ISOLAMENTO_POSSIVEL`, motivo diferente) e o que reintroduz a exclusão de `v` (o
+    // objeto some das examinadas e a exceção some junto).
+    descricao:
+      'visão SEM `security_invoker` reprova por não delegar o isolamento, mesmo tendo a coluna ' +
+      '`empresa_id`',
+    tabela: 'negocio.espelho_sem_delegacao',
+    motivo: 'VISAO_NAO_DELEGA_ISOLAMENTO',
+    criar: [
+      'CREATE VIEW negocio.espelho_sem_delegacao AS ' +
+        'SELECT id, empresa_id FROM negocio.acesso_usuario_app',
+    ],
+    remover: ['DROP VIEW negocio.espelho_sem_delegacao'],
+    examinadasEsperadas: [TABELA_DE_ACESSO, TABELA_DE_PERMISSAO, 'negocio.espelho_sem_delegacao'],
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -419,6 +453,45 @@ describe('guarda de cobertura de isolamento — tabela nascida sem isolamento', 
       LIMITE_DO_CASO_MS,
     );
   }
+
+  it(
+    'CT-009 (v-ok) — visão COM `security_invoker` é aprovada, e ainda assim aparece entre as examinadas',
+    async () => {
+      // O companheiro POSITIVO da variante `espelho_sem_delegacao`, e é ele que dá poder
+      // discriminante ao critério. Sem este caso, um mutante que reprovasse TODA visão — trocar
+      // `linha.delegaIsolamento` por `false`, ou mandar a visão para a lista de propriedades da
+      // tabela — passaria pela suíte inteira, e a guarda estaria proibindo um padrão legítimo em vez
+      // de exigir a delegação. É o par que detecta, nunca a asserção isolada.
+      //
+      // A segunda afirmação não é redundante com a primeira: uma visão aprovada por estar EXCLUÍDA
+      // do exame também produziria `excecoes: []`. Só a presença dela em `tabelasExaminadas`
+      // distingue "foi olhada e passou" de "não foi olhada" — que é a distinção inteira do D38.
+      const VISAO_SEGURA = 'negocio.espelho_com_delegacao';
+
+      await executarPrivilegiado(doMigrador, [
+        `CREATE VIEW ${VISAO_SEGURA} WITH (security_invoker = true) AS ` +
+          'SELECT id, empresa_id FROM negocio.acesso_usuario_app',
+      ]);
+
+      try {
+        const cobertura = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
+
+        expect(cobertura).toEqual({
+          excecoes: [],
+          tabelasExaminadas: [TABELA_DE_ACESSO, TABELA_DE_PERMISSAO, VISAO_SEGURA],
+        } satisfies CoberturaDeIsolamento);
+      } finally {
+        await executarPrivilegiado(doMigrador, [`DROP VIEW ${VISAO_SEGURA}`]);
+      }
+
+      const restaurado = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
+      expect(restaurado).toEqual({
+        excecoes: [],
+        tabelasExaminadas: TABELAS_LEGITIMAS,
+      } satisfies CoberturaDeIsolamento);
+    },
+    LIMITE_DO_CASO_MS,
+  );
 
   it(
     'CT-009 (M6) — isolamento retirado de UMA tabela legítima reprova aquela tabela, e só ela',

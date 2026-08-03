@@ -33,20 +33,23 @@
  * O que entra no exame — e por que o conjunto é definido por EXCLUSÃO
  * ---------------------------------------------------------------------------
  *
- * Ficam de fora do exame os `relkind` que comprovadamente não guardam nem expõem linha de negócio
- * — índice (`i`, `I`), sequência (`S`), tipo composto (`c`), tabela TOAST (`t`) e visão (`v`) —, e
- * **todo o resto é examinado**. A forma é deliberada: enumerar o que ENTRA é a forma que aprova em
- * silêncio o que a enumeração esquecer, e foi exatamente assim que a visão materializada
- * atravessou o filtro `relkind IN ('r','p')` da primeira escrita deste arquivo. Definido por
- * exclusão, o conjunto não tem como esquecer espécie nenhuma: a que ninguém previu cai dentro.
+ * Ficam de fora do exame os `relkind` que não devolvem linha de negócio por consulta própria —
+ * índice (`i`, `I`), sequência (`S`), tipo composto (`c`) e tabela TOAST (`t`) —, e **todo o resto é
+ * examinado**. A forma é deliberada: enumerar o que ENTRA é a forma que aprova em silêncio o que a
+ * enumeração esquecer, e foi exatamente assim que a visão materializada atravessou o filtro
+ * `relkind IN ('r','p')` da primeira escrita deste arquivo. Definido por exclusão, o conjunto não
+ * tem como esquecer espécie nenhuma: a que ninguém previu cai dentro.
  *
- * Os dois casos que a exclusão precisa justificar são a visão e a visão materializada, porque a
- * intuição as trata como o mesmo objeto e aqui elas são opostas:
+ * Os três casos que o exame precisa justificar são a visão, a visão materializada e a tabela
+ * estrangeira, porque a intuição trata as duas primeiras como o mesmo objeto e aqui elas são
+ * opostas:
  *
- *   * **visão** (`v`) não guarda linha. Ler dela reavalia, no momento da consulta, a política das
- *     tabelas de origem — e como esta mesma guarda cobra `FORCE` de toda tabela de `negocio`, a
- *     política vale inclusive para o dono da visão. Fica de fora do exame por isso, e não por não
- *     ter RLS própria;
+ *   * **visão** (`v`) não guarda linha, e é examinada por um critério PRÓPRIO: `security_invoker =
+ *     true`. Com a opção, a política das tabelas de origem é avaliada para **quem consulta**, e ler
+ *     a visão fica sujeito exatamente ao que ler a tabela já estava; sem ela, o PostgreSQL avalia a
+ *     política com os direitos da **dona**, e uma dona que contorne RLS faz a visão devolver todas
+ *     as empresas. O invariante, em uma frase: *uma visão em `negocio` não pode ser caminho mais
+ *     fraco que a tabela que ela lê*;
  *   * **visão materializada** (`m`) guarda linha, **fisicamente**, e o PostgreSQL **não** suporta
  *     RLS sobre ela: não existe `ALTER MATERIALIZED VIEW … ENABLE ROW LEVEL SECURITY`, e
  *     `CREATE POLICY` só alcança tabela. Ler dela não reavalia coisa alguma — é um retrato já
@@ -113,10 +116,14 @@
  *   * **a classificação da tabela** — pôr no schema errado uma tabela que deveria ser de negócio é
  *     erro que nenhuma consulta a `negocio` pega, e a própria ADR-0009 o declara entre os *Cons*;
  *   * **a propriedade dos objetos** e o papel de conexão — são do verificador de infraestrutura, que
- *     roda contra o cluster real, e de `test/papel-de-conexao.spec.ts`. É aqui que mora o resíduo
- *     da visão não-materializada, excluída do exame acima: ela reavalia a política a cada consulta,
- *     mas um dono com `BYPASSRLS` a atravessaria — e ter `BYPASSRLS` é propriedade de **papel**,
- *     que não se lê no catálogo de objeto e não é desta guarda;
+ *     roda contra o cluster real, e de `test/papel-de-conexao.spec.ts`. Um papel com `BYPASSRLS`
+ *     atravessa qualquer política, e isso vale para a tabela tanto quanto para a visão: é
+ *     propriedade de **papel**, não de objeto, e não é desta guarda. **O que mudou** (D38, fechado
+ *     no fechamento da F1): antes esse resíduo alcançava a visão de forma ASSIMÉTRICA — a dona da
+ *     visão emprestava os privilégios dela a QUALQUER leitor, de modo que a visão podia ser um
+ *     caminho mais fraco que a tabela sem que quem consultasse tivesse privilégio nenhum. Exigir
+ *     `security_invoker = true` remove a assimetria: agora só o privilégio de **quem consulta**
+ *     conta, nos dois caminhos;
  *   * **quantos defeitos um objeto tem** — a saída nomeia a primeira propriedade ausente, e só
  *     ela. Quando as ausências são independentes (a 2 e a 3, acima), corrigir a reportada revela a
  *     seguinte na execução seguinte: a guarda converge, mas não numa rodada só. Ler "uma exceção"
@@ -160,7 +167,8 @@ export type MotivoDeExcecao =
   | 'OBJETO_SEM_ISOLAMENTO_POSSIVEL'
   | 'SEM_COLUNA_EMPRESA'
   | 'RLS_NAO_FORCADA'
-  | 'SEM_UNICA_COMPOSTA';
+  | 'SEM_UNICA_COMPOSTA'
+  | 'VISAO_NAO_DELEGA_ISOLAMENTO';
 
 /** Um objeto que nasceu sem isolamento, e a primeira propriedade que falta nele. */
 export interface ExcecaoDeIsolamento {
@@ -190,11 +198,21 @@ export interface CoberturaDeIsolamento {
   readonly tabelasExaminadas: readonly string[];
 }
 
-/** Uma linha do catálogo, já reduzida à precondição e às três propriedades. */
+/** Uma linha do catálogo, já reduzida à precondição e às propriedades da espécie dela. */
 interface LinhaDeCobertura {
   readonly tabela: string;
-  /** Tabela ordinária ou particionada. Falso para visão materializada e tabela estrangeira. */
+  /** Tabela ordinária ou particionada. Falso para visão, visão materializada e tabela estrangeira. */
   readonly admiteIsolamento: boolean;
+  /** Visão não-materializada. Ela é examinada por um critério próprio — ver {@link PROPRIEDADES_DA_VISAO}. */
+  readonly ehVisao: boolean;
+  /**
+   * A visão foi declarada `WITH (security_invoker = true)`.
+   *
+   * É o que faz a política das tabelas de origem ser avaliada para **quem consulta**, e não para a
+   * dona da visão. Sem isso, uma dona que contorne RLS transforma a visão num caminho mais fraco que
+   * a tabela. Falso para tudo que não é visão, onde o campo não é lido.
+   */
+  readonly delegaIsolamento: boolean;
   readonly temColunaDeEmpresa: boolean;
   readonly rlsEmVigor: boolean;
   readonly temUnicaComposta: boolean;
@@ -213,12 +231,40 @@ interface PropriedadeDeIsolamento {
  * A primeira vem primeiro porque implica todas: uma visão materializada não tem RLS a forçar nem
  * par a tornar único, e reportá-la como `RLS_NAO_FORCADA` mandaria corrigir o que não tem conserto.
  */
-const PROPRIEDADES: readonly PropriedadeDeIsolamento[] = [
+const PROPRIEDADES_DA_TABELA: readonly PropriedadeDeIsolamento[] = [
   { motivo: 'OBJETO_SEM_ISOLAMENTO_POSSIVEL', satisfeitaEm: (linha) => linha.admiteIsolamento },
   { motivo: 'SEM_COLUNA_EMPRESA', satisfeitaEm: (linha) => linha.temColunaDeEmpresa },
   { motivo: 'RLS_NAO_FORCADA', satisfeitaEm: (linha) => linha.rlsEmVigor },
   { motivo: 'SEM_UNICA_COMPOSTA', satisfeitaEm: (linha) => linha.temUnicaComposta },
 ];
+
+/**
+ * O que se cobra de uma VISÃO — uma propriedade só, e ela é suficiente.
+ *
+ * A visão não tem RLS própria, coluna de empresa nem restrição única, e cobrar as três dela seria
+ * mandar corrigir o que não tem conserto — o mesmo erro que a ordem normativa das propriedades da
+ * tabela existe para evitar. O que ela pode ter é **delegação**: com `security_invoker = true`, a
+ * política das tabelas de origem é avaliada para quem consulta, e ler a visão fica sujeito
+ * exatamente ao que ler a tabela já estava. Sem isso, a avaliação usa os direitos da DONA, e uma
+ * dona que contorne RLS faz a visão devolver todas as empresas.
+ *
+ * As tabelas de origem, por sua vez, são cobradas por esta mesma guarda quando estão em `negocio` —
+ * de modo que a delegação não é promessa vazia: ela aponta para propriedades que já foram provadas.
+ */
+const PROPRIEDADES_DA_VISAO: readonly PropriedadeDeIsolamento[] = [
+  { motivo: 'VISAO_NAO_DELEGA_ISOLAMENTO', satisfeitaEm: (linha) => linha.delegaIsolamento },
+];
+
+/**
+ * Qual conjunto de propriedades se cobra deste objeto.
+ *
+ * A escolha é pela ESPÉCIE, e não por nome — nenhum nome de tabela entra em posição executável neste
+ * arquivo (ver o cabeçalho). Espécie que não é visão cai na lista da tabela, inclusive a espécie que
+ * ninguém previu: é o que mantém o conjunto definido por exclusão.
+ */
+function propriedadesDe(linha: LinhaDeCobertura): readonly PropriedadeDeIsolamento[] {
+  return linha.ehVisao ? PROPRIEDADES_DA_VISAO : PROPRIEDADES_DA_TABELA;
+}
 
 /**
  * Pergunta ao catálogo se algum objeto do schema de negócio nasceu sem isolamento.
@@ -253,38 +299,45 @@ export async function verificarCoberturaDeIsolamento(
     //                 omissão que produziu o defeito.
     //
     // O critério do campo acima NÃO é "não armazena" nem "não é legível": as duas formas são
-    // FALSAS sobre esta própria lista, e escrever qualquer uma faria o marcador mandar aplicar uma
-    // regra que a lista viola. Índice e TOAST **armazenam** (inclusive bytes de coluna
-    // tenantizada); visão **é legível** e devolve linha de negócio. O que une as cinco espécies
-    // excluídas é outra coisa — nenhuma delas entrega linha **escapando da RLS da origem**:
+    // FALSAS sobre a lista, e escrever qualquer uma faria o marcador mandar aplicar uma regra que a
+    // lista viola. Índice e TOAST **armazenam** (inclusive bytes de coluna tenantizada). O que une
+    // as quatro espécies excluídas é outra coisa — nenhuma delas entrega linha de negócio por
+    // consulta própria, **escapando da RLS da origem**:
     //
     //   * **não guardam linha de negócio** — sequência (`S`) e tipo composto (`c`);
     //   * **guardam bytes, mas só são lidos a serviço da tabela de origem** — índice (`i`, `I`) e
     //     TOAST (`t`). Quem os acessa é o executor de consulta, sempre resolvendo uma leitura da
-    //     tabela dona, cuja política se aplica antes de a linha sair;
-    //   * **é legível e devolve linha, mas reavalia a política da origem a cada consulta —
-    //     CONDICIONALMENTE** — visão (`v`). A condição não é ornamento e está medida abaixo.
+    //     tabela dona, cuja política se aplica antes de a linha sair.
     //
-    // É por isso que o critério recusa exatamente as duas que têm de reprovar, e a recusa é o
-    // motivo deste marcador existir: visão MATERIALIZADA (`m`) guarda cópia física com as empresas
-    // misturadas, e a RLS da origem não a alcança; tabela estrangeira (`f`) guarda o dado fora do
-    // banco, onde política nenhuma daqui vale. Ver o cabeçalho, que separa visão de materializada.
+    // É por isso que o critério recusa exatamente as espécies que têm de reprovar: visão
+    // MATERIALIZADA (`m`) guarda cópia física com as empresas misturadas, e a RLS da origem não a
+    // alcança; tabela estrangeira (`f`) guarda o dado fora do banco, onde política nenhuma daqui
+    // vale. Ver o cabeçalho, que separa visão de materializada.
     //
-    // A CONDIÇÃO DA VISÃO, declarada em vez de afirmada como absoluto (fechamento da F1). O
-    // PostgreSQL avalia a política da origem com os direitos da **dona da visão**, não de quem
-    // consulta — salvo `security_invoker = true`. Uma visão cuja dona contorne RLS (superusuária,
-    // ou papel `BYPASSRLS`) devolve TODAS as empresas, e a exclusão de `v` a tira do exame: mesmo
-    // desfecho da visão materializada, por outra porta. **Medido em instância efêmera**: visão
-    // sobre a mesma tabela, consultada sem `app.empresa_id`, devolveu 0 linhas com dona comum e as
-    // 2 linhas das duas empresas com dona superusuária.
-    //
-    // Por que isso NÃO é buraco alcançável pelos papéis deste produto, e por isso não muda a lista
-    // aqui: `sysloc_app` recebe apenas `USAGE ON SCHEMA` (`0001_seguranca.sql:96`) — **sem
-    // `CREATE`**, então não cria visão nenhuma; e `sysloc_migracao` nasce
-    // `NOSUPERUSER … NOBYPASSRLS` (`provisionar-base.sh:1902`), de modo que visão criada pela
-    // migração tem a política da origem aplicada — o `FORCE ROW LEVEL SECURITY` alcança a própria
-    // dona. Sobra o superusuário do cluster, que é o mesmo caminho que `conexaoSuperusuaria`
-    // existe para exercer nos testes. Registrado como débito D38 — ver o marcador abaixo.
+
+    // DECISÃO FECHADA — fechamento da F1 (D38) · 2026-08-02
+    // O QUÊ: **visão (`v`) saiu da lista de exclusão e passou a ser EXAMINADA**, por um critério
+    //        próprio: `security_invoker = true`. É aperto do conjunto examinado, nunca afrouxamento
+    //        — nada que era examinado deixou de ser.
+    // POR QUÊ: a razão pela qual `v` era excluída — "a visão reavalia a política da origem a cada
+    //          consulta" — é CONDICIONAL, e a condição não estava escrita. O PostgreSQL avalia
+    //          aquela política com os direitos da **dona da visão**, não de quem consulta, salvo
+    //          `security_invoker = true`. Uma visão de dona que contorne RLS devolvia todas as
+    //          empresas e **não aparecia sequer em `tabelasExaminadas`** — o mesmo desfecho da visão
+    //          materializada, por outra porta, e o mesmo "terceiro estado" que a ADR-0009 declara
+    //          não existir. Medido em instância efêmera antes da correção: a mesma visão, consultada
+    //          sem `app.empresa_id`, devolveu 0 linhas com dona comum e as 2 linhas das duas
+    //          empresas com dona superusuária.
+    //          O invariante que isto instala, e que a exclusão não conseguia dar: *uma visão em
+    //          `negocio` não pode ser caminho mais fraco que a tabela que ela lê*. Com a opção, só o
+    //          privilégio de QUEM CONSULTA conta — exatamente como no acesso direto à tabela —, e o
+    //          resíduo de `BYPASSRLS` volta a ser simétrico entre os dois caminhos.
+    // REVERTER EXIGE: provar que a visão sem `security_invoker` **não pode** devolver linha de
+    //                 negócio que a leitura direta da tabela de origem negaria ao mesmo papel — o
+    //                 que exige, no mínimo, que nenhuma dona possível de visão em `negocio` contorne
+    //                 RLS, hoje e em toda instalação futura. Enumerar os papéis de HOJE não
+    //                 satisfaz: foi assim que o defeito nasceu. Voltar a excluir `v` do exame sem
+    //                 isso reabre o terceiro estado.
     //
     // A restrição única é conferida por **conjunto de nomes de coluna**, e não por posição: o
     // `conkey` guarda números de coluna, cuja ordem segue a declaração da restrição, e comparar
@@ -299,28 +352,23 @@ export async function verificarCoberturaDeIsolamento(
     // `0001_seguranca.sql` e o gerador de migração produzem. O erro é fail-closed — reprova quem
     // está isolado por uma forma fora da convenção, e nunca aprova quem não está isolado.
 
-    // DÉBITO COM GATILHO — D38 · F1/fechamento · registrado 2026-08-02
-    // (NÃO confundir com a `DECISÃO FECHADA — T4 / Gate 2 (P1)` acima, que PROTEGE o critério de
-    //  exclusão. Este AGENDA uma reavaliação de UM membro da lista — o `v` —, e nada sob ele está
-    //  congelado. Os dois convivem neste arquivo de propósito: a decisão de excluir por espécie
-    //  segue valendo; o que está aberto é se `v` ainda pertence ao conjunto excluído.)
-    // O QUÊ: `v` é excluído do exame, e a razão declarada — a visão reavalia a política da origem —
-    //        é CONDICIONAL: vale enquanto a dona da visão não contornar RLS. Visão de dona
-    //        superusuária devolve todas as empresas e não aparece em `tabelasExaminadas`. Medido,
-    //        não suposto (ver o bloco acima).
-    // QUANDO FECHA: a **primeira fatia que criar visão em `negocio`** — hoje não existe nenhuma. A
-    //        decisão é de spec e tem duas saídas: parar de excluir `v` (uma visão sem `empresa_id`
-    //        passa a reprovar, que é fail-closed) ou exigir `security_invoker = true` nas visões
-    //        do schema.
-    // POR QUE NÃO AGORA: nenhum papel deste produto alcança o buraco — `sysloc_app` não tem
-    //        `CREATE` no schema e `sysloc_migracao` é `NOBYPASSRLS` —, e mudar a lista sem visão
-    //        alguma no banco alteraria o comportamento da guarda de isolamento sem que teste nenhum
-    //        exercitasse a mudança. Escalado ao usuário no fechamento da F1.
-    // ÍNDICE: docs/specs/features/fundacao-multitenancy-identidade/v1/_run/run-report.md §2, D38
     const linhas = await sql<LinhaDeCobertura[]>`
       SELECT
         n.nspname || '.' || c.relname AS "tabela",
         (c.relkind IN ('r', 'p')) AS "admiteIsolamento",
+        (c.relkind = 'v') AS "ehVisao",
+        -- O valor NORMALIZADO, e não a presença da opção: casar a cadeia literal deixaria passar
+        -- como ausente uma visão que declarou a opção noutra grafia (true, on, 1, yes). O cast
+        -- para boolean aceita todas, e a ausência vira falso por COALESCE -- falha fechada.
+        -- (Sem crase neste comentário: ele vive dentro de um template literal.)
+        COALESCE(
+          (
+            SELECT o.option_value
+            FROM pg_catalog.pg_options_to_table(c.reloptions) AS o
+            WHERE o.option_name = 'security_invoker'
+          ),
+          'false'
+        )::boolean AS "delegaIsolamento",
         EXISTS (
           SELECT 1
           FROM pg_catalog.pg_attribute a
@@ -345,13 +393,15 @@ export async function verificarCoberturaDeIsolamento(
       FROM pg_catalog.pg_class c
       JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = ${SCHEMA_DE_NEGOCIO}
-        AND c.relkind NOT IN ('i', 'I', 'S', 'c', 't', 'v')
+        AND c.relkind NOT IN ('i', 'I', 'S', 'c', 't')
       ORDER BY c.relname
     `;
 
     return {
       excecoes: linhas.flatMap((linha) => {
-        const ausente = PROPRIEDADES.find((propriedade) => !propriedade.satisfeitaEm(linha));
+        const ausente = propriedadesDe(linha).find(
+          (propriedade) => !propriedade.satisfeitaEm(linha),
+        );
         return ausente === undefined ? [] : [{ tabela: linha.tabela, motivo: ausente.motivo }];
       }),
       tabelasExaminadas: linhas.map((linha) => linha.tabela),

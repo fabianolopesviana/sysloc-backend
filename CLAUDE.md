@@ -208,8 +208,8 @@ Específicos deste domínio: **undici** (mTLS do Sicoob), **`node:crypto` `X509C
 > grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 > ```
 
-Seis débitos têm gatilho que dispara fora da fatia que os criou: **D28** e **D32** vêm da F0;
-**D7**, **D21**, **D23** e **D38** nasceram na F1. **Dois já dispararam e seguem abertos** — o D28 (na F1/T2) e
+Cinco débitos têm gatilho que dispara fora da fatia que os criou: **D28** e **D32** vêm da F0;
+**D7**, **D21** e **D23** nasceram na F1. **Dois já dispararam e seguem abertos** — o D28 (na F1/T2) e
 o D21 (na F1/T8, quando o encaminhador de `/v1/auth` montou `/change-password`). O débito D6 da
 F1/T5 foi fechado no fechamento da F1 — `verificar-migracao.sh` entrou em `VERIFICADORES_DA_FATIA`
 — e por isso saiu daqui: **este índice lista só débito vivo**.
@@ -235,7 +235,6 @@ F1/T5 foi fechado no fechamento da F1 — `verificar-migracao.sh` entrou em `VER
 | **D7** (F1/T6) | `packages/auth/src/autenticacao.ts` | a **primeira rota de criação de pessoa** (fatia `autorizacao-e-ciclo-de-acesso`) |
 | **D21** (F1/T7) | `packages/auth/src/autenticacao.ts` | **JÁ DISPAROU (F1/T8)** — `/change-password` montado; a recusa da barreira não desfaz o que a rota já escreveu |
 | **D23** (F1/T8) | `apps/api/src/autenticacao/autenticacao.module.ts` | a **publicação atrás do servidor de borda na F7** — origem confiável derivada do endereço de retorno |
-| **D38** (F1/fechamento) | `packages/db/src/catalogo.ts` | a **primeira fatia que criar visão em `negocio`** — `v` é excluído do exame por razão condicional |
 
 ---
 
