@@ -12,7 +12,8 @@
   "scripts": {
     "build": "turbo run build",
     "test": "turbo run test",
-    "lint": "biome check . && turbo run lint",
+    "lint": "biome check . && pnpm lint:shell && turbo run lint",
+    "lint:shell": "find deploy/scripts -name '*.sh' -print0 | xargs -0 -r shellcheck --severity=error",
     "dev": "mprocs"
   },
   "devDependencies": {

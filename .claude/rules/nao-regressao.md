@@ -216,6 +216,28 @@ apodrece — o relatório é corrigido e a cópia não.
 - Ele **não protege nada**. Diferente de §3, editar o código sob um `DÉBITO COM GATILHO` é normal —
   o que não se pode é editá-lo **sem ler o marcador**, porque ele diz o que ainda falta ali.
 
+### Como um débito é identificado — o número sozinho não basta
+
+> Esta regra morava no bloco "Débitos com gatilho ativo" do `CLAUDE.md`. Ela **não podia** ficar
+> lá: aquele bloco é declarado derivado e transitório logo abaixo, e o ciclo de vida manda
+> **apagá-lo inteiro** quando o último marcador sair — a regra iria junto, e a colisão voltaria a
+> ser descoberta do zero pela primeira fatia que registrasse um `Dnn` repetido.
+
+**O identificador de um débito é o par `Dnn · F{n}/{origem}` mais o caminho do `ÍNDICE` — nunca o
+número sozinho.** A sequência `Dnn` corre **dentro da §2 do `run-report.md` da fatia que a
+registrou**, e não globalmente. Três consequências, todas verificadas neste repositório:
+
+- `D6` da F1 e `D6` da F0 são débitos **diferentes**, e ambos legítimos. O mesmo vale para `D7`,
+  `D28` e `D32`, que hoje existem em duas fatias cada.
+- Ao registrar um débito novo, o número seguinte sai da **§2 da fatia corrente** — não da sucessão
+  dos marcadores existentes. Confundir o conjunto dos marcadores com o conjunto dos débitos foi a
+  causa das três colisões de numeração da F1, uma delas vinda de um gate.
+- A `{origem}` é **`T{n}`** quando o débito nasce numa task, e **`fechamento`** quando nasce fora do
+  pipeline — numa intervenção dirigida, numa revisão de fecho de fatia. As duas formas são
+  canônicas; o que não se admite é origem ausente, porque é ela que separa dois `Dnn` homônimos. A
+  numeração é a mesma sequência da §2 da fatia, sem faixa reservada: o débito descoberto no fecho da
+  F1 é o `D38` porque o último do run daquela fatia era o `D37`.
+
 ### Ciclo de vida do índice no `CLAUDE.md`
 
 O bloco de débitos com gatilho do `CLAUDE.md` é **derivado destes marcadores**, nunca uma lista
@@ -234,6 +256,25 @@ A condição é verificável numa linha, e ela tem de estar escrita **tanto aqui
 # vazio ⇒ o bloco do CLAUDE.md não deve mais existir
 grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 ```
+
+**No fecho de fatia, confira as DUAS pontas** — é a checagem que pegou um par `Dnn · F{n}/T{n}`
+errado na F1, e ela roda nos dois sentidos:
+
+1. **Marcador → registro**: para cada marcador no código, existe `### D{n}` na §2 do `run-report.md`
+   que o `ÍNDICE` nomeia, e a **origem** do cabeçalho bate com a linha do `CLAUDE.md`. A origem é
+   `F{n}/T{n}` para débito nascido numa task, e `F{n}/fechamento` para o que nasceu numa
+   intervenção dirigida fora do pipeline — quem confere aceita as duas formas.
+2. **Índice → marcador**: para cada linha do bloco do `CLAUDE.md`, existe marcador vivo no código.
+   Linha sem marcador é **débito já fechado que ficou no índice** — a mesma mentira do marcador
+   órfão, na direção contrária.
+
+> **Cuidado com a forma do cabeçalho na §2.** A F0 numera `### D28 · … · T5 · …`, sem o prefixo
+> `F0/`, porque é anterior à convenção do par. Relatório de fatia fechada é registro histórico e
+> **não se reescreve** — quem confere é que tolera as duas formas.
+>
+> **E não escreva `**Dnn** (F{n}/T{n})` fora da tabela**, nem para dizer que um débito foi fechado:
+> a checagem do sentido 2 varre essa forma, e a menção vira falso órfão. Débito fechado sai do
+> índice; se o fecho merecer nota, ela vai em prosa, sem a forma do índice.
 
 O `--exclude-dir=dist` não é ornamento: o `dist/` é saída de build (ignorada pelo git) e espelha o
 comentário do fonte, de modo que sem ele o mesmo marcador é contado duas vezes e o índice parece

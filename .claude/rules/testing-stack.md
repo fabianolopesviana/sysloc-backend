@@ -51,6 +51,15 @@ Este projeto testa em **duas linguagens, com propósitos disjuntos**. Confundi-l
 - **Subset**: `pnpm --filter @sysloc/<pacote> test`
 - **Um teste**: `pnpm --filter @sysloc/<pacote> test -- -t "<nome>"`
 - **Verificador shell**: `bash deploy/scripts/<área>/verificar-<alvo>.sh`
+- **Análise estática da frente shell**: `pnpm lint:shell` (encadeado dentro de `pnpm lint`). É
+  `shellcheck --severity=error` sobre `deploy/scripts/**/*.sh`, com o binário fixado em `.mise.toml`.
+  **Existe porque `biome check` não processa shell e `turbo run lint` resolve para 0 tarefas ali** —
+  a frente shell passou de 2.700 linhas sem análise estática nenhuma (débito D16 da F1).
+  **Severidade `error` é o piso, não o teto**: foi escolhida por passar limpa hoje (0 achados),
+  enquanto `warning` tem 7, `info` 48 e `style` 51. Subir o degrau é trabalho declarado, e os 7
+  `warning` são o próximo — nenhum deles é defeito de comportamento (dois `SC2034` de constante
+  consumida por `nameref`, um `SC2155`, um `SC2043` de laço sobre lista de um elemento, um `SC2115`
+  sob `set -u`, um `SC2010`).
 - **Bateria agregada da fatia**: `bash deploy/scripts/instalacao/verificar-fundacao.sh` (nasce em T7; agrega os verificadores da F0 **em ordem**, sem paralelizar)
 
 **Privilégio**: os verificadores de `deploy/scripts/instalacao/` que tocam o SO exigem `sudo`, e **`sudo` neste host pede senha interativa**. Nenhum subagente consegue executá-los. Quando um gate precisar deles, a execução é conduzida pelo orquestrador junto ao operador, e o gate audita a saída preservada. Nessa situação o QA reporta `executou_testes: false` — isso reflete o papel dele, **não** suíte pulada, e deve ser declarado como tal.
@@ -123,6 +132,46 @@ Toda asserção que inspeciona o **texto** do código sob teste — `grep`/`awk`
 O padrão que liga os três: **provou-se o que era fácil provar** (o predicado, a posição, o texto) **e deixou-se sem asserção o que era difícil** (a combinação de entradas que discrimina, e o efeito terminal). Quando a asserção carrega **companheiro positivo e negativo**, a falsificação costuma ser trivial de obter — e é o par que detecta, não a asserção isolada.
 
 Asserção **comportamental** (exercita o SUT e observa resultado) não exige a prova: ela falha naturalmente quando o SUT quebra.
+
+#### Como invocar a suíte durante a prova — **a escolha do comando decide a validade**
+
+> **Todo mutante sobre fonte de `packages/*` roda pelo script `test` do pacote consumidor:**
+> `pnpm --filter @sysloc/<pacote> test` (que é `tsc --build && tsc -p tsconfig.test.json && vitest run`),
+> ou `pnpm test` para a suíte inteira. **`vitest run` avulso é INVÁLIDO para trabalho de mutante** e
+> não deve ser usado para concluir nada sobre sobrevivência.
+
+A razão é o modo de falha, que é silencioso e **inverte a conclusão**: verde lido como *"o mutante
+sobreviveu"* quando o mutante nunca foi executado.
+
+Os quatro pacotes resolvem `"."` por `exports` para `./dist/index.js`. Uma suíte que carregue o SUT
+**pela fronteira do pacote** (`from '@sysloc/auth'`) continua lendo o `dist/` da compilação anterior
+quando invocada por `vitest run` avulso — o mutante fica no fonte e não alcança o que executa.
+
+**O discriminador é COMO a suíte carrega o SUT, não onde o mutante foi aplicado** — e por isso a
+regra é "sempre pelo script", em vez de um julgamento caso a caso. As duas medições que a fixam,
+ambas feitas neste repositório:
+
+| Mutante | Como a suíte carrega | `vitest run` avulso | Script `test` do pacote |
+|---|---|---|---|
+| `RESTRICOES_DE_SESSAO` invertida (`packages/auth/src/admissao.ts`) | `apps/api/test/sessao-restrita.spec.ts` lê `@sysloc/auth` | **10 passed — falso negativo** | reprova em `CT-105` |
+| `COMPRIMENTO_MINIMO_DE_SENHA` 10→3 (`packages/auth/src/senha.ts`) | `packages/auth/test/senha.spec.ts` lê `../src/senha.ts` | reprova (2 casos) | reprova (2 casos) |
+
+A segunda linha é o contraexemplo que impede a leitura errada da primeira: quando a suíte importa o
+fonte por caminho relativo, o mutante alcança mesmo sem build. **Não conte com isso**, por duas
+razões medidas:
+
+- **A forma de carregar não se lê no arquivo de teste.** `packages/auth/test/recusa-nao-credencial.spec.ts`
+  importa apenas `@sysloc/db` diretamente, e ainda assim alcança o fonte de `@sysloc/auth` — porque o
+  acessório `identidade-efemera.ts` importa `../src/autenticacao.ts`. Um mutante em
+  `packages/auth/src/autenticacao.ts` reprova ali nos dois caminhos. **Apurar isso exige seguir a
+  cadeia de acessórios**, e é trabalho que a regra "sempre pelo script" torna desnecessário.
+- **A exposição é por DIREÇÃO, não por arquivo.** O que atravessa `dist/` é o consumo
+  *cross-package*: `apps/api/test/**` alcança `@sysloc/auth` e `@sysloc/db` só pela fronteira, e
+  `packages/auth/test/**` alcança `@sysloc/db` pela fronteira. Nessas direções, mutante sem build
+  não chega.
+
+Numa fatia cujo eixo é segurança, **prova inconclusiva é pior que prova ausente — ela consta como
+feita.**
 
 ### Mutation testing — sem ferramenta, com método
 

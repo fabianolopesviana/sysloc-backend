@@ -91,11 +91,14 @@ readonly SCRIPT_PROVISIONAR="${RAIZ_REPO}/deploy/scripts/instalacao/provisionar-
 readonly DIR_UNIDADES_INSTALADAS="/etc/systemd/system"
 
 # --------------------------------------------------------------------------- #
-# Verificadores das tasks anteriores, NA ORDEM DE INVOCAÇÃO.
+# Verificadores das fatias anteriores, NA ORDEM DE INVOCAÇÃO.
 #
 # A ordem não é decorativa: o CT-004 de `verificar-workspace.sh` depende do
 # sandbox que o CT-001 dele cria, e os casos de `verificar-provisionamento.sh`
-# comparam retratos capturados em sequência. Nada aqui é paralelizado.
+# comparam retratos capturados em sequência. `verificar-migracao.sh` (F1/T5) vem
+# DEPOIS de `verificar-provisionamento.sh` porque cria e remove banco no cluster
+# e depende do estado que os passos P15/P16 do provisionamento deixam. Nada aqui
+# é paralelizado.
 #
 # Cada um honra o mesmo contrato de agregação, declarado no cabeçalho deles:
 # invocação como subprocesso, sem argumentos, raiz do repositório derivada do
@@ -113,23 +116,15 @@ readonly DIR_UNIDADES_INSTALADAS="/etc/systemd/system"
 #            Agregá-los sem baixar privilégio faria os dois reprovarem por um
 #            motivo que nada tem a ver com o que eles provam.
 # --------------------------------------------------------------------------- #
-# DÉBITO COM GATILHO — D6 · F1/T5 · registrado 2026-08-02
-# O QUÊ: este array agrega os três verificadores da F0. A quarta bateria da
-#        fatia, `deploy/scripts/instalacao/verificar-migracao.sh` (T5), não está
-#        aqui e não é invocada por agregador nenhum — hoje ela só roda se alguém
-#        lembrar do caminho completo.
-# QUANDO FECHA: quando a F1 (`fundacao-multitenancy-identidade`) ganhar sua task
-#        de fechamento. A ordem já está decidida: `verificar-migracao.sh` entra
-#        DEPOIS de `verificar-provisionamento.sh`, porque ela cria e remove banco
-#        no cluster e depende do estado que os passos P15/P16 do provisionamento
-#        deixam. As duas exigem `:root`.
-# POR QUE NÃO AGORA: acrescentá-la aqui está fora da §5.2 da T5, e a T5 não pode
-#        provar a agregação — os verificadores privilegiados exigem `sudo`
-#        interativo, que nenhum subagente executa.
-# ÍNDICE: docs/specs/features/fundacao-multitenancy-identidade/v1/_run/run-report.md §2, D6
+# Este array é a ÚNICA lista de verificadores agregados que existe — bateria que
+# não esteja aqui não roda por rotina, e foi assim que a bateria da F1 passou uma
+# fatia inteira invocável só por quem lembrasse do caminho completo (débito D6,
+# fechado no fechamento da F1). Quem acrescentar um verificador acrescenta a linha
+# aqui no mesmo commit.
 readonly VERIFICADORES_DA_FATIA=(
 	"deploy/scripts/instalacao/verificar-workspace.sh:usuario"
 	"deploy/scripts/instalacao/verificar-provisionamento.sh:root"
+	"deploy/scripts/instalacao/verificar-migracao.sh:root"
 	"deploy/scripts/instalacao/verificar-apuracao-versao.sh:usuario"
 )
 

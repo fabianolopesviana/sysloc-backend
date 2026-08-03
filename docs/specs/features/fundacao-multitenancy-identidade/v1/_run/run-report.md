@@ -4,7 +4,11 @@
 
 ## 1. Resumo do Run
 
-Status: ✅ **11/11 tasks concluídas** · suíte verde com **260 casos** (baseline do run: **115**) · `pnpm build` e `pnpm lint` verdes · zero regressão em todas as tasks
+Status: ✅ **11/11 tasks concluídas** · suíte verde com **271 casos** · `pnpm build` e `pnpm lint` verdes · zero regressão em todas as tasks
+
+> **Contagem em duas medidas**, porque este relatório passou a cobrir dois momentos: o **run** fechou
+> com **260 casos** (baseline de entrada dele: **115**); o **fechamento da F1** (§4) acrescentou 11 —
+> `CT-105` (10) e `CT-106` (1) —, sem retirar nenhum, chegando aos 271 acima.
 
 | Task | Nome | Modelo | Arquivos | QA | Tech Review |
 |------|------|--------|----------|-----|-------------|
@@ -30,7 +34,7 @@ Status: ✅ **11/11 tasks concluídas** · suíte verde com **260 casos** (basel
 >
 > **Numeração**: a sequência `Dnn` corre **dentro desta §2**. O identificador de um débito é o par `Dnn · F{n}/T{n}` mais o caminho do `ÍNDICE` — **nunca o número sozinho**. A F0 tem um `D6` e um `D7` diferentes destes, e ambos são legítimos.
 
-### D1 · BAIXO · security · T1 · Tech Review
+### D1 · BAIXO · security · T1 · Tech Review — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `packages/shared/src/log.ts:236-255`
 - **Problema:** o docblock do terceiro eixo declara a fronteira da âncora, mas **afirma o absoluto** sobre a fronteira do valor.
 - **Impacto:** documental. Duas fronteiras reais medidas: `?token=SEG]REDO` → `token=[REDIGIDO]]REDO` (cauda sobrevive) e `?a=1;token=SEGREDO` atravessa **intacto** (o `;` não delimita). Nenhuma é corrigível sem reabrir a mutilação que o eixo custou uma rodada para evitar — **o código está certo, o comentário promete demais**. Num arquivo cuja tese é distinguir "fechei a classe" de "fechei o caminho apontado", isso importa.
@@ -41,8 +45,9 @@ Status: ✅ **11/11 tasks concluídas** · suíte verde com **260 casos** (basel
 - **Problema:** o nome das duas funções é mais estreito que o comportamento — `redigirValorEmCadeiaDeConsulta` também alcança o **fragmento**, e `mascararCredencial` virou a composição dos dois eixos.
 - **Impacto:** nenhum hoje. **Nome estreito é o que faz um eixo novo nascer num ponto de escrita em vez de dentro da porta** — a classe que a T1 existe para fechar.
 - **O que fazer:** renomear para `redigirValorDeParametroDeEndereco` e `mascararPorFormaDoValor`. Toca 5 call sites; fazer junto do D1.
+- **⚠️ NÃO feito no fechamento da F1, embora o D1 tenha sido — decisão registrada.** O "fazer junto do D1" não foi cumprido de propósito, e a razão é o arquivo: `packages/shared/src/log.ts` é o módulo de redação de credencial que a §7 do Protocolo Antirregressão documenta como tendo **sobrevivido a quatro correções**, cada uma fechando o caminho apontado enquanto o defeito voltava por outro. O D1 é comentário e não toca uma linha de código; o D2 move 5 call sites ali dentro, pelo benefício de nomenclatura. Trocar risco de regressão por nome, no arquivo com o pior histórico da base, não se paga — e o próprio D2 declara o impacto de hoje como **nenhum**. **Continua aberto e sem gatilho**: o momento barato é a próxima fatia que já precise editar o módulo por mérito próprio, quando o diff de renomeação viajar junto de mudança que a suíte exercita de qualquer forma.
 
-### D3 · BAIXO · technical_requirement · T2 · Tech Review
+### D3 · BAIXO · technical_requirement · T2 · Tech Review — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `docs/specs/features/fundacao-multitenancy-identidade/v1/tasks/T2.md:59`
 - **Problema:** o critério 5 do §4 afirma que `conexaoDeMigracao()` é o "**único** acesso privilegiado", e a implementação expõe dois.
 - **Impacto:** o segundo acessório está **arquitetonicamente certo** — com `FORCE` ativo a conexão de migração **não consegue** demonstrar leitura cross-tenant, e sem a superusuária o eixo do CT-002 seria indemonstrável. O defeito é de **registro**: um auditor que confie no §4 procuraria uma entrada e não acharia `conexaoSuperusuaria`.
@@ -60,7 +65,7 @@ Status: ✅ **11/11 tasks concluídas** · suíte verde com **260 casos** (basel
 - **Impacto:** **não é violação** (conforme a tech spec §7.2 e a ADR-0008, cuja chave composta vale "entre entidades tenantizadas", e `identidade.usuario` não é tenantizada por decisão da ADR-0009) e **não é escalação nesta fatia** (vínculo incoerente produz linha inalcançável). O custo é dado inconsistente, e se materializa na fatia de autorização. **Sem o registro no ponto, a conciliação tende a nascer como validação de aplicação** — o padrão que a ADR-0008 rejeita nominalmente.
 - **O que fazer:** 3-4 linhas no bloco de `:57-61` nomeando a consequência e o dono. Se a conciliação tiver de ser estrutural, o caminho sem quebrar a ADR-0009 é um `CHECK` por função ou a promoção de `usuario` a par `(id, empresa_id)` — decisão de spec, a escalar.
 
-### D6 · BAIXO · testability · F1/T5 · Tech Review — **tem marcador**
+### D6 · BAIXO · testability · F1/T5 · Tech Review — **tem marcador** — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `deploy/scripts/instalacao/verificar-fundacao.sh:116` (`DÉBITO COM GATILHO — D6 · F1/T5`)
 - **Problema:** `VERIFICADORES_DA_FATIA` declara os três verificadores da F0; a quarta bateria (`verificar-migracao.sh`, F1/T5) **não é invocada por agregador nenhum** e só roda se alguém lembrar do caminho completo.
 - **Impacto:** regressão na infraestrutura provada pela F1 — papéis, propriedade dos schemas, cobertura de RLS e higiene da credencial no cluster real — deixa de ter execução por rotina. *"O risco não é hoje; é na F7, quando o runbook da virada precisar de uma invocação única que prove a fundação inteira."*
@@ -94,7 +99,7 @@ Status: ✅ **11/11 tasks concluídas** · suíte verde com **260 casos** (basel
 - **Impacto:** **latente** — não há consumidor de `emUnidadeDeTrabalho` no fonte de produção. Material na **primeira fatia que escrever repositório sobre a unidade de trabalho**. Menos provável que o caso do `executarCom` (escrever `tx.unsafe("SET LOCAL …")` num serviço não parece legítimo em revisão).
 - **O que fazer:** o ferramental já existe — estender o **CT-014** com um segundo eixo varrendo `app.empresa_id` no fonte de produção e afirmando, por igualdade de conjunto, os **dois** escritores legítimos de hoje (`unidade-de-trabalho.ts` e `semente.ts`).
 
-### D11 · BAIXO · architecture · T3 · Tech Review
+### D11 · BAIXO · architecture · T3 · Tech Review — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `packages/db/src/unidade-de-trabalho.ts` (marcador do `ErroDeUnidadeAninhada`)
 - **Problema:** a consequência que a **fatia 2** herda — quem abre a unidade quando serviço chama serviço — vive **só dentro de um `DECISÃO FECHADA`**, que **protege**, não **agenda**. E a mensagem do erro prescreve *"reúna as operações numa única unidade"*, que é a remediação certa para aninhamento acidental e **a errada para composição de serviços**.
 - **Impacto:** baixo, porque o modo de falha é **ruidoso e seguro** (erro nomeado, no ponto exato). O custo é uma rodada de descoberta na fatia 2 e o risco de a mensagem empurrar para a solução errada (fundir serviços em vez de mover a abertura para a borda).
@@ -106,25 +111,25 @@ Status: ✅ **11/11 tasks concluídas** · suíte verde com **260 casos** (basel
 - **Impacto:** risco de **divergência silenciosa**; é justamente `CONSULTA_ACESSOS` que o CT-003 audita como prova da ausência de filtro por empresa.
 - **O que fazer:** promover a um acessório comum do pacote, na linha do que a própria T3 fez com `varredura-de-fontes.ts`. **Não isoladamente** — o diff de extração sobre arquivos verdes é superfície de regressão sem causa-raiz (§4.5).
 
-### D13 · BAIXO · code_quality · T4 · Tech Review
+### D13 · BAIXO · code_quality · T4 · Tech Review — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `packages/db/src/catalogo.ts` — o critério de exclusão
 - **Problema:** o critério escrito (*"não guarda nem expõe linha de negócio"*) é **literalmente falso** para índice (`i`,`I`) e TOAST (`t`), que **armazenam**. O que os torna seguros é **não serem legíveis como relação de negócio**.
 - **Impacto:** fail-closed em qualquer direção, zero efeito na saída. O custo é o marcador mandar o próximo agente aplicar **uma regra que a lista atual viola**.
 - **O que fazer:** separar as razões (não armazenam: `S`, `c` · armazenam mas não são relação legível: `i`, `I`, `t` · reavalia a política: `v`) e trocar a frase do `REVERTER EXIGE` por *"não é legível como relação que devolva linha de negócio"*.
 
-### D14 · BAIXO · project_pattern · T4 · Tech Review
+### D14 · BAIXO · project_pattern · T4 · Tech Review — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `docs/specs/features/fundacao-multitenancy-identidade/v1/tasks/T4.md` §5
 - **Problema:** a §5.2 não lista `packages/db/test/unidade-de-trabalho.spec.ts` (modificado); a §5.1 diz "três variantes" onde há cinco mais o M6; e ainda atribui `pg_policies` a `catalogo.ts`.
 - **Impacto:** a §5 é o que a Camada 0 do QA e o P2 do protocolo leem para apurar escopo. **Não é `scope_deviation`** — a modificação é compelida pelo critério 5 do §4 somado à igualdade de conjunto do CT-012. A falha é do card.
 - **O que fazer:** acrescentar o arquivo à §5.2 e corrigir as duas descrições vencidas.
 
-### D15 · BAIXO · project_pattern · T5 · Tech Review
+### D15 · BAIXO · project_pattern · T5 · Tech Review — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `deploy/scripts/instalacao/migrar-banco.sh:320` (`garantir_tabela_de_registro`)
 - **Problema:** a decisão "a retirada commita junto com a concessão" tem **três sítios**; dois apontam para o marcador e **este não**.
 - **Impacto:** R3 residual. Um agente que abra a função para acrescentar coluna vê um `REVOKE` que **parece redundante** — `retirar_alcance_da_aplicacao` existe, tem nome de defesa e faz o mesmo — e não encontra contrato de reversão no sítio. Atenuado pelo comentário local, pelo `POR QUÊ` do marcador e pelo par (h-bis) — *"mas a bateria que carrega essa prova é justamente a que o D6 registra como não invocada por agregador nenhum"*.
 - **O que fazer:** uma linha apontando para o marcador, no formato já usado em `:332`.
 
-### D16 · BAIXO · testability · T5 · Tech Review
+### D16 · BAIXO · testability · T5 · Tech Review — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** todo `deploy/scripts/**/*.sh`
 - **Problema:** a frente shell entrega **~2.700 linhas nesta task sem nenhuma análise estática**. `biome check` roda mas **não processa shell**; `turbo run lint` resolve para 0 tarefas; **`shellcheck` está ausente do host**.
 - **Impacto:** nenhum defeito presente (o Staff varreu SC2155 à mão: **zero**). O custo é cumulativo — a F1 ainda tem T7–T11 e a F7 traz o runbook, e as classes que o shellcheck pega são **silenciosas até a janela de operação**.
@@ -136,19 +141,19 @@ Status: ✅ **11/11 tasks concluídas** · suíte verde com **260 casos** (basel
 - **Impacto:** **inócuo hoje** — os seis são `required: false` sem `defaultValue`, não entram na carga de criação de conta `credential`, a única desta fatia. E o modo de falha é **ruidoso e na primeira tentativa** (`BetterAuthError`), não silencioso. **Não acrescentar é a decisão certa** — pagar seis colunas hoje seria complexidade especulativa.
 - **O que fazer:** nada agora. **Migração é imutável**: se alguma fatia ligar provedor externo, a coluna nasce noutra migração.
 
-### D18 · BAIXO · project_pattern · T6 · Tech Review
+### D18 · BAIXO · project_pattern · T6 · Tech Review — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `packages/db/src/esquema/identidade.ts:84` e `packages/auth/src/autenticacao.ts:444`
 - **Problema:** os dois ponteiros para a pendência do `ACESSO_RECUSADO` citam o **card da T6**, não o dono novo (`T8.md §7 · P-T6-1`).
 - **Impacto:** navegacional — chega-se ao destino em dois saltos. Mas o **oráculo do vocabulário** fica apontando para a §7 de uma task concluída, que é o padrão que o próprio ciclo da T6 condenou.
 - **O que fazer:** uma linha em cada arquivo, nomeando `T8.md §7 · P-T6-1`.
 
-### D19 · BAIXO · code_quality · T6 · Tech Review
+### D19 · BAIXO · code_quality · T6 · Tech Review — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `packages/auth/src/autenticacao.ts:142-154` — o `REVERTER EXIGE` do marcador do `zod`
 - **Problema:** a restrição que impede a saída errada (**anotar o tipo à mão**) está no parágrafo **adjacente**, fora do campo.
 - **Impacto:** um leitor que faça o que a §3 manda pode anotar o tipo, ver o `.d.ts` emitir, remover o `zod` e **concluir que reverteu legitimamente**. Risco pequeno (a nota é contígua e inequívoca), não nulo.
 - **O que fazer:** oito palavras no campo — *"… emitir o `.d.ts` sem a dependência **E SEM anotação de tipo manual** (ver nota abaixo)"*.
 
-### D20 · BAIXO · project_pattern · T6 · Tech Review
+### D20 · BAIXO · project_pattern · T6 · Tech Review — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `CLAUDE.md:214-218`
 - **Problema:** a **regra de identificação de débito** foi escrita dentro do bloco "Débitos com gatilho ativo", que a §3-B declara *"derivado e transitório"* e manda **apagar inteiro** quando o último marcador sair.
 - **Impacto:** no dia em que o último débito fechar, o bloco é apagado **e a regra vai junto** — e a colisão volta a ser descoberta do zero pela primeira fatia que registrar um `D6`. A colisão é **real e verificada**: a F0 já tem `D6 · T2` e `D7 · T2`.
@@ -173,25 +178,25 @@ Status: ✅ **11/11 tasks concluídas** · suíte verde com **260 casos** (basel
 - **Impacto:** depois da virada da F7, `Origin` será o endereço público e o base continuará `http://127.0.0.1:<porta>`: **toda requisição com cookie e o próprio login** passam a ser recusados com `FORBIDDEN / INVALID_ORIGIN` antes de qualquer manipulador — **o serviço inteiro inacessível a navegador**. Nulo até lá; nada publica esta API na rede antes da virada.
 - **O que fazer:** variável de ambiente própria para a origem pública, validada na partida pelo mesmo esquema de `ambiente.ts` que já recusa a partida nomeando a variável ausente. Gatilho: a publicação atrás do servidor de borda na F7.
 
-### D24 · BAIXO · scope_deviation · F1/T8 · Tech Review
+### D24 · BAIXO · scope_deviation · F1/T8 · Tech Review — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `docs/specs/features/fundacao-multitenancy-identidade/v1/tasks/T8.md` §5.3 e §5.2 · `apps/api/src/comum/filtro-excecao.ts:68,85`
 - **Problema:** o card lista `filtro-excecao.ts` na **§5.3 (De Referência)**, e a task o modificou. O Staff **contradisse a razão** que o QA havia aceitado: só as três entradas de `MENSAGEM_POR_CODIGO` são forçadas pelo compilador (`Readonly<Record<CodigoErro, string>>`); `CODIGO_POR_STATUS` é `Readonly<Record<number, CodigoErro>>` e **não** é alcançada por valor novo no enum.
 - **Impacto:** card e diff divergem sobre a fronteira da task, e a memória do run registraria como "arrasto de compilação" o que é **mudança de comportamento** do filtro global de erro — e a rodada 2 aprofundou a intervenção (classificação por faixa). Segunda ocorrência da mesma classe na fatia; a primeira foi o **D14** da T4.
 - **O que fazer:** acrescentar o arquivo à §5.2 do card com a modificação descrita ("duas entradas em `CODIGO_POR_STATUS` para os status que o encaminhador levanta; três em `MENSAGEM_POR_CODIGO`, estas exigidas pelo compilador"). Sem alteração de código. **Candidato a regra já emitido** — ver `_run/rule-candidates.md`.
 
-### D25 · BAIXO · code_quality · F1/T8 · Tech Review
+### D25 · BAIXO · code_quality · F1/T8 · Tech Review — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `apps/api/src/comum/filtro-excecao.ts:246-250` (a nota adjacente à `DECISÃO FECHADA — T8 / Gate 2 (P1)`)
 - **Problema:** a nota afirma que o status de origem preservado é *"o único ponto do sistema em que a resposta NÃO usa o status que `STATUS_POR_CODIGO` associa ao código"*. **É verdadeiro hoje** — não há nenhum `new ErroDeAplicacao(CodigoErro.REQUISICAO_RECUSADA, …)` em produção —, mas o código é exportado no enum público de `@sysloc/shared` e nada, nem tipo nem asserção, impede que uma fatia futura o levante diretamente.
 - **Impacto:** nulo hoje. Se uma fatia futura o levantar, o **mesmo código** sai com `400` num ponto e `415`/`429` noutro, e um cliente que combine `codigo` com semântica de repetição não consegue decidir só pelo código — **sem que nenhum teste reprove**.
 - **O que fazer:** uma frase na nota adjacente fixando que `REQUISICAO_RECUSADA` é código de **fecho do filtro**, não código de negócio levantável; avaliar na task de fechamento da F1 uma asserção que reprove o aparecimento de levantamento direto em produção.
 
-### D26 · BAIXO · architecture · F1/T8 · Tech Review
+### D26 · BAIXO · architecture · F1/T8 · Tech Review — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `apps/api/test/autenticacao.e2e.spec.ts:212-247` (`SUPERFICIE_TOLERADA`)
 - **Problema:** 35 pares `MÉTODO /caminho` que a §4.1 da tech spec não declara são aceitos hoje por uma **constante de teste** — não por ADR, não por seção de spec, não por marcador. O docblock do `@ApiExcludeController` nomeia dono para declarar as **seis** rotas da §4.1 no contrato publicado, mas **ninguém** para decidir o destino das 35.
 - **Impacto:** **sem alcance de segurança hoje** — o Staff verificou no pacote que as perigosas estão inertes (`change-email`, `delete-user`, `request-password-reset`, `sign-up/email` e social todas exigem opção não passada), e o que está vivo é auto-escopado por sessão e não cruza tenant. O custo é de processo: o marco de entrega exige *"Superfície da API congelada"*, e o congelamento chegaria sem que ninguém tivesse decidido sobre 35 rotas — por descoberta, não por agendamento.
 - **O que fazer:** decidir o destino do conjunto tolerado — contrato, desligamento por configuração, ou tolerância declarada — **antes** de congelar a superfície e publicar `@sysloc/contracts`. Dono: **task de fechamento da F1**.
 
-### D27 · BAIXO · error_handling · F1/T8 · Tech Review
+### D27 · BAIXO · error_handling · F1/T8 · Tech Review — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `apps/api/src/comum/filtro-excecao.ts:172-178` (`caminhoSemConsulta`) · asserção em `apps/api/test/autenticacao.e2e.spec.ts:610`
 - **Problema:** `caminhoSemConsulta` prefere `requisicao.routeOptions.url` ao caminho concreto — decisão da T5, para agrupar o journal por rota em vez de por instância. Com o encaminhador `@All('*')`, o padrão casado das 40 rotas de identidade é **um só**, e o `CT-018 (e)` fixa isso por asserção: `expect(evento.caminho).toBe('/v1/auth/*')` numa requisição que foi de fato para `/v1/auth/sign-in/email`.
 - **Impacto:** o operador que lê o journal **não distingue tentativa de entrada de qualquer outra recusa da superfície**. Degrada o artefato que a `DECISÃO FECHADA — T6 / Gate 2 (P5)` nomeia como *"aquele que a operação lê para decidir se houve ataque"*, restrito à superfície de identidade. **Mitigado**: o artefato projetado para detecção de ataque à entrada é a trilha `identidade.tentativa_login` (T7, por pessoa e com desfecho), íntegra e fora deste caminho. O comportamento atual é **o mais seguro dos dois óbvios** — registrar o caminho concreto vazaria segmento sensível (`GET /reset-password/:token`, `GET /callback/:id`), e a redação da T1 opera por nome de chave e por forma, não por segmento.
@@ -204,19 +209,19 @@ Status: ✅ **11/11 tasks concluídas** · suíte verde com **260 casos** (basel
 - **Impacto:** apenas ruído. **Não é AP-29**: a asserção é aditiva, não substitutiva, e a prova real do eixo é forte — a falsificação do QA reprovou por `expected 500 to be 415`, não por ela.
 - **O que fazer:** em cleanup futuro, manter só `expect(recusa.texto).not.toContain(CodigoErro.ERRO_INTERNO)` como companheiro negativo (esse **não** é implicado pela igualdade de status) e remover o `not.toBe(500)`. **Não mexer agora** — a linha não enfraquece nada.
 
-### D29 · BAIXO · project_pattern · F1/T9 · Tech Review + QA
+### D29 · BAIXO · project_pattern · F1/T9 · Tech Review + QA — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `packages/auth/src/admissao.ts:234` (docblock de `carregarPessoa`)
 - **Problema:** o docblock abre com *"a **única** leitura da linha de `identidade.usuario` que existe neste sistema"* — **falso ao grep**, por dois caminhos: `buscarPessoa` (`packages/auth/src/autenticacao.ts:630-643`) lê a mesma linha por e-mail como sonda de existência da trilha, e o adaptador Drizzle do arcabouço a lê a cada `getSession`.
 - **Impacto:** **a substância está fechada** — a unificação do P1 é real e o absoluto **não é load-bearing**: `buscarPessoa` é privada, projeta só `{ id }`, não decide nada e não alimenta rota alguma, então a §11.2 continua satisfeita sobre a forma **verdadeira** da afirmação. O resíduo é **erosão de autoridade**: este projeto usa docblock como carregador de decisão, e um absoluto que o grep desmente leva o próximo agente ou a concluir que o invariante foi abandonado, ou a *restaurá-lo* fundindo `buscarPessoa` — refatoração que ninguém pediu, no caminho de login, contra a §4.5 do Protocolo.
 - **O que fazer:** trocar por *"a única leitura que **projeta o estado de admissão**"* e nomear a fronteira no padrão que `packages/db/src/acesso-identidade.ts` já pratica (*"fronteira declarada em vez de absoluto falso"*).
 
-### D30 · BAIXO · project_pattern · F1/T9 · Tech Review
+### D30 · BAIXO · project_pattern · F1/T9 · Tech Review — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `packages/auth/src/index.ts:26`
 - **Problema:** afirma que publicar `carregarPessoaDaSessao` *"mantém **topológica** (e não disciplinar) a contenção que a §11.2 exige"* — sem nomear o caminho residual. O Staff julgou a pergunta diretamente: a contenção **melhorou muito e é, no essencial, estrutural**, com a barreira forte sendo `TOKEN_ACESSO_A_IDENTIDADE` **fora do `exports:` de `AutenticacaoModule`**. Mas **sobrou** um caminho: de dentro daquele módulo, um provider novo pode fazer `acesso.identidade.query.usuario.findFirst({ where: (u, { eq }) => … })` — a API relacional do Drizzle entrega os operadores **por callback**, então a leitura nova **não precisa importar `drizzle-orm` nem `esquemaIdentidade`**, e nenhuma prova atual a alcança.
 - **Impacto:** baixo e indireto — **nenhuma superfície aberta hoje**. O risco é de leitura: um agente futuro lê "topológica", entende que a estrutura o impede, e não confere ao acrescentar provider no módulo de autenticação.
 - **O que fazer:** substituir o absoluto pela barreira concreta e nomear o resíduo, no mesmo padrão da seção *"Risco residual, nomeado"* que **esta própria rodada** escreveu no docblock de `rotasDaTabelaDoRoteador`. **Sem marcador `DÉBITO COM GATILHO`** — não há gatilho concreto e reconhecível, e a §3-B manda débito sem gatilho ficar só no relatório.
 
-### D31 · BAIXO · tests · F1/T10 · QA
+### D31 · BAIXO · tests · F1/T10 · QA — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `apps/api/src/autenticacao/sessao-restrita.ts:171`
 - **Problema:** o ramo de **duas exigências pendentes simultâneas** não é exercitado em camada nenhuma. `sessaoRestritaPermite()` compõe a mensagem juntando as pendências com `' e '`, e nenhum caso produz `senhaProvisoria: true` **e** `segundoFatorPendente: true` ao mesmo tempo — o CT-019 isola o segundo fator, o CT-021/CT-022 isolam a senha provisória. O `join` com dois elementos é código introduzido pela task e **nunca executado por asserção alguma**.
 - **Impacto:** o estado é **real e chega na fatia seguinte** — o primeiro acesso do Master no onboarding tem as duas marcas de pé. **Não é bloqueante**: a recusa em si está provada dos dois lados (o `403` vem de `pendentes.length === 0` ser falso), e *"não existe estado em que um defeito no `join` libere acesso — o que varia é apenas a redação da mensagem"*.
@@ -229,25 +234,25 @@ Status: ✅ **11/11 tasks concluídas** · suíte verde com **260 casos** (basel
 - **Impacto:** o próprio ciclo demonstrou o furo — `PessoaDaSenha` foi publicada sem leitor externo e **passou pelo CT-026 sem reprovar**; quem a pegou foi o QA à mão. **Baixo** por três razões: a limitação **já está declarada** no comentário do inventário; o invariante que o CT-026 protege — nenhum caminho de emissão de sessão escapa da barreira — é **inalcançável por um tipo**, que não existe em runtime; e fechar exigiria varredura estática do fonte.
 - **O que fazer:** se valer a pena, uma segunda asserção varrendo `export { … } from` do próprio `src/index.ts` e comparando os nomes precedidos de `type` com uma lista declarada — mesma igualdade nos dois sentidos, com prova de falsificação.
 
-### D33 · BAIXO · code_quality · F1/T10 · Tech Review
+### D33 · BAIXO · code_quality · F1/T10 · Tech Review — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `packages/auth/src/autenticacao.ts:921-927` (doc de `donoDoTokenDeRedefinicao`)
 - **Problema:** a doc estabelece a classe *"valor que o gancho relê do mesmo pedido que o manipulador"* e conclui que, fora o token, *"a leitura daqui é **subconjunto estrito** da do manipulador"* para `newPassword`, `code`, `email` e `password`. Para o `email` de `/sign-in/email` **é o contrário do que foi medido nesta mesma rodada**: a barreira normaliza com `.trim().toLowerCase()` enquanto o manipulador valida o e-mail **cru** (`dist/api/routes/sign-in.mjs:286`, sem `trim()`) — o gancho é **superconjunto** nesse eixo.
 - **Impacto:** **nenhum em comportamento**. A divergência **falha fechado** (` ana@x ` resolve no gancho e é recusado no manipulador com `INVALID_EMAIL` antes), a decisão de **não tocar** está certa (mexer seria R3, proibição 5 do Protocolo), e a conclusão do fechamento da classe permanece válida. O custo é de **leitura futura**: quem tomar a frase como premissa parte de um fato que já se sabe falso para um dos quatro valores.
 - **O que fazer:** enunciar a propriedade na forma correta — *"a leitura do gancho **nunca é estritamente menor** que a do manipulador"* (superconjunto e subconjunto a satisfazem) — e nomear o `email` como exceção conhecida e deliberada, com a medição que a sustenta. **Sem marcador `DECISÃO FECHADA`**: a §3 adverte contra marcador em item que não teve defeito de volta nem rejeição repetida.
 
-### D34 · BAIXO · testability · F1/T11 · Tech Review — ⚠️ **o mais importante da §2**
+### D34 · BAIXO · testability · F1/T11 · Tech Review — ⚠️ **o mais importante da §2** — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `.claude/rules/testing-stack.md` (seção "Prova de falsificação") · `apps/api/package.json:5`
 - **Problema:** **prova de falsificação contra `dist/` obsoleto é falso negativo silencioso.** `@sysloc/auth` e `@sysloc/db` resolvem por `exports` para `./dist/index.js`. Um mutante aplicado ao **fonte** (`packages/*/src/*.ts`) **não alcança o SUT** quando a suíte é invocada por `vitest run` direto — o consumidor continua carregando o `dist/` da compilação anterior, e **a suíte fica VERDE afirmando que o mutante sobreviveu**. Só `pnpm --filter @sysloc/api test` alcança, porque o script é `tsc --build && tsc -p tsconfig.test.json && vitest run`. **Medido pelo QA na primeira execução do mutante 1 da T11.**
 - **Impacto:** a **T11 não é afetada** (o executor usou o caminho com build e o QA reexecutou). O risco é **de classe**: a rule documenta o comando certo mas **em nenhum ponto liga a escolha do comando à validade da prova** — que ela própria torna obrigatória e que o P4 do Protocolo estende a todo defeito corrigido. *"O modo de falha é silencioso e **inverte a conclusão**: verde lido como 'mutante sobreviveu' quando o mutante nunca foi executado."* Numa fatia cujo eixo é segurança, **prova inconclusiva é pior que ausente — ela consta como feita**.
 - **O que fazer:** acrescentar à seção "Prova de falsificação" da `testing-stack.md` a exigência explícita do script `test` do pacote para todo mutante sobre fonte de `packages/*`, **nomeando `vitest run` avulso como inválido**. Se o fechamento da F1 quiser certeza sobre as provas já feitas, **reexecutar os mutantes das tasks de eixo de segurança (T6, T7, T9) pelo caminho com build** — a lista está nos cabeçalhos dos respectivos arquivos de teste.
 
-### D35 · BAIXO · architecture · F1/T11 · Tech Review — ⚠️ **três gatilhos disparam sem dono**
+### D35 · BAIXO · architecture · F1/T11 · Tech Review — ⚠️ **três gatilhos disparam sem dono** — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `docs/specs/features/fundacao-multitenancy-identidade/v1/task_plan.md` (a fatia termina na T11)
 - **Problema:** **a T11 encerra a fatia, mas três artefatos delegam trabalho a uma "task de fechamento da F1" que não existe no plano.** São eles: **(a)** o **D6** (`verificar-fundacao.sh:118-132`), cujo gatilho é literalmente *"a task de fechamento da F1"* — `verificar-migracao.sh` **não está** em `VERIFICADORES_DA_FATIA` e só roda se alguém lembrar do caminho completo; **(b)** `autenticacao.controller.ts`, cujo cabeçalho declara que as **seis rotas de `/v1/auth` estão fora de `/docs`** por `@ApiExcludeController()` e que declará-las *"pertence à task de fechamento da F1, junto da publicação do `@sysloc/contracts`"*; **(c)** o próprio **marco de entrega** do `CLAUDE.md`, que faz `handoff-frontend.md` e `@sysloc/contracts` dependerem daquele documento.
 - **Impacto:** com a T11 aprovada, **os três gatilhos disparam sem dono no plano**. O D6 é o mais concreto — a F1 fecha com um verificador que ninguém invoca. A ausência das seis rotas no documento OpenAPI é pré-requisito declarado de **dois dos sete itens do marco de entrega do backend**.
 - **O que fazer:** criar a task de fechamento (ou reendereçar explicitamente a `autorizacao-e-ciclo-de-acesso`) carregando, no mínimo: inserir `verificar-migracao.sh:root` em `VERIFICADORES_DA_FATIA` **depois** de `verificar-provisionamento.sh` (ordem já decidida no marcador) e **remover o marcador D6 no mesmo commit**; declarar as seis rotas da §4.1 no documento OpenAPI a partir do inventário do `CT-018 (d)`.
 
-### D36 · BAIXO · project_pattern · F1/T11 · Tech Review
+### D36 · BAIXO · project_pattern · F1/T11 · Tech Review — ✅ RESOLVIDO (fechamento da F1, 2026-08-02)
 - **Onde:** `CLAUDE.md`, linha do **D28** (coluna "Onde")
 - **Problema:** o índice ficou **defasado do terreno**. O marcador do D28 vive hoje em **seis** arquivos; a coluna nomeia **dois**, e o texto do gatilho ainda descreve `banco-efemero.ts` como *"o **quarto** consumidor"*. A §3-B fixa que o bloco é **derivado** dos marcadores.
 - **Impacto:** baixo e de leitura — uma sessão nova **subdimensiona o alcance** do D28: o fechamento parece tocar dois consumidores quando toca seis, **o que muda o custo estimado**.
@@ -259,11 +264,86 @@ Status: ✅ **11/11 tasks concluídas** · suíte verde com **260 casos** (basel
 - **Impacto:** **nenhum no código entregue** — a conduta foi correta nas três (arranjo no próprio caso, pelo padrão que a T7 estabeleceu e os dois gates aprovaram, sem rota/bandeira/símbolo de produção). O custo é **de ciclo**, e a repetição indica que **o gerador de casos não confronta a semente**.
 - **O que fazer:** na mineração de regras, propor que a geração de "Precondição privilegiada" **confronte o estado afirmado contra `packages/db/src/semente.ts`** antes de escrevê-lo no card. **Candidato a regra já emitido.**
 
+### D38 · BAIXO · security · F1/fechamento · revisão da intervenção — **tem marcador**
+> ⚠️ **Descoberto DURANTE o fechamento da F1**, não durante o run. É achado novo, não um dos 37 — por isso o número continua a sequência desta §2.
+- **Onde:** `packages/db/src/catalogo.ts` (`DÉBITO COM GATILHO — D38 · F1/fechamento`), no critério de exclusão de `verificarCoberturaDeIsolamento`
+- **Problema:** `v` (visão) é excluído do exame sob a razão de que reavalia a política da origem a cada consulta. **A razão é condicional, não absoluta**: o PostgreSQL avalia a política com os direitos da **dona da visão**, não de quem consulta (salvo `security_invoker = true`). Visão cuja dona contorne RLS devolve todas as empresas — e a exclusão a tira de `tabelasExaminadas`, que é exatamente o desfecho que o marcador da T4 existe para barrar na visão materializada, por outra porta.
+- **Impacto:** **medido em instância efêmera** — visão sobre a mesma tabela, consultada sem `app.empresa_id`: 0 linhas com dona comum, **2 linhas (as duas empresas)** com dona superusuária, e nos dois casos ausente de `tabelasExaminadas`. **Não alcançável pelos papéis deste produto**: `sysloc_app` recebe só `USAGE ON SCHEMA` (`0001_seguranca.sql:96`), sem `CREATE`, e `sysloc_migracao` nasce `NOSUPERUSER … NOBYPASSRLS` (`provisionar-base.sh:1902`), de modo que visão da migração tem a política aplicada — o `FORCE` alcança a própria dona. Sobra o superusuário do cluster. **Nenhuma visão existe em `negocio` hoje.**
+- **O que fazer:** decisão de **spec**, escalada ao usuário. Duas saídas: (a) parar de excluir `v`, e então visão sem `empresa_id`/RLS/unicidade composta passa a reprovar — fail-closed, coerente com a postura do projeto; (b) exigir `security_invoker = true` nas visões do schema. Não feito na intervenção porque mudaria o comportamento da guarda de isolamento sem que teste algum exercitasse a mudança (não há visão para exercitar), e porque a exclusão de `v` é escolha registrada da T4/Gate 2.
+- **Redação já pronta para o `REVERTER EXIGE`, a colar QUANDO este débito for fechado — e não antes.** A formulação vigente do campo deixou de ser falsa sobre a lista e recusa `m` e `f`, mas continua sendo um superconjunto do original. Existe uma estritamente mais apertada **e** verdadeira sobre as seis espécies excluídas:
+
+  > **REVERTER EXIGE**: provar que a espécie readmitida ao filtro de exclusão **não guarda cópia da linha de negócio independente da tabela de origem** *e* **só devolve linha de negócio por consulta em que a política de isolamento da origem é avaliada para o papel que consulta** — e, para trocar a exclusão por uma lista de inclusão, provar que a lista não pode omitir espécie alguma, hoje ou num PostgreSQL futuro.
+
+  Verificação membro a membro: `S`/`c` passam nos dois conjuntos; `i`/`I`/`t` passam — o armazenamento deles é **do** original e some com ele, não é cópia independente; `v` passa no primeiro e é **condicional** no segundo, que é exatamente a verdade que este débito registra; **`m` reprova no primeiro** (cópia física independente) e **`f` reprova no segundo** (não há política local a avaliar). Os dois que precisam reprovar caem por conjuntos **diferentes**, que é o sinal de que a conjunção não é decorativa.
+
+  **Por que não aplicar agora**: seria a terceira reescrita do mesmo `REVERTER EXIGE` numa única intervenção, e a §3 do Protocolo trata o campo como contrato, não rascunho — campo reescrito três vezes em dois dias perde a autoridade que o faz funcionar. O momento barato é este débito ser fechado: a fatia que decidir o destino do `v` reescreve o campo **uma vez**, com a lista já resolvida.
+
 ## 3. Tasks Bloqueadas
 
 ✅ Nenhuma task bloqueada.
 
 ## 4. Notas para Revisão Humana
+
+**FECHAMENTO DA F1 — intervenção dirigida fora do pipeline (2026-08-02).** Por decisão do usuário,
+os débitos foram atacados **sem** `/agent-spec-debt-resolution` e sem gerar `v2-debits/`: a análise
+mostrou que dos 37 apenas 6 eram trabalho de código, 14 eram escrituração, 10 já tinham dono em
+fatia futura e 5 eram explicitamente "não fazer". **22 fechados, 15 abertos** (marcados acima).
+Baseline comparada nos dois extremos, conforme P1/P5 do Protocolo.
+
+O que a intervenção entregou além da escrituração:
+
+- **Agregador da fatia (D6)** — `verificar-migracao.sh` entrou em `VERIFICADORES_DA_FATIA`, na ordem
+  já decidida (depois de `verificar-provisionamento.sh`). Marcador removido no mesmo commit.
+- **Análise estática da frente shell (D16)** — `shellcheck` fixado no `.mise.toml` e `pnpm lint:shell`
+  encadeado no `lint` raiz, em `--severity=error` (0 achados hoje; `warning` tem 7, registrados).
+  **Portão provado por falsificação**: script com `fi` ausente reprova, controle passa.
+- **Rótulo de rota no journal (D27)** — as ~40 rotas de identidade não colapsam mais em `/v1/auth/*`.
+  O encaminhador declara a rota real **só quando ela é padrão LITERAL** do registro do arcabouço;
+  padrão com segmento variável não entra, e o `CT-106` prova que o valor do segmento não alcança o
+  journal. Dois casos (`CT-018 e`, `CT-029`) foram atualizados com a linha `SUT_IS_CORRECT_BECAUSE:`
+  e **fortalecidos**, não afrouxados.
+- **Combinação de exigências sem prova (D31)** — `CT-105` novo, table-driven sobre as quatro
+  combinações × rota dentro/fora, com asserção literal da mensagem. Dois mutantes (conector trocado,
+  ordem invertida) reprovam pelo caso que antes não existia.
+- **Flake do `eco.spec.ts`** — o `CT-005` deixou de **esperar** o estado de travamento e passou a
+  **construí-lo**: uma tarefa em voo num processador que bloqueia até o teste liberar faz
+  `close()` esperar por contrato. Três execuções seguidas verdes; mutante que cala a desistência
+  reprova com a mesma mensagem que o flake produzia — que agora só pode significar SUT quebrado.
+- **Validade da prova de falsificação (D34)** — a `testing-stack.md` passou a exigir o script `test`
+  do pacote para todo mutante, nomeando `vitest run` avulso como inválido. **Medido nos dois
+  sentidos**: mutante em `packages/auth/src/admissao.ts` com `vitest run --root apps/api` devolve
+  *10 passed* (falso negativo) e reprova pelo caminho com build; e o contraexemplo (mutante alcançado
+  mesmo sem build, quando a suíte importa o fonte por caminho relativo) está registrado para impedir
+  a leitura errada da regra.
+- **Regra de identificação de débito (D20)** — movida do bloco transitório do `CLAUDE.md` para a §3-B
+  da `nao-regressao.md`, que é permanente. A §3-B ganhou também a **verificação de duas pontas**,
+  executada aqui: 10 marcadores conferidos nos dois sentidos, todos OK.
+
+**Três decisões merecem conferência humana:**
+
+1. **D26 — as 35 rotas toleradas ficaram TOLERADAS**, por escolha do usuário entre três saídas. A
+   razão está escrita no ponto (`SUPERFICIE_TOLERADA`), com o gatilho de revisão no congelamento da
+   superfície. Comportamento inalterado.
+2. **D25 (item 2) — a asserção automatizada foi avaliada e RECUSADA**, com as duas formas possíveis
+   descartadas por razão concreta: estreitar o tipo do construtor obrigaria a enfraquecer o `CT-005`
+   de `erros.spec.ts` (`it.each` sobre todo o enum), e varrer o fonte esbarraria no próprio
+   comentário que descreve a construção. Fica a regra escrita.
+3. **D35 — o trabalho foi feito, a task não foi criada.** Os itens que o débito delega à "task de
+   fechamento da F1" estão entregues aqui; o único que **não** está é declarar as seis rotas da §4.1
+   no documento OpenAPI, cujo dono foi precisado no código: a **publicação do `@sysloc/contracts`**,
+   porque declará-las antes produziria contrato que o congelamento reescreveria.
+
+**Continuam abertos e precisam de operador**: as baterias privilegiadas da T5 (`CT-030`, `CT-031`,
+`CT-032`) seguem **não executadas** — exigem `sudo` interativo. Agora que o agregador as invoca, o
+comando é um só: `sudo bash deploy/scripts/instalacao/verificar-fundacao.sh` (com `pnpm build` antes).
+⚠️ A primeira execução após a T5 reescreve o `pg_hba` e reinicia o cluster.
+
+**Também abertos, e fora do escopo desta intervenção**: `P-T6-1` e `P-T6-2` (§7 do card da T8) — o
+`ACESSO_RECUSADO` sobrecarregado exige valor novo no enum mais migração `0003`, e o blast radius
+medido pela decisão D-E3 do `workflow-report.md` não cabia numa varredura de débito.
+
+---
+
 
 **Autorização do usuário no meio do run (2026-08-02):** pausas pré-respondidas com a opção recomendada, e **limite de 3 tentativas suspenso**. Foi usado — a T6 precisou de 6 correções, 5 rodadas de QA e 4 de Tech Review.
 

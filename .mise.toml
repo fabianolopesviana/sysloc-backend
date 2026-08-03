@@ -22,3 +22,12 @@ pnpm = "11.18.0"
 # Multiplexador de processos do ciclo de desenvolvimento (`pnpm dev`).
 # O `mprocs.yaml` que ele lê nasce em T7, junto dos processos que há para orquestrar.
 mprocs = "0.9.6"
+
+# Análise estática da frente shell (`pnpm lint:shell`), fechando o débito D16 da F1.
+#
+# Por que ele entra aqui e não em `devDependencies`: shellcheck não é pacote npm — é binário —, e a
+# regra deste arquivo é justamente essa. Entra por NECESSIDADE medida: `deploy/scripts/**` passou de
+# 2.700 linhas sem análise estática nenhuma, porque `biome check` não processa shell e
+# `turbo run lint` resolve para 0 tarefas ali. As classes que o shellcheck pega são silenciosas até
+# a janela de operação, que é o pior momento possível para descobri-las — e a F7 traz o runbook.
+shellcheck = "0.11.0"

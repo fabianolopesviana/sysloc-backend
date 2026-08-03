@@ -208,9 +208,11 @@ Específicos deste domínio: **undici** (mTLS do Sicoob), **`node:crypto` `X509C
 > grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 > ```
 
-Seis débitos têm gatilho que dispara fora da fatia que os criou: **D28** e **D32** vêm da F0; **D6**,
-**D7**, **D21** e **D23** nasceram na F1. **Dois já dispararam e seguem abertos** — o D28 (na F1/T2) e
-o D21 (na F1/T8, quando o encaminhador de `/v1/auth` montou `/change-password`).
+Seis débitos têm gatilho que dispara fora da fatia que os criou: **D28** e **D32** vêm da F0;
+**D7**, **D21**, **D23** e **D38** nasceram na F1. **Dois já dispararam e seguem abertos** — o D28 (na F1/T2) e
+o D21 (na F1/T8, quando o encaminhador de `/v1/auth` montou `/change-password`). O débito D6 da
+F1/T5 foi fechado no fechamento da F1 — `verificar-migracao.sh` entrou em `VERIFICADORES_DA_FATIA`
+— e por isso saiu daqui: **este índice lista só débito vivo**.
 
 > **Esta tabela é um ÍNDICE, não um relatório.** Cada linha é um **ponteiro curto**; o detalhe —
 > impacto medido, o que fazer, prova exigida — vive **só** na §2 do `run-report.md` da fatia que
@@ -221,18 +223,19 @@ o D21 (na F1/T8, quando o encaminhador de `/v1/auth` montou `/change-password`).
 > o motivo é medido: este arquivo entra no contexto da sessão principal **e de todo subagente**, em
 > toda task. **Linha que passar de ~150 caracteres deve ter o excedente movido para a §2.**
 
-> **O número sozinho não identifica um débito — o identificador é o par `Dnn · F{n}/T{n}` mais o
-> caminho do `ÍNDICE`.** A sequência `Dnn` corre **dentro da §2 do `run-report.md` da fatia que a
-> registrou**, então `D6` da F1 e `D6` da F0 são débitos diferentes e ambos legítimos.
+> **Como um débito é identificado** (o número sozinho não basta — `D6` da F1 e `D6` da F0 são
+> débitos diferentes): a regra está na §3-B da `.claude/rules/nao-regressao.md`, que é permanente.
+> Ela **não** mora aqui, justamente porque este bloco é transitório e some quando o último marcador
+> sair.
 
 | Débito | Onde | Dispara quando |
 |---|---|---|
-| **D28** (F0/T5) | 3 arquivos de teste (`apps/api/test/`, `packages/db/test/`) | **JÁ DISPAROU (F1/T2)** — consumidor novo de `packages/shared/test/` por caminho relativo profundo |
+| **D28** (F0/T5) | 6 arquivos — `grep -rln --exclude-dir=dist "D28 · F0/T5" apps packages deploy` | **JÁ DISPAROU (F1/T2)** — consumidor novo de `packages/shared/test/` por caminho relativo profundo |
 | **D32** (F0/T6) | `apps/worker/src/fila.ts` | a primeira fatia que **enfileirar tarefa de negócio** |
-| **D6** (F1/T5) | `deploy/scripts/instalacao/verificar-fundacao.sh` | a **task de fechamento da F1** — `verificar-migracao.sh` sem agregador |
 | **D7** (F1/T6) | `packages/auth/src/autenticacao.ts` | a **primeira rota de criação de pessoa** (fatia `autorizacao-e-ciclo-de-acesso`) |
 | **D21** (F1/T7) | `packages/auth/src/autenticacao.ts` | **JÁ DISPAROU (F1/T8)** — `/change-password` montado; a recusa da barreira não desfaz o que a rota já escreveu |
 | **D23** (F1/T8) | `apps/api/src/autenticacao/autenticacao.module.ts` | a **publicação atrás do servidor de borda na F7** — origem confiável derivada do endereço de retorno |
+| **D38** (F1/fechamento) | `packages/db/src/catalogo.ts` | a **primeira fatia que criar visão em `negocio`** — `v` é excluído do exame por razão condicional |
 
 ---
 
