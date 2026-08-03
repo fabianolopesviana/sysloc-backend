@@ -373,8 +373,28 @@ a executar. As seis, e a distinção que importa:
 tinha rodado. É o **D6** cobrando o preço três vezes na mesma sessão, três fatias antes do que o
 débito previa.
 
-**O que falta:** o **`CT-006`**, reinício real do servidor, que a bateria não executa por consumir
-janela de indisponibilidade combinada. ⚠️ Derruba também o `/opt/frappe`.
+**✅ E o `CT-006` FECHOU — reinício real da máquina, 2026-08-03 09:25** (`1/1 caso aprovado, 0
+falhas`). Com ele, a fatia está provada de ponta a ponta no cluster que opera. O que essa execução
+provou, e que nenhuma outra provava:
+
+- **A tarefa 35, enfileirada ANTES do reinício, foi consumida depois dele e devolveu o mesmo
+  valor** — o invariante 8 do `CLAUDE.md` (Redis com AOF ligado, guardando a fila do BullMQ e não
+  só cache) atravessando queda real de máquina, e não `restart` de serviço.
+- **A API subiu sozinha, sem laço**: o `CT-002` pós-boot registra `PID 1563 · reinícios
+  contabilizados: 0`. Isso também prova que `BETTER_AUTH_SECRET`, acrescentada à mão, **sobrevive
+  ao boot** — o contorno do D39 é durável nesta máquina, embora a causa siga aberta para instalação
+  nova.
+- **45 unidades voltaram sozinhas, zero em falha**, e o verificador distinguiu a `polkit.service`
+  (ativada sob demanda, `Type=dbus`) de uma unidade que não voltou — em vez de reprovar por estado
+  legítimo.
+- **A bateria completa rodou DE NOVO depois do boot** (`7/7 aprovados`): não foi só "os serviços
+  subiram", foi a fundação inteira reverificada num sistema recém-iniciado.
+- As 29 portas não efêmeras do retrato voltaram com o mesmo processo dono, e o espaço livre em `/`
+  subiu de 3639 para 3831 MiB.
+
+O invariante 7 (*"tudo sobe sozinho após reboot"*) tinha sido provado na F0 e estava **vencido**:
+desde então a API passou a exigir variável nova, o banco ganhou dois schemas e o papel de migração
+passou a existir. Agora está provado sobre o sistema como ele é hoje.
 
 ---
 

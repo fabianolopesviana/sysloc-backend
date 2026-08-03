@@ -69,15 +69,15 @@ a F1 só termina quando as duas fecharem.
 **O que a PRIMEIRA FATIA deixou aberto, e que a próxima sessão precisa saber** — os caminhos abaixo
 são relativos a `docs/specs/features/fundacao-multitenancy-identidade/v1/`:
 
-- ✅ **A bateria agregada está VERDE no cluster real — `7/7 casos aprovados, 0 falhas`** (2026-08-03),
-  com as quatro sub-baterias e o `CT-030`/`CT-031`/`CT-032`. Chegou lá em quatro rodadas, de 14
-  falhas a zero; o diagnóstico das **6 causas-raiz** está na §4 do `_run/run-report.md`. Duas eram
-  estado operacional (a variável de ambiente nova e a migração não aplicada) e **quatro eram defeito
-  de verificador**, todos corrigidos e commitados. **Falta só o `CT-006`** — o reinício real do
-  servidor, que a bateria não executa por consumir janela de indisponibilidade:
-  `sudo bash …/verificar-fundacao.sh reinicio-preparar` → `sudo reboot` →
-  `sudo bash …/verificar-fundacao.sh reinicio-conferir`. ⚠️ O reinício derruba **também o
-  `/opt/frappe`**, que atende a operação.
+- ✅ **A fatia está PROVADA DE PONTA A PONTA no cluster real** (2026-08-03): bateria agregada em
+  `7/7 casos aprovados, 0 falhas` e **`CT-006` aprovado por reinício real da máquina** — a fundação
+  inteira reverificada num sistema recém-iniciado, com tarefa enfileirada ANTES do boot consumida
+  depois dele. Chegou lá em cinco rodadas, de 14 falhas a zero; o diagnóstico das **6 causas-raiz**
+  está na §4 do `_run/run-report.md`. Duas eram estado operacional (a variável de ambiente nova e a
+  migração não aplicada) e **quatro eram defeito de verificador**, todos corrigidos e commitados.
+  Reexecução: `sudo bash deploy/scripts/instalacao/verificar-fundacao.sh` (com `pnpm build` antes);
+  o `CT-006` sai de fora dela por consumir janela de indisponibilidade — ⚠️ o reinício derruba
+  **também o `/opt/frappe`**, que atende a operação.
 - **`P-T6-1` e `P-T6-2`** (`tasks/T8.md` §7) seguem **abertos e sem dono**: o dono era a "task de
   fechamento da F1" — expressão que os artefatos da fatia usam para dizer *fechamento desta fatia*,
   e não da fase —, e a intervenção não os cobriu. Exigem valor novo no enum `desfecho_tentativa`
