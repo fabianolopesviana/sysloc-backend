@@ -39,10 +39,18 @@
  * unidade da fila parar antes, o processo é morto por `SIGKILL` com a tarefa em voo abandonada e a
  * unidade converge para `failed` — estado que o CT-006 da T7 reprova.
  *
- * O caso pede o encerramento só **depois** de o processo ter observado o servidor fora do ar
- * repetidas vezes. Não é espera de conforto: é essa janela que leva a biblioteca ao estado em que
- * o fechamento não retorna (com o pedido logo após a queda, o travamento acontece em cerca de
- * metade das execuções; depois dela, em todas as que foram medidas).
+ * O travamento do caminho gracioso é **construído pelo caso**, e não esperado do ambiente: uma
+ * tarefa fica em voo num processador que bloqueia até o teste liberar, e `close()` tem de esperá-la
+ * por contrato. Antes ele era induzido contando falhas de conexão depois da queda — proxy que
+ * produzia o travamento "em cerca de metade das execuções" e que fez o caso reprovar sob a
+ * concorrência do Turbo. O detalhe está no corpo do CT-005.
+ *
+ * **Origem desta correção**, porque ela não pertence a nenhum débito `Dnn` e o escopo tem de ser
+ * rastreável: §4 do `docs/specs/features/fundacao-multitenancy-identidade/v1/_run/run-report.md`,
+ * nota *"Flake pré-existente que precisa de dono"*, fechada na intervenção de fechamento da F1. O
+ * arquivo é da F0/T6 e nenhuma task da F1 o havia tocado — `git diff -- apps/worker/` era vazio
+ * quando o flake foi observado. A `.claude/rules/testing-stack.md` é o que torna isto obrigatório e
+ * não opcional: *"flaky é defeito: para a fila até ser corrigido"*.
  *
  * ---------------------------------------------------------------------------
  * ADR-0006 — de onde vem a fila desta verificação
@@ -145,12 +153,6 @@ const LIMITE_DE_ACOMODACAO_MS = 30_000;
  * (5 s), de modo que um cliente ainda de pé teria registrado ao menos duas falhas dentro dela.
  */
 const JANELA_DE_QUIETUDE_MS = 12_000;
-
-/**
- * Quantas falhas de conexão o processo precisa ter registrado antes de o CT-005 pedir o
- * encerramento. Ver o cabeçalho: é o que torna o travamento reprodutível em vez de ocasional.
- */
-const FALHAS_DE_CONEXAO_ANTES_DO_PEDIDO = 5;
 
 /** Limite para observar a porta de uma instância já derrubada. */
 const LIMITE_DE_CONEXAO_MS = 10_000;
@@ -639,14 +641,70 @@ describe('processador de trabalho (T6)', () => {
     'CT-005 — com o servidor de fila fora do ar, o encerramento termina no prazo e devolve a conexão',
     async () => {
       const { instancia, fila, journal } = await montarFila();
-      fila.processar(processarEco);
 
-      // O consumidor está mesmo EM OPERAÇÃO quando o servidor cai — sem isto, o encerramento
-      // poderia terminar depressa por não ter consumidor nenhum a fechar, e o caso passaria sem
-      // exercitar o que persegue.
+      // -------------------------------------------------------------------------------------
+      // O arranjo é FORÇADO, e não esperado — correção do flake registrado no fechamento da F1
+      // -------------------------------------------------------------------------------------
+      // A versão anterior derrubava o servidor e então SONDAVA até o cliente registrar cinco
+      // falhas de conexão, na expectativa de que aquele estado fizesse `close()` deixar de
+      // retornar. Era proxy, não precondição: o cabeçalho deste arquivo admitia que o travamento
+      // acontecia "em cerca de metade das execuções" logo após a queda, e sob a concorrência do
+      // Turbo o caso reprovou com `expected 'RECURSOS-DEVOLVIDOS' to be 'PRAZO-ESTOURADO'` — isto
+      // é, o caminho gracioso RETORNOU e o caso deixou de observar o defeito que existe para
+      // cortar. A `.claude/rules/testing-stack.md` é explícita: *"flaky é defeito"*.
+      //
+      // Agora a precondição é construída pelo próprio caso e é observável: um processador que
+      // SINALIZA ter começado e então bloqueia numa promessa que só este teste resolve. Com uma
+      // tarefa em voo, `consumidor.close()` **tem** de esperar — é o contrato que o próprio
+      // `fila.ts` declara ("`close()` espera a tarefa em andamento terminar") —, de modo que o
+      // caminho gracioso não retorna por construção, e não por sorte de temporização.
+      //
+      // O cenário do invariante é preservado: o servidor continua sendo derrubado de verdade
+      // ANTES do pedido de encerramento, e a porta continua recusando conexão. O que mudou é só
+      // a origem do travamento, que passou a ser determinística — e ela é, além disso, a situação
+      // que a T7 de fato enfrenta no desligamento do sistema: uma tarefa em voo quando o
+      // supervisor manda parar.
+      //
+      // SUT_IS_CORRECT_BECAUSE: a precondição antiga — enfileirar uma tarefa e afirmar
+      // `getState() === 'completed'` — SAIU, e não podia sobreviver: ela provava que o consumidor
+      // estava operando fazendo a tarefa TERMINAR, e o arranjo novo depende de a tarefa NÃO
+      // terminar. Não é asserção do invariante deste caso, e sim arranjo: o invariante é o desfecho
+      // do encerramento, e as asserções que o carregam ('PRAZO-ESTOURADO', a linha única de estouro
+      // com nível/limite/fila, a devolução da conexão e a janela de quietude) estão todas
+      // intactas abaixo. A precondição substituta é MAIS forte — `sondarAte(… tarefaEmVoo …)`
+      // observa o consumidor DENTRO do processador, que é o estado de que `close()` depende, em vez
+      // de observar que ele já saiu. E o término normal de tarefa segue asserido, nos casos que
+      // existem para isso: **CT-001** (`expect(await terminada.getState()).toBe('completed')`) e
+      // **CT-003**, que o reafirma depois da queda e do religamento do servidor. (Sem número de
+      // linha de propósito: ele envelhece a cada edição deste arquivo, e um ponteiro defasado é o
+      // que faz um auditor concluir que a justificativa é fraudulenta quando ela é boa.)
+      let liberarTarefa: () => void = () => undefined;
+      const tarefaBloqueada = new Promise<void>((resolver) => {
+        liberarTarefa = resolver;
+      });
+      // Liberada ao fim do caso em QUALQUER desfecho: promessa pendente presa a um consumidor já
+      // abandonado seguraria o encerramento do arquivo de teste.
+      onTestFinished(() => {
+        liberarTarefa();
+      });
+
+      let tarefaEmVoo = false;
+      fila.processar(async (tarefa) => {
+        tarefaEmVoo = true;
+        await tarefaBloqueada;
+        return tarefa.data.valor;
+      });
+
       const valor = `eco-${randomUUID()}`;
-      const id = identificadorDe(await fila.eco.add(NOME_FILA_ECO, { valor }));
-      expect(await (await aguardarEstadoTerminal(fila, id)).getState()).toBe('completed');
+      await fila.eco.add(NOME_FILA_ECO, { valor });
+
+      // Sondagem por estado observável — o consumidor ENTROU no processador. É a precondição que
+      // torna o travamento de `close()` certo, e ela é afirmada, não suposta.
+      await sondarAte(
+        'o consumidor entrar no processador e a tarefa ficar em voo',
+        () => tarefaEmVoo,
+        LIMITE_DE_ACOMODACAO_MS,
+      );
 
       // Queda REAL do processo do servidor de fila, e a porta passa a RECUSAR conexão.
       await instancia.parar({ preservarDados: true });
@@ -655,15 +713,6 @@ describe('processador de trabalho (T6)', () => {
       const falhasDeConexao = (): number =>
         journal.eventos().filter((evento) => evento.mensagem === MENSAGEM_DE_FALHA_DE_CONEXAO)
           .length;
-
-      // Sondagem por estado observável, nunca espera fixa: o pedido de encerramento só é feito
-      // depois que o processo REGISTROU repetidas falhas de conexão — a janela em que o
-      // fechamento do consumidor deixa de retornar (ver o cabeçalho).
-      await sondarAte(
-        `o cliente da fila registrar ${FALHAS_DE_CONEXAO_ANTES_DO_PEDIDO} falhas de conexão`,
-        () => falhasDeConexao() >= FALHAS_DE_CONEXAO_ANTES_DO_PEDIDO,
-        LIMITE_DE_ACOMODACAO_MS,
-      );
 
       const inicio = performance.now();
       const desfecho = await Promise.race([
