@@ -50,20 +50,38 @@ commitadas, incluindo a **T7**, cuja recuperação foi provada por **reinício r
 A fatia `caracterizacao-regras-legadas` (v1) também está **concluída**: os 6 artefatos golden
 estão versionados e são o oráculo das regras legadas para a F3 e a F5.
 
-**Fase 1 em pré-refinamento** — `docs/specs/features/fundacao-multitenancy-identidade/v1/pre-refinement.md`.
 A F1 foi **desdobrada em duas fatias**, cortando *depois* da autenticação (o corte
-isolamento × identidade foi rebatido: ele atravessa a camada 5, e a fonte legítima do
-`empresa_id` é a sessão):
+isolamento × identidade foi rebatido: ele atravessa a camada 5, e a fonte legítima do `empresa_id`
+é a sessão). A primeira está fechada; a segunda é a próxima a executar:
 
-1. **`fundacao-multitenancy-identidade` (v1)** — schema, RLS, FK composta, `SET LOCAL`,
-   `AsyncLocalStorage`+guard, teste-guarda, suíte de isolamento e `better-auth`. Ao fim dela dá
-   para logar e o isolamento está provado. **É a próxima a executar** (SDD).
-2. **`autorizacao-e-ciclo-de-acesso` (v1)** — matriz 10×7 com ajuste por usuário, sessão gorda com
-   `versao_permissoes`, invalidação de sessão por evento, onboarding com senha temporária e as
-   rotas do Master. Ganha pré-refinamento próprio na sua entrada.
+1. **`fundacao-multitenancy-identidade` (v1) — CONCLUÍDA e commitada.** As 11 tasks aprovadas nos
+   dois gates. Dá para logar, e o isolamento entre empresas está provado: `empresa_id`, RLS
+   forçada e FK composta em toda tabela de negócio; contexto por `AsyncLocalStorage` mais
+   `SET LOCAL`; guarda de cobertura sobre o catálogo; `better-auth` com barreira única de admissão
+   de sessão. Depois do run, uma **intervenção dirigida de fechamento** (fora do pipeline) resolveu
+   **22 dos 37 débitos** anotados, mais o **D38**, achado durante a própria revisão. Suíte em
+   **274 casos**.
+2. **`autorizacao-e-ciclo-de-acesso` (v1) — É A PRÓXIMA A EXECUTAR.** Matriz 10×7 com ajuste por
+   usuário, sessão gorda com `versao_permissoes`, invalidação de sessão por evento, onboarding com
+   senha temporária e as rotas do Master. **Ganha pré-refinamento próprio na sua entrada.**
+
+**O que a F1 deixou aberto, e que a próxima sessão precisa saber** — os caminhos abaixo são
+relativos a `docs/specs/features/fundacao-multitenancy-identidade/v1/`:
+
+- **Baterias privilegiadas da T5 nunca executadas** (`CT-030`, `CT-031`, `CT-032`) — exigem `sudo`
+  interativo, que nenhum subagente roda. O agregador já as invoca:
+  `sudo bash deploy/scripts/instalacao/verificar-fundacao.sh`, com `pnpm build` antes. ⚠️ A primeira
+  execução reescreve o `pg_hba` e reinicia o cluster.
+- **`P-T6-1` e `P-T6-2`** (`tasks/T8.md` §7) seguem **abertos e sem dono**: o dono era a task de
+  fechamento da F1, e a intervenção não os cobriu. Exigem valor novo no enum `desfecho_tentativa`
+  mais uma migração `0003` — decisão registrada em `_run/workflow-report.md`, D-E3.
+- **As seis rotas de `/v1/auth` fora do documento OpenAPI** — dono precisado no código: a
+  publicação do `@sysloc/contracts`, não uma task genérica.
+- **15 débitos abertos** na §2 do `_run/run-report.md` da fatia, cada um com razão registrada.
 
 > Mantenha este bloco atualizado — ele é lido por todo subagente, e um estado errado aqui chega a
-> todos eles antes de qualquer arquivo do repositório.
+> todos eles antes de qualquer arquivo do repositório. **É índice, não relatório**: o detalhe vive
+> nos artefatos apontados.
 
 ---
 
