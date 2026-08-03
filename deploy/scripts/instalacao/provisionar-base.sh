@@ -614,6 +614,27 @@ conferir_coordenadas_do_ambiente() {
 		fi
 	fi
 
+	# DÉBITO COM GATILHO — D39 · F1/fechamento · registrado 2026-08-02
+	# (Marcador de DÉBITO, não de decisão: nada aqui está congelado. Esta lista VAI
+	#  crescer, e o marcador só diz quando e sob que cuidado.)
+	# O QUÊ: esta lista não conhece `BETTER_AUTH_SECRET`, que a F1/T8 tornou
+	#        EXIGIDA na partida da API (`apps/api/src/configuracao/ambiente.ts`) e
+	#        documentou no `.env.example`. O provisionamento não a gera nem a
+	#        cobra, então uma instalação do zero produz um `${ARQ_AMBIENTE}` com
+	#        que a API **não sobe**: ela recusa a partida nomeando a variável, o
+	#        supervisor tenta 5 vezes e desiste. Medido neste servidor em
+	#        2026-08-02, e é o que fez 11 das 14 falhas da bateria agregada.
+	# QUANDO FECHA: a **próxima instalação do zero** — a virada da F7, ou qualquer
+	#        provisionamento de máquina nova. Até lá o servidor existente segue de
+	#        pé com o valor acrescentado à mão.
+	# POR QUE NÃO AGORA: fechar exige gerar credencial e escrevê-la em `/etc` com
+	#        a mesma garantia de idempotência das demais — gerar se ausente e
+	#        **nunca** regerar, porque regerar invalida toda sessão em curso. A
+	#        única prova disso é a bateria privilegiada, que exige `sudo`
+	#        interativo e que nenhum agente executa; código privilegiado sem prova
+	#        é o que a `.claude/rules/testing-stack.md` chama de prova
+	#        inconclusiva. Escalado ao usuário, que decidiu adiar com gatilho.
+	# ÍNDICE: docs/specs/features/fundacao-multitenancy-identidade/v1/_run/run-report.md §2, D39
 	local chave esperado encontrado
 	for chave in REDIS_URL SMTP_URL; do
 		case "${chave}" in

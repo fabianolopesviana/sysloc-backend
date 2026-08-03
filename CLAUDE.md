@@ -69,15 +69,17 @@ a F1 só termina quando as duas fecharem.
 **O que a PRIMEIRA FATIA deixou aberto, e que a próxima sessão precisa saber** — os caminhos abaixo
 são relativos a `docs/specs/features/fundacao-multitenancy-identidade/v1/`:
 
-- 🔴 **Baterias privilegiadas da T5 foram executadas pelo operador, e ao menos uma REPROVOU**
-  (`CT-030`, `CT-031`, `CT-032`). **É achado, não escrituração**: são as verificações de
-  infraestrutura contra o cluster real — papéis, propriedade dos schemas, cobertura de RLS e higiene
-  da credencial —, e a suíte automatizada não as substitui, porque roda contra instância efêmera
-  (ADR-0006). **O desfecho por caso ainda não está registrado em lugar nenhum**, e enquanto não
-  estiver, o que a fatia provou sobre o cluster que opera é desconhecido. Reexecução:
-  `sudo bash deploy/scripts/instalacao/verificar-fundacao.sh`, com `pnpm build` antes — o agregador
-  agora invoca as quatro baterias de uma vez. ⚠️ A execução reescreve o `pg_hba` e reinicia o
-  cluster.
+- 🔴 **A bateria agregada foi executada e REPROVOU com 14 falhas — diagnóstico completo na §4 do
+  `_run/run-report.md`.** As 14 são **4 causas-raiz**, e a distinção importa: duas eram
+  verificadores da F0 que a F1 invalidou (contagem de membros do workspace, auditoria do
+  `ALTER ROLE`) e já estão **corrigidas e commitadas**; as outras duas são **estado operacional**,
+  não defeito — `BETTER_AUTH_SECRET` ausente em `/etc/sysloc/backend.env` (11 das 14 falhas, com a
+  API em `failed`) e a migração **nunca aplicada** ao banco `sysloc`. **Passos que faltam, nesta
+  ordem**: acrescentar a variável ao arquivo de ambiente e reiniciar `sysloc-api`; rodar
+  `sudo bash deploy/scripts/instalacao/migrar-banco.sh`; reexecutar
+  `sudo bash deploy/scripts/instalacao/verificar-fundacao.sh` (com `pnpm build` antes). ⚠️ A
+  execução reescreve o `pg_hba` e reinicia o cluster. **Enquanto os dois passos não rodarem, o que a
+  fatia provou sobre o cluster que opera continua não verificado.**
 - **`P-T6-1` e `P-T6-2`** (`tasks/T8.md` §7) seguem **abertos e sem dono**: o dono era a "task de
   fechamento da F1" — expressão que os artefatos da fatia usam para dizer *fechamento desta fatia*,
   e não da fase —, e a intervenção não os cobriu. Exigem valor novo no enum `desfecho_tentativa`
@@ -233,8 +235,8 @@ Específicos deste domínio: **undici** (mTLS do Sicoob), **`node:crypto` `X509C
 > grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 > ```
 
-Cinco débitos têm gatilho que dispara fora da fatia que os criou: **D28** e **D32** vêm da F0;
-**D7**, **D21** e **D23** nasceram na F1. **Dois já dispararam e seguem abertos** — o D28 (na F1/T2) e
+Seis débitos têm gatilho que dispara fora da fatia que os criou: **D28** e **D32** vêm da F0;
+**D7**, **D21**, **D23** e **D39** nasceram na F1. **Dois já dispararam e seguem abertos** — o D28 (na F1/T2) e
 o D21 (na F1/T8, quando o encaminhador de `/v1/auth` montou `/change-password`). O débito D6 da
 F1/T5 foi fechado no fechamento da F1 — `verificar-migracao.sh` entrou em `VERIFICADORES_DA_FATIA`
 — e por isso saiu daqui: **este índice lista só débito vivo**.
@@ -260,6 +262,7 @@ F1/T5 foi fechado no fechamento da F1 — `verificar-migracao.sh` entrou em `VER
 | **D7** (F1/T6) | `packages/auth/src/autenticacao.ts` | a **primeira rota de criação de pessoa** (fatia `autorizacao-e-ciclo-de-acesso`) |
 | **D21** (F1/T7) | `packages/auth/src/autenticacao.ts` | **JÁ DISPAROU (F1/T8)** — `/change-password` montado; a recusa da barreira não desfaz o que a rota já escreveu |
 | **D23** (F1/T8) | `apps/api/src/autenticacao/autenticacao.module.ts` | a **publicação atrás do servidor de borda na F7** — origem confiável derivada do endereço de retorno |
+| **D39** (F1/fechamento) | `deploy/scripts/instalacao/provisionar-base.sh` | a **próxima instalação do zero** — o provisionamento não gera `BETTER_AUTH_SECRET` e a API não sobe |
 
 ---
 
