@@ -115,9 +115,28 @@
  * A ausência, porém, é **pendência com dono**, e não decisão fechada: o marco de entrega do
  * `CLAUDE.md` faz o `handoff-frontend.md` e o `@sysloc/contracts` dependerem justamente deste
  * documento, e as seis rotas da §4.1 precisam estar nele. Fechar exige declará-las à mão, uma
- * anotação por rota, escrita a partir do inventário que o `CT-018 (d)` fixa — e isso pertence à
- * **task de fechamento da F1**, junto da publicação do `@sysloc/contracts`, que é o momento em que
- * a superfície da API é congelada. Sem alteração de comportamento aqui.
+ * anotação por rota, escrita a partir do inventário que o `CT-018 (d)` fixa.
+ *
+ * **Dono, precisado no fechamento da F1**: a **publicação do `@sysloc/contracts`**, e não uma task
+ * genérica de fechamento. Declarar as seis agora produziria um documento que o congelamento
+ * reescreveria dias depois, e as anotações envelheceriam sem consumidor — o gerador de cliente só
+ * existe a partir daquele pacote. O que o fechamento da F1 fez foi tirar a pendência do limbo:
+ * ela tem endereço no marco de entrega, e não em "alguma task futura". Sem alteração de
+ * comportamento aqui.
+ *
+ * ---------------------------------------------------------------------------
+ * O rótulo de journal, e por que ele nasce AQUI (fechamento da F1 · D27)
+ * ---------------------------------------------------------------------------
+ *
+ * O filtro global grava o padrão da rota casada, e sob `@All('*')` esse padrão é `/v1/auth/*` para
+ * as ~40 rotas de identidade — o operador não distinguia uma tentativa de ENTRADA de qualquer outra
+ * recusa daquele prefixo. Este encaminhador é o único ponto que conhece a rota real, então é ele
+ * quem a declara, por {@link definirRotuloDeRota}.
+ *
+ * A declaração é **fail-closed**: só padrões LITERAIS do registro do arcabouço viram rótulo, por
+ * igualdade. Padrão com segmento variável não entra, e a razão é dura — casá-lo exigiria extrair
+ * segmento do caminho concreto, e um defeito ali publicaria o token de redefinição no journal. Ver
+ * {@link caminhosLiteraisDoArcabouco} e `comum/rotulo-de-rota.ts`. O `CT-106` prova a propriedade.
  */
 
 import { All, Controller, HttpException, Inject, Req, Res } from '@nestjs/common';
@@ -131,6 +150,7 @@ import type { AcessoAIdentidade } from '@sysloc/db';
 import { CodigoErro, ErroDeAplicacao } from '@sysloc/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
+import { definirRotuloDeRota } from '../comum/rotulo-de-rota.js';
 import { TOKEN_ACESSO_A_IDENTIDADE, TOKEN_AUTENTICACAO } from '../configuracao/ambiente.js';
 import { RotaPublica } from './rota-publica.decorator.js';
 
@@ -152,6 +172,57 @@ const METODOS_SEM_CORPO = new Set(['GET', 'HEAD']);
 /** Caminho da troca de senha, **relativo ao prefixo do arcabouço** (§4.1). */
 const CAMINHO_DA_TROCA_DE_SENHA = '/change-password';
 
+/** Marca de segmento variável num padrão de rota do arcabouço (`/reset-password/:token`). */
+const MARCA_DE_PARAMETRO = ':';
+
+/**
+ * Uma ponta do registro do arcabouço, no mínimo que este arquivo lê.
+ *
+ * Declarada por estrutura em vez de importada: o tipo do registro é inferido das opções e mudaria de
+ * forma a cada bump, e o que interessa aqui — o padrão de caminho — é estável.
+ */
+interface PontaDoArcabouco {
+  readonly path?: string;
+}
+
+/**
+ * Os padrões de rota do arcabouço que **não têm segmento variável**, para rotular o journal.
+ *
+ * O encaminhador é `@All('*')`, então o roteador casa UM padrão (`/v1/auth/*`) para toda a
+ * superfície de identidade — e o journal sairia sem distinguir uma tentativa de entrada de qualquer
+ * outra recusa dali (débito D27). Este conjunto é o que permite ao filtro global gravar a rota real.
+ *
+ * **Só os literais entram, e a exclusão é a garantia.** Um padrão com `:` exigiria casar o caminho
+ * concreto contra ele, e um defeito nesse casamento publicaria o valor do segmento — o token de
+ * redefinição — no artefato que a operação lê. Sem casamento não há esse risco: a comparação é
+ * igualdade literal, e o que não estiver no conjunto continua saindo como o curinga, que é o
+ * comportamento anterior a esta mudança.
+ *
+ * Derivado do MESMO registro que o `CT-018 (d)` audita — não de uma segunda lista escrita à mão,
+ * que envelheceria a cada versão do arcabouço.
+ *
+ * **Falha ALTA num bump que renomeie `api` é deliberada.** A leitura roda na composição, e um
+ * registro ausente faria `Object.values(undefined)` levantar — a aplicação não sobe. O contrário
+ * (`?? {}`) faria o conjunto nascer vazio e o journal voltar em silêncio ao rótulo curinga, que é
+ * uma regressão que ninguém veria. O modo de falha barulhento chega antes de produção de qualquer
+ * forma: o `CT-018 (d)` lê o mesmo `.api` e reprova no mesmo bump.
+ */
+function caminhosLiteraisDoArcabouco(autenticacao: Autenticacao): ReadonlySet<string> {
+  const registro = (autenticacao as unknown as { readonly api: Record<string, PontaDoArcabouco> })
+    .api;
+  const literais = new Set<string>();
+
+  for (const ponta of Object.values(registro)) {
+    const caminho = ponta?.path;
+
+    if (caminho !== undefined && caminho.length > 0 && !caminho.includes(MARCA_DE_PARAMETRO)) {
+      literais.add(caminho);
+    }
+  }
+
+  return literais;
+}
+
 // A marca vale para o encaminhador INTEIRO, e não poderia ser mais fina: o `@All('*')` abaixo é UM
 // manipulador, e a guarda decide por manipulador. É exceção consciente, e o que a torna aceitável é
 // que a superfície liberada **não fica sem dono**: o arcabouço confere a própria sessão em cada rota
@@ -172,7 +243,17 @@ export class AutenticacaoController {
     // baixada pela capacidade que `@sysloc/auth` publica. Nenhuma consulta é escrita aqui: o que
     // este controlador conhece é a função, não o schema.
     @Inject(TOKEN_ACESSO_A_IDENTIDADE) private readonly acesso: AcessoAIdentidade,
-  ) {}
+  ) {
+    this.caminhosLiterais = caminhosLiteraisDoArcabouco(autenticacao);
+  }
+
+  /**
+   * Padrões literais do arcabouço, calculados UMA vez na composição.
+   *
+   * O registro não muda depois que a instância é montada, e recalcular por requisição colocaria uma
+   * varredura de ~40 pontas no caminho quente de toda chamada de identidade.
+   */
+  private readonly caminhosLiterais: ReadonlySet<string>;
 
   /**
    * Encaminha qualquer método e qualquer caminho sob `/v1/auth` ao manipulador do arcabouço.
@@ -194,6 +275,13 @@ export class AutenticacaoController {
   ): Promise<void> {
     const requisicaoWeb = comoRequisicaoWeb(requisicao, this.autenticacao.options.baseURL);
     const caminho = caminhoNoArcabouco(requisicaoWeb.url, this.autenticacao.options.basePath);
+
+    // O rótulo do journal, quando — e SÓ quando — o caminho é um padrão literal conhecido. Fora
+    // disso nada é definido e o filtro global segue com o padrão do roteador (`/v1/auth/*`),
+    // exatamente como antes. Ver `comum/rotulo-de-rota.ts` para por que o conjunto é fechado.
+    if (this.caminhosLiterais.has(caminho)) {
+      definirRotuloDeRota(requisicao, `${this.autenticacao.options.basePath ?? ''}${caminho}`);
+    }
 
     // A pessoa é resolvida ANTES do encaminhamento, e não depois: a troca pode rotacionar a sessão
     // (`revokeOtherSessions`) — depois dela, o cookie do pedido pode já não resolver ninguém.

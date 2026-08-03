@@ -50,6 +50,7 @@ import {
 import { CodigoErro, type CorpoErro, ErroDeAplicacao, type Logger } from '@sysloc/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { TOKEN_LOGGER } from '../configuracao/ambiente.js';
+import { rotuloDeRota } from './rotulo-de-rota.js';
 
 /**
  * Código do enum fechado por status HTTP que o arcabouço levanta por conta própria.
@@ -182,10 +183,18 @@ export class FiltroExcecaoGlobal implements ExceptionFilter {
  * O padrão da rota casada (`/contratos/:id`) é preferido ao caminho concreto: ele agrupa o journal
  * por rota em vez de por instância. Requisição que não casou rota alguma — o `404` — não tem
  * padrão, e aí sobra o alvo bruto truncado antes do `?`.
+ *
+ * **O rótulo explícito vem antes das duas.** Um manipulador curinga casa um padrão só para muitas
+ * rotas — é o caso do encaminhador de `/v1/auth`, cujas ~40 rotas sairiam todas como `/v1/auth/*` —,
+ * e quem conhece a rota real pode declará-la por {@link definirRotuloDeRota}. O contrato daquele
+ * módulo é que o rótulo seja **padrão de rota tirado de conjunto fechado**, nunca caminho concreto:
+ * sem isso, esta função voltaria a ser a via pela qual um segmento sensível chega ao journal, que é
+ * exatamente o que o parágrafo acima existe para impedir.
  */
 function caminhoSemConsulta(requisicao: FastifyRequest): string {
   const inicioDaConsulta = requisicao.url.indexOf('?');
   return (
+    rotuloDeRota(requisicao) ??
     requisicao.routeOptions?.url ??
     (inicioDaConsulta === -1 ? requisicao.url : requisicao.url.slice(0, inicioDaConsulta))
   );
@@ -264,6 +273,33 @@ function recusaDeOutrem(statusDeOrigem: number, excecao: HttpException): Respost
 // código diz "isto é recusa e não sabemos nomear a causa"; o status é a informação PRECISA, e ela
 // vem de quem recusou. Reclassificá-lo para o `400` padrão do código destruiria justamente o que a
 // tradução existe para preservar (um `429` vira "tente de novo mais tarde"; um `400`, não).
+//
+// O "único ponto" acima só continua verdadeiro sob uma condição, e ela agora está fixada:
+// **`REQUISICAO_RECUSADA` é código de FECHO deste filtro, não código de negócio levantável.**
+// Ele é exportado no enum público de `@sysloc/shared`, e um `new ErroDeAplicacao(
+// CodigoErro.REQUISICAO_RECUSADA, …)` numa fatia futura faria o MESMO código sair com `400` num
+// ponto e `415`/`429` noutro — um cliente que combine `codigo` com semântica de repetição deixaria
+// de conseguir decidir só pelo código. Quem precisar recusar por regra de negócio usa o código que
+// nomeia a causa; se nenhum servir, o caminho é acrescentar valor ao enum, não reaproveitar este.
+// **A rede automatizada foi avaliada no fechamento da F1 e RECUSADA — as duas formas possíveis, e
+// por que cada uma é pior que a regra escrita acima:**
+//
+//   * **Impor pelo tipo** (`codigo: Exclude<CodigoErro, CodigoErro.REQUISICAO_RECUSADA>` no
+//     construtor de `ErroDeAplicacao`) seria a forma estrutural, e é a que o invariante 1 do
+//     `CLAUDE.md` prefere. Mas o `CT-005` de `packages/shared/test/erros.spec.ts` é
+//     `it.each(Object.values(CodigoErro))` construindo TODO valor do enum para provar que cada um
+//     tem status na faixa de erro — estreitar o construtor obrigaria a excluir um código daquela
+//     tabela, isto é, a ENFRAQUECER uma prova tabular existente para instalar outra. A proibição 2
+//     da `.claude/rules/nao-regressao.md` fecha esse caminho.
+//   * **Varrer o fonte** reprovando `new ErroDeAplicacao(CodigoErro.REQUISICAO_RECUSADA` seria
+//     asserção estática sobre texto, e o texto onde ela rodaria inclui ESTE comentário — que cita a
+//     construção literalmente. Distinguir menção de construção exige remoção de comentário com
+//     consciência de literal, que é exatamente o defeito D9 registrado noutro varredor deste
+//     repositório. A `.claude/rules/testing-stack.md` já nomeia asserção estática frágil como a
+//     causa de três das cinco reprovações da T2.
+//
+// Fica, portanto, a regra escrita — e o gatilho concreto: se algum dia um código de negócio
+// precisar de status variável, é sinal de que o enum tem uma lacuna, e a resposta é o valor novo.
 /**
  * A recusa cujo status o vocabulário não nomeia.
  *

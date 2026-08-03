@@ -202,6 +202,38 @@ const SUPERFICIE_DECLARADA = [
  * revisar decide se aquela rota entra no contrato, é desligada ou é tolerada. É a rede que a §11.1
  * da tech spec exige — *"um caso de teste enumera as rotas públicas efetivas e falha se a lista
  * crescer sem revisão"*.
+ *
+ * ---------------------------------------------------------------------------
+ * DECISÃO (fechamento da F1, 2026-08-02 · decisão do usuário) — o conjunto é TOLERADO
+ * ---------------------------------------------------------------------------
+ *
+ * As 35 abaixo são **toleradas**, e não pendentes. Antes desta linha elas eram aceitas por esta
+ * constante sem que decisão nenhuma — ADR, seção de spec ou marcador — dissesse por quê; o débito
+ * **D26** da §2 registrou que o congelamento da superfície chegaria por descoberta em vez de por
+ * agendamento. A decisão foi tomada e é esta.
+ *
+ * **A razão é medida, e é de alcance — não de conveniência.** Nenhuma das 35 cruza tenant:
+ *
+ *   * as perigosas estão **inertes por configuração** e recusam antes de qualquer efeito —
+ *     `sign-up/email` (`disableSignUp`), `sign-in/social` e `link-social` (nenhum provedor social
+ *     declarado), `request-password-reset`/`send-verification-email` (nenhum remetente de e-mail),
+ *     `change-email` e `delete-user` (opção não passada);
+ *   * as **vivas** — `update-user`, `verify-password`, `list-sessions`, `revoke-*`,
+ *     `list-accounts`, `account-info` — são de identidade da PRÓPRIA pessoa, autoescopadas pela
+ *     sessão dela. O que a sessão não alcança é exatamente o que a RLS protege, e nenhum dado de
+ *     `negocio` é alcançável por elas.
+ *
+ * **As duas alternativas foram consideradas e recusadas.** Declará-las no contrato publicaria como
+ * API rotas que este produto não oferece. Desligá-las por lista de permissão no encaminhador
+ * reintroduz a enumeração à mão que a T8 rejeitou por escrito — *"uma lista que o arcabouço já tem,
+ * e que envelheceria a cada versão dele"* —, trocando um risco nulo hoje por um vetor de regressão
+ * a cada bump.
+ *
+ * **GATILHO DE REVISÃO** (não é decisão fechada — isto vence): a decisão vale **até o congelamento
+ * da superfície da API**, imediatamente antes de publicar `@sysloc/contracts` e gerar o
+ * `handoff-frontend.md`. Ali cada uma volta à mesa com a pergunta *"o cliente React chama isto?"*,
+ * e a resposta esperada, para as 35, é não. Quem congelar reavalia; quem só passar por aqui, não
+ * precisa.
  */
 const SUPERFICIE_TOLERADA = [
   'GET /account-info',
@@ -607,10 +639,70 @@ describe('superfície versionada de identidade (T8)', () => {
         expect(evento.status).toBe(STATUS_FORA_DA_TABELA);
         expect(evento.codigo).toBe(CodigoErro.REQUISICAO_RECUSADA);
         expect(evento.metodo).toBe('POST');
-        expect(evento.caminho).toBe(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/*`);
+        // SUT_IS_CORRECT_BECAUSE: esta asserção fixava `/v1/auth/*` — o padrão que o roteador casa
+        // para TODA a superfície de identidade, porque o encaminhador é `@All('*')`. O valor estava
+        // certo para o SUT de então e é o defeito que o débito D27 registra: o operador não
+        // distinguia uma tentativa de entrada de qualquer outra recusa daquele prefixo, degradando
+        // o artefato que a `DECISÃO FECHADA — T6 / Gate 2 (P5)` nomeia como "aquele que a operação
+        // lê para decidir se houve ataque". O fechamento da F1 fez o encaminhador declarar a rota
+        // real quando ela é um padrão LITERAL do registro do arcabouço, e a asserção passa a fixar
+        // o comportamento novo. Ela não afrouxou: era uma igualdade e continua sendo, agora contra
+        // um valor mais específico, com o companheiro negativo abaixo.
+        expect(evento.caminho).toBe(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/sign-in/email`);
+        expect(evento.caminho).not.toBe(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/*`);
       } finally {
         comoFalhaDoServico.mockRestore();
         comoRecusa.mockRestore();
+      }
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-106 — rota com segmento variável NÃO leva o valor do segmento ao journal',
+    async () => {
+      // O companheiro do eixo de journal do CT-018 (e), e o que torna o rótulo de rota seguro por
+      // construção: o encaminhador só declara a rota quando o padrão é LITERAL. Padrão com `:` fica
+      // de fora, e a linha sai com o curinga — que é o comportamento anterior ao débito D27 e o
+      // desfecho seguro. Sem este caso, um "melhoramento" futuro que casasse padrões parametrizados
+      // publicaria o token de redefinição no artefato que a operação lê, e nada reprovaria.
+      const logger = app.get<Logger>(TOKEN_LOGGER);
+      const comoRecusa = vi.spyOn(logger, 'warn');
+      const comoFalhaDoServico = vi.spyOn(logger, 'error');
+
+      try {
+        // Valor distinguível de qualquer outro texto do evento: se ele aparecer em QUALQUER campo
+        // da linha, a asserção abaixo o encontra.
+        const segmento = 'valor-de-segmento-que-nao-pode-vazar';
+        // A recusa é forçada pelo MESMO mecanismo do CT-018 (e) — tipo de conteúdo que o arcabouço
+        // não aceita —, e não pela reação da rota ao segmento: depender de a rota recusar por conta
+        // própria tornaria o caso refém do comportamento de uma rota que nem sequer está
+        // configurada (sem provedor social, `/callback/:id` responde por redirecionamento e não
+        // produziria linha de journal alguma).
+        await pedir(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/callback/${segmento}`, {
+          metodo: 'POST',
+          corpoBruto: { texto: 'isto não é JSON', tipoDeConteudo: TIPO_DE_CONTEUDO_RECUSADO },
+        });
+
+        const linhas = [...comoRecusa.mock.calls, ...comoFalhaDoServico.mock.calls];
+
+        // Guarda de conjunto vazio: sem linha de journal o caso não observa nada, e passaria por
+        // vacuidade. Se o arcabouço deixar de recusar esta rota, isto reprova e obriga revisão.
+        expect(
+          linhas.length,
+          'a rota parametrizada não produziu linha de journal — o caso não observa nada',
+        ).toBeGreaterThan(0);
+
+        for (const [evento] of linhas) {
+          const registrado = evento as Record<string, unknown>;
+          expect(registrado.caminho).toBe(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/*`);
+          // Sobre a linha INTEIRA, e não só sobre `caminho`: o eixo é "o valor não vaza", e
+          // restringi-lo a um campo deixaria os outros sem asserção.
+          expect(JSON.stringify(registrado)).not.toContain(segmento);
+        }
+      } finally {
+        comoRecusa.mockRestore();
+        comoFalhaDoServico.mockRestore();
       }
     },
     LIMITE_CASO_MS,

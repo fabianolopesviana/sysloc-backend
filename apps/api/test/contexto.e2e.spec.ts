@@ -830,19 +830,38 @@ describe('guarda de contexto, rotas públicas e sessão corrente (T9)', () => {
         caminho: evento.caminho,
       }));
 
+      // SUT_IS_CORRECT_BECAUSE: as duas primeiras entradas fixavam `/v1/auth/*`, e o valor estava
+      // certo para o SUT de então — o encaminhador é `@All('*')` e o roteador casa um padrão só
+      // para toda a superfície de identidade. Era exatamente o defeito do débito **D27**: as ~40
+      // rotas de identidade colapsavam num rótulo, e o operador não distinguia uma tentativa de
+      // ENTRADA de qualquer outra recusa daquele prefixo — degradando o artefato que a
+      // `DECISÃO FECHADA — T6 / Gate 2 (P5)` nomeia como "aquele que a operação lê para decidir se
+      // houve ataque". O fechamento da F1 fez o encaminhador declarar a rota real quando ela é um
+      // padrão LITERAL do registro do arcabouço, e este caso passa a fixar o comportamento novo.
+      //
+      // A asserção NÃO afrouxou — segue igualdade sobre a lista inteira, agora contra valores mais
+      // específicos. E as entradas 6 e 7 continuam iguais **de propósito**: elas são a prova, aqui
+      // mesmo, de que a mudança é fail-closed. Rota inexistente não é padrão literal do registro,
+      // então não recebe rótulo e continua saindo como o curinga; segmento nenhum do pedido chega
+      // ao journal por este caminho. O `CT-106` de `autenticacao.e2e.spec.ts` prova o mesmo para
+      // rota com segmento VARIÁVEL, que é o caso em que vazaria um token.
       expect(recusas).toEqual([
-        // 3 — a entrada recusada, com o status que o arcabouço escolheu, sob o caminho do
-        //     encaminhador (que é o padrão da rota casada, sem cadeia de consulta).
-        { nivel: 'warn', status: 401, caminho: `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/*` },
-        // 4 — o código de segundo fator recusado.
+        // 3 — a entrada recusada, com o status que o arcabouço escolheu, agora sob a rota REAL.
+        {
+          nivel: 'warn',
+          status: 401,
+          caminho: `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/sign-in/email`,
+        },
+        // 4 — o código de segundo fator recusado, idem.
         {
           nivel: 'warn',
           status: STATUS_DA_RECUSA_DE_SEGUNDO_FATOR,
-          caminho: `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/*`,
+          caminho: `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/verify-totp`,
         },
         // 5 — a recusa da GUARDA, no caminho da rota de sessão.
         { nivel: 'warn', status: 401, caminho: CAMINHO_DA_SESSAO_CORRENTE },
-        // 6 — a rota inexistente sob o encaminhador.
+        // 6 — a rota INEXISTENTE sob o encaminhador: não está no registro, não vira rótulo, sai
+        //     como o curinga. É metade da prova de que o rótulo vem de conjunto fechado.
         { nivel: 'warn', status: 404, caminho: `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/*` },
         // 7 — a rota inexistente fora dele: sem rota casada, sobra o alvo TRUNCADO antes do `?`.
         { nivel: 'warn', status: 404, caminho: `/${PREFIXO_DE_VERSAO}/rota-que-nao-existe` },
