@@ -110,12 +110,40 @@ export class ErroDeContextoInvalido extends Error {
  *
  * Erro com nome próprio pela mesma razão do anterior: "o chamador aninhou transação" é defeito de
  * composição do código, e não tem nada a ver com "o banco recusou a operação".
+ *
+ * ---------------------------------------------------------------------------
+ * As DUAS causas, e as duas remediações — leia antes de compor serviços
+ * ---------------------------------------------------------------------------
+ *
+ * A recusa em si é decisão fechada (ver o marcador em {@link abrirAcessoAoBanco}). O que **não** é
+ * decisão fechada, e chega junto com a primeira camada de serviço, é *quem abre a unidade quando um
+ * serviço chama outro*. Este erro tem duas causas com remediações opostas, e confundi-las leva à
+ * saída errada:
+ *
+ * 1. **Aninhamento acidental** — o mesmo fluxo abriu duas unidades por descuido. Remediação: reunir
+ *    as operações numa unidade só.
+ * 2. **Composição de serviços** — dois serviços legítimos, cada um dono de uma unidade, e um passou
+ *    a chamar o outro. Reuni-los seria fundir serviços para satisfazer o mecanismo de transação, o
+ *    que é a topologia às avessas. As saídas corretas são duas:
+ *    - **unidade na borda**: quem atende a requisição abre a unidade e passa o executor (`tx`)
+ *      adiante; os serviços deixam de abrir unidade e passam a receber uma. É a forma preferida
+ *      enquanto o ramo interno não precisar desfazer sozinho;
+ *    - **`SAVEPOINT` via `tx.begin`**: o ramo interno ganha ponto de desfazimento próprio dentro da
+ *      transação corrente. É o que o `REVERTER EXIGE` do marcador nomeia, e exige o caso que prove
+ *      que desfazer o ramo interno não deixa efeito gravado.
+ *
+ * Nenhuma das duas está implementada — o momento de escolher é a fatia que trouxer a camada de
+ * repositório, e ela decide com este parágrafo à vista, não por descoberta.
  */
 export class ErroDeUnidadeAninhada extends Error {
   constructor() {
+    // A mensagem nomeia as duas remediações de propósito: prescrever só "reúna as operações"
+    // — como fazia — está certo para o aninhamento acidental e empurra a composição de serviços
+    // para a saída errada, que é fundir serviços. Ver o docblock acima.
     super(
       'unidade de trabalho aninhada: já existe transação aberta nesta cadeia de execução — ' +
-        'reúna as operações numa única unidade',
+        'reúna as operações numa única unidade, ou abra a unidade na borda e passe o executor ' +
+        'adiante se o aninhamento vem de um serviço chamar outro',
     );
     this.name = 'ErroDeUnidadeAninhada';
   }

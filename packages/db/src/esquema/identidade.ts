@@ -81,7 +81,15 @@ export const perfilUsuario = identidade.enum('perfil_usuario', [
  * é precisamente o sinal de ataque que a RN-11 existe para tornar legível. Separá-los **exige valor
  * novo no enum**: nenhuma outra coluna desta tabela carrega o discriminante. Acrescentar código a
  * enum fechado é retrocompatível pela ADR-0007 e renomear não é, então o momento barato é **antes**
- * de o volume existir — pendência registrada para a T8 (§7 do card da T6).
+ * de o volume existir — pendência **`P-T6-1`**, escrita por extenso em
+ * `docs/specs/features/fundacao-multitenancy-identidade/v1/tasks/T8.md` §7.
+ *
+ * **Dono: a task de fechamento da F1**, e não a T8. O gatilho de escopo disparou na T8 e a resposta
+ * registrada (`_run/workflow-report.md`, D-E3) foi NÃO fechar ali: separar o desfecho exige valor
+ * novo neste enum mais uma migração `0003`, e somar migração de schema ao diff que move todas as
+ * rotas seria a "correção grande com regressão embutida" da §5 do Protocolo. O que o adiamento
+ * **não** custa: este banco não tem dado de produção até a virada da F7, então a mudança de enum
+ * segue sendo migração sobre banco vazio.
  *
  * **Quem lê a trilha, e por onde** (a frase anterior a esta dizia "a trilha não é consultável nesta
  * fatia", o que contradizia o texto do gancho): as duas coisas são verdadeiras em planos diferentes.

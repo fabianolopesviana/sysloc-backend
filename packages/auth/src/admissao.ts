@@ -231,14 +231,30 @@ export interface PessoaDaSessao extends EstadoDeAdmissao {
 }
 
 /**
- * A **única** leitura da linha de `identidade.usuario` que existe neste sistema.
+ * A única leitura de `identidade.usuario` que **projeta o estado de admissão**.
  *
  * As duas funções públicas abaixo diferem apenas no **critério**; a tabela, o `LEFT JOIN`, a
  * projeção e o `limit` são estes, e não há um segundo lugar onde escrevê-los diferente. Antes desta
  * unificação havia duas consultas à mesma linha, em pacotes distintos, iguais na intenção e livres
  * para divergir na forma — e a Revisão Técnica da T9 registrou por que isso pesa: a contenção da
  * ausência de RLS em `identidade` (§11.2 da tech spec) é *"nenhuma rota expõe identidade além da
- * própria sessão de quem pede"*, o que só é estrutural enquanto a leitura for uma só e viver aqui.
+ * própria sessão de quem pede"*, o que só é estrutural enquanto a leitura **que decide** for uma só
+ * e viver aqui.
+ *
+ * **Fronteira declarada, e não absoluto** (o padrão que `packages/db/src/acesso-identidade.ts` já
+ * pratica). Dizer "a única leitura da linha que existe neste sistema" seria falso ao grep, e um
+ * absoluto que o grep desmente leva o próximo agente ou a concluir que o invariante foi abandonado,
+ * ou a *restaurá-lo* fundindo o que não deve ser fundido. As outras leituras da mesma linha, e o
+ * que cada uma projeta:
+ *
+ * - `buscarPessoa` (`autenticacao.ts`) — **privada**, projeta `{ id }` e nada mais, serve de sonda
+ *   de existência para vincular a linha da trilha. Não decide nada e não alimenta rota alguma; por
+ *   isso não é candidata a fusão com esta;
+ * - o adaptador do arcabouço — relê a linha a cada `getSession`, para montar a sessão dele. É
+ *   leitura de terceiro, fora do alcance deste pacote.
+ *
+ * Nenhuma das duas projeta `ativo`, `suspensa_em` nem os demais campos de decisão — e é essa
+ * projeção, não a linha, que a §11.2 exige que tenha um lugar só.
  *
  * O `LEFT JOIN` com a empresa é o que permite decidir os três primeiros predicados com **uma**
  * leitura: duas consultas separadas abririam janela entre elas em que a empresa é suspensa depois

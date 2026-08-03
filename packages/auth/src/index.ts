@@ -23,8 +23,19 @@
  * a guarda de contexto de `apps/api`, que precisa da pessoa por trás de uma sessão que o arcabouço
  * JÁ conferiu. Ela sai daqui exatamente para que a consulta a `identidade` continue sendo uma só,
  * escrita num lugar só — publicá-la é o que dispensa `apps/api` de conhecer `esquemaIdentidade` e o
- * construtor de consulta do ORM, e é o que mantém topológica (e não disciplinar) a contenção que a
- * §11.2 da tech spec exige na ausência de RLS em `identidade`.
+ * construtor de consulta do ORM, e é o que sustenta a contenção que a §11.2 da tech spec exige na
+ * ausência de RLS em `identidade`.
+ *
+ * **A barreira concreta, e o resíduo — em vez de "a contenção é topológica".** O que de fato contém
+ * é `TOKEN_ACESSO_A_IDENTIDADE` ficar **fora do `exports:` de `AutenticacaoModule`**
+ * (`apps/api/src/autenticacao/autenticacao.module.ts`): nenhum módulo de fora recebe o executor
+ * restrito, e sem ele não há consulta a `identidade` para escrever. Isso é estrutura, e é forte.
+ *
+ * O que ela **não** alcança: de dentro daquele módulo, um provider novo pode ler a linha por
+ * `acesso.identidade.query.usuario.findFirst({ where: (u, { eq }) => … })`. A API relacional do
+ * Drizzle entrega tabela e operadores **por callback**, de modo que a leitura nova não precisa
+ * importar `drizzle-orm` nem `esquemaIdentidade` — e nenhuma prova atual a alcança. Quem acrescentar
+ * provider ali confere isto à mão; a palavra "topológica", sozinha, faria supor que não precisa.
  *
  * Também não sai daqui nenhum acesso a banco. O executor restrito é de `@sysloc/db`, entra por
  * parâmetro em `criarAutenticacao` e não é reexportado — reexportá-lo criaria um segundo caminho

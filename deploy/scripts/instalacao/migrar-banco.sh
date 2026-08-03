@@ -310,6 +310,13 @@ garantir_tabela_de_registro() {
 	# JA-OK ou ela aborta antes, sem a transação de aplicação passar por aqui.
 	# `psql -c` com várias instruções é UMA transação implícita: criação e retirada
 	# commitam juntas também neste ponto.
+	#
+	# TERCEIRO SÍTIO da mesma decisão — ver o marcador `DECISÃO FECHADA — T5 /
+	# Gate 2` em `aplicar_arquivo_de_migracao`. O `REVOKE` abaixo NÃO é redundante
+	# com `retirar_alcance_da_aplicacao`, apesar de a instrução ser idêntica: aquela
+	# é rede de fim de execução, esta commita junto com o `CREATE` que torna a
+	# concessão possível. Removê-la exige o que o `REVERTER EXIGE` daquele marcador
+	# pede — não a observação de que "já existe outra igual".
 	psql_migrador -c "
 		SET client_min_messages = warning;
 		CREATE TABLE IF NOT EXISTS ${TABELA_REGISTRO} (

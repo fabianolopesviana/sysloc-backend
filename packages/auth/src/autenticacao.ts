@@ -317,9 +317,11 @@ export type Autenticacao = ReturnType<typeof criarAutenticacao>;
 //          suposto: a linha foi removida, rodados `pnpm install` e `tsc --build --force`, o
 //          compilador reprovou apontando esta função, e manifesto e `pnpm-lock.yaml` voltaram.
 // REVERTER EXIGE: `tsc --build --force` com `dist/` e `tsbuildinfo` APAGADOS emitir o `.d.ts` sem
-//                 a dependência. Build INCREMENTAL NÃO mede — ele reaproveita o `.d.ts` já
-//                 emitido e passa mesmo sem `zod`, de modo que um `pnpm build` do dia a dia não
-//                 é prova de nada aqui.
+//                 a dependência **E SEM anotação de tipo manual no retorno desta função** (ver a
+//                 nota adjacente abaixo — a anotação faz o `.d.ts` emitir e NÃO satisfaz este
+//                 campo). Build INCREMENTAL NÃO mede — ele reaproveita o `.d.ts` já emitido e
+//                 passa mesmo sem `zod`, de modo que um `pnpm build` do dia a dia não é prova de
+//                 nada aqui.
 //
 // (Adjacente à decisão acima, e não parte dela.) A anotação de tipo explícita que o compilador
 // sugere NÃO satisfaz o `REVERTER EXIGE`: o retorno de `betterAuth(opcoes)` é inferido e
@@ -711,7 +713,11 @@ export function criarAutenticacao(opcoes: OpcoesDeAutenticacao) {
         // (`INVALID_EMAIL`). Consequência: um pico causado por indisponibilidade parcial do banco
         // fica indistinguível de um pico de tentativas contra contas desativadas — o sinal de
         // ataque que a RN-11 existe para tornar legível. Separá-los EXIGE valor novo no enum;
-        // pendência registrada para a T8 (§7 do card).
+        // pendência `P-T6-1`, escrita por extenso em `docs/specs/features/
+        // fundacao-multitenancy-identidade/v1/tasks/T8.md` §7, com dono na **task de fechamento da
+        // F1** — não na T8, que recusou o escopo por decisão registrada (`_run/workflow-report.md`,
+        // D-E3). Fechar aqui obriga a mexer no `DESFECHO_POR_MOTIVO` deste arquivo, que é parte do
+        // blast radius que aquela decisão pesou.
         //
         // ----------------------------------------------------------------------------------
         // Janela de corrida conhecida, anotada em vez de corrigida
@@ -921,11 +927,25 @@ async function donoDaSessao(ctx: ContextoDeEndpoint): Promise<PessoaDaSenha | un
  * **A classe é "valor que o gancho relê do mesmo pedido que o manipulador".** Este token é o ÚNICO
  * que o arcabouço lê por CADEIA de origens; os demais valores que este gancho relê — `newPassword`
  * (`ctx.body.newPassword`), `code` (`ctx.body.code`), `email` e `password` de `/sign-in/email` —
- * são campo simples do corpo, sem consulta nem parâmetro de rota por trás. Neles a leitura daqui é
- * subconjunto estrito da do manipulador: {@link campoTextual} só devolve valor quando ele é texto, e
- * o que não é texto o esquema do endpoint recusa antes de o manipulador ler. Um valor que chegue ao
- * manipulador, portanto, não tem como ficar invisível a este gancho — que é a propriedade de que a
- * política depende.
+ * são campo simples do corpo, sem consulta nem parâmetro de rota por trás.
+ *
+ * A propriedade de que a política depende é **"a leitura do gancho nunca é estritamente menor que a
+ * do manipulador"** — e não "é subconjunto dela". As duas formas a satisfazem, e a distinção
+ * importa porque um dos quatro valores é superconjunto:
+ *
+ * - **Subconjunto** é o caso de `newPassword`, `code` e `password`: {@link campoTextual} só devolve
+ *   valor quando ele é texto, e o que não é texto o esquema do endpoint recusa antes de o
+ *   manipulador ler.
+ * - **Superconjunto, e deliberado** é o caso do `email` de `/sign-in/email`. Este gancho normaliza
+ *   (`.trim().toLowerCase()`, ver {@link extrairEmail}) e o manipulador valida o e-mail **cru**
+ *   — medido em `better-auth@1.6.25`, `dist/api/routes/sign-in.mjs:286`:
+ *   `if (!z.email().safeParse(email).success) throw … INVALID_EMAIL`, sem `trim`. Um `' ana@x '`
+ *   resolve aqui e é recusado lá.
+ *
+ * A divergência **falha fechado** — o pedido morre no manipulador antes de qualquer efeito — e não
+ * é para ser "corrigida": alinhar a leitura seria mexer numa propriedade que já está segura, contra
+ * a proibição 5 da `.claude/rules/nao-regressao.md`. O que importa é que, nos dois sentidos, um
+ * valor que chegue ao manipulador não tem como ficar invisível a este gancho.
  */
 // DECISÃO FECHADA — T10 / Gate 2 (rodada 2) · 2026-08-02
 // O QUÊ: a leitura do token replica a REGRA DE VERACIDADE do manipulador — corpo primeiro, e a

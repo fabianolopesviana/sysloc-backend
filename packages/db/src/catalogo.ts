@@ -246,14 +246,45 @@ export async function verificarCoberturaDeIsolamento(
     //          silêncio e nem sequer aparecia em `tabelasExaminadas` — apesar de guardar linha
     //          FISICAMENTE, com as empresas misturadas, e de o PostgreSQL não suportar RLS sobre
     //          ela. Era o "terceiro estado" que a ADR-0009 declara não existir.
-    // REVERTER EXIGE: provar que a espécie readmitida ao filtro de exclusão não guarda nem expõe
-    //                 linha de negócio — e, para trocar a exclusão por uma lista de inclusão,
-    //                 provar que a lista não pode omitir espécie alguma, hoje ou num PostgreSQL
-    //                 futuro. Foi a omissão que produziu o defeito.
+    // REVERTER EXIGE: provar que a espécie readmitida ao filtro de exclusão **não pode devolver
+    //                 linha de negócio fora do alcance da política de isolamento da tabela de
+    //                 origem** — e, para trocar a exclusão por uma lista de inclusão, provar que a
+    //                 lista não pode omitir espécie alguma, hoje ou num PostgreSQL futuro. Foi a
+    //                 omissão que produziu o defeito.
     //
-    // Os `relkind` de fora: índice (`i`, `I`), sequência (`S`), tipo composto (`c`), TOAST (`t`) e
-    // visão (`v`) — nenhum guarda linha de negócio, e a visão reavalia a política das tabelas de
-    // origem a cada consulta (ver o cabeçalho, que separa visão de visão materializada).
+    // O critério do campo acima NÃO é "não armazena" nem "não é legível": as duas formas são
+    // FALSAS sobre esta própria lista, e escrever qualquer uma faria o marcador mandar aplicar uma
+    // regra que a lista viola. Índice e TOAST **armazenam** (inclusive bytes de coluna
+    // tenantizada); visão **é legível** e devolve linha de negócio. O que une as cinco espécies
+    // excluídas é outra coisa — nenhuma delas entrega linha **escapando da RLS da origem**:
+    //
+    //   * **não guardam linha de negócio** — sequência (`S`) e tipo composto (`c`);
+    //   * **guardam bytes, mas só são lidos a serviço da tabela de origem** — índice (`i`, `I`) e
+    //     TOAST (`t`). Quem os acessa é o executor de consulta, sempre resolvendo uma leitura da
+    //     tabela dona, cuja política se aplica antes de a linha sair;
+    //   * **é legível e devolve linha, mas reavalia a política da origem a cada consulta —
+    //     CONDICIONALMENTE** — visão (`v`). A condição não é ornamento e está medida abaixo.
+    //
+    // É por isso que o critério recusa exatamente as duas que têm de reprovar, e a recusa é o
+    // motivo deste marcador existir: visão MATERIALIZADA (`m`) guarda cópia física com as empresas
+    // misturadas, e a RLS da origem não a alcança; tabela estrangeira (`f`) guarda o dado fora do
+    // banco, onde política nenhuma daqui vale. Ver o cabeçalho, que separa visão de materializada.
+    //
+    // A CONDIÇÃO DA VISÃO, declarada em vez de afirmada como absoluto (fechamento da F1). O
+    // PostgreSQL avalia a política da origem com os direitos da **dona da visão**, não de quem
+    // consulta — salvo `security_invoker = true`. Uma visão cuja dona contorne RLS (superusuária,
+    // ou papel `BYPASSRLS`) devolve TODAS as empresas, e a exclusão de `v` a tira do exame: mesmo
+    // desfecho da visão materializada, por outra porta. **Medido em instância efêmera**: visão
+    // sobre a mesma tabela, consultada sem `app.empresa_id`, devolveu 0 linhas com dona comum e as
+    // 2 linhas das duas empresas com dona superusuária.
+    //
+    // Por que isso NÃO é buraco alcançável pelos papéis deste produto, e por isso não muda a lista
+    // aqui: `sysloc_app` recebe apenas `USAGE ON SCHEMA` (`0001_seguranca.sql:96`) — **sem
+    // `CREATE`**, então não cria visão nenhuma; e `sysloc_migracao` nasce
+    // `NOSUPERUSER … NOBYPASSRLS` (`provisionar-base.sh:1902`), de modo que visão criada pela
+    // migração tem a política da origem aplicada — o `FORCE ROW LEVEL SECURITY` alcança a própria
+    // dona. Sobra o superusuário do cluster, que é o mesmo caminho que `conexaoSuperusuaria`
+    // existe para exercer nos testes. Registrado como débito D38 — ver o marcador abaixo.
     //
     // A restrição única é conferida por **conjunto de nomes de coluna**, e não por posição: o
     // `conkey` guarda números de coluna, cuja ordem segue a declaração da restrição, e comparar
@@ -267,6 +298,25 @@ export async function verificarCoberturaDeIsolamento(
     // propósito**: a forma canônica deste projeto é a restrição nomeada, que é o que
     // `0001_seguranca.sql` e o gerador de migração produzem. O erro é fail-closed — reprova quem
     // está isolado por uma forma fora da convenção, e nunca aprova quem não está isolado.
+
+    // DÉBITO COM GATILHO — D38 · F1/fechamento · registrado 2026-08-02
+    // (NÃO confundir com a `DECISÃO FECHADA — T4 / Gate 2 (P1)` acima, que PROTEGE o critério de
+    //  exclusão. Este AGENDA uma reavaliação de UM membro da lista — o `v` —, e nada sob ele está
+    //  congelado. Os dois convivem neste arquivo de propósito: a decisão de excluir por espécie
+    //  segue valendo; o que está aberto é se `v` ainda pertence ao conjunto excluído.)
+    // O QUÊ: `v` é excluído do exame, e a razão declarada — a visão reavalia a política da origem —
+    //        é CONDICIONAL: vale enquanto a dona da visão não contornar RLS. Visão de dona
+    //        superusuária devolve todas as empresas e não aparece em `tabelasExaminadas`. Medido,
+    //        não suposto (ver o bloco acima).
+    // QUANDO FECHA: a **primeira fatia que criar visão em `negocio`** — hoje não existe nenhuma. A
+    //        decisão é de spec e tem duas saídas: parar de excluir `v` (uma visão sem `empresa_id`
+    //        passa a reprovar, que é fail-closed) ou exigir `security_invoker = true` nas visões
+    //        do schema.
+    // POR QUE NÃO AGORA: nenhum papel deste produto alcança o buraco — `sysloc_app` não tem
+    //        `CREATE` no schema e `sysloc_migracao` é `NOBYPASSRLS` —, e mudar a lista sem visão
+    //        alguma no banco alteraria o comportamento da guarda de isolamento sem que teste nenhum
+    //        exercitasse a mudança. Escalado ao usuário no fechamento da F1.
+    // ÍNDICE: docs/specs/features/fundacao-multitenancy-identidade/v1/_run/run-report.md §2, D38
     const linhas = await sql<LinhaDeCobertura[]>`
       SELECT
         n.nspname || '.' || c.relname AS "tabela",

@@ -247,12 +247,29 @@ const RADICAIS_SENSIVEIS_EM_ENDERECO: readonly string[] = [...RADICAIS_SENSIVEIS
  *   **Esta fronteira não é ornamento**: sem ela o valor engolia o delimitador do TEXTO em volta
  *   e o substituía junto — `at alvo [ENDERECO]` saía sem o `]`, que é a mutilação silenciosa
  *   que o eixo da cadeia de conexão já custou uma rodada para aprender a evitar. Fazer o valor
- *   terminar onde o próprio URI termina fecha a classe inteira, e não o colchete: nenhum
- *   desses caracteres aparece num valor de parâmetro real sem estar codificado, de modo que a
- *   exclusão não deixa para trás cauda de segredo nenhuma.
+ *   terminar onde o próprio URI termina é o que preserva o texto em volta.
  *
  * O valor exige **ao menos um caractere**: `?token=` sem valor não carrega segredo, e trocá-lo
  * pelo sentinela inventaria conteúdo onde não havia — mascarar não é apagar, nem preencher.
+ *
+ * ---------------------------------------------------------------------------
+ * A fronteira do VALOR, declarada — e não afirmada como absoluto
+ * ---------------------------------------------------------------------------
+ *
+ * A âncora (acima) é fronteira **fechada**: sem `?`, `&` ou `#` antes, nada é reconhecido. A do
+ * valor **não é**, e dizer que fosse seria a promessa que este arquivo existe para não fazer. Duas
+ * entradas foram medidas e atravessam:
+ *
+ * - `?token=SEG]REDO` → `?token=[REDIGIDO]]REDO`. O `]` encerra o valor, então a **cauda**
+ *   (`]REDO`) sobrevive. É o preço direto da exclusão que protege o texto em volta: sem ela, o
+ *   caso legítimo `at alvo [http://h/x?token=ABC]` sairia sem o `]` final.
+ * - `?a=1;token=SEGREDO` → intacto. O `;` **não delimita** — o par casado é `a=1;token=SEGREDO`,
+ *   cujo nome (`a`) não denuncia nada, e o `token` aninhado nunca é visto como parâmetro próprio.
+ *
+ * **Nenhuma das duas é corrigível por aqui.** Admitir `]` como delimitador de valor reabre a
+ * mutilação; admitir `;` obrigaria a tratá-lo como separador de parâmetro, que ele não é em
+ * endereço deste produto. As duas são fronteira conhecida do eixo, não defeito a fechar — e ambas
+ * exigem que o segredo já venha malformado, o que nenhum produtor deste sistema faz.
  */
 const PARAMETRO_DE_ENDERECO = /([?&#])([^?&#=\s]+)=([^?&#\s"<>{}|\\^`[\]]+)/g;
 
