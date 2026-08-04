@@ -234,4 +234,6 @@ Ao revisar testes implementados, o `agent-spec-qa-validator` aplica os 7 gates c
 | 6 (assertion em mock auto-set) | `mock_driven_confidence` (CRÍTICO) |
 | 7 (sem negative companion) | `happy_path_only` (ALTO) |
 
-Cada violação **simultaneamente** vai para `problemas.*` correspondente. Como todos os 7 gates listados aqui mapeiam para antipadrões CRÍTICOS ou ALTOS, qualquer violação **bloqueia** (`REJEITADO`) pela política débito-controlado do agent-spec-qa-validator. Apenas violações estilísticas BAIXAS listadas em `antipadroes.md` viram observações em vez de bloqueio (médios também bloqueiam → entram no loop de correção).
+Cada violação **simultaneamente** vai para `problemas.*` correspondente. **5 dos 7 gates** listados aqui mapeiam para antipadrões CRÍTICOS ou ALTOS, e esses **bloqueiam sempre** (`REJEITADO`) pela política do agent-spec-qa-validator.
+
+> As duas linhas da tabela acima que citam antipadrões **MÉDIO** (`vague_existence_assertion`, `duplicate_cross_layer`) são a exceção: em severidade MÉDIA vale o **bloqueio seletivo por categoria** e, em `categoria: tests`, quem decide é o campo `smell`. Ambos pertencem ao conjunto de manutenibilidade, portanto **anotam como débito** em vez de bloquear. Ver `antipadroes.md` → "O caso MÉDIO em `categoria: tests`". (A tabela acima não tem nenhuma entrada BAIXA; no catálogo completo do `antipadroes.md`, as violações BAIXAS seguem virando observação, como sempre.)

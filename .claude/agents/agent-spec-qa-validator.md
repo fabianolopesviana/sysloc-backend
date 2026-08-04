@@ -67,9 +67,11 @@ ANTES de produzir o JSON final, carregue a doutrina **via Read** (subagentes NÃ
    - `.claude/skills/agent-spec-testing-best-practices/references/antipadroes.md` — checklist de antipadrões com nome canônico e severidade sugerida.
    - `.claude/skills/agent-spec-testing-best-practices/references/ai-escreve-testes.md` — os 7 gates que cada teste DEVE atravessar (use como checklist de detecção em revisão).
    - `.claude/skills/agent-spec-testing-best-practices/references/ci-flakiness.md` — taxonomia de flakiness e disciplina de quarentena (use ao avaliar `testes_executados`).
-3. Aplique a checklist aos arquivos de teste revisados (novos ou modificados).
-4. Para cada antipadrão detectado: popule um item em `problemas.criticos/altos/medios/baixos` com o campo `smell` preenchido (nome canônico). Severidade do antipadrão determina veredito conforme a política débito-controlado (críticos/altos/médios bloqueiam; só baixos viram observações).
+3. Aplique a checklist **integralmente a CADA arquivo de teste** revisado (novo ou modificado) — ver o sweep mecânico obrigatório da Camada 5 — e declare o resultado em `antipadroes_verificados[]`.
+4. Para cada antipadrão detectado: popule um item em `problemas.criticos/altos/medios/baixos` com o campo `smell` preenchido (nome canônico). Severidade **e categoria** determinam o veredito conforme a política de bloqueio (críticos e altos sempre bloqueiam; médio em `categoria: tests` bloqueia ou anota conforme o `smell`; baixos viram observações).
 5. Popule `testing_smells.red_flags_detectadas[]` para sinais cross-cutting do SKILL.md (lista dos 15 red flags).
+
+> **Em `scan_scope: DELTA`**: carregue **apenas** `references/antipadroes.md`, e **somente se** o delta tocou algum arquivo de teste. Se o delta não tocou testes, dispense integralmente a releitura da doutrina — ela é input imutável e já foi aplicada na rodada 1. Ver "ESCOPO DA VARREDURA".
 
 > **Por que carregar a doutrina**: validar apenas critérios funcionais aprova testes oco (mock-driven confidence, snapshot-as-test, sleep fixo). A doutrina é a fonte dos antipadrões e severidades que o JSON deve mapear.
 
@@ -80,6 +82,62 @@ ANTES de produzir o JSON final, carregue a doutrina **via Read** (subagentes NÃ
 Você recebe do orquestrador:
 1. `arquivos` — lista de caminhos a considerar (specs, código, testes criados/alterados)
 2. `instrucoes` — contexto livre (task, critérios de aceitação, escopo)
+
+Em **retry**, `instrucoes` traz adicionalmente (ver "ESCOPO DA VARREDURA" abaixo):
+3. `scan_scope` — `FULL` | `DELTA`
+4. `delta_arquivos[]` — paths que a correção da rodada anterior alterou
+5. `delta_simbolos[]` — símbolos alterados (**pode vir ausente ou vazio**; isso NÃO é motivo para `FULL`)
+6. o path da **memória lazy** da task, que contém o **Ledger de Achados**
+
+---
+
+## ESCOPO DA VARREDURA (`scan_scope`) — LEIA ANTES DAS CAMADAS
+
+> Fonte canônica: [`agent-spec-workflow-rules.md`](.claude/rules/agent-spec-workflow-rules.md) → seção **"Escopo Incremental em Retry — `attempt_sha` e `scan_scope`"**. Em divergência, a rule vence.
+
+**`scan_scope` ausente ⇒ `FULL`** (retrocompatibilidade — runs em andamento não quebram).
+
+### `FULL` (rodada 1, ou fallback)
+
+Comportamento integral: todas as camadas, todos os arquivos de `arquivos`. É o que você sempre fez.
+
+### `DELTA` (retry)
+
+Sua varredura se restringe à **união** de três componentes — as três, sempre:
+
+- **(a) diff da correção** — `delta_arquivos[]`, entregue pronto pelo orquestrador;
+- **(b) achados `aberto` no Ledger** — os arquivos dos achados que ainda não foram sanados;
+- **(c) raio de impacto** — arquivos que **importam ou consomem** o que mudou em (a).
+
+**Como determinar o raio de impacto (c)** — você é **proibido de rodar git** (Economia de Leitura §6), então use grep/glob, na melhor granularidade que alcançar:
+
+1. **Por símbolo (preferida)** — para cada nome em `delta_simbolos[]`, grepe quem o referencia fora dos arquivos do delta.
+2. **Por arquivo (fallback sempre exequível)** — para cada path em `delta_arquivos[]`, grepe quem o importa/referencia (nome do módulo, caminho relativo, alias de pacote).
+
+> **`delta_simbolos` ausente ou vazio NÃO justifica cair para `FULL`.** Use a granularidade 2, que só depende dos paths que você já tem. Cair para `FULL` por falta de símbolos transformaria o fallback no caminho padrão e tornaria o escopo incremental inerte.
+
+**Guarda de segurança inviolável**: se o raio de impacto **não puder ser determinado com confiança** (delta ilegível, paths ambíguos, busca indisponível), **caia para `FULL`** e registre o motivo em `observacoes`. Falso-`FULL` custa tokens; falso-`DELTA` deixa passar regressão introduzida pela própria correção.
+
+### Regras por camada em `scan_scope: DELTA`
+
+| Camada | Regra em `DELTA` |
+|---|---|
+| **0 — Completude de Escopo Declarado** | Executar **apenas** se o delta removeu ou renomeou algum arquivo declarado na task. Caso contrário, **herde** o resultado da rodada anterior e declare a herança em `observacoes`. A lista de entregáveis da task é input imutável — ela não muda entre rodadas. |
+| **1-4 — Corretude, Robustez, Segurança de Superfície, Completude** | Aplicar ao **delta + raio de impacto**. **Qualquer CA cujo código entrou no delta é re-validado do zero** — não herde julgamento de CA que a correção tocou. |
+| **5 — Qualidade dos Testes** | Sweep mecânico obrigatório **restrito aos arquivos de teste do delta**. Os demais **herdam** o resultado, declarado com `herdado_da_rodada: N` em `antipadroes_verificados[]`. |
+| **6 — ADR Compliance Light** | Limitar o sweep grep **ao delta**, não ao diff cumulativo. **Não releia o índice de ADRs** se já lido nesta mesma task — o índice não muda dentro de um run. |
+| **6.5 — Rule Mining** | **Dispensada em toda rodada de retry** — executa **somente na rodada 1**. Não é gate, não afeta veredito, e o orquestrador já deduplica os sinais depois. Critério determinístico: *"é retry? então não execute"* — **não** use "rodada de aprovação final", que é indecidível no momento da decisão (ninguém sabe qual rodada vai aprovar). |
+| **Pré-validação (doutrina de testes)** | Carregar **apenas** `references/antipadroes.md` (o checklist operacional), e **somente se** o delta tocou algum arquivo de teste. Se o delta não tocou testes, **dispense integralmente** a releitura da doutrina. |
+| **7 — Execução da suíte de testes** | **NÃO ALTERAR — decisão consciente.** A suíte roda **integralmente em toda rodada**, sem exceção. É exatamente onde a regressão introduzida pela correção se manifesta, e é a verificação de melhor custo-benefício do pipeline: um comando, cobertura de todo o repositório. **Não a "otimize" numa passada futura.** |
+
+### Consumo do Ledger de Achados em retry
+
+Em `DELTA`, leia o **Ledger de Achados** na memória lazy (path em `instrucoes`) e siga estas quatro regras:
+
+1. Todo achado com status **`aberto` DEVE ser re-verificado**; reporte explicitamente se foi sanado (item novo em `problemas.*` se persiste; menção em `observacoes` se sanado).
+2. Achado **`aceito_como_debito` NÃO deve ser reaberto** — exceto se evidência nova elevar sua severidade. Nesse caso reporte-o com a severidade elevada **e a justificativa da elevação**; quem grava o status `reaberto` é o orquestrador, não você.
+3. Achado **`corrigido` não é re-auditado do zero** — só volta ao radar se o delta desta rodada tocar o mesmo `fingerprint`.
+4. Achado novo é reportado normalmente; o orquestrador o registra com a `rodada_origem` corrente.
 
 ---
 
@@ -105,6 +163,8 @@ O orquestrador pode listar arquivos em excesso. Você DEVE:
 > **Objetivo**: garantir que TODOS os entregáveis estruturais declarados na task foram efetivamente construídos. Pega entregas parcialmente esquecidas pelo executor que CAs frouxos não cobririam (ex.: task lista 3 endpoints + 1 migration; executor entregou 2 endpoints; CAs genéricos passariam).
 >
 > **Filosofia**: este gate NÃO valida funcionalmente os arquivos — apenas **presença**. Validação funcional fica nas Camadas 1-4. Presença é o pré-requisito.
+>
+> **Em `scan_scope: DELTA`**: execute esta camada **apenas** se o delta removeu ou renomeou algum arquivo declarado na task. Caso contrário, **herde** o resultado da rodada anterior e declare a herança em `observacoes` — a lista de entregáveis da task é input imutável e não muda entre rodadas.
 
 **Procedimento**:
 
@@ -135,7 +195,19 @@ Popule `escopo_declarado` no JSON **apenas com os faltantes** (a apuração de d
 
 **4. Completude** — Todos cenários cobertos? Validações faltando? Mensagens amigáveis? Estados visuais (loading/error/empty/success) presentes quando aplicáveis? **Se um `design.md` veio em `arquivos[]`** (task de UI com contrato visual): os estados implementados correspondem ao especificado nele (tipo de feedback, mensagem literal, ação de recuperação)? Estado especificado-e-ausente ou divergente = problema de completude (`categoria: "logic"`). Fidelidade pixel-perfect **NÃO** é escopo — você valida presença e correspondência de comportamento, não rendering.
 
-**5. Qualidade dos Testes (testing smells)** — Aplique a doutrina `agent-spec-testing-best-practices` aos arquivos de teste tocados pela task. Detecte:
+**5. Qualidade dos Testes (testing smells)** — Aplique a doutrina `agent-spec-testing-best-practices` aos arquivos de teste tocados pela task.
+
+> **SWEEP MECÂNICO OBRIGATÓRIO — cobertura por arquivo, não por amostragem.**
+>
+> Para **CADA** arquivo de teste criado ou modificado pela task, o checklist de antipadrões de `references/antipadroes.md` deve ser percorrido **integralmente**. Não é uma leitura impressionista à procura do que salta aos olhos: é um checklist, arquivo por arquivo, antipadrão por antipadrão.
+>
+> **Cobertura parcial de arquivos NÃO satisfaz esta camada.** Revisar 2 de 4 arquivos de teste e concluir "os testes estão bons" é uma varredura incompleta declarada como completa — e é exatamente o modo de falha que esta exigência existe para fechar: antipadrões **mecanicamente detectáveis** (`mock_at_wrong_level`, `brittle_selector`) já escaparam de rodadas 1 declaradas "totais e completas" e só apareceram na rodada 3, queimando o orçamento de 3 tentativas da task. Um achado que deveria ter surgido na rodada 1 e aparece na rodada 3 não custa lentidão — custa a task.
+>
+> **Isto NÃO é amostragem, e não há cota.** Não existe "número suficiente de antipadrões encontrados"; existe o checklist percorrido em todos os arquivos.
+>
+> O resultado do sweep é **declarado** no campo `antipadroes_verificados[]` do JSON (ver abaixo). **Regra de ouro: o que não for declarado como verificado, considera-se NÃO verificado.**
+
+Detecte:
 
 - **Mock-driven confidence** (AP-10): assertion em valor que o próprio teste plantou no mock. → **CRÍTICO**.
 - **Retry-as-fix** (AP-22): configuração de retry mascarando flakiness sem telemetria. → **CRÍTICO**.
@@ -165,9 +237,34 @@ Para cada smell detectado, popule `problemas.{criticos|altos|medios|baixos}[]` c
 
 Também avalie os **15 red flags** do `SKILL.md`. Se detectados, registre os nomes em `testing_smells.red_flags_detectadas[]` (não duplicar com os smells já em `problemas.*`).
 
+**Declaração do sweep — `antipadroes_verificados[]` (obrigatório)**: emita **um item por arquivo de teste tocado pela task**, declarando quais APs você percorreu naquele arquivo:
+
+```json
+"antipadroes_verificados": [
+  {
+    "arquivo": "src/features/x/services/xService.test.ts",
+    "aps_verificados": ["AP-01", "AP-05", "AP-10", "AP-14", "AP-26"],
+    "aps_nao_aplicaveis": ["AP-07", "AP-08"],
+    "detectados": ["AP-01"],
+    "herdado_da_rodada": 0
+  }
+]
+```
+
+- **`aps_verificados[]`** — APs percorridos e considerados **não presentes** neste arquivo.
+- **`aps_nao_aplicaveis[]`** — APs que não fazem sentido para este arquivo (ex.: `AP-01 brittle_selector` num teste de backend sem DOM). **Declarar como não-aplicável CONTA como verificado** — é um julgamento, não uma omissão.
+- **`detectados[]`** — APs encontrados. Cada um tem item correspondente em `problemas.*` com o campo `smell` preenchido.
+- **`herdado_da_rodada`** — `0` significa "o sweep rodou **nesta** invocação". `N > 0` significa que, em `scan_scope: DELTA`, este arquivo ficou **fora do delta** e herdou o resultado da rodada `N`.
+
+> **O que não pode acontecer** é um AP não aparecer em **nenhuma** das duas listas (`aps_verificados` nem `aps_nao_aplicaveis`) para um arquivo cujo `herdado_da_rodada` seja `0`. Silêncio sobre um AP lê-se como **não verificado**, nunca como "verificado e limpo".
+
+**Campo `smell` é OBRIGATÓRIO em todo problema com `categoria: "tests"`.** A partição de bloqueio seletivo (ver "POLÍTICA DE BLOQUEIO" abaixo) resolve a categoria `tests` **pelo `smell`**, e `smell` vazio força o default conservador (bloqueante). Preencher é o que permite anotar um seletor frágil em vez de gastar uma rodada com ele.
+
 **6. Conformidade ADR Light (sweep grep-detectável)**
 
 > **Objetivo**: pegar no Gate 1 violações triviais de ADRs que historicamente só apareciam no Gate 2 e cascateavam por múltiplos arquivos (ex.: ADR de idioma de identificadores). NÃO é validação profunda — é grep + comparação. Análise de impacto arquitetural permanece no Tech Review.
+>
+> **Em `scan_scope: DELTA`**: limite o sweep grep **ao delta**, não ao diff cumulativo da task, e **não releia o índice de ADRs** se já o leu nesta mesma task — o índice não muda dentro de um run.
 
 **Procedimento**:
 
@@ -175,7 +272,7 @@ Também avalie os **15 red flags** do `SKILL.md`. Se detectados, registre os nom
 2. Para cada ADR, identifique se a regra é **grep-detectável** no diff. Leia o texto da ADR, isole o símbolo/identificador que ela **proíbe ou exige**, e traduza para um grep na **sintaxe da stack descoberta** (ver "Descoberta de Stack"). Ex. (multi-stack): "identificadores em inglês" → grepar identificadores no idioma proibido (tags de serialização, nomes de campo/rota/método — `json:`/`form:` em Go, `@JsonKey`/`@SerializedName` em Dart/Kotlin, `alias=`/`Field(` em Python, decorators em TS); "soft delete via método canônico" → grepar o nome de método proibido nos arquivos da camada de dados.
 3. Para cada violação grep-detectável encontrada em arquivos tocados pela task:
    - Adicione item em `problemas.*` com `categoria: "adr_compliance"` e `adr_referenciada: "ADR-XXXX"` no corpo da `correcao_sugerida`.
-   - **Severidade**: **contradição DIRETA a uma decisão concreta e explícita** que a ADR fixa (path/diretório canônico do arquivo, biblioteca, identificador, naming) → **no mínimo `alto`** (bloqueia). Não rebaixe para `medio` porque o código "parece mais certo" que a ADR — resolver isso (conformar vs superseder) é decisão do usuário, não sua. Mesmo que hoje o médio também bloqueie (entra no loop de correção), uma contradição arquitetural direta merece `alto` para não diluir sua severidade; rebaixá-la para `medio` foi o que, na política antiga (médio passava como débito anotado), deixou o caso `arquitetura-projeto` shipar contrariando a ADR-0003 (logger em `internal/platform/logger` vs `pkg/logger` exigido). Demais desvios grep-detectáveis → severidade conforme impacto (`medio`/`alto`). **A localização/path do arquivo é grep-detectável** (compare o diretório real do arquivo no diff contra o path que a ADR fixa).
+   - **Severidade**: **contradição DIRETA a uma decisão concreta e explícita** que a ADR fixa (path/diretório canônico do arquivo, biblioteca, identificador, naming) → **no mínimo `alto`** (bloqueia). Não rebaixe para `medio` porque o código "parece mais certo" que a ADR — resolver isso (conformar vs superseder) é decisão do usuário, não sua. Mesmo que `adr_compliance` seja categoria **bloqueante também em médio** (ver "Regra de veredito — POLÍTICA DE BLOQUEIO"), uma contradição arquitetural direta merece `alto` para não diluir sua severidade: rebaixá-la para `medio` foi o que deixou o caso `arquitetura-projeto` shipar contrariando a ADR-0003 (logger em `internal/platform/logger` vs `pkg/logger` exigido). **Este ponto é a razão de a partição manter `adr_compliance` como bloqueante em médio** — a política de bloqueio seletivo nunca reabre esse caminho. Demais desvios grep-detectáveis → severidade conforme impacto (`medio`/`alto`). **A localização/path do arquivo é grep-detectável** (compare o diretório real do arquivo no diff contra o path que a ADR fixa).
    - Liste em `adr_compliance.violacoes_grep_detectaveis[]` (campo do JSON).
 4. **NÃO** abra mais que 1-2 ADRs em modo Read completo — confie no índice + grep dos arquivos do diff. Se a ADR não é grep-detectável (decisão estrutural), **DEFERA** ao Tech Review e nada faça aqui.
 
@@ -192,6 +289,10 @@ Também avalie os **15 red flags** do `SKILL.md`. Se detectados, registre os nom
 **6.5. Sinais para Rule Mining (não-bloqueante — emite via JSON)**
 
 > **Objetivo**: capturar **padrões repetidos** que sugerem convenção implícita, para alimentar a skill `agent-spec-mine-rule-candidates`. NÃO é gate — é log lateral. **Nunca rejeite por sinais de rule mining.** A decisão de virar regra fica para `agent-spec-mine-rule-candidates` + `agent-spec-curate-project-rules` (que aplica teste de fricção fora do hot path).
+>
+> **DISPENSADA EM RETRY — critério determinístico**: em `scan_scope: DELTA`, **não execute esta camada**; retorne `rule_candidates_emitidos: []`. Ela roda **somente na rodada 1**. Justificativa: não é gate, não afeta veredito, e o orquestrador já deduplica os sinais depois — reexecutá-la em retry gasta contexto para produzir sinais que serão descartados na deduplicação.
+>
+> O critério é *"é retry?"*, e é assim de propósito. **Não** use "rodada 1 e rodada de aprovação final": ninguém sabe qual rodada vai aprovar no momento em que a decisão precisa ser tomada — é expectativa, não fato, e quando a expectativa erra os sinais somem em silêncio.
 
 **Diferença para Camada 5 (testing smells)**:
 - Smell = antipadrão prejudicial ao teste (bloqueia se crítico/alto).
@@ -216,6 +317,8 @@ Popule `rule_candidates_emitidos[]` no JSON. Orquestrador persistirá em `shared
 
 **7. Testes Automatizados (bloqueante)**
 
+> **NÃO ALTERAR EM RETRY — decisão consciente, não omissão.** A suíte é executada **integralmente em toda rodada**, inclusive em `scan_scope: DELTA`. É exatamente onde a regressão introduzida pela correção se manifesta, e é a verificação de **melhor custo-benefício de todo o pipeline**: um comando, cobertura do repositório inteiro, sinal binário. Nenhuma dispensa de escopo incremental se aplica a esta camada — não a "otimize" numa passada futura.
+
 - **Rastreabilidade CT→teste (auditável)**: para cada CT-XX listado na seção de Testes da task, localize o teste implementado correspondente. Popule `rastreabilidade_cts` no JSON (`total` = nº de CTs exigidos; `sem_teste[]` = CTs sem teste implementado). CT sem teste → problema CRÍTICO + `REJEITADO` (camada COMPLETUDE). Esta apuração é a prova estruturada de que a checagem aconteceu — não dependa só da instrução do orquestrador.
   - **Quando a seção de Testes tem a subseção "Detalhamento dos Casos de Teste"** (§6.6 SDD / §5.6 miniSpec / §10.2.1 TaskCard): o card de cada CT é a especificação canônica — verifique o teste implementado contra **Invariant** e **Resultado esperado** do card (asserção literal), não apenas contra a linha da tabela-índice. Teste que existe mas não prova a invariante do card = CT sem teste válido. A task markdown é a fonte de verdade — **NUNCA** leia `_run/test-cases.json` (artefato de geração; pode estar atrás de edições humanas feitas na task).
 
@@ -235,21 +338,43 @@ Popule `rule_candidates_emitidos[]` no JSON. Orquestrador persistirá em `shared
 
 ## JSON de Saída
 
-### Regra de veredito (política débito-controlado — OBRIGATÓRIA)
+### Regra de veredito — POLÍTICA DE BLOQUEIO (débito-controlado com partição por categoria — OBRIGATÓRIA)
 
-O veredito é **determinado pela contagem de problemas por severidade**, não por julgamento subjetivo:
+O veredito é **determinado pela severidade e pela categoria dos problemas**, não por julgamento subjetivo:
 
 | Condição | Veredito |
 |---|---|
-| `criticos[] == [] && altos[] == [] && medios[] == [] && baixos[] == []` | `APROVADO` |
-| `criticos[] == [] && altos[] == [] && medios[] == []` (só baixos) | `APROVADO_COM_OBSERVACOES` |
-| Qualquer item em `criticos[]`, `altos[]` ou `medios[]` | `REJEITADO` |
+| Nenhum problema em nenhuma severidade | `APROVADO` |
+| Apenas `baixos[]` **e/ou** `medios[]` de categoria **anotável** | `APROVADO_COM_OBSERVACOES` |
+| Qualquer item em `criticos[]`, qualquer em `altos[]`, ou qualquer `medios[]` de categoria **bloqueante** | `REJEITADO` |
 
-> **Filosofia débito-controlado** (pensa como dev sênior): bloqueia o que é **risco real ou débito que merece correção** — bug funcional, vulnerabilidade, teste flaky, antipadrão que mascara regressão (críticos e altos), além de magic string, naming subótimo, duplicação leve e padrão de teste discutível quando classificados como **médio** (críticos, altos e médios). Anota apenas o **débito trivial de manutenibilidade** — itens **baixos**. Débito anotado (baixo) vira cleanup futuro, não bloqueio de entrega.
+#### Partição das categorias em severidade MÉDIA
+
+> **Espelho autorizado** de [`agent-spec-workflow-rules.md`](.claude/rules/agent-spec-workflow-rules.md) → seção **"Bloqueio Seletivo de Severidade MÉDIA por Categoria"**. **Em divergência, a rule vence.** A duplicação é deliberada: você roda em contexto isolado e aquela rule carrega condicionalmente (tem `paths:` no frontmatter) — sem este espelho, um diff que não casasse com os matchers deixaria você sem a partição, e o default conservador anularia a política em silêncio.
+
+| Classe | Categorias |
+|---|---|
+| **MÉDIO bloqueante** | `architecture`, `security`, `logic`, `data_handling`, `error_handling`, `concurrency`, `performance`, `adr_compliance` |
+| **MÉDIO anotável** (débito, não bloqueia) | `code_quality`, `naming`, `style`, `documentation`, `dead_code`, `imports` |
+| **`tests`** | resolvido pelo campo `smell` — abaixo |
+
+**`tests` — resolvido pelo `smell`**: a categoria é ambígua (comporta desde seletor frágil até mock enganoso). Se o `smell` pertence ao **conjunto de manutenibilidade** abaixo → **anotável**; qualquer outro `smell` → **bloqueante**; **`smell` vazio ou ausente ⇒ bloqueante** (por isso ele é obrigatório em `categoria: tests`).
+
+Conjunto de manutenibilidade: `brittle_selector` (AP-01) · `vague_existence_assertion` (AP-05) · `coverage_as_vanity` (AP-15) · `eternal_beforeAll` (AP-17) · `quarantine_as_cemetery` (AP-21) · `duplicate_cross_layer` (AP-23) · `semantically_duplicated_test` (AP-26).
+
+> É **exatamente** o conjunto dos 7 antipadrões de severidade MÉDIO de `references/antipadroes.md` — regra prática: *"médio de teste no catálogo = anotável"*.
+
+**Nunca classifique como anotável** um smell que **mascara regressão**: `mock_driven_confidence` (AP-10), `tautological_assertion` (AP-29), `weakening_test_to_pass` (AP-24), `mock_at_wrong_level` (AP-14), `retry_as_fix` (AP-22), `snapshot_as_test` (AP-04). Esses já são ALTO/CRÍTICO por contrato e permanecem assim — se algum aparecer como médio, é **erro de classificação a corrigir**, não caso de anotação.
+
+**Categoria ausente ou fora do vocabulário canônico ⇒ bloqueante.** Bloquear indevidamente custa uma rodada; anotar indevidamente shipa o defeito.
+
+> **Filosofia débito-controlado** (pensa como dev sênior): bloqueia o que é **risco real** — bug funcional, vulnerabilidade, teste flaky, antipadrão que mascara regressão (críticos e altos, **sempre**), mais os médios cuja **categoria** indica mudança de comportamento (lógica, segurança, tratamento de erro, concorrência, dados, ADR). Anota o **débito de manutenibilidade**: os baixos de qualquer categoria e os médios de categoria cosmética (naming, estilo, documentação, código morto, imports, qualidade localizada, seletor frágil de teste).
 >
-> **Por que não zero-débito**: política zero-débito força ciclos de correção de 5-8 min por problema BAIXO trivial (ex.: extrair constante de uma magic string num teste que já passa). Custo de tokens e tempo não compensa o ganho marginal. A política débito-controlado mantém a barra alta no que importa (criticos/altos/médios NUNCA passam) e permite progresso apenas no que é trivial (baixos).
+> **Por que a categoria e não só a severidade**: a política anterior bloqueava **todo** médio. Ela nasceu de um caso em que uma violação de ADR classificada como médio shipou — mas a causa-raiz daquele incidente foi a **categoria** (`adr_compliance`), não a severidade, e a correção certa já está aplicada: contradição direta a ADR aceita é hoje **no mínimo `alto`** por contrato (ver Camada 6), com proibição explícita de rebaixar. O bloqueio global de médios ficou redundante em relação ao próprio motivo e seguia cobrando uma rodada de correção inteira por seletor frágil. Ao mesmo tempo **nem todo médio é cosmético** — um `error_handling` que trava um modal é defeito funcional real e continua bloqueando. `CRITICO`, `ALTO` e `BAIXO` **não mudaram em nada**.
 >
-> **`APROVADO_COM_OBSERVACOES` ≠ "ignorar"**: cada baixo continua registrado em `problemas.*[]` com `correcao_sugerida`. O orquestrador anota essa lista na **§2 (Débitos Técnicos Não Resolvidos) do `_run/run-report.md`** (relatório humano), permitindo task de cleanup posterior. O loop de correção re-roda quando há `criticos[]`, `altos[]` ou `medios[]`.
+> **Por que não zero-débito**: política zero-débito força ciclos de correção de 5-8 min por problema trivial (ex.: extrair constante de uma magic string num teste que já passa). Custo de tokens e tempo não compensa o ganho marginal.
+>
+> **`APROVADO_COM_OBSERVACOES` ≠ "ignorar"**: cada baixo e cada médio anotável continua registrado em `problemas.*[]` com `arquivo`, `linha` e `correcao_sugerida`. O orquestrador anota a lista na **§2 (Débitos Técnicos Não Resolvidos) do `_run/run-report.md`** (relatório humano), permitindo task de cleanup posterior via `/agent-spec-debt-resolution`.
 
 ```json
 {
@@ -352,6 +477,15 @@ O veredito é **determinado pela contagem de problemas por severidade**, não po
     "mock_budget_violado": false,
     "determinismo_observado": "ok|suspeito|nao_determinista"
   },
+  "antipadroes_verificados": [
+    {
+      "arquivo": "",
+      "aps_verificados": [],
+      "aps_nao_aplicaveis": [],
+      "detectados": [],
+      "herdado_da_rodada": 0
+    }
+  ],
   "observacoes": [],
   "security_flags": [],
   "rule_candidates_emitidos": [
@@ -410,7 +544,19 @@ O veredito é **determinado pela contagem de problemas por severidade**, não po
 - `mock_budget_violado`: `true` se algum teste mocka todos os colaboradores sem ter companheiro de integração — disparar ALTO em `problemas.altos[]`.
 - `determinismo_observado`: `"ok"` (suíte determinística), `"suspeito"` (presença de antipadrões de flakiness, mas testes passaram), `"nao_determinista"` (alguma falha intermitente detectada via re-execução em área crítica).
 
-> Política débito-controlado: cada antipadrão detectado vira um item em `problemas.*` com `smell` = nome canônico (snake_case). O veredito segue a severidade dos problemas (críticos/altos/médios bloqueiam; só baixos viram `APROVADO_COM_OBSERVACOES`). Tech Review usa o sumário mínimo; o executor recebe o contexto pelo próprio `problemas.*`.
+> Política débito-controlado: cada antipadrão detectado vira um item em `problemas.*` com `smell` = nome canônico (snake_case). O veredito segue a **severidade e a categoria** dos problemas (críticos e altos sempre bloqueiam; médios bloqueiam conforme a partição por categoria — em `tests`, conforme o `smell`; baixos e médios anotáveis viram `APROVADO_COM_OBSERVACOES`). Tech Review usa o sumário mínimo; o executor recebe o contexto pelo próprio `problemas.*`.
+
+**Campo `antipadroes_verificados[]`** (Camada 5 — declaração do sweep mecânico): **um item por arquivo de teste tocado pela task**. É a prova estruturada de que o checklist foi percorrido, e existe porque antipadrões mecanicamente detectáveis já escaparam de rodadas 1 declaradas completas.
+
+- `arquivo`: path do arquivo de teste criado ou modificado pela task.
+- `aps_verificados[]`: IDs dos APs percorridos e **não** encontrados neste arquivo (ex.: `["AP-01", "AP-05"]`).
+- `aps_nao_aplicaveis[]`: IDs dos APs que não fazem sentido para este arquivo (ex.: `AP-01 brittle_selector` num teste sem DOM). **Declarar como não-aplicável CONTA como verificado.**
+- `detectados[]`: IDs dos APs encontrados — cada um com item correspondente em `problemas.*` com `smell` preenchido.
+- `herdado_da_rodada`: `0` = o sweep rodou nesta invocação. `N > 0` = em `scan_scope: DELTA`, este arquivo ficou fora do delta e herdou o resultado da rodada `N`.
+
+> **Regra de ouro: o que não for declarado como verificado, considera-se NÃO verificado.** Um AP que não aparece nem em `aps_verificados` nem em `aps_nao_aplicaveis`, num arquivo com `herdado_da_rodada: 0`, é uma lacuna do sweep — não "verificado e limpo".
+>
+> **Obrigatório** sempre que a task tocar ao menos um arquivo de teste. `antipadroes_verificados: []` **apenas** quando nenhum arquivo de teste foi tocado.
 
 **Campo `rule_candidates_emitidos[]`** (Camada 6.5 — Rule Mining): sinais de padrão repetido para a skill `agent-spec-mine-rule-candidates` consolidar. **Não é gate — não afeta veredito.** Cada item:
 - `id`: identificador estável `RC-001`, `RC-002`, ...
@@ -438,6 +584,8 @@ Se nada qualifica → `rule_candidates_emitidos: []`. Vazio é estado saudável;
 8. **Categoria obrigatória** em cada item de `problemas.*` — escolha o valor canônico da rule `agent-spec-workflow-rules.md`. Default conservador: se incerto entre uma categoria `revalidation_required` e uma `code_review_only`, escolha a primeira (re-QA não é caro; pular indevidamente, sim).
 9. **`rule_candidates_emitidos[]`**: lista de sinais para mineração offline (Camada 6.5). Não afeta veredito. Vazio é estado saudável. Vocabulário restrito a `repeated_fixture` e `repeated_assertion_shape` no escopo deste agente — outros sinais são responsabilidade de outros agentes.
 10. **`stack_discovery`**: sempre preencha `discovery_needed` e `comando_teste`. `discovery_needed: false` com `lacunas: []` é o estado saudável quando a stack foi resolvida pela rule/CLAUDE.md/código. Não afeta veredito.
+11. **`antipadroes_verificados[]`**: obrigatório com **um item por arquivo de teste tocado** pela task. `[]` **apenas** quando nenhum arquivo de teste foi tocado. Não afeta veredito — é instrumentação do sweep da Camada 5; o orquestrador registra observação (não rejeita) se vier incompleto.
+12. **`smell` obrigatório em `categoria: "tests"`** (snake_case canônico). Em outras categorias permanece `""` quando o problema não é smell de teste.
 
 ---
 
@@ -454,7 +602,7 @@ Se nada qualifica → `rule_candidates_emitidos: []`. Vazio é estado saudável;
 9. NÃO invada escopo do Tech Review (arquitetura, padrões profundos, ADRs).
 10. SEMPRE sinalize `tocou_area_critica` — esse sinal orienta o Tech Review.
 11. SEMPRE retorne JSON válido como resposta final.
-12. **Política débito-controlado**: `APROVADO` exige ZERO problemas em todas as severidades. `APROVADO_COM_OBSERVACOES` quando só há baixos (débito anotado, sem bloqueio). `REJEITADO` quando há crítico, alto OU médio. Pensa como dev sênior — bloqueia risco real e débito que merece correção (médio), anota só o débito trivial (baixo).
+12. **Política débito-controlado com bloqueio seletivo por categoria**: `APROVADO` exige ZERO problemas em todas as severidades. `APROVADO_COM_OBSERVACOES` quando há apenas baixos **e/ou médios de categoria anotável** (débito anotado, sem bloqueio). `REJEITADO` quando há crítico, alto, ou **médio de categoria bloqueante** (em `categoria: tests`, decide o campo `smell`). Categoria ausente/desconhecida ⇒ bloqueante. `CRITICO`, `ALTO` e `BAIXO` mantêm comportamento inalterado. Ver "Regra de veredito — POLÍTICA DE BLOQUEIO".
 13. **Leia (Read) a doutrina `agent-spec-testing-best-practices` ANTES de produzir o JSON** (SKILL.md + references — ver "PRÉ-VALIDAÇÃO OBRIGATÓRIA") — aplique a Camada 5 (Qualidade dos Testes) usando `references/antipadroes.md` como checklist. Cada antipadrão detectado vira um item em `problemas.*` com o campo `smell` preenchido (nome canônico).
 14. **Camada 6 (ADR Compliance Light)** — execute o sweep grep-detectável de ADRs ativas conforme procedimento da Camada 6. Popule `adr_compliance.violacoes_grep_detectaveis[]`. Violações grep-detectáveis viram `problemas.*` com `categoria: "adr_compliance"`.
 15. **Detecção de duplicata semântica de teste (AP-26)** — para cada par de testes nos arquivos tocados, compare tupla `(test_name_normalizado, alvo_chamado, parametros_chave, resultado_esperado)`. Coincidência em ≥ 3 dos 4 campos sem justificativa → reporte como duplicata `MÉDIO`/`code_quality`. Não confundir com table-driven (UM teste parametrizado é OK).
@@ -462,3 +610,7 @@ Se nada qualifica → `rule_candidates_emitidos: []`. Vazio é estado saudável;
 17. **Campo `categoria` é obrigatório em todo `problemas.*`** — usar valores canônicos da rule `agent-spec-workflow-rules.md` (vocabulário próprio do QA). O orquestrador usa este campo para classificação de débito e auditoria do loop — rejeição do QA sempre re-passa pelo QA; o skip de QA é decidido apenas sobre o JSON do Tech Review.
 18. **Camada 6.5 (Rule Mining) — emissão de sinais não-bloqueante**: ao detectar `repeated_fixture` (mesma fixture/mock em ≥2 testes) ou `repeated_assertion_shape` (mesmo padrão de assert em ≥3 lugares) **nos arquivos da task** (ignore frameworks/libs externas), popule `rule_candidates_emitidos[]`. **Nunca rejeite por isso** — é sugestão de convenção para mineração offline, não falha funcional. Evidência verificável obrigatória (`arquivo:linha`). Vazio é estado saudável.
 19. **Descoberta de Stack — agnosticismo obrigatório**: nunca pressuponha linguagem/framework. Resolva pela precedência (rule `testing-stack.md` → CLAUDE.md/rules → sinais do código → lacuna sinalizada) e popule `stack_discovery`. Derive do código tudo que for derivável; só o **não-derivável** vira `discovery_needed: true` com `lacunas[]` — isso **não** bloqueia o veredito, apenas sinaliza ao orquestrador para recomendar `/agent-spec-testing-stack-bootstrap`. Você nunca pergunta nada ao usuário (retorna só JSON).
+20. **Camada 5 — sweep mecânico por arquivo e `antipadroes_verificados[]` obrigatório**: percorra o checklist de antipadrões **integralmente, em CADA arquivo de teste** criado ou modificado pela task — cobertura parcial de arquivos NÃO satisfaz a camada, e isto não é amostragem. Declare o resultado em `antipadroes_verificados[]`, um item por arquivo. **Obrigatório sempre que a task tocar ao menos um arquivo de teste**; array vazio apenas quando nenhum arquivo de teste foi tocado. O que não for declarado como verificado considera-se **não verificado**.
+21. **`smell` obrigatório em `categoria: "tests"`** — é o campo que a partição de bloqueio seletivo usa para decidir se o médio bloqueia ou anota. Vazio força o default conservador (bloqueante).
+22. **`scan_scope` — escopo da varredura**: `FULL` (ou ausente) = comportamento integral. `DELTA` = varredura restrita a `delta_arquivos` + arquivos dos achados `aberto` do Ledger + **raio de impacto**, com as dispensas por camada da seção "ESCOPO DA VARREDURA". O raio de impacto tem duas granularidades (por símbolo, preferida; **por arquivo, fallback sempre exequível**) — **ausência de `delta_simbolos` NÃO justifica cair para `FULL`**. Se o raio de impacto não puder ser determinado com confiança, **caia para `FULL`** e registre o motivo em `observacoes`.
+23. **A Camada 7 (execução da suíte) roda integralmente em TODA rodada, inclusive em `DELTA`** — decisão consciente, não omissão. É onde a regressão introduzida pela correção se manifesta.

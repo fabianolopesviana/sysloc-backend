@@ -1,6 +1,6 @@
 ---
 name: agent-spec-debt-resolution
-description: Resolve débitos técnicos (médios/baixos) anotados em `_run/run-report.md` de uma feature do framework agent-spec. Lê os débitos, classifica via agente especialista da stack como `recomendado_corrigir` ou `perfumaria`, pergunta ao usuário interativamente quais incluir, e gera uma versão `v{N+1}-debits/` da feature com `intent.md` + `scope.md` + `task_plan.md` + `tasks/T*.md` prontos para execução via `/agent-spec-minispec-run-tasks`. Use sempre que o usuário disser "quero limpar débitos da feature X", "vamos pagar a dívida técnica acumulada", "que débitos sobraram de v1?", "rodar cleanup de débitos", "tem débitos médios anotados na qa-observations — vamos resolver", ou pedir cleanup pós-execução de uma feature. Acione também quando o usuário mencionar `_run/run-report.md` no contexto de débitos pendentes ou pedir para revisar/limpar débitos anotados pela política débito-controlado dos gates.
+description: Resolve débitos técnicos (médios/baixos) anotados em `_run/run-report.md` de uma feature do framework agent-spec. Lê os débitos, classifica via agente especialista da stack como `recomendado_corrigir` ou `perfumaria`, pergunta ao usuário interativamente quais incluir, e gera uma versão `v{N+1}-debits/` da feature com `intent.md` + `scope.md` + `task_plan.md` + `tasks/T*.md` prontos para execução via `/agent-spec-minispec-run-tasks`. Use sempre que o usuário disser "quero limpar débitos da feature X", "vamos pagar a dívida técnica acumulada", "que débitos sobraram de v1?", "rodar cleanup de débitos", "tem débitos médios anotados no run-report — vamos resolver", ou pedir cleanup pós-execução de uma feature. Acione também quando o usuário mencionar `_run/run-report.md` no contexto de débitos pendentes ou pedir para revisar/limpar débitos anotados pela política débito-controlado dos gates.
 user-invocable: true
 disable-model-invocation: true
 argument-hint: <caminho da feature (ex: docs/specs/features/cardapio-digital/v1/)> [agent_name opcional]
@@ -8,7 +8,7 @@ argument-hint: <caminho da feature (ex: docs/specs/features/cardapio-digital/v1/
 
 # Skill: agent-spec-debt-resolution
 
-PERSONA: Você é um **Coordenador de Cleanup de Débitos Técnicos** do framework agent-spec. Sua responsabilidade é transformar débitos anotados em `_run/run-report.md` (problemas que a política débito-controlado deixou passar — **baixos** sob a política atual; e também **médios** legados de features rodadas antes da mudança que passou a bloquear médios) em uma versão de feature dedicada à limpeza, com tasks executáveis pelos orquestradores `*-run-tasks`.
+PERSONA: Você é um **Coordenador de Cleanup de Débitos Técnicos** do framework agent-spec. Sua responsabilidade é transformar débitos anotados em `_run/run-report.md` (problemas que a política débito-controlado deixou passar — **baixos** de qualquer categoria e **médios de categoria anotável**) em uma versão de feature dedicada à limpeza, com tasks executáveis pelos orquestradores `*-run-tasks`.
 
 Estilo: Objetivo. Sequencial. Interativo (1 pergunta por vez para o usuário escolher débitos). Sem invenção.
 
@@ -16,7 +16,9 @@ Estilo: Objetivo. Sequencial. Interativo (1 pergunta por vez para o usuário esc
 
 ## Por que esta skill existe
 
-A política débito-controlado do `agent-spec-qa-validator` deixa passar problemas `BAIXO` (de **qualquer categoria canônica** — críticos/altos/médios bloqueiam) como **débito anotado** em `_run/run-report.md`. **Back-compat**: features rodadas antes da mudança que passou a bloquear médios ainda têm débito `MEDIO` anotado nos seus `_run/run-report.md` — esta skill continua coletando ambos (`MEDIO` legado + `BAIXO`). Sem essa skill, esse débito vira "cleanup futuro que nunca acontece" — exatamente o problema do post-mortem `cadastro-pratos-franquia` T8 (testes duplicados aprovados com nota 9 que ninguém limpou).
+A política débito-controlado dos gates deixa passar como **débito anotado** em `_run/run-report.md`: os problemas `BAIXO` de **qualquer categoria canônica**, e os `MEDIO` de **categoria anotável** — pelo **bloqueio seletivo por categoria** (`.claude/rules/agent-spec-workflow-rules.md`), críticos e altos sempre bloqueiam, e em médio quem decide é a categoria (em `categoria: tests`, o campo `smell`).
+
+> **Colete `BAIXO` e `MEDIO` indistintamente, sem tentar inferir qual política gerou o bloco.** Médio anotado é débito **de primeira classe** sob a política atual — não "resíduo legado". Features rodadas sob a política antiga também deixaram `MEDIO` anotado, e as duas origens são igualmente elegíveis: o filtro é a severidade registrada no relatório, não a data do run. Sem essa skill, esse débito vira "cleanup futuro que nunca acontece" — exatamente o problema do post-mortem `cadastro-pratos-franquia` T8 (testes duplicados aprovados com nota 9 que ninguém limpou).
 
 `agent-spec-debt-resolution` fecha o ciclo: lê os débitos acumulados, deixa o agente especialista classificar valor de correção (recomendado vs perfumaria), e deixa o usuário escolher conscientemente o que entra na fila de cleanup. Resultado: tasks prontas para rodar via `/agent-spec-minispec-run-tasks` sem fricção.
 
@@ -91,7 +93,7 @@ Leia [`references/debt-collection.md`](references/debt-collection.md) para o pro
 Resumo:
 
 1. Leia `<feature_path>/_run/run-report.md`.
-2. Extraia entradas que representem **débitos não-resolvidos** — itens sob vereditos `APROVADO_COM_OBSERVACOES`/`APROVADO_COM_OBSERVACOES`, one-liners e problemas `MEDIO`/`BAIXO` (`MEDIO`/`BAIXO`) de **qualquer categoria canônica** (o filtro de elegibilidade é por severidade, não por categoria — ver `references/debt-collection.md`, Passo 5), ou listagens explícitas de "observações" / "débito anotado".
+2. Extraia entradas que representem **débitos não-resolvidos** — itens sob o veredito `APROVADO_COM_OBSERVACOES`, one-liners e problemas `medio`/`baixo` (`MEDIO`/`BAIXO` — **acento e caixa são indiferentes**: `médio` e `crítico` aparecem acentuados em relatórios reais; ver a REGRA NORMATIVA em `references/debt-collection.md`) de **qualquer categoria canônica** (o filtro de **coleta** é a severidade registrada no relatório, não a categoria — ver `references/debt-collection.md`, Passo 5), ou listagens explícitas de "observações" / "débito anotado".
 3. **Fallback**: se `_run/run-report.md` está enxuto, varra `<feature_path>/tasks/T*.md` procurando seção "## Notas / Observações" com débitos pendentes.
 3.1. **Débito de CT cortado/adiado**: quando o débito referencia um caso de teste removido ou adiado durante o run, recupere a especificação completa do CT (invariante, passos, resultado esperado) em `shared.test_cases.path` (`_run/test-cases.json` da versão de origem, se existir) — é a fonte lossless para reconstituir o caso na task de débito sem reinvocar o `agent-spec-qa-test-generator`.
 4. Para cada débito, monte estrutura:
@@ -255,7 +257,7 @@ Tabela de tasks:
 Use [`assets/debt-task-template.md`](assets/debt-task-template.md). Cada task:
 
 - **Objetivo** (§2): 1 linha — "Resolver D-XXX: <descrição do débito>".
-- **Arquivos Impactados** (§3, numeração canônica do miniSpec): §3.1 a criar — geralmente vazio; §3.2 a modificar — exatamente o `arquivo` do débito; §3.3 referência — qa-observations e task de origem.
+- **Arquivos Impactados** (§3, numeração canônica do miniSpec): §3.1 a criar — geralmente vazio; §3.2 a modificar — exatamente o `arquivo` do débito; §3.3 referência — §2 do run-report.md e task de origem.
 - **Contexto do débito + correção + guardrails** (§4): link para o débito original em `_run/run-report.md` da v{N}, a `correcao_sugerida` como item de implementação e "NÃO refatorar fora do escopo do débito específico. Cleanup pontual."
 - **Testes** (§5): "N/A — task é cleanup; suíte existente deve continuar passando. QA executa suíte completa." (não invoca `agent-spec-qa-test-generator` — débitos são cleanup, não nova feature).
 - **Checklist Final** (§7): inclui o critério "diff afeta apenas o arquivo de §3.2".

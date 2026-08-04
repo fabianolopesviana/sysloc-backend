@@ -6,7 +6,7 @@
 > **Data**: {{data}}
 
 <!-- LLM-ONLY: Esta versão NÃO adiciona funcionalidade. É exclusivamente cleanup
-     de débitos `BAIXO` (e `MEDIO` legado de features pré-mudança) anotados pela
+     de débitos `BAIXO` e `MEDIO` de categoria anotável, anotados pela
      política débito-controlado dos gates durante a execução de `{{parent_version}}`.
      Não inclua user stories nem personas — débito técnico não tem stakeholder externo. -->
 
@@ -23,7 +23,7 @@
 
 ## 2. Objetivo
 
-Resolver **{{count_selecionados}} débitos técnicos** acumulados na execução de `{{parent_version}}`, classificados como aceitáveis para passar pelos gates (severidade `MEDIO`/`BAIXO`, categorias `code_review_only`) mas que prejudicam manutenibilidade, legibilidade ou propagam anti-padrões se deixados sem ação.
+Resolver **{{count_selecionados}} débitos técnicos** acumulados na execução de `{{parent_version}}`, classificados como aceitáveis para passar pelos gates (severidade `BAIXO` de qualquer categoria, ou `MEDIO` de categoria anotável) mas que prejudicam manutenibilidade, legibilidade ou propagam anti-padrões se deixados sem ação.
 
 A versão é gerada via skill `/agent-spec-debt-resolution` que:
 

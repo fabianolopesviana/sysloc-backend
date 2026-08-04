@@ -74,7 +74,7 @@ Propor alternativas **não** é desculpa para complexidade. A solução recomend
 - **Nada mirabolante.** Rejeite a opção sofisticada quando a simples entrega o mesmo resultado. Camada de abstração antecipada, generalização para casos hipotéticos, configurabilidade "que pode ser útil um dia" — tudo isso é over-engineering e fica de fora.
 - **A recomendada é a mais simples ancorada.** Quando mostrar 2-3 alternativas, a recomendação default é a mais simples que cabe no projeto. Alternativas mais elaboradas só entram se a feature **realmente cobra** o trade-off — e isso fica explícito na justificativa.
 
-> Espelha a doutrina da Disciplina do Executor (`.claude/skills/agent-spec-minispec-run-tasks/references/executor-discipline.md` — canônico, com symlinks nos demais `*-run-tasks`; Regra 2 — sem complexidade especulativa / Regra 3 — mudanças a serviço da task): a decisão tomada aqui é o que o executor vai implementar — se ela já nasce inflada ou fora do escopo, o over-engineering se propaga para baixo.
+> Espelha a doutrina da Disciplina do Executor (`.claude/skills/agent-spec-minispec-run-tasks/references/executor-discipline.md` — canônico, com cópias sincronizadas nos demais `*-run-tasks`; Regra 2 — sem complexidade especulativa / Regra 3 — mudanças a serviço da task): a decisão tomada aqui é o que o executor vai implementar — se ela já nasce inflada ou fora do escopo, o over-engineering se propaga para baixo.
 
 ---
 

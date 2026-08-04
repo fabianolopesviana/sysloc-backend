@@ -1,6 +1,6 @@
 ---
 name: agent-spec-sdd-run-tasks
-description: Executa as tasks geradas pelo TASK PLAN do framework SDD. Coordenador de subagentes — orquestra, NÃO implementa diretamente. Para CADA task: delega ao executor (agent_name da stack), valida no Gate 1 (agent-spec-qa-validator) e Gate 2 (agent-spec-staff-architecture-review), aplica memória lazy em rejeições e débito-controlado (críticos/altos/médios bloqueiam; só baixos são anotados). User-invocable.
+description: Executa as tasks geradas pelo TASK PLAN do framework SDD. Coordenador de subagentes — orquestra, NÃO implementa diretamente. Para CADA task: delega ao executor (agent_name da stack), valida no Gate 1 (agent-spec-qa-validator) e Gate 2 (agent-spec-staff-architecture-review), aplica memória lazy em rejeições, escopo incremental em retry (`scan_scope`/`attempt_sha`) e débito-controlado com bloqueio seletivo por categoria (críticos e altos sempre bloqueiam; médios bloqueiam conforme a categoria; baixos e médios anotáveis são anotados). User-invocable.
 user-invocable: true
 disable-model-invocation: true
 argument-hint: "<caminho task_plan.md ex: docs/specs/features/feature-user/v1/task_plan.md> [agent_name opcional ex: stack-agent]"
@@ -260,7 +260,7 @@ Você sempre terá acesso a:
    - diff não-staged em paths declarados (5.1/5.2) de task não-`Concluído`.
 
    Pergunte via `AskUserQuestion` com 3 opções: **(a) Retomar nos gates** — o código parcial já existe; use o `base_sha` da memória lazy (se existir — se não, grepe `shared.workflow_report.path` por `[T{N}] base_sha=`, persistido na pré-execução do Passo 3.1) e vá direto ao Gate 1; **(b) Reexecutar do zero** — `git checkout -- <paths declarados>` restaura os modificados; arquivos declarados em 5.1 (a criar) que existam como **untracked** devem ser **deletados explicitamente** (`git checkout` não remove untracked); confirme antes e execute normalmente; **(c) Resolver manualmente** — pare e aguarde. Logue a escolha em `shared.workflow_report.path`.
-4.1. **Leia [`references/executor-discipline.md`](references/executor-discipline.md)** (symlink que aponta para o canônico em `agent-spec-minispec-run-tasks/references/`) — extraia o bloco entre `<<<EXECUTOR_DISCIPLINE` e `EXECUTOR_DISCIPLINE>>>` e mantenha em memória. Será injetado **verbatim** no prompt de cada executor (Passo 3.3). Logue UMA vez no `shared.workflow_report.path`: `[run] executor_discipline injetado (fonte: references/executor-discipline.md)`.
+4.1. **Leia [`references/executor-discipline.md`](references/executor-discipline.md)** (**cópia sincronizada** do canônico em `agent-spec-minispec-run-tasks/references/` — ver a nota ANTIDRIFT no topo daquele arquivo) — extraia o bloco entre `<<<EXECUTOR_DISCIPLINE` e `EXECUTOR_DISCIPLINE>>>` e mantenha em memória. Será injetado **verbatim** no prompt de cada executor (Passo 3.3). Logue UMA vez no `shared.workflow_report.path`: `[run] executor_discipline injetado (fonte: references/executor-discipline.md)`.
 
 4.2. **Instrumentação de rule mining (não-bloqueante)** — durante o run, persista candidatos a regra em `shared.rule_candidates.path` conforme a subseção **"Persistência pelo orquestrador"** de [`agent-spec-workflow-rules.md`](.claude/rules/agent-spec-workflow-rules.md) → "Candidatos a Regra". Trigger points no fluxo SDD:
 
@@ -516,15 +516,29 @@ Você foi invocado com os seguintes parâmetros:
 1. **arquivos**: [lista de caminhos preparada no Passo 1]
 2. **instrucoes**: [conteúdo preparado no Passo 2]
 
+## Escopo da varredura (APENAS em retry — omita o bloco inteiro na rodada 1)
+- `scan_scope`: DELTA
+- `delta_arquivos`: [saída de `git diff --name-only <attempt_sha_anterior>`]
+- `delta_simbolos`: [símbolos alterados extraídos do diff textual — OMITA o campo se não conseguir extrair]
+- Memória lazy (contém o **Ledger de Achados**): [path resolvido via `shared.temp_memory.dir` + `shared.temp_memory.pattern`]
+
+Em `scan_scope: DELTA`, restrinja a varredura à união de (a) `delta_arquivos`, (b) arquivos dos achados com status `aberto` no Ledger e (c) o **raio de impacto** — quem importa/consome o que mudou em (a). Aplique as dispensas por camada da seção "ESCOPO DA VARREDURA" do seu contrato. **A ausência de `delta_simbolos` NÃO justifica cair para `FULL`**: use o raio de impacto por arquivo. Se o raio de impacto não puder ser determinado com confiança, **caia para `FULL`** e registre o motivo em `observacoes`. A **Camada 7 (execução da suíte) roda integralmente de qualquer forma**.
+
+Quando este bloco estiver ausente, `scan_scope` é `FULL` — comportamento integral.
+
 OBRIGATÓRIO: Antes de produzir o JSON final:
 
-1. Leia (Read) a doutrina de testes — `.claude/skills/agent-spec-testing-best-practices/SKILL.md` e `.claude/skills/agent-spec-testing-best-practices/references/antipadroes.md` — e aplique a Camada 5 (Qualidade dos Testes) usando o checklist de antipadrões. Cada antipadrão detectado em arquivos de teste tocados pela task vira um item em `problemas.*` com o campo `smell` preenchido (nome canônico). Severidade do antipadrão determina veredito conforme política débito-controlado (críticos/altos/médios bloqueiam; só baixos viram observações). Popule também `testing_smells.red_flags_detectadas[]`, `mock_budget_violado` e `determinismo_observado`.
+1. Leia (Read) a doutrina de testes — `.claude/skills/agent-spec-testing-best-practices/SKILL.md` e `.claude/skills/agent-spec-testing-best-practices/references/antipadroes.md` — e aplique a Camada 5 (Qualidade dos Testes) usando o checklist de antipadrões. Cada antipadrão detectado em arquivos de teste tocados pela task vira um item em `problemas.*` com o campo `smell` preenchido (nome canônico). Severidade **e categoria** determinam o veredito conforme a política de bloqueio seletivo (críticos e altos sempre bloqueiam; médio em `categoria: tests` bloqueia ou anota conforme o campo `smell`; baixos viram observações). Popule também `testing_smells.red_flags_detectadas[]`, `mock_budget_violado` e `determinismo_observado`.
+
+   **Sweep mecânico obrigatório (Camada 5 — cobertura por arquivo, não amostragem)**: percorra o checklist de antipadrões **integralmente, em CADA arquivo de teste** criado ou modificado. Cobertura parcial de arquivos NÃO satisfaz a camada. Declare o resultado em `antipadroes_verificados[]` — **um item por arquivo de teste tocado**, com `aps_verificados`, `aps_nao_aplicaveis`, `detectados` e `herdado_da_rodada`. O que não for declarado como verificado considera-se **não verificado**; array vazio APENAS quando nenhum arquivo de teste foi tocado.
 
 2. **Aplique a Camada 6 (ADR Compliance Light)** — leia `docs/adr/INDEX.md` (ou liste `docs/adr/*.md`), identifique ADRs ativas grep-detectáveis e cruze com os arquivos tocados pela task. Violações claras viram `problemas.*` com `categoria: "adr_compliance"`. Popule `adr_compliance.violacoes_grep_detectaveis[]`.
 
 3. **Detecte duplicatas semânticas (AP-26)** — para cada par de testes nos arquivos tocados, compare tupla `(test_name_normalizado, alvo_chamado, parametros_chave, resultado_esperado)`. Coincidência em ≥ 3 dos 4 campos sem justificativa → reporte como `MÉDIO` em `problemas.medios[]` com `categoria: "code_quality"`. Não confundir com table-driven (UM teste parametrizado é OK).
 
 4. **Categoria obrigatória** em cada item de `problemas.*` — usar valores canônicos da rule `.claude/rules/agent-spec-workflow-rules.md` (`architecture`, `security`, `tests`, `logic`, `data_handling`, `error_handling`, `performance`, `concurrency`, `code_quality`, `naming`, `style`, `documentation`, `dead_code`, `imports`, `adr_compliance`). Default conservador → `revalidation_required` quando incerto.
+
+5. **Campo `smell` obrigatório em todo problema com `categoria: "tests"`** (nome canônico snake_case). É por ele que a partição de bloqueio seletivo decide se um médio de teste bloqueia ou vira débito anotado — `smell` vazio força o default conservador (bloqueante). Ver `.claude/rules/agent-spec-workflow-rules.md` → "Bloqueio Seletivo de Severidade MÉDIA por Categoria".
 ```
 
 **IMPORTANTE**: preserve o JSON completo retornado pelo QA. Será usado:
@@ -533,9 +547,11 @@ OBRIGATÓRIO: Antes de produzir o JSON final:
 
 ### Passo 4 — Interpretar o resultado do QA
 
-> **Política débito-controlado**: bloqueia o que é risco real ou débito que merece correção (críticos, altos e médios); anota apenas o débito trivial de manutenibilidade (baixos). O loop de correção dispara quando há crítico, alto ou médio. Só os baixos viajam adiante, acumulados para a §2 do snapshot `_run/run-report.md` (cleanup futuro).
+> **Política débito-controlado com bloqueio seletivo por categoria**: bloqueia o que é risco real — **críticos e altos sempre**, mais os **médios de categoria bloqueante**. Anota como débito os **baixos** e os **médios de categoria anotável**, acumulados para a §2 do snapshot `_run/run-report.md` (cleanup futuro). A partição canônica está em [`agent-spec-workflow-rules.md`](.claude/rules/agent-spec-workflow-rules.md) → **"Bloqueio Seletivo de Severidade MÉDIA por Categoria"** — **consulte-a; não a reproduza aqui** (você roda no contexto principal, com a rule carregada; a regra de propagação assimétrica da própria rule reserva o espelho aos contratos de agente).
+>
+> Lembrete operacional da partição: em `categoria: tests`, quem decide é o campo `smell` — **vazio ou ausente ⇒ bloqueante** (default conservador); **categoria ausente ou desconhecida ⇒ bloqueante**.
 
-> **Formato canônico do bloco de débito (§2 do `_run/run-report.md`)** — todo baixo anotado (QA `APROVADO_COM_OBSERVACOES`, baixo remanescente ao fechar o loop, Tech Review `APROVADO_COM_OBSERVACOES`) vira um bloco neste formato. **NUNCA descarte `arquivo`/`linha`/`correcao_sugerida`** — alimentam a `/agent-spec-debt-resolution`:
+> **Formato canônico do bloco de débito (§2 do `_run/run-report.md`)** — todo **anotável** (baixo de qualquer categoria ou médio de categoria anotável), venha ele de `APROVADO_COM_OBSERVACOES` do QA, do remanescente ao fechar o loop, ou de `APROVADO_COM_OBSERVACOES` do Tech Review, vira um bloco neste formato. **NUNCA descarte `arquivo`/`linha`/`correcao_sugerida`** — alimentam a `/agent-spec-debt-resolution`:
 >
 > ```markdown
 > ### D{n} · {severidade} · {categoria} · T[N] · {QA|Tech Review}
@@ -545,11 +561,55 @@ OBRIGATÓRIO: Antes de produzir o JSON final:
 > - **O que fazer:** [correcao_sugerida/suggested_fix]
 > ```
 
-| Veredito | Críticos+Altos+Médios | Baixos | Ação |
+| Veredito | Bloqueantes | Anotáveis (baixos + médios anotáveis) | Ação |
 |---|---|---|---|
 | `APROVADO` | 0 | 0 | QA aprovado → avançar para Gate 2 |
-| `APROVADO_COM_OBSERVACOES` | 0 | ≥ 1 | QA aprovado com débito anotado → avançar para Gate 2; acumular os baixos para a §2 do snapshot `_run/run-report.md` (um bloco por problema — formato canônico abaixo) |
-| `REJEITADO` | ≥ 1 | qualquer | Enviar críticos+altos+médios ao executor para correção (Passo 5); baixos não bloqueiam mas são anexados ao prompt do executor como contexto opcional |
+| `APROVADO_COM_OBSERVACOES` | 0 | ≥ 1 | QA aprovado com débito anotado → avançar para Gate 2; acumular os anotáveis para a §2 do snapshot `_run/run-report.md` (um bloco por problema — formato canônico acima) |
+| `REJEITADO` | ≥ 1 | qualquer | Enviar os bloqueantes ao executor para correção (Passo 5); os anotáveis não bloqueiam, mas são anexados ao prompt do executor como contexto opcional |
+
+> **Cláusula de divergência de veredito (OBRIGATÓRIA)**: se o QA devolver `REJEITADO` mas **nenhum** dos problemas for bloqueante pela partição (aconteceu só com baixos e/ou médios anotáveis), **NÃO dispare rodada de correção** — seria queimar uma das 3 tentativas por achado que a política manda anotar. Em vez disso: **reclassifique** para `APROVADO_COM_OBSERVACOES`, siga para o Gate 2, trate os anotáveis como débito e logue em `shared.workflow_report.path`:
+>
+> ```
+> [T{N}] veredito reclassificado: QA devolveu REJEITADO sem bloqueante pela partição → APROVADO_COM_OBSERVACOES (médios anotáveis: <categorias>)
+> ```
+>
+> Isto protege a política da obediência imperfeita do gate — um contrato desatualizado ou uma classificação errada não podem, sozinhos, reabrir o bloqueio global de médios.
+
+#### Passo 4.1 — Conferir a declaração do sweep (`antipadroes_verificados[]`)
+
+> **Este passo executa em TODOS os vereditos** — `APROVADO`, `APROVADO_COM_OBSERVACOES` e `REJEITADO`. Ele NÃO pode viver no loop de correção: o loop só roda em rejeição, e a **rodada 1 aprovada** é justamente o caminho dominante que esta conferência existe para auditar.
+
+1. Monte o conjunto dos **arquivos de teste** presentes na lista `arquivos` enviada ao QA.
+2. Compare com os `arquivo` declarados em `antipadroes_verificados[]` do JSON.
+3. Se o campo vier **ausente**, **vazio com arquivos de teste na lista**, ou **não cobrir todos** esses arquivos, registre uma observação em `shared.workflow_report.path`:
+   ```
+   [T{N}] antipadroes_verificados incompleto: {n}/{m} arquivos de teste declarados (faltando: <paths>)
+   ```
+4. **NÃO rejeite a task por isso.** É sinal de **instrumentação**, não defeito do código — e reprovar por instrumentação queimaria tentativa sem nenhum ganho de qualidade. `antipadroes_verificados` ausente ⇒ observação não-bloqueante (retrocompatibilidade com gates de contrato antigo).
+
+#### Passo 4.2 — Manter o Ledger de Achados
+
+> **Também executa em TODOS os vereditos, inclusive no que aprova.** Se a manutenção ficasse só no loop de correção, a rodada que aprova nunca registraria seus `corrigido`/`aceito_como_debito` — e é exatamente esse ledger que a métrica de fechamento (Passo 4.3) lê.
+
+Formato canônico e regras completas: [`agent-spec-workflow-rules.md`](.claude/rules/agent-spec-workflow-rules.md) → **"Ledger de Achados"**. Operacionalmente:
+
+1. **Se a memória lazy ainda NÃO existir** (rodada 1 que já aprova, sem rejeição alguma): **não crie nada.** Sem rejeição não há achado bloqueante a rastrear, e os anotáveis já vão para a §2 do `_run/run-report.md`. Este é o caso legítimo — não é lacuna.
+2. **Se a memória lazy existir**, para cada problema do JSON desta rodada:
+   - calcule o `fingerprint` (`{arquivo}::{simbolo_ou_ancora}::{categoria}::{smell_ou_titulo_normalizado}` — **nunca com número de linha**);
+   - `fingerprint` **já no ledger** → atualize `status` e `rodada_ultima_verificacao`. **Jamais** insira segunda linha nem reescreva `rodada_origem`;
+   - `fingerprint` **novo** → insira com `rodada_origem` = rodada corrente, `status: aberto` se bloqueante, `aceito_como_debito` se anotável.
+3. Achados que estavam `aberto` e **não** reaparecem neste JSON → `status: corrigido`, `rodada_ultima_verificacao` = rodada corrente.
+4. **`reaberto` é seu, não do gate**: achado hoje `aceito_como_debito` que reaparece com severidade **maior** → grave `status: reaberto`, **preservando a `rodada_origem` original**. O gate apenas reporta com a severidade elevada e a justificativa.
+
+#### Passo 4.3 — Métrica do ledger (ao fechar a task, ANTES do cleanup)
+
+Quando a task atingir estado terminal e **antes** de deletar a memória lazy, registre em `shared.workflow_report.path`:
+
+```
+[T{N}] ledger: {A} achados totais | {B} originados em rodada >1 | {C} suspeitos de incompletude da rodada 1
+```
+
+`{C}` = os de `{B}` cujo `fingerprint` aponta para arquivo/símbolo que **não** estava no delta da correção anterior — isto é, achados que existiam desde a rodada 1 e a varredura daquela rodada não pegou. É o instrumento que permitirá medir o efeito do sweep mecânico com dados em vez de argumento. Se a memória lazy nunca nasceu (task aprovada na rodada 1), **não logue esta linha**.
 
 ### Passo 5 — Loop de correção QA (memória lazy)
 
@@ -567,11 +627,21 @@ Se rejeitado:
    ## base_sha
    [SHA capturado no Passo 3.1 — permite retomar gates após interrupção sem recapturar HEAD]
 
+   ## attempt_sha
+   [uma linha por rodada: `rodada {k}: <sha|indisponivel>` — marcador do estado da árvore
+    imediatamente ANTES do executor de correção daquela rodada. Ver Passo 5, item 5]
+
    ## last_severity
    [BAIXO|MEDIO|ALTO|CRITICO — do último JSON. Normalização do array do QA: criticos→CRITICO, altos→ALTO, medios→MEDIO, baixos→BAIXO]
 
    ## Sumário do executor
    [output enxuto de 4-6 linhas que o executor produziu]
+
+   ## Ledger de Achados
+   [tabela canônica — ver `agent-spec-workflow-rules.md` → "Ledger de Achados"]
+
+   | finding_id | fingerprint | gate | severidade | categoria | smell | status | rodada_origem | rodada_ultima_verificacao |
+   |---|---|---|---|---|---|---|---|---|
 
    ## JSON QA Validator
    ```json
@@ -587,14 +657,27 @@ Se rejeitado:
    - Testes: [lista]
    ```
 
-2. **Extraia os problemas do JSON do QA — política débito-controlado**:
-   - **Bloqueantes**: `problemas.criticos[]` + `problemas.altos[]` + `problemas.medios[]` (titulo, descricao, arquivo, linha, correcao_sugerida)
-   - **Débito anotado**: `problemas.baixos[]` — entram no prompt como "Observações" (corrigir é opcional); os que não forem corrigidos DEVEM ser acumulados para a §2 do snapshot `_run/run-report.md` ao fechar o loop
+   > **POPULE A TABELA DO LEDGER AGORA, nesta criação — não deixe apenas o cabeçalho.** Insira uma
+   > linha por problema deste JSON: `rodada_origem` = rodada corrente, `status: aberto` para os
+   > bloqueantes e `aceito_como_debito` para os anotáveis, `fingerprint` calculado **sem número de
+   > linha**.
+   >
+   > **Por que isto é imperativo**: a manutenção do ledger (Passo 4.2) é guardada por *"se a memória
+   > lazy existir"* — e na rodada 1 ela ainda **não** existe, porque nasce aqui. Um ledger que nasce
+   > vazio produz dois defeitos, o segundo pior que o primeiro: (a) a componente (b) do `DELTA`
+   > ("arquivos dos achados `aberto`") fica vazia justamente na transição 1→2, a mais comum; (b) na
+   > rodada 2 esses mesmos achados são reinseridos como **novos**, com `rodada_origem: 2`,
+   > **corrompendo a métrica** `{B}`/`{C}` do Passo 4.3 — que é exatamente o instrumento que o
+   > ledger existe para produzir.
+
+2. **Extraia os problemas do JSON do QA — política débito-controlado com bloqueio seletivo por categoria**:
+   - **Bloqueantes**: `problemas.criticos[]` + `problemas.altos[]` + os `problemas.medios[]` de **categoria bloqueante** (titulo, descricao, arquivo, linha, correcao_sugerida). A partição está em `.claude/rules/agent-spec-workflow-rules.md` → "Bloqueio Seletivo de Severidade MÉDIA por Categoria"; em `categoria: tests`, quem decide é o campo `smell`; categoria ausente/desconhecida ⇒ bloqueante
+   - **Débito anotado**: `problemas.baixos[]` **+ os `problemas.medios[]` de categoria anotável** — entram no prompt como "Observações" (corrigir é opcional); os que não forem corrigidos DEVEM ser acumulados para a §2 do snapshot `_run/run-report.md` ao fechar o loop, preservando `arquivo`/`linha`/`correcao_sugerida`
    - `observacoes[]`
    - `testes_executados.detalhes_falhas[]`
    - `criterios_falhos[]` (CAs com `status` `FALHOU` ou `PARCIAL`)
 
-   > **Débito-controlado** (mesma política do Passo 4): críticos/altos/médios bloqueiam e DEVEM ser corrigidos; só os baixos são débito anotado — não impedem a aprovação.
+   > **Débito-controlado com bloqueio seletivo** (mesma política do Passo 4): críticos e altos sempre bloqueiam, e os médios de **categoria bloqueante** também — todos DEVEM ser corrigidos. Baixos e médios de **categoria anotável** são débito anotado e não impedem a aprovação.
 
 3. **Aplique auto-escalonamento de modelo** (ver "Lógica de Seleção §3"). Logue se escalou.
 
@@ -604,7 +687,7 @@ Se rejeitado:
    A task [ID] foi REJEITADA pelo QA. Leia a memória lazy em [path do arquivo] antes de corrigir.
 
    ## Problemas Bloqueantes (DEVEM ser corrigidos — política débito-controlado)
-   [Para cada problema de problemas.criticos[], problemas.altos[] e problemas.medios[]:]
+   [Para cada problema de problemas.criticos[], problemas.altos[] e os problemas.medios[] de categoria BLOQUEANTE pela partição da rule (em `categoria: tests`, conforme o `smell`; categoria ausente/desconhecida ⇒ bloqueante):]
    - **[Pn]** ([critico|alto|medio]): [titulo]
      - Arquivo: [arquivo]:[linha]
      - Descrição: [descricao]
@@ -616,11 +699,11 @@ Se rejeitado:
    ## Critérios de Aceite não Atendidos
    [lista com status FALHOU ou PARCIAL]
 
-   ## Observações (baixos — débito anotado, opcional corrigir agora)
-   [Para cada problema de problemas.baixos[] — listagem compacta:]
-   - **[Pn]** (baixo): [titulo] — [correcao_sugerida]
+   ## Observações (anotáveis — débito anotado, opcional corrigir agora)
+   [Para cada problema de problemas.baixos[] e cada problemas.medios[] de categoria ANOTÁVEL — listagem compacta:]
+   - **[Pn]** ([baixo|medio]): [titulo] — [correcao_sugerida]
 
-   Corrija OBRIGATORIAMENTE os bloqueantes (críticos, altos e médios), os testes que falharam e os critérios não atendidos. Os baixos da seção "Observações" são débito anotado: corrija se for trivial no mesmo escopo; caso contrário, deixe para cleanup futuro (serão anotados na §2 do _run/run-report.md). Não expanda escopo.
+   Corrija OBRIGATORIAMENTE os bloqueantes (críticos, altos e os médios de categoria bloqueante), os testes que falharam e os critérios não atendidos. Os itens da seção "Observações" são débito anotado: corrija se for trivial no mesmo escopo; caso contrário, deixe para cleanup futuro (serão anotados na §2 do _run/run-report.md). Não expanda escopo.
 
    Para CADA problema bloqueante, antes de editar escreva uma linha `CAUSA-RAIZ: <por que o teste ou o código estava errado>`. Correção que apenas faz o gate passar sem atacar a causa — inverter uma flag, enfraquecer a asserção, renomear — será RE-REPROVADA. Se o problema é asserção fraca, mock-driven ou teste oco: reescreva a asserção para validar o comportamento observável real (não ajuste o valor do mock nem inverta booleanos). Se algum problema já havia sido reprovado na tentativa anterior, a correção anterior foi insuficiente — ataque a origem, não o sintoma.
 
@@ -630,13 +713,42 @@ Se rejeitado:
    [lista de arquivos dos problemas]
    ```
 
-5. **Dispare o executor** com `effective_model` (escalado se aplicável).
-6. **Re-valide com o QA** (volte ao Passo 3). Atualize `attempt_count` e `last_severity` na memória lazy. **Em retry, anexe às `instrucoes` do QA**: (a) o path da memória lazy (`shared.temp_memory.dir` + `pattern`); (b) resumo da tentativa anterior — testes que falharam + asserções/smells citados nos problemas. Instrução literal ao QA: "Compare contra a tentativa anterior: teste que existia e sumiu, ou asserção que ficou mais frouxa sem justificativa `SUT_IS_CORRECT_BECAUSE:`, é AP-24 (weakening test to pass) → CRÍTICO."
-7. **Limite máximo: 3 tentativas TOTAIS** por task (compartilhado com Tech Review — Passo 9).
+5. **Capture o `attempt_sha` — IMEDIATAMENTE ANTES de despachar o executor de correção (OBRIGATÓRIO)**. Ver [`agent-spec-workflow-rules.md`](.claude/rules/agent-spec-workflow-rules.md) → **"Escopo Incremental em Retry"**.
 
-**Ao fechar o loop com aprovação**: acumule para a §2 do snapshot `_run/run-report.md` os baixos remanescentes do último JSON do QA que NÃO foram corrigidos — um bloco por problema no formato canônico (`### D{n} · {severidade} · {categoria} · T[N] · QA` com Onde/Problema/Impacto/O que fazer); `arquivo`/`linha`/`correcao_sugerida` vêm do próprio problema no JSON — **nunca os descarte**: alimentam as tasks de cleanup da `/agent-spec-debt-resolution`. O caminho "REJEITADO → corrigido → aprovado" não passa pelo registro automático do veredito `APROVADO_COM_OBSERVACOES`. (Médios já não chegam aqui como débito: foram corrigidos no loop.)
+   É o marcador do estado da árvore **anterior** à correção — o que torna o diff da próxima rodada o **delta da correção**, e não a task inteira outra vez (`base_sha` não muda entre tentativas).
 
-**Ao aprovar AMBOS os gates**: delete a memória lazy `T{N}.md` (se foi criada por rejeição) — `cleanup_on_approval: true`. **Não há mais execution-summary em disco** (substituído por inline no prompt — ver Passo 3.4).
+   ```bash
+   TMP_IDX=$(mktemp)                                     # FORA do repositório — nunca dentro do worktree
+   cp "$(git rev-parse --git-path index)" "$TMP_IDX"     # resolve repo comum, subdiretório E worktree vinculado
+   GIT_INDEX_FILE="$TMP_IDX" git add -A -- <task_paths>  # popula SÓ o índice temporário
+   tree=$(GIT_INDEX_FILE="$TMP_IDX" git write-tree)
+   attempt_sha=$(git commit-tree "$tree" -p HEAD -m "attempt snapshot")
+   rm -f "$TMP_IDX"
+   ```
+
+   - **NÃO use `git stash create`**: com entradas *intent-to-add* no índice — e o `git add -N` do Passo 3.4 as cria em toda task que gera arquivo novo — ele aborta com exit 1 e stdout vazio (`Entry '<path>' not uptodate. Cannot merge.`). A degradação seria silenciosa: `attempt_sha` viraria `<indisponivel>`, toda rodada cairia em `FULL`, e o escopo incremental ficaria inerte sem nada acusar erro.
+   - **NÃO use `cp .git/index`**: em worktree vinculado `.git` é **arquivo**, não diretório (falha com `Not a directory`), e de subdiretório também falha, ali com `No such file or directory`. `git rev-parse --git-path index` resolve os três casos.
+   - **Fallback**: se **QUALQUER** passo falhar (`mktemp`, `cp`, `git add`, `git write-tree`, `git commit-tree`) → `attempt_sha = <indisponivel>` → a próxima rodada roda em **`FULL`**.
+   - A sequência **não altera o working tree nem o índice do usuário**.
+   - Grave na memória lazy (seção `## attempt_sha`, linha `rodada {k}: <sha|indisponivel>`) **e** logue em `shared.workflow_report.path`:
+     ```
+     [T{N}] attempt_sha (rodada {k})=<sha|indisponivel>
+     ```
+     `<indisponivel>` recorrente neste log significa que `DELTA` nunca está acontecendo — o escopo incremental está inerte.
+
+6. **Dispare o executor** com `effective_model` (escalado se aplicável).
+7. **Re-valide com o QA** (volte ao Passo 3), **passando o escopo incremental**. Atualize `attempt_count` e `last_severity` na memória lazy. **Em retry, anexe às `instrucoes` do QA**:
+   - **`scan_scope`**: `DELTA` quando o `attempt_sha` da rodada anterior existir; **`FULL`** quando for `<indisponivel>`;
+   - **`delta_arquivos[]`**: saída de `git diff --name-only <attempt_sha_anterior>`;
+   - **`delta_simbolos[]`**: nomes de função/método/classe/constante que o diff textual alterou — **best-effort**. Se não conseguir extraí-los, **omita o campo e NÃO caia para `FULL`**: o QA resolve o raio de impacto pela granularidade por arquivo;
+   - o **path da memória lazy** (`shared.temp_memory.dir` + `pattern`) — contém o **Ledger de Achados**, que o QA consome em retry;
+   - resumo da tentativa anterior — testes que falharam + asserções/smells citados nos problemas;
+   - instrução literal ao QA: "Compare contra a tentativa anterior: teste que existia e sumiu, ou asserção que ficou mais frouxa sem justificativa `SUT_IS_CORRECT_BECAUSE:`, é AP-24 (weakening test to pass) → CRÍTICO."
+8. **Limite máximo: 3 tentativas TOTAIS** por task (compartilhado com Tech Review — Passo 9).
+
+**Ao fechar o loop com aprovação**: acumule para a §2 do snapshot `_run/run-report.md` os **anotáveis remanescentes** (baixos + médios de categoria anotável) do último JSON do QA que NÃO foram corrigidos — um bloco por problema no formato canônico (`### D{n} · {severidade} · {categoria} · T[N] · QA` com Onde/Problema/Impacto/O que fazer); `arquivo`/`linha`/`correcao_sugerida` vêm do próprio problema no JSON — **nunca os descarte**: alimentam as tasks de cleanup da `/agent-spec-debt-resolution`. O caminho "REJEITADO → corrigido → aprovado" não passa pelo registro automático do veredito `APROVADO_COM_OBSERVACOES`. Isso agora inclui os **médios de categoria anotável**, que sob a política de bloqueio seletivo chegam até aqui como débito — antes, quando todo médio bloqueava, eles eram sempre corrigidos dentro do loop.
+
+**Ao aprovar AMBOS os gates**: delete a memória lazy `T{N}.md` (se foi criada por rejeição) — `cleanup_on_approval: true`. **ANTES de deletar**, registre a métrica do ledger em `shared.workflow_report.path` (`[T{N}] ledger: {A} achados totais | {B} originados em rodada >1 | {C} suspeitos de incompletude da rodada 1`) — a ordem importa, porque a métrica lê o ledger que o cleanup apaga. **Não há mais execution-summary em disco** (substituído por inline no prompt — ver Passo 3.4).
 
 ---
 
@@ -753,6 +865,15 @@ git diff <base_sha> -- <path>
 ## ADRs
 Consulte [path resolvido via adr.index_file] e leia ADRs específicas relacionadas aos paths tocados.
 
+## Escopo da revisão (APENAS em retry — omita o bloco inteiro na 1ª tentativa)
+- `scan_scope`: DELTA
+- `attempt_sha_anterior`: [SHA capturado antes do executor da rodada anterior]
+- `delta_arquivos`: [saída de `git diff --name-only <attempt_sha_anterior>`]
+
+Em `scan_scope: DELTA`, o diff primário passa a ser `git diff <attempt_sha_anterior> -- <path>` — mostra o **delta da correção**, não a task inteira outra vez. `git diff <base_sha> -- <path>` continua disponível **sob demanda**, para os arquivos do delta cujo julgamento arquitetural exija o quadro completo. **Todas as diretrizes do FLUXO DE DIFF do seu contrato continuam valendo**: um comando por arquivo, paralelize, nunca `--stat` para revisar, nunca `..HEAD`, nunca pipe para `head`/`tail`. Revise a união de (a) `delta_arquivos`, (b) arquivos dos achados `aberto` no Ledger e (c) o raio de impacto; se o raio de impacto não puder ser determinado com confiança, **caia para `FULL`** e registre o motivo em `observacoes`. A checagem de **AP-24 (weakening test to pass) permanece obrigatória e fica mais nítida em `DELTA`**.
+
+Quando este bloco estiver ausente, `scan_scope` é `FULL` — comportamento integral.
+
 ## Memória de retry (APENAS quando attempt_count >= 1 — omita o bloco na 1ª tentativa)
 Leia [path resolvido via shared.temp_memory.dir + shared.temp_memory.pattern] — contém o histórico de rejeições/correções desta task. Compare o diff atual contra os problemas anteriores: correção que apenas contorna o gate (teste enfraquecido/removido, flag invertida) → CRITICO/testability.
 
@@ -774,14 +895,23 @@ NÃO re-execute a suíte de testes salvo nas 3 condições do seu contrato: (1) 
 | Status | Significado | Ação |
 |---|---|---|
 | `APROVADO` | 0 problemas | Avançar para **Passo 8.5 (stage)** → marcar `Concluído` no task_plan.md |
-| `APROVADO_COM_OBSERVACOES` | Só `BAIXO` | Avançar para **Passo 8.5 (stage)** → marcar `Concluído`; acumular os baixos para a §2 do snapshot `_run/run-report.md` (um bloco por problema no formato canônico — ver Passo 4) |
-| `PARCIAL` | ≥ 1 `ALTO` e/ou `MEDIO` (sem `CRITICO`) | Enviar críticos+altos+médios ao executor (Passo 9); baixos viram débito anotado |
-| `REJEITADO` | ≥ 1 `CRITICO` | Enviar críticos+altos+médios ao executor (Passo 9); baixos viram débito anotado |
+| `APROVADO_COM_OBSERVACOES` | Só `BAIXO` e/ou `MEDIO` de categoria **anotável** | Avançar para **Passo 8.5 (stage)** → marcar `Concluído`; acumular os anotáveis para a §2 do snapshot `_run/run-report.md` (um bloco por problema no formato canônico — ver Passo 4) |
+| `PARCIAL` | ≥ 1 `ALTO`, ou `MEDIO` de categoria **bloqueante** (sem `CRITICO`) | Enviar os bloqueantes ao executor (Passo 9); os anotáveis viram débito anotado |
+| `REJEITADO` | ≥ 1 `CRITICO` | Enviar os bloqueantes ao executor (Passo 9); os anotáveis viram débito anotado |
 | `PULADO_QA_REJEITOU` | TR invocado com QA reprovado | Erro de orquestração: logue em `shared.workflow_report.path` e volte ao loop de correção do QA (Passo 5) |
 
-> **Débito-controlado** (mesma política do Passo 4): críticos/altos/médios bloqueiam; só os baixos são anotados na §2 do `_run/run-report.md` e não impedem a conclusão da task.
+> **Débito-controlado com bloqueio seletivo** (mesma política do Passo 4): críticos e altos sempre bloqueiam; **médios bloqueiam conforme a categoria** (partição na rule); baixos e médios anotáveis são registrados na §2 do `_run/run-report.md` e não impedem a conclusão da task.
+>
+> **Cláusula de divergência de veredito (OBRIGATÓRIA)**: se o Tech Review devolver `PARCIAL`/`REJEITADO` mas **nenhum** dos problemas for bloqueante pela partição, **NÃO dispare rodada de correção**. Reclassifique para `APROVADO_COM_OBSERVACOES`, siga para o Passo 8.5, trate os anotáveis como débito e logue:
+> ```
+> [T{N}] veredito reclassificado: Tech Review devolveu <status> sem bloqueante pela partição → APROVADO_COM_OBSERVACOES (médios anotáveis: <categorias>)
+> ```
+>
+> **Manutenção do Ledger de Achados**: aplique o Passo 4.2 **também aqui**, sobre `problems[]` do Tech Review (`gate: tech_review`), **em todos os status, inclusive nos que aprovam**. É a mesma razão do Passo 4.2: a rodada que aprova precisa registrar seus `corrigido`/`aceito_como_debito`, senão a métrica do Passo 4.3 lê um ledger incompleto.
 >
 > **Auditoria de ADRs**: registre `adrs_consultadas[]` do JSON do TR em `shared.workflow_report.path` (`T[N] — TR consultou: ADR-0001, ADR-0004` ou `nenhuma`). Sem esse log, ADR ignorada é indetectável.
+>
+> **Observações do TR**: registre `observacoes[]` do JSON em `shared.workflow_report.path`. É onde chegam o **fallback de escopo** (raio de impacto indeterminável → caiu para `FULL`, com motivo) e os **achados do Ledger sanados** — sinais que não viram problema mas que você precisa ver.
 
 ### Passo 8.5 — Stage da task aprovada (`git add`)
 
@@ -810,10 +940,12 @@ Se Tech Review reprovou:
    ```
    ```
 
-2. **Extraia os problemas — política débito-controlado**:
+   > **Se a memória lazy ainda NÃO existir aqui** — caso real e frequente: QA aprovou na rodada 1 e o Tech Review reprovou — **crie-a no formato COMPLETO do Passo 5**, `## attempt_sha` e `## Ledger de Achados` inclusive, **e POPULE a tabela do ledger agora** (uma linha por problema deste JSON, `gate: tech_review`, `rodada_origem` = rodada corrente, `status: aberto` para bloqueantes e `aceito_como_debito` para anotáveis). Criar só com a seção `## JSON Tech Review` deixaria o ledger inexistente justamente no caminho "QA aprovou → TR reprovou", e a rodada seguinte reinseriria tudo como achado novo.
+
+2. **Extraia os problemas — política débito-controlado com bloqueio seletivo por categoria**:
    - `problems[]`: `id`, `severity`, `category`, `title`, `description`, `expected`, `impact`, `suggested_fix`, `adr_referenciada`
-   - **Bloqueantes**: `severity` `CRITICO`, `ALTO` ou `MEDIO`. **Débito anotado**: `BAIXO` — entram no prompt como "Observações".
-   - **Acumule AGORA os baixos para a §2 do snapshot `_run/run-report.md`** — um bloco por problema no formato canônico (`### D{n} · {severity} · {category} · T[N] · Tech Review` com Onde/Problema/Impacto/O que fazer); `arquivo`/`linha`/`suggested_fix` vêm do próprio item em `problems[]` — **nunca os descarte**: são o que permite à `/agent-spec-debt-resolution` gerar tasks de cleanup sem reinferir paths. O prompt de correção afirma que eles "já estão anotados na §2"; este é o passo que garante isso.
+   - **Bloqueantes**: `severity` `CRITICO` ou `ALTO`, **mais os `MEDIO` de categoria bloqueante** pela partição da rule (categoria ausente/desconhecida ⇒ bloqueante). **Débito anotado**: `BAIXO` **+ os `MEDIO` de categoria anotável** (`code_quality`, `project_pattern`, `best_practices`) — entram no prompt como "Observações".
+   - **Acumule AGORA os anotáveis para a §2 do snapshot `_run/run-report.md`** (baixos de qualquer categoria + médios de categoria anotável) — um bloco por problema no formato canônico (`### D{n} · {severity} · {category} · T[N] · Tech Review` com Onde/Problema/Impacto/O que fazer); `arquivo`/`linha`/`suggested_fix` vêm do próprio item em `problems[]` — **nunca os descarte**: são o que permite à `/agent-spec-debt-resolution` gerar tasks de cleanup sem reinferir paths. O prompt de correção afirma que eles "já estão anotados na §2"; este é o passo que garante isso.
 
 3. **Monte o prompt de correção**:
 
@@ -821,7 +953,7 @@ Se Tech Review reprovou:
    A task [ID] foi REPROVADA pela Revisão Técnica. Leia a memória lazy em [path do arquivo].
 
    ## Problemas Bloqueantes (DEVEM ser corrigidos — política débito-controlado)
-   [Para cada problema com severity == CRITICO, ALTO OU MEDIO:]
+   [Para cada problema com severity == CRITICO, severity == ALTO, ou severity == MEDIO de categoria BLOQUEANTE pela partição da rule (categoria ausente/desconhecida ⇒ bloqueante):]
    - **[P1] ([severity]) [category]**: [title]
      - Descrição: [description]
      - Esperado: [expected]
@@ -829,11 +961,11 @@ Se Tech Review reprovou:
      - Correção sugerida: [suggested_fix]
      - ADR referenciada: [adr_referenciada se aplicável]
 
-   ## Observações (baixos — débito anotado, opcional corrigir agora)
-   [Para cada problema com severity == BAIXO:]
+   ## Observações (anotáveis — débito anotado, opcional corrigir agora)
+   [Para cada problema com severity == BAIXO, ou severity == MEDIO de categoria ANOTÁVEL:]
    - **[P_]** ([severity]) [category]: [title] — [suggested_fix]
 
-   Corrija OBRIGATORIAMENTE os críticos, altos e médios da seção "Bloqueantes". Os baixos da seção "Observações" são débito anotado: corrija se for trivial no mesmo escopo; caso contrário, deixa para cleanup futuro (já anotados na §2 do _run/run-report.md pelo orquestrador). Mantenha a conformidade com a arquitetura e padrões do projeto. Não expanda escopo.
+   Corrija OBRIGATORIAMENTE tudo que está na seção "Bloqueantes" (críticos, altos e os médios de categoria bloqueante). Os itens da seção "Observações" são débito anotado: corrija se for trivial no mesmo escopo; caso contrário, deixa para cleanup futuro (já anotados na §2 do _run/run-report.md pelo orquestrador). Mantenha a conformidade com a arquitetura e padrões do projeto. Não expanda escopo.
 
    Para CADA problema bloqueante, antes de editar escreva uma linha `CAUSA-RAIZ: <por que o código violava o padrão/arquitetura>`. Correção que apenas faz o gate passar sem atacar a causa — renomear superficialmente, mover código sem resolver o acoplamento, suprimir o sintoma — será RE-REPROVADA. Se algum problema já havia sido reprovado na tentativa anterior, a correção anterior foi insuficiente — ataque a origem, não o sintoma.
 
@@ -842,17 +974,22 @@ Se Tech Review reprovou:
    ```
 
 4. **Classifique `requires_qa_revalidation`** aplicando a regra "Tech Review Correction — Classificação `requires_qa_revalidation`" de `.claude/rules/agent-spec-workflow-rules.md`:
-   - Olhe `category` de cada item **bloqueante** (`severity` `CRITICO`/`ALTO`) em `problems[]`.
-   - Se TODOS estão em categorias `code_review_only` (`code_quality`, `project_pattern`, `best_practices`) → `requires_qa_revalidation = false`.
+   - Olhe `category` de cada item **bloqueante** em `problems[]` — bloqueante = `severity` `CRITICO` ou `ALTO`, **ou** `MEDIO` de categoria bloqueante pela partição da rule (categoria ausente/desconhecida ⇒ bloqueante). Médios de categoria **anotável** e baixos NÃO entram no cálculo: eles não disparam correção, logo não há correção cuja necessidade de re-QA classificar.
+   - Se TODOS os bloqueantes estão em categorias `code_review_only` (`code_quality`, `project_pattern`, `best_practices` — o mesmo conjunto que a partição chama de MÉDIO anotável) → `requires_qa_revalidation = false`.
+   - **Se NÃO houver nenhum bloqueante** (o gate devolveu `PARCIAL`/`REJEITADO` só com médios anotáveis e/ou baixos) → **não abra rodada de correção**: reclassifique para `APROVADO_COM_OBSERVACOES`, siga o fluxo normal e logue em `shared.workflow_report.path` a linha `[{task_id}] veredito reclassificado: Tech Review devolveu {status} sem bloqueante pela partição → APROVADO_COM_OBSERVACOES (médios anotáveis: {categorias})`.
    - Se QUALQUER item está em `revalidation_required` (`architecture`, `security`, `technical_requirement`, `testability`, `error_handling`, `performance`, `adr_compliance`, `scope_deviation`, `speculative_complexity`) ou categoria desconhecida/ausente → `requires_qa_revalidation = true`.
    - Aplique overrides (`tocou_area_critica`, `qa_security_flags_not_empty`, `task_risk == high`, mudança no `git diff --stat`) — qualquer um força `true`.
    - Persista `requires_qa_revalidation: <bool>` na memória lazy junto com a justificativa (categorias encontradas + overrides ativos).
-5. **Dispare o executor** com prompt de correção (escale modelo se aplicável).
-6. **Re-valide conforme `requires_qa_revalidation`**:
+5. **Capture o `attempt_sha` — IMEDIATAMENTE ANTES de despachar o executor de correção (OBRIGATÓRIO)**. Mesmo mecanismo, mesmas proibições e mesmo fallback do **Passo 5, item 5** (índice temporário via `GIT_INDEX_FILE`; nunca `git stash create`; nunca `cp .git/index`; qualquer passo que falhe ⇒ `<indisponivel>` ⇒ próxima rodada em `FULL`). Grave na memória lazy e logue `[T{N}] attempt_sha (rodada {k})=<sha|indisponivel>`.
+6. **Dispare o executor** com prompt de correção (escale modelo se aplicável).
+7. **Re-valide conforme `requires_qa_revalidation`**, **passando o escopo incremental ao(s) gate(s) invocado(s)**:
    - **`true`** → primeiro Gate 1 (QA, Passo 3) → se QA aprovar, Gate 2 (Tech Review, Passo 7).
    - **`false`** → **PULE QA**, vá direto a Gate 2 (Tech Review, Passo 7). Logue em `shared.workflow_report.path`: `T[N] retry — QA pulado (categorias code_review_only: <lista>)`.
-7. **Limite máximo: 3 tentativas TOTAIS** por task (compartilhado entre QA e Tech Review).
-8. **Ao aprovar final**: delete a memória lazy `T{N}.md`.
+   - **Ao QA**: `scan_scope`, `delta_arquivos[]`, `delta_simbolos[]` (best-effort — ausência **não** força `FULL`) e o path da memória lazy, exatamente como no Passo 5, item 7.
+   - **Ao Tech Review**: acrescente ao prompt o bloco `## Escopo da revisão` com `scan_scope` e **`attempt_sha_anterior`**, mais `delta_arquivos[]` e o path da memória lazy. Em `DELTA`, o diff primário dele passa a ser `git diff <attempt_sha_anterior> -- <path>`, com `git diff <base_sha> -- <path>` disponível sob demanda.
+   - **`attempt_sha` da rodada anterior `<indisponivel>` ⇒ `scan_scope: FULL`** para ambos os gates.
+8. **Limite máximo: 3 tentativas TOTAIS** por task (compartilhado entre QA e Tech Review).
+9. **Ao aprovar final**: registre a **métrica do ledger** (Passo 4.3) **e só então** delete a memória lazy `T{N}.md` — a ordem importa, porque a métrica lê o ledger que o cleanup apaga.
 
 ### Passo 10 — Escalar ao usuário (após 3 tentativas)
 
@@ -901,11 +1038,11 @@ Se após 3 tentativas totais o QA ou Tech Review ainda reprovar:
 A cada regeneração, o orquestrador monta as 4 seções a partir do estado acumulado em memória:
 
 1. **§1 Resumo do Run** — a tabela de Tasks Concluídas (`Task | Nome | Modelo | Arquivos | QA | Tech Review`); uma linha por task já concluída. `Arquivos` = `{X} criados, {Y} mod` (do diff staged). `QA`/`Tech Review` = veredito final; `—` quando o gate não se aplica (`gates: [qa]` → `Tech Review = — (gates=[qa])`; `gates: none` → ambos `— (sem gates)`).
-2. **§2 Débitos Técnicos Não Resolvidos** — um bloco `### D{n} · {sev} · {cat} · {task} · {gate}` por baixo anotado (acumulados dos JSONs dos gates: `arquivo:linha` → **Onde**, `title/titulo` → **Problema**, `description/descricao` → **Impacto**, `suggested_fix/correcao_sugerida` → **O que fazer**). Se nenhum: `✅ Nenhum débito técnico anotado neste run.`
+2. **§2 Débitos Técnicos Não Resolvidos** — um bloco `### D{n} · {sev} · {cat} · {task} · {gate}` por **anotável** (baixo de qualquer categoria ou médio de categoria anotável) acumulado dos JSONs dos gates (`arquivo:linha` → **Onde**, `title/titulo` → **Problema**, `description/descricao` → **Impacto**, `suggested_fix/correcao_sugerida` → **O que fazer**). Se nenhum: `✅ Nenhum débito técnico anotado neste run.`
 3. **§3 Tasks Bloqueadas** — um bloco por task que esgotou as 3 tentativas (Passo 10). Se nenhuma: `✅ Nenhuma task bloqueada.`
 4. **§4 Notas para Revisão Humana** — só o que ajuda um humano a julgar o run (escalação suspeita, decisão interativa, observação não-bloqueante relevante). NUNCA telemetria. Se nada: `Nada a destacar.`
 
-> **Acúmulo de débito**: mantenha em memória a lista de débitos baixos por task (vinda dos JSONs do QA/Tech Review). Como o snapshot é reescrito após cada task atingir estado terminal, no momento de uma eventual queda o `_run/run-report.md` já contém os débitos de todas as tasks finalizadas — não há perda. A telemetria crua (base_sha, retries, paralelismo) fica só no `_run/workflow-report.md`.
+> **Acúmulo de débito**: mantenha em memória a lista de débitos anotáveis (baixos + médios de categoria anotável) por task (vinda dos JSONs do QA/Tech Review). Como o snapshot é reescrito após cada task atingir estado terminal, no momento de uma eventual queda o `_run/run-report.md` já contém os débitos de todas as tasks finalizadas — não há perda. A telemetria crua (base_sha, retries, paralelismo) fica só no `_run/workflow-report.md`.
 
 ### Após TODAS as tasks concluídas
 
@@ -972,11 +1109,16 @@ Aplique durante TODA a execução:
 8. **Passar `base_sha` + sumário do executor INLINE** no prompt do QA e do Tech Review (Passo 3.4 — sem arquivo intermediário).
 9. **Preservar JSON completo do QA** para retry e sumário do Tech Review.
 10. **Stage real (`git add`)** apenas após os gates aplicáveis aprovarem — Passo 8.5 para `[qa, tech_review]`; fechamento da task (passo 0) para `[qa]`/`none`.
-11. **Cleanup de memória** ao aprovar AMBOS os gates.
+11. **Cleanup de memória** ao aprovar AMBOS os gates — **registrando antes** a métrica do ledger (`[T{N}] ledger: ...`), que lê o arquivo que o cleanup apaga.
 12. **Cleanup idempotente** (>24h) no início da execução.
 13. **Logar resolução de modelo/gates** no terminal antes de invocar executor/gates.
-14. **Injetar o bloco "Disciplina do Executor (Iron Rules)"** verbatim no prompt de TODO executor invocado — fonte: [`references/executor-discipline.md`](references/executor-discipline.md) (symlink que aponta para o canônico em `agent-spec-minispec-run-tasks/references/`; conteúdo entre os marcadores `<<<EXECUTOR_DISCIPLINE` … `EXECUTOR_DISCIPLINE>>>`). O sub-agente NÃO herda essa referência via system-prompt; sem o bloco no prompt, as 7 Iron Rules (Pense antes de codar / Qualidade de sênior / Cirúrgico / Goal-driven / Testes honestos / Lei do seam / Conformidade com ADRs) não chegam ao executor.
+14. **Injetar o bloco "Disciplina do Executor (Iron Rules)"** verbatim no prompt de TODO executor invocado — fonte: [`references/executor-discipline.md`](references/executor-discipline.md) (**cópia sincronizada** do canônico em `agent-spec-minispec-run-tasks/references/`; conteúdo entre os marcadores `<<<EXECUTOR_DISCIPLINE` … `EXECUTOR_DISCIPLINE>>>`). O sub-agente NÃO herda essa referência via system-prompt; sem o bloco no prompt, as 7 Iron Rules (Pense antes de codar / Qualidade de sênior / Cirúrgico / Goal-driven / Testes honestos / Lei do seam / Conformidade com ADRs) não chegam ao executor.
 15. **Injetar o bloco "ADRs aplicáveis" (REGRA ABSOLUTA)** no prompt de TODO executor (bloco [2.1], logo após a Disciplina) — fonte: subseção "ADRs Aplicáveis nesta Task" da task (fallback: "ADRs Aplicáveis nesta Feature" do tech_spec). É o dado que ativa a Iron Rule #7. Se não houver ADR, injetar "Nenhuma ADR aplicável a esta task". **Logar** por task em `shared.workflow_report.path`: `[T{N}] ADRs injetadas no executor: ADR-XXXX, ... (fonte: task §7 | tech_spec | nenhuma)`.
+16. **Capturar o `attempt_sha`** imediatamente antes de CADA executor de correção, pelo mecanismo do índice temporário (`GIT_INDEX_FILE` + `git write-tree` + `git commit-tree`, com `git rev-parse --git-path index`) — **nunca** `git stash create`, **nunca** `cp .git/index`. Falha em qualquer passo ⇒ `<indisponivel>` ⇒ próxima rodada em `scan_scope: FULL`. Logar `[T{N}] attempt_sha (rodada {k})=<sha|indisponivel>`.
+17. **Passar `scan_scope` e o delta aos gates em retry** — ao QA: `scan_scope`, `delta_arquivos[]`, `delta_simbolos[]` (best-effort; ausência **não** força `FULL`) e o path da memória lazy; ao Tech Review: `scan_scope`, `attempt_sha_anterior` e `delta_arquivos[]`.
+18. **Manter o Ledger de Achados na interpretação do veredito de CADA gate, inclusive na rodada que aprova** (Passo 4.2), e **fazê-lo nascer POPULADO** na primeira rejeição (Passo 5 / Passo 9). O estado `reaberto` é gravado pelo **orquestrador**, comparando pelo `fingerprint`.
+19. **Conferir `antipadroes_verificados[]`** na interpretação do veredito do QA (Passo 4.1) e registrar observação **não-bloqueante** quando ausente ou incompleto.
+20. **Registrar a métrica do ledger** (`[T{N}] ledger: ...`) **antes** de deletar a memória lazy.
 
 ### NÃO DEVE
 
@@ -984,7 +1126,7 @@ Aplique durante TODA a execução:
 2. **Tasks em paralelo são permitidas APENAS quando** todos os guards de [`agent-spec-workflow-rules.md`](.claude/rules/agent-spec-workflow-rules.md) → "Execução Paralela de Tasks" passam (independência no DAG, disjunção de símbolo, paths disjuntos, sem arquivo de alta contenção compartilhado, lote ≤ MAX_PARALLEL=4). Qualquer guard sem prova de independência → fallback determinístico para sequencial.
 3. **NUNCA lançar QA e Tech Review em paralelo PARA A MESMA TASK**. Entre tasks diferentes do mesmo lote, pipelines isolados PODEM rodar em paralelo (cada um QA→TR sequencial internamente).
 4. **NUNCA usar Haiku no executor** — rejeite com erro claro se frontmatter declarar.
-5. **Política débito-controlado em retry**: envie ao executor como bloqueantes os problemas com `severity` `CRITICO`, `ALTO` ou `MEDIO`; apenas problemas `BAIXO` vão como "Observações" opcionais no mesmo prompt (não exigem correção no ciclo). Esses baixos ficam anotados na §2 do `_run/run-report.md` para cleanup futuro.
+5. **Política débito-controlado com bloqueio seletivo por categoria, em retry**: envie ao executor como bloqueantes os problemas `CRITICO`, `ALTO` e os `MEDIO` de **categoria bloqueante** (partição em `.claude/rules/agent-spec-workflow-rules.md` → "Bloqueio Seletivo de Severidade MÉDIA por Categoria"; em `categoria: tests` decide o campo `smell`; categoria ausente/desconhecida ⇒ bloqueante). Os `BAIXO` **e os `MEDIO` de categoria anotável** vão como "Observações" opcionais no mesmo prompt (não exigem correção no ciclo) e ficam anotados na §2 do `_run/run-report.md` para cleanup futuro, preservando `arquivo`/`linha`/`correcao_sugerida`. **Nunca abra rodada de correção sem nenhum bloqueante** — reclassifique para `APROVADO_COM_OBSERVACOES` e logue.
 6. **NUNCA usar paths hardcoded** — sempre resolva via templates do `.claude/rules/agent-spec-sdd-workflow-rules.md` (paths SDD) e `.claude/rules/agent-spec-workflow-rules.md` (paths compartilhados).
 7. **NUNCA alterar PRD, TECH_SPEC ou criar novas tasks** sem o usuário pedir.
 8. **NUNCA continuar após 3 tentativas falhas** — escale ao usuário.
@@ -999,7 +1141,7 @@ Ao final, **(a)** garanta que o snapshot `_run/run-report.md` está regenerado c
 
 - **Tasks Concluídas** (a tabela `Task | Nome | Modelo | Arquivos | QA | Tech Review` — vira a §1 do snapshot)
 - **Tasks Bloqueadas** (se houver: motivo, gate bloqueante, problemas pendentes — vira a §3 do snapshot)
-- **Débitos Técnicos Não Resolvidos** (cada baixo anotado como bloco `### D{n} · sev · cat · task · gate` com Onde/Problema/Impacto/O que fazer — vira a §2 do snapshot) + ponteiro de fechamento de ciclo: "Para transformar o débito em versão de limpeza, rode `/agent-spec-debt-resolution <feature_path>`". **NÃO auto-execute** — a decisão é do usuário.
+- **Débitos Técnicos Não Resolvidos** (cada anotável — baixo ou médio de categoria anotável — como bloco `### D{n} · sev · cat · task · gate` com Onde/Problema/Impacto/O que fazer — vira a §2 do snapshot) + ponteiro de fechamento de ciclo: "Para transformar o débito em versão de limpeza, rode `/agent-spec-debt-resolution <feature_path>`". **NÃO auto-execute** — a decisão é do usuário.
 - **Notas para Revisão Humana** (escalações suspeitas, decisões interativas, observações não-bloqueantes — vira a §4 do snapshot)
 
 > Telemetria de pipeline (vereditos brutos por tentativa, retries, paralelismo, base_sha) NÃO entra no relatório humano — vive em `_run/workflow-report.md` para o eval e o resume. O stdout pode citar contagem de tentativas em uma linha-resumo, mas o detalhe cru fica no workflow report.

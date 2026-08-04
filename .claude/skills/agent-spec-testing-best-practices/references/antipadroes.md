@@ -274,15 +274,35 @@ Asserção que **nunca pode falhar**, logo não detecta regressão: ramo sempre-
 
 ---
 
-## Mapeamento severidade → política débito-controlado
+## Mapeamento severidade → política débito-controlado (com bloqueio seletivo por categoria)
 
-Lembre-se: na política débito-controlado do agent-spec-qa-validator, **críticos, altos e médios bloqueiam** (entram no loop de correção); **só baixos viram observação** (anotados na §2 do `_run/run-report.md` para cleanup futuro, sem reprovar). A severidade aqui define se o antipadrão **bloqueia** ou apenas **anota**.
+Na política do `agent-spec-qa-validator`, **CRÍTICO e ALTO sempre bloqueiam** (entram no loop de correção) e **BAIXO sempre anota** (registrado na §2 do `_run/run-report.md` para cleanup futuro, sem reprovar). Em **MÉDIO**, quem decide é a **categoria** do achado — e, para `categoria: tests`, o campo **`smell`**. Fonte canônica: `.claude/rules/agent-spec-workflow-rules.md` → **"Bloqueio Seletivo de Severidade MÉDIA por Categoria"**.
 
 | Severidade no testing_smells | Mapeia para `problemas.*` | Efeito no veredito |
 |---|---|---|
 | CRÍTICO | `problemas.criticos[]` | Bloqueia → `REJEITADO` |
 | ALTO | `problemas.altos[]` | Bloqueia → `REJEITADO` |
-| MÉDIO | `problemas.medios[]` | Bloqueia → `REJEITADO` |
+| MÉDIO | `problemas.medios[]` | **Depende da categoria** — em `tests`, do `smell` (ver abaixo) |
 | BAIXO | `problemas.baixos[]` | Anota → `APROVADO_COM_OBSERVACOES` |
 
-Antipattern detectado → vira item no array de problemas correspondente (com `id`, `arquivo`, `linha`, `correcao_sugerida` como qualquer outro problema) com o campo **`smell`** preenchido com o nome canônico; sinais agregados vão em `testing_smells.red_flags_detectadas[]`. (O antipadrão individual NÃO é mais listado num array próprio — contrato pós-redução de payload do `agent-spec-qa-validator`.) Quando crítico/alto/médio, dispara `REJEITADO`; só quando baixo fica registrado sem bloquear.
+### O caso MÉDIO em `categoria: tests`
+
+A categoria `tests` é **ambígua**: comporta desde seletor frágil (cosmético, não mascara nada) até mock enganoso (mascara regressão). Por isso ela não é classificada em bloco — resolve-se pelo `smell`:
+
+| `smell` | Efeito |
+|---|---|
+| pertence ao **conjunto de manutenibilidade** (abaixo) | **Anota** → débito na §2, sem bloquear |
+| qualquer outro `smell` | **Bloqueia** → `REJEITADO` |
+| vazio ou ausente | **Bloqueia** (default conservador) — por isso `smell` é **obrigatório** em `categoria: tests` |
+
+**Conjunto de manutenibilidade** — e aqui está a regra que torna isto memorável: ele é **exatamente o conjunto dos 7 antipadrões de severidade MÉDIO deste catálogo**.
+
+`brittle_selector` (AP-01) · `vague_existence_assertion` (AP-05) · `coverage_as_vanity` (AP-15) · `eternal_beforeAll` (AP-17) · `quarantine_as_cemetery` (AP-21) · `duplicate_cross_layer` (AP-23) · `semantically_duplicated_test` (AP-26)
+
+> **A coincidência não é acidental**: um antipadrão só foi catalogado aqui como MÉDIO porque **não mascara regressão** — e é justamente isso que o torna anotável. Regra prática, auditável contra este arquivo: *"médio de teste no catálogo = anotável"*.
+
+**Nunca classifique como anotável** um smell que mascara regressão — `mock_driven_confidence` (AP-10), `tautological_assertion` (AP-29), `weakening_test_to_pass` (AP-24), `mock_at_wrong_level` (AP-14), `retry_as_fix` (AP-22), `snapshot_as_test` (AP-04). Todos já são ALTO/CRÍTICO neste catálogo e permanecem assim. Se algum aparecer classificado como MÉDIO num JSON de gate, isso é **erro de classificação a corrigir**, não caso de anotação.
+
+**Por que a política mudou**: o bloqueio global de médios nasceu de um caso em que uma violação de ADR classificada como médio shipou — mas a causa-raiz foi a **categoria** (`adr_compliance`), não a severidade, e essa causa já está fechada (contradição direta a ADR aceita é hoje no mínimo ALTO por contrato, sem rebaixamento permitido). O bloqueio global ficou redundante e seguia cobrando uma rodada de correção inteira por um `brittle_selector`. Ao mesmo tempo, nem todo médio é cosmético — por isso a solução é a partição por categoria, não a revogação da política.
+
+Antipattern detectado → vira item no array de problemas correspondente (com `id`, `arquivo`, `linha`, `correcao_sugerida` como qualquer outro problema) com o campo **`smell`** preenchido com o nome canônico; sinais agregados vão em `testing_smells.red_flags_detectadas[]`. (O antipadrão individual NÃO é mais listado num array próprio — contrato pós-redução de payload do `agent-spec-qa-validator`.)

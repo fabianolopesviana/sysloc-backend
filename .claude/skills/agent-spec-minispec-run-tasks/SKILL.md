@@ -1,6 +1,6 @@
 ---
 name: agent-spec-minispec-run-tasks
-description: Executa as tasks geradas pelo TASK PLAN do framework miniSpec. Coordenador de subagentes — orquestra, NÃO implementa diretamente. Para CADA task: delega ao executor (agent_name da stack), valida no Gate 1 (agent-spec-qa-validator) e Gate 2 (agent-spec-staff-architecture-review), aplica memória lazy em rejeições e débito-controlado (críticos/altos/médios bloqueiam; só baixos são anotados). User-invocable via /agent-spec-minispec-run-tasks.
+description: Executa as tasks geradas pelo TASK PLAN do framework miniSpec. Coordenador de subagentes — orquestra, NÃO implementa diretamente. Para CADA task: delega ao executor (agent_name da stack), valida no Gate 1 (agent-spec-qa-validator) e Gate 2 (agent-spec-staff-architecture-review), aplica memória lazy em rejeições, escopo incremental em retry (`scan_scope`/`attempt_sha`) e débito-controlado com bloqueio seletivo por categoria (críticos e altos sempre bloqueiam; médios bloqueiam conforme a categoria; baixos e médios anotáveis são anotados). User-invocable via /agent-spec-minispec-run-tasks.
 user-invocable: true
 disable-model-invocation: true
 argument-hint: <caminho task_plan.md ex: /docs/specs/features/cardapio-digital/v1/task_plan.md> [agent_name opcional ex: stack-agent]
@@ -94,7 +94,7 @@ Use **exclusivamente** os templates de `.claude/rules/agent-spec-minispec-workfl
 | [`references/qa-validator-prompt.md`](references/qa-validator-prompt.md) | Prompt completo do Gate 1 (`agent-spec-qa-validator`) + passos de preparação (3.1, 3.2, 3.3) + interpretação (3.4) + loop de correção QA (3.5). | Antes de entrar na FASE 3 (Gate 1 — QA). |
 | [`references/staff-review-prompt.md`](references/staff-review-prompt.md) | Prompt completo do Gate 2 (`agent-spec-staff-architecture-review`) + passos de preparação (4.1) + interpretação (4.3) + loop de correção (4.4) + stage `git add` (4.5) + escalação ao usuário (4.6). | Antes de entrar na FASE 4 (Gate 2 — Tech Review). |
 | [`references/guardrails.md`](references/guardrails.md) | Guardrails Invioláveis (DEVE / NÃO DEVE) + Checklist Final do Orquestrador. | Após FASE 0 (internalizar) e antes de encerrar (validar checklist). |
-| [`references/executor-discipline.md`](references/executor-discipline.md) | Bloco "Disciplina do Executor (Iron Rules)" — 7 Iron Rules anti-vícios-de-LLM (adaptação Karpathy + doutrina de testes/seam + conformidade com ADRs; "Iron Laws" é o nome reservado às 6 leis da doutrina `agent-spec-testing-best-practices`) entre marcadores `<<<EXECUTOR_DISCIPLINE … EXECUTOR_DISCIPLINE>>>`. Arquivo canônico (symlinks em `agent-spec-sdd-run-tasks` e `agent-spec-taskcard-run`). | FASE 0 (carregar bloco em memória) + FASE 2.3 (injetar verbatim no TOPO do prompt de cada executor). |
+| [`references/executor-discipline.md`](references/executor-discipline.md) | Bloco "Disciplina do Executor (Iron Rules)" — 7 Iron Rules anti-vícios-de-LLM (adaptação Karpathy + doutrina de testes/seam + conformidade com ADRs; "Iron Laws" é o nome reservado às 6 leis da doutrina `agent-spec-testing-best-practices`) entre marcadores `<<<EXECUTOR_DISCIPLINE … EXECUTOR_DISCIPLINE>>>`. Arquivo canônico; `agent-spec-sdd-run-tasks` e `agent-spec-taskcard-run` mantêm **cópias byte a byte** (não symlinks) que DEVEM ser replicadas na mesma passada — ver a nota ANTIDRIFT no topo do canônico. | FASE 0 (carregar bloco em memória) + FASE 2.3 (injetar verbatim no TOPO do prompt de cada executor). |
 
 ---
 
@@ -307,12 +307,12 @@ Esses 2 campos são **passados INLINE** no prompt do QA (FASE 3) e do Tech Revie
 - **3.1** Preparar `arquivos` para o QA (lista enxuta — base_sha + sumário do executor entram inline em `instrucoes`)
 - **3.2** Preparar `instrucoes` para o QA (critérios, testes, rastreabilidade CT-XX, comandos)
 - **3.3** **Disparar o QA** — use exatamente o texto dessa seção como `prompt` no `Agent({...})`. Resolva `qa_model` via [`references/config.md`](references/config.md) §4. Preserve o JSON completo retornado.
-- **3.4** Interpretar veredito (`APROVADO`, `APROVADO_COM_OBSERVACOES`, `REJEITADO`) com política débito-controlado: `APROVADO` e `APROVADO_COM_OBSERVACOES` avançam para Gate 2 (só baixos viram observações); `REJEITADO` (críticos, altos ou médios) entra no loop de correção.
-- **3.5** Loop de correção QA com memória lazy + auto-escalonamento (até 3 tentativas totais — compartilhado com Tech Review).
+- **3.4** Interpretar veredito (`APROVADO`, `APROVADO_COM_OBSERVACOES`, `REJEITADO`) com a política débito-controlado **de bloqueio seletivo por categoria**: `APROVADO` e `APROVADO_COM_OBSERVACOES` avançam para Gate 2 (baixos **e médios de categoria anotável** viram débito); `REJEITADO` entra no loop de correção **apenas se houver bloqueante** — críticos, altos, ou médios de categoria bloqueante. Sem bloqueante, **reclassifique** e siga (cláusula de divergência de veredito). Inclui **3.4.1** (conferir `antipadroes_verificados[]`), **3.4.2** (manter o Ledger de Achados — em TODOS os vereditos, inclusive no que aprova) e **3.4.3** (métrica do ledger antes do cleanup).
+- **3.5** Loop de correção QA com memória lazy (nascendo com o **Ledger populado**) + captura do **`attempt_sha`** antes do executor + auto-escalonamento (até 3 tentativas totais — compartilhado com Tech Review).
 
 **Resumo do fluxo**: executor → persiste `base_sha` + sumário em memória (2.4) → leitura do `references/qa-validator-prompt.md` → `Agent(agent-spec-qa-validator, ...)` com `base_sha`/sumário INLINE em `instrucoes` → interpretar JSON → se rejeitado, montar memória lazy + prompt de correção e voltar ao executor; se aprovado, avançar para Gate 2.
 
-**Ao aprovar AMBOS os gates**: delete a memória lazy `T{N}.md` se foi criada por rejeição (`cleanup_on_approval: true`). **Não há mais execution-summary em disco**.
+**Ao aprovar AMBOS os gates**: delete a memória lazy `T{N}.md` se foi criada por rejeição (`cleanup_on_approval: true`). **ANTES de deletar**, registre a métrica do ledger em `shared.workflow_report.path` (`[T{N}] ledger: {A} achados totais | {B} originados em rodada >1 | {C} suspeitos de incompletude da rodada 1`) — a ordem importa, porque a métrica lê o ledger que o cleanup apaga. **Não há mais execution-summary em disco**.
 
 ---
 
@@ -325,8 +325,8 @@ Esses 2 campos são **passados INLINE** no prompt do QA (FASE 3) e do Tech Revie
 **Antes de iniciar esta fase, leia [`references/staff-review-prompt.md`](references/staff-review-prompt.md)** — contém os passos completos:
 - **4.1** Preparar contexto: visibilidade git via `git add -N` (4.1.1), sumário mínimo do QA com `qa_summary_fields` (4.1.2), categorização NOVOS/MODIFICADOS (4.1.3).
 - **4.2** **Disparar o Tech Review** — use exatamente o texto dessa seção como `prompt` no `Agent({...})`. Resolva `tech_model` via [`references/config.md`](references/config.md) §4. O agente staff gera os diffs por conta própria via Bash.
-- **4.3** Interpretar status (`APROVADO`, `APROVADO_COM_OBSERVACOES`, `PARCIAL`, `REJEITADO`) com política débito-controlado: `APROVADO` e `APROVADO_COM_OBSERVACOES` finalizam a task (só baixos viram observações); `PARCIAL` (há `ALTO` e/ou `MEDIO`) e `REJEITADO` (há `CRITICO`) entram no loop de correção.
-- **4.4** Loop de correção Tech Review com memória lazy (revalidação conforme `requires_qa_revalidation` — pode pular o QA quando os bloqueantes são só de code-review).
+- **4.3** Interpretar status (`APROVADO`, `APROVADO_COM_OBSERVACOES`, `PARCIAL`, `REJEITADO`) com a política de **bloqueio seletivo por categoria**: `APROVADO` e `APROVADO_COM_OBSERVACOES` finalizam a task (baixos **e médios de categoria anotável** viram débito); `PARCIAL` (há `ALTO`, ou `MEDIO` de categoria **bloqueante**) e `REJEITADO` (há `CRITICO`) entram no loop de correção. Sem nenhum bloqueante, **reclassifique** e siga. Mantenha o **Ledger de Achados** também aqui, em todos os status.
+- **4.4** Loop de correção Tech Review com memória lazy (criada no formato completo, **com o Ledger populado**, quando o QA aprovou na rodada 1) + captura do **`attempt_sha`** antes do executor + revalidação conforme `requires_qa_revalidation` (pode pular o QA quando os bloqueantes são só de code-review).
 - **4.5** Stage real (`git add -- <task_paths>`) APENAS após `status: APROVADO`. NÃO commitar.
 - **4.6** Escalar ao usuário após 3 tentativas totais (não marca concluída; marca `Bloqueado`).
 
@@ -366,11 +366,11 @@ Esses 2 campos são **passados INLINE** no prompt do QA (FASE 3) e do Tech Revie
 A cada regeneração, o orquestrador monta as 4 seções a partir do estado acumulado em memória:
 
 1. **§1 Resumo do Run** — a tabela de Tasks Concluídas (`Task | Nome | Modelo | Arquivos | QA | Tech Review`); uma linha por task já concluída. `Arquivos` = `{X} criados, {Y} mod` (do diff staged). `QA`/`Tech Review` = veredito final; `—` quando o gate não se aplica.
-2. **§2 Débitos Técnicos Não Resolvidos** — um bloco `### D{n} · {sev} · {cat} · {task} · {gate}` por baixo anotado (acumulados dos JSONs dos gates: `file:line` → **Onde**, `title` → **Problema**, `description` → **Impacto**, `suggested_fix` → **O que fazer**). Se nenhum: `✅ Nenhum débito técnico anotado neste run.`
+2. **§2 Débitos Técnicos Não Resolvidos** — um bloco `### D{n} · {sev} · {cat} · {task} · {gate}` por **anotável** (baixo de qualquer categoria ou médio de categoria anotável) acumulado dos JSONs dos gates (`file:line` → **Onde**, `title` → **Problema**, `description` → **Impacto**, `suggested_fix` → **O que fazer**). Se nenhum: `✅ Nenhum débito técnico anotado neste run.`
 3. **§3 Tasks Bloqueadas** — um bloco por task que esgotou as 3 tentativas. Se nenhuma: `✅ Nenhuma task bloqueada.`
 4. **§4 Notas para Revisão Humana** — só o que ajuda um humano a julgar o run (escalação suspeita, decisão interativa, observação não-bloqueante relevante). NUNCA telemetria. Se nada: `Nada a destacar.`
 
-> **Acúmulo de débito**: mantenha em memória a lista de débitos baixos por task (vinda dos JSONs do QA/Tech Review). Como o snapshot é reescrito após cada task concluir, no momento de uma eventual queda o `_run/run-report.md` já contém os débitos de todas as tasks finalizadas — não há perda. A telemetria crua (base_sha, retries, etc.) fica só no `_run/workflow-report.md`.
+> **Acúmulo de débito**: mantenha em memória a lista de débitos anotáveis (baixos + médios de categoria anotável) por task (vinda dos JSONs do QA/Tech Review). Como o snapshot é reescrito após cada task concluir, no momento de uma eventual queda o `_run/run-report.md` já contém os débitos de todas as tasks finalizadas — não há perda. A telemetria crua (base_sha, retries, etc.) fica só no `_run/workflow-report.md`.
 
 ### Após TODAS as tasks concluídas
 
@@ -428,8 +428,8 @@ Aplique durante TODA a execução:
 
 > Os DEVE / NÃO DEVE completos vivem em [`references/guardrails.md`](references/guardrails.md). Releia ESSE arquivo se houver dúvida sobre o que é permitido. Resumo:
 >
-> - **DEVE**: delegar ao subagente; lote paralelo só com guards (DAG independente, símbolos e paths disjuntos, sem alta contenção, ≤4); QA + Tech Review obrigatórios; resolver `model`/`risk`/`gates`; auto-escalonamento em retry; capturar `base_sha` e sumário do executor (inline + linha `[T{N}] base_sha=` em `_run/workflow-report.md`); `git add -N` pós-executor (pré-QA); preservar JSON do QA; `git add` real apenas após aprovar os gates aplicáveis; cleanup da memória lazy ao aprovar; cleanup idempotente >24h; logar resolução.
-> - **NÃO DEVE**: implementar diretamente; rodar tasks em paralelo SEM passar nos guards da rule "Execução Paralela de Tasks"; rodar QA+Tech Review **da MESMA task** em paralelo; Haiku no executor; filtrar por severidade; paths hardcoded; alterar INTENT/SCOPE; continuar após 3 falhas; commitar; enviar JSON completo do QA ao Tech Review.
+> - **DEVE**: delegar ao subagente; lote paralelo só com guards (DAG independente, símbolos e paths disjuntos, sem alta contenção, ≤4); QA + Tech Review obrigatórios; resolver `model`/`risk`/`gates`; auto-escalonamento em retry; capturar `base_sha` e sumário do executor (inline + linha `[T{N}] base_sha=` em `_run/workflow-report.md`); **capturar o `attempt_sha` antes de cada executor de correção** e passar `scan_scope`/`delta_*` aos gates em retry; **manter o Ledger de Achados na interpretação do veredito de cada gate, inclusive no que aprova**; **conferir `antipadroes_verificados[]` na interpretação do veredito do QA (3.4.1)**, registrando observação não-bloqueante quando ausente ou incompleto; `git add -N` pós-executor (pré-QA); preservar JSON do QA; `git add` real apenas após aprovar os gates aplicáveis; **registrar a métrica do ledger antes** do cleanup da memória lazy ao aprovar; cleanup idempotente >24h; logar resolução.
+> - **NÃO DEVE**: implementar diretamente; rodar tasks em paralelo SEM passar nos guards da rule "Execução Paralela de Tasks"; rodar QA+Tech Review **da MESMA task** em paralelo; Haiku no executor; **abrir rodada de correção sem nenhum problema bloqueante pela partição**; usar `git stash create` para capturar o `attempt_sha`; paths hardcoded; alterar INTENT/SCOPE; continuar após 3 falhas; commitar; enviar JSON completo do QA ao Tech Review.
 
 ---
 
@@ -439,7 +439,7 @@ Ao final, **(a)** garanta que o snapshot `_run/run-report.md` está regenerado c
 
 - **Tasks Concluídas** (a tabela `Task | Nome | Modelo | Arquivos | QA | Tech Review` — vira a §1 do snapshot)
 - **Tasks Bloqueadas** (se houver: motivo, gate bloqueante, problemas pendentes — vira a §3 do snapshot)
-- **Débitos Técnicos Não Resolvidos** (cada baixo anotado como bloco `### D{n} · sev · cat · task · gate` com Onde/Problema/Impacto/O que fazer — vira a §2 do snapshot) + ponteiro de fechamento de ciclo: "Para transformar o débito em versão de limpeza, rode `/agent-spec-debt-resolution <feature_path>`". **NÃO auto-execute** — a decisão é do usuário.
+- **Débitos Técnicos Não Resolvidos** (cada anotável — baixo ou médio de categoria anotável — como bloco `### D{n} · sev · cat · task · gate` com Onde/Problema/Impacto/O que fazer — vira a §2 do snapshot) + ponteiro de fechamento de ciclo: "Para transformar o débito em versão de limpeza, rode `/agent-spec-debt-resolution <feature_path>`". **NÃO auto-execute** — a decisão é do usuário.
 - **Notas para Revisão Humana** (escalações suspeitas, decisões interativas, observações não-bloqueantes — vira a §4 do snapshot)
 
 > Telemetria de pipeline (vereditos brutos por tentativa, retries, paralelismo, base_sha) NÃO entra no relatório humano — vive em `_run/workflow-report.md` para o eval e o resume. O stdout pode citar contagem de tentativas em uma linha-resumo, mas o detalhe cru fica no workflow report.

@@ -166,7 +166,7 @@ Status: {N}/{M} tasks concluídas · {testes verdes} · {análise estática}
 
 ## 2. Débitos Técnicos Não Resolvidos
 
-> Anotados pela política débito-controlado (severidade baixa não bloqueia). Resolva tudo de uma vez com `/agent-spec-debt-resolution docs/specs/features/{feature}/{version}/`.
+> Anotados pela política débito-controlado com bloqueio seletivo por categoria: baixos de qualquer categoria e médios de categoria anotável não bloqueiam. Resolva tudo de uma vez com `/agent-spec-debt-resolution docs/specs/features/{feature}/{version}/`.
 
 ### D1 · baixo · project_pattern · T2 · Tech Review
 - **Onde:** `lib/features/auth/model/authenticated_user.dart:4`
@@ -192,7 +192,7 @@ Status: {N}/{M} tasks concluídas · {testes verdes} · {análise estática}
 
 **Regras de geração do `_run/run-report.md`**:
 - **Seção 1 (tabela)**: a MESMA tabela "Tasks Concluídas" emitida no relatório final em stdout. `Arquivos` = `{X} criados, {Y} mod` (conte do diff staged da task). `QA`/`Tech Review` = veredito final de cada gate; use `—` quando o gate não se aplica (`gates: [qa]` → `Tech Review = — (gates=[qa])`; `gates: none` → ambos `— (sem gates)`).
-- **Seção 2 (débitos)**: um bloco `### D{n} · {severidade} · {categoria} · {task} · {gate}` por débito anotado (baixos pela política débito-controlado; médios legados quando aplicável). Os campos `Onde`/`Problema`/`Impacto`/`O que fazer` vêm direto do item do JSON do gate (`file:line`, `title`, `description`, `suggested_fix`). **Nunca descarte `file:line` nem `suggested_fix`** — alimentam a `/agent-spec-debt-resolution`. Severidade/categoria no idioma do gate de origem (QA pt-BR `baixo`; Tech Review inglês `BAIXO`).
+- **Seção 2 (débitos)**: um bloco `### D{n} · {severidade} · {categoria} · {task} · {gate}` por débito anotado — os **baixos** de qualquer categoria e os **médios de categoria anotável** (partição em "Bloqueio Seletivo de Severidade MÉDIA por Categoria"). Médio anotado é débito de primeira classe, não resíduo legado. Os campos `Onde`/`Problema`/`Impacto`/`O que fazer` vêm direto do item do JSON do gate (`file:line`, `title`, `description`, `suggested_fix`). **Nunca descarte `file:line` nem `suggested_fix`** — alimentam a `/agent-spec-debt-resolution`. Severidade/categoria no idioma do gate de origem (QA pt-BR `baixo`; Tech Review inglês `BAIXO`).
 - **Seção 3 (bloqueios)**: uma entrada por task que esgotou as 3 tentativas.
 - **Seção 4 (notas)**: curadoria — só o que ajuda um humano a julgar o run. Telemetria crua NUNCA entra aqui (vai no `_run/workflow-report.md`).
 - **Fonte primária de débito**: a Seção 2 é o que a `/agent-spec-debt-resolution` consome — mantenha-a parseável (ver `debt-collection.md`).
@@ -350,6 +350,54 @@ Se N == 0, **não** crie o arquivo nem logue (evita ruído).
 >
 > **Contexto da execução (NÃO mais em arquivo)**: `base_sha` e sumário do executor (4-6 linhas) passam **inline em `instrucoes`** do QA e do Tech Review. A versão anterior gravava um arquivo `{task_id}-execution-summary.md` com `git diff --stat`, hashes SHA-256 pré/pós e paths consolidados — campos que QA/Tech Review na prática não consultavam (Tech Review GERA diff sozinho via `git diff <base_sha> -- <path>`). Cortado em prol de fluxo mais simples e ~300-800 tokens × 2 gates × N tasks economizados por run.
 
+#### Ledger de Achados (formato canônico — fonte única)
+
+> **Por que existe**: a memória lazy era **narrativa** — guardava o JSON do gate anterior, mas não permitia responder "o que já foi verificado, o que foi corrigido, o que foi aceito como débito, e em que rodada cada achado surgiu". Sem essa resposta, o retry só sabia **acrescentar** trabalho. O Ledger é a estrutura que torna a memória **subtrativa**.
+
+Seção obrigatória de `shared.temp_memory.dir`/`{task_id}.md`, escrita pelo **orquestrador**:
+
+```markdown
+## Ledger de Achados
+
+| finding_id | fingerprint | gate | severidade | categoria | smell | status | rodada_origem | rodada_ultima_verificacao |
+|---|---|---|---|---|---|---|---|---|
+| QA-CRIT-001 | src/x/y.test.ts::describeFoo::tests::mock_at_wrong_level | qa | critico | tests | mock_at_wrong_level | corrigido | 1 | 2 |
+| TR-P2 | src/svc/pedido.ts::criarPedido::error_handling::rejeicao_sem_saida | tech_review | medio | error_handling | | aberto | 2 | 2 |
+```
+
+**Campos**:
+
+- **`finding_id`** — o `id` do item no JSON do gate, prefixado pelo gate (`QA-` / `TR-`). Os IDs se repetem entre rodadas (`CRIT-001` volta a existir na rodada 2); o prefixo mais a `rodada_origem` desambiguam.
+- **`fingerprint`** — chave de **identidade estável** do achado, no formato `{arquivo}::{simbolo_ou_ancora}::{categoria}::{smell_ou_titulo_normalizado}`. É o que permite reconhecer o **mesmo** achado entre rodadas depois que a correção deslocou o código. **NUNCA use número de linha como componente do fingerprint** — a correção move linhas, e um fingerprint com linha faz todo achado parecer novo a cada rodada, destruindo a métrica abaixo. Quando não houver símbolo identificável, use a âncora mais estável disponível (nome do `describe`/`it`, nome da função, nome da rota) e, em último caso, o título normalizado (minúsculas, sem pontuação, sem números).
+- **`status`** ∈ `aberto` | `corrigido` | `aceito_como_debito` | `reaberto`.
+- **`rodada_origem`** — número da rodada em que o achado apareceu **pela primeira vez**. **Nunca é reescrito**, em nenhuma circunstância.
+- **`rodada_ultima_verificacao`** — última rodada em que um gate efetivamente olhou para este achado.
+
+**Regras de consumo pelos gates em retry** (espelhadas nos dois contratos de agente):
+
+1. Todo achado com status **`aberto` DEVE ser re-verificado**, e o gate reporta explicitamente se foi sanado.
+2. Achado com status **`aceito_como_debito` NÃO deve ser reaberto**, exceto se evidência nova elevar sua severidade — e a elevação precisa de justificativa explícita no item de problema.
+3. Achado com status **`corrigido` não é re-auditado do zero**; só volta ao radar se o delta da rodada tocar o mesmo `fingerprint`.
+4. Achado novo é registrado com a **`rodada_origem` corrente**.
+
+**Regras de manutenção pelo orquestrador** (quem escreve é sempre o orquestrador, nunca o gate):
+
+- A manutenção acontece na **interpretação do veredito de CADA gate, inclusive na rodada que aprova** — não no loop de correção. Ver a razão em "Posicionamento" abaixo.
+- **`reaberto` tem dono explícito: o orquestrador.** Ele compara o JSON da rodada contra o ledger **pelo `fingerprint`**; quando um achado hoje `aceito_como_debito` reaparece com severidade **maior**, o orquestrador grava `status: reaberto` (preservando a `rodada_origem` original). O gate apenas reporta o achado com a severidade elevada e a justificativa — ele **não** escreve o ledger.
+- Achado do JSON cujo `fingerprint` **já existe** no ledger: atualize `status` e `rodada_ultima_verificacao`; **jamais** insira uma segunda linha nem reescreva `rodada_origem`.
+
+> **Posicionamento (obrigatório, e a razão importa)**: a manutenção do ledger vai no passo que **interpreta o veredito** de cada gate, que executa em `APROVADO`, `APROVADO_COM_OBSERVACOES`, `PARCIAL` e `REJEITADO`. Se ficasse só no loop de correção, a **rodada que aprova nunca registraria** seus `corrigido`/`aceito_como_debito` — e é exatamente esse ledger que a métrica de fechamento lê.
+>
+> **Nascimento do ledger**: o ledger nasce **populado** junto com a memória lazy, na primeira rejeição — o passo de criação da memória DEVE inserir as linhas dos achados daquela rodada, não apenas o cabeçalho da tabela. Se ele nascesse vazio, os achados da rodada 1 seriam reinseridos como **novos** na rodada 2, com `rodada_origem: 2`, corrompendo a métrica abaixo justamente na transição mais comum. Quando a rodada 1 aprova sem rejeição alguma, **não crie nada** — sem rejeição não há achado bloqueante a rastrear, e os anotáveis já vão para a §2 do `_run/run-report.md`.
+
+**Métrica derivada (valor de longo prazo)**: um achado com `rodada_origem > 1` cuja causa **não** é a correção da rodada anterior é evidência de que a varredura da rodada 1 foi **incompleta**. Ao fechar a task, e **antes** de deletar a memória lazy, o orquestrador registra em `shared.workflow_report.path`:
+
+```
+[T{N}] ledger: {A} achados totais | {B} originados em rodada >1 | {C} suspeitos de incompletude da rodada 1
+```
+
+`{C}` conta os de `{B}` cujo `fingerprint` aponta para arquivo/símbolo que **não** estava no delta da correção anterior. É o instrumento que permitirá medir o efeito da varredura completa com dados, em vez de argumento.
+
 ### Specs (varredura cross-feature)
 - **shared.specs_root**: `/docs/specs`
 - **shared.specs_glob**: `/docs/specs/**/*.md`
@@ -454,6 +502,164 @@ Ordem de avaliação (primeira que casar vence; ausência → `[qa, tech_review]
 
 ---
 
+## Escopo Incremental em Retry — `attempt_sha` e `scan_scope`
+
+> **Fonte única.** Consumida pelos três orquestradores de execução e pelos dois gates. Define como uma rodada de **retry** limita a varredura ao que a correção efetivamente mudou, sem perder a detecção de regressão introduzida pela própria correção.
+
+### O problema que isto resolve
+
+`base_sha` marca o estado **antes da task** e **não muda entre tentativas**. Consequência: na rodada 2 o `git diff <base_sha>` não é o delta da correção — **é a task inteira outra vez**. O Tech Review revisa do zero o código que ele mesmo já aprovou, e a lista `arquivos` do QA é cumulativa e nunca encolhe. `attempt_sha` é o marcador que faltava.
+
+### `attempt_sha` — captura (mecanismo verificado empiricamente)
+
+A cada rodada, **imediatamente antes de despachar o executor de correção**, o orquestrador captura um marcador do estado da árvore naquele instante:
+
+```bash
+TMP_IDX=$(mktemp)                                     # FORA do repositório — nunca dentro do worktree
+cp "$(git rev-parse --git-path index)" "$TMP_IDX"     # resolve repo comum, subdiretório E worktree vinculado
+GIT_INDEX_FILE="$TMP_IDX" git add -A -- <task_paths>  # popula SÓ o índice temporário
+tree=$(GIT_INDEX_FILE="$TMP_IDX" git write-tree)
+attempt_sha=$(git commit-tree "$tree" -p HEAD -m "attempt snapshot")
+rm -f "$TMP_IDX"
+```
+
+O commit resultante **não é referenciado por nenhum branch** (fica solto até o GC), e a sequência **não toca o working tree nem o índice do usuário** — verificado com `git status --porcelain` idêntico antes e depois.
+
+> **NÃO use `git stash create`.** É a escolha intuitiva e ela **falha exatamente no cenário que este pipeline garante**: com entradas *intent-to-add* no índice — e os três orquestradores rodam `git add -N -- <task_paths>` após cada executor, justamente para tornar arquivos novos visíveis no diff —, `git stash create` aborta com exit code 1 e **stdout vazio**:
+>
+> ```
+> error: Entry '<path>' not uptodate. Cannot merge.
+> Cannot save the current worktree state
+> ```
+>
+> Ou seja: **toda task que cria ao menos um arquivo** cairia nesse caso. A degradação seria silenciosa e enganosamente "segura" — `attempt_sha` viraria `<indisponivel>`, toda rodada cairia no fallback `FULL`, e o escopo incremental ficaria **permanentemente inerte sem que nada acusasse erro**.
+>
+> **E não use `cp .git/index`.** Em worktree vinculado, `.git` é um **arquivo**, não um diretório: o `cp` falha com `Not a directory`. Rodando de um subdiretório do repo ele também falha, ali com `No such file or directory` (o path relativo não resolve). `git rev-parse --git-path index` resolve corretamente nos três casos — repo comum, subdiretório e worktree vinculado.
+
+**Cláusula de fallback**: se **QUALQUER** passo da sequência falhar (`mktemp`, `cp`, `git add`, `git write-tree`, `git commit-tree`) → `attempt_sha = <indisponivel>` → **a próxima rodada roda em `FULL`**. O fallback não se limita a `write-tree`/`commit-tree`. Ele cobre também o repositório sem commit inicial, em que `git commit-tree -p HEAD` falha por HEAD não nascido — situação que não deveria ocorrer (o orquestrador já exige `base_sha = git rev-parse HEAD`), mas que degrada para `FULL` em vez de quebrar.
+
+**Persistência**: grave `attempt_sha` na memória lazy (uma linha por rodada) e registre em `shared.workflow_report.path`:
+
+```
+[T{N}] attempt_sha (rodada {k})=<sha|indisponivel>
+```
+
+> **Este log é o instrumento de diagnóstico da melhoria.** `<indisponivel>` recorrente significa que `DELTA` nunca está acontecendo e o escopo incremental está inerte.
+
+### `scan_scope` — definição e as três componentes do `DELTA`
+
+O orquestrador **deriva** `scan_scope` e o passa aos gates no prompt de invocação:
+
+| Rodada | `scan_scope` |
+|---|---|
+| 1 (execução inicial) | **`FULL`** |
+| N > 1 (retry) | **`DELTA`** — salvo se `attempt_sha` da rodada anterior for `<indisponivel>`, caso em que volta a `FULL` |
+
+`DELTA` é a **união** de três componentes — as três, sempre:
+
+- **(a) o diff da correção** — o orquestrador roda `git diff --name-only <attempt_sha_anterior>` e entrega a lista como `delta_arquivos`. Entrega também `delta_simbolos` (nomes de função/método/classe/constante tocados) **quando conseguir extraí-los do diff textual**;
+- **(b) os arquivos dos achados com status `aberto`** no Ledger de Achados;
+- **(c) o raio de impacto** — arquivos que **importam ou consomem** os símbolos alterados em (a).
+
+### Raio de impacto — duas granularidades, ambas exequíveis
+
+O item (c) é o que preserva a detecção de **regressão introduzida pela própria correção** — o caso em que a correção da rodada N cria um defeito novo em código que ela não declarou tocar. Ele tem **duas granularidades**, e o gate usa a melhor que alcançar:
+
+1. **Por símbolo (preferida)** — grepar quem referencia cada nome de `delta_simbolos`. O orquestrador extrai `delta_simbolos` do diff textual e o passa em `instrucoes`; o Tech Review, que gera os próprios diffs, sempre alcança esta granularidade sozinho.
+2. **Por arquivo (fallback sempre exequível)** — grepar quem importa/referencia os **paths** de `delta_arquivos`.
+
+> **A ausência de `delta_simbolos` NÃO justifica cair para `FULL`.** O QA é **proibido de rodar comandos exploratórios de git** (Economia de Leitura) e recebe apenas uma lista de nomes de arquivo — se a regra fosse "sem símbolos, varra tudo", o fallback viraria o caminho padrão e `DELTA` seria inalcançável no Gate 1. Sem `delta_simbolos`, use a granularidade 2, que só depende de grep sobre paths.
+
+**Guarda de segurança inviolável**: se o raio de impacto **não puder ser determinado com confiança** (delta ilegível, paths ambíguos, ferramenta de busca indisponível), o gate **cai para `FULL`** e registra o motivo em `observacoes`. Falso-`FULL` custa tokens; falso-`DELTA` deixa passar regressão.
+
+### Retrocompatibilidade
+
+Campos novos ausentes **nunca** quebram o fluxo — cada um tem fallback para o comportamento atual:
+
+| Campo ausente | Fallback |
+|---|---|
+| `scan_scope` | `FULL` |
+| `attempt_sha` | `FULL` na próxima rodada |
+| `delta_simbolos` | raio de impacto **por arquivo** (não `FULL`) |
+| `antipadroes_verificados` | observação não-bloqueante (não rejeita a task) |
+| `smell` em `categoria: tests` | bloqueante (conservador) |
+
+---
+
+## Bloqueio Seletivo de Severidade MÉDIA por Categoria
+
+> **Fonte única.** Consumida por `agent-spec-qa-validator` (Gate 1), `agent-spec-staff-architecture-review` (Gate 2) e pelos três orquestradores de execução (`agent-spec-sdd-run-tasks`, `agent-spec-minispec-run-tasks`, `agent-spec-taskcard-run`). Decide se um problema de severidade **MÉDIA** bloqueia a task (entra no loop de correção) ou vira **débito anotado** na §2 do `_run/run-report.md`.
+
+### O princípio
+
+`CRITICO` e `ALTO` **sempre bloqueiam**. `BAIXO` **sempre** vira débito anotado. **Nada muda para essas três severidades.** Em severidade **MÉDIA**, quem decide é a **categoria** do achado — não a severidade.
+
+**Por que categoria e não severidade.** A política anterior ("todo médio bloqueia") nasceu de um caso em que uma violação de ADR classificada como médio shipou contrariando uma ADR aceita. A causa-raiz daquele incidente foi a **categoria** (`adr_compliance`), não a severidade — e a correção certa já foi aplicada depois: hoje os dois contratos mandam classificar contradição direta ao `Decision` de uma ADR aceita como **no mínimo `alto`**, com proibição explícita de rebaixar. O bloqueio global de médios ficou redundante em relação ao próprio motivo, mas seguia cobrando uma rodada de correção inteira por achado cosmético.
+
+Ao mesmo tempo, **nem todo médio é cosmético**: um `error_handling` em beco-sem-saída (rejeição que trava um modal) é defeito funcional real e **deve** bloquear. Reverter a política em bloco ("médio nunca bloqueia") teria deixado esse caso shipar. A dimensão que separa um seletor frágil de um modal travado é a **categoria**.
+
+### Partição do vocabulário do QA (Gate 1)
+
+| Classe | Categorias |
+|---|---|
+| **MÉDIO bloqueante** | `architecture`, `security`, `logic`, `data_handling`, `error_handling`, `concurrency`, `performance`, `adr_compliance` |
+| **MÉDIO anotável** (vira débito, não bloqueia) | `code_quality`, `naming`, `style`, `documentation`, `dead_code`, `imports` |
+| **`tests`** | resolvido pelo campo `smell` — ver abaixo |
+
+### Partição do vocabulário do Tech Review (Gate 2)
+
+| Classe | Categorias |
+|---|---|
+| **MÉDIO bloqueante** | `architecture`, `security`, `technical_requirement`, `testability`, `error_handling`, `performance`, `adr_compliance`, `scope_deviation`, `speculative_complexity` |
+| **MÉDIO anotável** | `code_quality`, `project_pattern`, `best_practices` |
+
+> **Nota de design**: esta partição do Gate 2 é deliberadamente **a mesma divisão** que a seção "Tech Review Correction" abaixo já usa em `requires_qa_revalidation` (`revalidation_required` vs `code_review_only`). Reusar a taxonomia existente é intencional — evita introduzir um quarto vocabulário de débito no framework e mantém uma única fonte de verdade sobre "o que é mudança de comportamento".
+
+### `tests` — resolvido pelo campo `smell`
+
+A categoria `tests` do QA é **ambígua**: comporta desde seletor frágil (cosmético) até mock enganoso (mascara regressão). Por isso ela não entra em nenhuma das duas listas — resolve-se pelo `smell`:
+
+- `smell` pertence ao **conjunto de manutenibilidade** abaixo → **anotável**;
+- qualquer outro `smell` → **bloqueante**;
+- **`smell` vazio ou ausente ⇒ bloqueante** (default conservador). Por isso o campo `smell` é **obrigatório** em `categoria: tests`.
+
+**Conjunto de manutenibilidade** (nomes canônicos de `.claude/skills/agent-spec-testing-best-practices/references/antipadroes.md`):
+
+`brittle_selector` (AP-01) · `vague_existence_assertion` (AP-05) · `coverage_as_vanity` (AP-15) · `eternal_beforeAll` (AP-17) · `quarantine_as_cemetery` (AP-21) · `duplicate_cross_layer` (AP-23) · `semantically_duplicated_test` (AP-26)
+
+> **Esse conjunto é exatamente o conjunto dos 7 antipadrões de severidade MÉDIO do catálogo** — verificado contra `antipadroes.md`. A coincidência não é acidental: um antipadrão só é catalogado como MÉDIO quando não mascara regressão, e é justamente isso que o torna anotável. Isso torna a regra memorável e auditável: *"médio de teste no catálogo = anotável"*.
+
+**Nunca classifique como anotável** um smell que **mascara regressão** — `mock_driven_confidence` (AP-10), `tautological_assertion` (AP-29), `weakening_test_to_pass` (AP-24), `mock_at_wrong_level` (AP-14), `retry_as_fix` (AP-22), `snapshot_as_test` (AP-04). Esses já são ALTO/CRÍTICO por contrato e devem permanecer assim. Se algum aparecer classificado como médio, isso é **erro de classificação a corrigir**, não caso de anotação.
+
+### Categoria ausente ou desconhecida ⇒ bloqueante
+
+Se o item de problema vier **sem** `categoria`/`category`, ou com valor fora dos vocabulários canônicos, trate-o como **bloqueante**. Bloquear indevidamente custa uma rodada; anotar indevidamente shipa o defeito.
+
+### Divergência de veredito — o orquestrador reclassifica, nunca dispara correção sem bloqueante
+
+Um gate cujo contrato ainda não foi atualizado (ou que erra a classificação) pode devolver `REJEITADO`/`PARCIAL` **sem nenhum problema bloqueante pela partição acima**. Nesse caso o orquestrador:
+
+1. **reclassifica** o veredito para `APROVADO_COM_OBSERVACOES`, seguindo o fluxo normal (avança para o gate seguinte / fecha a task);
+2. trata os médios anotáveis como débito (§2 do `_run/run-report.md`);
+3. **loga** em `shared.workflow_report.path`:
+   ```
+   [T{N}] veredito reclassificado: {gate} devolveu {status_original} sem bloqueante pela partição → APROVADO_COM_OBSERVACOES (médios anotáveis: {categorias})
+   ```
+
+**Nunca dispare rodada de correção sem nenhum problema bloqueante** — seria queimar uma das 3 tentativas por achado que a política manda anotar.
+
+### Regra de propagação (assimétrica — leia antes de "unificar" uma duplicação)
+
+Esta partição é **duplicada de propósito** nos dois contratos de agente. Não a transforme em "referência única sem cópias":
+
+- **Os três orquestradores REFERENCIAM e não reproduzem** as listas de categoria desta partição. Eles rodam no contexto principal, onde esta rule está carregada, então a cópia só criaria superfície de drift.
+  - **Exceção nomeada — as duas listas do vocabulário do Tech Review**: a **MÉDIO anotável** (`code_quality`, `project_pattern`, `best_practices`) e a **MÉDIO bloqueante** (as nove de `revalidation_required`) podem aparecer inline nos orquestradores, porque são **os mesmos conjuntos**, item a item, que eles já enumeram como `code_review_only` e `revalidation_required` na seção "Tech Review Correction" abaixo — suprimi-las ali criaria uma assimetria pior do que a duplicação.
+  - **Nenhuma das duas listas da partição do QA** (MÉDIO bloqueante e MÉDIO anotável) **é reproduzida por orquestrador.** Não confunda com o **vocabulário canônico completo do QA** — as 15 categorias que os prompts dos gates citam ao exigir o campo `categoria`. Esse é outro artefato, com outra finalidade, e a sua reprodução é legítima: ele enumera o domínio de valores possíveis, não como eles se dividem entre bloqueante e anotável.
+- **Os dois contratos de agente PODEM espelhar** a partição integralmente, e **cada espelho DEVE estar marcado** como *"espelho autorizado de `agent-spec-workflow-rules.md` → Bloqueio Seletivo de Severidade MÉDIA por Categoria — em divergência, a rule vence"*. A razão é concreta: subagentes rodam em **contexto isolado** e esta rule carrega **condicionalmente** (tem `paths:` no frontmatter) — um diff que não case com os matchers deixaria o gate sem a partição, e o default conservador (tudo bloqueante) anularia a melhoria **em silêncio**.
+- **Toda alteração da partição aqui DEVE ser replicada nos dois espelhos na mesma passada.**
+
+---
+
 ## Tech Review Correction — Classificação `requires_qa_revalidation`
 
 > Usada por `agent-spec-sdd-run-tasks`, `agent-spec-minispec-run-tasks` e `agent-spec-taskcard-run` no loop de correção do Tech Review (Gate 2). Decide se a re-rodada após correção precisa **passar pelo QA novamente** (re-validar lógica/comportamento) ou pode **pular o QA e ir direto a um novo Tech Review** (apenas conformidade técnica/code-review). Otimiza tokens e tempo evitando re-QA quando nada mudou no comportamento do código.
@@ -487,7 +693,17 @@ O `agent-spec-staff-architecture-review` retorna **`problems[]`** (lista única)
 ### Algoritmo de Classificação (sobre `problems[]` do Tech Review)
 
 ```
-problemas_corrigir = [p for p in problems[] if p.severity in (CRITICO, ALTO, MEDIO)]
+# "bloqueante" segue a seção "Bloqueio Seletivo de Severidade MÉDIA por Categoria":
+#   severity CRITICO ou ALTO                                        → sempre bloqueante
+#   severity MEDIO   e category na lista MÉDIO bloqueante do TR     → bloqueante
+#   severity MEDIO   e category na lista MÉDIO anotável do TR       → NÃO bloqueante (débito)
+#   severity MEDIO   e category ausente/desconhecida                → bloqueante (conservador)
+#   severity BAIXO                                                  → nunca bloqueante (débito)
+problemas_corrigir = [p for p in problems[] if e_bloqueante(p)]
+
+se problemas_corrigir está vazio:
+    # o gate devolveu PARCIAL/REJEITADO sem nenhum bloqueante — ver "Divergência de veredito"
+    → NÃO abra rodada de correção; reclassifique para APROVADO_COM_OBSERVACOES e logue
 
 para cada p em problemas_corrigir:
     se p.category está em revalidation_required → return requires_qa_revalidation = true
@@ -497,7 +713,9 @@ para cada p em problemas_corrigir:
 return requires_qa_revalidation = false
 ```
 
-> Baixos não entram no cálculo: pela política débito-controlado só os baixos não disparam loop de correção — viram débito anotado. Críticos, altos e médios são todos bloqueantes e entram no cálculo.
+> **Só os bloqueantes entram no cálculo.** Baixos nunca entraram — viram débito anotado. **Médios de categoria anotável também não entram**: eles não disparam loop de correção, logo não há correção cuja necessidade de re-QA se precise classificar. Incluí-los forçaria `requires_qa_revalidation = true` por um achado que ninguém vai corrigir naquela rodada.
+>
+> Note que as duas listas do TR **coincidem**: `MÉDIO anotável` = `code_review_only` = {`code_quality`, `project_pattern`, `best_practices`}. Isso é deliberado (ver a Nota de design da seção anterior) e tem uma consequência útil: um retry cujos bloqueantes sejam todos `code_review_only` só pode vir de itens `CRITICO`/`ALTO` nessas categorias.
 
 ### Sinais Adicionais (override)
 

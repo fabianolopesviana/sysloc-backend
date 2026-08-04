@@ -4,8 +4,24 @@
 >
 > **Por que NÃO é mais rule do system-prompt**: o conteúdo só é útil para os 3 orquestradores acima. Carregar no system-prompt de TODA interação do Claude (chat trivial, outras skills, leitura de arquivo) gastava ~320 tokens permanentes sem retorno. Mover para `references/` torna o carregamento lazy — segue a mesma convenção de `config.md`, `guardrails.md`, `qa-validator-prompt.md`, `staff-review-prompt.md`.
 >
-> **Arquivo canônico**: este (`agent-spec-minispec-run-tasks/references/executor-discipline.md`).
-> Symlinks em `agent-spec-sdd-run-tasks/references/executor-discipline.md` e `agent-spec-taskcard-run/references/executor-discipline.md` apontam para cá. Edição em UM lugar propaga para os 3.
+> **⚠️ ANTIDRIFT — três arquivos reais idênticos, NÃO symlinks.** O canônico é
+> `agent-spec-minispec-run-tasks/references/executor-discipline.md`; as outras duas ocorrências —
+> em `agent-spec-sdd-run-tasks/references/` e `agent-spec-taskcard-run/references/` — são **cópias
+> byte a byte**, arquivos regulares. (Este bloco é idêntico nos três, então não diga "este
+> arquivo": identifique sempre pelo path.) **Editar UM dos três NÃO propaga para os outros dois**: toda alteração DEVE ser
+> replicada nos três na mesma passada. Verificação numa linha:
+>
+> ```bash
+> # vazio ⇒ as 3 cópias estão sincronizadas; qualquer saída denuncia divergência
+> md5sum .claude/skills/*/references/executor-discipline.md | awk '{print $1}' | sort -u | sed '1d'
+> ```
+>
+> **Por que cópia e não symlink**: um checkout sem suporte a symlink (Windows sem developer mode,
+> export em zip, sync que não preserva link) transforma o arquivo no **texto do caminho**. A
+> extração do conteúdo entre os marcadores não acharia marcador nenhum, e as 7 Iron Rules deixariam
+> de chegar ao executor **em silêncio** — sem erro, sem sinal. Cópia que diverge é detectável pelo
+> comando acima; symlink que não resolve, não. Trocamos um modo de falha silencioso por um
+> verificável.
 >
 > **Motivação do conteúdo**: o sub-agente executor **herda CLAUDE.md e as rules de `.claude/rules/`** (igual ao QA e ao Staff — rules com `paths:` carregam condicionalmente). O que ele **NÃO** enxerga é ESTA referência: ela vive em `references/`, fora de `.claude/rules/`, carregada sob demanda — por isso precisa ser **injetada verbatim** no prompt. O propósito do bloco não é suprir informação (ele já tem o contexto), é **calibrar o nível**: sem ele, o LLM oscila entre dois vícios — para MENOS (entrega o mínimo literal e deixa craft de fora: timeout, log de erro, footgun da lib → o Staff reprova pela ausência) e para MAIS (over-engineering: abstração/feature especulativa → o Staff reprova pelo excesso). As 7 **Iron Rules** (as 4 adaptadas das Karpathy Guidelines + a disciplina de testes + a Lei do seam + a conformidade com ADRs; não confundir com as 6 **Iron Laws** da doutrina `agent-spec-testing-best-practices`, que são as leis DE TESTES citadas pelos gates como #1/#5/#6) calibram o executor **na mesma régua dos gates**: qualidade de sênior, sem excesso especulativo. A Regra #7 (ADRs) é a única que **depende de dados do prompt** — a lista de ADRs aplicáveis que o orquestrador injeta a partir da task; as demais são doutrina pura, válida em qualquer task.
 
@@ -159,7 +175,7 @@ Logue no `shared.workflow_report.path` (uma vez por run, não por task) que o bl
 
 A Regra 2 é **simétrica** e os gates cobrem os dois lados do desvio:
 
-- **Excesso (over-engineering)** → o `agent-spec-staff-architecture-review` reprova como `speculative_complexity`. **Este é o backstop primário do modelo "executor com régua de sênior"**: como o executor agora é mandado implementar com qualidade de produção (não o mínimo), o risco que sobra é o de adicionar demais — e é exatamente aqui que o Staff o segura. O Staff escala para **ALTO** quando a abstração/feature especulativa acopla outras partes; **MEDIO** quando é localizada e trivial de remover. Pela política débito-controlado atual, **ambos bloqueiam → loop de correção** (só `BAIXO` passaria como observação) — ou seja, mesmo a complexidade especulativa localizada é cobrada no ciclo.
+- **Excesso (over-engineering)** → o `agent-spec-staff-architecture-review` reprova como `speculative_complexity`. **Este é o backstop primário do modelo "executor com régua de sênior"**: como o executor agora é mandado implementar com qualidade de produção (não o mínimo), o risco que sobra é o de adicionar demais — e é exatamente aqui que o Staff o segura. O Staff escala para **ALTO** quando a abstração/feature especulativa acopla outras partes; **MEDIO** quando é localizada e trivial de remover. Pela política de bloqueio seletivo por categoria, `speculative_complexity` é categoria **bloqueante também em MEDIO** — ou seja, **ambos bloqueiam → loop de correção**, e mesmo a complexidade especulativa localizada é cobrada no ciclo. (Só `BAIXO` passaria como observação nesta categoria; em severidade MEDIA, quem anota são as categorias cosméticas — ver `.claude/rules/agent-spec-workflow-rules.md` → "Bloqueio Seletivo de Severidade MÉDIA por Categoria".)
 - **Falta (craft ausente)** → cai em `best_practices`/`architecture` (timeout faltando, log de erro ausente, footgun da lib). Sob o modelo antigo (executor mínimo) isso era sistemático e shipava como débito; sob o novo (executor na régua do Staff) deve **deixar de existir na origem** — o executor implementa o craft na primeira passada porque sabe que o Staff cobraria.
 
 A Regra 3 tem suporte em `scope_deviation` (mudança fora do escopo da task — refatorar código alheio). A Regra 5 (disciplina de testes) é validada no Gate 1 pelo `agent-spec-qa-validator` (Camada 5): asserção fraca, mock-driven, happy-path-only viram `categoria: tests`. A Regra 7 (ADRs) → `adr_compliance` (Gate 1 grep-detectável + Gate 2 profundo); contradição direta ao `Decision` de ADR aceita é **ALTO** (bloqueia). Regras 1 e 4 são preventivas. **A simetria é o ponto-chave: o executor mira a régua dos gates; os gates corrigem o desvio em qualquer direção (excesso OU falta), não o usuário.**

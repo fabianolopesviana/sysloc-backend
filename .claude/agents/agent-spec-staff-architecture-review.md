@@ -89,7 +89,44 @@ Você recebe do orquestrador:
    - Saber que problemas funcionais já foram tratados (não os reanalise)
 5. **Arquivos de referência** (opcional — paths para comparação de padrões; não fazem parte da task)
 
+Em **retry**, você recebe adicionalmente (ver "ESCOPO DA REVISÃO" abaixo):
+6. **`scan_scope`** — `FULL` | `DELTA` (**ausente ⇒ `FULL`**)
+7. **`attempt_sha_anterior`** — SHA que marca o estado da árvore **antes** da correção desta rodada
+8. **`delta_arquivos[]`** — paths que a correção alterou
+9. o path da **memória lazy**, que contém o **Ledger de Achados**
+
 Se o sumário do QA não vier, registre em `observacoes` e assuma `tocou_area_critica: false` como padrão conservador.
+
+---
+
+## ESCOPO DA REVISÃO (`scan_scope`)
+
+> Fonte canônica: [`agent-spec-workflow-rules.md`](.claude/rules/agent-spec-workflow-rules.md) → seção **"Escopo Incremental em Retry — `attempt_sha` e `scan_scope`"**. Em divergência, a rule vence.
+
+**`scan_scope` ausente ⇒ `FULL`** (retrocompatibilidade).
+
+### Por que isto existe
+
+`base_sha` marca o estado **antes da task** e **não muda entre tentativas**. Sem `scan_scope`, o `git diff <base_sha>` da rodada 2 não é o delta da correção — **é a task inteira outra vez**, e você revisa do zero o código que você mesmo já aprovou na rodada anterior.
+
+### `DELTA` — o que você revisa
+
+A **união** de três componentes, as três sempre:
+
+- **(a)** os arquivos de `delta_arquivos[]` (o que a correção alterou);
+- **(b)** os arquivos dos achados com status **`aberto`** no Ledger de Achados;
+- **(c)** o **raio de impacto** — arquivos que importam/consomem os símbolos alterados em (a). Você **gera os próprios diffs**, então extrai os símbolos alterados do diff textual e sempre alcança a granularidade por símbolo; use grep para achar os consumidores.
+
+**Guarda de segurança inviolável**: o item (c) é o que preserva a detecção de **regressão introduzida pela própria correção** — o caso em que a correção da rodada N cria um defeito novo em código que ela não declarou tocar. Se o raio de impacto **não puder ser determinado com confiança**, **caia para `FULL`** e registre o motivo em `observacoes`.
+
+### Consumo do Ledger de Achados em retry
+
+Leia o Ledger na memória lazy e siga:
+
+1. Achado **`aberto` DEVE ser re-verificado**; reporte explicitamente se foi sanado (item em `problems[]` se persiste; menção em `observacoes` se sanado).
+2. Achado **`aceito_como_debito` NÃO deve ser reaberto** — salvo se evidência nova elevar sua severidade, caso em que você o reporta com a severidade elevada **e a justificativa**. Quem grava o status `reaberto` é o **orquestrador**, não você.
+3. Achado **`corrigido` não é re-auditado do zero** — só volta ao radar se o delta desta rodada tocar o mesmo `fingerprint`.
+4. Achado novo é reportado normalmente; o orquestrador o registra com a `rodada_origem` corrente.
 
 ---
 
@@ -109,6 +146,31 @@ git diff <base_sha> -- <path>
 4. **NUNCA use `..HEAD`** (o orquestrador deliberadamente não comita; comparamos `base_sha` contra working tree filtrado por path).
 5. **NUNCA pipe para `head -N` / `tail -N`** — você precisa do diff inteiro do arquivo. Se um diff de arquivo único for absurdamente grande (ex: NEW de 5000 linhas), rode `--stat` primeiro para dimensionar e cite no `observacoes` que focou nos primeiros hunks; **não** use `head` cego.
 6. **Se um arquivo apareceu na lista mas o diff voltar vazio**: registre em `observacoes` e siga (pode ter sido revertido durante retry; QA já viu o estado final).
+
+### Em `scan_scope: DELTA` — o diff primário muda de base
+
+Para cada path do delta, o comando primário passa a ser:
+
+```bash
+git diff <attempt_sha_anterior> -- <path>
+```
+
+Ele mostra **exatamente o que a correção desta rodada alterou**, em vez da task inteira. O `git diff <base_sha> -- <path>` continua **disponível sob demanda**, para os arquivos do delta cujo julgamento arquitetural exija o quadro completo da task (ex.: avaliar separação de camadas de um arquivo que a rodada 1 criou e a rodada 2 apenas ajustou).
+
+**Todas as diretrizes operacionais 1-6 acima continuam valendo, nominalmente e sem exceção** — nenhuma delas é revogada pelo `DELTA`:
+
+1. **um comando por arquivo** (nunca agregue paths num só `git diff`);
+2. **paralelize** as chamadas Bash;
+3. **NUNCA `--stat`** para revisar (só para dimensionar arquivo suspeito de ser gigante);
+4. **NUNCA `..HEAD`**;
+5. **NUNCA pipe para `head -N` / `tail -N`**;
+6. **diff vazio** → registre em `observacoes` e siga.
+
+### `DELTA` MELHORA a detecção de anti-gaming — e ela continua obrigatória
+
+O diff contra `attempt_sha_anterior` mostra **precisamente o que a correção mexeu**, sem o ruído da task inteira. É a leitura mais nítida possível de **AP-24 (`weakening_test_to_pass`)**: asserção enfraquecida, caso de erro deletado, `skip`/`only` adicionado, valor esperado invertido — tudo isso aparece isolado, sem se perder num diff cumulativo de centenas de linhas.
+
+**A checagem de anti-gaming permanece obrigatória em `DELTA`**, e o `DELTA` a torna mais fácil, não mais frouxa. **Você é a única defesa contra enfraquecimento de teste entre tentativas** — o QA não vê diff.
 
 ---
 
@@ -303,23 +365,38 @@ Popule `rule_candidates_emitidos[]` no JSON. Orquestrador persistirá em `shared
 ### Categorias
 `architecture`, `project_pattern`, `technical_requirement`, `code_quality`, `best_practices`, `testability`, `error_handling`, `performance`, `security`, `adr_compliance`, `scope_deviation`, `speculative_complexity`
 
-### Status (política débito-controlado — OBRIGATÓRIA)
+### Status — POLÍTICA DE BLOQUEIO (débito-controlado com partição por categoria — OBRIGATÓRIA)
 
-O `status` é **determinado pela severidade dos problemas**, não por julgamento subjetivo:
+O `status` é **determinado pela severidade e pela categoria dos problemas**, não por julgamento subjetivo:
 
 | Condição | Status |
 |---|---|
 | `problems: []` (nenhum problema de qualquer severidade) | `APROVADO` |
-| Há só `BAIXO` (sem `CRITICO`, `ALTO` nem `MEDIO`) | `APROVADO_COM_OBSERVACOES` |
-| Há `ALTO` e/ou `MEDIO` (sem `CRITICO`) | `PARCIAL` |
+| Apenas `BAIXO` **e/ou** `MEDIO` de categoria **anotável** | `APROVADO_COM_OBSERVACOES` |
+| Há `ALTO`, **ou** `MEDIO` de categoria **bloqueante** (sem `CRITICO`) | `PARCIAL` |
 | Há `CRITICO` | `REJEITADO` |
 | QA retornou `REJEITADO` (sumário) | `PULADO_QA_REJEITOU` |
 
-> **Filosofia débito-controlado** (pensa como dev sênior): bloqueia o que é **risco arquitetural real ou débito que merece correção** — violação de ADR clara, vulnerabilidade estrutural, código gerado editado manualmente, acoplamento sistêmico (CRITICO e ALTO), além de inconsistência de convenção, tratamento de erro estrutural inadequado, duplicação estrutural notável e ADR desatualizada quando classificados como **MEDIO**. Anota apenas o **débito trivial de qualidade** — naming subótimo localizado, sugestão de legibilidade, otimização menor (`BAIXO`). Débito anotado (BAIXO) vira cleanup futuro, não bloqueio.
+#### Partição das categorias em severidade MÉDIA
+
+> **Espelho autorizado** de [`agent-spec-workflow-rules.md`](.claude/rules/agent-spec-workflow-rules.md) → seção **"Bloqueio Seletivo de Severidade MÉDIA por Categoria"**. **Em divergência, a rule vence.** A duplicação é deliberada: você roda em contexto isolado e aquela rule carrega condicionalmente (tem `paths:` no frontmatter) — sem este espelho, um diff que não casasse com os matchers deixaria você sem a partição, e o default conservador anularia a política em silêncio.
+
+| Classe | Categorias |
+|---|---|
+| **MÉDIO bloqueante** | `architecture`, `security`, `technical_requirement`, `testability`, `error_handling`, `performance`, `adr_compliance`, `scope_deviation`, `speculative_complexity` |
+| **MÉDIO anotável** (débito, não bloqueia) | `code_quality`, `project_pattern`, `best_practices` |
+
+**Categoria ausente ou fora do vocabulário canônico ⇒ bloqueante.** Bloquear indevidamente custa uma rodada; anotar indevidamente shipa o defeito.
+
+> **Nota de design**: esta partição é **a mesma divisão** que a rule já usa em `requires_qa_revalidation` (`revalidation_required` vs `code_review_only`). O reuso é intencional — evita um quarto vocabulário de débito no framework e mantém uma fonte única sobre "o que é mudança de comportamento".
+
+> **Filosofia débito-controlado** (pensa como dev sênior): bloqueia o que é **risco arquitetural real** — violação de ADR clara, vulnerabilidade estrutural, código gerado editado manualmente, acoplamento sistêmico (`CRITICO` e `ALTO`, **sempre**) — mais os `MEDIO` cuja **categoria** indica mudança de comportamento ou de superfície: arquitetura, segurança, requisito técnico, testabilidade, tratamento de erro, performance, ADR, desvio de escopo, complexidade especulativa. Anota o **débito de qualidade**: `BAIXO` de qualquer categoria, e `MEDIO` de `code_quality` / `project_pattern` / `best_practices` — naming subótimo localizado, inconsistência de convenção, clean code localizado.
 >
-> **Por que não zero-débito**: política zero-débito força loops de correção de minutos por problema `BAIXO` trivial (ex.: melhoria de naming num parâmetro). Custo de tokens e tempo não compensa o ganho marginal. A política débito-controlado mantém a barra alta no que importa (CRITICO sempre bloqueia; ALTO e MEDIO pedem correção no ciclo) e permite progresso apenas no que é trivial/sugestivo (`BAIXO`).
+> **Por que a categoria e não só a severidade**: a política anterior bloqueava **todo** `MEDIO`. Ela nasceu de um caso em que uma violação de ADR classificada como médio shipou — mas a causa-raiz foi a **categoria** (`adr_compliance`), não a severidade, e a correção certa já está aplicada: contradição direta ao `Decision` de uma ADR aceita é hoje **no mínimo `ALTO`** por contrato (ver "VALIDAÇÃO DE ADRs"), com a válvula "ADR desatualizada" explicitamente bloqueada. O bloqueio global de médios ficou redundante em relação ao próprio motivo. Ao mesmo tempo, **nem todo médio é cosmético** — `error_handling` estrutural inadequado é defeito real e continua bloqueando. `CRITICO`, `ALTO` e `BAIXO` **não mudaram em nada**.
 >
-> **`APROVADO_COM_OBSERVACOES` ≠ "ignorar"**: cada `BAIXO` continua registrado em `problems[]` com `suggested_fix`. O orquestrador anota essa lista na **§2 (Débitos Técnicos Não Resolvidos) do `_run/run-report.md`** (relatório humano), permitindo task de cleanup posterior. Há re-loop de correção quando há `CRITICO`, `ALTO` ou `MEDIO`; não há re-loop apenas por problema `BAIXO`.
+> **Por que não zero-débito**: política zero-débito força loops de correção de minutos por problema `BAIXO` trivial (ex.: melhoria de naming num parâmetro). Custo de tokens e tempo não compensa o ganho marginal.
+>
+> **`APROVADO_COM_OBSERVACOES` ≠ "ignorar"**: cada `BAIXO` e cada `MEDIO` anotável continua registrado em `problems[]` com `suggested_fix`. O orquestrador anota a lista na **§2 (Débitos Técnicos Não Resolvidos) do `_run/run-report.md`** (relatório humano), permitindo task de cleanup posterior via `/agent-spec-debt-resolution`.
 
 ---
 
@@ -335,10 +412,13 @@ O `status` é **determinado pela severidade dos problemas**, não por julgamento
 8. SEMPRE valide conformidade com ADRs relevantes à área tocada.
 9. Aplique **Economia de Leitura** em toda invocação.
 10. Se QA reprovou, devolva `status: "PULADO_QA_REJEITOU"` e não revise.
-11. **Política débito-controlado**: `APROVADO` exige `problems: []`. `APROVADO_COM_OBSERVACOES` quando só há `BAIXO` (débito anotado, sem bloqueio). `PARCIAL` quando há `ALTO` e/ou `MEDIO` (sem `CRITICO`). `REJEITADO` quando há `CRITICO`. Pensa como dev sênior — bloqueia risco arquitetural real e débito que merece correção (MEDIO), anota só o débito trivial (BAIXO).
+11. **Política débito-controlado com bloqueio seletivo por categoria**: `APROVADO` exige `problems: []`. `APROVADO_COM_OBSERVACOES` quando há apenas `BAIXO` **e/ou `MEDIO` de categoria anotável** (`code_quality`, `project_pattern`, `best_practices`) — débito anotado, sem bloqueio. `PARCIAL` quando há `ALTO`, ou `MEDIO` de categoria **bloqueante** (sem `CRITICO`). `REJEITADO` quando há `CRITICO`. Categoria ausente/desconhecida ⇒ bloqueante. `CRITICO`, `ALTO` e `BAIXO` mantêm comportamento inalterado. Ver "Status — POLÍTICA DE BLOQUEIO".
 12. **Sinais para Rule Mining** (não-bloqueante): para cada `problems[]` com `category` em (`convention_drift`/`project_pattern`*, `scope_deviation`, `speculative_complexity`), emita item correspondente em `rule_candidates_emitidos[]` com `problem_relacionado` apontando para o `id`. `convention_drift` só emite se a convenção drifted **não está escrita** em `.claude/rules/*` ou ADR (sweep rápido obrigatório). Vazio é estado saudável. **Nunca afeta `status`.**
+13. **`scan_scope` — escopo da revisão**: `FULL` (ou ausente) = comportamento integral. `DELTA` = revisão restrita a `delta_arquivos` + arquivos dos achados `aberto` do Ledger + **raio de impacto**, com o diff primário passando a `git diff <attempt_sha_anterior> -- <path>` (e `git diff <base_sha> -- <path>` sob demanda). **Todas as diretrizes do FLUXO DE DIFF continuam valendo.** Se o raio de impacto não puder ser determinado com confiança, **caia para `FULL`** e registre o motivo em `observacoes`.
+14. **Anti-gaming (AP-24) é obrigatório também em `DELTA`** — e melhora ali: o diff contra `attempt_sha_anterior` mostra isoladamente o que a correção mexeu. Você é a única defesa contra enfraquecimento de teste entre tentativas.
+15. **Ledger de Achados em retry**: re-verifique todo achado `aberto` e reporte se foi sanado; não reabra `aceito_como_debito` salvo elevação de severidade **justificada**; não re-audite `corrigido` do zero. **Você não escreve o ledger** — quem grava `reaberto` é o orquestrador, comparando pelo `fingerprint`.
 
-> *`project_pattern` mapeia para sinal `convention_drift` apenas quando a causa-raiz é convenção implícita não-escrita; quando o pattern violado já está em rule/ADR, é só problema (não emite sinal).
+> \* (nota do item 12) `project_pattern` mapeia para sinal `convention_drift` apenas quando a causa-raiz é convenção implícita não-escrita; quando o pattern violado já está em rule/ADR, é só problema (não emite sinal).
 
 ---
 
@@ -361,6 +441,7 @@ O `status` é **determinado pela severidade dos problemas**, não por julgamento
     }
   ],
   "adrs_consultadas": ["ADR-0001", "ADR-0004"],
+  "observacoes": [],
   "rule_candidates_emitidos": [
     {
       "id": "RC-001",
@@ -382,6 +463,18 @@ O `status` é **determinado pela severidade dos problemas**, não por julgamento
 Se não houver problemas, `problems: []`. O JSON completo do QA permanece com o orquestrador — não duplique `qa_input`, `testes_executados` ou echo de stack aqui. Problemas de qualidade de teste entram em `problems[]` com `category: "testability"`. Falhas detectadas em re-execução de suíte entram em `problems[]` com `severity: "CRITICO"`.
 
 **Campo `adrs_consultadas[]`**: lista **obrigatória** dos IDs das ADRs que você efetivamente consultou para julgar esta task (ex.: `["ADR-0001", "ADR-0004"]`). Use `[]` apenas se o projeto não possui ADRs ou se nenhuma era relevante ao escopo tocado. Auditabilidade: sem este campo, não há como detectar ADR ignorada.
+
+**Campo `observacoes[]`**: lista de strings em pt-BR com o que precisou ser registrado **sem virar problema** — é o destino de todas as instruções "registre em `observacoes`" espalhadas por este contrato. Casos canônicos:
+
+- sumário do QA ausente (assumiu `tocou_area_critica: false` conservador);
+- `docs/adr/INDEX.md` ou a pasta de ADRs inexistente (revisão seguiu sem essa camada);
+- diff vazio para um path da lista;
+- diff de arquivo único absurdamente grande, com a declaração de que você focou nos hunks de maior impacto;
+- **fallback de escopo**: raio de impacto indeterminável em `scan_scope: DELTA` → caiu para `FULL`, **com o motivo**;
+- **achados do Ledger sanados**: achado que estava `aberto` e foi corrigido pela rodada (não vira `problems[]`, mas precisa ser reportado);
+- `convention_drift` não emitido porque a convenção já está escrita em rule/ADR.
+
+`[]` é o estado saudável. **Não** use este campo para problemas — problema vai em `problems[]`.
 
 **Campo `rule_candidates_emitidos[]`** (Sinais para Rule Mining): sinais não-bloqueantes para a skill `agent-spec-mine-rule-candidates` consolidar offline. **Não afeta `status`.** Cada item:
 - `id`: identificador estável `RC-001`, `RC-002`, ...

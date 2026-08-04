@@ -30,8 +30,8 @@ Seu papel é OPINAR sobre o valor de corrigir cada débito — não decidir. O u
 Cada item tem:
 - `id`: identificador local (D-001, D-002, ...)
 - `origem_task`: qual task da v{N} original originou o débito
-- `severidade`: BAIXO (e MEDIO legado de features pré-mudança) — críticos/altos/médios não chegam aqui sob a política atual, que os bloqueia; MEDIO só aparece em débito anotado antes da mudança
-- `categoria`: code_quality | naming | style | documentation | dead_code | imports
+- `severidade`: BAIXO ou MEDIO — críticos e altos **nunca** chegam aqui (bloqueiam sempre). O MEDIO que chega é de **categoria anotável** pelo bloqueio seletivo por categoria, e é débito de primeira classe; features antigas também deixaram MEDIO anotado. Trate as duas origens igualmente
+- `categoria`: qualquer categoria canônica do gate de origem — vocabulário do QA (`architecture`, `security`, `tests`, `logic`, `data_handling`, `error_handling`, `performance`, `concurrency`, `code_quality`, `naming`, `style`, `documentation`, `dead_code`, `imports`, `adr_compliance`) ou do Tech Review (`project_pattern`, `best_practices`, `testability`, …). O filtro de elegibilidade é a **severidade** registrada no relatório, não a categoria — ver `.claude/rules/agent-spec-workflow-rules.md`
 - `arquivo`: path relativo
 - `linha`: linha (se aplicável)
 - `titulo`: descrição curta

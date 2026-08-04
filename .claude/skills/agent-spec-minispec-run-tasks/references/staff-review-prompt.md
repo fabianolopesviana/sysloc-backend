@@ -123,6 +123,15 @@ git diff <base_sha> -- <path>
 ## ADRs
 Consulte [path resolvido via adr.index_file] e leia ADRs específicas relacionadas aos paths tocados.
 
+## Escopo da revisão (APENAS em retry — omita o bloco inteiro na 1ª tentativa)
+- `scan_scope`: DELTA
+- `attempt_sha_anterior`: [SHA capturado antes do executor da rodada anterior]
+- `delta_arquivos`: [saída de `git diff --name-only <attempt_sha_anterior>`]
+
+Em `scan_scope: DELTA`, o diff primário passa a ser `git diff <attempt_sha_anterior> -- <path>` — mostra o **delta da correção**, não a task inteira outra vez. `git diff <base_sha> -- <path>` continua disponível **sob demanda**, para os arquivos do delta cujo julgamento arquitetural exija o quadro completo. **Todas as diretrizes do FLUXO DE DIFF do seu contrato continuam valendo**: um comando por arquivo, paralelize, nunca `--stat` para revisar, nunca `..HEAD`, nunca pipe para `head`/`tail`. Revise a união de (a) `delta_arquivos`, (b) arquivos dos achados `aberto` no Ledger e (c) o raio de impacto; se o raio de impacto não puder ser determinado com confiança, **caia para `FULL`** e registre o motivo em `observacoes`. A checagem de **AP-24 (weakening test to pass) permanece obrigatória e fica mais nítida em `DELTA`**.
+
+Quando este bloco estiver ausente, `scan_scope` é `FULL` — comportamento integral.
+
 ## Memória de retry (APENAS quando attempt_count >= 1 — omita o bloco na 1ª tentativa)
 Leia [path resolvido via shared.temp_memory.dir + shared.temp_memory.pattern] — contém o histórico de rejeições/correções desta task. Compare o diff atual contra os problemas anteriores: correção que apenas contorna o gate (teste enfraquecido/removido, flag invertida) → CRITICO/testability.
 
@@ -144,14 +153,23 @@ NÃO re-execute a suíte de testes salvo nas 3 condições do seu contrato: (1) 
 | Status | Significado | Ação |
 |---|---|---|
 | `APROVADO` | 0 problemas | Avançar para **4.5 (stage)** → marcar `Concluído` na task e no `task_plan.md` |
-| `APROVADO_COM_OBSERVACOES` | Só `BAIXO` | Avançar para **4.5 (stage)** → marcar `Concluído`; **acumular os baixos** para a **§2 do snapshot `_run/run-report.md`** (um bloco `### D{n} · {severity} · {category} · T[N] · Tech Review` com `Onde`=`[arquivo]:[linha]`, `Problema`=`title`, `Impacto`=`description`, `O que fazer`=`suggested_fix` — formato em `agent-spec-workflow-rules.md`) |
-| `PARCIAL` | ≥ 1 `ALTO` e/ou `MEDIO` (sem `CRITICO`) | Enviar críticos+altos+médios ao executor (4.4); baixos viram débito anotado |
-| `REJEITADO` | ≥ 1 `CRITICO` | Enviar críticos+altos+médios ao executor (4.4); baixos viram débito anotado |
+| `APROVADO_COM_OBSERVACOES` | Só `BAIXO` e/ou `MEDIO` de categoria **anotável** | Avançar para **4.5 (stage)** → marcar `Concluído`; **acumular os anotáveis** para a **§2 do snapshot `_run/run-report.md`** (um bloco `### D{n} · {severity} · {category} · T[N] · Tech Review` com `Onde`=`[arquivo]:[linha]`, `Problema`=`title`, `Impacto`=`description`, `O que fazer`=`suggested_fix` — formato em `agent-spec-workflow-rules.md`) |
+| `PARCIAL` | ≥ 1 `ALTO`, ou `MEDIO` de categoria **bloqueante** (sem `CRITICO`) | Enviar os bloqueantes ao executor (4.4); os anotáveis viram débito anotado |
+| `REJEITADO` | ≥ 1 `CRITICO` | Enviar os bloqueantes ao executor (4.4); os anotáveis viram débito anotado |
 | `PULADO_QA_REJEITOU` | TR invocado com QA reprovado | Erro de orquestração: logue em `shared.workflow_report.path` e volte ao loop de correção do QA (3.5) |
 
-> **Débito-controlado**: críticos/altos/médios bloqueiam; só os baixos são anotados (na §2 do `_run/run-report.md`) e não impedem a conclusão da task.
+> **Débito-controlado com bloqueio seletivo**: críticos e altos sempre bloqueiam; **médios bloqueiam conforme a categoria** — partição canônica em [`agent-spec-workflow-rules.md`](.claude/rules/agent-spec-workflow-rules.md) → **"Bloqueio Seletivo de Severidade MÉDIA por Categoria"** (**consulte-a; não a reproduza aqui**). Baixos e médios anotáveis são registrados na §2 do `_run/run-report.md` e não impedem a conclusão da task.
+>
+> **Cláusula de divergência de veredito (OBRIGATÓRIA)**: se o Tech Review devolver `PARCIAL`/`REJEITADO` mas **nenhum** dos problemas for bloqueante pela partição, **NÃO dispare rodada de correção**. Reclassifique para `APROVADO_COM_OBSERVACOES`, siga para 4.5, trate os anotáveis como débito e logue:
+> ```
+> [T{N}] veredito reclassificado: Tech Review devolveu <status> sem bloqueante pela partição → APROVADO_COM_OBSERVACOES (médios anotáveis: <categorias>)
+> ```
+>
+> **Manutenção do Ledger de Achados**: aplique o passo 3.4.2 do [`qa-validator-prompt.md`](qa-validator-prompt.md) **também aqui**, sobre `problems[]` do Tech Review (`gate: tech_review`), **em todos os status, inclusive nos que aprovam** — a rodada que aprova precisa registrar seus `corrigido`/`aceito_como_debito`, senão a métrica de 3.4.3 lê um ledger incompleto.
 >
 > **Auditoria de ADRs**: registre `adrs_consultadas[]` do JSON do TR em `shared.workflow_report.path` (`T[N] — TR consultou: ADR-0001, ADR-0004` ou `nenhuma`). Sem esse log, ADR ignorada é indetectável.
+>
+> **Observações do TR**: registre `observacoes[]` do JSON em `shared.workflow_report.path`. É onde chegam o **fallback de escopo** (raio de impacto indeterminável → caiu para `FULL`, com motivo) e os **achados do Ledger sanados** — sinais que não viram problema mas que você precisa ver.
 
 ### 4.4 Loop de correção Tech Review (memória lazy)
 
@@ -165,10 +183,12 @@ Se Tech Review reprovou:
    ```
    ```
 
-2. **Extraia os problemas — política débito-controlado**:
+   > **Se a memória lazy ainda NÃO existir aqui** — caso real e frequente: QA aprovou na rodada 1 e o Tech Review reprovou — **crie-a no formato COMPLETO de 3.5**, `## attempt_sha` e `## Ledger de Achados` inclusive, **e POPULE a tabela do ledger agora** (uma linha por problema deste JSON, `gate: tech_review`, `rodada_origem` = rodada corrente, `status: aberto` para bloqueantes e `aceito_como_debito` para anotáveis). Criar só com a seção `## JSON Tech Review` deixaria o ledger inexistente justamente no caminho "QA aprovou → TR reprovou", e a rodada seguinte reinseriria tudo como achado novo.
+
+2. **Extraia os problemas — política débito-controlado com bloqueio seletivo por categoria**:
    - `problems[]`: `id`, `severity`, `category`, `title`, `description`, `expected`, `impact`, `suggested_fix`, `adr_referenciada`
-   - **Bloqueantes**: `severity` `CRITICO`, `ALTO` ou `MEDIO`. **Débito anotado**: `BAIXO` — entram no prompt como "Observações".
-   - **Acumule AGORA os baixos para a §2 do snapshot `_run/run-report.md`** (um bloco `### D{n} · {severity} · {category} · T[N] · Tech Review` por problema, com `Onde`=`[arquivo]:[linha]`, `Problema`=`title`, `Impacto`=`description`, `O que fazer`=`suggested_fix`; `arquivo`/`linha`/`suggested_fix` vêm do próprio item em `problems[]` — não os descarte: são o que permite à `/agent-spec-debt-resolution` gerar tasks de cleanup sem reinferir paths) — o prompt de correção afirma que eles "já estão anotados"; este é o passo que garante isso. O snapshot é reescrito ao fechar a task (FASE 5).
+   - **Bloqueantes**: `severity` `CRITICO` ou `ALTO`, **mais os `MEDIO` de categoria bloqueante** pela partição da rule (categoria ausente/desconhecida ⇒ bloqueante). **Débito anotado**: `BAIXO` **+ os `MEDIO` de categoria anotável** (`code_quality`, `project_pattern`, `best_practices`) — entram no prompt como "Observações".
+   - **Acumule AGORA os anotáveis para a §2 do snapshot `_run/run-report.md`** (baixos de qualquer categoria + médios de categoria anotável; um bloco `### D{n} · {severity} · {category} · T[N] · Tech Review` por problema, com `Onde`=`[arquivo]:[linha]`, `Problema`=`title`, `Impacto`=`description`, `O que fazer`=`suggested_fix`; `arquivo`/`linha`/`suggested_fix` vêm do próprio item em `problems[]` — não os descarte: são o que permite à `/agent-spec-debt-resolution` gerar tasks de cleanup sem reinferir paths) — o prompt de correção afirma que eles "já estão anotados"; este é o passo que garante isso. O snapshot é reescrito ao fechar a task (FASE 5).
 
 3. **Monte o prompt de correção**:
 
@@ -176,7 +196,7 @@ Se Tech Review reprovou:
    A task [ID] foi REPROVADA pela Revisão Técnica. Leia a memória lazy em [path do arquivo].
 
    ## Problemas Bloqueantes (DEVEM ser corrigidos — política débito-controlado)
-   [Para cada problema com severity == CRITICO, ALTO OU MEDIO:]
+   [Para cada problema com severity == CRITICO, severity == ALTO, ou severity == MEDIO de categoria BLOQUEANTE pela partição da rule (categoria ausente/desconhecida ⇒ bloqueante):]
    - **[P1] ([severity]) [category]**: [title]
      - Descrição: [description]
      - Esperado: [expected]
@@ -184,11 +204,11 @@ Se Tech Review reprovou:
      - Correção sugerida: [suggested_fix]
      - ADR referenciada: [adr_referenciada se aplicável]
 
-   ## Observações (baixos — débito anotado, opcional corrigir agora)
-   [Para cada problema com severity == BAIXO:]
+   ## Observações (anotáveis — débito anotado, opcional corrigir agora)
+   [Para cada problema com severity == BAIXO, ou severity == MEDIO de categoria ANOTÁVEL:]
    - **[P_]** ([severity]) [category]: [title] — [suggested_fix]
 
-   Corrija OBRIGATORIAMENTE os críticos, altos e médios da seção "Bloqueantes". Os baixos da seção "Observações" são débito anotado: corrija se for trivial no mesmo escopo; caso contrário, deixa para cleanup futuro (já anotados na §2 do _run/run-report.md pelo orquestrador). Mantenha a conformidade com a arquitetura e padrões do projeto. Não expanda escopo.
+   Corrija OBRIGATORIAMENTE tudo que está na seção "Bloqueantes" (críticos, altos e os médios de categoria bloqueante). Os itens da seção "Observações" são débito anotado: corrija se for trivial no mesmo escopo; caso contrário, deixa para cleanup futuro (já anotados na §2 do _run/run-report.md pelo orquestrador). Mantenha a conformidade com a arquitetura e padrões do projeto. Não expanda escopo.
 
    Para CADA problema bloqueante, antes de editar escreva uma linha `CAUSA-RAIZ: <por que o código violava o padrão/arquitetura>`. Correção que apenas faz o gate passar sem atacar a causa — renomear superficialmente, mover código sem resolver o acoplamento, suprimir o sintoma — será RE-REPROVADA. Se algum problema já havia sido reprovado na tentativa anterior, a correção anterior foi insuficiente — ataque a origem, não o sintoma.
 
@@ -197,17 +217,22 @@ Se Tech Review reprovou:
    ```
 
 4. **Classifique `requires_qa_revalidation`** aplicando a regra "Tech Review Correction — Classificação `requires_qa_revalidation`" de `.claude/rules/agent-spec-workflow-rules.md`:
-   - Olhe `category` de cada item **bloqueante** (`severity` `CRITICO`/`ALTO`) em `problems[]`.
-   - Se TODOS estão em categorias `code_review_only` (`code_quality`, `project_pattern`, `best_practices`) → `requires_qa_revalidation = false`.
+   - Olhe `category` de cada item **bloqueante** em `problems[]` — bloqueante = `severity` `CRITICO` ou `ALTO`, **ou** `MEDIO` de categoria bloqueante pela partição da rule (categoria ausente/desconhecida ⇒ bloqueante). Médios de categoria **anotável** e baixos NÃO entram no cálculo: eles não disparam correção, logo não há correção cuja necessidade de re-QA classificar.
+   - Se TODOS os bloqueantes estão em categorias `code_review_only` (`code_quality`, `project_pattern`, `best_practices` — o mesmo conjunto que a partição chama de MÉDIO anotável) → `requires_qa_revalidation = false`.
+   - **Se NÃO houver nenhum bloqueante** (o gate devolveu `PARCIAL`/`REJEITADO` só com médios anotáveis e/ou baixos) → **não abra rodada de correção**: reclassifique para `APROVADO_COM_OBSERVACOES`, siga o fluxo normal e logue em `shared.workflow_report.path` a linha `[{task_id}] veredito reclassificado: Tech Review devolveu {status} sem bloqueante pela partição → APROVADO_COM_OBSERVACOES (médios anotáveis: {categorias})`.
    - Se QUALQUER item está em `revalidation_required` (`architecture`, `security`, `technical_requirement`, `testability`, `error_handling`, `performance`, `adr_compliance`, `scope_deviation`, `speculative_complexity`) ou categoria desconhecida/ausente → `requires_qa_revalidation = true`.
    - Aplique overrides (`tocou_area_critica`, `qa_security_flags_not_empty`, `task_risk == high`, mudança no `git diff --stat`) — qualquer um força `true`.
    - Persista `requires_qa_revalidation: <bool>` na memória lazy junto com a justificativa (categorias encontradas + overrides ativos).
-5. **Dispare o executor** com prompt de correção (escale modelo se aplicável).
-6. **Re-valide conforme `requires_qa_revalidation`**:
+5. **Capture o `attempt_sha` — IMEDIATAMENTE ANTES de despachar o executor de correção (OBRIGATÓRIO)**. Mesmo mecanismo, mesmas proibições e mesmo fallback do **3.5, item 5** do [`qa-validator-prompt.md`](qa-validator-prompt.md) (índice temporário via `GIT_INDEX_FILE`; nunca `git stash create`; nunca `cp .git/index`; qualquer passo que falhe ⇒ `<indisponivel>` ⇒ próxima rodada em `FULL`). Grave na memória lazy e logue `[T{N}] attempt_sha (rodada {k})=<sha|indisponivel>`.
+6. **Dispare o executor** com prompt de correção (escale modelo se aplicável).
+7. **Re-valide conforme `requires_qa_revalidation`**, **passando o escopo incremental ao(s) gate(s) invocado(s)**:
    - **`true`** → primeiro Gate 1 — QA (3.3) → se QA aprovar, Gate 2 — Tech Review (4.2).
    - **`false`** → **PULE QA**, vá direto a Gate 2 — Tech Review (4.2). Logue em `shared.workflow_report.path`: `T[N] retry — QA pulado (categorias code_review_only: <lista>)`.
-7. **Limite máximo: 3 tentativas TOTAIS** por task (compartilhado entre QA e Tech Review).
-8. **Ao aprovar final**: delete a memória lazy `T{N}.md`.
+   - **Ao QA**: `scan_scope`, `delta_arquivos[]`, `delta_simbolos[]` (best-effort — ausência **não** força `FULL`) e o path da memória lazy, exatamente como no 3.5, item 7.
+   - **Ao Tech Review**: preencha o bloco `## Escopo da revisão` do prompt de 4.2 com `scan_scope`, **`attempt_sha_anterior`** e `delta_arquivos[]`. Em `DELTA`, o diff primário dele passa a ser `git diff <attempt_sha_anterior> -- <path>`, com `git diff <base_sha> -- <path>` sob demanda.
+   - **`attempt_sha` da rodada anterior `<indisponivel>` ⇒ `scan_scope: FULL`** para ambos os gates.
+8. **Limite máximo: 3 tentativas TOTAIS** por task (compartilhado entre QA e Tech Review).
+9. **Ao aprovar final**: registre a **métrica do ledger** (3.4.3) **e só então** delete a memória lazy `T{N}.md` — a ordem importa, porque a métrica lê o ledger que o cleanup apaga.
 
 ### 4.5 Stage da task aprovada (`git add`)
 

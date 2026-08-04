@@ -49,7 +49,7 @@ A skill **`/agent-spec-pre-refinement`** é o discovery de PRODUTO (Tree of Thou
 6. `/agent-spec-challenge-spec` — *(opcional)* stress-test interativo da Tech Spec contra domínio/código/ADRs.
 7. `/agent-spec-sdd-generate-task-plan` — decompõe em tasks atômicas; delega a Seção 6 (Testes) ao `agent-spec-qa-test-generator`.
 8. `/agent-spec-sdd-run-tasks` — **executa** (motor de 2 gates, ver §3).
-9. `/agent-spec-debt-resolution` — *(opcional, pós-run)* paga débitos baixos anotados (e médios legados de features rodadas sob a política antiga).
+9. `/agent-spec-debt-resolution` — *(opcional, pós-run)* paga os débitos anotados: baixos de qualquer categoria e **médios de categoria anotável**.
 
 ## Pipeline miniSpec
 1. `/agent-spec-pre-refinement` — *(opcional)*.
@@ -89,7 +89,7 @@ Use como índice. Ao responder, explique o PORQUÊ e o QUE a skill faz (abra o S
 | Executar uma TaskCard | `/agent-spec-taskcard-run` |
 | Propor soluções técnicas + alternativas (arquiteto) | `/agent-spec-generate-tech-alignment` |
 | Stress-test de uma spec contra domínio/código/ADRs | `/agent-spec-challenge-spec` |
-| Pagar débitos técnicos anotados na qa-observations | `/agent-spec-debt-resolution` |
+| Pagar débitos técnicos anotados na §2 do run-report | `/agent-spec-debt-resolution` |
 
 ## Design / UI
 | Necessidade | Skill |
@@ -151,7 +151,9 @@ Os três orquestradores de execução (`agent-spec-sdd-run-tasks`, `agent-spec-m
    - Produz relatório **exclusivamente JSON**.
 
 ## Política de débito-controlado (como os gates decidem aprovar/bloquear)
-- **Críticos / altos / médios** → **bloqueiam** a task (precisa corrigir e reprocessar).
+- **Críticos / altos** → **bloqueiam sempre** a task (precisa corrigir e reprocessar), em qualquer categoria.
+- **Médios** → **depende da CATEGORIA** (bloqueio seletivo). O critério é um só: a categoria indica **mudança de comportamento ou de superfície** (bloqueia) ou é **cosmética/manutenibilidade** (anota). Em `categoria: tests`, quem decide é o campo `smell` — o conjunto de manutenibilidade anota, o resto bloqueia. Categoria ausente/desconhecida ⇒ bloqueia. Os anotáveis vão para a mesma §2 dos baixos (ver abaixo).
+  > **A partição literal por vocabulário (QA e Tech Review) NÃO é reproduzida aqui de propósito.** Ela vive na fonte única `.claude/rules/agent-spec-workflow-rules.md` → "Bloqueio Seletivo de Severidade MÉDIA por Categoria", cuja regra de propagação reserva o espelho aos dois contratos de agente. Consulte-a — os vocabulários do QA e do TR são **distintos**, e uma cópia parcial aqui inevitavelmente atribuiria a um gate categoria que só existe no outro.
 - **Baixos** → **não bloqueiam**; são **anotados** na **§2 (Débitos Técnicos Não Resolvidos)** do `shared.run_report.path` (`/docs/specs/features/{feature}/{version}/_run/run-report.md` — relatório humano, snapshot regenerável) para serem pagos depois via `/agent-spec-debt-resolution`. A telemetria de pipeline (base_sha, retries, paralelismo, rule mining) vive separada em `shared.workflow_report.path` (`_run/workflow-report.md`).
 
 ## Memória lazy
@@ -174,7 +176,7 @@ Paths e convenções **NUNCA** são hardcoded nas skills; vivem nas rules. Para 
 | Onde os artefatos do **miniSpec** são salvos (paths `minispec.*`) | `.claude/rules/agent-spec-minispec-workflow-rules.md` |
 | Onde as **TaskCards** são salvas (paths `taskcard.*`) | `.claude/rules/agent-spec-taskcard-workflow-rules.md` |
 | Onde as **ADRs** vivem, o INDEX, o template, o script de reindex | `.claude/rules/agent-spec-adr-workflow-rules.md` |
-| Paths **compartilhados** (qa-observations, workflow-report, tech-alignment, design, domain-glossary, pre-refinement, rule-candidates) e os **Critical Paths** | `.claude/rules/agent-spec-workflow-rules.md` |
+| Paths **compartilhados** (run-report, workflow-report, tech-alignment, design, domain-glossary, pre-refinement, rule-candidates) e os **Critical Paths** | `.claude/rules/agent-spec-workflow-rules.md` |
 | Regras transversais (ex.: acentuação pt-BR) | `.claude/rules/agent-spec-shared.md` |
 | Config global / site de docs / diretrizes de documentação | `CLAUDE.md` |
 

@@ -32,6 +32,13 @@ T8 — baixo/style: inconsistência de naming em variável `x` no handler — in
 ```
 
 > Severidades em pt-BR quando a origem é o QA (`medio`/`baixo`) e em inglês quando é o Tech Review (`MEDIO`/`BAIXO`). Trate como sinônimos.
+>
+> **REGRA NORMATIVA — a comparação de severidade é insensível a CAIXA e a ACENTO.** Normalize antes
+> de comparar: remova acentos, minusculize, e só então case contra `critico|alto|medio|baixo`. A
+> forma pt-BR chega **acentuada** com frequência (`médio`, `crítico`) — é como se escreve em
+> português, e há ocorrências reais nos relatórios deste repositório. Em pt-BR o acento afeta
+> **apenas** `crítico` e `médio`; `alto` e `baixo` não têm acento. **As enumerações literais adiante
+> são exemplos das formas mais vistas, NÃO a lista fechada** — quem decide é esta regra.
 
 **Formato B — bloco rico de log** (legado; observado em runs reais; pode não ter path explícito):
 
@@ -44,7 +51,7 @@ T8 — baixo/style: inconsistência de naming em variável `x` no handler — in
   - BAIXO-001 (tests): CT-013 não valida estado inicial colapsado antes do clique.
 
 #### T7 — Tech Review (APROVADO_COM_OBSERVACOES)
-- 4 problemas, todos medium/low → APROVADA por política débito-controlado (exemplo **legado**: sob a política atual `MEDIO` bloqueia e não chegaria a `APROVADO_COM_OBSERVACOES`; estes blocos ainda aparecem em features rodadas antes da mudança):
+- 4 problemas, todos medium/low → APROVADA por política débito-controlado (sob a política atual, um `MEDIO` chega a `APROVADO_COM_OBSERVACOES` quando sua **categoria é anotável**; blocos assim aparecem tanto em runs atuais quanto em features antigas):
   - P1 (medium, testability): fluxo `pending-removal → cancelar` sem teste.
   - P3 (low, best_practices): import de `ConfirmModal` via path direto em vez do barrel.
 ```
@@ -55,10 +62,10 @@ T8 — baixo/style: inconsistência de naming em variável `x` no handler — in
 
 A skill DEVE detectar débitos via:
 
-- **Blocos da §2** `### D{n} · {sev} · {cat} · {task} · {gate}` seguidos de `- **Onde:** ... / **Problema:** ... / **Impacto:** ... / **O que fazer:** ...` (Formato C — canônico atual). A §2 já contém **apenas débito não resolvido** (o orquestrador acumula só os baixos remanescentes) — não precisa de filtro de "já resolvido".
-- **One-liners** `T{N} — {sev}/{categoria}: ...` com severidade `medio|baixo|medium|low` (Formato A, legado).
+- **Blocos da §2** `### D{n} · {sev} · {cat} · {task} · {gate}` seguidos de `- **Onde:** ... / **Problema:** ... / **Impacto:** ... / **O que fazer:** ...` (Formato C — canônico atual). A §2 já contém **apenas débito não resolvido** (o orquestrador acumula os anotáveis remanescentes — baixos de qualquer categoria e médios de categoria anotável) — não precisa de filtro de "já resolvido".
+- **One-liners** `T{N} — {sev}/{categoria}: ...` com severidade `medio|médio|baixo|medium|low` (Formato A, legado).
 - **Marcadores de item**: linhas `MED-XXX (categoria):`, `BAIXO-XXX (categoria):`, `P{n} (medium|low, categoria):` (Formato B, legado).
-- **Veredito `APROVADO_COM_OBSERVACOES` / `APROVADO_COM_OBSERVACOES`** (legado): tasks listadas sob esse veredito carregam débitos nas linhas seguintes (procurar até o próximo `### T`/`#### T` ou `## ` ou fim do arquivo).
+- **Veredito `APROVADO_COM_OBSERVACOES`** (legado): tasks listadas sob esse veredito carregam débitos nas linhas seguintes (procurar até o próximo `### T`/`#### T` ou `## ` ou fim do arquivo).
 - **Exclusão de já-resolvidos (só legado A/B)**: blocos `### T{N} — retry classification` com `requires_qa_revalidation: false` indicam débitos `code_review_only` já corrigidos sem re-QA — **NÃO recoletar**. Em runs atuais esse bloco vive em `_run/workflow-report.md` (telemetria), não no `_run/run-report.md`; ao processar features antigas, se o `_run/run-report.md` ainda tiver esses blocos no corpo, aplique a exclusão.
 
 #### Como NÃO incluir débitos já resolvidos
@@ -86,7 +93,7 @@ Tasks individuais podem ter seção "## Notas / Observações" ou "## Observaç�
 
 - **TODOs no código** (grep `// TODO`/`# TODO`): fora do escopo desta skill. São débitos do projeto, não da feature específica.
 - **Issues do GitHub/GitLab**: fora do escopo — esta skill opera só sobre artefatos do framework agent-spec.
-- **CRITICOS/ALTOS** em `_run/run-report.md`: esses NÃO chegam aqui como débito anotado. Eles bloquearam o pipeline e foram resolvidos via re-execução da task. Se aparecer um nesta fonte, há bug no gate — **logue um warning e pule** (não confunda débito MEDIO/BAIXO com bug crítico não resolvido).
+- **CRITICOS/ALTOS** em `_run/run-report.md`: esses NÃO chegam aqui como débito anotado — críticos e altos bloqueiam **sempre**, em qualquer categoria, e foram resolvidos via re-execução da task. Se aparecer um nesta fonte, há bug no gate — **logue um warning e pule** (não confunda débito MEDIO/BAIXO com bug crítico não resolvido).
 
 ---
 
@@ -124,8 +131,8 @@ Identifique, em ordem de prioridade:
 
 - **Blocos `### D{n} · {sev} · {cat} · {task} · {gate}`** sob a §2 (Formato C — fonte canônica atual); cada bloco já é um débito completo.
 - One-liners `T{N} — {sev}/{cat}:` e blocos `### T{N}` / `#### T{N}` (legado) que contenham:
-  - Severidades de débito: `medio`, `baixo`, `MEDIO`, `BAIXO` (one-liners) ou marcadores `MED-`, `BAIXO-`, `P{n} (medium|low, ...)` (blocos ricos).
-  - Veredito `APROVADO_COM_OBSERVACOES` / `APROVADO_COM_OBSERVACOES` (lista débitos imediatamente abaixo).
+  - Severidades de débito: `medio`, `médio`, `baixo`, `MEDIO`, `BAIXO` (one-liners) ou marcadores `MED-`, `BAIXO-`, `P{n} (medium|low, ...)` (blocos ricos). Acento e caixa são indiferentes — ver a REGRA NORMATIVA acima.
+  - Veredito `APROVADO_COM_OBSERVACOES` (lista débitos imediatamente abaixo).
 
 ### Passo 3 — Extrair cada débito
 
@@ -135,7 +142,7 @@ Para cada item identificado, monte o YAML do schema acima:
 - `origem_task`: no Formato C, do 4º campo do cabeçalho `### D{n} · {sev} · {cat} · {task} · {gate}` (regex `·\s*(T\d+|TC-\d+)\s*·`). No legado, do prefixo da one-liner — `T{N} —` / `TC-{NNN} —` — ou do heading `### T{N}` / `#### T{N}` / `### TC-{NNN}` mais próximo acima (regex `^(T\d+|TC-\d+)\s*—`).
 - `origem_arquivo`: literalmente `_run/run-report.md`.
 - `origem_linha`: linha em `_run/run-report.md` onde o débito foi achado.
-- `severidade`: normalizar para `MEDIO`/`BAIXO` (`medio`/`MEDIO`/`MED-` → `MEDIO`; `baixo`/`BAIXO`/`BAIXO-` → `BAIXO`). No Formato C, do 2º campo do cabeçalho.
+- `severidade`: normalizar para `MEDIO`/`BAIXO`, **descartando acento e caixa** (`medio`/`médio`/`MEDIO`/`MÉDIO`/`MED-` → `MEDIO`; `baixo`/`BAIXO`/`BAIXO-` → `BAIXO`). No Formato C, do 2º campo do cabeçalho.
 - `categoria`: no Formato C, do 3º campo do cabeçalho. No legado, do `{sev}/{cat}` da one-liner ou do parêntese `(categoria)` do item. Se ausente, inferir do contexto (ex.: "duplicata de teste" → `code_quality`; "naming inconsistente" → `naming`). Vocabulários do QA e do Tech Review são ambos válidos.
 - `arquivo` + `linha`: no Formato C, do campo `**Onde:** [arquivo]:[linha]`. No legado, do segmento `[arquivo]:[linha]` da one-liner, quando presente. **Se ausente** (formato rico antigo): inferir lendo a seção "Arquivos Impactados" da task de origem (`tasks/T{N}.md`) e localizando o símbolo/teste citado no título via `Grep` — registre `arquivo` sempre; `linha` é opcional. Débito sem `arquivo` resolvível → marque `arquivo: "?"` e sinalize ao usuário na FASE 2 (o especialista pode resolver).
 - `titulo`: no Formato C, o campo `**Problema:**`. No legado, o corpo do título (cortar em ~80 chars).
@@ -151,9 +158,9 @@ Se 2 entradas têm mesmo `(arquivo, linha, titulo_normalizado)`, mantenha apenas
 Pule entradas que:
 
 - Já estão em `<feature_path>/../v{N+1}-debits/scope.md` (se a versão existir) — já tratadas.
-- Severidade `CRITICO` ou `ALTO` (`CRITICO`/`ALTO`) — não deveriam estar aqui; logue warning e pule (possível bug no gate).
+- Severidade `critico`/`crítico` ou `alto` (`CRITICO`/`ALTO`) — não deveriam estar aqui; logue warning e pule (possível bug no gate).
 
-> **O filtro é por SEVERIDADE, não por categoria.** Pela política débito-controlado atual, **baixos** de **qualquer** categoria canônica (QA: `code_quality`, `naming`, `style`, `documentation`, `dead_code`, `imports`, `tests`, `logic`, `data_handling`, `error_handling`, `performance`, `concurrency`, `architecture`, `security`, `adr_compliance`; Tech Review: `project_pattern`, `best_practices`, `testability`, etc.) são débito anotado legítimo e **elegível para cleanup**. **Back-compat**: médios legados (features rodadas antes da mudança que passou a bloquear médios) também são elegíveis — colete-os igualmente. A distinção `revalidation_required`/`code_review_only` governa apenas o skip de re-QA no loop de correção — não a elegibilidade de débito.
+> **O filtro de COLETA é por SEVERIDADE registrada no relatório.** Pela política débito-controlado atual, **baixos de qualquer categoria canônica** — do vocabulário do QA ou do Tech Review — são débito anotado legítimo e **elegíveis para cleanup**. **Médios anotados também são elegíveis, e são débito de primeira classe**: sob o bloqueio seletivo por categoria, um `MEDIO` de **categoria anotável** chega ao relatório como débito legítimo. As listas literais da partição **não são reproduzidas aqui** — elas vivem na fonte única `.claude/rules/agent-spec-workflow-rules.md` → "Bloqueio Seletivo de Severidade MÉDIA por Categoria", cuja regra de propagação reserva o espelho aos dois contratos de agente. Features antigas, rodadas quando todo médio bloqueava, também têm `MEDIO` anotado. **Colete `BAIXO` e `MEDIO` indistintamente, sem inferir qual política gerou o bloco** — o filtro é a severidade registrada, não a categoria, e a distinção `revalidation_required`/`code_review_only` governa apenas o skip de re-QA no loop de correção.
 
 ### Passo 6 — Resultado
 
@@ -168,7 +175,7 @@ Lista ordenada por `(origem_task ascendente, id ascendente)`. Apresente count + 
 Use `Grep` antes de `Read` para localizar marcadores de débito:
 
 ```
-Grep(pattern="MED-|BAIXO-|medio/|baixo/|medium,|low,|medium/|low/|APROVADO_COM_OBSERVACOES|APROVADO_COM_OBSERVACOES", path=<qa-observations-path>, output_mode="content", -n=true, -B=2, -A=10)
+Grep(pattern="MED-|BAIXO-|medio/|médio/|baixo/|medium,|low,|medium/|low/|APROVADO_COM_OBSERVACOES", path=<run-report-path>, output_mode="content", -n=true, -B=2, -A=10)
 ```
 
 Resultado: linhas com contexto suficiente para extrair cada débito sem carregar o arquivo inteiro.
