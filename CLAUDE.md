@@ -159,6 +159,7 @@ pelo número, e sem os dois arquivos de `.claude/plans/` essas referências fica
 |---|---|---|
 | 1 | `docs/plano-backend-novo/decisao-e-stack.md` | A decisão, a **stack completa** com justificativas, o layout do monorepo, a estratégia de compatibilidade com o frontend, o inventário do que porta e do que morre, o destino das ADRs |
 | 2 | `docs/plano-backend-novo/plano-execucao.md` | As **8 fases** (F0–F7), entregas e critérios de aceitação executáveis |
+| 2b | `docs/plano-backend-novo/roadmap.md` | **Onde estamos** — o que cada fase é, em que fatias ela se parte e o estado de cada uma. O painel é **gerado** por `deploy/scripts/roadmap/atualizar-roadmap.sh` e um gancho `PostToolUse` o roda sozinho quando um `_run/*state.yaml` muda; **não edite o que está entre marcadores** |
 | 3 | `.claude/plans/plano-saas-decisoes.md` | As **40 decisões fechadas** — o plano de execução as cita por número |
 | 4 | `.claude/plans/plano-saas.md` | Arquitetura-alvo, os 3 perfis, as **10 telas × 7 ações sensíveis**, a especificação do webhook Sicoob |
 | 5 | `docs/plano-backend-novo/levantamento-frontend.md` | O frontend React: inventário dos **35 endpoints**, o **modelo de domínio que a API deve falar**, os acoplamentos a remover |
@@ -253,18 +254,20 @@ Específicos deste domínio: **undici** (mTLS do Sicoob), **`node:crypto` `X509C
 > ```
 
 Oito débitos têm gatilho que dispara fora da fatia que os criou: **D28** e **D32** vêm da F0;
-**D23**, **D39**, **D27**, **D37**, **D38** e **D40** nasceram na F1 — os quatro últimos na fatia
+**D23**, **D39**, **D24**, **D27**, **D37** e **D38** nasceram na F1 — os quatro últimos na fatia
 `autorizacao-e-ciclo-de-acesso`. O **D27** partilha com o D23 o gatilho e o fato que falta: qual é o
 salto confiável da borda.
 **Dois já dispararam e seguem abertos** — o D28, na F1/T2, e o D38, na própria T9 que o registrou.
-Quatro saíram daqui
-por terem sido fechados — **este índice lista só débito vivo**: o D6 da F1/T5, no fechamento da F1
+Cinco saíram daqui por terem sido fechados — **este índice lista só débito vivo**: o D6 da F1/T5,
+no fechamento da F1
 (`verificar-migracao.sh` entrou em `VERIFICADORES_DA_FATIA`); o D7 da F1/T6, na T6 da fatia
 `autorizacao-e-ciclo-de-acesso`, que declarou `perfil` e `empresa_id` como campos adicionais com a
 escrita pelo corpo fechada; o D32 da F1/T7 daquela mesma fatia, na T8, quando as rotas do Admin
 passaram a criar o vínculo de acesso sob o contexto que a guarda publica da sessão; e o D21 da
 F1/T7, na T9 daquela fatia, quando a rota nativa de troca de senha deixou de ser publicada e a
-troca do produto passou a conferir a admissão antes de qualquer escrita.
+troca do produto passou a conferir a admissão antes de qualquer escrita; e o **D40** da F1/T9, na
+intervenção dirigida de limpeza de 2026-08-05, quando `esquemaDoErro` ganhou definição única em
+`apps/api/src/comum/esquema-de-erro.ts`.
 
 > **Esta tabela é um ÍNDICE, não um relatório.** Cada linha é um **ponteiro curto**; o detalhe —
 > impacto medido, o que fazer, prova exigida — vive **só** na §2 do `run-report.md` da fatia que
@@ -286,10 +289,10 @@ troca do produto passou a conferir a admissão antes de qualquer escrita.
 | **D32** (F0/T6) | `apps/worker/src/fila.ts` | a primeira fatia que **enfileirar tarefa de negócio** |
 | **D23** (F1/T8) | `apps/api/src/autenticacao/autenticacao.module.ts` | a **publicação atrás do servidor de borda na F7** — origem confiável derivada do endereço de retorno |
 | **D39** (F1/fechamento) | `deploy/scripts/instalacao/provisionar-base.sh` | a **próxima instalação do zero** — o provisionamento não gera `BETTER_AUTH_SECRET` e a API não sobe |
+| **D24** (F1/T5, fatia `autorizacao-e-ciclo-de-acesso`) | `apps/api/src/main.ts` | a **publicação atrás do servidor de borda na F7** — `/docs*` atende sem sessão por decisão registrada, que vale só enquanto a API é local |
 | **D27** (F1/T6, fatia `autorizacao-e-ciclo-de-acesso`) | `packages/auth/src/autenticacao.ts` | a **publicação atrás do servidor de borda na F7** — sem ela o limitador não tem eixo de origem |
 | **D37** (F1/T8, fatia `autorizacao-e-ciclo-de-acesso`) | `apps/api/src/master/empresa.controller.ts` | a **primeira comparação do `:id` do Master com identidade da sessão** — o esquema de lá não canoniza a caixa do UUID |
 | **D38** (F1/T9, fatia `autorizacao-e-ciclo-de-acesso`) | `apps/api/src/autenticacao/senha.controller.ts` | **JÁ DISPAROU** — `validar()` na terceira cópia; fecha na quarta, ou na task que já inclua os três arquivos |
-| **D40** (F1/T9, fatia `autorizacao-e-ciclo-de-acesso`) | `apps/api/src/usuarios/usuario.controller.ts` | o **próximo controlador de borda** — `esquemaDoErro` em cinco cópias; extrair para `comum/` antes de copiar |
 
 ---
 

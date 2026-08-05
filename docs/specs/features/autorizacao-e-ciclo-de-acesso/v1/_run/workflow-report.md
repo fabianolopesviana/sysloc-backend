@@ -585,3 +585,46 @@ custa duas tasks reescritas.
 - O marcador **declara na primeira linha o que alcança e que AGENDA em vez de proteger**, contrastando-se com a `DECISÃO FECHADA — T8 / Gate 2` do mesmo arquivo, e registra **que é deliberadamente único** — *"senão quem partisse de outra cópia leria a ausência como inexistência do débito"*.
 - **Reconciliação final nas duas pontas**: marcadores vivos `{D23·F1/T8, D27·F1/T6, D28·F0/T5, D32·F0/T6, D37·F1/T8, D38·F1/T9, D39·F1/fechamento, D40·F1/T9}` — **oito**, iguais às oito linhas da tabela do `CLAUDE.md`. Nenhum órfão em nenhuma direção.
 - **`CLAUDE.md` atualizado**: bloco "Estado atual" com a **F1 concluída** (as duas fatias fechadas), e a linha do marco de entrega refletindo que faltam F2 a F5.
+
+## Intervenção dirigida de limpeza — 2026-08-05 (fora do pipeline)
+
+Conduzida diretamente, sem gerar `v2-debits`, pelo mesmo molde que a fatia anterior usou para fechar
+22 de 37 débitos. A análise que a motivou está resumida na §4 do relatório humano.
+
+### Passo 1 — higienização da §2
+- Os 41 débitos verificados **item a item contra o código**, em **duas passadas por caminhos
+  diferentes**. A segunda corrigiu dois enganos da primeira: **D2** e **D29** pareciam resolvidos e
+  não estavam — num caso o `grep` errou porque a frase estava quebrada em duas linhas.
+- **6 já estavam resolvidos** pelas tasks posteriores do próprio run e seguiam listados como
+  abertos: **D10** (T4), **D14**, **D32**, **D35**, **D36** (T8) e **D25** (fechamento). Marcados com
+  `Status: ✅` e a evidência.
+
+### Passo 2 — lote curto, 6 débitos, cada um com validação por execução
+| Débito | Desfecho | Prova |
+|---|---|---|
+| **D5** | fechado | `TS2353` recusa `'ACOA:emitir_boleto'` — a boa-formação do eixo saiu do teste e virou propriedade do compilador |
+| **D6** | fechado | `TS2741` em `efetivo.ts:92` quando `NEGADA_POR_SUSPENSAO` entra no enum; a ordem dos laços não foi tocada |
+| **D17** | fechado | reintroduzir a mensagem própria faz **2 casos reprovarem**; os dois testes levam `SUT_IS_CORRECT_BECAUSE` |
+| **D24** | **decidido e registrado** | era o que faltava — decisão no docblock de `publicarContrato` + `DÉBITO COM GATILHO — D24 · F1/T5` com gatilho na F7 |
+| **D26** | fechado pela alternativa | o `throw` ganhou ramo que **nomeia o culpado certo**; a fronteira entrou no cabeçalho. A supressão não foi condicionada: exigiria mudança estrutural sob `DECISÃO FECHADA`, sem defeito presente |
+| **D40** | fechado | definição única em `apps/api/src/comum/esquema-de-erro.ts`; **sem mudança de superfície provada por medição** — argumentos idênticos nos 3 call sites e saída byte a byte igual em 4 conjuntos |
+
+- **Divergência fundamentada do gate no D40**: as duas constantes `ESQUEMA_DO_ERRO` **não** entraram
+  na extração. Elas declaram 2 campos e a função declara 4 — unificá-las acrescentaria `campo` e
+  `detalhes` ao documento daquelas rotas, isto é, **mudança de superfície** numa superfície que
+  congela, para ganhar coerência de definição.
+- **Dois erros meus pegos pelo próprio ciclo de validação**: a mensagem canônica que supus
+  (`'acesso negado'`) era `'acesso negado para esta sessão'`; e o marcador do D24 nasceu com o
+  identificador `D40` copiado. Os dois corrigidos antes de qualquer validação passar.
+- **Um falso alarme investigado até o fim**: o diff acusava um `DECISÃO FECHADA` removido. Era
+  **menção em prosa** dentro do marcador do D40, que saiu legitimamente com ele — os cabeçalhos
+  canônicos seguem intactos (1 antes, 1 depois, no arquivo).
+
+### Passo 3 — o resto fica
+**29 débitos abertos**, nenhum deles defeito de comportamento. Índice do `CLAUDE.md` reconciliado nas
+duas pontas: **8 marcadores ↔ 8 linhas** (o D40 saiu, o D24 entrou).
+
+### Baseline
+`350` verdes antes e `350` depois (worker 16 · auth 82 · db 40 · shared 126 · api 86), comparados
+por pacote. `pnpm build` e `pnpm lint` em exit 0 — o lint reprovou uma vez por ordem de import e foi
+corrigido com `biome check --write`. Nenhum `it(` sumiu nos dois arquivos de teste tocados.

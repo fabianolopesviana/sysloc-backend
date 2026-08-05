@@ -20,6 +20,25 @@ Status: **9/9 tasks concluídas** · suíte em **350 casos verdes** (baseline de
 
 ## 2. Débitos Técnicos Não Resolvidos
 
+> **Higienizada e parcialmente fechada em 2026-08-05**, por intervenção dirigida fora do pipeline.
+> Todo item com `Status: ✅` está fechado; os demais seguem abertos. O balanço:
+>
+> | | Quantos | Quais |
+> |---|---|---|
+> | **Já resolvidos pelas tasks posteriores do próprio run**, e listados como abertos por falha de manutenção deste snapshot | 6 | D10, D14, D25, D32, D35, D36 |
+> | **Fechados na intervenção dirigida** | 6 | D5, D6, D17, D24, D26, D40 |
+> | **Abertos** | **29** | os demais |
+>
+> A verificação foi feita **duas vezes, por caminhos diferentes**, e a segunda corrigiu dois enganos
+> de `grep` da primeira — D2 e D29 pareciam resolvidos e não estão. É a razão de a conferência
+> dupla existir: um `grep` que erra por uma frase quebrada em duas linhas produz exatamente o tipo
+> de fantasma que esta higienização veio eliminar.
+>
+> **Nenhum dos 29 abertos é defeito de comportamento.** Sete deles proíbem, por escrito, mexer no
+> código (a correção é registro, ou exige escalada contra `DECISÃO FECHADA`); cinco têm gatilho
+> futuro deliberado e fechá-los agora seria antecipar decisão sem o fato que ela precisa. Suíte em
+> **350 casos verdes** antes e depois da intervenção, `pnpm build` e `pnpm lint` limpos.
+>
 > Anotados pela política débito-controlado com bloqueio seletivo por categoria: baixos de qualquer categoria e médios de categoria anotável não bloqueiam. Resolva tudo de uma vez com `/agent-spec-debt-resolution docs/specs/features/autorizacao-e-ciclo-de-acesso/v1/`.
 
 ### D1 · medio · tests · T1 · QA
@@ -47,12 +66,14 @@ Status: **9/9 tasks concluídas** · suíte em **350 casos verdes** (baseline de
 - **O que fazer:** na coluna `Resultado esperado` da linha do CT-201 em §6.5, trocar `chaves do mapa = ações` por `toda chave carrega o prefixo do seu eixo`, alinhando o índice ao card §6.6.
 
 ### D5 · MEDIO · best_practices · T2 · Tech Review
+- **Status:** ✅ RESOLVIDO na intervenção dirigida de 2026-08-05 — `MAPA_ACAO_TELA` passou a `satisfies Readonly<Record<`ACAO:${string}`, ChaveDeTela>>`. Falsificado por execução: a entrada `'ACOA:emitir_boleto'` é recusada com **`TS2353`**, e as asserções de prefixo do CT-201 permanecem como rede.
 - **Onde:** `packages/auth/src/catalogo-de-permissoes.ts:107`
 - **Problema:** o `satisfies` de `MAPA_ACAO_TELA` prende os valores às 10 telas e deixa as **chaves** como `string` livre — a boa-formação do eixo fica presa ao teste, contra a convenção que o próprio módulo declara.
 - **Impacto:** o cabeçalho do arquivo argumenta que as duas metades da totalidade do mapa são "propriedades do compilador, não do teste"; a terceira — a chave pertencer ao eixo das ações — não é. Uma entrada `'ACOA:emitir_boleto'` compila, entra em `ChaveDeAcao` e em `CHAVES_DE_ACAO`, é aceita por `ehChaveDoCatalogo` e mantém as cardinalidades. Hoje quem fecha a classe é a asserção de prefixo do CT-201. Baixo hoje (a classe está fechada pelo teste, com prova de falsificação medida); o custo é de coerência e de futuro — um teste pode ser movido ou renomeado numa refatoração, o tipo não.
 - **O que fazer:** trocar a anotação da linha 107 por ``as const satisfies Readonly<Record<`ACAO:${string}`, ChaveDeTela>>``, e considerar a simétrica para `CHAVES_DE_TELA`. **O Tech Review verificou a proposta por execução**: com `tsc --strict`, o mapa íntegro compila, `keyof typeof` preserva a união literal das 7 ações, e a entrada malformada é recusada com `TS2353`. Manter as asserções de prefixo do CT-201 como rede (P4 do Protocolo Antirregressão), não como prova primária.
 
 ### D6 · MEDIO · project_pattern · T2 · Tech Review
+- **Status:** ✅ RESOLVIDO na intervenção dirigida de 2026-08-05 — nasceu a constante `EFEITO`, um `Readonly<Record<EfeitoDePermissao, EfeitoDePermissao>>` consumido pelos dois laços, no molde de `DESFECHO_POR_MOTIVO`. Falsificado por execução: acrescentar `NEGADA_POR_SUSPENSAO` ao enum quebra a compilação com **`TS2741` em `efetivo.ts:92`**. A ordem dos laços — a precedência da negação — não foi tocada.
 - **Onde:** `packages/auth/src/efetivo.ts:85`
 - **Problema:** `calcularEfetivo` trata `EfeitoDePermissao` por dois `if` literais — um valor novo no enum do schema seria ignorado em silêncio, contra a convenção de exaustividade que o próprio pacote instala.
 - **Impacto:** renomear um valor quebra a compilação, mas **acrescentar** um terceiro não: ele atravessa os dois laços sem efeito algum. Quando disparar, será do lado errado da segurança — um efeito futuro de natureza restritiva (por exemplo `NEGADA_POR_SUSPENSAO`) seria ignorado e a chave permaneceria no efetivo, numa função cuja razão de existir é a precedência da negação. O padrão oposto está escrito e justificado em três lugares desta base: `DESFECHO_POR_MOTIVO` (`autenticacao.ts:293`), `STATUS_POR_CODIGO` (`shared/src/erros.ts:108`) e a própria `MATRIZ_POR_PERFIL` desta task. O enum tem hoje exatamente dois valores, então não há defeito em produção.
@@ -77,6 +98,7 @@ Status: **9/9 tasks concluídas** · suíte em **350 casos verdes** (baseline de
 - **O que fazer:** acrescentar à §4.2 do tech spec, ao lado do parágrafo do Master vazio, uma nota fixando `USUARIO_EMPRESA` no piso `TELA:resumo` com a razão da assimetria de erro.
 
 ### D10 · BAIXO · code_quality · T2 · Tech Review
+- **Status:** ✅ RESOLVIDO DURANTE O RUN (T4) — `type ChaveDeTela` e `type ChaveDeAcao` estão no barrel, `packages/auth/src/index.ts:196-197`.
 - **Onde:** `packages/auth/src/index.ts:125`
 - **Problema:** `ChaveDeTela` e `ChaveDeAcao` não são publicados no barrel — a T4 separa os dois eixos sem tipo para expressar a separação.
 - **Impacto:** o barrel publica `ChaveDoCatalogo`, `CHAVES_DE_TELA`, `CHAVES_DE_ACAO` e `MAPA_ACAO_TELA`, mas não os dois tipos por eixo, que existem e são exportados do módulo. A §6.2 do tech spec exige que a T4 serialize o efetivo em dois arranjos (`telas`, `acoes`) sem prefixo. Sem os tipos, `apps/api` tipa a partição como `string[]` ou re-deriva `(typeof CHAVES_DE_TELA)[number]` do lado dele — a segunda funciona, mas é a forma que o projeto evita em toda parte. Puramente ergonômico; exportação de tipo não altera o inventário do CT-026, que enumera só exportações de valor.
@@ -101,6 +123,7 @@ Status: **9/9 tasks concluídas** · suíte em **350 casos verdes** (baseline de
 - **O que fazer:** acrescentar o marcador `DÉBITO COM GATILHO` em `permissao.ts:123` com `O QUÊ`/`QUANDO FECHA`/`POR QUE NÃO AGORA`/`ÍNDICE`, mais a linha no bloco de débitos do `CLAUDE.md`; ou, preferindo não abrir débito, deixar a obrigação como critério de aceitação explícito na T4/T8.
 
 ### D14 · BAIXO · best_practices · T3 · Tech Review
+- **Status:** ✅ RESOLVIDO DURANTE O RUN (T8) — o **CT-232** prova a recusa de chave fora do catálogo com o envelope da ADR-0012 por `toEqual`, e o Gate 1 reproduziu o mutante.
 - **Onde:** `packages/db/src/permissao.ts:312`
 - **Problema:** o predicado do catálogo é aplicado na leitura e **não** na escrita — a assimetria é defensável, mas o risco que deixa para T4/T8 não está registrado.
 - **Impacto:** `escreverAjustes` grava qualquer `ChaveDeAjuste` (tipo aberto: `TELA:`/`ACAO:` + string arbitrária), e o único predicado que recebe é `validarCoerencia`, que examina o efetivo resultante e nada diz sobre pertinência. A justificativa é sólida e está escrita — a órfã nasce da **evolução** do catálogo, e a §6.1 atribui a validação de entrada à borda. Mas se a borda da T4 falhar, a consequência é exatamente o modo de falha que a RN-02 proíbe por escrito: a chave é gravada, a leitura seguinte a descarta em silêncio, e o Admin sai da tela achando que concedeu algo que nunca valeu. Nulo em segurança (chave fora do catálogo não concede nada — a ADR-0011 recusa por omissão de declaração); o dano é higiene de dado e recusa silenciosa.
@@ -119,6 +142,7 @@ Status: **9/9 tasks concluídas** · suíte em **350 casos verdes** (baseline de
 - **O que fazer:** acrescentar ao CT-216 uma segunda varredura que reprove ocorrência de `.telas`/`.acoes` de `sessaoDaRequisicao` em `apps/api/src` fora de `contexto.guard.ts` e `sessao.controller.ts`, com prova de falsificação; **ou** corrigir a redação dos dois docblocks para o que a varredura de fato afirma. **Relevante para a T7/T8** — é lá que a regressão de topologia pode entrar sem gate automatizado.
 
 ### D17 · BAIXO · security · T4 · Tech Review
+- **Status:** ✅ RESOLVIDO na intervenção dirigida de 2026-08-05 — o corpo passou a ser a mensagem canônica (`acesso negado para esta sessão`), indistinguível de qualquer recusa de autorização; a distinção migrou para o `logger.warn`, e o discriminante estrutural (ausência de `detalhes.exigido`) não mudou. Os dois casos que asseriam o texto antigo levam a linha `SUT_IS_CORRECT_BECAUSE:`. Falsificado por execução: reintroduzir a mensagem própria faz **2 casos reprovarem**.
 - **Onde:** `apps/api/src/autenticacao/contexto.guard.ts:253`
 - **Problema:** a recusa por rota sem declaração revela defeito interno de publicação a cliente **anônimo**.
 - **Impacto:** `MENSAGEM_SEM_DECLARACAO` é devolvida no corpo como *"acesso negado: a rota não declara exigência de autorização"* e — pela ordem da §5.1, que põe a leitura do metadado antes da resolução de sessão — chega **também a quem não tem cookie**. Um cliente anônimo consegue separar por varredura as rotas bem declaradas (`401`) das mal declaradas (`403` com esse texto). A §10.1 da tech spec fixa "canônica + `detalhes.exigido`" e não prevê uma quarta mensagem. Baixo e não explorável (a rota mal declarada recusa todo mundo, e a T5 impede que ela exista em produção); o que vaza é **reconhecimento**.
@@ -161,18 +185,21 @@ Status: **9/9 tasks concluídas** · suíte em **350 casos verdes** (baseline de
 - **O que fazer:** preferencialmente **dar-lhe o verificador operacional** — um `deploy/scripts/.../verificar-cobertura-autorizacao.sh` no molde de `verificar-isolamento`, que o invoque contra a instalação real e traduza a reprovação em código de saída; alternativamente mover o módulo para a suíte e ajustar a §5.1. **Não mover dentro do ciclo de correção.**
 
 ### D24 · BAIXO · security · T5 · Tech Review
+- **Status:** ✅ DECIDIDO E REGISTRADO em 2026-08-05 — que era exatamente o que faltava. **A decisão é manter público enquanto a API não for publicada, e restringir na borda na F7**, com as três razões escritas no docblock de `publicarContrato` (`main.ts`): o contrato é insumo declarado do handoff; a API escuta em `127.0.0.1`, então não há a quem vazar; e o que o documento revela é a forma da superfície, não dado nem credencial. A segunda razão é a que expira, e por isso o item virou `DÉBITO COM GATILHO — D24 · F1/T5` no ponto, com gatilho na **F7** — mesma janela e mesmo salto confiável que o D23 e o D27 esperam.
 - **Onde:** `apps/api/src/main.ts` (as 9 rotas do contrato)
 - **Problema:** o documento OpenAPI e a página de contrato atendem **sem sessão**, e essa exposição está inventariada mas **nunca foi decidida**.
 - **Impacto:** as 9 rotas que `SwaggerModule.setup` registra direto no adaptador não têm manipulador do arcabouço, logo o global guard **não corre nelas** — entre elas `/docs` (a página) e `/docs/json` + `/docs-yaml` (o documento inteiro do contrato). É **herdado, não introduzido**: `main.ts` publica o contrato desde a F1, e `verificar-fundacao.sh` consulta esses endereços como critério de aceitação da F0. O que o Tech Review procurou e **não encontrou** foi a **decisão**: nenhuma ADR ativa cobre a exposição do contrato (as 13 foram varridas) e nenhum critério de aceitação a nomeia. Dois verificadores independentes hoje **ratificam** o estado por igualdade de inventário, o que é diferente de alguém ter decidido. Baixo e não explorável hoje; o risco cresce quando a F7 publicar atrás do servidor de borda, e `/docs` deixar de ser endereço interno de conveniência.
 - **O que fazer:** decidir explicitamente **antes do congelamento da superfície**, e registrar. As saídas naturais: (a) manter público e registrar a decisão com a razão (o contrato é insumo declarado do handoff ao React), ou (b) restringir `/docs*` no servidor de borda na F7 — onde o **D23 da fatia anterior** já tem gatilho armado no mesmo arquivo e na mesma janela, o que torna o custo marginal quase nulo.
 
 ### D25 · BAIXO · project_pattern · T5 · Tech Review
+- **Status:** ✅ RESOLVIDO DURANTE O RUN (fechamento) — a linha do D28 no `CLAUDE.md` passou a carregar o próprio `grep -rln` em vez do literal `6 arquivos`, que era a correção pedida ("forma que não envelhece").
 - **Onde:** `CLAUDE.md:271`
 - **Problema:** o índice de débitos afirma "**6 arquivos**" para o D28 (F0/T5), e o grep canônico da própria rule devolve **9**.
 - **Impacto:** a replicação do marcador está **correta** pela §3-B — ele mora onde a tentação acontece, traz os quatro campos mais o `ÍNDICE`, e corretamente **não** acrescenta linha nova (a linha do D28 já existe). O que está vencido é o **conteúdo** da linha. A defasagem não é da T5 sozinha: T1–T4 deste run também replicaram sem atualizar a contagem. Baixo e de escrituração — mas o índice é lido por **todo agente antes de qualquer arquivo do repositório**, e informa uma magnitude errada.
 - **O que fazer:** trocar o literal `6 arquivos` por forma que não envelheça — o próprio `grep -rln` já está na célula e basta como ponteiro. Atualizar para 9 reintroduziria o mesmo desgaste a cada fatia.
 
 ### D26 · baixo · logic · T5 · QA
+- **Status:** ✅ RESOLVIDO PELA ALTERNATIVA que o próprio débito ofereceu, em 2026-08-05. A supressão do `HEAD` **não** foi condicionada — fechá-la exigiria inverter a ordem entre `metodosPorCaminho` e a enumeração dos manipuladores, mudança estrutural num módulo cuja granularidade está sob `DECISÃO FECHADA`, sem defeito presente que a motive. Corrigiu-se o dano real: o `throw` ganhou um ramo dedicado que **nomeia o culpado certo** (a normalização deste módulo, não o roteador) quando o verbo é `HEAD` e o caminho publica `GET`, e a coexistência entrou na lista de fronteiras conhecidas do cabeçalho.
 - **Onde:** `apps/api/src/autenticacao/cobertura-de-autorizacao.ts:372`
 - **Problema:** `@Head()` **explícito** convivendo com `@Get()` no mesmo caminho **aborta** a verificação inteira — medido por execução.
 - **Impacto:** a supressão do `HEAD` derivado é incondicional sobre o caminho; se o caminho publica `GET`, todo `HEAD` sai do inventário, e um manipulador `@Head()` explícito perde o par que reivindica. O QA montou o caso: o adaptador **aceita** a montagem, e a verificação levanta com uma mensagem **enganosa** — *"que o roteador não publica"*, quando o roteador **publica**; quem o retirou foi a normalização deste próprio módulo. É a mesma **forma** do achado que reprovou a rodada 1 (construção montável e legítima abortando a verificação), em construto muito mais raro. Os dois gates concordaram com BAIXO: a falha é barulhenta, nenhum `@Head()` existe hoje e nenhuma rota assim é declarada em spec alguma — ao contrário do `GET`+`POST` que a §5.3 declara para a T7.
@@ -210,6 +237,7 @@ Status: **9/9 tasks concluídas** · suíte em **350 casos verdes** (baseline de
 - **O que fazer:** alocar um CT para o caso (ou sufixá-lo no molde de `CT-236 (c)`), atualizar as três ocorrências e registrar a linha na §6.5 da T6. Se a decisão for manter, renomear a coluna `CT` da tabela de INVARIANTES para algo que não prometa um CT.
 
 ### D32 · BAIXO · architecture · T7 · Tech Review
+- **Status:** ✅ RESOLVIDO DURANTE O RUN (T8) — o vínculo passou a nascer em `garantirVinculoDeAcesso`, sob o contexto que a guarda publica da sessão; o marcador saiu de `empresa.service.ts` e a linha saiu do índice do `CLAUDE.md`.
 - **Onde:** `apps/api/src/master/empresa.service.ts` (marcador `DÉBITO COM GATILHO` junto de `admitirAdministrador`)
 - **Problema:** a admissão de administrador **não grava o vínculo** em `negocio.acesso_usuario_app`, e a consequência disso é uma pendência da T8 que vivia só num parágrafo de docblock e numa nota da task.
 - **Impacto:** a omissão em si está **certa** e foi verificada pelos dois gates — gravar o vínculo exigiria fixar `app.empresa_id` com o identificador vindo do caminho da requisição, que é a origem que a ADR-0008 proíbe e o mutante que o `CT-014` reprova; e o efetivo do Admin não depende do vínculo (sem ajustes, ele é a matriz do perfil, que para `ADMIN_EMPRESA` é o catálogo inteiro, provado no `CT-227`). O que faltava era o **registro**: enquanto o vínculo não existir, `POST /v1/usuarios/:id/permissoes` (T8) levanta `ErroDePessoaForaDoContexto` para a pessoa admitida por esta rota, e nem o docblock nem a §7 da T7 são lidos por uma sessão que abra a T8.
@@ -228,12 +256,14 @@ Status: **9/9 tasks concluídas** · suíte em **350 casos verdes** (baseline de
 - **O que fazer:** reescrever as duas frases para a formulação estreita ("nenhuma instrução de `apps/api/src` nomeia tabela de `identidade` ou de `negocio`"), citar o comando que a comprova, e declarar `saude.service.ts:107` como exceção conhecida. **Não mexer na sonda.**
 
 ### D35 · BAIXO · project_pattern · T7 · Tech Review
+- **Status:** ✅ RESOLVIDO DURANTE O RUN (T8) — `PerfilDaPessoa` mudou para `packages/db/src/esquema/identidade.ts:69`, com reexportação preservada em `permissao.ts` para não mudar a superfície pública.
 - **Onde:** `packages/db/src/empresa.ts:52`
 - **Problema:** `PerfilDaPessoa`, tipo do domínio de **identidade**, é importado de `./permissao.js` — e a T8 herda o desvio.
 - **Impacto:** o tipo é derivado do enum do schema e é do domínio de identidade, não de ajuste de permissão. `empresa.ts` é o segundo consumidor e o primeiro **sem relação alguma com ajustes** — ele só precisa do perfil para `lerAlvoDeReemissao`. O módulo de ajustes vira, **sem decisão**, o dono de um vocabulário compartilhado. A T8 escreve sobre a mesma superfície e vai importar do mesmo lugar **por imitação**; a partir do terceiro consumidor, mover deixa de ser gratuito.
 - **O que fazer:** mover a declaração para junto do enum que a origina (`packages/db/src/esquema/identidade.ts`) ou reexportá-la de lá; manter a reexportação em `permissao.ts` para não mudar a superfície pública; apontar `empresa.ts` para a origem nova. **Custo baixo agora, e fecha a porta antes da T8.**
 
 ### D36 · BAIXO · code_quality · T7 · Tech Review
+- **Status:** ✅ RESOLVIDO DURANTE O RUN (T8) — o par virou `EmpresaDaAdmissao` (borda) × `EmpresaNova` (dados), com o critério de distinção por camada registrado no cabeçalho de `empresa.service.ts:59-61`.
 - **Onde:** `apps/api/src/master/empresa.service.ts:181` e `packages/db/src/empresa.ts:69`
 - **Problema:** os tipos de borda atravessaram a fronteira com **dois critérios opostos** — `EmpresaNova` foi duplicado com o mesmo nome, `JanelaDeEmpresas` foi renomeado.
 - **Impacto:** `EmpresaNova` existe nos dois lados com **nome e forma idênticos**, e o serviço já importa dez símbolos de `@sysloc/db` — basta alguém acrescentar `EmpresaNova` à lista para haver colisão de identificador num arquivo que hoje compila. O par irmão foi resolvido pelo caminho **oposto** (`JanelaDaListagem` × `JanelaDeEmpresas`). A T8 publica sete rotas sobre a mesma superfície e vai espelhar mais pares por este molde — **com dois precedentes contrários no mesmo arquivo, ela escolhe qualquer um**, e a superfície fica com as duas convenções misturadas.
@@ -258,6 +288,7 @@ Status: **9/9 tasks concluídas** · suíte em **350 casos verdes** (baseline de
 - **O que fazer:** ⚠️ **NÃO afrouxe o número.** O cabeçalho do arquivo o declara como segundo discriminador do eixo da fila, e elevá-lo cairia em AP-24. Tire a medição da contenção: serialize o arquivo, ou repita a medição tomando a menor amostra (que mede o caminho, não a fila de CPU). Se o número mudar, a linha `SUT_IS_CORRECT_BECAUSE:` é devida.
 
 ### D40 · MEDIO · project_pattern · T9 · Tech Review
+- **Status:** ✅ RESOLVIDO na intervenção dirigida de 2026-08-05 — `esquemaDoErro` passou a ter definição única em `apps/api/src/comum/esquema-de-erro.ts`, e os três controladores importam de lá. **Sem mudança de superfície, provado por medição**: os argumentos dos três call sites são idênticos antes e depois (`diff` vazio), e a saída da função nova bate byte a byte com a antiga em 4 conjuntos de códigos. As duas constantes `ESQUEMA_DO_ERRO` **ficaram onde estavam**, divergindo do que o gate propôs: elas declaram 2 campos e a função declara 4, então unificá-las acrescentaria `campo` e `detalhes` ao documento daquelas rotas — mudança de superfície para ganhar coerência de definição. O marcador saiu, e a linha saiu do índice do `CLAUDE.md`.
 - **Onde:** `apps/api/src/master/empresa.controller.ts:214`, `apps/api/src/usuarios/usuario.controller.ts:337`, `apps/api/src/autenticacao/senha.controller.ts:208`, mais `apps/api/src/autenticacao/sessao.controller.ts:110` e `apps/api/src/saude/saude.controller.ts:77`
 - **Problema:** `esquemaDoErro(codigos)` existe **byte a byte idêntica** em três controladores criados por três tasks distintas (T7, T8, T9), somando-se a duas constantes `ESQUEMA_DO_ERRO` de mesmo papel — **cinco expressões** do envelope que a ADR-0012 declara canônico.
 - **Impacto:** nenhuma diverge hoje. O risco é de **congelamento**: a superfície fecha e o `@sysloc/contracts` nasce dela; a partir daí cada ajuste no envelope tem cinco pontos para acertar e **nenhum mecanismo que acuse a divergência**, e a próxima fatia que criar um controlador criará a sexta cópia por imitação — que foi exatamente o que aconteceu entre T7, T8 e T9. É a mesma classe de defeito que a ADR-0012 existe para fechar, só que **na definição em vez de na forma**.
