@@ -83,7 +83,40 @@ const ROTAS_FORA_DO_PREFIXO = ['saude', 'saude/pronto', CAMINHO_DO_CONTRATO, CAM
  * O versionamento da API é o prefixo de caminho (`PREFIXO_DE_VERSAO`), decidido na T8 da fatia
  * `fundacao-multitenancy-identidade` (§15.1 daquela tech spec) — até ali a decisão estava diferida
  * porque nenhum recurso do produto havia sido publicado, e é essa condição que deixou de valer.
+ *
+ * ## O contrato atende SEM SESSÃO, e isso é decisão — não omissão
+ *
+ * As rotas que `SwaggerModule.setup` registra direto no adaptador não têm manipulador do arcabouço,
+ * de modo que a guarda global **não corre nelas**: `/docs` (a página), `/docs/json` e `/docs-yaml`
+ * (o documento inteiro) respondem a qualquer cliente. O estado é herdado — o contrato é publicado
+ * assim desde a F1, e `verificar-fundacao.sh` consulta esses endereços como critério de aceitação da
+ * F0 —, mas até 2026-08-05 ele estava apenas **inventariado**, nunca decidido: nenhuma ADR o cobria
+ * e nenhum critério de aceitação o nomeava. Dois verificadores independentes RATIFICAVAM o estado
+ * por igualdade de inventário, o que é coisa diferente de alguém ter decidido. É o débito **D24**.
+ *
+ * **A decisão é manter público enquanto a API não for publicada, e restringir na borda na F7.** As
+ * três razões, na ordem em que pesam:
+ *
+ *   1. o contrato é **insumo declarado** do handoff ao frontend — o `CLAUDE.md` o lista no marco de
+ *      entrega do backend, e o `@sysloc/contracts` nasce dele. Fechá-lo agora encareceria o trabalho
+ *      que ele existe para servir;
+ *   2. **hoje não há a quem vazar**: a API escuta em `127.0.0.1` (`configuracao/ambiente.ts`) e
+ *      `deploy/nginx/` está vazio, então o alcance é o próprio hospedeiro;
+ *   3. o que o documento revela é a **forma** da superfície, não dado de negócio nem credencial —
+ *      toda rota de produto segue exigindo sessão e declaração de exigência (ADR-0011).
+ *
+ * O que muda isso é a F7, quando `/docs*` deixa de ser endereço interno de conveniência. Ver o
+ * marcador logo abaixo.
  */
+// DÉBITO COM GATILHO — D24 · F1/T5 · registrado 2026-08-05
+// O QUÊ: a página e o documento do contrato atendem sem sessão, por decisão registrada no docblock
+//        acima — decisão que vale enquanto a API só é alcançável do próprio hospedeiro.
+// QUANDO FECHA: na **F7**, ao publicar atrás do servidor de borda. É lá que a premissa (2) da
+//        decisão deixa de valer, e é a mesma janela e o mesmo salto confiável que o `D23 · F1/T8` e
+//        o `D27 · F1/T6` esperam — o custo marginal de restringir `/docs*` ali é quase nulo.
+// POR QUE NÃO AGORA: não há borda onde restringir, e o contrato é insumo do handoff ao frontend, que
+//        acontece antes da F7.
+// ÍNDICE: docs/specs/features/autorizacao-e-ciclo-de-acesso/v1/_run/run-report.md §2, D24
 function publicarContrato(app: NestFastifyApplication): void {
   const documento = SwaggerModule.createDocument(
     app,

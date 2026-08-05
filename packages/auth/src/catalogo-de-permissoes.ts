@@ -86,8 +86,15 @@ export type ChaveDeTela = (typeof CHAVES_DE_TELA)[number];
  *
  * É a declaração única do eixo das ações — ver o cabeçalho deste arquivo. O `satisfies` é o que
  * recusa um alvo inventado sem apagar os literais que o `as const` preserva; trocá-lo por uma
- * anotação de tipo (`: Readonly<Record<string, ChaveDeTela>>`) alargaria as chaves para `string` e
- * a união das ações deixaria de existir.
+ * anotação de tipo (`: Readonly<Record<`ACAO:${string}`, ChaveDeTela>>`) alargaria as chaves e a
+ * união das ações deixaria de existir.
+ *
+ * O molde da chave é `` `ACAO:${string}` ``, e não `string`, porque assim as **três** metades da
+ * boa-formação do mapa são propriedades do compilador: o alvo pertence ao eixo das telas, as
+ * cardinalidades se preservam, e a chave carrega o prefixo do próprio eixo. Antes, a terceira
+ * dependia só da asserção de prefixo do CT-201 — que segue existindo como rede (P4 do Protocolo
+ * Antirregressão), e não mais como prova primária. Uma entrada `'ACOA:emitir_boleto'` agora é
+ * recusada em compilação com `TS2353`, em vez de compilar e entrar em `ChaveDeAcao`.
  *
  * As atribuições seguem o alcance de cada área na §0.5: emissão e baixa de boleto são operações do
  * **Financeiro**; ativar e cancelar contrato são do **Contratos**; excluir cadastro é do
@@ -104,7 +111,7 @@ export const MAPA_ACAO_TELA = Object.freeze({
   'ACAO:excluir_cadastro': 'TELA:cadastros',
   'ACAO:configurar_integracao': 'TELA:integracoes_bancarias',
   'ACAO:enviar_cobranca_manual': 'TELA:automacao_de_cobranca',
-} as const satisfies Readonly<Record<string, ChaveDeTela>>);
+} as const satisfies Readonly<Record<`ACAO:${string}`, ChaveDeTela>>);
 
 /** União fechada das 7 ações sensíveis, derivada do mapa acima. */
 export type ChaveDeAcao = keyof typeof MAPA_ACAO_TELA;

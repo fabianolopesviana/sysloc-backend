@@ -200,8 +200,17 @@ const CAMINHO_EM_DISPUTA = 'verificacao-em-disputa';
  *
  * Literal, e **não** importada da guarda: derivá-la da mesma fonte que o SUT usa faria a asserção
  * concordar consigo mesma, e um erro de texto passaria despercebido nos dois lados.
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo e este literal é que descrevia o estado
+ * anterior. Ele era `'acesso negado: a rota não declara exigência de autorização'` — texto de um
+ * defeito interno de publicação que, pela ordem da guarda (o metadado é lido ANTES de a sessão ser
+ * resolvida), chegava também a cliente ANÔNIMO e permitia separar por varredura as rotas bem
+ * declaradas das mal declaradas. É o débito D17 da §2 do run-report desta fatia. Passou a ser a
+ * mensagem canônica de `ACESSO_NEGADO`, indistinguível de qualquer outra recusa de autorização; a
+ * distinção migrou para o `logger.warn` do ponto da recusa, que o cliente não lê. O discriminante
+ * ESTRUTURAL que este caso assere — a ausência de `detalhes` — não mudou.
  */
-const MENSAGEM_SEM_DECLARACAO = 'acesso negado: a rota não declara exigência de autorização';
+const MENSAGEM_SEM_DECLARACAO = 'acesso negado para esta sessão';
 
 /** Quantas chaves o catálogo tem (RN-15) — a âncora de "o Admin não é recusado por falta de chave". */
 const TOTAL_DE_CHAVES = 17;

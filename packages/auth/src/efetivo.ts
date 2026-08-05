@@ -75,6 +75,25 @@ const MENSAGEM_DE_ACAO_SEM_TELA = 'a ação sensível concedida exige a área de
  * @param perfil O perfil da pessoa — a origem do conjunto padrão.
  * @param ajustes Os ajustes individuais dela, já lidos. Ordem irrelevante, repetidos toleráveis.
  */
+/**
+ * Os efeitos que {@link calcularEfetivo} trata, um a um.
+ *
+ * Existe para que **acrescentar** um valor ao enum `negocio.efeito_permissao` quebre a compilação
+ * aqui, em vez de atravessar os dois laços sem efeito algum. Renomear um valor já quebrava; somar um
+ * terceiro, não — e ele seria ignorado do lado errado da segurança, porque um efeito futuro de
+ * natureza restritiva (`NEGADA_POR_SUSPENSAO`, digamos) deixaria a chave no efetivo, numa função
+ * cuja razão de existir é a precedência da negação.
+ *
+ * É o mesmo molde de `DESFECHO_POR_MOTIVO` (`autenticacao.ts`) e `STATUS_POR_CODIGO`
+ * (`@sysloc/shared`): o `Record` sobre a união fechada é o que torna a exaustividade propriedade do
+ * compilador. O valor de cada entrada é o próprio nome porque o que se consome aqui é a **chave** —
+ * os dois laços abaixo comparam contra estas constantes, e é esse consumo que faz a garantia valer.
+ */
+const EFEITO: Readonly<Record<EfeitoDePermissao, EfeitoDePermissao>> = Object.freeze({
+  CONCEDIDA: 'CONCEDIDA',
+  NEGADA: 'NEGADA',
+});
+
 export function calcularEfetivo(
   perfil: Perfil,
   ajustes: readonly AjusteDePermissao[],
@@ -82,7 +101,7 @@ export function calcularEfetivo(
   const efetivo = new Set<ChaveDoCatalogo>(MATRIZ_POR_PERFIL[perfil]);
 
   for (const ajuste of ajustes) {
-    if (ajuste.efeito === 'CONCEDIDA') {
+    if (ajuste.efeito === EFEITO.CONCEDIDA) {
       efetivo.add(ajuste.chave);
     }
   }
@@ -91,7 +110,7 @@ export function calcularEfetivo(
   // de cima, ou fundir os dois, desfaz a precedência da negação da ADR-0010 sem que nada mais no
   // sistema perceba. O CT-203 é o que reprova essa mudança.
   for (const ajuste of ajustes) {
-    if (ajuste.efeito === 'NEGADA') {
+    if (ajuste.efeito === EFEITO.NEGADA) {
       efetivo.delete(ajuste.chave);
     }
   }

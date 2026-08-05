@@ -87,6 +87,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { sessaoDaRequisicao } from '../autenticacao/contexto.guard.js';
 import { ExigeChave } from '../autenticacao/exigencia.decorator.js';
+import { esquemaDoErro } from '../comum/esquema-de-erro.js';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
 import {
   type JanelaDaListagem,
@@ -333,38 +334,7 @@ const ESQUEMA_DA_SENHA_REEMITIDA = {
   },
 };
 
-// DÉBITO COM GATILHO — D40 · F1/T9 · registrado 2026-08-05
-// (AGENDA, não protege — ao contrário da `DECISÃO FECHADA — T8 / Gate 2` mais acima neste arquivo,
-//  que alcança `ESQUEMA_DO_IDENTIFICADOR` e o torna intocável. Este alcança **apenas** a
-//  `esquemaDoErro` logo abaixo, e o que ele diz é o oposto: ela vai SAIR daqui.)
-// O QUÊ: o envelope de erro da ADR-0012 está definido cinco vezes na superfície que congela — três
-//        cópias byte a byte desta função, mais duas constantes de mesmo papel; a §2 nomeia os cinco
-//        pontos. Nenhuma diverge hoje, e nada acusaria se uma passasse a divergir.
-// QUANDO FECHA: na próxima fatia que criar um controlador de borda — ou na primeira task cujo
-//        escopo já inclua os cinco arquivos. Destino: `apps/api/src/comum/`, junto de
-//        `filtro-excecao.ts`, que já é a fonte única do envelope em tempo de execução.
-//        **Antes de copiar este arquivo para começar um controlador novo, feche o débito** — a
-//        sexta cópia nasce exatamente assim, e foi assim que nasceram a terceira e a quarta.
-// POR QUE NÃO AGORA: nenhuma cópia diverge, e extrair sem editar os quatro controladores já
-//        existentes deixaria SEIS definições em vez de cinco; editá-los é escopo alheio à task
-//        (§4.5 do Protocolo Antirregressão) numa fatia já aprovada nos dois gates.
-// ÍNDICE: docs/specs/features/autorizacao-e-ciclo-de-acesso/v1/_run/run-report.md §2, D40
-//
-// Marcador ÚNICO e deliberado: as outras quatro definições não o repetem. Mora aqui porque este é o
-// arquétipo que a próxima fatia vai copiar — CRUD de negócio da empresa, sob sessão e `@ExigeChave`.
 /** Envelope de erro da ADR-0012, para as respostas de recusa do documento publicado. */
-function esquemaDoErro(codigos: readonly CodigoErro[]): Record<string, unknown> {
-  return {
-    type: 'object',
-    required: ['codigo', 'mensagem'],
-    properties: {
-      codigo: { type: 'string', enum: [...codigos] },
-      mensagem: { type: 'string' },
-      campo: { type: 'string' },
-      detalhes: { type: 'object' },
-    },
-  };
-}
 
 @ApiTags('usuarios')
 @Controller(CAMINHO_DOS_USUARIOS)

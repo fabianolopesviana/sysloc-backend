@@ -241,16 +241,23 @@ const MENSAGEM_SEM_PERMISSAO = MENSAGEM_POR_CODIGO[CodigoErro.ACESSO_NEGADO];
 /**
  * Recusa da rota que **não declara exigência alguma** (ADR-0011).
  *
- * Ela é distinta da mensagem acima de propósito: a recusa por falta de permissão é sobre **quem
- * pede**, e esta é sobre **a rota**. Quem a receber está diante de um defeito de publicação, não de
- * uma permissão que lhe falta — e nenhuma concessão do Admin a resolveria. Não há `detalhes.exigido`
- * aqui: não há exigência a nomear, e inventar uma diria ao cliente que existe uma chave que o
- * liberaria.
+ * O corpo é a mensagem CANÔNICA, idêntica à de qualquer recusa de autorização — e é assim de
+ * propósito, desde a resolução do débito D24 da §2. A versão anterior devolvia ao cliente o texto
+ * `'acesso negado: a rota não declara exigência de autorização'`, que descreve um **defeito interno
+ * de publicação**; e pela ordem desta guarda a leitura do metadado precede a resolução de sessão, de
+ * modo que aquele texto chegava também a quem **não tem cookie**. Um cliente anônimo separava por
+ * varredura as rotas bem declaradas (`401`) das mal declaradas (`403` com o texto próprio) — o que
+ * vaza não é dado, é **reconhecimento**.
+ *
+ * A distinção não se perdeu, mudou de lugar. Ela vive onde só o operador lê: o `logger.warn` do
+ * ponto da recusa, que nomeia a rota. E o discriminante **estrutural** permanece intacto — não há
+ * `detalhes.exigido` aqui, porque não há exigência a nomear, e inventar uma diria ao cliente que
+ * existe uma chave que o liberaria. É essa ausência que o `CT-216 (b)` assere.
  *
  * O código continua sendo `ACESSO_NEGADO`: a ADR-0012 fixa que **nenhum código novo entra no enum**,
  * porque cada um é superfície versionada.
  */
-const MENSAGEM_SEM_DECLARACAO = 'acesso negado: a rota não declara exigência de autorização';
+const MENSAGEM_SEM_DECLARACAO = MENSAGEM_SEM_PERMISSAO;
 
 /**
  * Onde a sessão resolvida viaja entre `canActivate` e `intercept`.

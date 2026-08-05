@@ -139,6 +139,7 @@ import type { AcessoAIdentidade } from '@sysloc/db';
 import { CodigoErro, ErroDeAplicacao } from '@sysloc/shared';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { esquemaDoErro } from '../comum/esquema-de-erro.js';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
 import { TOKEN_ACESSO_A_IDENTIDADE, TOKEN_AUTENTICACAO } from '../configuracao/ambiente.js';
 import { cabecalhosDe, sessaoDaRequisicao } from './contexto.guard.js';
@@ -205,18 +206,6 @@ const ESQUEMA_DA_RESPOSTA = {
 };
 
 /** Envelope de erro da ADR-0012, para as respostas de recusa do documento publicado. */
-function esquemaDoErro(codigos: readonly CodigoErro[]): Record<string, unknown> {
-  return {
-    type: 'object',
-    required: ['codigo', 'mensagem'],
-    properties: {
-      codigo: { type: 'string', enum: [...codigos] },
-      mensagem: { type: 'string' },
-      campo: { type: 'string' },
-      detalhes: { type: 'object' },
-    },
-  };
-}
 
 @ApiTags('sessao')
 @Controller(CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO)

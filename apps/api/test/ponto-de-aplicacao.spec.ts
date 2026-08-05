@@ -307,12 +307,21 @@ describe('ponto de aplicação da autorização (T4)', () => {
       // E as duas respostas são a MESMA — é o que diz "a recusa é da rota, não de quem pede".
       expect(semDeclaracao.texto).toBe(comSessao.texto);
 
-      // Corpo INTEIRO: `ACESSO_NEGADO` (a ADR-0012 proíbe código novo no enum) com a mensagem que
-      // diz que o defeito é DA ROTA, e **sem** `detalhes` — não há exigência a nomear, e inventar
-      // uma diria ao cliente que existe uma chave capaz de liberá-lo.
+      // Corpo INTEIRO: `ACESSO_NEGADO` (a ADR-0012 proíbe código novo no enum) com a mensagem
+      // CANÔNICA, e **sem** `detalhes` — não há exigência a nomear, e inventar uma diria ao cliente
+      // que existe uma chave capaz de liberá-lo. É a ausência de `detalhes` que discrimina esta
+      // recusa da recusa por falta de permissão; o texto NÃO discrimina, e é assim de propósito.
+      //
+      // SUT_IS_CORRECT_BECAUSE: o código de produção está certo e esta asserção é que descrevia o
+      // estado anterior. A mensagem própria ('acesso negado: a rota não declara exigência de
+      // autorização') descreve um defeito interno de publicação e, pela ordem da guarda — o
+      // metadado é lido ANTES de a sessão ser resolvida —, chegava também a cliente ANÔNIMO,
+      // permitindo separar por varredura as rotas bem declaradas das mal declaradas. É o débito
+      // D17 da §2 do run-report da fatia `autorizacao-e-ciclo-de-acesso`. A distinção não sumiu:
+      // migrou para o `logger.warn` do ponto da recusa, que o cliente não lê.
       expect(JSON.parse(comSessao.texto) as unknown).toEqual({
         codigo: 'ACESSO_NEGADO',
-        mensagem: 'acesso negado: a rota não declara exigência de autorização',
+        mensagem: 'acesso negado para esta sessão',
       });
 
       // O par que discrimina: a MESMA sessão alcança a sonda, que declara a marca de "não exige".

@@ -58,6 +58,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { sessaoDaRequisicao } from '../autenticacao/contexto.guard.js';
 import { ExigePerfil } from '../autenticacao/exigencia.decorator.js';
+import { esquemaDoErro } from '../comum/esquema-de-erro.js';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
 import {
   type AdministradorAdmitido,
@@ -212,18 +213,6 @@ const ESQUEMA_DA_SENHA_REEMITIDA = {
 };
 
 /** Envelope de erro da ADR-0012, para as respostas de recusa do documento publicado. */
-function esquemaDoErro(codigos: readonly CodigoErro[]): Record<string, unknown> {
-  return {
-    type: 'object',
-    required: ['codigo', 'mensagem'],
-    properties: {
-      codigo: { type: 'string', enum: [...codigos] },
-      mensagem: { type: 'string' },
-      campo: { type: 'string' },
-      detalhes: { type: 'object' },
-    },
-  };
-}
 
 @ApiTags('master')
 @Controller(CAMINHO_DO_MASTER)

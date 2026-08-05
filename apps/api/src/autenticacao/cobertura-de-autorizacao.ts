@@ -348,6 +348,16 @@ function rotasDaTabelaDoRoteador(arvore: string): RotaDoRoteador[] {
  *      inventário sem acrescentar manipulador nenhum. A supressão é condicionada à presença do
  *      `GET`, e não à posição na lista: a árvore imprime ora `(GET, HEAD)`, ora `(HEAD, GET)`, e o
  *      `HEAD` publicado **sem** `GET` é manipulador de verdade, que continua sendo entrada.
+ *
+ * **Fronteira conhecida (débito D26):** a supressão do item 2 é incondicional sobre o caminho, e por
+ * isso um `@Head()` **explícito** que conviva com um `@Get()` no mesmo caminho perde o par que
+ * reivindica — a verificação então ABORTA. Aborta, não aprova: o modo de falha é barulhento e do
+ * lado seguro, e nenhum `@Head()` existe hoje nem é declarado em spec alguma. O que se corrigiu foi
+ * o **diagnóstico**, que atribuía a ausência ao roteador; ver o `throw` dedicado em
+ * {@link metodosDoManipulador}. Fechar a fronteira exige condicionar a supressão à ausência de
+ * manipulador que declare `HEAD`, o que hoje pediria inverter a ordem entre esta função e a
+ * enumeração dos manipuladores — mudança estrutural num módulo cuja granularidade está sob
+ * `DECISÃO FECHADA`, e sem defeito presente que a motive.
  */
 function metodosPorCaminho(rotas: readonly RotaDoRoteador[]): Map<string, readonly string[]> {
   const porUrl = new Map<string, string[]>();
@@ -507,6 +517,23 @@ function metodosDoManipulador(
   }
 
   if (!metodosDoCaminho.includes(verbo)) {
+    // O `HEAD` explícito num caminho que também publica `GET` é o ÚNICO desencontro cujo culpado é
+    // este módulo, e não o roteador: a normalização de {@link metodosPorCaminho} suprime o `HEAD`
+    // derivado sempre que há `GET`, e a supressão não distingue o derivado do declarado à mão. O
+    // roteador PUBLICA o par; quem o retirou fomos nós. Acusar o roteador aqui mandaria quem
+    // depurasse procurar o defeito no lugar errado — e a doutrina deste módulo é levantar NOMEANDO
+    // o culpado. Ver o débito D26 na §2 do run-report da fatia `autorizacao-e-ciclo-de-acesso`: a
+    // coexistência é fronteira conhecida e declarada, não defeito silencioso.
+    if (verbo === 'HEAD' && metodosDoCaminho.includes('GET')) {
+      throw new Error(
+        `${controlador}.${manipulador} declara ${chaveDaRota(verbo, caminho)} explicitamente, e ` +
+          'esta verificação não sabe representá-lo: a normalização suprime o `HEAD` de todo ' +
+          'caminho que publica `GET`, porque o adaptador o deriva sozinho. O roteador publica o ' +
+          'par; quem o retirou foi esta função. Condicione a supressão à ausência de manipulador ' +
+          'que declare `HEAD` antes de publicar esta rota.',
+      );
+    }
+
     throw new Error(
       `${controlador}.${manipulador} declara ${chaveDaRota(verbo, caminho)}, que o roteador não ` +
         `publica — ali ele atende ${metodosDoCaminho.join(', ')}. A cobertura descreveria uma ` +
