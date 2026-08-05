@@ -57,3 +57,7 @@ Thumbs.db
 # mover para fora exigiria plantar node_modules e trocaria fidelidade por asseio.
 # O `finally` os remove; esta linha cobre a queda dura entre o writeFile e o rm.
 packages/db/*-falsificad*.mjs
+
+# Marcador de configuração do git-flow — estado POR CLONE (identidade, credencial,
+# modo de fluxo). Não é do projeto, é da máquina.
+.claude/git-flow.local.json
