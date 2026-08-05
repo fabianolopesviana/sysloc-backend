@@ -205,6 +205,26 @@ export const TOKEN_AUTENTICACAO = Symbol('Autenticacao');
 export const TOKEN_ACESSO_A_IDENTIDADE = Symbol('AcessoAIdentidade');
 
 /**
+ * Token de injeção do acesso a dado de **negócio** — a unidade de trabalho (T4 da fatia
+ * `autorizacao-e-ciclo-de-acesso`).
+ *
+ * Mora aqui pela MESMA razão dos três tokens acima, e pelo mesmo mecanismo: declará-lo no módulo que
+ * o provê criaria importação circular com a guarda, que o pede no construtor enquanto o módulo ainda
+ * está sendo carregado.
+ *
+ * **Por que a guarda precisa dele**: a revalidação por versão da ADR-0010 relê os ajustes individuais
+ * da pessoa quando o retrato da sessão fica velho, e eles vivem em `negocio.acesso_usuario_permissao`
+ * — sob RLS forçada. A unidade de trabalho é a única porta para lá (ADR-0008), e é ela que emite o
+ * `SET LOCAL app.empresa_id` que dá escopo à leitura. Nenhum filtro por empresa é escrito na
+ * aplicação.
+ *
+ * Ele fica **fora do `exports`** de quem o provê, exatamente como `TOKEN_ACESSO_A_IDENTIDADE`:
+ * nenhum módulo de fora recebe o acesso, e a porta única para dado de negócio não vira duas por
+ * conveniência de injeção.
+ */
+export const TOKEN_ACESSO_AO_NEGOCIO = Symbol('AcessoAoBanco');
+
+/**
  * Lê e valida as variáveis de ambiente exigidas.
  *
  * @param fonte Registro de variáveis — `process.env` na partida, objeto montado na verificação.

@@ -31,6 +31,7 @@ import {
   pgSchema,
   text,
   timestamp,
+  unique,
   uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -54,49 +55,60 @@ export const perfilUsuario = identidade.enum('perfil_usuario', [
 ]);
 
 /**
- * Desfecho de uma tentativa de entrada (RN-11). O conjunto é fechado e cobre os quatro caminhos
- * que os fluxos da fatia produzem, mais a recusa por pessoa desativada ou empresa suspensa.
+ * Os três perfis como união fechada, derivados do enum acima — nunca redigitados.
+ *
+ * **A declaração mora aqui, junto do enum que a origina**, e não no módulo de ajustes de permissão,
+ * que foi onde ela nasceu. A troca é a resolução do **D35** da T7: o perfil é vocabulário do domínio
+ * de *identidade* e já tinha dois consumidores sem relação alguma com ajuste (`empresa.ts`, para
+ * `lerAlvoDeReemissao`) — o módulo de ajustes virava dono de um vocabulário compartilhado sem que
+ * ninguém tivesse decidido isso, e cada consumidor novo herdava o desvio por imitação.
+ *
+ * `permissao.ts` continua **reexportando** o nome, de modo que a superfície pública do pacote não
+ * muda: quem já importava de lá segue importando, e quem chega importa da origem.
+ */
+export type PerfilDaPessoa = (typeof perfilUsuario.enumValues)[number];
+
+/**
+ * Desfecho de uma tentativa de entrada (RN-11). O conjunto é fechado. **Este comentário é o oráculo
+ * do vocabulário**: quem for escrever um desfecho novo, ou interpretar um gravado, decide por aqui.
  *
  * ---------------------------------------------------------------------------
- * `ACESSO_RECUSADO` é o valor SOBRECARREGADO — leia a fronteira antes de usá-lo
+ * A fronteira que a migração `0004` instalou — `ACESSO_RECUSADO_POR_POLITICA` vs `ACESSO_RECUSADO`
  * ---------------------------------------------------------------------------
  *
- * Ele é escrito por **três origens distintas**, e o valor **não as distingue**:
+ * Até a fatia anterior, `ACESSO_RECUSADO` era escrito por **três origens** e não distinguia
+ * nenhuma delas. A consequência era medida e estava escrita aqui: uma indisponibilidade parcial do
+ * banco produzia um pico de `ACESSO_RECUSADO` **indistinguível** de um pico de tentativas contra
+ * contas desativadas — que é precisamente o sinal de ataque que a RN-11 existe para tornar legível.
+ * Era a pendência **`P-T6-1`**, e a migração `0004` a fecha, separando a primeira origem das outras
+ * duas:
  *
- *   1. **Recusa de política** (RN-10) — pessoa desativada ou empresa suspensa. É o caso para o qual
- *      o valor nasceu, e passa a ser o volume normal da coluna quando a barreira única de admissão
- *      (T7) entrar. Para fora, os dois predicados produzem resposta idêntica à de credencial
- *      incorreta; a indistinguibilidade é deliberada (§5.2 da tech spec) e a trilha é o único lugar
- *      em que eles ficam separados do resto.
- *   2. **Defeito de servidor** — `FAILED_TO_CREATE_SESSION`, que o manipulador de entrada emite
- *      **depois** da conferência bem-sucedida da senha. Ver a `DECISÃO FECHADA` do gancho `depois`
- *      em `packages/auth/src/autenticacao.ts`: erro que não é de credencial **não** incrementa o
- *      contador de bloqueio, mas a RN-11 manda registrar toda tentativa, e ela cai aqui.
- *   3. **Pedido malformado** — `INVALID_EMAIL` e afins, recusados pela validação do arcabouço antes
- *      de qualquer derivação de senha.
+ *   1. **`ACESSO_RECUSADO_POR_POLITICA` — recusa de política** (RN-10): pessoa desativada ou
+ *      empresa suspensa. É decisão do produto sobre **quem** pode entrar, tomada pela barreira única
+ *      de admissão, e é o volume normal da coluna. Para fora, os dois predicados produzem resposta
+ *      idêntica à de credencial incorreta; a indistinguibilidade é deliberada (§5.2 da tech spec) e
+ *      a trilha segue sendo o único lugar em que eles ficam separados do resto.
+ *   2. **`ACESSO_RECUSADO` — o que NÃO é decisão de política.** Sobram as duas origens que dizem
+ *      respeito ao servidor ou ao pedido, e não à pessoa:
+ *      * **defeito de servidor** — `FAILED_TO_CREATE_SESSION`, que o manipulador de entrada emite
+ *        **depois** da conferência bem-sucedida da senha. Ver a `DECISÃO FECHADA` do gancho
+ *        `depois` em `packages/auth/src/autenticacao.ts`: erro que não é de credencial **não**
+ *        incrementa o contador de bloqueio, mas a RN-11 manda registrar toda tentativa;
+ *      * **pedido malformado** — `INVALID_EMAIL` e afins, recusados pela validação do arcabouço
+ *        antes de qualquer derivação de senha.
  *
- * **A fronteira, por escrito**: quem lê a coluna **não** consegue separar recusa de política de
- * defeito de servidor. A consequência é concreta — uma indisponibilidade parcial do banco produz um
- * pico de `ACESSO_RECUSADO` indistinguível de um pico de tentativas contra contas desativadas, que
- * é precisamente o sinal de ataque que a RN-11 existe para tornar legível. Separá-los **exige valor
- * novo no enum**: nenhuma outra coluna desta tabela carrega o discriminante. Acrescentar código a
- * enum fechado é retrocompatível pela ADR-0007 e renomear não é, então o momento barato é **antes**
- * de o volume existir — pendência **`P-T6-1`**, escrita por extenso em
- * `docs/specs/features/fundacao-multitenancy-identidade/v1/tasks/T8.md` §7.
+ * **O valor antigo não mudou de nome nem de significado para o que ele já cobria** — ele apenas
+ * deixou de cobrir a recusa de política. Acrescentar valor a enum fechado é retrocompatível pela
+ * ADR-0012; **renomear ou remover não é**, e por isso nenhum dos cinco valores anteriores foi
+ * tocado. Provado pelo CT-208, que afirma os seis rótulos pelo catálogo do banco.
  *
- * **Dono: a task de fechamento da F1**, e não a T8. O gatilho de escopo disparou na T8 e a resposta
- * registrada (`_run/workflow-report.md`, D-E3) foi NÃO fechar ali: separar o desfecho exige valor
- * novo neste enum mais uma migração `0003`, e somar migração de schema ao diff que move todas as
- * rotas seria a "correção grande com regressão embutida" da §5 do Protocolo. O que o adiamento
- * **não** custa: este banco não tem dado de produção até a virada da F7, então a mudança de enum
- * segue sendo migração sobre banco vazio.
+ * O momento foi escolhido: enquanto a coluna não tem volume, a separação é migração sobre tabela
+ * vazia. Depois do volume existir, seria migração sobre dados que ninguém consegue reclassificar —
+ * a linha antiga não carrega o discriminante que a distinguiria.
  *
- * **Quem lê a trilha, e por onde** (a frase anterior a esta dizia "a trilha não é consultável nesta
- * fatia", o que contradizia o texto do gancho): as duas coisas são verdadeiras em planos diferentes.
- * Nenhuma **rota do produto** expõe esta tabela — não há superfície de consulta sobre ela, aqui nem
- * nas tasks seguintes. Quem a lê é a **operação**, por consulta direta ao banco, e é para esse
- * leitor que o desfecho precisa ser legível. "Não consultável" é sobre a API; "é essa trilha que a
- * operação lê para decidir se houve ataque" é sobre o banco.
+ * **Quem lê a trilha, e por onde**: nenhuma **rota do produto** expõe esta tabela — não há
+ * superfície de consulta sobre ela. Quem a lê é a **operação**, por consulta direta ao banco, e é
+ * para esse leitor que o desfecho precisa ser legível.
  */
 export const desfechoTentativa = identidade.enum('desfecho_tentativa', [
   'SUCESSO',
@@ -104,6 +116,11 @@ export const desfechoTentativa = identidade.enum('desfecho_tentativa', [
   'EMAIL_INEXISTENTE',
   'CONTA_BLOQUEADA',
   'ACESSO_RECUSADO',
+  // O valor NOVO vai no fim da união, e não perto do irmão semântico: o `0004` o acrescenta com
+  // `ALTER TYPE ... ADD VALUE` sem `BEFORE`/`AFTER`, o que o coloca no fim da ordenação do tipo no
+  // banco. Declarar aqui noutra posição faria o schema e o banco discordarem da ordem, e a próxima
+  // regeração emitiria uma migração para "corrigir" o que está certo.
+  'ACESSO_RECUSADO_POR_POLITICA',
 ]);
 
 /** A imobiliária atendida pelo produto. É a entidade a que todo dado de negócio se vincula. */
@@ -173,6 +190,20 @@ export const usuario = identidade.table(
     doisFatoresAtivo: boolean('dois_fatores_ativo').notNull().default(false),
     tentativasFalhas: integer('tentativas_falhas').notNull().default(0),
     bloqueadoAte: timestamp('bloqueado_ate', { withTimezone: true }),
+    /**
+     * Quantas vezes o efetivo de permissão desta pessoa mudou. É o discriminante que faz a sessão
+     * saber que o retrato que ela carrega ficou velho: divergiu do valor daqui, o efetivo é relido.
+     *
+     * **Mora na pessoa, e não no vínculo de acesso** (decisão D3 do tech-alignment). A razão não é
+     * preferência: o Sysloc Master **não tem** vínculo de acesso, e pôr o contador lá obrigaria um
+     * ramo condicional por perfil no caminho da comparação — exatamente o que o ponto de aplicação
+     * declara não conter e trata como invariante. Aqui, toda pessoa tem contador, e o Master não é
+     * exceção a tratar.
+     *
+     * Começa em zero e só cresce. Nada nesta task o incrementa — quem o move é a escrita de ajuste,
+     * na mesma transação do ajuste (§7.4 da tech spec).
+     */
+    versaoPermissoes: integer('versao_permissoes').notNull().default(0),
     criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
     /**
      * Instante da última alteração. O arcabouço a marca como obrigatória e a reescreve em **todo**
@@ -183,6 +214,25 @@ export const usuario = identidade.table(
   (tabela) => [
     // `email` não ganha índice próprio: a restrição de unicidade acima já o cria.
     index('usuario_empresa_id_idx').on(tabela.empresaId),
+    // ---------------------------------------------------------------------------------------
+    // ESTA RESTRIÇÃO NÃO TENANTIZA A TABELA — leia antes de tratá-la como violação da ADR-0009
+    // ---------------------------------------------------------------------------------------
+    //
+    // Ela **não** introduz política de isolamento, não habilita RLS e não muda o regime deste
+    // schema: `identidade` continua sem tenant, pela mesma razão do cabeçalho deste arquivo — a
+    // autenticação opera antes de existir contexto de empresa. A guarda de cobertura audita
+    // `negocio`, e o conjunto que ela examina não muda com esta linha.
+    //
+    // O que ela é: o **alvo** que o PostgreSQL exige para aceitar a referência ao par. Sem
+    // unicidade sobre `(id, empresa_id)`, a chave estrangeira composta de
+    // `negocio.acesso_usuario_app` não é sequer escrevível. É exatamente o mesmo papel que
+    // `acesso_usuario_app_id_empresa_key` já cumpre do lado do negócio.
+    //
+    // A unicidade é redundante com a chave primária no que diz respeito a `id`, e essa redundância
+    // é o ponto — não um descuido. E a pessoa sem empresa continua existindo: no PostgreSQL,
+    // unicidade não compara nulos entre si, de modo que múltiplos Masters seriam admitidos aqui;
+    // quem limita o Master a um é o e-mail único, não esta restrição.
+    unique('usuario_id_empresa_key').on(tabela.id, tabela.empresaId),
     // A equivalência é exigida nos DOIS sentidos, e não apenas "Master não tem empresa": sem o
     // segundo lado, uma pessoa de perfil de empresa poderia nascer sem empresa alguma e o contexto
     // da sessão dela ficaria vazio — o mesmo alcance do Master, obtido por omissão de dado.
@@ -239,6 +289,26 @@ export const sessao = identidade.table(
      */
     origem: text('origem'),
     agente: text('agente'),
+    /**
+     * O efetivo de permissão desta sessão — as áreas de tela e as ações sensíveis que quem a
+     * carrega alcança, no instante em que ela foi montada.
+     *
+     * As duas colunas são arranjos de texto, e não referência à tabela de ajustes: o que fica
+     * gravado aqui é o **resultado** já calculado (padrão do perfil mais os ajustes, com a
+     * precedência da negação aplicada), não a entrada do cálculo. É o que permite atender uma
+     * requisição sem recalcular a matriz a cada chamada.
+     *
+     * O padrão é o arranjo **vazio**, e não nulo: sessão sem efetivo escrito não alcança nada, que
+     * é o lado seguro. Nulo obrigaria todo leitor a decidir o que a ausência significa, e a decisão
+     * errada num único leitor abre acesso.
+     *
+     * `versao_permissoes` é o retrato do contador de `usuario` no momento da montagem. Divergiu do
+     * valor de lá, o efetivo aqui está velho e é relido — é a comparação que torna o ajuste
+     * perceptível na operação seguinte sem derrubar a sessão.
+     */
+    telas: text('telas').array().notNull().default([]),
+    acoes: text('acoes').array().notNull().default([]),
+    versaoPermissoes: integer('versao_permissoes').notNull().default(0),
     criadaEm: timestamp('criada_em', { withTimezone: true }).notNull().defaultNow(),
     atualizadaEm: timestamp('atualizada_em', { withTimezone: true }).notNull().defaultNow(),
   },

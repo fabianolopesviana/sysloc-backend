@@ -50,10 +50,11 @@ commitadas, incluindo a **T7**, cuja recuperação foi provada por **reinício r
 A fatia `caracterizacao-regras-legadas` (v1) também está **concluída**: os 6 artefatos golden
 estão versionados e são o oráculo das regras legadas para a F3 e a F5.
 
-**Fase 1 EM ANDAMENTO — uma das duas fatias concluída.** A F1 foi **desdobrada em duas fatias**,
-cortando *depois* da autenticação (o corte isolamento × identidade foi rebatido: ele atravessa a
-camada 5, e a fonte legítima do `empresa_id` é a sessão). **Fatia concluída não é fase concluída**:
-a F1 só termina quando as duas fecharem.
+**Fase 1 CONCLUÍDA — as duas fatias fechadas.** A F1 foi **desdobrada em duas fatias**, cortando
+*depois* da autenticação (o corte isolamento × identidade foi rebatido: ele atravessa a camada 5, e
+a fonte legítima do `empresa_id` é a sessão). Em **2026-08-05** a segunda fechou, e com ela a fase.
+**Nenhuma das duas foi commitada ainda** — o pipeline nunca commita; o trabalho está *staged*,
+aguardando a decisão do usuário.
 
 1. **`fundacao-multitenancy-identidade` (v1) — CONCLUÍDA e commitada.** As 11 tasks aprovadas nos
    dois gates. Dá para logar, e o isolamento entre empresas está provado: `empresa_id`, RLS
@@ -62,9 +63,21 @@ a F1 só termina quando as duas fecharem.
    de sessão. Depois do run, uma **intervenção dirigida de fechamento** (fora do pipeline) resolveu
    **22 dos 37 débitos** anotados, mais o **D38**, achado durante a própria revisão. Suíte em
    **274 casos**.
-2. **`autorizacao-e-ciclo-de-acesso` (v1) — É A PRÓXIMA A EXECUTAR.** Matriz 10×7 com ajuste por
-   usuário, sessão gorda com `versao_permissoes`, invalidação de sessão por evento, onboarding com
-   senha temporária e as rotas do Master. **Ganha pré-refinamento próprio na sua entrada.**
+2. **`autorizacao-e-ciclo-de-acesso` (v1) — CONCLUÍDA em 2026-08-05, staged e não commitada.**
+   As **9 tasks** aprovadas nos dois gates, nenhuma bloqueada. Suíte de **274 → 350 casos**;
+   `pnpm build`, `pnpm lint` e `pnpm test` verdes. Entrega a matriz 10×7 com **ajuste bidirecional**
+   por usuário (conceder **e** retirar), sessão com `versaoPermissoes` **por pessoa** relido quando
+   diverge, invalidação de sessão **na origem do evento**, onboarding por **senha provisória**
+   (termo canônico do glossário — não "temporária") e as rotas do Master e do Admin. Fechou os
+   débitos **D7**, **D21**, **D5**, **P-T6-1** e a metade acionável do **P-T6-2**; a outra metade
+   virou o **item 5 da §F7** do plano de execução. Nasceram dela as ADRs **0010**, **0011**,
+   **0012** e **0013**, e ela **aposentou a 0007**.
+   **Deixou 41 débitos anotados** na §2 do `_run/run-report.md` — quatro deles com marcador e
+   gatilho (**D27**, **D37**, **D38**, **D40**). Resolve-se tudo de uma vez com
+   `/agent-spec-debt-resolution docs/specs/features/autorizacao-e-ciclo-de-acesso/v1/`.
+   **A superfície da API está completa e pronta para congelar**: 15 rotas, mais a de troca de senha
+   do produto; a nativa de `/v1/auth/change-password` deixou de ser publicada, e o inventário de
+   `/v1/auth` caiu de 6 para 5.
 
 **O que a PRIMEIRA FATIA deixou aberto, e que a próxima sessão precisa saber** — os caminhos abaixo
 são relativos a `docs/specs/features/fundacao-multitenancy-identidade/v1/`:
@@ -78,10 +91,13 @@ são relativos a `docs/specs/features/fundacao-multitenancy-identidade/v1/`:
   Reexecução: `sudo bash deploy/scripts/instalacao/verificar-fundacao.sh` (com `pnpm build` antes);
   o `CT-006` sai de fora dela por consumir janela de indisponibilidade — ⚠️ o reinício derruba
   **também o `/opt/frappe`**, que atende a operação.
-- **`P-T6-1` e `P-T6-2`** (`tasks/T8.md` §7) seguem **abertos e sem dono**: o dono era a "task de
-  fechamento da F1" — expressão que os artefatos da fatia usam para dizer *fechamento desta fatia*,
-  e não da fase —, e a intervenção não os cobriu. Exigem valor novo no enum `desfecho_tentativa`
-  mais uma migração `0003`; decisão registrada em `_run/workflow-report.md`, D-E3.
+- **`P-T6-1` e `P-T6-2`** (`tasks/T8.md` §7) — **ganharam dono em 2026-08-04**, na especificação da
+  fatia 2. Ficaram abertos e sem dono por um tempo porque o dono declarado era a "task de fechamento
+  da F1" — expressão que os artefatos da fatia usam para dizer *fechamento desta fatia*, e não da
+  fase —, e a intervenção não os cobriu. Onde estão agora: o **P-T6-1** (valor novo no enum
+  `desfecho_tentativa`) é a migração **`0004`** da fatia 2, provado pelo `CT-208`; o **P-T6-2** foi
+  **partido em dois** — ligar o limitador de taxa entra na fatia 2 (`CT-236`), e a retenção de
+  `identidade.tentativa_login` virou o **item 5 da §F7** do plano de execução.
 - **As seis rotas de `/v1/auth` fora do documento OpenAPI** — dono precisado no código: a
   publicação do `@sysloc/contracts`, não uma task genérica.
 - **15 débitos abertos** na §2 do `_run/run-report.md` da fatia, cada um com razão registrada.
@@ -101,13 +117,13 @@ operacional dela — não uma meta aproximada.
 O marco está alcançado quando **todos** os sete itens forem verdadeiros:
 
 - [ ] **F1 a F5 concluídas** — todas as tasks aprovadas nos dois gates, suíte verde, critérios de
-      aceitação de cada fatia verificados
+      aceitação de cada fatia verificados · **F1 fechada em 2026-08-05; faltam F2 a F5**
 - [ ] **Superfície da API congelada** — nenhuma fatia posterior acrescenta, remove ou altera rota;
       o congelamento é o que torna o handoff confiável
 - [ ] **`@sysloc/contracts` publicado** no GitHub privado e versionado — é o artefato que o React
       importa para trocar tipos e cliente ts-rest
 - [ ] **`handoff-frontend.md` gerado** por `/agent-spec-backend-contract-handoff`, carregando o
-      modelo de domínio camelCase, o envelope de erro da ADR-0007, a autenticação por sessão, o
+      modelo de domínio camelCase, o envelope de erro da ADR-0012, a autenticação por sessão, o
       objeto de sessão gorda com `versao_permissoes`, e o **mapa endpoint-a-endpoint** ligando cada
       um dos 35 caminhos ERPNext antigos (`levantamento-frontend.md`) à rota nova
 - [ ] **Backup e restauração entregues e provados** — item 1 da F7: `pg_dump -Fc`, segredos em tar,
@@ -146,13 +162,16 @@ pelo número, e sem os dois arquivos de `.claude/plans/` essas referências fica
 | 3 | `.claude/plans/plano-saas-decisoes.md` | As **40 decisões fechadas** — o plano de execução as cita por número |
 | 4 | `.claude/plans/plano-saas.md` | Arquitetura-alvo, os 3 perfis, as **10 telas × 7 ações sensíveis**, a especificação do webhook Sicoob |
 | 5 | `docs/plano-backend-novo/levantamento-frontend.md` | O frontend React: inventário dos **35 endpoints**, o **modelo de domínio que a API deve falar**, os acoplamentos a remover |
-| 6 | `docs/adr/` | ADRs. **A ADR-0001 (modelo canônico de cobrança com adaptador por provedor) e a ADR-0006 (ambiente de verificação separado do que atende a operação) sobrevivem inteiras.** As 0002 e 0003 morreram com o Frappe |
+| 6 | `docs/adr/` | ADRs. **Ativas e vinculantes para a F1: 0008, 0009, 0010, 0011 e 0012.** Sobrevivem inteiras a **0001** (cobrança com adaptador por provedor), a **0005** (rotinas versionadas, sem credencial em script) e a **0006** (ambiente de verificação separado). As **0002, 0003 e 0004** morreram com o Frappe — `deprecated` desde 2026-08-04. A **0007 foi substituída pela 0012** (a chave exposta varia por classe de entidade) |
 
 Por fase: a **F4** exige `docs/specs/features/integracao-bancaria-configuravel/`; a **F6** exige
 o levantamento do frontend (item 5).
 
-**O critério que separa a ADR que morre da que sobrevive é o substrato.** A 0002 e a 0003 nomeiam
-primitivas do Frappe — DocType, fixture, `Custom DocPerm` — e vão junto com elas. A 0006 não nomeia
+**O critério que separa a ADR que morre da que sobrevive é o substrato.** A 0002, a 0003 e a 0004
+nomeiam primitivas do Frappe — DocType, fixture, `Custom DocPerm`, `Server Script` — e vão junto com
+elas. A 0004 entrou nesse conjunto em 2026-08-04, por aplicação do mesmo critério: a `Decision` dela
+preserva nomes curtos de endpoints herdados de Server Script por aliases registrados no app, e nada
+disso existe fora do Frappe. A 0006 não nomeia
 mecanismo nenhum: a decisão é *"a suíte de verificação nunca executa contra o ambiente que atende a
 operação; qual ambiente concreto cumpre o papel varia ao longo do tempo — o invariante é a separação,
 não um servidor específico"*, e uma das alternativas que ela rejeita **antecipa literalmente esta
@@ -233,11 +252,19 @@ Específicos deste domínio: **undici** (mTLS do Sicoob), **`node:crypto` `X509C
 > grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 > ```
 
-Seis débitos têm gatilho que dispara fora da fatia que os criou: **D28** e **D32** vêm da F0;
-**D7**, **D21**, **D23** e **D39** nasceram na F1. **Dois já dispararam e seguem abertos** — o D28 (na F1/T2) e
-o D21 (na F1/T8, quando o encaminhador de `/v1/auth` montou `/change-password`). O débito D6 da
-F1/T5 foi fechado no fechamento da F1 — `verificar-migracao.sh` entrou em `VERIFICADORES_DA_FATIA`
-— e por isso saiu daqui: **este índice lista só débito vivo**.
+Oito débitos têm gatilho que dispara fora da fatia que os criou: **D28** e **D32** vêm da F0;
+**D23**, **D39**, **D27**, **D37**, **D38** e **D40** nasceram na F1 — os quatro últimos na fatia
+`autorizacao-e-ciclo-de-acesso`. O **D27** partilha com o D23 o gatilho e o fato que falta: qual é o
+salto confiável da borda.
+**Dois já dispararam e seguem abertos** — o D28, na F1/T2, e o D38, na própria T9 que o registrou.
+Quatro saíram daqui
+por terem sido fechados — **este índice lista só débito vivo**: o D6 da F1/T5, no fechamento da F1
+(`verificar-migracao.sh` entrou em `VERIFICADORES_DA_FATIA`); o D7 da F1/T6, na T6 da fatia
+`autorizacao-e-ciclo-de-acesso`, que declarou `perfil` e `empresa_id` como campos adicionais com a
+escrita pelo corpo fechada; o D32 da F1/T7 daquela mesma fatia, na T8, quando as rotas do Admin
+passaram a criar o vínculo de acesso sob o contexto que a guarda publica da sessão; e o D21 da
+F1/T7, na T9 daquela fatia, quando a rota nativa de troca de senha deixou de ser publicada e a
+troca do produto passou a conferir a admissão antes de qualquer escrita.
 
 > **Esta tabela é um ÍNDICE, não um relatório.** Cada linha é um **ponteiro curto**; o detalhe —
 > impacto medido, o que fazer, prova exigida — vive **só** na §2 do `run-report.md` da fatia que
@@ -255,12 +282,14 @@ F1/T5 foi fechado no fechamento da F1 — `verificar-migracao.sh` entrou em `VER
 
 | Débito | Onde | Dispara quando |
 |---|---|---|
-| **D28** (F0/T5) | 6 arquivos — `grep -rln --exclude-dir=dist "D28 · F0/T5" apps packages deploy` | **JÁ DISPAROU (F1/T2)** — consumidor novo de `packages/shared/test/` por caminho relativo profundo |
+| **D28** (F0/T5) | `grep -rln --exclude-dir=dist "D28 · F0/T5" apps packages deploy` — a contagem sai do comando, que não envelhece | **JÁ DISPAROU (F1/T2)** — consumidor novo de `packages/shared/test/` por caminho relativo profundo |
 | **D32** (F0/T6) | `apps/worker/src/fila.ts` | a primeira fatia que **enfileirar tarefa de negócio** |
-| **D7** (F1/T6) | `packages/auth/src/autenticacao.ts` | a **primeira rota de criação de pessoa** (fatia `autorizacao-e-ciclo-de-acesso`) |
-| **D21** (F1/T7) | `packages/auth/src/autenticacao.ts` | **JÁ DISPAROU (F1/T8)** — `/change-password` montado; a recusa da barreira não desfaz o que a rota já escreveu |
 | **D23** (F1/T8) | `apps/api/src/autenticacao/autenticacao.module.ts` | a **publicação atrás do servidor de borda na F7** — origem confiável derivada do endereço de retorno |
 | **D39** (F1/fechamento) | `deploy/scripts/instalacao/provisionar-base.sh` | a **próxima instalação do zero** — o provisionamento não gera `BETTER_AUTH_SECRET` e a API não sobe |
+| **D27** (F1/T6, fatia `autorizacao-e-ciclo-de-acesso`) | `packages/auth/src/autenticacao.ts` | a **publicação atrás do servidor de borda na F7** — sem ela o limitador não tem eixo de origem |
+| **D37** (F1/T8, fatia `autorizacao-e-ciclo-de-acesso`) | `apps/api/src/master/empresa.controller.ts` | a **primeira comparação do `:id` do Master com identidade da sessão** — o esquema de lá não canoniza a caixa do UUID |
+| **D38** (F1/T9, fatia `autorizacao-e-ciclo-de-acesso`) | `apps/api/src/autenticacao/senha.controller.ts` | **JÁ DISPAROU** — `validar()` na terceira cópia; fecha na quarta, ou na task que já inclua os três arquivos |
+| **D40** (F1/T9, fatia `autorizacao-e-ciclo-de-acesso`) | `apps/api/src/usuarios/usuario.controller.ts` | o **próximo controlador de borda** — `esquemaDoErro` em cinco cópias; extrair para `comum/` antes de copiar |
 
 ---
 

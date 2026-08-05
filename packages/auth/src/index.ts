@@ -68,6 +68,78 @@
  * `senhaProvisoriaPendente` lê, depois de a troca ter sido aceita, e existe aqui para que o par
  * "quem lê a marca" e "quem a baixa" continue num arquivo só. Publicá-la é o que dispensa
  * `apps/api` de escrever em `identidade` conhecendo o schema e o construtor de consulta do ORM.
+ *
+ * ---------------------------------------------------------------------------
+ * O domínio da autorização sai INTEIRO — e a pergunta de sempre foi feita
+ * ---------------------------------------------------------------------------
+ *
+ * A fatia `autorizacao-e-ciclo-de-acesso` acrescenta o catálogo fechado, a matriz por perfil e o
+ * cálculo do efetivo. **Isto emite sessão? NÃO** — nenhum dos três toca banco, relógio ou
+ * requisição: são constantes e duas funções puras. O critério que este índice se impõe é o das
+ * **capacidades que os outros pacotes chamam**, e aqui os três consumidores estão nomeados: a
+ * guarda de `apps/api` calcula o efetivo e decide (ADR-0011), a rota de ajuste valida a coerência
+ * antes de escrever (RN-02), e a rota de sessão publica o conjunto para o cliente desenhar o menu
+ * (CA-19). Nenhum deles pode reimplementar a precedência da negação por conta própria sem criar uma
+ * segunda definição da ADR-0010, livre para divergir da que o CT-203 prova.
+ *
+ * `ehChaveDoCatalogo` sai pela mesma razão de `RECUSA_DE_CAMPO_INVALIDO`: é o que a borda usa para
+ * recusar chave inventada, e o alternativo seria `apps/api` conhecer a forma literal da chave.
+ * `MAPA_ACAO_TELA` sai porque o cliente precisa dele para não oferecer uma ação cuja área ele não
+ * liberou — a mesma dependência que a validação impõe do lado do servidor.
+ *
+ * `ChaveDeTela` e `ChaveDeAcao` saem junto de `ChaveDoCatalogo`: o efetivo viaja **repartido** nos
+ * dois eixos — no registro de sessão e no contrato do `GET /v1/sessao` —, e sem os dois tipos a
+ * borda declararia os arranjos publicados como `string[]`, perdendo exatamente a checagem que o
+ * catálogo fechado existe para dar.
+ *
+ * ---------------------------------------------------------------------------
+ * A autorização sai INTEIRA — inclusive as duas funções que tocam `identidade.sessao`
+ * ---------------------------------------------------------------------------
+ *
+ * `decidirAcesso` e o tipo `Exigencia` saem pelo motivo do parágrafo anterior levado ao fim: a
+ * guarda de `apps/api` é o **ponto único de aplicação** (ADR-0011), e ela consulta a decisão em vez
+ * de reescrevê-la — uma segunda definição de "o que esta rota exige" dentro do ponto onde ela é
+ * aplicada é a topologia que a §5 de `.claude/rules/nao-regressao.md` nomeia. **Isto emite sessão?
+ * NÃO**: é função pura, sem banco, sem pedido e sem relógio.
+ *
+ * `repartirEfetivo` sai pela mesma razão, num grau a mais: **isto emite sessão? NÃO** — é função
+ * pura sobre um arranjo de chaves. Ela sai porque a rota de ajuste de permissão da T8 devolve o
+ * efetivo novo **repartido nos mesmos dois eixos**, e a alternativa a publicá-la era escrevê-la de
+ * novo na borda. O docblock dela nomeia a forma que uma segunda escrita quase certamente teria
+ * (partir pelo prefixo textual da chave) e a razão de ela estar errada — o eixo é decidido pelo
+ * catálogo, não pela grafia. Duas repartições livres para divergir fariam o que a rota devolve e o
+ * que a sessão guarda deixarem de ser a mesma coisa.
+ *
+ * `carregarRetratoDaSessao` e `regravarEfetivoDaSessao` saem pelo MESMO critério de
+ * `carregarPessoaDaSessao` e `limparMarcaDeSenhaProvisoria`, e a pergunta foi feita para as duas:
+ * **isto emite sessão? NÃO.** Elas leem e reescrevem três colunas de uma sessão que o arcabouço já
+ * criou e conferiu; não devolvem token nem cookie, e não decidem admissão. Publicá-las é o que
+ * dispensa `apps/api` de conhecer `esquemaIdentidade` e o construtor de consulta do ORM — a mesma
+ * contenção que a §11.2 da tech spec exige na ausência de RLS em `identidade` (ADR-0009).
+ *
+ * ---------------------------------------------------------------------------
+ * O onboarding sai — e aqui a pergunta de sempre exige uma resposta mais longa
+ * ---------------------------------------------------------------------------
+ *
+ * `gerarSenhaProvisoria`, `criarPessoa` e `reemitirSenhaProvisoria` saem. **Isto emite sessão?
+ * NÃO** — nenhuma das três cria linha em `identidade.sessao`, devolve token ou cookie, ou decide
+ * admissão: a pessoa criada precisa ENTRAR depois, pela rota de entrada, e ali a barreira de
+ * admissão a recebe como a qualquer outra (e a recebe RESTRITA, porque as duas que escrevem
+ * levantam a marca de senha provisória que o predicado `senhaProvisoriaPendente` lê).
+ *
+ * A resposta é mais longa porque as duas últimas **emitem credencial**, que é a coisa mais próxima
+ * de emitir sessão que este pacote publica — e a distinção não é sutileza, é a ADR-0013: emitir
+ * credencial para outra pessoa é poder distinto da garantia sobre a sessão de quem emite, aceito e
+ * auditado, e não uma contradição com o que a fatia anterior provou sobre a sessão do Master. Elas
+ * saem porque os consumidores estão nomeados e são rotas: `POST /v1/master/empresas/:id/admin` e
+ * `POST /v1/master/usuarios/:id/senha-provisoria` (T7), e `POST /v1/usuarios` (T8). Nenhuma delas
+ * pode criar pessoa por conta própria sem conhecer `internalAdapter`, a derivação de senha do
+ * arcabouço e o schema de `identidade` — que é exatamente o que este índice existe para manter do
+ * lado de cá.
+ *
+ * `PessoaNova` **não** sai, pelo critério das capacidades: quem chama monta o objeto no ponto da
+ * chamada, e publicar o tipo de entrada não habilita nada que já não esteja habilitado — mesmo
+ * tratamento que `PessoaDaSenha` recebe em `senha.ts`.
  */
 
 export {
@@ -100,6 +172,17 @@ export {
   RECUSA_DE_CAMPO_INVALIDO,
 } from './autenticacao.js';
 export {
+  carregarRetratoDaSessao,
+  type DecisaoDeAcesso,
+  decidirAcesso,
+  type EfetivoDaSessao,
+  type Exigencia,
+  type PermissoesDaSessao,
+  type RetratoDaSessao,
+  regravarEfetivoDaSessao,
+  repartirEfetivo,
+} from './autorizacao.js';
+export {
   DURACAO_DO_BLOQUEIO_EM_MINUTOS,
   type EstadoDeBloqueio,
   estaBloqueada,
@@ -107,6 +190,28 @@ export {
   limparBloqueio,
   registrarFalha,
 } from './bloqueio.js';
+export {
+  CHAVES_DE_ACAO,
+  CHAVES_DE_TELA,
+  type ChaveDeAcao,
+  type ChaveDeTela,
+  type ChaveDoCatalogo,
+  ehChaveDoCatalogo,
+  MAPA_ACAO_TELA,
+} from './catalogo-de-permissoes.js';
+export {
+  type AjusteDePermissao,
+  calcularEfetivo,
+  type EfeitoDePermissao,
+  validarCoerenciaDeAjustes,
+} from './efetivo.js';
+export { MATRIZ_POR_PERFIL } from './matriz-de-perfil.js';
+export {
+  criarPessoa,
+  gerarSenhaProvisoria,
+  type PessoaCriada,
+  reemitirSenhaProvisoria,
+} from './onboarding.js';
 export { PERFIS, type Perfil } from './perfis.js';
 export {
   type AvaliacaoDeSenha,

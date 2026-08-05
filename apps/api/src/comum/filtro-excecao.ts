@@ -254,8 +254,9 @@ function recusaDeOutrem(statusDeOrigem: number, excecao: HttpException): Respost
 //          status não estivesse ali virava `500 ERRO_INTERNO` — e, porque o nível do registro é
 //          derivado do status, virava também uma linha `error` afirmando "requisição encerrada por
 //          falha do serviço". O produtor medido era o limitador nativo do arcabouço de identidade,
-//          que sobe sozinho em produção e emite `429` (`packages/auth/src/autenticacao.ts` agora o
-//          desliga explicitamente) — mas o limitador era A OCORRÊNCIA, não a classe: a classe é
+//          que sobe sozinho em produção e emite `429` (que a T6 da fatia
+//          `autorizacao-e-ciclo-de-acesso` passou a ligar explicitamente, com política própria) —
+//          mas o limitador era A OCORRÊNCIA, não a classe: a classe é
 //          "todo status que o arcabouço venha a emitir e que ninguém tenha lembrado de tabelar", e
 //          cada versão nova dele reabre a lista. Acrescentar `429` à tabela fecharia o caminho
 //          apontado e deixaria a classe aberta — exatamente o laço longo que a §5 de

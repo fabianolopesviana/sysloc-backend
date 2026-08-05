@@ -24,7 +24,7 @@
  * sobre a MESMA instância (`useExisting`). A repartição não é estilo:
  *
  *   * **`canActivate` decide.** Rota marcada `@RotaPublica()` passa direto; qualquer outra exige
- *     sessão válida, sob pena de `401` no envelope da ADR-0007. É aqui, e só aqui, que a sessão do
+ *     sessão válida, sob pena de `401` no envelope da ADR-0012. É aqui, e só aqui, que a sessão do
  *     produto é montada — uma vez por requisição.
  *   * **`intercept` publica.** `contextoDeTenant.executarCom` é `AsyncLocalStorage.run`, e `run`
  *     **envolve uma continuação**: o contexto vale para a cadeia assíncrona iniciada dentro do
@@ -103,6 +103,54 @@
  * código continua sendo o **padrão do filtro global**, para quem levantá-lo sem mensagem própria.
  *
  * ---------------------------------------------------------------------------
+ * A AUTORIZAÇÃO é consultada aqui, e decidida em outro lugar (ADR-0010, ADR-0011)
+ * ---------------------------------------------------------------------------
+ *
+ * A T4 da fatia `autorizacao-e-ciclo-de-acesso` acrescenta o **ponto de aplicação único** da
+ * autorização, e ele obedece exatamente ao parágrafo acima: a regra não é reescrita aqui. Quem
+ * decide é `decidirAcesso` (`@sysloc/auth`), consultado como `sessaoRestritaPermite` já é. Uma
+ * segunda avaliação em qualquer manipulador seria a topologia que a §5 de
+ * `.claude/rules/nao-regressao.md` nomeia — e o **CT-216** a reprova por varredura de fontes,
+ * afirmando que este é o **único** arquivo de `apps/api/src` que consome o símbolo de decisão.
+ *
+ * A ordem dos passos é a da **§5.1 da tech spec**, e ela é observável:
+ *
+ *   1. **exigência declarada** — lida por reflexão, sem tocar banco nem arcabouço. **Ausente
+ *      recusa** (ADR-0011): rota que não declara nada não atende ninguém, e o esquecimento produz
+ *      `403` em vez de superfície aberta. É o primeiro passo porque é o mais barato e porque a rota
+ *      sem declaração está quebrada independentemente de quem a chama;
+ *   2. **sessão válida** — `401`, como antes;
+ *   3. **versão de permissão** — o contador corrente chega na leitura de identidade que já
+ *      acontece, e é comparado com o retrato gravado no registro de sessão;
+ *   4. **divergiu: relê, reescreve e ATENDE** — a ADR-0010 é literal sobre isto (*"o servidor relê o
+ *      efetivo e atende — em vez de recusar"*), e rejeita por escrito as duas alternativas: recusar
+ *      a requisição transferiria ao cliente um retry que o servidor resolve sozinho, e encerrar a
+ *      sessão apagaria a distinção entre **mudar permissão** e **revogar acesso**, que esta
+ *      arquitetura separa deliberadamente;
+ *   5. **alcance da sessão restrita** — inalterado;
+ *   6. **decisão de autorização** — `403 ACESSO_NEGADO` com `detalhes.exigido`, que é o que a RN-14
+ *      exige: a recusa **nomeia** o que faltou, distinguindo as duas dimensões pelo próprio valor;
+ *   7. **pendurar** — e só então, pela razão do bloco anterior.
+ *
+ * ---------------------------------------------------------------------------
+ * A reescrita do registro de sessão é a ÚNICA escrita no caminho de leitura
+ * ---------------------------------------------------------------------------
+ *
+ * E ela acontece por **mudança**, não por requisição: só quando a versão diverge. O CT-219 prova os
+ * dois lados — que a divergência reescreve as três colunas, e que as requisições seguintes, sem
+ * mudança, não as tocam. Reescrever a cada requisição passaria nos casos positivos e transformaria
+ * toda leitura autenticada numa escrita, que é o custo que a ADR-0010 evita ao guardar o efetivo na
+ * sessão em primeiro lugar.
+ *
+ * A releitura dos ajustes corre **sob o contexto de tenant** (`executarCom` + unidade de trabalho),
+ * e não com um filtro por empresa escrito aqui: o escopo é a política do banco (ADR-0008). Para o
+ * Master, `empresaId` é nulo e o contexto vazio não casa política alguma — a leitura devolve vazio,
+ * pelo mesmo caminho de todo mundo, **sem ramo condicional por perfil**. Some-se que a matriz dele é
+ * vazia, de modo que ele atravessa apenas pela dimensão de perfil. Continua valendo, portanto, o que
+ * o bloco do Sysloc Master acima afirma: não existe, em lugar algum deste arquivo, um
+ * `if (perfil === 'SYSLOC_MASTER')`.
+ *
+ * ---------------------------------------------------------------------------
  * O que esta task NÃO decide (2): a REVOGAÇÃO de sessão já emitida
  * ---------------------------------------------------------------------------
  *
@@ -134,16 +182,37 @@ import {
 import { Reflector } from '@nestjs/core';
 import {
   type Autenticacao,
+  type ChaveDeAcao,
+  type ChaveDeTela,
+  calcularEfetivo,
   carregarPessoaDaSessao,
+  carregarRetratoDaSessao,
+  decidirAcesso,
+  type EfetivoDaSessao,
+  type Exigencia,
+  ehChaveDoCatalogo,
   type Perfil,
+  type PessoaDaSessao,
+  regravarEfetivoDaSessao,
   segundoFatorExigido,
 } from '@sysloc/auth';
-import { type AcessoAIdentidade, contextoDeTenant } from '@sysloc/db';
-import { CodigoErro, ErroDeAplicacao } from '@sysloc/shared';
+import {
+  type AcessoAIdentidade,
+  type AcessoAoBanco,
+  contextoDeTenant,
+  lerAjustesDaPessoa,
+} from '@sysloc/db';
+import { CodigoErro, ErroDeAplicacao, type Logger } from '@sysloc/shared';
 import type { FastifyRequest } from 'fastify';
 import { Observable, type Subscription } from 'rxjs';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
-import { TOKEN_ACESSO_A_IDENTIDADE, TOKEN_AUTENTICACAO } from '../configuracao/ambiente.js';
+import {
+  TOKEN_ACESSO_A_IDENTIDADE,
+  TOKEN_ACESSO_AO_NEGOCIO,
+  TOKEN_AUTENTICACAO,
+  TOKEN_LOGGER,
+} from '../configuracao/ambiente.js';
+import { EXIGENCIA } from './exigencia.decorator.js';
 import { ROTA_PUBLICA } from './rota-publica.decorator.js';
 import { sessaoRestritaPermite } from './sessao-restrita.js';
 
@@ -154,10 +223,34 @@ import { sessaoRestritaPermite } from './sessao-restrita.js';
  * o código com mensagem, e o filtro global, para quem levantar o código sem ela —, e a resposta do
  * cliente não pode depender de qual caminho a produziu. Enquanto o literal estava escrito nos dois
  * lugares, "elas precisam coincidir" era um comentário; agora é uma consequência de só existir uma.
- * A tabela é a fonte porque é ela que a ADR-0007 governa: o corpo de erro sai dali em todo caminho
+ * A tabela é a fonte porque é ela que a ADR-0012 governa: o corpo de erro sai dali em todo caminho
  * que não passa por aqui.
  */
 const MENSAGEM_SEM_SESSAO = MENSAGEM_POR_CODIGO[CodigoErro.NAO_AUTENTICADO];
+
+/**
+ * Mensagem pública da recusa por falta de permissão.
+ *
+ * É a **canônica do código**, lida da mesma tabela pela mesma razão da constante acima — a §10.1 da
+ * tech spec fixa *"canônica + `detalhes.exigido`"*. O que nomeia a exigência é o campo estruturado,
+ * e não a prosa: um cliente que precisasse extrair a chave do texto voltaria a classificar erro por
+ * prefixo de mensagem, que é exatamente o que a ADR-0012 aposentou.
+ */
+const MENSAGEM_SEM_PERMISSAO = MENSAGEM_POR_CODIGO[CodigoErro.ACESSO_NEGADO];
+
+/**
+ * Recusa da rota que **não declara exigência alguma** (ADR-0011).
+ *
+ * Ela é distinta da mensagem acima de propósito: a recusa por falta de permissão é sobre **quem
+ * pede**, e esta é sobre **a rota**. Quem a receber está diante de um defeito de publicação, não de
+ * uma permissão que lhe falta — e nenhuma concessão do Admin a resolveria. Não há `detalhes.exigido`
+ * aqui: não há exigência a nomear, e inventar uma diria ao cliente que existe uma chave que o
+ * liberaria.
+ *
+ * O código continua sendo `ACESSO_NEGADO`: a ADR-0012 fixa que **nenhum código novo entra no enum**,
+ * porque cada um é superfície versionada.
+ */
+const MENSAGEM_SEM_DECLARACAO = 'acesso negado: a rota não declara exigência de autorização';
 
 /**
  * Onde a sessão resolvida viaja entre `canActivate` e `intercept`.
@@ -178,8 +271,14 @@ const CHAVE_DA_SESSAO = Symbol('SessaoDoProduto');
  * `usuario_master_sem_empresa_chk` do schema torna a recíproca impossível, de modo que "nulo"
  * identifica o Master sem que perfil nenhum precise ser comparado.
  *
- * A sessão desta fatia **não** carrega telas nem ações: isso é da fatia
- * `autorizacao-e-ciclo-de-acesso`, junto de `versaoPermissoes`.
+ * **São ONZE campos**, e a contagem é afirmada por igualdade no CT-220: os oito da fatia anterior
+ * mais o efetivo repartido nos dois eixos e a versão que o datou. Os três últimos chegaram com a
+ * fatia `autorizacao-e-ciclo-de-acesso` (CA-19), e existem para o cliente desenhar o menu sem uma
+ * segunda chamada — que é metade da razão pela qual a ADR-0010 põe o efetivo na sessão.
+ *
+ * Este objeto é devolvido **campo a campo** por `GET /v1/sessao`, sem projeção intermediária: um
+ * campo interno acrescentado aqui vaza para o contrato publicado. Ele é, portanto, exatamente a
+ * superfície da rota, e nada além dela.
  */
 export interface SessaoDoProduto {
   readonly usuarioId: string;
@@ -192,6 +291,18 @@ export interface SessaoDoProduto {
   readonly senhaProvisoria: boolean;
   /** O segundo fator é exigido desta pessoa e ainda não está ativo (RN-08). */
   readonly segundoFatorPendente: boolean;
+  /** As áreas de tela que esta sessão alcança — o efetivo, já repartido (RN-01). */
+  readonly telas: readonly ChaveDeTela[];
+  /** As ações sensíveis que esta sessão alcança. */
+  readonly acoes: readonly ChaveDeAcao[];
+  /**
+   * A versão de permissão que datou o efetivo acima.
+   *
+   * Publicada porque o cliente precisa distinguir "o menu mudou" de "a resposta veio de um cache":
+   * ela é o mesmo contador que a guarda compara a cada requisição, e é o único campo desta sessão
+   * que muda sem que a pessoa faça nada.
+   */
+  readonly versaoPermissoes: number;
 }
 
 /**
@@ -227,6 +338,19 @@ export class GuardaDeContexto implements CanActivate, NestInterceptor {
     @Inject(Reflector) private readonly reflector: Reflector,
     @Inject(TOKEN_AUTENTICACAO) private readonly autenticacao: Autenticacao,
     @Inject(TOKEN_ACESSO_A_IDENTIDADE) private readonly acesso: AcessoAIdentidade,
+    // A releitura do efetivo precisa de `negocio` sob o contexto de tenant, e a unidade de trabalho
+    // é a única porta para lá (ADR-0008). Este token e o de identidade **saem** no `exports` do
+    // módulo desde a T7 — e a razão por extenso mora lá, no bloco de `exports` de
+    // `autenticacao.module.ts`, que é onde a decisão foi tomada. O que muda com o export é o
+    // SUSTENTÁCULO da contenção, não a contenção: a instância continua única por token, e o alcance
+    // a `negocio` e a `identidade` segue enumerável porque o consumidor **repassa o executor sem
+    // escrever consulta** — verificável, e não declarado.
+    @Inject(TOKEN_ACESSO_AO_NEGOCIO) private readonly negocio: AcessoAoBanco,
+    // A §10.3 da tech spec exige que a recusa de autorização seja registrada em `warn` com a
+    // exigência que faltou e o identificador da pessoa — dado que o filtro global não tem, porque
+    // ele só vê a exceção. O efetivo INTEIRO fica de fora do registro, também por decisão da §10.3:
+    // ruído e superfície de vazamento sem ganho diagnóstico.
+    @Inject(TOKEN_LOGGER) private readonly logger: Logger,
   ) {}
 
   /**
@@ -276,33 +400,77 @@ export class GuardaDeContexto implements CanActivate, NestInterceptor {
   }
 
   /**
-   * Exige sessão válida, confere o alcance dela e monta a sessão do produto.
+   * Aplica a exigência da rota, exige sessão válida, confere o alcance dela e monta a sessão do
+   * produto.
    *
-   * A ordem dos três passos é o que importa, e ela é observável:
+   * A ordem dos passos é o que importa, e ela é observável — a listagem por extenso, com a razão de
+   * cada posição, está no cabeçalho deste arquivo (§5.1 da tech spec). Em resumo:
    *
-   *   1. **resolver** — sem sessão válida a resposta é `401`, e a exigência pendente nem é
+   *   1. **exigência declarada** — ausente, `403`, antes de qualquer I/O. Rota que não declara nada
+   *      é recusada (ADR-0011), e recusá-la aqui é o que faz o esquecimento ser barulhento.
+   *   2. **resolver** — sem sessão válida a resposta é `401`, e a exigência pendente nem é
    *      consultada: quem não entrou não tem exigência a cumprir.
-   *   2. **conferir o alcance** — `sessaoRestritaPermite()` decide, e a recusa é `403`
+   *   3. **conferir o alcance** — `sessaoRestritaPermite()` decide, e a recusa é `403`
    *      `ACESSO_NEGADO` com a mensagem que **nomeia a exigência pendente** (§10.1). O par de
-   *      status é o da ADR-0007: `401` é *"quem é você?"*, `403` é *"você é quem diz e ainda não
+   *      status é o da ADR-0012: `401` é *"quem é você?"*, `403` é *"você é quem diz e ainda não
    *      alcança isto"*.
-   *   3. **pendurar** — e só então, porque a sessão pendurada é o que o interceptador usa para
+   *   4. **decidir a autorização** — `decidirAcesso()` decide, e a recusa nomeia o que faltou em
+   *      `detalhes.exigido` (RN-14). Ela vem **depois** do alcance da sessão restrita porque uma
+   *      exigência pendente é mais fundamental que uma permissão: quem ainda deve trocar a senha
+   *      provisória não deve descobrir, primeiro, que também lhe falta uma chave.
+   *   5. **pendurar** — e só então, porque a sessão pendurada é o que o interceptador usa para
    *      publicar o contexto de tenant. Recusar **antes** de pendurar é o que garante que nenhuma
    *      requisição recusada abra unidade de trabalho com contexto: o `intercept` encontra o slot
    *      vazio e não chama `executarCom`.
    */
   private async admitir(contexto: ExecutionContext): Promise<boolean> {
     const requisicao = contexto.switchToHttp().getRequest<FastifyRequest>();
-    const sessao = await this.resolverSessao(requisicao);
 
     // O padrão da rota casada, e não o alvo bruto: é o mesmo valor que o filtro global grava no
     // journal, já sem cadeia de consulta. Ausência é tratada como rota desconhecida — e rota
     // desconhecida não está no conjunto permitido, de modo que a sessão restrita é recusada em vez
     // de liberada por falta de informação.
-    const alcance = sessaoRestritaPermite(sessao, requisicao.routeOptions?.url ?? '');
+    const rota = requisicao.routeOptions?.url ?? '';
+
+    // `getAllAndOverride`, como a marca de rota pública: a declaração no método vence a da classe,
+    // e a granularidade fica com quem publica a rota. `undefined` é a AUSÊNCIA de declaração — e é
+    // ela, e não um valor, que a ADR-0011 manda recusar.
+    const exigencia = this.reflector.getAllAndOverride<Exigencia | undefined>(EXIGENCIA, [
+      contexto.getHandler(),
+      contexto.getClass(),
+    ]);
+
+    if (exigencia === undefined) {
+      this.logger.warn({ rota }, 'rota governada pela guarda não declara exigência de autorização');
+      throw new ErroDeAplicacao(CodigoErro.ACESSO_NEGADO, MENSAGEM_SEM_DECLARACAO);
+    }
+
+    const sessao = await this.resolverSessao(requisicao);
+
+    const alcance = sessaoRestritaPermite(sessao, rota);
 
     if (!alcance.permite) {
       throw new ErroDeAplicacao(CodigoErro.ACESSO_NEGADO, alcance.mensagem);
+    }
+
+    // A REGRA NÃO É REESCRITA AQUI. `decidirAcesso` decide; esta linha aplica. Ver o cabeçalho —
+    // e o CT-216, que afirma por varredura de fontes que este é o único ponto de `apps/api/src` que
+    // consome o símbolo.
+    const decisao = decidirAcesso(exigencia, sessao);
+
+    if (!decisao.alcanca) {
+      this.logger.warn(
+        {
+          rota,
+          exigido: decisao.exigido,
+          usuarioId: sessao.usuarioId,
+          empresaId: sessao.empresaId,
+        },
+        'acesso negado: a sessão não alcança a exigência declarada pela rota',
+      );
+      throw new ErroDeAplicacao(CodigoErro.ACESSO_NEGADO, MENSAGEM_SEM_PERMISSAO, {
+        detalhes: { exigido: decisao.exigido },
+      });
     }
 
     Reflect.set(requisicao, CHAVE_DA_SESSAO, sessao);
@@ -326,12 +494,16 @@ export class GuardaDeContexto implements CanActivate, NestInterceptor {
       throw new ErroDeAplicacao(CodigoErro.NAO_AUTENTICADO, MENSAGEM_SEM_SESSAO);
     }
 
-    // A leitura de `identidade` é a que `@sysloc/auth` publica — ver o cabeçalho deste arquivo.
+    // A leitura de `identidade` é a que `@sysloc/auth` publica — ver o cabeçalho deste arquivo. Ela
+    // traz `versaoPermissoes` na MESMA consulta por chave primária: o contador é coluna daquela
+    // linha, e uma segunda leitura seria a forma que a Revisão Técnica da T9 rejeitou.
     const pessoa = await carregarPessoaDaSessao(this.acesso.identidade, autenticada.user.id);
 
     if (pessoa === undefined) {
       throw new ErroDeAplicacao(CodigoErro.NAO_AUTENTICADO, MENSAGEM_SEM_SESSAO);
     }
+
+    const efetivo = await this.efetivoCorrente(pessoa, autenticada.session.id);
 
     return {
       usuarioId: pessoa.usuarioId,
@@ -346,7 +518,94 @@ export class GuardaDeContexto implements CanActivate, NestInterceptor {
       // segunda comparação escrita neste arquivo seria uma segunda definição da mesma regra, livre
       // para divergir daquela que decide a admissão da sessão.
       segundoFatorPendente: segundoFatorExigido(pessoa),
+      telas: efetivo.telas,
+      acoes: efetivo.acoes,
+      versaoPermissoes: efetivo.versaoPermissoes,
     };
+  }
+
+  /**
+   * O efetivo desta sessão, **revalidado por versão** (ADR-0010).
+   *
+   * O caso comum é o retrato gravado no registro de sessão estar em dia, e então nada é lido de
+   * `negocio` e **nada é escrito**: a leitura por requisição é a comparação de um inteiro, que é
+   * exatamente a economia que a ADR-0010 compra ao pôr o efetivo na sessão.
+   *
+   * Recalcula em três casos, e os três são "não há retrato confiável a servir":
+   *
+   *   * **o contador da pessoa mudou** — alguém ajustou permissão ou trocou o perfil dela. É o caso
+   *     da ADR-0010, e é o do CT-217 e do CT-218;
+   *   * **o retrato ainda não foi montado** — a linha de sessão nasce com as três colunas no padrão
+   *     do schema, porque quem a cria é o arcabouço de identidade, que não as conhece. O docblock
+   *     de `RetratoDaSessao` explica por que isso NÃO pode ser lido como "efetivo vazio";
+   *   * **a sessão não foi encontrada** — sumiu entre a conferência do arcabouço e esta leitura.
+   *
+   * **Divergiu, atende.** Não recusa e não desconecta: a ADR-0010 rejeita as duas alternativas por
+   * escrito, e o CT-217 afirma que a pessoa segue operando o que ainda alcança, com a sessão de pé.
+   */
+  private async efetivoCorrente(
+    pessoa: PessoaDaSessao,
+    sessaoId: string,
+  ): Promise<EfetivoDaSessao> {
+    const retrato = await carregarRetratoDaSessao(this.acesso.identidade, sessaoId);
+
+    if (retrato?.montado === true && retrato.efetivo.versaoPermissoes === pessoa.versaoPermissoes) {
+      return retrato.efetivo;
+    }
+
+    return await this.recalcularEfetivo(pessoa, sessaoId, retrato?.efetivo);
+  }
+
+  /**
+   * Relê os ajustes sob o contexto de tenant, recalcula o efetivo e reescreve o registro de sessão.
+   *
+   * **Sem filtro por empresa escrito aqui** (ADR-0008): o escopo é a política do banco, e o que a
+   * estabelece é o `executarCom` mais o `SET LOCAL` que a unidade de trabalho emite. Para o Master,
+   * `empresaId` é nulo, a política não casa nada e a leitura volta vazia — pelo mesmo caminho de
+   * todo mundo, sem condicional por perfil.
+   *
+   * O predicado do catálogo entra por parâmetro em `lerAjustesDaPessoa` por **inversão de
+   * dependência**: `@sysloc/auth` depende de `@sysloc/db`, e o inverso fecharia ciclo entre os
+   * pacotes. Quem compõe as duas camadas é esta borda.
+   */
+  private async recalcularEfetivo(
+    pessoa: PessoaDaSessao,
+    sessaoId: string,
+    gravado: EfetivoDaSessao | undefined,
+  ): Promise<EfetivoDaSessao> {
+    const { ajustes, chavesDesconhecidas } = await contextoDeTenant.executarCom(
+      { empresaId: pessoa.empresaId },
+      async () =>
+        await this.negocio.emUnidadeDeTrabalho(
+          async (tx) => await lerAjustesDaPessoa(tx, pessoa.usuarioId, ehChaveDoCatalogo),
+        ),
+    );
+
+    // `@sysloc/db` devolve as chaves órfãs em vez de registrá-las — ele não tem registrador, por
+    // decisão, e a obrigação de tornar o descarte observável é da borda. Este é o ÚNICO lugar em que
+    // uma chave gravada quando o catálogo a tinha, e removida dele depois, fica visível: sem esta
+    // linha, uma migração incompleta sumiria sem rastro.
+    if (chavesDesconhecidas.length > 0) {
+      this.logger.warn(
+        {
+          usuarioId: pessoa.usuarioId,
+          empresaId: pessoa.empresaId,
+          chavesDesconhecidas,
+        },
+        'ajustes de permissão fora do catálogo corrente foram descartados no cálculo do efetivo',
+      );
+    }
+
+    return await regravarEfetivoDaSessao(this.acesso.identidade, sessaoId, {
+      // A precedência da negação é de `calcularEfetivo` (ADR-0010, RN-01), e não é reescrita aqui:
+      // uma segunda aritmética nesta borda ficaria livre para divergir da que o CT-203 prova.
+      efetivo: calcularEfetivo(pessoa.perfil, ajustes),
+      versaoPermissoes: pessoa.versaoPermissoes,
+      // O que a leitura encontrou, para que um recálculo que chegue ao MESMO retrato não vire uma
+      // escrita. É o que faz "requisição sem mudança não altera as colunas" valer também no caminho
+      // em que o retrato não estava montado (CT-219, companheiro negativo).
+      gravado,
+    });
   }
 }
 
@@ -356,8 +615,14 @@ export class GuardaDeContexto implements CanActivate, NestInterceptor {
  * Valor repetido é **anexado**, e não sobrescrito: `cookie` pode chegar em mais de uma linha, e
  * ficar com a última perderia justamente a credencial de sessão quando o cliente enviar outros
  * cookies antes dela.
+ *
+ * **Exportada a partir da T9 da fatia `autorizacao-e-ciclo-de-acesso`**, e não copiada para lá:
+ * `senha.controller.ts` precisa falar com o arcabouço pela mesma requisição (`changePassword` e
+ * `revokeOtherSessions` resolvem a sessão pelos cabeçalhos), e uma segunda conversão escrita naquele
+ * arquivo estaria livre para divergir desta — o modo de falha seria a rota do produto enxergar uma
+ * sessão diferente da que a guarda resolveu, no mesmo pedido.
  */
-function cabecalhosDe(requisicao: FastifyRequest): Headers {
+export function cabecalhosDe(requisicao: FastifyRequest): Headers {
   const cabecalhos = new Headers();
 
   for (const [nome, valor] of Object.entries(requisicao.headers)) {

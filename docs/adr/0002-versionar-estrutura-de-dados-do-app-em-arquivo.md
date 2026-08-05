@@ -1,7 +1,7 @@
 ---
 id: 0002
 title: Versionar estrutura de dados do app em arquivo
-status: accepted
+status: deprecated
 date: 2026-07-20
 tags: [data, build]
 ---
@@ -34,6 +34,8 @@ Toda estrutura de dados criada a partir desta decisão nasce descrita em arquivo
 **Neutros:**
 - O modo de desenvolvimento já está habilitado no ambiente, então não há pré-requisito técnico a provisionar.
 - A decisão não impõe prazo nem obrigação de converter o que já existe.
+
+> Deprecated em 2026-08-04. Motivo: o substrato morreu — a decisão descreve a estrutura de dados do app Frappe e o processo de migração dele. O backend nativo declara schema em código, com migrações versionadas por outro mecanismo, e a estrutura é governada pelas ADR-0008 e ADR-0009.
 
 ## Alternatives considered
 

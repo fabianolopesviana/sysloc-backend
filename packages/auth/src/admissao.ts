@@ -219,15 +219,27 @@ export type AlvoDeAdmissao = { readonly email: string } | { readonly usuarioId: 
  * quem editar**: o retorno declarado de {@link carregarPessoa} é este, e projeção incompleta não
  * compila.
  *
- * Os três campos próprios são de **exibição**, e não de decisão: eles existem porque a §4.2 da tech
- * spec fixa `nome`, `email` e `empresaNome` no objeto de sessão, e não porque algum predicado os
- * leia. Por isso eles estão AQUI e não em `EstadoDeAdmissao`, que segue fechado no que a barreira
- * decide.
+ * Os campos próprios **não são de admissão**: três deles são de exibição, porque a §4.2 da tech
+ * spec fixa `nome`, `email` e `empresaNome` no objeto de sessão, e o quarto é de autorização. Por
+ * isso eles estão AQUI e não em `EstadoDeAdmissao`, que segue fechado no que a barreira decide.
  */
 export interface PessoaDaSessao extends EstadoDeAdmissao {
   readonly nome: string;
   readonly email: string;
   readonly empresaNome: string | null;
+  /**
+   * Quantas vezes o efetivo de permissão desta pessoa mudou — o discriminante da **ADR-0010**.
+   *
+   * Ele chega **nesta leitura**, e não numa segunda consulta à mesma linha: a guarda já lê a pessoa
+   * por chave primária a cada requisição autenticada, e o contador é uma coluna daquela mesma
+   * linha. Uma segunda leitura seria a forma que a Revisão Técnica da T9 rejeitou por escrito — duas
+   * consultas à mesma linha, iguais na intenção e livres para divergir em critério e limite.
+   *
+   * **Não entra em `EstadoDeAdmissao`, e a distinção é o ponto**: nenhum predicado da barreira o lê,
+   * e admissão não é autorização. Quem o compara com o retrato gravado no registro de sessão é a
+   * guarda de contexto, que relê o efetivo quando os dois divergem — em vez de recusar.
+   */
+  readonly versaoPermissoes: number;
 }
 
 /**
@@ -285,6 +297,7 @@ async function carregarPessoa(
       empresaId: usuario.empresaId,
       empresaNome: empresa.nome,
       empresaSuspensaEm: empresa.suspensaEm,
+      versaoPermissoes: usuario.versaoPermissoes,
     })
     .from(usuario)
     .leftJoin(empresa, eq(empresa.id, usuario.empresaId))

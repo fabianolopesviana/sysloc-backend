@@ -172,11 +172,31 @@ const CAMINHOS_SEM_EMISSAO = [
  * emite sessão?" é feita.
  */
 const SUPERFICIE_DO_PACOTE = [
+  // SUT_IS_CORRECT_BECAUSE: o código de produção está certo e este inventário é uma DECLARAÇÃO, não
+  // uma observação — o comentário acima diz literalmente que "um export novo reprova aqui, e quem o
+  // acrescentar precisa declará-lo, que é o momento em que a pergunta 'isto emite sessão?' é feita".
+  // Declarar é, portanto, o fluxo previsto, e não conserto de teste: nenhuma entrada sai, nenhuma
+  // asserção é afrouxada, e a comparação continua sendo por igualdade de conjunto MAIS cardinalidade
+  // exata, que só sobe de 23 para 30.
+  //
+  // Os SETE valores da T2 (fatia `autorizacao-e-ciclo-de-acesso`) são `CHAVES_DE_ACAO`,
+  // `CHAVES_DE_TELA`, `MAPA_ACAO_TELA`, `MATRIZ_POR_PERFIL`, `calcularEfetivo`,
+  // `ehChaveDoCatalogo` e `validarCoerenciaDeAjustes`. **Isto emite sessão? NÃO** — os quatro
+  // primeiros são CONSTANTES congeladas (o catálogo fechado da ADR-0011 e a matriz por perfil da
+  // ADR-0010) e os três últimos são FUNÇÕES PURAS: não recebem banco, não tocam `identidade.sessao`,
+  // não devolvem token nem cookie, e não decidem admissão. Saem do pacote porque a guarda de
+  // `apps/api` e as rotas de ajuste precisam da MESMA definição de precedência da negação — uma
+  // segunda, escrita à mão do outro lado da fronteira, ficaria livre para divergir da que o CT-203
+  // prova. Ver o índice do pacote.
+  'CHAVES_DE_ACAO',
+  'CHAVES_DE_TELA',
   'COMPRIMENTO_DE_REPETICAO_PROIBIDA',
   'COMPRIMENTO_DE_SEQUENCIA_PROIBIDA',
   'COMPRIMENTO_MINIMO_DE_SENHA',
   'DURACAO_DO_BLOQUEIO_EM_MINUTOS',
   'LIMITE_DE_FALHAS_CONSECUTIVAS',
+  'MAPA_ACAO_TELA',
+  'MATRIZ_POR_PERFIL',
   'MOTIVOS_DE_RECUSA',
   'PERFIS',
   // Acrescentado no ciclo de correção da T10, e a pergunta que este inventário existe para forçar
@@ -190,6 +210,25 @@ const SUPERFICIE_DO_PACOTE = [
   'RECUSA_DE_CREDENCIAL',
   'RESTRICOES_DE_SESSAO',
   'admitirSessao',
+  'calcularEfetivo',
+  // SUT_IS_CORRECT_BECAUSE: os TRÊS valores da T4 (fatia `autorizacao-e-ciclo-de-acesso`) entram
+  // por DECLARAÇÃO, que é o fluxo que este inventário existe para forçar — nenhuma entrada sai,
+  // nenhuma asserção é afrouxada, e a cardinalidade exata só sobe de 30 para 33. A pergunta foi
+  // feita para os três: **isto emite sessão? NÃO.**
+  //
+  // `decidirAcesso` é FUNÇÃO PURA — não recebe banco, não toca `identidade.sessao`, não devolve
+  // token nem cookie, e não decide admissão: ela responde se uma sessão já conferida alcança a
+  // exigência declarada por uma rota (ADR-0011). Sai porque a guarda de `apps/api` é o ponto de
+  // aplicação ÚNICO e precisa CONSULTAR a decisão em vez de reescrevê-la.
+  //
+  // `carregarRetratoDaSessao` e `regravarEfetivoDaSessao` LEEM e REESCREVEM três colunas de uma
+  // sessão que o arcabouço JÁ criou e conferiu — o efetivo de permissão e a versão que o datou.
+  // Nenhuma das duas cria linha em `identidade.sessao`, devolve token ou cookie, ou decide
+  // admissão. Saem pelo mesmo critério de `carregarPessoaDaSessao` e
+  // `limparMarcaDeSenhaProvisoria`: manter a leitura e a escrita de `identidade` deste lado da
+  // fronteira, de modo que `apps/api` não conheça `esquemaIdentidade` nem o construtor de consulta
+  // do ORM (§11.2 da tech spec, ADR-0009).
+  'carregarRetratoDaSessao',
   // `avaliarForcaDeSenha` saiu do índice na rodada 2 do ciclo de correção da T10: a política é
   // aplicada INTERNAMENTE pelo gancho de `autenticacao.ts`, que a lê de `./senha.js`, e nenhum
   // pacote de fora a chama. O que continua publicado é o VOCABULÁRIO da recusa — os `COMPRIMENTO_*`
@@ -204,8 +243,27 @@ const SUPERFICIE_DO_PACOTE = [
   'carregarPessoaDaSessao',
   'contaBloqueada',
   'criarAutenticacao',
+  // SUT_IS_CORRECT_BECAUSE: os TRÊS valores da T6 (fatia `autorizacao-e-ciclo-de-acesso`) entram
+  // por DECLARAÇÃO, que é o fluxo que este inventário existe para forçar — nenhuma entrada sai,
+  // nenhuma asserção é afrouxada, e a comparação continua sendo por igualdade de conjunto MAIS
+  // cardinalidade exata, que só sobe de 33 para 36.
+  //
+  // **Isto emite sessão? NÃO** — e aqui a pergunta merece a resposta longa, porque `criarPessoa` e
+  // `reemitirSenhaProvisoria` EMITEM CREDENCIAL, que é a coisa mais próxima de emitir sessão que
+  // este pacote publica. Nenhuma das três cria linha em `identidade.sessao`, devolve token ou
+  // cookie, ou decide admissão: quem nasce por elas precisa ENTRAR depois, pela rota de entrada, e
+  // a barreira de admissão a recebe RESTRITA — as duas que escrevem levantam a marca de senha
+  // provisória que o predicado `senhaProvisoriaPendente` lê. A distinção entre emitir credencial e
+  // emitir sessão não é sutileza: é a ADR-0013, que declara o primeiro poder distinto do segundo,
+  // aceito e auditado. Elas saem porque os consumidores são rotas nomeadas (T7 e T8), e nenhuma
+  // delas pode criar pessoa sem conhecer `internalAdapter`, a derivação de senha do arcabouço e o
+  // schema de `identidade` — que é o que este índice existe para manter deste lado.
+  'criarPessoa',
+  'decidirAcesso',
+  'ehChaveDoCatalogo',
   'empresaSuspensa',
   'estaBloqueada',
+  'gerarSenhaProvisoria',
   'limparBloqueio',
   // Acrescentado na T10, e a pergunta que este inventário existe para forçar foi feita: **isto
   // emite sessão? NÃO.** É uma ESCRITA de uma coluna do produto — baixa
@@ -216,10 +274,26 @@ const SUPERFICIE_DO_PACOTE = [
   // e para que `apps/api` não precise conhecer o schema de identidade (§11.2 da tech spec).
   'limparMarcaDeSenhaProvisoria',
   'pessoaDesativada',
+  'reemitirSenhaProvisoria',
   'registrarFalha',
   'registrarTentativa',
+  'regravarEfetivoDaSessao',
+  // SUT_IS_CORRECT_BECAUSE: a T8 (fatia `autorizacao-e-ciclo-de-acesso`) publica `repartirEfetivo`
+  // por DECLARAÇÃO, que é o fluxo que este inventário existe para forçar — nenhuma entrada sai,
+  // nenhuma asserção é afrouxada, e a cardinalidade exata sobe em um.
+  //
+  // **Isto emite sessão? NÃO** — é função pura sobre um arranjo de chaves do catálogo, sem banco,
+  // sem pedido e sem relógio. Ela sai porque a rota `POST /v1/usuarios/:id/permissoes` devolve o
+  // efetivo novo repartido nos MESMOS dois eixos que o registro de sessão guarda, e a alternativa a
+  // publicá-la era escrevê-la de novo na borda. O docblock dela nomeia a forma que a segunda escrita
+  // quase certamente teria — partir pelo prefixo textual da chave — e a razão de ela estar errada: o
+  // eixo é decidido pelo catálogo, não pela grafia, e `TELA:inventada` passaria por tela. Duas
+  // repartições livres para divergir fariam o que a rota devolve e o que a guarda aplica na
+  // requisição seguinte deixarem de ser a mesma coisa.
+  'repartirEfetivo',
   'segundoFatorExigido',
   'senhaProvisoriaPendente',
+  'validarCoerenciaDeAjustes',
 ] as const;
 
 /** O caminho emissor forjado da prova de falsificação. Não existe no arcabouço. */
@@ -518,8 +592,21 @@ describe('CT-026 — nenhum caminho de emissão produz sessão para quem a barre
     // `CREDENCIAL_INCORRETA` com incremento do contador, trancando por RN-06 quem acertou a senha.
     // ------------------------------------------------------------------------------------------
     expect(await desfechosDaTrilhaDe(PESSOA_BLOQUEADA.id)).toEqual(['CONTA_BLOQUEADA']);
-    expect(await desfechosDaTrilhaDe(PESSOA_DESATIVADA.id)).toEqual(['ACESSO_RECUSADO']);
-    expect(await desfechosDaTrilhaDe(PESSOA_DE_EMPRESA_SUSPENSA.id)).toEqual(['ACESSO_RECUSADO']);
+    // SUT_IS_CORRECT_BECAUSE: o rótulo esperado mudou porque o VOCABULÁRIO mudou, não porque a
+    // asserção estava frouxa. A migração `0004` (T1 da fatia `autorizacao-e-ciclo-de-acesso`)
+    // fechou a pendência `P-T6-1` acrescentando `ACESSO_RECUSADO_POR_POLITICA`, e as duas recusas
+    // abaixo são exatamente as de política. A força da asserção é a mesma de antes — igualdade do
+    // arranjo inteiro, com o rótulo literal —, e ela ficou MAIS discriminante: antes, um SUT que
+    // classificasse uma recusa de política como defeito de servidor passaria aqui, porque os dois
+    // gravavam o mesmo valor. A prova de que o valor residual não foi reclassificado junto está no
+    // par negativo do CT-208 e em `recusa-nao-credencial.spec.ts`, que segue exigindo
+    // `ACESSO_RECUSADO` para o pedido malformado.
+    expect(await desfechosDaTrilhaDe(PESSOA_DESATIVADA.id)).toEqual([
+      'ACESSO_RECUSADO_POR_POLITICA',
+    ]);
+    expect(await desfechosDaTrilhaDe(PESSOA_DE_EMPRESA_SUSPENSA.id)).toEqual([
+      'ACESSO_RECUSADO_POR_POLITICA',
+    ]);
 
     expect(await lerContador(PESSOA_DESATIVADA.id)).toBe(0);
     expect(await lerContador(PESSOA_DE_EMPRESA_SUSPENSA.id)).toBe(0);

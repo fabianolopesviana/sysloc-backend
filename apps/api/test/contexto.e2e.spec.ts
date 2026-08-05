@@ -102,6 +102,12 @@ import { Controller, Get, HttpCode, Post } from '@nestjs/common';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import {
+  CHAVES_DE_ACAO,
+  CHAVES_DE_TELA,
+  type ChaveDoCatalogo,
+  validarCoerenciaDeAjustes,
+} from '@sysloc/auth';
+import {
   ACESSOS_DA_EMPRESA_A,
   ACESSOS_DA_EMPRESA_B,
   type AcessoAoBanco,
@@ -109,10 +115,13 @@ import {
   contextoDeTenant,
   EMPRESA_A,
   EMPRESA_B,
+  escreverAjustes,
+  esquemaIdentidade,
   SENHA_DA_CARGA,
   USUARIO_MASTER,
 } from '@sysloc/db';
 import { CodigoErro, criarLogger } from '@sysloc/shared';
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)
 // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o código abaixo.)
@@ -136,6 +145,8 @@ import { reservarPorta } from '../../../packages/shared/test/efemero-comum.ts';
 import { type FilaEfemera, redisEfemero } from '../../../packages/shared/test/redis-efemero.ts';
 import { AppModule } from '../src/app.module.ts';
 import { PREFIXO_DAS_ROTAS_DE_IDENTIDADE } from '../src/autenticacao/autenticacao.module.ts';
+import { NaoExigePermissao } from '../src/autenticacao/exigencia.decorator.ts';
+import { CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO } from '../src/autenticacao/senha.controller.ts';
 import { CAMINHO_DA_SESSAO } from '../src/autenticacao/sessao.controller.ts';
 import {
   ENDERECO_DE_ESCUTA,
@@ -143,6 +154,8 @@ import {
   TOKEN_LOGGER,
 } from '../src/configuracao/ambiente.ts';
 import { CAMINHO_DO_CONTRATO, CAMINHO_DO_DOCUMENTO, criarAplicacao } from '../src/main.ts';
+import { CAMINHO_DO_MASTER } from '../src/master/empresa.controller.ts';
+import { CAMINHO_DOS_USUARIOS } from '../src/usuarios/usuario.controller.ts';
 import { decodificarBase32 } from './base32.ts';
 
 /** Limite da montagem: banco migrado, semente, fila e DUAS aplicações reais. */
@@ -242,8 +255,50 @@ const ROTAS_PUBLICAS_ACEITAS: readonly string[] = [
   `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/*`,
 ].sort();
 
-/** As rotas que a guarda PROTEGE na aplicação real — o outro lado da mesma igualdade. */
-const ROTAS_PROTEGIDAS_ACEITAS: readonly string[] = [CAMINHO_DA_SESSAO_CORRENTE];
+/**
+ * As rotas que a guarda PROTEGE na aplicação real — o outro lado da mesma igualdade.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T7 publicou as seis rotas do operador do SaaS, e as seis são
+ * **protegidas** — nenhuma delas é marcada `@RotaPublica()`, e por isso a sonda sem cookie recebe
+ * `401 NAO_AUTENTICADO` da guarda. O crescimento deste inventário é o do lado certo da igualdade:
+ * ele **não afrouxa** a asserção — nenhuma entrada anterior saiu, o conjunto público continua
+ * inalterado, e a igualdade segue sendo exata nos dois sentidos. Uma rota nova que tivesse
+ * dispensado sessão apareceria no OUTRO conjunto e reprovaria como excedente.
+ *
+ * A classificação do `CT-020 (d)` é por **caminho**, e não por par método+caminho (essa é a do
+ * `CT-213`): `POST` e `GET /v1/master/empresas` são um caminho só aqui, e cinco entradas cobrem as
+ * seis rotas.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T8 publicou as sete rotas de administração de pessoas, e as sete são
+ * **protegidas** — nenhuma é marcada `@RotaPublica()`, e por isso a sonda sem cookie recebe `401
+ * NAO_AUTENTICADO` da guarda. Pela classificação por caminho, elas entram como **seis** entradas
+ * (`POST` e `GET /v1/usuarios` são o mesmo caminho). Vale aqui o mesmo do parágrafo acima: nenhuma
+ * entrada anterior saiu, o conjunto público continua inalterado, e a igualdade segue exata nos dois
+ * sentidos — uma rota nova que tivesse dispensado sessão apareceria no OUTRO conjunto e reprovaria
+ * como excedente.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T9 publicou `POST /v1/sessao/senha`, a troca de senha do produto, e ela
+ * é **protegida** — declara `@NaoExigePermissao()`, que dispensa CHAVE e não dispensa SESSÃO, de
+ * modo que a sonda sem cookie recebe `401 NAO_AUTENTICADO` da guarda como qualquer outra daqui. Ela
+ * entra pelo mesmo lado da igualdade que as anteriores; nenhuma entrada saiu, e o conjunto público
+ * **encolheu de zero**: o desligamento da rota nativa de troca de senha, entregue na mesma task,
+ * acontece DENTRO do encaminhador `/v1/auth/*`, que segue publicado e segue público.
+ */
+const ROTAS_PROTEGIDAS_ACEITAS: readonly string[] = [
+  CAMINHO_DA_SESSAO_CORRENTE,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO}`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas/:id/admin`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas/:id/reativacao`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas/:id/suspensao`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/usuarios/:id/senha-provisoria`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_USUARIOS}`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_USUARIOS}/:id/desativacao`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_USUARIOS}/:id/perfil`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_USUARIOS}/:id/permissoes`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_USUARIOS}/:id/reativacao`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_USUARIOS}/:id/senha-provisoria`,
+].sort();
 
 /**
  * Segmento concreto usado para sondar o encaminhador de identidade.
@@ -297,6 +352,37 @@ const ADMIN_DE_B = pessoaSemeada('admin.b@exemplo.com.br');
 
 /** Sujeito exclusivo do CT-029 — a entrada bem-sucedida dele não mexe na contagem de outro caso. */
 const PESSOA_DO_REGISTRO = pessoaSemeada('usuario.a@exemplo.com.br');
+
+/**
+ * Sujeito exclusivo do CT-220 — o companheiro negativo, com duas chaves NEGADAS.
+ *
+ * É o Admin da empresa B, e não o de A: o CT-020 afirma que a sessão do Admin de A publica o
+ * catálogo inteiro, e negar chaves dele faria os dois casos disputarem o mesmo sujeito.
+ */
+const ADMIN_COM_CHAVES_NEGADAS = pessoaSemeada('admin.b@exemplo.com.br');
+
+/**
+ * As duas chaves retiradas do Admin de B no CT-220 — uma de cada eixo.
+ *
+ * Uma de cada, e não duas do mesmo, porque a repartição do efetivo nos dois arranjos publicados é
+ * justamente o que o caso precisa discriminar: com as duas no mesmo eixo, um defeito que jogasse
+ * tudo num arranjo só continuaria passando.
+ *
+ * `ACAO:cancelar_contrato` é negada junto com `TELA:relatorios`, e não com `TELA:contratos`: a
+ * RN-02 recusa o conjunto que deixe uma ação sensível sem a área que a comporta, e retirar
+ * `TELA:contratos` do Admin deixaria `ACAO:ativar_contrato` órfã.
+ */
+const CHAVES_NEGADAS_NO_CT220 = ['TELA:relatorios', 'ACAO:cancelar_contrato'] as const;
+
+/**
+ * As 10 áreas de tela e as 7 ações do catálogo, na ordem em que o efetivo as publica.
+ *
+ * `calcularEfetivo` devolve o conjunto ordenado, e a repartição preserva a ordem relativa dentro de
+ * cada eixo — de modo que cada arranjo publicado sai em ordem crescente. Derivar daqui, e ordenar
+ * aqui, é o que mantém a asserção independente da aritmética do SUT.
+ */
+const TELAS_DO_CATALOGO: readonly string[] = [...CHAVES_DE_TELA].sort();
+const ACOES_DO_CATALOGO: readonly string[] = [...CHAVES_DE_ACAO].sort();
 
 interface RotaRegistrada {
   readonly metodos: readonly string[];
@@ -448,9 +534,18 @@ describe('guarda de contexto, rotas públicas e sessão corrente (T9)', () => {
       });
 
       expect(sessaoDoMaster.status).toBe(200);
-      // Objeto INTEIRO por igualdade, e não presença de campo: os oito campos da §4.2, em
-      // camelCase e português, sem extras. Uma implementação que devolvesse o `{ user, session }`
-      // do arcabouço, ou que acrescentasse `versaoPermissoes` antes da hora, reprova aqui.
+      // SUT_IS_CORRECT_BECAUSE: a igualdade passou de OITO para ONZE campos porque o código de
+      // produção está certo — a §4.2 da tech spec da fatia `autorizacao-e-ciclo-de-acesso` fixa o
+      // contrato do `GET /v1/sessao` em 11 campos (CA-19), e a ADR-0010 registra que deixar o
+      // efetivo fora da sessão obrigaria o cliente a uma chamada extra só para desenhar o menu. O
+      // comentário abaixo — escrito na T9 — antecipava esta mudança nomeando `versaoPermissoes`
+      // como "antes da hora"; a hora chegou. A asserção NÃO afrouxou: segue igualdade de objeto
+      // INTEIRO, agora sobre três campos a mais, e nenhum dos oito anteriores mudou de nome, tipo
+      // ou valor esperado.
+      //
+      // Objeto INTEIRO por igualdade, e não presença de campo: os onze campos da §4.2, em camelCase
+      // e português, sem extras. Uma implementação que devolvesse o `{ user, session }` do
+      // arcabouço, ou que acrescentasse um campo interno, reprova aqui.
       expect(sessaoDoMaster.corpo).toEqual({
         usuarioId: USUARIO_MASTER.id,
         nome: USUARIO_MASTER.nome,
@@ -463,6 +558,14 @@ describe('guarda de contexto, rotas públicas e sessão corrente (T9)', () => {
         // barreira (RN-08) o exige dele. A configuração do segundo fator, e a queda da restrição,
         // são da T10 (CT-019).
         segundoFatorPendente: true,
+        // Vazios, e isso é ESTRUTURAL: as 17 chaves são áreas e ações do app da imobiliária, e o
+        // operador do SaaS não alcança dado de negócio por caminho nenhum. Ele atravessa as rotas
+        // dele pela dimensão de PERFIL da ADR-0011, nunca por chave — e nem pode ter ajuste
+        // individual, porque eles vivem numa tabela tenantizada e ele não pertence a empresa alguma.
+        telas: [],
+        acoes: [],
+        // A carga não ajusta permissão de ninguém, então o contador está no valor de nascimento.
+        versaoPermissoes: 0,
       });
 
       // O outro lado do par. Sem ele, "nulo para o Master" não distingue vínculo real de constante:
@@ -482,7 +585,18 @@ describe('guarda de contexto, rotas públicas e sessão corrente (T9)', () => {
         empresaNome: EMPRESA_A.nome,
         senhaProvisoria: false,
         segundoFatorPendente: false,
+        // O catálogo INTEIRO, repartido nos dois eixos — a matriz do Admin é "tudo na própria
+        // empresa". Derivado do catálogo exportado e ordenado aqui, e não de `calcularEfetivo`:
+        // re-derivar pela mesma função do SUT faria a asserção concordar consigo mesma.
+        telas: TELAS_DO_CATALOGO,
+        acoes: ACOES_DO_CATALOGO,
+        versaoPermissoes: 0,
       });
+
+      // E o par discrimina também no eixo novo: o Admin alcança 17 chaves e o Master, nenhuma. Sem
+      // esta linha, uma implementação que devolvesse sempre o catálogo inteiro passaria a metade de
+      // baixo, e uma que devolvesse sempre vazio passaria a de cima.
+      expect(TELAS_DO_CATALOGO.length + ACOES_DO_CATALOGO.length).toBe(17);
 
       // E as duas empresas são de fato distintas — a asserção acima só discrimina porque isto vale.
       expect(EMPRESA_A.id).not.toBe(EMPRESA_B.id);
@@ -737,6 +851,101 @@ describe('guarda de contexto, rotas públicas e sessão corrente (T9)', () => {
   );
 
   it(
+    'CT-220 — a sessão publica exatamente 11 campos, e os conjuntos são exatamente o efetivo',
+    async () => {
+      const cookie = await entrar(baseReal, ADMIN_DE_A.email);
+      const sessao = await pedir(baseReal, CAMINHO_DA_SESSAO_CORRENTE, { cookie });
+
+      expect(sessao.status).toBe(200);
+
+      // O CONJUNTO DE CHAVES, por igualdade: nem uma a mais, nem uma a menos. É o que o CT-020 já
+      // faz por objeto inteiro; aqui a asserção é sobre a FORMA do contrato, e ela reprova tanto o
+      // campo esquecido quanto o campo vazado — um campo interno acrescentado a `SessaoDoProduto`
+      // chega ao cliente, porque o manipulador devolve o objeto sem projeção intermediária.
+      expect(Object.keys(sessao.corpo as object).sort()).toEqual(
+        [
+          'acoes',
+          'email',
+          'empresaId',
+          'empresaNome',
+          'nome',
+          'perfil',
+          'senhaProvisoria',
+          'segundoFatorPendente',
+          'telas',
+          'usuarioId',
+          'versaoPermissoes',
+        ].sort(),
+      );
+      expect(Object.keys(sessao.corpo as object).length).toBe(11);
+
+      // Os oito herdados mantêm TIPO e SEMÂNTICA — não apenas presença. Sem isto, uma implementação
+      // que publicasse `empresaId` como objeto, ou `senhaProvisoria` como cadeia, passaria acima.
+      const corpo = sessao.corpo as Record<string, unknown>;
+      expect(corpo.usuarioId).toBe(ADMIN_DE_A.id);
+      expect(corpo.nome).toBe(ADMIN_DE_A.nome);
+      expect(corpo.email).toBe(ADMIN_DE_A.email);
+      expect(corpo.perfil).toBe('ADMIN_EMPRESA');
+      expect(corpo.empresaId).toBe(EMPRESA_A.id);
+      expect(corpo.empresaNome).toBe(EMPRESA_A.nome);
+      expect(corpo.senhaProvisoria).toBe(false);
+      expect(corpo.segundoFatorPendente).toBe(false);
+      expect(corpo.telas).toEqual(TELAS_DO_CATALOGO);
+      expect(corpo.acoes).toEqual(ACOES_DO_CATALOGO);
+
+      // A versão publicada é a PERSISTIDA na pessoa, e não um valor montado pela borda: lida do
+      // banco pelo acesso restrito, que é a mesma via por onde os outros casos afirmam precondição.
+      expect(corpo.versaoPermissoes).toBe(await versaoPersistida(ADMIN_DE_A.id));
+
+      // ---------------------------------------------------------------------------------------
+      // Companheiro negativo — chave negada NÃO aparece nos conjuntos publicados
+      // ---------------------------------------------------------------------------------------
+      //
+      // Sem ele, uma implementação que devolvesse a matriz do perfil e ignorasse os ajustes passaria
+      // tudo acima: o Admin recebe o catálogo inteiro pelo perfil, e é justamente a NEGAÇÃO que a
+      // ADR-0010 introduz e que nenhum outro eixo deste arquivo alcança.
+      //
+      // Os ajustes são gravados pelo caminho real da camada de dados (`escreverAjustes`, T3), sob o
+      // contexto de tenant — a rota do Admin que fará isso em operação nasce na T8 desta fatia, e
+      // este caso a substituirá por ela quando ela existir.
+      await ajustar(ADMIN_COM_CHAVES_NEGADAS.id, EMPRESA_B.id, [
+        { chave: CHAVES_NEGADAS_NO_CT220[0], efeito: 'NEGADA' },
+        { chave: CHAVES_NEGADAS_NO_CT220[1], efeito: 'NEGADA' },
+      ]);
+
+      const cookieDoNegado = await entrar(baseReal, ADMIN_COM_CHAVES_NEGADAS.email);
+      const sessaoNegada = await pedir(baseReal, CAMINHO_DA_SESSAO_CORRENTE, {
+        cookie: cookieDoNegado,
+      });
+
+      expect(sessaoNegada.status).toBe(200);
+      const corpoNegado = sessaoNegada.corpo as Record<string, unknown>;
+
+      // Igualdade sobre os dois arranjos INTEIROS, e não `not.toContain` das duas chaves: a
+      // igualdade reprova também a implementação que retirasse chaves demais, que a ausência
+      // sozinha aprovaria.
+      expect(corpoNegado.telas).toEqual(
+        TELAS_DO_CATALOGO.filter((chave) => chave !== CHAVES_NEGADAS_NO_CT220[0]),
+      );
+      expect(corpoNegado.acoes).toEqual(
+        ACOES_DO_CATALOGO.filter((chave) => chave !== CHAVES_NEGADAS_NO_CT220[1]),
+      );
+      // E as duas chaves de fato saíram — a âncora que impede o filtro acima de ser vácuo caso
+      // alguém troque as constantes por valores que o catálogo não tem.
+      expect(TELAS_DO_CATALOGO).toContain(CHAVES_NEGADAS_NO_CT220[0]);
+      expect(ACOES_DO_CATALOGO).toContain(CHAVES_NEGADAS_NO_CT220[1]);
+
+      // A escrita de ajuste incrementa o contador na mesma transação (RN-17), e a sessão publica o
+      // valor novo: a sessão nasceu DEPOIS da escrita, então o retrato já nasceu datado por ela.
+      expect(corpoNegado.versaoPermissoes).toBe(
+        await versaoPersistida(ADMIN_COM_CHAVES_NEGADAS.id),
+      );
+      expect(corpoNegado.versaoPermissoes).toBe(1);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
     'CT-029 — nenhum segredo de autenticação legível no registro durante o fluxo real de entrada',
     async () => {
       // O arquivo é esvaziado no COMEÇO do caso: a contagem de linhas abaixo é sobre o fluxo que
@@ -920,10 +1129,20 @@ describe('guarda de contexto, rotas públicas e sessão corrente (T9)', () => {
  * Nada em `apps/api/src` ganhou símbolo, bandeira ou rota para ele existir: a rota é declarada aqui
  * e injetada pelo mecanismo do próprio arcabouço de teste, como o `ControladorQueFalha` do CT-006 em
  * `test/saude.e2e.spec.ts`.
+ *
+ * SUT_IS_CORRECT_BECAUSE: as marcas `@NaoExigePermissao()` abaixo entraram com a T4 da fatia
+ * `autorizacao-e-ciclo-de-acesso`, e o código de produção está certo — a ADR-0011 fixa que **a rota
+ * que não declara nada é recusada**, e este fixture passou a ser exatamente esse caso. Sem elas os
+ * quatro eixos do CT-020 (b) receberiam `403` por ausência de declaração e o caso deixaria de
+ * exercitar o contexto de tenant, que é o sujeito dele. A marca, e não um `@ExigeChave(...)`,
+ * porque o caso roda também na sessão do **Master**, cuja matriz de permissão é vazia por decisão
+ * estrutural: exigir chave o recusaria por permissão e apagaria o eixo. Nenhuma asserção foi
+ * enfraquecida, removida ou trocada.
  */
 @Controller(CAMINHO_DOS_VINCULOS)
 class ControladorDeVinculos {
   @Get()
+  @NaoExigePermissao()
   async listar(): Promise<LeituraDeVinculos> {
     const contexto = contextoDeTenant.corrente();
     const linhas = await acessoAoNegocio.emUnidadeDeTrabalho(
@@ -955,6 +1174,7 @@ class ControladorDeVinculos {
    */
   @Post(':empresaIdDoPedido')
   @HttpCode(200)
+  @NaoExigePermissao()
   async listarComPedidoForjado(): Promise<LeituraDeVinculos> {
     return await this.listar();
   }
@@ -970,6 +1190,56 @@ interface LeituraDeVinculos {
 /** Identificadores de um conjunto de vínculos da carga, na ordem em que o banco os devolve. */
 function identificadoresOrdenados(acessos: readonly { readonly id: string }[]): string[] {
   return acessos.map((acesso) => acesso.id).sort();
+}
+
+/**
+ * O contador de versão de permissão da pessoa, lido do banco.
+ *
+ * Observação de estado persistido pelo acesso restrito a `identidade`, e não instrumentação do SUT:
+ * é a mesma via pela qual a T7, a T8 e a T10 já afirmam precondição. Ela existe para que o
+ * `versaoPermissoes` publicado seja conferido contra o **banco**, e não contra si mesmo.
+ */
+async function versaoPersistida(usuarioId: string): Promise<number> {
+  const { usuario } = esquemaIdentidade;
+
+  const [linha] = await identidade.acesso.identidade
+    .select({ versaoPermissoes: usuario.versaoPermissoes })
+    .from(usuario)
+    .where(eq(usuario.id, usuarioId))
+    .limit(1);
+
+  if (linha === undefined) {
+    throw new Error(`a pessoa ${usuarioId} não existe no banco desta execução`);
+  }
+
+  return linha.versaoPermissoes;
+}
+
+/**
+ * Substitui os ajustes individuais de uma pessoa, pelo caminho real da camada de dados.
+ *
+ * `escreverAjustes` (T3) sob o contexto de tenant e dentro da unidade de trabalho — o mesmo caminho
+ * que a rota do Admin usará quando ela existir (T8 desta fatia). Nada é gravado por SQL escrito à
+ * mão: a coerência ação→tela é validada pela função de domínio, e o contador é incrementado na
+ * mesma transação, que é o comportamento sob observação.
+ */
+async function ajustar(
+  usuarioId: string,
+  empresaId: string,
+  ajustes: readonly { readonly chave: ChaveDoCatalogo; readonly efeito: 'CONCEDIDA' | 'NEGADA' }[],
+): Promise<number> {
+  return await contextoDeTenant.executarCom(
+    { empresaId },
+    async () =>
+      await acessoAoNegocio.emUnidadeDeTrabalho(
+        async (tx) =>
+          await escreverAjustes(tx, {
+            usuarioId,
+            ajustes,
+            validarCoerencia: validarCoerenciaDeAjustes,
+          }),
+      ),
+  );
 }
 
 /** Largura de um nível na árvore que o roteador imprime — `'│   '`, `'    '`, `'├── '`, `'└── '`. */

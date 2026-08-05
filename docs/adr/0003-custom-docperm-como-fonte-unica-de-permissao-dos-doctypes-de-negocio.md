@@ -1,7 +1,7 @@
 ---
 id: 0003
 title: Custom DocPerm como fonte única de permissão dos DocTypes de negócio
-status: accepted
+status: deprecated
 date: 2026-07-28
 tags: [security, architecture, data]
 ---
@@ -40,6 +40,8 @@ Os nove DocTypes de negócio — `Atraso`, `Cobranca`, `Conjunto`, `Contrato`, `
 **Neutros:**
 - `Configuracao Integracao Bancaria` está fora dos nove e não tem `Custom DocPerm`: continua regido pelo `DocPerm` padrão de `System Manager`. O fluxo de configuração da integração pelo Desk, adotado como contorno até a sessão real chegar, segue funcionando.
 - O escopo do sombreamento é por DocType, não global: DocTypes sem nenhum `Custom DocPerm` mantêm o comportamento padrão do framework.
+
+> Deprecated em 2026-08-04. Motivo: o substrato morreu — a decisão rege nove DocTypes por `Custom DocPerm`, primitivas do Frappe. A autorização do backend nativo é governada pelas ADR-0010 (efetivo do perfil com overrides) e ADR-0011 (cobertura declarada por rota).
 
 ## Alternatives considered
 

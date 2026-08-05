@@ -24,9 +24,15 @@
  * |       |        | `identidade.sessao`. A diferença observável só existe quando a admissão é
  * |       |        | legítima — sem isso, "todas as recusas são iguais" passaria sobre uma barreira
  * |       |        | que recusa todo mundo. |
+ * | CA-03 | CT-223 | Depois de o Master reemitir a Senha provisória de um Admin, a **anterior deixa
+ * |       |        | de servir** e a **nova serve** — e a recusa da anterior é **indistinguível**
+ * |       |        | da recusa por credencial incorreta, pelo MESMO comparador dos dois casos
+ * |       |        | acima. A família da RN-10 ganha, portanto, um quarto membro: credencial
+ * |       |        | incorreta, conta bloqueada, recusa de política e **credencial invalidada por
+ * |       |        | reemissão**. (RN-09, RN-10) |
  *
  * Rastreabilidade: `CA-08 → CT-016 (RN-06)`, `CA-08 → CT-016 (RN-10)`, `CA-13 → CT-017 (RN-10)`,
- * `CA-13 → CT-017 (RN-11)`.
+ * `CA-13 → CT-017 (RN-11)`, `CA-03 → CT-223 (RN-09)`, `CA-03 → CT-223 (RN-10)`.
  *
  * ---------------------------------------------------------------------------
  * O eixo que discrimina é a comparação CRUZADA, e só ela
@@ -80,6 +86,22 @@
  * faria a linha de base de um caso ser o sujeito recusado do outro — e comparar recusa de política
  * com recusa de política é exatamente a tautologia que este arquivo existe para não cometer.
  *
+ * O **CT-223** entra no mesmo regime, e por isso não toca a carga: a empresa e o Admin dele nascem
+ * pelas **rotas do Master** (T7), dentro do próprio caso. Nenhuma pessoa da carga tem a senha
+ * reescrita, e por isso a reemissão não pode corromper a linha de base de nenhum dos dois casos
+ * anteriores.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que o CT-223 mora AQUI, e não no arquivo da T7
+ * ---------------------------------------------------------------------------
+ *
+ * Porque o que ele afirma é **indistinguibilidade**, e ela já tem uma definição neste arquivo:
+ * {@link observavel}, o comparador que os outros dois casos usam. Escrevê-lo no arquivo de ciclo de
+ * vida obrigaria a uma segunda definição do que "duas recusas são iguais" significa — e duas
+ * definições da mesma coisa divergem, que é precisamente o defeito que a RN-10 não pode ter.
+ * A metade da T7 que **não** é indistinguibilidade (a contenção do alvo ao perfil `ADMIN_EMPRESA`,
+ * da ADR-0013) fica lá, como `CT-223 (b)`.
+ *
  * ---------------------------------------------------------------------------
  * O estado de desativação e de suspensão é arranjado no caso — e por quê
  * ---------------------------------------------------------------------------
@@ -130,10 +152,16 @@
  * da porta CONFIGURADA — com `port: 0` a configurada e a real divergiriam.
  */
 
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { LIMITE_DE_FALHAS_CONSECUTIVAS } from '@sysloc/auth';
-import { EMPRESA_A, EMPRESA_B, esquemaIdentidade, SENHA_DA_CARGA } from '@sysloc/db';
+import {
+  EMPRESA_A,
+  EMPRESA_B,
+  esquemaIdentidade,
+  SENHA_DA_CARGA,
+  USUARIO_MASTER,
+} from '@sysloc/db';
 import { CodigoErro } from '@sysloc/shared';
 import { count, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -158,8 +186,10 @@ import {
 import { reservarPorta } from '../../../packages/shared/test/efemero-comum.ts';
 import { type FilaEfemera, redisEfemero } from '../../../packages/shared/test/redis-efemero.ts';
 import { PREFIXO_DAS_ROTAS_DE_IDENTIDADE } from '../src/autenticacao/autenticacao.module.ts';
-import { ENDERECO_DE_ESCUTA } from '../src/configuracao/ambiente.ts';
+import { ENDERECO_DE_ESCUTA, PREFIXO_DE_VERSAO } from '../src/configuracao/ambiente.ts';
 import { criarAplicacao } from '../src/main.ts';
+import { CAMINHO_DO_MASTER } from '../src/master/empresa.controller.ts';
+import { decodificarBase32 } from './base32.ts';
 
 /** Limite da montagem: banco migrado, semente com credencial, fila e a aplicação real. */
 const LIMITE_DE_MONTAGEM_MS = 240_000;
@@ -178,6 +208,15 @@ const SUFIXO_DO_COOKIE_DE_SESSAO = 'session_token';
 
 /** A rota de entrada, composta a partir do prefixo real. Nunca escrita à mão. */
 const ROTA_DE_ENTRADA = `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/sign-in/email`;
+
+/** A rota de saída do arcabouço — o "sair" que o CT-223 executa antes de reemitir. */
+const ROTA_DE_SAIDA = `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/sign-out`;
+
+/** Caminho, relativo à raiz, da coleção de empresas do operador (T7). Composto, nunca literal. */
+const CAMINHO_DAS_EMPRESAS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas`;
+
+/** Caminho, relativo à raiz, da reemissão de Senha provisória pelo operador (T7). */
+const CAMINHO_DOS_USUARIOS_DO_MASTER = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/usuarios`;
 
 /**
  * A mensagem canônica do código `CREDENCIAL_INVALIDA`, escrita por extenso.
@@ -225,6 +264,20 @@ const PESSOA_DE_EMPRESA_SUSPENSA = pessoaSemeada('usuario.a@exemplo.com.br');
  * qualquer restrição de sessão ser avaliada.
  */
 const CONTA_SAUDAVEL_DA_POLITICA = pessoaSemeada('master@sysloc.com.br');
+
+/**
+ * CT-223 · o operador do SaaS — aqui como **ator**, e não como sujeito de recusa.
+ *
+ * É a mesma pessoa de {@link CONTA_SAUDAVEL_DA_POLITICA}, e a coincidência não quebra a disjunção do
+ * elenco: lá ele é a conta contra quem a senha ERRADA é informada, aqui ele é quem chama a rota de
+ * reemissão. O que o CT-223 muda no estado dele — o segundo fator e uma sessão — é **desfeito no
+ * `finally`**, de modo que a asserção absoluta do CT-017 (`o Master não tem sessão alguma`)
+ * continua valendo qualquer que seja a ordem em que os casos rodem.
+ */
+const MASTER = USUARIO_MASTER;
+
+/** CT-223 · o Admin admitido DENTRO do caso. Ele não existe na carga, e ninguém mais o usa. */
+const EMAIL_DO_ADMIN_REEMITIDO = 'admin.reemitido@exemplo.com.br';
 
 let identidade: IdentidadeEfemera;
 let fila: FilaEfemera;
@@ -512,11 +565,17 @@ describe('recusas indistinguíveis de admissão (T11)', () => {
         }))
         .sort((uma, outra) => uma.emailInformado.localeCompare(outra.emailInformado));
 
+      // SUT_IS_CORRECT_BECAUSE: as duas recusas de política passaram a gravar
+      // `ACESSO_RECUSADO_POR_POLITICA` porque o VOCABULÁRIO mudou, não porque a asserção tenha
+      // afrouxado. A migração `0004` (T1 da fatia `autorizacao-e-ciclo-de-acesso`) fechou o débito
+      // `P-T6-1`, separando a recusa de política do que não é decisão de política — que é a mesma
+      // coisa que o comentário acima já pedia da trilha, agora um degrau mais fina. A forma da
+      // asserção é idêntica: igualdade do arranjo inteiro, com rótulos literais.
       expect(novas).toEqual([
         {
           emailInformado: PESSOA_DESATIVADA.email,
           usuarioId: PESSOA_DESATIVADA.id,
-          desfecho: 'ACESSO_RECUSADO',
+          desfecho: 'ACESSO_RECUSADO_POR_POLITICA',
         },
         {
           emailInformado: CONTA_SAUDAVEL_DA_POLITICA.email,
@@ -526,9 +585,91 @@ describe('recusas indistinguíveis de admissão (T11)', () => {
         {
           emailInformado: PESSOA_DE_EMPRESA_SUSPENSA.email,
           usuarioId: PESSOA_DE_EMPRESA_SUSPENSA.id,
-          desfecho: 'ACESSO_RECUSADO',
+          desfecho: 'ACESSO_RECUSADO_POR_POLITICA',
         },
       ]);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-223 — reemitir a Senha provisória invalida a anterior, e a recusa é indistinguível',
+    async () => {
+      // O Master entra RESTRITO por segundo fator (RN-08), e sessão restrita não alcança as rotas
+      // dele: sem cumpri-lo pela via real, a reemissão responderia `403` da restrição e o
+      // diagnóstico apontaria para o lugar errado.
+      const cookieDoMaster = await entrarComSegundoFatorCumprido(MASTER.email);
+
+      try {
+        // --- Arranjo, pelas rotas reais da T7: empresa nova e Admin novo ----------------------
+        //
+        // Nada da carga é tocado — ver o cabeçalho. O Admin nasce com a senha provisória e **sem**
+        // tê-la trocado, que é a precondição literal do card.
+        const empresa = await criarEmpresa(cookieDoMaster);
+        const admitido = await admitirAdministrador(
+          cookieDoMaster,
+          empresa,
+          EMAIL_DO_ADMIN_REEMITIDO,
+        );
+
+        // --- Linha de base: a Senha provisória INICIAL entra ----------------------------------
+        //
+        // Sem esta perna, "a anterior deixou de servir" passaria sobre uma credencial que nunca
+        // serviu — e a reemissão não teria provado coisa alguma.
+        const comInicial = await entrar(admitido.email, admitido.senhaProvisoria);
+        expect(comInicial.status).toBe(200);
+        expect(comInicial.cookies.filter(ehCookieDeSessao)).toHaveLength(1);
+
+        const saida = await pedir(ROTA_DE_SAIDA, {
+          metodo: 'POST',
+          cookie: credencialDeSessao(comInicial),
+        });
+        expect(saida.status).toBe(200);
+
+        // --- A reemissão, pela rota do Master --------------------------------------------------
+        const reemissao = await pedir(
+          `${CAMINHO_DOS_USUARIOS_DO_MASTER}/${admitido.usuarioId}/senha-provisoria`,
+          { metodo: 'POST', cookie: cookieDoMaster },
+        );
+
+        expect(reemissao.status).toBe(200);
+        const nova = (reemissao.corpo as { senhaProvisoria?: unknown }).senhaProvisoria;
+        expect(typeof nova).toBe('string');
+        // A senha nova é OUTRA. Sem esta linha, uma reemissão que devolvesse a mesma cadeia faria
+        // "a nova entra" passar por vacuidade.
+        expect(nova).not.toBe(admitido.senhaProvisoria);
+
+        // --- A anterior deixa de servir, e a recusa é a da família da RN-10 --------------------
+        const comAnterior = await entrar(admitido.email, admitido.senhaProvisoria);
+        const comCredencialIncorreta = await entrar(admitido.email, SENHA_ERRADA);
+
+        // A ÂNCORA fica sobre a resposta de REFERÊNCIA, pela mesma razão registrada no CT-016: é o
+        // que deixa a comparação cruzada carregar sozinha o peso de julgar a recusa por reemissão.
+        expect(comCredencialIncorreta.status).toBe(401);
+        expect(comCredencialIncorreta.corpo).toEqual({
+          codigo: CodigoErro.CREDENCIAL_INVALIDA,
+          mensagem: MENSAGEM_DE_CREDENCIAL_INVALIDA,
+        });
+
+        // A CRUZADA — o MESMO comparador dos outros dois casos deste arquivo.
+        expect(observavel(comAnterior)).toEqual(observavel(comCredencialIncorreta));
+
+        for (const resposta of [comAnterior, comCredencialIncorreta]) {
+          expect(resposta.cookies).toEqual([]);
+        }
+
+        // --- E a NOVA entra --------------------------------------------------------------------
+        const comNova = await entrar(admitido.email, nova as string);
+        expect(comNova.status).toBe(200);
+        expect(comNova.cookies.filter(ehCookieDeSessao)).toHaveLength(1);
+      } finally {
+        // O estado do Master volta ao da carga ACONTEÇA O QUE ACONTECER acima — sem segundo fator e
+        // sem sessão —, porque o CT-017 afirma, em valor ABSOLUTO, que ele não tem sessão alguma.
+        // No `finally`, e não como última instrução: um `expect` que reprove antes deixaria o
+        // resíduo e faria outro caso falhar apontando para o lugar errado.
+        await desfazerSegundoFator(cookieDoMaster);
+        await pedir(ROTA_DE_SAIDA, { metodo: 'POST', cookie: cookieDoMaster });
+      }
     },
     LIMITE_CASO_MS,
   );
@@ -696,6 +837,14 @@ interface Resposta {
 interface OpcoesDoPedido {
   readonly metodo?: string;
   readonly corpo?: Record<string, unknown>;
+  /**
+   * A credencial de sessão a reenviar, no formato `nome=valor`.
+   *
+   * Chegou com o CT-223, que precisa de sessão para chamar as rotas do Master. Os dois casos
+   * anteriores continuam sem informá-la — e a ausência segue significando "requisição sem cookie",
+   * que é o regime em que eles exercitam a entrada.
+   */
+  readonly cookie?: string;
 }
 
 /**
@@ -710,6 +859,9 @@ async function pedir(caminho: string, opcoes: OpcoesDoPedido = {}): Promise<Resp
 
   if (opcoes.corpo !== undefined) {
     cabecalhos['content-type'] = 'application/json';
+  }
+  if (opcoes.cookie !== undefined) {
+    cabecalhos.cookie = opcoes.cookie;
   }
 
   const resposta = await fetch(new URL(caminho, base), {
@@ -745,4 +897,143 @@ async function entrar(email: string, senha: string): Promise<Resposta> {
 function ehCookieDeSessao(bruto: string): boolean {
   const par = bruto.split(';')[0] ?? '';
   return (par.split('=')[0] ?? '').trim().endsWith(SUFIXO_DO_COOKIE_DE_SESSAO);
+}
+
+/** O par `nome=valor` do cookie de sessão, no formato em que o cliente o reenvia. */
+function credencialDeSessao(resposta: Resposta): string {
+  const cookie = resposta.cookies.find(ehCookieDeSessao);
+
+  if (cookie === undefined) {
+    throw new Error('a resposta não devolveu cookie de sessão');
+  }
+
+  return cookie.split(';')[0] ?? '';
+}
+
+// ---------------------------------------------------------------------------------------------
+// O arranjo do CT-223 — tudo pelas rotas reais
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Entra e **cumpre a exigência de segundo fator**, pelo caminho público real.
+ *
+ * O Master nasce da carga sem segundo fator configurado, e a sessão dele é restrita até que ele o
+ * configure (RN-08). Nada é forjado: o segredo sai do endereço que a própria resposta do preparo
+ * devolveu, e o código é derivado pela função de geração **do arcabouço** — uma cópia do algoritmo
+ * provaria que duas implementações concordam, não que a nossa confere o código que ele espera.
+ */
+async function entrarComSegundoFatorCumprido(email: string): Promise<string> {
+  const entrada = await entrar(email, SENHA_DA_CARGA);
+
+  if (entrada.status !== 200) {
+    throw new Error(`a entrada de ${email} respondeu ${String(entrada.status)}: ${entrada.texto}`);
+  }
+
+  const cookie = credencialDeSessao(entrada);
+
+  const preparo = await pedir(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/enable`, {
+    metodo: 'POST',
+    cookie,
+    corpo: { password: SENHA_DA_CARGA },
+  });
+
+  if (preparo.status !== 200) {
+    throw new Error(
+      `o preparo do segundo fator respondeu ${String(preparo.status)}: ${preparo.texto}`,
+    );
+  }
+
+  const totpURI = (preparo.corpo as { totpURI?: unknown }).totpURI;
+  if (typeof totpURI !== 'string') {
+    throw new Error('o preparo do segundo fator não devolveu o endereço de configuração');
+  }
+
+  const codificado = new URL(totpURI).searchParams.get('secret');
+  if (codificado === null) {
+    throw new Error('o endereço de configuração do segundo fator não trouxe segredo');
+  }
+
+  const { code } = await identidade.autenticacao.api.generateTOTP({
+    body: { secret: decodificarBase32(codificado) },
+  });
+
+  const ativacao = await pedir(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/verify-totp`, {
+    metodo: 'POST',
+    cookie,
+    corpo: { code },
+  });
+
+  if (ativacao.status !== 200) {
+    throw new Error(
+      `a ativação do segundo fator respondeu ${String(ativacao.status)}: ${ativacao.texto}`,
+    );
+  }
+
+  return credencialDeSessao(ativacao);
+}
+
+/** Desfaz o segundo fator pela rota pública, devolvendo a pessoa ao estado da carga. */
+async function desfazerSegundoFator(cookie: string): Promise<void> {
+  const desfeito = await pedir(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/disable`, {
+    metodo: 'POST',
+    cookie,
+    corpo: { password: SENHA_DA_CARGA },
+  });
+
+  if (desfeito.status !== 200) {
+    throw new Error(
+      `a desativação do segundo fator respondeu ${String(desfeito.status)}: ${desfeito.texto}`,
+    );
+  }
+}
+
+/** Cria uma empresa pela rota do Master (T7) e devolve o identificador dela. */
+async function criarEmpresa(cookieDoMaster: string): Promise<string> {
+  const criada = await pedir(CAMINHO_DAS_EMPRESAS, {
+    metodo: 'POST',
+    cookie: cookieDoMaster,
+    // Documento sorteado por execução: ele é único, e um literal faria a segunda execução contra o
+    // mesmo banco recusar por duplicidade.
+    corpo: { nome: 'Imobiliária do CT-223 Ltda', documento: randomUUID() },
+  });
+
+  if (criada.status !== 201) {
+    throw new Error(`a criação de empresa respondeu ${String(criada.status)}: ${criada.texto}`);
+  }
+
+  return (criada.corpo as { id: string }).id;
+}
+
+/** O que a admissão de administrador devolve, no que este arquivo observa dela. */
+interface AdministradorAdmitido {
+  readonly usuarioId: string;
+  readonly email: string;
+  readonly senhaProvisoria: string;
+}
+
+/** Admite um administrador pela rota do Master (T7), com a Senha provisória devolvida uma vez. */
+async function admitirAdministrador(
+  cookieDoMaster: string,
+  empresaId: string,
+  email: string,
+): Promise<AdministradorAdmitido> {
+  const admitido = await pedir(`${CAMINHO_DAS_EMPRESAS}/${empresaId}/admin`, {
+    metodo: 'POST',
+    cookie: cookieDoMaster,
+    corpo: { nome: 'Administrador do CT-223', email },
+  });
+
+  if (admitido.status !== 201) {
+    throw new Error(
+      `a admissão de administrador respondeu ${String(admitido.status)}: ${admitido.texto}`,
+    );
+  }
+
+  const corpo = admitido.corpo as AdministradorAdmitido;
+
+  if (typeof corpo.senhaProvisoria !== 'string' || corpo.senhaProvisoria.length === 0) {
+    throw new Error('a admissão de administrador não devolveu Senha provisória');
+  }
+
+  return corpo;
 }

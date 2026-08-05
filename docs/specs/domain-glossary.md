@@ -40,6 +40,22 @@ _Evitar_: senha temporária, senha inicial, senha padrão, senha de primeiro ace
 Registro que liga uma pessoa a uma empresa e é a base sobre a qual as permissões dela naquela empresa são definidas.
 _Evitar_: associação, membership, permissão, papel do usuário
 
+**Área de tela**:
+Uma das dez divisões fixas do app pelas quais o acesso é concedido — Resumo, Imóveis, Contratos, Cadastros, Financeiro, Automação de cobrança, Integrações bancárias, Multa e juros, Relatórios, Usuários.
+_Evitar_: módulo, seção, página, menu, seção do sistema
+
+**Ação sensível**:
+Uma das sete operações de impacto que exigem concessão própria, além da área de tela que as comporta — emitir boleto, solicitar baixa, ativar contrato, cancelar contrato, excluir cadastro, configurar integração, enviar cobrança manual.
+_Evitar_: permissão especial, operação crítica, ação restrita, ação privilegiada
+
+**Efetivo de permissão**:
+O conjunto de áreas de tela e ações sensíveis que uma pessoa alcança num dado momento — o padrão do perfil dela, acrescido do que lhe foi concedido individualmente e subtraído do que lhe foi retirado.
+_Evitar_: permissões do usuário, ACL, conjunto de acesso, escopo, efetivas
+
+**Ajuste individual**:
+Concessão ou retirada de uma área de tela ou ação sensível para uma pessoa específica, aplicada sobre o padrão do perfil dela. A retirada vence a concessão.
+_Evitar_: override, exceção, permissão extra, customização, ajuste fino
+
 ## Relacionamentos
 
 - Uma **Cobrança** pode originar um boleto junto a um **Provedor**.
@@ -49,6 +65,9 @@ _Evitar_: associação, membership, permissão, papel do usuário
 - Um **Admin Empresa** e um **Usuário Empresa** pertencem a exatamente uma **Empresa**; um **Sysloc Master** não pertence a nenhuma.
 - Uma pessoa tem um **Vínculo de acesso** por **Empresa** em que atua.
 - Uma **Senha provisória** pertence a uma conta e deixa de valer na primeira troca.
+- O **Efetivo de permissão** de uma pessoa deriva do perfil dela e dos **Ajustes individuais** que ela tem.
+- Toda **Ação sensível** pertence a exatamente uma **Área de tela**, e só vale para quem alcança essa área.
+- Um **Ajuste individual** existe sobre um **Vínculo de acesso** — logo não existe para quem não pertence a nenhuma **Empresa**, como o **Sysloc Master**.
 
 ## Ambiguidades resolvidas
 
@@ -56,3 +75,4 @@ _Evitar_: associação, membership, permissão, papel do usuário
 - "Banco" era usado tanto para a instituição financeira quanto para o banco de dados. Resolvido: a instituição é **Provedor**; banco de dados permanece "banco de dados".
 - "Usuário" era usado tanto para qualquer pessoa autenticada quanto para o perfil sem poderes administrativos. Resolvido: pessoa autenticada é "pessoa" ou "conta"; o perfil é **Usuário Empresa**.
 - "Empresa" e "tenant" apareciam como sinônimos em textos técnicos. Resolvido: o termo do produto é **Empresa**; "tenant" fica restrito à discussão de isolamento no banco, nunca à API nem à interface.
+- "Permissão" era usado tanto para uma chave isolada quanto para o conjunto que a pessoa alcança. Resolvido: a chave é uma **Área de tela** ou uma **Ação sensível**; o conjunto é o **Efetivo de permissão**.

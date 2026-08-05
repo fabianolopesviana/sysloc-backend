@@ -24,6 +24,26 @@
  * | CA-03    | CT-007 | Removido o isolamento de propósito, os predicados dos CT-003 a CT-006
  * |          |        | REPROVAM, e o conjunto de predicados reprovados é exato e nomeado por
  * |          |        | mutante; com o schema íntegro, todos passam. |
+ * | CA-16    | CT-209 | Os ajustes individuais de uma pessoa da empresa A são invisíveis sob o
+ * |          |        | contexto da empresa B e sob contexto ausente, e o ÚNICO mecanismo que os
+ * |          |        | escopa é a política do banco: o fonte que os lê e os grava
+ * |          |        | (`src/permissao.ts`) não contém cláusula alguma que compare a coluna de
+ * |          |        | tenant. Chave gravada que o catálogo corrente não reconhece é descartada
+ * |          |        | da leitura, e volta nomeada em vez de sumir. |
+ * | CA-16    | CT-209 | O companheiro NEGATIVO do lado da ESCRITA: sob o contexto da empresa B e
+ * |          |        | sob contexto ausente, as TRÊS escritas do módulo (`escreverAjustes`,
+ * |          |        | `trocarPerfilDaPessoa`, `incrementarVersaoPermissoes`) sobre a pessoa da
+ * |          |        | empresa A recusam com `ErroDePessoaForaDoContexto` E deixam o contador, o
+ * |          |        | perfil e as linhas de ajuste bit a bit como estavam — enquanto a MESMA
+ * |          |        | operação, sob o contexto de A, grava. É a prova de que o escopo das
+ * |          |        | escritas em `identidade` (schema SEM RLS, ADR-0009) vem do alcance ao
+ * |          |        | vínculo em `negocio`, e não de uma comparação escrita na aplicação. |
+ * | CA-16    | CT-207 | Depois da conciliação estrutural (migração `0003`),
+ * |          |        | `negocio.acesso_usuario_app` referencia o par `(pessoa, empresa)` por chave
+ * |          |        | estrangeira composta — de modo que um vínculo cuja empresa difere da empresa
+ * |          |        | da pessoa é recusado PELO BANCO, e não por validação de aplicação. A pessoa
+ * |          |        | sem empresa (o Master) continua inserível e simplesmente não é alvo de
+ * |          |        | vínculo. |
  *
  * ===========================================================================
  * Por que os predicados são funções, e não asserções soltas
@@ -55,15 +75,27 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { abrirConexao } from '../src/conexao.ts';
 import * as contextoDeTenant from '../src/contexto.ts';
+import {
+  type AjustePersistido,
+  type AjustesDaPessoa,
+  ErroDePessoaForaDoContexto,
+  escreverAjustes,
+  incrementarVersaoPermissoes,
+  lerAjustesDaPessoa,
+  type PerfilDaPessoa,
+  trocarPerfilDaPessoa,
+} from '../src/permissao.ts';
 import {
   ACESSOS_DA_EMPRESA_A,
   ACESSOS_DA_EMPRESA_B,
   EMPRESA_A,
   EMPRESA_B,
   USUARIO_MASTER,
+  USUARIOS,
 } from '../src/semente.ts';
 import { type AcessoAoBanco, abrirAcessoAoBanco } from '../src/unidade-de-trabalho.ts';
 import {
@@ -139,11 +171,89 @@ const PERMISSAO_CRUZADA_B_PARA_A = 'dddddddd-1111-4000-8000-000000000003';
  */
 const PERMISSAO_DE_APOIO = 'dddddddd-1111-4000-8000-000000000004';
 
+/**
+ * Pessoa descartável da empresa B, criada pelo próprio caso em `identidade.usuario`.
+ *
+ * Ela existe por causa da chave estrangeira composta que a migração `0003` instalou: o vínculo
+ * descartável do CT-004 precisa apontar para uma pessoa que **pertença mesmo** à empresa B, e as
+ * três pessoas de B da carga inicial já têm vínculo — a restrição
+ * `acesso_usuario_app_empresa_usuario_key` admite um vínculo por pessoa e empresa. Reaproveitar uma
+ * delas colidiria; usar o Master, como antes, é hoje impossível por construção, que é exatamente o
+ * que o CT-207 prova.
+ *
+ * Ela mora em `identidade`, que não é tenantizado (ADR-0009), e não entra em contagem nenhuma dos
+ * demais casos — todos afirmam conjuntos de `negocio.acesso_usuario_app`.
+ */
+const PESSOA_DESCARTAVEL_EM_B = {
+  id: 'dddddddd-2222-4000-8000-000000000001',
+  email: 'descartavel.b@exemplo.com.br',
+  nome: 'Pessoa Descartável de B',
+} as const;
+
+/**
+ * A SEGUNDA pessoa de B, sujeito da linha que a empresa A tenta gravar no CT-004.
+ *
+ * Ela é uma pessoa de B, e não de A, por uma razão de método: o que o CT-004 mede é a RLS, e só
+ * ela. Com uma pessoa de A, a linha seria incoerente também para a chave estrangeira composta da
+ * migração `0003` — e, no mutante M1 do CT-007, que desliga a RLS de propósito, a gravação passaria
+ * a ser barrada pela referência em vez de acontecer. O mutante deixaria de exibir "o dado alheio
+ * foi alcançado", que é justamente o que ele existe para exibir.
+ *
+ * São DUAS pessoas, e não uma, porque `acesso_usuario_app_empresa_usuario_key` admite um vínculo
+ * por pessoa e empresa: a linha do preparo e a linha da tentativa cruzada precisam de sujeitos
+ * distintos.
+ */
+const PESSOA_CRUZADA_EM_B = {
+  id: 'dddddddd-2222-4000-8000-000000000004',
+  email: 'cruzada.b@exemplo.com.br',
+  nome: 'Segunda Pessoa Descartável de B',
+} as const;
+
+/**
+ * Pessoa descartável da empresa A — o sujeito do CT-207.
+ *
+ * É a MESMA pessoa nas duas pernas do caso: o vínculo incoerente a coloca sob a empresa B e o
+ * coerente sob a empresa A. Usar a mesma pessoa é o que faz a empresa ser a única variável entre a
+ * recusa e o sucesso; duas pessoas diferentes deixariam a diferença atribuível a qualquer outra
+ * coisa.
+ */
+const PESSOA_DESCARTAVEL_EM_A = {
+  id: 'dddddddd-2222-4000-8000-000000000002',
+  email: 'descartavel.a@exemplo.com.br',
+  nome: 'Pessoa Descartável de A',
+} as const;
+
+/**
+ * Um SEGUNDO operador sem empresa. Ele não substitui o Master da carga — ele coexiste com ele, e é
+ * essa coexistência que prova que a unicidade `(id, empresa_id)` acrescentada pela migração `0003`
+ * **não** tenantiza `identidade.usuario`: no PostgreSQL, unicidade não compara nulos entre si.
+ */
+const MASTER_DESCARTAVEL = {
+  id: 'dddddddd-2222-4000-8000-000000000003',
+  email: 'master.descartavel@sysloc.com.br',
+  nome: 'Segundo Operador Sysloc',
+} as const;
+
+/**
+ * A chave das permissões CRUZADAS do CT-006 — distinta da `contratos` usada pela legítima e pela de
+ * apoio. Ver o comentário de `gravarPermissaoCruzada`: é o que impede a unicidade do trio, criada
+ * pela migração `0003`, de responder no lugar da chave estrangeira composta.
+ */
+const CHAVE_DA_CRUZADA = 'financeiro';
+
+/** Vínculos que o CT-207 tenta gravar: o incoerente, o coerente e o do operador sem empresa. */
+const VINCULO_INCOERENTE = 'dddddddd-3333-4000-8000-000000000001';
+const VINCULO_COERENTE = 'dddddddd-3333-4000-8000-000000000002';
+const VINCULO_DO_MASTER = 'dddddddd-3333-4000-8000-000000000003';
+
 const ACESSOS_DESCARTAVEIS = [
   ACESSO_DESCARTAVEL_EM_B,
   ACESSO_CRUZADO_EM_B,
   ACESSO_SEM_CONTEXTO_1,
   ACESSO_SEM_CONTEXTO_2,
+  VINCULO_INCOERENTE,
+  VINCULO_COERENTE,
+  VINCULO_DO_MASTER,
 ] as const;
 
 const PERMISSOES_DESCARTAVEIS = [
@@ -161,7 +271,8 @@ const IDENTIFICADORES_DE_A = ACESSOS_DA_EMPRESA_A.map((acesso) => acesso.id);
 const IDENTIFICADORES_DE_B = ACESSOS_DA_EMPRESA_B.map((acesso) => acesso.id);
 
 const ACESSO_A_1 = IDENTIFICADORES_DE_A[0] ?? '';
-const USUARIO_ADMIN_A = ACESSOS_DA_EMPRESA_A[0]?.usuarioId ?? '';
+// `USUARIO_ADMIN_A` saiu: a gravação cruzada do CT-004 passou a usar `PESSOA_CRUZADA_EM_B`, e
+// nenhum outro ponto o consumia. Símbolo que esta mudança tornou órfão é removido por ela.
 const USUARIO_ADMIN_B = ACESSOS_DA_EMPRESA_B[0]?.usuarioId ?? '';
 
 // ---------------------------------------------------------------------------
@@ -194,6 +305,19 @@ function sqlstate(erro: unknown): string | undefined {
 
 function mensagemDo(erro: unknown): string {
   return erro instanceof Error ? erro.message : String(erro);
+}
+
+/**
+ * O nome da restrição que o servidor apontou, ou `undefined` quando o erro não veio dele.
+ *
+ * O campo se chama `constraint_name` porque é assim que o driver nomeia o campo `n` da resposta de
+ * erro do PostgreSQL (`postgres/src/connection.js`). Afirmar o nome da restrição — e não só o
+ * SQLSTATE — é o que distingue "alguma chave estrangeira recusou" de "ESTA chave estrangeira
+ * recusou": a tabela tem três, e um `23503` sozinho não diz qual delas falou.
+ */
+function nomeDaRestricao(erro: unknown): string | undefined {
+  const nome = (erro as { constraint_name?: unknown } | null)?.constraint_name;
+  return typeof nome === 'string' ? nome : undefined;
 }
 
 /** O nome do predicado, sem o detalhe — é o que o CT-007 afirma por igualdade de conjunto. */
@@ -409,12 +533,24 @@ async function conferirGravacaoCruzadaRecusada(
     // descartável de propósito: com o isolamento removido (CT-007), a tentativa de A a alcança de
     // verdade, e o estrago fica contido numa linha que o caso mesmo criou — a carga inicial, que os
     // demais predicados afirmam, sobrevive intacta e o mutante continua atribuível.
+    //
+    // A pessoa da linha é criada aqui, e pertence a B: desde a migração `0003` o par
+    // `(usuario_id, empresa_id)` é referenciado por chave estrangeira composta, e o Master — que
+    // ocupava este lugar antes — não pertence a empresa alguma. Ver `PESSOA_DESCARTAVEL_EM_B`.
     const preparo = await tentar(() =>
       contextoDeTenant.executarCom(CONTEXTO_DE_B, async () =>
         acesso.emUnidadeDeTrabalho(async (tx) => {
+          for (const pessoa of [PESSOA_DESCARTAVEL_EM_B, PESSOA_CRUZADA_EM_B]) {
+            await tx`
+              INSERT INTO identidade.usuario (id, email, nome, perfil, empresa_id)
+              VALUES (${pessoa.id}, ${pessoa.email}, ${pessoa.nome},
+                      ${'USUARIO_EMPRESA'}::identidade.perfil_usuario, ${EMPRESA_B.id})
+              ON CONFLICT DO NOTHING
+            `;
+          }
           await tx`
             INSERT INTO negocio.acesso_usuario_app (id, empresa_id, usuario_id)
-            VALUES (${ACESSO_DESCARTAVEL_EM_B}, ${EMPRESA_B.id}, ${USUARIO_MASTER.id})
+            VALUES (${ACESSO_DESCARTAVEL_EM_B}, ${EMPRESA_B.id}, ${PESSOA_DESCARTAVEL_EM_B.id})
           `;
         }),
       ),
@@ -428,9 +564,13 @@ async function conferirGravacaoCruzadaRecusada(
     const insercao = await tentar(() =>
       contextoDeTenant.executarCom(CONTEXTO_DE_A, async () =>
         acesso.emUnidadeDeTrabalho(async (tx) => {
+          // A linha é bem formada em tudo menos no contexto de quem a escreve: a pessoa pertence
+          // mesmo a B (ver `PESSOA_CRUZADA_EM_B`). É o que faz a RLS ser o ÚNICO motivo possível da
+          // recusa aqui — e o que mantém o mutante M1 do CT-007 exibindo a gravação alheia
+          // acontecendo de verdade quando o isolamento é removido.
           await tx`
             INSERT INTO negocio.acesso_usuario_app (id, empresa_id, usuario_id)
-            VALUES (${ACESSO_CRUZADO_EM_B}, ${EMPRESA_B.id}, ${USUARIO_ADMIN_A})
+            VALUES (${ACESSO_CRUZADO_EM_B}, ${EMPRESA_B.id}, ${PESSOA_CRUZADA_EM_B.id})
           `;
         }),
       ),
@@ -556,9 +696,11 @@ async function conferirContextoSemEmpresa(
       contextoDeTenant.executarCom(CONTEXTO_DE_A, async () =>
         acesso.emUnidadeDeTrabalho(async (tx) => {
           await tx`
-            INSERT INTO negocio.acesso_usuario_permissao (id, empresa_id, acesso_id, tipo, chave)
+            INSERT INTO negocio.acesso_usuario_permissao
+                        (id, empresa_id, acesso_id, tipo, chave, efeito)
             VALUES (${PERMISSAO_DE_APOIO}, ${EMPRESA_A.id}, ${ACESSO_A_1},
-                    ${'TELA'}::negocio.tipo_permissao, ${'contratos'})
+                    ${'TELA'}::negocio.tipo_permissao, ${'contratos'},
+                    ${'CONCEDIDA'}::negocio.efeito_permissao)
           `;
         }),
       ),
@@ -719,9 +861,11 @@ async function conferirChaveEstrangeiraComposta(
       contextoDeTenant.executarCom(CONTEXTO_DE_A, async () =>
         acesso.emUnidadeDeTrabalho(async (tx) => {
           const resultado = await tx`
-            INSERT INTO negocio.acesso_usuario_permissao (id, empresa_id, acesso_id, tipo, chave)
+            INSERT INTO negocio.acesso_usuario_permissao
+                        (id, empresa_id, acesso_id, tipo, chave, efeito)
             VALUES (${PERMISSAO_LEGITIMA}, ${EMPRESA_A.id}, ${ACESSO_A_1},
-                    ${'TELA'}::negocio.tipo_permissao, ${'contratos'})
+                    ${'TELA'}::negocio.tipo_permissao, ${'contratos'},
+                    ${'CONCEDIDA'}::negocio.efeito_permissao)
           `;
           return resultado.count;
         }),
@@ -797,9 +941,17 @@ async function gravarPermissaoCruzada(
   const tentativa = await tentar(() =>
     contextoDeTenant.executarCom(contexto, async () =>
       acesso.emUnidadeDeTrabalho(async (tx) => {
+        // A chave é OUTRA, e não `contratos`: desde a migração `0003` existe unicidade sobre
+        // `(acesso_id, tipo, chave)`, e a tentativa cruzada de B para A aponta justamente para
+        // `ACESSO_A_1` — o mesmo vínculo da permissão legítima. Com a mesma chave, o banco recusaria
+        // por `23505` ANTES de a chave estrangeira composta ser consultada, e o caso passaria a
+        // provar a unicidade em vez da referência. Nomes distintos mantêm a referência como o único
+        // motivo possível da recusa.
         await tx`
-          INSERT INTO negocio.acesso_usuario_permissao (id, empresa_id, acesso_id, tipo, chave)
-          VALUES (${id}, ${empresaId}, ${acessoId}, ${'TELA'}::negocio.tipo_permissao, ${'contratos'})
+          INSERT INTO negocio.acesso_usuario_permissao
+                      (id, empresa_id, acesso_id, tipo, chave, efeito)
+          VALUES (${id}, ${empresaId}, ${acessoId}, ${'TELA'}::negocio.tipo_permissao,
+                  ${CHAVE_DA_CRUZADA}, ${'CONCEDIDA'}::negocio.efeito_permissao)
         `;
       }),
     ),
@@ -822,6 +974,115 @@ function avaliarCruzada(rotulo: string, tentativa: TentativaCruzada, reprovacoes
         `(esperado conter '${RESTRICAO_COMPOSTA}')`,
     );
   }
+}
+
+// ===========================================================================
+// CT-207 — conciliação estrutural do D5: vínculo cross-tenant é impossível
+// ===========================================================================
+//
+// Ele NÃO entra em `rodarBateria`. A bateria existe para o CT-007, que aplica mutantes ao
+// isolamento e afirma o conjunto exato de predicados reprovados por mutante; acrescentar um quinto
+// conjunto a ela mudaria o esperado dos quatro mutantes já fixados, sem que nenhum deles tenha
+// relação com esta restrição. O CT-006 já cobre a família do lado das permissões, e a prova aqui é
+// o PAR — a mesma pessoa recusada sob a empresa errada e aceita sob a certa.
+
+const RESTRICAO_DO_VINCULO = 'acesso_usuario_app_usuario_empresa_fkey';
+
+interface PessoaDescartavel {
+  readonly id: string;
+  readonly email: string;
+  readonly nome: string;
+}
+
+/**
+ * Cria uma pessoa em `identidade.usuario` pelo caminho restrito que a ADR-0009 autoriza — o mesmo
+ * acesso sem privilégio que a aplicação usa, nunca a conexão de migração.
+ *
+ * Devolve quantas linhas foram gravadas, para que quem chama possa afirmar a criação em vez de
+ * presumi-la: com `ON CONFLICT DO NOTHING`, uma pessoa que já existisse devolveria zero.
+ */
+async function criarPessoa(
+  acesso: AcessoAoBanco,
+  contexto: Contexto,
+  pessoa: PessoaDescartavel,
+  perfil: 'SYSLOC_MASTER' | 'ADMIN_EMPRESA' | 'USUARIO_EMPRESA',
+  empresaId: string | null,
+): Promise<number> {
+  return contextoDeTenant.executarCom(contexto, async () =>
+    acesso.emUnidadeDeTrabalho(async (tx) => {
+      const resultado = await tx`
+        INSERT INTO identidade.usuario (id, email, nome, perfil, empresa_id)
+        VALUES (${pessoa.id}, ${pessoa.email}, ${pessoa.nome},
+                ${perfil}::identidade.perfil_usuario, ${empresaId})
+        ON CONFLICT DO NOTHING
+      `;
+      return resultado.count;
+    }),
+  );
+}
+
+interface TentativaDeVinculo {
+  readonly codigo: string | undefined;
+  readonly restricao: string | undefined;
+  readonly linhas: number | undefined;
+}
+
+/** Tenta gravar um vínculo de acesso sob o contexto informado. */
+async function gravarVinculo(
+  acesso: AcessoAoBanco,
+  contexto: Contexto,
+  id: string,
+  empresaId: string,
+  usuarioId: string,
+): Promise<TentativaDeVinculo> {
+  const tentativa = await tentar(() =>
+    contextoDeTenant.executarCom(contexto, async () =>
+      acesso.emUnidadeDeTrabalho(async (tx) => {
+        const resultado = await tx`
+          INSERT INTO negocio.acesso_usuario_app (id, empresa_id, usuario_id)
+          VALUES (${id}, ${empresaId}, ${usuarioId})
+        `;
+        return resultado.count;
+      }),
+    ),
+  );
+
+  return tentativa.ok
+    ? { codigo: undefined, restricao: undefined, linhas: tentativa.valor }
+    : {
+        codigo: sqlstate(tentativa.erro),
+        restricao: nomeDaRestricao(tentativa.erro),
+        linhas: undefined,
+      };
+}
+
+/** Os identificadores das pessoas SEM empresa, lidos de `identidade` pelo acesso sem privilégio. */
+async function lerPessoasSemEmpresa(acesso: AcessoAoBanco, contexto: Contexto): Promise<string[]> {
+  return contextoDeTenant.executarCom(contexto, async () =>
+    acesso.emUnidadeDeTrabalho(async (tx) => {
+      const linhas = await tx<{ id: string }[]>`
+        SELECT id FROM identidade.usuario WHERE empresa_id IS NULL ORDER BY id
+      `;
+      return linhas.map((linha) => linha.id);
+    }),
+  );
+}
+
+/** Quantos vínculos existem para a pessoa informada, no contexto dado. */
+async function contarVinculosDe(
+  acesso: AcessoAoBanco,
+  contexto: Contexto,
+  usuarioId: string,
+): Promise<number> {
+  return contextoDeTenant.executarCom(contexto, async () =>
+    acesso.emUnidadeDeTrabalho(async (tx) => {
+      const linhas = await tx<{ total: string }[]>`
+        SELECT count(*)::text AS total FROM negocio.acesso_usuario_app
+         WHERE usuario_id = ${usuarioId}
+      `;
+      return Number(linhas[0]?.total ?? -1);
+    }),
+  );
 }
 
 // ===========================================================================
@@ -895,6 +1156,12 @@ const CAMINHO_DO_DADO = [
   'db/src/contexto.ts',
   'db/src/conexao.ts',
   'db/src/semente.ts',
+  // T3 da fatia `autorizacao-e-ciclo-de-acesso` — módulo NOVO que compõe e emite consulta, que é o
+  // critério declarado acima para entrar nesta lista. Ele também é o alvo declarado da asserção
+  // estática do CT-209, que procura outra coisa: aqui se procura ramo por perfil, lá se procura
+  // comparação por empresa. As duas varreduras são independentes de propósito — um alcance único
+  // com dois predicados faria a falsificação de uma provar a da outra.
+  'db/src/permissao.ts',
 ] as const;
 
 /** `packages/` — a raiz a partir da qual `CAMINHO_DO_DADO` é resolvido. */
@@ -979,6 +1246,339 @@ async function arvoreDeFalsificacao(): Promise<string> {
     await escrever(join(raiz, relativo), await readFile(join(RAIZ_DOS_PACOTES, relativo), 'utf8'));
   }
   return raiz;
+}
+
+// ===========================================================================
+// CT-209 — o efetivo é montado sob RLS, sem filtro por empresa na aplicação
+// ===========================================================================
+
+/**
+ * O vínculo sobre o qual o caso semeia os ajustes.
+ *
+ * É o **segundo** da empresa A de propósito: o primeiro (`ACESSO_A_1`) carrega a permissão legítima
+ * do CT-006, cujo conjunto é asserido por igualdade. Semear no mesmo vínculo tornaria os dois casos
+ * dependentes da ordem de execução.
+ */
+const VINCULO_DO_EFETIVO = ACESSOS_DA_EMPRESA_A[1]?.id ?? '';
+const PESSOA_DO_EFETIVO = ACESSOS_DA_EMPRESA_A[1]?.usuarioId ?? '';
+
+/**
+ * Um catálogo de três chaves, no lugar do catálogo de `@sysloc/auth`.
+ *
+ * O predicado de pertinência entra por parâmetro em produção porque `@sysloc/auth` **depende** de
+ * `@sysloc/db`, e não o contrário (ver o cabeçalho de `src/permissao.ts`). O daqui tem a **mesma
+ * assinatura** de `ehChaveDoCatalogo` — recebe `unknown` e estreita —, de modo que o caso exercita a
+ * composição exatamente como a guarda de `apps/api` a fará.
+ */
+const CHAVES_CONHECIDAS = ['TELA:financeiro', 'TELA:relatorios', 'ACAO:emitir_boleto'] as const;
+
+type ChaveConhecida = (typeof CHAVES_CONHECIDAS)[number];
+
+const CATALOGO_DO_CASO: ReadonlySet<unknown> = new Set<string>(CHAVES_CONHECIDAS);
+
+function ehChaveConhecida(valor: unknown): valor is ChaveConhecida {
+  return CATALOGO_DO_CASO.has(valor);
+}
+
+/**
+ * A chave **órfã**: gravada no banco e ausente do catálogo corrente.
+ *
+ * É a forma exata do risco que a Revisão Técnica da T2 encaminhou para a T3 — chave de um catálogo
+ * anterior, removida do código e ainda gravada, entrando no efetivo por uma leitura crua e saindo
+ * publicada em `GET /v1/sessao`. Ela existe aqui para que "a leitura descarta" seja afirmação
+ * comportamental, e não promessa do comentário.
+ */
+const CHAVE_ORFA = 'TELA:tela_extinta';
+
+/** Os quatro ajustes semeados: as três do catálogo do caso, mais a órfã. */
+const AJUSTES_DO_EFETIVO: readonly AjustePersistido[] = [
+  { chave: 'TELA:financeiro', efeito: 'CONCEDIDA' },
+  { chave: 'TELA:relatorios', efeito: 'CONCEDIDA' },
+  { chave: 'ACAO:emitir_boleto', efeito: 'NEGADA' },
+  { chave: CHAVE_ORFA, efeito: 'CONCEDIDA' },
+];
+
+/** O que a leitura deve devolver sob o contexto que ENXERGA o vínculo. */
+const EFETIVO_VISIVEL = {
+  ajustes: [
+    { chave: 'ACAO:emitir_boleto', efeito: 'NEGADA' },
+    { chave: 'TELA:financeiro', efeito: 'CONCEDIDA' },
+    { chave: 'TELA:relatorios', efeito: 'CONCEDIDA' },
+  ],
+  chavesDesconhecidas: [CHAVE_ORFA],
+} as const;
+
+/** O que ela deve devolver sob QUALQUER contexto que não o enxergue. Vazio, e nunca erro. */
+const EFETIVO_INVISIVEL = { ajustes: [], chavesDesconhecidas: [] } as const;
+
+/**
+ * A coerência entre os eixos NÃO é o objeto deste caso — ela é do CT-205, em `@sysloc/auth`.
+ * A regra que a semeadura passa apenas aceita, para que o caso exercite o caminho real de escrita
+ * sem reimplementar a regra de domínio dentro do verificador.
+ */
+function aceitarQualquerAjuste(): void {
+  // Nada a fazer: aceitar é o comportamento declarado desta regra de semeadura.
+}
+
+/** Leitura comparável: o objeto devolvido, achatado para igualdade estrutural. */
+function comoObjeto(leitura: AjustesDaPessoa): {
+  ajustes: { chave: string; efeito: string }[];
+  chavesDesconhecidas: string[];
+} {
+  return {
+    ajustes: leitura.ajustes.map((ajuste) => ({ chave: ajuste.chave, efeito: ajuste.efeito })),
+    chavesDesconhecidas: [...leitura.chavesDesconhecidas],
+  };
+}
+
+async function lerEfetivo(
+  acesso: AcessoAoBanco,
+  contexto: Contexto | typeof SEM_CONTEXTO,
+): Promise<AjustesDaPessoa<ChaveConhecida>> {
+  return noContexto(contexto, async () =>
+    acesso.emUnidadeDeTrabalho((tx) => lerAjustesDaPessoa(tx, PESSOA_DO_EFETIVO, ehChaveConhecida)),
+  );
+}
+
+/** Remove só o que este caso gravou, pelo vínculo — nunca por `empresa_id` (ADR-0008). */
+async function limparEfetivo(acesso: AcessoAoBanco): Promise<void> {
+  await contextoDeTenant.executarCom(CONTEXTO_DE_A, async () => {
+    await acesso.emUnidadeDeTrabalho(async (tx) => {
+      await tx`DELETE FROM negocio.acesso_usuario_permissao WHERE acesso_id = ${VINCULO_DO_EFETIVO}`;
+      await tx`
+        UPDATE identidade.usuario SET versao_permissoes = 0 WHERE id = ${PESSOA_DO_EFETIVO}
+      `;
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// A asserção ESTÁTICA do CT-209 — comparação por empresa na cláusula de filtro
+// ---------------------------------------------------------------------------
+
+/**
+ * O fonte que lê e grava o ajuste — o alvo declarado, arquivo a arquivo.
+ *
+ * Declarado, e não "o diretório `src/`": arquivo renomeado faz `readFile` levantar, em vez de
+ * reduzir a varredura a zero em silêncio (`varredura-de-fontes.ts`).
+ */
+const FONTE_DO_EFETIVO = ['db/src/permissao.ts'] as const;
+
+function arquivosDoEfetivo(raizDePacotes: string): string[] {
+  return FONTE_DO_EFETIVO.map((relativo) => join(raizDePacotes, relativo));
+}
+
+/** A coluna de tenant, nas duas grafias que o módulo poderia usar — a do SQL e a do domínio. */
+const COLUNA_DE_EMPRESA = /empresa_?id/i;
+
+/**
+ * O que transforma a MENÇÃO à coluna em CLÁUSULA DE FILTRO: um operador de comparação.
+ *
+ * A distinção é a razão de o predicado ter duas partes, e não uma. O módulo **menciona**
+ * `empresa_id` em dois lugares legítimos — a lista de colunas do `INSERT` e o item de projeção
+ * `SELECT a.empresa_id`, que carrega o valor do PAI para a linha-filha sem que ele passe pela
+ * aplicação. Um predicado que casasse a simples menção reprovaria o código correto, e detector que
+ * reprova o correto é detector desligado na rodada seguinte. Um que exigisse a palavra `WHERE` na
+ * mesma linha deixaria passar o `AND a.empresa_id = …` da linha de baixo, que é a forma em que o
+ * filtro de fato reaparece.
+ */
+const COMPARACAO_SQL = /={1,3}|!==?|<>|\bin\b|\bany\b/i;
+
+function ehFiltroPorEmpresa(linha: string): boolean {
+  return COLUNA_DE_EMPRESA.test(linha) && COMPARACAO_SQL.test(linha);
+}
+
+function varrerFiltroPorEmpresa(arquivos: readonly string[]): Promise<VarreduraDeFontes> {
+  return varrerArquivos(arquivos, ehFiltroPorEmpresa);
+}
+
+/**
+ * Monta a marca de interpolação em vez de escrevê-la.
+ *
+ * O texto produzido é idêntico ao do fonte — que é o que o mutante precisa casar —, e a montagem
+ * evita plantar `${…}` numa cadeia comum deste arquivo, pela mesma razão que o controle negativo do
+ * CT-005 já registra ao trocar a interpolação por nome literal.
+ */
+function interpolacao(nome: string): string {
+  return `$\{${nome}}`;
+}
+
+/**
+ * A cláusula que o mutante reintroduz, e o trecho real em que ela entra.
+ *
+ * O mutante **altera a consulta de verdade** — não acrescenta uma função inventada ao fim do
+ * arquivo. É a diferença entre provar que o detector reconhece um filtro qualquer e provar que ele
+ * reconhece o filtro **na forma em que o defeito voltaria**: dentro da leitura que monta o efetivo.
+ */
+const TRECHO_ALVO_DO_MUTANTE = `WHERE a.usuario_id = ${interpolacao('usuarioId')}`;
+const FILTRO_REINTRODUZIDO = `AND a.empresa_id = ${interpolacao('empresaId')}`;
+
+/**
+ * As quatro formas em que a comparação por empresa de fato reapareceria: SQL na cláusula, SQL
+ * invertida, filtro escrito em TypeScript e conjunto.
+ *
+ * São a ENTRADA do controle negativo e também o ESPERADO dele — a mesma lista nas duas pontas, para
+ * que uma forma acrescentada aqui tenha de ser detectada, e não apenas escrita no gabarito.
+ */
+const LINHAS_COM_FILTRO = [
+  `const a = \`AND a.empresa_id = ${interpolacao('empresaId')}\`;`,
+  `const b = \`AND ${interpolacao('empresaId')} = a.empresa_id\`;`,
+  'const c = linhas.filter((l) => l.empresaId === empresaId);',
+  `const d = \`AND p.empresa_id IN (${interpolacao('lista')})\`;`,
+] as const;
+
+// ---------------------------------------------------------------------------
+// O companheiro NEGATIVO de tenant do lado da ESCRITA
+// ---------------------------------------------------------------------------
+
+/**
+ * Por que este bloco existe, e por que ele NÃO é redundante com o CT-209 acima.
+ *
+ * O CT-209 prova a invisibilidade da **leitura** (3 em A, 0 em B, 0 sem contexto) e, pela varredura,
+ * a ausência de comparação por empresa no fonte. Nenhuma das duas alcança o modo de falha das
+ * **escritas**: elas gravam em `identidade.usuario`, que **não tem RLS** (ADR-0009), e só ficam
+ * escopadas porque alcançam a pessoa **através do vínculo** em `negocio.acesso_usuario_app`, que
+ * está sob a política. Trocar `FROM negocio.acesso_usuario_app AS a WHERE a.usuario_id = u.id` por
+ * um `WHERE u.id = $1` sozinho — a forma que o cabeçalho de `src/permissao.ts` nomeia e proíbe —
+ * faz a escrita alcançar pessoa de qualquer empresa, e a asserção estática nada acusa: ela procura a
+ * **presença** de comparação por `empresa_id`, e este defeito é a **ausência** do alcance pelo pai.
+ *
+ * Daí a forma do caso: o produto cartesiano {três escritas} × {contexto de B, contexto ausente}, com
+ * as **duas pernas** por célula — o erro nomeado e o estado bit a bit. Só o `throws` não distingue
+ * *"recusou"* de *"recusou depois de escrever"*, e só o estado não distingue *"não escreveu"* de
+ * *"escreveu e o desfazimento apagou"*. A perna do estado discrimina, em particular, a escrita que
+ * **escapa da unidade de trabalho** — a que abrisse conexão própria para alcançar `identidade`, que
+ * é o desvio que o cabeçalho de `src/permissao.ts` recusa por nome —, porque essa o desfazimento da
+ * transação da borda não alcançaria. O companheiro POSITIVO fecha a terceira leitura possível: sem
+ * ele, uma operação que recusasse sempre — inclusive sob o contexto que enxerga — passaria.
+ */
+
+/** O perfil com que a pessoa do efetivo é semeada — o valor que a troca recusada NÃO pode mover. */
+const PERFIL_SEMEADO_DO_EFETIVO: PerfilDaPessoa =
+  USUARIOS.find((pessoa) => pessoa.id === PESSOA_DO_EFETIVO)?.perfil ?? 'USUARIO_EMPRESA';
+
+/**
+ * O perfil que a troca recusada tentaria gravar. **Diferente do semeado, de propósito**: com o mesmo
+ * valor, "o perfil não mudou" seria verdade também sobre uma troca que tivesse acontecido.
+ */
+const PERFIL_DA_TROCA_RECUSADA: PerfilDaPessoa = 'ADMIN_EMPRESA';
+
+/** O estado observável da pessoa do efetivo — as três coisas que uma escrita recusada não move. */
+interface EstadoDoEfetivo {
+  readonly versao: number;
+  readonly perfil: string;
+  /** Uma entrada por linha de ajuste do vínculo, na forma `TIPO:chave=EFEITO`. */
+  readonly ajustes: string[];
+}
+
+/**
+ * Lê o estado **sob o contexto da empresa A** — o único que enxerga o vínculo.
+ *
+ * Ler sob o contexto da tentativa devolveria vazio por invisibilidade, e "não mudou nada" ficaria
+ * verde contra uma escrita que mudou tudo. É a mesma disciplina do CT-004, que confere o estado de B
+ * no contexto de B depois de A tentar escrever nele.
+ */
+async function lerEstadoDoEfetivo(acesso: AcessoAoBanco): Promise<EstadoDoEfetivo> {
+  return contextoDeTenant.executarCom(CONTEXTO_DE_A, () =>
+    acesso.emUnidadeDeTrabalho(async (tx) => {
+      const [pessoa] = await tx<{ versao: number; perfil: string }[]>`
+        SELECT versao_permissoes AS versao, perfil AS perfil
+          FROM identidade.usuario
+         WHERE id = ${PESSOA_DO_EFETIVO}
+      `;
+      // `ORDER BY` sobre coluna de enum segue a ordem de DECLARAÇÃO do tipo, não a alfabética — daí
+      // o `::text`, como em `permissao.spec.ts` e no CT-210.
+      const linhas = await tx<{ tipo: string; chave: string; efeito: string }[]>`
+        SELECT tipo::text AS tipo, chave AS chave, efeito::text AS efeito
+          FROM negocio.acesso_usuario_permissao
+         WHERE acesso_id = ${VINCULO_DO_EFETIVO}
+         ORDER BY tipo::text, chave
+      `;
+      return {
+        // `-1` em vez de `0`: pessoa não encontrada tem de ser distinguível de contador zerado.
+        versao: Number(pessoa?.versao ?? -1),
+        perfil: pessoa?.perfil ?? '',
+        ajustes: linhas.map((linha) => `${linha.tipo}:${linha.chave}=${linha.efeito}`),
+      };
+    }),
+  );
+}
+
+/**
+ * Devolve a pessoa do efetivo ao estado semeado — ajustes, contador e **perfil**.
+ *
+ * É mais que `limparEfetivo`, e de propósito: este caso tenta trocar o perfil, e um mutante que
+ * deixasse a troca acontecer sob contexto alheio vazaria o perfil trocado para os casos seguintes.
+ * `limparEfetivo` não é alterada — ela serve ao CT-209, que não movimenta perfil algum.
+ */
+async function restaurarPessoaDoEfetivo(acesso: AcessoAoBanco): Promise<void> {
+  await contextoDeTenant.executarCom(CONTEXTO_DE_A, () =>
+    acesso.emUnidadeDeTrabalho(async (tx) => {
+      await tx`DELETE FROM negocio.acesso_usuario_permissao WHERE acesso_id = ${VINCULO_DO_EFETIVO}`;
+      await tx`
+        UPDATE identidade.usuario
+           SET versao_permissoes = 0, perfil = ${PERFIL_SEMEADO_DO_EFETIVO}::identidade.perfil_usuario
+         WHERE id = ${PESSOA_DO_EFETIVO}
+      `;
+    }),
+  );
+}
+
+/** Uma escrita do módulo, nomeada — o nome entra na asserção para o relatório apontar a célula. */
+interface EscritaDoModulo {
+  readonly nome: string;
+  readonly executar: (tx: TransactionSql) => Promise<number>;
+}
+
+/**
+ * As TRÊS escritas do módulo, e apenas elas.
+ *
+ * A lista é o alvo declarado: uma quarta escrita acrescentada a `src/permissao.ts` sem entrada aqui
+ * é escrita sem companheiro negativo de tenant — que é exatamente a lacuna que este caso fecha.
+ */
+const ESCRITAS_DO_MODULO: readonly EscritaDoModulo[] = [
+  {
+    nome: 'escreverAjustes',
+    executar: (tx) =>
+      escreverAjustes(tx, {
+        usuarioId: PESSOA_DO_EFETIVO,
+        ajustes: AJUSTES_DO_EFETIVO,
+        validarCoerencia: aceitarQualquerAjuste,
+      }),
+  },
+  {
+    nome: 'trocarPerfilDaPessoa',
+    executar: (tx) =>
+      trocarPerfilDaPessoa(tx, {
+        usuarioId: PESSOA_DO_EFETIVO,
+        perfil: PERFIL_DA_TROCA_RECUSADA,
+      }),
+  },
+  {
+    nome: 'incrementarVersaoPermissoes',
+    executar: (tx) => incrementarVersaoPermissoes(tx, PESSOA_DO_EFETIVO),
+  },
+];
+
+/** Os dois alcances que NÃO enxergam o vínculo da pessoa de A. */
+const ALCANCES_QUE_NAO_ENXERGAM = [
+  { nome: 'contexto-de-B', contexto: CONTEXTO_DE_B },
+  { nome: 'sem-contexto', contexto: SEM_CONTEXTO },
+] as const;
+
+/**
+ * O desfecho de uma tentativa, como texto comparável.
+ *
+ * Sucesso carrega o valor devolvido: com um rótulo genérico, o relatório de falha diria "gravou" sem
+ * dizer o que gravou, e o mutante que este caso persegue é justamente o que devolve um contador.
+ */
+function desfechoDaEscrita(tentativa: Resultado<number>): string {
+  if (tentativa.ok) {
+    return `GRAVOU (devolveu ${tentativa.valor})`;
+  }
+  return tentativa.erro instanceof ErroDePessoaForaDoContexto
+    ? 'ErroDePessoaForaDoContexto'
+    : `outro erro: ${mensagemDo(tentativa.erro)}`;
 }
 
 // ===========================================================================
@@ -1192,6 +1792,334 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
       expect(observado.permissoesEmB).toEqual([]);
 
       expect(reprovacoes).toEqual([]);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-207 — vínculo cuja empresa difere da empresa da pessoa é recusado pela chave composta',
+    async () => {
+      await limparDescartaveis(banco.cadeiaConexao);
+      const acesso = abrir(banco.cadeiaConexao);
+
+      try {
+        // --- Preparo: uma pessoa que pertence, de fato, à empresa A -------------------------
+        expect(
+          await criarPessoa(
+            acesso,
+            CONTEXTO_DE_A,
+            PESSOA_DESCARTAVEL_EM_A,
+            'USUARIO_EMPRESA',
+            EMPRESA_A.id,
+          ),
+        ).toBe(1);
+
+        // --- Perna negativa: a MESMA pessoa, sob a empresa B --------------------------------
+        // A recusa vem do driver, e é isso que as duas asserções afirmam: o SQLSTATE e o nome da
+        // restrição são campos da resposta de erro do servidor — nenhum código de aplicação os
+        // produz, e nenhuma verificação nossa foi consultada no caminho.
+        const incoerente = await gravarVinculo(
+          acesso,
+          CONTEXTO_DE_B,
+          VINCULO_INCOERENTE,
+          EMPRESA_B.id,
+          PESSOA_DESCARTAVEL_EM_A.id,
+        );
+        expect(incoerente.codigo).toBe('23503');
+        expect(incoerente.restricao).toBe(RESTRICAO_DO_VINCULO);
+
+        // --- Perna positiva: a MESMA pessoa, sob a empresa A --------------------------------
+        // Sem ela, a recusa acima não distinguiria "a empresa está errada" de "esta pessoa não
+        // pode ter vínculo nenhum". A empresa é a única variável entre as duas pernas.
+        const coerente = await gravarVinculo(
+          acesso,
+          CONTEXTO_DE_A,
+          VINCULO_COERENTE,
+          EMPRESA_A.id,
+          PESSOA_DESCARTAVEL_EM_A.id,
+        );
+        expect(coerente.codigo).toBeUndefined();
+        expect(coerente.linhas).toBe(1);
+
+        // O estado observável confirma as duas pernas: B ficou com exatamente a carga inicial, e A
+        // ganhou o vínculo coerente e nada mais.
+        expect(ordenado(await lerAcessos(acesso, CONTEXTO_DE_B))).toEqual(
+          ordenado(IDENTIFICADORES_DE_B),
+        );
+        expect(ordenado(await lerAcessos(acesso, CONTEXTO_DE_A))).toEqual(
+          ordenado([...IDENTIFICADORES_DE_A, VINCULO_COERENTE]),
+        );
+
+        // --- O controle da pessoa SEM empresa ----------------------------------------------
+        // Ela continua inserível: a unicidade `(id, empresa_id)` da migração `0003` não impede um
+        // SEGUNDO operador sem empresa, porque o PostgreSQL não compara nulos entre si. É esta
+        // linha que prova que a restrição não tenantizou `identidade.usuario`.
+        expect(
+          await criarPessoa(acesso, CONTEXTO_DE_A, MASTER_DESCARTAVEL, 'SYSLOC_MASTER', null),
+        ).toBe(1);
+        expect(await lerPessoasSemEmpresa(acesso, CONTEXTO_DE_A)).toEqual(
+          ordenado([USUARIO_MASTER.id, MASTER_DESCARTAVEL.id]),
+        );
+
+        // E ela não é alvo de vínculo — afirmado por COMPORTAMENTO, e não pela ausência de linha:
+        // "não tem vínculo" também é verdade sobre quem ninguém tentou vincular.
+        const doMaster = await gravarVinculo(
+          acesso,
+          CONTEXTO_DE_A,
+          VINCULO_DO_MASTER,
+          EMPRESA_A.id,
+          MASTER_DESCARTAVEL.id,
+        );
+        expect(doMaster.codigo).toBe('23503');
+        expect(doMaster.restricao).toBe(RESTRICAO_DO_VINCULO);
+        expect(await contarVinculosDe(acesso, CONTEXTO_DE_A, MASTER_DESCARTAVEL.id)).toBe(0);
+      } finally {
+        await acesso.encerrar();
+        await limparDescartaveis(banco.cadeiaConexao);
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-209 — a mesma leitura de ajustes devolve 3 em A, 0 em B e 0 sem contexto, e o fonte não filtra por empresa',
+    async () => {
+      // Reserva de UMA conexão: as três leituras correm sobre a MESMA conexão física, alternando o
+      // contexto pela unidade de trabalho publicada. Com reservas distintas, "0 linhas sob B"
+      // poderia ser propriedade de uma conexão nova, e não da política.
+      const acesso = abrir(banco.cadeiaConexao);
+
+      try {
+        await limparEfetivo(acesso);
+
+        // --- A semeadura, pelo caminho real de escrita -------------------------------------
+        const versao = await contextoDeTenant.executarCom(CONTEXTO_DE_A, () =>
+          acesso.emUnidadeDeTrabalho((tx) =>
+            escreverAjustes(tx, {
+              usuarioId: PESSOA_DO_EFETIVO,
+              ajustes: AJUSTES_DO_EFETIVO,
+              validarCoerencia: aceitarQualquerAjuste,
+            }),
+          ),
+        );
+        expect(versao).toBe(1);
+
+        // --- A MESMA leitura, sob os três contextos ----------------------------------------
+        const emA = await lerEfetivo(acesso, CONTEXTO_DE_A);
+        const emB = await lerEfetivo(acesso, CONTEXTO_DE_B);
+        const semContexto = await lerEfetivo(acesso, SEM_CONTEXTO);
+
+        // Sob A: as três chaves do catálogo, e a órfã DESCARTADA e nomeada. Igualdade do objeto
+        // inteiro, e não contagem: a contagem sozinha não distinguiria "descartou a órfã" de
+        // "perdeu uma das três".
+        expect(comoObjeto(emA)).toEqual(EFETIVO_VISIVEL);
+
+        // Sob B e sem contexto: vazio, sem erro. Não é recusa — é invisibilidade, que é o que a
+        // política produz para qualquer leitura de negócio fora do tenant.
+        expect(comoObjeto(emB)).toEqual(EFETIVO_INVISIVEL);
+        expect(comoObjeto(semContexto)).toEqual(EFETIVO_INVISIVEL);
+
+        // A contagem, dita também de forma direta — os três números do card.
+        expect([emA.ajustes.length, emB.ajustes.length, semContexto.ajustes.length]).toEqual([
+          3, 0, 0,
+        ]);
+
+        // --- A asserção ESTÁTICA ------------------------------------------------------------
+        const varredura = await varrerFiltroPorEmpresa(arquivosDoEfetivo(RAIZ_DOS_PACOTES));
+        // A contagem exata, e não `> 0`, fixa que `arquivosDoEfetivo` é TOTAL sobre
+        // `FONTE_DO_EFETIVO` — nenhum alvo declarado fica de fora da lista entregue ao varredor.
+        // Quem barra o alvo RENOMEADO é outro mecanismo, e a atribuição importa: `varrerArquivos`
+        // devolve `arquivos: arquivos.length`, o tamanho da lista de ENTRADA, e é o `readFile` de
+        // `varredura-de-fontes.ts` que levanta em vez de engolir a ausência do arquivo.
+        expect(varredura.arquivos).toBe(FONTE_DO_EFETIVO.length);
+        expect(varredura.ocorrencias).toEqual([]);
+      } finally {
+        await limparEfetivo(acesso);
+        await acesso.encerrar();
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-209 (escrita fora do contexto) — as três escritas recusam sob B e sem contexto, e não movem contador, perfil nem ajuste',
+    async () => {
+      // Reserva de UMA conexão, pela mesma razão do CT-209: as tentativas e as conferências correm
+      // sobre a MESMA conexão física, alternando o contexto pela unidade de trabalho publicada.
+      const acesso = abrir(banco.cadeiaConexao);
+
+      try {
+        await restaurarPessoaDoEfetivo(acesso);
+
+        // --- Estado de partida NÃO vazio ---------------------------------------------------
+        // Contra contador zerado e vínculo sem ajuste, "nada mudou" também é verdade sobre uma
+        // escrita que não teria como mudar coisa alguma. A semeadura é pelo caminho real, sob o
+        // contexto que enxerga — e é ela o companheiro POSITIVO da primeira operação.
+        const versaoSemeada = await contextoDeTenant.executarCom(CONTEXTO_DE_A, () =>
+          acesso.emUnidadeDeTrabalho((tx) =>
+            escreverAjustes(tx, {
+              usuarioId: PESSOA_DO_EFETIVO,
+              ajustes: AJUSTES_DO_EFETIVO,
+              validarCoerencia: aceitarQualquerAjuste,
+            }),
+          ),
+        );
+        expect(versaoSemeada).toBe(1);
+
+        const antes = await lerEstadoDoEfetivo(acesso);
+        expect(antes).toEqual({
+          versao: 1,
+          perfil: PERFIL_SEMEADO_DO_EFETIVO,
+          ajustes: [
+            'ACAO:emitir_boleto=NEGADA',
+            'TELA:financeiro=CONCEDIDA',
+            'TELA:relatorios=CONCEDIDA',
+            'TELA:tela_extinta=CONCEDIDA',
+          ],
+        });
+
+        // --- As seis células: {três escritas} × {contexto de B, contexto ausente} -----------
+        const desfechos: string[] = [];
+        const estados: EstadoDoEfetivo[] = [];
+
+        for (const alcance of ALCANCES_QUE_NAO_ENXERGAM) {
+          for (const escrita of ESCRITAS_DO_MODULO) {
+            const tentativa = await tentar(() =>
+              noContexto(alcance.contexto, () =>
+                acesso.emUnidadeDeTrabalho((tx) => escrita.executar(tx)),
+              ),
+            );
+
+            desfechos.push(`${escrita.nome}/${alcance.nome}: ${desfechoDaEscrita(tentativa)}`);
+            // Lido DEPOIS de cada célula, e não uma vez ao fim: com uma conferência só, uma escrita
+            // indevida desfeita por outra célula passaria despercebida.
+            estados.push(await lerEstadoDoEfetivo(acesso));
+          }
+        }
+
+        // Perna (a) — a recusa, com o erro NOMEADO. As seis células declaradas de uma vez: a lista
+        // inteira é o esperado, de modo que uma célula que passe a gravar apareça pelo nome.
+        expect(desfechos).toEqual([
+          'escreverAjustes/contexto-de-B: ErroDePessoaForaDoContexto',
+          'trocarPerfilDaPessoa/contexto-de-B: ErroDePessoaForaDoContexto',
+          'incrementarVersaoPermissoes/contexto-de-B: ErroDePessoaForaDoContexto',
+          'escreverAjustes/sem-contexto: ErroDePessoaForaDoContexto',
+          'trocarPerfilDaPessoa/sem-contexto: ErroDePessoaForaDoContexto',
+          'incrementarVersaoPermissoes/sem-contexto: ErroDePessoaForaDoContexto',
+        ]);
+
+        // Perna (b) — o estado bit a bit, lido sob o contexto de A. Sem ela, o `throws` não
+        // distingue "recusou" de "recusou depois de escrever".
+        expect(estados).toEqual([antes, antes, antes, antes, antes, antes]);
+
+        // --- O companheiro POSITIVO das outras duas escritas -------------------------------
+        // Sem ele, "recusa sempre" — inclusive sob o contexto que enxerga — passaria neste caso.
+        // A empresa do contexto é a ÚNICA variável entre a recusa e o sucesso: mesma pessoa, mesma
+        // operação, mesma conexão.
+        const versaoTrocada = await contextoDeTenant.executarCom(CONTEXTO_DE_A, () =>
+          acesso.emUnidadeDeTrabalho((tx) =>
+            trocarPerfilDaPessoa(tx, {
+              usuarioId: PESSOA_DO_EFETIVO,
+              perfil: PERFIL_DA_TROCA_RECUSADA,
+            }),
+          ),
+        );
+        expect(versaoTrocada).toBe(2);
+
+        const versaoIncrementada = await contextoDeTenant.executarCom(CONTEXTO_DE_A, () =>
+          acesso.emUnidadeDeTrabalho((tx) => incrementarVersaoPermissoes(tx, PESSOA_DO_EFETIVO)),
+        );
+        expect(versaoIncrementada).toBe(3);
+
+        // A troca de perfil descarta os ajustes — é a operação, não efeito colateral esquecido.
+        expect(await lerEstadoDoEfetivo(acesso)).toEqual({
+          versao: 3,
+          perfil: PERFIL_DA_TROCA_RECUSADA,
+          ajustes: [],
+        });
+      } finally {
+        await restaurarPessoaDoEfetivo(acesso);
+        await acesso.encerrar();
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-209 (falsificação) — a varredura reprova o filtro por empresa reintroduzido na leitura',
+    async () => {
+      const raiz = await arvoreDeFalsificacao();
+
+      try {
+        // Controle: a cópia bit a bit do arquivo real passa limpa. Sem ele, "a cópia mutada
+        // reprovou" não distingue detector que funciona de detector que reprova qualquer coisa —
+        // e o arquivo real é justamente o que MENCIONA `empresa_id` em dois pontos legítimos.
+        const integra = await varrerFiltroPorEmpresa(arquivosDoEfetivo(raiz));
+        expect(integra.arquivos).toBe(FONTE_DO_EFETIVO.length);
+        expect(integra.ocorrencias).toEqual([]);
+
+        const alvo = join(raiz, 'db/src/permissao.ts');
+        const original = await readFile(alvo, 'utf8');
+        const mutado = original.replace(
+          TRECHO_ALVO_DO_MUTANTE,
+          `${TRECHO_ALVO_DO_MUTANTE}\n       ${FILTRO_REINTRODUZIDO}`,
+        );
+        // Sem esta linha, um trecho-alvo que deixasse de existir tornaria o mutante um no-op — e o
+        // caso seguinte estaria afirmando que o detector reprova um arquivo íntegro.
+        expect(mutado).not.toBe(original);
+        await writeFile(alvo, mutado, 'utf8');
+
+        const comFiltro = await varrerFiltroPorEmpresa(arquivosDoEfetivo(raiz));
+
+        expect(comFiltro.arquivos).toBe(FONTE_DO_EFETIVO.length);
+        expect(comFiltro.ocorrencias).toHaveLength(1);
+        expect(comFiltro.ocorrencias[0]).toContain('db/src/permissao.ts');
+        expect(comFiltro.linhas[0]).toBe(FILTRO_REINTRODUZIDO);
+      } finally {
+        await rm(raiz, { recursive: true, force: true });
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-209 (controle negativo) — a menção legítima a `empresa_id` não é reportada, e a comparação é',
+    async () => {
+      const raiz = await mkdtemp(join(tmpdir(), 'sysloc-filtro-empresa-'));
+
+      try {
+        // (a) As duas formas legítimas que o módulo real usa: a coluna na lista do `INSERT` e o
+        // item de projeção que carrega o valor do PAI. Nenhuma delas compara nada.
+        const legitimo = join(raiz, 'legitimo.ts');
+        await escrever(
+          legitimo,
+          [
+            'const consulta = `',
+            '  INSERT INTO negocio.acesso_usuario_permissao (empresa_id, acesso_id, tipo)',
+            '  SELECT a.empresa_id,',
+            '         a.id,',
+            "         'TELA'::negocio.tipo_permissao",
+            '    FROM negocio.acesso_usuario_app AS a`;',
+            '',
+          ].join('\n'),
+        );
+
+        const semFiltro = await varrerFiltroPorEmpresa([legitimo]);
+        expect(semFiltro.arquivos).toBe(1);
+        expect(semFiltro.ocorrencias).toEqual([]);
+
+        // (b) …e o controle não é vazio: as quatro formas em que a comparação de fato reapareceria
+        // — SQL na cláusula, SQL invertida, filtro em TypeScript e conjunto — são todas reportadas.
+        const comFiltro = join(raiz, 'com-filtro.ts');
+        await escrever(comFiltro, `${LINHAS_COM_FILTRO.join('\n')}\n`);
+
+        const reportadas = await varrerFiltroPorEmpresa([comFiltro]);
+        expect(reportadas.arquivos).toBe(1);
+        expect(reportadas.ocorrencias).toHaveLength(LINHAS_COM_FILTRO.length);
+        expect(reportadas.linhas).toEqual([...LINHAS_COM_FILTRO]);
+      } finally {
+        await rm(raiz, { recursive: true, force: true });
+      }
     },
     LIMITE_DO_CASO_MS,
   );

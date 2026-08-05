@@ -11,7 +11,7 @@
  *      a criação da aplicação falhar — antes de qualquer porta ser aberta.
  *   2. **O registrador estruturado** é criado uma vez, com a severidade que a configuração fixa.
  *   3. **O filtro global de erro** é registrado por `APP_FILTER`. Montá-lo no ponto de entrada
- *      faria a verificação ter de repetir o registro para provar a ADR-0007 — e um dia repetir
+ *      faria a verificação ter de repetir o registro para provar a ADR-0012 — e um dia repetir
  *      diferente. Aqui, toda aplicação criada a partir deste módulo nasce com ele.
  *   4. **A guarda de contexto** é registrada por `APP_GUARD` **e** por `APP_INTERCEPTOR`, pela
  *      mesma razão do item anterior e mais uma: é o registro global que faz o default ser
@@ -46,11 +46,13 @@ import {
   TOKEN_AMBIENTE,
   TOKEN_LOGGER,
 } from './configuracao/ambiente.js';
+import { MasterModule } from './master/master.module.js';
 import { SaudeModule } from './saude/saude.module.js';
+import { UsuariosModule } from './usuarios/usuarios.module.js';
 
 @Global()
 @Module({
-  imports: [SaudeModule, AutenticacaoModule],
+  imports: [SaudeModule, AutenticacaoModule, MasterModule, UsuariosModule],
   providers: [
     {
       provide: TOKEN_AMBIENTE,

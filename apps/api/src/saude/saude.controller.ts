@@ -18,7 +18,7 @@
  * oscila, ou a prova do reinício aceita verde com o banco ainda indisponível.
  *
  * ---------------------------------------------------------------------------
- * O `503` sai no envelope da ADR-0007
+ * O `503` sai no envelope da ADR-0012
  * ---------------------------------------------------------------------------
  *
  * Dependência fora não é um corpo de sucesso com status de erro: é um erro, e o projeto tem um
@@ -123,7 +123,7 @@ export class SaudeController {
   @ApiServiceUnavailableResponse({
     description:
       'Ao menos uma dependência está inalcançável. O corpo nomeia qual, no envelope de erro ' +
-      'da ADR-0007.',
+      'da ADR-0012.',
     schema: ESQUEMA_DO_ERRO,
   })
   async verificacaoProfunda(): Promise<RespostaSaudeProfunda> {

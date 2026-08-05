@@ -58,17 +58,24 @@
 
 import { Inject, Module, type OnApplicationShutdown } from '@nestjs/common';
 import { type Autenticacao, criarAutenticacao } from '@sysloc/auth';
-import { type AcessoAIdentidade, abrirAcessoAIdentidade } from '@sysloc/db';
+import {
+  type AcessoAIdentidade,
+  type AcessoAoBanco,
+  abrirAcessoAIdentidade,
+  abrirAcessoAoBanco,
+} from '@sysloc/db';
 import {
   type Ambiente,
   ENDERECO_DE_ESCUTA,
   PREFIXO_DE_VERSAO,
   TOKEN_ACESSO_A_IDENTIDADE,
+  TOKEN_ACESSO_AO_NEGOCIO,
   TOKEN_AMBIENTE,
   TOKEN_AUTENTICACAO,
 } from '../configuracao/ambiente.js';
 import { AutenticacaoController, CAMINHO_DA_IDENTIDADE } from './autenticacao.controller.js';
 import { GuardaDeContexto } from './contexto.guard.js';
+import { SenhaController } from './senha.controller.js';
 import { SessaoController } from './sessao.controller.js';
 
 /**
@@ -82,7 +89,12 @@ import { SessaoController } from './sessao.controller.js';
 export const PREFIXO_DAS_ROTAS_DE_IDENTIDADE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_IDENTIDADE}`;
 
 @Module({
-  controllers: [AutenticacaoController, SessaoController],
+  // `SenhaController` entra ao lado dos dois desde a T9 da fatia `autorizacao-e-ciclo-de-acesso`:
+  // ele publica a troca de senha do produto, que substitui a rota nativa que o encaminhador deixou
+  // de publicar. Ele vive NESTE módulo, e não num módulo próprio, porque injeta exatamente as duas
+  // coisas que este módulo é dono — a instância do arcabouço e o acesso restrito a `identidade` —,
+  // e um módulo novo só para ele teria de importá-las de volta daqui.
+  controllers: [AutenticacaoController, SenhaController, SessaoController],
   providers: [
     // A guarda é declarada AQUI, e não na composição raiz, porque é aqui que vivem as duas coisas
     // que ela injeta: a instância do arcabouço e o acesso restrito a `identidade`. Quem a torna
@@ -94,6 +106,21 @@ export const PREFIXO_DAS_ROTAS_DE_IDENTIDADE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_
       provide: TOKEN_ACESSO_A_IDENTIDADE,
       useFactory: (ambiente: Ambiente): AcessoAIdentidade =>
         abrirAcessoAIdentidade({ cadeiaDeConexao: ambiente.cadeiaConexaoBanco }),
+      inject: [TOKEN_AMBIENTE],
+    },
+    {
+      // O acesso a dado de NEGÓCIO — reserva própria, distinta da de identidade, porque são papéis
+      // distintos: aquela é o executor restrito ao schema `identidade`, esta é a unidade de trabalho
+      // que fixa `app.empresa_id` por transação. Fundi-las devolveria a `identidade` um caminho para
+      // `negocio` sem contexto, que é o que a ADR-0008 fecha.
+      //
+      // Ele nasce aqui, e não na composição raiz, porque hoje o único consumidor é a guarda de
+      // contexto, que este módulo declara — mesma razão pela qual a guarda não vive lá. Quando as
+      // rotas de Master e de usuários chegarem (T7, T8), a decisão a rever é se ele sobe para a
+      // composição raiz; até lá, publicá-lo seria superfície sem consumidor.
+      provide: TOKEN_ACESSO_AO_NEGOCIO,
+      useFactory: (ambiente: Ambiente): AcessoAoBanco =>
+        abrirAcessoAoBanco({ cadeiaDeConexao: ambiente.cadeiaConexaoBanco }),
       inject: [TOKEN_AMBIENTE],
     },
     {
@@ -132,16 +159,61 @@ export const PREFIXO_DAS_ROTAS_DE_IDENTIDADE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_
       inject: [TOKEN_AMBIENTE, TOKEN_ACESSO_A_IDENTIDADE],
     },
   ],
-  // `TOKEN_ACESSO_A_IDENTIDADE` continua **fora** daqui, como desde a T8: publicar o executor
-  // criaria um segundo caminho para as tabelas de identidade. O que sai é a guarda, que consome o
-  // executor por dentro e devolve apenas a sessão do produto.
-  exports: [TOKEN_AUTENTICACAO, GuardaDeContexto],
+  // Os dois acessos SAEM daqui a partir da T7 da fatia `autorizacao-e-ciclo-de-acesso`, e as duas
+  // saídas são DECISÕES DESTA TASK, com argumento próprio. Nenhuma delas é a revisão que o
+  // comentário de `TOKEN_ACESSO_AO_NEGOCIO`, acima, agendou: aquele texto pergunta se **ele** sobe
+  // para a composição raiz — é sobre a LOCALIZAÇÃO da fábrica dele —, e a resposta continua sendo
+  // não, pela razão que `master.module.ts` registra (mover o provedor sem mover o gancho de
+  // desligamento deixaria o recurso sem dono). Exportar é outra coisa, e não estava agendado.
+  //
+  // **O que muda, e o que não muda.** Não muda o número de objetos: cada token continua tendo UMA
+  // fábrica, e é essa única instância que sai. Publicá-los é o que impede o módulo do Master (e o
+  // de pessoas, na T8) de abrir a própria reserva de conexões — o que produziria duas donas do
+  // mesmo recurso e um desligamento que só devolve metade delas, já que o gancho abaixo encerra as
+  // que ESTE módulo abriu.
+  //
+  //   * `TOKEN_ACESSO_AO_NEGOCIO` sai porque o Master precisa de transação de verdade, e esta é a
+  //     porta ÚNICA que a entrega. Ela abre a transação com `SET LOCAL` derivado do contexto, que
+  //     só a guarda escreve (CT-014): publicar o objeto não publica um caminho para `negocio` sem
+  //     contexto, porque esse caminho não existe;
+  //   * `TOKEN_ACESSO_A_IDENTIDADE` sai porque as duas funções de onboarding de `@sysloc/auth`
+  //     (`criarPessoa` e `reemitirSenhaProvisoria`) exigem o executor de identidade **por
+  //     assinatura**, e o índice daquele pacote as publicou nomeando literalmente as rotas desta
+  //     task. Sem o export, o módulo do Master abriria um segundo `abrirAcessoAIdentidade`, que é o
+  //     recurso sem dono do parágrafo acima.
+  //
+  // **A prescrição que isto substitui, e por que ela pôde cair.** Desde a T8 da fatia anterior este
+  // módulo registrava que `TOKEN_ACESSO_A_IDENTIDADE` ficava fora do `exports` porque *"publicar o
+  // executor criaria um segundo caminho para as tabelas de identidade"*. A propriedade que ela
+  // protegia — o alcance a `identidade` ser enumerável — continua sendo exigida, e é ela que o
+  // cabeçalho de `master.module.ts` e o de `empresa.service.ts` sustentam por outra via: o
+  // consumidor **repassa** o executor e não escreve consulta alguma com ele. Isso é verificável,
+  // não declarado: as operações de `identidade` do ciclo de vida da empresa vivem em
+  // `packages/db/src/empresa.ts`, e `apps/api/src` não tem SQL nem importa `esquemaIdentidade` ou o
+  // construtor de consulta do ORM. O executor publicado continua sendo o restrito às sete tabelas,
+  // sem `$client` (a `DECISÃO FECHADA` de `packages/db/src/acesso-identidade.ts`).
+  exports: [
+    TOKEN_ACESSO_A_IDENTIDADE,
+    TOKEN_ACESSO_AO_NEGOCIO,
+    TOKEN_AUTENTICACAO,
+    GuardaDeContexto,
+  ],
 })
 export class AutenticacaoModule implements OnApplicationShutdown {
-  constructor(@Inject(TOKEN_ACESSO_A_IDENTIDADE) private readonly acesso: AcessoAIdentidade) {}
+  constructor(
+    @Inject(TOKEN_ACESSO_A_IDENTIDADE) private readonly acesso: AcessoAIdentidade,
+    @Inject(TOKEN_ACESSO_AO_NEGOCIO) private readonly negocio: AcessoAoBanco,
+  ) {}
 
-  /** Devolve a reserva de conexões aberta na construção. */
+  /**
+   * Devolve as duas reservas de conexões abertas na construção.
+   *
+   * As duas, e não só a primeira: quem abre é dono do recurso, e uma reserva viva segura o laço de
+   * eventos — o desligamento gracioso que o ponto de entrada arma pararia de ser gracioso e viraria
+   * morte por temporizador do supervisor. `Promise.allSettled` para que a falha de uma não impeça o
+   * fechamento da outra, que é justamente o caminho em que o vazamento aconteceria.
+   */
   async onApplicationShutdown(): Promise<void> {
-    await this.acesso.encerrar();
+    await Promise.allSettled([this.acesso.encerrar(), this.negocio.encerrar()]);
   }
 }

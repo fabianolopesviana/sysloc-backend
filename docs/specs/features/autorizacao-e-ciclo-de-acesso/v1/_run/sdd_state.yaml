@@ -1,0 +1,27 @@
+feature: "autorizacao-e-ciclo-de-acesso"
+current_step: tech_spec
+variant: backend
+source: "recommended"
+source_note: "o pre-refinement.md desta fatia recomenda SDD na secao 15.2, confirmando a proposta do pre-refinamento do programa; nenhuma divergencia"
+steps:
+  prd:
+    status: completed
+    summary: "16 US, 23 CA. O acesso deixa de ser rotulo e passa a ser decisao: catalogo fechado de 10 telas e 7 acoes, ajuste individual em ambos os sentidos, ciclo de vida de empresa e pessoa, e onboarding por senha provisoria."
+  tech_alignment:
+    status: completed
+    summary: "7 decisoes tecnicas. Ponto de aplicacao unico com regra fora dele; exigencia declarada em duas dimensoes com default que nega; contador de versao junto da identidade; efetivo no registro de sessao; encerramento na origem do evento; conciliacao estrutural do D5; rota nativa de troca de senha desligada. 1 candidata a ADR (D2)."
+  tech_spec:
+    status: completed
+    variant: backend
+    summary: "12 componentes novos (5 em @sysloc/auth, 1 em @sysloc/db, 6 em apps/api), 15 rotas, 36 casos de teste. Tabelas tocadas: negocio.acesso_usuario_permissao, negocio.acesso_usuario_app, identidade.usuario, identidade.sessao, mais o enum identidade.desfecho_tentativa. Migracoes 0003 (gerada) e 0004 (a mao). Fecha os debitos D7, D21, D5, P-T6-1 e a metade acionavel do P-T6-2."
+  validation:
+    status: completed
+    summary: "challenge-spec: 4 questoes processadas, 4 ajustes inline. Achados: limite da garantia do Master declarado e alvo da reemissao restrito; regra de rotas publicas na cobertura (removida modificacao inocua em saude.controller.ts); alcance de /v1/usuarios canonizado; matriz do SYSLOC_MASTER declarada vazia. 6 termos canonizados (4 no global, 2 no feature). 1 ADR sugerida."
+  task_plan:
+    status: completed
+    summary: "9 tasks, 3 fases, 1 par paralelizavel (T1 ∥ T2). US cobertas: 16/16. 36 CTs redistribuidos sem sobreposicao, sem reinvocar o gerador. Todas em opus com [qa, tech_review] — a fatia cruza auth, security e db_migrations."
+  execution:
+    status: completed
+    tasks_total: 9
+    tasks_completed: 9
+    summary: "9/9 tasks concluidas, nenhuma bloqueada. Suite de 274 para 350 casos verdes (+76). build e lint limpos. 14 debitos anotados (D27 a D40)."

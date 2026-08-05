@@ -12,8 +12,13 @@
  * |          |        | `identidade.tentativa_login`, com desfecho próprio, momento, origem de rede
  * |          |        | e autor quando identificável (nulo, e apenas nulo, quando o e-mail não
  * |          |        | existe). |
+ * | —        | CT-208 | A migração `0004` acrescenta um valor ao enum `identidade.desfecho_tentativa`
+ * |          |        | — acréscimo retrocompatível (ADR-0012) — preservando os cinco valores
+ * |          |        | anteriores com a MESMA grafia e a mesma ordem, e a trilha passa a separar
+ * |          |        | **recusa de política** do que não é decisão de política. |
  *
- * Rastreabilidade: `CA-14 → CT-025 (RN-11)`.
+ * Rastreabilidade: `CA-14 → CT-025 (RN-11)`. O CT-208 não valida critério de produto: ele fecha o
+ * débito herdado `P-T6-1`, cujo eixo é a operação que lê a trilha.
  *
  * ---------------------------------------------------------------------------
  * Por que a contagem é TOTAL, e não das quatro tentativas do caso
@@ -56,7 +61,7 @@
  */
 
 import { esquemaIdentidade, SENHA_DA_CARGA } from '@sysloc/db';
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LIMITE_DE_FALHAS_CONSECUTIVAS } from '../src/bloqueio.ts';
 import { type IdentidadeEfemera, identidadeEfemera, pessoaSemeada } from './identidade-efemera.ts';
@@ -195,7 +200,127 @@ describe('CT-025 — toda tentativa de entrada é registrada com autor, momento,
   });
 });
 
+// ===========================================================================
+// CT-208 — o enum ganhou valor sem que nenhum anterior mudasse (fecha o `P-T6-1`)
+// ===========================================================================
+//
+// ---------------------------------------------------------------------------
+// Divergência declarada, na mesma forma da do CT-025 acima
+// ---------------------------------------------------------------------------
+//
+// O card manda exercitar, como companheiro negativo, uma **falha de criação de sessão**
+// (`FAILED_TO_CREATE_SESSION`). Esse desfecho não é alcançável pelo caminho real: produzi-lo
+// exigiria sabotar a escrita de `identidade.sessao` por conexão privilegiada no meio do caso, e
+// uma recusa fabricada assim provaria o sabotador, não o SUT.
+//
+// O caso exercita, no lugar dele, a OUTRA origem não-política — o pedido malformado
+// (`INVALID_EMAIL`, com a senha CORRETA) —, que percorre exatamente o mesmo ramo do gancho
+// `depois`: o `else` da comparação com o código de recusa de credencial, que é o único ponto onde
+// `ACESSO_RECUSADO` é escrito hoje. É o mesmo caminho real que
+// `packages/auth/test/recusa-nao-credencial.spec.ts` já usa, e pela mesma razão registrada lá.
+//
+// O que o par prova, que é o que o débito pedia: **a origem da recusa passou a ser legível na
+// coluna**. Antes, as duas linhas abaixo eram indistinguíveis.
+
+/** Os cinco rótulos que existiam antes da migração `0004`, na ordem em que o tipo os declara. */
+const DESFECHOS_ANTERIORES = [
+  'SUCESSO',
+  'CREDENCIAL_INCORRETA',
+  'EMAIL_INEXISTENTE',
+  'CONTA_BLOQUEADA',
+  'ACESSO_RECUSADO',
+] as const;
+
+/** O rótulo que a migração `0004` acrescentou, no fim da ordenação do tipo. */
+const DESFECHO_DE_POLITICA = 'ACESSO_RECUSADO_POR_POLITICA';
+
+/** A conta que o caso desativa para produzir uma recusa de POLÍTICA. Nenhum caso acima a usa. */
+const DESATIVADA = pessoaSemeada('usuario.b1@exemplo.com.br');
+
+/** A conta da recusa que NÃO é de política. Também intocada pelos casos acima. */
+const PEDIDO_MALFORMADO = pessoaSemeada('usuario.b2@exemplo.com.br');
+
+/**
+ * O mesmo endereço, com espaços em volta — válido para a borda, que normaliza, e inválido para a
+ * validação do arcabouço, que confere o valor cru. A senha vai CORRETA de propósito: a recusa não
+ * tem nada a ver com credencial.
+ */
+const EMAIL_COM_ESPACOS = `  ${PEDIDO_MALFORMADO.email.toUpperCase()}  `;
+
+describe('CT-208 — o enum de desfecho separa recusa de política do que não é decisão de política', () => {
+  it('os cinco rótulos anteriores sobrevivem com a mesma grafia e na mesma ordem, e o novo é o sexto', async () => {
+    const rotulos = await lerRotulosDoDesfecho();
+
+    // A igualdade do arranjo INTEIRO, e não `toContain` por rótulo: é ela que reprova a remoção de
+    // um valor, a renomeação de um valor e a inserção do novo no MEIO da ordenação — as três coisas
+    // que a ADR-0012 declara não retrocompatíveis. `toContain` sobreviveria às três.
+    expect(rotulos).toEqual([...DESFECHOS_ANTERIORES, DESFECHO_DE_POLITICA]);
+    expect(rotulos).toHaveLength(6);
+  });
+
+  it('a recusa de política grava o rótulo novo; a que não é de política continua em ACESSO_RECUSADO', async () => {
+    const banco = identidade.acesso.identidade;
+    const { usuario } = esquemaIdentidade;
+
+    // As duas contas começam sem histórico: sem isto, "o desfecho gravado foi X" poderia ser uma
+    // linha deixada por outro caso.
+    expect(await desfechosDe(DESATIVADA.id)).toEqual([]);
+    expect(await desfechosDe(PEDIDO_MALFORMADO.id)).toEqual([]);
+
+    // --- Recusa de POLÍTICA: pessoa desativada, senha CORRETA -----------------------------
+    // A desativação é escrita direto no estado da pessoa porque a rota que a faz nasce numa task
+    // seguinte — mesmo caminho que `admissao.spec.ts` já usa para montar este cenário.
+    await banco.update(usuario).set({ ativo: false }).where(eq(usuario.id, DESATIVADA.id));
+    await entrar(DESATIVADA.email, SENHA_DA_CARGA);
+
+    expect(await desfechosDe(DESATIVADA.id)).toEqual([DESFECHO_DE_POLITICA]);
+
+    // --- Recusa que NÃO é de política: pedido malformado, senha CORRETA -------------------
+    await entrar(EMAIL_COM_ESPACOS, SENHA_DA_CARGA);
+
+    expect(await desfechosDe(PEDIDO_MALFORMADO.id)).toEqual(['ACESSO_RECUSADO']);
+
+    // As duas igualdades acima são a prova INTEIRA do par, e por isso não há uma terceira linha
+    // aqui. Cada uma fixa o desfecho gravado por igualdade literal a uma constante diferente, e a
+    // reclassificação em massa — o rótulo novo substituindo o antigo em TODAS as origens — reprova
+    // na segunda delas, que passaria a ler `ACESSO_RECUSADO_POR_POLITICA`. Comparar as duas
+    // leituras entre si (`not.toEqual`) seria IMPLICADO por elas: passadas as duas, a desigualdade
+    // não teria mundo em que reprovar, e uma asserção que não pode falhar não detecta regressão.
+  });
+});
+
 type Banco = IdentidadeEfemera['acesso']['identidade'];
+
+/**
+ * Os rótulos do enum de desfecho, lidos do catálogo do banco na ordem do próprio tipo.
+ *
+ * Do catálogo, e não do schema declarado em TypeScript: o que esta asserção precisa provar é o que
+ * a MIGRAÇÃO fez no banco. Ler a união declarada compararia o schema consigo mesmo e ficaria verde
+ * com a migração `0004` ausente.
+ */
+async function lerRotulosDoDesfecho(): Promise<string[]> {
+  const linhas = await identidade.acesso.identidade.execute<{ rotulo: string }>(sql`
+    SELECT enumlabel AS rotulo
+      FROM pg_enum
+     WHERE enumtypid = 'identidade.desfecho_tentativa'::regtype
+     ORDER BY enumsortorder
+  `);
+
+  return [...linhas].map((linha) => linha.rotulo);
+}
+
+/** Os desfechos gravados para uma pessoa, na ordem dos fatos. */
+async function desfechosDe(usuarioId: string): Promise<string[]> {
+  const { tentativaLogin } = esquemaIdentidade;
+
+  const linhas = await identidade.acesso.identidade
+    .select({ desfecho: tentativaLogin.desfecho })
+    .from(tentativaLogin)
+    .where(eq(tentativaLogin.usuarioId, usuarioId))
+    .orderBy(asc(tentativaLogin.ocorridaEm));
+
+  return linhas.map((linha) => linha.desfecho);
+}
 
 /** Uma linha da trilha, como ela está gravada. */
 interface LinhaDaTrilha {

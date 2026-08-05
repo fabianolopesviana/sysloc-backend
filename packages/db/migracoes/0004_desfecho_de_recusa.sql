@@ -1,0 +1,59 @@
+-- Separação da recusa de política — ESCRITA À MÃO, e não gerada. Fecha a pendência `P-T6-1`.
+--
+-- ---------------------------------------------------------------------------
+-- Por que este arquivo existe separado do `0003`
+-- ---------------------------------------------------------------------------
+--
+-- A regra é a mesma que separou `0001_seguranca.sql` do `0000`: **conteúdo gerado e conteúdo
+-- autoral nunca convivem no mesmo arquivo**. Uma regeração futura de `0003` sobrescreve o arquivo
+-- inteiro, e o trecho autoral desapareceria em silêncio — sem erro, sem diff que alguém leia, e com
+-- a migração já aplicada no banco que atende a operação.
+--
+-- O acréscimo a enum é autoral por uma razão a mais, específica do PostgreSQL: `ALTER TYPE ... ADD
+-- VALUE` tem **posição** na ordenação do tipo, e a posição é escolha semântica, não saída de
+-- comparação de schema. Aqui a escolha é o FIM da ordenação — sem `BEFORE` nem `AFTER` —, e ela tem
+-- de casar com a posição em que `src/esquema/identidade.ts` declara o valor na união, senão o
+-- gerador emitiria uma migração seguinte para "corrigir" o que está certo.
+--
+-- ---------------------------------------------------------------------------
+-- O que o valor novo separa
+-- ---------------------------------------------------------------------------
+--
+-- `ACESSO_RECUSADO` era escrito por TRÊS origens e não distinguia nenhuma: recusa de política
+-- (pessoa desativada, empresa suspensa), defeito de servidor (`FAILED_TO_CREATE_SESSION`, emitido
+-- DEPOIS da conferência bem-sucedida da senha) e pedido malformado (`INVALID_EMAIL`). A
+-- consequência é medida, não hipotética: uma indisponibilidade parcial do banco produzia um pico
+-- indistinguível de um pico de tentativas contra contas desativadas — que é exatamente o sinal de
+-- ataque que a RN-11 existe para tornar legível.
+--
+-- A partir daqui, a **recusa de política** tem valor próprio e as outras duas permanecem em
+-- `ACESSO_RECUSADO`. A fronteira, por extenso, é o comentário de `desfechoTentativa` em
+-- `src/esquema/identidade.ts`, que é o oráculo do vocabulário — este cabeçalho não o duplica.
+--
+-- ---------------------------------------------------------------------------
+-- Por que agora, e por que é retrocompatível
+-- ---------------------------------------------------------------------------
+--
+-- **Acrescentar** valor a enum fechado é retrocompatível (ADR-0012); **renomear ou remover** não é.
+-- Nenhum dos cinco valores anteriores é tocado por este arquivo, e o CT-208 afirma os seis rótulos
+-- pelo catálogo do banco justamente para que uma renomeação futura reprove.
+--
+-- O momento é o barato: enquanto a coluna não tem volume, isto é migração sobre tabela vazia.
+-- Depois, seria migração sobre dados que ninguém consegue reclassificar — a linha antiga não
+-- carrega o discriminante que a distinguiria.
+--
+-- ---------------------------------------------------------------------------
+-- Restrição de transação — a razão de este arquivo ter UMA instrução só
+-- ---------------------------------------------------------------------------
+--
+-- `deploy/scripts/instalacao/migrar-banco.sh` aplica cada arquivo com `psql --single-transaction`, e
+-- `packages/db/test/banco-efemero.ts` o envia numa consulta só, que o servidor executa em transação
+-- implícita. Desde o PostgreSQL 12, `ALTER TYPE ... ADD VALUE` é admitido dentro de bloco de
+-- transação **desde que o valor novo não seja USADO antes do commit**. Manter este arquivo com uma
+-- instrução só é o que torna essa condição verdadeira por construção: não há instrução seguinte
+-- capaz de usar o valor. Quem acrescentar linha aqui precisa reler este parágrafo.
+--
+-- Sem descida (`down`): o PostgreSQL não remove valor de enum, e o caminho de volta é restauração
+-- de backup — o mesmo do `0001`, do `0002` e do `0003`.
+
+ALTER TYPE "identidade"."desfecho_tentativa" ADD VALUE 'ACESSO_RECUSADO_POR_POLITICA';

@@ -1,7 +1,7 @@
 ---
 id: 0007
 title: Forma canônica do contrato da API do backend novo
-status: accepted
+status: superseded-by:0012
 date: 2026-07-30
 tags: [http, architecture, error-handling]
 ---
@@ -34,6 +34,8 @@ Todo recurso da API obedece a cinco regras de forma: a chave exposta é o códig
 **Neutros:**
 - `limite`/`deslocamento` é adequado ao volume atual e pode conviver com cursor depois, num recurso específico, sem invalidar esta decisão.
 - O enum de `codigo` em pt-BR mantém continuidade com os símbolos que o cliente já trata (`sem_certificado_proprio`, `requer_decisao`, `sem_config_ativa`).
+
+> Superseded by 0012 - Forma canônica do contrato da API, com a chave exposta variando por classe de entidade em 2026-08-04.
 
 ## Alternatives considered
 

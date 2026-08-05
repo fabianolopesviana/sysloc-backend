@@ -91,7 +91,7 @@ function publicarContrato(app: NestFastifyApplication): void {
       .setTitle('Sysloc — API')
       .setDescription(
         'Contrato do backend Sysloc. Erros seguem a forma canônica ' +
-          '`{ codigo, mensagem, campo?, detalhes? }` com status HTTP semântico (ADR-0007).',
+          '`{ codigo, mensagem, campo?, detalhes? }` com status HTTP semântico (ADR-0012).',
       )
       .setVersion('0.0.0')
       .build(),

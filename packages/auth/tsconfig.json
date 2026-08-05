@@ -13,10 +13,16 @@
     "sourceMap": true,
     "types": ["node"]
   },
-  // `src/` importa `@sysloc/db` pelo especificador público, e o `exports` daquele manifesto
-  // resolve só para `dist/` — que o `.gitignore` barra. Declarar a referência é o que faz o
-  // `tsc --build` deste pacote CONSTRUIR o irmão antes de compilar aqui, inclusive sob
+  // `src/` importa `@sysloc/db` e `@sysloc/shared` pelo especificador público, e o `exports` dos
+  // dois manifestos resolve só para `dist/` — que o `.gitignore` barra. Declarar a referência é o
+  // que faz o `tsc --build` deste pacote CONSTRUIR os irmãos antes de compilar aqui, inclusive sob
   // `pnpm --filter @sysloc/auth test`, que não atravessa o grafo do Turborepo.
-  "references": [{ "path": "../db" }],
+  //
+  // A aresta para `../shared` entra na T2 da fatia `autorizacao-e-ciclo-de-acesso`, quando
+  // `efetivo.ts` passa a recusar ajuste incoerente com `ErroDeAplicacao`. Ela é a MESMA direção que
+  // a §3.2 da tech spec daquela fatia fixa (`apps/api` → `@sysloc/auth` → `@sysloc/db` →
+  // `@sysloc/shared`): o contrato de erro é transversal, e reescrever a recusa com um literal
+  // próprio aqui criaria uma segunda definição do envelope da ADR-0012, livre para divergir.
+  "references": [{ "path": "../db" }, { "path": "../shared" }],
   "include": ["src/**/*.ts"]
 }

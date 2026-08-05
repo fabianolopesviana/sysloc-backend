@@ -20,8 +20,14 @@
  * |       | (b)    | respondendo fora do prefixo, e a versão prefixada deles NÃO existe; ao mesmo
  * |       |        | tempo a superfície de identidade só existe COM o prefixo. |
  * | —     | CT-018 | O INVENTÁRIO das rotas que o curinga publica sob `/v1/auth` é exatamente o
- * |       | (d)    | conjunto aceito — as seis declaradas na §4.1 mais a superfície tolerada —, e
+ * |       | (d)    | conjunto aceito — as declaradas na §4.1 mais a superfície tolerada —, e
  * |       |        | qualquer excedente ou ausente é NOMEADO na falha. (§11.1) |
+ * | CA-18 | CT-234 | `/v1/auth/change-password` não é mais alcançável pelo encaminhador — responde
+ * |       |        | `404` mesmo com sessão válida e senha atual correta, e a credencial fica
+ * |       |        | intacta —, e na rota do produto que a substitui TODA recusa acontece antes
+ * |       |        | de a credencial ser gravada e antes de qualquer sessão ser apagada: a pessoa
+ * |       |        | recusada sai com `senha_derivada` inalterada e a contagem de sessões
+ * |       |        | preservada. O controle positivo, no fim, muda as duas coisas. (D21) |
  * | —     | CT-018 | Recusa do arcabouço com status FORA da tabela de código por status sai com o
  * |       | (e)    | status preservado e código de recusa — nunca `500`/`ERRO_INTERNO` —, e o
  * |       |        | journal a registra como recusa, nunca como falha do serviço. (ADR-0007) |
@@ -34,7 +40,7 @@
  * |       |        | entrada, que funciona. (RN-07) |
  *
  * Rastreabilidade: `CA-06 → CT-018 (RN-07)`, `CA-01 → CT-018`, `CA-11 → CT-023 (RN-10)`,
- * `CA-12 → CT-024 (RN-07)`.
+ * `CA-12 → CT-024 (RN-07)`, `CA-18 → CT-234 (RN-10)`.
  *
  * ---------------------------------------------------------------------------
  * A sonda autenticada é `GET /v1/auth/get-session`, e não `GET /v1/sessao`
@@ -100,6 +106,7 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { criarPessoa } from '@sysloc/auth';
 import { EMPRESA_A, EMPRESA_B, esquemaIdentidade, SENHA_DA_CARGA } from '@sysloc/db';
 import { CodigoErro, type Logger } from '@sysloc/shared';
 import { eq } from 'drizzle-orm';
@@ -124,9 +131,12 @@ import {
 } from '../../../packages/auth/test/identidade-efemera.ts';
 import { reservarPorta, sondarAte } from '../../../packages/shared/test/efemero-comum.ts';
 import { type FilaEfemera, redisEfemero } from '../../../packages/shared/test/redis-efemero.ts';
+import { CAMINHOS_NAO_PUBLICADOS } from '../src/autenticacao/autenticacao.controller.ts';
 import { PREFIXO_DAS_ROTAS_DE_IDENTIDADE } from '../src/autenticacao/autenticacao.module.ts';
+import { CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO } from '../src/autenticacao/senha.controller.ts';
 import {
   ENDERECO_DE_ESCUTA,
+  PREFIXO_DE_VERSAO,
   TOKEN_AUTENTICACAO,
   TOKEN_LOGGER,
 } from '../src/configuracao/ambiente.ts';
@@ -170,20 +180,29 @@ const ENDERECOS_DA_FUNDACAO = ['/docs', '/docs/json', '/saude', '/saude/pronto']
 /**
  * As rotas que a **§4.1 da tech spec DECLARA** sob `/v1/auth` — o contrato, e só ele.
  *
- * A tabela da §4.1 tem seis linhas sob este prefixo, e duas delas ("Verificar segundo fator" e
- * "Ativar segundo fator") são a MESMA rota exercitada em dois momentos do fluxo; por isso cinco
- * entradas, e não seis. A sétima linha da tabela, `GET /v1/sessao`, não mora sob `/v1/auth` e é da
- * T9.
- *
  * Escritas à mão de propósito, e separadas de {@link SUPERFICIE_TOLERADA}: é a distinção entre o
  * que o produto **prometeu** e o que a montagem por curinga **arrastou** junto. Derivar esta lista
  * do arcabouço destruiria a distinção — passaria a afirmar "o arcabouço publica o que o arcabouço
  * publica", que é verdade vazia.
+ *
+ * ---------------------------------------------------------------------------
+ * A aritmética, porque os dois números diferem e a diferença já foi motivo de confusão
+ * ---------------------------------------------------------------------------
+ *
+ * A tabela da §4.1 tinha **seis** linhas sob este prefixo, e duas delas ("Verificar segundo fator"
+ * e "Ativar segundo fator") são a MESMA rota exercitada em dois momentos do fluxo — por isso a
+ * constante nasceu com **cinco** entradas, e não seis. A T9 desligou a troca de senha nativa: a
+ * tabela passa a ter **cinco linhas** e esta constante, **quatro entradas**. A outra linha da
+ * tabela, `GET /v1/sessao`, não mora sob `/v1/auth`.
+ *
+ * SUT_IS_CORRECT_BECAUSE: o desligamento da rota nativa de troca de senha é entrega
+ * declarada desta fatia (decisão D7 do tech-alignment, fechamento do débito D21);
+ * o inventário de 6 rotas descrevia o estado anterior, e a rota removida grava a
+ * credencial antes de conferir a política — que é o defeito que o D21 mediu.
  */
 const SUPERFICIE_DECLARADA = [
   'POST /sign-in/email',
   'POST /sign-out',
-  'POST /change-password',
   'POST /two-factor/enable',
   'POST /two-factor/verify-totp',
 ] as const;
@@ -324,6 +343,28 @@ const PESSOA_DA_EXPIRACAO = pessoaSemeada('admin.b@exemplo.com.br');
  * e emprestar o sujeito de outro caso faria o número que aquele caso afirma depender da ordem.
  */
 const PESSOA_DA_RECUSA = pessoaSemeada('usuario.b2@exemplo.com.br');
+
+/**
+ * Sujeito exclusivo do CT-234, e **não** uma pessoa da carga.
+ *
+ * Ele é criado pelo próprio caso, pela capacidade do produto, porque o CT-234 é o único deste
+ * arquivo que **muda a credencial** de alguém e que conta as sessões dessa pessoa a cada passo.
+ * Emprestar uma pessoa semeada faria a contagem que os casos vizinhos afirmam depender da ordem de
+ * execução, que é exatamente o defeito que o cabeçalho deste arquivo proíbe.
+ */
+const PESSOA_DA_TROCA_DO_PRODUTO = {
+  nome: 'Marta Quintela',
+  email: 'marta.quintela@exemplo.com.br',
+} as const;
+
+/** A rota de troca de senha do produto, composta a partir do dono do segmento. */
+const ROTA_DA_TROCA_DO_PRODUTO = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO}`;
+
+/** Senha nova do CT-234 — aprovada pela política, e sem pedaço do nome ou do e-mail da pessoa. */
+const SENHA_NOVA_DO_PRODUTO = 'Trilha9Verde!';
+
+/** Senha atual errada, para exercitar a recusa da conferência sem trocar coisa alguma. */
+const SENHA_ATUAL_ERRADA_DO_PRODUTO = 'Bosque4Claro!';
 
 let identidade: IdentidadeEfemera;
 let fila: FilaEfemera;
@@ -841,6 +882,152 @@ describe('superfície versionada de identidade (T8)', () => {
     },
     LIMITE_CASO_MS,
   );
+
+  it(
+    'CT-234 — a rota nativa deixa de ser publicada, e a recusa acontece antes de qualquer escrita (D21)',
+    async () => {
+      // ------------------------------------------------------------------------------------------
+      // Sujeito EXCLUSIVO deste caso, criado pela capacidade do PRODUTO
+      // ------------------------------------------------------------------------------------------
+      //
+      // `criarPessoa` é a mesma função que `POST /v1/usuarios` chama, e não uma inserção escrita
+      // aqui: a credencial nasce derivada pelo mecanismo do arcabouço, que é o que faz a entrada
+      // abaixo ser a entrada real. Sujeito próprio porque este caso **muda a senha** no controle
+      // positivo do fim e conta as sessões da pessoa em cada passo — emprestar uma pessoa da carga
+      // faria o número que os casos vizinhos afirmam depender da ordem de execução.
+      const pessoa = await criarPessoa(identidade.autenticacao, identidade.acesso.identidade, {
+        nome: PESSOA_DA_TROCA_DO_PRODUTO.nome,
+        email: PESSOA_DA_TROCA_DO_PRODUTO.email,
+        perfil: 'USUARIO_EMPRESA',
+        empresaId: EMPRESA_B.id,
+      });
+
+      const entrada = await pedir(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/sign-in/email`, {
+        metodo: 'POST',
+        corpo: { email: PESSOA_DA_TROCA_DO_PRODUTO.email, password: pessoa.senhaProvisoria },
+      });
+      expect(entrada.status).toBe(200);
+      const cookie = credencialDeSessao(entrada);
+
+      // O par que DISCRIMINA. Um `401` sozinho passaria com a implementação defeituosa — o defeito
+      // do D21 também respondia `401`. O que separa "recusou" de "recusou depois de escrever" é a
+      // credencial derivada antes e depois, somada à contagem de sessões.
+      const derivadaInicial = await senhaDerivadaDe(pessoa.usuarioId);
+      expect(typeof derivadaInicial).toBe('string');
+      expect(await sessoesDe(pessoa.usuarioId)).toHaveLength(1);
+
+      // ------------------------------------------------------------------------------------------
+      // 1. A ROTA NATIVA não é publicada — nem com sessão válida e senha atual CORRETA
+      // ------------------------------------------------------------------------------------------
+      //
+      // A senha atual é a certa de propósito: com a rota publicada, esta requisição TROCARIA a
+      // senha e devolveria `200`. É a forma mais forte da asserção — ela reprova tanto o
+      // republicar quanto o "barrar só o corpo errado".
+      const nativa = await pedir(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/change-password`, {
+        metodo: 'POST',
+        cookie,
+        corpo: {
+          currentPassword: pessoa.senhaProvisoria,
+          newPassword: SENHA_NOVA_DO_PRODUTO,
+          revokeOtherSessions: true,
+        },
+      });
+      expect(nativa.status).toBe(404);
+      expect(nativa.corpo).toEqual({
+        codigo: CodigoErro.RECURSO_NAO_ENCONTRADO,
+        mensagem: 'recurso não encontrado',
+      });
+      expect(await senhaDerivadaDe(pessoa.usuarioId)).toBe(derivadaInicial);
+      expect(await sessoesDe(pessoa.usuarioId)).toHaveLength(1);
+
+      // O inventário deixa de listá-la, e o literal é escrito à mão — é o contrato, e derivá-lo do
+      // mesmo lugar que o SUT faria o caso concordar consigo mesmo. A cardinalidade exata do
+      // conjunto é afirmada por igualdade no `CT-018 (d)`.
+      expect(superficieEfetiva()).not.toContain('POST /change-password');
+
+      // ------------------------------------------------------------------------------------------
+      // 2. Na rota do PRODUTO, a recusa por ADMISSÃO não deixa efeito
+      // ------------------------------------------------------------------------------------------
+      //
+      // A empresa é suspensa por escrita direta, e não pela rota do Master, por uma razão que muda o
+      // que o caso mede: a suspensão pela rota **encerra as sessões da empresa no mesmo ato**
+      // (RN-04, CT-224), e sem sessão viva a requisição seria recusada pela GUARDA — a asserção
+      // sobre a contagem de sessões viraria `0 → 0`, verdadeira por vacuidade, e nada teria sido
+      // dito sobre a ordem dentro da rota. Aqui a sessão continua viva, a requisição chega ao
+      // manipulador, e é a conferência de admissão dele que recusa.
+      //
+      // A restauração é `finally` porque a empresa é da carga e outros casos deste arquivo entram
+      // com pessoas dela: uma suspensão que sobrevivesse a uma falha aqui derrubaria o vizinho.
+      await definirSuspensaoDaEmpresa(EMPRESA_B.id, new Date());
+      try {
+        const recusadaPelaPolitica = await pedir(ROTA_DA_TROCA_DO_PRODUTO, {
+          metodo: 'POST',
+          cookie,
+          corpo: { senhaAtual: pessoa.senhaProvisoria, senhaNova: SENHA_NOVA_DO_PRODUTO },
+        });
+
+        expect(recusadaPelaPolitica.status).toBe(401);
+        expect(recusadaPelaPolitica.corpo).toEqual({
+          codigo: CodigoErro.NAO_AUTENTICADO,
+          mensagem: 'sessão inválida ou expirada',
+        });
+        expect(await senhaDerivadaDe(pessoa.usuarioId)).toBe(derivadaInicial);
+        expect(await sessoesDe(pessoa.usuarioId)).toHaveLength(1);
+      } finally {
+        await definirSuspensaoDaEmpresa(EMPRESA_B.id, null);
+      }
+
+      // ------------------------------------------------------------------------------------------
+      // 3. E a recusa por SENHA ATUAL ERRADA também não deixa efeito
+      // ------------------------------------------------------------------------------------------
+      const recusadaPelaSenha = await pedir(ROTA_DA_TROCA_DO_PRODUTO, {
+        metodo: 'POST',
+        cookie,
+        corpo: { senhaAtual: SENHA_ATUAL_ERRADA_DO_PRODUTO, senhaNova: SENHA_NOVA_DO_PRODUTO },
+      });
+      expect(recusadaPelaSenha.status).toBe(422);
+      expect(recusadaPelaSenha.corpo).toEqual({
+        codigo: CodigoErro.CAMPO_INVALIDO,
+        mensagem: 'requisição inválida',
+      });
+      expect(await senhaDerivadaDe(pessoa.usuarioId)).toBe(derivadaInicial);
+      expect(await sessoesDe(pessoa.usuarioId)).toHaveLength(1);
+
+      // ------------------------------------------------------------------------------------------
+      // 4. CONTROLE POSITIVO — sem condição de recusa, a troca ACONTECE
+      // ------------------------------------------------------------------------------------------
+      //
+      // Sem ele, as três asserções de "credencial inalterada" acima seriam satisfeitas por uma rota
+      // que nunca escreve nada, e o caso passaria provando o oposto do que persegue.
+      const trocada = await pedir(ROTA_DA_TROCA_DO_PRODUTO, {
+        metodo: 'POST',
+        cookie,
+        corpo: { senhaAtual: pessoa.senhaProvisoria, senhaNova: SENHA_NOVA_DO_PRODUTO },
+      });
+      expect(trocada.status).toBe(200);
+      expect(trocada.corpo).toEqual({ trocada: true });
+      expect(await senhaDerivadaDe(pessoa.usuarioId)).not.toBe(derivadaInicial);
+
+      // E a credencial passou a ser a nova, pelas duas pontas: a anterior deixou de entrar, com a
+      // recusa indistinguível de credencial incorreta (RN-10), e a nova entra.
+      const comAProvisoria = await pedir(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/sign-in/email`, {
+        metodo: 'POST',
+        corpo: { email: PESSOA_DA_TROCA_DO_PRODUTO.email, password: pessoa.senhaProvisoria },
+      });
+      expect(comAProvisoria.status).toBe(401);
+      expect(comAProvisoria.corpo).toEqual({
+        codigo: CodigoErro.CREDENCIAL_INVALIDA,
+        mensagem: 'credencial inválida',
+      });
+
+      const comASenhaNova = await pedir(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/sign-in/email`, {
+        metodo: 'POST',
+        corpo: { email: PESSOA_DA_TROCA_DO_PRODUTO.email, password: SENHA_NOVA_DO_PRODUTO },
+      });
+      expect(comASenhaNova.status).toBe(200);
+    },
+    LIMITE_CASO_MS,
+  );
 });
 
 /**
@@ -883,6 +1070,19 @@ function superficieEfetiva(): string[] {
       continue;
     }
     if (ponta.options.metadata?.SERVER_ONLY === true) {
+      continue;
+    }
+    // A QUARTA exclusão, e a única que não é do roteador do arcabouço: o que o ENCAMINHADOR recusa
+    // antes do repasse não é publicado por esta API, e portanto não é superfície efetiva. Ela é
+    // lida do SUT (`CAMINHOS_NAO_PUBLICADOS`), e não de uma segunda lista escrita aqui — republicar
+    // o caminho reprova o caso, e é o que amarra a subtração à decisão do encaminhador.
+    //
+    // Ela é necessária porque o registro de pontas **não** encolhe: o arcabouço monta `api` com
+    // `changePassword` incondicionalmente, e nem a opção `disabledPaths` dele o removeria dali
+    // (medido — ver `CAMINHOS_NAO_PUBLICADOS`). A prova de que a subtração não é ficção é
+    // comportamental e mora no `CT-234`: o caminho responde `404` com sessão válida e senha atual
+    // correta.
+    if (CAMINHOS_NAO_PUBLICADOS.has(ponta.path)) {
       continue;
     }
 
@@ -1057,6 +1257,43 @@ async function sessoesDe(usuarioId: string): Promise<readonly { token: string; e
     .select({ token: sessao.token, expiraEm: sessao.expiraEm })
     .from(sessao)
     .where(eq(sessao.usuarioId, usuarioId));
+}
+
+/**
+ * A credencial DERIVADA da conta local da pessoa — o valor que distingue "recusou" de "recusou
+ * depois de escrever".
+ *
+ * Observação de estado persistido, e não instrumentação do SUT: nenhum contador de escritas é
+ * instalado na produção, porque a coluna antes e depois já responde à pergunta. É a leitura que a
+ * precondição privilegiada do CT-234 declara.
+ */
+async function senhaDerivadaDe(usuarioId: string): Promise<string | null | undefined> {
+  const { conta } = esquemaIdentidade;
+
+  const [linha] = await identidade.acesso.identidade
+    .select({ senhaDerivada: conta.senhaDerivada })
+    .from(conta)
+    .where(eq(conta.usuarioId, usuarioId))
+    .limit(1);
+
+  return linha?.senhaDerivada;
+}
+
+/**
+ * Escreve — e desfaz — a suspensão de uma empresa no arranjo do caso.
+ *
+ * A rota do Master faz isto e mais: ela **encerra as sessões da empresa no mesmo ato** (RN-04). O
+ * CT-234 precisa exatamente do oposto — uma sessão viva cuja pessoa a política não admite mais —,
+ * e por isso o arranjo é a escrita direta da coluna, que é o mesmo padrão de observação e escrita
+ * de estado de domínio que a T7 e a T8 já usam (`ativo`, `senha_provisoria`).
+ */
+async function definirSuspensaoDaEmpresa(empresaId: string, valor: Date | null): Promise<void> {
+  const { empresa } = esquemaIdentidade;
+
+  await identidade.acesso.identidade
+    .update(empresa)
+    .set({ suspensaEm: valor })
+    .where(eq(empresa.id, empresaId));
 }
 
 /** A expiração persistida da sessão de um token. */

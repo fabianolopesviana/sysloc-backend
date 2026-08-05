@@ -131,6 +131,151 @@ export const RENOVACAO_DA_SESSAO_EM_SEGUNDOS = 0;
 /** O caminho, relativo ao prefixo do arcabouço, em que a entrada por identificação e senha acontece. */
 const CAMINHO_DE_ENTRADA = '/sign-in/email';
 
+/**
+ * Janela do limitador de taxa nativo, em segundos (§11.5, `P-T6-2`).
+ *
+ * Um minuto, e a mesma janela para as duas regras: o que distingue o caminho de entrada dos demais
+ * é o TETO, não o período. Dois períodos diferentes só acrescentariam um número a manter.
+ *
+ * A janela é **rolante a partir do último pedido**, e não fixa a partir do primeiro — medido no
+ * pacote publicado: o contador só zera quando o intervalo entre dois pedidos consecutivos passa da
+ * janela. Quem insiste sem parar não obtém o zeramento pela passagem do tempo.
+ *
+ * **Exportada para ser ancorável**, pelo mesmo critério de {@link DURACAO_DA_SESSAO_EM_SEGUNDOS}:
+ * sem uma asserção que amarre o número à política, ele é literal órfão e alargá-lo até o limitador
+ * nunca disparar não reprovaria caso nenhum. A âncora vive no CT-236 (`test/bloqueio.spec.ts`).
+ * Não sai no índice do pacote — nenhum consumidor de fora lê a configuração da instância.
+ */
+export const JANELA_DO_LIMITADOR_EM_SEGUNDOS = 60;
+
+/**
+ * Quantas tentativas de ENTRADA uma mesma origem obtém por janela.
+ *
+ * **A CONDIÇÃO EM QUE ESTE NÚMERO É "POR ORIGEM", E ELA NÃO VALE HOJE.** O eixo de identidade do
+ * limitador é o endereço que `getIp` apura a partir de cabeçalho declarado — e, sem um salto
+ * confiável declarado em `advanced.ipAddress`, ele não existe: em produção `getIp` devolve nulo e a
+ * chave vira uma só por caminho, de modo que este teto passa a ser o do PRODUTO INTEIRO naquele
+ * caminho. O dimensionamento abaixo é o do regime COM eixo, que é o regime em que ele vale; o
+ * regime de hoje, a razão de ele ser assim e quando isso fecha estão no `DÉBITO COM GATILHO` ao
+ * lado de `rateLimit`, e o estado corrente é fixado por asserção no CT-236 (c).
+ *
+ * O teto é por origem e por caminho, e precisa caber o pior caso legítimo: uma imobiliária inteira
+ * atrás de um endereço só, abrindo o expediente ao mesmo tempo (decisão 2 — 20 a 300 empresas com
+ * equipes pequenas). Trinta cobre esse pico com folga e ainda corta o regime que a RN-06 não vê: a
+ * pulverização de uma senha por conta, em que nenhuma conta chega às cinco falhas do bloqueio.
+ *
+ * Ele é MENOR que {@link TETO_GERAL_POR_JANELA} de propósito: a entrada é o único caminho em que
+ * cada pedido custa uma derivação de senha, e é o único que um atacante repete sem credencial
+ * nenhuma na mão.
+ *
+ * Exportada pela mesma razão da constante acima, e com o mesmo critério de índice.
+ */
+export const TETO_DE_ENTRADAS_POR_JANELA = 30;
+
+/**
+ * Quantos pedidos uma mesma origem obtém, por janela, nos caminhos que CRIAM, CONFEREM ou TROCAM
+ * credencial fora do fluxo de entrada.
+ *
+ * «Por origem» aqui vale sob a MESMA condição declarada em {@link TETO_DE_ENTRADAS_POR_JANELA}, e
+ * ela não vale hoje.
+ *
+ * O grupo é `/sign-in/*` (as variantes que não são a entrada), `/sign-up/*`, `/change-password` e
+ * `/change-email`. O que eles têm em comum não é a rota: é **não existir contador por conta ali**.
+ * A RN-06 conta falhas por conta no caminho de entrada, e só nele — o gancho `depois` deste arquivo
+ * retorna cedo para todo `ctx.path` que não seja {@link CAMINHO_DE_ENTRADA}, de modo que
+ * `registrarFalha` nunca corre nesses caminhos. Neles o limitador **é a única camada**, e é por isso
+ * que o teto não pode ser o geral.
+ *
+ * Dez, e não os trinta da entrada: nenhum destes caminhos tem pico coletivo. A entrada tem — a
+ * imobiliária inteira abrindo o expediente atrás de um endereço só —, e é dela que vêm os trinta.
+ * Trocar a própria senha, ou o próprio e-mail, é ato individual e raro; dez por minuto cobrem a
+ * redigitação de algumas pessoas atrás do mesmo endereço e continuam **mais estreitos** que os 3 por
+ * 10 s (18 por minuto) que o padrão do arcabouço dava a este grupo.
+ *
+ * Duas das rotas do grupo estão inertes hoje por configuração — `/sign-up/*` por `disableSignUp`,
+ * `/sign-in/social` por não haver provedor social declarado, `/change-email` por a opção não ser
+ * passada. **É justamente por isso que elas entram**: a inércia é uma linha de configuração, e um
+ * teto que dependa dela some no dia em que a linha mudar, sem que nada acuse.
+ *
+ * **Exportada para ser ancorável**, pelo mesmo critério de {@link TETO_DE_ENTRADAS_POR_JANELA}. A
+ * âncora vive no CT-236 (`test/bloqueio.spec.ts`), com a perna comportamental de
+ * `/change-password` — o caminho do grupo que confere `currentPassword`.
+ *
+ * **Como `/change-password` é alcançado, e por que a distinção importa** (T9 da fatia
+ * `autorizacao-e-ciclo-de-acesso`): ele **deixou de ser publicado** sob `/v1/auth` — o encaminhador
+ * de `apps/api` responde `404` a ele —, e passou a ser alcançado apenas por dentro, no repasse que
+ * `POST /v1/sessao/senha` faz ao **manipulador** desta instância. O teto, portanto, continua
+ * governando toda troca de senha do produto; o que mudou é que o balde é alimentado por uma rota
+ * só. A perna do CT-236 em `test/bloqueio.spec.ts` exercita a INSTÂNCIA, que é o lado da fronteira
+ * que este pacote alcança; a perna sobre a **superfície publicada** vive em
+ * `apps/api/test/campos-fechados.e2e.spec.ts`, e é ela que impede este número de voltar a ser
+ * literal órfão do lado do produto.
+ */
+export const TETO_DE_CREDENCIAL_POR_JANELA = 10;
+
+/**
+ * Quantos pedidos uma mesma origem obtém, por janela, nos caminhos que DISPARAM E-MAIL para um
+ * endereço informado no próprio pedido.
+ *
+ * «Por origem» aqui vale sob a MESMA condição declarada em {@link TETO_DE_ENTRADAS_POR_JANELA}, e
+ * ela não vale hoje.
+ *
+ * O grupo é `/request-password-reset`, `/send-verification-email` e a família
+ * `/forget-password/**`. O teto mais estreito dos três é deste grupo porque o custo de cada pedido
+ * **não é do servidor nem de quem pede**: é da caixa de entrada de um terceiro, escolhido pelo
+ * atacante. Um teto folgado aqui transforma a identidade do produto em remetente de mensagem não
+ * solicitada, e a reputação do domínio de envio é o que se perde.
+ *
+ * Cinco, e não os 3 por 60 s do padrão do arcabouço: o padrão foi escolhido sem saber que este
+ * produto tem origens compartilhadas por desenho (decisão 2 — imobiliárias inteiras atrás de um
+ * endereço), e três recusaria a terceira pessoa do escritório que pedisse a redefinição no mesmo
+ * minuto. Cinco é a mesma ordem de grandeza do padrão, e vinte e quatro vezes mais estreito que
+ * {@link TETO_GERAL_POR_JANELA}.
+ *
+ * `/forget-password` não existe no núcleo do `better-auth@1.6.25` — é o nome histórico do
+ * `/request-password-reset`, e hoje só o plugin `email-otp`, que este projeto não instala, publica
+ * caminho com esse prefixo. A entrada fica assim mesmo: ela custa uma chave e não depende de o nome
+ * voltar num bump. Os dois caminhos `/email-otp/*` que o padrão também cobria ficam de fora pelo
+ * motivo oposto — declará-los seria configurar um plugin ausente, e a rede contra a instalação dele
+ * já existe e é comportamental: o CT-018 (d) de `apps/api/test/autenticacao.e2e.spec.ts` reprova
+ * nomeando **toda** rota nova que apareça sob o prefixo, e quem instalar o plugin decide ali o teto
+ * das rotas que ele trouxer.
+ *
+ * Exportada pela mesma razão das constantes acima, e com o mesmo critério de índice.
+ */
+export const TETO_DE_EMISSAO_DE_EMAIL_POR_JANELA = 5;
+
+/**
+ * O teto de toda a demais superfície de identidade, por origem e por caminho — «por origem» sob a
+ * MESMA condição declarada em {@link TETO_DE_ENTRADAS_POR_JANELA}, que não vale hoje.
+ *
+ * Mais folgado que o da entrada porque os caminhos daqui pressupõem sessão ou token já emitido —
+ * quem os alcança já passou por alguma barreira —, e porque uma sessão legítima ativa faz muito
+ * mais pedidos de leitura de sessão do que tentativas de entrada.
+ *
+ * Exportada pela mesma razão das constantes acima, e com o mesmo critério de índice.
+ */
+export const TETO_GERAL_POR_JANELA = 120;
+
+/**
+ * Quantas verificações de segundo fator seguidas erram antes de a CONTA ser trancada.
+ *
+ * Ela é a camada que sustenta o teto geral em `/two-factor/*` — ver o quadro do bloco `rateLimit`,
+ * onde aquele caminho é o único deixado na curinga por decisão. O número é o mesmo que o plugin
+ * aplicaria por padrão (`enabled ?? true`, `maxFailedAttempts ?? 10`, `durationSeconds ?? 900`,
+ * medido em `better-auth@1.6.25`, `dist/plugins/two-factor/verify-two-factor.mjs`), e é DECLARADO
+ * mesmo assim: um padrão de biblioteca não declarado muda no próximo bump sem que nada acuse, que é
+ * exatamente o raciocínio que o bloco `rateLimit` recusa duas vezes para os demais caminhos.
+ *
+ * **Exportada para ser ancorável**, pelo mesmo critério de {@link TETO_DE_ENTRADAS_POR_JANELA}. A
+ * âncora vive no CT-236 (b) (`test/bloqueio.spec.ts`) e lê a configuração DA INSTÂNCIA, não este
+ * comentário: apagar a declaração das opções do plugin reprova ali.
+ */
+export const FALHAS_DE_SEGUNDO_FATOR_ANTES_DA_TRANCA = 10;
+
+/** Por quanto tempo a conta fica trancada depois delas, em segundos. Mesmo critério acima. */
+export const TRANCA_DO_SEGUNDO_FATOR_EM_SEGUNDOS = 15 * 60;
+
 // ---------------------------------------------------------------------------------------------
 // As duas validações de PRODUTO, e por que elas moram AQUI e não no adaptador HTTP (T10 / Gate 2)
 // ---------------------------------------------------------------------------------------------
@@ -280,15 +425,21 @@ const CAMPO_DO_CODIGO_NO_ERRO = 'codigo';
  * `Record` exaustivo, e não `switch` com ramo padrão: um motivo novo na barreira deixa de compilar
  * aqui, em vez de cair em silêncio num desfecho genérico que a auditoria não sabe interpretar.
  *
- * `PESSOA_DESATIVADA` e `EMPRESA_SUSPENSA` compartilham `ACESSO_RECUSADO` porque o enum do banco não
- * os distingue — a fronteira está escrita por extenso no comentário de `desfechoTentativa`
- * (`packages/db/src/esquema/identidade.ts`), que é o oráculo do vocabulário, e separá-los exige
- * valor novo no enum e migração. Elas são, a partir da T7, o volume normal do valor.
+ * `PESSOA_DESATIVADA` e `EMPRESA_SUSPENSA` compartilham `ACESSO_RECUSADO_POR_POLITICA` — e o que
+ * elas compartilham agora é uma CLASSE, não a falta de um valor. As duas são decisão do produto
+ * sobre quem pode entrar; o que ficou de fora do valor é o que **não** é decisão de política
+ * (defeito de servidor e pedido malformado), que segue em `ACESSO_RECUSADO`.
+ *
+ * Até a migração `0004` as três origens dividiam o mesmo rótulo, e um pico causado por
+ * indisponibilidade do banco era indistinguível de um pico de tentativas contra contas desativadas.
+ * A fronteira está escrita por extenso no comentário de `desfechoTentativa`
+ * (`packages/db/src/esquema/identidade.ts`), que continua sendo o oráculo do vocabulário — este
+ * comentário aponta para lá, não o duplica.
  */
 const DESFECHO_POR_MOTIVO: Record<MotivoDeRecusa, DesfechoDeTentativa> = {
   CONTA_BLOQUEADA: 'CONTA_BLOQUEADA',
-  PESSOA_DESATIVADA: 'ACESSO_RECUSADO',
-  EMPRESA_SUSPENSA: 'ACESSO_RECUSADO',
+  PESSOA_DESATIVADA: 'ACESSO_RECUSADO_POR_POLITICA',
+  EMPRESA_SUSPENSA: 'ACESSO_RECUSADO_POR_POLITICA',
 };
 
 /** O que a instância precisa para existir. Tudo entra por parâmetro; nada é lido do ambiente. */
@@ -337,22 +488,169 @@ export function criarAutenticacao(opcoes: OpcoesDeAutenticacao) {
     basePath: opcoes.prefixoDasRotas,
     secret: opcoes.segredoDeSessao,
 
-    // O limitador nativo fica DESLIGADO, e explicitamente — a omissão não era "não usar".
+    // O limitador nativo fica LIGADO, e com a política inteira escrita aqui (P-T6-2, T6 da fatia
+    // `autorizacao-e-ciclo-de-acesso`).
     //
-    // Medido em `better-auth@1.6.25` (`dist/context/create-context.mjs`): o estado do limitador é
+    // A herança que ele desfaz, medida em `better-auth@1.6.25`
+    // (`dist/context/create-context.mjs`): o estado do limitador é
     // `options.rateLimit?.enabled ?? isProduction`, e `isProduction` é
-    // `process.env.NODE_ENV === 'production'`. Omitir a opção, portanto, LIGAVA o limitador em
-    // produção — janela de 10 s, teto de 100, aplicado antes do casamento de rota para todo
-    // `/v1/auth/*` — e o mantinha desligado em toda verificação, que roda com `NODE_ENV=test`. A
-    // configuração que atende a operação era diferente da que a suíte exercita, e nenhuma decisão
-    // deste projeto tinha escolhido isso.
+    // `process.env.NODE_ENV === 'production'`. Omitir a opção LIGAVA o limitador em produção e o
+    // mantinha desligado em toda verificação, que roda com `NODE_ENV=test` — a configuração que
+    // atende a operação era diferente da que a suíte exercita. `enabled: true` fecha essa
+    // assimetria pelo lado certo: o mesmo ESTADO em todo ambiente, e agora exercitado.
     //
-    // A §11.5 da tech spec declara o limitador nativo como "camada adicional, e não substituto" do
-    // bloqueio por conta (RN-06): algo a ligar de propósito, com janela e teto escolhidos. Esse é
-    // o `P-T6-2`, atribuído à task de fechamento da F1 — ele exige decidir também a retenção de
-    // `identidade.tentativa_login`, e as duas decisões são de lá. Até que sejam tomadas, o estado
-    // fica escrito aqui em vez de herdado do padrão de uma biblioteca.
-    rateLimit: { enabled: false },
+    // **A assimetria do ESTADO é a que `enabled: true` fecha; a do EIXO não é ela.** O endereço do
+    // cliente que serve de chave vem de `getIp`, que só o apura a partir de cabeçalho — e devolve
+    // `127.0.0.1` sob `isTest()`/`isDevelopment()` e `null` em produção quando cabeçalho nenhum
+    // chega. A suíte, portanto, exercita um eixo que a operação hoje não tem. Isso está registrado
+    // como débito com gatilho logo abaixo, e o estado corrente é fixado por asserção no CT-236 (c).
+    //
+    // ELE É CAMADA ADICIONAL, NÃO SUBSTITUTO do bloqueio por conta (§11.5 da tech spec, RN-06), e
+    // as duas cobrem coisas diferentes: o bloqueio conta falhas POR CONTA, e não enxerga a
+    // pulverização de credencial que tenta uma senha em cada uma de muitas contas a partir da
+    // mesma origem — nenhuma conta chega a cinco falhas. O limitador conta por CHAVE E CAMINHO
+    // (`getIp(req) + path`), e essa chave **é** a origem exatamente sob a condição do débito
+    // abaixo — enquanto ela não valer, o eixo que falta continua faltando, e quem cobre a entrada é
+    // o bloqueio por conta. O CT-236 afirma as duas camadas na mesma execução, para que ligar uma
+    // não possa mascarar a remoção da outra.
+    //
+    // A REGRA GERAL É EXPLÍCITA, E A REGRA-CURINGA TAMBÉM — o arcabouço traz regras especiais
+    // próprias que se aplicam ANTES de `customRules`, e que `customRules` **substitui**: o bloco de
+    // regras customizadas corre depois delas em `resolveRateLimitConfig`
+    // (`dist/api/rate-limiter/index.mjs`) e reescreve `currentWindow`/`currentMax`. Herdá-las seria
+    // repetir, do outro lado, o defeito que este bloco existe para fechar: a política em vigor
+    // sairia do padrão de uma biblioteca, e mudaria no próximo bump sem que nada acusasse.
+    //
+    // SUBSTITUIR NÃO É APAGAR, E É ESSA A LIÇÃO DA RODADA 1 (T6 / Gate 1 · 2026-08-05). A primeira
+    // versão deste bloco declarava a curinga logo depois do caminho de entrada, e com isso ela
+    // substituía o conjunto INTEIRO de regras especiais do arcabouço pelo teto geral — sem que
+    // ninguém tivesse percorrido o que cada uma delas cobria. Em produção o limitador JÁ rodava com
+    // aquelas regras (o estado era `enabled ?? isProduction`), então o efeito líquido era
+    // afrouxamento real, e o pior caso era `/change-password`: 6,7 vezes mais folgado, num caminho
+    // que confere `currentPassword` e onde o contador POR CONTA da RN-06 não existe.
+    //
+    // SÃO DOIS OS CONJUNTOS SUBSTITUÍDOS, e não um: `resolveRateLimitConfig` aplica, nesta ordem,
+    // as regras especiais do núcleo, as regras declaradas pelos PLUGINS e por último `customRules`
+    // — de modo que o que se escreve aqui vence os dois. Percorridos um a um:
+    //
+    //   | Substituída                                                | Aqui                        |
+    //   |------------------------------------------------------------|-----------------------------|
+    //   | núcleo: `/sign-in*`, `/sign-up*`, `/change-password`,       | entrada: 30/60 s            |
+    //   | `/change-email` — 3 por 10 s                                | demais: 10/60 s             |
+    //   | núcleo: `/request-password-reset`,                          | 5/60 s                      |
+    //   | `/send-verification-email`, `/forget-password*` — 3 por 60 s|                             |
+    //   | núcleo: `/email-otp/*` — 3 por 60 s                         | plugin não instalado        |
+    //   | plugin de 2º fator: `/two-factor/*` — 3 por 10 s            | teto geral, POR DECISÃO     |
+    //
+    // A razão de cada teto está na constante correspondente, e não aqui — é lá que ela é lida por
+    // quem for alterá-lo. O `/email-otp/*` fica de fora com a rede nomeada em
+    // {@link TETO_DE_EMISSAO_DE_EMAIL_POR_JANELA}.
+    //
+    // `/two-factor/*` é o ÚNICO caminho que fica no teto geral por decisão, e o critério é o mesmo
+    // que separou `/change-password` do resto: lá o limitador é a única camada; aqui não é. A outra
+    // camada é o bloqueio POR CONTA do plugin (`accountLockout`), e ele está DECLARADO nas opções
+    // dele abaixo — não herdado do padrão. A rodada 2 desta task o deixava implícito, e isso era a
+    // mesma forma que este bloco recusa duas vezes: a política em vigor sairia do padrão de uma
+    // biblioteca e mudaria no próximo bump sem que nada acusasse, num caminho cujo teto geral só se
+    // sustenta porque ela existe. Os valores estão em {@link FALHAS_DE_SEGUNDO_FATOR_ANTES_DA_TRANCA}
+    // e {@link TRANCA_DO_SEGUNDO_FATOR_EM_SEGUNDOS}, e este arquivo mapeia as duas colunas que a
+    // tranca usa (`falhasVerificacao` e `bloqueadoAte`), de modo que ela opera. Some-se a isso que o
+    // desafio do segundo fator só é alcançável DEPOIS da conferência da senha: o regime de
+    // pulverização, que é o que um teto por origem cobre, não se aplica. Um teto próprio aqui
+    // trocaria uma camada existente por outra sem ganho, e recusaria a operação legítima de um
+    // escritório atrás de um endereço só.
+    //
+    // A ORDEM É A POLÍTICA: a busca de `customRules` usa a PRIMEIRA chave que casa, na ordem de
+    // declaração, de modo que a curinga é necessariamente a ÚLTIMA e cada grupo específico vem
+    // antes dela. `'/**'` casa toda a superfície, e `*` NÃO atravessa `/` (medido contra o
+    // `wildcardMatch` do pacote publicado) — é por isso que os grupos são escritos `'/sign-in/*'` e
+    // `'/forget-password/**'`, e não `'/sign-in*'`, que não casaria caminho algum. Mover a curinga
+    // para cima reprova a perna de `/change-password` do CT-236, que é o que amarra a ordem ao
+    // comportamento em vez de a um comentário.
+    // DÉBITO COM GATILHO — D27 · F1/T6 · registrado 2026-08-05
+    // (Fatia `autorizacao-e-ciclo-de-acesso`; o `ÍNDICE` abaixo é o que o separa do `D7 · F1/T6`,
+    //  que nasceu na fatia anterior e vive noutro relatório. Ele não protege nada e não alcança
+    //  marcador algum deste arquivo: as `DECISÃO FECHADA` seguem intocáveis.)
+    // O QUÊ: a política acima é dimensionada POR ORIGEM, e a configuração que atende a operação não
+    //        fornece o eixo de origem. `advanced.ipAddress` não é declarado, e `getIp` só apura o
+    //        endereço a partir de cabeçalho: sem `trustedProxies`, um cabeçalho de valor único é
+    //        aceito COMO O CLIENTE O ENVIOU (rotacioná-lo dá um balde novo por pedido); e sem
+    //        cabeçalho algum — que é o estado de hoje, porque nada publica esta API: ela escuta em
+    //        `127.0.0.1` e `deploy/nginx/` está vazio — `getIp` devolve `null` fora de teste e
+    //        desenvolvimento, a chave vira `no-trusted-ip|<caminho>` e o teto passa a ser UM BALDE
+    //        ÚNICO POR CAMINHO para o produto inteiro. O próprio pacote adverte
+    //        (`dist/api/rate-limiter/index.mjs`, `logger.warn`) mandando declarar
+    //        `ipAddressHeaders` ou `trustedProxies`.
+    // QUANDO FECHA: na **publicação atrás do servidor de borda, na F7** — o mesmo gatilho e o mesmo
+    //        arquivo de decisão do `D23 · F1/T8` (`apps/api/src/autenticacao/autenticacao.module.ts`),
+    //        porque é o mesmo fato que falta: qual é o salto confiável. Fechar é declarar
+    //        `advanced.ipAddress` com `ipAddressHeaders` e `trustedProxies` daquele salto, e então
+    //        rever o CT-236 (c), que hoje FIXA o estado compartilhado. **Até lá, o balde de
+    //        `'/change-password'` governa um fluxo do PRODUTO**: `POST /v1/sessao/senha` (T9) grava
+    //        pelo manipulador e cai sob esta política, e a fatia entrega o onboarding por senha
+    //        provisória com troca obrigatória — de modo que a décima primeira troca de qualquer
+    //        empresa no mesmo minuto recebe `429` enquanto a chave for `no-trusted-ip|<caminho>`.
+    //        Isso não é regressão (a rota nativa corria sob o mesmo balde) e não pede teto novo:
+    //        pede o eixo de origem, que é justamente o que este débito agenda.
+    // POR QUE NÃO AGORA: o endereço do salto confiável não existe para ser declarado, e declarar um
+    //        salto suposto é pior que não declarar — `trustedProxies` errado transforma cabeçalho
+    //        forjado em origem aceita, que é a falha que o débito descreve, com aparência de
+    //        correção. O mesmo fato que impede a declaração limita hoje a exposição: a API escuta em
+    //        `127.0.0.1` e não é alcançável de fora do hospedeiro. A camada que cobre a ENTRADA
+    //        enquanto isso é o bloqueio POR CONTA da RN-06, que não depende de eixo de origem.
+    // ÍNDICE: docs/specs/features/autorizacao-e-ciclo-de-acesso/v1/_run/run-report.md §2, D27
+    rateLimit: {
+      enabled: true,
+      window: JANELA_DO_LIMITADOR_EM_SEGUNDOS,
+      max: TETO_GERAL_POR_JANELA,
+      // Contador em memória do processo. É o padrão do arcabouço, e está escrito para ser uma
+      // escolha: a alternativa (`'database'`) exigiria uma tabela de janelas e a migração dela, e
+      // esta API sobe como uma unidade systemd única — um contador por processo é o contador do
+      // serviço. Se um dia houver mais de um processo atendendo, o teto efetivo passa a ser o teto
+      // vezes o número de processos, e é aí que a troca se paga.
+      storage: 'memory',
+      customRules: {
+        [CAMINHO_DE_ENTRADA]: {
+          window: JANELA_DO_LIMITADOR_EM_SEGUNDOS,
+          max: TETO_DE_ENTRADAS_POR_JANELA,
+        },
+
+        // As demais variantes de `/sign-in/*` (hoje só a social, inerte) NÃO herdam os trinta da
+        // entrada: aquele número existe para o pico do expediente num caminho que este produto usa,
+        // e não é teto a distribuir por vizinhança de prefixo.
+        '/sign-in/*': {
+          window: JANELA_DO_LIMITADOR_EM_SEGUNDOS,
+          max: TETO_DE_CREDENCIAL_POR_JANELA,
+        },
+        '/sign-up/*': {
+          window: JANELA_DO_LIMITADOR_EM_SEGUNDOS,
+          max: TETO_DE_CREDENCIAL_POR_JANELA,
+        },
+        '/change-password': {
+          window: JANELA_DO_LIMITADOR_EM_SEGUNDOS,
+          max: TETO_DE_CREDENCIAL_POR_JANELA,
+        },
+        '/change-email': {
+          window: JANELA_DO_LIMITADOR_EM_SEGUNDOS,
+          max: TETO_DE_CREDENCIAL_POR_JANELA,
+        },
+
+        '/request-password-reset': {
+          window: JANELA_DO_LIMITADOR_EM_SEGUNDOS,
+          max: TETO_DE_EMISSAO_DE_EMAIL_POR_JANELA,
+        },
+        '/send-verification-email': {
+          window: JANELA_DO_LIMITADOR_EM_SEGUNDOS,
+          max: TETO_DE_EMISSAO_DE_EMAIL_POR_JANELA,
+        },
+        '/forget-password/**': {
+          window: JANELA_DO_LIMITADOR_EM_SEGUNDOS,
+          max: TETO_DE_EMISSAO_DE_EMAIL_POR_JANELA,
+        },
+
+        '/**': { window: JANELA_DO_LIMITADOR_EM_SEGUNDOS, max: TETO_GERAL_POR_JANELA },
+      },
+    },
 
     database: drizzleAdapter(banco, {
       provider: 'pg',
@@ -384,38 +682,13 @@ export function criarAutenticacao(opcoes: OpcoesDeAutenticacao) {
       minPasswordLength: 10,
     },
 
-    // DÉBITO COM GATILHO — D21 · F1/T7 · registrado 2026-08-02 · gatilho DISPARADO nesta fatia
-    //                       (F1/T8, 2026-08-02) — segue ABERTO
-    // (Natureza OPOSTA à `DECISÃO FECHADA — T7` logo abaixo, e ele NÃO a alcança: aquela PROTEGE a
-    //  topologia da barreira, que não se altera sem satisfazer o `REVERTER EXIGE`. Este AGENDA, e
-    //  alcança só o que a recusa do gancho é incapaz de desfazer. Nada aqui autoriza mover, alterar
-    //  ou remover a barreira nem a decisão abaixo.)
-    // O QUÊ: a recusa deste gancho NÃO desfaz o que a rota já escreveu. Em `/change-password` o
-    //        arcabouço persiste a senha nova e apaga as sessões ANTES de chegar aqui — medido em
-    //        `better-auth@1.6.25`, onde `updateAccount` precede `deleteUserSessions` e
-    //        `createSession` sem que as três corram numa transação comum. A pessoa recusada sai da
-    //        requisição com a credencial TROCADA, com ZERO sessões, e recebendo um `401` que a
-    //        RN-10 torna indistinguível de "a senha atual estava errada". Reativada depois pelo
-    //        Master, ela não entra com a senha antiga e não sabe qual é a nova: perda de acesso que
-    //        só intervenção administrativa desfaz, com a resposta afirmando que nada aconteceu.
-    // QUANDO FECHA: JÁ DISPAROU — F1/T8 (2026-08-02). O gatilho registrado era "quando
-    //        `/change-password` for montado em `apps/api`", e a T8 o montou: o encaminhador
-    //        `@All('*')` de `apps/api/src/autenticacao/autenticacao.controller.ts` publica sob
-    //        `/v1/auth` TODA rota do núcleo do arcabouço, e `/change-password` é uma delas
-    //        (inventariada e fixada por asserção no CT-018 (d) de
-    //        `apps/api/test/autenticacao.e2e.spec.ts`). As duas frases que sustentavam o adiamento
-    //        deixaram de ser verdadeiras e por isso foram reescritas: NÃO é mais verdade que
-    //        "nenhuma rota de identidade está montada", e a alcançabilidade NÃO é mais zero —
-    //        basta sessão válida somada à senha atual correta, isto é, o próprio dono da conta.
-    //        O débito segue ABERTO; o que mudou é que ele agora é alcançável.
-    // POR QUE NÃO AGORA: fechar exige barrar ANTES da escrita de credencial — topologia POR ROTA,
-    //        distinta da barreira de emissão que a T7 entrega —, e a rota publicada pela T8 é a
-    //        NATIVA do arcabouço, não a do produto. Quem decide a forma da troca de senha (rota
-    //        própria, senha provisória, convite, e se `/change-password` continua exposta) é a
-    //        fatia `autorizacao-e-ciclo-de-acesso`; desenhar a barreira contra uma rota que aquela
-    //        fatia vai redesenhar seria fechar o caminho errado, e a T8 é um ciclo de correção de
-    //        gate, não o lugar de tomar a decisão de desenho daquela fatia.
-    // ÍNDICE: docs/specs/features/fundacao-multitenancy-identidade/v1/_run/run-report.md §2, D21
+    // (O `D21` vivia aqui e FOI FECHADO pela T9 da fatia `autorizacao-e-ciclo-de-acesso`. O que ele
+    //  registrava — que a recusa deste gancho não desfaz o que `/change-password` já escreveu,
+    //  porque `updateAccount` precede `deleteUserSessions` e `createSession` — continua verdadeiro
+    //  sobre a rota NATIVA, e deixou de importar porque ela não é mais publicada: `apps/api` a
+    //  recusa antes do repasse, e a troca do produto (`POST /v1/sessao/senha`) confere a admissão
+    //  ANTES de qualquer escrita. A decisão abaixo segue intocada — ela nunca foi alcançada por
+    //  aquele débito.)
     //
     // DECISÃO FECHADA — T7 · 2026-08-02
     // O QUÊ: a admissão de sessão tem UMA entrada, e ela está no gancho de criação de sessão do
@@ -450,63 +723,42 @@ export function criarAutenticacao(opcoes: OpcoesDeAutenticacao) {
       },
     },
 
-    // DÉBITO COM GATILHO — D7 · F1/T6 · registrado 2026-08-02
-    // (Natureza OPOSTA às `DECISÃO FECHADA` deste arquivo — sem contá-las, porque o numeral
-    //  envelhece a cada marcador novo: aquelas PROTEGEM o código sob elas, que não se altera sem
-    //  satisfazer o `REVERTER EXIGE`. Esta AGENDA — o bloco abaixo VAI mudar, e o marcador só diz
-    //  quando e sob que cuidado. Editá-lo é normal; editá-lo sem ler, não.)
-    // O QUÊ: criar pessoa pelo adaptador é INEXEQUÍVEL. `perfil` e `empresa_id` são colunas do
-    //        PRODUTO e não campos do modelo `user`; o `transformInput` do arcabouço itera apenas os
-    //        campos declarados e descarta toda chave que não seja um deles, então o `INSERT` sai com
-    //        `perfil` em `default` — coluna `NOT NULL` sem padrão — e o banco recusa. Medido contra
-    //        o pacote publicado, não suposto.
-    // QUANDO FECHA: quando a PRIMEIRA rota de criação de pessoa — onboarding com senha temporária ou
-    //        convite do Master, ambos da fatia `autorizacao-e-ciclo-de-acesso` — precisar de
-    //        `internalAdapter.createUser`. Nenhuma task restante desta fatia cria pessoa (T7 é a
-    //        barreira de admissão, T8 publica `/v1`, T9 liga sessão a tenant, T10 fecha senha
-    //        provisória e segundo fator por ATUALIZAÇÃO, T11 prova a equivalência das recusas), de
-    //        modo que o gatilho não dispara aqui.
-    //        Ao fechar, o par NÃO é uma coisa só: `perfil` e `empresa_id` têm consequências
-    //        distintas quando abertos à escrita, e a segunda é a mais grave — ver abaixo.
-    // POR QUE NÃO AGORA: declarar os dois como `additionalFields` muda o objeto de pessoa devolvido
-    //        pela sessão, que é superfície pública — e a "sessão gorda" é decisão registrada da
-    //        fatia de autorização —, e abre `perfil` à escrita por `updateUser`, o que é ELEVAÇÃO DE
-    //        PRIVILÉGIO se o campo não nascer com `input: false`. Quando a decisão for tomada, o par
-    //        `perfil`/`empresa_id` precisa nascer com a escrita FECHADA, e isso merece análise da
-    //        superfície de privilégio. É decisão de desenho daquela fatia, não de um ciclo de
-    //        correção de gate desta.
+    // DECISÃO FECHADA — T6 (fatia `autorizacao-e-ciclo-de-acesso`) · 2026-08-05 — fecha o `D7`
+    // O QUÊ: `perfil` e `empresaId` são campos adicionais do modelo de pessoa **com a escrita pelo
+    //        corpo da requisição FECHADA** (`input: false`). O par é declarado junto e fechado
+    //        junto; nenhum dos dois se abre isoladamente.
+    // POR QUÊ: sem a DECLARAÇÃO, criar pessoa pelo adaptador é inexequível — o `transformInput`
+    //          itera apenas os campos declarados e descarta o resto, e o `INSERT` sairia com
+    //          `perfil` em `default`, coluna `NOT NULL` sem padrão (medido duas vezes, por executor
+    //          e por gate). Sem o FECHAMENTO, o mesmo par vira duas vulnerabilidades de gravidade
+    //          distinta, e a segunda é a pior:
+    //            * `perfil` aberto é ELEVAÇÃO DE PRIVILÉGIO — `POST /update-user` grava a coluna a
+    //              partir de QUALQUER sessão autenticada;
+    //            * `empresa_id` aberto é FUGA DE TENANT — o contexto de tenant nasce da sessão, que
+    //              deriva desta coluna, de modo que torná-la escrevível pelo corpo faz A ORIGEM DO
+    //              CONTEXTO DE RLS SER O REQUEST, por via indireta. A ADR-0008 fixa o oposto em
+    //              texto literal ("sua origem **nunca é o request**"), e isso é o invariante 2 do
+    //              `CLAUDE.md`.
+    //          Fechar só `perfil` — com a justificativa plausível "o Master precisa mover pessoa
+    //          entre empresas" — derrubaria a ADR-0008 por um flag de configuração de biblioteca,
+    //          sem que nada no banco acusasse: o `usuario_master_sem_empresa_chk`
+    //          (`packages/db/src/esquema/identidade.ts`) exige
+    //          `(perfil = 'SYSLOC_MASTER') = (empresa_id IS NULL)` e portanto cobre SÓ METADE do
+    //          espaço — a troca lateral de uma empresa para outra MANTENDO `ADMIN_EMPRESA` passa
+    //          por ele, e `identidade` não tem RLS por decisão da ADR-0009. O CT-235 persegue
+    //          exatamente esse vetor, e não o de elevação, que é o fácil.
+    // REVERTER EXIGE: provar que nenhum caminho de escrita do modelo `user` alcança estas duas
+    //                 colunas a partir do corpo de uma requisição — o que hoje é falso: o
+    //                 `parseInputData` do arcabouço é o ponto único por onde todo corpo vira dado
+    //                 de `user`, e é o `input: false` que o faz recusar. Trocar por validação numa
+    //                 rota específica NÃO satisfaz: seria instalar por ponto a propriedade que aqui
+    //                 é do campo, e a rota seguinte nasceria descoberta.
     //
-    //        `empresa_id` NÃO É CARONA DE `perfil` — É A METADE MAIS GRAVE. O contexto de tenant
-    //        nasce da sessão, que deriva de `identidade.usuario.empresa_id`; tornar essa coluna
-    //        escrevível pelo corpo de um request faz A ORIGEM DO CONTEXTO DE RLS SER O REQUEST, por
-    //        via indireta. A ADR-0008 fixa o oposto em texto literal — o `app.empresa_id` que a
-    //        política consome "é fixado por transação com `SET LOCAL`, e sua origem **nunca é o
-    //        request**" —, e isso é o invariante 2 do `CLAUDE.md`. `perfil` aberto é ELEVAÇÃO DE
-    //        PRIVILÉGIO; `empresa_id` aberto é FUGA DE TENANT. Fechar só `perfil` — com a
-    //        justificativa plausível "o Master precisa mover pessoa entre empresas" — derruba a
-    //        ADR-0008 por um flag de configuração de biblioteca, sem que nada no banco acuse.
-    //
-    //        O ÚNICO GUARDA-CORPO ESTRUTURAL DE HOJE COBRE SÓ METADE DO ESPAÇO. O
-    //        `usuario_master_sem_empresa_chk` (`packages/db/src/esquema/identidade.ts`) exige
-    //        `(perfil = 'SYSLOC_MASTER') = (empresa_id IS NULL)`: ele barra a promoção a
-    //        `SYSLOC_MASTER` com empresa preenchida, mas NÃO barra a troca de `empresa_id` de uma
-    //        empresa para outra mantendo `ADMIN_EMPRESA` — que é exatamente a fuga de tenant. E
-    //        nenhuma suíte pega isso: `identidade` não tem RLS, por decisão da ADR-0009.
-    //
-    //        `input: false` É DEFESA DE APLICAÇÃO, não estrutural. Ela é necessária, e pode não ser
-    //        suficiente: a fatia de autorização precisa decidir se quer também defesa no banco. O
-    //        caminho já está escrito — o D5 da §2 do run-report desta fatia aponta a promoção de
-    //        `usuario` a par `(id, empresa_id)` ou um `CHECK` por função. É decisão de spec, a
-    //        escalar, não de execução.
-    //
-    //        DUAS MEDIÇÕES JÁ FEITAS CONTRA O PACOTE PUBLICADO, para a fatia seguinte não as
-    //        refazer (Staff, Gate 2 rodada 2): (a) sem `input: false`, `perfil` seria escrito pelo
-    //        corpo de `POST /update-user` a partir de qualquer sessão autenticada; (b)
-    //        `input: false` não inviabiliza o onboarding server-side. Ambas medidas contra
-    //        `better-auth@1.6.25`; caminhos e linhas na §2 do run-report (ver ÍNDICE abaixo) — o
-    //        endereço fica lá, e não aqui, porque é `path:linha` de saída de build de terceiro e
-    //        deixa de valer no próximo bump.
-    // ÍNDICE: docs/specs/features/fundacao-multitenancy-identidade/v1/_run/run-report.md §2, D7
+    // (Adjacente à decisão acima, e não parte dela.) O que fica em aberto, herdado do texto do D7:
+    // `input: false` é defesa de APLICAÇÃO. A defesa estrutural correspondente é o caminho do `D5`
+    // — promover `identidade.usuario` a par `(id, empresa_id)` ou um `CHECK` por função —, e a T1
+    // desta fatia já instalou a metade dele que é a conciliação estrutural. Enquanto a outra metade
+    // não existir, esta é a única barreira, e é por isso que ela tem prova comportamental própria.
     user: {
       modelName: 'usuario',
       // O mapeamento cobre **todos** os campos que o modelo `user` declara, e não só os que esta
@@ -520,6 +772,29 @@ export function criarAutenticacao(opcoes: OpcoesDeAutenticacao) {
         image: 'imagem',
         createdAt: 'criadoEm',
         updatedAt: 'atualizadoEm',
+      },
+      // As duas colunas do PRODUTO que o modelo do arcabouço precisa conhecer. Elas não entram em
+      // `fields` acima porque aquele mapa renomeia campos que o modelo JÁ tem; estas o modelo não
+      // tem, e é `additionalFields` que as acrescenta a ele.
+      //
+      // A CHAVE É O NOME DA PROPRIEDADE NA TABELA DO ORM, e não o da coluna: o adaptador resolve
+      // `esquemaIdentidade.usuario[chave]`, e é ele que conhece o nome físico (`empresa_id`). Uma
+      // chave em caixa de coluna faria o adaptador procurar uma propriedade que não existe.
+      additionalFields: {
+        perfil: {
+          type: 'string',
+          // A coluna é `NOT NULL` sem padrão: `required` diz a verdade sobre ela.
+          required: true,
+          // O fechamento. Ver a decisão acima.
+          input: false,
+        },
+        empresaId: {
+          type: 'string',
+          // Nulo é estado legítimo — é o do Sysloc Master, que não pertence a empresa alguma, e a
+          // restrição `usuario_master_sem_empresa_chk` o exige assim.
+          required: false,
+          input: false,
+        },
       },
     },
 
@@ -563,6 +838,20 @@ export function criarAutenticacao(opcoes: OpcoesDeAutenticacao) {
     plugins: [
       twoFactor({
         issuer: 'Sysloc',
+        // A CAMADA QUE SUSTENTA O TETO GERAL EM `/two-factor/*`. O quadro do bloco `rateLimit` deixa
+        // aquele caminho na regra-curinga por decisão, e o que torna a decisão defensável é este
+        // bloqueio por conta — sem ele, `/two-factor/verify-totp` ficaria a 120 tentativas por
+        // minuto sobre um espaço de 10⁶ códigos, na última barreira depois da senha.
+        //
+        // Os três campos repetem o padrão medido do plugin, e é essa a razão de estarem escritos: um
+        // padrão de biblioteca não declarado é política que muda num bump sem que nada acuse, e aqui
+        // o que dependeria dela é a decisão de NÃO dar teto próprio ao caminho. Declará-los não muda
+        // comportamento nenhum hoje; muda quem responde por ele.
+        accountLockout: {
+          enabled: true,
+          maxFailedAttempts: FALHAS_DE_SEGUNDO_FATOR_ANTES_DA_TRANCA,
+          durationSeconds: TRANCA_DO_SEGUNDO_FATOR_EM_SEGUNDOS,
+        },
         schema: {
           user: { fields: { twoFactorEnabled: 'doisFatoresAtivo' } },
           twoFactor: {
@@ -707,17 +996,19 @@ export function criarAutenticacao(opcoes: OpcoesDeAutenticacao) {
         //  `desfechoTentativa` em `packages/db/src/esquema/identidade.ts`, onde a fronteira está
         //  escrita por extenso e é onde ela deve ser mantida.)
         // ----------------------------------------------------------------------------------
-        // `ACESSO_RECUSADO` passou a ter TRÊS origens e NÃO as distingue: recusa de política
-        // (RN-10 — pessoa desativada, empresa suspensa; volume normal a partir da T7), defeito de
-        // servidor (`FAILED_TO_CREATE_SESSION`, gravado no ramo abaixo) e pedido malformado
-        // (`INVALID_EMAIL`). Consequência: um pico causado por indisponibilidade parcial do banco
-        // fica indistinguível de um pico de tentativas contra contas desativadas — o sinal de
-        // ataque que a RN-11 existe para tornar legível. Separá-los EXIGE valor novo no enum;
-        // pendência `P-T6-1`, escrita por extenso em `docs/specs/features/
-        // fundacao-multitenancy-identidade/v1/tasks/T8.md` §7, com dono na **task de fechamento da
-        // F1** — não na T8, que recusou o escopo por decisão registrada (`_run/workflow-report.md`,
-        // D-E3). Fechar aqui obriga a mexer no `DESFECHO_POR_MOTIVO` deste arquivo, que é parte do
-        // blast radius que aquela decisão pesou.
+        // `ACESSO_RECUSADO` teve TRÊS origens e não distinguia nenhuma: recusa de política (RN-10 —
+        // pessoa desativada, empresa suspensa), defeito de servidor (`FAILED_TO_CREATE_SESSION`,
+        // gravado no ramo abaixo) e pedido malformado (`INVALID_EMAIL`). O efeito era um pico por
+        // indisponibilidade parcial do banco indistinguível de um pico de tentativas contra contas
+        // desativadas — o sinal de ataque que a RN-11 existe para tornar legível.
+        //
+        // **A pendência `P-T6-1` está FECHADA** (fatia `autorizacao-e-ciclo-de-acesso`, T1): a
+        // migração `0004` acrescentou `ACESSO_RECUSADO_POR_POLITICA`, e o `DESFECHO_POR_MOTIVO`
+        // deste arquivo — o blast radius que a T8 pesou ao recusar o escopo — passou a apontar as
+        // duas recusas de política para o valor novo. **O ramo abaixo permanece `ACESSO_RECUSADO`
+        // de propósito**: o que ele grava não é decisão de política, e sim defeito de servidor ou
+        // pedido malformado. Trocá-lo desfaria a separação que a migração instalou, devolvendo os
+        // dois picos ao mesmo rótulo.
         //
         // ----------------------------------------------------------------------------------
         // Janela de corrida conhecida, anotada em vez de corrigida

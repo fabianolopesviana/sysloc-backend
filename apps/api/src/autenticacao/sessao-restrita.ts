@@ -19,16 +19,19 @@
  * ---------------------------------------------------------------------------
  *
  * A §5.2 da tech spec e o §3 do cartão da T10 dizem que a sessão restrita alcança três coisas:
- * `GET /v1/sessao`, a troca de senha e a configuração do segundo fator. Só a primeira aparece em
- * {@link ROTAS_DA_SESSAO_RESTRITA}, e a razão é topológica, não esquecimento:
+ * `GET /v1/sessao`, a troca de senha e a configuração do segundo fator. **Duas** aparecem em
+ * {@link ROTAS_DA_SESSAO_RESTRITA}, e o critério é topológico, não preferência:
  *
- *   * as outras duas vivem sob `/v1/auth`, que a T8 publicou por um encaminhador `@All('*')`
- *     marcado `@RotaPublica()` — a guarda **retorna antes** de resolver sessão para elas, de modo
- *     que nada nesta função é consultado no caminho delas. Listá-las aqui produziria um ramo que
- *     nenhuma execução alcança, e um ramo inalcançável mente sobre onde a decisão é tomada;
- *   * que elas de fato atendem à sessão restrita é afirmado por comportamento, e não por esta
- *     lista: o CT-021 troca a senha com o cookie da sessão restrita e o CT-019 configura o segundo
- *     fator com ela.
+ *   * entra o que a guarda **governa**. `GET /v1/sessao` sempre esteve nesse conjunto, e a troca de
+ *     senha entrou na T9 da fatia `autorizacao-e-ciclo-de-acesso`, quando ela deixou de ser a rota
+ *     nativa sob `/v1/auth` e passou a ser `POST /v1/sessao/senha`, protegida como qualquer rota do
+ *     produto;
+ *   * fica de fora o que vive sob `/v1/auth`, publicado pelo encaminhador `@All('*')` marcado
+ *     `@RotaPublica()` — a guarda **retorna antes** de resolver sessão ali, de modo que nada nesta
+ *     função é consultado naquele caminho. Listá-lo produziria um ramo que nenhuma execução
+ *     alcança, e um ramo inalcançável mente sobre onde a decisão é tomada. É o caso da configuração
+ *     do segundo fator, e que ela de fato atende à sessão restrita é afirmado por comportamento —
+ *     o CT-019 a configura com o cookie da sessão restrita.
  *
  * **Risco residual, nomeado.** A marca `@RotaPublica()` é do MANIPULADOR, e o encaminhador é um só:
  * a sessão restrita alcança, portanto, toda a superfície que o arcabouço publica sob `/v1/auth` —
@@ -129,15 +132,30 @@ const CONECTOR_DE_EXIGENCIAS = ' e ';
 /**
  * As rotas que uma sessão restrita alcança **entre as que a guarda governa**.
  *
- * Hoje é uma só, e o cabeçalho deste arquivo explica por que as outras duas do §3 do cartão não
- * estão aqui. Quando a fatia `autorizacao-e-ciclo-de-acesso` publicar rotas do produto para trocar
- * a senha e configurar o segundo fator — que serão protegidas, e não públicas —, elas entram nesta
- * lista, e é esta lista que decide.
+ * São **duas** desde a T9 da fatia `autorizacao-e-ciclo-de-acesso`, e a segunda é exatamente o que
+ * o cabeçalho deste arquivo antecipava por escrito: *"quando a fatia publicar rotas do produto para
+ * trocar a senha …, elas entram nesta lista, e é esta lista que decide"*. A troca de senha deixou
+ * de viver sob `/v1/auth` — a rota nativa não é mais publicada (`autenticacao.controller.ts`) — e
+ * passou a ser `POST /v1/sessao/senha`, que é **protegida**, e portanto governada pela guarda: sem
+ * a entrada abaixo, a sessão restrita seria recusada justamente na única rota que a tira da
+ * restrição, e a exigência da RN-09 não teria desfecho.
  *
- * Exportada para que o CT-021 a compare, por igualdade, com o caminho composto a partir do dono do
- * segmento (`CAMINHO_DA_SESSAO`, em `sessao.controller.ts`).
+ * A **configuração do segundo fator** continua fora, e pela razão topológica de sempre: ela segue
+ * sob `/v1/auth`, atrás do encaminhador marcado `@RotaPublica()`, de modo que a guarda retorna
+ * antes e nada aqui é consultado no caminho dela. Que ela atende a sessão restrita é afirmado por
+ * comportamento no `CT-019`, e não por esta lista.
+ *
+ * Exportada para que o `CT-021` e o `CT-238` a comparem, por igualdade, com os caminhos compostos a
+ * partir dos donos dos segmentos (`CAMINHO_DA_SESSAO`, em `sessao.controller.ts`, e
+ * `CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO`, em `senha.controller.ts`).
  */
-export const ROTAS_DA_SESSAO_RESTRITA: readonly string[] = [`/${PREFIXO_DE_VERSAO}/sessao`];
+export const ROTAS_DA_SESSAO_RESTRITA: readonly string[] = [
+  `/${PREFIXO_DE_VERSAO}/sessao`,
+  // O literal segue escrito aqui pela MESMA razão da linha acima — importar o dono do segmento
+  // fecharia o ciclo `senha.controller` → `contexto.guard` → `sessao-restrita` → `senha.controller`,
+  // e a constante de topo quebraria na carga. A amarra com o dono é por asserção (CT-238).
+  `/${PREFIXO_DE_VERSAO}/sessao/senha`,
+];
 
 /**
  * Decide se a sessão alcança a rota, e monta a recusa quando não alcança.

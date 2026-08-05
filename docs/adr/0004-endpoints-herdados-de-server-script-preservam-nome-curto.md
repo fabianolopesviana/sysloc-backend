@@ -1,7 +1,7 @@
 ---
 id: 0004
 title: Endpoints herdados de Server Script preservam o nome curto
-status: accepted
+status: deprecated
 date: 2026-07-29
 tags: [architecture, http, security]
 ---
@@ -33,6 +33,8 @@ Os quatro endpoints herdados de Server Script preservam seus nomes curtos após 
 **Neutros:**
 - A superfície exposta na allowlist não muda de tamanho.
 - Migrar para o namespace continua possível depois, como decisão própria e com handoff.
+
+> Deprecated em 2026-08-04. Motivo: o substrato morreu — a decisão preserva nomes curtos de endpoints herdados de Server Script, primitiva do Frappe, por aliases registrados no app. A forma da API do backend nativo é governada pela ADR-0012.
 
 ## Alternatives considered
 

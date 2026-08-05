@@ -30,12 +30,12 @@
  *   3. **A resposta de erro NÃO é repassada.** Ver abaixo.
  *
  * ---------------------------------------------------------------------------
- * Erro do arcabouço vira exceção — é o que faz a ADR-0007 valer aqui
+ * Erro do arcabouço vira exceção — é o que faz a ADR-0012 valer aqui
  * ---------------------------------------------------------------------------
  *
  * O manipulador devolve a recusa como uma `Response` comum, no formato dele
  * (`{ code, message }`, em inglês). Repassá-la publicaria dois formatos de erro na mesma API e
- * mataria a classificação por `codigo` que a ADR-0007 comprou.
+ * mataria a classificação por `codigo` que a ADR-0012 comprou.
  *
  * Por isso a resposta de erro é convertida em exceção do arcabouço HTTP e **o filtro global**
  * (`comum/filtro-excecao.ts`, registrado por `APP_FILTER`) faz a tradução para o envelope canônico
@@ -81,26 +81,28 @@
  * completa está lá, junto das constantes.
  *
  * O que sobrou aqui é a tradução da recusa — ver o parágrafo seguinte —, e ela continua sendo o
- * único jeito de o envelope da ADR-0007 valer para uma recusa que nasce fora deste vocabulário.
+ * único jeito de o envelope da ADR-0012 valer para uma recusa que nasce fora deste vocabulário.
  *
- * **Isto não fecha o `D21`.** Aquele débito é de outro eixo — a barreira de ADMISSÃO (pessoa
- * desativada, empresa suspensa) não desfazer a escrita de credencial —, tem dono declarado na
- * fatia `autorizacao-e-ciclo-de-acesso` e segue aberto no marcador de `packages/auth/src/
- * autenticacao.ts`.
+ * **Isto não fechava o `D21`**, e não é aqui que ele fecha. Aquele débito é de outro eixo — a
+ * barreira de ADMISSÃO (pessoa desativada, empresa suspensa) não desfazer a escrita de credencial
+ * —, e a T9 desta fatia o fechou por topologia: a rota que gravava antes de conferir **deixou de
+ * ser publicada** (ver a seção seguinte), e a troca do produto confere a admissão antes de
+ * qualquer escrita.
  *
  * ---------------------------------------------------------------------------
- * A marca de senha provisória cai DEPOIS da troca, e só depois
+ * O ENCAMINHADOR NÃO PUBLICA TUDO: a troca de senha nativa fica de fora (T9 · D21)
  * ---------------------------------------------------------------------------
  *
- * `identidade.usuario.senha_provisoria` é coluna do produto: o arcabouço não a conhece e não a
- * baixaria nunca. Sem alguém a baixar, a sessão restrita da RN-09 seria permanente e a troca
- * obrigatória não teria desfecho. Quem escreve é `@sysloc/auth`
- * (`limparMarcaDeSenhaProvisoria`), pelo mesmo motivo pelo qual a leitura de `identidade` mora lá
- * — esta aplicação não conhece o schema nem o construtor de consulta do ORM (§11.2).
+ * `/change-password` é recusada **antes do repasse**, e o caminho responde `404` no envelope
+ * canônico — ver {@link CAMINHOS_NAO_PUBLICADOS}. Quem troca senha neste produto é
+ * `POST /v1/sessao/senha` (`senha.controller.ts`), e o cabeçalho daquele arquivo carrega a razão
+ * por extenso: na rota nativa a credencial é gravada e as sessões apagadas **antes** de a barreira
+ * de admissão levantar, de modo que uma pessoa recusada saía sem acesso e sem saber por quê.
  *
- * A escrita acontece **depois** de o manipulador responder sem recusa. Antes seria liberar a
- * sessão de quem teve a senha recusada; e a marca cai **sem novo login** porque a guarda relê a
- * pessoa a cada requisição — nada precisa ser invalidado para a restrição sumir.
+ * Com isso, a queda da marca de senha provisória — que morava neste manipulador enquanto a rota
+ * nativa era a única troca existente — mudou de casa junto com a troca: ela agora acontece no
+ * controlador do produto, na mesma ordem de sempre (depois de a troca ser aceita, nunca antes).
+ * Nada aqui a escreve, e nada aqui precisa do acesso a `identidade`.
  *
  * ---------------------------------------------------------------------------
  * Por que esta superfície fica FORA do contrato publicado
@@ -108,17 +110,18 @@
  *
  * `@ApiExcludeController()` retira as rotas de identidade de `/docs` e de `/docs/json`. A decisão
  * é do encaminhador, não da superfície: anotar `@All('*')` produziria no documento uma entrada
- * `/v1/auth/{*}` **por método** — um caminho que ninguém chama, e que não descreve nenhuma das seis
+ * `/v1/auth/{*}` **por método** — um caminho que ninguém chama, e que não descreve nenhuma das
  * rotas da §4.1. Um gerador de cliente consumiria isso como se fosse contrato, o que é pior que a
  * ausência.
  *
  * A ausência, porém, é **pendência com dono**, e não decisão fechada: o marco de entrega do
  * `CLAUDE.md` faz o `handoff-frontend.md` e o `@sysloc/contracts` dependerem justamente deste
- * documento, e as seis rotas da §4.1 precisam estar nele. Fechar exige declará-las à mão, uma
- * anotação por rota, escrita a partir do inventário que o `CT-018 (d)` fixa.
+ * documento, e as rotas que a §4.1 declara sob este prefixo precisam estar nele — **cinco desde a
+ * T9**, que desligou a sexta. Fechar exige declará-las à mão, uma anotação por rota, escrita a
+ * partir do inventário que o `CT-018 (d)` fixa.
  *
  * **Dono, precisado no fechamento da F1**: a **publicação do `@sysloc/contracts`**, e não uma task
- * genérica de fechamento. Declarar as seis agora produziria um documento que o congelamento
+ * genérica de fechamento. Declará-las agora produziria um documento que o congelamento
  * reescreveria dias depois, e as anotações envelheceriam sem consumidor — o gerador de cliente só
  * existe a partir daquele pacote. O que o fechamento da F1 fez foi tirar a pendência do limbo:
  * ela tem endereço no marco de entrega, e não em "alguma task futura". Sem alteração de
@@ -141,17 +144,12 @@
 
 import { All, Controller, HttpException, Inject, Req, Res } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
-import {
-  type Autenticacao,
-  limparMarcaDeSenhaProvisoria,
-  RECUSA_DE_CAMPO_INVALIDO,
-} from '@sysloc/auth';
-import type { AcessoAIdentidade } from '@sysloc/db';
+import { type Autenticacao, RECUSA_DE_CAMPO_INVALIDO } from '@sysloc/auth';
 import { CodigoErro, ErroDeAplicacao } from '@sysloc/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
 import { definirRotuloDeRota } from '../comum/rotulo-de-rota.js';
-import { TOKEN_ACESSO_A_IDENTIDADE, TOKEN_AUTENTICACAO } from '../configuracao/ambiente.js';
+import { TOKEN_AUTENTICACAO } from '../configuracao/ambiente.js';
 import { RotaPublica } from './rota-publica.decorator.js';
 
 /**
@@ -169,8 +167,54 @@ const PRIMEIRO_STATUS_DE_RECUSA = 400;
 /** Métodos que não carregam corpo — reescrevê-lo para eles é erro de protocolo. */
 const METODOS_SEM_CORPO = new Set(['GET', 'HEAD']);
 
-/** Caminho da troca de senha, **relativo ao prefixo do arcabouço** (§4.1). */
-const CAMINHO_DA_TROCA_DE_SENHA = '/change-password';
+/** Caminho da troca de senha nativa, **relativo ao prefixo do arcabouço**. */
+const CAMINHO_DA_TROCA_DE_SENHA_NATIVA = '/change-password';
+
+/**
+ * Os caminhos do arcabouço que este encaminhador **deixa de publicar** (T9 · fecha o `D21`).
+ *
+ * ---------------------------------------------------------------------------
+ * Por que a recusa mora AQUI, e não na configuração do arcabouço
+ * ---------------------------------------------------------------------------
+ *
+ * O cartão da T9 manda preferir desligar a capacidade na própria configuração, *"para que a rota
+ * deixe de existir em vez de ser barrada na borda"*, e registra a preferência como hipótese a
+ * validar. **Ela foi validada, e o caminho foi recusado com razão medida** — três achados, todos
+ * contra `better-auth@1.6.25` instalado:
+ *
+ *   1. **a opção existe**: `disabledPaths` é campo de primeira classe das opções
+ *      (`@better-auth/core`, `src/types/init-options.ts`) e o roteador responde `404` a todo
+ *      caminho listado, em `onRequest` (`dist/api/index.mjs`);
+ *   2. **ela NÃO faz a rota deixar de existir**: `getEndpoints` monta o registro `api` com
+ *      `changePassword` incondicionalmente, e `disabledPaths` só é consultado pelo ROTEADOR. A
+ *      capacidade continua no registro, continua chamável por `auth.api.changePassword` — que é
+ *      exatamente como a rota do produto grava a credencial — e continua aparecendo no inventário
+ *      do `CT-018 (d)`. A premissa da preferência não se sustenta;
+ *   3. **e ela custaria DUAS provas vivas**, ambas em `packages/auth`, que é outro pacote e outro
+ *      escopo: o caso da barreira de admissão exercita `/change-password` como a **segunda rota
+ *      emissora de sessão** — é o que sustenta o `REVERTER EXIGE` da `DECISÃO FECHADA — T7` —, e o
+ *      `CT-236` exercita nele a perna do grupo de tetos de credencial do limitador de taxa (as
+ *      outras estão inertes por configuração). Um `404` em `onRequest` apagaria as duas: ele
+ *      responde antes do limitador e antes do manipulador. **E apagaria uma terceira coisa, que não
+ *      é prova**: `POST /v1/sessao/senha` grava a credencial repassando ao manipulador desta mesma
+ *      instância, justamente para correr sob aquele teto (ver `senha.controller.ts`). Com
+ *      `disabledPaths`, a troca de senha do produto deixaria de funcionar.
+ *
+ * O encaminhador, por outro lado, **é** o ponto topológico onde se decide o que esta API publica
+ * sob `/v1/auth`: ele é um só, é `@All('*')`, e não existe segundo caminho por onde uma requisição
+ * HTTP alcance a superfície de identidade. Recusar aqui não é "instalar a propriedade por ponto" —
+ * a propriedade *é* sobre a superfície HTTP, e este é o único ponto dela.
+ *
+ * A recusa é `404`, e não `403`: o cliente não está sendo barrado, o caminho **não é publicado por
+ * esta API**. É o mesmo status que a opção do arcabouço escolheria, e o mesmo que qualquer caminho
+ * inexistente sob o prefixo já devolve.
+ *
+ * Exportado para que o `CT-018 (d)` subtraia estes caminhos da superfície efetiva a partir do SUT,
+ * em vez de manter uma segunda lista escrita à mão no caso.
+ */
+export const CAMINHOS_NAO_PUBLICADOS: ReadonlySet<string> = new Set([
+  CAMINHO_DA_TROCA_DE_SENHA_NATIVA,
+]);
 
 /** Marca de segmento variável num padrão de rota do arcabouço (`/reset-password/:token`). */
 const MARCA_DE_PARAMETRO = ':';
@@ -237,13 +281,7 @@ function caminhosLiteraisDoArcabouco(autenticacao: Autenticacao): ReadonlySet<st
 @ApiExcludeController()
 @Controller(CAMINHO_DA_IDENTIDADE)
 export class AutenticacaoController {
-  constructor(
-    @Inject(TOKEN_AUTENTICACAO) private readonly autenticacao: Autenticacao,
-    // O acesso restrito a `identidade` entra apenas para que a marca de senha provisória possa ser
-    // baixada pela capacidade que `@sysloc/auth` publica. Nenhuma consulta é escrita aqui: o que
-    // este controlador conhece é a função, não o schema.
-    @Inject(TOKEN_ACESSO_A_IDENTIDADE) private readonly acesso: AcessoAIdentidade,
-  ) {
+  constructor(@Inject(TOKEN_AUTENTICACAO) private readonly autenticacao: Autenticacao) {
     this.caminhosLiterais = caminhosLiteraisDoArcabouco(autenticacao);
   }
 
@@ -264,9 +302,9 @@ export class AutenticacaoController {
    * forma nomeada é a do outro adaptador, e a conversão automática do arcabouço só alcança
    * middleware, nunca rota de controlador.
    *
-   * A queda da marca de senha provisória entra **neste** manipulador porque ele é um só:
-   * `@All('*')` é o único ponto por onde toda requisição de `/v1/auth` passa. O cabeçalho deste
-   * arquivo diz por que a ordem — encaminhar, e só então baixar a marca — é o que importa.
+   * A recusa dos caminhos não publicados entra **neste** manipulador porque ele é um só:
+   * `@All('*')` é o único ponto por onde toda requisição de `/v1/auth` passa, e é por isso que
+   * barrar aqui vale para todo método sem que a lista precise conhecer verbo nenhum.
    */
   @All('*')
   async encaminhar(
@@ -276,6 +314,16 @@ export class AutenticacaoController {
     const requisicaoWeb = comoRequisicaoWeb(requisicao, this.autenticacao.options.baseURL);
     const caminho = caminhoNoArcabouco(requisicaoWeb.url, this.autenticacao.options.basePath);
 
+    // ANTES de qualquer outra coisa — antes do rótulo de journal, antes de resolver sessão e antes
+    // do repasse: o caminho não publicado não chega ao arcabouço por via nenhuma. Ver
+    // {@link CAMINHOS_NAO_PUBLICADOS} para por que a recusa mora aqui e por que ela é `404`.
+    if (CAMINHOS_NAO_PUBLICADOS.has(caminho)) {
+      throw new ErroDeAplicacao(
+        CodigoErro.RECURSO_NAO_ENCONTRADO,
+        MENSAGEM_POR_CODIGO[CodigoErro.RECURSO_NAO_ENCONTRADO],
+      );
+    }
+
     // O rótulo do journal, quando — e SÓ quando — o caminho é um padrão literal conhecido. Fora
     // disso nada é definido e o filtro global segue com o padrão do roteador (`/v1/auth/*`),
     // exatamente como antes. Ver `comum/rotulo-de-rota.ts` para por que o conjunto é fechado.
@@ -283,49 +331,20 @@ export class AutenticacaoController {
       definirRotuloDeRota(requisicao, `${this.autenticacao.options.basePath ?? ''}${caminho}`);
     }
 
-    // A pessoa é resolvida ANTES do encaminhamento, e não depois: a troca pode rotacionar a sessão
-    // (`revokeOtherSessions`) — depois dela, o cookie do pedido pode já não resolver ninguém.
-    // Sessão ausente devolve `undefined` e o pedido segue para o arcabouço, que é quem recusa.
-    const donoDaTroca =
-      caminho === CAMINHO_DA_TROCA_DE_SENHA ? await this.pessoaDaSessao(requisicaoWeb) : undefined;
-
     const devolvida = await this.autenticacao.handler(requisicaoWeb);
 
     if (devolvida.status >= PRIMEIRO_STATUS_DE_RECUSA) {
       const diagnostico = await devolvida.text();
-      // Recusa NOSSA primeiro: ela já traz o campo culpado e os motivos, e o envelope da ADR-0007
+      // Recusa NOSSA primeiro: ela já traz o campo culpado e os motivos, e o envelope da ADR-0012
       // sai completo. O que não for nossa cai na regra geral abaixo.
       recusarComEnvelopeDoProduto(diagnostico);
 
       // O corpo do arcabouço vira DIAGNÓSTICO da exceção, nunca resposta: o filtro global monta o
-      // envelope da ADR-0007 a partir do status e da tabela de mensagem pública.
+      // envelope da ADR-0012 a partir do status e da tabela de mensagem pública.
       throw new HttpException(diagnostico, devolvida.status);
     }
 
-    if (donoDaTroca !== undefined) {
-      // Só aqui: a linha acima já levantou para toda recusa, então alcançar este ponto é a troca
-      // ter sido aceita. Baixar a marca antes seria liberar a sessão de quem teve a senha nova
-      // recusada — e é exatamente esse o defeito que o CT-022 procura.
-      await limparMarcaDeSenhaProvisoria(this.acesso.identidade, donoDaTroca);
-    }
-
     await responderCom(resposta, devolvida);
-  }
-
-  /**
-   * Quem está por trás do cookie desta requisição, ou `undefined` quando não há sessão.
-   *
-   * A conferência é a **do arcabouço** (`getSession`), a mesma que a guarda de contexto usa: um
-   * segundo jeito de decidir "há sessão aqui?" seria um segundo jeito de errar. Os cabeçalhos são
-   * os da requisição já convertida — sem uma segunda cópia deles, que poderia divergir da que o
-   * manipulador vai receber.
-   *
-   * O que sai daqui é o mínimo: o identificador, porque é dele que a marca de senha provisória cai.
-   */
-  private async pessoaDaSessao(requisicao: Request): Promise<string | undefined> {
-    const autenticada = await this.autenticacao.api.getSession({ headers: requisicao.headers });
-
-    return autenticada === null ? undefined : autenticada.user.id;
   }
 }
 
@@ -355,7 +374,7 @@ function caminhoNoArcabouco(alvo: string, prefixo: string | undefined): string {
 }
 
 /**
- * Levanta o envelope da ADR-0007 quando a recusa do arcabouço é, na verdade, uma recusa NOSSA.
+ * Levanta o envelope da ADR-0012 quando a recusa do arcabouço é, na verdade, uma recusa NOSSA.
  *
  * As validações de produto de `@sysloc/auth` recusam com `APIError`, porque é a única recusa que o
  * roteador do arcabouço converte em resposta em vez de tratar como falha do servidor — e o corpo
@@ -365,7 +384,7 @@ function caminhoNoArcabouco(alvo: string, prefixo: string | undefined): string {
  *
  * **A mensagem que sai é sempre a canônica do código**, lida de `MENSAGEM_POR_CODIGO`, nunca a que
  * viajou no corpo: quem discrimina o problema é `codigo` mais `campo` mais `detalhes`, e adotar o
- * texto de origem seria classificação por mensagem — o que a ADR-0007 existe para aposentar.
+ * texto de origem seria classificação por mensagem — o que a ADR-0012 existe para aposentar.
  *
  * Corpo que não é JSON, ou que é JSON de outra forma, sai daqui sem efeito: a recusa segue para a
  * regra geral, que preserva o status de quem recusou.

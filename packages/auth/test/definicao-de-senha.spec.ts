@@ -38,7 +38,7 @@
  * Os casos abaixo chamam `auth.api.*` **de propósito**, e não por atalho: é justamente a metade da
  * classe que o encaminhador HTTP não alcançava, e é a que a fatia `autorizacao-e-ciclo-de-acesso`
  * vai usar no onboarding. A metade que passa por HTTP continua provada onde já estava — o `CT-022`
- * de `apps/api/test/sessao-restrita.e2e.spec.ts`, que exercita `/v1/auth/change-password` com
+ * de `apps/api/test/sessao-restrita.e2e.spec.ts`, que exercita `POST /v1/sessao/senha` com
  * requisição real e afirma o envelope inteiro.
  *
  * ---------------------------------------------------------------------------

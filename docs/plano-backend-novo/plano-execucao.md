@@ -380,7 +380,7 @@ de vazamento + 10 fluxos redesenhados + 67 arquivos de teste com fixtures novas*
 
 ## F7 — Virada e desinstalação
 
-> **Partida em duas na revisão 3.** Os quatro itens abaixo não caem do mesmo lado da fronteira do
+> **Partida em duas na revisão 3.** Os itens abaixo não caem do mesmo lado da fronteira do
 > `CLAUDE.md`, e tratá-los como uma fatia só esconde uma dependência que não se pode dissolver.
 >
 > **Entram no marco de entrega do backend** (construção, sem depender de frontend algum): o **item 1
@@ -388,8 +388,8 @@ de vazamento + 10 fluxos redesenhados + 67 arquivos de teste com fixtures novas*
 > e a **redação** do `deploy/scripts/virada.md` com o gate de desinstalação. O item 2 não é trabalho:
 > não há migração de dados.
 >
-> **Ficam para uma sessão operacional futura neste servidor**: a **execução** da virada (item 3) e a
-> **desinstalação** (item 4). O motivo é o primeiro critério de aceitação desta própria fase —
+> **Ficam para uma sessão operacional futura neste servidor**: a **execução** da virada (item 3), a
+> **desinstalação** (item 4) e a **retenção da trilha de tentativas** (item 5). O motivo é o primeiro critério de aceitação desta própria fase —
 > *"app funcionando integralmente contra o backend novo"* —, que só é verificável com o frontend
 > pronto, e o frontend é implementado fora daqui. As duas exigem este servidor, porque é onde o
 > `/opt/frappe` e o CloudPanel existem.
@@ -409,6 +409,15 @@ de vazamento + 10 fluxos redesenhados + 67 arquivos de teste com fixtures novas*
 4. **Desinstalação**: contêineres, volumes, imagens, `/opt/frappe`, os `run-*.sh`, os scripts em
    `/usr/local/bin` e as entradas de cron do root — liberada pelo gate abaixo, **sem espera por
    tempo**.
+5. **Retenção da trilha de tentativas de entrada**: janela de retenção e purga periódica de
+   `identidade.tentativa_login`, por timer systemd, nos moldes do item 1. Sem ela, a tabela que a
+   operação lê para decidir se houve ataque cresce sem limite.
+   **Origem**: é a metade não acionável do débito `P-T6-2` da F1 — a outra metade (ligar o limitador
+   de taxa) foi fechada na fatia `autorizacao-e-ciclo-de-acesso`, que endereçou esta aqui.
+   **A classificação como operação é conservadora**, e vale dizer por quê: escrever a política não
+   depende da virada nem do frontend, então ela caberia no item 1, que já instala timer sobre o
+   banco. Não foi movida para lá porque isso alteraria o marco de entrega do backend, cujos sete
+   itens estão fixados no `CLAUDE.md` — antecipá-la é decisão do usuário, não do plano.
 
 ### Sem janela de rollback por tempo (revisão 2)
 

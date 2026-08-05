@@ -1,0 +1,35 @@
+/**
+ * Módulo do operador do SaaS — as seis rotas de `/v1/master`.
+ *
+ * ---------------------------------------------------------------------------
+ * Ele IMPORTA o módulo de identidade em vez de abrir acesso próprio
+ * ---------------------------------------------------------------------------
+ *
+ * O serviço precisa de três coisas que já existem no processo: a instância do arcabouço de
+ * identidade, o acesso restrito a `identidade` (que as duas funções de onboarding de `@sysloc/auth`
+ * exigem por assinatura) e a unidade de trabalho. As três nascem em `AutenticacaoModule`, que é
+ * quem as abre e — o que importa mais — quem as **encerra** no desligamento
+ * (`onApplicationShutdown`).
+ *
+ * Abrir aqui um segundo `abrirAcessoAIdentidade` ou um segundo `abrirAcessoAoBanco` seria a saída
+ * mais curta e a errada: duas reservas de conexões para o mesmo papel, duas donas do mesmo recurso,
+ * e um desligamento que só devolve metade delas. Importar o módulo é o que mantém **uma** instância
+ * de cada, com dono único.
+ *
+ * A alternativa de subir os dois acessos para a composição raiz — anotada como decisão a rever
+ * "quando as rotas de Master e de usuários chegarem" — foi descartada por essa mesma razão: mover o
+ * provedor sem mover o gancho de desligamento deixaria o recurso sem dono, e mover os dois é
+ * refatoração da fatia anterior sem ganho para esta.
+ */
+
+import { Module } from '@nestjs/common';
+import { AutenticacaoModule } from '../autenticacao/autenticacao.module.js';
+import { EmpresaController } from './empresa.controller.js';
+import { EmpresaService } from './empresa.service.js';
+
+@Module({
+  imports: [AutenticacaoModule],
+  controllers: [EmpresaController],
+  providers: [EmpresaService],
+})
+export class MasterModule {}

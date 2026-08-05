@@ -28,8 +28,31 @@
  * |       |        | rota de negócio segue em `403`, a provisória continua autenticando e
  * |       |        | nenhuma das recusadas autentica. (RN-05, RN-09) |
  *
+ * | CA-17 | CT-238 | Enquanto a Senha provisória não for trocada, a sessão alcança apenas a leitura
+ * |       |        | da própria sessão e a rota de troca — **inclusive as rotas novas de Master e
+ * |       |        | Admin são recusadas**, com `403` nomeando a exigência pendente, e a recusa da
+ * |       |        | rota do Master é a da RESTRIÇÃO, não a do perfil. A troca não é barrada pela
+ * |       |        | restrição, e o alcance declarado é exatamente `['/v1/sessao',
+ * |       |        | '/v1/sessao/senha']`. (RN-09, RN-10) |
+ * | CA-18 | CT-239 | Trocada a senha pela rota do produto, a marca cai no banco, a **mesma** sessão
+ * |       |        | passa a alcançar o que as permissões comportam — sem novo login e sem cookie
+ * |       |        | reemitido —, **as demais sessões da pessoa são encerradas**, e a Senha
+ * |       |        | provisória deixa de servir para entrar. (RN-07, RN-09, RN-10) |
+ *
  * Rastreabilidade: `CA-09 → CT-019 (RN-08)`, `CA-10 → CT-021 (RN-09)`, `CA-10 → CT-022 (RN-09)`,
- * `CA-07 → CT-022 (RN-05)`.
+ * `CA-07 → CT-022 (RN-05)`, `CA-17 → CT-238 (RN-09)`, `CA-18 → CT-239 (RN-09)`.
+ *
+ * ---------------------------------------------------------------------------
+ * A troca de senha mudou de rota na T9 — e o que isso muda aqui
+ * ---------------------------------------------------------------------------
+ *
+ * Os casos desta suíte usavam `/v1/auth/change-password`, a rota NATIVA do arcabouço. Ela deixou de
+ * ser publicada por entrega declarada da T9 da fatia `autorizacao-e-ciclo-de-acesso`, e o que a
+ * substitui é `POST /v1/sessao/senha`. A justificativa por extenso, com a linha
+ * `SUT_IS_CORRECT_BECAUSE`, está na constante {@link ROTA_DE_TROCA_DE_SENHA}; o que vale registrar
+ * aqui é que **nenhuma asserção foi enfraquecida** na travessia: mudaram o caminho e o vocabulário
+ * do corpo, e as igualdades de envelope, de estado persistido e de credencial em vigor seguem as
+ * mesmas.
  *
  * ---------------------------------------------------------------------------
  * De onde vem o estado que cada caso assume
@@ -82,6 +105,7 @@ import { randomBytes } from 'node:crypto';
 import { Controller, Get } from '@nestjs/common';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
+import { CHAVES_DE_ACAO, CHAVES_DE_TELA } from '@sysloc/auth';
 import {
   ACESSOS_DA_EMPRESA_A,
   type AcessoAoBanco,
@@ -118,9 +142,13 @@ import { reservarPorta } from '../../../packages/shared/test/efemero-comum.ts';
 import { type FilaEfemera, redisEfemero } from '../../../packages/shared/test/redis-efemero.ts';
 import { AppModule } from '../src/app.module.ts';
 import { PREFIXO_DAS_ROTAS_DE_IDENTIDADE } from '../src/autenticacao/autenticacao.module.ts';
+import { NaoExigePermissao } from '../src/autenticacao/exigencia.decorator.ts';
+import { CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO } from '../src/autenticacao/senha.controller.ts';
 import { CAMINHO_DA_SESSAO } from '../src/autenticacao/sessao.controller.ts';
 import { ROTAS_DA_SESSAO_RESTRITA } from '../src/autenticacao/sessao-restrita.ts';
 import { ENDERECO_DE_ESCUTA, PREFIXO_DE_VERSAO } from '../src/configuracao/ambiente.ts';
+import { CAMINHO_DO_MASTER } from '../src/master/empresa.controller.ts';
+import { CAMINHO_DOS_USUARIOS } from '../src/usuarios/usuario.controller.ts';
 import { decodificarBase32 } from './base32.ts';
 
 /** Limite da montagem: banco migrado, semente, fila e a aplicação. */
@@ -136,6 +164,32 @@ const SUFIXO_DO_COOKIE_DE_SESSAO = 'session_token';
 const CAMINHO_DA_SESSAO_CORRENTE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_SESSAO}`;
 
 /**
+ * Os três campos de efetivo que o `GET /v1/sessao` publica para o **Sysloc Master**.
+ *
+ * Vazios, e isso é estrutural: as 17 chaves são áreas e ações do app da imobiliária, e o operador do
+ * SaaS não alcança dado de negócio por caminho nenhum — ele atravessa as rotas dele pela dimensão de
+ * PERFIL da ADR-0011. A carga não ajusta permissão de ninguém, então o contador está no valor de
+ * nascimento.
+ *
+ * Extraídos para constante porque as igualdades abaixo os repetem, e um par de valores repetido em
+ * cinco lugares diverge no primeiro que alguém esquecer de atualizar.
+ */
+const EFETIVO_DO_MASTER = { telas: [], acoes: [], versaoPermissoes: 0 } as const;
+
+/**
+ * Os mesmos três campos para o **Admin da empresa**, cuja matriz é o catálogo inteiro.
+ *
+ * Derivados do catálogo exportado e ordenados aqui, e não de `calcularEfetivo`: re-derivar pela
+ * mesma função do SUT faria a asserção concordar consigo mesma. A ordem é crescente dentro de cada
+ * eixo, porque é assim que o efetivo é publicado.
+ */
+const EFETIVO_DO_ADMIN = {
+  telas: [...CHAVES_DE_TELA].sort(),
+  acoes: [...CHAVES_DE_ACAO].sort(),
+  versaoPermissoes: 0,
+} as const;
+
+/**
  * Caminho do controlador-fixture, relativo ao prefixo de versão.
  *
  * O nome denuncia o que ele é: superfície de VERIFICAÇÃO, montada apenas nesta aplicação. Nada em
@@ -149,7 +203,18 @@ const CAMINHO_DO_NEGOCIO_CORRENTE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_NEGOCIO}
 /** As rotas do arcabouço que esta task exercita, compostas a partir do prefixo real. */
 const ROTA_DE_ENTRADA = `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/sign-in/email`;
 const ROTA_DE_SAIDA = `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/sign-out`;
-const ROTA_DE_TROCA_DE_SENHA = `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/change-password`;
+/**
+ * A troca de senha **do produto** — `POST /v1/sessao/senha`, publicada pela T9 da fatia
+ * `autorizacao-e-ciclo-de-acesso`.
+ *
+ * SUT_IS_CORRECT_BECAUSE: até a T9 esta constante apontava para `/v1/auth/change-password`, a rota
+ * NATIVA do arcabouço, e o desligamento dela é entrega declarada daquela task (decisão D7 do
+ * tech-alignment, fechamento do débito D21) — a rota removida grava a credencial antes de conferir
+ * a política de admissão. Mudaram o caminho e o vocabulário do corpo (`{ senhaAtual, senhaNova }`),
+ * e **nenhuma asserção** do CT-021 ou do CT-022 foi enfraquecida: as duas seguem afirmando o
+ * envelope inteiro, o estado persistido antes e depois, e a credencial que de fato passou a valer.
+ */
+const ROTA_DE_TROCA_DE_SENHA = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO}`;
 const ROTA_DE_PREPARO_DO_SEGUNDO_FATOR = `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/enable`;
 const ROTA_DE_VERIFICACAO_DO_SEGUNDO_FATOR = `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/verify-totp`;
 
@@ -185,6 +250,24 @@ const PESSOA_DA_TROCA = pessoaSemeada('admin.a@exemplo.com.br');
 
 /** Sujeito exclusivo do CT-022: as três recusas incrementam o contador de bloqueio dele. */
 const PESSOA_DA_RECUSA = pessoaSemeada('usuario.a@exemplo.com.br');
+
+/**
+ * Quem ADMITE as pessoas do CT-238 e do CT-239 — o administrador da **empresa B**.
+ *
+ * Da empresa B, e não da A, por isolamento medido: o controlador-fixture lista os vínculos do
+ * contexto, e o CT-021 compara essa lista, por igualdade, com os vínculos da empresa A. Criar
+ * pessoa em A faria aquela igualdade depender da ordem de execução dos casos deste arquivo.
+ *
+ * A senha dele **não** é trocada por caso nenhum, e a sessão que ele abre serve só para criar as
+ * pessoas: os sujeitos dos dois casos novos são as pessoas criadas, nunca ele.
+ */
+const ADMIN_DA_EMPRESA_B = pessoaSemeada('admin.b@exemplo.com.br');
+
+/** Caminho, relativo à raiz, da superfície de pessoas. Composto do dono do segmento. */
+const CAMINHO_DOS_USUARIOS_CORRENTE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_USUARIOS}`;
+
+/** Idem para a coleção de empresas do operador do SaaS. */
+const CAMINHO_DAS_EMPRESAS_CORRENTE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas`;
 
 /** A senha nova do CT-021 — aprovada pela política, e sem pedaço do nome ou do e-mail da pessoa. */
 const SENHA_NOVA = 'Trilha9Verde!';
@@ -294,7 +377,13 @@ describe('sessão restrita, troca de senha provisória e segundo fator (T10)', (
       // --- 2. a sessão é RESTRITA: reporta a exigência e não alcança negócio -------------------
       const restrita = await pedir(CAMINHO_DA_SESSAO_CORRENTE, { cookies: sessaoDoMaster });
       expect(restrita.status).toBe(200);
-      // Objeto inteiro: os oito campos da §4.2. `segundoFatorPendente: true` com
+      // SUT_IS_CORRECT_BECAUSE: as igualdades de sessão deste arquivo passaram de OITO para ONZE
+      // campos porque o código de produção está certo — a §4.2 da tech spec da fatia
+      // `autorizacao-e-ciclo-de-acesso` fixa o contrato do `GET /v1/sessao` em 11 campos (CA-19).
+      // Nenhuma asserção afrouxou: seguem igualdades de objeto INTEIRO, agora sobre três campos a
+      // mais, e nenhum dos oito anteriores mudou de nome, tipo ou valor esperado.
+      //
+      // Objeto inteiro: os onze campos da §4.2. `segundoFatorPendente: true` com
       // `senhaProvisoria: false` é o par que isola a exigência sob teste.
       expect(restrita.corpo).toEqual({
         usuarioId: MASTER.id,
@@ -305,6 +394,7 @@ describe('sessão restrita, troca de senha provisória e segundo fator (T10)', (
         empresaNome: null,
         senhaProvisoria: false,
         segundoFatorPendente: true,
+        ...EFETIVO_DO_MASTER,
       });
 
       const negocioBarrado = await pedir(CAMINHO_DO_NEGOCIO_CORRENTE, { cookies: sessaoDoMaster });
@@ -358,6 +448,7 @@ describe('sessão restrita, troca de senha provisória e segundo fator (T10)', (
         empresaNome: null,
         senhaProvisoria: false,
         segundoFatorPendente: false,
+        ...EFETIVO_DO_MASTER,
       });
 
       // E a rota de negócio deixou de responder `403`. Para o Master ela devolve VAZIO, e é por
@@ -439,6 +530,7 @@ describe('sessão restrita, troca de senha provisória e segundo fator (T10)', (
         empresaNome: null,
         senhaProvisoria: false,
         segundoFatorPendente: false,
+        ...EFETIVO_DO_MASTER,
       });
 
       const negocioAposDesafio = await pedir(CAMINHO_DO_NEGOCIO_CORRENTE, { cookies: desafio });
@@ -451,10 +543,21 @@ describe('sessão restrita, troca de senha provisória e segundo fator (T10)', (
   it(
     'CT-021 — a senha provisória obriga a troca antes de qualquer outra ação, e depois dela deixa de valer',
     async () => {
-      // A lista de rotas permitidas é a do módulo sob teste, e o caminho da rota de sessão é
-      // composto a partir do DONO do segmento — é o que amarra o literal daquele módulo ao
-      // controlador que atende, já que o ciclo de módulos impede a importação direta lá.
-      expect(ROTAS_DA_SESSAO_RESTRITA).toEqual([CAMINHO_DA_SESSAO_CORRENTE]);
+      // A lista de rotas permitidas é a do módulo sob teste, e cada caminho é composto a partir do
+      // DONO do segmento — é o que amarra os literais daquele módulo aos controladores que atendem,
+      // já que o ciclo de módulos impede a importação direta lá.
+      //
+      // SUT_IS_CORRECT_BECAUSE: a lista passou de UM para DOIS elementos porque o código de
+      // produção está certo — a T9 publicou `POST /v1/sessao/senha`, que é rota PROTEGIDA e
+      // portanto governada pela guarda, e o próprio `sessao-restrita.ts` antecipava a extensão por
+      // escrito desde a fatia anterior (*"quando a fatia publicar rotas do produto para trocar a
+      // senha, elas entram nesta lista"*). Sem a entrada nova, a sessão restrita seria recusada
+      // justamente na única rota que a tira da restrição. **Nenhum elemento anterior saiu**, e a
+      // asserção segue sendo igualdade exata de lista, não `toContain`.
+      expect(ROTAS_DA_SESSAO_RESTRITA).toEqual([
+        CAMINHO_DA_SESSAO_CORRENTE,
+        ROTA_DE_TROCA_DE_SENHA,
+      ]);
 
       await marcarSenhaProvisoria(PESSOA_DA_TROCA.id, true);
       // Precondição afirmada no BANCO, e não pressuposta: é ela que faz a sessão nascer restrita.
@@ -482,6 +585,7 @@ describe('sessão restrita, troca de senha provisória e segundo fator (T10)', (
         empresaNome: EMPRESA_A.nome,
         senhaProvisoria: true,
         segundoFatorPendente: false,
+        ...EFETIVO_DO_ADMIN,
       });
 
       const preparoPermitido = await pedir(ROTA_DE_PREPARO_DO_SEGUNDO_FATOR, {
@@ -496,7 +600,7 @@ describe('sessão restrita, troca de senha provisória e segundo fator (T10)', (
       const sondaDaTroca = await pedir(ROTA_DE_TROCA_DE_SENHA, {
         metodo: 'POST',
         cookies: sessao,
-        corpo: { currentPassword: SENHA_ATUAL_ERRADA, newPassword: SENHA_NOVA },
+        corpo: { senhaAtual: SENHA_ATUAL_ERRADA, senhaNova: SENHA_NOVA },
       });
       expect(sondaDaTroca.status).toBe(422);
       expect(sondaDaTroca.corpo).toEqual({
@@ -516,7 +620,7 @@ describe('sessão restrita, troca de senha provisória e segundo fator (T10)', (
       const troca = await pedir(ROTA_DE_TROCA_DE_SENHA, {
         metodo: 'POST',
         cookies: sessao,
-        corpo: { currentPassword: SENHA_DA_CARGA, newPassword: SENHA_NOVA },
+        corpo: { senhaAtual: SENHA_DA_CARGA, senhaNova: SENHA_NOVA },
       });
       expect(troca.status).toBe(200);
       // "Sem novo login" tem uma prova direta: a troca NÃO devolveu credencial de sessão nova. Sem
@@ -536,6 +640,7 @@ describe('sessão restrita, troca de senha provisória e segundo fator (T10)', (
         empresaNome: EMPRESA_A.nome,
         senhaProvisoria: false,
         segundoFatorPendente: false,
+        ...EFETIVO_DO_ADMIN,
       });
       expect(await estadoPersistido(PESSOA_DA_TROCA.id)).toEqual({
         senhaProvisoria: false,
@@ -590,7 +695,7 @@ describe('sessão restrita, troca de senha provisória e segundo fator (T10)', (
         const recusa = await pedir(ROTA_DE_TROCA_DE_SENHA, {
           metodo: 'POST',
           cookies: sessao,
-          corpo: { currentPassword: SENHA_DA_CARGA, newPassword: linha.senha },
+          corpo: { senhaAtual: SENHA_DA_CARGA, senhaNova: linha.senha },
         });
 
         expect(recusa.status, linha.rotulo).toBe(422);
@@ -643,6 +748,148 @@ describe('sessão restrita, troca de senha provisória e segundo fator (T10)', (
     },
     LIMITE_CASO_MS,
   );
+
+  it(
+    'CT-238 — antes da troca, a sessão restrita não alcança nada além da própria troca',
+    async () => {
+      // A pessoa nasce pela ROTA DO PRODUTO, com a Senha provisória que ela devolve: aqui não há
+      // marca escrita à mão, porque a partir da T8 existe caminho real que a produz — e o caminho
+      // real é o que faz a sessão nascer restrita pela barreira de admissão, e não por arranjo.
+      const admissao = await admitirPessoaDaEmpresaB('sessao.restrita.um@exemplo.com.br');
+
+      const entrada = await entrar(admissao.email, admissao.senhaProvisoria);
+      expect(entrada.status).toBe(200);
+      const sessao = guardarCookies(new Map(), entrada);
+
+      // --- 1. as rotas NOVAS desta fatia são recusadas, e a mensagem NOMEIA a pendência ----------
+      //
+      // As três, e não uma: o eixo é a SUPERFÍCIE, e provar uma rota deixaria as outras livres. A
+      // do Master entra de propósito — ela seria recusada por PERFIL de qualquer forma, e é
+      // justamente isso que a asserção discrimina: a mensagem que volta é a da RESTRIÇÃO, porque a
+      // guarda confere o alcance da sessão restrita **antes** de decidir a autorização.
+      const naoAlcancaveis = [
+        { rotulo: 'criar pessoa', caminho: CAMINHO_DOS_USUARIOS_CORRENTE, metodo: 'POST' },
+        { rotulo: 'listar pessoas', caminho: CAMINHO_DOS_USUARIOS_CORRENTE, metodo: 'GET' },
+        { rotulo: 'criar empresa', caminho: CAMINHO_DAS_EMPRESAS_CORRENTE, metodo: 'POST' },
+      ] as const;
+
+      for (const rota of naoAlcancaveis) {
+        const recusa = await pedir(rota.caminho, {
+          metodo: rota.metodo,
+          cookies: sessao,
+          ...(rota.metodo === 'POST' ? { corpo: {} } : {}),
+        });
+
+        expect(recusa.status, rota.rotulo).toBe(403);
+        expect(recusa.corpo, rota.rotulo).toEqual({
+          codigo: CodigoErro.ACESSO_NEGADO,
+          mensagem: MENSAGEM_DA_SENHA_PROVISORIA,
+        });
+      }
+
+      // --- 2. a leitura da própria sessão responde, e reporta a pendência ------------------------
+      const propriaSessao = await pedir(CAMINHO_DA_SESSAO_CORRENTE, { cookies: sessao });
+      expect(propriaSessao.status).toBe(200);
+      expect((propriaSessao.corpo as { senhaProvisoria?: unknown }).senhaProvisoria).toBe(true);
+
+      // --- 3. e a rota de TROCA não é recusada pela restrição ------------------------------------
+      //
+      // A sonda leva a senha atual ERRADA de propósito: ela **responde** — que é o que o passo pede
+      // — sem trocar coisa alguma. O que discrimina não é o status ser `2xx`, e sim a recusa ser a
+      // da CONFERÊNCIA (`422 CAMPO_INVALIDO`) e não a da RESTRIÇÃO (`403 ACESSO_NEGADO`): uma rota
+      // que a restrição barrasse devolveria o envelope das três acima.
+      const sondaDaTroca = await pedir(ROTA_DE_TROCA_DE_SENHA, {
+        metodo: 'POST',
+        cookies: sessao,
+        corpo: { senhaAtual: SENHA_ATUAL_ERRADA, senhaNova: SENHA_NOVA },
+      });
+      expect(sondaDaTroca.status).toBe(422);
+      expect(sondaDaTroca.corpo).toEqual({
+        codigo: CodigoErro.CAMPO_INVALIDO,
+        mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
+      });
+      expect(await estadoPersistido(admissao.usuarioId)).toEqual({
+        senhaProvisoria: true,
+        doisFatoresAtivo: false,
+      });
+
+      // --- 4. asserção ESTÁTICA: o alcance declarado é exatamente o esperado ---------------------
+      //
+      // O par com a asserção comportamental acima é o que a torna verificável: a lista diz o que a
+      // decisão consulta, e os passos 1 a 3 dizem o que ela de fato produz.
+      expect(ROTAS_DA_SESSAO_RESTRITA).toEqual([
+        CAMINHO_DA_SESSAO_CORRENTE,
+        ROTA_DE_TROCA_DE_SENHA,
+      ]);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-239 — trocada a senha, a MESMA sessão alcança tudo e as demais são encerradas',
+    async () => {
+      const admissao = await admitirPessoaDaEmpresaB('sessao.restrita.dois@exemplo.com.br');
+
+      // DUAS sessões da mesma pessoa: a desta requisição e uma outra, aberta antes da troca. É o
+      // par que separa "encerrou as demais" de "encerrou todas" e de "não encerrou nenhuma" —
+      // nenhuma das três passa nas duas asserções do passo 4 ao mesmo tempo.
+      const primeira = await entrar(admissao.email, admissao.senhaProvisoria);
+      expect(primeira.status).toBe(200);
+      const sessao = guardarCookies(new Map(), primeira);
+
+      const outra = await entrar(admissao.email, admissao.senhaProvisoria);
+      expect(outra.status).toBe(200);
+      const outraSessao = guardarCookies(new Map(), outra);
+
+      // --- 1. antes da troca, a rota de negócio é recusada pela restrição ------------------------
+      const antes = await pedir(CAMINHO_DO_NEGOCIO_CORRENTE, { cookies: sessao });
+      expect(antes.status).toBe(403);
+      expect(antes.corpo).toEqual({
+        codigo: CodigoErro.ACESSO_NEGADO,
+        mensagem: MENSAGEM_DA_SENHA_PROVISORIA,
+      });
+
+      // --- 2. a troca, pela rota do produto -----------------------------------------------------
+      const troca = await pedir(ROTA_DE_TROCA_DE_SENHA, {
+        metodo: 'POST',
+        cookies: sessao,
+        corpo: { senhaAtual: admissao.senhaProvisoria, senhaNova: SENHA_NOVA },
+      });
+      expect(troca.status).toBe(200);
+      expect(troca.corpo).toEqual({ trocada: true });
+      // "A MESMA sessão", com prova direta: a troca NÃO reemite credencial de sessão. É a mesma
+      // asserção do CT-021, e ela é o que impede a implementação de rotacionar o cookie em silêncio.
+      expect(troca.cookies.filter(ehCookieDeSessao)).toEqual([]);
+
+      // --- 3. a marca caiu no BANCO, e a mesma sessão passou a alcançar --------------------------
+      expect(await estadoPersistido(admissao.usuarioId)).toEqual({
+        senhaProvisoria: false,
+        doisFatoresAtivo: false,
+      });
+
+      const depois = await pedir(CAMINHO_DO_NEGOCIO_CORRENTE, { cookies: sessao });
+      expect(depois.status).toBe(200);
+
+      const sessaoLiberada = await pedir(CAMINHO_DA_SESSAO_CORRENTE, { cookies: sessao });
+      expect(sessaoLiberada.status).toBe(200);
+      expect((sessaoLiberada.corpo as { senhaProvisoria?: unknown }).senhaProvisoria).toBe(false);
+
+      // --- 4. as DEMAIS sessões foram encerradas ------------------------------------------------
+      await afirmarQueNaoHaSessao(outraSessao);
+
+      // --- 5. a Senha provisória deixou de servir, e a nova serve --------------------------------
+      const comAProvisoria = await entrar(admissao.email, admissao.senhaProvisoria);
+      expect(comAProvisoria.status).toBe(401);
+      expect(comAProvisoria.corpo).toEqual({
+        codigo: CodigoErro.CREDENCIAL_INVALIDA,
+        mensagem: MENSAGEM_DE_CREDENCIAL_INVALIDA,
+      });
+
+      const comASenhaNova = await entrar(admissao.email, SENHA_NOVA);
+      expect(comASenhaNova.status).toBe(200);
+    },
+    LIMITE_CASO_MS,
+  );
 });
 
 /**
@@ -655,10 +902,20 @@ describe('sessão restrita, troca de senha provisória e segundo fator (T10)', (
  * A leitura atravessa a unidade de trabalho REAL, com `SET LOCAL` e política — é o que faz o `200`
  * depois da troca significar "a pessoa alcançou o dado da empresa dela", e não apenas "o
  * manipulador rodou".
+ *
+ * SUT_IS_CORRECT_BECAUSE: a marca `@NaoExigePermissao()` abaixo entrou com a T4 da fatia
+ * `autorizacao-e-ciclo-de-acesso`, e o código de produção está certo — a ADR-0011 fixa que **a rota
+ * que não declara nada é recusada**, e uma rota-fixture sem declaração passou a ser exatamente esse
+ * caso. Sem a marca, os três casos deste arquivo receberiam `403` por AUSÊNCIA DE DECLARAÇÃO em vez
+ * de pela restrição da sessão, e passariam a provar outra coisa. A escolha da marca, e não de um
+ * `@ExigeChave(...)`, preserva o sujeito: o eixo daqui é a **sessão restrita**, e o Master tem
+ * matriz de permissão vazia — exigir uma chave o recusaria por permissão, apagando a distinção que
+ * o CT-019 existe para afirmar. Nenhuma asserção foi enfraquecida, removida ou trocada.
  */
 @Controller(CAMINHO_DO_NEGOCIO)
 class ControladorDeNegocioDeVerificacao {
   @Get()
+  @NaoExigePermissao()
   async listar(): Promise<{ vinculos: string[] }> {
     const linhas = await acessoAoNegocio.emUnidadeDeTrabalho(
       async (tx) =>
@@ -699,6 +956,50 @@ async function estadoPersistido(usuarioId: string): Promise<EstadoPersistido | u
     .limit(1);
 
   return linha;
+}
+
+/** O que a criação de pessoa devolve, no mínimo que os dois casos novos consomem. */
+interface PessoaAdmitida {
+  readonly usuarioId: string;
+  readonly email: string;
+  readonly senhaProvisoria: string;
+}
+
+/**
+ * Cria uma pessoa da **empresa B** pela rota real do produto, e devolve a Senha provisória dela.
+ *
+ * Tudo acontece pelo caminho de produção: o administrador entra pela rota de entrada, cria a pessoa
+ * por `POST /v1/usuarios`, e a senha em texto sai **uma única vez**, no corpo daquela resposta. É a
+ * diferença entre este arranjo e o de {@link marcarSenhaProvisoria}: aquele existe porque a fatia
+ * anterior não tinha rota que produzisse a marca, e esta passou a ter.
+ *
+ * A entrada do administrador é refeita a cada chamada, de propósito: uma sessão compartilhada entre
+ * casos faria o segundo depender do que o primeiro deixou.
+ */
+async function admitirPessoaDaEmpresaB(email: string): Promise<PessoaAdmitida> {
+  const entrada = await entrar(ADMIN_DA_EMPRESA_B.email, SENHA_DA_CARGA);
+
+  if (entrada.status !== 200) {
+    throw new Error(`a entrada do administrador respondeu ${String(entrada.status)}`);
+  }
+
+  const criacao = await pedir(CAMINHO_DOS_USUARIOS_CORRENTE, {
+    metodo: 'POST',
+    cookies: guardarCookies(new Map(), entrada),
+    corpo: { nome: 'Renata Coelho', email, perfil: 'USUARIO_EMPRESA' },
+  });
+
+  if (criacao.status !== 201) {
+    throw new Error(`a criação de ${email} respondeu ${String(criacao.status)}: ${criacao.texto}`);
+  }
+
+  const corpo = criacao.corpo as Partial<PessoaAdmitida>;
+
+  if (typeof corpo.usuarioId !== 'string' || typeof corpo.senhaProvisoria !== 'string') {
+    throw new Error(`a criação de ${email} não devolveu identificador e Senha provisória`);
+  }
+
+  return { usuarioId: corpo.usuarioId, email, senhaProvisoria: corpo.senhaProvisoria };
 }
 
 /**

@@ -21,6 +21,12 @@
  * |          |        | propriedades nem nas propriedades delas. |
  * | CA-02    | CT-013 | Unidade de trabalho aberta de dentro de outra é RECUSADA com erro nomeado,
  * |          |        | antes de reservar conexão; a unidade sequencial seguinte segue valendo. |
+ * | CA-20    | CT-210 | Toda operação que altere o perfil ou os ajustes de uma pessoa incrementa
+ * | CA-21    |        | `identidade.usuario.versao_permissoes` EXATAMENTE UMA VEZ, na MESMA
+ * |          |        | transação da escrita em `negocio` — de modo que o desfazimento da unidade
+ * |          |        | de trabalho apaga as duas pontas juntas. Operação recusada não deixa o
+ * |          |        | contador incrementado nem linha gravada, e escrita que não toca permissão
+ * |          |        | (o nome da pessoa) deixa o contador onde estava. |
  * | CA-02    | CT-014 | O escritor do contexto de tenant (`contextoDeTenant.executarCom`) é chamado
  * |          |        | em exatamente o conjunto declarado de arquivos de produção — exatamente um
  * |          |        | desde a T9, a guarda de CONTEXTO de `apps/api` (`GuardaDeContexto`).
@@ -49,7 +55,14 @@
  *   * o CT-013 exercita o aninhamento pela API pública, com reserva de DUAS conexões — para que a
  *     recusa seja atribuível à guarda, e não ao esgotamento da reserva;
  *   * o CT-014 é asserção ESTÁTICA sobre o fonte de produção e, por
- *     `.claude/rules/testing-stack.md`, carrega prova de falsificação com as duas pernas.
+ *     `.claude/rules/testing-stack.md`, carrega prova de falsificação com as duas pernas;
+ *   * o CT-210 cruza as duas fronteiras de schema — o ajuste em `negocio` (sob RLS forçada) e o
+ *     contador em `identidade` (sem RLS) — pela **unidade de trabalho publicada**, com o contexto
+ *     escrito por `contextoDeTenant.executarCom`. Nunca por duas conexões: é exatamente a
+ *     atomicidade entre as duas que o caso existe para provar, e duas conexões a perderiam em
+ *     silêncio. A regra de coerência do domínio entra por parâmetro, como em produção (ver o
+ *     comentário do caso); nenhum símbolo foi acrescentado a `packages/db/src/**` para o caso
+ *     existir.
  */
 
 import { execFile } from 'node:child_process';
@@ -60,16 +73,24 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
+import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { abrirAcessoAIdentidade } from '../src/acesso-identidade.ts';
 import { abrirConexao } from '../src/conexao.ts';
 import * as contextoDeTenant from '../src/contexto.ts';
 import { empresa } from '../src/esquema/identidade.ts';
 import {
+  type AjustePersistido,
+  escreverAjustes,
+  type PerfilDaPessoa,
+  trocarPerfilDaPessoa,
+} from '../src/permissao.ts';
+import {
   ACESSOS_DA_EMPRESA_A,
   ACESSOS_DA_EMPRESA_B,
   EMPRESA_A,
   EMPRESA_B,
+  USUARIOS,
 } from '../src/semente.ts';
 import {
   type AcessoAoBanco,
@@ -248,6 +269,42 @@ const SIMBOLOS_ESPERADOS = [
   'EMPRESA_A',
   'EMPRESA_B',
   'ErroDeContextoInvalido',
+  // T7 da fatia `autorizacao-e-ciclo-de-acesso` — as OITO operações do ciclo de vida da empresa,
+  // ordenadas no conjunto pela posição de cada nome (a comparação é sobre a lista ordenada).
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a correção da T7 publica oito símbolos novos no índice por decisão
+  // declarada — a Revisão Técnica mediu que as nove instruções sobre `identidade` que viviam em
+  // `apps/api/src/master/empresa.service.ts` tornavam o alcance às sete tabelas daquele schema
+  // **não enumerável**, porque a contenção da §11.2 é de tipo e não alcança texto de SQL. Movê-las
+  // para `packages/db/src/empresa.ts` é o que devolve a enumerabilidade, e publicá-las é o preço.
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o
+  // defeito que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia.
+  // **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // Elas entram pelo mesmo critério das quatro de `permissao.js`: **recebem** o executor de quem já
+  // abriu a unidade de trabalho, não abrem conexão, não reservam e não devolvem executor. Os tipos
+  // que publicam (`AlvoDeReemissao`, `EmpresaNova`, `EmpresaPersistida`, `JanelaDeEmpresas`,
+  // `MarcaDeSuspensao`, `PaginaDeEmpresasPersistidas`) não aparecem aqui porque não existem em
+  // tempo de execução, e este caso observa o módulo carregado.
+  'admitirEmpresa',
+  'encerrarSessoesDaEmpresa',
+  'lerAlvoDeReemissao',
+  'listarEmpresas',
+  'localizarEmpresa',
+  'localizarPessoaPorEmail',
+  'reativarEmpresa',
+  'suspenderEmpresa',
+  // T3 da fatia `autorizacao-e-ciclo-de-acesso` — a recusa de escrita de permissão para pessoa cujo
+  // vínculo o contexto corrente não alcança. Entra pelo mesmo critério de `ErroDeUnidadeAninhada`:
+  // é classe de erro, não caminho para dado.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T3 publica cinco símbolos novos no índice por decisão declarada na
+  // §5.2 da task. O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido —
+  // que é o defeito que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não
+  // conhecia. Nenhuma entrada anterior sai, e a igualdade (nunca contenção) segue sendo asserida.
+  'ErroDePessoaForaDoContexto',
   'ErroDeUnidadeAninhada',
   // T6 — dado da carga inicial, no mesmo critério dos identificadores literais que já estão aqui:
   // são constantes de carga, não acesso a dado. `SENHA_DA_CARGA` só vira credencial quando o
@@ -269,6 +326,13 @@ const SIMBOLOS_ESPERADOS = [
   'abrirAcessoAoBanco',
   'contextoDeTenant.corrente',
   'contextoDeTenant.executarCom',
+  // T3 da fatia `autorizacao-e-ciclo-de-acesso` — as quatro operações sobre ajuste de permissão.
+  // Elas RECEBEM o executor de quem já abriu a unidade de trabalho: não abrem conexão, não
+  // reservam, não devolvem executor. Os tipos que elas publicam (`AjustePersistido`,
+  // `AjustesDaPessoa`, `ChaveDeAjuste`, `EfeitoDoAjuste`, `EscritaDeAjustes`, `PerfilDaPessoa`,
+  // `TrocaDePerfil`) não aparecem aqui porque não existem em tempo de execução, e este caso observa
+  // o módulo carregado.
+  'escreverAjustes',
   'esquemaIdentidade.conta',
   'esquemaIdentidade.desfechoTentativa',
   'esquemaIdentidade.doisFatores',
@@ -281,9 +345,44 @@ const SIMBOLOS_ESPERADOS = [
   'esquemaIdentidade.verificacao',
   'esquemaNegocio.acessoUsuarioApp',
   'esquemaNegocio.acessoUsuarioPermissao',
+  // T1 da fatia `autorizacao-e-ciclo-de-acesso` — o enum que a migração `0003` acrescentou. Ele
+  // entra aqui pela mesma razão de `tipoPermissao`: é declaração de tipo do schema, não caminho
+  // para dado. O inventário é EXATO de propósito, então símbolo novo no schema tem de ser
+  // declarado — é o que faz este caso reprovar quando a superfície do pacote cresce sem que
+  // ninguém decida que ela deveria crescer.
+  'esquemaNegocio.efeitoPermissao',
   'esquemaNegocio.negocio',
   'esquemaNegocio.tipoPermissao',
+  'incrementarVersaoPermissoes',
+  'lerAjustesDaPessoa',
+  // T8 da fatia `autorizacao-e-ciclo-de-acesso` — as SEIS operações do ciclo de vida das pessoas de
+  // uma empresa, ordenadas no conjunto pela posição de cada nome (a comparação é sobre a lista
+  // ordenada).
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T8 publica seis símbolos novos no índice por decisão declarada. O
+  // critério é o mesmo das quatro de `permissao.js` e das oito de `empresa.js`: elas **recebem** o
+  // executor de quem já abriu a unidade de trabalho, não abrem conexão, não reservam e não devolvem
+  // executor. Elas existem para que o alcance a `identidade` volte a ser enumerável — a contenção da
+  // §11.2 é de tipo e não alcança texto de SQL — e para que a resolução de pessoa **pelo vínculo**,
+  // que é a fronteira de tenant das sete rotas do Admin, tenha um lugar só.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o
+  // defeito que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia.
+  // **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // Os tipos que elas publicam (`JanelaDePessoas`, `PaginaDePessoasPersistidas`, `PessoaDoContexto`,
+  // `PessoaPersistida`) não aparecem aqui porque não existem em tempo de execução, e este caso
+  // observa o módulo carregado. `PerfilDaPessoa`, que a T8 moveu de `permissao.ts` para
+  // `esquema/identidade.ts`, também não: ele é tipo, e a reexportação preserva o nome no índice.
+  'contarAjustesDaPessoa',
+  'definirAtivoDaPessoa',
+  'encerrarSessoesDaPessoa',
+  'garantirVinculoDeAcesso',
+  'listarPessoasDaEmpresa',
+  'localizarPessoaDoContexto',
   'semear',
+  'trocarPerfilDaPessoa',
   // T4 — a guarda de cobertura de isolamento. Ela é PERGUNTA sobre o catálogo, não caminho para
   // dado de negócio: não devolve cliente nem transação, e abre e encerra por dentro a conexão que
   // usa. Os tipos que ela publica (`CoberturaDeIsolamento`, `ExcecaoDeIsolamento`,
@@ -525,6 +624,127 @@ function arquivosDe(ocorrencias: readonly string[]): string[] {
 
 /** Âncora contra descobridor quebrado: estes existem hoje e têm de aparecer na varredura. */
 const PACOTES_QUE_EXISTEM_HOJE = ['apps/api', 'apps/worker', 'packages/db', 'packages/shared'];
+
+// ===========================================================================
+// CT-210 — o contador de versão e a escrita de permissão, num commit só
+// ===========================================================================
+
+/** A pessoa da empresa A cujo perfil e ajustes o caso movimenta. */
+const PESSOA_DO_CASO = ACESSOS_DA_EMPRESA_A[1] ?? { id: '', usuarioId: '', empresaId: '' };
+
+/** O perfil com que ela é semeada — a origem do primeiro valor que a validação deve receber. */
+const PERFIL_SEMEADO: PerfilDaPessoa =
+  USUARIOS.find((pessoa) => pessoa.id === PESSOA_DO_CASO.usuarioId)?.perfil ?? 'USUARIO_EMPRESA';
+
+/** O perfil para o qual ela é trocada. Diferente do semeado, de propósito. */
+const PERFIL_TROCADO: PerfilDaPessoa = 'ADMIN_EMPRESA';
+
+const CONTEXTO_DA_EMPRESA_A = { empresaId: EMPRESA_A.id } as const;
+
+/** O ajuste coerente: uma área de tela concedida, que não exige nada além de si mesma. */
+const AJUSTE_COERENTE: readonly AjustePersistido[] = [
+  { chave: 'TELA:financeiro', efeito: 'CONCEDIDA' },
+];
+
+/**
+ * O ajuste incoerente: a ação sensível sem a área de tela que a comporta (RN-02).
+ *
+ * A DUPLA é deliberada — a ação órfã e um ajuste perfeitamente válido no mesmo pedido. Com um item
+ * só, "nenhuma linha foi gravada" já discriminaria; com dois, discrimina também a implementação que
+ * gravasse o que dá para gravar e recusasse o resto, que é a saída cômoda que a RN-02 proíbe.
+ */
+const AJUSTE_INCOERENTE: readonly AjustePersistido[] = [
+  { chave: 'TELA:relatorios', efeito: 'CONCEDIDA' },
+  { chave: 'ACAO:emitir_boleto', efeito: 'CONCEDIDA' },
+];
+
+/** O que a validação de coerência recusou. Instância única, para a asserção ser por identidade. */
+const RECUSA_DE_COERENCIA = new Error('a ação sensível concedida exige a área de tela');
+
+/** O erro com que o caso derruba uma unidade de trabalho de propósito. */
+const DESFAZIMENTO_PEDIDO = new Error('desfazimento pedido pelo caso');
+
+/** O que a regra de domínio recebeu, chamada a chamada — argumentos exatos, não "foi chamada". */
+interface ChamadaDeValidacao {
+  readonly perfil: PerfilDaPessoa;
+  readonly ajustes: readonly string[];
+}
+
+function comoTextoOsAjustes(ajustes: readonly AjustePersistido[]): string[] {
+  return ajustes.map((ajuste) => `${ajuste.chave}=${ajuste.efeito}`);
+}
+
+/**
+ * A regra de coerência entra por PARÂMETRO em produção — `@sysloc/auth` depende de `@sysloc/db`, e
+ * não o contrário. O caso passa a sua, e é isso que ele observa: **o perfil com que ela é chamada
+ * vem do banco**, lido dentro da transação, e muda quando o perfil da pessoa muda.
+ *
+ * A regra de verdade (`validarCoerenciaDeAjustes`) é provada no CT-205, em `@sysloc/auth`. Reescrevê-la
+ * aqui seria a "reimplementação do leitor no próprio verificador" que
+ * `.claude/rules/testing-stack.md` registra como antipadrão — por isso a daqui apenas **registra e
+ * recusa**, e o que se afirma são os argumentos recebidos e o efeito da recusa.
+ */
+function regraQueRegistra(
+  registro: ChamadaDeValidacao[],
+  recusa?: Error,
+): (perfil: PerfilDaPessoa, ajustes: readonly AjustePersistido[]) => void {
+  return (perfil, ajustes) => {
+    registro.push({ perfil, ajustes: comoTextoOsAjustes(ajustes) });
+    if (recusa !== undefined) {
+      throw recusa;
+    }
+  };
+}
+
+interface LinhaDeAjusteGravada {
+  readonly tipo: string;
+  readonly chave: string;
+  readonly efeito: string;
+}
+
+/** O estado observável da pessoa: contador, perfil e as linhas de ajuste do vínculo dela. */
+interface EstadoDaPessoa {
+  readonly versao: number;
+  readonly perfil: string;
+  readonly ajustes: LinhaDeAjusteGravada[];
+}
+
+async function lerEstadoDaPessoa(tx: TransactionSql): Promise<EstadoDaPessoa> {
+  const [pessoa] = await tx<{ versao: number; perfil: string }[]>`
+    SELECT versao_permissoes AS versao, perfil AS perfil
+      FROM identidade.usuario
+     WHERE id = ${PESSOA_DO_CASO.usuarioId}
+  `;
+  // A ordenação é por `tipo::text` pelo mesmo motivo de `permissao.spec.ts`: `ORDER BY` sobre
+  // coluna de enum segue a ordem de DECLARAÇÃO do tipo, não a alfabética.
+  const ajustes = await tx<LinhaDeAjusteGravada[]>`
+    SELECT tipo::text AS tipo, chave AS chave, efeito::text AS efeito
+      FROM negocio.acesso_usuario_permissao
+     WHERE acesso_id = ${PESSOA_DO_CASO.id}
+     ORDER BY tipo::text, chave
+  `;
+  return {
+    versao: Number(pessoa?.versao ?? -1),
+    perfil: pessoa?.perfil ?? '',
+    ajustes: ajustes.map((linha) => ({ ...linha })),
+  };
+}
+
+/** Devolve a pessoa ao estado semeado, para que os dois casos sejam independentes da ordem. */
+async function restaurarPessoa(acesso: AcessoAoBanco): Promise<void> {
+  await contextoDeTenant.executarCom(CONTEXTO_DA_EMPRESA_A, () =>
+    acesso.emUnidadeDeTrabalho(async (tx) => {
+      await tx`
+        DELETE FROM negocio.acesso_usuario_permissao WHERE acesso_id = ${PESSOA_DO_CASO.id}
+      `;
+      await tx`
+        UPDATE identidade.usuario
+           SET versao_permissoes = 0, perfil = ${PERFIL_SEMEADO}::identidade.perfil_usuario
+         WHERE id = ${PESSOA_DO_CASO.usuarioId}
+      `;
+    }),
+  );
+}
 
 // ===========================================================================
 // Os casos
@@ -949,6 +1169,242 @@ describe('unidade de trabalho', () => {
         expect(suja.linhas[0]).toContain('executarCom(');
       } finally {
         await rm(raiz, { recursive: true, force: true });
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-210 — cada operação que altera o efetivo incrementa o contador uma vez; recusa e nome, nenhuma',
+    async () => {
+      // Reserva de UMA conexão: as quatro operações correm sobre a mesma conexão física, como a
+      // requisição faria — e é sobre ela que a atomicidade entre os dois schemas tem de valer.
+      const acesso = abrirAcessoAoBanco({
+        cadeiaDeConexao: banco.cadeiaConexao,
+        maximoDeConexoes: 1,
+      });
+      const validacoes: ChamadaDeValidacao[] = [];
+
+      try {
+        await restaurarPessoa(acesso);
+
+        // --- Passo 1: o estado inicial -----------------------------------------------------
+        const inicial = await contextoDeTenant.executarCom(CONTEXTO_DA_EMPRESA_A, () =>
+          acesso.emUnidadeDeTrabalho(lerEstadoDaPessoa),
+        );
+        expect(inicial).toEqual({ versao: 0, perfil: PERFIL_SEMEADO, ajustes: [] });
+
+        // --- Passo 2: o ajuste válido ------------------------------------------------------
+        const versaoDoAjuste = await contextoDeTenant.executarCom(CONTEXTO_DA_EMPRESA_A, () =>
+          acesso.emUnidadeDeTrabalho((tx) =>
+            escreverAjustes(tx, {
+              usuarioId: PESSOA_DO_CASO.usuarioId,
+              ajustes: AJUSTE_COERENTE,
+              validarCoerencia: regraQueRegistra(validacoes),
+            }),
+          ),
+        );
+        expect(versaoDoAjuste).toBe(1);
+
+        const depoisDoAjuste = await contextoDeTenant.executarCom(CONTEXTO_DA_EMPRESA_A, () =>
+          acesso.emUnidadeDeTrabalho(lerEstadoDaPessoa),
+        );
+        // O conjunto de linhas por extenso, e não a contagem: é o que prova a DECOMPOSIÇÃO da chave
+        // canônica `TELA:financeiro` nas duas colunas do trio — `tipo` e `chave` separados, sem o
+        // prefixo repetido dentro de `chave`.
+        expect(depoisDoAjuste).toEqual({
+          versao: 1,
+          perfil: PERFIL_SEMEADO,
+          ajustes: [{ tipo: 'TELA', chave: 'financeiro', efeito: 'CONCEDIDA' }],
+        });
+
+        // --- Passo 3: a troca de perfil ----------------------------------------------------
+        const versaoDaTroca = await contextoDeTenant.executarCom(CONTEXTO_DA_EMPRESA_A, () =>
+          acesso.emUnidadeDeTrabalho((tx) =>
+            trocarPerfilDaPessoa(tx, {
+              usuarioId: PESSOA_DO_CASO.usuarioId,
+              perfil: PERFIL_TROCADO,
+            }),
+          ),
+        );
+        expect(versaoDaTroca).toBe(2);
+
+        const depoisDaTroca = await contextoDeTenant.executarCom(CONTEXTO_DA_EMPRESA_A, () =>
+          acesso.emUnidadeDeTrabalho(lerEstadoDaPessoa),
+        );
+        expect(depoisDaTroca).toEqual({ versao: 2, perfil: PERFIL_TROCADO, ajustes: [] });
+
+        // --- Passo 4: o ajuste incoerente, RECUSADO ----------------------------------------
+        const capturado = await contextoDeTenant
+          .executarCom(CONTEXTO_DA_EMPRESA_A, () =>
+            acesso.emUnidadeDeTrabalho((tx) =>
+              escreverAjustes(tx, {
+                usuarioId: PESSOA_DO_CASO.usuarioId,
+                ajustes: AJUSTE_INCOERENTE,
+                validarCoerencia: regraQueRegistra(validacoes, RECUSA_DE_COERENCIA),
+              }),
+            ),
+          )
+          .then(
+            () => undefined,
+            (erro: unknown) => erro,
+          );
+
+        // A recusa do domínio atravessa INTACTA — a mesma instância, não um erro genérico que a
+        // camada de dados tenha embrulhado e cuja causa a rota não conseguiria classificar.
+        expect(capturado).toBe(RECUSA_DE_COERENCIA);
+
+        const depoisDaRecusa = await contextoDeTenant.executarCom(CONTEXTO_DA_EMPRESA_A, () =>
+          acesso.emUnidadeDeTrabalho(lerEstadoDaPessoa),
+        );
+        // Contador onde estava, e NENHUMA das duas linhas do pedido gravada — nem a coerente.
+        expect(depoisDaRecusa).toEqual(depoisDaTroca);
+
+        // --- Passo 5: a escrita que NÃO toca permissão -------------------------------------
+        // Emitida à mão de propósito: o que se prova é que o incremento é da OPERAÇÃO de permissão,
+        // e não um gatilho pendurado na tabela que qualquer atualização dispararia.
+        await contextoDeTenant.executarCom(CONTEXTO_DA_EMPRESA_A, () =>
+          acesso.emUnidadeDeTrabalho(async (tx) => {
+            await tx`
+              UPDATE identidade.usuario
+                 SET nome = ${'Artur Amaral (renomeado pelo CT-210)'}
+               WHERE id = ${PESSOA_DO_CASO.usuarioId}
+            `;
+          }),
+        );
+
+        const depoisDoNome = await contextoDeTenant.executarCom(CONTEXTO_DA_EMPRESA_A, () =>
+          acesso.emUnidadeDeTrabalho(lerEstadoDaPessoa),
+        );
+        expect(depoisDoNome).toEqual(depoisDaTroca);
+
+        // --- A regra de domínio: chamadas e ARGUMENTOS exatos ------------------------------
+        // O perfil não é escolhido pelo caso: ele é lido do banco DENTRO da transação. A prova é
+        // que o segundo valor é o perfil TROCADO no passo 3 — uma implementação que recebesse o
+        // perfil do chamador, ou que o lesse antes da transação, não teria como acompanhá-lo.
+        expect(validacoes).toEqual([
+          { perfil: PERFIL_SEMEADO, ajustes: comoTextoOsAjustes(AJUSTE_COERENTE) },
+          { perfil: PERFIL_TROCADO, ajustes: comoTextoOsAjustes(AJUSTE_INCOERENTE) },
+        ]);
+      } finally {
+        await restaurarPessoa(acesso);
+        await acesso.encerrar();
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-210 (atomicidade) — desfeita a unidade, o ajuste em `negocio` e o contador em `identidade` somem juntos',
+    async () => {
+      const acesso = abrirAcessoAoBanco({
+        cadeiaDeConexao: banco.cadeiaConexao,
+        maximoDeConexoes: 1,
+      });
+      const validacoes: ChamadaDeValidacao[] = [];
+
+      try {
+        await restaurarPessoa(acesso);
+
+        let dentroDaTransacao: EstadoDaPessoa | undefined;
+
+        const capturado = await contextoDeTenant
+          .executarCom(CONTEXTO_DA_EMPRESA_A, () =>
+            acesso.emUnidadeDeTrabalho(async (tx) => {
+              const versao = await escreverAjustes(tx, {
+                usuarioId: PESSOA_DO_CASO.usuarioId,
+                ajustes: AJUSTE_COERENTE,
+                validarCoerencia: regraQueRegistra(validacoes),
+              });
+              expect(versao).toBe(1);
+
+              // O eixo POSITIVO, sem o qual "sumiu tudo" também ficaria verde sobre uma
+              // implementação que não escreve nada: dentro da transação, as duas pontas já estão
+              // gravadas — o contador em `identidade` e a linha em `negocio`.
+              dentroDaTransacao = await lerEstadoDaPessoa(tx);
+
+              throw DESFAZIMENTO_PEDIDO;
+            }),
+          )
+          .then(
+            () => undefined,
+            (erro: unknown) => erro,
+          );
+
+        expect(capturado).toBe(DESFAZIMENTO_PEDIDO);
+        expect(dentroDaTransacao).toEqual({
+          versao: 1,
+          perfil: PERFIL_SEMEADO,
+          ajustes: [{ tipo: 'TELA', chave: 'financeiro', efeito: 'CONCEDIDA' }],
+        });
+
+        // E depois do desfazimento, as DUAS pontas voltaram — o que só é possível se elas
+        // estiverem no mesmo commit. Duas conexões perderiam a atomicidade aqui, em silêncio: o
+        // contador de `identidade`, escrito fora desta transação, sobreviveria ao `ROLLBACK`.
+        const depois = await contextoDeTenant.executarCom(CONTEXTO_DA_EMPRESA_A, () =>
+          acesso.emUnidadeDeTrabalho(lerEstadoDaPessoa),
+        );
+        expect(depois).toEqual({ versao: 0, perfil: PERFIL_SEMEADO, ajustes: [] });
+      } finally {
+        await restaurarPessoa(acesso);
+        await acesso.encerrar();
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-210 (conjunto vazio) — escrever nenhum ajuste remove todos e incrementa o contador uma vez',
+    async () => {
+      // O pedido que zera os ajustes de uma pessoa é entrada LEGÍTIMA da escrita — é como o Admin
+      // desfaz todos os desvios sobre a matriz do perfil. Ele exercita a inserção em massa com
+      // arranjos vazios, que é o caminho em que uma implementação por `unnest` falharia sem que
+      // nenhum outro caso passasse por ali; e continua sendo alteração do efetivo, logo incrementa.
+      const acesso = abrirAcessoAoBanco({
+        cadeiaDeConexao: banco.cadeiaConexao,
+        maximoDeConexoes: 1,
+      });
+      const validacoes: ChamadaDeValidacao[] = [];
+
+      try {
+        await restaurarPessoa(acesso);
+
+        await contextoDeTenant.executarCom(CONTEXTO_DA_EMPRESA_A, () =>
+          acesso.emUnidadeDeTrabalho((tx) =>
+            escreverAjustes(tx, {
+              usuarioId: PESSOA_DO_CASO.usuarioId,
+              ajustes: AJUSTE_COERENTE,
+              validarCoerencia: regraQueRegistra(validacoes),
+            }),
+          ),
+        );
+
+        const versaoDoVazio = await contextoDeTenant.executarCom(CONTEXTO_DA_EMPRESA_A, () =>
+          acesso.emUnidadeDeTrabalho((tx) =>
+            escreverAjustes(tx, {
+              usuarioId: PESSOA_DO_CASO.usuarioId,
+              ajustes: [],
+              validarCoerencia: regraQueRegistra(validacoes),
+            }),
+          ),
+        );
+        expect(versaoDoVazio).toBe(2);
+
+        const depois = await contextoDeTenant.executarCom(CONTEXTO_DA_EMPRESA_A, () =>
+          acesso.emUnidadeDeTrabalho(lerEstadoDaPessoa),
+        );
+        expect(depois).toEqual({ versao: 2, perfil: PERFIL_SEMEADO, ajustes: [] });
+
+        // A regra de domínio é consultada TAMBÉM no conjunto vazio — retirar tudo é uma decisão de
+        // permissão como qualquer outra, e pular a validação nela abriria o caminho de escrever sem
+        // passar pela regra.
+        expect(validacoes).toEqual([
+          { perfil: PERFIL_SEMEADO, ajustes: comoTextoOsAjustes(AJUSTE_COERENTE) },
+          { perfil: PERFIL_SEMEADO, ajustes: [] },
+        ]);
+      } finally {
+        await restaurarPessoa(acesso);
+        await acesso.encerrar();
       }
     },
     LIMITE_DO_CASO_MS,
