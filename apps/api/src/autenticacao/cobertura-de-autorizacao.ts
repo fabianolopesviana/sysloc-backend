@@ -186,7 +186,13 @@ export interface CoberturaDeAutorizacao {
 }
 
 /** Um caminho publicado, como o roteador do adaptador HTTP o registrou. */
-interface RotaDoRoteador {
+/**
+ * Uma rota como o roteador a imprime: o par de métodos e o caminho já com o prefixo desfatorado.
+ *
+ * Exportada porque `apps/api/test/contexto.e2e.spec.ts` a consome junto de
+ * {@link rotasDaTabelaDoRoteador} — ver a razão no docblock daquela função.
+ */
+export interface RotaDoRoteador {
   readonly metodos: readonly string[];
   readonly url: string;
 }
@@ -302,8 +308,21 @@ export function verificarCoberturaDeAutorizacao(
  * A forma com prefixo fatorado é a que se lê, e não `printRoutes({ commonPrefix: false })`: medido
  * nesta aplicação, a segunda imprime o encaminhador de identidade como `*`, sem o `/v1/auth` que o
  * roteador de fato casa — isto é, ela perde o caminho justamente da rota mais larga da superfície.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que é exportada — o fecho do débito D21 (F1/T5)
+ * ---------------------------------------------------------------------------
+ *
+ * Ela viveu em **duas cópias verbatim**: esta e uma em `apps/api/test/contexto.e2e.spec.ts`, ambas
+ * mantidas à mão. O que se analisa aqui é um formato de **impressão para humanos** (`printRoutes()`)
+ * do adaptador HTTP — justamente o tipo de dependência que muda sem aviso num bump. Quando mudar,
+ * muda para os dois consumidores; com duas cópias, nada obrigava quem consertasse uma a consertar a
+ * outra, e o modo de falha era **uma rota governada caindo no balde público sem que ninguém visse**.
+ *
+ * A duplicação era consequência de uma decisão correta do executor da T5 — `contexto.e2e.spec.ts`
+ * não estava no escopo declarado daquela task —, e por isso foi anotada em vez de bloqueada.
  */
-function rotasDaTabelaDoRoteador(arvore: string): RotaDoRoteador[] {
+export function rotasDaTabelaDoRoteador(arvore: string): RotaDoRoteador[] {
   const rotulos: string[] = [];
   const rotas: RotaDoRoteador[] = [];
 

@@ -155,6 +155,7 @@ import { ENDERECO_DE_ESCUTA, PREFIXO_DE_VERSAO } from '../src/configuracao/ambie
 import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
 import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
 import { CAMINHO_DO_DOCUMENTO, criarAplicacao } from '../src/main.ts';
+import { cpfValido } from './documento.ts';
 
 /** Limite da montagem: banco migrado, semente, fila, aplicação e o arranjo dos registros. */
 const LIMITE_DE_MONTAGEM_MS = 240_000;
@@ -949,7 +950,7 @@ function corpoDePessoa(): Record<string, unknown> {
   return {
     nome: `Pessoa ${marca}`,
     tipoPessoa: 'PESSOA_FISICA',
-    documentoPrincipal: cpfValido(),
+    documentoPrincipal: cpfValido(proximo()),
     rg: `MG-${marca}`,
     email: `pessoa.${marca}@exemplo.com.br`,
     telefone: '11999990000',
@@ -961,33 +962,6 @@ function corpoDePessoa(): Record<string, unknown> {
     estado: 'SP',
     cep: '01000000',
   };
-}
-
-/**
- * Um CPF **válido**, derivado do sequencial.
- *
- * A RN-04 exige que o documento seja conferido, e `cadastro-de-pessoa.service.ts` o confere com
- * `conferirDocumento` — de modo que um número qualquer de onze dígitos é recusado com `422`. Isto é
- * **arranjo**, e não asserção: nada aqui é comparado contra o SUT, e quem prova que a conferência
- * recusa documento inválido é o `CT-312`, com vetores próprios.
- */
-function cpfValido(): string {
-  const base = String(100_000_000 + ((proximo() * 7_919) % 800_000_000));
-  const digitos = [...base].map((caractere) => Number(caractere));
-  const primeiro = digitoDeControle(digitos, 10);
-  const segundo = digitoDeControle([...digitos, primeiro], 11);
-
-  return `${base}${String(primeiro)}${String(segundo)}`;
-}
-
-/** Um dígito de controle de CPF: soma ponderada decrescente, resto da multiplicação por dez. */
-function digitoDeControle(digitos: readonly number[], pesoInicial: number): number {
-  const soma = digitos.reduce((acumulado, digito, indice) => {
-    return acumulado + digito * (pesoInicial - indice);
-  }, 0);
-  const resto = (soma * 10) % 11;
-
-  return resto >= 10 ? 0 : resto;
 }
 
 /** Cria um registro pela rota real e devolve o corpo publicado. A falha levanta. */

@@ -145,6 +145,10 @@ import { reservarPorta } from '../../../packages/shared/test/efemero-comum.ts';
 import { type FilaEfemera, redisEfemero } from '../../../packages/shared/test/redis-efemero.ts';
 import { AppModule } from '../src/app.module.ts';
 import { PREFIXO_DAS_ROTAS_DE_IDENTIDADE } from '../src/autenticacao/autenticacao.module.ts';
+import {
+  type RotaDoRoteador,
+  rotasDaTabelaDoRoteador,
+} from '../src/autenticacao/cobertura-de-autorizacao.ts';
 import { NaoExigePermissao } from '../src/autenticacao/exigencia.decorator.ts';
 import { CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO } from '../src/autenticacao/senha.controller.ts';
 import { CAMINHO_DA_SESSAO } from '../src/autenticacao/sessao.controller.ts';
@@ -252,8 +256,38 @@ const ROTAS_DO_CONTRATO_NO_ADAPTADOR: readonly string[] = [
  *
  * A lista é ordenada porque o conjunto classificado também é, e a igualdade abaixo compara os dois
  * na mesma ordem — ordenar aqui evita que acrescentar uma entrada exija adivinhar a posição dela.
+ *
+ * ---------------------------------------------------------------------------
+ * A gêmea, e por que a fusão foi ANALISADA E RECUSADA (débito D22 · F1/T5)
+ * ---------------------------------------------------------------------------
+ *
+ * Existe um inventário irmão em `apps/api/test/cobertura-de-autorizacao.e2e.spec.ts`,
+ * `PARES_PUBLICOS_ACEITOS`. **Os dois não são cópias** — provam coisas diferentes:
+ *
+ *   * **este** classifica por **COMPORTAMENTO**, recorte por **caminho**: dispara requisição sem
+ *     cookie e observa quem a guarda recusa. Lê o que o código *faz*.
+ *   * **o gêmeo** classifica por **DECLARAÇÃO**, recorte por **par método+caminho**: consulta o que
+ *     o catálogo diz sobre cada manipulador. Lê o que o código *declara*.
+ *
+ * Até 2026-08-08 os dois se chamavam `ROTAS_PUBLICAS_ACEITAS` — nome idêntico para recortes
+ * divergentes, que é o que fazia alguém atualizar o inventário errado. O rename fechou essa
+ * armadilha; a **manutenção dupla ao acrescentar rota permanece**, e é deliberada.
+ *
+ * O D22 prescrevia fundi-los num ponto único, "escolhendo **um** recorte nominal". As duas vias
+ * foram examinadas e nenhuma é admissível hoje:
+ *
+ *   * **fundir no recorte por CAMINHO** (o mais simples, porque é o formato daqui) contraria de
+ *     frente o marcador `DECISÃO FECHADA — T5 / Gate 2 · 2026-08-04` de
+ *     `apps/api/src/autenticacao/cobertura-de-autorizacao.ts`, que fixa o par método+caminho como
+ *     unidade de classificação, com motivo medido, e cujo `REVERTER EXIGE` ninguém satisfaz hoje.
+ *     Pela §3 do Protocolo Antirregressão isso é **PARE e escale** — não é decisão de uma limpeza.
+ *   * **fundir no recorte por PAR** exigiria reescrever a classificação comportamental daqui, o que
+ *     muda o que o `CT-020 (d)` prova, sem defeito que o motive.
+ *
+ * **Não tente a fusão sem escalar.** O ganho seria de manutenção; o risco é enfraquecer uma prova
+ * de segurança sem quebrar teste nenhum — que é o pior modo de falha possível.
  */
-const ROTAS_PUBLICAS_ACEITAS: readonly string[] = [
+const CAMINHOS_PUBLICOS_ACEITOS: readonly string[] = [
   ...ROTAS_DO_CONTRATO_NO_ADAPTADOR,
   `/${CAMINHO_DO_CONTRATO}/*`,
   '/saude',
@@ -452,10 +486,13 @@ const CHAVES_NEGADAS_NO_CT220 = ['TELA:relatorios', 'ACAO:cancelar_contrato'] as
 const TELAS_DO_CATALOGO: readonly string[] = [...CHAVES_DE_TELA].sort();
 const ACOES_DO_CATALOGO: readonly string[] = [...CHAVES_DE_ACAO].sort();
 
-interface RotaRegistrada {
-  readonly metodos: readonly string[];
-  readonly url: string;
-}
+/**
+ * Uma rota registrada, no formato que {@link rotasDaTabelaDoRoteador} devolve.
+ *
+ * O alias existe para não trocar o vocabulário deste arquivo, que fala de "rota registrada" em
+ * cinco lugares: o tipo canônico vem do módulo de produção, e o nome local segue o que se lê aqui.
+ */
+type RotaRegistrada = RotaDoRoteador;
 
 let identidade: IdentidadeEfemera;
 let fila: FilaEfemera;
@@ -882,7 +919,7 @@ describe('guarda de contexto, rotas públicas e sessão corrente (T9)', () => {
       // Igualdade nos DOIS sentidos, com as diferenças NOMEADAS: a mensagem da falha é o que faz
       // quem revisar saber se abriu uma rota sem querer (excedente) ou fechou uma que o supervisor
       // do sistema operacional consulta (ausente).
-      const aceitas: readonly string[] = ROTAS_PUBLICAS_ACEITAS;
+      const aceitas: readonly string[] = CAMINHOS_PUBLICOS_ACEITOS;
       const excedentes = publicas.filter((rota) => !aceitas.includes(rota));
       const ausentes = aceitas.filter((rota) => !publicas.includes(rota));
 
@@ -894,7 +931,7 @@ describe('guarda de contexto, rotas públicas e sessão corrente (T9)', () => {
         ausentes,
         `rotas que precisam dispensar sessão deixaram de dispensá-la: ${ausentes.join(', ')}`,
       ).toEqual([]);
-      expect(publicas).toEqual([...ROTAS_PUBLICAS_ACEITAS]);
+      expect(publicas).toEqual([...CAMINHOS_PUBLICOS_ACEITOS]);
 
       // O outro lado da mesma igualdade. Sem ele, desligar a guarda inteira passaria bastando
       // encolher a constante de cima — a igualdade sozinha prova estabilidade, não proteção.
@@ -1308,63 +1345,6 @@ async function ajustar(
           }),
       ),
   );
-}
-
-/** Largura de um nível na árvore que o roteador imprime — `'│   '`, `'    '`, `'├── '`, `'└── '`. */
-const LARGURA_DO_NIVEL_DA_ARVORE = 4;
-
-/**
- * Extrai a tabela de rotas do roteador a partir da árvore que o adaptador HTTP imprime.
- *
- * **Por que esta é a fonte do inventário.** A alternativa — o gancho `onRoute` — só enxerga o que é
- * registrado DEPOIS dela, e a instalação do gancho só é possível depois de `criarAplicacao()`.
- * Tudo o que a montagem registra direto no adaptador (hoje as oito rotas do contrato, por
- * `SwaggerModule.setup`; amanhã um plugin novo, outra página, uma rota escrita à mão em
- * `app.getHttpAdapter().getInstance().get(...)`) nasce **público e invisível ao gancho** — o modo
- * de falha *"superfície aberta silenciosa"* que a §11.1 da tech spec existe para pegar. A tabela do
- * roteador não tem esse ponto cego: ela é o estado final, e nela está tudo o que foi registrado,
- * antes ou depois de qualquer gancho.
- *
- * **Como se lê a árvore.** Cada linha é um NÓ, e o caminho de uma rota é a concatenação dos rótulos
- * dos ancestrais dela — a impressão fatora prefixo comum, de modo que `/v1/auth/*` aparece como
- * `v1/` → `auth/` → `*`. O nível é dado pela coluna em que o traço da ramificação começa. Só os nós
- * que declaram métodos entre parênteses são rota; os demais são apenas prefixo.
- *
- * **Risco residual, nomeado.** Isto cobre o que passa pelo roteador do adaptador HTTP, que é onde a
- * guarda atua. Fica de fora quem responde SEM passar por ele: um ouvinte instalado direto no
- * servidor HTTP do runtime, um manipulador de "não encontrado" que passe a atender, ou um segundo
- * servidor em outra porta. Nenhum deles existe hoje, nenhum é alcançável pela guarda, e detectá-los
- * exigiria varrer o fonte em vez de perguntar ao roteador — que é a troca de prova comportamental
- * por prova estática que este caso evita de propósito.
- */
-function rotasDaTabelaDoRoteador(arvore: string): RotaRegistrada[] {
-  const rotulos: string[] = [];
-  const rotas: RotaRegistrada[] = [];
-
-  for (const linha of arvore.split('\n')) {
-    const coluna = linha.search(/[├└]/u);
-    if (coluna < 0 || coluna % LARGURA_DO_NIVEL_DA_ARVORE !== 0) {
-      continue;
-    }
-
-    const conteudo = linha.slice(coluna + LARGURA_DO_NIVEL_DA_ARVORE).trimEnd();
-    const casamento = /^(.*?)(?: \(([^()]+)\))?$/u.exec(conteudo);
-    if (casamento === null) {
-      continue;
-    }
-
-    // Trunca em vez de sobrescrever: sair de um ramo profundo para um raso tem de descartar os
-    // rótulos do ramo anterior, senão um caminho herdaria segmento de rota vizinha.
-    rotulos.length = coluna / LARGURA_DO_NIVEL_DA_ARVORE;
-    rotulos.push(casamento[1] ?? '');
-
-    const metodos = casamento[2];
-    if (metodos !== undefined) {
-      rotas.push({ metodos: metodos.split(', '), url: rotulos.join('') });
-    }
-  }
-
-  return rotas;
 }
 
 /**

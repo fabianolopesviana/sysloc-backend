@@ -166,6 +166,7 @@ import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
 import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
 import { criarAplicacao } from '../src/main.ts';
 import { CAMINHO_DOS_USUARIOS } from '../src/usuarios/usuario.controller.ts';
+import { cpfValido } from './documento.ts';
 
 /** Limite da montagem: banco migrado, semente, fila, aplicação e o arranjo das quatro sessões. */
 const LIMITE_DE_MONTAGEM_MS = 240_000;
@@ -800,37 +801,6 @@ function identificadorMunicipal(): string {
   return `IM-${String(proximo()).padStart(6, '0')}`;
 }
 
-/**
- * Um CPF **válido**, derivado de um sequencial.
- *
- * A RN-04 exige que o documento seja conferido, e `cadastro-de-pessoa.service.ts` o confere com
- * `conferirDocumento` — de modo que um número qualquer de onze dígitos é recusado com `422`. Os dois
- * dígitos de controle são calculados aqui porque o caso precisa de **dezenas** de documentos
- * distintos, e uma lista literal envelheceria ao primeiro caso novo.
- *
- * Isto é **arranjo**, e não asserção: nada aqui é comparado contra o SUT. Quem prova que a
- * conferência recusa documento inválido é o `CT-312`, com vetores próprios — este gerador só produz
- * entrada que a borda deve aceitar, e a rota reprovaria em voz alta se ele estivesse errado.
- */
-function cpfValido(): string {
-  const base = String(100_000_000 + ((proximo() * 7_919) % 800_000_000));
-  const digitos = [...base].map((caractere) => Number(caractere));
-  const primeiro = digitoDeControle(digitos, 10);
-  const segundo = digitoDeControle([...digitos, primeiro], 11);
-
-  return `${base}${String(primeiro)}${String(segundo)}`;
-}
-
-/** Um dígito de controle de CPF: soma ponderada decrescente, resto da multiplicação por dez. */
-function digitoDeControle(digitos: readonly number[], pesoInicial: number): number {
-  const soma = digitos.reduce((acumulado, digito, indice) => {
-    return acumulado + digito * (pesoInicial - indice);
-  }, 0);
-  const resto = (soma * 10) % 11;
-
-  return resto >= 10 ? 0 : resto;
-}
-
 /** O corpo completo de um imóvel. **`empresaId` não aparece**, e a ausência é o ponto (ADR-0008). */
 function corpoDeImovel(conjuntoId: string, identificador: string): Record<string, unknown> {
   return {
@@ -857,7 +827,7 @@ function corpoDePessoa(): Record<string, unknown> {
   return {
     nome: `Pessoa ${marca}`,
     tipoPessoa: 'PESSOA_FISICA',
-    documentoPrincipal: cpfValido(),
+    documentoPrincipal: cpfValido(proximo()),
     rg: null,
     email: `pessoa.${marca}@exemplo.com.br`,
     telefone: '11999990000',

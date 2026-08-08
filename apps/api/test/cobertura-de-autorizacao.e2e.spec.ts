@@ -510,8 +510,28 @@ function paresDeCadastrosDePessoa(): readonly string[] {
  * **É esta igualdade que impede a escapatória.** Sem ela, bastaria marcar uma rota de negócio como
  * pública para ela sair da autorização inteira, e o conjunto sem declaração continuaria vazio — a
  * guarda retorna antes para rota pública, e não haveria nada a declarar.
+ *
+ * ---------------------------------------------------------------------------
+ * A gêmea, e por que a fusão foi ANALISADA E RECUSADA (débito D22 · F1/T5)
+ * ---------------------------------------------------------------------------
+ *
+ * Existe um inventário irmão em `apps/api/test/contexto.e2e.spec.ts`, `CAMINHOS_PUBLICOS_ACEITOS`.
+ * **Os dois não são cópias** — provam coisas diferentes: **este** classifica por **DECLARAÇÃO**,
+ * recorte por **par método+caminho** (o que o catálogo diz); o gêmeo classifica por
+ * **COMPORTAMENTO**, recorte por **caminho** (quem a guarda de fato recusa sem cookie).
+ *
+ * Até 2026-08-08 os dois se chamavam `ROTAS_PUBLICAS_ACEITAS` — nome idêntico para recortes
+ * divergentes, que é o que fazia alguém atualizar o inventário errado. O rename fechou essa
+ * armadilha; a **manutenção dupla ao acrescentar rota permanece**, e é deliberada.
+ *
+ * O D22 prescrevia fundi-los num ponto único. Fundir no recorte **por caminho** contrariaria o
+ * marcador `DECISÃO FECHADA — T5 / Gate 2 · 2026-08-04` de
+ * `apps/api/src/autenticacao/cobertura-de-autorizacao.ts`, que fixa o par método+caminho como
+ * unidade de classificação **desta** verificação — o que a §3 do Protocolo Antirregressão manda
+ * escalar, não decidir numa limpeza. Fundir **por par** mudaria o que o `CT-020 (d)` do gêmeo prova.
+ * **Não tente a fusão sem escalar.**
  */
-const ROTAS_PUBLICAS_ACEITAS: readonly string[] = [
+const PARES_PUBLICOS_ACEITOS: readonly string[] = [
   ...ROTAS_FORA_DO_ARCABOUCO,
   'GET /saude',
   'GET /saude/pronto',
@@ -940,7 +960,7 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     ).toBe(ROTAS_PUBLICADAS_EM_PRODUCAO);
 
     // A CONFERÊNCIA — a mesma função que o caso de falsificação aplica ao mutante.
-    expect(conferir(cobertura, ROTAS_PUBLICAS_ACEITAS)).toEqual({
+    expect(conferir(cobertura, PARES_PUBLICOS_ACEITOS)).toEqual({
       semDeclaracao: [],
       excedentes: [],
       ausentes: [],
@@ -955,7 +975,7 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     // faz a falha dizer POR QUE uma rota não passa pela decisão, e o que impede o segundo bucket de
     // virar um depósito onde tudo cabe.
     expect(cobertura.foraDoArcabouco).toEqual([...ROTAS_FORA_DO_ARCABOUCO]);
-    expect(cobertura.publicas).toEqual([...ROTAS_PUBLICAS_ACEITAS]);
+    expect(cobertura.publicas).toEqual([...PARES_PUBLICOS_ACEITOS]);
   });
 
   it('CT-213 (b) — a mesma conferência REPROVA a aplicação que carrega as rotas de verificação', () => {
@@ -1058,7 +1078,7 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     ]);
 
     // Os dois conjuntos que a fatia NÃO deve ter tocado, inalterados.
-    expect(cobertura.publicas).toEqual([...ROTAS_PUBLICAS_ACEITAS]);
+    expect(cobertura.publicas).toEqual([...PARES_PUBLICOS_ACEITOS]);
     expect(cobertura.foraDoArcabouco).toEqual([...ROTAS_FORA_DO_ARCABOUCO]);
 
     // O TOTAL e o DELTA, os dois. O total sozinho não distingue "33 novas entraram" de "34 entraram
