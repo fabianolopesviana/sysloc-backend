@@ -1,7 +1,7 @@
 ---
 id: 0012
 title: Forma canônica do contrato da API, com a chave exposta variando por classe de entidade
-status: accepted
+status: superseded-by:0017
 date: 2026-08-04
 tags: [http, architecture, error-handling]
 ---
@@ -36,6 +36,8 @@ Todo recurso da API obedece a cinco regras de forma. **A chave exposta depende d
 **Neutros:**
 - A fronteira coincide com a da ADR-0009 (identidade × negócio por schema), mas é decidida independentemente: uma entidade de negócio não tenantizada, se existir, expõe código legível pela primeira regra.
 - `limite`/`deslocamento` é adequado ao volume atual e pode conviver com cursor depois, sem invalidar esta decisão.
+
+> Superseded by 0017 - Forma canônica do contrato da API, com três classes de chave exposta em 2026-08-05.
 
 ## Alternatives considered
 

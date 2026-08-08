@@ -1,6 +1,6 @@
 # Architecture Decision Records — INDEX
 
-> Ultima atualizacao: 2026-08-04 (13 ADRs)
+> Ultima atualizacao: 2026-08-06 (18 ADRs)
 
 <!-- ADR-INDEX-START -->
 | ID | Titulo | Status | Tags | Problema (1-linha) | Decisao (1-linha) |
@@ -16,6 +16,11 @@
 | 0009 | Fronteira entre identidade e negócio por schema, com cobertura verificada no catálogo | accepted | architecture, security, data | A ADR-0008 fixa que o isolamento é propriedade do banco e que toda tabela de negócio nasce com | As tabelas ficam em dois schemas: identidade, sem noção de tenant; e negócio, onde toda tabela |
 | 0010 | Efetivo de permissão calculado do perfil com overrides bidirecionais, transportado na sessão e revalidado por versão | accepted | auth, security, architecture | A ADR-0008 fixa que o dado é escopado pelo banco e a ADR-0009 separa identidade de negócio. | O efetivo de permissão de uma pessoa é o conjunto do seu perfil somado aos overrides dela, com a |
 | 0011 | Cobertura de autorização declarada por rota, com default que nega e verificação sobre a superfície publicada | accepted | auth, security, architecture | A ADR-0010 fixa como o efetivo de permissão se forma, viaja e é revalidado. Ela não diz como uma | Toda rota declara o que exige em duas dimensões independentes — perfil e chave do catálogo |
-| 0012 | Forma canônica do contrato da API, com a chave exposta variando por classe de entidade | accepted | http, architecture, error-handling | A API do Frappe vazou sua forma para dentro do frontend: name é chave e rótulo exibido em 11 inte... | Todo recurso da API obedece a cinco regras de forma. A chave exposta depende da classe da entidad... |
+| 0012 | Forma canônica do contrato da API, com a chave exposta variando por classe de entidade | superseded-by:0017 | http, architecture, error-handling | A API do Frappe vazou sua forma para dentro do frontend: name é chave e rótulo exibido em 11 inte... | Todo recurso da API obedece a cinco regras de forma. A chave exposta depende da classe da entidad... |
 | 0013 | O alcance da garantia do operador do SaaS — vale para a sessão dele, não para credencial que ele emite | accepted | security, auth | O produto tem um perfil de operador do SaaS que administra empresas e não alcança dado de negócio | A garantia de que o operador do SaaS não alcança dado de negócio é uma propriedade da sessão |
+| 0014 | Entidade de cadastro do domínio nunca é apagada — a exclusão é lógica | accepted | data, architecture | O domínio de locação nasce na F2 e é referenciado por todas as fases seguintes: cobrança aponta | Entidade de cadastro do domínio — a que o usuário cria, nomeia e referencia de outro registro |
+| 0015 | Contador sequencial por empresa, com furo aceito e número nunca reusado | accepted | data, architecture | Entidades que expõem código legível (CTR-2026-00020 no contrato, COB-… na cobrança, e o | Todo contador sequencial deste produto é único por empresa, e cada série declara o próprio |
+| 0016 | O esquema é a fonte única do contrato — validação e documento derivam dele | accepted | http, architecture | A API descreve hoje o mesmo contrato duas vezes: o esquema que confere a entrada e a descrição | O esquema declarado no pacote de contratos é a fonte única: a conferência de entrada, o tipo da |
+| 0017 | Forma canônica do contrato da API, com três classes de chave exposta | accepted | http, architecture, error-handling | A ADR-0012 partiu as entidades em duas classes e fixou que toda entidade de negócio tenantizada | Todo recurso da API obedece a cinco regras de forma, das quais a primeira passa a ter três |
+| 0018 | Uma rota compõe exigências, e a cobertura de autorização confere conteúdo — não só existência | accepted | auth, security, architecture | A ADR-0011 fixou que toda rota declara o que exige e que a rota sem declaração é recusada, com a | Uma rota pode declarar uma conjunção de exigências, e a recusa nomeia a primeira ausente na |
 <!-- ADR-INDEX-END -->

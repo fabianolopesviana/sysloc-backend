@@ -56,3 +56,4 @@ mão.
 ## Applied in
 
 - `autorizacao-e-ciclo-de-acesso (v1)` — docs/specs/features/autorizacao-e-ciclo-de-acesso/v1/tech-alignment.md (decisão D2; adoção pendente)
+- `cadastro-de-imoveis-e-pessoas (v1)` — `docs/specs/features/cadastro-de-imoveis-e-pessoas/v1/tech_spec.md` (§11.2) — **estendida pela ADR-0018**, que acrescenta a conjunção de exigências numa mesma rota e fortalece o predicado de cobertura de *existência* para *conteúdo*. Esta decisão permanece `accepted` e inteira: o default que nega, as duas dimensões e a marca de "não exige" não mudam.
