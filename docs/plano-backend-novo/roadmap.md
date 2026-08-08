@@ -18,9 +18,14 @@
 
 **Fase × fatia.** Uma fase é uma unidade do plano; uma **fatia** é uma feature do agent-spec, com
 `v1` próprio, que se executa num run. Quase toda fase é uma fatia só — mas quando a amplitude não
-cabe num run, ela se parte. **A F1 foi partida em duas**, e isso não foi previsto no plano: decidiu-se
-durante o pré-refinamento dela, cortando *depois* da autenticação. Outras fases podem se partir pelo
-mesmo motivo; quando isso acontecer, as fatias novas aparecem aqui.
+cabe num run, ela se parte. **A F1 e a F2 foram partidas em duas**, e nenhuma das duas partições foi
+prevista no plano: as duas se decidiram no pré-refinamento da fase. A F1 cortou *depois da
+autenticação*; a F2 corta *por agregado*, com imóveis e pessoas antes de contratos. Outras fases podem
+se partir pelo mesmo motivo; quando isso acontecer, as fatias novas aparecem aqui.
+
+> **O pré-refinamento de uma fase partida tem casa própria.** O da F2 vive em
+> `docs/specs/features/dominio-locacao/v1/pre-refinement.md` e cobre as **duas** fatias — ele não é
+> uma fatia executável, e por isso não aparece no painel.
 
 ---
 
@@ -31,7 +36,7 @@ mesmo motivo; quando isso acontecer, as fatias novas aparecem aqui.
 |---|---|---|---|
 | **F0** | Stack instalada e provada | ✅ concluída | 7/7 tasks |
 | **F1** | Fundação SaaS — isolamento, identidade e autorização | ✅ concluída | 20/20 tasks |
-| **F2** | Domínio de locação | ⬜ não iniciada | — |
+| **F2** | Domínio de locação | 🔄 em andamento | 1 de 2 fatias · 11/11 tasks |
 | **F3** | Cobrança, mora e documentos | ⬜ não iniciada | — |
 | **F4** | Integração bancária (Sicoob) | ⬜ não iniciada | — |
 | **F5** | Automações agendadas | ⬜ não iniciada | — |
@@ -119,28 +124,52 @@ com **default que nega**. Ciclo de vida de empresas (Master) e de pessoas (Admin
 **O que é:** as entidades do negócio, que até aqui não existem. É a primeira fase que um usuário
 final enxergaria.
 
-**As 8 entidades:** `Conjunto`, `Imovel`, `Comodo`, `Locador`, `Locatario`, `Fiador`, `Contrato`,
-`ContratoFiador`.
+**As 7 entidades:** `Conjunto`, `Imovel`, `Comodo`, `Locador`, `Locatario`, `Fiador` e `Contrato`,
+mais o vínculo entre contrato e fiadores. O plano falava em oito, contando um `ContratoFiador` que
+**não existe no legado**: lá a child table chama-se `Fiadores` e tem um único campo, o elo com o
+fiador.
+
+**Por que foi partida em duas:** o corte é **por agregado**, e a dependência dá a ordem — `Contrato`
+aponta para imóvel e para pessoas, então eles vêm antes. Cada fatia é vertical (schema → rota →
+contrato → teste), o que rebate o corte por camada que a F1 já havia descartado.
+
+### Fatia 1 — `cadastro-de-imoveis-e-pessoas`
+
+Conjunto, imóvel, cômodos e os três papéis de pessoa, com **metragem derivada na leitura** provada
+contra o golden, exclusão lógica (nada é apagado, exceto cômodo, que é detalhe de composição) e
+unicidade por empresa de documento e identificador municipal. Nasce aqui o **`@sysloc/contracts`**.
+
+### Fatia 2 — `contratos-de-locacao`
+
+`Contrato`, o vínculo com fiadores, o código legível `CTR-{ano}-{sequencial}` e o **núcleo local** da
+ativação e do cancelamento.
 
 **Entrega:**
 
-1. Schema com RLS e FK composta, e **código legível por entidade** (`CTR-2026-0001`), único por
-   empresa — é o que preserva as telas do frontend, que exibem esse código como título.
+1. Schema com RLS e FK composta. **Código legível só onde há série declarada** — hoje contrato e
+   cobrança. As demais entidades expõem o identificador opaco: seis das oito nunca tiveram código no
+   legado, e inventá-lo daria ao imóvel um segundo identificador ao lado do municipal (ADR-0017,
+   que substituiu a 0012 por isso).
 2. **Tipos reais**: dinheiro em `numeric(15,2)`, datas em `date`/`timestamptz`, status em enum. Com
    isso some a camada de coerção do frontend (`toInt`, `toDouble`, `isTruthy`).
-3. Os **3 `Custom Field` de negócio** que a estrutura versionada do Frappe não alcançava viram
-   colunas de primeira classe.
-4. **Três regras portadas do Frappe**, e é aqui que os goldens são cobrados: metragem do imóvel,
-   ativação de contrato (340 linhas) e cancelamento em cascata (174 linhas).
-5. **`@sysloc/contracts`** — os primeiros contratos ts-rest + Zod, no modelo camelCase.
+3. Os **2 `Custom Field` de negócio** desta fase — `gerarCobrancasAutomaticamente` e
+   `pdfContratoArquivo`, ambos de `Contrato`. O terceiro do site pertence à `Cobranca` e é F3.
+4. **Regras portadas do Frappe**, e é aqui que os goldens são cobrados. Mas só a **metragem** tem
+   golden: ativação (340 linhas) e cancelamento (174 linhas) **atravessam F3 e F4** — geram cobrança,
+   emitem boleto, exigem PDF e pedem baixa bancária. A F2 porta o **núcleo local** delas (validações,
+   transição de status, efeito no imóvel) e declara os pontos de extensão como débito com gatilho.
+5. **`@sysloc/contracts`** — nasce **interno**, com esquema compartilhado como fonte única do contrato
+   e documento derivado dele (ADR-0016). A publicação acontece no marco; `ts-rest`, que a stack
+   declara, fica para quando a superfície congelar.
 
 **Aceitação:** a caracterização de metragem passa contra a implementação nova · criar `Contrato` da
 empresa A apontando `Imovel` da B é **recusado pelo banco**.
 
 <!-- ESTADO:F2:INICIO -->
-> ⬜ **não iniciada**
+> 🔄 **em andamento** — 1 de 2 fatias · 11/11 tasks
 >
-> ⬜ `dominio-locacao/v1`
+> ✅ `cadastro-de-imoveis-e-pessoas/v1` — 11/11 tasks
+> ⬜ `contratos-de-locacao/v1`
 <!-- ESTADO:F2:FIM -->
 
 ---

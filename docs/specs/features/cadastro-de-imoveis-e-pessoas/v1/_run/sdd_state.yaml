@@ -1,0 +1,27 @@
+feature: "Cadastro de imóveis e pessoas do domínio de locação"
+current_step: execution
+source: "recommended"
+source_note: "o pre-refinement de docs/specs/features/dominio-locacao/v1/ recomendou SDD por fatia; esta é a fatia 1 de 2"
+variant: backend
+steps:
+  prd:
+    status: completed
+    summary: "11 US, 16 CA. Entregar imóveis, cômodos e pessoas isolados por empresa, com metragem calculada pelo sistema e nada apagável."
+  tech_alignment:
+    status: completed
+    summary: "6 decisões técnicas (D1–D6) + 4 diretas. Uma candidata a ADR: esquema compartilhado como fonte única do contrato, divergindo da stack declarada."
+  tech_spec:
+    status: completed
+    variant: backend
+    summary: "6 entidades novas em `negocio` + pacote @sysloc/contracts; 33 rotas sob /v1; migrações 0005 (gerada) e 0006 (segurança). Tabelas: conjunto, imovel, comodo, locador, locatario, fiador."
+  validation:
+    status: completed
+    summary: "challenge-spec: 5 questões, 5 ajustes inline, 9 termos canonizados no glossário global"
+  task_plan:
+    status: completed
+    summary: "11 tasks, 4 fases, 3 paralelizáveis (T1, T3, T4). US cobertas: 11/11. 53 CTs distribuídos (CT-300 a CT-352)."
+  execution:
+    status: completed
+    tasks_total: 11
+    tasks_completed: 11
+    summary: "11/11 tasks aprovadas nos dois gates. Suíte 274 → 541 casos. 33 rotas governadas, `rotasEnumeradas` = 66, `semDeclaracao` vazio."

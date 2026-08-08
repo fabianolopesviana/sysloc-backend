@@ -1,0 +1,2650 @@
+{
+  "schema_version": 1,
+  "framework": "sdd",
+  "feature": "cadastro-de-imoveis-e-pessoas",
+  "version": "v1",
+  "atualizado_em": "2026-08-05",
+  "stack_discovery": {
+    "fonte": "testing_stack_rule",
+    "stack": "Node 24.18.1 · TypeScript strict · NestJS + Fastify · Drizzle + postgres.js · PostgreSQL 18 · Zod 4 · monorepo pnpm 11 + Turborepo",
+    "framework_teste": "Vitest + `embedded-postgres` (instância efêmera própria por execução, ADR-0006) + HTTP real contra servidor do arcabouço em porta RESERVADA (`reservarPorta()`), nunca dinâmica — o arcabouço de identidade confere a origem das requisições com cookie contra o endereço base composto a partir da porta CONFIGURADA",
+    "comando_teste": "pnpm test (→ turbo run test); subset: pnpm --filter @sysloc/<pacote> test; mutante SEMPRE pelo script `test` do pacote, nunca `vitest run` avulso",
+    "discovery_needed": false,
+    "lacunas": []
+  },
+  "casos_teste": [
+    {
+      "id": "CT-300",
+      "titulo": "As seis tabelas novas de `negocio` nascem cobertas pela guarda de isolamento",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "Sobre o schema migrado da fatia, `verificarCoberturaDeIsolamento` devolve `excecoes: []` e `tabelasExaminadas` exatamente igual às oito tabelas de `negocio` em ordem alfabética — as duas herdadas (`acesso_usuario_app`, `acesso_usuario_permissao`) mais `comodo`, `conjunto`, `fiador`, `imovel`, `locador`, `locatario` —, de modo que nenhuma entidade nova pode ter nascido sem `empresa_id`, sem RLS forçada ou sem a restrição única `(id, empresa_id)`.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/catalogo.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-301",
+        "input_invalido": "schema em que `negocio.imovel` perdeu `FORCE ROW LEVEL SECURITY` (mutante aplicado por DDL numa instância dedicada)",
+        "assertion_esperada": "`excecoes` igual a `[{ tabela: 'negocio.imovel', motivo: 'RLS_NAO_FORCADA' }]` — exatamente uma entrada — e `tabelasExaminadas` inalterada, com as oito tabelas"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "packages/db — guarda de catálogo sobre o schema migrado",
+      "pre_condicoes": [
+        "Instância efêmera de PostgreSQL subida por `bancoEfemero()`, com `0000` a `0006` aplicadas",
+        "A guarda é invocada pela cadeia SEM privilégio (`banco.cadeiaConexao`, papel `sysloc_app`), como já faz o CT-008"
+      ],
+      "dados_entrada": {
+        "descricao": "Nenhuma entrada de negócio — o objeto sob observação é o catálogo do sistema",
+        "valores": {
+          "cadeia": "banco.cadeiaConexao (papel sysloc_app)"
+        }
+      },
+      "passos": [
+        "Subir a instância efêmera migrada",
+        "Chamar `verificarCoberturaDeIsolamento(banco.cadeiaConexao)`",
+        "Afirmar `excecoes` e `tabelasExaminadas` por igualdade de array, posição inclusive"
+      ],
+      "resultado_esperado": "`excecoes` é `[]` e `tabelasExaminadas` é exatamente `['negocio.acesso_usuario_app', 'negocio.acesso_usuario_permissao', 'negocio.comodo', 'negocio.conjunto', 'negocio.fiador', 'negocio.imovel', 'negocio.locador', 'negocio.locatario']` — nesta ordem. As duas metades são obrigatórias: lista vazia de exceções sobre lista vazia de examinadas seria verdade vazia.",
+      "criterios_aceitacao_validados": [
+        "CA-14"
+      ],
+      "observacoes": "Estende o CT-008, que hoje afirma a lista das DUAS tabelas herdadas por igualdade — ele reprovará assim que a migração `0005` entrar, e é essa reprovação que força a declaração consciente das entidades novas. Ajustar aquele conjunto é a atualização legítima; enfraquecê-lo para contenção (`toContain`) seria regressão de prova (R2). Note que `comodo` entra na lista: ele é tabela de negócio, tem `empresa_id`, RLS forçada e única composta — o que ele não tem é `retirado_em`, que a guarda não cobra.",
+      "task_id": "T2"
+    },
+    {
+      "id": "CT-301",
+      "titulo": "Falsificação: entidade nova sem RLS forçada é nomeada pela guarda",
+      "tipo": "INTEGRACAO",
+      "categoria": "teste_negativo",
+      "invariant": "Retirado `FORCE ROW LEVEL SECURITY` de `negocio.imovel` numa instância dedicada, a MESMA asserção do CT-300 reprova nomeando `negocio.imovel` com motivo `RLS_NAO_FORCADA`, e volta a aprovar quando o `FORCE` é restaurado.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/catalogo.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — `ALTER TABLE negocio.imovel NO FORCE ROW LEVEL SECURITY`",
+        "assertion_esperada": "ver `resultado_esperado`"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Aplicar e desfazer DDL de mutante sobre uma tabela de `negocio` exige privilégio que o papel da aplicação não tem.",
+        "caminho_legitimo": "Imitar o acessório já usado pelo CT-009 e pelo CT-007: `conexaoDeMigracao()` de `packages/db/test/banco-efemero.ts`, contra uma instância efêmera DEDICADA a este caso e descartada ao fim — nunca a instância compartilhada pelos demais casos, que passaria a conviver com tabela sem política. A guarda continua sendo invocada pela cadeia sem privilégio. Nenhuma bandeira, semente condicional ou ramo de produção que 'pule' o isolamento pode ser acrescentado ao fonte.",
+        "teste_analogo": "packages/db/test/catalogo.spec.ts — CT-009 (bloco 'tabela nascida sem isolamento')"
+      },
+      "camada": "packages/db — guarda de catálogo, instância dedicada",
+      "pre_condicoes": [
+        "Instância efêmera DEDICADA, distinta da usada pelo CT-300",
+        "Migrações aplicadas, inclusive a de segurança das entidades novas"
+      ],
+      "dados_entrada": {
+        "descricao": "Mutante de schema aplicado por DDL",
+        "valores": {
+          "mutante": "ALTER TABLE negocio.imovel NO FORCE ROW LEVEL SECURITY"
+        }
+      },
+      "passos": [
+        "Subir instância dedicada e afirmar o controle: `excecoes` é `[]`",
+        "Aplicar o mutante pela cadeia de migração",
+        "Chamar `verificarCoberturaDeIsolamento` pela cadeia sem privilégio",
+        "Restaurar o `FORCE` e reafirmar o controle",
+        "Encerrar a instância dedicada"
+      ],
+      "resultado_esperado": "Com o mutante, `excecoes` é exatamente `[{ tabela: 'negocio.imovel', motivo: 'RLS_NAO_FORCADA' }]` (uma entrada, não mais) e `tabelasExaminadas` continua com as oito tabelas; restaurado o `FORCE`, `excecoes` volta a `[]`. O par controle→mutante→controle é o que detecta.",
+      "criterios_aceitacao_validados": [
+        "CA-14"
+      ],
+      "observacoes": "É o par que impede o CT-300 de passar por vacuidade — sem ele, uma guarda quebrada devolveria `excecoes: []` sobre qualquer schema. Um único mutante, sobre uma única tabela nova, basta: o mecanismo da guarda é o mesmo para as sete, e o CT-009 já cobre as demais variantes de defeito (sem coluna, sem única composta, objeto sem isolamento possível).",
+      "task_id": "T2"
+    },
+    {
+      "id": "CT-302",
+      "titulo": "Leitura das entidades novas é escopada pelo banco, e o contexto ausente lê vazio",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Com dado semeado nas duas empresas, uma leitura crua de cada uma das seis tabelas novas sob o contexto da empresa A devolve o conjunto exato de identificadores de A e interseção vazia com os de B; sob o contexto da empresa B, o simétrico; e sob contexto ausente (e sob contexto de empresa nula) devolve zero linhas nas sete, sem erro — sem que nenhuma consulta escreva filtro por `empresa_id`.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/isolamento.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-303",
+        "input_invalido": "gravação sob o contexto de A com `empresa_id` da empresa B",
+        "assertion_esperada": "SQLSTATE `42501` com mensagem contendo 'row-level security policy'; `UPDATE` e `DELETE` sobre linha de B afetam 0 linhas; estado de B bit a bit inalterado"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "O caso precisa correr sob o contexto de tenant de duas empresas distintas e também sem contexto algum.",
+        "caminho_legitimo": "Exclusivamente pela API pública do pacote, como já faz o arquivo: `contextoDeTenant.executarCom({ empresaId })` para escrever o contexto e `abrirAcessoAoBanco({ cadeiaDeConexao, maximoDeConexoes: 1 })` para a unidade de trabalho. A ausência de contexto é obtida NÃO chamando o escritor, sobre uma reserva aberta depois do preparo (padrão `acessoVirgem` do CT-005). Nenhum `SET LOCAL` composto à mão, nenhum símbolo novo em `packages/db/src/**`.",
+        "teste_analogo": "packages/db/test/isolamento.spec.ts — CT-003 e CT-005"
+      },
+      "camada": "packages/db — política do banco, sem camada de aplicação",
+      "pre_condicoes": [
+        "Instância efêmera migrada e semeada",
+        "Uma linha descartável de cada entidade nova criada pela PRÓPRIA empresa dona, dentro do contexto dela",
+        "A consulta de leitura é declarada como valor e conferida quanto à ausência de `empresa_id` na cláusula (mesmo mecanismo de `CONSULTAS_DE_NEGOCIO`)"
+      ],
+      "dados_entrada": {
+        "descricao": "Linhas nas seis tabelas novas, em ambas as empresas da carga",
+        "valores": {
+          "empresas": "EMPRESA_A.id, EMPRESA_B.id",
+          "tabelas": "conjunto, imovel, comodo, locador, locatario, fiador (e as duas herdadas continuam cobertas pelos casos existentes)"
+        }
+      },
+      "passos": [
+        "Criar, sob o contexto de cada empresa, uma linha descartável de cada entidade",
+        "Ler cada tabela sob o contexto de A e afirmar conjunto exato + interseção vazia com B",
+        "Repetir sob o contexto de B",
+        "Ler cada tabela sob contexto ausente e sob contexto de empresa nula",
+        "Afirmar o companheiro positivo: a leitura sob A continua devolvendo as linhas de A (senão 'vazio' provaria banco vazio, não isolamento)",
+        "Remover as linhas descartáveis pelo identificador, nunca por `empresa_id`"
+      ],
+      "resultado_esperado": "Sob A: cada tabela devolve exatamente os identificadores criados por A e `intersecao(lidos, identificadoresDeB)` é `[]`. Sob contexto ausente e sob contexto de empresa nula: cada uma das sete devolve `[]`, sem erro, enquanto a mesma leitura sob A devolve conjunto não vazio na mesma transação de conferência.",
+      "criterios_aceitacao_validados": [
+        "CA-14"
+      ],
+      "observacoes": "Este caso NÃO entra em `rodarBateria` — o mesmo motivo registrado no arquivo para o CT-207: a bateria afirma o conjunto exato de predicados reprovados por mutante do CT-007, e acrescentar predicados mudaria o esperado de quatro mutantes que nada têm a ver com estas tabelas. Alterar aquele esperado seria regressão de prova. Se o executor julgar o arquivo grande demais (2496 linhas hoje), a alternativa aceitável é um irmão `packages/db/test/isolamento-cadastros.spec.ts` importando as MESMAS utilidades de coleta — o que não é aceitável é reimplementar `tentar`/`sqlstate`/`mesmoConjunto` localmente.",
+      "task_id": "T2"
+    },
+    {
+      "id": "CT-303",
+      "titulo": "Gravação cruzada nas entidades novas é recusada pela política, e nada muda na empresa alheia",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Sob o contexto da empresa A, `INSERT` em qualquer das seis tabelas novas com `empresa_id` da empresa B é recusado com SQLSTATE `42501` e mensagem contendo 'row-level security policy'; `UPDATE` e `DELETE` sobre linha existente de B afetam zero linhas; e o estado de B, lido em seguida no contexto de B, é bit a bit o mesmo de antes.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/isolamento.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — escrita sob o contexto de A dirigida a linha/empresa de B",
+        "assertion_esperada": "ver `resultado_esperado`"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "A linha alvo tem de existir em B e ser bem formada em tudo menos no contexto de quem escreve, para que a RLS seja o único motivo possível da recusa.",
+        "caminho_legitimo": "A empresa B cria a linha alvo no PRÓPRIO contexto, por `contextoDeTenant.executarCom(CONTEXTO_DE_B, …)`; as chaves estrangeiras da linha cruzada apontam para pais que pertencem mesmo a B (um `conjunto` de B para o `imovel` de B, um `imovel` de B para o `comodo` de B). Sem isso, a FK composta recusaria antes da política e o caso passaria a provar a referência em vez do isolamento — exatamente a armadilha que o comentário de `PESSOA_CRUZADA_EM_B` documenta. A conferência final corre numa unidade SEPARADA, no contexto de B, nunca por conexão privilegiada.",
+        "teste_analogo": "packages/db/test/isolamento.spec.ts — CT-004 (`conferirGravacaoCruzadaRecusada`)"
+      },
+      "camada": "packages/db — política do banco",
+      "pre_condicoes": [
+        "Linhas descartáveis de B criadas pela própria B",
+        "Reserva de uma conexão, para que as unidades corram sobre a mesma conexão física"
+      ],
+      "dados_entrada": {
+        "descricao": "Uma tentativa de inserção cruzada por entidade, mais uma atualização e uma remoção sobre linha de B",
+        "valores": {
+          "contextoDeQuemEscreve": "EMPRESA_A.id",
+          "empresaIdDaLinha": "EMPRESA_B.id",
+          "colunaAtualizada": "coluna que não participa de restrição de unicidade (ex.: `observacoes`), para não confundir o diagnóstico"
+        }
+      },
+      "passos": [
+        "Serializar o estado das linhas de B, lido no contexto de B",
+        "Sob o contexto de A, tentar `INSERT` com `empresa_id` de B em cada entidade nova",
+        "Sob o contexto de A, tentar `UPDATE` e `DELETE` sobre a linha descartável de B",
+        "Reserializar o estado de B no contexto de B e comparar"
+      ],
+      "resultado_esperado": "Cada `INSERT` cruzado falha com `sqlstate === '42501'` e mensagem contendo 'row-level security policy'; `UPDATE` devolve `count === 0` e `DELETE` devolve `count === 0`, ambos sem erro; a serialização do estado de B depois é idêntica, caractere a caractere, à de antes.",
+      "criterios_aceitacao_validados": [
+        "CA-14"
+      ],
+      "observacoes": "Zero linhas afetadas em `UPDATE`/`DELETE` é o desfecho correto e é diferente de erro: sob `USING`, a linha alheia simplesmente não existe para quem escreve. Asserir 'lançou exceção' aqui seria asserir o comportamento errado. Como o CT-302, fica fora de `rodarBateria`.",
+      "task_id": "T2"
+    },
+    {
+      "id": "CT-304",
+      "titulo": "Referência entre cadastros de empresas diferentes é impossível pela chave estrangeira composta",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "`negocio.imovel` só aceita `conjunto_id` cujo par `(conjunto_id, empresa_id)` exista em `negocio.conjunto (id, empresa_id)`, e `negocio.comodo` só aceita `imovel_id` cujo par exista em `negocio.imovel` — o apontamento cruzado é recusado com SQLSTATE `23503` nomeando a restrição composta, nas duas direções, enquanto o apontamento legítimo grava exatamente uma linha.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/isolamento.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — `imovel` da empresa A apontando para `conjunto` da empresa B, e o simétrico",
+        "assertion_esperada": "ver `resultado_esperado`"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "O identificador do pai alheio precisa ser conhecido sem uso de conexão privilegiada.",
+        "caminho_legitimo": "Obter o identificador do `conjunto` de B LENDO sob o contexto de B (nunca por consulta privilegiada) — assim o caso prova também o outro lado: conhecer o identificador alheio não basta para usá-lo. Escolher para a tentativa cruzada valores que não colidam com nenhuma restrição de unicidade da tabela (identificador municipal e documento distintos dos já gravados), pela mesma razão do comentário de `gravarPermissaoCruzada`: com colisão, o banco recusaria por `23505` antes de a chave estrangeira composta ser consultada, e o caso provaria a unicidade em vez da referência.",
+        "teste_analogo": "packages/db/test/isolamento.spec.ts — CT-006 (`conferirChaveEstrangeiraComposta`)"
+      },
+      "camada": "packages/db — restrições do schema",
+      "pre_condicoes": [
+        "Um `conjunto` em A e um `conjunto` em B, criados cada um pela própria empresa",
+        "Um `imovel` em A, para servir de pai do `comodo`"
+      ],
+      "dados_entrada": {
+        "descricao": "Três tentativas: a legítima, a cruzada A→B e a simétrica B→A; repetidas para o par `comodo`→`imovel`",
+        "valores": {
+          "legitima": "imovel(empresa A, conjunto de A)",
+          "cruzadaAparaB": "imovel(empresa A, conjunto de B)",
+          "cruzadaBparaA": "imovel(empresa B, conjunto de A)"
+        }
+      },
+      "passos": [
+        "Gravar a linha legítima sob o contexto de A e afirmar `count === 1`",
+        "Tentar a cruzada A→B e capturar SQLSTATE e nome da restrição",
+        "Tentar a simétrica B→A e capturar os mesmos campos",
+        "Repetir o trio para `comodo` apontando `imovel`",
+        "Afirmar o conjunto final de linhas em A e em B"
+      ],
+      "resultado_esperado": "A legítima grava `count === 1`. As duas cruzadas falham com `sqlstate === '23503'` e `constraint_name` igual ao nome da restrição composta da tabela filha (`imovel_conjunto_empresa_fkey` e `comodo_imovel_empresa_fkey`, conforme a migração fixar) — o nome é afirmado, e não apenas o SQLSTATE, porque a tabela tem mais de uma chave estrangeira e um `23503` sozinho não diz qual delas falou. Nenhuma linha cruzada aparece em A nem em B.",
+      "criterios_aceitacao_validados": [
+        "CA-14"
+      ],
+      "observacoes": "Afirmar `constraint_name` é o que distingue 'alguma chave estrangeira recusou' de 'ESTA chave recusou' — a lição já registrada em `nomeDaRestricao`. Se o nome definitivo da restrição divergir do usado aqui, o caso deve tomá-lo de uma constante única do arquivo, nunca duplicar o literal por tentativa.",
+      "task_id": "T2"
+    },
+    {
+      "id": "CT-305",
+      "titulo": "Os quatro cenários do golden de metragem, contra a implementação nova",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "Para os quatro cenários capturados do sistema antigo, a metragem total derivada na leitura é exatamente 0, 25.5, 67.75 e 58.5, entregue como `number`, e os cômodos devolvidos batem, um a um e na ordem de posição, com `comodos_persistidos` do golden.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-306",
+        "input_invalido": "cômodo criado sem metragem informada (o cenário `varios_comodos_com_metragem_nula` do golden)",
+        "assertion_esperada": "a COLUNA `metragem` do cômodo persistido vale `0.00`, não nulo, quando lida crua do banco — e a soma continua 58.5"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "packages/db — porta única de leitura de imóvel",
+      "pre_condicoes": [
+        "Instância efêmera migrada e semeada",
+        "Contexto de tenant escrito por `contextoDeTenant.executarCom`, unidade aberta por `abrirAcessoAoBanco`",
+        "O golden é LIDO do arquivo versionado, nunca redigitado no teste"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela derivada de `docs/specs/features/caracterizacao-regras-legadas/v1/golden/metragem.json` — quatro cenários, com `comodos_entrada` como entrada e `comodos_persistidos` + `valor_agregado` como oráculo",
+        "valores": {
+          "sem_comodo": "[] → 0",
+          "um_comodo": "[Sala 25.5] → 25.5",
+          "varios_comodos": "[Sala 25.5, Quarto 30.25, Cozinha 12.0] → 67.75",
+          "varios_comodos_com_metragem_nula": "[Sala 40.0, Deposito null, Quarto 18.5] → 58.5"
+        }
+      },
+      "passos": [
+        "Carregar `metragem.json` e derivar a tabela dos quatro cenários",
+        "Para cada cenário: criar o imóvel com os `comodos_entrada`, na ordem do golden e com posição 1..N",
+        "Ler o imóvel pela porta única de leitura",
+        "Afirmar `metragemTotal` por igualdade numérica com `valor_agregado` e `typeof` igual a `'number'`",
+        "Afirmar o vetor de cômodos devolvido contra `comodos_persistidos`, comparando nome, metragem e posição por igualdade profunda, na ordem"
+      ],
+      "resultado_esperado": "Os quatro cenários devolvem `metragemTotal` igual a 0, 25.5, 67.75 e 58.5 respectivamente, com `typeof metragemTotal === 'number'` (nunca `'string'`, que é o que `numeric` devolve pelo driver sem conversão explícita); e o vetor de cômodos é profundamente igual a `comodos_persistidos` do golden, incluindo o `Deposito` com metragem `0` na posição 2. A afirmação é 4 de 4, e a contagem de cenários exercitados é ela mesma afirmada em 4 — âncora contra golden truncado.",
+      "criterios_aceitacao_validados": [
+        "CA-04",
+        "CA-05",
+        "CA-16"
+      ],
+      "observacoes": "Arquivo novo proposto: `packages/db/test/imovel.spec.ts`. Nenhuma suíte existente cobre a agregação de metragem — `catalogo.spec.ts` responde por cobertura de isolamento, `isolamento.spec.ts` por política, `permissao.spec.ts` por ajustes de permissão. A convenção do pacote é uma suíte por módulo de `src/`, espelhada em `test/`. O `valor_sentinela_de_entrada: -1.0` do golden é da CAPTURA do legado (marca de 'não informado' na origem) e não deve virar valor de entrada aqui: a entrada equivalente no produto novo é a ausência do campo — o executor deve registrar isso no cabeçalho do arquivo para que a rodada seguinte não o reintroduza como caso.",
+      "task_id": "T7"
+    },
+    {
+      "id": "CT-306",
+      "titulo": "A normalização do cômodo sem metragem acontece na ESCRITA, e a coluna guarda zero",
+      "tipo": "INTEGRACAO",
+      "categoria": "fronteira",
+      "invariant": "Cômodo criado sem metragem informada persiste `0.00` na coluna `negocio.comodo.metragem` — lida crua do banco —, e não nulo; a coluna é `NOT NULL DEFAULT 0` e uma tentativa de gravar nulo nela é recusada pelo banco com SQLSTATE `23502`.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — cômodo sem metragem, e `INSERT` direto com `metragem = NULL`",
+        "assertion_esperada": "coluna vale `'0.00'` na leitura crua; o `INSERT` com nulo explícito falha com `sqlstate === '23502'`"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "packages/db — escrita de cômodo",
+      "pre_condicoes": [
+        "Um imóvel do cenário `varios_comodos_com_metragem_nula` já criado",
+        "A leitura de conferência é uma consulta crua sobre a coluna, dentro do contexto de tenant"
+      ],
+      "dados_entrada": {
+        "descricao": "O cômodo `Deposito` do golden, sem metragem informada, mais uma tentativa direta de gravar nulo",
+        "valores": {
+          "comodo": "{ nomeComodo: 'Deposito', posicao: 2 }",
+          "tentativaDireta": "INSERT ... (metragem) VALUES (NULL)"
+        }
+      },
+      "passos": [
+        "Criar o cômodo sem informar metragem pelo caminho de escrita do produto",
+        "Ler a coluna `metragem` crua, no contexto de tenant",
+        "Tentar `INSERT` direto com `metragem = NULL` e capturar o SQLSTATE",
+        "Ler o imóvel pela porta única e conferir que a soma continua 58.5"
+      ],
+      "resultado_esperado": "A coluna vale `'0.00'` (não nulo) na leitura crua; o `INSERT` com nulo explícito falha com `sqlstate === '23502'` (not-null violation); e a metragem total do imóvel é 58.5.",
+      "criterios_aceitacao_validados": [
+        "CA-05"
+      ],
+      "observacoes": "Este é o caso DISCRIMINANTE da D2, e a razão de ele existir separado do CT-305: uma implementação que normalizasse apenas na SOMA (tratando nulo como zero no agregado) produziria os MESMOS 58.5 do golden e passaria no CT-305 inteiro. O que discrimina é a asserção sobre a COLUNA — o golden registra o valor já normalizado em `comodos_persistidos`, não apenas no agregado. Mesmo arquivo do CT-305 (`packages/db/test/imovel.spec.ts`).",
+      "task_id": "T7"
+    },
+    {
+      "id": "CT-307",
+      "titulo": "A soma da metragem tem um ponto único de avaliação",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "Para o mesmo imóvel, a metragem total devolvida pela leitura de um imóvel, pela listagem de imóveis e pela carteira expandida é o mesmo valor, nos quatro cenários do golden — não existe segunda soma escrita por consulta.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-308",
+        "input_invalido": "alteração da metragem de um único cômodo entre duas leituras",
+        "assertion_esperada": "as três leituras passam a devolver, todas, o novo total (antigo − metragem antiga do cômodo + metragem nova); nenhuma delas fica no valor antigo"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "packages/db — as três leituras que expõem metragem",
+      "pre_condicoes": [
+        "Os quatro imóveis do golden criados",
+        "As três leituras correm na MESMA unidade de trabalho, para que a comparação não sofra de retratos diferentes"
+      ],
+      "dados_entrada": {
+        "descricao": "Os quatro imóveis do golden",
+        "valores": {
+          "esperados": "0, 25.5, 67.75, 58.5"
+        }
+      },
+      "passos": [
+        "Ler cada imóvel individualmente e coletar `metragemTotal`",
+        "Ler a listagem de imóveis e coletar `metragemTotal` por imóvel",
+        "Ler a carteira expandida e coletar `metragemTotal` por imóvel",
+        "Comparar os três mapas por igualdade profunda e contra os valores do golden"
+      ],
+      "resultado_esperado": "Os três mapas `{ imovelId → metragemTotal }` são profundamente iguais entre si e iguais a `{ …: 0, …: 25.5, …: 67.75, …: 58.5 }`. Divergência em qualquer par reprova nomeando as duas leituras que discordam.",
+      "criterios_aceitacao_validados": [
+        "CA-04",
+        "CA-15"
+      ],
+      "observacoes": "É a rede do trade-off que a D2 declara por escrito — 'a soma deve ter um ponto único de avaliação; se duas consultas somarem por conta própria, a divergência volta pela porta de trás'. A comparação entre as três leituras é o único jeito de detectar a segunda soma, porque cada uma sozinha estaria certa. Mesmo arquivo do CT-305.",
+      "task_id": "T7"
+    },
+    {
+      "id": "CT-308",
+      "titulo": "Alterar um cômodo isoladamente muda a metragem total, sem reenviar o imóvel",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "`PUT /v1/imoveis/:id/comodos/:comodoId` aceita a alteração de um único cômodo e a leitura seguinte do imóvel devolve `metragemTotal` igual ao total anterior menos a metragem antiga daquele cômodo mais a nova, com os demais cômodos inalterados em nome, metragem e posição.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-332",
+        "input_invalido": "`PUT` de cômodo com metragem negativa e com `comodoId` de outro imóvel",
+        "assertion_esperada": "422 `CAMPO_INVALIDO` com `campo: 'metragem'` no primeiro; 404 `RECURSO_NAO_ENCONTRADO` no segundo; nos dois, a metragem total do imóvel permanece no valor anterior"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "A requisição precisa correr sob sessão autenticada de uma pessoa que alcança `TELA:imoveis`.",
+        "caminho_legitimo": "Imitar o arranjo do teste análogo: `identidadeEfemera()` + `pessoaSemeada(email)` para o elenco, `entrar(email)` pela rota real de entrada para obter o cookie, e ajustes de permissão gravados por `escreverAjustes` sob `contextoDeTenant.executarCom` dentro da unidade de trabalho — o mesmo caminho que a rota do Admin chama por dentro. A porta é obtida por `reservarPorta()` e escrita em `process.env.PORT` ANTES da montagem, nunca uma porta dinâmica pedida ao sistema depois. Nenhum símbolo de produção nasce para o teste.",
+        "teste_analogo": "apps/api/test/autorizacao.e2e.spec.ts (arranjo completo: identidade efêmera, fila, porta reservada, `entrar`, `ajustar`)"
+      },
+      "camada": "apps/api — rota de cômodo",
+      "pre_condicoes": [
+        "Aplicação montada com banco, fila e porta reservada próprios",
+        "Imóvel do cenário `varios_comodos` (67.75) criado pela rota",
+        "Sessão com `TELA:imoveis`"
+      ],
+      "dados_entrada": {
+        "descricao": "Alteração da metragem do cômodo `Quarto` de 30.25 para 40.25",
+        "valores": {
+          "antes": 30.25,
+          "depois": 40.25,
+          "totalAntes": 67.75,
+          "totalDepois": 77.75
+        }
+      },
+      "passos": [
+        "Ler o imóvel e afirmar `metragemTotal === 67.75`",
+        "`PUT /v1/imoveis/:id/comodos/:comodoId` com o corpo completo do cômodo e metragem 40.25",
+        "Afirmar o status da resposta e o corpo do cômodo devolvido",
+        "Ler o imóvel de novo e afirmar `metragemTotal` e o vetor completo de cômodos"
+      ],
+      "resultado_esperado": "A alteração responde `200` com o cômodo alterado; a leitura seguinte devolve `metragemTotal === 77.75` e o vetor de cômodos profundamente igual a `[{ nomeComodo: 'Sala', metragem: 25.5, posicao: 1 }, { nomeComodo: 'Quarto', metragem: 40.25, posicao: 2 }, { nomeComodo: 'Cozinha', metragem: 12, posicao: 3 }]`. Nenhuma outra rota é chamada entre as duas leituras — em particular, o imóvel não é reenviado.",
+      "criterios_aceitacao_validados": [
+        "CA-06"
+      ],
+      "observacoes": "Arquivo novo proposto: `apps/api/test/imoveis.e2e.spec.ts`. Nenhuma suíte E2E existente cobre rotas de imóvel — `autorizacao.e2e.spec.ts` exercita rotas SINTÉTICAS para provar a guarda, `administracao-de-pessoas.e2e.spec.ts` cobre `/v1/usuarios`. A asserção sobre o vetor inteiro (e não só sobre o total) é o que pega a implementação que recalcula o agregado e, de quebra, embaralha ou perde os demais cômodos.",
+      "task_id": "T7"
+    },
+    {
+      "id": "CT-309",
+      "titulo": "Cômodos são devolvidos na ordem da posição, e não na de inserção",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "Cômodos criados em ordem de posição embaralhada são devolvidos ordenados por `posicao` crescente, e o vetor devolvido difere tanto da ordem de inserção quanto da ordem por identificador — a ordem é propriedade da consulta, não do retorno do banco.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — inserção em ordem 3, 1, 2, que é a ordem que uma consulta sem `ORDER BY posicao` devolveria",
+        "assertion_esperada": "o vetor devolvido é `[posicao 1, posicao 2, posicao 3]` e é DIFERENTE do vetor de inserção `[3, 1, 2]`"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "packages/db — leitura de cômodos",
+      "pre_condicoes": [
+        "Um imóvel sem cômodos",
+        "Cômodos criados um a um, em ordem de posição deliberadamente embaralhada"
+      ],
+      "dados_entrada": {
+        "descricao": "Três cômodos inseridos na ordem 3, 1, 2",
+        "valores": {
+          "insercao": "[{ nome: 'Cozinha', posicao: 3 }, { nome: 'Sala', posicao: 1 }, { nome: 'Quarto', posicao: 2 }]"
+        }
+      },
+      "passos": [
+        "Criar os três cômodos na ordem embaralhada, registrando a ordem de inserção e os identificadores gerados",
+        "Ler o imóvel pela porta única",
+        "Afirmar o vetor devolvido por igualdade, na ordem",
+        "Afirmar que o vetor devolvido é diferente do vetor de inserção e do vetor ordenado por identificador"
+      ],
+      "resultado_esperado": "O vetor devolvido é exatamente `['Sala', 'Quarto', 'Cozinha']` (posições 1, 2, 3). O vetor de nomes na ordem de inserção é `['Cozinha', 'Sala', 'Quarto']`, e a asserção afirma explicitamente que os dois são diferentes — sem essa segunda asserção, uma consulta sem `ORDER BY` passaria por coincidência quando o banco devolvesse na ordem física.",
+      "criterios_aceitacao_validados": [
+        "CA-04"
+      ],
+      "observacoes": "A D6 justifica a posição explícita justamente porque 'a comparação passaria a depender da ordem de retorno do banco, que não é garantida por nenhuma cláusula'. Inserir em ordem embaralhada é o que torna a asserção falsificável: com inserção ordenada, ordem de inserção e ordem de posição coincidem e o caso não discrimina. Mesmo arquivo do CT-305.",
+      "task_id": "T7"
+    },
+    {
+      "id": "CT-310",
+      "titulo": "Identificador municipal não se repete na empresa, e se repete entre empresas",
+      "tipo": "E2E",
+      "categoria": "teste_negativo",
+      "invariant": "Um segundo imóvel com o mesmo `identificadorMunicipal` na MESMA empresa é recusado com `422 CAMPO_INVALIDO` nomeando `identificadorMunicipal` em `campo`, e nada é gravado; a MESMA tentativa partindo de outra empresa é aceita com `201`.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — identificador municipal repetido na mesma empresa",
+        "assertion_esperada": "ver `resultado_esperado`; o par positivo obrigatório é a MESMA cadeia aceita sob outra empresa"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "O caso exige duas sessões de empresas diferentes, ambas alcançando `TELA:imoveis`.",
+        "caminho_legitimo": "Duas pessoas semeadas, uma por empresa (`EMPRESA_A` e `EMPRESA_B`), cada uma com o próprio cookie obtido por `entrar(email)` na rota real; os ajustes de permissão gravados por `escreverAjustes` sob o contexto da empresa correspondente. Nenhuma rota deve receber `empresaId` — a empresa vem da sessão, e é isso que o caso explora.",
+        "teste_analogo": "apps/api/test/autorizacao.e2e.spec.ts (elenco por empresa: `pessoaSemeada` + `ajustar(id, EMPRESA_X.id, …)`)"
+      },
+      "camada": "apps/api — rota de imóvel",
+      "pre_condicoes": [
+        "Um conjunto em cada empresa",
+        "Um imóvel já criado na empresa A com o identificador em disputa"
+      ],
+      "dados_entrada": {
+        "descricao": "Mesmo identificador municipal, três tentativas",
+        "valores": {
+          "identificadorMunicipal": "12345.678.9012-3",
+          "tentativa1": "empresa A — primeira criação (aceita)",
+          "tentativa2": "empresa A — repetição (recusada)",
+          "tentativa3": "empresa B — mesma cadeia (aceita)"
+        }
+      },
+      "passos": [
+        "Criar o imóvel na empresa A e afirmar `201`",
+        "Repetir a criação na empresa A com o mesmo identificador",
+        "Afirmar o corpo INTEIRO da recusa e o status",
+        "Contar os imóveis da empresa A e afirmar que continua 1",
+        "Criar na empresa B com a mesma cadeia e afirmar `201`",
+        "Afirmar que o imóvel de B não é visível para a sessão de A"
+      ],
+      "resultado_esperado": "A repetição em A responde `422` com corpo `{ codigo: 'CAMPO_INVALIDO', mensagem: 'requisição inválida', campo: 'identificadorMunicipal', … }` — corpo inteiro afirmado, conforme a ADR-0017 —, e a contagem de imóveis de A permanece 1. A criação em B responde `201` e devolve um identificador de recurso diferente do de A.",
+      "criterios_aceitacao_validados": [
+        "CA-03"
+      ],
+      "observacoes": "O par 'recusa na mesma empresa / aceita em outra' é o que discrimina: uma unicidade global (o defeito que o PRD nomeia no sistema antigo — 'um dado de identificação do imóvel é único no sistema inteiro') passaria na primeira metade e reprovaria só na segunda. O vocabulário de erro é FECHADO em `packages/shared/src/erros.ts` e não tem código de conflito: `CAMPO_INVALIDO` (422) com `campo` nomeado é a forma canônica, e o TECH_SPEC deve fixá-la explicitamente antes da implementação. Mesmo arquivo do CT-308.",
+      "task_id": "T6"
+    },
+    {
+      "id": "CT-311",
+      "titulo": "Documento da pessoa não se repete na empresa, e se repete entre empresas — nos três papéis",
+      "tipo": "E2E",
+      "categoria": "teste_negativo",
+      "invariant": "Para locador, locatário e fiador, uma segunda pessoa com o mesmo `documentoPrincipal` na MESMA empresa é recusada com `422 CAMPO_INVALIDO` nomeando `documentoPrincipal`, e nada é gravado; a mesma tentativa sob outra empresa é aceita com `201`.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — documento repetido na mesma empresa, parametrizado nos três papéis",
+        "assertion_esperada": "ver `resultado_esperado`; o par positivo é a mesma cadeia aceita sob outra empresa"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Duas sessões de empresas diferentes, ambas alcançando `TELA:cadastros`.",
+        "caminho_legitimo": "Mesmo arranjo do CT-310, trocando a chave concedida para `TELA:cadastros`. As três montagens de papel compartilham o mesmo elenco: a parametrização é sobre a rota, não sobre a sessão.",
+        "teste_analogo": "apps/api/test/autorizacao.e2e.spec.ts"
+      },
+      "camada": "apps/api — rotas de locador, locatário e fiador",
+      "pre_condicoes": [
+        "Sessão em A e sessão em B, ambas com `TELA:cadastros`",
+        "Uma pessoa já cadastrada em A com o documento em disputa, por papel"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela de três papéis × dois tipos de pessoa, com CPF e CNPJ válidos",
+        "valores": {
+          "papeis": "['locadores', 'locatarios', 'fiadores']",
+          "cpfValido": "um CPF com dígito verificador correto, fixado como constante do arquivo",
+          "cnpjValido": "um CNPJ com dígito verificador correto, fixado como constante do arquivo"
+        }
+      },
+      "passos": [
+        "Para cada papel: criar a pessoa em A e afirmar `201`",
+        "Repetir a criação em A com o mesmo documento e afirmar o corpo inteiro da recusa",
+        "Contar as pessoas daquele papel em A e afirmar que continua 1",
+        "Criar em B com o mesmo documento e afirmar `201`",
+        "Afirmar que a tabela exercitou os três papéis (contagem afirmada em 3)"
+      ],
+      "resultado_esperado": "Em cada um dos três papéis, a repetição em A responde `422` com `codigo: 'CAMPO_INVALIDO'` e `campo: 'documentoPrincipal'`, a contagem em A permanece 1, e a criação em B responde `201`. A unicidade é por PAPEL: o mesmo documento pode existir como locador e como fiador na mesma empresa — o caso afirma isso explicitamente criando as duas e obtendo `201` nas duas.",
+      "criterios_aceitacao_validados": [
+        "CA-09"
+      ],
+      "observacoes": "Um teste parametrizado sobre os três papéis, e não três testes: a implementação é declaradamente parametrizada por papel (um serviço, um esquema base, três montagens), e a tabela é o que garante que as três montagens recebam a mesma prova. A afirmação de que o mesmo documento convive entre papéis distintos é o que impede uma unicidade global por engano. Arquivo novo proposto: `apps/api/test/cadastros.e2e.spec.ts`.",
+      "task_id": "T9"
+    },
+    {
+      "id": "CT-312",
+      "titulo": "A unicidade alcança os retirados, e a recusa distingue 'já existe' de 'já existe, retirado'",
+      "tipo": "E2E",
+      "categoria": "fronteira",
+      "invariant": "Com o registro anterior RETIRADO de circulação, a segunda tentativa continua sendo recusada; e o corpo dessa recusa é distinto, por igualdade profunda, do corpo da recusa por registro EM circulação — os dois compartilham `codigo` e `campo`, e diferem no discriminador que informa que o caminho oferecido é reativar, não recadastrar.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — documento/identificador repetido cujo dono está retirado de circulação",
+        "assertion_esperada": "422 `CAMPO_INVALIDO` com o mesmo `campo`, e `detalhes` DIFERENTE do da recusa por registro em circulação; os dois corpos inteiros afirmados e comparados como distintos"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Retirar de circulação exige, além da área, a ação sensível `ACAO:excluir_cadastro`.",
+        "caminho_legitimo": "A sessão do caso recebe `TELA:imoveis`/`TELA:cadastros` E `ACAO:excluir_cadastro` por `escreverAjustes`, respeitando a coerência que a RN-02 do catálogo exige (ação sensível acompanhada da área que a comporta — `ACAO:excluir_cadastro` mapeia para `TELA:cadastros` em `packages/auth/src/catalogo-de-permissoes.ts`). A retirada acontece pela ROTA real (`POST /:id/retirada`), nunca por escrita direta na coluna `retirado_em` — escrever a coluna à mão provaria a unicidade sem provar que o caminho do produto chega lá.",
+        "teste_analogo": "apps/api/test/autorizacao.e2e.spec.ts — `ajustar(...)` com `validarCoerenciaDeAjustes`"
+      },
+      "camada": "apps/api — rotas de imóvel e de pessoa",
+      "pre_condicoes": [
+        "Dois cenários preparados por entidade: um com o registro em circulação, outro com o registro retirado",
+        "Registros distintos por cenário, para que um caso não observe o estado do outro"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela de duas entidades × dois estados do registro anterior",
+        "valores": {
+          "entidades": "['imoveis/identificadorMunicipal', 'locadores/documentoPrincipal']",
+          "estados": "['EM_CIRCULACAO', 'RETIRADO']"
+        }
+      },
+      "passos": [
+        "Criar o registro anterior e, no cenário RETIRADO, retirá-lo pela rota",
+        "Afirmar que o retirado sumiu da listagem padrão (âncora do estado)",
+        "Tentar criar o segundo registro com o mesmo valor único",
+        "Capturar o corpo inteiro das duas recusas",
+        "Afirmar `codigo` e `campo` iguais nos dois, e os corpos inteiros distintos"
+      ],
+      "resultado_esperado": "As duas tentativas respondem `422` com `codigo: 'CAMPO_INVALIDO'` e o mesmo `campo`; os dois corpos, comparados por igualdade profunda, são DIFERENTES — o do cenário retirado carrega o discriminador que o TECH_SPEC fixar em `detalhes` (nome único, referenciado por constante do arquivo, nunca literal repetido). Nenhum dos dois cria linha nova: a contagem por entidade permanece 1, contando também os retirados.",
+      "criterios_aceitacao_validados": [
+        "CA-03",
+        "CA-09"
+      ],
+      "observacoes": "A D4 declara o trade-off por escrito — 'o usuário pode ser recusado por um registro que não enxerga na lista' — e chama a distinção de 'consequência de contrato e obrigatória'. Uma recusa idêntica nos dois estados satisfaria a unicidade e violaria a decisão, e nenhuma outra asserção pegaria isso: é por comparação entre os dois corpos que se detecta. O TECH_SPEC precisa fixar o nome do discriminador ANTES da implementação; enquanto não fixar, o caso afirma a distinguibilidade (mesmo padrão do CT-214, que compara três corpos inteiros entre si).",
+      "task_id": "T9"
+    },
+    {
+      "id": "CT-313",
+      "titulo": "Documento com dígito verificador inválido é recusado antes de qualquer escrita",
+      "tipo": "E2E",
+      "categoria": "teste_negativo",
+      "invariant": "CPF e CNPJ com dígito verificador incorreto são recusados com `422 CAMPO_INVALIDO` nomeando `documentoPrincipal`, sem que nenhuma linha seja gravada; CPF e CNPJ corretos, sob a mesma rota e o mesmo corpo no resto, são aceitos com `201`.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — documentos com DV errado, todos os dígitos iguais e comprimento fora do previsto",
+        "assertion_esperada": "422 `CAMPO_INVALIDO` com `campo: 'documentoPrincipal'`; contagem da entidade inalterada após cada tentativa"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Sessão autenticada com `TELA:cadastros`.",
+        "caminho_legitimo": "Mesmo arranjo do CT-311.",
+        "teste_analogo": "apps/api/test/autorizacao.e2e.spec.ts"
+      },
+      "camada": "apps/api — rotas de pessoa",
+      "pre_condicoes": [
+        "Sessão com `TELA:cadastros`",
+        "Contagem inicial da entidade registrada antes da bateria"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela de documentos inválidos e o par de controle válido",
+        "valores": {
+          "invalidos": "CPF com DV errado; CPF de dígitos repetidos (111.111.111-11); CPF com 10 dígitos; CNPJ com DV errado; CNPJ de dígitos repetidos; CNPJ com 13 dígitos; cadeia vazia; cadeia com letras",
+          "controle": "um CPF válido e um CNPJ válido, com o tipo de pessoa correspondente"
+        }
+      },
+      "passos": [
+        "Para cada documento inválido, tentar a criação e afirmar status e corpo",
+        "Após cada tentativa, afirmar que a contagem da entidade não mudou",
+        "Criar com o CPF válido (PESSOA_FISICA) e afirmar `201`",
+        "Criar com o CNPJ válido (PESSOA_JURIDICA) e afirmar `201`"
+      ],
+      "resultado_esperado": "Cada documento inválido responde `422` com `{ codigo: 'CAMPO_INVALIDO', campo: 'documentoPrincipal' }` e a contagem da entidade permanece no valor inicial. Os dois documentos válidos respondem `201`. O controle é obrigatório: uma conferência que recusasse tudo passaria o eixo negativo inteiro e quebraria a operação — é a mesma lição de `VALORES_INVALIDOS` no CT-011.",
+      "criterios_aceitacao_validados": [
+        "CA-08"
+      ],
+      "observacoes": "Mesmo arquivo do CT-311. A asserção 'nada foi gravado' é sobre a CONTAGEM lida depois de cada tentativa, e não sobre o status: um SUT que gravasse e depois respondesse 422 passaria pelo status. O par positivo/negativo em cada tipo de pessoa é o que a `.claude/rules/testing-stack.md` chama de 'combinação de entradas que discrimina'.",
+      "task_id": "T9"
+    },
+    {
+      "id": "CT-314",
+      "titulo": "Conferência de CPF e CNPJ — tabela de dígito verificador",
+      "tipo": "UNITARIO",
+      "categoria": "fronteira",
+      "invariant": "A função de conferência de documento devolve verdadeiro exatamente para as cadeias cujo dígito verificador confere segundo o algoritmo oficial, e falso para dígito errado, para todos os dígitos iguais, para comprimento fora do previsto e para cadeia com caractere não numérico — com e sem máscara de formatação.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — a metade da tabela cujo resultado esperado é falso",
+        "assertion_esperada": "cada entrada inválida devolve `false`, e cada entrada válida devolve `true`; a tabela afirma a contagem de casos exercitados"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "packages/shared — aritmética pura, sem I/O",
+      "pre_condicoes": [
+        "Nenhuma — função pura"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela de pares (entrada, esperado), cobrindo os dois tipos de documento",
+        "valores": {
+          "cpfValidos": "com máscara e sem máscara; ao menos um cujo DV calculado seja 0 (o caso de resto < 2)",
+          "cpfInvalidos": "DV errado no primeiro dígito; DV errado no segundo; 000.000.000-00; 111.111.111-11; 10 dígitos; 12 dígitos; com letra",
+          "cnpjValidos": "com máscara e sem máscara; ao menos um cujo DV calculado seja 0",
+          "cnpjInvalidos": "DV errado; 00.000.000/0000-00; 13 dígitos; 15 dígitos; com letra"
+        }
+      },
+      "passos": [
+        "Percorrer a tabela e afirmar o resultado de cada entrada",
+        "Afirmar a contagem de entradas exercitadas, como âncora contra tabela truncada",
+        "Afirmar que a mesma cadeia com e sem máscara produz o mesmo resultado"
+      ],
+      "resultado_esperado": "Cada entrada devolve exatamente o booleano esperado da tabela; a contagem de entradas é afirmada; e para cada documento válido, a forma mascarada e a não mascarada devolvem ambas `true`. O caso do resto < 2 (dígito verificador igual a 0) é obrigatório: é o ramo que uma implementação ingênua erra, e sem ele a tabela não discrimina.",
+      "criterios_aceitacao_validados": [
+        "CA-08"
+      ],
+      "observacoes": "Arquivo novo proposto: `packages/shared/test/documento.spec.ts` — o pacote já tem `test/` com esta convenção (`erros.spec.ts`, `log.spec.ts`). É o único caso puramente unitário da fatia junto com o CT-326, e legitimamente `none`: aritmética sem I/O. O companheiro de integração exigido pela Mock Budget Rule é o CT-313, que exercita a mesma regra pela rota real. ATENÇÃO: publicar a função em `@sysloc/shared` faz `packages/shared/test/superficie-publica.spec.ts` reprovar por igualdade de conjunto — a atualização daquele conjunto é obrigatória e consciente (ver `recomendacoes`).",
+      "task_id": "T3"
+    },
+    {
+      "id": "CT-315",
+      "titulo": "Retirado não aparece sem o parâmetro, e aparece com ele — nas cinco entidades",
+      "tipo": "E2E",
+      "categoria": "fronteira",
+      "invariant": "Para conjunto, imóvel, locador, locatário e fiador, um registro retirado de circulação NÃO consta na listagem padrão e CONSTA, marcado como retirado, na listagem com `incluirRetirados=true`; e um registro em circulação consta nas duas — o par é o que detecta.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — a listagem padrão, cujo conjunto esperado EXCLUI o retirado",
+        "assertion_esperada": "o identificador do retirado não está no conjunto devolvido pela listagem padrão, e o do registro em circulação está; com `incluirRetirados=true`, os dois estão, e o retirado vem com a marca de retirado preenchida"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "A retirada exige `ACAO:excluir_cadastro` além da área.",
+        "caminho_legitimo": "Mesmo arranjo do CT-312: a sessão recebe a área e a ação sensível por `escreverAjustes`, e a retirada acontece pela rota `POST /:id/retirada`. Nunca escrever `retirado_em` diretamente — a coluna escrita à mão provaria o predicado de leitura sem provar que a rota de retirada chega a ele.",
+        "teste_analogo": "apps/api/test/autorizacao.e2e.spec.ts"
+      },
+      "camada": "apps/api — listagens das cinco entidades com retirada",
+      "pre_condicoes": [
+        "Dois registros por entidade: um que permanece em circulação e um que é retirado",
+        "Registros exclusivos deste caso, para não observar o estado de outro"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela de cinco entidades × duas listagens",
+        "valores": {
+          "entidades": "['conjuntos', 'imoveis', 'locadores', 'locatarios', 'fiadores']",
+          "listagens": "['sem parâmetro', 'incluirRetirados=true']"
+        }
+      },
+      "passos": [
+        "Criar os dois registros por entidade e afirmar que ambos constam na listagem padrão",
+        "Retirar um deles pela rota e afirmar `200`",
+        "Ler a listagem padrão e afirmar o conjunto exato de identificadores",
+        "Ler com `incluirRetirados=true` e afirmar o conjunto exato",
+        "Afirmar que o retirado vem com a marca de retirada preenchida e o outro com ela nula",
+        "Afirmar a contagem de entidades exercitadas em 5"
+      ],
+      "resultado_esperado": "Na listagem padrão de cada entidade, o conjunto de identificadores contém o registro em circulação e NÃO contém o retirado. Com `incluirRetirados=true`, contém os dois, e o retirado traz o campo de retirada com carimbo de tempo não nulo enquanto o outro o traz nulo. As duas metades são obrigatórias: só a primeira ficaria verde numa listagem quebrada que devolvesse vazio; só a segunda ficaria verde numa listagem sem predicado nenhum.",
+      "criterios_aceitacao_validados": [
+        "CA-10",
+        "CA-11"
+      ],
+      "observacoes": "É a prova da D3 ('porta única com o predicado aplicado por padrão; incluir retirados só por parâmetro explícito'). Uma implementação que escrevesse o predicado consulta a consulta passaria em algumas entidades e falharia em outras — por isso a tabela cobre as cinco, e a contagem de entidades é ela mesma afirmada. Dividido entre `imoveis.e2e.spec.ts` (conjunto, imóvel) e `cadastros.e2e.spec.ts` (três papéis), com a tabela escrita uma vez e compartilhada por acessório, ou num único arquivo se o executor preferir — o que não se admite é cinco cópias do mesmo corpo.",
+      "task_id": "T9"
+    },
+    {
+      "id": "CT-316",
+      "titulo": "Retirar de circulação não apaga, e a recirculação desfaz",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "Depois de `POST /:id/retirada`, a linha continua existindo no banco com todos os campos preservados e `GET /:id` continua devolvendo o registro marcado como retirado; `POST /:id/recirculacao` zera a marca e devolve o registro à listagem padrão, com os demais campos bit a bit iguais aos de antes da retirada.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-320",
+        "input_invalido": "retirada pedida por sessão sem `ACAO:excluir_cadastro`",
+        "assertion_esperada": "403 `ACESSO_NEGADO` com `detalhes.exigido: 'ACAO:excluir_cadastro'`, e o registro permanece em circulação (marca de retirada nula na leitura seguinte)"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Sessão com a área e a ação sensível; leitura crua do banco para provar que a linha não foi apagada.",
+        "caminho_legitimo": "A sessão vem do arranjo do CT-312. A leitura crua de conferência corre por `abrirAcessoAoBanco` sob `contextoDeTenant.executarCom` com a empresa da sessão — nunca por conexão privilegiada: a auditoria não pode ser mais poderosa que o ato que ela audita (a mesma regra que o CT-004 aplica).",
+        "teste_analogo": "packages/db/test/isolamento.spec.ts — CT-004 (conferência em unidade separada, no contexto do dono)"
+      },
+      "camada": "apps/api — retirada e recirculação",
+      "pre_condicoes": [
+        "Um registro criado com todos os campos preenchidos",
+        "Estado serializado antes da retirada"
+      ],
+      "dados_entrada": {
+        "descricao": "Um locador com endereço, contato e documento completos",
+        "valores": {
+          "ciclo": "criar → serializar → retirar → conferir → recircular → conferir"
+        }
+      },
+      "passos": [
+        "Criar o registro e serializar o estado completo lido do banco",
+        "Retirar pela rota e afirmar `200`",
+        "Ler a linha crua no banco e afirmar que ela existe, com todos os campos iguais aos serializados, exceto a marca de retirada",
+        "Afirmar que `GET /:id` devolve `200` com a marca de retirada preenchida",
+        "Afirmar que a listagem padrão não o traz",
+        "Recircular pela rota e afirmar `200`",
+        "Afirmar que a marca voltou a nula, que a listagem padrão o traz de novo e que o estado serializado é idêntico ao de antes da retirada"
+      ],
+      "resultado_esperado": "A linha existe no banco depois da retirada (contagem crua igual a 1), com todos os campos de negócio preservados; `GET /:id` responde `200` com a marca de retirada não nula; a listagem padrão não o contém. Após a recirculação, a marca é nula, a listagem padrão o contém, e a serialização do estado é idêntica, caractere a caractere, à de antes da retirada.",
+      "criterios_aceitacao_validados": [
+        "CA-10",
+        "CA-11"
+      ],
+      "observacoes": "A ADR-0014 diz que nada é apagado — a asserção sobre a EXISTÊNCIA da linha no banco é o que separa 'retirado' de 'removido'. A comparação bit a bit antes/depois do ciclo é o que pega uma recirculação que, de passagem, zere ou reescreva outro campo. `GET /:id` respondendo `200` para retirado (e não `404`) é decisão de contrato que o TECH_SPEC deve fixar: a RN-06 diz que o retirado 'aparece na tela de cadastro apenas sob filtro explícito', o que se refere à LISTAGEM; o acesso direto por identificador precisa continuar funcionando para que a recirculação seja possível.",
+      "task_id": "T9"
+    },
+    {
+      "id": "CT-317",
+      "titulo": "Cômodo é removido de fato — a exceção declarada da ADR-0014",
+      "tipo": "INTEGRACAO",
+      "categoria": "fronteira",
+      "invariant": "`negocio.comodo` não tem coluna de retirada de circulação, e `DELETE /v1/imoveis/:id/comodos/:comodoId` remove a linha do banco: a contagem de cômodos do imóvel cai em um, o cômodo removido some da leitura, e a metragem total passa a excluí-lo.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — a ausência de coluna de retirada em `comodo`, afirmada contra o catálogo, e a ausência da linha após a remoção",
+        "assertion_esperada": "consulta a `pg_attribute` para `negocio.comodo` não devolve coluna de retirada; após o `DELETE`, `count(*)` dos cômodos do imóvel cai exatamente em 1 e o identificador removido não é encontrado"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "packages/db — schema e escrita de cômodo",
+      "pre_condicoes": [
+        "Um imóvel do cenário `varios_comodos` (três cômodos, total 67.75)"
+      ],
+      "dados_entrada": {
+        "descricao": "Remoção do cômodo `Quarto` (30.25)",
+        "valores": {
+          "totalAntes": 67.75,
+          "totalDepois": 37.5
+        }
+      },
+      "passos": [
+        "Consultar o catálogo e afirmar que `negocio.comodo` não tem coluna cujo nome case com a marca de retirada usada pelas demais entidades",
+        "Contar os cômodos do imóvel (3) e afirmar `metragemTotal === 67.75`",
+        "Remover o cômodo `Quarto`",
+        "Contar de novo (2), afirmar que o identificador removido não existe, e afirmar `metragemTotal === 37.5`",
+        "Afirmar que as posições dos cômodos remanescentes não foram reescritas pela remoção"
+      ],
+      "resultado_esperado": "A consulta ao catálogo devolve zero colunas de retirada em `negocio.comodo`; após a remoção, a contagem cai de 3 para 2, a busca pelo identificador removido devolve zero linhas, e `metragemTotal` é 37.5. As posições remanescentes continuam 1 e 3 — a remoção não renumera (ou renumera, se o TECH_SPEC decidir a posição densa; o caso afirma o que a decisão fixar, e a decisão precisa estar escrita antes).",
+      "criterios_aceitacao_validados": [
+        "CA-06"
+      ],
+      "observacoes": "A ADR-0014 exclui o cômodo explicitamente do alcance da retirada de circulação, e o tech-alignment dá o discriminador: 'ser referenciável'. A asserção sobre a AUSÊNCIA da coluna é o que impede uma implementação bem-intencionada de dar `retirado_em` ao cômodo 'por simetria' — o que criaria uma segunda semântica de remoção sem que nada acusasse. Ponto em aberto do tech-alignment: se a posição é densa e reatribuída ou apenas monotônica; o caso deve afirmar a escolha registrada, não descobri-la. Mesmo arquivo do CT-305.",
+      "task_id": "T7"
+    },
+    {
+      "id": "CT-318",
+      "titulo": "As 33 rotas novas declaram exigência, e nenhuma escapa para o conjunto público",
+      "tipo": "E2E",
+      "categoria": "seguranca",
+      "invariant": "Sobre a superfície publicada da aplicação montada, cada um dos 33 pares método+caminho das rotas novas consta em `comExigencia`, nenhum consta em `publicas`, `semDeclaracao` é vazio, e `rotasEnumeradas` cresce de 33 para 66.",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/cobertura-de-autorizacao.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-319",
+        "input_invalido": "sessão sem a chave que a rota exige, batendo em cada uma das 33 rotas",
+        "assertion_esperada": "403 `ACESSO_NEGADO` com `detalhes.exigido` igual à chave daquela área — `TELA:imoveis` nas 15 de imóveis e `TELA:cadastros` nas 18 de pessoas"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "apps/api — verificação declarativa sobre o roteador montado",
+      "pre_condicoes": [
+        "Aplicação montada (`listen()` executado), com todos os controladores novos registrados",
+        "Nenhuma requisição é emitida — a verificação lê a tabela do roteador e o metadado dos manipuladores"
+      ],
+      "dados_entrada": {
+        "descricao": "Os 33 pares novos, derivados da lista de rotas do TECH_SPEC e escritos por extenso no inventário",
+        "valores": {
+          "conjuntos": "POST /v1/conjuntos, GET /v1/conjuntos, GET /v1/conjuntos/:id, PUT /v1/conjuntos/:id, POST /v1/conjuntos/:id/retirada, POST /v1/conjuntos/:id/recirculacao",
+          "imoveis": "as mesmas 6 formas sob /v1/imoveis",
+          "comodos": "POST /v1/imoveis/:id/comodos, PUT /v1/imoveis/:id/comodos/:comodoId, DELETE /v1/imoveis/:id/comodos/:comodoId",
+          "pessoas": "as mesmas 6 formas sob /v1/locadores, /v1/locatarios e /v1/fiadores"
+        }
+      },
+      "passos": [
+        "Montar a aplicação e chamar `verificarCoberturaDeAutorizacao(aplicacao)`",
+        "Afirmar `semDeclaracao` igual a `[]`",
+        "Afirmar `comExigencia` por igualdade de array contra o inventário atualizado",
+        "Afirmar `publicas` e `foraDoArcabouco` inalterados em relação ao inventário anterior",
+        "Afirmar `rotasEnumeradas === 66`"
+      ],
+      "resultado_esperado": "`semDeclaracao` é `[]`; `comExigencia` é exatamente o inventário anterior mais os 33 pares novos, ordenado; `publicas` e `foraDoArcabouco` são idênticos aos de hoje (nenhuma rota nova escapou por `@RotaPublica()`); `rotasEnumeradas` é 66, ante 33 hoje — o crescimento de exatamente 33 é afirmado como delta, e não só como total.",
+      "criterios_aceitacao_validados": [
+        "CA-12"
+      ],
+      "observacoes": "Estende o caso existente, que já afirma os quatro conjuntos por igualdade de array e a constante `ROTAS_PUBLICADAS_EM_PRODUCAO = 33`. Aquele caso REPROVARÁ assim que os controladores novos entrarem — é essa reprovação que força a declaração consciente, e ela é a rede, não um obstáculo. Enfraquecer a igualdade para contenção seria regressão de prova (R2). Afirmar o delta (33) além do total é o que impede um erro de contagem de passar despercebido numa atualização apressada do inventário.",
+      "task_id": "T11"
+    },
+    {
+      "id": "CT-319",
+      "titulo": "Quem não alcança a área é recusado em todas as rotas novas, com a chave nomeada",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Para cada uma das 33 rotas novas, uma sessão válida sem a chave da área correspondente recebe `403 ACESSO_NEGADO` com `detalhes.exigido` igual àquela chave — nunca uma genérica —, e quem tem a chave recebe resposta diferente de 403 na mesma rota.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — sessão com efetivo que não contém a chave da área",
+        "assertion_esperada": "403 com corpo `{ codigo: 'ACESSO_NEGADO', mensagem: 'acesso negado para esta sessão', detalhes: { exigido: 'TELA:imoveis' | 'TELA:cadastros' } }`; o par positivo é a mesma rota com a chave concedida devolvendo status diferente de 403"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Duas sessões: uma com efetivo vazio na área, outra com a área concedida.",
+        "caminho_legitimo": "Imitar o elenco do teste análogo: `USUARIO_SEM_NADA` recebe a NEGAÇÃO explícita das chaves em questão por `escreverAjustes` (o efetivo é `(matriz do perfil ∪ concedidas) − negadas`, e sem a negação o piso do perfil poderia já conceder a área), e o efetivo publicado é AFIRMADO por `GET /v1/sessao` antes do fluxo — nunca presumido. Cada caso arranja o próprio sujeito; nenhuma sessão é compartilhada com casos que alteram permissão.",
+        "teste_analogo": "apps/api/test/autorizacao.e2e.spec.ts — CT-211 (tabela derivada do catálogo, com eixo positivo e negativo por chave)"
+      },
+      "camada": "apps/api — guarda no ponto de aplicação",
+      "pre_condicoes": [
+        "Uma pessoa com efetivo sem `TELA:imoveis` nem `TELA:cadastros`, com o efetivo afirmado vazio nessas chaves",
+        "Uma pessoa com as duas áreas e `ACAO:excluir_cadastro`",
+        "Recursos existentes para que o `404` não mascare o `403`"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela derivada da própria lista de rotas, com a chave esperada por rota",
+        "valores": {
+          "areaDeImoveis": "TELA:imoveis — 15 rotas (conjuntos 6, imóveis 6, cômodos 3)",
+          "areaDeCadastros": "TELA:cadastros — 18 rotas (3 papéis × 6)"
+        }
+      },
+      "passos": [
+        "Afirmar o efetivo publicado das duas sessões por `GET /v1/sessao`",
+        "Percorrer a tabela das 33 rotas com a sessão sem a área e afirmar status e corpo inteiro",
+        "Percorrer a mesma tabela com a sessão que tem a área e afirmar que o status é diferente de 403",
+        "Afirmar a contagem de rotas exercitadas em 33"
+      ],
+      "resultado_esperado": "As 33 rotas respondem `403` à sessão sem a área, com corpo exatamente `{ codigo: 'ACESSO_NEGADO', mensagem: 'acesso negado para esta sessão', detalhes: { exigido: <a chave daquela área> } }`; e nenhuma delas responde `403` à sessão que tem a área. A contagem de 33 é afirmada — tabela truncada em silêncio é o modo de falha desta classe de caso.",
+      "criterios_aceitacao_validados": [
+        "CA-12"
+      ],
+      "observacoes": "A tabela deve ser DERIVADA da mesma lista de rotas que o inventário do CT-318 usa, e não redigitada: uma rota nova que ninguém acrescentasse à tabela ficaria sem prova comportamental, enquanto o CT-318 (declarativo) a pegaria. Os dois se cobrem — um lê o metadado, o outro sonda o comportamento —, exatamente como o cabeçalho de `cobertura-de-autorizacao.ts` descreve a relação entre a verificação declarativa e o `CT-020 (d)`.",
+      "task_id": "T11"
+    },
+    {
+      "id": "CT-320",
+      "titulo": "Retirar cadastro exige a ação sensível, e a recusa deixa o cadastro em circulação",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Nas 10 rotas de retirada e recirculação, uma sessão que tem a área mas não `ACAO:excluir_cadastro` recebe `403 ACESSO_NEGADO` com `detalhes.exigido: 'ACAO:excluir_cadastro'`, e o cadastro permanece em circulação (marca de retirada nula) na leitura seguinte; com a ação concedida, a mesma rota responde `200` e a marca passa a preenchida.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — sessão com a área e sem a ação sensível",
+        "assertion_esperada": "403 com `detalhes.exigido: 'ACAO:excluir_cadastro'` (nunca `TELA:cadastros`, que a sessão TEM) e marca de retirada ainda nula"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Uma sessão com a área e SEM a ação, e outra com as duas — e a ação precisa ser coerente com a área que a comporta.",
+        "caminho_legitimo": "Por `escreverAjustes` sob o contexto da empresa, respeitando `validarCoerenciaDeAjustes` (a ação sensível concedida exige a área de tela que a comporta — `ACAO:excluir_cadastro` → `TELA:cadastros` em `packages/auth/src/catalogo-de-permissoes.ts`). Para a sessão SEM a ação, negar explicitamente `ACAO:excluir_cadastro` e afirmar o efetivo por `GET /v1/sessao` antes do fluxo. Sujeitos exclusivos deste caso, para que ele não observe o estado do CT-315/CT-316.",
+        "teste_analogo": "apps/api/test/autorizacao.e2e.spec.ts — CT-217/CT-218 (`ajustar` com efetivo afirmado antes e depois)"
+      },
+      "camada": "apps/api — guarda + rotas de retirada",
+      "pre_condicoes": [
+        "Um registro em circulação por entidade, exclusivo deste caso",
+        "Duas sessões com efetivo afirmado"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela das 10 rotas de retirada/recirculação (5 entidades × 2 rotas)",
+        "valores": {
+          "entidades": "['conjuntos', 'imoveis', 'locadores', 'locatarios', 'fiadores']",
+          "rotas": "['retirada', 'recirculacao']"
+        }
+      },
+      "passos": [
+        "Afirmar o efetivo das duas sessões",
+        "Com a sessão sem a ação, chamar cada uma das 10 rotas e afirmar status e corpo inteiro",
+        "Após cada recusa, ler o registro e afirmar que a marca de retirada não mudou",
+        "Com a sessão que tem a ação, chamar `retirada` e afirmar `200` e a marca preenchida",
+        "Afirmar a contagem de rotas exercitadas em 10"
+      ],
+      "resultado_esperado": "As 10 rotas respondem `403` com `detalhes.exigido: 'ACAO:excluir_cadastro'` — e não `TELA:cadastros`/`TELA:imoveis`, que a sessão possui: nomear a área seria a recusa genérica que a ADR-0011 rejeita. O estado do cadastro é lido depois de cada recusa e a marca de retirada continua nula. Com a ação concedida, a retirada responde `200` e a marca passa a carimbo não nulo.",
+      "criterios_aceitacao_validados": [
+        "CA-13"
+      ],
+      "observacoes": "O que discrimina é a sessão TER a área: uma implementação que exigisse só a área passaria em `403` para quem não tem nada e falharia aqui, que é exatamente o cenário do CA-13. A asserção sobre o ESTADO após a recusa é o que separa 'recusou' de 'recusou depois de gravar'. Dividido entre os dois arquivos E2E novos, com a tabela escrita uma vez.",
+      "task_id": "T11"
+    },
+    {
+      "id": "CT-321",
+      "titulo": "Cadastro de outra empresa é indistinguível de inexistente, pelas cinco rotas de `:id`",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Uma sessão da empresa B pedindo `GET`, `PUT`, `retirada` ou `recirculacao` sobre o identificador de um cadastro da empresa A recebe `404 RECURSO_NAO_ENCONTRADO` com corpo idêntico, campo a campo, ao devolvido para um identificador que não existe em empresa alguma; e o estado do cadastro de A é bit a bit o mesmo depois das quatro tentativas.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — identificador legítimo de outra empresa, e identificador que não existe",
+        "assertion_esperada": "os dois corpos são `{ codigo: 'RECURSO_NAO_ENCONTRADO', mensagem: 'recurso não encontrado' }` e profundamente iguais entre si; estado de A inalterado"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "O identificador alheio precisa ser real, e a sessão que o usa precisa ser de outra empresa com a área concedida.",
+        "caminho_legitimo": "O cadastro de A é criado pela SESSÃO DE A, pela rota real; o identificador devolvido por essa criação é o que a sessão de B usa. Assim o caso prova o outro lado: conhecer o identificador alheio não basta. A sessão de B tem a área e a ação sensível — a recusa precisa vir do não-alcance, não da falta de permissão, e isso é afirmado por a mesma sessão de B alcançar com sucesso um cadastro próprio.",
+        "teste_analogo": "packages/db/test/isolamento.spec.ts — CT-006 (identificador alheio obtido LENDO no contexto do dono) e apps/api/test/autorizacao.e2e.spec.ts — CT-214 (comparação de corpos inteiros entre recusas)"
+      },
+      "camada": "apps/api — rotas de `:id` das cinco entidades",
+      "pre_condicoes": [
+        "Um cadastro por entidade na empresa A, criado pela sessão de A",
+        "Sessão de B com a área e a ação sensível, afirmadas pelo efetivo publicado",
+        "Um cadastro próprio de B, para o eixo positivo"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela de cinco entidades × quatro rotas de `:id`, com dois identificadores",
+        "valores": {
+          "idAlheio": "identificador real do cadastro da empresa A",
+          "idInexistente": "99999999-9999-4999-8999-999999999999",
+          "rotas": "['GET /:id', 'PUT /:id', 'POST /:id/retirada', 'POST /:id/recirculacao']"
+        }
+      },
+      "passos": [
+        "Serializar o estado do cadastro de A, lido pela sessão de A",
+        "Com a sessão de B, chamar as quatro rotas com o identificador alheio e capturar os corpos",
+        "Com a sessão de B, chamar as quatro rotas com o identificador inexistente e capturar os corpos",
+        "Afirmar que cada par de corpos é profundamente igual",
+        "Com a sessão de B, alcançar um cadastro PRÓPRIO e afirmar `200` (eixo positivo)",
+        "Reserializar o estado de A e comparar com o inicial"
+      ],
+      "resultado_esperado": "As oito respostas são `404` com corpo `{ codigo: 'RECURSO_NAO_ENCONTRADO', mensagem: 'recurso não encontrado' }`, e o corpo do identificador alheio é profundamente igual ao do inexistente em cada rota. A sessão de B alcança o próprio cadastro com `200`, provando que a recusa não vem de sessão quebrada. O estado de A é idêntico ao inicial, caractere a caractere.",
+      "criterios_aceitacao_validados": [
+        "CA-14",
+        "CA-12"
+      ],
+      "observacoes": "É o CA-14 pela borda; o CT-302/CT-303 são o mesmo invariante pelo banco, e os dois são necessários: o do banco prova que a garantia não depende da aplicação, o da borda prova que a aplicação não vaza a existência do recurso alheio. `404` (e não `403`) é o contrato já estabelecido pelo `CT-230` da fatia anterior para 'pessoa de outra empresa'; o TECH_SPEC deve reafirmá-lo para estas entidades.",
+      "task_id": "T11"
+    },
+    {
+      "id": "CT-322",
+      "titulo": "Corpo fechado — chave desconhecida recusa em toda rota de escrita nova",
+      "tipo": "E2E",
+      "categoria": "teste_negativo",
+      "invariant": "Em cada rota nova de escrita, um corpo válido acrescido de uma chave que nenhum esquema declara é recusado com `422 CAMPO_INVALIDO` e nada é gravado; o mesmo corpo sem a chave extra é aceito.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — corpo válido mais `{ campoQueNinguemDeclarou: 'x' }`",
+        "assertion_esperada": "422 `{ codigo: 'CAMPO_INVALIDO', mensagem: 'requisição inválida' }` e contagem da entidade inalterada; o par positivo é o mesmo corpo sem a chave, respondendo 201/200"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Sessão com a área correspondente a cada rota.",
+        "caminho_legitimo": "Mesmo arranjo do CT-308/CT-311.",
+        "teste_analogo": "apps/api/test/autorizacao.e2e.spec.ts"
+      },
+      "camada": "apps/api — validação de borda",
+      "pre_condicoes": [
+        "Sessões com as duas áreas",
+        "Contagem inicial por entidade registrada"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela das rotas de escrita (POST e PUT) das seis entidades, cada uma com o corpo mínimo válido e a variante com chave extra",
+        "valores": {
+          "chaveExtra": "campoQueNinguemDeclarou",
+          "rotas": "POST/PUT de conjuntos, imóveis, cômodos, locadores, locatários e fiadores"
+        }
+      },
+      "passos": [
+        "Para cada rota, enviar o corpo válido e afirmar sucesso (eixo positivo, que impede o caso de passar por corpo mal formado)",
+        "Enviar o mesmo corpo com a chave extra e afirmar status e corpo da recusa",
+        "Afirmar que a contagem da entidade não mudou pela tentativa recusada",
+        "Afirmar a contagem de rotas exercitadas"
+      ],
+      "resultado_esperado": "Cada rota responde `422` com `{ codigo: 'CAMPO_INVALIDO', mensagem: 'requisição inválida' }` ao corpo com chave extra, e responde `201`/`200` ao corpo sem ela; a contagem da entidade só se altera nas tentativas aceitas.",
+      "criterios_aceitacao_validados": [
+        "CA-16"
+      ],
+      "observacoes": "O eixo positivo é obrigatório: sem ele, um esquema quebrado que recusasse tudo passaria o caso inteiro. O padrão de corpo fechado (`z.strictObject`) e a mensagem canônica vêm de `apps/api/src/usuarios/usuario.controller.ts` e de `administracao-de-pessoas.e2e.spec.ts`. Dividido entre os dois arquivos E2E novos.",
+      "task_id": "T11"
+    },
+    {
+      "id": "CT-323",
+      "titulo": "`empresaId` no corpo é recusado, e a empresa gravada é sempre a da sessão",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Enviar `empresaId` no corpo de qualquer rota nova de escrita é recusado com `422 CAMPO_INVALIDO` sem gravar linha; e o registro criado sem esse campo nasce com a `empresa_id` da SESSÃO — provado por ele ser invisível para uma sessão da outra empresa e visível para a própria.",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/campos-fechados.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — corpo com `empresaId` da OUTRA empresa, o vetor de fuga de tenant",
+        "assertion_esperada": "422 `CAMPO_INVALIDO`; nenhuma linha nova em nenhuma das duas empresas, conferido por leitura crua sob os dois contextos"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Duas sessões, uma por empresa, e leitura crua sob os dois contextos para conferir a coluna.",
+        "caminho_legitimo": "Sessões pelo arranjo do CT-310. A conferência da coluna corre por `abrirAcessoAoBanco` sob `contextoDeTenant.executarCom` para cada empresa — nunca por conexão privilegiada, e nunca comparando `empresa_id` numa cláusula escrita pelo teste: o que se afirma é VISIBILIDADE sob cada contexto, que é a forma que a ADR-0008 autoriza.",
+        "teste_analogo": "apps/api/test/campos-fechados.e2e.spec.ts — CT-235 (troca lateral de empresa; asserção sobre a COLUNA e sobre a ausência de vínculo novo, nunca sobre o status)"
+      },
+      "camada": "apps/api — validação de borda + política do banco",
+      "pre_condicoes": [
+        "Sessão em A e sessão em B, ambas com a área",
+        "Contagens iniciais por empresa registradas"
+      ],
+      "dados_entrada": {
+        "descricao": "Corpo válido acrescido de `empresaId` apontando para a outra empresa; e o mesmo corpo sem o campo",
+        "valores": {
+          "vetor": "{ …corpo válido, empresaId: EMPRESA_B.id } enviado pela sessão de A",
+          "controle": "{ …corpo válido } enviado pela sessão de A"
+        }
+      },
+      "passos": [
+        "Enviar o vetor pela sessão de A e afirmar status e corpo",
+        "Ler cruamente sob o contexto de A e sob o de B e afirmar que nenhuma linha nova apareceu",
+        "Enviar o controle pela sessão de A e afirmar `201`",
+        "Afirmar que o registro criado é visível sob o contexto de A e invisível sob o de B",
+        "Afirmar que a sessão de B recebe `404` ao pedi-lo por identificador"
+      ],
+      "resultado_esperado": "O vetor responde `422` com `codigo: 'CAMPO_INVALIDO'` e nenhuma linha nova aparece em nenhuma das duas empresas. O controle responde `201`, e o registro é visível sob o contexto de A, invisível sob o de B, e devolve `404` à sessão de B — a empresa gravada saiu da sessão, e não do corpo.",
+      "criterios_aceitacao_validados": [
+        "CA-14"
+      ],
+      "observacoes": "O que DISCRIMINA aqui é a segunda metade: a recusa do campo extra já seria dada pelo corpo fechado do CT-322, e um SUT que aceitasse `empresaId` e o ignorasse passaria pelo status. A prova de que a empresa vem da sessão é a VISIBILIDADE sob cada contexto — é a lição literal do CT-235, que registra que a primeira tentativa dele não discriminava porque a asserção era sobre a resposta, e não sobre a coluna. Estende a suíte existente, que é a suíte canônica desta classe de invariante.",
+      "task_id": "T11"
+    },
+    {
+      "id": "CT-324",
+      "titulo": "Identificador de rota é validado como UUID e canonizado em minúsculas",
+      "tipo": "E2E",
+      "categoria": "fronteira",
+      "invariant": "O mesmo recurso é alcançado com o identificador em caixa alta, em caixa mista e em minúsculas — as três respostas são profundamente iguais —, e um identificador que não é UUID é recusado com `422 CAMPO_INVALIDO` nomeando o parâmetro, sem que nenhuma consulta chegue ao banco.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — `nao-e-uuid`, cadeia vazia, UUID truncado em um caractere, e UUID com aspa simples e ponto e vírgula",
+        "assertion_esperada": "422 `{ codigo: 'CAMPO_INVALIDO', campo: 'id' }` em todos, e nenhum efeito no banco"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Sessão com a área, e um recurso existente cujo identificador é conhecido.",
+        "caminho_legitimo": "Sessão pelo arranjo do CT-308. O recurso é criado pela rota real e o identificador vem da resposta da criação.",
+        "teste_analogo": "apps/api/test/administracao-de-pessoas.e2e.spec.ts (rotas de `:id` com `ESQUEMA_DO_IDENTIFICADOR`)"
+      },
+      "camada": "apps/api — validação do parâmetro de rota",
+      "pre_condicoes": [
+        "Um recurso criado por entidade",
+        "Sessão com a área"
+      ],
+      "dados_entrada": {
+        "descricao": "O identificador do recurso em três grafias, mais quatro valores inválidos",
+        "valores": {
+          "grafias": "minúsculas, MAIÚSCULAS, CaIxA mIsTa",
+          "invalidos": "['', 'nao-e-uuid', '11111111-1111-4111-8111-11111111111', \"<uuid>'; DROP TABLE negocio.imovel; --\"]"
+        }
+      },
+      "passos": [
+        "Pedir o recurso com o identificador em minúsculas e guardar o corpo",
+        "Pedir com o mesmo identificador em maiúsculas e em caixa mista",
+        "Afirmar que os três corpos são profundamente iguais",
+        "Pedir com cada valor inválido e afirmar status e corpo",
+        "Afirmar que a tabela sob teste continua com a contagem inicial"
+      ],
+      "resultado_esperado": "As três grafias devolvem `200` com corpos profundamente iguais — inclusive o campo `id` do corpo, que vem em minúsculas nas três, provando a canonização. Os quatro valores inválidos respondem `422` com `{ codigo: 'CAMPO_INVALIDO', campo: 'id' }`, e a contagem da tabela não muda.",
+      "criterios_aceitacao_validados": [
+        "CA-16"
+      ],
+      "observacoes": "A canonização em minúsculas é decisão já fechada em `apps/api/src/usuarios/usuario.controller.ts` (`ESQUEMA_DO_IDENTIFICADOR`, com marcador `DECISÃO FECHADA` e o `REVERTER EXIGE` registrado), e o débito `D37` existe justamente porque o esquema do Master não a aplica. Rotas novas herdam a forma canônica; o caso é a rede disso. O vetor com aspa e ponto e vírgula é o mesmo padrão de `VALORES_INVALIDOS` do CT-011.",
+      "task_id": "T11"
+    },
+    {
+      "id": "CT-325",
+      "titulo": "A operação composta grava num commit só, com a unidade aberta na borda",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "Criar um imóvel com N cômodos é atômico: uma falha no enésimo cômodo não deixa gravados nem o imóvel nem os cômodos anteriores; e dois serviços novos chamados dentro da MESMA unidade de trabalho não levantam `ErroDeUnidadeAninhada`.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — o terceiro cômodo viola uma restrição do banco, derrubando a transação",
+        "assertion_esperada": "nenhuma linha do imóvel e nenhum cômodo persistidos (contagem de ambas as tabelas volta ao valor anterior); e a mesma operação sem a violação grava imóvel + 3 cômodos"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "O caso precisa provocar uma falha no meio da composição sem instrumentar o código de produção.",
+        "caminho_legitimo": "Provocar a falha por dado, não por bandeira: o terceiro cômodo viola uma restrição real do schema (por exemplo, `posicao` repetida, se houver unicidade, ou `metragem` fora do domínio permitido pela restrição de verificação). Nenhum gancho, contador ou ramo condicional pode ser acrescentado a `packages/db/src/**` nem aos serviços — Iron Law #6. Se nenhuma restrição do schema servir, a falha vem de um erro levantado pelo próprio `trabalho` passado à unidade, exatamente como `DESFAZIMENTO_PEDIDO` faz no teste análogo.",
+        "teste_analogo": "packages/db/test/unidade-de-trabalho.spec.ts — CT-210 (`DESFAZIMENTO_PEDIDO`: erro que derruba a unidade de propósito, com o estado conferido depois)"
+      },
+      "camada": "packages/db + serviços de aplicação — composição transacional",
+      "pre_condicoes": [
+        "Instância efêmera migrada",
+        "Contagens iniciais de `negocio.imovel` e `negocio.comodo` registradas"
+      ],
+      "dados_entrada": {
+        "descricao": "Um imóvel com três cômodos, na variante íntegra e na variante que falha no terceiro",
+        "valores": {
+          "integra": "3 cômodos válidos",
+          "comFalha": "2 cômodos válidos e o terceiro violando restrição"
+        }
+      },
+      "passos": [
+        "Registrar as contagens iniciais",
+        "Executar a composição íntegra e afirmar as contagens (+1 imóvel, +3 cômodos)",
+        "Executar a composição com falha e afirmar que ela rejeita",
+        "Afirmar que as contagens voltaram ao valor de antes da tentativa",
+        "Numa unidade só, chamar dois serviços novos em sequência e afirmar que nenhum erro é levantado",
+        "Afirmar que abrir uma unidade DENTRO de outra continua levantando `ErroDeUnidadeAninhada`"
+      ],
+      "resultado_esperado": "A composição íntegra deixa exatamente 1 imóvel e 3 cômodos novos. A composição com falha rejeita e as duas contagens voltam ao valor inicial — nem o imóvel nem os dois cômodos anteriores sobrevivem. Dois serviços novos na mesma unidade completam sem erro. E `acesso.emUnidadeDeTrabalho` chamada de dentro de outra continua rejeitando com `ErroDeUnidadeAninhada` — a garantia herdada não foi afrouxada para acomodar a composição.",
+      "criterios_aceitacao_validados": [
+        "CA-02",
+        "CA-04"
+      ],
+      "observacoes": "É a prova da D1. A última asserção é essencial e é a que o Protocolo Antirregressão exige: a saída escolhida pela D1 é 'unidade na borda', NÃO 'relaxar a recusa de aninhamento' — o marcador `DECISÃO FECHADA` em `abrirAcessoAoBanco` é intocável, e seu `REVERTER EXIGE` (oferecer `SAVEPOINT` via `tx.begin` com prova de desfazimento) não foi satisfeito por esta fatia. Arquivo novo proposto: `packages/db/test/unidade-na-borda.spec.ts`, ou o próprio `imovel.spec.ts`; o que não se faz é acrescentar ao CT-013 em `unidade-de-trabalho.spec.ts`, cujo eixo é a recusa, não a composição.",
+      "task_id": "T7"
+    },
+    {
+      "id": "CT-326",
+      "titulo": "Só a borda abre unidade de trabalho — conjunto de chamadores enumerado",
+      "tipo": "UNITARIO",
+      "categoria": "seguranca",
+      "invariant": "O conjunto de arquivos de produção que chamam `emUnidadeDeTrabalho` é exatamente o conjunto declarado das bordas (controladores/interceptador da fatia, mais os chamadores já legítimos da F1); nenhum serviço novo aparece nele.",
+      "owning_layer": "unit",
+      "existing_suite": "packages/db/test/unidade-de-trabalho.spec.ts",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — prova de falsificação: cópia de um serviço novo com a chamada a `emUnidadeDeTrabalho` reintroduzida",
+        "assertion_esperada": "a asserção COMMITADA, aplicada à cópia defeituosa, reprova nomeando o arquivo excedente; e a perna de controle (fonte íntegro) passa limpa no mesmo harness"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "packages/db — asserção estática sobre o fonte de produção",
+      "pre_condicoes": [
+        "Varredura de `apps/**/src` e `packages/**/src` descoberta no disco, nunca uma lista fixa de diretórios",
+        "Testes não entram na varredura — eles abrem unidade por ofício"
+      ],
+      "dados_entrada": {
+        "descricao": "Fonte de produção do monorepo, mais uma cópia com o defeito reintroduzido",
+        "valores": {
+          "padrao": "/\\bemUnidadeDeTrabalho\\s*\\(/ — a CHAMADA, não a declaração",
+          "chamadoresLegitimos": "o conjunto que o TECH_SPEC fixar para a borda, composto a partir da raiz do repositório"
+        }
+      },
+      "passos": [
+        "Descobrir os fontes de produção no disco e afirmar que os pacotes conhecidos apareceram (âncora contra descobridor quebrado)",
+        "Varrer as chamadas e comparar o conjunto de arquivos por igualdade",
+        "Gerar uma cópia de um serviço novo com a chamada reintroduzida e aplicar a MESMA função de auditoria",
+        "Afirmar que a cópia é apontada como excedente e que o controle passa limpo",
+        "Remover a cópia"
+      ],
+      "resultado_esperado": "O conjunto de arquivos que chamam `emUnidadeDeTrabalho` é igual, por igualdade de conjunto, ao declarado. Aplicada à cópia defeituosa, a mesma função devolve `excedentes` contendo o caminho daquele arquivo; aplicada ao fonte íntegro, devolve `excedentes: []`. A âncora `PACOTES_QUE_EXISTEM_HOJE` é afirmada para que uma varredura que não achasse nada não passe por verde.",
+      "criterios_aceitacao_validados": [
+        "CA-02"
+      ],
+      "observacoes": "Molde direto do CT-014, que faz exatamente isto para `contextoDeTenant.executarCom`, com as duas pernas da falsificação. É asserção ESTÁTICA sobre texto de código e, por `.claude/rules/testing-stack.md`, a prova de falsificação é OBRIGATÓRIA — e o mutante roda pelo script `test` do pacote (`pnpm --filter @sysloc/db test`), nunca por `vitest run` avulso. Sem este caso, a D1 é promessa: um serviço novo que abrisse unidade própria compilaria, passaria em toda a suíte funcional, e só falharia no dia em que outro serviço o chamasse. Estende a suíte existente, que já é a dona desta classe de asserção.",
+      "task_id": "T11"
+    },
+    {
+      "id": "CT-327",
+      "titulo": "O documento publicado é derivado dos esquemas que validam a entrada",
+      "tipo": "E2E",
+      "categoria": "integracao",
+      "invariant": "Para cada rota nova, o esquema de corpo e o de resposta descritos no documento publicado são derivados do mesmo esquema que valida a requisição: acrescentar um campo obrigatório ao esquema muda o documento sem que nenhuma descrição escrita à mão seja tocada.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — mutante que acrescenta um campo obrigatório a um esquema de entrada",
+        "assertion_esperada": "o conjunto `required` daquela rota no documento passa a conter o campo novo, sem edição do documento; se não passar, o documento é escrito à mão e a D5 não foi cumprida"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Ler o documento publicado exige a aplicação montada.",
+        "caminho_legitimo": "Montar a aplicação pelo mesmo caminho dos demais E2E (`Test.createTestingModule` + `listen` em porta reservada) e pedir o documento pela rota que a aplicação já publica (`/docs*`, hoje sem sessão por decisão registrada no débito D24). Nenhuma função de produção pode ser acrescentada para 'expor os esquemas ao teste' — a derivação é observada pelo documento publicado, que é o artefato real.",
+        "teste_analogo": "apps/api/test/cobertura-de-autorizacao.e2e.spec.ts (aplicação montada, superfície inspecionada sem emitir requisição de negócio)"
+      },
+      "camada": "apps/api + @sysloc/contracts — contrato publicado",
+      "pre_condicoes": [
+        "Aplicação montada com todos os controladores novos",
+        "Os 33 caminhos novos presentes no documento"
+      ],
+      "dados_entrada": {
+        "descricao": "O documento publicado e os esquemas do pacote de contratos",
+        "valores": {
+          "rotas": "as 33 novas",
+          "mutante": "campo obrigatório acrescentado a um esquema de entrada do pacote de contratos"
+        }
+      },
+      "passos": [
+        "Obter o documento publicado da aplicação montada",
+        "Para cada rota nova, extrair o conjunto de propriedades e o `required` do corpo",
+        "Comparar com o conjunto derivado do esquema correspondente do pacote de contratos",
+        "Aplicar o mutante num esquema, remontar e afirmar que o documento mudou correspondentemente",
+        "Reverter o mutante e afirmar o controle"
+      ],
+      "resultado_esperado": "Para as 33 rotas, o conjunto de propriedades e o `required` do documento são iguais aos derivados do esquema que valida a entrada. Com o mutante, o `required` daquela rota no documento passa a conter o campo novo — sem que nenhuma descrição tenha sido editada; revertido o mutante, volta ao conjunto anterior. A contagem de rotas conferidas é afirmada em 33.",
+      "criterios_aceitacao_validados": [
+        "CA-16"
+      ],
+      "observacoes": "É a prova da D5 (ADR-0016 candidata), e é o que elimina a duplicação que a F1 carrega — 'o esquema de validação e a descrição publicada são escritos duas vezes, livres para divergir'. Sem o mutante, o caso passaria sobre um documento escrito à mão que por acaso concordasse hoje: é o par que detecta. O mutante é aplicado no fonte do pacote de contratos e a suíte é invocada pelo script `test` do pacote consumidor (`pnpm --filter @sysloc/api test`), nunca por `vitest run` avulso — `apps/api` alcança `@sysloc/contracts` pela fronteira e leria o `dist/` anterior. Arquivo novo proposto: `apps/api/test/contrato-publicado.e2e.spec.ts`.",
+      "task_id": "T11"
+    },
+    {
+      "id": "CT-328",
+      "titulo": "Nenhum campo exige conversão de tipo pelo consumidor",
+      "tipo": "E2E",
+      "categoria": "integridade_dados",
+      "invariant": "Em toda leitura das seis entidades, metragem e metragem total chegam como `number`, tipo de imóvel, situação de locação e tipo de pessoa chegam como um dos valores da lista fechada correspondente, a marca de retirada chega como cadeia ISO-8601 ou nulo, e nenhum campo numérico ou booleano chega como texto.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — a varredura afirma a AUSÊNCIA de campo numérico entregue como texto, sobre o corpo inteiro",
+        "assertion_esperada": "a lista de campos cujo valor é cadeia de caracteres mas cujo esquema declara número é `[]`, nomeando o caminho de cada violação quando não for"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Sessões com as duas áreas e registros com todos os campos preenchidos.",
+        "caminho_legitimo": "Arranjo do CT-308/CT-311; os registros são criados pelas rotas reais com todos os campos opcionais preenchidos, para que nenhum campo escape da varredura por estar nulo.",
+        "teste_analogo": "apps/api/test/autorizacao.e2e.spec.ts"
+      },
+      "camada": "apps/api — serialização das respostas",
+      "pre_condicoes": [
+        "Um registro completo por entidade, com cômodos no imóvel",
+        "Um registro retirado, para exercitar a marca preenchida"
+      ],
+      "dados_entrada": {
+        "descricao": "As leituras de cada entidade: item, listagem e carteira expandida",
+        "valores": {
+          "camposNumericos": "['metragem', 'metragemTotal', 'total' da janela, 'posicao']",
+          "enums": "tipoImovel ∈ {RESIDENCIAL, COMERCIAL, MISTO}; statusLocacao ∈ {DISPONIVEL, LOCADO, INDISPONIVEL}; tipoPessoa ∈ {PESSOA_FISICA, PESSOA_JURIDICA}"
+        }
+      },
+      "passos": [
+        "Ler cada entidade pelas três formas",
+        "Percorrer recursivamente cada corpo e coletar o tipo de cada caminho",
+        "Afirmar `typeof` de cada campo numérico como `'number'`",
+        "Afirmar que cada campo de enum pertence à lista fechada correspondente",
+        "Afirmar que a marca de retirada é nula ou casa com o padrão ISO-8601",
+        "Afirmar que a lista de violações coletadas é `[]`"
+      ],
+      "resultado_esperado": "`typeof metragemTotal === 'number'`, `typeof metragem === 'number'`, `typeof posicao === 'number'`, `typeof total === 'number'`; cada valor de enum pertence à sua lista fechada; a marca de retirada é `null` ou casa com `/^\\d{4}-\\d{2}-\\d{2}T/`; e a lista de violações coletadas pela varredura é `[]` — quando não for, ela nomeia o caminho exato de cada campo entregue no tipo errado.",
+      "criterios_aceitacao_validados": [
+        "CA-16"
+      ],
+      "observacoes": "É a métrica 'zero conversão de tipo no consumidor' do PRD §10, e o defeito que ela previne está nomeado no §2 do PRD: no sistema antigo 'metragem e valores chegam ao consumidor como texto e precisam ser convertidos por ele'. O risco concreto é real e conhecido neste projeto: `numeric` e `count(*)` (bigint) voltam do driver como CADEIA, e `listarPessoasDaEmpresa` já precisa de `Number(...)` explícito por isso. A varredura por caminho, e não campo a campo, é o que impede a asserção de envelhecer quando um campo novo entrar. Dividido entre os dois arquivos E2E novos.",
+      "task_id": "T11"
+    },
+    {
+      "id": "CT-329",
+      "titulo": "A carteira volta numa consulta só, com imóveis, cômodos e metragem",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "`GET /v1/conjuntos?expandir=imoveis` devolve cada conjunto com seus imóveis e cada imóvel com seus cômodos ordenados por posição e a metragem total — árvore idêntica à composição das leituras individuais —, sem trazer nenhum registro retirado em nenhum nível, e sem exigir uma segunda chamada.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — um conjunto retirado, um imóvel retirado dentro de conjunto ativo, e a chamada SEM `expandir`",
+        "assertion_esperada": "nem o conjunto retirado nem o imóvel retirado aparecem na árvore; sem `expandir`, a resposta não traz a chave de imóveis, e a árvore só aparece com o parâmetro"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Sessão com `TELA:imoveis` e `ACAO:excluir_cadastro` (para preparar os retirados).",
+        "caminho_legitimo": "Arranjo do CT-312; os retirados são produzidos pela rota de retirada, nunca por escrita direta.",
+        "teste_analogo": "apps/api/test/autorizacao.e2e.spec.ts"
+      },
+      "camada": "apps/api — leitura expandida",
+      "pre_condicoes": [
+        "Dois conjuntos ativos, cada um com dois imóveis, cada imóvel com cômodos dos cenários do golden",
+        "Um terceiro conjunto retirado, e um imóvel retirado dentro de um conjunto ativo"
+      ],
+      "dados_entrada": {
+        "descricao": "Carteira com os quatro cenários de metragem distribuídos entre os imóveis",
+        "valores": {
+          "metragensEsperadas": "0, 25.5, 67.75, 58.5"
+        }
+      },
+      "passos": [
+        "Ler cada conjunto, cada imóvel e cada lista de cômodos individualmente e montar a árvore de referência",
+        "Chamar a rota com `expandir=imoveis`",
+        "Comparar a árvore devolvida com a de referência por igualdade profunda",
+        "Afirmar que o conjunto retirado e o imóvel retirado não aparecem",
+        "Chamar sem `expandir` e afirmar que a resposta não traz a chave de imóveis",
+        "Chamar com `expandir=imoveis&incluirRetirados=true` e afirmar que os retirados aparecem, marcados"
+      ],
+      "resultado_esperado": "A árvore devolvida é profundamente igual à composição das leituras individuais — mesmos identificadores, mesma ordem de cômodos por posição, mesmas metragens totais (0, 25.5, 67.75, 58.5). O conjunto retirado e o imóvel retirado estão ausentes de todos os níveis. Sem `expandir`, a resposta não traz a chave de imóveis. Com `incluirRetirados=true`, os dois retirados aparecem com a marca preenchida.",
+      "criterios_aceitacao_validados": [
+        "CA-15"
+      ],
+      "observacoes": "A comparação contra a composição das leituras individuais é o que torna a asserção concreta sem depender de contar idas ao banco: uma implementação que somasse a metragem por conta própria na consulta expandida (o risco que a D2 nomeia) divergiria aqui — e o CT-307 cobre o mesmo eixo pela camada de dados. A propagação do predicado de circulação ao nível FILHO é o eixo que só este caso alcança: um imóvel retirado dentro de conjunto ativo passaria despercebido pelo CT-315, que lista por entidade. Mesmo arquivo do CT-308.",
+      "task_id": "T10"
+    },
+    {
+      "id": "CT-330",
+      "titulo": "A janela devolve página e total da mesma transação, sem repetir nem omitir",
+      "tipo": "INTEGRACAO",
+      "categoria": "fronteira",
+      "invariant": "A listagem devolve o total do conjunto inteiro e a página pedida lidos na MESMA transação, e a união de páginas consecutivas de tamanho 2 sobre 5 registros é exatamente o conjunto dos 5, sem repetição e sem omissão — a ordenação tem desempate por identificador.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — cinco registros com o MESMO nome, que empatam na ordenação",
+        "assertion_esperada": "a união das três páginas é exatamente o conjunto dos 5 identificadores, sem repetição; sem desempate, um homônimo apareceria em duas páginas ou em nenhuma"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "packages/db — porta única de leitura com janela",
+      "pre_condicoes": [
+        "Cinco registros da mesma entidade, todos com o MESMO nome, para forçar o empate",
+        "Contexto de tenant escrito pela API pública do pacote"
+      ],
+      "dados_entrada": {
+        "descricao": "Cinco registros homônimos, paginados de 2 em 2",
+        "valores": {
+          "limite": 2,
+          "deslocamentos": "[0, 2, 4]"
+        }
+      },
+      "passos": [
+        "Criar os cinco registros homônimos",
+        "Ler as três páginas",
+        "Afirmar `total === 5` em cada uma",
+        "Afirmar os tamanhos das páginas (2, 2, 1)",
+        "Afirmar que a união dos identificadores é exatamente o conjunto dos cinco, sem repetição"
+      ],
+      "resultado_esperado": "Cada página traz `total === 5`; os tamanhos são 2, 2 e 1; a união dos identificadores das três páginas, ordenada, é exatamente o conjunto dos cinco criados, e a contagem de identificadores distintos é 5 (nenhuma repetição).",
+      "criterios_aceitacao_validados": [
+        "CA-15"
+      ],
+      "observacoes": "Homônimos são o que discrimina: com nomes distintos, qualquer ordenação estável passa, e a ausência de desempate por identificador só aparece em produção. O padrão vem de `listarPessoasDaEmpresa`, cujo docblock registra a lição por extenso ('`nome` sozinho empata entre homônimos, e um empate faz a mesma linha aparecer em duas páginas — ou em nenhuma'). Mesmo arquivo do CT-305 ou do CT-311, conforme a entidade escolhida.",
+      "task_id": "T10"
+    },
+    {
+      "id": "CT-331",
+      "titulo": "Caminho feliz — conjunto, imóvel vinculado e as três pessoas",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "Um conjunto criado com nome passa a existir na empresa de quem o criou e é oferecido como destino de imóvel; um imóvel criado com endereço completo, tipo, identificador municipal e situação de locação nasce vinculado ao conjunto informado; e locador, locatário e fiador criados com documento válido, contato e endereço passam a constar nas listagens correspondentes.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-332",
+        "input_invalido": "corpo sem campo obrigatório, com valor fora da lista fechada de enum, ou com `conjuntoId` inexistente",
+        "assertion_esperada": "422 `CAMPO_INVALIDO` nomeando o campo culpado (ou 404 para `conjuntoId` inexistente), e nada gravado"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Sessões com `TELA:imoveis` e `TELA:cadastros`.",
+        "caminho_legitimo": "Arranjo do CT-308/CT-311; o efetivo é afirmado por `GET /v1/sessao` antes do fluxo.",
+        "teste_analogo": "apps/api/test/autorizacao.e2e.spec.ts"
+      },
+      "camada": "apps/api — criação das seis entidades",
+      "pre_condicoes": [
+        "Sessões com as duas áreas",
+        "Banco sem registros das entidades novas"
+      ],
+      "dados_entrada": {
+        "descricao": "Um corpo completo por entidade",
+        "valores": {
+          "conjunto": "{ nome: 'Residencial Aurora' }",
+          "imovel": "{ conjuntoId, nomeImovel, identificadorMunicipal, tipoImovel: 'RESIDENCIAL', logradouro, numero, complemento, bairro, cidade, estado, cep, statusLocacao: 'DISPONIVEL', observacoes }",
+          "pessoas": "{ nome, tipoPessoa: 'PESSOA_FISICA', documentoPrincipal: <CPF válido>, rg, email, telefone, + 7 campos de endereço }"
+        }
+      },
+      "passos": [
+        "Criar o conjunto e afirmar `201` e o corpo devolvido",
+        "Afirmar que ele consta na listagem de conjuntos",
+        "Criar o imóvel apontando aquele conjunto e afirmar `201`",
+        "Ler o imóvel e afirmar `conjuntoId` igual ao do conjunto criado",
+        "Afirmar que a carteira expandida traz o imóvel dentro daquele conjunto",
+        "Criar locador, locatário e fiador e afirmar `201` em cada",
+        "Afirmar que cada um consta na listagem do próprio papel e NÃO nas dos outros dois"
+      ],
+      "resultado_esperado": "As seis criações respondem `201` com o recurso devolvido carregando os valores enviados (e `id` em minúsculas). O conjunto consta na listagem; o imóvel devolve `conjuntoId` igual ao identificador do conjunto criado e aparece sob ele na carteira expandida; cada pessoa consta apenas na listagem do próprio papel — locador criado não aparece em locatários nem em fiadores.",
+      "criterios_aceitacao_validados": [
+        "CA-01",
+        "CA-02",
+        "CA-07"
+      ],
+      "observacoes": "A asserção 'não aparece nas listagens dos outros papéis' é o que pega a implementação parametrizada que perde o discriminador de papel — risco real, já que a decisão é 'um serviço, um esquema base, três montagens'. Dividido entre os dois arquivos E2E novos.",
+      "task_id": "T10"
+    },
+    {
+      "id": "CT-332",
+      "titulo": "Entrada inválida é recusada nomeando o campo, e nada é gravado",
+      "tipo": "E2E",
+      "categoria": "teste_negativo",
+      "invariant": "Campo obrigatório ausente, valor fora da lista fechada de um enum, metragem negativa e referência a pai inexistente são recusados com o status e o código previstos, nomeando o campo culpado, sem que nenhuma linha seja gravada.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — a tabela inteira de entradas inválidas",
+        "assertion_esperada": "422 `{ codigo: 'CAMPO_INVALIDO', campo: <o culpado> }` para os de validação, 404 `RECURSO_NAO_ENCONTRADO` para pai inexistente; contagem da entidade inalterada após cada tentativa"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Sessões com as duas áreas.",
+        "caminho_legitimo": "Arranjo do CT-331.",
+        "teste_analogo": "apps/api/test/autorizacao.e2e.spec.ts"
+      },
+      "camada": "apps/api — validação de borda",
+      "pre_condicoes": [
+        "Contagens iniciais por entidade registradas",
+        "Um corpo válido de referência por entidade, do qual as variantes inválidas derivam por uma única alteração"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela de variantes, cada uma derivada do corpo válido por UMA alteração",
+        "valores": {
+          "obrigatorioAusente": "imóvel sem `identificadorMunicipal`; pessoa sem `documentoPrincipal`; conjunto sem `nome`",
+          "enumForaDaLista": "tipoImovel: 'RURAL'; statusLocacao: 'ALUGADO'; tipoPessoa: 'PESSOA_ESTRANGEIRA'",
+          "metragemNegativa": "cômodo com metragem -1 (o valor sentinela do legado, que NÃO é entrada válida no produto novo)",
+          "paiInexistente": "imóvel com `conjuntoId` que não existe; cômodo sob `imovelId` que não existe"
+        }
+      },
+      "passos": [
+        "Para cada variante, enviar a requisição e afirmar status e corpo",
+        "Após cada tentativa, afirmar que a contagem da entidade não mudou",
+        "Enviar o corpo válido de referência e afirmar sucesso (controle)",
+        "Afirmar a contagem de variantes exercitadas"
+      ],
+      "resultado_esperado": "Cada variante de validação responde `422` com `{ codigo: 'CAMPO_INVALIDO', campo: <o culpado> }` — o campo nomeado é afirmado por variante, e não apenas o código. As variantes de pai inexistente respondem `404 RECURSO_NAO_ENCONTRADO`. Após cada tentativa a contagem da entidade é a inicial, e o corpo de controle é aceito.",
+      "criterios_aceitacao_validados": [
+        "CA-02",
+        "CA-07",
+        "CA-16"
+      ],
+      "observacoes": "Cada variante difere do corpo válido por UMA alteração — é o que faz o campo nomeado na recusa ser atribuível. Metragem `-1` como entrada inválida é deliberado: `-1.0` é o `valor_sentinela_de_entrada` do golden, isto é, a marca de 'não informado' do sistema ANTIGO; no produto novo a ausência é expressa omitindo o campo, e aceitar `-1` reintroduziria o sentinela mágico que a fatia existe para eliminar. Dividido entre os dois arquivos E2E novos.",
+      "task_id": "T9"
+    },
+    {
+      "id": "CT-333",
+      "titulo": "Imóvel não pode ser vinculado a conjunto de outra empresa, nem pela borda",
+      "tipo": "E2E",
+      "categoria": "seguranca",
+      "invariant": "`POST /v1/imoveis` com `conjuntoId` de um conjunto que existe em OUTRA empresa responde `404 RECURSO_NAO_ENCONTRADO`, com corpo idêntico ao de um `conjuntoId` inexistente, e nenhuma linha é gravada em nenhuma das duas empresas.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — `conjuntoId` real, porém de outra empresa",
+        "assertion_esperada": "404 com corpo profundamente igual ao do `conjuntoId` inexistente; contagem de `negocio.imovel` inalterada sob os dois contextos"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "O identificador do conjunto alheio precisa ser real, e a conferência precisa correr sob os dois contextos.",
+        "caminho_legitimo": "O conjunto de A é criado pela sessão de A e o identificador vem da resposta; a tentativa parte da sessão de B. A conferência de que nada foi gravado corre por `abrirAcessoAoBanco` sob `contextoDeTenant.executarCom` para cada empresa, nunca por conexão privilegiada e nunca comparando `empresa_id` numa cláusula do teste.",
+        "teste_analogo": "packages/db/test/isolamento.spec.ts — CT-006 (identificador alheio obtido lendo no contexto do dono)"
+      },
+      "camada": "apps/api — criação de imóvel + política do banco",
+      "pre_condicoes": [
+        "Um conjunto em A e um conjunto em B",
+        "Sessões nas duas empresas, com `TELA:imoveis`"
+      ],
+      "dados_entrada": {
+        "descricao": "Três tentativas partindo da sessão de B",
+        "valores": {
+          "alheio": "conjuntoId do conjunto de A",
+          "inexistente": "99999999-9999-4999-8999-999999999999",
+          "proprio": "conjuntoId do conjunto de B (controle positivo)"
+        }
+      },
+      "passos": [
+        "Registrar as contagens de imóveis sob os dois contextos",
+        "Da sessão de B, criar imóvel com o `conjuntoId` alheio e capturar o corpo",
+        "Da sessão de B, criar imóvel com o `conjuntoId` inexistente e capturar o corpo",
+        "Afirmar que os dois corpos são profundamente iguais",
+        "Da sessão de B, criar imóvel com o conjunto próprio e afirmar `201`",
+        "Reconferir as contagens sob os dois contextos"
+      ],
+      "resultado_esperado": "As duas tentativas respondem `404` com corpo `{ codigo: 'RECURSO_NAO_ENCONTRADO', mensagem: 'recurso não encontrado' }`, profundamente iguais entre si — a existência do conjunto alheio não é revelada. O controle com o conjunto próprio responde `201`. As contagens de imóveis sob o contexto de A e sob o de B só crescem pela criação de controle.",
+      "criterios_aceitacao_validados": [
+        "CA-14"
+      ],
+      "observacoes": "É o 'nem referenciá-lo' do CA-14, pela borda. O CT-304 prova a mesma impossibilidade pelo banco (chave estrangeira composta), e os dois são complementares: sem o CT-333, a borda poderia responder `500` com o erro do banco vazando a existência do conjunto alheio — que é recusa correta e contrato errado. Mesmo arquivo do CT-308.",
+      "task_id": "T6"
+    },
+    {
+      "id": "CT-334",
+      "titulo": "T1 — o esquema de ENTRADA de imóvel aceita `DISPONIVEL` e `INDISPONIVEL` em `statusLocacao`",
+      "tipo": "UNITARIO",
+      "categoria": "caminho_feliz",
+      "invariant": "o esquema de entrada de imóvel de `@sysloc/contracts` aprova um corpo cujo `statusLocacao` é `DISPONIVEL` e aprova o mesmo corpo com `INDISPONIVEL`, devolvendo o valor verbatim — são os dois únicos valores que o usuário controla (RN-10)",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-335",
+        "input_invalido": "corpo idêntico com `statusLocacao: 'LOCADO'` (valor que existe no enum do banco mas só a ativação de contrato produz) e com `'disponivel'` em minúsculas",
+        "assertion_esperada": "`safeParse().success === false` e `error.issues[0].path` profundamente igual a `['statusLocacao']` nas duas variantes"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "contrato (`packages/contracts/src/imovel.ts`)",
+      "pre_condicoes": [
+        "o pacote `@sysloc/contracts` publica o esquema de entrada de imóvel (criação e alteração compartilham o mesmo corpo completo, §4.1.1)"
+      ],
+      "dados_entrada": {
+        "descricao": "o corpo canônico de `POST /v1/imoveis` da §4.1.1, com `statusLocacao` variando entre os dois valores aceitos",
+        "valores": {
+          "corpo_base": {
+            "conjuntoId": "9f1c0000-0000-4000-8000-000000000001",
+            "nomeImovel": "Ap 101",
+            "identificadorMunicipal": "12345.678.9012-3",
+            "tipoImovel": "RESIDENCIAL",
+            "logradouro": "Rua X",
+            "numero": "100",
+            "complemento": null,
+            "bairro": "Centro",
+            "cidade": "São Paulo",
+            "estado": "SP",
+            "cep": "01000000",
+            "observacoes": null
+          },
+          "statusLocacao_aceitos": [
+            "DISPONIVEL",
+            "INDISPONIVEL"
+          ]
+        }
+      },
+      "passos": [
+        "montar o corpo base uma única vez, como constante do arquivo",
+        "para cada valor de `statusLocacao_aceitos`, chamar `safeParse` do esquema de entrada de imóvel com o corpo base acrescido daquele valor",
+        "afirmar o desfecho e o valor devolvido"
+      ],
+      "resultado_esperado": "para `DISPONIVEL`: `resultado.success === true` e `resultado.data.statusLocacao === 'DISPONIVEL'`; para `INDISPONIVEL`: `resultado.success === true` e `resultado.data.statusLocacao === 'INDISPONIVEL'`. `resultado.data` é profundamente igual ao corpo enviado (nenhum campo acrescentado nem removido pelo esquema).",
+      "criterios_aceitacao_validados": [
+        "CA-16"
+      ],
+      "observacoes": "`NO_SUITE_FOUND` porque `packages/contracts/` nasce nesta task; nenhuma suíte existente cobre esquemas deste pacote. Arquivo proposto: `packages/contracts/test/esquemas.spec.ts`. Este caso e o CT-335 são um PAR — só o positivo deixaria verde um esquema que aceitasse o enum inteiro; só o negativo deixaria verde um esquema que recusasse tudo.",
+      "task_id": "T1"
+    },
+    {
+      "id": "CT-335",
+      "titulo": "T1 — `LOCADO` é recusado na ENTRADA e aceito na SAÍDA — a restrição é do esquema de entrada, não do enum",
+      "tipo": "UNITARIO",
+      "categoria": "teste_negativo",
+      "invariant": "`statusLocacao: 'LOCADO'` é recusado pelo esquema de ENTRADA de imóvel com `issues[0].path === ['statusLocacao']`, enquanto o esquema de SAÍDA do mesmo pacote o aprova — o enum do domínio tem três valores e a entrada admite dois",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — `LOCADO`, `'disponivel'` em minúsculas, `''` e `null` em `statusLocacao`",
+        "assertion_esperada": "ver `resultado_esperado`"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "contrato (`packages/contracts/src/imovel.ts`)",
+      "pre_condicoes": [
+        "o pacote publica DOIS esquemas distintos para imóvel: o de entrada e o de saída"
+      ],
+      "dados_entrada": {
+        "descricao": "o mesmo corpo base do CT-334, com quatro variantes recusadas de `statusLocacao`; e o objeto de saída com `LOCADO`",
+        "valores": {
+          "recusados_na_entrada": [
+            "LOCADO",
+            "disponivel",
+            "",
+            null
+          ],
+          "aceito_na_saida": "LOCADO"
+        }
+      },
+      "passos": [
+        "para cada valor de `recusados_na_entrada`, chamar `safeParse` do esquema de ENTRADA com o corpo base",
+        "afirmar a recusa e o caminho do problema",
+        "montar um objeto de imóvel de SAÍDA completo com `statusLocacao: 'LOCADO'` e chamar `safeParse` do esquema de SAÍDA",
+        "afirmar a aprovação"
+      ],
+      "resultado_esperado": "nas quatro variantes de entrada: `resultado.success === false` e `resultado.error.issues[0].path` profundamente igual a `['statusLocacao']`. No esquema de SAÍDA: `resultado.success === true` e `resultado.data.statusLocacao === 'LOCADO'`. A segunda metade é obrigatória — sem ela, um esquema que simplesmente removesse `LOCADO` do enum do domínio passaria, e a fatia de contratos não teria como devolver o valor que ela mesma produz.",
+      "criterios_aceitacao_validados": [
+        "CA-16"
+      ],
+      "observacoes": "Arquivo proposto: `packages/contracts/test/esquemas.spec.ts`. Este é o único caso desta geração que prova a RN-10 (achado 4 da sessão de challenge de 2026-08-05); nenhum CT-300–333 a cobre.",
+      "task_id": "T1"
+    },
+    {
+      "id": "CT-336",
+      "titulo": "T1 — todo esquema de entrada é `strictObject`: chave desconhecida recusa, em vez de ser ignorada",
+      "tipo": "UNITARIO",
+      "categoria": "fronteira",
+      "invariant": "para CADA esquema de entrada publicado por `@sysloc/contracts`, um corpo válido acrescido de uma chave desconhecida é recusado com `issues[0].code === 'unrecognized_keys'`, e o MESMO corpo sem a chave extra é aprovado",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "corpo válido de cada entidade acrescido da chave `campoInventado: 'x'`",
+        "assertion_esperada": "ver `resultado_esperado`"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "contrato (`packages/contracts/src/**`)",
+      "pre_condicoes": [
+        "o pacote publica os esquemas de entrada de conjunto, imóvel, cômodo, pessoa e da janela de listagem"
+      ],
+      "dados_entrada": {
+        "descricao": "tabela `(rótulo, esquema de entrada, corpo válido mínimo)` — uma linha por esquema de entrada publicado; cada linha é exercitada duas vezes, com e sem a chave extra",
+        "valores": {
+          "chave_extra": "campoInventado"
+        }
+      },
+      "passos": [
+        "montar a tabela de esquemas de entrada a partir dos símbolos EXPORTADOS do pacote, não de uma lista redigitada",
+        "afirmar o tamanho da tabela contra a contagem declarada de esquemas de entrada",
+        "para cada linha: `safeParse(corpoValido)` e `safeParse({ ...corpoValido, campoInventado: 'x' })`"
+      ],
+      "resultado_esperado": "sem a chave extra: `success === true` em todas as linhas. Com a chave extra: `success === false` em todas as linhas, `error.issues[0].code === 'unrecognized_keys'` e `error.issues[0].keys` contendo `'campoInventado'`. A contagem de linhas da tabela é afirmada com valor exato — sem ela, `nenhum esquema violou` seria indistinguível de `nenhum esquema foi olhado`.",
+      "criterios_aceitacao_validados": [
+        "CA-14",
+        "CA-16"
+      ],
+      "observacoes": "Arquivo proposto: `packages/contracts/test/esquemas.spec.ts`. Não duplica o CT-322 (corpo fechado pela rota, E2E): aqui o objeto sob teste é o esquema, e a falha discriminada é `esqueci o strictObject num dos esquemas` — que o CT-322 só pegaria se exercitasse as 33 rotas uma a uma.",
+      "task_id": "T1"
+    },
+    {
+      "id": "CT-337",
+      "titulo": "T1 — `empresaId` não é declarado em nenhum esquema de entrada",
+      "tipo": "UNITARIO",
+      "categoria": "seguranca",
+      "invariant": "a enumeração das chaves declaradas por CADA esquema de entrada de `@sysloc/contracts` não contém `empresaId`, e enviá-lo num corpo válido produz recusa nomeando a chave — o discriminador de empresa sai da sessão e nunca do corpo (ADR-0008)",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "corpo válido de cada entidade acrescido de `empresaId` com um UUID de outra empresa",
+        "assertion_esperada": "`success === false`, `issues[0].code === 'unrecognized_keys'` e `issues[0].keys` contendo `'empresaId'` — nunca aprovação com o campo descartado em silêncio"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "contrato (`packages/contracts/src/**`)",
+      "pre_condicoes": [
+        "os esquemas de entrada são objetos Zod cujas chaves são enumeráveis por `.shape`"
+      ],
+      "dados_entrada": {
+        "descricao": "a mesma tabela de esquemas de entrada do CT-336; para a metade comportamental, cada corpo válido acrescido de `empresaId`",
+        "valores": {
+          "empresaId_alheio": "b0000000-0000-4000-8000-000000000002"
+        }
+      },
+      "passos": [
+        "para cada esquema de entrada, coletar `Object.keys(esquema.shape)`",
+        "afirmar que `empresaId` está ausente em todas as coleções, e afirmar a contagem de esquemas examinados",
+        "para cada esquema, chamar `safeParse({ ...corpoValido, empresaId: <UUID alheio> })` e afirmar a recusa"
+      ],
+      "resultado_esperado": "`empresaId` ausente em `Object.keys(shape)` de todos os esquemas de entrada; a contagem de esquemas examinados é igual ao valor exato declarado. Na metade comportamental: `success === false` com `issues[0].keys` contendo `'empresaId'` em todos. As duas metades são obrigatórias — a primeira sozinha não distingue `não declarado` de `declarado e opcional`; a segunda sozinha não distingue `recusado por strict` de `recusado por tipo`.",
+      "criterios_aceitacao_validados": [
+        "CA-14",
+        "CA-16"
+      ],
+      "observacoes": "Arquivo proposto: `packages/contracts/test/esquemas.spec.ts`. A introspecção é sobre o objeto Zod em tempo de execução, não sobre o TEXTO do fonte — portanto NÃO é asserção estática e não exige prova de falsificação.",
+      "task_id": "T1"
+    },
+    {
+      "id": "CT-338",
+      "titulo": "T1 — a janela de listagem RECUSA `limite` acima do teto, em vez de truncar",
+      "tipo": "UNITARIO",
+      "categoria": "fronteira",
+      "invariant": "o esquema da janela aprova `limite` igual ao teto devolvendo o valor verbatim, e recusa `teto + 1` com `issues[0].path === ['limite']` — pedido acima do teto nunca é truncado em silêncio para o teto",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "`limite` = teto + 1, `limite` = 0, `limite` = 1.5, `deslocamento` = -1",
+        "assertion_esperada": "`success === false` com `issues[0].path` igual a `['limite']` nas três primeiras e a `['deslocamento']` na última"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "contrato (`packages/contracts/src/comum.ts`)",
+      "pre_condicoes": [
+        "o pacote publica o esquema da janela e a CONSTANTE do teto — a asserção lê o teto da constante exportada, nunca de um literal redigitado no teste"
+      ],
+      "dados_entrada": {
+        "descricao": "tabela de janelas na fronteira, derivada da constante de teto exportada pelo pacote",
+        "valores": {
+          "aceitos": [
+            "{ limite: 1, deslocamento: 0 }",
+            "{ limite: <TETO>, deslocamento: 0 }",
+            "{ deslocamento: 7 } (limite ausente → padrão)",
+            "{} (ambos ausentes → padrões)"
+          ],
+          "recusados": [
+            "{ limite: <TETO> + 1 }",
+            "{ limite: 0 }",
+            "{ limite: 1.5 }",
+            "{ deslocamento: -1 }"
+          ]
+        }
+      },
+      "passos": [
+        "importar do pacote a constante do teto e a do limite padrão",
+        "exercitar cada linha aceita e afirmar o valor devolvido",
+        "exercitar cada linha recusada e afirmar o caminho do problema"
+      ],
+      "resultado_esperado": "`{ limite: TETO }` → `success === true` e `data.limite === TETO` (verbatim, não truncado). `{ limite: TETO + 1 }` → `success === false` e `issues[0].path` igual a `['limite']`. `{ limite: 0 }` e `{ limite: 1.5 }` → `success === false` com o mesmo caminho. `{ deslocamento: -1 }` → `success === false` e `issues[0].path` igual a `['deslocamento']`. Janela vazia → `data.limite === <LIMITE_PADRAO exportado>` e `data.deslocamento === 0`. O par teto/teto+1 é o que detecta: só o lado aceito deixaria verde um teto maior; só o recusado deixaria verde um teto menor.",
+      "criterios_aceitacao_validados": [
+        "CA-15",
+        "CA-16"
+      ],
+      "observacoes": "Arquivo proposto: `packages/contracts/test/esquemas.spec.ts`. Repete o desenho do par CT-013/CT-014 de `packages/auth/test/senha.spec.ts` (fronteira `>= 10` provada pelos dois lados) — imite-o.",
+      "task_id": "T1"
+    },
+    {
+      "id": "CT-339",
+      "titulo": "T1 — o pacote de contratos é FOLHA: não depende de `@sysloc/db` nem de `@sysloc/api`",
+      "tipo": "UNITARIO",
+      "categoria": "integridade_dados",
+      "invariant": "nenhum arquivo de `packages/contracts/src/**` importa `@sysloc/db`, `@sysloc/api` ou caminho relativo que saia do pacote, e o manifesto não declara nenhum dos dois como dependência — é o que permite ao frontend importar o contrato sem arrastar o servidor (§3.3)",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "cópia de `packages/contracts/src/imovel.ts` com `import type { Imovel } from '@sysloc/db';` reintroduzido, e cópia do manifesto com `\"@sysloc/db\": \"workspace:*\"` em `dependencies`",
+        "assertion_esperada": "sobre as cópias defeituosas a asserção REPROVA nomeando o arquivo e o especificador proibido; sobre o fonte íntegro, a lista de ocorrências é `[]` e a contagem de arquivos varridos é maior que zero"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "contrato (manifesto + fonte de `packages/contracts/`)",
+      "pre_condicoes": [
+        "o pacote existe com `package.json` e `src/`",
+        "os acessórios `listarFontesTs`, `semComentarios` e `varrerArquivos` de `packages/db/test/varredura-de-fontes.ts` são reusados — não reimplementados (o D28 já disparou; ler o marcador antes de acrescentar o consumidor)"
+      ],
+      "dados_entrada": {
+        "descricao": "o fonte de `packages/contracts/src/**` e o `package.json` do pacote; mais as duas cópias defeituosas da prova de falsificação",
+        "valores": {
+          "especificadores_proibidos": [
+            "@sysloc/db",
+            "@sysloc/api"
+          ],
+          "campos_do_manifesto_examinados": [
+            "dependencies",
+            "peerDependencies",
+            "devDependencies"
+          ]
+        }
+      },
+      "passos": [
+        "listar os `.ts` de `packages/contracts/src/` com `listarFontesTs` (diretório ausente levanta — a ausência não é engolida)",
+        "varrer as linhas com os comentários já removidos por `semComentarios`, casando `from '@sysloc/db'`, `from '@sysloc/api'` e `from '../../'`",
+        "ler o manifesto e afirmar a ausência dos dois especificadores nos três campos de dependência",
+        "PROVA DE FALSIFICAÇÃO: aplicar o mutante descrito em `negative_companion.input_invalido` e rodar `pnpm --filter @sysloc/contracts test`; confirmar a reprovação; reverter e confirmar o verde"
+      ],
+      "resultado_esperado": "`varredura.ocorrencias` profundamente igual a `[]`; `varredura.arquivos` estritamente maior que zero (o zero nunca é escondido); `dependencies`/`peerDependencies`/`devDependencies` do manifesto sem `@sysloc/db` e sem `@sysloc/api`. Na cópia defeituosa, `ocorrencias` contém exatamente uma entrada no formato `<caminho>:<linha>` apontando para o `import` reintroduzido.",
+      "criterios_aceitacao_validados": [
+        "CA-16"
+      ],
+      "observacoes": "Arquivo proposto: `packages/contracts/test/folha.spec.ts`. ASSERÇÃO ESTÁTICA → prova de falsificação OBRIGATÓRIA (`.claude/rules/testing-stack.md`). O mutante roda pelo SCRIPT `test` do pacote (`tsc --build && tsc -p tsconfig.test.json && vitest run`), NUNCA por `vitest run` avulso — a regra vale mesmo aqui, onde a suíte lê o fonte por caminho relativo, porque `sempre pelo script` é o que dispensa apurar a cadeia de acessórios.",
+      "task_id": "T1"
+    },
+    {
+      "id": "CT-340",
+      "titulo": "T4 — a tradução extraída nomeia o campo pelo caminho do primeiro problema, e o campo padrão quando não há caminho",
+      "tipo": "UNITARIO",
+      "categoria": "caminho_feliz",
+      "invariant": "`validar()` de `apps/api/src/comum/validacao.ts` devolve o dado analisado quando o esquema aprova, e quando recusa levanta `ErroDeAplicacao` com `codigo === CodigoErro.CAMPO_INVALIDO`, `status === 422`, `mensagem === MENSAGEM_POR_CODIGO[CAMPO_INVALIDO]` e `campo` igual ao caminho do primeiro problema unido por ponto — ou ao campo padrão quando o caminho é vazio",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-341",
+        "input_invalido": "valores que a validação recusa carregando dado sensível (documento, e-mail, cadeia com marcação)",
+        "assertion_esperada": "o corpo serializado do erro não contém o valor recusado em nenhuma grafia"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "borda (`apps/api/src/comum/validacao.ts`)",
+      "pre_condicoes": [
+        "a função foi extraída e é importável; nenhum servidor HTTP é montado neste caso"
+      ],
+      "dados_entrada": {
+        "descricao": "tabela `(rótulo, esquema, valor, campoPadrao, campo esperado)` cobrindo as três formas de caminho que os controladores produzem hoje",
+        "valores": {
+          "caminho_de_um_nivel": "`z.strictObject({ nome: z.string().min(1) })` com `{ nome: '' }`, campoPadrao `'corpo'` → campo `'nome'`",
+          "caminho_aninhado": "esquema com `ajustes[0].chave` recusada → campo `'ajustes.0.chave'`",
+          "sem_caminho": "`z.uuid()` com `'nao-e-uuid'`, campoPadrao `'id'` → campo `'id'`",
+          "chave_desconhecida": "`strictObject` com chave extra, campoPadrao `'corpo'` → campo nomeando a chave recusada",
+          "aprovado": "`z.uuid().transform(v => v.toLowerCase())` com `'3F2504E0-4F89-41D3-9A0C-0305E82C3301'` → devolve a forma minúscula"
+        }
+      },
+      "passos": [
+        "para cada linha da tabela, chamar `validar(esquema, valor, campoPadrao)` capturando o desfecho",
+        "na linha aprovada, afirmar o valor devolvido (inclusive a transformação aplicada)",
+        "nas linhas recusadas, afirmar os quatro campos do erro"
+      ],
+      "resultado_esperado": "linha aprovada: devolve `'3f2504e0-4f89-41d3-9a0c-0305e82c3301'` (a transformação do esquema é preservada — a extração não pode virar um `parse` que descarte `transform`). Linhas recusadas: `erro instanceof ErroDeAplicacao`, `erro.paraCorpo().codigo === 'CAMPO_INVALIDO'`, `erro.status === 422`, `erro.paraCorpo().mensagem === 'requisição inválida'` e `erro.paraCorpo().campo` exatamente igual ao valor declarado por linha (`'nome'`, `'ajustes.0.chave'`, `'id'`). A linha `sem_caminho` é a que discrimina o ramo do campo padrão — sem ela, uma extração que sempre usasse o caminho passaria.",
+      "criterios_aceitacao_validados": [],
+      "observacoes": "`NO_SUITE_FOUND`: `apps/api/test/ponto-de-aplicacao.spec.ts` é varredura estática do fonte e `campos-fechados.e2e.spec.ts` é E2E — nenhuma suíte de `apps/api/test/` exercita função de borda em unidade. Arquivo proposto: `apps/api/test/validacao.spec.ts`. `MENSAGEM_POR_CODIGO` é importado de `comum/filtro-excecao.ts` (símbolo público sob `DECISÃO FECHADA` — T9/Gate 2), nunca redigitado como literal.",
+      "task_id": "T4"
+    },
+    {
+      "id": "CT-341",
+      "titulo": "T4 — o valor recusado não vaza para a mensagem, para o campo nem para os detalhes",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "o corpo de erro que `validar()` produz, serializado por inteiro, não contém o valor recusado em nenhuma grafia — documento, e-mail e endereço são dado pessoal e entrada não confiável nunca é repetida ao cliente (§10.3)",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — valores recusados que carregam dado pessoal e marcação",
+        "assertion_esperada": "ver `resultado_esperado`"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "borda (`apps/api/src/comum/validacao.ts`)",
+      "pre_condicoes": [],
+      "dados_entrada": {
+        "descricao": "tabela de valores recusados escolhidos para serem reconhecíveis se vazarem",
+        "valores": {
+          "documento": "529.982.247-25xxx",
+          "email": "Pessoa.Sensivel+marca@exemplo.com.br",
+          "marcacao": "<script>alerta</script>",
+          "cadeia_longa": "AAAA-VALOR-QUE-NAO-PODE-SAIR-AAAA"
+        }
+      },
+      "passos": [
+        "para cada valor, chamar `validar()` com um esquema que o recuse e capturar o `ErroDeAplicacao`",
+        "serializar o corpo público com `JSON.stringify(erro.paraCorpo())`",
+        "afirmar a ausência do valor na serialização, em caixa original e em minúsculas"
+      ],
+      "resultado_esperado": "`JSON.stringify(erro.paraCorpo())` não contém o valor recusado, nem `serializado.toLowerCase()` contém `valor.toLowerCase()`, para as quatro linhas. A asserção é sobre o CORPO INTEIRO serializado, e não só sobre `mensagem` — um campo novo que ecoasse a entrada seria pego aqui. Complemento obrigatório: afirmar que `erro.paraCorpo()` tem exatamente as chaves `{ codigo, mensagem, campo }` (a `causa` do `ErroDeAplicacao` NÃO é publicada), porque é por `detalhes` que o vazamento reentraria.",
+      "criterios_aceitacao_validados": [],
+      "observacoes": "Arquivo proposto: `apps/api/test/validacao.spec.ts`. Imite o segundo `it.each` do CT-014 de `packages/auth/test/senha.spec.ts`, que já usa exatamente este desenho (serializar o veredito inteiro e negar o `toContain` nas duas caixas).",
+      "task_id": "T4"
+    },
+    {
+      "id": "CT-342",
+      "titulo": "T4 — equivalência de comportamento pela borda: as rotas que já usavam `validar()` respondem o mesmo corpo depois da extração",
+      "tipo": "E2E",
+      "categoria": "tratamento_erro",
+      "invariant": "depois da extração, cada rota que consumia a cópia local de `validar()` continua respondendo `422` com o corpo `{ codigo: 'CAMPO_INVALIDO', mensagem: 'requisição inválida', campo: <o mesmo de antes> }` — a extração não muda o contrato de erro",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/campos-fechados.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — corpos e parâmetros que as três bordas recusam",
+        "assertion_esperada": "ver `resultado_esperado`"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "as três rotas exercitadas exigem sessão admitida — duas sob `TELA:usuarios` (Admin da empresa) e uma sob o perfil `SYSLOC_MASTER`",
+        "caminho_legitimo": "monte a aplicação com `Test.createTestingModule` + `listen` em PORTA RESERVADA (`reservarPorta()` de `packages/shared/test/efemero-comum.ts`), use a identidade efêmera e obtenha a sessão pela ROTA REAL de entrada; conceda a área por `escreverAjustes`, respeitando `validarCoerenciaDeAjustes`. Nenhum símbolo é acrescentado a `apps/api/src/**` nem a `packages/auth/src/**` para o teste existir, e nenhum cookie é forjado.",
+        "teste_analogo": "apps/api/test/campos-fechados.e2e.spec.ts"
+      },
+      "camada": "apresentação (rotas existentes de `/v1/usuarios`, `/v1/master` e `/v1/sessao/senha`)",
+      "pre_condicoes": [
+        "os três controladores já importam `validar` de `../comum/validacao.js`",
+        "instância efêmera de banco com as migrações aplicadas e a carga inicial"
+      ],
+      "dados_entrada": {
+        "descricao": "uma requisição recusada por borda, escolhida para exercitar os DOIS ramos do campo (caminho presente e caminho ausente)",
+        "valores": {
+          "usuarios_corpo": "POST /v1/usuarios com `{ nome: '', email: 'a@b.c', perfil: 'USUARIO_EMPRESA' }` → campo `'nome'`",
+          "usuarios_id": "POST /v1/usuarios/nao-e-uuid/desativacao → campo `'id'` (ramo do campo padrão)",
+          "master_janela": "GET /v1/master/empresas?limite=999999 → campo `'limite'`",
+          "usuarios_chave_extra": "POST /v1/usuarios com `empresaId` acrescido → campo nomeando a chave recusada"
+        }
+      },
+      "passos": [
+        "subir a aplicação em porta reservada e obter as duas sessões pela rota real de entrada",
+        "disparar as quatro requisições",
+        "afirmar o status e o corpo INTEIRO de cada resposta"
+      ],
+      "resultado_esperado": "as quatro respondem `422`; o corpo de cada uma é PROFUNDAMENTE IGUAL a `{ codigo: 'CAMPO_INVALIDO', mensagem: 'requisição inválida', campo: <valor declarado por linha> }` — objeto inteiro afirmado, nunca presença de campo (ADR-0017 e §4 de `.claude/rules/nao-regressao.md`). A linha `usuarios_id` é a que prova o ramo do campo padrão pela borda; sem ela, uma extração que perdesse o argumento `campoPadrao` responderia com campo vazio e passaria.",
+      "criterios_aceitacao_validados": [],
+      "observacoes": "Estende `campos-fechados.e2e.spec.ts` porque ela já monta a aplicação em porta reservada e já atravessa os controladores de usuários e do Master — criar suíte nova para o mesmo arranjo seria a duplicata que o Gate 2 anota. Este é o CASO DE REDE do P4 do Protocolo Antirregressão para a extração do D38: ele falha se a extração alterar qualquer uma das três traduções.",
+      "task_id": "T4"
+    },
+    {
+      "id": "CT-343",
+      "titulo": "T4 — não restou cópia: `validar` é definido em exatamente um arquivo de produção e importado pelos três controladores",
+      "tipo": "UNITARIO",
+      "categoria": "integridade_dados",
+      "invariant": "a varredura de `apps/api/src/**`, com os comentários removidos, encontra exatamente UMA definição de `validar` — em `comum/validacao.ts` — e encontra a importação dela em `usuarios/usuario.controller.ts`, `master/empresa.controller.ts` e `autenticacao/senha.controller.ts`; nenhuma quarta cópia nasce (D38)",
+      "owning_layer": "unit",
+      "existing_suite": "apps/api/test/ponto-de-aplicacao.spec.ts",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "cópia de `apps/api/src/usuarios/usuario.controller.ts` com a `function validar<T>(…)` reintroduzida no fim do arquivo; e segunda variante em que apenas a IMPORTAÇÃO é removida de `master/empresa.controller.ts`",
+        "assertion_esperada": "na primeira variante, o conjunto de definições tem 2 entradas e a asserção nomeia o arquivo excedente; na segunda, o conjunto de importadores tem 2 entradas e a asserção nomeia o controlador faltante"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "borda (fonte de `apps/api/src/**`)",
+      "pre_condicoes": [
+        "a suíte reusa `listarFontesTs`, `semComentarios` e `varrerArquivos` de `packages/db/test/varredura-de-fontes.ts`, como `ponto-de-aplicacao.spec.ts` já faz (D28 já disparado — ler o marcador antes de acrescentar o consumidor)"
+      ],
+      "dados_entrada": {
+        "descricao": "todo o fonte de `apps/api/src/`, sem comentários; mais as duas cópias defeituosas da prova de falsificação",
+        "valores": {
+          "padrao_de_definicao": "declaração de `validar` como função ou constante no escopo do módulo",
+          "padrao_de_importacao": "importação do símbolo `validar` a partir de `comum/validacao.js`",
+          "importadores_esperados": [
+            "apps/api/src/usuarios/usuario.controller.ts",
+            "apps/api/src/master/empresa.controller.ts",
+            "apps/api/src/autenticacao/senha.controller.ts"
+          ]
+        }
+      },
+      "passos": [
+        "varrer o fonte procurando a DEFINIÇÃO e afirmar o conjunto de arquivos por IGUALDADE (exatamente `comum/validacao.ts`)",
+        "varrer o fonte procurando a IMPORTAÇÃO e afirmar o conjunto de arquivos por IGUALDADE com os três importadores esperados",
+        "afirmar que a varredura leu um número de arquivos maior que zero",
+        "PROVA DE FALSIFICAÇÃO: aplicar cada mutante, rodar `pnpm --filter @sysloc/api test`, confirmar a reprovação nomeando o arquivo, reverter e confirmar o verde"
+      ],
+      "resultado_esperado": "conjunto de arquivos com definição profundamente igual a `['apps/api/src/comum/validacao.ts']`; conjunto de importadores profundamente igual aos três caminhos declarados, em ordem estável; `varredura.arquivos > 0`. A remoção dos comentários por `semComentarios` é obrigatória — os docblocks atuais de `usuario.controller.ts` e `empresa.controller.ts` citam `validar()` em prosa e, sem a remoção, a asserção reprovaria o código correto (é o defeito literal que a `.claude/rules/testing-stack.md` registra: `asserção que casava ALTER ROLE em comentário`).",
+      "criterios_aceitacao_validados": [],
+      "observacoes": "ASSERÇÃO ESTÁTICA → prova de falsificação OBRIGATÓRIA, com mutante rodado pelo SCRIPT `test` do pacote consumidor (`pnpm --filter @sysloc/api test`), NUNCA por `vitest run` avulso. As DUAS pontas são afirmadas por igualdade de conjunto (definição única E três importadores) porque uma ponta sozinha não detecta: só a definição deixaria verde um controlador que parou de importar; só a importação deixaria verde uma quarta cópia dormente. Ao fechar, o marcador `DÉBITO COM GATILHO — D38` sai de `senha.controller.ts` e a linha correspondente sai do índice do `CLAUDE.md`, no mesmo commit.",
+      "task_id": "T4"
+    },
+    {
+      "id": "CT-344",
+      "titulo": "T5 — ciclo completo do conjunto: criar → ler → alterar",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "`POST /v1/conjuntos` responde `201` com `{ id (UUID minúsculo), nome, retiradoEm: null }`; `GET /v1/conjuntos/:id` devolve corpo profundamente igual ao da criação; `PUT /v1/conjuntos/:id` responde `200` com o `nome` novo e o MESMO `id`, e a leitura seguinte reflete a alteração",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/cadastro-de-imoveis.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-345",
+        "input_invalido": "corpo sem `nome`, corpo com chave extra `empresaId`, `:id` malformado e `:id` de UUID inexistente",
+        "assertion_esperada": "`422` com `campo` nomeado nos três primeiros e `404 RECURSO_NAO_ENCONTRADO` no último, com contagem crua de `negocio.conjunto` inalterada"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "as seis rotas de conjunto exigem sessão admitida com a área `TELA:imoveis`",
+        "caminho_legitimo": "monte a aplicação com `Test.createTestingModule` + `listen` em PORTA RESERVADA (`reservarPorta()`), obtenha a sessão pela ROTA REAL de entrada com a identidade efêmera, e conceda `TELA:imoveis` por `escreverAjustes` respeitando `validarCoerenciaDeAjustes`. Confirme o efetivo por `GET /v1/sessao` ANTES do fluxo. Nunca conceda a chave por escrita direta na tabela nem acrescente símbolo a `apps/api/src/**` para o teste existir.",
+        "teste_analogo": "apps/api/test/administracao-de-pessoas.e2e.spec.ts"
+      },
+      "camada": "apresentação → domínio → dados",
+      "pre_condicoes": [
+        "instância efêmera com as migrações `0000`–`0006` aplicadas",
+        "sessão com `TELA:imoveis` confirmada por `GET /v1/sessao`"
+      ],
+      "dados_entrada": {
+        "descricao": "um conjunto criado e depois renomeado",
+        "valores": {
+          "criacao": "{ \"nome\": \"Edifício Aurora\" }",
+          "alteracao": "{ \"nome\": \"Edifício Aurora — Bloco A\" }"
+        }
+      },
+      "passos": [
+        "`POST /v1/conjuntos` com o corpo de criação",
+        "`GET /v1/conjuntos/:id` com o `id` devolvido",
+        "`PUT /v1/conjuntos/:id` com o corpo de alteração",
+        "`GET /v1/conjuntos/:id` de novo"
+      ],
+      "resultado_esperado": "criação: `201`, corpo profundamente igual a `{ id: <uuid>, nome: 'Edifício Aurora', retiradoEm: null }`, com `id === id.toLowerCase()`. Primeira leitura: `200` e corpo profundamente igual ao da criação. Alteração: `200`, corpo profundamente igual a `{ id: <o mesmo id>, nome: 'Edifício Aurora — Bloco A', retiradoEm: null }`. Segunda leitura: `200` e corpo profundamente igual ao da alteração — a asserção do objeto inteiro (ADR-0017) é o que impede a leitura de devolver o nome antigo com um campo a mais mascarando a divergência.",
+      "criterios_aceitacao_validados": [
+        "CA-01"
+      ],
+      "observacoes": "`cadastro-de-imoveis.e2e.spec.ts` é declarada `[N]` na §3.4 do tech_spec e é a suíte canônica do agregado de imóveis, do qual conjunto faz parte — não é arquivo inventado aqui. Não duplica o CT-331 (caminho feliz das SEIS criações, transversal): este prova o ciclo `criar → ler → alterar` de uma entidade, que o CT-331 não exercita.",
+      "task_id": "T5"
+    },
+    {
+      "id": "CT-345",
+      "titulo": "T5 — recusas do conjunto: campo obrigatório, corpo fechado, `:id` malformado e inexistente",
+      "tipo": "E2E",
+      "categoria": "teste_negativo",
+      "invariant": "toda entrada recusada de conjunto nomeia o campo culpado e não grava linha alguma: `nome` ausente ou vazio e chave desconhecida respondem `422 CAMPO_INVALIDO`, `:id` malformado responde `422` com `campo: 'id'` sem tocar o banco, e UUID bem formado e inexistente responde `404 RECURSO_NAO_ENCONTRADO`",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/cadastro-de-imoveis.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este é o caso negativo — as quatro variantes de recusa",
+        "assertion_esperada": "ver `resultado_esperado`"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessão admitida com `TELA:imoveis`",
+        "caminho_legitimo": "mesma receita do CT-344 — aplicação em porta reservada, sessão pela rota real de entrada, chave concedida por `escreverAjustes`",
+        "teste_analogo": "apps/api/test/administracao-de-pessoas.e2e.spec.ts"
+      },
+      "camada": "apresentação",
+      "pre_condicoes": [
+        "contagem crua de `negocio.conjunto` capturada ANTES das requisições, pela API pública do pacote de dados sob o contexto de tenant"
+      ],
+      "dados_entrada": {
+        "descricao": "quatro variantes de recusa, cada uma com o campo esperado declarado",
+        "valores": {
+          "sem_nome": "POST `{}` → campo `'nome'`",
+          "nome_vazio": "POST `{ \"nome\": \"   \" }` → campo `'nome'`",
+          "chave_extra": "POST `{ \"nome\": \"X\", \"empresaId\": \"<uuid alheio>\" }` → `422`",
+          "id_malformado": "GET `/v1/conjuntos/nao-e-uuid` → campo `'id'`",
+          "id_inexistente": "GET `/v1/conjuntos/<uuid bem formado e inexistente>` → `404`"
+        }
+      },
+      "passos": [
+        "capturar a contagem crua de `negocio.conjunto` sob o contexto da empresa da sessão",
+        "disparar as cinco requisições",
+        "afirmar status e corpo inteiro de cada uma",
+        "recapturar a contagem crua e comparar"
+      ],
+      "resultado_esperado": "`sem_nome`, `nome_vazio` e `chave_extra`: `422` com corpo profundamente igual a `{ codigo: 'CAMPO_INVALIDO', mensagem: 'requisição inválida', campo: <declarado> }`. `id_malformado`: `422` com `campo: 'id'`. `id_inexistente`: `404` com corpo profundamente igual a `{ codigo: 'RECURSO_NAO_ENCONTRADO', mensagem: 'recurso não encontrado' }`. Contagem crua de `negocio.conjunto` idêntica antes e depois — nenhuma linha nasce de requisição recusada.",
+      "criterios_aceitacao_validados": [
+        "CA-01",
+        "CA-14"
+      ],
+      "observacoes": "A contagem crua antes/depois é o que distingue `respondeu 422` de `respondeu 422 e não gravou`; sem ela o caso passaria com um controlador que gravasse antes de validar.",
+      "task_id": "T5"
+    },
+    {
+      "id": "CT-346",
+      "titulo": "T5 — `GET /:id` de conjunto RETIRADO responde `200` com a marca",
+      "tipo": "E2E",
+      "categoria": "caso_extremo",
+      "invariant": "depois de `POST /v1/conjuntos/:id/retirada`, `GET /v1/conjuntos/:id` responde `200` com `retiradoEm` preenchido (data-hora ISO) em vez de `404` — sem isso a recirculação ficaria inalcançável pela interface (decisão fixada 2 da §21 do tech_spec)",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/circulacao-de-cadastro.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "o mesmo `GET /:id` sobre um UUID bem formado que nunca existiu, disparado no mesmo caso como controle",
+        "assertion_esperada": "`404` com corpo profundamente igual a `{ codigo: 'RECURSO_NAO_ENCONTRADO', mensagem: 'recurso não encontrado' }` — o par `200 no retirado` × `404 no inexistente` é o que discrimina; um `GET` que devolvesse `200` para qualquer id passaria só com a primeira metade"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "a rota de retirada exige `TELA:imoveis` E a ação sensível `ACAO:excluir_cadastro`",
+        "caminho_legitimo": "conceda AS DUAS chaves por `escreverAjustes`, respeitando `validarCoerenciaDeAjustes` — a ação sem a área é recusada pela própria coerência, e essa é a ordem legítima. Confirme o efetivo por `GET /v1/sessao` antes do fluxo. Não acrescente chave ao catálogo nem símbolo à produção.",
+        "teste_analogo": "apps/api/test/ciclo-de-acesso.e2e.spec.ts"
+      },
+      "camada": "apresentação → domínio → dados",
+      "pre_condicoes": [
+        "um conjunto em circulação, criado pela rota real"
+      ],
+      "dados_entrada": {
+        "descricao": "um conjunto criado, retirado e relido; mais um UUID inexistente como controle",
+        "valores": {
+          "conjunto": "{ \"nome\": \"Edifício Retirado\" }",
+          "corpo_da_retirada": "{}",
+          "uuid_inexistente": "00000000-0000-4000-8000-0000000000ff"
+        }
+      },
+      "passos": [
+        "criar o conjunto e guardar o corpo devolvido",
+        "`POST /v1/conjuntos/:id/retirada` com corpo vazio",
+        "`GET /v1/conjuntos/:id`",
+        "`GET /v1/conjuntos/<uuid inexistente>` como controle"
+      ],
+      "resultado_esperado": "retirada: `200` com `retiradoEm` diferente de `null` e analisável como data-hora. Leitura do retirado: `200`, `id` igual ao da criação, `nome` inalterado e `retiradoEm` EXATAMENTE igual ao devolvido pela retirada. Controle: `404` com o corpo canônico de recurso não encontrado.",
+      "criterios_aceitacao_validados": [
+        "CA-10",
+        "CA-11"
+      ],
+      "observacoes": "`circulacao-de-cadastro.e2e.spec.ts` é declarada `[N]` na §3.4. NÃO duplica CT-315/CT-316: aqueles provam a listagem (some sem o parâmetro, aparece com ele) nas cinco entidades; este prova a LEITURA POR ID do retirado, que é o que torna a recirculação alcançável — invariante que a listagem não toca.",
+      "task_id": "T5"
+    },
+    {
+      "id": "CT-347",
+      "titulo": "T5 — a retirada de conjunto é idempotente: repetir mantém a MESMA marca e responde `200`",
+      "tipo": "E2E",
+      "categoria": "caso_extremo",
+      "invariant": "repetir `POST /v1/conjuntos/:id/retirada` sobre um conjunto já retirado responde `200` com `retiradoEm` IDÊNTICO ao da primeira retirada — a marca não é reescrita — e a recirculação seguida de nova retirada produz uma marca DIFERENTE",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/circulacao-de-cadastro.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "`POST /v1/conjuntos/:id/retirada` com corpo NÃO vazio (`{ \"retiradoEm\": \"2020-01-01T00:00:00Z\" }`) — o corpo da rota de circulação é vazio e fechado (§4.1.1)",
+        "assertion_esperada": "`422` com corpo profundamente igual a `{ codigo: 'CAMPO_INVALIDO', mensagem: 'requisição inválida', campo: 'retiradoEm' }` e `retiradoEm` do conjunto inalterado na leitura seguinte — o cliente não pode escolher a data da marca"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessão com `TELA:imoveis` e `ACAO:excluir_cadastro`",
+        "caminho_legitimo": "mesma receita do CT-346 — as duas chaves concedidas por `escreverAjustes` sob `validarCoerenciaDeAjustes`, efetivo confirmado por `GET /v1/sessao`",
+        "teste_analogo": "apps/api/test/ciclo-de-acesso.e2e.spec.ts"
+      },
+      "camada": "apresentação → domínio → dados",
+      "pre_condicoes": [
+        "um conjunto criado pela rota real"
+      ],
+      "dados_entrada": {
+        "descricao": "duas retiradas seguidas, depois recirculação e terceira retirada; mais a variante de corpo não vazio",
+        "valores": {
+          "corpo_da_circulacao": "{}"
+        }
+      },
+      "passos": [
+        "criar o conjunto",
+        "`POST /:id/retirada` (primeira) e guardar `retiradoEm`",
+        "`POST /:id/retirada` (segunda) e comparar `retiradoEm`",
+        "afirmar por leitura crua que existe UMA linha do conjunto em `negocio.conjunto`",
+        "`POST /:id/recirculacao` e depois `POST /:id/retirada` (terceira)",
+        "disparar a variante de corpo não vazio e reler"
+      ],
+      "resultado_esperado": "primeira retirada: `200`, `retiradoEm` não nulo. Segunda retirada: `200` e corpo PROFUNDAMENTE IGUAL ao da primeira — em particular `retiradoEm` idêntico caractere a caractere. Leitura crua: exatamente 1 linha para aquele `id`. Recirculação: `200` com `retiradoEm: null`. Terceira retirada: `200` com `retiradoEm` DIFERENTE do da primeira — sem esta última asserção, uma implementação que nunca reescrevesse a marca (nem depois da recirculação) passaria. Variante de corpo não vazio: `422` com `campo: 'retiradoEm'` e a marca inalterada.",
+      "criterios_aceitacao_validados": [
+        "CA-10",
+        "CA-11"
+      ],
+      "observacoes": "A igualdade do `retiradoEm` entre a primeira e a segunda retirada é a asserção que discrimina idempotência de reexecução — `200` sozinho não distingue as duas, e é exatamente o que a §7.4 do tech_spec fixa (`repetir a retirada mantém a marca`).",
+      "task_id": "T5"
+    },
+    {
+      "id": "CT-348",
+      "titulo": "T5 — o predicado de circulação vive na PORTA de leitura, aplicado por padrão",
+      "tipo": "INTEGRACAO",
+      "categoria": "integracao",
+      "invariant": "a função de listagem de `packages/db/src/conjunto.ts`, chamada sem o parâmetro de inclusão, não devolve conjunto retirado; chamada com ele, devolve os dois; e a leitura por id devolve o retirado nos dois modos — o predicado é da porta, não de quem a chama",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/circulacao.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "chamada sem o parâmetro sobre um cenário em que TODOS os conjuntos estão retirados",
+        "assertion_esperada": "a listagem devolve arranjo vazio e o total é `0` — e não a lista inteira; sem esta variante, uma porta que ignorasse o predicado passaria quando houvesse ao menos um conjunto em circulação"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "as tabelas de `negocio` nascem sob RLS forçada: qualquer escrita ou leitura exige contexto de tenant fixado",
+        "caminho_legitimo": "obtenha o contexto EXCLUSIVAMENTE pela API pública do pacote — `contextoDeTenant.executarCom` mais `abrirAcessoAoBanco` —, que é o mesmo caminho da operação. Não abra conexão privilegiada no arquivo de teste e não acrescente símbolo a `packages/db/src/**` para a prova existir (ADR-0006, ADR-0008).",
+        "teste_analogo": "packages/db/test/permissao.spec.ts"
+      },
+      "camada": "dados (`packages/db/src/conjunto.ts`)",
+      "pre_condicoes": [
+        "instância efêmera com as migrações `0000`–`0006` aplicadas",
+        "três conjuntos gravados sob o contexto da empresa A, dois em circulação e um retirado"
+      ],
+      "dados_entrada": {
+        "descricao": "cenário de três conjuntos, e um segundo cenário em que os três estão retirados",
+        "valores": {
+          "em_circulacao": [
+            "Aurora",
+            "Boreal"
+          ],
+          "retirado": [
+            "Crepúsculo"
+          ]
+        }
+      },
+      "passos": [
+        "sob o contexto de A, gravar os três conjuntos e marcar a retirada de um deles pela porta de escrita",
+        "chamar a listagem SEM o parâmetro de inclusão",
+        "chamar a listagem COM o parâmetro",
+        "chamar a leitura por id do retirado nos dois modos",
+        "marcar a retirada dos outros dois e repetir a listagem sem o parâmetro"
+      ],
+      "resultado_esperado": "sem o parâmetro: os nomes devolvidos são exatamente `['Aurora', 'Boreal']` e o `total` é `2`. Com o parâmetro: exatamente `['Aurora', 'Boreal', 'Crepúsculo']` e `total === 3` — os dois lados afirmados por igualdade de conjunto, porque só o lado que exclui deixaria verde uma porta que nunca inclui. Leitura por id do retirado: devolve o registro nos dois modos, com `retiradoEm` não nulo. Cenário com os três retirados: listagem sem o parâmetro devolve `[]` e `total === 0`.",
+      "criterios_aceitacao_validados": [
+        "CA-10",
+        "CA-11"
+      ],
+      "observacoes": "`circulacao.spec.ts` é declarada `[N]` na §3.4. NÃO duplica CT-315/CT-316 (E2E, cinco entidades, pela rota): a invariante aqui é o LUGAR do predicado. Falsificação da distinção: mover o filtro da porta para o serviço mantém o CT-315 verde e reprova este caso, porque ele chama a porta diretamente.",
+      "task_id": "T5"
+    },
+    {
+      "id": "CT-349",
+      "titulo": "T8 — o mesmo documento existe como locador E como locatário: a unicidade é por papel, não global",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "o mesmo `documentoPrincipal`, na mesma empresa, é gravado com sucesso nos três papéis; a SEGUNDA gravação do mesmo documento no MESMO papel é recusada pelo banco com SQLSTATE `23505` nomeando a restrição única daquele papel",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "segunda gravação do mesmo `documentoPrincipal` no mesmo papel, na mesma empresa",
+        "assertion_esperada": "a gravação falha com SQLSTATE `23505` e a mensagem do servidor cita o nome da restrição única daquele papel (`unique(empresa_id, documento_principal)` da tabela correspondente); a contagem crua da tabela permanece em 1"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "as três tabelas de pessoa nascem sob RLS forçada — gravar exige contexto de tenant fixado",
+        "caminho_legitimo": "contexto obtido pela API pública do pacote (`contextoDeTenant.executarCom` + `abrirAcessoAoBanco`), como em `permissao.spec.ts`. Nenhuma conexão privilegiada é aberta no arquivo de teste, e nenhum símbolo é acrescentado a `packages/db/src/**` para a prova existir.",
+        "teste_analogo": "packages/db/test/permissao.spec.ts"
+      },
+      "camada": "dados (`packages/db/src/cadastro-de-pessoa.ts`)",
+      "pre_condicoes": [
+        "instância efêmera com as migrações `0000`–`0006` aplicadas",
+        "contexto da empresa A fixado"
+      ],
+      "dados_entrada": {
+        "descricao": "um único documento válido gravado nos três papéis e repetido em um deles",
+        "valores": {
+          "documentoPrincipal": "52998224725",
+          "papeis": [
+            "locador",
+            "locatario",
+            "fiador"
+          ],
+          "nome": "Pessoa Tríplice"
+        }
+      },
+      "passos": [
+        "sob o contexto de A, gravar a pessoa com o MESMO documento nos três papéis, um por vez",
+        "afirmar que as três gravações venceram e que os três identificadores devolvidos são distintos entre si",
+        "para cada papel, tentar gravar o mesmo documento uma segunda vez e capturar o erro",
+        "afirmar a contagem crua de cada uma das três tabelas"
+      ],
+      "resultado_esperado": "as três primeiras gravações vencem e devolvem `id` distintos. As três repetições falham, cada uma com `erro.code === '23505'` e a mensagem citando o nome da restrição única DA TABELA daquele papel (afirmado por literal declarado no topo do arquivo, não derivado do erro — mesmo desenho de `RESTRICAO_DO_TRIO` em `permissao.spec.ts`). Contagem crua final: exatamente 1 linha em `negocio.locador`, 1 em `negocio.locatario` e 1 em `negocio.fiador`. O par é o que detecta: só o lado que aceita deixaria verde uma implementação sem unicidade alguma; só o lado que recusa deixaria verde uma unicidade global sobre os três papéis.",
+      "criterios_aceitacao_validados": [
+        "CA-07",
+        "CA-09"
+      ],
+      "observacoes": "`NO_SUITE_FOUND`: as duas suítes novas de `packages/db/test/` declaradas na §3.4 são `metragem.spec.ts` (imóvel e cômodo) e `circulacao.spec.ts` (marca de retirada) — nenhuma cobre unicidade por papel nem a parametrização das três tabelas. Arquivo proposto: `packages/db/test/cadastro-de-pessoa.spec.ts`. NÃO duplica o CT-311 (unicidade por EMPRESA, pela rota): o eixo aqui é o PAPEL, com a empresa constante.",
+      "task_id": "T8"
+    },
+    {
+      "id": "CT-350",
+      "titulo": "T8 — a parametrização não vaza: gravar como locador não escreve em locatário nem em fiador",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "para cada papel, a gravação pela porta parametrizada deixa exatamente uma linha na tabela daquele papel e ZERO nas outras duas, e a leitura parametrizada por outro papel não alcança o registro gravado",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "leitura pela porta parametrizada com um papel DIFERENTE do usado na gravação",
+        "assertion_esperada": "a leitura por id devolve `undefined` (ou arranjo vazio na listagem) para os dois papéis não gravados — e não o registro do papel vizinho"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "escrita e leitura nas três tabelas exigem contexto de tenant fixado (RLS forçada)",
+        "caminho_legitimo": "mesma receita do CT-349 — contexto pela API pública do pacote, sem conexão privilegiada e sem símbolo novo em produção",
+        "teste_analogo": "packages/db/test/permissao.spec.ts"
+      },
+      "camada": "dados (`packages/db/src/cadastro-de-pessoa.ts`)",
+      "pre_condicoes": [
+        "instância efêmera migrada; contexto da empresa A fixado",
+        "as três tabelas vazias no início de cada linha da tabela de casos"
+      ],
+      "dados_entrada": {
+        "descricao": "tabela `(papel gravado, tabela esperada, tabelas que devem ficar vazias)` — três linhas, uma por papel, com documentos distintos para não colidir com o CT-349",
+        "valores": {
+          "linhas": [
+            "locador → negocio.locador; vazias: negocio.locatario, negocio.fiador",
+            "locatario → negocio.locatario; vazias: negocio.locador, negocio.fiador",
+            "fiador → negocio.fiador; vazias: negocio.locador, negocio.locatario"
+          ]
+        }
+      },
+      "passos": [
+        "para cada linha: gravar uma pessoa pela porta parametrizada com aquele papel",
+        "contar as linhas das TRÊS tabelas por leitura crua sob o contexto de A",
+        "ler por id pela porta parametrizada com o papel gravado e com os outros dois",
+        "listar pela porta com cada um dos três papéis"
+      ],
+      "resultado_esperado": "por linha: contagem `1` na tabela do papel gravado e `0` nas outras duas — as três contagens afirmadas na MESMA asserção, porque contar só a tabela esperada não detecta escrita duplicada. Leitura por id com o papel gravado: devolve o registro com `id` e `documentoPrincipal` esperados. Leitura por id com cada um dos outros dois papéis: devolve `undefined`. Listagem por papel: o papel gravado devolve exatamente 1 item; os outros dois devolvem `[]`.",
+      "criterios_aceitacao_validados": [
+        "CA-07"
+      ],
+      "observacoes": "Arquivo proposto: `packages/db/test/cadastro-de-pessoa.spec.ts`. Esta é a prova de que o papel é PARÂMETRO e não ramo condicional espalhado: uma implementação com um `if` errado num dos três ramos reprova aqui, e passaria num caso que só exercitasse o papel `locador`.",
+      "task_id": "T8"
+    },
+    {
+      "id": "CT-351",
+      "titulo": "T8 — o conjunto de papéis é FECHADO em três, e papel inventado não é representável",
+      "tipo": "UNITARIO",
+      "categoria": "fronteira",
+      "invariant": "o mapa de papel → tabela publicado pela porta parametrizada tem exatamente as três chaves `locador`, `locatario` e `fiador`, apontando para três tabelas distintas; e um papel fora desse conjunto não é aceito pelo verificador de tipos do pacote",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "chamada da porta parametrizada com o papel `'inquilino'`, marcada com `@ts-expect-error`",
+        "assertion_esperada": "o `tsc -p tsconfig.test.json` do script `test` do pacote APROVA enquanto o papel for inaceitável; se o tipo do papel for alargado (ex.: para `string`), o `@ts-expect-error` fica sem erro para suprimir e a compilação REPROVA — a asserção é o próprio verificador de tipos"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "dados (`packages/db/src/cadastro-de-pessoa.ts`)",
+      "pre_condicoes": [
+        "a porta publica o tipo do papel e o mapa papel → tabela"
+      ],
+      "dados_entrada": {
+        "descricao": "o mapa exportado e uma chamada com papel inventado sob `@ts-expect-error`",
+        "valores": {
+          "papeis_esperados": [
+            "locador",
+            "locatario",
+            "fiador"
+          ],
+          "papel_inventado": "inquilino"
+        }
+      },
+      "passos": [
+        "afirmar `Object.keys(<mapa>).sort()` por igualdade com os três papéis ordenados",
+        "afirmar que os três valores do mapa são distintos entre si (`new Set(Object.values(mapa)).size === 3`)",
+        "escrever a chamada com `'inquilino'` precedida de `@ts-expect-error` e um comentário explicando que a supressão é a asserção",
+        "PROVA DE FALSIFICAÇÃO: numa cópia do fonte, alargar o tipo do papel para `string`, rodar `pnpm --filter @sysloc/db test` e confirmar que o passo de compilação REPROVA (`@ts-expect-error` sem erro correspondente); reverter e confirmar o verde"
+      ],
+      "resultado_esperado": "`Object.keys(mapa).sort()` profundamente igual a `['fiador', 'locador', 'locatario']` — igualdade de conjunto, não `toContain`: um quarto papel dormente reprova, e é o que este caso existe para pegar. Os três valores distintos entre si (o mapa não aponta dois papéis para a mesma tabela). O `@ts-expect-error` compila hoje e deixa de compilar sob o mutante.",
+      "criterios_aceitacao_validados": [
+        "CA-07"
+      ],
+      "observacoes": "Arquivo proposto: `packages/db/test/cadastro-de-pessoa.spec.ts`. A metade de tipo é ASSERÇÃO ESTÁTICA e por isso carrega prova de falsificação; ela é exequível porque o script `test` do pacote roda `tsc -p tsconfig.test.json` ANTES do `vitest run` — mutante rodado pelo script, nunca por `vitest run` avulso, que não compila e devolveria falso negativo.",
+      "task_id": "T8"
+    },
+    {
+      "id": "CT-352",
+      "titulo": "T8 — o documento é gravado só com dígitos, e a unicidade alcança a forma mascarada",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "a porta grava `documentoPrincipal` normalizado para dígitos (a máscara não é persistida), e por isso a segunda gravação do MESMO documento com máscara diferente, no mesmo papel e na mesma empresa, é recusada pelo banco com `23505`",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "`12345678909` gravado depois de `123.456.789-09` no mesmo papel e empresa",
+        "assertion_esperada": "SQLSTATE `23505` na segunda gravação, contagem crua da tabela em 1, e a coluna `documento_principal` lida crua igual a `'12345678909'` — nunca com ponto ou traço"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "gravação e leitura crua exigem contexto de tenant fixado",
+        "caminho_legitimo": "mesma receita do CT-349 — contexto pela API pública do pacote (`contextoDeTenant.executarCom` + `abrirAcessoAoBanco`)",
+        "teste_analogo": "packages/db/test/permissao.spec.ts"
+      },
+      "camada": "dados (`packages/db/src/cadastro-de-pessoa.ts`)",
+      "pre_condicoes": [
+        "instância efêmera migrada; contexto da empresa A fixado; tabela do papel vazia"
+      ],
+      "dados_entrada": {
+        "descricao": "o mesmo CPF em duas grafias, e um CNPJ mascarado como segunda linha da tabela",
+        "valores": {
+          "cpf_mascarado": "123.456.789-09",
+          "cpf_cru": "12345678909",
+          "cnpj_mascarado": "11.222.333/0001-81",
+          "cnpj_cru": "11222333000181"
+        }
+      },
+      "passos": [
+        "gravar a pessoa com o documento MASCARADO",
+        "ler a coluna `documento_principal` crua e afirmar o valor",
+        "tentar gravar de novo com a grafia SEM máscara e capturar o erro",
+        "repetir as três etapas com o par de CNPJ, em outro papel"
+      ],
+      "resultado_esperado": "primeira gravação vence; a coluna `documento_principal` lida crua vale exatamente `'12345678909'` (e `'11222333000181'` no par de CNPJ) — sem ponto, traço ou barra. Segunda gravação falha com `erro.code === '23505'` citando a restrição única declarada por literal. Contagem crua da tabela: exatamente 1. As duas metades são obrigatórias — a asserção sobre a coluna sozinha não prova que a unicidade alcança as duas grafias, e a recusa sozinha não distingue `normalizou` de `recusou por coincidência de texto`.",
+      "criterios_aceitacao_validados": [
+        "CA-09"
+      ],
+      "observacoes": "Arquivo proposto: `packages/db/test/cadastro-de-pessoa.spec.ts`. NÃO duplica o CT-313 (documento com DV inválido recusado na borda) nem o CT-314 (tabela de dígito verificador, unitário em `@sysloc/shared`): aqui os documentos são VÁLIDOS e o eixo é a normalização na escrita mais o alcance da restrição única.",
+      "task_id": "T8"
+    }
+  ],
+  "cenarios_nao_cobertos": [
+    {
+      "descricao": "Transição automática da situação de locação do imóvel (passar a LOCADO ao ativar um contrato)",
+      "motivo": "Fora do escopo declarado pelo PRD §4.2 — pertence à fatia seguinte da fase (contratos). A RN-10 é explícita: nesta fatia a situação não muda sozinha."
+    },
+    {
+      "descricao": "Verificação de e-mail e WhatsApp do locatário (token, reenvios, registro de confirmação)",
+      "motivo": "Fora do escopo (PRD §4.2 e RN-09). Aqui o locatário tem apenas contato simples."
+    },
+    {
+      "descricao": "Comportamento do agregado quando o imóvel tem cômodos e é retirado de circulação",
+      "motivo": "Ponto em aberto declarado no tech-alignment: 'o PRD não distingue, e a fatia trata a retirada apenas no cadastro'. Não há expectativa de produto registrada, e inventá-la no teste seria inventar requisito. Precisa vir antes da implementação."
+    },
+    {
+      "descricao": "Retenção e anonimização de dado pessoal (documento, endereço e contato retidos indefinidamente)",
+      "motivo": "Dívida registrada na ADR-0014 e no PRD §9; não há política declarada no projeto, e o TECH_SPEC não deve inventá-la."
+    },
+    {
+      "descricao": "Carga e desempenho da carteira expandida (número de idas ao banco, comportamento com centenas de imóveis)",
+      "motivo": "Teste de carga está fora do escopo por doutrina. O risco de consulta N+1 fica registrado em `recomendacoes`, e o CT-329 cobre a corretude do resultado, não o custo."
+    },
+    {
+      "descricao": "Concorrência entre duas criações simultâneas com o mesmo documento/identificador municipal",
+      "motivo": "Race condition em fatia de MVP não vira caso automatizado por doutrina. O risco é estruturalmente coberto: a unicidade é do BANCO (restrição por empresa), não uma leitura prévia na aplicação — a corrida produz recusa do segundo, não duplicata. Registrado como risco em `recomendacoes` para que a implementação não substitua a restrição por conferência prévia."
+    },
+    {
+      "descricao": "Rotas do painel do operador do SaaS sobre estes cadastros",
+      "motivo": "Fora do escopo (PRD §4.2 e §5): o Sysloc Master não alcança dado de negócio de nenhuma empresa. Que a matriz dele seja vazia já é provado pelo CT-211 da fatia anterior."
+    },
+    {
+      "descricao": "Concorrência entre duas gravações simultâneas do mesmo documento no mesmo papel (T8)",
+      "motivo": "a unicidade do banco resolve; a §19 do tech_spec declara race em MVP fora do escopo automatizado, e a doutrina não gera caso para isso"
+    },
+    {
+      "descricao": "Custo da carteira expandida e número de idas ao banco (T5, listagem com `expandir=imoveis`)",
+      "motivo": "carga e desempenho estão fora do escopo por doutrina; a §12.2 fixa consultas por nível e o risco está registrado na §20 para medição em revisão"
+    },
+    {
+      "descricao": "Recusa de autorização das seis rotas de conjunto (403 sem `TELA:imoveis` e sem `ACAO:excluir_cadastro`)",
+      "motivo": "coberto transversalmente pelos CT-318 a CT-321 na T11; repetir por entidade seria duplicação cross-layer"
+    },
+    {
+      "descricao": "Isolamento entre empresas nas tabelas de conjunto e das três pessoas",
+      "motivo": "coberto pelos CT-300 a CT-304 (catálogo, leitura escopada, gravação cruzada e FK composta) e pelo CT-333"
+    },
+    {
+      "descricao": "Documento com dígito verificador inválido nas rotas de pessoa (T8/T9)",
+      "motivo": "CT-313 (rota) e CT-314 (tabela de DV em `@sysloc/shared`) já cobrem; a conferência é da T3 e da borda, não da porta de dados"
+    },
+    {
+      "descricao": "Verificação de que o documento publicado de `@sysloc/contracts` é derivado dos esquemas",
+      "motivo": "CT-327 e CT-328 cobrem, na T11; a T1 só precisa provar os esquemas em si"
+    }
+  ],
+  "recomendacoes": [
+    "TRÊS SUÍTES EXISTENTES VÃO REPROVAR ao entrar o código desta fatia, e cada reprovação é a rede funcionando — atualizar o conjunto esperado é obrigação consciente; enfraquecê-lo para contenção é regressão de prova (R2, Protocolo Antirregressão §4.2): (a) `packages/db/test/catalogo.spec.ts` CT-008, que afirma `tabelasExaminadas` por igualdade e passará de 2 para 9 tabelas; (b) `packages/db/test/unidade-de-trabalho.spec.ts` CT-012, cujo `SIMBOLOS_ESPERADOS` é igualdade EXATA e crescerá com as funções de acesso a dado das entidades novas — cada entrada nova exige a linha `SUT_IS_CORRECT_BECAUSE:` no comentário, como as da T7 e da T8 já têm; (c) `apps/api/test/cobertura-de-autorizacao.e2e.spec.ts`, cujos quatro conjuntos e a constante `ROTAS_PUBLICADAS_EM_PRODUCAO = 33` são igualdade.",
+    "QUARTA suíte afetada se a conferência de documento for publicada em `@sysloc/shared`: `packages/shared/test/superficie-publica.spec.ts` compara a superfície do pacote por igualdade de conjunto. Publicar `conferirDocumento` é decisão declarada pelo tech-alignment ('nasce no pacote compartilhado, sem dependência nova'), e a atualização do conjunto acompanha.",
+    "PORTA RESERVADA, NÃO DINÂMICA, nos E2E. A instrução de invocação diz 'porta dinâmica', mas o precedente medido do projeto é `reservarPorta()` de `packages/shared/test/efemero-comum.ts`, com `process.env.PORT` escrito ANTES da montagem: o arcabouço de identidade confere a origem das requisições com cookie contra o endereço base composto a partir da porta CONFIGURADA. Uma porta pedida ao sistema depois da montagem quebra a autenticação por cookie. Está registrado em três suítes E2E existentes.",
+    "MUTANTE SEMPRE PELO SCRIPT `test` DO PACOTE CONSUMIDOR (`pnpm --filter @sysloc/<pacote> test`), nunca `vitest run` avulso. Vale com força para o CT-326 e o CT-327: `apps/api/test/**` alcança `@sysloc/db`, `@sysloc/auth` e `@sysloc/contracts` pela FRONTEIRA do pacote, e leria o `dist/` da compilação anterior — o mutante ficaria no fonte sem alcançar o que executa, e o verde seria lido como 'o mutante sobreviveu'. A tabela com as duas medições está em `.claude/rules/testing-stack.md`.",
+    "O DÉBITO D28 TEM GATILHO JÁ DISPARADO e as suítes novas de `apps/api/test/` serão consumidores NOVOS dos acessórios compartilhados (`../../../packages/auth/test/identidade-efemera.ts`, `../../../packages/shared/test/efemero-comum.ts`) por caminho relativo profundo. O tech-alignment manda verificar o marcador antes de acrescentar o próximo consumidor. Ou o débito fecha nesta fatia (subpath `\"./test\"` nos manifestos), ou cada arquivo novo repete o marcador `DÉBITO COM GATILHO` como os existentes fazem — o que não se admite é acrescentar consumidor sem nenhuma das duas.",
+    "O DÉBITO D38 DISPARA NESTA FATIA por decisão já registrada no tech-alignment: os controladores novos são a quarta cópia de `validar()`, e a extração para módulo de borda é obrigação herdada. O marcador sai no MESMO commit da extração, e a linha correspondente sai do índice do `CLAUDE.md`. Os testes de validação desta fatia (CT-322, CT-324, CT-332) passam a exercitar o módulo extraído, e a extração NÃO pode afrouxar nenhuma asserção existente sobre o corpo de recusa das rotas da F1.",
+    "O VOCABULÁRIO DE ERRO É FECHADO e não tem código de conflito: `packages/shared/src/erros.ts` publica sete códigos, e `STATUS_POR_CODIGO` é `Record<CodigoErro, number>` — acrescentar valor sem mapear status NÃO compila. A recusa por unicidade (CA-03, CA-09) e a distinção da D4 precisam caber em `CAMPO_INVALIDO` (422) com `campo` nomeado e um discriminador em `detalhes`. O TECH_SPEC deve FIXAR o nome desse discriminador antes da implementação — o CT-312 depende dele, e um nome inventado no teste viraria acoplamento a uma escolha que ninguém tomou. Acrescentar um código novo ao enum é decisão de contrato com efeito no handoff ao frontend, e não escolha de implementação.",
+    "PIRÂMIDE DELIBERADAMENTE INVERTIDA nesta fatia (2 unitários, 10 integração, 22 rota/E2E), e a razão é regra do projeto, não descuido: `.claude/rules/testing-stack.md` declara que 'repositório, rota HTTP, processador de fila e todo verificador de infraestrutura DEVEM atravessar fronteira real', e 'mock é evitado por decisão'. Toda a lógica desta fatia mora exatamente nessas camadas. Os dois unitários são os únicos invariantes verdadeiramente sem I/O (aritmética de dígito verificador e asserção estática sobre o fonte).",
+    "RISCO REGISTRADO — consulta N+1 na carteira expandida: o CT-329 prova a corretude do resultado, não o custo. Se a implementação montar a árvore com uma consulta por conjunto e outra por imóvel, o caso passa. O volume declarado do produto (dezenas de imóveis) não cobra o preço hoje; se a F5 mudar a conta, o instrumento existe — a sentinela de porta do CT-011 conta o que efetivamente trafega entre cliente e servidor.",
+    "RISCO REGISTRADO — a unicidade deve ser do BANCO (restrição `unique(empresa_id, …)` alcançando os retirados), nunca uma leitura prévia na aplicação. Leitura prévia como MECANISMO de unicidade está refutada pela corrida, e a refutação já está escrita por extenso no docblock de `garantirVinculoDeAcesso`. O CT-310/CT-311/CT-312 provam o efeito, não o mecanismo — o Gate 2 deve conferir que a recusa vem da restrição.",
+    "PONTOS EM ABERTO DO TECH-ALIGNMENT QUE OS TESTES PRECISAM VER DECIDIDOS, e que o TECH_SPEC deve fechar antes da implementação: (a) se a posição do cômodo é densa e reatribuída ou apenas monotônica — o CT-317 afirma o que a decisão fixar; (b) se `GET /:id` de registro retirado devolve `200` com a marca ou `404` — o CT-316 pressupõe `200`, sem o que a recirculação fica inalcançável; (c) o nome do discriminador da D4 (ver acima); (d) onde exatamente a unidade de trabalho é aberta na borda — manipulador ou mecanismo transversal —, porque é isso que o conjunto declarado do CT-326 enumera.",
+    "DIVERGÊNCIA FACTUAL A CORRIGIR NA SPEC, não no teste: o enunciado desta invocação e a §3.6 do tech_spec afirmam que `packages/shared/test/superficie-publica.spec.ts` compara a superfície publicada por IGUALDADE DE CONJUNTO. O arquivo lido não faz isso — o CT-009 assere por PRESENÇA (`expect(publico.tipos.ErroDeAplicacao).toBe('function')`, `expect(publico.codigos).toContain('CAMPO_INVALIDO')`) e o comentário na linha 78 declara a escolha por extenso: `Presença (superconjunto), não igualdade de chaves: acrescentar export é retrocompatível`. Consequência prática: publicar a conferência de documento em `@sysloc/shared` (T3) NÃO faz aquela suíte reprovar, e a linha correspondente da §3.6 descreve um mecanismo que não existe. Ou a §3.6 é corrigida, ou a T3 passa a ter o trabalho declarado de converter o CT-009 para igualdade — decisão de contrato, não conserto de teste, e sujeita ao Protocolo Antirregressão.",
+    "T1: o pacote `packages/contracts/` não existe ainda; o `package.json` dele deve copiar o script `test` dos três pacotes atuais (`tsc --build && tsc -p tsconfig.test.json && vitest run`), sem o que os mutantes de CT-339 rodariam sem compilação e devolveriam falso negativo.",
+    "T4: o fechamento do D38 exige, no MESMO commit da extração, a remoção do marcador `DÉBITO COM GATILHO — D38` de `apps/api/src/autenticacao/senha.controller.ts` E da linha correspondente do índice do `CLAUDE.md`; se ele for o último marcador vivo, o bloco inteiro do `CLAUDE.md` é apagado (`.claude/rules/nao-regressao.md` §3-B). Confira as duas pontas com `grep -rl --exclude-dir=dist \"DÉBITO COM GATILHO\" apps packages deploy`.",
+    "T4: a extração toca `apps/api/src/comum/`, que já hospeda o `esquemaDoErro` unificado pela intervenção de 2026-08-05 (D40). Reuse `MENSAGEM_POR_CODIGO` de `comum/filtro-excecao.ts` por importação — ele é público sob `DECISÃO FECHADA` (T9/Gate 2) e a cadeia da mensagem não pode ser redigitada em `validacao.ts`.",
+    "T4/T5/T8: as suítes novas de `apps/api/test/` e `packages/db/test/` serão consumidoras dos acessórios compartilhados por caminho relativo profundo — o D28 JÁ DISPAROU. Leia o marcador antes de acrescentar o consumidor, em vez de reimplementar `listarFontesTs`/`semComentarios`/`varrerArquivos`.",
+    "Todos os E2E desta geração devem usar `reservarPorta()` de `packages/shared/test/efemero-comum.ts`. Porta dinâmica quebra a conferência de origem do arcabouço de identidade, que compõe o endereço base a partir da porta configurada — é regra da fatia, não preferência.",
+    "As três asserções estáticas geradas (CT-339, CT-343 e a metade de tipo do CT-351) exigem prova de falsificação COM MUTANTE RODADO PELO SCRIPT `test` DO PACOTE CONSUMIDOR (`pnpm --filter @sysloc/contracts test`, `pnpm --filter @sysloc/api test`, `pnpm --filter @sysloc/db test`). `vitest run` avulso é inválido para trabalho de mutante e inverte a conclusão em silêncio."
+  ],
+  "mock_budget_observado": true,
+  "gates_aplicados": [
+    "invariant_first",
+    "owning_layer",
+    "real_execution",
+    "failure_means_fix_production",
+    "no_snapshot_without_contract",
+    "no_self_set_mock_assertion",
+    "negative_companion"
+  ]
+}

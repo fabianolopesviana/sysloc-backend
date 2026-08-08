@@ -50,6 +50,19 @@ commitadas, incluindo a **T7**, cuja recuperação foi provada por **reinício r
 A fatia `caracterizacao-regras-legadas` (v1) também está **concluída**: os 6 artefatos golden
 estão versionados e são o oráculo das regras legadas para a F3 e a F5.
 
+**Fase 2 em andamento — a fatia 1 de 2 fechou em 2026-08-08.**
+**`cadastro-de-imoveis-e-pessoas` (v1) — CONCLUÍDA, staged e não commitada.** As **11 tasks**
+aprovadas nos dois gates, nenhuma bloqueada. Suíte de **274 → 541 casos**; `pnpm build`, `pnpm lint`
+e `pnpm test` verdes. Entrega as 6 entidades de negócio em `negocio` (conjunto, imóvel, cômodo,
+locador, locatário, fiador), as **33 rotas** sob `/v1` — `rotasEnumeradas` = **66**, `semDeclaracao`
+vazio —, a metragem derivada provada contra o golden, exclusão lógica em tudo menos cômodo, e o
+pacote **`@sysloc/contracts`** como fonte única do contrato. Fechou os débitos **D38** (na T4) e
+**D11**. Nasceram dela as ADRs **0014**, **0015**, **0016**, **0017** e **0018**.
+**Deixou 13 débitos abertos** na §2 do `_run/run-report.md` (14 blocos, um já fechado) — um deles
+com marcador e gatilho (**D3**). Resolve-se tudo de uma vez com
+`/agent-spec-debt-resolution docs/specs/features/cadastro-de-imoveis-e-pessoas/v1/`.
+Falta a fatia **`contratos-de-locacao`** para a fase fechar.
+
 **Fase 1 CONCLUÍDA — as duas fatias fechadas.** A F1 foi **desdobrada em duas fatias**, cortando
 *depois* da autenticação (o corte isolamento × identidade foi rebatido: ele atravessa a camada 5, e
 a fonte legítima do `empresa_id` é a sessão). Em **2026-08-05** a segunda fechou, e com ela a fase.
@@ -254,20 +267,23 @@ Específicos deste domínio: **undici** (mTLS do Sicoob), **`node:crypto` `X509C
 > ```
 
 Oito débitos têm gatilho que dispara fora da fatia que os criou: **D28** e **D32** vêm da F0;
-**D23**, **D39**, **D24**, **D27**, **D37** e **D38** nasceram na F1 — os quatro últimos na fatia
-`autorizacao-e-ciclo-de-acesso`. O **D27** partilha com o D23 o gatilho e o fato que falta: qual é o
+**D23**, **D39**, **D24**, **D27** e **D37** nasceram na F1 — os três últimos na fatia
+`autorizacao-e-ciclo-de-acesso` —; e o **D3** nasceu na F2, na fatia
+`cadastro-de-imoveis-e-pessoas`. O **D27** partilha com o D23 o gatilho e o fato que falta: qual é o
 salto confiável da borda.
-**Dois já dispararam e seguem abertos** — o D28, na F1/T2, e o D38, na própria T9 que o registrou.
-Cinco saíram daqui por terem sido fechados — **este índice lista só débito vivo**: o D6 da F1/T5,
+**Um já disparou e segue aberto** — o D28, na F1/T2.
+Seis saíram daqui por terem sido fechados — **este índice lista só débito vivo**: o D6 da F1/T5,
 no fechamento da F1
 (`verificar-migracao.sh` entrou em `VERIFICADORES_DA_FATIA`); o D7 da F1/T6, na T6 da fatia
 `autorizacao-e-ciclo-de-acesso`, que declarou `perfil` e `empresa_id` como campos adicionais com a
 escrita pelo corpo fechada; o D32 da F1/T7 daquela mesma fatia, na T8, quando as rotas do Admin
 passaram a criar o vínculo de acesso sob o contexto que a guarda publica da sessão; e o D21 da
 F1/T7, na T9 daquela fatia, quando a rota nativa de troca de senha deixou de ser publicada e a
-troca do produto passou a conferir a admissão antes de qualquer escrita; e o **D40** da F1/T9, na
+troca do produto passou a conferir a admissão antes de qualquer escrita; o **D40** da F1/T9, na
 intervenção dirigida de limpeza de 2026-08-05, quando `esquemaDoErro` ganhou definição única em
-`apps/api/src/comum/esquema-de-erro.ts`.
+`apps/api/src/comum/esquema-de-erro.ts`; e o D38 daquela mesma T9, na T4 da fatia
+`cadastro-de-imoveis-e-pessoas`, quando `validar()` ganhou definição única em
+`apps/api/src/comum/validacao.ts` e os três controladores passaram a importá-la.
 
 > **Esta tabela é um ÍNDICE, não um relatório.** Cada linha é um **ponteiro curto**; o detalhe —
 > impacto medido, o que fazer, prova exigida — vive **só** na §2 do `run-report.md` da fatia que
@@ -292,7 +308,7 @@ intervenção dirigida de limpeza de 2026-08-05, quando `esquemaDoErro` ganhou d
 | **D24** (F1/T5, fatia `autorizacao-e-ciclo-de-acesso`) | `apps/api/src/main.ts` | a **publicação atrás do servidor de borda na F7** — `/docs*` atende sem sessão por decisão registrada, que vale só enquanto a API é local |
 | **D27** (F1/T6, fatia `autorizacao-e-ciclo-de-acesso`) | `packages/auth/src/autenticacao.ts` | a **publicação atrás do servidor de borda na F7** — sem ela o limitador não tem eixo de origem |
 | **D37** (F1/T8, fatia `autorizacao-e-ciclo-de-acesso`) | `apps/api/src/master/empresa.controller.ts` | a **primeira comparação do `:id` do Master com identidade da sessão** — o esquema de lá não canoniza a caixa do UUID |
-| **D38** (F1/T9, fatia `autorizacao-e-ciclo-de-acesso`) | `apps/api/src/autenticacao/senha.controller.ts` | **JÁ DISPAROU** — `validar()` na terceira cópia; fecha na quarta, ou na task que já inclua os três arquivos |
+| **D3** (F2/T1, fatia `cadastro-de-imoveis-e-pessoas`) | `packages/contracts/src/comum.ts` | a **primeira task que abrir `usuario.controller.ts` por outra razão** — `ESQUEMA_DO_IDENTIFICADOR` tem duas definições |
 
 ---
 
