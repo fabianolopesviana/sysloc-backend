@@ -22,6 +22,11 @@
  * do SaaS não cabem nele sem inflá-lo até ele deixar de ser a matriz do produto, e por isso o
  * Master atravessa pela dimensão de **perfil**, nunca por chave.
  *
+ * As duas dimensões são ortogonais **entre si**, e não exclusivas dentro de uma rota: a §4.1 do
+ * domínio de locação declara rotas que exigem a área de tela **e** a ação sensível. Quem exprime
+ * isso é a variante `TODAS` de {@link Exigencia} — ver o docblock dela, que registra o defeito
+ * concreto que a ausência dela produziu.
+ *
  * A terceira variante — {@link Exigencia} com `dimensao: 'NENHUMA'` — é a marca de *"esta rota
  * legitimamente não exige permissão"*, que a própria ADR nomeia como *"a única abertura
  * deliberada"*. Ela é um valor de {@link Exigencia}, e **não** um caso especial tratado fora daqui:
@@ -81,16 +86,62 @@ const PREFIXO_DE_PERFIL = 'PERFIL';
 const SEPARADOR = ':';
 
 /**
- * O que uma rota exige, nas duas dimensões da ADR-0011 mais a marca de "não exige".
+ * Prefixo com que a conjunção se nomeia quando ela própria é o defeito.
+ *
+ * Mesma forma dos outros dois eixos (`PERFIL:…`, `TELA:…`) para que o valor de `detalhes.exigido`
+ * continue legível por inspeção, sem campo extra no envelope.
+ */
+const PREFIXO_DE_CONJUNCAO = 'TODAS';
+
+/**
+ * O que uma rota exige — as duas dimensões da ADR-0011, a marca de "não exige", e a **conjunção**
+ * que a **ADR-0018** acrescenta.
  *
  * União discriminada, como o `Admissao` da barreira e o `AlcanceDaSessao` da sessão restrita: é
  * impossível declarar um perfil e uma chave ao mesmo tempo, e impossível ler `chave` de uma
  * exigência de perfil sem que o compilador reclame.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que `TODAS` existe — e o defeito concreto que a ausência dela produziu
+ * ---------------------------------------------------------------------------
+ *
+ * As três variantes originais carregam **uma** exigência cada. Isso bastou enquanto toda rota
+ * declarava uma coisa só; deixou de bastar quando a §4.1 do domínio de locação passou a pedir *"a
+ * área **mais** a ação sensível"* nas rotas de retirada e recirculação.
+ *
+ * A forma óbvia — declarar a área na classe e a ação no método — **não** soma: a guarda lê com
+ * `getAllAndOverride`, e a declaração do método **substitui** a da classe. A **ADR-0018** nomeia
+ * esse override como **modo de falha**, e registra por que mesclar as declarações dentro do leitor
+ * seria pior — o mecanismo de mesclagem do arcabouço combina objetos planos e produziria o mesmo
+ * defeito, escondido atrás de um nome que promete união.
+ *
+ * Sem esta variante, o *"além disso"* da spec virava *"em vez disso"*, e as rotas de circulação
+ * deixavam de exigir a área. O caminho de exploração era o uso normal do produto: quem recebe
+ * `{TELA:cadastros, ACAO:excluir_cadastro}` — conjunto **coerente**, que
+ * `validarCoerenciaDeAjustes` aceita, porque `MAPA_ACAO_TELA` mapeia aquela ação para
+ * `TELA:cadastros` — recebia `403` na listagem de conjuntos e **`200`** na retirada de qualquer um
+ * deles.
+ *
+ * A conjunção é **recursiva** sobre `Exigencia`, e não uma lista de chaves: o que ela compõe são
+ * exigências, e restringi-la a um eixo faria a próxima composição legítima (perfil **e** chave, por
+ * exemplo) nascer como uma quinta variante em vez de um uso desta.
+ *
+ * **O único produtor de `TODAS` hoje é `@ExigeChaves`** (`apps/api/src/autenticacao/exigencia.
+ * decorator.ts`), que compõe **chaves do catálogo, e só elas**. A recursão e a composição
+ * perfil∧chave são exercitadas pelo `CT-353`, mas **não há decorador que as declare numa rota** —
+ * compô-las exigiria um decorador novo, que ninguém escreveu. Isto está registrado para que quem
+ * publicar rota nas tasks seguintes não infira do tipo uma forma que a borda ainda não oferece.
+ *
+ * O arranjo é **tupla não vazia**: a conjunção de nada é vacuamente verdadeira, e isso seria uma
+ * segunda "abertura deliberada" — obtida por omissão, que é exatamente o que a ADR-0011 recusa. O
+ * tipo a torna irrepresentável; {@link DECISAO_POR_DIMENSAO} ainda a recusa em execução, porque o
+ * metadado chega por reflexão e conversão.
  */
 export type Exigencia =
   | { readonly dimensao: 'PERFIL'; readonly perfil: Perfil }
   | { readonly dimensao: 'CHAVE'; readonly chave: ChaveDoCatalogo }
-  | { readonly dimensao: 'NENHUMA' };
+  | { readonly dimensao: 'NENHUMA' }
+  | { readonly dimensao: 'TODAS'; readonly exigencias: readonly [Exigencia, ...Exigencia[]] };
 
 /** As dimensões, para a tabela exaustiva abaixo. */
 type DimensaoDaExigencia = Exigencia['dimensao'];
@@ -165,6 +216,43 @@ const DECISAO_POR_DIMENSAO: Readonly<
   // exista um lugar só onde se responde "isto passa?" — e para que a marca seja um valor auditável
   // em vez de a ausência de um.
   NENHUMA: () => ({ alcanca: true }),
+  // DECISÃO FECHADA — T5 / Gate 1 · 2026-08-06
+  // O QUÊ: a conjunção recusa na PRIMEIRA exigência que falta, na ordem declarada pela rota, e a
+  //        conjunção VAZIA recusa em vez de passar.
+  // POR QUÊ: as duas metades fecham defeitos medidos, e nenhuma é preferência de estilo.
+  //          (1) A ordem: a RN-14 manda a recusa NOMEAR o que faltou, e o `CT-320` fixa que a
+  //              sessão que tem a área e não tem a ação recebe `exigido: 'ACAO:excluir_cadastro'`
+  //              — "e NÃO a área, que a sessão possui: nomear a área seria a recusa genérica que a
+  //              ADR-0011 rejeita". Devolver a primeira ausente, com a área declarada antes da
+  //              ação, é o que produz esse valor sem nenhuma regra de prioridade escrita à parte.
+  //              Devolver a última, ou a lista inteira, quebra aquele caso e devolve ao cliente uma
+  //              chave que ele já tem.
+  //          (2) O vazio: `[].every(...)` é `true`, e uma conjunção vacuamente verdadeira seria uma
+  //              SEGUNDA abertura deliberada — obtida por omissão. A ADR-0011 admite exatamente uma,
+  //              `NENHUMA`, e exige que ela seja explícita e grepável.
+  // REVERTER EXIGE: provar que a recusa deixou de precisar nomear UMA exigência (isto é, que o
+  //                 envelope da ADR-0017 passou a publicar um conjunto em `detalhes.exigido` e que o
+  //                 `CT-320` foi reescrito para isso), E que a conjunção vazia deixou de ser
+  //                 alcançável por reflexão. Enquanto o metadado chegar por conversão, o ramo fica.
+  TODAS: (exigencia, sessao) => {
+    const { exigencias } = exigencia as Extract<Exigencia, { dimensao: 'TODAS' }>;
+
+    // Irrepresentável pelo tipo (tupla não vazia) e ainda assim recusado aqui: o metadado chega por
+    // `Reflector`, com conversão, e um valor forjado encontraria a conjunção vazia passando.
+    if (exigencias.length === 0) {
+      return { alcanca: false, exigido: `${PREFIXO_DE_CONJUNCAO}${SEPARADOR}vazia` };
+    }
+
+    for (const parte of exigencias) {
+      const decisao = decidirAcesso(parte, sessao);
+
+      if (!decisao.alcanca) {
+        return decisao;
+      }
+    }
+
+    return { alcanca: true };
+  },
 };
 
 /**

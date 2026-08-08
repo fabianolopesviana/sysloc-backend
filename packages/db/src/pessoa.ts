@@ -76,7 +76,14 @@
  * como propor uma empresa.
  */
 
-import type { Fragment, TransactionSql } from 'postgres';
+import type { TransactionSql } from 'postgres';
+// O fragmento da empresa do contexto tem **lar único** em `./contexto-de-escrita.ts` — ele era, até
+// a T7 da fatia `cadastro-de-imoveis-e-pessoas`, uma cópia byte a byte em três arquivos deste
+// pacote (débito D7). Aqui ele não é filtro redundante e sim **o** caminho: `identidade.usuario`
+// não tem política (ADR-0009), e em `garantirVinculoDeAcesso` a linha do vínculo ainda não existe,
+// de modo que a única forma de saber se a pessoa é da empresa do contexto é perguntar à variável
+// que a própria política leria. O porquê da forma está no cabeçalho daquele módulo.
+import { empresaDoContexto } from './contexto-de-escrita.js';
 import type { PerfilDaPessoa } from './esquema/identidade.js';
 
 /** A janela pedida da listagem, já validada na borda. */
@@ -113,32 +120,6 @@ export interface PessoaDoContexto {
   readonly email: string;
   readonly perfil: PerfilDaPessoa;
   readonly ativo: boolean;
-}
-
-/**
- * A empresa do contexto, **na expressão literal das políticas de `0001_seguranca.sql`**.
- *
- * Escrita uma vez e reusada pelas três consultas que leem `identidade.usuario` — as duas da listagem
- * e a de {@link garantirVinculoDeAcesso} —, para que não existam leituras da variável de sessão
- * livres para divergir. O `true` de `current_setting` é o que faz a variável não
- * fixada devolver nulo em vez de levantar erro, e o `nullif(…, '')` trata o outro caminho, o da
- * variável fixada em cadeia vazia — a mesma escolha, e a mesma razão, da migração: **contexto
- * ausente resulta em vazio, nunca em dado alheio**.
- *
- * É um **fragmento** do driver (`tx`...``), e não uma cadeia interpolada: ele é montado pelo mesmo
- * mecanismo da consulta que o hospeda, de modo que nenhum texto entra na instrução por concatenação
- * — mesmo padrão, e mesma justificativa, de `colunasDaEmpresa` em {@link ./empresa.ts}. Nada aqui
- * vem de fora: o fragmento é constante deste módulo, sem interpolação alguma.
- *
- * Ela **não é um filtro redundante sobre `negocio`**: nenhuma consulta deste arquivo a aplica a
- * tabela que já tem política. Ela existe para `identidade.usuario`, que por decisão da ADR-0009 não
- * tem política alguma — e ali ela não duplica caminho nenhum, ela **é** o caminho. Em
- * {@link garantirVinculoDeAcesso} isso vale com força ainda maior: ali a linha do vínculo **ainda
- * não existe**, então não há política de `negocio` a consultar sobre a pessoa — a única forma de
- * saber se ela é da empresa do contexto é perguntar à variável que a própria política leria.
- */
-function empresaDoContexto(tx: TransactionSql): Fragment {
-  return tx`nullif(current_setting('app.empresa_id', true), '')::uuid`;
 }
 
 /**

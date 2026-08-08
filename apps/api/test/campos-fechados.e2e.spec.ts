@@ -24,7 +24,14 @@
  * |       | (d)    | CREDENCIAL: a conferência de `senhaAtual` acima do teto é recusada pelo
  * |       |        | limitador, por origem e por caminho, e não fica sem teto nenhum. (P-T6-2) |
  *
- * Rastreabilidade: `CA-16 → CT-235 (RN-13)` e `P-T6-2 → CT-236 (RN-06)`.
+ * | CA-14 | CT-323 | Na superfície NOVA do domínio de locação, `empresaId` no corpo é recusado com
+ * |       |        | `422 CAMPO_INVALIDO` **sem gravar linha em empresa alguma**; e o registro criado
+ * |       |        | sem o campo nasce com a `empresa_id` da SESSÃO — provado por ele ser visível sob
+ * |       |        | o contexto da empresa de quem criou, invisível sob o da outra, e por a sessão da
+ * |       |        | outra receber `404` ao pedi-lo. (ADR-0008) |
+ *
+ * Rastreabilidade: `CA-16 → CT-235 (RN-13)` e `P-T6-2 → CT-236 (RN-06)`. Acrescida pela T11 da fatia
+ * `cadastro-de-imoveis-e-pessoas`: `CA-14 → CT-323 (RN-01)`.
  *
  * ---------------------------------------------------------------------------
  * Por que o CT-236 (d) — a rota do produto trocou de porta de entrada, e quase perdeu o teto
@@ -159,6 +166,10 @@ import { AppModule } from '../src/app.module.ts';
 import { PREFIXO_DAS_ROTAS_DE_IDENTIDADE } from '../src/autenticacao/autenticacao.module.ts';
 import { CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO } from '../src/autenticacao/senha.controller.ts';
 import { ENDERECO_DE_ESCUTA, PREFIXO_DE_VERSAO } from '../src/configuracao/ambiente.ts';
+import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
+import { CAMINHO_DO_MASTER } from '../src/master/empresa.controller.ts';
+import { CAMINHO_DOS_USUARIOS } from '../src/usuarios/usuario.controller.ts';
+import { decodificarBase32 } from './base32.ts';
 
 /** Limite da montagem: banco migrado, semente, fila e a aplicação. */
 const LIMITE_DE_MONTAGEM_MS = 240_000;
@@ -271,6 +282,51 @@ const STATUS_DE_SENHA_ATUAL_INCORRETA = 422;
 
 /** A mensagem canônica de `CAMPO_INVALIDO`, por extenso. */
 const MENSAGEM_DE_CAMPO_INVALIDO = 'requisição inválida';
+
+// ---------------------------------------------------------------------------------------------
+// CT-342 (T4 da fatia `cadastro-de-imoveis-e-pessoas`) — a extração de `validar()` fecha o D38 sem
+// tocar no contrato de erro das três bordas que a usavam
+// ---------------------------------------------------------------------------------------------
+
+/** A superfície de pessoas, composta a partir do DONO do segmento — nunca escrita à mão. */
+const ROTA_DOS_USUARIOS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_USUARIOS}`;
+
+/** A superfície do operador do SaaS, composta a partir do DONO do segmento. */
+const ROTA_DO_MASTER = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}`;
+
+/**
+ * O operador do SaaS — o único perfil que alcança `/v1/master` (`@ExigePerfil('SYSLOC_MASTER')`).
+ *
+ * A sessão dele nasce **restrita** por `SEGUNDO_FATOR` (RN-08), e por isso a entrada dele exige o
+ * passo a mais que {@link entrarComoOperadorDoSaaS} cumpre. Sem ele a listagem responderia `403` da
+ * restrição de sessão, e o caso estaria provando a restrição em vez da tradução da recusa.
+ */
+const OPERADOR_DO_SAAS = pessoaSemeada('master@sysloc.com.br');
+
+/** O status que `CodigoErro.CAMPO_INVALIDO` implica (`STATUS_POR_CODIGO`, `@sysloc/shared`). */
+const STATUS_DE_CAMPO_INVALIDO = 422;
+
+/**
+ * Um `limite` acima de qualquer teto de página.
+ *
+ * Escrito por extenso e **não** derivado de `MAIOR_PAGINA_DE_EMPRESAS`, pela mesma razão que
+ * {@link ENTRADAS_ATE_O_TETO} registra: derivá-lo faria o número acompanhar um teto alargado, e a
+ * requisição deixaria de ser recusada sem que nada acusasse. O eixo aqui é o CAMPO nomeado na
+ * recusa, e o teto concreto tem prova própria no `CT-233`.
+ */
+const LIMITE_ACIMA_DE_QUALQUER_TETO = 999_999;
+
+/** Endereço bem formado para a criação recusada por chave desconhecida — o e-mail não é o culpado. */
+const EMAIL_BEM_FORMADO = 'pessoa.da.chave.extra@exemplo.com.br';
+
+/** A coleção de conjuntos — a rota do domínio de locação que o `CT-323` exercita. */
+const ROTA_DOS_CONJUNTOS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONJUNTOS}`;
+
+/** O nome do conjunto que o VETOR tenta criar com `empresaId` no corpo. */
+const NOME_DO_VETOR = 'Edifício do vetor de fuga de tenant';
+
+/** O nome do conjunto do CONTROLE — o mesmo corpo, sem o campo recusado. */
+const NOME_DO_CONTROLE = 'Edifício do controle do CT-323';
 
 let identidade: IdentidadeEfemera;
 let fila: FilaEfemera;
@@ -728,9 +784,330 @@ describe('CT-236 (d) — a troca de senha do produto corre sob o teto de credenc
   );
 });
 
+/**
+ * CT-342 — a rede do P4 do Protocolo Antirregressão para a extração do **D38**.
+ *
+ * ---------------------------------------------------------------------------
+ * O que ele prova, e por que ele mora aqui
+ * ---------------------------------------------------------------------------
+ *
+ * A T4 tirou `validar()` de dentro de `usuarios/usuario.controller.ts`,
+ * `master/empresa.controller.ts` e `autenticacao/senha.controller.ts` — três cópias literais — e a
+ * pôs em `comum/validacao.ts`. **É extração, não melhoria**: o contrato de erro que o cliente vê
+ * tem de ser exatamente o de antes, e é isso que este caso afirma pela BORDA, com o corpo INTEIRO
+ * por igualdade (ADR-0017 e §4 de `.claude/rules/nao-regressao.md` — nunca presença de campo).
+ *
+ * Ele estende esta suíte, e não uma nova, porque ela já monta a aplicação em porta reservada e já
+ * atravessa as duas bordas de que o caso precisa; um arranjo novo para o mesmo propósito seria a
+ * duplicata que o Gate 2 anota.
+ *
+ * As quatro linhas cobrem os DOIS ramos do campo, e não são intercambiáveis:
+ *
+ *   * `usuarios_corpo` e `master_janela` exercitam o ramo do **caminho presente** — `issues[0].path`
+ *     unido por ponto —, em bordas DIFERENTES (`usuario.controller.ts` e `empresa.controller.ts`);
+ *   * `usuarios_id` e `usuarios_chave_extra` exercitam o ramo do **campo padrão**, e com valores
+ *     DIFERENTES (`'id'` e `'corpo'`). É esse par que discrimina o argumento `campoPadrao`: sem
+ *     ele, uma extração que perdesse o parâmetro — ou que o fixasse num literal — responderia campo
+ *     vazio, ou o mesmo campo nas duas, e passaria.
+ *
+ * **`usuarios_chave_extra` cai no campo padrão, e isso é MEDIDO, não suposto.** O Zod v4 reporta a
+ * chave desconhecida de um `strictObject` como `unrecognized_keys` com `path: []` — o nome da chave
+ * viaja em `keys`, que `validar()` não lê. Logo o campo publicado é o `campoPadrao` daquele ponto de
+ * chamada (`'corpo'`), e não `'empresaId'`. Afirmar `'empresaId'` aqui exigiria MUDAR o
+ * comportamento da função extraída, que é exatamente o que a §3 da task proíbe. O endereço enviado
+ * nessa linha é bem formado de propósito: com um e-mail inválido o primeiro problema seria o dele, e
+ * a linha deixaria de exercitar o ramo que existe para exercitar.
+ *
+ * ---------------------------------------------------------------------------
+ * Precondição privilegiada — pelo caminho REAL, sem símbolo novo e sem cookie forjado
+ * ---------------------------------------------------------------------------
+ *
+ * As duas sessões saem da rota pública de entrada. A do Admin alcança `TELA:usuarios` pela **matriz
+ * do perfil** (`ADMIN_EMPRESA` é o catálogo inteiro), de modo que nenhum ajuste individual precisa
+ * ser escrito — `escreverAjustes` só teria o que fazer se a chave faltasse, e conceder o que a
+ * matriz já concede não seria precondição, seria ruído. A do operador do SaaS cumpre o segundo fator
+ * pelas rotas reais do arcabouço, com o código derivado por ele próprio (ver
+ * {@link entrarComoOperadorDoSaaS}). Nada é acrescentado a `apps/api/src/**` nem a
+ * `packages/auth/src/**` para este caso existir.
+ */
+describe('CT-342 — a extração de `validar()` não mudou o contrato de erro de nenhuma das bordas', () => {
+  it(
+    'as quatro recusas de borda respondem 422 com o envelope canônico e o MESMO campo de antes',
+    async () => {
+      const doAdmin = await entrarCom(ADMIN_DA_EMPRESA_A.email, SENHA_DA_CARGA);
+      const doOperador = await entrarComoOperadorDoSaaS();
+
+      // Ramo do CAMINHO, na borda de pessoas: `nome` vazio é o primeiro problema do corpo.
+      const usuariosCorpo = await pedir(ROTA_DOS_USUARIOS, {
+        metodo: 'POST',
+        cookie: doAdmin,
+        corpo: { nome: '', email: 'a@b.c', perfil: 'USUARIO_EMPRESA' },
+      });
+
+      // Ramo do CAMPO PADRÃO, na mesma borda: o escalar de rota recusa sem caminho a nomear.
+      const usuariosId = await pedir(`${ROTA_DOS_USUARIOS}/nao-e-uuid/desativacao`, {
+        metodo: 'POST',
+        cookie: doAdmin,
+      });
+
+      // Ramo do CAMINHO, na borda do operador do SaaS — a SEGUNDA das três cópias extraídas.
+      const masterJanela = await pedir(
+        `${ROTA_DO_MASTER}/empresas?limite=${String(LIMITE_ACIMA_DE_QUALQUER_TETO)}`,
+        { cookie: doOperador },
+      );
+
+      // Ramo do CAMPO PADRÃO com OUTRO valor (`'corpo'`) — ver o cabeçalho.
+      const usuariosChaveExtra = await pedir(ROTA_DOS_USUARIOS, {
+        metodo: 'POST',
+        cookie: doAdmin,
+        corpo: {
+          nome: 'Pessoa da Chave Extra',
+          email: EMAIL_BEM_FORMADO,
+          perfil: 'USUARIO_EMPRESA',
+          empresaId: EMPRESA_B.id,
+        },
+      });
+
+      const recusas = [
+        { rotulo: 'usuarios_corpo', resposta: usuariosCorpo, campo: 'nome' },
+        { rotulo: 'usuarios_id', resposta: usuariosId, campo: 'id' },
+        { rotulo: 'master_janela', resposta: masterJanela, campo: 'limite' },
+        { rotulo: 'usuarios_chave_extra', resposta: usuariosChaveExtra, campo: 'corpo' },
+      ] as const;
+
+      for (const { rotulo, resposta, campo } of recusas) {
+        expect(
+          resposta.status,
+          `${rotulo} respondeu ${String(resposta.status)}: ${resposta.texto}`,
+        ).toBe(STATUS_DE_CAMPO_INVALIDO);
+
+        // O corpo INTEIRO por igualdade, e não a presença de `campo`: um envelope que ganhasse
+        // `detalhes` — com o `ZodError` dentro, que é por onde a entrada recusada vazaria — reprova
+        // aqui, e um que perdesse `campo` também.
+        expect(resposta.corpo, `o corpo de ${rotulo} deixou de ser o de antes da extração`).toEqual(
+          {
+            codigo: CodigoErro.CAMPO_INVALIDO,
+            mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
+            campo,
+          },
+        );
+      }
+
+      // Companheiro positivo: a MESMA sessão do Admin, na MESMA rota, é atendida quando o corpo é
+      // válido. Sem ele, uma borda que tivesse simplesmente parado de funcionar — respondendo `422`
+      // a tudo — passaria as quatro asserções acima.
+      const aceita = await pedir(`${ROTA_DOS_USUARIOS}?limite=1`, { cookie: doAdmin });
+      expect(aceita.status, `a listagem de pessoas respondeu ${String(aceita.status)}`).toBe(200);
+    },
+    LIMITE_CASO_MS,
+  );
+});
+
+/**
+ * O `empresaId` do corpo, na superfície NOVA — e a empresa gravada, que sai da SESSÃO.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que este caso mora AQUI
+ * ---------------------------------------------------------------------------
+ *
+ * Esta é a suíte canônica desta classe de invariante, e o `CT-235` logo acima registra, por extenso,
+ * a lição que custou a primeira tentativa dele: *"a asserção é sobre a COLUNA e sobre a ausência de
+ * vínculo novo, nunca sobre o status da resposta"*. O `CT-323` é o mesmo invariante um domínio
+ * adiante — as 33 rotas da fatia `cadastro-de-imoveis-e-pessoas` —, e ele repete a lição em vez de
+ * reaprendê-la.
+ *
+ * ---------------------------------------------------------------------------
+ * O que DISCRIMINA, e o que apenas cobre
+ * ---------------------------------------------------------------------------
+ *
+ * A recusa do campo extra é o eixo FÁCIL, e ela **não discrimina**: o corpo fechado (`strictObject`)
+ * do `CT-322` já a daria, e um SUT que aceitasse `empresaId` e simplesmente o ignorasse passaria
+ * pelo status. O que discrimina é a **segunda metade** — a VISIBILIDADE do registro criado sob o
+ * contexto de cada empresa. Ela é observada por `abrirAcessoAoBanco` sob
+ * `contextoDeTenant.executarCom`, uma vez por empresa, **sem nenhuma cláusula que compare
+ * `empresa_id`**: o que se afirma é o que a política do banco deixa cada contexto enxergar, que é a
+ * forma que a ADR-0008 autoriza. Escrever o filtro aqui provaria a consulta, e não a RLS.
+ *
+ * ---------------------------------------------------------------------------
+ * Precondição privilegiada
+ * ---------------------------------------------------------------------------
+ *
+ * As duas sessões saem da rota pública de entrada, e as duas alcançam `TELA:imoveis` pela **matriz
+ * do perfil** (`ADMIN_EMPRESA` é o catálogo inteiro) — nenhum ajuste individual precisa ser escrito.
+ * O registro é criado **pela rota**, e o identificador que a sessão da outra empresa usa é o que
+ * aquela criação devolveu.
+ */
+describe('CT-323 — `empresaId` no corpo é recusado, e a empresa gravada sai da SESSÃO', () => {
+  it(
+    'o vetor não grava linha em empresa alguma, e o controle nasce visível só na empresa da sessão',
+    async () => {
+      const deA = await entrarCom(ADMIN_DA_EMPRESA_A.email, SENHA_DA_CARGA);
+      const deB = await entrarCom(ADMIN_DA_EMPRESA_B.email, SENHA_DA_CARGA);
+
+      const emAAntes = await contarConjuntos(EMPRESA_A.id);
+      const emBAntes = await contarConjuntos(EMPRESA_B.id);
+
+      // ------------------------------------------------------------------------------------
+      // O VETOR — corpo válido acrescido de `empresaId` apontando para a OUTRA empresa.
+      // ------------------------------------------------------------------------------------
+      const vetor = await pedir(ROTA_DOS_CONJUNTOS, {
+        metodo: 'POST',
+        cookie: deA,
+        corpo: { nome: NOME_DO_VETOR, empresaId: EMPRESA_B.id },
+      });
+
+      expect(vetor.status, `o vetor respondeu ${String(vetor.status)}: ${vetor.texto}`).toBe(
+        STATUS_DE_CAMPO_INVALIDO,
+      );
+      // Corpo INTEIRO por igualdade: um envelope que trouxesse `detalhes` publicaria o `ZodError`,
+      // e com ele o valor recusado — que é a empresa alheia.
+      expect(vetor.corpo).toEqual({
+        codigo: CodigoErro.CAMPO_INVALIDO,
+        mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
+        campo: 'corpo',
+      });
+      expect(vetor.texto).not.toContain(EMPRESA_B.id);
+
+      // NENHUMA linha nova, em NENHUMA das duas empresas — é o que separa "recusou" de "recusou
+      // depois de gravar", e o eixo que o status sozinho não alcança.
+      expect({
+        emA: await contarConjuntos(EMPRESA_A.id),
+        emB: await contarConjuntos(EMPRESA_B.id),
+      }).toEqual({ emA: emAAntes, emB: emBAntes });
+
+      // ------------------------------------------------------------------------------------
+      // O CONTROLE — o MESMO corpo, sem o campo. Sem ele, um SUT que recusasse tudo passaria.
+      // ------------------------------------------------------------------------------------
+      const controle = await pedir(ROTA_DOS_CONJUNTOS, {
+        metodo: 'POST',
+        cookie: deA,
+        corpo: { nome: NOME_DO_CONTROLE },
+      });
+
+      expect(
+        controle.status,
+        `o controle respondeu ${String(controle.status)}: ${controle.texto}`,
+      ).toBe(201);
+      const criado = (controle.corpo as { id: string }).id;
+
+      // A EMPRESA GRAVADA — por VISIBILIDADE sob cada contexto, e não por comparação de coluna.
+      expect({
+        visivelEmA: await enxergaConjunto(EMPRESA_A.id, criado),
+        visivelEmB: await enxergaConjunto(EMPRESA_B.id, criado),
+      }).toEqual({ visivelEmA: true, visivelEmB: false });
+
+      // E pela BORDA: a sessão de B não alcança o registro que nasceu na empresa de A.
+      const pelaOutraSessao = await pedir(`${ROTA_DOS_CONJUNTOS}/${criado}`, { cookie: deB });
+      expect(pelaOutraSessao.status).toBe(404);
+
+      // Eixo POSITIVO da leitura: a sessão de A alcança o mesmo registro. Sem ele, um `404` para
+      // todo mundo passaria a asserção acima.
+      const pelaPropriaSessao = await pedir(`${ROTA_DOS_CONJUNTOS}/${criado}`, { cookie: deA });
+      expect(pelaPropriaSessao.status).toBe(200);
+      expect((pelaPropriaSessao.corpo as { nome: string }).nome).toBe(NOME_DO_CONTROLE);
+    },
+    LIMITE_CASO_MS,
+  );
+});
+
 // ---------------------------------------------------------------------------------------------
 // Acessórios
 // ---------------------------------------------------------------------------------------------
+
+/**
+ * Quantos conjuntos a empresa tem — lidos SOB o contexto de tenant dela.
+ *
+ * Sem filtro por `empresa_id` na consulta: quem limita o alcance é a política do banco, e escrever o
+ * filtro aqui provaria a consulta em vez da RLS (ADR-0008). Mesmo desenho de {@link contarVinculos}.
+ */
+async function contarConjuntos(empresaId: string): Promise<number> {
+  return await contextoDeTenant.executarCom({ empresaId }, async () =>
+    acessoAoNegocio.emUnidadeDeTrabalho(async (tx) => {
+      const linhas = await tx<{ total: string }[]>`
+        SELECT count(*)::text AS total FROM negocio.conjunto
+      `;
+      return Number(linhas[0]?.total ?? '0');
+    }),
+  );
+}
+
+/** O contexto daquela empresa enxerga o conjunto? A pergunta que a ADR-0008 autoriza fazer. */
+async function enxergaConjunto(empresaId: string, id: string): Promise<boolean> {
+  return await contextoDeTenant.executarCom({ empresaId }, async () =>
+    acessoAoNegocio.emUnidadeDeTrabalho(async (tx) => {
+      const linhas = await tx<{ id: string }[]>`
+        SELECT id FROM negocio.conjunto WHERE id = ${id}
+      `;
+      return linhas.length === 1;
+    }),
+  );
+}
+
+/**
+ * Entra como operador do SaaS e **cumpre a exigência de segundo fator**, pelo caminho público real.
+ *
+ * O Master nasce da carga sem segundo fator configurado, e a sessão dele é restrita até que ele o
+ * configure (RN-08). Nada é forjado: o segredo sai do endereço que a própria resposta do preparo
+ * devolveu, e o código é derivado pela função de geração **do arcabouço** — uma cópia do algoritmo
+ * provaria que duas implementações concordam, não que a nossa confere o código que ele espera.
+ *
+ * É o mesmo arranjo, pelas mesmas rotas, de `administracao-de-pessoas.e2e.spec.ts` — a suíte
+ * análoga que o cartão do CT-342 manda imitar.
+ */
+async function entrarComoOperadorDoSaaS(): Promise<string> {
+  const cookie = await entrarCom(OPERADOR_DO_SAAS.email, SENHA_DA_CARGA);
+
+  const preparo = await pedir(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/enable`, {
+    metodo: 'POST',
+    cookie,
+    corpo: { password: SENHA_DA_CARGA },
+  });
+
+  if (preparo.status !== 200) {
+    throw new Error(
+      `o preparo do segundo fator respondeu ${String(preparo.status)}: ${preparo.texto}`,
+    );
+  }
+
+  const totpURI = (preparo.corpo as { totpURI?: unknown }).totpURI;
+  if (typeof totpURI !== 'string') {
+    throw new Error('o preparo do segundo fator não devolveu o endereço de configuração');
+  }
+
+  const codificado = new URL(totpURI).searchParams.get('secret');
+  if (codificado === null) {
+    throw new Error(`o endereço de configuração do segundo fator não trouxe segredo: ${totpURI}`);
+  }
+
+  const { code } = await identidade.autenticacao.api.generateTOTP({
+    body: { secret: decodificarBase32(codificado) },
+  });
+
+  const ativacao = await pedir(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/verify-totp`, {
+    metodo: 'POST',
+    cookie,
+    corpo: { code },
+  });
+
+  if (ativacao.status !== 200) {
+    throw new Error(
+      `a ativação do segundo fator respondeu ${String(ativacao.status)}: ${ativacao.texto}`,
+    );
+  }
+
+  // A ativação pode ou não reemitir a credencial de sessão, e as duas formas são aceitas: o que
+  // importa é o cookie que passa a valer, e não por qual das duas ele chegou.
+  return credencialDeSessao(ativacao) ?? cookie;
+}
+
+/** O par `nome=valor` do cookie de sessão de uma resposta, quando ela o reemite. */
+function credencialDeSessao(resposta: Resposta): string | undefined {
+  const cookie = resposta.cookies.find((candidato) =>
+    (candidato.split(';')[0] ?? '').split('=')[0]?.trim().endsWith(SUFIXO_DO_COOKIE_DE_SESSAO),
+  );
+
+  return cookie === undefined ? undefined : (cookie.split(';')[0] ?? '');
+}
 
 /**
  * As duas colunas fechadas de uma pessoa, lidas pelo acesso restrito a `identidade`.

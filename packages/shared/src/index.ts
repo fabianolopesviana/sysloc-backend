@@ -7,6 +7,7 @@
  */
 
 export { EXIGENCIA_DA_CADEIA_DE_FILA, ehCadeiaDeFilaValida } from './ambiente.js';
+export { conferirDocumento, somenteDigitos } from './documento.js';
 export { CodigoErro, type CorpoErro, ErroDeAplicacao, type OpcoesDeErro } from './erros.js';
 export {
   criarLogger,

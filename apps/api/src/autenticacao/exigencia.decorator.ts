@@ -19,6 +19,15 @@
  * não exige permissão, ou não atende ninguém.
  *
  * ---------------------------------------------------------------------------
+ * A declaração do MÉTODO substitui a da CLASSE — e o que fazer quando se quer somar
+ * ---------------------------------------------------------------------------
+ *
+ * `getAllAndOverride` é **override**, não união. Declarar `@ExigeChave` num método de uma classe que
+ * já declara `@ExigeChave` **troca** a exigência daquela rota; a da classe deixa de valer ali, em
+ * silêncio. Quem quer *"o da classe **mais** este"* usa {@link ExigeChaves}, que declara a conjunção
+ * inteira no método — ver o docblock dela, e o defeito de segurança concreto que ela fecha.
+ *
+ * ---------------------------------------------------------------------------
  * `@RotaPublica()` NÃO precisa (nem pode) declarar exigência
  * ---------------------------------------------------------------------------
  *
@@ -92,6 +101,57 @@ export const ExigePerfil = (perfil: Perfil): CustomDecorator<symbol> =>
  */
 export const ExigeChave = (chave: ChaveDoCatalogo): CustomDecorator<symbol> =>
   SetMetadata(EXIGENCIA, { dimensao: 'CHAVE', chave } satisfies Exigencia);
+
+/**
+ * Declara que a rota exige **todas** as chaves informadas — a conjunção da **ADR-0018**.
+ *
+ * ---------------------------------------------------------------------------
+ * Ela existe porque `getAllAndOverride` SUBSTITUI, e não soma
+ * ---------------------------------------------------------------------------
+ *
+ * A intuição de quem publica uma rota que exige *"a área da classe **mais** uma ação"* é escrever
+ * `@ExigeChave` no método e contar com a da classe. **Não funciona**: a guarda lê com
+ * `getAllAndOverride`, a declaração do método vence a da classe, e a área **desaparece** da rota.
+ * O defeito é silencioso — a rota segue exigindo *alguma coisa*, e a cobertura de autorização segue
+ * verde, porque ela audita a **existência** da declaração, não o conteúdo dela.
+ *
+ * Foi exatamente isso que aconteceu nas duas rotas de circulação de conjunto, e o que tornou o
+ * defeito explorável pelo uso normal do produto: a coerência do catálogo garante a área que
+ * **comporta** a ação (`ACAO:excluir_cadastro → TELA:cadastros`), que **não** é necessariamente a
+ * área da classe. Quem administrava cadastros de pessoa retirava conjuntos de circulação numa área
+ * que lhe era negada.
+ *
+ * ---------------------------------------------------------------------------
+ * DUAS chaves no mínimo, e a exigência é do TIPO
+ * ---------------------------------------------------------------------------
+ *
+ * A assinatura recebe uma tupla de **dois ou mais**: uma conjunção de um elemento só é
+ * {@link ExigeChave} escrita de forma mais longa, e permitir a forma degenerada convidaria a usá-la
+ * "por consistência" em rotas que não compõem nada. Zero elementos seria pior — conjunção vazia é
+ * vacuamente verdadeira, e `decidirAcesso` a recusa por isso.
+ *
+ * **A ordem importa e é conteúdo, não estilo**: a recusa nomeia a **primeira** chave ausente
+ * (`detalhes.exigido`, RN-14). Declare a **área antes da ação** — assim quem tem a área e não tem a
+ * ação recebe o nome da ação, que é o que lhe falta, e não o da área, que ele possui.
+ */
+export const ExigeChaves = (
+  ...chaves: readonly [ChaveDoCatalogo, ChaveDoCatalogo, ...ChaveDoCatalogo[]]
+): CustomDecorator<symbol> => {
+  // A desestruturação, e não `chaves.map(...)` com conversão: ela preserva **para o compilador** a
+  // não-vacuidade que a assinatura já exige, de modo que o arranjo abaixo satisfaz a tupla não vazia
+  // de `Exigencia` sem um `as` no caminho. Conversão num construtor de metadado de autorização é
+  // justamente onde ela não deve existir.
+  const [primeira, segunda, ...demais] = chaves;
+
+  return SetMetadata(EXIGENCIA, {
+    dimensao: 'TODAS',
+    exigencias: [
+      { dimensao: 'CHAVE', chave: primeira },
+      { dimensao: 'CHAVE', chave: segunda },
+      ...demais.map((chave) => ({ dimensao: 'CHAVE', chave }) as const),
+    ],
+  } satisfies Exigencia);
+};
 
 /**
  * Declara que a rota **não exige permissão** — a abertura deliberada, e a única.

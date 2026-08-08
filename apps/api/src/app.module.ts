@@ -39,6 +39,7 @@ import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { criarLogger, type Logger } from '@sysloc/shared';
 import { AutenticacaoModule } from './autenticacao/autenticacao.module.js';
 import { GuardaDeContexto } from './autenticacao/contexto.guard.js';
+import { CadastrosModule } from './cadastros/cadastros.module.js';
 import { FiltroExcecaoGlobal } from './comum/filtro-excecao.js';
 import {
   type Ambiente,
@@ -46,13 +47,21 @@ import {
   TOKEN_AMBIENTE,
   TOKEN_LOGGER,
 } from './configuracao/ambiente.js';
+import { ImoveisModule } from './imoveis/imoveis.module.js';
 import { MasterModule } from './master/master.module.js';
 import { SaudeModule } from './saude/saude.module.js';
 import { UsuariosModule } from './usuarios/usuarios.module.js';
 
 @Global()
 @Module({
-  imports: [SaudeModule, AutenticacaoModule, MasterModule, UsuariosModule],
+  imports: [
+    SaudeModule,
+    AutenticacaoModule,
+    MasterModule,
+    UsuariosModule,
+    ImoveisModule,
+    CadastrosModule,
+  ],
   providers: [
     {
       provide: TOKEN_AMBIENTE,

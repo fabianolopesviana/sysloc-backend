@@ -6,8 +6,8 @@
  *
  * INVARIANTES
  * - CT-009: a resolução do especificador público devolve um módulo que expõe os símbolos de
- *   runtime `CodigoErro`, `ErroDeAplicacao` e `criarLogger`; caminho profundo para arquivo
- *   interno não é resolvível.
+ *   runtime `CodigoErro`, `ErroDeAplicacao`, `criarLogger`, `conferirDocumento` e
+ *   `somenteDigitos`; caminho profundo para arquivo interno não é resolvível.
  *
  * Fronteira real exercida: filesystem. A importação acontece num processo Node de verdade,
  * fora do resolvedor do executor de testes — é o algoritmo de resolução que a aplicação vai
@@ -18,6 +18,21 @@
  * contexto de resolução é a raiz do próprio pacote — o especificador público é resolvido pelo
  * campo `exports`, exatamente como um consumidor externo o resolveria, e não por caminho
  * relativo ao arquivo de teste.
+ *
+ * ---------------------------------------------------------------------------
+ * Acréscimo da T3 da fatia `cadastro-de-imoveis-e-pessoas` — leia antes de "corrigir"
+ * ---------------------------------------------------------------------------
+ *
+ * (Não confundir com a T3 citada na rastreabilidade acima, que é a da fundação e criou este
+ * arquivo.) Aquela task publicou `conferirDocumento` e `somenteDigitos`, e as duas asserções
+ * correspondentes entraram abaixo. É **acréscimo consciente**, não conserto: nenhuma asserção
+ * existente foi alterada e a contagem de casos do arquivo não mudou.
+ *
+ * `SUT_IS_CORRECT_BECAUSE:` **não se aplica aqui**, e a distinção importa: aquela linha é exigida
+ * quando um teste reprova e é o *teste* que estava errado (Iron Law #5). A task previa que a
+ * publicação faria este arquivo reprovar **por igualdade de conjunto** — e ele não reprovou,
+ * porque a asserção sempre foi por **presença**, decisão registrada na linha que a acompanha e
+ * aqui preservada. Convertê-la em igualdade seria desfazer aquela decisão sem que nada o exigisse.
  */
 
 import { execFile } from 'node:child_process';
@@ -69,7 +84,7 @@ async function resolverEmProcessoNode(especificador: string): Promise<Resolucao>
 }
 
 describe('CT-009 — superfície pública resolve pelo especificador do pacote', () => {
-  it('expõe CodigoErro, ErroDeAplicacao e criarLogger como símbolos de runtime', async () => {
+  it('expõe os símbolos de runtime do pacote, inclusive a conferência de documento', async () => {
     const resolucao = await resolverEmProcessoNode(ESPECIFICADOR_PUBLICO);
 
     expect(resolucao.resolveu).toBe(true);
@@ -80,6 +95,8 @@ describe('CT-009 — superfície pública resolve pelo especificador do pacote',
     expect(publico.tipos.criarLogger).toBe('function');
     expect(publico.tipos.CodigoErro).toBe('object');
     expect(publico.codigos).toContain('CAMPO_INVALIDO');
+    expect(publico.tipos.conferirDocumento).toBe('function');
+    expect(publico.tipos.somenteDigitos).toBe('function');
   });
 
   it('não resolve caminho profundo para arquivo interno', async () => {

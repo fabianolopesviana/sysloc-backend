@@ -53,13 +53,13 @@ import {
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
-import { CodigoErro, ErroDeAplicacao } from '@sysloc/shared';
+import { CodigoErro } from '@sysloc/shared';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { sessaoDaRequisicao } from '../autenticacao/contexto.guard.js';
 import { ExigePerfil } from '../autenticacao/exigencia.decorator.js';
 import { esquemaDoErro } from '../comum/esquema-de-erro.js';
-import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
+import { validar } from '../comum/validacao.js';
 import {
   type AdministradorAdmitido,
   type EmpresaDoContrato,
@@ -349,31 +349,4 @@ export class EmpresaController {
       sessaoDaRequisicao(requisicao).usuarioId,
     );
   }
-}
-
-/**
- * Valida a entrada e traduz a recusa no envelope da ADR-0012.
- *
- * **Ponto único da tradução**, e não um `safeParse` com tratamento por manipulador: seis traduções
- * ficariam livres para divergir no código, no status e no campo nomeado, e a forma do erro é
- * contrato.
- *
- * O que sai para o cliente é o **campo culpado**, e nada do valor recusado: entrada não confiável
- * repetida na mensagem chega ao registro estruturado por outro caminho, que é a razão pela qual a
- * unidade de trabalho já redige o identificador inválido em vez de ecoá-lo.
- */
-function validar<T>(esquema: z.ZodType<T>, valor: unknown, campoPadrao: string): T {
-  const resultado = esquema.safeParse(valor);
-
-  if (resultado.success) {
-    return resultado.data;
-  }
-
-  const caminho = resultado.error.issues[0]?.path ?? [];
-
-  throw new ErroDeAplicacao(
-    CodigoErro.CAMPO_INVALIDO,
-    MENSAGEM_POR_CODIGO[CodigoErro.CAMPO_INVALIDO],
-    { campo: caminho.length > 0 ? caminho.join('.') : campoPadrao, causa: resultado.error },
-  );
 }

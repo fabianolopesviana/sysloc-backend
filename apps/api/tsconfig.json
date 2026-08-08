@@ -19,6 +19,7 @@
   // importa as duas pelo especificador público e a referência é o que ordena a construção.
   "references": [
     { "path": "../../packages/shared" },
+    { "path": "../../packages/contracts" },
     { "path": "../../packages/db" },
     { "path": "../../packages/auth" }
   ],

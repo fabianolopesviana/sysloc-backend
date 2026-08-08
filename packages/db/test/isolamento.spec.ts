@@ -38,6 +38,24 @@
  * |          |        | operação, sob o contexto de A, grava. É a prova de que o escopo das
  * |          |        | escritas em `identidade` (schema SEM RLS, ADR-0009) vem do alcance ao
  * |          |        | vínculo em `negocio`, e não de uma comparação escrita na aplicação. |
+ * | CA-14    | CT-302 | Com uma linha descartável semeada nas duas empresas, a leitura de cada uma
+ * |          |        | das SEIS entidades de cadastro (`conjunto`, `imovel`, `comodo`, `locador`,
+ * |          |        | `locatario`, `fiador`) sob o contexto de A devolve o conjunto exato de
+ * |          |        | identificadores de A e interseção vazia com os de B; sob B, o simétrico; e
+ * |          |        | sob contexto ausente e sob contexto de empresa nula devolve zero linhas nas
+ * |          |        | seis, sem erro — enquanto a mesma leitura sob A segue devolvendo conjunto
+ * |          |        | não vazio. Nenhuma das consultas escreve filtro por `empresa_id`. |
+ * | CA-14    | CT-303 | Sob o contexto da empresa A, `INSERT` em qualquer das seis entidades com
+ * |          |        | `empresa_id` de B é recusado com `42501` e mensagem contendo 'row-level
+ * |          |        | security policy'; `UPDATE` e `DELETE` sobre linha existente de B afetam ZERO
+ * |          |        | linhas, sem erro; o estado de B, lido em seguida no contexto de B, é
+ * |          |        | caractere a caractere o mesmo; e a MESMA atualização, sob o contexto de B,
+ * |          |        | alcança a linha. |
+ * | CA-14    | CT-304 | `negocio.imovel` só aceita `conjunto_id` cujo par `(conjunto_id, empresa_id)`
+ * |          |        | exista em `negocio.conjunto (id, empresa_id)`, e `negocio.comodo` só aceita
+ * |          |        | `imovel_id` cujo par exista em `negocio.imovel` — o apontamento cruzado é
+ * |          |        | recusado com `23503` NOMEANDO a restrição composta, nas duas direções,
+ * |          |        | enquanto o apontamento legítimo grava exatamente uma linha. |
  * | CA-16    | CT-207 | Depois da conciliação estrutural (migração `0003`),
  * |          |        | `negocio.acesso_usuario_app` referencia o par `(pessoa, empresa)` por chave
  * |          |        | estrangeira composta — de modo que um vínculo cuja empresa difere da empresa
@@ -1086,6 +1104,516 @@ async function contarVinculosDe(
 }
 
 // ===========================================================================
+// CT-302 · CT-303 · CT-304 — as seis entidades de cadastro do domínio
+// ===========================================================================
+//
+// Os três NÃO entram em `rodarBateria`, e o motivo é o mesmo já registrado para o CT-207: a bateria
+// afirma o conjunto EXATO de predicados reprovados por mutante do CT-007, e acrescentar predicados
+// mudaria o esperado dos quatro mutantes — nenhum dos quais tem relação com estas tabelas. Alterar
+// aquele esperado seria regressão de prova.
+//
+// Eles também não reimplementam nada: `tentar`, `sqlstate`, `nomeDaRestricao`, `intersecao` e
+// `comoTexto` são as mesmas utilidades dos CT-003 a CT-006, e o contexto vem exclusivamente de
+// `contextoDeTenant.executarCom` mais `abrirAcessoAoBanco`. Nenhum símbolo foi acrescentado a
+// `packages/db/src/**` para que estes casos existam — as linhas de cadastro nascem de SQL do
+// próprio caso, sob o contexto da empresa DONA, que é o caminho que a aplicação usará.
+
+/** Os dados de uma linha descartável de cadastro. Um só formato para as seis entidades. */
+interface DadosDeCadastro {
+  readonly id: string;
+  readonly empresaId: string;
+  /** O pai tenantizado de `imovel`. Ignorado pelas entidades que não têm pai. */
+  readonly conjuntoId: string;
+  /** O pai tenantizado de `comodo`. Ignorado pelas entidades que não têm pai. */
+  readonly imovelId: string;
+  /** Posição do cômodo. Distinta por tentativa: `unique(imovel_id, posicao)` recusaria antes da FK. */
+  readonly posicao: number;
+  /**
+   * Sufixo que torna únicos o identificador municipal e o documento.
+   *
+   * Ele existe pela mesma razão do comentário de `gravarPermissaoCruzada`: com valor repetido, o
+   * banco recusaria por `23505` ANTES de a política ou a chave estrangeira composta serem
+   * consultadas, e o caso passaria a provar a unicidade em vez do isolamento.
+   */
+  readonly marca: string;
+}
+
+/**
+ * Uma das seis entidades novas: como lê-la, como gravá-la e qual coluna é livre para ser atualizada.
+ *
+ * A lista abaixo é o ALVO DECLARADO dos três casos. Entidade acrescentada a `negocio` sem entrada
+ * aqui é entidade sem prova de isolamento — que é exatamente a lacuna que estes casos fecham.
+ */
+interface EntidadeDeCadastro {
+  readonly nome: string;
+  readonly relacao: string;
+  /**
+   * A leitura, **declarada como valor** para que a ausência de filtro por empresa seja CONFERIDA e
+   * não apenas prometida (ADR-0008) — mesmo mecanismo de {@link CONSULTAS_DE_NEGOCIO}.
+   */
+  readonly consulta: string;
+  /** A leitura do retrato: identificador mais a coluna livre, para comparação bit a bit. */
+  readonly consultaDoRetrato: string;
+  /**
+   * Coluna de texto que **não participa de restrição de unicidade alguma**. A atualização cruzada
+   * do CT-303 mede visibilidade; colidir com outra regra confundiria o diagnóstico.
+   */
+  readonly colunaLivre: string;
+  /** Todo identificador que os três casos usam nesta entidade — a lista que a limpeza percorre. */
+  readonly descartaveis: readonly string[];
+  gravar(tx: TransactionSql, dados: DadosDeCadastro): Promise<number>;
+}
+
+// Uma linha descartável por entidade e por empresa. O segundo grupo do identificador distingue a
+// empresa (`4444` = A, `5555` = B) e o último distingue a entidade.
+const CADASTROS_DE_A = {
+  conjunto: 'dddddddd-4444-4000-8000-000000000001',
+  imovel: 'dddddddd-4444-4000-8000-000000000002',
+  comodo: 'dddddddd-4444-4000-8000-000000000003',
+  locador: 'dddddddd-4444-4000-8000-000000000004',
+  locatario: 'dddddddd-4444-4000-8000-000000000005',
+  fiador: 'dddddddd-4444-4000-8000-000000000006',
+} as const;
+
+const CADASTROS_DE_B = {
+  conjunto: 'dddddddd-5555-4000-8000-000000000001',
+  imovel: 'dddddddd-5555-4000-8000-000000000002',
+  comodo: 'dddddddd-5555-4000-8000-000000000003',
+  locador: 'dddddddd-5555-4000-8000-000000000004',
+  locatario: 'dddddddd-5555-4000-8000-000000000005',
+  fiador: 'dddddddd-5555-4000-8000-000000000006',
+} as const;
+
+/** As linhas que a empresa A tenta gravar com `empresa_id` da empresa B (CT-303). */
+const CADASTROS_CRUZADOS = {
+  conjunto: 'dddddddd-6666-4000-8000-000000000001',
+  imovel: 'dddddddd-6666-4000-8000-000000000002',
+  comodo: 'dddddddd-6666-4000-8000-000000000003',
+  locador: 'dddddddd-6666-4000-8000-000000000004',
+  locatario: 'dddddddd-6666-4000-8000-000000000005',
+  fiador: 'dddddddd-6666-4000-8000-000000000006',
+} as const;
+
+// As seis tentativas do CT-304: a legítima e as duas cruzadas, para cada uma das duas relações
+// tenantizadas (`imovel` → `conjunto` e `comodo` → `imovel`).
+const IMOVEL_LEGITIMO_EM_A = 'dddddddd-7777-4000-8000-000000000001';
+const IMOVEL_CRUZADO_A_PARA_B = 'dddddddd-7777-4000-8000-000000000002';
+const IMOVEL_CRUZADO_B_PARA_A = 'dddddddd-7777-4000-8000-000000000003';
+const COMODO_LEGITIMO_EM_A = 'dddddddd-7777-4000-8000-000000000004';
+const COMODO_CRUZADO_A_PARA_B = 'dddddddd-7777-4000-8000-000000000005';
+const COMODO_CRUZADO_B_PARA_A = 'dddddddd-7777-4000-8000-000000000006';
+
+/** Os nomes das duas restrições compostas do domínio, escritos UMA vez cada (CT-304). */
+const RESTRICAO_DO_IMOVEL = 'imovel_conjunto_empresa_fkey';
+const RESTRICAO_DO_COMODO = 'comodo_imovel_empresa_fkey';
+
+/**
+ * Posições distintas por tentativa de cômodo.
+ *
+ * `unique(imovel_id, posicao)` é restrição de índice e é verificada ANTES dos gatilhos de
+ * integridade referencial: repetir a posição faria o banco recusar por `23505` e o CT-304 provaria
+ * a unicidade em vez da chave estrangeira composta.
+ */
+const POSICAO_SEMEADA = 1;
+const POSICAO_CRUZADA = 2;
+const POSICAO_LEGITIMA_EM_A = 3;
+const POSICAO_CRUZADA_A_PARA_B = 4;
+const POSICAO_CRUZADA_B_PARA_A = 5;
+
+/**
+ * A gravação de um cadastro de pessoa, por relação.
+ *
+ * As três tabelas têm a mesma forma (ver `camposDeCadastroDePessoa` em `src/esquema/negocio.ts`), e
+ * escrever quinze colunas três vezes aqui criaria três cópias livres para divergir. O nome da
+ * relação vem da lista fechada abaixo, nunca de entrada externa.
+ */
+function gravarCadastroDePessoa(relacao: string) {
+  return async (tx: TransactionSql, dados: DadosDeCadastro): Promise<number> => {
+    const resultado = await tx.unsafe(
+      `INSERT INTO ${relacao}
+              (id, empresa_id, nome, tipo_pessoa, documento_principal, rg, email, telefone,
+               logradouro, numero, complemento, bairro, cidade, estado, cep)
+       VALUES ($1, $2, $3, 'PESSOA_FISICA', $4, NULL, $5, '8699990000',
+               'Rua das Laranjeiras', '100', NULL, 'Centro', 'Teresina', 'PI', '64000000')`,
+      [
+        dados.id,
+        dados.empresaId,
+        `Cadastro ${dados.marca}`,
+        `DOC-${dados.marca}`,
+        `cadastro.${dados.marca}@exemplo.com.br`,
+      ],
+    );
+    return resultado.count;
+  };
+}
+
+function consultaDeIds(relacao: string): string {
+  return `SELECT id FROM ${relacao} ORDER BY id`;
+}
+
+function consultaDeRetrato(relacao: string, colunaLivre: string): string {
+  return `SELECT id, ${colunaLivre} AS livre FROM ${relacao} ORDER BY id`;
+}
+
+/**
+ * As seis, na ordem PAI → FILHO.
+ *
+ * A ordem é normativa em dois pontos: a semeadura precisa criar o conjunto antes do imóvel e o
+ * imóvel antes do cômodo, e a limpeza percorre a lista ao contrário, para que nenhuma remoção
+ * esbarre numa chave estrangeira.
+ */
+const ENTIDADES_DE_CADASTRO: readonly EntidadeDeCadastro[] = [
+  {
+    nome: 'conjunto',
+    relacao: 'negocio.conjunto',
+    consulta: consultaDeIds('negocio.conjunto'),
+    consultaDoRetrato: consultaDeRetrato('negocio.conjunto', 'nome'),
+    colunaLivre: 'nome',
+    descartaveis: [CADASTROS_DE_A.conjunto, CADASTROS_DE_B.conjunto, CADASTROS_CRUZADOS.conjunto],
+    gravar: async (tx, dados) => {
+      const resultado = await tx`
+        INSERT INTO negocio.conjunto (id, empresa_id, nome)
+        VALUES (${dados.id}, ${dados.empresaId}, ${`Conjunto ${dados.marca}`})
+      `;
+      return resultado.count;
+    },
+  },
+  {
+    nome: 'imovel',
+    relacao: 'negocio.imovel',
+    consulta: consultaDeIds('negocio.imovel'),
+    consultaDoRetrato: consultaDeRetrato('negocio.imovel', 'observacoes'),
+    colunaLivre: 'observacoes',
+    descartaveis: [
+      CADASTROS_DE_A.imovel,
+      CADASTROS_DE_B.imovel,
+      CADASTROS_CRUZADOS.imovel,
+      IMOVEL_LEGITIMO_EM_A,
+      IMOVEL_CRUZADO_A_PARA_B,
+      IMOVEL_CRUZADO_B_PARA_A,
+    ],
+    gravar: async (tx, dados) => {
+      const resultado = await tx`
+        INSERT INTO negocio.imovel
+                    (id, empresa_id, conjunto_id, nome_imovel, identificador_municipal, tipo_imovel,
+                     logradouro, numero, complemento, bairro, cidade, estado, cep, status_locacao,
+                     observacoes)
+        VALUES (${dados.id}, ${dados.empresaId}, ${dados.conjuntoId}, ${`Imóvel ${dados.marca}`},
+                ${`IM-${dados.marca}`}, ${'RESIDENCIAL'}::negocio.tipo_imovel,
+                ${'Rua das Laranjeiras'}, ${'100'}, ${null}, ${'Centro'}, ${'Teresina'}, ${'PI'},
+                ${'64000000'}, ${'DISPONIVEL'}::negocio.status_locacao, ${null})
+      `;
+      return resultado.count;
+    },
+  },
+  {
+    nome: 'comodo',
+    relacao: 'negocio.comodo',
+    consulta: consultaDeIds('negocio.comodo'),
+    consultaDoRetrato: consultaDeRetrato('negocio.comodo', 'observacoes'),
+    colunaLivre: 'observacoes',
+    descartaveis: [
+      CADASTROS_DE_A.comodo,
+      CADASTROS_DE_B.comodo,
+      CADASTROS_CRUZADOS.comodo,
+      COMODO_LEGITIMO_EM_A,
+      COMODO_CRUZADO_A_PARA_B,
+      COMODO_CRUZADO_B_PARA_A,
+    ],
+    gravar: async (tx, dados) => {
+      const resultado = await tx`
+        INSERT INTO negocio.comodo
+                    (id, empresa_id, imovel_id, nome_comodo, metragem, posicao, observacoes)
+        VALUES (${dados.id}, ${dados.empresaId}, ${dados.imovelId}, ${`Sala ${dados.marca}`},
+                ${'12.50'}, ${dados.posicao}, ${null})
+      `;
+      return resultado.count;
+    },
+  },
+  {
+    nome: 'locador',
+    relacao: 'negocio.locador',
+    consulta: consultaDeIds('negocio.locador'),
+    consultaDoRetrato: consultaDeRetrato('negocio.locador', 'nome'),
+    colunaLivre: 'nome',
+    descartaveis: [CADASTROS_DE_A.locador, CADASTROS_DE_B.locador, CADASTROS_CRUZADOS.locador],
+    gravar: gravarCadastroDePessoa('negocio.locador'),
+  },
+  {
+    nome: 'locatario',
+    relacao: 'negocio.locatario',
+    consulta: consultaDeIds('negocio.locatario'),
+    consultaDoRetrato: consultaDeRetrato('negocio.locatario', 'nome'),
+    colunaLivre: 'nome',
+    descartaveis: [
+      CADASTROS_DE_A.locatario,
+      CADASTROS_DE_B.locatario,
+      CADASTROS_CRUZADOS.locatario,
+    ],
+    gravar: gravarCadastroDePessoa('negocio.locatario'),
+  },
+  {
+    nome: 'fiador',
+    relacao: 'negocio.fiador',
+    consulta: consultaDeIds('negocio.fiador'),
+    consultaDoRetrato: consultaDeRetrato('negocio.fiador', 'nome'),
+    colunaLivre: 'nome',
+    descartaveis: [CADASTROS_DE_A.fiador, CADASTROS_DE_B.fiador, CADASTROS_CRUZADOS.fiador],
+    gravar: gravarCadastroDePessoa('negocio.fiador'),
+  },
+];
+
+/** As duas relações tenantizadas do CT-304, tomadas da lista acima — nunca redeclaradas. */
+const ENTIDADE_CONJUNTO = exigirEntidade('conjunto');
+const ENTIDADE_IMOVEL = exigirEntidade('imovel');
+const ENTIDADE_COMODO = exigirEntidade('comodo');
+
+function exigirEntidade(nome: string): EntidadeDeCadastro {
+  const entidade = ENTIDADES_DE_CADASTRO.find((candidata) => candidata.nome === nome);
+  if (entidade === undefined) {
+    throw new Error(`entidade de cadastro '${nome}' não está declarada em ENTIDADES_DE_CADASTRO`);
+  }
+  return entidade;
+}
+
+/** Os identificadores semeados de cada empresa, para a conferência de interseção do CT-302. */
+const IDS_SEMEADOS_EM_A = Object.values(CADASTROS_DE_A);
+const IDS_SEMEADOS_EM_B = Object.values(CADASTROS_DE_B);
+
+/**
+ * Cria, sob o contexto da PRÓPRIA empresa, uma linha descartável de cada entidade.
+ *
+ * Tudo numa unidade só, na ordem pai → filho: a chave estrangeira composta exige que o conjunto
+ * exista antes do imóvel, e o imóvel antes do cômodo.
+ */
+async function semearCadastros(
+  acesso: AcessoAoBanco,
+  contexto: Contexto,
+  empresaId: string,
+  ids: Record<string, string>,
+  marca: string,
+): Promise<void> {
+  await contextoDeTenant.executarCom(contexto, async () => {
+    await acesso.emUnidadeDeTrabalho(async (tx) => {
+      for (const entidade of ENTIDADES_DE_CADASTRO) {
+        await entidade.gravar(tx, {
+          id: idDe(ids, entidade.nome),
+          empresaId,
+          conjuntoId: ids.conjunto ?? '',
+          imovelId: ids.imovel ?? '',
+          posicao: POSICAO_SEMEADA,
+          marca: `${entidade.nome}-${marca}`,
+        });
+      }
+    });
+  });
+}
+
+/**
+ * Remove toda linha descartável de cadastro, **pelo identificador** — nunca por `empresa_id`, que é
+ * o filtro que a ADR-0008 proíbe à aplicação. Rodada nos dois contextos porque, com o isolamento
+ * íntegro, cada linha só é alcançável pelo contexto da sua própria empresa; e na ordem filho → pai,
+ * para que nenhuma remoção esbarre numa chave estrangeira.
+ */
+async function limparCadastros(cadeiaDeConexao: string): Promise<void> {
+  const acesso = abrir(cadeiaDeConexao);
+  try {
+    for (const contexto of [CONTEXTO_DE_A, CONTEXTO_DE_B]) {
+      await contextoDeTenant.executarCom(contexto, async () => {
+        await acesso.emUnidadeDeTrabalho(async (tx) => {
+          for (const entidade of [...ENTIDADES_DE_CADASTRO].reverse()) {
+            for (const id of entidade.descartaveis) {
+              await tx.unsafe(`DELETE FROM ${entidade.relacao} WHERE id = $1`, [id]);
+            }
+          }
+        });
+      });
+    }
+  } finally {
+    await acesso.encerrar();
+  }
+}
+
+/** Lê os identificadores de uma entidade sob o contexto dado, pela consulta DECLARADA dela. */
+async function lerCadastros(
+  acesso: AcessoAoBanco,
+  entidade: EntidadeDeCadastro,
+  contexto: Contexto | typeof SEM_CONTEXTO,
+): Promise<string[]> {
+  return noContexto(contexto, async () =>
+    acesso.emUnidadeDeTrabalho(async (tx) => {
+      const linhas = await tx.unsafe<{ id: string }[]>(entidade.consulta);
+      return linhas.map((linha) => linha.id);
+    }),
+  );
+}
+
+/** Uma entrada por entidade, no formato `<rótulo>: <detalhe>`. */
+function comoLinha(rotulo: string, detalhe: string): string {
+  return `${rotulo}: ${detalhe}`;
+}
+
+/** Uma entrada por entidade, no formato `<entidade>: <conjunto ordenado>`. */
+function porEntidade(nome: string, valores: readonly string[]): string {
+  return comoLinha(nome, comoTexto(valores));
+}
+
+/**
+ * O identificador descartável de uma entidade, ou uma falha que a NOMEIA.
+ *
+ * Devolver cadeia vazia para a entidade ausente faria a gravação recusar por identificador
+ * malformado, e o caso reprovaria longe da causa.
+ */
+function idDe(ids: Record<string, string>, nome: string): string {
+  const id = ids[nome];
+  if (id === undefined) {
+    throw new Error(`sem identificador descartável para a entidade '${nome}'`);
+  }
+  return id;
+}
+
+/**
+ * O estado das seis entidades sob um contexto, comparável **caractere a caractere**.
+ *
+ * Carrega o identificador E a coluna livre: sem a segunda, uma atualização cruzada que tivesse
+ * passado não moveria o retrato, e "nada mudou" ficaria verde sobre uma escrita que mudou tudo.
+ */
+async function retratoDosCadastros(acesso: AcessoAoBanco, contexto: Contexto): Promise<string> {
+  const partes: string[] = [];
+  for (const entidade of ENTIDADES_DE_CADASTRO) {
+    const linhas = await contextoDeTenant.executarCom(contexto, async () =>
+      acesso.emUnidadeDeTrabalho(async (tx) =>
+        tx.unsafe<{ id: string; livre: string | null }[]>(entidade.consultaDoRetrato),
+      ),
+    );
+    partes.push(
+      `${entidade.nome}: ${JSON.stringify(linhas.map((linha) => [linha.id, linha.livre]))}`,
+    );
+  }
+  return partes.join(' | ');
+}
+
+/** O desfecho de uma tentativa de gravação, como texto comparável — o código E a mensagem. */
+function desfechoDaGravacao(tentativa: Resultado<number>): string {
+  if (tentativa.ok) {
+    return `GRAVOU (${tentativa.valor} linha(s))`;
+  }
+  const codigo = sqlstate(tentativa.erro) ?? 'sem sqlstate';
+  const texto = mensagemDo(tentativa.erro);
+  return texto.includes('row-level security policy')
+    ? `${codigo} · row-level security policy`
+    : `${codigo} · ${texto}`;
+}
+
+/** O desfecho de uma tentativa de referência — o código E o nome da restrição que recusou. */
+function desfechoDaReferencia(tentativa: Resultado<number>): string {
+  if (tentativa.ok) {
+    return `GRAVOU (${tentativa.valor} linha(s))`;
+  }
+  const codigo = sqlstate(tentativa.erro) ?? 'sem sqlstate';
+  return `${codigo} · ${nomeDaRestricao(tentativa.erro) ?? 'sem restrição nomeada'}`;
+}
+
+/**
+ * As duas escritas que o CT-303 tenta sobre a linha ALHEIA já existente.
+ *
+ * Elas são declaradas como valor, e não escritas no meio do caso, pelo mesmo motivo das consultas
+ * de leitura: o `WHERE` é por IDENTIFICADOR, nunca por `empresa_id` — o filtro que a ADR-0008
+ * proíbe à aplicação. A coluna atualizada é a livre de cada entidade, que não participa de
+ * restrição de unicidade alguma.
+ */
+type EscritaSobreLinha = 'UPDATE' | 'DELETE';
+
+/** O texto que a atualização cruzada tenta gravar. Distinto do semeado, senão "não mudou" seria vácuo. */
+const TEXTO_DA_ESCRITA_CRUZADA = 'tocado por quem não deveria alcançar';
+
+async function tentarEscreverEmLinhaAlheia(
+  acesso: AcessoAoBanco,
+  entidade: EntidadeDeCadastro,
+  contexto: Contexto,
+  id: string,
+  verbo: EscritaSobreLinha,
+): Promise<Resultado<number>> {
+  const instrucao =
+    verbo === 'UPDATE'
+      ? `UPDATE ${entidade.relacao} SET ${entidade.colunaLivre} = $2 WHERE id = $1`
+      : `DELETE FROM ${entidade.relacao} WHERE id = $1`;
+  const parametros = verbo === 'UPDATE' ? [id, TEXTO_DA_ESCRITA_CRUZADA] : [id];
+
+  return tentar(() =>
+    contextoDeTenant.executarCom(contexto, async () =>
+      acesso.emUnidadeDeTrabalho(async (tx) => {
+        const resultado = await tx.unsafe(instrucao, parametros);
+        return resultado.count;
+      }),
+    ),
+  );
+}
+
+/** Quantas linhas a escrita alcançou — ou o erro, quando ela nem chegou a contar. */
+function desfechoDaEscritaSobreLinha(tentativa: Resultado<number>): string {
+  return tentativa.ok
+    ? `${tentativa.valor} linha(s)`
+    : `erro ${sqlstate(tentativa.erro) ?? '?'} ${mensagemDo(tentativa.erro)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Os conjuntos ESPERADOS — literais do caso, entidade a entidade
+// ---------------------------------------------------------------------------
+
+const ESPERADO_SOB_A: readonly string[] = [
+  porEntidade('conjunto', [CADASTROS_DE_A.conjunto]),
+  porEntidade('imovel', [CADASTROS_DE_A.imovel]),
+  porEntidade('comodo', [CADASTROS_DE_A.comodo]),
+  porEntidade('locador', [CADASTROS_DE_A.locador]),
+  porEntidade('locatario', [CADASTROS_DE_A.locatario]),
+  porEntidade('fiador', [CADASTROS_DE_A.fiador]),
+];
+
+const ESPERADO_SOB_B: readonly string[] = [
+  porEntidade('conjunto', [CADASTROS_DE_B.conjunto]),
+  porEntidade('imovel', [CADASTROS_DE_B.imovel]),
+  porEntidade('comodo', [CADASTROS_DE_B.comodo]),
+  porEntidade('locador', [CADASTROS_DE_B.locador]),
+  porEntidade('locatario', [CADASTROS_DE_B.locatario]),
+  porEntidade('fiador', [CADASTROS_DE_B.fiador]),
+];
+
+/** As seis entidades sem linha alcançável. Escrito por extenso: o nome de cada uma importa. */
+const SEIS_LISTAS_VAZIAS: readonly string[] = [
+  porEntidade('conjunto', []),
+  porEntidade('imovel', []),
+  porEntidade('comodo', []),
+  porEntidade('locador', []),
+  porEntidade('locatario', []),
+  porEntidade('fiador', []),
+];
+
+/** As seis escritas cruzadas que não alcançam linha nenhuma — zero linhas, e nunca erro. */
+const SEIS_ESCRITAS_SEM_EFEITO: readonly string[] = [
+  'conjunto: 0 linha(s)',
+  'imovel: 0 linha(s)',
+  'comodo: 0 linha(s)',
+  'locador: 0 linha(s)',
+  'locatario: 0 linha(s)',
+  'fiador: 0 linha(s)',
+];
+
+/** Grava uma linha de cadastro sob o contexto informado, coletando o desfecho em vez de abortar. */
+async function tentarGravarCadastro(
+  acesso: AcessoAoBanco,
+  entidade: EntidadeDeCadastro,
+  contexto: Contexto,
+  dados: DadosDeCadastro,
+): Promise<Resultado<number>> {
+  return tentar(() =>
+    contextoDeTenant.executarCom(contexto, async () =>
+      acesso.emUnidadeDeTrabalho((tx) => entidade.gravar(tx, dados)),
+    ),
+  );
+}
+
+// ===========================================================================
 // A bateria — a MESMA função de conferência para o caso e para o mutante
 // ===========================================================================
 
@@ -1876,6 +2404,353 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
       } finally {
         await acesso.encerrar();
         await limparDescartaveis(banco.cadeiaConexao);
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-302 — a leitura de cada entidade nova é escopada pelo banco, e o contexto ausente lê vazio',
+    async () => {
+      await limparCadastros(banco.cadeiaConexao);
+      const acesso = abrir(banco.cadeiaConexao);
+      let acessoVirgem: AcessoAoBanco | undefined;
+
+      try {
+        // A ausência de filtro por empresa é INVARIANTE (ADR-0008), e por isso é conferida no
+        // próprio texto das consultas que o caso emite — mesmo mecanismo do CT-003, e não uma
+        // convenção que alguém precise lembrar.
+        for (const entidade of ENTIDADES_DE_CADASTRO) {
+          for (const consulta of [entidade.consulta, entidade.consultaDoRetrato]) {
+            expect(consulta.toLowerCase()).not.toContain('empresa_id');
+            expect(consulta.toLowerCase()).not.toContain('where');
+          }
+        }
+
+        // Cada empresa cria as PRÓPRIAS linhas, dentro do próprio contexto — nunca por conexão
+        // privilegiada, e nunca uma escrevendo pela outra.
+        await semearCadastros(acesso, CONTEXTO_DE_A, EMPRESA_A.id, CADASTROS_DE_A, 'a');
+        await semearCadastros(acesso, CONTEXTO_DE_B, EMPRESA_B.id, CADASTROS_DE_B, 'b');
+
+        // A reserva virgem é aberta DEPOIS do preparo, para que a conexão dela nunca tenha atendido
+        // outra unidade. É assim que o cenário "ninguém chamou o escritor de contexto" é obtido
+        // pelo caminho normal — padrão `acessoVirgem` do CT-005.
+        acessoVirgem = abrir(banco.cadeiaConexao);
+
+        const sobA: string[] = [];
+        const sobB: string[] = [];
+        const semContexto: string[] = [];
+        const contextoNulo: string[] = [];
+        const invasaoEmA: string[] = [];
+        const invasaoEmB: string[] = [];
+
+        for (const entidade of ENTIDADES_DE_CADASTRO) {
+          const emA = await lerCadastros(acesso, entidade, CONTEXTO_DE_A);
+          const emB = await lerCadastros(acesso, entidade, CONTEXTO_DE_B);
+
+          sobA.push(porEntidade(entidade.nome, emA));
+          sobB.push(porEntidade(entidade.nome, emB));
+          invasaoEmA.push(porEntidade(entidade.nome, intersecao(emA, IDS_SEMEADOS_EM_B)));
+          invasaoEmB.push(porEntidade(entidade.nome, intersecao(emB, IDS_SEMEADOS_EM_A)));
+          semContexto.push(
+            porEntidade(entidade.nome, await lerCadastros(acessoVirgem, entidade, SEM_CONTEXTO)),
+          );
+          contextoNulo.push(
+            porEntidade(entidade.nome, await lerCadastros(acesso, entidade, CONTEXTO_SEM_EMPRESA)),
+          );
+        }
+
+        // O conjunto EXATO de cada empresa, entidade por entidade — nunca "alguma linha".
+        expect(sobA).toEqual(ESPERADO_SOB_A);
+        expect(sobB).toEqual(ESPERADO_SOB_B);
+
+        // …e a interseção vazia, que é a outra metade: sem ela, uma leitura que devolvesse TUDO
+        // ainda conteria o conjunto esperado como subconjunto se a igualdade acima fosse afrouxada.
+        expect(invasaoEmA).toEqual(SEIS_LISTAS_VAZIAS);
+        expect(invasaoEmB).toEqual(SEIS_LISTAS_VAZIAS);
+
+        // Sem contexto e com empresa nula: vazio nas seis, e SEM erro. Não é recusa — é
+        // invisibilidade, que é o que a política produz para qualquer leitura fora do tenant.
+        expect(semContexto).toEqual(SEIS_LISTAS_VAZIAS);
+        expect(contextoNulo).toEqual(SEIS_LISTAS_VAZIAS);
+
+        // O companheiro POSITIVO, lido DEPOIS dos vazios e na mesma reserva: sem ele, "vazio" não
+        // distingue isolamento de banco sem dado.
+        const conferenciaEmA: string[] = [];
+        for (const entidade of ENTIDADES_DE_CADASTRO) {
+          conferenciaEmA.push(
+            porEntidade(entidade.nome, await lerCadastros(acesso, entidade, CONTEXTO_DE_A)),
+          );
+        }
+        expect(conferenciaEmA).toEqual(ESPERADO_SOB_A);
+      } finally {
+        await acessoVirgem?.encerrar();
+        await acesso.encerrar();
+        await limparCadastros(banco.cadeiaConexao);
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-303 — no contexto de A, gravar cadastro da empresa B é recusado pelo banco e nada muda em B',
+    async () => {
+      await limparCadastros(banco.cadeiaConexao);
+      const acesso = abrir(banco.cadeiaConexao);
+
+      try {
+        // A empresa B cria, no PRÓPRIO contexto, as linhas sobre as quais A vai tentar escrever. As
+        // chaves estrangeiras das linhas cruzadas apontam para pais que pertencem mesmo a B (um
+        // `conjunto` de B para o `imovel`, um `imovel` de B para o `comodo`): sem isso, a chave
+        // composta recusaria ANTES da política e o caso provaria a referência em vez do isolamento
+        // — a armadilha que o comentário de `PESSOA_CRUZADA_EM_B` documenta.
+        await semearCadastros(acesso, CONTEXTO_DE_B, EMPRESA_B.id, CADASTROS_DE_B, 'b');
+
+        const antes = await retratoDosCadastros(acesso, CONTEXTO_DE_B);
+
+        const insercoes: string[] = [];
+        const atualizacoes: string[] = [];
+        const remocoes: string[] = [];
+
+        for (const entidade of ENTIDADES_DE_CADASTRO) {
+          const cruzada = await tentarGravarCadastro(acesso, entidade, CONTEXTO_DE_A, {
+            id: idDe(CADASTROS_CRUZADOS, entidade.nome),
+            empresaId: EMPRESA_B.id,
+            conjuntoId: CADASTROS_DE_B.conjunto,
+            imovelId: CADASTROS_DE_B.imovel,
+            posicao: POSICAO_CRUZADA,
+            marca: `cruzada-${entidade.nome}`,
+          });
+          insercoes.push(comoLinha(entidade.nome, desfechoDaGravacao(cruzada)));
+        }
+
+        for (const entidade of ENTIDADES_DE_CADASTRO) {
+          const alvo = idDe(CADASTROS_DE_B, entidade.nome);
+          atualizacoes.push(
+            comoLinha(
+              entidade.nome,
+              desfechoDaEscritaSobreLinha(
+                await tentarEscreverEmLinhaAlheia(acesso, entidade, CONTEXTO_DE_A, alvo, 'UPDATE'),
+              ),
+            ),
+          );
+          remocoes.push(
+            comoLinha(
+              entidade.nome,
+              desfechoDaEscritaSobreLinha(
+                await tentarEscreverEmLinhaAlheia(acesso, entidade, CONTEXTO_DE_A, alvo, 'DELETE'),
+              ),
+            ),
+          );
+        }
+
+        // O SQLSTATE **e** a mensagem, numa asserção literal por entidade: `42501` sozinho não diz
+        // que foi a política, e a mensagem sozinha não diz que a recusa veio do servidor.
+        expect(insercoes).toEqual([
+          'conjunto: 42501 · row-level security policy',
+          'imovel: 42501 · row-level security policy',
+          'comodo: 42501 · row-level security policy',
+          'locador: 42501 · row-level security policy',
+          'locatario: 42501 · row-level security policy',
+          'fiador: 42501 · row-level security policy',
+        ]);
+
+        // Zero linhas afetadas é o desfecho CORRETO, e é diferente de erro: sob `USING`, a linha
+        // alheia simplesmente não existe para quem escreve. Asserir "lançou exceção" aqui seria
+        // asserir o comportamento errado.
+        expect(atualizacoes).toEqual(SEIS_ESCRITAS_SEM_EFEITO);
+        expect(remocoes).toEqual(SEIS_ESCRITAS_SEM_EFEITO);
+
+        // O estado de B, lido numa unidade SEPARADA e no contexto de B — nunca por conexão
+        // privilegiada: a auditoria não pode ser mais poderosa que o ato que ela audita.
+        expect(await retratoDosCadastros(acesso, CONTEXTO_DE_B)).toBe(antes);
+
+        // O companheiro POSITIVO: a MESMA atualização, sob o contexto de B, alcança a linha. Sem
+        // ele, "0 linhas" não distinguiria invisibilidade de uma instrução que não atualiza nada.
+        const atualizacoesEmB: string[] = [];
+        for (const entidade of ENTIDADES_DE_CADASTRO) {
+          atualizacoesEmB.push(
+            comoLinha(
+              entidade.nome,
+              desfechoDaEscritaSobreLinha(
+                await tentarEscreverEmLinhaAlheia(
+                  acesso,
+                  entidade,
+                  CONTEXTO_DE_B,
+                  idDe(CADASTROS_DE_B, entidade.nome),
+                  'UPDATE',
+                ),
+              ),
+            ),
+          );
+        }
+        expect(atualizacoesEmB).toEqual([
+          'conjunto: 1 linha(s)',
+          'imovel: 1 linha(s)',
+          'comodo: 1 linha(s)',
+          'locador: 1 linha(s)',
+          'locatario: 1 linha(s)',
+          'fiador: 1 linha(s)',
+        ]);
+      } finally {
+        await acesso.encerrar();
+        await limparCadastros(banco.cadeiaConexao);
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-304 — referência entre cadastros de empresas diferentes é impossível pela chave composta',
+    async () => {
+      await limparCadastros(banco.cadeiaConexao);
+      const acesso = abrir(banco.cadeiaConexao);
+
+      try {
+        await semearCadastros(acesso, CONTEXTO_DE_A, EMPRESA_A.id, CADASTROS_DE_A, 'a');
+        await semearCadastros(acesso, CONTEXTO_DE_B, EMPRESA_B.id, CADASTROS_DE_B, 'b');
+
+        // Os identificadores alheios são obtidos LENDO sob o contexto de B — nunca por consulta
+        // privilegiada. Assim o caso prova também o outro lado: conhecer o identificador de outra
+        // empresa não basta para usá-lo.
+        const conjuntosDeB = await lerCadastros(acesso, ENTIDADE_CONJUNTO, CONTEXTO_DE_B);
+        const imoveisDeB = await lerCadastros(acesso, ENTIDADE_IMOVEL, CONTEXTO_DE_B);
+        expect(conjuntosDeB).toEqual([CADASTROS_DE_B.conjunto]);
+        expect(imoveisDeB).toEqual([CADASTROS_DE_B.imovel]);
+
+        const desfechos: string[] = [];
+
+        // --- `imovel` → `conjunto` ---------------------------------------------------------
+        desfechos.push(
+          comoLinha(
+            'imovel/legitima',
+            desfechoDaReferencia(
+              await tentarGravarCadastro(acesso, ENTIDADE_IMOVEL, CONTEXTO_DE_A, {
+                id: IMOVEL_LEGITIMO_EM_A,
+                empresaId: EMPRESA_A.id,
+                conjuntoId: CADASTROS_DE_A.conjunto,
+                imovelId: '',
+                posicao: 0,
+                marca: 'imovel-legitimo-em-a',
+              }),
+            ),
+          ),
+        );
+        desfechos.push(
+          comoLinha(
+            'imovel/cruzada-A-para-B',
+            desfechoDaReferencia(
+              await tentarGravarCadastro(acesso, ENTIDADE_IMOVEL, CONTEXTO_DE_A, {
+                id: IMOVEL_CRUZADO_A_PARA_B,
+                empresaId: EMPRESA_A.id,
+                conjuntoId: CADASTROS_DE_B.conjunto,
+                imovelId: '',
+                posicao: 0,
+                marca: 'imovel-cruzado-a-para-b',
+              }),
+            ),
+          ),
+        );
+        desfechos.push(
+          comoLinha(
+            'imovel/cruzada-B-para-A',
+            desfechoDaReferencia(
+              await tentarGravarCadastro(acesso, ENTIDADE_IMOVEL, CONTEXTO_DE_B, {
+                id: IMOVEL_CRUZADO_B_PARA_A,
+                empresaId: EMPRESA_B.id,
+                conjuntoId: CADASTROS_DE_A.conjunto,
+                imovelId: '',
+                posicao: 0,
+                marca: 'imovel-cruzado-b-para-a',
+              }),
+            ),
+          ),
+        );
+
+        // --- `comodo` → `imovel` -----------------------------------------------------------
+        desfechos.push(
+          comoLinha(
+            'comodo/legitima',
+            desfechoDaReferencia(
+              await tentarGravarCadastro(acesso, ENTIDADE_COMODO, CONTEXTO_DE_A, {
+                id: COMODO_LEGITIMO_EM_A,
+                empresaId: EMPRESA_A.id,
+                conjuntoId: '',
+                imovelId: CADASTROS_DE_A.imovel,
+                posicao: POSICAO_LEGITIMA_EM_A,
+                marca: 'comodo-legitimo-em-a',
+              }),
+            ),
+          ),
+        );
+        desfechos.push(
+          comoLinha(
+            'comodo/cruzada-A-para-B',
+            desfechoDaReferencia(
+              await tentarGravarCadastro(acesso, ENTIDADE_COMODO, CONTEXTO_DE_A, {
+                id: COMODO_CRUZADO_A_PARA_B,
+                empresaId: EMPRESA_A.id,
+                conjuntoId: '',
+                imovelId: CADASTROS_DE_B.imovel,
+                posicao: POSICAO_CRUZADA_A_PARA_B,
+                marca: 'comodo-cruzado-a-para-b',
+              }),
+            ),
+          ),
+        );
+        desfechos.push(
+          comoLinha(
+            'comodo/cruzada-B-para-A',
+            desfechoDaReferencia(
+              await tentarGravarCadastro(acesso, ENTIDADE_COMODO, CONTEXTO_DE_B, {
+                id: COMODO_CRUZADO_B_PARA_A,
+                empresaId: EMPRESA_B.id,
+                conjuntoId: '',
+                imovelId: CADASTROS_DE_A.imovel,
+                posicao: POSICAO_CRUZADA_B_PARA_A,
+                marca: 'comodo-cruzado-b-para-a',
+              }),
+            ),
+          ),
+        );
+
+        // O nome da restrição é afirmado ALÉM do SQLSTATE, e a razão é a mesma de `nomeDaRestricao`:
+        // cada uma destas tabelas tem mais de uma chave estrangeira, e um `23503` sozinho não diz
+        // qual delas falou. O nome vem de uma constante única do arquivo, nunca duplicado por
+        // tentativa.
+        expect(desfechos).toEqual([
+          'imovel/legitima: GRAVOU (1 linha(s))',
+          `imovel/cruzada-A-para-B: 23503 · ${RESTRICAO_DO_IMOVEL}`,
+          `imovel/cruzada-B-para-A: 23503 · ${RESTRICAO_DO_IMOVEL}`,
+          'comodo/legitima: GRAVOU (1 linha(s))',
+          `comodo/cruzada-A-para-B: 23503 · ${RESTRICAO_DO_COMODO}`,
+          `comodo/cruzada-B-para-A: 23503 · ${RESTRICAO_DO_COMODO}`,
+        ]);
+
+        // O estado final das duas empresas: a legítima entrou, nenhuma cruzada apareceu de nenhum
+        // dos dois lados.
+        const finalEmA: string[] = [];
+        const finalEmB: string[] = [];
+        for (const entidade of ENTIDADES_DE_CADASTRO) {
+          finalEmA.push(
+            porEntidade(entidade.nome, await lerCadastros(acesso, entidade, CONTEXTO_DE_A)),
+          );
+          finalEmB.push(
+            porEntidade(entidade.nome, await lerCadastros(acesso, entidade, CONTEXTO_DE_B)),
+          );
+        }
+        expect(finalEmA).toEqual([
+          porEntidade('conjunto', [CADASTROS_DE_A.conjunto]),
+          porEntidade('imovel', [CADASTROS_DE_A.imovel, IMOVEL_LEGITIMO_EM_A]),
+          porEntidade('comodo', [CADASTROS_DE_A.comodo, COMODO_LEGITIMO_EM_A]),
+          porEntidade('locador', [CADASTROS_DE_A.locador]),
+          porEntidade('locatario', [CADASTROS_DE_A.locatario]),
+          porEntidade('fiador', [CADASTROS_DE_A.fiador]),
+        ]);
+        expect(finalEmB).toEqual(ESPERADO_SOB_B);
+      } finally {
+        await acesso.encerrar();
+        await limparCadastros(banco.cadeiaConexao);
       }
     },
     LIMITE_DO_CASO_MS,

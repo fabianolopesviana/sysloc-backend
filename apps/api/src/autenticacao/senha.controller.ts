@@ -141,6 +141,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { esquemaDoErro } from '../comum/esquema-de-erro.js';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
+import { validar } from '../comum/validacao.js';
 import { TOKEN_ACESSO_A_IDENTIDADE, TOKEN_AUTENTICACAO } from '../configuracao/ambiente.js';
 import { cabecalhosDe, sessaoDaRequisicao } from './contexto.guard.js';
 import { NaoExigePermissao } from './exigencia.decorator.js';
@@ -248,9 +249,9 @@ export class SenhaController {
     schema: esquemaDoErro([CodigoErro.CAMPO_INVALIDO]),
   })
   // DECISÃO FECHADA — T9 / Gate 2 · 2026-08-05
-  // (Ele PROTEGE, ao contrário do `DÉBITO COM GATILHO` do D38 mais abaixo neste mesmo arquivo, que
-  //  AGENDA. Alcance: o bloco de comentário abaixo e o decorador `@ApiTooManyRequestsResponse` que
-  //  ele explica, até o fecho dele.)
+  // (Ele PROTEGE — ao contrário de um `DÉBITO COM GATILHO`, que AGENDA. Alcance: o bloco de
+  //  comentário abaixo e o decorador `@ApiTooManyRequestsResponse` que ele explica, até o fecho
+  //  dele.)
   // O QUÊ: o `429` desta rota declara STATUS e CORPO, e CABEÇALHO NENHUM.
   // POR QUÊ: duas rodadas de gate fecharam sobre afirmação não medida NESTE MESMO bloco — o Gate 2
   //          da rodada 1 rejeitou "é alcançável hoje" e "a única perna alcançável", que a task
@@ -522,42 +523,4 @@ function comoRecusaDoArcabouco(falha: unknown): RecusaDoArcabouco | undefined {
 /** `detalhes` é objeto simples, ou não é `detalhes`. */
 function ehDetalhes(valor: unknown): valor is Record<string, unknown> {
   return typeof valor === 'object' && valor !== null && !Array.isArray(valor);
-}
-
-/**
- * Valida a entrada e traduz a recusa no envelope da ADR-0012.
- *
- * **Terceira ocorrência desta função na borda** — as outras duas são `master/empresa.controller.ts`
- * e `usuarios/usuario.controller.ts`, e aquela última registra por escrito que *"quando o terceiro
- * controlador chegar, a extração passa a valer a pena"*. Ela chegou, e a extração **não** foi feita
- * aqui: ver o débito abaixo.
- */
-// DÉBITO COM GATILHO — D38 · F1/T9 · registrado 2026-08-05
-// (Fatia `autorizacao-e-ciclo-de-acesso`. Ele AGENDA, não protege: editar esta função é normal — o
-//  que não se pode é editá-la sem saber que ela tem duas irmãs idênticas.)
-// O QUÊ: `validar()` existe em TRÊS cópias literais na borda — aqui,
-//        `apps/api/src/master/empresa.controller.ts` e `apps/api/src/usuarios/usuario.controller.ts`
-//        —, e o gatilho declarado pela segunda ("quando o terceiro controlador chegar") já disparou.
-// QUANDO FECHA: no próximo controlador de borda a precisar dela — a quarta cópia —, ou na primeira
-//        task cujo escopo já inclua os três arquivos. Fechar é extrair um módulo de borda comum e
-//        fazer os três importarem dele.
-// POR QUE NÃO AGORA: extrair sem editar os dois controladores existentes deixaria TRÊS definições
-//        em vez de duas, e editá-los é mudança fora do escopo desta task — o §4.5 do Protocolo
-//        Antirregressão é literal sobre "aproveitar que estou aqui", e cada linha de diff que não
-//        serve à causa-raiz é superfície de regressão de graça.
-// ÍNDICE: docs/specs/features/autorizacao-e-ciclo-de-acesso/v1/_run/run-report.md §2, D38
-function validar<T>(esquema: z.ZodType<T>, valor: unknown, campoPadrao: string): T {
-  const resultado = esquema.safeParse(valor);
-
-  if (resultado.success) {
-    return resultado.data;
-  }
-
-  const caminho = resultado.error.issues[0]?.path ?? [];
-
-  throw new ErroDeAplicacao(
-    CodigoErro.CAMPO_INVALIDO,
-    MENSAGEM_POR_CODIGO[CodigoErro.CAMPO_INVALIDO],
-    { campo: caminho.length > 0 ? caminho.join('.') : campoPadrao, causa: resultado.error },
-  );
 }

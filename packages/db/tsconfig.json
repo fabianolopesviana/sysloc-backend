@@ -15,5 +15,21 @@
     "sourceMap": true,
     "types": ["node"]
   },
+  // `src/esquema/negocio.ts` importa os literais dos enums de `@sysloc/contracts` pelo
+  // especificador público, e o `exports` daquele manifesto resolve só para `dist/` — que o
+  // `.gitignore` barra. Declarar a referência é o que faz o `tsc --build` deste pacote CONSTRUIR o
+  // contrato antes de compilar aqui, inclusive sob `pnpm --filter @sysloc/db test`, que não
+  // atravessa o grafo do Turborepo.
+  //
+  // A direção é `db` → `contracts`, e NUNCA a inversa: o contrato é folha por decisão (ADR-0016) —
+  // é ele que o frontend importa no marco de entrega, e uma aresta de lá para cá arrastaria
+  // `drizzle-orm` e `postgres` junto. O CT-339 reprova se a aresta inversa nascer.
+  //
+  // A referência a `../shared` entra na T8 pelo mesmo motivo, e com um consumidor concreto:
+  // `src/cadastro-de-pessoa.ts` normaliza o documento com `somenteDigitos`, de `@sysloc/shared`, e
+  // aquele manifesto também resolve `"."` só para `dist/`. A dependência saiu de `devDependencies`
+  // para `dependencies` no mesmo passo — ela deixou de ser só do acessório de teste e passou a ser
+  // de execução. Não há ciclo: `@sysloc/shared` não depende de pacote algum do workspace.
+  "references": [{ "path": "../contracts" }, { "path": "../shared" }],
   "include": ["src/**/*.ts"]
 }

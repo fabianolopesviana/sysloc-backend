@@ -148,11 +148,17 @@ import { PREFIXO_DAS_ROTAS_DE_IDENTIDADE } from '../src/autenticacao/autenticaca
 import { NaoExigePermissao } from '../src/autenticacao/exigencia.decorator.ts';
 import { CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO } from '../src/autenticacao/senha.controller.ts';
 import { CAMINHO_DA_SESSAO } from '../src/autenticacao/sessao.controller.ts';
+import { CAMINHO_DOS_FIADORES } from '../src/cadastros/fiador.controller.ts';
+import { CAMINHO_DOS_LOCADORES } from '../src/cadastros/locador.controller.ts';
+import { CAMINHO_DOS_LOCATARIOS } from '../src/cadastros/locatario.controller.ts';
 import {
   ENDERECO_DE_ESCUTA,
   PREFIXO_DE_VERSAO,
   TOKEN_LOGGER,
 } from '../src/configuracao/ambiente.ts';
+import { CAMINHO_DOS_COMODOS } from '../src/imoveis/comodo.controller.ts';
+import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
+import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
 import { CAMINHO_DO_CONTRATO, CAMINHO_DO_DOCUMENTO, criarAplicacao } from '../src/main.ts';
 import { CAMINHO_DO_MASTER } from '../src/master/empresa.controller.ts';
 import { CAMINHO_DOS_USUARIOS } from '../src/usuarios/usuario.controller.ts';
@@ -283,9 +289,71 @@ const ROTAS_PUBLICAS_ACEITAS: readonly string[] = [
  * entra pelo mesmo lado da igualdade que as anteriores; nenhuma entrada saiu, e o conjunto público
  * **encolheu de zero**: o desligamento da rota nativa de troca de senha, entregue na mesma task,
  * acontece DENTRO do encaminhador `/v1/auth/*`, que segue publicado e segue público.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T5 da fatia `cadastro-de-imoveis-e-pessoas` publicou as seis rotas de
+ * conjunto, e as seis são **protegidas** — a classe declara `@ExigeChave('TELA:imoveis')` e as duas
+ * de circulação declaram `ACAO:excluir_cadastro` no método; nenhuma é marcada `@RotaPublica()`, e por
+ * isso a sonda sem cookie recebe `401 NAO_AUTENTICADO` da guarda. Pela classificação por **caminho**
+ * deste caso, elas entram como **quatro** entradas (`POST` e `GET /v1/conjuntos` são o mesmo caminho,
+ * e `GET` e `PUT /v1/conjuntos/:id` também). Vale aqui o mesmo dos parágrafos acima: nenhuma entrada
+ * anterior saiu, o conjunto público continua inalterado, e a igualdade segue exata nos dois sentidos
+ * — uma rota nova que tivesse dispensado sessão apareceria no OUTRO conjunto e reprovaria como
+ * excedente.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T6 da mesma fatia publicou as seis rotas de imóvel, e as seis são
+ * **protegidas** — a classe declara `@ExigeChave('TELA:imoveis')` e as duas de circulação declaram a
+ * conjunção com `ACAO:excluir_cadastro` no método (ADR-0018); nenhuma é marcada `@RotaPublica()`, e
+ * por isso a sonda sem cookie recebe `401 NAO_AUTENTICADO` da guarda. Pela classificação por
+ * **caminho** deste caso, elas entram como **quatro** entradas (`POST` e `GET /v1/imoveis` são o
+ * mesmo caminho, e `GET` e `PUT /v1/imoveis/:id` também). Vale o mesmo dos parágrafos acima: nenhuma
+ * entrada anterior saiu, o conjunto público continua inalterado, e a igualdade segue exata nos dois
+ * sentidos.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T7 da mesma fatia publicou as três rotas de cômodo, e as três são
+ * **protegidas** — a classe declara `@ExigeChave('TELA:imoveis')`, nenhuma é marcada
+ * `@RotaPublica()`, e por isso a sonda sem cookie recebe `401 NAO_AUTENTICADO` da guarda. Pela
+ * classificação por **caminho** deste caso, elas entram como **duas** entradas, e não três: o `POST`
+ * é sobre `/v1/imoveis/:id/comodos`, e o `PUT` e o `DELETE` compartilham
+ * `/v1/imoveis/:id/comodos/:comodoId`. Vale o mesmo dos parágrafos acima: nenhuma entrada anterior
+ * saiu, o conjunto público continua inalterado, e a igualdade segue exata nos dois sentidos.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T9 da mesma fatia publicou as dezoito rotas dos três papéis de cadastro
+ * de pessoa, e as dezoito são **protegidas** — cada classe declara `@ExigeChave('TELA:cadastros')` e
+ * as seis de circulação declaram a conjunção com `ACAO:excluir_cadastro` no método (ADR-0018);
+ * nenhuma é marcada `@RotaPublica()`, e por isso a sonda sem cookie recebe `401 NAO_AUTENTICADO` da
+ * guarda. Pela classificação por **caminho** deste caso, elas entram como **doze** entradas — quatro
+ * por papel, porque `POST` e `GET` da coleção são o mesmo caminho, e `GET` e `PUT` de `:id` também.
+ * Vale o mesmo dos parágrafos acima: nenhuma entrada anterior saiu, o conjunto público continua
+ * inalterado, e a igualdade segue exata nos dois sentidos.
+ *
+ * **Este arquivo não está na §5.2 da T7 nem na da T9** — divergência declarada nas duas. Ele é blast
+ * radius por construção: a âncora afirma por igualdade de conjunto, e publicar caminho novo a faz
+ * reprovar, que é exatamente o que ela existe para fazer. A âncora **sobe**; ela não vira contenção.
  */
 const ROTAS_PROTEGIDAS_ACEITAS: readonly string[] = [
   CAMINHO_DA_SESSAO_CORRENTE,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_FIADORES}`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_FIADORES}/:id`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_FIADORES}/:id/recirculacao`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_FIADORES}/:id/retirada`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_LOCADORES}`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_LOCADORES}/:id`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_LOCADORES}/:id/recirculacao`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_LOCADORES}/:id/retirada`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_LOCATARIOS}`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_LOCATARIOS}/:id`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_LOCATARIOS}/:id/recirculacao`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_LOCATARIOS}/:id/retirada`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONJUNTOS}`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONJUNTOS}/:id`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONJUNTOS}/:id/recirculacao`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONJUNTOS}/:id/retirada`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_COMODOS}`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_COMODOS}/:comodoId`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_IMOVEIS}`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_IMOVEIS}/:id`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_IMOVEIS}/:id/recirculacao`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_IMOVEIS}/:id/retirada`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas/:id/admin`,

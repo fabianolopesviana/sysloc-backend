@@ -82,13 +82,13 @@ import {
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
 import { CHAVES_DE_ACAO, CHAVES_DE_TELA, ehChaveDoCatalogo } from '@sysloc/auth';
-import { CodigoErro, ErroDeAplicacao } from '@sysloc/shared';
+import { CodigoErro } from '@sysloc/shared';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { sessaoDaRequisicao } from '../autenticacao/contexto.guard.js';
 import { ExigeChave } from '../autenticacao/exigencia.decorator.js';
 import { esquemaDoErro } from '../comum/esquema-de-erro.js';
-import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
+import { validar } from '../comum/validacao.js';
 import {
   type JanelaDaListagem,
   MAIOR_PAGINA_DE_PESSOAS,
@@ -528,32 +528,4 @@ export class UsuarioController {
       validar(ESQUEMA_DO_IDENTIFICADOR, identificador, CAMPO_DO_IDENTIFICADOR),
     );
   }
-}
-
-/**
- * Valida a entrada e traduz a recusa no envelope da ADR-0012.
- *
- * **Ponto único da tradução**, e não um `safeParse` com tratamento por manipulador: dez traduções
- * ficariam livres para divergir no código, no status e no campo nomeado, e a forma do erro é
- * contrato. É a mesma função, com a mesma justificativa, de `master/empresa.controller.ts` — e ela é
- * duplicada em vez de compartilhada porque compartilhá-la exigiria um módulo de borda que hoje teria
- * um só símbolo; quando o terceiro controlador chegar, a extração passa a valer a pena.
- *
- * O que sai para o cliente é o **campo culpado**, e nada do valor recusado: entrada não confiável
- * repetida na mensagem chega ao registro estruturado por outro caminho.
- */
-function validar<T>(esquema: z.ZodType<T>, valor: unknown, campoPadrao: string): T {
-  const resultado = esquema.safeParse(valor);
-
-  if (resultado.success) {
-    return resultado.data;
-  }
-
-  const caminho = resultado.error.issues[0]?.path ?? [];
-
-  throw new ErroDeAplicacao(
-    CodigoErro.CAMPO_INVALIDO,
-    MENSAGEM_POR_CODIGO[CodigoErro.CAMPO_INVALIDO],
-    { campo: caminho.length > 0 ? caminho.join('.') : campoPadrao, causa: resultado.error },
-  );
 }

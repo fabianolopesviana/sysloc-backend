@@ -32,7 +32,64 @@
  * |       |        | no mesmo caminho, por dois manipuladores — segue **levantando**, nomeando os
  * |       |        | dois. (ADR-0011) |
  *
- * Rastreabilidade: `CA-23 → CT-212 (RN-14)`, `CA-23 → CT-213 (RN-14)`.
+ * | CA-23 | CT-355 | Sobre a aplicação de PRODUÇÃO montada, **nenhum manipulador declara menos do
+ * |       |        | que a classe dele exige**: onde as duas declarações existem, o conjunto de
+ * |       |        | átomos do MÉTODO contém o da CLASSE. A MESMA função, aplicada ao defeito
+ * |       |        | literal (área na classe, ação no método), o **acusa nomeando o
+ * |       |        | manipulador** — e não acusa a gêmea que declara a conjunção. |
+ *
+ * | CA-12 | CT-318 | As **33 rotas** que a fatia `cadastro-de-imoveis-e-pessoas` publica constam,
+ * |       |        | uma a uma, no conjunto POSITIVO; **nenhuma** delas está entre as públicas nem
+ * |       |        | fora do arcabouço; a metade do inventário ANTERIOR à fatia está intacta por
+ * |       |        | igualdade de array; e a superfície cresceu de exatamente 33 — o delta é
+ * |       |        | afirmado **além** do total, e medido sobre a superfície observada. (ADR-0011) |
+ *
+ * Rastreabilidade: `CA-23 → CT-212 (RN-14)`, `CA-23 → CT-213 (RN-14)`, `CA-23 → CT-355 (RN-14)`.
+ * Acrescida pela T11 da fatia `cadastro-de-imoveis-e-pessoas`: `CA-12 → CT-318 (RN-14)`.
+ *
+ * ===========================================================================
+ * Por que o CT-318 existe ao lado do CT-213, que já afirma o mesmo conjunto
+ * ===========================================================================
+ *
+ * O `CT-213` afirma `comExigencia` por igualdade contra um inventário ÚNICO e a contagem por um
+ * TOTAL único. Isso pega crescimento e encolhimento, e deixa aberta uma terceira forma: a **troca**.
+ * Um par da F1 que sumisse enquanto um par da fatia entrasse no lugar dele manteria o total em `66`
+ * — e a igualdade do `CT-213` reprovaria, sim, mas apontando para o inventário inteiro, sem dizer de
+ * que lado da fronteira o erro está.
+ *
+ * O `CT-318` parte o inventário em duas metades nomeadas — {@link EXIGENCIA_ANTERIOR_A_FATIA} e
+ * {@link PARES_NOVOS_DA_FATIA} — e afirma cada uma por si, mais o **delta** medido sobre a superfície
+ * observada (`rotasEnumeradas` menos os 33 novos, contra a âncora de antes). É o que a §6.6 da T11
+ * pede por extenso: *"afirmar o delta (33) além do total é o que impede um erro de contagem de passar
+ * despercebido numa atualização apressada do inventário"*.
+ *
+ * ===========================================================================
+ * O CT-355 audita o CONTEÚDO da declaração — o eixo que faltava (ADR-0018)
+ * ===========================================================================
+ *
+ * O `CT-213` audita a **existência** da declaração: nenhuma rota governada sem nada declarado. Isso
+ * deixa em aberto um defeito inteiro, e ele custou o primeiro `REJEITADO` da T5 do domínio de
+ * locação: `getAllAndOverride` **substitui**, de modo que declarar `@ExigeChave` num método de uma
+ * classe que já declara **apaga** a exigência da classe naquela rota. A rota segue declarando
+ * *alguma coisa*, o `CT-213` segue verde, e a área desaparece.
+ *
+ * Foi assim que `POST /v1/conjuntos/:id/retirada` passou a exigir apenas `ACAO:excluir_cadastro`.
+ * A coerência do catálogo **não** cobre a lacuna — `MAPA_ACAO_TELA['ACAO:excluir_cadastro']` é
+ * `TELA:cadastros`, não `TELA:imoveis` —, e quem administra locador, locatário e fiador recebia
+ * `403` para listar conjuntos e `200` para retirá-los.
+ *
+ * **Por que a asserção é estrutural, e não um caso de comportamento por rota.** A T6, a T7 e a T9
+ * publicam as MESMAS duas rotas de circulação em mais quatro controladores. Um caso por entidade
+ * dependeria de cada autor futuro lembrar de escrevê-lo — e foi exatamente um esquecimento desse
+ * tipo que produziu o defeito. Esta asserção varre a superfície inteira: qualquer manipulador que
+ * nasça declarando menos do que a classe dele exige reprova aqui sem que ninguém precise se lembrar
+ * de nada. É a topologia, e não a ocorrência — e é a segunda metade do predicado de cobertura que a
+ * **ADR-0018** fixa: *"nenhum manipulador exige menos do que a classe dele exige"*, ao lado do
+ * *"nenhuma rota sem declaração"* que a ADR-0011 já pedia.
+ *
+ * A falsificação é **permanente na suíte**, no mesmo molde do `CT-213 (b)`: `ControladorQueSubstitui`
+ * carrega o defeito literal e `ControladorQueCompoe` difere dele **apenas** por declarar a
+ * conjunção. A mesma função roda nas duas montagens, e o resultado esperado é oposto.
  *
  * ===========================================================================
  * A prova de falsificação é o PAR de aplicações — e ela é permanente
@@ -123,8 +180,11 @@
 
 import { randomBytes } from 'node:crypto';
 import { Controller, Get, Post, type Type } from '@nestjs/common';
+import { METHOD_METADATA } from '@nestjs/common/constants.js';
+import { DiscoveryService, MetadataScanner, ModulesContainer, Reflector } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
+import type { Exigencia } from '@sysloc/auth';
 import { SENHA_DA_CARGA, USUARIO_MASTER } from '@sysloc/db';
 import { CodigoErro } from '@sysloc/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -155,11 +215,22 @@ import {
   type RotaSemDeclaracao,
   verificarCoberturaDeAutorizacao,
 } from '../src/autenticacao/cobertura-de-autorizacao.ts';
-import { NaoExigePermissao } from '../src/autenticacao/exigencia.decorator.ts';
-import { RotaPublica } from '../src/autenticacao/rota-publica.decorator.ts';
+import {
+  EXIGENCIA,
+  ExigeChave,
+  ExigeChaves,
+  NaoExigePermissao,
+} from '../src/autenticacao/exigencia.decorator.ts';
+import { ROTA_PUBLICA, RotaPublica } from '../src/autenticacao/rota-publica.decorator.ts';
 import { CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO } from '../src/autenticacao/senha.controller.ts';
 import { CAMINHO_DA_SESSAO } from '../src/autenticacao/sessao.controller.ts';
+import { CAMINHO_DOS_FIADORES } from '../src/cadastros/fiador.controller.ts';
+import { CAMINHO_DOS_LOCADORES } from '../src/cadastros/locador.controller.ts';
+import { CAMINHO_DOS_LOCATARIOS } from '../src/cadastros/locatario.controller.ts';
 import { ENDERECO_DE_ESCUTA, PREFIXO_DE_VERSAO } from '../src/configuracao/ambiente.ts';
+import { CAMINHO_DOS_COMODOS } from '../src/imoveis/comodo.controller.ts';
+import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
+import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
 import { CAMINHO_DO_CONTRATO, CAMINHO_DO_DOCUMENTO, criarAplicacao } from '../src/main.ts';
 import { CAMINHO_DO_MASTER } from '../src/master/empresa.controller.ts';
 import { CAMINHO_DOS_USUARIOS } from '../src/usuarios/usuario.controller.ts';
@@ -316,6 +387,117 @@ function paresDeUsuarios(): readonly string[] {
 }
 
 /**
+ * Os **seis pares** que as rotas de conjunto publicam (T5 da fatia `cadastro-de-imoveis-e-pessoas`).
+ *
+ * Escritos à mão e compostos a partir do dono do segmento (`CAMINHO_DOS_CONJUNTOS`), pela mesma razão
+ * dos inventários acima. O `HEAD` derivado do `GET` da coleção **não** entra: ele não é entrada
+ * própria, e o módulo verificado já o descarta.
+ *
+ * As duas transições de circulação são **sub-recursos** de `POST`, e não campos de um `PATCH` — é por
+ * isso que elas aparecem aqui como pares distintos, cada um com a própria classificação. E elas são
+ * as únicas desta superfície que declaram no MÉTODO (`ACAO:excluir_cadastro`): as outras quatro
+ * herdam a declaração da classe (`TELA:imoveis`). Nos dois casos há declaração, que é o que este
+ * caso mede.
+ */
+function paresDeConjuntos(): readonly string[] {
+  const conjuntos = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONJUNTOS}`;
+
+  return [
+    `POST ${conjuntos}`,
+    `GET ${conjuntos}`,
+    `GET ${conjuntos}/:id`,
+    `PUT ${conjuntos}/:id`,
+    `POST ${conjuntos}/:id/retirada`,
+    `POST ${conjuntos}/:id/recirculacao`,
+  ];
+}
+
+/**
+ * Os **seis pares** que as rotas de imóvel publicam (T6 da fatia `cadastro-de-imoveis-e-pessoas`).
+ *
+ * Escritos à mão e compostos a partir do dono do segmento (`CAMINHO_DOS_IMOVEIS`), pela mesma razão
+ * dos inventários acima. O `HEAD` derivado do `GET` da coleção **não** entra: ele não é entrada
+ * própria, e o módulo verificado já o descarta.
+ *
+ * As duas transições de circulação são **sub-recursos** de `POST`, e não campos de um `PATCH`. Elas
+ * são as únicas desta superfície que declaram no MÉTODO — e declaram a **conjunção inteira**
+ * (`@ExigeChaves(TELA:imoveis, ACAO:excluir_cadastro)`), nunca só a ação: é o `CT-355` que audita
+ * esse conteúdo, e é a ADR-0018 que o fixa. As outras quatro herdam a declaração da classe. Nos dois
+ * casos há declaração, que é o que **este** caso mede.
+ */
+function paresDeImoveis(): readonly string[] {
+  const imoveis = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_IMOVEIS}`;
+
+  return [
+    `POST ${imoveis}`,
+    `GET ${imoveis}`,
+    `GET ${imoveis}/:id`,
+    `PUT ${imoveis}/:id`,
+    `POST ${imoveis}/:id/retirada`,
+    `POST ${imoveis}/:id/recirculacao`,
+  ];
+}
+
+/**
+ * Os **três pares** que as rotas de cômodo publicam (T7 da fatia `cadastro-de-imoveis-e-pessoas`).
+ *
+ * Escritos à mão e compostos a partir do dono do segmento (`CAMINHO_DOS_COMODOS`, que por sua vez
+ * deriva de `CAMINHO_DOS_IMOVEIS`), pela mesma razão dos inventários acima.
+ *
+ * **Não existe par de LEITURA**, e a ausência é contrato: o cômodo não tem representação própria na
+ * API — ele chega e volta dentro do imóvel, que é o agregado dele (§4.1). As três escritas respondem
+ * com o imóvel inteiro já recalculado.
+ *
+ * As três declaram pela **classe** e nenhuma declara no método — nem a de remoção. Ver a razão no
+ * `SUT_IS_CORRECT_BECAUSE` de {@link ROTAS_COM_EXIGENCIA}: a ação sensível é da saída de circulação
+ * de cadastro, e a ADR-0014 exclui o cômodo daquele alcance.
+ */
+function paresDeComodos(): readonly string[] {
+  const comodos = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_COMODOS}`;
+
+  return [`POST ${comodos}`, `PUT ${comodos}/:comodoId`, `DELETE ${comodos}/:comodoId`];
+}
+
+/**
+ * Os **seis pares** que UM papel de cadastro de pessoa publica (T9 da fatia
+ * `cadastro-de-imoveis-e-pessoas`).
+ *
+ * Compostos a partir do dono do segmento, que é passado por argumento — os três papéis publicam a
+ * MESMA superfície, e escrever três listas idênticas a não ser pelo caminho daria três lugares para
+ * esquecer um par. O `HEAD` derivado do `GET` da coleção **não** entra: ele não é entrada própria, e
+ * o módulo verificado já o descarta.
+ *
+ * As duas transições de circulação são **sub-recursos** de `POST`. Elas são as únicas desta
+ * superfície que declaram no MÉTODO — e declaram a **conjunção inteira**
+ * (`@ExigeChaves(TELA:cadastros, ACAO:excluir_cadastro)`), nunca só a ação. Aqui a forma importa
+ * mais do que em qualquer outra superfície da fatia: `MAPA_ACAO_TELA['ACAO:excluir_cadastro']` **é**
+ * `TELA:cadastros`, de modo que declarar só a ação produziria, por coincidência, a mesma área
+ * exigida — e nenhuma prova comportamental reprovaria. Quem audita esse conteúdo é o `CT-355`, por
+ * ESTRUTURA; este caso mede a **existência** da declaração.
+ */
+function paresDeUmPapelDeCadastro(caminhoDoPapel: string): readonly string[] {
+  const papel = `/${PREFIXO_DE_VERSAO}/${caminhoDoPapel}`;
+
+  return [
+    `POST ${papel}`,
+    `GET ${papel}`,
+    `GET ${papel}/:id`,
+    `PUT ${papel}/:id`,
+    `POST ${papel}/:id/retirada`,
+    `POST ${papel}/:id/recirculacao`,
+  ];
+}
+
+/** Os **dezoito pares** dos três papéis — seis por papel, na ordem em que os controladores nascem. */
+function paresDeCadastrosDePessoa(): readonly string[] {
+  return [
+    ...paresDeUmPapelDeCadastro(CAMINHO_DOS_LOCADORES),
+    ...paresDeUmPapelDeCadastro(CAMINHO_DOS_LOCATARIOS),
+    ...paresDeUmPapelDeCadastro(CAMINHO_DOS_FIADORES),
+  ];
+}
+
+/**
  * O INVENTÁRIO dos pares que não passam pela decisão da guarda, na aplicação de produção.
  *
  * São os nove acima mais os das três rotas marcadas `@RotaPublica()`:
@@ -335,6 +517,48 @@ const ROTAS_PUBLICAS_ACEITAS: readonly string[] = [
   'GET /saude/pronto',
   ...paresDoEncaminhador(),
 ].sort();
+
+/**
+ * As **quinze** rotas que já declaravam exigência **antes** da fatia `cadastro-de-imoveis-e-pessoas`.
+ *
+ * A metade nomeada existe para o `CT-318`: o total sozinho (`66`) é âncora de tamanho, e uma
+ * atualização apressada que tirasse um par desta metade e acrescentasse um da outra manteria o total
+ * e passaria despercebida. Com as duas metades separadas, o `CT-318` afirma que **esta** ficou
+ * intacta e que a outra tem exatamente 33 pares.
+ *
+ * Ela reúne, sem tirar nem acrescentar nada, o que {@link ROTAS_COM_EXIGENCIA} já listava: a sessão
+ * corrente, a troca de senha do produto, as seis do operador do SaaS e as sete da administração de
+ * pessoas.
+ */
+const EXIGENCIA_ANTERIOR_A_FATIA: readonly string[] = [
+  `GET ${CAMINHO_DA_SESSAO_CORRENTE}`,
+  `POST ${CAMINHO_DA_TROCA_CORRENTE}`,
+  ...paresDoMaster(),
+  ...paresDeUsuarios(),
+].sort();
+
+/**
+ * Os **trinta e três** pares que a fatia `cadastro-de-imoveis-e-pessoas` acrescenta.
+ *
+ * Seis de conjunto (T5), seis de imóvel (T6), três de cômodo (T7) e dezoito dos três papéis de
+ * cadastro de pessoa (T9) — `6 + 6 + 3 + 18 = 33`. É a outra metade de {@link ROTAS_COM_EXIGENCIA},
+ * e é o inventário que o `CT-318` afirma **por igualdade** contra o que a superfície publica.
+ */
+const PARES_NOVOS_DA_FATIA: readonly string[] = [
+  ...paresDeConjuntos(),
+  ...paresDeImoveis(),
+  ...paresDeComodos(),
+  ...paresDeCadastrosDePessoa(),
+].sort();
+
+/**
+ * Quantos pares a superfície publicava **antes** da fatia — o outro lado do delta do `CT-318`.
+ *
+ * É o valor que {@link ROTAS_PUBLICADAS_EM_PRODUCAO} carregava ao fim da fatia
+ * `autorizacao-e-ciclo-de-acesso`, e ele não é derivado daquele número: é a âncora contra a qual o
+ * crescimento de exatamente 33 é afirmado, medido sobre a superfície observada.
+ */
+const ROTAS_PUBLICADAS_ANTES_DA_FATIA = 33;
 
 /**
  * Os pares da aplicação de produção que DECLARAM exigência — o eixo positivo da leitura.
@@ -358,12 +582,49 @@ const ROTAS_PUBLICAS_ACEITAS: readonly string[] = [
  * chamar POSITIVO e não "das que exigem chave": a marca de "não exige" **é** uma declaração, e é ela
  * que a ADR-0011 chama de *"única abertura deliberada"*. A rota entra aqui pelo mesmo motivo que
  * `GET /v1/sessao` entra: ela declara, e o que a ADR-0011 recusa é a rota que não declara nada.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T5 da fatia `cadastro-de-imoveis-e-pessoas` publicou as **seis rotas de
+ * conjunto**, e as seis declaram exigência — quatro pela classe (`@ExigeChave('TELA:imoveis')`) e as
+ * duas de circulação pelo método (`@ExigeChave('ACAO:excluir_cadastro')`, que a ADR-0011 exige que
+ * seja a chave nomeada na recusa). Vale aqui, palavra por palavra, o parágrafo da T8: **nenhuma
+ * entrada anterior saiu**, a igualdade segue exata, e as seis entram no conjunto POSITIVO — o que
+ * prova que elas declaram exigência em vez de dispensá-la. É a revisão que a ADR-0011 exige de quem
+ * publica rota, e ela é o motivo de esta lista ser escrita à mão.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T6 da mesma fatia publicou as **seis rotas de imóvel**, e as seis
+ * declaram exigência — quatro pela classe (`@ExigeChave('TELA:imoveis')`) e as duas de circulação
+ * pelo método, com a **conjunção inteira** (`@ExigeChaves('TELA:imoveis', 'ACAO:excluir_cadastro')`),
+ * que é a forma que a ADR-0018 fixa e que o `CT-355` audita por conteúdo. Vale aqui, palavra por
+ * palavra, o parágrafo da T5: **nenhuma entrada anterior saiu**, a igualdade segue exata, e as seis
+ * entram no conjunto POSITIVO.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T7 da mesma fatia publicou as **três rotas de cômodo**, e as três
+ * declaram exigência pela classe (`@ExigeChave('TELA:imoveis')`) — nenhuma declara nada no método.
+ * Vale aqui, palavra por palavra, o parágrafo da T6: **nenhuma entrada anterior saiu**, a igualdade
+ * segue exata, e as três entram no conjunto POSITIVO.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T9 da mesma fatia publicou as **dezoito rotas dos três papéis de
+ * cadastro de pessoa**, e as dezoito declaram exigência — doze pela classe
+ * (`@ExigeChave('TELA:cadastros')`) e as seis de circulação pelo método, com a **conjunção inteira**
+ * (`@ExigeChaves('TELA:cadastros', 'ACAO:excluir_cadastro')`). Vale aqui, palavra por palavra, o
+ * parágrafo da T6: **nenhuma entrada anterior saiu**, a igualdade segue exata, e as dezoito entram no
+ * conjunto POSITIVO.
+ *
+ * Nesta superfície a conjunção é a única coisa que separa o certo do errado **sem que o
+ * comportamento mude**: a área da classe coincide com `MAPA_ACAO_TELA['ACAO:excluir_cadastro']`, de
+ * modo que uma declaração só com a ação exigiria, por acidente, a mesma área. É o `CT-355` que a
+ * acusa, por conteúdo — este inventário afirma que as dezoito declaram algo, e não o quê.
+ *
+ * A ausência de `ACAO:excluir_cadastro` no `DELETE` do cômodo **é conteúdo**, e não esquecimento: a
+ * ação sensível governa a saída de circulação de um CADASTRO, e a ADR-0014 exclui o cômodo
+ * nominalmente daquele alcance por ele não ser referenciável — remover um cômodo é corrigir a
+ * planta, exatamente como alterá-lo. A §4.1 da tech spec registra as três rotas com `TELA:imoveis` e
+ * nada mais, e é essa tabela que este inventário afirma. Se a decisão mudar, muda aqui **e** no
+ * controlador, e o `CT-355` acusa a metade que ficar para trás.
  */
 const ROTAS_COM_EXIGENCIA: readonly string[] = [
-  `GET ${CAMINHO_DA_SESSAO_CORRENTE}`,
-  `POST ${CAMINHO_DA_TROCA_CORRENTE}`,
-  ...paresDoMaster(),
-  ...paresDeUsuarios(),
+  ...EXIGENCIA_ANTERIOR_A_FATIA,
+  ...PARES_NOVOS_DA_FATIA,
 ].sort();
 
 /**
@@ -382,8 +643,72 @@ const ROTAS_COM_EXIGENCIA: readonly string[] = [
  * o encaminhador continua sendo um manipulador `@All('*')` sobre um caminho só, e o que mudou foi o
  * que ele repassa ao arcabouço — a recusa acontece dentro do mesmo par `POST /v1/auth/*`, que segue
  * publicado porque toda a demais superfície de identidade continua atendendo por ele.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T5 da fatia `cadastro-de-imoveis-e-pessoas` acrescentou **seis** pares à
+ * superfície publicada (33 → 39), as seis rotas de `/v1/conjuntos`. A âncora de contagem existe
+ * justamente para que esse acréscimo passe pela revisão de quem lê este arquivo em vez de entrar
+ * sozinho — e a igualdade de conjunto logo acima nomeia quais são os seis.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T6 da mesma fatia acrescentou **seis** pares à superfície publicada
+ * (39 → 45), as seis rotas de `/v1/imoveis`, pela mesma razão do parágrafo acima. Nenhum par anterior
+ * saiu.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T7 da mesma fatia acrescentou **três** pares (45 → 48), as três rotas de
+ * `/v1/imoveis/:id/comodos`, pela mesma razão do parágrafo acima. Nenhum par anterior saiu. São três
+ * e não quatro porque **não há rota de leitura de cômodo**: ele volta dentro do imóvel (§4.1), e o
+ * `POST` da coleção, o `PUT` e o `DELETE` de `:comodoId` são a superfície inteira.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T9 da mesma fatia acrescentou **dezoito** pares (48 → 66), as seis rotas
+ * de cada um dos três papéis de cadastro de pessoa, pela mesma razão do parágrafo acima. Nenhum par
+ * anterior saiu. A contagem foi **refeita do zero**, por varredura dos decoradores de rota em
+ * `apps/api/src`, e não derivada das outras âncoras deste arquivo.
  */
-const ROTAS_PUBLICADAS_EM_PRODUCAO = 33;
+const ROTAS_PUBLICADAS_EM_PRODUCAO = 66;
+
+/**
+ * Quantos **manipuladores** de controlador a aplicação de produção monta — a âncora do `CT-355`.
+ *
+ * Ela conta manipuladores, e não pares método+caminho: um `@All('*')` é UM manipulador que
+ * reivindica sete pares, e as rotas registradas direto no adaptador (o contrato publicado) não têm
+ * manipulador algum. Por isso este número **não** é `ROTAS_PUBLICADAS_EM_PRODUCAO`, e não deve ser
+ * derivado dele.
+ *
+ * SUT_IS_CORRECT_BECAUSE: o valor é a **expectativa revisada** da superfície que hoje existe, e a
+ * soma é `2 + 1 + 1 + 1 + 6 + 7 + 6 = 24`: as **duas** de saúde, o **um** encaminhador de identidade
+ * (`@All('*')`, que sozinho reivindica sete pares), a sessão corrente, a troca de senha do produto,
+ * as **seis** do operador do SaaS, as **sete** da administração de pessoas e as **seis** de
+ * conjunto. As nove do contrato publicado não entram: elas são registradas direto no adaptador e não
+ * têm manipulador do arcabouço. Ele é exato
+ * pela mesma razão das outras três âncoras deste arquivo: `> 0` fecha o caso degenerado e deixa
+ * aberto o intermediário. As tasks seguintes desta fatia já tocam este arquivo para subir
+ * `ROTAS_PUBLICADAS_EM_PRODUCAO`, então mantê-lo exato custa zero incremental e compra a mesma
+ * revisão forçada.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T6 acrescentou **seis manipuladores** (24 → 30), um por rota de
+ * `/v1/imoveis`, e a soma passa a ser `2 + 1 + 1 + 1 + 6 + 7 + 6 + 6 = 30`. O número **não** é
+ * derivável de `ROTAS_PUBLICADAS_EM_PRODUCAO`, e a coincidência de as duas terem crescido seis aqui é
+ * acidente da forma destas rotas: cada uma tem manipulador próprio e reivindica um par só. Um
+ * `@All('*')` acrescentaria um manipulador e sete pares, e derivar um número do outro erraria.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T7 acrescentou **três manipuladores** (30 → 33) — o `@Post()`, o
+ * `@Put(':comodoId')` e o `@Delete(':comodoId')` de `comodo.controller.ts` —, e a soma passa a ser
+ * `2 + 1 + 1 + 1 + 6 + 7 + 6 + 6 + 3 = 33`. A contagem foi **refeita do zero**, por varredura dos
+ * decoradores de rota em `apps/api/src`, e não derivada de `ROTAS_PUBLICADAS_EM_PRODUCAO`: as duas
+ * crescerem três aqui é, de novo, acidente da forma destas rotas — cada manipulador reivindica um
+ * par só. `cobertura-de-autorizacao.ts` tem dez decoradores e **não entra**, porque é o módulo de
+ * verificação e não a aplicação de produção.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T9 acrescentou **dezoito manipuladores** (33 → 51) — seis em cada um de
+ * `cadastros/locador.controller.ts`, `cadastros/locatario.controller.ts` e
+ * `cadastros/fiador.controller.ts` —, e a soma passa a ser
+ * `2 + 1 + 1 + 1 + 6 + 7 + 6 + 6 + 3 + 18 = 51`. A contagem foi **refeita do zero**, por varredura
+ * dos decoradores de rota em `apps/api/src`, e não derivada de `ROTAS_PUBLICADAS_EM_PRODUCAO`: as
+ * duas crescerem dezoito aqui é, de novo, acidente da forma destas rotas — cada manipulador
+ * reivindica um par só. `cadastros/superficie-de-cadastro.ts` **não entra**: ele carrega o
+ * comportamento das seis operações e não tem decorador de rota algum, que é precisamente o que faz a
+ * contagem por manipulador continuar sendo dezoito e não seis.
+ */
+const MANIPULADORES_EXAMINADOS_EM_PRODUCAO = 51;
 
 /**
  * Quantos pares a aplicação MUTANTE publica.
@@ -399,8 +724,23 @@ const ROTAS_PUBLICADAS_EM_PRODUCAO = 33;
  *
  * SUT_IS_CORRECT_BECAUSE: a T9 acrescentou o par da troca de senha do produto à mesma composição
  * raiz (26 → 27), pela mesma razão do parágrafo acima.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T5 da fatia `cadastro-de-imoveis-e-pessoas` registrou o módulo de
+ * imóveis na MESMA composição raiz, e os seis pares de conjunto aparecem aqui pela mesma razão que
+ * aparecem no controle (27 → 33). A âncora continua sendo de contagem EXATA.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T6 registrou o controlador de imóveis no MESMO módulo, e os seis pares
+ * de `/v1/imoveis` aparecem aqui pela mesma razão que aparecem no controle (33 → 39).
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T7 registrou o controlador de cômodos no MESMO módulo, e os três pares
+ * de `/v1/imoveis/:id/comodos` aparecem aqui pela mesma razão que aparecem no controle (39 → 42).
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T9 registrou os três controladores de papel em `CadastrosModule`, que a
+ * T8 já havia registrado na MESMA composição raiz — o módulo existia sem publicar rota alguma, e é
+ * por isso que ele não aparecia aqui até agora. Os dezoito pares aparecem pela mesma razão que
+ * aparecem no controle (42 → 60).
  */
-const ROTAS_PUBLICADAS_NO_MUTANTE = 27;
+const ROTAS_PUBLICADAS_NO_MUTANTE = 60;
 
 /**
  * O que seria o inventário público da aplicação mutante **se o mutante não estivesse lá**.
@@ -433,6 +773,10 @@ let aplicacaoDeRecurso: NestFastifyApplication;
 
 /** A montagem em que dois manipuladores disputam o MESMO verbo do mesmo caminho (CT-213 c). */
 let aplicacaoEmDisputa: NestFastifyApplication;
+
+/** As duas montagens do par de falsificação do CT-355 — o defeito literal e a gêmea que o corrige. */
+let aplicacaoQueSubstitui: NestFastifyApplication;
+let aplicacaoQueCompoe: NestFastifyApplication;
 
 let ambienteAnterior: NodeJS.ProcessEnv;
 
@@ -488,9 +832,18 @@ beforeAll(async () => {
   // consumiria recurso do host sem provar nada.
   aplicacaoDeRecurso = await montarMinima([ControladorDeRecurso]);
   aplicacaoEmDisputa = await montarMinima([ControladorQueDisputa, ControladorQueTambemDisputa]);
+
+  // O par de falsificação PERMANENTE do CT-355 — o defeito literal e a gêmea que o corrige. Elas
+  // vivem em montagens próprias, e nunca na composição raiz: publicar em `apps/api/src` um
+  // manipulador que substitui a exigência da classe seria criar em produção exatamente a
+  // vulnerabilidade que a asserção existe para impedir.
+  aplicacaoQueSubstitui = await montarMinima([ControladorQueSubstitui]);
+  aplicacaoQueCompoe = await montarMinima([ControladorQueCompoe]);
 }, LIMITE_DE_MONTAGEM_MS);
 
 afterAll(async () => {
+  await aplicacaoQueCompoe?.close();
+  await aplicacaoQueSubstitui?.close();
   await aplicacaoEmDisputa?.close();
   await aplicacaoDeRecurso?.close();
   await aplicacaoMutante?.close();
@@ -639,6 +992,21 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     // da T9 — e ele reforça a distinção que este bloco existe para fazer: a rota do produto declara
     // "não exige" como a gêmea de verificação ao lado, e por isso as duas caem no conjunto POSITIVO,
     // enquanto a que não declara nada continua sendo acusada acima.
+    //
+    // SUT_IS_CORRECT_BECAUSE: os SEIS pares de conjunto entram aqui pela mesma razão que entram no
+    // controle — a aplicação mutante importa a composição raiz da produção, onde a T5 registrou o
+    // módulo de imóveis. Nenhuma entrada anterior saiu, e a igualdade segue exata.
+    //
+    // SUT_IS_CORRECT_BECAUSE: os SEIS pares de imóvel entram pela mesma razão, agora da T6, que
+    // registrou o controlador de imóveis no mesmo módulo. Nenhuma entrada anterior saiu.
+    //
+    // SUT_IS_CORRECT_BECAUSE: os TRÊS pares de cômodo entram pela mesma razão, agora da T7, que
+    // registrou o controlador de cômodos no mesmo módulo. Nenhuma entrada anterior saiu.
+    //
+    // SUT_IS_CORRECT_BECAUSE: os DEZOITO pares dos três papéis de cadastro de pessoa entram pela
+    // mesma razão, agora da T9, que registrou os três controladores em `CadastrosModule` — módulo
+    // que a T8 já havia posto na composição raiz sem que ele publicasse rota alguma. Nenhuma entrada
+    // anterior saiu, e a igualdade segue exata.
     expect(cobertura.comExigencia).toEqual(
       [
         `GET ${CAMINHO_DA_SESSAO_CORRENTE}`,
@@ -646,12 +1014,63 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
         `GET ${caminho(CAMINHO_SEM_EXIGENCIA)}`,
         ...paresDoMaster(),
         ...paresDeUsuarios(),
+        ...paresDeConjuntos(),
+        ...paresDeImoveis(),
+        ...paresDeComodos(),
+        ...paresDeCadastrosDePessoa(),
       ].sort(),
     );
 
     // E nada aqui é registrado direto no adaptador: o conjunto "fora do arcabouço" não é um depósito
     // que absorva o que a junção não soube ligar — se a junção falhasse, a rota apareceria nele.
     expect(cobertura.foraDoArcabouco).toEqual([]);
+  });
+
+  it('CT-318 — as 33 rotas novas da fatia declaram exigência, e nenhuma escapou para o conjunto público', () => {
+    const cobertura = verificarCoberturaDeAutorizacao(aplicacaoReal);
+
+    // O inventário desta fatia tem 33 pares — afirmado sobre o próprio inventário, antes de comparar
+    // com a superfície. Sem isto, uma lista truncada faria as igualdades abaixo passarem sobre menos
+    // rotas do que a fatia publica, que é o modo de falha silencioso desta classe de caso.
+    expect(PARES_NOVOS_DA_FATIA.length).toBe(33);
+
+    // Nenhuma rota da superfície publicada existe sem declaração — o predicado da ADR-0011, e o que
+    // torna as igualdades seguintes afirmações sobre uma superfície inteiramente governada.
+    expect(cobertura.semDeclaracao).toEqual([]);
+
+    // As 33 constam no conjunto POSITIVO, nomeadas: `filter` em vez de `every` porque a falha precisa
+    // dizer QUAL rota escapou, e não apenas que alguma escapou.
+    expect(PARES_NOVOS_DA_FATIA.filter((par) => !cobertura.comExigencia.includes(par))).toEqual([]);
+
+    // E nenhuma delas escapou por `@RotaPublica()`, que é a escapatória que a existência da
+    // declaração sozinha não fecha: a guarda retorna antes para rota pública, e o conjunto sem
+    // declaração continuaria vazio.
+    expect(PARES_NOVOS_DA_FATIA.filter((par) => cobertura.publicas.includes(par))).toEqual([]);
+    expect(PARES_NOVOS_DA_FATIA.filter((par) => cobertura.foraDoArcabouco.includes(par))).toEqual(
+      [],
+    );
+
+    // A metade ANTERIOR à fatia está intacta, por igualdade de array: o que o conjunto positivo
+    // publica menos os 33 novos é exatamente o inventário de antes. É esta asserção que pega a troca
+    // que o total não veria — um par da F1 sumindo enquanto um par novo entra no lugar dele.
+    expect(cobertura.comExigencia.filter((par) => !PARES_NOVOS_DA_FATIA.includes(par))).toEqual([
+      ...EXIGENCIA_ANTERIOR_A_FATIA,
+    ]);
+
+    // Os dois conjuntos que a fatia NÃO deve ter tocado, inalterados.
+    expect(cobertura.publicas).toEqual([...ROTAS_PUBLICAS_ACEITAS]);
+    expect(cobertura.foraDoArcabouco).toEqual([...ROTAS_FORA_DO_ARCABOUCO]);
+
+    // O TOTAL e o DELTA, os dois. O total sozinho não distingue "33 novas entraram" de "34 entraram
+    // e uma antiga saiu"; o delta é medido sobre a superfície observada — quantos pares publicados
+    // NÃO são da fatia —, e por isso ele não é aritmética entre duas constantes deste arquivo.
+    expect(
+      cobertura.rotasEnumeradas,
+      'a superfície publicada mudou de tamanho: o inventário desta prova precisa ser revisado',
+    ).toBe(ROTAS_PUBLICADAS_EM_PRODUCAO);
+    expect(cobertura.rotasEnumeradas - PARES_NOVOS_DA_FATIA.length).toBe(
+      ROTAS_PUBLICADAS_ANTES_DA_FATIA,
+    );
   });
 
   it('CT-213 (c) — o recurso REST comum é classificado par a par; a disputa do MESMO verbo levanta', () => {
@@ -696,6 +1115,49 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
         'ControladorQueDisputa.responder e ControladorQueTambemDisputa.responder: ' +
         'a cobertura não tem como dizer qual declaração vale',
     );
+  });
+
+  it('CT-355 — nenhuma declaração de MÉTODO substitui a da classe: a do método CONTÉM a da classe', () => {
+    // ---------------------------------------------------------------------------------------
+    // Controle: a aplicação de PRODUÇÃO inteira
+    // ---------------------------------------------------------------------------------------
+    const violacoes = declaracoesQueSubstituemAClasse(aplicacaoReal);
+
+    // Âncora de não-vacuidade em valor EXATO, e ela é indispensável: "nenhuma violação" sobre zero
+    // manipuladores examinados é verdade vazia, e é exatamente assim que esta asserção apodreceria
+    // em silêncio. `> 0` fecharia só o caso degenerado e deixaria aberto o intermediário — uma
+    // varredura que perdesse metade dos controladores continuaria passando. É o mesmo raciocínio,
+    // e a mesma escolha, das outras três âncoras deste arquivo.
+    expect(
+      manipuladoresExaminados(aplicacaoReal),
+      'o número de manipuladores da superfície publicada mudou: o inventário desta prova precisa ser revisado',
+    ).toBe(MANIPULADORES_EXAMINADOS_EM_PRODUCAO);
+
+    expect(
+      violacoes,
+      `declaração de método que SUBSTITUI a da classe: ${violacoes
+        .map((v) => `${v.controlador}.${v.manipulador}`)
+        .join(', ')}`,
+    ).toEqual([]);
+
+    // ---------------------------------------------------------------------------------------
+    // FALSIFICAÇÃO PERMANENTE: a MESMA função sobre o defeito literal
+    // ---------------------------------------------------------------------------------------
+    //
+    // O controle acima, sozinho, não prova nada — uma função que devolvesse `[]` sempre passaria.
+    // O par é o que detecta, e ele vive **na suíte** em vez de numa medição narrada num comentário:
+    // `ControladorQueSubstitui` é o defeito exato que rejeitou a T5 na rodada 1 (área na classe,
+    // ação no método), e `ControladorQueCompoe` é a gêmea que difere **apenas** por declarar a
+    // conjunção. Uma implementação que acusasse as duas, ou nenhuma, reprova aqui.
+    expect(declaracoesQueSubstituemAClasse(aplicacaoQueSubstitui)).toEqual([
+      {
+        controlador: 'ControladorQueSubstitui',
+        manipulador: 'circular',
+        daClasse: ['TELA:imoveis'],
+        doMetodo: ['ACAO:excluir_cadastro'],
+      },
+    ]);
+    expect(declaracoesQueSubstituemAClasse(aplicacaoQueCompoe)).toEqual([]);
   });
 });
 
@@ -746,6 +1208,42 @@ class ControladorSemExigencia {
 class ControladorPublicoIndevido {
   @Get()
   responder(): { readonly alcancada: true } {
+    return { alcancada: true };
+  }
+}
+
+/**
+ * O DEFEITO LITERAL que rejeitou a T5 na rodada 1: área na **classe**, ação no **método**.
+ *
+ * `getAllAndOverride` substitui, então este manipulador exige `ACAO:excluir_cadastro` **e mais
+ * nada** — `TELA:imoveis` desaparece dele. A cobertura de autorização o classifica como
+ * `comExigencia` e fica verde, porque ela audita a **existência** da declaração, não o conteúdo.
+ * É por isso que o `CT-355` existe: ele é a única asserção da suíte que olha o conteúdo.
+ */
+@Controller('verificacao-substitui')
+@ExigeChave('TELA:imoveis')
+class ControladorQueSubstitui {
+  @Post()
+  @ExigeChave('ACAO:excluir_cadastro')
+  circular(): { readonly naoDeveriaChegarAqui: true } {
+    return { naoDeveriaChegarAqui: true };
+  }
+}
+
+/**
+ * A GÊMEA da anterior: mesma classe, mesmo manipulador, mesma ação — e **uma única diferença**, que
+ * é declarar a CONJUNÇÃO em vez de trocar a exigência.
+ *
+ * O par existe para que a acusação seja atribuível à substituição, e a nada mais: com controladores
+ * de formas diferentes, uma acusação lá e um silêncio aqui provariam que dois controladores se
+ * comportam diferente, não que a verificação discrimina o defeito.
+ */
+@Controller('verificacao-compoe')
+@ExigeChave('TELA:imoveis')
+class ControladorQueCompoe {
+  @Post()
+  @ExigeChaves('TELA:imoveis', 'ACAO:excluir_cadastro')
+  circular(): { readonly alcancada: true } {
     return { alcancada: true };
   }
 }
@@ -846,6 +1344,151 @@ function comTabelaDoRoteador(
     get: (tipo: unknown, opcoes: unknown) =>
       (aplicacao.get as (alvo: unknown, opcoes: unknown) => unknown)(tipo, opcoes),
   } as unknown as NestFastifyApplication;
+}
+
+/**
+ * Um manipulador cuja declaração de MÉTODO deixou de conter a da CLASSE.
+ *
+ * Os dois conjuntos viajam nomeados porque a mensagem da falha precisa dizer **o que sumiu**: o
+ * defeito não é declarar no método, é declarar no método **menos** do que a classe já exigia.
+ */
+interface DeclaracaoQueSubstitui {
+  readonly controlador: string;
+  readonly manipulador: string;
+  readonly daClasse: readonly string[];
+  readonly doMetodo: readonly string[];
+}
+
+/**
+ * Achata uma exigência nos **átomos** que ela impõe.
+ *
+ * `TODAS` é recursiva, então o achatamento também é. As duas dimensões viajam na mesma forma
+ * textual que `detalhes.exigido` publica (`TELA:imoveis`, `PERFIL:SYSLOC_MASTER`), o que faz a
+ * comparação de conjunto ser sobre o que o cliente de fato veria.
+ */
+function atomosDaExigencia(exigencia: Exigencia): readonly string[] {
+  switch (exigencia.dimensao) {
+    case 'CHAVE':
+      return [exigencia.chave];
+    case 'PERFIL':
+      return [`PERFIL:${exigencia.perfil}`];
+    case 'NENHUMA':
+      // A abertura deliberada não impõe átomo nenhum — e é por isso que ela, declarada num método
+      // de classe que exige, aparece como violação: ela REMOVE o que a classe impunha. Isso é
+      // deliberado: a ADR-0011 chama a marca de "única abertura deliberada" e manda que cada uso
+      // dela peça revisão explícita. Nenhum controlador de produção faz isso hoje.
+      return [];
+    case 'TODAS':
+      return exigencia.exigencias.flatMap(atomosDaExigencia);
+  }
+}
+
+/**
+ * Percorre os manipuladores da aplicação e devolve os que **substituem** a declaração da classe.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que ela mora AQUI, e não em `apps/api/src/`
+ * ---------------------------------------------------------------------------
+ *
+ * Iron Law #6: nenhum símbolo nasce em produção para um teste enxergar algo. Tudo que ela usa é a
+ * API pública do arcabouço — `DiscoveryService`, `MetadataScanner` e a MESMA instância de
+ * `Reflector` da aplicação —, exatamente como a sonda que o Gate 1 usou para medir o defeito. Ela
+ * **não** duplica `verificarCoberturaDeAutorizacao`: não precisa da tabela do roteador nem da
+ * resolução de caminho, porque a propriedade sob prova é sobre METADADO, não sobre rota.
+ *
+ * ---------------------------------------------------------------------------
+ * O que ela fecha, e por que isso é a CLASSE e não a ocorrência
+ * ---------------------------------------------------------------------------
+ *
+ * A T6, a T7 e a T9 publicam **as mesmas duas rotas de circulação** em mais quatro controladores.
+ * Um caso de comportamento por entidade dependeria de cada autor futuro lembrar de escrevê-lo — e
+ * foi precisamente um esquecimento desse tipo que produziu o defeito. Esta asserção é sobre a
+ * superfície **inteira**: qualquer manipulador, de qualquer controlador, que declare menos do que a
+ * classe dele exige, reprova aqui sem que ninguém precise se lembrar de nada.
+ *
+ * `@RotaPublica()` é exceção declarada: a marca **é** a declaração daquela rota (§5.1 da tech spec),
+ * a guarda retorna antes de ler a exigência, e o inventário público do `CT-213` já a governa por
+ * igualdade de conjunto.
+ */
+function declaracoesQueSubstituemAClasse(
+  aplicacao: NestFastifyApplication,
+): readonly DeclaracaoQueSubstitui[] {
+  const violacoes: DeclaracaoQueSubstitui[] = [];
+
+  for (const { classe, alvo, nome } of manipuladoresDe(aplicacao)) {
+    const reflector = aplicacao.get(Reflector, { strict: false });
+
+    if (reflector.getAllAndOverride<boolean | undefined>(ROTA_PUBLICA, [alvo, classe]) === true) {
+      continue;
+    }
+
+    // O MESMO leitor da guarda, com a MESMA instância de `Reflector` — mas apontado a **um** alvo
+    // de cada vez. É a única forma de ver a substituição: com os dois alvos juntos, a precedência
+    // devolve o do método e o da classe some, que é exatamente o efeito sob prova.
+    const doMetodo = reflector.getAllAndOverride<Exigencia | undefined>(EXIGENCIA, [alvo]);
+    const daClasse = reflector.getAllAndOverride<Exigencia | undefined>(EXIGENCIA, [classe]);
+
+    if (daClasse === undefined || doMetodo === undefined) {
+      continue;
+    }
+
+    const atomosDaClasse = atomosDaExigencia(daClasse);
+    const atomosDoMetodo = atomosDaExigencia(doMetodo);
+
+    if (atomosDaClasse.every((atomo) => atomosDoMetodo.includes(atomo))) {
+      continue;
+    }
+
+    violacoes.push({
+      controlador: classe.name,
+      manipulador: nome,
+      daClasse: [...atomosDaClasse].sort(),
+      doMetodo: [...atomosDoMetodo].sort(),
+    });
+  }
+
+  return violacoes.sort((um, outro) =>
+    `${um.controlador}.${um.manipulador}`.localeCompare(
+      `${outro.controlador}.${outro.manipulador}`,
+    ),
+  );
+}
+
+/** Quantos manipuladores a varredura de {@link manipuladoresDe} alcança — a âncora do CT-355. */
+function manipuladoresExaminados(aplicacao: NestFastifyApplication): number {
+  return [...manipuladoresDe(aplicacao)].length;
+}
+
+/** Os manipuladores de rota de todos os controladores montados na aplicação. */
+function* manipuladoresDe(
+  aplicacao: NestFastifyApplication,
+): Generator<{ classe: Type<unknown>; alvo: Type<unknown>; nome: string }> {
+  const descoberta = new DiscoveryService(aplicacao.get(ModulesContainer, { strict: false }));
+  const varredor = new MetadataScanner();
+
+  for (const embrulho of descoberta.getControllers()) {
+    const instancia = embrulho.instance;
+    const classe = embrulho.metatype;
+
+    if (instancia === null || instancia === undefined || typeof classe !== 'function') {
+      continue;
+    }
+
+    const prototipo = Object.getPrototypeOf(instancia) as object;
+
+    for (const nome of varredor.getAllMethodNames(prototipo)) {
+      const alvo = (prototipo as Record<string, unknown>)[nome];
+
+      if (typeof alvo !== 'function' || Reflect.getMetadata(METHOD_METADATA, alvo) === undefined) {
+        continue;
+      }
+
+      // A conversão é o preço de `Reflector` aceitar `Type<any> | Function`: `alvo` já foi
+      // estreitado para função pela guarda de cima, e `Type<unknown>` é a forma que os dois usos
+      // abaixo — o alvo e a classe — satisfazem sem um segundo tipo só para isto.
+      yield { classe: classe as Type<unknown>, alvo: alvo as unknown as Type<unknown>, nome };
+    }
+  }
 }
 
 /** O erro que uma chamada levantou, ou `undefined` se ela não levantou nenhum. */

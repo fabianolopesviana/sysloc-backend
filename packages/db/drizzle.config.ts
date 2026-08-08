@@ -17,6 +17,33 @@
  *      trafega por `PGPASSFILE` no script de operação (ADR-0005). Declará-la aqui a colocaria numa
  *      variável de ambiente do processo de desenvolvimento, que é exatamente o transporte que a
  *      ADR-0005 proíbe.
+ *
+ * ---------------------------------------------------------------------------
+ * Antes de regerar: `pnpm build` é PRÉ-CONDIÇÃO (desde a T2 da fatia de cadastro)
+ * ---------------------------------------------------------------------------
+ *
+ * `src/esquema/negocio.ts` importa os literais dos enums de `@sysloc/contracts`, cujo `exports`
+ * resolve para `dist/` — que o `.gitignore` barra. Em árvore limpa,
+ * `pnpm --filter @sysloc/db gerar-migracao` **falha na resolução do módulo**.
+ *
+ * O `references` do `tsconfig.json` daqui não salva: ele governa `tsc --build` e a suíte, e o
+ * drizzle-kit não o consulta. O Turborepo também não, porque `gerar-migracao` **não é tarefa
+ * declarada** em `turbo.json` (lá existem apenas `build`, `test` e `lint`) e portanto não tem grafo
+ * de dependência a resolver. Rode `pnpm build` na raiz antes, e a falha não acontece.
+ *
+ * ---------------------------------------------------------------------------
+ * O que NÃO se "corrige" à mão na saída do gerador
+ * ---------------------------------------------------------------------------
+ *
+ * A restrição de verificação de `negocio.comodo` sai **totalmente qualificada**:
+ * `CHECK ("negocio"."comodo"."metragem" >= 0)`. É a forma que o drizzle-kit emite quando a
+ * expressão interpola a coluna, o PostgreSQL a aceita dentro do `CREATE TABLE` (o nome resolve para
+ * a tabela em criação), e ela está aplicada e provada na `0005_dominio_locacao.sql`.
+ *
+ * **Não a encurte para `CHECK (metragem >= 0)`.** O gerador voltaria a emitir a forma qualificada na
+ * regeração seguinte, e o diff entre o arquivo versionado e a saída do gerador viraria ruído
+ * permanente — o mesmo tipo de divergência silenciosa que a supressão manual dos `CREATE SCHEMA`,
+ * logo abaixo, obriga a refazer de propósito e por escrito.
  */
 
 import { defineConfig } from 'drizzle-kit';

@@ -1,0 +1,29 @@
+{
+  "name": "@sysloc/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Fonte única do contrato da API do backend Sysloc — os esquemas que validam a entrada, tipam a resposta e de onde o documento publicado deriva (ADR-0016)",
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "test": "tsc --build && tsc -p tsconfig.test.json && vitest run"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

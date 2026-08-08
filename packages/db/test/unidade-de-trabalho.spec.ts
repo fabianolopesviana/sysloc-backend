@@ -31,6 +31,21 @@
  * |          |        | em exatamente o conjunto declarado de arquivos de produção — exatamente um
  * |          |        | desde a T9, a guarda de CONTEXTO de `apps/api` (`GuardaDeContexto`).
  * |          |        | Qualquer outro chamador reprova. |
+ * | CA-03    | CT-310 | A recusa da restrição de unicidade do identificador municipal desfaz **só a
+ * | CA-02    | (c)    | instrução recusada**: numa unidade de trabalho ÚNICA, o conjunto e o imóvel
+ * |          |        | gravados antes dela sobrevivem, a unidade segue utilizável depois da recusa
+ * |          |        | (a leitura que discrimina o conflito corre nela) e o COMMIT preserva os
+ * |          |        | dois — enquanto o imóvel recusado não nasce. |
+ *
+ * | CA-02    | CT-326 | O conjunto de arquivos de PRODUÇÃO que **abrem** unidade de trabalho
+ * |          |        | (`emUnidadeDeTrabalho(…)`) é exatamente o conjunto declarado das bordas —
+ * |          |        | a guarda de contexto, o ponto único do domínio de locação
+ * |          |        | (`sobContextoDaSessao`) e os dois chamadores já legítimos da F1. Nenhum
+ * |          |        | serviço abre unidade própria, e qualquer arquivo novo que passe a abrir
+ * |          |        | aparece nomeado como excedente. |
+ *
+ * Rastreabilidade acrescida pela T6 da fatia `cadastro-de-imoveis-e-pessoas`:
+ * `CA-03 → CT-310 (c) (RN-03)`. Pela T11 da mesma fatia: `CA-02 → CT-326 (RN-03)`.
  *
  * ===========================================================================
  * Precondição privilegiada
@@ -56,13 +71,22 @@
  *     recusa seja atribuível à guarda, e não ao esgotamento da reserva;
  *   * o CT-014 é asserção ESTÁTICA sobre o fonte de produção e, por
  *     `.claude/rules/testing-stack.md`, carrega prova de falsificação com as duas pernas;
+ *   * o CT-326 é a irmã do CT-014 um símbolo adiante — ESTÁTICA pela mesma razão, com as mesmas
+ *     duas pernas, e sobre a mesma fonte descoberta no disco. Ele não instrumenta nada: o que
+ *     observa é o texto do fonte de produção, e a cópia defeituosa é escrita em diretório temporário
+ *     e removida no `finally`;
  *   * o CT-210 cruza as duas fronteiras de schema — o ajuste em `negocio` (sob RLS forçada) e o
  *     contador em `identidade` (sem RLS) — pela **unidade de trabalho publicada**, com o contexto
  *     escrito por `contextoDeTenant.executarCom`. Nunca por duas conexões: é exatamente a
  *     atomicidade entre as duas que o caso existe para provar, e duas conexões a perderiam em
  *     silêncio. A regra de coerência do domínio entra por parâmetro, como em produção (ver o
  *     comentário do caso); nenhum símbolo foi acrescentado a `packages/db/src/**` para o caso
- *     existir.
+ *     existir;
+ *   * o CT-310 (c) monta todo o estado pelas funções públicas da porta (`criarConjunto`,
+ *     `criarImovel`), sob `contextoDeTenant.executarCom` mais `emUnidadeDeTrabalho` — o mesmo par
+ *     da operação. Nenhuma conexão privilegiada, nenhum `INSERT` escrito no caso, e a recusa vem da
+ *     restrição do banco, nunca de uma bandeira. Ver a nota logo acima do caso para a razão de ele
+ *     morar neste arquivo.
  */
 
 import { execFile } from 'node:child_process';
@@ -77,8 +101,15 @@ import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { abrirAcessoAIdentidade } from '../src/acesso-identidade.ts';
 import { abrirConexao } from '../src/conexao.ts';
+import { criarConjunto, localizarConjunto } from '../src/conjunto.ts';
 import * as contextoDeTenant from '../src/contexto.ts';
 import { empresa } from '../src/esquema/identidade.ts';
+import {
+  criarImovel,
+  type DadosDoImovel,
+  ErroDeIdentificadorMunicipalEmUso,
+  listarImoveis,
+} from '../src/imovel.ts';
 import {
   type AjustePersistido,
   escreverAjustes,
@@ -306,6 +337,185 @@ const SIMBOLOS_ESPERADOS = [
   // conhecia. Nenhuma entrada anterior sai, e a igualdade (nunca contenção) segue sendo asserida.
   'ErroDePessoaForaDoContexto',
   'ErroDeUnidadeAninhada',
+  // T5 da fatia `cadastro-de-imoveis-e-pessoas` — as CINCO operações do ciclo de vida do conjunto,
+  // ordenadas no conjunto pela posição de cada nome (a comparação é sobre a lista ordenada).
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T5 publica cinco símbolos novos no índice por decisão declarada na
+  // §5.2 da task. O critério é o mesmo das quatro de `permissao.js`, das oito de `empresa.js` e das
+  // seis de `pessoa.js`: elas **recebem** o executor de quem já abriu a unidade de trabalho, não
+  // abrem conexão, não reservam e não devolvem executor. Elas existem para que o alcance a
+  // `negocio.conjunto` seja enumerável — a contenção da §11.2 é de tipo e não alcança texto de SQL —
+  // e para que o **predicado de circulação da ADR-0014** tenha um lugar só, aplicado por padrão, em
+  // vez de ser reescrito por cada listagem que venha a existir.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o
+  // defeito que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia.
+  // **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // Os tipos que elas publicam (`ConjuntoPersistido`, `DadosDoConjunto`, `JanelaDeConjuntos`,
+  // `OpcoesDeCirculacao`, `PaginaDeConjuntosPersistidos`) não aparecem aqui porque não existem em
+  // tempo de execução, e este caso observa o módulo carregado.
+  'alterarConjunto',
+  'criarConjunto',
+  'definirCirculacaoDoConjunto',
+  'listarConjuntos',
+  'localizarConjunto',
+  // T6 da fatia `cadastro-de-imoveis-e-pessoas` — as CINCO operações do ciclo de vida do imóvel,
+  // mais a classe de erro que a tradução da unicidade publica.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T6 publica seis símbolos novos no índice por decisão declarada na
+  // §5.2 da task. As cinco operações entram pelo critério de sempre — **recebem** o executor de quem
+  // já abriu a unidade de trabalho, não abrem conexão, não reservam e não devolvem executor —, com
+  // uma razão a mais, própria desta entidade: a **tradução da violação de unicidade** exige ler o
+  // estado do registro em conflito depois da recusa, de dentro da mesma transação e atrás de um
+  // `SAVEPOINT`, o que só é possível de dentro do pacote.
+  //
+  // `ErroDeIdentificadorMunicipalEmUso` entra pelo MESMO critério de `ErroDeUnidadeAninhada` e de
+  // `ErroDePessoaForaDoContexto`: é classe de erro, não caminho para dado. Ela precisa sair daqui
+  // porque quem a traduz no envelope da ADR-0017 é `apps/api/src/imoveis/imovel.service.ts`, e a
+  // alternativa — reconhecer a recusa pelo texto da mensagem — amarraria a borda ao idioma do
+  // servidor.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o
+  // defeito que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia.
+  // **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // Os tipos que elas publicam (`ConflitoDeIdentificador`, `DadosDoImovel`, `ImovelPersistido`,
+  // `JanelaDeImoveis`, `PaginaDeImoveisPersistidos`) não aparecem aqui porque não existem em tempo
+  // de execução, e este caso observa o módulo carregado.
+  'ErroDeIdentificadorMunicipalEmUso',
+  'alterarImovel',
+  'criarImovel',
+  'definirCirculacaoDoImovel',
+  'listarImoveis',
+  'localizarImovel',
+  // T7 da fatia `cadastro-de-imoveis-e-pessoas` — as TRÊS escritas do cômodo, mais a soma da
+  // metragem.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T7 publica quatro símbolos novos no índice por decisão declarada na
+  // §5.2 da task. As três escritas entram pelo critério de sempre — **recebem** o executor de quem
+  // já abriu a unidade de trabalho, não abrem conexão, não reservam e não devolvem executor —, com
+  // uma razão a mais, própria desta entidade: a **atribuição de posição** (`max(posicao) + 1`)
+  // acontece dentro da própria instrução de gravação, e escrevê-la fora do pacote reabriria a
+  // janela de corrida que ela existe para não ter.
+  //
+  // `somarMetragem` entra por critério diferente das demais, e é o que a torna admissível: ela é
+  // função **pura** sobre os cômodos já lidos — não recebe executor, não toca banco e não é caminho
+  // para dado nenhum. Ela é publicada porque é a materialização do *ponto único de soma* que a
+  // decisão D2 do tech_spec exige, e ter o ponto com nome é o que torna a afirmação verificável: uma
+  // segunda soma apareceria como um segundo símbolo, e não como uma linha escondida numa consulta.
+  //
+  // O que **não** sai do pacote, e a ausência é deliberada: `lerComodosDeImoveis`, consumida por
+  // `src/imovel.ts` para montar o agregado. Publicá-la ofereceria a `apps/api` um caminho para ler
+  // cômodo **sem** passar pelo imóvel — que é justamente o que o contrato recusa, já que não há rota
+  // de leitura de cômodo. `empresaDoContexto`, de `src/contexto-de-escrita.ts`, fica fora pelo mesmo
+  // critério: é fragmento de SQL, e publicá-lo daria à borda um pedaço de instrução para compor.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o
+  // defeito que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia.
+  // **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // Os tipos que elas publicam (`ComodoPersistido`, `DadosDoComodo`) não aparecem aqui porque não
+  // existem em tempo de execução, e este caso observa o módulo carregado.
+  'acrescentarComodo',
+  'alterarComodo',
+  'removerComodo',
+  'somarMetragem',
+  // T8 da fatia `cadastro-de-imoveis-e-pessoas` — as CINCO operações do ciclo de vida dos três
+  // cadastros de pessoa, mais a união fechada dos papéis.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T8 publica seis símbolos novos no índice por decisão declarada na §1
+  // da task (`Símbolos públicos criados`). As cinco operações entram pelo critério de sempre —
+  // **recebem** o executor de quem já abriu a unidade de trabalho, não abrem conexão, não reservam e
+  // não devolvem executor —, com uma razão a mais, própria destas três entidades: o **papel é
+  // parâmetro**, e publicar UMA porta para os três é o que impede a borda de escolher a tabela por
+  // conta própria.
+  //
+  // `PAPEIS_DE_PESSOA` entra por critério diferente das demais, e é o que o torna admissível: é a
+  // união fechada dos papéis, declaração de vocabulário e não caminho para dado — mesmo critério de
+  // `esquemaNegocio.tipoPessoa`. Ele precisa sair daqui porque é com ele que cada controlador da T9
+  // fixa o próprio papel, sem redigitar os três nomes.
+  //
+  // O que **não** sai do pacote, e a ausência é deliberada: `TABELA_POR_PAPEL`, a declaração interna
+  // da parametrização. Publicá-lo daria a `apps/api` o nome físico da tabela, que é justamente o que
+  // a contenção da §11.2 mantém dentro — mesmo critério de `lerComodosDeImoveis` e de
+  // `empresaDoContexto`.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o
+  // defeito que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia.
+  // **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // Os tipos que elas publicam (`DadosDaPessoa`, `JanelaDePessoasCadastradas`, `PapelDePessoa`,
+  // `PaginaDePessoasCadastradas`, `PessoaCadastrada`) não aparecem aqui porque não existem em tempo
+  // de execução, e este caso observa o módulo carregado.
+  'PAPEIS_DE_PESSOA',
+  'alterarPessoa',
+  'criarPessoa',
+  'definirCirculacaoDaPessoa',
+  'listarPessoas',
+  'localizarPessoa',
+  // T9 da fatia `cadastro-de-imoveis-e-pessoas` — a tradução da violação de unicidade do documento:
+  // a classe de erro do domínio e o envoltório que a produz.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T9 publica DOIS símbolos novos no índice por decisão declarada. Eles
+  // são o par que faltava para que um `23505` de documento repetido chegasse à borda como recusa
+  // nomeada em vez de subir cru ao filtro de exceção e virar `500` — a herança que a T8 deixou com
+  // dono escrito no cabeçalho de `src/cadastro-de-pessoa.ts`.
+  //
+  // `ErroDeDocumentoEmUso` entra pelo MESMO critério de `ErroDeUnidadeAninhada`, de
+  // `ErroDePessoaForaDoContexto` e de `ErroDeIdentificadorMunicipalEmUso`: é classe de erro, não
+  // caminho para dado. Ela precisa sair daqui porque quem a traduz no envelope da ADR-0017 é
+  // `apps/api/src/cadastros/cadastro-de-pessoa.service.ts`, e a alternativa — reconhecer a recusa
+  // pelo texto da mensagem — amarraria a borda ao idioma do servidor.
+  //
+  // `gravarCadastroSobRestricaoDeUnicidade` entra pelo critério das operações — **recebe** o executor
+  // de quem já abriu a unidade, não abre conexão nem transação e não devolve executor —, com a razão
+  // própria desta tradução: ler o estado do registro em conflito **depois** da recusa exige a mesma
+  // transação e um `SAVEPOINT`, o que só é possível de dentro do pacote. Ele é PÚBLICO, e não
+  // privado como o gêmeo de `./imovel.ts`, porque `criarPessoa` e `alterarPessoa` seguem subindo o
+  // `23505` cru — é o que o `CT-349` e o `CT-352` afirmam, e é essa prova que demonstra que o
+  // mecanismo da unicidade é a restrição do banco. A composição das duas coisas é da borda.
+  //
+  // O que **não** sai do pacote, e a ausência é deliberada: `RESTRICAO_DO_DOCUMENTO`, pelo mesmo
+  // critério de `TABELA_POR_PAPEL` (nome físico de objeto do banco), e `lerConflitoDoDocumento`,
+  // porque publicá-la daria à borda uma leitura por documento **sem** a recusa que a justifica —
+  // exatamente a leitura-antes-de-gravar que o cabeçalho daquele arquivo recusa.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o
+  // defeito que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia.
+  // **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // O tipo que ela publica (`ConflitoDeDocumento`) não aparece aqui porque não existe em tempo de
+  // execução, e este caso observa o módulo carregado.
+  'ErroDeDocumentoEmUso',
+  'gravarCadastroSobRestricaoDeUnicidade',
+  // T10 da fatia `cadastro-de-imoveis-e-pessoas` — a leitura composta da carteira.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T10 publica UM símbolo novo no índice por decisão declarada na §1 da
+  // task (`Símbolos públicos criados: lerCarteira`). Ela entra pelo critério de sempre — **recebe** o
+  // executor de quem já abriu a unidade de trabalho, não abre conexão, não reserva e não devolve
+  // executor —, com a razão própria desta leitura: o número de idas ao banco que a carteira custa é
+  // decisão da camada de dados (tech spec §12.2), e deixá-la à borda devolveria à aplicação a
+  // liberdade de montar a árvore com uma consulta por conjunto.
+  //
+  // O que **não** sai do pacote, e a ausência é deliberada: `lerImoveisDeConjuntos`, de
+  // `src/imovel.ts`, consumida por `src/conjunto.ts` para compor a árvore. Publicá-la ofereceria a
+  // `apps/api` uma listagem de imóveis por conjunto **sem janela**, fora das duas portas que o
+  // contrato publica — mesmo critério de `lerComodosDeImoveis` um nível abaixo.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o
+  // defeito que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia.
+  // **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // Os tipos que ela publica (`ConjuntoComImoveisPersistido`, `PaginaDaCarteiraPersistida`) não
+  // aparecem aqui porque não existem em tempo de execução, e este caso observa o módulo carregado.
+  'lerCarteira',
   // T6 — dado da carga inicial, no mesmo critério dos identificadores literais que já estão aqui:
   // são constantes de carga, não acesso a dado. `SENHA_DA_CARGA` só vira credencial quando o
   // chamador passa a derivação a `semear`, e nenhum caminho de operação o faz (ver o cabeçalho de
@@ -353,6 +563,28 @@ const SIMBOLOS_ESPERADOS = [
   'esquemaNegocio.efeitoPermissao',
   'esquemaNegocio.negocio',
   'esquemaNegocio.tipoPermissao',
+  // T2 da fatia `cadastro-de-imoveis-e-pessoas` — as SEIS tabelas do domínio de locação e os TRÊS
+  // enums que elas usam, todos criados pela migração `0005`.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T2 publica nove símbolos novos no schema por decisão declarada na
+  // §1 da task (`Símbolos públicos criados`). Eles entram pelo mesmo critério de
+  // `acessoUsuarioApp` e `tipoPermissao`: são **declaração de estrutura**, não caminho para dado —
+  // quem os tem em mãos ainda precisa de um executor para chegar ao banco, e o executor não sai do
+  // índice. O eixo das marcas de cliente continua valendo sobre cada um deles.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o
+  // defeito que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia.
+  // **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  'esquemaNegocio.comodo',
+  'esquemaNegocio.conjunto',
+  'esquemaNegocio.fiador',
+  'esquemaNegocio.imovel',
+  'esquemaNegocio.locador',
+  'esquemaNegocio.locatario',
+  'esquemaNegocio.statusLocacao',
+  'esquemaNegocio.tipoImovel',
+  'esquemaNegocio.tipoPessoa',
   'incrementarVersaoPermissoes',
   'lerAjustesDaPessoa',
   // T8 da fatia `autorizacao-e-ciclo-de-acesso` — as SEIS operações do ciclo de vida das pessoas de
@@ -626,6 +858,169 @@ function arquivosDe(ocorrencias: readonly string[]): string[] {
 const PACOTES_QUE_EXISTEM_HOJE = ['apps/api', 'apps/worker', 'packages/db', 'packages/shared'];
 
 // ===========================================================================
+// CT-326 — quem ABRE unidade de trabalho: só a borda
+// ===========================================================================
+
+/**
+ * A **segunda metade** da prova de atomicidade da fatia `cadastro-de-imoveis-e-pessoas`.
+ *
+ * A primeira é o `CT-325` (T7), que prova pela borda que imóvel e cômodos entram num commit só. Ela
+ * é comportamental e, sozinha, **não cobre o invariante**: ela observa a composição que existe hoje,
+ * e ficaria verde no dia em que um serviço novo abrisse unidade própria — o defeito só apareceria
+ * quando alguém compusesse esse serviço com outro, e aí como `ErroDeUnidadeAninhada` em produção.
+ *
+ * A decisão D1 do tech_spec é *"a unidade abre na BORDA, e o serviço recebe o executor"*, e os
+ * cabeçalhos de `imoveis/conjunto.service.ts`, `imoveis/imovel.service.ts`,
+ * `imoveis/comodo.service.ts` e `cadastros/cadastro-de-pessoa.service.ts` afirmam, cada um por
+ * extenso, que *"nenhum deles chama `emUnidadeDeTrabalho`"*. Comentário não é prova: um serviço novo
+ * que a chamasse compilaria, passaria a suíte funcional inteira e desmentiria os quatro cabeçalhos em
+ * silêncio.
+ *
+ * O que fecha a classe é o mesmo movimento do `CT-014`, um símbolo adiante: enumerar o conjunto
+ * **PERMITIDO** de arquivos que abrem unidade, por igualdade de conjunto, sobre a fonte descoberta no
+ * disco — e não os caminhos pelos quais o vazamento aconteceria.
+ *
+ * ---------------------------------------------------------------------------
+ * MUTANTE EXECUTADO — MT11-1 (2026-08-06)
+ * ---------------------------------------------------------------------------
+ *
+ * Asserção estática ⇒ prova de falsificação obrigatória (`.claude/rules/testing-stack.md`). Além da
+ * falsificação PERMANENTE na suíte (o caso logo abaixo do principal, com as duas pernas), o defeito
+ * foi reintroduzido **no fonte de produção** e medido. A suíte foi invocada pelo **script do
+ * pacote** (`pnpm --filter @sysloc/db test -t "CT-326"`), nunca por `vitest run` avulso.
+ *
+ *   * **controle** — árvore íntegra: `2 passed | 62 skipped`;
+ *   * **MT11-1 · um serviço da fatia abre a própria unidade** — acrescentado a
+ *     `apps/api/src/imoveis/conjunto.service.ts` o corpo
+ *     `export async function listarPorContaPropria(banco: AcessoAoBanco) { await
+ *     banco.emUnidadeDeTrabalho(async () => undefined); }`: `1 failed | 1 passed`, no caso
+ *     principal, com a mensagem nomeando o culpado —
+ *     `"excedentes": ["/…/apps/api/src/imoveis/conjunto.service.ts"]`. É o modo de falha desejado:
+ *     ele aponta o ARQUIVO, e não uma contagem;
+ *   * **reversão** — o fonte foi restaurado e conferido idêntico ao original por `diff` e por
+ *     `git diff` vazio, e o controle voltou a `2 passed`.
+ *
+ * ---------------------------------------------------------------------------
+ * MUTANTE EXECUTADO — MT11-6 (2026-08-08), sobre o EIXO POSITIVO
+ * ---------------------------------------------------------------------------
+ *
+ * O eixo positivo do caso principal ganhou prova própria na rodada 2, depois que o Gate 1 mediu que
+ * a forma anterior (reaplicar {@link ABERTURA_DE_UNIDADE} a `varredura.linhas`) era tautológica. As
+ * duas mutações abaixo são **complementares**: a primeira mostra que este eixo reprova por caminho
+ * PRÓPRIO, com o exame de conjunto intacto; a segunda é o defeito que ele existe para pegar.
+ *
+ *   * **MT11-6a · o varredor deixa de restringir `linhas` às linhas casadas** —
+ *     `packages/db/test/varredura-de-fontes.ts` com `linhasCasadas.push` movido para FORA do
+ *     `if (casa(linha))`. `ocorrencias` fica intacto, e portanto o exame de conjunto seguiria verde;
+ *     reprova só aqui, com `expected 'emUnidadeDeTrabalho<T>(trabalho: (tx: TransactionSql) =>
+ *     Promise<T>): Promise<T>;' not to match /\bemUnidadeDeTrabalho\s*</`. Reversão conferida por
+ *     `sha256sum` e `git diff` vazio no arquivo mutado (que estava limpo no índice);
+ *   * **MT11-6b · o predicado deixa de discriminar** — {@link ABERTURA_DE_UNIDADE} afrouxado para
+ *     `/\bemUnidadeDeTrabalho\s*[<(]/`. É o mutante que separa a rodada 2 da rodada 1: a asserção
+ *     antiga passaria (ela reaplicava o predicado mutado, que por construção casa o que selecionou),
+ *     e esta reprova nomeando `ocorrência em …/packages/db/src/unidade-de-trabalho.ts:177`. Reversão
+ *     conferida por `sha256sum` idêntico ao estado pré-mutante e por `diff` vazio contra a cópia.
+ *
+ * A âncora destes registros é **simbólica** — {@link ABRIDORES_LEGITIMOS}, {@link ABERTURA_DE_UNIDADE},
+ * {@link DECLARACAO_DE_UNIDADE} e o nome do arquivo mutado —, e nunca número de linha: a linha se
+ * move na primeira edição do serviço, e o registro passaria a apontar para o lugar errado. O
+ * `:177` acima é a única exceção, e é citação do modo de falha medido, não âncora.
+ */
+const ABRIDORES_LEGITIMOS: readonly string[] = [
+  // A borda de CONTEXTO: a guarda que resolve a sessão e a empresa antes de qualquer rota.
+  join(RAIZ_DO_REPOSITORIO, 'apps/api/src/autenticacao/contexto.guard.ts'),
+  // A borda do DOMÍNIO DE LOCAÇÃO: o ponto único por onde os oito controladores da fatia abrem a
+  // unidade sob o contexto da sessão (`sobContextoDaSessao`). É por ele existir que nenhum dos
+  // cinco serviços novos precisa abrir a sua — e é o fecho do débito D12.
+  join(RAIZ_DO_REPOSITORIO, 'apps/api/src/comum/contexto-da-sessao.ts'),
+  // Os dois chamadores JÁ LEGÍTIMOS da F1, anteriores à decisão D1. Eles abrem a unidade dentro do
+  // serviço porque as rotas do Master e do Admin nasceram assim, e nenhuma delas compõe dois
+  // serviços — a decisão D1 governa a superfície do domínio de locação, e não os reescreve.
+  join(RAIZ_DO_REPOSITORIO, 'apps/api/src/master/empresa.service.ts'),
+  join(RAIZ_DO_REPOSITORIO, 'apps/api/src/usuarios/usuario.service.ts'),
+].sort();
+
+/**
+ * A CHAMADA, e não a declaração.
+ *
+ * `emUnidadeDeTrabalho<T>(trabalho: …` — que é como `packages/db/src/unidade-de-trabalho.ts` a
+ * declara, nas duas ocorrências — traz `<T>` entre o nome e o parêntese e **não** casa. A perna de
+ * controle da falsificação prova isso sobre o arquivo real, e não sobre um exemplo escrito à mão.
+ */
+const ABERTURA_DE_UNIDADE = /\bemUnidadeDeTrabalho\s*\(/;
+
+/**
+ * A forma da DECLARAÇÃO — o que {@link ABERTURA_DE_UNIDADE} existe para **não** casar.
+ *
+ * Ela não é a negação do predicado acima: é um predicado **independente** sobre a mesma linha, e é
+ * só isso que a torna capaz de reprovar. Reaplicar a uma linha o predicado que a selecionou compara
+ * o valor com o próprio critério de seleção e não pode falhar em árvore nenhuma — foi o defeito da
+ * primeira rodada desta task, e a razão de esta constante existir.
+ *
+ * A classe que ela fecha é a do predicado que **deixa de discriminar** chamada de declaração. Hoje
+ * um afrouxamento (`/\bemUnidadeDeTrabalho\s*[<(]/`, por exemplo) casaria as duas linhas de
+ * `packages/db/src/unidade-de-trabalho.ts`; e no dia em que um arquivo JÁ LEGÍTIMO declarar a
+ * assinatura — uma porta estreitada em `comum/contexto-da-sessao.ts` é o caso plausível —, o exame
+ * de conjunto ficaria verde com uma DECLARAÇÃO contada como abertura, e este eixo é o único que
+ * veria.
+ */
+const DECLARACAO_DE_UNIDADE = /\bemUnidadeDeTrabalho\s*</;
+
+interface AuditoriaDeAberturas {
+  /** Arquivos que abrem unidade e não deveriam — nomeados, nunca contados. */
+  readonly excedentes: string[];
+  /** Arquivos declarados legítimos que deixaram de abrir unidade. */
+  readonly ausentes: string[];
+}
+
+/**
+ * A MESMA função para a árvore íntegra e para a cópia defeituosa — é o par que detecta, e não a
+ * asserção isolada.
+ *
+ * `ausentes` existe pela razão que o `CT-012` registra do lado dele: sem ele a auditoria seria de
+ * CONTENÇÃO, e continuaria verde se a borda parasse de abrir a unidade e um serviço entrasse no
+ * lugar dela — troca que mantém a contagem e destrói a propriedade.
+ */
+function auditarAberturas(
+  chamadores: readonly string[],
+  legitimos: readonly string[],
+): AuditoriaDeAberturas {
+  return {
+    excedentes: chamadores.filter((arquivo) => !legitimos.includes(arquivo)).sort(),
+    ausentes: legitimos.filter((arquivo) => !chamadores.includes(arquivo)).sort(),
+  };
+}
+
+function varrerAberturasDeUnidade(arquivos: readonly string[]): Promise<VarreduraDeFontes> {
+  return varrerArquivos(arquivos, (linha) => ABERTURA_DE_UNIDADE.test(linha));
+}
+
+/**
+ * O serviço da fatia cuja cópia carrega o defeito reintroduzido.
+ *
+ * É um dos quatro cujo cabeçalho afirma não abrir unidade — de modo que o mutante é literalmente o
+ * desmentido daquela frase, e não um arquivo inventado para o caso.
+ */
+const SERVICO_QUE_NAO_ABRE_UNIDADE = join(
+  RAIZ_DO_REPOSITORIO,
+  'apps/api/src/imoveis/conjunto.service.ts',
+);
+
+/** O fonte que DECLARA a unidade — a perna de controle: declarar não é chamar. */
+const DECLARACAO_DA_UNIDADE = fileURLToPath(
+  new URL('../src/unidade-de-trabalho.ts', import.meta.url),
+);
+
+/** O defeito literal: um serviço abrindo a própria unidade em vez de receber o executor. */
+const ABERTURA_REINTRODUZIDA = [
+  '',
+  'export async function listarPorContaPropria(banco: AcessoAoBanco): Promise<void> {',
+  '  await banco.emUnidadeDeTrabalho(async () => undefined);',
+  '}',
+  '',
+].join('\n');
+
+// ===========================================================================
 // CT-210 — o contador de versão e a escrita de permissão, num commit só
 // ===========================================================================
 
@@ -744,6 +1139,109 @@ async function restaurarPessoa(acesso: AcessoAoBanco): Promise<void> {
       `;
     }),
   );
+}
+
+// ===========================================================================
+// CT-310 (c) — o alcance do desfazimento da recusa por unicidade, DENTRO da unidade
+// ===========================================================================
+
+/**
+ * **Por que este caso mora AQUI, e não num arquivo do imóvel.**
+ *
+ * O SUT é a porta do imóvel (`packages/db/src/imovel.ts`), mas a invariante não é sobre o imóvel: é
+ * sobre **o que a unidade de trabalho preserva e o que ela commita** quando uma instrução dela é
+ * recusada. Ela é a irmã exata do `CT-210 (atomicidade)`, logo abaixo — lá se prova que o
+ * desfazimento da unidade inteira leva as duas pontas juntas; aqui se prova o complemento, que o
+ * desfazimento **parcial** (o `ROLLBACK TO` do savepoint) **não** alcança o que a unidade gravou
+ * antes. As duas metades da mesma pergunta em arquivos diferentes ficariam livres para divergir, e a
+ * segunda subiria um Postgres efêmero a mais para observar a mesma superfície.
+ *
+ * Ele **não** é o `CT-325` da T7, e não o antecipa: aquele prova a **composição** (imóvel mais
+ * cômodos, num commit só, pela borda). Este prova a propriedade da porta de que aquele depende —
+ * e é justamente por isso que ele existe antes.
+ *
+ * **O que ele prova, e que nenhum caso de rota prova.** O docblock de `gravarSobRestricaoDeUnicidade`
+ * afirma que *"o desfazimento alcança só a instrução recusada — o que a unidade já gravou antes dela
+ * permanece, e é o que faz esta tradução caber dentro de uma composição maior"*. Pela rota, cada
+ * requisição abre a sua unidade e a recusa a derruba inteira, de modo que o `CT-310` e o `CT-310 (b)`
+ * não conseguem distinguir *"desfez só a instrução"* de *"desfez tudo"*: nas contagens deles os dois
+ * desenhos dão o mesmo resultado. Aqui a unidade é **uma só** e ela **commita**, e é isso que torna a
+ * distinção observável.
+ *
+ * **Precondição privilegiada**: nenhuma. O contexto vem de `contextoDeTenant.executarCom` e o banco
+ * de `abrirAcessoAoBanco` — o mesmo par da operação —, e todo estado é montado pelas funções
+ * públicas da porta. Nenhuma conexão privilegiada, nenhum `INSERT` escrito aqui, e nenhum símbolo
+ * acrescentado a `packages/db/src/**` para o caso existir (Iron Law #6).
+ *
+ * ---------------------------------------------------------------------------
+ * MUTANTE EXECUTADO — MT6-6 (2026-08-06)
+ * ---------------------------------------------------------------------------
+ *
+ * A `.claude/rules/testing-stack.md` e o P4 de `.claude/rules/nao-regressao.md` exigem demonstrar que
+ * a prova **reprova** com o defeito reintroduzido. Aplicado ao fonte de `packages/db/src/imovel.ts`,
+ * com a suíte invocada pelo **script do pacote** (`pnpm --filter @sysloc/db test`), nunca por
+ * `vitest run` avulso.
+ *
+ *   * **controle** — árvore íntegra: `7 arquivos, 46 casos, 0 falhas`;
+ *   * **MT6-6 · o `SAVEPOINT` da porta desaparece** (`tx.savepoint(cb)` trocado por `cb(tx)`, em
+ *     `gravarSobRestricaoDeUnicidade`): `1 failed | 45 passed`, **neste caso** — a unidade rejeita
+ *     inteira com `PostgresError: duplicate key value violates unique constraint
+ *     "imovel_empresa_identificador_municipal_key"`, levantada da linha do `INSERT`. Sem o ponto de
+ *     retorno não há desfazimento parcial: a violação derruba a unidade toda, e com ela o conjunto e
+ *     o primeiro imóvel — que é exatamente a metade que o docblock afirma e que nenhum caso provava;
+ *   * **por que ele NÃO é o MT6-4** — a mutação do fonte é a mesma, a prova é outra. O MT6-4 mede a
+ *     **forma da resposta HTTP** (`500` no lugar do `422` discriminado, em `apps/api`), e ficaria
+ *     verde sobre uma implementação que traduzisse a recusa corretamente e ainda assim perdesse tudo
+ *     o que a unidade gravou antes — porque, pela rota, cada requisição abre a sua unidade e a recusa
+ *     a derruba de qualquer jeito. É esse par que separa as duas propriedades;
+ *   * **reversão** — o fonte foi restaurado e conferido idêntico ao original por `diff`, e o controle
+ *     voltou a `46 passed`.
+ */
+const NOME_DO_CONJUNTO_DA_COMPOSICAO = 'Edifício da composição — CT-310 (c)';
+
+/**
+ * O identificador municipal em disputa **deste** caso, e só dele.
+ *
+ * A unicidade alcança os retirados (ADR-0014), então um valor reaproveitado por outro caso criaria
+ * dependência de ordem (AP-08). Nenhum outro caso deste arquivo escreve em `negocio.imovel`.
+ */
+const IDENTIFICADOR_DA_COMPOSICAO = '98765.432.1098-7';
+
+/** Janela larga o bastante para que o recorte observado seja o do filtro por identificador. */
+const JANELA_DA_COMPOSICAO = { limite: 50, deslocamento: 0 } as const;
+
+/** O corpo completo de um imóvel, com o conjunto e o nome por parâmetro. */
+function dadosDoImovel(conjuntoId: string, nomeImovel: string): DadosDoImovel {
+  return {
+    conjuntoId,
+    nomeImovel,
+    identificadorMunicipal: IDENTIFICADOR_DA_COMPOSICAO,
+    tipoImovel: 'RESIDENCIAL',
+    logradouro: 'Rua das Acácias',
+    numero: '100',
+    complemento: null,
+    bairro: 'Centro',
+    cidade: 'São Paulo',
+    estado: 'SP',
+    cep: '01000000',
+    statusLocacao: 'DISPONIVEL',
+    observacoes: null,
+  };
+}
+
+/**
+ * Os identificadores dos imóveis que ocupam o identificador municipal do caso.
+ *
+ * Pela porta de leitura pública, e não por um `SELECT` escrito aqui: o que se observa é o que o
+ * produto enxerga. O filtro é do caso — a porta lista a empresa inteira — e existe para que a
+ * asserção não dependa do que os outros casos deste arquivo gravaram.
+ */
+async function imoveisComOIdentificadorDoCaso(tx: TransactionSql): Promise<string[]> {
+  const { imoveis } = await listarImoveis(tx, JANELA_DA_COMPOSICAO);
+
+  return imoveis
+    .filter((imovel) => imovel.identificadorMunicipal === IDENTIFICADOR_DA_COMPOSICAO)
+    .map((imovel) => imovel.id);
 }
 
 // ===========================================================================
@@ -1175,6 +1673,102 @@ describe('unidade de trabalho', () => {
   );
 
   it(
+    'CT-326 — a unidade de trabalho é aberta em exatamente o conjunto declarado de bordas',
+    async () => {
+      const fontes = await fontesDeProducao();
+
+      // A varredura viu todo pacote com `src/`, e nenhum deles rendeu zero arquivo — a mesma âncora
+      // do `CT-014`, e pela mesma razão: é a diferença entre "nenhum serviço abre unidade" e "não se
+      // olhou onde ele estaria". Sem ela, um descobridor quebrado passaria por verde.
+      expect(Object.keys(fontes.porPacote).sort()).toEqual(
+        expect.arrayContaining(PACOTES_QUE_EXISTEM_HOJE),
+      );
+      for (const [pacote, quantos] of Object.entries(fontes.porPacote)) {
+        expect({ pacote, temFonte: quantos > 0 }).toEqual({ pacote, temFonte: true });
+      }
+
+      const varredura = await varrerAberturasDeUnidade(fontes.arquivos);
+      const chamadores = arquivosDe(varredura.ocorrencias);
+
+      // Eixo POSITIVO da varredura — vem ANTES da igualdade de conjunto porque é **precondição**
+      // dela: o predicado achou alguma coisa, e o que ele achou são CHAMADAS, nunca declarações.
+      //
+      // A ordem não é estética. Um predicado afrouxado a ponto de casar a DECLARAÇÃO faz
+      // `packages/db/src/unidade-de-trabalho.ts` — que declara a assinatura duas vezes — entrar como
+      // excedente, e o exame de conjunto reprovaria acusando o arquivo CORRETO, como se o pacote de
+      // dados abrisse unidade indevida. Aqui a mesma mutação reprova nomeando a linha e o predicado,
+      // que é a causa. O mesmo vale para o piso de ocorrências: `ausentes` também pega o regexp que
+      // não casa nada, mas relatando quatro bordas sumidas em vez do fato, que é a varredura vazia.
+      //
+      // SUT_IS_CORRECT_BECAUSE: a rodada 1 fechava este eixo reaplicando `ABERTURA_DE_UNIDADE` a
+      // `varredura.linhas`, e `varrerArquivos` só põe em `linhas` a linha para a qual **esse mesmo**
+      // predicado já respondeu verdadeiro (`if (casa(linha))`, e o `trim` intermediário não muda
+      // casamento). A asserção comparava o valor com o critério que o selecionou e não podia
+      // reprovar em árvore nenhuma. O fonte de produção e o varredor estavam certos — vazia era a
+      // prova, e o comentário lhe atribuía uma rede que ela não tinha.
+      expect(varredura.ocorrencias.length).toBeGreaterThanOrEqual(ABRIDORES_LEGITIMOS.length);
+      for (const [indice, linha] of varredura.linhas.entries()) {
+        expect(linha, `ocorrência em ${varredura.ocorrencias[indice]}`).not.toMatch(
+          DECLARACAO_DE_UNIDADE,
+        );
+      }
+
+      // Igualdade de CONJUNTO nos dois sentidos, e não contagem. `excedentes` pega o serviço novo
+      // que passe a abrir a própria unidade — o defeito que a decisão D1 existe para impedir, e que
+      // hoje só está afirmado em quatro cabeçalhos de arquivo. `ausentes` pega a troca que a
+      // contagem não veria: a borda deixar de abrir e um serviço entrar no lugar dela.
+      expect(
+        auditarAberturas(chamadores, ABRIDORES_LEGITIMOS),
+        `quem abre unidade de trabalho hoje: ${chamadores.join(', ')}`,
+      ).toEqual({ excedentes: [], ausentes: [] });
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-326 (falsificação) — a auditoria reprova o serviço que abre a própria unidade',
+    async () => {
+      const raiz = await mkdtemp(join(tmpdir(), 'sysloc-abertura-de-unidade-'));
+
+      try {
+        // Controle: o arquivo que DECLARA a unidade não é chamador. Sem esta perna, um detector que
+        // casasse a própria declaração acusaria `packages/db/src/unidade-de-trabalho.ts` — o código
+        // correto — e seria desligado por ruído.
+        const declaracao = join(raiz, 'unidade-de-trabalho.ts');
+        await writeFile(declaracao, await readFile(DECLARACAO_DA_UNIDADE, 'utf8'), 'utf8');
+
+        const limpa = await varrerAberturasDeUnidade([declaracao]);
+        expect(limpa.arquivos).toBe(1);
+        expect(auditarAberturas(arquivosDe(limpa.ocorrencias), [])).toEqual({
+          excedentes: [],
+          ausentes: [],
+        });
+
+        // O defeito: um dos serviços da fatia — cujo cabeçalho afirma, por extenso, que ele **não**
+        // chama `emUnidadeDeTrabalho` — com a chamada reintroduzida. É o desmentido literal daquela
+        // frase, e a forma pela qual a decisão D1 cai sem quebrar compilação nem suíte funcional.
+        const intruso = join(raiz, 'conjunto.service.ts');
+        await writeFile(
+          intruso,
+          (await readFile(SERVICO_QUE_NAO_ABRE_UNIDADE, 'utf8')) + ABERTURA_REINTRODUZIDA,
+          'utf8',
+        );
+
+        const suja = await varrerAberturasDeUnidade([declaracao, intruso]);
+        expect(suja.arquivos).toBe(2);
+        expect(auditarAberturas(arquivosDe(suja.ocorrencias), [])).toEqual({
+          excedentes: [intruso],
+          ausentes: [],
+        });
+        expect(suja.linhas[0]).toContain('emUnidadeDeTrabalho(');
+      } finally {
+        await rm(raiz, { recursive: true, force: true });
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
     'CT-210 — cada operação que altera o efetivo incrementa o contador uma vez; recusa e nome, nenhuma',
     async () => {
       // Reserva de UMA conexão: as quatro operações correm sobre a mesma conexão física, como a
@@ -1404,6 +1998,82 @@ describe('unidade de trabalho', () => {
         ]);
       } finally {
         await restaurarPessoa(acesso);
+        await acesso.encerrar();
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-310 (c) — a recusa por unicidade desfaz só a instrução recusada, e a unidade segue e commita',
+    async () => {
+      // Reserva de UMA conexão: tudo corre sobre a mesma conexão física, como a requisição faria — e
+      // é sobre ela que o alcance do `ROLLBACK TO` tem de valer.
+      const acesso = abrirAcessoAoBanco({
+        cadeiaDeConexao: banco.cadeiaConexao,
+        maximoDeConexoes: 1,
+      });
+
+      try {
+        // --- UMA unidade de trabalho, do começo ao fim, e ela COMMITA ----------------------------
+        const naUnidade = await contextoDeTenant.executarCom(CONTEXTO_DA_EMPRESA_A, () =>
+          acesso.emUnidadeDeTrabalho(async (tx) => {
+            // As escritas ANTERIORES à recusa — são elas que têm de sobreviver ao desfazimento.
+            const conjunto = await criarConjunto(tx, { nome: NOME_DO_CONJUNTO_DA_COMPOSICAO });
+            const primeiro = await criarImovel(tx, dadosDoImovel(conjunto.id, 'Ap 101'));
+
+            // A instrução RECUSADA, na MESMA unidade: o identificador municipal já é do primeiro.
+            const recusado = await criarImovel(tx, dadosDoImovel(conjunto.id, 'Ap 102')).then(
+              () => undefined,
+              (erro: unknown) => erro,
+            );
+
+            // As leituras abaixo correm DEPOIS da recusa e dentro da mesma unidade. Elas são metade
+            // da prova: sem o ponto de retorno, a violação teria abortado a transação e qualquer
+            // instrução daqui em diante falharia com `25P02` — o caso reprovaria aqui, e não numa
+            // asserção adiante.
+            return {
+              conjuntoId: conjunto.id,
+              primeiroId: primeiro.id,
+              recusado,
+              conjuntoDepoisDaRecusa: await localizarConjunto(tx, conjunto.id),
+              imoveisDepoisDaRecusa: await imoveisComOIdentificadorDoCaso(tx),
+            };
+          }),
+        );
+
+        // --- A recusa é a NOMEADA, e discriminada -----------------------------------------------
+        //
+        // O tipo específico, e não "algum erro": o que a porta publica é a classe de domínio, e é
+        // por ela que a borda decide o `422`. Um erro de driver subindo cru reprova aqui.
+        expect(naUnidade.recusado).toBeInstanceOf(ErroDeIdentificadorMunicipalEmUso);
+        expect((naUnidade.recusado as ErroDeIdentificadorMunicipalEmUso).conflito).toBe(
+          'EM_CIRCULACAO',
+        );
+
+        // --- Dentro da unidade: o que veio antes da recusa continua lá, e só ele -----------------
+        expect(naUnidade.conjuntoDepoisDaRecusa?.nome).toBe(NOME_DO_CONJUNTO_DA_COMPOSICAO);
+        expect(naUnidade.imoveisDepoisDaRecusa).toEqual([naUnidade.primeiroId]);
+
+        // --- Depois do COMMIT: as escritas anteriores sobreviveram, a recusada não nasceu --------
+        //
+        // É esta metade que separa "desfez só a instrução" de "desfez tudo": pela rota, cada
+        // requisição abre a sua unidade e a recusa a derruba inteira, de modo que os dois desenhos
+        // dariam a mesma contagem. Aqui a unidade é uma só, e ela commitou.
+        const depoisDoCommit = await contextoDeTenant.executarCom(CONTEXTO_DA_EMPRESA_A, () =>
+          acesso.emUnidadeDeTrabalho(async (tx) => ({
+            conjunto: await localizarConjunto(tx, naUnidade.conjuntoId),
+            imoveis: await imoveisComOIdentificadorDoCaso(tx),
+          })),
+        );
+
+        expect(depoisDoCommit.conjunto?.id).toBe(naUnidade.conjuntoId);
+        expect(depoisDoCommit.conjunto?.nome).toBe(NOME_DO_CONJUNTO_DA_COMPOSICAO);
+        // Igualdade de conjunto, e não contagem: um imóvel a mais com o mesmo identificador — a
+        // unicidade tendo falhado — e um a menos — o primeiro tendo sido desfeito junto — reprovam
+        // os dois aqui.
+        expect(depoisDoCommit.imoveis).toEqual([naUnidade.primeiroId]);
+      } finally {
         await acesso.encerrar();
       }
     },

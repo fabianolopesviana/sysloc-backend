@@ -36,6 +36,20 @@
       "when": 1785864119924,
       "tag": "0004_desfecho_de_recusa",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785972020450,
+      "tag": "0005_dominio_locacao",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785972021450,
+      "tag": "0006_seguranca_dominio",
+      "breakpoints": true
     }
   ]
 }

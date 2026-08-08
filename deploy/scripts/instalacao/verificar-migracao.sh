@@ -154,7 +154,7 @@ readonly MANIFESTO_DB="${RAIZ_REPO}/packages/db/package.json"
 readonly ENTRADA_PUBLICA_DB="./dist/index.js"
 readonly CAMINHO_ENTRADA_DB="${RAIZ_REPO}/packages/db/dist/index.js"
 
-# As duas tabelas que a fatia cria em `negocio`. Escrever os nomes AQUI é
+# As tabelas que as fatias criam em `negocio`. Escrever os nomes AQUI é
 # legítimo e é o oposto do que `catalogo.ts` proíbe: lá a lista substituiria a
 # consulta ao catálogo (e a tabela nova nasceria invisível); aqui ela é o valor
 # ESPERADO contra o qual o resultado da consulta é comparado. Sem ele, uma
@@ -172,7 +172,11 @@ readonly CAMINHO_ENTRADA_DB="${RAIZ_REPO}/packages/db/dist/index.js"
 #   COMO A FALHA APARECE: a asserção "(b) as tabelas de negócio examinadas são
 #   exatamente as da fatia" reprova nomeando a diferença; é ruidosa e
 #   autoexplicativa, não silenciosa.
-readonly TABELAS_DE_NEGOCIO_ESPERADAS="negocio.acesso_usuario_app negocio.acesso_usuario_permissao"
+#
+#   ATUALIZADA EM 2026-08-05 pela T2 da fatia `cadastro-de-imoveis-e-pessoas`,
+#   no mesmo commit da migração `0005_dominio_locacao.sql`, que acrescenta as
+#   seis entidades do domínio de locação — o tropeço funcionou como previsto.
+readonly TABELAS_DE_NEGOCIO_ESPERADAS="negocio.acesso_usuario_app negocio.acesso_usuario_permissao negocio.comodo negocio.conjunto negocio.fiador negocio.imovel negocio.locador negocio.locatario"
 
 # Os quatro transportes de segredo que a ADR-0005 proíbe. O `[=]` é classe de
 # caractere de UM elemento — casa exatamente o que o sinal solto casaria, sem

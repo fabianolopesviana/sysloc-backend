@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Mesmo arranjo de `packages/db`, `packages/shared` e `packages/auth`: este pacote será
+    // REFERENCIADO por `apps/api` a partir da T5, e referência de projeto só é aceita sobre projeto
+    // composto. É o que faz `tsc --build` do consumidor construir este aqui ANTES de compilar a si
+    // mesmo — sem isso, o `dist/` que o `exports` do manifesto resolve pode não existir (árvore
+    // limpa) ou corresponder a um `src/` anterior.
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "types": ["node"]
+  },
+  // NENHUMA referência de projeto, e isto é a decisão do pacote, não uma omissão: o contrato é
+  // FOLHA (§3.3 da tech spec). Ele não conhece `@sysloc/db` nem `apps/api`, porque é ele que o
+  // frontend importará no marco de entrega — uma aresta para dentro do servidor arrastaria o
+  // servidor junto. O CT-339 afirma essa ausência sobre o fonte e sobre o manifesto.
+  "include": ["src/**/*.ts"]
+}

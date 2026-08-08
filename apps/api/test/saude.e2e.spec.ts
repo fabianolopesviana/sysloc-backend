@@ -66,9 +66,39 @@
  *     chamadas — sem que nada em `apps/api/src` ganhe ponto de injeção para isso (o mecanismo é o
  *     do próprio arcabouço de teste). Zero chamadas na rasa, exatamente uma na profunda.
  *
- *     O teto de tempo do CT-001 continua sendo o segundo discriminador comportamental da fila, e
- *     não é ornamental: medido, dez consultas à fila derrubada levaram ~1 s para se resolver, bem
- *     acima do teto declarado.
+ *     **O CT-001 tinha um teto de tempo, e ele SAIU** — débito D9 da fatia
+ *     `cadastro-de-imoveis-e-pessoas`, fechado em 2026-08-06. A redação original o declarava
+ *     "segundo discriminador comportamental da fila", apoiada na medição de que dez consultas à
+ *     fila derrubada levavam ~1 s. A própria medição desmente a conclusão: ~1 s para DEZ consultas
+ *     é ~100 ms para UMA, folgadamente abaixo dos 500 ms declarados — de modo que o mutante
+ *     realista (a rasa consultando a fila **uma** vez) já passava por baixo do teto. O que sobrava
+ *     era relógio de parede asserido como correção, e foi ele que reprovou a suíte por contenção
+ *     de máquina, sem defeito no produto. Quem discrimina a fila é o CT-001 (b), que conta
+ *     chamadas e não milissegundos — e a seção seguinte mede que a remoção não custou detecção.
+ *
+ * ===========================================================================
+ * MUTANTES EXECUTADOS — o eixo de cada rota sobrevive sem o teto de tempo
+ * ===========================================================================
+ *
+ * A `.claude/rules/testing-stack.md` e o P4 de `.claude/rules/nao-regressao.md` exigem demonstrar
+ * que a prova **reprova** com o defeito reintroduzido. O mutante abaixo foi aplicado ao fonte de
+ * produção e a suíte foi invocada pelo **script do pacote** (`pnpm --filter @sysloc/api test`),
+ * nunca por `vitest run` avulso — a regra é "sempre pelo script" e não se negocia caso a caso.
+ *
+ *   * **controle** — árvore íntegra, com o teto de tempo já removido: `16 arquivos, 110 casos,
+ *     0 falhas`. A contagem é a mesma de antes da remoção, porque o que saiu foi uma **asserção**,
+ *     não um caso;
+ *   * **MT-D9 · a rota rasa passa a consultar as dependências** — `verificacaoRasa`, em
+ *     `apps/api/src/saude/saude.controller.ts`, vira `async` e chama
+ *     `this.saude.verificarDependencias()` antes de devolver o corpo (a forma que uma fusão das
+ *     duas rotas produziria): `2 failed | 108 passed`, nos **dois** casos que existem para isto e
+ *     em nenhum outro. O CT-001 reprova em `expect(sentinela.conexoes()).toBe(0)` —
+ *     *expected 498 to be +0* —, e o CT-001 (b) em `expect(espiao.chamadas).toBe(0)` —
+ *     *expected 1 to be +0*. É a prova de que a remoção do teto **não** custou poder de detecção:
+ *     os dois eixos, o do banco e o da fila, seguem sendo apanhados por asserção de contagem, que
+ *     é determinística e não depende de quanto a máquina está carregada;
+ *   * **reversão** — `saude.controller.ts` foi restaurado e conferido idêntico ao original por
+ *     `diff`, e o controle voltou ao verde.
  */
 
 import { readFileSync } from 'node:fs';
@@ -111,9 +141,6 @@ import { type EstadoDasDependencias, SaudeService } from '../src/saude/saude.ser
 
 /** Limite de um caso que sobe instância própria de banco e de fila. */
 const LIMITE_CASO_MS = 120_000;
-
-/** Teto da resposta da verificação rasa com as dependências fora (CT-001). */
-const LIMITE_DA_RASA_MS = 500;
 
 /** Limite para observar a porta de uma instância já derrubada. */
 const LIMITE_DE_CONEXAO_MS = 10_000;
@@ -477,9 +504,17 @@ describe('serviço de aplicação (T5)', () => {
         // deste arquivo traz a medição que sustenta a escolha.
         const sentinela = await sentinelaNaPorta(banco.porta);
 
-        const inicio = performance.now();
+        // SUT_IS_CORRECT_BECAUSE: a rota rasa está CERTA — ela não consulta dependência alguma, e
+        // quem prova isso é o sentinela logo abaixo. O que estava errado era a asserção de tempo
+        // que morava aqui (`expect(decorrido).toBeLessThan(500)`): ela media RELÓGIO DE PAREDE —
+        // agendamento do event loop e contenção entre as suítes paralelas — e reprovou a suíte com
+        // 528 ms no mesmo host, minutos depois de um `110/110` verde, sem defeito algum no produto.
+        // Ela também não discriminava nada: o comentário abaixo já registrava, desde a F0/T5, que
+        // "conexão recusada custa milissegundos, então a latência sozinha não distingue os dois".
+        // O poder de detecção NÃO cai com a remoção, e isso foi medido, não argumentado — ver
+        // `MT-D9` na seção de mutantes do cabeçalho. Fecha o débito D9 da fatia
+        // `cadastro-de-imoveis-e-pessoas` (§2 do `_run/run-report.md`).
         const resposta = await pedir(base, '/saude');
-        const decorrido = performance.now() - inicio;
 
         expect(resposta.status).toBe(200);
         expect(comoObjeto(resposta)).toEqual({ estado: 'disponivel' });
@@ -487,7 +522,6 @@ describe('serviço de aplicação (T5)', () => {
         expect(resposta.texto).not.toContain('banco');
         expect(resposta.texto).not.toContain('fila');
         expect(resposta.texto).not.toContain('dependencias');
-        expect(decorrido).toBeLessThan(LIMITE_DA_RASA_MS);
         // A prova: o endereço do banco não recebeu conexão nenhuma.
         expect(sentinela.conexoes()).toBe(0);
 

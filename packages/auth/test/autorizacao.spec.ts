@@ -63,6 +63,12 @@
 import { CodigoErro, ErroDeAplicacao } from '@sysloc/shared';
 import { describe, expect, it } from 'vitest';
 import {
+  decidirAcesso,
+  type Exigencia,
+  type PermissoesDaSessao,
+  repartirEfetivo,
+} from '../src/autorizacao.ts';
+import {
   CHAVES_DE_ACAO,
   CHAVES_DE_TELA,
   type ChaveDoCatalogo,
@@ -516,5 +522,159 @@ describe('CT-205 — a ação sem a tela que a comporta é recusada, nomeando a 
         validarCoerenciaDeAjustes(perfil, []);
       }).not.toThrow();
     }
+  });
+});
+
+// ===========================================================================
+// CT-353 — a CONJUNÇÃO de exigências, e a chave que ela nomeia ao recusar
+// ===========================================================================
+//
+// | Critério | CT     | Invariante |
+// |----------|--------|------------|
+// | CA-23    | CT-353 | Uma exigência `TODAS` alcança **apenas** quando a sessão satisfaz TODAS as
+// |          |        | partes; recusando, nomeia a **primeira** ausente na ordem declarada pela
+// |          |        | rota. A conjunção VAZIA recusa. Ela compõe as duas dimensões da ADR-0011,
+// |          |        | e não só chaves. |
+//
+// Rastreabilidade: `CA-23 → CT-353 (RN-14)`.
+//
+// ---------------------------------------------------------------------------
+// Por que este caso existe — e o defeito de SEGURANÇA que ele fecha
+// ---------------------------------------------------------------------------
+//
+// Até 2026-08-06 `Exigencia` era união de três variantes de UMA chave cada, e a guarda lê o
+// metadado com `getAllAndOverride` — que **substitui**. Uma rota que quisesse exigir *"a área da
+// classe MAIS uma ação"* não tinha como: declarar a ação no método APAGAVA a área.
+//
+// Foi o que aconteceu com `POST /v1/conjuntos/:id/{retirada,recirculacao}`. A mitigação suposta
+// — *"a coerência do catálogo garante a área"* — é falsa, e a medição está no caso
+// `a premissa que dá sentido ao caso` abaixo: `MAPA_ACAO_TELA['ACAO:excluir_cadastro']` é
+// `TELA:cadastros`, **não** `TELA:imoveis`. Quem administra locador, locatário e fiador recebia
+// `403` para LISTAR conjuntos e `200` para RETIRÁ-LOS.
+//
+// ---------------------------------------------------------------------------
+// MUTANTES EXECUTADOS — os dois reprovam
+// ---------------------------------------------------------------------------
+//
+// Aplicados a `packages/auth/src/autorizacao.ts` e executados pelo **script do pacote**
+// (`pnpm --filter @sysloc/auth test`), nunca por `vitest run` avulso.
+//
+//   * **controle** — árvore íntegra: `11 arquivos, 89 casos, 0 falhas`;
+//   * **MA8 · a conjunção nomeia a ÚLTIMA ausente, e não a primeira** (o laço passa a guardar a
+//     última recusa em vez de retornar na primeira): `1 failed | 88 passed`, no caso
+//     `sem nenhuma das duas, recusa nomeando a primeira declarada`. **Ele NÃO é observável pela
+//     borda**: a suíte de `apps/api` fica em `104 passed` — nos dois cenários do `CT-354` falta
+//     exatamente UMA chave, e ali primeira e última coincidem. É a razão de a regra de ordem ser
+//     provada aqui, na camada da função pura, e não por um caso de rota;
+//   * **MA9 · a conjunção VAZIA volta a passar** (o ramo de recusa removido, junto da constante que
+//     ele lê): `1 failed | 88 passed`, no caso `a conjunção VAZIA recusa`. É a abertura obtida por
+//     omissão que a ADR-0011 recusa;
+//   * **reversão** — o fonte foi restaurado e conferido idêntico por `diff`, e o controle voltou a
+//     `89 passed`.
+
+/**
+ * A área e a ação que a superfície do domínio de locação compõe nas rotas de circulação.
+ *
+ * Escolhidas de propósito como um par em que a área **não** é a que `MAPA_ACAO_TELA` associa à ação
+ * (`ACAO:excluir_cadastro → TELA:cadastros`): é exatamente essa assimetria que fazia a mitigação
+ * "a coerência do catálogo garante a área" ser falsa, e é ela que a conjunção existe para cobrir.
+ */
+const AREA_DA_ROTA = 'TELA:imoveis' as const;
+const ACAO_DA_ROTA = 'ACAO:excluir_cadastro' as const;
+
+/** A área que a coerência do catálogo garante junto da ação — e que **não** é a da rota. */
+const AREA_QUE_COMPORTA_A_ACAO = MAPA_ACAO_TELA[ACAO_DA_ROTA];
+
+/** A conjunção como as duas rotas de circulação a declaram: a ÁREA primeiro, depois a ação. */
+const CONJUNCAO_DA_ROTA: Exigencia = {
+  dimensao: 'TODAS',
+  exigencias: [
+    { dimensao: 'CHAVE', chave: AREA_DA_ROTA },
+    { dimensao: 'CHAVE', chave: ACAO_DA_ROTA },
+  ],
+};
+
+/** Uma sessão de `USUARIO_EMPRESA` cujo efetivo é exatamente o conjunto informado. */
+function sessaoCom(...chaves: readonly ChaveDoCatalogo[]): PermissoesDaSessao {
+  const { telas, acoes } = repartirEfetivo([...chaves].sort(), 1);
+  return { perfil: 'USUARIO_EMPRESA', telas, acoes };
+}
+
+describe('CT-353 — a conjunção exige TODAS as chaves e nomeia a PRIMEIRA que falta', () => {
+  it('a premissa que dá sentido ao caso: a área da rota NÃO é a que a coerência garante', () => {
+    // Sem esta linha, todo o caso seria compatível com um catálogo em que as duas áreas coincidem —
+    // e foi justamente supor a coincidência que produziu a vulnerabilidade. Ela é afirmada sobre o
+    // catálogo REAL, não sobre um literal redigitado.
+    expect(AREA_QUE_COMPORTA_A_ACAO).not.toBe(AREA_DA_ROTA);
+    expect(AREA_QUE_COMPORTA_A_ACAO).toBe('TELA:cadastros');
+  });
+
+  it('com as DUAS chaves, alcança', () => {
+    expect(decidirAcesso(CONJUNCAO_DA_ROTA, sessaoCom(AREA_DA_ROTA, ACAO_DA_ROTA))).toEqual({
+      alcanca: true,
+    });
+  });
+
+  it('com a ÁREA e sem a ação, recusa nomeando a AÇÃO (CT-320 preservado literalmente)', () => {
+    // É a direção que o `CT-320` fixa: "403 com `detalhes.exigido: 'ACAO:excluir_cadastro'` — e NÃO
+    // a área, que a sessão possui". Ela sai da ORDEM da conjunção, sem regra de prioridade à parte.
+    expect(decidirAcesso(CONJUNCAO_DA_ROTA, sessaoCom(AREA_DA_ROTA))).toEqual({
+      alcanca: false,
+      exigido: ACAO_DA_ROTA,
+    });
+  });
+
+  it('com a AÇÃO e sem a área, recusa nomeando a ÁREA — a direção que estava aberta', () => {
+    // **Este é o caso da vulnerabilidade.** O conjunto abaixo é o efetivo COERENTE de quem
+    // administra locador, locatário e fiador: a ação mais a área que o catálogo exige junto dela.
+    // Antes da conjunção, a rota de circulação exigia só a ação e esta sessão passava.
+    expect(
+      decidirAcesso(CONJUNCAO_DA_ROTA, sessaoCom(AREA_QUE_COMPORTA_A_ACAO, ACAO_DA_ROTA)),
+    ).toEqual({ alcanca: false, exigido: AREA_DA_ROTA });
+  });
+
+  it('sem nenhuma das duas, recusa nomeando a primeira declarada', () => {
+    expect(decidirAcesso(CONJUNCAO_DA_ROTA, sessaoCom())).toEqual({
+      alcanca: false,
+      exigido: AREA_DA_ROTA,
+    });
+  });
+
+  it('a conjunção VAZIA recusa — ela não é uma segunda abertura deliberada', () => {
+    // Irrepresentável pelo tipo (tupla não vazia): a conversão abaixo é deliberada e reproduz o que
+    // um metadado forjado produziria, porque a guarda lê por reflexão. `[].every(...)` é `true`, e
+    // sem este ramo a conjunção vazia passaria — uma abertura obtida por OMISSÃO, que é o que a
+    // ADR-0011 recusa (a única deliberada é `NENHUMA`, explícita e grepável).
+    const vazia = { dimensao: 'TODAS', exigencias: [] } as unknown as Exigencia;
+
+    expect(decidirAcesso(vazia, sessaoCom(AREA_DA_ROTA, ACAO_DA_ROTA))).toEqual({
+      alcanca: false,
+      exigido: 'TODAS:vazia',
+    });
+  });
+
+  it('a conjunção compõe as DUAS dimensões, e não só chaves', () => {
+    // A variante é recursiva sobre `Exigencia`, e não uma lista de chaves. Sem esta asserção, uma
+    // implementação que só soubesse compor chaves passaria em tudo acima — e a próxima composição
+    // legítima (perfil **e** chave) nasceria como uma quinta variante em vez de um uso desta.
+    const perfilEChave: Exigencia = {
+      dimensao: 'TODAS',
+      exigencias: [
+        { dimensao: 'PERFIL', perfil: 'ADMIN_EMPRESA' },
+        { dimensao: 'CHAVE', chave: AREA_DA_ROTA },
+      ],
+    };
+
+    expect(decidirAcesso(perfilEChave, sessaoCom(AREA_DA_ROTA))).toEqual({
+      alcanca: false,
+      exigido: 'PERFIL:ADMIN_EMPRESA',
+    });
+    expect(
+      decidirAcesso(perfilEChave, {
+        perfil: 'ADMIN_EMPRESA',
+        telas: [AREA_DA_ROTA],
+        acoes: [],
+      }),
+    ).toEqual({ alcanca: true });
   });
 });

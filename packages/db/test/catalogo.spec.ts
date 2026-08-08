@@ -6,26 +6,45 @@
  * INVARIANTES
  * ===========================================================================
  *
- * | Critério | Caso   | Invariante |
- * |----------|--------|------------|
- * | CA-16    | CT-008 | Sobre o schema produzido por `0000_fundacao.sql` + `0001_seguranca.sql`, a
- * |          |        | consulta de cobertura devolve lista VAZIA de exceções e a lista de tabelas
- * |          |        | EXAMINADAS igual, na íntegra, às duas tabelas de `negocio` — nem mais, nem
- * |          |        | menos. As duas metades importam: sem a segunda, "nenhuma exceção" e "nada
- * |          |        | foi olhado" seriam indistinguíveis, e um schema vazio passaria por verde. |
- * | CA-16    | CT-009 | Criado em `negocio` um objeto sem isolamento — tabela sem `empresa_id`, sem
- * |          |        | RLS forçada ou sem a restrição única `(id, empresa_id)`, ou objeto que não
- * |          |        | admite isolamento em espécie alguma —, a guarda devolve EXATAMENTE uma
- * |          |        | exceção, nomeando aquele objeto e aquele motivo; as duas tabelas legítimas
- * |          |        | seguem examinadas e fora das exceções; e, removido o defeito, a lista volta
- * |          |        | a vazia. A lista de EXAMINADAS é cobrada por igualdade de array — posição
- * |          |        | inclusive —, e a primeira variante existe para que a ordem seja
- * |          |        | falsificável: ela é criada por ÚLTIMO e ordena PRIMEIRO, de modo que a
- * |          |        | ordem alfabética prometida diverge da ordem em que o catálogo devolveria
- * |          |        | as linhas sem `ORDER BY`. A ÚLTIMA variante é uma visão materializada: ela
- * |          |        | guarda linha fisicamente, o PostgreSQL não suporta RLS sobre ela, e é o
- * |          |        | "terceiro estado" que a ADR-0009 declara não existir — a guarda a examina
- * |          |        | e a reprova com `OBJETO_SEM_ISOLAMENTO_POSSIVEL`. |
+ * | Critério       | Caso            | Invariante |
+ * |----------------|-----------------|------------|
+ * | CA-16 · CA-14  | CT-008 → CT-300 | Sobre o schema migrado — `0000_fundacao.sql` e
+ * |                |                 | `0001_seguranca.sql`, mais `0005_dominio_locacao.sql` e
+ * |                |                 | `0006_seguranca_dominio.sql` —, a consulta de cobertura
+ * |                |                 | devolve lista VAZIA de exceções e a lista de tabelas
+ * |                |                 | EXAMINADAS igual, na íntegra, às OITO tabelas de `negocio`
+ * |                |                 | — nem mais, nem menos. As duas metades importam: sem a
+ * |                |                 | segunda, "nenhuma exceção" e "nada foi olhado" seriam
+ * |                |                 | indistinguíveis, e um schema vazio passaria por verde.
+ * |                |                 | **É UM caso só, com dois identificadores**: o CT-008 o
+ * |                |                 | criou sobre as duas tabelas da F1, e o CT-300 é o mesmo
+ * |                |                 | invariante depois que a fatia de cadastro acrescentou as
+ * |                |                 | seis entidades do domínio — todas cobertas sem exceção. |
+ * | CA-14          | CT-301          | Retirado `FORCE ROW LEVEL SECURITY` de `negocio.imovel`
+ * |                |                 | numa instância DEDICADA, a MESMA asserção do CT-300 reprova
+ * |                |                 | nomeando aquela tabela com motivo `RLS_NAO_FORCADA` —
+ * |                |                 | exatamente uma entrada, não mais —, a lista de examinadas
+ * |                |                 | continua com as oito, e o controle volta ao verde quando o
+ * |                |                 | `FORCE` é restaurado. É o par que impede o CT-300 de passar
+ * |                |                 | por vacuidade: sem ele, uma guarda quebrada devolveria
+ * |                |                 | `excecoes: []` sobre qualquer schema. |
+ * | CA-16          | CT-009          | Criado em `negocio` um objeto sem isolamento — tabela sem
+ * |                |                 | `empresa_id`, sem RLS forçada ou sem a restrição única
+ * |                |                 | `(id, empresa_id)`, ou objeto que não admite isolamento em
+ * |                |                 | espécie alguma —, a guarda devolve EXATAMENTE uma exceção,
+ * |                |                 | nomeando aquele objeto e aquele motivo; as OITO tabelas
+ * |                |                 | legítimas seguem examinadas e fora das exceções; e,
+ * |                |                 | removido o defeito, a lista volta a vazia. A lista de
+ * |                |                 | EXAMINADAS é cobrada por igualdade de array — posição
+ * |                |                 | inclusive —, e a primeira variante existe para que a ordem
+ * |                |                 | seja falsificável: ela é criada por ÚLTIMO e ordena
+ * |                |                 | PRIMEIRO, de modo que a ordem alfabética prometida diverge
+ * |                |                 | da ordem em que o catálogo devolveria as linhas sem
+ * |                |                 | `ORDER BY`. A ÚLTIMA variante é uma visão materializada:
+ * |                |                 | ela guarda linha fisicamente, o PostgreSQL não suporta RLS
+ * |                |                 | sobre ela, e é o "terceiro estado" que a ADR-0009 declara
+ * |                |                 | não existir — a guarda a examina e a reprova com
+ * |                |                 | `OBJETO_SEM_ISOLAMENTO_POSSIVEL`. |
  *
  * O aceite 5 da §4 da task — *"a guarda é exportada por `@sysloc/db` e consumível fora do
  * pacote"* — é provado pelo **CT-012**, em `unidade-de-trabalho.spec.ts`: ele resolve o
@@ -85,14 +104,41 @@ const LIMITE_DO_CASO_MS = 60_000;
 const TABELA_DE_ACESSO = 'negocio.acesso_usuario_app';
 const TABELA_DE_PERMISSAO = 'negocio.acesso_usuario_permissao';
 
+// As seis entidades do domínio de locação, criadas pela migração `0005` (T2 da fatia
+// `cadastro-de-imoveis-e-pessoas`). `comodo` está entre elas: ele é tabela de negócio, tem
+// `empresa_id`, RLS forçada e a única composta — o que ele NÃO tem é `retirado_em`, que a guarda
+// não cobra de ninguém (ADR-0014).
+const TABELA_DE_COMODO = 'negocio.comodo';
+const TABELA_DE_CONJUNTO = 'negocio.conjunto';
+const TABELA_DE_FIADOR = 'negocio.fiador';
+const TABELA_DE_IMOVEL = 'negocio.imovel';
+const TABELA_DE_LOCADOR = 'negocio.locador';
+const TABELA_DE_LOCATARIO = 'negocio.locatario';
+
 /**
- * As duas, na ordem em que a guarda promete devolvê-las (nome de tabela, intercalação `C`).
+ * As oito, na ordem em que a guarda promete devolvê-las (nome de tabela, intercalação `C`).
  *
  * Este conjunto é do CASO, não da guarda: é aqui que o nome de tabela pode ser escrito à mão, e é
  * exatamente por escrevê-lo aqui — e nunca em `src/catalogo.ts` — que a comparação tem valor. Uma
  * guarda que trouxesse a mesma lista por dentro estaria se conferindo contra si mesma.
+ *
+ * SUT_IS_CORRECT_BECAUSE: até a fatia anterior eram DUAS, e a igualdade sobre as duas é o que
+ * reprovou quando a migração `0005` entrou — a rede funcionando, não defeito. A guarda continua
+ * respondendo o que sempre respondeu (todo objeto de `negocio`, ordenado); o que mudou foi o
+ * schema, e declarar as seis entidades novas aqui é a atualização legítima. Enfraquecer a asserção
+ * para contê-las (`toContain`) seria regressão de prova: a tabela que nascesse sem isolamento
+ * continuaria passando.
  */
-const TABELAS_LEGITIMAS: readonly string[] = [TABELA_DE_ACESSO, TABELA_DE_PERMISSAO];
+const TABELAS_LEGITIMAS: readonly string[] = [
+  TABELA_DE_ACESSO,
+  TABELA_DE_PERMISSAO,
+  TABELA_DE_COMODO,
+  TABELA_DE_CONJUNTO,
+  TABELA_DE_FIADOR,
+  TABELA_DE_IMOVEL,
+  TABELA_DE_LOCADOR,
+  TABELA_DE_LOCATARIO,
+];
 
 // ---------------------------------------------------------------------------
 // As variantes de defeito do CT-009
@@ -129,6 +175,12 @@ interface VarianteDefeituosa {
    * propriedade que ele existe para provar, e a guarda passaria a se conferir contra uma cópia de
    * si mesma — o defeito que a `.claude/rules/testing-stack.md` registra como o pior dos três da
    * F0 (o verificador que reimplementava o leitor e aprovava 5/5 um alvo defeituoso).
+   *
+   * **O que a proibição alcança é a ORDENAÇÃO, não o reúso do nome.** Espalhar
+   * `...TABELAS_LEGITIMAS` é escrever as oito legítimas na ordem em que elas já estão escritas
+   * acima — nenhuma ordenação acontece, e a posição do objeto DEFEITUOSO, que é o que discrimina,
+   * segue declarada à mão em cada variante. Onde ele não cai no fim da lista, a variante escreve as
+   * nove posições por extenso.
    */
   readonly examinadasEsperadas: readonly string[];
 }
@@ -176,7 +228,19 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
       'ALTER TABLE negocio.aaa_sem_empresa FORCE ROW LEVEL SECURITY',
     ],
     remover: ['DROP TABLE negocio.aaa_sem_empresa'],
-    examinadasEsperadas: ['negocio.aaa_sem_empresa', TABELA_DE_ACESSO, TABELA_DE_PERMISSAO],
+    // As nove posições por extenso: esta é a variante da ORDEM, e espalhar a lista legítima
+    // esconderia justamente o que ela discrimina — a defeituosa vindo ANTES das oito.
+    examinadasEsperadas: [
+      'negocio.aaa_sem_empresa',
+      TABELA_DE_ACESSO,
+      TABELA_DE_PERMISSAO,
+      TABELA_DE_COMODO,
+      TABELA_DE_CONJUNTO,
+      TABELA_DE_FIADOR,
+      TABELA_DE_IMOVEL,
+      TABELA_DE_LOCADOR,
+      TABELA_DE_LOCATARIO,
+    ],
   },
   {
     descricao: 'tabela sem a coluna `empresa_id` reprova nomeando a tabela',
@@ -192,7 +256,7 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
       'ALTER TABLE negocio.sem_empresa FORCE ROW LEVEL SECURITY',
     ],
     remover: ['DROP TABLE negocio.sem_empresa'],
-    examinadasEsperadas: [TABELA_DE_ACESSO, TABELA_DE_PERMISSAO, 'negocio.sem_empresa'],
+    examinadasEsperadas: [...TABELAS_LEGITIMAS, 'negocio.sem_empresa'],
   },
   {
     descricao: 'tabela com RLS habilitada mas NÃO forçada reprova nomeando a tabela',
@@ -209,7 +273,7 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
       'ALTER TABLE negocio.sem_forca ENABLE ROW LEVEL SECURITY',
     ],
     remover: ['DROP TABLE negocio.sem_forca'],
-    examinadasEsperadas: [TABELA_DE_ACESSO, TABELA_DE_PERMISSAO, 'negocio.sem_forca'],
+    examinadasEsperadas: [...TABELAS_LEGITIMAS, 'negocio.sem_forca'],
   },
   {
     descricao: 'tabela sem a restrição única `(id, empresa_id)` reprova nomeando a tabela',
@@ -226,7 +290,7 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
       'ALTER TABLE negocio.sem_chave_composta FORCE ROW LEVEL SECURITY',
     ],
     remover: ['DROP TABLE negocio.sem_chave_composta'],
-    examinadasEsperadas: [TABELA_DE_ACESSO, TABELA_DE_PERMISSAO, 'negocio.sem_chave_composta'],
+    examinadasEsperadas: [...TABELAS_LEGITIMAS, 'negocio.sem_chave_composta'],
   },
   {
     // ---------------------------------------------------------------------------
@@ -266,7 +330,7 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
         'SELECT id, empresa_id FROM negocio.acesso_usuario_app',
     ],
     remover: ['DROP MATERIALIZED VIEW negocio.resumo_por_empresa'],
-    examinadasEsperadas: [TABELA_DE_ACESSO, TABELA_DE_PERMISSAO, 'negocio.resumo_por_empresa'],
+    examinadasEsperadas: [...TABELAS_LEGITIMAS, 'negocio.resumo_por_empresa'],
   },
   {
     // ---------------------------------------------------------------------------
@@ -300,7 +364,19 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
         'SELECT id, empresa_id FROM negocio.acesso_usuario_app',
     ],
     remover: ['DROP VIEW negocio.espelho_sem_delegacao'],
-    examinadasEsperadas: [TABELA_DE_ACESSO, TABELA_DE_PERMISSAO, 'negocio.espelho_sem_delegacao'],
+    // `espelho_...` ordena entre `conjunto` e `fiador`, e não no fim: as nove posições vão por
+    // extenso, porque é a POSIÇÃO que a igualdade de array cobra.
+    examinadasEsperadas: [
+      TABELA_DE_ACESSO,
+      TABELA_DE_PERMISSAO,
+      TABELA_DE_COMODO,
+      TABELA_DE_CONJUNTO,
+      'negocio.espelho_sem_delegacao',
+      TABELA_DE_FIADOR,
+      TABELA_DE_IMOVEL,
+      TABELA_DE_LOCADOR,
+      TABELA_DE_LOCATARIO,
+    ],
   },
 ];
 
@@ -380,13 +456,14 @@ describe('guarda de cobertura de isolamento — schema íntegro', () => {
   }, LIMITE_SUBIDA_MS);
 
   it(
-    'CT-008 — guarda de catálogo aprova o schema íntegro sem apontar exceção',
+    'CT-300 (estende o CT-008) — guarda de catálogo aprova o schema íntegro sem apontar exceção',
     async () => {
       const cobertura = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
 
-      // Igualdade nas DUAS listas, numa asserção só: nenhuma exceção **e** as duas tabelas
+      // Igualdade nas DUAS listas, numa asserção só: nenhuma exceção **e** as oito tabelas
       // examinadas, nem mais nem menos. É o par que detecta — "exceções vazias" sozinho ficaria
-      // verde contra um banco em que a consulta não alcançou tabela nenhuma.
+      // verde contra um banco em que a consulta não alcançou tabela nenhuma, e "oito examinadas"
+      // sozinho não diria que todas passaram.
       expect(cobertura).toEqual({
         excecoes: [],
         tabelasExaminadas: TABELAS_LEGITIMAS,
@@ -478,7 +555,18 @@ describe('guarda de cobertura de isolamento — tabela nascida sem isolamento', 
 
         expect(cobertura).toEqual({
           excecoes: [],
-          tabelasExaminadas: [TABELA_DE_ACESSO, TABELA_DE_PERMISSAO, VISAO_SEGURA],
+          // A visão segura ordena entre `conjunto` e `fiador`, pela mesma razão da irmã acima.
+          tabelasExaminadas: [
+            TABELA_DE_ACESSO,
+            TABELA_DE_PERMISSAO,
+            TABELA_DE_COMODO,
+            TABELA_DE_CONJUNTO,
+            VISAO_SEGURA,
+            TABELA_DE_FIADOR,
+            TABELA_DE_IMOVEL,
+            TABELA_DE_LOCADOR,
+            TABELA_DE_LOCATARIO,
+          ],
         } satisfies CoberturaDeIsolamento);
       } finally {
         await executarPrivilegiado(doMigrador, [`DROP VIEW ${VISAO_SEGURA}`]);
@@ -534,5 +622,95 @@ describe('guarda de cobertura de isolamento — tabela nascida sem isolamento', 
       } satisfies CoberturaDeIsolamento);
     },
     LIMITE_DO_CASO_MS,
+  );
+});
+
+// ===========================================================================
+// CT-301 — a falsificação do CT-300, sobre uma ENTIDADE NOVA da fatia
+// ===========================================================================
+//
+// O CT-009 já falsifica a guarda com tabela criada pelo próprio caso, e o M6 dele já a falsifica
+// sobre uma tabela que a MIGRAÇÃO criou. O que nenhum dos dois cobre é a pergunta que esta task
+// abre: **as tabelas que a `0006` acabou de forçar estão mesmo forçadas?** Se a migração de
+// segurança tivesse esquecido uma delas, o CT-300 reprovaria — mas se a GUARDA tivesse deixado de
+// enxergar `FORCE`, o CT-300 ficaria verde sobre um schema sem isolamento, e é esse o par que falta.
+//
+// Um único mutante, sobre uma única tabela nova, basta: o mecanismo da guarda é o mesmo para as
+// oito, e o CT-009 já cobre as demais variantes de defeito (sem coluna, sem única composta, objeto
+// sem isolamento possível).
+//
+// A instância é DEDICADA e descartada ao fim — nunca a compartilhada pelos demais casos, que
+// passaria a conviver com tabela sem política enquanto o arquivo roda. É o mesmo padrão do CT-007
+// de `isolamento.spec.ts`.
+
+/** O caso sobe a própria instância, então o teto soma a subida ao trabalho. */
+const LIMITE_COM_INSTANCIA_PROPRIA_MS = 180_000;
+
+/** A entidade nova sobre a qual o mutante age. Uma só, e o comentário acima diz por quê. */
+const TABELA_MUTANTE = TABELA_DE_IMOVEL;
+
+describe('CT-301 — entidade nova sem RLS forçada é nomeada pela guarda', () => {
+  it(
+    'CT-301 — retirado o `FORCE` de `negocio.imovel`, a guarda o acusa por RLS_NAO_FORCADA e volta ao verde restaurado',
+    async () => {
+      const banco = await bancoEfemero();
+      const doMigrador = conexaoDeMigracao(banco);
+
+      try {
+        // Controle ANTES: sem ele, "reprovou com o mutante" não distingue a guarda que discrimina
+        // daquela que reprova qualquer coisa.
+        const controle = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
+        expect(controle).toEqual({
+          excecoes: [],
+          tabelasExaminadas: TABELAS_LEGITIMAS,
+        } satisfies CoberturaDeIsolamento);
+
+        await executarPrivilegiado(doMigrador, [
+          `ALTER TABLE ${TABELA_MUTANTE} NO FORCE ROW LEVEL SECURITY`,
+        ]);
+
+        try {
+          // A guarda é invocada pela cadeia SEM privilégio, como no controle: `NO FORCE` é
+          // invisível para o papel da aplicação em toda leitura de dado, e é justamente por isso
+          // que a resposta tem de vir do catálogo.
+          const comMutante = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
+
+          // Exatamente UMA entrada, com a tabela e o motivo exatos — não "alguma exceção". A
+          // igualdade de array é o que impede a guarda de reprovar as oito em bloco e ainda assim
+          // passar aqui.
+          expect(comMutante.excecoes).toEqual([
+            { tabela: TABELA_MUTANTE, motivo: 'RLS_NAO_FORCADA' },
+          ]);
+
+          // As oito continuam EXAMINADAS: sem esta metade, uma guarda que tivesse perdido de vista
+          // as sete irmãs reportaria a mesma exceção única e passaria.
+          expect(comMutante.tabelasExaminadas).toEqual(TABELAS_LEGITIMAS);
+
+          // E as irmãs seguem aprovadas — a guarda distingue a tabela defeituosa em vez de
+          // reprovar o schema inteiro.
+          expect(comMutante.excecoes.map((excecao) => excecao.tabela)).not.toContain(
+            TABELA_DE_CONJUNTO,
+          );
+          expect(comMutante.excecoes.map((excecao) => excecao.tabela)).not.toContain(
+            TABELA_DE_COMODO,
+          );
+        } finally {
+          await executarPrivilegiado(doMigrador, [
+            `ALTER TABLE ${TABELA_MUTANTE} FORCE ROW LEVEL SECURITY`,
+          ]);
+        }
+
+        // Controle DEPOIS: restaurado o `FORCE`, a guarda volta ao vazio. É a terceira perna do par
+        // controle→mutante→controle, e sem ela "reprovou" poderia ser estado residual.
+        const restaurado = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
+        expect(restaurado).toEqual({
+          excecoes: [],
+          tabelasExaminadas: TABELAS_LEGITIMAS,
+        } satisfies CoberturaDeIsolamento);
+      } finally {
+        await banco.parar();
+      }
+    },
+    LIMITE_COM_INSTANCIA_PROPRIA_MS,
   );
 });
