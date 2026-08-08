@@ -115,6 +115,17 @@ são relativos a `docs/specs/features/fundacao-multitenancy-identidade/v1/`:
   publicação do `@sysloc/contracts`, não uma task genérica.
 - **15 débitos abertos** na §2 do `_run/run-report.md` da fatia, cada um com razão registrada.
 
+**Higienização da dívida técnica — 2026-08-08.** Os **101 débitos** abertos das cinco fatias foram
+auditados **contra o código**, um a um. Resultado: **7 já estavam pagos** e continuavam listados
+(fechados fora do pipeline, sem anotação na época), e **4 haviam crescido** desde o registro — o
+**D28 (F0/T5)** dez vezes, de "3 imports num arquivo" para ~35 em ~20 arquivos, o que o tirou da
+classe de cleanup barato. Os 11 estão marcados na §2 da fatia de origem, com evidência. Na mesma
+passagem, uma **intervenção dirigida** fechou **D1** (caracterização), **D12**, **D18** e **D21**, e
+fechou **em parte** o **D22** — cada um com mutante medido e revertido, e todos aprovados por
+validação independente. Restam **~85 débitos abertos**, quase todos `BAIXO` de higiene local.
+**O parecer registrado é NÃO rodar `/agent-spec-debt-resolution` em massa**: o custo é de 2 a 4 runs
+do tamanho de uma fatia, contra ganho marginal, com F2.2 a F5 ainda entre aqui e o marco de entrega.
+
 > Mantenha este bloco atualizado — ele é lido por todo subagente, e um estado errado aqui chega a
 > todos eles antes de qualquer arquivo do repositório. **É índice, não relatório**: o detalhe vive
 > nos artefatos apontados.

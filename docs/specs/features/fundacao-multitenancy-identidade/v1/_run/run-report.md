@@ -60,6 +60,7 @@ Status: ✅ **11/11 tasks concluídas** · suíte verde com **271 casos** · `pn
 - **O que fazer:** guarda de destino em `semear`, ou mover o export para subcaminho próprio no `exports`. **Sem gatilho concreto** — por isso fica só aqui, sem marcador (§3-B).
 
 ### D5 · BAIXO · architecture · T2 · Tech Review
+- **Status:** ✅ **RESOLVIDO** — confirmado por auditoria de 2026-08-08 (higienização da lista). Fechado fora do pipeline, sem anotação na época: `packages/db/src/esquema/negocio.ts:acessoUsuarioApp` ganhou a FK composta `acesso_usuario_app_usuario_empresa_fkey`, descrita no cabeçalho como conciliação estrutural do D5 e provada pelo `CT-207`.
 - **Onde:** `packages/db/src/esquema/negocio.ts:57-67`
 - **Problema:** nada no banco concilia `acesso_usuario_app.empresa_id` com `identidade.usuario.empresa_id` — as duas FKs são simples e independentes.
 - **Impacto:** **não é violação** (conforme a tech spec §7.2 e a ADR-0008, cuja chave composta vale "entre entidades tenantizadas", e `identidade.usuario` não é tenantizada por decisão da ADR-0009) e **não é escalação nesta fatia** (vínculo incoerente produz linha inalcançável). O custo é dado inconsistente, e se materializa na fatia de autorização. **Sem o registro no ponto, a conciliação tende a nascer como validação de aplicação** — o padrão que a ADR-0008 rejeita nominalmente.
@@ -72,6 +73,7 @@ Status: ✅ **11/11 tasks concluídas** · suíte verde com **271 casos** · `pn
 - **O que fazer:** a **task de fechamento da F1** cria o agregador. **Ordem já decidida**: `verificar-migracao.sh` **depois** de `verificar-provisionamento.sh` — ela cria e remove banco no cluster e depende do estado que P15/P16 deixam; ambas exigem `:root`.
 
 ### D7 · BAIXO · security/architecture · F1/T6 · Tech Review — **tem marcador**
+- **Status:** ✅ **RESOLVIDO** — confirmado por auditoria de 2026-08-08 (higienização da lista). Fechado fora do pipeline, sem anotação na época: `packages/auth/src/autenticacao.ts` declara `additionalFields` com `perfil` e `empresaId` em `input: false`; o marcador `DÉBITO COM GATILHO — D7` **não existe mais** no arquivo. Fechado na T6 da fatia `autorizacao-e-ciclo-de-acesso`.
 - **Onde:** `packages/auth/src/autenticacao.ts:198` (`DÉBITO COM GATILHO — D7 · F1/T6`), acima do bloco `user: { fields: … }`
 - **Problema:** **criar pessoa pelo adaptador é inexequível.** `perfil` e `empresa_id` são colunas do produto; o modelo `user` não as declara; o `transformInput` descarta toda chave que não seja campo do modelo; e `perfil` é `NOT NULL` sem DEFAULT. O `INSERT` sai com `perfil` em `default` e o servidor recusa. **Medido duas vezes, por executor e por gate, com sonda descartável.**
 - **Impacto:** **nenhuma task da F1 tropeça** — T7 a T11 não criam pessoa. O bloqueio cai sobre a fatia **`autorizacao-e-ciclo-de-acesso`** (onboarding e rotas do Master).
@@ -94,6 +96,7 @@ Status: ✅ **11/11 tasks concluídas** · suíte verde com **271 casos** · `pn
 - **O que fazer:** declarar a fronteira no docblock (mínimo), ou neutralizar literais antes de remover comentários, com perna de controle provando que linha com URL e chamada juntas continua detectada.
 
 ### D10 · BAIXO · security · T3 · Tech Review
+- **Status:** ⚠️ **ABERTO E AGRAVADO** — remedido em 2026-08-08 (higienização da lista): a latência que segurava o débito acabou: `emUnidadeDeTrabalho(` passou de **0 para 9 chamadas de produção em 4 arquivos**, todas recebendo o `tx` cru, e nenhum eixo estático sobre `app.empresa_id` foi acrescentado. O `CT-326` (F2/T11) cobre *quem abre a unidade*, não *o contexto dentro dela*.
 - **Onde:** `packages/db/src/unidade-de-trabalho.ts`, junto de `emUnidadeDeTrabalho`
 - **Problema:** a fixação de abertura neutraliza **resíduo de sessão**, mas o `trabalho` recebe o `tx` cru e **pode emitir `SET LOCAL app.empresa_id` para outro valor dentro da transação já fixada** — a RLS obedece ao valor novo até o `COMMIT`.
 - **Impacto:** **latente** — não há consumidor de `emUnidadeDeTrabalho` no fonte de produção. Material na **primeira fatia que escrever repositório sobre a unidade de trabalho**. Menos provável que o caso do `executarCom` (escrever `tx.unsafe("SET LOCAL …")` num serviço não parece legítimo em revisão).
@@ -160,6 +163,7 @@ Status: ✅ **11/11 tasks concluídas** · suíte verde com **271 casos** · `pn
 - **O que fazer:** mover as quatro linhas para a §3-B da `.claude/rules/nao-regressao.md`, deixando no `CLAUDE.md` só a remissão. **Edição de rule — decisão deliberada, fora do escopo de task.**
 
 ### D21 · BAIXO · security · F1/T7 · Tech Review — **tem marcador**
+- **Status:** ✅ **RESOLVIDO** — confirmado por auditoria de 2026-08-08 (higienização da lista). Fechado fora do pipeline, sem anotação na época: `packages/auth/src/autenticacao.ts:685` registra por extenso: *"O `D21` vivia aqui e FOI FECHADO pela T9"*. A rota nativa `/change-password` deixou de ser publicada e a troca do produto confere a admissão antes da escrita.
 - **Onde:** `packages/auth/src/autenticacao.ts:224` (`DÉBITO COM GATILHO — D21 · F1/T7`), acima do bloco `databaseHooks`
 - **Problema:** **a recusa da barreira não desfaz o que a rota já escreveu.** Medido no pacote instalado (`better-auth@1.6.25`, `dist/api/routes/update-user.mjs`): `internalAdapter.updateAccount(account.id, { password: passwordHash })` na linha 178 precede `deleteUserSessions` (`:181`) e `createSession` (`:182`), e **não há transação** envolvendo as três. Quando o gancho `databaseHooks.session.create.before` levanta, a escrita da credencial e a exclusão das sessões **já ocorreram**.
 - **Impacto:** o invariante que a T7 prova — nenhuma sessão nasce — **segue íntegro**, e não há elevação de privilégio, fuga de tenant nem oráculo de existência de conta: o caminho exige sessão válida **mais** a senha atual correta, então o ator é o dono da conta. O que fica aberto é outro eixo, que o Staff nomeou e o QA não tinha alcançado: uma pessoa **desativada** ou de **empresa suspensa** que tente trocar a senha sai da requisição com **(i)** a senha efetivamente trocada, **(ii)** todas as sessões apagadas e **(iii)** um `401` que a RN-10 torna **indistinguível de "senha atual errada"**. Reativada depois pelo Master, ela não entra com a senha antiga e não sabe a nova — *perda de acesso irreversível sem intervenção administrativa, com a resposta afirmando que nada aconteceu*.
