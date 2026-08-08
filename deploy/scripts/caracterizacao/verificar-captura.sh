@@ -131,10 +131,19 @@ ler_credencial_db() {
 # SELECT direto no serviço de banco, e não por `bench` apontado para o site de
 # produção: a ADR-0006 restringe execução de verificação naquele ambiente, e o
 # CT-012 exige que os scripts versionados não carreguem esse tipo de invocação.
+#
+# Autentica como o USUÁRIO DA BASE, nunca como `root`. O Frappe cria o usuário do
+# MariaDB com o mesmo nome do banco do site, e a senha dele mora no `site_config.json`
+# de onde `base_producao` já sai — então o privilégio aqui é exatamente o que a função
+# precisa: ler uma base. A credencial root segue necessária em
+# `preparar-site-efemero.sh`, onde `new-site`/`restore`/`drop-site` de fato a exigem;
+# o que ela não pode é atravessar até um caminho de SELECT. Com `-u root`, o raio de um
+# erro de interpolação no heredoc SQL era a instância inteira — a mesma superfície que
+# a ADR-0006 existe para reduzir.
 consultar_banco_de_producao() { # consultar_banco_de_producao <sql>
-	printf '%s\n' "${credencial_db}" |
+	printf '%s\n' "${senha_producao}" |
 		compose exec -T "${SERVICO_BANCO}" bash -c \
-			"IFS= read -r cred; MYSQL_PWD=\"\$cred\" mysql -N -B -u root '${base_producao}' -e \"$1\""
+			"IFS= read -r cred; MYSQL_PWD=\"\$cred\" mysql -N -B -u '${base_producao}' '${base_producao}' -e \"$1\""
 }
 
 sha_dos_golden() {
@@ -1397,27 +1406,38 @@ ct_013_logs() {
 	local varredura
 	varredura="${DIR_TRABALHO}/varrer-logs.py"
 	cat >"${varredura}" <<'PY'
-"""Procura a credencial nos logs dos scripts. Recebe o valor por stdin; nunca o imprime."""
+"""Procura as credenciais nos logs dos scripts. Recebe UMA POR LINHA em stdin; nunca as imprime.
+
+São duas desde que `consultar_banco_de_producao` deixou de autenticar como `root`: a do
+usuário da base, que é a que o caminho de SELECT usa hoje, e a root, que segue viva em
+`preparar-site-efemero.sh`. Varrer só uma delas provaria o vazamento da credencial errada —
+e a que importa mais é justamente a nova, porque é a que atravessa mais pontos.
+"""
 import re
 import sys
 from pathlib import Path
 
 diretorio = Path(sys.argv[1])
-agulha = sys.stdin.readline().rstrip("\n")
-if not agulha:
-    print("credencial vazia — varredura inconclusiva", file=sys.stderr)
+agulhas = [linha.rstrip("\n") for linha in sys.stdin]
+# Vazia entre as recebidas ABORTA, e não é descartada: filtrar em silêncio faria a varredura
+# rodar com as agulhas restantes e anunciar ter conferido TODAS as credenciais — aprovando a
+# prova de segurança sobre uma que nunca foi lida. É a propriedade que a versão de uma agulha
+# tinha, generalizada para N.
+if not agulhas or any(not agulha for agulha in agulhas):
+    print("credencial vazia ou ausente entre as recebidas — varredura inconclusiva", file=sys.stderr)
     sys.exit(2)
 
-padrao = re.compile(
-    r"(?:^|[^A-Za-z0-9_-])" + re.escape(agulha) + r"(?:[^A-Za-z0-9_-]|$)"
-)
+padroes = [
+    re.compile(r"(?:^|[^A-Za-z0-9_-])" + re.escape(agulha) + r"(?:[^A-Za-z0-9_-]|$)")
+    for agulha in agulhas
+]
 
 ocorrencias = []
 examinados = 0
 for arquivo in sorted(diretorio.glob("*.out")) + sorted(diretorio.glob("*.err")):
     examinados += 1
     for numero, linha in enumerate(arquivo.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-        if padrao.search(linha):
+        if any(padrao.search(linha) for padrao in padroes):
             ocorrencias.append(f"{arquivo.name}:{numero}")
 
 if examinados == 0:
@@ -1430,10 +1450,13 @@ print(f"logs examinados: {examinados}")
 sys.exit(1 if ocorrencias else 0)
 PY
 
-	if printf '%s\n' "${credencial_db}" | python3 "${varredura}" "${DIR_TRABALHO}"; then
-		ok "nem 'criar', nem 'destruir', nem 'capturar.py' ecoaram a credencial"
+	# AS DUAS credenciais, uma por linha: a do usuário da base (que `consultar_banco_de_producao`
+	# usa) e a root (que `preparar-site-efemero.sh` ainda exige). Varrer só a root deixaria a
+	# credencial efetivamente em uso pelo caminho de consulta sem prova de não-vazamento.
+	if printf '%s\n%s\n' "${senha_producao}" "${credencial_db}" | python3 "${varredura}" "${DIR_TRABALHO}"; then
+		ok "nem 'criar', nem 'destruir', nem 'capturar.py' ecoaram as credenciais"
 	else
-		falhar "a credencial apareceu na saída dos scripts (arquivo:linha acima; valor omitido)"
+		falhar "uma credencial apareceu na saída dos scripts (arquivo:linha acima; valor omitido)"
 	fi
 
 	fechar_caso "CT-013"
@@ -1467,6 +1490,14 @@ main() {
 		tr -d '\r\n')"
 	base_producao="$(no_container "python3 -c \"import json;print(json.load(open('sites/${site_producao}/site_config.json'))['db_name'])\"" |
 		tr -d '\r\n')"
+	# Do MESMO arquivo de onde sai `db_name`, e pela mesma razão: é o par que autentica
+	# a leitura da base do site. Nunca ecoada — o CT-013 varre as duas credenciais.
+	senha_producao="$(no_container "python3 -c \"import json;print(json.load(open('sites/${site_producao}/site_config.json'))['db_password'])\"" |
+		tr -d '\r\n')"
+	if [[ -z "${senha_producao}" ]]; then
+		printf 'ERRO: db_password ausente em sites/%s/site_config.json\n' "${site_producao}" >&2
+		exit 1
+	fi
 	# Lido enquanto o site efêmero existe: o CT-003 o destrói antes do CT-012.
 	banco_efemero="$(no_container "python3 -c \"import json;print(json.load(open('sites/${SITE_EFEMERO}/site_config.json'))['db_name'])\"" |
 		tr -d '\r\n' || true)"
@@ -1500,6 +1531,7 @@ main() {
 credencial_db=""
 site_producao=""
 base_producao=""
+senha_producao=""
 banco_efemero=""
 instante_t0=""
 main "$@"
