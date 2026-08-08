@@ -365,8 +365,20 @@ export async function escreverAjustes(
 export interface TrocaDePerfil {
   /** A pessoa cujo perfil muda. */
   readonly usuarioId: string;
-  /** O perfil novo. */
-  readonly perfil: PerfilDaPessoa;
+  /**
+   * O perfil novo — **nunca `SYSLOC_MASTER`**.
+   *
+   * A exclusão é de tipo porque a escalada a Master precisa ser *irrepresentável*, e não
+   * apenas recusada: com `PerfilDaPessoa` inteiro, `{ perfil: 'SYSLOC_MASTER' }` compilava e
+   * a recusa vinha do `usuario_master_sem_empresa_chk` como `PostgresError` 23514 cru — que
+   * a borda não classifica e devolve como `500`.
+   *
+   * Isto **não substitui** a garantia do banco, que continua sendo a autoridade (ADR-0008):
+   * são as duas metades, no molde que `BancoDeIdentidade` já usa. O Master não é criável nem
+   * alcançável pelas rotas de administração, e a borda já restringe por `PerfilAdministravel`;
+   * esta é a camada que impede um chamador **novo** de reabrir o caminho sem perceber.
+   */
+  readonly perfil: Exclude<PerfilDaPessoa, 'SYSLOC_MASTER'>;
 }
 
 /**
