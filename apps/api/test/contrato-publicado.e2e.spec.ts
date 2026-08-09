@@ -1,6 +1,23 @@
 /**
- * O contrato publicado das 33 rotas do domínio de locação — T11 da fatia
- * `cadastro-de-imoveis-e-pessoas`.
+ * O contrato publicado das rotas do domínio de locação — T11 da fatia
+ * `cadastro-de-imoveis-e-pessoas`, estendido pela T6, pela T7 e pela T8 da fatia
+ * `contratos-de-locacao`.
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era o título — e a tabela do `CT-327` —
+ * que descreviam uma superfície de **33** rotas. A T6 da fatia `contratos-de-locacao` publicou seis
+ * rotas de cadastro de contrato, e uma tabela que as ignorasse deixaria o caso passar sobre uma
+ * superfície incompleta: nenhuma asserção foi afrouxada, e o que mudou foi o **inventário revisado**
+ * contra o qual a igualdade profunda corre, agora afirmado em duas partições nomeadas (33 + 6).
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T7 publicou `POST /v1/contratos/{codigo}/ativacao`, e as partições passam
+ * a ser `33 + 7`. A linha nova é a primeira desta tabela a apontar para um esquema **estendido** —
+ * `esquemaDaAtivacaoDeContrato`, o contrato mais `efeitos` —, e é ela que faz o documento ter de
+ * descrever a declaração de efeito. Nenhuma asserção foi afrouxada e nenhuma linha anterior saiu.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T8 publicou `POST /v1/contratos/{codigo}/cancelamento`, e as partições
+ * passam a ser `33 + 8`. A linha nova aponta para `esquemaDoContrato`, e **não** para o estendido: a
+ * resposta do cancelamento não leva declaração de efeito, e é a própria escolha da rota que a tabela
+ * afirma aqui. Nenhuma asserção foi afrouxada e nenhuma linha anterior saiu.
  *
  * ===========================================================================
  * INVARIANTES
@@ -16,7 +33,7 @@
  * |       |        | em caixa mista: as três respostas são profundamente iguais, e o `id` do corpo
  * |       |        | vem em minúsculas nas três. Identificador que não é UUID é recusado com
  * |       |        | `422 CAMPO_INVALIDO` nomeando o parâmetro, e a contagem da tabela não muda. |
- * | CA-16 | CT-327 | Para **cada uma** das 33 rotas, o esquema de resposta que o documento publicado
+ * | CA-16 | CT-327 | Para **cada uma** das 42 rotas, o esquema de resposta que o documento publicado
  * |       |        | descreve é **profundamente igual** ao derivado do esquema de `@sysloc/contracts`
  * |       |        | que a rota usa — nenhuma descrição escrita à mão em paralelo. Acrescentar um
  * |       |        | campo obrigatório ao esquema muda a descrição derivada, e a comparação passa a
@@ -48,7 +65,7 @@
  * A ADR-0016 é literal: *"o esquema declarado no pacote de contratos é a fonte única… Nenhuma
  * descrição de contrato é escrita à mão em paralelo ao esquema"*. As duas metades da prova:
  *
- *   1. **A comparação** (permanente, neste caso): para as 33 rotas, o esquema que o documento
+ *   1. **A comparação** (permanente, neste caso): para as 42 rotas, o esquema que o documento
  *      publica é profundamente igual ao que `esquemaPublicado(<esquema de @sysloc/contracts>)`
  *      produz. Uma descrição escrita à mão precisaria coincidir byte a byte com a saída de
  *      `z.toJSONSchema` — inclusive os padrões de UUID e de data — para passar aqui;
@@ -74,7 +91,8 @@
  *     (`{ type: 'object', properties: { id, nome, retiradoEm }, required: […] }`): `1 failed | 128
  *     passed`, no `CT-327`, com a mensagem nomeando a rota — *"GET /v1/conjuntos/{id} descreve algo
  *     que o esquema não produz"*. É **o defeito literal que a ADR-0016 existe para impedir**, e o
- *     caso o acusa apontando qual das 33 rotas divergiu;
+ *     caso o acusa apontando qual rota divergiu (a superfície era de 33 rotas quando esta medição
+ *     foi feita; hoje são 41, e a âncora `ROTAS_DESCRITAS` é quem carrega o número);
  *   * **MT11-3 · o esquema ganha um campo** — em `packages/contracts/src/conjunto.ts`,
  *     `esquemaDoConjunto` acrescido de `campoDerivadoDoMutante: z.string().optional()`:
  *     `129 passed`, **verde**. E o verde é a prova, não a ausência dela: o valor esperado do
@@ -117,9 +135,11 @@ import { randomBytes } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import {
   envelopeDeLista,
+  esquemaDaAtivacaoDeContrato,
   esquemaDaPessoa,
   esquemaDoConjunto,
   esquemaDoConjuntoComImoveis,
+  esquemaDoContrato,
   esquemaDoImovel,
   SITUACOES_DE_LOCACAO,
   TIPOS_DE_IMOVEL,
@@ -152,6 +172,7 @@ import { CAMINHO_DOS_LOCADORES } from '../src/cadastros/locador.controller.ts';
 import { CAMINHO_DOS_LOCATARIOS } from '../src/cadastros/locatario.controller.ts';
 import { esquemaPublicado } from '../src/comum/esquema-publicado.ts';
 import { ENDERECO_DE_ESCUTA, PREFIXO_DE_VERSAO } from '../src/configuracao/ambiente.ts';
+import { CAMINHO_DOS_CONTRATOS } from '../src/contratos/contrato.controller.ts';
 import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
 import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
 import { CAMINHO_DO_DOCUMENTO, criarAplicacao } from '../src/main.ts';
@@ -184,10 +205,75 @@ const CAMPO_DO_IDENTIFICADOR = 'id';
 /** A chave que nenhum esquema declara — o vetor do `CT-322`. */
 const CHAVE_EXTRA = 'campoQueNinguemDeclarou';
 
-/** Quantas rotas a fatia publica — a âncora do `CT-327` contra tabela truncada. */
+/** Quantas rotas a fatia `cadastro-de-imoveis-e-pessoas` publica. */
 const ROTAS_DA_FATIA = 33;
 
-/** Quantas rotas de escrita a fatia publica: `POST` e `PUT` das seis entidades. */
+/**
+ * Quantas rotas a fatia `contratos-de-locacao` publica sob `/v1/contratos` até aqui (T7).
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era esta partição que descrevia a
+ * superfície de uma task só. A T7 publicou `POST /:codigo/ativacao`, e a partição existe justamente
+ * para que o total não esconda a troca — deixá-la em `6` faria o `CT-327` reprovar sobre uma tabela
+ * legítima, ou (pior) passar sobre uma incompleta se alguém "corrigisse" o total sozinho.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T8 publicou `POST /:codigo/cancelamento`, e a partição sobe pela mesma
+ * razão do parágrafo acima — ela existe justamente para que o total não esconda a troca.
+ *
+ * São **oito**, e com elas a superfície de `/v1/contratos` está completa nesta fatia: a única rota
+ * que ainda falta é a de situação de locação do imóvel (T10), e ela **não** entra nesta partição,
+ * porque vive sob `/v1/imoveis`.
+ */
+const ROTAS_DE_CONTRATO = 8;
+
+/**
+ * Quantas rotas a fatia `contratos-de-locacao` publica **fora** de `/v1/contratos` — a de situação de
+ * locação do imóvel (T10), e só ela.
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era a partição em **duas** metades que
+ * descrevia uma superfície em que toda rota nova da fatia caía sob `/v1/contratos`. A T10 publicou
+ * `POST /v1/imoveis/{id}/situacao-de-locacao`, que é da fatia de contratos e vive sob `/v1/imoveis` —
+ * sem esta terceira partição, ela seria contada como rota da fatia **anterior** e a igualdade
+ * `tabela - contrato === 33` reprovaria sobre uma tabela legítima. A partição por prefixo de caminho
+ * deixaria de descrever a fatia, e é a fatia que estas âncoras existem para separar. **Nenhuma
+ * asserção foi afrouxada**: as três partições continuam sendo igualdades exatas, e a nova é nomeada
+ * em vez de somada ao total.
+ */
+const ROTAS_DE_SITUACAO_DE_LOCACAO = 1;
+
+/**
+ * Quantas rotas o domínio publica hoje — a âncora do `CT-327` contra tabela truncada.
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo e a âncora é que descrevia uma superfície
+ * de uma fatia só. A T6 da fatia `contratos-de-locacao` acrescentou seis rotas ao domínio, e a tabela
+ * do `CT-327` tem de cobrir a superfície **inteira** — deixá-la em `33` faria o caso passar sobre uma
+ * tabela que ignora as rotas novas, que é exatamente o modo de falha silencioso que a âncora existe
+ * para fechar. O valor é escrito à mão e revisado, e o total anterior continua nomeado ao lado dele.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T7 da mesma fatia acrescentou **uma** rota (39 → 40), a ativação, pela
+ * mesma razão do parágrafo acima. O valor é `33 + 7`, e as duas partições continuam afirmadas
+ * separadamente no `CT-327` — é essa separação que impede o total de esconder "uma entrou e uma da
+ * fatia anterior saiu".
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T8 da mesma fatia acrescentou **uma** rota (40 → 41), o cancelamento,
+ * pela mesma razão dos parágrafos acima. O valor é `33 + 8`, e as duas partições continuam afirmadas
+ * separadamente.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T10 da mesma fatia acrescentou **uma** rota (41 → 42), a situação de
+ * locação do imóvel, pela mesma razão dos parágrafos acima. O valor é `33 + 8 + 1`, e as **três**
+ * partições passam a ser afirmadas separadamente — ver {@link ROTAS_DE_SITUACAO_DE_LOCACAO} para por
+ * que a terceira precisou nascer. Com ela, a superfície de domínio desta fatia está completa.
+ */
+const ROTAS_DESCRITAS = 42;
+
+/**
+ * Quantas rotas de escrita a fatia `cadastro-de-imoveis-e-pessoas` publica: `POST` e `PUT` das seis
+ * entidades dela.
+ *
+ * A fatia é **nomeada**, e o número não cresce com as rotas de contrato: quem ele ancora é a tabela
+ * `rotasDeEscrita`, montada sobre o cenário daquelas seis entidades. Sem o nome da fatia, o `12`
+ * pareceria descrever a superfície inteira e convidaria a próxima task a "corrigi-lo" para cima,
+ * afrouxando a âncora em vez de acrescentar a tabela que falta.
+ */
 const ROTAS_DE_ESCRITA = 12;
 
 /** A pessoa que age: Admin da empresa A, cuja matriz do perfil é o catálogo inteiro. */
@@ -268,7 +354,7 @@ afterAll(async () => {
   }
 }, LIMITE_DE_MONTAGEM_MS);
 
-describe('o contrato publicado das 33 rotas do domínio (T11)', () => {
+describe('o contrato publicado das 42 rotas do domínio (T11)', () => {
   it(
     'CT-327 — o documento publicado é DERIVADO dos esquemas que validam a entrada',
     async () => {
@@ -276,7 +362,24 @@ describe('o contrato publicado das 33 rotas do domínio (T11)', () => {
       const tabela = ESQUEMAS_POR_ROTA;
 
       // A tabela cobre a superfície inteira — afirmado antes de percorrê-la.
-      expect(tabela.length).toBe(ROTAS_DA_FATIA);
+      expect(tabela.length).toBe(ROTAS_DESCRITAS);
+
+      // E ela cobre as DUAS partições, cada uma pelo próprio tamanho: o total sozinho não distingue
+      // "seis rotas de contrato entraram" de "seis entraram e seis da fatia anterior saíram".
+      const doContrato = tabela.filter((rota) =>
+        rota.caminho.startsWith(caminhoDoDocumento(CAMINHO_DOS_CONTRATOS)),
+      );
+      expect(doContrato.length).toBe(ROTAS_DE_CONTRATO);
+
+      // A TERCEIRA partição: a rota da fatia de contratos que vive sob `/v1/imoveis`. Ela é filtrada
+      // pelo sufixo do caminho, e não pelo prefixo, porque é justamente o prefixo que a confundiria
+      // com as rotas da fatia anterior — ver {@link ROTAS_DE_SITUACAO_DE_LOCACAO}.
+      const daSituacaoDeLocacao = tabela.filter((rota) =>
+        rota.caminho.endsWith('/situacao-de-locacao'),
+      );
+      expect(daSituacaoDeLocacao.length).toBe(ROTAS_DE_SITUACAO_DE_LOCACAO);
+
+      expect(tabela.length - doContrato.length - daSituacaoDeLocacao.length).toBe(ROTAS_DA_FATIA);
 
       const conferidas: string[] = [];
       for (const rota of tabela) {
@@ -293,7 +396,7 @@ describe('o contrato publicado das 33 rotas do domínio (T11)', () => {
 
         conferidas.push(`${rota.metodo.toUpperCase()} ${rota.caminho}`);
       }
-      expect(conferidas.length).toBe(ROTAS_DA_FATIA);
+      expect(conferidas.length).toBe(ROTAS_DESCRITAS);
 
       // --- SENSIBILIDADE: o mesmo esquema com UM campo obrigatório a mais ----------------------
       // Sem esta metade, a comparação acima passaria por vacuidade sobre uma igualdade frouxa. Aqui
@@ -497,7 +600,7 @@ describe('o contrato publicado das 33 rotas do domínio (T11)', () => {
 });
 
 // ---------------------------------------------------------------------------------------------
-// CT-327 — a tabela das 33 rotas, com o esquema de `@sysloc/contracts` que cada uma publica
+// CT-327 — a tabela das 42 rotas, com o esquema de `@sysloc/contracts` que cada uma publica
 // ---------------------------------------------------------------------------------------------
 
 /** Uma rota do domínio e o esquema de que a resposta dela deve derivar. */
@@ -528,7 +631,14 @@ function esquemasDeUmCadastro(dono: string, item: z.ZodType, lista: z.ZodType): 
 }
 
 /**
- * As **33** rotas, com o esquema de `@sysloc/contracts` de que cada resposta deriva.
+ * As **42** rotas, com o esquema de `@sysloc/contracts` de que cada resposta deriva.
+ *
+ * SUT_IS_CORRECT_BECAUSE: esta linha dizia "As **39** rotas" enquanto a tabela já tinha 40, depois
+ * 41, e agora 42 — é o débito **D33 (F2/T7)**, fechado na T7 e mantido em dia desde então. O que mudou é **só a prosa**: a cardinalidade
+ * executável vive em {@link ROTAS_DESCRITAS}, e o `CT-327` a afirma antes de percorrer a tabela.
+ * Corrigi-la é obrigatório mesmo assim, pela razão que o docblock de {@link ROTAS_DE_ESCRITA} escreve
+ * por extenso: número desatualizado convida a próxima task a "corrigir" a âncora **para o valor
+ * errado**.
  *
  * A listagem de conjuntos é a **união** da página simples com a da carteira, porque a rota é uma só
  * e devolve uma das duas formas conforme `expandir` — é o que `conjunto.controller.ts` publica, e a
@@ -545,6 +655,25 @@ const ESQUEMAS_POR_ROTA: readonly EsquemaDeRota[] = [
     z.union([envelopeDeLista(esquemaDoConjunto), envelopeDeLista(esquemaDoConjuntoComImoveis)]),
   ),
   ...esquemasDeUmCadastro(CAMINHO_DOS_IMOVEIS, esquemaDoImovel, envelopeDeLista(esquemaDoImovel)),
+  // SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era esta tabela que descrevia uma
+  // superfície de seis rotas de imóvel. A T10 publicou `POST /v1/imoveis/{id}/situacao-de-locacao`, e
+  // a linha nova aponta para **`esquemaDoImovel`**: a rota responde com o imóvel inteiro já
+  // recalculado, como as três de cômodo logo abaixo — e não com um objeto próprio da situação, que
+  // obrigaria o cliente a uma segunda leitura para saber como o imóvel ficou. Sem a linha, o `CT-327`
+  // passaria sobre uma superfície incompleta. Nenhuma asserção foi afrouxada e nenhuma linha anterior
+  // saiu.
+  //
+  // Os **dois esquemas de entrada** que a T10 publica — `esquemaDeImovelAlterado` (o corpo do `PUT`,
+  // derivado por `omit`) e `esquemaDaSituacaoDeLocacao` (o corpo de um campo desta rota) — **não**
+  // aparecem nesta tabela, e a ausência não é omissão: **nenhum controlador desta base descreve corpo
+  // de requisição** no documento (não há um `@ApiBody` em `apps/api/src`), de modo que o documento
+  // publicado descreve respostas. Quem prova que o `PUT` deixou de aceitar `statusLocacao` é o
+  // `CT-434`, pela rota, e o `CT-322` deste arquivo, que envia o corpo válido e depois a chave a mais.
+  {
+    caminho: `${caminhoDoDocumento(CAMINHO_DOS_IMOVEIS)}/{id}/situacao-de-locacao`,
+    metodo: 'post',
+    esquema: esquemaDoImovel,
+  },
   {
     caminho: `${caminhoDoDocumento(CAMINHO_DOS_IMOVEIS)}/{id}/comodos`,
     metodo: 'post',
@@ -567,7 +696,53 @@ const ESQUEMAS_POR_ROTA: readonly EsquemaDeRota[] = [
     envelopeDeLista(esquemaDaPessoa),
   ),
   ...esquemasDeUmCadastro(CAMINHO_DOS_FIADORES, esquemaDaPessoa, envelopeDeLista(esquemaDaPessoa)),
+  ...esquemasDeCadastroDeContrato(),
 ];
+
+/**
+ * As **oito** rotas da superfície de contrato — as seis de cadastro (T6), a **ativação** (T7) e o
+ * **cancelamento** (T8) da fatia `contratos-de-locacao`.
+ *
+ * Elas não passam por {@link esquemasDeUmCadastro}, e a exclusão é conteúdo: o parâmetro de rota do
+ * contrato é `{codigo}`, e não `{id}` — a chave exposta é o **código legível**, porque a entidade tem
+ * série declarada (ADR-0017). Reusar a fábrica exigiria parametrizar o nome do parâmetro nela, o que
+ * apagaria do fonte a única diferença que importa aqui.
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era esta tabela que descrevia uma
+ * superfície sem a ativação. A T7 publicou `POST /v1/contratos/{codigo}/ativacao`, e a linha nova
+ * aponta para **`esquemaDaAtivacaoDeContrato`** — que não é `esquemaDoContrato`: ele o estende com
+ * `efeitos`. Sem a linha, o `CT-327` passaria sobre uma superfície incompleta e **nada** afirmaria que
+ * o documento descreve a declaração de efeito; e apontá-la para `esquemaDoContrato` faria a igualdade
+ * profunda reprovar, que é precisamente a prova de que o documento é **derivado** e não escrito à mão.
+ * Nenhuma asserção foi afrouxada e nenhuma linha anterior saiu.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T8 publicou `POST /v1/contratos/{codigo}/cancelamento`, e as partições
+ * passam a ser `33 + 8`. A linha nova aponta para **`esquemaDoContrato`**, e **não** para
+ * `esquemaDaAtivacaoDeContrato`: a resposta do cancelamento é o contrato no root, **sem** declaração
+ * de efeito — escolha registrada, porque o CA-06 fala só da ativação. É essa distinção que a linha
+ * afirma, e apontá-la para o esquema estendido faria a igualdade profunda reprovar. Sem a linha, o
+ * `CT-327` passaria sobre uma superfície incompleta. Nenhuma asserção foi afrouxada e nenhuma linha
+ * anterior saiu.
+ */
+function esquemasDeCadastroDeContrato(): EsquemaDeRota[] {
+  const raiz = caminhoDoDocumento(CAMINHO_DOS_CONTRATOS);
+  const lista = envelopeDeLista(esquemaDoContrato);
+
+  return [
+    { caminho: raiz, metodo: 'post', esquema: esquemaDoContrato },
+    { caminho: raiz, metodo: 'get', esquema: lista },
+    { caminho: `${raiz}/{codigo}`, metodo: 'get', esquema: esquemaDoContrato },
+    { caminho: `${raiz}/{codigo}`, metodo: 'put', esquema: esquemaDoContrato },
+    {
+      caminho: `${raiz}/{codigo}/ativacao`,
+      metodo: 'post',
+      esquema: esquemaDaAtivacaoDeContrato,
+    },
+    { caminho: `${raiz}/{codigo}/cancelamento`, metodo: 'post', esquema: esquemaDoContrato },
+    { caminho: `${raiz}/{codigo}/retirada`, metodo: 'post', esquema: esquemaDoContrato },
+    { caminho: `${raiz}/{codigo}/recirculacao`, metodo: 'post', esquema: esquemaDoContrato },
+  ];
+}
 
 /** O documento publicado, pedido pela rota que a aplicação já expõe. */
 async function documentoPublicado(): Promise<Record<string, unknown>> {
@@ -783,7 +958,7 @@ function rotasDeEscrita(cenario: CenarioCompleto): readonly RotaDeEscrita[] {
       rotulo: `PUT ${colecao(CAMINHO_DOS_IMOVEIS)}/:id`,
       metodo: 'PUT',
       alvo: `${colecao(CAMINHO_DOS_IMOVEIS)}/${imovelId}`,
-      corpo: () => corpoDeImovel(conjuntoId),
+      corpo: () => corpoDeImovelAlterado(conjuntoId),
       sucesso: 200,
       colecaoDaContagem: CAMINHO_DOS_IMOVEIS,
       crescimentoEsperado: 0,
@@ -941,6 +1116,26 @@ function corpoDeImovel(conjuntoId: string): Record<string, unknown> {
     statusLocacao: 'DISPONIVEL',
     observacoes: 'imóvel do cenário completo',
   };
+}
+
+/**
+ * O corpo completo do `PUT` de imóvel — o da criação **menos** `statusLocacao` (T10).
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era o corpo do `PUT` desta tabela que
+ * carregava um campo que a rota deixou de aceitar. A T10 da fatia `contratos-de-locacao` tirou
+ * `statusLocacao` do corpo da alteração, e `esquemaDeImovelAlterado` é `strictObject` — um corpo que
+ * ainda o traga responde `422`. Aqui isso quebraria justamente o **eixo positivo** do `CT-322` (*"a
+ * rota aceita o corpo VÁLIDO"*), que existe para impedir que um esquema quebrado, recusando tudo,
+ * passe o caso inteiro. **Nenhuma asserção foi afrouxada**: o `422` da chave a mais continua sendo
+ * afirmado por corpo inteiro, agora sobre o corpo que a rota de fato aceita.
+ *
+ * Ele é **derivado** do corpo da criação, espelhando o `omit` do contrato — nunca uma segunda lista.
+ */
+function corpoDeImovelAlterado(conjuntoId: string): Record<string, unknown> {
+  const corpo = corpoDeImovel(conjuntoId);
+  delete corpo.statusLocacao;
+
+  return corpo;
 }
 
 /** O corpo completo de um cadastro de pessoa, com **todos** os campos opcionais preenchidos. */

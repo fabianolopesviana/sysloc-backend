@@ -176,7 +176,19 @@ readonly CAMINHO_ENTRADA_DB="${RAIZ_REPO}/packages/db/dist/index.js"
 #   ATUALIZADA EM 2026-08-05 pela T2 da fatia `cadastro-de-imoveis-e-pessoas`,
 #   no mesmo commit da migração `0005_dominio_locacao.sql`, que acrescenta as
 #   seis entidades do domínio de locação — o tropeço funcionou como previsto.
-readonly TABELAS_DE_NEGOCIO_ESPERADAS="negocio.acesso_usuario_app negocio.acesso_usuario_permissao negocio.comodo negocio.conjunto negocio.fiador negocio.imovel negocio.locador negocio.locatario"
+#   ATUALIZADA EM 2026-08-09 pela T3 da fatia `contratos-de-locacao`, no mesmo
+#   commit da migração `0007_dominio_contrato.sql`, que acrescenta o contrato e o
+#   vínculo de fiador — o tropeço funcionou de novo, e a suíte de `@sysloc/db`
+#   (CT-300, CT-301, CT-421) reprovou pela mesma razão, no mesmo instante.
+#
+#   A SEQUÊNCIA DO CONTADOR NÃO ENTRA AQUI, e a ausência é a decisão: a migração
+#   `0008_seguranca_contrato.sql` traz para `${SCHEMA_NEGOCIO}` um objeto de
+#   espécie nova — a sequência do escopo `(empresa, ano)`, criada em tempo de
+#   execução pelas funções `SECURITY DEFINER` (ADR-0020). A guarda de cobertura
+#   exclui `relkind = 'S'` do exame POR CONSTRUÇÃO, então ela nunca aparece no
+#   resultado que esta lista compara. Acrescentá-la faria a asserção (b) reprovar
+#   um schema íntegro.
+readonly TABELAS_DE_NEGOCIO_ESPERADAS="negocio.acesso_usuario_app negocio.acesso_usuario_permissao negocio.comodo negocio.conjunto negocio.contrato negocio.contrato_fiador negocio.fiador negocio.imovel negocio.locador negocio.locatario"
 
 # Os quatro transportes de segredo que a ADR-0005 proíbe. O `[=]` é classe de
 # caractere de UM elemento — casa exatamente o que o sinal solto casaria, sem

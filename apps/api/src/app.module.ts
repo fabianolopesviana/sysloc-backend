@@ -47,6 +47,7 @@ import {
   TOKEN_AMBIENTE,
   TOKEN_LOGGER,
 } from './configuracao/ambiente.js';
+import { ContratosModule } from './contratos/contratos.module.js';
 import { ImoveisModule } from './imoveis/imoveis.module.js';
 import { MasterModule } from './master/master.module.js';
 import { SaudeModule } from './saude/saude.module.js';
@@ -61,6 +62,7 @@ import { UsuariosModule } from './usuarios/usuarios.module.js';
     UsuariosModule,
     ImoveisModule,
     CadastrosModule,
+    ContratosModule,
   ],
   providers: [
     {

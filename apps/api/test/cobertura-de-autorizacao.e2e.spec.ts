@@ -44,8 +44,19 @@
  * |       |        | igualdade de array; e a superfície cresceu de exatamente 33 — o delta é
  * |       |        | afirmado **além** do total, e medido sobre a superfície observada. (ADR-0011) |
  *
+ * | CA-16 | CT-427 | As **quatro rotas governadas de contrato** — ativação, cancelamento, retirada e
+ * | CA-17 |        | recirculação — declaram no MÉTODO a **conjunção inteira**, com `TELA:contratos`
+ * |       |        | **seguido** da ação própria, **nesta ordem** (a recusa nomeia a PRIMEIRA
+ * |       |        | ausente); a rota de **situação de locação** não declara nada no método e exige
+ * |       |        | **exatamente** `TELA:imoveis`, que é a da classe; `semDeclaracao` é vazio; e a
+ * |       |        | superfície publicada bate com as âncoras finais da fatia — **75** pares e **60**
+ * |       |        | manipuladores, cada uma medida por varredura própria. (ADR-0011, ADR-0018,
+ * |       |        | ADR-0019) |
+ *
  * Rastreabilidade: `CA-23 → CT-212 (RN-14)`, `CA-23 → CT-213 (RN-14)`, `CA-23 → CT-355 (RN-14)`.
  * Acrescida pela T11 da fatia `cadastro-de-imoveis-e-pessoas`: `CA-12 → CT-318 (RN-14)`.
+ * Acrescida pela T10 da fatia `contratos-de-locacao`: `CA-16 → CT-427 (RN-13)`,
+ * `CA-17 → CT-427 (RN-14)`.
  *
  * ===========================================================================
  * Por que o CT-318 existe ao lado do CT-213, que já afirma o mesmo conjunto
@@ -62,6 +73,13 @@
  * observada (`rotasEnumeradas` menos os 33 novos, contra a âncora de antes). É o que a §6.6 da T11
  * pede por extenso: *"afirmar o delta (33) além do total é o que impede um erro de contagem de passar
  * despercebido numa atualização apressada do inventário"*.
+ *
+ * **A partir da T6 da fatia `contratos-de-locacao` a partição tem TRÊS metades**, e não duas:
+ * {@link EXIGENCIA_ANTERIOR_A_FATIA}, {@link PARES_NOVOS_DA_FATIA} e
+ * {@link PARES_DA_FATIA_DE_CONTRATOS}. Engordar a segunda com as rotas de contrato teria sido a saída
+ * mais curta e a errada — o `CT-318` afirma o tamanho dela em `33` por escrito, e o delta dele
+ * passaria a somar duas fatias diferentes num número só. Com a terceira metade nomeada, cada fatia
+ * responde pelo próprio crescimento e a metade antiga continua sendo afirmada por igualdade de array.
  *
  * ===========================================================================
  * O CT-355 audita o CONTEÚDO da declaração — o eixo que faltava (ADR-0018)
@@ -228,6 +246,7 @@ import { CAMINHO_DOS_FIADORES } from '../src/cadastros/fiador.controller.ts';
 import { CAMINHO_DOS_LOCADORES } from '../src/cadastros/locador.controller.ts';
 import { CAMINHO_DOS_LOCATARIOS } from '../src/cadastros/locatario.controller.ts';
 import { ENDERECO_DE_ESCUTA, PREFIXO_DE_VERSAO } from '../src/configuracao/ambiente.ts';
+import { CAMINHO_DOS_CONTRATOS } from '../src/contratos/contrato.controller.ts';
 import { CAMINHO_DOS_COMODOS } from '../src/imoveis/comodo.controller.ts';
 import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
 import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
@@ -488,6 +507,78 @@ function paresDeUmPapelDeCadastro(caminhoDoPapel: string): readonly string[] {
   ];
 }
 
+/**
+ * Os **oito pares** que a superfície de contrato publica — as seis rotas de cadastro (T6), a
+ * **ativação** (T7) e o **cancelamento** (T8), da fatia `contratos-de-locacao`.
+ *
+ * Escritos à mão e compostos a partir do dono do segmento (`CAMINHO_DOS_CONTRATOS`), pela mesma razão
+ * dos inventários acima. O `HEAD` derivado do `GET` da coleção **não** entra: ele não é entrada
+ * própria, e o módulo verificado já o descarta.
+ *
+ * **A chave da rota é o `:codigo`, e não um `:id`** — o contrato tem série declarada, e a ADR-0017 lhe
+ * dá o código legível como chave exposta. O nome do parâmetro entra literalmente no par, porque é ele
+ * que o roteador publica.
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era este inventário que descrevia uma
+ * superfície sem a ativação. A T7 publicou `POST /v1/contratos/:codigo/ativacao` — rota própria por
+ * decisão da ADR-0019 —, e uma tabela que a ignorasse deixaria o `CT-213` e o `CT-318` passarem sobre
+ * uma superfície incompleta, que é exatamente o modo de falha silencioso que estes inventários
+ * existem para fechar. **Nenhuma entrada anterior saiu**, a igualdade segue exata, e o par novo entra
+ * no conjunto POSITIVO — o que prova que ele declara exigência em vez de dispensá-la.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T8 publicou `POST /v1/contratos/:codigo/cancelamento` — a segunda
+ * transição governada, com ação sensível **própria** (`ACAO:cancelar_contrato`) —, e vale aqui,
+ * palavra por palavra, o parágrafo acima: uma tabela que a ignorasse deixaria o `CT-213` e o `CT-318`
+ * passarem sobre uma superfície incompleta. **Nenhuma entrada anterior saiu**, a igualdade segue
+ * exata, e o par novo entra no conjunto POSITIVO. Com ele a máquina de estados fecha, e o único par
+ * ainda por vir nesta fatia é o da rota de situação de locação (T10), que vive sob `/v1/imoveis`.
+ *
+ * As duas de circulação, a ativação **e o cancelamento** são as únicas desta superfície que declaram
+ * no MÉTODO — e as quatro declaram a **conjunção inteira**
+ * (`@ExigeChaves(TELA:contratos, <ação>)`), nunca só a ação. Aqui a forma tem consequência material:
+ * `MAPA_ACAO_TELA['ACAO:excluir_cadastro']` é `TELA:cadastros`, que **não** é a área desta classe —
+ * declarar só a ação daria a quem administra cadastros de pessoa o poder de retirar contratos de
+ * circulação. Nas duas transições a consequência é ainda mais direta: `MAPA_ACAO_TELA` leva
+ * `ACAO:ativar_contrato` e `ACAO:cancelar_contrato` **à própria** `TELA:contratos`, de modo que a
+ * declaração só com a ação exigiria a área certa **por acidente** — e este caso, que mede existência,
+ * não a distinguiria. Quem audita esse conteúdo é o `CT-355`.
+ */
+/**
+ * O **único par** que a rota de situação de locação publica (T10 da fatia `contratos-de-locacao`).
+ *
+ * Ele é da fatia de contratos e vive sob `/v1/imoveis`, e as duas coisas são conteúdo: o que a rota
+ * governa é o par `contrato ATIVO ⇔ imóvel LOCADO`, mas o recurso alterado é o **imóvel**, e um
+ * caminho sob `/v1/contratos` diria que a situação do imóvel pertence ao contrato. Por isso ele entra
+ * em {@link PARES_DA_FATIA_DE_CONTRATOS} — que é partição por **fatia**, não por prefixo de caminho —
+ * e **não** em {@link paresDeImoveis}, cujo tamanho o `CT-318` afirma em `33` por escrito.
+ *
+ * **Ela é a única rota de sub-recurso de ato desta base que NÃO declara nada no método**, e a
+ * ausência é a decisão registrada no cabeçalho de `imovel.controller.ts`: vale a exigência da classe,
+ * `TELA:imoveis`, porque não há ação sensível para esta transição no catálogo fechado e alternar
+ * entre disponível e indisponível é atributo operacional do cadastro, não ato sensível (leitura
+ * declarada da ADR-0019). Para **este** caso, que mede existência de declaração, ela é uma rota como
+ * as outras quatro que herdam a da classe; quem audita conteúdo é o `CT-355`, e o `CT-427` é quem
+ * afirma que a ausência aqui é ausência **de declaração no método**, e não de exigência.
+ */
+function paresDeSituacaoDeLocacao(): readonly string[] {
+  return [`POST /${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_IMOVEIS}/:id/situacao-de-locacao`];
+}
+
+function paresDeContratos(): readonly string[] {
+  const contratos = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}`;
+
+  return [
+    `POST ${contratos}`,
+    `GET ${contratos}`,
+    `GET ${contratos}/:codigo`,
+    `PUT ${contratos}/:codigo`,
+    `POST ${contratos}/:codigo/ativacao`,
+    `POST ${contratos}/:codigo/cancelamento`,
+    `POST ${contratos}/:codigo/retirada`,
+    `POST ${contratos}/:codigo/recirculacao`,
+  ];
+}
+
 /** Os **dezoito pares** dos três papéis — seis por papel, na ordem em que os controladores nascem. */
 function paresDeCadastrosDePessoa(): readonly string[] {
   return [
@@ -572,13 +663,60 @@ const PARES_NOVOS_DA_FATIA: readonly string[] = [
 ].sort();
 
 /**
- * Quantos pares a superfície publicava **antes** da fatia — o outro lado do delta do `CT-318`.
+ * Quantos pares a superfície publicava **antes** da fatia `cadastro-de-imoveis-e-pessoas` — o outro
+ * lado do delta do `CT-318`.
  *
  * É o valor que {@link ROTAS_PUBLICADAS_EM_PRODUCAO} carregava ao fim da fatia
  * `autorizacao-e-ciclo-de-acesso`, e ele não é derivado daquele número: é a âncora contra a qual o
  * crescimento de exatamente 33 é afirmado, medido sobre a superfície observada.
  */
 const ROTAS_PUBLICADAS_ANTES_DA_FATIA = 33;
+
+/**
+ * Os **nove** pares que a fatia `contratos-de-locacao` acrescenta — os seis de cadastro de contrato
+ * (T6), a ativação (T7), o cancelamento (T8) e a situação de locação do imóvel (T10). Com o último, a
+ * superfície da fatia está completa.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a contagem narrativa desta linha dizia "os **seis** pares … (T6)" enquanto
+ * a constante já carregava sete, depois oito, e agora nove — é o débito **D33 (F2/T7)**, fechado na
+ * T7 e mantido em dia desde então. O que
+ * mudou é **só a prosa**: a lista é derivada de {@link paresDeContratos}, e nenhuma asserção deriva
+ * deste texto. A correção é obrigatória mesmo assim, e a razão está escrita no docblock de
+ * `ROTAS_DE_ESCRITA` de `contrato-publicado.e2e.spec.ts`: número desatualizado convida a próxima task
+ * a "corrigir" a âncora executável **para baixo**.
+ *
+ * Ele é uma **terceira metade** nomeada, e não uma extensão de {@link PARES_NOVOS_DA_FATIA}: aquele
+ * inventário é a fatia anterior, o `CT-318` afirma o tamanho dele em `33` por escrito, e engordá-lo
+ * com rotas de outra fatia tornaria o delta daquele caso uma soma de duas coisas diferentes. Separado,
+ * cada fatia responde pelo próprio crescimento e a metade antiga continua sendo afirmada por
+ * igualdade.
+ *
+ * As transições de estado (T7, T8) e a rota de situação de locação do imóvel (T10) entram aqui
+ * conforme nascerem — a superfície cresce por decisão de quem publica rota, nunca em silêncio.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T10 publicou `POST /v1/imoveis/:id/situacao-de-locacao`, e ela entra
+ * **nesta** metade, e não em {@link PARES_NOVOS_DA_FATIA}: a partição é por **fatia**, e o `CT-318`
+ * afirma o tamanho daquela em `33` por escrito. Somá-la lá tornaria o delta daquele caso uma soma de
+ * duas coisas diferentes; é a mesma razão que fez esta terceira metade nascer na T6. **Nenhuma
+ * entrada anterior saiu**, e com ela a superfície da fatia está completa em **nove** rotas.
+ */
+const PARES_DA_FATIA_DE_CONTRATOS: readonly string[] = [
+  ...paresDeContratos(),
+  ...paresDeSituacaoDeLocacao(),
+].sort();
+
+/**
+ * O inventário de exigência **anterior à fatia `contratos-de-locacao`** — as duas metades da fatia de
+ * cadastro somadas.
+ *
+ * É contra ele que o `CT-318` compara o que sobra da superfície depois de tirar os pares de contrato,
+ * e é ele que faz a prova "nenhuma entrada anterior saiu" continuar valendo com um inventário a mais
+ * em jogo.
+ */
+const EXIGENCIA_ANTERIOR_AOS_CONTRATOS: readonly string[] = [
+  ...EXIGENCIA_ANTERIOR_A_FATIA,
+  ...PARES_NOVOS_DA_FATIA,
+].sort();
 
 /**
  * Os pares da aplicação de produção que DECLARAM exigência — o eixo positivo da leitura.
@@ -641,10 +779,20 @@ const ROTAS_PUBLICADAS_ANTES_DA_FATIA = 33;
  * planta, exatamente como alterá-lo. A §4.1 da tech spec registra as três rotas com `TELA:imoveis` e
  * nada mais, e é essa tabela que este inventário afirma. Se a decisão mudar, muda aqui **e** no
  * controlador, e o `CT-355` acusa a metade que ficar para trás.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T6 da fatia `contratos-de-locacao` publicou as **seis rotas de cadastro
+ * de contrato**, e as seis declaram exigência — quatro pela classe (`@ExigeChave('TELA:contratos')`)
+ * e as duas de circulação pelo método, com a **conjunção inteira**
+ * (`@ExigeChaves('TELA:contratos', 'ACAO:excluir_cadastro')`). Vale aqui, palavra por palavra, o
+ * parágrafo da T6 da fatia anterior: **nenhuma entrada anterior saiu**, a igualdade segue exata, e as
+ * seis entram no conjunto POSITIVO. A diferença material desta superfície está registrada em
+ * {@link paresDeContratos}: a área da classe **não** coincide com
+ * `MAPA_ACAO_TELA['ACAO:excluir_cadastro']`, de modo que uma declaração só com a ação exigiria uma
+ * área **diferente** — e o `CT-355` é quem a acusa, por conteúdo.
  */
 const ROTAS_COM_EXIGENCIA: readonly string[] = [
-  ...EXIGENCIA_ANTERIOR_A_FATIA,
-  ...PARES_NOVOS_DA_FATIA,
+  ...EXIGENCIA_ANTERIOR_AOS_CONTRATOS,
+  ...PARES_DA_FATIA_DE_CONTRATOS,
 ].sort();
 
 /**
@@ -682,8 +830,55 @@ const ROTAS_COM_EXIGENCIA: readonly string[] = [
  * de cada um dos três papéis de cadastro de pessoa, pela mesma razão do parágrafo acima. Nenhum par
  * anterior saiu. A contagem foi **refeita do zero**, por varredura dos decoradores de rota em
  * `apps/api/src`, e não derivada das outras âncoras deste arquivo.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T6 da fatia `contratos-de-locacao` acrescentou **seis** pares (66 → 72),
+ * as seis rotas de cadastro de `/v1/contratos`, pela mesma razão dos parágrafos acima. Nenhum par
+ * anterior saiu. A contagem foi **refeita do zero**, por varredura dos decoradores de rota em
+ * `apps/api/src`, e não derivada das outras âncoras deste arquivo — o controlador novo tem seis
+ * decoradores de rota, cada um reivindicando um par. São **seis** e não oito: as duas transições de
+ * estado (`/ativacao` e `/cancelamento`) só nascem em T7 e T8, e a rota de situação de locação do
+ * imóvel, em T10.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T7 da mesma fatia acrescentou **um** par (72 → 73),
+ * `POST /v1/contratos/:codigo/ativacao`, pela mesma razão dos parágrafos acima. Nenhum par anterior
+ * saiu, e a igualdade de conjunto logo acima nomeia qual é o novo. A contagem foi **refeita do
+ * zero**, por varredura dos decoradores de rota em `apps/api/src`. É **um** e não dois porque a rota
+ * é `POST`: só um `GET` acrescenta um segundo par ao roteador, pelo `HEAD` derivado.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T8 da mesma fatia acrescentou **um** par (73 → 74),
+ * `POST /v1/contratos/:codigo/cancelamento`, pela mesma razão dos parágrafos acima. Nenhum par
+ * anterior saiu, e a igualdade de conjunto logo acima nomeia qual é o novo. A contagem foi **refeita
+ * do zero**, por varredura dos decoradores de rota em `apps/api/src`. É **um** e não dois pela mesma
+ * razão do parágrafo anterior — a rota é `POST`, e só um `GET` traz o `HEAD` derivado junto.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T10 da mesma fatia acrescentou **um** par (74 → 75),
+ * `POST /v1/imoveis/:id/situacao-de-locacao`, pela mesma razão dos parágrafos acima. Nenhum par
+ * anterior saiu, e a igualdade de conjunto logo acima nomeia qual é o novo.
+ *
+ * ---------------------------------------------------------------------------
+ * A âncora é 75, e a §11.2 do tech spec ESPERAVA 77 — a diferença foi MEDIDA
+ * ---------------------------------------------------------------------------
+ *
+ * A §3.6 da T10 manda refazer as duas âncoras **do zero, por varredura, sem derivar uma da outra**,
+ * e é isso que este número é. As duas medições independentes, feitas nesta task, concordam em **75**:
+ *
+ *   * **pela enumeração do próprio módulo de cobertura** — `cobertura.rotasEnumeradas` sobre a
+ *     aplicação de produção montada: `75`;
+ *   * **pela composição da superfície**, contada à parte — `60` manipuladores com decorador de rota
+ *     nos arquivos `.controller.ts` de `apps/api/src`, dos quais **um** é o encaminhador de
+ *     identidade (`@All`), que sozinho reivindica os {@link METODOS_DO_ENCAMINHADOR} sete pares:
+ *     `(60 - 1) + 7 + 9 = 75`, com os nove de {@link ROTAS_FORA_DO_ARCABOUCO}, que são registrados
+ *     direto no adaptador e não têm manipulador.
+ *
+ * O `77` da §11.2 é **aritmética da estimativa**, e não uma superfície observada: a fatia publica
+ * **nove** rotas (seis de cadastro de contrato, ativação, cancelamento e a situação de locação), a
+ * superfície anterior a ela tinha `66`, e `66 + 9 = 75`. A mesma §11.2 esperava `51 → 60`
+ * manipuladores, e essa metade **bate exatamente** — o que confirma as nove rotas e localiza o erro
+ * na soma do total, não no escopo entregue. Escrever `77` aqui exigiria publicar duas rotas que
+ * ninguém especificou, ou afrouxar a âncora para uma desigualdade — as duas piores que corrigir o
+ * número. É precisamente o caso que o *"não derive uma âncora da outra"* existe para pegar.
  */
-const ROTAS_PUBLICADAS_EM_PRODUCAO = 66;
+const ROTAS_PUBLICADAS_EM_PRODUCAO = 75;
 
 /**
  * Quantos **manipuladores** de controlador a aplicação de produção monta — a âncora do `CT-355`.
@@ -727,8 +922,88 @@ const ROTAS_PUBLICADAS_EM_PRODUCAO = 66;
  * reivindica um par só. `cadastros/superficie-de-cadastro.ts` **não entra**: ele carrega o
  * comportamento das seis operações e não tem decorador de rota algum, que é precisamente o que faz a
  * contagem por manipulador continuar sendo dezoito e não seis.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T6 da fatia `contratos-de-locacao` acrescentou **seis manipuladores**
+ * (51 → 57) — o `@Post()`, o `@Get()`, o `@Get(':codigo')`, o `@Put(':codigo')`, o
+ * `@Post(':codigo/retirada')` e o `@Post(':codigo/recirculacao')` de `contratos/contrato.controller.ts`
+ * —, e a soma passa a ser `2 + 1 + 1 + 1 + 6 + 7 + 6 + 6 + 3 + 18 + 6 = 57`. A contagem foi **refeita
+ * do zero**, por varredura dos decoradores de rota em `apps/api/src`, e não derivada de
+ * `ROTAS_PUBLICADAS_EM_PRODUCAO`: as duas crescerem seis aqui é, de novo, acidente da forma destas
+ * rotas — cada manipulador reivindica um par só. O método privado `definirCirculacao` do controlador
+ * **não entra**: ele carrega o comportamento comum das duas rotas de circulação e não tem decorador de
+ * rota algum.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T7 da mesma fatia acrescentou **um manipulador** (57 → 58) — o
+ * `@Post(':codigo/ativacao')` de `contratos/contrato.controller.ts` —, e a soma passa a ser
+ * `2 + 1 + 1 + 1 + 6 + 7 + 6 + 6 + 3 + 18 + 7 = 58`. A contagem foi **refeita do zero**, por varredura
+ * dos decoradores de rota em `apps/api/src`, e não derivada de `ROTAS_PUBLICADAS_EM_PRODUCAO`: as
+ * duas crescerem um aqui é acidente da forma desta rota — ela é `POST`, e por isso reivindica um par
+ * só, sem o `HEAD` que todo `GET` acrescenta ao roteador.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T8 da mesma fatia acrescentou **um manipulador** (58 → 59) — o
+ * `@Post(':codigo/cancelamento')` de `contratos/contrato.controller.ts` —, e a soma passa a ser
+ * `2 + 1 + 1 + 1 + 6 + 7 + 6 + 6 + 3 + 18 + 8 = 59`. A contagem foi **refeita do zero**, por
+ * varredura dos decoradores de rota em `apps/api/src`, e não derivada de
+ * `ROTAS_PUBLICADAS_EM_PRODUCAO`. O manipulador novo importa duplamente para o `CT-355`: ele declara
+ * no MÉTODO, e é justamente essa forma que a auditoria de conteúdo examina.
+ *
+ * ---------------------------------------------------------------------------
+ * MUTANTE DA T8 — MT8-5 (2026-08-09), a ADR-0018 sobre a rota nova
+ * ---------------------------------------------------------------------------
+ *
+ * Aplicado ao `@ExigeChaves(AREA_DOS_CONTRATOS, ACAO_DE_CANCELAMENTO)` do manipulador de
+ * cancelamento, trocado por `@ExigeChave(ACAO_DE_CANCELAMENTO)` — a forma intuitiva e **errada**, em
+ * que a declaração do método **substitui** a da classe. Invocado pelo script do pacote
+ * (`pnpm --filter @sysloc/api test`); controle: `151 passed`.
+ *
+ *   * **MT8-5**: `1 failed | 150 passed`, no **`CT-355`**, nomeando o manipulador — *"declaração de
+ *     método que SUBSTITUI a da classe: ContratoController.cancelar"*. Os casos **comportamentais**
+ *     desta suíte sobreviveriam a ele: `MAPA_ACAO_TELA['ACAO:cancelar_contrato']` **é**
+ *     `TELA:contratos`, de modo que a área seria exigida por acidente e nenhum `403` mudaria de
+ *     forma. É a prova por **estrutura** que fecha essa direção — e é a razão de este caso existir
+ *     ao lado dos que sondam comportamento;
+ *   * **reversão** — o fonte foi restaurado do backup e conferido idêntico ao original por `diff -q`,
+ *     `pnpm build` refeito, e o controle voltou a `151 passed`.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T10 da mesma fatia acrescentou **um manipulador** (59 → 60) — o
+ * `@Post(':id/situacao-de-locacao')` de `imoveis/imovel.controller.ts` —, e a soma passa a ser
+ * `2 + 1 + 1 + 1 + 6 + 7 + 6 + 7 + 3 + 18 + 8 = 60`, com os **sete** de imóvel no lugar dos seis. A
+ * contagem foi **refeita do zero**, por varredura dos decoradores de rota em `apps/api/src`, e não
+ * derivada de {@link ROTAS_PUBLICADAS_EM_PRODUCAO}: a varredura devolve, por arquivo,
+ * `1 + 1 + 1 + 6 + 6 + 6 + 8 + 3 + 6 + 7 + 6 + 2 + 7 = 60`. O manipulador novo importa duplamente
+ * para o `CT-355` e para o `CT-427`: ele é o único sub-recurso de ato desta base que **não** declara
+ * nada no método, e a auditoria de conteúdo tem de continuar verde sobre ele — porque não declarar
+ * nada no método é o oposto de declarar **menos** do que a classe.
+ *
+ * **Este número é o único das duas âncoras que bate com a §11.2 do tech spec** (`51 → 60`), e é ele
+ * que localiza o erro do `77` esperado lá na soma do total, e não no escopo entregue — ver a seção
+ * correspondente no docblock de {@link ROTAS_PUBLICADAS_EM_PRODUCAO}.
+ *
+ * ---------------------------------------------------------------------------
+ * MUTANTE DA T10 — MT10-3 (2026-08-09), a falsificação do `CT-427`
+ * ---------------------------------------------------------------------------
+ *
+ * Aplicado ao `@ExigeChaves(AREA_DOS_CONTRATOS, ACAO_DE_CANCELAMENTO)` do manipulador de
+ * cancelamento — uma das **quatro** rotas governadas que o `CT-427` audita —, trocado por
+ * `@ExigeChave(ACAO_DE_CANCELAMENTO)`: a forma intuitiva e **errada**, em que a declaração do método
+ * **substitui** a da classe. Invocado pelo script do pacote (`pnpm --filter @sysloc/api test`);
+ * controle: `155 passed`.
+ *
+ *   * **MT10-3**: `2 failed | 153 passed`, e os dois casos falham por **eixos diferentes** — o
+ *     `CT-355` acusa o manipulador **pelo nome** (*"declaração de método que SUBSTITUI a da classe:
+ *     ContratoController.cancelar"*, com `daClasse: ['TELA:contratos']` e
+ *     `doMetodo: ['ACAO:cancelar_contrato']` no diff), e o `CT-427` reprova na igualdade de **array**
+ *     da conjunção: `expected [ 'ACAO:cancelar_contrato' ] to deeply equal [ 'TELA:contratos', …(1) ]`.
+ *     A divisão de trabalho entre os dois é a razão de o `CT-427` existir ao lado do `CT-355`: aquele
+ *     responde *"o método declara MENOS do que a classe?"* e este responde *"o que exatamente cada uma
+ *     das quatro declara, e em que ordem?"* — e a ordem, que decide qual chave a recusa nomeia, é
+ *     invisível para o primeiro. Os casos **comportamentais** sobreviveriam ao mutante:
+ *     `MAPA_ACAO_TELA['ACAO:cancelar_contrato']` **é** `TELA:contratos`, de modo que a área seria
+ *     exigida por acidente e nenhum `403` mudaria de forma;
+ *   * **reversão** — o fonte foi restaurado do backup e conferido idêntico ao original por `diff -q`,
+ *     `pnpm build` refeito, e o controle voltou a `155 passed`.
  */
-const MANIPULADORES_EXAMINADOS_EM_PRODUCAO = 51;
+const MANIPULADORES_EXAMINADOS_EM_PRODUCAO = 60;
 
 /**
  * Quantos pares a aplicação MUTANTE publica.
@@ -759,8 +1034,23 @@ const MANIPULADORES_EXAMINADOS_EM_PRODUCAO = 51;
  * T8 já havia registrado na MESMA composição raiz — o módulo existia sem publicar rota alguma, e é
  * por isso que ele não aparecia aqui até agora. Os dezoito pares aparecem pela mesma razão que
  * aparecem no controle (42 → 60).
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T6 da fatia `contratos-de-locacao` registrou `ContratosModule` na MESMA
+ * composição raiz, e os seis pares de cadastro de contrato aparecem aqui pela mesma razão que
+ * aparecem no controle (60 → 66).
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T7 acrescentou o par da ativação ao MESMO controlador, já registrado
+ * naquela composição raiz, e ele aparece aqui pela mesma razão que aparece no controle (66 → 67). A
+ * âncora continua sendo de contagem EXATA.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T8 acrescentou o par do cancelamento ao MESMO controlador, pela mesma
+ * razão do parágrafo acima (67 → 68).
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T10 acrescentou o par da situação de locação ao controlador de imóveis,
+ * já registrado naquela composição raiz, e ele aparece aqui pela mesma razão que aparece no controle
+ * (68 → 69). A âncora continua sendo de contagem EXATA.
  */
-const ROTAS_PUBLICADAS_NO_MUTANTE = 60;
+const ROTAS_PUBLICADAS_NO_MUTANTE = 69;
 
 /**
  * O que seria o inventário público da aplicação mutante **se o mutante não estivesse lá**.
@@ -1027,6 +1317,22 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     // mesma razão, agora da T9, que registrou os três controladores em `CadastrosModule` — módulo
     // que a T8 já havia posto na composição raiz sem que ele publicasse rota alguma. Nenhuma entrada
     // anterior saiu, e a igualdade segue exata.
+    //
+    // SUT_IS_CORRECT_BECAUSE: os SEIS pares de cadastro de contrato entram pela mesma razão, agora da
+    // T6 da fatia `contratos-de-locacao`, que registrou `ContratosModule` na composição raiz. Nenhuma
+    // entrada anterior saiu, e a igualdade segue exata.
+    //
+    // SUT_IS_CORRECT_BECAUSE: o par da ATIVAÇÃO entra pela mesma razão, agora da T7 — ele nasce no
+    // MESMO controlador já registrado naquela composição raiz. Nenhuma entrada anterior saiu, e a
+    // igualdade segue exata; o inventário cresce por {@link paresDeContratos}, que é escrito à mão e
+    // revisado, e não por derivação de outra âncora deste arquivo.
+    //
+    // SUT_IS_CORRECT_BECAUSE: o par do CANCELAMENTO e o da SITUAÇÃO DE LOCAÇÃO entram pela mesma
+    // razão, agora da T8 e da T10 — o primeiro nasce no controlador de contrato e o segundo no de
+    // imóvel, os dois já registrados naquela composição raiz. Nenhuma entrada anterior saiu, e a
+    // igualdade segue exata. O par novo entra por {@link paresDeSituacaoDeLocacao}, e a rota é a única
+    // desta base que não declara nada no método: ela cai no conjunto POSITIVO pela declaração da
+    // CLASSE, que é exatamente o que este eixo mede — existência de declaração, não conteúdo dela.
     expect(cobertura.comExigencia).toEqual(
       [
         `GET ${CAMINHO_DA_SESSAO_CORRENTE}`,
@@ -1038,6 +1344,8 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
         ...paresDeImoveis(),
         ...paresDeComodos(),
         ...paresDeCadastrosDePessoa(),
+        ...paresDeContratos(),
+        ...paresDeSituacaoDeLocacao(),
       ].sort(),
     );
 
@@ -1071,11 +1379,28 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     );
 
     // A metade ANTERIOR à fatia está intacta, por igualdade de array: o que o conjunto positivo
-    // publica menos os 33 novos é exatamente o inventário de antes. É esta asserção que pega a troca
-    // que o total não veria — um par da F1 sumindo enquanto um par novo entra no lugar dele.
-    expect(cobertura.comExigencia.filter((par) => !PARES_NOVOS_DA_FATIA.includes(par))).toEqual([
-      ...EXIGENCIA_ANTERIOR_A_FATIA,
-    ]);
+    // publica menos os 33 novos — e menos os pares que fatias POSTERIORES acrescentaram — é
+    // exatamente o inventário de antes. É esta asserção que pega a troca que o total não veria — um
+    // par da F1 sumindo enquanto um par novo entra no lugar dele.
+    //
+    // SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era o filtro que descrevia uma
+    // superfície de duas metades. A T6 da fatia `contratos-de-locacao` publicou seis pares que não
+    // são nem da F1 nem da fatia `cadastro-de-imoveis-e-pessoas`, e o filtro anterior os empurraria
+    // para dentro da metade "anterior", fazendo a igualdade reprovar sobre rotas legítimas. O que a
+    // asserção mede — *"a metade anterior está intacta"* — **não foi afrouxado**: continua sendo
+    // igualdade de array contra um inventário escrito à mão, agora com a terceira metade nomeada e
+    // subtraída explicitamente. Nenhuma entrada saiu de {@link EXIGENCIA_ANTERIOR_A_FATIA}.
+    expect(
+      cobertura.comExigencia.filter(
+        (par) => !PARES_NOVOS_DA_FATIA.includes(par) && !PARES_DA_FATIA_DE_CONTRATOS.includes(par),
+      ),
+    ).toEqual([...EXIGENCIA_ANTERIOR_A_FATIA]);
+
+    // E os pares da fatia de contratos são exatamente os que sobram do outro lado da mesma partição:
+    // sem esta linha, a subtração acima poderia estar escondendo um par de contrato que sumiu.
+    expect(
+      cobertura.comExigencia.filter((par) => PARES_DA_FATIA_DE_CONTRATOS.includes(par)),
+    ).toEqual([...PARES_DA_FATIA_DE_CONTRATOS]);
 
     // Os dois conjuntos que a fatia NÃO deve ter tocado, inalterados.
     expect(cobertura.publicas).toEqual([...PARES_PUBLICOS_ACEITOS]);
@@ -1088,9 +1413,15 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
       cobertura.rotasEnumeradas,
       'a superfície publicada mudou de tamanho: o inventário desta prova precisa ser revisado',
     ).toBe(ROTAS_PUBLICADAS_EM_PRODUCAO);
-    expect(cobertura.rotasEnumeradas - PARES_NOVOS_DA_FATIA.length).toBe(
-      ROTAS_PUBLICADAS_ANTES_DA_FATIA,
-    );
+    //
+    // SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era a aritmética do delta que
+    // descrevia uma superfície de duas metades. Com a fatia `contratos-de-locacao` publicando seis
+    // pares, o delta desta fatia passa a ser medido descontando também os dela — o valor comparado
+    // (`ROTAS_PUBLICADAS_ANTES_DA_FATIA`, 33) **não muda**, e continua sendo âncora escrita à mão e
+    // não derivada de `ROTAS_PUBLICADAS_EM_PRODUCAO`.
+    expect(
+      cobertura.rotasEnumeradas - PARES_NOVOS_DA_FATIA.length - PARES_DA_FATIA_DE_CONTRATOS.length,
+    ).toBe(ROTAS_PUBLICADAS_ANTES_DA_FATIA);
   });
 
   it('CT-213 (c) — o recurso REST comum é classificado par a par; a disputa do MESMO verbo levanta', () => {
@@ -1178,6 +1509,80 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
       },
     ]);
     expect(declaracoesQueSubstituemAClasse(aplicacaoQueCompoe)).toEqual([]);
+  });
+
+  it('CT-427 — a conjunção das quatro rotas governadas de contrato é auditada por ESTRUTURA, e a superfície fecha em 75 pares / 60 manipuladores', () => {
+    const cobertura = verificarCoberturaDeAutorizacao(aplicacaoReal);
+
+    // ---------------------------------------------------------------------------------------
+    // As duas âncoras FINAIS da fatia, medidas SEPARADAMENTE
+    // ---------------------------------------------------------------------------------------
+    //
+    // Elas vêm de dois mecanismos diferentes — a enumeração da tabela do roteador e a varredura dos
+    // decoradores dos controladores — e nenhuma é derivada da outra. A razão está escrita no
+    // docblock de {@link ROTAS_PUBLICADAS_EM_PRODUCAO}: a coincidência aritmética entre elas não é
+    // garantia, e foi justamente ela que produziu o `77` esperado pela §11.2 do tech spec.
+    expect(
+      cobertura.rotasEnumeradas,
+      'a superfície publicada mudou de tamanho: o inventário desta prova precisa ser revisado',
+    ).toBe(ROTAS_PUBLICADAS_EM_PRODUCAO);
+    expect(
+      manipuladoresExaminados(aplicacaoReal),
+      'o número de manipuladores da superfície publicada mudou: o inventário desta prova precisa ser revisado',
+    ).toBe(MANIPULADORES_EXAMINADOS_EM_PRODUCAO);
+
+    // Nenhuma rota da superfície publicada existe sem declaração — inclusive a que nasceu nesta task.
+    expect(cobertura.semDeclaracao).toEqual([]);
+
+    // ---------------------------------------------------------------------------------------
+    // A ESTRUTURA das quatro governadas: a conjunção inteira, e a ORDEM é conteúdo
+    // ---------------------------------------------------------------------------------------
+    //
+    // Igualdade de ARRAY, e não de conjunto: a recusa nomeia a **PRIMEIRA** chave ausente (RN-14), de
+    // modo que a ordem é o que decide se quem tem a área e não tem a ação recebe o nome da ação — o
+    // que lhe falta — ou o da área, que ele já possui. Um `expect.arrayContaining` aceitaria a ordem
+    // invertida, e um `toContain` aceitaria a declaração só com a ação, que é o defeito da ADR-0018.
+    const noMetodo = exigenciasDeclaradasNoMetodo(aplicacaoReal);
+
+    expect(noMetodo.get('ContratoController.ativar')).toEqual([
+      'TELA:contratos',
+      'ACAO:ativar_contrato',
+    ]);
+    expect(noMetodo.get('ContratoController.cancelar')).toEqual([
+      'TELA:contratos',
+      'ACAO:cancelar_contrato',
+    ]);
+    expect(noMetodo.get('ContratoController.retirar')).toEqual([
+      'TELA:contratos',
+      'ACAO:excluir_cadastro',
+    ]);
+    expect(noMetodo.get('ContratoController.recircular')).toEqual([
+      'TELA:contratos',
+      'ACAO:excluir_cadastro',
+    ]);
+
+    // ---------------------------------------------------------------------------------------
+    // A rota NOVA: nada no método, e a exigência EFETIVA é exatamente a da classe
+    // ---------------------------------------------------------------------------------------
+    //
+    // As duas metades são necessárias e nenhuma basta. A primeira afirma a **forma** — não há
+    // declaração de método a substituir a da classe, que é a leitura declarada da ADR-0019 no
+    // cabeçalho de `imovel.controller.ts`. A segunda afirma o **efeito**: a rota exige `TELA:imoveis`
+    // e nada além, lido pelo MESMO `getAllAndOverride` da guarda. Sem a segunda, um manipulador que
+    // perdesse a classe inteira (um `@Controller` sem `@ExigeChave`) passaria pela primeira; sem a
+    // primeira, uma conjunção declarada no método com a mesma área passaria pela segunda.
+    expect(noMetodo.has('ImovelController.definirSituacaoDeLocacao')).toBe(false);
+    expect(
+      exigenciaEfetivaDoManipulador(aplicacaoReal, 'ImovelController.definirSituacaoDeLocacao'),
+    ).toEqual(['TELA:imoveis']);
+
+    // E o par que discrimina: as duas rotas de circulação de imóvel, da MESMA classe, declaram sim no
+    // método. Sem esta linha, "não declara nada no método" seria satisfeito por uma varredura que não
+    // enxergasse declaração de método alguma.
+    expect(noMetodo.get('ImovelController.retirar')).toEqual([
+      'TELA:imoveis',
+      'ACAO:excluir_cadastro',
+    ]);
   });
 });
 
@@ -1477,6 +1882,82 @@ function declaracoesQueSubstituemAClasse(
 /** Quantos manipuladores a varredura de {@link manipuladoresDe} alcança — a âncora do CT-355. */
 function manipuladoresExaminados(aplicacao: NestFastifyApplication): number {
   return [...manipuladoresDe(aplicacao)].length;
+}
+
+/**
+ * As exigências declaradas **no MÉTODO**, por manipulador, **na ordem em que o decorador as declara**
+ * — o eixo que o `CT-427` audita.
+ *
+ * Ela é a irmã de {@link declaracoesQueSubstituemAClasse} e prova outra coisa: aquela responde *"o
+ * método declara MENOS do que a classe?"*, e esta responde *"o que exatamente o método declara, e em
+ * que ordem?"*. As duas são necessárias porque a ordem é conteúdo — a recusa nomeia a **primeira**
+ * chave ausente (RN-14) —, e uma conjunção com os mesmos dois átomos em ordem trocada satisfaz a
+ * contenção da primeira e muda o corpo que o cliente lê.
+ *
+ * **A ordem não é ordenada aqui, e a ausência do `sort` é a decisão.** `atomosDaExigencia` achata na
+ * ordem em que `@ExigeChaves` gravou o metadado, e é essa sequência que precisa ser afirmada;
+ * ordená-la apagaria justamente o que o caso mede.
+ *
+ * O manipulador que **não** declara nada no método não aparece no mapa — a ausência é o resultado, e
+ * não um arranjo vazio que se confundiria com `@NaoExigePermissao()`, que declara e não exige nada.
+ *
+ * A chave é `Controlador.manipulador`, o mesmo rótulo que a mensagem de falha do `CT-355` usa: é ele
+ * que a guarda de cobertura acusa **pelo nome**.
+ */
+function exigenciasDeclaradasNoMetodo(
+  aplicacao: NestFastifyApplication,
+): Map<string, readonly string[]> {
+  const reflector = aplicacao.get(Reflector, { strict: false });
+  const porManipulador = new Map<string, readonly string[]>();
+
+  for (const { alvo, classe, nome } of manipuladoresDe(aplicacao)) {
+    // Um alvo de cada vez, como em `declaracoesQueSubstituemAClasse`: com os dois juntos a
+    // precedência devolveria o da classe quando o método não declara nada, e a distinção sumiria.
+    const doMetodo = reflector.getAllAndOverride<Exigencia | undefined>(EXIGENCIA, [alvo]);
+
+    if (doMetodo === undefined) {
+      continue;
+    }
+
+    porManipulador.set(`${classe.name}.${nome}`, atomosDaExigencia(doMetodo));
+  }
+
+  return porManipulador;
+}
+
+/**
+ * A exigência **efetiva** de um manipulador — a que a guarda de fato aplica, com a precedência dela.
+ *
+ * `getAllAndOverride([alvo, classe])` é a MESMA chamada da guarda, com os dois alvos e na mesma
+ * ordem: é ela que faz a declaração do método substituir a da classe. Ler por aqui é o que torna a
+ * asserção sobre a rota de situação de locação uma afirmação sobre o que o cliente encontra, e não
+ * sobre o que está escrito no fonte.
+ *
+ * O manipulador ausente levanta em vez de devolver vazio: um nome com erro de digitação produziria
+ * `[]`, e `[]` comparado a `[]` passaria em silêncio — que é exatamente a forma de esta asserção
+ * apodrecer sem que ninguém perceba.
+ */
+function exigenciaEfetivaDoManipulador(
+  aplicacao: NestFastifyApplication,
+  rotulo: string,
+): readonly string[] {
+  const reflector = aplicacao.get(Reflector, { strict: false });
+
+  for (const { alvo, classe, nome } of manipuladoresDe(aplicacao)) {
+    if (`${classe.name}.${nome}` !== rotulo) {
+      continue;
+    }
+
+    const efetiva = reflector.getAllAndOverride<Exigencia | undefined>(EXIGENCIA, [alvo, classe]);
+
+    if (efetiva === undefined) {
+      throw new Error(`${rotulo} não declara exigência alguma, nem no método nem na classe`);
+    }
+
+    return atomosDaExigencia(efetiva);
+  }
+
+  throw new Error(`a varredura não encontrou o manipulador ${rotulo}`);
 }
 
 /** Os manipuladores de rota de todos os controladores montados na aplicação. */

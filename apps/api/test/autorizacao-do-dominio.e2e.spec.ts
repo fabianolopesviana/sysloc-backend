@@ -1,6 +1,19 @@
 /**
- * As três provas de SEGURANÇA sobre as 33 rotas do domínio de locação — T11 da fatia
- * `cadastro-de-imoveis-e-pessoas`.
+ * As três provas de SEGURANÇA sobre as **33 rotas do domínio de locação da fatia
+ * `cadastro-de-imoveis-e-pessoas`** (T11), mais as duas provas de que as **três ações sensíveis da
+ * superfície de contrato são independentes entre si** (T7 e T8 da fatia `contratos-de-locacao`).
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era a prosa deste arquivo que dizia "as
+ * 33 rotas do domínio" como se fossem a superfície inteira. Elas são as **da fatia anterior**, e a
+ * tabela {@link rotasDoDominio} continua descrevendo exatamente essas 33 — `ROTAS_DA_FATIA` **não
+ * muda**, nenhuma asserção foi afrouxada e nenhum caso saiu. O que a T7 acrescenta é o `CT-320 (b)`,
+ * sobre uma superfície que aquela tabela nunca cobriu: `/v1/contratos`.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T8 acrescenta o `CT-320 (c)`, sobre a MESMA superfície e pela mesma
+ * razão — e o `describe` perde o numeral "três provas", que já estava vencido com quatro casos
+ * dentro (débito **D33 · F2/T7**). O número vive nas âncoras logo abaixo, que são executáveis;
+ * repeti-lo na prosa só criava um segundo lugar para envelhecer. `ROTAS_DA_FATIA` **não muda**,
+ * nenhuma asserção foi afrouxada e nenhum caso saiu.
  *
  * ===========================================================================
  * INVARIANTES
@@ -23,7 +36,45 @@
  * |       |        | estado do cadastro alheio é idêntico, campo a campo, depois das tentativas. A
  * |       |        | mesma sessão alcança o cadastro PRÓPRIO com `200`. (ADR-0008, ADR-0017) |
  *
- * Rastreabilidade: `CA-12 → CT-319 (RN-14)`, `CA-13 → CT-320 (RN-14)`, `CA-14 → CT-321 (RN-01)`.
+ * | CA-16 | CT-320 | Na rota de **ativação** de contrato, a sessão que tem a área **e a outra ação
+ * |       | (b)    | sensível da mesma superfície** (`ACAO:excluir_cadastro`) — provada por retirar e
+ * |       |        | recircular o contrato com `200` — recebe `403` nomeando `ACAO:ativar_contrato`
+ * |       |        | ao tentar ativar; o contrato segue `RASCUNHO` e o imóvel `DISPONIVEL`. As duas
+ * |       |        | ações são **independentes**: ter uma não substitui a outra. (ADR-0018,
+ * |       |        | ADR-0019) |
+ * | CA-17 | CT-320 | Na rota de **cancelamento**, a sessão que tem a área **e as DUAS outras ações
+ * |       | (c)    | sensíveis** da mesma superfície (`ACAO:excluir_cadastro` e
+ * |       |        | `ACAO:ativar_contrato`) — provadas por ativar, retirar e recircular com `200` —
+ * |       |        | recebe `403` nomeando `ACAO:cancelar_contrato`; o contrato segue `ATIVO` e o
+ * |       |        | imóvel `LOCADO`. As três ações são independentes duas a duas, e reaproveitar
+ * |       |        | `ACAO:excluir_cadastro` para cancelar é o que a ADR-0019 rejeita
+ * |       |        | **nominalmente**. (ADR-0018, ADR-0019) |
+ *
+ * Rastreabilidade: `CA-12 → CT-319 (RN-14)`, `CA-13 → CT-320 (RN-14)`, `CA-14 → CT-321 (RN-01)`,
+ * `CA-16 → CT-320 (b) (RN-13)`, `CA-17 → CT-320 (c) (RN-07)`.
+ *
+ * ===========================================================================
+ * POR QUE O CT-320 (b) E O (c) NÃO SÃO O CT-425 E O CT-426 OUTRA VEZ
+ * ===========================================================================
+ *
+ * O `CT-425` e o `CT-426`, em `test/contratos.e2e.spec.ts`, medem sessões que **não têm** a ação da
+ * rota que tentam — e o que eles prendem é a **forma** da recusa. Estes dois medem sessões que **têm
+ * as outras ações da mesma superfície**, e o que eles prendem é outra coisa: que **ter uma ação da
+ * superfície não dá as demais**. É a diferença entre acusar um corpo de erro errado e mostrar a
+ * **escalada**.
+ *
+ * A distinção não é acadêmica, e nomeia o erro mais provável deste controlador: as **quatro** rotas
+ * que declaram no método são adjacentes no fonte, e duas delas exigem `ACAO:excluir_cadastro`. Uma
+ * ativação que copiasse a linha de cima exigiria a ação errada — e a sessão do `(b)`, que **tem** a
+ * de circulação, seria admitida a ativar. O cancelamento tem **duas** vizinhas de onde copiar, e é
+ * por isso que a sessão do `(c)` carrega as duas: com qualquer uma delas exigida por engano, a rota
+ * responderia `200`, e nenhum dos casos de `contratos.e2e.spec.ts` mostraria isso. O eixo positivo
+ * de cada um — as rotas que a MESMA sessão alcança com `200` — é o que torna o `403` atribuível à
+ * ação que falta, e não à que ela tem.
+ *
+ * No `(c)` o eixo positivo tem uma segunda função, e ela é necessária: a ativação **precisa** vir
+ * antes, senão o contrato seria um rascunho e a recusa do cancelamento poderia ser a `422` da guarda
+ * de **estado** em vez da `403` da guarda de autorização.
  *
  * ===========================================================================
  * A tabela das 33 rotas é DERIVADA, e não redigitada
@@ -86,6 +137,31 @@
  *     e é isso que torna a ADR-0018 verificável em vez de prometida;
  *   * **reversão** — o fonte foi restaurado e conferido por `git diff` vazio, e o controle voltou a
  *     `3 passed`.
+ *
+ * ---------------------------------------------------------------------------
+ * MUTANTES DA T8 — MT8-3 e MT8-4 (2026-08-09), o par que mede a ESCALADA
+ * ---------------------------------------------------------------------------
+ *
+ * Os dois foram aplicados ao MESMO ponto — a constante `ACAO_DE_CANCELAMENTO` de
+ * `apps/api/src/contratos/contrato.controller.ts`, que é o que a rota de cancelamento exige além da
+ * área —, e cada um troca a ação por **uma das duas vizinhas** dela no fonte. A suíte foi invocada
+ * pelo script do pacote (`pnpm --filter @sysloc/api test`). **Controle**: `151 passed`.
+ *
+ *   * **MT8-3 · a ação vira a da vizinha de CIMA** (`ACAO:cancelar_contrato` →
+ *     `ACAO:ativar_contrato`): `2 failed | 149 passed`, no **`CT-320 (c)`** — `expected 200 to be
+ *     403`, isto é, **quem pode ativar passaria a cancelar** — e no `CT-426` de
+ *     `test/contratos.e2e.spec.ts`, na mesma forma;
+ *   * **MT8-4 · a ação vira a da vizinha de BAIXO** (`ACAO:cancelar_contrato` →
+ *     `ACAO:excluir_cadastro`): `2 failed | 149 passed`, e os dois falham de formas **diferentes** —
+ *     o `CT-320 (c)` com `expected 200 to be 403` (quem administra a circulação passaria a destravar
+ *     imóveis, que é o efeito que a ADR-0019 rejeita **nominalmente**) e o `CT-426` na **igualdade
+ *     do corpo** da recusa, porque a sessão dele não tem aquela ação. É a divisão de trabalho entre
+ *     os dois casos, medida: um acusa a **forma** da recusa, o outro mostra a **escalada**;
+ *   * **reversão** — o fonte foi restaurado do backup e conferido idêntico ao original por `diff -q`,
+ *     `pnpm build` refeito, e o controle voltou a `151 passed`.
+ *
+ * A âncora destes registros é **simbólica** — a constante `ACAO_DE_CANCELAMENTO` do controlador de
+ * contrato —, e nunca número de linha.
  *
  * As âncoras destes registros são **simbólicas** — o `@ExigeChaves` do manipulador de retirada de
  * `imovel.controller.ts` —, e nunca número de linha.
@@ -161,6 +237,7 @@ import { CAMINHO_DOS_FIADORES } from '../src/cadastros/fiador.controller.ts';
 import { CAMINHO_DOS_LOCADORES } from '../src/cadastros/locador.controller.ts';
 import { CAMINHO_DOS_LOCATARIOS } from '../src/cadastros/locatario.controller.ts';
 import { ENDERECO_DE_ESCUTA, PREFIXO_DE_VERSAO } from '../src/configuracao/ambiente.ts';
+import { CAMINHO_DOS_CONTRATOS } from '../src/contratos/contrato.controller.ts';
 import { CAMINHO_DOS_COMODOS } from '../src/imoveis/comodo.controller.ts';
 import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
 import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
@@ -198,6 +275,23 @@ const AREA_DOS_CADASTROS: ChaveDoCatalogo = 'TELA:cadastros';
 
 /** A ação sensível que as 10 rotas de circulação exigem **além** da área (ADR-0011, ADR-0018). */
 const ACAO_SENSIVEL: ChaveDoCatalogo = 'ACAO:excluir_cadastro';
+
+/**
+ * A área e as **duas** ações sensíveis próprias da superfície de contrato — o eixo do `CT-320 (b)` e
+ * do `CT-320 (c)` (ADR-0019).
+ *
+ * As duas ações são **independentes**, e é a independência que os dois casos medem por ângulos
+ * opostos: o `(b)` prova que ter a de circulação não dá a de ativar; o `(c)`, que ter as de circulação
+ * **e** de ativar não dá a de cancelar. A ADR-0019 rejeita **nominalmente** reaproveitar
+ * `ACAO:excluir_cadastro` para cancelar, e a razão é de efeito — retirar de circulação não libera o
+ * imóvel, cancelar libera.
+ */
+const AREA_DOS_CONTRATOS: ChaveDoCatalogo = 'TELA:contratos';
+const ACAO_DE_ATIVAR_CONTRATO: ChaveDoCatalogo = 'ACAO:ativar_contrato';
+const ACAO_DE_CANCELAR_CONTRATO: ChaveDoCatalogo = 'ACAO:cancelar_contrato';
+
+/** A coleção de contratos, sob o prefixo de versão — a superfície que o `CT-320 (b)` sonda. */
+const COLECAO_DE_CONTRATOS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}`;
 
 /** A mensagem canônica da recusa de autorização — literal, e não importada da guarda. */
 const MENSAGEM_DE_ACESSO_NEGADO = 'acesso negado para esta sessão';
@@ -300,7 +394,7 @@ afterAll(async () => {
   }
 }, LIMITE_DE_MONTAGEM_MS);
 
-describe('as três provas de segurança sobre as 33 rotas do domínio (T11)', () => {
+describe('as provas de segurança sobre as rotas do domínio (T11) e sobre as ações do contrato', () => {
   it(
     'CT-319 — quem não alcança a área é recusado nas 33 rotas, com a chave DAQUELA área nomeada',
     async () => {
@@ -452,6 +546,183 @@ describe('as três provas de segurança sobre as 33 rotas do domínio (T11)', ()
         ).toBe(200);
         expect(await marcaDeRetirada(entidade.item, sujeito.cookie)).not.toBeNull();
       }
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-320 (b) — ter a ação de circulação não dá a de ativar: a recusa nomeia ACAO:ativar_contrato',
+    async () => {
+      // Sujeito EXCLUSIVO deste caso, pela mesma razão do `CT-320`: o efetivo dele é o que está sob
+      // prova, e compartilhá-lo faria os demais casos observarem uma permissão que este escreveu.
+      const sujeito = await pessoaOperandoComSenhaTrocada('so.circula.contrato');
+      await ajustar(sujeito.usuarioId, EMPRESA_A.id, [
+        { chave: AREA_DOS_CONTRATOS, efeito: 'CONCEDIDA' },
+        { chave: AREA_DOS_IMOVEIS, efeito: 'CONCEDIDA' },
+        { chave: AREA_DOS_CADASTROS, efeito: 'CONCEDIDA' },
+        { chave: ACAO_SENSIVEL, efeito: 'CONCEDIDA' },
+        // A NEGAÇÃO explícita da ação de ativar: é ela que torna o `403` atribuível a essa ação, e
+        // não ao piso do perfil.
+        { chave: ACAO_DE_ATIVAR_CONTRATO, efeito: 'NEGADA' },
+      ]);
+
+      // Precondição AFIRMADA nas TRÊS pontas, e as três importam: ela alcança a área da classe, TEM
+      // a outra ação sensível da MESMA superfície, e NÃO tem a que está sob prova.
+      const efetivo = await efetivoDe(sujeito.cookie);
+      expect(efetivo.telas).toContain(AREA_DOS_CONTRATOS);
+      expect(efetivo.acoes).toContain(ACAO_SENSIVEL);
+      expect(efetivo.acoes).not.toContain(ACAO_DE_ATIVAR_CONTRATO);
+
+      // --- Arranjo: um rascunho montado pela PRÓPRIA sessão -------------------------------------
+      const partes = await criarAlvosDoDominio(sujeito.cookie);
+      const criacao = await pedir(COLECAO_DE_CONTRATOS, {
+        metodo: 'POST',
+        cookie: sujeito.cookie,
+        corpo: corpoDeContrato(partes),
+      });
+      expect(criacao.status, criacao.texto).toBe(201);
+      const codigo = (criacao.corpo as { codigo: string }).codigo;
+
+      // --- Eixo POSITIVO da ação que ela TEM: retirar e recircular respondem 200 ---------------
+      //
+      // Ele vem ANTES do eixo negativo de propósito: sem ele, o `403` da ativação seria compatível
+      // com uma sessão que não alcança nada da superfície, e o caso não diria nada sobre a
+      // independência entre as duas ações.
+      for (const transicao of ['retirada', 'recirculacao'] as const) {
+        const aceita = await pedir(`${COLECAO_DE_CONTRATOS}/${codigo}/${transicao}`, {
+          metodo: 'POST',
+          cookie: sujeito.cookie,
+          corpo: {},
+        });
+
+        expect(aceita.status, `${transicao}: ${aceita.texto}`).toBe(200);
+      }
+
+      // --- Eixo NEGATIVO: ativar recusa, nomeando a ação que FALTA -----------------------------
+      const recusada = await pedir(`${COLECAO_DE_CONTRATOS}/${codigo}/ativacao`, {
+        metodo: 'POST',
+        cookie: sujeito.cookie,
+        corpo: {},
+      });
+
+      expect(recusada.status).toBe(403);
+      // Corpo INTEIRO por igualdade, e `exigido` nomeando **`ACAO:ativar_contrato`**. É esta linha
+      // que acusa a rota que declarasse a ação errada por cópia da vizinha: com a sessão possuindo
+      // `ACAO:excluir_cadastro`, uma exigência copiada responderia `200` aqui.
+      expect(recusada.corpo).toEqual({
+        codigo: CodigoErro.ACESSO_NEGADO,
+        mensagem: MENSAGEM_DE_ACESSO_NEGADO,
+        detalhes: { exigido: ACAO_DE_ATIVAR_CONTRATO },
+      });
+
+      // --- E NADA transitou --------------------------------------------------------------------
+      //
+      // A recusa sozinha não prova ausência de efeito: uma implementação que gravasse e só então
+      // recusasse passaria em tudo acima e reprovaria aqui.
+      const contrato = await pedir(`${COLECAO_DE_CONTRATOS}/${codigo}`, { cookie: sujeito.cookie });
+      expect(contrato.status).toBe(200);
+      expect((contrato.corpo as { status: string }).status).toBe('RASCUNHO');
+
+      const imovel = await pedir(`${colecao(CAMINHO_DOS_IMOVEIS)}/${partes.imovelId}`, {
+        cookie: sujeito.cookie,
+      });
+      expect(imovel.status).toBe(200);
+      expect((imovel.corpo as { statusLocacao: string }).statusLocacao).toBe('DISPONIVEL');
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-320 (c) — ter a ação de ativar não dá a de cancelar: a recusa nomeia ACAO:cancelar_contrato',
+    async () => {
+      // Sujeito EXCLUSIVO deste caso, pela mesma razão do `CT-320 (b)`.
+      const sujeito = await pessoaOperandoComSenhaTrocada('so.ativa.contrato');
+      await ajustar(sujeito.usuarioId, EMPRESA_A.id, [
+        { chave: AREA_DOS_CONTRATOS, efeito: 'CONCEDIDA' },
+        { chave: AREA_DOS_IMOVEIS, efeito: 'CONCEDIDA' },
+        { chave: AREA_DOS_CADASTROS, efeito: 'CONCEDIDA' },
+        // As DUAS outras ações sensíveis que a superfície de contrato conhece. É o efetivo mais
+        // generoso que ainda **não** deve poder cancelar — e é exatamente ele que discrimina.
+        { chave: ACAO_SENSIVEL, efeito: 'CONCEDIDA' },
+        { chave: ACAO_DE_ATIVAR_CONTRATO, efeito: 'CONCEDIDA' },
+        // A NEGAÇÃO explícita da ação sob prova: é ela que torna o `403` atribuível a essa ação, e
+        // não ao piso do perfil.
+        { chave: ACAO_DE_CANCELAR_CONTRATO, efeito: 'NEGADA' },
+      ]);
+
+      // Precondição AFIRMADA nas QUATRO pontas: ela alcança a área da classe, TEM as duas outras
+      // ações sensíveis da MESMA superfície, e NÃO tem a que está sob prova.
+      const efetivo = await efetivoDe(sujeito.cookie);
+      expect(efetivo.telas).toContain(AREA_DOS_CONTRATOS);
+      expect(efetivo.acoes).toContain(ACAO_SENSIVEL);
+      expect(efetivo.acoes).toContain(ACAO_DE_ATIVAR_CONTRATO);
+      expect(efetivo.acoes).not.toContain(ACAO_DE_CANCELAR_CONTRATO);
+
+      // --- Arranjo: um contrato VIGENTE, montado e ativado pela PRÓPRIA sessão ------------------
+      const partes = await criarAlvosDoDominio(sujeito.cookie);
+      const criacao = await pedir(COLECAO_DE_CONTRATOS, {
+        metodo: 'POST',
+        cookie: sujeito.cookie,
+        corpo: corpoDeContrato(partes),
+      });
+      expect(criacao.status, criacao.texto).toBe(201);
+      const codigo = (criacao.corpo as { codigo: string }).codigo;
+
+      // --- Eixo POSITIVO das ações que ela TEM: ativar e circular respondem 200 ----------------
+      //
+      // Ele vem ANTES do eixo negativo de propósito. Sem a ativação aqui, o contrato seria um
+      // rascunho e a recusa do cancelamento poderia ser a `422` da guarda de ESTADO em vez da `403`
+      // da guarda de autorização — o caso mediria outra coisa. E sem a retirada, o `403` seria
+      // compatível com uma sessão que não alcança ação alguma da superfície.
+      const ativacao = await pedir(`${COLECAO_DE_CONTRATOS}/${codigo}/ativacao`, {
+        metodo: 'POST',
+        cookie: sujeito.cookie,
+        corpo: {},
+      });
+      expect(ativacao.status, `ativacao: ${ativacao.texto}`).toBe(200);
+
+      for (const transicao of ['retirada', 'recirculacao'] as const) {
+        const aceita = await pedir(`${COLECAO_DE_CONTRATOS}/${codigo}/${transicao}`, {
+          metodo: 'POST',
+          cookie: sujeito.cookie,
+          corpo: {},
+        });
+
+        expect(aceita.status, `${transicao}: ${aceita.texto}`).toBe(200);
+      }
+
+      // --- Eixo NEGATIVO: cancelar recusa, nomeando a ação que FALTA ---------------------------
+      const recusada = await pedir(`${COLECAO_DE_CONTRATOS}/${codigo}/cancelamento`, {
+        metodo: 'POST',
+        cookie: sujeito.cookie,
+        corpo: {},
+      });
+
+      expect(recusada.status).toBe(403);
+      // Corpo INTEIRO por igualdade, e `exigido` nomeando **`ACAO:cancelar_contrato`**. É esta linha
+      // que acusa a rota que declarasse a ação de uma das vizinhas — as quatro rotas que declaram no
+      // método são adjacentes no controlador —, porque a sessão **tem** as duas outras: uma exigência
+      // copiada responderia `200` aqui, e o `403` do `CT-426` não mostraria a escalada.
+      expect(recusada.corpo).toEqual({
+        codigo: CodigoErro.ACESSO_NEGADO,
+        mensagem: MENSAGEM_DE_ACESSO_NEGADO,
+        detalhes: { exigido: ACAO_DE_CANCELAR_CONTRATO },
+      });
+
+      // --- E NADA transitou --------------------------------------------------------------------
+      //
+      // As DUAS metades: uma implementação que cancelasse e só então recusasse passaria em tudo
+      // acima e reprova aqui, e a segunda escrita do ato — a liberação do imóvel — também não pode
+      // ter acontecido.
+      const contrato = await pedir(`${COLECAO_DE_CONTRATOS}/${codigo}`, { cookie: sujeito.cookie });
+      expect(contrato.status).toBe(200);
+      expect((contrato.corpo as { status: string }).status).toBe('ATIVO');
+
+      const imovel = await pedir(`${colecao(CAMINHO_DOS_IMOVEIS)}/${partes.imovelId}`, {
+        cookie: sujeito.cookie,
+      });
+      expect(imovel.status).toBe(200);
+      expect((imovel.corpo as { statusLocacao: string }).statusLocacao).toBe('LOCADO');
     },
     LIMITE_CASO_MS,
   );
@@ -635,7 +906,7 @@ function rotasDoDominio(recursos: AlvosDoDominio): readonly RotaDoDominio[] {
       // tabela endereça, devolvendo a ele o MESMO identificador com que nasceu — que é o único
       // valor que a restrição de unicidade aceita da própria linha.
       corpoDeImovel(recursos.conjuntoId, identificadorMunicipal()),
-      corpoDeImovel(recursos.conjuntoId, identificadorMunicipal()),
+      corpoDeImovelAlterado(recursos.conjuntoId, identificadorMunicipal()),
     ),
     // O cômodo não tem rota de leitura: ele chega e volta dentro do imóvel, que é o agregado dele
     // (§4.1). São três escritas, e a ausência da quarta é contrato.
@@ -717,7 +988,7 @@ function entidadesCirculaveis(recursos: AlvosDoDominio): readonly EntidadeCircul
       nome: CAMINHO_DOS_IMOVEIS,
       item: `${colecao(CAMINHO_DOS_IMOVEIS)}/${recursos.imovelId}`,
       area: AREA_DOS_IMOVEIS,
-      corpoDoPut: () => corpoDeImovel(recursos.conjuntoId, identificadorMunicipal()),
+      corpoDoPut: () => corpoDeImovelAlterado(recursos.conjuntoId, identificadorMunicipal()),
     },
     {
       nome: CAMINHO_DOS_LOCADORES,
@@ -820,6 +1091,27 @@ function corpoDeImovel(conjuntoId: string, identificador: string): Record<string
   };
 }
 
+/**
+ * O corpo completo do `PUT` de imóvel — o da criação **menos** `statusLocacao` (T10).
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era o corpo do `PUT` deste arquivo que
+ * carregava um campo que a rota deixou de aceitar. A T10 da fatia `contratos-de-locacao` tirou
+ * `statusLocacao` do corpo da alteração — ele passou a ter rota própria —, e `esquemaDeImovelAlterado`
+ * é `strictObject`: um corpo que ainda o traga responde `422`. Aqui isso importa duplamente, porque o
+ * docblock de {@link EntidadeCirculavel} registra por que o corpo do `PUT` **tem** de ser válido — a
+ * borda valida o corpo **antes** de procurar o registro, de modo que um corpo recusado devolveria
+ * `422` e o `404` que o `CT-321` mede nunca aconteceria. **Nenhuma asserção foi afrouxada**; o corpo
+ * continua completo, e a recusa da chave a mais tem prova própria no `CT-434`.
+ *
+ * Ele é **derivado** do corpo da criação, espelhando o `omit` do contrato — nunca uma segunda lista.
+ */
+function corpoDeImovelAlterado(conjuntoId: string, identificador: string): Record<string, unknown> {
+  const corpo = corpoDeImovel(conjuntoId, identificador);
+  delete corpo.statusLocacao;
+
+  return corpo;
+}
+
 /** O corpo completo de um cadastro de pessoa, com documento e endereço **únicos a cada chamada**. */
 function corpoDePessoa(): Record<string, unknown> {
   const marca = String(proximo()).padStart(6, '0');
@@ -889,6 +1181,28 @@ async function criarAlvosDoDominio(credencial: string): Promise<AlvosDoDominio> 
   const fiadorId = await criarPelaRota(credencial, colecao(CAMINHO_DOS_FIADORES), corpoDePessoa());
 
   return { conjuntoId, imovelId, comodoId, locadorId, locatarioId, fiadorId, marca };
+}
+
+/**
+ * O corpo completo de um contrato sobre os alvos de uma leva — o arranjo do `CT-320 (b)`.
+ *
+ * Os termos são fixos e irrelevantes para o que o caso mede: o eixo aqui é a **autorização**, e não a
+ * derivação nem as condições de entrada. `empresaId` não aparece — ela sai da sessão, e o
+ * `strictObject` do contrato recusaria a chave.
+ */
+function corpoDeContrato(alvos: AlvosDoDominio): Record<string, unknown> {
+  return {
+    imovelId: alvos.imovelId,
+    locadorId: alvos.locadorId,
+    locatarioId: alvos.locatarioId,
+    fiadoresIds: [alvos.fiadorId],
+    dataInicioLocacao: '2026-01-15',
+    prazoMeses: 12,
+    valorMensal: 2500,
+    diaVencimento: 10,
+    gerarCobrancasAutomaticamente: true,
+    pdfContratoArquivo: null,
+  };
 }
 
 /**

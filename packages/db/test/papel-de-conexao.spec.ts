@@ -17,6 +17,25 @@
  * |          |         | valor obtido em cada predicado; e a leitura de negócio pelo superusuário
  * |          |         | devolve também as linhas da outra empresa. As asserções discriminam
  * |          |         | privilégio em vez de serem infalíveis. |
+ * | CA-04    | CT-406  | As duas funções de emissão da série (`0008`) leem o contexto de empresa
+ * | CA-18    |         | EXCLUSIVAMENTE de `current_setting('app.empresa_id')` e **levantam** quando
+ * |          |         | ele está ausente, nomeando-o na mensagem; e a introspecção do catálogo
+ * |          |         | mostra que a assinatura de nenhuma delas aceita empresa por parâmetro —
+ * |          |         | de modo que pedir o contador de OUTRA empresa é irrepresentável, e não
+ * |          |         | apenas recusado. A recusa não deixa resíduo: nenhuma sequência é criada.
+ * |          |         | O companheiro POSITIVO, com o contexto fixado, é o que impede o caso de
+ * |          |         | ficar verde sobre uma função que levantasse sempre. E as DUAS funções
+ * |          |         | guardam o ano com a MESMA faixa: nulo, abaixo do piso e acima do teto são
+ * |          |         | recusados com contexto VÁLIDO fixado — o que discrimina a guarda de faixa
+ * |          |         | da guarda de contexto —, e a recusa também não deixa contador de escopo
+ * |          |         | indeterminado para trás. |
+ * | CA-04    | CT-431  | O ÚNICO privilégio que a `0008` concede a `sysloc_app` é `EXECUTE` sobre
+ * | CA-18    |         | as duas funções: ele as executa, e o `nextval` DIRETO sobre a sequência do
+ * |          |         | contador é recusado por `42501` — enquanto o papel DONO o executa, o que
+ * |          |         | prova que a recusa é de privilégio e não de objeto ausente. Pelo catálogo,
+ * |          |         | a lista de concessões das duas funções é exatamente
+ * |          |         | `{sysloc_app, sysloc_migracao} × EXECUTE`: **`PUBLIC` não está nela**, e
+ * |          |         | `sysloc_app` não tem privilégio algum sobre a sequência. |
  *
  * ===========================================================================
  * Por que este arquivo é o mais importante da fatia
@@ -70,17 +89,20 @@ const PAPEL_DONO = 'sysloc_migracao';
  *
  * SUT_IS_CORRECT_BECAUSE: o valor esperado é do CASO, não do SUT — ele existe justamente para que
  * uma consulta que não alcançasse tabela nenhuma não passe por verde. A T2 da fatia
- * `cadastro-de-imoveis-e-pessoas` cria SEIS tabelas em `negocio` pela migração `0005`, e o conjunto
- * de duas era o da fatia anterior. O papel da conexão — que é o que estes casos provam — não mudou:
- * `sysloc_app` continua sem privilégio, e as tabelas novas continuam pertencendo a
- * `sysloc_migracao`. Declarar as oito é a atualização legítima; derivar a lista da própria consulta
- * faria o esperado vir da mesma fonte que o obtido, e a asserção deixaria de poder falhar.
+ * `cadastro-de-imoveis-e-pessoas` criou SEIS tabelas em `negocio` pela migração `0005`, e a T3 da
+ * fatia `contratos-de-locacao` acrescenta DUAS pela `0007`. O papel da conexão — que é o que estes
+ * casos provam — não mudou: `sysloc_app` continua sem privilégio, e as tabelas novas continuam
+ * pertencendo a `sysloc_migracao`. Declarar as dez é a atualização legítima; derivar a lista da
+ * própria consulta faria o esperado vir da mesma fonte que o obtido, e a asserção deixaria de poder
+ * falhar.
  */
 const TABELAS_DE_NEGOCIO_ESPERADAS = [
   'acesso_usuario_app',
   'acesso_usuario_permissao',
   'comodo',
   'conjunto',
+  'contrato',
+  'contrato_fiador',
   'fiador',
   'imovel',
   'locador',
@@ -276,21 +298,25 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
 
       // A contagem é afirmada ANTES da propriedade, e é deliberada: sem ela, um schema `negocio`
       // vazio faria a asserção seguinte passar sem examinar tabela alguma.
-      expect(observado.tabelasDeNegocio).toHaveLength(8);
+      expect(observado.tabelasDeNegocio).toHaveLength(10);
       expect(observado.tabelasDeNegocio.map((linha) => linha.tabela)).toEqual([
         'acesso_usuario_app',
         'acesso_usuario_permissao',
         'comodo',
         'conjunto',
+        'contrato',
+        'contrato_fiador',
         'fiador',
         'imovel',
         'locador',
         'locatario',
       ]);
-      // As oito escritas por extenso, e não `map(() => …)`: a propriedade é afirmada POR TABELA, de
+      // As dez escritas por extenso, e não `map(() => …)`: a propriedade é afirmada POR TABELA, de
       // modo que uma delas que nascesse com outro dono apareça pela posição. Derivar a lista do
       // tamanho da anterior faria a contagem responder no lugar da propriedade.
       expect(observado.tabelasDeNegocio.map((linha) => linha.dono)).toEqual([
+        'sysloc_migracao',
+        'sysloc_migracao',
         'sysloc_migracao',
         'sysloc_migracao',
         'sysloc_migracao',
@@ -319,7 +345,8 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
         "current_user = 'sysloc_migracao' (esperado 'sysloc_app')",
         "pg_has_role(current_user, 'sysloc_migracao', 'MEMBER') = true",
         "tableowner = current_user ('sysloc_migracao') em acesso_usuario_app, " +
-          'acesso_usuario_permissao, comodo, conjunto, fiador, imovel, locador, locatario',
+          'acesso_usuario_permissao, comodo, conjunto, contrato, contrato_fiador, fiador, ' +
+          'imovel, locador, locatario',
       ]);
 
       const superusuario = await conferirPapelDaConexao(conexaoSuperusuaria(banco));
@@ -367,6 +394,404 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
       // aplicação não enxerga' — ficaria vacuamente verde. É a mesma guarda de conjunto vazio que o
       // CT-001 instala com a asserção de contagem de tabelas, pelo mesmo motivo.
       expect(lidosPeloSuperusuario.length).toBeGreaterThan(lidosPeloDono.length);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});
+
+// ===========================================================================
+// CT-406 e CT-431 — o mecanismo de emissão da série, e o privilégio que o cerca
+// ===========================================================================
+//
+// As duas funções `SECURITY DEFINER` da migração `0008` são a superfície de maior risco desta fatia,
+// e por uma razão precisa: elas rodam com os direitos de `sysloc_migracao`, que é DONO das tabelas
+// de `negocio`. Tudo o que elas aceitarem por argumento, a aplicação passa a poder pedir com o
+// privilégio da dona — inclusive o que a política de linha lhe tira.
+//
+// É por isso que nenhuma das duas tem parâmetro de empresa, e é por isso que o CT-406 afirma a
+// AUSÊNCIA dele por introspecção do catálogo, e não apenas o comportamento: comportamento se
+// conserta com uma conferência a mais dentro da função; assinatura sem o parâmetro torna o pedido
+// cruzado **irrepresentável**, que é a mesma escolha estrutural do isolamento entre empresas.
+//
+// O CT-431 fecha a outra metade — o privilégio. O `nextval` corre DENTRO da função; o papel da
+// aplicação nunca toca a sequência, e não recebe `USAGE ON SEQUENCES`. A ADR-0020 registra entre os
+// *Neutros* que alargar o privilégio do papel da aplicação **não é o caminho**, e este caso é o que
+// impede que alguém o alargue "para simplificar" sem que nada acuse.
+
+/** O escopo que o CT-431 usa. Ano fixo: o que se observa é o privilégio, não o valor emitido. */
+const ANO_DO_CONTADOR = 2026;
+
+/** O ano do CT-406 é OUTRO, para que a recusa dele não dependa do estado deixado pelo CT-431. */
+const ANO_SEM_CONTEXTO = 2027;
+
+/** `SQLSTATE` de privilégio insuficiente — o que o servidor devolve ao negar a sequência. */
+const PRIVILEGIO_INSUFICIENTE = '42501';
+
+/** `SQLSTATE` de `RAISE EXCEPTION` sem código próprio — o que as duas funções levantam. */
+const EXCECAO_LEVANTADA = 'P0001';
+
+/**
+ * Os anos que a guarda de faixa das duas funções recusa, escritos como literal de SQL.
+ *
+ * Os três discriminam ramos diferentes da guarda, e nenhum é redundante: `NULL::integer` cobre a
+ * função **não ser `STRICT`** — o corpo correria, e `format('contrato_%s_%s', NULL, …)` renderia
+ * cadeia vazia no lugar do ano, criando um contador de escopo indeterminado; `1999` e `3000` cobrem
+ * os dois extremos da faixa, e um só deles deixaria vivo um mutante que trocasse a comparação por
+ * uma desigualdade de um lado só.
+ */
+const ANOS_FORA_DA_FAIXA = ['NULL::integer', '1999', '3000'] as const;
+
+/** A mensagem única da guarda de faixa. `%` renderiza argumento nulo como `<NULL>` no `RAISE`. */
+const RECUSA_DE_FAIXA = 'ano do contador fora da faixa admitida';
+
+/** O desfecho de uma instrução, coletado em vez de abortar — mesmo padrão de `conferirPapel…`. */
+interface DesfechoDeSql {
+  readonly codigo: string;
+  readonly mensagem: string;
+}
+
+/**
+ * Executa uma instrução e devolve o desfecho como valor.
+ *
+ * `GRAVOU` é um desfecho legítimo e distinguível: o caso que espera recusa afirma o par
+ * `(código, mensagem)` por igualdade, e uma execução bem-sucedida aparece como `GRAVOU` em vez de
+ * passar despercebida.
+ */
+async function tentarSql(cadeia: string, instrucao: string): Promise<DesfechoDeSql> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+  try {
+    await sql.unsafe(instrucao);
+    return { codigo: 'GRAVOU', mensagem: '' };
+  } catch (erro) {
+    const codigo = (erro as { code?: string }).code ?? 'sem sqlstate';
+    return { codigo, mensagem: erro instanceof Error ? erro.message : String(erro) };
+  } finally {
+    await sql.end();
+  }
+}
+
+/**
+ * Executa uma instrução com o contexto de empresa VÁLIDO e fixado, e devolve o desfecho como valor.
+ *
+ * O contexto é fixado na SESSÃO (`is_local = false`) e não numa transação, e a escolha é conteúdo:
+ * as duas instruções correm em autocommit, de modo que um `CREATE SEQUENCE` executado ANTES da
+ * guarda ficaria commitado e apareceria no retrato de sequências do passo seguinte. Sob `sql.begin`
+ * o desfazimento apagaria o resíduo, e a asserção de resíduo deixaria de poder falhar.
+ */
+async function tentarSqlComContexto(
+  cadeia: string,
+  empresaId: string,
+  instrucao: string,
+): Promise<DesfechoDeSql> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+  try {
+    await sql`SELECT set_config('app.empresa_id', ${empresaId}, false)`;
+    await sql.unsafe(instrucao);
+    return { codigo: 'GRAVOU', mensagem: '' };
+  } catch (erro) {
+    const codigo = (erro as { code?: string }).code ?? 'sem sqlstate';
+    return { codigo, mensagem: erro instanceof Error ? erro.message : String(erro) };
+  } finally {
+    await sql.end();
+  }
+}
+
+/** As sequências de `negocio`, ordenadas pelo nome. É o que o CT-406 compara antes e depois. */
+async function sequenciasDeNegocio(cadeia: string): Promise<string[]> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+  try {
+    const linhas = await sql<{ nome: string }[]>`
+      SELECT c.relname AS nome
+        FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'negocio' AND c.relkind = 'S'
+       ORDER BY c.relname
+    `;
+    return linhas.map((linha) => linha.nome);
+  } finally {
+    await sql.end();
+  }
+}
+
+/** Assinatura de cada função de `negocio`, tal como o catálogo a reconstrói. */
+interface AssinaturaDeFuncao {
+  readonly nome: string;
+  readonly argumentos: string;
+  readonly seguranca: string;
+  readonly caminhoDeBusca: string;
+}
+
+async function assinaturasDeNegocio(cadeia: string): Promise<AssinaturaDeFuncao[]> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+  try {
+    return await sql<AssinaturaDeFuncao[]>`
+      SELECT p.proname                          AS nome,
+             pg_get_function_arguments(p.oid)   AS argumentos,
+             CASE WHEN p.prosecdef THEN 'DEFINER' ELSE 'INVOKER' END AS seguranca,
+             coalesce(array_to_string(p.proconfig, ' | '), 'SEM CONFIGURACAO') AS "caminhoDeBusca"
+        FROM pg_catalog.pg_proc p
+        JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'negocio'
+       ORDER BY p.proname
+    `;
+  } finally {
+    await sql.end();
+  }
+}
+
+/**
+ * Toda concessão viva sobre as funções de `negocio`, no formato `função → beneficiário → privilégio`.
+ *
+ * `grantee = 0` é `PUBLIC` no catálogo, e é por isso que a consulta o traduz em vez de filtrá-lo:
+ * filtrar esconderia justamente o que o caso procura. A lista é afirmada por IGUALDADE — uma
+ * concessão a mais, para quem for, aparece como linha nova.
+ */
+async function concessoesDasFuncoes(cadeia: string): Promise<string[]> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+  try {
+    const linhas = await sql<{ linha: string }[]>`
+      SELECT p.proname || ' -> ' ||
+             CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END ||
+             ' -> ' || a.privilege_type AS linha
+        FROM pg_catalog.pg_proc p
+        JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+        CROSS JOIN LATERAL aclexplode(p.proacl) AS a
+       WHERE n.nspname = 'negocio'
+       ORDER BY 1
+    `;
+    return linhas.map((linha) => linha.linha);
+  } finally {
+    await sql.end();
+  }
+}
+
+/** Emite um número sob o contexto de uma empresa, pelo caminho que a borda usará (§7.4). */
+async function emitirNumero(cadeia: string, empresaId: string, ano: number): Promise<string> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+  try {
+    // As DUAS unidades, na ordem da §7.4: a primeira cria e COMMITA a sequência, a segunda a
+    // consome. Fundi-las faria o desfazimento devolver o número, contra a ADR-0015.
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.empresa_id', ${empresaId}, true)`;
+      await tx`SELECT negocio.garantir_contador_de_contrato(${ano})`;
+    });
+    return await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.empresa_id', ${empresaId}, true)`;
+      const [linha] = await tx<{ numero: string }[]>`
+        SELECT negocio.proximo_numero_de_contrato(${ano})::text AS numero
+      `;
+      if (linha === undefined) {
+        throw new Error('a emissão não devolveu linha');
+      }
+      return linha.numero;
+    });
+  } finally {
+    await sql.end();
+  }
+}
+
+describe('emissão da série declarada — contexto e privilégio', () => {
+  let banco: BancoMigrado;
+
+  beforeAll(async () => {
+    banco = await bancoEfemero();
+  }, LIMITE_SUBIDA_MS);
+
+  afterAll(async () => {
+    await banco?.parar();
+  }, LIMITE_SUBIDA_MS);
+
+  it(
+    'CT-406 — a emissão recusa sem contexto de empresa, e a assinatura não aceita empresa por parâmetro',
+    async () => {
+      // O retrato ANTES, e não "a lista vazia": o caso não pode depender da ordem em que os `it`
+      // deste arquivo rodam, e o que ele afirma é que a recusa NÃO DEIXA RESÍDUO — comparação
+      // antes/depois, no molde das contagens cruas do resto da suíte.
+      const antes = await sequenciasDeNegocio(banco.cadeiaConexao);
+
+      // --- Passo 1: as duas funções, chamadas SEM contexto -------------------------------------
+      //
+      // A chamada é direta, por SQL, sem passar por `contextoDeTenant.executarCom` — é o que
+      // reproduz o estado real de uma conexão que ninguém preparou, no mesmo padrão do CT-005 de
+      // `isolamento.spec.ts`.
+      const semContexto = [
+        await tentarSql(
+          banco.cadeiaConexao,
+          `SELECT negocio.proximo_numero_de_contrato(${ANO_SEM_CONTEXTO})`,
+        ),
+        await tentarSql(
+          banco.cadeiaConexao,
+          `SELECT negocio.garantir_contador_de_contrato(${ANO_SEM_CONTEXTO})`,
+        ),
+      ];
+
+      // O SQLSTATE **e** a mensagem, por igualdade: `P0001` sozinho não diz que foi o contexto que
+      // faltou — qualquer `RAISE` da função devolveria o mesmo —, e a mensagem sozinha não diz que a
+      // recusa veio do servidor. A mensagem NOMEIA `app.empresa_id`, que é a variável de sessão em
+      // falta, e não ecoa entrada nenhuma.
+      expect(semContexto.map((desfecho) => `${desfecho.codigo} · ${desfecho.mensagem}`)).toEqual([
+        `${EXCECAO_LEVANTADA} · contexto de empresa ausente: app.empresa_id não está fixado nesta transação`,
+        `${EXCECAO_LEVANTADA} · contexto de empresa ausente: app.empresa_id não está fixado nesta transação`,
+      ]);
+
+      // --- Passo 2: a recusa não deixa resíduo -------------------------------------------------
+      //
+      // Sem esta asserção, uma função que criasse a sequência ANTES de conferir o contexto passaria
+      // pelo passo 1 e teria deixado um contador órfão — de escopo indeterminado — para trás.
+      expect(await sequenciasDeNegocio(banco.cadeiaConexao)).toEqual(antes);
+
+      // --- Passo 3: a ASSINATURA, pelo catálogo ------------------------------------------------
+      //
+      // Este é o passo que o comportamento não dá. A igualdade cobre quatro fatos de uma vez, e cada
+      // um deles é um mutante morto:
+      //
+      //   * as DUAS funções de `negocio` são estas — uma terceira, criada para "facilitar", apareceria
+      //     aqui;
+      //   * nenhuma delas tem parâmetro de empresa, e o `p_inicio bigint DEFAULT 1` está declarado
+      //     com o padrão que a semeadura da F7 depende de poder omitir;
+      //   * as duas são `SECURITY DEFINER` — sem isso, o `nextval` correria com os direitos de quem
+      //     chama e o CT-431 recusaria a chamada legítima;
+      //   * as duas fixam `search_path`, com o schema temporário em ÚLTIMO lugar. Uma
+      //     `SECURITY DEFINER` sem `search_path` fixo é sequestrável por quem chama, e o catálogo é
+      //     o único lugar onde essa propriedade é observável.
+      expect(await assinaturasDeNegocio(banco.cadeiaConexao)).toEqual([
+        {
+          nome: 'garantir_contador_de_contrato',
+          argumentos: 'p_ano integer, p_inicio bigint DEFAULT 1',
+          seguranca: 'DEFINER',
+          caminhoDeBusca: 'search_path=pg_catalog, pg_temp',
+        },
+        {
+          nome: 'proximo_numero_de_contrato',
+          argumentos: 'p_ano integer',
+          seguranca: 'DEFINER',
+          caminhoDeBusca: 'search_path=pg_catalog, pg_temp',
+        },
+      ] satisfies AssinaturaDeFuncao[]);
+
+      // --- Passo 4: o companheiro POSITIVO -----------------------------------------------------
+      //
+      // Sem ele, o caso ficaria verde sobre uma função que levantasse SEMPRE — e "recusa sem
+      // contexto" não distinguiria isolamento de função quebrada. O escopo é o do CT-406, e o
+      // primeiro número de um escopo novo é `1`, por `START WITH 1`.
+      expect(await emitirNumero(banco.cadeiaConexao, EMPRESA_A.id, ANO_SEM_CONTEXTO)).toBe('1');
+
+      // --- Passo 5: a guarda de faixa do ano, nas DUAS funções ---------------------------------
+      //
+      // O contexto aqui é VÁLIDO e fixado, e é isso que separa esta recusa da do passo 1: sem o
+      // contexto, a guarda de contexto levantaria primeiro e a asserção ficaria verde sobre funções
+      // sem guarda de faixa nenhuma. O par `(SQLSTATE, mensagem)` é afirmado por igualdade sobre as
+      // SEIS linhas de uma vez — três entradas × duas funções —, porque o invariante é que as duas
+      // superfícies pelas quais o escopo `(empresa, ano)` é nomeado tenham a MESMA superfície de
+      // entrada: guardar só a que cria deixaria a que consome aceitar o ano nulo.
+      //
+      // Os dois mutantes foram medidos nesta task, um por função: retirar a guarda de
+      // `garantir_contador_de_contrato` e retirar a de `proximo_numero_de_contrato` reprovam este
+      // caso separadamente. É o par que discrimina — uma asserção sobre uma função só sobreviveria
+      // à divergência entre as duas, que é justamente o defeito que o passo procura.
+      const antesDaFaixa = await sequenciasDeNegocio(banco.cadeiaConexao);
+
+      const foraDaFaixa: string[] = [];
+      for (const funcao of ['garantir_contador_de_contrato', 'proximo_numero_de_contrato']) {
+        for (const ano of ANOS_FORA_DA_FAIXA) {
+          const desfecho = await tentarSqlComContexto(
+            banco.cadeiaConexao,
+            EMPRESA_A.id,
+            `SELECT negocio.${funcao}(${ano})`,
+          );
+          foraDaFaixa.push(`${funcao}(${ano}) -> ${desfecho.codigo} · ${desfecho.mensagem}`);
+        }
+      }
+
+      // O RESÍDUO é afirmado ANTES das mensagens, e a ordem é conteúdo: é ela que torna esta
+      // asserção capaz de falhar. Sem a guarda, `garantir_…(NULL)` cria de fato
+      // `contrato__<32 hexadecimais>` — um contador de escopo INDETERMINADO, permanente e invisível
+      // à guarda de cobertura do catálogo, que exclui sequências por espécie —, e é este retrato,
+      // não a mensagem, que nomeia o dano. Posta depois da igualdade de mensagens, ela nunca
+      // chegaria a ser avaliada no mutante que ela discrimina.
+      //
+      // O que ela NÃO discrimina, medido nesta task: a guarda posta DEPOIS do `CREATE SEQUENCE`
+      // sobrevive — a chamada corre em autocommit, e o `RAISE` desfaz a criação junto com a
+      // instrução. Esse caminho é fechado pelo PostgreSQL, não por asserção, e afirmar o contrário
+      // seria escrever uma asserção que não pode falhar.
+      expect(await sequenciasDeNegocio(banco.cadeiaConexao)).toEqual(antesDaFaixa);
+
+      expect(foraDaFaixa).toEqual([
+        `garantir_contador_de_contrato(NULL::integer) -> ${EXCECAO_LEVANTADA} · ${RECUSA_DE_FAIXA}: <NULL>`,
+        `garantir_contador_de_contrato(1999) -> ${EXCECAO_LEVANTADA} · ${RECUSA_DE_FAIXA}: 1999`,
+        `garantir_contador_de_contrato(3000) -> ${EXCECAO_LEVANTADA} · ${RECUSA_DE_FAIXA}: 3000`,
+        `proximo_numero_de_contrato(NULL::integer) -> ${EXCECAO_LEVANTADA} · ${RECUSA_DE_FAIXA}: <NULL>`,
+        `proximo_numero_de_contrato(1999) -> ${EXCECAO_LEVANTADA} · ${RECUSA_DE_FAIXA}: 1999`,
+        `proximo_numero_de_contrato(3000) -> ${EXCECAO_LEVANTADA} · ${RECUSA_DE_FAIXA}: 3000`,
+      ]);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-431 — o papel da aplicação executa as duas funções e não alcança a sequência diretamente',
+    async () => {
+      // --- Pré-condição: a sequência do escopo, criada pelo caminho legítimo -------------------
+      //
+      // A conexão é a do papel da APLICAÇÃO — a única que `bancoEfemero()` publica como campo. É ela
+      // que a operação usa, e é sobre ela que a conclusão deste caso precisa valer.
+      expect(await emitirNumero(banco.cadeiaConexao, EMPRESA_A.id, ANO_DO_CONTADOR)).toBe('1');
+
+      const sequencias = await sequenciasDeNegocio(banco.cadeiaConexao);
+      const contador = sequencias.find((nome) => nome.startsWith(`contrato_${ANO_DO_CONTADOR}_`));
+      // O nome vem do catálogo, e não é recomposto aqui: recompô-lo reimplementaria no caso a regra
+      // que a função aplica, e o par passaria a se conferir contra uma cópia de si mesmo.
+      expect(contador).toBeTypeOf('string');
+      const alvo = `negocio."${contador ?? ''}"`;
+
+      // --- O que o papel da aplicação NÃO alcança ----------------------------------------------
+      const direto = await tentarSql(banco.cadeiaConexao, `SELECT nextval('${alvo}')`);
+      expect(direto.codigo).toBe(PRIVILEGIO_INSUFICIENTE);
+      expect(direto.mensagem).toContain('permission denied for sequence');
+
+      // O companheiro POSITIVO da recusa, e sem ele `42501` não distinguiria "sem privilégio" de
+      // "objeto que não existe com esse nome": o papel DONO executa o mesmo `nextval` sobre o mesmo
+      // objeto. A sequência existe, é utilizável, e o que separa os dois papéis é o privilégio.
+      const peloDono = await tentarSql(conexaoDeMigracao(banco), `SELECT nextval('${alvo}')`);
+      expect(peloDono).toEqual({ codigo: 'GRAVOU', mensagem: '' });
+
+      // --- E a função continua funcionando para o papel da aplicação ---------------------------
+      //
+      // Lido DEPOIS da recusa e na mesma instância: é a metade que prova que o menor privilégio não
+      // quebrou o caminho legítimo. O número é `3` porque o dono acabou de consumir o `2` — e a
+      // igualdade exata é o que torna o avanço observável, em vez de "algum número".
+      expect(await emitirNumero(banco.cadeiaConexao, EMPRESA_A.id, ANO_DO_CONTADOR)).toBe('3');
+
+      // --- As concessões, pelo catálogo --------------------------------------------------------
+      //
+      // Igualdade sobre a lista inteira, e não `not.toContain('PUBLIC')`: a segunda ficaria verde
+      // diante de um `GRANT ALL` a um papel qualquer, e o invariante é que o privilégio novo seja
+      // **exclusivamente** `EXECUTE` para `sysloc_app` (mais o do dono, que é implícito à criação).
+      expect(await concessoesDasFuncoes(banco.cadeiaConexao)).toEqual([
+        'garantir_contador_de_contrato -> sysloc_app -> EXECUTE',
+        'garantir_contador_de_contrato -> sysloc_migracao -> EXECUTE',
+        'proximo_numero_de_contrato -> sysloc_app -> EXECUTE',
+        'proximo_numero_de_contrato -> sysloc_migracao -> EXECUTE',
+      ]);
+
+      // E nenhum dos três privilégios de sequência alcança o papel da aplicação. A afirmação é por
+      // catálogo além de por comportamento: o `nextval` acima só exercita `USAGE`/`UPDATE`, e um
+      // `SELECT` concedido por engano deixaria o valor corrente do contador de uma empresa legível
+      // por qualquer conexão da aplicação.
+      const privilegiosDaSequencia = await (async () => {
+        const sql = abrirConexao(banco.cadeiaConexao, { maximoDeConexoes: 1 });
+        try {
+          const [linha] = await sql<{ usa: boolean; le: boolean; escreve: boolean }[]>`
+            SELECT has_sequence_privilege(${PAPEL_ESPERADO}, ${alvo}, 'USAGE')  AS usa,
+                   has_sequence_privilege(${PAPEL_ESPERADO}, ${alvo}, 'SELECT') AS le,
+                   has_sequence_privilege(${PAPEL_ESPERADO}, ${alvo}, 'UPDATE') AS escreve
+          `;
+          return linha;
+        } finally {
+          await sql.end();
+        }
+      })();
+      expect(privilegiosDaSequencia).toEqual({ usa: false, le: false, escreve: false });
     },
     LIMITE_DO_CASO_MS,
   );

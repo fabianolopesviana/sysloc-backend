@@ -1,13 +1,14 @@
 /**
- * As **seis rotas do imóvel** — a entidade central do cadastro, no molde que a T5 estabeleceu.
+ * As **sete rotas do imóvel** — as seis do cadastro, no molde que a T5 estabeleceu, mais a de
+ * **situação de locação**, que a fatia `contratos-de-locacao` acrescenta (T10).
  *
  * ---------------------------------------------------------------------------
  * A exigência é declarada na CLASSE, e a dimensão é a de CHAVE
  * ---------------------------------------------------------------------------
  *
- * `@ExigeChave(AREA_DO_CADASTRO)` na classe vale para os seis manipuladores — a guarda lê o metadado
+ * `@ExigeChave(AREA_DO_CADASTRO)` na classe vale para os sete manipuladores — a guarda lê o metadado
  * com `getAllAndOverride`, e a declaração da classe é o que ela encontra quando o método não declara
- * nada próprio. Declarar seis vezes o mesmo valor criaria seis lugares para esquecer um.
+ * nada próprio. Declarar sete vezes o mesmo valor criaria sete lugares para esquecer um.
  *
  * A dimensão é a de **chave**, e nunca a de perfil (§11.2): é o que permite ao Admin conceder e
  * retirar o alcance ao cadastro de imóveis por ajuste individual, com a negação individual vencendo
@@ -35,6 +36,45 @@
  * área — que é a direção pela qual o defeito da T5 era explorável.
  *
  * ---------------------------------------------------------------------------
+ * A rota de SITUAÇÃO DE LOCAÇÃO exige apenas a ÁREA — e a leitura da ADR-0019 fica AQUI
+ * ---------------------------------------------------------------------------
+ *
+ * `POST /:id/situacao-de-locacao` não declara nada no método: vale a exigência da classe,
+ * `TELA:imoveis`, e nada além dela. A `Decision` da ADR-0019 diz *"rota própria, governada pela
+ * chave de ação sensível correspondente do catálogo fechado"*, e **não existe ação sensível para
+ * esta transição** — o catálogo é fechado nas sete, e a própria ADR registra entre os *Cons* que ele
+ * não cresce sem decisão explícita (ADR-0011: nenhuma chave nova é criada nesta fatia).
+ *
+ * **A leitura adotada**: a ADR-0019 alcança **transição governada** — ativar, cancelar, retirar de
+ * circulação —, e alternar entre disponível e indisponível é **atributo operacional do cadastro**,
+ * não ato sensível. Ela se apoia nos *Neutros* da própria ADR (*"quais estados cada entidade tem é
+ * decisão da fatia dela; esta ADR fixa a forma da transição"*), e a metade que importa — **rota
+ * própria, nunca campo em atualização do recurso** — é obedecida ao pé da letra.
+ *
+ * **Isto é interpretação do texto, e não conformidade literal.** Fica declarado como tal para que um
+ * gate futuro reconheça a decisão em vez de reabri-la, e para que a fatia que quiser rigor saiba
+ * exatamente o que emendar: a `Decision` da ADR-0019, por `/agent-spec-adr-supersede 0019`.
+ *
+ * **Reusar `ACAO:excluir_cadastro` foi avaliado e descartado**: a ADR-0019 rejeita nominalmente esse
+ * reuso nas Alternativas (*"são efeitos diferentes"*), e quem marca um imóvel em reforma passaria a
+ * precisar da concessão de excluir cadastro.
+ *
+ * DÉBITO COM GATILHO — D43 · F2/T10 · registrado 2026-08-09
+ * (Este marcador **agenda**, e não protege — ele é o oposto do `DECISÃO FECHADA` citado na seção
+ *  anterior, que governa a conjunção das chaves de circulação e é intocável. Aqui a leitura acima é
+ *  provisória por prazo declarado; lá a forma é definitiva.)
+ * O QUÊ: esta rota governa uma **transição de estado sem chave de ação correspondente**. A metade da
+ *        `Decision` da ADR-0019 que exige *"governada pela chave de ação sensível correspondente do
+ *        catálogo fechado"* **não** é satisfeita — só a metade da forma (rota própria) é.
+ * QUANDO FECHA: **antes do congelamento da superfície da API para o handoff**. É o instante em que o
+ *        documento publicado passa a ser o contrato entregue ao frontend, e uma divergência entre a
+ *        ADR e a superfície deixa de ser corrigível sem custo de contrato.
+ * POR QUE NÃO AGORA: a emenda foi **oferecida e adiada por decisão do usuário** na sessão de
+ *        challenge desta fatia (`_run/workflow-report.md`), e o catálogo de chaves é fechado pela
+ *        ADR-0011 — criar `ACAO:*` nova aqui contrariaria uma ADR ativa para satisfazer outra.
+ * ÍNDICE: docs/specs/features/contratos-de-locacao/v1/_run/run-report.md §2, D43
+ *
+ * ---------------------------------------------------------------------------
  * A UNIDADE DE TRABALHO ABRE AQUI, na borda (decisão D1)
  * ---------------------------------------------------------------------------
  *
@@ -42,7 +82,7 @@
  * composição da T7 — o imóvel e os cômodos dele — um commit só, sem tocar o marcador que recusa
  * aninhamento em `packages/db/src/unidade-de-trabalho.ts`.
  *
- * Todas as seis passam por {@link sobContextoDaSessao}, de `comum/contexto-da-sessao.ts`, e nenhuma
+ * Todas as sete passam por {@link sobContextoDaSessao}, de `comum/contexto-da-sessao.ts`, e nenhuma
  * abre unidade por conta própria: propriedade instalada por ponto sobrevive só até o ponto seguinte.
  * Ela era um método privado copiado byte a byte por três controladores — o débito **D12**, fechado
  * pela T9 no mesmo desenho de `comum/validacao.ts`.
@@ -100,6 +140,8 @@ import {
   ESQUEMA_DO_IDENTIFICADOR,
   envelopeDeLista,
   esquemaDaJanelaComCirculacao,
+  esquemaDaSituacaoDeLocacao,
+  esquemaDeImovelAlterado,
   esquemaDeImovelNovo,
   esquemaDoImovel,
   type Imovel,
@@ -273,7 +315,9 @@ export class ImovelController {
       'O corpo é **completo**: não há atualização parcial nesta superfície, e campo ausente é ' +
       'recusa por campo obrigatório. **Mudar o imóvel de conjunto acontece por aqui** — ' +
       '`conjuntoId` é campo como outro qualquer, e o destino passa pela mesma conferência de ' +
-      'alcance da criação. A marca de circulação não é tocada por esta rota.',
+      'alcance da criação. A marca de circulação **não** é tocada por esta rota, e a **situação ' +
+      'de locação também não**: `statusLocacao` não pertence a este corpo e é recusado como chave ' +
+      'desconhecida (`422`) — ela tem rota própria, `POST /v1/imoveis/:id/situacao-de-locacao`.',
   })
   @ApiOkResponse({
     description: 'O imóvel como ele ficou.',
@@ -289,13 +333,66 @@ export class ImovelController {
     @Req() requisicao: FastifyRequest,
   ): Promise<Imovel> {
     const id = validar(ESQUEMA_DO_IDENTIFICADOR, identificador, CAMPO_DO_IDENTIFICADOR);
-    const entrada = validar(esquemaDeImovelNovo, corpo, CAMPO_DO_CORPO);
+    // O esquema é o **derivado**, e não o da criação: `statusLocacao` sai daqui e o `strictObject`
+    // o recusa como chave desconhecida. Ver o marcador `DECISÃO FECHADA` de `esquemaDeImovelAlterado`
+    // em `packages/contracts/src/imovel.ts` — é ele que governa esta linha.
+    const entrada = validar(esquemaDeImovelAlterado, corpo, CAMPO_DO_CORPO);
 
     return await sobContextoDaSessao(
       this.banco,
       requisicao,
       async (tx) => await this.imoveis.alterar(tx, id, entrada),
     );
+  }
+
+  @Post(':id/situacao-de-locacao')
+  @HttpCode(200)
+  // NENHUMA declaração no método, e a ausência é conteúdo: vale a exigência da classe,
+  // `TELA:imoveis`, e nada além. A leitura da ADR-0019 que sustenta isso — e o reuso de
+  // `ACAO:excluir_cadastro` que foi avaliado e descartado — está no cabeçalho deste arquivo.
+  @ApiOperation({
+    summary: 'Informa a situação de locação do imóvel',
+    description:
+      'Alterna o imóvel entre `DISPONIVEL` e `INDISPONIVEL` — *"não ofereça nas buscas"*. É a ' +
+      '**única** porta por onde uma requisição escreve a situação de locação: ela saiu do corpo do ' +
+      '`PUT`, e `LOCADO` **não é informável** (é produzido pela ativação de contrato, e informá-lo ' +
+      'aqui é `422` por valor fora da união). Imóvel com **contrato vigente** é recusado com `422`, ' +
+      '`campo: "statusLocacao"` e `detalhes: { conflito: "IMOVEL_COM_CONTRATO_VIGENTE" }` — o ' +
+      '`LOCADO` que um contrato sustenta não se desfaz por atributo operacional; para liberá-lo, ' +
+      'cancele o contrato. O corpo é fechado num campo só: qualquer outra chave é `422`.',
+  })
+  @ApiOkResponse({
+    description: 'O imóvel como ele ficou.',
+    schema: esquemaPublicado(esquemaDoImovel, 'output'),
+  })
+  @ApiUnauthorizedResponse({ schema: esquemaDoErro([CodigoErro.NAO_AUTENTICADO]) })
+  @ApiForbiddenResponse({ schema: esquemaDoErro([CodigoErro.ACESSO_NEGADO]) })
+  @ApiNotFoundResponse({ schema: esquemaDoErro([CodigoErro.RECURSO_NAO_ENCONTRADO]) })
+  @ApiUnprocessableEntityResponse({ schema: esquemaDoErro([CodigoErro.CAMPO_INVALIDO]) })
+  async definirSituacaoDeLocacao(
+    @Param('id') identificador: string,
+    @Body() corpo: unknown,
+    @Req() requisicao: FastifyRequest,
+  ): Promise<Imovel> {
+    const id = validar(ESQUEMA_DO_IDENTIFICADOR, identificador, CAMPO_DO_IDENTIFICADOR);
+    const { statusLocacao } = validar(esquemaDaSituacaoDeLocacao, corpo, CAMPO_DO_CORPO);
+
+    return await sobContextoDaSessao(this.banco, requisicao, async (tx, sessao) => {
+      const imovel = await this.imoveis.definirSituacaoDeLocacao(tx, id, statusLocacao);
+
+      this.logger.info(
+        {
+          empresaId: sessao.empresaId,
+          entidade: 'imovel',
+          id: imovel.id,
+          acao: 'situacao-de-locacao',
+          statusLocacao: imovel.statusLocacao,
+        },
+        'situação de locação informada',
+      );
+
+      return imovel;
+    });
   }
 
   @Post(':id/retirada')

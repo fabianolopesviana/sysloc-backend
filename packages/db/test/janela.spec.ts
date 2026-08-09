@@ -19,9 +19,14 @@
  * | CA-15    | CT-329 | O número de invocações do executor que `lerCarteira` emite **não depende**
  * |          | (d)    | do número de conjuntos nem do de imóveis: dois cenários de tamanhos
  * |          |        | diferentes produzem a MESMA contagem, e ela é o valor exato declarado. |
+ * | CA-14    | CT-420 | E a leitura do **contrato vigente** entra em LOTE: a contagem sobe de 10 para
+ * |          |        | 11 — uma consulta a mais, e uma só —, continua **igual** nos dois tamanhos,
+ * |          |        | e os dois cenários carregam contrato `ATIVO` de fato. |
+ * | CA-14    | CT-420 | E a lista **vazia** custa **zero** invocações do executor e devolve o mapa
+ * |          | (b)    | vazio: a guarda é anterior à consulta, e não uma consulta que não casa nada. |
  *
  * Rastreabilidade: `CA-15 → CT-330 (RN-13)`, `CA-15 → CT-330 (b) (RN-13)`,
- * `CA-15 → CT-329 (d) (RN-13)`.
+ * `CA-15 → CT-329 (d) (RN-13)`, `CA-14 → CT-420 (RN-15)`, `CA-14 → CT-420 (b) (RN-15)`.
  *
  * ===========================================================================
  * DIVERGÊNCIAS DECLARADAS DA T10 — leia antes de comparar com a §5.1
@@ -45,7 +50,15 @@
  *    de modo que reusar `(b)` aqui daria a dois casos de **critérios e regras distintos**
  *    (`CA-11 → RN-05` lá, `CA-15 → RN-13` aqui) o mesmo identificador. O mapa `CA → CT` da fatia é
  *    consumido pela task de fechamento como dado, e identificador ambíguo entra nela como ambiguidade.
- * 2. **Os dois casos correm em empresas diferentes** — o `CT-330` na A, o `CT-329 (d)` na B. Não é
+ * 1-B. **O `CT-420` é o `CT-329 (d)`, e não um caso novo ao lado dele.** A T9 acrescenta uma leitura
+ *    ao agregado do imóvel, e a invariante do custo da carteira é **a mesma**: o número de invocações
+ *    não depende de N. Um `it` novo que remontasse dois cenários para afirmar a mesma coisa com um
+ *    número diferente seria duplicação semântica (AP-26) — e, pior, deixaria dois casos livres para
+ *    discordar sobre quantas idas ao banco a carteira custa. O `describe` carrega os **dois**
+ *    identificadores porque os dois critérios continuam vivos: o `CA-15` responde pelo custo da
+ *    carteira, e o `CA-14` pelo custo da leitura nova. Nenhuma asserção anterior saiu; o que a T9 fez
+ *    foi subir a âncora de valor e povoar os cenários com contrato ativo.
+ * 2. **Os dois casos correm em empresas diferentes** — o `CT-330` na A, o `CT-329 (d)`/`CT-420` na B. Não é
  *    ornamento: o `CT-330` afirma `total === 5`, que é a contagem da empresa inteira, e um conjunto
  *    criado pelo outro caso a quebraria. O recorte é o **real** (a política de `negocio.conjunto`),
  *    e não uma cláusula escrita aqui — é o mesmo mecanismo que separa as duas sessões da operação.
@@ -95,6 +108,14 @@
  * de imóveis, e a asserção é a **igualdade entre eles** — a âncora de valor exato vem junto para que
  * "as duas contagens são iguais" não passe sobre uma medição que não observou nada.
  *
+ * **CT-420 — o contrato ATIVO nos dois cenários é a âncora que a contagem sozinha não dá.** A
+ * contagem de invocações é a mesma com a consulta de contrato devolvendo linhas ou devolvendo nada, e
+ * por isso ela não distingue *"leu o contrato vigente em lote"* de *"leu um lote que não casa com
+ * imóvel algum"*. O caso povoa **cada** cenário com um contrato ativo e afirma, sobre a árvore
+ * devolvida, quantos imóveis voltam com `contratoVigente` preenchido — e o código deles é o do
+ * contrato que o arranjo ativou, e não um qualquer. É o par com a contagem que fecha as duas metades:
+ * uma diz que **custa** uma consulta, a outra que a consulta **traz o dado certo**.
+ *
  * ===========================================================================
  * MUTANTES EXECUTADOS — os dois reprovam
  * ===========================================================================
@@ -124,6 +145,23 @@
  *   * **reversão** — os fontes foram restaurados e conferidos idênticos ao original por `diff`, e o
  *     controle voltou a `62 passed`.
  *
+ * **Os dois da T9**, medidos sobre a árvore com o contrato vigente já no agregado — controle
+ * `13 arquivos, 84 casos, 0 falhas`:
+ *
+ *   * **MT9-2 · a leitura do contrato vigente vira N+1** (`comAgregadoEmLote`, em
+ *     `packages/db/src/imovel.ts`, chamando `lerContratosVigentesDeImoveis` **por imóvel** num laço,
+ *     em vez de uma vez para a página inteira — a árvore devolvida continua **idêntica**):
+ *     `1 failed | 83 passed`, no **CT-420** — `expected 19 to be 13`. Os dois números medem o mutante:
+ *     com o laço, o cenário pequeno custa 13 invocações e o grande custa 19, que é a dependência de N
+ *     aparecendo. O `CT-419`, pela rota, **atravessa este mutante verde** — ele prova a corretude do
+ *     campo, e não o custo;
+ *   * **MT9-5 · a guarda da lista vazia sai** (`lerContratosVigentesDeImoveis` sem o
+ *     `if (imoveisIds.length === 0)`, emitindo `= ANY('{}')`): `1 failed | 83 passed`, no
+ *     **CT-420 (b)** — `expected 1 to be +0`. O `CT-420` principal atravessa verde, porque a carteira
+ *     povoada nunca chama a função com lista vazia — é literalmente a lacuna que o sub-caso fecha;
+ *   * **reversão** — os fontes foram restaurados e conferidos idênticos ao original por `diff`, e o
+ *     controle voltou a `84 passed`.
+ *
  * ===========================================================================
  * ISOLAMENTO DE ORDEM — cada caso passa sozinho (Gate 1, rodada 2)
  * ===========================================================================
@@ -145,6 +183,11 @@
  *   * **`MT10-2` reconfirmado** sobre o arranjo novo: `1 failed | 61 passed`, no **CT-330 (b)** —
  *     a concatenação das três páginas deixa de ser a lista crescente de identificadores.
  *
+ * **Remedido depois da T9**, com o sub-caso novo: `CT-330` isolado — `2 passed | 2 skipped` (o filtro
+ * casa o `describe` também); `CT-330 (b)` isolado — `1 passed | 3 skipped`; `CT-329 (d)`/`CT-420`
+ * isolado — `1 passed | 3 skipped`; `CT-420 (b)` isolado — `1 passed | 3 skipped`. O `CT-420 (b)` não
+ * escreve linha alguma e não depende do arranjo do caso irmão.
+ *
  * ===========================================================================
  * Precondição privilegiada
  * ===========================================================================
@@ -159,9 +202,19 @@
 
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { criarPessoa } from '../src/cadastro-de-pessoa.ts';
 import { acrescentarComodo } from '../src/comodo.ts';
 import { criarConjunto, lerCarteira, listarConjuntos } from '../src/conjunto.ts';
 import * as contextoDeTenant from '../src/contexto.ts';
+import {
+  ativarContrato,
+  criarContrato,
+  emitirNumeroDeContrato,
+  garantirContadorDeContrato,
+  lerAnoDaSerieDeContrato,
+  lerContratosVigentesDeImoveis,
+} from '../src/contrato.ts';
+import { derivarTerminoDaLocacao, derivarValorTotal } from '../src/derivacao-de-contrato.ts';
 import { criarImovel } from '../src/imovel.ts';
 import { EMPRESA_A, EMPRESA_B } from '../src/semente.ts';
 import { type AcessoAoBanco, abrirAcessoAoBanco } from '../src/unidade-de-trabalho.ts';
@@ -218,11 +271,24 @@ const SO_EM_CIRCULACAO = { incluirRetirados: false } as const;
  * Quantas invocações do executor `lerCarteira` emite, qualquer que seja o tamanho da carteira.
  *
  * Duas pela página de conjuntos (a projeção de colunas, o predicado) mais a consulta, duas pelo total
- * (o predicado e a consulta), três pelos imóveis (a projeção, o predicado e a consulta) e duas pelos
- * cômodos (a projeção e a consulta) — **dez**. O valor exato é a âncora de não-vacuidade: sem ele,
- * *"as duas contagens são iguais"* passaria sobre uma medição que não observou invocação alguma.
+ * (o predicado e a consulta), três pelos imóveis (a projeção, o predicado e a consulta), duas pelos
+ * cômodos (a projeção e a consulta) e **uma** pelo contrato vigente — **onze**. O valor exato é a
+ * âncora de não-vacuidade: sem ele, *"as duas contagens são iguais"* passaria sobre uma medição que
+ * não observou invocação alguma.
+ *
+ * A leitura do contrato vigente custa **uma** invocação, e não duas, porque a projeção dela é escrita
+ * na própria consulta: ela serve a um consumidor só, e um fragmento de colunas — que é o desenho
+ * correto quando a projeção é compartilhada por seis consultas, como em `colunasDoContrato` — seria
+ * aqui uma invocação a mais sem nada em troca.
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo e o valor `10` descrevia a carteira **antes**
+ * da T9. O agregado do imóvel passou a compor também o contrato vigente, por decisão declarada da
+ * task, e a leitura nova é **em lote** — uma consulta para a página inteira, no molde de
+ * `lerComodosDeImoveis`. A âncora **sobe**, e não afrouxa: continua sendo igualdade sobre valor exato,
+ * e a asserção de que os dois tamanhos produzem o mesmo número segue intacta. Uma implementação N+1
+ * da leitura nova reprova aqui exatamente como a dos imóveis reprovava (mutante MT10-1).
  */
-const INVOCACOES_DA_CARTEIRA = 10;
+const INVOCACOES_DA_CARTEIRA = 11;
 
 /** A janela dos dois cenários do custo: larga o bastante para conter os dois inteiros. */
 const JANELA_LARGA = { limite: 50, deslocamento: 0 } as const;
@@ -238,6 +304,29 @@ const CONJUNTOS_DO_CENARIO_PEQUENO = CARTEIRA_PEQUENA.length;
 const CONJUNTOS_DO_CENARIO_GRANDE = CARTEIRA_PEQUENA.length + CARTEIRA_ACRESCIDA.length;
 const IMOVEIS_DO_CENARIO_PEQUENO = somar(CARTEIRA_PEQUENA);
 const IMOVEIS_DO_CENARIO_GRANDE = somar(CARTEIRA_PEQUENA) + somar(CARTEIRA_ACRESCIDA);
+
+/**
+ * Quantos contratos `ATIVO` cada cenário carrega — {@link povoar} ativa **um** por chamada.
+ *
+ * São as âncoras do `CT-420`: a contagem de invocações é a mesma com a consulta de contrato
+ * devolvendo linhas ou devolvendo nada, e sem elas o caso não distinguiria *"leu o contrato vigente
+ * em lote"* de *"leu um lote que não casa com imóvel algum"*.
+ */
+const CONTRATOS_ATIVOS_DO_CENARIO_PEQUENO = 1;
+const CONTRATOS_ATIVOS_DO_CENARIO_GRANDE = 2;
+
+/** O que a lista vazia custa e o que ela devolve — o `CT-420 (b)` afirma os dois. */
+const SEM_NENHUMA_INVOCACAO = 0;
+
+/** Os termos do contrato do arranjo — nenhum caso afirma coisa alguma sobre eles. */
+const TERMOS_DO_CONTRATO = {
+  dataInicioLocacao: '2026-03-15',
+  prazoMeses: 12,
+  valorMensal: 2500,
+  diaVencimento: 10,
+  gerarCobrancasAutomaticamente: true,
+  pdfContratoArquivo: null,
+} as const;
 
 let banco: BancoMigrado;
 let acesso: AcessoAoBanco;
@@ -356,12 +445,12 @@ describe('CT-330 — a janela devolve página e total da mesma transação, sem 
   );
 });
 
-describe('CT-329 (d) — a carteira custa o mesmo número de idas ao banco em qualquer tamanho', () => {
+describe('CT-329 (d) / CT-420 — a carteira custa o mesmo número de idas ao banco em qualquer tamanho', () => {
   it(
     'dois cenários com quantidades diferentes de conjuntos e imóveis emitem a MESMA contagem',
     async () => {
       // --- Passo 1: o cenário pequeno, gravado pelas PORTAS de escrita ---------------------------
-      await povoar(CARTEIRA_PEQUENA);
+      const codigoDoPequeno = await povoar(CARTEIRA_PEQUENA);
 
       const pequeno = await lerCarteiraContando();
 
@@ -370,13 +459,32 @@ describe('CT-329 (d) — a carteira custa o mesmo número de idas ao banco em qu
       expect(pequeno.carteira.conjuntos).toHaveLength(CONJUNTOS_DO_CENARIO_PEQUENO);
       expect(contarImoveis(pequeno.carteira.conjuntos)).toBe(IMOVEIS_DO_CENARIO_PEQUENO);
 
+      // E a âncora do CT-420: a leitura em lote **trouxe dado**. Sem ela, a contagem de invocações
+      // seria idêntica sobre um lote que não casa com imóvel algum, e a metade "custa uma consulta"
+      // passaria sem que a metade "traz o contrato certo" fosse afirmada.
+      expect(codigosVigentes(pequeno.carteira.conjuntos)).toEqual([codigoDoPequeno]);
+
       // --- Passo 2: o cenário acrescido ----------------------------------------------------------
-      await povoar(CARTEIRA_ACRESCIDA);
+      const codigoDoGrande = await povoar(CARTEIRA_ACRESCIDA);
 
       const grande = await lerCarteiraContando();
 
       expect(grande.carteira.conjuntos).toHaveLength(CONJUNTOS_DO_CENARIO_GRANDE);
       expect(contarImoveis(grande.carteira.conjuntos)).toBe(IMOVEIS_DO_CENARIO_GRANDE);
+
+      // Os DOIS contratos, e não só o segundo: o cenário grande contém o pequeno, e a lista fechada é
+      // o que impede uma leitura que só alcançasse o último lote de passar despercebida.
+      expect([...codigosVigentes(grande.carteira.conjuntos)].sort()).toEqual(
+        [codigoDoPequeno, codigoDoGrande].sort(),
+      );
+      // As contagens dos dois cenários, por extenso — as âncoras que declaram que o número de
+      // contratos vigentes CRESCEU entre as duas medições, enquanto o de invocações não.
+      expect(codigosVigentes(pequeno.carteira.conjuntos)).toHaveLength(
+        CONTRATOS_ATIVOS_DO_CENARIO_PEQUENO,
+      );
+      expect(codigosVigentes(grande.carteira.conjuntos)).toHaveLength(
+        CONTRATOS_ATIVOS_DO_CENARIO_GRANDE,
+      );
 
       // --- Passo 3: a contagem NÃO mudou ---------------------------------------------------------
       //
@@ -386,6 +494,40 @@ describe('CT-329 (d) — a carteira custa o mesmo número de idas ao banco em qu
       // E o valor exato, que é a âncora de não-vacuidade da igualdade acima: sem ele, uma medição que
       // não observasse invocação nenhuma (dois zeros) satisfaria a linha anterior.
       expect(pequeno.invocacoes).toBe(INVOCACOES_DA_CARTEIRA);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-420 (b) — a lista VAZIA devolve o mapa vazio sem emitir consulta alguma',
+    async () => {
+      // A outra ponta do custo: a leitura em lote custa **uma** consulta para N imóveis e **nenhuma**
+      // para zero. Sem esta metade, uma implementação que pagasse uma ida ao banco para descobrir que
+      // `= ANY('{}')` não casa nada atravessaria o caso acima intacta — a contagem da carteira mede a
+      // chamada com lista **cheia**, e nunca alcança a guarda.
+      //
+      // A contagem é do MESMO `Proxy` do caso acima: o executor é a fronteira real da função, e nada
+      // nasce em `packages/db/src/**` para que a prova exista (Iron Law #6).
+      let invocacoes = 0;
+
+      const vigentes = await sobContexto(CONTEXTO_DE_B, async (tx) => {
+        const contado = new Proxy(tx, {
+          apply(alvo, esteObjeto, argumentos) {
+            invocacoes += 1;
+
+            return Reflect.apply(
+              alvo as unknown as (...parametros: unknown[]) => unknown,
+              esteObjeto,
+              argumentos,
+            );
+          },
+        });
+
+        return await lerContratosVigentesDeImoveis(contado, []);
+      });
+
+      expect(invocacoes).toBe(SEM_NENHUMA_INVOCACAO);
+      expect(vigentes.size).toBe(SEM_NENHUMA_INVOCACAO);
     },
     LIMITE_DO_CASO_MS,
   );
@@ -416,17 +558,23 @@ let sequenciaDoIdentificador = 0;
 
 /**
  * Grava, na empresa B, um conjunto por posição do arranjo, cada um com o número de imóveis que a
- * posição declara, e um cômodo por imóvel.
+ * posição declara, e um cômodo por imóvel. Ativa **um** contrato sobre o primeiro imóvel criado e
+ * devolve o código dele.
  *
  * Os cômodos existem porque a carteira os lê: sem nenhum, a consulta de cômodos seria dispensada
  * pela guarda de lista vazia de `lerComodosDeImoveis`, e a contagem observada deixaria de ser a da
- * carteira povoada — que é o cenário que o aceite descreve.
+ * carteira povoada — que é o cenário que o aceite descreve. O contrato ativo existe pela razão
+ * simétrica, e é a âncora do `CT-420`: sem ele, a consulta de contrato vigente correria sobre um lote
+ * que não casa com imóvel algum, e a contagem seria a mesma.
  *
  * O identificador municipal é composto a partir de um contador de módulo porque a unicidade é por
  * empresa e **alcança os retirados**: repetir um valor entre chamadas faria a segunda reprovar por um
- * motivo que nada tem a ver com o caso (AP-08).
+ * motivo que nada tem a ver com o caso (AP-08). O documento das duas pessoas sai do mesmo contador,
+ * pela mesma razão.
  */
-async function povoar(imoveisPorConjunto: readonly number[]): Promise<void> {
+async function povoar(imoveisPorConjunto: readonly number[]): Promise<string> {
+  const criados: string[] = [];
+
   for (const [indice, quantidade] of imoveisPorConjunto.entries()) {
     const conjunto = await sobContexto(
       CONTEXTO_DE_B,
@@ -466,8 +614,104 @@ async function povoar(imoveisPorConjunto: readonly number[]): Promise<void> {
             observacoes: null,
           }),
       );
+
+      criados.push(imovel.id);
     }
   }
+
+  const [primeiro] = criados;
+
+  if (primeiro === undefined) {
+    throw new Error('o arranjo do CT-420 precisa de ao menos um imóvel para ocupar');
+  }
+
+  return await ocuparComContratoAtivo(primeiro);
+}
+
+/**
+ * Monta e ativa um contrato sobre o imóvel informado, **pelas portas de escrita**, e devolve o código.
+ *
+ * A série é emitida pelo **protocolo das duas unidades sequenciais** que a borda usa (§7.4): a
+ * primeira garante o contador e commita, a segunda emite o número e grava. Fundi-las é o desenho que a
+ * ADR-0015 recusa, e um acessório que o fizesse montaria o cenário por um caminho que a operação não
+ * tem.
+ *
+ * As derivações da ativação saem do ponto único da RD-10 (`derivarTerminoDaLocacao` e
+ * `derivarValorTotal`), e não de uma conta escrita aqui: nenhum caso deste arquivo as afirma, e
+ * recalculá-las criaria uma segunda fonte do mesmo fato dentro do arranjo.
+ */
+async function ocuparComContratoAtivo(imovelId: string): Promise<string> {
+  sequenciaDoIdentificador += 1;
+  const marca = String(sequenciaDoIdentificador).padStart(3, '0');
+
+  const locador = await sobContexto(
+    CONTEXTO_DE_B,
+    async (tx) => await criarPessoa(tx, 'locador', dadosDePessoa(`Ana ${marca}`, `1${marca}`)),
+  );
+  const locatario = await sobContexto(
+    CONTEXTO_DE_B,
+    async (tx) => await criarPessoa(tx, 'locatario', dadosDePessoa(`Bruno ${marca}`, `2${marca}`)),
+  );
+
+  const ano = await sobContexto(CONTEXTO_DE_B, lerAnoDaSerieDeContrato);
+
+  await sobContexto(CONTEXTO_DE_B, async (tx) => {
+    await garantirContadorDeContrato(tx, ano);
+  });
+
+  const contrato = await sobContexto(CONTEXTO_DE_B, async (tx) => {
+    const numero = await emitirNumeroDeContrato(tx, ano);
+
+    return await criarContrato(
+      tx,
+      {
+        imovelId,
+        locadorId: locador.id,
+        locatarioId: locatario.id,
+        fiadoresIds: [],
+        ...TERMOS_DO_CONTRATO,
+      },
+      { ano, numero },
+    );
+  });
+
+  await sobContexto(CONTEXTO_DE_B, async (tx) => {
+    const ativado = await ativarContrato(tx, contrato.codigo, {
+      dataFimLocacao: derivarTerminoDaLocacao(
+        TERMOS_DO_CONTRATO.dataInicioLocacao,
+        TERMOS_DO_CONTRATO.prazoMeses,
+      ),
+      valorTotalContrato: derivarValorTotal(
+        TERMOS_DO_CONTRATO.valorMensal,
+        TERMOS_DO_CONTRATO.prazoMeses,
+      ),
+    });
+
+    if (ativado === undefined) {
+      throw new Error(`o arranjo do CT-420 não conseguiu ativar o contrato ${contrato.codigo}`);
+    }
+  });
+
+  return contrato.codigo;
+}
+
+/** O cadastro completo de uma pessoa do arranjo — o documento é único por construção. */
+function dadosDePessoa(nome: string, sufixoDoDocumento: string): Parameters<typeof criarPessoa>[2] {
+  return {
+    nome,
+    tipoPessoa: 'PESSOA_FISICA',
+    documentoPrincipal: `1000000${sufixoDoDocumento}`,
+    rg: null,
+    email: `${sufixoDoDocumento}@exemplo.com.br`,
+    telefone: '11999990000',
+    logradouro: 'Rua das Acácias',
+    numero: '100',
+    complemento: null,
+    bairro: 'Centro',
+    cidade: 'São Paulo',
+    estado: 'SP',
+    cep: '01000000',
+  };
 }
 
 /**
@@ -510,6 +754,22 @@ async function lerCarteiraContando(): Promise<{
 /** Quantos imóveis a árvore inteira carrega — a âncora de tamanho de cada cenário. */
 function contarImoveis(conjuntos: Awaited<ReturnType<typeof lerCarteira>>['conjuntos']): number {
   return conjuntos.reduce((total, conjunto) => total + conjunto.imoveis.length, 0);
+}
+
+/**
+ * Os códigos dos contratos vigentes que a árvore inteira apresenta — a âncora do `CT-420`.
+ *
+ * Ela devolve os **códigos**, e não uma contagem: é o que permite afirmar que o contrato apresentado é
+ * o que o arranjo ativou, e não um qualquer que a consulta tenha alcançado.
+ */
+function codigosVigentes(
+  conjuntos: Awaited<ReturnType<typeof lerCarteira>>['conjuntos'],
+): readonly string[] {
+  return conjuntos.flatMap((conjunto) =>
+    conjunto.imoveis
+      .map((imovel) => imovel.contratoVigente?.codigo)
+      .filter((codigo): codigo is string => codigo !== undefined),
+  );
 }
 
 /** A soma de um arranjo de contagens — usada só para declarar o tamanho esperado dos cenários. */

@@ -90,6 +90,14 @@
  * daqui: ele é **classe de erro**, no mesmo critério de `ErroDeUnidadeAninhada` e de
  * `ErroDePessoaForaDoContexto`, e não um caminho para dado.
  *
+ * De lá sai também, pela fatia de contratos, `definirSituacaoDeLocacaoDoImovel` — a **porta
+ * estreita** que escreve `status_locacao`. Ela entra pelo mesmo critério das cinco, e existe para
+ * que o **único** caminho que grava `LOCADO` seja enumerável: a porta de alteração continua tipada em
+ * `SituacaoInformavel`, e a assimetria entre as duas é decisão fechada da fatia anterior, com prova
+ * dedicada. Publicá-la é o que dispensa a ativação de contrato de escrever a coluna por fora — e o
+ * que faz "há três produtores de `status_locacao`, todos por porta" ser uma afirmação verificável em
+ * vez de uma promessa.
+ *
  * De lá **não** sai `lerImoveisDeConjuntos`, e a ausência é deliberada — a mesma de
  * `lerComodosDeImoveis` um nível abaixo. Quem a consome é `./conjunto.js`, para compor a carteira, e
  * publicá-la ofereceria a `apps/api` um caminho para ler imóvel **por conjunto** fora das duas
@@ -116,6 +124,35 @@
  * segunda soma apareceria como um segundo símbolo, e não como uma linha a mais escondida numa
  * consulta.
  *
+ * `./contrato.js` entra pela mesma pergunta, e com a mesma resposta: as operações do ciclo de vida do
+ * contrato — inclusive as **duas da série** — **recebem** o executor de quem já abriu a unidade, não
+ * abrem conexão nem transação e não devolvem executor. As duas da série não abrem exceção: elas
+ * invocam pelo executor recebido as funções `SECURITY DEFINER` que a migração `0008` criou, e é
+ * justamente por isso que a aplicação nunca precisa — nem pode — tocar a sequência (ADR-0020).
+ *
+ * Elas repetem as razões das anteriores — enumerabilidade do alcance a `negocio`, um lugar único sob a
+ * política, o predicado de circulação por padrão, a tradução da violação de unicidade — e acrescentam
+ * a que é própria desta entidade: **a chave da porta é o código legível** (ADR-0017), e o UUID
+ * interno, que sai em `ContratoPersistido.id`, só existe para o vínculo de fiador e para a porta
+ * estreita do imóvel.
+ *
+ * São **duas** traduções de unicidade, e não uma: `ErroDeCodigoEmUso` e
+ * `ErroDeImovelComContratoVigente` saem daqui pelo mesmo critério de `ErroDeIdentificadorMunicipalEmUso`
+ * — são classes de erro, não caminho para dado. Traduzir `23505` em bloco esconderia uma colisão atrás
+ * da outra.
+ *
+ * De lá **não** sai `lerFiadoresDeContratos`, e a ausência é deliberada — a mesma de
+ * `lerComodosDeImoveis` e de `lerImoveisDeConjuntos`: não há rota de leitura de fiador, ele chega e
+ * volta dentro do agregado do contrato, e publicá-la ofereceria a `apps/api` um caminho para ler o
+ * vínculo sem passar pelo pai.
+ *
+ * `./derivacao-de-contrato.js` entra pelo MESMO critério de `somarMetragem`, e não pelo das portas:
+ * as duas funções são **puras** sobre valor já em mãos — não recebem executor, não tocam o banco,
+ * não leem relógio e não são caminho para dado nenhum. Elas saem daqui porque são a materialização
+ * do *ponto único de derivação* que a RD-10 exige, e ter o ponto com nome é o que torna a afirmação
+ * verificável: uma segunda derivação da data de fim ou do valor total apareceria como um segundo
+ * símbolo neste índice, e não como uma linha a mais escondida no serviço que ativa o contrato.
+ *
  * `./cadastro-de-pessoa.js` entra pela mesma pergunta, e com a mesma resposta: as cinco operações do
  * ciclo de vida dos três cadastros de pessoa — locador, locatário e fiador — **recebem** o executor
  * de quem já abriu a unidade, não abrem conexão nem transação e não devolvem executor. Elas repetem
@@ -124,6 +161,15 @@
  * parâmetro, e a parametrização é por tabela**. Publicar UMA porta para os três papéis é o que
  * impede a borda de escolher a tabela por conta própria; e `PAPEIS_DE_PESSOA` sai junto porque é a
  * união fechada que a borda usa para fixar o papel de cada controlador, sem redigitar os três nomes.
+ *
+ * De lá sai também `localizarPessoas`, a leitura **em lote** por papel, e ela entra pelo critério das
+ * demais — recebe o executor, não abre conexão, não devolve executor — com uma razão própria: a
+ * coleção de fiadores de um contrato **não tem teto** (RD-06), e conferi-la com uma leitura por item
+ * faria o número de idas ao banco ser escolhido pela requisição. Publicá-la é o que dá à borda um
+ * caminho para conferir N cadastros num custo que **não depende de N** — e é o que impede a próxima
+ * conferência de nascer como laço, na T7 ou depois. Ela devolve um **mapa** por identificador, e não
+ * uma lista, porque quem chama precisa iterar os identificadores na ordem em que o cliente os enviou
+ * para nomear o primeiro problema; o docblock dela registra por quê.
  *
  * De lá saem também, pela T9, `ErroDeDocumentoEmUso` e `gravarCadastroSobRestricaoDeUnicidade`. A
  * classe entra pelo MESMO critério de `ErroDeUnidadeAninhada`, de `ErroDePessoaForaDoContexto` e de
@@ -166,6 +212,7 @@ export {
   type JanelaDePessoasCadastradas,
   listarPessoas,
   localizarPessoa,
+  localizarPessoas,
   PAPEIS_DE_PESSOA,
   type PaginaDePessoasCadastradas,
   type PapelDePessoa,
@@ -201,6 +248,29 @@ export {
 } from './conjunto.js';
 export * as contextoDeTenant from './contexto.js';
 export {
+  alterarContrato,
+  ativarContrato,
+  type ContratoPersistido,
+  cancelarContrato,
+  criarContrato,
+  type DadosDoContrato,
+  type DerivacoesDaAtivacao,
+  definirCirculacaoDoContrato,
+  ErroDeCodigoEmUso,
+  ErroDeImovelComContratoVigente,
+  emitirNumeroDeContrato,
+  type FiadorDoContrato,
+  garantirContadorDeContrato,
+  type JanelaDeContratos,
+  lerAnoDaSerieDeContrato,
+  listarContratos,
+  localizarContrato,
+  type NumeroDaSerie,
+  type PaginaDeContratosPersistidos,
+  substituirFiadoresDoContrato,
+} from './contrato.js';
+export { derivarTerminoDaLocacao, derivarValorTotal } from './derivacao-de-contrato.js';
+export {
   type AlvoDeReemissao,
   admitirEmpresa,
   type EmpresaNova,
@@ -222,8 +292,10 @@ export {
   alterarImovel,
   type ConflitoDeIdentificador,
   criarImovel,
+  type DadosDaAlteracaoDoImovel,
   type DadosDoImovel,
   definirCirculacaoDoImovel,
+  definirSituacaoDeLocacaoDoImovel,
   ErroDeIdentificadorMunicipalEmUso,
   type ImovelPersistido,
   type JanelaDeImoveis,

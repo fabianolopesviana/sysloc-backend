@@ -458,6 +458,21 @@ const SIMBOLOS_ESPERADOS = [
   'definirCirculacaoDaPessoa',
   'listarPessoas',
   'localizarPessoa',
+  // T6 da fatia `contratos-de-locacao`, rodada 2 — a leitura EM LOTE por papel.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a correção do bloqueante `P1` da Revisão Técnica publica UM símbolo
+  // novo no índice por decisão declarada. Ela entra pelo critério de sempre — **recebe** o executor
+  // de quem já abriu a unidade de trabalho, não abre conexão, não reserva e não devolve executor —,
+  // com a razão própria desta leitura: a coleção de fiadores de um contrato **não tem teto** (RD-06),
+  // e a conferência de alcance e circulação escrita como uma leitura por item fazia o número de idas
+  // ao banco ser escolhido pela requisição, dentro de uma transação que segura conexão de um pool
+  // compartilhado entre empresas. O custo passa a ser UMA consulta por papel, independente de N.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o
+  // defeito que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia.
+  // **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  'localizarPessoas',
   // T9 da fatia `cadastro-de-imoveis-e-pessoas` — a tradução da violação de unicidade do documento:
   // a classe de erro do domínio e o envoltório que a produz.
   //
@@ -585,6 +600,89 @@ const SIMBOLOS_ESPERADOS = [
   'esquemaNegocio.statusLocacao',
   'esquemaNegocio.tipoImovel',
   'esquemaNegocio.tipoPessoa',
+  // T3 da fatia `contratos-de-locacao` — as DUAS tabelas do contrato e o enum de estado, criados
+  // pela migração `0007`.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T3 publica três símbolos novos no schema por decisão declarada na
+  // §1 da task (`Símbolos públicos criados`). Eles entram pelo mesmo critério das nove da T2: são
+  // **declaração de estrutura**, não caminho para dado — quem os tem em mãos ainda precisa de um
+  // executor para chegar ao banco, e o executor não sai do índice.
+  //
+  // As duas funções `SECURITY DEFINER` da mesma task (`garantir_contador_de_contrato` e
+  // `proximo_numero_de_contrato`) **não aparecem aqui**, e a ausência não é esquecimento: elas são
+  // objetos do BANCO, criados pela migração `0008`, e não símbolos deste pacote. Quem as publicará
+  // como função de domínio é a T5, em `packages/db/src/contrato.ts`.
+  'esquemaNegocio.contrato',
+  'esquemaNegocio.contratoFiador',
+  'esquemaNegocio.statusContrato',
+  // T4 da fatia `contratos-de-locacao` — as DUAS derivações puras da ativação.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T4 publica dois símbolos novos no índice por decisão declarada na §1
+  // da task (`Símbolos públicos criados: derivarTerminoDaLocacao, derivarValorTotal`). Elas entram
+  // pelo MESMO critério de `somarMetragem`, e não pelo das portas: são funções **puras** sobre valor
+  // já em mãos — não recebem executor, não abrem conexão, não tocam o banco e não leem relógio.
+  //
+  // Elas são publicadas porque são a materialização do *ponto único de derivação* que a RD-10 exige,
+  // e ter o ponto com nome é o que torna a afirmação verificável: uma segunda derivação da data de
+  // fim ou do valor total apareceria aqui como um símbolo excedente, e não como uma linha a mais
+  // escondida no serviço que ativa o contrato.
+  //
+  // O que **não** sai do pacote, e a ausência é deliberada: `ultimoDiaDoMes`, `ehBissexto` e
+  // `formatarEmUtc`, os três acessórios de `src/derivacao-de-contrato.ts`. Eles são o mecanismo
+  // interno das duas derivações; publicá-los daria à borda pedaços da aritmética para recompor, que
+  // é exatamente o vazamento que a §7 da task proíbe — quem ativa chama as duas e não recalcula
+  // nada. Mesmo critério de `empresaDoContexto` e de `lerComodosDeImoveis`.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o
+  // defeito que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia.
+  // **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  'derivarTerminoDaLocacao',
+  'derivarValorTotal',
+  // T5 da fatia `contratos-de-locacao` — a PORTA do contrato (treze símbolos) mais a porta estreita
+  // da situação de locação do imóvel (um), ordenados no conjunto pela posição de cada nome (a
+  // comparação é sobre a lista ordenada).
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T5 publica catorze símbolos novos no índice por decisão declarada na
+  // §1 e na §5.2 da task. O critério é o mesmo de todas as portas anteriores: elas **recebem** o
+  // executor de quem já abriu a unidade de trabalho, não abrem conexão, não reservam e não devolvem
+  // executor. Isso vale inclusive para as DUAS da série (`garantirContadorDeContrato`,
+  // `emitirNumeroDeContrato`) e para `lerAnoDaSerieDeContrato`: elas invocam, pelo executor recebido,
+  // funções `SECURITY DEFINER` do banco — a aplicação nunca alcança a sequência, e o `CT-431` afirma
+  // que ela sequer tem privilégio para tanto.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o defeito
+  // que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia. **Nenhuma
+  // entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // O que **não** sai do pacote, e a ausência é deliberada: `lerFiadoresDeContratos`, de
+  // `src/contrato.ts`. Ela é a leitura em lote que o próprio módulo consome para montar o agregado, e
+  // publicá-la ofereceria a `apps/api` um caminho para ler o vínculo de fiador **sem passar pelo
+  // contrato** — mesmo critério de `lerComodosDeImoveis` e de `lerImoveisDeConjuntos`. As duas
+  // traduções de unicidade (`gravarSobRestricaoDoCodigo`, `gravarSobIndiceDeVigencia`) também ficam
+  // dentro: elas são compostas por dentro das portas, ao contrário de
+  // `gravarCadastroSobRestricaoDeUnicidade`, cuja publicação existe para preservar as provas que
+  // observam a violação crua.
+  //
+  // Os tipos que elas publicam (`ContratoPersistido`, `DadosDoContrato`, `DerivacoesDaAtivacao`,
+  // `FiadorDoContrato`, `JanelaDeContratos`, `NumeroDaSerie`, `PaginaDeContratosPersistidos`) não
+  // aparecem aqui porque não existem em tempo de execução, e este caso observa o módulo carregado.
+  'ErroDeCodigoEmUso',
+  'ErroDeImovelComContratoVigente',
+  'alterarContrato',
+  'ativarContrato',
+  'cancelarContrato',
+  'criarContrato',
+  'definirCirculacaoDoContrato',
+  'definirSituacaoDeLocacaoDoImovel',
+  'emitirNumeroDeContrato',
+  'garantirContadorDeContrato',
+  'lerAnoDaSerieDeContrato',
+  'listarContratos',
+  'localizarContrato',
+  'substituirFiadoresDoContrato',
   'incrementarVersaoPermissoes',
   'lerAjustesDaPessoa',
   // T8 da fatia `autorizacao-e-ciclo-de-acesso` — as SEIS operações do ciclo de vida das pessoas de

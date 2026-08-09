@@ -160,6 +160,7 @@ import {
   PREFIXO_DE_VERSAO,
   TOKEN_LOGGER,
 } from '../src/configuracao/ambiente.ts';
+import { CAMINHO_DOS_CONTRATOS } from '../src/contratos/contrato.controller.ts';
 import { CAMINHO_DOS_COMODOS } from '../src/imoveis/comodo.controller.ts';
 import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
 import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
@@ -360,9 +361,52 @@ const CAMINHOS_PUBLICOS_ACEITOS: readonly string[] = [
  * Vale o mesmo dos parágrafos acima: nenhuma entrada anterior saiu, o conjunto público continua
  * inalterado, e a igualdade segue exata nos dois sentidos.
  *
- * **Este arquivo não está na §5.2 da T7 nem na da T9** — divergência declarada nas duas. Ele é blast
- * radius por construção: a âncora afirma por igualdade de conjunto, e publicar caminho novo a faz
- * reprovar, que é exatamente o que ela existe para fazer. A âncora **sobe**; ela não vira contenção.
+ * SUT_IS_CORRECT_BECAUSE: a T6 da fatia `contratos-de-locacao` publicou as seis rotas de cadastro de
+ * contrato, e as seis são **protegidas** — a classe declara `@ExigeChave('TELA:contratos')` e as duas
+ * de circulação declaram a conjunção com `ACAO:excluir_cadastro` no método (ADR-0018); nenhuma é
+ * marcada `@RotaPublica()`, e por isso a sonda sem cookie recebe `401 NAO_AUTENTICADO` da guarda. Pela
+ * classificação por **caminho** deste caso, elas entram como **quatro** entradas (`POST` e
+ * `GET /v1/contratos` são o mesmo caminho, e `GET` e `PUT /v1/contratos/:codigo` também). O parâmetro
+ * é `:codigo`, e não `:id`, porque a chave exposta do contrato é o código legível (ADR-0017). Vale o
+ * mesmo dos parágrafos acima: nenhuma entrada anterior saiu, o conjunto público continua inalterado, e
+ * a igualdade segue exata nos dois sentidos.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T7 da fatia `contratos-de-locacao` publicou
+ * `POST /v1/contratos/:codigo/ativacao` — a primeira transição de estado governada do produto
+ * (ADR-0019) —, e ela é **protegida**: o método declara a conjunção inteira
+ * `@ExigeChaves('TELA:contratos', 'ACAO:ativar_contrato')` (ADR-0018), não é marcada
+ * `@RotaPublica()`, e por isso a sonda sem cookie recebe `401 NAO_AUTENTICADO` da guarda. Pela
+ * classificação por **caminho** deste caso ela entra como **uma** entrada nova, porque nenhum outro
+ * método atende aquele caminho. Vale o mesmo dos parágrafos acima: nenhuma entrada anterior saiu, o
+ * conjunto público continua inalterado, e a igualdade segue exata nos dois sentidos — **nada foi
+ * afrouxado**, o `toEqual` continua sendo igualdade de conjunto contra um inventário escrito à mão.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T8 da fatia `contratos-de-locacao` publicou
+ * `POST /v1/contratos/:codigo/cancelamento` — a segunda transição governada (ADR-0019) —, e ela é
+ * **protegida**: o método declara a conjunção inteira
+ * `@ExigeChaves('TELA:contratos', 'ACAO:cancelar_contrato')` (ADR-0018), não é marcada
+ * `@RotaPublica()`, e por isso a sonda sem cookie recebe `401 NAO_AUTENTICADO` da guarda. Pela
+ * classificação por **caminho** deste caso ela entra como **uma** entrada nova, porque nenhum outro
+ * método atende aquele caminho. Vale o mesmo dos parágrafos acima: nenhuma entrada anterior saiu, o
+ * conjunto público continua inalterado, e a igualdade segue exata nos dois sentidos — **nada foi
+ * afrouxado**, o `toEqual` continua sendo igualdade de conjunto contra um inventário escrito à mão.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T10 da fatia `contratos-de-locacao` publicou
+ * `POST /v1/imoveis/:id/situacao-de-locacao` — a rota própria que a situação de locação ganha ao sair
+ * do corpo do `PUT` (ADR-0019) —, e ela é **protegida**: vale a exigência da classe,
+ * `@ExigeChave('TELA:imoveis')`, ela não é marcada `@RotaPublica()`, e por isso a sonda sem cookie
+ * recebe `401 NAO_AUTENTICADO` da guarda. Pela classificação por **caminho** deste caso ela entra
+ * como **uma** entrada nova, porque nenhum outro método atende aquele caminho. Vale o mesmo dos
+ * parágrafos acima: nenhuma entrada anterior saiu, o conjunto público continua inalterado, e a
+ * igualdade segue exata nos dois sentidos — **nada foi afrouxado**, o `toEqual` continua sendo
+ * igualdade de conjunto contra um inventário escrito à mão.
+ *
+ * **Este arquivo não está na §5.2 da T7 nem na da T9, nem na da T6, da T7 e da T8 da fatia de
+ * contratos** — divergência declarada nas cinco, e é o débito **D26 (F2/T6)**, cuja recomendação
+ * literal é declará-lo nas §5.2 de T7, T8 e T10. A T10 **também não o declara**, e a divergência
+ * volta a ser anotada aqui pela quinta vez. Ele é blast radius por construção: a âncora afirma por
+ * igualdade de conjunto, e publicar caminho novo a faz reprovar, que é exatamente o que ela existe
+ * para fazer. A âncora **sobe**; ela não vira contenção.
  */
 const ROTAS_PROTEGIDAS_ACEITAS: readonly string[] = [
   CAMINHO_DA_SESSAO_CORRENTE,
@@ -382,12 +426,19 @@ const ROTAS_PROTEGIDAS_ACEITAS: readonly string[] = [
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONJUNTOS}/:id`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONJUNTOS}/:id/recirculacao`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONJUNTOS}/:id/retirada`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo/ativacao`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo/cancelamento`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo/recirculacao`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo/retirada`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_COMODOS}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_COMODOS}/:comodoId`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_IMOVEIS}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_IMOVEIS}/:id`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_IMOVEIS}/:id/recirculacao`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_IMOVEIS}/:id/retirada`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_IMOVEIS}/:id/situacao-de-locacao`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas/:id/admin`,

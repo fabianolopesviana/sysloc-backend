@@ -358,6 +358,14 @@ const IMPORTADORES_ESPERADOS = [
   // a igualdade (nunca contenção) segue sendo asserida nas três pontas.
   'cadastros/superficie-de-cadastro.ts',
   // SUT_IS_CORRECT_BECAUSE: o código de produção está certo, e é esta lista que descrevia o estado
+  // anterior. A T6 da fatia `contratos-de-locacao` publica a **oitava** borda — as seis rotas de
+  // cadastro de `/v1/contratos` —, e ela **importa** a tradução única em vez de copiá-la, que é
+  // exatamente o desfecho que o `CT-343` existe para premiar. Vale aqui, palavra por palavra, o
+  // parágrafo acima: a ponta da DEFINIÇÃO permanece em um elemento, {@link ANALISADORES_ESPERADOS}
+  // não muda (o controlador novo chama `validar`, e não `safeParse`), e a igualdade (nunca
+  // contenção) segue sendo asserida nas três pontas.
+  'contratos/contrato.controller.ts',
+  // SUT_IS_CORRECT_BECAUSE: o código de produção está certo, e é esta lista que descrevia o estado
   // anterior. A T7 publica a **sexta** borda — as três rotas de `/v1/imoveis/:id/comodos` —, e ela
   // **importa** a tradução única em vez de copiá-la, que é exatamente o desfecho que o `CT-343`
   // existe para premiar. Vale aqui, palavra por palavra, o parágrafo acima: a ponta da DEFINIÇÃO

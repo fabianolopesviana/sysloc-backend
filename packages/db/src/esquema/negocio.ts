@@ -16,25 +16,29 @@
  *      e não apenas verificada.
  *
  * Falta a quinta, que **não mora neste arquivo**: `FORCE ROW LEVEL SECURITY` e as políticas
- * `USING`/`WITH CHECK` vivem em migração de segurança escrita à mão. São **duas**, e quem
- * acrescentar tabela aqui precisa saber qual delas emendar:
+ * `USING`/`WITH CHECK` vivem em migração de segurança escrita à mão. São **três**, e quem
+ * acrescentar tabela aqui precisa saber qual delas emendar — a resposta é sempre *nenhuma*, e a
+ * lista existe para dizer onde cada tabela já protegida foi protegida:
  *
  *   * `migracoes/0001_seguranca.sql` — as duas tabelas herdadas da F1 (`acesso_usuario_app` e
  *     `acesso_usuario_permissao`);
  *   * `migracoes/0006_seguranca_dominio.sql` — as seis entidades do domínio de locação
- *     (`conjunto`, `imovel`, `comodo`, `locador`, `locatario`, `fiador`).
+ *     (`conjunto`, `imovel`, `comodo`, `locador`, `locatario`, `fiador`);
+ *   * `migracoes/0008_seguranca_contrato.sql` — o contrato e o vínculo de fiador (`contrato` e
+ *     `contrato_fiador`), mais o mecanismo de emissão da série declarada (ADR-0020).
  *
- * São duas porque **gerado e autoral nunca convivem no mesmo arquivo** — uma regeração futura da
+ * São três porque **gerado e autoral nunca convivem no mesmo arquivo** — uma regeração futura da
  * gerada sobrescreveria o trecho autoral em silêncio. O que **obriga** a parceira autoral não é a
  * predecessora ser gerada: é **nascer tabela em `negocio`**, porque o gerador não emite `FORCE` nem
  * política. Toda migração que criar tabela aqui leva junto uma parceira autoral própria — nunca um
- * acréscimo à `0001` ou à `0006`, que descrevem schemas já aplicados e são, portanto, imutáveis.
+ * acréscimo à `0001`, à `0006` ou à `0008`, que descrevem schemas já aplicados e são, portanto,
+ * imutáveis.
  *
  * O diretório de migrações é a conferência da regra, e ele recusa a forma mais larga dela: a
  * `0002_campos_do_arcabouco.sql` e a `0003_autorizacao.sql` são **geradas e não têm parceira** —
  * nenhuma das duas cria tabela, elas só alteram o que já existia —, e a `0004_desfecho_de_recusa.sql`
- * é **autoral avulsa**, sem gerada a quem se parear. Só a `0000` e a `0005` criam tabela em
- * `negocio`, e são exatamente elas que têm parceira. Ler o gatilho como "toda gerada ganha uma
+ * é **autoral avulsa**, sem gerada a quem se parear. Só a `0000`, a `0005` e a `0007` criam tabela
+ * em `negocio`, e são exatamente elas que têm parceira. Ler o gatilho como "toda gerada ganha uma
  * parceira" produziria uma migração de segurança vazia, sem `FORCE` nem política a declarar.
  *
  * O gerador de migração declara RLS e a política que se declare aqui, mas **não emite `FORCE`** — e
@@ -53,10 +57,17 @@
  * de existir num ponto novo, nenhum teste acusa. Há um caminho só, e ele é o banco.
  */
 
-import { SITUACOES_DE_LOCACAO, TIPOS_DE_IMOVEL, TIPOS_DE_PESSOA } from '@sysloc/contracts';
+import {
+  ESTADOS_DO_CONTRATO,
+  SITUACOES_DE_LOCACAO,
+  TIPOS_DE_IMOVEL,
+  TIPOS_DE_PESSOA,
+} from '@sysloc/contracts';
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   check,
+  date,
   foreignKey,
   index,
   integer,
@@ -65,6 +76,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { empresa, usuario } from './identidade.js';
@@ -222,12 +234,18 @@ export const acessoUsuarioPermissao = negocio
 // fecha: o dia em que o contrato ganhar um tipo de imóvel, o banco o recusaria sem que nada
 // acusasse antes da primeira gravação em operação.
 //
-// **Nenhuma destas entidades tem contador sequencial** (ADR-0015): nenhuma delas expõe código
-// legível — a chave exposta é o UUID, e a ADR-0015 só se aplica a série declarada. O
+// **Nenhuma das SEIS entidades de cadastro tem contador sequencial** (ADR-0015): nenhuma delas expõe
+// código legível — a chave exposta é o UUID, e a ADR-0015 só se aplica a série declarada. O
 // `identificador_municipal` do imóvel não é série do produto: é dado do cliente, informado por ele.
 //
-// Os dois candidatos ficam nomeados, porque o bloco acima sozinho não os alcança e é aqui que quem
-// procurar vai olhar:
+// **O contrato, esse, TEM** — ele é a primeira entidade do produto com série declarada, e a única
+// até aqui. O `codigo` dele (`CTR-{ano}-{5 dígitos}`) é emitido pelas duas funções
+// `SECURITY DEFINER` de `migracoes/0008_seguranca_contrato.sql`, com escopo `(empresa, ano)`, cujo
+// avanço não participa do desfazimento (ADR-0020). Nada disso é declarável em Drizzle: o que mora
+// aqui é a coluna `codigo` e a unicidade `(empresa_id, codigo)` que a torna estável.
+//
+// Os dois candidatos que NÃO são série ficam nomeados, porque o bloco acima sozinho não os alcança
+// e é aqui que quem procurar vai olhar:
 //
 //   * **`imovel.identificador_municipal`** — parece código legível e não é série NOSSA. Quem o emite
 //     é a prefeitura; o produto apenas o guarda e o torna único por empresa. Não há número a
@@ -496,4 +514,219 @@ export const fiador = negocio
     unique('fiador_empresa_documento_key').on(tabela.empresaId, tabela.documentoPrincipal),
     index('fiador_empresa_retirado_idx').on(tabela.empresaId, tabela.retiradoEm),
   ])
+  .enableRLS();
+
+// ===========================================================================
+// O contrato de locação — a primeira entidade com série declarada e ciclo governado
+// ===========================================================================
+
+/**
+ * Os quatro estados do contrato (RD-02). Ordem e valores vêm do contrato, **nunca redigitados**.
+ *
+ * A direção da dependência é a mesma dos três enums do cadastro, e pela mesma razão (ADR-0016):
+ * redigitar os literais seria a segunda fonte do mesmo fato, e o dia em que o contrato ganhasse um
+ * estado o banco o recusaria sem que nada acusasse antes da primeira gravação em operação.
+ *
+ * A ORDEM é conteúdo, e não estética: um enum do PostgreSQL guarda a ordem dos rótulos, e é ela que
+ * governa comparação e ordenação do tipo. Reordenar aqui mudaria o significado de `ORDER BY status`
+ * sem tocar em consulta nenhuma.
+ */
+export const statusContrato = negocio.enum('status_contrato', ESTADOS_DO_CONTRATO);
+
+/**
+ * O contrato de locação.
+ *
+ * `empresa_id` **não** ganha chave estrangeira própria para `identidade.empresa`: ela seria
+ * implicada pelas três compostas abaixo, que só aceitam pares já existentes nos pais, e os pais já
+ * referenciam a empresa. Uma segunda restrição sobre a mesma coluna custaria uma verificação a cada
+ * escrita sem recusar nada que estas já não recusem — o mesmo desenho de {@link imovel}.
+ *
+ * `data_fim_locacao` e `valor_total_contrato` são **anuláveis** porque são derivados na ativação
+ * (RD-10): o contrato nasce `RASCUNHO` com os dois nulos, e declará-los obrigatórios obrigaria a
+ * criação a inventar valores que só a ativação decide.
+ *
+ * `gerar_cobrancas_automaticamente` é `NOT NULL DEFAULT true`, mesmo desenho de `comodo.metragem`: o
+ * contrato já aplica o padrão na entrada, e o `NOT NULL` é o que impede um caminho futuro de gravar
+ * a ausência como nulo — quem lesse a coluna teria de decidir de novo o que fazer com ela.
+ *
+ * **A unicidade do código é TOTAL, e não parcial**: ela alcança o contrato retirado de circulação,
+ * pela mesma razão escrita no cabeçalho de {@link imovel} para o identificador municipal. Parcial, a
+ * recirculação de um retirado colidiria com o que nasceu depois dele — e aqui o preço seria maior,
+ * porque o código é a referência citada fora do sistema que a ADR-0015 existe para manter estável.
+ */
+export const contrato = negocio
+  .table(
+    'contrato',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      empresaId: uuid('empresa_id').notNull(),
+      /**
+       * A chave **exposta** (ADR-0017): o contrato tem série declarada, então o UUID não trafega.
+       *
+       * O valor é emitido pelas duas funções `SECURITY DEFINER` de
+       * `migracoes/0008_seguranca_contrato.sql`, com escopo `(empresa, ano)` e avanço fora do
+       * desfazimento (ADR-0020) — nada disso é declarável aqui. O que esta coluna traz é o lugar do
+       * número e, com a restrição abaixo, a unicidade que o torna referência estável.
+       */
+      codigo: text('codigo').notNull(),
+      imovelId: uuid('imovel_id').notNull(),
+      locadorId: uuid('locador_id').notNull(),
+      locatarioId: uuid('locatario_id').notNull(),
+      /**
+       * Sem padrão, de propósito: quem cria o contrato declara o estado dele — o serviço grava
+       * `RASCUNHO`. Um padrão escolheria por omissão o ponto de partida do ciclo de vida, que é
+       * decisão de domínio e não do schema. Mesmo critério de `status_locacao` em {@link imovel}.
+       */
+      status: statusContrato('status').notNull(),
+      /**
+       * Data de calendário, e não instante: o valor viaja como `YYYY-MM-DD` da consulta até o JSON,
+       * sem passar por `Date` com fuso (§6.2). O `mode` padrão de `date()` é `'string'`, que é
+       * exatamente isso — trocá-lo por `'date'` reintroduziria o fuso no caminho.
+       */
+      dataInicioLocacao: date('data_inicio_locacao').notNull(),
+      prazoMeses: integer('prazo_meses').notNull(),
+      /** Dinheiro em `numeric(15,2)`, nunca ponto flutuante — invariante 4 do projeto. */
+      valorMensal: numeric('valor_mensal', { precision: 15, scale: 2 }).notNull(),
+      diaVencimento: integer('dia_vencimento').notNull(),
+      /** Anulável: derivado na ativação (RD-10). */
+      dataFimLocacao: date('data_fim_locacao'),
+      /** Anulável: derivado na ativação (RD-10). */
+      valorTotalContrato: numeric('valor_total_contrato', { precision: 15, scale: 2 }),
+      gerarCobrancasAutomaticamente: boolean('gerar_cobrancas_automaticamente')
+        .notNull()
+        .default(true),
+      /** Guarda **caminho**, nunca bytes (§7.2). */
+      pdfContratoArquivo: text('pdf_contrato_arquivo'),
+      retiradoEm: timestamp('retirado_em', { withTimezone: true }),
+    },
+    (tabela) => [
+      // O alvo das chaves estrangeiras compostas de `contrato_fiador`, e o que a guarda de cobertura
+      // de `src/catalogo.ts` cobra de toda tabela deste schema.
+      unique('contrato_id_empresa_key').on(tabela.id, tabela.empresaId),
+      unique('contrato_empresa_codigo_key').on(tabela.empresaId, tabela.codigo),
+      // As TRÊS chaves estrangeiras compostas da ADR-0008. Cada uma recusa, no banco, apontar um
+      // contrato da empresa A para um imóvel, um locador ou um locatário da empresa B: o par
+      // `(alheio_id, empresa_id)` teria de existir no pai, e não existe. É recusa ESTRUTURAL —
+      // nenhuma validação de aplicação é consultada no caminho.
+      foreignKey({
+        name: 'contrato_imovel_empresa_fkey',
+        columns: [tabela.imovelId, tabela.empresaId],
+        foreignColumns: [imovel.id, imovel.empresaId],
+      }),
+      foreignKey({
+        name: 'contrato_locador_empresa_fkey',
+        columns: [tabela.locadorId, tabela.empresaId],
+        foreignColumns: [locador.id, locador.empresaId],
+      }),
+      foreignKey({
+        name: 'contrato_locatario_empresa_fkey',
+        columns: [tabela.locatarioId, tabela.empresaId],
+        foreignColumns: [locatario.id, locatario.empresaId],
+      }),
+      // Os três limites de RD-08 repetidos no banco. O contrato de entrada já os declara, e é ele
+      // que produz a recusa com nome de campo; estes são o que impede um caminho de escrita futuro
+      // — carga, correção manual, fatia nova — de gravar o que a regra não admite.
+      check('contrato_dia_vencimento_chk', sql`${tabela.diaVencimento} BETWEEN 1 AND 28`),
+      check('contrato_prazo_positivo_chk', sql`${tabela.prazoMeses} > 0`),
+      check('contrato_valor_mensal_positivo_chk', sql`${tabela.valorMensal} > 0`),
+      // ---------------------------------------------------------------------------
+      // A vigência única por imóvel — ÍNDICE PARCIAL, e a forma NÃO é escolha de estilo
+      // ---------------------------------------------------------------------------
+      //
+      // É `uniqueIndex(...).where(...)`, e não `unique(...)`, porque **o PostgreSQL não admite
+      // restrição única parcial**: `ALTER TABLE … ADD CONSTRAINT … UNIQUE (…) WHERE …` não existe na
+      // gramática. Só `CREATE UNIQUE INDEX … WHERE` alcança a condição.
+      //
+      // Quem "corrigir" isto para restrição, por consistência com as vizinhas, **remove a condição**
+      // — e a tabela passa a impedir dois contratos em QUALQUER estado sobre o mesmo imóvel, o que
+      // quebra montar contrato novo depois de cancelar o anterior, que é o fluxo normal do negócio.
+      // A conversão é silenciosa: o schema fica "mais uniforme" e o defeito só aparece no primeiro
+      // recontrato.
+      //
+      // Ele é o MECANISMO da RN-09, não uma otimização: é o que torna a dupla locação
+      // irrepresentável, pela mesma escolha estrutural do isolamento entre empresas — recusa do
+      // banco, não conferência da aplicação.
+      //
+      // `empresa_id` fica FORA do índice de propósito: ele é funcionalmente determinado por
+      // `imovel_id`, que a chave estrangeira composta acima amarra a um único imóvel — e um imóvel
+      // pertence a uma empresa só. Acrescentá-lo alargaria a chave sem recusar nada a mais. Mesmo
+      // desenho de `comodo_imovel_posicao_key`.
+      //
+      // Ele **não** satisfaz a guarda de cobertura, e não precisa: ela cobra restrição NOMEADA sobre
+      // `(id, empresa_id)`, que é `contrato_id_empresa_key`. As duas coexistem sem se substituir.
+      //
+      // DECISÃO FECHADA — T3 · 2026-08-09
+      // O QUÊ: a vigência única por imóvel é ÍNDICE ÚNICO PARCIAL
+      //        (`uniqueIndex(...).where(sql`status = 'ATIVO'`)`), e não `unique(...)`.
+      // POR QUÊ: o PostgreSQL não admite restrição única parcial — não existe `ADD CONSTRAINT …
+      //          UNIQUE (…) WHERE …`. Converter para restrição, "por consistência" com as seis
+      //          vizinhas deste arquivo, **remove a condição junto**, e a tabela passa a impedir dois
+      //          contratos em QUALQUER estado sobre o mesmo imóvel — o que quebra montar contrato
+      //          novo depois de cancelar o anterior, que é o fluxo normal do negócio. A conversão é
+      //          silenciosa: o schema fica mais uniforme e o defeito só aparece no primeiro
+      //          recontrato, em operação.
+      // REVERTER EXIGE: exibir uma forma de restrição do PostgreSQL que aceite predicado parcial —
+      //                 ou provar que impedir dois contratos em qualquer estado sobre o mesmo imóvel
+      //                 é a regra pretendida, o que contraria a RN-09 e o ciclo de vida da ADR-0019.
+      uniqueIndex('contrato_imovel_vigente_uidx').on(tabela.imovelId).where(sql`status = 'ATIVO'`),
+      // A listagem padrão esconde o que saiu de circulação (§12.2): o índice cobre o par que ela
+      // filtra, e não `empresa_id` sozinho.
+      index('contrato_empresa_retirado_idx').on(tabela.empresaId, tabela.retiradoEm),
+      index('contrato_empresa_imovel_idx').on(tabela.empresaId, tabela.imovelId),
+    ],
+  )
+  .enableRLS();
+
+/**
+ * Vínculo entre contrato e fiador — **vínculo puro**, e não entidade de cadastro.
+ *
+ * ---------------------------------------------------------------------------
+ * A coluna que NÃO existe aqui, e a ausência é a decisão
+ * ---------------------------------------------------------------------------
+ *
+ * Não há `retirado_em`. A ADR-0014 exclui do alcance da exclusão lógica *"vínculo ou concessão, cuja
+ * linha representa estado de relacionamento"*, e o discriminador dela é **ser referenciável** —
+ * nada aponta para uma linha de `contrato_fiador`. Substituir a lista de fiadores de um rascunho
+ * **remove** e **insere** linhas, que é o mecanismo legítimo, o mesmo do ajuste bidirecional da
+ * matriz de permissões (§7.5).
+ *
+ * A **ausência** da coluna é o que torna a decisão verificável: o CT-430 consulta o catálogo e
+ * afirma que ela não está lá, com as seis entidades de cadastro como controle positivo.
+ * Acrescentá-la "por simetria" com elas desfaria a decisão em silêncio, e a guarda de cobertura
+ * **não acusaria** — ela não cobra `retirado_em` de ninguém. É o mesmo desenho, e a mesma razão, do
+ * que {@link comodo} já registra.
+ *
+ * A tabela não tem coluna livre alguma além das quatro: medido no sistema antigo, a tabela-filha
+ * `Fiadores` tem **um único campo**, `fiador` — nenhum percentual, nenhuma data, nenhuma ordem de
+ * negócio. Inventar uma aqui seria inventar regra que ninguém declarou.
+ */
+export const contratoFiador = negocio
+  .table(
+    'contrato_fiador',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      empresaId: uuid('empresa_id').notNull(),
+      contratoId: uuid('contrato_id').notNull(),
+      fiadorId: uuid('fiador_id').notNull(),
+    },
+    (tabela) => [
+      unique('contrato_fiador_id_empresa_key').on(tabela.id, tabela.empresaId),
+      // O mesmo fiador não entra duas vezes no mesmo contrato. `empresa_id` fica FORA do par pela
+      // mesma razão do índice de vigência: ele é funcionalmente determinado por `contrato_id`.
+      unique('contrato_fiador_contrato_fiador_key').on(tabela.contratoId, tabela.fiadorId),
+      // As duas chaves estrangeiras compostas da ADR-0008 — ver o comentário gêmeo em
+      // {@link contrato}.
+      foreignKey({
+        name: 'contrato_fiador_contrato_empresa_fkey',
+        columns: [tabela.contratoId, tabela.empresaId],
+        foreignColumns: [contrato.id, contrato.empresaId],
+      }),
+      foreignKey({
+        name: 'contrato_fiador_fiador_empresa_fkey',
+        columns: [tabela.fiadorId, tabela.empresaId],
+        foreignColumns: [fiador.id, fiador.empresaId],
+      }),
+      index('contrato_fiador_empresa_contrato_idx').on(tabela.empresaId, tabela.contratoId),
+    ],
+  )
   .enableRLS();

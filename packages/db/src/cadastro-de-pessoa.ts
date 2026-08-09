@@ -12,7 +12,7 @@
  * vida dos três cadastros precisa vive aqui, publicada como função de domínio.
  *
  * A pergunta que o índice do pacote força, e a resposta: **isto é um caminho para dado fora da
- * unidade de trabalho? NÃO.** As cinco funções **recebem** o executor (`tx`) de quem já abriu a
+ * unidade de trabalho? NÃO.** As seis funções **recebem** o executor (`tx`) de quem já abriu a
  * unidade; nenhuma abre conexão, reserva ou transação, e nenhuma devolve executor.
  *
  * O termo é o do glossário: **cadastro de pessoa** é a entidade de negócio destas três tabelas;
@@ -299,14 +299,14 @@ function tabelaDoPapel(tx: TransactionSql, papel: PapelDePessoa) {
 }
 
 /**
- * A projeção publicada, escrita **uma vez** e reusada pelas cinco funções.
+ * A projeção publicada, escrita **uma vez** e reusada pelas seis funções.
  *
  * É um **fragmento** do driver, e não uma cadeia interpolada: ele é montado pelo mesmo mecanismo da
  * consulta que o hospeda, e nada aqui vem de fora — é constante deste módulo, sem interpolação
  * alguma. Mesmo padrão, e mesma justificativa, de `colunasDoImovel` em {@link ./imovel.ts}.
  *
  * Os apelidos existem porque as colunas são `snake_case` e o contrato fala camelCase (ADR-0017):
- * traduzir aqui, num ponto só, é o que impede cinco traduções livres para divergir. E `empresa_id`
+ * traduzir aqui, num ponto só, é o que impede seis traduções livres para divergir. E `empresa_id`
  * **não** está na lista — o que a porta devolve é o que o contrato publica, e a coluna de tenant não
  * é publicada.
  */
@@ -457,6 +457,69 @@ export async function localizarPessoa(
   `;
 
   return pessoa;
+}
+
+/**
+ * Localiza N cadastros do papel informado **numa consulta só**, indexados pelo identificador.
+ *
+ * ---------------------------------------------------------------------------
+ * ELA EXISTE PORQUE A CARDINALIDADE É DO CLIENTE — e o laço a transformava em N consultas
+ * ---------------------------------------------------------------------------
+ *
+ * A coleção de fiadores de um contrato **não tem teto** — nem no esquema de entrada, nem no banco,
+ * nem por decisão (a RD-06 fixa *"zero ou mais fiadores, sem teto"* por escrito). Conferi-la com uma
+ * chamada a {@link localizarPessoa} por item faria o **número de idas ao banco** ser escolhido pela
+ * requisição, dentro de uma transação aberta que segura uma conexão de um pool **compartilhado entre
+ * empresas**. O isolamento de *dado* é garantido pela política (ADR-0008); o de **recurso** não é
+ * garantido por nada, e uma requisição com dezenas de milhares de identificadores degradaria o
+ * serviço de todas as empresas sem violar regra alguma de acesso.
+ *
+ * O teto declarado foi a alternativa descartada: ele fecharia a magnitude contrariando a RD-06, e
+ * deixaria o eixo aberto para a próxima coleção sem teto. Esta forma fecha o eixo — o custo passa a
+ * ser **uma** consulta por papel, por construção, e não por um limite que alguém precise manter.
+ *
+ * ---------------------------------------------------------------------------
+ * O MAPA é a forma devolvida, e a razão é a ORDEM DA RECUSA
+ * ---------------------------------------------------------------------------
+ *
+ * Ela devolve um índice por identificador, e **não** a lista de linhas, porque quem chama precisa
+ * percorrer os identificadores **na ordem em que o cliente os enviou** para nomear o **primeiro**
+ * problema. Percorrer o resultado da consulta faria a resposta depender da ordem em que o banco
+ * devolveu as linhas — e, pior, tornaria o identificador **ausente** invisível, já que ele não está
+ * no resultado. O mapa preserva as duas coisas: a ordem é de quem itera, e a ausência é um
+ * {@link Map.get} que devolve `undefined`, exatamente como {@link localizarPessoa} devolvia.
+ *
+ * A lista vazia devolve o mapa vazio **sem consultar**: pagar uma ida ao banco para saber que
+ * `= ANY('{}')` não casa nada é custo sem informação — mesma decisão de `lerComodosDeImoveis`, em
+ * {@link ./comodo.ts}, e é o caso comum aqui (contrato sem fiador).
+ *
+ * As três ausências de {@link localizarPessoa} valem sem mudança: não existe, existe em outra
+ * empresa (a política o esconde), ou existe em **outro papel**. Nenhuma comparação de empresa é
+ * escrita aqui, e **ela alcança o retirado de circulação** — é a conferência de circulação de quem
+ * chama que o recusa, e sem esse alcance a recusa nomeada viraria um `404` genérico.
+ */
+export async function localizarPessoas(
+  tx: TransactionSql,
+  papel: PapelDePessoa,
+  ids: readonly string[],
+): Promise<Map<string, PessoaCadastrada>> {
+  const porId = new Map<string, PessoaCadastrada>();
+
+  if (ids.length === 0) {
+    return porId;
+  }
+
+  const pessoas = await tx<PessoaCadastrada[]>`
+    SELECT ${colunasDaPessoa(tx)}
+      FROM ${tabelaDoPapel(tx, papel)}
+     WHERE id = ANY(${[...ids]}::uuid[])
+  `;
+
+  for (const pessoa of pessoas) {
+    porId.set(pessoa.id, pessoa);
+  }
+
+  return porId;
 }
 
 /**

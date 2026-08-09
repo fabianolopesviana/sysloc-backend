@@ -1,6 +1,14 @@
 /**
  * A carteira expandida e o caminho feliz da fatia — CT-329 e CT-331. T10 da fatia
- * `cadastro-de-imoveis-e-pessoas`.
+ * `cadastro-de-imoveis-e-pessoas`. **A T9 da fatia `contratos-de-locacao` acrescenta o CT-419**, que
+ * afirma o contrato vigente nas três superfícies que publicam imóvel.
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era este cabeçalho que descrevia uma
+ * suíte de quatro casos. A T9 acrescenta dois `it` e três chaves ao arranjo compartilhado
+ * ({@link CHAVES_DO_ARRANJO}), e **nenhuma asserção dos quatro casos anteriores foi alterada,
+ * afrouxada ou removida** — em particular, nenhuma igualdade de corpo virou asserção de presença. A
+ * única mudança em código anterior é o campo `contratoVigente` na declaração local de
+ * {@link ImovelPublicado}, que é crescimento de esquema.
  *
  * ---------------------------------------------------------------------------
  * INVARIANTES
@@ -25,10 +33,19 @@
  * | CA-07 |        | listagem; o imóvel devolve `conjuntoId` igual ao do conjunto criado e aparece
  * |       |        | **sob ele** na carteira expandida; e cada pessoa consta na listagem do
  * |       |        | próprio papel e **não** nas dos outros dois. |
+ * | CA-14 | CT-419 | O imóvel ocupado por contrato `ATIVO` apresenta `contratoVigente` igual a
+ * |       |        | `{ codigo, locatario: { id, nome } }` nas **três** superfícies que publicam
+ * |       |        | imóvel — `GET /v1/imoveis/:id`, `GET /v1/imoveis` e
+ * |       |        | `GET /v1/conjuntos?expandir=imoveis` —, e o imóvel cujo contrato está **só em
+ * |       |        | rascunho** apresenta `null` nas três. As três superfícies concordam sobre o
+ * |       |        | corpo INTEIRO do imóvel, campo a campo. |
+ * | CA-15 | CT-419 | Retirar o contrato `ATIVO` de circulação **não** libera o imóvel: o campo
+ * |       | (b)    | continua preenchido nas três. **Cancelar** libera: o campo vira `null` nas três.
  *
  * Rastreabilidade: `CA-15 → CT-329 (RN-13)`, `CA-11 → CT-329 (RN-05)`,
  * `CA-11 → CT-329 (b) (RN-05)`, `CA-15 → CT-329 (c) (RN-13)`, `CA-16 → CT-329 (c) (RN-12)`,
- * `CA-01 → CT-331 (RN-01)`, `CA-02 → CT-331 (RN-01)`, `CA-07 → CT-331 (RN-04)`.
+ * `CA-01 → CT-331 (RN-01)`, `CA-02 → CT-331 (RN-01)`, `CA-07 → CT-331 (RN-04)`,
+ * `CA-14 → CT-419 (RN-15)`, `CA-15 → CT-419 (b) (RN-15)`.
  *
  * ===========================================================================
  * DIVERGÊNCIAS DECLARADAS DA T10 — leia antes de comparar com a §6.6
@@ -130,6 +147,28 @@
  *   * **reversão** — os quatro fontes foram restaurados e conferidos idênticos ao original por
  *     `diff`, e o controle voltou a `121 passed`.
  *
+ * **Os três da T9**, medidos sobre a árvore com o contrato vigente já publicado — controle
+ * `21 arquivos, 153 casos, 0 falhas`:
+ *
+ *   * **MT9-1 · a marca de circulação entra no filtro** (`lerContratosVigentesDeImoveis`, em
+ *     `packages/db/src/contrato.ts`, acrescentando `AND contrato.retirado_em IS NULL` ao
+ *     `status = 'ATIVO'`): `1 failed | 152 passed`, no **CT-419 (b)**. É a RN-15: com o mutante, a
+ *     retirada de circulação do contrato **libera o imóvel por via oblíqua**. O `CT-419` principal
+ *     atravessa o mutante **verde**, porque nada é retirado ali — a metade (b) é a única rede desta
+ *     cláusula;
+ *   * **MT9-4 · o filtro de estado sai** (a mesma consulta sem `AND contrato.status = 'ATIVO'`, isto
+ *     é, casando **qualquer** contrato do imóvel): `2 failed | 151 passed`, no **CT-419** — o imóvel
+ *     cujo contrato está só em `RASCUNHO` deixa de trazer `null` — e no **CT-419 (b)**, porque o
+ *     cancelado passa a continuar aparecendo. É o par que discrimina *"tem contrato"* de *"tem
+ *     contrato VIGENTE"*;
+ *   * **MT9-3 · a borda zera o campo** (`publicar`, em `apps/api/src/imoveis/imovel.service.ts`,
+ *     devolvendo `contratoVigente: null` fixo em vez de copiar o que a porta produziu):
+ *     `2 failed | 151 passed`, nos **CT-419** e **CT-419 (b)**. Ele mede o que o `CT-420` não alcança:
+ *     aquele caso conta invocações na camada de dados e passaria intacto com a borda descartando o
+ *     resultado;
+ *   * **reversão** — os três fontes foram restaurados e conferidos idênticos ao original por `diff`,
+ *     e o controle voltou a `153 passed`.
+ *
  * ===========================================================================
  * ISOLAMENTO DE ORDEM — cada caso passa sozinho (Gate 1, rodada 2)
  * ===========================================================================
@@ -169,6 +208,14 @@
  *   * **`MT10-3` reconfirmado** sobre a asserção corrigida: `1 failed | 120 passed`, no **CT-329** —
  *     a igualdade profunda do passo 3 divergindo em `metragemTotal` no imóvel de `10.06 + 10.07`;
  *   * **`MT10-5` reconfirmado**: `3 failed | 118 passed` — **CT-329**, **CT-329 (b)** e **CT-331**.
+ *
+ * **Os dois casos da T9 nascem isolados**, e a medição está feita: o arranjo deles é do `beforeAll`
+ * do **próprio `describe`**, e o `CT-419 (b)` — que muda o estado do contrato — monta cenário próprio
+ * **dentro** do `it`, para não deslocar o que o `CT-419` afirma. Medido caso a caso com o filtro por
+ * nome sobre este arquivo: `CT-419` isolado — `1 passed | 5 skipped`; `CT-419 (b)` isolado —
+ * `1 passed | 5 skipped`; e os quatro anteriores continuam passando isolados (`CT-329`, `CT-329 (b)`,
+ * `CT-329 (c)` e `CT-331`). O conjunto do `CT-419` é **próprio**, de modo que nenhum imóvel dele entra
+ * no recorte que o passo 5 do `CT-329` mede.
  *
  * ===========================================================================
  * Precondição privilegiada — pelo caminho REAL, sem símbolo novo e sem cookie forjado
@@ -242,9 +289,11 @@ import { CAMINHO_DOS_FIADORES } from '../src/cadastros/fiador.controller.ts';
 import { CAMINHO_DOS_LOCADORES } from '../src/cadastros/locador.controller.ts';
 import { CAMINHO_DOS_LOCATARIOS } from '../src/cadastros/locatario.controller.ts';
 import { ENDERECO_DE_ESCUTA, PREFIXO_DE_VERSAO } from '../src/configuracao/ambiente.ts';
+import { CAMINHO_DOS_CONTRATOS } from '../src/contratos/contrato.controller.ts';
 import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
 import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
 import { criarAplicacao } from '../src/main.ts';
+import { cpfValido } from './documento.ts';
 
 /** Limite da montagem: banco migrado, semente com credencial, fila e a aplicação real. */
 const LIMITE_DE_MONTAGEM_MS = 240_000;
@@ -261,12 +310,13 @@ const ROTA_DE_ENTRADA = `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/sign-in/email`;
 /** Caminho, relativo à raiz, da rota de sessão do produto. Composto, nunca escrito à mão. */
 const CAMINHO_DA_SESSAO_CORRENTE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_SESSAO}`;
 
-/** Caminhos, relativos à raiz, das cinco coleções que este arquivo exercita. */
+/** Caminhos, relativos à raiz, das seis coleções que este arquivo exercita. */
 const COLECAO_DE_CONJUNTOS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONJUNTOS}`;
 const COLECAO_DE_IMOVEIS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_IMOVEIS}`;
 const COLECAO_DE_LOCADORES = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_LOCADORES}`;
 const COLECAO_DE_LOCATARIOS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_LOCATARIOS}`;
 const COLECAO_DE_FIADORES = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_FIADORES}`;
+const COLECAO_DE_CONTRATOS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}`;
 
 /**
  * A mensagem canônica de recusa de campo, escrita por extenso.
@@ -286,12 +336,23 @@ const CHAVES_DO_ARRANJO: readonly ChaveDoCatalogo[] = [
   'TELA:imoveis',
   'TELA:cadastros',
   'ACAO:excluir_cadastro',
+  // SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era este arranjo que descrevia o que a
+  // suíte precisava **antes** da T9. O `CT-419` monta e ativa contrato pelas ROTAS reais para provar
+  // que o imóvel apresenta o vigente nas três superfícies, e sem estas três chaves ele receberia
+  // `403` da guarda em vez de exercitar o campo. É **acréscimo puro**: nenhuma chave saiu, nenhuma
+  // asserção dos quatro casos anteriores foi alterada, e nenhum deles observa ausência de permissão.
+  'TELA:contratos',
+  'ACAO:ativar_contrato',
+  'ACAO:cancelar_contrato',
 ];
 
-/** As três chaves afirmadas, uma a uma, no efetivo — a precondição que não se supõe. */
+/** As chaves afirmadas, uma a uma, no efetivo — a precondição que não se supõe. */
 const AREA_DOS_IMOVEIS: ChaveDoCatalogo = 'TELA:imoveis';
 const AREA_DOS_CADASTROS: ChaveDoCatalogo = 'TELA:cadastros';
+const AREA_DOS_CONTRATOS: ChaveDoCatalogo = 'TELA:contratos';
 const ACAO_DE_CIRCULACAO: ChaveDoCatalogo = 'ACAO:excluir_cadastro';
+const ACAO_DE_ATIVACAO: ChaveDoCatalogo = 'ACAO:ativar_contrato';
+const ACAO_DE_CANCELAMENTO: ChaveDoCatalogo = 'ACAO:cancelar_contrato';
 
 /** Forma canônica do UUID, em minúsculas — a chave exposta destas entidades (ADR-0017). */
 const PADRAO_UUID_CANONICO = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
@@ -361,6 +422,36 @@ const CPF_DO_LOCADOR = '10000013773';
 const CPF_DO_LOCATARIO = '10000027480';
 const CPF_DO_FIADOR = '10000041122';
 
+// ---------------------------------------------------------------------------------------------
+// O cenário do CT-419 — o contrato vigente nas três superfícies (T9)
+// ---------------------------------------------------------------------------------------------
+
+/** O conjunto PRÓPRIO do caso: nenhum imóvel dele entra no recorte que o `CT-329` mede. */
+const CONJUNTO_DO_CONTRATO_VIGENTE = 'Edifício Vigente — CT-419';
+
+/**
+ * Os termos do contrato do arranjo. Nenhum caso deste arquivo afirma coisa alguma sobre eles — o que
+ * está sob prova é o par `{ codigo, locatario }` que o imóvel apresenta, e não as derivações da
+ * ativação, que são do `CT-413`.
+ */
+const TERMOS_DO_CONTRATO = {
+  dataInicioLocacao: '2026-03-15',
+  prazoMeses: 12,
+  valorMensal: 2500,
+  diaVencimento: 10,
+  gerarCobrancasAutomaticamente: true,
+  pdfContratoArquivo: null,
+} as const;
+
+/**
+ * O contador que mantém o documento das partes exclusivo entre as montagens do `CT-419`.
+ *
+ * Ele é próprio, e não compartilhado com {@link sequenciaDoIdentificador}: os dois numeram coisas
+ * diferentes (documento e identificador municipal), e reuni-los faria a numeração de um depender de
+ * quantas vezes o outro correu.
+ */
+let sequenciaDoDocumento = 0;
+
 /**
  * A pessoa que age: `USUARIO_EMPRESA` da empresa A, **da carga**.
  *
@@ -420,7 +511,10 @@ beforeAll(async () => {
   const sessao = (await pedir(CAMINHO_DA_SESSAO_CORRENTE, { cookie })).corpo as SessaoPublicada;
   expect(sessao.telas).toContain(AREA_DOS_IMOVEIS);
   expect(sessao.telas).toContain(AREA_DOS_CADASTROS);
+  expect(sessao.telas).toContain(AREA_DOS_CONTRATOS);
   expect(sessao.acoes).toContain(ACAO_DE_CIRCULACAO);
+  expect(sessao.acoes).toContain(ACAO_DE_ATIVACAO);
+  expect(sessao.acoes).toContain(ACAO_DE_CANCELAMENTO);
 
   await montarCarteiraDoCaso();
 }, LIMITE_DE_MONTAGEM_MS);
@@ -717,6 +811,259 @@ describe('caminho feliz completo da fatia (T10)', () => {
   );
 });
 
+describe('o contrato vigente nas três superfícies que publicam imóvel (T9)', () => {
+  /** O conjunto próprio do caso — nenhum imóvel dele entra no recorte medido pelo `CT-329`. */
+  let conjuntoDoCaso: string;
+
+  /** O imóvel ocupado por contrato `ATIVO`, e o que só tem `RASCUNHO`. */
+  let imovelOcupado: string;
+  let imovelComRascunho: string;
+
+  /** O par `{ codigo, locatario }` que as três superfícies têm de apresentar sobre o ocupado. */
+  let vigenteDoOcupado: ContratoVigentePublicado;
+
+  beforeAll(async () => {
+    conjuntoDoCaso = await criarConjunto(CONJUNTO_DO_CONTRATO_VIGENTE);
+
+    imovelOcupado = await criarImovelComComodos(conjuntoDoCaso, 'Ap 301', UM_COMODO);
+    imovelComRascunho = await criarImovelComComodos(conjuntoDoCaso, 'Ap 302', SEM_COMODOS);
+
+    vigenteDoOcupado = await ocupar(imovelOcupado);
+
+    // O segundo imóvel recebe um contrato que **não é ativado**. É ele que discrimina "tem contrato"
+    // de "tem contrato VIGENTE": um filtro que casasse qualquer contrato do imóvel — em vez de
+    // `status = 'ATIVO'` — apresentaria este rascunho como se ocupasse o imóvel.
+    await montarRascunho(imovelComRascunho);
+  }, LIMITE_CASO_MS);
+
+  it(
+    'CT-419 — o imóvel ocupado traz o contrato e o locatário nas TRÊS superfícies; o do rascunho traz null',
+    async () => {
+      // --- Passo 1: a leitura individual ---------------------------------------------------------
+      const individualDoOcupado = await lerImovel(imovelOcupado);
+      const individualDoRascunho = await lerImovel(imovelComRascunho);
+
+      // Igualdade sobre o objeto INTEIRO — não presença do campo, e não só o código: é ela que prende
+      // as duas classes de chave da ADR-0017 no mesmo lugar (o código legível do contrato, o UUID do
+      // locatário) e que impede um campo a mais de entrar no objeto sem ser visto.
+      expect(individualDoOcupado.contratoVigente).toEqual(vigenteDoOcupado);
+      // O negativo que discrimina: o imóvel com contrato **só em rascunho** não é ocupado por ele.
+      expect(individualDoRascunho.contratoVigente).toBeNull();
+
+      // --- Passo 2: a listagem -------------------------------------------------------------------
+      const listagem = (
+        await pedir(`${COLECAO_DE_IMOVEIS}?limite=${String(LIMITE_DECLARADO)}`, { cookie })
+      ).corpo as PaginaPublicada<ImovelPublicado>;
+
+      expect(naListagem(listagem, imovelOcupado).contratoVigente).toEqual(vigenteDoOcupado);
+      expect(naListagem(listagem, imovelComRascunho).contratoVigente).toBeNull();
+
+      // --- Passo 3: a carteira expandida ---------------------------------------------------------
+      //
+      // A terceira superfície não tem esquema próprio: `esquemaDoConjuntoComImoveis` reusa
+      // `esquemaDoImovel` inteiro (ADR-0016), e é por isso que o campo chega aqui **por
+      // consequência**. Afirmá-lo mesmo assim é o que pega uma carteira que voltasse a publicar
+      // imóveis por uma tradução própria.
+      const naCarteira = await lerCarteiraExpandida(conjuntoDoCaso);
+
+      expect(imovelDaCarteira(naCarteira, imovelOcupado).contratoVigente).toEqual(vigenteDoOcupado);
+      expect(imovelDaCarteira(naCarteira, imovelComRascunho).contratoVigente).toBeNull();
+
+      // --- Passo 4: as três superfícies concordam CAMPO A CAMPO ----------------------------------
+      //
+      // A âncora que nenhuma das três asserções acima dá sozinha: elas comparam cada superfície com o
+      // arranjo, e esta compara as superfícies **entre si**, sobre o corpo inteiro do imóvel. É a
+      // mesma forma do `CT-307`, que compara os produtores do agregado — e é o que reprovaria uma
+      // borda que apresentasse o campo em duas superfícies e o compusesse diferente na terceira.
+      expect(naListagem(listagem, imovelOcupado)).toEqual(individualDoOcupado);
+      expect(imovelDaCarteira(naCarteira, imovelOcupado)).toEqual(individualDoOcupado);
+      expect(naListagem(listagem, imovelComRascunho)).toEqual(individualDoRascunho);
+      expect(imovelDaCarteira(naCarteira, imovelComRascunho)).toEqual(individualDoRascunho);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-419 (b) — retirar o contrato de circulação NÃO libera o imóvel; cancelar libera',
+    async () => {
+      // O arranjo é PRÓPRIO deste caso: ele muda o estado do contrato, e reusar o do `CT-419` faria
+      // aquele caso depender da ordem de execução (AP-08).
+      const imovel = await criarImovelComComodos(conjuntoDoCaso, 'Ap 303', SEM_COMODOS);
+      const vigente = await ocupar(imovel);
+
+      expect((await lerImovel(imovel)).contratoVigente).toEqual(vigente);
+
+      // --- Metade 1: a RETIRADA de circulação não muda nada -------------------------------------
+      //
+      // RN-15: a retirada é de **visibilidade**, não muda o estado e não libera o imóvel. Um
+      // `AND retirado_em IS NULL` na leitura em lote faria a retirada virar uma porta lateral para
+      // destravar o imóvel sem cancelar o contrato — e é só esta metade que o reprova, nas três
+      // superfícies.
+      const retirada = await pedir(`${COLECAO_DE_CONTRATOS}/${vigente.codigo}/retirada`, {
+        metodo: 'POST',
+        cookie,
+        corpo: {},
+      });
+      exigir(retirada, 200, `a retirada do contrato ${vigente.codigo}`);
+
+      const aposRetirada = await lerImovel(imovel);
+      expect(aposRetirada.contratoVigente).toEqual(vigente);
+      expect(
+        naListagem(
+          (await pedir(`${COLECAO_DE_IMOVEIS}?limite=${String(LIMITE_DECLARADO)}`, { cookie }))
+            .corpo as PaginaPublicada<ImovelPublicado>,
+          imovel,
+        ).contratoVigente,
+      ).toEqual(vigente);
+      expect(
+        imovelDaCarteira(await lerCarteiraExpandida(conjuntoDoCaso), imovel).contratoVigente,
+      ).toEqual(vigente);
+
+      // --- Metade 2: o CANCELAMENTO libera ------------------------------------------------------
+      //
+      // O par que impede a metade acima de passar sobre uma leitura que nunca zera o campo: se o
+      // filtro casasse qualquer estado, o cancelado continuaria aparecendo aqui.
+      const cancelamento = await pedir(`${COLECAO_DE_CONTRATOS}/${vigente.codigo}/cancelamento`, {
+        metodo: 'POST',
+        cookie,
+        corpo: {},
+      });
+      exigir(cancelamento, 200, `o cancelamento do contrato ${vigente.codigo}`);
+
+      expect((await lerImovel(imovel)).contratoVigente).toBeNull();
+      expect(
+        naListagem(
+          (await pedir(`${COLECAO_DE_IMOVEIS}?limite=${String(LIMITE_DECLARADO)}`, { cookie }))
+            .corpo as PaginaPublicada<ImovelPublicado>,
+          imovel,
+        ).contratoVigente,
+      ).toBeNull();
+      expect(
+        imovelDaCarteira(await lerCarteiraExpandida(conjuntoDoCaso), imovel).contratoVigente,
+      ).toBeNull();
+    },
+    LIMITE_CASO_MS,
+  );
+});
+
+// ---------------------------------------------------------------------------------------------
+// O arranjo do CT-419 — o contrato vigente, montado e ativado pelas ROTAS reais
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Monta um contrato em `RASCUNHO` sobre o imóvel informado, com locador e locatário **próprios**.
+ *
+ * As partes são novas a cada chamada porque o documento é único por empresa e a unicidade **alcança
+ * os retirados**: reusar uma pessoa faria a segunda montagem depender do que a primeira criou (AP-08).
+ * O nome do locatário volta junto porque é ele que as três superfícies têm de apresentar.
+ */
+async function montarRascunho(imovelId: string): Promise<ContratoVigentePublicado> {
+  sequenciaDoDocumento += 1;
+  const marca = String(sequenciaDoDocumento).padStart(3, '0');
+
+  const locador = await criarPessoa(
+    COLECAO_DE_LOCADORES,
+    cpfValido(sequenciaDoDocumento),
+    `Locador ${marca}`,
+  );
+
+  sequenciaDoDocumento += 1;
+  const nomeDoLocatario = `Locatário ${marca}`;
+  const locatario = await criarPessoa(
+    COLECAO_DE_LOCATARIOS,
+    cpfValido(sequenciaDoDocumento),
+    nomeDoLocatario,
+  );
+
+  const montagem = await pedir(COLECAO_DE_CONTRATOS, {
+    metodo: 'POST',
+    cookie,
+    corpo: {
+      imovelId,
+      locadorId: locador.id,
+      locatarioId: locatario.id,
+      fiadoresIds: [],
+      ...TERMOS_DO_CONTRATO,
+    },
+  });
+  exigir(montagem, 201, `a montagem do contrato do imóvel ${imovelId}`);
+
+  return {
+    codigo: (montagem.corpo as { codigo: string }).codigo,
+    locatario: { id: locatario.id, nome: nomeDoLocatario },
+  };
+}
+
+/** Monta e **ativa** um contrato sobre o imóvel, pelas rotas reais, e devolve o par publicado. */
+async function ocupar(imovelId: string): Promise<ContratoVigentePublicado> {
+  const vigente = await montarRascunho(imovelId);
+
+  const ativacao = await pedir(`${COLECAO_DE_CONTRATOS}/${vigente.codigo}/ativacao`, {
+    metodo: 'POST',
+    cookie,
+    corpo: {},
+  });
+  exigir(ativacao, 200, `a ativação do contrato ${vigente.codigo}`);
+
+  return vigente;
+}
+
+/** A leitura individual do imóvel, pela rota real. A falha levanta. */
+async function lerImovel(imovelId: string): Promise<ImovelPublicado> {
+  const leitura = await pedir(`${COLECAO_DE_IMOVEIS}/${imovelId}`, { cookie });
+  exigir(leitura, 200, `a leitura individual do imóvel ${imovelId}`);
+
+  return leitura.corpo as ImovelPublicado;
+}
+
+/** A carteira expandida, recortada ao conjunto informado. A ausência dele levanta. */
+async function lerCarteiraExpandida(conjuntoId: string): Promise<ConjuntoComImoveisPublicado> {
+  const resposta = await pedir(
+    `${COLECAO_DE_CONJUNTOS}?limite=${String(LIMITE_DECLARADO)}&expandir=${EXPANSAO_VALIDA}`,
+    { cookie },
+  );
+  exigir(resposta, 200, 'a leitura da carteira expandida');
+
+  const carteira = resposta.corpo as PaginaPublicada<ConjuntoComImoveisPublicado>;
+  const doCaso = carteira.itens.find((item) => item.id === conjuntoId);
+
+  if (doCaso === undefined) {
+    throw new Error(`o conjunto ${conjuntoId} não veio na carteira expandida`);
+  }
+
+  return doCaso;
+}
+
+/**
+ * O imóvel de identificador informado dentro de uma página — a ausência **levanta**.
+ *
+ * Ela levanta em vez de devolver `undefined` porque um imóvel que sumiu da listagem é falha de
+ * arranjo, e `undefined?.contratoVigente` satisfaria silenciosamente um `toBeNull()`.
+ */
+function naListagem(pagina: PaginaPublicada<ImovelPublicado>, imovelId: string): ImovelPublicado {
+  const encontrado = pagina.itens.find((item) => item.id === imovelId);
+
+  if (encontrado === undefined) {
+    throw new Error(`o imóvel ${imovelId} não veio na listagem`);
+  }
+
+  return encontrado;
+}
+
+/** O mesmo, dentro do conjunto da carteira expandida — e pela mesma razão, a ausência levanta. */
+function imovelDaCarteira(
+  conjunto: ConjuntoComImoveisPublicado,
+  imovelId: string,
+): ImovelPublicado {
+  const encontrado = conjunto.imoveis.find((item) => item.id === imovelId);
+
+  if (encontrado === undefined) {
+    throw new Error(`o imóvel ${imovelId} não veio na carteira expandida`);
+  }
+
+  return encontrado;
+}
+
 // ---------------------------------------------------------------------------------------------
 // O arranjo do CT-329 — montado pelas ROTAS reais, no `beforeAll`
 // ---------------------------------------------------------------------------------------------
@@ -1012,7 +1359,20 @@ interface ConjuntoComImoveisPublicado extends ConjuntoPublicado {
   readonly imoveis: readonly ImovelPublicado[];
 }
 
-/** Um imóvel como a API o publica, com as duas derivadas que a T7 povoa. */
+/**
+ * O contrato vigente que ocupa o imóvel, como a API o publica.
+ *
+ * Declarado aqui, e não importado de `@sysloc/contracts`, pela razão de {@link ImovelPublicado}:
+ * derivá-lo do tipo do SUT faria a asserção concordar consigo mesma. As **duas classes de chave** da
+ * ADR-0017 convivem nele — `codigo` para o contrato, que tem série declarada, e `id` para o
+ * locatário, que não tem — e é exatamente isso que o `CT-419` afirma por igualdade.
+ */
+interface ContratoVigentePublicado {
+  readonly codigo: string;
+  readonly locatario: { readonly id: string; readonly nome: string };
+}
+
+/** Um imóvel como a API o publica, com as três derivadas — as duas da T7 e a da T9. */
 interface ImovelPublicado {
   readonly id: string;
   readonly conjuntoId: string;
@@ -1030,6 +1390,7 @@ interface ImovelPublicado {
   readonly observacoes: string | null;
   readonly comodos: readonly unknown[];
   readonly metragemTotal: number;
+  readonly contratoVigente: ContratoVigentePublicado | null;
   readonly retiradoEm: string | null;
 }
 

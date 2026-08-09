@@ -1,0 +1,1032 @@
+/**
+ * Contrato de locação — a regra de domínio das seis rotas de cadastro de `/v1/contratos` e das
+ * **duas transições de estado governadas do produto** (`/ativacao` e `/cancelamento`).
+ *
+ * ---------------------------------------------------------------------------
+ * ELE RECEBE O EXECUTOR, E NÃO ABRE UNIDADE PRÓPRIA (decisão D1)
+ * ---------------------------------------------------------------------------
+ *
+ * Todos os métodos tomam o `tx` de quem já abriu a unidade de trabalho — o controlador. Nenhum deles
+ * chama `emUnidadeDeTrabalho`, e é essa ausência que faz o contrato e os fiadores dele nascerem num
+ * **commit só**. Se este serviço abrisse unidade própria, a composição bateria em
+ * `ErroDeUnidadeAninhada`, e a saída seria fundir serviços para satisfazer o mecanismo de transação —
+ * a topologia às avessas. É a mesma decisão, com a mesma razão, de {@link ../imoveis/imovel.service.js},
+ * e é a saída que o próprio marcador `DECISÃO FECHADA` de `packages/db/src/unidade-de-trabalho.ts`
+ * aponta como preferível. **A decisão fechada não é tocada.**
+ *
+ * A ausência de construtor é o mecanismo: o acesso ao banco **não** é injetado aqui, porque injetá-lo
+ * daria a este serviço exatamente a capacidade que ele não pode ter.
+ *
+ * ---------------------------------------------------------------------------
+ * ELE ORQUESTRA — não escreve consulta, e não compara empresa
+ * ---------------------------------------------------------------------------
+ *
+ * Toda instrução sobre `negocio.contrato` e `negocio.contrato_fiador` vive em
+ * `packages/db/src/contrato.ts`, publicada como função de domínio. A razão é a enumerabilidade, e
+ * está por extenso no cabeçalho daquele arquivo: a contenção da §11.2 é de **tipo** e não alcança
+ * texto de SQL, de modo que o que a mantém viva é não haver **onde** escrever a instrução.
+ *
+ * Não existe, em lugar algum deste arquivo, uma comparação de empresa. O contrato de outra empresa
+ * não é achado — a política do banco o esconde —, e a ausência vira `404 RECURSO_NAO_ENCONTRADO` num
+ * ponto único ({@link ContratoService.exigir}).
+ *
+ * ---------------------------------------------------------------------------
+ * A GARANTIA DA SÉRIE mora aqui, e o controlador só ABRE a unidade dela
+ * ---------------------------------------------------------------------------
+ *
+ * A §5.1 da tech spec descreve o fluxo como *"o controlador abre a primeira unidade e chama
+ * `garantirContadorDeContrato(tx, ano)`"*. O que aquela frase fixa — e o que esta base não negocia —
+ * é **onde a unidade abre**: na borda, sempre. Quem alcança a camada de dados continua sendo o
+ * serviço, por {@link ContratoService.garantirSerie}, e a razão é a mesma que mantém o SQL inteiro em
+ * `packages/db`: nenhum controlador desta superfície importa função de porta, e a primeira exceção
+ * tornaria o alcance às tabelas do domínio deixar de ser enumerável pela lista de importações dos
+ * cinco controladores de cadastro. O invariante da §3.2 da task fica intacto — são **duas unidades
+ * sequenciais**, abertas pelo controlador, e a segunda começa depois de a primeira commitar.
+ *
+ * ---------------------------------------------------------------------------
+ * A CONFERÊNCIA DOS CADASTROS REFERENCIADOS tem DUAS metades, e elas são de naturezas diferentes
+ * ---------------------------------------------------------------------------
+ *
+ * {@link ContratoService.exigirCadastrosAlcancaveisEEmCirculacao} é o **ponto único** das duas, e
+ * roda na montagem **e** na alteração — os dois carregam o corpo completo, com os mesmos quatro
+ * campos de referência e a mesma exposição.
+ *
+ *   * **alcance** — é uma **leitura sob a política** (`localizarImovel`, `localizarPessoa`), e não
+ *     uma comparação de `empresa_id` escrita aqui. Ela existe por razão de **contrato**, e não de
+ *     segurança: quem impede o vínculo cruzado são as quatro chaves estrangeiras compostas, que
+ *     recusariam a linha de qualquer jeito (ADR-0008, §7.2). O que ela compra é a **forma** da
+ *     recusa: sem ela, o cadastro de outra empresa produziria erro de driver — `500` com o erro do
+ *     banco —, e o `500` diria ao cliente que aquele identificador existe em algum lugar. Com ela,
+ *     cadastro alheio e cadastro inexistente respondem o **mesmo** `404`, byte a byte, que é o que o
+ *     `CT-423` mede;
+ *   * **circulação** — as portas por identificador **alcançam o retirado de propósito**, para que a
+ *     recirculação seja possível (ADR-0014). Nada, portanto, recusaria sozinho um contrato montado
+ *     sobre um locatário que saiu de circulação, e a conferência é **deliberada e visível**:
+ *     `422 CAMPO_INVALIDO` nomeando o campo, com `detalhes.circulacao` dizendo por quê. É a
+ *     informação que resolve a situação — recircular o cadastro, ou apontar outro.
+ *
+ * A ordem das quatro é fixa (imóvel, locador, locatário, fiadores) porque a recusa nomeia **um**
+ * campo: uma ordem que variasse faria o mesmo corpo recusado nomear campos diferentes entre
+ * requisições.
+ *
+ * ---------------------------------------------------------------------------
+ * A ALTERAÇÃO SÓ ENQUANTO RASCUNHO (RD-05) — e por que ela NÃO substitui a defesa da porta
+ * ---------------------------------------------------------------------------
+ *
+ * A guarda de estado vive aqui, num ponto único, e produz `422 CAMPO_INVALIDO` com `campo: 'status'`
+ * e `detalhes: { estadoAtual, transicaoPedida }` — a recusa é de **domínio** e precisa nomear o
+ * estado atual na resposta, o que a camada de dados, que não conhece HTTP, não faz.
+ *
+ * **Ela é leitura-antes-de-gravar, e por isso não é defesa de integridade.** Entre o `SELECT` que vê
+ * `RASCUNHO` e o `UPDATE` cabe uma ativação concorrente do mesmo contrato, e o `UPDATE` alcançaria
+ * uma linha que já está no índice `contrato_imovel_vigente_uidx`. Quem fecha essa janela é o
+ * envoltório `gravarSobIndiceDeVigencia` da porta — protegido por marcador `DECISÃO FECHADA` em
+ * `packages/db/src/contrato.ts` —, e é por isso que
+ * {@link ContratoService.traduzirConflitoDeGravacao} trata {@link ErroDeImovelComContratoVigente}
+ * **também na alteração**, e não apenas onde a ativação da T7 o produzirá. Sem essa tradução, a
+ * corrida devolveria `500` ao cliente: o defeito que a porta fechou, reaberto um andar acima.
+ *
+ * ---------------------------------------------------------------------------
+ * A ATIVAÇÃO É UM ATO, com ORDEM FIXA e DUAS escritas no MESMO commit
+ * ---------------------------------------------------------------------------
+ *
+ * {@link ContratoService.ativar} é a primeira transição de estado governada do produto (ADR-0019), e
+ * a ordem das sete etapas é **conteúdo**, não estilo — cada uma existe porque a anterior já decidiu
+ * algo que ela precisa:
+ *
+ *   1. **localizar** — contrato inalcançável responde `404` antes de qualquer outra coisa, senão a
+ *      recusa por estado diria que ele existe;
+ *   2. **exigir `RASCUNHO`** — a máquina de estados é do servidor (ver a nota logo abaixo);
+ *   3. **condições de entrada portadas** (RD-08) — o que o oráculo governa;
+ *   4. **reconferir a circulação** das quatro referências, no **ponto único**
+ *      {@link ContratoService.exigirCadastrosAlcancaveisEEmCirculacao} — a montagem pode ter sido há
+ *      semanas, e a circulação é a **única** das seis condições capaz de mudar nesse intervalo;
+ *   5. **derivar** por {@link derivarTerminoDaLocacao} e {@link derivarValorTotal} — este serviço
+ *      **não recalcula nada** (ver a nota abaixo);
+ *   6. **gravar** `ATIVO` com as duas derivações, com a recusa por imóvel ocupado vindo do índice
+ *      único parcial e traduzida por {@link ContratoService.traduzirConflitoDeGravacao};
+ *   7. **marcar o imóvel** `LOCADO` pela **porta estreita** `definirSituacaoDeLocacaoDoImovel`.
+ *
+ * **As etapas 6 e 7 são DUAS escritas independentes, e nada no banco as pareia.** Nenhuma restrição
+ * recusa um imóvel `DISPONIVEL` com contrato vigente — o docblock daquela porta nomeia o modo de
+ * falha por extenso: *"não acusaria nada até a segunda locação ser recusada"*. O que as mantém
+ * juntas é elas correrem na **mesma unidade de trabalho**, aberta na borda: qualquer falha depois da
+ * etapa 6 desfaz também o `ATIVO`. É por isso que este método **não abre unidade própria** e por isso
+ * que a etapa 7 não é uma segunda requisição.
+ *
+ * ---------------------------------------------------------------------------
+ * O CANCELAMENTO fecha a máquina de estados — e o que ele NÃO faz é a decisão
+ * ---------------------------------------------------------------------------
+ *
+ * {@link ContratoService.cancelar} é a segunda transição governada (ADR-0019), e tem **quatro**
+ * etapas, na ordem em que elas dependem umas das outras:
+ *
+ *   1. **localizar** — contrato inalcançável responde `404` antes de qualquer outra coisa, pela mesma
+ *      razão da ativação: a recusa por estado diria que ele existe;
+ *   2. **exigir `ATIVO`** — cancelar `RASCUNHO`, `CANCELADO` ou `ENCERRADO` é `422` nomeando
+ *      `status`, no ponto único {@link ContratoService.exigirEstado};
+ *   3. **gravar `CANCELADO`** — sem envoltório de conflito, e a ausência está explicada no docblock
+ *      do método;
+ *   4. **devolver o imóvel a `DISPONIVEL`** pela **mesma porta estreita** da ativação.
+ *
+ * As etapas 3 e 4 são, de novo, **duas escritas independentes que nada no banco pareia** — e o que as
+ * mantém juntas é a unidade de trabalho aberta na borda. O modo de falha do par quebrado aqui é o
+ * espelho do da ativação, e pior de perceber: um imóvel que ficasse `LOCADO` depois de o contrato
+ * dele ser cancelado ficaria **inlocável pela interface**, sem que nada acusasse.
+ *
+ * **Três coisas o cancelamento NÃO faz, e as três ausências são decisões desta fatia:**
+ *
+ *   * **não apaga e não retira de circulação.** O contrato cancelado permanece na carteira, legível e
+ *     listado — é o histórico que a ADR-0014 preserva, e é o que separa *cancelar* de *retirar de
+ *     circulação*. As duas derivações da ativação também ficam: elas descrevem o que o contrato foi
+ *     enquanto valeu;
+ *   * **não é idempotente.** Repetir o pedido é transição inválida e recebe `422` com
+ *     `estadoAtual: 'CANCELADO'`, porque o segundo pedido significa que quem o fez **não sabia o
+ *     estado** — e responder `200` o deixaria acreditar que acabou de cancelar algo;
+ *   * **não exige o PDF do contrato.** Ver o marcador `DÉBITO COM GATILHO` no ponto do método: é a
+ *     única regra do oráculo deliberadamente não portada, e o gatilho é a F3.
+ *
+ * **O cancelamento em cascata das cobranças cancela um conjunto vazio, e isso é correto.**
+ * `negocio.cobranca` não existe nesta fatia (RD-12), de modo que o percurso do sistema antigo sobre
+ * as cobranças canceláveis não tem elemento algum aqui. Quando a F3 chegar, o conjunto passa a ter
+ * elementos e o mesmo caminho percorre — não há nada a antecipar, e antecipar seria escrever a regra
+ * de outra fatia contra um oráculo que esta não prova. O efeito que **existe** e que esta fatia prova
+ * é o imóvel voltar a `DISPONIVEL`.
+ *
+ * ---------------------------------------------------------------------------
+ * A REGRA NÃO VAZA DE VOLTA — o serviço não recalcula nada
+ * ---------------------------------------------------------------------------
+ *
+ * As duas derivações saem **inteiras** de `packages/db/src/derivacao-de-contrato.ts`, e não há neste
+ * arquivo aritmética alguma de data ou de dinheiro. A proibição está escrita no cabeçalho daquele
+ * módulo, e ela é a contrapartida de a RD-10 afirmar *"a derivação acontece num lugar só"*.
+ *
+ * ---------------------------------------------------------------------------
+ * A PROVA DISTO É ESTÁTICA, e a razão está MEDIDA — leia antes de "simplificar"
+ * ---------------------------------------------------------------------------
+ *
+ * A tentação de escrever `atual.valorMensal * atual.prazoMeses` aqui é grande, e **nenhum caso
+ * comportamental desta suíte a reprova**. Isso foi medido nesta task, e a razão é do domínio, não da
+ * suíte:
+ *
+ *   * o **golden é cego** à forma ingênua — ela acerta os 23 cenários do oráculo sem exceção;
+ *   * e o **`numeric(15,2)` normaliza o resíduo antes de a resposta existir**. O valor publicado é o
+ *     que volta do `RETURNING` da porta, e o produto exato de um valor de duas casas por um inteiro
+ *     tem **sempre** duas casas — nunca cai na borda de arredondamento. No teto do domínio que
+ *     `esquemaDeContratoNovo` admite (`MAIOR_VALOR_MONETARIO`, 9.99999999999999 × 10¹²), o erro
+ *     máximo do ponto flutuante é `2^-52 ×` esse teto ≈ **0,00222** — menos da metade dos 0,005 de
+ *     que a divergência precisaria. **O domínio inteiro é seguro por construção**, e não por acaso.
+ *
+ * Consequência prática, e é ela que importa para quem editar este arquivo: *a multiplicação ingênua
+ * aqui seria hoje indistinguível pela rota*, e passaria por toda a suíte. O que a impede é a asserção
+ * **estática** do `CT-413 (c)`, que varre este fonte e acusa qualquer aritmética de dinheiro, de prazo
+ * ou de instante fora das duas chamadas puras. **É ela a rede desta decisão** (P4 do Protocolo
+ * Antirregressão), e é por isso que ela existe apesar de haver casos E2E de sobra sobre a ativação.
+ *
+ * A indistinguibilidade **é de hoje, e não é garantia**: ela depende do teto atual da coluna e do
+ * esquema. Um teto maior, uma escala diferente, ou um consumidor que publique o valor derivado em vez
+ * do lido — e o resíduo passa a chegar ao cliente. A regra continua sendo a mesma: **a regra não vaza
+ * de volta para cá.**
+ *
+ * ---------------------------------------------------------------------------
+ * A MÁQUINA DE ESTADOS É NOSSA — a divergência do sistema antigo é DELIBERADA
+ * ---------------------------------------------------------------------------
+ *
+ * No sistema antigo, `ativar_contrato_e_gerar_cobrancas` **não confere estado algum**: ele ativa a
+ * partir de qualquer `status_contrato`, inclusive de um já cancelado. Aqui a ativação exige
+ * `RASCUNHO`, e a diferença é decisão desta fatia — fixada pela ADR-0019 e exigida pelo CA-10.
+ *
+ * O oráculo (`golden/contrato-ativacao.json`) governa **três** coisas, e só três: as condições de
+ * entrada (RD-08), as derivações (RD-10) e a guarda de imóvel ocupado (RD-09). **A máquina de estados
+ * não está entre elas.** Sem esta nota, a rodada seguinte leria a guarda de estado como divergência
+ * com o legado e a "corrigiria".
+ *
+ * ---------------------------------------------------------------------------
+ * `INDISPONIVEL` NÃO IMPEDE A ATIVAÇÃO — e a assimetria com a T10 é o ponto
+ * ---------------------------------------------------------------------------
+ *
+ * `ativar_imovel_contrato`, no sistema antigo, confere **apenas** `contrato_ativo`; ele **não olha**
+ * `status_locacao`. Recusar a ativação de um imóvel `INDISPONIVEL` seria condição de entrada nova,
+ * sem fonte no legado nem no PRD — contra a RN-08, que fixa as seis condições portadas.
+ * `INDISPONIVEL` significa *"não ofereça nas buscas"*, e não *"proibido de locar"*.
+ *
+ * A assimetria com a rota de situação de locação da T10 — que **recusa** pôr em `INDISPONIVEL` um
+ * imóvel locado — é deliberada e não é defeito: um sentido protege um invariante que existe
+ * (`LOCADO` implica contrato vigente); o outro inventaria uma regra que ninguém declarou. O `CT-413`
+ * mede o sub-caso.
+ *
+ * ---------------------------------------------------------------------------
+ * A RECUSA POR CONFLITO é traduzida AQUI, num ponto só
+ * ---------------------------------------------------------------------------
+ *
+ * O vocabulário de erro é **fechado em sete códigos e não tem código de conflito**:
+ * `STATUS_POR_CODIGO` é `Record<CodigoErro, number>`, de modo que acrescentar valor sem mapear status
+ * não compila — e acrescentar código é decisão de contrato com efeito no handoff, não escolha de
+ * implementação. A §10.1 da tech spec fixa, por isso, a forma das duas recusas: `422 CAMPO_INVALIDO`
+ * com o campo culpado e o discriminador **`detalhes.conflito`**.
+ *
+ * A tradução é **uma** para as duas classes: duas ficariam livres para divergir no código, no campo
+ * nomeado e no nome do discriminador — e os três são contrato publicado. É o mesmo desenho, e a mesma
+ * razão, de `traduzirConflitoDeIdentificador` em {@link ../imoveis/imovel.service.js}.
+ */
+
+import { Injectable } from '@nestjs/common';
+import type {
+  AtivacaoDeContrato,
+  Contrato,
+  ContratoNovo,
+  EnvelopeDeLista,
+  EstadoDoContrato,
+  Janela,
+  SituacaoDeLocacao,
+} from '@sysloc/contracts';
+import {
+  alterarContrato,
+  ativarContrato,
+  type ContratoPersistido,
+  cancelarContrato,
+  criarContrato,
+  type DerivacoesDaAtivacao,
+  definirCirculacaoDoContrato,
+  definirSituacaoDeLocacaoDoImovel,
+  derivarTerminoDaLocacao,
+  derivarValorTotal,
+  ErroDeCodigoEmUso,
+  ErroDeImovelComContratoVigente,
+  emitirNumeroDeContrato,
+  garantirContadorDeContrato,
+  lerAnoDaSerieDeContrato,
+  listarContratos,
+  localizarContrato,
+  localizarImovel,
+  localizarPessoa,
+  localizarPessoas,
+  type OpcoesDeCirculacao,
+  type PapelDePessoa,
+} from '@sysloc/db';
+import { CodigoErro, ErroDeAplicacao } from '@sysloc/shared';
+import type { TransactionSql } from 'postgres';
+import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
+
+/** A página de contratos, na forma canônica de lista da ADR-0017. */
+export type PaginaDeContratos = EnvelopeDeLista<Contrato>;
+
+/**
+ * Os **quatro** campos que a conferência de cadastros referenciados lê — e nada além deles.
+ *
+ * Estrutural e nomeado, e **não** `ContratoNovo`: a conferência é declarada ponto único das escritas
+ * **e** da ativação (T7), e na ativação não existe `ContratoNovo` nenhum — o que há lá é um contrato
+ * já persistido, cuja coleção de fiadores é `{ id, nome }[]`. Tipar o parâmetro no corpo inteiro do
+ * `POST` obrigaria o consumidor seguinte a **fabricar um objeto sintético** com dez campos para usar
+ * quatro; e uma assinatura que cobra isso é precisamente o que faz um executor futuro preferir
+ * escrever a própria conferência — o modo de falha que produziu os débitos D12, D38 e D40 nesta base.
+ *
+ * É o mesmo princípio, e a mesma razão, de {@link ContratoService.exigirEmCirculacao}, que recebe a
+ * marca de retirada em vez do cadastro inteiro. Nenhum ponto de chamada atual muda: `ContratoNovo`
+ * satisfaz este subconjunto estruturalmente.
+ */
+export interface CadastrosReferenciados {
+  readonly imovelId: string;
+  readonly locadorId: string;
+  readonly locatarioId: string;
+  readonly fiadoresIds: readonly string[];
+}
+
+/**
+ * Os campos que a recusa nomeia, como o cliente os conhece (camelCase, ADR-0017).
+ *
+ * Constantes nomeadas, e não literais no ponto de cada recusa: elas são **contrato publicado** — o
+ * cliente as usa para destacar o campo do formulário —, e os casos as afirmam por igualdade de corpo
+ * inteiro.
+ */
+const CAMPO_DO_IMOVEL = 'imovelId';
+const CAMPO_DO_LOCADOR = 'locadorId';
+const CAMPO_DO_LOCATARIO = 'locatarioId';
+const CAMPO_DOS_FIADORES = 'fiadoresIds';
+const CAMPO_DO_CODIGO = 'codigo';
+const CAMPO_DO_ESTADO = 'status';
+const CAMPO_DA_DATA_DE_INICIO = 'dataInicioLocacao';
+const CAMPO_DO_PRAZO = 'prazoMeses';
+const CAMPO_DO_VALOR_MENSAL = 'valorMensal';
+const CAMPO_DO_DIA_DE_VENCIMENTO = 'diaVencimento';
+
+/**
+ * O nome do discriminador de circulação dentro de `detalhes`, e o valor que ele carrega.
+ *
+ * Fixados pela §10.1 da tech spec **antes** da implementação, e não escolhidos aqui: a recusa por
+ * cadastro fora de circulação nasce em quatro campos diferentes e voltará na ativação (T7), e um nome
+ * escolhido por conveniência em cada ponto faria a comparação entre eles reprovar por divergência de
+ * forma.
+ */
+const DISCRIMINADOR_DA_CIRCULACAO = 'circulacao';
+const CADASTRO_RETIRADO = 'RETIRADO_DE_CIRCULACAO';
+
+/**
+ * O nome do discriminador de conflito dentro de `detalhes`, e os dois valores que ele carrega.
+ *
+ * O nome é o **mesmo** que a recusa por identificador municipal já publica em
+ * {@link ../imoveis/imovel.service.js} — a §10.1 usa `detalhes.conflito` para toda colisão desta
+ * superfície, e um segundo nome faria o cliente ter de aprender dois vocabulários para a mesma classe
+ * de recusa.
+ */
+const DISCRIMINADOR_DO_CONFLITO = 'conflito';
+const CONFLITO_DE_CODIGO = 'CODIGO_EM_USO';
+const CONFLITO_DE_VIGENCIA = 'IMOVEL_COM_CONTRATO_VIGENTE';
+
+/** A chave que carrega **qual** contrato ocupa o imóvel — o discriminante da RD-09. */
+const CHAVE_DO_CONTRATO_VIGENTE = 'contratoVigente';
+
+/**
+ * O único estado em que o contrato aceita alteração (RD-05), o único de que ele parte para valer e o
+ * único de que ele parte para ser cancelado (RD-02), mais o nome de cada ato recusado.
+ *
+ * **São três constantes, duas delas com o mesmo valor, e a duplicação é deliberada.** Elas
+ * materializam regras diferentes — a janela de edição do rascunho e as duas origens de transição da
+ * ADR-0019 —, e `ESTADO_ALTERAVEL` e `ESTADO_ATIVAVEL` coincidirem hoje é fato do domínio, não
+ * identidade: aceitar alteração num estado a mais não autorizaria ativar a partir dele. Uma constante
+ * só faria a segunda regra mudar junto com a primeira, em silêncio, num campo que o cliente lê.
+ * `ESTADO_CANCELAVEL` é a evidência de que a coincidência era mesmo acidental — ele parte de `ATIVO`.
+ * A anotação é `EstadoDoContrato` porque literal fora da união fechada de `@sysloc/contracts` **não
+ * compila**.
+ *
+ * O nome do ato viaja em `detalhes.transicaoPedida`, e é o que separa as recusas entre si: as quatro
+ * respondem `422` nomeando `status`, e o que diz **o que** foi tentado é este valor.
+ */
+const ESTADO_ALTERAVEL: EstadoDoContrato = 'RASCUNHO';
+const ESTADO_ATIVAVEL: EstadoDoContrato = 'RASCUNHO';
+const ESTADO_CANCELAVEL: EstadoDoContrato = 'ATIVO';
+const ALTERACAO = 'ALTERACAO';
+const ATIVACAO = 'ATIVACAO';
+const CANCELAMENTO = 'CANCELAMENTO';
+
+/**
+ * Os atos que a guarda de estado sabe nomear — união fechada dos três literais acima.
+ *
+ * **Ela existe porque o irmão de `transicaoPedida` dentro do MESMO `detalhes` já tinha o compilador
+ * atrás dele, e ele não tinha.** `estadoAtual` é `EstadoDoContrato`, união fechada de
+ * `@sysloc/contracts`; `transicaoPedida` era `string` solto, e os dois viajam no mesmo objeto da
+ * mesma recusa, os dois publicados ao cliente. Um `'CANCELAMETO'` compilava, passava `pnpm build` e
+ * `pnpm lint`, e só era pego pelo caso E2E — rede real, mas tardia, e dependente de o executor não
+ * copiar o erro de digitação do produto para o teste. É o débito **D34 (F2/T7)**, fechado aqui: a
+ * task que o Tech Review nomeou como devedora é justamente a que acrescenta o terceiro valor.
+ *
+ * `typeof <constante>` em vez de literais redigitados: a união e as constantes são o mesmo fato, e
+ * redigitá-los deixaria os dois livres para divergir — que é o defeito que ela existe para fechar.
+ */
+type TransicaoPedida = typeof ALTERACAO | typeof ATIVACAO | typeof CANCELAMENTO;
+
+/**
+ * A situação que a ativação escreve no imóvel, pela **porta estreita** (RD-11).
+ *
+ * Tipada em {@link SituacaoDeLocacao} — o enum **completo** —, e não em `SituacaoInformavel`: `LOCADO`
+ * é produzido por este ato e por nenhum corpo de requisição. A assimetria entre os dois tipos é
+ * decisão fechada da fatia anterior, com prova dedicada, e o cabeçalho de
+ * `packages/contracts/src/imovel.ts` registra a razão por extenso — **leia-o antes de qualquer
+ * tentativa de simetrizar**.
+ */
+const SITUACAO_DO_IMOVEL_LOCADO: SituacaoDeLocacao = 'LOCADO';
+
+/**
+ * A situação que o cancelamento devolve ao imóvel, pela **mesma porta estreita** (RD-11).
+ *
+ * `DISPONIVEL` é o que o oráculo governa: em `golden/contrato-cancelamento.json`, o imóvel do
+ * contrato cancelado sai com `status_locacao: "Disponível"`, e o do contrato que **não** foi
+ * cancelado permanece `Locado`.
+ *
+ * **A situação anterior à locação não é preservada, e a perda é anterior a este ato.** Um imóvel que
+ * estava `INDISPONIVEL` ao ser locado teve a marca sobrescrita por `LOCADO` na ativação — a coluna
+ * guarda um valor só —, de modo que o cancelamento não tem de onde restaurá-la. Devolver `DISPONIVEL`
+ * é o que o oráculo manda, e inventar uma memória da situação anterior seria regra sem fonte. Quem
+ * quiser o imóvel fora das buscas depois do cancelamento usa a rota de situação de locação.
+ *
+ * Diferente de `SITUACAO_DO_IMOVEL_LOCADO`, este valor **também** pertence a `SituacaoInformavel` —
+ * o cliente pode escrevê-lo pela rota própria. A tipagem aqui continua sendo o enum completo porque
+ * quem escreve é a porta estreita, e não o corpo de uma requisição.
+ */
+const SITUACAO_DO_IMOVEL_DISPONIVEL: SituacaoDeLocacao = 'DISPONIVEL';
+
+/**
+ * A declaração de efeito que acompanha o contrato na resposta da ativação (CA-06).
+ *
+ * O literal `false` é o ponto, e ele está no esquema: nesta fatia a ativação **não** gera cobrança
+ * (RD-12), e declará-lo em vez de deixá-lo implícito obriga a F3 a **tocar o contrato** para
+ * afrouxá-lo. A mudança aparece no diff, em vez de acontecer por omissão — que é como um consumidor
+ * descobriria, em produção, que o significado da resposta mudou.
+ *
+ * Congelada porque é compartilhada por toda resposta: ela é serializada, nunca modificada.
+ *
+ * DÉBITO COM GATILHO — D28 · F2/T7 · registrado 2026-08-09
+ * (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o código abaixo.)
+ * O QUÊ: a ativação **não gera as cobranças** do contrato, e a declaração de efeito é o literal
+ *        `false`. O sistema antigo gera as parcelas no mesmo ato
+ *        (`montar_dados_cobrancas_contrato`), e o golden já capturou os três cenários delas.
+ * QUANDO FECHA: na **F3**, a fatia de cobrança e integração bancária — ela é obrigada a afrouxar o
+ *        literal para publicar quantas cobranças nasceram, e não consegue fazê-lo sem editar
+ *        `esquemaDaAtivacaoDeContrato` e este ponto.
+ * POR QUE NÃO AGORA: `negocio.cobranca` não existe, e a competência, a referência e o dia de
+ *        vencimento saturado das parcelas são a entrega da F3 — antecipá-los aqui seria escrever a
+ *        regra de outra fatia contra um oráculo que esta não prova.
+ * ÍNDICE: docs/specs/features/contratos-de-locacao/v1/_run/run-report.md §2, D28
+ */
+const EFEITOS_DA_ATIVACAO: AtivacaoDeContrato['efeitos'] = Object.freeze({
+  cobrancasGeradas: false,
+});
+
+/**
+ * As **seis condições de entrada portadas** do sistema antigo (RD-08), na ordem em que ele as confere.
+ *
+ * ---------------------------------------------------------------------------
+ * ELAS EXISTEM AQUI, E A CONFERÊNCIA NÃO É REDUNDANTE
+ * ---------------------------------------------------------------------------
+ *
+ * Nesta spec as seis são **estruturalmente garantidas na criação** — três `check` no banco
+ * (`contrato_dia_vencimento_chk`, `contrato_prazo_positivo_chk`,
+ * `contrato_valor_mensal_positivo_chk`), três colunas `NOT NULL` e o esquema fechado da borda. Nenhum
+ * corpo que a superfície aceita hoje as viola, e é por isso que nenhum caso de rota as alcança.
+ *
+ * A conferência existe assim mesmo, e por uma razão que não é zelo: **é ela o ponto que o oráculo
+ * governa**. A RN-08 diz que quem decide as condições de fazer valer é
+ * `validar_contrato_para_ativacao`, do sistema antigo — não o esquema de entrada, que é uma segunda
+ * materialização do mesmo fato. Um caminho futuro que relaxe a criação (uma importação da virada, um
+ * corpo parcial, uma coluna que ganhe padrão) encontraria esta tabela; sem ela, encontraria a
+ * gravação.
+ *
+ * ---------------------------------------------------------------------------
+ * A ORDEM É A DO ORÁCULO, e a recusa nomeia a PRIMEIRA insatisfeita
+ * ---------------------------------------------------------------------------
+ *
+ * `validar_contrato_para_ativacao` confere data, prazo, valor, dia, imóvel e locatário **nessa
+ * ordem**, e para na primeira. Reproduzi-la é o que faz o mesmo contrato inapto nomear sempre o mesmo
+ * campo — uma ordem escolhida por conveniência faria a resposta depender de qual condição o
+ * implementador escreveu primeiro.
+ *
+ * Os dois limites do dia de vencimento são escritos aqui, e **não** importados de
+ * `@sysloc/contracts`: eles são privados daquele módulo, e a fonte declarada desta conferência é o
+ * oráculo (`dia_vencimento < 1 or dia_vencimento > 28`), não o esquema da borda. Os dois valores
+ * coincidem porque **derivam do mesmo lugar**, e o `check` do banco é a terceira materialização.
+ */
+interface CondicaoDeEntrada {
+  /** O campo que a recusa nomeia, como o cliente o conhece (camelCase, ADR-0017). */
+  readonly campo: string;
+  readonly satisfeita: (contrato: ContratoPersistido) => boolean;
+}
+
+const MENOR_DIA_DE_VENCIMENTO_DO_ORACULO = 1;
+const MAIOR_DIA_DE_VENCIMENTO_DO_ORACULO = 28;
+
+const CONDICOES_DE_ENTRADA_DA_ATIVACAO: readonly CondicaoDeEntrada[] = [
+  { campo: CAMPO_DA_DATA_DE_INICIO, satisfeita: (c) => c.dataInicioLocacao.length > 0 },
+  { campo: CAMPO_DO_PRAZO, satisfeita: (c) => c.prazoMeses > 0 },
+  { campo: CAMPO_DO_VALOR_MENSAL, satisfeita: (c) => c.valorMensal > 0 },
+  {
+    campo: CAMPO_DO_DIA_DE_VENCIMENTO,
+    satisfeita: (c) =>
+      c.diaVencimento >= MENOR_DIA_DE_VENCIMENTO_DO_ORACULO &&
+      c.diaVencimento <= MAIOR_DIA_DE_VENCIMENTO_DO_ORACULO,
+  },
+  { campo: CAMPO_DO_IMOVEL, satisfeita: (c) => c.imovelId.length > 0 },
+  { campo: CAMPO_DO_LOCATARIO, satisfeita: (c) => c.locatarioId.length > 0 },
+];
+
+/** O papel de cada pessoa referenciada, nomeado uma vez — a porta de leitura é parametrizada nele. */
+const PAPEL_DO_LOCADOR: PapelDePessoa = 'locador';
+const PAPEL_DO_LOCATARIO: PapelDePessoa = 'locatario';
+const PAPEL_DO_FIADOR: PapelDePessoa = 'fiador';
+
+@Injectable()
+export class ContratoService {
+  // Sem construtor, e a ausência é o ponto: ver o cabeçalho deste arquivo.
+
+  /**
+   * Garante o contador do escopo `(empresa da sessão, ano)` e devolve **o ano lido**.
+   *
+   * ---------------------------------------------------------------------------
+   * ELA É A PRIMEIRA das DUAS UNIDADES SEQUENCIAIS — e a separação é a ADR-0015
+   * ---------------------------------------------------------------------------
+   *
+   * Ela corre numa unidade de trabalho **própria, que commita antes de a segunda abrir**. Fundir as
+   * duas devolveria o número `00001` no desfazimento: a criação da sequência e o `nextval` cairiam na
+   * mesma transação, o desfazimento apagaria a sequência recém-criada, e o contrato seguinte a
+   * recriaria e tomaria `nextval = 1` **outra vez** — o número teria sido **reusado**, contra a
+   * cláusula literal da ADR-0015 (*"nunca reusado, nem por registro excluído, nem por criação
+   * abortada"*). Com as duas unidades, a sequência já está commitada quando o `nextval` corre, e a
+   * criação abortada queima o número para sempre, que é o furo que a ADR aceita por escrito.
+   *
+   * O custo é uma transação curta por criação — no caso comum um `CREATE SEQUENCE IF NOT EXISTS` que
+   * só consulta o catálogo —, num volume medido de dezenas de contratos por ano.
+   *
+   * **As duas unidades não aninham**: a segunda começa depois de a primeira fechar, e o marcador
+   * `DECISÃO FECHADA` de `packages/db/src/unidade-de-trabalho.ts`, que recusa abrir uma segunda
+   * unidade **de dentro** de uma aberta, não é tocado.
+   *
+   * **O ano é lido AQUI e viaja daqui em diante.** Ele sai do relógio do **banco**, e não do processo
+   * — a razão está no docblock de `lerAnoDaSerieDeContrato` —, e é lido **uma vez**: o mesmo valor
+   * alimenta o contador desta unidade, a emissão do número na seguinte e o código que a porta compõe.
+   * Uma segunda leitura permitiria às duas unidades discordarem na virada do ano.
+   */
+  async garantirSerie(tx: TransactionSql): Promise<number> {
+    const ano = await lerAnoDaSerieDeContrato(tx);
+
+    await garantirContadorDeContrato(tx, ano);
+
+    return ano;
+  }
+
+  /**
+   * Monta o contrato e devolve o corpo que a rota publica.
+   *
+   * **O ano chega pronto, e esta função não o relê.** Ele foi lido uma única vez pela borda, na
+   * primeira unidade de trabalho, e é o mesmo que alimentou `garantirContadorDeContrato`. Relê-lo
+   * aqui permitiria à segunda unidade discordar da primeira na virada do ano — o número teria saído
+   * do contador de um ano e o código anunciaria o outro. A razão está por extenso no docblock de
+   * `NumeroDaSerie`, em `packages/db/src/contrato.ts`.
+   *
+   * As conferências vêm **antes** da emissão porque é delas que sai o `404`; a emissão do número vem
+   * depois, e o número que ela consome **não volta** se a gravação abortar (ADR-0015, ADR-0020).
+   */
+  async criar(tx: TransactionSql, entrada: ContratoNovo, ano: number): Promise<Contrato> {
+    await this.exigirCadastrosAlcancaveisEEmCirculacao(tx, entrada);
+
+    const numero = await emitirNumeroDeContrato(tx, ano);
+
+    return publicarContrato(
+      await this.traduzirConflitoDeGravacao(
+        async () => await criarContrato(tx, entrada, { ano, numero }),
+      ),
+    );
+  }
+
+  /**
+   * Lê a página pedida.
+   *
+   * O envelope é montado aqui, e a janela devolvida é a que foi **de fato servida** — não um eco do
+   * que o cliente pediu. `total` é a contagem na empresa inteira, e é ela que permite ao cliente saber
+   * que existe uma página seguinte sem pedi-la (ADR-0017).
+   *
+   * As opções de circulação **atravessam** este serviço sem serem interpretadas: quem decide o que a
+   * leitura enxerga é a porta, e reimplementar o predicado aqui é precisamente o defeito que a fatia
+   * anterior fixou.
+   */
+  async listar(
+    tx: TransactionSql,
+    janela: Janela,
+    opcoes: OpcoesDeCirculacao,
+  ): Promise<PaginaDeContratos> {
+    const { contratos, total } = await listarContratos(tx, janela, opcoes);
+
+    return {
+      itens: contratos.map(publicarContrato),
+      total,
+      limite: janela.limite,
+      deslocamento: janela.deslocamento,
+    };
+  }
+
+  /**
+   * Lê o contrato pelo **código** (ADR-0017).
+   *
+   * **Ela alcança o contrato retirado de circulação**, e responde `200` com a marca preenchida — sem
+   * isso a recirculação ficaria inalcançável pela interface, porque a rota que a executa é sobre o
+   * mesmo `:codigo`.
+   */
+  async ler(tx: TransactionSql, codigo: string): Promise<Contrato> {
+    return publicarContrato(this.exigir(await localizarContrato(tx, codigo)));
+  }
+
+  /**
+   * Reescreve o contrato com o corpo completo (§4.1.1) e devolve como ele ficou.
+   *
+   * **O código não está no corpo e não muda** — a ausência dele na instrução da porta é o mecanismo,
+   * e a ADR-0015 existe para mantê-lo estável. A coleção de fiadores é **substituída por inteiro**,
+   * nunca mesclada.
+   *
+   * A ordem dos três passos é conteúdo: o contrato inalcançável responde `404` antes de qualquer
+   * outra coisa (senão a recusa por estado diria que o contrato existe); a guarda de estado vem em
+   * seguida, porque a janela de edição é do **pai**; e as conferências dos cadastros correm por
+   * último, sobre um alvo que já se sabe alterável.
+   */
+  async alterar(tx: TransactionSql, codigo: string, entrada: ContratoNovo): Promise<Contrato> {
+    const atual = this.exigir(await localizarContrato(tx, codigo));
+
+    // A guarda da RD-05. Ela é leitura-antes-de-gravar e **não** substitui a defesa da porta contra a
+    // corrida — ver o cabeçalho deste arquivo e o marcador de `traduzirConflitoDeGravacao`.
+    this.exigirEstado(atual, ESTADO_ALTERAVEL, ALTERACAO);
+    await this.exigirCadastrosAlcancaveisEEmCirculacao(tx, entrada);
+
+    return publicarContrato(
+      this.exigir(
+        await this.traduzirConflitoDeGravacao(
+          async () => await alterarContrato(tx, codigo, entrada),
+        ),
+      ),
+    );
+  }
+
+  /**
+   * Faz o contrato valer: transita `RASCUNHO → ATIVO`, deriva as duas grandezas, ocupa o imóvel e
+   * devolve o corpo da transição — **num commit só**.
+   *
+   * A ordem das sete etapas, a razão de cada uma e as três notas que governam este método — a
+   * atomicidade do par `ATIVO ⇔ LOCADO`, a proibição de recalcular e a divergência deliberada da
+   * máquina de estados — estão no cabeçalho deste arquivo. Não as reproduzo aqui.
+   *
+   * **Ela recebe o executor e não abre unidade própria.** É isso, e nada mais, que faz as etapas 6 e
+   * 7 serem um commit só: falha em qualquer ponto deixa o contrato `RASCUNHO` e o imóvel exatamente
+   * como estava.
+   *
+   * A conferência de circulação reusa {@link ContratoService.exigirCadastrosAlcancaveisEEmCirculacao}
+   * — o **ponto único** das escritas —, montada a partir do contrato persistido. É para isso que
+   * {@link CadastrosReferenciados} é estrutural e de quatro campos: aqui não existe `ContratoNovo`
+   * nenhum, e uma assinatura que cobrasse o corpo inteiro do `POST` obrigaria este método a fabricar
+   * um objeto sintético — que é precisamente o que faria um executor futuro preferir escrever a
+   * própria conferência.
+   */
+  async ativar(tx: TransactionSql, codigo: string): Promise<AtivacaoDeContrato> {
+    const atual = this.exigir(await localizarContrato(tx, codigo));
+
+    this.exigirEstado(atual, ESTADO_ATIVAVEL, ATIVACAO);
+    this.exigirCondicoesDeEntrada(atual);
+    await this.exigirCadastrosAlcancaveisEEmCirculacao(tx, {
+      imovelId: atual.imovelId,
+      locadorId: atual.locadorId,
+      locatarioId: atual.locatarioId,
+      fiadoresIds: atual.fiadores.map((fiador) => fiador.id),
+    });
+
+    // As duas derivações vêm PRONTAS das funções puras da RD-10, e não há aritmética de data nem de
+    // dinheiro neste arquivo. **Uma conta escrita aqui seria hoje indistinguível pela rota** — o
+    // oráculo é cego à forma ingênua e o `numeric(15,2)` normaliza o resíduo antes de a resposta
+    // existir —, e é por isso que a rede desta decisão é a asserção ESTÁTICA do `CT-413 (c)`. A
+    // medição e o cálculo do limite estão no cabeçalho deste arquivo; leia-os antes de "simplificar".
+    const derivacoes: DerivacoesDaAtivacao = {
+      dataFimLocacao: derivarTerminoDaLocacao(atual.dataInicioLocacao, atual.prazoMeses),
+      valorTotalContrato: derivarValorTotal(atual.valorMensal, atual.prazoMeses),
+    };
+
+    // A recusa por imóvel já ocupado vem do índice único parcial, e **não** de um `if` que leu antes:
+    // entre o `SELECT` e o `UPDATE` cabe outra ativação, e as duas passariam. A tradução é a mesma
+    // das escritas de cadastro, num ponto só.
+    const ativado = this.exigir(
+      await this.traduzirConflitoDeGravacao(
+        async () => await ativarContrato(tx, codigo, derivacoes),
+      ),
+    );
+
+    // A segunda escrita, pela PORTA ESTREITA — nunca pela porta de alteração de imóvel, que é tipada
+    // no subconjunto informável justamente para que `LOCADO` não seja alcançável por corpo de
+    // requisição. Ela corre depois da gravação do estado e na MESMA unidade: nada no banco pareia as
+    // duas, e é o commit único que impede um imóvel `DISPONIVEL` com contrato vigente.
+    await definirSituacaoDeLocacaoDoImovel(tx, ativado.imovelId, SITUACAO_DO_IMOVEL_LOCADO);
+
+    return { ...publicarContrato(ativado), efeitos: EFEITOS_DA_ATIVACAO };
+  }
+
+  /**
+   * Faz o contrato deixar de valer: transita `ATIVO → CANCELADO` e devolve o imóvel a `DISPONIVEL` —
+   * **num commit só**.
+   *
+   * A ordem das quatro etapas, a razão de cada uma e o que **não** foi portado do sistema antigo
+   * estão no cabeçalho deste arquivo. Não os reproduzo aqui.
+   *
+   * **Ela recebe o executor e não abre unidade própria**, pela mesma razão de
+   * {@link ContratoService.ativar}: é isso, e nada mais, que faz as duas escritas serem um commit só.
+   * Falha em qualquer ponto deixa o contrato `ATIVO` e o imóvel `LOCADO`.
+   *
+   * **A gravação NÃO passa por {@link ContratoService.traduzirConflitoDeGravacao}, e a ausência é a
+   * decisão.** As duas classes que o envoltório traduz são impossíveis aqui: `cancelarContrato` não
+   * escreve `codigo`, e ela **sai** do índice `contrato_imovel_vigente_uidx` em vez de disputá-lo — o
+   * índice é parcial sobre `status = 'ATIVO'`, e é justamente essa saída que torna possível montar um
+   * contrato novo sobre o mesmo imóvel. Envolvê-la mesmo assim anunciaria no fonte uma colisão que
+   * este caminho não tem, e a primeira leitura do trecho gastaria uma rodada procurando por ela.
+   *
+   * **A resposta é o contrato no root, SEM declaração de efeito**, e isso é escolha registrada, não
+   * esquecimento: o CA-06 fala **só** da ativação, e a RN-12 diz literalmente *"a resposta da ativação
+   * declara isso explicitamente"*. Publicar `efeitos` aqui seria inventar contrato sem fonte — e um
+   * contrato publicado é caro de tirar depois.
+   */
+  async cancelar(tx: TransactionSql, codigo: string): Promise<Contrato> {
+    // DÉBITO COM GATILHO — D36 · F2/T8 · registrado 2026-08-09
+    // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o código abaixo.)
+    // O QUÊ: a pré-condição legada **"sem PDF privado, não cancela"** não é portada. No sistema
+    //        antigo ela é a PRIMEIRA coisa que `cancelar_contrato` faz — `obter_pdf_privado_bytes`
+    //        seguido de `frappe.throw` —, e o golden a captura na recusa `contrato_sem_pdf`.
+    // QUANDO FECHA: na **F3**, a fatia que produz o documento do contrato — é ela que decide se o
+    //        carimbo "CANCELADO" no PDF é **pré-condição** do ato ou **efeito** dele. Enquanto a
+    //        decisão não existir, não há o que conferir aqui.
+    // POR QUE NÃO AGORA: portada literal, ela tornaria o cancelamento **impossível** nesta fatia (o
+    //        PDF é F3) e **permanentemente impossível** para todo contrato sem PDF anexado. É
+    //        acidente do desenho legado: lá o cancelamento existe PARA carimbar o PDF, e a guarda
+    //        protege o carimbo, não o negócio.
+    // ÍNDICE: docs/specs/features/contratos-de-locacao/v1/_run/run-report.md §2, D36
+    const atual = this.exigir(await localizarContrato(tx, codigo));
+
+    // A guarda de estado, no MESMO ponto único que a alteração e a ativação usam — a recusa muda de
+    // ato, e não de forma. Cancelar um `RASCUNHO` é recusado de propósito: rascunho abandonado se
+    // **retira de circulação**, e as duas operações têm efeitos distintos (o cancelamento libera o
+    // imóvel; a retirada não).
+    this.exigirEstado(atual, ESTADO_CANCELAVEL, CANCELAMENTO);
+
+    const cancelado = this.exigir(await cancelarContrato(tx, codigo));
+
+    // A segunda escrita, pela PORTA ESTREITA e na MESMA unidade — o espelho exato da etapa 7 da
+    // ativação. Nada no banco pareia as duas: um imóvel que ficasse `LOCADO` sem contrato vigente não
+    // acusaria nada, e ninguém conseguiria locá-lo de novo pela interface.
+    await definirSituacaoDeLocacaoDoImovel(tx, cancelado.imovelId, SITUACAO_DO_IMOVEL_DISPONIVEL);
+
+    return publicarContrato(cancelado);
+  }
+
+  /**
+   * Retira o contrato de circulação, ou o devolve a ela (ADR-0014).
+   *
+   * **Nada é apagado, nada transita e o imóvel não é liberado**: o que muda é a marca. Um contrato
+   * ativo retirado continua vigente para o índice `contrato_imovel_vigente_uidx` — é o que impede a
+   * retirada de virar porta lateral para destravar o imóvel sem cancelar o contrato (RD-15).
+   *
+   * A idempotência é da instrução da porta — repetir preserva o instante da primeira —, e não de um
+   * ramo escrito aqui: um `if` antes da escrita teria duas idas ao banco e uma corrida entre elas.
+   */
+  async definirCirculacao(
+    tx: TransactionSql,
+    codigo: string,
+    emCirculacao: boolean,
+  ): Promise<Contrato> {
+    return publicarContrato(
+      this.exigir(await definirCirculacaoDoContrato(tx, codigo, emCirculacao)),
+    );
+  }
+
+  /**
+   * Recusa os cadastros que o contexto corrente não alcança, e os que estão fora de circulação —
+   * **ponto único** das duas escritas que os referenciam.
+   *
+   * As duas metades e a razão de cada uma estão no cabeçalho deste arquivo.
+   *
+   * ---------------------------------------------------------------------------
+   * O CUSTO NÃO DEPENDE DE QUANTOS FIADORES O CLIENTE ENVIOU
+   * ---------------------------------------------------------------------------
+   *
+   * São **quatro** consultas, sempre: uma pelo imóvel, uma por papel de pessoa singular e **uma pelo
+   * conjunto inteiro dos fiadores** ({@link localizarPessoas}). A forma anterior conferia os fiadores
+   * num laço com uma leitura por item, e isso punha o **número de idas ao banco** nas mãos de quem
+   * envia a requisição: a coleção não tem teto no esquema, não tem `check` no banco e a RD-06 fixa
+   * *"zero ou mais fiadores, sem teto"* por escrito. Dentro de uma unidade de trabalho aberta, com
+   * `SET LOCAL`, cada ida segura uma conexão de um pool **compartilhado entre empresas** — o
+   * isolamento de *dado* é do banco (ADR-0008), o de **recurso** não é de ninguém.
+   *
+   * ---------------------------------------------------------------------------
+   * A ITERAÇÃO É SOBRE A ENTRADA, e não sobre o resultado da consulta
+   * ---------------------------------------------------------------------------
+   *
+   * `entrada.fiadoresIds` é percorrido **na ordem em que o cliente o enviou**, consultando o mapa. É
+   * o que preserva a propriedade que a ordem fixa das quatro conferências existe para garantir: a
+   * recusa nomeia o **PRIMEIRO** problema, e o mesmo corpo recusado produz sempre a mesma resposta.
+   * Percorrer as linhas devolvidas pelo banco quebraria as duas coisas de uma vez — a ordem passaria
+   * a ser a do resultado, e o identificador **ausente** ficaria invisível, porque ele justamente não
+   * está lá. O `CT-411 (c)` mede as duas metades.
+   */
+  private async exigirCadastrosAlcancaveisEEmCirculacao(
+    tx: TransactionSql,
+    entrada: CadastrosReferenciados,
+  ): Promise<void> {
+    this.exigirEmCirculacao(CAMPO_DO_IMOVEL, await localizarImovel(tx, entrada.imovelId));
+    this.exigirEmCirculacao(
+      CAMPO_DO_LOCADOR,
+      await localizarPessoa(tx, PAPEL_DO_LOCADOR, entrada.locadorId),
+    );
+    this.exigirEmCirculacao(
+      CAMPO_DO_LOCATARIO,
+      await localizarPessoa(tx, PAPEL_DO_LOCATARIO, entrada.locatarioId),
+    );
+
+    const fiadores = await localizarPessoas(tx, PAPEL_DO_FIADOR, entrada.fiadoresIds);
+
+    for (const fiadorId of entrada.fiadoresIds) {
+      this.exigirEmCirculacao(CAMPO_DOS_FIADORES, fiadores.get(fiadorId));
+    }
+  }
+
+  /**
+   * As duas recusas de um cadastro referenciado, num ponto só: `404` quando não alcançado, `422`
+   * quando alcançado e fora de circulação.
+   *
+   * O parâmetro é a marca de retirada, e não o cadastro inteiro, porque é só ela que decide — imóvel
+   * e pessoa não têm outra coisa em comum, e tipar isto no agregado de um deles obrigaria a segunda
+   * conferência a nascer separada.
+   *
+   * A ausência é traduzida no **mesmo** `404` de contrato inexistente, sem campo nomeado: as duas
+   * causas — não existe, ou existe em outra empresa e a política o esconde — são deliberadamente
+   * indistinguíveis, e é isso que impede a borda de virar oráculo de existência sobre o cadastro
+   * alheio (ADR-0008).
+   */
+  private exigirEmCirculacao(
+    campo: string,
+    cadastro: { readonly retiradoEm: Date | null } | undefined,
+  ): void {
+    if (cadastro === undefined) {
+      throw new ErroDeAplicacao(
+        CodigoErro.RECURSO_NAO_ENCONTRADO,
+        MENSAGEM_POR_CODIGO[CodigoErro.RECURSO_NAO_ENCONTRADO],
+      );
+    }
+
+    if (cadastro.retiradoEm !== null) {
+      throw new ErroDeAplicacao(
+        CodigoErro.CAMPO_INVALIDO,
+        MENSAGEM_POR_CODIGO[CodigoErro.CAMPO_INVALIDO],
+        { campo, detalhes: { [DISCRIMINADOR_DA_CIRCULACAO]: CADASTRO_RETIRADO } },
+      );
+    }
+  }
+
+  /**
+   * Recusa o ato quando o contrato não está no estado de que ele parte — **ponto único** da guarda de
+   * estado desta superfície.
+   *
+   * Ela serve a três regras diferentes com a mesma forma de recusa: a janela de edição do rascunho
+   * (RD-05) e as duas origens de transição da ADR-0019 (RD-02). Escrevê-las por extenso três vezes
+   * deixaria livres para divergir o código, o campo nomeado e os nomes dos dois discriminadores — e
+   * os três são contrato publicado, afirmado por igualdade de corpo inteiro. É a mesma razão, e o
+   * mesmo desenho, de {@link ContratoService.traduzirConflitoDeGravacao}.
+   *
+   * O corpo da recusa nomeia `status` — o campo que o cliente **não** enviou e que decide —, e
+   * carrega o estado atual mais o ato tentado. O que separa uma recusa da outra é
+   * `detalhes.transicaoPedida`, e é por isso que ele é **parâmetro** em vez de derivado do estado
+   * exigido: `ALTERACAO` e `ATIVACAO` partem do MESMO estado, e derivá-lo tornaria as duas
+   * indistinguíveis para o cliente.
+   *
+   * O parâmetro é {@link TransicaoPedida}, e não `string`: os dois valores de `detalhes` são contrato
+   * publicado, e agora os dois têm o compilador atrás deles. Ver o docblock daquele tipo.
+   *
+   * **Ela é leitura-antes-de-gravar, e por isso não é defesa de integridade.** Ver o cabeçalho deste
+   * arquivo para por que ela não substitui a defesa da porta contra a corrida.
+   */
+  private exigirEstado(
+    contrato: ContratoPersistido,
+    estadoExigido: EstadoDoContrato,
+    transicaoPedida: TransicaoPedida,
+  ): void {
+    if (contrato.status === estadoExigido) {
+      return;
+    }
+
+    throw new ErroDeAplicacao(
+      CodigoErro.CAMPO_INVALIDO,
+      MENSAGEM_POR_CODIGO[CodigoErro.CAMPO_INVALIDO],
+      {
+        campo: CAMPO_DO_ESTADO,
+        detalhes: { estadoAtual: contrato.status, transicaoPedida },
+      },
+    );
+  }
+
+  /**
+   * Recusa a ativação de um contrato que não satisfaz as **seis condições de entrada portadas**
+   * (RD-08).
+   *
+   * A tabela, e a razão de ela existir apesar de o banco e o esquema já as garantirem, estão em
+   * {@link CONDICOES_DE_ENTRADA_DA_ATIVACAO}. A recusa nomeia o campo culpado e **não carrega
+   * `detalhes`** — a §10.1 da tech spec fixou a forma antes da implementação, e um discriminador
+   * inventado aqui seria contrato publicado escolhido por conveniência.
+   *
+   * Nada do valor recusado entra na resposta: sai o campo culpado, nunca o valor.
+   */
+  private exigirCondicoesDeEntrada(contrato: ContratoPersistido): void {
+    for (const condicao of CONDICOES_DE_ENTRADA_DA_ATIVACAO) {
+      if (condicao.satisfeita(contrato)) {
+        continue;
+      }
+
+      throw new ErroDeAplicacao(
+        CodigoErro.CAMPO_INVALIDO,
+        MENSAGEM_POR_CODIGO[CodigoErro.CAMPO_INVALIDO],
+        { campo: condicao.campo },
+      );
+    }
+  }
+
+  /**
+   * Traduz as duas recusas que o banco produz nas escritas desta superfície — **ponto único** delas.
+   *
+   * O código é `CAMPO_INVALIDO` porque o vocabulário é fechado e **não tem código de conflito**; o
+   * `422` sai do próprio código, e não é escolhido aqui.
+   *
+   * As duas classes viajam pelo mesmo envoltório porque as duas escritas correm sob ele: um envoltório
+   * por classe deixaria a segunda tradução nascer no ponto de chamada seguinte, que é exatamente como
+   * os débitos D12, D38 e D40 apareceram nesta base. Qualquer outro erro sobe **intacto** — traduzir
+   * em bloco atribuiria à entrada do cliente uma falha que ele não causou.
+   *
+   * Nada do valor recusado entra na mensagem: sai o campo culpado e o discriminador, nunca a entrada.
+   * O código do contrato vigente é exceção declarada — ele é dado **do servidor**, apurado depois da
+   * recusa, e é o que permite ao usuário saber o que cancelar.
+   */
+  private async traduzirConflitoDeGravacao<T>(gravar: () => Promise<T>): Promise<T> {
+    try {
+      return await gravar();
+    } catch (erro) {
+      if (erro instanceof ErroDeCodigoEmUso) {
+        throw new ErroDeAplicacao(
+          CodigoErro.CAMPO_INVALIDO,
+          MENSAGEM_POR_CODIGO[CodigoErro.CAMPO_INVALIDO],
+          {
+            campo: CAMPO_DO_CODIGO,
+            detalhes: { [DISCRIMINADOR_DO_CONFLITO]: CONFLITO_DE_CODIGO },
+            causa: erro,
+          },
+        );
+      }
+
+      // DECISÃO FECHADA — T6 / fatia `contratos-de-locacao` · 2026-08-09
+      // O QUÊ: `ErroDeImovelComContratoVigente` é traduzido AQUI, e o envoltório corre também sobre
+      //        `alterarContrato` — não apenas sobre a ativação, que é onde a §6.4 da task o previa.
+      // POR QUÊ: o `PUT` escreve `imovel_id`, que é a CHAVE de `contrato_imovel_vigente_uidx`, e o
+      //        alcance ao índice depende do `status` já gravado na linha. A recusa da RD-05
+      //        (`exigirAlteravel`) fecha o caminho comum e **não** fecha a corrida: entre o `SELECT`
+      //        que vê `RASCUNHO` e o `UPDATE` cabe uma ativação concorrente. Sem esta tradução, essa
+      //        janela devolve `500` ao cliente — que é o MESMO defeito que a T5 já fechou uma vez na
+      //        porta (marcador `DECISÃO FECHADA` de `packages/db/src/contrato.ts`), reaparecendo um
+      //        andar acima, com a porta correta.
+      // REVERTER EXIGE: provar que nenhuma escrita desta borda alcança o índice de vigência sem
+      //        passar por aqui — o que é falso enquanto o `PUT` escrever `imovel_id`. **Não há prova
+      //        comportamental deste ramo nesta suíte**, e a ausência é medida, não esquecimento: pela
+      //        rota, a RD-05 torna a condição inalcançável sem concorrência real, e quem mede a
+      //        tradução sob concorrência é o `CT-407 (b)`, na camada da porta. Este marcador É a rede
+      //        (P4 do Protocolo Antirregressão).
+      if (erro instanceof ErroDeImovelComContratoVigente) {
+        throw new ErroDeAplicacao(
+          CodigoErro.CAMPO_INVALIDO,
+          MENSAGEM_POR_CODIGO[CodigoErro.CAMPO_INVALIDO],
+          {
+            campo: CAMPO_DO_IMOVEL,
+            detalhes: {
+              [DISCRIMINADOR_DO_CONFLITO]: CONFLITO_DE_VIGENCIA,
+              [CHAVE_DO_CONTRATO_VIGENTE]: erro.contratoVigente,
+            },
+            causa: erro,
+          },
+        );
+      }
+
+      throw erro;
+    }
+  }
+
+  /**
+   * Traduz a ausência em `404` — **ponto único** das quatro rotas de `:codigo`.
+   *
+   * É aqui, e em nenhum outro lugar, que a fronteira de tenant do contrato vira resposta. Quatro
+   * traduções da mesma ausência ficariam livres para divergir no código e no status, e a forma do erro
+   * é contrato: o contrato de outra empresa responde `404` com o corpo **idêntico** ao do contrato que
+   * não existe, porque a borda não tem como distinguir os dois — e não deve ter.
+   */
+  private exigir(contrato: ContratoPersistido | undefined): ContratoPersistido {
+    if (contrato === undefined) {
+      throw new ErroDeAplicacao(
+        CodigoErro.RECURSO_NAO_ENCONTRADO,
+        MENSAGEM_POR_CODIGO[CodigoErro.RECURSO_NAO_ENCONTRADO],
+      );
+    }
+
+    return contrato;
+  }
+}
+
+/**
+ * A linha persistida no corpo que o contrato publica — a **única** tradução das duas formas.
+ *
+ * **`id` não sai**, e a ausência é a decisão: a chave exposta é o `codigo`, porque o contrato tem
+ * série declarada (ADR-0017). O UUID interno é o pai do vínculo de fiador e o alvo da porta estreita
+ * de imóvel, e permanece dentro do servidor. `empresa_id` não chega sequer até aqui — a projeção da
+ * porta não o lê.
+ *
+ * Os campos são copiados **um a um**, e não por espalhamento: o espalhamento publicaria qualquer
+ * coluna que a projeção venha a ganhar, inclusive as duas acima. `retiradoEm` sai como cadeia ISO-8601
+ * em UTC, que é o que `esquemaDoContrato` declara (`z.iso.datetime()`); nulo continua nulo, e é ele
+ * que diz que o contrato circula.
+ *
+ * **Ela é exportada desde já**, e a razão é a mesma que já produziu os débitos D12, D38 e D40 nesta
+ * base: a ativação (T7), o cancelamento (T8) e a leitura do imóvel com o contrato vigente (T9)
+ * publicam contratos, e a segunda tradução da mesma forma nasceria lá se não houvesse de onde
+ * importar. As duas divergiriam no primeiro campo que o contrato ganhar — e o que diverge primeiro
+ * neste molde é justamente o formato de `retiradoEm` e a lista de campos copiados, isto é, o corpo que
+ * o cliente vê.
+ */
+export function publicarContrato(contrato: ContratoPersistido): Contrato {
+  return {
+    codigo: contrato.codigo,
+    status: contrato.status,
+    imovelId: contrato.imovelId,
+    locadorId: contrato.locadorId,
+    locatarioId: contrato.locatarioId,
+    fiadores: contrato.fiadores.map((fiador) => ({ id: fiador.id, nome: fiador.nome })),
+    dataInicioLocacao: contrato.dataInicioLocacao,
+    prazoMeses: contrato.prazoMeses,
+    valorMensal: contrato.valorMensal,
+    diaVencimento: contrato.diaVencimento,
+    dataFimLocacao: contrato.dataFimLocacao,
+    valorTotalContrato: contrato.valorTotalContrato,
+    gerarCobrancasAutomaticamente: contrato.gerarCobrancasAutomaticamente,
+    pdfContratoArquivo: contrato.pdfContratoArquivo,
+    retiradoEm: contrato.retiradoEm === null ? null : contrato.retiradoEm.toISOString(),
+  };
+}

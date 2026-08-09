@@ -9,10 +9,11 @@
  * | Critério       | Caso            | Invariante |
  * |----------------|-----------------|------------|
  * | CA-16 · CA-14  | CT-008 → CT-300 | Sobre o schema migrado — `0000_fundacao.sql` e
- * |                |                 | `0001_seguranca.sql`, mais `0005_dominio_locacao.sql` e
- * |                |                 | `0006_seguranca_dominio.sql` —, a consulta de cobertura
+ * |                |                 | `0001_seguranca.sql`, mais `0005_dominio_locacao.sql`,
+ * |                |                 | `0006_seguranca_dominio.sql`, `0007_dominio_contrato.sql` e
+ * |                |                 | `0008_seguranca_contrato.sql` —, a consulta de cobertura
  * |                |                 | devolve lista VAZIA de exceções e a lista de tabelas
- * |                |                 | EXAMINADAS igual, na íntegra, às OITO tabelas de `negocio`
+ * |                |                 | EXAMINADAS igual, na íntegra, às DEZ tabelas de `negocio`
  * |                |                 | — nem mais, nem menos. As duas metades importam: sem a
  * |                |                 | segunda, "nenhuma exceção" e "nada foi olhado" seriam
  * |                |                 | indistinguíveis, e um schema vazio passaria por verde.
@@ -24,7 +25,7 @@
  * |                |                 | numa instância DEDICADA, a MESMA asserção do CT-300 reprova
  * |                |                 | nomeando aquela tabela com motivo `RLS_NAO_FORCADA` —
  * |                |                 | exatamente uma entrada, não mais —, a lista de examinadas
- * |                |                 | continua com as oito, e o controle volta ao verde quando o
+ * |                |                 | continua com as dez, e o controle volta ao verde quando o
  * |                |                 | `FORCE` é restaurado. É o par que impede o CT-300 de passar
  * |                |                 | por vacuidade: sem ele, uma guarda quebrada devolveria
  * |                |                 | `excecoes: []` sobre qualquer schema. |
@@ -32,7 +33,7 @@
  * |                |                 | `empresa_id`, sem RLS forçada ou sem a restrição única
  * |                |                 | `(id, empresa_id)`, ou objeto que não admite isolamento em
  * |                |                 | espécie alguma —, a guarda devolve EXATAMENTE uma exceção,
- * |                |                 | nomeando aquele objeto e aquele motivo; as OITO tabelas
+ * |                |                 | nomeando aquele objeto e aquele motivo; as DEZ tabelas
  * |                |                 | legítimas seguem examinadas e fora das exceções; e,
  * |                |                 | removido o defeito, a lista volta a vazia. A lista de
  * |                |                 | EXAMINADAS é cobrada por igualdade de array — posição
@@ -45,6 +46,33 @@
  * |                |                 | sobre ela, e é o "terceiro estado" que a ADR-0009 declara
  * |                |                 | não existir — a guarda a examina e a reprova com
  * |                |                 | `OBJETO_SEM_ISOLAMENTO_POSSIVEL`. |
+ * | CA-18          | CT-421          | As DUAS tabelas que a `0007` cria (`negocio.contrato` e
+ * |                |                 | `negocio.contrato_fiador`) nascem com as quatro
+ * |                |                 | propriedades: elas constam de `tabelasExaminadas` e não
+ * |                |                 | rendem exceção alguma. A SEQUÊNCIA do contador, criada em
+ * |                |                 | tempo de execução pela função da `0008`, **não** aparece
+ * |                |                 | entre as examinadas — `relkind = 'S'` está fora do exame
+ * |                |                 | por construção, e não por exceção mantida à mão. Retirado
+ * |                |                 | o `FORCE` de `negocio.contrato` numa instância DEDICADA, a
+ * |                |                 | MESMA asserção reprova nomeando aquela tabela com motivo
+ * |                |                 | `RLS_NAO_FORCADA` — exatamente uma entrada —, a lista de
+ * |                |                 | examinadas continua com as dez, e o controle volta ao verde
+ * |                |                 | quando o `FORCE` é restaurado. No mesmo caso, e sobre o
+ * |                |                 | mesmo schema íntegro, `contrato_imovel_vigente_uidx` é
+ * |                |                 | ÍNDICE ÚNICO PARCIAL em `status = 'ATIVO'` — afirmado pela
+ * |                |                 | definição que o catálogo reconstrói — e **não** aparece
+ * |                |                 | entre as restrições de `negocio.contrato`, que são
+ * |                |                 | afirmadas por igualdade. A prova sob CONCORRÊNCIA é o
+ * |                |                 | CT-407, na T5; aqui prova-se a forma. |
+ * | CA-03          | CT-430          | `negocio.contrato_fiador` **não tem** a coluna
+ * |                |                 | `retirado_em`, e a ausência é a decisão (ADR-0014 exclui
+ * |                |                 | vínculo do alcance da exclusão lógica). O companheiro
+ * |                |                 | POSITIVO são as SEIS entidades de cadastro mais o próprio
+ * |                |                 | `contrato`, que a têm — sem ele, "não tem a coluna" ficaria
+ * |                |                 | verde sobre uma consulta que não achasse nada. E a guarda
+ * |                |                 | de cobertura segue devolvendo `excecoes: []` com a coluna
+ * |                |                 | ausente: **ela não cobra `retirado_em` de ninguém**, que é
+ * |                |                 | exatamente por que esta afirmação precisa de caso próprio. |
  *
  * O aceite 5 da §4 da task — *"a guarda é exportada por `@sysloc/db` e consumível fora do
  * pacote"* — é provado pelo **CT-012**, em `unidade-de-trabalho.spec.ts`: ele resolve o
@@ -85,6 +113,7 @@ import {
   verificarCoberturaDeIsolamento,
 } from '../src/catalogo.ts';
 import { abrirConexao } from '../src/conexao.ts';
+import { EMPRESA_A } from '../src/semente.ts';
 import { type BancoMigrado, bancoEfemero, conexaoDeMigracao } from './banco-efemero.ts';
 
 // ---------------------------------------------------------------------------
@@ -115,29 +144,75 @@ const TABELA_DE_IMOVEL = 'negocio.imovel';
 const TABELA_DE_LOCADOR = 'negocio.locador';
 const TABELA_DE_LOCATARIO = 'negocio.locatario';
 
+// As duas tabelas do contrato, criadas pela migração `0007` (T3 da fatia `contratos-de-locacao`) e
+// forçadas pela `0008`. `contrato_fiador` está entre elas: ele é tabela de negócio, tem
+// `empresa_id`, RLS forçada e a única composta — o que ele NÃO tem é `retirado_em`, que a guarda não
+// cobra de ninguém (ADR-0014). É o CT-430, adiante, que afirma essa ausência.
+const TABELA_DE_CONTRATO = 'negocio.contrato';
+const TABELA_DE_CONTRATO_FIADOR = 'negocio.contrato_fiador';
+
 /**
- * As oito, na ordem em que a guarda promete devolvê-las (nome de tabela, intercalação `C`).
+ * As dez, na ordem em que a guarda promete devolvê-las (nome de tabela, intercalação `C`).
  *
  * Este conjunto é do CASO, não da guarda: é aqui que o nome de tabela pode ser escrito à mão, e é
  * exatamente por escrevê-lo aqui — e nunca em `src/catalogo.ts` — que a comparação tem valor. Uma
  * guarda que trouxesse a mesma lista por dentro estaria se conferindo contra si mesma.
  *
- * SUT_IS_CORRECT_BECAUSE: até a fatia anterior eram DUAS, e a igualdade sobre as duas é o que
- * reprovou quando a migração `0005` entrou — a rede funcionando, não defeito. A guarda continua
- * respondendo o que sempre respondeu (todo objeto de `negocio`, ordenado); o que mudou foi o
- * schema, e declarar as seis entidades novas aqui é a atualização legítima. Enfraquecer a asserção
- * para contê-las (`toContain`) seria regressão de prova: a tabela que nascesse sem isolamento
- * continuaria passando.
+ * SUT_IS_CORRECT_BECAUSE: até a fatia da fundação eram DUAS, e a igualdade sobre elas é o que
+ * reprovou quando a migração `0005` entrou — a rede funcionando, não defeito; a `0007` acaba de
+ * reprovar do mesmo jeito, pela mesma razão. A guarda continua respondendo o que sempre respondeu
+ * (todo objeto de `negocio`, ordenado); o que mudou foi o schema, e declarar as duas tabelas novas
+ * aqui é a atualização legítima. Enfraquecer a asserção para contê-las (`toContain`) seria
+ * regressão de prova: a tabela que nascesse sem isolamento continuaria passando.
  */
 const TABELAS_LEGITIMAS: readonly string[] = [
   TABELA_DE_ACESSO,
   TABELA_DE_PERMISSAO,
   TABELA_DE_COMODO,
   TABELA_DE_CONJUNTO,
+  TABELA_DE_CONTRATO,
+  TABELA_DE_CONTRATO_FIADOR,
   TABELA_DE_FIADOR,
   TABELA_DE_IMOVEL,
   TABELA_DE_LOCADOR,
   TABELA_DE_LOCATARIO,
+];
+
+// ---------------------------------------------------------------------------
+// O que o CT-430 afirma sobre COLUNAS — a marca de retirada, e onde ela não está
+// ---------------------------------------------------------------------------
+
+/** A marca da exclusão lógica (ADR-0014), pelo nome com que a coluna existe no banco. */
+const COLUNA_DE_RETIRADA = 'retirado_em';
+
+/**
+ * As colunas de `negocio.contrato_fiador`, por igualdade de conjunto e ordenadas pelo nome.
+ *
+ * Escritas à mão, e **não** derivadas do esquema Drizzle: derivá-las faria a asserção concordar com
+ * o mesmo lugar onde a coluna de retirada seria acrescentada. A ausência de `retirado_em` aqui é o
+ * conteúdo do caso. Mesmo desenho de `COLUNAS_DO_COMODO`, em `metragem.spec.ts`.
+ */
+const COLUNAS_DO_VINCULO_DE_FIADOR: readonly string[] = [
+  'contrato_id',
+  'empresa_id',
+  'fiador_id',
+  'id',
+];
+
+/**
+ * As entidades de CADASTRO que carregam a marca — o controle positivo do CT-430, na ordem em que a
+ * asserção as afirma.
+ *
+ * `comodo` fica de fora porque é o outro excluído nominal da ADR-0014 (detalhe de composição), e é
+ * afirmado à parte, como segundo negativo.
+ */
+const ENTIDADES_COM_RETIRADA: readonly string[] = [
+  'conjunto',
+  'contrato',
+  'fiador',
+  'imovel',
+  'locador',
+  'locatario',
 ];
 
 // ---------------------------------------------------------------------------
@@ -177,7 +252,7 @@ interface VarianteDefeituosa {
    * F0 (o verificador que reimplementava o leitor e aprovava 5/5 um alvo defeituoso).
    *
    * **O que a proibição alcança é a ORDENAÇÃO, não o reúso do nome.** Espalhar
-   * `...TABELAS_LEGITIMAS` é escrever as oito legítimas na ordem em que elas já estão escritas
+   * `...TABELAS_LEGITIMAS` é escrever as dez legítimas na ordem em que elas já estão escritas
    * acima — nenhuma ordenação acontece, e a posição do objeto DEFEITUOSO, que é o que discrimina,
    * segue declarada à mão em cada variante. Onde ele não cai no fim da lista, a variante escreve as
    * nove posições por extenso.
@@ -198,7 +273,7 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
     // lista inteira em vez de só o conjunto.
     //
     // A promessa não era falsificável porque os nomes de todas as demais (`sem_empresa`,
-    // `sem_forca`, `sem_chave_composta`, `resumo_por_empresa`) ordenam DEPOIS das duas legítimas,
+    // `sem_forca`, `sem_chave_composta`, `resumo_por_empresa`) ordenam DEPOIS das legítimas,
     // que é também a ordem em que as
     // linhas do catálogo chegam quando ninguém as ordena: a varredura de `pg_class` devolve as
     // tabelas da migração antes da tabela que o caso acabou de criar. Alfabética e física
@@ -228,14 +303,16 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
       'ALTER TABLE negocio.aaa_sem_empresa FORCE ROW LEVEL SECURITY',
     ],
     remover: ['DROP TABLE negocio.aaa_sem_empresa'],
-    // As nove posições por extenso: esta é a variante da ORDEM, e espalhar a lista legítima
-    // esconderia justamente o que ela discrimina — a defeituosa vindo ANTES das oito.
+    // As onze posições por extenso: esta é a variante da ORDEM, e espalhar a lista legítima
+    // esconderia justamente o que ela discrimina — a defeituosa vindo ANTES das dez.
     examinadasEsperadas: [
       'negocio.aaa_sem_empresa',
       TABELA_DE_ACESSO,
       TABELA_DE_PERMISSAO,
       TABELA_DE_COMODO,
       TABELA_DE_CONJUNTO,
+      TABELA_DE_CONTRATO,
+      TABELA_DE_CONTRATO_FIADOR,
       TABELA_DE_FIADOR,
       TABELA_DE_IMOVEL,
       TABELA_DE_LOCADOR,
@@ -364,13 +441,15 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
         'SELECT id, empresa_id FROM negocio.acesso_usuario_app',
     ],
     remover: ['DROP VIEW negocio.espelho_sem_delegacao'],
-    // `espelho_...` ordena entre `conjunto` e `fiador`, e não no fim: as nove posições vão por
-    // extenso, porque é a POSIÇÃO que a igualdade de array cobra.
+    // `espelho_...` ordena entre `contrato_fiador` e `fiador`, e não no fim: as onze posições vão
+    // por extenso, porque é a POSIÇÃO que a igualdade de array cobra.
     examinadasEsperadas: [
       TABELA_DE_ACESSO,
       TABELA_DE_PERMISSAO,
       TABELA_DE_COMODO,
       TABELA_DE_CONJUNTO,
+      TABELA_DE_CONTRATO,
+      TABELA_DE_CONTRATO_FIADOR,
       'negocio.espelho_sem_delegacao',
       TABELA_DE_FIADOR,
       TABELA_DE_IMOVEL,
@@ -390,6 +469,125 @@ async function executarPrivilegiado(cadeia: string, instrucoes: readonly string[
     for (const instrucao of instrucoes) {
       await sql.unsafe(instrucao);
     }
+  } finally {
+    await sql.end();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Leituras cruas do catálogo — sem privilégio, pela cadeia da aplicação
+// ---------------------------------------------------------------------------
+
+/**
+ * As colunas vivas de uma tabela de `negocio`, ordenadas pelo nome.
+ *
+ * Vem de `pg_attribute`, e não do esquema Drizzle: derivá-la da declaração faria a asserção do
+ * CT-430 concordar com o mesmo lugar onde a coluna de retirada seria acrescentada, e a ausência
+ * deixaria de ser verificável. Mesmo mecanismo do `CT-317`, em `metragem.spec.ts`.
+ */
+async function colunasDe(cadeia: string, tabela: string): Promise<string[]> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+  try {
+    const linhas = await sql<{ coluna: string }[]>`
+      SELECT a.attname AS coluna
+        FROM pg_catalog.pg_attribute a
+        JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'negocio'
+         AND c.relname = ${tabela}
+         AND a.attnum > 0
+         AND NOT a.attisdropped
+       ORDER BY a.attname
+    `;
+    return linhas.map((linha) => linha.coluna);
+  } finally {
+    await sql.end();
+  }
+}
+
+/**
+ * A definição de um índice, tal como o PostgreSQL a reconstrói a partir do catálogo.
+ *
+ * `pg_get_indexdef` é a fonte porque ela é o estado REAL: ler o texto da migração provaria o que
+ * está escrito no arquivo, e não o que o banco aplicou. É a mesma razão pela qual a guarda de
+ * cobertura pergunta ao `pg_class` em vez de ler a declaração em Drizzle.
+ */
+async function definicaoDeIndice(cadeia: string, indice: string): Promise<string> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+  try {
+    const [linha] = await sql<{ definicao: string }[]>`
+      SELECT pg_catalog.pg_get_indexdef(c.oid) AS definicao
+        FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'negocio' AND c.relname = ${indice} AND c.relkind IN ('i', 'I')
+    `;
+    return linha?.definicao ?? 'INDICE INEXISTENTE';
+  } finally {
+    await sql.end();
+  }
+}
+
+/**
+ * As restrições NOMEADAS de uma tabela, no formato `tipo:nome`, ordenadas pelo nome.
+ *
+ * O que este retorno discrimina é a diferença entre **índice** e **restrição**: o índice único
+ * parcial não aparece aqui, e é isso que prova que ele não foi convertido em `CONSTRAINT` — a
+ * conversão que removeria a condição `WHERE status = 'ATIVO'` em silêncio.
+ */
+async function restricoesDe(cadeia: string, tabela: string): Promise<string[]> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+  try {
+    const linhas = await sql<{ linha: string }[]>`
+      SELECT k.contype::text || ':' || k.conname AS linha
+        FROM pg_catalog.pg_constraint k
+        JOIN pg_catalog.pg_class c ON c.oid = k.conrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'negocio' AND c.relname = ${tabela}
+       ORDER BY k.conname
+    `;
+    return linhas.map((linha) => linha.linha);
+  } finally {
+    await sql.end();
+  }
+}
+
+/** As sequências que existem em `negocio`, ordenadas pelo nome. Vazia significa nenhuma. */
+async function sequenciasDeNegocio(cadeia: string): Promise<string[]> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+  try {
+    const linhas = await sql<{ nome: string }[]>`
+      SELECT n.nspname || '.' || c.relname AS nome
+        FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'negocio'
+         AND c.relkind = 'S'
+       ORDER BY c.relname
+    `;
+    return linhas.map((linha) => linha.nome);
+  } finally {
+    await sql.end();
+  }
+}
+
+/**
+ * Cria o contador de um escopo `(empresa, ano)` pelo caminho LEGÍTIMO: a função `SECURITY DEFINER`
+ * da `0008`, chamada pela cadeia da APLICAÇÃO, com o contexto de tenant fixado na transação.
+ *
+ * Nenhum `CREATE SEQUENCE` é escrito aqui, e a diferença importa: a sequência que o CT-421 procura
+ * em `tabelasExaminadas` é a que a operação cria de verdade, com o nome que a função compõe — não
+ * um objeto sintético que o caso inventou e que poderia nem se parecer com o real.
+ */
+async function criarContadorPeloCaminhoDaAplicacao(
+  cadeia: string,
+  empresaId: string,
+  ano: number,
+): Promise<void> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+  try {
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.empresa_id', ${empresaId}, true)`;
+      await tx`SELECT negocio.garantir_contador_de_contrato(${ano})`;
+    });
   } finally {
     await sql.end();
   }
@@ -460,11 +658,72 @@ describe('guarda de cobertura de isolamento — schema íntegro', () => {
     async () => {
       const cobertura = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
 
-      // Igualdade nas DUAS listas, numa asserção só: nenhuma exceção **e** as oito tabelas
+      // Igualdade nas DUAS listas, numa asserção só: nenhuma exceção **e** as dez tabelas
       // examinadas, nem mais nem menos. É o par que detecta — "exceções vazias" sozinho ficaria
-      // verde contra um banco em que a consulta não alcançou tabela nenhuma, e "oito examinadas"
+      // verde contra um banco em que a consulta não alcançou tabela nenhuma, e "dez examinadas"
       // sozinho não diria que todas passaram.
       expect(cobertura).toEqual({
+        excecoes: [],
+        tabelasExaminadas: TABELAS_LEGITIMAS,
+      } satisfies CoberturaDeIsolamento);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  // =========================================================================
+  // CT-430 — o vínculo NÃO tem marca de retirada, e a ausência é a decisão
+  // =========================================================================
+  //
+  // A ADR-0014 exclui do alcance da exclusão lógica *"vínculo ou concessão, cuja linha representa
+  // estado de relacionamento"*, e o discriminador dela é **ser referenciável** — nada aponta para
+  // uma linha de `contrato_fiador`. Substituir a lista de fiadores de um rascunho remove e insere
+  // linhas, que é o mecanismo legítimo.
+  //
+  // Este caso existe porque a decisão se desfaz em SILÊNCIO: a guarda de cobertura não cobra
+  // `retirado_em` de ninguém, então acrescentar a coluna "por simetria" com as sete entidades que a
+  // têm passaria por todas as demais asserções deste arquivo. É o mesmo raciocínio, e o mesmo molde,
+  // do `CT-317` para o cômodo.
+  it(
+    'CT-430 — `negocio.contrato_fiador` não tem `retirado_em`, e as sete entidades de cadastro têm',
+    async () => {
+      // --- A ausência, por igualdade de conjunto ----------------------------------------------
+      //
+      // Igualdade, e não `not.toContain`: uma coluna A MAIS, com outro nome, também é revisão
+      // devida — o vínculo tem quatro colunas e só quatro, e é isso que a decisão diz.
+      const doVinculo = await colunasDe(banco.cadeiaConexao, 'contrato_fiador');
+      expect(doVinculo).toEqual([...COLUNAS_DO_VINCULO_DE_FIADOR]);
+      expect(doVinculo).not.toContain(COLUNA_DE_RETIRADA);
+
+      // --- O controle POSITIVO ------------------------------------------------------------------
+      //
+      // Sem ele, "não tem a coluna" ficaria verde sobre uma consulta ao catálogo que não achasse
+      // nada — inclusive uma com o nome da marca escrito errado, ou apontada para a tabela errada.
+      // São SEIS: as cinco entidades de cadastro da fatia anterior que a têm — o cômodo é o outro
+      // excluído nominal da ADR-0014 — mais o próprio `contrato`, que a ADR nomeia na lista.
+      const comMarcaDeRetirada: string[] = [];
+      for (const entidade of ENTIDADES_COM_RETIRADA) {
+        const colunas = await colunasDe(banco.cadeiaConexao, entidade);
+        comMarcaDeRetirada.push(`${entidade}: ${colunas.includes(COLUNA_DE_RETIRADA)}`);
+      }
+      expect(comMarcaDeRetirada).toEqual([
+        'conjunto: true',
+        'contrato: true',
+        'fiador: true',
+        'imovel: true',
+        'locador: true',
+        'locatario: true',
+      ]);
+      // O cômodo é o OUTRO excluído nominalmente pela ADR-0014, e entra como segundo negativo: sem
+      // ele, a lista acima poderia ser lida como "toda tabela de negócio tem a marca menos o
+      // vínculo", que não é a decisão.
+      expect(await colunasDe(banco.cadeiaConexao, 'comodo')).not.toContain(COLUNA_DE_RETIRADA);
+
+      // --- E a guarda NÃO acusa a ausência ------------------------------------------------------
+      //
+      // Esta terceira asserção é a razão de o caso existir. Se a guarda cobrasse `retirado_em`, ela
+      // apontaria `contrato_fiador` aqui e o caso acima seria redundante com ela. Ela não cobra — e
+      // é por isso que a ausência precisa de asserção própria, e não de confiança na cobertura.
+      expect(await verificarCoberturaDeIsolamento(banco.cadeiaConexao)).toEqual({
         excecoes: [],
         tabelasExaminadas: TABELAS_LEGITIMAS,
       } satisfies CoberturaDeIsolamento);
@@ -555,12 +814,15 @@ describe('guarda de cobertura de isolamento — tabela nascida sem isolamento', 
 
         expect(cobertura).toEqual({
           excecoes: [],
-          // A visão segura ordena entre `conjunto` e `fiador`, pela mesma razão da irmã acima.
+          // A visão segura ordena entre `contrato_fiador` e `fiador`, pela mesma razão da irmã
+          // acima.
           tabelasExaminadas: [
             TABELA_DE_ACESSO,
             TABELA_DE_PERMISSAO,
             TABELA_DE_COMODO,
             TABELA_DE_CONJUNTO,
+            TABELA_DE_CONTRATO,
+            TABELA_DE_CONTRATO_FIADOR,
             VISAO_SEGURA,
             TABELA_DE_FIADOR,
             TABELA_DE_IMOVEL,
@@ -636,7 +898,7 @@ describe('guarda de cobertura de isolamento — tabela nascida sem isolamento', 
 // enxergar `FORCE`, o CT-300 ficaria verde sobre um schema sem isolamento, e é esse o par que falta.
 //
 // Um único mutante, sobre uma única tabela nova, basta: o mecanismo da guarda é o mesmo para as
-// oito, e o CT-009 já cobre as demais variantes de defeito (sem coluna, sem única composta, objeto
+// dez, e o CT-009 já cobre as demais variantes de defeito (sem coluna, sem única composta, objeto
 // sem isolamento possível).
 //
 // A instância é DEDICADA e descartada ao fim — nunca a compartilhada pelos demais casos, que
@@ -676,14 +938,14 @@ describe('CT-301 — entidade nova sem RLS forçada é nomeada pela guarda', () 
           const comMutante = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
 
           // Exatamente UMA entrada, com a tabela e o motivo exatos — não "alguma exceção". A
-          // igualdade de array é o que impede a guarda de reprovar as oito em bloco e ainda assim
+          // igualdade de array é o que impede a guarda de reprovar as dez em bloco e ainda assim
           // passar aqui.
           expect(comMutante.excecoes).toEqual([
             { tabela: TABELA_MUTANTE, motivo: 'RLS_NAO_FORCADA' },
           ]);
 
-          // As oito continuam EXAMINADAS: sem esta metade, uma guarda que tivesse perdido de vista
-          // as sete irmãs reportaria a mesma exceção única e passaria.
+          // As dez continuam EXAMINADAS: sem esta metade, uma guarda que tivesse perdido de vista
+          // as nove irmãs reportaria a mesma exceção única e passaria.
           expect(comMutante.tabelasExaminadas).toEqual(TABELAS_LEGITIMAS);
 
           // E as irmãs seguem aprovadas — a guarda distingue a tabela defeituosa em vez de
@@ -701,6 +963,199 @@ describe('CT-301 — entidade nova sem RLS forçada é nomeada pela guarda', () 
         }
 
         // Controle DEPOIS: restaurado o `FORCE`, a guarda volta ao vazio. É a terceira perna do par
+        // controle→mutante→controle, e sem ela "reprovou" poderia ser estado residual.
+        const restaurado = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
+        expect(restaurado).toEqual({
+          excecoes: [],
+          tabelasExaminadas: TABELAS_LEGITIMAS,
+        } satisfies CoberturaDeIsolamento);
+      } finally {
+        await banco.parar();
+      }
+    },
+    LIMITE_COM_INSTANCIA_PROPRIA_MS,
+  );
+});
+
+// ===========================================================================
+// CT-421 — as DUAS tabelas do contrato, e a sequência que a guarda ignora
+// ===========================================================================
+//
+// Ele é o CT-301 desta fatia, com um eixo a mais que só existe aqui: **o contador**.
+//
+// A ADR-0020 traz para `negocio` um objeto de espécie NOVA — a sequência do escopo `(empresa, ano)`,
+// criada em tempo de execução pela função `SECURITY DEFINER` da `0008`. A pergunta que ela abre é se
+// a guarda de cobertura passa a reprovar o schema por causa dela, e a resposta é não: `relkind = 'S'`
+// está fora do exame **por construção**, no filtro por exclusão que o marcador `DECISÃO FECHADA` de
+// `src/catalogo.ts` protege — e não por exceção mantida à mão, que é justamente o que a ADR-0009
+// rejeita. Uma sequência não guarda linha de negócio nem é caminho para uma.
+//
+// A asserção sobre isso só tem conteúdo com a sequência EXISTINDO: "não aparece na lista" é
+// trivialmente verdade sobre um objeto que ninguém criou. Por isso o caso a cria pelo caminho da
+// aplicação e afirma, primeiro, que ela está lá.
+//
+// A instância é DEDICADA e descartada ao fim — nunca a compartilhada pelos demais casos, que
+// passaria a conviver com tabela sem política enquanto o arquivo roda. É o mesmo padrão do CT-301.
+
+/** As duas tabelas sobre as quais o mutante age, uma por vez. */
+const TABELA_MUTANTE_DO_CONTRATO = TABELA_DE_CONTRATO;
+
+/** O escopo do contador que o caso cria. Ano fixo: o que se observa é a ESPÉCIE, não o valor. */
+const ANO_DO_CONTADOR = 2026;
+
+describe('CT-421 — o contrato nasce isolado, e a sequência do contador não é examinada', () => {
+  it(
+    'as duas tabelas constam sem exceção, a sequência fica de fora, e sem `FORCE` o contrato é acusado',
+    async () => {
+      const banco = await bancoEfemero();
+      const doMigrador = conexaoDeMigracao(banco);
+
+      try {
+        // --- Passo 1: o schema íntegro ---------------------------------------------------------
+        //
+        // Controle ANTES: sem ele, "reprovou com o mutante" não distingue a guarda que discrimina
+        // daquela que reprova qualquer coisa. A igualdade cobre as DUAS listas de uma vez — as dez
+        // tabelas examinadas incluem `negocio.contrato` e `negocio.contrato_fiador`, nas posições
+        // que a ordem prometida lhes dá, e nenhuma delas rende exceção.
+        const controle = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
+        expect(controle).toEqual({
+          excecoes: [],
+          tabelasExaminadas: TABELAS_LEGITIMAS,
+        } satisfies CoberturaDeIsolamento);
+        expect(controle.tabelasExaminadas).toContain(TABELA_DE_CONTRATO);
+        expect(controle.tabelasExaminadas).toContain(TABELA_DE_CONTRATO_FIADOR);
+
+        // --- Passo 1-b: a vigência única é ÍNDICE PARCIAL, e não restrição ----------------------
+        //
+        // O PostgreSQL **não admite restrição única parcial**, então quem "corrigir"
+        // `contrato_imovel_vigente_uidx` para `CONSTRAINT`, por consistência com as vizinhas, terá
+        // de **remover a condição** — e a tabela passará a impedir dois contratos em QUALQUER estado
+        // sobre o mesmo imóvel, o que quebra montar contrato novo depois de cancelar o anterior.
+        //
+        // As duas asserções abaixo são o par que detecta essa conversão. A definição, por igualdade
+        // literal, mata o mutante que apaga o `WHERE`; a lista de restrições, também por igualdade,
+        // mata o mutante que transforma o índice em restrição — ali ele apareceria como `u:`.
+        //
+        // A prova de CONCORRÊNCIA (duas ativações simultâneas sobre o mesmo imóvel) é o CT-407, na
+        // T5. Aqui prova-se a forma, que é o que a estrutura pode responder sozinha.
+        expect(await definicaoDeIndice(banco.cadeiaConexao, 'contrato_imovel_vigente_uidx')).toBe(
+          'CREATE UNIQUE INDEX contrato_imovel_vigente_uidx ON negocio.contrato ' +
+            "USING btree (imovel_id) WHERE (status = 'ATIVO'::negocio.status_contrato)",
+        );
+
+        // A lista inteira por igualdade, e não `not.toContain`: uma restrição a mais ou a menos em
+        // `negocio.contrato` é revisão devida. `c:` é verificação, `f:` é chave estrangeira, `n:` é
+        // não-nulo, `p:` é chave primária e `u:` é unicidade — e nenhuma `u:` nomeia o índice de
+        // vigência, que é o que separa índice de restrição.
+        //
+        // As entradas `n:` entram porque o PostgreSQL 18 materializa `NOT NULL` como restrição
+        // nomeada, e mantê-las torna a igualdade uma afirmação a mais: **`data_fim_locacao`,
+        // `valor_total_contrato`, `pdf_contrato_arquivo` e `retirado_em` NÃO aparecem aqui**, e é
+        // essa ausência que prova que as quatro são anuláveis. As duas primeiras são derivadas na
+        // ativação (RD-10); declará-las não nulas obrigaria a criação a inventar valores que só a
+        // ativação decide, e o defeito só apareceria na primeira criação em operação.
+        expect(await restricoesDe(banco.cadeiaConexao, 'contrato')).toEqual([
+          'n:contrato_codigo_not_null',
+          'n:contrato_data_inicio_locacao_not_null',
+          'c:contrato_dia_vencimento_chk',
+          'n:contrato_dia_vencimento_not_null',
+          'u:contrato_empresa_codigo_key',
+          'n:contrato_empresa_id_not_null',
+          'n:contrato_gerar_cobrancas_automaticamente_not_null',
+          'u:contrato_id_empresa_key',
+          'n:contrato_id_not_null',
+          'f:contrato_imovel_empresa_fkey',
+          'n:contrato_imovel_id_not_null',
+          'f:contrato_locador_empresa_fkey',
+          'n:contrato_locador_id_not_null',
+          'f:contrato_locatario_empresa_fkey',
+          'n:contrato_locatario_id_not_null',
+          'p:contrato_pkey',
+          'n:contrato_prazo_meses_not_null',
+          'c:contrato_prazo_positivo_chk',
+          'n:contrato_status_not_null',
+          'n:contrato_valor_mensal_not_null',
+          'c:contrato_valor_mensal_positivo_chk',
+        ]);
+        // O vínculo tem QUATRO colunas, todas não nulas, duas chaves compostas e duas unicidades —
+        // e nada mais. A lista é a forma inteira dele, e é onde uma restrição acrescentada "por
+        // simetria" com as entidades de cadastro apareceria.
+        expect(await restricoesDe(banco.cadeiaConexao, 'contrato_fiador')).toEqual([
+          'f:contrato_fiador_contrato_empresa_fkey',
+          'u:contrato_fiador_contrato_fiador_key',
+          'n:contrato_fiador_contrato_id_not_null',
+          'n:contrato_fiador_empresa_id_not_null',
+          'f:contrato_fiador_fiador_empresa_fkey',
+          'n:contrato_fiador_fiador_id_not_null',
+          'u:contrato_fiador_id_empresa_key',
+          'n:contrato_fiador_id_not_null',
+          'p:contrato_fiador_pkey',
+        ]);
+
+        // --- Passo 2: a sequência existe, e mesmo assim não é examinada -------------------------
+        //
+        // Antes de criar o contador não há sequência alguma em `negocio` — é a âncora que impede o
+        // passo seguinte de passar por vacuidade.
+        expect(await sequenciasDeNegocio(banco.cadeiaConexao)).toEqual([]);
+
+        await criarContadorPeloCaminhoDaAplicacao(
+          banco.cadeiaConexao,
+          EMPRESA_A.id,
+          ANO_DO_CONTADOR,
+        );
+
+        // O nome vem do catálogo, e não é recomposto aqui: recompor `contrato_{ano}_{empresa}` no
+        // caso reimplementaria no teste a regra que a função aplica, e o par passaria a se conferir
+        // contra uma cópia de si mesmo.
+        const sequencias = await sequenciasDeNegocio(banco.cadeiaConexao);
+        expect(sequencias).toHaveLength(1);
+        const contador = sequencias[0] ?? '';
+        expect(contador).not.toBe('');
+
+        const comContador = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
+        // A sequência EXISTE (afirmado acima) e ainda assim não entra em `tabelasExaminadas`, e não
+        // produz exceção nenhuma. As duas metades são necessárias: sem a primeira, "não reprovou"
+        // também seria verdade sobre uma guarda que a examinasse e a aprovasse por engano.
+        expect(comContador.tabelasExaminadas).not.toContain(contador);
+        expect(comContador).toEqual({
+          excecoes: [],
+          tabelasExaminadas: TABELAS_LEGITIMAS,
+        } satisfies CoberturaDeIsolamento);
+
+        // --- Passo 3: o mutante ----------------------------------------------------------------
+        await executarPrivilegiado(doMigrador, [
+          `ALTER TABLE ${TABELA_MUTANTE_DO_CONTRATO} NO FORCE ROW LEVEL SECURITY`,
+        ]);
+
+        try {
+          // A guarda é invocada pela cadeia SEM privilégio, como no controle: `NO FORCE` é
+          // invisível para o papel da aplicação em toda leitura de dado, e é justamente por isso
+          // que a resposta tem de vir do catálogo.
+          const comMutante = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
+
+          // Exatamente UMA entrada, com a tabela e o motivo exatos — não "alguma exceção".
+          expect(comMutante.excecoes).toEqual([
+            { tabela: TABELA_MUTANTE_DO_CONTRATO, motivo: 'RLS_NAO_FORCADA' },
+          ]);
+
+          // As dez continuam EXAMINADAS: sem esta metade, uma guarda que tivesse perdido de vista
+          // as nove irmãs reportaria a mesma exceção única e passaria.
+          expect(comMutante.tabelasExaminadas).toEqual(TABELAS_LEGITIMAS);
+
+          // E a tabela IRMÃ da mesma migração segue aprovada — a guarda distingue as duas em vez de
+          // reprovar em bloco o que a `0007` criou.
+          expect(comMutante.excecoes.map((excecao) => excecao.tabela)).not.toContain(
+            TABELA_DE_CONTRATO_FIADOR,
+          );
+        } finally {
+          await executarPrivilegiado(doMigrador, [
+            `ALTER TABLE ${TABELA_MUTANTE_DO_CONTRATO} FORCE ROW LEVEL SECURITY`,
+          ]);
+        }
+
+        // --- Passo 4: o controle DEPOIS ---------------------------------------------------------
+        //
+        // Restaurado o `FORCE`, a guarda volta ao vazio. É a terceira perna do par
         // controle→mutante→controle, e sem ela "reprovou" poderia ser estado residual.
         const restaurado = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
         expect(restaurado).toEqual({

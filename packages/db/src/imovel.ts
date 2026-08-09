@@ -12,10 +12,12 @@
  * vida do imóvel precisa vive aqui, publicada como função de domínio.
  *
  * A pergunta que o índice do pacote força, e a resposta: **isto é um caminho para dado fora da
- * unidade de trabalho? NÃO.** As seis funções **recebem** o executor (`tx`) de quem já abriu a
+ * unidade de trabalho? NÃO.** As sete funções **recebem** o executor (`tx`) de quem já abriu a
  * unidade; nenhuma abre conexão, reserva ou transação, e nenhuma devolve executor. A sexta é
  * {@link lerImoveisDeConjuntos}, da T10, que **não** sai pelo índice do pacote — ela é a leitura por
- * nível que `./conjunto.ts` compõe, e o docblock dela registra por quê.
+ * nível que `./conjunto.ts` compõe, e o docblock dela registra por quê. A sétima é
+ * {@link definirSituacaoDeLocacaoDoImovel}, da fatia de contratos, e o docblock dela registra por que
+ * ela é **estreita** em vez de um alargamento de {@link alterarImovel}.
  *
  * ---------------------------------------------------------------------------
  * A UNICIDADE É DO BANCO — e a leitura só acontece DEPOIS da recusa
@@ -89,6 +91,7 @@
 
 import type {
   Comodo,
+  ContratoVigenteDoImovel,
   SituacaoDeLocacao,
   SituacaoInformavel,
   TipoDeImovel,
@@ -108,6 +111,10 @@ import type { OpcoesDeCirculacao } from './conjunto.js';
 // aplica, porque a tabela já tem política e um segundo caminho para o mesmo recorte é o que a
 // ADR-0008 rejeita. Ele existe para a **escrita**, onde `empresa_id` é `NOT NULL` sem padrão.
 import { empresaDoContexto } from './contexto-de-escrita.js';
+// E o mesmo vale para `negocio.contrato`: a leitura do contrato vigente mora no módulo dono daquela
+// tabela. A direção é `imovel.ts → contrato.ts`, e **não há ciclo** — `contrato.ts` não lê imóvel (a
+// conferência de alcance do imóvel é da borda), e o que ele importa de `conjunto.ts` é só um tipo.
+import { lerContratosVigentesDeImoveis } from './contrato.js';
 
 /** A janela pedida da listagem, já validada na borda. */
 export interface JanelaDeImoveis {
@@ -125,7 +132,8 @@ export interface JanelaDeImoveis {
 const SO_EM_CIRCULACAO: OpcoesDeCirculacao = Object.freeze({ incluirRetirados: false });
 
 /**
- * Os campos que o cliente informa de um imóvel — os mesmos na criação e na alteração (§4.1.1).
+ * Os campos que o cliente informa ao **criar** um imóvel (§4.1.1). A alteração usa
+ * {@link DadosDaAlteracaoDoImovel}, que é este menos a situação de locação.
  *
  * `statusLocacao` é {@link SituacaoInformavel}, e **não** {@link SituacaoDeLocacao}: `LOCADO` é
  * produzido pela ativação de contrato, que é fatia seguinte, e não pode entrar por aqui. A restrição
@@ -150,6 +158,19 @@ export interface DadosDoImovel {
   readonly observacoes: string | null;
 }
 
+/**
+ * Os campos que o cliente informa ao **alterar** um imóvel — os da criação **menos** a situação de
+ * locação (T10).
+ *
+ * Derivado por `Omit`, e não redigitado: uma segunda lista de doze campos seria a segunda fonte do
+ * mesmo fato, e as duas divergiriam no primeiro campo que o cadastro ganhasse. É o espelho, nesta
+ * camada, do `omit` que produz `esquemaDeImovelAlterado` em `@sysloc/contracts`.
+ *
+ * **A ausência de `statusLocacao` no tipo é o mecanismo**, e não uma conferência escrita em
+ * {@link alterarImovel}: o campo não chega, então não há o que ignorar nem o que decidir ignorar.
+ */
+export type DadosDaAlteracaoDoImovel = Omit<DadosDoImovel, 'statusLocacao'>;
+
 /** Uma linha de `negocio.imovel`, na projeção que o contrato publica. */
 export interface ImovelPersistido {
   readonly id: string;
@@ -171,12 +192,18 @@ export interface ImovelPersistido {
   readonly comodos: readonly Comodo[];
   /** A soma das metragens dos cômodos (RN-02). Ver {@link montarImovel}. */
   readonly metragemTotal: number;
+  /**
+   * O contrato `ATIVO` que ocupa o imóvel, com o locatário dele — nulo quando não há nenhum.
+   *
+   * Derivado como a metragem, e pelo mesmo ponto único. Ver {@link montarImovel}.
+   */
+  readonly contratoVigente: ContratoVigenteDoImovel | null;
   /** A marca da exclusão lógica (ADR-0014): nula enquanto circula, o instante da retirada depois. */
   readonly retiradoEm: Date | null;
 }
 
-/** O que a consulta de fato lê da tabela — o agregado de cômodos não é coluna. */
-type LinhaDoImovel = Omit<ImovelPersistido, 'comodos' | 'metragemTotal'>;
+/** O que a consulta de fato lê da tabela — os três agregados derivados não são coluna. */
+type LinhaDoImovel = Omit<ImovelPersistido, 'comodos' | 'metragemTotal' | 'contratoVigente'>;
 
 /** A página lida, com o total do conjunto inteiro — os dois da MESMA transação. */
 export interface PaginaDeImoveisPersistidos {
@@ -268,31 +295,36 @@ function predicadoDeCirculacao(tx: TransactionSql, opcoes: OpcoesDeCirculacao): 
 }
 
 /**
- * O agregado de cômodos do imóvel — **o ponto único**, e ele é da T7.
+ * O agregado derivado do imóvel — **o ponto único**. Ele nasceu na T7 e cresceu na T9.
  *
- * O contrato publica `comodos` e `metragemTotal` (`esquemaDoImovel`), e as duas são **derivadas**:
- * a metragem total não é coluna de tabela nenhuma (decisão D2 do tech_spec), e os cômodos são um
- * `SELECT` próprio, ordenado por posição. O agregado é montado aqui, e não no serviço ou no
- * controlador, porque a soma tem de ter um ponto único de avaliação: se a leitura do item, a
- * listagem e a porta de circulação somassem por conta própria, a divergência voltaria pela porta de
- * trás e nenhuma delas estaria errada isoladamente — é exatamente o que o `CT-307` mede,
- * comparando os três caminhos.
+ * O contrato publica `comodos`, `metragemTotal` e `contratoVigente` (`esquemaDoImovel`), e os três são
+ * **derivados**: a metragem total não é coluna de tabela nenhuma (decisão D2 do tech_spec), os cômodos
+ * são um `SELECT` próprio ordenado por posição, e o contrato vigente é a leitura em lote de
+ * `lerContratosVigentesDeImoveis`. O agregado é montado aqui, e não no serviço ou no controlador,
+ * porque a derivação tem de ter um ponto único de avaliação: se a leitura do item, a listagem e a
+ * porta de circulação derivassem por conta própria, a divergência voltaria pela porta de trás e
+ * nenhuma delas estaria errada isoladamente — é exatamente o que o `CT-307` mede, comparando os três
+ * caminhos.
  *
- * **Esta função é o único lugar do repositório que produz `metragemTotal`.** As quatro portas de
- * leitura e escrita deste arquivo passam por {@link comAgregado} ou {@link comAgregadoEmLote}, e as
- * duas terminam aqui.
+ * **Esta função é o único lugar do repositório que produz `metragemTotal` e `contratoVigente`.** As
+ * portas de leitura e escrita deste arquivo passam por {@link comAgregado} ou
+ * {@link comAgregadoEmLote}, e as duas terminam aqui.
  *
  * **O compilador NÃO segura essa propriedade, e é importante não acreditar que ele segura.**
- * `ImovelPersistido` exige a **presença** dos dois campos derivados, não a **procedência** deles:
- * uma porta nova que devolvesse `{ ...linha, comodos, metragemTotal: 0 }`, ou que somasse por conta
- * própria, compila sem uma reclamação sequer. Quem obriga a preenchê-los **por este ponto** é o
- * `CT-307`, que compara os três produtores existentes entre si e reprova no par que discorda — e foi
- * ele, e não o tipo, que matou o mutante MT7-1. A porta que nascer aqui (a carteira, e o quarto mapa
- * que o cabeçalho de `packages/db/test/metragem.spec.ts` promete) entra naquele caso; **não o trate
- * como redundante com a verificação estática, porque ela não existe.**
+ * `ImovelPersistido` exige a **presença** dos campos derivados, não a **procedência** deles: uma porta
+ * nova que devolvesse `{ ...linha, comodos, metragemTotal: 0, contratoVigente: null }`, ou que
+ * derivasse por conta própria, compila sem uma reclamação sequer. Quem obriga a preenchê-los **por
+ * este ponto** é o `CT-307`, que compara os três produtores existentes entre si e reprova no par que
+ * discorda — e foi ele, e não o tipo, que matou o mutante MT7-1; e é o `CT-329`, pela rota, que
+ * compara a carteira com a composição das leituras individuais. A porta que nascer aqui entra naqueles
+ * casos; **não os trate como redundantes com a verificação estática, porque ela não existe.**
  */
-function montarImovel(linha: LinhaDoImovel, comodos: readonly Comodo[]): ImovelPersistido {
-  return { ...linha, comodos, metragemTotal: somarMetragem(comodos) };
+function montarImovel(
+  linha: LinhaDoImovel,
+  comodos: readonly Comodo[],
+  contratoVigente: ContratoVigenteDoImovel | null,
+): ImovelPersistido {
+  return { ...linha, comodos, metragemTotal: somarMetragem(comodos), contratoVigente };
 }
 
 /**
@@ -340,11 +372,21 @@ const CENTESIMOS_POR_UNIDADE = 100;
 const SEM_COMODOS: readonly Comodo[] = Object.freeze([]);
 
 /**
+ * O imóvel que **nenhum** contrato vigente ocupa.
+ *
+ * Constante nomeada, e não um `null` solto no ponto da composição: ela é o resultado verdadeiro da
+ * leitura em lote — o imóvel sem vigente não aparece no mapa —, e nomeá-la é o que distingue *"não há
+ * contrato vigente"* de *"o campo ainda não foi preenchido"*.
+ */
+const SEM_CONTRATO_VIGENTE = null;
+
+/**
  * Monta o agregado de **um** imóvel. `undefined` atravessa intacto — é a ausência da porta.
  *
- * Ela e {@link comAgregadoEmLote} compartilham a **mesma** consulta de cômodos e o **mesmo**
- * montador, e é por isso que existem duas em vez de uma: a diferença entre elas é o número de
- * imóveis, e uma listagem que chamasse esta em laço faria uma consulta por linha da página.
+ * Ela e {@link comAgregadoEmLote} compartilham as **mesmas** duas leituras — cômodos e contrato
+ * vigente — e o **mesmo** montador, e é por isso que existem duas em vez de uma: a diferença entre
+ * elas é o número de imóveis, e uma listagem que chamasse esta em laço faria duas consultas por linha
+ * da página.
  */
 async function comAgregado(
   tx: TransactionSql,
@@ -354,28 +396,40 @@ async function comAgregado(
     return undefined;
   }
 
-  const porImovel = await lerComodosDeImoveis(tx, [linha.id]);
+  const comodosPorImovel = await lerComodosDeImoveis(tx, [linha.id]);
+  const contratoPorImovel = await lerContratosVigentesDeImoveis(tx, [linha.id]);
 
-  return montarImovel(linha, porImovel.get(linha.id) ?? SEM_COMODOS);
+  return montarImovel(
+    linha,
+    comodosPorImovel.get(linha.id) ?? SEM_COMODOS,
+    contratoPorImovel.get(linha.id) ?? SEM_CONTRATO_VIGENTE,
+  );
 }
 
 /**
- * Monta o agregado de uma página inteira com **uma** consulta de cômodos, qualquer que seja o
- * tamanho dela.
+ * Monta o agregado de uma página inteira com **uma** consulta de cômodos e **uma** de contrato
+ * vigente, qualquer que seja o tamanho dela.
  *
- * O imóvel sem cômodo nenhum não aparece no mapa — a consulta devolve linha só para quem tem —, e o
- * `SEM_COMODOS` é o resultado verdadeiro dela, não um padrão que substitui a leitura.
+ * O imóvel sem cômodo nenhum — e o que não tem contrato vigente — não aparece no mapa respectivo: a
+ * consulta devolve linha só para quem tem. `SEM_COMODOS` e `SEM_CONTRATO_VIGENTE` são o resultado
+ * verdadeiro dela, não um padrão que substitui a leitura.
  */
 async function comAgregadoEmLote(
   tx: TransactionSql,
   linhas: readonly LinhaDoImovel[],
 ): Promise<ImovelPersistido[]> {
-  const porImovel = await lerComodosDeImoveis(
-    tx,
-    linhas.map((linha) => linha.id),
-  );
+  const identificadores = linhas.map((linha) => linha.id);
 
-  return linhas.map((linha) => montarImovel(linha, porImovel.get(linha.id) ?? SEM_COMODOS));
+  const comodosPorImovel = await lerComodosDeImoveis(tx, identificadores);
+  const contratoPorImovel = await lerContratosVigentesDeImoveis(tx, identificadores);
+
+  return linhas.map((linha) =>
+    montarImovel(
+      linha,
+      comodosPorImovel.get(linha.id) ?? SEM_COMODOS,
+      contratoPorImovel.get(linha.id) ?? SEM_CONTRATO_VIGENTE,
+    ),
+  );
 }
 
 /**
@@ -595,6 +649,25 @@ export async function localizarImovel(
  * corpo. Ela também **não** toca `retirado_em` — a circulação tem porta própria, e reuni-las faria
  * uma correção de endereço carregar, por descuido, uma mudança de estado.
  *
+ * ---------------------------------------------------------------------------
+ * E ela NÃO toca `status_locacao`, pela MESMA razão — a segunda coluna de estado (T10)
+ * ---------------------------------------------------------------------------
+ *
+ * O argumento do parágrafo acima não envelheceu; ele apenas não tinha sido aplicado à segunda coluna
+ * de estado. Enquanto esta instrução escrevia `status_locacao` incondicionalmente, e a entrada não
+ * aceitava `LOCADO`, **toda** alteração de um imóvel locado — inclusive corrigir o endereço —
+ * apagava o `LOCADO` em silêncio, e a resposta trazia `statusLocacao: 'DISPONIVEL'` ao lado de
+ * `contratoVigente` preenchido, com o contrato ainda `ATIVO`.
+ *
+ * A situação de locação tem **duas** portas próprias, e nenhuma delas é esta:
+ * {@link definirSituacaoDeLocacaoDoImovel}, que a ativação, o cancelamento e a rota
+ * `POST /v1/imoveis/:id/situacao-de-locacao` usam. **Não devolva a coluna a esta instrução "por
+ * simetria com os outros campos"** — ver o marcador `DECISÃO FECHADA` de `esquemaDeImovelAlterado`,
+ * em `packages/contracts/src/imovel.ts`, que governa esta ausência também.
+ *
+ * O tipo do parâmetro é {@link DadosDaAlteracaoDoImovel}, e é ele que torna a escrita
+ * irrepresentável: o campo não chega até aqui.
+ *
  * A recusa por identificador municipal repetido vem do banco também aqui: o `PUT` que aponte para um
  * identificador já ocupado é a **mesma** colisão da criação, e responde a mesma coisa. Um caminho
  * que só tratasse a criação deixaria a alteração devolver erro de driver ao cliente.
@@ -602,7 +675,7 @@ export async function localizarImovel(
 export async function alterarImovel(
   tx: TransactionSql,
   id: string,
-  dados: DadosDoImovel,
+  dados: DadosDaAlteracaoDoImovel,
 ): Promise<ImovelPersistido | undefined> {
   const linha = await gravarSobRestricaoDeUnicidade(
     tx,
@@ -621,7 +694,6 @@ export async function alterarImovel(
                cidade = ${dados.cidade},
                estado = ${dados.estado},
                cep = ${dados.cep},
-               status_locacao = ${dados.statusLocacao},
                observacoes = ${dados.observacoes}
          WHERE id = ${id}
         RETURNING ${colunasDoImovel(escrita)}
@@ -679,6 +751,56 @@ export async function definirCirculacaoDoImovel(
   `;
 
   return await comAgregado(tx, linha);
+}
+
+/**
+ * Escreve a situação de locação do imóvel — **a porta estreita, e o único caminho que grava
+ * `LOCADO`**.
+ *
+ * ---------------------------------------------------------------------------
+ * POR QUE ELA EXISTE SEPARADA, e por que a assimetria NÃO se unifica
+ * ---------------------------------------------------------------------------
+ *
+ * A assimetria é com a **criação**: {@link criarImovel} recebe `statusLocacao` tipado em
+ * {@link SituacaoInformavel} — o subconjunto que o cliente pode declarar, que
+ * `esquemaDeImovelNovo.statusLocacao` lê de `SITUACOES_INFORMAVEIS` na borda —, e esta função é
+ * tipada em {@link SituacaoDeLocacao}, o enum completo. Ela é **decisão fechada da fatia 1**, com
+ * prova dedicada (`CT-334`/`CT-335`), e o cabeçalho de `packages/contracts/src/imovel.ts` registra a
+ * razão por extenso: `LOCADO` é produzido pela **ativação de contrato**, e nenhum corpo de
+ * requisição pode alcançá-lo.
+ *
+ * A **alteração** deixou de participar dessa comparação na T10: {@link alterarImovel} recebe
+ * {@link DadosDaAlteracaoDoImovel}, que **não tem** `statusLocacao` — ali não há tipo a alargar,
+ * porque não há campo.
+ *
+ * Nenhuma das duas simetrias tentadoras se aplica, e as duas desfariam **o mesmo** invariante —
+ * *"`LOCADO` implica contrato ativo"* —, bastando um corpo de requisição com o campo para um imóvel
+ * se declarar locado sem contrato algum: nem devolver o campo à alteração "por simetria com a
+ * criação", nem alargar o tipo da criação para o enum completo "por simetria com esta função".
+ * **Leia o marcador `DECISÃO FECHADA` de `esquemaDeImovelAlterado`, em
+ * `packages/contracts/src/imovel.ts`, antes de qualquer tentativa de simetrizar** (regressão de
+ * decisão, R3) — ele governa as duas ausências.
+ *
+ * Ela devolve `void` porque quem a chama já tem o imóvel em mãos: são a ativação e o cancelamento de
+ * contrato, que acabaram de alcançá-lo pela chave estrangeira composta, e a rota de situação de
+ * locação. A ausência de linha é, portanto, estado impossível — e ela levanta com nome, em vez de
+ * deixar a escrita não ter efeito em silêncio, que é o modo de falha desta operação: um imóvel que
+ * ficasse `DISPONIVEL` com contrato vigente não acusaria nada até a segunda locação ser recusada.
+ */
+export async function definirSituacaoDeLocacaoDoImovel(
+  tx: TransactionSql,
+  imovelId: string,
+  situacao: SituacaoDeLocacao,
+): Promise<void> {
+  const resultado = await tx`
+    UPDATE negocio.imovel
+       SET status_locacao = ${situacao}
+     WHERE id = ${imovelId}
+  `;
+
+  if (resultado.count !== 1) {
+    throw new Error('a situação de locação foi escrita e o imóvel não foi alcançado');
+  }
 }
 
 /**

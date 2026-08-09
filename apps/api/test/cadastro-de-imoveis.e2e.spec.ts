@@ -701,6 +701,14 @@ describe('cadastro de imóveis pelas rotas de imóvel (T6)', () => {
       // reprova aqui, e não numa asserção de presença. `comodos` e `metragemTotal` entram porque são
       // contrato publicado desde já: o imóvel sem cômodo devolve o agregado vazio, e não a ausência
       // do campo, que é o que o cliente consome.
+      //
+      // SUT_IS_CORRECT_BECAUSE: o código de produção está certo e o corpo esperado é que descrevia o
+      // imóvel **antes** da T9. `esquemaDoImovel` ganhou `contratoVigente` por decisão declarada da
+      // fatia de contratos (ADR-0016 — um esquema só, e o campo aparece nas três superfícies por
+      // consequência), e o imóvel recém-criado não tem contrato algum, de modo que o valor verdadeiro
+      // é `null`. É **crescimento de esquema**: a asserção continua sendo igualdade de corpo INTEIRO,
+      // nenhum campo saiu, nenhuma igualdade virou asserção de presença, e um campo a mais segue
+      // reprovando aqui.
       expect(criado).toEqual({
         id: criado.id,
         conjuntoId: conjuntoDeA,
@@ -718,6 +726,7 @@ describe('cadastro de imóveis pelas rotas de imóvel (T6)', () => {
         observacoes: null,
         comodos: [],
         metragemTotal: 0,
+        contratoVigente: null,
         retiradoEm: null,
       });
       // E o `id` é de fato um UUID canônico, e não uma cadeia qualquer que a linha acima aceitaria
@@ -946,7 +955,7 @@ describe('cadastro de imóveis pelas rotas de imóvel (T6)', () => {
       const mudanca = await pedir(`${CAMINHO_DOS_IMOVEIS_DA_API}/${criado.id}`, {
         metodo: 'PUT',
         cookie,
-        corpo: corpoDeImovel(conjuntoDeDestino, IDENTIFICADOR_DA_MUDANCA),
+        corpo: corpoDeImovelAlterado(conjuntoDeDestino, IDENTIFICADOR_DA_MUDANCA),
       });
 
       expect(mudanca.status).toBe(200);
@@ -962,7 +971,7 @@ describe('cadastro de imóveis pelas rotas de imóvel (T6)', () => {
       const paraOAlheio = await pedir(`${CAMINHO_DOS_IMOVEIS_DA_API}/${criado.id}`, {
         metodo: 'PUT',
         cookie,
-        corpo: corpoDeImovel(conjuntoDeB, IDENTIFICADOR_DA_MUDANCA),
+        corpo: corpoDeImovelAlterado(conjuntoDeB, IDENTIFICADOR_DA_MUDANCA),
       });
 
       expect(paraOAlheio.status).toBe(404);
@@ -996,7 +1005,7 @@ describe('cadastro de imóveis pelas rotas de imóvel (T6)', () => {
       const paraOOcupado = await pedir(`${CAMINHO_DOS_IMOVEIS_DA_API}/${criado.id}`, {
         metodo: 'PUT',
         cookie,
-        corpo: corpoDeImovel(conjuntoDeDestino, IDENTIFICADOR_DO_VIZINHO),
+        corpo: corpoDeImovelAlterado(conjuntoDeDestino, IDENTIFICADOR_DO_VIZINHO),
       });
 
       expect(paraOOcupado.status).toBe(422);
@@ -1451,6 +1460,31 @@ function corpoDeImovel(
 }
 
 /**
+ * O corpo completo do `PUT` de imóvel — o da criação **menos** `statusLocacao` (T10).
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era o corpo do `PUT` deste arquivo que
+ * carregava um campo que a rota deixou de aceitar. A T10 da fatia `contratos-de-locacao` tirou
+ * `statusLocacao` do corpo da alteração — ele passou a ter rota própria —, e a recusa da chave a mais
+ * é **deliberada**: `esquemaDeImovelAlterado` é `strictObject`, e um corpo que ainda a traga responde
+ * `422 campo 'corpo'`. Continuar enviando-a aqui faria os três `PUT` do `CT-333 (b)` medirem a recusa
+ * ruidosa em vez do que eles existem para medir. **Nenhuma asserção foi afrouxada**: o corpo continua
+ * completo, e a prova de que o campo é recusado vive no `CT-434`, não aqui.
+ *
+ * Ele é **derivado** do corpo da criação, e não uma segunda lista de doze campos — espelhando o
+ * `omit` do contrato. Duas listas divergiriam no primeiro campo que o cadastro ganhasse.
+ */
+function corpoDeImovelAlterado(
+  conjuntoId: string,
+  identificadorMunicipal: string,
+  ajustes: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const corpo = corpoDeImovel(conjuntoId, identificadorMunicipal, ajustes);
+  delete corpo.statusLocacao;
+
+  return corpo;
+}
+
+/**
  * Concede as chaves informadas a uma pessoa, pelo caminho real da camada de dados.
  *
  * Sob o contexto de tenant **da empresa dela** e dentro da unidade de trabalho, com a coerência
@@ -1501,6 +1535,9 @@ interface ConjuntoPublicado {
  * {@link ConjuntoPublicado}: o conjunto de chaves é o que o `CT-310` assere por igualdade, e derivá-lo
  * do tipo do SUT faria a asserção concordar consigo mesma. As duas derivadas — `comodos` e
  * `metragemTotal` — entram porque são contrato publicado desde já, e é a T7 que passa a povoá-las.
+ *
+ * A terceira derivada, `contratoVigente`, entra na T9 pela mesma razão: ela é contrato publicado, e o
+ * imóvel deste arquivo não tem contrato algum, de modo que o valor verdadeiro dela é sempre `null`.
  */
 interface ImovelPublicado {
   readonly id: string;
@@ -1519,6 +1556,7 @@ interface ImovelPublicado {
   readonly observacoes: string | null;
   readonly comodos: readonly unknown[];
   readonly metragemTotal: number;
+  readonly contratoVigente: unknown;
   readonly retiradoEm: string | null;
 }
 

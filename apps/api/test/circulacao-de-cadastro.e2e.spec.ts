@@ -1,6 +1,13 @@
 /**
  * Circulação de cadastro pelas rotas de conjunto — CT-346 e CT-347. T5 da fatia
- * `cadastro-de-imoveis-e-pessoas`.
+ * `cadastro-de-imoveis-e-pessoas`, estendida pela T9 da mesma fatia e pela **T8** da fatia
+ * `contratos-de-locacao`.
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era o arranjo deste arquivo que
+ * descrevia uma sessão sem alcance à carteira de contratos. A T8 acrescenta o `CT-416`, que precisa
+ * de um contrato **vigente** para medir o que mede, e as duas chaves novas de
+ * {@link CHAVES_DO_ARRANJO} são **acréscimo puro** — nenhuma saiu, e nenhuma asserção dos cinco casos
+ * anteriores foi alterada, afrouxada ou removida.
  *
  * ---------------------------------------------------------------------------
  * INVARIANTES
@@ -36,10 +43,56 @@
  * |       |        | Na direção oposta (área sem ação), `403` com
  * |       |        | `detalhes.exigido: 'ACAO:excluir_cadastro'`. Com as duas, `200`. |
  *
+ * | CA-12 | CT-416 | Retirar de circulação um imóvel **`LOCADO` por contrato vigente** é **ACEITO**:
+ * |       |        | `200` com `retiradoEm` preenchido, e **nenhum `4xx`** — não existe recusa por
+ * |       |        | vínculo (ADR-0014). O corpo devolvido é, tirando a marca, **idêntico** ao de
+ * |       |        | antes: `statusLocacao` continua `LOCADO` — retirar é visibilidade e **não
+ * |       |        | libera o imóvel** —, e a releitura confirma o persistido. O contrato fica
+ * |       |        | **byte a byte** como estava, `ATIVO` e com o mesmo `imovelId`. |
+ *
  * Rastreabilidade: `CA-10 → CT-346 (RN-06)`, `CA-11 → CT-346 (RN-05)`, `CA-10 → CT-347 (RN-06)`,
  * `CA-11 → CT-347 (RN-05)`, `CA-13 → CT-354 (RN-08)`, `CA-23 → CT-354 (RN-14)`,
  * `CA-10 → CT-315 (RN-06)`, `CA-11 → CT-315 (RN-05)`, `CA-10 → CT-316 (RN-06)`,
- * `CA-11 → CT-316 (RN-05)`.
+ * `CA-11 → CT-316 (RN-05)`, `CA-12 → CT-416 (RN-15)`.
+ *
+ * ===========================================================================
+ * POR QUE O CT-416 (T8, outra fatia) MORA AQUI — divergência declarada
+ * ===========================================================================
+ *
+ * A §6.6 da T8 manda **estender** esta suíte em vez de abrir arquivo novo, e a razão é a mesma que
+ * trouxe o `CT-315` e o `CT-316` para cá: a montagem de retirada e recirculação de imóvel já vive
+ * aqui, com aplicação real, banco efêmero e sessão pela rota de entrada. Duplicá-la subiria um segundo
+ * Postgres para observar a mesma decisão, e criaria **duas montagens do mesmo fato** — livres para
+ * divergir.
+ *
+ * **O que o CT-416 prova é uma AUSÊNCIA, e é por isso que ele afirma o `200` e o estado, nunca "não
+ * deu erro".** A ADR-0014 decidiu que a exclusão lógica **não** tem recusa por vínculo: o cadastro
+ * referenciado sai de circulação e quem já o referencia continua legível. Uma conferência de vínculo
+ * escrita depois — a forma "cuidadosa" e errada — produziria `4xx` na rota de retirada, e é
+ * exatamente isso que a asserção de `200` reprova. As duas metades seguintes fecham a classe: o
+ * imóvel continua `LOCADO` (uma retirada que liberasse o imóvel seria porta lateral para destravá-lo
+ * sem cancelar o contrato) e o contrato continua `ATIVO` com o mesmo `imovelId`.
+ *
+ * ---------------------------------------------------------------------------
+ * MUTANTE EXECUTADO — MT8-6 (2026-08-09), a prova de que a AUSÊNCIA é falsificável
+ * ---------------------------------------------------------------------------
+ *
+ * Aplicado ao fonte de produção e invocado pelo **script do pacote**
+ * (`pnpm --filter @sysloc/api test`), nunca por `vitest run` avulso — este arquivo carrega
+ * `@sysloc/auth`, `@sysloc/db` e `@sysloc/contracts` pela fronteira do pacote.
+ *
+ *   * **controle** — árvore íntegra: `21 arquivos, 151 casos, 0 falhas`;
+ *   * **MT8-6 · a recusa por vínculo inventada** — `ImovelService.definirCirculacao` passa a ler o
+ *     imóvel antes de escrever e a recusar com `422 CAMPO_INVALIDO` quando `statusLocacao` é
+ *     `'LOCADO'`, que é a forma "cuidadosa" e errada de tratar o vínculo: `1 failed | 150 passed`, no
+ *     **`CT-416`** — *"a retirada do imóvel ocupado foi recusada:
+ *     {"codigo":"CAMPO_INVALIDO","mensagem":"requisição inválida","campo":"statusLocacao"}: expected
+ *     422 to be 200"*. É a medição que impede este caso de ser uma asserção que não pode falhar;
+ *   * **reversão** — o fonte foi restaurado do backup e conferido idêntico ao original por `diff -q`
+ *     e por `git diff --stat` vazio, `pnpm build` refeito, e o controle voltou a `151 passed`.
+ *
+ * A âncora deste registro é **simbólica** — `ImovelService.definirCirculacao`, em
+ * `apps/api/src/imoveis/imovel.service.ts` —, e nunca número de linha.
  *
  * ===========================================================================
  * POR QUE O CT-315 E O CT-316 (T9) MORAM AQUI — divergência declarada
@@ -239,10 +292,12 @@ import { CAMINHO_DOS_FIADORES } from '../src/cadastros/fiador.controller.ts';
 import { CAMINHO_DOS_LOCADORES } from '../src/cadastros/locador.controller.ts';
 import { CAMINHO_DOS_LOCATARIOS } from '../src/cadastros/locatario.controller.ts';
 import { ENDERECO_DE_ESCUTA, PREFIXO_DE_VERSAO } from '../src/configuracao/ambiente.ts';
+import { CAMINHO_DOS_CONTRATOS } from '../src/contratos/contrato.controller.ts';
 import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
 import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
 import { criarAplicacao } from '../src/main.ts';
 import { CAMINHO_DOS_USUARIOS } from '../src/usuarios/usuario.controller.ts';
+import { cpfValido } from './documento.ts';
 
 /** Limite da montagem: banco migrado, semente com credencial, fila e a aplicação real. */
 const LIMITE_DE_MONTAGEM_MS = 240_000;
@@ -281,11 +336,30 @@ const CHAVES_DO_ARRANJO: readonly ChaveDoCatalogo[] = [
   'TELA:imoveis',
   'TELA:cadastros',
   'ACAO:excluir_cadastro',
+  'TELA:contratos',
+  'ACAO:ativar_contrato',
 ];
 
 /** A área e a ação afirmadas, uma a uma, no efetivo — a precondição que não se supõe. */
 const AREA_DO_CADASTRO_DE_IMOVEIS: ChaveDoCatalogo = 'TELA:imoveis';
 const ACAO_SENSIVEL: ChaveDoCatalogo = 'ACAO:excluir_cadastro';
+
+/**
+ * A área e a ação que o `CT-416` acrescenta ao arranjo — a superfície de contrato (T8).
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo, e o arranjo é que descrevia uma sessão sem
+ * alcance à carteira de contratos. O `CT-416` precisa de um contrato **vigente** sobre o imóvel para
+ * medir o que ele mede, e o contrato só nasce e passa a valer pelas rotas reais. O acréscimo é
+ * **puro**: nenhuma chave saiu, o efetivo dos cinco casos anteriores continua contendo tudo o que
+ * eles afirmam, e o sujeito exclusivo do `CT-354` — que é quem mede ausência de chave — tem efetivo
+ * próprio e não é tocado.
+ *
+ * `TELA:contratos` é **obrigatória junto** de `ACAO:ativar_contrato`, e não escolha deste arquivo: o
+ * catálogo mapeia a ação àquela tela, e `validarCoerenciaDeAjustes` recusa o conjunto que deixasse a
+ * ação órfã.
+ */
+const AREA_DOS_CONTRATOS: ChaveDoCatalogo = 'TELA:contratos';
+const ACAO_DE_ATIVACAO: ChaveDoCatalogo = 'ACAO:ativar_contrato';
 
 /** Um UUID bem formado que não corresponde a conjunto algum — o controle do `404`. */
 const UUID_INEXISTENTE = '00000000-0000-4000-8000-0000000000ff';
@@ -323,11 +397,36 @@ const DOCUMENTOS_DA_CIRCULACAO = Object.freeze({
 /** O documento do único registro do `CT-316` — o do ciclo completo. */
 const DOCUMENTO_DO_CICLO = '10000191876';
 
+/**
+ * Os sequenciais de que saem os documentos das duas pessoas do `CT-416`.
+ *
+ * Derivados por {@link cpfValido} em vez de escritos à mão, pela razão que o cabeçalho daquele módulo
+ * registra: o dígito de controle é regra de domínio, e um número inventado seria recusado com `422`
+ * **no arranjo** — falha no lugar errado. Os valores são altos e afastados dos literais acima
+ * justamente para não colidirem com eles: a unicidade de documento por papel **alcança o retirado**
+ * (ADR-0014), e um documento repetido produziria `422` onde o caso mede outra coisa.
+ */
+const SEQUENCIAIS_DO_CONTRATO_VIGENTE: readonly [number, number] = [901, 902];
+
 /** Identificadores municipais dos dois imóveis do `CT-315`, distintos entre si. */
 const IDENTIFICADORES_DOS_IMOVEIS: readonly [string, string] = [
   '77777.111.0001-1',
   '77777.111.0002-2',
 ];
+
+/** O identificador municipal do imóvel do `CT-416` — distinto dos dois acima, pela mesma razão. */
+const IDENTIFICADOR_DO_IMOVEL_OCUPADO = '77777.111.0003-3';
+
+/** Caminho, relativo à raiz, da coleção de contratos — a superfície que o `CT-416` arranja. */
+const CAMINHO_DOS_CONTRATOS_DA_API = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}`;
+
+/** Os termos do contrato do `CT-416` — fixos, e irrelevantes para o que o caso mede. */
+const TERMOS_DO_CONTRATO_OCUPANTE = Object.freeze({
+  dataInicioLocacao: '2026-01-15',
+  prazoMeses: 12,
+  valorMensal: 2500,
+  diaVencimento: 10,
+});
 
 /** Caminho, relativo à raiz, da coleção de pessoas — usado para arranjar o sujeito do CT-354. */
 const CAMINHO_DAS_PESSOAS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_USUARIOS}`;
@@ -413,6 +512,8 @@ beforeAll(async () => {
   const sessao = (await pedir(CAMINHO_DA_SESSAO_CORRENTE, { cookie })).corpo as SessaoPublicada;
   expect(sessao.telas).toContain(AREA_DO_CADASTRO_DE_IMOVEIS);
   expect(sessao.acoes).toContain(ACAO_SENSIVEL);
+  expect(sessao.telas).toContain(AREA_DOS_CONTRATOS);
+  expect(sessao.acoes).toContain(ACAO_DE_ATIVACAO);
 }, LIMITE_DE_MONTAGEM_MS);
 
 afterAll(async () => {
@@ -846,6 +947,119 @@ describe('circulação transversal nas cinco entidades (T9)', () => {
   );
 });
 
+describe('circulação de imóvel OCUPADO por contrato vigente (T8)', () => {
+  it(
+    'CT-416 — retirar de circulação um imóvel LOCADO é ACEITO, sem recusa por vínculo',
+    async () => {
+      // --- Arranjo: um imóvel de fato ocupado, pelas rotas reais --------------------------------
+      //
+      // O `LOCADO` do imóvel é escrito pela ATIVAÇÃO, e não por corpo de requisição — a situação não
+      // é informável (decisão fechada da fatia anterior). É por isso que o arranjo passa pela rota
+      // de ativação em vez de mandar `statusLocacao` na criação do imóvel: sem o contrato vigente,
+      // não haveria vínculo algum, e o caso mediria uma retirada comum.
+      const conjunto = await criarConjunto('Edifício do Imóvel Ocupado');
+      const imovelId = await criarPelaRota(CAMINHO_DOS_IMOVEIS_DA_API, {
+        conjuntoId: conjunto.id,
+        nomeImovel: 'Ap Ocupado',
+        identificadorMunicipal: IDENTIFICADOR_DO_IMOVEL_OCUPADO,
+        tipoImovel: 'RESIDENCIAL',
+        logradouro: 'Rua das Acácias',
+        numero: '100',
+        complemento: null,
+        bairro: 'Centro',
+        cidade: 'São Paulo',
+        estado: 'SP',
+        cep: '01000000',
+        statusLocacao: 'DISPONIVEL',
+        observacoes: null,
+      });
+
+      const locadorId = await criarPelaRota(
+        CAMINHO_DOS_LOCADORES_DA_API,
+        corpoDeLocador(cpfValido(SEQUENCIAIS_DO_CONTRATO_VIGENTE[0]), 'Locador do Ocupado'),
+      );
+      const locatarioId = await criarPelaRota(
+        CAMINHO_DOS_LOCATARIOS_DA_API,
+        corpoDeLocador(cpfValido(SEQUENCIAIS_DO_CONTRATO_VIGENTE[1]), 'Locatário do Ocupado'),
+      );
+
+      const criacao = await pedir(CAMINHO_DOS_CONTRATOS_DA_API, {
+        metodo: 'POST',
+        cookie,
+        corpo: {
+          imovelId,
+          locadorId,
+          locatarioId,
+          fiadoresIds: [],
+          ...TERMOS_DO_CONTRATO_OCUPANTE,
+          gerarCobrancasAutomaticamente: true,
+          pdfContratoArquivo: null,
+        },
+      });
+      expect(criacao.status, criacao.texto).toBe(201);
+      const codigo = (criacao.corpo as { codigo: string }).codigo;
+
+      const ativacao = await pedir(`${CAMINHO_DOS_CONTRATOS_DA_API}/${codigo}/ativacao`, {
+        metodo: 'POST',
+        cookie,
+        corpo: {},
+      });
+      expect(ativacao.status, ativacao.texto).toBe(200);
+
+      // A precondição do caso é AFIRMADA: o imóvel está de fato ocupado. Sem esta linha, a retirada
+      // aceita abaixo não diria nada — ela seria a retirada de um imóvel livre, que o `CT-315` já
+      // mede.
+      const imovelAntes = await lerImovel(imovelId);
+      expect(imovelAntes.statusLocacao).toBe('LOCADO');
+      expect(imovelAntes.retiradoEm).toBeNull();
+
+      const contratoAntes = await lerContrato(codigo);
+      expect(contratoAntes.status).toBe('ATIVO');
+      expect(contratoAntes.imovelId).toBe(imovelId);
+
+      // --- A RETIRADA do imóvel ocupado ---------------------------------------------------------
+      //
+      // O que este caso prova é uma **ausência**: não existe recusa por vínculo (ADR-0014). A
+      // asserção é `toBe(200)` sobre o estado observado, e ela **pode falhar** — qualquer `4xx` que
+      // uma conferência de vínculo produzisse reprova nesta linha, com o corpo da recusa na
+      // mensagem. Afirmar "não deu erro" seria o que não se admite.
+      const retirada = await pedir(`${CAMINHO_DOS_IMOVEIS_DA_API}/${imovelId}/retirada`, {
+        metodo: 'POST',
+        cookie,
+        corpo: {},
+      });
+
+      expect(retirada.status, `a retirada do imóvel ocupado foi recusada: ${retirada.texto}`).toBe(
+        200,
+      );
+
+      const retirado = retirada.corpo as ImovelPublicado;
+      expect(retirado.retiradoEm).not.toBeNull();
+
+      // O corpo INTEIRO menos a marca é **idêntico** ao de antes: a retirada é de visibilidade, e o
+      // que ela pode tocar é a marca, e nada mais. É esta linha que pega uma implementação que, de
+      // passagem, liberasse o imóvel — `statusLocacao` voltaria a `DISPONIVEL` e reprovaria aqui,
+      // enquanto qualquer asserção sobre `retiradoEm` continuaria verde.
+      expect({ ...retirado, retiradoEm: null }).toEqual(imovelAntes);
+      expect(retirado.statusLocacao).toBe('LOCADO');
+
+      // --- E o estado PERSISTIDO das duas entidades ---------------------------------------------
+      //
+      // A releitura, e não só o corpo da resposta: uma borda que devolvesse o imóvel intacto e
+      // gravasse outra coisa passaria em tudo acima.
+      const imovelDepois = await lerImovel(imovelId);
+      expect(imovelDepois).toEqual(retirado);
+      expect(imovelDepois.statusLocacao).toBe('LOCADO');
+
+      // E o contrato ficou byte a byte como estava — `status` ainda `ATIVO` e `imovelId` inalterado.
+      // O vínculo continua existindo: o que saiu de circulação foi o cadastro do imóvel, e retirar
+      // não é cancelar.
+      expect(await lerContrato(codigo)).toEqual(contratoAntes);
+    },
+    LIMITE_CASO_MS,
+  );
+});
+
 // ---------------------------------------------------------------------------------------------
 // Arranjo do cenário, pelas ROTAS REAIS
 // ---------------------------------------------------------------------------------------------
@@ -955,6 +1169,30 @@ function entidadesSobCirculacao(conjuntoPaiId: string): readonly EntidadeSobCirc
         ),
     },
   ];
+}
+
+/** O imóvel como a API o publica, no que o `CT-416` observa dele. A falha levanta. */
+async function lerImovel(imovelId: string): Promise<ImovelPublicado> {
+  const alvo = `${CAMINHO_DOS_IMOVEIS_DA_API}/${imovelId}`;
+  const leitura = await pedir(alvo, { cookie });
+
+  if (leitura.status !== 200) {
+    throw new Error(`a leitura de ${alvo} respondeu ${String(leitura.status)}: ${leitura.texto}`);
+  }
+
+  return leitura.corpo as ImovelPublicado;
+}
+
+/** O contrato como a API o publica, no que o `CT-416` observa dele. A falha levanta. */
+async function lerContrato(codigo: string): Promise<ContratoPublicado> {
+  const alvo = `${CAMINHO_DOS_CONTRATOS_DA_API}/${codigo}`;
+  const leitura = await pedir(alvo, { cookie });
+
+  if (leitura.status !== 200) {
+    throw new Error(`a leitura de ${alvo} respondeu ${String(leitura.status)}: ${leitura.texto}`);
+  }
+
+  return leitura.corpo as ContratoPublicado;
 }
 
 /** Cria um registro pela ROTA real e devolve o identificador, ou levanta nomeando a recusa. */
@@ -1237,6 +1475,27 @@ interface CadastroPublicado {
 /** Uma página de qualquer das cinco coleções, no que este arquivo observa dela. */
 interface PaginaPublicada {
   readonly itens: readonly CadastroPublicado[];
+}
+
+/**
+ * O imóvel como a API o publica, no que o `CT-416` observa dele.
+ *
+ * Os campos nomeados são os **dois** que o caso afirma por extenso; o restante do corpo é comparado
+ * por igualdade de objeto inteiro, sem que este tipo precise enumerá-lo — é o que faz a comparação
+ * alcançar também um campo que o esquema venha a ganhar (a T9 lhe acrescenta `contratoVigente`).
+ * Declarado aqui, e não importado de `@sysloc/contracts`, pela razão de {@link CadastroPublicado}.
+ */
+interface ImovelPublicado {
+  readonly id: string;
+  readonly statusLocacao: string;
+  readonly retiradoEm: string | null;
+}
+
+/** O contrato como a API o publica, no que o `CT-416` observa dele. */
+interface ContratoPublicado {
+  readonly codigo: string;
+  readonly status: string;
+  readonly imovelId: string;
 }
 
 /** A sessão do produto, no que este arquivo observa dela. */

@@ -62,13 +62,38 @@ export {
   esquemaDoConjuntoComImoveis,
 } from './conjunto.js';
 export type {
+  AtivacaoDeContrato,
+  CodigoDeContrato,
+  Contrato,
+  ContratoNovo,
+  EstadoDoContrato,
+} from './contrato.js';
+export {
+  ESCALA_MONETARIA,
+  ESQUEMA_DO_CODIGO_DE_CONTRATO,
+  ESTADOS_DO_CONTRATO,
+  esquemaDaAtivacaoDeContrato,
+  esquemaDeContratoNovo,
+  esquemaDoContrato,
+  formatarCodigoDeContrato,
+  LARGURA_DO_SEQUENCIAL_DE_CONTRATO,
+  MAIOR_PRAZO_EM_MESES,
+  MAIOR_VALOR_MONETARIO,
+  PREFIXO_DO_CODIGO_DE_CONTRATO,
+} from './contrato.js';
+export type {
+  ContratoVigenteDoImovel,
   Imovel,
+  ImovelAlterado,
   ImovelNovo,
   SituacaoDeLocacao,
+  SituacaoDeLocacaoInformada,
   SituacaoInformavel,
   TipoDeImovel,
 } from './imovel.js';
 export {
+  esquemaDaSituacaoDeLocacao,
+  esquemaDeImovelAlterado,
   esquemaDeImovelNovo,
   esquemaDoImovel,
   SITUACOES_DE_LOCACAO,

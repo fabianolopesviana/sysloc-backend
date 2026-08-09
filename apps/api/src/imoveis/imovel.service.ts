@@ -1,5 +1,6 @@
 /**
- * Imóvel — a regra de domínio das seis rotas de `/v1/imoveis`.
+ * Imóvel — a regra de domínio das **sete** rotas de `/v1/imoveis`: as seis do cadastro e a de
+ * situação de locação, que a fatia `contratos-de-locacao` acrescenta (T10).
  *
  * ---------------------------------------------------------------------------
  * ELE RECEBE O EXECUTOR, E NÃO ABRE UNIDADE PRÓPRIA (decisão D1)
@@ -67,11 +68,19 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import type { EnvelopeDeLista, Imovel, ImovelNovo, Janela } from '@sysloc/contracts';
+import type {
+  EnvelopeDeLista,
+  Imovel,
+  ImovelAlterado,
+  ImovelNovo,
+  Janela,
+  SituacaoInformavel,
+} from '@sysloc/contracts';
 import {
   alterarImovel,
   criarImovel,
   definirCirculacaoDoImovel,
+  definirSituacaoDeLocacaoDoImovel,
   ErroDeIdentificadorMunicipalEmUso,
   type ImovelPersistido,
   listarImoveis,
@@ -102,6 +111,26 @@ const CAMPO_DO_IDENTIFICADOR_MUNICIPAL = 'identificadorMunicipal';
  * conveniência em cada uma faria a comparação reprovar por divergência de forma.
  */
 const DISCRIMINADOR_DO_CONFLITO = 'conflito';
+
+/**
+ * O campo que a recusa da rota de situação de locação nomeia — o único que o corpo dela carrega.
+ *
+ * Constante nomeada, e não literal no ponto da recusa: ele é **contrato publicado**, e o `CT-434` o
+ * afirma por igualdade de corpo inteiro.
+ */
+const CAMPO_DA_SITUACAO_DE_LOCACAO = 'statusLocacao';
+
+/**
+ * O valor de `detalhes.conflito` quando o imóvel já tem contrato vigente.
+ *
+ * O nome do discriminador e o valor são os **mesmos** que `contratos/contrato.service.ts` publica ao
+ * recusar a segunda ativação sobre o mesmo imóvel: a §10.1 da tech spec fixa `detalhes.conflito` para
+ * toda colisão desta superfície, e um segundo vocabulário faria o cliente ter de aprender duas formas
+ * para a mesma classe de recusa. O literal é escrito aqui, e não importado daquele módulo, porque a
+ * constante de lá é privada dele — o que **não** pode divergir é o texto, e é ele que o `CT-434`
+ * afirma por igualdade de corpo inteiro dos dois lados.
+ */
+const CONFLITO_DE_VIGENCIA = 'IMOVEL_COM_CONTRATO_VIGENTE';
 
 @Injectable()
 export class ImovelService {
@@ -167,8 +196,12 @@ export class ImovelService {
    * O conjunto de destino passa pela **mesma** conferência da criação: `conjuntoId` é campo como
    * outro qualquer, e mudar o imóvel de conjunto é operação legítima de cadastro. Um `PUT` que
    * apontasse conjunto alheio sem a conferência responderia `500` em vez de `404`.
+   *
+   * **A entrada é {@link ImovelAlterado}, e não `ImovelNovo`**: a situação de locação não entra em
+   * corpo de atualização, e a porta de dados sequer a recebe. Ver o marcador `DECISÃO FECHADA` de
+   * `esquemaDeImovelAlterado`, em `packages/contracts/src/imovel.ts`.
    */
-  async alterar(tx: TransactionSql, id: string, entrada: ImovelNovo): Promise<Imovel> {
+  async alterar(tx: TransactionSql, id: string, entrada: ImovelAlterado): Promise<Imovel> {
     await this.exigirConjuntoAlcancavel(tx, entrada.conjuntoId);
 
     return publicar(
@@ -189,6 +222,67 @@ export class ImovelService {
    */
   async definirCirculacao(tx: TransactionSql, id: string, emCirculacao: boolean): Promise<Imovel> {
     return publicar(this.exigir(await definirCirculacaoDoImovel(tx, id, emCirculacao)));
+  }
+
+  /**
+   * Informa a situação de locação do imóvel — o **único** caminho por onde uma requisição a escreve.
+   *
+   * ---------------------------------------------------------------------------
+   * ELA RECUSA O IMÓVEL COM CONTRATO VIGENTE, e a recusa é o ponto da rota
+   * ---------------------------------------------------------------------------
+   *
+   * `LOCADO` é sustentado por um contrato `ATIVO`, e alternar o imóvel para `DISPONIVEL` ou
+   * `INDISPONIVEL` por baixo dele reabriria, por outra porta, exatamente o furo que tirar o campo do
+   * `PUT` fechou: a resposta traria a situação informada **ao lado** de `contratoVigente`
+   * preenchido. Por isso a recusa é por **haver contrato vigente**, e não por valor informado — as
+   * duas situações informáveis divergiriam do contrato do mesmo jeito.
+   *
+   * A conferência lê `contratoVigente` do próprio agregado que {@link localizarImovel} devolve — o
+   * campo que a leitura em lote `lerContratosVigentesDeImoveis` preenche num ponto único. Não há aqui
+   * uma segunda leitura de contrato por imóvel: uma consulta própria seria a segunda fonte do mesmo
+   * fato, livre para discordar do campo que a mesma rota publica na resposta.
+   *
+   * ---------------------------------------------------------------------------
+   * ELA É LEITURA-ANTES-DE-GRAVAR, e a assimetria com a ativação é deliberada
+   * ---------------------------------------------------------------------------
+   *
+   * Nada no banco pareia `contrato.status` com `imovel.status_locacao` — é o que o docblock de
+   * `definirSituacaoDeLocacaoDoImovel` já registra —, de modo que esta guarda é da aplicação, com a
+   * janela de corrida que toda leitura-antes-de-gravar tem: uma ativação concorrente que commitasse
+   * entre a leitura e a escrita deixaria o imóvel na situação informada. A janela é a mesma da guarda
+   * de estado do contrato, e a saída definitiva é a restrição no banco que o `REVERTER EXIGE` do
+   * marcador de `esquemaDeImovelAlterado` nomeia; inventá-la aqui seria decisão de esquema fora do
+   * alcance desta rota.
+   *
+   * **O sentido inverso não é recusado**: locar um imóvel `INDISPONIVEL` passa. `INDISPONIVEL`
+   * significa *"não ofereça nas buscas"*, e não *"proibido de locar"* — recusá-lo inventaria uma
+   * regra que nenhuma RN declara, enquanto a recusa daqui protege um invariante que existe.
+   *
+   * A releitura depois da escrita é o que faz a resposta ser **o que o banco guarda**, e não um
+   * objeto montado a partir do que a requisição pediu: as duas idas correm na mesma unidade de
+   * trabalho, e a segunda enxerga o que a primeira gravou.
+   */
+  async definirSituacaoDeLocacao(
+    tx: TransactionSql,
+    id: string,
+    situacao: SituacaoInformavel,
+  ): Promise<Imovel> {
+    const atual = this.exigir(await localizarImovel(tx, id));
+
+    if (atual.contratoVigente !== null) {
+      throw new ErroDeAplicacao(
+        CodigoErro.CAMPO_INVALIDO,
+        MENSAGEM_POR_CODIGO[CodigoErro.CAMPO_INVALIDO],
+        {
+          campo: CAMPO_DA_SITUACAO_DE_LOCACAO,
+          detalhes: { [DISCRIMINADOR_DO_CONFLITO]: CONFLITO_DE_VIGENCIA },
+        },
+      );
+    }
+
+    await definirSituacaoDeLocacaoDoImovel(tx, atual.id, situacao);
+
+    return publicar(this.exigir(await localizarImovel(tx, atual.id)));
   }
 
   /**
@@ -295,6 +389,11 @@ export function publicar(imovel: ImovelPersistido): Imovel {
     observacoes: imovel.observacoes,
     comodos: [...imovel.comodos],
     metragemTotal: imovel.metragemTotal,
+    // O objeto vem da porta já na forma que o contrato publica — `ContratoVigenteDoImovel` é o tipo
+    // de `@sysloc/contracts`, e não uma projeção própria da camada de dados —, de modo que não há
+    // tradução a fazer aqui. Copiar o campo é o que mantém esta função **enumerando** o corpo
+    // publicado: um espalhamento traria junto qualquer coluna que a projeção da porta venha a ganhar.
+    contratoVigente: imovel.contratoVigente,
     retiradoEm: imovel.retiradoEm === null ? null : imovel.retiradoEm.toISOString(),
   };
 }
