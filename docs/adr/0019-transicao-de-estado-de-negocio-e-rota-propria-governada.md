@@ -1,7 +1,7 @@
 ---
 id: 0019
 title: Transição de estado de negócio é rota própria governada por ação sensível
-status: accepted
+status: superseded-by:0021
 date: 2026-08-08
 tags: [state-management, architecture]
 ---
@@ -49,6 +49,8 @@ ortogonal ao estado: não transita nada e não libera o imóvel.
 - Quais estados cada entidade tem é decisão da fatia dela; esta ADR fixa a **forma** da transição.
 - `RESCINDIDO` não entra no enum do contrato: zero caminhos de escrita no app legado.
 - O nome e o formato das rotas de transição são decisão da spec, não desta ADR.
+
+> Superseded by 0021 - Transição de estado de negócio é rota própria, governada conforme a natureza do ato em 2026-08-09.
 
 ## Alternatives considered
 

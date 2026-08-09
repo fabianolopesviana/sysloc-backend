@@ -36,43 +36,31 @@
  * área — que é a direção pela qual o defeito da T5 era explorável.
  *
  * ---------------------------------------------------------------------------
- * A rota de SITUAÇÃO DE LOCAÇÃO exige apenas a ÁREA — e a leitura da ADR-0019 fica AQUI
+ * A rota de SITUAÇÃO DE LOCAÇÃO exige apenas a ÁREA — e a ADR-0021 é o que a governa
  * ---------------------------------------------------------------------------
  *
  * `POST /:id/situacao-de-locacao` não declara nada no método: vale a exigência da classe,
- * `TELA:imoveis`, e nada além dela. A `Decision` da ADR-0019 diz *"rota própria, governada pela
- * chave de ação sensível correspondente do catálogo fechado"*, e **não existe ação sensível para
- * esta transição** — o catálogo é fechado nas sete, e a própria ADR registra entre os *Cons* que ele
- * não cresce sem decisão explícita (ADR-0011: nenhuma chave nova é criada nesta fatia).
+ * `TELA:imoveis`, e nada além dela. **É conformidade com a `Decision` da ADR-0021**, que governa a
+ * transição pela **natureza do ato**: ato sensível exige a chave de ação do catálogo fechado;
+ * **atributo operacional do cadastro** — o que não transfere direito, não move dinheiro e não altera
+ * o que outra entidade pode fazer — exige apenas a área. A ADR nomeia a **situação de locação do
+ * imóvel** como a instância declarada da segunda classe. A metade que vale sempre — **rota própria,
+ * nunca campo em atualização do recurso** — é obedecida ao pé da letra, e é a razão de esta rota
+ * existir em vez de o campo voltar ao corpo do `PUT`.
  *
- * **A leitura adotada**: a ADR-0019 alcança **transição governada** — ativar, cancelar, retirar de
- * circulação —, e alternar entre disponível e indisponível é **atributo operacional do cadastro**,
- * não ato sensível. Ela se apoia nos *Neutros* da própria ADR (*"quais estados cada entidade tem é
- * decisão da fatia dela; esta ADR fixa a forma da transição"*), e a metade que importa — **rota
- * própria, nunca campo em atualização do recurso** — é obedecida ao pé da letra.
+ * **A história, porque ela explica o formato desta seção.** Até 2026-08-09 a rota era regida pela
+ * **ADR-0019**, cuja `Decision` exigia a chave de ação para *toda* transição, sem recorte. Não
+ * existia — nem existe — ação sensível para esta, e o catálogo é fechado nas sete pela ADR-0011, que
+ * a própria 0019 registrava entre os *Cons* como algo que não cresce sem decisão explícita. A rota
+ * foi publicada com a exigência de área e a divergência ficou declarada aqui como débito com prazo
+ * (**D43**), até que a emenda saísse. Ela saiu: a **ADR-0021 supersede a 0019** e recorta o caso, de
+ * modo que o que era interpretação passou a ser o texto. **O marcador `DÉBITO COM GATILHO` que
+ * ocupava este ponto foi removido no mesmo commit da emenda**, como manda a §3-B da
+ * `.claude/rules/nao-regressao.md`.
  *
- * **Isto é interpretação do texto, e não conformidade literal.** Fica declarado como tal para que um
- * gate futuro reconheça a decisão em vez de reabri-la, e para que a fatia que quiser rigor saiba
- * exatamente o que emendar: a `Decision` da ADR-0019, por `/agent-spec-adr-supersede 0019`.
- *
- * **Reusar `ACAO:excluir_cadastro` foi avaliado e descartado**: a ADR-0019 rejeita nominalmente esse
- * reuso nas Alternativas (*"são efeitos diferentes"*), e quem marca um imóvel em reforma passaria a
- * precisar da concessão de excluir cadastro.
- *
- * DÉBITO COM GATILHO — D43 · F2/T10 · registrado 2026-08-09
- * (Este marcador **agenda**, e não protege — ele é o oposto do `DECISÃO FECHADA` citado na seção
- *  anterior, que governa a conjunção das chaves de circulação e é intocável. Aqui a leitura acima é
- *  provisória por prazo declarado; lá a forma é definitiva.)
- * O QUÊ: esta rota governa uma **transição de estado sem chave de ação correspondente**. A metade da
- *        `Decision` da ADR-0019 que exige *"governada pela chave de ação sensível correspondente do
- *        catálogo fechado"* **não** é satisfeita — só a metade da forma (rota própria) é.
- * QUANDO FECHA: **antes do congelamento da superfície da API para o handoff**. É o instante em que o
- *        documento publicado passa a ser o contrato entregue ao frontend, e uma divergência entre a
- *        ADR e a superfície deixa de ser corrigível sem custo de contrato.
- * POR QUE NÃO AGORA: a emenda foi **oferecida e adiada por decisão do usuário** na sessão de
- *        challenge desta fatia (`_run/workflow-report.md`), e o catálogo de chaves é fechado pela
- *        ADR-0011 — criar `ACAO:*` nova aqui contrariaria uma ADR ativa para satisfazer outra.
- * ÍNDICE: docs/specs/features/contratos-de-locacao/v1/_run/run-report.md §2, D43
+ * **Reusar `ACAO:excluir_cadastro` foi avaliado e descartado**, e continua descartado: são efeitos
+ * diferentes (a 0019 já o rejeitava nas Alternativas, e a 0021 mantém a rejeição), e quem marca um
+ * imóvel em reforma passaria a precisar da concessão de excluir cadastro.
  *
  * ---------------------------------------------------------------------------
  * A UNIDADE DE TRABALHO ABRE AQUI, na borda (decisão D1)
