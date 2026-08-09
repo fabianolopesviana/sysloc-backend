@@ -763,12 +763,20 @@ describe('CT-424 (b) — o corpo da montagem é fechado, e cada campo tem a sua 
    * `valorTotalContrato` são derivados na ativação; `empresaId` sai da sessão. A lista é escrita por
    * extenso porque é ela que a RN-03 elimina como segunda fonte de estado.
    */
+  // Os quatro campos que o SERVIDOR decide e que a montagem não pode enviar. A RN-03 nomeia CINCO:
+  // o quinto é `empresaId`, e ele **não** está aqui de propósito — a varredura do CT-337 já gera
+  // exatamente este caso para `esquemaDeContratoNovo` (mesmo alvo, mesmo valor, as mesmas duas
+  // asserções), e é estritamente mais forte, porque acrescenta a metade declarativa
+  // `shape` não contém `empresaId`. Repeti-lo aqui não acrescentava poder de detecção.
+  //
+  // A cobertura não depende de lembrar: `ESQUEMAS_DE_ENTRADA` é descoberta a partir dos símbolos
+  // exportados, e `esquemaDeContratoNovo` entra nela pelo prefixo `esquemaDe`, como todo esquema de
+  // entrada futuro. Medido: um esquema que passasse a declarar `empresaId` reprova no CT-337.
   const DECIDIDOS_PELO_SERVIDOR: readonly { readonly chave: string; readonly valor: unknown }[] = [
     { chave: 'status', valor: 'ATIVO' },
     { chave: 'codigo', valor: 'CTR-2026-00002' },
     { chave: 'dataFimLocacao', valor: '2027-01-30' },
     { chave: 'valorTotalContrato', valor: 30_000 },
-    { chave: 'empresaId', valor: EMPRESA_ALHEIA },
   ];
 
   it('o corpo aprova a montagem completa, verbatim', () => {
@@ -1059,6 +1067,18 @@ describe('CT-428 (b) — os tetos do dinheiro e do prazo são a capacidade das c
     },
     { rotulo: 'muito abaixo da escala', remendo: { valorMensal: 0.001 }, campo: 'valorMensal' },
     { rotulo: 'acima do teto da coluna', remendo: { valorMensal: 1e14 }, campo: 'valorMensal' },
+    // A FRONTEIRA IMEDIATA do teto — um centavo acima, e não uma ordem de grandeza acima. As outras
+    // três grandezas do arquivo têm o par de fronteira; o dinheiro era a única sem, e a ausência
+    // deixava sobreviver um mutante medido: `.max(MAIOR_VALOR_MONETARIO * 2)` mantinha a suíte
+    // verde, porque `1e14` fica acima do teto dobrado e continuava recusado. O que se perdia não era
+    // a recusa — a conferência conjunta `.refine` recusa de qualquer forma —, era a ATRIBUIÇÃO DE
+    // CAMPO: na faixa `(teto, 2 × teto]` o erro passaria a acusar `prazoMeses` com o culpado sendo
+    // `valorMensal`, contra o que a §6.1 declara.
+    {
+      rotulo: 'um centavo acima do teto da coluna',
+      remendo: { valorMensal: MAIOR_VALOR_MONETARIO + ESCALA_MONETARIA },
+      campo: 'valorMensal',
+    },
     {
       rotulo: 'a ordem de grandeza que o gate mediu na metragem',
       remendo: { valorMensal: 1e30 },

@@ -25,25 +25,6 @@ REL_SCRIPTS="deploy/scripts/caracterizacao"
 DIR_SCRIPTS="${RAIZ_REPO}/${REL_SCRIPTS}"
 ARQ_COMPOSE="/opt/frappe/docker-compose.yaml"
 
-# Fonte única do conjunto esperado E da contagem. A contagem sai do tamanho desta
-# lista de propósito: enquanto o número era literal, acrescentar um artefato exigia
-# lembrar de dois lugares, e esquecer o segundo deixava a asserção de número
-# passando com o conjunto errado.
-#
-# Os sete primeiros vêm da captura original (TC-001); os dois últimos, da T1 da
-# fatia `contratos-de-locacao`.
-GOLDEN_ESPERADOS=(
-	"PROCEDENCIA.md"
-	"atualizar-atrasos-cobrancas.json"
-	"calcular-mora.json"
-	"contrato-ativacao.json"
-	"contrato-cancelamento.json"
-	"contrato-pdf.txt"
-	"encerrar-contratos-vencidos.json"
-	"marcar-cobrancas-vencidas.json"
-	"metragem.json"
-)
-
 # Os seis artefatos que a captura original produziu, sem o manifesto. O CT-433 usa
 # a lista para afirmar que a extensão é ACRÉSCIMO: nenhum deles pode ter sido
 # substituído pelos dois novos.
@@ -59,6 +40,24 @@ GOLDEN_DA_CAPTURA_ORIGINAL=(
 GOLDEN_DE_CONTRATO=(
 	"contrato-ativacao.json"
 	"contrato-cancelamento.json"
+)
+
+# Fonte única do conjunto esperado E da contagem. A contagem sai do tamanho desta
+# lista de propósito: enquanto o número era literal, acrescentar um artefato exigia
+# lembrar de dois lugares, e esquecer o segundo deixava a asserção de número
+# passando com o conjunto errado.
+#
+# COMPOSTA das duas sublistas acima, e não transcrita: a identidade
+# `manifesto + captura original + contrato` passa a ser mantida pelo interpretador.
+# Enquanto era escrita à mão, "fonte única" valia para a contagem e era FALSO para o
+# conjunto, e um artefato novo continuava exigindo lembrar de três lugares — o atrito
+# que o parágrafo acima diz eliminar. A ordem muda com a composição e não é
+# observável: o único consumo do conjunto compara sob `sort`, e os outros dois usam
+# apenas a cardinalidade.
+GOLDEN_ESPERADOS=(
+	"PROCEDENCIA.md"
+	"${GOLDEN_DA_CAPTURA_ORIGINAL[@]}"
+	"${GOLDEN_DE_CONTRATO[@]}"
 )
 
 # Marcadores introduzidos pela fase de cancelamento. Nomeá-los aqui é o que separa
@@ -719,6 +718,18 @@ erros = []
 FORMA_CANONICA = ("entrada", "retorno", "estado_resultante")
 DIAS_DE_VIRADA_EXIGIDOS = {29, 30, 31}
 
+# As SEIS condições de entrada que a regra legada recusa, cada uma pela mensagem literal que ela
+# emite. A lista existe para que a cobertura seja afirmada por IDENTIDADE, e não por contagem:
+# `len(recusadas) >= 6` é satisfeito por seis cópias da mesma condição, e era.
+CONDICOES_DE_RECUSA = (
+    "Data de início da locação é obrigatória.",
+    "Prazo da locação deve ser maior que zero.",
+    "Valor mensal inválido.",
+    "Dia de vencimento deve estar entre 1 e 28.",
+    "Contrato sem imóvel vinculado.",
+    "Contrato sem locatário vinculado.",
+)
+
 
 def carregar(nome):
     caminho = golden / nome
@@ -775,10 +786,22 @@ if ativacao is not None:
     recusadas = [
         item for item in validacao if not item.get("resultado", {}).get("aceito", True)
     ]
-    if len(recusadas) < 6:
+    # A cobertura das recusas é afirmada por IDENTIDADE da condição, não por contagem. A forma
+    # anterior (`len(recusadas) < 6`) é satisfeita por seis cenários da MESMA condição — medido: seis
+    # cópias de `sem_locatario` saíam `exit 0`, embora a mensagem de erro prometesse "um cada".
+    mensagens_recusadas = [
+        str(item.get("resultado", {}).get("mensagem") or "") for item in recusadas
+    ]
+    condicoes_ausentes = [
+        condicao
+        for condicao in CONDICOES_DE_RECUSA
+        if not any(condicao in mensagem for mensagem in mensagens_recusadas)
+    ]
+    if condicoes_ausentes:
         erros.append(
-            f"{ARQ_ATIVACAO}: só {len(recusadas)} cenários de recusa na validação; as seis "
-            "condições de entrada exigem ao menos um cada"
+            f"{ARQ_ATIVACAO}: as condições de entrada {condicoes_ausentes} não aparecem entre "
+            f"os {len(recusadas)} cenários de recusa capturados; a regra recusa por SEIS razões "
+            "distintas e o oráculo precisa de ao menos uma de cada"
         )
     for item in recusadas:
         if not str(item["resultado"].get("mensagem") or "").strip():
@@ -792,6 +815,11 @@ if ativacao is not None:
     }
     dias_de_inicio = set()
     anos_de_fevereiro = set()
+    # O PAR, e não os dois conjuntos ao lado: `(dia de início, ano de destino)` acumulado só quando o
+    # destino cai em fevereiro. É a conjunção que a §4-2 exige, e ela não é derivável dos dois
+    # conjuntos separados — medido: um golden em que a virada nunca encosta em fevereiro satisfazia
+    # as três asserções abaixo e saía `exit 0`.
+    viradas_em_fevereiro = set()
     derivacao = ativacao.get("retorno", {}).get("derivacao", [])
     if not derivacao:
         erros.append(f"{ARQ_ATIVACAO}: nenhum cenário de derivação capturado")
@@ -824,6 +852,8 @@ if ativacao is not None:
         destino = fim + timedelta(days=1)
         if destino.month == 2:
             anos_de_fevereiro.add(destino.year)
+            if inicio.day in DIAS_DE_VIRADA_EXIGIDOS:
+                viradas_em_fevereiro.add((inicio.day, calendar.isleap(destino.year)))
 
     faltantes = sorted(DIAS_DE_VIRADA_EXIGIDOS - dias_de_inicio)
     if faltantes:
@@ -840,6 +870,27 @@ if ativacao is not None:
         erros.append(
             f"{ARQ_ATIVACAO}: nenhuma derivação cai em fevereiro de ano não-bissexto "
             f"(fevereiros cobertos: {sorted(anos_de_fevereiro)})"
+        )
+
+    # O PRODUTO CARTESIANO, que é a exigência real da §4-2 e o que as três asserções acima NÃO
+    # alcançam: cada um dos três dias de virada tem de encostar em fevereiro nos DOIS tipos de ano.
+    # Sem esta asserção, um golden que cobrisse 29/30/31 em meses quaisquer e, à parte, fevereiro por
+    # um cenário de dia 15, satisfazia tudo — e é exatamente o caso que a task chama de "a razão
+    # inteira de capturar em vez de ler". Este verificador é a única rede do oráculo depois da F7,
+    # quando não houver mais como recapturar; é por isso que a asserção é do par, e não da margem.
+    pares_exigidos = {
+        (dia, bissexto) for dia in DIAS_DE_VIRADA_EXIGIDOS for bissexto in (True, False)
+    }
+    pares_faltantes = sorted(pares_exigidos - viradas_em_fevereiro)
+    if pares_faltantes:
+        legiveis = [
+            f"dia {dia} × fevereiro {'bissexto' if bissexto else 'não-bissexto'}"
+            for dia, bissexto in pares_faltantes
+        ]
+        erros.append(
+            f"{ARQ_ATIVACAO}: a virada de mês não cobre {legiveis} — os seis pares "
+            "(29/30/31 × bissexto/não-bissexto) são o que discrimina a saturação de fevereiro, "
+            f"e o golden só traz {sorted(viradas_em_fevereiro)}"
         )
 
 # ---- cancelamento: cascata, liberação do imóvel, transição e as recusas ----

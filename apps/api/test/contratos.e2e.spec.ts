@@ -913,6 +913,25 @@ const FIM_DERIVADO_COM_RESIDUO = '2027-02-27';
 const TOTAL_DERIVADO_SEM_RESIDUO = 6500.39;
 const TOTAL_INGENUO_COM_RESIDUO = 6500.389999999999;
 
+/**
+ * O prefixo do produto ingênuo que já o denuncia no texto cru da resposta — **derivado**, e não
+ * redigitado ao lado da constante de que deveria sair.
+ *
+ * É o número ingênuo cortado **uma casa depois** de ele divergir do correto (`6500.389…` contra
+ * `6500.39`). O prefixo, e não o número inteiro, é o que a asserção usa de propósito: uma
+ * serialização que truncasse o resíduo em `6500.38999` escaparia de um
+ * `not.toContain(String(TOTAL_INGENUO_COM_RESIDUO))` e é pega aqui. Trocar um pelo outro seria
+ * afrouxar a asserção, não simplificá-la.
+ *
+ * Enquanto o valor era literal, mudar o par `(500.03, 13)` movia a constante e deixava o literal
+ * perseguindo um número que ninguém mais produz — **em silêncio, com o caso verde**. Era o único
+ * ponto do delta em que um valor de contrato era redigitado.
+ */
+const PREFIXO_DO_RESIDUO_NO_TEXTO = String(TOTAL_INGENUO_COM_RESIDUO).slice(
+  0,
+  String(TOTAL_DERIVADO_SEM_RESIDUO).length + 2,
+);
+
 /** A declaração de efeito que a resposta da ativação carrega — o literal que a F3 terá de afrouxar. */
 const EFEITOS_ESPERADOS = { cobrancasGeradas: false };
 
@@ -1861,9 +1880,15 @@ describe('ativação do contrato — a primeira transição de estado governada 
       expect(doProduto.valorTotalContrato).toBe(TOTAL_DERIVADO_SEM_RESIDUO);
       expect(doProduto.valorTotalContrato).not.toBe(TOTAL_INGENUO_COM_RESIDUO);
       expect(doProduto.dataFimLocacao).toBe(FIM_DERIVADO_COM_RESIDUO);
+      // A âncora da DERIVAÇÃO, antes de usá-la: o prefixo tem de ser prefixo do ingênuo e NÃO do
+      // correto. Sem ela, um corte curto demais o faria casar também com `6500.39`, e a asserção
+      // seguinte passaria a reprovar a resposta certa — ou, pior, a ser satisfeita por vacuidade.
+      expect(String(TOTAL_INGENUO_COM_RESIDUO)).toContain(PREFIXO_DO_RESIDUO_NO_TEXTO);
+      expect(String(TOTAL_DERIVADO_SEM_RESIDUO)).not.toContain(PREFIXO_DO_RESIDUO_NO_TEXTO);
+
       // E o resíduo não chega ao cliente nem no texto cru da resposta — é ali que ele apareceria,
       // porque o número atravessa a serialização sem passar por arredondamento nenhum.
-      expect(derivada.texto).not.toContain('6500.3899');
+      expect(derivada.texto).not.toContain(PREFIXO_DO_RESIDUO_NO_TEXTO);
 
       // --- Sub-caso B: o imóvel INDISPONIVEL É ATIVÁVEL ----------------------------------------
       //
