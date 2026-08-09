@@ -1,6 +1,6 @@
 # Architecture Decision Records — INDEX
 
-> Ultima atualizacao: 2026-08-06 (18 ADRs)
+> Ultima atualizacao: 2026-08-08 (20 ADRs)
 
 <!-- ADR-INDEX-START -->
 | ID | Titulo | Status | Tags | Problema (1-linha) | Decisao (1-linha) |
@@ -23,4 +23,6 @@
 | 0016 | O esquema é a fonte única do contrato — validação e documento derivam dele | accepted | http, architecture | A API descreve hoje o mesmo contrato duas vezes: o esquema que confere a entrada e a descrição | O esquema declarado no pacote de contratos é a fonte única: a conferência de entrada, o tipo da |
 | 0017 | Forma canônica do contrato da API, com três classes de chave exposta | accepted | http, architecture, error-handling | A ADR-0012 partiu as entidades em duas classes e fixou que toda entidade de negócio tenantizada | Todo recurso da API obedece a cinco regras de forma, das quais a primeira passa a ter três |
 | 0018 | Uma rota compõe exigências, e a cobertura de autorização confere conteúdo — não só existência | accepted | auth, security, architecture | A ADR-0011 fixou que toda rota declara o que exige e que a rota sem declaração é recusada, com a | Uma rota pode declarar uma conjunção de exigências, e a recusa nomeia a primeira ausente na |
+| 0019 | Transição de estado de negócio é rota própria governada por ação sensível | accepted | state-management, architecture | O contrato é a primeira entidade do produto com ciclo de vida governado, e a cobrança (F3) é a | Toda transição de estado de entidade de negócio é uma rota própria, governada pela chave de ação |
+| 0020 | Número de série declarada é emitido por contador do banco fora do desfazimento | accepted | data, architecture | A ADR-0015 fixa a política de todo contador — único por empresa, escopo declarado por série, furo | Todo número de série declarada deste produto é emitido por contador do próprio banco, um por |
 <!-- ADR-INDEX-END -->

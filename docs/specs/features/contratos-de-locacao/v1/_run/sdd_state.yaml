@@ -1,0 +1,29 @@
+feature: "Contratos de locação — montagem, ativação e cancelamento"
+current_step: task_plan
+source: "recommended"
+source_note: "o pre-refinement de docs/specs/features/contratos-de-locacao/v1/ recomendou SDD na §15.2; esta é a fatia 2 de 2 da fase"
+variant: backend
+steps:
+  prd:
+    status: completed
+    summary: "16 US, 20 CA, 18 RN. Entregar o contrato de locação com estado decidido pelo servidor, código legível próprio, e ativação e cancelamento provados contra o comportamento capturado do sistema antigo."
+  tech_alignment:
+    status: completed
+    summary: "9 decisões (D1 a D9), 12 invariantes herdados, 2 candidatas a ADR — a de mecanismo de emissão de série virou a ADR-0020. Usado como ponto de partida da tech spec; nenhum conflito com o codebase."
+  tech_spec:
+    status: completed
+    variant: backend
+    summary: "ContratoController + ContratoService + porta de dados contrato.ts + módulo puro derivacao-de-contrato.ts + contrato @sysloc/contracts/contrato.ts; 9 rotas novas — 8 sob /v1/contratos (4 governadas por ação sensível com a conjunção inteira) e a de situação de locação sobre /v1/imoveis, que o challenge acrescentou (§4.1.2); superfície 66→77 rotas e 51→60 manipuladores; tabelas: negocio.contrato, negocio.contrato_fiador, enum negocio.status_contrato, sequência por (empresa, ano) com duas funções SECURITY DEFINER; migrações 0007 (gerada) e 0008 (autoral); 34 casos de teste, 20 de 20 CA rastreados. Números revisados pela sessão de challenge — a §19 do tech_spec é canônica."
+  design:
+    status: N-A
+    summary: "frente backend — o repositório não produz interface; fronteira declarada no CLAUDE.md"
+  validation:
+    status: completed
+    summary: "challenge-spec: 6 questões, 17 ajustes inline. Fechou o furo de statusLocacao no PUT de imóvel (9ª rota, §4.1.2); canonizou 7 termos no glossário global e resolveu a colisão de 'contador sequencial' e de 'carteira'; 1 candidato a ADR confirmado e adiado (emenda da 0019)."
+  task_plan:
+    status: completed
+    summary: "10 tasks, 3 fases, 0 paralelizáveis (derivado — §4.2 do plano registra a condição que falha em cada par). US cobertas: 16/16, nenhuma órfã. 34 CTs distribuídos por redistribuição via JSON, sem disparar subagente de QA; cada CT em exatamente 1 task. Achado da derivação: o schema depende do contrato de tipos (ADR-0016), então T3 vem depois de T2."
+  execution:
+    status: pending
+    tasks_total: 10
+    tasks_completed: 0

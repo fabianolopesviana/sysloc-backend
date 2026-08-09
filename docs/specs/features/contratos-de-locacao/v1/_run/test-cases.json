@@ -1,0 +1,1558 @@
+{
+  "schema_version": 1,
+  "framework": "sdd",
+  "feature": "contratos-de-locacao",
+  "version": "v1",
+  "atualizado_em": "2026-08-08",
+  "stack_discovery": {
+    "fonte": "testing_stack_rule",
+    "stack": "TypeScript 7.0.2 (Node 24.18.1) + Bash — monorepo pnpm 11.18.0/Turborepo 2.10.7",
+    "framework_teste": "Vitest + embedded-postgres (unitário e integração, instância efêmera própria) · Vitest exercitando HTTP real em porta dinâmica (E2E) · Bash com vocabulário caso/ok/falhar/afirmar_igual/fechar_caso (infraestrutura e golden)",
+    "comando_teste": "pnpm test (turbo run test) · pnpm --filter @sysloc/<pacote> test · bash deploy/scripts/caracterizacao/verificar-golden.sh",
+    "discovery_needed": false,
+    "lacunas": []
+  },
+  "erros_leitura": [],
+  "resumo": {
+    "total_casos_teste": 34,
+    "por_tipo": {
+      "unitario": 6,
+      "integracao": 10,
+      "e2e": 18
+    },
+    "origem": {
+      "agent-spec-qa-test-generator": 29,
+      "arquiteto_tech_spec": 4,
+      "challenge-spec": 1
+    }
+  },
+  "casos_teste": [
+    {
+      "id": "CT-401",
+      "task_id": "T4",
+      "titulo": "derivarTerminoDaLocacao reproduz o oráculo legado, inclusive na virada de mês",
+      "tipo": "UNITARIO",
+      "categoria": "caso_extremo",
+      "invariant": "para todo par (dataInicio, prazoMeses) do golden capturado, derivarTerminoDaLocacao produz data de fim bit-a-bit igual à do sistema antigo — incluindo início em dia que não existe no mês de destino (29, 30, 31), onde a saturação de addMeses seguida de -1 dia é o comportamento correto.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "início em 31/01, 30/04, 29/02(bissexto) e não-bissexto combinados com prazos que caem em mês mais curto — o modo de falha é a virada de mês SEM o ajuste de -1 dia",
+        "assertion_esperada": "31/01/2026 + 1 mês → 27/02/2026 (28/02 saturado, menos 1 dia), byte a byte igual ao golden; sem o ajuste, o resultado seria 28/02/2026 e a asserção reprovaria"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": "NENHUM"
+      },
+      "camada": "packages/db/src/derivacao-de-contrato.ts",
+      "pre_condicoes": [
+        "golden/contrato-ativacao.json existe e contém os cenários de virada de mês (produzido pela Fase 1 — Oráculo desta mesma fatia)"
+      ],
+      "dados_entrada": {
+        "descricao": "tabela lida do golden mais o exemplo fixado na tech spec",
+        "valores": {
+          "casos": "todo cenário de derivação de data_fim_locacao do golden, mais { dataInicio: '2026-01-31', prazoMeses: 1, esperado: '2026-02-27' }"
+        }
+      },
+      "passos": [
+        "carregar golden/contrato-ativacao.json",
+        "para cada cenário, chamar derivarTerminoDaLocacao(dataInicio, prazoMeses)",
+        "afirmar igualdade de cadeia YYYY-MM-DD contra o valor do golden",
+        "afirmar isoladamente o exemplo 31/01/2026 + 1 mês = 27/02/2026"
+      ],
+      "resultado_esperado": "todo cenário do golden é reproduzido exatamente; nenhuma divergência de um dia sequer",
+      "criterios_aceitacao_validados": [
+        "CA-20",
+        "CA-08"
+      ],
+      "observacoes": "NO_SUITE_FOUND porque packages/db/src/derivacao-de-contrato.ts é módulo novo desta fatia; nenhuma suíte existente cobre a invariante. Arquivo novo proposto: packages/db/test/derivacao-de-contrato.spec.ts, mesmo padrão de metragem.spec.ts (que já lê golden/metragem.json diretamente). Depende da Fase 1 (captura do golden) ter rodado antes."
+    },
+    {
+      "id": "CT-402",
+      "task_id": "T4",
+      "titulo": "derivarValorTotal multiplica em centavos inteiros, sem resíduo de ponto flutuante",
+      "tipo": "UNITARIO",
+      "categoria": "caso_extremo",
+      "invariant": "para todo (valorMensal, prazoMeses), derivarValorTotal(valorMensal, prazoMeses) é exato em duas casas decimais — nunca carrega resíduo binário de multiplicação/soma em ponto flutuante — e reproduz o valor do golden.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "par (valorMensal, prazoMeses) cuja multiplicação ingênua em ponto flutuante produz resíduo — buscado por amostragem exaustiva no mesmo espírito do MT10-3/somarMetragem",
+        "assertion_esperada": "o valor total sai com exatamente duas casas decimais, sem dígitos de resíduo (ex.: nunca `…000000000004`); comparado por igualdade de número, não por proximidade"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": "NENHUM"
+      },
+      "camada": "packages/db/src/derivacao-de-contrato.ts",
+      "pre_condicoes": [
+        "golden/contrato-ativacao.json existe com os cenários de valor total"
+      ],
+      "dados_entrada": {
+        "descricao": "cenários do golden mais um par de resíduo binário achado por busca",
+        "valores": {
+          "exemplo": "valorMensal: 1350.50, prazoMeses: 12 → valorTotal: 16206.00",
+          "residuo": "par medido cuja soma/multiplicação direta produz dízima (análogo ao 0.01+2.01 de metragem)"
+        }
+      },
+      "passos": [
+        "carregar cenários do golden",
+        "chamar derivarValorTotal(valorMensal, prazoMeses) para cada um",
+        "afirmar igualdade exata contra o golden",
+        "aplicar o par de resíduo binário e afirmar que o resultado NÃO carrega dígitos de resíduo"
+      ],
+      "resultado_esperado": "todo valor total é exato, sem resíduo de ponto flutuante, batendo com o golden",
+      "criterios_aceitacao_validados": [
+        "CA-20"
+      ],
+      "observacoes": "NO_SUITE_FOUND pela mesma razão do CT-401. A prova de falsificação (remover a aritmética em centavos inteiros e voltar à multiplicação direta) é obrigatória antes de aceitar este caso — mesmo protocolo do MT10-3 em somarMetragem."
+    },
+    {
+      "id": "CT-403",
+      "task_id": "T5",
+      "titulo": "o código do contrato nasce CTR-{ano}-{5 dígitos}, único por empresa, e o mesmo número pode existir em empresas diferentes",
+      "tipo": "INTEGRACAO",
+      "categoria": "caminho_feliz",
+      "invariant": "todo contrato recebe, na criação, um código no formato CTR-{ano}-{cinco dígitos}; a unicidade é por (empresa, código) — duas empresas podem legitimamente ter o mesmo número no mesmo ano.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-403",
+        "input_invalido": "mesma sub-caso: duas empresas emitindo no mesmo ano",
+        "assertion_esperada": "os dois contratos recebem o MESMO número (ex.: CTR-2026-00001 nas duas empresas), e nenhuma restrição global os impede — só a unicidade (empresa_id, codigo) importa"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "o contexto de tenant é fixado via contextoDeTenant.executarCom({ empresaId }, …), o mesmo mecanismo que packages/db/test/isolamento.spec.ts e catalogo.spec.ts já usam — não é superfície privilegiada, é utilitário de teste já publicado",
+        "caminho_legitimo": "imitar packages/db/test/isolamento.spec.ts, que fixa app.empresa_id via contextoDeTenant.executarCom antes de chamar a porta de dados diretamente",
+        "teste_analogo": "packages/db/test/isolamento.spec.ts (CT-302/CT-303)"
+      },
+      "camada": "packages/db/src/contrato.ts (porta de dados)",
+      "pre_condicoes": [
+        "banco efêmero migrado (0007/0008 aplicadas)",
+        "imóvel, locador e locatário em circulação em duas empresas"
+      ],
+      "dados_entrada": {
+        "descricao": "dois contratos, cada um numa empresa diferente, ambos criados no mesmo ano corrente",
+        "valores": {
+          "empresaA": "cria contrato",
+          "empresaB": "cria contrato"
+        }
+      },
+      "passos": [
+        "sob contexto de tenant da empresa A, criar contrato",
+        "afirmar formato: /^CTR-\\d{4}-\\d{5}$/",
+        "sob contexto de tenant da empresa B, criar contrato",
+        "afirmar que o código de B é IGUAL ao código de A (mesma sequência inicial em anos/empresas distintos)",
+        "afirmar que um segundo contrato na MESMA empresa A recebe o PRÓXIMO número, nunca repetido"
+      ],
+      "resultado_esperado": "código no formato correto; unicidade escopada a (empresa, código); nenhuma colisão entre empresas",
+      "criterios_aceitacao_validados": [
+        "CA-04"
+      ],
+      "observacoes": "NO_SUITE_FOUND: packages/db/test/contrato.spec.ts é arquivo novo — a porta de dados negocio.contrato/negocio.contrato_fiador é módulo novo."
+    },
+    {
+      "id": "CT-404",
+      "task_id": "T5",
+      "titulo": "criação abortada queima o número da série para sempre — o furo é comprovado, não só o formato",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "quando a segunda unidade de trabalho da criação (a que grava o contrato em si) falha depois de a primeira já ter avançado o contador e commitado, o número reservado NUNCA é atribuído a nenhum contrato posterior — o furo é permanente, e o próximo contrato pula esse número.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "a segunda unidade de trabalho falha propositalmente (ex.: violando um CHECK de negocio.contrato) depois que negocio.proximo_numero_de_contrato já commitou o avanço",
+        "assertion_esperada": "o próximo contrato criado com sucesso recebe o número SEGUINTE ao reservado pela unidade abortada, nunca o número perdido — o furo é visível na sequência"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "imitar packages/db/test/isolamento.spec.ts para fixar o contexto de tenant; chamar negocio.garantir_contador_de_contrato/proximo_numero_de_contrato diretamente pela porta de dados, exatamente como a borda faz nas duas unidades de trabalho sequenciais",
+        "teste_analogo": "NENHUM — é a primeira prova de furo do repositório; segue o molde de CT-347 (idempotência de retirada)"
+      },
+      "camada": "packages/db/src/contrato.ts + migração 0008 (funções SECURITY DEFINER)",
+      "pre_condicoes": [
+        "banco efêmero migrado",
+        "empresa e ano de escopo já existentes ou criados pela primeira chamada"
+      ],
+      "dados_entrada": {
+        "descricao": "uma chamada a garantir_contador_de_contrato + proximo_numero_de_contrato (unidade 1, commit), seguida de uma tentativa de INSERT em negocio.contrato que viola deliberadamente um CHECK (unidade 2, rollback)",
+        "valores": {
+          "campo_forcado_a_falhar": "ex.: prazo_meses: 0 (viola prazo_meses > 0)"
+        }
+      },
+      "passos": [
+        "sob contexto de tenant da empresa A, chamar proximo_numero_de_contrato(ano) numa unidade de trabalho que COMMITA — anotar o número N devolvido",
+        "numa SEGUNDA unidade de trabalho, tentar gravar negocio.contrato com um campo que viola CHECK — a unidade faz rollback",
+        "criar um contrato válido normalmente na mesma empresa/ano",
+        "afirmar que o código deste novo contrato usa o número N+1, nunca N",
+        "consultar negocio.contrato da empresa e confirmar que NENHUMA linha usa o número N — o furo é permanente"
+      ],
+      "resultado_esperado": "o número N nunca é atribuído a contrato algum; o mecanismo produz furo por construção, não por promessa de disciplina",
+      "criterios_aceitacao_validados": [
+        "CA-04"
+      ],
+      "observacoes": "É o caso mais importante de CA-04 — a tech spec exige provar o furo, não só o formato. Mesmo arquivo de CT-403."
+    },
+    {
+      "id": "CT-405",
+      "task_id": "T5",
+      "titulo": "duas criações concorrentes na mesma empresa/ano obtêm números distintos sem esperar uma pela outra",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "duas chamadas concorrentes a negocio.proximo_numero_de_contrato no mesmo (empresa, ano) não se bloqueiam — nenhuma espera pela outra até o commit — e cada uma recebe um número distinto (a política de furo/não-fila da ADR-0020).",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "duas conexões/transações concorrentes chamando proximo_numero_de_contrato antes de qualquer uma commitar — o modo de falha rejeitado seria uma delas ficar bloqueada até a outra commitar (mecanismo de linha travada, A1 da tech-alignment)",
+        "assertion_esperada": "as duas chamadas retornam (não travam) dentro de um limite de tempo curto, e devolvem números DIFERENTES"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "duas conexões postgres.js abertas diretamente contra o banco efêmero, cada uma chamando a função SQL sob o mesmo contexto de tenant — mecanismo já publicado pelo pacote de dados",
+        "teste_analogo": "NENHUM"
+      },
+      "camada": "packages/db/src/contrato.ts + migração 0008",
+      "pre_condicoes": [
+        "banco efêmero migrado",
+        "duas conexões/clientes SQL independentes"
+      ],
+      "dados_entrada": {
+        "descricao": "duas chamadas concorrentes a proximo_numero_de_contrato(anoCorrente) sob o mesmo contexto de tenant",
+        "valores": {}
+      },
+      "passos": [
+        "abrir duas conexões independentes sob o mesmo contexto de tenant (empresa A)",
+        "disparar as duas chamadas a proximo_numero_de_contrato em paralelo (Promise.all), sem uma esperar a outra commitar",
+        "medir que ambas retornam dentro de um limite curto (não há bloqueio mútuo)",
+        "afirmar que os dois números devolvidos são distintos"
+      ],
+      "resultado_esperado": "nenhuma das duas chamadas espera a outra; números distintos, sem serialização",
+      "criterios_aceitacao_validados": [
+        "CA-04"
+      ],
+      "observacoes": "Prova a segunda metade da ADR-0020 (não-fila), complementar ao CT-404 (não-reuso). Mesmo arquivo."
+    },
+    {
+      "id": "CT-406",
+      "task_id": "T3",
+      "titulo": "proximo_numero_de_contrato recusa sem contexto de empresa fixado, e não aceita empresa_id por parâmetro",
+      "tipo": "INTEGRACAO",
+      "categoria": "seguranca",
+      "invariant": "a função lê exclusivamente current_setting('app.empresa_id') e não tem parâmetro de empresa — é estruturalmente impossível pedir o contador de outra empresa passando um identificador.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "chamada a proximo_numero_de_contrato/garantir_contador_de_contrato sem app.empresa_id fixado no contexto",
+        "assertion_esperada": "a chamada levanta erro (a função afirma o contexto ausente), e nenhuma linha de sequência é criada/avançada"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "chamar a função diretamente via SQL, sem passar por contextoDeTenant.executarCom — reproduz o estado real de uma conexão sem contexto fixado",
+        "teste_analogo": "packages/db/test/isolamento.spec.ts (CT-005 — sem empresa no contexto)"
+      },
+      "camada": "packages/db/src/contrato.ts + migração 0008",
+      "pre_condicoes": [
+        "banco efêmero migrado"
+      ],
+      "dados_entrada": {
+        "descricao": "chamada SQL direta às duas funções sem SET LOCAL app.empresa_id",
+        "valores": {}
+      },
+      "passos": [
+        "abrir conexão sem fixar app.empresa_id",
+        "chamar SELECT negocio.proximo_numero_de_contrato(2026)",
+        "afirmar que a chamada levanta erro nomeando o contexto ausente",
+        "confirmar que a assinatura da função NÃO aceita parâmetro de empresa (introspecção do catálogo)"
+      ],
+      "resultado_esperado": "recusa sem contexto; a função é estruturalmente incapaz de aceitar empresa por parâmetro",
+      "criterios_aceitacao_validados": [
+        "CA-04",
+        "CA-18"
+      ],
+      "observacoes": "É o mecanismo que impede pedir o contador de outra empresa — parte do argumento de isolamento estrutural da ADR-0020/CA-18."
+    },
+    {
+      "id": "CT-407",
+      "task_id": "T5",
+      "titulo": "duas ativações simultâneas sobre o mesmo imóvel: uma passa, a outra é recusada pelo índice único parcial — nunca por leitura prévia",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "quando dois contratos concorrem para ativar sobre o mesmo imóvel, o banco (índice único parcial contrato_imovel_vigente_uidx) recusa exatamente um deles com 23505 — a recusa não depende de uma leitura-antes-de-gravar da aplicação, que seria vulnerável à corrida entre as duas transações.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-407",
+        "input_invalido": "a segunda das duas ativações concorrentes",
+        "assertion_esperada": "a transação perdedora recebe erro 23505 nomeando contrato_imovel_vigente_uidx, e o contrato dela permanece RASCUNHO — o imóvel não muda por ela"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "duas conexões/transações independentes chamando a rotina de ativação da porta de dados diretamente (não pela rota HTTP) — mesmo padrão de concorrência do CT-405",
+        "teste_analogo": "NENHUM"
+      },
+      "camada": "packages/db/src/contrato.ts (índice contrato_imovel_vigente_uidx)",
+      "pre_condicoes": [
+        "dois contratos RASCUNHO válidos apontando para o MESMO imóvel, na mesma empresa"
+      ],
+      "dados_entrada": {
+        "descricao": "duas transações concorrentes tentando UPDATE status='ATIVO' no mesmo imóvel, iniciadas antes de qualquer uma commitar",
+        "valores": {}
+      },
+      "passos": [
+        "criar imóvel, locador, locatário e dois contratos RASCUNHO distintos apontando para o mesmo imóvel",
+        "abrir duas transações independentes; em cada uma, executar a gravação de ativação para um dos dois contratos",
+        "disparar o commit das duas em paralelo (Promise.allSettled)",
+        "afirmar que exatamente UMA commitou com sucesso (contrato ATIVO, imóvel LOCADO)",
+        "afirmar que a outra recebeu 23505 nomeando contrato_imovel_vigente_uidx, e o contrato dela segue RASCUNHO"
+      ],
+      "resultado_esperado": "exclusão mútua garantida pelo banco, sob concorrência real — nunca por um `if` que leu antes",
+      "criterios_aceitacao_validados": [
+        "CA-07"
+      ],
+      "observacoes": "É a prova forte que a tech-alignment exige nomeadamente para CA-07 — um teste sequencial não distingue índice de `if`. Complementado pelo CT-414 (tradução HTTP do 23505 em 422)."
+    },
+    {
+      "id": "CT-408",
+      "task_id": "T6",
+      "titulo": "POST /v1/contratos cria o contrato como RASCUNHO num único envio, com zero, um ou vários fiadores",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "montar um contrato com imóvel, locador, locatário, termos e zero-ou-mais fiadores é um único envio; o contrato nasce RASCUNHO, com código atribuído, e ainda não vale (não aparece como vigente no imóvel).",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-411",
+        "input_invalido": "corpo com campo obrigatório ausente ou termos inválidos (ver CT-411)",
+        "assertion_esperada": "422 CAMPO_INVALIDO nomeando o campo; nenhuma linha gravada"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "a sessão que age precisa de TELA:contratos concedida — o perfil-piso não a tem",
+        "caminho_legitimo": "imitar o `conceder`/`escreverAjustes` sob contextoDeTenant.executarCom já usado em apps/api/test/carteira.e2e.spec.ts e circulacao-de-cadastro.e2e.spec.ts; entrada pela rota pública de sign-in real",
+        "teste_analogo": "apps/api/test/carteira.e2e.spec.ts (função conceder)"
+      },
+      "camada": "apps/api/src/contratos/contrato.controller.ts",
+      "pre_condicoes": [
+        "imóvel, locador, locatário em circulação na empresa",
+        "sessão com TELA:contratos concedida"
+      ],
+      "dados_entrada": {
+        "descricao": "tabela: (a) zero fiadores, (b) um fiador, (c) três fiadores",
+        "valores": {
+          "corpo": "{ imovelId, locadorId, locatarioId, dataInicioLocacao, prazoMeses, valorMensal, diaVencimento, fiadoresIds: [] | [id] | [id,id,id], gerarCobrancasAutomaticamente }"
+        }
+      },
+      "passos": [
+        "para cada sub-caso, POST /v1/contratos com o corpo",
+        "afirmar 201, status RASCUNHO, código no formato CTR-{ano}-{5 dígitos}, dataFimLocacao e valorTotalContrato nulos",
+        "afirmar que a lista de fiadores retornada bate com a enviada",
+        "GET /v1/imoveis/:id do imóvel referenciado e afirmar contratoVigente: null — o rascunho não vale"
+      ],
+      "resultado_esperado": "rascunho criado num único envio para os três sub-casos de fiador, sem afetar o imóvel",
+      "criterios_aceitacao_validados": [
+        "CA-01",
+        "CA-03",
+        "CA-04"
+      ],
+      "observacoes": "NO_SUITE_FOUND: apps/api/test/contratos.e2e.spec.ts é arquivo novo. Segue o molde de cadastro-de-imoveis.e2e.spec.ts."
+    },
+    {
+      "id": "CT-409",
+      "task_id": "T6",
+      "titulo": "alterar rascunho preserva o código; contrato ATIVO ou CANCELADO recusa alteração",
+      "tipo": "E2E",
+      "categoria": "teste_negativo",
+      "invariant": "PUT /v1/contratos/:codigo só é aceito enquanto RASCUNHO, nunca muda o código, e é recusado (422 CAMPO_INVALIDO, campo status) para contrato ATIVO ou CANCELADO, sem alterar nada.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "PUT sobre contrato já ATIVO e sobre contrato já CANCELADO",
+        "assertion_esperada": "422 CAMPO_INVALIDO, campo: 'status', detalhes: { estadoAtual, transicaoPedida }; releitura do contrato byte a byte igual à de antes da tentativa"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "TELA:contratos para montar/alterar; ACAO:ativar_contrato para levar um contrato a ATIVO no arranjo deste caso",
+        "caminho_legitimo": "mesmo caminho do CT-408, com a concessão adicional de ACAO:ativar_contrato",
+        "teste_analogo": "apps/api/test/carteira.e2e.spec.ts (função conceder)"
+      },
+      "camada": "apps/api/src/contratos/contrato.controller.ts + contrato.service.ts",
+      "pre_condicoes": [
+        "um contrato RASCUNHO, um ATIVO e um CANCELADO na mesma empresa"
+      ],
+      "dados_entrada": {
+        "descricao": "PUT com corpo completo válido sobre os três contratos",
+        "valores": {
+          "corpoNovo": "termos alterados (ex.: valorMensal diferente)"
+        }
+      },
+      "passos": [
+        "PUT sobre o RASCUNHO: afirmar 200, código INALTERADO, termos atualizados",
+        "PUT sobre o ATIVO: afirmar 422 CAMPO_INVALIDO, campo status, detalhes.estadoAtual='ATIVO'",
+        "PUT sobre o CANCELADO: afirmar 422 CAMPO_INVALIDO, campo status, detalhes.estadoAtual='CANCELADO'",
+        "reler os dois contratos recusados e afirmar corpo byte a byte igual ao de antes das tentativas"
+      ],
+      "resultado_esperado": "alteração aceita só em RASCUNHO; as duas recusas não gravam nada",
+      "criterios_aceitacao_validados": [
+        "CA-02"
+      ],
+      "observacoes": "Mesmo arquivo do CT-408."
+    },
+    {
+      "id": "CT-410",
+      "task_id": "T6",
+      "titulo": "fiadores são substituídos por inteiro no PUT enquanto rascunho; congelam na ativação",
+      "tipo": "E2E",
+      "categoria": "teste_negativo",
+      "invariant": "PUT sobre RASCUNHO substitui a coleção de fiadores por inteiro (não faz merge); depois da ativação, qualquer tentativa de alteração — inclusive só de fiadores — é recusada pela guarda do PAI, e a lista congelada na ativação permanece intacta.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "PUT tentando só trocar fiadoresIds de um contrato já ATIVO",
+        "assertion_esperada": "422 CAMPO_INVALIDO campo status; releitura mostra a MESMA lista de fiadores da ativação"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "TELA:contratos + ACAO:ativar_contrato",
+        "caminho_legitimo": "mesmo do CT-409",
+        "teste_analogo": "apps/api/test/carteira.e2e.spec.ts (função conceder)"
+      },
+      "camada": "apps/api/src/contratos/contrato.controller.ts + contrato.service.ts",
+      "pre_condicoes": [
+        "contrato RASCUNHO com dois fiadores"
+      ],
+      "dados_entrada": {
+        "descricao": "PUT enquanto rascunho com lista de fiadores diferente; depois, ativação; depois, PUT tentando alterar fiadores",
+        "valores": {}
+      },
+      "passos": [
+        "criar contrato com fiadores [F1, F2]",
+        "PUT enquanto RASCUNHO com fiadoresIds: [F2, F3] — afirmar 200 e lista EXATAMENTE [F2, F3] (F1 saiu, sem sobra)",
+        "ativar o contrato",
+        "tentar PUT com fiadoresIds: [F3] — afirmar 422 campo status",
+        "reler o contrato e afirmar fiadores ainda [F2, F3], intocados"
+      ],
+      "resultado_esperado": "substituição integral funciona enquanto rascunho; congelamento absoluto depois da ativação",
+      "criterios_aceitacao_validados": [
+        "CA-03"
+      ],
+      "observacoes": "Mesmo arquivo dos anteriores."
+    },
+    {
+      "id": "CT-411",
+      "task_id": "T6",
+      "titulo": "condições de entrada inválidas são recusadas na criação, nomeando o campo, na forma do golden",
+      "tipo": "E2E",
+      "categoria": "teste_negativo",
+      "invariant": "um contrato com prazo <= 0, valor mensal <= 0, dia de vencimento fora de 1-28, ou data de início ausente nunca é criado — a recusa é 422 CAMPO_INVALIDO nomeando o campo, e a forma reproduz a do sistema antigo para o mesmo caso.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-411",
+        "input_invalido": "tabela: prazoMeses=0, valorMensal=0, diaVencimento=0, diaVencimento=29, dataInicioLocacao ausente",
+        "assertion_esperada": "cada linha responde 422 CAMPO_INVALIDO nomeando o campo específico; nenhuma linha grava contrato"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "TELA:contratos para alcançar a rota",
+        "caminho_legitimo": "mesmo do CT-408",
+        "teste_analogo": "apps/api/test/cadastro-de-imoveis.e2e.spec.ts (padrão RECUSAS[])"
+      },
+      "camada": "apps/api/src/contratos/contrato.controller.ts (validar contra @sysloc/contracts) + CHECK do banco",
+      "pre_condicoes": [
+        "imóvel/locador/locatário em circulação",
+        "contagem crua de negocio.contrato antes de cada tentativa"
+      ],
+      "dados_entrada": {
+        "descricao": "tabela de recusas, no molde de RECUSAS[] do CT-345",
+        "valores": {
+          "casos": [
+            "prazoMeses: 0 → campo prazoMeses",
+            "valorMensal: 0 → campo valorMensal",
+            "diaVencimento: 0 → campo diaVencimento",
+            "diaVencimento: 29 → campo diaVencimento",
+            "dataInicioLocacao ausente → campo dataInicioLocacao"
+          ]
+        }
+      },
+      "passos": [
+        "contar linhas cruas de negocio.contrato antes",
+        "para cada entrada da tabela, POST /v1/contratos e afirmar 422 CAMPO_INVALIDO nomeando o campo esperado",
+        "contar linhas cruas depois — deve ser IGUAL à contagem inicial"
+      ],
+      "resultado_esperado": "as cinco recusas nomeiam o campo culpado; nenhuma grava linha",
+      "criterios_aceitacao_validados": [
+        "CA-08"
+      ],
+      "observacoes": "Resposta do arquiteto à ressalva do gerador: nesta spec NÃO há campo opcional na criação, e as duas condições restantes da RN-08 (imóvel e locatário vinculados) são NOT NULL de coluna — logo as seis condições são inalcançáveis na ativação. O que a ativação re-confere é a CIRCULAÇÃO, coberta pelo CT-412."
+    },
+    {
+      "id": "CT-412",
+      "task_id": "T7",
+      "titulo": "cadastro fora de circulação é recusado ao montar e ao fazer valer um contrato, nomeando o campo",
+      "tipo": "E2E",
+      "categoria": "teste_negativo",
+      "invariant": "referenciar imóvel, locador, locatário ou fiador retirado de circulação é recusado — na montagem e na ativação — com 422 CAMPO_INVALIDO nomeando o campo e detalhes.circulacao: 'RETIRADO_DE_CIRCULACAO'.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-412",
+        "input_invalido": "tabela: imovelId retirado, locadorId retirado, locatarioId retirado, fiadoresIds[1] retirado — cada um testado na criação E na ativação",
+        "assertion_esperada": "422 CAMPO_INVALIDO nomeando o campo correspondente com detalhes.circulacao: 'RETIRADO_DE_CIRCULACAO'; nenhuma linha gravada/nenhuma transição ocorre"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "TELA:contratos + ACAO:ativar_contrato + ACAO:excluir_cadastro",
+        "caminho_legitimo": "conceder as três chaves, retirar os cadastros pela ROTA real (POST …/retirada), nunca por UPDATE direto",
+        "teste_analogo": "apps/api/test/circulacao-de-cadastro.e2e.spec.ts"
+      },
+      "camada": "apps/api/src/contratos/contrato.service.ts (conferência sob a política com predicado de circulação — decisão H1)",
+      "pre_condicoes": [
+        "um imóvel, um locador, um locatário e um fiador retirados de circulação pela rota real"
+      ],
+      "dados_entrada": {
+        "descricao": "tentativas de POST /v1/contratos e de POST /:codigo/ativacao referenciando cada cadastro retirado",
+        "valores": {}
+      },
+      "passos": [
+        "retirar de circulação um imóvel, um locador, um locatário e um fiador, cada um pela rota real",
+        "POST /v1/contratos apontando para o imóvel retirado — afirmar 422, campo imovelId, detalhes.circulacao",
+        "repetir para locadorId, locatarioId, fiadoresIds[n]",
+        "criar um RASCUNHO válido, depois retirar de circulação o locatário dele, então POST /:codigo/ativacao — afirmar a MESMA recusa na ativação",
+        "confirmar que o contrato do passo anterior permanece RASCUNHO"
+      ],
+      "resultado_esperado": "as quatro recusas nomeiam o campo certo, na montagem e na ativação; nada é gravado indevidamente",
+      "criterios_aceitacao_validados": [
+        "CA-11"
+      ],
+      "observacoes": "Mesmo arquivo dos anteriores. Prova RN-14/ADR-0014 aplicada às quatro referências do contrato."
+    },
+    {
+      "id": "CT-413",
+      "task_id": "T7",
+      "titulo": "ativação bem-sucedida: contrato ATIVO, imóvel LOCADO ligado, derivações batendo com o golden, efeitos declarados",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "ativar um rascunho conferido muda o contrato para ATIVO, marca o imóvel como LOCADO ligado a esse contrato, deriva dataFimLocacao e valorTotalContrato batendo com o golden, e responde 200 com o contrato no root acrescido de efeitos: { cobrancasGeradas: false } — tudo num commit só.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-414",
+        "input_invalido": "ver CT-414 (imóvel já ocupado)",
+        "assertion_esperada": "ver CT-414"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "TELA:contratos + ACAO:ativar_contrato",
+        "caminho_legitimo": "mesmo do CT-409",
+        "teste_analogo": "apps/api/test/carteira.e2e.spec.ts (função conceder)"
+      },
+      "camada": "apps/api/src/contratos/contrato.controller.ts + contrato.service.ts + packages/db/src/imovel.ts (definirSituacaoDeLocacaoDoImovel)",
+      "pre_condicoes": [
+        "um contrato RASCUNHO válido, com dataInicioLocacao/prazoMeses/valorMensal conhecidos"
+      ],
+      "dados_entrada": {
+        "descricao": "dataInicioLocacao: '2026-01-31', prazoMeses: 1, valorMensal: 1500.00 (caso de virada de mês, batendo com CT-401)",
+        "valores": {}
+      },
+      "passos": [
+        "POST /:codigo/ativacao",
+        "afirmar 200; corpo INTEIRO por igualdade: status ATIVO, dataFimLocacao='2026-02-27', valorTotalContrato=1500.00, efeitos: { cobrancasGeradas: false }",
+        "GET /v1/imoveis/:id do imóvel e afirmar statusLocacao='LOCADO' e contratoVigente: { codigo, locatario: { id, nome } }",
+        "GET /v1/contratos/:codigo e afirmar releitura igual ao corpo da ativação (exceto efeitos, que só existe na resposta da transição)"
+      ],
+      "resultado_esperado": "ativação completa e correta, com a derivação reproduzindo o golden e o efeito no imóvel visível de imediato",
+      "criterios_aceitacao_validados": [
+        "CA-05",
+        "CA-06",
+        "CA-20"
+      ],
+      "observacoes": "Complementa a prova unitária de derivação (CT-401/402) com a integração fim-a-fim pela rota."
+    },
+    {
+      "id": "CT-414",
+      "task_id": "T7",
+      "titulo": "segunda ativação sobre imóvel já ocupado é recusada, nomeando o código do contrato vigente",
+      "tipo": "E2E",
+      "categoria": "teste_negativo",
+      "invariant": "ativar um segundo contrato sobre um imóvel que já tem contrato vigente é recusado com 422 CAMPO_INVALIDO, campo imovelId, detalhes.conflito: 'IMOVEL_COM_CONTRATO_VIGENTE' e o código do vigente; o segundo contrato continua RASCUNHO e o vigente não é afetado.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "segundo contrato sobre o mesmo imóvel do primeiro (já ativo)",
+        "assertion_esperada": "422 CAMPO_INVALIDO, campo imovelId, detalhes.conflito: 'IMOVEL_COM_CONTRATO_VIGENTE', detalhes com o código do vigente"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "TELA:contratos + ACAO:ativar_contrato",
+        "caminho_legitimo": "mesmo do CT-409",
+        "teste_analogo": "apps/api/test/carteira.e2e.spec.ts (função conceder)"
+      },
+      "camada": "apps/api/src/contratos/contrato.service.ts (tradução do 23505)",
+      "pre_condicoes": [
+        "um contrato já ATIVO sobre um imóvel",
+        "um segundo contrato RASCUNHO sobre o MESMO imóvel"
+      ],
+      "dados_entrada": {
+        "descricao": "POST /:codigoDoSegundo/ativacao",
+        "valores": {}
+      },
+      "passos": [
+        "ativar o primeiro contrato — afirmar 200, imóvel LOCADO",
+        "POST /:codigoDoSegundo/ativacao",
+        "afirmar 422, campo imovelId, detalhes.conflito='IMOVEL_COM_CONTRATO_VIGENTE', detalhes contendo o código do primeiro",
+        "GET do segundo contrato — status ainda RASCUNHO",
+        "GET do imóvel — statusLocacao e contratoVigente inalterados, ainda apontando o primeiro"
+      ],
+      "resultado_esperado": "recusa sequencial que complementa a prova de concorrência do CT-407, confirmando a tradução HTTP correta do 23505",
+      "criterios_aceitacao_validados": [
+        "CA-07"
+      ],
+      "observacoes": "Sequencial — a prova de concorrência é do CT-407 (nível DB). Nenhum dos dois substitui o outro."
+    },
+    {
+      "id": "CT-415",
+      "task_id": "T8",
+      "titulo": "cancelamento libera o imóvel e transita para CANCELADO; transições inválidas são recusadas nomeando estado atual e pedido",
+      "tipo": "E2E",
+      "categoria": "teste_negativo",
+      "invariant": "POST /:codigo/cancelamento só é aceito sobre contrato ATIVO — devolve o imóvel a DISPONIVEL e desfaz o vínculo; ativar um contrato ATIVO/CANCELADO ou cancelar um RASCUNHO/CANCELADO é recusado com 422 CAMPO_INVALIDO, campo status, detalhes: { estadoAtual, transicaoPedida }.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-415",
+        "input_invalido": "tabela: ativar contrato já ATIVO, ativar contrato CANCELADO, cancelar contrato RASCUNHO, cancelar contrato já CANCELADO",
+        "assertion_esperada": "cada linha responde 422 CAMPO_INVALIDO campo status com detalhes.estadoAtual/transicaoPedida corretos; nenhuma transição ocorre, imóvel inalterado"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "TELA:contratos + ACAO:ativar_contrato + ACAO:cancelar_contrato",
+        "caminho_legitimo": "mesmo do CT-409, com a concessão adicional de ACAO:cancelar_contrato",
+        "teste_analogo": "apps/api/test/carteira.e2e.spec.ts (função conceder)"
+      },
+      "camada": "apps/api/src/contratos/contrato.service.ts (máquina de estados)",
+      "pre_condicoes": [
+        "um contrato RASCUNHO, um ATIVO e um CANCELADO"
+      ],
+      "dados_entrada": {
+        "descricao": "tabela de tentativas de transição inválida, mais o caminho positivo de cancelamento",
+        "valores": {}
+      },
+      "passos": [
+        "criar e ativar um contrato — afirmar imóvel LOCADO",
+        "cancelar esse contrato — afirmar 200, status CANCELADO, imóvel DISPONIVEL, contratoVigente:null no imóvel",
+        "cancelar de novo o mesmo contrato — afirmar 422, campo status, estadoAtual='CANCELADO', transicaoPedida='CANCELADO'",
+        "ativar de novo o mesmo contrato — afirmar 422, campo status, estadoAtual='CANCELADO', transicaoPedida='ATIVO'",
+        "tentar cancelar um contrato ainda RASCUNHO — afirmar 422, campo status, estadoAtual='RASCUNHO'",
+        "GET da carteira — o contrato cancelado continua listado, marcado como CANCELADO"
+      ],
+      "resultado_esperado": "cancelamento libera o imóvel; as quatro transições inválidas são recusadas sem efeito colateral; o histórico permanece na carteira",
+      "criterios_aceitacao_validados": [
+        "CA-09",
+        "CA-10"
+      ],
+      "observacoes": "Mesmo arquivo dos anteriores. O cancelamento sem qualquer menção a documento é a forma de a não-portabilidade da RN-13 ficar provada."
+    },
+    {
+      "id": "CT-416",
+      "task_id": "T8",
+      "titulo": "retirar de circulação um imóvel ocupado por contrato vigente é aceito, sem recusa por vínculo",
+      "tipo": "E2E",
+      "categoria": "teste_negativo",
+      "invariant": "retirar um imóvel de circulação enquanto ele está LOCADO por contrato vigente é ACEITO — sem recusa por vínculo, sem alterar o contrato, e sem mudar statusLocacao do imóvel (que permanece LOCADO).",
+      "owning_layer": "route-integration",
+      "existing_suite": "circulacao-de-cadastro.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "o sentido inverso (recusa por vínculo) é o que este caso PROVA NÃO acontecer",
+        "assertion_esperada": "200, sem 4xx algum; statusLocacao continua 'LOCADO' e o contrato continua ATIVO, legível e apontando o mesmo imóvel"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "TELA:imoveis + ACAO:excluir_cadastro + TELA:contratos + ACAO:ativar_contrato",
+        "caminho_legitimo": "conceder as quatro chaves; usar as rotas reais de criação de imóvel/contrato e de retirada",
+        "teste_analogo": "apps/api/test/circulacao-de-cadastro.e2e.spec.ts"
+      },
+      "camada": "apps/api/src/imoveis/imovel.controller.ts (rota de retirada) + apps/api/src/contratos",
+      "pre_condicoes": [
+        "imóvel com contrato ATIVO vigente"
+      ],
+      "dados_entrada": {
+        "descricao": "POST /v1/imoveis/:id/retirada sobre o imóvel ocupado",
+        "valores": {}
+      },
+      "passos": [
+        "criar imóvel, ativar um contrato sobre ele — statusLocacao='LOCADO'",
+        "POST /v1/imoveis/:id/retirada",
+        "afirmar 200 (não 4xx) e retiradoEm preenchido",
+        "GET do imóvel — statusLocacao AINDA 'LOCADO', contratoVigente ainda aponta o mesmo contrato",
+        "GET do contrato — status AINDA 'ATIVO', imovelId inalterado"
+      ],
+      "resultado_esperado": "a retirada de circulação do imóvel é aceita sem side effect sobre o contrato ou a situação de locação",
+      "criterios_aceitacao_validados": [
+        "CA-12"
+      ],
+      "observacoes": "Estende apps/api/test/circulacao-de-cadastro.e2e.spec.ts, que já tem a montagem e o vocabulário de retirada/recirculação para imóvel."
+    },
+    {
+      "id": "CT-417",
+      "task_id": "T6",
+      "titulo": "retirada e recirculação do contrato são ortogonais ao estado — idempotentes, reversíveis, nunca liberam o imóvel",
+      "tipo": "E2E",
+      "categoria": "teste_negativo",
+      "invariant": "POST /:codigo/retirada e /:codigo/recirculacao não transitam estado algum, não liberam o imóvel, alcançam qualquer estado do contrato (RASCUNHO, ATIVO, CANCELADO) e são idempotentes; corpo não vazio é recusado.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "POST …/retirada com corpo não vazio",
+        "assertion_esperada": "422 CAMPO_INVALIDO campo 'corpo'; marca de retirada inalterada — mesmo molde do CT-347"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "TELA:contratos + ACAO:ativar_contrato + ACAO:excluir_cadastro",
+        "caminho_legitimo": "conceder as três chaves; contratos nos três estados alcançáveis criados pelas rotas reais",
+        "teste_analogo": "apps/api/test/circulacao-de-cadastro.e2e.spec.ts (CT-346/CT-347)"
+      },
+      "camada": "apps/api/src/contratos/contrato.controller.ts (rotas de circulação)",
+      "pre_condicoes": [
+        "um contrato em cada estado alcançável: RASCUNHO, ATIVO, CANCELADO"
+      ],
+      "dados_entrada": {
+        "descricao": "tabela: retirada+recirculação sobre cada um dos três estados; retirada repetida; retirada com corpo não vazio",
+        "valores": {}
+      },
+      "passos": [
+        "para cada contrato (RASCUNHO/ATIVO/CANCELADO): POST …/retirada — afirmar 200, retiradoEm preenchido, status do contrato INALTERADO",
+        "para o contrato ATIVO: confirmar que o imóvel PERMANECE LOCADO depois da retirada do contrato",
+        "repetir a retirada do mesmo contrato — afirmar corpo profundamente igual (idempotência)",
+        "POST …/recirculacao — afirmar retiradoEm: null, status ainda inalterado",
+        "POST …/retirada com corpo { qualquerCampo: 1 } — afirmar 422 campo 'corpo', marca inalterada"
+      ],
+      "resultado_esperado": "circulação de contrato é puramente de visibilidade, em qualquer estado, idempotente e reversível",
+      "criterios_aceitacao_validados": [
+        "CA-15"
+      ],
+      "observacoes": "ENCERRADO fica fora da tabela por não ter produtor nesta fatia."
+    },
+    {
+      "id": "CT-418",
+      "task_id": "T6",
+      "titulo": "GET /v1/contratos lista a carteira com código, partes, termos e estado, sem juntar consultas",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "a consulta da carteira de contratos devolve, para cada contrato, código, partes (imóvel/locador/locatário), termos e estado num único envelope — sem que o cliente precise de uma segunda consulta.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "limite acima do teto publicado",
+        "assertion_esperada": "422 CAMPO_INVALIDO campo 'limite' (recusa, não trunca) — mesmo molde do CT-329 (c)"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "TELA:contratos",
+        "caminho_legitimo": "mesmo do CT-408",
+        "teste_analogo": "apps/api/test/carteira.e2e.spec.ts"
+      },
+      "camada": "apps/api/src/contratos/contrato.controller.ts + contrato.service.ts",
+      "pre_condicoes": [
+        "contratos em estados diversos (RASCUNHO, ATIVO, CANCELADO) na empresa"
+      ],
+      "dados_entrada": {
+        "descricao": "GET /v1/contratos?limite=200",
+        "valores": {}
+      },
+      "passos": [
+        "criar três contratos em três estados diferentes",
+        "GET /v1/contratos?limite=200",
+        "afirmar 200; cada item traz código, status, e os campos de termo (valorMensal, prazoMeses, dataInicioLocacao, dia de vencimento)",
+        "afirmar que total/limite/deslocamento seguem o envelope de lista da ADR-0017",
+        "GET /v1/contratos?limite=201 — afirmar 422 campo 'limite'"
+      ],
+      "resultado_esperado": "a carteira é servida com toda a informação relevante numa consulta só",
+      "criterios_aceitacao_validados": [
+        "CA-13"
+      ],
+      "observacoes": "Mesmo arquivo novo dos anteriores."
+    },
+    {
+      "id": "CT-419",
+      "task_id": "T9",
+      "titulo": "o contrato vigente aparece nas três superfícies que publicam imóvel, e nenhum contrato aparece quando não há vigente",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "GET /v1/imoveis/:id, GET /v1/imoveis e GET /v1/conjuntos?expandir=imoveis apresentam, para um imóvel ocupado, contratoVigente: { codigo, locatario: { id, nome } }; para um imóvel sem contrato vigente, contratoVigente: null.",
+      "owning_layer": "route-integration",
+      "existing_suite": "carteira.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "imóvel sem contrato vigente (nunca ativado, ou com contrato apenas RASCUNHO)",
+        "assertion_esperada": "contratoVigente: null nas três superfícies"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "TELA:imoveis + TELA:contratos + ACAO:ativar_contrato",
+        "caminho_legitimo": "conceder as três chaves; usar as rotas reais para criar e ativar",
+        "teste_analogo": "apps/api/test/carteira.e2e.spec.ts"
+      },
+      "camada": "apps/api/src/imoveis/imovel.service.ts + packages/db/src/imovel.ts (agregado com contratoVigente)",
+      "pre_condicoes": [
+        "dois imóveis: um com contrato ATIVO, outro sem contrato ou só com RASCUNHO"
+      ],
+      "dados_entrada": {
+        "descricao": "leitura individual, listagem e carteira expandida dos dois imóveis",
+        "valores": {}
+      },
+      "passos": [
+        "criar dois imóveis; ativar um contrato só no primeiro",
+        "GET /v1/imoveis/:id do primeiro — afirmar contratoVigente: { codigo, locatario: { id, nome } }",
+        "GET /v1/imoveis (lista) — afirmar o mesmo campo no item correspondente",
+        "GET /v1/conjuntos?expandir=imoveis — afirmar o mesmo campo dentro da árvore",
+        "repetir as três leituras para o segundo imóvel — afirmar contratoVigente: null nas três"
+      ],
+      "resultado_esperado": "consistência do campo derivado nas três superfícies, sem exigir consulta adicional do cliente",
+      "criterios_aceitacao_validados": [
+        "CA-14"
+      ],
+      "observacoes": "Estende apps/api/test/carteira.e2e.spec.ts, que já monta a carteira expandida e a listagem de imóveis (CT-329/CT-331)."
+    },
+    {
+      "id": "CT-420",
+      "task_id": "T9",
+      "titulo": "a leitura em lote de contratos vigentes custa uma consulta independente de N, e a carteira sobe de 10 para 11 invocações",
+      "tipo": "INTEGRACAO",
+      "categoria": "fronteira",
+      "invariant": "lerContratosVigentesDeImoveis emite exatamente UMA consulta para qualquer número de imóveis; INVOCACOES_DA_CARTEIRA passa de 10 para 11 com o acréscimo desta leitura — nunca depende de N.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/janela.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "dois tamanhos de carteira diferentes (poucos imóveis vs. muitos)",
+        "assertion_esperada": "o número de invocações do executor é IDÊNTICO nos dois tamanhos — se dependesse de N, o maior teria mais invocações"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "instrumentação do executor já publicada pela suíte existente (mesmo padrão do CT-329 (d))",
+        "teste_analogo": "packages/db/test/janela.spec.ts (CT-329 (d))"
+      },
+      "camada": "packages/db/src/imovel.ts (lerContratosVigentesDeImoveis) + packages/db/src/conjunto.ts (lerCarteira)",
+      "pre_condicoes": [
+        "duas carteiras de tamanhos diferentes, cada uma com pelo menos um contrato ativo"
+      ],
+      "dados_entrada": {
+        "descricao": "carteira pequena e carteira grande, medindo invocações do executor via a mesma instrumentação do CT-329 (d)",
+        "valores": {
+          "invocacoesEsperadas": 11
+        }
+      },
+      "passos": [
+        "montar carteira pequena (poucos conjuntos/imóveis, um deles com contrato ativo)",
+        "chamar lerCarteira e contar invocações do executor — afirmar igual a INVOCACOES_DA_CARTEIRA=11",
+        "montar carteira grande (mais conjuntos/imóveis)",
+        "chamar lerCarteira de novo — afirmar o MESMO número de invocações do caso pequeno"
+      ],
+      "resultado_esperado": "o custo da carteira permanece constante com a nova leitura de contrato vigente incluída",
+      "criterios_aceitacao_validados": [
+        "CA-14"
+      ],
+      "observacoes": "Estende packages/db/test/janela.spec.ts, atualizando a constante INVOCACOES_DA_CARTEIRA de 10 para 11."
+    },
+    {
+      "id": "CT-421",
+      "task_id": "T3",
+      "titulo": "a guarda de cobertura de isolamento examina negocio.contrato e negocio.contrato_fiador; falsificação com FORCE removido reprova",
+      "tipo": "INTEGRACAO",
+      "categoria": "seguranca",
+      "invariant": "verificarCoberturaDeIsolamento não aponta exceção para negocio.contrato nem negocio.contrato_fiador — ambas têm empresa_id, RLS habilitada E forçada, e a restrição única (id, empresa_id) — e a sequência do contador NÃO é examinada (relkind='S' excluído por construção).",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/catalogo.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "instância dedicada com FORCE ROW LEVEL SECURITY retirado de negocio.contrato",
+        "assertion_esperada": "a guarda aponta a exceção nomeando negocio.contrato com motivo RLS_NAO_FORCADA — mesmo par CT-300/CT-301 aplicado à entidade nova"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "instância efêmera dedicada com a migração alterada para omitir o FORCE, exatamente como CT-301 já faz para negocio.imovel",
+        "teste_analogo": "packages/db/test/catalogo.spec.ts (CT-301)"
+      },
+      "camada": "packages/db/src/catalogo.ts",
+      "pre_condicoes": [
+        "banco efêmero com migrações 0000-0008 aplicadas"
+      ],
+      "dados_entrada": {
+        "descricao": "chamada a verificarCoberturaDeIsolamento sobre schema íntegro, e sobre instância dedicada com FORCE retirado de negocio.contrato",
+        "valores": {}
+      },
+      "passos": [
+        "sobre schema íntegro: chamar verificarCoberturaDeIsolamento — afirmar excecoes vazio e tabelasExaminadas contendo negocio.contrato e negocio.contrato_fiador",
+        "afirmar que a sequência do contador NÃO aparece em tabelasExaminadas (relkind='S' excluído por construção)",
+        "sobre instância dedicada sem FORCE em negocio.contrato: chamar de novo e afirmar a exceção nomeada com motivo RLS_NAO_FORCADA",
+        "restaurar o FORCE e confirmar volta ao verde"
+      ],
+      "resultado_esperado": "a guarda cobre as duas tabelas novas sem exceção, ignora a sequência, e a falsificação reprova como esperado",
+      "criterios_aceitacao_validados": [
+        "CA-18"
+      ],
+      "observacoes": "Estende packages/db/test/catalogo.spec.ts, reusando o molde CT-300/CT-301 já aprovado."
+    },
+    {
+      "id": "CT-422",
+      "task_id": "T8",
+      "titulo": "contrato de uma empresa é inalcançável por outra, nas cinco operações de leitura e transição",
+      "tipo": "E2E",
+      "categoria": "seguranca",
+      "invariant": "um contrato da empresa A não é consultável, alterável, ativável, cancelável nem referenciável pela sessão da empresa B — a garantia não depende de conferência da aplicação (RLS forçada + FK composta), e a recusa é o 404 uniforme.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-422",
+        "input_invalido": "as cinco tentativas de B sobre o contrato de A",
+        "assertion_esperada": "404 RECURSO_NAO_ENCONTRADO, corpo idêntico ao de código inexistente, nas cinco tentativas"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "duas sessões, uma por empresa, cada uma com TELA:contratos + ACAO:ativar_contrato + ACAO:cancelar_contrato + ACAO:excluir_cadastro — sem as chaves em B, o 403 mascararia o 404 e o caso não provaria isolamento",
+        "caminho_legitimo": "conceder as quatro chaves nas duas empresas, mesmo padrão de cadastro-de-imoveis.e2e.spec.ts",
+        "teste_analogo": "apps/api/test/cadastro-de-imoveis.e2e.spec.ts (CT-310, leitura cruzada)"
+      },
+      "camada": "apps/api/src/contratos/contrato.service.ts",
+      "pre_condicoes": [
+        "contrato ATIVO na empresa A",
+        "sessão da empresa B com as mesmas chaves concedidas"
+      ],
+      "dados_entrada": {
+        "descricao": "as cinco tentativas da sessão de B sobre o código do contrato de A: GET, PUT, ativação, cancelamento, retirada",
+        "valores": {}
+      },
+      "passos": [
+        "criar e ativar um contrato na empresa A; anotar o código",
+        "da sessão de B: GET /v1/contratos/:codigo — afirmar 404 canônico",
+        "da sessão de B: PUT no mesmo código — afirmar 404",
+        "da sessão de B: POST .../ativacao — afirmar 404",
+        "da sessão de B: POST .../cancelamento — afirmar 404",
+        "da sessão de B: POST .../retirada — afirmar 404",
+        "da sessão de A: GET do mesmo contrato — afirmar 200, intacto (controle positivo)"
+      ],
+      "resultado_esperado": "as cinco tentativas cruzadas recebem o mesmo 404, sem vazar existência; o contrato de A permanece intacto",
+      "criterios_aceitacao_validados": [
+        "CA-18"
+      ],
+      "observacoes": "Mesmo arquivo novo apps/api/test/contratos.e2e.spec.ts."
+    },
+    {
+      "id": "CT-423",
+      "task_id": "T6",
+      "titulo": "montar contrato juntando imóvel de uma empresa e pessoa de outra é recusado, sem vazar existência",
+      "tipo": "E2E",
+      "categoria": "seguranca",
+      "invariant": "criar um contrato apontando um imóvel de A e um locador/locatário de B (ou vice-versa) é recusado com o mesmo 404 de cadastro inexistente — a chave estrangeira composta e a conferência de alcance impedem o cruzamento estruturalmente.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "corpo com imovelId de A e locatarioId de B",
+        "assertion_esperada": "404 RECURSO_NAO_ENCONTRADO, corpo idêntico ao de um identificador inexistente; nenhuma linha gravada em nenhuma das duas empresas"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessões de A e B com TELA:contratos",
+        "caminho_legitimo": "mesmo do CT-422",
+        "teste_analogo": "apps/api/test/cadastro-de-imoveis.e2e.spec.ts (CT-333)"
+      },
+      "camada": "apps/api/src/contratos/contrato.service.ts (conferência de alcance H1)",
+      "pre_condicoes": [
+        "imóvel na empresa A",
+        "locatário na empresa B"
+      ],
+      "dados_entrada": {
+        "descricao": "POST /v1/contratos da sessão de A com locatarioId de B",
+        "valores": {}
+      },
+      "passos": [
+        "contar contratos crus nas duas empresas antes",
+        "da sessão de A: POST /v1/contratos com imovelId de A e locatarioId de B",
+        "afirmar 404 RECURSO_NAO_ENCONTRADO, corpo canônico",
+        "contar contratos crus depois — inalterado nas duas empresas",
+        "controle positivo: o mesmo corpo com locatarioId de A — afirmar 201"
+      ],
+      "resultado_esperado": "cruzamento entre empresas é recusado sem vazar qual identificador existe alhures",
+      "criterios_aceitacao_validados": [
+        "CA-18"
+      ],
+      "observacoes": "A razão do caso é a RN-01; o critério de aceite que ele valida é o CA-18. O gerador havia listado 'RN-01' no campo de critérios — normalizado pelo arquiteto."
+    },
+    {
+      "id": "CT-424",
+      "task_id": "T2",
+      "titulo": "o esquema do estado do contrato aceita só os quatro valores fechados; RESCINDIDO é recusado",
+      "tipo": "UNITARIO",
+      "categoria": "fronteira",
+      "invariant": "esquemaDoContrato.status é uma união fechada de exatamente {RASCUNHO, ATIVO, CANCELADO, ENCERRADO}; qualquer outro valor — inclusive 'RESCINDIDO', do legado — é recusado pelo esquema.",
+      "owning_layer": "unit",
+      "existing_suite": "packages/contracts/test/esquemas.spec.ts",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "status: 'RESCINDIDO' e status: 'QUALQUER_OUTRO'",
+        "assertion_esperada": "safeParse falha com issues[0].path === ['status']"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": "NENHUM"
+      },
+      "camada": "packages/contracts/src/contrato.ts",
+      "pre_condicoes": [],
+      "dados_entrada": {
+        "descricao": "tabela: os quatro valores válidos, mais RESCINDIDO e um valor arbitrário",
+        "valores": {}
+      },
+      "passos": [
+        "para cada um dos quatro valores válidos, afirmar que esquemaDoContrato.parse aceita",
+        "para 'RESCINDIDO', afirmar que a análise falha nomeando o campo status",
+        "para um valor arbitrário, afirmar a mesma recusa",
+        "afirmar que ESTADOS_DO_CONTRATO tem exatamente 4 elementos, na ordem RASCUNHO, ATIVO, CANCELADO, ENCERRADO"
+      ],
+      "resultado_esperado": "o campo único de estado nunca aceita o quinto valor podado nem qualquer outro",
+      "criterios_aceitacao_validados": [
+        "CA-19"
+      ],
+      "observacoes": "Estende packages/contracts/test/esquemas.spec.ts (mesmo arquivo que já cobre CT-334/CT-335 para imóvel)."
+    },
+    {
+      "id": "CT-425",
+      "task_id": "T7",
+      "titulo": "sem ACAO:ativar_contrato, o rascunho é criado normalmente e a ativação é recusada nomeando a ação",
+      "tipo": "E2E",
+      "categoria": "seguranca",
+      "invariant": "uma sessão com TELA:contratos mas sem ACAO:ativar_contrato cria rascunho normalmente e recebe 403 ACESSO_NEGADO com detalhes.exigido: 'ACAO:ativar_contrato' ao tentar ativar.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "sessão sem ACAO:ativar_contrato tentando POST .../ativacao",
+        "assertion_esperada": "403 ACESSO_NEGADO, detalhes.exigido: 'ACAO:ativar_contrato'; contrato permanece RASCUNHO"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessão com SOMENTE TELA:contratos — o efetivo negativo é a precondição sob prova",
+        "caminho_legitimo": "conceder só TELA:contratos; afirmar via GET /v1/sessao que ACAO:ativar_contrato NÃO está no efetivo antes de tentar",
+        "teste_analogo": "apps/api/test/circulacao-de-cadastro.e2e.spec.ts (CT-354, ausência afirmada antes do fluxo)"
+      },
+      "camada": "apps/api/src/contratos/contrato.controller.ts (@ExigeChaves na rota de ativação)",
+      "pre_condicoes": [
+        "sessão com TELA:contratos apenas"
+      ],
+      "dados_entrada": {
+        "descricao": "POST /v1/contratos (deve funcionar) seguido de POST .../ativacao (deve recusar)",
+        "valores": {}
+      },
+      "passos": [
+        "afirmar via GET /v1/sessao que a sessão TEM TELA:contratos e NÃO TEM ACAO:ativar_contrato",
+        "POST /v1/contratos — afirmar 201, status RASCUNHO",
+        "POST .../ativacao sobre esse contrato — afirmar 403, detalhes.exigido='ACAO:ativar_contrato'",
+        "GET do contrato — status ainda RASCUNHO, imóvel ainda DISPONIVEL"
+      ],
+      "resultado_esperado": "montar e alterar continuam livres com só a área; ativar exige a ação além da área",
+      "criterios_aceitacao_validados": [
+        "CA-16"
+      ],
+      "observacoes": "Mesmo arquivo novo dos anteriores."
+    },
+    {
+      "id": "CT-426",
+      "task_id": "T8",
+      "titulo": "sem ACAO:cancelar_contrato, o cancelamento é recusado e o contrato permanece vigente",
+      "tipo": "E2E",
+      "categoria": "seguranca",
+      "invariant": "uma sessão com TELA:contratos + ACAO:ativar_contrato mas sem ACAO:cancelar_contrato recebe 403 ao tentar cancelar; o contrato permanece ATIVO e o imóvel LOCADO.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "sessão sem ACAO:cancelar_contrato tentando POST .../cancelamento",
+        "assertion_esperada": "403 ACESSO_NEGADO, detalhes.exigido: 'ACAO:cancelar_contrato'; contrato permanece ATIVO, imóvel LOCADO"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessão com TELA:contratos + ACAO:ativar_contrato, SEM ACAO:cancelar_contrato",
+        "caminho_legitimo": "conceder as duas chaves, afirmar ausência da terceira via GET /v1/sessao antes da tentativa",
+        "teste_analogo": "apps/api/test/circulacao-de-cadastro.e2e.spec.ts (CT-354)"
+      },
+      "camada": "apps/api/src/contratos/contrato.controller.ts (@ExigeChaves na rota de cancelamento)",
+      "pre_condicoes": [
+        "contrato ATIVO",
+        "sessão com TELA:contratos + ACAO:ativar_contrato apenas"
+      ],
+      "dados_entrada": {
+        "descricao": "POST .../cancelamento",
+        "valores": {}
+      },
+      "passos": [
+        "criar e ativar contrato",
+        "com a sessão SEM ACAO:cancelar_contrato: afirmar via GET /v1/sessao a ausência",
+        "POST .../cancelamento — afirmar 403, detalhes.exigido='ACAO:cancelar_contrato'",
+        "GET do contrato — status ainda ATIVO",
+        "GET do imóvel — statusLocacao ainda LOCADO"
+      ],
+      "resultado_esperado": "cancelamento exige a ação própria, independente de quem pode ativar",
+      "criterios_aceitacao_validados": [
+        "CA-17"
+      ],
+      "observacoes": "Pode compartilhar a sessão de ativação de CT-425 desde que a concessão intermediária não inclua ACAO:cancelar_contrato antes deste caso rodar."
+    },
+    {
+      "id": "CT-427",
+      "task_id": "T10",
+      "titulo": "a conjunção classe+ação das quatro rotas governadas de contrato é auditada por estrutura, e a superfície publicada sobe para 76 rotas / 59 manipuladores",
+      "tipo": "E2E",
+      "categoria": "seguranca",
+      "invariant": "as quatro rotas de transição/circulação de contrato declaram a conjunção INTEIRA (TELA:contratos + a ação própria), nesta ordem; nenhum manipulador da API fica sem declaração; a contagem estrutural bate com as âncoras atualizadas.",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/cobertura-de-autorizacao.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "mutante estrutural: uma das quatro rotas governadas declarando @ExigeChave só com a ação (substituindo a da classe) — mesmo molde do MT11-5/CT-355",
+        "assertion_esperada": "a guarda de cobertura acusa a rota por nome, listando a declaração de método que SUBSTITUI a da classe"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "reflexão sobre os decoradores em apps/api/src, mesmo mecanismo já publicado pela suíte existente",
+        "teste_analogo": "apps/api/test/cobertura-de-autorizacao.e2e.spec.ts (CT-355)"
+      },
+      "camada": "apps/api/src/contratos/contrato.controller.ts + a guarda de cobertura de autorização",
+      "pre_condicoes": [
+        "as 8 rotas de contrato publicadas",
+        "as âncoras atualizadas na suíte, com a linha SUT_IS_CORRECT_BECAUSE"
+      ],
+      "dados_entrada": {
+        "descricao": "varredura estrutural dos decoradores de todos os controladores em produção",
+        "valores": {}
+      },
+      "passos": [
+        "chamar a guarda de cobertura de autorização sobre a árvore de produção",
+        "afirmar cobertura.rotasEnumeradas === 76 e o número de manipuladores examinados === 59",
+        "afirmar cobertura.semDeclaracao === [] (nenhum manipulador sem exigência)",
+        "afirmar, por estrutura, que as quatro rotas declaram TELA:contratos seguido da ação própria, nesta ordem",
+        "aplicar o mutante (uma das quatro rotas com só a ação) e afirmar que a guarda a acusa pelo nome do manipulador"
+      ],
+      "resultado_esperado": "nenhuma rota nova escapa da conjunção, e a superfície publicada bate com o inventário declarado",
+      "criterios_aceitacao_validados": [
+        "CA-16",
+        "CA-17"
+      ],
+      "observacoes": "Os valores 76 e 59 são ESPERADOS (§11.2 da tech spec) e têm de ser reconferidos por varredura, refeita do zero e não derivada de uma contagem da outra."
+    },
+    {
+      "id": "CT-428",
+      "task_id": "T2",
+      "titulo": "o código do contrato é canonizado num ponto único (trim + maiúsculas) e o formato de 5 dígitos é a decisão fechada",
+      "tipo": "UNITARIO",
+      "categoria": "fronteira",
+      "invariant": "o esquema/formatador do código do contrato normaliza espaço e caixa num ponto único, aceita exatamente CTR-{4 dígitos de ano}-{5 dígitos}, e recusa 4 dígitos (a forma que o CLAUDE.md e o plano de execução escrevem por engano).",
+      "owning_layer": "unit",
+      "existing_suite": "packages/contracts/test/esquemas.spec.ts",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "'ctr-2026-0001' (4 dígitos, minúsculo), 'CTR-2026-000001' (6 dígitos), '  CTR-2026-00001  ' (com espaço, válido depois do trim)",
+        "assertion_esperada": "4 e 6 dígitos são recusados; a entrada com espaço e minúscula é aceita e canonizada para 'CTR-2026-00001'"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": "NENHUM"
+      },
+      "camada": "packages/contracts/src/contrato.ts (constantes + formatador + esquema derivados delas)",
+      "pre_condicoes": [],
+      "dados_entrada": {
+        "descricao": "tabela de formatos válidos/inválidos",
+        "valores": {}
+      },
+      "passos": [
+        "afirmar que 'CTR-2026-00001' passa e permanece igual",
+        "afirmar que 'ctr-2026-00001' passa e sai canonizado para 'CTR-2026-00001'",
+        "afirmar que '  CTR-2026-00001  ' passa e sai sem espaços",
+        "afirmar que 'CTR-2026-0001' (4 dígitos) é RECUSADO",
+        "afirmar que 'CTR-2026-000001' (6 dígitos) é RECUSADO"
+      ],
+      "resultado_esperado": "o formato de 5 dígitos é o único aceito, e a canonização acontece num ponto único",
+      "criterios_aceitacao_validados": [
+        "CA-04"
+      ],
+      "observacoes": "É a rede (P4 do Protocolo Antirregressão) que o marcador DECISÃO FECHADA dos 5 dígitos exige — sem ela, 'corrigir' para quatro passaria pela suíte."
+    },
+    {
+      "id": "CT-429",
+      "task_id": "T2",
+      "titulo": "a resposta da ativação fixa efeitos.cobrancasGeradas em z.literal(false), fechado nesta fatia",
+      "tipo": "UNITARIO",
+      "categoria": "fronteira",
+      "invariant": "o esquema de resposta da ativação recusa qualquer valor de efeitos.cobrancasGeradas diferente de false — é contrato fechado no nível do esquema, não apenas comportamento observado na rota.",
+      "owning_layer": "unit",
+      "existing_suite": "packages/contracts/test/esquemas.spec.ts",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "efeitos: { cobrancasGeradas: true }",
+        "assertion_esperada": "safeParse falha, nomeando o campo efeitos.cobrancasGeradas"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": "NENHUM"
+      },
+      "camada": "packages/contracts/src/contrato.ts (esquema da resposta de ativação)",
+      "pre_condicoes": [],
+      "dados_entrada": {
+        "descricao": "corpo de resposta de ativação com cobrancasGeradas: false e com true",
+        "valores": {}
+      },
+      "passos": [
+        "montar corpo válido com efeitos: { cobrancasGeradas: false } e afirmar que o esquema aceita",
+        "trocar para cobrancasGeradas: true e afirmar que o esquema RECUSA"
+      ],
+      "resultado_esperado": "o campo é literalmente fechado em false — a F3 é obrigada a tocar o esquema para afrouxá-lo",
+      "criterios_aceitacao_validados": [
+        "CA-06"
+      ],
+      "observacoes": "Complementa o CT-413 (comportamento pela rota) com a garantia estática no ponto único do contrato."
+    },
+    {
+      "id": "CT-430",
+      "task_id": "T3",
+      "titulo": "negocio.contrato_fiador NÃO tem coluna retirado_em — a ausência é a decisão",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "a tabela de vínculo não carrega marca de exclusão lógica: a ADR-0014 exclui do alcance 'vínculo ou concessão, cuja linha representa estado de relacionamento', e o discriminador é ser referenciável — nada aponta para uma linha de contrato_fiador.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/catalogo.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "companheiro positivo: as seis entidades de cadastro (conjunto, imovel, locador, locatario, fiador, contrato) TÊM a coluna",
+        "assertion_esperada": "retirado_em ausente em negocio.contrato_fiador e presente nas seis — a asserção falha se alguém acrescentar a coluna 'por simetria'"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "consulta a pg_attribute pela conexão do banco efêmero, mesmo mecanismo do CT-317",
+        "teste_analogo": "packages/db/test/catalogo.spec.ts (CT-317, mesma afirmação para negocio.comodo)"
+      },
+      "camada": "packages/db/src/esquema/negocio.ts + migração 0007",
+      "pre_condicoes": [
+        "banco efêmero com migrações 0000-0008 aplicadas"
+      ],
+      "dados_entrada": {
+        "descricao": "consulta ao catálogo para a presença da coluna nas sete tabelas de domínio",
+        "valores": {}
+      },
+      "passos": [
+        "consultar pg_attribute para negocio.contrato_fiador e afirmar que retirado_em NÃO existe",
+        "consultar as seis entidades de cadastro e afirmar que retirado_em existe em todas",
+        "confirmar que a guarda de cobertura não acusa a ausência (ela não cobra retirado_em de ninguém) — é por isso que este caso precisa existir"
+      ],
+      "resultado_esperado": "a decisão de vínculo puro é verificável, e acrescentar a coluna reprova",
+      "criterios_aceitacao_validados": [
+        "CA-03"
+      ],
+      "observacoes": "ACRÉSCIMO DO ARQUITETO (Passo 5). O gerador não emitiu caso para esta invariante, e ela é exatamente o tipo de decisão que se desfaz em silêncio: a guarda de cobertura NÃO a protege."
+    },
+    {
+      "id": "CT-431",
+      "task_id": "T3",
+      "titulo": "o papel da aplicação executa as duas funções e NÃO alcança a sequência diretamente",
+      "tipo": "INTEGRACAO",
+      "categoria": "seguranca",
+      "invariant": "o privilégio novo concedido a sysloc_app pela migração 0008 é exclusivamente EXECUTE sobre as duas funções SECURITY DEFINER; ele não tem USAGE sobre a sequência do contador, e PUBLIC não tem nada.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/papel-de-conexao.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "SELECT nextval('negocio.<sequência>') conectado como sysloc_app",
+        "assertion_esperada": "recusa por privilégio insuficiente — conceder USAGE ON SEQUENCES abriria um segundo caminho para o número, fora do escopo (empresa, ano) que a função impõe"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "conectar com a cadeia do papel de aplicação (não a de migração), que o banco efêmero já publica",
+        "teste_analogo": "packages/db/test/papel-de-conexao.spec.ts"
+      },
+      "camada": "packages/db/migracoes/0008_seguranca_contrato.sql",
+      "pre_condicoes": [
+        "banco efêmero migrado",
+        "a sequência de um escopo já criada por uma chamada anterior a garantir_contador_de_contrato"
+      ],
+      "dados_entrada": {
+        "descricao": "duas tentativas como sysloc_app: chamar a função e tocar a sequência diretamente",
+        "valores": {}
+      },
+      "passos": [
+        "conectado como sysloc_app sob contexto de tenant: SELECT negocio.proximo_numero_de_contrato(ano) — afirmar que FUNCIONA",
+        "conectado como sysloc_app: SELECT nextval sobre a sequência do escopo — afirmar RECUSA por privilégio",
+        "afirmar, pelo catálogo, que PUBLIC não tem EXECUTE sobre nenhuma das duas funções"
+      ],
+      "resultado_esperado": "o menor privilégio é o que a migração concede, e a sequência só é alcançável por dentro da função",
+      "criterios_aceitacao_validados": [
+        "CA-04",
+        "CA-18"
+      ],
+      "observacoes": "ACRÉSCIMO DO ARQUITETO (Passo 5). SECURITY DEFINER é a superfície de maior risco desta fatia (§20) e o gerador não emitiu caso para os privilégios que a cercam."
+    },
+    {
+      "id": "CT-432",
+      "task_id": "T4",
+      "titulo": "a derivação e a leitura de data não deslocam com o fuso horário do processo",
+      "tipo": "UNITARIO",
+      "categoria": "caso_extremo",
+      "invariant": "a data de fim derivada é a mesma cadeia YYYY-MM-DD em qualquer TZ do processo — a aritmética é de calendário sobre cadeia (Date.UTC), nunca sobre o relógio local, e a leitura do banco usa to_char em vez de objeto Date.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "a mesma derivação sob TZ=UTC, TZ=America/Sao_Paulo e TZ=Pacific/Kiritimati (UTC+14)",
+        "assertion_esperada": "cadeia idêntica nos três; o mutante que troca a aritmética por new Date(...) local desloca a data em um dia em pelo menos um dos fusos e REPROVA"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "fixar process.env.TZ por caso, mecanismo nativo do Node — nenhum símbolo de produção é exportado nem criado para teste",
+        "teste_analogo": "NENHUM"
+      },
+      "camada": "packages/db/src/derivacao-de-contrato.ts",
+      "pre_condicoes": [],
+      "dados_entrada": {
+        "descricao": "o mesmo cenário de virada de mês do CT-401, avaliado sob três fusos",
+        "valores": {
+          "cenario": "{ dataInicio: '2026-01-31', prazoMeses: 1 } → '2026-02-27'"
+        }
+      },
+      "passos": [
+        "para cada um dos três fusos, fixar TZ e chamar derivarTerminoDaLocacao",
+        "afirmar que a cadeia devolvida é idêntica nos três",
+        "aplicar o mutante que usa new Date local e afirmar que ao menos um fuso reprova"
+      ],
+      "resultado_esperado": "a derivação é imune ao fuso do processo, e é isso que torna a comparação com o oráculo válida em qualquer máquina",
+      "criterios_aceitacao_validados": [
+        "CA-20"
+      ],
+      "observacoes": "ACRÉSCIMO DO ARQUITETO (Passo 5). §6.2 identifica o fuso como risco medido — um date reserializado com o fuso do processo desloca a data em um dia para metade dos fusos, e é justamente dataFimLocacao que o CA-20 compara contra o oráculo."
+    },
+    {
+      "id": "CT-433",
+      "task_id": "T1",
+      "titulo": "os dois artefatos golden novos existem, têm forma, e a bijeção manifesto ↔ golden permanece verificável",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "a extensão do roteiro de captura é ACRÉSCIMO: os seis artefatos anteriores continuam íntegros, os dois novos declaram os cenários de ativação e de cancelamento, e toda máscara declarada no manifesto tem marcador presente nos artefatos — e todo marcador presente tem máscara declarada.",
+      "owning_layer": "shell",
+      "existing_suite": "deploy/scripts/caracterizacao/verificar-golden.sh",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "máscara declarada no manifesto sem marcador correspondente nos artefatos (e o sentido inverso)",
+        "assertion_esperada": "o verificador reprova nos dois sentidos, nomeando a máscara órfã — mesmo molde do CT-014 já existente"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "roda offline sobre os artefatos versionados; nenhum banco, nenhum privilégio",
+        "teste_analogo": "deploy/scripts/caracterizacao/verificar-golden.sh (CT-011, CT-014)"
+      },
+      "camada": "deploy/scripts/caracterizacao/verificar-golden.sh + golden/",
+      "pre_condicoes": [
+        "a captura da Fase 1 (Oráculo) já executada, com os dois artefatos e o PROCEDENCIA.md regerado"
+      ],
+      "dados_entrada": {
+        "descricao": "os 9 artefatos de golden/ e o manifesto de procedência",
+        "valores": {}
+      },
+      "passos": [
+        "afirmar que git ls-files sobre golden/ retorna 9 caminhos (era 7)",
+        "afirmar a forma dos dois artefatos novos: entrada, estado_resultante e retorno para ativação e para cancelamento",
+        "afirmar a bijeção máscara ↔ marcador nos dois sentidos, incluindo as máscaras novas",
+        "afirmar que o manifesto nomeia o dump de origem, o horário e o commit do app",
+        "afirmar que os seis artefatos anteriores continuam passando nos casos que já existiam"
+      ],
+      "resultado_esperado": "a extensão não quebra nada do que a fatia fechada entregou, e os dois artefatos novos são verificáveis pelo mesmo critério",
+      "criterios_aceitacao_validados": [
+        "CA-08",
+        "CA-20"
+      ],
+      "observacoes": "ACRÉSCIMO DO ARQUITETO (Passo 5). O gerador não emitiu nenhum caso da FRENTE SHELL, que é metade da suíte deste projeto. NÃO transportar para Vitest: é observável inspecionando git e filesystem. O verificar-captura.sh irmão exige o site efêmero de pé e sudo — nenhum subagente o executa; a execução é conduzida junto ao operador e o gate audita a saída preservada."
+    },
+    {
+      "id": "CT-434",
+      "task_id": "T10",
+      "titulo": "o PUT de imóvel não desfaz o LOCADO, e a rota de situação é o único caminho",
+      "tipo": "E2E",
+      "categoria": "teste_negativo",
+      "invariant": "a situação de locação de um imóvel com contrato vigente é irrepresentável como divergente do estado do contrato — nenhuma resposta traz statusLocacao: 'DISPONIVEL' junto de contratoVigente preenchido.",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/contratos.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "dois mutantes aplicados ISOLADAMENTE: (a) devolver statusLocacao ao esquema de alteração; (b) reativar a escrita da coluna em alterarImovel",
+        "assertion_esperada": "o caso reprova nos DOIS mutantes; um mutante só não discrimina — reaceitar o campo sem escrever a coluna passaria despercebido por asserção que só olhasse o corpo da resposta"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "TELA:imoveis + TELA:contratos + ACAO:ativar_contrato",
+        "caminho_legitimo": "conceder as três chaves; criar e ativar pelas rotas reais",
+        "teste_analogo": "apps/api/test/carteira.e2e.spec.ts (função conceder)"
+      },
+      "camada": "apps/api/src/imoveis/imovel.controller.ts + imovel.service.ts + packages/db/src/imovel.ts",
+      "pre_condicoes": [
+        "imóvel com contrato ATIVO",
+        "as três chaves concedidas"
+      ],
+      "dados_entrada": {
+        "descricao": "um PUT com statusLocacao no corpo; um PUT sem o campo alterando o endereço; um POST /:id/situacao-de-locacao com INDISPONIVEL",
+        "valores": {}
+      },
+      "passos": [
+        "PUT /v1/imoveis/:id com corpo completo E statusLocacao — afirmar 422 nomeando statusLocacao como chave desconhecida",
+        "PUT /v1/imoveis/:id com o corpo novo (sem o campo), alterando o endereço — afirmar 200, endereço alterado E statusLocacao ainda LOCADO",
+        "POST /:id/situacao-de-locacao com INDISPONIVEL sobre o imóvel locado — afirmar 422, campo statusLocacao, detalhes.conflito: 'IMOVEL_COM_CONTRATO_VIGENTE'",
+        "afirmar que em nenhum momento a resposta traz statusLocacao: 'DISPONIVEL' com contratoVigente preenchido"
+      ],
+      "resultado_esperado": "as duas fontes nunca divergem no mesmo corpo; o PUT corrige o endereço sem tocar o estado",
+      "criterios_aceitacao_validados": [
+        "CA-05",
+        "CA-09"
+      ],
+      "observacoes": "ACRÉSCIMO da sessão de challenge (2026-08-08). Fecha um furo herdado da fatia anterior que ESTA fatia torna observável ao acrescentar contratoVigente."
+    }
+  ],
+  "cenarios_nao_cobertos": [
+    {
+      "descricao": "carga/performance sobre a listagem de contratos ou sobre a emissão concorrente em alto volume",
+      "motivo": "proibido por contrato nesta stack — vira recomendação, não caso de teste. O eixo que importa (número de consultas independente de N) é coberto pelo CT-420"
+    },
+    {
+      "descricao": "retenção de dado financeiro (valorMensal/valorTotalContrato) retido indefinidamente",
+      "motivo": "dívida já registrada na ADR-0014, ampliada aqui em classe de dado — decisão de produto, não desta fatia"
+    },
+    {
+      "descricao": "rate-limit e timeout específicos das rotas de contrato",
+      "motivo": "não há requisito diferenciado desta fatia; o débito D27 · F1/T6 já agenda o eixo de origem para a publicação atrás do servidor de borda"
+    },
+    {
+      "descricao": "geração de cobranças na ativação e emissão de boleto",
+      "motivo": "fora de escopo — RN-12, F3 e F4. O que esta fatia prova é que a AUSÊNCIA é declarada (CT-429, CT-413)"
+    },
+    {
+      "descricao": "exigência de PDF do contrato para cancelar (regra do legado)",
+      "motivo": "explicitamente NÃO portada (RN-13). O CT-415 cancela sem qualquer menção a documento, que é a forma de a ausência ficar provada"
+    },
+    {
+      "descricao": "o ramo contrato_sem_name da rotina de encerramento",
+      "motivo": "inalcançável pelo caminho real, como o PROCEDENCIA.md já registra. Forjá-lo produziria referência de comportamento que a produção nunca exibe"
+    }
+  ],
+  "recomendacoes": [
+    "A ordem de execução importa: CT-401, CT-402, CT-411 e CT-433 dependem de golden/contrato-ativacao.json e golden/contrato-cancelamento.json existirem — produzidos pela Fase 1 (Oráculo) desta mesma fatia. Rode a captura ANTES.",
+    "A distribuição pesa em E2E (17 de 33) por decisão: a invariante central é uma máquina de estados governada por permissão de rota, observável só de ponta a ponta. As três invariantes de maior risco TÊM prova na camada baixa — CT-401/402 (derivações), CT-404 (furo e não-reuso), CT-407 (exclusão mútua sob concorrência).",
+    "Antes de aceitar qualquer CT com asserção estática (CT-421, CT-427, CT-430, CT-431, CT-433), aplique a prova de falsificação obrigatória: reintroduza o defeito do companheiro negativo, confirme a reprovação, reverta.",
+    "Rode toda a suíte pelo script do pacote (pnpm --filter @sysloc/<pacote> test), nunca vitest run avulso — os quatro pacotes resolvem a fronteira para dist/, e mutantes aplicados ao fonte não alcançariam o executado. O modo de falha é silencioso e INVERTE a conclusão.",
+    "Preserve o par (CT, arquivo de teste) ao distribuir pelas tasks. Seis casos ESTENDEM suítes existentes em vez de abrir arquivo novo: CT-416 (circulacao-de-cadastro), CT-419 (carteira), CT-420 (janela), CT-421 e CT-430 (catalogo), CT-424/CT-428/CT-429 (esquemas), CT-427 (cobertura-de-autorizacao), CT-431 (papel-de-conexao).",
+    "Baseline antes e depois, com a contagem comparada. A suíte está em 541 casos; queda inexplicada é regressão de prova (R2)."
+  ],
+  "mock_budget_observado": true,
+  "gates_aplicados": [
+    "invariant_first",
+    "owning_layer",
+    "real_execution",
+    "failure_means_fix_production",
+    "no_snapshot_without_contract",
+    "no_self_set_mock_assertion",
+    "negative_companion"
+  ]
+}

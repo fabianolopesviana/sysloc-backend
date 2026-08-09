@@ -63,6 +63,30 @@ com marcador e gatilho (**D3**). Resolve-se tudo de uma vez com
 `/agent-spec-debt-resolution docs/specs/features/cadastro-de-imoveis-e-pessoas/v1/`.
 Falta a fatia **`contratos-de-locacao`** para a fase fechar.
 
+**`contratos-de-locacao` (v1) — ESPECIFICADA, pronta para execução; nenhuma linha de código escrita.**
+O pipeline SDD fechou em 2026-08-08: pré-refinamento, tech-alignment, PRD (16 US, 20 CA, 18 RN),
+tech spec, challenge e task plan. Entrega planejada: **`negocio.contrato` e `negocio.contrato_fiador`**
+(este último **vínculo puro, sem `retirado_em`** — a ausência é a decisão), a primeira **série
+declarada** do produto (`CTR-{ano}-{5 dígitos}`, sequência por `(empresa, ano)` atrás de duas funções
+`SECURITY DEFINER`) e o primeiro **ciclo de vida governado**. **9 rotas novas** — 8 sob
+`/v1/contratos` e a de situação de locação sobre `/v1/imoveis`; superfície **66 → 77** rotas e
+**51 → 60** manipuladores. Nasceram dela as ADRs **0019** e **0020**.
+**São 10 tasks em 3 fases**, sem par paralelizável (derivado, não autorado — a §4.2 do
+`task_plan.md` registra a condição que falha em cada par), e **34 casos de teste** distribuídos, um
+CT por task. Executa-se com
+`/agent-spec-sdd-run-tasks docs/specs/features/contratos-de-locacao/v1/`.
+
+> **A T1 é a primeira por uma razão que expira**: ela captura do `/opt/frappe` o oráculo de ativação
+> e cancelamento, e essa janela fecha na F7. Ela exige `sudo` e o site efêmero de pé — **nenhum
+> subagente a executa**; a execução é conduzida junto ao operador e o gate audita a saída preservada.
+>
+> **Dois furos herdados que esta fatia fecha, e que valem saber antes de tocar o código de imóveis**:
+> (1) `alterarImovel` escreve `status_locacao` incondicionalmente e a entrada não aceita `LOCADO`, de
+> modo que **toda** alteração de um imóvel locado apagaria o `LOCADO` em silêncio — a T10 tira o campo
+> do corpo do `PUT` e lhe dá rota própria; (2) `esquemaDoImovel` ganha `contratoVigente`, o que alcança
+> **três** superfícies publicadas de uma vez e obriga quatro suítes da fatia 1 a crescer — **crescimento
+> de esquema, nunca troca de igualdade por asserção de presença**.
+
 **Fase 1 CONCLUÍDA — as duas fatias fechadas.** A F1 foi **desdobrada em duas fatias**, cortando
 *depois* da autenticação (o corte isolamento × identidade foi rebatido: ele atravessa a camada 5, e
 a fonte legítima do `empresa_id` é a sessão). Em **2026-08-05** a segunda fechou, e com ela a fase.
@@ -84,7 +108,8 @@ aguardando a decisão do usuário.
    (termo canônico do glossário — não "temporária") e as rotas do Master e do Admin. Fechou os
    débitos **D7**, **D21**, **D5**, **P-T6-1** e a metade acionável do **P-T6-2**; a outra metade
    virou o **item 5 da §F7** do plano de execução. Nasceram dela as ADRs **0010**, **0011**,
-   **0012** e **0013**, e ela **aposentou a 0007**.
+   **0012** e **0013**, e ela **aposentou a 0007**. (Registro histórico: a **0012 foi, depois,
+   substituída pela 0017** — não a cite como vigente.)
    **Deixou 41 débitos anotados** na §2 do `_run/run-report.md` — quatro deles com marcador e
    gatilho (**D27**, **D37**, **D38**, **D40**). Resolve-se tudo de uma vez com
    `/agent-spec-debt-resolution docs/specs/features/autorizacao-e-ciclo-de-acesso/v1/`.
@@ -147,7 +172,7 @@ O marco está alcançado quando **todos** os sete itens forem verdadeiros:
 - [ ] **`@sysloc/contracts` publicado** no GitHub privado e versionado — é o artefato que o React
       importa para trocar tipos e cliente ts-rest
 - [ ] **`handoff-frontend.md` gerado** por `/agent-spec-backend-contract-handoff`, carregando o
-      modelo de domínio camelCase, o envelope de erro da ADR-0012, a autenticação por sessão, o
+      modelo de domínio camelCase, o envelope de erro da **ADR-0017**, a autenticação por sessão, o
       objeto de sessão gorda com `versao_permissoes`, e o **mapa endpoint-a-endpoint** ligando cada
       um dos 35 caminhos ERPNext antigos (`levantamento-frontend.md`) à rota nova
 - [ ] **Backup e restauração entregues e provados** — item 1 da F7: `pg_dump -Fc`, segredos em tar,
@@ -187,7 +212,7 @@ pelo número, e sem os dois arquivos de `.claude/plans/` essas referências fica
 | 3 | `.claude/plans/plano-saas-decisoes.md` | As **40 decisões fechadas** — o plano de execução as cita por número |
 | 4 | `.claude/plans/plano-saas.md` | Arquitetura-alvo, os 3 perfis, as **10 telas × 7 ações sensíveis**, a especificação do webhook Sicoob |
 | 5 | `docs/plano-backend-novo/levantamento-frontend.md` | O frontend React: inventário dos **35 endpoints**, o **modelo de domínio que a API deve falar**, os acoplamentos a remover |
-| 6 | `docs/adr/` | ADRs. **Ativas e vinculantes para a F1: 0008, 0009, 0010, 0011 e 0012.** Sobrevivem inteiras a **0001** (cobrança com adaptador por provedor), a **0005** (rotinas versionadas, sem credencial em script) e a **0006** (ambiente de verificação separado). As **0002, 0003 e 0004** morreram com o Frappe — `deprecated` desde 2026-08-04. A **0007 foi substituída pela 0012** (a chave exposta varia por classe de entidade) |
+| 6 | `docs/adr/` | ADRs. **20 registradas, 15 `accepted`**: 0001, 0005, 0006, 0008, 0009, 0010, 0011, 0013, 0014, 0015, 0016, 0017, 0018, 0019 e 0020. **Vinculantes para a F2**: 0006, 0008, 0009, 0011, 0013, 0014, 0015, 0016, 0017, 0018, 0019 e 0020. As **0002, 0003 e 0004** morreram com o Frappe — `deprecated` desde 2026-08-04, porque nomeiam primitivas dele (DocType, fixture, `Custom DocPerm`, Server Script). A forma canônica do contrato da API tem **cadeia de três**: **0007 → 0012 → 0017**; as duas primeiras estão `superseded` e **não se citam** — a vigente é a **0017** (três classes de chave exposta: código legível quando há série declarada, UUID quando não há). ⚠️ **Citar ADR exige abrir a `Decision`** — esta linha e o `INDEX.md` são paráfrases, e já divergiram do texto real |
 
 Por fase: a **F4** exige `docs/specs/features/integracao-bancaria-configuravel/`; a **F6** exige
 o levantamento do frontend (item 5).
@@ -236,9 +261,15 @@ Específicos deste domínio: **undici** (mTLS do Sicoob), **`node:crypto` `X509C
 3. **Nenhum segredo versionado.** Certificado `.pfx`, senha de banco e chave de cifra vivem fora
    do repositório (`EnvironmentFile` 0600). O `.gitignore` barra `.env`, `*.pfx`, `secrets/`.
 4. **Dinheiro em `numeric(15,2)`**, nunca float.
-5. **IDs textuais legíveis** (`CTR-2026-0001`) preservados — o frontend os exibe como título de
-   contrato, label de select e campo "Identificador". Chave interna é UUID; o código legível é
-   coluna própria, única por empresa.
+5. **IDs textuais legíveis** (`CTR-2026-00001` — **cinco** dígitos) preservados — o frontend os exibe
+   como título de contrato, label de select e campo "Identificador". Chave interna é UUID; o código
+   legível é coluna própria, única por empresa.
+   > **A largura é cinco, e este texto já disse quatro.** O valor é **medido** no sistema antigo
+   > (`autoname` = `CTR-.YYYY.-.#####`, série viva em 20), e a divergência foi descoberta ao ler o
+   > dado em vez de estimar. O `plano-execucao.md` §F2 **ainda escreve quatro** — corrigi-lo não
+   > pertence a nenhuma fatia aberta, e a proteção local é o marcador `DECISÃO FECHADA` no ponto do
+   > código que fixa o formato (`packages/contracts/src/contrato.ts`, a partir da T2 da fatia
+   > `contratos-de-locacao`). Não "corrija" para quatro.
 6. **A API fala o modelo de domínio camelCase** que o frontend já usa internamente
    (`levantamento-frontend.md` §6) — não o formato do Frappe.
 7. **Tudo sobe sozinho após reboot.** Unit systemd por serviço, `Restart=always`,
@@ -261,7 +292,7 @@ Específicos deste domínio: **undici** (mTLS do Sicoob), **`node:crypto` `X509C
   mesma rule): não protege, **agenda** — ver o bloco abaixo.
 - **Lint/format**: Biome. Sem ESLint, sem Prettier.
 - **Commits**: Conventional Commits em pt-BR — ver a skill `agent-spec-semantic-commit`.
-- **Specs**: o framework agent-spec está em `.claude/` (36 skills, 7 rules, 3 agents). Features
+- **Specs**: o framework agent-spec está em `.claude/` (37 skills, 8 rules, 4 agents). Features
   novas seguem o pipeline SDD/miniSpec/TaskCard com os gates de QA e Tech Review.
 
 ---
