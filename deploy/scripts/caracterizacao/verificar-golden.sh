@@ -2,7 +2,7 @@
 #
 # Verificação OFFLINE dos artefatos golden da caracterização (TC-001).
 #
-# Casos cobertos: CT-010, CT-011, CT-013 (metade estática), CT-014.
+# Casos cobertos: CT-010, CT-011, CT-013 (metade estática), CT-014, CT-433.
 #
 # Este script não fala com o Frappe. Ele lê apenas o que está versionado no
 # repositório, e por isso continua executável depois que o backend legado for
@@ -25,14 +25,48 @@ REL_SCRIPTS="deploy/scripts/caracterizacao"
 DIR_SCRIPTS="${RAIZ_REPO}/${REL_SCRIPTS}"
 ARQ_COMPOSE="/opt/frappe/docker-compose.yaml"
 
+# Fonte única do conjunto esperado E da contagem. A contagem sai do tamanho desta
+# lista de propósito: enquanto o número era literal, acrescentar um artefato exigia
+# lembrar de dois lugares, e esquecer o segundo deixava a asserção de número
+# passando com o conjunto errado.
+#
+# Os sete primeiros vêm da captura original (TC-001); os dois últimos, da T1 da
+# fatia `contratos-de-locacao`.
 GOLDEN_ESPERADOS=(
 	"PROCEDENCIA.md"
+	"atualizar-atrasos-cobrancas.json"
+	"calcular-mora.json"
+	"contrato-ativacao.json"
+	"contrato-cancelamento.json"
+	"contrato-pdf.txt"
+	"encerrar-contratos-vencidos.json"
+	"marcar-cobrancas-vencidas.json"
+	"metragem.json"
+)
+
+# Os seis artefatos que a captura original produziu, sem o manifesto. O CT-433 usa
+# a lista para afirmar que a extensão é ACRÉSCIMO: nenhum deles pode ter sido
+# substituído pelos dois novos.
+GOLDEN_DA_CAPTURA_ORIGINAL=(
 	"atualizar-atrasos-cobrancas.json"
 	"calcular-mora.json"
 	"contrato-pdf.txt"
 	"encerrar-contratos-vencidos.json"
 	"marcar-cobrancas-vencidas.json"
 	"metragem.json"
+)
+
+GOLDEN_DE_CONTRATO=(
+	"contrato-ativacao.json"
+	"contrato-cancelamento.json"
+)
+
+# Marcadores introduzidos pela fase de cancelamento. Nomeá-los aqui é o que separa
+# o CT-433 do CT-014: a bijeção daquele caso é genérica e continuaria verde se as
+# duas máscaras sumissem do manifesto E dos artefatos ao mesmo tempo.
+MASCARAS_DE_CONTRATO=(
+	"<PDF_CONTRATO_CODIFICADO>"
+	"<ARQUIVO_PDF_PRIVADO>"
 )
 
 falhas_totais=0
@@ -59,12 +93,27 @@ afirmar_igual() {
 	fi
 }
 
+afirmar_diferente() {
+	if [[ "$2" != "$3" ]]; then
+		ok "$1"
+	else
+		falhar "$1 — obtido [$3], que não deveria ser [$2]"
+	fi
+}
+
 fechar_caso() {
 	if [[ "${falhas_caso}" -eq 0 ]]; then
 		printf '    -> %s aprovado\n' "$1"
 	else
 		printf '    -> %s REPROVADO (%d falha(s))\n' "$1" "${falhas_caso}" >&2
 	fi
+}
+
+# Caminhos de `golden/` conhecidos pelo git, um por linha e em ordem estável.
+# Extraída para função porque CT-010 e CT-433 afirmam propriedades diferentes do
+# MESMO conjunto, e duas invocações literais divergiriam sem que nada acusasse.
+caminhos_versionados_do_golden() {
+	git -C "${RAIZ_REPO}" ls-files "${REL_GOLDEN}/" | sort
 }
 
 # --------------------------------------------------------------------------- #
@@ -75,16 +124,16 @@ ct_010() {
 	caso "CT-010" "Documento de contrato — texto extraído e mascarado, sem bytes de PDF"
 
 	local versionados
-	versionados="$(git -C "${RAIZ_REPO}" ls-files "${REL_GOLDEN}/" | sort)"
-	afirmar_igual "git ls-files sobre golden/ retorna 7 caminhos" \
-		"7" "$(printf '%s\n' "${versionados}" | grep -c . || true)"
+	versionados="$(caminhos_versionados_do_golden)"
+	afirmar_igual "git ls-files sobre golden/ retorna ${#GOLDEN_ESPERADOS[@]} caminhos" \
+		"${#GOLDEN_ESPERADOS[@]}" "$(printf '%s\n' "${versionados}" | grep -c . || true)"
 
 	local esperados_completos=()
 	local nome
 	for nome in "${GOLDEN_ESPERADOS[@]}"; do
 		esperados_completos+=("${REL_GOLDEN}/${nome}")
 	done
-	afirmar_igual "o conjunto versionado é exatamente o dos 7 artefatos" \
+	afirmar_igual "o conjunto versionado é exatamente o dos ${#GOLDEN_ESPERADOS[@]} artefatos" \
 		"$(printf '%s\n' "${esperados_completos[@]}" | sort)" "${versionados}"
 
 	afirmar_igual "nenhum arquivo versionado com extensão binária (.pdf/.bin/.zip)" \
@@ -604,12 +653,335 @@ for erro in erros:
 sys.exit(1 if erros else 0)
 PY
 	then
-		ok "manifesto completo e em bijeção com os marcadores dos 6 golden"
+		ok "manifesto completo e em bijeção com os marcadores dos artefatos de caracterização"
 	else
 		falhar "PROCEDENCIA.md incompleto ou fora de bijeção (ver acima)"
 	fi
 
 	fechar_caso "CT-014"
+}
+
+# --------------------------------------------------------------------------- #
+# CT-433 — os dois artefatos golden de contrato existem, têm forma, cobrem a
+#          virada de mês, e a bijeção manifesto <-> golden segue verificável.
+#
+# INVARIANTE: a extensão do roteiro de captura é ACRÉSCIMO — os seis artefatos
+# anteriores continuam íntegros, os dois novos declaram os cenários de ativação e
+# de cancelamento, e toda máscara declarada no manifesto tem marcador presente no
+# artefato que ela nomeia, e todo marcador presente tem máscara declarada para
+# aquele artefato.
+#
+# O QUE ESTE CASO NÃO FAZ, e por quê: ele não recalcula `data_fim_locacao` nem
+# `valor_total_contrato`. O golden É o oráculo; um verificador que reimplementasse
+# a derivação estaria conferindo o golden contra a própria suposição de quem o
+# escreveu, e aprovaria um golden errado desde que errasse igual. O que se afere
+# aqui é COBERTURA e FORMA — que os cenários de virada existem e que os campos
+# estão lá. A conferência dos valores é da T4, contra as funções puras novas.
+# --------------------------------------------------------------------------- #
+ct_433() {
+	caso "CT-433" "dois artefatos novos, forma e bijeção"
+
+	local versionados
+	versionados="$(caminhos_versionados_do_golden)"
+
+	afirmar_igual "git ls-files sobre golden/ retorna ${#GOLDEN_ESPERADOS[@]} caminhos (eram 7)" \
+		"${#GOLDEN_ESPERADOS[@]}" "$(printf '%s\n' "${versionados}" | grep -c . || true)"
+
+	# Contagem sozinha não distingue acréscimo de substituição: trocar um artefato
+	# antigo pelos dois novos mudaria o conjunto e manteria o número.
+	local nome ausentes_originais=0 ausentes_novos=0
+	for nome in "${GOLDEN_DA_CAPTURA_ORIGINAL[@]}"; do
+		printf '%s\n' "${versionados}" | grep -qxF "${REL_GOLDEN}/${nome}" ||
+			ausentes_originais=$((ausentes_originais + 1))
+	done
+	afirmar_igual "os ${#GOLDEN_DA_CAPTURA_ORIGINAL[@]} artefatos da captura original continuam versionados" \
+		"0" "${ausentes_originais}"
+
+	for nome in "${GOLDEN_DE_CONTRATO[@]}"; do
+		printf '%s\n' "${versionados}" | grep -qxF "${REL_GOLDEN}/${nome}" ||
+			ausentes_novos=$((ausentes_novos + 1))
+	done
+	afirmar_igual "os ${#GOLDEN_DE_CONTRATO[@]} artefatos de contrato estão versionados" \
+		"0" "${ausentes_novos}"
+
+	if python3 - "${DIR_GOLDEN}" "${MASCARAS_DE_CONTRATO[@]}" <<'PY'
+import calendar
+import json
+import re
+import sys
+from datetime import date, timedelta
+from pathlib import Path
+
+golden = Path(sys.argv[1])
+mascaras_de_contrato = list(sys.argv[2:])
+erros = []
+
+FORMA_CANONICA = ("entrada", "retorno", "estado_resultante")
+DIAS_DE_VIRADA_EXIGIDOS = {29, 30, 31}
+
+
+def carregar(nome):
+    caminho = golden / nome
+    if not caminho.is_file():
+        erros.append(
+            f"{nome}: ausente de golden/ — a captura contra o site efêmero ainda não rodou"
+        )
+        return None
+    try:
+        return json.loads(caminho.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        erros.append(f"{nome}: não é JSON válido ({exc})")
+        return None
+
+
+ARQ_ATIVACAO = "contrato-ativacao.json"
+ARQ_CANCELAMENTO = "contrato-cancelamento.json"
+
+ativacao = carregar(ARQ_ATIVACAO)
+cancelamento = carregar(ARQ_CANCELAMENTO)
+
+MODULO_ESPERADO = {
+    ARQ_ATIVACAO: "locacao_automation.contrato_ativacao.service",
+    ARQ_CANCELAMENTO: "locacao_automation.contrato_cancelamento.service",
+}
+
+for nome, dados in ((ARQ_ATIVACAO, ativacao), (ARQ_CANCELAMENTO, cancelamento)):
+    if dados is None:
+        continue
+    faltando = [chave for chave in FORMA_CANONICA if chave not in dados]
+    if faltando:
+        erros.append(f"{nome}: seções da forma canônica ausentes {faltando}")
+    if dados.get("modulo") != MODULO_ESPERADO[nome]:
+        erros.append(
+            f"{nome}: módulo de origem {dados.get('modulo')!r}, "
+            f"esperado {MODULO_ESPERADO[nome]!r}"
+        )
+
+# ---- ativação: as quatro frentes da regra, e a cobertura da virada de mês ----
+FRENTES_DA_ATIVACAO = ("validacao", "derivacao", "cobrancas", "fluxo")
+
+if ativacao is not None:
+    for secao in ("entrada", "retorno"):
+        faltando = [f for f in FRENTES_DA_ATIVACAO if f not in ativacao.get(secao, {})]
+        if faltando:
+            erros.append(f"{ARQ_ATIVACAO}: {secao} não cobre as frentes {faltando}")
+
+    if "fluxo" not in ativacao.get("estado_resultante", {}):
+        erros.append(
+            f"{ARQ_ATIVACAO}: estado_resultante sem a frente 'fluxo' — é a única que escreve"
+        )
+
+    validacao = ativacao.get("retorno", {}).get("validacao", [])
+    recusadas = [
+        item for item in validacao if not item.get("resultado", {}).get("aceito", True)
+    ]
+    if len(recusadas) < 6:
+        erros.append(
+            f"{ARQ_ATIVACAO}: só {len(recusadas)} cenários de recusa na validação; as seis "
+            "condições de entrada exigem ao menos um cada"
+        )
+    for item in recusadas:
+        if not str(item["resultado"].get("mensagem") or "").strip():
+            erros.append(
+                f"{ARQ_ATIVACAO}: cenário de recusa {item.get('id')!r} sem a mensagem da regra"
+            )
+
+    entrada_por_id = {
+        item["id"]: item.get("contrato", {})
+        for item in ativacao.get("entrada", {}).get("derivacao", [])
+    }
+    dias_de_inicio = set()
+    anos_de_fevereiro = set()
+    derivacao = ativacao.get("retorno", {}).get("derivacao", [])
+    if not derivacao:
+        erros.append(f"{ARQ_ATIVACAO}: nenhum cenário de derivação capturado")
+
+    for item in derivacao:
+        chave = item.get("id")
+        resultado = item.get("resultado", {})
+        if not resultado.get("aceito"):
+            erros.append(f"{ARQ_ATIVACAO}: cenário de derivação {chave!r} foi recusado")
+            continue
+        corpo = resultado.get("retorno", {})
+        for campo in ("data_fim_locacao", "valor_total_contrato"):
+            if corpo.get(campo) in (None, ""):
+                erros.append(f"{ARQ_ATIVACAO}: derivação {chave!r} sem {campo}")
+
+        inicio_texto = str(entrada_por_id.get(chave, {}).get("data_inicio_locacao") or "")
+        fim_texto = str(corpo.get("data_fim_locacao") or "")
+        try:
+            inicio = date.fromisoformat(inicio_texto[:10])
+            fim = date.fromisoformat(fim_texto[:10])
+        except ValueError:
+            erros.append(
+                f"{ARQ_ATIVACAO}: derivação {chave!r} com datas ilegíveis "
+                f"(início {inicio_texto!r}, fim {fim_texto!r})"
+            )
+            continue
+        dias_de_inicio.add(inicio.day)
+        # `data_fim` é o dia anterior ao destino de `add_months`; o destino é o que
+        # revela em que mês a virada caiu.
+        destino = fim + timedelta(days=1)
+        if destino.month == 2:
+            anos_de_fevereiro.add(destino.year)
+
+    faltantes = sorted(DIAS_DE_VIRADA_EXIGIDOS - dias_de_inicio)
+    if faltantes:
+        erros.append(
+            f"{ARQ_ATIVACAO}: sem cenário de derivação com início nos dias {faltantes} — "
+            "a virada de mês é a razão de capturar em vez de ler"
+        )
+    if not any(calendar.isleap(ano) for ano in anos_de_fevereiro):
+        erros.append(
+            f"{ARQ_ATIVACAO}: nenhuma derivação cai em fevereiro de ano bissexto "
+            f"(fevereiros cobertos: {sorted(anos_de_fevereiro)})"
+        )
+    if not any(not calendar.isleap(ano) for ano in anos_de_fevereiro):
+        erros.append(
+            f"{ARQ_ATIVACAO}: nenhuma derivação cai em fevereiro de ano não-bissexto "
+            f"(fevereiros cobertos: {sorted(anos_de_fevereiro)})"
+        )
+
+# ---- cancelamento: cascata, liberação do imóvel, transição e as recusas ----
+if cancelamento is not None:
+    for secao, exigidas in (
+        ("entrada", ("contratos", "imoveis", "cobrancas")),
+        ("estado_resultante", ("contratos", "imoveis", "cobrancas")),
+    ):
+        faltando = [c for c in exigidas if c not in cancelamento.get(secao, {})]
+        if faltando:
+            erros.append(f"{ARQ_CANCELAMENTO}: {secao} sem as coleções {faltando}")
+
+    recusas = {item.get("id") for item in cancelamento.get("recusas", [])}
+    exigidas = {"parametro_vazio", "contrato_sem_pdf", "contrato_sem_imovel"}
+    if not exigidas.issubset(recusas):
+        erros.append(
+            f"{ARQ_CANCELAMENTO}: guardas sem oráculo {sorted(exigidas - recusas)}"
+        )
+    for item in cancelamento.get("recusas", []):
+        resultado = item.get("resultado", {})
+        if resultado.get("aceito"):
+            erros.append(
+                f"{ARQ_CANCELAMENTO}: a guarda {item.get('id')!r} não recusou"
+            )
+        elif not str(resultado.get("mensagem") or "").strip():
+            erros.append(
+                f"{ARQ_CANCELAMENTO}: a guarda {item.get('id')!r} recusou sem mensagem"
+            )
+
+    retorno = cancelamento.get("retorno", {})
+    if not retorno.get("aceito"):
+        erros.append(
+            f"{ARQ_CANCELAMENTO}: o cenário de cancelamento completo não foi aceito — "
+            f"{retorno.get('mensagem')!r}"
+        )
+    else:
+        corpo = retorno.get("retorno", {})
+        faltando = [
+            c for c in ("ok", "contrato", "imovel", "cobrancas_canceladas",
+                        "baixas_sicoob", "status_contrato")
+            if c not in corpo
+        ]
+        if faltando:
+            erros.append(f"{ARQ_CANCELAMENTO}: retorno sem as chaves {faltando}")
+
+    estados = {
+        item.get("status_cobranca")
+        for item in cancelamento.get("estado_resultante", {}).get("cobrancas", [])
+    }
+    if "Cancelada" not in estados:
+        erros.append(f"{ARQ_CANCELAMENTO}: nenhuma cobrança terminou 'Cancelada'")
+    # O negativo que discrimina: sem cobrança fora da cascata, "cancelou as
+    # canceláveis" é indistinguível de "cancelou tudo".
+    if not estados - {"Cancelada"}:
+        erros.append(
+            f"{ARQ_CANCELAMENTO}: todas as cobranças terminaram 'Cancelada' — o filtro "
+            "de status ficou sem contraprova"
+        )
+
+# ---- bijeção máscara <-> marcador, por ARTEFATO e nos dois sentidos ----
+# Mais forte que a do CT-014, que é global: aqui uma máscara declarada para
+# `contrato-cancelamento.json` e presente apenas em `contrato-pdf.txt` reprova.
+manifesto_arquivo = golden / "PROCEDENCIA.md"
+if not manifesto_arquivo.is_file():
+    erros.append("PROCEDENCIA.md: manifesto ausente de golden/")
+else:
+    manifesto = manifesto_arquivo.read_text(encoding="utf-8")
+    secao = re.search(r"\n## 2\. Máscaras aplicadas\n(.*?)(?=\n## )", manifesto, re.DOTALL)
+    if not secao:
+        erros.append("PROCEDENCIA.md: seção '## 2. Máscaras aplicadas' ausente")
+    else:
+        declarado = {}
+        for linha in secao.group(1).splitlines():
+            if not linha.strip().startswith("|"):
+                continue
+            colunas = [c.strip() for c in linha.strip().strip("|").split("|")]
+            if len(colunas) < 4:
+                continue
+            marcadores = re.findall(r"<[A-Z_]+>", colunas[0])
+            if not marcadores:
+                continue
+            artefatos = re.findall(r"`([^`]+\.(?:json|txt|md))`", colunas[1])
+            if not artefatos:
+                erros.append(
+                    f"PROCEDENCIA.md: a máscara {marcadores} não nomeia artefato algum"
+                )
+            for marcador in marcadores:
+                declarado.setdefault(marcador, set()).update(artefatos)
+
+        presente = {}
+        for arquivo in sorted(golden.iterdir()):
+            if arquivo.name == "PROCEDENCIA.md":
+                continue
+            for marcador in set(re.findall(r"<[A-Z_]+>", arquivo.read_text(encoding="utf-8"))):
+                presente.setdefault(marcador, set()).add(arquivo.name)
+
+        for marcador, artefatos in sorted(declarado.items()):
+            faltando = sorted(artefatos - presente.get(marcador, set()))
+            if faltando:
+                erros.append(
+                    f"máscara órfã: {marcador} é declarada para {faltando} e não aparece lá"
+                )
+        for marcador, artefatos in sorted(presente.items()):
+            faltando = sorted(artefatos - declarado.get(marcador, set()))
+            if faltando:
+                erros.append(
+                    f"marcador sem máscara: {marcador} aparece em {faltando} sem declaração "
+                    "correspondente no manifesto"
+                )
+
+        for marcador in mascaras_de_contrato:
+            if marcador not in declarado:
+                erros.append(f"a máscara nova {marcador} não está declarada no manifesto")
+            if marcador not in presente:
+                erros.append(f"a máscara nova {marcador} não aparece em artefato nenhum")
+
+    # Procedência da captura que produziu os nove artefatos. Sobrepõe de propósito
+    # o CT-014: o card do CT-433 exige um caso auto-contido, que reprove sozinho.
+    for campo, padrao in (
+        ("Dump de origem", r"sites/[^/|]+/private/backups/\S+\.sql\.gz"),
+        ("Data e hora da captura", r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"),
+        ("Versão do app (commit)", r"[0-9a-f]{40}"),
+    ):
+        casamento = re.search(
+            r"^\|\s*" + re.escape(campo) + r"\s*\|\s*(.+?)\s*\|\s*$", manifesto, re.MULTILINE
+        )
+        if not casamento or not re.fullmatch(padrao, casamento.group(1).strip()):
+            erros.append(
+                f"PROCEDENCIA.md: campo {campo!r} ausente ou fora da forma esperada"
+            )
+
+for erro in erros:
+    print(erro, file=sys.stderr)
+sys.exit(1 if erros else 0)
+PY
+	then
+		ok "forma, cobertura da virada de mês, guardas do cancelamento e bijeção por artefato"
+	else
+		falhar "os artefatos de contrato estão ausentes, sem forma ou fora de bijeção (ver acima)"
+	fi
+
+	fechar_caso "CT-433"
 }
 
 main() {
@@ -624,10 +996,11 @@ main() {
 	ct_011
 	ct_013_estatico
 	ct_014
+	ct_433
 
 	printf '\n'
 	if [[ "${falhas_totais}" -eq 0 ]]; then
-		printf 'verificar-golden: 4/4 casos aprovados (CT-010, CT-011, CT-013, CT-014)\n'
+		printf 'verificar-golden: 5/5 casos aprovados (CT-010, CT-011, CT-013, CT-014, CT-433)\n'
 		exit 0
 	fi
 	printf 'verificar-golden: %d falha(s) — REPROVADO\n' "${falhas_totais}" >&2

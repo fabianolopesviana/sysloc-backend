@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Captura a caracterização das seis regras de negócio legadas (TC-001).
+"""Captura a caracterização das regras de negócio legadas (TC-001 e F2/T1).
+
+Oito artefatos golden: os seis da captura original (TC-001) mais os dois de
+ativação e cancelamento de contrato, acrescentados pela T1 da fatia
+`contratos-de-locacao`.
 
 A captura roda **dentro do container `backend`** do Frappe, contra o site efêmero
 `caracterizacao.localhost` criado por `preparar-site-efemero.sh` (ADR-0006 — o
@@ -18,7 +22,7 @@ Ordem de execução obrigatória do fluxo completo:
     preparar-site-efemero.sh destruir
 
 Códigos de saída:
-    0  captura concluída, seis artefatos golden + manifesto gravados
+    0  captura concluída, oito artefatos golden + manifesto gravados
     1  falha de ambiente ou de execução
     2  gate de sanidade reprovado — nenhum arquivo de `golden/` é tocado
 """
@@ -152,6 +156,14 @@ SENTINELA_INICIO = "@@SENTINELA_INICIO@@"
 SENTINELA_FIM = "@@SENTINELA_FIM@@"
 MARCADOR_DATA_EXECUCAO = "<DATA_EXECUCAO>"
 MARCADOR_DATA_PDF = "<DATA_GERACAO_EXTENSO>"
+
+# Marcadores da fase de cancelamento. Os dois nomes são escritos SEM dígito de
+# propósito: a bijeção máscara <-> marcador do CT-014 varre `<[A-Z_]+>`, que não
+# casa algarismo. Um marcador como `<PDF_CONTRATO_BASE64>` escaparia da varredura
+# e viraria máscara órfã silenciosa — o defeito exato que aquela bijeção existe
+# para pegar.
+MARCADOR_PDF_CONTRATO = "<PDF_CONTRATO_CODIFICADO>"
+MARCADOR_ARQUIVO_PDF = "<ARQUIVO_PDF_PRIVADO>"
 
 # Sentinela gravada no campo agregado ANTES do save. Se o Server Script de
 # metragem não executar, o valor sobrevive e denuncia a regra inativa.
@@ -701,6 +713,578 @@ def capturar_atualizar_atrasos_cobrancas(hoje):
     }
 
 
+# --------------------------------------------------------------------------- #
+# Fases F e G — ativação e cancelamento de contrato
+#
+# ORDEM É DECISÃO, não arrumação: as duas fases rodam DEPOIS das três rotinas de
+# estado. `ativar_contrato` grava `status_contrato = "Ativo"` e a fase de
+# cancelamento cria cobranças `Pendente`/`Vencida` — que são exatamente os
+# conjuntos que `encerrar_contratos_vencidos`, `marcar_cobrancas_vencidas` e
+# `atualizar_atrasos_cobrancas` varrem. Antecipá-las mudaria o golden das três, e
+# esses seis artefatos são de fatia FECHADA.
+# --------------------------------------------------------------------------- #
+def mascarar_se_presente(valor, marcador):
+    """Campo volátil por construção: marcador quando há valor, `None` quando não há.
+
+    O que interessa ao oráculo é a PRESENÇA (o PDF continua anexado? foi trocado
+    pelo arquivo privado?), não o conteúdo — que é base64 de megabytes num caso e
+    caminho com identificador sorteado no outro, e faria o golden mudar a cada
+    captura.
+    """
+    return marcador if str(valor or "").strip() else None
+
+
+def executar_capturando_recusa(funcao, *args):
+    """Executa a regra e devolve a recusa como DADO, em vez de deixá-la escapar.
+
+    Metade do valor destes dois oráculos são os caminhos de recusa: a F3 precisa
+    reproduzir a condição, a mensagem e a ORDEM em que as guardas disparam. Uma
+    exceção que sobe abortaria a captura e não deixaria registro nenhum.
+    """
+    try:
+        return {"aceito": True, "retorno": funcao(*args)}
+    except Exception as excecao:
+        # `frappe.throw` empilha a mensagem no log de mensagens da sessão; sem a
+        # limpeza, a mensagem de um cenário reaparece no seguinte.
+        frappe.clear_messages()
+        return {
+            "aceito": False,
+            "excecao": type(excecao).__name__,
+            "mensagem": str(excecao),
+        }
+
+
+BASE_CONTRATO_ATIVACAO = {
+    "doctype": "Contrato",
+    "locador": "LOCADOR-CARACT",
+    "locatario": "LOCATARIO-CARACT",
+    "imovel": "IMOVEL-CARACT-ATV-01",
+    "data_inicio_locacao": "2027-01-15",
+    "prazo_meses": 12,
+    "valor_mensal": 1500.0,
+    "dia_vencimento": 10,
+    "status_contrato": "Rascunho",
+    "gerar_cobrancas_automaticamente": 0,
+}
+
+CAMPOS_LIDOS_NA_VALIDACAO = (
+    "data_inicio_locacao",
+    "prazo_meses",
+    "valor_mensal",
+    "dia_vencimento",
+    "imovel",
+    "locatario",
+)
+
+# As seis condições de entrada, uma a uma, mais os dois limites aceitos do dia de
+# vencimento e um cenário com DUAS violações — este último é o que revela a ORDEM
+# das guardas, que nenhum cenário de violação isolada consegue mostrar.
+CENARIOS_ATIVACAO_VALIDACAO = (
+    ("completo_valido", {}),
+    ("sem_data_inicio", {"data_inicio_locacao": None}),
+    ("prazo_zero", {"prazo_meses": 0}),
+    ("prazo_negativo", {"prazo_meses": -3}),
+    ("valor_mensal_zero", {"valor_mensal": 0.0}),
+    ("valor_mensal_negativo", {"valor_mensal": -100.0}),
+    ("dia_vencimento_zero", {"dia_vencimento": 0}),
+    ("dia_vencimento_limite_inferior", {"dia_vencimento": 1}),
+    ("dia_vencimento_limite_superior", {"dia_vencimento": 28}),
+    ("dia_vencimento_acima_do_teto", {"dia_vencimento": 29}),
+    ("sem_imovel", {"imovel": ""}),
+    ("sem_locatario", {"locatario": ""}),
+    ("prazo_zero_e_valor_zero", {"prazo_meses": 0, "valor_mensal": 0.0}),
+)
+
+# Cobertura da virada de mês — a RAZÃO INTEIRA de capturar em vez de ler.
+# `data_fim_locacao = add_days(add_months(inicio, prazo), -1)`, e `add_months`
+# mora na biblioteca do arcabouço, não no arquivo portado. Início em 29, 30 e 31
+# caindo em mês mais curto, com fevereiro bissexto (2028) e não-bissexto (2027);
+# os cenários de 2 e 3 meses discriminam "ajusta a cada mês" de "ajusta uma vez
+# só, no destino"; e o valor fracionário captura a multiplicação em ponto
+# flutuante do legado, que não arredonda.
+# (id, data_inicio_locacao, prazo_meses, valor_mensal)
+CENARIOS_ATIVACAO_DERIVACAO = (
+    ("controle_dia_seguro_doze_meses", "2027-01-15", 12, 1500.0),
+    ("dia_vinte_e_nove_para_fevereiro_nao_bissexto", "2027-01-29", 1, 1500.0),
+    ("dia_vinte_e_nove_para_fevereiro_bissexto", "2028-01-29", 1, 1500.0),
+    ("dia_trinta_para_fevereiro_nao_bissexto", "2027-01-30", 1, 1500.0),
+    ("dia_trinta_para_fevereiro_bissexto", "2028-01-30", 1, 1500.0),
+    ("dia_trinta_e_um_para_fevereiro_nao_bissexto", "2027-01-31", 1, 1500.0),
+    ("dia_trinta_e_um_para_fevereiro_bissexto", "2028-01-31", 1, 1500.0),
+    ("dia_trinta_e_um_dois_meses_atravessando_fevereiro", "2027-01-31", 2, 1500.0),
+    ("dia_vinte_e_nove_tres_meses_para_mes_de_trinta_dias", "2027-01-29", 3, 1500.0),
+    ("dia_trinta_tres_meses_para_mes_de_trinta_dias", "2027-01-30", 3, 1500.0),
+    ("dia_trinta_e_um_tres_meses_para_mes_de_trinta_dias", "2027-01-31", 3, 1500.0),
+    ("dia_trinta_e_um_um_mes_para_mes_de_trinta_dias", "2027-03-31", 1, 1500.0),
+    ("dia_trinta_e_um_doze_meses_sem_ajuste", "2027-01-31", 12, 1500.0),
+    ("dia_trinta_e_um_treze_meses_para_fevereiro_bissexto", "2027-01-31", 13, 1500.0),
+    ("dia_trinta_e_um_seis_meses_para_fevereiro_bissexto", "2027-08-31", 6, 1500.0),
+    ("dia_trinta_e_um_seis_meses_para_fevereiro_nao_bissexto", "2026-08-31", 6, 1500.0),
+    ("vinte_e_nove_de_fevereiro_bissexto_mais_doze_meses", "2028-02-29", 12, 1500.0),
+    ("valor_mensal_fracionario_tres_meses", "2027-01-15", 3, 1333.33),
+)
+
+# `montar_dados_cobrancas_contrato` avança o mês com `add_months(data_atual, 1)`
+# EM CADA VOLTA, e não `add_months(inicio, n)`. Começar no dia 31 mostra o ajuste
+# ACUMULANDO — insumo arquivado para a F3, que é quem implementa a montagem.
+# (id, data_inicio_locacao, prazo_meses, dia_vencimento, valor_mensal)
+CENARIOS_ATIVACAO_COBRANCAS = (
+    ("dia_seguro_tres_meses", "2027-01-15", 3, 10, 1500.0),
+    ("inicio_no_dia_trinta_e_um_quatro_meses", "2027-01-31", 4, 28, 1500.0),
+    ("inicio_no_dia_trinta_e_um_treze_meses", "2027-01-31", 13, 5, 1000.0),
+)
+
+# (id, imovel, contrato, contrato_ativo_previo, status_locacao_previo)
+CENARIOS_ATIVACAO_IMOVEL = (
+    ("imovel_livre", "IMOVEL-CARACT-ATV-01", "CTR-CARACT-ATV-01", "", "Disponível"),
+    (
+        "imovel_com_o_mesmo_contrato",
+        "IMOVEL-CARACT-ATV-02",
+        "CTR-CARACT-ATV-02",
+        "CTR-CARACT-ATV-02",
+        "Locado",
+    ),
+    (
+        "imovel_com_outro_contrato",
+        "IMOVEL-CARACT-ATV-03",
+        "CTR-CARACT-ATV-03",
+        "CTR-CARACT-ATV-OUTRO",
+        "Locado",
+    ),
+)
+
+
+def documento_de_ativacao(nome, sobrescritas):
+    """Documento EM MEMÓRIA, deliberadamente não inserido.
+
+    `validar_contrato_para_ativacao` e `montar_dados_cobrancas_contrato` só leem o
+    documento (`contrato.get(...)`, `contrato.name`) e não tocam o banco. Inserir
+    trinta contratos degenerados — sem data de início, sem locatário — só para
+    tornar a leitura possível acrescentaria o Server Script de PDF ao caminho e
+    poria estado sintético inválido no site sem que a regra capturada ganhasse
+    nada.
+    """
+    dados = dict(BASE_CONTRATO_ATIVACAO)
+    dados["name"] = nome
+    dados.update(sobrescritas)
+    return frappe.get_doc(dados)
+
+
+def capturar_ativacao_validacao():
+    from locacao_automation.contrato_ativacao.service import validar_contrato_para_ativacao
+
+    cenarios = []
+    for chave, sobrescritas in CENARIOS_ATIVACAO_VALIDACAO:
+        documento = documento_de_ativacao("CTR-CARACT-ATV-VALIDACAO", sobrescritas)
+        cenarios.append({
+            "id": chave,
+            "entrada": {campo: documento.get(campo) for campo in CAMPOS_LIDOS_NA_VALIDACAO},
+            "resultado": executar_capturando_recusa(
+                validar_contrato_para_ativacao, documento
+            ),
+        })
+    return cenarios
+
+
+def capturar_ativacao_derivacao():
+    from locacao_automation.contrato_ativacao.service import validar_contrato_para_ativacao
+
+    cenarios = []
+    for chave, inicio, prazo, valor_mensal in CENARIOS_ATIVACAO_DERIVACAO:
+        documento = documento_de_ativacao("CTR-CARACT-ATV-DERIVACAO", {
+            "data_inicio_locacao": inicio,
+            "prazo_meses": prazo,
+            "valor_mensal": valor_mensal,
+        })
+        cenarios.append({
+            "id": chave,
+            "entrada": {
+                "data_inicio_locacao": inicio,
+                "prazo_meses": prazo,
+                "valor_mensal": valor_mensal,
+            },
+            "resultado": executar_capturando_recusa(
+                validar_contrato_para_ativacao, documento
+            ),
+        })
+    return cenarios
+
+
+def capturar_ativacao_cobrancas():
+    from locacao_automation.contrato_ativacao.service import montar_dados_cobrancas_contrato
+
+    cenarios = []
+    for chave, inicio, prazo, dia_vencimento, valor_mensal in CENARIOS_ATIVACAO_COBRANCAS:
+        documento = documento_de_ativacao("CTR-CARACT-ATV-COBRANCAS", {
+            "data_inicio_locacao": inicio,
+            "prazo_meses": prazo,
+            "dia_vencimento": dia_vencimento,
+            "valor_mensal": valor_mensal,
+        })
+        cenarios.append({
+            "id": chave,
+            "entrada": {
+                "data_inicio_locacao": inicio,
+                "prazo_meses": prazo,
+                "dia_vencimento": dia_vencimento,
+                "valor_mensal": valor_mensal,
+            },
+            "resultado": executar_capturando_recusa(
+                montar_dados_cobrancas_contrato, documento
+            ),
+        })
+    return cenarios
+
+
+def capturar_ativacao_fluxo():
+    """`ativar_imovel_contrato` + `ativar_contrato` sobre documentos PERSISTIDOS.
+
+    Estes dois escrevem no banco (`db_set`), então aqui o documento em memória não
+    serve: o que se captura é justamente o efeito no imóvel e no contrato.
+    """
+    from locacao_automation.contrato_ativacao.service import (
+        ativar_contrato,
+        ativar_imovel_contrato,
+        validar_contrato_para_ativacao,
+    )
+
+    campos_imovel = ["status_locacao", "contrato_ativo"]
+    campos_contrato = [
+        "status_contrato", "data_inicio_locacao", "prazo_meses",
+        "valor_mensal", "data_fim_locacao", "valor_total_contrato",
+    ]
+
+    for indice, (_chave, imovel, contrato, ativo_previo, status_previo) in enumerate(
+        CENARIOS_ATIVACAO_IMOVEL, start=1
+    ):
+        inserir(
+            imovel_dict(imovel, "ATV-00" + str(indice),
+                        [{"nome_comodo": "Sala", "metragem": 28.0}],
+                        status=status_previo),
+            ignorar_obrigatorios=True,
+        )
+        inserir({
+            "doctype": "Contrato",
+            "name": contrato,
+            "imovel": imovel,
+            "locador": "LOCADOR-CARACT",
+            "locatario": "LOCATARIO-CARACT",
+            # Dia 31 de propósito: o fluxo persistido também exibe a virada de mês,
+            # e não só os cenários em memória.
+            "data_inicio_locacao": "2027-01-31",
+            "prazo_meses": 13,
+            "valor_mensal": 1750.0,
+            "dia_vencimento": 12,
+            "status_contrato": "Rascunho",
+            "gerar_cobrancas_automaticamente": 0,
+        }, ignorar_obrigatorios=True)
+        if ativo_previo:
+            # Escrita direta pela mesma razão da fase D: reabrir o `Imovel`
+            # reexecutaria a regra de metragem, que não é o objeto desta fase.
+            frappe.db.set_value("Imovel", imovel, "contrato_ativo", ativo_previo,
+                                update_modified=False)
+    frappe.db.commit()
+
+    cenarios = []
+    for chave, imovel, contrato, ativo_previo, status_previo in CENARIOS_ATIVACAO_IMOVEL:
+        documento = frappe.get_doc("Contrato", contrato)
+        resultado_imovel = executar_capturando_recusa(ativar_imovel_contrato, documento)
+
+        resultado_contrato = None
+        if resultado_imovel["aceito"]:
+            resultado_contrato = executar_capturando_recusa(
+                ativar_contrato, documento, validar_contrato_para_ativacao(documento)
+            )
+        frappe.db.commit()
+
+        cenarios.append({
+            "id": chave,
+            "entrada": {
+                "contrato": contrato,
+                "imovel": imovel,
+                "imovel_status_locacao": status_previo,
+                "imovel_contrato_ativo": ativo_previo,
+            },
+            "resultado_ativar_imovel_contrato": resultado_imovel,
+            "resultado_ativar_contrato": resultado_contrato,
+            "estado_resultante": {
+                "imovel": dict(
+                    frappe.db.get_value("Imovel", imovel, campos_imovel, as_dict=True),
+                    name=imovel,
+                ),
+                "contrato": dict(
+                    frappe.db.get_value("Contrato", contrato, campos_contrato, as_dict=True),
+                    name=contrato,
+                ),
+            },
+        })
+    return cenarios
+
+
+def capturar_contrato_ativacao():
+    """Agrega as quatro frentes da regra de ativação num artefato só.
+
+    A forma canônica dos golden — `entrada` / `retorno` / `estado_resultante` — é
+    preservada: `entrada` reúne os cenários de cada frente, `retorno` reúne o que
+    cada função devolveu (aceite ou recusa) e `estado_resultante` só existe para a
+    frente que de fato escreve no banco. As três primeiras frentes são funções
+    puras sobre o documento e não têm estado a registrar; dizer isso
+    explicitamente é o que impede a leitura de que o registro ficou faltando.
+    """
+    validacao = capturar_ativacao_validacao()
+    derivacao = capturar_ativacao_derivacao()
+    cobrancas = capturar_ativacao_cobrancas()
+    fluxo = capturar_ativacao_fluxo()
+
+    return {
+        "regra": "ativação de contrato",
+        "modulo": "locacao_automation.contrato_ativacao.service",
+        "funcoes": [
+            "validar_contrato_para_ativacao",
+            "ativar_imovel_contrato",
+            "ativar_contrato",
+            "montar_dados_cobrancas_contrato",
+        ],
+        "entrada": {
+            "validacao": [
+                {"id": item["id"], "contrato": item["entrada"]} for item in validacao
+            ],
+            "derivacao": [
+                {"id": item["id"], "contrato": item["entrada"]} for item in derivacao
+            ],
+            "cobrancas": [
+                {"id": item["id"], "contrato": item["entrada"]} for item in cobrancas
+            ],
+            "fluxo": [
+                {"id": item["id"], "contrato": item["entrada"]} for item in fluxo
+            ],
+        },
+        "retorno": {
+            "validacao": [
+                {"id": item["id"], "resultado": item["resultado"]} for item in validacao
+            ],
+            "derivacao": [
+                {"id": item["id"], "resultado": item["resultado"]} for item in derivacao
+            ],
+            "cobrancas": [
+                {"id": item["id"], "resultado": item["resultado"]} for item in cobrancas
+            ],
+            "fluxo": [
+                {
+                    "id": item["id"],
+                    "ativar_imovel_contrato": item["resultado_ativar_imovel_contrato"],
+                    "ativar_contrato": item["resultado_ativar_contrato"],
+                }
+                for item in fluxo
+            ],
+        },
+        "estado_resultante": {
+            "sem_efeito_no_banco": ["validacao", "derivacao", "cobrancas"],
+            "fluxo": [
+                {"id": item["id"], **item["estado_resultante"]} for item in fluxo
+            ],
+        },
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Fase G — cancelar_contrato()
+# --------------------------------------------------------------------------- #
+# (name, offset de vencimento, valor original, status inicial)
+#
+# `Paga` e `Cancelada` estão aqui para provar o filtro nos DOIS sentidos: sem
+# elas, "cancelou as duas canceláveis" seria indistinguível de "cancelou tudo".
+ENTRADA_CANCELAMENTO_COBRANCAS = (
+    ("COB-CARACT-CAN-01", -20, 1200.00, "Pendente"),
+    ("COB-CARACT-CAN-02", -50, 1300.00, "Vencida"),
+    ("COB-CARACT-CAN-03", 10, 1400.00, "Paga"),
+    ("COB-CARACT-CAN-04", 40, 1500.00, "Cancelada"),
+)
+
+CONTRATO_CANCELAMENTO = "CTR-CARACT-CAN-01"
+CONTRATO_CANCELAMENTO_SEM_PDF = "CTR-CARACT-CAN-SEM-PDF"
+CONTRATO_CANCELAMENTO_SEM_IMOVEL = "CTR-CARACT-CAN-SEM-IMOVEL"
+
+# (contrato, imóvel, identificador municipal). O identificador é escrito por
+# extenso em vez de derivado da posição na tupla: com índice, reordenar a lista
+# renomearia documentos sintéticos e o golden mudaria sem que regra alguma tivesse
+# mudado.
+ENTRADA_CANCELAMENTO_CONTRATOS = (
+    (CONTRATO_CANCELAMENTO, "IMOVEL-CARACT-CAN-01", "CAN-001"),
+    (CONTRATO_CANCELAMENTO_SEM_IMOVEL, "", ""),
+    (CONTRATO_CANCELAMENTO_SEM_PDF, "IMOVEL-CARACT-CAN-02", "CAN-002"),
+)
+
+CAMPOS_COBRANCA_CANCELAMENTO = ("status_cobranca", "data_vencimento",
+                                "valor_original", "boleto_gerado", "nosso_numero")
+
+CAMPOS_CONTRATO_CANCELAMENTO = ("status_contrato", "imovel", "pdf_contrato",
+                                "pdf_contrato_arquivo")
+
+
+def contrato_de_cancelamento(nome, imovel):
+    return {
+        "doctype": "Contrato",
+        "name": nome,
+        "imovel": imovel,
+        "locador": "LOCADOR-CARACT",
+        "locatario": "LOCATARIO-CARACT",
+        "data_inicio_locacao": "2027-01-15",
+        "prazo_meses": 12,
+        "data_fim_locacao": "2028-01-14",
+        "valor_mensal": 1200.0,
+        "valor_total_contrato": 14400.0,
+        "status_contrato": "Ativo",
+        "dia_vencimento": 10,
+        "gerar_cobrancas_automaticamente": 0,
+    }
+
+
+def estado_do_contrato_cancelamento(nome):
+    valores = frappe.db.get_value(
+        "Contrato", nome, list(CAMPOS_CONTRATO_CANCELAMENTO), as_dict=True
+    )
+    return {
+        "name": nome,
+        "status_contrato": valores["status_contrato"],
+        "imovel": valores["imovel"],
+        "pdf_contrato": mascarar_se_presente(valores["pdf_contrato"],
+                                             MARCADOR_PDF_CONTRATO),
+        "pdf_contrato_arquivo": mascarar_se_presente(valores["pdf_contrato_arquivo"],
+                                                     MARCADOR_ARQUIVO_PDF),
+    }
+
+
+def estado_do_imovel_cancelamento(nome):
+    return dict(
+        frappe.db.get_value("Imovel", nome, ["status_locacao", "contrato_ativo"],
+                            as_dict=True),
+        name=nome,
+    )
+
+
+def estado_da_cobranca_cancelamento(nome, hoje):
+    valores = frappe.db.get_value(
+        "Cobranca", nome, list(CAMPOS_COBRANCA_CANCELAMENTO), as_dict=True
+    )
+    return {
+        "name": nome,
+        "status_cobranca": valores["status_cobranca"],
+        "vencimento_offset_dias": offset_de(valores["data_vencimento"], hoje),
+        "valor_original": valores["valor_original"],
+        "boleto_gerado": valores["boleto_gerado"],
+        "nosso_numero": valores["nosso_numero"],
+    }
+
+
+def capturar_contrato_cancelamento(hoje):
+    from locacao_automation.contrato_cancelamento.service import cancelar_contrato
+
+    contratos = [contrato for contrato, _, _ in ENTRADA_CANCELAMENTO_CONTRATOS]
+    imoveis = [imovel for _, imovel, _ in ENTRADA_CANCELAMENTO_CONTRATOS if imovel]
+
+    for contrato, imovel, identificador in ENTRADA_CANCELAMENTO_CONTRATOS:
+        if imovel:
+            inserir(
+                imovel_dict(imovel, identificador,
+                            [{"nome_comodo": "Sala", "metragem": 22.0}],
+                            status="Locado"),
+                ignorar_obrigatorios=True,
+            )
+        inserir(contrato_de_cancelamento(contrato, imovel), ignorar_obrigatorios=True)
+        if imovel:
+            frappe.db.set_value("Imovel", imovel, "contrato_ativo", contrato,
+                                update_modified=False)
+
+    # Precondição do cenário `sem_pdf`: o Server Script "PDF contrato" anexa o
+    # documento no After Save de TODO contrato, então a ausência de PDF só existe
+    # se for produzida. Zerar os dois campos é montar a precondição pelo estado
+    # real do banco — nenhum parâmetro de simulação entra na regra.
+    frappe.db.set_value(
+        "Contrato", CONTRATO_CANCELAMENTO_SEM_PDF,
+        {"pdf_contrato": None, "pdf_contrato_arquivo": None},
+        update_modified=False,
+    )
+
+    # Precondição do cenário `sem_imovel`: a guarda de imóvel vem DEPOIS da guarda
+    # de PDF. Sem garantir o PDF, o cenário recusaria pela primeira guarda e a
+    # segunda ficaria sem oráculo — o defeito clássico de provar o que é fácil.
+    pdf_de_referencia = frappe.db.get_value("Contrato", CONTRATO_CANCELAMENTO,
+                                            "pdf_contrato")
+    if not pdf_de_referencia:
+        raise RuntimeError(
+            "Contrato " + CONTRATO_CANCELAMENTO + " salvo sem PDF — o Server "
+            "Script 'PDF contrato' não produziu o documento e os cenários de "
+            "cancelamento não teriam precondição."
+        )
+    frappe.db.set_value("Contrato", CONTRATO_CANCELAMENTO_SEM_IMOVEL,
+                        "pdf_contrato", pdf_de_referencia, update_modified=False)
+
+    for name, off_venc, valor, status in ENTRADA_CANCELAMENTO_COBRANCAS:
+        inserir(cobranca_dict(name, off_venc, valor, status,
+                              contrato=CONTRATO_CANCELAMENTO))
+    frappe.db.commit()
+
+    # A entrada é LIDA do banco, e não repetida a partir do que se pretendeu
+    # gravar: `boleto_gerado` e `nosso_numero` decidem se a baixa Sicoob é
+    # solicitada ou ignorada, e afirmá-los sem ler seria registrar a intenção no
+    # lugar do fato.
+    entrada_cobrancas = [
+        estado_da_cobranca_cancelamento(name, hoje)
+        for name, _, _, _ in ENTRADA_CANCELAMENTO_COBRANCAS
+    ]
+    entrada_contratos = [estado_do_contrato_cancelamento(nome) for nome in contratos]
+    entrada_imoveis = [estado_do_imovel_cancelamento(imovel) for imovel in imoveis]
+
+    # Recusas primeiro: cada uma é conferida com o estado ainda intacto, e a ordem
+    # das guardas fica registrada pelas mensagens.
+    recusas = [
+        {"id": "parametro_vazio", "argumento": "",
+         "resultado": executar_capturando_recusa(cancelar_contrato, "")},
+        {"id": "contrato_sem_pdf", "argumento": CONTRATO_CANCELAMENTO_SEM_PDF,
+         "resultado": executar_capturando_recusa(
+             cancelar_contrato, CONTRATO_CANCELAMENTO_SEM_PDF)},
+        {"id": "contrato_sem_imovel", "argumento": CONTRATO_CANCELAMENTO_SEM_IMOVEL,
+         "resultado": executar_capturando_recusa(
+             cancelar_contrato, CONTRATO_CANCELAMENTO_SEM_IMOVEL)},
+    ]
+    frappe.db.commit()
+
+    resultado = executar_capturando_recusa(cancelar_contrato, CONTRATO_CANCELAMENTO)
+    frappe.db.commit()
+
+    retorno = dict(resultado)
+    if retorno.get("aceito"):
+        corpo = dict(retorno["retorno"])
+        corpo["pdf_contrato_arquivo"] = mascarar_se_presente(
+            corpo.get("pdf_contrato_arquivo"), MARCADOR_ARQUIVO_PDF
+        )
+        corpo["pdf_contrato"] = mascarar_se_presente(
+            corpo.get("pdf_contrato"), MARCADOR_PDF_CONTRATO
+        )
+        retorno["retorno"] = corpo
+
+    return {
+        "regra": "cancelar_contrato",
+        "modulo": "locacao_automation.contrato_cancelamento.service",
+        "entrada": {
+            "contratos": entrada_contratos,
+            "imoveis": entrada_imoveis,
+            "cobrancas": entrada_cobrancas,
+        },
+        "recusas": recusas,
+        "retorno": retorno,
+        "estado_resultante": {
+            "contratos": [estado_do_contrato_cancelamento(nome) for nome in contratos],
+            "imoveis": [estado_do_imovel_cancelamento(imovel) for imovel in imoveis],
+            "cobrancas": [
+                estado_da_cobranca_cancelamento(name, hoje)
+                for name, _, _, _ in ENTRADA_CANCELAMENTO_COBRANCAS
+            ],
+        },
+    }
+
+
 def main():
     frappe.init(site=SITE)
     frappe.connect()
@@ -741,6 +1325,11 @@ def main():
     envelope["marcar_cobrancas_vencidas"] = capturar_marcar_cobrancas_vencidas(hoje)
     envelope["encerrar_contratos_vencidos"] = capturar_encerrar_contratos_vencidos(hoje)
     envelope["atualizar_atrasos_cobrancas"] = capturar_atualizar_atrasos_cobrancas(hoje)
+
+    # Depois das três rotinas de estado, e não antes — ver o cabeçalho das fases F
+    # e G. Inverter a ordem regride os seis artefatos da captura original.
+    envelope["contrato_ativacao"] = capturar_contrato_ativacao()
+    envelope["contrato_cancelamento"] = capturar_contrato_cancelamento(hoje)
 
     frappe.db.commit()
     frappe.destroy()
@@ -914,11 +1503,27 @@ do fluxo.
 |---|---|---|---|
 | `<DATA_EXECUCAO>` | `marcar-cobrancas-vencidas.json`, `encerrar-contratos-vencidos.json`, `atualizar-atrasos-cobrancas.json` | `retorno.data_execucao`; `estado_resultante.*.data_inicio_atraso`; `estado_resultante.*.data_ultima_atualizacao_atraso` | As três rotinas derivam de `nowdate()`. Gravar a data absoluta faria o golden expirar no dia seguinte; o marcador representa o offset zero — o próprio dia da execução. |
 | `<DATA_GERACAO_EXTENSO>` | `contrato-pdf.txt` | Data por extenso do fecho do contrato (`DD de MÊS de AAAA`), montada pelo Server Script com `nowdate()` | É o único campo do documento que muda a cada geração. Sem a máscara, a comparação textual acusaria diferença todo dia, onde não há diferença de comportamento. |
+| `<PDF_CONTRATO_CODIFICADO>` | `contrato-cancelamento.json` | `entrada.contratos[].pdf_contrato`; `estado_resultante.contratos[].pdf_contrato`; `retorno.retorno.pdf_contrato` | O campo guarda o documento inteiro codificado, com megabytes que mudam a cada geração. O que a regra observa é a PRESENÇA — é ela que libera ou bloqueia o cancelamento —, e é a presença que o marcador preserva; ausência continua gravada como `null`. |
+| `<ARQUIVO_PDF_PRIVADO>` | `contrato-cancelamento.json` | `entrada.contratos[].pdf_contrato_arquivo`; `estado_resultante.contratos[].pdf_contrato_arquivo`; `retorno.retorno.pdf_contrato_arquivo` | O caminho do anexo privado carrega identificador sorteado pelo arcabouço a cada gravação, e duas capturas nunca coincidiriam. A troca de `pdf_contrato` por `pdf_contrato_arquivo` é o efeito observável do cancelamento, e o par marcador/`null` a preserva. |
+
+Os dois marcadores acima são nomeados **sem algarismo** de propósito: a bijeção do
+`verificar-golden.sh` varre `<[A-Z_]+>`, que não casa dígito, e um nome como
+`<PDF_CONTRATO_BASE64>` escaparia da varredura — viraria máscara órfã justamente
+no verificador que existe para achar máscara órfã.
 
 Todas as demais datas dos golden das rotinas são gravadas como **offset inteiro
 de dias** relativo à data de captura (`vencimento_offset_dias`,
 `data_fim_locacao_offset_dias`), nunca como data absoluta. É o que permite à F5
-reconstruir o mesmo cenário em qualquer dia.
+reconstruir o mesmo cenário em qualquer dia. O mesmo vale para
+`contrato-cancelamento.json`, que não grava data absoluta nenhuma.
+
+**`contrato-ativacao.json` é a exceção declarada, e ela é o próprio objeto da
+captura.** Ali as datas são absolutas porque a derivação
+`data_fim_locacao = add_days(add_months(inicio, prazo), -1)` é função pura da data
+de início ESCOLHIDA no cenário, e não do relógio: gravar `2027-01-31 + 1 mês` como
+offset destruiria exatamente o fato capturado — o ajuste de `add_months` quando o
+dia de origem não existe no mês de destino. Nenhuma das datas daquele artefato
+deriva de `nowdate()`, então o relógio não o alcança e ele não expira.
 
 O texto do contrato é capturado como **texto extraído** do PDF, nunca como bytes:
 o binário carrega metadados de geração que variam a cada execução, e a comparação
@@ -949,6 +1554,26 @@ byte a byte acusaria diferença onde não há. Nenhum byte de PDF é versionado.
   `valor_multa = 7,77` e `valor_juros = 3,33` para que "a rotina não escreveu
   nada" seja uma afirmação verificável, e não a constatação de que os campos
   continuam zerados.
+- **Documento em memória nas frentes puras da ativação.**
+  `validar_contrato_para_ativacao` e `montar_dados_cobrancas_contrato` apenas leem
+  o documento e não tocam o banco. Os cenários dessas duas frentes usam um
+  `Contrato` montado em memória e **não inserido**: inserir trinta contratos
+  degenerados — sem data de início, sem locatário — acrescentaria o Server Script
+  de PDF ao caminho e deixaria estado inválido no site, sem que a regra capturada
+  ganhasse nada. As frentes que escrevem (`ativar_imovel_contrato`,
+  `ativar_contrato`, `cancelar_contrato`) usam documentos persistidos, e é delas
+  que sai o `estado_resultante`.
+- **Precondições do cancelamento montadas pelo estado, nunca por parâmetro.** O
+  Server Script "PDF contrato" anexa o documento no `After Save` de todo contrato,
+  de modo que a ausência de PDF só existe se for produzida: o cenário
+  `contrato_sem_pdf` tem os dois campos de PDF zerados por escrita direta. E como
+  a guarda de PDF vem ANTES da guarda de imóvel, o cenário `contrato_sem_imovel`
+  recebe o PDF do contrato completo — sem isso ele recusaria pela primeira guarda
+  e a segunda ficaria sem oráculo. Nenhuma bandeira de simulação foi acrescentada
+  à regra.
+- **Filtro de cobranças provado nos dois sentidos.** O contrato cancelado tem uma
+  cobrança `Pendente`, uma `Vencida`, uma `Paga` e uma já `Cancelada`. Sem as duas
+  últimas, "cancelou as canceláveis" seria indistinguível de "cancelou tudo".
 
 ## 4. Observações sobre o comportamento capturado
 
@@ -970,6 +1595,24 @@ defeitos**. Nenhum resultado foi corrigido, arredondado ou completado.
   de linearidade dos juros e de independência entre juros e multa.
 - **A régua de cobrança (`cobranca_automation`) não foi caracterizada.** Ela tem
   efeito colateral de envio de e-mail e ficou fora do escopo desta captura.
+- **`min(dia_vencimento, 28)` é inalcançável pelo caminho real.**
+  `montar_dados_cobrancas_contrato` chama `validar_contrato_para_ativacao` na
+  primeira linha, e essa validação recusa `dia_vencimento` fora de 1..28. O teto
+  do `min` nunca chega a agir sobre valor maior que 28. O golden registra os dois
+  fatos lado a lado — a recusa em `dia_vencimento_acima_do_teto` e a montagem com
+  `dia_vencimento = 28` — sem corrigir nem remover o `min`, que fica onde está.
+- **A ordem das guardas é dado, não detalhe.** Na ativação, o cenário
+  `prazo_zero_e_valor_zero` viola duas condições ao mesmo tempo e mostra qual
+  mensagem sai; no cancelamento, `contrato_sem_pdf` e `contrato_sem_imovel` são
+  capturados separadamente porque a guarda de PDF precede a de imóvel. Cenário com
+  violação isolada não consegue exibir precedência nenhuma.
+- **Cenário deliberadamente não coberto no cancelamento:** o ramo em que a baixa
+  Sicoob é `solicitada` ou devolve `erro`. Ele exige boleto emitido de verdade
+  (`boleto_gerado = 1` com `nosso_numero`), e alcançá-lo faria a captura abrir
+  conexão mTLS contra a instituição financeira a partir de um site sintético —
+  efeito externo e irreversível, fora do que a ADR-0006 admite. Todas as cobranças
+  do cenário nascem sem boleto, e o ramo capturado é o `ignoradas /
+  sem_boleto_sicoob`, que é o único alcançável sem tocar a rede.
 """
 
 
@@ -987,6 +1630,8 @@ def main() -> int:
     gravar_json("marcar-cobrancas-vencidas.json", envelope["marcar_cobrancas_vencidas"])
     gravar_json("encerrar-contratos-vencidos.json", envelope["encerrar_contratos_vencidos"])
     gravar_json("atualizar-atrasos-cobrancas.json", envelope["atualizar_atrasos_cobrancas"])
+    gravar_json("contrato-ativacao.json", envelope["contrato_ativacao"])
+    gravar_json("contrato-cancelamento.json", envelope["contrato_cancelamento"])
     gravar_json("calcular-mora.json", {
         "funcao": "_calcular_mora",
         "modulo": "locacao_automation.cobranca_atraso.service",

@@ -1,0 +1,1036 @@
+{
+  "entrada": {
+    "cobrancas": [
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-15",
+          "dia_vencimento": 10,
+          "prazo_meses": 3,
+          "valor_mensal": 1500.0
+        },
+        "id": "dia_seguro_tres_meses"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-31",
+          "dia_vencimento": 28,
+          "prazo_meses": 4,
+          "valor_mensal": 1500.0
+        },
+        "id": "inicio_no_dia_trinta_e_um_quatro_meses"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-31",
+          "dia_vencimento": 5,
+          "prazo_meses": 13,
+          "valor_mensal": 1000.0
+        },
+        "id": "inicio_no_dia_trinta_e_um_treze_meses"
+      }
+    ],
+    "derivacao": [
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-15",
+          "prazo_meses": 12,
+          "valor_mensal": 1500.0
+        },
+        "id": "controle_dia_seguro_doze_meses"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-29",
+          "prazo_meses": 1,
+          "valor_mensal": 1500.0
+        },
+        "id": "dia_vinte_e_nove_para_fevereiro_nao_bissexto"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2028-01-29",
+          "prazo_meses": 1,
+          "valor_mensal": 1500.0
+        },
+        "id": "dia_vinte_e_nove_para_fevereiro_bissexto"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-30",
+          "prazo_meses": 1,
+          "valor_mensal": 1500.0
+        },
+        "id": "dia_trinta_para_fevereiro_nao_bissexto"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2028-01-30",
+          "prazo_meses": 1,
+          "valor_mensal": 1500.0
+        },
+        "id": "dia_trinta_para_fevereiro_bissexto"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-31",
+          "prazo_meses": 1,
+          "valor_mensal": 1500.0
+        },
+        "id": "dia_trinta_e_um_para_fevereiro_nao_bissexto"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2028-01-31",
+          "prazo_meses": 1,
+          "valor_mensal": 1500.0
+        },
+        "id": "dia_trinta_e_um_para_fevereiro_bissexto"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-31",
+          "prazo_meses": 2,
+          "valor_mensal": 1500.0
+        },
+        "id": "dia_trinta_e_um_dois_meses_atravessando_fevereiro"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-29",
+          "prazo_meses": 3,
+          "valor_mensal": 1500.0
+        },
+        "id": "dia_vinte_e_nove_tres_meses_para_mes_de_trinta_dias"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-30",
+          "prazo_meses": 3,
+          "valor_mensal": 1500.0
+        },
+        "id": "dia_trinta_tres_meses_para_mes_de_trinta_dias"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-31",
+          "prazo_meses": 3,
+          "valor_mensal": 1500.0
+        },
+        "id": "dia_trinta_e_um_tres_meses_para_mes_de_trinta_dias"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-03-31",
+          "prazo_meses": 1,
+          "valor_mensal": 1500.0
+        },
+        "id": "dia_trinta_e_um_um_mes_para_mes_de_trinta_dias"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-31",
+          "prazo_meses": 12,
+          "valor_mensal": 1500.0
+        },
+        "id": "dia_trinta_e_um_doze_meses_sem_ajuste"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-31",
+          "prazo_meses": 13,
+          "valor_mensal": 1500.0
+        },
+        "id": "dia_trinta_e_um_treze_meses_para_fevereiro_bissexto"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-08-31",
+          "prazo_meses": 6,
+          "valor_mensal": 1500.0
+        },
+        "id": "dia_trinta_e_um_seis_meses_para_fevereiro_bissexto"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2026-08-31",
+          "prazo_meses": 6,
+          "valor_mensal": 1500.0
+        },
+        "id": "dia_trinta_e_um_seis_meses_para_fevereiro_nao_bissexto"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2028-02-29",
+          "prazo_meses": 12,
+          "valor_mensal": 1500.0
+        },
+        "id": "vinte_e_nove_de_fevereiro_bissexto_mais_doze_meses"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-15",
+          "prazo_meses": 3,
+          "valor_mensal": 1333.33
+        },
+        "id": "valor_mensal_fracionario_tres_meses"
+      }
+    ],
+    "fluxo": [
+      {
+        "contrato": {
+          "contrato": "CTR-CARACT-ATV-01",
+          "imovel": "IMOVEL-CARACT-ATV-01",
+          "imovel_contrato_ativo": "",
+          "imovel_status_locacao": "Disponível"
+        },
+        "id": "imovel_livre"
+      },
+      {
+        "contrato": {
+          "contrato": "CTR-CARACT-ATV-02",
+          "imovel": "IMOVEL-CARACT-ATV-02",
+          "imovel_contrato_ativo": "CTR-CARACT-ATV-02",
+          "imovel_status_locacao": "Locado"
+        },
+        "id": "imovel_com_o_mesmo_contrato"
+      },
+      {
+        "contrato": {
+          "contrato": "CTR-CARACT-ATV-03",
+          "imovel": "IMOVEL-CARACT-ATV-03",
+          "imovel_contrato_ativo": "CTR-CARACT-ATV-OUTRO",
+          "imovel_status_locacao": "Locado"
+        },
+        "id": "imovel_com_outro_contrato"
+      }
+    ],
+    "validacao": [
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-15",
+          "dia_vencimento": 10,
+          "imovel": "IMOVEL-CARACT-ATV-01",
+          "locatario": "LOCATARIO-CARACT",
+          "prazo_meses": 12,
+          "valor_mensal": 1500.0
+        },
+        "id": "completo_valido"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": null,
+          "dia_vencimento": 10,
+          "imovel": "IMOVEL-CARACT-ATV-01",
+          "locatario": "LOCATARIO-CARACT",
+          "prazo_meses": 12,
+          "valor_mensal": 1500.0
+        },
+        "id": "sem_data_inicio"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-15",
+          "dia_vencimento": 10,
+          "imovel": "IMOVEL-CARACT-ATV-01",
+          "locatario": "LOCATARIO-CARACT",
+          "prazo_meses": 0,
+          "valor_mensal": 1500.0
+        },
+        "id": "prazo_zero"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-15",
+          "dia_vencimento": 10,
+          "imovel": "IMOVEL-CARACT-ATV-01",
+          "locatario": "LOCATARIO-CARACT",
+          "prazo_meses": -3,
+          "valor_mensal": 1500.0
+        },
+        "id": "prazo_negativo"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-15",
+          "dia_vencimento": 10,
+          "imovel": "IMOVEL-CARACT-ATV-01",
+          "locatario": "LOCATARIO-CARACT",
+          "prazo_meses": 12,
+          "valor_mensal": 0.0
+        },
+        "id": "valor_mensal_zero"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-15",
+          "dia_vencimento": 10,
+          "imovel": "IMOVEL-CARACT-ATV-01",
+          "locatario": "LOCATARIO-CARACT",
+          "prazo_meses": 12,
+          "valor_mensal": -100.0
+        },
+        "id": "valor_mensal_negativo"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-15",
+          "dia_vencimento": 0,
+          "imovel": "IMOVEL-CARACT-ATV-01",
+          "locatario": "LOCATARIO-CARACT",
+          "prazo_meses": 12,
+          "valor_mensal": 1500.0
+        },
+        "id": "dia_vencimento_zero"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-15",
+          "dia_vencimento": 1,
+          "imovel": "IMOVEL-CARACT-ATV-01",
+          "locatario": "LOCATARIO-CARACT",
+          "prazo_meses": 12,
+          "valor_mensal": 1500.0
+        },
+        "id": "dia_vencimento_limite_inferior"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-15",
+          "dia_vencimento": 28,
+          "imovel": "IMOVEL-CARACT-ATV-01",
+          "locatario": "LOCATARIO-CARACT",
+          "prazo_meses": 12,
+          "valor_mensal": 1500.0
+        },
+        "id": "dia_vencimento_limite_superior"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-15",
+          "dia_vencimento": 29,
+          "imovel": "IMOVEL-CARACT-ATV-01",
+          "locatario": "LOCATARIO-CARACT",
+          "prazo_meses": 12,
+          "valor_mensal": 1500.0
+        },
+        "id": "dia_vencimento_acima_do_teto"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-15",
+          "dia_vencimento": 10,
+          "imovel": "",
+          "locatario": "LOCATARIO-CARACT",
+          "prazo_meses": 12,
+          "valor_mensal": 1500.0
+        },
+        "id": "sem_imovel"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-15",
+          "dia_vencimento": 10,
+          "imovel": "IMOVEL-CARACT-ATV-01",
+          "locatario": "",
+          "prazo_meses": 12,
+          "valor_mensal": 1500.0
+        },
+        "id": "sem_locatario"
+      },
+      {
+        "contrato": {
+          "data_inicio_locacao": "2027-01-15",
+          "dia_vencimento": 10,
+          "imovel": "IMOVEL-CARACT-ATV-01",
+          "locatario": "LOCATARIO-CARACT",
+          "prazo_meses": 0,
+          "valor_mensal": 0.0
+        },
+        "id": "prazo_zero_e_valor_zero"
+      }
+    ]
+  },
+  "estado_resultante": {
+    "fluxo": [
+      {
+        "contrato": {
+          "data_fim_locacao": "2028-02-28",
+          "data_inicio_locacao": "2027-01-31",
+          "name": "CTR-CARACT-ATV-01",
+          "prazo_meses": 13,
+          "status_contrato": "Ativo",
+          "valor_mensal": 1750.0,
+          "valor_total_contrato": 22750.0
+        },
+        "id": "imovel_livre",
+        "imovel": {
+          "contrato_ativo": "CTR-CARACT-ATV-01",
+          "name": "IMOVEL-CARACT-ATV-01",
+          "status_locacao": "Locado"
+        }
+      },
+      {
+        "contrato": {
+          "data_fim_locacao": "2028-02-28",
+          "data_inicio_locacao": "2027-01-31",
+          "name": "CTR-CARACT-ATV-02",
+          "prazo_meses": 13,
+          "status_contrato": "Ativo",
+          "valor_mensal": 1750.0,
+          "valor_total_contrato": 22750.0
+        },
+        "id": "imovel_com_o_mesmo_contrato",
+        "imovel": {
+          "contrato_ativo": "CTR-CARACT-ATV-02",
+          "name": "IMOVEL-CARACT-ATV-02",
+          "status_locacao": "Locado"
+        }
+      },
+      {
+        "contrato": {
+          "data_fim_locacao": null,
+          "data_inicio_locacao": "2027-01-31",
+          "name": "CTR-CARACT-ATV-03",
+          "prazo_meses": 13,
+          "status_contrato": "Rascunho",
+          "valor_mensal": 1750.0,
+          "valor_total_contrato": 0.0
+        },
+        "id": "imovel_com_outro_contrato",
+        "imovel": {
+          "contrato_ativo": "CTR-CARACT-ATV-OUTRO",
+          "name": "IMOVEL-CARACT-ATV-03",
+          "status_locacao": "Locado"
+        }
+      }
+    ],
+    "sem_efeito_no_banco": [
+      "validacao",
+      "derivacao",
+      "cobrancas"
+    ]
+  },
+  "funcoes": [
+    "validar_contrato_para_ativacao",
+    "ativar_imovel_contrato",
+    "ativar_contrato",
+    "montar_dados_cobrancas_contrato"
+  ],
+  "modulo": "locacao_automation.contrato_ativacao.service",
+  "regra": "ativação de contrato",
+  "retorno": {
+    "cobrancas": [
+      {
+        "id": "dia_seguro_tres_meses",
+        "resultado": {
+          "aceito": true,
+          "retorno": [
+            {
+              "competencia": "2027-01-01",
+              "contrato": "CTR-CARACT-ATV-COBRANCAS",
+              "data_vencimento": "2027-01-10",
+              "doctype": "Cobranca",
+              "locatario": "LOCATARIO-CARACT",
+              "pagamento_confirmado": 0,
+              "referencia": "15/01/2027 à 14/02/2027",
+              "valor_juros": 0,
+              "valor_multa": 0,
+              "valor_original": 1500.0,
+              "valor_total": 1500.0
+            },
+            {
+              "competencia": "2027-02-01",
+              "contrato": "CTR-CARACT-ATV-COBRANCAS",
+              "data_vencimento": "2027-02-10",
+              "doctype": "Cobranca",
+              "locatario": "LOCATARIO-CARACT",
+              "pagamento_confirmado": 0,
+              "referencia": "15/02/2027 à 14/03/2027",
+              "valor_juros": 0,
+              "valor_multa": 0,
+              "valor_original": 1500.0,
+              "valor_total": 1500.0
+            },
+            {
+              "competencia": "2027-03-01",
+              "contrato": "CTR-CARACT-ATV-COBRANCAS",
+              "data_vencimento": "2027-03-10",
+              "doctype": "Cobranca",
+              "locatario": "LOCATARIO-CARACT",
+              "pagamento_confirmado": 0,
+              "referencia": "15/03/2027 à 14/04/2027",
+              "valor_juros": 0,
+              "valor_multa": 0,
+              "valor_original": 1500.0,
+              "valor_total": 1500.0
+            }
+          ]
+        }
+      },
+      {
+        "id": "inicio_no_dia_trinta_e_um_quatro_meses",
+        "resultado": {
+          "aceito": true,
+          "retorno": [
+            {
+              "competencia": "2027-01-01",
+              "contrato": "CTR-CARACT-ATV-COBRANCAS",
+              "data_vencimento": "2027-01-28",
+              "doctype": "Cobranca",
+              "locatario": "LOCATARIO-CARACT",
+              "pagamento_confirmado": 0,
+              "referencia": "31/01/2027 à 27/02/2027",
+              "valor_juros": 0,
+              "valor_multa": 0,
+              "valor_original": 1500.0,
+              "valor_total": 1500.0
+            },
+            {
+              "competencia": "2027-02-01",
+              "contrato": "CTR-CARACT-ATV-COBRANCAS",
+              "data_vencimento": "2027-02-28",
+              "doctype": "Cobranca",
+              "locatario": "LOCATARIO-CARACT",
+              "pagamento_confirmado": 0,
+              "referencia": "28/02/2027 à 27/03/2027",
+              "valor_juros": 0,
+              "valor_multa": 0,
+              "valor_original": 1500.0,
+              "valor_total": 1500.0
+            },
+            {
+              "competencia": "2027-03-01",
+              "contrato": "CTR-CARACT-ATV-COBRANCAS",
+              "data_vencimento": "2027-03-28",
+              "doctype": "Cobranca",
+              "locatario": "LOCATARIO-CARACT",
+              "pagamento_confirmado": 0,
+              "referencia": "28/03/2027 à 27/04/2027",
+              "valor_juros": 0,
+              "valor_multa": 0,
+              "valor_original": 1500.0,
+              "valor_total": 1500.0
+            },
+            {
+              "competencia": "2027-04-01",
+              "contrato": "CTR-CARACT-ATV-COBRANCAS",
+              "data_vencimento": "2027-04-28",
+              "doctype": "Cobranca",
+              "locatario": "LOCATARIO-CARACT",
+              "pagamento_confirmado": 0,
+              "referencia": "28/04/2027 à 27/05/2027",
+              "valor_juros": 0,
+              "valor_multa": 0,
+              "valor_original": 1500.0,
+              "valor_total": 1500.0
+            }
+          ]
+        }
+      },
+      {
+        "id": "inicio_no_dia_trinta_e_um_treze_meses",
+        "resultado": {
+          "aceito": true,
+          "retorno": [
+            {
+              "competencia": "2027-01-01",
+              "contrato": "CTR-CARACT-ATV-COBRANCAS",
+              "data_vencimento": "2027-01-05",
+              "doctype": "Cobranca",
+              "locatario": "LOCATARIO-CARACT",
+              "pagamento_confirmado": 0,
+              "referencia": "31/01/2027 à 27/02/2027",
+              "valor_juros": 0,
+              "valor_multa": 0,
+              "valor_original": 1000.0,
+              "valor_total": 1000.0
+            },
+            {
+              "competencia": "2027-02-01",
+              "contrato": "CTR-CARACT-ATV-COBRANCAS",
+              "data_vencimento": "2027-02-05",
+              "doctype": "Cobranca",
+              "locatario": "LOCATARIO-CARACT",
+              "pagamento_confirmado": 0,
+              "referencia": "28/02/2027 à 27/03/2027",
+              "valor_juros": 0,
+              "valor_multa": 0,
+              "valor_original": 1000.0,
+              "valor_total": 1000.0
+            },
+            {
+              "competencia": "2027-03-01",
+              "contrato": "CTR-CARACT-ATV-COBRANCAS",
+              "data_vencimento": "2027-03-05",
+              "doctype": "Cobranca",
+              "locatario": "LOCATARIO-CARACT",
+              "pagamento_confirmado": 0,
+              "referencia": "28/03/2027 à 27/04/2027",
+              "valor_juros": 0,
+              "valor_multa": 0,
+              "valor_original": 1000.0,
+              "valor_total": 1000.0
+            },
+            {
+              "competencia": "2027-04-01",
+              "contrato": "CTR-CARACT-ATV-COBRANCAS",
+              "data_vencimento": "2027-04-05",
+              "doctype": "Cobranca",
+              "locatario": "LOCATARIO-CARACT",
+              "pagamento_confirmado": 0,
+              "referencia": "28/04/2027 à 27/05/2027",
+              "valor_juros": 0,
+              "valor_multa": 0,
+              "valor_original": 1000.0,
+              "valor_total": 1000.0
+            },
+            {
+              "competencia": "2027-05-01",
+              "contrato": "CTR-CARACT-ATV-COBRANCAS",
+              "data_vencimento": "2027-05-05",
+              "doctype": "Cobranca",
+              "locatario": "LOCATARIO-CARACT",
+              "pagamento_confirmado": 0,
+              "referencia": "28/05/2027 à 27/06/2027",
+              "valor_juros": 0,
+              "valor_multa": 0,
+              "valor_original": 1000.0,
+              "valor_total": 1000.0
+            },
+            {
+              "competencia": "2027-06-01",
+              "contrato": "CTR-CARACT-ATV-COBRANCAS",
+              "data_vencimento": "2027-06-05",
+              "doctype": "Cobranca",
+              "locatario": "LOCATARIO-CARACT",
+              "pagamento_confirmado": 0,
+              "referencia": "28/06/2027 à 27/07/2027",
+              "valor_juros": 0,
+              "valor_multa": 0,
+              "valor_original": 1000.0,
+              "valor_total": 1000.0
+            },
+            {
+              "competencia": "2027-07-01",
+              "contrato": "CTR-CARACT-ATV-COBRANCAS",
+              "data_vencimento": "2027-07-05",
+              "doctype": "Cobranca",
+              "locatario": "LOCATARIO-CARACT",
+              "pagamento_confirmado": 0,
+              "referencia": "28/07/2027 à 27/08/2027",
+              "valor_juros": 0,
+              "valor_multa": 0,
+              "valor_original": 1000.0,
+              "valor_total": 1000.0
+            },
+            {
+              "competencia": "2027-08-01",
+              "contrato": "CTR-CARACT-ATV-COBRANCAS",
+              "data_vencimento": "2027-08-05",
+              "doctype": "Cobranca",
+              "locatario": "LOCATARIO-CARACT",
+              "pagamento_confirmado": 0,
+              "referencia": "28/08/2027 à 27/09/2027",
+              "valor_juros": 0,
+              "valor_multa": 0,
+              "valor_original": 1000.0,
+              "valor_total": 1000.0
+            },
+            {
+              "competencia": "2027-09-01",
+              "contrato": "CTR-CARACT-ATV-COBRANCAS",
+              "data_vencimento": "2027-09-05",
+              "doctype": "Cobranca",
+              "locatario": "LOCATARIO-CARACT",
+              "pagamento_confirmado": 0,
+              "referencia": "28/09/2027 à 27/10/2027",
+              "valor_juros": 0,
+              "valor_multa": 0,
+              "valor_original": 1000.0,
+              "valor_total": 1000.0
+            },
+            {
+              "competencia": "2027-10-01",
+              "contrato": "CTR-CARACT-ATV-COBRANCAS",
+              "data_vencimento": "2027-10-05",
+              "doctype": "Cobranca",
+              "locatario": "LOCATARIO-CARACT",
+              "pagamento_confirmado": 0,
+              "referencia": "28/10/2027 à 27/11/2027",
+              "valor_juros": 0,
+              "valor_multa": 0,
+              "valor_original": 1000.0,
+              "valor_total": 1000.0
+            },
+            {
+              "competencia": "2027-11-01",
+              "contrato": "CTR-CARACT-ATV-COBRANCAS",
+              "data_vencimento": "2027-11-05",
+              "doctype": "Cobranca",
+              "locatario": "LOCATARIO-CARACT",
+              "pagamento_confirmado": 0,
+              "referencia": "28/11/2027 à 27/12/2027",
+              "valor_juros": 0,
+              "valor_multa": 0,
+              "valor_original": 1000.0,
+              "valor_total": 1000.0
+            },
+            {
+              "competencia": "2027-12-01",
+              "contrato": "CTR-CARACT-ATV-COBRANCAS",
+              "data_vencimento": "2027-12-05",
+              "doctype": "Cobranca",
+              "locatario": "LOCATARIO-CARACT",
+              "pagamento_confirmado": 0,
+              "referencia": "28/12/2027 à 27/01/2028",
+              "valor_juros": 0,
+              "valor_multa": 0,
+              "valor_original": 1000.0,
+              "valor_total": 1000.0
+            },
+            {
+              "competencia": "2028-01-01",
+              "contrato": "CTR-CARACT-ATV-COBRANCAS",
+              "data_vencimento": "2028-01-05",
+              "doctype": "Cobranca",
+              "locatario": "LOCATARIO-CARACT",
+              "pagamento_confirmado": 0,
+              "referencia": "28/01/2028 à 27/02/2028",
+              "valor_juros": 0,
+              "valor_multa": 0,
+              "valor_original": 1000.0,
+              "valor_total": 1000.0
+            }
+          ]
+        }
+      }
+    ],
+    "derivacao": [
+      {
+        "id": "controle_dia_seguro_doze_meses",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2028-01-14",
+            "valor_total_contrato": 18000.0
+          }
+        }
+      },
+      {
+        "id": "dia_vinte_e_nove_para_fevereiro_nao_bissexto",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2027-02-27",
+            "valor_total_contrato": 1500.0
+          }
+        }
+      },
+      {
+        "id": "dia_vinte_e_nove_para_fevereiro_bissexto",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2028-02-28",
+            "valor_total_contrato": 1500.0
+          }
+        }
+      },
+      {
+        "id": "dia_trinta_para_fevereiro_nao_bissexto",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2027-02-27",
+            "valor_total_contrato": 1500.0
+          }
+        }
+      },
+      {
+        "id": "dia_trinta_para_fevereiro_bissexto",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2028-02-28",
+            "valor_total_contrato": 1500.0
+          }
+        }
+      },
+      {
+        "id": "dia_trinta_e_um_para_fevereiro_nao_bissexto",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2027-02-27",
+            "valor_total_contrato": 1500.0
+          }
+        }
+      },
+      {
+        "id": "dia_trinta_e_um_para_fevereiro_bissexto",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2028-02-28",
+            "valor_total_contrato": 1500.0
+          }
+        }
+      },
+      {
+        "id": "dia_trinta_e_um_dois_meses_atravessando_fevereiro",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2027-03-30",
+            "valor_total_contrato": 3000.0
+          }
+        }
+      },
+      {
+        "id": "dia_vinte_e_nove_tres_meses_para_mes_de_trinta_dias",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2027-04-28",
+            "valor_total_contrato": 4500.0
+          }
+        }
+      },
+      {
+        "id": "dia_trinta_tres_meses_para_mes_de_trinta_dias",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2027-04-29",
+            "valor_total_contrato": 4500.0
+          }
+        }
+      },
+      {
+        "id": "dia_trinta_e_um_tres_meses_para_mes_de_trinta_dias",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2027-04-29",
+            "valor_total_contrato": 4500.0
+          }
+        }
+      },
+      {
+        "id": "dia_trinta_e_um_um_mes_para_mes_de_trinta_dias",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2027-04-29",
+            "valor_total_contrato": 1500.0
+          }
+        }
+      },
+      {
+        "id": "dia_trinta_e_um_doze_meses_sem_ajuste",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2028-01-30",
+            "valor_total_contrato": 18000.0
+          }
+        }
+      },
+      {
+        "id": "dia_trinta_e_um_treze_meses_para_fevereiro_bissexto",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2028-02-28",
+            "valor_total_contrato": 19500.0
+          }
+        }
+      },
+      {
+        "id": "dia_trinta_e_um_seis_meses_para_fevereiro_bissexto",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2028-02-28",
+            "valor_total_contrato": 9000.0
+          }
+        }
+      },
+      {
+        "id": "dia_trinta_e_um_seis_meses_para_fevereiro_nao_bissexto",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2027-02-27",
+            "valor_total_contrato": 9000.0
+          }
+        }
+      },
+      {
+        "id": "vinte_e_nove_de_fevereiro_bissexto_mais_doze_meses",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2029-02-27",
+            "valor_total_contrato": 18000.0
+          }
+        }
+      },
+      {
+        "id": "valor_mensal_fracionario_tres_meses",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2027-04-14",
+            "valor_total_contrato": 3999.99
+          }
+        }
+      }
+    ],
+    "fluxo": [
+      {
+        "ativar_contrato": {
+          "aceito": true,
+          "retorno": "CTR-CARACT-ATV-01"
+        },
+        "ativar_imovel_contrato": {
+          "aceito": true,
+          "retorno": "IMOVEL-CARACT-ATV-01"
+        },
+        "id": "imovel_livre"
+      },
+      {
+        "ativar_contrato": {
+          "aceito": true,
+          "retorno": "CTR-CARACT-ATV-02"
+        },
+        "ativar_imovel_contrato": {
+          "aceito": true,
+          "retorno": "IMOVEL-CARACT-ATV-02"
+        },
+        "id": "imovel_com_o_mesmo_contrato"
+      },
+      {
+        "ativar_contrato": null,
+        "ativar_imovel_contrato": {
+          "aceito": false,
+          "excecao": "ValidationError",
+          "mensagem": "O imóvel IMOVEL-CARACT-ATV-03 já possui contrato ativo (CTR-CARACT-ATV-OUTRO)."
+        },
+        "id": "imovel_com_outro_contrato"
+      }
+    ],
+    "validacao": [
+      {
+        "id": "completo_valido",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2028-01-14",
+            "valor_total_contrato": 18000.0
+          }
+        }
+      },
+      {
+        "id": "sem_data_inicio",
+        "resultado": {
+          "aceito": false,
+          "excecao": "ValidationError",
+          "mensagem": "Data de início da locação é obrigatória."
+        }
+      },
+      {
+        "id": "prazo_zero",
+        "resultado": {
+          "aceito": false,
+          "excecao": "ValidationError",
+          "mensagem": "Prazo da locação deve ser maior que zero."
+        }
+      },
+      {
+        "id": "prazo_negativo",
+        "resultado": {
+          "aceito": false,
+          "excecao": "ValidationError",
+          "mensagem": "Prazo da locação deve ser maior que zero."
+        }
+      },
+      {
+        "id": "valor_mensal_zero",
+        "resultado": {
+          "aceito": false,
+          "excecao": "ValidationError",
+          "mensagem": "Valor mensal inválido."
+        }
+      },
+      {
+        "id": "valor_mensal_negativo",
+        "resultado": {
+          "aceito": false,
+          "excecao": "ValidationError",
+          "mensagem": "Valor mensal inválido."
+        }
+      },
+      {
+        "id": "dia_vencimento_zero",
+        "resultado": {
+          "aceito": false,
+          "excecao": "ValidationError",
+          "mensagem": "Dia de vencimento deve estar entre 1 e 28."
+        }
+      },
+      {
+        "id": "dia_vencimento_limite_inferior",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2028-01-14",
+            "valor_total_contrato": 18000.0
+          }
+        }
+      },
+      {
+        "id": "dia_vencimento_limite_superior",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "data_fim_locacao": "2028-01-14",
+            "valor_total_contrato": 18000.0
+          }
+        }
+      },
+      {
+        "id": "dia_vencimento_acima_do_teto",
+        "resultado": {
+          "aceito": false,
+          "excecao": "ValidationError",
+          "mensagem": "Dia de vencimento deve estar entre 1 e 28."
+        }
+      },
+      {
+        "id": "sem_imovel",
+        "resultado": {
+          "aceito": false,
+          "excecao": "ValidationError",
+          "mensagem": "Contrato sem imóvel vinculado."
+        }
+      },
+      {
+        "id": "sem_locatario",
+        "resultado": {
+          "aceito": false,
+          "excecao": "ValidationError",
+          "mensagem": "Contrato sem locatário vinculado."
+        }
+      },
+      {
+        "id": "prazo_zero_e_valor_zero",
+        "resultado": {
+          "aceito": false,
+          "excecao": "ValidationError",
+          "mensagem": "Prazo da locação deve ser maior que zero."
+        }
+      }
+    ]
+  }
+}

@@ -150,11 +150,27 @@ sha_dos_golden() {
 	(cd "${DIR_GOLDEN}" && sha256sum ./* | sort)
 }
 
-# Os 6 artefatos de caracterização, sem o manifesto. O PROCEDENCIA.md registra a
+# Os artefatos de caracterização, sem o manifesto. O PROCEDENCIA.md registra a
 # data e a hora da captura e, por contrato, é o único arquivo autorizado a diferir
 # entre duas execuções (CT-004).
-sha_dos_seis_golden() {
-	(cd "${DIR_GOLDEN}" && sha256sum ./*.json ./*.txt | sort)
+#
+# Fonte única do conjunto E da contagem: enquanto os nomes eram literais repetidos
+# em três casos e o número era escrito à mão, acrescentar um artefato exigia
+# lembrar de todos eles — e esquecer um deixava o artefato novo sem conferência
+# de determinismo, que é a propriedade mais cara de recuperar depois.
+GOLDEN_DE_CARACTERIZACAO=(
+	"atualizar-atrasos-cobrancas.json"
+	"calcular-mora.json"
+	"contrato-ativacao.json"
+	"contrato-cancelamento.json"
+	"contrato-pdf.txt"
+	"encerrar-contratos-vencidos.json"
+	"marcar-cobrancas-vencidas.json"
+	"metragem.json"
+)
+
+sha_dos_golden_de_caracterizacao() {
+	(cd "${DIR_GOLDEN}" && sha256sum "${GOLDEN_DE_CARACTERIZACAO[@]}" | sort)
 }
 
 estado_git_dos_golden() {
@@ -558,14 +574,102 @@ for resultado in [r for r in resultados if r.get("acao") == "atualizada"]:
             f"como {MARCADOR}, está {por_nome[nome]['data_ultima_atualizacao_atraso']!r}"
         )
 
+# ---- ativação e cancelamento de contrato ----
+# Entram aqui pela mesma razão dos três de cima: sem conferir o estado resultante
+# contra o banco, um golden inventado — ou capturado de um caminho que não chegou
+# a executar — passaria despercebido, e o oráculo da F3 seria ficção.
+
+
+def data(valor):
+    """Só a parte de calendário: golden e dump serializam a data por caminhos
+    diferentes, e um deles pode trazer a hora zerada junto. O que se compara é o
+    dia, não o formato de serialização."""
+    return str(valor or "")[:10]
+
+
+def conferir_imovel(rotulo, item):
+    real = estado["imoveis"].get(item["name"])
+    if real is None:
+        erros.append(f"{rotulo}: imóvel {item['name']} ausente do banco")
+        return
+    if real["status_locacao"] != item["status_locacao"]:
+        erros.append(
+            f"{rotulo}: {item['name']}.status_locacao golden {item['status_locacao']!r} "
+            f"!= banco {real['status_locacao']!r}"
+        )
+    if (real["contrato_ativo"] or "") != (item["contrato_ativo"] or ""):
+        erros.append(
+            f"{rotulo}: {item['name']}.contrato_ativo golden {item['contrato_ativo']!r} "
+            f"!= banco {real['contrato_ativo']!r}"
+        )
+
+
+def conferir_contrato(rotulo, item, com_data_fim=False):
+    real = estado["contratos"].get(item["name"])
+    if real is None:
+        erros.append(f"{rotulo}: contrato {item['name']} ausente do banco")
+        return
+    if real["status_contrato"] != item["status_contrato"]:
+        erros.append(
+            f"{rotulo}: {item['name']}.status_contrato golden {item['status_contrato']!r} "
+            f"!= banco {real['status_contrato']!r}"
+        )
+    if com_data_fim and data(real["data_fim_locacao"]) != data(item.get("data_fim_locacao")):
+        erros.append(
+            f"{rotulo}: {item['name']}.data_fim_locacao golden "
+            f"{data(item.get('data_fim_locacao'))!r} != banco {data(real['data_fim_locacao'])!r}"
+        )
+
+
+ativacao = json.load(open(golden_dir / "contrato-ativacao.json", encoding="utf-8"))
+fluxo = ativacao["estado_resultante"]["fluxo"]
+if not fluxo:
+    erros.append("ativação: nenhum cenário de fluxo persistido no golden")
+for item in fluxo:
+    conferir_imovel("ativação", item["imovel"])
+    conferir_contrato("ativação", item["contrato"], com_data_fim=True)
+
+# A guarda de imóvel já ocupado tem de ter recusado: se ela tivesse passado, o
+# imóvel apareceria apontando para o contrato novo, e o efeito seria silencioso.
+por_cenario = {item["id"]: item for item in fluxo}
+ocupado = por_cenario.get("imovel_com_outro_contrato")
+if ocupado is None:
+    erros.append("ativação: cenário 'imovel_com_outro_contrato' ausente do golden")
+else:
+    retorno_ocupado = next(
+        (r for r in ativacao["retorno"]["fluxo"] if r["id"] == "imovel_com_outro_contrato"),
+        {},
+    )
+    if retorno_ocupado.get("ativar_imovel_contrato", {}).get("aceito"):
+        erros.append("ativação: imóvel já ocupado foi aceito por ativar_imovel_contrato")
+    if ocupado["contrato"]["status_contrato"] == "Ativo":
+        erros.append(
+            "ativação: o contrato do imóvel ocupado ficou 'Ativo' apesar da recusa"
+        )
+
+cancelamento = json.load(open(golden_dir / "contrato-cancelamento.json", encoding="utf-8"))
+for item in cancelamento["estado_resultante"]["contratos"]:
+    conferir_contrato("cancelamento", item)
+for item in cancelamento["estado_resultante"]["imoveis"]:
+    conferir_imovel("cancelamento", item)
+for item in cancelamento["estado_resultante"]["cobrancas"]:
+    real = estado["cobrancas"].get(item["name"])
+    if real is None:
+        erros.append(f"cancelamento: cobrança {item['name']} ausente do banco")
+    elif real["status_cobranca"] != item["status_cobranca"]:
+        erros.append(
+            f"cancelamento: {item['name']} golden {item['status_cobranca']!r} != "
+            f"banco {real['status_cobranca']!r}"
+        )
+
 for erro in erros:
     print(erro, file=sys.stderr)
 sys.exit(1 if erros else 0)
 PY
 	then
-		ok "as 3 rotinas gravam retorno e estado, e o estado bate com o banco"
+		ok "as 3 rotinas e as 2 regras de contrato gravam retorno e estado, e o estado bate com o banco"
 	else
-		falhar "golden das rotinas divergiu do site efêmero (ver acima)"
+		falhar "golden das rotinas ou das regras de contrato divergiu do site efêmero (ver acima)"
 	fi
 
 	fechar_caso "CT-008"
@@ -685,18 +789,17 @@ ct_004() {
 	local diferentes
 	diferentes="$(diff <(printf '%s\n' "${antes}") <(printf '%s\n' "${depois}") |
 		grep -E '^[<>]' | grep -vE 'PROCEDENCIA\.md' | grep -c . || true)"
-	afirmar_igual "os 6 artefatos golden têm sha256 idêntico ao da primeira execução" \
+	afirmar_igual "os ${#GOLDEN_DE_CARACTERIZACAO[@]} artefatos golden têm sha256 idêntico ao da primeira execução" \
 		"0" "${diferentes}"
 
-	local sujos
-	sujos="$(git -C "${RAIZ_REPO}" status --porcelain -- \
-		"${REL_GOLDEN}/metragem.json" \
-		"${REL_GOLDEN}/contrato-pdf.txt" \
-		"${REL_GOLDEN}/marcar-cobrancas-vencidas.json" \
-		"${REL_GOLDEN}/encerrar-contratos-vencidos.json" \
-		"${REL_GOLDEN}/atualizar-atrasos-cobrancas.json" \
-		"${REL_GOLDEN}/calcular-mora.json" | grep -cE '^.[^ ]' || true)"
-	afirmar_igual "nenhum dos 6 artefatos aparece modificado em relação ao índice do git" \
+	local sujos caminhos_versionados=()
+	local nome
+	for nome in "${GOLDEN_DE_CARACTERIZACAO[@]}"; do
+		caminhos_versionados+=("${REL_GOLDEN}/${nome}")
+	done
+	sujos="$(git -C "${RAIZ_REPO}" status --porcelain -- "${caminhos_versionados[@]}" |
+		grep -cE '^.[^ ]' || true)"
+	afirmar_igual "nenhum dos ${#GOLDEN_DE_CARACTERIZACAO[@]} artefatos aparece modificado em relação ao índice do git" \
 		"0" "${sujos}"
 
 	fechar_caso "CT-004"
@@ -891,12 +994,14 @@ ct_001() {
 	# provam nada (uma captura que nunca funciona "aborta" sempre).
 	executar_capturar "ct001-a"
 	afirmar_igual "(a) estado saudável: capturar.py termina com exit 0" "0" "${ultimo_codigo}"
-	afirmar_igual "(a) os 7 artefatos estão gravados" "7" \
+	# O manifesto entra na contagem; os demais são os artefatos de caracterização.
+	afirmar_igual "(a) os $((${#GOLDEN_DE_CARACTERIZACAO[@]} + 1)) artefatos estão gravados" \
+		"$((${#GOLDEN_DE_CARACTERIZACAO[@]} + 1))" \
 		"$(ls -1 "${DIR_GOLDEN}" | grep -c . || true)"
 
-	local sha_antes sha_seis_antes git_antes
+	local sha_antes sha_caracterizacao_antes git_antes
 	sha_antes="$(sha_dos_golden)"
-	sha_seis_antes="$(sha_dos_seis_golden)"
+	sha_caracterizacao_antes="$(sha_dos_golden_de_caracterizacao)"
 	git_antes="$(estado_git_dos_golden)"
 
 	verificar_linha_reprovada() { # verificar_linha_reprovada <rotulo> <agulha1> <agulha2>
@@ -934,8 +1039,8 @@ ct_001() {
 	executar_capturar "ct001-final"
 	afirmar_igual "estado do site restaurado: capturar.py volta a terminar com exit 0" \
 		"0" "${ultimo_codigo}"
-	afirmar_igual "os 6 golden definitivos são idênticos aos da linha (a)" \
-		"${sha_seis_antes}" "$(sha_dos_seis_golden)"
+	afirmar_igual "os ${#GOLDEN_DE_CARACTERIZACAO[@]} golden definitivos são idênticos aos da linha (a)" \
+		"${sha_caracterizacao_antes}" "$(sha_dos_golden_de_caracterizacao)"
 
 	fechar_caso "CT-001"
 }

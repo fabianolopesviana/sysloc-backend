@@ -1,0 +1,205 @@
+{
+  "entrada": {
+    "cobrancas": [
+      {
+        "boleto_gerado": 0,
+        "name": "COB-CARACT-CAN-01",
+        "nosso_numero": null,
+        "status_cobranca": "Pendente",
+        "valor_original": 1200.0,
+        "vencimento_offset_dias": -20
+      },
+      {
+        "boleto_gerado": 0,
+        "name": "COB-CARACT-CAN-02",
+        "nosso_numero": null,
+        "status_cobranca": "Vencida",
+        "valor_original": 1300.0,
+        "vencimento_offset_dias": -50
+      },
+      {
+        "boleto_gerado": 0,
+        "name": "COB-CARACT-CAN-03",
+        "nosso_numero": null,
+        "status_cobranca": "Paga",
+        "valor_original": 1400.0,
+        "vencimento_offset_dias": 10
+      },
+      {
+        "boleto_gerado": 0,
+        "name": "COB-CARACT-CAN-04",
+        "nosso_numero": null,
+        "status_cobranca": "Cancelada",
+        "valor_original": 1500.0,
+        "vencimento_offset_dias": 40
+      }
+    ],
+    "contratos": [
+      {
+        "imovel": "IMOVEL-CARACT-CAN-01",
+        "name": "CTR-CARACT-CAN-01",
+        "pdf_contrato": "<PDF_CONTRATO_CODIFICADO>",
+        "pdf_contrato_arquivo": null,
+        "status_contrato": "Ativo"
+      },
+      {
+        "imovel": "",
+        "name": "CTR-CARACT-CAN-SEM-IMOVEL",
+        "pdf_contrato": "<PDF_CONTRATO_CODIFICADO>",
+        "pdf_contrato_arquivo": null,
+        "status_contrato": "Ativo"
+      },
+      {
+        "imovel": "IMOVEL-CARACT-CAN-02",
+        "name": "CTR-CARACT-CAN-SEM-PDF",
+        "pdf_contrato": null,
+        "pdf_contrato_arquivo": null,
+        "status_contrato": "Ativo"
+      }
+    ],
+    "imoveis": [
+      {
+        "contrato_ativo": "CTR-CARACT-CAN-01",
+        "name": "IMOVEL-CARACT-CAN-01",
+        "status_locacao": "Locado"
+      },
+      {
+        "contrato_ativo": "CTR-CARACT-CAN-SEM-PDF",
+        "name": "IMOVEL-CARACT-CAN-02",
+        "status_locacao": "Locado"
+      }
+    ]
+  },
+  "estado_resultante": {
+    "cobrancas": [
+      {
+        "boleto_gerado": 0,
+        "name": "COB-CARACT-CAN-01",
+        "nosso_numero": null,
+        "status_cobranca": "Cancelada",
+        "valor_original": 1200.0,
+        "vencimento_offset_dias": -20
+      },
+      {
+        "boleto_gerado": 0,
+        "name": "COB-CARACT-CAN-02",
+        "nosso_numero": null,
+        "status_cobranca": "Cancelada",
+        "valor_original": 1300.0,
+        "vencimento_offset_dias": -50
+      },
+      {
+        "boleto_gerado": 0,
+        "name": "COB-CARACT-CAN-03",
+        "nosso_numero": null,
+        "status_cobranca": "Paga",
+        "valor_original": 1400.0,
+        "vencimento_offset_dias": 10
+      },
+      {
+        "boleto_gerado": 0,
+        "name": "COB-CARACT-CAN-04",
+        "nosso_numero": null,
+        "status_cobranca": "Cancelada",
+        "valor_original": 1500.0,
+        "vencimento_offset_dias": 40
+      }
+    ],
+    "contratos": [
+      {
+        "imovel": "IMOVEL-CARACT-CAN-01",
+        "name": "CTR-CARACT-CAN-01",
+        "pdf_contrato": null,
+        "pdf_contrato_arquivo": "<ARQUIVO_PDF_PRIVADO>",
+        "status_contrato": "Cancelado"
+      },
+      {
+        "imovel": "",
+        "name": "CTR-CARACT-CAN-SEM-IMOVEL",
+        "pdf_contrato": "<PDF_CONTRATO_CODIFICADO>",
+        "pdf_contrato_arquivo": null,
+        "status_contrato": "Ativo"
+      },
+      {
+        "imovel": "IMOVEL-CARACT-CAN-02",
+        "name": "CTR-CARACT-CAN-SEM-PDF",
+        "pdf_contrato": null,
+        "pdf_contrato_arquivo": null,
+        "status_contrato": "Ativo"
+      }
+    ],
+    "imoveis": [
+      {
+        "contrato_ativo": "",
+        "name": "IMOVEL-CARACT-CAN-01",
+        "status_locacao": "Disponível"
+      },
+      {
+        "contrato_ativo": "CTR-CARACT-CAN-SEM-PDF",
+        "name": "IMOVEL-CARACT-CAN-02",
+        "status_locacao": "Locado"
+      }
+    ]
+  },
+  "modulo": "locacao_automation.contrato_cancelamento.service",
+  "recusas": [
+    {
+      "argumento": "",
+      "id": "parametro_vazio",
+      "resultado": {
+        "aceito": false,
+        "excecao": "ValidationError",
+        "mensagem": "Parametro name do Contrato e obrigatorio."
+      }
+    },
+    {
+      "argumento": "CTR-CARACT-CAN-SEM-PDF",
+      "id": "contrato_sem_pdf",
+      "resultado": {
+        "aceito": false,
+        "excecao": "ValidationError",
+        "mensagem": "O contrato nao possui PDF privado disponivel para cancelamento."
+      }
+    },
+    {
+      "argumento": "CTR-CARACT-CAN-SEM-IMOVEL",
+      "id": "contrato_sem_imovel",
+      "resultado": {
+        "aceito": false,
+        "excecao": "ValidationError",
+        "mensagem": "O Contrato nao possui imovel vinculado. O cancelamento foi bloqueado."
+      }
+    }
+  ],
+  "regra": "cancelar_contrato",
+  "retorno": {
+    "aceito": true,
+    "retorno": {
+      "baixas_sicoob": {
+        "erros": [],
+        "ignoradas": [
+          {
+            "boleto_gerado": 0,
+            "cobranca": "COB-CARACT-CAN-02",
+            "motivo": "sem_boleto_sicoob",
+            "nosso_numero": null
+          },
+          {
+            "boleto_gerado": 0,
+            "cobranca": "COB-CARACT-CAN-01",
+            "motivo": "sem_boleto_sicoob",
+            "nosso_numero": null
+          }
+        ],
+        "solicitadas": []
+      },
+      "cobrancas_canceladas": 2,
+      "contrato": "CTR-CARACT-CAN-01",
+      "imovel": "IMOVEL-CARACT-CAN-01",
+      "ok": true,
+      "pdf_contrato": null,
+      "pdf_contrato_arquivo": "<ARQUIVO_PDF_PRIVADO>",
+      "status_contrato": "Cancelado"
+    }
+  }
+}
