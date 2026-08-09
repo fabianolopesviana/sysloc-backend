@@ -74,7 +74,10 @@ declarada** do produto (`CTR-{ano}-{5 dígitos}`, sequência por `(empresa, ano)
 **São 10 tasks em 3 fases**, sem par paralelizável (derivado, não autorado — a §4.2 do
 `task_plan.md` registra a condição que falha em cada par), e **34 casos de teste** distribuídos, um
 CT por task. Executa-se com
-`/agent-spec-sdd-run-tasks docs/specs/features/contratos-de-locacao/v1/`.
+`/agent-spec-sdd-run-tasks docs/specs/features/contratos-de-locacao/v1/task_plan.md sysloc-backend-implementer`
+— a assinatura da skill é `<task_plan_path> [agent_name]`, e o primeiro argumento é o **arquivo**
+`task_plan.md`, não o diretório da fatia. Omitir o segundo argumento não é erro: a skill lista os
+agentes de `.claude/agents/`, filtra os três reservados aos gates e pergunta qual usar.
 
 > **A T1 é a primeira por uma razão que expira**: ela captura do `/opt/frappe` o oráculo de ativação
 > e cancelamento, e essa janela fecha na F7. Ela exige `sudo` e o site efêmero de pé — **nenhum
@@ -308,11 +311,15 @@ Específicos deste domínio: **undici** (mTLS do Sicoob), **`node:crypto` `X509C
 > grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 > ```
 
-Oito débitos têm gatilho que dispara fora da fatia que os criou: **D28** e **D32** vêm da F0;
+Onze débitos têm gatilho que dispara fora da fatia que os criou: **D28** e **D32** vêm da F0;
 **D23**, **D39**, **D24**, **D27** e **D37** nasceram na F1 — os três últimos na fatia
-`autorizacao-e-ciclo-de-acesso` —; e o **D3** nasceu na F2, na fatia
-`cadastro-de-imoveis-e-pessoas`. O **D27** partilha com o D23 o gatilho e o fato que falta: qual é o
-salto confiável da borda.
+`autorizacao-e-ciclo-de-acesso` —; e quatro nasceram na F2, o **D3** na fatia
+`cadastro-de-imoveis-e-pessoas` e o **D28**, o **D36** e o **D43** na fatia `contratos-de-locacao`.
+O **D27** partilha com o D23 o gatilho e o fato que falta: qual é o salto confiável da borda; e o
+**D36** partilha com o D28 da mesma fatia o gatilho — a F3. O **D43** é o único cujo gatilho é o
+**congelamento da superfície da API**, e por isso ele vence os demais em prazo.
+⚠️ **Os dois `D28` são débitos DIFERENTES** — `F0/T5` e `F2/T7` —, e a coexistência é legítima: a
+sequência corre dentro da §2 da fatia que registrou cada um (§3-B da `nao-regressao.md`).
 **Um já disparou e segue aberto** — o D28, na F1/T2.
 Seis saíram daqui por terem sido fechados — **este índice lista só débito vivo**: o D6 da F1/T5,
 no fechamento da F1
@@ -331,7 +338,8 @@ intervenção dirigida de limpeza de 2026-08-05, quando `esquemaDoErro` ganhou d
 > impacto medido, o que fazer, prova exigida — vive **só** na §2 do `run-report.md` da fatia que
 > registrou o débito, para onde o `ÍNDICE` do marcador aponta: a F0 em
 > `docs/specs/features/fundacao-stack-nativa/v1/_run/`, a F1 em
-> `docs/specs/features/fundacao-multitenancy-identidade/v1/_run/`. É o que a §3-B manda
+> `docs/specs/features/fundacao-multitenancy-identidade/v1/_run/`, e a fatia de contratos em
+> `docs/specs/features/contratos-de-locacao/v1/_run/`. É o que a §3-B manda
 > (*"marcador que copia o relatório inteiro apodrece — o relatório é corrigido e a cópia não"*), e
 > o motivo é medido: este arquivo entra no contexto da sessão principal **e de todo subagente**, em
 > toda task. **Linha que passar de ~150 caracteres deve ter o excedente movido para a §2.**
@@ -351,6 +359,9 @@ intervenção dirigida de limpeza de 2026-08-05, quando `esquemaDoErro` ganhou d
 | **D27** (F1/T6, fatia `autorizacao-e-ciclo-de-acesso`) | `packages/auth/src/autenticacao.ts` | a **publicação atrás do servidor de borda na F7** — sem ela o limitador não tem eixo de origem |
 | **D37** (F1/T8, fatia `autorizacao-e-ciclo-de-acesso`) | `apps/api/src/master/empresa.controller.ts` | a **primeira comparação do `:id` do Master com identidade da sessão** — o esquema de lá não canoniza a caixa do UUID |
 | **D3** (F2/T1, fatia `cadastro-de-imoveis-e-pessoas`) | `packages/contracts/src/comum.ts` | a **primeira task que abrir `usuario.controller.ts` por outra razão** — `ESQUEMA_DO_IDENTIFICADOR` tem duas definições |
+| **D28** (F2/T7, fatia `contratos-de-locacao`) | `apps/api/src/contratos/contrato.service.ts` | a **F3** — a ativação não gera cobranças, e a fatia de cobrança é obrigada a afrouxar o literal `cobrancasGeradas: false` |
+| **D36** (F2/T8, fatia `contratos-de-locacao`) | `apps/api/src/contratos/contrato.service.ts` (`cancelar`) | a **F3** — a pré-condição legada "sem PDF, não cancela" não é portada, e é lá que se decide se o carimbo é pré-condição ou efeito |
+| **D43** (F2/T10, fatia `contratos-de-locacao`) | `apps/api/src/imoveis/imovel.controller.ts` | o **congelamento da superfície da API** — transição de estado sem chave de ação; emenda a ADR-0019 por supersede |
 
 ---
 

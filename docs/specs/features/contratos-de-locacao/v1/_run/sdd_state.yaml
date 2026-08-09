@@ -1,5 +1,5 @@
 feature: "Contratos de locação — montagem, ativação e cancelamento"
-current_step: task_plan
+current_step: execution
 source: "recommended"
 source_note: "o pre-refinement de docs/specs/features/contratos-de-locacao/v1/ recomendou SDD na §15.2; esta é a fatia 2 de 2 da fase"
 variant: backend
@@ -24,6 +24,7 @@ steps:
     status: completed
     summary: "10 tasks, 3 fases, 0 paralelizáveis (derivado — §4.2 do plano registra a condição que falha em cada par). US cobertas: 16/16, nenhuma órfã. 34 CTs distribuídos por redistribuição via JSON, sem disparar subagente de QA; cada CT em exatamente 1 task. Achado da derivação: o schema depende do contrato de tipos (ADR-0016), então T3 vem depois de T2."
   execution:
-    status: pending
+    status: completed
     tasks_total: 10
-    tasks_completed: 0
+    tasks_completed: 10
+    summary: "10/10 tasks concluídas, nenhuma bloqueada. Suíte 541 → 664. Superfície publicada em 75 rotas / 60 manipuladores (a §11.2 projetava 77 — a medição refuta a premissa do HEAD derivado; ver D45). 47 débitos anotados na §2. Quatro tasks precisaram de rodada de correção: T3 (3 rodadas), T5, T6 e T10 (esta só para escriturar um anotável com prazo)."

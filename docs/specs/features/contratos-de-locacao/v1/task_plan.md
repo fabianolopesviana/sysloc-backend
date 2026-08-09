@@ -4,7 +4,7 @@
 - **Feature/Projeto**: Contratos de locação — montagem, ativação e cancelamento
 - **Responsável (Tech Lead)**: sysloc (neuberagil@icloud.com)
 - **Data**: 2026-08-08
-- **Status**: Rascunho
+- **Status**: Concluído
 - **TECH_SPEC**: `docs/specs/features/contratos-de-locacao/v1/tech_spec.md`
 - **PRD**: `docs/prds/features/contratos-de-locacao/v1/prd.md`
 - **Variante**: `backend` — sem `design.md`, por decisão registrada no `CLAUDE.md` (este repositório não produz interface)
@@ -39,16 +39,16 @@ As três fases vêm da **§11 do PRD** (Roadmap / Fases), que as declara como or
 
 | ID | Nome da Task | Arquivo | Fase | Dependências | Pode Rodar em Paralelo? (derivado) | Status |
 |----|--------------|---------|------|--------------|------------------------------------|--------|
-| T1 | Capturar o golden de ativação e cancelamento do sistema antigo | [T1](tasks/T1.md) | 1 | — | Não | A Fazer |
-| T2 | Contrato de tipos do contrato de locação em `@sysloc/contracts` | [T2](tasks/T2.md) | 2 | — | Não | A Fazer |
-| T3 | Schema e migrações do contrato — tabelas isoladas, vigência única e o contador da série | [T3](tasks/T3.md) | 2 | T2 | Não | A Fazer |
-| T4 | Derivações puras do contrato — término da locação e valor total, provados contra o oráculo | [T4](tasks/T4.md) | 2 | T1 | Não | A Fazer |
-| T5 | Porta de dados do contrato — emissão da série, escritas do ciclo de vida e traduções de unicidade | [T5](tasks/T5.md) | 2 | T2, T3 | Não | A Fazer |
-| T6 | Superfície de cadastro do contrato — montar, consultar, alterar e retirar de circulação | [T6](tasks/T6.md) | 2 | T2, T5 | Não | A Fazer |
-| T7 | Ativação do contrato — ato governado, derivações e efeito no imóvel | [T7](tasks/T7.md) | 3 | T4, T6 | Não | A Fazer |
-| T8 | Cancelamento do contrato — ato governado, liberação do imóvel e o histórico que permanece | [T8](tasks/T8.md) | 3 | T7 | Não | A Fazer |
-| T9 | Contrato vigente nas consultas de imóvel — leitura em lote, custo independente de N | [T9](tasks/T9.md) | 3 | T7 | Não | A Fazer |
-| T10 | A situação de locação sai do corpo do `PUT` de imóvel e ganha rota própria | [T10](tasks/T10.md) | 3 | T9 | Não | A Fazer |
+| T1 | Capturar o golden de ativação e cancelamento do sistema antigo | [T1](tasks/T1.md) | 1 | — | Não | Concluído |
+| T2 | Contrato de tipos do contrato de locação em `@sysloc/contracts` | [T2](tasks/T2.md) | 2 | — | Não | Concluído |
+| T3 | Schema e migrações do contrato — tabelas isoladas, vigência única e o contador da série | [T3](tasks/T3.md) | 2 | T2 | Não | Concluído |
+| T4 | Derivações puras do contrato — término da locação e valor total, provados contra o oráculo | [T4](tasks/T4.md) | 2 | T1 | Não | Concluído |
+| T5 | Porta de dados do contrato — emissão da série, escritas do ciclo de vida e traduções de unicidade | [T5](tasks/T5.md) | 2 | T2, T3 | Não | Concluído |
+| T6 | Superfície de cadastro do contrato — montar, consultar, alterar e retirar de circulação | [T6](tasks/T6.md) | 2 | T2, T5 | Não | Concluído |
+| T7 | Ativação do contrato — ato governado, derivações e efeito no imóvel | [T7](tasks/T7.md) | 3 | T4, T6 | Não | Concluído |
+| T8 | Cancelamento do contrato — ato governado, liberação do imóvel e o histórico que permanece | [T8](tasks/T8.md) | 3 | T7 | Não | Concluído |
+| T9 | Contrato vigente nas consultas de imóvel — leitura em lote, custo independente de N | [T9](tasks/T9.md) | 3 | T7 | Não | Concluído |
+| T10 | A situação de locação sai do corpo do `PUT` de imóvel e ganha rota própria | [T10](tasks/T10.md) | 3 | T9 | Não | Concluído |
 
 ### 4.1 Ordem de Execução (grafo)
 
@@ -134,16 +134,16 @@ O flag foi **computado** pelo Invariante de Paralelismo (Regra 10d), não autora
 
 ## 7. Critérios de Conclusão da Feature
 
-- [ ] As 10 tasks concluídas e aprovadas nos dois gates
-- [ ] `pnpm build`, `pnpm lint` e `pnpm test` verdes, com a contagem de casos comparada contra a baseline (541) — **queda inexplicada é regressão de prova**
-- [ ] Os 20 critérios de aceite do PRD com ao menos um caso rastreado — **34 CTs distribuídos, cada um em exatamente 1 task**
-- [ ] `verificar-golden.sh` afirma 9 artefatos e passa limpo; os seis anteriores inalterados
-- [ ] `verificarCoberturaDeIsolamento` sem exceções, com as duas tabelas novas em `tabelasExaminadas`
-- [ ] Superfície publicada em **77 rotas / 60 manipuladores**, `semDeclaracao` vazio, contagens **refeitas por varredura**
-- [ ] Nenhuma resposta traz `statusLocacao: 'DISPONIVEL'` junto de `contratoVigente` preenchido
-- [ ] Os dois débitos com gatilho registrados (pré-condição de PDF, em T8; geração de cobranças, em T7), com marcador no código **e** linha no índice do `CLAUDE.md` — as duas pontas conferidas
-- [ ] Os marcadores `DECISÃO FECHADA` presentes: largura de 5 dígitos (T2) e a saída de `statusLocacao` do `PUT` (T10)
-- [ ] Nenhuma asserção de igualdade de corpo trocada por asserção de presença nas suítes da fatia anterior
+- [x] As 10 tasks concluídas e aprovadas nos dois gates
+- [x] `pnpm build`, `pnpm lint` e `pnpm test` verdes, com a contagem de casos comparada contra a baseline (541) — **664 casos**, crescimento monotônico, nenhum pacote encolheu em nenhuma rodada — **queda inexplicada é regressão de prova**
+- [x] Os 20 critérios de aceite do PRD com ao menos um caso rastreado — **34 CTs distribuídos, cada um em exatamente 1 task**
+- [~] `verificar-golden.sh` afirma **9** artefatos e o CT-433 passa; o script sai `1` por **CT-013 pré-existente e alheio** (ver **D4**); os seis anteriores inalterados
+- [x] `verificarCoberturaDeIsolamento` sem exceções, com as duas tabelas novas em `tabelasExaminadas`
+- [~] Superfície publicada em **75 rotas / 60 manipuladores** — os manipuladores batem exatamente; o total medido é **75**, não 77 (ver **D45**), `semDeclaracao` vazio, contagens **refeitas por varredura**
+- [x] Nenhuma resposta traz `statusLocacao: 'DISPONIVEL'` junto de `contratoVigente` preenchido
+- [x] Os dois débitos com gatilho registrados (mais um terceiro, o **D43**, da ADR-0019) (pré-condição de PDF, em T8; geração de cobranças, em T7), com marcador no código **e** linha no índice do `CLAUDE.md` — as duas pontas conferidas
+- [x] Os marcadores `DECISÃO FECHADA` presentes: largura de 5 dígitos (T2) e a saída de `statusLocacao` do `PUT` (T10)
+- [x] Nenhuma asserção de igualdade de corpo trocada por asserção de presença nas suítes da fatia anterior — **varredura mecânica do diff, confirmada pelos dois gates**
 
 ---
 
