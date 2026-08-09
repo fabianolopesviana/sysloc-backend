@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash deploy/scripts/roadmap/gancho-roadmap.sh",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/deploy/scripts/roadmap/gancho-roadmap.sh\"",
             "timeout": 30,
             "statusMessage": "Atualizando o roadmap…"
           }
