@@ -29,8 +29,17 @@
  * |          |        | trocado de fuso. O controle que constrói o instante no **relógio local**
  * |          |        | devolve `'2027-02-26'` no terceiro fuso: é ele que mede a discriminação. |
  *
+ * | —        | RG-D21-01 | `derivarTerminoDaLocacao` devolve o ano de destino **literal** quando
+ * |          |        | ele cai entre 1 e 99, em vez do `1900 + ano` que `Date.UTC` produzia: o
+ * |          |        | caso do débito (`0050-03-15` + 12 → `0051-03-14`), as duas pontas da
+ * |          |        | faixa, e o par de fronteira que só o AVANÇO separa — `0099-12-01`, dentro
+ * |          |        | dela, contra `0099-12-31`, cujo destino transborda para `0100`. Um
+ * |          |        | controle positivo na faixa moderna impede que a correção do século
+ * |          |        | quebre o resto. |
+ *
  * Rastreabilidade: `CA-20 → CT-401 (RN-10)`, `CA-08 → CT-401 (RN-08)`, `CA-20 → CT-402 (RN-10)`,
- * `CA-20 → CT-432 (RN-10)`.
+ * `CA-20 → CT-432 (RN-10)`. O `RG-D21-01` **não tem critério de aceitação**: ele nasce da resolução
+ * do débito D21, e não da §6 de uma task — ver o docblock do bloco.
  *
  * ===========================================================================
  * O GOLDEN É LIDO DO ARQUIVO VERSIONADO, NUNCA REDIGITADO
@@ -472,6 +481,82 @@ describe('CT-432 — a data de fim é a mesma cadeia em qualquer TZ do processo'
     // imune por acidente, e o mutante da §6.4 sobreviveria.
     expect(peloRelogioLocal).toEqual([...TERMINO_PELO_RELOGIO_LOCAL]);
     expect(peloRelogioLocal).not.toEqual(pelaDerivacao);
+  });
+});
+
+// ===========================================================================
+// RG-D21-01 — o ano de destino de um a noventa e nove não é remapeado para 1900+
+// ===========================================================================
+
+/**
+ * Rede da correção do débito **D21** (F2/T4, Tech Review).
+ *
+ * ===========================================================================
+ * Por que o identificador NÃO é um `CT-4xx`
+ * ===========================================================================
+ *
+ * Mesma razão, e mesma forma, do `RG-T3-01` de `coerencia-de-migracoes.spec.ts`: os casos planejados
+ * desta fatia ocupam `CT-401`–`CT-434` e estão distribuídos em `_run/test-cases.json`. Este não está
+ * na §6 de task nenhuma — nasceu da **resolução de um débito**, fora do pipeline —, e dar-lhe um
+ * número daquela faixa o faria passar por planejado. A âncora depois do prefixo é o **débito**, e
+ * não a task, porque é o débito que o identifica: `RG-D21-01` lê-se *rede do D21, primeira*.
+ *
+ * ===========================================================================
+ * O que ele prova, e por que fora do golden
+ * ===========================================================================
+ *
+ * `Date.UTC` herda do construtor de `Date` a regra que remapeia argumento de ano entre 0 e 99 para
+ * `1900 + ano`. Como `formatarEmUtc` imprime o ano resultante com quatro dígitos, o valor errado
+ * saía com a **forma certa** — `derivarTerminoDaLocacao('0050-03-15', 12)` devolvia `'1951-03-14'`,
+ * errado em mil e novecentos anos, sem nada na cadeia denunciando.
+ *
+ * O oráculo **não tem** cenário nessa faixa e não vai ganhar um: o golden reproduz o sistema antigo,
+ * que nunca operou nela. Por isso as asserções abaixo são literais, escritas contra a aritmética do
+ * calendário gregoriano proléptico, e não contra o golden nem contra o controle deste arquivo —
+ * {@link controleDefeituoso} constrói com `Date.UTC` e portanto **carrega o mesmo defeito**;
+ * compará-los aqui devolveria dois erros idênticos e um caso verde. Não o corrija por isto: na faixa
+ * que ele serve (a moderna, dos defeitos injetados) ele está certo, e mexer nele sem necessidade é
+ * superfície de regressão de graça.
+ *
+ * ===========================================================================
+ * A faixa é do ano de DESTINO, não do de início
+ * ===========================================================================
+ *
+ * Detalhe medido, e é o que faz a fronteira do caso: o remapeamento incide sobre o argumento que
+ * chega a `Date.UTC`, que é o ano **depois** do avanço de `prazoMeses`. Um contrato iniciado em
+ * `0099-12-31` com prazo 1 tem destino em `0100`, fora da faixa, e **sempre** esteve correto — ao
+ * passo que `0001-01-01` com prazo 1 permanece em `0001` e estava errado. Por isso o par de
+ * fronteira abaixo é `0099-12-01` (dentro, errado antes) contra `0099-12-31` (destino em `0100`,
+ * correto antes): eles diferem **só** no dia de início, e é o avanço que os separa.
+ */
+describe('RG-D21-01 — o ano de destino entre 1 e 99 não sofre o remapeamento de `Date.UTC`', () => {
+  it('devolve o ano literal na faixa baixa, e não `1900 + ano`', () => {
+    // --- O caso que o débito mede, nomeado ------------------------------------------------------
+    //
+    // Antes da correção: `'1951-03-14'`. O `-1 dia` do passo 3 é o que leva 15 de março a 14.
+    expect(derivarTerminoDaLocacao('0050-03-15', 12)).toBe('0051-03-14');
+
+    // --- As duas pontas da faixa ----------------------------------------------------------------
+    //
+    // Ano 1 e ano 99 de destino: os extremos do intervalo que o remapeamento alcançava. Antes:
+    // `'1901-01-31'` e `'1999-12-31'`.
+    expect(derivarTerminoDaLocacao('0001-01-01', 1)).toBe('0001-01-31');
+    expect(derivarTerminoDaLocacao('0099-01-01', 12)).toBe('0099-12-31');
+
+    // --- A fronteira, pelo par que só o AVANÇO separa -------------------------------------------
+    //
+    // Os dois começam em dezembro de 99 e têm prazo 1; o segundo só difere no dia. O primeiro
+    // termina dentro da faixa (destino `0099`) e reprovava; o segundo transborda para `0100` e
+    // sempre passou. Asserir os dois juntos é o que impede uma "correção" que desloque a fronteira.
+    expect(derivarTerminoDaLocacao('0099-12-01', 1)).toBe('0099-12-31');
+    expect(derivarTerminoDaLocacao('0099-12-31', 1)).toBe('0100-01-30');
+
+    // --- O controle POSITIVO --------------------------------------------------------------------
+    //
+    // A faixa moderna, inalterada pela correção: sem esta linha o caso ficaria verde sobre uma
+    // implementação que consertasse o século e quebrasse todo o resto. É o mesmo cenário que o
+    // aceite da T4 nomeia, e ele também vive no `CT-401`.
+    expect(derivarTerminoDaLocacao('2026-01-31', 1)).toBe('2026-02-27');
   });
 });
 

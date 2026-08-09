@@ -47,13 +47,17 @@
  * DATA É CADEIA, E A ARITMÉTICA CORRE EM UTC — leia antes de "simplificar"
  * ---------------------------------------------------------------------------
  *
- * As duas funções recebem e devolvem `YYYY-MM-DD`, e toda construção de instante passa por
- * {@link Date.UTC}. **Nunca `new Date(ano, mes, dia)`**, que interpreta os campos no fuso do
- * processo: um `date` construído assim e reserializado desloca a data em **um dia inteiro** para
- * metade dos fusos — em `Pacific/Kiritimati` (UTC+14), `2027-02-28` local vira `2027-02-27` em UTC.
- * E é precisamente `dataFimLocacao` que o CA-20 compara contra o oráculo, de modo que o defeito
- * apareceria como divergência com o legado numa máquina e não em outra. O `CT-432` mede os três
- * fusos.
+ * As duas funções recebem e devolvem `YYYY-MM-DD`, e toda construção de instante corre **em UTC**.
+ * **Nunca `new Date(ano, mes, dia)`**, que interpreta os campos no fuso do processo: um `date`
+ * construído assim e reserializado desloca a data em **um dia inteiro** para metade dos fusos — em
+ * `Pacific/Kiritimati` (UTC+14), `2027-02-28` local vira `2027-02-27` em UTC. E é precisamente
+ * `dataFimLocacao` que o CA-20 compara contra o oráculo, de modo que o defeito apareceria como
+ * divergência com o legado numa máquina e não em outra. O `CT-432` mede os três fusos.
+ *
+ * **E nunca `Date.UTC` tampouco**, pela segunda razão, que é independente da primeira e foi medida:
+ * ele herda do construtor de `Date` a regra que remapeia argumento de ano entre 0 e 99 para
+ * `1900 + ano`. O instrumento escolhido é {@link Date.setUTCFullYear}, que **não** tem essa cláusula
+ * na especificação — ver o passo 3 de {@link derivarTerminoDaLocacao} e o `RG-D21-01`.
  *
  * ---------------------------------------------------------------------------
  * PRÉ-CONDIÇÃO DAS ENTRADAS — de onde elas vêm, e por que não são revalidadas aqui
@@ -136,11 +140,22 @@ export function derivarTerminoDaLocacao(dataInicio: string, prazoMeses: number):
 
   // --- Passo 3: menos um dia --------------------------------------------------------------------
   //
-  // `Date.UTC`, nunca `new Date(ano, mes, dia)`: a segunda forma lê o fuso do processo e deslocaria
-  // o resultado em um dia inteiro em metade dos fusos (ver o cabeçalho, e o `CT-432`).
-  const inicioDoDiaDeDestino = Date.UTC(anoDeDestino, mesDeDestino - 1, diaSaturado);
+  // A construção corre em UTC, e por DUAS razões independentes — as duas medidas, nenhuma dedutível
+  // da outra. Ver o cabeçalho para o texto longo de cada uma.
+  //
+  //   1. Nunca `new Date(ano, mes, dia)`: lê o fuso do processo e desloca o resultado em um dia
+  //      inteiro em metade dos fusos (`CT-432`).
+  //   2. Nunca `Date.UTC`: ele remapeia argumento de ano entre 0 e 99 para `1900 + ano`, e
+  //      `formatarEmUtc` imprime o ano remapeado com quatro dígitos — de modo que o resultado sai
+  //      com a FORMA certa e o valor errado em ~1900 anos (`RG-D21-01`).
+  //
+  // `setUTCFullYear` com os três argumentos de uma vez atende as duas: ele não consulta fuso algum e
+  // não tem cláusula de remapeamento. Passar ano, mês e dia juntos também evita que a data de época
+  // — 1 de janeiro — sature num mês de destino mais curto durante uma atribuição intermediária.
+  const inicioDoDiaDeDestino = new Date(0);
+  inicioDoDiaDeDestino.setUTCFullYear(anoDeDestino, mesDeDestino - 1, diaSaturado);
 
-  return formatarEmUtc(new Date(inicioDoDiaDeDestino - MILISSEGUNDOS_POR_DIA));
+  return formatarEmUtc(new Date(inicioDoDiaDeDestino.getTime() - MILISSEGUNDOS_POR_DIA));
 }
 
 /**
