@@ -357,7 +357,7 @@ As quatro rotas de ato **de contrato** aceitam corpo **vazio e fechado**: qualqu
 
 **Ela exige apenas `TELA:imoveis`, e a leitura precisa ficar escrita.** A `Decision` da ADR-0019 diz *"rota própria, governada pela chave de ação sensível correspondente do catálogo fechado"*, e **não existe ação sensível para esta transição** — o catálogo é fechado nas sete, e a própria ADR registra entre os *Cons* que ele "não cresce sem decisão explícita". A leitura adotada: a ADR-0019 alcança **transição governada** — ativar, cancelar, retirar de circulação —, e alternar entre disponível e indisponível é **atributo operacional do cadastro**, não ato sensível. Ela se apoia nos *Neutros* da própria ADR (*"quais estados cada entidade tem é decisão da fatia dela; esta ADR fixa a forma da transição"*), e a metade que importa — **rota própria, nunca campo em atualização do recurso** — é obedecida ao pé da letra.
 
-> **Isto é interpretação do texto, e não conformidade literal.** Fica declarado como tal para que um gate futuro reconheça a decisão em vez de reabri-la, e para que a fatia que quiser rigor saiba exatamente o que emendar: a `Decision` da ADR-0019, distinguindo transição governada de transição de atributo operacional.
+> ~~**Isto é interpretação do texto, e não conformidade literal.**~~ **DEIXOU DE SER, em 2026-08-09.** O parágrafo acima foi escrito quando a rota era regida pela ADR-0019, e a saída rigorosa que ele nomeava — emendar a `Decision` para distinguir transição governada de transição de atributo operacional — **foi tomada**: a **ADR-0021** supersede a 0019 e faz exatamente esse recorte, nomeando a **situação de locação do imóvel** como a instância declarada da segunda classe. A leitura descrita acima é hoje **o texto da ADR vigente**, e não uma interpretação dele; a exigência da rota não mudou uma linha. Onde esta seção diz `ADR-0019`, leia **ADR-0021** — a 0019 está `superseded-by:0021` e **não se cita**. Registro: **D43** na §2 do `_run/run-report.md`.
 
 **Reusar `ACAO:excluir_cadastro` foi avaliado e descartado**: a ADR-0019 rejeita nominalmente esse reuso nas Alternativas (*"são efeitos diferentes"*), e quem marca um imóvel em reforma passaria a precisar da concessão de excluir cadastro para pôr um imóvel em reforma.
 
@@ -804,10 +804,12 @@ Duas dimensões independentes (ADR-0011), com **default que nega**: rota que nã
 | Âncora | Antes | Depois (**esperado**) | Delta |
 |---|---|---|---|
 | `MANIPULADORES_EXAMINADOS_EM_PRODUCAO` | 51 | 60 | **+9 manipuladores** — as 8 rotas de contrato mais a de situação de locação (§4.1.2) |
-| `ROTAS_PUBLICADAS_EM_PRODUCAO` (`rotasEnumeradas`) | 66 | 77 | **+11** — os 9 manipuladores, mais 2 porque cada rota `GET` entra em dobro na tabela do roteador (`GET` e `HEAD`), e duas das nove são `GET` |
+| `ROTAS_PUBLICADAS_EM_PRODUCAO` (`rotasEnumeradas`) | 66 | 75 | **+9** — um por manipulador publicado |
 | `semDeclaracao` | `[]` | `[]` | inalterado |
 
-> **O delta é o que esta spec fixa; os valores absolutos são esperados e têm de ser reconferidos.** As duas contagens são **refeitas do zero**, por varredura dos decoradores de rota em `apps/api/src`, e **não derivadas uma da outra** — a coincidência aritmética entre elas (hoje `51 + 15 GET = 66`) não é garantia, e derivar uma da outra faria um erro de contagem passar despercebido. A alteração de âncora de teste carrega a linha `SUT_IS_CORRECT_BECAUSE`, como a fatia anterior fez a cada crescimento; sem ela, alterar um teste que reprovou é fraude de gate.
+> **O delta é o que esta spec fixa; os valores absolutos são esperados e têm de ser reconferidos.** As duas contagens são **refeitas do zero**, por varredura dos decoradores de rota em `apps/api/src`, e **não derivadas uma da outra** — derivar uma da outra faria um erro de contagem passar despercebido. A alteração de âncora de teste carrega a linha `SUT_IS_CORRECT_BECAUSE`, como a fatia anterior fez a cada crescimento; sem ela, alterar um teste que reprovou é fraude de gate.
+>
+> ⚠️ **Esta seção escreveu `77` até 2026-08-09, e o `+2` vinha de uma premissa que a medição REFUTOU**: *"cada rota `GET` entra em dobro na tabela do roteador (`GET` e `HEAD`)"*. É falso contra o módulo implementado — `apps/api/src/autenticacao/cobertura-de-autorizacao.ts` **suprime explicitamente** o `HEAD` derivado de `GET` (o mapa `semHeadDerivado`), e foi por isso que a T6 contou **6 pares para 6 rotas**, das quais duas eram `GET`. O valor medido é **75**, e é o que as âncoras executáveis carregam desde a T10. Os **60 manipuladores batem exatamente**, o que localiza o erro na soma do total e não no escopo entregue. Registrado como **D45** na §2 do `_run/run-report.md`; a correção veio na intervenção dirigida de 2026-08-09. **Não "corrija" para 77.**
 
 ### 11.3 Criptografia
 
@@ -1209,9 +1211,9 @@ Todos em `apps/api/test/`, exercitando **HTTP real** contra a aplicação montad
 
 #### Fluxo: cobertura de autorização sobre a superfície publicada (CT-427) — em `cobertura-de-autorizacao.e2e.spec.ts`
 - **CA**: CA-16, CA-17 · **Objetivo**: as quatro rotas governadas declaram a **conjunção inteira**, na ordem área→ação; nenhum manipulador fica sem declaração; a contagem estrutural bate com as âncoras
-- **Validações**: `rotasEnumeradas === 77`; manipuladores examinados `=== 60`; `semDeclaracao === []`; a estrutura confirma `TELA:contratos` **seguido** da ação própria nas quatro
+- **Validações**: `rotasEnumeradas === 75`; manipuladores examinados `=== 60`; `semDeclaracao === []`; a estrutura confirma `TELA:contratos` **seguido** da ação própria nas quatro
 - **Falsificação obrigatória**: declarar `@ExigeChave` só com a ação numa das quatro — a guarda tem de acusar o manipulador **pelo nome**, no mesmo molde do `CT-355`
-- **Nota**: os valores `77` e `60` são os **esperados** de §11.2 — as 8 rotas de contrato mais a de situação de locação — e têm de ser reconferidos por varredura, com a linha `SUT_IS_CORRECT_BECAUSE` na alteração das âncoras
+- **Nota**: os valores `75` e `60` são os **esperados** de §11.2 — as 8 rotas de contrato mais a de situação de locação — e têm de ser reconferidos por varredura, com a linha `SUT_IS_CORRECT_BECAUSE` na alteração das âncoras. Esta linha dizia `77` até 2026-08-09, pela premissa falsa do `HEAD` derivado que a §11.2 agora refuta por extenso
 
 ### 19.4 Cenários de Erro
 
@@ -1313,6 +1315,7 @@ Aplicados os 5 critérios canônicos a cada decisão técnica desta spec:
 
 - **Estado de negócio nunca é escrito por atualização do recurso — nem quando não há ação sensível para ele** (§4.1.2) — **Candidato a ADR confirmado, adiado por decisão do usuário** (`state-management`, `architecture`). Nasceu na sessão de challenge de 2026-08-08 e satisfaz os cinco: **C1** — a cobrança da F3 terá o mesmo dilema, com estados que ninguém vai querer expor no corpo; **C2** — `state-management`; **C3** — reverter é devolver o campo ao corpo, reativar a escrita da coluna e refazer os testes das duas fatias; **C4** — um leitor futuro perguntará por que `statusLocacao` está no `POST` e não no `PUT`; **C5** — quatro caminhos avaliados, três rejeitados por razão registrada (recusar todo `PUT` de imóvel locado; aceitar a divergência; débito com gatilho).
   **Por que não foi criada**: a decisão certa não é uma ADR nova — é **emendar a `Decision` da ADR-0019** para distinguir transição governada de transição de atributo operacional. Isso foi oferecido na sessão e o usuário optou por **registrar a leitura na spec** (§4.1.2) em vez de mexer na ADR antes de gerar as tasks. A saída rigorosa fica nomeada, e o comando é `/agent-spec-adr-supersede 0019`.
+  ✅ **CUMPRIDO em 2026-08-09**: o comando foi rodado e a **ADR-0021** nasceu — *"Transição de estado de negócio é rota própria, governada conforme a natureza do ato"*. A emenda é exatamente a que este item previa, e o adiamento durou o que devia durar: da sessão de challenge ao fecho da fatia, antes do congelamento da superfície. A 0019 está `superseded-by:0021`.
 
 Nenhuma **outra** decisão desta spec satisfaz os 5 critérios, e as duas ADRs que a fatia precisava (0019 e 0020) já foram registradas antes dela. A distinção `INDISPONIVEL` não impede a ativação (§6.3) fica em **1/5** — é decisão de fatia, sem alcance transversal.
 

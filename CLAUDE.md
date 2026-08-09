@@ -50,51 +50,58 @@ commitadas, incluindo a **T7**, cuja recuperação foi provada por **reinício r
 A fatia `caracterizacao-regras-legadas` (v1) também está **concluída**: os 6 artefatos golden
 estão versionados e são o oráculo das regras legadas para a F3 e a F5.
 
-**Fase 2 em andamento — a fatia 1 de 2 fechou em 2026-08-08.**
-**`cadastro-de-imoveis-e-pessoas` (v1) — CONCLUÍDA, staged e não commitada.** As **11 tasks**
-aprovadas nos dois gates, nenhuma bloqueada. Suíte de **274 → 541 casos**; `pnpm build`, `pnpm lint`
-e `pnpm test` verdes. Entrega as 6 entidades de negócio em `negocio` (conjunto, imóvel, cômodo,
-locador, locatário, fiador), as **33 rotas** sob `/v1` — `rotasEnumeradas` = **66**, `semDeclaracao`
-vazio —, a metragem derivada provada contra o golden, exclusão lógica em tudo menos cômodo, e o
-pacote **`@sysloc/contracts`** como fonte única do contrato. Fechou os débitos **D38** (na T4) e
-**D11**. Nasceram dela as ADRs **0014**, **0015**, **0016**, **0017** e **0018**.
-**Deixou 13 débitos abertos** na §2 do `_run/run-report.md` (14 blocos, um já fechado) — um deles
-com marcador e gatilho (**D3**). Resolve-se tudo de uma vez com
-`/agent-spec-debt-resolution docs/specs/features/cadastro-de-imoveis-e-pessoas/v1/`.
-Falta a fatia **`contratos-de-locacao`** para a fase fechar.
+**Fase 2 CONCLUÍDA — as duas fatias fecharam, e as duas estão commitadas.** A fase entrega o domínio
+de locação inteiro em **21 tasks**, todas aprovadas nos dois gates, nenhuma bloqueada.
 
-**`contratos-de-locacao` (v1) — ESPECIFICADA, pronta para execução; nenhuma linha de código escrita.**
-O pipeline SDD fechou em 2026-08-08: pré-refinamento, tech-alignment, PRD (16 US, 20 CA, 18 RN),
-tech spec, challenge e task plan. Entrega planejada: **`negocio.contrato` e `negocio.contrato_fiador`**
-(este último **vínculo puro, sem `retirado_em`** — a ausência é a decisão), a primeira **série
-declarada** do produto (`CTR-{ano}-{5 dígitos}`, sequência por `(empresa, ano)` atrás de duas funções
-`SECURITY DEFINER`) e o primeiro **ciclo de vida governado**. **9 rotas novas** — 8 sob
-`/v1/contratos` e a de situação de locação sobre `/v1/imoveis`; superfície **66 → 77** rotas e
-**51 → 60** manipuladores. Nasceram dela as ADRs **0019** e **0020**.
-**São 10 tasks em 3 fases**, sem par paralelizável (derivado, não autorado — a §4.2 do
-`task_plan.md` registra a condição que falha em cada par), e **34 casos de teste** distribuídos, um
-CT por task. Executa-se com
-`/agent-spec-sdd-run-tasks docs/specs/features/contratos-de-locacao/v1/task_plan.md sysloc-backend-implementer`
-— a assinatura da skill é `<task_plan_path> [agent_name]`, e o primeiro argumento é o **arquivo**
-`task_plan.md`, não o diretório da fatia. Omitir o segundo argumento não é erro: a skill lista os
-agentes de `.claude/agents/`, filtra os três reservados aos gates e pergunta qual usar.
+1. **`cadastro-de-imoveis-e-pessoas` (v1) — CONCLUÍDA em 2026-08-08 e commitada.** As **11 tasks**
+   aprovadas. Suíte de **274 → 541 casos**. Entrega as 6 entidades de negócio em `negocio`
+   (conjunto, imóvel, cômodo, locador, locatário, fiador), as **33 rotas** sob `/v1`, a metragem
+   derivada provada contra o golden, exclusão lógica em tudo menos cômodo, e o pacote
+   **`@sysloc/contracts`** como fonte única do contrato. Fechou os débitos **D38** (na T4) e **D11**.
+   Nasceram dela as ADRs **0014**, **0015**, **0016**, **0017** e **0018**. Deixou **13 débitos
+   abertos** — um com marcador e gatilho (**D3**).
+2. **`contratos-de-locacao` (v1) — CONCLUÍDA em 2026-08-09 e commitada.** As **10 tasks** aprovadas,
+   em 16 rodadas de gate; só a **T3** precisou de duas rejeições. Suíte de **541 → 664 casos**, com
+   crescimento monotônico — nenhum pacote encolheu em nenhuma rodada. Entrega
+   **`negocio.contrato` e `negocio.contrato_fiador`** (este último vínculo puro, sem `retirado_em` —
+   a ausência é a decisão), a primeira **série declarada** do produto (`CTR-{ano}-{5 dígitos}`,
+   sequência por `(empresa, ano)` atrás de duas funções `SECURITY DEFINER`) e o primeiro **ciclo de
+   vida governado**. **9 rotas novas** — 8 sob `/v1/contratos` e a de situação de locação sobre
+   `/v1/imoveis`. Nasceram dela as ADRs **0019** e **0020**; a **0019 já foi superseded pela 0021**.
+   Deixou **47 débitos** anotados, dos quais **14 já escriturados** (ver a intervenção abaixo).
 
-> **A T1 é a primeira por uma razão que expira**: ela captura do `/opt/frappe` o oráculo de ativação
-> e cancelamento, e essa janela fecha na F7. Ela exige `sudo` e o site efêmero de pé — **nenhum
-> subagente a executa**; a execução é conduzida junto ao operador e o gate audita a saída preservada.
+**A superfície da API está pronta para congelar, e não tem mais condição pendente.** São **75 rotas**
+e **60 manipuladores**, `semDeclaracao` vazio, 42 rotas do domínio com esquema derivado de
+`@sysloc/contracts`. ⚠️ **É 75, e não 77** — o `77` que circulou no `tech_spec.md` vinha de uma
+premissa que a medição refutou (*"cada `GET` entra em dobro por causa do `HEAD`"*), e o módulo
+`cobertura-de-autorizacao.ts` **suprime** o `HEAD` derivado. Não "corrija" para 77.
+
+**Intervenção dirigida de 2026-08-09** (fora do pipeline, no molde do commit `11c33ad`). Precedida de
+auditoria dos 47 débitos **contra o código**. Resultado: **quatro já estavam pagos** um dia depois do
+run (**D23**, **D24**, **D29**, **D34**), e **dez foram fechados** — **D1** e **D2** (os vãos de
+detecção do `verificar-golden.sh`, os dois com mutante), **D21** (o remapeamento de século em
+`Date.UTC`, único defeito funcional da lista), **D7**, **D9**, **D10**, **D31**, **D32**, **D44** e
+**D45**. Suíte **664 → 665**. O parecer registrado na **§5 do `_run/run-report.md`** é **NÃO rodar
+`/agent-spec-debt-resolution`** nesta fatia: os ~26 restantes são prosa em artefato de fatia fechada,
+três são débito com gatilho que a skill coletaria e não deve resolver, e o default `gates: [qa]` dela
+desliga justamente o Gate 2, que é quem detecta violação de `DECISÃO FECHADA`.
+
+> **Dois furos herdados que a F2 fechou, e que valem saber antes de tocar o código de imóveis**:
+> (1) `alterarImovel` escrevia `status_locacao` incondicionalmente e a entrada não aceitava `LOCADO`,
+> de modo que **toda** alteração de um imóvel locado apagava o `LOCADO` em silêncio — a T10 tirou o
+> campo do corpo do `PUT` e lhe deu rota própria, hoje governada pela **ADR-0021**; (2)
+> `esquemaDoImovel` ganhou `contratoVigente`, o que alcança **três** superfícies publicadas de uma vez
+> — **crescimento de esquema, nunca troca de igualdade por asserção de presença**.
 >
-> **Dois furos herdados que esta fatia fecha, e que valem saber antes de tocar o código de imóveis**:
-> (1) `alterarImovel` escreve `status_locacao` incondicionalmente e a entrada não aceita `LOCADO`, de
-> modo que **toda** alteração de um imóvel locado apagaria o `LOCADO` em silêncio — a T10 tira o campo
-> do corpo do `PUT` e lhe dá rota própria; (2) `esquemaDoImovel` ganha `contratoVigente`, o que alcança
-> **três** superfícies publicadas de uma vez e obriga quatro suítes da fatia 1 a crescer — **crescimento
-> de esquema, nunca troca de igualdade por asserção de presença**.
+> **O oráculo do sistema antigo já foi capturado, e a janela que expirava fechou bem.** A T1 da fatia
+> de contratos capturou do `/opt/frappe` a ativação e o cancelamento antes da F7; os **8 artefatos
+> golden** estão versionados e o determinismo foi provado por recaptura contra site restaurado do
+> zero. Não há mais captura pendente.
 
-**Fase 1 CONCLUÍDA — as duas fatias fechadas.** A F1 foi **desdobrada em duas fatias**, cortando
-*depois* da autenticação (o corte isolamento × identidade foi rebatido: ele atravessa a camada 5, e
-a fonte legítima do `empresa_id` é a sessão). Em **2026-08-05** a segunda fechou, e com ela a fase.
-**Nenhuma das duas foi commitada ainda** — o pipeline nunca commita; o trabalho está *staged*,
-aguardando a decisão do usuário.
+**Fase 1 CONCLUÍDA — as duas fatias fechadas e commitadas.** A F1 foi **desdobrada em duas fatias**,
+cortando *depois* da autenticação (o corte isolamento × identidade foi rebatido: ele atravessa a
+camada 5, e a fonte legítima do `empresa_id` é a sessão). Em **2026-08-05** a segunda fechou, e com
+ela a fase.
 
 1. **`fundacao-multitenancy-identidade` (v1) — CONCLUÍDA e commitada.** As 11 tasks aprovadas nos
    dois gates. Dá para logar, e o isolamento entre empresas está provado: `empresa_id`, RLS
@@ -103,7 +110,7 @@ aguardando a decisão do usuário.
    de sessão. Depois do run, uma **intervenção dirigida de fechamento** (fora do pipeline) resolveu
    **22 dos 37 débitos** anotados, mais o **D38**, achado durante a própria revisão. Suíte em
    **274 casos**.
-2. **`autorizacao-e-ciclo-de-acesso` (v1) — CONCLUÍDA em 2026-08-05, staged e não commitada.**
+2. **`autorizacao-e-ciclo-de-acesso` (v1) — CONCLUÍDA em 2026-08-05 e commitada.**
    As **9 tasks** aprovadas nos dois gates, nenhuma bloqueada. Suíte de **274 → 350 casos**;
    `pnpm build`, `pnpm lint` e `pnpm test` verdes. Entrega a matriz 10×7 com **ajuste bidirecional**
    por usuário (conceder **e** retirar), sessão com `versaoPermissoes` **por pessoa** relido quando
@@ -113,12 +120,12 @@ aguardando a decisão do usuário.
    virou o **item 5 da §F7** do plano de execução. Nasceram dela as ADRs **0010**, **0011**,
    **0012** e **0013**, e ela **aposentou a 0007**. (Registro histórico: a **0012 foi, depois,
    substituída pela 0017** — não a cite como vigente.)
-   **Deixou 41 débitos anotados** na §2 do `_run/run-report.md` — quatro deles com marcador e
-   gatilho (**D27**, **D37**, **D38**, **D40**). Resolve-se tudo de uma vez com
-   `/agent-spec-debt-resolution docs/specs/features/autorizacao-e-ciclo-de-acesso/v1/`.
-   **A superfície da API está completa e pronta para congelar**: 15 rotas, mais a de troca de senha
-   do produto; a nativa de `/v1/auth/change-password` deixou de ser publicada, e o inventário de
-   `/v1/auth` caiu de 6 para 5.
+   **Deixou 41 débitos anotados** na §2 do `_run/run-report.md` — hoje **dois** deles ainda têm
+   marcador vivo (**D27** e **D37**); o **D38** e o **D40**, que também tinham, foram fechados.
+   **A superfície de autenticação e autorização fechou aqui**: 15 rotas ao fim desta fatia, mais a
+   de troca de senha do produto; a nativa de `/v1/auth/change-password` deixou de ser publicada, e o
+   inventário de `/v1/auth` caiu de 6 para 5. (O total do produto **não** parou em 15 — a F2
+   acrescentou 60 e a superfície hoje é de **75 rotas**.)
 
 **O que a PRIMEIRA FATIA deixou aberto, e que a próxima sessão precisa saber** — os caminhos abaixo
 são relativos a `docs/specs/features/fundacao-multitenancy-identidade/v1/`:
@@ -150,9 +157,19 @@ auditados **contra o código**, um a um. Resultado: **7 já estavam pagos** e co
 classe de cleanup barato. Os 11 estão marcados na §2 da fatia de origem, com evidência. Na mesma
 passagem, uma **intervenção dirigida** fechou **D1** (caracterização), **D12**, **D18** e **D21**, e
 fechou **em parte** o **D22** — cada um com mutante medido e revertido, e todos aprovados por
-validação independente. Restam **~85 débitos abertos**, quase todos `BAIXO` de higiene local.
+validação independente. Restaram **~85 débitos abertos** naquelas cinco fatias, quase todos `BAIXO`
+de higiene local.
 **O parecer registrado é NÃO rodar `/agent-spec-debt-resolution` em massa**: o custo é de 2 a 4 runs
-do tamanho de uma fatia, contra ganho marginal, com F2.2 a F5 ainda entre aqui e o marco de entrega.
+do tamanho de uma fatia, contra ganho marginal, com F3 a F5 ainda entre aqui e o marco de entrega.
+
+> **O parecer foi reafirmado em 2026-08-09**, sobre os 47 débitos da fatia de contratos, e agora com
+> razões medidas contra a mecânica da própria skill — não só de custo. As seis estão na **§5.1** do
+> `_run/run-report.md` daquela fatia; a mais forte é que o default `gates: [qa]` **desliga o Gate 2**,
+> que é quem a `.claude/rules/nao-regressao.md` §6 encarrega de detectar violação de
+> `DECISÃO FECHADA` — e mais da metade daqueles débitos é edição de prosa que **registra decisão**,
+> em arquivos com 2 a 7 marcadores. Somando as seis fatias, são **~118 débitos abertos**.
+> O caminho que se mostrou barato e seguro é a **intervenção dirigida**: escolher os poucos com
+> prazo ou poder de detecção, fechar cada um com mutante medido, e escriturar o resto.
 
 > Mantenha este bloco atualizado — ele é lido por todo subagente, e um estado errado aqui chega a
 > todos eles antes de qualquer arquivo do repositório. **É índice, não relatório**: o detalhe vive
@@ -169,9 +186,12 @@ operacional dela — não uma meta aproximada.
 O marco está alcançado quando **todos** os sete itens forem verdadeiros:
 
 - [ ] **F1 a F5 concluídas** — todas as tasks aprovadas nos dois gates, suíte verde, critérios de
-      aceitação de cada fatia verificados · **F1 fechada em 2026-08-05; faltam F2 a F5**
+      aceitação de cada fatia verificados · **F1 fechada em 2026-08-05, F2 em 2026-08-09; faltam
+      F3, F4 e F5**
 - [ ] **Superfície da API congelada** — nenhuma fatia posterior acrescenta, remove ou altera rota;
-      o congelamento é o que torna o handoff confiável
+      o congelamento é o que torna o handoff confiável · **hoje em 75 rotas / 60 manipuladores, e
+      sem condição pendente** desde que a ADR-0021 fechou o D43 · ⚠️ mas **F3 a F5 ainda publicam
+      rota** (cobrança, webhook Sicoob, rotinas), então o congelamento é o *depois* delas
 - [ ] **`@sysloc/contracts` publicado** no GitHub privado e versionado — é o artefato que o React
       importa para trocar tipos e cliente ts-rest
 - [ ] **`handoff-frontend.md` gerado** por `/agent-spec-backend-contract-handoff`, carregando o
@@ -215,7 +235,7 @@ pelo número, e sem os dois arquivos de `.claude/plans/` essas referências fica
 | 3 | `.claude/plans/plano-saas-decisoes.md` | As **40 decisões fechadas** — o plano de execução as cita por número |
 | 4 | `.claude/plans/plano-saas.md` | Arquitetura-alvo, os 3 perfis, as **10 telas × 7 ações sensíveis**, a especificação do webhook Sicoob |
 | 5 | `docs/plano-backend-novo/levantamento-frontend.md` | O frontend React: inventário dos **35 endpoints**, o **modelo de domínio que a API deve falar**, os acoplamentos a remover |
-| 6 | `docs/adr/` | ADRs. **20 registradas, 15 `accepted`**: 0001, 0005, 0006, 0008, 0009, 0010, 0011, 0013, 0014, 0015, 0016, 0017, 0018, 0019 e 0020. **Vinculantes para a F2**: 0006, 0008, 0009, 0011, 0013, 0014, 0015, 0016, 0017, 0018, 0019 e 0020. As **0002, 0003 e 0004** morreram com o Frappe — `deprecated` desde 2026-08-04, porque nomeiam primitivas dele (DocType, fixture, `Custom DocPerm`, Server Script). A forma canônica do contrato da API tem **cadeia de três**: **0007 → 0012 → 0017**; as duas primeiras estão `superseded` e **não se citam** — a vigente é a **0017** (três classes de chave exposta: código legível quando há série declarada, UUID quando não há). ⚠️ **Citar ADR exige abrir a `Decision`** — esta linha e o `INDEX.md` são paráfrases, e já divergiram do texto real |
+| 6 | `docs/adr/` | ADRs. **21 registradas, 15 `accepted`**: 0001, 0005, 0006, 0008, 0009, 0010, 0011, 0013, 0014, 0015, 0016, 0017, 0018, 0020 e 0021. **Vinculantes para a F2**: 0006, 0008, 0009, 0011, 0013, 0014, 0015, 0016, 0017, 0018, 0020 e 0021. As **0002, 0003 e 0004** morreram com o Frappe — `deprecated` desde 2026-08-04, porque nomeiam primitivas dele (DocType, fixture, `Custom DocPerm`, Server Script). Há **duas cadeias de supersede**, e nas duas só a última se cita: a forma canônica do contrato da API é **0007 → 0012 → 0017**, vigente a **0017** (três classes de chave exposta: código legível quando há série declarada, UUID quando não há); e a transição de estado é **0019 → 0021**, vigente a **0021** (rota própria sempre; a chave de ação só quando o ato é sensível — atributo operacional do cadastro exige apenas a área). ⚠️ **Citar ADR exige abrir a `Decision`** — esta linha e o `INDEX.md` são paráfrases, e já divergiram do texto real |
 
 Por fase: a **F4** exige `docs/specs/features/integracao-bancaria-configuravel/`; a **F6** exige
 o levantamento do frontend (item 5).
@@ -314,13 +334,17 @@ Específicos deste domínio: **undici** (mTLS do Sicoob), **`node:crypto` `X509C
 Onze débitos têm gatilho que dispara fora da fatia que os criou: **D28** e **D32** vêm da F0;
 **D23**, **D39**, **D24**, **D27** e **D37** nasceram na F1 — os três últimos na fatia
 `autorizacao-e-ciclo-de-acesso` —; e quatro nasceram na F2, o **D3** na fatia
-`cadastro-de-imoveis-e-pessoas` e o **D28**, o **D36** e o **D43** na fatia `contratos-de-locacao`.
+`cadastro-de-imoveis-e-pessoas` e o **D28**, o **D36** e o **D44** na fatia `contratos-de-locacao`.
 O **D27** partilha com o D23 o gatilho e o fato que falta: qual é o salto confiável da borda; e o
-**D36** partilha com o D28 da mesma fatia o gatilho — a F3. O **D43** é o único cujo gatilho é o
-**congelamento da superfície da API**, e por isso ele vence os demais em prazo.
+**D36** partilha com o D28 da mesma fatia o gatilho — a F3. O **D44** é o mais novo: o marcador dele
+foi emitido na intervenção dirigida de 2026-08-09, e não no run — o débito existia desde a T10 e
+chegava ao futuro só por um parágrafo de docblock.
+**Nenhum tem por gatilho o congelamento da superfície da API** — o único que tinha era o D43, e ele
+foi fechado em 2026-08-09 pela ADR-0021, que supersede a 0019 e recorta a governança da transição
+pela natureza do ato.
 ⚠️ **Os dois `D28` são débitos DIFERENTES** — `F0/T5` e `F2/T7` —, e a coexistência é legítima: a
 sequência corre dentro da §2 da fatia que registrou cada um (§3-B da `nao-regressao.md`).
-**Um já disparou e segue aberto** — o D28, na F1/T2.
+**Um já disparou e segue aberto** — o **D28 (F0/T5)**, na F1/T2.
 Seis saíram daqui por terem sido fechados — **este índice lista só débito vivo**: o D6 da F1/T5,
 no fechamento da F1
 (`verificar-migracao.sh` entrou em `VERIFICADORES_DA_FATIA`); o D7 da F1/T6, na T6 da fatia
@@ -361,7 +385,7 @@ intervenção dirigida de limpeza de 2026-08-05, quando `esquemaDoErro` ganhou d
 | **D3** (F2/T1, fatia `cadastro-de-imoveis-e-pessoas`) | `packages/contracts/src/comum.ts` | a **primeira task que abrir `usuario.controller.ts` por outra razão** — `ESQUEMA_DO_IDENTIFICADOR` tem duas definições |
 | **D28** (F2/T7, fatia `contratos-de-locacao`) | `apps/api/src/contratos/contrato.service.ts` | a **F3** — a ativação não gera cobranças, e a fatia de cobrança é obrigada a afrouxar o literal `cobrancasGeradas: false` |
 | **D36** (F2/T8, fatia `contratos-de-locacao`) | `apps/api/src/contratos/contrato.service.ts` (`cancelar`) | a **F3** — a pré-condição legada "sem PDF, não cancela" não é portada, e é lá que se decide se o carimbo é pré-condição ou efeito |
-| **D43** (F2/T10, fatia `contratos-de-locacao`) | `apps/api/src/imoveis/imovel.controller.ts` | o **congelamento da superfície da API** — transição de estado sem chave de ação; emenda a ADR-0019 por supersede |
+| **D44** (F2/T10, fatia `contratos-de-locacao`) | `apps/api/src/imoveis/imovel.service.ts` (`definirSituacaoDeLocacao`) | a fatia que criar no banco a **restrição pareando `contrato.status='ATIVO'` com `imovel.status_locacao`** — hoje nada fecha a janela da guarda |
 
 ---
 

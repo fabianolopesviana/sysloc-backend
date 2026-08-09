@@ -24,12 +24,14 @@ Status: **10/10 tasks concluídas — as três fases fechadas** · `pnpm test` *
 > Anotados pela política débito-controlado com bloqueio seletivo por categoria: baixos de qualquer categoria e médios de categoria anotável não bloqueiam. Resolva tudo de uma vez com `/agent-spec-debt-resolution docs/specs/features/contratos-de-locacao/v1/`.
 
 ### D1 · medio · tests · T1 · QA
+- **Status:** ✅ **RESOLVIDO** — intervenção dirigida de 2026-08-09. O bloco passou a acumular o par `(dia de início, ano de destino)` quando o destino cai em fevereiro, e a afirmar os **seis** pares `{29,30,31} × {bissexto, não-bissexto}`. **Prova de falsificação simétrica, com o mutante DISCRIMINANTE**: um golden em que fevereiro segue coberto nos dois tipos de ano — mas só por cenários de dia baixo, com 29/30/31 desviados para março — sai `exit 0` no bloco antigo e `exit 1` no novo, **acusando só a asserção nova**; as três antigas passam nele. Controle (golden íntegro) limpo nos dois.
 - **Onde:** `deploy/scripts/caracterizacao/verificar-golden.sh:828`
 - **Problema:** CT-433 prova a virada de mês e a cobertura de fevereiro de forma DESACOPLADA — o produto cartesiano que a §4-2 exige não é asserido.
 - **Impacto:** o bloco acumula `dias_de_inicio` e `anos_de_fevereiro` como conjuntos independentes e os afirma separadamente. Nada liga os dois. Provado por mutante executado pelo QA: um golden em que a virada de mês nunca encosta em fevereiro — exatamente o caso que a task chama de "a razão inteira de capturar em vez de ler" — sai `exit 0`. O artefato entregue hoje satisfaz o critério (29/30/31 × fev-2027 e fev-2028, conferidos um a um); o que falta é poder de detecção, e ele importa mais que o normal porque este verificador é o que protege o oráculo depois da F7, quando não houver mais como recapturar.
 - **O que fazer:** acumular o par `(inicio.day, destino.year)` quando `destino.month == 2` e afirmar que o conjunto cobre `{29,30,31} × {bissexto, não-bissexto}` — seis pares. Falsificação exigida: reaplicar o mutante (A) do QA e demonstrar que ele passa a reprovar.
 
 ### D2 · medio · tests · T1 · QA
+- **Status:** ✅ **RESOLVIDO** — intervenção dirigida de 2026-08-09. A contagem `len(recusadas) < 6` deu lugar à constante `CONDICOES_DE_RECUSA`, com as seis mensagens literais da regra, e a asserção passou de cardinalidade a **identidade**. Prova de falsificação: o mutante (B) do QA — seis cópias de `sem_locatario` — sai `exit 0` no bloco antigo e `exit 1` no novo, nomeando as **cinco** condições ausentes.
 - **Onde:** `deploy/scripts/caracterizacao/verificar-golden.sh:778`
 - **Problema:** CT-433 conta recusas em vez de discriminá-las — `len(recusadas) < 6` não prova "uma por condição de entrada".
 - **Impacto:** seis recusas da MESMA condição satisfazem a asserção, embora a própria mensagem de erro declare "as seis condições de entrada exigem ao menos um cada". Provado por mutante executado: seis cópias de `sem_locatario` saem `exit 0`. O golden real cobre as seis corretamente.
@@ -60,6 +62,7 @@ Status: **10/10 tasks concluídas — as três fases fechadas** · `pnpm test` *
 - **O que fazer:** remover a função, ou dar-lhe consumidor no CT-433 — `afirmar_diferente "o conjunto versionado deixou de ser o de 7 caminhos" "7" "$(...)"` é o companheiro negativo natural da contagem que o caso já afirma.
 
 ### D7 · BAIXO · code_quality · T1 · Tech Review
+- **Status:** ✅ **RESOLVIDO** — intervenção dirigida de 2026-08-09. `GOLDEN_ESPERADOS` passou a ser **composta** — `("PROCEDENCIA.md" "${GOLDEN_DA_CAPTURA_ORIGINAL[@]}" "${GOLDEN_DE_CONTRATO[@]}")` — e declarada depois das duas sublistas. Verificado: o conjunto continua idêntico (9 itens, mesmos nomes) e a ordem não é observável — o único consumo do conjunto compara sob `sort`, e os outros dois usam só a cardinalidade. `shellcheck --severity=error` limpo.
 - **Onde:** `deploy/scripts/caracterizacao/verificar-golden.sh:35`
 - **Problema:** o conjunto de artefatos golden é declarado em três listas paralelas no mesmo arquivo, sem asserção de coerência.
 - **Impacto:** vale `GOLDEN_ESPERADOS == PROCEDENCIA.md + GOLDEN_DA_CAPTURA_ORIGINAL + GOLDEN_DE_CONTRATO`, mas a identidade é mantida à mão. O comentário declara `GOLDEN_ESPERADOS` como "fonte única do conjunto E da contagem" — verdade para a contagem, falso para o conjunto assim que as outras duas listas existem ao lado. Acrescentar um décimo artefato continua exigindo lembrar de três lugares, que é o atrito que os comentários dizem eliminar.
@@ -72,12 +75,14 @@ Status: **10/10 tasks concluídas — as três fases fechadas** · `pnpm test` *
 - **O que fazer:** coluna de sha256 por artefato na §1 do `PROCEDENCIA.md`, emitida por `capturar.py` junto do manifesto, mais asserção no `verificar-golden.sh` conferindo cada digest. Endereçar junto da próxima captura, se houver, ou por um caso que fixe os digests atuais como constantes versionadas — recapturar só por isto não se paga.
 
 ### D9 · medio · code_quality · T2 · QA
+- **Status:** ✅ **RESOLVIDO** — intervenção dirigida de 2026-08-09. A linha `empresaId` saiu de `DECIDIDOS_PELO_SERVIDOR`, com a razão registrada no ponto. **Não houve perda de cobertura, e ela foi medida**: um `esquemaDeContratoNovo` que passasse a declarar `empresaId` reprova no `CT-337` (`1 failed | 129 passed`) mesmo sem a linha removida — a varredura descobre os esquemas pelos símbolos exportados, e o alvo entra nela pelo prefixo `esquemaDe`. Os outros quatro itens da tabela permanecem.
 - **Onde:** `packages/contracts/test/esquemas.spec.ts:731`
 - **Problema:** duplicata semântica — a recusa de `empresaId` em `esquemaDeContratoNovo` é provada duas vezes com a mesma tupla.
 - **Impacto:** o item `{ chave: 'empresaId', valor: EMPRESA_ALHEIA }` da tabela `DECIDIDOS_PELO_SERVIDOR` coincide integralmente com o caso que o **CT-337** já gera (mesmo alvo, mesmos parâmetros, mesmo resultado esperado — `unrecognized_keys`, `keys: ['empresaId']`). O CT-337 é ainda estritamente mais forte, porque acrescenta a metade declarativa. Os outros quatro itens da tabela (`status`, `codigo`, `dataFimLocacao`, `valorTotalContrato`) **não** são cobertos pelo CT-337 e são legítimos.
 - **O que fazer:** remover a linha de `empresaId` e registrar no docblock que ela é coberta pela varredura do CT-337 — a lista dos cinco continua nomeada na prosa (RN-03) sem repetir a asserção. Alternativa aceitável: manter e registrar a duplicação como deliberada; nesse caso o débito fecha por decisão, não por edição.
 
 ### D10 · baixo · tests · T2 · QA
+- **Status:** ✅ **RESOLVIDO** — intervenção dirigida de 2026-08-09. A tabela `RECUSADOS` do `CT-428 (b)` ganhou a fronteira imediata (`MAIOR_VALOR_MONETARIO + ESCALA_MONETARIA`, campo `valorMensal`). **Mata exatamente o mutante que sobrevivia**: com `.max(MAIOR_VALOR_MONETARIO * 2)` a suíte agora sai `1 failed | 129 passed`, e o caso que reprova é o novo.
 - **Onde:** `packages/contracts/test/esquemas.spec.ts:1021`
 - **Problema:** a fronteira imediata do teto monetário não é exercitada — mutante medido sobrevive.
 - **Impacto:** trocar `.max(MAIOR_VALOR_MONETARIO)` por `.max(MAIOR_VALOR_MONETARIO * 2)` deixa a suíte **126/126 verde**. As outras três grandezas do arquivo têm o par de fronteira imediata; o dinheiro é a única sem. **O impacto é delimitado pela medição**: o mutante não aprova valor indevido, porque a conferência conjunta `.refine` recusa de qualquer forma — o que se perde é a **atribuição de campo** na faixa `(teto, 2×teto]`, que passaria a acusar `prazoMeses` quando o culpado é `valorMensal`, contrariando a §6.1.
@@ -144,6 +149,7 @@ Status: **10/10 tasks concluídas — as três fases fechadas** · `pnpm test` *
 - **O que fazer:** trocar a segunda frase do docblock pelo cenário vivo. Uma linha de prosa; não toca asserção nenhuma.
 
 ### D21 · BAIXO · code_quality · T4 · Tech Review
+- **Status:** ✅ **RESOLVIDO** — intervenção dirigida de 2026-08-09, **pelo caminho que fecha a classe** e não pela declaração de pré-condição. `Date.UTC` deu lugar a `setUTCFullYear` sobre um `Date` de época, que não tem a cláusula de remapeamento; é a única construção de instante da função. Rede: **`RG-D21-01`**, fora da faixa `CT-4xx` pela mesma razão e na mesma forma do `RG-T3-01` (o caso nasce de resolução de débito, não da §6 de uma task). Prova de falsificação: reintroduzido o `Date.UTC`, ele reprova com `expected '1951-03-14' to be '0051-03-14'` e **nenhum outro caso o acompanha** (`1 failed | 84 passed`), o que confirma que o vão era real. Medido também que a faixa é a do ano de **destino**, não a do de início — `0099-12-31 + 1 mês` sempre esteve correto, porque transborda para `0100`; o par de fronteira asserido cobre os dois lados.
 - **Onde:** `packages/db/src/derivacao-de-contrato.ts:141`
 - **Problema:** `Date.UTC` remapeia anos de 1 a 99 para `1900+ano`, e a data de fim sai ~1900 anos errada **em silêncio**.
 - **Impacto:** medido contra o módulo construído — `derivarTerminoDaLocacao('0050-03-15', 12)` devolve `'1951-03-14'` (correto seria `'0051-03-14'`); a partir de `0100` o comportamento volta ao certo. O `formatarEmUtc` imprime o ano remapeado com quatro dígitos, de modo que **o resultado tem a forma correta e o valor errado**. A entrada é **alcançável**: `esquemaDeContratoNovo.safeParse` aceita `dataInicioLocacao: '0050-03-15'` (o `z.iso.date()` admite ano de dois dígitos significativos), a coluna `data_inicio_locacao` não tem restrição de faixa, e não há `CHECK` de `data_fim_locacao >= data_inicio_locacao`. Um erro de digitação no século atravessaria a borda e o banco, e a ativação da T7 gravaria data de fim **anterior** à de início sem erro nenhum. É `BAIXO` porque a faixa é implausível no domínio de locação, não porque seja inofensiva. **É o único ramo do calendário defeituoso**: 498.555 pares `(início, prazo)` entre 2020 e 2110 foram conferidos contra implementação de referência independente, com **zero** divergências.
@@ -156,12 +162,14 @@ Status: **10/10 tasks concluídas — as três fases fechadas** · `pnpm test` *
 - **O que fazer:** trocar o retorno para `emitirNumeroDeContrato(tx, ano): Promise<NumeroDaSerie>` (`{ ano, numero }`, com o mesmo `ano` que selecionou o contador) e ajustar `montarContrato` e o CT-403 (c). O CT-403 (c) fica **mais forte**: passa a provar que o par gravado é literalmente o que o emissor devolveu.
 
 ### D23 · BAIXO · error_handling · T5 · Tech Review
+- **Status:** ✅ **RESOLVIDO EM SUBSTÂNCIA** — confirmado por auditoria de 2026-08-09 (intervenção dirigida), contra o código. O risco que o débito nomeia — a janela de corrida devolver `500` — **não existe**: `apps/api/src/contratos/contrato.service.ts:955` traduz `ErroDeImovelComContratoVigente` em `traduzirConflitoDeGravacao`, e o envoltório corre também sobre a alteração (registro no marcador de `:940`). O que resta é a **prosa da T6.md**, documento de fatia fechada, deliberadamente não corrigido — ver o parecer de 2026-08-09 na §5.
 - **Onde:** `docs/specs/features/contratos-de-locacao/v1/tasks/T6.md:14` e a tabela §6.4 dela
 - **Problema:** a alteração passou a produzir `ErroDeImovelComContratoVigente`, e a **T6** — dona do `PUT` — não declara essa classe entre o que consome nem a mapeia.
 - **Impacto:** com o envoltório instalado na rodada 2, `alterarContrato` virou **segunda origem** da classe. A T6 lista em §1 apenas `garantirContadorDeContrato, ErroDeCodigoEmUso ← T5`, e a §6.4 não tem entrada para conflito de vigência. A RD-05 recusa `PUT` sobre contrato que não é `RASCUNHO`, então o caminho só se abre **na janela de corrida** entre o `SELECT` da guarda e o `UPDATE` — uma ativação concorrente do mesmo contrato. **Se a T6 não mapear a classe, essa janela devolve `500`**: a tradução morre na borda e o defeito da rodada 1 reaparece um andar acima, com a porta correta.
 - **O que fazer:** acrescentar `ErroDeImovelComContratoVigente` aos símbolos consumidos da T6 e uma linha na §6.4: *"imóvel de destino já com contrato vigente (corrida com ativação concorrente) → `422 CAMPO_INVALIDO`, `campo: 'imovelId'`, `detalhes.conflito: 'IMOVEL_COM_CONTRATO_VIGENTE'"*. Mesmo mapeamento da T7, num ponto único se a borda já compartilhar o tradutor.
 
 ### D24 · baixo · architecture · T5 · Tech Review (rodada 1)
+- **Status:** ✅ **RESOLVIDO** — confirmado por auditoria de 2026-08-09 (intervenção dirigida), contra o código. A T7 e a T8 entregaram exatamente o que o débito pediu, **com mutante medido e nomeando o débito**: o cabeçalho de `apps/api/test/contratos.e2e.spec.ts` registra o **MT7-2** (*"é o sentido ativar ⇒ imóvel `LOCADO` do par que o Tech Review da T5 pediu (débito D24), medido em três pontos independentes"* — `CT-413`, `CT-414`, `CT-425`) e o **MT8-1**, seu espelho no cancelamento (`CT-415` e `CT-426`, `expected 'LOCADO' to be 'DISPONIVEL'`). O CT negativo pedido é o `CT-413 (b)`: uma falha depois das duas escritas deixa contrato `RASCUNHO` **e** imóvel `DISPONIVEL`. A ressalva sobre `SituacaoInformavel` na borda da T10 também foi cumprida e é asserida.
 - **Onde:** `packages/db/src/contrato.ts:884` (`ativarContrato`) e `:917` (`cancelarContrato`)
 - **Problema:** o par *"contrato ATIVO ⇔ imóvel LOCADO"* **não tem pareamento estrutural** — a T7 o herda como disciplina de serviço.
 - **Impacto:** as duas escritas precisam ocorrer na mesma unidade e **nos dois sentidos**, mas nada na estrutura as pareia: são duas chamadas independentes que o serviço da T7 tem de lembrar de emitir. O docblock da porta estreita já nomeia o modo de falha — *"um imóvel que ficasse `DISPONIVEL` com contrato vigente não acusaria nada até a segunda locação ser recusada"*. Nenhuma restrição do banco recusa esse estado, e ele só se manifesta **longe da causa**. Agravante menor: a porta estreita aceita o enum **completo** `SituacaoDeLocacao`, de modo que a rota da T10 poderá lhe passar `LOCADO` se não mantiver `SituacaoInformavel` na borda — a proteção que a fatia 1 fechou é de **contrato (Zod)**, não de assinatura.
@@ -193,6 +201,7 @@ Status: **10/10 tasks concluídas — as três fases fechadas** · `pnpm test` *
 - **Por que não agora:** `negocio.cobranca` não existe, e a competência, a referência e o vencimento saturado das parcelas são a entrega da F3 — antecipá-los aqui seria escrever a regra de outra fatia contra um oráculo que esta não prova.
 
 ### D29 · baixo · documentation · T7 · QA
+- **Status:** ✅ **RESOLVIDO EM SUBSTÂNCIA** — confirmado por auditoria de 2026-08-09 (intervenção dirigida), contra o código. O que o débito existia para evitar **não aconteceu**: `grep -rn "ErroDeTransicaoInvalida" apps packages --include=*.ts` devolve **uma única linha**, e ela é o cabeçalho de `apps/api/test/contratos.e2e.spec.ts:267`, que **declara a divergência**. A T8 não criou a classe, não nasceu a segunda guarda com segunda forma de recusa, e `ContratoService.exigirEstado` seguiu como ponto único. Resta a prosa da T7.md/T8.md — fatia fechada, não corrigida por decisão.
 - **Onde:** `docs/specs/features/contratos-de-locacao/v1/tasks/T8.md:14`
 - **Problema:** `ErroDeTransicaoInvalida` foi declarado na §1 da T7 como símbolo público criado, **não existe no código**, e a **§1 da T8 declara consumi-lo da T7**.
 - **Impacto:** a divergência **procede em substância** — a §10.1 da tech spec fixa a recusa como `CAMPO_INVALIDO | 422 | campo status | { estadoAtual, transicaoPedida }`, e `ErroDeTransicaoInvalida` aparece na §6.3 apenas como "Erro de Domínio Associado" **conceitual**. `ContratoService.exigirEstado` é o ponto único e **preserva as duas formas**: o CT-409 afirma `transicaoPedida: 'ALTERACAO'` e o CT-414 afirma `'ATIVACAO'`, os dois verdes; `transicaoPedida` é **parâmetro** justamente porque as duas transições partem do **mesmo** estado exigido e derivá-lo as tornaria indistinguíveis. **O Tech Review foi enfático**: a ausência está **certa**, e se a T8 criar a classe para "cumprir" a §1, nasce uma **segunda guarda com uma segunda forma de recusa** sobre um `detalhes` que é contrato publicado — o padrão exato dos débitos D12/D38/D40 desta base.
@@ -205,12 +214,14 @@ Status: **10/10 tasks concluídas — as três fases fechadas** · `pnpm test` *
 - **O que fazer:** acrescentar um item à seção "DIVERGÊNCIAS DECLARADAS DA T7" registrando que a metade de log não é alcançável sem seam de produção (Iron Law #6), pela mesma razão já escrita para o desfecho de estado.
 
 ### D31 · baixo · tests · T7 · QA
+- **Status:** ✅ **RESOLVIDO** — intervenção dirigida de 2026-08-09. O literal `'6500.3899'` deu lugar a `PREFIXO_DO_RESIDUO_NO_TEXTO`, derivado das duas constantes do cenário. **Não pelo caminho que o débito sugeria primeiro**: trocar por `String(TOTAL_INGENUO_COM_RESIDUO)` teria **afrouxado** a asserção (uma serialização que truncasse o resíduo em `6500.38999` escaparia do `not.toContain`), e afrouxar asserção é R2. O prefixo é preservado, e uma âncora nova afirma que ele é prefixo do ingênuo e **não** do correto — sem ela, um corte curto demais tornaria a asserção infalsificável.
 - **Onde:** `apps/api/test/contratos.e2e.spec.ts:1935`
 - **Problema:** literal `'6500.3899'` escrito à mão **ao lado da constante que ele deveria derivar** (`TOTAL_INGENUO_COM_RESIDUO = 6500.389999999999`).
 - **Impacto:** se o par do resíduo mudar, a constante muda e o literal não — **a asserção passaria a não perseguir nada, em silêncio**. É o único ponto do delta em que um valor de contrato é redigitado.
 - **O que fazer:** derivar da constante — `expect(derivada.texto).not.toContain(String(TOTAL_INGENUO_COM_RESIDUO))`, ou uma constante `PREFIXO_DO_RESIDUO_NO_TEXTO` definida a partir dela.
 
 ### D32 · baixo · documentation · T7 · QA
+- **Status:** ✅ **RESOLVIDO** — intervenção dirigida de 2026-08-09. A linha do `CLAUDE.md` passou a dizer *"o **D28 (F0/T5)**, na F1/T2"*, no par que a §3-B exige.
 - **Onde:** `CLAUDE.md:321`
 - **Problema:** a frase *"Um já disparou e segue aberto — o D28, na F1/T2"* ficou **ambígua** com dois D28 no índice.
 - **Impacto:** a linha é anterior à T7 e nomeia o débito **pelo número solto**, o que a §3-B proíbe justamente porque o identificador é o par `Dnn · F{n}/{origem}`. Com o `D28 (F2/T7)` agora no mesmo índice, a frase deixa de identificar qual dos dois disparou. O aviso que a T7 acrescentou mitiga, mas **não desambigua esta linha**.
@@ -223,6 +234,7 @@ Status: **10/10 tasks concluídas — as três fases fechadas** · `pnpm test` *
 - **O que fazer:** três edições de uma linha — "As **40** rotas"; "Os **sete** pares … de cadastro (T6) e a ativação (T7)"; e o `describe` sem o numeral, já que o número vive nas âncoras logo abaixo.
 
 ### D34 · BAIXO · code_quality · T7 · Tech Review
+- **Status:** ✅ **RESOLVIDO** — confirmado por auditoria de 2026-08-09 (intervenção dirigida), contra o código. Fechado pela **T8**, sem anotação na época: `apps/api/src/contratos/contrato.service.ts:376` declara `type TransicaoPedida = typeof ALTERACAO | typeof ATIVACAO | typeof CANCELAMENTO`, e `:867` usa a união na assinatura de `exigirEstado`. O ponto de extensão nomeado que o débito previa foi de fato herdado pela T8 ao acrescentar o terceiro valor — o `'CANCELAMETO'` que o débito temia não compila.
 - **Onde:** `apps/api/src/contratos/contrato.service.ts:315-316` e `:730`
 - **Problema:** `transicaoPedida` é **`string` solto**, enquanto o estado irmão da mesma recusa é preso à união fechada — **e a T8 acrescenta o terceiro valor**.
 - **Impacto:** `ALTERACAO` e `ATIVACAO` são literais sem anotação. Uma linha acima, o docblock de `ESTADO_ALTERAVEL`/`ESTADO_ATIVAVEL` declara o princípio **oposto** e a razão: *"a anotação é `EstadoDoContrato` porque literal fora da união fechada não compila"*. Os dois valores viajam no **mesmo** objeto `detalhes` da **mesma** recusa, e os dois são contrato publicado — mas só um tem o compilador atrás. Um `'CANCELAMETO'` na T8 compila, passa build e lint, e só é pego pelo caso E2E da própria T8 — rede real, mas **tardia**, e que depende de o executor não copiar o typo do produto.
@@ -278,6 +290,7 @@ Status: **10/10 tasks concluídas — as três fases fechadas** · `pnpm test` *
 - **O que fazer:** um parágrafo no docblock declarando (a) que este é o **único** ponto em que a superfície de `TELA:imoveis` publica dado governado por outra área; (b) que o recorte é o mínimo que a US-11 exige; (c) que **qualquer campo adicional de pessoa aqui é decisão de autorização, não de tela**, e exige registro próprio. **Não** exigir conjunção nas rotas de imóvel — reabriria a US-11 e quebraria o CT-419.
 
 ### D43 · BAIXO · adr_compliance · T10 · Tech Review
+- **Status:** ✅ **RESOLVIDO** — 2026-08-09, pelo caminho que o próprio bloco nomeia. `/agent-spec-adr-supersede 0019` criou a **ADR-0021** (*"Transição de estado de negócio é rota própria, governada conforme a natureza do ato"*), que recorta a `Decision`: rota própria vale sempre; a chave de ação sensível vale quando o ato é sensível, e **atributo operacional do cadastro** — o que não transfere direito, não move dinheiro e não altera o que outra entidade pode fazer — exige apenas a área, com a **situação de locação do imóvel** nomeada como a instância declarada. A 0019 ficou `superseded-by:0021`, com `Applied in` e `date` preservados; o `INDEX.md` foi reindexado. **O que era interpretação virou o texto**, e o marcador `DÉBITO COM GATILHO` saiu do controlador **no mesmo commit da emenda**, junto com a linha do índice do `CLAUDE.md` — as duas pontas da §3-B, conferidas nos dois sentidos. A alternativa proibida foi mantida proibida: criar `ACAO:definir_situacao_de_locacao` contrariaria a ADR-0011, e está registrada como tal nas Alternativas da 0021. **Com isto, nenhum débito desta base tem por gatilho o congelamento da superfície da API.**
 - **Onde:** `apps/api/src/imoveis/imovel.controller.ts` (o cabeçalho, na seção *"A rota de SITUAÇÃO DE LOCAÇÃO exige apenas a ÁREA"*), com marcador `DÉBITO COM GATILHO` no ponto e linha no índice do `CLAUDE.md`
 - **Problema:** `POST /v1/imoveis/:id/situacao-de-locacao` cumpre **metade** da `Decision` da ADR-0019. A metade da forma — *"rota própria, nunca campo em atualização do recurso"* — é obedecida ao pé da letra; a metade da governança — *"governada pela chave de ação sensível correspondente do catálogo fechado"* — **não é satisfeita**, porque não existe ação sensível para esta transição e o catálogo é fechado pela ADR-0011.
 - **Impacto:** **nenhum hoje, e a divergência é decisão do usuário, não esquecimento.** A emenda da ADR foi **oferecida e adiada** na sessão de challenge desta fatia (registro em `_run/workflow-report.md`), e o código cumpre a decisão adotada ao pé da letra — a rota exige `TELA:imoveis`, e reusar `ACAO:excluir_cadastro` foi avaliado e descartado (a própria ADR-0019 rejeita o reuso nominalmente nas Alternativas: *"são efeitos diferentes"*). **O defeito estava no registro, não na escolha**: o débito foi aceito com **prazo** — o congelamento da superfície da API para o handoff —, e até 2026-08-09 a única coisa que o levava até lá era um parágrafo de prosa no docblock do controlador. É exatamente o modo de falha que a §3-B da `.claude/rules/nao-regressao.md` nomeia: quem chegar ao congelamento abre o `CLAUDE.md`, não o cabeçalho do controlador. Depois do congelamento, a divergência entre o texto da ADR e a superfície publicada deixa de ser corrigível sem custo de contrato, porque o documento entregue ao frontend passa a citá-la.
@@ -285,12 +298,14 @@ Status: **10/10 tasks concluídas — as três fases fechadas** · `pnpm test` *
 - **Por que não agora:** a T10 não tem mandato para emendar ADR — o caminho é a skill de supersede, e a decisão de adiar é do usuário. Criar a chave por conta própria trocaria uma divergência declarada por uma violação silenciosa de outra ADR ativa.
 
 ### D44 · baixo · concurrency · T10 · QA
+- **Status:** ✅ **RESOLVIDO** — intervenção dirigida de 2026-08-09, nas duas metades. (a) O marcador `DÉBITO COM GATILHO — D44 · F2/T10` foi emitido no ponto da guarda em `imovel.service.ts`, com a linha correspondente no índice do `CLAUDE.md` — as duas pontas que a §3-B confere. (b) A frase falsa saiu: o docblock dizia que a janela *"é a mesma da guarda de estado do contrato"*, e agora registra que **lá o índice `contrato_imovel_vigente_uidx` fecha a janela no banco e aqui nada a fecha**. O débito **continua aberto** — o que fechou foi a escrituração dele; o gatilho é a fatia que criar a restrição pareando as duas colunas.
 - **Onde:** `apps/api/src/imoveis/imovel.service.ts:246`
 - **Problema:** a janela de corrida da guarda de vigência **não tem marcador `DÉBITO COM GATILHO`**, e o docblock a **equipara indevidamente** à guarda de estado do contrato.
 - **Impacto:** `definirSituacaoDeLocacao` é leitura-antes-de-gravar; uma ativação concorrente que commite entre a leitura e a escrita deixa `contrato.status='ATIVO'` ao lado de `imovel.status_locacao` divergente — **exatamente o par que o CT-434 declara irrepresentável**. O docblock **declara** a janela (correto), mas afirma que ela é *"a mesma da guarda de estado do contrato"* — e a equivalência é falsa no ponto que importa: lá o índice `contrato_imovel_vigente_uidx` **fecha** a janela no banco; **aqui não existe restrição alguma pareando as duas colunas**, e o próprio `REVERTER EXIGE` do marcador `DECISÃO FECHADA` reconhece isso. **Não é regressão da T10** — antes dela o furo era **determinístico** (todo `PUT` apagava o `LOCADO`); a T10 o estreita para uma janela concorrente e a declara.
 - **O que fazer:** emitir `DÉBITO COM GATILHO` no ponto da guarda, com `QUANDO FECHA` = *"a fatia que introduzir no banco a restrição que pareia `contrato.status = 'ATIVO'` com `imovel.status_locacao`"*, mais a linha no `CLAUDE.md`; e corrigir a frase para dizer que **lá o índice fecha a janela e aqui nada a fecha**.
 
 ### D45 · baixo · documentation · T10 · QA
+- **Status:** ✅ **RESOLVIDO** — intervenção dirigida de 2026-08-09. Os três pontos do `tech_spec.md` passaram a `75`, e a §11.2 **perdeu a justificativa aritmética do `+2`**, que era a fonte do erro e não a ocorrência dele: `cobertura-de-autorizacao.ts` suprime explicitamente o `HEAD` derivado de `GET` (o mapa `semHeadDerivado`, verificado). No lugar dela ficou um aviso nomeando a premissa refutada, para que a próxima leitura não a reponha.
 - **Onde:** `docs/specs/features/contratos-de-locacao/v1/tech_spec.md:807` (§11.2), e as linhas 1212 e 1214
 - **Problema:** o tech spec continua escrevendo **`77`** em três pontos, com o raciocínio aritmético que a medição **refuta**.
 - **Impacto:** a varredura mede **75** pares, e a T10 registrou a divergência na task e no docblock — mas o tech spec não foi tocado. A §11.2 justifica o `+2` com *"cada rota GET entra em dobro na tabela do roteador (GET e HEAD)"*, e **essa premissa é falsa** contra o módulo implementado: `cobertura-de-autorizacao.ts` **suprime explicitamente** o `HEAD` derivado de `GET` (linhas 356 e 401) — é por isso que a T6 contou **6 pares para 6 rotas**, das quais duas eram `GET`. Número desatualizado em artefato de spec **convida a próxima task a "corrigir" a âncora do teste para o valor errado** — o modo de falha que o docblock de `ROTAS_DE_ESCRITA` já nomeia nesta base. **Os dois gates confirmaram os 60 manipuladores por varredura independente**, o que localiza o erro na **soma do total**, não no escopo entregue.
@@ -350,8 +365,89 @@ Status: **10/10 tasks concluídas — as três fases fechadas** · `pnpm test` *
 
 **O que o marco de entrega recebe, e a única condição pendente:** a superfície está coerente — 75 rotas, 60 manipuladores, `semDeclaracao` vazio, 42 rotas do domínio com esquema derivado de `@sysloc/contracts`. **O congelamento fica condicionado à decisão do D43**: a rota de situação de locação obedece a metade *"rota própria"* da ADR-0019 e **não** a metade *"governada por ação sensível"*, porque **não existe chave correspondente** e a ADR-0011 proíbe criar. **A decisão já é do usuário** (registrada na sessão de challenge, que adiou a emenda), e o marcador `DÉBITO COM GATILHO` agora existe para que ela **chegue ao congelamento** em vez de depender de alguém lembrar. **Rodar `/agent-spec-adr-supersede 0019` antes do handoff é o remédio nomeado.**
 
+> ⚠️ **O parágrafo acima é o retrato do fecho do run, e a condição que ele declara NÃO existe mais.**
+> Em **2026-08-09** o D43 foi fechado: a **ADR-0021** supersede a 0019 e recorta a `Decision`, de modo
+> que a rota de situação de locação passou de divergência declarada a **conformidade**. **O
+> congelamento da superfície não tem mais condição pendente.** Ver o Status do D43 na §2 e a §5.3.
+> O parágrafo fica como está por ser registro do que se sabia no fecho — é a mesma razão pela qual os
+> blocos da §2 não são reescritos.
+
 **Ressalva para o handoff**: os esquemas de **entrada** não aparecem no documento OpenAPI, porque **nenhum** controlador desta base descreve corpo de requisição. É consistente e registrado, mas o `handoff-frontend.md` precisa deixar explícito que **os corpos de requisição viajam pelo pacote `@sysloc/contracts`, não pelo documento**.
 
 **Dois defeitos foram do orquestrador**, e ficam registrados: o one-liner Python que truncou `tasks/T4.md` a zero byte (o executor detectou e restaurou), e o `task_plan.md` que manteve a T4 em `Em Progresso` até o Tech Review da T10 acusar (P3). Os dois foram corrigidos.
 
 **O débito D26 reapareceu pela quinta fatia consecutiva** — a §5.2 não declarar os arquivos-âncora que a publicação de rota ou de símbolo faz crescer. Os dois gates o classificaram como **candidato forte a regra do framework**, e ele está no `_run/rule-candidates.md` como `convention_drift`.
+
+---
+
+## 5. Intervenção dirigida de 2026-08-09 — o que foi pago, e o que foi deliberadamente deixado
+
+> **Fora do pipeline**, no molde do commit `11c33ad` (que fechou seis débitos da F1). Precedida de uma
+> auditoria dos **47** débitos da §2 **contra o código**, e não contra o que os blocos afirmam. As
+> linhas `Status:` acrescentadas acima são o resultado dela; os blocos originais ficam **intactos**,
+> porque a §2 é registro de auditoria e reescrever o que o gate da época disse apagaria a razão pela
+> qual o débito foi aceito.
+
+### 5.1 O parecer que decidiu o recorte
+
+**Não rodar `/agent-spec-debt-resolution` nesta fatia.** As razões, todas medidas:
+
+1. **Quatro débitos já estavam pagos**, um dia depois do run — **D23**, **D24**, **D29** e **D34**.
+   É o mesmo padrão que a higienização de 2026-08-08 encontrou nas cinco fatias anteriores ("sete já
+   estavam pagos e continuavam listados"), aqui reproduzido em 24 horas.
+2. **Três débitos a skill coletaria e não deve resolver** — **D28**, **D36** e **D43** são
+   `DÉBITO COM GATILHO` e portanto `BAIXO`, logo elegíveis pelo filtro de severidade da coleta; mas o
+   "o que fazer" de cada um diz *"na F3"* ou *"antes do handoff"*. Um executor de cleanup encarregado
+   do D28 escreveria a geração de cobranças, que é **a entrega da F3**.
+3. **Um é inresolúvel pela skill, por guardrail dela mesma** — o **D38** pede editar o bloco do D35
+   na §2, e o Guardrail #1 proíbe alterar o `run-report.md` além da marcação de cleanup.
+4. **O default `gates: [qa]` desliga o gate que esta dívida exige.** Mais da metade dos 47 é edição
+   de prosa que **registra decisão**, em arquivos com 2 a 7 marcadores `DECISÃO FECHADA`
+   (`contrato.service.ts` tem 7; `packages/db/src/contrato.ts`, 6). É o Gate 2 que a §6 da
+   `nao-regressao.md` encarrega de detectar violação de marcador e remoção de garantia.
+5. **Dois custam muito mais do que a §2 registra.** O **D18** parece uma palavra, mas a `0008` usa
+   `CREATE FUNCTION` (não `OR REPLACE`) e o cabeçalho dela declara imutável a migração de schema já
+   aplicado — fazer certo é uma migração nova, que é Critical Path. E o **D22** já perdeu a janela
+   que o próprio bloco anunciava (*"fechar agora é gratuito; depois de T6 e T7 escritas, exige tocar
+   chamadores"*): T6 a T10 estão escritas, e hoje são ~10 sítios, um deles inventário por igualdade.
+6. **O paralelismo não se aplica.** A skill assume débitos disjuntos por arquivo; aqui eles se
+   aglomeram — `verificar-golden.sh` **5**, `contratos.e2e.spec.ts` **4**, `tech_spec.md` **3**,
+   `catalogo.spec.ts` **3**, `contracts/src/contrato.ts` **3**, `tasks/T*.md` **~10**.
+
+### 5.2 Os dez itens pagos
+
+| Débito | O que fechou | Prova |
+|---|---|---|
+| **D1** | produto cartesiano da virada × fevereiro | mutante **discriminante**: passa nas três asserções antigas, reprova só na nova |
+| **D2** | seis condições de recusa por identidade | mutante (B) do QA: `exit 0` antes, `exit 1` depois |
+| **D7** | `GOLDEN_ESPERADOS` composta das sublistas | conjunto idêntico (9), ordem não observável, `shellcheck` limpo |
+| **D9** | duplicata de `empresaId` removida | `CT-337` reprova o mutante mesmo sem a linha |
+| **D10** | fronteira imediata do teto monetário | mata o mutante `.max(× 2)` que sobrevivia |
+| **D21** | `Date.UTC` → `setUTCFullYear` | `RG-D21-01`; reintroduzido o defeito, só ele reprova |
+| **D31** | prefixo do resíduo derivado | preserva o prefixo — derivar o número inteiro teria afrouxado |
+| **D32** | `D28` desambiguado no `CLAUDE.md` | — |
+| **D44** | marcador emitido + frase falsa corrigida | as duas pontas da §3-B; **o débito segue aberto** |
+| **D45** | `77 → 75`, e a premissa falsa removida | `ROTAS_PUBLICADAS_EM_PRODUCAO = 75`; `semHeadDerivado` verificado |
+
+### 5.3 O que ficou aberto, e por quê
+
+- **~26 débitos de prosa em artefato de fatia fechada** (as §5.2 e §6.x de `tasks/T*.md`, e o resto do
+  `tech_spec.md`). O documento é histórico; o próximo leitor daquelas seções é arqueólogo, não
+  executor. O **D46** diz isso com todas as letras — *"um débito cuja recomendação é ignorada cinco
+  vezes deixou de ser débito e virou ruído"* —, e a conclusão certa dele **não é corrigir a T10.md**:
+  é a regra do framework, que já está no `_run/rule-candidates.md` como `convention_drift`.
+- **D43** — ~~tem prazo (o congelamento da superfície)~~ **FECHADO no mesmo dia**, logo depois desta
+  seção ser escrita: o usuário rodou `/agent-spec-adr-supersede 0019` (a skill é exclusiva dele —
+  nenhum agente a dispara) e a **ADR-0021** nasceu. Ver o Status do bloco D43 na §2. Com ele, a
+  **condição pendente do congelamento da superfície deixou de existir**.
+- **D4** (rotacionar a credencial do `/opt/frappe`) e **D8** (digests dos golden) — operação e
+  recaptura, não cleanup de código. O próprio D8 diz que recapturar só por isso não se paga.
+- **D18**, **D22**, **D35**, **D38** — custo real acima do registrado, ou decisão de spec. Ficam com
+  o diagnóstico corrigido acima para que a próxima leitura não os subestime.
+
+### 5.4 Baseline
+
+`pnpm build`, `pnpm lint` e `pnpm test` verdes antes e depois. A suíte foi de **664** para **665**
+casos: `+1` em `@sysloc/db` (o `RG-D21-01`) e **saldo zero** em `@sysloc/contracts`, onde a fronteira
+do teto entrou (`+1`) e a duplicata de `empresaId` saiu (`−1`). Nenhum pacote encolheu por outra
+razão, e nenhuma asserção foi afrouxada.

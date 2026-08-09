@@ -249,10 +249,16 @@ export class ImovelService {
    * Nada no banco pareia `contrato.status` com `imovel.status_locacao` — é o que o docblock de
    * `definirSituacaoDeLocacaoDoImovel` já registra —, de modo que esta guarda é da aplicação, com a
    * janela de corrida que toda leitura-antes-de-gravar tem: uma ativação concorrente que commitasse
-   * entre a leitura e a escrita deixaria o imóvel na situação informada. A janela é a mesma da guarda
-   * de estado do contrato, e a saída definitiva é a restrição no banco que o `REVERTER EXIGE` do
-   * marcador de `esquemaDeImovelAlterado` nomeia; inventá-la aqui seria decisão de esquema fora do
-   * alcance desta rota.
+   * entre a leitura e a escrita deixaria o imóvel na situação informada.
+   *
+   * **Esta janela NÃO é a mesma da guarda de estado do contrato**, e a diferença é justamente a que
+   * decide se sobra trabalho a fazer. Lá o índice parcial `contrato_imovel_vigente_uidx` fecha a
+   * janela **no banco**: a segunda ativação concorrente do mesmo imóvel colide com o índice e vira
+   * `422`, aconteça o que acontecer com a leitura. **Aqui não existe restrição alguma pareando as
+   * duas colunas** — é o que o próprio `REVERTER EXIGE` do marcador de `esquemaDeImovelAlterado`
+   * reconhece —, e a janela permanece aberta até que ela exista. A saída definitiva é essa
+   * restrição; inventá-la aqui seria decisão de esquema fora do alcance desta rota. Ver o marcador
+   * de débito no ponto da guarda.
    *
    * **O sentido inverso não é recusado**: locar um imóvel `INDISPONIVEL` passa. `INDISPONIVEL`
    * significa *"não ofereça nas buscas"*, e não *"proibido de locar"* — recusá-lo inventaria uma
@@ -269,6 +275,17 @@ export class ImovelService {
   ): Promise<Imovel> {
     const atual = this.exigir(await localizarImovel(tx, id));
 
+    // DÉBITO COM GATILHO — D44 · F2/T10 · registrado 2026-08-09
+    // O QUÊ: esta guarda é leitura-antes-de-gravar e a janela entre as duas NÃO é fechada por nada
+    //        no banco — uma ativação que commite no meio deixa `contrato.status='ATIVO'` ao lado de
+    //        uma `imovel.status_locacao` divergente, o par que o CT-434 declara irrepresentável.
+    // QUANDO FECHA: a fatia que introduzir no banco a restrição que pareia `contrato.status='ATIVO'`
+    //        com `imovel.status_locacao`. Nascida ela, a guarda daqui vira tradução do erro do
+    //        banco, e não a única defesa.
+    // POR QUE NÃO AGORA: a restrição é decisão de esquema, e esta rota não tem mandato para tomá-la;
+    //        antes da T10 o furo era DETERMINÍSTICO (todo `PUT` apagava o `LOCADO`), e o que a T10
+    //        fez foi estreitá-lo para uma janela concorrente e declará-la.
+    // ÍNDICE: docs/specs/features/contratos-de-locacao/v1/_run/run-report.md §2, D44
     if (atual.contratoVigente !== null) {
       throw new ErroDeAplicacao(
         CodigoErro.CAMPO_INVALIDO,

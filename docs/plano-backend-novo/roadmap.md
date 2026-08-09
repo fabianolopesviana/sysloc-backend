@@ -36,7 +36,7 @@ se partir pelo mesmo motivo; quando isso acontecer, as fatias novas aparecem aqu
 |---|---|---|---|
 | **F0** | Stack instalada e provada | ✅ concluída | 7/7 tasks |
 | **F1** | Fundação SaaS — isolamento, identidade e autorização | ✅ concluída | 20/20 tasks |
-| **F2** | Domínio de locação | 🔄 em andamento | 1 de 2 fatias · 11/21 tasks |
+| **F2** | Domínio de locação | ✅ concluída | 21/21 tasks |
 | **F3** | Cobrança, mora e documentos | ⬜ não iniciada | — |
 | **F4** | Integração bancária (Sicoob) | ⬜ não iniciada | — |
 | **F5** | Automações agendadas | ⬜ não iniciada | — |
@@ -166,10 +166,10 @@ ativação e do cancelamento.
 empresa A apontando `Imovel` da B é **recusado pelo banco**.
 
 <!-- ESTADO:F2:INICIO -->
-> 🔄 **em andamento** — 1 de 2 fatias · 11/21 tasks
+> ✅ **concluída** — 21/21 tasks
 >
 > ✅ `cadastro-de-imoveis-e-pessoas/v1` — 11/11 tasks
-> 📋 `contratos-de-locacao/v1` — 0/10 tasks
+> ✅ `contratos-de-locacao/v1` — 10/10 tasks
 <!-- ESTADO:F2:FIM -->
 
 ---
