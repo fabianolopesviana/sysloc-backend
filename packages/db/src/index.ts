@@ -146,6 +146,35 @@
  * volta dentro do agregado do contrato, e publicá-la ofereceria a `apps/api` um caminho para ler o
  * vínculo sem passar pelo pai.
  *
+ * `./cobranca.js` entra pela mesma pergunta, e com a mesma resposta: as seis operações da cobrança —
+ * inclusive as **duas da série** e o leitor do ano do escopo dela — **recebem** o executor de quem já
+ * abriu a unidade, não abrem conexão nem transação e não devolvem executor. As duas da série não
+ * abrem exceção, pela razão que as do contrato já registram: elas invocam pelo executor recebido as
+ * funções `SECURITY DEFINER` que a migração `0010` criou, e é por isso que a aplicação nunca precisa
+ * — nem pode — tocar a sequência (ADR-0020).
+ *
+ * `lerAnoDaSerieDeCobranca` sai daqui pelo mesmo critério das duas: ela recebe o executor e devolve
+ * um número. Ela é publicada porque é o **eixo único de data** da série da cobrança — o mesmo
+ * `negocio.data_corrente_da_operacao()` que a visão consulta para classificar a linha —, e ter o eixo
+ * com nome é o que torna verificável a afirmação de que o contador, o número, o código e o estado
+ * concordam: um segundo eixo apareceria como um segundo símbolo neste índice, e não como um
+ * `current_date` escondido numa consulta. Reusar aqui o leitor do contrato, que deriva do fuso da
+ * **sessão**, é o defeito que esse nome existe para tornar visível.
+ *
+ * Elas repetem as razões das anteriores — enumerabilidade do alcance a `negocio`, um lugar único sob
+ * a política, a chave da porta sendo o código legível (ADR-0017), a tradução da violação de unicidade
+ * — e acrescentam a que é própria desta entidade: **a assimetria entre escrita e leitura**. A escrita
+ * vai na tabela e **toda** leitura vai na visão `negocio.cobranca_derivada`, que é o lugar único onde
+ * o estado e a mora são derivados (ADR-0022, ADR-0023). Publicar a porta é o que dispensa `apps/api`
+ * de escrever a consulta por conta própria — e é o que torna *"não há segunda avaliação do estado"*
+ * uma afirmação verificável, e não uma promessa de disciplina.
+ *
+ * `ErroDeCodigoDeCobrancaEmUso` sai daqui pelo mesmo critério de `ErroDeCodigoEmUso`: é **classe de
+ * erro**, não caminho para dado. Ela precisa sair porque quem a traduz no envelope da ADR-0017 é a
+ * borda, e a alternativa — reconhecer a recusa pelo texto da mensagem — amarraria a tradução ao
+ * idioma configurado no servidor. `gravarSobRestricaoDoCodigo` e `ehViolacaoDe` ficam **dentro**,
+ * como os gêmeos de `./contrato.ts`: são compostos por dentro da própria porta.
+ *
  * `./derivacao-de-contrato.js` entra pelo MESMO critério de `somarMetragem`, e não pelo das portas:
  * as duas funções são **puras** sobre valor já em mãos — não recebem executor, não tocam o banco,
  * não leem relógio e não são caminho para dado nenhum. Elas saem daqui porque são a materialização
@@ -224,6 +253,20 @@ export {
   type MotivoDeExcecao,
   verificarCoberturaDeIsolamento,
 } from './catalogo.js';
+export {
+  criarCobranca,
+  type DadosDaCobranca,
+  ErroDeCodigoDeCobrancaEmUso,
+  emitirNumeroDeCobranca,
+  type FiltrosDaCarteira,
+  garantirContadorDeCobranca,
+  type JanelaDaCarteira,
+  type LinhaDeCobranca,
+  lerAnoDaSerieDeCobranca,
+  listarCobrancas,
+  localizarCobranca,
+  type PaginaDeCobrancasPersistidas,
+} from './cobranca.js';
 export {
   acrescentarComodo,
   alterarComodo,

@@ -13,7 +13,7 @@
  * |                |                 | `0006_seguranca_dominio.sql`, `0007_dominio_contrato.sql` e
  * |                |                 | `0008_seguranca_contrato.sql` —, a consulta de cobertura
  * |                |                 | devolve lista VAZIA de exceções e a lista de tabelas
- * |                |                 | EXAMINADAS igual, na íntegra, às DEZ tabelas de `negocio`
+ * |                |                 | EXAMINADAS igual, na íntegra, aos TREZE objetos de `negocio`
  * |                |                 | — nem mais, nem menos. As duas metades importam: sem a
  * |                |                 | segunda, "nenhuma exceção" e "nada foi olhado" seriam
  * |                |                 | indistinguíveis, e um schema vazio passaria por verde.
@@ -25,7 +25,7 @@
  * |                |                 | numa instância DEDICADA, a MESMA asserção do CT-300 reprova
  * |                |                 | nomeando aquela tabela com motivo `RLS_NAO_FORCADA` —
  * |                |                 | exatamente uma entrada, não mais —, a lista de examinadas
- * |                |                 | continua com as dez, e o controle volta ao verde quando o
+ * |                |                 | continua com os treze, e o controle volta ao verde quando o
  * |                |                 | `FORCE` é restaurado. É o par que impede o CT-300 de passar
  * |                |                 | por vacuidade: sem ele, uma guarda quebrada devolveria
  * |                |                 | `excecoes: []` sobre qualquer schema. |
@@ -33,7 +33,7 @@
  * |                |                 | `empresa_id`, sem RLS forçada ou sem a restrição única
  * |                |                 | `(id, empresa_id)`, ou objeto que não admite isolamento em
  * |                |                 | espécie alguma —, a guarda devolve EXATAMENTE uma exceção,
- * |                |                 | nomeando aquele objeto e aquele motivo; as DEZ tabelas
+ * |                |                 | nomeando aquele objeto e aquele motivo; os TREZE objetos
  * |                |                 | legítimas seguem examinadas e fora das exceções; e,
  * |                |                 | removido o defeito, a lista volta a vazia. A lista de
  * |                |                 | EXAMINADAS é cobrada por igualdade de array — posição
@@ -56,7 +56,7 @@
  * |                |                 | o `FORCE` de `negocio.contrato` numa instância DEDICADA, a
  * |                |                 | MESMA asserção reprova nomeando aquela tabela com motivo
  * |                |                 | `RLS_NAO_FORCADA` — exatamente uma entrada —, a lista de
- * |                |                 | examinadas continua com as dez, e o controle volta ao verde
+ * |                |                 | examinadas continua com os treze, e o controle volta ao verde
  * |                |                 | quando o `FORCE` é restaurado. No mesmo caso, e sobre o
  * |                |                 | mesmo schema íntegro, `contrato_imovel_vigente_uidx` é
  * |                |                 | ÍNDICE ÚNICO PARCIAL em `status = 'ATIVO'` — afirmado pela
@@ -73,6 +73,18 @@
  * |                |                 | de cobertura segue devolvendo `excecoes: []` com a coluna
  * |                |                 | ausente: **ela não cobra `retirado_em` de ninguém**, que é
  * |                |                 | exatamente por que esta afirmação precisa de caso próprio. |
+ * | CA-02 · CA-09  | CT-535          | As duas funções da série da COBRANÇA emitem número sob o
+ * |                |                 | CONTEXTO de empresa, nunca sob parâmetro: nenhuma das duas
+ * |                |                 | assinaturas contém `uuid`, as duas são `SECURITY DEFINER`
+ * |                |                 | com `search_path=pg_catalog, pg_temp`, e chamá-las sem
+ * |                |                 | contexto levanta com a mensagem declarada na `0010`. A
+ * |                |                 | guarda de faixa do ano é a MESMA nas duas superfícies —
+ * |                |                 | `NULL`, `1999` e `3000` levantam, sem deixar sequência
+ * |                |                 | residual; `2000`, `2027` e `2999` emitem o número `1`. E o
+ * |                |                 | papel da aplicação tem `EXECUTE` sobre as duas e **nenhum**
+ * |                |                 | privilégio sobre a sequência (`USAGE`, `SELECT` e `UPDATE`
+ * |                |                 | falsos), de modo que o `nextval` direto levanta `42501`
+ * |                |                 | enquanto o mesmo `nextval` pelo papel dono sucede. |
  *
  * O aceite 5 da §4 da task — *"a guarda é exportada por `@sysloc/db` e consumível fora do
  * pacote"* — é provado pelo **CT-012**, em `unidade-de-trabalho.spec.ts`: ele resolve o
@@ -151,24 +163,45 @@ const TABELA_DE_LOCATARIO = 'negocio.locatario';
 const TABELA_DE_CONTRATO = 'negocio.contrato';
 const TABELA_DE_CONTRATO_FIADOR = 'negocio.contrato_fiador';
 
+// As duas tabelas da cobrança, criadas pela migração `0009` (T3 da fatia `cobranca-e-mora`) e
+// forçadas pela `0010`. Nenhuma das duas tem `retirado_em`, e a guarda não a cobra de ninguém: a
+// cobrança não circula, ela transita de estado (RD-12).
+const TABELA_DE_COBRANCA = 'negocio.cobranca';
+const TABELA_DE_CONFIGURACAO_DE_MORA = 'negocio.configuracao_de_mora';
+
 /**
- * As dez, na ordem em que a guarda promete devolvê-las (nome de tabela, intercalação `C`).
+ * A VISÃO da migração `0010` — o único objeto desta lista que não é tabela.
+ *
+ * Ela é examinada por um critério PRÓPRIO (`security_invoker = true`) e o satisfaz, de modo que
+ * consta das examinadas **sem exceção associada**. É a diferença que o D38 instalou, e é por isso
+ * que ela aparece aqui em vez de ficar de fora: objeto aprovado por estar EXCLUÍDO do exame e objeto
+ * aprovado por ter passado no exame produzem o mesmo `excecoes: []`, e só a presença nesta lista
+ * distingue os dois.
+ */
+const VISAO_DA_COBRANCA_DERIVADA = 'negocio.cobranca_derivada';
+
+/**
+ * Os treze, na ordem em que a guarda promete devolvê-los (nome do objeto, intercalação `C`).
  *
  * Este conjunto é do CASO, não da guarda: é aqui que o nome de tabela pode ser escrito à mão, e é
  * exatamente por escrevê-lo aqui — e nunca em `src/catalogo.ts` — que a comparação tem valor. Uma
  * guarda que trouxesse a mesma lista por dentro estaria se conferindo contra si mesma.
  *
  * SUT_IS_CORRECT_BECAUSE: até a fatia da fundação eram DUAS, e a igualdade sobre elas é o que
- * reprovou quando a migração `0005` entrou — a rede funcionando, não defeito; a `0007` acaba de
- * reprovar do mesmo jeito, pela mesma razão. A guarda continua respondendo o que sempre respondeu
- * (todo objeto de `negocio`, ordenado); o que mudou foi o schema, e declarar as duas tabelas novas
- * aqui é a atualização legítima. Enfraquecer a asserção para contê-las (`toContain`) seria
- * regressão de prova: a tabela que nascesse sem isolamento continuaria passando.
+ * reprovou quando a migração `0005` entrou — a rede funcionando, não defeito; a `0007` reprovou do
+ * mesmo jeito, pela mesma razão, e a `0009`/`0010` acaba de reprovar pela terceira vez. A guarda
+ * continua respondendo o que sempre respondeu (todo objeto de `negocio`, ordenado); o que mudou foi
+ * o schema, e declarar aqui as duas tabelas novas **e a visão** é a atualização legítima.
+ * Enfraquecer a asserção para contê-las (`toContain`) seria regressão de prova: a tabela que
+ * nascesse sem isolamento continuaria passando.
  */
 const TABELAS_LEGITIMAS: readonly string[] = [
   TABELA_DE_ACESSO,
   TABELA_DE_PERMISSAO,
+  TABELA_DE_COBRANCA,
+  VISAO_DA_COBRANCA_DERIVADA,
   TABELA_DE_COMODO,
+  TABELA_DE_CONFIGURACAO_DE_MORA,
   TABELA_DE_CONJUNTO,
   TABELA_DE_CONTRATO,
   TABELA_DE_CONTRATO_FIADOR,
@@ -252,7 +285,7 @@ interface VarianteDefeituosa {
    * F0 (o verificador que reimplementava o leitor e aprovava 5/5 um alvo defeituoso).
    *
    * **O que a proibição alcança é a ORDENAÇÃO, não o reúso do nome.** Espalhar
-   * `...TABELAS_LEGITIMAS` é escrever as dez legítimas na ordem em que elas já estão escritas
+   * `...TABELAS_LEGITIMAS` é escrever os treze legítimos na ordem em que eles já estão escritos
    * acima — nenhuma ordenação acontece, e a posição do objeto DEFEITUOSO, que é o que discrimina,
    * segue declarada à mão em cada variante. Onde ele não cai no fim da lista, a variante escreve as
    * nove posições por extenso.
@@ -303,13 +336,16 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
       'ALTER TABLE negocio.aaa_sem_empresa FORCE ROW LEVEL SECURITY',
     ],
     remover: ['DROP TABLE negocio.aaa_sem_empresa'],
-    // As onze posições por extenso: esta é a variante da ORDEM, e espalhar a lista legítima
-    // esconderia justamente o que ela discrimina — a defeituosa vindo ANTES das dez.
+    // As catorze posições por extenso: esta é a variante da ORDEM, e espalhar a lista legítima
+    // esconderia justamente o que ela discrimina — a defeituosa vindo ANTES dos treze.
     examinadasEsperadas: [
       'negocio.aaa_sem_empresa',
       TABELA_DE_ACESSO,
       TABELA_DE_PERMISSAO,
+      TABELA_DE_COBRANCA,
+      VISAO_DA_COBRANCA_DERIVADA,
       TABELA_DE_COMODO,
+      TABELA_DE_CONFIGURACAO_DE_MORA,
       TABELA_DE_CONJUNTO,
       TABELA_DE_CONTRATO,
       TABELA_DE_CONTRATO_FIADOR,
@@ -441,12 +477,15 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
         'SELECT id, empresa_id FROM negocio.acesso_usuario_app',
     ],
     remover: ['DROP VIEW negocio.espelho_sem_delegacao'],
-    // `espelho_...` ordena entre `contrato_fiador` e `fiador`, e não no fim: as onze posições vão
+    // `espelho_...` ordena entre `contrato_fiador` e `fiador`, e não no fim: as catorze posições vão
     // por extenso, porque é a POSIÇÃO que a igualdade de array cobra.
     examinadasEsperadas: [
       TABELA_DE_ACESSO,
       TABELA_DE_PERMISSAO,
+      TABELA_DE_COBRANCA,
+      VISAO_DA_COBRANCA_DERIVADA,
       TABELA_DE_COMODO,
+      TABELA_DE_CONFIGURACAO_DE_MORA,
       TABELA_DE_CONJUNTO,
       TABELA_DE_CONTRATO,
       TABELA_DE_CONTRATO_FIADOR,
@@ -658,9 +697,9 @@ describe('guarda de cobertura de isolamento — schema íntegro', () => {
     async () => {
       const cobertura = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
 
-      // Igualdade nas DUAS listas, numa asserção só: nenhuma exceção **e** as dez tabelas
+      // Igualdade nas DUAS listas, numa asserção só: nenhuma exceção **e** os treze objetos
       // examinadas, nem mais nem menos. É o par que detecta — "exceções vazias" sozinho ficaria
-      // verde contra um banco em que a consulta não alcançou tabela nenhuma, e "dez examinadas"
+      // verde contra um banco em que a consulta não alcançou tabela nenhuma, e "treze examinados"
       // sozinho não diria que todas passaram.
       expect(cobertura).toEqual({
         excecoes: [],
@@ -819,7 +858,10 @@ describe('guarda de cobertura de isolamento — tabela nascida sem isolamento', 
           tabelasExaminadas: [
             TABELA_DE_ACESSO,
             TABELA_DE_PERMISSAO,
+            TABELA_DE_COBRANCA,
+            VISAO_DA_COBRANCA_DERIVADA,
             TABELA_DE_COMODO,
+            TABELA_DE_CONFIGURACAO_DE_MORA,
             TABELA_DE_CONJUNTO,
             TABELA_DE_CONTRATO,
             TABELA_DE_CONTRATO_FIADOR,
@@ -898,7 +940,7 @@ describe('guarda de cobertura de isolamento — tabela nascida sem isolamento', 
 // enxergar `FORCE`, o CT-300 ficaria verde sobre um schema sem isolamento, e é esse o par que falta.
 //
 // Um único mutante, sobre uma única tabela nova, basta: o mecanismo da guarda é o mesmo para as
-// dez, e o CT-009 já cobre as demais variantes de defeito (sem coluna, sem única composta, objeto
+// treze, e o CT-009 já cobre as demais variantes de defeito (sem coluna, sem única composta, objeto
 // sem isolamento possível).
 //
 // A instância é DEDICADA e descartada ao fim — nunca a compartilhada pelos demais casos, que
@@ -938,14 +980,14 @@ describe('CT-301 — entidade nova sem RLS forçada é nomeada pela guarda', () 
           const comMutante = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
 
           // Exatamente UMA entrada, com a tabela e o motivo exatos — não "alguma exceção". A
-          // igualdade de array é o que impede a guarda de reprovar as dez em bloco e ainda assim
+          // igualdade de array é o que impede a guarda de reprovar os treze em bloco e ainda assim
           // passar aqui.
           expect(comMutante.excecoes).toEqual([
             { tabela: TABELA_MUTANTE, motivo: 'RLS_NAO_FORCADA' },
           ]);
 
-          // As dez continuam EXAMINADAS: sem esta metade, uma guarda que tivesse perdido de vista
-          // as nove irmãs reportaria a mesma exceção única e passaria.
+          // Os treze continuam EXAMINADOS: sem esta metade, uma guarda que tivesse perdido de vista
+          // os doze irmãos reportaria a mesma exceção única e passaria.
           expect(comMutante.tabelasExaminadas).toEqual(TABELAS_LEGITIMAS);
 
           // E as irmãs seguem aprovadas — a guarda distingue a tabela defeituosa em vez de
@@ -1014,9 +1056,9 @@ describe('CT-421 — o contrato nasce isolado, e a sequência do contador não �
         // --- Passo 1: o schema íntegro ---------------------------------------------------------
         //
         // Controle ANTES: sem ele, "reprovou com o mutante" não distingue a guarda que discrimina
-        // daquela que reprova qualquer coisa. A igualdade cobre as DUAS listas de uma vez — as dez
-        // tabelas examinadas incluem `negocio.contrato` e `negocio.contrato_fiador`, nas posições
-        // que a ordem prometida lhes dá, e nenhuma delas rende exceção.
+        // daquela que reprova qualquer coisa. A igualdade cobre as DUAS listas de uma vez — os treze
+        // objetos examinados incluem `negocio.contrato` e `negocio.contrato_fiador`, nas posições
+        // que a ordem prometida lhes dá, e nenhum deles rende exceção.
         const controle = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
         expect(controle).toEqual({
           excecoes: [],
@@ -1138,8 +1180,8 @@ describe('CT-421 — o contrato nasce isolado, e a sequência do contador não �
             { tabela: TABELA_MUTANTE_DO_CONTRATO, motivo: 'RLS_NAO_FORCADA' },
           ]);
 
-          // As dez continuam EXAMINADAS: sem esta metade, uma guarda que tivesse perdido de vista
-          // as nove irmãs reportaria a mesma exceção única e passaria.
+          // Os treze continuam EXAMINADOS: sem esta metade, uma guarda que tivesse perdido de vista
+          // os doze irmãos reportaria a mesma exceção única e passaria.
           expect(comMutante.tabelasExaminadas).toEqual(TABELAS_LEGITIMAS);
 
           // E a tabela IRMÃ da mesma migração segue aprovada — a guarda distingue as duas em vez de
@@ -1162,6 +1204,405 @@ describe('CT-421 — o contrato nasce isolado, e a sequência do contador não �
           excecoes: [],
           tabelasExaminadas: TABELAS_LEGITIMAS,
         } satisfies CoberturaDeIsolamento);
+      } finally {
+        await banco.parar();
+      }
+    },
+    LIMITE_COM_INSTANCIA_PROPRIA_MS,
+  );
+});
+
+// ===========================================================================
+// CT-535 — as funções da série da COBRANÇA: sem empresa, com guarda, sem sequência
+// ===========================================================================
+//
+// Ele é o CT-406 e o CT-431 desta fatia reunidos num caso só, sobre o par de funções que a `0010`
+// cria. A razão de existir é a mesma que aqueles registram, e ela não envelheceu: as funções são
+// `SECURITY DEFINER` e rodam com os direitos de `sysloc_migracao`, que é DONO das tabelas de
+// `negocio`. Tudo o que elas aceitarem por argumento, a aplicação passa a poder pedir com o
+// privilégio da dona — inclusive o que a política de linha lhe tira.
+//
+// Daí os dois eixos, e nenhum substitui o outro:
+//
+//   * a **assinatura** — afirmada por introspecção do catálogo, e não por comportamento.
+//     Comportamento se conserta com uma conferência a mais dentro da função; assinatura sem o
+//     parâmetro de empresa torna o pedido cruzado **irrepresentável**;
+//   * o **privilégio** — o `nextval` corre DENTRO da função, e o papel da aplicação nunca toca a
+//     sequência. A ADR-0020 registra entre os *Neutros* que alargar o privilégio do papel da
+//     aplicação **não é o caminho**, e é este caso que impede que alguém o alargue "para
+//     simplificar" sem que nada acuse. É a rede executável do `DECISÃO FECHADA` da `0010` §6.
+//
+// A instância é DEDICADA e descartada ao fim — o caso cria sequências, e a compartilhada passaria a
+// conviver com contadores que os demais casos deste arquivo afirmam não existir (CT-421, passo 2).
+//
+// As três utilidades locais abaixo repetem, em forma, as de `papel-de-conexao.spec.ts`. A
+// duplicação é deliberada: aquelas são privadas daquele módulo, e exportá-las só para este caso
+// enxergá-las seria o seam que a `.claude/rules/testing-stack.md` proíbe. O que NÃO se duplica é o
+// nome das funções sob teste — cada helper o escreve literalmente, e nenhum o recebe por variável.
+
+/** O escopo que os passos de privilégio usam. Ano fixo: o que se observa não é o valor emitido. */
+const ANO_DA_COBRANCA = 2026;
+
+/** `SQLSTATE` de privilégio insuficiente — o que o servidor devolve ao negar a sequência. */
+const PRIVILEGIO_INSUFICIENTE = '42501';
+
+/** `SQLSTATE` de `RAISE EXCEPTION` sem código próprio — o que as duas funções levantam. */
+const EXCECAO_LEVANTADA = 'P0001';
+
+/** As duas mensagens declaradas na migração `0010`, escritas UMA vez cada. */
+const RECUSA_SEM_CONTEXTO =
+  'contexto de empresa ausente: app.empresa_id não está fixado nesta transação';
+const RECUSA_DE_FAIXA = 'ano do contador fora da faixa admitida';
+
+/**
+ * Os anos que a guarda de faixa das duas funções recusa, escritos como literal de SQL.
+ *
+ * Os três discriminam ramos diferentes, e nenhum é redundante: `NULL::integer` cobre a função **não
+ * ser `STRICT`** — o corpo correria, e `format('cobranca_%s_%s', NULL, …)` renderia cadeia vazia no
+ * lugar do ano, criando um contador de escopo indeterminado; `1999` e `3000` cobrem os dois extremos
+ * da faixa, e um só deles deixaria vivo um mutante que trocasse a comparação por uma desigualdade de
+ * um lado só.
+ */
+const ANOS_FORA_DA_FAIXA = ['NULL::integer', '1999', '3000'] as const;
+
+/**
+ * Os anos ACEITOS — o controle positivo do passo 5, e ele não é opcional.
+ *
+ * Sem ele, uma guarda escrita ao contrário (`p_ano BETWEEN 2000 AND 2999` levantando quando o ano
+ * está DENTRO da faixa) passaria todas as asserções negativas acima. Os extremos entram junto do
+ * meio de propósito: `2000` e `2999` são exatamente os valores que um `<`/`>` trocado por `<=`/`>=`
+ * moveria.
+ */
+const ANOS_ACEITOS = [2000, 2027, 2999] as const;
+
+/** O desfecho de uma instrução, coletado em vez de abortar — mesmo padrão do CT-406. */
+interface DesfechoDeSql {
+  readonly codigo: string;
+  readonly mensagem: string;
+}
+
+/**
+ * Executa uma instrução e devolve o desfecho como valor.
+ *
+ * `GRAVOU` é um desfecho legítimo e distinguível: o caso que espera recusa afirma o par
+ * `(código, mensagem)` por igualdade, e uma execução bem-sucedida aparece como `GRAVOU` em vez de
+ * passar despercebida.
+ */
+async function tentarInstrucao(cadeia: string, instrucao: string): Promise<DesfechoDeSql> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+  try {
+    await sql.unsafe(instrucao);
+    return { codigo: 'GRAVOU', mensagem: '' };
+  } catch (erro) {
+    const codigo = (erro as { code?: string }).code ?? 'sem sqlstate';
+    return { codigo, mensagem: erro instanceof Error ? erro.message : String(erro) };
+  } finally {
+    await sql.end();
+  }
+}
+
+/**
+ * Executa uma instrução com o contexto de empresa VÁLIDO e fixado, e devolve o desfecho como valor.
+ *
+ * O contexto é fixado na SESSÃO (`is_local = false`) e não numa transação, e a escolha é conteúdo:
+ * a instrução corre em autocommit, de modo que um `CREATE SEQUENCE` executado ANTES da guarda
+ * ficaria commitado e apareceria no retrato de sequências do passo seguinte. Sob `sql.begin` o
+ * desfazimento apagaria o resíduo, e a asserção de resíduo deixaria de poder falhar.
+ */
+async function tentarInstrucaoComContexto(
+  cadeia: string,
+  empresaId: string,
+  instrucao: string,
+): Promise<DesfechoDeSql> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+  try {
+    await sql`SELECT set_config('app.empresa_id', ${empresaId}, false)`;
+    await sql.unsafe(instrucao);
+    return { codigo: 'GRAVOU', mensagem: '' };
+  } catch (erro) {
+    const codigo = (erro as { code?: string }).code ?? 'sem sqlstate';
+    return { codigo, mensagem: erro instanceof Error ? erro.message : String(erro) };
+  } finally {
+    await sql.end();
+  }
+}
+
+/**
+ * Cria o contador de um escopo `(empresa, ano)` da COBRANÇA pelo caminho LEGÍTIMO e emite o
+ * primeiro número — as DUAS unidades da §7.4, na ordem que ela fixa.
+ *
+ * Ela é irmã de {@link criarContadorPeloCaminhoDaAplicacao}, e não uma generalização dela: cada uma
+ * escreve LITERALMENTE o nome das funções que exercita. Passar o nome por parâmetro tornaria a
+ * função sob teste um valor, e a asserção deixaria de dizer qual delas foi chamada.
+ */
+async function emitirNumeroDeCobranca(
+  cadeia: string,
+  empresaId: string,
+  ano: number,
+): Promise<string> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+  try {
+    // A primeira unidade cria e COMMITA a sequência; a segunda a consome. Fundi-las faria o
+    // desfazimento devolver o número, contra a ADR-0015.
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.empresa_id', ${empresaId}, true)`;
+      await tx`SELECT negocio.garantir_contador_de_cobranca(${ano})`;
+    });
+    return await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.empresa_id', ${empresaId}, true)`;
+      const [linha] = await tx<{ numero: string }[]>`
+        SELECT negocio.proximo_numero_de_cobranca(${ano})::text AS numero
+      `;
+      if (linha === undefined) {
+        throw new Error('a emissão não devolveu linha');
+      }
+      return linha.numero;
+    });
+  } finally {
+    await sql.end();
+  }
+}
+
+/** A assinatura de identidade de cada função da série da cobrança, tal como o catálogo a guarda. */
+interface AssinaturaDaSerie {
+  readonly nome: string;
+  /**
+   * A assinatura de IDENTIDADE — nome e tipo de cada parâmetro, **sem o valor padrão**.
+   *
+   * É a forma que identifica a função para `REVOKE`/`GRANT`, e é onde um parâmetro de empresa
+   * apareceria. `pg_get_function_identity_arguments` inclui o nome do parâmetro e omite o
+   * `DEFAULT 1` — que é afirmado à parte, pelo CT-406, sobre a série do contrato.
+   */
+  readonly tiposDosArgumentos: string;
+  readonly definidoPeloDono: boolean;
+  readonly caminhoDeBusca: string;
+}
+
+async function assinaturasDaSerieDeCobranca(cadeia: string): Promise<AssinaturaDaSerie[]> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+  try {
+    return await sql<AssinaturaDaSerie[]>`
+      SELECT p.proname                                    AS nome,
+             pg_get_function_identity_arguments(p.oid)    AS "tiposDosArgumentos",
+             p.prosecdef                                  AS "definidoPeloDono",
+             coalesce(array_to_string(p.proconfig, ' | '), 'SEM CONFIGURACAO') AS "caminhoDeBusca"
+        FROM pg_catalog.pg_proc p
+        JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'negocio'
+         AND p.proname LIKE '%\_cobranca'
+       ORDER BY p.proname
+    `;
+  } finally {
+    await sql.end();
+  }
+}
+
+describe('CT-535 — a série da cobrança não aceita empresa, guarda o ano e não concede a sequência', () => {
+  it(
+    'CT-535 — assinatura sem `uuid`, guarda de faixa nas duas, `EXECUTE` concedido e sequência inalcançável',
+    async () => {
+      const banco = await bancoEfemero();
+
+      try {
+        // --- Passo 1 e 2: a ASSINATURA, pelo catálogo -------------------------------------------
+        //
+        // A igualdade cobre quatro fatos de uma vez, e cada um é um mutante morto:
+        //
+        //   * as DUAS funções da série da cobrança são estas — uma terceira, criada para
+        //     "facilitar", apareceria aqui;
+        //   * **nenhuma tem parâmetro de empresa**: a lista de tipos é afirmada por igualdade, e um
+        //     `uuid` acrescentado à assinatura aparece nela. É o pedido cruzado sendo
+        //     IRREPRESENTÁVEL, e não conferido;
+        //   * as duas são `SECURITY DEFINER` — sem isso, o `nextval` correria com os direitos de
+        //     quem chama e o passo 8 recusaria a chamada legítima;
+        //   * as duas fixam `search_path`, com o schema temporário em ÚLTIMO lugar. Uma
+        //     `SECURITY DEFINER` sem `search_path` fixo é sequestrável por quem chama, e o catálogo
+        //     é o único lugar onde essa propriedade é observável.
+        const assinaturas = await assinaturasDaSerieDeCobranca(banco.cadeiaConexao);
+        expect(assinaturas).toEqual([
+          {
+            nome: 'garantir_contador_de_cobranca',
+            tiposDosArgumentos: 'p_ano integer, p_inicio bigint',
+            definidoPeloDono: true,
+            caminhoDeBusca: 'search_path=pg_catalog, pg_temp',
+          },
+          {
+            nome: 'proximo_numero_de_cobranca',
+            tiposDosArgumentos: 'p_ano integer',
+            definidoPeloDono: true,
+            caminhoDeBusca: 'search_path=pg_catalog, pg_temp',
+          },
+        ] satisfies AssinaturaDaSerie[]);
+
+        // Dito também de forma direta, e não deduzido da igualdade acima: é ESTE o fato que a
+        // decisão fixa, e é ele que precisa nomear a regressão se ela vier.
+        expect(
+          assinaturas.map((assinatura) => assinatura.tiposDosArgumentos.includes('uuid')),
+        ).toEqual([false, false]);
+
+        // --- Passo 3: as duas funções, chamadas SEM contexto ------------------------------------
+        //
+        // A chamada é direta, por SQL, sem passar por escritor de contexto algum — é o que reproduz
+        // o estado real de uma conexão que ninguém preparou.
+        const semContexto = [
+          await tentarInstrucao(
+            banco.cadeiaConexao,
+            `SELECT negocio.garantir_contador_de_cobranca(${ANO_DA_COBRANCA})`,
+          ),
+          await tentarInstrucao(
+            banco.cadeiaConexao,
+            `SELECT negocio.proximo_numero_de_cobranca(${ANO_DA_COBRANCA})`,
+          ),
+        ];
+
+        // O SQLSTATE **e** a mensagem, por igualdade: `P0001` sozinho não diz que foi o contexto que
+        // faltou — qualquer `RAISE` da função devolveria o mesmo —, e a mensagem sozinha não diz que
+        // a recusa veio do servidor. A mensagem NOMEIA `app.empresa_id`, e não ecoa entrada nenhuma.
+        expect(semContexto.map((desfecho) => `${desfecho.codigo} · ${desfecho.mensagem}`)).toEqual([
+          `${EXCECAO_LEVANTADA} · ${RECUSA_SEM_CONTEXTO}`,
+          `${EXCECAO_LEVANTADA} · ${RECUSA_SEM_CONTEXTO}`,
+        ]);
+
+        // A recusa não deixa RESÍDUO. Sem esta asserção, uma função que criasse a sequência ANTES de
+        // conferir o contexto passaria pelo passo acima e teria deixado um contador órfão — de
+        // escopo indeterminado — para trás.
+        expect(await sequenciasDeNegocio(banco.cadeiaConexao)).toEqual([]);
+
+        // --- Passo 4: a guarda de faixa do ano, nas DUAS funções --------------------------------
+        //
+        // O contexto aqui é VÁLIDO e fixado, e é isso que separa esta recusa da do passo 3: sem o
+        // contexto, a guarda de contexto levantaria primeiro e a asserção ficaria verde sobre funções
+        // sem guarda de faixa nenhuma. As SEIS linhas são afirmadas de uma vez — três entradas × duas
+        // funções —, porque o invariante é que as duas superfícies pelas quais o escopo
+        // `(empresa, ano)` é NOMEADO tenham a MESMA superfície de entrada: guardar só a que cria
+        // deixaria a que consome aceitar o ano nulo.
+        const foraDaFaixa: string[] = [];
+        for (const funcao of ['garantir_contador_de_cobranca', 'proximo_numero_de_cobranca']) {
+          for (const ano of ANOS_FORA_DA_FAIXA) {
+            const desfecho = await tentarInstrucaoComContexto(
+              banco.cadeiaConexao,
+              EMPRESA_A.id,
+              `SELECT negocio.${funcao}(${ano})`,
+            );
+            foraDaFaixa.push(`${funcao}(${ano}) -> ${desfecho.codigo} · ${desfecho.mensagem}`);
+          }
+        }
+
+        // O RESÍDUO é afirmado ANTES das mensagens, e a ordem é conteúdo: é ela que torna esta
+        // asserção capaz de falhar. Sem a guarda, `garantir_…(NULL)` cria de fato
+        // `cobranca__<32 hexadecimais>` — um contador de escopo INDETERMINADO, permanente e invisível
+        // à guarda de cobertura do catálogo, que exclui sequências por espécie —, e é este retrato,
+        // não a mensagem, que nomeia o dano. Posta depois da igualdade de mensagens, ela nunca
+        // chegaria a ser avaliada no mutante que ela discrimina.
+        expect(await sequenciasDeNegocio(banco.cadeiaConexao)).toEqual([]);
+
+        expect(foraDaFaixa).toEqual([
+          `garantir_contador_de_cobranca(NULL::integer) -> ${EXCECAO_LEVANTADA} · ${RECUSA_DE_FAIXA}: <NULL>`,
+          `garantir_contador_de_cobranca(1999) -> ${EXCECAO_LEVANTADA} · ${RECUSA_DE_FAIXA}: 1999`,
+          `garantir_contador_de_cobranca(3000) -> ${EXCECAO_LEVANTADA} · ${RECUSA_DE_FAIXA}: 3000`,
+          `proximo_numero_de_cobranca(NULL::integer) -> ${EXCECAO_LEVANTADA} · ${RECUSA_DE_FAIXA}: <NULL>`,
+          `proximo_numero_de_cobranca(1999) -> ${EXCECAO_LEVANTADA} · ${RECUSA_DE_FAIXA}: 1999`,
+          `proximo_numero_de_cobranca(3000) -> ${EXCECAO_LEVANTADA} · ${RECUSA_DE_FAIXA}: 3000`,
+        ]);
+
+        // --- Passo 5: o CONTROLE POSITIVO -------------------------------------------------------
+        //
+        // Sem ele, uma guarda escrita ao contrário passaria todas as asserções negativas acima. O
+        // número emitido é afirmado por igualdade, e não "algum número": o primeiro de um escopo
+        // virgem é `1`, por `START WITH 1`.
+        const aceitos: string[] = [];
+        for (const ano of ANOS_ACEITOS) {
+          aceitos.push(
+            `${ano} -> ${await emitirNumeroDeCobranca(banco.cadeiaConexao, EMPRESA_A.id, ano)}`,
+          );
+        }
+        expect(aceitos).toEqual(['2000 -> 1', '2027 -> 1', '2999 -> 1']);
+
+        // --- Passo 6 a 8: o privilégio ----------------------------------------------------------
+        //
+        // A pré-condição é o contador do escopo, criado pelo caminho legítimo, pela conexão do papel
+        // da APLICAÇÃO — a única que `bancoEfemero()` publica como campo.
+        expect(
+          await emitirNumeroDeCobranca(banco.cadeiaConexao, EMPRESA_A.id, ANO_DA_COBRANCA),
+        ).toBe('1');
+
+        // O nome vem do catálogo, e não é recomposto aqui: recompô-lo reimplementaria no caso a regra
+        // que a função aplica, e o par passaria a se conferir contra uma cópia de si mesmo.
+        const contador = (await sequenciasDeNegocio(banco.cadeiaConexao)).find((nome) =>
+          nome.startsWith(`negocio.cobranca_${ANO_DA_COBRANCA}_`),
+        );
+        expect(contador).toBeTypeOf('string');
+        const alvo = contador ?? '';
+
+        const privilegios = await (async () => {
+          const sql = abrirConexao(banco.cadeiaConexao, { maximoDeConexoes: 1 });
+          try {
+            const [linha] = await sql<
+              {
+                executaGarantir: boolean;
+                executaProximo: boolean;
+                usa: boolean;
+                le: boolean;
+                escreve: boolean;
+              }[]
+            >`
+              SELECT has_function_privilege(
+                       'sysloc_app',
+                       'negocio.garantir_contador_de_cobranca(integer, bigint)',
+                       'EXECUTE'
+                     ) AS "executaGarantir",
+                     has_function_privilege(
+                       'sysloc_app',
+                       'negocio.proximo_numero_de_cobranca(integer)',
+                       'EXECUTE'
+                     ) AS "executaProximo",
+                     has_sequence_privilege('sysloc_app', ${alvo}, 'USAGE')  AS usa,
+                     has_sequence_privilege('sysloc_app', ${alvo}, 'SELECT') AS le,
+                     has_sequence_privilege('sysloc_app', ${alvo}, 'UPDATE') AS escreve
+            `;
+            return linha;
+          } finally {
+            await sql.end();
+          }
+        })();
+
+        // Os cinco fatos numa igualdade só: o `EXECUTE` concedido é o companheiro POSITIVO das três
+        // recusas — sem ele, "sem privilégio sobre a sequência" também seria verdade sobre um papel
+        // que não pudesse fazer nada. E um `SELECT` concedido por engano deixaria o valor corrente do
+        // contador de uma empresa legível por qualquer conexão da aplicação, o que o `nextval` do
+        // passo 8 não exercita.
+        expect(privilegios).toEqual({
+          executaGarantir: true,
+          executaProximo: true,
+          usa: false,
+          le: false,
+          escreve: false,
+        });
+
+        // --- Passo 8: e o `nextval` direto é RECUSADO -------------------------------------------
+        //
+        // Se ele SUCEDER, existe um segundo caminho para o número, e o `DECISÃO FECHADA` da `0010`
+        // §6 foi violado.
+        const direto = await tentarInstrucao(banco.cadeiaConexao, `SELECT nextval('${alvo}')`);
+        expect(direto.codigo).toBe(PRIVILEGIO_INSUFICIENTE);
+        expect(direto.mensagem).toContain('permission denied for sequence');
+
+        // O companheiro POSITIVO da recusa, e sem ele `42501` não distinguiria "sem privilégio" de
+        // "objeto que não existe com esse nome": o papel DONO executa o mesmo `nextval` sobre o mesmo
+        // objeto. A sequência existe, é utilizável, e o que separa os dois papéis é o privilégio.
+        expect(
+          await tentarInstrucao(conexaoDeMigracao(banco), `SELECT nextval('${alvo}')`),
+        ).toEqual({
+          codigo: 'GRAVOU',
+          mensagem: '',
+        });
+
+        // E a função continua funcionando para o papel da aplicação, lido DEPOIS da recusa: é a
+        // metade que prova que o menor privilégio não quebrou o caminho legítimo. O número é `3`
+        // porque o dono acabou de consumir o `2`.
+        expect(
+          await emitirNumeroDeCobranca(banco.cadeiaConexao, EMPRESA_A.id, ANO_DA_COBRANCA),
+        ).toBe('3');
       } finally {
         await banco.parar();
       }

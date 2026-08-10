@@ -28,6 +28,28 @@
  * mudança incompatível. Listar é o que mantém a decisão de publicar explícita.
  */
 
+export type {
+  Cobranca,
+  CobrancaNova,
+  CodigoDeCobranca,
+  EstadoDaCobranca,
+  JanelaDeCobrancas,
+  NaturezaDeCobranca,
+  PagamentoDeCobranca,
+} from './cobranca.js';
+export {
+  ESQUEMA_DO_CODIGO_DE_COBRANCA,
+  ESTADOS_DA_COBRANCA,
+  ESTADOS_EM_ABERTO,
+  esquemaDaCobranca,
+  esquemaDaJanelaDeCobrancas,
+  esquemaDeCobrancaNova,
+  esquemaDoPagamentoDeCobranca,
+  formatarCodigoDeCobranca,
+  LARGURA_DO_SEQUENCIAL_DE_COBRANCA,
+  NATUREZAS_DE_COBRANCA,
+  PREFIXO_DO_CODIGO_DE_COBRANCA,
+} from './cobranca.js';
 export type { Comodo, ComodoNovo } from './comodo.js';
 export { esquemaDeComodoNovo, esquemaDoComodo } from './comodo.js';
 export type {

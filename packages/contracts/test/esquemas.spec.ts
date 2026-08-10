@@ -1,6 +1,7 @@
 /**
  * Os esquemas de `@sysloc/contracts` — CT-334 a CT-338, CT-340, CT-341, mais CT-424, CT-428 e
- * CT-429, que a fatia `contratos-de-locacao` acrescenta.
+ * CT-429, que a fatia `contratos-de-locacao` acrescenta, e CT-540 a CT-545, que a fatia
+ * `cobranca-e-mora` acrescenta.
  *
  * ---------------------------------------------------------------------------
  * INVARIANTES
@@ -41,11 +42,42 @@
  * |          |        | escala vale na ENTRADA e **não** na SAÍDA. |
  * | CA-06    | CT-429 | A resposta da ativação recusa qualquer `efeitos.cobrancasGeradas` diferente
  * |          |        | de `false` — contrato fechado no esquema, não comportamento observado. |
+ * | §4.1     | CT-540 | `NATUREZAS_DE_COBRANCA` publica exatamente
+ * |          |        | `['ALUGUEL','AGUA','CONDOMINIO','ENERGIA','OUTRO']` e `ESTADOS_DA_COBRANCA`
+ * |          |        | exatamente `['A_VENCER','VENCIDA','PAGA','CANCELADA']`, nesta ordem e
+ * |          |        | congelados; `esquemaDaCobranca` aprova os nove rótulos devolvendo o recurso
+ * |          |        | verbatim e recusa qualquer outro nomeando `natureza` ou `status`. |
+ * | §4.1     | CT-540 | `ESTADOS_EM_ABERTO` publica exatamente `['A_VENCER','VENCIDA']`, nesta
+ * |          | (b)    | ordem, e está **congelada em execução** — a partição que
+ * |          |        | `predicadoDaCarteira` consulta para alcançar o índice parcial não pode
+ * |          |        | crescer por um `push` de consumidor. (D9 · F3/T4) |
+ * | §4.2     | CT-541 | `PREFIXO_DO_CODIGO_DE_COBRANCA === 'COB'` e
+ * | §4.3     |        | `LARGURA_DO_SEQUENCIAL_DE_COBRANCA === 7`; o esquema aplica `trim` →
+ * | §4.4     |        | maiúsculas e aceita exatamente `COB-\d{4}-\d{7}`, recusando as larguras 5, 6
+ * |          |        | e 8; e todo código que o formatador emite dentro da largura é aceito. |
+ * | §4.5     | CT-542 | `esquemaDeCobrancaNova` declara exatamente seis campos, nenhum opcional, e
+ * |          |        | recusa `codigo`, `status`, `locatarioId`, `valorMulta`, `pagoEm` e
+ * |          |        | `empresaId` com `unrecognized_keys` nomeando a chave enviada. |
+ * | §4.6     | CT-543 | `competencia` só é aceita no primeiro dia do mês; `valorOriginal` só é aceito
+ * | §4.7     |        | positivo, no teto e na escala de `numeric(15,2)`; `referencia` só é aceita
+ * |          |        | não vazia e dentro de `MAIOR_TEXTO_CURTO` — e toda recusa reporta o `path` do
+ * |          |        | próprio campo, nunca da raiz do objeto. |
+ * | §4.9     | CT-544 | `esquemaDaCobranca` declara exatamente os 18 campos publicados, não declara
+ * |          |        | `id` e descarta o `id` que chegue de fora; e as grandezas monetárias de saída
+ * |          |        | não carregam escala, aprovando o resíduo de ponto flutuante que a escala
+ * |          |        | de entrada RECUSA. |
+ * | §4.10    | CT-545 | Em `packages/contracts/src/` existe exatamente uma declaração exportada de
+ * |          |        | `MAIOR_VALOR_MONETARIO` e uma de `ESCALA_MONETARIA`, ambas em `contrato.ts`;
+ * |          |        | `cobranca.ts` as obtém por `import … from './contrato.js'` e não redeclara
+ * |          |        | nenhuma das duas, sob `export` ou sem ele. |
  *
  * Rastreabilidade: `CA-02 → CT-334, CT-335 (RN-10)` · `CA-14 → CT-337 (RN-01)` ·
  * `CA-15 → CT-338 (RN-06)` · `CA-16 → CT-336, CT-340, CT-341 (RN-11)` ·
  * `CA-19 → CT-424, CT-424 (b) (RN-02, RN-03)` · `CA-04 → CT-428 (RN-04)` ·
- * `CA-01 → CT-428 (b) (RN-08)` · `CA-06 → CT-429 (RN-12)`.
+ * `CA-01 → CT-428 (b) (RN-08)` · `CA-06 → CT-429 (RN-12)` · `CA-§4.1 → CT-540 (RD-03, RD-04)` ·
+ * `CA-§4.2/§4.3/§4.4 → CT-541 (RD-02)` · `CA-§4.5 → CT-542 (RD-01)` ·
+ * `CA-§4.6/§4.7 → CT-543 (RD-03, RD-16)` · `CA-§4.9 → CT-544 (RD-04, RD-09)` ·
+ * `CA-§4.10 → CT-545 (RD-16)`.
  *
  * ---------------------------------------------------------------------------
  * Por que os casos vêm em pares, e por que nenhum deles sozinho serve
@@ -85,34 +117,120 @@
  * **CT-429** afirma o literal no esquema, e não o comportamento na rota: é o que obriga a F3 a tocar
  * este arquivo para gerar cobrança, em vez de o significado da resposta mudar por omissão.
  *
- * Sem colaborador algum: os esquemas são funções puras. Fronteira real de execução: **nenhuma**.
- * As asserções são comportamentais — exercitam o esquema e observam o desfecho —, e por isso não
- * exigem prova de falsificação; a asserção estática desta task é o CT-339, em `folha.spec.ts`.
+ * **CT-541** é a **rede** que o P4 do Protocolo Antirregressão exige do marcador `DECISÃO FECHADA`
+ * da largura 7, em `cobranca.ts`, e ela prende a largura pelos **dois** lados pela mesma razão do
+ * CT-428 — com um agravante: aqui a largura DIVERGE da série irmã, e "harmonizar" as duas para cinco
+ * dígitos é a tentação de quem lê os dois arquivos lado a lado. Sem os cinco dígitos recusados e sem
+ * os oito, essa harmonização passaria pela suíte inteira.
+ *
+ * **CT-544** carrega a rede da assimetria entrada × saída, e ela vem em **par**: um caso aprova o
+ * resíduo de ponto flutuante da derivação, e o seguinte afirma que `multipleOf(ESCALA_MONETARIA)`
+ * **recusa** os mesmos dois números. Sozinho, o primeiro seria infalível (AP-29) — os números que o
+ * card sugeria (`6.2399999999999995`, `193.66999999999996`) são aprovados pela tolerância do zod,
+ * medido, e um caso construído sobre eles seguiria verde com a escala replicada na saída. Os que
+ * ficaram foram MEDIDOS contra a aritmética da RD-07 e são recusados; é o par que detecta.
+ *
+ * Sem colaborador algum: os esquemas são funções puras. Fronteira real de execução: **nenhuma** —
+ * salvo no CT-545, que é `filesystem`. As demais asserções são comportamentais — exercitam o esquema
+ * e observam o desfecho —, e por isso não exigem prova de falsificação.
+ *
+ * ---------------------------------------------------------------------------
+ * CT-545 é ESTÁTICO — a prova de falsificação, medida
+ * ---------------------------------------------------------------------------
+ *
+ * Ele inspeciona o **texto** do fonte, e por isso a prova é OBRIGATÓRIA
+ * (`.claude/rules/testing-stack.md`). Os dois mutantes foram aplicados ao fonte, medidos e
+ * revertidos, e os dois rodaram pelo SCRIPT do pacote — `pnpm --filter @sysloc/contracts test` —, e
+ * não por `vitest run` avulso.
+ *
+ * - **Mutante 1 — a segunda definição do mesmo fato**: `export const ESCALA_MONETARIA = 0.01;`
+ *   acrescentado a `src/comum.ts`, que é exatamente a forma do débito **D3** já aberto no projeto.
+ *   Resultado: `1 failed | 218 passed`, com `arquivosQueDeclaram` igual a
+ *   `['src/comum.ts', 'src/contrato.ts']` — a falha **nomeia** o arquivo culpado. O caso do import
+ *   seguiu **verde**, que é o que prova a contagem ser carregada e não redundante.
+ *   ⚠️ O mutante é o do card **corrigido para compilar**: acrescentá-lo a `src/cobranca.ts`, como
+ *   ele pede à letra, colide com o `import` do mesmo nome e reprova no `tsc --build` **antes** de
+ *   qualquer asserção correr — seria "reprovou sem provar nada", o modo de falha que o CT-339
+ *   registra. Um terceiro arquivo é a forma fiel, e é a que a própria Obs do card nomeia.
+ * - **Mutante 2 — a redeclaração local, sem `export`**: em `src/cobranca.ts`, os dois nomes saem do
+ *   `import … from './contrato.js'` e entram como `const` local. Resultado: `1 failed | 218 passed`,
+ *   com `simbolosImportados` igual a `['ESQUEMA_DO_CODIGO_DE_CONTRATO']`. Os dois casos da contagem
+ *   seguiram **verdes** — sem `export`, a redeclaração não aparece na varredura do primeiro caso —,
+ *   e é isso que prova a metade do import ser carregada.
+ *
+ * Revertidos os dois, o controle voltou a `219 passed`.
+ *
+ * ---------------------------------------------------------------------------
+ * CT-541 é a rede do `DECISÃO FECHADA` da largura 7 — e ela foi medida
+ * ---------------------------------------------------------------------------
+ *
+ * O P4 do Protocolo Antirregressão exige que o marcador tenha prova que reprove se o defeito voltar.
+ * Mutante aplicado a `src/cobranca.ts`: `LARGURA_DO_SEQUENCIAL_DE_COBRANCA` de `7` para `5` — a
+ * "harmonização" com a série do contrato de locação, que é a tentação registrada no marcador.
+ * Resultado: `28 failed | 191 passed`, entre elas o caso que recusa `COB-2026-00058`. Revertido, o
+ * controle voltou a `219 passed`. A asserção é comportamental, e o par de literais do primeiro caso
+ * é o que pega o mutante que derivar-das-constantes não pegaria — alargar a constante moveria as
+ * duas pontas juntas.
  */
 
+import { readFile } from 'node:fs/promises';
+import { dirname, join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+// DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)
+// (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o código abaixo.)
+// O QUÊ: o import a seguir atravessa a fronteira de `@sysloc/db` por CAMINHO DE ARQUIVO, fora do
+//        `exports` e do `files` daquele manifesto. Aqui ele repete, byte a byte, o que
+//        `folha.spec.ts` já faz neste mesmo pacote: o acessório de varredura é **reusado**, e não
+//        recopiado, porque cópia de varredor diverge em silêncio e passa a provar coisa diferente
+//        da que o caso afirma provar. Nenhum símbolo NOVO é pedido ao acessório — os três já
+//        existiam —, de modo que o débito ganha um consumidor e não ganha superfície.
+// QUANDO FECHA: o gatilho já disparou e o fechamento segue pendente; ele é o mesmo de sempre —
+//        declarar o subpath `"./test"` nos manifestos e importar por `@sysloc/<pacote>/test`, ou
+//        extrair um `@sysloc/test-utils`. Para ESTE pacote, só a segunda saída serve: a primeira
+//        criaria a aresta `@sysloc/contracts` → `@sysloc/db` que o CT-339 proíbe.
+// POR QUE NÃO AGORA: extrair o pacote de acessórios é trabalho de todos os consumidores, alheio a
+//        esta task, e o Protocolo Antirregressão veda refactor fora do escopo.
+// ÍNDICE: docs/specs/features/fundacao-stack-nativa/v1/_run/run-report.md §2, D28
+import {
+  listarFontesTs,
+  semComentarios,
+  varrerArquivos,
+} from '../../db/test/varredura-de-fontes.ts';
+// `MAIOR_TEXTO_CURTO` não é publicado pelo índice do pacote — ele é composição interna do contrato,
+// e publicá-lo só para o teste vê-lo alargaria a superfície de produção (Iron Law #6). O teste o lê
+// do ponto único onde ele vive, que é o mesmo que `cobranca.ts` importa.
+import { MAIOR_TEXTO_CURTO } from '../src/comum.ts';
 import * as contratos from '../src/index.ts';
 import {
   ESCALA_DA_METRAGEM,
   ESCALA_MONETARIA,
+  ESQUEMA_DO_CODIGO_DE_COBRANCA,
   ESQUEMA_DO_CODIGO_DE_CONTRATO,
+  ESTADOS_DA_COBRANCA,
   ESTADOS_DO_CONTRATO,
+  ESTADOS_EM_ABERTO,
   esquemaDaAtivacaoDeContrato,
+  esquemaDaCobranca,
   esquemaDaJanela,
+  esquemaDeCobrancaNova,
   esquemaDeComodoNovo,
   esquemaDeContratoNovo,
   esquemaDeImovelNovo,
   esquemaDePessoaNova,
   esquemaDoContrato,
   esquemaDoImovel,
+  formatarCodigoDeCobranca,
   formatarCodigoDeContrato,
+  LARGURA_DO_SEQUENCIAL_DE_COBRANCA,
   LARGURA_DO_SEQUENCIAL_DE_CONTRATO,
   MAIOR_METRAGEM,
   MAIOR_PAGINA,
   MAIOR_PRAZO_EM_MESES,
   MAIOR_VALOR_MONETARIO,
+  NATUREZAS_DE_COBRANCA,
   PAGINA_PADRAO,
+  PREFIXO_DO_CODIGO_DE_COBRANCA,
   PREFIXO_DO_CODIGO_DE_CONTRATO,
   SITUACOES_INFORMAVEIS,
 } from '../src/index.ts';
@@ -189,6 +307,52 @@ const CONTRATO_PUBLICADO = {
   gerarCobrancasAutomaticamente: true,
   pdfContratoArquivo: null,
   retiradoEm: null,
+} as const;
+
+/** O corpo canônico de `POST /v1/cobrancas` (tech spec §4.1.1), completo e sem campo opcional. */
+const CORPO_DE_COBRANCA = {
+  contratoCodigo: 'CTR-2026-00007',
+  natureza: 'AGUA',
+  referencia: 'Conta de água — 03/2026',
+  competencia: '2026-03-01',
+  dataVencimento: '2026-03-10',
+  valorOriginal: 187.42,
+} as const;
+
+/**
+ * O locatário da cobrança — **UUID**, e não código.
+ *
+ * A ADR-0017 dá a chave exposta pela existência de série declarada: contrato tem, logo `CTR-…`;
+ * locatário não tem, logo UUID. As duas classes convivem no mesmo recurso de propósito.
+ */
+const LOCATARIO_DA_COBRANCA = '8f1c0000-0000-4000-8000-000000000007';
+
+/**
+ * A cobrança como a API a devolve, recém-lançada (tech spec §4.1.1).
+ *
+ * Os cinco anuláveis vêm nulos porque são o **desfecho**, e a cobrança nasce aberta; `status`,
+ * `diasAtraso` e as três grandezas de mora vêm derivados, e é o estado que o `201` do exemplo
+ * publica.
+ */
+const COBRANCA_PUBLICADA = {
+  codigo: 'COB-2026-0000059',
+  contratoCodigo: CORPO_DE_COBRANCA.contratoCodigo,
+  locatarioId: LOCATARIO_DA_COBRANCA,
+  natureza: CORPO_DE_COBRANCA.natureza,
+  referencia: CORPO_DE_COBRANCA.referencia,
+  competencia: CORPO_DE_COBRANCA.competencia,
+  dataVencimento: CORPO_DE_COBRANCA.dataVencimento,
+  valorOriginal: CORPO_DE_COBRANCA.valorOriginal,
+  status: 'A_VENCER',
+  diasAtraso: 0,
+  valorMulta: 0,
+  valorJuros: 0,
+  valorTotal: CORPO_DE_COBRANCA.valorOriginal,
+  pagoEm: null,
+  valorPago: null,
+  canceladoEm: null,
+  multaPercentualAplicado: null,
+  jurosPercentualAplicado: null,
 } as const;
 
 /** Identificador de outra empresa — o valor que a metade comportamental do CT-337 tenta enfiar. */
@@ -341,12 +505,21 @@ const PREFIXO_DE_ENTRADA_DE_ENTIDADE = 'esquemaDe';
  * parágrafos acima ele escaparia às duas varreduras, e é justamente o esquema em que "`empresaId`
  * não é declarado" e "o corpo é fechado" mais importam: ele é a única porta de requisição que escreve
  * a situação de locação. Nenhum alvo sai daqui; o conjunto só cresce.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T2 da fatia `cobranca-e-mora` publicou **dois** esquemas de entrada fora
+ * do prefixo de entidade — `esquemaDoPagamentoDeCobranca`, o corpo do ato que liquida a cobrança, e
+ * `esquemaDaJanelaDeCobrancas`, a janela da carteira estendida com os três filtros. Pelo mesmo motivo
+ * dos parágrafos acima, sem esta lista os dois escapariam às duas varreduras — e o primeiro é o corpo
+ * pelo qual multa e juros seriam escritos pelo cliente se o esquema fosse aberto. Nenhum alvo sai
+ * daqui; o conjunto só cresce.
  */
 const NOMES_DAS_ENTRADAS_FORA_DO_PREFIXO = [
   'esquemaDaJanela',
   'esquemaDaJanelaComCirculacao',
   'esquemaDaJanelaDaCarteira',
+  'esquemaDaJanelaDeCobrancas',
   'esquemaDaSituacaoDeLocacao',
+  'esquemaDoPagamentoDeCobranca',
 ] as const;
 
 /**
@@ -375,8 +548,15 @@ const NOMES_DAS_ENTRADAS_FORA_DO_PREFIXO = [
  * criação, e `esquemaDaSituacaoDeLocacao`, o corpo da rota que passa a ser a única porta de
  * requisição para a situação de locação. O primeiro entra pelo prefixo de entidade; o segundo, pela
  * lista acima. A âncora segue exata, e nenhum alvo saiu.
+ *
+ * SUT_IS_CORRECT_BECAUSE: subiu de 10 para 13 porque a T2 da fatia `cobranca-e-mora` publicou **três**
+ * esquemas de entrada — `esquemaDeCobrancaNova` (o lançamento avulso, que entra sozinho pelo prefixo
+ * de entidade), `esquemaDoPagamentoDeCobranca` e `esquemaDaJanelaDeCobrancas` (os dois pela lista
+ * acima). O literal é o que impede *"nenhum esquema violou"* de ser indistinguível de *"nenhum
+ * esquema foi olhado"*: trocá-lo por `ESQUEMAS_DE_ENTRADA.length` seria a asserção tautológica que
+ * esta linha existe para evitar. A âncora **sobe** e segue exata; nenhum alvo saiu.
  */
-const QUANTIDADE_DE_ESQUEMAS_DE_ENTRADA = 10;
+const QUANTIDADE_DE_ESQUEMAS_DE_ENTRADA = 13;
 
 /** Um corpo válido por esquema de entrada, indexado pelo nome exportado. */
 const CORPOS_VALIDOS = new Map<string, Record<string, unknown>>([
@@ -401,6 +581,21 @@ const CORPOS_VALIDOS = new Map<string, Record<string, unknown>>([
   [
     'esquemaDaJanelaDaCarteira',
     { limite: 10, deslocamento: 0, incluirRetirados: 'false', expandir: 'imoveis' },
+  ],
+  ['esquemaDeCobrancaNova', { ...CORPO_DE_COBRANCA }],
+  ['esquemaDoPagamentoDeCobranca', { pagoEm: '2026-03-25', valorPago: 191.3 }],
+  // Os três filtros vão declarados **por extenso**, pela mesma razão das duas linhas acima: são o
+  // que este esquema acrescenta à janela comum, e um corpo que os omitisse deixaria a varredura
+  // provando apenas o que `esquemaDaJanela` já prova.
+  [
+    'esquemaDaJanelaDeCobrancas',
+    {
+      limite: 10,
+      deslocamento: 0,
+      contrato: CORPO_DE_COBRANCA.contratoCodigo,
+      status: 'A_VENCER',
+      natureza: 'AGUA',
+    },
   ],
 ]);
 
@@ -1190,5 +1385,659 @@ describe('CT-429 — a resposta da ativação fixa efeitos.cobrancasGeradas em f
     expect(resultado.success).toBe(false);
     expect(resultado.error?.issues[0]?.code).toBe('unrecognized_keys');
     expect(resultado.error?.issues[0]).toMatchObject({ keys: ['boletosEmitidos'] });
+  });
+});
+
+describe('CT-540 — natureza e estado da cobrança são uniões fechadas de cinco e quatro valores', () => {
+  /**
+   * As duas listas escritas **por extenso**, e na ordem — o card do caso as fixa.
+   *
+   * A ordem é conteúdo: a T3 deriva `negocio.natureza_cobranca` e `negocio.status_cobranca` destes
+   * arranjos, e um enum do PostgreSQL guarda a ordem dos rótulos. Derivá-las das constantes
+   * exportadas deixaria as duas pontas andando juntas, e um sexto valor acrescentado passaria pela
+   * suíte sem uma recusa sequer.
+   */
+  const NATUREZAS_DECLARADAS = ['ALUGUEL', 'AGUA', 'CONDOMINIO', 'ENERGIA', 'OUTRO'] as const;
+  const ESTADOS_DECLARADOS = ['A_VENCER', 'VENCIDA', 'PAGA', 'CANCELADA'] as const;
+
+  /**
+   * A **partição** dos estados em aberto, escrita por extenso — o sujeito do `CT-540 (b)`.
+   *
+   * Escrita aqui, e não derivada de `ESTADOS_DECLARADOS`: derivá-la faria as duas pontas andarem
+   * juntas, e um rótulo liquidado que entrasse na partição passaria pela suíte sem uma recusa. É a
+   * mesma razão que já governa as duas listas acima.
+   */
+  const EM_ABERTO_DECLARADOS = ['A_VENCER', 'VENCIDA'] as const;
+
+  it('as duas uniões publicadas têm exatamente os valores declarados, na ordem', () => {
+    expect([...NATUREZAS_DE_COBRANCA]).toEqual([...NATUREZAS_DECLARADAS]);
+    expect([...ESTADOS_DA_COBRANCA]).toEqual([...ESTADOS_DECLARADOS]);
+  });
+
+  it('os dois arranjos estão congelados em execução', () => {
+    // `as const` fecha a união em compilação e não sobrevive ao build; sem `Object.freeze`, um
+    // consumidor com um `push` mal colocado alargaria o enum de todo mundo, porque o módulo tem
+    // instância única no processo.
+    expect([Object.isFrozen(NATUREZAS_DE_COBRANCA), Object.isFrozen(ESTADOS_DA_COBRANCA)]).toEqual([
+      true,
+      true,
+    ]);
+  });
+
+  it('CT-540 (b) — ESTADOS_EM_ABERTO é a partição declarada, na ordem, e está congelada', () => {
+    // A **terceira** lista do módulo ganha o mesmo par de asserções dos dois irmãos, e a razão de ela
+    // precisar dele é própria: `predicadoDaCarteira`, em `packages/db/src/cobranca.ts`, consulta esta
+    // partição para decidir quando anexar `AND pago_em IS NULL AND cancelado_em IS NULL` ao recorte —
+    // o par que alcança o índice parcial `cobranca_aberta_idx`. Um `push` de consumidor que
+    // acrescentasse um estado **liquidado** faria o predicado anexar o par ao recorte daquele estado,
+    // e a carteira passaria a **descartar linhas em silêncio**: as pagas e as canceladas têm um dos
+    // dois carimbos preenchido por construção.
+    //
+    // Sem esta asserção, a única rede era indireta: um rótulo acrescentado em tempo de módulo faria o
+    // `CT-524 (b)` reprovar por conjunto vazio, mas a **mutação após a carga** — que é o que
+    // `Object.freeze` impede — atravessava a suíte inteira sem uma recusa. É o débito **D9 (F3/T4)**,
+    // fechado aqui.
+    expect([...ESTADOS_EM_ABERTO]).toEqual([...EM_ABERTO_DECLARADOS]);
+    expect(Object.isFrozen(ESTADOS_EM_ABERTO)).toBe(true);
+  });
+
+  for (const natureza of NATUREZAS_DECLARADAS) {
+    it(`aprova a natureza ${natureza} e devolve o recurso verbatim`, () => {
+      const cobranca = { ...COBRANCA_PUBLICADA, natureza };
+
+      const resultado = esquemaDaCobranca.safeParse(cobranca);
+
+      expect(resultado.success).toBe(true);
+      expect(resultado.data?.natureza).toBe(natureza);
+      // Profundamente igual ao enviado: o esquema não acrescenta nem remove campo.
+      expect(resultado.data).toEqual(cobranca);
+    });
+  }
+
+  for (const status of ESTADOS_DECLARADOS) {
+    it(`aprova o estado ${status} e devolve o recurso verbatim`, () => {
+      const cobranca = { ...COBRANCA_PUBLICADA, status };
+
+      const resultado = esquemaDaCobranca.safeParse(cobranca);
+
+      expect(resultado.success).toBe(true);
+      expect(resultado.data?.status).toBe(status);
+      expect(resultado.data).toEqual(cobranca);
+    });
+  }
+
+  const RECUSADOS: readonly {
+    readonly rotulo: string;
+    readonly campo: string;
+    readonly valor: string;
+  }[] = [
+    { rotulo: 'uma natureza plausível e não declarada', campo: 'natureza', valor: 'IPTU' },
+    { rotulo: 'a mesma natureza em minúsculas', campo: 'natureza', valor: 'agua' },
+    { rotulo: 'o estado do contrato, que é outro enum', campo: 'status', valor: 'ATIVO' },
+    { rotulo: 'um rótulo arbitrário de estado', campo: 'status', valor: 'EM_ABERTO' },
+  ];
+
+  for (const { rotulo, campo, valor } of RECUSADOS) {
+    it(`recusa ${rotulo} (${valor}) nomeando o campo ${campo}`, () => {
+      const resultado = esquemaDaCobranca.safeParse({ ...COBRANCA_PUBLICADA, [campo]: valor });
+
+      expect(resultado.success).toBe(false);
+      expect(resultado.error?.issues[0]?.path).toEqual([campo]);
+    });
+  }
+});
+
+describe('CT-541 — o código da cobrança é canonizado num ponto único, e a largura é de SETE dígitos', () => {
+  /**
+   * O formato declarado, escrito **por extenso** — pela mesma razão do CT-428, e com o agravante de
+   * que aqui a largura DIVERGE da série irmã.
+   *
+   * É a decisão que o marcador `DECISÃO FECHADA` de `cobranca.ts` protege, e o valor foi MEDIDO no
+   * sistema antigo (`autoname` = `COB-.YYYY.-.#######`, série viva em `COB-2026-0000058`). Derivá-lo
+   * das constantes deixaria as duas pontas andando juntas: uma largura "harmonizada" para os cinco
+   * dígitos do contrato de locação — que é a tentação óbvia de quem lê os dois arquivos lado a lado
+   * — passaria pela suíte inteira sem uma recusa sequer.
+   */
+  const PREFIXO_DECLARADO = 'COB';
+  const LARGURA_DECLARADA_DO_SEQUENCIAL = 7;
+
+  it('o formato publicado é exatamente o que as constantes declaram', () => {
+    expect([PREFIXO_DO_CODIGO_DE_COBRANCA, LARGURA_DO_SEQUENCIAL_DE_COBRANCA]).toEqual([
+      PREFIXO_DECLARADO,
+      LARGURA_DECLARADA_DO_SEQUENCIAL,
+    ]);
+  });
+
+  const ACEITOS: readonly {
+    readonly rotulo: string;
+    readonly entrada: string;
+    readonly canonizado: string;
+  }[] = [
+    {
+      rotulo: 'a forma canônica, que permanece igual',
+      entrada: 'COB-2026-0000058',
+      canonizado: 'COB-2026-0000058',
+    },
+    {
+      rotulo: 'o mesmo código em minúsculas',
+      entrada: 'cob-2026-0000058',
+      canonizado: 'COB-2026-0000058',
+    },
+    {
+      rotulo: 'o mesmo código cercado de espaços',
+      entrada: '  COB-2026-0000058  ',
+      canonizado: 'COB-2026-0000058',
+    },
+    {
+      rotulo: 'caixa mista e espaços de uma vez',
+      entrada: ' Cob-2026-0000001 ',
+      canonizado: 'COB-2026-0000001',
+    },
+  ];
+
+  for (const { rotulo, entrada, canonizado } of ACEITOS) {
+    it(`aprova ${rotulo} devolvendo ${canonizado}`, () => {
+      const resultado = ESQUEMA_DO_CODIGO_DE_COBRANCA.safeParse(entrada);
+
+      expect(resultado.success).toBe(true);
+      // Valor exato, e não "está definido": é a forma que o banco guarda e que toda comparação de
+      // igualdade a jusante vai usar.
+      expect(resultado.data).toBe(canonizado);
+    });
+  }
+
+  const RECUSADOS: readonly { readonly rotulo: string; readonly valor: string }[] = [
+    {
+      rotulo: 'cinco dígitos — a largura do contrato de locação, que é a harmonização tentadora',
+      valor: 'COB-2026-00058',
+    },
+    { rotulo: 'seis dígitos', valor: 'COB-2026-000058' },
+    { rotulo: 'oito dígitos', valor: 'COB-2026-000000058' },
+    { rotulo: 'o prefixo da outra série', valor: 'CTR-2026-0000058' },
+    { rotulo: 'ano de dois dígitos', valor: 'COB-26-0000058' },
+    { rotulo: 'sequencial não numérico', valor: 'COB-2026-000005A' },
+    { rotulo: 'texto vazio', valor: '   ' },
+  ];
+
+  for (const { rotulo, valor } of RECUSADOS) {
+    it(`recusa ${rotulo} (${JSON.stringify(valor)})`, () => {
+      const resultado = ESQUEMA_DO_CODIGO_DE_COBRANCA.safeParse(valor);
+
+      expect(resultado.success).toBe(false);
+      expect(resultado.error?.issues[0]?.code).toBe('invalid_format');
+    });
+  }
+
+  it('dentro do recurso publicado, a recusa nomeia o campo codigo', () => {
+    // O esquema do código é escalar, e escalar não tem caminho a reportar: quando ele chega pelo
+    // parâmetro da rota, o nome do campo é aposto pela borda. Dentro do recurso o campo se nomeia
+    // sozinho, e é esta metade que prova o `campo: 'codigo'` que a §6.1 exige.
+    const resultado = esquemaDaCobranca.safeParse({
+      ...COBRANCA_PUBLICADA,
+      codigo: 'COB-2026-00058',
+    });
+
+    expect(resultado.success).toBe(false);
+    expect(resultado.error?.issues[0]?.path).toEqual(['codigo']);
+  });
+
+  /**
+   * A amarra entre a EMISSÃO e a LEITURA — a terceira ponta da rede.
+   *
+   * Formatador e esquema saem das mesmas constantes; sem esta asserção os dois poderiam divergir e a
+   * emissão produziria um código que a rota de leitura recusa, em silêncio, até o primeiro `GET`.
+   */
+  const SEQUENCIAIS_DENTRO_DA_LARGURA = [1, 58, 9_999_999] as const;
+
+  for (const sequencial of SEQUENCIAIS_DENTRO_DA_LARGURA) {
+    it(`o código emitido para o sequencial ${sequencial} é aceito pelo esquema`, () => {
+      const codigo = formatarCodigoDeCobranca(2026, sequencial);
+
+      expect(ESQUEMA_DO_CODIGO_DE_COBRANCA.safeParse(codigo).data).toBe(codigo);
+    });
+  }
+
+  it('o formatador preenche com zeros até a largura declarada', () => {
+    expect(formatarCodigoDeCobranca(2026, 1)).toBe('COB-2026-0000001');
+    expect(formatarCodigoDeCobranca(2026, 58)).toBe('COB-2026-0000058');
+    expect(formatarCodigoDeCobranca(2026, 9_999_999)).toBe('COB-2026-9999999');
+  });
+
+  it('o formatador NÃO trunca o sequencial que passa da largura — truncar seria colisão', () => {
+    expect(formatarCodigoDeCobranca(2026, 12_345_678)).toBe('COB-2026-12345678');
+  });
+});
+
+describe('CT-542 — o corpo da cobrança nova é fechado em seis campos e recusa tudo que o servidor decide', () => {
+  /** Os seis campos do corpo, na ordem declarada — a forma que o `strictObject` publica. */
+  const CAMPOS_DECLARADOS = [
+    'contratoCodigo',
+    'natureza',
+    'referencia',
+    'competencia',
+    'dataVencimento',
+    'valorOriginal',
+  ] as const;
+
+  /**
+   * As seis chaves que o SERVIDOR decide (§6.1) — nenhuma delas é chave do corpo.
+   *
+   * `codigo` vem da série; `status` é derivado (ADR-0021 e ADR-0022, que o tiram do recurso);
+   * `locatarioId` sai da junção com o contrato; `valorMulta` é derivado enquanto a cobrança está
+   * aberta e carimbado quando ela é liquidada; `pagoEm` é o ato de liquidação; e `empresaId` sai da
+   * sessão. A de `empresaId` é herdada de graça pela varredura do CT-337, e fica **também** aqui,
+   * explícita, porque é a chave cujo vazamento cruzaria empresa.
+   */
+  const DECIDIDOS_PELO_SERVIDOR: readonly { readonly chave: string; readonly valor: unknown }[] = [
+    { chave: 'codigo', valor: 'COB-2026-0000060' },
+    { chave: 'status', valor: 'PAGA' },
+    { chave: 'locatarioId', valor: LOCATARIO_DA_COBRANCA },
+    { chave: 'valorMulta', valor: 3.75 },
+    { chave: 'pagoEm', valor: '2026-03-25' },
+    { chave: 'empresaId', valor: EMPRESA_ALHEIA },
+  ];
+
+  it('o corpo declara exatamente os seis campos, na ordem', () => {
+    expect(Object.keys(esquemaDeCobrancaNova.shape)).toEqual([...CAMPOS_DECLARADOS]);
+  });
+
+  it('o corpo aprova o lançamento completo, verbatim', () => {
+    const resultado = esquemaDeCobrancaNova.safeParse({ ...CORPO_DE_COBRANCA });
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data).toEqual({ ...CORPO_DE_COBRANCA });
+    expect(resultado.data?.valorOriginal).toBe(187.42);
+    expect(resultado.data?.contratoCodigo).toBe('CTR-2026-00007');
+  });
+
+  for (const { chave, valor } of DECIDIDOS_PELO_SERVIDOR) {
+    it(`recusa ${chave} como chave desconhecida`, () => {
+      const resultado = esquemaDeCobrancaNova.safeParse({ ...CORPO_DE_COBRANCA, [chave]: valor });
+
+      expect(resultado.success).toBe(false);
+      expect(resultado.error?.issues[0]?.code).toBe('unrecognized_keys');
+      expect(resultado.error?.issues[0]).toMatchObject({ keys: [chave] });
+    });
+  }
+
+  for (const campo of CAMPOS_DECLARADOS) {
+    it(`recusa o corpo sem ${campo}, nomeando o campo omitido`, () => {
+      // É o que distingue "fechado e obrigatório" de "fechado e opcional": nenhum campo desta
+      // superfície admite ausência, porque não há atualização parcial nela.
+      const semOCampo = Object.fromEntries(
+        Object.entries(CORPO_DE_COBRANCA).filter(([nome]) => nome !== campo),
+      );
+
+      const resultado = esquemaDeCobrancaNova.safeParse(semOCampo);
+
+      expect(resultado.success).toBe(false);
+      expect(resultado.error?.issues[0]?.path).toEqual([campo]);
+    });
+  }
+});
+
+describe('CT-543 — cada campo do corpo da cobrança recusa fora da fronteira nomeando o próprio campo', () => {
+  /**
+   * O teto e a escala de `numeric(15,2)` e o teto do texto curto, escritos **por extenso**.
+   *
+   * Não são política de produto: são a **capacidade** das colunas (§7.2). Escrevê-los aqui é o que
+   * prende o contrato ao banco — alargar a constante sem alargar a coluna reprova este caso, que é
+   * exatamente a divergência que reabriria o defeito do `500` por `numeric field overflow`.
+   */
+  const TETO_DECLARADO_MONETARIO = 9_999_999_999_999.99;
+  const ESCALA_DECLARADA_MONETARIA = 0.01;
+  const TETO_DECLARADO_DO_TEXTO_CURTO = 200;
+
+  it('o teto e a escala do dinheiro são a precisão e a escala de numeric(15,2)', () => {
+    expect([MAIOR_VALOR_MONETARIO, ESCALA_MONETARIA]).toEqual([
+      TETO_DECLARADO_MONETARIO,
+      ESCALA_DECLARADA_MONETARIA,
+    ]);
+  });
+
+  it('o teto da referência é o do texto curto do pacote', () => {
+    expect(MAIOR_TEXTO_CURTO).toBe(TETO_DECLARADO_DO_TEXTO_CURTO);
+  });
+
+  const ACEITOS: readonly {
+    readonly rotulo: string;
+    readonly campo: 'competencia' | 'valorOriginal' | 'referencia';
+    readonly valor: string | number;
+  }[] = [
+    { rotulo: 'o primeiro dia de março', campo: 'competencia', valor: '2026-03-01' },
+    { rotulo: 'o primeiro dia de um mês curto', campo: 'competencia', valor: '2026-02-01' },
+    { rotulo: 'o primeiro dia do ano seguinte', campo: 'competencia', valor: '2027-01-01' },
+    { rotulo: 'o menor valor representável', campo: 'valorOriginal', valor: 0.01 },
+    { rotulo: 'um valor comum', campo: 'valorOriginal', valor: 187.42 },
+    // As dízimas do binário não são enfeite: `1200.29` e `8.11` não são exatos em ponto flutuante, e
+    // um resto de escala ingênuo os recusaria — e recusar cobrança legítima é o defeito pior.
+    { rotulo: 'uma dízima do binário', campo: 'valorOriginal', valor: 1200.29 },
+    { rotulo: 'outra dízima do binário', campo: 'valorOriginal', valor: 8.11 },
+    {
+      rotulo: 'exatamente o teto da coluna',
+      campo: 'valorOriginal',
+      valor: TETO_DECLARADO_MONETARIO,
+    },
+    { rotulo: 'a menor referência não vazia', campo: 'referencia', valor: 'A' },
+    {
+      rotulo: 'exatamente o teto do texto curto',
+      campo: 'referencia',
+      valor: 'x'.repeat(TETO_DECLARADO_DO_TEXTO_CURTO),
+    },
+  ];
+
+  for (const { rotulo, campo, valor } of ACEITOS) {
+    it(`aprova ${rotulo} em ${campo}, devolvendo o valor exato`, () => {
+      const resultado = esquemaDeCobrancaNova.safeParse({ ...CORPO_DE_COBRANCA, [campo]: valor });
+
+      expect(resultado.success).toBe(true);
+      expect(resultado.data?.[campo]).toBe(valor);
+    });
+  }
+
+  const RECUSADOS: readonly {
+    readonly rotulo: string;
+    readonly remendo: Record<string, unknown>;
+    readonly campo: string;
+  }[] = [
+    {
+      rotulo: 'o segundo dia do mês',
+      remendo: { competencia: '2026-03-02' },
+      campo: 'competencia',
+    },
+    {
+      rotulo: 'o último dia do mês',
+      remendo: { competencia: '2026-03-31' },
+      campo: 'competencia',
+    },
+    // `2026-02-30` prende o `z.iso.date()` por um lado e `…T00:00:00Z` pelo outro: são as duas
+    // coisas que um `regex` ingênuo de competência deixaria passar.
+    {
+      rotulo: 'uma data que o calendário não tem',
+      remendo: { competencia: '2026-02-30' },
+      campo: 'competencia',
+    },
+    {
+      rotulo: 'a competência com hora — a coluna é date, não timestamp',
+      remendo: { competencia: '2026-03-01T00:00:00Z' },
+      campo: 'competencia',
+    },
+    { rotulo: 'valor zero', remendo: { valorOriginal: 0 }, campo: 'valorOriginal' },
+    { rotulo: 'valor negativo', remendo: { valorOriginal: -187.42 }, campo: 'valorOriginal' },
+    // A ordem de grandeza que motivou `MAIOR_VALOR_MONETARIO`: `z.number().gt(0)` a aprova, o driver
+    // levanta `numeric field overflow` (22003) e a borda devolveria **500** por entrada malformada
+    // de cliente, quando a §6.1 manda `422 CAMPO_INVALIDO` nomeando o campo.
+    {
+      rotulo: 'a ordem de grandeza que estoura a coluna',
+      remendo: { valorOriginal: 1e30 },
+      campo: 'valorOriginal',
+    },
+    {
+      rotulo: 'uma casa decimal além da escala — o arredondamento silencioso',
+      remendo: { valorOriginal: 187.425 },
+      campo: 'valorOriginal',
+    },
+    { rotulo: 'referência só de espaços', remendo: { referencia: '   ' }, campo: 'referencia' },
+    {
+      rotulo: 'um caractere além do teto do texto curto',
+      remendo: { referencia: 'x'.repeat(TETO_DECLARADO_DO_TEXTO_CURTO + 1) },
+      campo: 'referencia',
+    },
+    {
+      rotulo: 'um vencimento que o calendário não tem',
+      remendo: { dataVencimento: '2026-02-30' },
+      campo: 'dataVencimento',
+    },
+  ];
+
+  for (const { rotulo, remendo, campo } of RECUSADOS) {
+    it(`recusa ${rotulo} nomeando ${campo}`, () => {
+      const resultado = esquemaDeCobrancaNova.safeParse({ ...CORPO_DE_COBRANCA, ...remendo });
+
+      expect(resultado.success).toBe(false);
+      // O `path` do PRÓPRIO campo, nunca a raiz do objeto: a conferência da competência é do objeto,
+      // e sem o `path` explícito do `refine` a recusa chegaria ao cliente sem nome de campo.
+      expect(resultado.error?.issues[0]?.path).toEqual([campo]);
+    });
+  }
+});
+
+describe('CT-544 — o recurso publicado da cobrança tem forma fechada, sem UUID e sem escala na saída', () => {
+  /** Os dezoito campos publicados, na ordem declarada (tech spec §4.1.1). */
+  const CAMPOS_PUBLICADOS = [
+    'codigo',
+    'contratoCodigo',
+    'locatarioId',
+    'natureza',
+    'referencia',
+    'competencia',
+    'dataVencimento',
+    'valorOriginal',
+    'status',
+    'diasAtraso',
+    'valorMulta',
+    'valorJuros',
+    'valorTotal',
+    'pagoEm',
+    'valorPago',
+    'canceladoEm',
+    'multaPercentualAplicado',
+    'jurosPercentualAplicado',
+  ] as const;
+
+  /**
+   * O resíduo de ponto flutuante da derivação, **MEDIDO** contra a aritmética da RD-07 — não
+   * estimado pela aparência.
+   *
+   * O cenário é uma cobrança de `R$ 257,50` com 12 dias de atraso, multa de 2% e juros de 1% ao mês,
+   * e os três números saem da RD-07 corrida em ponto flutuante:
+   *
+   * ```
+   * multa = round(257.50 × 2/100, 2)              = 5.15
+   * juros = 257.50 × (1/100) / 30 × 12            = 1.0300000000000002
+   * total = 257.50 + 5.15 + 1.0300000000000002    = 263.67999999999995
+   * ```
+   *
+   * **A medição não é cerimônia — ela trocou os dois números.** Os que o card sugeria
+   * (`6.2399999999999995` e `193.66999999999996`) são **aprovados** por `multipleOf(0.01)`, medido
+   * com o zod deste pacote: um caso construído sobre eles seguiria verde mesmo com a escala
+   * replicada na saída, e não provaria nada sobre a assimetria. É exatamente o que o
+   * `DECISÃO FECHADA` de `ESCALA_DA_METRAGEM` adverte — *a aparência do número não diz de que lado
+   * da tolerância ele cai*. Estes dois são **recusados**, e o caso logo abaixo o afirma.
+   */
+  const COBRANCA_COM_RESIDUO = {
+    ...COBRANCA_PUBLICADA,
+    valorOriginal: 257.5,
+    status: 'VENCIDA',
+    diasAtraso: 12,
+    valorMulta: 5.15,
+    valorJuros: 1.0300000000000002,
+    valorTotal: 263.67999999999995,
+  };
+
+  /** A cobrança liquidada — os cinco anuláveis preenchidos, que é o outro estado possível deles. */
+  const COBRANCA_LIQUIDADA = {
+    ...COBRANCA_PUBLICADA,
+    status: 'PAGA',
+    pagoEm: '2026-03-25',
+    valorPago: 191.3,
+    multaPercentualAplicado: 2,
+    jurosPercentualAplicado: 1,
+  };
+
+  it('o recurso declara exatamente os dezoito campos, na ordem', () => {
+    expect(Object.keys(esquemaDaCobranca.shape)).toEqual([...CAMPOS_PUBLICADOS]);
+  });
+
+  it('o recurso publicado NÃO expõe o UUID interno (ADR-0017)', () => {
+    // Metade declarativa: o campo não existe no contrato. Sozinha, ela não distingue
+    // "não declarado" de "declarado e ignorado na leitura".
+    expect(Object.keys(esquemaDaCobranca.shape)).not.toContain('id');
+
+    // Metade comportamental: um `id` que chegue de fora não atravessa o esquema. Sozinha, ela não
+    // distingue "descartado" de "nunca chegou".
+    const comUuidInterno = esquemaDaCobranca.safeParse({
+      ...COBRANCA_PUBLICADA,
+      id: '5d6e7f80-9102-4a3b-8c4d-5e6f70819203',
+    });
+
+    expect(comUuidInterno.success).toBe(true);
+    expect(comUuidInterno.data).toEqual(COBRANCA_PUBLICADA);
+  });
+
+  it('os cinco campos do desfecho aceitam null e os devolvem', () => {
+    const resultado = esquemaDaCobranca.safeParse(COBRANCA_PUBLICADA);
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data).toEqual(COBRANCA_PUBLICADA);
+  });
+
+  it('os cinco campos do desfecho aceitam o carimbo do pagamento e o devolvem', () => {
+    const resultado = esquemaDaCobranca.safeParse(COBRANCA_LIQUIDADA);
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data).toEqual(COBRANCA_LIQUIDADA);
+  });
+
+  it('APROVA o resíduo de ponto flutuante da derivação e devolve os dois valores intactos', () => {
+    const resultado = esquemaDaCobranca.safeParse(COBRANCA_COM_RESIDUO);
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data?.valorJuros).toBe(1.0300000000000002);
+    expect(resultado.data?.valorTotal).toBe(263.67999999999995);
+    expect(resultado.data).toEqual(COBRANCA_COM_RESIDUO);
+  });
+
+  it('os dois resíduos SÃO recusados pela escala — é isso que dá poder ao caso acima', () => {
+    // Sem esta linha o caso anterior seria infalível (AP-29): se `multipleOf(ESCALA_MONETARIA)`
+    // aprovasse os dois números, "simetrizar entrada e saída" passaria pela suíte, e a primeira
+    // divergência a montante viraria queda de rota em vez de `422`. Ver a razão (1) do
+    // `DECISÃO FECHADA` de `ESCALA_DA_METRAGEM`, em `comum.ts`.
+    const comEscalaDeSaida = z.number().multipleOf(ESCALA_MONETARIA);
+
+    expect([
+      comEscalaDeSaida.safeParse(1.0300000000000002).success,
+      comEscalaDeSaida.safeParse(263.67999999999995).success,
+    ]).toEqual([false, false]);
+  });
+
+  const RECUSADOS: readonly {
+    readonly rotulo: string;
+    readonly recurso: Record<string, unknown>;
+    readonly campo: string;
+  }[] = [
+    {
+      rotulo: 'o código nulo',
+      recurso: { ...COBRANCA_PUBLICADA, codigo: null },
+      campo: 'codigo',
+    },
+    {
+      rotulo: 'o estado com espaço à direita',
+      recurso: { ...COBRANCA_PUBLICADA, status: 'A_VENCER ' },
+      campo: 'status',
+    },
+    {
+      rotulo: 'o recurso sem o total derivado',
+      recurso: Object.fromEntries(
+        Object.entries(COBRANCA_PUBLICADA).filter(([nome]) => nome !== 'valorTotal'),
+      ),
+      campo: 'valorTotal',
+    },
+  ];
+
+  for (const { rotulo, recurso, campo } of RECUSADOS) {
+    it(`recusa ${rotulo} nomeando ${campo}`, () => {
+      const resultado = esquemaDaCobranca.safeParse(recurso);
+
+      expect(resultado.success).toBe(false);
+      expect(resultado.error?.issues[0]?.path).toEqual([campo]);
+    });
+  }
+});
+
+describe('CT-545 — as constantes monetárias têm definição única no pacote', () => {
+  /** A raiz deste pacote, derivada da posição deste arquivo — o mesmo cálculo de `folha.spec.ts`. */
+  const RAIZ_DO_PACOTE = dirname(import.meta.dirname);
+
+  /** O arquivo que DEVE ser o dono das duas constantes, e o que DEVE consumi-las por importação. */
+  const DONO_DAS_CONSTANTES = 'src/contrato.ts';
+  const CONSUMIDOR = 'src/cobranca.ts';
+
+  /** Os dois nomes cujo fato do contrato não pode ter uma segunda definição. */
+  const CONSTANTES_MONETARIAS = ['MAIOR_VALOR_MONETARIO', 'ESCALA_MONETARIA'] as const;
+
+  /**
+   * Casa a **declaração exportada** de uma das duas constantes.
+   *
+   * A varredura já entrega o fonte sem comentários, de modo que o próprio marcador
+   * `DÉBITO COM GATILHO` de `cobranca.ts` — que cita os dois nomes em prosa — não é contado. É o
+   * defeito literal registrado em `.claude/rules/testing-stack.md`: asserção que casa o alvo dentro
+   * de um comentário reprova o código correto.
+   */
+  const declaracaoExportada = (nome: string): ((linha: string) => boolean) => {
+    const padrao = new RegExp(`^export const ${nome}\\b`);
+    return (linha) => padrao.test(linha);
+  };
+
+  /** Casa QUALQUER ligação do nome, exportada ou não — é o que pega a redeclaração local. */
+  const qualquerDeclaracao = (nome: string): ((linha: string) => boolean) => {
+    const padrao = new RegExp(`\\b(const|let|var)\\s+${nome}\\b`);
+    return (linha) => padrao.test(linha);
+  };
+
+  for (const nome of CONSTANTES_MONETARIAS) {
+    it(`${nome} tem exatamente UMA declaração exportada em todo o src/, e ela está em ${DONO_DAS_CONSTANTES}`, async () => {
+      // Diretório ausente LEVANTA (é o desenho de `listarFontesTs`): um `src/` renomeado reduziria a
+      // varredura a zero arquivos, e o caso seguiria verde provando nada.
+      const fontes = await listarFontesTs(join(RAIZ_DO_PACOTE, 'src'));
+
+      const varredura = await varrerArquivos(fontes, declaracaoExportada(nome));
+      const arquivosQueDeclaram = varredura.ocorrencias.map((ocorrencia) =>
+        relative(RAIZ_DO_PACOTE, ocorrencia.replace(/:\d+$/, '')),
+      );
+
+      // Lista exata: a contagem e o dono numa asserção só. Uma segunda definição em qualquer
+      // arquivo — a forma do débito D3 já aberto no projeto — acrescenta um elemento e reprova
+      // nomeando o arquivo culpado.
+      expect(arquivosQueDeclaram).toEqual([DONO_DAS_CONSTANTES]);
+      // O zero nunca é escondido: sem esta linha, uma varredura que não leu arquivo algum passaria.
+      expect(varredura.arquivos).toBeGreaterThan(0);
+    });
+  }
+
+  it(`${CONSUMIDOR} obtém as duas por importação de './contrato.js', e não redeclara nenhuma`, async () => {
+    const fonte = semComentarios(await readFile(join(RAIZ_DO_PACOTE, CONSUMIDOR), 'utf8'));
+
+    const importacao = /import\s*\{([^}]*)\}\s*from\s*'\.\/contrato\.js'/.exec(fonte);
+    const simbolosImportados = (importacao?.[1] ?? '')
+      .split(',')
+      .map((simbolo) => simbolo.trim())
+      .filter((simbolo) => simbolo.length > 0)
+      .sort();
+
+    // O arquivo entra na asserção para que a falha nomeie o culpado — trocar o import por
+    // redeclaração local esvazia esta lista.
+    expect({ arquivo: CONSUMIDOR, simbolosImportados }).toEqual({
+      arquivo: CONSUMIDOR,
+      simbolosImportados: [
+        'ESCALA_MONETARIA',
+        'ESQUEMA_DO_CODIGO_DE_CONTRATO',
+        'MAIOR_VALOR_MONETARIO',
+      ],
+    });
+
+    // A metade que a contagem acima não alcança: uma redeclaração **sem `export`** não é declaração
+    // exportada, e passaria pela varredura anterior sem uma ocorrência sequer.
+    const redeclaracoes = CONSTANTES_MONETARIAS.filter((nome) =>
+      fonte.split('\n').some((linha) => qualquerDeclaracao(nome)(linha)),
+    );
+
+    expect(redeclaracoes).toEqual([]);
+  });
+
+  it('o valor que o pacote publica é a precisão e a escala de numeric(15,2)', () => {
+    // A amarra de VALOR, a partir do símbolo importado: sem ela, "uma definição só" seria compatível
+    // com uma definição só e errada.
+    expect([MAIOR_VALOR_MONETARIO, ESCALA_MONETARIA]).toEqual([9_999_999_999_999.99, 0.01]);
   });
 });

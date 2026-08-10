@@ -63,6 +63,22 @@
  * |          |        | da pessoa é recusado PELO BANCO, e não por validação de aplicação. A pessoa
  * |          |        | sem empresa (o Master) continua inserível e simplesmente não é alvo de
  * |          |        | vínculo. |
+ * | CA-11    | CT-522 | Sob o contexto de uma empresa, a VISÃO `negocio.cobranca_derivada` devolve
+ * |          |        | apenas as cobranças dela — interseção vazia com as da outra —, e os valores
+ * |          |        | de mora saem da configuração DELA: com cobranças idênticas de `2000,00`
+ * |          |        | vencidas há 30 dias, A apura `40.00`/`20.00`/`2060.00` e B apura
+ * |          |        | `200.00`/`100.00`/`2300.00`, e os dois resultados DIFEREM. Sem contexto e
+ * |          |        | com empresa nula a leitura devolve vazio, sem erro, enquanto a mesma
+ * |          |        | leitura sob A segue devolvendo a linha. A consulta emitida não escreve
+ * |          |        | filtro por `empresa_id`. |
+ * | CA-11    | CT-523 | A visão `negocio.cobranca_derivada` DELEGA o isolamento às tabelas-base —
+ * |          |        | ela não adquire direitos próprios (ADR-0023). Recriada com o MESMO corpo,
+ * |          |        | lido da migração `0010` do disco, mas SEM `security_invoker` e por dona
+ * |          |        | privilegiada, a leitura sob o MESMO contexto de A passa a devolver a
+ * |          |        | cobrança de B, e `verificarCoberturaDeIsolamento` acusa exatamente
+ * |          |        | `{ tabela: 'negocio.cobranca_derivada', motivo: 'VISAO_NAO_DELEGA_ISOLAMENTO' }`.
+ * |          |        | Restaurada pelo papel de migração e com o atributo, as duas vias voltam ao
+ * |          |        | verde. |
  *
  * ===========================================================================
  * Por que os predicados são funções, e não asserções soltas
@@ -96,6 +112,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { verificarCoberturaDeIsolamento } from '../src/catalogo.ts';
 import { abrirConexao } from '../src/conexao.ts';
 import * as contextoDeTenant from '../src/contexto.ts';
 import {
@@ -1724,6 +1741,209 @@ async function tentarGravarCadastro(
 }
 
 // ===========================================================================
+// CT-522 · CT-523 — a cobrança, e o que a VISÃO derivada devolve a cada empresa
+// ===========================================================================
+//
+// Os dois não entram em `rodarBateria`, pela razão já registrada para o CT-207 e para os
+// CT-302/303/304: a bateria afirma o conjunto EXATO de predicados reprovados por mutante do CT-007,
+// e acrescentar predicados mudaria o esperado dos quatro mutantes — nenhum dos quais tem relação
+// com estas relações.
+//
+// O que eles provam, e que nenhum caso anterior alcança, é a **visão**. Até aqui todo objeto de
+// `negocio` era tabela, e o isolamento vinha da política dela; `negocio.cobranca_derivada` é o
+// primeiro objeto DERIVADO do produto (ADR-0023), e ele delega o isolamento às tabelas-base em vez
+// de ter política própria. A delegação tem exatamente um mecanismo — `security_invoker = true` — e
+// duas vias independentes de detecção, que é o par CT-522 (comportamento) + CT-523 (a guarda de
+// catálogo, mais o vazamento com o atributo removido).
+//
+// A montagem de cadastro é a MESMA dos CT-302/303/304 (`semearCadastros`/`limparCadastros`): a
+// cobrança aponta para o contrato pelo par `(contrato_id, empresa_id)`, de modo que o contrato de
+// cada empresa precisa existir antes dela.
+
+/** A cobrança descartável de cada empresa, e a que serve à falsificação do CT-523. */
+const COBRANCA_DE_A = 'dddddddd-8888-4000-8000-000000000001';
+const COBRANCA_DE_B = 'dddddddd-8888-4000-8000-000000000002';
+
+/** A política de mora descartável de cada empresa. */
+const MORA_DE_A = 'dddddddd-9999-4000-8000-000000000001';
+const MORA_DE_B = 'dddddddd-9999-4000-8000-000000000002';
+
+/**
+ * A política de cada empresa, DEZ VEZES distinta uma da outra.
+ *
+ * O fator dez não é estético: com percentuais próximos, uma apuração que tomasse a configuração
+ * alheia produziria valores parecidos, e a asserção literal poderia passar por coincidência de
+ * arredondamento. Com `2%` contra `10%`, qualquer troca aparece na primeira casa.
+ */
+const MULTA_DE_A = '2.00';
+const JUROS_DE_A = '1.00';
+const MULTA_DE_B = '10.00';
+const JUROS_DE_B = '5.00';
+
+/** O valor original das duas cobranças — IDÊNTICO, para que a única variável seja a política. */
+const VALOR_DA_COBRANCA = '2000.00';
+
+/** Quantos dias antes da data corrente da operação as duas cobranças venceram. */
+const DIAS_DE_ATRASO = 30;
+
+/**
+ * A mora esperada de cada empresa, apurada à mão a partir da fórmula do oráculo
+ * (`golden/calcular-mora.json`) e escrita como literal — nunca recalculada no caso.
+ *
+ * Recalcular aqui reimplementaria a expressão da visão no teste, e o par passaria a se conferir
+ * contra uma cópia de si mesmo: é o defeito que a `.claude/rules/testing-stack.md` registra como o
+ * pior dos três da F0. Os números vêm da conta feita uma vez, com papel:
+ *
+ *   * A — multa `2000,00 × 2% = 40,00`; juros `2000,00 × 1%/30 × 30 = 20,00`; total `2 060,00`;
+ *   * B — multa `2000,00 × 10% = 200,00`; juros `2000,00 × 5%/30 × 30 = 100,00`; total `2 300,00`.
+ *
+ * O caso de trinta dias é, além disso, o `juros_um_mes_e_exatamente_a_taxa_mensal` do golden: um mês
+ * de atraso rende exatamente a taxa mensal sobre o valor original.
+ */
+const MORA_ESPERADA_DE_A = {
+  valorMulta: '40.00',
+  valorJuros: '20.00',
+  valorTotal: '2060.00',
+} as const;
+
+const MORA_ESPERADA_DE_B = {
+  valorMulta: '200.00',
+  valorJuros: '100.00',
+  valorTotal: '2300.00',
+} as const;
+
+/** O nome da visão, escrito UMA vez: ele é lido, recriado e nomeado na exceção da guarda. */
+const VISAO_DERIVADA = 'negocio.cobranca_derivada';
+
+/**
+ * A leitura da visão, **declarada como valor** para que a ausência de filtro por empresa seja
+ * CONFERIDA e não apenas prometida (ADR-0008) — mesmo mecanismo de {@link CONSULTAS_DE_NEGOCIO} e
+ * de {@link EntidadeDeCadastro.consulta}.
+ */
+const CONSULTA_DA_DERIVADA =
+  'SELECT id, codigo, status::text AS status, dias_atraso AS "diasAtraso", ' +
+  'valor_multa AS "valorMulta", valor_juros AS "valorJuros", valor_total AS "valorTotal", ' +
+  `contrato_codigo AS "contratoCodigo" FROM ${VISAO_DERIVADA} ORDER BY id`;
+
+/** Uma linha da visão, como o driver a devolve: `numeric` vem como texto, `integer` como número. */
+interface LinhaDerivada {
+  readonly id: string;
+  readonly codigo: string;
+  readonly status: string;
+  readonly diasAtraso: number;
+  readonly valorMulta: string;
+  readonly valorJuros: string;
+  readonly valorTotal: string;
+  readonly contratoCodigo: string;
+}
+
+/**
+ * Semeia, sob o contexto da PRÓPRIA empresa, a política de mora e uma cobrança vencida.
+ *
+ * O vencimento é composto a partir de `negocio.data_corrente_da_operacao()`, e não de um `Date` do
+ * processo: fixá-lo pelo relógio do Node reintroduziria no caso exatamente a dependência do fuso da
+ * sessão que aquela função existe para remover, e o caso passaria a virar por volta da meia-noite
+ * conforme o fuso de quem o roda. O que este caso mede é o ISOLAMENTO e a origem da política — a
+ * fronteira do vencimento é do CT-513, na T4.
+ */
+async function semearCobranca(
+  acesso: AcessoAoBanco,
+  contexto: Contexto,
+  empresaId: string,
+  cobrancaId: string,
+  moraId: string,
+  contratoId: string,
+  multaPercentual: string,
+  jurosPercentual: string,
+): Promise<void> {
+  await contextoDeTenant.executarCom(contexto, async () => {
+    await acesso.emUnidadeDeTrabalho(async (tx) => {
+      await tx`
+        INSERT INTO negocio.configuracao_de_mora
+                    (id, empresa_id, multa_percentual, juros_percentual)
+        VALUES (${moraId}, ${empresaId}, ${multaPercentual}, ${jurosPercentual})
+      `;
+      await tx`
+        INSERT INTO negocio.cobranca
+                    (id, empresa_id, codigo, contrato_id, natureza, referencia, competencia,
+                     data_vencimento, valor_original)
+        VALUES (${cobrancaId}, ${empresaId}, ${`COB-2026-${cobrancaId.slice(-7)}`}, ${contratoId},
+                ${'ALUGUEL'}::negocio.natureza_cobranca, ${'01/01/2026 à 31/01/2026'},
+                ${'2026-01-01'}::date,
+                negocio.data_corrente_da_operacao() - ${DIAS_DE_ATRASO}::integer,
+                ${VALOR_DA_COBRANCA})
+      `;
+    });
+  });
+}
+
+/**
+ * Remove as linhas descartáveis de cobrança e de mora, **pelo identificador** — nunca por
+ * `empresa_id`, que é o filtro que a ADR-0008 proíbe à aplicação.
+ *
+ * Corre nos DOIS contextos, porque com o isolamento íntegro cada linha só é alcançável pelo contexto
+ * da própria empresa; e ANTES de `limparCadastros`, porque a cobrança referencia o contrato.
+ */
+async function limparCobrancas(cadeiaDeConexao: string): Promise<void> {
+  const acesso = abrir(cadeiaDeConexao);
+  try {
+    for (const contexto of [CONTEXTO_DE_A, CONTEXTO_DE_B]) {
+      await contextoDeTenant.executarCom(contexto, async () => {
+        await acesso.emUnidadeDeTrabalho(async (tx) => {
+          for (const id of [COBRANCA_DE_A, COBRANCA_DE_B]) {
+            await tx`DELETE FROM negocio.cobranca WHERE id = ${id}`;
+          }
+          for (const id of [MORA_DE_A, MORA_DE_B]) {
+            await tx`DELETE FROM negocio.configuracao_de_mora WHERE id = ${id}`;
+          }
+        });
+      });
+    }
+  } finally {
+    await acesso.encerrar();
+  }
+}
+
+/** Lê a visão derivada sob o contexto dado, pela consulta DECLARADA acima. */
+async function lerDerivada(
+  acesso: AcessoAoBanco,
+  contexto: Contexto | typeof SEM_CONTEXTO,
+): Promise<LinhaDerivada[]> {
+  return noContexto(contexto, async () =>
+    acesso.emUnidadeDeTrabalho(async (tx) => {
+      const linhas = await tx.unsafe<LinhaDerivada[]>(CONSULTA_DA_DERIVADA);
+      return linhas.map((linha) => ({ ...linha }));
+    }),
+  );
+}
+
+/** Semeia cadastro e cobrança das DUAS empresas, cada uma sob o próprio contexto. */
+async function semearAsDuasCarteiras(acesso: AcessoAoBanco): Promise<void> {
+  await semearCadastros(acesso, CONTEXTO_DE_A, EMPRESA_A.id, CADASTROS_DE_A, 'a');
+  await semearCadastros(acesso, CONTEXTO_DE_B, EMPRESA_B.id, CADASTROS_DE_B, 'b');
+  await semearCobranca(
+    acesso,
+    CONTEXTO_DE_A,
+    EMPRESA_A.id,
+    COBRANCA_DE_A,
+    MORA_DE_A,
+    CADASTROS_DE_A.contrato,
+    MULTA_DE_A,
+    JUROS_DE_A,
+  );
+  await semearCobranca(
+    acesso,
+    CONTEXTO_DE_B,
+    EMPRESA_B.id,
+    COBRANCA_DE_B,
+    MORA_DE_B,
+    CADASTROS_DE_B.contrato,
+    MULTA_DE_B,
+    JUROS_DE_B,
+  );
+}
+
+// ===========================================================================
 // A bateria — a MESMA função de conferência para o caso e para o mutante
 // ===========================================================================
 
@@ -3164,6 +3384,107 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
     },
     LIMITE_DO_CASO_MS,
   );
+
+  it(
+    'CT-522 — duas empresas apuram cada uma pela PRÓPRIA política de mora, e nenhuma enxerga a outra',
+    async () => {
+      await limparCobrancas(banco.cadeiaConexao);
+      await limparCadastros(banco.cadeiaConexao);
+      const acesso = abrir(banco.cadeiaConexao);
+      let acessoVirgem: AcessoAoBanco | undefined;
+
+      try {
+        // A ausência de filtro por empresa é INVARIANTE (ADR-0008), e por isso é conferida no
+        // próprio texto da consulta que o caso emite — mesmo mecanismo do CT-003 e do CT-302. O que
+        // escopa a leitura é a política das tabelas-base, alcançada pela visão por delegação.
+        expect(CONSULTA_DA_DERIVADA.toLowerCase()).not.toContain('empresa_id');
+        expect(CONSULTA_DA_DERIVADA.toLowerCase()).not.toContain('where');
+
+        // Cada empresa cria as PRÓPRIAS linhas, dentro do próprio contexto — nunca por conexão
+        // privilegiada, e nunca uma escrevendo pela outra.
+        await semearAsDuasCarteiras(acesso);
+
+        // A reserva virgem é aberta DEPOIS do preparo, para que a conexão dela nunca tenha atendido
+        // outra unidade — padrão `acessoVirgem` do CT-005 e do CT-302.
+        acessoVirgem = abrir(banco.cadeiaConexao);
+
+        // --- Sob o contexto de A -----------------------------------------------------------
+        const sobA = await lerDerivada(acesso, CONTEXTO_DE_A);
+
+        expect(sobA.map((linha) => linha.id)).toEqual([COBRANCA_DE_A]);
+        // Companheiro negativo EXPLÍCITO, no molde do CT-107: a igualdade acima já o implica, mas é
+        // esta linha que nomeia o vazamento se ele voltar.
+        expect(
+          intersecao(
+            sobA.map((linha) => linha.id),
+            [COBRANCA_DE_B],
+          ),
+        ).toEqual([]);
+
+        // A linha inteira por igualdade, e não campo a campo: o estado derivado, o atraso, as duas
+        // parcelas de mora, o total e o código do contrato saem da MESMA leitura, e é o objeto
+        // completo que discrimina uma apuração feita com a política alheia.
+        expect(sobA[0]).toEqual({
+          id: COBRANCA_DE_A,
+          codigo: 'COB-2026-0000001',
+          status: 'VENCIDA',
+          diasAtraso: DIAS_DE_ATRASO,
+          contratoCodigo: 'CTR-2026-contrato-a',
+          ...MORA_ESPERADA_DE_A,
+        } satisfies LinhaDerivada);
+
+        // --- Sob o contexto de B -----------------------------------------------------------
+        const sobB = await lerDerivada(acesso, CONTEXTO_DE_B);
+
+        expect(sobB.map((linha) => linha.id)).toEqual([COBRANCA_DE_B]);
+        expect(
+          intersecao(
+            sobB.map((linha) => linha.id),
+            [COBRANCA_DE_A],
+          ),
+        ).toEqual([]);
+        expect(sobB[0]).toEqual({
+          id: COBRANCA_DE_B,
+          codigo: 'COB-2026-0000002',
+          status: 'VENCIDA',
+          diasAtraso: DIAS_DE_ATRASO,
+          contratoCodigo: 'CTR-2026-contrato-b',
+          ...MORA_ESPERADA_DE_B,
+        } satisfies LinhaDerivada);
+
+        // --- Os dois resultados DIFEREM ----------------------------------------------------
+        //
+        // Dito de forma direta, e não deduzido das duas igualdades acima: se coincidissem, a
+        // configuração de uma teria alcançado a outra — que é o defeito que este caso persegue, e
+        // ele é distinto de "enxergou a linha alheia".
+        expect([sobA[0]?.valorMulta, sobA[0]?.valorJuros, sobA[0]?.valorTotal]).not.toEqual([
+          sobB[0]?.valorMulta,
+          sobB[0]?.valorJuros,
+          sobB[0]?.valorTotal,
+        ]);
+
+        // --- Sem contexto: VAZIO, e sem erro -----------------------------------------------
+        //
+        // O terceiro pé do caso, e o que impede que ele fique verde sobre uma visão que ignorasse
+        // `empresa_id` e devolvesse tudo para todos: contexto ausente resulta em vazio, nunca em
+        // dado alheio. Não é recusa — é invisibilidade, que é o que a política produz.
+        expect(await lerDerivada(acessoVirgem, SEM_CONTEXTO)).toEqual([]);
+        expect(await lerDerivada(acesso, CONTEXTO_SEM_EMPRESA)).toEqual([]);
+
+        // O companheiro POSITIVO, lido DEPOIS dos vazios e na mesma reserva: sem ele, "vazio" não
+        // distingue isolamento de banco sem dado.
+        expect((await lerDerivada(acesso, CONTEXTO_DE_A)).map((linha) => linha.id)).toEqual([
+          COBRANCA_DE_A,
+        ]);
+      } finally {
+        await acessoVirgem?.encerrar();
+        await acesso.encerrar();
+        await limparCobrancas(banco.cadeiaConexao);
+        await limparCadastros(banco.cadeiaConexao);
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
 });
 
 // ===========================================================================
@@ -3524,6 +3845,212 @@ describe('CT-107 — `security_invoker` decide de QUEM é o privilégio que a vi
           // E o vazamento acontece com o MESMO contexto fixado que a perna 1 usou — não é ausência
           // de contexto. É o que prova que a diferença está na visão, e não no chamador.
           expect(ordenado(peloVazante)).not.toEqual(ordenado(peloDelegante));
+        } finally {
+          await acesso.encerrar();
+        }
+      } finally {
+        await banco.parar();
+      }
+    },
+    LIMITE_DA_FALSIFICACAO_MS,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// CT-523 — `security_invoker` da visão da COBRANÇA, falsificado por duas vias
+// ---------------------------------------------------------------------------
+//
+// O CT-107 provou o que o atributo FAZ, sobre um espelho sintético de `acesso_usuario_app`. Este
+// caso prova o mesmo sobre o objeto REAL da fatia — a visão que a migração `0010` cria, com o corpo
+// que ela declara — e acrescenta a segunda via de detecção: a guarda de cobertura de
+// `packages/db/src/catalogo.ts`, que nomeia a visão com `VISAO_NAO_DELEGA_ISOLAMENTO`.
+//
+// As duas vias são INDEPENDENTES, e é por isso que as duas estão aqui: a guarda responde por FORMA
+// (o atributo está declarado?) e o vazamento responde por SEMÂNTICA (a linha alheia atravessa?).
+// Uma guarda quebrada e uma visão correta produziriam o mesmo `excecoes: []` que uma guarda correta
+// e uma visão correta; só a perna comportamental distingue os dois.
+//
+// **O corpo da visão é LIDO do arquivo `0010` do disco**, e não recomposto aqui. Recompô-lo faria a
+// asserção concordar com quem a escreveu — é a mesma razão pela qual o CT-007 relê a política da
+// migração em vez de reescrevê-la no teste.
+//
+// **A instância é DEDICADA**, como a do CT-007 e a do CT-107: as duas variantes são DDL sobre um
+// objeto que os demais casos deste arquivo consultam, e recriá-las na instância compartilhada
+// mudaria o que eles examinam.
+//
+// ===========================================================================
+// MUTANTE EXECUTADO SOBRE A MIGRAÇÃO — MT-SI1 (2026-08-10)
+// ===========================================================================
+//
+// A prova de falsificação não para nas variantes que este caso cria: ela alcança o ARQUIVO
+// versionado. O atributo `WITH (security_invoker = true)` foi removido da
+// `0010_seguranca_cobranca.sql` real, a suíte foi invocada pelo **script do pacote**
+// (`pnpm --filter @sysloc/db test`, nunca `vitest run` avulso — `.claude/rules/testing-stack.md`), e
+// o resultado foi medido:
+//
+//   * **controle** — árvore íntegra: `88 passed`;
+//   * **MT-SI1 · atributo removido da migração real**: `13 failed | 75 passed`. Reprovam o **CT-523**
+//     (por não achar o cabeçalho da visão na migração, que é o modo de falha desejado: ele NOMEIA o
+//     que sumiu) e **doze casos que afirmam `excecoes: []`**, entre eles o CT-300, o CT-301, o
+//     CT-421 e todas as variantes do CT-009 — todos com
+//     `{ motivo: 'VISAO_NAO_DELEGA_ISOLAMENTO', tabela: 'negocio.cobranca_derivada' }` a mais;
+//   * **reversão** — o arquivo foi restaurado e conferido idêntico ao original por `sha256sum`
+//     (`5c91980109…`), e o controle voltou a `88 passed`.
+//
+// ---------------------------------------------------------------------------
+// O CT-522 **não** reprova sob o MT-SI1, e a premissa do card foi refutada pela medição
+// ---------------------------------------------------------------------------
+//
+// O card previa que a migração mutada faria o CT-522 reprovar. **Não faz**, e a razão é estrutural,
+// não um defeito do caso: a visão que a `0010` cria pertence a `sysloc_migracao`, que é dono das
+// tabelas-base mas **não contorna a política** — o `FORCE ROW LEVEL SECURITY` do bloco 1 alcança
+// também o dono. Sem `security_invoker`, a política continua sendo avaliada, com os direitos da dona
+// e sobre a MESMA variável de sessão que quem consulta fixou; o conjunto devolvido é o mesmo, e o
+// vazamento não acontece.
+//
+// O vazamento comportamental exige dona que contorne RLS — e é exatamente essa condição que a perna
+// 2 deste caso CONSTRÓI, recriando a visão pela superusuária. Ela é, portanto, a prova
+// comportamental permanente, e ela não depende de o `FORCE` estar lá; a guarda de catálogo é a
+// segunda via, independente, e é ela que responde pelo objeto REAL.
+//
+// Isto é registro de medição, e não conveniência: o que o atributo garante hoje é que a visão não
+// possa ser caminho mais fraco que a tabela **seja quem for a dona** — incluindo o dia em que uma
+// migração for aplicada por papel privilegiado, ou em que o `FORCE` de uma tabela-base for perdido.
+// É literalmente o invariante que o D38 instalou, e é por isso que o marcador `DECISÃO FECHADA` da
+// `0010` fala em *provar por outro mecanismo*, e não em *hoje dá no mesmo*.
+//
+// A âncora deste registro é SIMBÓLICA — {@link ATRIBUTO_DE_DELEGACAO} e {@link MIGRACAO_DA_COBRANCA}
+// —, e nunca número de linha.
+
+/** A migração autoral desta fatia, de onde o corpo da visão é lido. */
+const MIGRACAO_DA_COBRANCA = new URL('../migracoes/0010_seguranca_cobranca.sql', import.meta.url);
+
+/** O atributo que faz a visão delegar. Escrito UMA vez: ele é procurado, aplicado e omitido. */
+const ATRIBUTO_DE_DELEGACAO = 'WITH (security_invoker = true)';
+
+/** O cabeçalho literal da criação da visão na migração — a âncora do recorte do corpo. */
+const ABERTURA_DA_VISAO = `CREATE VIEW "${VISAO_DERIVADA.replace('.', '"."')}"\n\t${ATRIBUTO_DE_DELEGACAO} AS\n`;
+
+/** O terminador de instrução que a migração usa, e onde o corpo da visão termina. */
+const FIM_DA_INSTRUCAO = ';--> statement-breakpoint';
+
+/**
+ * O corpo da visão, recortado da migração do disco.
+ *
+ * Levanta NOMEANDO o que não encontrou, em vez de devolver cadeia vazia: um recorte que falhasse em
+ * silêncio criaria uma visão vazia, e as duas pernas do caso ficariam iguais — verdes sobre nada.
+ */
+async function corpoDaVisaoDerivada(): Promise<string> {
+  const migracao = await readFile(MIGRACAO_DA_COBRANCA, 'utf8');
+  const abertura = migracao.indexOf(ABERTURA_DA_VISAO);
+  if (abertura < 0) {
+    throw new Error(
+      `não encontrei ${JSON.stringify(ABERTURA_DA_VISAO)} em 0010_seguranca_cobranca.sql — o ` +
+        'corpo da visão precisa vir da migração, nunca ser recomposto neste arquivo',
+    );
+  }
+
+  const inicioDoCorpo = abertura + ABERTURA_DA_VISAO.length;
+  const fim = migracao.indexOf(FIM_DA_INSTRUCAO, inicioDoCorpo);
+  if (fim < 0) {
+    throw new Error('a criação da visão em 0010_seguranca_cobranca.sql não termina em `;`');
+  }
+
+  return migracao.slice(inicioDoCorpo, fim);
+}
+
+describe('CT-523 — a visão da cobrança delega o isolamento, e sem o atributo ela vaza', () => {
+  it(
+    'CT-523 — sem `security_invoker` a cobrança de outra empresa atravessa a leitura e a guarda acusa a visão',
+    async () => {
+      // Instância DEDICADA — ver o cabeçalho.
+      const banco = await bancoEfemero();
+
+      try {
+        const doDono = conexaoDeMigracao(banco);
+        const daSuperusuaria = conexaoSuperusuaria(banco);
+        const corpo = await corpoDaVisaoDerivada();
+
+        // O recorte tem de ter trazido a consulta, e não um pedaço dela: sem esta âncora, um corpo
+        // truncado produziria uma visão que reprova por sintaxe, longe da causa.
+        expect(corpo).toContain('FROM "negocio"."cobranca" c');
+        expect(corpo).toContain('LEFT JOIN "negocio"."configuracao_de_mora" m');
+        // E ele NÃO carrega o atributo: ele é aplicado (ou omitido) pelo caso, e é essa omissão que
+        // separa as duas pernas.
+        expect(corpo).not.toContain(ATRIBUTO_DE_DELEGACAO);
+
+        const acesso = abrir(banco.cadeiaConexao);
+
+        try {
+          await semearAsDuasCarteiras(acesso);
+
+          // --- Perna 1: a visão COMO A MIGRAÇÃO A CRIOU, que delega -----------------------
+          //
+          // Nada é recriado aqui: o que se lê é o objeto real, criado pelo papel de migração ao
+          // aplicar a `0010`. É o controle ANTES do par controle→mutante→controle.
+          const peloDelegante = await lerDerivada(acesso, CONTEXTO_DE_A);
+          expect(peloDelegante.map((linha) => linha.id)).toEqual([COBRANCA_DE_A]);
+          expect(
+            intersecao(
+              peloDelegante.map((linha) => linha.id),
+              [COBRANCA_DE_B],
+            ),
+          ).toEqual([]);
+
+          // A primeira via de detecção, sobre o objeto íntegro: a visão consta das examinadas E não
+          // rende exceção. As duas metades importam — uma visão aprovada por estar EXCLUÍDA do exame
+          // também produziria `excecoes: []`.
+          const coberturaComDelegacao = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
+          expect(coberturaComDelegacao.excecoes).toEqual([]);
+          expect(coberturaComDelegacao.tabelasExaminadas).toContain(VISAO_DERIVADA);
+
+          // --- Perna 2: a MESMA visão, sem o atributo e de dona privilegiada ---------------
+          //
+          // O corpo é o mesmo, o nome é o mesmo e o chamador é o mesmo — o papel da aplicação, pela
+          // cadeia sem privilégio. A ÚNICA coisa que muda é o atributo e a dona, e é por isso que o
+          // que a perna seguinte observar é atribuível à visão, e não ao chamador.
+          await executarPrivilegiado(daSuperusuaria, [
+            `DROP VIEW ${VISAO_DERIVADA}`,
+            `CREATE VIEW ${VISAO_DERIVADA} AS ${corpo}`,
+            `GRANT SELECT ON ${VISAO_DERIVADA} TO ${PAPEL_DA_APLICACAO}`,
+          ]);
+
+          const peloVazante = await lerDerivada(acesso, CONTEXTO_DE_A);
+          expect(
+            intersecao(
+              peloVazante.map((linha) => linha.id),
+              [COBRANCA_DE_B],
+            ),
+            'a visão de dona privilegiada deveria vazar B — se não vaza, a premissa do CT-523 ' +
+              'mudou e o critério de `catalogo.ts` precisa ser reavaliado, não o teste',
+          ).toEqual([COBRANCA_DE_B]);
+
+          // O vazamento acontece com o MESMO contexto fixado que a perna 1 usou — não é ausência de
+          // contexto. É o que prova que a diferença está na visão.
+          expect(peloVazante.map((linha) => linha.id)).not.toEqual(
+            peloDelegante.map((linha) => linha.id),
+          );
+
+          // A segunda via de detecção, sobre o objeto defeituoso: EXATAMENTE uma exceção, com o nome
+          // da visão e o motivo próprio dela — não "alguma exceção".
+          const coberturaSemDelegacao = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
+          expect(coberturaSemDelegacao.excecoes).toEqual([
+            { tabela: VISAO_DERIVADA, motivo: 'VISAO_NAO_DELEGA_ISOLAMENTO' },
+          ]);
+          expect(coberturaSemDelegacao.tabelasExaminadas).toContain(VISAO_DERIVADA);
+
+          // --- Restauração: o controle DEPOIS ----------------------------------------------
+          //
+          // A visão volta a nascer do papel de MIGRAÇÃO e com o atributo, que é o estado que a
+          // `0010` aplica. Sem esta terceira perna, "reprovou" poderia ser estado residual.
+          await executarPrivilegiado(daSuperusuaria, [`DROP VIEW ${VISAO_DERIVADA}`]);
+          await executarPrivilegiado(doDono, [
+            `CREATE VIEW ${VISAO_DERIVADA} ${ATRIBUTO_DE_DELEGACAO} AS ${corpo}`,
+          ]);
+
+          const restaurada = await lerDerivada(acesso, CONTEXTO_DE_A);
+          expect(restaurada.map((linha) => linha.id)).toEqual([COBRANCA_DE_A]);
+          expect((await verificarCoberturaDeIsolamento(banco.cadeiaConexao)).excecoes).toEqual([]);
         } finally {
           await acesso.encerrar();
         }

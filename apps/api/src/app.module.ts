@@ -40,6 +40,7 @@ import { criarLogger, type Logger } from '@sysloc/shared';
 import { AutenticacaoModule } from './autenticacao/autenticacao.module.js';
 import { GuardaDeContexto } from './autenticacao/contexto.guard.js';
 import { CadastrosModule } from './cadastros/cadastros.module.js';
+import { CobrancasModule } from './cobrancas/cobrancas.module.js';
 import { FiltroExcecaoGlobal } from './comum/filtro-excecao.js';
 import {
   type Ambiente,
@@ -63,6 +64,7 @@ import { UsuariosModule } from './usuarios/usuarios.module.js';
     ImoveisModule,
     CadastrosModule,
     ContratosModule,
+    CobrancasModule,
   ],
   providers: [
     {

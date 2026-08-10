@@ -180,6 +180,16 @@ readonly CAMINHO_ENTRADA_DB="${RAIZ_REPO}/packages/db/dist/index.js"
 #   commit da migração `0007_dominio_contrato.sql`, que acrescenta o contrato e o
 #   vínculo de fiador — o tropeço funcionou de novo, e a suíte de `@sysloc/db`
 #   (CT-300, CT-301, CT-421) reprovou pela mesma razão, no mesmo instante.
+#   ATUALIZADA EM 2026-08-10 pela T3 da fatia `cobranca-e-mora`, no mesmo commit
+#   das migrações `0009_dominio_cobranca.sql` e `0010_seguranca_cobranca.sql`,
+#   que acrescentam a cobrança, a configuração de mora e a VISÃO derivada.
+#
+#   A VISÃO ENTRA AQUI, e a sequência continua fora — a distinção não é
+#   arbitrária, é a espécie: `negocio.cobranca_derivada` é `relkind = 'v'`, que a
+#   guarda EXAMINA por um critério próprio (`security_invoker = true`, ADR-0023) e
+#   devolve entre as examinadas; a sequência do contador é `relkind = 'S'`, que a
+#   guarda exclui por construção e nunca devolve. Omitir a visão faria a asserção
+#   (b) reprovar um schema íntegro, exatamente como acrescentar a sequência faria.
 #
 #   A SEQUÊNCIA DO CONTADOR NÃO ENTRA AQUI, e a ausência é a decisão: a migração
 #   `0008_seguranca_contrato.sql` traz para `${SCHEMA_NEGOCIO}` um objeto de
@@ -188,7 +198,7 @@ readonly CAMINHO_ENTRADA_DB="${RAIZ_REPO}/packages/db/dist/index.js"
 #   exclui `relkind = 'S'` do exame POR CONSTRUÇÃO, então ela nunca aparece no
 #   resultado que esta lista compara. Acrescentá-la faria a asserção (b) reprovar
 #   um schema íntegro.
-readonly TABELAS_DE_NEGOCIO_ESPERADAS="negocio.acesso_usuario_app negocio.acesso_usuario_permissao negocio.comodo negocio.conjunto negocio.contrato negocio.contrato_fiador negocio.fiador negocio.imovel negocio.locador negocio.locatario"
+readonly TABELAS_DE_NEGOCIO_ESPERADAS="negocio.acesso_usuario_app negocio.acesso_usuario_permissao negocio.cobranca negocio.cobranca_derivada negocio.comodo negocio.configuracao_de_mora negocio.conjunto negocio.contrato negocio.contrato_fiador negocio.fiador negocio.imovel negocio.locador negocio.locatario"
 
 # Os quatro transportes de segredo que a ADR-0005 proíbe. O `[=]` é classe de
 # caractere de UM elemento — casa exatamente o que o sinal solto casaria, sem

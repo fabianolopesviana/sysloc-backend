@@ -64,6 +64,20 @@
       "when": 1786253106443,
       "tag": "0008_seguranca_contrato",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786332060948,
+      "tag": "0009_dominio_cobranca",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786332061948,
+      "tag": "0010_seguranca_cobranca",
+      "breakpoints": true
     }
   ]
 }

@@ -16,7 +16,7 @@
  *      e não apenas verificada.
  *
  * Falta a quinta, que **não mora neste arquivo**: `FORCE ROW LEVEL SECURITY` e as políticas
- * `USING`/`WITH CHECK` vivem em migração de segurança escrita à mão. São **três**, e quem
+ * `USING`/`WITH CHECK` vivem em migração de segurança escrita à mão. São **quatro**, e quem
  * acrescentar tabela aqui precisa saber qual delas emendar — a resposta é sempre *nenhuma*, e a
  * lista existe para dizer onde cada tabela já protegida foi protegida:
  *
@@ -25,27 +25,55 @@
  *   * `migracoes/0006_seguranca_dominio.sql` — as seis entidades do domínio de locação
  *     (`conjunto`, `imovel`, `comodo`, `locador`, `locatario`, `fiador`);
  *   * `migracoes/0008_seguranca_contrato.sql` — o contrato e o vínculo de fiador (`contrato` e
- *     `contrato_fiador`), mais o mecanismo de emissão da série declarada (ADR-0020).
+ *     `contrato_fiador`), mais o mecanismo de emissão da série declarada (ADR-0020);
+ *   * `migracoes/0010_seguranca_cobranca.sql` — a cobrança e a configuração de mora (`cobranca` e
+ *     `configuracao_de_mora`), mais a view `cobranca_derivada`, a data corrente da operação e a
+ *     segunda série declarada do produto.
  *
- * São três porque **gerado e autoral nunca convivem no mesmo arquivo** — uma regeração futura da
+ * São quatro porque **gerado e autoral nunca convivem no mesmo arquivo** — uma regeração futura da
  * gerada sobrescreveria o trecho autoral em silêncio. O que **obriga** a parceira autoral não é a
  * predecessora ser gerada: é **nascer tabela em `negocio`**, porque o gerador não emite `FORCE` nem
  * política. Toda migração que criar tabela aqui leva junto uma parceira autoral própria — nunca um
- * acréscimo à `0001`, à `0006` ou à `0008`, que descrevem schemas já aplicados e são, portanto,
- * imutáveis.
+ * acréscimo à `0001`, à `0006`, à `0008` ou à `0010`, que descrevem schemas já aplicados e são,
+ * portanto, imutáveis.
  *
  * O diretório de migrações é a conferência da regra, e ele recusa a forma mais larga dela: a
  * `0002_campos_do_arcabouco.sql` e a `0003_autorizacao.sql` são **geradas e não têm parceira** —
  * nenhuma das duas cria tabela, elas só alteram o que já existia —, e a `0004_desfecho_de_recusa.sql`
- * é **autoral avulsa**, sem gerada a quem se parear. Só a `0000`, a `0005` e a `0007` criam tabela
- * em `negocio`, e são exatamente elas que têm parceira. Ler o gatilho como "toda gerada ganha uma
- * parceira" produziria uma migração de segurança vazia, sem `FORCE` nem política a declarar.
+ * é **autoral avulsa**, sem gerada a quem se parear. Só a `0000`, a `0005`, a `0007` e a `0009` criam
+ * tabela em `negocio`, e são exatamente elas que têm parceira. Ler o gatilho como "toda gerada ganha
+ * uma parceira" produziria uma migração de segurança vazia, sem `FORCE` nem política a declarar.
  *
  * O gerador de migração declara RLS e a política que se declare aqui, mas **não emite `FORCE`** — e
  * sem `FORCE` o dono das tabelas ignora a política, o que faria a suíte de isolamento ficar verde
  * sem provar nada (ADR-0009, seção Neutros). A autoridade sobre o estado real é a consulta ao
  * catálogo, não a declaração: é a guarda da T4 que reprova a tabela que nasça sem qualquer uma das
  * propriedades.
+ *
+ * ---------------------------------------------------------------------------
+ * Acrescentar objeto aqui move QUATRO listas-espelho, e elas não têm ponto único
+ * ---------------------------------------------------------------------------
+ *
+ * A rede de verificação afirma o conjunto EXATO de objetos de `negocio` — nunca "contém", porque
+ * `toContain` deixaria passar a tabela que nascesse sem isolamento. O preço é que cada objeto novo
+ * precisa entrar em quatro listas escritas por extenso, em quatro arquivos, e as três últimas fatias
+ * descobriram isso por reprovação da suíte, uma de cada vez. Elas ficam nomeadas aqui porque este é
+ * o arquivo que se abre para criar o objeto:
+ *
+ *   * `TABELAS_LEGITIMAS` — `test/catalogo.spec.ts` (o conjunto examinado pela guarda de cobertura);
+ *   * `TABELAS_DE_NEGOCIO_ESPERADAS` — `test/papel-de-conexao.spec.ts` **e**, com o mesmo nome e
+ *     conteúdo, `deploy/scripts/instalacao/verificar-migracao.sh` (as duas frentes de teste);
+ *   * `SIMBOLOS_ESPERADOS` — `test/unidade-de-trabalho.spec.ts` (a superfície publicada do pacote).
+ *
+ * A lista acima envelhece; o comando que as encontra, não:
+ *
+ * ```bash
+ * grep -rln --exclude-dir=dist "TABELAS_DE_NEGOCIO_ESPERADAS\|TABELAS_LEGITIMAS\|SIMBOLOS_ESPERADOS" packages deploy
+ * ```
+ *
+ * É a mesma mecânica de comando-que-não-envelhece que o índice de débitos do `CLAUDE.md` usa. Este
+ * parágrafo **não** é permissão para afrouxar qualquer uma das quatro: crescimento de lista esperada
+ * é o caminho legítimo, troca de igualdade por presença é regressão de prova.
  *
  * ---------------------------------------------------------------------------
  * O que NÃO existe aqui, de propósito
@@ -58,7 +86,9 @@
  */
 
 import {
+  ESTADOS_DA_COBRANCA,
   ESTADOS_DO_CONTRATO,
+  NATUREZAS_DE_COBRANCA,
   SITUACOES_DE_LOCACAO,
   TIPOS_DE_IMOVEL,
   TIPOS_DE_PESSOA,
@@ -727,6 +757,254 @@ export const contratoFiador = negocio
         foreignColumns: [fiador.id, fiador.empresaId],
       }),
       index('contrato_fiador_empresa_contrato_idx').on(tabela.empresaId, tabela.contratoId),
+    ],
+  )
+  .enableRLS();
+
+// ===========================================================================
+// A cobrança — o fato financeiro, e a segunda entidade com série declarada
+// ===========================================================================
+//
+// Os dois enums abaixo derivam dos literais de `@sysloc/contracts`, pela mesma razão e na mesma
+// direção dos quatro anteriores (ADR-0016): o contrato é **folha**, e é ele que o frontend importa
+// no marco de entrega. A ORDEM dos rótulos é conteúdo — um enum do PostgreSQL guarda a ordem, e é
+// ela que governa comparação e ordenação do tipo.
+//
+// **O que NÃO é declarável aqui**, e por isso vive em `migracoes/0010_seguranca_cobranca.sql`: a
+// view `negocio.cobranca_derivada` (ADR-0022 e ADR-0023 — o estado publicado e a mora são
+// derivados, e a derivação que participa de seleção e compõe aritmética monetária vive no banco), a
+// função `negocio.data_corrente_da_operacao()` e as duas funções `SECURITY DEFINER` da série
+// `COB-{ano}-{7 dígitos}` (ADR-0015 e ADR-0020). O que mora aqui são as duas TABELAS, e só elas.
+
+/** As cinco naturezas de cobrança (RD-03). Ordem e valores vêm do contrato, nunca redigitados. */
+export const naturezaCobranca = negocio.enum('natureza_cobranca', NATUREZAS_DE_COBRANCA);
+
+/**
+ * Os quatro estados da cobrança (RD-04). Ordem e valores vêm do contrato, nunca redigitados.
+ *
+ * **Nenhuma coluna deste arquivo tem este tipo, e a ausência é a decisão.** O estado é DERIVADO dos
+ * fatos gravados (ADR-0022) e avaliado num lugar só — a view `negocio.cobranca_derivada` —, que é o
+ * que impede as três derivações divergentes do mesmo estado que o legado carrega. O tipo existe
+ * porque é a coluna `status` da VIEW que o carrega: publicar o estado como texto solto abriria a
+ * porta para valor fora da união, e a união é o que a ADR-0021 governa por rota própria.
+ */
+export const statusCobranca = negocio.enum('status_cobranca', ESTADOS_DA_COBRANCA);
+
+/**
+ * A cobrança — só **fatos** e **carimbos**.
+ *
+ * ---------------------------------------------------------------------------
+ * As quatro colunas que NÃO existem aqui, e cada ausência é uma decisão
+ * ---------------------------------------------------------------------------
+ *
+ *   * **`status`** — o estado é derivado (ADR-0022), e a coluna seria a segunda fonte do mesmo
+ *     fato: bastaria uma escrita esquecida para uma cobrança vencida constar como `A_VENCER`. É
+ *     exatamente o defeito do legado, que avalia o estado em três lugares e diverge nos três;
+ *   * **coluna de mora em aberto** — `valor_multa`, `valor_juros`, `dias_atraso` e `valor_total`
+ *     mudam sozinhos com a passagem do dia e com a política vigente. Gravá-los obrigaria a uma
+ *     rotina que os movesse, e a ADR-0022 rejeita nominalmente o estado publicado movido por
+ *     rotina. O que se grava é o CARIMBO, no ato que liquida — e ele é outra coisa: é o valor que
+ *     foi efetivamente cobrado, com a configuração que valia naquele instante;
+ *   * **`locatario_id`** — sai da junção com o contrato. A tabela-filha do legado guarda as duas
+ *     pontas e admite que elas discordem; aqui a incoerência é **estruturalmente impossível**,
+ *     porque não há segunda ponta a divergir;
+ *   * **`retirado_em`** — a cobrança não circula, ela **transita de estado**. Nada é apagado
+ *     (RD-12) e o cancelamento é `cancelado_em`, que é fato datado e não marca de retirada. A
+ *     ADR-0014 alcança entidade de cadastro; esta não é uma.
+ *
+ * Os seis campos de conciliação bancária (`nosso_numero`, `linha_digitavel`, `codigo_barras`,
+ * `data_credito`, `valor_creditado`, `boleto_arquivo`) nascem **nulos e sem produtor**: nenhuma
+ * rota desta fatia os escreve, e nenhum esquema de `@sysloc/contracts` os publica. É a F4 que os
+ * preenche, e tê-los aqui desde já é o que evita uma migração de coluna sobre tabela com dado.
+ */
+export const cobranca = negocio
+  .table(
+    'cobranca',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      empresaId: uuid('empresa_id').notNull(),
+      /**
+       * A chave **exposta** (ADR-0017): a cobrança tem série declarada, então o UUID não trafega.
+       *
+       * O valor é emitido pelas duas funções `SECURITY DEFINER` de
+       * `migracoes/0010_seguranca_cobranca.sql`, com escopo `(empresa, ano)` e avanço fora do
+       * desfazimento (ADR-0020) — nada disso é declarável aqui. O ano do escopo é o da **emissão**,
+       * nunca o da competência: um contrato de treze meses atravessa a virada do ano.
+       */
+      codigo: text('codigo').notNull(),
+      contratoId: uuid('contrato_id').notNull(),
+      natureza: naturezaCobranca('natureza').notNull(),
+      /**
+       * Rótulo livre — o período que a parcela cobre, no formato do oráculo. É campo DISTINTO de
+       * {@link naturezaCobranca} de propósito: fundi-los reproduziria o defeito do legado, em que
+       * filtrar por tipo de título exigia casar texto.
+       */
+      referencia: text('referencia').notNull(),
+      /**
+       * Mês de competência, sempre no primeiro dia — a restrição abaixo o impõe.
+       *
+       * Data de calendário, e não instante: o `mode` padrão de `date()` é `'string'`, e o valor
+       * viaja como `YYYY-MM-DD` da consulta até o JSON, sem passar por `Date` com fuso. Mesmo
+       * desenho de `data_inicio_locacao` em {@link contrato}.
+       */
+      competencia: date('competencia').notNull(),
+      dataVencimento: date('data_vencimento').notNull(),
+      /** Dinheiro em `numeric(15,2)`, nunca ponto flutuante — invariante 4 do projeto. */
+      valorOriginal: numeric('valor_original', { precision: 15, scale: 2 }).notNull(),
+      /** Fato: nulo enquanto a cobrança não foi paga. */
+      pagoEm: date('pago_em'),
+      valorPago: numeric('valor_pago', { precision: 15, scale: 2 }),
+      /** Fato: nulo enquanto a cobrança não foi cancelada. É `timestamptz` porque é um ATO. */
+      canceladoEm: timestamp('cancelado_em', { withTimezone: true }),
+      /** Carimbo (ADR-0022): a multa efetivamente cobrada no ato do pagamento. */
+      multaAplicada: numeric('multa_aplicada', { precision: 15, scale: 2 }),
+      /** Carimbo (ADR-0022): os juros efetivamente cobrados no ato do pagamento. */
+      jurosAplicados: numeric('juros_aplicados', { precision: 15, scale: 2 }),
+      /** Carimbo da configuração VIGENTE no pagamento — é o que faz RD-10 valer sem reescrita. */
+      multaPercentualAplicado: numeric('multa_percentual_aplicado', { precision: 5, scale: 2 }),
+      jurosPercentualAplicado: numeric('juros_percentual_aplicado', { precision: 5, scale: 2 }),
+      /** Conciliação bancária — nasce nula, sem produtor nesta fatia. Ver o cabeçalho. */
+      nossoNumero: text('nosso_numero'),
+      linhaDigitavel: text('linha_digitavel'),
+      codigoBarras: text('codigo_barras'),
+      dataCredito: date('data_credito'),
+      valorCreditado: numeric('valor_creditado', { precision: 15, scale: 2 }),
+      /** Guarda **caminho**, nunca bytes — mesmo desenho de `pdf_contrato_arquivo`. */
+      boletoArquivo: text('boleto_arquivo'),
+    },
+    (tabela) => [
+      // O alvo da chave estrangeira composta de quem vier a apontar para a cobrança, e o que a
+      // guarda de cobertura de `src/catalogo.ts` cobra de toda tabela deste schema.
+      unique('cobranca_id_empresa_key').on(tabela.id, tabela.empresaId),
+      // A unicidade do código é **TOTAL**, e não parcial: ela é o que torna o número emitido uma
+      // referência estável (ADR-0015). Aqui não há sequer o que tornar parcial — não existe
+      // `retirado_em` —, e é por isso que a decisão precisa estar escrita: quem trouxer exclusão
+      // lógica para esta tabela no futuro não pode acompanhá-la de um `WHERE retirado_em IS NULL`.
+      unique('cobranca_empresa_codigo_key').on(tabela.empresaId, tabela.codigo),
+      // A chave estrangeira composta da ADR-0008 — a ÚNICA da tabela, porque o locatário sai da
+      // junção com o contrato. Ela recusa, no banco, apontar uma cobrança da empresa A para um
+      // contrato da empresa B: o par `(contrato_id, empresa_id)` teria de existir no pai, e não
+      // existe. É recusa ESTRUTURAL — nenhuma validação de aplicação é consultada no caminho.
+      //
+      // `empresa_id` não ganha chave estrangeira própria para `identidade.empresa`: ela seria
+      // implicada por esta, e o contrato já referencia a empresa por três caminhos. Mesmo desenho
+      // de {@link imovel} e de {@link contrato}.
+      foreignKey({
+        name: 'cobranca_contrato_empresa_fkey',
+        columns: [tabela.contratoId, tabela.empresaId],
+        foreignColumns: [contrato.id, contrato.empresaId],
+      }),
+      check('cobranca_valor_positivo_chk', sql`${tabela.valorOriginal} > 0`),
+      // A competência é o MÊS, e o primeiro dia é a forma canônica dele. Sem esta restrição, duas
+      // parcelas do mesmo mês poderiam gravar dias diferentes e nenhuma comparação por competência
+      // as juntaria.
+      check(
+        'cobranca_competencia_no_primeiro_dia_chk',
+        sql`extract(day from ${tabela.competencia}) = 1`,
+      ),
+      // Paga E cancelada é IRREPRESENTÁVEL — não conferido pela aplicação, recusado pelo banco. O
+      // estado publicado é derivado dos dois carimbos com `CANCELADA` na frente (RD-04), e sem esta
+      // restrição a precedência estaria escondendo uma linha incoerente em vez de descrever uma
+      // coerente.
+      check(
+        'cobranca_desfecho_unico_chk',
+        sql`${tabela.pagoEm} IS NULL OR ${tabela.canceladoEm} IS NULL`,
+      ),
+      // ---------------------------------------------------------------------------
+      // O carimbo é EQUIVALENTE ao pagamento, e não apenas implicado por ele
+      // ---------------------------------------------------------------------------
+      //
+      // A forma é `(pago_em IS NULL) = (<carimbo> IS NULL)` para os quatro carimbos **e** para
+      // `valor_pago`, e a igualdade cobra as duas direções de uma vez:
+      //
+      //   * carimbo sem pagamento seria valor cobrado de uma cobrança que ninguém pagou;
+      //   * pagamento sem carimbo seria um pagamento cujo valor efetivo se perdeu — e ele NÃO é
+      //     recuperável depois, porque a configuração de mora pode ter mudado (RD-10). É a metade
+      //     que uma implicação simples (`carimbo ⇒ pagamento`) deixaria aberta, e é a que dói.
+      //
+      // `valor_pago` entra na mesma restrição, e não numa segunda: ele é carimbo do mesmo ato, e
+      // separá-lo admitiria a linha meio carimbada que esta restrição existe para recusar.
+      check(
+        'cobranca_carimbo_coerente_chk',
+        sql`(${tabela.pagoEm} IS NULL) = (${tabela.multaAplicada} IS NULL)
+        AND (${tabela.pagoEm} IS NULL) = (${tabela.jurosAplicados} IS NULL)
+        AND (${tabela.pagoEm} IS NULL) = (${tabela.multaPercentualAplicado} IS NULL)
+        AND (${tabela.pagoEm} IS NULL) = (${tabela.jurosPercentualAplicado} IS NULL)
+        AND (${tabela.pagoEm} IS NULL) = (${tabela.valorPago} IS NULL)`,
+      ),
+      // A ordenação padrão da carteira (§12.2): o índice cobre o par que ela percorre, e não
+      // `empresa_id` sozinho.
+      index('cobranca_empresa_vencimento_idx').on(tabela.empresaId, tabela.dataVencimento),
+      // O filtro por contrato e a cascata do cancelamento (RD-13).
+      index('cobranca_empresa_contrato_idx').on(tabela.empresaId, tabela.contratoId),
+      // A carteira em ABERTO — a leitura mais frequente do produto. É índice PARCIAL, e a condição
+      // é o que o torna pequeno; convertê-lo em índice total o faria crescer com todo o histórico
+      // pago, que é justamente o que ele não precisa varrer.
+      //
+      // **Ele não é alcançável pelo predicado `status` da visão `cobranca_derivada`**: `status` é
+      // uma expressão `CASE`, e o provador de implicação de predicado do PostgreSQL não a decompõe,
+      // de modo que ele não consegue provar que `status = 'VENCIDA'` implica os dois `IS NULL`
+      // daqui. Quem consulta a visão acompanha o filtro por `status` dos fatos que este índice
+      // cobre (`AND pago_em IS NULL AND cancelado_em IS NULL`) — redundante para a semântica,
+      // decisivo para o planejador. A medição com `EXPLAIN (ANALYZE, BUFFERS)` que fixa isto está
+      // por extenso no comentário homônimo de `migracoes/0009_dominio_cobranca.sql`, e não é
+      // recopiada aqui: cópia de justificativa apodrece quando o original é corrigido.
+      index('cobranca_aberta_idx')
+        .on(tabela.empresaId, tabela.dataVencimento)
+        .where(sql`pago_em IS NULL AND cancelado_em IS NULL`),
+    ],
+  )
+  .enableRLS();
+
+/**
+ * A política de mora da empresa — **uma linha por empresa**, e a unicidade é o mecanismo.
+ *
+ * `configuracao_de_mora_empresa_key` não é conveniência de leitura: é o alvo do `ON CONFLICT` que
+ * torna a escrita da política um `upsert` de um comando só. Sem ela, a escrita teria de ler antes
+ * de gravar — e leitura-antes-de-gravar é corrida disfarçada: entre o `SELECT` que não achou e o
+ * `INSERT`, outra transação grava, e a empresa passaria a ter duas políticas com nada que decida
+ * qual vale.
+ *
+ * `empresa_id` ganha chave estrangeira **simples** para `identidade.empresa` porque esta tabela não
+ * tem pai tenantizado a quem se referir pelo par — mesmo caso de {@link conjunto} e dos três
+ * cadastros de pessoa.
+ *
+ * Os dois percentuais são `NOT NULL DEFAULT 0`, mesmo desenho de `comodo.metragem`: **a ausência de
+ * política e a política zerada são a mesma coisa** (RD-21), e o nulo obrigaria todo leitor a decidir
+ * de novo o que fazer com ele. A apuração da view fecha o outro lado da mesma decisão pelo
+ * `COALESCE` do `LEFT JOIN` — empresa sem linha alguma apura zero, e a cobrança **continua
+ * constando** na carteira.
+ */
+export const configuracaoDeMora = negocio
+  .table(
+    'configuracao_de_mora',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      empresaId: uuid('empresa_id')
+        .notNull()
+        .references(() => empresa.id),
+      /** Percentual da multa, aplicado UMA vez sobre o valor original (RD-07). */
+      multaPercentual: numeric('multa_percentual', { precision: 5, scale: 2 })
+        .notNull()
+        .default('0'),
+      /** Percentual de juros **ao mês**, simples, base de mês comercial de 30 dias (RD-07). */
+      jurosPercentual: numeric('juros_percentual', { precision: 5, scale: 2 })
+        .notNull()
+        .default('0'),
+    },
+    (tabela) => [
+      unique('configuracao_de_mora_id_empresa_key').on(tabela.id, tabela.empresaId),
+      // Uma linha por empresa — ver o cabeçalho: é o alvo do `ON CONFLICT`, e não um índice de
+      // leitura.
+      unique('configuracao_de_mora_empresa_key').on(tabela.empresaId),
+      // O piso e o teto no BANCO, além do contrato de entrada. O contrato é quem produz a recusa
+      // com nome de campo; esta restrição é o que impede um caminho de escrita futuro — carga,
+      // correção manual, fatia nova — de gravar percentual que a regra não admite. Mesmo desenho
+      // dos três limites de {@link contrato}.
+      check(
+        'configuracao_de_mora_faixa_chk',
+        sql`${tabela.multaPercentual} BETWEEN 0 AND 100 AND ${tabela.jurosPercentual} BETWEEN 0 AND 100`,
+      ),
     ],
   )
   .enableRLS();

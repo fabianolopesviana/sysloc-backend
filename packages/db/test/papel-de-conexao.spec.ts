@@ -89,17 +89,23 @@ const PAPEL_DONO = 'sysloc_migracao';
  *
  * SUT_IS_CORRECT_BECAUSE: o valor esperado é do CASO, não do SUT — ele existe justamente para que
  * uma consulta que não alcançasse tabela nenhuma não passe por verde. A T2 da fatia
- * `cadastro-de-imoveis-e-pessoas` criou SEIS tabelas em `negocio` pela migração `0005`, e a T3 da
- * fatia `contratos-de-locacao` acrescenta DUAS pela `0007`. O papel da conexão — que é o que estes
- * casos provam — não mudou: `sysloc_app` continua sem privilégio, e as tabelas novas continuam
- * pertencendo a `sysloc_migracao`. Declarar as dez é a atualização legítima; derivar a lista da
- * própria consulta faria o esperado vir da mesma fonte que o obtido, e a asserção deixaria de poder
- * falhar.
+ * `cadastro-de-imoveis-e-pessoas` criou SEIS tabelas em `negocio` pela migração `0005`, a T3 da
+ * fatia `contratos-de-locacao` acrescentou DUAS pela `0007`, e a T3 da fatia `cobranca-e-mora`
+ * acrescenta DUAS pela `0009`. O papel da conexão — que é o que estes casos provam — não mudou:
+ * `sysloc_app` continua sem privilégio, e as tabelas novas continuam pertencendo a
+ * `sysloc_migracao`. Declarar as doze é a atualização legítima; derivar a lista da própria consulta
+ * faria o esperado vir da mesma fonte que o obtido, e a asserção deixaria de poder falhar.
+ *
+ * A VISÃO `negocio.cobranca_derivada`, criada pela `0010`, **não aparece aqui**, e a ausência não é
+ * esquecimento: a consulta que alimenta estes casos lê `pg_tables`, e o que eles afirmam é o DONO de
+ * cada tabela. Quem responde pela visão é a guarda de cobertura, em `catalogo.spec.ts`.
  */
 const TABELAS_DE_NEGOCIO_ESPERADAS = [
   'acesso_usuario_app',
   'acesso_usuario_permissao',
+  'cobranca',
   'comodo',
+  'configuracao_de_mora',
   'conjunto',
   'contrato',
   'contrato_fiador',
@@ -298,11 +304,13 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
 
       // A contagem é afirmada ANTES da propriedade, e é deliberada: sem ela, um schema `negocio`
       // vazio faria a asserção seguinte passar sem examinar tabela alguma.
-      expect(observado.tabelasDeNegocio).toHaveLength(10);
+      expect(observado.tabelasDeNegocio).toHaveLength(12);
       expect(observado.tabelasDeNegocio.map((linha) => linha.tabela)).toEqual([
         'acesso_usuario_app',
         'acesso_usuario_permissao',
+        'cobranca',
         'comodo',
+        'configuracao_de_mora',
         'conjunto',
         'contrato',
         'contrato_fiador',
@@ -311,10 +319,12 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
         'locador',
         'locatario',
       ]);
-      // As dez escritas por extenso, e não `map(() => …)`: a propriedade é afirmada POR TABELA, de
+      // As doze escritas por extenso, e não `map(() => …)`: a propriedade é afirmada POR TABELA, de
       // modo que uma delas que nascesse com outro dono apareça pela posição. Derivar a lista do
       // tamanho da anterior faria a contagem responder no lugar da propriedade.
       expect(observado.tabelasDeNegocio.map((linha) => linha.dono)).toEqual([
+        'sysloc_migracao',
+        'sysloc_migracao',
         'sysloc_migracao',
         'sysloc_migracao',
         'sysloc_migracao',
@@ -345,8 +355,8 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
         "current_user = 'sysloc_migracao' (esperado 'sysloc_app')",
         "pg_has_role(current_user, 'sysloc_migracao', 'MEMBER') = true",
         "tableowner = current_user ('sysloc_migracao') em acesso_usuario_app, " +
-          'acesso_usuario_permissao, comodo, conjunto, contrato, contrato_fiador, fiador, ' +
-          'imovel, locador, locatario',
+          'acesso_usuario_permissao, cobranca, comodo, configuracao_de_mora, conjunto, contrato, ' +
+          'contrato_fiador, fiador, imovel, locador, locatario',
       ]);
 
       const superusuario = await conferirPapelDaConexao(conexaoSuperusuaria(banco));
@@ -645,19 +655,50 @@ describe('emissão da série declarada — contexto e privilégio', () => {
       // Este é o passo que o comportamento não dá. A igualdade cobre quatro fatos de uma vez, e cada
       // um deles é um mutante morto:
       //
-      //   * as DUAS funções de `negocio` são estas — uma terceira, criada para "facilitar", apareceria
-      //     aqui;
-      //   * nenhuma delas tem parâmetro de empresa, e o `p_inicio bigint DEFAULT 1` está declarado
-      //     com o padrão que a semeadura da F7 depende de poder omitir;
-      //   * as duas são `SECURITY DEFINER` — sem isso, o `nextval` correria com os direitos de quem
-      //     chama e o CT-431 recusaria a chamada legítima;
-      //   * as duas fixam `search_path`, com o schema temporário em ÚLTIMO lugar. Uma
+      //   * TODA função de `negocio` está aqui — uma a mais, criada para "facilitar", apareceria;
+      //   * nenhuma das quatro da série tem parâmetro de empresa, e o `p_inicio bigint DEFAULT 1`
+      //     está declarado com o padrão que a semeadura da F7 depende de poder omitir;
+      //   * as quatro são `SECURITY DEFINER` — sem isso, o `nextval` correria com os direitos de
+      //     quem chama e o CT-431 recusaria a chamada legítima;
+      //   * as quatro fixam `search_path`, com o schema temporário em ÚLTIMO lugar. Uma
       //     `SECURITY DEFINER` sem `search_path` fixo é sequestrável por quem chama, e o catálogo é
       //     o único lugar onde essa propriedade é observável.
+      //
+      // SUT_IS_CORRECT_BECAUSE: a lista é do CASO e é EXATA de propósito, e a T3 da fatia
+      // `cobranca-e-mora` cria TRÊS funções novas por decisão declarada — as duas da série da
+      // cobrança (`0010`) e a `data_corrente_da_operacao`. O caso reprovaria não porque a superfície
+      // cresceu por descuido, que é o defeito que ele existe para pegar, mas porque cresceu por
+      // decisão que ele ainda não conhecia. **Nenhuma entrada anterior sai**, e a igualdade (nunca
+      // contenção) segue sendo asserida.
+      //
+      // `data_corrente_da_operacao` entra com `INVOKER` e `SEM CONFIGURACAO`, e as duas coisas são o
+      // conteúdo da linha, não ruído: ela **não** é `SECURITY DEFINER` — roda com os direitos de
+      // quem chama e não empresta privilégio nenhum —, e por isso não precisa (nem deve) fixar
+      // `search_path`: o `SET` a tornaria não-inlinável pelo planejador, e a comparação da visão com
+      // `data_vencimento` deixaria de aproveitar índice. Se algum dia ela aparecer aqui como
+      // `DEFINER`, é regressão de segurança, e é esta linha que a nomeia.
       expect(await assinaturasDeNegocio(banco.cadeiaConexao)).toEqual([
+        {
+          nome: 'data_corrente_da_operacao',
+          argumentos: '',
+          seguranca: 'INVOKER',
+          caminhoDeBusca: 'SEM CONFIGURACAO',
+        },
+        {
+          nome: 'garantir_contador_de_cobranca',
+          argumentos: 'p_ano integer, p_inicio bigint DEFAULT 1',
+          seguranca: 'DEFINER',
+          caminhoDeBusca: 'search_path=pg_catalog, pg_temp',
+        },
         {
           nome: 'garantir_contador_de_contrato',
           argumentos: 'p_ano integer, p_inicio bigint DEFAULT 1',
+          seguranca: 'DEFINER',
+          caminhoDeBusca: 'search_path=pg_catalog, pg_temp',
+        },
+        {
+          nome: 'proximo_numero_de_cobranca',
+          argumentos: 'p_ano integer',
           seguranca: 'DEFINER',
           caminhoDeBusca: 'search_path=pg_catalog, pg_temp',
         },
@@ -767,9 +808,21 @@ describe('emissão da série declarada — contexto e privilégio', () => {
       // Igualdade sobre a lista inteira, e não `not.toContain('PUBLIC')`: a segunda ficaria verde
       // diante de um `GRANT ALL` a um papel qualquer, e o invariante é que o privilégio novo seja
       // **exclusivamente** `EXECUTE` para `sysloc_app` (mais o do dono, que é implícito à criação).
+      //
+      // SUT_IS_CORRECT_BECAUSE: a lista é do CASO e é EXATA de propósito, e a T3 da fatia
+      // `cobranca-e-mora` cria as duas funções da série da COBRANÇA, com o mesmo par
+      // `REVOKE`/`GRANT`. **Nenhuma entrada anterior sai.** `data_corrente_da_operacao` não aparece
+      // aqui, e a ausência é a decisão: ela não é `SECURITY DEFINER`, seu `proacl` permanece nulo —
+      // o padrão do PostgreSQL, `EXECUTE` a `PUBLIC` —, e `aclexplode(NULL)` não rende linha. O
+      // `0010` registra por que revogá-la não fecharia risco algum e quebraria a leitura da visão
+      // para todo papel criado depois.
       expect(await concessoesDasFuncoes(banco.cadeiaConexao)).toEqual([
+        'garantir_contador_de_cobranca -> sysloc_app -> EXECUTE',
+        'garantir_contador_de_cobranca -> sysloc_migracao -> EXECUTE',
         'garantir_contador_de_contrato -> sysloc_app -> EXECUTE',
         'garantir_contador_de_contrato -> sysloc_migracao -> EXECUTE',
+        'proximo_numero_de_cobranca -> sysloc_app -> EXECUTE',
+        'proximo_numero_de_cobranca -> sysloc_migracao -> EXECUTE',
         'proximo_numero_de_contrato -> sysloc_app -> EXECUTE',
         'proximo_numero_de_contrato -> sysloc_migracao -> EXECUTE',
       ]);

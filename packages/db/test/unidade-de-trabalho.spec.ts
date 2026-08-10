@@ -616,6 +616,74 @@ const SIMBOLOS_ESPERADOS = [
   'esquemaNegocio.contrato',
   'esquemaNegocio.contratoFiador',
   'esquemaNegocio.statusContrato',
+  // T3 da fatia `cobranca-e-mora` — as DUAS tabelas da cobrança e os DOIS enums, criados pela
+  // migração `0009`.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T3 publica quatro símbolos novos no schema por decisão declarada na
+  // §1 da task (`Símbolos públicos criados`). Eles entram pelo mesmo critério das três da T3
+  // anterior: são **declaração de estrutura**, não caminho para dado — quem os tem em mãos ainda
+  // precisa de um executor para chegar ao banco, e o executor não sai do índice.
+  //
+  // `statusCobranca` é declarado sem que coluna de tabela alguma o use, e a assimetria é a decisão:
+  // o estado é DERIVADO (ADR-0022), e o tipo é o da coluna `status` da VISÃO `cobranca_derivada`,
+  // criada pela `0010`. A visão, a função `data_corrente_da_operacao` e as duas funções da série da
+  // cobrança **não aparecem aqui** pela mesma razão que as duas do contrato não apareciam: são
+  // objetos do BANCO, e não símbolos deste pacote. Quem as publicará como função de domínio é a T4,
+  // em `packages/db/src/cobranca.ts`.
+  'esquemaNegocio.cobranca',
+  'esquemaNegocio.configuracaoDeMora',
+  'esquemaNegocio.naturezaCobranca',
+  'esquemaNegocio.statusCobranca',
+  // T4 da fatia `cobranca-e-mora` — a PORTA da cobrança: as três operações do ciclo de vida, as DUAS
+  // da série e a classe de erro da tradução de unicidade, ordenadas no conjunto pela posição de cada
+  // nome (a comparação é sobre a lista ordenada).
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T4 publica seis símbolos novos no índice por decisão declarada na §1 e
+  // na §5.2 da task. O critério é o mesmo de todas as portas anteriores: elas **recebem** o executor
+  // de quem já abriu a unidade de trabalho, não abrem conexão, não reservam e não devolvem executor.
+  // Isso vale inclusive para as duas da série (`garantirContadorDeCobranca`, `emitirNumeroDeCobranca`),
+  // que invocam pelo executor recebido as funções `SECURITY DEFINER` da migração `0010` — a aplicação
+  // nunca alcança a sequência, e o `CT-535` afirma que ela sequer tem privilégio para tanto.
+  //
+  // `ErroDeCodigoDeCobrancaEmUso` entra pelo MESMO critério de `ErroDeCodigoEmUso`, de
+  // `ErroDeUnidadeAninhada` e de `ErroDeIdentificadorMunicipalEmUso`: é classe de erro, não caminho
+  // para dado. Ela sai daqui porque quem a traduz no envelope da ADR-0017 (`422 CAMPO_INVALIDO` com
+  // `campo: "codigo"`) é a borda, na T5.
+  //
+  // O que **não** sai do pacote, e a ausência é deliberada: `gravarSobRestricaoDoCodigo` e
+  // `ehViolacaoDe`, de `src/cobranca.ts`. Elas são compostas por dentro da própria porta — ao
+  // contrário de `gravarCadastroSobRestricaoDeUnicidade`, cuja publicação existe para preservar as
+  // provas que observam a violação crua. `colunasDaCobranca` e `predicadoDaCarteira` ficam dentro pelo
+  // critério de `empresaDoContexto`: são fragmentos de SQL, e publicá-los daria à borda pedaços de
+  // instrução para compor.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o defeito
+  // que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia. **Nenhuma
+  // entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // Os tipos que ela publica (`DadosDaCobranca`, `FiltrosDaCarteira`, `JanelaDaCarteira`,
+  // `LinhaDeCobranca`, `PaginaDeCobrancasPersistidas`) não aparecem aqui porque não existem em tempo
+  // de execução, e este caso observa o módulo carregado.
+  //
+  // SUT_IS_CORRECT_BECAUSE: a T5 publica **um** símbolo novo — `lerAnoDaSerieDeCobranca` —, e o
+  // conjunto é EXATO de propósito. Ele entra pelo MESMO critério das duas da série: recebe o executor
+  // de quem já abriu a unidade, não abre conexão, não reserva e não devolve executor. Ele é publicado
+  // porque é o **eixo único de data** da série da cobrança — o mesmo
+  // `negocio.data_corrente_da_operacao()` que a visão consulta para classificar a linha —, e ter o
+  // eixo com nome é o que torna verificável a afirmação de que o contador, o número, o código e o
+  // estado concordam: um segundo eixo apareceria aqui como símbolo excedente, e não como um
+  // `current_date` escondido numa consulta. Ele fecha o débito **D7 (F3/T4)**, cujo gatilho declarado
+  // era esta task. **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo
+  // asserida.
+  'ErroDeCodigoDeCobrancaEmUso',
+  'criarCobranca',
+  'emitirNumeroDeCobranca',
+  'garantirContadorDeCobranca',
+  'lerAnoDaSerieDeCobranca',
+  'listarCobrancas',
+  'localizarCobranca',
   // T4 da fatia `contratos-de-locacao` — as DUAS derivações puras da ativação.
   //
   // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de

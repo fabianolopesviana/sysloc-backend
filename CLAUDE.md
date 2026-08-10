@@ -351,10 +351,11 @@ Específicos deste domínio: **undici** (mTLS do Sicoob), **`node:crypto` `X509C
 > grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 > ```
 
-Onze débitos têm gatilho que dispara fora da fatia que os criou: **D28** e **D32** vêm da F0;
+Doze débitos têm gatilho que dispara fora da fatia que os criou: **D28** e **D32** vêm da F0;
 **D23**, **D39**, **D24**, **D27** e **D37** nasceram na F1 — os três últimos na fatia
-`autorizacao-e-ciclo-de-acesso` —; e quatro nasceram na F2, o **D3** na fatia
-`cadastro-de-imoveis-e-pessoas` e o **D28**, o **D36** e o **D44** na fatia `contratos-de-locacao`.
+`autorizacao-e-ciclo-de-acesso` —; quatro nasceram na F2, o **D3** na fatia
+`cadastro-de-imoveis-e-pessoas` e o **D28**, o **D36** e o **D44** na fatia `contratos-de-locacao`;
+e um nasceu na F3, o **D1**, na fatia `cobranca-e-mora`.
 O **D27** partilha com o D23 o gatilho e o fato que falta: qual é o salto confiável da borda; e o
 **D36** partilha com o D28 da mesma fatia o gatilho — a F3. O **D44** é o mais novo: o marcador dele
 foi emitido na intervenção dirigida de 2026-08-09, e não no run — o débito existia desde a T10 e
@@ -365,7 +366,10 @@ pela natureza do ato.
 ⚠️ **Os dois `D28` são débitos DIFERENTES** — `F0/T5` e `F2/T7` —, e a coexistência é legítima: a
 sequência corre dentro da §2 da fatia que registrou cada um (§3-B da `nao-regressao.md`).
 **Um já disparou e segue aberto** — o **D28 (F0/T5)**, na F1/T2.
-Seis saíram daqui por terem sido fechados — **este índice lista só débito vivo**: o D6 da F1/T5,
+Sete saíram daqui por terem sido fechados — **este índice lista só débito vivo**: o D7 da F3/T4, na
+T5 daquela mesma fatia, quando `lerAnoDaSerieDeCobranca` nasceu em `packages/db/src/cobranca.ts` e a
+borda de lançamento passou a ler o ano do mesmo `negocio.data_corrente_da_operacao()` que a visão
+consulta; o D6 da F1/T5,
 no fechamento da F1
 (`verificar-migracao.sh` entrou em `VERIFICADORES_DA_FATIA`); o D7 da F1/T6, na T6 da fatia
 `autorizacao-e-ciclo-de-acesso`, que declarou `perfil` e `empresa_id` como campos adicionais com a
@@ -406,6 +410,7 @@ intervenção dirigida de limpeza de 2026-08-05, quando `esquemaDoErro` ganhou d
 | **D28** (F2/T7, fatia `contratos-de-locacao`) | `apps/api/src/contratos/contrato.service.ts` | a **F3** — a ativação não gera cobranças, e a fatia de cobrança é obrigada a afrouxar o literal `cobrancasGeradas: false` |
 | **D36** (F2/T8, fatia `contratos-de-locacao`) | `apps/api/src/contratos/contrato.service.ts` (`cancelar`) | a **F3** — a pré-condição legada "sem PDF, não cancela" não é portada, e é lá que se decide se o carimbo é pré-condição ou efeito |
 | **D44** (F2/T10, fatia `contratos-de-locacao`) | `apps/api/src/imoveis/imovel.service.ts` (`definirSituacaoDeLocacao`) | a fatia que criar no banco a **restrição pareando `contrato.status='ATIVO'` com `imovel.status_locacao`** — hoje nada fecha a janela da guarda |
+| **D1** (F3/T2, fatia `cobranca-e-mora`) | `packages/contracts/src/cobranca.ts` (ponto do import) | o **terceiro consumidor monetário do pacote** — `MAIOR_VALOR_MONETARIO` e `ESCALA_MONETARIA` sobem para `comum.ts` |
 
 ---
 

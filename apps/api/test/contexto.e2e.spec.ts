@@ -155,6 +155,7 @@ import { CAMINHO_DA_SESSAO } from '../src/autenticacao/sessao.controller.ts';
 import { CAMINHO_DOS_FIADORES } from '../src/cadastros/fiador.controller.ts';
 import { CAMINHO_DOS_LOCADORES } from '../src/cadastros/locador.controller.ts';
 import { CAMINHO_DOS_LOCATARIOS } from '../src/cadastros/locatario.controller.ts';
+import { CAMINHO_DAS_COBRANCAS } from '../src/cobrancas/cobranca.controller.ts';
 import {
   ENDERECO_DE_ESCUTA,
   PREFIXO_DE_VERSAO,
@@ -401,8 +402,19 @@ const CAMINHOS_PUBLICOS_ACEITOS: readonly string[] = [
  * igualdade segue exata nos dois sentidos — **nada foi afrouxado**, o `toEqual` continua sendo
  * igualdade de conjunto contra um inventário escrito à mão.
  *
+ * SUT_IS_CORRECT_BECAUSE: a T5 da fatia `cobranca-e-mora` publicou as **três rotas de cobrança**, e
+ * as três são **protegidas**: vale a exigência da classe, `@ExigeChave('TELA:financeiro')`, nenhuma é
+ * marcada `@RotaPublica()`, e por isso a sonda sem cookie recebe `401 NAO_AUTENTICADO` da guarda.
+ * Pela classificação por **caminho** deste caso elas entram como **duas** entradas novas, e não três:
+ * o `POST` e o `GET` da coleção atendem o mesmo caminho, e é o recorte por caminho que os funde — a
+ * classificação por par método+caminho, que é a de `cobertura-de-autorizacao.e2e.spec.ts`, conta as
+ * três separadamente. Vale o mesmo dos parágrafos acima: nenhuma entrada anterior saiu, o conjunto
+ * público continua inalterado, e a igualdade segue exata nos dois sentidos — **nada foi afrouxado**,
+ * o `toEqual` continua sendo igualdade de conjunto contra um inventário escrito à mão.
+ *
  * **Este arquivo não está na §5.2 da T7 nem na da T9, nem na da T6, da T7 e da T8 da fatia de
- * contratos** — divergência declarada nas cinco, e é o débito **D26 (F2/T6)**, cuja recomendação
+ * contratos, nem na da T5 da fatia `cobranca-e-mora`** — divergência declarada nas seis, e é o débito
+ * **D26 (F2/T6)**, cuja recomendação
  * literal é declará-lo nas §5.2 de T7, T8 e T10. A T10 **também não o declara**, e a divergência
  * volta a ser anotada aqui pela quinta vez. Ele é blast radius por construção: a âncora afirma por
  * igualdade de conjunto, e publicar caminho novo a faz reprovar, que é exatamente o que ela existe
@@ -426,6 +438,8 @@ const ROTAS_PROTEGIDAS_ACEITAS: readonly string[] = [
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONJUNTOS}/:id`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONJUNTOS}/:id/recirculacao`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONJUNTOS}/:id/retirada`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}/:codigo`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo/ativacao`,

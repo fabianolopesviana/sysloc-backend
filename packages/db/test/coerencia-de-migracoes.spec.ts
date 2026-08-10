@@ -15,7 +15,9 @@
  * | CA-18    | RG-T3-01    | Sobre cópias do ledger com o defeito reintroduzido, a MESMA
  * |          | (falsificação) | asserção reprova nomeando o culpado nos três eixos: entrada
  * |          |             | ausente, `idx` que não corresponde ao prefixo do arquivo, e
- * |          |             | `when` que não cresce. O controle — cópia íntegra — passa limpo. |
+ * |          |             | `when` que não cresce — e a entrada ausente é falsificada sobre as
+ * |          |             | DUAS migrações autorais, a `0008` e a `0010`. O controle — cópia
+ * |          |             | íntegra — passa limpo. |
  *
  * ===========================================================================
  * Por que o identificador NÃO é um `CT-4xx`
@@ -65,8 +67,8 @@
  * listas são derivadas de fontes INDEPENDENTES e comparadas inteiras: entrada ausente, entrada
  * sobrando, `idx` copiado da anterior sem incrementar, `tag` que não bate com o nome do arquivo e
  * ordem trocada rompem todas a mesma igualdade. E, por ser derivada do disco em vez de uma lista
- * fixa de migrações, ela já cobre a `0009` que ainda não existe — sem precisar ser editada quando
- * ela chegar.
+ * fixa de migrações, ela já cobria a `0009` e a `0010` antes de elas existirem — as duas entraram na
+ * varredura sem que uma linha do caso principal precisasse mudar, que é o que se esperava dele.
  *
  * O marcador `DECISÃO FECHADA` não é opção no `_journal.json`: JSON não admite comentário. Esta é a
  * rede possível, e ela é executável.
@@ -139,8 +141,26 @@ const MIGRACOES_IMUTAVEIS: readonly string[] = [
   '0006_seguranca_dominio',
 ];
 
-/** A migração autoral que esta task criou, e o alvo nomeado das três pernas da falsificação. */
+/**
+ * A migração autoral da T3 da fatia `contratos-de-locacao` — o alvo nomeado das três primeiras
+ * pernas da falsificação, e o artefato sobre o qual os mutantes MT-J1 e MT-J2 foram medidos.
+ *
+ * O nome do símbolo é preservado porque é ele a ÂNCORA SIMBÓLICA daquele registro, e o cabeçalho o
+ * cita por `{@link}`: renomeá-lo desfaria a rastreabilidade da prova já executada. "Esta task", aqui,
+ * é a que escreveu o caso.
+ */
 const MIGRACAO_AUTORAL_DESTA_TASK = '0008_seguranca_contrato';
+
+/**
+ * A migração autoral da T3 da fatia `cobranca-e-mora` — o alvo da QUARTA perna.
+ *
+ * Ela existe porque o defeito que este caso fecha é de CLASSE, e não de ocorrência: toda fatia que
+ * cria tabela em `negocio` leva junto uma parceira autoral, e é a parceira — que o `drizzle-kit`
+ * nunca escreve no ledger — que nasce fora dele. Falsificar sobre a `0008` prova que o detector
+ * funciona; falsificar também sobre a autoral mais recente prova que ele **alcança a que acabou de
+ * ser escrita**, que é onde o descuido acontece.
+ */
+const MIGRACAO_AUTORAL_DA_COBRANCA = '0010_seguranca_cobranca';
 
 /** O par que identifica uma migração nas duas fontes. É sobre ele que a igualdade corre. */
 interface EntradaDoLedger {
@@ -305,14 +325,20 @@ async function ledgerReal(): Promise<{
   };
 }
 
-/** Aplica uma mutação à entrada da migração autoral, preservando as demais na ordem. */
+/**
+ * Aplica uma mutação à entrada da migração autoral NOMEADA, preservando as demais na ordem.
+ *
+ * O alvo é parâmetro, e não literal: as pernas correm sobre migrações autorais diferentes, e um
+ * alvo fixo faria a quarta perna mutar a entrada da terceira sem que nada acusasse.
+ */
 function comEntradaMutada(
   entradas: readonly EntradaDoJournal[],
+  alvo: string,
   mutar: (entrada: EntradaDoJournal) => EntradaDoJournal | undefined,
 ): EntradaDoJournal[] {
   const mutadas: EntradaDoJournal[] = [];
   for (const entrada of entradas) {
-    if (entrada.tag !== MIGRACAO_AUTORAL_DESTA_TASK) {
+    if (entrada.tag !== alvo) {
       mutadas.push(entrada);
       continue;
     }
@@ -388,12 +414,34 @@ describe('coerência do ledger de migrações', () => {
         await montarCopiaDoLedger(
           raiz,
           real.arquivos,
-          comEntradaMutada(real.entradas, () => undefined),
+          comEntradaMutada(real.entradas, MIGRACAO_AUTORAL_DESTA_TASK, () => undefined),
         ),
       );
       expect(ausentesNoJournal(semEntrada)).toEqual([`8·${MIGRACAO_AUTORAL_DESTA_TASK}`]);
       expect(excedentesNoJournal(semEntrada)).toEqual([]);
       expect(semEntrada.registradoNoJournal).not.toEqual(semEntrada.derivadoDoDiretorio);
+
+      // --- Defeito 1-b: o mesmo defeito, sobre a migração autoral MAIS RECENTE -----------------
+      //
+      // A `0010_seguranca_cobranca.sql` é a parceira autoral da fatia `cobranca-e-mora`, e o
+      // `drizzle-kit` **não a escreve no ledger** — quem a registra é quem a escreveu. É exatamente
+      // a situação da rodada 1 da T3 anterior, agora sobre a migração recém-nascida: se ela ficasse
+      // fora, o próximo `gerar-migracao` reemitiria o índice 10 e a ordem de aplicação passaria a
+      // ser decidida por um sufixo sorteado.
+      const semEntradaDaCobranca = await coerenciaDoLedger(
+        await montarCopiaDoLedger(
+          raiz,
+          real.arquivos,
+          comEntradaMutada(real.entradas, MIGRACAO_AUTORAL_DA_COBRANCA, () => undefined),
+        ),
+      );
+      expect(ausentesNoJournal(semEntradaDaCobranca)).toEqual([
+        `10·${MIGRACAO_AUTORAL_DA_COBRANCA}`,
+      ]);
+      expect(excedentesNoJournal(semEntradaDaCobranca)).toEqual([]);
+      expect(semEntradaDaCobranca.registradoNoJournal).not.toEqual(
+        semEntradaDaCobranca.derivadoDoDiretorio,
+      );
 
       // --- Defeito 2: entrada presente, `idx` copiado da anterior ------------------------------
       //
@@ -403,7 +451,10 @@ describe('coerência do ledger de migrações', () => {
         await montarCopiaDoLedger(
           raiz,
           real.arquivos,
-          comEntradaMutada(real.entradas, (entrada) => ({ ...entrada, idx: entrada.idx - 1 })),
+          comEntradaMutada(real.entradas, MIGRACAO_AUTORAL_DESTA_TASK, (entrada) => ({
+            ...entrada,
+            idx: entrada.idx - 1,
+          })),
         ),
       );
       expect(ausentesNoJournal(idxDivergente)).toEqual([`8·${MIGRACAO_AUTORAL_DESTA_TASK}`]);
@@ -418,7 +469,10 @@ describe('coerência do ledger de migrações', () => {
         await montarCopiaDoLedger(
           raiz,
           real.arquivos,
-          comEntradaMutada(real.entradas, (entrada) => ({ ...entrada, when: 0 })),
+          comEntradaMutada(real.entradas, MIGRACAO_AUTORAL_DESTA_TASK, (entrada) => ({
+            ...entrada,
+            when: 0,
+          })),
         ),
       );
       expect(carimboEmpatado.registradoNoJournal).toEqual(carimboEmpatado.derivadoDoDiretorio);
