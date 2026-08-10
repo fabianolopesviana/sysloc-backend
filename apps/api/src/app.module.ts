@@ -51,6 +51,7 @@ import {
 import { ContratosModule } from './contratos/contratos.module.js';
 import { ImoveisModule } from './imoveis/imoveis.module.js';
 import { MasterModule } from './master/master.module.js';
+import { MoraModule } from './mora/mora.module.js';
 import { SaudeModule } from './saude/saude.module.js';
 import { UsuariosModule } from './usuarios/usuarios.module.js';
 
@@ -65,6 +66,7 @@ import { UsuariosModule } from './usuarios/usuarios.module.js';
     CadastrosModule,
     ContratosModule,
     CobrancasModule,
+    MoraModule,
   ],
   providers: [
     {

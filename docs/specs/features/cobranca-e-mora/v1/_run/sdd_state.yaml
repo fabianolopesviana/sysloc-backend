@@ -1,5 +1,5 @@
 feature: "Cobrança e mora por empresa, com estado de fonte única no servidor"
-current_step: task_plan
+current_step: execution
 variant: backend
 source: recommended
 steps:
@@ -20,6 +20,6 @@ steps:
     status: completed
     summary: "11 tasks, 5 fases, 0 paralelizáveis (derivado — nenhum par da mesma fase sobrevive ao invariante). US cobertas: 10/10. 45 CTs distribuídos, 1 por task: 39 redistribuídos do JSON e 6 (CT-540..545) de uma invocação de fallback para a T2, única task sem CT correspondente. CT-511 e CT-521 realocados para T7 e T10 (exigem as transições e a cascata). As âncoras de superfície sobem em três tasks (75→78→80→82) e T11 confere por dupla medição."
   execution:
-    status: pending
+    status: in_progress
     tasks_total: 11
-    tasks_completed: 0
+    tasks_completed: 5

@@ -175,6 +175,16 @@
  * idioma configurado no servidor. `gravarSobRestricaoDoCodigo` e `ehViolacaoDe` ficam **dentro**,
  * como os gêmeos de `./contrato.ts`: são compostos por dentro da própria porta.
  *
+ * `./configuracao-de-mora.js` entra pela mesma pergunta, e com a mesma resposta: as **duas**
+ * operações da política de multa e juros **recebem** o executor de quem já abriu a unidade, não abrem
+ * conexão nem transação e não devolvem executor. Elas repetem as razões das anteriores —
+ * enumerabilidade do alcance a `negocio`, um lugar único sob a política — e acrescentam a que é
+ * própria desta entidade: **a escrita é um `upsert` de um comando só**. Publicar a porta é o que
+ * impede a borda de escrever por conta própria o par "ler, decidir, gravar", que passa em todos os
+ * casos felizes e perde escrita sob concorrência; e a leitura tem lar único porque é ela que traduz a
+ * ausência de linha nos zeros que a apuração da view já produz por `COALESCE` (RD-21 concordando com
+ * a RD-08). Nenhuma das duas recebe `empresaId`: o escopo é da política do banco.
+ *
  * `./derivacao-de-contrato.js` entra pelo MESMO critério de `somarMetragem`, e não pelo das portas:
  * as duas funções são **puras** sobre valor já em mãos — não recebem executor, não tocam o banco,
  * não leem relógio e não são caminho para dado nenhum. Elas saem daqui porque são a materialização
@@ -274,6 +284,11 @@ export {
   type DadosDoComodo,
   removerComodo,
 } from './comodo.js';
+export {
+  type ConfiguracaoDeMoraPersistida,
+  gravarConfiguracaoDeMora,
+  lerConfiguracaoDeMora,
+} from './configuracao-de-mora.js';
 export {
   alterarConjunto,
   type ConjuntoComImoveisPersistido,

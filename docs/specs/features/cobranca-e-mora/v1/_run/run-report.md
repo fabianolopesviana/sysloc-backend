@@ -4,7 +4,7 @@
 
 ## 1. Resumo do Run
 
-Status: **4/11 tasks concluídas** · suíte **687 → 801** casos, verde · `pnpm build` e `pnpm lint` verdes.
+Status: **5/11 tasks concluídas** · suíte **687 → 805** casos, verde · `pnpm build` e `pnpm lint` verdes.
 
 | Task | Nome | Modelo | Arquivos | QA | Tech Review |
 |------|------|--------|----------|-----|-------------|
@@ -12,6 +12,7 @@ Status: **4/11 tasks concluídas** · suíte **687 → 801** casos, verde · `pn
 | T3 | Schema e migrações da cobrança — tabelas isoladas, a view de fonte única e o contador da série | opus | 3 criados, 9 mod | ✅ APROVADO_COM_OBSERVACOES (2 rodadas) | ✅ APROVADO_COM_OBSERVACOES (2 rodadas) |
 | T4 | Porta de dados da cobrança — leitura pela view, emissão da série e a prova da mora contra o golden | opus | 2 criados, 6 mod | ✅ APROVADO_COM_OBSERVACOES (2 rodadas) | ✅ APROVADO_COM_OBSERVACOES (2 rodadas) |
 | T5 | As três rotas de lançamento e leitura da carteira de cobranças | opus | 5 criados, 11 mod | ✅ APROVADO (3 rodadas) | ✅ APROVADO_COM_OBSERVACOES (2 rodadas) |
+| T6 | Configuração de mora por empresa — contrato, porta e as duas rotas de `/v1/multa-e-juros` | opus | 6 criados, 8 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
 
 > **T1 não está nesta tabela por decisão de ordenação, não por bloqueio.** Ela exige `sudo` com senha
 > interativa e o site efêmero do `/opt/frappe` de pé — nenhum subagente a executa. Fica para o fim do
@@ -194,6 +195,115 @@ Status: **4/11 tasks concluídas** · suíte **687 → 801** casos, verde · `pn
   cobrança na empresa A entra **depois** do `CT-515 (c)`* —, ou derivar o teto da distância observada
   em vez de fixá-lo. **Não alterar as asserções do caso.**
 
+### D12 · baixo · tests · T6 · QA
+
+- **Onde:** `apps/api/test/mora.e2e.spec.ts:314`
+- **Problema:** o `CT-538` depende de ser o primeiro `it` do arquivo — a ordem invertida o reprovaria.
+- **Impacto:** o `CT-538` mede a RD-21 nos passos 1-2 (`GET` de empresa sem linha devolve zeros e **não
+  cria linha**, com contagem `0` em A e B), e o `CT-539` grava a política de A como precondição
+  própria. Na ordem alternada, a contagem do passo 2 valeria `1` e o corpo do passo 1 viria `{2,1}` em
+  vez de zeros. Cada caso passa isolado; só a ordem invertida quebra. O QA rebaixou de `ALTO`
+  (catálogo AP-08) para `BAIXO` por três razões medidas: (a) a precondição *"nenhuma das duas chamou
+  `PUT` ainda"* é exigência **literal** da §6.6 da task, não descuido; (b) a ordem interna de um
+  arquivo é determinística no Vitest e nenhuma embaralhadura está configurada — não há flakiness hoje;
+  (c) a violação reprovaria **ruidosamente**, porque a asserção de contagem `0` é ela mesma a
+  afirmação da precondição. O que sustenta a decisão do executor é a irreconstituibilidade: **não
+  existe rota que apague a política**, por decisão de produto, então o invariante *"a primeira leitura
+  não escreve"* só é mensurável de primeira mão.
+- **O que fazer:** se um terceiro caso vier a ser acrescentado ao arquivo, mantê-lo **depois** do
+  `CT-538`. A correção estrutural, se algum dia valer o custo, é uma das duas: dar ao `CT-538` uma
+  empresa própria (uma terceira na carga), ou um acessório que zere `negocio.configuracao_de_mora` da
+  empresa em `beforeEach`, sob o contexto de tenant — que tornaria os dois casos independentes de
+  ordem sem publicar rota de exclusão.
+
+### D13 · baixo · tests · T6 · QA
+
+- **Onde:** `apps/api/test/mora.e2e.spec.ts:499`
+- **Problema:** a escala `0.01` tem negativo, mas **nenhum positivo com duas casas decimais**.
+- **Impacto:** o `CT-539` prova a recusa fora de escala (`0.005` → `422`, passo 3), mas nenhum corpo
+  **aceito** da suíte tem duas casas: os positivos são `0`, `0.5`, `1`, `2`, `5`, `10` e `100`, e o de
+  maior precisão tem uma casa. A classe de valor que a escala `0.01` existe para **permitir** é a única
+  não exercitada. O QA sondou `packages/contracts/dist/index.js` diretamente: `2.55`, `12.34`, `33.33`,
+  `99.99`, `8.29`, `0.07` e `0.03` são todos **aceitos** e `0.005` recusado com `not_multiple_of` —
+  logo **não há defeito hoje**, o `multipleOf` do Zod 4 usa resto decimal-seguro. O que falta é a rede:
+  uma troca de versão do Zod, ou uma reescrita da conferência com resto de ponto flutuante ingênuo
+  (`v % 0.01`, que devolve `0.00999…` para `2.55`), passaria a recusar **toda política de duas casas**
+  com `422` — o valor mais natural do domínio — e a suíte continuaria verde.
+- **O que fazer:** acrescentar um par de duas casas ao laço de bordas que já existe no passo 7 do
+  `CT-539` — por exemplo `{ multaPercentual: 2.55, jurosPercentual: 0.07 }` —, afirmando `200`, o eco
+  do corpo e a releitura exata. Custo de uma linha, e passa a prender o lado que **aceita** da mesma
+  dimensão cujo lado que recusa já está preso.
+
+### D14 · MEDIO · project_pattern · T6 · Tech Review
+
+- **Onde:** `packages/db/src/configuracao-de-mora.ts:119`
+- **Problema:** `POLITICA_AUSENTE` é constante de módulo compartilhada por toda leitura e **não está
+  congelada**, contra a convenção de 4 precedentes do mesmo pacote.
+- **Impacto:** a constante é devolvida **por referência** em `lerConfiguracaoDeMora` (linha 171), sem
+  `Object.freeze`. O pacote tem a convenção estabelecida e explícita para exatamente este papel —
+  constante de módulo devolvida como o valor da ausência por uma porta de leitura —, e nos quatro casos
+  ela é congelada, com o docblock literal *"Congelado — é compartilhado por toda leitura"*:
+  `packages/db/src/contrato.ts:485` (`SEM_FIADORES`), `packages/db/src/imovel.ts:372` (`SEM_COMODOS`),
+  `packages/db/src/conjunto.ts:143` (`SEM_IMOVEIS`) e
+  `apps/api/src/contratos/contrato.service.ts:431` (`EFEITOS_DA_ATIVACAO`). O `readonly` da interface
+  (linha 93) protege dentro do pacote, mas **a proteção se perde na fronteira do serviço**:
+  `MoraService.ler` devolve `Promise<ConfiguracaoDeMora>`, cujo tipo vem de `z.infer` de `z.number()` e
+  **não tem `readonly`** — o consumidor recebe um alias mutável do objeto de módulo. Hoje ninguém a
+  muta, então não há defeito ativo; o risco é o que a convenção existe para fechar: um consumidor
+  futuro que faça `const p = await mora.ler(tx); p.multaPercentual = x` altera o objeto de módulo **do
+  processo**, e toda leitura seguinte de **qualquer** empresa que nunca configurou passa a devolver o
+  valor injetado — a política de uma empresa vazando para outra pelo estado compartilhado, exatamente
+  a classe de falha que a RD-21 e a ADR-0008 fecham no banco. O compilador não acusa (o tipo já foi
+  alargado na borda) e teste algum acusa (nenhum caso escreve no valor devolvido).
+- **O que fazer:** envolver o literal em `Object.freeze`, no molde de `SEM_FIADORES`
+  (`packages/db/src/contrato.ts:485`), com o mesmo docblock de congelamento. Uma palavra, sem mudança
+  de comportamento e sem tocar teste.
+
+### D15 · MEDIO · project_pattern · T6 · Tech Review
+
+- **Onde:** `packages/contracts/src/configuracao-de-mora.ts:117`
+- **Problema:** `esquemaDaConfiguracaoDeMora` é o **único esquema de saída** do pacote declarado como
+  `strictObject` — todos os 6 anteriores são `z.object`, e a diferença **entra no documento publicado**.
+- **Impacto:** o inventário do pacote mostra a convenção sem exceção — entrada é `strictObject`, saída é
+  `z.object`: entradas `esquemaDePessoaNova`, `esquemaDeComodoNovo`, `esquemaDeImovelNovo`,
+  `esquemaDeConjuntoNovo`, `esquemaDoPagamentoDeCobranca`, `esquemaDaSituacaoDeLocacao`,
+  `esquemaDaJanela`; saídas `esquemaDaPessoa:75`, `esquemaDoComodo:74`, `esquemaDoImovel:241`,
+  `esquemaDaCobranca:353`, `esquemaDoConjunto:48`, `esquemaDoContrato:322`, **todas** `z.object`. A
+  consequência é observável e não é interna: `esquemaPublicado(…, 'output')` roda `z.toJSONSchema`, e um
+  `strictObject` emite `additionalProperties: false` — as duas respostas de `/v1/multa-e-juros` passam a
+  ser os únicos objetos **fechados** do documento OpenAPI, num contrato em que as outras 78 rotas
+  publicam objeto aberto. A **ADR-0016** é justamente o que propaga isso: o documento **deriva** do
+  esquema, então a escolha não fica no pacote. Um cliente gerado ou um `ts-rest` que confira a resposta
+  contra o esquema **recusa qualquer campo acrescentado no futuro nessas duas rotas** — enquanto tolera
+  o mesmo acréscimo em todo o resto da API; crescimento aditivo deixa de ser aditivo aqui. Não é
+  violação de marcador: o `DECISÃO FECHADA` de `ESCALA_DA_METRAGEM` (`packages/contracts/src/comum.ts`)
+  alcança a restrição de **escala**, e nem o código nem o texto dele foram tocados — é a convenção
+  irmã, aplicada ao contrário. Nenhuma asserção da suíte cobre abertura de esquema de **saída** (a
+  varredura de `esquemas.spec.ts` só percorre entradas), e por isso isto passa verde e só aparece no diff.
+- **O que fazer:** trocar `z.strictObject` por `z.object` na linha 117 e ajustar o docblock, que hoje
+  explica a assimetria de faixa/escala mas não menciona a de fechamento. Se o fechamento na saída for
+  deliberado, precisa de justificativa própria escrita ali — e então é decisão de contrato que vale para
+  as 80 rotas, não para duas.
+
+### D16 · BAIXO · project_pattern · T6 · Tech Review
+
+- **Onde:** `packages/db/src/configuracao-de-mora.ts:192`
+- **Problema:** `gravarConfiguracaoDeMora` reusa o tipo de **saída** (`ConfiguracaoDeMoraPersistida`)
+  como tipo do parâmetro de escrita, onde as 7 portas anteriores declaram um `DadosDeX` próprio.
+- **Impacto:** o parâmetro se chama `dados`, seguindo a convenção, mas o tipo é o de leitura. Toda porta
+  de escrita do pacote separa os dois: `criarCobranca` (`DadosDaCobranca`, `cobranca.ts:567`),
+  `criarContrato`/`alterarContrato` (`DadosDoContrato`), `criarImovel` (`DadosDoImovel`),
+  `alterarImovel` (`DadosDaAlteracaoDoImovel`), `criarConjunto`/`alterarConjunto`,
+  `criarComodo`/`alterarComodo`. Nenhum efeito hoje — as duas formas coincidem. O acoplamento é o
+  custo: o primeiro campo somente-de-leitura que a política publicar (um `definidoEm`, um
+  `definidoPor`, um carimbo de auditoria) passa a ser exigido no corpo da escrita, ou obriga a partir o
+  tipo naquele momento, no arquivo que estiver sendo alterado por outra razão. É o mesmo acoplamento
+  que `DadosDaAlteracaoDoImovel` existe para desfazer, e a lição está registrada: em `alterarImovel`,
+  entrada e saída partilhadas foram a origem do furo do `status_locacao`.
+- **O que fazer:** declarar `interface DadosDaConfiguracaoDeMora` com os dois campos `readonly` e usá-la
+  no parâmetro, mantendo `ConfiguracaoDeMoraPersistida` como retorno das duas funções. Não altera o
+  índice publicado do pacote nem o `CT-012`, que observa símbolos de tempo de execução.
+
 ### D7 · F3/T4 — **FECHADO na T5**
 
 Nasceu `lerAnoDaSerieDeCobranca` em `packages/db/src/cobranca.ts`, derivada de
@@ -212,28 +322,36 @@ ambíguo o único identificador que a §3-B da `nao-regressao.md` reconhece.
 
 ## 4. Notas para Revisão Humana
 
-> ### ⏸️ O RUN ESTÁ PAUSADO — leia isto antes de qualquer coisa
+> ### ▶️ O RUN FOI RETOMADO em 2026-08-10 — a pausa está encerrada
 >
-> **Parado em 2026-08-10, a pedido do usuário.** O ponto exato: o **executor da T6 concluiu** e os
-> **dois gates dela ainda não rodaram**. A T6 está `Em Progresso`, com o código no working tree e
-> `git add -N` feito — **nada foi perdido**.
+> A pausa parou o run com o **executor da T6 concluído e os dois gates dela sem rodar**. A retomada
+> escolheu **(a) "Retomar nos gates"** — o código estava íntegro, e reexecutar do zero descartaria
+> trabalho bom. Os dois gates rodaram sobre ele e **aprovaram**: QA `APROVADO_COM_OBSERVACOES` (13/13
+> critérios, 2/2 CTs) e Tech Review `APROVADO_COM_OBSERVACOES` (0 bloqueantes). **T6 está concluída e
+> staged.** O histórico da pausa segue no `_run/workflow-report.md` como registro; o que ele diz sobre
+> "como retomar" já foi cumprido e não se aplica mais.
 >
-> **Para retomar**, reinvoque a mesma skill com os mesmos argumentos:
->
-> ```
-> /agent-spec-sdd-run-tasks docs/specs/features/cobranca-e-mora/v1/task_plan.md sysloc-backend-implementer
-> ```
->
-> O Passo 4.0.1 vai detectar a T6 em `Em Progresso` e oferecer três caminhos. **O correto é
-> (a) "Retomar nos gates"** — reexecutar do zero descartaria trabalho íntegro. O `base_sha` da T6 é
-> `fb9391532190d4fa90a452849e213ede32404605`.
->
-> **O sumário do executor da T6**, que os gates precisam receber inline, e as **seis notas
-> operacionais** que não estão em nenhum artefato de spec (o flake do `CT-907`, o disco em 93%, o
-> próximo `Dnn` livre, os avisos vivos para T7 em diante) estão no bloco **"⏸️ PAUSA DO RUN"** ao fim
-> do `_run/workflow-report.md`.
->
-> **Nada foi commitado.** T2 a T5 estão `staged`; a T6 não, porque os gates dela não aprovaram.
+> **Nada foi commitado.** T2 a T6 estão `staged`, aguardando a decisão do usuário sobre o agrupamento.
+> As notas operacionais que continuam valendo para T7 em diante (flake do `CT-907`, disco em ~93%,
+> próximo `Dnn` livre — hoje **D17** —, a folga do `cobrancas.e2e.spec.ts` do D11) estão no
+> `_run/workflow-report.md`.
+
+- **Uma consequência do `t5_sha` que vale reusar até o usuário commitar.** Com T2–T6 `staged` e sem
+  commit, o HEAD não se move, então `git diff <base_sha>` devolve as tasks **somadas** nos arquivos que
+  elas compartilham — e o Gate 2 rerrevisaria código já aprovado. Na T6 isso foi resolvido com um
+  marcador sintético do estado do índice (`t5_sha`), passado ao Tech Review como diff primário: ele
+  revisou 12 arquivos de delta em vez dos 22 cumulativos. O mecanismo está descrito no
+  `_run/workflow-report.md` e deve ser refeito a cada task enquanto o commit não acontecer.
+
+- **⚠️ O D15 merece decisão do usuário AGORA, e não no cleanup — é o único débito desta fatia que
+  alcança um artefato de entrega.** Ele diz que `esquemaDaConfiguracaoDeMora` nasceu `strictObject`
+  onde os outros seis esquemas de saída do pacote são `z.object`, e a ADR-0016 propaga a diferença para
+  o **documento OpenAPI publicado**: duas das 80 rotas passam a publicar objeto **fechado**
+  (`additionalProperties: false`). O `@sysloc/contracts` publicado é um dos sete itens do marco de
+  entrega do backend, e a superfície da API será **congelada** depois da F5 — corrigir depois do
+  handoff custa uma versão do pacote; corrigir agora custa **trocar uma palavra**. A política de
+  bloqueio seletivo o classifica como `MEDIO` de categoria anotável, então o pipeline **não pode**
+  abrir rodada de correção por ele; a decisão de fechá-lo fora do pipeline é do usuário.
 
 - **A T4 herdou da T3 uma instrução que o Gate 2 mandou atravessar tasks, e ela mudou o código.** O
   P4 da revisão da T3 apontou que a medição de `EXPLAIN` sobre `cobranca_aberta_idx` morava em

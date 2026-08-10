@@ -68,6 +68,11 @@ export {
   MAIOR_PAGINA,
   PAGINA_PADRAO,
 } from './comum.js';
+export type { ConfiguracaoDeMora, ConfiguracaoDeMoraNova } from './configuracao-de-mora.js';
+export {
+  esquemaDaConfiguracaoDeMora,
+  esquemaDaConfiguracaoDeMoraNova,
+} from './configuracao-de-mora.js';
 export type {
   Conjunto,
   ConjuntoComImoveis,

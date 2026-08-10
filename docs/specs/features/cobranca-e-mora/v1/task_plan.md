@@ -46,12 +46,12 @@ As quatro primeiras vêm da **§11 do PRD** (Roadmap / Fases). A quinta é acré
 | ID | Nome da Task | Arquivo | Fase | Dependências | Pode Rodar em Paralelo? (derivado) | Status |
 |----|--------------|---------|------|--------------|------------------------------------|--------|
 | T1 | Capturar o oráculo da régua de cobrança do sistema antigo, sem despachar mensagem | [T1](tasks/T1.md) | 1 | — | Não | A Fazer |
-| T2 | Contrato de tipos da cobrança em `@sysloc/contracts` | [T2](tasks/T2.md) | 2 | — | Não | A Fazer |
-| T3 | Schema e migrações da cobrança — tabelas isoladas, a view de fonte única e o contador da série | [T3](tasks/T3.md) | 2 | T2 | Não | A Fazer |
-| T4 | Porta de dados da cobrança — leitura pela view, emissão da série e a prova da mora contra o golden | [T4](tasks/T4.md) | 2 | T2, T3 | Não | A Fazer |
-| T5 | As três rotas de lançamento e leitura da carteira de cobranças | [T5](tasks/T5.md) | 2 | T2, T4 | Não | A Fazer |
-| T6 | Configuração de mora por empresa — contrato, porta e as duas rotas de `/v1/multa-e-juros` | [T6](tasks/T6.md) | 3 | T3, T5 | Não | A Fazer |
-| T7 | As duas transições da cobrança — acusar pagamento com carimbo e cancelar preservando o histórico | [T7](tasks/T7.md) | 3 | T5, T6 | Não | A Fazer |
+| T2 | Contrato de tipos da cobrança em `@sysloc/contracts` | [T2](tasks/T2.md) | 2 | — | Não | Concluído |
+| T3 | Schema e migrações da cobrança — tabelas isoladas, a view de fonte única e o contador da série | [T3](tasks/T3.md) | 2 | T2 | Não | Concluído |
+| T4 | Porta de dados da cobrança — leitura pela view, emissão da série e a prova da mora contra o golden | [T4](tasks/T4.md) | 2 | T2, T3 | Não | Concluído |
+| T5 | As três rotas de lançamento e leitura da carteira de cobranças | [T5](tasks/T5.md) | 2 | T2, T4 | Não | Concluído |
+| T6 | Configuração de mora por empresa — contrato, porta e as duas rotas de `/v1/multa-e-juros` | [T6](tasks/T6.md) | 3 | T3, T5 | Não | Concluído |
+| T7 | As duas transições da cobrança — acusar pagamento com carimbo e cancelar preservando o histórico | [T7](tasks/T7.md) | 3 | T5, T6 | Não | Em Progresso |
 | T8 | `derivarParcelasDoContrato` — a função pura das parcelas, provada contra o oráculo | [T8](tasks/T8.md) | 4 | T2 | Não | A Fazer |
 | T9 | A ativação do contrato gera as parcelas na mesma unidade de trabalho — fecha o D28 | [T9](tasks/T9.md) | 4 | T4, T8 | Não | A Fazer |
 | T10 | O cancelamento do contrato cancela as cobranças em cascata, na mesma unidade | [T10](tasks/T10.md) | 4 | T7, T9 | Não | A Fazer |
@@ -106,13 +106,13 @@ O flag foi **computado** pelo Invariante de Paralelismo (Regra 10d), não autora
 |------------------|--------------------------|--------------------|--------|
 | US-01 — Capturar a referência da régua antes do desligamento | §17 US-01 · captura com despachante substituído, fora da API | T1 | A Fazer |
 | US-02 — Ativar contrato gera as parcelas do período | §6.3 RD-05, RD-18, RD-19, RD-20 · §5.1 fluxo B | T2, T3, T4, T8, T9 | A Fazer |
-| US-03 — Estado da cobrança com significado único | §6.3 RD-04 · view `cobranca_derivada` · §3.3 (proibição em TypeScript) | T2, T3, T4, T5 | A Fazer |
+| US-03 — Estado da cobrança com significado único | §6.3 RD-04 · view `cobranca_derivada` · §3.3 (proibição em TypeScript) | T2, T3, T4, T5 | Concluído |
 | US-04 — Cobranças que não são aluguel, distinguíveis por natureza | §6.3 RD-03 · enum `natureza_cobranca` | T2, T5 | A Fazer |
 | US-05 — Acusar pagamento e registrar o recebido | §6.3 RD-09, RD-15 · §5.1 fluxo D | T2, T7, T11 | A Fazer |
 | US-06 — Cancelar lançamento errado e emitir substituta | §6.3 RD-12, RD-02 · §5.1 fluxos E e F | T4, T7, T11 | A Fazer |
-| US-07 — Multa e juros da própria imobiliária | §6.3 RD-11, RD-21 · `negocio.configuracao_de_mora` sob RLS | T3, T6 | A Fazer |
+| US-07 — Multa e juros da própria imobiliária | §6.3 RD-11, RD-21 · `negocio.configuracao_de_mora` sob RLS | T3, T6 | Concluído |
 | US-08 — Mora calculada pelo sistema | §6.3 RD-07, RD-08, RD-16 · expressões em `numeric` | T3, T4 | A Fazer |
-| US-09 — Mudar a multa não altera o que já foi pago | §6.3 RD-09, RD-10 · o carimbo com a configuração vigente | T6, T7 | A Fazer |
+| US-09 — Mudar a multa não altera o que já foi pago | §6.3 RD-09, RD-10 · o carimbo com a configuração vigente | T6, T7 | Em Progresso |
 | US-10 — Cancelar contrato cancela as cobranças canceláveis | §6.3 RD-13 · cascata na mesma unidade | T10 | A Fazer |
 
 > **Nenhuma US órfã.** A US com mais tasks é a **US-02, com cinco** — acima do teto operacional de três, e a razão é estrutural, não de decomposição frouxa: gerar parcelas na ativação atravessa **contrato de tipos → schema e série → porta de dados → função pura de datas → serviço de ativação**, e cada uma dessas camadas é um artefato arquitetural completo com prova própria. Fundi-las produziria uma task de diff enorme sobre `contrato.service.ts`, que é exatamente o risco de média probabilidade e alto impacto que a §20 do tech spec nomeia. A US-03 aparece em quatro pela mesma razão (a fonte única atravessa contrato, banco, porta e borda).

@@ -79,3 +79,47 @@
 - Sinal: `convention_drift` · Origem: `staff-review` · 2026-08-10T08:00:00Z
 
 ---
+
+## [repeated_fixture] Acessório HTTP e de concessão das suítes E2E
+
+**Regra que isto sugere:** centralizar o acessório de requisição HTTP, entrada de sessão e concessão de chaves num utilitário compartilhado das suítes E2E de `apps/api/test/`, em vez de recopiá-lo por arquivo.
+
+**O que ela faria (simples):** toda suíte E2E nova recopia o mesmo trio — `pedir` (requisição com `Origin` e leitura de cookie), `entrar` (login pela rota real) e `conceder` (ajuste de chaves pela camada de dados) — mais a lista `VARIAVEIS_MONTADAS` de restauração de ambiente. Hoje são 12 cópias de `pedir`, 6 de `conceder` e 18 de `VARIAVEIS_MONTADAS`, e a T6 acrescentou uma de cada. A regra evitaria que a próxima suíte copie de novo e que as cópias divirjam em silêncio quando a barreira de admissão ou o cabeçalho conferido mudar.
+
+- Evidência: acessórios `pedir`/`entrar`/`conceder` replicados literalmente entre suítes E2E de `apps/api/test/` — `apps/api/test/mora.e2e.spec.ts:584` — T6 / duas rotas de `/v1/multa-e-juros`
+- Sinal: `repeated_fixture` · Origem: `agent-spec-qa-validator` · 2026-08-10T08:20:00Z
+
+---
+
+## [convention_drift] Constante de módulo devolvida por porta
+
+**Regra que isto sugere:** constante de módulo que uma porta devolve como valor da ausência nasce sob `Object.freeze`.
+
+**O que ela faria (simples):** quatro portas de `packages/db/src` congelam o objeto que devolvem quando não há linha, com o docblock *"Congelado — é compartilhado por toda leitura"*, e a quinta nasceu sem congelar porque a convenção só existe no código. O `readonly` do tipo não substitui o congelamento: ele se perde quando o serviço alarga o tipo na borda, e aí um consumidor pode mutar o objeto do processo inteiro.
+
+- Evidência: `POLITICA_AUSENTE` devolvida por referência sem `Object.freeze`, contra 4 precedentes congelados no mesmo pacote (`SEM_FIADORES`, `SEM_COMODOS`, `SEM_IMOVEIS`, `EFEITOS_DA_ATIVACAO`) — `packages/db/src/configuracao-de-mora.ts:119` — T6 / porta da política de mora
+- Sinal: `convention_drift` · Origem: `staff-review` · 2026-08-10T08:35:00Z
+
+---
+
+## [convention_drift] Esquema de saída aberto, entrada fechada
+
+**Regra que isto sugere:** esquema de **ENTRADA** é `strictObject` e esquema de **SAÍDA** publicado é `z.object` — a assimetria é a regra, não a exceção.
+
+**O que ela faria (simples):** o pacote de contratos aplica essa divisão em 13 de 13 esquemas, mas ela não está escrita em rule nem em ADR — só é inferível por imitação do arquivo vizinho, e o `DECISÃO FECHADA` que existe cobre a restrição de *escala*, não o fechamento do objeto. O sétimo esquema de saída nasceu fechado, e como nenhuma varredura da suíte olha esquema de saída, a divergência viaja para o documento OpenAPI publicado como `additionalProperties: false`.
+
+- Evidência: `esquemaDaConfiguracaoDeMora` é `strictObject`; os 6 esquemas de saída anteriores do pacote são todos `z.object` — `packages/contracts/src/configuracao-de-mora.ts:117` — T6 / contrato publicado da política de mora
+- Sinal: `convention_drift` · Origem: `staff-review` · 2026-08-10T08:35:00Z
+
+---
+
+## [convention_drift] Tipo de escrita separado do de leitura
+
+**Regra que isto sugere:** porta de escrita recebe um tipo `DadosDeX` próprio, nunca o `XPersistido` que a leitura devolve.
+
+**O que ela faria (simples):** as sete portas de escrita do pacote declaram um tipo de entrada dedicado, e a oitava reusou o de saída porque as duas formas coincidem hoje. A separação é o que impede o primeiro campo somente-de-leitura de virar campo exigido no corpo da escrita — foi entrada e saída partilhadas que produziram o furo do `status_locacao` em `alterarImovel`.
+
+- Evidência: `gravarConfiguracaoDeMora(tx, dados: ConfiguracaoDeMoraPersistida)` contra `DadosDaCobranca`, `DadosDoContrato`, `DadosDoImovel`, `DadosDaAlteracaoDoImovel`, `DadosDoConjunto`, `DadosDoComodo` — `packages/db/src/configuracao-de-mora.ts:192` — T6 / porta da política de mora
+- Sinal: `convention_drift` · Origem: `staff-review` · 2026-08-10T08:35:00Z
+
+---

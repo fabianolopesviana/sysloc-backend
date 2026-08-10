@@ -512,8 +512,16 @@ const PREFIXO_DE_ENTRADA_DE_ENTIDADE = 'esquemaDe';
  * dos parágrafos acima, sem esta lista os dois escapariam às duas varreduras — e o primeiro é o corpo
  * pelo qual multa e juros seriam escritos pelo cliente se o esquema fosse aberto. Nenhum alvo sai
  * daqui; o conjunto só cresce.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T6 da mesma fatia publicou `esquemaDaConfiguracaoDeMoraNova` — o corpo do
+ * `PUT` que define a política de multa e juros da empresa. Pelo mesmo motivo dos parágrafos acima ele
+ * escaparia às duas varreduras, por começar com `esquemaDa` e não com `esquemaDe`; e ele é
+ * **exatamente** o esquema em que as duas afirmações mais importam, porque é a única porta de
+ * requisição que escreve os percentuais que a carteira inteira cobra — um corpo aberto aceitaria
+ * `empresaId` e escreveria a política de outra empresa. Nenhum alvo sai daqui; o conjunto só cresce.
  */
 const NOMES_DAS_ENTRADAS_FORA_DO_PREFIXO = [
+  'esquemaDaConfiguracaoDeMoraNova',
   'esquemaDaJanela',
   'esquemaDaJanelaComCirculacao',
   'esquemaDaJanelaDaCarteira',
@@ -555,11 +563,23 @@ const NOMES_DAS_ENTRADAS_FORA_DO_PREFIXO = [
  * acima). O literal é o que impede *"nenhum esquema violou"* de ser indistinguível de *"nenhum
  * esquema foi olhado"*: trocá-lo por `ESQUEMAS_DE_ENTRADA.length` seria a asserção tautológica que
  * esta linha existe para evitar. A âncora **sobe** e segue exata; nenhum alvo saiu.
+ *
+ * SUT_IS_CORRECT_BECAUSE: subiu de 13 para 14 porque a T6 da mesma fatia publicou
+ * `esquemaDaConfiguracaoDeMoraNova` — o corpo do `PUT` da política de multa e juros, que nasce nesta
+ * fonte única pela mesma ADR-0016. Ele entra pela lista de nomes fora do prefixo, logo acima. Vale
+ * aqui, palavra por palavra, o parágrafo anterior: o literal é o que impede *"nenhum esquema
+ * violou"* de ser indistinguível de *"nenhum esquema foi olhado"*, a âncora **sobe** e segue exata, e
+ * nenhum alvo saiu.
  */
-const QUANTIDADE_DE_ESQUEMAS_DE_ENTRADA = 13;
+const QUANTIDADE_DE_ESQUEMAS_DE_ENTRADA = 14;
 
 /** Um corpo válido por esquema de entrada, indexado pelo nome exportado. */
 const CORPOS_VALIDOS = new Map<string, Record<string, unknown>>([
+  // Os dois percentuais vão declarados **por extenso**, e com valores distintos entre si: são os
+  // únicos campos que este esquema tem, nenhum deles é opcional, e um corpo que omitisse qualquer um
+  // seria recusado antes de a varredura medir o que ela existe para medir. Valores diferentes em cada
+  // campo é o que impede uma troca acidental entre eles de passar despercebida.
+  ['esquemaDaConfiguracaoDeMoraNova', { multaPercentual: 2, jurosPercentual: 1 }],
   ['esquemaDeConjuntoNovo', { nome: 'Edifício Aurora' }],
   ['esquemaDeImovelNovo', { ...CORPO_DE_IMOVEL, statusLocacao: 'DISPONIVEL' }],
   // O corpo da alteração é o da criação **sem** `statusLocacao`, que é exatamente o que o `omit`

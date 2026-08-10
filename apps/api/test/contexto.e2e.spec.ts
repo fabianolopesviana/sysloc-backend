@@ -167,6 +167,7 @@ import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
 import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
 import { CAMINHO_DO_CONTRATO, CAMINHO_DO_DOCUMENTO, criarAplicacao } from '../src/main.ts';
 import { CAMINHO_DO_MASTER } from '../src/master/empresa.controller.ts';
+import { CAMINHO_DE_MULTA_E_JUROS } from '../src/mora/mora.controller.ts';
 import { CAMINHO_DOS_USUARIOS } from '../src/usuarios/usuario.controller.ts';
 import { decodificarBase32 } from './base32.ts';
 
@@ -412,9 +413,19 @@ const CAMINHOS_PUBLICOS_ACEITOS: readonly string[] = [
  * público continua inalterado, e a igualdade segue exata nos dois sentidos — **nada foi afrouxado**,
  * o `toEqual` continua sendo igualdade de conjunto contra um inventário escrito à mão.
  *
+ * SUT_IS_CORRECT_BECAUSE: a T6 da mesma fatia publicou as **duas rotas da política de mora**, e as
+ * duas são **protegidas**: vale a exigência da classe, `@ExigeChave('TELA:multa_e_juros')`, nenhuma é
+ * marcada `@RotaPublica()`, e por isso a sonda sem cookie recebe `401 NAO_AUTENTICADO` da guarda.
+ * Pela classificação por **caminho** deste caso elas entram como **uma** entrada nova, e não duas: o
+ * `GET` e o `PUT` atendem o mesmo caminho, porque o recurso é singular por empresa e não tem `:id` —
+ * a classificação por par método+caminho, que é a de `cobertura-de-autorizacao.e2e.spec.ts`, conta as
+ * duas separadamente. Vale o mesmo dos parágrafos acima: nenhuma entrada anterior saiu, o conjunto
+ * público continua inalterado, e a igualdade segue exata nos dois sentidos — **nada foi afrouxado**,
+ * o `toEqual` continua sendo igualdade de conjunto contra um inventário escrito à mão.
+ *
  * **Este arquivo não está na §5.2 da T7 nem na da T9, nem na da T6, da T7 e da T8 da fatia de
- * contratos, nem na da T5 da fatia `cobranca-e-mora`** — divergência declarada nas seis, e é o débito
- * **D26 (F2/T6)**, cuja recomendação
+ * contratos, nem na da T5 e na da T6 da fatia `cobranca-e-mora`** — divergência declarada nas sete, e
+ * é o débito **D26 (F2/T6)**, cuja recomendação
  * literal é declará-lo nas §5.2 de T7, T8 e T10. A T10 **também não o declara**, e a divergência
  * volta a ser anotada aqui pela quinta vez. Ele é blast radius por construção: a âncora afirma por
  * igualdade de conjunto, e publicar caminho novo a faz reprovar, que é exatamente o que ela existe
@@ -453,6 +464,7 @@ const ROTAS_PROTEGIDAS_ACEITAS: readonly string[] = [
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_IMOVEIS}/:id/recirculacao`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_IMOVEIS}/:id/retirada`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_IMOVEIS}/:id/situacao-de-locacao`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DE_MULTA_E_JUROS}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas/:id/admin`,

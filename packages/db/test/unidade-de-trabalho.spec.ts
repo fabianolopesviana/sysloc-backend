@@ -684,6 +684,35 @@ const SIMBOLOS_ESPERADOS = [
   'lerAnoDaSerieDeCobranca',
   'listarCobrancas',
   'localizarCobranca',
+  // T6 da fatia `cobranca-e-mora` — a PORTA da política de multa e juros: a leitura e o `upsert`.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T6 publica dois símbolos novos no índice por decisão declarada na §1 e
+  // na §5.2 da task. As duas entram pelo critério de todas as portas anteriores: **recebem** o
+  // executor de quem já abriu a unidade de trabalho, não abrem conexão, não reservam e não devolvem
+  // executor, e nenhuma recebe `empresaId` — o escopo é da política do banco (ADR-0008).
+  //
+  // `gravarConfiguracaoDeMora` é publicada porque a escrita é um `INSERT … ON CONFLICT (empresa_id)
+  // DO UPDATE` de **um comando só**: publicar a porta é o que impede a borda de escrever por conta
+  // própria o par "ler, decidir, gravar", que passa em todos os casos felizes e perde escrita sob
+  // concorrência. `lerConfiguracaoDeMora` é publicada porque é ela que traduz a **ausência de linha**
+  // nos zeros que a apuração da view já produz por `COALESCE` — é a RD-21 concordando com a RD-08 —,
+  // e um segundo tradutor apareceria aqui como símbolo excedente, e não como um `?? 0` escondido num
+  // serviço.
+  //
+  // O que **não** sai do pacote, e a ausência é deliberada: `colunasDaConfiguracao`, pelo critério de
+  // `colunasDaCobranca` e de `empresaDoContexto` — é fragmento de SQL, e publicá-lo daria à borda
+  // pedaços de instrução para compor. `POLITICA_AUSENTE` e `configuracaoPublicada` ficam dentro pelo
+  // mesmo motivo de `cobrancaPublicada`: são o mecanismo interno da tradução, não caminho para dado.
+  //
+  // O tipo que elas publicam (`ConfiguracaoDeMoraPersistida`) não aparece aqui porque não existe em
+  // tempo de execução, e este caso observa o módulo carregado.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o defeito
+  // que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia. **Nenhuma
+  // entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  'gravarConfiguracaoDeMora',
+  'lerConfiguracaoDeMora',
   // T4 da fatia `contratos-de-locacao` — as DUAS derivações puras da ativação.
   //
   // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
