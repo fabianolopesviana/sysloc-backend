@@ -40,7 +40,7 @@ mesmo motivo; quando isso acontecer, as fatias novas aparecem aqui.
 | **F0** | Stack instalada e provada | ✅ concluída | 7/7 tasks |
 | **F1** | Fundação SaaS — isolamento, identidade e autorização | ✅ concluída | 20/20 tasks |
 | **F2** | Domínio de locação | ✅ concluída | 21/21 tasks |
-| **F3** | Cobrança, mora e documentos | 🔄 em andamento | 0 de 2 fatias · 9/11 tasks |
+| **F3** | Cobrança, mora e documentos | 🔄 em andamento | 0 de 2 fatias · 10/11 tasks |
 | **F4** | Integração bancária (Sicoob) | ⬜ não iniciada | — |
 | **F5** | Automações agendadas | ⬜ não iniciada | — |
 | **F6** | Frontend religado — só o handoff sai daqui | ⬜ não iniciada | — |
@@ -216,9 +216,9 @@ fecha o **D32 (F0/T6)**), o **PDF de contrato** de 752 linhas validado contra o 
 o `reply_to` da empresa certa.
 
 <!-- ESTADO:F3:INICIO -->
-> 🔄 **em andamento** — 0 de 2 fatias · 9/11 tasks
+> 🔄 **em andamento** — 0 de 2 fatias · 10/11 tasks
 >
-> 🔄 `cobranca-e-mora/v1` — 9/11 tasks
+> 🔄 `cobranca-e-mora/v1` — 10/11 tasks
 > ⬜ `regua-e-documentos/v1`
 <!-- ESTADO:F3:FIM -->
 

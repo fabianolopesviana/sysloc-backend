@@ -50,8 +50,37 @@
  * |       |        | `ACAO:excluir_cadastro` para cancelar é o que a ADR-0019 rejeita
  * |       |        | **nominalmente**. (ADR-0018, ADR-0019) |
  *
+ * | CA-17 | CT-534 | Nas **sete rotas da fatia `cobranca-e-mora`**, a sessão a quem a área exigida foi
+ * |       |        | **RETIRADA** pelo caminho real de administração recebe `403` com o envelope da
+ * |       |        | ADR-0017 e `detalhes.exigido` igual à chave **daquela** área — `TELA:financeiro`
+ * |       |        | nas cinco de cobrança, `TELA:multa_e_juros` nas duas de mora —, e as sete recusas
+ * |       |        | são idênticas entre si **byte a byte** dentro de cada área e **indistinguíveis
+ * |       |        | entre perfis** (Admin e Usuário recebem o mesmo corpo). **Nada muda**: o `xmin`
+ * |       |        | das duas cobranças alvo, o `xmin` e os percentuais gravados da política, e a
+ * |       |        | contagem crua de `negocio.cobranca` são idênticos antes e depois. A sessão que tem
+ * |       |        | **as duas áreas** alcança as MESMAS sete com `2xx`. (ADR-0011, ADR-0017, ADR-0021)
+ *
  * Rastreabilidade: `CA-12 → CT-319 (RN-14)`, `CA-13 → CT-320 (RN-14)`, `CA-14 → CT-321 (RN-01)`,
  * `CA-16 → CT-320 (b) (RN-13)`, `CA-17 → CT-320 (c) (RN-07)`.
+ * Acrescida pela T11 da fatia `cobranca-e-mora`: `CA-17 → CT-534 (RN-14)`.
+ *
+ * ===========================================================================
+ * O CT-534 mede o COMPORTAMENTO; quem audita a declaração é o CT-533
+ * ===========================================================================
+ *
+ * Os dois cobrem a mesma superfície por eixos que não se implicam. O `CT-533`, em
+ * `test/cobertura-de-autorizacao.e2e.spec.ts`, lê o **metadado** das sete rotas e afirma que cada uma
+ * exige exatamente a área devida e nenhuma chave de ação — e ficaria verde numa aplicação cuja guarda
+ * não fosse consultada, porque declaração escrita não é decisão aplicada. Este caso **sonda a borda**:
+ * ele mostra que quem não alcança a área é de fato recusado, com o corpo que o contrato publica, e que
+ * a recusa acontece **antes** de qualquer escrita.
+ *
+ * A metade de estado é o que separa *recusou* de *recusou depois de gravar*, e ela tem três formas
+ * porque as sete rotas tocam três coisas distintas: as **duas tuplas de cobrança** (o `xmin` acusa o
+ * `UPDATE` das transições), a **linha da política** (o `xmin` acusa até um `PUT` que reescrevesse os
+ * mesmos percentuais — a única forma de escrita idempotente desta superfície) e a **contagem crua**
+ * (que é o que o `xmin` não alcança, porque o `POST` da coleção criaria uma linha nova em vez de tocar
+ * as observadas).
  *
  * ===========================================================================
  * POR QUE O CT-320 (b) E O (c) NÃO SÃO O CT-425 E O CT-426 OUTRA VEZ
@@ -236,12 +265,14 @@ import { CAMINHO_DA_SESSAO } from '../src/autenticacao/sessao.controller.ts';
 import { CAMINHO_DOS_FIADORES } from '../src/cadastros/fiador.controller.ts';
 import { CAMINHO_DOS_LOCADORES } from '../src/cadastros/locador.controller.ts';
 import { CAMINHO_DOS_LOCATARIOS } from '../src/cadastros/locatario.controller.ts';
+import { CAMINHO_DAS_COBRANCAS } from '../src/cobrancas/cobranca.controller.ts';
 import { ENDERECO_DE_ESCUTA, PREFIXO_DE_VERSAO } from '../src/configuracao/ambiente.ts';
 import { CAMINHO_DOS_CONTRATOS } from '../src/contratos/contrato.controller.ts';
 import { CAMINHO_DOS_COMODOS } from '../src/imoveis/comodo.controller.ts';
 import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
 import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
 import { criarAplicacao } from '../src/main.ts';
+import { CAMINHO_DE_MULTA_E_JUROS } from '../src/mora/mora.controller.ts';
 import { CAMINHO_DOS_USUARIOS } from '../src/usuarios/usuario.controller.ts';
 import { cpfValido } from './documento.ts';
 
@@ -292,6 +323,90 @@ const ACAO_DE_CANCELAR_CONTRATO: ChaveDoCatalogo = 'ACAO:cancelar_contrato';
 
 /** A coleção de contratos, sob o prefixo de versão — a superfície que o `CT-320 (b)` sonda. */
 const COLECAO_DE_CONTRATOS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}`;
+
+/**
+ * As duas áreas de tela que governam a superfície da fatia `cobranca-e-mora` — o eixo do `CT-534`
+ * (§3.1 da T11).
+ *
+ * Nenhuma das sete rotas exige chave de **ação**, e a ausência é decisão escalada e confirmada antes
+ * da spec: a `Decision` da **ADR-0021** nomeia *"acusar pagamento de cobrança"* e *"cancelar
+ * cobrança"* entre as instâncias da classe que exige apenas a área, e o catálogo fechado não tem ação
+ * alguma para lançar, ler, pagar ou cancelar cobrança — nem qualquer ação dentro de
+ * `TELA:multa_e_juros`. Quem audita isso por **estrutura** é o `CT-533`; este caso mede o
+ * **comportamento**, e é por isso que a chave que ele espera em `detalhes.exigido` é sempre a da
+ * área.
+ */
+const AREA_DO_FINANCEIRO: ChaveDoCatalogo = 'TELA:financeiro';
+const AREA_DE_MULTA_E_JUROS: ChaveDoCatalogo = 'TELA:multa_e_juros';
+
+/**
+ * As **duas** ações sensíveis que o catálogo fechado enumera dentro de `TELA:financeiro` — as que
+ * falam com o banco, e nenhuma delas de cobrança.
+ *
+ * Elas entram neste arquivo por **obrigação da regra de domínio**, e não porque alguma das sete rotas
+ * as exija: a matriz do `ADMIN_EMPRESA` é o catálogo inteiro, e retirar dele a área sem retirar as duas
+ * ações deixaria ação sensível sem a tela que a comporta — o que a RN-02 recusa no momento de salvar.
+ */
+const ACAO_DE_EMITIR_BOLETO: ChaveDoCatalogo = 'ACAO:emitir_boleto';
+const ACAO_DE_SOLICITAR_BAIXA: ChaveDoCatalogo = 'ACAO:solicitar_baixa_de_boleto';
+
+/** A coleção de cobranças, sob o prefixo de versão — cinco das sete rotas do `CT-534`. */
+const COLECAO_DE_COBRANCAS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}`;
+
+/**
+ * O recurso **singular** da política de mora, sob o prefixo de versão — as outras duas.
+ *
+ * Singular, e por isso sem `:id`: a política é uma por empresa, e a chave é a própria sessão. Os dois
+ * pares desta superfície compartilham o mesmo caminho e diferem só pelo verbo.
+ */
+const RECURSO_DE_MULTA_E_JUROS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DE_MULTA_E_JUROS}`;
+
+/** Quantas rotas a fatia `cobranca-e-mora` publica — cinco de cobrança e duas de mora. */
+const ROTAS_DA_FATIA_DE_COBRANCA = 7;
+
+/**
+ * A política de mora do cenário do `CT-534` — multa de 2% e juros de 1% ao mês.
+ *
+ * Os dois são **diferentes entre si** de propósito: uma leitura que trocasse os dois campos de lugar
+ * passaria despercebida sob valores iguais, e é o corpo inteiro da política que o caso compara antes e
+ * depois das recusas.
+ */
+const MULTA_DO_CENARIO = 2;
+const JUROS_DO_CENARIO = 1;
+
+/**
+ * Os mesmos dois percentuais **como o banco os guarda** — `numeric(5,2)`, portanto com as duas casas.
+ *
+ * A leitura crua entra ao lado da leitura pela rota porque as duas dizem coisas diferentes: a rota
+ * publica `number`, e uma escrita que gravasse `2` em vez de `2.00`, ou que reescrevesse a linha com o
+ * mesmo valor, seria invisível ali. É a forma literal que a §6.6 da T11 pede.
+ */
+const MULTA_GRAVADA = '2.00';
+const JUROS_GRAVADO = '1.00';
+
+/**
+ * A distância, em dias, entre o relógio do banco e o vencimento das cobranças do cenário.
+ *
+ * Positiva, e é ela que torna `A_VENCER` consequência do **cenário** em vez do calendário — a mesma
+ * convenção, e o mesmo eixo (`negocio.data_corrente_da_operacao()`), de `cobrancas.e2e.spec.ts`.
+ * Trinta dias é folga larga o bastante para que a virada do dia durante a execução não mova nada.
+ */
+const DIAS_ATE_O_VENCIMENTO = 30;
+
+/** O estado que as duas cobranças do cenário publicam antes e depois das sete recusas. */
+const ESTADO_EM_ABERTO = 'A_VENCER';
+
+/** A natureza e a referência das cobranças do cenário — valores quaisquer, dentro do contrato. */
+const NATUREZA_DO_CENARIO = 'ALUGUEL';
+const REFERENCIA_DO_CENARIO = 'Competência do período — parcela';
+
+/**
+ * O valor original de cada cobrança do cenário.
+ *
+ * Ele **não** é derivado do valor mensal do contrato: a cobrança avulsa não o herda, e amarrá-los faria
+ * este arranjo depender de uma regra que não existe.
+ */
+const VALOR_DA_COBRANCA = 2500;
 
 /** A mensagem canônica da recusa de autorização — literal, e não importada da guarda. */
 const MENSAGEM_DE_ACESSO_NEGADO = 'acesso negado para esta sessão';
@@ -805,6 +920,239 @@ describe('as provas de segurança sobre as rotas do domínio (T11) e sobre as a�
     },
     LIMITE_CASO_MS,
   );
+
+  it(
+    'CT-534 — sem a área exigida, as sete rotas da fatia de cobrança recusam com 403 e nada muda',
+    async () => {
+      // ---------------------------------------------------------------------------------------
+      // Os sujeitos: a área é concedida E RETIRADA pelo caminho real de administração
+      // ---------------------------------------------------------------------------------------
+      //
+      // Cada um é EXCLUSIVO deste caso, pela mesma razão do `CT-320`: é o efetivo deles que está sob
+      // prova. A matriz admite ajuste bidirecional, e as duas direções são usadas — cada sujeito
+      // recebe uma das áreas por CONCESSÃO e perde a outra por NEGAÇÃO explícita. A negação não é
+      // zelo: o efetivo é `(matriz do perfil ∪ concedidas) − negadas`, e sem ela o piso do perfil
+      // poderia já conceder a área — o que é literalmente o caso do `ADMIN_EMPRESA`, cuja matriz é o
+      // catálogo inteiro.
+      const semFinanceiro = await pessoaOperandoComSenhaTrocada('so.multa.e.juros');
+      await ajustar(semFinanceiro.usuarioId, EMPRESA_A.id, [
+        { chave: AREA_DE_MULTA_E_JUROS, efeito: 'CONCEDIDA' },
+        { chave: AREA_DO_FINANCEIRO, efeito: 'NEGADA' },
+      ]);
+
+      const semMultaEJuros = await pessoaOperandoComSenhaTrocada('so.financeiro');
+      await ajustar(semMultaEJuros.usuarioId, EMPRESA_A.id, [
+        { chave: AREA_DO_FINANCEIRO, efeito: 'CONCEDIDA' },
+        { chave: AREA_DE_MULTA_E_JUROS, efeito: 'NEGADA' },
+      ]);
+
+      const comAsDuas = await pessoaOperandoComSenhaTrocada('alcanca.as.duas');
+      await ajustar(comAsDuas.usuarioId, EMPRESA_A.id, [
+        { chave: AREA_DO_FINANCEIRO, efeito: 'CONCEDIDA' },
+        { chave: AREA_DE_MULTA_E_JUROS, efeito: 'CONCEDIDA' },
+      ]);
+
+      // O quarto sujeito é de PERFIL DIFERENTE, e existe só para o eixo de indistinguibilidade: a
+      // matriz do `ADMIN_EMPRESA` concede as 17 chaves, de modo que aqui a **retirada** é o único
+      // ajuste — é ela que produz um Admin sem alcance ao financeiro.
+      //
+      // As duas ações sensíveis da área saem **junto**, e não por zelo: a RN-02 recusa o conjunto que
+      // deixasse uma ação concedida sem a tela que a comporta, e `validarCoerenciaDeAjustes` examina o
+      // efetivo RESULTANTE — retirar só a área deixaria `ACAO:emitir_boleto` e
+      // `ACAO:solicitar_baixa_de_boleto` órfãs, e a escrita seria recusada. É a regra de domínio
+      // funcionando, e é ela que fixa **quais** são as duas ações daquela área: as mesmas que o
+      // `CT-533` enumera ao afirmar que o catálogo não tem ação para pagar nem para cancelar cobrança.
+      const adminSemFinanceiro = await pessoaOperandoComSenhaTrocada(
+        'admin.sem.financeiro',
+        'ADMIN_EMPRESA',
+      );
+      await ajustar(adminSemFinanceiro.usuarioId, EMPRESA_A.id, [
+        { chave: AREA_DO_FINANCEIRO, efeito: 'NEGADA' },
+        { chave: ACAO_DE_EMITIR_BOLETO, efeito: 'NEGADA' },
+        { chave: ACAO_DE_SOLICITAR_BAIXA, efeito: 'NEGADA' },
+      ]);
+
+      // Precondições AFIRMADAS pelo caminho real (`GET /v1/sessao`), nunca supostas: sem elas, um
+      // `403` seria indistinguível de sessão quebrada, e o controle positivo, de sessão privilegiada.
+      const efetivoSemFinanceiro = await efetivoDe(semFinanceiro.cookie);
+      expect(efetivoSemFinanceiro.telas).not.toContain(AREA_DO_FINANCEIRO);
+      expect(efetivoSemFinanceiro.telas).toContain(AREA_DE_MULTA_E_JUROS);
+
+      const efetivoSemMulta = await efetivoDe(semMultaEJuros.cookie);
+      expect(efetivoSemMulta.telas).toContain(AREA_DO_FINANCEIRO);
+      expect(efetivoSemMulta.telas).not.toContain(AREA_DE_MULTA_E_JUROS);
+
+      const efetivoComAsDuas = await efetivoDe(comAsDuas.cookie);
+      expect(efetivoComAsDuas.telas).toContain(AREA_DO_FINANCEIRO);
+      expect(efetivoComAsDuas.telas).toContain(AREA_DE_MULTA_E_JUROS);
+
+      const efetivoDoAdmin = await efetivoDe(adminSemFinanceiro.cookie);
+      expect(efetivoDoAdmin.telas).not.toContain(AREA_DO_FINANCEIRO);
+      // Os PERFIS são diferentes — é o que dá sentido a "indistinguível entre perfis". Sem esta
+      // linha, o eixo final compararia duas sessões do mesmo perfil e não provaria nada.
+      expect(efetivoDoAdmin.perfil).not.toBe(efetivoSemFinanceiro.perfil);
+
+      // ---------------------------------------------------------------------------------------
+      // O cenário: duas cobranças A_VENCER e a política de mora, tudo pelas rotas reais
+      // ---------------------------------------------------------------------------------------
+      const cenario = await montarCenarioDeCobranca(cookiePleno);
+      const tabela = rotasDaFatiaDeCobranca(cenario);
+
+      // A tabela cobre a superfície inteira da fatia — afirmado sobre ela ANTES de percorrê-la.
+      expect(tabela.length).toBe(ROTAS_DA_FATIA_DE_COBRANCA);
+      expect(tabela.filter((rota) => rota.area === AREA_DO_FINANCEIRO).length).toBe(5);
+      expect(tabela.filter((rota) => rota.area === AREA_DE_MULTA_E_JUROS).length).toBe(2);
+
+      // --- Passo 1: o estado ANTES, nas três formas que as sete rotas podem tocar --------------
+      const xminAntes = {
+        paraPagar: await xminDaCobranca(cenario.paraPagar.codigo),
+        paraCancelar: await xminDaCobranca(cenario.paraCancelar.codigo),
+      };
+      const politicaAntes = await linhaDaPolitica();
+      const politicaPublicadaAntes = await lerPolitica(cookiePleno);
+      const cobrancasAntes = await contarCobrancas(EMPRESA_A.id);
+
+      // --- Passos 2 e 3: as sete recusam, cada uma nomeando a área DAQUELA rota ----------------
+      //
+      // A credencial é escolhida pela área da rota: quem exercita as cinco de cobrança é a sessão a
+      // quem `TELA:financeiro` foi retirada, e quem exercita as duas de mora é a sessão a quem
+      // `TELA:multa_e_juros` foi retirada. As duas TÊM a outra área, e é isso que torna o `403`
+      // atribuível à área que falta — uma sessão sem nenhuma das duas seria recusada nas sete mesmo
+      // que as rotas exigissem a área trocada.
+      const credencialSemAArea = new Map<ChaveDoCatalogo, string>([
+        [AREA_DO_FINANCEIRO, semFinanceiro.cookie],
+        [AREA_DE_MULTA_E_JUROS, semMultaEJuros.cookie],
+      ]);
+
+      const recusadas: string[] = [];
+      const corposDaRecusa = new Map<string, unknown>();
+
+      for (const rota of tabela) {
+        const resposta = await pedir(rota.alvo, {
+          metodo: rota.metodo,
+          cookie: credencialSemAArea.get(rota.area) ?? '',
+          ...(rota.corpo === undefined ? {} : { corpo: rota.corpo }),
+        });
+
+        expect(resposta.status, `${rota.rotulo} respondeu ${String(resposta.status)}`).toBe(403);
+        // O envelope INTEIRO por igualdade (ADR-0017): `detalhes.exigido` é a chave da área
+        // **daquela** rota, e não uma genérica — e não há `campo`, porque a recusa não é de entrada.
+        // Uma recusa que nomeasse sempre a mesma chave reprova em duas das sete.
+        expect(resposta.corpo, `a recusa de ${rota.rotulo} mudou de forma`).toEqual({
+          codigo: CodigoErro.ACESSO_NEGADO,
+          mensagem: MENSAGEM_DE_ACESSO_NEGADO,
+          detalhes: { exigido: rota.area },
+        });
+
+        recusadas.push(rota.rotulo);
+        corposDaRecusa.set(rota.rotulo, resposta.corpo);
+      }
+      expect(recusadas.length).toBe(ROTAS_DA_FATIA_DE_COBRANCA);
+
+      // As sete recusas são idênticas ENTRE SI dentro de cada área, **byte a byte** — há exatamente
+      // duas formas distintas na serialização, uma por área. A igualdade do laço acima é profunda e
+      // não alcança a ordem das chaves; esta linha alcança, e é ela que impede a recusa de virar
+      // oráculo por diferença de forma entre duas rotas da mesma área.
+      expect(
+        new Set([...corposDaRecusa.values()].map((corpo) => JSON.stringify(corpo))).size,
+        'as recusas das sete rotas não são idênticas byte a byte dentro de cada área',
+      ).toBe(2);
+
+      // --- Passo 4: a cobrança alvo está intacta — `status` e `xmin` -----------------------------
+      //
+      // O `xmin` é o identificador da transação que gravou a versão corrente da linha, e ele muda a
+      // cada `UPDATE`: é o que separa *recusado* de *recusado depois de gravar*. O `status` sozinho
+      // não bastaria — uma escrita que gravasse os mesmos valores o preservaria.
+      expect(await lerCobranca(cookiePleno, cenario.paraPagar.codigo)).toMatchObject({
+        codigo: cenario.paraPagar.codigo,
+        status: ESTADO_EM_ABERTO,
+        pagoEm: null,
+        canceladoEm: null,
+      });
+      expect(await lerCobranca(cookiePleno, cenario.paraCancelar.codigo)).toMatchObject({
+        codigo: cenario.paraCancelar.codigo,
+        status: ESTADO_EM_ABERTO,
+        pagoEm: null,
+        canceladoEm: null,
+      });
+      expect({
+        paraPagar: await xminDaCobranca(cenario.paraPagar.codigo),
+        paraCancelar: await xminDaCobranca(cenario.paraCancelar.codigo),
+      }).toEqual(xminAntes);
+
+      // E nenhuma linha NOVA nasceu: é o que o `xmin` não alcança, porque o `POST` da coleção não
+      // toca as duas tuplas observadas — ele criaria uma terceira.
+      expect(await contarCobrancas(EMPRESA_A.id)).toBe(cobrancasAntes);
+
+      // --- Passo 5: a política de mora está intacta, na rota e na linha -------------------------
+      //
+      // As duas leituras dizem coisas diferentes: a rota publica os percentuais como números, e a
+      // linha crua carrega a escala gravada mais o `xmin` — que é o que acusa um `PUT` que
+      // reescrevesse a mesma política. Sem o `xmin`, a única rota de escrita desta superfície teria
+      // uma escrita idempotente invisível.
+      expect(politicaPublicadaAntes).toEqual({
+        multaPercentual: MULTA_DO_CENARIO,
+        jurosPercentual: JUROS_DO_CENARIO,
+      });
+      expect(await lerPolitica(cookiePleno)).toEqual(politicaPublicadaAntes);
+      expect(politicaAntes.multaPercentual).toBe(MULTA_GRAVADA);
+      expect(politicaAntes.jurosPercentual).toBe(JUROS_GRAVADO);
+      expect(await linhaDaPolitica()).toEqual(politicaAntes);
+
+      // --- Passo 6: CONTROLE POSITIVO — a permissão certa passa nas SETE ------------------------
+      //
+      // Ele é obrigatório, e é a lição registrada da F0: uma guarda que recusasse **tudo** passaria o
+      // eixo negativo inteiro acima. São as MESMAS sete chamadas, com os mesmos corpos, sobre os
+      // mesmos recursos — o que muda é só a sessão, e é isso que torna a diferença atribuível à
+      // permissão.
+      //
+      // A asserção é de SUCESSO (`2xx`), e não de "diferente de 403": as sete requisições são
+      // bem-formadas e endereçam recursos que existem, de modo que qualquer outra recusa — `404` de
+      // alcance, `422` de esquema — também seria defeito. Um "diferente de 403" aceitaria a
+      // superfície inteira respondendo `422`, que é o controle positivo vazio.
+      const alcancadas: string[] = [];
+      for (const rota of tabela) {
+        const resposta = await pedir(rota.alvo, {
+          metodo: rota.metodo,
+          cookie: comAsDuas.cookie,
+          ...(rota.corpo === undefined ? {} : { corpo: rota.corpo }),
+        });
+
+        expect(
+          { rotulo: rota.rotulo, sucesso: resposta.status >= 200 && resposta.status < 300 },
+          `${rota.rotulo} respondeu ${String(resposta.status)} a quem TEM a área: ${resposta.texto}`,
+        ).toEqual({ rotulo: rota.rotulo, sucesso: true });
+        alcancadas.push(rota.rotulo);
+      }
+      expect(alcancadas).toEqual(recusadas);
+
+      // --- Passo 7: o corpo da recusa é INDISTINGUÍVEL entre perfis -----------------------------
+      //
+      // O Admin sem alcance ao financeiro e o Usuário sem alcance ao financeiro recebem o MESMO corpo,
+      // byte a byte, nas cinco rotas de cobrança. É o invariante de `recusa-indistinguivel.e2e.spec.ts`
+      // aplicado à autorização: um corpo que variasse com o perfil — uma mensagem mais específica para
+      // quem "quase" alcança — transformaria a recusa em oráculo sobre o perfil de quem pergunta.
+      const conferidas: string[] = [];
+      for (const rota of tabela.filter((candidata) => candidata.area === AREA_DO_FINANCEIRO)) {
+        const doAdmin = await pedir(rota.alvo, {
+          metodo: rota.metodo,
+          cookie: adminSemFinanceiro.cookie,
+          ...(rota.corpo === undefined ? {} : { corpo: rota.corpo }),
+        });
+
+        expect(doAdmin.status, `${rota.rotulo} (Admin) respondeu ${String(doAdmin.status)}`).toBe(
+          403,
+        );
+        expect(
+          doAdmin.corpo,
+          `${rota.rotulo}: a recusa do Admin é distinguível da do Usuário`,
+        ).toEqual(corposDaRecusa.get(rota.rotulo));
+        conferidas.push(rota.rotulo);
+      }
+      expect(conferidas.length).toBe(5);
+    },
+    LIMITE_CASO_MS,
+  );
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -1047,6 +1395,330 @@ const ROTAS_DE_IDENTIFICADOR: readonly RotaDeIdentificador[] = [
     corpo: () => ({}),
   },
 ];
+
+// ---------------------------------------------------------------------------------------------
+// A tabela das SETE rotas da fatia `cobranca-e-mora` — o eixo do CT-534
+// ---------------------------------------------------------------------------------------------
+
+/** Uma das sete rotas da fatia, no que o `CT-534` precisa saber dela. */
+interface RotaDaFatiaDeCobranca {
+  /** Método e caminho, para a mensagem de falha nomear a rota exata. */
+  readonly rotulo: string;
+  readonly metodo: string;
+  readonly alvo: string;
+  readonly corpo?: Record<string, unknown>;
+  /** A chave de área que a rota exige — o valor que a recusa tem de nomear. */
+  readonly area: ChaveDoCatalogo;
+}
+
+/** Uma cobrança como a API a publica, no que este arquivo observa dela. */
+interface CobrancaPublicada {
+  readonly codigo: string;
+  readonly status: string;
+  readonly dataVencimento: string;
+  readonly valorTotal: number;
+}
+
+/** O cenário que o `CT-534` exercita: duas cobranças em aberto e o corpo de um lançamento válido. */
+interface CenarioDeCobranca {
+  readonly contratoCodigo: string;
+  readonly paraPagar: CobrancaPublicada;
+  readonly paraCancelar: CobrancaPublicada;
+  readonly corpoDeLancamento: Record<string, unknown>;
+}
+
+/**
+ * As **sete** rotas da fatia, compostas a partir dos donos de segmento — nunca redigitadas.
+ *
+ * Cada uma carrega um corpo **válido** onde há corpo, e a validade é obrigatória por causa do controle
+ * positivo: é a MESMA chamada que roda com a sessão que alcança a área, e um corpo malformado
+ * responderia `422` ali, esvaziando o controle. No eixo negativo o corpo não muda nada — a guarda
+ * decide antes de o manipulador ler a requisição —, e é justamente essa ordem que o `xmin` inalterado
+ * da política mede do outro lado.
+ *
+ * As duas transições apontam para cobranças **diferentes**: acusar o pagamento e cancelar são
+ * mutuamente exclusivos, de modo que o controle positivo não conseguiria fazer as duas sobre a mesma
+ * linha — a segunda receberia `422` da guarda de estado, e o controle diria que a rota recusou quando
+ * a permissão estava certa.
+ */
+function rotasDaFatiaDeCobranca(cenario: CenarioDeCobranca): readonly RotaDaFatiaDeCobranca[] {
+  const paraPagar = `${COLECAO_DE_COBRANCAS}/${cenario.paraPagar.codigo}`;
+  const paraCancelar = `${COLECAO_DE_COBRANCAS}/${cenario.paraCancelar.codigo}`;
+
+  return [
+    {
+      rotulo: `POST ${COLECAO_DE_COBRANCAS}`,
+      metodo: 'POST',
+      alvo: COLECAO_DE_COBRANCAS,
+      corpo: cenario.corpoDeLancamento,
+      area: AREA_DO_FINANCEIRO,
+    },
+    {
+      rotulo: `GET ${COLECAO_DE_COBRANCAS}`,
+      metodo: 'GET',
+      alvo: COLECAO_DE_COBRANCAS,
+      area: AREA_DO_FINANCEIRO,
+    },
+    {
+      rotulo: `GET ${COLECAO_DE_COBRANCAS}/:codigo`,
+      metodo: 'GET',
+      alvo: paraPagar,
+      area: AREA_DO_FINANCEIRO,
+    },
+    {
+      rotulo: `POST ${COLECAO_DE_COBRANCAS}/:codigo/pagamento`,
+      metodo: 'POST',
+      alvo: `${paraPagar}/pagamento`,
+      // O `pagoEm` é o vencimento da própria cobrança, e o valor é o total que a leitura publicou —
+      // a mesma convenção de `cobrancas.e2e.spec.ts`, e nenhuma data absoluta de calendário.
+      corpo: {
+        pagoEm: cenario.paraPagar.dataVencimento,
+        valorPago: cenario.paraPagar.valorTotal,
+      },
+      area: AREA_DO_FINANCEIRO,
+    },
+    {
+      rotulo: `POST ${COLECAO_DE_COBRANCAS}/:codigo/cancelamento`,
+      metodo: 'POST',
+      alvo: `${paraCancelar}/cancelamento`,
+      // Corpo **vazio e fechado**: o instante do cancelamento é decidido pelo servidor.
+      corpo: {},
+      area: AREA_DO_FINANCEIRO,
+    },
+    {
+      rotulo: `GET ${RECURSO_DE_MULTA_E_JUROS}`,
+      metodo: 'GET',
+      alvo: RECURSO_DE_MULTA_E_JUROS,
+      area: AREA_DE_MULTA_E_JUROS,
+    },
+    {
+      rotulo: `PUT ${RECURSO_DE_MULTA_E_JUROS}`,
+      metodo: 'PUT',
+      alvo: RECURSO_DE_MULTA_E_JUROS,
+      // Os MESMOS percentuais que o cenário já gravou: a rota é idempotente por construção, e assim o
+      // controle positivo exercita a escrita **sem** invalidar o que os passos 4 e 5 afirmaram.
+      corpo: { multaPercentual: MULTA_DO_CENARIO, jurosPercentual: JUROS_DO_CENARIO },
+      area: AREA_DE_MULTA_E_JUROS,
+    },
+  ];
+}
+
+/**
+ * Monta o cenário do `CT-534` **pelas rotas reais**: contrato, política de mora e duas cobranças.
+ *
+ * O contrato nasce com `gerarCobrancasAutomaticamente: false` e **não é ativado**: o lançamento avulso
+ * exige apenas que o contrato exista e esteja em circulação, e ativá-lo faria nascer as parcelas de
+ * aluguel do prazo inteiro — cobranças com vencimento no passado, que mudariam a contagem crua que
+ * este caso compara e nada acrescentariam ao que ele mede.
+ *
+ * As duas cobranças vencem **adiante** do relógio do banco, e por isso publicam `A_VENCER`: é o estado
+ * em que as duas transições são admitidas, o que faz o controle positivo poder existir.
+ */
+async function montarCenarioDeCobranca(credencial: string): Promise<CenarioDeCobranca> {
+  const partes = await criarAlvosDoDominio(credencial);
+  const montagem = await pedir(COLECAO_DE_CONTRATOS, {
+    metodo: 'POST',
+    cookie: credencial,
+    corpo: { ...corpoDeContrato(partes), gerarCobrancasAutomaticamente: false },
+  });
+
+  if (montagem.status !== 201) {
+    throw new Error(
+      `a montagem do contrato respondeu ${String(montagem.status)}: ${montagem.texto}`,
+    );
+  }
+
+  const contratoCodigo = (montagem.corpo as { codigo: string }).codigo;
+
+  const politica = await pedir(RECURSO_DE_MULTA_E_JUROS, {
+    metodo: 'PUT',
+    cookie: credencial,
+    corpo: { multaPercentual: MULTA_DO_CENARIO, jurosPercentual: JUROS_DO_CENARIO },
+  });
+
+  if (politica.status !== 200) {
+    throw new Error(
+      `a definição da política respondeu ${String(politica.status)}: ${politica.texto}`,
+    );
+  }
+
+  const corpoDeLancamento = await corpoDeCobranca(contratoCodigo);
+  const paraPagar = await lancarCobranca(credencial, corpoDeLancamento);
+  const paraCancelar = await lancarCobranca(credencial, corpoDeLancamento);
+
+  // Precondição AFIRMADA: as duas nascem em aberto. Sem esta conferência, uma cobrança já vencida
+  // faria o controle positivo medir a guarda de ESTADO em vez da de autorização.
+  for (const cobranca of [paraPagar, paraCancelar]) {
+    if (cobranca.status !== ESTADO_EM_ABERTO) {
+      throw new Error(`a cobrança ${cobranca.codigo} nasceu ${cobranca.status}`);
+    }
+  }
+
+  return { contratoCodigo, paraPagar, paraCancelar, corpoDeLancamento };
+}
+
+/** Lança uma cobrança pela rota real e devolve o corpo publicado. A falha levanta. */
+async function lancarCobranca(
+  credencial: string,
+  corpo: Record<string, unknown>,
+): Promise<CobrancaPublicada> {
+  const resposta = await pedir(COLECAO_DE_COBRANCAS, { metodo: 'POST', cookie: credencial, corpo });
+
+  if (resposta.status !== 201) {
+    throw new Error(`o lançamento respondeu ${String(resposta.status)}: ${resposta.texto}`);
+  }
+
+  return resposta.corpo as CobrancaPublicada;
+}
+
+/** Lê uma cobrança pela rota real, com a sessão informada. A falha levanta. */
+async function lerCobranca(credencial: string, codigo: string): Promise<unknown> {
+  const resposta = await pedir(`${COLECAO_DE_COBRANCAS}/${codigo}`, { cookie: credencial });
+
+  if (resposta.status !== 200) {
+    throw new Error(
+      `a leitura de ${codigo} respondeu ${String(resposta.status)}: ${resposta.texto}`,
+    );
+  }
+
+  return resposta.corpo;
+}
+
+/** Lê a política de mora pela rota real, com a sessão informada. A falha levanta. */
+async function lerPolitica(credencial: string): Promise<unknown> {
+  const resposta = await pedir(RECURSO_DE_MULTA_E_JUROS, { cookie: credencial });
+
+  if (resposta.status !== 200) {
+    throw new Error(
+      `a leitura da política respondeu ${String(resposta.status)}: ${resposta.texto}`,
+    );
+  }
+
+  return resposta.corpo;
+}
+
+/**
+ * O corpo de um lançamento válido sobre o contrato informado, com as datas **lidas do relógio do
+ * banco**.
+ *
+ * A competência é o primeiro dia do mês do vencimento — forma que o `refine` do contrato e o
+ * `cobranca_competencia_no_primeiro_dia_chk` do banco exigem. A projeção é feita por `to_char` no
+ * banco, e não por `Date` em JavaScript: as duas viajam como `YYYY-MM-DD`, e construir um `Date` aqui
+ * reintroduziria o deslocamento de dia por fuso que a coluna `date` existe para evitar.
+ */
+async function corpoDeCobranca(contratoCodigo: string): Promise<Record<string, unknown>> {
+  const datas = await contextoDeTenant.executarCom(
+    { empresaId: EMPRESA_A.id },
+    async () =>
+      await acessoAoNegocio.emUnidadeDeTrabalho(async (tx) => {
+        const [linha] = await tx<{ competencia: string; vencimento: string }[]>`
+          SELECT to_char(
+                   date_trunc(
+                     'month',
+                     negocio.data_corrente_da_operacao()
+                       + make_interval(days => ${DIAS_ATE_O_VENCIMENTO})
+                   ),
+                   'YYYY-MM-DD'
+                 ) AS competencia,
+                 to_char(
+                   negocio.data_corrente_da_operacao()
+                     + make_interval(days => ${DIAS_ATE_O_VENCIMENTO}),
+                   'YYYY-MM-DD'
+                 ) AS vencimento
+        `;
+
+        if (linha === undefined) {
+          throw new Error('o relógio do banco não devolveu as datas do cenário');
+        }
+
+        return linha;
+      }),
+  );
+
+  return {
+    contratoCodigo,
+    natureza: NATUREZA_DO_CENARIO,
+    referencia: REFERENCIA_DO_CENARIO,
+    competencia: datas.competencia,
+    dataVencimento: datas.vencimento,
+    valorOriginal: VALOR_DA_COBRANCA,
+  };
+}
+
+/**
+ * O `xmin` da tupla da cobrança — o identificador da transação que gravou a versão corrente da linha.
+ *
+ * É a única leitura deste arquivo que observa coluna de sistema, e ela é **observação**, não caminho de
+ * leitura de produto: o `xmin` muda a cada `UPDATE`, e é por isso que a igualdade entre duas medições
+ * separa *recusado* de *aceito sem efeito visível*. A empresa entra pelo **contexto**, e nenhum
+ * `WHERE empresa_id` é escrito — quem recorta é a política (ADR-0008).
+ */
+async function xminDaCobranca(codigo: string): Promise<string> {
+  return await contextoDeTenant.executarCom(
+    { empresaId: EMPRESA_A.id },
+    async () =>
+      await acessoAoNegocio.emUnidadeDeTrabalho(async (tx) => {
+        const [linha] = await tx<{ xmin: string }[]>`
+          SELECT xmin::text AS xmin FROM negocio.cobranca WHERE codigo = ${codigo}
+        `;
+
+        if (linha === undefined) {
+          throw new Error(`a cobrança ${codigo} não foi alcançada para a leitura do xmin`);
+        }
+
+        return linha.xmin;
+      }),
+  );
+}
+
+/** A linha crua da política de mora da empresa A: os percentuais **gravados** e o `xmin` dela. */
+async function linhaDaPolitica(): Promise<{
+  multaPercentual: string;
+  jurosPercentual: string;
+  xmin: string;
+}> {
+  return await contextoDeTenant.executarCom(
+    { empresaId: EMPRESA_A.id },
+    async () =>
+      await acessoAoNegocio.emUnidadeDeTrabalho(async (tx) => {
+        const [linha] = await tx<
+          { multaPercentual: string; jurosPercentual: string; xmin: string }[]
+        >`
+          SELECT multa_percentual::text AS "multaPercentual",
+                 juros_percentual::text AS "jurosPercentual",
+                 xmin::text AS xmin
+            FROM negocio.configuracao_de_mora
+        `;
+
+        if (linha === undefined) {
+          throw new Error('a política de mora da empresa A não foi alcançada');
+        }
+
+        return linha;
+      }),
+  );
+}
+
+/**
+ * Quantas linhas de `negocio.cobranca` o contexto da empresa informada alcança.
+ *
+ * A contagem é **crua** e sem recorte: o que o `CT-534` mede é se alguma linha nasceu. Nenhum
+ * `WHERE empresa_id` é escrito — quem recorta é a política (ADR-0008) —, e ela lê a **tabela**, não a
+ * visão: o que se quer saber é se a linha física existe.
+ */
+async function contarCobrancas(empresaId: string): Promise<number> {
+  return await contextoDeTenant.executarCom(
+    { empresaId },
+    async () =>
+      await acessoAoNegocio.emUnidadeDeTrabalho(async (tx) => {
+        const [linha] = await tx<{ total: string }[]>`
+          SELECT count(*) AS total FROM negocio.cobranca
+        `;
+
+        return Number(linha?.total ?? 0);
+      }),
+  );
+}
 
 // ---------------------------------------------------------------------------------------------
 // Arranjo — tudo pelo caminho real
@@ -1302,15 +1974,23 @@ async function ajustar(
  * A troca não é conveniência: sem ela a sessão fica RESTRITA (RN-09), e o `403` que ela produz viria
  * da restrição — não da autorização, que é o eixo do caso. É o mesmo arranjo, pelas mesmas rotas, de
  * `circulacao-de-cadastro.e2e.spec.ts`.
+ *
+ * O **perfil é parâmetro**, com `USUARIO_EMPRESA` por padrão — o valor que todos os chamadores
+ * anteriores usavam, de modo que nenhum deles muda de comportamento. Ele existe porque o eixo de
+ * indistinguibilidade do `CT-534` precisa de duas sessões de **perfis diferentes** recusadas pela mesma
+ * rota, e os dois perfis administráveis pela rota do Admin são exatamente estes dois.
  */
-async function pessoaOperandoComSenhaTrocada(prefixo: string): Promise<PessoaEmOperacao> {
+async function pessoaOperandoComSenhaTrocada(
+  prefixo: string,
+  perfil: 'ADMIN_EMPRESA' | 'USUARIO_EMPRESA' = 'USUARIO_EMPRESA',
+): Promise<PessoaEmOperacao> {
   const criada = await pedir(CAMINHO_DAS_PESSOAS, {
     metodo: 'POST',
     cookie: cookiePleno,
     corpo: {
       nome: 'Pessoa Que Só Administra Cadastros',
       email: `${prefixo}.${randomUUID()}@exemplo.com.br`,
-      perfil: 'USUARIO_EMPRESA',
+      perfil,
     },
   });
 
@@ -1346,8 +2026,14 @@ interface PessoaEmOperacao {
   readonly cookie: string;
 }
 
-/** A sessão do produto, no que este arquivo observa dela. */
+/**
+ * A sessão do produto, no que este arquivo observa dela.
+ *
+ * `perfil` entra com o `CT-534`: é ele que torna *"indistinguível entre perfis"* uma afirmação
+ * verificável, em vez de uma suposição sobre como as duas pessoas foram criadas.
+ */
 interface SessaoPublicada {
+  readonly perfil: string;
   readonly telas: readonly string[];
   readonly acoes: readonly string[];
 }

@@ -22,4 +22,5 @@ steps:
   execution:
     status: in_progress
     tasks_total: 11
-    tasks_completed: 9
+    tasks_completed: 10
+    summary: "10/11 tasks concluídas e aprovadas nos dois gates, todas staged sem commit. Suíte 687 → 834, build e lint verdes. Falta apenas a T1 — captura do oráculo da régua de cobrança —, diferida por decisão: exige sudo interativo e o site efêmero do /opt/frappe, e a §7 dela declara que nenhum subagente a conduz. 10 dos 13 Critérios de Conclusão da Feature satisfeitos; os 3 abertos dependem exclusivamente da T1. Nenhuma task bloqueada."

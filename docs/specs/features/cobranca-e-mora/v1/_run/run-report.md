@@ -4,7 +4,12 @@
 
 ## 1. Resumo do Run
 
-Status: **9/11 tasks concluídas** · suíte **687 → 832** casos, verde · `pnpm build` e `pnpm lint` verdes.
+Status: **10/11 tasks concluídas** · suíte **687 → 834** casos, verde · `pnpm build` e `pnpm lint` verdes.
+
+**A única task restante é a T1**, diferida por decisão do usuário — ela exige `sudo` com senha
+interativa e o site efêmero do `/opt/frappe` de pé, e **nenhum subagente a executa**. Nada nas outras
+dez depende dela. Enquanto ela não rodar, a fatia fica em **10/11** e o Status geral do `task_plan.md`
+**não** vai a `Concluído`.
 
 | Task | Nome | Modelo | Arquivos | QA | Tech Review |
 |------|------|--------|----------|-----|-------------|
@@ -17,6 +22,7 @@ Status: **9/11 tasks concluídas** · suíte **687 → 832** casos, verde · `pn
 | T8 | `derivarParcelasDoContrato` — a função pura das parcelas, provada contra o oráculo | opus | 2 criados, 5 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
 | T9 | A ativação do contrato gera as parcelas na mesma unidade de trabalho — **fecha o D28** | opus | 0 criados, 13 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
 | T10 | O cancelamento do contrato cancela as cobranças em cascata, na mesma unidade | opus | 0 criados, 8 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
+| T11 | Cobertura de autorização das sete rotas novas e as âncoras finais da superfície | opus | 0 criados, 2 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
 
 > **T1 não está nesta tabela por decisão de ordenação, não por bloqueio.** Ela exige `sudo` com senha
 > interativa e o site efêmero do `/opt/frappe` de pé — nenhum subagente a executa. Fica para o fim do
@@ -701,37 +707,135 @@ ambíguo o único identificador que a §3-B da `nao-regressao.md` reconhece.
 `CT-540 (b)` em `packages/contracts/test/esquemas.spec.ts` — as duas asserções de congelamento de
 `ESTADOS_EM_ABERTO`. **O número está queimado**, pela mesma razão do D7.
 
+### D39 · baixo · dead_code · T11 · QA
+
+- **Onde:** `apps/api/test/autorizacao-do-dominio.e2e.spec.ts:1424`
+- **Problema:** `montarCenarioDeCobranca` devolve `contratoCodigo` e a interface `CenarioDeCobranca` o
+  declara, mas o CT-534 nunca lê `cenario.contratoCodigo` — ele só consome `paraPagar`, `paraCancelar`
+  e `corpoDeLancamento`. O código do contrato já viaja dentro de `corpoDeLancamento`, montado por
+  `corpoDeCobranca(contratoCodigo)`.
+- **Impacto:** campo morto na superfície do acessório, não defeito de prova: nenhuma asserção depende
+  dele e nenhuma deixa de existir por causa dele.
+- **O que fazer:** remover `contratoCodigo` da interface e do objeto devolvido (a variável local segue
+  necessária para `corpoDeCobranca`), ou consumi-lo numa asserção se a intenção era ancorar o cenário
+  ao contrato.
+
+### D40 · baixo · code_quality · T11 · QA
+
+- **Onde:** `apps/api/test/autorizacao-do-dominio.e2e.spec.ts:1160`
+- **Problema:** três asserções do CT-534 são logicamente implicadas por asserções anteriores do mesmo
+  caso — `recusadas.length` igual a 7 (o laço percorre `tabela` sem `break`/`continue`, e o tamanho de
+  `tabela` já foi afirmado), `alcancadas` igual a `recusadas` (dois laços completos sobre a MESMA
+  tabela, na mesma ordem) e `conferidas.length` igual a 5 (cardinalidade já afirmada).
+- **Impacto:** nenhum. O QA foi explícito ao **não** classificar como AP-29: em `tautological_assertion`
+  o ramo sempre-verdadeiro **substitui** a prova e deixa a afirmação por provar; aqui as três são
+  verdadeiras e garantidas por outras asserções do mesmo caso — redundância decorativa, não prova
+  ausente disfarçada. As asserções que discriminam (403 por rota, envelope inteiro por igualdade, 2xx
+  no controle positivo, corpo idêntico entre perfis) estão íntegras e falham de verdade, o que foi
+  medido no MT11-2.
+- **O que fazer:** manter apenas as duas asserções de cardinalidade sobre a tabela, que são as que de
+  fato pegam um inventário truncado; ou mantê-las como guarda contra `continue`/`break` futuros,
+  registrando essa intenção num comentário. Como remover asserção é ato coberto pelo Protocolo
+  Antirregressão, o caminho de menor risco é anotar e não mexer agora.
+
+### D41 · BAIXO · code_quality · T11 · Tech Review
+
+- **Onde:** `apps/api/test/autorizacao-do-dominio.e2e.spec.ts:54` e `:928`
+- **Problema:** as duas passagens afirmam que a área é ajustada *"pelo caminho real de administração"*,
+  mas o acessório usado é `ajustar()` (linha 1952), que escreve por `escreverAjustes` sob
+  `contextoDeTenant.executarCom` — o docblock do próprio `ajustar()` é mais preciso ao dizer *"pelo
+  caminho REAL da camada de dados… é o mesmo caminho que a rota do Admin usa por dentro"*. A rota
+  `POST /v1/usuarios/...` do Admin não é exercitada no arranjo do CT-534.
+- **Impacto:** nenhum funcional — a garantia auditada (sessão não forjada, `versaoPermissoes`
+  incrementada pela função de domínio, efetivo confirmado por `GET /v1/sessao`) está de fato
+  construída. O custo é de leitura futura: neste repositório o comentário é o veículo da decisão, e uma
+  linha que reivindica cobertura de borda HTTP mais forte que a real induz o próximo agente a acreditar
+  que o caminho de escrita do Admin está sob prova aqui.
+- **O que fazer:** trocar *"pelo caminho real de administração"* por *"pelo mesmo caminho de domínio
+  que a rota do Admin usa por dentro"* nas duas ocorrências, preservando o restante do texto.
+
+### D42 · BAIXO · code_quality · T11 · Tech Review
+
+- **Onde:** `apps/api/test/cobertura-de-autorizacao.e2e.spec.ts:2025-2039`
+- **Problema:** quatro asserções do bloco *"O predicado da ADR-0011"* do CT-533 já são consequência de
+  outras do mesmo arquivo — `semDeclaracao` vazio já é afirmado nas linhas 1764 e 1957, e as três
+  filtragens de `PARES_DA_FATIA_DE_COBRANCA` contra `comExigencia`, `publicas` e `foraDoArcabouco` são
+  implicadas pelo **CT-213**, que compara os mesmos conjuntos por **igualdade de arranjo** (mais forte
+  que pertencimento filtrado).
+- **Impacto:** nenhum — leituras de metadado sem I/O, e a duplicação não afrouxa nada. O custo é de
+  manutenção: quatro pontos a mais para atualizar quando o inventário mudar, e o risco de um leitor
+  futuro tratar o CT-533 como guardião de `semDeclaracao` e enfraquecer o CT-213 achando-o redundante.
+- **O que fazer:** manter as asserções, anotando no comentário do bloco que são pré-condição local de
+  diagnóstico e que a prova forte da partição é a igualdade de arranjo do CT-213 (linhas 1639-1646) —
+  o mesmo tipo de nota que o arquivo já usa em *"Por que o CT-533 existe ao lado do CT-355 e do
+  CT-427"*. Alternativa: removê-las e citar o CT-213 por nome.
+
+### D43 · BAIXO · code_quality · T11 · Tech Review
+
+- **Onde:** `apps/api/test/autorizacao-do-dominio.e2e.spec.ts:1991`
+- **Problema:** o literal `nome: 'Pessoa Que Só Administra Cadastros'` ficou fixo no corpo de criação.
+  Com o parâmetro de perfil que a T11 introduziu, o mesmo acessório passa a criar o sujeito
+  `admin.sem.financeiro` com perfil `ADMIN_EMPRESA` — que não é uma pessoa que só administra cadastros:
+  a matriz do `ADMIN_EMPRESA` é o catálogo inteiro, e é por isso que o caso precisa **retirar** a área
+  dele.
+- **Impacto:** nenhum funcional — o campo `nome` não participa de asserção alguma. Custo de
+  legibilidade em diagnóstico: quem inspecionar a tabela de usuários numa falha do CT-534 lê um rótulo
+  que contradiz o perfil da linha.
+- **O que fazer:** compor o nome a partir do parâmetro (por exemplo `Pessoa de teste (${perfil})`), ou
+  aceitar o nome como argumento com o literal atual como padrão.
+
 ## 3. Tasks Bloqueadas
 
 ✅ Nenhuma task bloqueada.
 
 ## 4. Notas para Revisão Humana
 
-> ### ⏸️ O RUN ESTÁ PAUSADO DE NOVO — 2026-08-10, a pedido do usuário
+> ### ⚠️ Achado PRÉ-EXISTENTE que o fechamento da fatia encontrou — o `CT-013` está vermelho
 >
-> **Ponto de parada**: o **executor da T11 concluiu** e os **dois gates dela NÃO rodaram**. É o mesmo
-> ponto da primeira pausa, cinco tasks adiante. **T2 a T10 estão concluídas e staged**; a T11 está
-> `Em Progresso`, com o código no working tree — e como ela só **modificou** dois arquivos de teste,
-> não há arquivo untracked e **nada pode se perder**.
+> `bash deploy/scripts/caracterizacao/verificar-golden.sh` termina **REPROVADO** por um caso só, o
+> **CT-013**: *"a credencial aparece na árvore versionada"*, apontando `packages/auth/test/senha.spec.ts`,
+> `packages/db/src/pessoa.ts` e `packages/db/src/semente.ts`.
 >
-> **Para retomar**, reinvoque a mesma skill com os mesmos argumentos e escolha
-> **(a) "Retomar nos gates"** — foi o caminho que funcionou na primeira pausa:
+> **Não é regressão desta fatia, e a prova é direta**: o verificador foi executado num **worktree limpo
+> no `fb93915`** — o `base_sha`, antes de qualquer trabalho do run — e reprova **idêntico**, ali com
+> **mais** ocorrências (13 contra 7), justamente porque o worktree limpo não tem os arquivos que a fatia
+> criou. Os três arquivos apontados são **intocados** pela fatia: `git diff fb93915` sobre cada um volta
+> vazio.
 >
-> ```
-> /agent-spec-sdd-run-tasks docs/specs/features/cobranca-e-mora/v1/task_plan.md sysloc-backend-implementer
-> ```
+> **Causa provável: colisão de agulha, não vazamento.** O próprio script documenta que a credencial do
+> ambiente legado é *"uma palavra de dicionário de 5 caracteres"* e que o casamento é **por token** sobre
+> a árvore versionada inteira — de modo que qualquer literal de teste igual àquela palavra acusa. Isso
+> **não** é conclusão fechada: quem for fechar o item precisa abrir os pontos apontados e decidir se é
+> colisão ou vazamento real. O que está provado é apenas que a fatia não o causou.
 >
-> O bloco **"⏸️ PAUSA DO RUN — 2026-08-10 (segunda pausa)"** ao fim do `_run/workflow-report.md` carrega
-> **tudo** que a retomada precisa: o sumário do executor da T11 para os gates receberem inline, a
-> baseline por unidade (**832 → 834**), o `t10_sha` com a receita para recriá-lo se o `git gc` o podar,
-> os quatro pontos a auditar com rigor, e a lista do que falta para fechar a fatia depois dos gates.
+> Registrado conforme o **P1** do Protocolo Antirregressão (*"se a baseline já estiver vermelha, isso é
+> informação, não obstáculo"*) e deliberadamente **não** consertado aqui — não é causa-raiz de nada
+> desta fatia, e mexer nele seria a Proibição 5.
 >
-> ⚠️ **Não faça `git add` da T11 antes dos gates** — o índice hoje é exatamente T2..T10, e é isso que
-> torna o `t10_sha` recriável.
+> ---
+>
+> ### ▶️ O RUN FOI RETOMADO DA SEGUNDA PAUSA — 2026-08-10, e a T11 fechou
+>
+> A pausa parou o run com o **executor da T11 concluído e os dois gates dela sem rodar** — o mesmo
+> ponto da primeira pausa, cinco tasks adiante. A retomada escolheu **(a) "Retomar nos gates"**, e os
+> dois rodaram sobre o código íntegro: QA `APROVADO_COM_OBSERVACOES` (13/13 critérios, 2/2 CTs, 0
+> bloqueantes) e Tech Review `APROVADO_COM_OBSERVACOES` (0 bloqueantes). **A T11 está concluída e
+> staged**, e com ela **as dez tasks executáveis da fatia**.
+>
+> O `t10_sha` (`469a6a03…`) sobreviveu à pausa e isolou o delta da T11 para o Gate 2 — **2 arquivos,
+> +1042/−5**, em vez das T2..T11 somadas. O que os blocos de pausa diziam sobre *"como retomar"* já foi
+> cumprido e não se aplica mais; eles seguem no `_run/workflow-report.md` como registro histórico.
+>
+> **⚠️ Duas autorizações permanentes do usuário passaram a valer na retomada, e valem até o fim do
+> run**: (1) nenhuma pausa para pergunta — toda escalada que iria a `AskUserQuestion` assume a opção
+> recomendada e segue; (2) o **teto de 3 tentativas por task fica suspenso** — o loop de correção
+> prossegue até não restar bloqueante. Nenhuma das duas afrouxa gate: os critérios de aprovação seguem
+> idênticos e o Protocolo Antirregressão continua com força máxima. Na prática **nenhuma das duas
+> chegou a ser exercida na T11** — ela aprovou nos dois gates na primeira rodada, sem escalada.
 >
 > **A T1 segue diferida por decisão** (exige `sudo` interativo e o site efêmero do `/opt/frappe` de pé;
-> nada na fatia depende dela). Enquanto ela não rodar, a fatia fica em **10/11** e o `task_plan.md`
-> **não** deve ir a `Concluído`.
+> nenhum subagente a executa, e nada na fatia depende dela). Enquanto ela não rodar, a fatia fica em
+> **10/11** e o Status geral do `task_plan.md` **não** vai a `Concluído`.
 >
 > ---
 >

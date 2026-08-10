@@ -53,10 +53,78 @@
  * |       |        | manipuladores, cada uma medida por varredura própria. (ADR-0011, ADR-0018,
  * |       |        | ADR-0019) |
  *
+ * | CA-17 | CT-533 | As **sete rotas da fatia `cobranca-e-mora`** — cinco de `/v1/cobrancas` e duas
+ * |       |        | de `/v1/multa-e-juros` — exigem, pela declaração da CLASSE, **exatamente**
+ * |       |        | `TELA:financeiro` e `TELA:multa_e_juros`, afirmado por igualdade de OBJETO sobre
+ * |       |        | o retrato das sete; **nenhuma** exige chave `ACAO:`, e a asserção NOMEIA a que
+ * |       |        | encontrar; nenhuma declara nada no MÉTODO; `semDeclaracao` é vazio; a superfície
+ * |       |        | publicada fecha em **82** pares e **67** manipuladores, por **duas medições
+ * |       |        | independentes que têm de concordar** — a divergência reprova nomeando os dois
+ * |       |        | números; e o catálogo fechado continua com as **mesmas 10 áreas**, com as duas
+ * |       |        | ações de `TELA:financeiro` e **nenhuma** em `TELA:multa_e_juros`. (ADR-0011,
+ * |       |        | ADR-0018, ADR-0021) |
+ *
  * Rastreabilidade: `CA-23 → CT-212 (RN-14)`, `CA-23 → CT-213 (RN-14)`, `CA-23 → CT-355 (RN-14)`.
  * Acrescida pela T11 da fatia `cadastro-de-imoveis-e-pessoas`: `CA-12 → CT-318 (RN-14)`.
  * Acrescida pela T10 da fatia `contratos-de-locacao`: `CA-16 → CT-427 (RN-13)`,
  * `CA-17 → CT-427 (RN-14)`.
+ * Acrescida pela T11 da fatia `cobranca-e-mora`: `CA-17 → CT-533 (RN-14)`.
+ *
+ * ===========================================================================
+ * Por que o CT-533 existe ao lado do CT-355 e do CT-427
+ * ===========================================================================
+ *
+ * Os três leem metadado da mesma superfície e respondem perguntas diferentes, e nenhuma das três
+ * implica as outras:
+ *
+ *   * o **`CT-355`** pergunta *"algum manipulador declara MENOS do que a classe dele exige?"* — e é
+ *     cego para as sete rotas desta fatia, porque nenhuma declara coisa alguma no método: não há
+ *     substituição a detectar onde não há declaração de método;
+ *   * o **`CT-427`** pergunta *"o que exatamente cada uma das QUATRO governadas de contrato declara no
+ *     método, e em que ordem?"* — e o mapa dele não alcança rota que declara só pela classe;
+ *   * o **`CT-533`** pergunta *"qual é a exigência EFETIVA de cada uma das sete rotas desta fatia, e
+ *     alguma passou a exigir chave de ação?"*. É a única das três que reprovaria uma conjunção
+ *     `@ExigeChaves(TELA:financeiro, ACAO:emitir_boleto)` acrescentada a uma transição de cobrança —
+ *     forma que **contém** a da classe (o `CT-355` fica verde) e que não pertence ao mapa do `CT-427`.
+ *
+ * Essa terceira pergunta é a que fecha a ADR-0021 para esta fatia. A classificação dos sete atos como
+ * **operacionais** foi escalada e confirmada antes da spec, e a emenda de 2026-08-10 da ADR-0021 a
+ * registrou nominalmente; sem uma asserção sobre o conteúdo efetivo, uma rodada futura acrescentaria a
+ * chave por conveniência — a forma intuitiva, e a que o Gate 2 da T7 já leu como violação — sem que
+ * nada na suíte reprovasse.
+ *
+ * ---------------------------------------------------------------------------
+ * MUTANTES DA T11 — MT11-1, MT11-2 e MT11-3 (2026-08-10), a falsificação do `CT-533`
+ * ---------------------------------------------------------------------------
+ *
+ * O `CT-533` é asserção **estática** — ele inspeciona metadado em vez de exercitar a borda —, e a
+ * `.claude/rules/testing-stack.md` exige que ela seja demonstrada **reprovando** com o defeito
+ * reintroduzido. Os três mutantes abaixo foram invocados pelo **script do pacote**
+ * (`pnpm --filter @sysloc/api test`), nunca por `vitest run` avulso: este arquivo carrega
+ * `@sysloc/auth` e `@sysloc/db` pela fronteira do pacote, e um `vitest run` leria o `dist/` da
+ * compilação anterior. **Controle**: `175 passed`.
+ *
+ *   * **MT11-1 · uma chave de ação acrescentada a uma das sete** — `@ExigeChaves(AREA_DO_FINANCEIRO,
+ *     'ACAO:emitir_boleto')` no manipulador de pagamento de `cobrancas/cobranca.controller.ts`, que é
+ *     a forma **conforme** à ADR-0018 (a do método CONTÉM a da classe) e por isso invisível para o
+ *     `CT-355`: `9 failed | 166 passed`, e o `CT-533` reprova na igualdade de objeto do retrato das
+ *     sete. O `CT-534` reprova junto, pelo **controle positivo** — *"POST /v1/cobrancas/:codigo/
+ *     pagamento respondeu 403 a quem TEM a área"*, com `exigido: ACAO:emitir_boleto` no corpo —, e é
+ *     a prova de que os dois casos se cobrem por eixos diferentes;
+ *   * **MT11-2 · o MESMO mutante, com a expectativa "corrigida"** — MT11-1 mais
+ *     `EXIGENCIA_DEVIDA_POR_MANIPULADOR` atualizada para incluir a chave nova, que é literalmente o
+ *     que uma rodada futura faria para ficar verde sem escalar: a igualdade de objeto passa, e a
+ *     asserção de ausência de `ACAO:` reprova **nomeando** o culpado —
+ *     `+ ["CobrancaController.acusarPagamento exige ACAO:emitir_boleto"]`. É por isso que as duas
+ *     asserções convivem: a segunda não é redundância, é a rede sob a primeira;
+ *   * **MT11-3 · a exigência retirada da classe e declarada em UM só manipulador** —
+ *     `@ExigeChave(AREA_DE_MULTA_E_JUROS)` sai de `MoraController` e vai para o `@Get()`, deixando o
+ *     `@Put()` sem declaração alguma: `14 failed | 161 passed`, e o `CT-533` reprova em
+ *     `semDeclaracao`, nomeando `{ metodo: 'PUT', caminho: '/v1/multa-e-juros', controlador:
+ *     'MoraController', manipulador: 'definir' }`. O `CT-534` reprova no **arranjo** (*"a definição da
+ *     política respondeu 403"*), porque a rota passou a recusar quem alcança a área;
+ *   * **reversão** — os dois fontes foram restaurados do backup e conferidos por `diff -q` e
+ *     `sha256sum` idênticos aos originais, e o controle voltou a `175 passed`.
  *
  * ===========================================================================
  * Por que o CT-318 existe ao lado do CT-213, que já afirma o mesmo conjunto
@@ -197,12 +265,12 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { Controller, Get, Post, type Type } from '@nestjs/common';
+import { Controller, Get, Post, RequestMethod, type Type } from '@nestjs/common';
 import { METHOD_METADATA } from '@nestjs/common/constants.js';
 import { DiscoveryService, MetadataScanner, ModulesContainer, Reflector } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
-import type { Exigencia } from '@sysloc/auth';
+import { CHAVES_DE_TELA, type Exigencia, MAPA_ACAO_TELA } from '@sysloc/auth';
 import { SENHA_DA_CARGA, USUARIO_MASTER } from '@sysloc/db';
 import { CodigoErro } from '@sysloc/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -1210,6 +1278,101 @@ const ROTAS_PUBLICADAS_EM_PRODUCAO = 82;
 const MANIPULADORES_EXAMINADOS_EM_PRODUCAO = 67;
 
 /**
+ * Quantos manipuladores da aplicação de produção atendem **todos** os verbos (`@All`) — hoje um só, o
+ * encaminhador de identidade.
+ *
+ * É o fator que liga as duas medições da superfície no `CT-533`, e por isso ele é **afirmado** junto
+ * com elas em vez de suposto: um manipulador `@All` novo acrescentaria **sete** pares e um só
+ * manipulador, e a composição que trata todo manipulador como um par erraria o total por seis sem que
+ * nada dissesse por quê.
+ */
+const MANIPULADORES_QUE_ATENDEM_TODOS_OS_VERBOS = 1;
+
+/** Quantos pares a fatia `cobranca-e-mora` publica — cinco de cobrança e dois de mora (§3.1 da T11). */
+const PARES_PUBLICADOS_PELA_FATIA_DE_COBRANCA = 7;
+
+/** O prefixo que separa o eixo das ações sensíveis do das áreas de tela, na chave do catálogo. */
+const PREFIXO_DA_CHAVE_DE_ACAO = 'ACAO:';
+
+/**
+ * As duas áreas de tela que governam a superfície da fatia `cobranca-e-mora` (§3.1 da T11).
+ *
+ * Literais escritos à mão, e **não** importados de `cobranca.controller.ts` nem de
+ * `mora.controller.ts`: as duas constantes de lá são privadas de propósito, e derivá-las da mesma
+ * fonte que o SUT usa para declarar faria a asserção do `CT-533` concordar consigo mesma — trocar a
+ * área do controlador deixaria de reprovar caso algum. Elas são o valor que o cliente lê em
+ * `detalhes.exigido`, e por isso a expectativa é escrita, não derivada.
+ */
+const AREA_DO_FINANCEIRO = 'TELA:financeiro';
+const AREA_DE_MULTA_E_JUROS = 'TELA:multa_e_juros';
+
+/**
+ * A exigência **efetiva** devida por cada um dos sete manipuladores da fatia — o que o `CT-533`
+ * audita por igualdade de OBJETO.
+ *
+ * O rótulo é `Controlador.manipulador`, o mesmo que o `CT-355` e o `CT-427` já usam, e o valor é a
+ * lista de átomos que `getAllAndOverride([alvo, classe])` — a MESMA chamada da guarda — devolve. As
+ * cinco de cobrança exigem exatamente `TELA:financeiro` e as duas de mora exatamente
+ * `TELA:multa_e_juros`, cada uma com **um** átomo e nenhuma chave de ação.
+ *
+ * **A ausência de chave `ACAO:` nas sete é decisão escalada e confirmada antes da spec**, e a
+ * evidência é o catálogo fechado: a `Decision` da **ADR-0021** nomeia *"acusar pagamento de cobrança"*
+ * e *"cancelar cobrança"* entre as instâncias da classe que exige **apenas a área**, e
+ * `MAPA_ACAO_TELA` não tem ação alguma para lançar, ler, pagar ou cancelar cobrança — nem qualquer
+ * ação dentro de `TELA:multa_e_juros`. Este mapa é a rede que impede uma rodada futura de acrescentar
+ * uma chave sem passar pela mesma escalada.
+ *
+ * Ele é **um objeto**, e não sete asserções soltas: uma exigência que sumisse de um manipulador
+ * reprovaria com o rótulo dele nomeado, e uma que aparecesse a mais reprovaria pelo excedente — as
+ * duas direções, numa comparação só.
+ */
+const EXIGENCIA_DEVIDA_POR_MANIPULADOR: Readonly<Record<string, readonly string[]>> = {
+  'CobrancaController.criar': [AREA_DO_FINANCEIRO],
+  'CobrancaController.listar': [AREA_DO_FINANCEIRO],
+  'CobrancaController.ler': [AREA_DO_FINANCEIRO],
+  'CobrancaController.acusarPagamento': [AREA_DO_FINANCEIRO],
+  'CobrancaController.cancelar': [AREA_DO_FINANCEIRO],
+  'MoraController.ler': [AREA_DE_MULTA_E_JUROS],
+  'MoraController.definir': [AREA_DE_MULTA_E_JUROS],
+};
+
+/** Os sete manipuladores auditados, derivados do mapa acima — a ordem é a de inserção dele. */
+const MANIPULADORES_DA_FATIA: readonly string[] = Object.keys(EXIGENCIA_DEVIDA_POR_MANIPULADOR);
+
+/**
+ * As **10 áreas de tela** do catálogo fechado, na ordem em que ele as enumera (RN-15, ADR-0011).
+ *
+ * Escritas à mão pela mesma razão das duas áreas acima: a asserção do `CT-533` é *"o catálogo continua
+ * com as mesmas chaves da fatia anterior"*, e derivá-la de `CHAVES_DE_TELA` a faria concordar consigo
+ * mesma — uma área nova entraria nos dois lados ao mesmo tempo. É por igualdade de **arranjo**, e não
+ * de conjunto: a ordem é a da decisão 38 do `plano-saas.md`, e o catálogo é congelado, não ordenado.
+ */
+const AREAS_DE_TELA_DO_CATALOGO: readonly string[] = [
+  'TELA:resumo',
+  'TELA:imoveis',
+  'TELA:contratos',
+  'TELA:cadastros',
+  'TELA:financeiro',
+  'TELA:automacao_de_cobranca',
+  'TELA:integracoes_bancarias',
+  'TELA:multa_e_juros',
+  'TELA:relatorios',
+  'TELA:usuarios',
+];
+
+/**
+ * As ações sensíveis que o catálogo fechado enumera **dentro de `TELA:financeiro`** — as duas que
+ * falam com o banco, e nenhuma para lançar, ler, pagar ou cancelar cobrança.
+ *
+ * É a evidência literal que a emenda de 2026-08-10 da **ADR-0021** cita para sustentar as duas
+ * instâncias novas da segunda classe. Em ordem alfabética, que é a do acessório que as extrai.
+ */
+const ACOES_SENSIVEIS_DO_FINANCEIRO: readonly string[] = [
+  'ACAO:emitir_boleto',
+  'ACAO:solicitar_baixa_de_boleto',
+];
+
+/**
  * Quantos pares a aplicação MUTANTE publica.
  *
  * Ela não publica o contrato — quem o faz é `criarAplicacao()`, e a montagem de verificação usa o
@@ -1843,6 +2006,123 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
       'ACAO:excluir_cadastro',
     ]);
   });
+
+  it('CT-533 — as sete rotas da fatia exigem a área devida e NENHUMA chave de ação; a superfície fecha em 82 pares / 67 manipuladores pelas duas medições', () => {
+    const cobertura = verificarCoberturaDeAutorizacao(aplicacaoReal);
+
+    // O inventário desta fatia tem sete pares — afirmado sobre o próprio inventário, antes de
+    // comparar com a superfície. Sem isto, uma lista truncada faria as igualdades abaixo passarem
+    // sobre menos rotas do que a fatia publica, que é o modo de falha silencioso desta classe.
+    expect(PARES_DA_FATIA_DE_COBRANCA.length).toBe(PARES_PUBLICADOS_PELA_FATIA_DE_COBRANCA);
+    expect(MANIPULADORES_DA_FATIA.length).toBe(PARES_PUBLICADOS_PELA_FATIA_DE_COBRANCA);
+
+    // ---------------------------------------------------------------------------------------
+    // O predicado da ADR-0011: `semDeclaracao` VAZIO, por igualdade de lista
+    // ---------------------------------------------------------------------------------------
+    //
+    // Igualdade de lista, e **nunca** `toHaveLength(0)`: a falha precisa nomear o par, o controlador
+    // e o manipulador que ficaram sem declaração — um comprimento diria apenas que há alguém.
+    expect(cobertura.semDeclaracao).toEqual([]);
+
+    // As sete constam do conjunto POSITIVO, nomeadas, e nenhuma escapou por `@RotaPublica()`, que é a
+    // escapatória que a existência da declaração sozinha não fecha: a guarda retorna antes para rota
+    // pública, e o conjunto sem declaração continuaria vazio.
+    expect(
+      PARES_DA_FATIA_DE_COBRANCA.filter((par) => !cobertura.comExigencia.includes(par)),
+    ).toEqual([]);
+    expect(PARES_DA_FATIA_DE_COBRANCA.filter((par) => cobertura.publicas.includes(par))).toEqual(
+      [],
+    );
+    expect(
+      PARES_DA_FATIA_DE_COBRANCA.filter((par) => cobertura.foraDoArcabouco.includes(par)),
+    ).toEqual([]);
+
+    // ---------------------------------------------------------------------------------------
+    // O CONTEÚDO das sete declarações, por igualdade de OBJETO
+    // ---------------------------------------------------------------------------------------
+    //
+    // A exigência é a **efetiva** — lida pelo MESMO `getAllAndOverride([alvo, classe])` da guarda —,
+    // e não o que está escrito no fonte: é ela que o cliente encontra. O mapa inteiro numa comparação
+    // só afirma as duas direções de uma vez: exigência que sumiu de um manipulador e exigência que
+    // apareceu a mais aparecem nomeadas pelo rótulo.
+    const efetivas = exigenciasEfetivasDe(aplicacaoReal, MANIPULADORES_DA_FATIA);
+
+    expect(efetivas).toEqual(EXIGENCIA_DEVIDA_POR_MANIPULADOR);
+
+    // NENHUMA das sete exige chave de ação, e a asserção **nomeia** a que encontrar — é por isso que
+    // ela não é um predicado booleano: a falha tem de dizer qual manipulador passou a exigir o quê,
+    // porque acrescentar chave de ação aqui exige a mesma escalada que classificou os sete atos como
+    // operacionais (ADR-0021), e não uma linha num decorador.
+    expect(chavesDeAcaoExigidasEm(efetivas)).toEqual([]);
+
+    // E a metade da FORMA: nenhuma das sete declara nada no MÉTODO — as sete valem pela declaração da
+    // classe. Sem esta linha, uma conjunção declarada no método com a mesma área satisfaria a
+    // igualdade acima; sem a igualdade, um manipulador que perdesse a classe inteira passaria aqui.
+    const noMetodoDaFatia = exigenciasDeclaradasNoMetodo(aplicacaoReal);
+
+    expect(MANIPULADORES_DA_FATIA.filter((rotulo) => noMetodoDaFatia.has(rotulo))).toEqual([]);
+
+    // O par que discrimina: um manipulador que **declara** no método continua sendo visto como tal
+    // pela mesma varredura. Sem ele, "nenhuma das sete declara no método" seria satisfeito por uma
+    // varredura que não enxergasse declaração de método alguma.
+    expect(noMetodoDaFatia.get('ContratoController.cancelar')).toEqual([
+      'TELA:contratos',
+      'ACAO:cancelar_contrato',
+    ]);
+
+    // ---------------------------------------------------------------------------------------
+    // As duas âncoras FINAIS da fatia, por DUAS medições independentes que têm de concordar
+    // ---------------------------------------------------------------------------------------
+    //
+    // A primeira lê a **tabela do roteador** já montado; a segunda varre os **decoradores dos
+    // controladores** e compõe: cada manipulador reivindica um par, salvo o `@All`, que reivindica os
+    // sete verbos do caminho dele, mais os nove pares registrados direto no adaptador, que não têm
+    // manipulador. Nenhuma é derivada da outra — é essa independência que mediu `75` onde a §11.2 da
+    // fatia anterior estimava `77`, e localizou o erro na soma em vez de no escopo entregue.
+    //
+    // As quatro grandezas viajam numa comparação só de propósito: se as duas medições divergirem, a
+    // falha **nomeia os dois números** lado a lado, e o errado é a âncora, nunca a medição. É a
+    // conferência FINAL da fatia — as âncoras já foram subidas por T5, T6 e T7, e aqui elas são
+    // apenas conferidas.
+    const manipuladores = manipuladoresExaminados(aplicacaoReal);
+    const comTodosOsVerbos = manipuladoresQueAtendemTodosOsVerbos(aplicacaoReal);
+    const pelaComposicao =
+      manipuladores -
+      comTodosOsVerbos +
+      comTodosOsVerbos * METODOS_DO_ENCAMINHADOR.length +
+      ROTAS_FORA_DO_ARCABOUCO.length;
+
+    expect(
+      {
+        peloRoteador: cobertura.rotasEnumeradas,
+        pelaComposicao,
+        manipuladores,
+        comTodosOsVerbos,
+      },
+      'as duas medições da superfície publicada precisam concordar: se divergirem, o errado é a âncora e não a medição',
+    ).toEqual({
+      peloRoteador: ROTAS_PUBLICADAS_EM_PRODUCAO,
+      pelaComposicao: ROTAS_PUBLICADAS_EM_PRODUCAO,
+      manipuladores: MANIPULADORES_EXAMINADOS_EM_PRODUCAO,
+      comTodosOsVerbos: MANIPULADORES_QUE_ATENDEM_TODOS_OS_VERBOS,
+    });
+
+    // ---------------------------------------------------------------------------------------
+    // O catálogo fechado NÃO foi aberto por esta fatia
+    // ---------------------------------------------------------------------------------------
+    //
+    // As dez áreas de tela, por igualdade de arranjo contra a lista escrita à mão: nenhuma área nova
+    // nasceu, e nenhuma saiu. É a metade executável do critério *"`catalogo-de-permissoes.ts` não foi
+    // tocado pela fatia inteira"* — a outra metade é a conferência do diff, que o Gate 2 faz.
+    expect([...CHAVES_DE_TELA]).toEqual(AREAS_DE_TELA_DO_CATALOGO);
+
+    // E o eixo das ações, nas duas áreas desta fatia: `TELA:financeiro` tem exatamente as duas que
+    // falam com o banco, e `TELA:multa_e_juros` **nenhuma**. É a evidência literal que a emenda de
+    // 2026-08-10 da ADR-0021 cita para sustentar a ausência de chave de ação nas sete — e é a
+    // asserção que reprova a rodada que "resolvesse" o problema criando a chave em vez de escalar.
+    expect(acoesSensiveisDaArea(AREA_DO_FINANCEIRO)).toEqual(ACOES_SENSIVEIS_DO_FINANCEIRO);
+    expect(acoesSensiveisDaArea(AREA_DE_MULTA_E_JUROS)).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -2141,6 +2421,77 @@ function declaracoesQueSubstituemAClasse(
 /** Quantos manipuladores a varredura de {@link manipuladoresDe} alcança — a âncora do CT-355. */
 function manipuladoresExaminados(aplicacao: NestFastifyApplication): number {
   return [...manipuladoresDe(aplicacao)].length;
+}
+
+/**
+ * Quantos manipuladores declaram atender **todos** os verbos (`@All`) — o fator da segunda medição do
+ * `CT-533`.
+ *
+ * O metadado é lido com a chave **do próprio arcabouço** e comparado com a enumeração dele
+ * (`RequestMethod.ALL`), exatamente como o módulo verificado faz: uma tabela local de números
+ * envelheceria em silêncio no dia em que o arcabouço inserisse um verbo no meio da enumeração.
+ */
+function manipuladoresQueAtendemTodosOsVerbos(aplicacao: NestFastifyApplication): number {
+  let total = 0;
+
+  for (const { alvo } of manipuladoresDe(aplicacao)) {
+    if (Reflect.getMetadata(METHOD_METADATA, alvo) === RequestMethod.ALL) {
+      total += 1;
+    }
+  }
+
+  return total;
+}
+
+/**
+ * A exigência **efetiva** de cada rótulo informado, num objeto — o retrato que o `CT-533` compara.
+ *
+ * Ela delega a {@link exigenciaEfetivaDoManipulador}, que **levanta** quando o rótulo não existe na
+ * varredura: um nome com erro de digitação produziria ausência, e ausência comparada a ausência
+ * passaria em silêncio, que é a forma de esta auditoria apodrecer sem que ninguém perceba.
+ */
+function exigenciasEfetivasDe(
+  aplicacao: NestFastifyApplication,
+  rotulos: readonly string[],
+): Record<string, readonly string[]> {
+  return Object.fromEntries(
+    rotulos.map((rotulo) => [rotulo, exigenciaEfetivaDoManipulador(aplicacao, rotulo)]),
+  );
+}
+
+/**
+ * As chaves de **ação** exigidas num retrato de exigências, cada uma com o manipulador que a exige.
+ *
+ * O resultado é uma lista de frases, e não um booleano nem uma contagem: a asserção do `CT-533` compara
+ * essa lista com `[]`, de modo que a falha **nomeia** o manipulador e a chave encontrada. Um predicado
+ * `não contém ACAO:` diria apenas que alguém passou a exigir alguma coisa, e quem lesse a falha teria
+ * de ir procurar onde — e é justamente o *onde* que decide se houve escalada ou linha copiada.
+ */
+function chavesDeAcaoExigidasEm(
+  exigencias: Readonly<Record<string, readonly string[]>>,
+): readonly string[] {
+  return Object.entries(exigencias)
+    .flatMap(([rotulo, atomos]) =>
+      atomos
+        .filter((atomo) => atomo.startsWith(PREFIXO_DA_CHAVE_DE_ACAO))
+        .map((atomo) => `${rotulo} exige ${atomo}`),
+    )
+    .sort();
+}
+
+/**
+ * As ações sensíveis que o catálogo fechado enumera dentro de uma área de tela.
+ *
+ * Extraídas de `MAPA_ACAO_TELA`, que é a **declaração** do eixo das ações (ver o cabeçalho de
+ * `packages/auth/src/catalogo-de-permissoes.ts`): uma ação existe porque tem entrada no mapa, e a área
+ * que a comporta é o valor dela. Ordenadas, para que a igualdade seja sobre o conjunto e não sobre a
+ * ordem de inserção do literal.
+ */
+function acoesSensiveisDaArea(area: string): readonly string[] {
+  return Object.entries(MAPA_ACAO_TELA)
+    .filter(([, tela]) => tela === area)
+    .map(([acao]) => acao)
+    .sort();
 }
 
 /**

@@ -244,3 +244,25 @@
 - Sinal: `repeated_fixture` · Origem: `agent-spec-qa-validator` · 2026-08-10T18:00:00Z
 
 ---
+
+## [repeated_assertion_shape] Recusa de autorização afirmada pelo envelope inteiro
+
+**Regra que isto sugere:** toda asserção de recusa por falta de alcance compara o envelope INTEIRO por igualdade de objeto, com `detalhes.exigido` igual à chave que a rota exige — nunca só o status nem só a presença de campos.
+
+**O que ela faria (simples):** a mesma forma de asserção já aparece em cinco pontos do arquivo de autorização do domínio, sempre escrita do zero. Uma regra escrita evitaria que a próxima fatia afirmasse apenas `status === 403`, que passaria mesmo se a recusa vazasse qual chave falta ou variasse de corpo entre perfis.
+
+- Evidência: envelope `{codigo: CodigoErro.ACESSO_NEGADO, mensagem: MENSAGEM_DE_ACESSO_NEGADO, detalhes: {exigido}}` afirmado por igualdade em 5 pontos do mesmo arquivo — `apps/api/test/autorizacao-do-dominio.e2e.spec.ts:549` — T11 / cobranca-e-mora v1
+- Sinal: `repeated_assertion_shape` · Origem: `agent-spec-qa-validator` · 2026-08-10T17:10:00Z
+
+---
+
+## [repeated_fixture] Sujeito de autorização montado pelo caminho real
+
+**Regra que isto sugere:** sujeito de prova de autorização nasce por `pessoaOperandoComSenhaTrocada` mais `ajustar`, com a área concedida ou retirada pela rota real de administração e a sessão admitida por login — nunca sessão forjada.
+
+**O que ela faria (simples):** quatro casos deste arquivo repetem exatamente esse arranjo, e é ele que impede a prova de medir a restrição de senha provisória em vez da autorização. Escrita, a regra pouparia cada fatia nova de redescobrir por que a troca de senha faz parte do arranjo.
+
+- Evidência: `pessoaOperandoComSenhaTrocada(...)` seguido de `ajustar(...)` em 4 casos do mesmo arquivo, 3 deles anteriores à T11 — `apps/api/test/autorizacao-do-dominio.e2e.spec.ts:589` — T11 / cobranca-e-mora v1
+- Sinal: `repeated_fixture` · Origem: `agent-spec-qa-validator` · 2026-08-10T17:10:00Z
+
+---

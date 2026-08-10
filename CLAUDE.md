@@ -63,7 +63,7 @@ estão versionados e são o oráculo das regras legadas para a F3 e a F5.
 pré-refinamento (`docs/specs/features/cobranca-mora-e-documentos/v1/pre-refinement.md`), pelo corte
 **por efeito colateral**: a fatia 1 não toca nada fora do banco, a fatia 2 é toda ação sobre o mundo.
 
-1. **`cobranca-e-mora` (v1) — EM ANDAMENTO, 9 de 11 tasks concluídas.** `negocio.cobranca` e
+1. **`cobranca-e-mora` (v1) — 10 de 11 tasks concluídas; só a T1 falta.** `negocio.cobranca` e
    `negocio.configuracao_de_mora`, a view `cobranca_derivada` com `security_invoker` como **fonte
    única do estado e da mora**, a série `COB-{ano}-{7 dígitos}` atrás de duas funções
    `SECURITY DEFINER`, e as **7 rotas novas** (superfície em **82/67**). **Fechou o D28 (F2/T7)** na T9,
@@ -73,21 +73,32 @@ pré-refinamento (`docs/specs/features/cobranca-mora-e-documentos/v1/pre-refinem
    contrato contra o golden textual, carnê com `pdf-lib` no servidor (fecha o **D36 (F2/T8)**).
    ~1.800 LOC — o pré-refinamento registra que ela **pode precisar partir de novo**.
 
-> ⏸️ **O run da fatia 1 está PAUSADO a pedido do usuário — segunda pausa, 2026-08-10.** O ponto de
-> parada é exato e é o **mesmo formato da primeira**: **o executor da T11 concluiu, e os dois gates da
-> T11 NÃO rodaram.** T2–T10 aprovadas nos dois gates e **staged sem commit** (nove tasks); T11 no
-> working tree, só com **modificações** em dois arquivos de teste — nenhum arquivo untracked, nada a
-> perder. A **T1 segue diferida por decisão** — exige `sudo` interativo e o site efêmero do
-> `/opt/frappe` de pé, nenhum subagente a executa, e nada na fatia depende dela. Retomar é reinvocar
-> `/agent-spec-sdd-run-tasks docs/specs/features/cobranca-e-mora/v1/task_plan.md sysloc-backend-implementer`
-> e escolher **"Retomar nos gates"** — foi o caminho que funcionou na primeira pausa. O bloco
-> **"⏸️ PAUSA DO RUN — 2026-08-10 (segunda pausa)"** ao fim do `_run/workflow-report.md` da fatia
-> carrega o sumário do executor da T11 para os gates receberem inline, a baseline por unidade, o
-> `t10_sha` com a receita para recriá-lo, os quatro pontos a auditar e o que falta para fechar a fatia
-> — **leia-o antes de retomar**. ⚠️ **Não faça `git add` da T11 antes dos gates**: o índice hoje é
-> exatamente T2..T10, e é isso que torna o `t10_sha` recriável.
+> ✅ **O run da fatia 1 TERMINOU em 2026-08-10** — retomado da segunda pausa pelo caminho
+> **"Retomar nos gates"**, os dois gates da T11 rodaram e **aprovaram** (`APROVADO_COM_OBSERVACOES` nos
+> dois, 0 bloqueantes, rodada única). **As dez tasks executáveis estão concluídas e staged**, e
+> **10 dos 13 Critérios de Conclusão da Feature** estão satisfeitos e conferidos um a um na §7 do
+> `task_plan.md`.
 >
-> **Nada foi commitado** — o HEAD segue em `fb93915` desde o início do run. A **ADR-0021 foi emendada**
+> **Os TRÊS critérios abertos dependem exclusivamente da T1**, que segue **diferida por decisão**: as
+> 11 tasks (hoje 10/11), o `verificar-golden.sh` afirmando **10** artefatos (afirma **9** — o 10º é o
+> `regua-de-cobranca.json` que ela produz) e o `PROCEDENCIA.md` declarando o nível da ordem de queda.
+> A T1 exige **`sudo` com senha interativa** (o `sudo -n` recusa) e o site efêmero do `/opt/frappe`, e a
+> **§7 da própria task declara que nenhum subagente a conduz**. Some-se um risco medido: o script roda
+> `bench --site frontend backup` na **produção** e restaura o dump, com o disco em **94% e 2,0 GB
+> livres**. É execução do operador, não de agente. **Enquanto ela não rodar, o Status geral do
+> `task_plan.md` não vai a `Concluído`.**
+>
+> ⚠️ **Achado PRÉ-EXISTENTE que o fechamento encontrou**: o `verificar-golden.sh` termina REPROVADO no
+> **`CT-013`** (*"a credencial aparece na árvore versionada"*, apontando `senha.spec.ts`, `pessoa.ts` e
+> `semente.ts`). **Não é regressão da fatia** — provado por execução do verificador num worktree limpo
+> em `fb93915`, onde reprova idêntico e com mais ocorrências, e os três arquivos são intocados pela
+> fatia. Causa **provável** (não confirmada): colisão de agulha, já que a credencial do ambiente legado
+> é uma palavra de dicionário de 5 caracteres e o casamento é por token sobre a árvore inteira. Quem
+> for fechar precisa abrir os pontos e decidir se é colisão ou vazamento real. Detalhe na §4 do
+> `_run/run-report.md`.
+>
+> **Nada foi commitado** — o HEAD segue em `fb93915` desde o início do run, com **T2..T11 staged**
+> (59 arquivos, +21.618/−453) aguardando a decisão do usuário sobre o agrupamento. A **ADR-0021 foi emendada**
 > durante a T7, por decisão do usuário escalada pelo Gate 2: a `Decision` ganhou o roster explícito das
 > instâncias da segunda classe, e o pagamento e o cancelamento de **cobrança** estão nele por nome.
 >

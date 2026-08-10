@@ -55,7 +55,7 @@ As quatro primeiras vêm da **§11 do PRD** (Roadmap / Fases). A quinta é acré
 | T8 | `derivarParcelasDoContrato` — a função pura das parcelas, provada contra o oráculo | [T8](tasks/T8.md) | 4 | T2 | Não | Concluído |
 | T9 | A ativação do contrato gera as parcelas na mesma unidade de trabalho — fecha o D28 | [T9](tasks/T9.md) | 4 | T4, T8 | Não | Concluído |
 | T10 | O cancelamento do contrato cancela as cobranças em cascata, na mesma unidade | [T10](tasks/T10.md) | 4 | T7, T9 | Não | Concluído |
-| T11 | Cobertura de autorização das sete rotas novas e as âncoras finais da superfície | [T11](tasks/T11.md) | 5 | T5, T6, T7 | Não | Em Progresso |
+| T11 | Cobertura de autorização das sete rotas novas e as âncoras finais da superfície | [T11](tasks/T11.md) | 5 | T5, T6, T7 | Não | Concluído |
 
 ### 4.1 Ordem de Execução (grafo)
 
@@ -148,19 +148,24 @@ O flag foi **computado** pelo Invariante de Paralelismo (Regra 10d), não autora
 
 ## 7. Critérios de Conclusão da Feature
 
-- [ ] As 11 tasks concluídas e aprovadas nos dois gates
-- [ ] `pnpm build`, `pnpm lint` e `pnpm test` verdes, com a contagem comparada contra a baseline de **687 casos** — crescimento monotônico, nenhum pacote encolhendo em nenhuma rodada; **queda inexplicada é regressão de prova**
-- [ ] Os 17 critérios de aceite do PRD com ao menos um caso rastreado — **45 CTs distribuídos, cada um em exatamente 1 task**
-- [ ] Superfície publicada em **82 rotas / 67 manipuladores**, `semDeclaracao` vazio, contagens **refeitas por varredura** e concordantes nas duas medições independentes
-- [ ] `verificarCoberturaDeIsolamento` sem exceções, com as duas tabelas novas **e a view** em `tabelasExaminadas`
-- [ ] `verificar-golden.sh` afirma **10** artefatos e os CT-501/CT-503 passam; os seis anteriores inalterados
-- [ ] A captura da régua declara no `PROCEDENCIA.md` **qual nível da ordem de queda foi alcançado**, e o contador de despacho real vale `0`
-- [ ] **O débito D28 (F2/T7) está fechado**: o literal afrouxado, a ativação gerando as parcelas, o marcador removido do código **e** a linha removida do bloco do `CLAUDE.md`, no mesmo commit
-- [ ] O marcador do **D36 (F2/T8) permanece**, reafirmado e não removido
-- [ ] Os três marcadores `DECISÃO FECHADA` exigidos pela §21 do tech spec estão no código: largura 7 (T2), leitura só pela view (T4) e `security_invoker` (T3) — mais o quarto, da conciliação bancária intocada (T7)
-- [ ] O marcador `DÉBITO COM GATILHO` das constantes monetárias registrado com os cinco campos e o par `Dnn · F3/T2`, **com a linha correspondente no `CLAUDE.md`**
-- [ ] Nenhuma asserção de igualdade de corpo trocada por asserção de presença nas suítes das fatias anteriores — varredura mecânica do diff
-- [ ] As duas alterações de asserção de fatia fechada (`EFEITOS_ESPERADOS` e CT-429 → CT-537) carregam `SUT_IS_CORRECT_BECAUSE:`, e a contagem total **não cai**
+> **Conferidos em 2026-08-10, ao fim do run. 10 dos 13 estão satisfeitos; os 3 abertos dependem
+> EXCLUSIVAMENTE da T1**, que é execução do operador (`sudo` interativo mais o site efêmero do
+> `/opt/frappe`) e que a §7 da própria task declara que **nenhum subagente conduz**. Nenhum dos três
+> depende de trabalho das outras dez tasks.
+
+- [ ] As 11 tasks concluídas e aprovadas nos dois gates — **10/11**; só a **T1** falta, diferida por decisão
+- [x] `pnpm build`, `pnpm lint` e `pnpm test` verdes, com a contagem comparada contra a baseline de **687 casos** — crescimento monotônico, nenhum pacote encolhendo em nenhuma rodada; **queda inexplicada é regressão de prova** · **687 → 834**, medido POR PACOTE (contracts 227 · shared 212 · api 175 · auth 89 · db 115 · worker 16); nenhum pacote encolheu em nenhuma rodada do run
+- [x] Os 17 critérios de aceite do PRD com ao menos um caso rastreado — **45 CTs distribuídos, cada um em exatamente 1 task** · **17/17** rastreados; o **CA-01** é o único cujos CTs (CT-501/502/503) vivem na T1 e portanto ainda não executaram
+- [x] Superfície publicada em **82 rotas / 67 manipuladores**, `semDeclaracao` vazio, contagens **refeitas por varredura** e concordantes nas duas medições independentes · fechado pelo **CT-533** (T11), aprovado nos dois gates; a independência das duas medições foi verificada pelo Gate 2 lendo as duas fontes
+- [x] `verificarCoberturaDeIsolamento` sem exceções, com as duas tabelas novas **e a view** em `tabelasExaminadas` · `TABELAS_LEGITIMAS` tem 13 entradas incluindo `TABELA_DE_COBRANCA`, `VISAO_DA_COBRANCA_DERIVADA` e `TABELA_DE_CONFIGURACAO_DE_MORA`, comparadas por **igualdade** (`toEqual`)
+- [ ] `verificar-golden.sh` afirma **10** artefatos e os CT-501/CT-503 passam; os seis anteriores inalterados — **afirma 9** (o 10º é o `regua-de-cobranca.json` da T1). ⚠️ O **CT-013 reprova por causa PRÉ-EXISTENTE**, provada idêntica no HEAD limpo `fb93915`: a agulha de credencial é uma palavra de dicionário de 5 caracteres e colide com literais de teste do `@sysloc/auth` e da semente do `@sysloc/db`. **Não é regressão desta fatia** — nenhum dos arquivos apontados foi tocado por ela
+- [ ] A captura da régua declara no `PROCEDENCIA.md` **qual nível da ordem de queda foi alcançado**, e o contador de despacho real vale `0` — depende da **T1**
+- [x] **O débito D28 (F2/T7) está fechado**: o literal afrouxado, a ativação gerando as parcelas, o marcador removido do código **e** a linha removida do bloco do `CLAUDE.md`, no mesmo commit · fechado na **T9**; `grep "D28 · F2/T7"` retorna vazio, e o `D28` que resta no índice é o **da F0/T5**, homônimo e vivo em 22 arquivos
+- [x] O marcador do **D36 (F2/T8) permanece**, reafirmado e não removido · o Gate 2 da T10 o conferiu **byte a byte** em `contrato.service.ts:854`, com os cinco campos e a natureza não trocada
+- [x] Os três marcadores `DECISÃO FECHADA` exigidos pela §21 do tech spec estão no código: largura 7 (T2), leitura só pela view (T4) e `security_invoker` (T3) — mais o quarto, da conciliação bancária intocada (T7) · os quatro presentes: `contracts/src/cobranca.ts:177`, `db/src/cobranca.ts:812`, `migracoes/0010:263` e `:505`, e `cobranca.service.ts:343`
+- [x] O marcador `DÉBITO COM GATILHO` das constantes monetárias registrado com os cinco campos e o par `Dnn · F3/T2`, **com a linha correspondente no `CLAUDE.md`** · `D1 · F3/T2` vivo em `contracts/src/cobranca.ts` e indexado na linha 463 do `CLAUDE.md`; a checagem dos **dois sentidos** da §3-B fecha em **12 ↔ 12**
+- [x] Nenhuma asserção de igualdade de corpo trocada por asserção de presença nas suítes das fatias anteriores — varredura mecânica do diff · o diff da fatia inteira sobre arquivos de teste tem **229 `toEqual` acrescentados contra 2 removidos**, e as duas removidas são a substituição CT-429 → CT-537, reescritas em forma **mais forte** (a mesma igualdade de corpo agora dentro de laço sobre os aceitos, mais uma igualdade de número que pega coerção)
+- [x] As duas alterações de asserção de fatia fechada (`EFEITOS_ESPERADOS` e CT-429 → CT-537) carregam `SUT_IS_CORRECT_BECAUSE:`, e a contagem total **não cai** · presentes em `apps/api/test/contratos.e2e.spec.ts:1109` e `packages/contracts/test/esquemas.spec.ts:460`; a contagem subiu 687 → 834
 
 ---
 
