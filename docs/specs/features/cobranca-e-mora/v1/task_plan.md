@@ -149,7 +149,7 @@ O flag foi **computado** pelo Invariante de Paralelismo (Regra 10d), não autora
 ## 7. Critérios de Conclusão da Feature
 
 - [ ] As 11 tasks concluídas e aprovadas nos dois gates
-- [ ] `pnpm build`, `pnpm lint` e `pnpm test` verdes, com a contagem comparada contra a baseline de **665 casos** — crescimento monotônico, nenhum pacote encolhendo em nenhuma rodada; **queda inexplicada é regressão de prova**
+- [ ] `pnpm build`, `pnpm lint` e `pnpm test` verdes, com a contagem comparada contra a baseline de **687 casos** — crescimento monotônico, nenhum pacote encolhendo em nenhuma rodada; **queda inexplicada é regressão de prova**
 - [ ] Os 17 critérios de aceite do PRD com ao menos um caso rastreado — **45 CTs distribuídos, cada um em exatamente 1 task**
 - [ ] Superfície publicada em **82 rotas / 67 manipuladores**, `semDeclaracao` vazio, contagens **refeitas por varredura** e concordantes nas duas medições independentes
 - [ ] `verificarCoberturaDeIsolamento` sem exceções, com as duas tabelas novas **e a view** em `tabelasExaminadas`
@@ -172,7 +172,7 @@ O flag foi **computado** pelo Invariante de Paralelismo (Regra 10d), não autora
 | **`security_invoker` omitido ou perdido** — a view roda com os direitos da dona e devolve cobrança de outra empresa, furando a ADR-0008 por dentro do objeto que a ADR-0023 autorizou | T3 | `0010` é autoral e nunca regerado; `DECISÃO FECHADA` no ponto; CT-523 com as **duas variantes da view** e prova de falsificação; e a guarda de `catalogo.ts`, que **já cobre a espécie VIEW desde a F2** e reprova sem precisar de edição |
 | **Derivação de estado reaparecer em TypeScript** — reabre o defeito de origem (três avaliações divergentes) | T5, T7 | Asserção estática com falsificação (CT-510); `DECISÃO FECHADA` no ponto da porta; §3.3 do tech spec registra a proibição |
 | **Saturação implementada como não-iterativa** (RD-19) — passa em todo cenário com dia ≤ 28 e diverge do legado só nos iniciados em 29–31 | T8 | Os dois cenários de `2027-01-31` do golden são o discriminador; o terceiro período (`28/03`) é asserido nominalmente; **controle não-iterativo escrito dentro do teste** |
-| **Regressão em `contrato.service.ts`** — arquivo com marcadores e literais fixados, e a fatia precisa afrouxar um `z.literal` | T9, T10 | Protocolo Antirregressão com força máxima; as três linhas do P3 obrigatórias; o marcador do D28 sai **no mesmo commit**; o do D36 **permanece**; baseline de 665 antes e depois |
+| **Regressão em `contrato.service.ts`** — arquivo com marcadores e literais fixados, e a fatia precisa afrouxar um `z.literal` | T9, T10 | Protocolo Antirregressão com força máxima; as três linhas do P3 obrigatórias; o marcador do D28 sai **no mesmo commit**; o do D36 **permanece**; baseline de 687 antes e depois |
 | **Perda de centavo em alguma composição** (RN-16) — os juros proporcionais a dias são onde o arredondamento discrimina | T3, T4 | Aritmética inteiramente em `numeric`; igualdade **centavo a centavo** contra o golden, jamais tolerância; `1234.56` com 5 e 17 dias, mais o **mutante que arredonda antes da divisão por 30** |
 | **`0009` sozinha deixando a guarda de cobertura vermelha** | T3 | As duas migrações na **mesma task** — ver §4.3, item 1 |
 | **Âncora de superfície errada ou derivada de si mesma** | T5, T6, T7, T11 | Contagem **refeita do zero por varredura** em cada task que publica rota, nunca derivada; conferência final por **duas medições independentes** em T11; e o docblock que registra por que a âncora é 75 e não 77 |

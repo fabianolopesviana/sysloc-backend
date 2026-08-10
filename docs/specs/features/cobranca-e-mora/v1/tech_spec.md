@@ -1401,7 +1401,7 @@ barreira.
   exatamente isto. A fatia **se submete** à guarda; ela não a estende, não a move e não a reescreve.
   A única coisa que muda é a expectativa das suítes que já a consomem: `cobranca_derivada` passa a
   constar em `tabelasExaminadas` sem exceção associada.
-- **Baseline de 665 casos** antes e depois (P1/P5). O CT-537 substitui o CT-429 e o CT-508 altera
+- **Baseline de 687 casos** antes e depois (P1/P5). O CT-537 substitui o CT-429 e o CT-508 altera
   `EFEITOS_ESPERADOS` — as duas exigem `SUT_IS_CORRECT_BECAUSE:`, e **a contagem final não pode cair**.
 - **Os cinco valores de `natureza_cobranca` são criação do produto, não porte.** Medido: o DocType
   `Cobranca` do legado (48 campos) **não tem campo de natureza** — "novo título" se distingue apenas
@@ -1418,7 +1418,7 @@ barreira.
 | **Saturação iterativa implementada como não-iterativa** (RD-19) — passa em todo cenário com dia ≤ 28 e diverge do legado só nos iniciados em 29–31 | **média** | alto | Os dois cenários de `2027-01-31` do golden são o discriminador, e o terceiro período (`28/03`) é asserido nominalmente; mutante medido na task |
 | **Falha da intercepção do envio na captura** (US-01) — 837 LOC portadas na fatia 2 sem oráculo, e **a janela não reabre** | média | **alto** | Ordem de queda fixada **antes** de começar (substituir despachante → servidor local que descarta → piso das frentes puras); a captura é a **primeira** task, com duas fatias de folga |
 | **Perda de centavo em alguma composição** (RN-16) — juros proporcionais a dias é onde o arredondamento discrimina | baixa | alto | Aritmética inteiramente em `numeric`; igualdade **centavo a centavo** contra o golden, jamais tolerância; `1234.56` com 5 e 17 dias no conjunto |
-| **Regressão em `contrato.service.ts`** — arquivo com marcadores e literais fixados, e a fatia precisa afrouxar um `z.literal` | média | alto | Protocolo Antirregressão com força máxima; as três linhas do P3 obrigatórias; o marcador do D28 sai **no mesmo commit**; baseline de 665 casos antes e depois |
+| **Regressão em `contrato.service.ts`** — arquivo com marcadores e literais fixados, e a fatia precisa afrouxar um `z.literal` | média | alto | Protocolo Antirregressão com força máxima; as três linhas do P3 obrigatórias; o marcador do D28 sai **no mesmo commit**; baseline de 687 casos antes e depois |
 | **Fuso do banco divergir do esperado** e a virada do dia acontecer em hora errada, movendo a transição para `VENCIDA` | baixa | médio | `data_corrente_da_operacao()` fixa a zona **no objeto**, sem depender da sessão; caso de fronteira montado **pelo dado**, não pelo relógio |
 | **Ordem das instruções da migração gerada** mudar numa regeração e uma FK preceder o alvo | baixa | médio | Conferência declarada a cada regeração (§7.3), como o `0007` já registra; a suíte de coerência de migrações aplica os arquivos do disco |
 | **Rollback sem backup provado** — o item 1 da F7 ainda não existe | baixa | médio | As duas migrações são **aditivas**, de modo que voltar o binário não exige tocar o schema; registrado como dependência do marco |
