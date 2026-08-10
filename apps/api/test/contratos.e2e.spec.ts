@@ -1,7 +1,27 @@
 /**
  * As seis rotas de cadastro de `/v1/contratos` — T6 da fatia `contratos-de-locacao` —, as **duas
- * transições de estado governadas do produto** (a ativação, T7, e o cancelamento, T8) e o invariante
- * que a T10 fecha: a situação de locação do imóvel **nunca diverge** do estado do contrato.
+ * transições de estado governadas do produto** (a ativação, T7, e o cancelamento, T8), o invariante
+ * que a T10 fecha (a situação de locação do imóvel **nunca diverge** do estado do contrato) e, pela
+ * fatia `cobranca-e-mora`, os dois invariantes que ligam o contrato ao fato financeiro: **a ativação
+ * gera as parcelas de aluguel na MESMA unidade de trabalho** (T9) e **o cancelamento cancela em cascata
+ * as cobranças canceláveis — e só elas — na mesma unidade** (T10).
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T10 da fatia `cobranca-e-mora` fez o cancelamento do contrato cancelar em
+ * cascata as cobranças canceláveis dele, na mesma unidade de trabalho. **Nenhuma asserção dos vinte e um
+ * casos anteriores foi removida nem afrouxada**, e duas coisas mudaram, as duas declaradas no ponto: a
+ * chave `TELA:financeiro` acrescentada a {@link CHAVES_DO_ARRANJO} e afirmada no efetivo das duas sessões
+ * — **acréscimo puro**, sem o qual os casos da cascata não conseguiriam montar a carteira pelas rotas de
+ * produção —, e o `describe` novo que o `CT-530` e o `CT-531` ocupam. O `CT-415`, que afirma o corpo
+ * **inteiro** do cancelamento por igualdade, **não foi tocado**: a cascata não acrescenta campo algum à
+ * resposta, e é ele que continua provando isso.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T9 da fatia `cobranca-e-mora` fez a ativação gerar as parcelas do contrato,
+ * fechando o débito **D28** da fatia `contratos-de-locacao` (F2/T7). **Nenhuma asserção dos dezenove
+ * casos anteriores foi removida nem afrouxada**, e três coisas mudaram, todas declaradas no ponto:
+ * {@link EFEITOS_ESPERADOS}, que era o literal `{ cobrancasGeradas: false }` que o débito agendava para
+ * ser afrouxado — o valor passa a ser derivado do prazo do cenário, e a igualdade de objeto inteiro
+ * continua inteira; o campo `efeitos` de {@link AtivacaoPublicada}, que era `boolean` e passa a
+ * `number`; e o `describe` novo que o `CT-508` e o `CT-509` ocupam.
  *
  * SUT_IS_CORRECT_BECAUSE: a T10 tirou `statusLocacao` do corpo do `PUT` de imóvel e lhe deu rota
  * própria, e **nenhuma asserção dos dezoito casos anteriores foi alterada, afrouxada ou removida** —
@@ -133,6 +153,41 @@
  * |       |        | nomeando `corpo`; e, **cancelado o contrato**, a MESMA rota responde `200` e
  * |       |        | grava. (ADR-0016, ADR-0017, ADR-0019) |
  *
+ * | CA-02 | CT-508 | `POST /v1/contratos/:codigo/ativacao` responde `200` com
+ * |       |        | `efeitos.cobrancasGeradas` **igual ao `prazoMeses`** do contrato, e o banco
+ * |       |        | guarda o mesmo número de linhas em `negocio.cobranca` para aquele contrato; os
+ * |       |        | códigos emitidos casam `^COB-\d{4}-\d{7}$`, são **distintos**, têm sufixos
+ * |       |        | **consecutivos** e um único ano; e as parcelas igualam, campo a campo e na
+ * |       |        | ordem, o cenário `dia_seguro_tres_meses` do golden. Com
+ * |       |        | `gerarCobrancasAutomaticamente: false` são **zero** parcelas,
+ * |       |        | `cobrancasGeradas: 0` e a série **não avança**. (RD-18, RD-19, RD-20) |
+ *
+ * | CA-03 | CT-509 | Ativação recusada não deixa parcela alguma, e a contagem é aferida **DEPOIS**
+ * |       |        | da recusa: o envelope é o da ADR-0017 nomeando o motivo, `negocio.cobranca`
+ * |       |        | tem `0` linha para o contrato recusado, o total da empresa é idêntico ao de
+ * |       |        | antes e o contrato fica byte a byte como estava. Vale para as **duas**
+ * |       |        | condições de recusa — imóvel com contrato vigente e contrato já `ATIVO`, esta
+ * |       |        | última medindo a **não duplicação** das parcelas que já existem. (RN-06) |
+ *
+ * | CA-15 | CT-530 | O cancelamento do contrato cancela **exatamente** as cobranças com
+ * | CA-10 |        | `pago_em IS NULL AND cancelado_em IS NULL`: sobre uma carteira de quatro
+ * |       |        | (A_VENCER, VENCIDA, PAGA, já CANCELADA), as duas em aberto passam a
+ * |       |        | `CANCELADA` com `canceladoEm` não nulo e **`xmin` diferente** do guardado; a
+ * |       |        | PAGA e a já CANCELADA têm a publicação **inteira** idêntica (por igualdade de
+ * |       |        | objeto — `pagoEm`, `valorPago` e os quatro carimbos de mora) e o **`xmin`
+ * |       |        | idêntico**, que é o que separa *não alterou* de *reescreveu com o mesmo
+ * |       |        | valor*; o `canceladoEm` da já cancelada é **exatamente** o instante original;
+ * |       |        | a contagem é `4` antes e depois; e as quatro seguem legíveis com `200`. O
+ * |       |        | imóvel volta a `DISPONIVEL` no mesmo commit. (RN-13) |
+ * | CA-15 | CT-531 | Cancelamento recusado **não cancela cobrança alguma**: sobre um contrato já
+ * |       |        | `CANCELADO` (com as doze parcelas da ativação, já canceladas pela cascata
+ * |       |        | anterior) e sobre um `RASCUNHO` com duas cobranças **em aberto**, as duas
+ * |       |        | respostas são `422` com o envelope da ADR-0017 nomeando o estado atual, e o
+ * |       |        | retrato de **todas** as tuplas — código, `xmin` e `status` — é idêntico ao de
+ * |       |        | antes: não existe cascata parcial. **Fronteira**: um contrato `ATIVO` **sem
+ * |       |        | cobrança alguma** é cancelado com `200`, a carteira permanece vazia e o imóvel
+ * |       |        | volta a `DISPONIVEL` — `0` linhas afetadas **não é erro**. (RN-13) |
+ *
  * Rastreabilidade: `CA-01 → CT-408 (RN-01)`, `CA-03 → CT-408 (RN-06)`, `CA-04 → CT-408 (RN-04)`,
  * `CA-02 → CT-409 (RN-05)`, `CA-03 → CT-410 (RN-06)`, `CA-08 → CT-411 (RN-08)`,
  * `CA-11 → CT-411 (b) (RN-14)`, `CA-11 → CT-411 (c) (RN-14)`, `CA-15 → CT-417 (RN-15)`,
@@ -142,6 +197,63 @@
  * `CA-16 → CT-425 (RN-13)`, `CA-09 → CT-415 (RN-11)`, `CA-10 → CT-415 (RN-02)`,
  * `CA-18 → CT-422 (RN-01)`, `CA-17 → CT-426 (RN-07)`.
  * Acrescida pela T10: `CA-05 → CT-434 (RN-10)`, `CA-09 → CT-434 (RN-11)`.
+ * Acrescida pela T9 da fatia `cobranca-e-mora`: `CA-02 → CT-508 (RN-06)`, `CA-03 → CT-509 (RN-06)`.
+ * Acrescida pela T10 da fatia `cobranca-e-mora`: `CA-15 → CT-530 (RN-13)`, `CA-10 → CT-530 (RN-12)`,
+ * `CA-15 → CT-531 (RN-13)`.
+ *
+ * ===========================================================================
+ * POR QUE O CT-530 E O CT-531 VÊM EM PAR — e por que o `xmin` é o eixo dos dois
+ * ===========================================================================
+ *
+ * **Dois mutantes foram aplicados a `packages/db/src/cobranca.ts` e medidos, os dois pelo script do
+ * pacote** (`pnpm --filter @sysloc/api test -- -t "CT-530"`, nunca por `vitest run` avulso — os pacotes
+ * resolvem `"."` para `dist/`). Eles são **degraus**, e é o segundo que justifica o `xmin`:
+ *
+ *   * **MT-1 · a cascata SEM predicado** (`WHERE contrato_id = $1`, alcançando as quatro linhas):
+ *     `1 failed | 172 passed`, e a reprovação vem no **passo 2** —
+ *     `expected 500 to be 200`, com `{"codigo":"ERRO_INTERNO"}`. A forma mais crua do defeito é barrada
+ *     **pelo banco**: escrever `cancelado_em` numa linha que tem `pago_em` viola
+ *     `cobranca_desfecho_unico_chk` (`23514`), que nenhuma tradução desta borda reconhece. Ela é, por
+ *     isso, um mutante **fraco** — qualquer asserção de status o pegaria;
+ *   * **MT-2 · a cascata que REESCREVE COM O MESMO VALOR**
+ *     (`SET cancelado_em = COALESCE(cancelado_em, now())`, com o predicado reduzido a
+ *     `pago_em IS NULL`): `1 failed | 172 passed`, e a reprovação vem **exatamente** na asserção de
+ *     `xmin` da já cancelada — `expected '1904' to be '1898'`. Ele **passa o passo 4 inteiro**: a
+ *     publicação das duas terminais é idêntica byte a byte, porque o `COALESCE` preserva o instante
+ *     original e a paga fica fora do conjunto. É a variante que a RN-13 proíbe nominalmente, e **nenhuma
+ *     comparação de campos a distingue** — só o `xmin`, que é o identificador da transação que gravou a
+ *     versão corrente da tupla e muda a cada `UPDATE`.
+ *
+ * Em cada mutante o arquivo foi restaurado de cópia e conferido idêntico por `diff -q`, e o controle
+ * voltou a `173 passed`.
+ *
+ * O `CT-531` é o que discrimina a **unidade de trabalho**: uma cascata que corresse em transação própria,
+ * commitada antes da guarda de estado, deixaria o `422` idêntico e as cobranças canceladas. Sem ele, o
+ * caminho feliz do `CT-530` é indistinguível entre a cascata na mesma unidade e a cascata solta.
+ *
+ * E a **fronteira da carteira vazia**, dentro do `CT-531`, é o controle que impede a implementação de
+ * tratar `0 linhas afetadas` como falha — o modo de falha mais provável da task, porque a porta irmã
+ * (`definirSituacaoDeLocacaoDoImovel`) **levanta** quando não alcança exatamente uma linha.
+ *
+ * ===========================================================================
+ * POR QUE O CT-508 E O CT-509 VÊM EM PAR, e por que nenhum deles sozinho serve
+ * ===========================================================================
+ *
+ * O `CT-508` sozinho ficaria verde numa implementação que gerasse as parcelas **numa transação
+ * própria**, commitada antes da ativação: o caminho feliz é indistinguível entre as duas formas — as
+ * três parcelas aparecem, os códigos são consecutivos, o golden bate. É o `CT-509` que discrimina, e o
+ * que o faz discriminar é **a contagem ser aferida DEPOIS da recusa**: com a geração fora da unidade de
+ * trabalho, as treze parcelas do contrato recusado ficam no banco e a resposta continua sendo o mesmo
+ * `422`.
+ *
+ * O recíproco também vale: o `CT-509` sozinho seria satisfeito por uma ativação que **nunca** gerasse
+ * parcela alguma — zero linhas depois da recusa é o que um serviço inerte também produz. É o `CT-508`
+ * que fecha essa saída, e é por isso que ele afirma a contagem crua **antes** e **depois**.
+ *
+ * Dentro do `CT-508`, o par que discrimina a RD-20 é outro, e ele é o passo 8: *"gravou zero parcelas"*
+ * e *"gravou zero parcelas e queimou três números da série"* são indistinguíveis por contagem de linha,
+ * e o segundo é defeito — a ADR-0015 proíbe reusar número, então o queimado se perde. Quem o pega é o
+ * contrato SEGUINTE, cujo primeiro código tem de ser o sucessor imediato do último emitido.
  *
  * ===========================================================================
  * DIVERGÊNCIAS DECLARADAS DA T10 — leia antes de comparar com a §6.4 e a §6.6
@@ -163,6 +275,38 @@
  *    sessão sem a chave daquela área. Duplicá-lo aqui provaria a mesma coisa por um caminho pior.
  * 4. **"Sem linha `error` no journal"** vale para o caso da T10 pelo mesmo discriminante observável
  *    das divergências 4 da T6, 4 da T7 e 5 da T8.
+ *
+ * ===========================================================================
+ * MUTANTES DA T9 da fatia `cobranca-e-mora` (2026-08-10) — TRÊS, e o terceiro é o que importa
+ * ===========================================================================
+ *
+ * Os três aplicados ao **fonte de produção** e invocados pelo **script do pacote**
+ * (`pnpm --filter @sysloc/api test`), nunca por `vitest run` avulso: `apps/api/test/**` alcança
+ * `@sysloc/db` **só pela fronteira do pacote**, e mutante no fonte sem build não chega ao `dist/` que
+ * executa — verde ali se leria como "sobreviveu" e **inverteria a conclusão**.
+ *
+ *   * **controle** — árvore íntegra: `171 passed`;
+ *   * **MT-T9-1 · a ativação não gera parcela alguma** (o ramo da RD-20 forçado a `return 0` sempre, em
+ *     `gerarParcelas`): `3 failed | 168 passed`, no **`CT-508`** (`expected +0 to be 3`, no efeito
+ *     publicado), no **`CT-509`** (`expected +0 to be 3`, nas parcelas do contrato vigente) e no
+ *     **`CT-413`**, pela igualdade do corpo inteiro da ativação — é `EFEITOS_ESPERADOS` cobrando a
+ *     contagem, e a prova de que a asserção antiga daquele caso **não** ficou decorativa;
+ *   * **MT-T9-2 · a RD-20 é ignorada** (a guarda `if (!contrato.gerarCobrancasAutomaticamente)`
+ *     removida): `2 failed | 169 passed`, no **`CT-508`** — `expected { cobrancasGeradas: 3 } to deeply
+ *     equal { cobrancasGeradas: +0 }`, no passo 7 — e no **`CT-514`** de `test/cobrancas.e2e.spec.ts`,
+ *     que é a evidência medida de por que o arranjo `contratoAtivo` daquele arquivo passou a montar o
+ *     contrato com `gerarCobrancasAutomaticamente: false`: ele é sensível exatamente a esta
+ *     propriedade;
+ *   * **MT-T9-3 · a geração sai da unidade de trabalho da ativação** (ela ganha unidade PRÓPRIA, aberta
+ *     pelo controlador e **commitada antes** de a transição ser tentada — o defeito que o `CT-509`
+ *     existe para pegar, e o único que o caminho feliz não distingue): `3 failed | 168 passed`, e o
+ *     modo de falha do **`CT-509`** é literalmente o que o card previa —
+ *     `expected [ { …(6) }, { …(6) }, { …(6) }, …(10) ] to deeply equal []`, isto é, as **treze**
+ *     parcelas do contrato recusado ficaram no banco depois do `422`. O `CT-508` e o `CT-413` também
+ *     reprovam, porque a segunda unidade passou a publicar `0`;
+ *   * **reversão** — os dois fontes mutados (`src/contratos/contrato.service.ts` e
+ *     `src/contratos/contrato.controller.ts`) restaurados de cópia e conferidos por `sha256sum`
+ *     idêntico ao estado pré-mutante, com o controle de volta a `171 passed`.
  *
  * ===========================================================================
  * MUTANTES DA T10 (2026-08-09) — DOIS isolados, e cada um reprova numa asserção diferente
@@ -739,6 +883,7 @@ import { CAMINHO_DA_SESSAO } from '../src/autenticacao/sessao.controller.ts';
 import { CAMINHO_DOS_FIADORES } from '../src/cadastros/fiador.controller.ts';
 import { CAMINHO_DOS_LOCADORES } from '../src/cadastros/locador.controller.ts';
 import { CAMINHO_DOS_LOCATARIOS } from '../src/cadastros/locatario.controller.ts';
+import { CAMINHO_DAS_COBRANCAS } from '../src/cobrancas/cobranca.controller.ts';
 import { ENDERECO_DE_ESCUTA, PREFIXO_DE_VERSAO } from '../src/configuracao/ambiente.ts';
 import { CAMINHO_DOS_CONTRATOS } from '../src/contratos/contrato.controller.ts';
 import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
@@ -764,6 +909,15 @@ const CAMINHO_DA_SESSAO_CORRENTE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_SESSAO}`;
 
 /** Caminho, relativo à raiz, da coleção de contratos — a superfície desta task. */
 const COLECAO_DE_CONTRATOS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}`;
+
+/**
+ * Caminho, relativo à raiz, da coleção de cobranças — a superfície que a **cascata** alcança (T10).
+ *
+ * Composto a partir do dono do segmento, e nunca escrito à mão: um caminho redigitado ficaria livre
+ * para divergir do que o roteador publica, e a divergência apareceria como `404` de rota inexistente —
+ * que é exatamente o que outros casos deste arquivo **esperam** em outra circunstância.
+ */
+const COLECAO_DE_COBRANCAS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}`;
 
 /** A rota do Admin por onde nasce o sujeito exclusivo do `CT-425`. */
 const CAMINHO_DAS_PESSOAS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_USUARIOS}`;
@@ -796,6 +950,7 @@ const CHAVES_DO_ARRANJO: readonly ChaveDoCatalogo[] = [
   'TELA:contratos',
   'TELA:imoveis',
   'TELA:cadastros',
+  'TELA:financeiro',
   'ACAO:excluir_cadastro',
   'ACAO:ativar_contrato',
   'ACAO:cancelar_contrato',
@@ -803,6 +958,22 @@ const CHAVES_DO_ARRANJO: readonly ChaveDoCatalogo[] = [
 
 /** A área que a classe do controlador de contrato exige — afirmada no efetivo, nunca suposta. */
 const AREA_DOS_CONTRATOS: ChaveDoCatalogo = 'TELA:contratos';
+
+/**
+ * A área que a classe do controlador de **cobrança** exige — afirmada no efetivo, nunca suposta.
+ *
+ * Ela entra no arranjo pela T10: os cenários da cascata montam a carteira e leem as cobranças **pelas
+ * rotas de produção**, e as cinco rotas de `/v1/cobrancas` valem pela exigência da classe,
+ * `TELA:financeiro`. É **acréscimo puro** ao arranjo — nenhuma chave anterior sai, e nenhum caso deste
+ * arquivo afirma a ausência desta.
+ *
+ * **Nenhuma ação sensível acompanha**, e a ausência é decisão registrada: o catálogo fechado da
+ * ADR-0011 enumera duas ações dentro daquela área — `ACAO:emitir_boleto` e
+ * `ACAO:solicitar_baixa_de_boleto` — e **nenhuma** para lançar, ler, pagar ou cancelar cobrança
+ * (ADR-0021, emenda de 2026-08-10). O literal é escrito aqui e não importado do controlador: derivá-lo
+ * do SUT faria a asserção concordar consigo mesma.
+ */
+const AREA_DO_FINANCEIRO: ChaveDoCatalogo = 'TELA:financeiro';
 
 /** A ação sensível que as duas rotas de circulação exigem — afirmada no efetivo, nunca suposta. */
 const ACAO_DE_CIRCULACAO: ChaveDoCatalogo = 'ACAO:excluir_cadastro';
@@ -932,8 +1103,107 @@ const PREFIXO_DO_RESIDUO_NO_TEXTO = String(TOTAL_INGENUO_COM_RESIDUO).slice(
   String(TOTAL_DERIVADO_SEM_RESIDUO).length + 2,
 );
 
-/** A declaração de efeito que a resposta da ativação carrega — o literal que a F3 terá de afrouxar. */
-const EFEITOS_ESPERADOS = { cobrancasGeradas: false };
+/**
+ * A declaração de efeito que a resposta da ativação carrega — **quantas cobranças nasceram**.
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo, e era esta constante que descrevia uma fatia
+ * que não gerava cobrança. Ela valia `{ cobrancasGeradas: false }`, e o literal `false` era o
+ * débito **D28** da fatia `contratos-de-locacao` (F2/T7), cujo `QUANDO FECHA` nomeia **esta** fatia: a ativação passou a
+ * derivar as parcelas do contrato e a gravá-las na mesma unidade de trabalho, e o efeito a publicar
+ * deixou de ser *"não fiz"* e passou a ser **quantas**. O `false` era, portanto, a asserção datada — não
+ * o comportamento.
+ *
+ * O valor é **derivado** de {@link PRAZO_DE_UM_MES}, que é o prazo do contrato do único caso que usa
+ * esta constante: uma parcela por mês de prazo (RD-18). Redigitar `1` aqui faria o caso sobreviver a uma
+ * mudança do prazo do cenário perseguindo um número que ninguém mais produz — é a mesma razão, e o mesmo
+ * desenho, de {@link PREFIXO_DO_RESIDUO_NO_TEXTO}.
+ *
+ * **Nenhuma asserção foi afrouxada**: os dois pontos de chamada continuam comparando o objeto inteiro
+ * por igualdade, e a contagem passa a ser afirmada por valor exato em vez de por um booleano.
+ */
+const EFEITOS_ESPERADOS = { cobrancasGeradas: PRAZO_DE_UM_MES };
+
+/**
+ * O cenário `dia_seguro_tres_meses` do golden `contrato-ativacao.json` — as ENTRADAS.
+ *
+ * São os quatro campos que o oráculo declara em `entrada.cobrancas[0].contrato`:
+ * `data_inicio_locacao: "2027-01-15"`, `prazo_meses: 3`, `dia_vencimento: 10` e
+ * `valor_mensal: 1500.0`. Escritos aqui por extenso porque são **oráculo**, e não escolha deste
+ * arquivo: mudá-los invalida o desfecho de baixo, que é o retorno capturado do sistema antigo.
+ *
+ * É o **mesmo** cenário que o `CT-504` afirma sobre a função pura, em
+ * `packages/db/test/derivacao-de-cobranca.spec.ts`. Aqui ele é conferido **pela rota**, com o banco
+ * lido depois — as duas provas se somam: a de lá mede a derivação, e a de cá mede que a ativação a
+ * consome e grava o que ela devolveu.
+ */
+const INICIO_DO_CENARIO_DO_GOLDEN = '2027-01-15';
+const PRAZO_DO_CENARIO_DO_GOLDEN = 3;
+const DIA_DE_VENCIMENTO_DO_GOLDEN = 10;
+const VALOR_MENSAL_DO_GOLDEN = 1500;
+
+/** A natureza de toda parcela que a ativação gera (RD-18) — a única do oráculo. */
+const NATUREZA_DA_PARCELA = 'ALUGUEL';
+
+/**
+ * O cenário `dia_seguro_tres_meses` do golden — o DESFECHO, parcela a parcela e na ordem.
+ *
+ * Copiado de `retorno.cobrancas[0].resultado.retorno`: as três competências no primeiro dia do mês, os
+ * três vencimentos no dia 10 e as três referências com a preposição **com crase** (`à`), byte a byte
+ * como o oráculo as escreve. `codigo` **não** está aqui: ele é emitido pela série do banco e não pelo
+ * oráculo, e é afirmado por forma, distinção e consecutividade.
+ *
+ * Se a implementação divergir desta tabela, o errado é a implementação.
+ */
+const PARCELAS_DO_CENARIO_DO_GOLDEN: readonly Omit<ParcelaGravada, 'codigo'>[] = [
+  {
+    natureza: NATUREZA_DA_PARCELA,
+    referencia: '15/01/2027 à 14/02/2027',
+    competencia: '2027-01-01',
+    dataVencimento: '2027-01-10',
+    valorOriginal: VALOR_MENSAL_DO_GOLDEN,
+  },
+  {
+    natureza: NATUREZA_DA_PARCELA,
+    referencia: '15/02/2027 à 14/03/2027',
+    competencia: '2027-02-01',
+    dataVencimento: '2027-02-10',
+    valorOriginal: VALOR_MENSAL_DO_GOLDEN,
+  },
+  {
+    natureza: NATUREZA_DA_PARCELA,
+    referencia: '15/03/2027 à 14/04/2027',
+    competencia: '2027-03-01',
+    dataVencimento: '2027-03-10',
+    valorOriginal: VALOR_MENSAL_DO_GOLDEN,
+  },
+];
+
+/**
+ * A forma do código da série da COBRANÇA — sete dígitos, e não os cinco do contrato.
+ *
+ * A divergência de largura entre as duas séries é decisão registrada, e as duas larguras são medidas no
+ * sistema antigo. Um padrão que aceitasse as duas deixaria passar exatamente a "harmonização" que o
+ * `CT-541` existe para reprovar do lado do esquema.
+ */
+const PADRAO_DO_CODIGO_DE_COBRANCA = /^COB-\d{4}-\d{7}$/u;
+
+/**
+ * Os dois deslocamentos que posicionam a carteira dos casos da cascata, e o valor de cada cobrança.
+ *
+ * **O relógio nunca é falseado**: o vencimento é calculado a partir de
+ * `negocio.data_corrente_da_operacao()` — o mesmo eixo que a visão consulta para classificar a linha —,
+ * e é o **dado** que se move. É a convenção da suíte da camada de dados e do `CT-512`. Positivo produz
+ * `A_VENCER`; negativo produz `VENCIDA`, com `diasAtraso` igual ao módulo.
+ */
+const DIAS_ADIANTE = 10;
+const DIAS_DE_ATRASO = 30;
+const VALOR_DA_COBRANCA = 1500;
+
+/** A referência de toda cobrança avulsa dos casos da cascata — texto livre, nada afirma sobre ela. */
+const REFERENCIA_DA_COBRANCA = 'Cobrança do cenário da cascata';
+
+/** Quantas cobranças a carteira do `CT-530` tem — e continua tendo depois da cascata (ADR-0014). */
+const QUATRO_COBRANCAS = 4;
 
 /** O fonte que o `CT-413 (c)` audita — o serviço, e só ele. Ausência levanta em `varrerArquivos`. */
 const FONTE_DO_SERVICO_DE_CONTRATO = fileURLToPath(
@@ -1051,6 +1321,9 @@ beforeAll(async () => {
     const sessao = (await pedir(CAMINHO_DA_SESSAO_CORRENTE, { cookie: credencial }))
       .corpo as SessaoPublicada;
     expect(sessao.telas).toContain(AREA_DOS_CONTRATOS);
+    // A área do financeiro entra pela T10: sem ela, o `403` das rotas de cobrança que montam a
+    // carteira dos casos da cascata seria indistinguível de um defeito delas.
+    expect(sessao.telas).toContain(AREA_DO_FINANCEIRO);
     expect(sessao.acoes).toContain(ACAO_DE_CIRCULACAO);
     expect(sessao.acoes).toContain(ACAO_DE_ATIVACAO);
     expect(sessao.acoes).toContain(ACAO_DE_CANCELAMENTO);
@@ -2207,6 +2480,215 @@ describe('ativação do contrato — a primeira transição de estado governada 
   );
 });
 
+describe('a ativação gera as parcelas na MESMA unidade de trabalho (T9)', () => {
+  it(
+    'CT-508 — ativar um contrato de 3 meses cria 3 cobranças, e a resposta publica quantas',
+    async () => {
+      // --- Passo 1: a contagem ANTES ------------------------------------------------------------
+      //
+      // Ela é o que separa *"existem três parcelas"* de *"a ativação criou três parcelas"*: outros
+      // casos deste arquivo já ativaram contratos, e a carteira da empresa não começa vazia.
+      const antes = await contarCobrancas(EMPRESA_A.id);
+
+      const partes = await montarPartes(cookie, 1);
+      const contrato = await criarContratoPor(cookie, partes, {
+        dataInicioLocacao: INICIO_DO_CENARIO_DO_GOLDEN,
+        prazoMeses: PRAZO_DO_CENARIO_DO_GOLDEN,
+        diaVencimento: DIA_DE_VENCIMENTO_DO_GOLDEN,
+        valorMensal: VALOR_MENSAL_DO_GOLDEN,
+      });
+
+      // O rascunho não gera nada: a geração é efeito do ATO, e não da montagem. Sem esta linha, três
+      // parcelas criadas na criação passariam pelo caso inteiro.
+      expect(await contarCobrancas(EMPRESA_A.id)).toBe(antes);
+
+      // --- Passo 2: a ativação ------------------------------------------------------------------
+      const ativacao = await transitar(cookie, contrato.codigo, 'ativacao');
+
+      expect(ativacao.status, ativacao.texto).toBe(200);
+
+      // --- Passo 3: o efeito publicado, por igualdade de NÚMERO ---------------------------------
+      //
+      // Igualdade com o `prazoMeses` do contrato, e não com um literal: é a RD-18 — uma parcela por mês
+      // de prazo. `toBe` sobre número, nunca `toBeTruthy`: o `3` tem de ser **este** três.
+      const corpo = ativacao.corpo as AtivacaoPublicada;
+      expect(corpo.efeitos.cobrancasGeradas).toBe(PRAZO_DO_CENARIO_DO_GOLDEN);
+      expect(corpo.efeitos).toEqual({ cobrancasGeradas: PRAZO_DO_CENARIO_DO_GOLDEN });
+
+      // --- Passo 4: o BANCO confirma o mesmo número --------------------------------------------
+      //
+      // As duas metades, e nenhuma sozinha basta: a contagem do contrato pega uma resposta que
+      // anunciasse três sem gravar nada, e a da empresa pega uma implementação que gravasse parcelas
+      // **a mais** — de outro contrato, ou duplicadas — sem que a primeira acusasse.
+      const parcelas = await parcelasDoContrato(EMPRESA_A.id, contrato.codigo);
+      expect(parcelas.length).toBe(PRAZO_DO_CENARIO_DO_GOLDEN);
+      expect(await contarCobrancas(EMPRESA_A.id)).toBe(antes + PRAZO_DO_CENARIO_DO_GOLDEN);
+
+      // --- Passo 5: os códigos — forma, distinção e CONSECUTIVIDADE ----------------------------
+      //
+      // Os três eixos são independentes. A forma pega a largura errada (os cinco dígitos do contrato);
+      // a distinção pega um código reusado, que a unicidade do banco recusaria mas que um lote de uma
+      // linha repetida produziria; e a consecutividade pega uma emissão que pulasse contador — o que um
+      // laço de `emitirNumeroDeCobranca` intercalado com outra escrita produziria.
+      //
+      // Os sufixos são afirmados como `n, n+1, n+2` a partir do PRIMEIRO emitido, e não como
+      // `0000001..3`: outros casos deste arquivo já consumiram a série, e um literal absoluto amarraria
+      // o caso à ordem de execução do arquivo. O ANO do código é o do relógio do banco — o mesmo eixo
+      // que a visão consulta —, e **não** o da competência: o cenário do golden vence em 2027 e o código
+      // sai com o ano corrente.
+      const codigos = parcelas.map((parcela) => parcela.codigo);
+
+      for (const codigo of codigos) {
+        expect(codigo, codigo).toMatch(PADRAO_DO_CODIGO_DE_COBRANCA);
+      }
+
+      expect(new Set(codigos).size).toBe(PRAZO_DO_CENARIO_DO_GOLDEN);
+
+      const primeiro = sequencialDe(codigos[0] ?? '');
+      expect(codigos.map(sequencialDe)).toEqual([primeiro, primeiro + 1, primeiro + 2]);
+
+      // Um ano só nos três: a série é por `(empresa, ano)`, e dois anos no mesmo lote significaria que o
+      // ano foi relido entre as emissões.
+      expect(new Set(codigos.map((codigo) => codigo.slice(0, codigo.lastIndexOf('-')))).size).toBe(
+        1,
+      );
+
+      // --- Passo 6: as três parcelas contra o GOLDEN, pela rota --------------------------------
+      //
+      // Igualdade da lista INTEIRA, e não campo a campo de uma delas: a saturação de fim de mês, o
+      // avanço iterativo e a crase da referência estão todos nesta tabela, e uma asserção por campo
+      // deixaria a ordem sem prova. É o mesmo oráculo do `CT-504`, agora conferido depois da rota.
+      expect(
+        parcelas.map(({ codigo: _codigo, ...fatos }) => fatos),
+        JSON.stringify(parcelas),
+      ).toEqual([...PARCELAS_DO_CENARIO_DO_GOLDEN]);
+
+      // --- Passo 7 · RD-20: `gerarCobrancasAutomaticamente: false` gera ZERO -------------------
+      //
+      // O campo é dado de negócio do contrato, e este é o primeiro consumidor dele. Sem este eixo, uma
+      // implementação que ignorasse o campo passaria o caso inteiro.
+      const antesDaRecusaDeGeracao = await contarCobrancas(EMPRESA_A.id);
+      const semGeracao = await criarContratoPor(cookie, await montarPartes(cookie, 0), {
+        dataInicioLocacao: INICIO_DO_CENARIO_DO_GOLDEN,
+        prazoMeses: PRAZO_DO_CENARIO_DO_GOLDEN,
+        diaVencimento: DIA_DE_VENCIMENTO_DO_GOLDEN,
+        valorMensal: VALOR_MENSAL_DO_GOLDEN,
+        gerarCobrancasAutomaticamente: false,
+      });
+
+      const semParcelas = await transitar(cookie, semGeracao.codigo, 'ativacao');
+
+      expect(semParcelas.status, semParcelas.texto).toBe(200);
+      expect((semParcelas.corpo as AtivacaoPublicada).status).toBe('ATIVO');
+      expect((semParcelas.corpo as AtivacaoPublicada).efeitos).toEqual({ cobrancasGeradas: 0 });
+      expect(await parcelasDoContrato(EMPRESA_A.id, semGeracao.codigo)).toEqual([]);
+      expect(await contarCobrancas(EMPRESA_A.id)).toBe(antesDaRecusaDeGeracao);
+
+      // --- Passo 8 · RD-20: e a SÉRIE não avançou ----------------------------------------------
+      //
+      // É a metade que separa *"gravou zero parcelas"* de *"gravou zero parcelas e queimou três
+      // números"*. O segundo é defeito real — a ADR-0015 proíbe reusar número, então o queimado se perde
+      // —, e nenhuma contagem de linhas o veria. A prova é o contrato SEGUINTE: o primeiro código dele
+      // tem de ser o sucessor imediato do último emitido antes da ativação sem geração.
+      const ultimoEmitido = sequencialDe(codigos[codigos.length - 1] ?? '');
+      const seguinte = await criarContratoPor(cookie, await montarPartes(cookie, 0), {
+        dataInicioLocacao: INICIO_DO_CENARIO_DO_GOLDEN,
+        prazoMeses: PRAZO_DO_CENARIO_DO_GOLDEN,
+        diaVencimento: DIA_DE_VENCIMENTO_DO_GOLDEN,
+        valorMensal: VALOR_MENSAL_DO_GOLDEN,
+      });
+
+      expect((await transitar(cookie, seguinte.codigo, 'ativacao')).status).toBe(200);
+
+      const doSeguinte = await parcelasDoContrato(EMPRESA_A.id, seguinte.codigo);
+      expect(doSeguinte.map((parcela) => sequencialDe(parcela.codigo))).toEqual([
+        ultimoEmitido + 1,
+        ultimoEmitido + 2,
+        ultimoEmitido + 3,
+      ]);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-509 — ativação recusada não deixa parcela alguma, e a contagem é feita DEPOIS da recusa',
+    async () => {
+      // A precondição é montada pelo CAMINHO REAL: o primeiro contrato passa a valer pela própria rota
+      // de ativação, e é isso que ocupa o imóvel. Nada de estado inválido é injetado por escrita direta.
+      const partes = await montarPartes(cookie, 1);
+      const vigente = await criarContratoPor(cookie, partes, {
+        dataInicioLocacao: INICIO_DO_CENARIO_DO_GOLDEN,
+        prazoMeses: PRAZO_DO_CENARIO_DO_GOLDEN,
+        diaVencimento: DIA_DE_VENCIMENTO_DO_GOLDEN,
+        valorMensal: VALOR_MENSAL_DO_GOLDEN,
+      });
+      // O segundo aponta para o MESMO imóvel, com prazo 13: se a geração não estiver na unidade de
+      // trabalho da ativação, são TREZE parcelas que aparecem.
+      const recusado = await criarContratoPor(cookie, partes, {
+        dataInicioLocacao: INICIO_DO_CENARIO_DO_GOLDEN,
+        prazoMeses: PRAZO_COM_RESIDUO,
+        diaVencimento: DIA_DE_VENCIMENTO_DO_GOLDEN,
+        valorMensal: VALOR_MENSAL_DO_GOLDEN,
+      });
+
+      expect((await transitar(cookie, vigente.codigo, 'ativacao')).status).toBe(200);
+
+      const doVigente = await parcelasDoContrato(EMPRESA_A.id, vigente.codigo);
+      expect(doVigente.length).toBe(PRAZO_DO_CENARIO_DO_GOLDEN);
+
+      // --- Recusa 1: o imóvel já tem contrato vigente -------------------------------------------
+      const antesDaPrimeira = await contarCobrancas(EMPRESA_A.id);
+      const comoEstava = await lerContrato(cookie, recusado.codigo);
+
+      const conflito = await transitar(cookie, recusado.codigo, 'ativacao');
+
+      expect(conflito.status).toBe(422);
+      // O envelope INTEIRO por igualdade de objeto (ADR-0017): o discriminador **e** o código do
+      // vigente. Um corpo a mais, ou uma mensagem trocada, reprova aqui — e não numa asserção de
+      // presença.
+      expect(conflito.corpo).toEqual({
+        codigo: CodigoErro.CAMPO_INVALIDO,
+        mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
+        campo: 'imovelId',
+        detalhes: { conflito: CONFLITO_DE_VIGENCIA, contratoVigente: vigente.codigo },
+      });
+
+      // A CONTAGEM DEPOIS DA RECUSA — é o ponto do caso. Afirmar apenas o `422` deixaria passar uma
+      // implementação que gerasse as parcelas numa transação própria e commitasse antes: o `422` sairia
+      // igual, e as treze linhas ficariam no banco.
+      expect(await parcelasDoContrato(EMPRESA_A.id, recusado.codigo)).toEqual([]);
+      // O total da empresa idêntico: ele pega a parcela que nascesse **sem** contrato reconhecível pela
+      // consulta acima — ou apontando para o contrato errado.
+      expect(await contarCobrancas(EMPRESA_A.id)).toBe(antesDaPrimeira);
+      // E o contrato ficou BYTE A BYTE como estava: `RASCUNHO`, sem as duas derivações, e com o MESMO
+      // código — a série do contrato não foi reemitida.
+      expect(await lerContrato(cookie, recusado.codigo)).toEqual(comoEstava);
+      expect(comoEstava.status).toBe('RASCUNHO');
+      // O vigente também não ganhou parcela nenhuma na tentativa alheia.
+      expect(await parcelasDoContrato(EMPRESA_A.id, vigente.codigo)).toEqual(doVigente);
+
+      // --- Recusa 2: o contrato já está ATIVO ---------------------------------------------------
+      //
+      // A mesma prova sobre a outra condição de recusa, e aqui o eixo é a NÃO duplicação: o alvo já tem
+      // três parcelas, e uma reativação que passasse teria seis. A contagem esperada é a de antes, e não
+      // zero — é o mesmo invariante escrito sobre um alvo que legitimamente já tem parcelas.
+      const antesDaSegunda = await contarCobrancas(EMPRESA_A.id);
+      const vigenteComoEstava = await lerContrato(cookie, vigente.codigo);
+
+      const reativacao = await transitar(cookie, vigente.codigo, 'ativacao');
+
+      expect(reativacao.status).toBe(422);
+      expect(reativacao.corpo).toEqual(recusaDeEstado('ATIVO', 'ATIVACAO'));
+
+      expect(await parcelasDoContrato(EMPRESA_A.id, vigente.codigo)).toEqual(doVigente);
+      expect(await contarCobrancas(EMPRESA_A.id)).toBe(antesDaSegunda);
+      expect(await lerContrato(cookie, vigente.codigo)).toEqual(vigenteComoEstava);
+      expect(vigenteComoEstava.status).toBe('ATIVO');
+    },
+    LIMITE_CASO_MS,
+  );
+});
+
 describe('cancelamento do contrato — a segunda transição governada (T8)', () => {
   it(
     'CT-415 — cancelar libera o imóvel e transita; as QUATRO transições inválidas recusam sem efeito',
@@ -2475,6 +2957,220 @@ describe('cancelamento do contrato — a segunda transição governada (T8)', ()
       expect(aceita.status, aceita.texto).toBe(200);
       expect((aceita.corpo as ContratoPublicado).status).toBe('CANCELADO');
       expect(await situacaoDoImovel(sujeito.cookie, partes.imovelId)).toBe('DISPONIVEL');
+    },
+    LIMITE_CASO_MS,
+  );
+});
+
+describe('o cancelamento do contrato cancela as cobranças em cascata (T10)', () => {
+  it(
+    'CT-530 — a cascata alcança só as canceláveis; a PAGA e a já CANCELADA ficam intactas, com o mesmo `xmin`',
+    async () => {
+      // --- Precondição: um contrato ATIVO com carteira montada por LANÇAMENTO AVULSO --------------
+      //
+      // `gerarCobrancasAutomaticamente: false` é o que mantém a carteira deste caso com **exatamente**
+      // quatro linhas, e a escolha é conteúdo: os quatro estados exigem vencimentos posicionados por
+      // deslocamento relativo ao relógio do banco, e os da ativação derivam de `dataInicioLocacao`, que
+      // é data fixa do arranjo. A ausência de parcela é AFIRMADA — sem esta linha, doze parcelas da
+      // ativação passariam pelo caso inteiro e a contagem de `4` mediria outra coisa.
+      const partes = await montarPartes(cookie, 1);
+      const contrato = await criarContratoPor(cookie, partes, {
+        gerarCobrancasAutomaticamente: false,
+      });
+
+      expect((await transitar(cookie, contrato.codigo, 'ativacao')).status).toBe(200);
+      expect(await parcelasDoContrato(EMPRESA_A.id, contrato.codigo)).toEqual([]);
+
+      // Os quatro estados, montados **pelas rotas de produção**: duas ficam em aberto (uma A_VENCER e
+      // uma VENCIDA, que é a partição que a cascata alcança), e as duas terminais são levadas ao
+      // desfecho pelas próprias rotas de transição da cobrança.
+      const aVencer = await lancarCobranca(contrato.codigo, DIAS_ADIANTE);
+      const vencida = await lancarCobranca(contrato.codigo, -DIAS_DE_ATRASO);
+      const paga = await lancarCobranca(contrato.codigo, -DIAS_DE_ATRASO);
+      const cancelada = await lancarCobranca(contrato.codigo, DIAS_ADIANTE);
+
+      await pagarCobranca(paga.codigo, {
+        pagoEm: (await datasEm(0)).vencimento,
+        valorPago: VALOR_DA_COBRANCA,
+      });
+      await cancelarCobranca(cancelada.codigo);
+
+      // --- Passo 1: a publicação inteira das quatro, o `xmin` de cada tupla e a contagem ---------
+      //
+      // As quatro publicações são guardadas **antes** do ato, e é contra elas que a igualdade de objeto
+      // do passo 4 fala. Os quatro estados são afirmados aqui: sem esta linha, um cenário que não
+      // tivesse chegado aos desfechos deixaria os passos 4 e 5 provando a intocabilidade de duas
+      // cobranças em aberto — isto é, nada.
+      const antes = await publicacaoDaCarteira([aVencer, vencida, paga, cancelada]);
+
+      expect(antes.map((cobranca) => cobranca.status)).toEqual([
+        'A_VENCER',
+        'VENCIDA',
+        'PAGA',
+        'CANCELADA',
+      ]);
+
+      const xminsAntes = await retratoDaCarteira(EMPRESA_A.id, contrato.codigo);
+
+      expect(xminsAntes.length).toBe(QUATRO_COBRANCAS);
+
+      // --- Passo 2: o cancelamento do contrato ---------------------------------------------------
+      const cancelamento = await transitar(cookie, contrato.codigo, 'cancelamento');
+
+      expect(cancelamento.status, cancelamento.texto).toBe(200);
+      expect((cancelamento.corpo as ContratoPublicado).status).toBe('CANCELADO');
+
+      const depois = await publicacaoDaCarteira([aVencer, vencida, paga, cancelada]);
+      const xminsDepois = await retratoDaCarteira(EMPRESA_A.id, contrato.codigo);
+
+      // --- Passo 3: as DUAS em aberto passam a CANCELADA -----------------------------------------
+      //
+      // O `canceladoEm` não nulo é a metade que separa *"a visão publica CANCELADA"* de *"o carimbo foi
+      // gravado"*: o estado é derivado do fato, e sem o fato ele não muda.
+      const [aVencerDepois, vencidaDepois, pagaDepois, canceladaDepois] = depois;
+
+      expect(aVencerDepois?.status).toBe('CANCELADA');
+      expect(aVencerDepois?.canceladoEm).not.toBeNull();
+      expect(vencidaDepois?.status).toBe('CANCELADA');
+      expect(vencidaDepois?.canceladoEm).not.toBeNull();
+
+      // E as duas foram tocadas **fisicamente** — é o controle positivo do passo 5: sem ele, uma
+      // implementação que não escrevesse nada satisfaria a igualdade de `xmin` das terminais.
+      expect(xminDe(xminsDepois, aVencer.codigo)).not.toBe(xminDe(xminsAntes, aVencer.codigo));
+      expect(xminDe(xminsDepois, vencida.codigo)).not.toBe(xminDe(xminsAntes, vencida.codigo));
+
+      // --- Passo 4: a PAGA e a já CANCELADA, por igualdade de OBJETO -----------------------------
+      //
+      // O corpo **inteiro** das duas, e não campo a campo: ele carrega `pagoEm`, `valorPago` e os
+      // quatro carimbos de mora (`valorMulta`, `valorJuros`, `multaPercentualAplicado`,
+      // `jurosPercentualAplicado`) numa asserção só, e uma chave a mais ou a menos reprova aqui.
+      //
+      // Um `cancelado_em` escrito na tupla da PAGA seria pego duas vezes: o `status` publicado viraria
+      // `CANCELADA` pela precedência da visão, e a mora carimbada voltaria a zero — a mesma propriedade
+      // que o `CT-527` mede do lado da camada de dados.
+      expect(pagaDepois).toEqual(antes[2]);
+      expect(pagaDepois?.status).toBe('PAGA');
+      expect(pagaDepois?.pagoEm).not.toBeNull();
+      expect(pagaDepois?.canceladoEm).toBeNull();
+
+      // O instante do cancelamento da já cancelada é **exatamente** o original. A igualdade de objeto
+      // acima já o alcança; esta linha o nomeia porque é o campo que uma cascata sem predicado
+      // sobrescreveria — e a única coisa que a distinguiria seria o carimbo do instante.
+      expect(canceladaDepois).toEqual(antes[3]);
+      expect(canceladaDepois?.status).toBe('CANCELADA');
+      expect(canceladaDepois?.canceladoEm).toBe(antes[3]?.canceladoEm);
+
+      // --- Passo 5: o `xmin` das DUAS terminais é idêntico ao guardado ---------------------------
+      //
+      // **É a asserção que dá valor a este caso.** *Não alterou* e *reescreveu com o mesmo valor* são
+      // indistinguíveis por comparação de campos, e é a segunda que a RN-13 proíbe: uma cascata sem o
+      // par de `IS NULL` reescreveria as quatro linhas e passaria o passo 4 inteiro se os valores
+      // reescritos coincidissem. O `xmin` é a transação que gravou a versão corrente da tupla, e ele
+      // muda a cada `UPDATE`.
+      expect(xminDe(xminsDepois, paga.codigo)).toBe(xminDe(xminsAntes, paga.codigo));
+      expect(xminDe(xminsDepois, cancelada.codigo)).toBe(xminDe(xminsAntes, cancelada.codigo));
+
+      // --- Passo 6: a contagem NÃO se moveu, e as quatro seguem legíveis -------------------------
+      //
+      // Nada é apagado (ADR-0014): a cascata é transição, e a leitura por código continua alcançando as
+      // quatro com `200` — o que `publicacaoDaCarteira` já exerceu duas vezes, e que esta contagem
+      // fecha do lado do banco.
+      // A ordem do retrato é a do `codigo`, e os quatro foram emitidos na ordem em que o cenário os
+      // lançou — de modo que a lista de estados é literal, e não dependente de ordenação.
+      expect(xminsDepois.length).toBe(QUATRO_COBRANCAS);
+      expect(xminsDepois.map((linha) => linha.status)).toEqual([
+        'CANCELADA',
+        'CANCELADA',
+        'PAGA',
+        'CANCELADA',
+      ]);
+
+      // E o imóvel voltou a ficar disponível: a cascata não substituiu nenhum dos efeitos que a fatia
+      // anterior já provava — as três escritas correm no mesmo commit.
+      expect(await situacaoDoImovel(cookie, partes.imovelId)).toBe('DISPONIVEL');
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-531 — cancelamento recusado não cancela cobrança alguma, e carteira vazia responde 200',
+    async () => {
+      // --- Cenário 1: um contrato JÁ CANCELADO, com a carteira dele -----------------------------
+      //
+      // Montado **só por rotas de produção**: montar, ativar (o que gera as doze parcelas), e cancelar
+      // uma vez — o que já aplica a cascata. O estado de partida é, portanto, o legítimo: um contrato
+      // `CANCELADO` cujas cobranças estão todas `CANCELADA`.
+      const partesDoCancelado = await montarPartes(cookie, 0);
+      const jaCancelado = await criarContratoPor(cookie, partesDoCancelado);
+
+      expect((await transitar(cookie, jaCancelado.codigo, 'ativacao')).status).toBe(200);
+
+      const geradas = await parcelasDoContrato(EMPRESA_A.id, jaCancelado.codigo);
+      expect(geradas.length).toBe(PRAZO_EM_MESES);
+
+      const primeiroCancelamento = await transitar(cookie, jaCancelado.codigo, 'cancelamento');
+      expect(primeiroCancelamento.status, primeiroCancelamento.texto).toBe(200);
+
+      // --- Cenário 2: um contrato em RASCUNHO, com cobranças EM ABERTO --------------------------
+      //
+      // O lançamento avulso não exige contrato ativo — ele exige contrato **alcançável e em
+      // circulação** —, e é por isso que este cenário existe: sem cobrança em aberto, o `422` sobre o
+      // rascunho não diria nada sobre cascata parcial.
+      const partesDoRascunho = await montarPartes(cookie, 0);
+      const rascunho = await criarContratoPor(cookie, partesDoRascunho);
+
+      await lancarCobranca(rascunho.codigo, DIAS_ADIANTE);
+      await lancarCobranca(rascunho.codigo, -DIAS_DE_ATRASO);
+
+      // --- Passo 1: o retrato de TODAS as cobranças dos dois contratos --------------------------
+      const antesDoCancelado = await retratoDaCarteira(EMPRESA_A.id, jaCancelado.codigo);
+      const antesDoRascunho = await retratoDaCarteira(EMPRESA_A.id, rascunho.codigo);
+
+      expect(antesDoCancelado.length).toBe(PRAZO_EM_MESES);
+      // Todas já canceladas pela cascata do primeiro cancelamento — a precondição do cenário 1 é
+      // afirmada, e não suposta.
+      expect(antesDoCancelado.map((linha) => linha.status)).toEqual(
+        Array.from({ length: PRAZO_EM_MESES }, () => 'CANCELADA'),
+      );
+      expect(antesDoRascunho.map((linha) => linha.status)).toEqual(['A_VENCER', 'VENCIDA']);
+
+      // --- Passo 2 e 3: as DUAS recusas, com o envelope da ADR-0017 nomeando o estado ------------
+      const sobreCancelado = await transitar(cookie, jaCancelado.codigo, 'cancelamento');
+      const sobreRascunho = await transitar(cookie, rascunho.codigo, 'cancelamento');
+
+      expect(sobreCancelado.status, sobreCancelado.texto).toBe(422);
+      expect(sobreCancelado.corpo).toEqual(recusaDeEstado('CANCELADO', 'CANCELAMENTO'));
+      expect(sobreRascunho.status, sobreRascunho.texto).toBe(422);
+      expect(sobreRascunho.corpo).toEqual(recusaDeEstado('RASCUNHO', 'CANCELAMENTO'));
+
+      // --- Passo 4, 5 e 6: `xmin`, `status` e contagem idênticos em CADA tupla ------------------
+      //
+      // O retrato inteiro por igualdade de lista: ele carrega código, `xmin` e `status` de cada linha,
+      // de modo que a contagem, a ausência de escrita e o estado publicado são a mesma asserção. **Não
+      // existe cascata parcial** — a cascata corre na unidade de trabalho da transição, e a recusa
+      // acontece antes de qualquer escrita.
+      expect(await retratoDaCarteira(EMPRESA_A.id, jaCancelado.codigo)).toEqual(antesDoCancelado);
+      expect(await retratoDaCarteira(EMPRESA_A.id, rascunho.codigo)).toEqual(antesDoRascunho);
+
+      // --- Passo 7 · FRONTEIRA: contrato ATIVO SEM cobrança alguma responde `200` ---------------
+      //
+      // É o controle que impede a implementação de tratar `0 linhas afetadas` como erro — o modo de
+      // falha mais provável desta task, porque a porta irmã (`definirSituacaoDeLocacaoDoImovel`)
+      // **levanta** quando não alcança exatamente uma linha. Aqui a quantidade é dado do contrato.
+      const partesSemCarteira = await montarPartes(cookie, 0);
+      const semCarteira = await criarContratoPor(cookie, partesSemCarteira, {
+        gerarCobrancasAutomaticamente: false,
+      });
+
+      expect((await transitar(cookie, semCarteira.codigo, 'ativacao')).status).toBe(200);
+      expect(await retratoDaCarteira(EMPRESA_A.id, semCarteira.codigo)).toEqual([]);
+
+      const semCascata = await transitar(cookie, semCarteira.codigo, 'cancelamento');
+
+      expect(semCascata.status, semCascata.texto).toBe(200);
+      expect((semCascata.corpo as ContratoPublicado).status).toBe('CANCELADO');
+      expect(await retratoDaCarteira(EMPRESA_A.id, semCarteira.codigo)).toEqual([]);
+      expect(await situacaoDoImovel(cookie, partesSemCarteira.imovelId)).toBe('DISPONIVEL');
     },
     LIMITE_CASO_MS,
   );
@@ -3352,6 +4048,276 @@ async function contarContratos(empresaId: string): Promise<number> {
 }
 
 /**
+ * Quantas linhas de `negocio.cobranca` o contexto da empresa informada alcança.
+ *
+ * A contagem é **crua** e sem recorte algum, pela mesma razão de {@link contarContratos}: o que os casos
+ * medem é se alguma linha nasceu, e um recorte esconderia justamente a linha gravada por engano. Nenhum
+ * `WHERE empresa_id` é escrito aqui — quem recorta é a política (ADR-0008) —, e a empresa entra pelo
+ * **contexto**, que é o mesmo mecanismo que a aplicação usa.
+ *
+ * Ela lê a **tabela**, e não a visão `negocio.cobranca_derivada`: o que o `CT-509` afirma é quantos
+ * **fatos** existem, e a visão publica os mesmos fatos acrescidos de derivação que não interessa a uma
+ * contagem. O marcador `DECISÃO FECHADA` daquela porta alcança as leituras de produção
+ * (`packages/db/src/**`, `apps/api/src/**`), que é onde a unicidade da derivação importa — e é o
+ * `CT-510` que o cobra.
+ */
+async function contarCobrancas(empresaId: string): Promise<number> {
+  return await contextoDeTenant.executarCom(
+    { empresaId },
+    async () =>
+      await acessoAoNegocio.emUnidadeDeTrabalho(async (tx) => {
+        const [linha] = await tx<{ total: string }[]>`
+          SELECT count(*) AS total FROM negocio.cobranca
+        `;
+
+        return Number(linha?.total ?? 0);
+      }),
+  );
+}
+
+/**
+ * As parcelas gravadas para um contrato, pelo **código** dele, em ordem de competência.
+ *
+ * A junção é com `negocio.contrato` porque a coluna da cobrança é o UUID interno e o que o caso tem em
+ * mãos é o código legível (ADR-0017) — a mesma tradução que a borda faz. Não há `WHERE empresa_id` em
+ * lugar nenhum: as duas tabelas têm política, e o contexto é quem recorta.
+ *
+ * As três datas saem por `to_char`, e a escolha é conteúdo: o driver entregaria uma coluna `date` como
+ * `Date` no fuso do processo, e reserializá-la desloca a data em um dia para metade dos fusos — o caso
+ * compararia contra o golden uma data que o banco não guardou. É a mesma razão que a projeção da porta
+ * registra.
+ *
+ * A ordem é `competencia, codigo`: ela é a do oráculo, e o desempate pelo código existe porque parcelas
+ * do mesmo contrato podem partilhar competência num cenário futuro — sem ele, a igualdade de lista
+ * passaria a depender da ordem em que o banco devolve o empate.
+ */
+async function parcelasDoContrato(empresaId: string, codigo: string): Promise<ParcelaGravada[]> {
+  return await contextoDeTenant.executarCom({ empresaId }, async () => {
+    return await acessoAoNegocio.emUnidadeDeTrabalho(async (tx) => {
+      const linhas = await tx<
+        {
+          codigo: string;
+          natureza: string;
+          referencia: string;
+          competencia: string;
+          dataVencimento: string;
+          valorOriginal: string;
+        }[]
+      >`
+        SELECT cobranca.codigo,
+               cobranca.natureza::text AS natureza,
+               cobranca.referencia,
+               to_char(cobranca.competencia, 'YYYY-MM-DD') AS competencia,
+               to_char(cobranca.data_vencimento, 'YYYY-MM-DD') AS "dataVencimento",
+               cobranca.valor_original AS "valorOriginal"
+          FROM negocio.cobranca AS cobranca
+          JOIN negocio.contrato AS contrato ON contrato.id = cobranca.contrato_id
+         WHERE contrato.codigo = ${codigo}
+         ORDER BY cobranca.competencia, cobranca.codigo
+      `;
+
+      // `numeric` volta do driver **em texto**, porque não cabe em ponto flutuante sem perda. A
+      // conversão explícita é o que permite comparar com o número do oráculo em vez de com a grafia
+      // dele.
+      return linhas.map((linha) => ({
+        codigo: linha.codigo,
+        natureza: linha.natureza,
+        referencia: linha.referencia,
+        competencia: linha.competencia,
+        dataVencimento: linha.dataVencimento,
+        valorOriginal: Number(linha.valorOriginal),
+      }));
+    });
+  });
+}
+
+/** O sufixo sequencial de um código `COB-{ano}-{7 dígitos}`, como número. */
+function sequencialDe(codigo: string): number {
+  return Number(codigo.slice(codigo.lastIndexOf('-') + 1));
+}
+
+/**
+ * A competência e o vencimento deslocados em `dias` a partir do relógio do **banco**.
+ *
+ * A competência é o primeiro dia do mês do vencimento, porque é o que o `refine` do contrato e o
+ * `cobranca_competencia_no_primeiro_dia_chk` exigem. O eixo é
+ * `negocio.data_corrente_da_operacao()` — o mesmo que a visão consulta —, de modo que a fronteira do
+ * vencimento é medida contra o próprio relógio que a decide, e nunca contra o do processo.
+ */
+async function datasEm(dias: number): Promise<{ competencia: string; vencimento: string }> {
+  return await contextoDeTenant.executarCom({ empresaId: EMPRESA_A.id }, async () => {
+    return await acessoAoNegocio.emUnidadeDeTrabalho(async (tx) => {
+      const [linha] = await tx<{ competencia: string; vencimento: string }[]>`
+        SELECT to_char(
+                 date_trunc(
+                   'month',
+                   negocio.data_corrente_da_operacao() + make_interval(days => ${dias})
+                 ),
+                 'YYYY-MM-DD'
+               ) AS competencia,
+               to_char(
+                 negocio.data_corrente_da_operacao() + make_interval(days => ${dias}),
+                 'YYYY-MM-DD'
+               ) AS vencimento
+      `;
+
+      if (linha === undefined) {
+        throw new Error('o relógio do banco não devolveu as datas do cenário');
+      }
+
+      return linha;
+    });
+  });
+}
+
+/**
+ * Lança uma cobrança avulsa **pela rota real**, com o vencimento deslocado em `dias`. A falha levanta.
+ *
+ * É o caminho por onde os casos da cascata montam os quatro estados: a ativação gera parcelas com
+ * vencimento derivado de `dataInicioLocacao`, que é data fixa do arranjo, e os estados `A_VENCER` e
+ * `VENCIDA` exigem posicionamento relativo ao relógio do banco.
+ */
+async function lancarCobranca(contratoCodigo: string, dias: number): Promise<CobrancaPublicada> {
+  const datas = await datasEm(dias);
+  const resposta = await pedir(COLECAO_DE_COBRANCAS, {
+    metodo: 'POST',
+    cookie,
+    corpo: {
+      contratoCodigo,
+      natureza: NATUREZA_DA_PARCELA,
+      referencia: REFERENCIA_DA_COBRANCA,
+      competencia: datas.competencia,
+      dataVencimento: datas.vencimento,
+      valorOriginal: VALOR_DA_COBRANCA,
+    },
+  });
+
+  if (resposta.status !== 201) {
+    throw new Error(`o lançamento respondeu ${String(resposta.status)}: ${resposta.texto}`);
+  }
+
+  return resposta.corpo as CobrancaPublicada;
+}
+
+/** Acusa o pagamento de uma cobrança **pela rota real**. A falha levanta. */
+async function pagarCobranca(
+  codigo: string,
+  corpo: { readonly pagoEm: string; readonly valorPago: number },
+): Promise<void> {
+  const resposta = await pedir(`${COLECAO_DE_COBRANCAS}/${codigo}/pagamento`, {
+    metodo: 'POST',
+    cookie,
+    corpo,
+  });
+
+  if (resposta.status !== 200) {
+    throw new Error(
+      `o pagamento de ${codigo} respondeu ${String(resposta.status)}: ${resposta.texto}`,
+    );
+  }
+}
+
+/** Cancela uma cobrança **pela rota real** — nunca a de contrato. A falha levanta. */
+async function cancelarCobranca(codigo: string): Promise<void> {
+  const resposta = await pedir(`${COLECAO_DE_COBRANCAS}/${codigo}/cancelamento`, {
+    metodo: 'POST',
+    cookie,
+    corpo: {},
+  });
+
+  if (resposta.status !== 200) {
+    throw new Error(
+      `o cancelamento de ${codigo} respondeu ${String(resposta.status)}: ${resposta.texto}`,
+    );
+  }
+}
+
+/**
+ * Lê pela rota real a publicação **inteira** de cada cobrança informada, na ordem em que vieram.
+ *
+ * Ela é o que dá ao `CT-530` o retrato contra o qual a igualdade de objeto fala, e ela **exige `200`**:
+ * a leitura das quatro depois da cascata é ela mesma uma asserção do caso — nada é apagado (ADR-0014),
+ * e o registro continua legível.
+ */
+async function publicacaoDaCarteira(
+  cobrancas: readonly CobrancaPublicada[],
+): Promise<CobrancaPublicada[]> {
+  const publicadas: CobrancaPublicada[] = [];
+
+  for (const cobranca of cobrancas) {
+    const resposta = await pedir(`${COLECAO_DE_COBRANCAS}/${cobranca.codigo}`, { cookie });
+
+    if (resposta.status !== 200) {
+      throw new Error(
+        `a leitura de ${cobranca.codigo} respondeu ${String(resposta.status)}: ${resposta.texto}`,
+      );
+    }
+
+    publicadas.push(resposta.corpo as CobrancaPublicada);
+  }
+
+  return publicadas;
+}
+
+/**
+ * O retrato de cada cobrança de um contrato: o código, o **`xmin`** da tupla e o estado publicado.
+ *
+ * O `xmin` é o identificador da transação que gravou a versão corrente da linha — coluna de sistema,
+ * que **não existe na visão** —, e ele muda a cada `UPDATE`. É por isso que a igualdade dele entre duas
+ * medições prova **ausência de escrita**, e não apenas igualdade de valor: *não alterou* e *reescreveu
+ * com o mesmo valor* são indistinguíveis por comparação de campos, e é a segunda que a RN-13 proíbe.
+ *
+ * O `status` sai da **visão**, e não de uma condicional escrita aqui: ele é derivado (ADR-0022), e
+ * reproduzir a precedência neste arquivo faria a asserção concordar com uma segunda avaliação do
+ * estado. A junção é por `id` — o `WHERE` já recorta pelo contrato.
+ *
+ * Não há `WHERE empresa_id` em lugar nenhum: as duas relações têm política, e o contexto é quem recorta
+ * (ADR-0008). A ordem é a do `codigo`, que é único por empresa e, portanto, desempata sempre.
+ */
+interface RetratoDaCobranca {
+  readonly codigo: string;
+  readonly xmin: string;
+  readonly status: string;
+}
+
+async function retratoDaCarteira(
+  empresaId: string,
+  codigoDoContrato: string,
+): Promise<RetratoDaCobranca[]> {
+  return await contextoDeTenant.executarCom({ empresaId }, async () => {
+    return await acessoAoNegocio.emUnidadeDeTrabalho(async (tx) => {
+      const linhas = await tx<RetratoDaCobranca[]>`
+        SELECT cobranca.codigo,
+               cobranca.xmin::text AS xmin,
+               derivada.status::text AS status
+          FROM negocio.cobranca AS cobranca
+          JOIN negocio.cobranca_derivada AS derivada ON derivada.id = cobranca.id
+          JOIN negocio.contrato AS contrato ON contrato.id = cobranca.contrato_id
+         WHERE contrato.codigo = ${codigoDoContrato}
+         ORDER BY cobranca.codigo
+      `;
+
+      return linhas.map((linha) => ({
+        codigo: linha.codigo,
+        xmin: linha.xmin,
+        status: linha.status,
+      }));
+    });
+  });
+}
+
+/** O `xmin` de uma cobrança dentro de um retrato. A ausência levanta — o código tem de estar lá. */
+function xminDe(retrato: readonly RetratoDaCobranca[], codigo: string): string {
+  const linha = retrato.find((item) => item.codigo === codigo);
+
+  if (linha === undefined) {
+    throw new Error(`o retrato da carteira não trouxe a cobrança ${codigo}`);
+  }
+
+  return linha.xmin;
+}
+
+/**
  * Concede as chaves informadas a uma pessoa, pelo caminho real da camada de dados.
  *
  * Sob o contexto de tenant **da empresa dela** e dentro da unidade de trabalho, com a coerência
@@ -3411,8 +4377,65 @@ interface ContratoPublicado {
  * conjunto de chaves é o que os casos asserem por igualdade, e derivá-lo do tipo do SUT faria a
  * asserção concordar consigo mesma.
  */
+/**
+ * Uma parcela como o **banco** a guarda — os cinco fatos com que ela nasce, mais o código emitido.
+ *
+ * Declarada aqui, e não importada de `@sysloc/db`, pela razão de {@link ContratoPublicado}: é o conjunto
+ * de campos que os casos asserem por igualdade, e derivá-lo do tipo do SUT faria a asserção concordar
+ * consigo mesma. Estado, mora e valor total **não estão aqui**, e a ausência é a ADR-0022: eles são
+ * derivados pela visão, e a parcela nasce como fato.
+ */
+interface ParcelaGravada {
+  readonly codigo: string;
+  readonly natureza: string;
+  readonly referencia: string;
+  readonly competencia: string;
+  readonly dataVencimento: string;
+  readonly valorOriginal: number;
+}
+
+/**
+ * Uma cobrança como a API a publica — **dezoito campos**.
+ *
+ * Declarada aqui, e não importada de `@sysloc/contracts`, pela razão de {@link ContratoPublicado}: é o
+ * conjunto de chaves que o `CT-530` compara por igualdade de objeto, e derivá-lo do tipo do SUT faria a
+ * asserção concordar consigo mesma. **Não há `id`**, e a ausência é a ADR-0017 — a chave exposta é o
+ * `codigo`, porque a cobrança tem série declarada.
+ *
+ * Os cinco derivados (`status`, `diasAtraso`, `valorMulta`, `valorJuros`, `valorTotal`) e os cinco do
+ * desfecho estão aqui porque é justamente sobre eles que a intocabilidade da PAGA e da já CANCELADA é
+ * afirmada: um `cancelado_em` escrito na tupla da paga mudaria o primeiro grupo pela precedência da
+ * visão, e o segundo é o fato gravado.
+ */
+interface CobrancaPublicada {
+  readonly codigo: string;
+  readonly contratoCodigo: string;
+  readonly locatarioId: string;
+  readonly natureza: string;
+  readonly referencia: string;
+  readonly competencia: string;
+  readonly dataVencimento: string;
+  readonly valorOriginal: number;
+  readonly status: string;
+  readonly diasAtraso: number;
+  readonly valorMulta: number;
+  readonly valorJuros: number;
+  readonly valorTotal: number;
+  readonly pagoEm: string | null;
+  readonly valorPago: number | null;
+  readonly canceladoEm: string | null;
+  readonly multaPercentualAplicado: number | null;
+  readonly jurosPercentualAplicado: number | null;
+}
+
 interface AtivacaoPublicada extends ContratoPublicado {
-  readonly efeitos: { readonly cobrancasGeradas: boolean };
+  /**
+   * SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era este tipo que descrevia o efeito
+   * como booleano — a forma de uma fatia que não gerava cobrança. Desde a T9 o campo é a **contagem**
+   * de parcelas gravadas, e `boolean` aqui faria a asserção do `CT-508` comparar um número com um tipo
+   * que não o admite. Nenhuma asserção mudou por causa desta linha.
+   */
+  readonly efeitos: { readonly cobrancasGeradas: number };
 }
 
 /** A página de contratos, no envelope que a ADR-0017 fixa. */

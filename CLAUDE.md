@@ -59,6 +59,47 @@ commitadas, incluindo a **T7**, cuja recuperação foi provada por **reinício r
 A fatia `caracterizacao-regras-legadas` (v1) também está **concluída**: os 6 artefatos golden
 estão versionados e são o oráculo das regras legadas para a F3 e a F5.
 
+**Fase 3 EM ANDAMENTO — é aqui que o trabalho está.** A fase foi **partida em duas fatias** no
+pré-refinamento (`docs/specs/features/cobranca-mora-e-documentos/v1/pre-refinement.md`), pelo corte
+**por efeito colateral**: a fatia 1 não toca nada fora do banco, a fatia 2 é toda ação sobre o mundo.
+
+1. **`cobranca-e-mora` (v1) — EM ANDAMENTO, 9 de 11 tasks concluídas.** `negocio.cobranca` e
+   `negocio.configuracao_de_mora`, a view `cobranca_derivada` com `security_invoker` como **fonte
+   única do estado e da mora**, a série `COB-{ano}-{7 dígitos}` atrás de duas funções
+   `SECURITY DEFINER`, e as **7 rotas novas** (superfície em **82/67**). **Fechou o D28 (F2/T7)** na T9,
+   com o marcador e a linha do índice saindo no mesmo commit. Deixou o **D1** e o **D26** com marcador
+   e gatilho (índice abaixo). Suíte **687 → 834**.
+2. **`regua-e-documentos` (v1) — não iniciada.** Régua com fila (fecha o **D32 (F0/T6)**), PDF de
+   contrato contra o golden textual, carnê com `pdf-lib` no servidor (fecha o **D36 (F2/T8)**).
+   ~1.800 LOC — o pré-refinamento registra que ela **pode precisar partir de novo**.
+
+> ⏸️ **O run da fatia 1 está PAUSADO a pedido do usuário — segunda pausa, 2026-08-10.** O ponto de
+> parada é exato e é o **mesmo formato da primeira**: **o executor da T11 concluiu, e os dois gates da
+> T11 NÃO rodaram.** T2–T10 aprovadas nos dois gates e **staged sem commit** (nove tasks); T11 no
+> working tree, só com **modificações** em dois arquivos de teste — nenhum arquivo untracked, nada a
+> perder. A **T1 segue diferida por decisão** — exige `sudo` interativo e o site efêmero do
+> `/opt/frappe` de pé, nenhum subagente a executa, e nada na fatia depende dela. Retomar é reinvocar
+> `/agent-spec-sdd-run-tasks docs/specs/features/cobranca-e-mora/v1/task_plan.md sysloc-backend-implementer`
+> e escolher **"Retomar nos gates"** — foi o caminho que funcionou na primeira pausa. O bloco
+> **"⏸️ PAUSA DO RUN — 2026-08-10 (segunda pausa)"** ao fim do `_run/workflow-report.md` da fatia
+> carrega o sumário do executor da T11 para os gates receberem inline, a baseline por unidade, o
+> `t10_sha` com a receita para recriá-lo, os quatro pontos a auditar e o que falta para fechar a fatia
+> — **leia-o antes de retomar**. ⚠️ **Não faça `git add` da T11 antes dos gates**: o índice hoje é
+> exatamente T2..T10, e é isso que torna o `t10_sha` recriável.
+>
+> **Nada foi commitado** — o HEAD segue em `fb93915` desde o início do run. A **ADR-0021 foi emendada**
+> durante a T7, por decisão do usuário escalada pelo Gate 2: a `Decision` ganhou o roster explícito das
+> instâncias da segunda classe, e o pagamento e o cancelamento de **cobrança** estão nele por nome.
+>
+> Dois fatos operacionais que não estão em artefato de spec e mordem quem rodar a suíte:
+> o **`CT-907` é flaky PRÉ-EXISTENTE** (expira no teto de 5000ms sob disputa de CPU no `pnpm test`
+> completo, e passa 3/3 isolado — falha por **timeout** é o flake, falha por **asserção** é achado);
+> e o **disco do host está em ~93%**, com resíduos de `/tmp/sysloc-banco-*` já tendo produzido
+> `No space left on device`, que **se disfarça de teste vermelho**. Rode `rm -rf /tmp/sysloc-banco-*`
+> entre execuções. E **meça a suíte POR PACOTE** (`pnpm --filter @sysloc/<pacote> test`): o
+> `turbo run test` **aborta os pacotes irmãos** quando um falha, e a saída agregada não carrega
+> contagem confiável dos interrompidos.
+
 **Fase 2 CONCLUÍDA — as duas fatias fecharam, e as duas estão commitadas.** A fase entrega o domínio
 de locação inteiro em **21 tasks**, todas aprovadas nos dois gates, nenhuma bloqueada.
 
@@ -79,11 +120,16 @@ de locação inteiro em **21 tasks**, todas aprovadas nos dois gates, nenhuma bl
    `/v1/imoveis`. Nasceram dela as ADRs **0019** e **0020**; a **0019 já foi superseded pela 0021**.
    Deixou **47 débitos** anotados, dos quais **14 já escriturados** (ver a intervenção abaixo).
 
-**A superfície da API está pronta para congelar, e não tem mais condição pendente.** São **75 rotas**
-e **60 manipuladores**, `semDeclaracao` vazio, 42 rotas do domínio com esquema derivado de
-`@sysloc/contracts`. ⚠️ **É 75, e não 77** — o `77` que circulou no `tech_spec.md` vinha de uma
-premissa que a medição refutou (*"cada `GET` entra em dobro por causa do `HEAD`"*), e o módulo
-`cobertura-de-autorizacao.ts` **suprime** o `HEAD` derivado. Não "corrija" para 77.
+**A superfície da API não tem condição pendente para congelar, mas voltou a crescer na F3.** Ela
+fechou a F2 em **75 rotas / 60 manipuladores**, `semDeclaracao` vazio, 42 rotas do domínio com
+esquema derivado de `@sysloc/contracts`. Na fatia `cobranca-e-mora` ela sobe em **três tasks**:
+a **T5** levou a **78/63**, a **T6** a **80/65** e a **T7** a **82/67** — as três aprovadas nos dois
+gates. A conferência final por **dupla medição independente** é o **CT-533**, na T11: o executor dela
+já mediu **82 pelo roteador e 82 pela composição**, com **67** manipuladores, e ⚠️ **os dois gates da
+T11 ainda não rodaram** — o número só fecha quando rodarem. ⚠️ **O número da F2 era 75, e não 77** — o `77` que
+circulou no `tech_spec.md` vinha de uma premissa que a medição refutou (*"cada `GET` entra em dobro
+por causa do `HEAD`"*), e o módulo `cobertura-de-autorizacao.ts` **suprime** o `HEAD` derivado. Não
+"corrija" para 77, nem propague a premissa para as contagens novas.
 
 **Intervenção dirigida de 2026-08-09** (fora do pipeline, no molde do commit `11c33ad`). Precedida de
 auditoria dos 47 débitos **contra o código**. Resultado: **quatro já estavam pagos** um dia depois do
@@ -206,12 +252,12 @@ operacional dela — não uma meta aproximada.
 O marco está alcançado quando **todos** os sete itens forem verdadeiros:
 
 - [ ] **F1 a F5 concluídas** — todas as tasks aprovadas nos dois gates, suíte verde, critérios de
-      aceitação de cada fatia verificados · **F1 fechada em 2026-08-05, F2 em 2026-08-09; faltam
-      F3, F4 e F5**
+      aceitação de cada fatia verificados · **F1 fechada em 2026-08-05, F2 em 2026-08-09; a F3 está
+      EM ANDAMENTO** (fatia 1 em 4/11 tasks, run pausado), **e faltam F4 e F5**
 - [ ] **Superfície da API congelada** — nenhuma fatia posterior acrescenta, remove ou altera rota;
-      o congelamento é o que torna o handoff confiável · **hoje em 75 rotas / 60 manipuladores, e
-      sem condição pendente** desde que a ADR-0021 fechou o D43 · ⚠️ mas **F3 a F5 ainda publicam
-      rota** (cobrança, webhook Sicoob, rotinas), então o congelamento é o *depois* delas
+      o congelamento é o que torna o handoff confiável · **sem condição pendente** desde que a
+      ADR-0021 fechou o D43 · ⚠️ mas **F3 a F5 ainda publicam rota** (cobrança, webhook Sicoob,
+      rotinas) — a F3 já leva de 75 a 82 —, então o congelamento é o *depois* delas
 - [ ] **`@sysloc/contracts` publicado** no GitHub privado e versionado — é o artefato que o React
       importa para trocar tipos e cliente ts-rest
 - [ ] **`handoff-frontend.md` gerado** por `/agent-spec-backend-contract-handoff`, carregando o
@@ -353,20 +399,25 @@ Específicos deste domínio: **undici** (mTLS do Sicoob), **`node:crypto` `X509C
 
 Doze débitos têm gatilho que dispara fora da fatia que os criou: **D28** e **D32** vêm da F0;
 **D23**, **D39**, **D24**, **D27** e **D37** nasceram na F1 — os três últimos na fatia
-`autorizacao-e-ciclo-de-acesso` —; quatro nasceram na F2, o **D3** na fatia
-`cadastro-de-imoveis-e-pessoas` e o **D28**, o **D36** e o **D44** na fatia `contratos-de-locacao`;
-e um nasceu na F3, o **D1**, na fatia `cobranca-e-mora`.
-O **D27** partilha com o D23 o gatilho e o fato que falta: qual é o salto confiável da borda; e o
-**D36** partilha com o D28 da mesma fatia o gatilho — a F3. O **D44** é o mais novo: o marcador dele
-foi emitido na intervenção dirigida de 2026-08-09, e não no run — o débito existia desde a T10 e
-chegava ao futuro só por um parágrafo de docblock.
+`autorizacao-e-ciclo-de-acesso` —; três nasceram na F2, o **D3** na fatia
+`cadastro-de-imoveis-e-pessoas` e o **D36** e o **D44** na fatia `contratos-de-locacao`;
+e dois nasceram na F3, o **D1** e o **D26**, na fatia `cobranca-e-mora`.
+O **D27** partilha com o D23 o gatilho e o fato que falta: qual é o salto confiável da borda. O
+**D26** é o mais novo, emitido na T8, e
+tem a mesma forma do D1: os dois agendam a **promoção de um símbolo duplicado** para quando o terceiro
+consumidor chegar. O **D44** foi emitido na intervenção dirigida de 2026-08-09, e não num run — o
+débito existia desde a T10 e chegava ao futuro só por um parágrafo de docblock.
 **Nenhum tem por gatilho o congelamento da superfície da API** — o único que tinha era o D43, e ele
 foi fechado em 2026-08-09 pela ADR-0021, que supersede a 0019 e recorta a governança da transição
 pela natureza do ato.
-⚠️ **Os dois `D28` são débitos DIFERENTES** — `F0/T5` e `F2/T7` —, e a coexistência é legítima: a
-sequência corre dentro da §2 da fatia que registrou cada um (§3-B da `nao-regressao.md`).
-**Um já disparou e segue aberto** — o **D28 (F0/T5)**, na F1/T2.
-Sete saíram daqui por terem sido fechados — **este índice lista só débito vivo**: o D7 da F3/T4, na
+⚠️ **O `D28` que resta é o da F0/T5**, e ele não é o mesmo que a fatia `contratos-de-locacao`
+registrou: a sequência corre dentro da §2 da fatia que registrou cada um (§3-B da
+`nao-regressao.md`), de modo que dois `Dnn` homônimos são débitos diferentes.
+**Ele já disparou e segue aberto** — na F1/T2.
+Oito saíram daqui por terem sido fechados — **este índice lista só débito vivo**: o D28 da F2/T7, na
+T9 da fatia `cobranca-e-mora`, quando a ativação do contrato passou a derivar as parcelas e a
+gravá-las na mesma unidade de trabalho, e `esquemaDaAtivacaoDeContrato.efeitos.cobrancasGeradas`
+deixou de ser o literal `false` para publicar quantas nasceram; o D7 da F3/T4, na
 T5 daquela mesma fatia, quando `lerAnoDaSerieDeCobranca` nasceu em `packages/db/src/cobranca.ts` e a
 borda de lançamento passou a ler o ano do mesmo `negocio.data_corrente_da_operacao()` que a visão
 consulta; o D6 da F1/T5,
@@ -407,10 +458,10 @@ intervenção dirigida de limpeza de 2026-08-05, quando `esquemaDoErro` ganhou d
 | **D27** (F1/T6, fatia `autorizacao-e-ciclo-de-acesso`) | `packages/auth/src/autenticacao.ts` | a **publicação atrás do servidor de borda na F7** — sem ela o limitador não tem eixo de origem |
 | **D37** (F1/T8, fatia `autorizacao-e-ciclo-de-acesso`) | `apps/api/src/master/empresa.controller.ts` | a **primeira comparação do `:id` do Master com identidade da sessão** — o esquema de lá não canoniza a caixa do UUID |
 | **D3** (F2/T1, fatia `cadastro-de-imoveis-e-pessoas`) | `packages/contracts/src/comum.ts` | a **primeira task que abrir `usuario.controller.ts` por outra razão** — `ESQUEMA_DO_IDENTIFICADOR` tem duas definições |
-| **D28** (F2/T7, fatia `contratos-de-locacao`) | `apps/api/src/contratos/contrato.service.ts` | a **F3** — a ativação não gera cobranças, e a fatia de cobrança é obrigada a afrouxar o literal `cobrancasGeradas: false` |
 | **D36** (F2/T8, fatia `contratos-de-locacao`) | `apps/api/src/contratos/contrato.service.ts` (`cancelar`) | a **F3** — a pré-condição legada "sem PDF, não cancela" não é portada, e é lá que se decide se o carimbo é pré-condição ou efeito |
 | **D44** (F2/T10, fatia `contratos-de-locacao`) | `apps/api/src/imoveis/imovel.service.ts` (`definirSituacaoDeLocacao`) | a fatia que criar no banco a **restrição pareando `contrato.status='ATIVO'` com `imovel.status_locacao`** — hoje nada fecha a janela da guarda |
 | **D1** (F3/T2, fatia `cobranca-e-mora`) | `packages/contracts/src/cobranca.ts` (ponto do import) | o **terceiro consumidor monetário do pacote** — `MAIOR_VALOR_MONETARIO` e `ESCALA_MONETARIA` sobem para `comum.ts` |
+| **D26** (F3/T8, fatia `cobranca-e-mora`) | `packages/db/src/derivacao-de-cobranca.ts` (`ultimoDiaDoMes`) | o **terceiro consumidor de aritmética de calendário do pacote** — `ultimoDiaDoMes` e `ehBissexto` sobem para módulo próprio |
 
 ---
 

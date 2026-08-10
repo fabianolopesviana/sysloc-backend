@@ -582,7 +582,7 @@ function paresDeContratos(): readonly string[] {
 }
 
 /**
- * Os **três pares** que a superfície de cobrança publica (T5 da fatia `cobranca-e-mora`).
+ * Os **cinco pares** que a superfície de cobrança publica — três da T5 e as duas transições da T7.
  *
  * Escritos à mão e compostos a partir do dono do segmento (`CAMINHO_DAS_COBRANCAS`), pela mesma razão
  * dos inventários acima. O `HEAD` derivado do `GET` da coleção **não** entra: ele não é entrada
@@ -592,21 +592,32 @@ function paresDeContratos(): readonly string[] {
  * dá o código legível como chave exposta. O nome do parâmetro entra literalmente no par, porque é ele
  * que o roteador publica.
  *
- * **Nenhuma das três declara nada no MÉTODO**, e a ausência é decisão registrada (§11.2 do tech
- * spec): as três valem pela exigência da classe, `TELA:financeiro`, porque o catálogo fechado da
+ * **Nenhuma das cinco declara nada no MÉTODO**, e a ausência é decisão registrada (§11.2 do tech
+ * spec): as cinco valem pela exigência da classe, `TELA:financeiro`, porque o catálogo fechado da
  * ADR-0011 enumera duas ações sensíveis dentro daquela área — `ACAO:emitir_boleto` e
- * `ACAO:solicitar_baixa_de_boleto` — e **nenhuma** para lançar ou ler cobrança. Para **este** caso,
- * que mede existência de declaração, elas são rotas como as que herdam a da classe; quem audita
- * conteúdo é o `CT-355`, e a auditoria final das sete declarações é o `CT-533`, em T11.
+ * `ACAO:solicitar_baixa_de_boleto` — e **nenhuma** para lançar, ler, pagar ou cancelar cobrança. Para
+ * **este** caso, que mede existência de declaração, elas são rotas como as que herdam a da classe;
+ * quem audita conteúdo é o `CT-355`, e a auditoria final das sete declarações é o `CT-533`, em T11.
+ *
+ * **As duas transições da T7 são a evidência mais forte disso nesta superfície**: elas são atos de
+ * escrita que mudam o estado publicado de um fato financeiro, e ainda assim exigem **apenas a área** —
+ * a classificação sai da `Decision` da ADR-0021 (acusar pagamento registra dinheiro que se moveu fora
+ * do sistema, e o cancelamento tem substituta prevista) e foi escalada e confirmada antes da spec.
  *
  * **Não há par de exclusão nem de circulação**, e a ausência é contrato: a cobrança não tem ato de
  * exclusão a traduzir (ADR-0014, §21 do tech spec). O `CT-521`, em T10, afirma que os métodos sob
- * `/v1/cobrancas` são exatamente `['GET','POST']`.
+ * `/v1/cobrancas` são exatamente `['GET','POST']` — e as duas transições, sendo `POST`, não o mudam.
  */
 function paresDeCobrancas(): readonly string[] {
   const cobrancas = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}`;
 
-  return [`POST ${cobrancas}`, `GET ${cobrancas}`, `GET ${cobrancas}/:codigo`];
+  return [
+    `POST ${cobrancas}`,
+    `GET ${cobrancas}`,
+    `GET ${cobrancas}/:codigo`,
+    `POST ${cobrancas}/:codigo/pagamento`,
+    `POST ${cobrancas}/:codigo/cancelamento`,
+  ];
 }
 
 /**
@@ -1011,8 +1022,26 @@ const ROTAS_COM_EXIGENCIA: readonly string[] = [
  * São **dois** e não três: os dois manipuladores compartilham o **mesmo caminho** — o recurso é
  * singular por empresa e não tem `:id` —, de modo que o par é `GET`/`PUT` sobre a coleção, e só o
  * `GET` traria `HEAD` derivado, que o módulo verificado suprime.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T7 da mesma fatia acrescentou **dois** pares (80 → 82), as duas transições
+ * da cobrança — `POST /v1/cobrancas/:codigo/pagamento` e `POST /v1/cobrancas/:codigo/cancelamento` —, e
+ * a âncora de contagem existe justamente para que esse acréscimo passe pela revisão de quem lê este
+ * arquivo em vez de entrar sozinho; a igualdade de conjunto acima nomeia quais são os dois. Nenhum par
+ * anterior saiu. A contagem foi **refeita do zero**, e por **duas** medições independentes que
+ * concordam:
+ *
+ *   * **pela enumeração do próprio módulo de cobertura** — `cobertura.rotasEnumeradas` sobre a
+ *     aplicação de produção montada: `82`;
+ *   * **pela composição da superfície**, contada à parte — `67` manipuladores com decorador de rota
+ *     nos arquivos `.controller.ts` de `apps/api/src`, dos quais **um** é o encaminhador de
+ *     identidade (`@All`), que sozinho reivindica os {@link METODOS_DO_ENCAMINHADOR} sete pares:
+ *     `(67 - 1) + 7 + 9 = 82`, com os nove de {@link ROTAS_FORA_DO_ARCABOUCO}.
+ *
+ * São **dois**, e nenhum `HEAD` entra: as duas rotas novas são `POST`, de modo que a supressão do
+ * `HEAD` derivado não participa desta conta. Não "corrija" para 84 nem para 77 — a premissa de que
+ * cada `GET` entraria em dobro foi refutada por medição, e o módulo verificado suprime o `HEAD`.
  */
-const ROTAS_PUBLICADAS_EM_PRODUCAO = 80;
+const ROTAS_PUBLICADAS_EM_PRODUCAO = 82;
 
 /**
  * Quantos **manipuladores** de controlador a aplicação de produção monta — a âncora do `CT-355`.
@@ -1163,8 +1192,22 @@ const ROTAS_PUBLICADAS_EM_PRODUCAO = 80;
  *
  * Os dois importam para o `CT-355` pelo mesmo lado dos três de cobrança: eles **não** declaram nada
  * no método, e a auditoria de conteúdo tem de continuar verde sobre eles.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T7 da mesma fatia acrescentou **dois manipuladores** (65 → 67) — o
+ * `@Post(':codigo/pagamento')` e o `@Post(':codigo/cancelamento')` de
+ * `cobrancas/cobranca.controller.ts` —, e a soma passa a ser
+ * `2 + 1 + 1 + 1 + 6 + 7 + 6 + 7 + 5 + 18 + 8 + 3 + 2 = 67`. A contagem foi **refeita do zero**, por
+ * varredura dos decoradores de rota em `apps/api/src`, e **não** derivada de
+ * {@link ROTAS_PUBLICADAS_EM_PRODUCAO}: a varredura devolve, por arquivo,
+ * `1 + 1 + 1 + 6 + 6 + 6 + 5 + 8 + 3 + 6 + 7 + 6 + 2 + 2 + 7 = 67`. As duas terem crescido dois aqui
+ * é, de novo, acidente da forma destas rotas — cada manipulador reivindica um par só, e nenhuma das
+ * duas é `GET`, de modo que `HEAD` derivado não participa.
+ *
+ * Os dois importam para o `CT-355` pelo mesmo lado dos três de cobrança e dos dois de mora: eles
+ * **não** declaram nada no método, e a auditoria de conteúdo tem de continuar verde sobre eles — que é
+ * o oposto de declarar **menos** do que a classe, e é o desfecho que a §11.2 exige das duas transições.
  */
-const MANIPULADORES_EXAMINADOS_EM_PRODUCAO = 65;
+const MANIPULADORES_EXAMINADOS_EM_PRODUCAO = 67;
 
 /**
  * Quantos pares a aplicação MUTANTE publica.
@@ -1218,8 +1261,12 @@ const MANIPULADORES_EXAMINADOS_EM_PRODUCAO = 65;
  * SUT_IS_CORRECT_BECAUSE: a T6 da mesma fatia registrou `MoraModule` na MESMA composição raiz, e os
  * dois pares de `/v1/multa-e-juros` aparecem aqui pela mesma razão que aparecem no controle
  * (72 → 74). A âncora continua sendo de contagem EXATA.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T7 da mesma fatia acrescentou as **duas transições** ao MESMO controlador,
+ * já registrado naquela composição raiz, e elas aparecem aqui pela mesma razão que aparecem no controle
+ * (74 → 76). A âncora continua sendo de contagem EXATA.
  */
-const ROTAS_PUBLICADAS_NO_MUTANTE = 74;
+const ROTAS_PUBLICADAS_NO_MUTANTE = 76;
 
 /**
  * O que seria o inventário público da aplicação mutante **se o mutante não estivesse lá**.
@@ -1513,6 +1560,11 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     // da mesma fatia, que registrou `MoraModule` na composição raiz. Nenhuma entrada anterior saiu, e
     // a igualdade segue exata. Os dois caem no conjunto POSITIVO pela declaração da CLASSE
     // (`TELA:multa_e_juros`) — nenhum declara nada no método, e é justamente isso que este eixo mede.
+    //
+    // SUT_IS_CORRECT_BECAUSE: os DOIS pares das transições de cobrança entram pela mesma razão, agora
+    // da T7 — eles nascem no MESMO controlador já registrado naquela composição raiz, e entram por
+    // {@link paresDeCobrancas}, que é escrito à mão e revisado. Nenhuma entrada anterior saiu, e a
+    // igualdade segue exata; as duas caem no conjunto POSITIVO pela declaração da CLASSE.
     expect(cobertura.comExigencia).toEqual(
       [
         `GET ${CAMINHO_DA_SESSAO_CORRENTE}`,

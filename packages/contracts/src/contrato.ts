@@ -343,16 +343,30 @@ export type Contrato = z.infer<typeof esquemaDoContrato>;
 /**
  * A resposta de `POST /v1/contratos/:codigo/ativacao` — o contrato **mais** a declaração de efeito.
  *
- * `cobrancasGeradas` é `z.literal(false)`, e o literal é o ponto: nesta fatia a ativação **não** gera
- * cobrança (RD-12), e declará-lo no esquema em vez de deixá-lo implícito faz a F3 ter de **tocar o
- * contrato** para afrouxá-lo. A mudança aparece no diff, em vez de acontecer por omissão — que é
- * como um consumidor descobriria, em produção, que o significado da resposta mudou.
+ * ---------------------------------------------------------------------------
+ * `cobrancasGeradas` DEIXOU DE SER `z.literal(false)`, e o gatilho era esta fatia
+ * ---------------------------------------------------------------------------
  *
- * `efeitos` é `strictObject` pela razão de sempre: efeito inventado é erro de quem publica, e
- * ignorá-lo faria a resposta descrever um efeito que ninguém produziu.
+ * Até a fatia `contratos-de-locacao` o campo era `z.literal(false)`: a ativação **não** gerava
+ * cobrança (RD-12), e declarar o literal em vez de deixar o fato implícito obrigava a F3 a **tocar
+ * este arquivo** para afrouxá-lo — a mudança aparece no diff, em vez de acontecer por omissão, que é
+ * como um consumidor descobriria em produção que o significado da resposta mudou. Era o
+ * débito **D28** da fatia `contratos-de-locacao` (F2/T7), e a T9 desta fatia é o gatilho dele: a ativação
+ * passou a derivar as parcelas do contrato e a gravá-las **na mesma unidade de trabalho**, de modo
+ * que o efeito a publicar deixou de ser *"não fiz"* e passou a ser **quantas** nasceram.
+ *
+ * O tipo é inteiro **não negativo** porque os dois extremos são resultado legítimo: `0` quando o
+ * contrato declara `gerarCobrancasAutomaticamente: false` (RD-20), e `prazoMeses` nos demais casos.
+ * Negativo e fracionário não têm leitura — uma contagem de linhas gravadas é sempre um inteiro ≥ 0 —,
+ * e recusá-los aqui é o que impede a resposta de anunciar um efeito que o banco não pode ter
+ * produzido.
+ *
+ * **O afrouxamento é só do tipo do campo.** `efeitos` continua `strictObject`, pela razão de sempre:
+ * efeito inventado é erro de quem publica, e ignorá-lo faria a resposta descrever um efeito que
+ * ninguém produziu.
  */
 export const esquemaDaAtivacaoDeContrato = esquemaDoContrato.extend({
-  efeitos: z.strictObject({ cobrancasGeradas: z.literal(false) }),
+  efeitos: z.strictObject({ cobrancasGeradas: z.number().int().nonnegative() }),
 });
 
 /** A resposta da ativação do contrato. */

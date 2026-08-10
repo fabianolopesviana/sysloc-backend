@@ -677,9 +677,65 @@ const SIMBOLOS_ESPERADOS = [
   // `current_date` escondido numa consulta. Ele fecha o débito **D7 (F3/T4)**, cujo gatilho declarado
   // era esta task. **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo
   // asserida.
+  //
+  // SUT_IS_CORRECT_BECAUSE: a T7 publica **dois** símbolos novos — `acusarPagamentoDeCobranca` e
+  // `cancelarCobranca`, as duas transições da cobrança —, e o conjunto é EXATO de propósito. As duas
+  // entram pelo critério de todas as portas anteriores: **recebem** o executor de quem já abriu a
+  // unidade, não abrem conexão, não reservam e não devolvem executor, e nenhuma recebe `empresaId`.
+  //
+  // A do pagamento é publicada porque a gravação dos dois fatos e o carimbo dos **quatro** valores são
+  // **uma instrução só**, que lê `negocio.cobranca_derivada` no `FROM`: publicá-la é o que impede a
+  // borda de compor o par "ler a mora, gravar o pagamento", em que a mora carimbada seria a de uma
+  // leitura anterior e a fórmula acabaria reescrita fora da visão (ADR-0022, ADR-0023). A do
+  // cancelamento é publicada porque **não é idempotente** por decisão — quem recusa a repetição é a
+  // guarda de estado da borda, com o estado atual nomeado —, e um `UPDATE` condicional escrito por fora
+  // silenciaria a segunda tentativa.
+  //
+  // Nenhuma das duas confere estado: a guarda é da aplicação, e o que impede a linha incoerente de
+  // existir são os dois `CHECK` do banco. O tipo que a primeira publica (`DesfechoDoPagamento`) não
+  // aparece aqui porque não existe em tempo de execução, e este caso observa o módulo carregado.
+  // **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // SUT_IS_CORRECT_BECAUSE: a T9 publica **dois** símbolos novos — `emitirNumerosDeCobranca` e
+  // `criarCobrancasEmLote` —, e o conjunto é EXATO de propósito. Eles entram pelo critério de todas as
+  // portas anteriores: **recebem** o executor de quem já abriu a unidade, não abrem conexão, não
+  // reservam, não devolvem executor e não recebem `empresaId`.
+  //
+  // O primeiro não abre exceção ao que as duas da série já registram: ele invoca a MESMA função
+  // `SECURITY DEFINER` da migração `0010`, **uma vez por número**, e o que muda é quantas idas ao banco
+  // isso custa — uma, e não N. A aplicação continua sem alcançar a sequência, e o `CT-535` afirma que
+  // ela sequer tem privilégio para tanto. O segundo é publicado porque a escrita das parcelas é **um
+  // `INSERT` de N linhas**: publicar a porta é o que impede a borda de compor o laço "emitir número,
+  // gravar, reler a visão" por parcela — em que o número de idas ao banco passaria a ser escolhido pelo
+  // prazo que o cliente contratou, e em que o `SAVEPOINT` da tradução da colisão do código, que é ponto
+  // único DENTRO da porta, nasceria esquecido.
+  //
+  // Os dois são o que a ativação do contrato consome para fechar o débito **D28 (F2/T7)**, cujo gatilho
+  // declarado era esta fatia. `gravarSobRestricaoDoCodigo` continua **dentro** do pacote, como os gêmeos
+  // de `./contrato.ts`: ela é composta por dentro das próprias portas. **Nenhuma entrada anterior sai**,
+  // e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // SUT_IS_CORRECT_BECAUSE: a T10 publica **um** símbolo novo — `cancelarCobrancasDoContrato`, a
+  // cascata do cancelamento do contrato —, e o conjunto é EXATO de propósito. Ela entra pelo critério
+  // de todas as portas anteriores: **recebe** o executor de quem já abriu a unidade, não abre conexão,
+  // não reserva, não devolve executor e não recebe `empresaId`.
+  //
+  // Ela é publicada porque o **predicado é a regra de negócio**: cancelar as cobranças canceláveis de
+  // um contrato é `pago_em IS NULL AND cancelado_em IS NULL`, e publicar a porta é o que impede a borda
+  // de compor o par "listar as em aberto pela visão, cancelar uma a uma" — que seria a segunda
+  // avaliação do estado que o marcador `DECISÃO FECHADA` de `src/cobranca.ts` existe para tornar
+  // impossível, e que gravaria com base numa leitura anterior à escrita. Ela devolve **quantas linhas o
+  // banco alcançou**, e conjunto vazio é resultado legítimo — a recusa por estado do contrato continua
+  // sendo da guarda da aplicação. **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção)
+  // segue sendo asserida.
   'ErroDeCodigoDeCobrancaEmUso',
+  'acusarPagamentoDeCobranca',
+  'cancelarCobranca',
+  'cancelarCobrancasDoContrato',
   'criarCobranca',
+  'criarCobrancasEmLote',
   'emitirNumeroDeCobranca',
+  'emitirNumerosDeCobranca',
   'garantirContadorDeCobranca',
   'lerAnoDaSerieDeCobranca',
   'listarCobrancas',
@@ -737,6 +793,32 @@ const SIMBOLOS_ESPERADOS = [
   // **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
   'derivarTerminoDaLocacao',
   'derivarValorTotal',
+  // T8 da fatia `cobranca-e-mora` — a derivação PURA das parcelas de aluguel de um contrato.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T8 publica UM símbolo novo no índice por decisão declarada na §1 e na
+  // §3.5 da task (`Símbolos públicos criados: derivarParcelasDoContrato, ParcelaDerivada`). Ela entra
+  // pelo MESMO critério das duas acima e de `somarMetragem`, e não pelo das portas: é função **pura**
+  // sobre valor já em mãos — não recebe executor, não abre conexão, não toca o banco e não lê relógio.
+  //
+  // Ela é publicada porque é a materialização do *ponto único de derivação das parcelas* que a RD-18 e
+  // a RD-19 exigem, e ter o ponto com nome é o que torna a afirmação verificável: uma segunda
+  // derivação de competência, de vencimento ou de referência apareceria aqui como símbolo excedente, e
+  // não como um laço a mais escondido no serviço que ativa o contrato.
+  //
+  // O que **não** sai do pacote, e a ausência é deliberada: `ultimoDiaDoMes`, `ehBissexto`,
+  // `avancarUmMesComSaturacao`, `recuarUmDia`, `montarReferencia`, `lerData`, `formatarEmIso` e
+  // `formatarEmDiaMesAno`, os acessórios de `src/derivacao-de-cobranca.ts`. Eles são o mecanismo
+  // interno da derivação; publicá-los daria à borda pedaços da aritmética para recompor, que é
+  // exatamente o vazamento que a §7 da task proíbe — quem ativa chama a função e não recalcula nada.
+  // Mesmo critério dos três acessórios de `src/derivacao-de-contrato.ts`. Os tipos que ela publica
+  // (`ParcelaDerivada`, `ContratoParaParcelas`) não aparecem aqui porque não existem em tempo de
+  // execução, e este caso observa o módulo carregado.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o defeito
+  // que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia. **Nenhuma
+  // entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  'derivarParcelasDoContrato',
   // T5 da fatia `contratos-de-locacao` — a PORTA do contrato (treze símbolos) mais a porta estreita
   // da situação de locação do imóvel (um), ordenados no conjunto pela posição de cada nome (a
   // comparação é sobre a lista ordenada).

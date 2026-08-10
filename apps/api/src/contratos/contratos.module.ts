@@ -26,15 +26,35 @@
  *
  * As duas transições de estado (T7 e T8) e a rota de situação de locação do imóvel (T10) entram
  * **aqui** e no módulo de imóveis, respectivamente, cada uma sob o dono do segmento que ela publica.
+ *
+ * ---------------------------------------------------------------------------
+ * Ele IMPORTA `CobrancasModule` porque a ativação garante o contador da COBRANÇA
+ * ---------------------------------------------------------------------------
+ *
+ * A partir da F3 a ativação gera as parcelas do contrato, e a primeira das duas unidades de trabalho
+ * dela precisa garantir o contador da série da cobrança. Quem sabe fazê-lo — e, o que importa mais,
+ * quem sabe de **qual relógio** o ano daquela série sai — é `CobrancaService.garantirSerie`, que já
+ * existe. O módulo é importado para **consumir** esse símbolo, e não para recriá-lo: uma segunda
+ * garantia escrita nesta superfície seria a segunda fonte do mesmo fato, com liberdade para escolher o
+ * eixo de data errado, que é exatamente o débito **D7 (F3/T4)** que a T5 fechou.
+ *
+ * **Importar o módulo, e não prover o serviço aqui**, é a mesma decisão do parágrafo de cima: dois
+ * `providers` do mesmo serviço são duas instâncias, e a superfície de cobrança teria dois donos. O
+ * `CobrancasModule` o exporta por isso.
+ *
+ * Ele **não** publica rota de cobrança nem toca a área de tela dela: `TELA:financeiro` continua
+ * governando `/v1/cobrancas`, e esta superfície continua exigindo `TELA:contratos`. O que atravessa a
+ * fronteira é uma garantia de contador, não autorização.
  */
 
 import { Module } from '@nestjs/common';
 import { AutenticacaoModule } from '../autenticacao/autenticacao.module.js';
+import { CobrancasModule } from '../cobrancas/cobrancas.module.js';
 import { ContratoController } from './contrato.controller.js';
 import { ContratoService } from './contrato.service.js';
 
 @Module({
-  imports: [AutenticacaoModule],
+  imports: [AutenticacaoModule, CobrancasModule],
   controllers: [ContratoController],
   providers: [ContratoService],
 })

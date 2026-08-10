@@ -1,7 +1,8 @@
 /**
- * Os esquemas de `@sysloc/contracts` — CT-334 a CT-338, CT-340, CT-341, mais CT-424, CT-428 e
- * CT-429, que a fatia `contratos-de-locacao` acrescenta, e CT-540 a CT-545, que a fatia
- * `cobranca-e-mora` acrescenta.
+ * Os esquemas de `@sysloc/contracts` — CT-334 a CT-338, CT-340, CT-341, mais CT-424 e CT-428, que a
+ * fatia `contratos-de-locacao` acrescenta, e CT-537 mais CT-540 a CT-545, que a fatia
+ * `cobranca-e-mora` acrescenta. O **CT-537 substitui o CT-429** daquela fatia: ver o parágrafo dedicado
+ * abaixo, e a linha `SUT_IS_CORRECT_BECAUSE:` no ponto do caso.
  *
  * ---------------------------------------------------------------------------
  * INVARIANTES
@@ -40,8 +41,12 @@
  * | CA-01    | CT-428 | `valorMensal` e `prazoMeses` espelham as capacidades das colunas
  * |          | (b)    | (`numeric(15,2)` e `integer`), o PRODUTO delas também cabe, e a restrição de
  * |          |        | escala vale na ENTRADA e **não** na SAÍDA. |
- * | CA-06    | CT-429 | A resposta da ativação recusa qualquer `efeitos.cobrancasGeradas` diferente
- * |          |        | de `false` — contrato fechado no esquema, não comportamento observado. |
+ * | CA-06    | CT-537 | A resposta da ativação exige `efeitos.cobrancasGeradas` **inteiro não
+ * | CA-02    |        | negativo**: `0`, `3` e `13` são aceitos com o valor sobrevivendo à análise, e
+ * |          |        | `false`, `-1` e `2.5` são recusados nomeando `['efeitos','cobrancasGeradas']`.
+ * |          |        | O bloco continua fechado — campo extra é recusado nomeando
+ * |          |        | `efeitos.boletosEmitidos` — e os dois enums da cobrança seguem com exatamente
+ * |          |        | cinco e quatro membros, na ordem publicada. (Substitui o CT-429.) |
  * | §4.1     | CT-540 | `NATUREZAS_DE_COBRANCA` publica exatamente
  * |          |        | `['ALUGUEL','AGUA','CONDOMINIO','ENERGIA','OUTRO']` e `ESTADOS_DA_COBRANCA`
  * |          |        | exatamente `['A_VENCER','VENCIDA','PAGA','CANCELADA']`, nesta ordem e
@@ -74,7 +79,8 @@
  * Rastreabilidade: `CA-02 → CT-334, CT-335 (RN-10)` · `CA-14 → CT-337 (RN-01)` ·
  * `CA-15 → CT-338 (RN-06)` · `CA-16 → CT-336, CT-340, CT-341 (RN-11)` ·
  * `CA-19 → CT-424, CT-424 (b) (RN-02, RN-03)` · `CA-04 → CT-428 (RN-04)` ·
- * `CA-01 → CT-428 (b) (RN-08)` · `CA-06 → CT-429 (RN-12)` · `CA-§4.1 → CT-540 (RD-03, RD-04)` ·
+ * `CA-01 → CT-428 (b) (RN-08)` · `CA-06 → CT-537 (RN-12)` · `CA-02 → CT-537 (RN-06)` ·
+ * `CA-§4.1 → CT-540 (RD-03, RD-04)` ·
  * `CA-§4.2/§4.3/§4.4 → CT-541 (RD-02)` · `CA-§4.5 → CT-542 (RD-01)` ·
  * `CA-§4.6/§4.7 → CT-543 (RD-03, RD-16)` · `CA-§4.9 → CT-544 (RD-04, RD-09)` ·
  * `CA-§4.10 → CT-545 (RD-16)`.
@@ -114,8 +120,25 @@
  * dois fatores **ambos dentro dos seus tetos** cujo produto não cabe — nenhum teto de campo isolado
  * o pega.
  *
- * **CT-429** afirma o literal no esquema, e não o comportamento na rota: é o que obriga a F3 a tocar
- * este arquivo para gerar cobrança, em vez de o significado da resposta mudar por omissão.
+ * **CT-537 substitui o CT-429**, e a substituição é o **preço declarado** do débito que ela fecha. O
+ * CT-429 afirmava o literal `false` no esquema, e não o comportamento na rota: era o que obrigava a F3
+ * a tocar `contrato.ts` para gerar cobrança, em vez de o significado da resposta mudar por omissão. O
+ * gatilho chegou, e o par que agora discrimina é outro — **o `false` do lado RECUSADO**. Os três aceitos
+ * sozinhos deixariam verde um `z.number()` sem `int()` e sem `nonnegative()`; os três recusados sozinhos
+ * deixariam verde um esquema que recusasse tudo; e sem o `false` explicitamente entre os recusados, um
+ * `z.union([z.literal(false), z.number()])` — a "correção compatível", que é a tentação óbvia de quem
+ * quiser não quebrar consumidor — passaria pela suíte inteira. O passo do campo extra é a quarta ponta:
+ * ele afirma que o `strictObject` **não** foi afrouxado junto com o campo.
+ *
+ * **MUTANTE EXECUTADO — MT-T9-A (2026-08-10).** Aplicado ao fonte de produção
+ * (`packages/contracts/src/contrato.ts`) e invocado pelo **script do pacote**
+ * (`pnpm --filter @sysloc/contracts test`), nunca por `vitest run` avulso. O mutante é justamente a
+ * "correção compatível" descrita acima — `z.number().int().nonnegative()` trocado por
+ * `z.union([z.literal(false), z.number()])` —, e o resultado é `3 failed | 224 passed`: reprovam os
+ * três casos do eixo RECUSADO (`expected true to be false`), um por cláusula perdida — o `false` que a
+ * união readmite, o `-1` que `nonnegative()` barrava e o `2.5` que `int()` barrava. Os três aceitos
+ * seguem verdes, que é exatamente o que torna o par necessário. Reversão conferida por `sha256sum`
+ * idêntico ao estado pré-mutante, com o controle de volta a `227 passed`.
  *
  * **CT-541** é a **rede** que o P4 do Protocolo Antirregressão exige do marcador `DECISÃO FECHADA`
  * da largura 7, em `cobranca.ts`, e ela prende a largura pelos **dois** lados pela mesma razão do
@@ -1360,7 +1383,24 @@ describe('CT-428 (b) — os tetos do dinheiro e do prazo são a capacidade das c
   });
 });
 
-describe('CT-429 — a resposta da ativação fixa efeitos.cobrancasGeradas em false', () => {
+/**
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo, e era o **CT-429** que descrevia uma fatia
+ * que não gerava cobrança. Ele afirmava `efeitos.cobrancasGeradas` como `z.literal(false)`, e aquele
+ * literal existia por decisão: era o débito **D28** da fatia `contratos-de-locacao` (F2/T7), cujo `QUANDO FECHA` nomeia
+ * **esta** fatia — *"ela é obrigada a afrouxar o literal para publicar quantas cobranças nasceram, e não
+ * consegue fazê-lo sem editar `esquemaDaAtivacaoDeContrato`"*. A T9 fez exatamente isso: a ativação
+ * passou a derivar as parcelas do contrato e a gravá-las na mesma unidade de trabalho, de modo que o
+ * efeito publicado deixou de ser *"não fiz"* e passou a ser **quantas**. Manter o CT-429 exigiria manter
+ * o literal, e é ele — não o caso — que estava datado.
+ *
+ * **O caso não sumiu: ele foi substituído, e a substituição é mais estrita nas duas pontas que
+ * importam.** O que o CT-429 provava — o campo obrigatório, o bloco fechado, a recusa nomeando o campo —
+ * continua provado aqui, e o `false`, que era o único valor aceito, passa a estar afirmado **entre os
+ * RECUSADOS**: é ele que impede a "correção compatível" (`z.union([z.literal(false), z.number()])`) de
+ * atravessar a suíte. A contagem de casos **sobe** de quatro para cinco. Nenhuma asserção foi afrouxada:
+ * toda igualdade continua sendo de valor exato e de `path` literal.
+ */
+describe('CT-537 — efeitos.cobrancasGeradas exige inteiro não negativo, e RECUSA o antigo false', () => {
   /** O contrato como a ativação o devolve: `ATIVO`, com as duas derivações já preenchidas. */
   const CONTRATO_ATIVADO = {
     ...CONTRATO_PUBLICADO,
@@ -1369,25 +1409,59 @@ describe('CT-429 — a resposta da ativação fixa efeitos.cobrancasGeradas em f
     valorTotalContrato: 30_000,
   } as const;
 
-  it('aprova a resposta com o efeito declarado em false', () => {
-    const resposta = { ...CONTRATO_ATIVADO, efeitos: { cobrancasGeradas: false } };
+  /**
+   * Os três valores aceitos, e os três não são decorativos.
+   *
+   * `0` é o caminho da RD-20 (`gerarCobrancasAutomaticamente: false` gera zero parcelas), e é a
+   * fronteira de baixo de `nonnegative()`; `3` e `13` são os prazos dos dois cenários do golden que a
+   * ativação exercita de ponta a ponta. Escritos por extenso, e não derivados de constante: derivá-los
+   * faria a asserção andar junto com o que ela mede.
+   */
+  const ACEITOS = [0, 3, 13] as const;
 
-    const resultado = esquemaDaAtivacaoDeContrato.safeParse(resposta);
+  /**
+   * Os três recusados, cada um fechando uma frouxidão diferente do tipo.
+   *
+   * `false` é o valor que o esquema **antigo** exigia, e é a ponta que discrimina o esquema novo de uma
+   * união complacente com o antigo; `-1` só é recusado por `nonnegative()`; `2.5` só é recusado por
+   * `int()`. Tirar qualquer um dos três deixa uma das três cláusulas sem asserção.
+   */
+  const RECUSADOS: readonly { readonly rotulo: string; readonly valor: unknown }[] = [
+    { rotulo: 'o antigo literal false', valor: false },
+    { rotulo: 'a contagem negativa', valor: -1 },
+    { rotulo: 'a contagem fracionária', valor: 2.5 },
+  ];
 
-    expect(resultado.success).toBe(true);
-    expect(resultado.data).toEqual(resposta);
-  });
+  /** O caminho que toda recusa do campo tem de nomear — escrito uma vez, afirmado por igualdade. */
+  const CAMINHO_DO_CAMPO = ['efeitos', 'cobrancasGeradas'];
 
-  it('RECUSA o efeito afrouxado para true, nomeando o campo', () => {
-    const resultado = esquemaDaAtivacaoDeContrato.safeParse({
-      ...CONTRATO_ATIVADO,
-      efeitos: { cobrancasGeradas: true },
+  for (const aceito of ACEITOS) {
+    it(`aprova ${String(aceito)} cobranças geradas e o valor sobrevive à análise`, () => {
+      const resposta = { ...CONTRATO_ATIVADO, efeitos: { cobrancasGeradas: aceito } };
+
+      const resultado = esquemaDaAtivacaoDeContrato.safeParse(resposta);
+
+      expect(resultado.success).toBe(true);
+      // Igualdade de NÚMERO, e depois do corpo inteiro: um esquema que coagisse o valor (para texto,
+      // para booleano) passaria por uma asserção de presença e reprova aqui.
+      expect(resultado.data?.efeitos.cobrancasGeradas).toBe(aceito);
+      expect(resultado.data).toEqual(resposta);
     });
+  }
 
-    expect(resultado.success).toBe(false);
-    expect(resultado.error?.issues[0]?.code).toBe('invalid_value');
-    expect(resultado.error?.issues[0]?.path).toEqual(['efeitos', 'cobrancasGeradas']);
-  });
+  for (const recusado of RECUSADOS) {
+    it(`RECUSA ${recusado.rotulo}, nomeando o campo`, () => {
+      const resultado = esquemaDaAtivacaoDeContrato.safeParse({
+        ...CONTRATO_ATIVADO,
+        efeitos: { cobrancasGeradas: recusado.valor },
+      });
+
+      expect(resultado.success).toBe(false);
+      // O `path` LITERAL, e não a existência de erro: é ele que o cliente usa para destacar o campo, e
+      // uma recusa que nomeasse a raiz do objeto passaria por um `success === false` sozinho.
+      expect(resultado.error?.issues[0]?.path).toEqual(CAMINHO_DO_CAMPO);
+    });
+  }
 
   it('RECUSA a resposta sem a declaração de efeito', () => {
     const resultado = esquemaDaAtivacaoDeContrato.safeParse({ ...CONTRATO_ATIVADO });
@@ -1396,15 +1470,43 @@ describe('CT-429 — a resposta da ativação fixa efeitos.cobrancasGeradas em f
     expect(resultado.error?.issues[0]?.path).toEqual(['efeitos']);
   });
 
-  it('RECUSA efeito inventado ao lado do declarado — o bloco é fechado', () => {
+  it('RECUSA efeito inventado ao lado do declarado — o strictObject NÃO foi afrouxado', () => {
     const resultado = esquemaDaAtivacaoDeContrato.safeParse({
       ...CONTRATO_ATIVADO,
-      efeitos: { cobrancasGeradas: false, boletosEmitidos: 3 },
+      efeitos: { cobrancasGeradas: 3, boletosEmitidos: 3 },
     });
 
     expect(resultado.success).toBe(false);
     expect(resultado.error?.issues[0]?.code).toBe('unrecognized_keys');
+    expect(resultado.error?.issues[0]?.path).toEqual(['efeitos']);
     expect(resultado.error?.issues[0]).toMatchObject({ keys: ['boletosEmitidos'] });
+
+    // O locatário do card é `['efeitos','boletosEmitidos']`, e ele é AFIRMADO — pela composição de
+    // `path` com `keys`, que é onde o Zod 4 o publica. A chave desconhecida não pertence ao esquema, de
+    // modo que `path` aponta para o objeto que a recusou e `keys` diz **qual** chave sobrou; a forma foi
+    // medida, não presumida. Compor as duas é o que impede a asserção de passar num esquema que
+    // reportasse a raiz da resposta em vez de `efeitos`.
+    const issue = resultado.error?.issues[0] as { path: unknown[]; keys: string[] } | undefined;
+    expect([...(issue?.path ?? []), ...(issue?.keys ?? [])]).toEqual([
+      'efeitos',
+      'boletosEmitidos',
+    ]);
+  });
+
+  it('CT-537 (b) — os dois enums publicados da cobrança seguem com cinco e quatro membros', () => {
+    // Ela duplica parcialmente o `CT-540`, e o card manda mantê-la: aqui ela é a **âncora** que impede
+    // o enum de crescer junto com a mudança do contrato de ativação. A ativação passou a gerar parcelas
+    // de natureza `ALUGUEL`, e a tentação de acrescentar uma natureza — ou um estado "GERADA" — nasce
+    // exatamente nesta fatia. As listas são escritas por extenso e comparadas por igualdade ORDENADA: a
+    // T3 deriva os dois enums do PostgreSQL destes arranjos, e um enum guarda a ordem dos rótulos.
+    expect([...NATUREZAS_DE_COBRANCA]).toEqual([
+      'ALUGUEL',
+      'AGUA',
+      'CONDOMINIO',
+      'ENERGIA',
+      'OUTRO',
+    ]);
+    expect([...ESTADOS_DA_COBRANCA]).toEqual(['A_VENCER', 'VENCIDA', 'PAGA', 'CANCELADA']);
   });
 });
 

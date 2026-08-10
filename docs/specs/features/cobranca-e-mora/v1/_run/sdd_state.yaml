@@ -22,4 +22,4 @@ steps:
   execution:
     status: in_progress
     tasks_total: 11
-    tasks_completed: 5
+    tasks_completed: 9

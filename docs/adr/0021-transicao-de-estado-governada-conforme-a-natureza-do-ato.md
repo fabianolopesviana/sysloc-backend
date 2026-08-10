@@ -26,8 +26,35 @@ Toda transição de estado de entidade de negócio é uma **rota própria** — 
 atualização parcial do recurso —, e a governança segue a **natureza do ato**: quando ele é um ato
 sensível, a rota exige a chave de ação correspondente do catálogo fechado; quando é **atributo
 operacional do cadastro**, que não transfere direito nem move dinheiro nem altera o que outra
-entidade pode fazer, a rota exige apenas a área. A situação de locação do imóvel é a instância
-declarada da segunda classe; ativação, cancelamento e retirada de circulação são da primeira.
+entidade pode fazer, a rota exige apenas a área.
+
+**Instâncias declaradas da segunda classe** — a que exige apenas a área:
+
+- a **situação de locação do imóvel** (`contratos-de-locacao`, v1);
+- **acusar pagamento de cobrança** (`cobranca-e-mora`, v1) — o ato **registra** dinheiro que se moveu
+  fora do sistema; ele não o move;
+- **cancelar cobrança** (`cobranca-e-mora`, v1) — o ato tem substituta prevista, logo é reversível, e
+  o registro permanece legível pela ADR-0014.
+
+Da **primeira classe** — a que exige a chave de ação do catálogo fechado — são a **ativação de
+contrato**, o **cancelamento de CONTRATO** e a **retirada de circulação**, as três com chave própria
+já existente (`ACAO:ativar_contrato`, `ACAO:cancelar_contrato`, `ACAO:excluir_cadastro`).
+
+> **Emenda de 2026-08-10.** A redação original desta seção dizia *"ativação, cancelamento e retirada
+> de circulação são da primeira"*, sem qualificar de que entidade — e a enumeração espelhava as três
+> chaves que existiam à época, todas do domínio de contrato e cadastro. Lida ao pé da letra, ela
+> punha o cancelamento de **cobrança** na primeira classe, o que contradiz a exigência publicada
+> pelas duas rotas de transição da fatia `cobranca-e-mora`. **A decisão não mudou**: mudou o registro
+> dela, que passou a nomear a entidade e a declarar as instâncias novas — que é o que esta ADR pede,
+> ao entregar a classificação do ato à fatia (ver o primeiro dos *Cons*). O que a tornou necessária
+> é o que a **terceira** das *Alternativas* já previa — a de conviver com a divergência declarada:
+> *"um gate futuro leria violação onde houve decisão"* — e leu, no Gate 2 da T7. A evidência que
+> sustenta as duas instâncias novas é o **catálogo fechado** — a ADR-0011 é quem o declara fechado, e
+> quem o **enumera** é `packages/auth/src/catalogo-de-permissoes.ts` (materializando a decisão 38 do
+> `.claude/plans/plano-saas.md`): dentro de `TELA:financeiro` há **duas** ações sensíveis,
+> `ACAO:emitir_boleto` e `ACAO:solicitar_baixa_de_boleto`, e **nenhuma** para pagamento ou
+> cancelamento de cobrança. Quem fechou o catálogo tinha as operações de cobrança à vista e concedeu
+> chave própria só às que falam com o banco.
 
 ## Consequences
 
@@ -71,3 +98,5 @@ declarada da segunda classe; ativação, cancelamento e retirada de circulação
 ## Applied in
 
 - `contratos-de-locacao (v1)` — `docs/specs/features/contratos-de-locacao/v1/tech_spec.md`
+- `cobranca-e-mora (v1)` — `docs/specs/features/cobranca-e-mora/v1/tech_spec.md` (§11.2, a evidência
+  do catálogo fechado que classifica os dois atos de transição da cobrança)

@@ -1,6 +1,17 @@
 /**
- * Cobrança — a regra de aplicação das três primeiras rotas de `/v1/cobrancas`: lançar avulsa, ler a
- * carteira e ler uma cobrança.
+ * Cobrança — a regra de aplicação das cinco rotas de `/v1/cobrancas`: lançar avulsa, ler a carteira,
+ * ler uma cobrança, acusar o pagamento e cancelar.
+ *
+ * ---------------------------------------------------------------------------
+ * AS DUAS TRANSIÇÕES compartilham a guarda de estado, e nenhuma delas calcula mora
+ * ---------------------------------------------------------------------------
+ *
+ * {@link CobrancaService.acusarPagamento} e {@link CobrancaService.cancelar} são rotas próprias
+ * (ADR-0021), e as duas fazem a mesma coisa em ordem: lêem a cobrança pela visão, conferem o estado
+ * publicado no ponto único {@link CobrancaService.exigirEstado} e chamam a escrita. O que o pagamento
+ * carimba — multa, juros e os dois percentuais vigentes — **não passa por aqui**: é copiado da visão
+ * dentro da própria instrução que grava, na porta de dados. A ausência de qualquer aritmética neste
+ * arquivo é a decisão, e a rede dela é a asserção estática do `CT-510`.
  *
  * ---------------------------------------------------------------------------
  * ELE NÃO DERIVA NADA — e a ausência é a decisão central da fatia (ADR-0022, ADR-0023)
@@ -92,8 +103,18 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import type { Cobranca, CobrancaNova, EnvelopeDeLista, JanelaDeCobrancas } from '@sysloc/contracts';
+import type {
+  Cobranca,
+  CobrancaNova,
+  EnvelopeDeLista,
+  EstadoDaCobranca,
+  JanelaDeCobrancas,
+  PagamentoDeCobranca,
+} from '@sysloc/contracts';
+import { ESTADOS_EM_ABERTO } from '@sysloc/contracts';
 import {
+  acusarPagamentoDeCobranca,
+  cancelarCobranca,
   criarCobranca,
   ErroDeCodigoDeCobrancaEmUso,
   emitirNumeroDeCobranca,
@@ -142,6 +163,46 @@ const CADASTRO_RETIRADO = 'RETIRADO_DE_CIRCULACAO';
  */
 const DISCRIMINADOR_DO_CONFLITO = 'conflito';
 const CONFLITO_DE_CODIGO = 'CODIGO_EM_USO';
+
+/**
+ * Os estados de que cada transição parte, e o nome de cada ato recusado.
+ *
+ * ---------------------------------------------------------------------------
+ * São DUAS constantes com o mesmo valor, e nenhuma delas redigita rótulo algum
+ * ---------------------------------------------------------------------------
+ *
+ * A duplicação segue o precedente de `ESTADO_ALTERAVEL`/`ESTADO_ATIVAVEL` em
+ * {@link ../contratos/contrato.service.js}, e pela mesma razão: as duas materializam regras
+ * **diferentes** — só se paga o que está em aberto, e só se cancela o que está em aberto —, e elas
+ * coincidirem hoje é fato do domínio, não identidade. Uma constante só faria a segunda regra mudar
+ * junto com a primeira, em silêncio, num campo que o cliente lê.
+ *
+ * **A diferença em relação ao precedente é que aqui os rótulos NÃO são escritos por extenso**, e a
+ * assimetria é obrigatória: {@link ESTADOS_EM_ABERTO} é a partição publicada por `@sysloc/contracts` ao
+ * lado do enum que a governa, e o `CT-510` varre `apps/api/src/**` acusando qualquer literal de
+ * `negocio.status_cobranca` em posição executável — é justamente a ausência dele que torna verificável
+ * a decisão de haver **uma só** derivação do estado. Duas constantes que apontam para o mesmo nome
+ * publicado dão nome a duas regras sem criar segunda fonte do fato.
+ *
+ * Nada aqui deriva estado: a pergunta que estas listas respondem é a inversa — *dado um estado já
+ * publicado pela visão, ele admite este ato?*
+ */
+const ESTADOS_PAGAVEIS: readonly EstadoDaCobranca[] = ESTADOS_EM_ABERTO;
+const ESTADOS_CANCELAVEIS: readonly EstadoDaCobranca[] = ESTADOS_EM_ABERTO;
+const PAGAMENTO = 'PAGAMENTO';
+const CANCELAMENTO = 'CANCELAMENTO';
+
+/**
+ * Os atos que a guarda de estado sabe nomear — união fechada dos dois literais acima.
+ *
+ * Ela existe pela razão que o débito **D34 (F2/T7)** deixou registrada em
+ * {@link ../contratos/contrato.service.js}: `estadoAtual` já tem o compilador atrás dele (é
+ * `EstadoDaCobranca`, união fechada de `@sysloc/contracts`), e um `transicaoPedida: string` solto
+ * deixaria um `'CANCELAMETO'` compilar, passar o lint e chegar publicado ao cliente dentro do mesmo
+ * `detalhes`. `typeof <constante>` em vez de literais redigitados: a união e as constantes são o mesmo
+ * fato.
+ */
+type TransicaoPedida = typeof PAGAMENTO | typeof CANCELAMENTO;
 
 @Injectable()
 export class CobrancaService {
@@ -255,6 +316,79 @@ export class CobrancaService {
   }
 
   /**
+   * Acusa o pagamento: grava os dois fatos e **carimba** os quatro valores da política vigente.
+   *
+   * A ordem dos dois passos é conteúdo. A leitura vem primeiro porque é dela que sai o `404` de
+   * cobrança inalcançável — e porque é ela que traz o `status` já derivado pela visão, que é o único
+   * lugar onde ele existe. A guarda de estado vem em seguida, sobre esse valor: nem esta camada nem a
+   * porta comparam data de vencimento com coisa alguma.
+   *
+   * **Nada de mora é calculado aqui, e nada de mora é passado adiante.** O que viaja para a porta são
+   * os dois campos do corpo; multa, juros e os dois percentuais são copiados da visão dentro da própria
+   * instrução que grava — ver {@link acusarPagamentoDeCobranca}. Um cálculo escrito neste arquivo
+   * concordaria com a visão na esmagadora maioria dos casos e passaria por toda a suíte de rota; o que
+   * o impede é não haver aqui onde escrevê-lo.
+   *
+   * A guarda de estado é **leitura-antes-de-gravar**, e por isso não é defesa de integridade: entre a
+   * leitura e o `UPDATE` cabe outra transação. O que impede a linha incoerente de existir são os dois
+   * `CHECK` do banco (`cobranca_desfecho_unico_chk` e `cobranca_carimbo_coerente_chk`); o que a guarda
+   * compra é a **forma** da recusa — `422` nomeando o estado atual, em vez de um `23514` de driver em
+   * `500`.
+   */
+  async acusarPagamento(
+    tx: TransactionSql,
+    codigo: string,
+    entrada: PagamentoDeCobranca,
+  ): Promise<Cobranca> {
+    // DECISÃO FECHADA — F3/T7 · 2026-08-10
+    // O QUÊ: acusar o pagamento **não toca** nenhum dos seis campos de conciliação bancária
+    //        (`nosso_numero`, `linha_digitavel`, `codigo_barras`, `data_credito`, `valor_creditado`,
+    //        `boleto_arquivo`). Eles permanecem exatamente como estavam, e o `SET` de
+    //        `acusarPagamentoDeCobranca` não os nomeia — a garantia é estrutural: coluna que não é
+    //        nomeada não é escrita.
+    // POR QUÊ: é **divergência declarada** contra o sistema antigo, que zera os seis ao confirmar o
+    //          pagamento (RN-15, CA-16, §4 do tech alignment). Lá o zeramento existe porque a
+    //          confirmação e a baixa bancária são o mesmo ato; aqui não são — a emissão e a
+    //          conciliação são da F4, e apagar o `nosso_numero` de um título já registrado no banco
+    //          destruiria o elo pelo qual o retorno é reconciliado, sem que nada acusasse. O legado
+    //          nunca precisou do elo depois da baixa; a F4 precisa.
+    //          Sem este marcador, uma futura "harmonização com o legado" reintroduz o zeramento, e o
+    //          `CT-532` seria lido como expectativa a ajustar em vez de decisão a respeitar.
+    // REVERTER EXIGE: provar que **nenhum** consumidor da F4 depende dos seis campos preservados após
+    //                 o pagamento — nominalmente, que o processamento do retorno do Sicoob e a emissão
+    //                 de segunda via não localizam o título por `nosso_numero` nem por
+    //                 `linha_digitavel` de cobrança já paga —, e que o golden `regua-de-cobranca.json`
+    //                 não exibe nenhum dos seis em cobrança liquidada.
+    const atual = this.exigir(await localizarCobranca(tx, codigo));
+
+    this.exigirEstado(atual, ESTADOS_PAGAVEIS, PAGAMENTO);
+
+    return this.exigir(await acusarPagamentoDeCobranca(tx, codigo, entrada));
+  }
+
+  /**
+   * Cancela a cobrança — **transição, nunca exclusão** (ADR-0014).
+   *
+   * A cobrança permanece legível por `GET /v1/cobrancas/:codigo` e continua constando da carteira; o
+   * código dela segue ocupado na unicidade `(empresa_id, codigo)`, de modo que a série **nunca o
+   * reusa** (ADR-0015). A substituta é um `POST /v1/cobrancas` comum, com número novo, e **não há
+   * vínculo explícito** com a cancelada — decisão registrada na §21 do tech spec, e a ausência é
+   * contrato: o esquema publicado não tem campo para ela.
+   *
+   * A mesma guarda de estado do pagamento, no mesmo ponto único: cancelar o que já está liquidado é
+   * `422` nomeando o estado atual. **Repetir informa em vez de silenciar** — um cancelamento
+   * idempotente recarimbaria `cancelado_em` e perderia o instante original, e é por isso que nem esta
+   * camada nem a porta escondem a segunda tentativa.
+   */
+  async cancelar(tx: TransactionSql, codigo: string): Promise<Cobranca> {
+    const atual = this.exigir(await localizarCobranca(tx, codigo));
+
+    this.exigirEstado(atual, ESTADOS_CANCELAVEIS, CANCELAMENTO);
+
+    return this.exigir(await cancelarCobranca(tx, codigo));
+  }
+
+  /**
    * Recusa o contrato que o contexto corrente não alcança, e o que está fora de circulação.
    *
    * As duas metades são de naturezas diferentes, e a distinção é a mesma que
@@ -314,6 +448,53 @@ export class CobrancaService {
     }
 
     return linha;
+  }
+
+  /**
+   * Recusa o ato quando a cobrança não está num estado de que ele parte — **ponto único** da guarda de
+   * estado desta superfície.
+   *
+   * Ela serve às **duas** transições com a mesma forma de recusa. Escrevê-las por extenso duas vezes
+   * deixaria livres para divergir o código, o campo nomeado e os nomes dos dois discriminadores — e os
+   * três são contrato publicado, afirmado por igualdade de corpo inteiro. É a mesma razão, e o mesmo
+   * desenho, de `exigirEstado` em {@link ../contratos/contrato.service.js}.
+   *
+   * **`estadoAtual` e `transicaoPedida` são os mesmos nomes que a superfície de contratos publica**, e
+   * a coincidência é deliberada: as duas recusas descrevem o mesmo fato — *o recurso está num estado
+   * que não admite o ato pedido* —, e um terceiro discriminador para a mesma classe faria o cliente
+   * aprender dois vocabulários para tratar uma coisa só.
+   *
+   * O campo nomeado é `codigo`, e **não** `status` como no contrato. A diferença é conteúdo: o cliente
+   * não envia estado nenhum a estas duas rotas — o corpo do pagamento tem dois campos de fato e o do
+   * cancelamento é vazio —, e o único dado da requisição que identifica o alvo da recusa é o código no
+   * caminho. Nomear `status` apontaria para um campo que não existe em requisição alguma desta
+   * superfície.
+   *
+   * O estado exigido é uma **lista**, e não um valor: as duas transições partem de dois estados
+   * (`ESTADOS_EM_ABERTO`), e um par de conferências por ato repetiria a partição fora do lugar em que
+   * ela é publicada.
+   *
+   * O que a recusa **não** carrega: o estado exigido. Ela diz onde a cobrança está e o que se tentou,
+   * e não o que teria de ser verdade — a forma é a que a §10.1 fixou antes da implementação, e
+   * acrescentar campo a `detalhes` é decisão de contrato.
+   */
+  private exigirEstado(
+    cobranca: Cobranca,
+    estadosAdmitidos: readonly EstadoDaCobranca[],
+    transicaoPedida: TransicaoPedida,
+  ): void {
+    if (estadosAdmitidos.includes(cobranca.status)) {
+      return;
+    }
+
+    throw new ErroDeAplicacao(
+      CodigoErro.CAMPO_INVALIDO,
+      MENSAGEM_POR_CODIGO[CodigoErro.CAMPO_INVALIDO],
+      {
+        campo: CAMPO_DO_CODIGO,
+        detalhes: { estadoAtual: cobranca.status, transicaoPedida },
+      },
+    );
   }
 
   /**

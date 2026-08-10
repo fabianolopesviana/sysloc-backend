@@ -190,11 +190,53 @@ $$;--> statement-breakpoint
 -- PostgreSQL segue outra regra, e trocar o tipo em qualquer ponto do caminho a quebraria em
 -- silêncio. É a razão de toda a aritmética desta visão correr em `numeric` (RD-16).
 --
--- A mora só existe no estado `VENCIDA`: nos demais, as duas expressões dão zero. É a precedência
+-- A mora só é APURADA no estado `VENCIDA`: nos demais, as duas expressões dão zero. É a precedência
 -- que impede o produto de reproduzir a divergência do legado, em que uma cobrança paga com atraso
 -- continuava apurando mora depois de liquidada — aqui, o que foi cobrado no ato do pagamento está
 -- CARIMBADO em `multa_aplicada`/`juros_aplicados`, e não recalculado a cada leitura.
 --
+-- ---------------------------------------------------------------------------
+-- O CARIMBO TEM PRECEDÊNCIA SOBRE A APURAÇÃO — emenda da T7, e por que ela mora AQUI
+-- ---------------------------------------------------------------------------
+--
+-- CAUSA-RAIZ: apurar zero fora de `VENCIDA` e **publicar** zero são coisas diferentes, e a primeira
+-- redação desta visão as confundia. O carimbo é fato gravado na tabela, mas `multa_aplicada` e
+-- `juros_aplicados` **não estão entre as dezoito colunas que o contrato publica**
+-- (`esquemaDaCobranca`, em `packages/contracts/src/cobranca.ts`): as duas grandezas chegam ao cliente
+-- por `valor_multa` e `valor_juros`, e só por elas. Sem o `COALESCE` abaixo, a cobrança PAGA publicava
+-- `0.00`/`0.00` e `valor_total = valor_original` — o que o cliente lia de uma cobrança liquidada não
+-- era o que foi cobrado dela, e o carimbo, apesar de gravado, era inalcançável.
+--
+-- POR QUE ISTO FECHA A CLASSE: porque o carimbo entra na MESMA expressão que a apuração, no único
+-- lugar em que a mora é avaliada. As quatro leituras publicadas (o item, a carteira sem filtro e os
+-- dois recortes) e o próprio `UPDATE` que carimba passam a ler o mesmo `valor_multa`/`valor_juros`, e
+-- `valor_total` os soma sem saber de onde vieram. Não existe segundo lugar em que alguém escolha
+-- entre o derivado e o gravado — que é exatamente a escolha que, escrita na porta de dados ou no
+-- serviço, reabriria o defeito de duas avaliações do mesmo valor (ADR-0023).
+--
+-- O QUE ESTA MUDANÇA REMOVE: **nada**. As duas expressões de mora, a comparação estrita do
+-- vencimento, a precedência do `CASE`, o `LEFT JOIN` com `COALESCE` da RD-08, o atributo
+-- `security_invoker` e o marcador `DECISÃO FECHADA` abaixo permanecem **literalmente** como estavam —
+-- inclusive byte a byte na expressão dos juros, que é alvo de três mutantes de falsificação da T3 e
+-- da T4 (`EXPRESSAO_DOS_JUROS`, em `packages/db/test/cobranca.spec.ts`, exige **uma** ocorrência
+-- exata). O que se acrescenta é um `COALESCE` **por fora** de cada `CASE` e duas colunas de saída.
+--
+-- **Ela emenda a `0010` em vez de nascer numa `0011`, e a escolha é conteúdo.** Uma migração nova com
+-- `CREATE OR REPLACE VIEW` deixaria **duas** redações da mesma visão no repositório — o defeito
+-- "livres para divergir" que esta fatia existe para fechar — e, pior, `blocoDaVisao()` da suíte extrai
+-- o bloco `CREATE VIEW` **deste** arquivo para aplicar os mutantes do CT-513 e do CT-526: com a visão
+-- viva definida noutro lugar, as duas falsificações passariam a mutar e restaurar um objeto que não é
+-- o do produto, e a prova valeria sobre outra coisa. A `0010` **não descreve schema já aplicado** —
+-- diferente da `0007` e da `0008`, que o cabeçalho declara imutáveis por isso —, e nada além de
+-- instância efêmera a executou até aqui.
+--
+-- Os dois percentuais **vigentes** saem publicados junto (`multa_percentual_vigente`,
+-- `juros_percentual_vigente`) para que os QUATRO carimbos do pagamento venham de UMA referência a
+-- esta visão, e não de uma segunda leitura da política escrita no `UPDATE`. Eles repetem o
+-- `COALESCE(…, 0)` da RD-08 que as expressões já usam, e a repetição é deliberada: extrair o valor
+-- comum trocaria o texto da expressão dos juros, que os três mutantes casam por igualdade exata.
+--
+-- ---------------------------------------------------------------------------
 -- ---------------------------------------------------------------------------
 -- Empresa sem configuração de mora: `LEFT JOIN` e `COALESCE`, nunca `INNER JOIN`
 -- ---------------------------------------------------------------------------
@@ -249,6 +291,8 @@ SELECT
 	d.status,
 	d.valor_multa,
 	d.valor_juros,
+	COALESCE(m.multa_percentual, 0) AS multa_percentual_vigente,
+	COALESCE(m.juros_percentual, 0) AS juros_percentual_vigente,
 	round(c.valor_original + d.valor_multa + d.valor_juros, 2) AS valor_total
 FROM "negocio"."cobranca" c
 JOIN "negocio"."contrato" ctr
@@ -274,19 +318,19 @@ CROSS JOIN LATERAL (
 	SELECT
 		e.status,
 		t.dias_atraso,
-		CASE
+		COALESCE(c.multa_aplicada, CASE
 			WHEN e.status = 'VENCIDA'
 				THEN round(c.valor_original * COALESCE(m.multa_percentual, 0) / 100, 2)
 			ELSE 0.00
-		END AS valor_multa,
-		CASE
+		END) AS valor_multa,
+		COALESCE(c.juros_aplicados, CASE
 			WHEN e.status = 'VENCIDA'
 				THEN round(
 					c.valor_original * (COALESCE(m.juros_percentual, 0) / 100) / 30 * t.dias_atraso,
 					2
 				)
 			ELSE 0.00
-		END AS valor_juros
+		END) AS valor_juros
 ) AS d;--> statement-breakpoint
 
 -- ===========================================================================

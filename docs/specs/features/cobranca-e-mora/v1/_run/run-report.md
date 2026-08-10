@@ -4,7 +4,7 @@
 
 ## 1. Resumo do Run
 
-Status: **5/11 tasks concluídas** · suíte **687 → 805** casos, verde · `pnpm build` e `pnpm lint` verdes.
+Status: **9/11 tasks concluídas** · suíte **687 → 832** casos, verde · `pnpm build` e `pnpm lint` verdes.
 
 | Task | Nome | Modelo | Arquivos | QA | Tech Review |
 |------|------|--------|----------|-----|-------------|
@@ -13,6 +13,10 @@ Status: **5/11 tasks concluídas** · suíte **687 → 805** casos, verde · `pn
 | T4 | Porta de dados da cobrança — leitura pela view, emissão da série e a prova da mora contra o golden | opus | 2 criados, 6 mod | ✅ APROVADO_COM_OBSERVACOES (2 rodadas) | ✅ APROVADO_COM_OBSERVACOES (2 rodadas) |
 | T5 | As três rotas de lançamento e leitura da carteira de cobranças | opus | 5 criados, 11 mod | ✅ APROVADO (3 rodadas) | ✅ APROVADO_COM_OBSERVACOES (2 rodadas) |
 | T6 | Configuração de mora por empresa — contrato, porta e as duas rotas de `/v1/multa-e-juros` | opus | 6 criados, 8 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
+| T7 | As duas transições da cobrança — acusar pagamento com carimbo e cancelar preservando o histórico | opus | 0 criados, 11 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES (2 rodadas) |
+| T8 | `derivarParcelasDoContrato` — a função pura das parcelas, provada contra o oráculo | opus | 2 criados, 5 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
+| T9 | A ativação do contrato gera as parcelas na mesma unidade de trabalho — **fecha o D28** | opus | 0 criados, 13 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
+| T10 | O cancelamento do contrato cancela as cobranças em cascata, na mesma unidade | opus | 0 criados, 8 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
 
 > **T1 não está nesta tabela por decisão de ordenação, não por bloqueio.** Ela exige `sudo` com senha
 > interativa e o site efêmero do `/opt/frappe` de pé — nenhum subagente a executa. Fica para o fim do
@@ -304,6 +308,387 @@ Status: **5/11 tasks concluídas** · suíte **687 → 805** casos, verde · `pn
   no parâmetro, mantendo `ConfiguracaoDeMoraPersistida` como retorno das duas funções. Não altera o
   índice publicado do pacote nem o `CT-012`, que observa símbolos de tempo de execução.
 
+### D19 · MEDIO · project_pattern · T7 · Tech Review
+
+- **Onde:** `packages/db/migracoes/0010_seguranca_cobranca.sql:294`
+- **Problema:** duas colunas entraram na visão `cobranca_derivada` sem âncora de conjunto exato,
+  enquanto a **tabela** `negocio.cobranca` tem a dela (`CT-510 b`).
+- **Impacto:** a emenda da T7 acrescentou `multa_percentual_vigente` e `juros_percentual_vigente`. O
+  projeto protege a superfície gêmea por igualdade de conjunto —
+  `packages/db/test/fonte-unica-do-estado.spec.ts:299` afirma a lista **ordenada e inteira** das
+  colunas de `negocio.cobranca` via `information_schema.columns`, e o `_run/test-cases.json` registra
+  o propósito (*"impede coluna nova entrar sem decisão"*). A visão não tem equivalente: o único caso
+  que a inspeciona por catálogo é o `CT-510 (c)`, que confere apenas o **tipo** da coluna `status`. As
+  duas colunas novas entraram, portanto, sem nada que force revisão — e a visão é, por decisão desta
+  fatia (`DECISÃO FECHADA` de `packages/db/src/cobranca.ts:630`), a **única porta de leitura de
+  cobrança do produto**. Não é defeito hoje: `listarCobrancas` e `localizarCobranca` selecionam lista
+  explícita (`SELECT ${colunasDaCobranca(tx)}`), então nada vaza para o contrato. Mas a **F4** (régua,
+  boleto, carnê) lê essa visão, e é ela que herda a lacuna.
+- **O que fazer:** estender o `CT-510` com um caso que afirme a lista ordenada e inteira das colunas de
+  `negocio.cobranca_derivada`, no molde do `CT-510 (b)`, **ou** incorporar a conferência ao `CT-533`
+  da **T11**, que já é a auditoria final por dupla medição. A segunda opção não custa caso novo e
+  mantém o débito com dono e prazo dentro da própria fatia.
+
+### D20 · BAIXO · scope_deviation · T7 · Tech Review
+
+- **Onde:** `packages/db/migracoes/0010_seguranca_cobranca.sql:224`
+- **Problema:** a emenda da `0010` é legítima e correta, mas a legitimidade **expira** na primeira
+  aplicação a banco durável, e nada no repositório registra isso.
+- **Impacto:** o Gate 2 julgou o desvio e o aprovou em todos os pontos verificáveis — a emenda é
+  necessária (mutante `MT-7` reproduzido pelo QA), a alternativa `0011` com `CREATE OR REPLACE VIEW`
+  seria **pior** (`blocoDaVisao()` extrai o `CREATE VIEW` do arquivo `0010` **do disco**, então a visão
+  viva definida noutro arquivo faria `CT-513` e `CT-526` mutarem objeto que não é o do produto — R2,
+  regressão de prova), e a `0010` de fato **nunca foi aplicada** (`A` no git, T1 é captura de golden,
+  os artefatos só a citam contra instância efêmera). A regra de imutabilidade do projeto é
+  **condicional** a *"já aplicada"* — o cabeçalho da própria `0010` a enuncia assim. O risco
+  operacional é **fail-safe**: `deploy/scripts/instalacao/migrar-banco.sh:519` mantém
+  `identidade.migracao_aplicada` com `sha256sum` por arquivo e **aborta sem alterar nada** em
+  divergência, imprimindo a remediação correta. O que falta é o registro: a janela fecha **em
+  silêncio**, T8–T11 e a fatia `regua-e-documentos` ainda vêm, e o precedente recém-aberto (*"emende a
+  `0010`, porque `blocoDaVisao()` extrai dela"*) convida à mesma edição depois de a janela fechar.
+- **O que fazer:** acrescentar o arquivo à §5.2 da T7 com a divergência declarada; emitir um
+  `DÉBITO COM GATILHO` junto do bloco da visão, com
+  `QUANDO FECHA: a primeira aplicação da 0010 a banco durável — a partir dela o arquivo é imutável e a
+  guarda de sha256 do migrar-banco.sh aborta a instalação`, mais a linha correspondente no índice do
+  `CLAUDE.md`; e registrar aqui o par emenda-vs-`0011`, para que a escolha não seja re-derivada.
+
+### D21 · BAIXO · code_quality · T7 · Tech Review
+
+- **Onde:** `packages/db/src/cobranca.ts` (docblock de `cancelarCobranca`)
+- **Problema:** o docblock afirma uma garantia que o código não tem, e contradiz o docblock do serviço
+  escrito **na mesma task**.
+- **Impacto:** ele conclui que *"esta instrução nunca alcança uma linha já liquidada, e o instante
+  original é preservado por não haver segunda escrita"*. Isso não decorre do código: a guarda é
+  leitura-antes-de-gravar no serviço, e o `UPDATE` não tem `AND cancelado_em IS NULL`. Sob duas
+  transações concorrentes as duas passam a guarda e a segunda sobrescreve `cancelado_em`, sem que o
+  `cobranca_desfecho_unico_chk` dispare (só um desfecho está preenchido). O docblock de
+  `CobrancaService.acusarPagamento`, escrito na mesma task, diz o certo: *"entre a leitura e o
+  `UPDATE` cabe outra transação"*. **A corrida em si não é o achado** — race condition de backend em
+  MVP é não-objetivo consciente dos gates. O passivo é a prosa: o próximo agente que avaliar se deve
+  acrescentar o predicado lê, **no ponto exato da decisão**, que a preservação já está garantida.
+- **O que fazer:** trocar a frase final por uma que separe o que a decisão entrega do que não entrega —
+  a ausência do predicado é deliberada para que a segunda tentativa seja **recusada com o estado
+  nomeado** em vez de silenciada; a preservação do instante vale sob a serialização das transições, e a
+  janela entre a leitura e o `UPDATE` é a mesma que `acusarPagamento` já reconhece.
+
+### D22 · BAIXO · code_quality · T7 · Tech Review
+
+- **Onde:** `packages/db/migracoes/0010_seguranca_cobranca.sql:239-240`
+- **Problema:** linha de separador `-- ---` duplicada entre o bloco novo da T7 e a seção seguinte.
+- **Impacto:** cosmético. Todas as outras seções do arquivo têm **uma** régua; a seção *"Empresa sem
+  configuração de mora"* passou a ter duas acima do título. Só pesa por ser um arquivo que a suíte lê
+  do disco para montar mutantes, e no qual a uniformidade do texto é a convenção que separa bloco de
+  bloco.
+- **O que fazer:** remover uma das duas linhas.
+
+### D23 · BAIXO · code_quality · T7 · Tech Review
+
+- **Onde:** `apps/api/src/cobrancas/cobranca.controller.ts:195`
+- **Problema:** `ESQUEMA_DO_CORPO_VAZIO` ganhou segunda definição idêntica, contra o precedente de
+  unificar em `apps/api/src/comum/`.
+- **Impacto:** é idêntico ao de `apps/api/src/contratos/contrato.controller.ts:241`. O repositório já
+  pagou essa classe **duas** vezes e fechou nos dois casos por definição única em
+  `apps/api/src/comum/`: o **D40 (F1/T9)** com `esquemaDoErro` e o **D38 (F1/T9)** com `validar()`. A
+  duplicação é trivial e sem risco de divergência de comportamento — um objeto estrito vazio não tem
+  variação possível —, mas com a **F4** publicando mais rotas de transição e de rotina, a terceira
+  cópia é previsível.
+- **O que fazer:** mover para `apps/api/src/comum/` (junto de `validacao.ts`) e importar nos dois
+  controladores, **ou** registrar com gatilho no terceiro consumidor, no molde do **D1** desta fatia.
+
+### D24 · baixo · documentation · T7 · QA
+
+- **Onde:** `packages/db/test/cobranca.spec.ts:2015`
+- **Problema:** o docblock de `registrarPolitica` afirma que a porta da política *"nasce em T6"*, e ela
+  já nasceu.
+- **Impacto:** o acessório escreve `negocio.configuracao_de_mora` por instrução crua, e a justificativa
+  escrita para isso está **vencida** — a T6 está concluída e `gravarConfiguracaoDeMora` existe. A T7
+  corrigiu o par análogo no mesmo arquivo (`carimbarPagamento`/`carimbarCancelamento` →
+  `pagar`/`cancelar`, pelas portas de produção) e deixou este. **Não há confiança fabricada**: a
+  política não é o objeto sob prova em `CT-527` nem em `CT-532` — o que eles afirmam é a **derivação**
+  a partir dela, e a linha gravada é idêntica pelos dois caminhos. O que existe é um docblock que
+  afirma um fato falso, no arquivo que a T7 tocou.
+- **O que fazer:** reescrever o docblock declarando a razão **real** de a escrita seguir crua (a
+  política não é o objeto sob prova nestes casos, e a suíte é da camada de dados), **ou** trocar o
+  acessório por `gravarConfiguracaoDeMora`.
+
+### D25 · BAIXO · project_pattern · T7 · Tech Review
+
+- **Onde:** `docs/adr/0021-transicao-de-estado-governada-conforme-a-natureza-do-ato.md:43`
+- **Problema:** emendar ADR `accepted` em loco é **precedente novo**, e não há convenção escrita para a
+  forma do rastro.
+- **Impacto:** esta é a **primeira** emenda in loco de ADR aceita do repositório
+  (`grep -rn "Emenda de" docs/adr/*.md` casa só neste arquivo). O sweep por `emenda|emendar|amend` em
+  `.claude/rules/` e nas skills `agent-spec-adr-*` voltou **vazio**: o domínio ADR tem `-create`,
+  `-supersede`, `-deprecate` e `-reindex`, e **nenhuma** cobre *"corrigir o registro de uma decisão que
+  não mudou"*; o template canônico não tem campo de emenda, e o frontmatter segue
+  `status: accepted` / `date: 2026-08-09` sem sinal de que o corpo foi editado em 2026-08-10. O rastro
+  escolhido (bloco datado dentro da própria `Decision`) é bom e está no lugar certo — dentro da seção
+  que se lê antes de tentar a mudança —, mas é convenção de **uma ocorrência só**. A próxima emenda
+  inventa a forma de novo, e a partir da terceira não há como distinguir por varredura redação original
+  de redação emendada.
+- **O que fazer:** registrar a forma como convenção — bloco `> **Emenda de {data}.**` ao fim da seção
+  emendada, com *o que a redação original dizia* / *o que mudou* / *por que a decisão NÃO mudou* /
+  *origem*, mais uma linha `amended: {data}` no frontmatter do template. Colocação natural:
+  `.claude/rules/agent-spec-adr-workflow-rules.md`, junto da seção de rastreabilidade ADR ↔ Feature.
+
+### D26 · BAIXO · code_quality · T8 · Executor
+
+- **Onde:** `packages/db/src/derivacao-de-cobranca.ts` (`ultimoDiaDoMes`, `ehBissexto` — marcador
+  `DÉBITO COM GATILHO — D26 · F3/T8` imediatamente acima das duas)
+- **Problema:** a regra do calendário gregoriano — comprimento do mês e ano bissexto — passa a ter
+  **duas** escritas no pacote: as duas funções novas e as homônimas de
+  `packages/db/src/derivacao-de-contrato.ts`, que são internas de lá.
+- **Impacto:** baixo hoje, e mensurável: as duas cópias são **idênticas em comportamento** e cada uma é
+  provada contra o **mesmo** oráculo (`contrato-ativacao.json` — o bloco `derivacao` exercita a virada
+  de fevereiro pelo lado do término, e o bloco `cobrancas` pelo lado das parcelas), de modo que uma
+  divergência entre elas reprovaria numa das duas suítes. O que a duplicação custa é a garantia
+  estrutural: nada obriga a próxima correção de calendário a acontecer nos dois lugares.
+- **O que fazer:** promover `ultimoDiaDoMes` e `ehBissexto` a um módulo de calendário próprio de
+  `packages/db/src/` (interno, **não** publicado no índice — o `CT-012` registra a ausência dos
+  acessórios como deliberada), com os dois call sites ajustados no mesmo commit e as duas suítes
+  reexecutadas. Não foi feito aqui porque exigiria alterar a superfície de um módulo estável, com
+  decisões registradas, **fora dos arquivos da §5.2 da T8**.
+- **Gatilho:** o **terceiro** consumidor de aritmética de calendário do pacote — a régua de vencimento
+  da F5 e o carnê da fatia 2 são os candidatos óbvios.
+
+### D27 · MEDIO · tests · T8 · QA
+
+- **Onde:** `packages/db/test/derivacao-de-cobranca.spec.ts:713`
+- **Problema:** a recusa de `diaVencimento = 29` pelo esquema é asserida em **dois pacotes**.
+- **Impacto:** o `CT-507` (segundo caso) afirma, em `packages/db/test/`, que
+  `esquemaDeContratoNovo.safeParse({...CORPO_DE_CONTRATO, diaVencimento: 29})` reprova nomeando o campo.
+  Essa **mesma** invariante já é propriedade de `packages/contracts/test/esquemas.spec.ts:1061-1065`, na
+  tabela `CAMPOS_RECUSADOS`, com o rótulo *"dia de vencimento acima de 28 (RD-08)"*, o mesmo remendo e o
+  mesmo campo esperado. O *owning layer* da regra é `packages/contracts` — é lá que o esquema vive. A
+  consequência concreta: quando a RD-06/RD-08 mudar o teto, **dois** pacotes reprovam; e o teste de
+  `packages/db` passa a carregar uma fixture de nove campos (`CORPO_DE_CONTRATO`) que precisa continuar
+  válida contra um esquema de **outro** pacote, sem que nada aqui a mantenha em dia. **O card §6.6 pediu
+  esta asserção, e o executor a cumpriu** — o achado é sobre a colocação, não sobre a obediência ao card.
+- **O que fazer:** substituir a asserção sobre o esquema por um ponteiro em comentário para
+  `packages/contracts/test/esquemas.spec.ts` (tabela `CAMPOS_RECUSADOS`), mantendo aqui apenas a
+  afirmação que é **deste** arquivo: que a função não satura o vencimento (já coberta pelos treze
+  vencimentos literais em `-28`). Com isso `CORPO_DE_CONTRATO` e o import de `@sysloc/contracts` saem do
+  arquivo. `smell: duplicate_cross_layer` (AP-23), anotável pela partição.
+
+### D28 · baixo · tests · T8 · QA
+
+- **Onde:** `packages/db/test/derivacao-de-cobranca.spec.ts:606`
+- **Problema:** a data discriminadora `2027-01-31` é literal inline em **seis** pontos.
+- **Impacto:** todo valor **medido** deste arquivo ganhou constante nomeada — `REFERENCIAS_DO_DISCRIMINADOR`,
+  `TERCEIRO_PERIODO_DO_CONTROLE`, `COMPETENCIAS_DE_TREZE_MESES`, `INDICES_DIVERGENTES_EM_*`,
+  `FUSOS_DO_CASO`. A exceção é justamente **a data que torna os casos discriminadores**: `'2027-01-31'`
+  aparece inline nas linhas 590, 606, 658, 676, 691 e 700. É o **dia 31** que faz a saturação de fevereiro
+  ser herdada; trocado por engano em um dos seis pontos, aquele trecho passa a exercitar um cenário de
+  dia seguro e **deixa de discriminar sem que nada acuse**.
+- **O que fazer:** extrair `const INICIO_DISCRIMINADOR = '2027-01-31';` junto das demais constantes
+  medidas (perto de `DISCRIMINADOR`, linha 230) e usá-la nos seis pontos, inclusive dentro de
+  `CORPO_DE_CONTRATO`. `smell: magic_strings`.
+
+### D29 · BAIXO · project_pattern · T8 · Tech Review
+
+- **Onde:** `docs/specs/features/cobranca-e-mora/v1/tasks/T8.md:94` (§5.2)
+- **Problema:** a §5.2 não pré-declarou os **três** arquivos que a publicação do símbolo e a emissão do
+  marcador obrigam a tocar. É a **nona** ocorrência do padrão.
+- **Impacto:** nenhum no código entregue, e o Gate 2 provou que as três edições eram **mecanicamente
+  obrigatórias**: o `CT-012` compara a superfície publicada por **igualdade**
+  (`expect(superficie.nomes).toEqual(ordenado(SIMBOLOS_ESPERADOS))`), de modo que publicar
+  `derivarParcelasDoContrato` no índice **necessariamente** reprova o caso até o inventário incluí-lo; e a
+  §3-B de `.claude/rules/nao-regressao.md` **obriga** quem emite um `DÉBITO COM GATILHO` a fechar as duas
+  pontas do índice (`CLAUDE.md` e a §2 daqui, que o campo `ÍNDICE` do marcador nomeia literalmente). O
+  custo é de gate: a cada task o executor declara como pendência o que a spec deveria ter previsto, e os
+  **dois** gates gastam uma passagem julgando se foi alargamento.
+- **O que fazer:** nas tasks restantes (T9–T11), incluir na §5.2 **(a)**
+  `packages/db/test/unidade-de-trabalho.spec.ts` sempre que a task publicar símbolo no índice de
+  `@sysloc/db` — a **T9 publica dois** —, e **(b)** `CLAUDE.md` mais este relatório sempre que a task
+  prever emissão de `DÉBITO COM GATILHO`. Nenhuma ação sobre o código da T8. É o mesmo `O que fazer` do
+  **D10**, que segue sem ser seguido — e enquanto a skill proíbe o orquestrador de editar spec sem pedido
+  do usuário, o caminho usado neste run é **injetar a instrução no prompt do executor da task seguinte**,
+  que é o destinatário real (foi assim que o P4 da T3 alcançou a T4).
+
+### D30 · MEDIO · code_quality · T9 · QA
+
+- **Onde:** `packages/contracts/test/esquemas.spec.ts:1496`
+- **Problema:** o `CT-537 (b)` duplica semanticamente o primeiro caso do `CT-540`, **no mesmo arquivo**.
+- **Impacto:** o passo 5 do `CT-537` afirma `[...NATUREZAS_DE_COBRANCA]` e `[...ESTADOS_DA_COBRANCA]` por
+  igualdade de lista ordenada; o primeiro `it` do `CT-540` (`esquemas.spec.ts:1534-1537`, duas dezenas
+  de linhas abaixo) afirma **exatamente as mesmas duas igualdades**, sobre os mesmos símbolos, contra
+  listas idênticas. A tupla (alvo, parâmetros, resultado esperado) coincide integralmente — só o nome
+  do `it` difere. **O card manda mantê-lo** alegando ser *"a âncora que impede o enum de crescer junto
+  com a mudança do contrato de ativação"*, e o QA julgou que **a razão não se sustenta**: não existe
+  estado do código em que o `CT-537 (b)` reprove e o `CT-540` passe, porque o `CT-540` já afirma a
+  igualdade ordenada das duas listas e vive no mesmo arquivo. O poder de detecção acrescentado é
+  **zero**, e a próxima mudança de enum passa a exigir edição em dois lugares sem ganho.
+- **O que fazer:** remover o `it` `CT-537 (b)` e, se a ancoragem do enum ao contrato de ativação for
+  desejada, **referenciar** o `CT-540` no docblock do `CT-537` em vez de reasserir. Se a decisão for
+  mantê-lo, registrar aqui a duplicação como **intencional**. `smell: semantically_duplicated_test`.
+
+### D31 · baixo · documentation · T9 · QA
+
+- **Onde:** `packages/contracts/test/esquemas.spec.ts:1400`
+- **Problema:** a contagem declarada no `SUT_IS_CORRECT_BECAUSE:` do `CT-537` está errada — diz
+  *"sobe de quatro para cinco"*; é de **quatro para nove**.
+- **Impacto:** o `CT-537` tem **nove** casos executáveis (3 do laço ACEITOS + 3 do laço RECUSADOS + a
+  resposta sem declaração de efeito + o efeito inventado + o `CT-537 (b)`), e a medição confirma:
+  `@sysloc/contracts` foi de 222 a **227**, delta `+5 = 9−4`. A própria §4 da task escreve *"o CT-429
+  tinha 4 casos; o CT-537 tem 9"*. É documentação, não defeito de prova — nenhuma asserção está
+  afrouxada e a substituição é legítima. Mas o número errado está **exatamente no campo que a
+  comparação de contagem do P5 usa** para julgar se a suíte encolheu, e é o campo que um gate futuro
+  vai ler para decidir se a substituição foi honesta.
+- **O que fazer:** trocar por *"a contagem de casos **sobe** de quatro para nove"*, alinhando com a §4
+  da task e com a medição do pacote.
+
+### D32 · baixo · documentation · T9 · QA
+
+- **Onde:** `apps/api/test/contratos.e2e.spec.ts:1980`
+- **Problema:** o comentário do `CT-413` ainda anuncia **como futuro** o afrouxamento que **esta task
+  fez**.
+- **Impacto:** ele diz *"`efeitos` prende o literal que a F3 terá de afrouxar"*. A T9 **é** a F3, e o
+  literal já foi afrouxado — `EFEITOS_ESPERADOS` deixou de ser `{ cobrancasGeradas: false }` neste
+  mesmo diff. A frase descreve como pendente algo já consumado, no arquivo que a task tocou; é o tipo
+  de prosa que faz o próximo agente procurar por um afrouxamento pendente que não existe.
+- **O que fazer:** reescrever no presente — *"`efeitos` prende a contagem publicada por igualdade de
+  objeto; era o literal `false` até a T9, e é o que faz o efeito não ficar decorativo"* (o `MT-T9-1`
+  mediu que é essa linha que reprova quando a ativação não gera parcela).
+- ⚠️ **Este `D32` coexiste com o `D32 (F0/T6)`** do índice do `CLAUDE.md`, e a coexistência é legítima
+  pela §3-B: a sequência corre dentro da §2 **desta** fatia, e o identificador é o par
+  `Dnn · F{n}/{origem}`.
+
+### D33 · BAIXO · project_pattern · T9 · Tech Review
+
+- **Onde:** `apps/api/src/contratos/contrato.service.ts:174-179`
+- **Problema:** um parágrafo do docblock justifica a ausência de cascata com uma premissa que **esta
+  task matou**, e a janela T9 → T10 não tem marcador.
+- **Impacto:** o parágrafo afirma que *"o cancelamento em cascata das cobranças cancela um conjunto
+  vazio, e isso é correto: `negocio.cobranca` não existe nesta fatia (RD-12) … Quando a F3 chegar, o
+  conjunto passa a ter elementos e o mesmo caminho percorre — não há nada a antecipar"*. **As três
+  afirmações estão falsas hoje**: `negocio.cobranca` existe desde a `0009` (T3), a T9 fez a ativação
+  gravar N parcelas, e **não existe "o mesmo caminho"** — o Gate 2 leu o `cancelar` (linhas 812-825) e
+  ele faz `localizarContrato`, `cancelarContrato` e `definirSituacaoDeLocacaoDoImovel`, **sem tocar
+  cobrança**. O conjunto deixou de ser vazio e nada o percorre. A janela é real: entre a T9 e a T10, um
+  contrato cancelado deixa **N parcelas vivas** em `cobranca_derivada`, classificadas
+  `A_VENCER`/`VENCIDA` e **acumulando mora**, sem que nada no código acuse. O risco é **R3** (regressão
+  de decisão) com leitor nomeado: a **T10 abre exatamente este método**, e um parágrafo que diz *"não
+  há nada a antecipar"* faz o executor procurar um percurso existente a ligar, em vez de escrever a
+  cascata do zero.
+- **O que fazer:** reescrever o parágrafo no tempo presente (*"a cascata **não** está implementada; a
+  partir da T9 o conjunto tem elementos"*). O `suggested_fix` registra que, **sendo a T10 a próxima a
+  rodar, corrigir a prosa e dispensar o `DÉBITO COM GATILHO` é aceitável** — ele nasceria e morreria na
+  mesma sessão. **Não confundir** com o `DÉBITO COM GATILHO — D36 · F2/T8`, que vive no mesmo método
+  (linha 799) e **permanece**. A instrução foi injetada no prompt do executor da T10.
+
+### D34 · BAIXO · code_quality · T9 · Tech Review
+
+- **Onde:** `apps/api/src/contratos/contrato.controller.ts:453`
+- **Problema:** a descrição do `@ApiOkResponse` da ativação continua dizendo que a resposta declara **o
+  que a ativação NÃO fez**.
+- **Impacto:** ela contradiz duas coisas do mesmo bloco de decoradores — o `schema` da linha seguinte,
+  que deriva de `esquemaDaAtivacaoDeContrato` já com `cobrancasGeradas: z.number()`, e o
+  `@ApiOperation` das linhas 445-450, que **esta task reescreveu** para dizer que a ativação **gera** as
+  parcelas e publica quantas nasceram. O executor atualizou a descrição da operação e passou pela da
+  resposta. **Não é violação da ADR-0016** — a forma continua **derivada** do esquema, e o que está
+  errado é prosa narrativa. O custo: o `handoff-frontend.md` é gerado desta superfície, e quem abrir o
+  documento OpenAPI lê, na resposta `200`, a leitura **exatamente invertida** de `cobrancasGeradas: 3`.
+  O nome do campo e a descrição da operação desfazem o mal-entendido, o que mantém o custo baixo.
+- **O que fazer:** trocar por *"O contrato como ele ficou, mais a declaração de quantas cobranças a
+  ativação gerou."* Uma linha, sem efeito comportamental.
+
+### D35 · baixo · documentation · T10 · QA
+
+- **Onde:** `packages/db/src/index.ts:149`
+- **Problema:** o docblock ainda diz *"as **oito** operações da cobrança"* — são **onze**, e a T10 publica a
+  décima primeira.
+- **Impacto:** a contagem real de funções publicadas de `./cobranca.js` é onze:
+  `acusarPagamentoDeCobranca`, `cancelarCobranca`, `cancelarCobrancasDoContrato`, `criarCobranca`,
+  `criarCobrancasEmLote`, `emitirNumeroDeCobranca`, `emitirNumerosDeCobranca`,
+  `garantirContadorDeCobranca`, `lerAnoDaSerieDeCobranca`, `listarCobrancas`, `localizarCobranca`. O
+  número já estava vencido antes da T10, **mas a T10 edita esse mesmo docblock 40 linhas abaixo** (o
+  parágrafo novo *"Pela T10 sai daqui `cancelarCobrancasDoContrato`"*), de modo que a justificativa de
+  *"preexistente fora do escopo"* não se sustenta: a edição já estava aberta no bloco. A prosa deste
+  arquivo é mecanismo de memória entre agentes, e um número errado ali é lido como fato.
+- **O que fazer:** trocar por *"as onze operações"* e ajustar a enumeração aposta (*"as duas
+  transições"* já não cobre a cascata). Alternativa que **não envelhece**: suprimir o numeral —
+  *"as operações da cobrança — inclusive as transições, as duas da série e o leitor do ano do escopo
+  dela"*.
+
+### D36 · baixo · documentation · T10 · QA **e** Tech Review
+
+- **Onde:** `apps/api/src/contratos/contrato.service.ts:146` (mais 13 pontos nos dois arquivos)
+- **Problema:** `contrato.service.ts` e `contrato.controller.ts` citam a **ADR-0019** como vigente, e ela
+  está `superseded-by:0021`. A T10 **reescreveu uma das linhas que a citam**, mantendo o ponteiro vencido.
+- **Impacto:** são **14** citações vivas — `service.ts` 93, 146, 247, 424, 1003; `controller.ts` 46, 55,
+  62, 142, 217, 226, 228, 434, 507. O `CLAUDE.md` é explícito: *"há duas cadeias de supersede, e nas duas
+  só a última se cita"*. **Os dois gates convergiram na classificação**: é `documentation`, **não**
+  `adr_compliance`, porque não há contradição com nenhuma `Decision` — ambos abriram o texto vigente da
+  0021 (com a emenda de 2026-08-10) e o comportamento conforma item a item: o cancelamento de
+  **CONTRATO** está nominalmente na primeira classe, exigindo `ACAO:cancelar_contrato`, que é o que a
+  rota declara, e a cascata é **efeito** da rota própria. O defeito é de **ponteiro**, não de decisão
+  desfeita. O agravante que o Gate 2 nomeou: a redação **original** da 0019, antes da emenda, punha o
+  cancelamento de **cobrança** na primeira classe — *"e foi exatamente essa leitura ao pé da letra que
+  consumiu uma rodada no Gate 2 da T7"*.
+- **O que fazer:** **não** corrigir de dentro de uma task que abra os arquivos por outra razão — as duas
+  gates registraram que trocar as 14 ali seria `scope_deviation` de manual. Fechar numa **passagem
+  dirigida** sobre os dois arquivos, conferindo **linha a linha**, porque quatro das ocorrências
+  descrevem a decisão em prosa e o texto ao redor precisa conferir com a redação vigente — em especial
+  `controller.ts:62` (*"a ADR-0019 a rejeita nominalmente"*) e `controller.ts:228`, que descrevem a
+  governança por chave de ação que a 0021 **recortou em duas classes**. A passagem é o lugar certo para
+  acrescentar a nota de que a 0021 emendou a classificação do ato.
+- ⚠️ **Este `D36` coexiste com o `D36 (F2/T8)`, que é marcador VIVO** em `contrato.service.ts:854` — o
+  arquivo que esta própria task editou. É a coexistência mais confusa do run, e é **legítima** pela §3-B:
+  a sequência corre dentro da §2 **desta** fatia, e o identificador é o par `Dnn · F{n}/{origem}`. Quem
+  ler *"D36"* sem a origem vai errar; **cite sempre `D36 · F3/T10` para este, e `D36 · F2/T8` para o
+  marcador da pré-condição de PDF**.
+
+### D37 · baixo · documentation · T10 · QA
+
+- **Onde:** `apps/api/src/contratos/contrato.service.ts:184`
+- **Problema:** o texto **novo** do cabeçalho — o que substituiu o parágrafo obsoleto do **D33** — diz
+  *"não deixou marcador nem débito"*, e o débito **existe**.
+- **Impacto:** o Gate 1 verificou as **dez** afirmações substantivas do texto novo uma a uma contra o
+  código e **todas conferem** — a existência da tabela desde a `0009`, as N parcelas da T9, a ausência do
+  *"mesmo caminho"*, as cinco etapas, o predicado literal, a tupla intacta com `xmin` preservado (que ele
+  mesmo provou pelo `MT-2`), o conjunto vazio sem ramo de erro, a contagem publicada só na trilha, o
+  evento da §13.1 verbatim, e as etapas 4 e 5 no mesmo commit. **O texto não trocou uma afirmação falsa
+  por outra imprecisa.** A única imprecisão é a oração final: marcador de fato não deixou; **débito
+  deixou** — o `D33` está na §2 desta fatia e é exatamente aquele parágrafo. Um agente que grepe a §2
+  encontra o `D33` e lê no fonte a negação de que ele exista.
+- **O que fazer:** trocar por algo que preserve o fato — *"e por isso não deixou `DÉBITO COM GATILHO`: o
+  débito **D33**, que o Gate 2 registrou na T9, é fechado aqui, na mesma fatia, e o marcador nasceria e
+  morreria na mesma sessão (o próprio `suggested_fix` do D33 o autoriza)"*. **Não confundir** com o
+  `DÉBITO COM GATILHO — D36 · F2/T8`, que segue no mesmo método e **permanece**.
+
+### D38 · BAIXO · testability · T10 · Tech Review
+
+- **Onde:** `packages/db/test/cobranca.spec.ts` (passo 5 do `CT-521`)
+- **Problema:** o passo acopla um caso de `packages/db/test` ao **texto-fonte** de um arquivo de
+  `apps/api`, com a **indentação embutida** no literal do mutante.
+- **Impacto:** o passo lê `apps/api/src/cobrancas/cobranca.controller.ts` do disco e afirma três coisas
+  sobre o **texto**: a declaração do segmento verbatim (com ponto e vírgula), o dono do segmento, e a
+  igualdade `metodosDeclarados(dono) === ['GET','POST']`. O mutante de falsificação é uma substituição de
+  literal com dois espaços de indentação embutidos. O Gate 2 verificou que o caso está **correto** — alvo
+  único hoje, `trocarUmaVez` afirmando a unicidade, regex ancorada em início de linha (docblock não casa),
+  `matchAll` sem vazamento de `lastIndex` — e que a falsificação **prova o predicado**. O que se reporta é
+  a **fragilidade da via**: uma reformatação cosmética em `apps/api` (aspas, quebra de linha, indentação)
+  fica **vermelha em `packages/db`**, com mensagem apontando para o pacote errado. **Não é vão de prova**:
+  um `DELETE` novo sob `/v1/cobrancas` — inclusive de outro controlador, o único caso que esta varredura
+  não alcança — reprova `cobertura-de-autorizacao.e2e.spec.ts`, que fixa **82/67** por dupla medição.
+- **O que fazer:** quando uma task futura tocar o `CT-521`, mover o passo 5 para `apps/api/test/`, onde
+  `CAMINHO_DAS_COBRANCAS` já é **importado** (`contratos.e2e.spec.ts:101` o faz nesta mesma T10), e manter
+  em `packages/db/test` só os passos 1 a 4, que são de camada de dados. O Gate 2 **considerou bloquear e
+  decidiu que não**, com razão registrada: `cobranca.spec.ts` já lê texto versionado de outros workspaces
+  desde a T4 (`CAMINHO_DA_FILA` → `apps/worker/src/fila.ts`; `DIRETORIO_DE_UNIDADES` → `deploy/systemd`),
+  o padrão passou por gate antes, não há `import` de `apps` (o grafo de build segue `api → db`), a
+  divergência está declarada no cabeçalho da suíte e a prova de falsificação está presente — *"reabrir
+  isso agora seria churn sobre padrão aceito"*.
+
+### D17 e D18 — **NÚMEROS NÃO UTILIZADOS, queimados**
+
+Anunciei os dois na telemetria da T7 (`_run/workflow-report.md`) para os dois `baixos` do QA daquela task,
+e depois **escriturei os achados com outros números**: o primeiro (a classificação dos dois atos não
+escriturada na ADR-0021) foi **fechado** pela emenda da ADR e por isso não virou bloco nenhum; o segundo
+(o docblock vencido de `registrarPolitica`) foi escriturado como **`D24`**. Os números ficam **queimados**
+pela mesma razão do D7 e do D9: reemiti-los tornaria ambíguo o único identificador que a §3-B da
+`nao-regressao.md` reconhece. Registrado aqui para que a linha da telemetria não pareça um bloco órfão.
+
 ### D7 · F3/T4 — **FECHADO na T5**
 
 Nasceu `lerAnoDaSerieDeCobranca` em `packages/db/src/cobranca.ts`, derivada de
@@ -322,7 +707,35 @@ ambíguo o único identificador que a §3-B da `nao-regressao.md` reconhece.
 
 ## 4. Notas para Revisão Humana
 
-> ### ▶️ O RUN FOI RETOMADO em 2026-08-10 — a pausa está encerrada
+> ### ⏸️ O RUN ESTÁ PAUSADO DE NOVO — 2026-08-10, a pedido do usuário
+>
+> **Ponto de parada**: o **executor da T11 concluiu** e os **dois gates dela NÃO rodaram**. É o mesmo
+> ponto da primeira pausa, cinco tasks adiante. **T2 a T10 estão concluídas e staged**; a T11 está
+> `Em Progresso`, com o código no working tree — e como ela só **modificou** dois arquivos de teste,
+> não há arquivo untracked e **nada pode se perder**.
+>
+> **Para retomar**, reinvoque a mesma skill com os mesmos argumentos e escolha
+> **(a) "Retomar nos gates"** — foi o caminho que funcionou na primeira pausa:
+>
+> ```
+> /agent-spec-sdd-run-tasks docs/specs/features/cobranca-e-mora/v1/task_plan.md sysloc-backend-implementer
+> ```
+>
+> O bloco **"⏸️ PAUSA DO RUN — 2026-08-10 (segunda pausa)"** ao fim do `_run/workflow-report.md` carrega
+> **tudo** que a retomada precisa: o sumário do executor da T11 para os gates receberem inline, a
+> baseline por unidade (**832 → 834**), o `t10_sha` com a receita para recriá-lo se o `git gc` o podar,
+> os quatro pontos a auditar com rigor, e a lista do que falta para fechar a fatia depois dos gates.
+>
+> ⚠️ **Não faça `git add` da T11 antes dos gates** — o índice hoje é exatamente T2..T10, e é isso que
+> torna o `t10_sha` recriável.
+>
+> **A T1 segue diferida por decisão** (exige `sudo` interativo e o site efêmero do `/opt/frappe` de pé;
+> nada na fatia depende dela). Enquanto ela não rodar, a fatia fica em **10/11** e o `task_plan.md`
+> **não** deve ir a `Concluído`.
+>
+> ---
+>
+> ### ▶️ Histórico: o run foi retomado em 2026-08-10, da primeira pausa
 >
 > A pausa parou o run com o **executor da T6 concluído e os dois gates dela sem rodar**. A retomada
 > escolheu **(a) "Retomar nos gates"** — o código estava íntegro, e reexecutar do zero descartaria
@@ -335,6 +748,33 @@ ambíguo o único identificador que a §3-B da `nao-regressao.md` reconhece.
 > As notas operacionais que continuam valendo para T7 em diante (flake do `CT-907`, disco em ~93%,
 > próximo `Dnn` livre — hoje **D17** —, a folga do `cobrancas.e2e.spec.ts` do D11) estão no
 > `_run/workflow-report.md`.
+
+- **⚠️ A T7 produziu a única escalada ao usuário deste run, e ela mudou uma ADR aceita.** O Gate 2
+  reprovou com um `ALTO` de `adr_compliance`: a `Decision` da **ADR-0021** dizia, sem qualificar, que
+  *"ativação, **cancelamento** e retirada de circulação são da primeira [classe]"* — a que exige chave
+  de ação — e definia a segunda classe por *"instância declarada"*, com um único membro. A T7 publicou
+  `POST /v1/cobrancas/:codigo/cancelamento` exigindo só a área. **A classificação não estava em dúvida**
+  (o usuário a escalou e confirmou antes da spec, e o catálogo fechado a sustenta): a ADR que a
+  autoriza é que não a registrava. Os **dois gates leram o mesmo parágrafo em sentidos opostos** — o QA
+  como escrituração (`BAIXO`), o TR como contradição literal (`ALTO`) —, e a correção era editar uma ADR
+  aceita, o que nenhum executor pode fazer. **Nenhuma rodada de correção foi aberta**: o orquestrador
+  escalou por `AskUserQuestion` apesar da autorização de "sem pausas" do run, porque emendar o registro
+  arquitetural do projeto está fora do que aquela autorização cobre. O usuário escolheu **emendar a
+  0021 agora**, entre três saídas (emendar / débito com gatilho no congelamento, no molde do D43 /
+  superseder com ADR nova). A emenda nomeia a **entidade** na primeira classe, transforma a segunda
+  classe em **roster explícito de três instâncias**, acrescenta `cobranca-e-mora (v1)` ao `Applied in`
+  e registra num bloco datado que **a decisão não mudou — mudou o registro dela**. O Gate 2 da rodada 2
+  confirmou os três pontos e declarou o `P1` sanado. O que faltou virou o **D25**: o repositório não tem
+  convenção para emenda de ADR aceita.
+
+- **⚠️ Um risco que a T7 não pode fechar, e que a T11 precisa conferir antes da F4.** Numa cobrança
+  **PAGA com atraso**, a visão publica `diasAtraso: 0` ao lado de `valorJuros` **carimbado e positivo** —
+  o `CASE` de `dias_atraso` não foi envolvido em `COALESCE` porque **não existe** coluna
+  `dias_atraso_aplicado` com que envolvê-lo. E `diasAtraso` **é** campo publicado
+  (`packages/contracts/src/cobranca.ts:363`), então o cliente lê zero dia de atraso com juros de mora
+  positivos. Sob a leitura *"dias em atraso AGORA"*, zero é correto para uma cobrança liquidada, e
+  nenhum CA da T7 pediu outra coisa — por isso não é achado. Mas a **F4** monta carnê e segunda via
+  sobre esse par, e o **CT-533** (T11) e o handoff são os pontos onde a leitura tem de ficar explícita.
 
 - **Uma consequência do `t5_sha` que vale reusar até o usuário commitar.** Com T2–T6 `staged` e sem
   commit, o HEAD não se move, então `git diff <base_sha>` devolve as tasks **somadas** nos arquivos que

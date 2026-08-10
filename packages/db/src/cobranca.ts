@@ -21,10 +21,15 @@
  * A ASSIMETRIA É O MECANISMO: escreve na TABELA, lê na VISÃO
  * ---------------------------------------------------------------------------
  *
- * {@link criarCobranca} grava em `negocio.cobranca`; {@link listarCobrancas} e
- * {@link localizarCobranca} leem `negocio.cobranca_derivada`. **Não há neste arquivo uma única
- * leitura de cobrança que selecione da tabela**, e é essa ausência que torna a unicidade da
- * derivação verificável em vez de prometida — ver o marcador `DECISÃO FECHADA` adiante.
+ * {@link criarCobranca}, {@link criarCobrancasEmLote}, {@link acusarPagamentoDeCobranca},
+ * {@link cancelarCobranca} e {@link cancelarCobrancasDoContrato} gravam em
+ * `negocio.cobranca`; {@link listarCobrancas} e {@link localizarCobranca} leem
+ * `negocio.cobranca_derivada`. **Não há neste arquivo uma única leitura de cobrança que selecione da
+ * tabela**, e é essa ausência que torna a unicidade da derivação verificável em vez de prometida —
+ * ver o marcador `DECISÃO FECHADA` adiante.
+ *
+ * O pagamento é a única escrita que **lê a visão dentro da própria instrução**, e a assimetria é o
+ * mecanismo do carimbo: ver {@link acusarPagamentoDeCobranca}.
  *
  * ---------------------------------------------------------------------------
  * NENHUMA DERIVAÇÃO DE ESTADO OU DE MORA EXISTE EM TypeScript (ADR-0022, ADR-0023)
@@ -45,7 +50,9 @@
  * ---------------------------------------------------------------------------
  *
  * {@link garantirContadorDeCobranca} e {@link emitirNumeroDeCobranca} são **duas**, e a separação é
- * a decisão — o raciocínio inteiro está no cabeçalho de {@link ./contrato.ts} e na §4 de
+ * a decisão — mais {@link emitirNumerosDeCobranca}, que é a **mesma** emissão pedida N vezes numa ida
+ * ao banco só, para a ativação do contrato (T9). O raciocínio inteiro está no cabeçalho de
+ * {@link ./contrato.ts} e na §4 de
  * `migracoes/0008_seguranca_contrato.sql`, **referenciado daqui e não recopiado**: a borda as chama
  * em duas unidades de trabalho sequenciais, e fundi-las faria o desfazimento apagar a sequência
  * recém-criada, de modo que a cobrança seguinte tomaria `nextval = 1` **outra vez** — número
@@ -125,6 +132,14 @@ import { empresaDoContexto } from './contexto-de-escrita.js';
 // `./contrato.ts` importa `OpcoesDeCirculacao` de `./conjunto.ts` em vez de redeclará-lo. O que se
 // importa é o tipo: `contrato.ts` não é tocado.
 import type { NumeroDaSerie } from './contrato.js';
+// Mesmo critério da importação acima, e a mesma razão: `ParcelaDerivada` é o nome que o pacote **já
+// publica** para os cinco fatos com que uma parcela de aluguel nasce, e o docblock dela declara por
+// extenso que é *"exatamente `DadosDaCobranca` menos o `contratoId`"* — a coincidência foi deliberada
+// na T8, justamente para que quem grava em lote receba o contrato uma vez e as parcelas N vezes.
+// Declarar um gêmeo aqui daria dois nomes ao mesmo fato na superfície pública. O que se importa é o
+// tipo: `derivacao-de-cobranca.ts` não é tocado, e a direção do grafo não muda — aquele módulo é puro
+// e não importa nada deste.
+import type { ParcelaDerivada } from './derivacao-de-cobranca.js';
 
 /**
  * A janela pedida da carteira, já validada na borda.
@@ -160,8 +175,9 @@ export interface FiltrosDaCarteira {
  *
  * `codigo`, `status` e todo o desfecho (`pagoEm`, `valorPago`, `canceladoEm` e os quatro carimbos)
  * **não estão aqui**, e a ausência é o mecanismo: o código é emitido pela série, o estado é derivado
- * (ADR-0022) e o desfecho é escrito pelo ato que liquida, em T7. Um caminho que os aceitasse por este
- * tipo seria a segunda fonte de estado que a fatia inteira existe para eliminar.
+ * (ADR-0022) e o desfecho é escrito pelo ato que liquida — {@link acusarPagamentoDeCobranca} e
+ * {@link cancelarCobranca}. Um caminho que os aceitasse por este tipo seria a segunda fonte de estado
+ * que a fatia inteira existe para eliminar.
  *
  * `locatarioId` **também não está**, e essa ausência é a mais importante: ele sai da junção com o
  * contrato. A tabela do legado guarda as duas pontas e admite que elas discordem; aqui a incoerência
@@ -182,6 +198,24 @@ export interface DadosDaCobranca {
   readonly competencia: string;
   readonly dataVencimento: string;
   readonly valorOriginal: number;
+}
+
+/**
+ * Os **dois** fatos que o ato de pagar informa — e nada mais.
+ *
+ * Multa, juros e os dois percentuais **não estão aqui**, e a ausência é o mecanismo do carimbo: eles
+ * são copiados da visão dentro da própria instrução que grava o pagamento
+ * ({@link acusarPagamentoDeCobranca}), de modo que não existe caminho pelo qual a borda — ou o cliente
+ * dela — proponha um valor de mora. Aceitá-los por este tipo daria a quem paga o poder de escrever o
+ * próprio recibo, e é a razão de `esquemaDoPagamentoDeCobranca` ter dois campos e não seis.
+ *
+ * `pagoEm` é cadeia `YYYY-MM-DD`, e não `Date`: a coluna é `date`, e um objeto `Date` reserializado
+ * com o fuso do processo desloca a data em um dia para metade dos fusos (§6.2) — a mesma razão das
+ * três datas de {@link DadosDaCobranca}.
+ */
+export interface DesfechoDoPagamento {
+  readonly pagoEm: string;
+  readonly valorPago: number;
 }
 
 /**
@@ -536,6 +570,72 @@ export async function emitirNumeroDeCobranca(tx: TransactionSql, ano: number): P
 }
 
 /**
+ * Consome `quantidade` números do contador do escopo `(empresa do contexto, ano)` e devolve os pares
+ * emitidos, na ordem em que a série os entregou.
+ *
+ * ---------------------------------------------------------------------------
+ * É UMA CHAMADA À FUNÇÃO POR NÚMERO, NUMA IDA AO BANCO SÓ
+ * ---------------------------------------------------------------------------
+ *
+ * `negocio.proximo_numero_de_cobranca` é `VOLATILE` (o padrão de `plpgsql`, e o que `nextval` exige),
+ * de modo que o `generate_series` a invoca **uma vez por linha** — são `quantidade` avanços do
+ * contador, exatamente como `quantidade` chamadas de {@link emitirNumeroDeCobranca} produziriam. O que
+ * a forma economiza é **ida ao banco**, e não avanço: a ativação de doze meses passa de doze viagens a
+ * uma. Dentro de uma unidade de trabalho aberta, com `SET LOCAL`, cada viagem segura uma conexão de um
+ * pool compartilhado entre empresas — o isolamento de *dado* é do banco (ADR-0008), o de **recurso**
+ * não é de ninguém.
+ *
+ * **A aplicação continua sem tocar a sequência** (ADR-0020): o único caminho para o número é a função
+ * `SECURITY DEFINER`, e `generate_series` só decide **quantas vezes** ela é chamada. A empresa não é
+ * parâmetro nem aqui — quem a lê é a função, por dentro.
+ *
+ * ---------------------------------------------------------------------------
+ * O ANO VIAJA JUNTO DE CADA NÚMERO, e a repetição é deliberada
+ * ---------------------------------------------------------------------------
+ *
+ * A devolução é uma lista de {@link NumeroDaSerie}, e não de números crus, pela razão que a ADR-0020
+ * fixa e que o cabeçalho de {@link ./contrato.ts} registra por extenso: o par tem de viajar junto para
+ * que {@link criarCobrancasEmLote} **não releia o ano**. Doze cópias do mesmo inteiro custam nada, e o
+ * que elas compram é a impossibilidade de o código anunciar um contador que não emitiu aquele número —
+ * a virada do ano cabe entre a unidade que garante o contador e a que grava.
+ *
+ * **A quantidade é conferida antes da ida ao banco**, e a lista vazia **não** emite instrução alguma:
+ * `generate_series(1, 0)` não produz linha, e pagar a viagem para descobrir isso é custo sem
+ * informação — mesma decisão de `substituirFiadoresDoContrato` em {@link ./contrato.ts}. Quantidade
+ * negativa ou fracionária levanta em vez de virar lista curta: ela produziria menos parcelas do que o
+ * contrato prevê **sem nada acusando**, que é a mesma classe de silêncio que
+ * `derivarParcelasDoContrato` recusa no prazo.
+ */
+export async function emitirNumerosDeCobranca(
+  tx: TransactionSql,
+  ano: number,
+  quantidade: number,
+): Promise<readonly NumeroDaSerie[]> {
+  if (!Number.isInteger(quantidade) || quantidade < 0) {
+    // Sem o valor na mensagem, de propósito: ela pode alcançar o registro estruturado.
+    throw new RangeError('a quantidade de números da série precisa ser um inteiro não negativo');
+  }
+
+  if (quantidade === 0) {
+    return [];
+  }
+
+  const linhas = await tx<{ numero: string }[]>`
+    SELECT negocio.proximo_numero_de_cobranca(${ano}::integer) AS numero
+      FROM generate_series(1, ${quantidade}::integer)
+  `;
+
+  if (linhas.length !== quantidade) {
+    // Inalcançável: `generate_series` produz exatamente `quantidade` linhas e a função ou devolve o
+    // número ou levanta. A conferência existe porque uma lista mais curta que a pedida faria a
+    // gravação em lote emitir menos parcelas do que o contrato prevê, em silêncio.
+    throw new Error('a série da cobrança não devolveu um número para cada parcela pedida');
+  }
+
+  return linhas.map((linha) => ({ ano, numero: Number(linha.numero) }));
+}
+
+/**
  * Grava uma cobrança e devolve a linha como a **visão** a publica.
  *
  * ---------------------------------------------------------------------------
@@ -569,7 +669,9 @@ export async function criarCobranca(
 ): Promise<LinhaDeCobranca> {
   const codigo = formatarCodigoDeCobranca(serie.ano, serie.numero);
 
-  const gravado = await gravarSobRestricaoDoCodigo(tx, async (escrita) => {
+  // O envoltório devolve **os** códigos gravados — um, aqui; N, no lote —, e é essa uniformidade que
+  // mantém a tradução da colisão num ponto só. Ver {@link gravarSobRestricaoDoCodigo}.
+  const [gravado] = await gravarSobRestricaoDoCodigo(tx, async (escrita) => {
     const [linha] = await escrita<{ codigo: string }[]>`
       INSERT INTO negocio.cobranca (
         empresa_id, codigo, contrato_id, natureza, referencia,
@@ -582,7 +684,7 @@ export async function criarCobranca(
       RETURNING codigo
     `;
 
-    return linha?.codigo;
+    return linha === undefined ? [] : [linha.codigo];
   });
 
   if (gravado === undefined) {
@@ -601,6 +703,110 @@ export async function criarCobranca(
   }
 
   return publicada;
+}
+
+/**
+ * Grava **as N parcelas de um contrato numa instrução só** e devolve os códigos que o banco escreveu.
+ *
+ * ---------------------------------------------------------------------------
+ * UM `INSERT` DE N LINHAS, e não N `INSERT`s — a forma é conteúdo
+ * ---------------------------------------------------------------------------
+ *
+ * As colunas variáveis chegam como **arranjos paralelos** e são recompostas por `unnest`, que é o
+ * mesmo mecanismo de `substituirFiadoresDoContrato` em {@link ./contrato.ts}. A ativação de doze meses
+ * paga **uma** ida ao banco em vez de doze, e a razão é a mesma de
+ * {@link emitirNumerosDeCobranca}: dentro de uma unidade de trabalho aberta cada viagem segura uma
+ * conexão de um pool compartilhado entre empresas, e o número de viagens passaria a ser escolhido pelo
+ * prazo que o cliente contratou — que não tem teto pequeno (`prazoMeses` admite dezenas).
+ *
+ * A alternativa — um laço de {@link criarCobranca} na borda — teria um segundo preço, e ele é pior que
+ * o custo: cada iteração relê a **visão** para publicar a linha, de modo que a ativação de doze meses
+ * faria vinte e quatro consultas para devolver um número que é a contagem das linhas gravadas.
+ *
+ * ---------------------------------------------------------------------------
+ * O QUE ELA DEVOLVE, e por que não é a linha publicada
+ * ---------------------------------------------------------------------------
+ *
+ * Os **códigos**, colhidos do `RETURNING` — e não as linhas da visão. Quem chama é a ativação, e o que
+ * a resposta dela publica é **quantas** cobranças nasceram (`efeitos.cobrancasGeradas`), não a carteira:
+ * a lista completa é a rota de leitura `GET /v1/cobrancas?contrato=…`, que já existe. Usar o
+ * comprimento desta devolução em vez de `parcelas.length` é o que faz o efeito publicado ser o número
+ * de linhas que o **banco** escreveu, e não o de linhas que a aplicação pretendia escrever.
+ *
+ * A ordem da devolução não é contratada — quem precisa de ordem lê a carteira, que ordena por
+ * `data_vencimento, codigo`.
+ *
+ * ---------------------------------------------------------------------------
+ * O CONTRATO ENTRA UMA VEZ; o par `(ano, número)` entra N vezes
+ * ---------------------------------------------------------------------------
+ *
+ * `contratoId` é o **UUID** — a coluna é `uuid` e a chave estrangeira composta é
+ * `(contrato_id, empresa_id)` —, e ele é o mesmo para todas as parcelas por construção: a parcela
+ * cruzada é irrepresentável porque não há caminho para propor um contrato por linha. Quem traduziu o
+ * código recebido do cliente no identificador interno foi a borda, e é essa tradução que produz o `404`
+ * de contrato inalcançável, que esta camada não sabe emitir.
+ *
+ * Cada código sai de `formatarCodigoDeCobranca` sobre o par que {@link emitirNumerosDeCobranca}
+ * devolveu — **o ano não é relido aqui**, pela mesma razão de {@link criarCobranca}. A conferência de
+ * que há um número por parcela vem antes de qualquer escrita: emitir doze números e gravar onze linhas
+ * queimaria um número em silêncio, e a ADR-0015 proíbe reusá-lo.
+ *
+ * A lista vazia **não** emite instrução alguma — `unnest` de arranjos vazios não produz linha, e pagar
+ * a viagem para descobrir isso é custo sem informação. É o caminho da RD-20, em que o contrato declara
+ * `gerarCobrancasAutomaticamente: false` e a ativação grava zero parcelas.
+ *
+ * `empresa_id` é proposto por {@link empresaDoContexto} porque a coluna é `NOT NULL` sem padrão — quem
+ * aceita ou recusa cada linha continua sendo o `WITH CHECK` da política (ADR-0008), e não há aqui um
+ * `WHERE empresa_id = …`. A colisão de código é traduzida pelo **mesmo** ponto único da gravação
+ * avulsa, e o `SAVEPOINT` dele é o que impede a recusa de uma parcela de abortar a ativação inteira com
+ * `25P02` — ver {@link gravarSobRestricaoDoCodigo}.
+ */
+export async function criarCobrancasEmLote(
+  tx: TransactionSql,
+  contratoId: string,
+  parcelas: readonly ParcelaDerivada[],
+  numeros: readonly NumeroDaSerie[],
+): Promise<readonly string[]> {
+  if (parcelas.length !== numeros.length) {
+    // Sem os valores na mensagem, de propósito: ela pode alcançar o registro estruturado.
+    throw new RangeError('o lote recebeu uma quantidade de números diferente da de parcelas');
+  }
+
+  if (parcelas.length === 0) {
+    return [];
+  }
+
+  const codigos = numeros.map((serie) => formatarCodigoDeCobranca(serie.ano, serie.numero));
+
+  return await gravarSobRestricaoDoCodigo(tx, async (escrita) => {
+    const linhas = await escrita<{ codigo: string }[]>`
+      INSERT INTO negocio.cobranca (
+        empresa_id, codigo, contrato_id, natureza, referencia,
+        competencia, data_vencimento, valor_original
+      )
+      SELECT ${empresaDoContexto(escrita)},
+             parcela.codigo,
+             ${contratoId}::uuid,
+             parcela.natureza::negocio.natureza_cobranca,
+             parcela.referencia,
+             parcela.competencia::date,
+             parcela.data_vencimento::date,
+             parcela.valor_original::numeric
+        FROM unnest(
+               ${codigos}::text[],
+               ${parcelas.map((parcela) => parcela.natureza)}::text[],
+               ${parcelas.map((parcela) => parcela.referencia)}::text[],
+               ${parcelas.map((parcela) => parcela.competencia)}::text[],
+               ${parcelas.map((parcela) => parcela.dataVencimento)}::text[],
+               ${parcelas.map((parcela) => parcela.valorOriginal)}::numeric[]
+             ) AS parcela(
+               codigo, natureza, referencia, competencia, data_vencimento, valor_original
+             )
+      RETURNING codigo
+    `;
+
+    return linhas.map((linha) => linha.codigo);
+  });
 }
 
 // DECISÃO FECHADA — F3/fatia 1 · 2026-08-10
@@ -684,12 +890,207 @@ export async function localizarCobranca(
 }
 
 /**
+ * Grava os fatos do pagamento e os **quatro carimbos**, numa instrução só, e devolve a linha
+ * publicada.
+ *
+ * ---------------------------------------------------------------------------
+ * OS QUATRO CARIMBOS SAEM DA VISÃO, DENTRO DA MESMA INSTRUÇÃO QUE OS GRAVA
+ * ---------------------------------------------------------------------------
+ *
+ * O `UPDATE` lê `negocio.cobranca_derivada` no `FROM` e copia dela `valor_multa`, `valor_juros` e os
+ * dois percentuais vigentes. **Nenhuma fórmula é escrita aqui**, e é isso que a torna impossível de
+ * divergir: multa e juros carimbados são, por construção, os mesmos centavos que a visão publicava —
+ * a mesma expressão, no mesmo lugar, referenciada e não recopiada (ADR-0022, ADR-0023). Escrever a
+ * conta de novo neste `UPDATE` produziria dois cálculos que concordariam hoje e divergiriam na
+ * primeira mudança da política, e a divergência não faria barulho.
+ *
+ * **A visão enxerga a linha ANTES desta escrita**, e a propriedade é do PostgreSQL, não uma sutileza
+ * a lembrar: a relação do `FROM` é avaliada contra a fotografia do início da instrução, de modo que
+ * `pago_em` ainda é nulo para ela e a mora vem apurada pela política vigente. É a razão de o carimbo
+ * caber numa instrução só, e a razão de ele congelar o instante imediatamente anterior ao ato.
+ *
+ * Os **quatro** vão juntos, e não só os dois valores: `multa_percentual_aplicado` e
+ * `juros_percentual_aplicado` são a **configuração vigente** que a ADR-0022 manda gravar junto, e sem
+ * eles a releitura de uma cobrança paga não diria mais sob qual política ela foi cobrada. O
+ * `cobranca_carimbo_coerente_chk` os amarra ao pagamento pelos dois lados — carimbo sem `pago_em` e
+ * `pago_em` sem carimbo são igualmente irrepresentáveis —, de modo que gravá-los em duas instruções
+ * seria recusado pelo banco no meio do caminho.
+ *
+ * A junção é por `id`, e não por código: o `WHERE` já recorta a linha pelo código, e igualar o
+ * identificador interno das duas relações é o que declara que a visão consultada é a **daquela**
+ * linha. Não há `empresa_id` em lugar nenhum desta instrução — quem recorta as duas pontas é a
+ * política, e a visão é `security_invoker` justamente para que ela seja avaliada com os direitos de
+ * quem consulta (ADR-0008).
+ *
+ * **Os seis campos de conciliação bancária não aparecem no `SET`**, e a ausência é a decisão — ver o
+ * marcador `DECISÃO FECHADA` de `apps/api/src/cobrancas/cobranca.service.ts`, que registra a
+ * divergência declarada contra o sistema antigo. Aqui a garantia é estrutural: uma coluna que não é
+ * nomeada não é escrita.
+ *
+ * `undefined` quando o contexto corrente não alcança a cobrança — mesma indistinguibilidade de
+ * {@link localizarCobranca}, traduzida pela borda no `404` canônico. A guarda de estado **não** mora
+ * aqui: quem recusa pagar o que já está liquidado é o serviço, com a recusa que nomeia o estado atual.
+ */
+export async function acusarPagamentoDeCobranca(
+  tx: TransactionSql,
+  codigo: string,
+  desfecho: DesfechoDoPagamento,
+): Promise<LinhaDeCobranca | undefined> {
+  const [linha] = await tx<{ codigo: string }[]>`
+    UPDATE negocio.cobranca AS alvo
+       SET pago_em = ${desfecho.pagoEm},
+           valor_pago = ${desfecho.valorPago},
+           multa_aplicada = derivada.valor_multa,
+           juros_aplicados = derivada.valor_juros,
+           multa_percentual_aplicado = derivada.multa_percentual_vigente,
+           juros_percentual_aplicado = derivada.juros_percentual_vigente
+      FROM negocio.cobranca_derivada AS derivada
+     WHERE derivada.id = alvo.id
+       AND alvo.codigo = ${codigo}
+    RETURNING alvo.codigo
+  `;
+
+  return linha === undefined ? undefined : await localizarCobranca(tx, linha.codigo);
+}
+
+/**
+ * Carimba o cancelamento da cobrança e devolve a linha publicada.
+ *
+ * **Nada é apagado** (ADR-0014): a linha permanece, o código continua ocupado na unicidade
+ * `(empresa_id, codigo)` — de modo que a série nunca o reusa — e a leitura por código segue
+ * alcançando-a. O que muda é um fato gravado, e é a precedência da visão que o traduz no estado
+ * publicado.
+ *
+ * O instante sai de `now()`, do relógio do **banco**, e não de um `Date` da aplicação: a coluna é
+ * `timestamptz` e o valor é comparado com os demais carimbos do mesmo servidor.
+ *
+ * **Ela NÃO é idempotente, e a ausência de `AND cancelado_em IS NULL` é deliberada.** Um `UPDATE`
+ * condicional responderia sobre a cobrança já cancelada sem escrever nada, e a borda não teria como
+ * distinguir *"cancelei agora"* de *"já estava cancelada"* — a segunda tentativa passaria em silêncio.
+ * Quem recusa a repetição é a guarda de estado do serviço, que responde `422` nomeando o estado atual:
+ * repetir **informa**. A consequência é que esta instrução nunca alcança uma linha já liquidada, e o
+ * instante original é preservado por não haver segunda escrita.
+ *
+ * `undefined` quando o contexto corrente não alcança a cobrança, como em {@link localizarCobranca}.
+ */
+export async function cancelarCobranca(
+  tx: TransactionSql,
+  codigo: string,
+): Promise<LinhaDeCobranca | undefined> {
+  const [linha] = await tx<{ codigo: string }[]>`
+    UPDATE negocio.cobranca
+       SET cancelado_em = now()
+     WHERE codigo = ${codigo}
+    RETURNING codigo
+  `;
+
+  return linha === undefined ? undefined : await localizarCobranca(tx, linha.codigo);
+}
+
+/**
+ * Cancela **as cobranças canceláveis de um contrato** e devolve **quantas linhas o banco alcançou**.
+ *
+ * ---------------------------------------------------------------------------
+ * O PREDICADO É A REGRA DE NEGÓCIO, SEM TRADUÇÃO — e isso é o dividendo do estado derivado
+ * ---------------------------------------------------------------------------
+ *
+ * *"Cancele as que ainda podem ser canceladas"* escreve-se, em SQL,
+ * `pago_em IS NULL AND cancelado_em IS NULL` — e não há entre as duas frases nenhuma tradução, nenhuma
+ * lista de rótulos e nenhuma máquina de estados própria. É consequência direta de o estado ser
+ * derivado dos fatos gravados (ADR-0022): a precedência da visão publica `A_VENCER` ou `VENCIDA`
+ * exatamente quando os dois carimbos são nulos, de modo que *"em aberto"* e *"cancelável"* são o mesmo
+ * conjunto, escrito uma vez.
+ *
+ * A alternativa — selecionar por `status IN ('A_VENCER','VENCIDA')` sobre a visão e cancelar a lista —
+ * seria uma **segunda** avaliação do estado nesta camada, contra o marcador `DECISÃO FECHADA` acima, e
+ * teria de reproduzir aqui a precedência do `CASE`. Ela também gravaria com base numa leitura anterior,
+ * e entre a leitura e a escrita cabe o pagamento de uma das linhas.
+ *
+ * ---------------------------------------------------------------------------
+ * O QUE ELA NÃO ALCANÇA — e por que a diferença é FÍSICA, não de valor
+ * ---------------------------------------------------------------------------
+ *
+ * A paga e a já cancelada ficam **fora do conjunto**, e por isso não são reescritas: `pago_em`,
+ * `valor_pago`, os quatro carimbos de mora e o `cancelado_em` original permanecem, com a **tupla
+ * intacta** — o `xmin` delas não muda. A distinção que importa é entre *não alterou* e *reescreveu com
+ * o mesmo valor*: a segunda passaria em qualquer comparação de campos, e é o que a RN-13 proíbe.
+ *
+ * **Os dois `IS NULL` protegem coisas diferentes, e a medição está registrada no cabeçalho de
+ * `apps/api/test/contratos.e2e.spec.ts`.** Sem `pago_em IS NULL`, a escrita alcança uma linha paga e o
+ * banco a **recusa em voz alta**: `cobranca_desfecho_unico_chk` proíbe os dois carimbos na mesma linha, e
+ * o `23514` chega ao cliente como `500`. Sem `cancelado_em IS NULL`, não há recusa alguma — o instante
+ * original do cancelamento é sobrescrito **em silêncio**, e uma variante que o preservasse
+ * (`COALESCE(cancelado_em, now())`) reescreveria a tupla sem mudar valor nenhum. É esta que só o `xmin`
+ * distingue, e é por ela que o par existe inteiro.
+ *
+ * ---------------------------------------------------------------------------
+ * CONJUNTO VAZIO NÃO É ERRO — e a assimetria com a porta estreita do imóvel é deliberada
+ * ---------------------------------------------------------------------------
+ *
+ * `0` linhas afetadas é resultado legítimo, e não falha: o contrato pode não ter cobrança alguma
+ * (`gerarCobrancasAutomaticamente: false`), ou tê-las todas já liquidadas. Ela devolve zero e o
+ * cancelamento do contrato responde `200`.
+ *
+ * É o oposto de `definirSituacaoDeLocacaoDoImovel`, que **levanta** quando não alcança exatamente uma
+ * linha — e a diferença não é estilo: lá a ausência de linha é estado impossível (o imóvel existe, foi
+ * alcançado pela chave estrangeira composta, e um `UPDATE` sem efeito deixaria um imóvel `LOCADO` sem
+ * contrato vigente); aqui a quantidade é **dado do contrato**, e um teto ou piso escrito nesta camada
+ * recusaria o caso mais banal do produto.
+ *
+ * ---------------------------------------------------------------------------
+ * ELA NÃO CONFERE ESTADO DO CONTRATO, e não abre unidade de trabalho
+ * ---------------------------------------------------------------------------
+ *
+ * Quem recusa cancelar um contrato que não é `ATIVO` é a guarda de estado do serviço, que nomeia o
+ * estado atual na resposta — esta camada não conhece HTTP. E ela **recebe** o executor de quem já abriu
+ * a unidade: é isso, e nada mais, que faz a cascata, a transição do contrato e a liberação do imóvel
+ * commitarem juntas ou não commitarem. Não existe cascata parcial porque não existe segunda unidade.
+ *
+ * `contratoId` é o **UUID**, e não o código: a coluna é `uuid`, e a chave estrangeira composta é
+ * `(contrato_id, empresa_id)` — mesma razão de {@link criarCobrancasEmLote}. Quem traduziu o código
+ * recebido do cliente no identificador interno foi a borda.
+ *
+ * Não há `empresa_id` na instrução, e não pode haver: quem recorta é a política forçada (ADR-0008), e
+ * o índice `cobranca_empresa_contrato_idx` — `(empresa_id, contrato_id)` — é quem a resolve com o
+ * recorte que a política acrescenta. Uma cobrança de outra empresa apontando para este contrato é
+ * irrepresentável: a chave estrangeira composta recusa o par que não existe.
+ *
+ * A devolução sai de `count` do driver, que é **quantas linhas o servidor escreveu** — e não o
+ * comprimento de uma lista que a aplicação montou. Não há `RETURNING`: quem chama publica a contagem
+ * numa linha de trilha, e trazer N códigos para descartá-los seria transporte sem consumidor.
+ */
+export async function cancelarCobrancasDoContrato(
+  tx: TransactionSql,
+  contratoId: string,
+): Promise<number> {
+  const resultado = await tx`
+    UPDATE negocio.cobranca
+       SET cancelado_em = now()
+     WHERE contrato_id = ${contratoId}::uuid
+       AND pago_em IS NULL
+       AND cancelado_em IS NULL
+  `;
+
+  return resultado.count;
+}
+
+/**
  * Executa a escrita e traduz **a violação da restrição de unicidade do código** — o ponto único dela.
  *
  * A escrita corre dentro de um `SAVEPOINT` pela razão que o cabeçalho deste arquivo registra. O
  * desfazimento alcança **só** o que correu dentro dele — o que a unidade gravou antes permanece, e é o
- * que faz esta tradução caber dentro de uma composição maior: a ativação da T9 emite doze parcelas na
- * mesma unidade, e uma recusa da décima não pode apagar a leitura do contrato que a antecedeu.
+ * que faz esta tradução caber dentro de uma composição maior: a ativação do contrato grava as parcelas
+ * na mesma unidade que transita o estado, e uma recusa da escrita não pode apagar a leitura do contrato
+ * que a antecedeu.
+ *
+ * **A devolução é a LISTA de códigos gravados**, e é ela que mantém a tradução num ponto só para as
+ * **duas** escritas que emitem código: a avulsa ({@link criarCobranca}) devolve um elemento — ou zero,
+ * se a linha não voltar —, e o lote ({@link criarCobrancasEmLote}) devolve N. Uma lista onde antes havia
+ * `string | undefined` é a menor mudança que serve às duas: um segundo envoltório para o lote nasceria
+ * com a liberdade de traduzir `23505` em bloco, ou de esquecer o `SAVEPOINT` — que é exatamente o modo
+ * de falha que este ponto único existe para não ter. O tipo **não** é genérico de propósito:
+ * `tx.savepoint` devolve `UnwrapPromiseArray<T>`, que sobre um parâmetro de tipo não se resolve, e a
+ * saída seria um `as` largo em cima da única escrita deste arquivo que o cliente não controla.
  *
  * Toda violação que **não** seja a da restrição nomeada é **repassada intacta** — inclusive a de
  * `cobranca_id_empresa_key` e as de `check`, que a mesma escrita pode produzir. Traduzir `23505` em
@@ -702,8 +1103,8 @@ export async function localizarCobranca(
  */
 async function gravarSobRestricaoDoCodigo(
   tx: TransactionSql,
-  escrever: (escrita: TransactionSql) => Promise<string | undefined>,
-): Promise<string | undefined> {
+  escrever: (escrita: TransactionSql) => Promise<readonly string[]>,
+): Promise<readonly string[]> {
   try {
     return await tx.savepoint(async (escrita) => await escrever(escrita));
   } catch (erro) {

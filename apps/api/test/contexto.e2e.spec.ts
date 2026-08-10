@@ -423,8 +423,18 @@ const CAMINHOS_PUBLICOS_ACEITOS: readonly string[] = [
  * público continua inalterado, e a igualdade segue exata nos dois sentidos — **nada foi afrouxado**,
  * o `toEqual` continua sendo igualdade de conjunto contra um inventário escrito à mão.
  *
+ * SUT_IS_CORRECT_BECAUSE: a T7 da fatia `cobranca-e-mora` publicou as **duas transições da cobrança**,
+ * e as duas são **protegidas**: vale a exigência da classe, `@ExigeChave('TELA:financeiro')`, nenhuma é
+ * marcada `@RotaPublica()`, e por isso a sonda sem cookie recebe `401 NAO_AUTENTICADO` da guarda. Pela
+ * classificação por **caminho** deste caso elas entram como **duas** entradas novas, porque cada uma
+ * atende um caminho próprio — `:codigo/pagamento` e `:codigo/cancelamento` —, e nenhum outro método os
+ * atende. Vale o mesmo dos parágrafos acima: nenhuma entrada anterior saiu, o conjunto público continua
+ * inalterado, e a igualdade segue exata nos dois sentidos — **nada foi afrouxado**, o `toEqual`
+ * continua sendo igualdade de conjunto contra um inventário escrito à mão.
+ *
  * **Este arquivo não está na §5.2 da T7 nem na da T9, nem na da T6, da T7 e da T8 da fatia de
- * contratos, nem na da T5 e na da T6 da fatia `cobranca-e-mora`** — divergência declarada nas sete, e
+ * contratos, nem na da T5, na da T6 e na da T7 da fatia `cobranca-e-mora`** — divergência declarada nas
+ * oito, e
  * é o débito **D26 (F2/T6)**, cuja recomendação
  * literal é declará-lo nas §5.2 de T7, T8 e T10. A T10 **também não o declara**, e a divergência
  * volta a ser anotada aqui pela quinta vez. Ele é blast radius por construção: a âncora afirma por
@@ -451,6 +461,8 @@ const ROTAS_PROTEGIDAS_ACEITAS: readonly string[] = [
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONJUNTOS}/:id/retirada`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}/:codigo`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}/:codigo/cancelamento`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}/:codigo/pagamento`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo/ativacao`,

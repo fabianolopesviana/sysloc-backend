@@ -32,11 +32,16 @@ FEATURES="$RAIZ/docs/specs/features"
 # O separador entre fatias é `;` e o formato de cada uma é `<feature>/<versao>`. Fatia ainda não
 # especificada entra como `<feature>/v1` mesmo assim: o script a reporta como "não iniciada", que é
 # a informação correta.
+#
+# ⚠️ Só entra aqui **fatia executável**. O pré-refinamento de uma fase partida tem diretório próprio
+# em `docs/specs/features/` — `dominio-locacao/v1` para a F2, `cobranca-mora-e-documentos/v1` para a
+# F3 — e ele NÃO é fatia: não tem `_run/`, não tem task, e listá-lo faz o painel reportar uma fatia
+# "especificada" que ninguém vai executar, escondendo o estado real das que existem.
 declare -A FATIAS_DA_FASE=(
   [F0]='fundacao-stack-nativa/v1'
   [F1]='fundacao-multitenancy-identidade/v1;autorizacao-e-ciclo-de-acesso/v1'
   [F2]='cadastro-de-imoveis-e-pessoas/v1;contratos-de-locacao/v1'
-  [F3]='cobranca-mora-e-documentos/v1'
+  [F3]='cobranca-e-mora/v1;regua-e-documentos/v1'
   [F4]='integracao-bancaria-sicoob/v1'
   [F5]='automacoes-agendadas/v1'
   [F6]='frontend-religado/v1'

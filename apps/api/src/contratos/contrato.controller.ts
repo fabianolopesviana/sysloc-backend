@@ -75,28 +75,40 @@
  * receberia `200` e acreditaria ter escolhido o estado.
  *
  * ---------------------------------------------------------------------------
- * A CRIAÇÃO abre DUAS unidades de trabalho SEQUENCIAIS (ADR-0015, ADR-0020)
+ * A CRIAÇÃO e a ATIVAÇÃO abrem DUAS unidades de trabalho SEQUENCIAIS (ADR-0015, ADR-0020)
  * ---------------------------------------------------------------------------
  *
  * ```
- * unidade 1:  garantirSerie(tx)      → lê o ano e cria o contador, e COMMITA
- * unidade 2:  conferências; emissão do número; gravação do contrato e dos fiadores
+ * criar    · unidade 1:  contratos.garantirSerie(tx) → ano do CONTRATO, e COMMITA
+ *            unidade 2:  conferências; emissão do número; gravação do contrato e dos fiadores
+ *
+ * ativar   · unidade 1:  cobrancas.garantirSerie(tx) → ano da COBRANÇA, e COMMITA
+ *            unidade 2:  conferências; transição; ocupação do imóvel; emissão dos N números e
+ *                        gravação das N parcelas
  * ```
  *
  * **A razão não é estilo, e este é o ponto mais fácil de "simplificar" desta superfície.** Se a
  * criação da sequência e o `nextval` ficassem na mesma transação, o desfazimento apagaria a sequência
- * recém-criada e o contrato seguinte tomaria `nextval = 1` outra vez — o número **seria reusado**,
+ * recém-criada e o registro seguinte tomaria `nextval = 1` outra vez — o número **seria reusado**,
  * contra a cláusula literal da ADR-0015 (*"nunca reusado, nem por criação abortada"*). Com as duas
  * unidades, a sequência já está commitada quando o `nextval` corre, e a criação abortada queima o
- * número para sempre: o furo que a ADR aceita por escrito, e que o `CT-404` mede.
+ * número para sempre: o furo que a ADR aceita por escrito, e que o `CT-404` e o `CT-536` medem.
  *
- * As duas **não aninham** — a segunda começa depois de a primeira fechar —, então o marcador
- * `DECISÃO FECHADA` de `packages/db/src/unidade-de-trabalho.ts`, que recusa abrir uma segunda unidade
- * **de dentro** de uma aberta, **não é tocado**. As demais rotas abrem uma unidade só.
+ * Nas duas rotas as unidades **não aninham** — a segunda começa depois de a primeira fechar —, então o
+ * marcador `DECISÃO FECHADA` de `packages/db/src/unidade-de-trabalho.ts`, que recusa abrir uma segunda
+ * unidade **de dentro** de uma aberta, **não é tocado**. As demais rotas abrem uma unidade só.
  *
  * O **ano** sai de dentro da primeira unidade e viaja para a segunda: ele é lido do relógio do banco
  * uma única vez, e é o mesmo valor que alimenta o contador, a emissão e o código. Ver
- * {@link ContratoService.garantirSerie}.
+ * {@link ContratoService.garantirSerie} e {@link CobrancaService.garantirSerie}.
+ *
+ * **São contadores diferentes, e os dois anos saem de relógios diferentes de propósito.** A criação
+ * garante o contador do CONTRATO (`lerAnoDaSerieDeContrato`, fuso da sessão); a ativação garante o da
+ * COBRANÇA (`lerAnoDaSerieDeCobranca`, `negocio.data_corrente_da_operacao()`, fuso do objeto — o mesmo
+ * eixo que a visão `negocio.cobranca_derivada` consulta para classificar a linha). Reusar um pelo outro
+ * poria o código de um ano no contador do outro nas horas em torno da virada, e a razão por extenso está
+ * no docblock de `lerAnoDaSerieDeCobranca`. A ativação **não** garante o contador do contrato: o código
+ * do contrato foi emitido na criação e não muda.
  *
  * ---------------------------------------------------------------------------
  * A UNIDADE DE TRABALHO ABRE AQUI, na borda (decisão D1)
@@ -177,6 +189,7 @@ import { CodigoErro, type Logger } from '@sysloc/shared';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { ExigeChave, ExigeChaves } from '../autenticacao/exigencia.decorator.js';
+import { CobrancaService } from '../cobrancas/cobranca.service.js';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
 import { esquemaDoErro } from '../comum/esquema-de-erro.js';
 import { esquemaPublicado } from '../comum/esquema-publicado.js';
@@ -249,10 +262,16 @@ const ESQUEMA_DA_PAGINA = envelopeDeLista(esquemaDoContrato);
 export class ContratoController {
   constructor(
     // A porta única para transação. É dela que sai o executor que os métodos do serviço recebem, e é
-    // ela que torna a operação inteira um commit só — e, na criação, o que torna as DUAS unidades
-    // sequenciais exprimíveis sem aninhamento.
+    // ela que torna a operação inteira um commit só — e, na criação e na ativação, o que torna as DUAS
+    // unidades sequenciais exprimíveis sem aninhamento.
     @Inject(TOKEN_ACESSO_AO_NEGOCIO) private readonly banco: AcessoAoBanco,
     @Inject(ContratoService) private readonly contratos: ContratoService,
+    // O serviço da COBRANÇA entra aqui por **uma** razão: a garantia do contador da série dela, na
+    // primeira unidade da ativação. Ele é **consumido**, e não recriado — `garantirSerie` já existe e é
+    // quem sabe de qual relógio o ano da cobrança sai. Uma segunda garantia escrita nesta superfície
+    // seria a segunda fonte do mesmo fato, com liberdade para escolher o eixo errado; e é ele que faz
+    // `contratos.module.ts` importar `CobrancasModule`, em vez de prover o serviço duas vezes.
+    @Inject(CobrancaService) private readonly cobrancas: CobrancaService,
     @Inject(TOKEN_LOGGER) private readonly logger: Logger,
   ) {}
 
@@ -422,8 +441,13 @@ export class ContratoController {
       '`detalhes: { conflito: "IMOVEL_COM_CONTRATO_VIGENTE", contratoVigente }` — é o código do ' +
       'vigente que diz ao usuário o que cancelar. Um imóvel `INDISPONIVEL` **é ativável**: a ' +
       'situação significa "não ofereça nas buscas", não "proibido de locar". O corpo é vazio e ' +
-      'fechado — o estado nunca é escolhido pelo cliente. A resposta traz o contrato acrescido de ' +
-      '`efeitos`, e `cobrancasGeradas` é **`false`**: esta fatia não gera cobrança.',
+      'fechado — o estado nunca é escolhido pelo cliente. **A ativação gera as parcelas de aluguel ' +
+      'do contrato na MESMA unidade de trabalho**: são `prazoMeses` cobranças de natureza `ALUGUEL`, ' +
+      'com código próprio da série `COB-{ano}-{7 dígitos}`, competência no primeiro dia de cada mês ' +
+      'e vencimento no `diaVencimento` — e a resposta traz o contrato acrescido de `efeitos`, com ' +
+      '`cobrancasGeradas` igual a **quantas nasceram**. Um contrato com ' +
+      '`gerarCobrancasAutomaticamente: false` gera **zero** e responde `cobrancasGeradas: 0`. Recusa ' +
+      'em qualquer etapa deixa o contrato `RASCUNHO`, o imóvel como estava e **nenhuma** cobrança.',
   })
   @ApiOkResponse({
     description: 'O contrato como ele ficou, mais a declaração do que a ativação NÃO fez.',
@@ -441,10 +465,20 @@ export class ContratoController {
     const codigo = validar(ESQUEMA_DO_CODIGO_DE_CONTRATO, identificador, CAMPO_DO_CODIGO);
     validar(ESQUEMA_DO_CORPO_VAZIO, corpo ?? {}, CAMPO_DO_CORPO);
 
-    // UMA unidade de trabalho, aberta aqui: as duas escritas da ativação — o estado do contrato e a
-    // situação do imóvel — commitam juntas ou não commitam. Ver o cabeçalho do serviço.
+    // PRIMEIRA unidade: ela **commita** antes de a segunda abrir, e é isso que impede o número da
+    // cobrança de ser reusado por uma ativação abortada. O contador é o da COBRANÇA, e a garantia é a
+    // do serviço dela — ver o cabeçalho deste arquivo. Não funda as duas.
+    const ano = await sobContextoDaSessao(
+      this.banco,
+      requisicao,
+      async (tx) => await this.cobrancas.garantirSerie(tx),
+    );
+
+    // SEGUNDA unidade: as três escritas da ativação — o estado do contrato, a situação do imóvel e as
+    // N parcelas — commitam juntas ou não commitam. Ela abre depois de a primeira fechar, e por isso
+    // não aninha. Ver o cabeçalho do serviço.
     return await sobContextoDaSessao(this.banco, requisicao, async (tx, sessao) => {
-      const ativado = await this.contratos.ativar(tx, codigo);
+      const ativado = await this.contratos.ativar(tx, codigo, ano);
 
       this.logger.info(
         {
@@ -452,6 +486,7 @@ export class ContratoController {
           entidade: ENTIDADE_DA_TRILHA,
           codigo: ativado.codigo,
           acao: 'ativacao',
+          cobrancasGeradas: ativado.efeitos.cobrancasGeradas,
         },
         'contrato ativado',
       );
@@ -470,9 +505,14 @@ export class ContratoController {
     summary: 'Faz o contrato deixar de valer',
     description:
       'Transita `ATIVO → CANCELADO` **num commit só** (ADR-0019): confere o estado, grava o ' +
-      'contrato como `CANCELADO` e devolve o imóvel a `DISPONIVEL`, liberando-o para um contrato ' +
-      'novo. Falha em qualquer etapa deixa o contrato `ATIVO` e o imóvel **exatamente como ' +
-      'estava**. **O contrato permanece na carteira** (ADR-0014): nada é apagado, ele continua ' +
+      'contrato como `CANCELADO`, devolve o imóvel a `DISPONIVEL`, liberando-o para um contrato ' +
+      'novo, e **cancela em cascata as cobranças do contrato que ainda podem ser canceladas** — as ' +
+      'que não foram pagas nem canceladas. As **pagas** e as **já canceladas** ficam exatamente ' +
+      'como estavam: valor pago, instante do cancelamento e os carimbos de multa e juros **não são ' +
+      'reescritos**. Um contrato sem cobrança alguma responde `200` do mesmo jeito — cascata sobre ' +
+      'conjunto vazio não é erro. Falha em qualquer etapa deixa o contrato `ATIVO`, o imóvel ' +
+      '**exatamente como estava** e **nenhuma** cobrança cancelada. ' +
+      '**O contrato permanece na carteira** (ADR-0014): nada é apagado, ele continua ' +
       'listado e legível como histórico, e `dataFimLocacao` e `valorTotalContrato` **não são ' +
       'zerados** — eles descrevem o que o contrato foi enquanto valeu. Sobre um contrato que não é ' +
       '`ATIVO` responde `422` com `campo: "status"` e `detalhes: { estadoAtual, transicaoPedida }`: ' +
@@ -497,10 +537,14 @@ export class ContratoController {
     const codigo = validar(ESQUEMA_DO_CODIGO_DE_CONTRATO, identificador, CAMPO_DO_CODIGO);
     validar(ESQUEMA_DO_CORPO_VAZIO, corpo ?? {}, CAMPO_DO_CORPO);
 
-    // UMA unidade de trabalho, aberta aqui: as duas escritas do cancelamento — o estado do contrato e
-    // a situação do imóvel — commitam juntas ou não commitam. Ver o cabeçalho do serviço.
+    // UMA unidade de trabalho, aberta aqui: as TRÊS escritas do cancelamento — o estado do contrato, a
+    // situação do imóvel e a cascata nas cobranças — commitam juntas ou não commitam. Ver o cabeçalho
+    // do serviço.
     return await sobContextoDaSessao(this.banco, requisicao, async (tx, sessao) => {
-      const cancelado = await this.contratos.cancelar(tx, codigo);
+      const { contrato: cancelado, cobrancasCanceladas } = await this.contratos.cancelar(
+        tx,
+        codigo,
+      );
 
       // Os campos são os que a §13.1 da tech spec nomeia para este evento — `imovelId` entre eles,
       // porque é ele que diz **qual** imóvel voltou a ficar disponível. Nenhum valor monetário e
@@ -514,6 +558,26 @@ export class ContratoController {
           acao: 'cancelamento',
         },
         'contrato cancelado',
+      );
+
+      // A SEGUNDA linha, e ela é evento próprio na §13.1 — não um campo a mais na de cima. Ela é
+      // **sempre** emitida, inclusive com `quantidade: 0`: condicioná-la a haver cobrança faria a
+      // ausência da linha significar tanto *"cascata de conjunto vazio"* quanto *"cascata não
+      // executada"*, e a contagem é justamente o que separa as duas.
+      //
+      // O campo se chama `quantidade`, como a §13.1 o declara, e **não** `cobrancasCanceladas`: o
+      // irmão da ativação usa `cobrancasGeradas` porque aquele nome é o do **efeito publicado**
+      // (`efeitos.cobrancasGeradas`), e a linha espelha o contrato. Aqui não há efeito publicado — a
+      // resposta é o contrato no root, por decisão registrada —, e um nome que sugerisse campo de
+      // corpo anunciaria contrato que não existe.
+      this.logger.info(
+        {
+          empresaId: sessao.empresaId,
+          entidade: ENTIDADE_DA_TRILHA,
+          codigo: cancelado.codigo,
+          quantidade: cobrancasCanceladas,
+        },
+        'cobranças canceladas em cascata',
       );
 
       return cancelado;

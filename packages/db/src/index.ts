@@ -146,9 +146,10 @@
  * volta dentro do agregado do contrato, e publicá-la ofereceria a `apps/api` um caminho para ler o
  * vínculo sem passar pelo pai.
  *
- * `./cobranca.js` entra pela mesma pergunta, e com a mesma resposta: as seis operações da cobrança —
- * inclusive as **duas da série** e o leitor do ano do escopo dela — **recebem** o executor de quem já
- * abriu a unidade, não abrem conexão nem transação e não devolvem executor. As duas da série não
+ * `./cobranca.js` entra pela mesma pergunta, e com a mesma resposta: as oito operações da cobrança —
+ * inclusive as **duas transições**, as **duas da série** e o leitor do ano do escopo dela —
+ * **recebem** o executor de quem já abriu a unidade, não abrem conexão nem transação e não devolvem
+ * executor. As duas da série não
  * abrem exceção, pela razão que as do contrato já registram: elas invocam pelo executor recebido as
  * funções `SECURITY DEFINER` que a migração `0010` criou, e é por isso que a aplicação nunca precisa
  * — nem pode — tocar a sequência (ADR-0020).
@@ -169,6 +170,35 @@
  * de escrever a consulta por conta própria — e é o que torna *"não há segunda avaliação do estado"*
  * uma afirmação verificável, e não uma promessa de disciplina.
  *
+ * Pela T9 saem daqui `emitirNumerosDeCobranca` e `criarCobrancasEmLote`, e as duas entram pelo critério
+ * das anteriores: **recebem** o executor de quem já abriu a unidade, não abrem conexão nem transação,
+ * não devolvem executor e não recebem `empresaId`. A primeira não abre exceção ao que as duas da série
+ * já registram — ela invoca a MESMA função `SECURITY DEFINER`, uma vez por número, e o que muda é
+ * quantas viagens ao banco isso custa (uma, e não N). A segunda é publicada porque a escrita das
+ * parcelas é **um `INSERT` de N linhas**: publicar a porta é o que impede a borda de compor o laço
+ * "emitir número, gravar, reler a visão" por parcela, em que o número de idas ao banco passaria a ser
+ * escolhido pelo prazo que o cliente contratou — e em que o `SAVEPOINT` da tradução da colisão de
+ * código, que é ponto único dentro da porta, nasceria esquecido.
+ *
+ * As **duas transições** (`acusarPagamentoDeCobranca`, `cancelarCobranca`) saem daqui pelo critério
+ * das demais escritas, e cada uma acrescenta uma razão própria. A do pagamento é publicada porque o
+ * carimbo dos **quatro** valores e a gravação dos dois fatos são **uma instrução só**, que lê a visão
+ * no `FROM`: publicá-la é o que impede a borda de compor o par "ler a mora, gravar o pagamento", em
+ * que a mora carimbada seria a de uma leitura anterior e a fórmula acabaria reescrita fora da visão
+ * (ADR-0022, ADR-0023). A do cancelamento é publicada porque **não é idempotente** por decisão — quem
+ * recusa a repetição é a guarda de estado da borda, com o estado atual nomeado —, e um `UPDATE`
+ * condicional escrito por fora silenciaria a segunda tentativa. Nenhuma das duas recebe `empresaId`, e
+ * nenhuma confere estado: o escopo é da política do banco e a guarda é da aplicação.
+ *
+ * Pela T10 sai daqui `cancelarCobrancasDoContrato`, a **cascata**, e ela entra pelo critério das demais
+ * escritas: recebe o executor de quem já abriu a unidade, não abre conexão nem transação, não devolve
+ * executor e não recebe `empresaId`. A razão própria dela é o **predicado**: cancelar as cobranças de um
+ * contrato é `pago_em IS NULL AND cancelado_em IS NULL`, e publicar a porta é o que impede a borda de
+ * compor o par "listar as em aberto pela visão, cancelar uma a uma" — que seria a segunda avaliação do
+ * estado que o marcador `DECISÃO FECHADA` daquele arquivo existe para tornar impossível, e que gravaria
+ * com base numa leitura anterior à escrita. Ela devolve **quantas linhas o banco alcançou**, e não a
+ * lista: quem chama publica a contagem numa linha de trilha, e conjunto vazio é resultado legítimo.
+ *
  * `ErroDeCodigoDeCobrancaEmUso` sai daqui pelo mesmo critério de `ErroDeCodigoEmUso`: é **classe de
  * erro**, não caminho para dado. Ela precisa sair porque quem a traduz no envelope da ADR-0017 é a
  * borda, e a alternativa — reconhecer a recusa pelo texto da mensagem — amarraria a tradução ao
@@ -184,6 +214,21 @@
  * casos felizes e perde escrita sob concorrência; e a leitura tem lar único porque é ela que traduz a
  * ausência de linha nos zeros que a apuração da view já produz por `COALESCE` (RD-21 concordando com
  * a RD-08). Nenhuma das duas recebe `empresaId`: o escopo é da política do banco.
+ *
+ * `./derivacao-de-cobranca.js` entra pelo MESMO critério de `somarMetragem` e das duas derivações do
+ * contrato, e não pelo das portas: `derivarParcelasDoContrato` é **pura** sobre valor já em mãos — não
+ * recebe executor, não toca o banco, não lê relógio e não é caminho para dado nenhum. Ela sai daqui
+ * porque é a materialização do *ponto único de derivação das parcelas* que a RD-18/RD-19 exigem, e ter
+ * o ponto com nome é o que torna a afirmação verificável: uma segunda derivação de competência, de
+ * vencimento ou de referência apareceria como um segundo símbolo neste índice — que o `CT-012` audita
+ * por igualdade —, e não como um laço a mais escondido no serviço que ativa o contrato. A parcela que
+ * ela devolve é **fato** e nada mais (ADR-0022): sem estado, sem mora e sem código, os três derivados
+ * ou emitidos noutro lugar.
+ *
+ * De lá **não** sai `ContratoParaParcelas`, e a ausência é deliberada — mesmo critério dos acessórios
+ * de calendário: ele é a declaração dos quatro campos que a derivação consome, e quem chama passa o
+ * contrato que já tem em mãos, sem precisar nomear o tipo. `ParcelaDerivada`, sim, sai: é o que a porta
+ * de escrita em lote recebe, e o consumidor precisa nomeá-lo para transportar a lista.
  *
  * `./derivacao-de-contrato.js` entra pelo MESMO critério de `somarMetragem`, e não pelo das portas:
  * as duas funções são **puras** sobre valor já em mãos — não recebem executor, não tocam o banco,
@@ -264,10 +309,16 @@ export {
   verificarCoberturaDeIsolamento,
 } from './catalogo.js';
 export {
+  acusarPagamentoDeCobranca,
+  cancelarCobranca,
+  cancelarCobrancasDoContrato,
   criarCobranca,
+  criarCobrancasEmLote,
   type DadosDaCobranca,
+  type DesfechoDoPagamento,
   ErroDeCodigoDeCobrancaEmUso,
   emitirNumeroDeCobranca,
+  emitirNumerosDeCobranca,
   type FiltrosDaCarteira,
   garantirContadorDeCobranca,
   type JanelaDaCarteira,
@@ -327,6 +378,10 @@ export {
   type PaginaDeContratosPersistidos,
   substituirFiadoresDoContrato,
 } from './contrato.js';
+export {
+  derivarParcelasDoContrato,
+  type ParcelaDerivada,
+} from './derivacao-de-cobranca.js';
 export { derivarTerminoDaLocacao, derivarValorTotal } from './derivacao-de-contrato.js';
 export {
   type AlvoDeReemissao,

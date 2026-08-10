@@ -1,6 +1,6 @@
 /**
- * As **três primeiras rotas de `/v1/cobrancas`** — T5 da fatia `cobranca-e-mora`: lançar avulsa, ler
- * a carteira e ler uma cobrança.
+ * As **cinco rotas de `/v1/cobrancas`** — lançar avulsa, ler a carteira e ler uma cobrança (T5 da
+ * fatia `cobranca-e-mora`), acusar o pagamento e cancelar (T7).
  *
  * ---------------------------------------------------------------------------
  * INVARIANTES
@@ -38,8 +38,96 @@
  * | CA-06 | CT-515 | A colisão do código **emitido** — a quarta classe de recusa — é traduzida em
  * |       | (d)    | `422` nomeando `codigo`, com `detalhes.conflito: CODIGO_EM_USO`, e o número
  * |       |        | queimado **não volta**: o lançamento seguinte toma o número posterior. |
+ * | CA-07 | CT-516 | `POST /v1/cobrancas/:codigo/pagamento` sobre cobrança VENCIDA responde `200`
+ * |       |        | com estado PAGA e grava, na mesma instrução, `pagoEm`, `valorPago` e os
+ * |       |        | **quatro carimbos** IGUAIS, centavo a centavo, ao que a leitura imediatamente
+ * |       |        | anterior publicava: `40.00`, `34.67`, `2.00` e `1.00` sobre `2000.00` vencidos
+ * |       |        | há 52 dias — o caso canônico do golden. A releitura é afirmada por **corpo
+ * |       |        | inteiro**, e o total publicado é `2074.67`, e não o valor original. |
+ * | CA-08 | CT-518 | Depois do pagamento, `PUT /v1/multa-e-juros` de `{2, 1}` para `{10, 5}` **não
+ * |       |        | move um centavo**: a releitura é idêntica por igualdade de OBJETO, os
+ * |       |        | percentuais carimbados continuam sendo os ANTIGOS (`2.00`/`1.00`) e o total
+ * |       |        | continua `2074.67` — **nunca** `2373.33`, que é o que a reapuração daria. |
+ * | CA-14 | CT-529 | A mesma alteração alcança a cobrança **em aberto** e só ela, no mesmo ato: a
+ * |       |        | VENCIDA passa de `40.00`/`2060.00` para `100.00`/`2120.00` na leitura
+ * |       |        | seguinte, com os juros parados porque o percentual deles não mudou; a PAGA
+ * |       |        | segue idêntica por igualdade de OBJETO; e o **`xmin` da VENCIDA não muda** —
+ * |       |        | a mudança veio da derivação, não de escrita na cobrança. |
+ * | CA-04 | CT-511 | Para a MESMA cobrança, o par (`status`, `valorTotal`) é idêntico nos QUATRO
+ * |       |        | caminhos de leitura publicados — item, carteira sem recorte, recorte por
+ * |       |        | contrato e recorte por estado —, nos quatro estados: A_VENCER `1000.00`,
+ * |       |        | VENCIDA há 30 dias `1030.00`, PAGA `1030.00` pelos carimbos e CANCELADA
+ * |       |        | `1000.00`. E os quatro recortes por estado **particionam** as quatro. |
+ * | CA-09 | CT-519 | `POST /v1/cobrancas/:codigo/cancelamento` responde `200` com estado CANCELADA e
+ * | CA-10 |        | `canceladoEm` não nulo; a releitura devolve **`200`, nunca `404`**, com
+ * |       |        | natureza, referência, competência e valor originais; a cancelada **consta** da
+ * |       |        | carteira; a substituta recebe código com sufixo **MAIOR**; a contagem crua
+ * |       |        | sobe em **exatamente 1**; e o conjunto de chaves publicado é **igual** ao
+ * |       |        | inventário de dezoito — não há campo de vínculo com a cancelada. |
+ * | CA-09 | CT-520 | Cancelar cobrança PAGA ou já CANCELADA responde `422` com o envelope inteiro,
+ * | CA-10 |        | `campo: "codigo"` e `detalhes: { estadoAtual, transicaoPedida }`; o `xmin` das
+ * |       |        | duas tuplas é idêntico antes e depois, e a releitura de cada uma é idêntica
+ * |       |        | por igualdade de objeto — o `canceladoEm` da já cancelada preserva o instante
+ * |       |        | ORIGINAL, e os quatro carimbos da paga ficam onde estavam. |
+ * | CA-07 | CT-517 | Pela rota, acusar pagamento de cobrança PAGA ou CANCELADA responde `422`
+ * | CA-10 | (rota) | nomeando o estado atual, **sem escrita alguma** (`xmin` idêntico, publicação
+ * |       |        | idêntica por igualdade de objeto). Corpo sem `valorPago` é `422` nomeando
+ * |       |        | `valorPago`; chave desconhecida no corpo **vazio e fechado** do cancelamento é
+ * |       |        | `422` nomeando `corpo`; e o controle positivo paga a mesma cobrança em
+ * |       |        | seguida, o que separa *a guarda de estado recusa* de *a rota recusa tudo*. |
  *
- * Rastreabilidade: `CA-06 → CT-514 (RD-03)`, `CA-06 → CT-515 (RD-03, RN-01)`.
+ * Rastreabilidade: `CA-06 → CT-514 (RD-03)` · `CA-06 → CT-515 (RD-03, RN-01)` ·
+ * `CA-07 → CT-516 (RN-09)` · `CA-08 → CT-518 (RN-10)` · `CA-14 → CT-529 (RN-10)` ·
+ * `CA-04 → CT-511 (RN-04)` · `CA-09 → CT-519 (RN-12)` · `CA-10 → CT-519, CT-520 (RN-12)` ·
+ * `CA-07 → CT-517 (rota) (RN-09)`.
+ *
+ * ===========================================================================
+ * A ORDEM DOS CASOS DA T7 É CONTEÚDO — eles entram DEPOIS do `CT-515 (c)`
+ * ===========================================================================
+ *
+ * Os sete casos da T7 criam contrato e cobrança na empresa A, e por isso vivem num `describe`
+ * **posterior** ao dos casos da T5. A razão é o débito **D11** desta fatia: `ateSerExclusivo`, no
+ * `CT-515 (c)`, monta até obter um código que a sessão de B não alcança, e o teto nomeado dele
+ * (`MAXIMO_DE_MONTAGENS_ATE_O_CODIGO_EXCLUSIVO`) mede a **distância** entre as duas séries no instante
+ * em que o laço começa. Montagens novas em A **antes** daquele caso consomem essa folga; depois dele,
+ * não consomem nada. O modo de falha é ruidoso (o laço levanta nomeando a coleção e o número de
+ * tentativas), nunca falso-verde — mas custa uma rodada de gate diagnosticando um erro cuja causa está
+ * a centenas de linhas de distância.
+ *
+ * ===========================================================================
+ * MUTANTES EXECUTADOS na T7 — os quatro reprovam
+ * ===========================================================================
+ *
+ * Todos aplicados ao artefato real e invocados pelo **script do pacote** (`pnpm --filter @sysloc/api
+ * test` e `pnpm --filter @sysloc/db test`), nunca por `vitest run` avulso — a regra da
+ * `.claude/rules/testing-stack.md`, que existe porque os pacotes resolvem `"."` para `dist/`.
+ *
+ *   * **controle** — árvore íntegra: `@sysloc/api` `169 passed`, `@sysloc/db` `107 passed`;
+ *   * **MT-1 · a visão volta a publicar mora zero para a cobrança liquidada** — os dois `COALESCE` do
+ *     carimbo removidos de `migracoes/0010_seguranca_cobranca.sql`, que é o estado em que a T3 a
+ *     deixou. `@sysloc/db` fica em `1 failed | 106 passed`, com o `CT-527` reprovando na igualdade da
+ *     PAGA; `@sysloc/api` fica em `3 failed | 166 passed`, com o `CT-516` reprovando no corpo inteiro,
+ *     o `CT-518` em `expected +0 to be 40` e o `CT-511` em
+ *     `expected { status: 'PAGA', valorTotal: 1000 } to deeply equal { status: 'PAGA', valorTotal:
+ *     1030 }`. É a medição de que o carimbo, apesar de gravado na tabela, era **inalcançável** pelas
+ *     dezoito colunas publicadas — `multaAplicada` e `jurosAplicados` não estão entre elas;
+ *   * **MT-2 · o `UPDATE` carimba só os dois VALORES**, deixando os dois percentuais de fora:
+ *     `6 failed | 163 passed`, e o `CT-516` reprova em `expected 500 to be 200`. Quem recusa é o
+ *     **banco** — `cobranca_carimbo_coerente_chk` pareia `pago_em` com **cada um** dos quatro
+ *     carimbos —, de modo que "carimbar só os valores" é **irrepresentável**, e não apenas detectado.
+ *     A restrição e o `CT-518` fecham a classe pelos dois lados;
+ *   * **MT-3 · a guarda de estado do pagamento admite os QUATRO estados** (`ESTADOS_PAGAVEIS` aponta
+ *     para `ESTADOS_DA_COBRANCA`): `1 failed | 168 passed`, e o `CT-517 (rota)` reprova em
+ *     `expected 200 to be 422`. ⚠️ O mutante ÓBVIO — apagar a chamada de `exigirEstado` — **não
+ *     serve**: `ESTADOS_PAGAVEIS` e `PAGAMENTO` ficam sem uso, `noUnusedLocals` derruba o
+ *     `tsc --build` e a suíte não corre, o que é "reprovou sem provar nada". O mutante acima é o
+ *     defeito real que o compilador não pega: alguém alargar o conjunto admitido;
+ *   * **MT-4 · o `@HttpCode(200)` do pagamento ausente** — medido **por acidente**, na primeira
+ *     execução, antes de o decorador existir: o arcabouço devolve `201` a todo `@Post`, e o `CT-516`,
+ *     o `CT-518`, o `CT-529`, o `CT-511`, o `CT-520` e o `CT-517 (rota)` reprovaram de uma vez, cada
+ *     um nomeando o status obtido;
+ *   * **reversão** — em cada mutante o arquivo foi restaurado de cópia e conferido idêntico por
+ *     `diff -q`, e o controle voltou aos números acima.
  *
  * ===========================================================================
  * A INDISTINGUIBILIDADE se prova por IGUALDADE DE CORPO, nunca por status
@@ -177,6 +265,7 @@ import { CAMINHO_DOS_CONTRATOS } from '../src/contratos/contrato.controller.ts';
 import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
 import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
 import { criarAplicacao } from '../src/main.ts';
+import { CAMINHO_DE_MULTA_E_JUROS } from '../src/mora/mora.controller.ts';
 import { cpfValido } from './documento.ts';
 
 /** Limite da montagem: banco migrado, semente com credencial, fila e a aplicação real. */
@@ -199,6 +288,105 @@ const COLECAO_DE_COBRANCAS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}`;
 
 /** Caminho, relativo à raiz, da coleção de contratos — a precondição do cenário. */
 const COLECAO_DE_CONTRATOS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}`;
+
+/** Caminho da política de mora — a superfície que a T6 publicou, e que a T7 exercita de fora. */
+const RECURSO_DE_MULTA_E_JUROS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DE_MULTA_E_JUROS}`;
+
+/**
+ * Os dois percentuais que a T7 usa como política inicial — os do caso canônico do golden.
+ *
+ * `2` e `1` são multa de 2% e juros de 1% ao mês, e é dessa política que saem todos os centavos
+ * esperados adiante. Eles são escritos por extenso, e não lidos de artefato nenhum: são a **entrada**
+ * do cenário, e o oráculo é comparado pelo `CT-525`, na suíte da camada de dados.
+ */
+const MULTA_INICIAL = 2;
+const JUROS_INICIAL = 1;
+
+/** A política que o `CT-518` aplica DEPOIS do pagamento — ela não pode mover a cobrança paga. */
+const MULTA_ALTERADA = 10;
+const JUROS_ALTERADO = 5;
+
+/** A multa que o `CT-529` aplica com uma cobrança ainda em aberto — ela tem de alcançá-la. */
+const MULTA_MAIOR = 5;
+
+/**
+ * O caso canônico do golden `calcular-mora.json` (`exemplo_canonico_2074_67`), pela rota.
+ *
+ * `2000.00` vencidos há 52 dias, a 2%/1%, publicam `40.00` de multa e `34.67` de juros — um total de
+ * `2074.67`. Os valores são os do oráculo, e não literais escolhidos pelo caso.
+ */
+const VALOR_DA_CANONICA = 2000;
+const DIAS_DA_CANONICA = 52;
+const MULTA_DA_CANONICA = 40;
+const JUROS_DA_CANONICA = 34.67;
+const TOTAL_DA_CANONICA = 2074.67;
+
+/**
+ * O que a reapuração pela política nova daria — o número que o `CT-518` afirma **não** ver.
+ *
+ * `2000.00` a 52 dias, com multa de 10% e juros de 5%/mês: `200.00` + `173.33`. Ele existe para que a
+ * asserção negativa nomeie os dois números na reprovação, em vez de dizer apenas que o total mudou.
+ */
+const TOTAL_REAPURADO = 2373.33;
+
+/**
+ * A cobrança em aberto dos casos de transição — `2000.00` vencidos há 30 dias.
+ *
+ * Trinta dias é o mês comercial inteiro, de modo que os juros valem a taxa mensal cheia: `20.00` a
+ * 1%/mês, e `40.00` de multa a 2%. Com a multa a 5%, a mesma linha passa a `100.00` de multa e
+ * `2120.00` de total — os juros **não** se movem, porque o percentual deles não mudou.
+ */
+const DIAS_DA_ABERTA = 30;
+const MULTA_DA_ABERTA = 40;
+const JUROS_DA_ABERTA = 20;
+const TOTAL_DA_ABERTA = 2060;
+const MULTA_MAIOR_APLICADA = 100;
+const TOTAL_COM_MULTA_MAIOR = 2120;
+
+/** As quatro cobranças do `CT-511`: `1000.00`, e `1030.00` quando vencidas há 30 dias a 2%/1%. */
+const VALOR_REDONDO = 1000;
+const TOTAL_REDONDO_COM_MORA = 1030;
+
+/** O valor da substituta do `CT-519` — diferente do da cancelada, para que a troca seja visível. */
+const VALOR_DA_SUBSTITUTA = 92.1;
+
+/**
+ * A janela declarada nas leituras de carteira do `CT-511` e do `CT-519`.
+ *
+ * Ela é o teto que `MAIOR_PAGINA` admite, e existe para que a lista **sem recorte** contenha a
+ * carteira inteira da empresa: o que se compara é o conjunto, e uma página curta faria o caso medir a
+ * primeira página em vez dele. O recorte pedido continua sendo nenhum.
+ */
+const JANELA_LARGA = 200;
+
+/**
+ * As **dezoito** chaves que a cobrança publica, em ordem alfabética.
+ *
+ * Escritas por extenso, e não derivadas de `esquemaDaCobranca` nem do corpo observado: é a igualdade
+ * contra esta lista que transforma *"não há campo de vínculo com a cancelada"* numa afirmação que pega
+ * **qualquer** grafia — `substituiCodigo`, `canceladaPor`, `substitutaCodigo` —, e não só um nome que
+ * o caso tivesse adivinhado. Derivá-la do tipo do SUT faria a asserção concordar consigo mesma.
+ */
+const CHAVES_PUBLICADAS: readonly string[] = [
+  'canceladoEm',
+  'codigo',
+  'competencia',
+  'contratoCodigo',
+  'dataVencimento',
+  'diasAtraso',
+  'jurosPercentualAplicado',
+  'locatarioId',
+  'multaPercentualAplicado',
+  'natureza',
+  'pagoEm',
+  'referencia',
+  'status',
+  'valorJuros',
+  'valorMulta',
+  'valorOriginal',
+  'valorPago',
+  'valorTotal',
+];
 
 /**
  * As mensagens canônicas de cada código, escritas por extenso.
@@ -228,6 +416,7 @@ const MENSAGEM_DE_NAO_ENCONTRADO = 'recurso não encontrado';
  */
 const CHAVES_DO_ARRANJO: readonly ChaveDoCatalogo[] = [
   'TELA:financeiro',
+  'TELA:multa_e_juros',
   'TELA:contratos',
   'TELA:imoveis',
   'TELA:cadastros',
@@ -237,6 +426,19 @@ const CHAVES_DO_ARRANJO: readonly ChaveDoCatalogo[] = [
 
 /** A área que a classe do controlador de cobrança exige — afirmada no efetivo, nunca suposta. */
 const AREA_DO_FINANCEIRO: ChaveDoCatalogo = 'TELA:financeiro';
+
+/**
+ * A área que a classe do controlador da política de mora exige — afirmada no efetivo, nunca suposta.
+ *
+ * Ela entra no arranjo por **obrigação do cenário** da T7, e não por conveniência: o `CT-518` e o
+ * `CT-529` alteram a política por `PUT /v1/multa-e-juros`, que é rota de outra superfície, com
+ * exigência própria. **A declaração de nenhuma rota foi alargada** — o que se concedeu foi a área à
+ * sessão, pelo caminho real de administração, exatamente como se concedeu `TELA:contratos` para ter
+ * contrato sobre o qual lançar. A alternativa de montar uma segunda sessão só para alterar a política
+ * não se aplica aqui: o perfil de quem age já pode receber as duas áreas, e o glossário não separa os
+ * dois papéis.
+ */
+const AREA_DE_MULTA_E_JUROS: ChaveDoCatalogo = 'TELA:multa_e_juros';
 
 /** A ação que as duas rotas de circulação de contrato exigem — afirmada no efetivo, nunca suposta. */
 const ACAO_DE_CIRCULACAO: ChaveDoCatalogo = 'ACAO:excluir_cadastro';
@@ -387,6 +589,7 @@ beforeAll(async () => {
     const sessao = (await pedir(CAMINHO_DA_SESSAO_CORRENTE, { cookie: credencial }))
       .corpo as SessaoPublicada;
     expect(sessao.telas).toContain(AREA_DO_FINANCEIRO);
+    expect(sessao.telas).toContain(AREA_DE_MULTA_E_JUROS);
     expect(sessao.acoes).toContain(ACAO_DE_CIRCULACAO);
   }
 }, LIMITE_DE_MONTAGEM_MS);
@@ -836,6 +1039,517 @@ describe('lançamento e leitura da carteira de cobranças (T5)', () => {
   );
 });
 
+describe('as duas transições da cobrança (T7)', () => {
+  it(
+    'CT-516 — acusar pagamento congela os quatro carimbos com os centavos que a view publicava',
+    async () => {
+      const cenario = await contratoAtivo();
+      await definirPolitica(MULTA_INICIAL, JUROS_INICIAL);
+
+      const cobranca = await lancarEm(cenario.codigo, -DIAS_DA_CANONICA, VALOR_DA_CANONICA);
+
+      // --- Passo 1: o que a view publicava no instante ANTERIOR ao pagamento --------------------
+      //
+      // Os três valores são os do golden `calcular-mora.json`, caso `exemplo_canonico_2074_67`: 2% de
+      // `2000.00` são `40.00`, e 52 dias a 1%/mês sobre base de trinta dias são `34.67`. Eles são
+      // afirmados **antes** para que a comparação adiante seja contra um valor observado, e não contra
+      // um literal que o caso escolheu — e o literal está aqui para que o caso reprove se a view
+      // deixar de reproduzir o oráculo.
+      const antes = await lerCobranca(cobranca.codigo);
+
+      expect(antes.status).toBe('VENCIDA');
+      expect(antes.diasAtraso).toBe(DIAS_DA_CANONICA);
+      expect(antes.valorMulta).toBe(MULTA_DA_CANONICA);
+      expect(antes.valorJuros).toBe(JUROS_DA_CANONICA);
+      expect(antes.valorTotal).toBe(TOTAL_DA_CANONICA);
+
+      // --- Passos 2 e 3: o pagamento ------------------------------------------------------------
+      const pagamento = await pedir(rotaDoPagamento(cobranca.codigo), {
+        metodo: 'POST',
+        cookie,
+        corpo: { pagoEm: antes.dataVencimento, valorPago: TOTAL_DA_CANONICA },
+      });
+
+      expect(pagamento.status).toBe(200);
+      expect((pagamento.corpo as CobrancaPublicada).status).toBe('PAGA');
+
+      // --- Passos 4, 5 e 6: a releitura, e os quatro carimbos -----------------------------------
+      //
+      // O corpo INTEIRO por igualdade: é ele que afirma, de uma vez, que `pagoEm` e `valorPago` são os
+      // informados, que os quatro carimbos ficaram com os centavos do instante anterior, que
+      // `canceladoEm` continua nulo e que **nenhum campo a mais** apareceu. Os dois percentuais são o
+      // discriminador do CT-518 — sem eles, uma implementação que carimbasse só os valores passaria
+      // numa releitura ingênua e perderia a configuração vigente que a ADR-0022 manda gravar.
+      const depois = await lerCobranca(cobranca.codigo);
+
+      expect(depois).toEqual({
+        ...antes,
+        status: 'PAGA',
+        diasAtraso: 0,
+        pagoEm: antes.dataVencimento,
+        valorPago: TOTAL_DA_CANONICA,
+        multaPercentualAplicado: MULTA_INICIAL,
+        jurosPercentualAplicado: JUROS_INICIAL,
+      });
+      // E os três valores publicados são os CARIMBOS, e não uma reapuração: a paga já não está
+      // `VENCIDA`, de modo que uma view que reapurasse pela precedência devolveria `0.00`/`0.00` e o
+      // total voltaria ao valor original. As três asserções nomeadas repetem o que a igualdade acima
+      // já garante, e existem para que a reprovação diga QUAL centavo se moveu.
+      expect(depois.valorMulta).toBe(MULTA_DA_CANONICA);
+      expect(depois.valorJuros).toBe(JUROS_DA_CANONICA);
+      expect(depois.valorTotal).toBe(TOTAL_DA_CANONICA);
+      expect(depois.valorTotal).not.toBe(VALOR_DA_CANONICA);
+      // A resposta do próprio ato é igual à releitura: a rota não publica um retrato diferente do que
+      // a leitura seguinte devolve.
+      expect(pagamento.corpo).toEqual(depois);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-518 — alterar a multa DEPOIS do pagamento não move um centavo do que ficou registrado',
+    async () => {
+      const cenario = await contratoAtivo();
+      await definirPolitica(MULTA_INICIAL, JUROS_INICIAL);
+
+      const cobranca = await lancarEm(cenario.codigo, -DIAS_DA_CANONICA, VALOR_DA_CANONICA);
+
+      // --- Passo 1: pagar, e guardar a publicação INTEIRA --------------------------------------
+      const paga = await pagar(cobranca.codigo, {
+        pagoEm: cobranca.dataVencimento,
+        valorPago: TOTAL_DA_CANONICA,
+      });
+
+      expect(paga.status).toBe('PAGA');
+
+      // --- Passo 2: a política MUDA, e a leitura dela confirma ---------------------------------
+      await definirPolitica(MULTA_ALTERADA, JUROS_ALTERADO);
+
+      expect(await lerPolitica()).toEqual({
+        multaPercentual: MULTA_ALTERADA,
+        jurosPercentual: JUROS_ALTERADO,
+      });
+
+      // --- Passos 3 e 4: a releitura, por igualdade de OBJETO ----------------------------------
+      //
+      // `toEqual` sobre o objeto inteiro, e nunca `toMatchObject` nem presença de campo: o que se
+      // afirma é que **nada** se moveu, e um subconjunto deixaria passar exatamente o campo que a
+      // reapuração mexeria.
+      const relida = await lerCobranca(cobranca.codigo);
+
+      expect(relida).toEqual(paga);
+
+      // --- Passo 5: os quatro carimbos, nominalmente ------------------------------------------
+      //
+      // Os percentuais gravados são os **antigos**, e é isso que prova que o carimbo inclui a
+      // configuração vigente no ato. Uma implementação que carimbasse só os valores publicaria aqui
+      // `10.00`/`5.00` — os novos —, e a igualdade de objeto acima não a pegaria, porque os dois
+      // valores continuariam corretos.
+      expect(relida.valorMulta).toBe(MULTA_DA_CANONICA);
+      expect(relida.valorJuros).toBe(JUROS_DA_CANONICA);
+      expect(relida.multaPercentualAplicado).toBe(MULTA_INICIAL);
+      expect(relida.jurosPercentualAplicado).toBe(JUROS_INICIAL);
+
+      // --- Passo 6: o total NÃO é o da reapuração ---------------------------------------------
+      //
+      // Pela configuração nova, `2000.00` a 52 dias daria `200.00` de multa e `173.33` de juros —
+      // `2373.33`. A asserção negativa é o que separa *"o total está certo"* de *"o total não foi
+      // reapurado"*, e ela nomeia os dois números na reprovação.
+      expect(relida.valorTotal).toBe(TOTAL_DA_CANONICA);
+      expect(relida.valorTotal).not.toBe(TOTAL_REAPURADO);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-529 — alterar a multa alcança as cobranças em aberto e só elas, no mesmo ato',
+    async () => {
+      const cenario = await contratoAtivo();
+      await definirPolitica(MULTA_INICIAL, JUROS_INICIAL);
+
+      const emAberto = await lancarEm(cenario.codigo, -DIAS_DA_ABERTA, VALOR_DA_CANONICA);
+      const aPagar = await lancarEm(cenario.codigo, -DIAS_DA_ABERTA, VALOR_DA_CANONICA);
+      const paga = await pagar(aPagar.codigo, {
+        pagoEm: aPagar.dataVencimento,
+        valorPago: TOTAL_DA_ABERTA,
+      });
+
+      // --- Passos 1 e 2: as duas publicações ANTES da alteração --------------------------------
+      //
+      // A vencida há 30 dias a 2%/1% apura `40.00` de multa e `20.00` de juros — um mês de atraso vale
+      // a taxa mensal cheia, porque a base é o mês comercial de trinta dias.
+      const abertaAntes = await lerCobranca(emAberto.codigo);
+
+      expect(abertaAntes.status).toBe('VENCIDA');
+      expect(abertaAntes.valorMulta).toBe(MULTA_DA_ABERTA);
+      expect(abertaAntes.valorJuros).toBe(JUROS_DA_ABERTA);
+      expect(abertaAntes.valorTotal).toBe(TOTAL_DA_ABERTA);
+      expect(paga.status).toBe('PAGA');
+
+      const xminAntes = await xminDa(emAberto.codigo);
+
+      // --- Passo 3: a política muda ------------------------------------------------------------
+      await definirPolitica(MULTA_MAIOR, JUROS_INICIAL);
+
+      expect(await lerPolitica()).toEqual({
+        multaPercentual: MULTA_MAIOR,
+        jurosPercentual: JUROS_INICIAL,
+      });
+
+      // --- Passo 4: a ABERTA passa a publicar pela política NOVA, na leitura seguinte ----------
+      //
+      // Sem que nada tenha rodado: não há rotina, não há fila e não há gatilho — a mudança vem da
+      // derivação. `2000.00` a 5% são `100.00`, e os juros não se movem porque o percentual deles não
+      // mudou, o que também separa *"a multa foi reapurada"* de *"tudo foi reapurado"*.
+      const abertaDepois = await lerCobranca(emAberto.codigo);
+
+      expect(abertaDepois.valorMulta).toBe(MULTA_MAIOR_APLICADA);
+      expect(abertaDepois.valorJuros).toBe(JUROS_DA_ABERTA);
+      expect(abertaDepois.valorTotal).toBe(TOTAL_COM_MULTA_MAIOR);
+
+      // --- Passo 5: a PAGA, por igualdade de OBJETO, no MESMO ato -----------------------------
+      expect(await lerCobranca(aPagar.codigo)).toEqual(paga);
+
+      // --- Passo 6: o `xmin` da ABERTA é o MESMO ----------------------------------------------
+      //
+      // É o que separa *derivado* de *materializado por gatilho na alteração da política*: uma
+      // implementação que reescrevesse as cobranças em aberto ao salvar a configuração passaria por
+      // todos os valores acima e reprovaria aqui — que é o desejado.
+      expect(await xminDa(emAberto.codigo)).toBe(xminAntes);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-511 — o estado e o valor total são idênticos nos quatro caminhos de leitura publicados',
+    async () => {
+      const cenario = await contratoAtivo();
+      await definirPolitica(MULTA_INICIAL, JUROS_INICIAL);
+
+      // --- Passo 0: as quatro cobranças, uma em cada estado -----------------------------------
+      //
+      // Os terminais são montados **pelas rotas desta task**, e não por escrita direta: é o único
+      // caminho legítimo, e é ele que faz o `status` publicado ser consequência do fato gravado.
+      const aVencer = await lancarEm(cenario.codigo, DIAS_ATE_O_VENCIMENTO, VALOR_REDONDO);
+      const vencida = await lancarEm(cenario.codigo, -DIAS_DA_ABERTA, VALOR_REDONDO);
+      const aPagar = await lancarEm(cenario.codigo, -DIAS_DA_ABERTA, VALOR_REDONDO);
+      const aCancelar = await lancarEm(cenario.codigo, -DIAS_DA_ABERTA, VALOR_REDONDO);
+
+      await pagar(aPagar.codigo, {
+        pagoEm: aPagar.dataVencimento,
+        valorPago: TOTAL_REDONDO_COM_MORA,
+      });
+      await cancelar(aCancelar.codigo);
+
+      /** O par esperado de cada estado — os valores concretos, e não só a concordância. */
+      const esperados: readonly { readonly codigo: string; readonly par: ParDeLeitura }[] = [
+        { codigo: aVencer.codigo, par: { status: 'A_VENCER', valorTotal: VALOR_REDONDO } },
+        { codigo: vencida.codigo, par: { status: 'VENCIDA', valorTotal: TOTAL_REDONDO_COM_MORA } },
+        { codigo: aPagar.codigo, par: { status: 'PAGA', valorTotal: TOTAL_REDONDO_COM_MORA } },
+        { codigo: aCancelar.codigo, par: { status: 'CANCELADA', valorTotal: VALOR_REDONDO } },
+      ];
+
+      // --- Passos 1 a 4: os quatro caminhos, para cada uma das quatro --------------------------
+      //
+      // A janela é declarada larga o bastante para conter a carteira inteira da empresa: o recorte
+      // pedido continua sendo **nenhum**, e o que se evita é medir uma página em vez do conjunto.
+      const semFiltro = await listar(`limite=${String(JANELA_LARGA)}`);
+      const doContrato = await listar(`contrato=${cenario.codigo}&limite=${String(JANELA_LARGA)}`);
+
+      for (const { codigo, par } of esperados) {
+        const porItem = parDe(await lerCobranca(codigo));
+        const naLista = parDe(itemDe(semFiltro, codigo));
+        const noContrato = parDe(itemDe(doContrato, codigo));
+        const porEstado = parDe(
+          itemDe(await listar(`status=${par.status}&limite=${String(JANELA_LARGA)}`), codigo),
+        );
+
+        // A igualdade estrita dos QUATRO pares, e nunca `toMatchObject`: uma segunda derivação escrita
+        // num dos caminhos de leitura reprova aqui exibindo os dois valores.
+        expect(porItem, codigo).toEqual(par);
+        expect(naLista, codigo).toEqual(par);
+        expect(noContrato, codigo).toEqual(par);
+        expect(porEstado, codigo).toEqual(par);
+      }
+
+      // --- Passo 5: e o recorte por estado PARTICIONA as quatro -------------------------------
+      //
+      // A âncora de não-vacuidade dos quatro recortes: cada um traz a sua e nenhuma das outras três.
+      // Sem ela, um filtro ignorado devolveria a carteira inteira e as asserções acima passariam,
+      // porque `itemDe` acharia o item de qualquer jeito.
+      for (const { codigo, par } of esperados) {
+        const doEstado = await listar(`status=${par.status}&limite=${String(JANELA_LARGA)}`);
+        const outras = esperados
+          .filter((esperado) => esperado.codigo !== codigo)
+          .map((esperado) => esperado.codigo);
+
+        expect(
+          doEstado.itens.map((item) => item.codigo),
+          codigo,
+        ).toContain(codigo);
+        for (const alheia of outras) {
+          expect(
+            doEstado.itens.map((item) => item.codigo),
+            `${par.status} × ${alheia}`,
+          ).not.toContain(alheia);
+        }
+      }
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-519 — cancelar preserva o registro legível e libera substituta com código novo',
+    async () => {
+      const cenario = await contratoAtivo();
+      const original = await lancarEm(cenario.codigo, DIAS_ATE_O_VENCIMENTO, VALOR_DA_AGUA, 'AGUA');
+      const antes = await contarCobrancas(EMPRESA_A.id);
+
+      // --- Passo 2: o cancelamento -------------------------------------------------------------
+      const cancelamento = await pedir(rotaDoCancelamento(original.codigo), {
+        metodo: 'POST',
+        cookie,
+        corpo: {},
+      });
+
+      expect(cancelamento.status).toBe(200);
+      expect((cancelamento.corpo as CobrancaPublicada).status).toBe('CANCELADA');
+
+      // --- Passo 3: a releitura devolve `200`, e NUNCA `404` ----------------------------------
+      //
+      // É o que separa *cancelar* de *retirar de circulação*, e é a materialização do invariante da
+      // ADR-0014 nesta fatia: o registro permanece legível por quem já o referencia. Os quatro campos
+      // de negócio são afirmados um a um contra os originais — um cancelamento que zerasse termos
+      // reprovaria aqui, e não numa asserção de status.
+      const releitura = await pedir(`${COLECAO_DE_COBRANCAS}/${original.codigo}`, { cookie });
+
+      expect(releitura.status).toBe(200);
+
+      const cancelada = releitura.corpo as CobrancaPublicada;
+
+      expect(cancelada.status).toBe('CANCELADA');
+      expect(cancelada.canceladoEm).not.toBeNull();
+      expect(cancelada.natureza).toBe(original.natureza);
+      expect(cancelada.referencia).toBe(original.referencia);
+      expect(cancelada.competencia).toBe(original.competencia);
+      expect(cancelada.valorOriginal).toBe(original.valorOriginal);
+      // E a mora deixa de ser apurada: o total volta ao valor original mesmo que o vencimento passe.
+      expect(cancelada.valorTotal).toBe(original.valorOriginal);
+      expect(cancelamento.corpo).toEqual(cancelada);
+
+      // --- Passo 4: ela CONSTA da lista -------------------------------------------------------
+      const carteira = await listar(`contrato=${cenario.codigo}&limite=${String(JANELA_LARGA)}`);
+
+      expect(carteira.itens.map((item) => item.codigo)).toContain(original.codigo);
+
+      // --- Passo 5: a substituta recebe código NOVO, com sufixo MAIOR -------------------------
+      //
+      // O código da cancelada segue ocupado na unicidade `(empresa_id, codigo)`, e a série nunca reusa
+      // número (ADR-0015). A comparação é sobre o sufixo numérico, e não sobre a cadeia: é ele que
+      // carrega a posição na série.
+      const substituta = await lancarEm(
+        cenario.codigo,
+        DIAS_ATE_O_VENCIMENTO,
+        VALOR_DA_SUBSTITUTA,
+        'AGUA',
+      );
+
+      expect(substituta.codigo).not.toBe(original.codigo);
+      expect(sufixoDe(substituta.codigo)).toBeGreaterThan(sufixoDe(original.codigo));
+      expect(substituta.natureza).toBe(original.natureza);
+      expect(substituta.competencia).toBe(original.competencia);
+
+      // --- Passo 6: a contagem subiu em EXATAMENTE um ----------------------------------------
+      //
+      // Nada foi apagado: a cancelada continua na tabela, e o que nasceu foi a substituta. Uma
+      // implementação que apagasse a cancelada deixaria a contagem igual.
+      expect(await contarCobrancas(EMPRESA_A.id)).toBe(antes + 1);
+
+      // --- Passo 7: o esquema publicado NÃO tem campo de vínculo -----------------------------
+      //
+      // Igualdade do conjunto de chaves, e não ausência de um nome escolhido: `substituiCodigo` seria
+      // só uma das grafias possíveis, e a igualdade pega qualquer uma. A decisão está registrada na
+      // §21 do tech spec — o PRD não pede rastrear a substituição.
+      expect(Object.keys(cancelada).sort()).toEqual([...CHAVES_PUBLICADAS]);
+      expect(Object.keys(substituta).sort()).toEqual([...CHAVES_PUBLICADAS]);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-520 — cancelar cobrança PAGA ou já CANCELADA é recusado, e nada muda',
+    async () => {
+      const cenario = await contratoAtivo();
+      await definirPolitica(MULTA_INICIAL, JUROS_INICIAL);
+
+      const aPagar = await lancarEm(cenario.codigo, -DIAS_DA_ABERTA, VALOR_DA_CANONICA);
+      const aCancelar = await lancarEm(cenario.codigo, DIAS_ATE_O_VENCIMENTO, VALOR_DA_CANONICA);
+
+      const paga = await pagar(aPagar.codigo, {
+        pagoEm: aPagar.dataVencimento,
+        valorPago: TOTAL_DA_ABERTA,
+      });
+      const cancelada = await cancelar(aCancelar.codigo);
+
+      // --- Passo 1: o `xmin` das duas tuplas, antes ------------------------------------------
+      const xminDaPaga = await xminDa(paga.codigo);
+      const xminDaCancelada = await xminDa(cancelada.codigo);
+
+      // --- Passos 2 e 3: as duas recusas, com o envelope INTEIRO ----------------------------
+      //
+      // O envelope por igualdade de objeto, e não a presença de campos: `campo` é `codigo` — o cliente
+      // não envia estado algum a esta rota —, e `detalhes` carrega os dois discriminadores que a fatia
+      // de contratos fixou. Um terceiro nome para a mesma classe de recusa reprova aqui.
+      const sobreAPaga = await pedir(rotaDoCancelamento(paga.codigo), {
+        metodo: 'POST',
+        cookie,
+        corpo: {},
+      });
+
+      expect(sobreAPaga.status).toBe(422);
+      expect(sobreAPaga.corpo).toEqual({
+        codigo: CodigoErro.CAMPO_INVALIDO,
+        mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
+        campo: 'codigo',
+        detalhes: { estadoAtual: 'PAGA', transicaoPedida: 'CANCELAMENTO' },
+      });
+
+      const sobreACancelada = await pedir(rotaDoCancelamento(cancelada.codigo), {
+        metodo: 'POST',
+        cookie,
+        corpo: {},
+      });
+
+      expect(sobreACancelada.status).toBe(422);
+      expect(sobreACancelada.corpo).toEqual({
+        codigo: CodigoErro.CAMPO_INVALIDO,
+        mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
+        campo: 'codigo',
+        detalhes: { estadoAtual: 'CANCELADA', transicaoPedida: 'CANCELAMENTO' },
+      });
+
+      // --- Passo 4: o `xmin` das duas é o MESMO ---------------------------------------------
+      //
+      // É o que distingue *recusado* de *aceito sem efeito visível*: um `UPDATE … WHERE cancelado_em
+      // IS NULL` respondendo `200` passaria por uma asserção de estado só.
+      expect(await xminDa(paga.codigo)).toBe(xminDaPaga);
+      expect(await xminDa(cancelada.codigo)).toBe(xminDaCancelada);
+
+      // --- Passos 5 e 6: o instante ORIGINAL e os carimbos, preservados ---------------------
+      //
+      // Um cancelamento idempotente que recarimbasse `cancelado_em` reprovaria aqui, e é o desejado: o
+      // instante do primeiro cancelamento é o fato, e o segundo pedido significa que quem o fez não
+      // sabia o estado.
+      expect(await lerCobranca(cancelada.codigo)).toEqual(cancelada);
+      expect(await lerCobranca(paga.codigo)).toEqual(paga);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-517 (rota) — acusar pagamento de cobrança PAGA ou CANCELADA é recusado, sem escrita alguma',
+    async () => {
+      const cenario = await contratoAtivo();
+      await definirPolitica(MULTA_INICIAL, JUROS_INICIAL);
+
+      const aPagar = await lancarEm(cenario.codigo, -DIAS_DA_ABERTA, VALOR_DA_CANONICA);
+      const aCancelar = await lancarEm(cenario.codigo, DIAS_ATE_O_VENCIMENTO, VALOR_DA_CANONICA);
+
+      const paga = await pagar(aPagar.codigo, {
+        pagoEm: aPagar.dataVencimento,
+        valorPago: TOTAL_DA_ABERTA,
+      });
+      const cancelada = await cancelar(aCancelar.codigo);
+
+      const xminDaPaga = await xminDa(paga.codigo);
+      const xminDaCancelada = await xminDa(cancelada.codigo);
+
+      // --- As duas recusas, nomeando o estado atual em `detalhes` ---------------------------
+      const sobreAPaga = await pedir(rotaDoPagamento(paga.codigo), {
+        metodo: 'POST',
+        cookie,
+        corpo: { pagoEm: paga.dataVencimento, valorPago: TOTAL_DA_ABERTA },
+      });
+
+      expect(sobreAPaga.status).toBe(422);
+      expect(sobreAPaga.corpo).toEqual({
+        codigo: CodigoErro.CAMPO_INVALIDO,
+        mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
+        campo: 'codigo',
+        detalhes: { estadoAtual: 'PAGA', transicaoPedida: 'PAGAMENTO' },
+      });
+
+      const sobreACancelada = await pedir(rotaDoPagamento(cancelada.codigo), {
+        metodo: 'POST',
+        cookie,
+        corpo: { pagoEm: cancelada.dataVencimento, valorPago: VALOR_DA_CANONICA },
+      });
+
+      expect(sobreACancelada.status).toBe(422);
+      expect(sobreACancelada.corpo).toEqual({
+        codigo: CodigoErro.CAMPO_INVALIDO,
+        mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
+        campo: 'codigo',
+        detalhes: { estadoAtual: 'CANCELADA', transicaoPedida: 'PAGAMENTO' },
+      });
+
+      // --- E nada foi escrito: `xmin` idêntico, publicação idêntica -------------------------
+      //
+      // A igualdade de objeto sobre as duas releituras é o que afirma que `pago_em`, `valor_pago` e os
+      // quatro carimbos permaneceram com os valores originais — o `xmin` prova que a tupla não foi
+      // reescrita, e a igualdade prova que o que ela carrega é o mesmo.
+      expect(await xminDa(paga.codigo)).toBe(xminDaPaga);
+      expect(await xminDa(cancelada.codigo)).toBe(xminDaCancelada);
+      expect(await lerCobranca(paga.codigo)).toEqual(paga);
+      expect(await lerCobranca(cancelada.codigo)).toEqual(cancelada);
+
+      // --- E o corpo malformado é recusado nomeando o campo do Zod --------------------------
+      //
+      // O companheiro que separa *"a guarda de estado recusa"* de *"a rota recusa tudo"*: uma cobrança
+      // em aberto com corpo inválido é recusada por **outro** motivo, e o campo nomeado é o do corpo.
+      const emAberto = await lancarEm(cenario.codigo, -DIAS_DA_ABERTA, VALOR_DA_CANONICA);
+      const semValor = await pedir(rotaDoPagamento(emAberto.codigo), {
+        metodo: 'POST',
+        cookie,
+        corpo: { pagoEm: emAberto.dataVencimento },
+      });
+
+      expect(semValor.status).toBe(422);
+      expect(semValor.corpo).toEqual({
+        codigo: CodigoErro.CAMPO_INVALIDO,
+        mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
+        campo: 'valorPago',
+      });
+
+      // E a chave desconhecida no corpo do CANCELAMENTO, que é vazio e fechado.
+      const comChaveDesconhecida = await pedir(rotaDoCancelamento(emAberto.codigo), {
+        metodo: 'POST',
+        cookie,
+        corpo: { status: 'CANCELADA' },
+      });
+
+      expect(comChaveDesconhecida.status).toBe(422);
+      expect(comChaveDesconhecida.corpo).toEqual({
+        codigo: CodigoErro.CAMPO_INVALIDO,
+        mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
+        campo: 'corpo',
+      });
+
+      // O CONTROLE POSITIVO das duas recusas de corpo: a cobrança segue em aberto e pagável.
+      expect((await lerCobranca(emAberto.codigo)).status).toBe('VENCIDA');
+      expect(
+        (
+          await pagar(emAberto.codigo, {
+            pagoEm: emAberto.dataVencimento,
+            valorPago: TOTAL_DA_ABERTA,
+          })
+        ).status,
+      ).toBe('PAGA');
+    },
+    LIMITE_CASO_MS,
+  );
+});
+
 // ---------------------------------------------------------------------------------------------
 // Acessórios — tudo pelas rotas reais, salvo a contagem crua e a inserção direta do CT-515 (b)
 // ---------------------------------------------------------------------------------------------
@@ -863,6 +1577,27 @@ interface CenarioDeContrato {
  * A **credencial é parâmetro**, com a sessão de A por padrão, e é o que permite ao `CT-515 (c)` montar
  * o mesmo cenário na empresa B sem que rota alguma receba a empresa: quem decide onde o cadastro
  * nasce é o cookie, e nada mais.
+ *
+ * ---------------------------------------------------------------------------
+ * O contrato nasce com `gerarCobrancasAutomaticamente: false`, e a escolha é o que PRESERVA os casos
+ * ---------------------------------------------------------------------------
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era este arranjo que dependia de a ativação
+ * não gerar cobrança. Desde a T9 a ativação **gera as parcelas de aluguel na mesma unidade de trabalho**
+ * — é o fecho do débito **D28** da fatia `contratos-de-locacao` (F2/T7) —, de modo que um contrato de
+ * {@link PRAZO_EM_MESES} meses ativado aqui faria nascer doze cobranças `ALUGUEL` **antes** de cada caso
+ * lançar as suas. Duas asserções do `CT-514` mediriam então outra coisa: a igualdade de lista de códigos
+ * do recorte `natureza=ALUGUEL` (que compara com as parcelas lançadas **por ele**), e o sequencial
+ * `0000001` do `CT-514 (b)`, cuja afirmação literal é *"foi por ESTA rota que a série nasceu"*.
+ *
+ * O `false` é o que mantém as duas verdadeiras, e ele **não** é contorno: é o campo de negócio da RD-20,
+ * que declara por contrato que aquele contrato não gera parcelas automaticamente, e é exatamente o
+ * cenário em que o lançamento avulso é a única origem de cobrança — que é o que este arquivo mede. Quem
+ * prova o caminho oposto, com as parcelas nascendo da ativação, é o `CT-508` de
+ * `test/contratos.e2e.spec.ts`.
+ *
+ * **Nenhuma asserção deste arquivo mudou, e nenhuma foi afrouxada** — só a precondição, num campo do
+ * corpo da montagem.
  */
 async function contratoAtivo(credencial: string = cookie): Promise<CenarioDeContrato> {
   const conjuntoId = (
@@ -884,7 +1619,9 @@ async function contratoAtivo(credencial: string = cookie): Promise<CenarioDeCont
       prazoMeses: PRAZO_EM_MESES,
       valorMensal: VALOR_MENSAL,
       diaVencimento: DIA_DE_VENCIMENTO,
-      gerarCobrancasAutomaticamente: true,
+      // Ver o docblock acima: a ativação gera as parcelas desde a T9, e o `false` é o que mantém este
+      // arquivo medindo o LANÇAMENTO AVULSO como única origem de cobrança.
+      gerarCobrancasAutomaticamente: false,
       pdfContratoArquivo: null,
     },
   });
@@ -942,6 +1679,180 @@ function corpoDeCobranca(contratoCodigo: string): Record<string, unknown> {
     dataVencimento: vencimentoDoCenario,
     valorOriginal: VALOR_DA_PARCELA,
   };
+}
+
+/** As duas rotas de transição, compostas a partir do dono do segmento — nunca escritas à mão. */
+function rotaDoPagamento(codigo: string): string {
+  return `${COLECAO_DE_COBRANCAS}/${codigo}/pagamento`;
+}
+
+function rotaDoCancelamento(codigo: string): string {
+  return `${COLECAO_DE_COBRANCAS}/${codigo}/cancelamento`;
+}
+
+/**
+ * Lança uma cobrança com o vencimento deslocado em `dias` a partir do relógio do banco.
+ *
+ * **É assim que todo estado dos casos da T7 é posicionado**: o relógio nunca é falseado, o dado é que
+ * se move — a mesma convenção do cabeçalho deste arquivo e da suíte da camada de dados. Deslocamento
+ * negativo produz `VENCIDA` com `diasAtraso` igual ao módulo dele; positivo produz `A_VENCER`.
+ *
+ * A competência acompanha o vencimento (primeiro dia do mês dele), porque é o que o `refine` do
+ * contrato e o `cobranca_competencia_no_primeiro_dia_chk` do banco exigem.
+ */
+async function lancarEm(
+  contratoCodigo: string,
+  dias: number,
+  valorOriginal: number,
+  natureza: string = 'ALUGUEL',
+): Promise<CobrancaPublicada> {
+  const datas = await datasEm(dias);
+
+  return await lancar({
+    contratoCodigo,
+    natureza,
+    referencia: REFERENCIA_DA_PARCELA,
+    competencia: datas.competencia,
+    dataVencimento: datas.vencimento,
+    valorOriginal,
+  });
+}
+
+/** Acusa o pagamento pela rota real e devolve o corpo publicado. A falha levanta. */
+async function pagar(
+  codigo: string,
+  corpo: { readonly pagoEm: string; readonly valorPago: number },
+): Promise<CobrancaPublicada> {
+  const resposta = await pedir(rotaDoPagamento(codigo), { metodo: 'POST', cookie, corpo });
+
+  if (resposta.status !== 200) {
+    throw new Error(
+      `o pagamento de ${codigo} respondeu ${String(resposta.status)}: ${resposta.texto}`,
+    );
+  }
+
+  return resposta.corpo as CobrancaPublicada;
+}
+
+/** Cancela pela rota real e devolve o corpo publicado. A falha levanta. */
+async function cancelar(codigo: string): Promise<CobrancaPublicada> {
+  const resposta = await pedir(rotaDoCancelamento(codigo), { metodo: 'POST', cookie, corpo: {} });
+
+  if (resposta.status !== 200) {
+    throw new Error(
+      `o cancelamento de ${codigo} respondeu ${String(resposta.status)}: ${resposta.texto}`,
+    );
+  }
+
+  return resposta.corpo as CobrancaPublicada;
+}
+
+/** Lê uma cobrança pela rota real. A falha levanta — a ausência é medida pelos casos, não aqui. */
+async function lerCobranca(codigo: string): Promise<CobrancaPublicada> {
+  const resposta = await pedir(`${COLECAO_DE_COBRANCAS}/${codigo}`, { cookie });
+
+  if (resposta.status !== 200) {
+    throw new Error(
+      `a leitura de ${codigo} respondeu ${String(resposta.status)}: ${resposta.texto}`,
+    );
+  }
+
+  return resposta.corpo as CobrancaPublicada;
+}
+
+/**
+ * Define a política de mora **pela rota real** de `/v1/multa-e-juros`.
+ *
+ * A área que ela exige foi concedida à sessão pelo caminho real de administração — ver
+ * {@link AREA_DE_MULTA_E_JUROS}. Nenhuma escrita direta em `negocio.configuracao_de_mora` acontece
+ * neste arquivo: montar a política por fora mediria a derivação sobre um estado que a operação não
+ * produz.
+ */
+async function definirPolitica(multaPercentual: number, jurosPercentual: number): Promise<void> {
+  const resposta = await pedir(RECURSO_DE_MULTA_E_JUROS, {
+    metodo: 'PUT',
+    cookie,
+    corpo: { multaPercentual, jurosPercentual },
+  });
+
+  if (resposta.status !== 200) {
+    throw new Error(
+      `a definição da política respondeu ${String(resposta.status)}: ${resposta.texto}`,
+    );
+  }
+}
+
+/** Lê a política vigente pela rota real — é ela que confirma que a alteração valeu. */
+async function lerPolitica(): Promise<unknown> {
+  const resposta = await pedir(RECURSO_DE_MULTA_E_JUROS, { cookie });
+
+  if (resposta.status !== 200) {
+    throw new Error(
+      `a leitura da política respondeu ${String(resposta.status)}: ${resposta.texto}`,
+    );
+  }
+
+  return resposta.corpo;
+}
+
+/** O par sob prova no `CT-511` — o estado e o total, e nada mais. */
+interface ParDeLeitura {
+  readonly status: string;
+  readonly valorTotal: number;
+}
+
+/** O par de uma cobrança publicada, extraído para comparação por igualdade estrita. */
+function parDe(cobranca: CobrancaPublicada): ParDeLeitura {
+  return { status: cobranca.status, valorTotal: cobranca.valorTotal };
+}
+
+/** O item de uma página, pelo código. A ausência levanta — o caso mediria `undefined` de outro jeito. */
+function itemDe(pagina: PaginaPublicada, codigo: string): CobrancaPublicada {
+  const item = pagina.itens.find((candidato) => candidato.codigo === codigo);
+
+  if (item === undefined) {
+    throw new Error(`a cobrança ${codigo} não veio na página lida`);
+  }
+
+  return item;
+}
+
+/** O sufixo numérico do código — a posição na série, que é o que o `CT-519` compara. */
+function sufixoDe(codigo: string): number {
+  const sufixo = codigo.split('-')[2];
+
+  if (sufixo === undefined) {
+    throw new Error(`código de cobrança fora da forma esperada: ${codigo}`);
+  }
+
+  return Number(sufixo);
+}
+
+/**
+ * O `xmin` da tupla — o identificador da transação que gravou a versão corrente da linha.
+ *
+ * É a única leitura deste arquivo que observa coluna de sistema, e ela é **observação**, não caminho de
+ * leitura de produto: o `xmin` muda a cada `UPDATE`, e é por isso que a igualdade entre duas medições
+ * separa *recusado* de *aceito sem efeito visível*, e *derivado* de *materializado por gatilho*. A
+ * empresa entra pelo **contexto**, como em toda leitura crua deste arquivo, e nenhum
+ * `WHERE empresa_id` é escrito — quem recorta é a política (ADR-0008).
+ */
+async function xminDa(codigo: string): Promise<string> {
+  return await contextoDeTenant.executarCom(
+    { empresaId: EMPRESA_A.id },
+    async () =>
+      await acessoAoNegocio.emUnidadeDeTrabalho(async (tx) => {
+        const [linha] = await tx<{ xmin: string }[]>`
+          SELECT xmin::text AS xmin FROM negocio.cobranca WHERE codigo = ${codigo}
+        `;
+
+        if (linha === undefined) {
+          throw new Error(`a cobrança ${codigo} não foi alcançada para a leitura do xmin`);
+        }
+
+        return linha.xmin;
+      }),
+  );
 }
 
 /** Lê a carteira pela rota real, com a cadeia de consulta informada. A falha levanta. */
@@ -1153,6 +2064,19 @@ async function contarCobrancas(empresaId: string): Promise<number> {
  * entra pelo **contexto**, como em toda leitura crua deste arquivo.
  */
 async function datasDoCenario(): Promise<{ competencia: string; vencimento: string }> {
+  return await datasEm(DIAS_ATE_O_VENCIMENTO);
+}
+
+/**
+ * O par competência/vencimento deslocado em `dias` a partir do relógio do banco.
+ *
+ * Ela é a generalização de {@link datasDoCenario}, e nasceu na T7 porque as duas transições exigem
+ * cobrança **VENCIDA** — deslocamento negativo — ao lado da `A_VENCER` que os casos da T5 já usavam.
+ * O eixo é o mesmo, e é ele o ponto: a fronteira do vencimento é medida contra o próprio
+ * `negocio.data_corrente_da_operacao()` que a visão consulta para decidir o estado, e não contra o
+ * calendário.
+ */
+async function datasEm(dias: number): Promise<{ competencia: string; vencimento: string }> {
   return await contextoDeTenant.executarCom(
     { empresaId: EMPRESA_A.id },
     async () =>
@@ -1161,14 +2085,12 @@ async function datasDoCenario(): Promise<{ competencia: string; vencimento: stri
           SELECT to_char(
                    date_trunc(
                      'month',
-                     negocio.data_corrente_da_operacao()
-                       + make_interval(days => ${DIAS_ATE_O_VENCIMENTO})
+                     negocio.data_corrente_da_operacao() + make_interval(days => ${dias})
                    ),
                    'YYYY-MM-DD'
                  ) AS competencia,
                  to_char(
-                   negocio.data_corrente_da_operacao()
-                     + make_interval(days => ${DIAS_ATE_O_VENCIMENTO}),
+                   negocio.data_corrente_da_operacao() + make_interval(days => ${dias}),
                    'YYYY-MM-DD'
                  ) AS vencimento
         `;

@@ -1,28 +1,48 @@
 /**
- * As **três primeiras rotas da cobrança** — lançar avulsa, ler a carteira e ler uma cobrança.
+ * As **cinco rotas da cobrança** — lançar avulsa, ler a carteira, ler uma cobrança, acusar o
+ * pagamento e cancelar.
  *
  * ---------------------------------------------------------------------------
  * A exigência é declarada na CLASSE, e é de ÁREA — nenhuma chave de ação
  * ---------------------------------------------------------------------------
  *
- * `@ExigeChave(AREA_DO_FINANCEIRO)` na classe vale para os três manipuladores — a guarda lê o
+ * `@ExigeChave(AREA_DO_FINANCEIRO)` na classe vale para os cinco manipuladores — a guarda lê o
  * metadado com `getAllAndOverride`, e a declaração da classe é o que ela encontra quando o método não
- * declara nada próprio. Declarar três vezes o mesmo valor criaria três lugares para esquecer um.
+ * declara nada próprio. Declarar cinco vezes o mesmo valor criaria cinco lugares para esquecer um.
  *
- * **Nenhuma das três exige chave de ação, e a ausência é decisão registrada** (§11.2 da tech spec):
+ * **Nenhuma das cinco exige chave de ação, e a ausência é decisão registrada** (§11.2 da tech spec):
  * o catálogo fechado da ADR-0011 enumera **duas** ações sensíveis dentro de `TELA:financeiro` —
- * `ACAO:emitir_boleto` e `ACAO:solicitar_baixa_de_boleto` — e **nenhuma** para lançar ou ler
- * cobrança. Quem fechou o catálogo tinha as operações de cobrança à vista e concedeu chave própria só
- * às que falam com o banco. Nenhuma chave nova nasce nesta fatia, e
+ * `ACAO:emitir_boleto` e `ACAO:solicitar_baixa_de_boleto` — e **nenhuma** para lançar, ler, pagar ou
+ * cancelar cobrança. Quem fechou o catálogo tinha as operações de cobrança à vista e concedeu chave
+ * própria só às que falam com o banco. Nenhuma chave nova nasce nesta fatia, e
  * `packages/auth/src/catalogo-de-permissoes.ts` **não é tocado** — precisar de uma chave nova aqui
  * seria sinal de escopo mal delimitado, e abrir o catálogo exigiria supersedê-la ADR-0011.
+ *
+ * **As duas transições entram por esse mesmo critério, e a classificação é decisão escalada e
+ * confirmada antes da spec.** A ADR-0021 dá "apenas a área" ao ato que não transfere direito, não move
+ * dinheiro e não altera o que outra entidade pode fazer: acusar pagamento **registra** dinheiro que se
+ * moveu fora do sistema — não o move —, e o cancelamento tem substituta prevista, o que o torna
+ * reversível. As alternativas recusadas foram abrir o catálogo com duas chaves novas (exigiria
+ * supersedê-la ADR-0011, que o PRD §4.2 exclui nominalmente) e estender a ADR-0021 com uma terceira
+ * instância declarada. **Não reabra.**
  *
  * Como não há declaração no método, **não existe nesta superfície o risco de substituição** que o
  * marcador `DECISÃO FECHADA` de {@link ../imoveis/conjunto.controller.js} governa: `getAllAndOverride`
  * faz a declaração do método **substituir** a da classe, e é por isso que a rota que precisasse de uma
  * ação teria de declarar a **conjunção inteira**, nunca só a ação. O `CT-355` varre a aplicação e
- * acusa qualquer manipulador que exija menos do que a classe dele; estas três exigem exatamente o que
- * a classe exige, que é o que se quer.
+ * acusa qualquer manipulador que exija menos do que a classe dele; estas cinco exigem exatamente o
+ * que a classe exige, que é o que se quer.
+ *
+ * ---------------------------------------------------------------------------
+ * A TRANSIÇÃO É ROTA PRÓPRIA, nunca campo de atualização (ADR-0021)
+ * ---------------------------------------------------------------------------
+ *
+ * `POST :codigo/pagamento` e `POST :codigo/cancelamento` existem porque o estado da cobrança **não é
+ * campo editável**: ele é derivado dos fatos gravados (ADR-0022), e `esquemaDeCobrancaNova` não tem
+ * `status` — a ausência é o mecanismo, e não uma verificação. As duas são `POST` sobre um caminho
+ * próprio pelo mesmo desenho das transições do contrato, e as duas abrem **uma** unidade de trabalho:
+ * nenhuma emite número de série, de modo que o protocolo das duas unidades sequenciais não se aplica a
+ * elas.
  *
  * ---------------------------------------------------------------------------
  * O LANÇAMENTO abre DUAS unidades de trabalho SEQUENCIAIS (ADR-0015, ADR-0020)
@@ -104,7 +124,7 @@
  * objeto que confere a entrada.
  */
 
-import { Body, Controller, Get, Inject, Param, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Req } from '@nestjs/common';
 import {
   ApiCreatedResponse,
   ApiForbiddenResponse,
@@ -122,10 +142,12 @@ import {
   esquemaDaCobranca,
   esquemaDaJanelaDeCobrancas,
   esquemaDeCobrancaNova,
+  esquemaDoPagamentoDeCobranca,
 } from '@sysloc/contracts';
 import type { AcessoAoBanco } from '@sysloc/db';
 import { CodigoErro, type Logger } from '@sysloc/shared';
 import type { FastifyRequest } from 'fastify';
+import { z } from 'zod';
 import { ExigeChave } from '../autenticacao/exigencia.decorator.js';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
 import { esquemaDoErro } from '../comum/esquema-de-erro.js';
@@ -160,6 +182,21 @@ const ENTIDADE_DA_TRILHA = 'cobranca';
 
 /** O envelope da carteira, derivado do esquema do item — nunca redigitado (ADR-0017). */
 const ESQUEMA_DA_PAGINA = envelopeDeLista(esquemaDaCobranca);
+
+/**
+ * O corpo do cancelamento: **vazio e fechado** (§3.1).
+ *
+ * O instante do cancelamento é decidido pelo servidor — sai do relógio do banco —, e nenhum campo é
+ * aceito. Um corpo com qualquer chave é recusado com `422` nomeando o corpo: o Zod reporta chave
+ * desconhecida de um `strictObject` com caminho vazio, e é por isso que a recusa cai no campo padrão
+ * deste ponto de chamada. É a mesma forma, e a mesma razão, das rotas de transição de
+ * {@link ../contratos/contrato.controller.js}.
+ */
+const ESQUEMA_DO_CORPO_VAZIO = z.strictObject({});
+
+/** Os dois segmentos de transição, escritos uma vez — eles entram no par que o `CT-533` audita. */
+const SEGMENTO_DO_PAGAMENTO = ':codigo/pagamento';
+const SEGMENTO_DO_CANCELAMENTO = ':codigo/cancelamento';
 
 @ApiTags('cobrancas')
 @Controller(CAMINHO_DAS_COBRANCAS)
@@ -293,5 +330,106 @@ export class CobrancaController {
       requisicao,
       async (tx) => await this.cobrancas.ler(tx, codigo),
     );
+  }
+
+  @Post(SEGMENTO_DO_PAGAMENTO)
+  // `200`, e não o `201` que o arcabouço dá a todo `@Post`: a transição **não cria recurso** — ela
+  // muda o que a cobrança que já existia publica —, e é o mesmo desfecho, pela mesma razão, das
+  // transições de {@link ../contratos/contrato.controller.js}.
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Acusa o pagamento de uma cobrança',
+    description:
+      'Registra dinheiro que **já se moveu fora do sistema** — não o move. Grava a data e o valor ' +
+      'pagos e **carimba**, na mesma instrução, a multa, os juros e os dois percentuais vigentes no ' +
+      'instante do ato (ADR-0022): os quatro saem da mesma expressão que a leitura publicava um ' +
+      'instante antes, e não de um cálculo próprio. A partir daí o estado publicado passa a ser ' +
+      'PAGA, e `valorMulta`, `valorJuros` e `valorTotal` deixam de acompanhar a política — alterar ' +
+      'multa e juros depois disto **não move um centavo** desta cobrança, enquanto alcança as que ' +
+      'seguem em aberto. Multa e juros **não são aceitos no corpo**, que tem os dois campos de fato ' +
+      'e mais nenhum: quem paga não escreve o próprio recibo. Os seis campos de conciliação ' +
+      'bancária permanecem **exatamente como estavam** — divergência declarada contra o sistema ' +
+      'antigo, que os zerava. Sobre cobrança que já foi paga ou cancelada responde `422` com ' +
+      '`campo: "codigo"` e `detalhes: { estadoAtual, transicaoPedida }`, **sem escrever nada**: a ' +
+      'operação não é idempotente por decisão, porque repetir significa que quem pediu não sabia o ' +
+      'estado. Cobrança de outra empresa é indistinguível de inexistente: `404` com o mesmo corpo.',
+  })
+  @ApiOkResponse({
+    description: 'A cobrança como ela ficou, com os quatro carimbos gravados.',
+    schema: esquemaPublicado(esquemaDaCobranca, 'output'),
+  })
+  @ApiUnauthorizedResponse({ schema: esquemaDoErro([CodigoErro.NAO_AUTENTICADO]) })
+  @ApiForbiddenResponse({ schema: esquemaDoErro([CodigoErro.ACESSO_NEGADO]) })
+  @ApiNotFoundResponse({ schema: esquemaDoErro([CodigoErro.RECURSO_NAO_ENCONTRADO]) })
+  @ApiUnprocessableEntityResponse({ schema: esquemaDoErro([CodigoErro.CAMPO_INVALIDO]) })
+  async acusarPagamento(
+    @Param('codigo') identificador: string,
+    @Body() corpo: unknown,
+    @Req() requisicao: FastifyRequest,
+  ): Promise<Cobranca> {
+    const codigo = validar(ESQUEMA_DO_CODIGO_DE_COBRANCA, identificador, CAMPO_DO_CODIGO);
+    const entrada = validar(esquemaDoPagamentoDeCobranca, corpo, CAMPO_DO_CORPO);
+
+    // UMA unidade de trabalho: a leitura pela visão, a guarda de estado e a escrita que carimba
+    // commitam juntas ou não commitam. Nenhum número de série é emitido aqui, então não há a segunda
+    // unidade que o lançamento precisa.
+    return await sobContextoDaSessao(this.banco, requisicao, async (tx, sessao) => {
+      const paga = await this.cobrancas.acusarPagamento(tx, codigo, entrada);
+
+      // Os campos são os que a §13.1 nomeia para este evento. **`valorPago` fica de fora**, e a
+      // ausência é a decisão: nenhum valor monetário e nenhum dado do locatário entram na linha de
+      // trilha. O que ela registra é que o pagamento foi acusado, não quanto foi pago.
+      this.logger.info(
+        { empresaId: sessao.empresaId, entidade: ENTIDADE_DA_TRILHA, codigo: paga.codigo },
+        'pagamento acusado',
+      );
+
+      return paga;
+    });
+  }
+
+  @Post(SEGMENTO_DO_CANCELAMENTO)
+  // `200` pela mesma razão do pagamento: nada é criado, e nada é apagado.
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Cancela uma cobrança',
+    description:
+      '**Nada é apagado** (ADR-0014): a cobrança continua legível por `GET /v1/cobrancas/:codigo`, ' +
+      'continua constando da carteira com os termos originais, e o código dela segue **ocupado** — ' +
+      'a série nunca o reusa (ADR-0015). Cobrar de novo o mesmo fato é lançar uma substituta por ' +
+      '`POST /v1/cobrancas`, que recebe código novo; **não há vínculo publicado** entre as duas. O ' +
+      'estado publicado passa a ser CANCELADA, e a mora deixa de ser apurada mesmo que o vencimento ' +
+      'já tenha passado. Sobre cobrança já paga ou já cancelada responde `422` com ' +
+      '`campo: "codigo"` e `detalhes: { estadoAtual, transicaoPedida }`, **sem escrever nada** — a ' +
+      'operação não é idempotente por decisão, e o instante do primeiro cancelamento é preservado. ' +
+      'O corpo é vazio e fechado. Cobrança de outra empresa é indistinguível de inexistente: `404` ' +
+      'com o mesmo corpo.',
+  })
+  @ApiOkResponse({
+    description: 'A cobrança como ela ficou, agora cancelada e ainda legível.',
+    schema: esquemaPublicado(esquemaDaCobranca, 'output'),
+  })
+  @ApiUnauthorizedResponse({ schema: esquemaDoErro([CodigoErro.NAO_AUTENTICADO]) })
+  @ApiForbiddenResponse({ schema: esquemaDoErro([CodigoErro.ACESSO_NEGADO]) })
+  @ApiNotFoundResponse({ schema: esquemaDoErro([CodigoErro.RECURSO_NAO_ENCONTRADO]) })
+  @ApiUnprocessableEntityResponse({ schema: esquemaDoErro([CodigoErro.CAMPO_INVALIDO]) })
+  async cancelar(
+    @Param('codigo') identificador: string,
+    @Body() corpo: unknown,
+    @Req() requisicao: FastifyRequest,
+  ): Promise<Cobranca> {
+    const codigo = validar(ESQUEMA_DO_CODIGO_DE_COBRANCA, identificador, CAMPO_DO_CODIGO);
+    validar(ESQUEMA_DO_CORPO_VAZIO, corpo ?? {}, CAMPO_DO_CORPO);
+
+    return await sobContextoDaSessao(this.banco, requisicao, async (tx, sessao) => {
+      const cancelada = await this.cobrancas.cancelar(tx, codigo);
+
+      this.logger.info(
+        { empresaId: sessao.empresaId, entidade: ENTIDADE_DA_TRILHA, codigo: cancelada.codigo },
+        'cobrança cancelada',
+      );
+
+      return cancelada;
+    });
   }
 }

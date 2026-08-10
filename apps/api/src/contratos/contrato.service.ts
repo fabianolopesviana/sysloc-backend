@@ -87,11 +87,11 @@
  * corrida devolveria `500` ao cliente: o defeito que a porta fechou, reaberto um andar acima.
  *
  * ---------------------------------------------------------------------------
- * A ATIVAÇÃO É UM ATO, com ORDEM FIXA e DUAS escritas no MESMO commit
+ * A ATIVAÇÃO É UM ATO, com ORDEM FIXA e TRÊS escritas no MESMO commit
  * ---------------------------------------------------------------------------
  *
  * {@link ContratoService.ativar} é a primeira transição de estado governada do produto (ADR-0019), e
- * a ordem das sete etapas é **conteúdo**, não estilo — cada uma existe porque a anterior já decidiu
+ * a ordem das dez etapas é **conteúdo**, não estilo — cada uma existe porque a anterior já decidiu
  * algo que ela precisa:
  *
  *   1. **localizar** — contrato inalcançável responde `404` antes de qualquer outra coisa, senão a
@@ -105,20 +105,45 @@
  *      **não recalcula nada** (ver a nota abaixo);
  *   6. **gravar** `ATIVO` com as duas derivações, com a recusa por imóvel ocupado vindo do índice
  *      único parcial e traduzida por {@link ContratoService.traduzirConflitoDeGravacao};
- *   7. **marcar o imóvel** `LOCADO` pela **porta estreita** `definirSituacaoDeLocacaoDoImovel`.
+ *   7. **marcar o imóvel** `LOCADO` pela **porta estreita** `definirSituacaoDeLocacaoDoImovel`;
+ *   8. **derivar as parcelas** por {@link derivarParcelasDoContrato} — função **pura** da porta, e a
+ *      ativação não recalcula competência, vencimento nem referência (RD-18, RD-19);
+ *   9. **emitir os N números** da série da cobrança por {@link emitirNumerosDeCobranca};
+ *  10. **gravar as N parcelas** num `INSERT` só, por {@link criarCobrancasEmLote}.
  *
- * **As etapas 6 e 7 são DUAS escritas independentes, e nada no banco as pareia.** Nenhuma restrição
- * recusa um imóvel `DISPONIVEL` com contrato vigente — o docblock daquela porta nomeia o modo de
- * falha por extenso: *"não acusaria nada até a segunda locação ser recusada"*. O que as mantém
- * juntas é elas correrem na **mesma unidade de trabalho**, aberta na borda: qualquer falha depois da
- * etapa 6 desfaz também o `ATIVO`. É por isso que este método **não abre unidade própria** e por isso
- * que a etapa 7 não é uma segunda requisição.
+ * **As etapas 6, 7 e 10 são TRÊS escritas independentes, e nada no banco as pareia.** Nenhuma
+ * restrição recusa um imóvel `DISPONIVEL` com contrato vigente — o docblock daquela porta nomeia o modo
+ * de falha por extenso: *"não acusaria nada até a segunda locação ser recusada"* —, e nenhuma recusa um
+ * contrato `ATIVO` sem parcela alguma. O que as mantém juntas é elas correrem na **mesma unidade de
+ * trabalho**, aberta na borda: qualquer falha depois da etapa 6 desfaz também o `ATIVO`. É por isso que
+ * este método **não abre unidade própria** e por isso que as etapas 7 e 10 não são requisições
+ * seguintes.
+ *
+ * ---------------------------------------------------------------------------
+ * AS PARCELAS NASCEM AQUI, e a atomicidade NÃO é mecanismo novo (fecha o D28)
+ * ---------------------------------------------------------------------------
+ *
+ * As etapas 8 a 10 são o que a F3 acrescentou, e elas fecham o débito **D28** da fatia `contratos-de-locacao` (F2/T7)
+ * exatamente onde ele foi agendado. O que a RN-06 exige — *recusa em qualquer etapa deixa o contrato
+ * `RASCUNHO`, o imóvel como estava e **zero** parcelas* — sai do **commit único que já existia**: não
+ * há orquestrador, não há barramento de evento e não há segunda unidade de trabalho. É a mesma
+ * propriedade que já mantinha `ATIVO ⇔ LOCADO`, estendida a um terceiro efeito por ele correr no mesmo
+ * `tx`.
+ *
+ * A ordem das três é conteúdo, e o ponto é qual delas recusa primeiro: a gravação do estado (etapa 6) é
+ * a que colide no índice de vigência, e ela vem **antes** da emissão dos números. Uma ativação recusada
+ * por imóvel ocupado, portanto, **não queima número da série** — e o furo que a ADR-0015 aceita por
+ * escrito fica reservado às falhas posteriores à emissão, que é o mínimo possível.
+ *
+ * **`gerarCobrancasAutomaticamente: false` gera zero parcelas** (RD-20), e o campo não é interruptor de
+ * implementação: é dado de negócio, portado do sistema antigo e decidido por contrato pelo operador.
+ * Nesse caminho nenhum número é emitido — a série não avança por um contrato que não gera cobrança.
  *
  * ---------------------------------------------------------------------------
  * O CANCELAMENTO fecha a máquina de estados — e o que ele NÃO faz é a decisão
  * ---------------------------------------------------------------------------
  *
- * {@link ContratoService.cancelar} é a segunda transição governada (ADR-0019), e tem **quatro**
+ * {@link ContratoService.cancelar} é a segunda transição governada (ADR-0019), e tem **cinco**
  * etapas, na ordem em que elas dependem umas das outras:
  *
  *   1. **localizar** — contrato inalcançável responde `404` antes de qualquer outra coisa, pela mesma
@@ -127,10 +152,12 @@
  *      `status`, no ponto único {@link ContratoService.exigirEstado};
  *   3. **gravar `CANCELADO`** — sem envoltório de conflito, e a ausência está explicada no docblock
  *      do método;
- *   4. **devolver o imóvel a `DISPONIVEL`** pela **mesma porta estreita** da ativação.
+ *   4. **devolver o imóvel a `DISPONIVEL`** pela **mesma porta estreita** da ativação;
+ *   5. **cancelar em cascata as cobranças canceláveis** do contrato, por
+ *      {@link cancelarCobrancasDoContrato}.
  *
- * As etapas 3 e 4 são, de novo, **duas escritas independentes que nada no banco pareia** — e o que as
- * mantém juntas é a unidade de trabalho aberta na borda. O modo de falha do par quebrado aqui é o
+ * As etapas 3, 4 e 5 são, de novo, **três escritas independentes que nada no banco pareia** — e o que
+ * as mantém juntas é a unidade de trabalho aberta na borda. O modo de falha do par quebrado aqui é o
  * espelho do da ativação, e pior de perceber: um imóvel que ficasse `LOCADO` depois de o contrato
  * dele ser cancelado ficaria **inlocável pela interface**, sem que nada acusasse.
  *
@@ -146,12 +173,35 @@
  *   * **não exige o PDF do contrato.** Ver o marcador `DÉBITO COM GATILHO` no ponto do método: é a
  *     única regra do oráculo deliberadamente não portada, e o gatilho é a F3.
  *
- * **O cancelamento em cascata das cobranças cancela um conjunto vazio, e isso é correto.**
- * `negocio.cobranca` não existe nesta fatia (RD-12), de modo que o percurso do sistema antigo sobre
- * as cobranças canceláveis não tem elemento algum aqui. Quando a F3 chegar, o conjunto passa a ter
- * elementos e o mesmo caminho percorre — não há nada a antecipar, e antecipar seria escrever a regra
- * de outra fatia contra um oráculo que esta não prova. O efeito que **existe** e que esta fatia prova
- * é o imóvel voltar a `DISPONIVEL`.
+ * ---------------------------------------------------------------------------
+ * A CASCATA alcança as CANCELÁVEIS — e só elas — na MESMA unidade (RD-13)
+ * ---------------------------------------------------------------------------
+ *
+ * A etapa 5 é o que a T10 acrescentou, e ela substitui a nota que este cabeçalho carregava até aqui —
+ * *"a cascata cancela um conjunto vazio, e isso é correto; `negocio.cobranca` não existe nesta
+ * fatia"*. As três afirmações daquela nota **deixaram de ser verdadeiras**: a tabela existe desde a
+ * migração `0009`, a ativação passou a gravar N parcelas na T9, e não havia *"o mesmo caminho"* a
+ * percorrer — nenhuma linha deste método tocava cobrança. Ela era descrição datada, não decisão, e por
+ * isso não deixou marcador nem débito: o gatilho e o fecho caíram na mesma fatia.
+ *
+ * O que a cascata faz é **um `UPDATE` com predicado**, em {@link cancelarCobrancasDoContrato}, e o
+ * predicado é a regra de negócio escrita em SQL sem tradução: `pago_em IS NULL AND cancelado_em IS
+ * NULL`. É o dividendo de o estado ser derivado (ADR-0022) — *em aberto* e *cancelável* são o mesmo
+ * conjunto —, e é a razão de a RD-13 não precisar de máquina de estados própria para a cobrança.
+ *
+ * **A paga e a já cancelada ficam FORA do conjunto, e não são reescritas.** A distinção é física, e não
+ * de valor: `pago_em`, `valor_pago`, os quatro carimbos de mora e o `cancelado_em` original permanecem
+ * na **mesma tupla**, com o `xmin` intacto. *Não alterou* e *reescreveu com o mesmo valor* são
+ * indistinguíveis por comparação de campos, e é a segunda que a RN-13 proíbe.
+ *
+ * **Conjunto vazio não é erro**, e nenhum ramo deste arquivo o trata como tal: um contrato sem cobrança
+ * alguma — `gerarCobrancasAutomaticamente: false`, ou carteira toda liquidada — é cancelado com `200` e
+ * cascata de zero linhas. O que a borda publica dessa contagem é **só a linha de trilha** (§13.1): a
+ * resposta continua sendo o contrato no root, sem declaração de efeito, pela razão registrada no
+ * docblock do método.
+ *
+ * O efeito que a fatia anterior já provava — o imóvel voltar a `DISPONIVEL` — continua sendo a etapa 4,
+ * e as duas correm no mesmo commit da transição.
  *
  * ---------------------------------------------------------------------------
  * A REGRA NÃO VAZA DE VOLTA — o serviço não recalcula nada
@@ -244,16 +294,21 @@ import {
   alterarContrato,
   ativarContrato,
   type ContratoPersistido,
+  cancelarCobrancasDoContrato,
   cancelarContrato,
+  criarCobrancasEmLote,
   criarContrato,
   type DerivacoesDaAtivacao,
   definirCirculacaoDoContrato,
   definirSituacaoDeLocacaoDoImovel,
+  derivarParcelasDoContrato,
   derivarTerminoDaLocacao,
   derivarValorTotal,
+  ErroDeCodigoDeCobrancaEmUso,
   ErroDeCodigoEmUso,
   ErroDeImovelComContratoVigente,
   emitirNumeroDeContrato,
+  emitirNumerosDeCobranca,
   garantirContadorDeContrato,
   lerAnoDaSerieDeContrato,
   listarContratos,
@@ -270,6 +325,30 @@ import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
 
 /** A página de contratos, na forma canônica de lista da ADR-0017. */
 export type PaginaDeContratos = EnvelopeDeLista<Contrato>;
+
+/**
+ * O que o cancelamento devolve à borda: o contrato como ele ficou **e** quantas cobranças a cascata
+ * alcançou.
+ *
+ * ---------------------------------------------------------------------------
+ * ELE NÃO É TIPO PUBLICADO, e a ausência em `@sysloc/contracts` é a decisão
+ * ---------------------------------------------------------------------------
+ *
+ * Ele mora aqui, e **não** ao lado de `esquemaDaAtivacaoDeContrato`, porque não é contrato de API: a
+ * resposta do cancelamento é o contrato no **root, sem declaração de efeito** — escolha registrada no
+ * docblock de {@link ContratoService.cancelar}, e afirmada por igualdade de corpo inteiro no `CT-415`.
+ * A contagem existe para a **linha de trilha** que a §13.1 declara (`cobranças canceladas em cascata`,
+ * com `quantidade`), e para nada além dela.
+ *
+ * A separação em dois campos é o que põe o compilador atrás dessa fronteira: o manipulador continua
+ * anotado `Promise<Contrato>`, de modo que devolver este objeto inteiro ao cliente **não compila**. A
+ * alternativa — acrescentar `efeitos` ao corpo, como a ativação faz — publicaria contrato novo sem
+ * fonte no PRD, e contrato publicado é caro de tirar depois.
+ */
+export interface ResultadoDoCancelamento {
+  readonly contrato: Contrato;
+  readonly cobrancasCanceladas: number;
+}
 
 /**
  * Os **quatro** campos que a conferência de cadastros referenciados lê — e nada além deles.
@@ -408,29 +487,23 @@ const SITUACAO_DO_IMOVEL_DISPONIVEL: SituacaoDeLocacao = 'DISPONIVEL';
 /**
  * A declaração de efeito que acompanha o contrato na resposta da ativação (CA-06).
  *
- * O literal `false` é o ponto, e ele está no esquema: nesta fatia a ativação **não** gera cobrança
- * (RD-12), e declará-lo em vez de deixá-lo implícito obriga a F3 a **tocar o contrato** para
- * afrouxá-lo. A mudança aparece no diff, em vez de acontecer por omissão — que é como um consumidor
- * descobriria, em produção, que o significado da resposta mudou.
+ * **Ela deixou de ser constante, e a mudança é o fecho do débito **D28** da fatia `contratos-de-locacao` (F2/T7).** Até a
+ * F3 o valor era o literal `false` congelado — a ativação não gerava cobrança (RD-12) —, e o literal
+ * existia no esquema para obrigar esta fatia a **tocar o contrato** em vez de mudar o significado da
+ * resposta por omissão. O gatilho chegou: a ativação passou a gerar as parcelas, e o que se publica é
+ * **quantas** nasceram.
  *
- * Congelada porque é compartilhada por toda resposta: ela é serializada, nunca modificada.
+ * A anotação é `AtivacaoDeContrato['efeitos']`, e não um objeto solto: o nome do campo é contrato
+ * publicado (o cliente o lê), e derivá-lo do esquema é o que põe o compilador atrás dele — um
+ * `cobrancasGeradas` com erro de digitação, ou um efeito inventado ao lado, **não compila**. É a mesma
+ * razão que fez o valor viver aqui quando era literal.
  *
- * DÉBITO COM GATILHO — D28 · F2/T7 · registrado 2026-08-09
- * (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o código abaixo.)
- * O QUÊ: a ativação **não gera as cobranças** do contrato, e a declaração de efeito é o literal
- *        `false`. O sistema antigo gera as parcelas no mesmo ato
- *        (`montar_dados_cobrancas_contrato`), e o golden já capturou os três cenários delas.
- * QUANDO FECHA: na **F3**, a fatia de cobrança e integração bancária — ela é obrigada a afrouxar o
- *        literal para publicar quantas cobranças nasceram, e não consegue fazê-lo sem editar
- *        `esquemaDaAtivacaoDeContrato` e este ponto.
- * POR QUE NÃO AGORA: `negocio.cobranca` não existe, e a competência, a referência e o dia de
- *        vencimento saturado das parcelas são a entrega da F3 — antecipá-los aqui seria escrever a
- *        regra de outra fatia contra um oráculo que esta não prova.
- * ÍNDICE: docs/specs/features/contratos-de-locacao/v1/_run/run-report.md §2, D28
+ * O argumento é a contagem das linhas que a porta **de fato gravou**, e não `parcelas.length`: o que a
+ * resposta declara é efeito ocorrido, não intenção.
  */
-const EFEITOS_DA_ATIVACAO: AtivacaoDeContrato['efeitos'] = Object.freeze({
-  cobrancasGeradas: false,
-});
+function efeitosDaAtivacao(cobrancasGeradas: number): AtivacaoDeContrato['efeitos'] {
+  return { cobrancasGeradas };
+}
 
 /**
  * As **seis condições de entrada portadas** do sistema antigo (RD-08), na ordem em que ele as confere.
@@ -623,16 +696,23 @@ export class ContratoService {
   }
 
   /**
-   * Faz o contrato valer: transita `RASCUNHO → ATIVO`, deriva as duas grandezas, ocupa o imóvel e
-   * devolve o corpo da transição — **num commit só**.
+   * Faz o contrato valer: transita `RASCUNHO → ATIVO`, deriva as duas grandezas, ocupa o imóvel,
+   * **gera as parcelas de aluguel** e devolve o corpo da transição — **num commit só**.
    *
-   * A ordem das sete etapas, a razão de cada uma e as três notas que governam este método — a
-   * atomicidade do par `ATIVO ⇔ LOCADO`, a proibição de recalcular e a divergência deliberada da
-   * máquina de estados — estão no cabeçalho deste arquivo. Não as reproduzo aqui.
+   * A ordem das dez etapas, a razão de cada uma e as notas que governam este método — a atomicidade das
+   * três escritas, a proibição de recalcular e a divergência deliberada da máquina de estados — estão
+   * no cabeçalho deste arquivo. Não as reproduzo aqui.
    *
-   * **Ela recebe o executor e não abre unidade própria.** É isso, e nada mais, que faz as etapas 6 e
-   * 7 serem um commit só: falha em qualquer ponto deixa o contrato `RASCUNHO` e o imóvel exatamente
-   * como estava.
+   * **Ela recebe o executor e não abre unidade própria.** É isso, e nada mais, que faz as etapas 6, 7 e
+   * 10 serem um commit só: falha em qualquer ponto deixa o contrato `RASCUNHO`, o imóvel exatamente
+   * como estava e **zero** parcelas gravadas.
+   *
+   * **O ano chega pronto, e este método não o relê.** Ele foi lido uma única vez pela borda, na
+   * primeira unidade de trabalho, do MESMO eixo (`lerAnoDaSerieDeCobranca`) que alimentou
+   * `garantirContadorDeCobranca` — e é o eixo da cobrança, não o do contrato: os dois derivam de
+   * relógios diferentes de propósito, e a razão está no docblock daquela função. Relê-lo aqui
+   * permitiria à segunda unidade discordar da primeira na virada do ano, e o código anunciaria um
+   * contador que não emitiu aquele número (ADR-0015, ADR-0020).
    *
    * A conferência de circulação reusa {@link ContratoService.exigirCadastrosAlcancaveisEEmCirculacao}
    * — o **ponto único** das escritas —, montada a partir do contrato persistido. É para isso que
@@ -641,7 +721,7 @@ export class ContratoService {
    * um objeto sintético — que é precisamente o que faria um executor futuro preferir escrever a
    * própria conferência.
    */
-  async ativar(tx: TransactionSql, codigo: string): Promise<AtivacaoDeContrato> {
+  async ativar(tx: TransactionSql, codigo: string, ano: number): Promise<AtivacaoDeContrato> {
     const atual = this.exigir(await localizarContrato(tx, codigo));
 
     this.exigirEstado(atual, ESTADO_ATIVAVEL, ATIVACAO);
@@ -678,19 +758,85 @@ export class ContratoService {
     // duas, e é o commit único que impede um imóvel `DISPONIVEL` com contrato vigente.
     await definirSituacaoDeLocacaoDoImovel(tx, ativado.imovelId, SITUACAO_DO_IMOVEL_LOCADO);
 
-    return { ...publicarContrato(ativado), efeitos: EFEITOS_DA_ATIVACAO };
+    return {
+      ...publicarContrato(ativado),
+      efeitos: efeitosDaAtivacao(await this.gerarParcelas(tx, ativado, ano)),
+    };
   }
 
   /**
-   * Faz o contrato deixar de valer: transita `ATIVO → CANCELADO` e devolve o imóvel a `DISPONIVEL` —
-   * **num commit só**.
+   * Grava as parcelas de aluguel do contrato recém-ativado e devolve **quantas o banco escreveu** —
+   * a TERCEIRA escrita da ativação, na MESMA unidade de trabalho.
    *
-   * A ordem das quatro etapas, a razão de cada uma e o que **não** foi portado do sistema antigo
-   * estão no cabeçalho deste arquivo. Não os reproduzo aqui.
+   * ---------------------------------------------------------------------------
+   * ELE NÃO DERIVA NADA, e a ausência é o que mantém a regra num lugar só
+   * ---------------------------------------------------------------------------
+   *
+   * As N parcelas vêm **inteiras** de {@link derivarParcelasDoContrato}, a função pura da porta
+   * (RD-18, RD-19), e não há neste arquivo aritmética alguma de calendário, de competência ou de
+   * referência. É a mesma proibição, com a mesma razão, que já vale para as duas derivações da
+   * ativação: o oráculo é o golden, a regra tem um lugar só, e ela **não vaza de volta** para cá. A
+   * rede é a asserção estática do `CT-413 (c)`, que varre este fonte.
+   *
+   * O código também não é composto aqui: ele sai da série do banco, pelas duas funções
+   * `SECURITY DEFINER` (ADR-0020), e o par `(ano, número)` viaja junto até a porta que grava.
+   *
+   * ---------------------------------------------------------------------------
+   * A RD-20 é o PRIMEIRO ramo, e é ela que impede a série de avançar em vão
+   * ---------------------------------------------------------------------------
+   *
+   * `gerarCobrancasAutomaticamente: false` devolve **zero** sem emitir número nenhum e sem tocar o
+   * banco. A ordem importa: emitir antes de olhar o campo queimaria N números — que a ADR-0015 proíbe
+   * reusar — para gravar nada. O campo é dado de negócio do contrato, não interruptor de
+   * implementação; ele existe na tabela desde a F2 e este é o primeiro consumidor dele.
+   *
+   * ---------------------------------------------------------------------------
+   * O QUE ELE DEVOLVE é a CONTAGEM DO BANCO, e não a da lista derivada
+   * ---------------------------------------------------------------------------
+   *
+   * `criarCobrancasEmLote` devolve os códigos que o `RETURNING` trouxe, e é o comprimento **dessa**
+   * lista que a resposta publica. Devolver `parcelas.length` faria o efeito declarado descrever a
+   * intenção da aplicação em vez do que o banco gravou — e as duas divergirem é justamente o que um
+   * `INSERT` de N linhas parcialmente recusado produziria.
+   */
+  private async gerarParcelas(
+    tx: TransactionSql,
+    contrato: ContratoPersistido,
+    ano: number,
+  ): Promise<number> {
+    if (!contrato.gerarCobrancasAutomaticamente) {
+      return 0;
+    }
+
+    const parcelas = derivarParcelasDoContrato(contrato);
+    const numeros = await emitirNumerosDeCobranca(tx, ano, parcelas.length);
+
+    // A colisão do código EMITIDO atravessa o MESMO ponto único das outras duas recusas desta
+    // superfície — ver {@link ContratoService.traduzirConflitoDeGravacao}. Sem ela, uma série semeada
+    // para trás na virada (F7) devolveria ao cliente o `23505` do driver em `500`, no meio de uma
+    // ativação; e uma tradução escrita aqui seria a segunda forma do mesmo envelope publicado.
+    const gravadas = await this.traduzirConflitoDeGravacao(
+      async () => await criarCobrancasEmLote(tx, contrato.id, parcelas, numeros),
+    );
+
+    return gravadas.length;
+  }
+
+  /**
+   * Faz o contrato deixar de valer: transita `ATIVO → CANCELADO`, devolve o imóvel a `DISPONIVEL` e
+   * **cancela em cascata as cobranças canceláveis dele** — **num commit só**.
+   *
+   * A ordem das cinco etapas, a razão de cada uma, o que a cascata **não** alcança e o que **não** foi
+   * portado do sistema antigo estão no cabeçalho deste arquivo. Não os reproduzo aqui.
    *
    * **Ela recebe o executor e não abre unidade própria**, pela mesma razão de
-   * {@link ContratoService.ativar}: é isso, e nada mais, que faz as duas escritas serem um commit só.
-   * Falha em qualquer ponto deixa o contrato `ATIVO` e o imóvel `LOCADO`.
+   * {@link ContratoService.ativar}: é isso, e nada mais, que faz as três escritas serem um commit só.
+   * Falha em qualquer ponto deixa o contrato `ATIVO`, o imóvel `LOCADO` e **nenhuma** cobrança
+   * cancelada — não existe cascata parcial, porque não existe segunda unidade de trabalho.
+   *
+   * **Ela devolve {@link ResultadoDoCancelamento}, e não o contrato sozinho**, porque a §13.1 declara o
+   * evento `cobranças canceladas em cascata` com `quantidade`, e o logger vive na borda. A contagem
+   * viaja daqui até a linha de trilha e **não** entra na resposta — ver o docblock daquele tipo.
    *
    * **A gravação NÃO passa por {@link ContratoService.traduzirConflitoDeGravacao}, e a ausência é a
    * decisão.** As duas classes que o envoltório traduz são impossíveis aqui: `cancelarContrato` não
@@ -704,7 +850,7 @@ export class ContratoService {
    * declara isso explicitamente"*. Publicar `efeitos` aqui seria inventar contrato sem fonte — e um
    * contrato publicado é caro de tirar depois.
    */
-  async cancelar(tx: TransactionSql, codigo: string): Promise<Contrato> {
+  async cancelar(tx: TransactionSql, codigo: string): Promise<ResultadoDoCancelamento> {
     // DÉBITO COM GATILHO — D36 · F2/T8 · registrado 2026-08-09
     // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o código abaixo.)
     // O QUÊ: a pré-condição legada **"sem PDF privado, não cancela"** não é portada. No sistema
@@ -733,7 +879,17 @@ export class ContratoService {
     // acusaria nada, e ninguém conseguiria locá-lo de novo pela interface.
     await definirSituacaoDeLocacaoDoImovel(tx, cancelado.imovelId, SITUACAO_DO_IMOVEL_DISPONIVEL);
 
-    return publicarContrato(cancelado);
+    // A TERCEIRA escrita, na MESMA unidade: a cascata. O predicado das canceláveis vive na porta e
+    // **não** é reescrito aqui — não há neste arquivo condicional sobre estado, vencimento ou carimbo
+    // de cobrança, e é essa ausência que mantém a RD-13 num lugar só. Ela corre DEPOIS das duas
+    // escritas do contrato, e a ordem é indiferente à atomicidade: qualquer falha desfaz as três.
+    //
+    // O identificador é o **UUID** do contrato, e não o código: a coluna da cobrança é `uuid`, e a
+    // chave estrangeira composta é `(contrato_id, empresa_id)`. Zero linhas afetadas é resultado
+    // legítimo, e nenhum ramo daqui o trata como falha.
+    const cobrancasCanceladas = await cancelarCobrancasDoContrato(tx, cancelado.id);
+
+    return { contrato: publicarContrato(cancelado), cobrancasCanceladas };
   }
 
   /**
@@ -906,15 +1062,23 @@ export class ContratoService {
   }
 
   /**
-   * Traduz as duas recusas que o banco produz nas escritas desta superfície — **ponto único** delas.
+   * Traduz as três recusas que o banco produz nas escritas desta superfície — **ponto único** delas.
    *
    * O código é `CAMPO_INVALIDO` porque o vocabulário é fechado e **não tem código de conflito**; o
    * `422` sai do próprio código, e não é escolhido aqui.
    *
-   * As duas classes viajam pelo mesmo envoltório porque as duas escritas correm sob ele: um envoltório
+   * As classes viajam pelo mesmo envoltório porque as escritas correm sob ele: um envoltório
    * por classe deixaria a segunda tradução nascer no ponto de chamada seguinte, que é exatamente como
    * os débitos D12, D38 e D40 apareceram nesta base. Qualquer outro erro sobe **intacto** — traduzir
    * em bloco atribuiria à entrada do cliente uma falha que ele não causou.
+   *
+   * **A colisão do código de COBRANÇA cai no mesmo ramo da colisão do código de CONTRATO**, e a
+   * coincidência é deliberada: é o mesmo fato — *o código que o servidor emitiu já pertence a outra
+   * linha desta empresa* —, o cliente não escolheu nenhum dos dois, e não há nada que ele possa
+   * corrigir. O envelope publicado é, byte a byte, o que a superfície de `/v1/cobrancas` já devolve
+   * para a mesma colisão no lançamento avulso; um segundo vocabulário para uma classe só faria o
+   * cliente aprender duas formas da mesma recusa. Ela é alcançável a partir da T9, em que a ativação
+   * grava as parcelas, e a origem prática é a série semeada para trás na virada (F7).
    *
    * Nada do valor recusado entra na mensagem: sai o campo culpado e o discriminador, nunca a entrada.
    * O código do contrato vigente é exceção declarada — ele é dado **do servidor**, apurado depois da
@@ -924,7 +1088,7 @@ export class ContratoService {
     try {
       return await gravar();
     } catch (erro) {
-      if (erro instanceof ErroDeCodigoEmUso) {
+      if (erro instanceof ErroDeCodigoEmUso || erro instanceof ErroDeCodigoDeCobrancaEmUso) {
         throw new ErroDeAplicacao(
           CodigoErro.CAMPO_INVALIDO,
           MENSAGEM_POR_CODIGO[CodigoErro.CAMPO_INVALIDO],

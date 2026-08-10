@@ -18,14 +18,17 @@
 
 **Fase × fatia.** Uma fase é uma unidade do plano; uma **fatia** é uma feature do agent-spec, com
 `v1` próprio, que se executa num run. Quase toda fase é uma fatia só — mas quando a amplitude não
-cabe num run, ela se parte. **A F1 e a F2 foram partidas em duas**, e nenhuma das duas partições foi
-prevista no plano: as duas se decidiram no pré-refinamento da fase. A F1 cortou *depois da
-autenticação*; a F2 corta *por agregado*, com imóveis e pessoas antes de contratos. Outras fases podem
-se partir pelo mesmo motivo; quando isso acontecer, as fatias novas aparecem aqui.
+cabe num run, ela se parte. **A F1, a F2 e a F3 foram partidas em duas**, e nenhuma das três
+partições foi prevista no plano: as três se decidiram no pré-refinamento da fase. A F1 cortou *depois
+da autenticação*; a F2 corta *por agregado*, com imóveis e pessoas antes de contratos; a F3 corta
+*por efeito*, com o dado e o cálculo antes do que age e do que sai. Outras fases podem se partir pelo
+mesmo motivo; quando isso acontecer, as fatias novas aparecem aqui.
 
 > **O pré-refinamento de uma fase partida tem casa própria.** O da F2 vive em
-> `docs/specs/features/dominio-locacao/v1/pre-refinement.md` e cobre as **duas** fatias — ele não é
-> uma fatia executável, e por isso não aparece no painel.
+> `docs/specs/features/dominio-locacao/v1/pre-refinement.md` e o da F3 em
+> `docs/specs/features/cobranca-mora-e-documentos/v1/pre-refinement.md`; cada um cobre as **duas**
+> fatias da sua fase. Nenhum dos dois é fatia executável, e por isso não aparecem no painel — nem no
+> mapa `FATIAS_DA_FASE` do gerador.
 
 ---
 
@@ -37,7 +40,7 @@ se partir pelo mesmo motivo; quando isso acontecer, as fatias novas aparecem aqu
 | **F0** | Stack instalada e provada | ✅ concluída | 7/7 tasks |
 | **F1** | Fundação SaaS — isolamento, identidade e autorização | ✅ concluída | 20/20 tasks |
 | **F2** | Domínio de locação | ✅ concluída | 21/21 tasks |
-| **F3** | Cobrança, mora e documentos | 📋 especificada, execução pendente | — |
+| **F3** | Cobrança, mora e documentos | 🔄 em andamento | 0 de 2 fatias · 9/11 tasks |
 | **F4** | Integração bancária (Sicoob) | ⬜ não iniciada | — |
 | **F5** | Automações agendadas | ⬜ não iniciada | — |
 | **F6** | Frontend religado — só o handoff sai daqui | ⬜ não iniciada | — |
@@ -178,6 +181,25 @@ empresa A apontando `Imovel` da B é **recusado pelo banco**.
 
 **O que é:** o dinheiro. Ciclo de cobrança, cálculo de mora e os documentos que o cliente recebe.
 
+**Por que foi partida em duas:** o corte é **por efeito colateral**, e três critérios independentes
+(efeito, objeto e oráculo) coincidem no mesmo ponto. A fatia 1 não toca nada fora do banco; a fatia 2
+é toda ela ação sobre o mundo — fila, e-mail, PDF. A viabilidade decidiu: a F2 inteira fez ~1.000 LOC
+em 2 fatias e 21 tasks, e a F3 num run só seria o dobro disso.
+
+### Fatia 1 — `cobranca-e-mora`
+
+O agregado `Cobranca`, o **`status` com fonte única no servidor** (view `cobranca_derivada` com
+`security_invoker`, em vez do `normalizeStatus` que hoje cada tela calcula por conta própria), a
+**mora por empresa** e a série `COB-{ano}-{7 dígitos}`. Fecha o **D28 (F2/T7)**: a ativação do
+contrato passa a gerar as parcelas na mesma unidade de trabalho.
+
+### Fatia 2 — `regua-e-documentos`
+
+A régua de cobrança com a fila (é a **primeira fatia que enfileira tarefa de negócio**, e por isso
+fecha o **D32 (F0/T6)**), o **PDF de contrato** de 752 linhas validado contra o golden textual e o
+**carnê** montado com `pdf-lib` no servidor. Fecha o **D36 (F2/T8)**. ⚠️ Concentra ~1.800 LOC e
+**pode precisar partir de novo** — a decisão fica para o briefing dela.
+
 **Entrega:**
 
 1. `Cobranca` com o ciclo completo e **`status` com fonte única no servidor** — hoje é derivado no
@@ -194,9 +216,10 @@ empresa A apontando `Imovel` da B é **recusado pelo banco**.
 o `reply_to` da empresa certa.
 
 <!-- ESTADO:F3:INICIO -->
-> 📋 **especificada, execução pendente**
+> 🔄 **em andamento** — 0 de 2 fatias · 9/11 tasks
 >
-> 📋 `cobranca-mora-e-documentos/v1`
+> 🔄 `cobranca-e-mora/v1` — 9/11 tasks
+> ⬜ `regua-e-documentos/v1`
 <!-- ESTADO:F3:FIM -->
 
 ---

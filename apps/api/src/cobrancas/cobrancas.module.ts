@@ -27,6 +27,18 @@
  *
  * As rotas de pagamento e de cancelamento (T7) e as da política de mora (T6) entram depois — as duas
  * primeiras **aqui**, e as de mora sob o dono do próprio segmento, que tem outra área.
+ *
+ * ---------------------------------------------------------------------------
+ * Ele EXPORTA `CobrancaService`, e o consumidor é a ativação do contrato (T9)
+ * ---------------------------------------------------------------------------
+ *
+ * A ativação abre duas unidades de trabalho sequenciais, e a primeira garante o contador da série da
+ * **cobrança** — `CobrancaService.garantirSerie`, que é quem sabe de qual relógio o ano daquela série
+ * sai. Exportar é o que permite a `ContratosModule` **consumir** o símbolo em vez de recriá-lo; provê-lo
+ * lá também daria duas instâncias e dois donos da mesma regra.
+ *
+ * O que a exportação **não** move é autorização: `TELA:financeiro` continua governando as cinco rotas
+ * desta superfície, e nada da exigência declarada aqui alcança quem importa o módulo.
  */
 
 import { Module } from '@nestjs/common';
@@ -38,5 +50,6 @@ import { CobrancaService } from './cobranca.service.js';
   imports: [AutenticacaoModule],
   controllers: [CobrancaController],
   providers: [CobrancaService],
+  exports: [CobrancaService],
 })
 export class CobrancasModule {}

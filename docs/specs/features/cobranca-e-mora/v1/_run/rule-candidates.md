@@ -123,3 +123,124 @@
 - Sinal: `convention_drift` · Origem: `staff-review` · 2026-08-10T08:35:00Z
 
 ---
+
+## [executor_askquestion] Escalada do executor não alcança o usuário
+
+**Regra que isto sugere:** o executor que atinge um gatilho de parada declara a escalada no sumário de retorno, num campo próprio, em vez de tentar `AskUserQuestion`.
+
+**O que ela faria (simples):** o executor da T7 atingiu o gatilho legítimo *"implementar exige alterar arquivo fora da lista declarada"* e tentou parar para perguntar — mas `AskUserQuestion` não opera em subagente, então a tentativa se perdeu e a decisão foi tomada sozinha, aparecendo só como prosa avulsa depois do bloco de retorno. Com a regra, a escalada chegaria ao orquestrador num campo que ele lê sempre, em vez de depender de o executor escrever um parágrafo extra que o formato de saída não prevê.
+
+- Evidência: *"Tentei escalar por `AskUserQuestion`; a ferramenta não existe em subagente"* — emenda de `packages/db/migracoes/0010_seguranca_cobranca.sql` fora da §5.2 — T7 / duas transições da cobrança
+- Sinal: `executor_askquestion` · Origem: `agent-spec-sdd-run-tasks` · 2026-08-10T09:40:00Z
+
+---
+
+## [repeated_assertion_shape] Envelope de erro da ADR-0017 afirmado literal
+
+**Regra que isto sugere:** o envelope de erro esperado num teste de rota vem de um construtor único, e não de um literal reescrito em cada caso.
+
+**O que ela faria (simples):** o mesmo objeto `{ codigo, mensagem, campo, detalhes }` é redigitado nove vezes no mesmo arquivo de rota — seis delas acrescentadas pela T7. Cada cópia é um lugar onde a forma do envelope pode divergir do que a ADR-0017 fixa, e uma mudança de contrato obriga a editar as nove. Um construtor de envelope esperado mantém a asserção por **igualdade de objeto inteiro** — que é o que discrimina — sem multiplicar a redação.
+
+- Evidência: envelope afirmado por igualdade em 9 pontos do mesmo arquivo — `apps/api/test/cobrancas.e2e.spec.ts:805` — T7 / as duas transições da cobrança
+- Sinal: `repeated_assertion_shape` · Origem: `agent-spec-qa-validator` · 2026-08-10T10:05:00Z
+
+---
+
+## [repeated_fixture] Acessórios `pagar`/`cancelar` duplicados por camada
+
+**Regra que isto sugere:** o acessório de arranjo que monta estado terminal chama a camada de produção mais baixa alcançável pela suíte, e o nome dele é o mesmo nas duas frentes.
+
+**O que ela faria (simples):** a T7 criou o par `pagar`/`cancelar` duas vezes, com o mesmo nome e o mesmo papel — na suíte de rota ele fala HTTP, na de dados ele fala pela porta. A convenção funcionou e vale escrever, porque foi a **ausência** dela que produziu os dois acessórios crus que a T7 teve de substituir: eles escreviam o desfecho por `UPDATE` à mão e sobreviveram um gate inteiro. A regra evita que a próxima fatia repita o `UPDATE` cru e evita a divergência de nome entre as duas suítes.
+
+- Evidência: acessórios homônimos definidos independentemente nas duas suítes da mesma entidade, um pela rota e outro pela porta — `packages/db/test/cobranca.spec.ts:2057` — T7 / as duas transições da cobrança
+- Sinal: `repeated_fixture` · Origem: `agent-spec-qa-validator` · 2026-08-10T10:05:00Z
+
+---
+
+## [scope_deviation] Migração não aplicada é emendável, aplicada não
+
+**Regra que isto sugere:** arquivo de migração é emendável enquanto nenhum banco durável o aplicou, e a janela fecha com `DÉBITO COM GATILHO` no próprio arquivo.
+
+**O que ela faria (simples):** a T7 precisou corrigir um defeito latente da visão criada três tasks antes, e a alternativa correta (migração nova) invalidaria dois mutantes que leem o `CREATE VIEW` do arquivo original — então emendar era o caminho certo, mas **nada no repositório diz quando ele deixa de ser**. A regra faria o executor declarar o arquivo no escopo e registrar que a emenda expira na primeira aplicação durável, que é quando a guarda de `sha256sum` do instalador passa a abortar.
+
+- Evidência: emenda de `packages/db/migracoes/0010_seguranca_cobranca.sql` fora da §5.2, em arquivo protegido por guarda de soma em `deploy/scripts/instalacao/migrar-banco.sh:519` — T7 / duas transições da cobrança
+- Sinal: `scope_deviation` · Origem: `staff-review` · 2026-08-10T10:30:00Z
+
+---
+
+## [convention_drift] Âncora de conjunto exato por superfície publicada
+
+**Regra que isto sugere:** toda superfície publicada — colunas de tabela **e de visão derivada**, inventário de rotas, símbolos exportados — tem âncora de **igualdade de conjunto**, nunca de contenção.
+
+**O que ela faria (simples):** o repositório aplica essa âncora com rigor em quatro lugares (colunas da tabela, contagem e conjunto de rotas, símbolos publicados do pacote de dados), mas a prática **não está escrita** em rule nem em ADR. O resultado é que a visão que esta fatia declara *fonte única do estado* ganhou duas colunas sem nada forçando revisão, enquanto a tabela que ela deriva tem a sua âncora.
+
+- Evidência: `CT-510 (b)` afirma a lista ordenada inteira de `negocio.cobranca`; `negocio.cobranca_derivada` só tem conferência de **tipo** de uma coluna e recebeu duas colunas novas — `packages/db/test/fonte-unica-do-estado.spec.ts:299` — T7
+- Sinal: `convention_drift` · Origem: `staff-review` · 2026-08-10T10:30:00Z
+
+---
+
+## [convention_drift] Emenda de ADR aceita sem convenção
+
+**Regra que isto sugere:** forma única para emendar ADR `accepted` cujo **registro** estava impreciso e cuja **decisão não mudou** — bloco datado na seção emendada, com a redação original, o que mudou, por que a decisão não mudou e a origem, mais `amended:` no frontmatter do template.
+
+**O que ela faria (simples):** o domínio ADR do framework cobre criar, supersedar, depreciar e reindexar, mas **não** cobre *"a decisão está certa e o texto que a registra está impreciso"* — que foi exatamente o caso aqui, e cuja saída o usuário escolheu entre três. Sem regra escrita, a próxima emenda inventa outra forma, e a partir da terceira não há como distinguir por varredura o que é redação original do que é redação emendada.
+
+- Evidência: primeira emenda in loco de ADR `accepted` do repositório (`grep -rn "Emenda de" docs/adr/*.md` casa só neste arquivo); sweep por `emenda|emendar|amend` em `.claude/rules/` e nas skills `agent-spec-adr-*` voltou vazio; o template canônico não tem campo de emenda e o frontmatter segue `date: 2026-08-09` com corpo editado em 2026-08-10 — `docs/adr/0021-transicao-de-estado-governada-conforme-a-natureza-do-ato.md:43` — T7
+- Sinal: `convention_drift` · Origem: `staff-review` · 2026-08-10T11:00:00Z
+
+---
+
+## [repeated_fixture] Corpo de contrato válido para teste
+
+**Regra que isto sugere:** um único construtor compartilhado do corpo de contrato válido, consumido por qualquer suíte que precise dele.
+
+**O que ela faria (simples):** a mesma fixture `CORPO_DE_CONTRATO`, com os mesmos nove campos, foi recriada em **dois pacotes** diferentes e com valores distintos. Uma regra apontando o construtor único evitaria que uma mudança no esquema do contrato deixasse uma das cópias inválida **em silêncio**.
+
+- Evidência: `CORPO_DE_CONTRATO` com os mesmos 9 campos em dois pacotes — `packages/db/test/derivacao-de-cobranca.spec.ts:585` e `packages/contracts/test/esquemas.spec.ts:275` — T8
+- Sinal: `repeated_fixture` · Origem: `agent-spec-qa-validator` · 2026-08-10T12:15:00Z
+
+---
+
+## [repeated_assertion_shape] Afirmar campo constante em toda a lista
+
+**Regra que isto sugere:** padronizar a forma de afirmar que um campo é o mesmo em **toda** a coleção, em vez de repetir a projeção mais `Array.from` de comprimento.
+
+**O que ela faria (simples):** a construção `expect(lista.map(projecao), rotulo).toEqual(Array.from({ length: n }, () => valor))` aparece três vezes no mesmo caso. Uma forma nomeada tornaria a intenção explícita e a falha mais legível do que uma diferença entre dois arranjos de treze elementos iguais.
+
+- Evidência: projeção + `Array.from` em 3 asserções do `CT-507` — `packages/db/test/derivacao-de-cobranca.spec.ts:615` — T8
+- Sinal: `repeated_assertion_shape` · Origem: `agent-spec-qa-validator` · 2026-08-10T12:15:00Z
+
+---
+
+## [convention_drift] Consequência obrigatória fora da §5.2
+
+**Regra que isto sugere:** a §5.2 de uma task inclui os arquivos que a **publicação de símbolo em índice auditado por igualdade** e a **emissão de marcador de débito** tornam consequência obrigatória.
+
+**O que ela faria (simples):** publicar símbolo no índice de `@sysloc/db` **reprova o `CT-012`** até que o inventário de superfície seja atualizado, e emitir um `DÉBITO COM GATILHO` obriga por rule a fechar as duas pontas do índice (`CLAUDE.md` e a §2 do run-report). Mas a §5.2 das tasks não lista nenhum desses arquivos — então o executor os toca por necessidade e os declara como pendência, e os **dois** gates gastam uma passagem decidindo se foi alargamento de escopo. Na **nona** ocorrência, a regra pouparia o julgamento repetido ao tornar a consequência previsível na spec.
+
+- Evidência: a §5.2 da T8 declara só `packages/db/src/index.ts`, mas a execução tocou por obrigação mecânica `packages/db/test/unidade-de-trabalho.spec.ts` (inventário do `CT-012` por igualdade exata), `CLAUDE.md` e o `_run/run-report.md` da fatia — `docs/specs/features/cobranca-e-mora/v1/tasks/T8.md:94` — T8
+- Sinal: `convention_drift` · Origem: `staff-review` · 2026-08-10T13:00:00Z
+
+---
+
+## [repeated_assertion_shape] Ativação de contrato afirmada inline nos cenários
+
+**Regra que isto sugere:** cenário que só precisa do contrato `ATIVO` usa um auxiliar que **levanta** em status inesperado, em vez de repetir a asserção de `200` da rota de ativação.
+
+**O que ela faria (simples):** a mesma linha `expect((await transitar(cookie, X.codigo, 'ativacao')).status).toBe(200)` aparece **seis** vezes no arquivo, três delas escritas pela T10 — e ali ela é **montagem de cenário**, não o invariante do caso. O arquivo já tem a forma boa (`lancarCobranca`, `pagarCobranca` levantam com o status e o corpo na mensagem), o que dá diagnóstico melhor quando a montagem falha e deixa claro qual asserção é a prova do caso.
+
+- Evidência: a mesma asserção de ativação em 6 pontos do mesmo arquivo, 3 acrescentados pela T10 — `apps/api/test/contratos.e2e.spec.ts:2981` — T10
+- Sinal: `repeated_assertion_shape` · Origem: `agent-spec-qa-validator` · 2026-08-10T18:00:00Z
+
+---
+
+## [repeated_fixture] Auxiliar de rota que levanta em status inesperado
+
+**Regra que isto sugere:** montagem de cenário por rota de produção passa por um **auxiliar único** que recebe o status esperado e levanta com alvo, status e corpo na mensagem.
+
+**O que ela faria (simples):** a T10 criou **quatro** auxiliares com a mesma estrutura, copiada — chama `pedir`, compara o status com um literal e levanta uma mensagem montada à mão. Já havia dois iguais no arquivo (`criarPor`, `transitar`). A repetição não quebra nada hoje, mas cada cópia é uma chance de alguém **esquecer a checagem** e o cenário seguir em silêncio com dado errado.
+
+- Evidência: `lancarCobranca`, `pagarCobranca`, `cancelarCobranca` e `publicacaoDaCarteira` repetem a estrutura já presente em `criarPor` — `apps/api/test/contratos.e2e.spec.ts:4180` — T10
+- Sinal: `repeated_fixture` · Origem: `agent-spec-qa-validator` · 2026-08-10T18:00:00Z
+
+---
