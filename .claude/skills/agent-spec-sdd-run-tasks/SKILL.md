@@ -420,7 +420,7 @@ Agent(
   >
   > (Quando a seção 6 da task é `N/A — task não envolve código testável`, omita a instrução de leitura da doutrina.)
 - **Output enxuto exigido**:
-  > "Ao concluir, retorne APENAS o formato: `✅ T[ID] — [Nome] / Arquivos: X criados, Y modificados / Testes: N/M implementados ([engine]) / Pendências: [...]`. NÃO retorne diffs, descrições, relatórios longos ou sugestões — apenas esse bloco de 4 linhas."
+  > "Ao concluir, retorne APENAS o formato: `✅ T[ID] — [Nome] / Arquivos: X criados, Y modificados / Testes: N/M implementados ([engine]) / Garantias removidas: [nenhuma | <o que saiu> em <arquivo>] / Pendências: [...]`. NÃO retorne diffs, descrições, relatórios longos ou sugestões — apenas esse bloco de 5 linhas. O campo **Garantias removidas** lista toda validação, guarda, timeout, tratamento de erro, liberação de recurso ou redação de segredo **que já existia no código** e que a sua mudança apagou ou afrouxou — `nenhuma` quando você não removeu nada, que é o caso comum. Garantia que você mesmo introduziu nesta task não conta. O campo alimenta o cruzamento do Tech Review: omitir uma remoção real é o que torna o achado CRÍTICO em vez de discutível."
 - **Checklist Final (seção 8 da task)**: o executor DEVE validar cada item (mesma lista do template da task):
   - [ ] Implementada conforme SPEC
   - [ ] Testes unitários criados/atualizados
@@ -634,6 +634,11 @@ Se rejeitado:
    ## last_severity
    [BAIXO|MEDIO|ALTO|CRITICO — do último JSON. Normalização do array do QA: criticos→CRITICO, altos→ALTO, medios→MEDIO, baixos→BAIXO]
 
+   ## Contagem de casos por unidade (rodada anterior)
+   [uma linha por unidade de execução: `<unidade>: <N> casos`, do campo
+    `testes_executados.contagem_por_unidade` do último JSON do QA. Ausente na rodada 1.
+    É o insumo da comparação que detecta teste DELETADO — que não falha, desaparece.]
+
    ## Sumário do executor
    [output enxuto de 4-6 linhas que o executor produziu]
 
@@ -743,7 +748,7 @@ Se rejeitado:
    - **`delta_simbolos[]`**: nomes de função/método/classe/constante que o diff textual alterou — **best-effort**. Se não conseguir extraí-los, **omita o campo e NÃO caia para `FULL`**: o QA resolve o raio de impacto pela granularidade por arquivo;
    - o **path da memória lazy** (`shared.temp_memory.dir` + `pattern`) — contém o **Ledger de Achados**, que o QA consome em retry;
    - resumo da tentativa anterior — testes que falharam + asserções/smells citados nos problemas;
-   - instrução literal ao QA: "Compare contra a tentativa anterior: teste que existia e sumiu, ou asserção que ficou mais frouxa sem justificativa `SUT_IS_CORRECT_BECAUSE:`, é AP-24 (weakening test to pass) → CRÍTICO."
+   - instrução literal ao QA: "Compare contra a tentativa anterior: teste que existia e sumiu, ou asserção que ficou mais frouxa sem justificativa `SUT_IS_CORRECT_BECAUSE:`, é AP-24 (weakening test to pass) → CRÍTICO. **Compare também a contagem de casos POR UNIDADE** contra o bloco `## Contagem de casos por unidade (rodada anterior)` da memória lazy: queda não explicada em qualquer unidade é o mesmo AP-24 → CRÍTICO, `categoria: tests`, `smell: weakening_test_to_pass`. Só o total esconde compensação entre unidades. Contagem anterior ausente → registre em `observacoes` e siga; não é achado."
 8. **Limite máximo: 3 tentativas TOTAIS** por task (compartilhado com Tech Review — Passo 9).
 
 **Ao fechar o loop com aprovação**: acumule para a §2 do snapshot `_run/run-report.md` os **anotáveis remanescentes** (baixos + médios de categoria anotável) do último JSON do QA que NÃO foram corrigidos — um bloco por problema no formato canônico (`### D{n} · {severidade} · {categoria} · T[N] · QA` com Onde/Problema/Impacto/O que fazer); `arquivo`/`linha`/`correcao_sugerida` vêm do próprio problema no JSON — **nunca os descarte**: alimentam as tasks de cleanup da `/agent-spec-debt-resolution`. O caminho "REJEITADO → corrigido → aprovado" não passa pelo registro automático do veredito `APROVADO_COM_OBSERVACOES`. Isso agora inclui os **médios de categoria anotável**, que sob a política de bloqueio seletivo chegam até aqui como débito — antes, quando todo médio bloqueava, eles eram sempre corrigidos dentro do loop.
@@ -828,6 +833,10 @@ Realize a revisão técnica da task [ID] - [Nome da Task].
 
 ## Sumário do executor (intenção)
 [output enxuto de 4-6 linhas retornado pelo executor no Passo 3.3]
+
+## Declaração do executor — O QUE ESTA MUDANÇA REMOVE
+[campo "Garantias removidas" do output enxuto, literal. "nenhuma" quando o executor declarou não ter removido nada; "<ausente>" quando o retorno veio sem o campo (executor em formato antigo)]
+Cruze esta declaração com as linhas removidas (`-`) do diff: garantia que sumiu do diff e NÃO consta aqui é remoção não declarada → CRITICO. A declaração agrava ou absolve o achado — **ela nunca dispensa a varredura**. Ver "Garantia removida" no seu Checklist de Validação.
 
 ## Como gerar os diffs (você mesmo executa via Bash)
 Para cada path em "Arquivos NOVOS" + "Arquivos MODIFICADOS", rode em paralelo:

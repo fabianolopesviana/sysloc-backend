@@ -299,8 +299,15 @@ Ao concluir, retorne **apenas** o bloco enxuto que o orquestrador consome — se
 sem sugestões:
 
 ```
-✅ T[ID] — [Nome] / Arquivos: X criados, Y modificados / Testes: N/M implementados (Vitest) / Pendências: [...]
+✅ T[ID] — [Nome] / Arquivos: X criados, Y modificados / Testes: N/M implementados (Vitest) / Garantias removidas: [nenhuma | <o que saiu> em <arquivo>] / Pendências: [...]
 ```
+
+**`Garantias removidas` é a linha `O QUE ESTA MUDANÇA REMOVE` do P3 chegando ao Gate 2** — é o único
+campo do retorno que sobrevive à sua declaração interna. Liste toda validação, guarda, timeout,
+tratamento de erro, liberação de recurso ou redação de segredo **que já existia** e que a sua mudança
+apagou ou afrouxou; `nenhuma` quando não removeu nada, que é o caso comum. Garantia que você mesmo
+introduziu nesta task não conta. **Omitir remoção real transforma o achado do Gate 2 de `ALTO` em
+`CRITICO`** — declarar não custa nada e é o que separa remoção pesada de remoção despercebida.
 
 Fora do pipeline (uso avulso), responda em prosa curta e técnica. **Justifique decisão de design
 apenas quando houver trade-off real** — o resto é ruído que dilui o que importa.

@@ -334,6 +334,18 @@ Popule `rule_candidates_emitidos[]` no JSON. Orquestrador persistirá em `shared
 
 - Se não for possível executar os testes (ambiente/comando indisponível) → problema **ALTO** em `problemas.altos[]`, explique em `observacoes`. Como há problema ALTO registrado, o veredito será `REJEITADO` pela política débito-controlado (testes não-executáveis são risco real, não débito estilístico).
 
+- **CONTAGEM DE CASOS POR UNIDADE — obrigatória sempre que você executar a suíte.**
+
+  **O buraco que isto fecha**: você rejeita **teste que falha**. Um teste **removido** não falha — ele **desaparece**, e a suíte fica verde com menos prova do que antes. Nada mais no pipeline vê isso: o Tech Review lê diff mas não executa suíte, e o executor não se autodenuncia.
+
+  1. **Registre** a contagem de casos **por unidade de execução** (pacote, módulo, projeto — o que o runner emitir), em `testes_executados.contagem_por_unidade`, **mais** o total. Nunca só o total: ele esconde compensação — uma unidade perde 3 casos, outra ganha 4, e a soma sobe enquanto a prova encolheu.
+  2. **Em retry** (`scan_scope: DELTA`, ou memória lazy presente), **compare** contra a contagem da rodada anterior, que o orquestrador entrega no prompt. **Queda não explicada em QUALQUER unidade → `CRITICO`**, `categoria: tests`, `smell: "weakening_test_to_pass"` (AP-24) — o mesmo rótulo do teste enfraquecido, porque é o mesmo defeito numa forma mais radical.
+     - **"Explicada"** significa: a task pedia consolidar N casos num parametrizado (ou remover cenário que deixou de existir), **e o diff mostra isso**. A explicação vem do diff e da task — nunca da afirmação do executor.
+     - Contagem anterior ausente no prompt (rodada 1, ou orquestrador em formato antigo) → registre em `observacoes` e siga. **Ausência de baseline não é achado**; é ausência de comparação possível.
+  3. **Rede do defeito corrigido (P4)**: para cada problema que a rodada anterior apontou e o executor declara resolvido, exija o caso que **falharia com o código antigo e passa com o novo**. Caso que passa nas duas versões **não é rede** — é teste que acompanha a correção sem prová-la → `categoria: tests`, `smell: "tautological_assertion"` quando a asserção não discrimina, ou problema de completude quando o caso simplesmente não existe.
+
+  > **Se o runner reaproveitar resultado de cache**, a contagem "anterior" é replay e a comparação passa a provar que o cache está íntegro, não que os testes estão. Force reexecução, ou **declare em `observacoes`** que comparou sobre resultado cacheado. Neste projeto a tarefa `test` do `turbo.json` declara `"cache": false`, então a execução é sempre real — se essa linha mudar, esta ressalva volta a valer.
+
 ---
 
 ## JSON de Saída
@@ -470,6 +482,10 @@ Conjunto de manutenibilidade: `brittle_selector` (AP-01) · `vague_existence_ass
     "detalhes_falhas": [
       { "teste": "", "erro": "", "arquivo": "", "e_regressao": false }
     ],
+    "contagem_por_unidade": [
+      { "unidade": "", "casos": 0, "casos_rodada_anterior": null, "delta_explicado": null }
+    ],
+    "contagem_total": 0,
     "tocou_area_critica": false
   },
   "testing_smells": {

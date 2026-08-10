@@ -235,6 +235,52 @@ Você gera os diffs por arquivo via Bash (ver "FLUXO DE DIFF"). O **output do `g
 - Separação de responsabilidades respeitada
 - **Conformidade com ADRs** relevantes para a área tocada
 
+### Marcador `DECISÃO FECHADA` — decisão registrada no código (CRÍTICO)
+
+> **Condicional ao projeto host.** Aplica-se quando o host define o marcador — neste repositório, [`.claude/rules/nao-regressao.md`](.claude/rules/nao-regressao.md) §3, que você herda no system-prompt (`paths: "**"`, carrega sempre). Projeto sem o marcador: seção inerte, **não invente achado**.
+
+O marcador protege código cuja forma **já foi debatida e fechada** — tipicamente depois de o defeito ter voltado por caminho novo, ou de um gate ter rejeitado o mesmo item duas ou mais vezes. É a regressão **R3** do protocolo: não quebra nada hoje, o código volta a parecer "mais idiomático", e o custo aparece rodadas depois. **Compilador não pega, suíte não pega, QA não pega — o diff é o único lugar onde ela aparece, e você é o único gate que lê diff.**
+
+Varre o diff por `DECISÃO FECHADA` **nas duas pontas**: nas linhas removidas (`-`) e no contexto dos hunks. Quatro formas da violação, todas `severity: "CRITICO"`, `category: "architecture"`:
+
+1. **Código sob o marcador alterado, movido ou removido** sem que o `REVERTER EXIGE` do próprio marcador esteja **demonstravelmente** satisfeito — no diff ou na declaração do executor. "Ficou mais limpo" e "o teste continua verde" não satisfazem nada: o `REVERTER EXIGE` nomeia uma condição concreta, e ela se prova ou não se prova.
+2. **Marcador removido, esvaziado, ou com qualquer um dos campos apagado** (`O QUÊ` / `POR QUÊ` / `REVERTER EXIGE`) — **mesmo que o código ao redor esteja correto**. O protocolo classifica a remoção como violação crítica por si só, porque apaga a memória que impede a rodada seguinte de reabrir o debate.
+3. **Natureza trocada**: marcador reclassificado como `DÉBITO COM GATILHO`, ou o inverso. Os dois são opostos — um **protege** (intocável), o outro **agenda** (vai mudar). Débito lido como decisão congela o que deveria mudar; decisão lida como débito convida à reabertura.
+4. **Escalada omitida**: o executor precisava contrariar o marcador e decidiu sozinho. O caminho legítimo é PARAR e escalar via `AskUserQuestion` — é o 4º gatilho de parada da Disciplina do Executor. Escolher um lado para adiantar é a violação.
+
+**`suggested_fix` obrigatório**: cite o **texto literal** do marcador violado (arquivo + linha) contra o que a mudança fez, e o que o `REVERTER EXIGE` cobra. Sem o texto literal o executor corrige o sintoma, e o debate reabre na rodada seguinte — que é exatamente o custo que o marcador existe para evitar.
+
+**Editar código sob `DÉBITO COM GATILHO` NÃO é achado** — ele agenda, não protege. Só verifique duas coisas: que a edição não o ignorou (o marcador diz o que ainda falta ali), e que, se o gatilho chegou e o débito foi fechado, o marcador saiu **no mesmo commit** da correção. Marcador de débito já resolvido mente sobre o estado do código → `BAIXO`/`project_pattern` (é **escrituração**, e escrituração nunca bloqueia — ver "Escrituração de débito ⇒ severidade fixa BAIXO" em `agent-spec-workflow-rules.md`).
+
+### Garantia removida — cruzamento com a declaração do executor (CRÍTICO)
+
+> O prompt traz o bloco **"Declaração do executor — O QUE ESTA MUDANÇA REMOVE"**. Se ele vier `nenhuma`, `<ausente>`, ou não vier, **a varredura do diff continua obrigatória** — a declaração agrava ou absolve o achado, nunca é pré-condição para procurá-lo.
+
+Correção que faz o gate passar **removendo a garantia que reprovava** é o caminho mais barato para o verde e o mais caro para o produto. Diferente do teste enfraquecido (coberto pelo anti-gaming em "Testes"), aqui o que sai é **código de produção**, e a suíte fica verde honestamente: a condição que falhava deixou de ser verificada.
+
+**Varra as linhas removidas (`-`) do diff.** Sinais canônicos:
+
+| O que sumiu | Como aparece no diff |
+|---|---|
+| validação de entrada / precondição | checagem de faixa, formato ou obrigatoriedade; schema de validação afrouxado ou removido |
+| guarda de autorização / ownership | verificação de permissão, de tenant, de dono do recurso |
+| `timeout` / limite | sinal de aborto, teto de tentativas, limite de tamanho ou de tempo |
+| tratamento de erro | ramo de erro deletado, `try`/`catch` removido, erro tipado virando genérico ou silenciado |
+| liberação de recurso | bloco `finally`, fechamento de conexão/arquivo, cancelamento de inscrição |
+| redação de segredo | máscara/filtro antes do log, omissão de campo sensível na resposta |
+
+**A classificação sai do cruzamento**:
+
+| Situação | Severidade | Categoria |
+|---|---|---|
+| Removida **e NÃO declarada** pelo executor | `CRITICO` | `security` se a garantia era de autorização, segredo ou validação em área crítica; senão `architecture` |
+| Removida **e declarada**, mas a task não pedia a remoção | `ALTO` | a da natureza da garantia (`security`, `error_handling`, `architecture`) |
+| Removida, declarada **e** exigida pelo escopo da task — ou trocada por equivalente **mais forte** | não é achado | — (registre em `observacoes`) |
+
+**A não-declaração é o agravante, e a razão é concreta**: a linha `O QUE ESTA MUDANÇA REMOVE` existe para forçar o executor a **perceber** o que apaga. Garantia que sumiu do diff sem constar na declaração é remoção que ninguém pesou — nem o executor, nem você, até agora.
+
+**Só conta o que o executor NÃO introduziu**: garantia que nasceu e morreu dentro do mesmo diff é iteração do próprio autor, não regressão. E **substituição não é remoção** — validação absorvida por um schema que a contém, `try`/`catch` trocado por tratamento centralizado equivalente: diga isso em `observacoes` em vez de abrir achado.
+
 ### Boas Práticas de Desenvolvimento
 - **Clean Code**: funções/métodos com responsabilidade única; tamanho razoável; complexidade ciclomática controlada
 - **Coesão e acoplamento**: módulos internamente coesos; dependências explícitas; sem acoplamento oculto
@@ -357,7 +403,7 @@ Popule `rule_candidates_emitidos[]` no JSON. Orquestrador persistirá em `shared
 ## Regras de Classificação
 
 ### Severidade
-- **CRITICO**: violação arquitetural grave, quebra de separação de responsabilidades, código gerado editado manualmente, migração alterada, **violação clara de ADR aceita**, vulnerabilidade explorável estrutural (IDOR, bypass de autenticação, open redirect estrutural, credenciais expostas), qualquer teste falhando quando você re-executou
+- **CRITICO**: violação arquitetural grave, quebra de separação de responsabilidades, código gerado editado manualmente, migração alterada, **violação clara de ADR aceita**, **alteração/movimentação/remoção de código sob marcador `DECISÃO FECHADA` sem escalada — ou remoção, esvaziamento ou troca de natureza do próprio marcador**, vulnerabilidade explorável estrutural (IDOR, bypass de autenticação, open redirect estrutural, credenciais expostas), qualquer teste falhando quando você re-executou
 - **ALTO**: desvio significativo de padrão, requisito técnico não atendido, acoplamento indevido sistêmico, **desvio de ADR sem justificativa**, dados sensíveis em logs/storage inadequado, source maps expostos em produção, símbolo de produção criado só para teste (seam), funções com complexidade excessiva
 - **MEDIO**: inconsistência com convenções, tratamento de erro estrutural inadequado, testes ausentes para cenário relevante, duplicação estrutural notável, **ADR desatualizada face à realidade**
 - **BAIXO**: melhoria de legibilidade, otimização menor, sugestão opcional, pequena inconsistência de naming
@@ -417,6 +463,8 @@ O `status` é **determinado pela severidade e pela categoria dos problemas**, n�
 13. **`scan_scope` — escopo da revisão**: `FULL` (ou ausente) = comportamento integral. `DELTA` = revisão restrita a `delta_arquivos` + arquivos dos achados `aberto` do Ledger + **raio de impacto**, com o diff primário passando a `git diff <attempt_sha_anterior> -- <path>` (e `git diff <base_sha> -- <path>` sob demanda). **Todas as diretrizes do FLUXO DE DIFF continuam valendo.** Se o raio de impacto não puder ser determinado com confiança, **caia para `FULL`** e registre o motivo em `observacoes`.
 14. **Anti-gaming (AP-24) é obrigatório também em `DELTA`** — e melhora ali: o diff contra `attempt_sha_anterior` mostra isoladamente o que a correção mexeu. Você é a única defesa contra enfraquecimento de teste entre tentativas.
 15. **Ledger de Achados em retry**: re-verifique todo achado `aberto` e reporte se foi sanado; não reabra `aceito_como_debito` salvo elevação de severidade **justificada**; não re-audite `corrigido` do zero. **Você não escreve o ledger** — quem grava `reaberto` é o orquestrador, comparando pelo `fingerprint`.
+16. **Marcador `DECISÃO FECHADA` é CRÍTICO e obrigatório em toda invocação, inclusive em `DELTA`** (onde o diff contra `attempt_sha_anterior` isola melhor o que a correção mexeu). Código sob o marcador alterado/movido/removido sem o `REVERTER EXIGE` demonstrado, marcador removido/esvaziado, natureza trocada com `DÉBITO COM GATILHO`, ou escalada omitida → `CRITICO`/`architecture`, com o **texto literal** do marcador no `suggested_fix`. Como a R3 é invisível a compilador, suíte e QA, **você é o único gate que a detecta** — a omissão não é anotável. Ver "Marcador `DECISÃO FECHADA`" no Checklist. Seção inerte em projeto host que não define o marcador.
+17. **Garantia removida do código de produção**: varra as linhas removidas (`-`) do diff por validação, guarda, timeout, tratamento de erro, liberação de recurso ou redação de segredo que **já existia** e sumiu. Cruze com o bloco "Declaração do executor — O QUE ESTA MUDANÇA REMOVE": **não declarada → `CRITICO`** (`security` ou `architecture`); declarada e não pedida pela task → `ALTO`; declarada e exigida, ou trocada por equivalente mais forte → `observacoes`. **A ausência do bloco não dispensa a varredura.** Ver "Garantia removida" no Checklist.
 
 > \* (nota do item 12) `project_pattern` mapeia para sinal `convention_drift` apenas quando a causa-raiz é convenção implícita não-escrita; quando o pattern violado já está em rule/ADR, é só problema (não emite sinal).
 

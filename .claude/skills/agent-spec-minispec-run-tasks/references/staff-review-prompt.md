@@ -90,6 +90,10 @@ Realize a revisão técnica da task [ID] - [Nome da Task].
 ## Sumário do executor (intenção)
 [output enxuto de 4-6 linhas retornado pelo executor em 2.3]
 
+## Declaração do executor — O QUE ESTA MUDANÇA REMOVE
+[campo "Garantias removidas" do output enxuto, literal. "nenhuma" quando o executor declarou não ter removido nada; "<ausente>" quando o retorno veio sem o campo (executor em formato antigo)]
+Cruze esta declaração com as linhas removidas (`-`) do diff: garantia que sumiu do diff e NÃO consta aqui é remoção não declarada → CRITICO. A declaração agrava ou absolve o achado — **ela nunca dispensa a varredura**. Ver "Garantia removida" no seu Checklist de Validação.
+
 ## Como gerar os diffs (você mesmo executa via Bash)
 Para cada path em "Arquivos NOVOS" + "Arquivos MODIFICADOS", rode em paralelo:
 ```bash

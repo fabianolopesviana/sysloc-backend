@@ -234,7 +234,7 @@ Aplique durante TODA a execução:
    >
    > (Quando a seção 10 da TaskCard é `N/A — task não envolve código testável`, omita a instrução de leitura da doutrina.)
 2. **Output enxuto exigido do executor**: inclua no prompt:
-   > "Ao concluir, retorne APENAS o formato: `✅ TaskCard [ID] — [Nome] / Arquivos: X criados, Y modificados / Testes: N/M implementados ([engine]) / Pendências: [...]`. NÃO retorne diffs, descrições ou relatórios longos."
+   > "Ao concluir, retorne APENAS o formato: `✅ TaskCard [ID] — [Nome] / Arquivos: X criados, Y modificados / Testes: N/M implementados ([engine]) / Garantias removidas: [nenhuma | <o que saiu> em <arquivo>] / Pendências: [...]`. NÃO retorne diffs, descrições ou relatórios longos. O campo **Garantias removidas** lista toda validação, guarda, timeout, tratamento de erro, liberação de recurso ou redação de segredo **que já existia no código** e que a sua mudança apagou ou afrouxou — `nenhuma` quando você não removeu nada, que é o caso comum. Garantia que você mesmo introduziu nesta task não conta. O campo alimenta o cruzamento do Tech Review: omitir uma remoção real é o que torna o achado CRÍTICO em vez de discutível."
 3. **Estado compartilhado executor → QA → Tech Review**: `base_sha` + sumário do executor passam **inline** no prompt dos gates (não em arquivo). Memória lazy `TC-{id}.md` só nasce em rejeição.
 4. **Hash-based skip**: arquivos não alterados entre gates não são relidos — apenas re-hashados.
 
@@ -598,6 +598,10 @@ Realize a revisão técnica da TaskCard [ID] - [Nome].
 ## Sumário do executor (intenção)
 [output enxuto de 4-6 linhas retornado pelo executor no Passo 2]
 
+## Declaração do executor — O QUE ESTA MUDANÇA REMOVE
+[campo "Garantias removidas" do output enxuto, literal. "nenhuma" quando o executor declarou não ter removido nada; "<ausente>" quando o retorno veio sem o campo (executor em formato antigo)]
+Cruze esta declaração com as linhas removidas (`-`) do diff: garantia que sumiu do diff e NÃO consta aqui é remoção não declarada → CRITICO. A declaração agrava ou absolve o achado — **ela nunca dispensa a varredura**. Ver "Garantia removida" no seu Checklist de Validação.
+
 ## Como gerar os diffs (você mesmo executa via Bash)
 Para cada path em "Arquivos NOVOS" + "Arquivos MODIFICADOS", rode em paralelo (uma chamada Bash por arquivo):
 
@@ -755,6 +759,11 @@ Se o QA OU Tech Review reprovar a implementação:
    ## last_severity
    [BAIXO|MEDIO|ALTO|CRITICO — do último JSON. Normalização do array do QA: criticos→CRITICO, altos→ALTO, medios→MEDIO, baixos→BAIXO]
 
+   ## Contagem de casos por unidade (rodada anterior)
+   [uma linha por unidade de execução: `<unidade>: <N> casos`, do campo
+    `testes_executados.contagem_por_unidade` do último JSON do QA. Ausente na rodada 1.
+    É o insumo da comparação que detecta teste DELETADO — que não falha, desaparece.]
+
    ## Sumário do executor (retornado no Passo 2)
    [output enxuto de 4-6 linhas que o executor produziu]
 
@@ -884,7 +893,7 @@ Se o QA OU Tech Review reprovar a implementação:
    - **`true`** → primeiro Gate 1 — QA (volte ao Passo 4) → se QA aprovar, Gate 2 — Tech Review (Passo 5).
    - **`false`** → **PULE QA**, vá direto a Gate 2 — Tech Review (Passo 5). Logue em `shared.workflow_report.path`: `TC-[id] retry — QA pulado (categorias code_review_only: <lista>)`.
    - Atualize `attempt_count` e `last_severity` na memória lazy.
-   - **Em retry, anexe aos prompts dos gates o contexto da tentativa anterior**: ao QA, o bloco `## Escopo da varredura` (`scan_scope`, `delta_arquivos` de `git diff --name-only <attempt_sha_anterior>`, `delta_simbolos` best-effort) + o path da memória lazy + resumo (testes que falharam, asserções/smells citados) com a instrução "teste que existia e sumiu, ou asserção mais frouxa sem `SUT_IS_CORRECT_BECAUSE:`, é AP-24 → CRÍTICO"; ao Tech Review, o bloco `## Escopo da revisão` (`scan_scope`, **`attempt_sha_anterior`**, `delta_arquivos`) e o bloco `## Memória de retry` com o path da memória lazy (o contrato do agente prevê a leitura).
+   - **Em retry, anexe aos prompts dos gates o contexto da tentativa anterior**: ao QA, o bloco `## Escopo da varredura` (`scan_scope`, `delta_arquivos` de `git diff --name-only <attempt_sha_anterior>`, `delta_simbolos` best-effort) + o path da memória lazy + resumo (testes que falharam, asserções/smells citados) com a instrução "teste que existia e sumiu, ou asserção mais frouxa sem `SUT_IS_CORRECT_BECAUSE:`, é AP-24 → CRÍTICO. **Compare também a contagem de casos POR UNIDADE** contra o bloco `## Contagem de casos por unidade (rodada anterior)` da memória lazy: queda não explicada em qualquer unidade é o mesmo AP-24 → CRÍTICO, `categoria: tests`, `smell: weakening_test_to_pass`. Só o total esconde compensação entre unidades. Contagem anterior ausente → registre em `observacoes` e siga; não é achado"; ao Tech Review, o bloco `## Escopo da revisão` (`scan_scope`, **`attempt_sha_anterior`**, `delta_arquivos`) e o bloco `## Memória de retry` com o path da memória lazy (o contrato do agente prevê a leitura).
    - **`delta_simbolos` ausente NÃO força `FULL`** — o QA resolve o raio de impacto por arquivo. **`attempt_sha` da rodada anterior `<indisponivel>` ⇒ `scan_scope: FULL`** para ambos os gates.
 
 9. **Limite máximo: 3 tentativas TOTAIS** (compartilhado entre QA e Tech Review). A re-validação na próxima tentativa segue o item 8 acima — nem sempre começa pelo QA.

@@ -176,6 +176,11 @@ Se rejeitado:
    ## last_severity
    [BAIXO|MEDIO|ALTO|CRITICO — do último JSON. Normalização do array do QA: criticos→CRITICO, altos→ALTO, medios→MEDIO, baixos→BAIXO]
 
+   ## Contagem de casos por unidade (rodada anterior)
+   [uma linha por unidade de execução: `<unidade>: <N> casos`, do campo
+    `testes_executados.contagem_por_unidade` do último JSON do QA. Ausente na rodada 1.
+    É o insumo da comparação que detecta teste DELETADO — que não falha, desaparece.]
+
    ## Sumário do executor
    [output enxuto de 4-6 linhas que o executor produziu]
 
@@ -284,7 +289,7 @@ Se rejeitado:
    - **`delta_simbolos[]`**: símbolos alterados extraídos do diff textual — **best-effort**. Se não conseguir extraí-los, **omita o campo e NÃO caia para `FULL`**: o QA resolve o raio de impacto pela granularidade por arquivo;
    - o **path da memória lazy** (`shared.temp_memory.dir` + `pattern`) — contém o **Ledger de Achados**, que o QA consome em retry;
    - resumo da tentativa anterior — testes que falharam + asserções/smells citados nos problemas;
-   - instrução literal ao QA: "Compare contra a tentativa anterior: teste que existia e sumiu, ou asserção que ficou mais frouxa sem justificativa `SUT_IS_CORRECT_BECAUSE:`, é AP-24 (weakening test to pass) → CRÍTICO."
+   - instrução literal ao QA: "Compare contra a tentativa anterior: teste que existia e sumiu, ou asserção que ficou mais frouxa sem justificativa `SUT_IS_CORRECT_BECAUSE:`, é AP-24 (weakening test to pass) → CRÍTICO. **Compare também a contagem de casos POR UNIDADE** contra o bloco `## Contagem de casos por unidade (rodada anterior)` da memória lazy: queda não explicada em qualquer unidade é o mesmo AP-24 → CRÍTICO, `categoria: tests`, `smell: weakening_test_to_pass`. Só o total esconde compensação entre unidades. Contagem anterior ausente → registre em `observacoes` e siga; não é achado."
 8. **Limite máximo: 3 tentativas TOTAIS** por task (compartilhado com Tech Review — 4.4).
 
 **Ao fechar o loop com aprovação**: acumule para a §2 do snapshot `_run/run-report.md` os **anotáveis remanescentes** (baixos + médios de categoria anotável) do último JSON do QA que NÃO foram corrigidos (um bloco `### D{n} · {severidade} · {categoria} · T[N] · QA` por problema, com `Onde`=`[arquivo]:[linha]`, `Problema`=`titulo`, `Impacto`=`descricao`, `O que fazer`=`correcao_sugerida`; `arquivo`/`linha`/`correcao_sugerida` vêm do próprio problema no JSON — não os descarte: alimentam as tasks de cleanup da `/agent-spec-debt-resolution`) — o caminho "REJEITADO → corrigido → aprovado" não passa pelo registro automático do veredito `APROVADO_COM_OBSERVACOES`. Isso agora inclui os **médios de categoria anotável**, que sob a política de bloqueio seletivo chegam até aqui como débito — antes, quando todo médio bloqueava, eles eram sempre corrigidos dentro do loop.

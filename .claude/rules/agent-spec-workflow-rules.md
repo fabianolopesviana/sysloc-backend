@@ -631,6 +631,21 @@ A categoria `tests` do QA é **ambígua**: comporta desde seletor frágil (cosm�
 
 **Nunca classifique como anotável** um smell que **mascara regressão** — `mock_driven_confidence` (AP-10), `tautological_assertion` (AP-29), `weakening_test_to_pass` (AP-24), `mock_at_wrong_level` (AP-14), `retry_as_fix` (AP-22), `snapshot_as_test` (AP-04). Esses já são ALTO/CRÍTICO por contrato e devem permanecer assim. Se algum aparecer classificado como médio, isso é **erro de classificação a corrigir**, não caso de anotação.
 
+### Escrituração de débito ⇒ severidade fixa BAIXO (nunca bloqueia)
+
+**Escrituração** é o **registro** do débito, não o débito: marcador `DÉBITO COM GATILHO` ausente onde deveria haver, marcador órfão (o débito já foi fechado e o marcador ficou), linha do índice do arquivo de instruções sem marcador vivo correspondente, campo `ÍNDICE` apontando para caminho inexistente, ou entrada faltando na §2 do relatório da fatia.
+
+**Classificação fixa: `BAIXO`.** Categoria: `project_pattern` no Gate 2, `documentation` no Gate 1. Como `BAIXO` de qualquer categoria é sempre anotável, a escrituração **nunca** bloqueia — vira débito na §2 e segue.
+
+**O que se classifica aqui é o registro, não o risco.** A fronteira precisa estar escrita junto, porque a confusão entre as duas pontas é o que faz um projeto ou ignorar o protocolo ou ser paralisado por ele:
+
+| Situação | Severidade |
+|---|---|
+| Faltou **anotar** — marcador, linha de índice ou entrada na §2 ausente ou vencida | `BAIXO` (aqui) |
+| Desfez-se o que estava **fechado** — código sob `DECISÃO FECHADA` alterado, ou o marcador removido | `CRITICO` (ver o contrato do Gate 2) |
+
+> **Por que fixa, e não deixada ao julgamento do gate**: sem classificação declarada, cada gate decide na hora, e basta um deles bloquear entrega por falta de anotação para ensinar todo mundo a contornar o protocolo. Esse contorno custa mais que o débito não escriturado. O marcador de débito também **não protege nada** — editar código sob ele é normal e não é achado.
+
 ### Categoria ausente ou desconhecida ⇒ bloqueante
 
 Se o item de problema vier **sem** `categoria`/`category`, ou com valor fora dos vocabulários canônicos, trate-o como **bloqueante**. Bloquear indevidamente custa uma rodada; anotar indevidamente shipa o defeito.

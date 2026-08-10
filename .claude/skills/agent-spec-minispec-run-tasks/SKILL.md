@@ -267,7 +267,7 @@ Agent(
   >
   > (Quando a seção de Testes da task é `N/A — task não envolve código testável`, omita a instrução de leitura da doutrina.)
 - **Output enxuto exigido**:
-  > "Ao concluir, retorne APENAS o formato: `✅ T[ID] — [Nome] / Arquivos: X criados, Y modificados / Testes: N/M implementados ([engine]) / Pendências: [...]`. NÃO retorne diffs, descrições, relatórios longos ou sugestões — apenas esse bloco de 4 linhas."
+  > "Ao concluir, retorne APENAS o formato: `✅ T[ID] — [Nome] / Arquivos: X criados, Y modificados / Testes: N/M implementados ([engine]) / Garantias removidas: [nenhuma | <o que saiu> em <arquivo>] / Pendências: [...]`. NÃO retorne diffs, descrições, relatórios longos ou sugestões — apenas esse bloco de 5 linhas. O campo **Garantias removidas** lista toda validação, guarda, timeout, tratamento de erro, liberação de recurso ou redação de segredo **que já existia no código** e que a sua mudança apagou ou afrouxou — `nenhuma` quando você não removeu nada, que é o caso comum. Garantia que você mesmo introduziu nesta task não conta. O campo alimenta o cruzamento do Tech Review: omitir uma remoção real é o que torna o achado CRÍTICO em vez de discutível."
 - **Checklist Final (seção 7 da task)**: o executor DEVE validar cada item:
   - [ ] Implementada conforme Scope
   - [ ] Testes unitários criados/atualizados
