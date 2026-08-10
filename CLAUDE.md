@@ -35,6 +35,15 @@ SaaS multi-empresa de gestão de locação de imóveis. Backend em Node/NestJS/P
 > 4. **Nunca** enfraquecer, remover ou pular teste, afrouxar asserção, ou tirar validação, guarda,
 >    timeout, tratamento de erro ou redação de segredo que você não introduziu.
 >
+> **O protocolo tem barreira executável desde 2026-08-09**, e ela **inclui este arquivo**:
+> `packages/shared/test/protocolo-antirregressao.spec.ts` (CT-501 a CT-510) prova por `fs` o
+> substrato de que o protocolo depende — o escopo universal da rule, o núcleo íntegro com **contagem
+> exata** (5 passos, 3 formas de regressão, 7 proibições), o resumo acima com **os 4 itens**, os
+> critérios instalados nos dois gates, a igualdade das 3 cópias do bloco do executor, e o índice de
+> débito abaixo **nas duas pontas**. Resumir uma dessas listas, apagar um item ou dessincronizar o
+> índice **fica vermelho na suíte** — não é mais questão de boa-fé. Os 15 mutantes que provam que
+> cada asserção pode falhar estão registrados no commit `c0453d2`.
+>
 > **Fronteira**: **aqui só se faz backend.** Nenhum agente deste repositório escreve, edita ou
 > planeja código de frontend — o fonte do React vive na máquina local do usuário e será
 > implementado lá, por outro agente, a partir do handoff que esta base produz. Decisão do usuário,
@@ -85,6 +94,17 @@ detecção do `verificar-golden.sh`, os dois com mutante), **D21** (o remapeamen
 `/agent-spec-debt-resolution`** nesta fatia: os ~26 restantes são prosa em artefato de fatia fechada,
 três são débito com gatilho que a skill coletaria e não deve resolver, e o default `gates: [qa]` dela
 desliga justamente o Gate 2, que é quem detecta violação de `DECISÃO FECHADA`.
+
+**Endurecimento do Protocolo Antirregressão — 2026-08-09**, também fora do pipeline. A §6 do
+protocolo atribui obrigações aos dois gates e ao orquestrador, e **nenhuma delas estava escrita nos
+contratos**: herdar a doutrina pelo system-prompt não é o mesmo que ter o critério na superfície pela
+qual o agente decide. Quatro lacunas fechadas — o Gate 2 passou a reprovar regressão de decisão e
+garantia removida do código de produção; o Gate 1 passou a enxergar **teste deletado**, que não falha,
+desaparece (contagem por unidade comparada entre rodadas); o executor genérico recebeu a ordem de
+precedência dentro do bloco injetado; e a escrituração de débito ficou fixada em `BAIXO` na fonte
+única de severidade. **Suíte 665 → 687**, e os 22 casos novos são a **barreira executável** descrita
+logo abaixo. Os dois roteiros portáteis do trabalho estão em `docs/melhoria-agent-spec-gate2-antirregressao.md`
+e `docs/dar-dentes-ao-protocolo-antirregressao.md`.
 
 > **Dois furos herdados que a F2 fechou, e que valem saber antes de tocar o código de imóveis**:
 > (1) `alterarImovel` escrevia `status_locacao` incondicionalmente e a entrada não aceitava `LOCADO`,
