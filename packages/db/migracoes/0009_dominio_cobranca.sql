@@ -52,13 +52,21 @@
 -- 60.000 cobranças com 2.000 em aberto e vencidas, sob o contexto de uma empresa:
 --
 --   * `… FROM negocio.cobranca_derivada WHERE status = 'VENCIDA' ORDER BY data_vencimento LIMIT 50`
---     escolhe `cobranca_empresa_vencimento_idx`, resolve o `CASE` como `Filter` e descarta 58.000
---     linhas — `Buffers: shared hit=1411`, 73,4 ms. Com `enable_seqscan = off` o plano é o MESMO:
---     não é preferência de custo, o índice parcial é INALCANÇÁVEL por esse caminho;
---   * a MESMA consulta acrescida de `AND pago_em IS NULL AND cancelado_em IS NULL` passa a
---     `Bitmap Index Scan on cobranca_aberta_idx` — `Buffers: shared hit=49`, 22,3 ms;
---   * a leitura DIRETA da tabela com o predicado do índice: `Index Scan using cobranca_aberta_idx`,
---     `Buffers: shared hit=4`, 0,10 ms.
+--     escolhe `Index Scan using cobranca_empresa_vencimento_idx` e resolve o `CASE` como `Filter`.
+--     Com `enable_seqscan = off` o plano é o MESMO: não é preferência de custo, o índice parcial é
+--     INALCANÇÁVEL por esse caminho — e é este passo que DISCRIMINA;
+--   * a MESMA consulta acrescida de `AND pago_em IS NULL AND cancelado_em IS NULL` troca de
+--     operador e passa a `Bitmap Index Scan on cobranca_aberta_idx`;
+--   * a leitura DIRETA da tabela com o predicado do índice também usa
+--     `Index Scan using cobranca_aberta_idx`.
+--
+-- **O que se reproduz é o PLANO e o OPERADOR, e é só isso que a decisão usa.** As cifras de linhas
+-- descartadas e de `Buffers` que esta medição produziu **não** decorrem do cenário como ele está
+-- escrito: elas dependem da distribuição de `data_vencimento` entre liquidadas e em aberto, e da
+-- ordem de inserção — com `LIMIT 50` o `Index Scan` termina cedo, e só descarta a carteira toda se
+-- as liquidadas ordenarem antes das vencidas. Reproduzi-las exigiria fixar no cenário duas condições
+-- que ele não fixa, e por isso elas saíram: apresentar como medida uma cifra que não se reproduz
+-- enfraquece a mesma classe de guarda que este comentário existe para sustentar (débito D5).
 --
 -- A razão é do planejador, não da visão: `status` é uma expressão `CASE` do `CROSS JOIN LATERAL` do
 -- `0010`, e o provador de implicação de predicado — que é quem autoriza o uso de índice parcial —

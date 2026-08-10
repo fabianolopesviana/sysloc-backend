@@ -113,8 +113,17 @@ export type ConfiguracaoDeMoraNova = z.infer<typeof esquemaDaConfiguracaoDeMoraN
  * `404`: a ausência de linha e a política explicitamente zerada são a mesma coisa publicada
  * (RD-21). É o que faz a leitura concordar com a apuração, onde o `LEFT JOIN` com `COALESCE(…, 0)`
  * já produz mora zero (RD-08).
+ *
+ * **Ele é `z.object`, e o irmão de entrada é `strictObject` — a assimetria é a convenção, não
+ * descuido.** Todo esquema de SAÍDA deste pacote é aberto e todo esquema de ENTRADA é fechado, sem
+ * exceção. A razão não fica no pacote: pela **ADR-0016** o documento OpenAPI **deriva** daqui, e um
+ * `strictObject` emite `additionalProperties: false` — um cliente gerado passaria a recusar campo
+ * acrescentado no futuro **nestas duas rotas**, enquanto tolera o mesmo acréscimo em todas as
+ * outras. Crescimento aditivo deixaria de ser aditivo num ponto só da API, que é o pior lugar para
+ * uma exceção morar. Fechar a saída é decisão de contrato que vale para a superfície inteira, nunca
+ * para duas rotas; se algum dia for tomada, é aqui que ela precisa estar escrita por extenso.
  */
-export const esquemaDaConfiguracaoDeMora = z.strictObject({
+export const esquemaDaConfiguracaoDeMora = z.object({
   multaPercentual: z.number(),
   jurosPercentual: z.number(),
 });

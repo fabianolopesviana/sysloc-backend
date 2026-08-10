@@ -147,9 +147,9 @@ import {
 import type { AcessoAoBanco } from '@sysloc/db';
 import { CodigoErro, type Logger } from '@sysloc/shared';
 import type { FastifyRequest } from 'fastify';
-import { z } from 'zod';
 import { ExigeChave } from '../autenticacao/exigencia.decorator.js';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
+import { ESQUEMA_DO_CORPO_VAZIO } from '../comum/esquema-de-corpo-vazio.js';
 import { esquemaDoErro } from '../comum/esquema-de-erro.js';
 import { esquemaPublicado } from '../comum/esquema-publicado.js';
 import { validar } from '../comum/validacao.js';
@@ -184,15 +184,14 @@ const ENTIDADE_DA_TRILHA = 'cobranca';
 const ESQUEMA_DA_PAGINA = envelopeDeLista(esquemaDaCobranca);
 
 /**
- * O corpo do cancelamento: **vazio e fechado** (§3.1).
+ * O corpo do cancelamento é **vazio e fechado** (§3.1), e é `ESQUEMA_DO_CORPO_VAZIO`, importado de
+ * `comum/esquema-de-corpo-vazio.js`.
  *
  * O instante do cancelamento é decidido pelo servidor — sai do relógio do banco —, e nenhum campo é
- * aceito. Um corpo com qualquer chave é recusado com `422` nomeando o corpo: o Zod reporta chave
- * desconhecida de um `strictObject` com caminho vazio, e é por isso que a recusa cai no campo padrão
- * deste ponto de chamada. É a mesma forma, e a mesma razão, das rotas de transição de
- * {@link ../contratos/contrato.controller.js}.
+ * aceito. É a mesma forma, e a mesma razão, das rotas de transição de
+ * {@link ../contratos/contrato.controller.js}; a razão por extenso, e por que a definição é única,
+ * estão no docblock do módulo comum (débito D23).
  */
-const ESQUEMA_DO_CORPO_VAZIO = z.strictObject({});
 
 /** Os dois segmentos de transição, escritos uma vez — eles entram no par que o `CT-533` audita. */
 const SEGMENTO_DO_PAGAMENTO = ':codigo/pagamento';

@@ -43,7 +43,7 @@
  * é negada.
  *
  * ---------------------------------------------------------------------------
- * As DUAS TRANSIÇÕES são rotas PRÓPRIAS, e cada uma tem a SUA ação (ADR-0019, ADR-0018)
+ * As DUAS TRANSIÇÕES são rotas PRÓPRIAS, e cada uma tem a SUA ação (ADR-0021, ADR-0018)
  * ---------------------------------------------------------------------------
  *
  * `POST /:codigo/ativacao` declara `@ExigeChaves(AREA_DOS_CONTRATOS, ACAO_DE_ATIVACAO)` e
@@ -52,14 +52,25 @@
  * `DECISÃO FECHADA` de {@link ../imoveis/conjunto.controller.js} — declarar aqui só a ação
  * **substituiria** a exigência da classe, e `TELA:contratos` sumiria destas rotas em silêncio.
  *
- * **A ação é outra a cada ato, e a diferença é o ponto da ADR-0019**: transitar estado não é
+ * **A ação é outra a cada ato, e a diferença é o ponto da ADR-0021**: transitar estado não é
  * cadastrar, e `ACAO:ativar_contrato` e `ACAO:cancelar_contrato` existem no catálogo fechado desde a
  * fase de autorização exatamente para separar quem monta, de quem faz valer, de quem desfaz. Exigir
  * qualquer uma delas na rota de **criação** desfaria essa separação — é a alternativa que a ADR
  * rejeita por escrito. Nenhuma chave nova é criada (ADR-0011).
  *
+ * **Os dois atos desta superfície estão NOMINALMENTE na primeira classe da ADR-0021** — a que exige
+ * a chave de ação —, e é por isso que a exigência aqui não é julgamento local: a `Decision` cita
+ * *"a ativação de contrato, o cancelamento de CONTRATO e a retirada de circulação"*, as três com
+ * chave própria já existente. A 0021 recortou a regra mecânica da 0019 em duas classes, e o que
+ * decide é a **natureza do ato**: quem é atributo operacional do cadastro — não transfere direito,
+ * não move dinheiro, não altera o que outra entidade pode fazer — exige apenas a área. Aqui não é
+ * o caso, e a distância entre as classes é curta: o cancelamento de **cobrança** está na segunda,
+ * por nome, e confundir os dois é o erro que a T7 desta fatia custou uma rodada de gate.
+ *
  * **As três ações desta superfície são independentes, e a mais tentadora das confusões é reaproveitar
- * `ACAO:excluir_cadastro` para cancelar.** A ADR-0019 a rejeita **nominalmente**, e a razão é de
+ * `ACAO:excluir_cadastro` para cancelar.** A rejeição segue **nominal e vigente**: ela está escrita
+ * no `Context` da **ADR-0021**, que a herda da 0019 ao supersedê-la, e a `Decision` fecha o assunto
+ * pelo outro lado ao dar ao cancelamento de contrato a **sua** chave. A razão é de
  * efeito: retirar de circulação é visibilidade e **não libera o imóvel**; cancelar é transição e
  * **libera**. Quem administra a circulação de cadastros não pode, por isso, destravar um imóvel. As
  * quatro rotas que declaram no método são adjacentes neste fonte, e a linha copiada da vizinha é o
@@ -139,7 +150,8 @@
  * `POST`, campo ausente é recusa por campo obrigatório, e `fiadoresIds` é substituída por inteiro. O
  * `codigo` não está no corpo e não muda; `status`, `dataFimLocacao` e `valorTotalContrato` são
  * recusados como chave desconhecida pelo `strictObject` — a **ausência** deles no esquema é o
- * mecanismo (ADR-0019), e não uma conferência escrita aqui.
+ * mecanismo (ADR-0021 — transição é rota própria, **nunca** campo gravado por atualização parcial do
+ * recurso), e não uma conferência escrita aqui.
  *
  * O corpo das duas rotas de circulação é o objeto **vazio e fechado**: a marca de retirada é decidida
  * pelo servidor, e aceitá-la do cliente daria a ele o poder de datar a própria exclusão.
@@ -187,10 +199,10 @@ import {
 import type { AcessoAoBanco } from '@sysloc/db';
 import { CodigoErro, type Logger } from '@sysloc/shared';
 import type { FastifyRequest } from 'fastify';
-import { z } from 'zod';
 import { ExigeChave, ExigeChaves } from '../autenticacao/exigencia.decorator.js';
 import { CobrancaService } from '../cobrancas/cobranca.service.js';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
+import { ESQUEMA_DO_CORPO_VAZIO } from '../comum/esquema-de-corpo-vazio.js';
 import { esquemaDoErro } from '../comum/esquema-de-erro.js';
 import { esquemaPublicado } from '../comum/esquema-publicado.js';
 import { validar } from '../comum/validacao.js';
@@ -214,7 +226,7 @@ const AREA_DOS_CONTRATOS = 'TELA:contratos' as const;
 const ACAO_DE_CIRCULACAO = 'ACAO:excluir_cadastro' as const;
 
 /**
- * A ação sensível que a rota de ativação exige **além** da área (ADR-0011, ADR-0019, §4.1).
+ * A ação sensível que a rota de ativação exige **além** da área (ADR-0011, ADR-0021, §4.1).
  *
  * Ela **já existe** no catálogo fechado desde a fase de autorização, e nenhuma chave nova é criada
  * nesta fatia — precisar de uma seria sinal de escopo mal delimitado. Constante nomeada porque o
@@ -223,12 +235,15 @@ const ACAO_DE_CIRCULACAO = 'ACAO:excluir_cadastro' as const;
 const ACAO_DE_ATIVACAO = 'ACAO:ativar_contrato' as const;
 
 /**
- * A ação sensível que a rota de cancelamento exige **além** da área (ADR-0011, ADR-0019, §4.1).
+ * A ação sensível que a rota de cancelamento exige **além** da área (ADR-0011, ADR-0021, §4.1).
  *
- * Ela também **já existe** no catálogo fechado, e é **outra** que não a de ativar: a ADR-0019 dá a
- * cada transição a ação correspondente, de modo que conceder o poder de fazer valer não concede o de
- * desfazer. Reaproveitar `ACAO:excluir_cadastro` aqui é a alternativa que a ADR rejeita
- * nominalmente — retirar de circulação e cancelar têm efeitos diferentes sobre o imóvel.
+ * Ela também **já existe** no catálogo fechado, e é **outra** que não a de ativar: o cancelamento de
+ * CONTRATO está nominalmente na primeira classe da ADR-0021 e leva a **sua** chave, de modo que
+ * conceder o poder de fazer valer não concede o de desfazer. Reaproveitar `ACAO:excluir_cadastro`
+ * aqui é a alternativa que a ADR rejeita nominalmente — retirar de circulação e cancelar têm efeitos
+ * diferentes sobre o imóvel. ⚠️ **Não leia isto como regra para toda transição**: a 0021 exige a
+ * chave conforme a natureza do ato, e o cancelamento de **cobrança** — outra entidade — está na
+ * segunda classe, exigindo apenas a área.
  */
 const ACAO_DE_CANCELAMENTO = 'ACAO:cancelar_contrato' as const;
 
@@ -244,14 +259,10 @@ const CAMPO_DA_CONSULTA = 'limite';
 /** A entidade nomeada na linha de trilha desta superfície — escrita uma vez, usada nas duas. */
 const ENTIDADE_DA_TRILHA = 'contrato';
 
-/**
- * O corpo das duas rotas de circulação: **vazio e fechado** (§4.1.1).
- *
- * A marca de retirada é decidida pelo servidor; nenhum campo é aceito. Um corpo com qualquer chave é
- * recusado com `422` nomeando o corpo — o Zod reporta chave desconhecida de um `strictObject` com
- * caminho vazio, e é por isso que a recusa cai no campo padrão deste ponto de chamada.
- */
-const ESQUEMA_DO_CORPO_VAZIO = z.strictObject({});
+// O corpo das duas rotas de circulação **e** o das duas transições — **vazio e fechado** (§4.1.1) —
+// é `ESQUEMA_DO_CORPO_VAZIO`, importado de `comum/esquema-de-corpo-vazio.js`. A marca de retirada e
+// o estado são decididos pelo servidor, e nenhum campo é aceito; a razão por extenso, e por que a
+// definição é única, estão no docblock daquele módulo (débito D23).
 
 /** O envelope de lista de contratos, derivado do esquema do item — nunca redigitado (ADR-0017). */
 const ESQUEMA_DA_PAGINA = envelopeDeLista(esquemaDoContrato);
@@ -431,7 +442,7 @@ export class ContratoController {
   @ApiOperation({
     summary: 'Faz o contrato valer',
     description:
-      'Transita `RASCUNHO → ATIVO` **num commit só** (ADR-0019): confere o estado e as condições ' +
+      'Transita `RASCUNHO → ATIVO` **num commit só** (ADR-0021): confere o estado e as condições ' +
       'de entrada, reconfere que imóvel, locador, locatário e fiadores continuam **em circulação** ' +
       '— a montagem pode ter sido há semanas —, deriva `dataFimLocacao` e `valorTotalContrato`, ' +
       'grava o contrato como `ATIVO` e marca o imóvel como `LOCADO`. Falha em qualquer etapa deixa ' +
@@ -450,7 +461,8 @@ export class ContratoController {
       'em qualquer etapa deixa o contrato `RASCUNHO`, o imóvel como estava e **nenhuma** cobrança.',
   })
   @ApiOkResponse({
-    description: 'O contrato como ele ficou, mais a declaração do que a ativação NÃO fez.',
+    description:
+      'O contrato como ele ficou, mais a declaração de quantas cobranças a ativação gerou.',
     schema: esquemaPublicado(esquemaDaAtivacaoDeContrato, 'output'),
   })
   @ApiUnauthorizedResponse({ schema: esquemaDoErro([CodigoErro.NAO_AUTENTICADO]) })
@@ -504,7 +516,7 @@ export class ContratoController {
   @ApiOperation({
     summary: 'Faz o contrato deixar de valer',
     description:
-      'Transita `ATIVO → CANCELADO` **num commit só** (ADR-0019): confere o estado, grava o ' +
+      'Transita `ATIVO → CANCELADO` **num commit só** (ADR-0021): confere o estado, grava o ' +
       'contrato como `CANCELADO`, devolve o imóvel a `DISPONIVEL`, liberando-o para um contrato ' +
       'novo, e **cancela em cascata as cobranças do contrato que ainda podem ser canceladas** — as ' +
       'que não foram pagas nem canceladas. As **pagas** e as **já canceladas** ficam exatamente ' +

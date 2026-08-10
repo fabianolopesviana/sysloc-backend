@@ -90,7 +90,7 @@
  * A ATIVAÇÃO É UM ATO, com ORDEM FIXA e TRÊS escritas no MESMO commit
  * ---------------------------------------------------------------------------
  *
- * {@link ContratoService.ativar} é a primeira transição de estado governada do produto (ADR-0019), e
+ * {@link ContratoService.ativar} é a primeira transição de estado governada do produto (ADR-0021), e
  * a ordem das dez etapas é **conteúdo**, não estilo — cada uma existe porque a anterior já decidiu
  * algo que ela precisa:
  *
@@ -143,7 +143,7 @@
  * O CANCELAMENTO fecha a máquina de estados — e o que ele NÃO faz é a decisão
  * ---------------------------------------------------------------------------
  *
- * {@link ContratoService.cancelar} é a segunda transição governada (ADR-0019), e tem **cinco**
+ * {@link ContratoService.cancelar} é a segunda transição governada (ADR-0021), e tem **cinco**
  * etapas, na ordem em que elas dependem umas das outras:
  *
  *   1. **localizar** — contrato inalcançável responde `404` antes de qualquer outra coisa, pela mesma
@@ -244,7 +244,10 @@
  *
  * No sistema antigo, `ativar_contrato_e_gerar_cobrancas` **não confere estado algum**: ele ativa a
  * partir de qualquer `status_contrato`, inclusive de um já cancelado. Aqui a ativação exige
- * `RASCUNHO`, e a diferença é decisão desta fatia — fixada pela ADR-0019 e exigida pelo CA-10.
+ * `RASCUNHO`, e a diferença é decisão desta fatia, exigida pelo CA-10. A **ADR-0021** é explícita ao
+ * deixá-la aqui: *"quais estados cada entidade tem continua sendo decisão da fatia dela; esta ADR
+ * fixa a forma da transição e o critério da exigência"*. O que a ADR governa é a rota ser própria e
+ * qual chave ela pede — não de que estado se pode partir.
  *
  * O oráculo (`golden/contrato-ativacao.json`) governa **três** coisas, e só três: as condições de
  * entrada (RD-08), as derivações (RD-10) e a guarda de imóvel ocupado (RD-09). **A máquina de estados
@@ -421,7 +424,7 @@ const CHAVE_DO_CONTRATO_VIGENTE = 'contratoVigente';
  *
  * **São três constantes, duas delas com o mesmo valor, e a duplicação é deliberada.** Elas
  * materializam regras diferentes — a janela de edição do rascunho e as duas origens de transição da
- * ADR-0019 —, e `ESTADO_ALTERAVEL` e `ESTADO_ATIVAVEL` coincidirem hoje é fato do domínio, não
+ * ADR-0021 —, e `ESTADO_ALTERAVEL` e `ESTADO_ATIVAVEL` coincidirem hoje é fato do domínio, não
  * identidade: aceitar alteração num estado a mais não autorizaria ativar a partir dele. Uma constante
  * só faria a segunda regra mudar junto com a primeira, em silêncio, num campo que o cliente lê.
  * `ESTADO_CANCELAVEL` é a evidência de que a coincidência era mesmo acidental — ele parte de `ATIVO`.
@@ -1000,7 +1003,7 @@ export class ContratoService {
    * estado desta superfície.
    *
    * Ela serve a três regras diferentes com a mesma forma de recusa: a janela de edição do rascunho
-   * (RD-05) e as duas origens de transição da ADR-0019 (RD-02). Escrevê-las por extenso três vezes
+   * (RD-05) e as duas origens de transição da ADR-0021 (RD-02). Escrevê-las por extenso três vezes
    * deixaria livres para divergir o código, o campo nomeado e os nomes dos dois discriminadores — e
    * os três são contrato publicado, afirmado por igualdade de corpo inteiro. É a mesma razão, e o
    * mesmo desenho, de {@link ContratoService.traduzirConflitoDeGravacao}.

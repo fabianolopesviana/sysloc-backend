@@ -236,6 +236,21 @@ $$;--> statement-breakpoint
 -- `COALESCE(…, 0)` da RD-08 que as expressões já usam, e a repetição é deliberada: extrair o valor
 -- comum trocaria o texto da expressão dos juros, que os três mutantes casam por igualdade exata.
 --
+-- DÉBITO COM GATILHO — D20 · F3/T7 · registrado 2026-08-10
+-- O QUÊ: a legitimidade de EMENDAR este arquivo, em vez de escrever uma migração nova, é
+--        CONDICIONAL a ele nunca ter sido aplicado a banco durável — e a condição não está
+--        registrada em lugar nenhum que quem for emendar de novo vá abrir.
+-- QUANDO FECHA: a PRIMEIRA aplicação da `0010` a banco durável. A partir dela o arquivo é imutável:
+--               `deploy/scripts/instalacao/migrar-banco.sh` mantém `identidade.migracao_aplicada`
+--               com `sha256sum` por arquivo e ABORTA a instalação, sem alterar nada, em divergência.
+--               Quem precisar mudar a visão depois disso escreve uma `00NN` nova — e, se for o caso,
+--               move `blocoDaVisao()` (`packages/db/test/cobranca.spec.ts`) para ler o arquivo novo,
+--               ou os mutantes do CT-513 e do CT-526 passam a mutar objeto que não é o do produto.
+-- POR QUE NÃO AGORA: hoje a emenda é a escolha CORRETA, e a alternativa é pior — ver o parágrafo
+--                    acima. A janela está aberta e nada além de instância efêmera executou este
+--                    arquivo; o que faltava era ela fechar sem ser em silêncio.
+-- ÍNDICE: docs/specs/features/cobranca-e-mora/v1/_run/run-report.md §2, D20
+--
 -- ---------------------------------------------------------------------------
 -- ---------------------------------------------------------------------------
 -- Empresa sem configuração de mora: `LEFT JOIN` e `COALESCE`, nunca `INNER JOIN`

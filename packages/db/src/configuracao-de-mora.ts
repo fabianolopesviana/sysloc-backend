@@ -115,8 +115,21 @@ interface LinhaBrutaDaConfiguracao {
  * corpo que `GET /v1/multa-e-juros` devolve a toda empresa nova —, e ter nome é o que deixa
  * explícito que a ausência de linha tem uma tradução declarada, em vez de parecer um valor de
  * conveniência escolhido na hora.
+ *
+ * **Congelado — é compartilhado por toda leitura**, no molde de `SEM_FIADORES`
+ * ({@link ./contrato.ts}), `SEM_COMODOS` ({@link ./imovel.ts}) e `SEM_IMOVEIS`
+ * ({@link ./conjunto.ts}). `lerConfiguracaoDeMora` o devolve **por referência**, e o `readonly` da
+ * interface protege só dentro deste pacote: na fronteira do serviço o tipo passa a vir de `z.infer`
+ * de `z.number()`, que não o carrega, e o consumidor recebe um alias mutável do objeto de módulo.
+ * Uma escrita nele mudaria a política publicada a **toda** empresa que nunca configurou, no processo
+ * inteiro — a política de uma empresa vazando para outra por estado compartilhado, que é a classe
+ * que a RD-21 e a ADR-0008 fecham no banco. O congelamento age sobre o **valor** e não sobre o tipo,
+ * e por isso vale em qualquer camada, independente da anotação que ela enxergue.
  */
-const POLITICA_AUSENTE: ConfiguracaoDeMoraPersistida = { multaPercentual: 0, jurosPercentual: 0 };
+const POLITICA_AUSENTE: ConfiguracaoDeMoraPersistida = Object.freeze({
+  multaPercentual: 0,
+  jurosPercentual: 0,
+});
 
 /**
  * A projeção publicada, escrita **uma vez** e reusada pela leitura e pelo `RETURNING` da escrita.

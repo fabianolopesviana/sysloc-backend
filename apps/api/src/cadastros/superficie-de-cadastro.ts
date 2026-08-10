@@ -49,8 +49,8 @@ import {
 import type { AcessoAoBanco, PapelDePessoa } from '@sysloc/db';
 import type { Logger } from '@sysloc/shared';
 import type { FastifyRequest } from 'fastify';
-import { z } from 'zod';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
+import { ESQUEMA_DO_CORPO_VAZIO } from '../comum/esquema-de-corpo-vazio.js';
 import { validar } from '../comum/validacao.js';
 import type { CadastroDePessoaService, PaginaDePessoas } from './cadastro-de-pessoa.service.js';
 
@@ -69,12 +69,17 @@ export const ACAO_DE_CIRCULACAO = 'ACAO:excluir_cadastro' as const;
 /**
  * Nome de campo usado quando a recusa não tem caminho a nomear — o identificador da rota.
  *
- * As quatro constantes deste bloco são **internas ao módulo**, sem `export`, pelo mesmo critério que
+ * As três constantes deste bloco são **internas ao módulo**, sem `export`, pelo mesmo critério que
  * mantém os análogos de `imoveis/conjunto.controller.ts`, de `imovel.controller.ts` e de
  * `comodo.controller.ts` privados, e pelo mesmo que despublicou `MENSAGEM_POR_CODIGO` (T8 / Gate 2) e
- * `TABELA_POR_PAPEL`: símbolo publicado sem consumidor é caminho oferecido, e o caminho que
- * {@link ESQUEMA_DO_CORPO_VAZIO} ofereceria é o pior deles — um controlador futuro validando o corpo
- * fechado por conta própria em vez de delegar à superfície, que é a duplicação por ponto do D12.
+ * `TABELA_POR_PAPEL`: símbolo publicado sem consumidor é caminho oferecido.
+ *
+ * ⚠️ **Eram quatro, e `ESQUEMA_DO_CORPO_VAZIO` saiu do bloco**: ele não é mais definido aqui — vem
+ * importado de `comum/esquema-de-corpo-vazio.js`, que é o ponto único da borda (débito **D23**). O
+ * risco que este parágrafo nomeava continua real e continua fechado pelo outro lado: um controlador
+ * futuro que valide o corpo fechado por conta própria, em vez de delegar à superfície, é a
+ * duplicação por ponto do **D12** — e agora ela é detectável, porque o `CT-357` afirma por igualdade
+ * de conjunto quem define e quem importa o esquema.
  */
 const CAMPO_DO_IDENTIFICADOR = 'id';
 
@@ -84,14 +89,10 @@ const CAMPO_DO_CORPO = 'corpo';
 /** Nome de campo usado quando a recusa é da cadeia de consulta. */
 const CAMPO_DA_CONSULTA = 'limite';
 
-/**
- * O corpo das rotas de circulação: **vazio e fechado** (§4.1.1).
- *
- * A marca de retirada é decidida pelo servidor; nenhum campo é aceito. Um corpo com qualquer chave é
- * recusado com `422` nomeando o corpo — o Zod reporta chave desconhecida de um `strictObject` com
- * caminho vazio, e é por isso que a recusa cai no campo padrão deste ponto de chamada.
- */
-const ESQUEMA_DO_CORPO_VAZIO = z.strictObject({});
+// O corpo das rotas de circulação — **vazio e fechado** (§4.1.1) — é `ESQUEMA_DO_CORPO_VAZIO`,
+// importado de `comum/esquema-de-corpo-vazio.js`. A marca de retirada é decidida pelo servidor e
+// nenhum campo é aceito; a razão por extenso, e por que a definição é única, estão no docblock
+// daquele módulo (débito D23). ⚠️ Esta era a QUINTA cópia, e o débito registrava duas.
 
 /** O envelope de lista de cadastros, derivado do esquema do item — nunca redigitado (ADR-0017). */
 export const ESQUEMA_DA_PAGINA = envelopeDeLista(esquemaDaPessoa);

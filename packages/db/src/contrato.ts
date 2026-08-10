@@ -208,7 +208,7 @@ export type FiadorDoContrato = Contrato['fiadores'][number];
  *
  * `codigo`, `status`, `dataFimLocacao`, `valorTotalContrato` e `retiradoEm` **não estão aqui**, e a
  * ausência é o mecanismo: os cinco são decididos pelo servidor. O código é emitido pela série; o
- * estado tem rota própria (ADR-0019); as duas derivações nascem na ativação; a circulação tem porta
+ * estado tem rota própria (ADR-0021); as duas derivações nascem na ativação; a circulação tem porta
  * própria. Um caminho que os aceitasse por este tipo seria a segunda fonte de estado que a RN-03
  * elimina.
  *
@@ -860,7 +860,7 @@ export async function localizarContrato(
  *
  * **Cinco colunas não são tocadas, e a ausência delas nesta instrução é o mecanismo**: `codigo`
  * (emitido uma vez e citado fora do sistema — a ADR-0015 existe para mantê-lo estável), `status` (a
- * transição é rota própria, ADR-0019), `retirado_em` (a circulação tem porta própria; reuni-las faria
+ * transição é rota própria, ADR-0021), `retirado_em` (a circulação tem porta própria; reuni-las faria
  * uma correção de valor carregar, por descuido, uma mudança de visibilidade) e as duas derivações da
  * ativação (RD-10).
  *

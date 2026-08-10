@@ -37,6 +37,31 @@ dez depende dela. Enquanto ela não rodar, a fatia fica em **10/11** e o Status 
 > `.claude/rules/nao-regressao.md`). O identificador de um débito é o par `Dnn · F{n}/{origem}` mais
 > o caminho deste arquivo.
 
+> ### 📋 Auditoria contra o código — 2026-08-10 · intervenção dirigida
+>
+> Os **39 débitos** desta seção foram lidos e conferidos **contra o código**, um a um. **Oito foram
+> fechados** e estão marcados no cabeçalho de cada bloco; os **31 restantes ficam escriturados**, com
+> o parecer na **§5**. A auditoria corrigiu três fatos que a §2 registrava errado:
+>
+> 1. **O `D33` já estava pago.** A T10 reescreveu o parágrafo de `contrato.service.ts`, e o `D37`
+>    existe justamente porque ela o reescreveu. O bloco continuava aqui como se estivesse aberto.
+> 2. **O `D23` tinha CINCO cópias, não duas.** Além dos dois controladores que o bloco nomeia,
+>    `imoveis/conjunto.controller.ts`, `imoveis/imovel.controller.ts` e
+>    `cadastros/superficie-de-cadastro.ts` também definiam `ESQUEMA_DO_CORPO_VAZIO` byte a byte — a
+>    última nunca havia sido vista por gate nenhum. O débito **cresceu desde o registro**, como o
+>    `D28 (F0/T5)` já havia crescido.
+> 3. **O `D36` alcançava 20 citações, não 14.** Quatro afirmações de vigência da ADR-0019 viviam fora
+>    dos dois arquivos que o bloco nomeia — em `packages/db/src/contrato.ts` (duas),
+>    `packages/contracts/src/contrato.ts` e `apps/api/src/imoveis/imovel.controller.ts`. As duas que
+>    **permanecem** permanecem por decisão: a de `imovel.controller.ts:52` é narrativa histórica no
+>    passado e está correta, e a de `packages/db/src/esquema/negocio.ts:700` está **dentro do
+>    `REVERTER EXIGE:` de uma `DECISÃO FECHADA`** — §3 do protocolo, não se toca.
+>
+> **Três débitos NÃO foram tocados de propósito, e a razão é a mesma para os três**: o `D1` e o `D26`
+> têm marcador `DÉBITO COM GATILHO` vivo — resolvê-los agora é desfazer a decisão de adiar —, e o
+> `D4` é baseline pré-existente fora do escopo da fatia, cujo conserto óbvio o próprio docblock do
+> arquivo pré-rejeita por escrito.
+
 ### D1 · baixo · project_pattern · T2 · executor
 
 - **Onde:** `packages/contracts/src/cobranca.ts`, no ponto do `import … from './contrato.js'`
@@ -115,7 +140,7 @@ dez depende dela. Enquanto ela não rodar, a fatia fica em **10/11** e o Status 
   escopo desta fatia (que não toca `packages/shared`), e editá-lo aqui seria a Proibição 5 do
   protocolo (*"nunca aproveitar que estou aqui"*).
 
-### D5 · baixo · documentation · T3 · QA
+### D5 · baixo · documentation · T3 · QA — ✅ **FECHADO** na intervenção dirigida de 2026-08-10
 
 - **Onde:** `packages/db/migracoes/0009_dominio_cobranca.sql:56` e o parágrafo gêmeo na §7 de
   `docs/specs/features/cobranca-e-mora/v1/tasks/T3.md`
@@ -244,7 +269,7 @@ dez depende dela. Enquanto ela não rodar, a fatia fica em **10/11** e o Status 
   do corpo e a releitura exata. Custo de uma linha, e passa a prender o lado que **aceita** da mesma
   dimensão cujo lado que recusa já está preso.
 
-### D14 · MEDIO · project_pattern · T6 · Tech Review
+### D14 · MEDIO · project_pattern · T6 · Tech Review — ✅ **FECHADO** na intervenção dirigida de 2026-08-10
 
 - **Onde:** `packages/db/src/configuracao-de-mora.ts:119`
 - **Problema:** `POLITICA_AUSENTE` é constante de módulo compartilhada por toda leitura e **não está
@@ -269,7 +294,7 @@ dez depende dela. Enquanto ela não rodar, a fatia fica em **10/11** e o Status 
   (`packages/db/src/contrato.ts:485`), com o mesmo docblock de congelamento. Uma palavra, sem mudança
   de comportamento e sem tocar teste.
 
-### D15 · MEDIO · project_pattern · T6 · Tech Review
+### D15 · MEDIO · project_pattern · T6 · Tech Review — ✅ **FECHADO** na intervenção dirigida de 2026-08-10
 
 - **Onde:** `packages/contracts/src/configuracao-de-mora.ts:117`
 - **Problema:** `esquemaDaConfiguracaoDeMora` é o **único esquema de saída** do pacote declarado como
@@ -335,7 +360,7 @@ dez depende dela. Enquanto ela não rodar, a fatia fica em **10/11** e o Status 
   da **T11**, que já é a auditoria final por dupla medição. A segunda opção não custa caso novo e
   mantém o débito com dono e prazo dentro da própria fatia.
 
-### D20 · BAIXO · scope_deviation · T7 · Tech Review
+### D20 · BAIXO · scope_deviation · T7 · Tech Review — ✅ **FECHADO** na intervenção dirigida de 2026-08-10
 
 - **Onde:** `packages/db/migracoes/0010_seguranca_cobranca.sql:224`
 - **Problema:** a emenda da `0010` é legítima e correta, mas a legitimidade **expira** na primeira
@@ -387,7 +412,7 @@ dez depende dela. Enquanto ela não rodar, a fatia fica em **10/11** e o Status 
   bloco.
 - **O que fazer:** remover uma das duas linhas.
 
-### D23 · BAIXO · code_quality · T7 · Tech Review
+### D23 · BAIXO · code_quality · T7 · Tech Review — ✅ **FECHADO** na intervenção dirigida de 2026-08-10
 
 - **Onde:** `apps/api/src/cobrancas/cobranca.controller.ts:195`
 - **Problema:** `ESQUEMA_DO_CORPO_VAZIO` ganhou segunda definição idêntica, contra o precedente de
@@ -559,7 +584,7 @@ dez depende dela. Enquanto ela não rodar, a fatia fica em **10/11** e o Status 
   pela §3-B: a sequência corre dentro da §2 **desta** fatia, e o identificador é o par
   `Dnn · F{n}/{origem}`.
 
-### D33 · BAIXO · project_pattern · T9 · Tech Review
+### D33 · BAIXO · project_pattern · T9 · Tech Review — ✅ **FECHADO** na intervenção dirigida de 2026-08-10
 
 - **Onde:** `apps/api/src/contratos/contrato.service.ts:174-179`
 - **Problema:** um parágrafo do docblock justifica a ausência de cascata com uma premissa que **esta
@@ -582,7 +607,7 @@ dez depende dela. Enquanto ela não rodar, a fatia fica em **10/11** e o Status 
   mesma sessão. **Não confundir** com o `DÉBITO COM GATILHO — D36 · F2/T8`, que vive no mesmo método
   (linha 799) e **permanece**. A instrução foi injetada no prompt do executor da T10.
 
-### D34 · BAIXO · code_quality · T9 · Tech Review
+### D34 · BAIXO · code_quality · T9 · Tech Review — ✅ **FECHADO** na intervenção dirigida de 2026-08-10
 
 - **Onde:** `apps/api/src/contratos/contrato.controller.ts:453`
 - **Problema:** a descrição do `@ApiOkResponse` da ativação continua dizendo que a resposta declara **o
@@ -616,7 +641,7 @@ dez depende dela. Enquanto ela não rodar, a fatia fica em **10/11** e o Status 
   *"as operações da cobrança — inclusive as transições, as duas da série e o leitor do ano do escopo
   dela"*.
 
-### D36 · baixo · documentation · T10 · QA **e** Tech Review
+### D36 · baixo · documentation · T10 · QA **e** Tech Review — ✅ **FECHADO** na intervenção dirigida de 2026-08-10
 
 - **Onde:** `apps/api/src/contratos/contrato.service.ts:146` (mais 13 pontos nos dois arquivos)
 - **Problema:** `contrato.service.ts` e `contrato.controller.ts` citam a **ADR-0019** como vigente, e ela
@@ -941,3 +966,117 @@ ambíguo o único identificador que a §3-B da `nao-regressao.md` reconhece.
   o conserto óbvio (*"alargar o teto seria conserto do sintoma"*), e tocá-lo seria a Proibição 5. Ver
   o **D4** da §2. Todo executor e todo gate deste run recebem o aviso de que a expiração dele não é
   regressão da task.
+
+---
+
+## 5. Intervenção dirigida de 2026-08-10 — o que foi fechado, e o parecer sobre o resto
+
+> Fora do pipeline, no molde das intervenções de 2026-08-08 e 2026-08-09. Precedida de auditoria dos
+> **39 débitos da §2 contra o código**, um a um. A fatia foi **commitada antes** da intervenção, em
+> quatro commits (`256e53c`, `5451847`, `3341d19`, `056a1ca`), para que o diff do cleanup não se
+> misturasse ao da fatia.
+
+### 5.1 Baseline (P1/P5 do Protocolo Antirregressão)
+
+| Pacote | P1 (antes) | P5 (depois) | |
+|---|---|---|---|
+| `@sysloc/contracts` | 227 | 227 | — |
+| `@sysloc/shared` | 212 | 212 | — |
+| `@sysloc/api` | 175 | **176** | `+1` — o `CT-357` |
+| `@sysloc/auth` | 89 | 89 | — |
+| `@sysloc/db` | 115 | 115 | — |
+| `@sysloc/worker` | 16 | 16 | — |
+| **Total** | **834** | **835** | crescimento monotônico; **nenhuma unidade encolheu** |
+
+`pnpm build` e `pnpm lint` verdes nas duas pontas. O flake do `CT-907` **não se manifestou** em
+nenhuma das duas execuções completas, com `rm -rf /tmp/sysloc-banco-*` antes de cada pacote e o disco
+em 93%. A medição foi **por pacote**, nunca por `turbo run test`.
+
+### 5.2 Os oito débitos fechados
+
+| Débito | O que mudou | Rede |
+|---|---|---|
+| **D15** `MEDIO` | `esquemaDaConfiguracaoDeMora` passou de `z.strictObject` a `z.object`, e o docblock passou a declarar por extenso a assimetria entrada-fechada / saída-aberta e a razão dela (ADR-0016 propaga o fechamento para o documento OpenAPI publicado). Era o único débito que alcançava artefato de entrega. | os 7 esquemas de saída do pacote voltam a ser uniformes — não sobra instância que ensine a próxima a copiar o fechamento |
+| **D14** `MEDIO` | `POLITICA_AUSENTE` ganhou `Object.freeze`, no molde dos 4 precedentes do pacote, com o docblock de congelamento. | o congelamento age no **valor**, não no tipo: vale em qualquer camada, inclusive onde o `readonly` se perdia na borda |
+| **D36** `baixo` | as citações vivas de **ADR-0019** (`superseded-by:0021`) foram reescritas. Quatro delas mudaram de **conteúdo**, não só de número — a `Decision` da 0021 foi aberta antes de cada reescrita. | `grep -rn "ADR-0019"` no código de produção devolve **duas** ocorrências, e as duas são legítimas (ver §5.3) |
+| **D23** `BAIXO` | `ESQUEMA_DO_CORPO_VAZIO` passou a ter definição única em `apps/api/src/comum/esquema-de-corpo-vazio.ts`, importada pelas **cinco** bordas. Terceira vez que o repositório fecha esta classe do mesmo jeito (D40 e D38 da F1/T9). | **`CT-357`**, no molde do `CT-343`, com **dois mutantes medidos** (§5.4) |
+| **D34** `BAIXO` | a descrição do `@ApiOkResponse` da ativação deixou de dizer o **oposto** do que o campo `cobrancasGeradas` publica. Alcança o documento OpenAPI, de onde o `handoff-frontend.md` é gerado. | — (prosa; o esquema já era derivado) |
+| **D20** `BAIXO` | emitido o `DÉBITO COM GATILHO — D20 · F3/T7` no bloco da emenda da `0010`, mais a linha no índice do `CLAUDE.md`. **É o único débito do índice cujo gatilho fecha em silêncio**: a legitimidade de emendar o arquivo termina na primeira aplicação dele a banco durável. | a checagem §3-B dos **dois sentidos** fecha em **13 ↔ 13**, e o `CT-907` a executa |
+| **D5** `baixo` | as duas cifras que **não reproduzem** saíram do comentário da `0009` e do parágrafo gêmeo da `tasks/T3.md` §7, substituídas pela grandeza que reproduz — o **plano e o operador** —, com a dependência de distribuição declarada. | — (a conclusão estrutural, que é o passo que discrimina, já reproduzia por inteiro) |
+| **D33** `BAIXO` | **já estava pago**: a T10 reescreveu o parágrafo, e o `D37` existe por causa disso. Fechado no registro apenas. | — |
+
+⚠️ **Do `D20`, uma ponta ficou deliberadamente aberta**: o `O que fazer` pedia também acrescentar o
+arquivo à §5.2 da `tasks/T7.md`. Não foi feito — é bookkeeping retroativo de task encerrada, da mesma
+classe do D6, do D10 e do D29 (§5.5). O que fecha a janela em silêncio é o marcador, e ele existe.
+
+### 5.3 O que a auditoria encontrou que a §2 não registrava
+
+1. **O `D23` tinha CINCO cópias, não duas** — a quinta, em `cadastros/superficie-de-cadastro.ts`,
+   nunca havia sido vista por gate nenhum. O débito **cresceu desde o registro**, como o
+   `D28 (F0/T5)`. O docblock daquele arquivo, que declarava as constantes internas e citava
+   `ESQUEMA_DO_CORPO_VAZIO` entre elas, foi corrigido junto — ele passaria a afirmar um fato falso.
+2. **O `D36` alcançava 20 citações, não 14** — quatro afirmavam vigência fora dos dois arquivos que o
+   bloco nomeia: `packages/db/src/contrato.ts` (duas), `packages/contracts/src/contrato.ts` e
+   `apps/api/src/imoveis/imovel.controller.ts`. Fechar só as 14 deixaria a classe aberta.
+3. **Duas citações de ADR-0019 PERMANECEM, e permanecem por decisão.** A de
+   `apps/api/src/imoveis/imovel.controller.ts:52` é **narrativa histórica no passado** (*"Até
+   2026-08-09 a rota era regida pela ADR-0019"*) e é justamente o que explica a supersedência — está
+   correta. A de `packages/db/src/esquema/negocio.ts:700` está **dentro do `REVERTER EXIGE:` de uma
+   `DECISÃO FECHADA — T3 · 2026-08-09`**: a §3 do protocolo proíbe alterar o texto do marcador, e o
+   fato que ele cita (o ciclo de vida da transição) não mudou com a 0021.
+
+### 5.4 Prova de falsificação do `CT-357` (P4)
+
+Invocada pelo **script do pacote** (`pnpm --filter @sysloc/api test`), nunca por `vitest run` avulso —
+a regra da `.claude/rules/testing-stack.md`.
+
+- **MT-1 · a sexta cópia nasce.** `const ESQUEMA_DO_CORPO_VAZIO = z.strictObject({});` acrescentado a
+  `master/empresa.controller.ts`, que não importa o símbolo (num arquivo que o importasse, a colisão
+  de nome reprovaria no `tsc` **antes** de qualquer asserção correr — a armadilha que o `CT-545` da
+  T2 já havia encontrado). Resultado: `1 failed | 175 passed`, e a mensagem **nomeia o culpado** —
+  *"a definição de ESQUEMA_DO_CORPO_VAZIO deixou de ser única: comum/esquema-de-corpo-vazio.ts,
+  master/empresa.controller.ts"*. Restaurado e conferido por `sha256sum` e `diff -q`.
+- **MT-2 · um importador some sem quebrar a compilação.** Em `cobrancas/cobranca.controller.ts`, a
+  importação nomeada virou importação de espaço de nomes. Resultado: `1 failed | 175 passed`, com a
+  mensagem listando as **quatro** bordas restantes contra as cinco esperadas.
+- **Controle**: árvore restaurada, `176 passed (176)`.
+
+As duas pontas do caso discriminam, e discriminam por razões diferentes — a definição e a
+importação —, que é o que separa o `CT-357` de uma asserção que só pode falhar de um jeito.
+
+### 5.5 Parecer sobre os 31 restantes — **NÃO** rodar `/agent-spec-debt-resolution`
+
+O parecer das fatias anteriores é **reafirmado**, e agora com duas razões novas, medidas contra a
+mecânica da própria skill nesta §2:
+
+1. **A coleta descarta os campos que dizem "não faça".** O `references/debt-collection.md` mapeia
+   `Onde → arquivo`, `Problema → titulo`, `Impacto → descricao` e `O que fazer → correcao_sugerida`.
+   Os campos **`Gatilho:`** e **`Por que não agora:`** — que existem no `D1`, no `D4` e no `D26` — não
+   têm destino no schema e são perdidos. O especialista receberia do `D1` a sugestão *"promover as
+   duas para `comum.ts` e ajustar os três call sites"*, que lê como correção limpa e recomendável, sem
+   a frase que a desautoriza. Os dois débitos com marcador vivo existem **para não serem resolvidos
+   agora**.
+2. **O default `gates: [qa]` desliga o Gate 2**, que é quem a §6 da `.claude/rules/nao-regressao.md`
+   encarrega de detectar violação de `DECISÃO FECHADA`. Os arquivos-alvo destes débitos carregam
+   **64 marcadores**, e a ação da maioria deles é **reescrever docblock** — prosa colada nos
+   marcadores. Esta própria intervenção esbarrou num deles (§5.3, item 3), e o desfecho correto foi
+   **não editar**: é exatamente a decisão que o gate desligado não tomaria.
+
+Somam-se as razões de custo, agora com número medido: a suíte completa custa **~13 min por execução**,
+o guard de recursos serializa o QA quando ≥2 tasks do lote têm teste de integração — e **16 dos 39**
+alvos são suíte com banco —, de modo que 39 tasks × 1 QA cada dão **~8,5 h só de suíte**, num host com
+**2,1 GB livres** e um flake conhecido que se disfarça de regressão.
+
+**Doze dos 31 restantes pedem inação por escrito**, no próprio `O que fazer`: o `D40` (*"o caminho de
+menor risco é anotar e não mexer agora"*), o `D38` (*"quando uma task futura tocar o CT-521"* — e o
+Gate 2 registrou que reabrir seria churn), o `D42` (*"manter as asserções"*), o `D12` (*"se um
+terceiro caso vier"*), o `D11` (*"não alterar as asserções do caso"*), o `D1`, o `D26` e o `D4`.
+
+**Três têm destinatário expirado** e não têm ação de código possível: o `D6`, o `D10` e o `D29` são
+instruções endereçadas a executores de tasks que já rodaram e fecharam. Ou viram convenção em
+`.claude/rules/`, ou se fecham como vencidos — o que **não** se faz é gerar task de cleanup para
+editar artefato de spec de task encerrada.
+
+O caminho que se mostrou barato e seguro continua sendo este: escolher os poucos com **prazo, poder
+de detecção ou alcance em artefato de entrega**, fechar cada um com mutante medido, e escriturar o
+resto.

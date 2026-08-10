@@ -156,6 +156,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { ExigeChave, ExigeChaves } from '../autenticacao/exigencia.decorator.js';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
+import { ESQUEMA_DO_CORPO_VAZIO } from '../comum/esquema-de-corpo-vazio.js';
 import { esquemaDoErro } from '../comum/esquema-de-erro.js';
 import { esquemaPublicado } from '../comum/esquema-publicado.js';
 import { validar } from '../comum/validacao.js';
@@ -191,14 +192,10 @@ const CAMPO_DO_CORPO = 'corpo';
 /** Nome de campo usado quando a recusa é da cadeia de consulta. */
 const CAMPO_DA_CONSULTA = 'limite';
 
-/**
- * O corpo das duas rotas de circulação: **vazio e fechado** (§4.1.1).
- *
- * A marca de retirada é decidida pelo servidor; nenhum campo é aceito. Um corpo com qualquer chave é
- * recusado com `422` nomeando o corpo — o Zod reporta chave desconhecida de um `strictObject` com
- * caminho vazio, e é por isso que a recusa cai no campo padrão deste ponto de chamada.
- */
-const ESQUEMA_DO_CORPO_VAZIO = z.strictObject({});
+// O corpo das duas rotas de circulação — **vazio e fechado** (§4.1.1) — é
+// `ESQUEMA_DO_CORPO_VAZIO`, importado de `comum/esquema-de-corpo-vazio.js`. A marca de retirada é
+// decidida pelo servidor e nenhum campo é aceito; a razão por extenso, e por que a definição é
+// única, estão no docblock daquele módulo (débito D23).
 
 /** O envelope de lista de conjuntos, derivado do esquema do item — nunca redigitado (ADR-0017). */
 const ESQUEMA_DA_PAGINA = envelopeDeLista(esquemaDoConjunto);

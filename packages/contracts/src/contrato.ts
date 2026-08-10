@@ -30,7 +30,7 @@
  * `status` não é campo de atualização — e a ausência é o mecanismo
  * ===========================================================================
  *
- * A ADR-0019 fixa que toda transição de estado é **rota própria**, nunca campo gravado por
+ * A ADR-0021 fixa que toda transição de estado é **rota própria**, nunca campo gravado por
  * atualização do recurso. Aqui isso não é uma verificação: é a **ausência** de `status` no
  * {@link esquemaDeContratoNovo}, que o `strictObject` transforma em recusa por chave desconhecida.
  * O mesmo vale para `codigo`, `dataFimLocacao`, `valorTotalContrato` e `empresaId` — os cinco são

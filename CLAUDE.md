@@ -67,8 +67,8 @@ pré-refinamento (`docs/specs/features/cobranca-mora-e-documentos/v1/pre-refinem
    `negocio.configuracao_de_mora`, a view `cobranca_derivada` com `security_invoker` como **fonte
    única do estado e da mora**, a série `COB-{ano}-{7 dígitos}` atrás de duas funções
    `SECURITY DEFINER`, e as **7 rotas novas** (superfície em **82/67**). **Fechou o D28 (F2/T7)** na T9,
-   com o marcador e a linha do índice saindo no mesmo commit. Deixou o **D1** e o **D26** com marcador
-   e gatilho (índice abaixo). Suíte **687 → 834**.
+   com o marcador e a linha do índice saindo no mesmo commit. Deixou o **D1**, o **D26** e — pela
+   intervenção dirigida abaixo — o **D20** com marcador e gatilho (índice abaixo). Suíte **687 → 835**.
 2. **`regua-e-documentos` (v1) — não iniciada.** Régua com fila (fecha o **D32 (F0/T6)**), PDF de
    contrato contra o golden textual, carnê com `pdf-lib` no servidor (fecha o **D36 (F2/T8)**).
    ~1.800 LOC — o pré-refinamento registra que ela **pode precisar partir de novo**.
@@ -97,10 +97,13 @@ pré-refinamento (`docs/specs/features/cobranca-mora-e-documentos/v1/pre-refinem
 > for fechar precisa abrir os pontos e decidir se é colisão ou vazamento real. Detalhe na §4 do
 > `_run/run-report.md`.
 >
-> **Nada foi commitado** — o HEAD segue em `fb93915` desde o início do run, com **T2..T11 staged**
-> (59 arquivos, +21.618/−453) aguardando a decisão do usuário sobre o agrupamento. A **ADR-0021 foi emendada**
-> durante a T7, por decisão do usuário escalada pelo Gate 2: a `Decision` ganhou o roster explícito das
-> instâncias da segunda classe, e o pagamento e o cancelamento de **cobrança** estão nele por nome.
+> ✅ **A fatia FOI COMMITADA em 2026-08-10**, em **quatro commits** sobre `fb93915` — `256e53c`
+> (T2..T5, o domínio, a visão e a carteira), `5451847` (T6, a mora), `3341d19` (T7..T10, as transições
+> e a ligação com o contrato) e `056a1ca` (T11 e o fecho). Os 59 arquivos e os `+21.629/−453` batem
+> com o índice que estava staged. O agrupamento saiu dos marcadores sintéticos `t5_sha`, `t6_sha` e
+> `t10_sha`, que sobreviveram ao run. A **ADR-0021 foi emendada** durante a T7, por decisão do usuário
+> escalada pelo Gate 2: a `Decision` ganhou o roster explícito das instâncias da segunda classe, e o
+> pagamento e o cancelamento de **cobrança** estão nele por nome.
 >
 > Dois fatos operacionais que não estão em artefato de spec e mordem quem rodar a suíte:
 > o **`CT-907` é flaky PRÉ-EXISTENTE** (expira no teto de 5000ms sob disputa de CPU no `pnpm test`
@@ -151,6 +154,20 @@ detecção do `verificar-golden.sh`, os dois com mutante), **D21** (o remapeamen
 `/agent-spec-debt-resolution`** nesta fatia: os ~26 restantes são prosa em artefato de fatia fechada,
 três são débito com gatilho que a skill coletaria e não deve resolver, e o default `gates: [qa]` dela
 desliga justamente o Gate 2, que é quem detecta violação de `DECISÃO FECHADA`.
+
+**Intervenção dirigida de 2026-08-10**, sobre os **39 débitos da fatia `cobranca-e-mora`**, depois de
+a fatia ser commitada. Precedida de auditoria **contra o código**, um a um. **Oito fechados** —
+**D15** (o `strictObject` no esquema de saída, o único que alcançava o `@sysloc/contracts` publicado),
+**D14** (`Object.freeze` na política ausente), **D36** (as citações da ADR-0019 superseded), **D23**
+(a definição única de `ESQUEMA_DO_CORPO_VAZIO`, com o `CT-357` e dois mutantes), **D34**, **D20** (o
+marcador da janela da `0010`), **D5** e **D33** (que já estava pago). Suíte **834 → 835**. A auditoria
+corrigiu três fatos que a §2 registrava errado: o **D23 tinha cinco cópias, não duas**; o **D36
+alcançava 20 citações, não 14**; e o **D33 já estava fechado desde a T10**. Duas citações de ADR-0019
+**permanecem por decisão** — uma é narrativa histórica correta, a outra está dentro do `REVERTER
+EXIGE:` de uma `DECISÃO FECHADA`. O parecer está na **§5 do `_run/run-report.md`** da fatia, e
+**reafirma o NÃO** a `/agent-spec-debt-resolution`, agora com uma razão nova e medida: a coleta da
+skill **descarta os campos `Gatilho:` e `Por que não agora:`**, que é justamente o que desautoriza
+resolver o D1 e o D26.
 
 **Endurecimento do Protocolo Antirregressão — 2026-08-09**, também fora do pipeline. A §6 do
 protocolo atribui obrigações aos dois gates e ao orquestrador, e **nenhuma delas estava escrita nos
@@ -408,16 +425,19 @@ Específicos deste domínio: **undici** (mTLS do Sicoob), **`node:crypto` `X509C
 > grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 > ```
 
-Doze débitos têm gatilho que dispara fora da fatia que os criou: **D28** e **D32** vêm da F0;
+Treze débitos têm gatilho que dispara fora da fatia que os criou: **D28** e **D32** vêm da F0;
 **D23**, **D39**, **D24**, **D27** e **D37** nasceram na F1 — os três últimos na fatia
 `autorizacao-e-ciclo-de-acesso` —; três nasceram na F2, o **D3** na fatia
 `cadastro-de-imoveis-e-pessoas` e o **D36** e o **D44** na fatia `contratos-de-locacao`;
-e dois nasceram na F3, o **D1** e o **D26**, na fatia `cobranca-e-mora`.
+e três nasceram na F3, o **D1**, o **D26** e o **D20**, na fatia `cobranca-e-mora`.
 O **D27** partilha com o D23 o gatilho e o fato que falta: qual é o salto confiável da borda. O
-**D26** é o mais novo, emitido na T8, e
-tem a mesma forma do D1: os dois agendam a **promoção de um símbolo duplicado** para quando o terceiro
-consumidor chegar. O **D44** foi emitido na intervenção dirigida de 2026-08-09, e não num run — o
-débito existia desde a T10 e chegava ao futuro só por um parágrafo de docblock.
+**D26** e o **D1** têm a mesma forma: os dois agendam a **promoção de um símbolo duplicado** para
+quando o terceiro consumidor chegar. O **D44** foi emitido na intervenção dirigida de 2026-08-09, e
+não num run — o débito existia desde a T10 e chegava ao futuro só por um parágrafo de docblock.
+O **D20** é o mais novo, emitido na **intervenção dirigida de 2026-08-10** sobre um débito da T7 que
+o run havia registrado só na §2: ele é o único do índice cujo gatilho **fecha em silêncio** — a
+janela em que emendar a `0010` é legítimo termina na primeira aplicação dela a banco durável, e
+nada acusaria isso sem o marcador.
 **Nenhum tem por gatilho o congelamento da superfície da API** — o único que tinha era o D43, e ele
 foi fechado em 2026-08-09 pela ADR-0021, que supersede a 0019 e recorta a governança da transição
 pela natureza do ato.
@@ -473,6 +493,7 @@ intervenção dirigida de limpeza de 2026-08-05, quando `esquemaDoErro` ganhou d
 | **D44** (F2/T10, fatia `contratos-de-locacao`) | `apps/api/src/imoveis/imovel.service.ts` (`definirSituacaoDeLocacao`) | a fatia que criar no banco a **restrição pareando `contrato.status='ATIVO'` com `imovel.status_locacao`** — hoje nada fecha a janela da guarda |
 | **D1** (F3/T2, fatia `cobranca-e-mora`) | `packages/contracts/src/cobranca.ts` (ponto do import) | o **terceiro consumidor monetário do pacote** — `MAIOR_VALOR_MONETARIO` e `ESCALA_MONETARIA` sobem para `comum.ts` |
 | **D26** (F3/T8, fatia `cobranca-e-mora`) | `packages/db/src/derivacao-de-cobranca.ts` (`ultimoDiaDoMes`) | o **terceiro consumidor de aritmética de calendário do pacote** — `ultimoDiaDoMes` e `ehBissexto` sobem para módulo próprio |
+| **D20** (F3/T7, fatia `cobranca-e-mora`) | `packages/db/migracoes/0010_seguranca_cobranca.sql` (bloco da emenda) | a **primeira aplicação da `0010` a banco durável** — a partir dela o arquivo é imutável e o `sha256sum` do `migrar-banco.sh` aborta a instalação |
 
 ---
 

@@ -29,8 +29,14 @@
  * |       |        | único ponto onde as duas escritas cruas são compostas com
  * |       |        | `gravarCadastroSobRestricaoDeUnicidade`. O homônimo de `@sysloc/auth` é
  * |       |        | separado por asserção própria, e não por acidente do padrão. |
+ * | CA-16 | CT-357 | A varredura de `apps/api/src/**`, com os comentários removidos, encontra
+ * |       |        | exatamente UMA definição de `ESQUEMA_DO_CORPO_VAZIO` — em
+ * |       |        | `comum/esquema-de-corpo-vazio.ts` — e encontra a importação dela
+ * |       |        | **exatamente** nas cinco bordas que a consomem. Era o débito **D23**, e ele
+ * |       |        | tinha CINCO cópias byte a byte quando foi fechado (o registro dele falava em
+ * |       |        | duas). É a mesma classe, e a mesma forma de fecho, do CT-343. |
  *
- * Rastreabilidade: `CA-16 → CT-340, CT-341, CT-343` e `CA-09 → CT-356`. A equivalência **pela
+ * Rastreabilidade: `CA-16 → CT-340, CT-341, CT-343, CT-357` e `CA-09 → CT-356`. A equivalência **pela
  * borda** — as rotas que
  * já consumiam as três cópias respondendo o mesmo corpo depois da extração — é o `CT-342`, em
  * `apps/api/test/campos-fechados.e2e.spec.ts`; os dois são complementares e nenhum substitui o
@@ -429,6 +435,49 @@ const CHAMADA_DE_SAFE_PARSE = /\bsafeParse\s*\(/u;
 const ANALISADORES_ESPERADOS = ['comum/validacao.ts', 'configuracao/ambiente.ts'];
 
 /**
+ * Casa a **definição** de `ESQUEMA_DO_CORPO_VAZIO` no escopo do módulo, com ou sem `export`.
+ *
+ * Mesma forma de {@link DEFINICAO_DE_VALIDAR}, e pela mesma razão: as âncoras `\b` impedem um nome
+ * mais longo de contar, e os comentários já saíram antes de a linha chegar aqui — o que importa,
+ * porque as cinco bordas trocaram a definição por um **comentário** que cita o símbolo.
+ */
+const DEFINICAO_DO_CORPO_VAZIO = /\b(?:function|const|let|var)\s+ESQUEMA_DO_CORPO_VAZIO\b/u;
+
+/** Casa a **importação** de `ESQUEMA_DO_CORPO_VAZIO` a partir do módulo comum, na mesma linha. */
+const IMPORTACAO_DO_CORPO_VAZIO =
+  /^\s*import\s.*\bESQUEMA_DO_CORPO_VAZIO\b.*['"][^'"]*comum\/esquema-de-corpo-vazio\.js['"]/u;
+
+/**
+ * O único definidor legítimo, relativo a `apps/api/src`.
+ *
+ * Literal e escrito à mão pelo mesmo critério de {@link DEFINIDOR_ESPERADO}: derivá-lo da varredura
+ * que o caso classifica faria o caso concordar consigo mesmo.
+ */
+const DEFINIDOR_DO_CORPO_VAZIO_ESPERADO = 'comum/esquema-de-corpo-vazio.ts';
+
+/**
+ * Os importadores legítimos, relativos a `apps/api/src`, em ordem estável.
+ *
+ * São **cinco**, e o número é o achado: o débito **D23** registrava *"segunda definição idêntica"* e
+ * a medição do fecho encontrou **cinco** cópias byte a byte — as quatro dos controladores mais a de
+ * `cadastros/superficie-de-cadastro.ts`, que nenhum gate tinha visto. O débito havia crescido desde
+ * o registro, como o D28 (F0/T5) já havia crescido antes dele.
+ *
+ * Vale aqui a mesma leitura do {@link IMPORTADORES_ESPERADOS}: o que este caso existe para reprovar
+ * é a **segunda definição**, e a ponta que a mede é {@link DEFINIDOR_DO_CORPO_VAZIO_ESPERADO}, que
+ * **não deve mudar**. O conjunto que pode crescer é o dos consumidores — cada borda nova que importa
+ * em vez de copiar é o D23 continuando fechado —, e crescê-lo aqui exige a linha
+ * `SUT_IS_CORRECT_BECAUSE:` junto, como as edições anteriores desta suíte.
+ */
+const IMPORTADORES_DO_CORPO_VAZIO_ESPERADOS = [
+  'cadastros/superficie-de-cadastro.ts',
+  'cobrancas/cobranca.controller.ts',
+  'contratos/contrato.controller.ts',
+  'imoveis/conjunto.controller.ts',
+  'imoveis/imovel.controller.ts',
+];
+
+/**
  * Casa uma **declaração de importação inteira** a partir de `@sysloc/db`, capturando os nomeados.
  *
  * Ela é aplicada ao arquivo INTEIRO, e não linha a linha como as três acima, e a diferença não é
@@ -596,6 +645,37 @@ describe('CT-343 — `validar` é definida num arquivo só e importada pelas bor
       analisadores,
       `a análise de entrada com Zod deixou de acontecer em dois pontos: ${analisadores.join(', ')}`,
     ).toEqual(ANALISADORES_ESPERADOS);
+  });
+});
+
+describe('CT-357 — `ESQUEMA_DO_CORPO_VAZIO` é definido num arquivo só e importado pelas bordas', () => {
+  it('não restou cópia: uma definição em comum/esquema-de-corpo-vazio.ts e cinco importadores', async () => {
+    const arquivos = await listarFontesTs(FONTE_DA_APLICACAO);
+    const definicoes = await varrerArquivos(arquivos, (linha) =>
+      DEFINICAO_DO_CORPO_VAZIO.test(linha),
+    );
+    const importacoes = await varrerArquivos(arquivos, (linha) =>
+      IMPORTACAO_DO_CORPO_VAZIO.test(linha),
+    );
+
+    // Âncora: sem ela, uma varredura que não lesse arquivo algum produziria conjuntos vazios e as
+    // igualdades abaixo reprovariam por ausência, sem dizer por quê. Mesma razão do CT-343.
+    expect(
+      definicoes.arquivos,
+      'a varredura não leu arquivo algum: a cardinalidade seria zero por construção',
+    ).toBeGreaterThan(0);
+
+    const definidores = [...new Set(definicoes.ocorrencias.map(arquivoDaOcorrencia))].sort();
+    expect(
+      definidores,
+      `a definição de ESQUEMA_DO_CORPO_VAZIO deixou de ser única: ${definidores.join(', ')}`,
+    ).toEqual([DEFINIDOR_DO_CORPO_VAZIO_ESPERADO]);
+
+    const importadores = [...new Set(importacoes.ocorrencias.map(arquivoDaOcorrencia))].sort();
+    expect(
+      importadores,
+      `os importadores de ESQUEMA_DO_CORPO_VAZIO deixaram de ser as cinco bordas revisadas: ${importadores.join(', ')}`,
+    ).toEqual(IMPORTADORES_DO_CORPO_VAZIO_ESPERADOS);
   });
 });
 
