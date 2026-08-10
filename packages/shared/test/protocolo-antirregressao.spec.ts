@@ -1,5 +1,10 @@
 /**
- * Barreira executável do Protocolo Antirregressão — CT-501 a CT-507.
+ * Barreira executável do Protocolo Antirregressão — CT-901 a CT-910.
+ *
+ * A faixa **CT-9xx é deliberada**: estes casos não provam regra de domínio, provam o substrato do
+ * pipeline. A sequência de domínio cresce fatia a fatia (a F3 já alocou até CT-545) e alcançaria
+ * qualquer faixa baixa que se escolhesse — a primeira versão deste arquivo nasceu em CT-501 e
+ * colidiu inteira com a fatia de cobrança. Casos de meta-verificação ficam no 9xx, fora do caminho.
  *
  * ---------------------------------------------------------------------------
  * INVARIANTES
@@ -7,15 +12,15 @@
  *
  * | CT     | Invariante |
  * |--------|------------|
- * | CT-501 | A rule do protocolo declara escopo de carregamento UNIVERSAL (`paths: - "**"`). |
- * | CT-502 | O núcleo do protocolo está íntegro: 5 passos, 3 formas de regressão, **exatamente**
+ * | CT-901 | A rule do protocolo declara escopo de carregamento UNIVERSAL (`paths: - "**"`). |
+ * | CT-902 | O núcleo do protocolo está íntegro: 5 passos, 3 formas de regressão, **exatamente**
  * |        | 7 proibições, e as 3 linhas de declaração nomeadas literalmente. |
- * | CT-503 | O `CLAUDE.md` aponta para a rule e carrega o resumo mínimo com os 4 itens. |
- * | CT-504 | Nenhum contrato de agente DUPLICA o texto normativo do protocolo. |
- * | CT-505 | Os dentes existem: as âncoras de L1 (Gate 2), L2 (Gate 1), L3 (fonte única de
+ * | CT-903 | O `CLAUDE.md` aponta para a rule e carrega o resumo mínimo com os 4 itens. |
+ * | CT-904 | Nenhum contrato de agente DUPLICA o texto normativo do protocolo. |
+ * | CT-905 | Os dentes existem: as âncoras de L1 (Gate 2), L2 (Gate 1), L3 (fonte única de
  * |        | severidade) e L4 (bloco injetado) estão nos arquivos onde foram instaladas. |
- * | CT-506 | As 3 cópias do bloco de disciplina do executor são byte-idênticas. |
- * | CT-507 | O índice de débito fecha nas DUAS pontas, e todo campo `ÍNDICE` de marcador vivo
+ * | CT-906 | As 3 cópias do bloco de disciplina do executor são byte-idênticas. |
+ * | CT-907 | O índice de débito fecha nas DUAS pontas, e todo campo `ÍNDICE` de marcador vivo
  * |        | aponta para arquivo existente. |
  *
  * ---------------------------------------------------------------------------
@@ -41,7 +46,7 @@
  *    caractere**, uma string não-vazia que passa em qualquer asserção de "não está vazio". A
  *    asserção fica decorativa e ninguém percebe.
  *
- * 2. **Controle de não-cegueira (CT-508 e CT-509).** Uma varredura que hoje não encontra alvo fica
+ * 2. **Controle de não-cegueira (CT-908 e CT-909).** Uma varredura que hoje não encontra alvo fica
  *    verde por não enxergar, e uma expressão de busca quebrada fica verde igual. Os dois casos
  *    provam que a detecção discrimina (fixtures positiva e negativa) e que a varredura enxerga
  *    arquivos de verdade, excluindo saída de build.
@@ -77,7 +82,7 @@ const AREAS_DE_CODIGO = ['apps', 'packages', 'deploy'];
 
 /**
  * Este arquivo cita os marcadores como dado. Sem a exclusão, a varredura o encontraria e o
- * CT-507 exigiria uma linha no índice do `CLAUDE.md` para um débito que não existe.
+ * CT-907 exigiria uma linha no índice do `CLAUDE.md` para um débito que não existe.
  */
 const ARQUIVO_DESTA_BARREIRA = relative(RAIZ, import.meta.filename);
 
@@ -164,7 +169,7 @@ function marcadoresVivos(): Set<string> {
   return identificadores;
 }
 
-describe('CT-501 — a rule do protocolo carrega em TODA sessão', () => {
+describe('CT-901 — a rule do protocolo carrega em TODA sessão', () => {
   it('declara escopo de carregamento universal', () => {
     const frontmatter = recortarSecao(ler(CAMINHO_DA_RULE), '---', '---');
 
@@ -175,7 +180,7 @@ describe('CT-501 — a rule do protocolo carrega em TODA sessão', () => {
   });
 });
 
-describe('CT-502 — o núcleo do protocolo está íntegro', () => {
+describe('CT-902 — o núcleo do protocolo está íntegro', () => {
   const rule = ler(CAMINHO_DA_RULE);
 
   it('mantém os 5 passos do protocolo, nomeados', () => {
@@ -209,7 +214,7 @@ describe('CT-502 — o núcleo do protocolo está íntegro', () => {
   });
 });
 
-describe('CT-503 — o arquivo de instruções liga o protocolo e não o resume a menos', () => {
+describe('CT-903 — o arquivo de instruções liga o protocolo e não o resume a menos', () => {
   const instrucoes = ler(CAMINHO_DAS_INSTRUCOES);
 
   it('aponta para o caminho da rule', () => {
@@ -227,7 +232,7 @@ describe('CT-503 — o arquivo de instruções liga o protocolo e não o resume 
   });
 });
 
-describe('CT-504 — nenhum contrato de agente duplica o texto do protocolo', () => {
+describe('CT-904 — nenhum contrato de agente duplica o texto do protocolo', () => {
   it('nenhum agente reproduz as seções normativas da rule', () => {
     const secoesNormativas = ['## 4. Proibições absolutas', '## 2. Protocolo obrigatório'];
 
@@ -243,7 +248,7 @@ describe('CT-504 — nenhum contrato de agente duplica o texto do protocolo', ()
   });
 });
 
-describe('CT-505 — os dentes estão instalados onde reprovam', () => {
+describe('CT-905 — os dentes estão instalados onde reprovam', () => {
   it('L1 · o Gate 2 detecta regressão de decisão e garantia removida', () => {
     const gate2 = ler(CONTRATO_GATE_2);
     expect(gate2).toContain('DECISÃO FECHADA');
@@ -277,7 +282,7 @@ describe('CT-505 — os dentes estão instalados onde reprovam', () => {
   });
 });
 
-describe('CT-506 — as 3 cópias do bloco de disciplina não divergem', () => {
+describe('CT-906 — as 3 cópias do bloco de disciplina não divergem', () => {
   it('são byte-idênticas', () => {
     const [primeira, ...demais] = COPIAS_DA_DISCIPLINA.map(ler);
     for (const [indice, copia] of demais.entries()) {
@@ -288,7 +293,7 @@ describe('CT-506 — as 3 cópias do bloco de disciplina não divergem', () => {
   });
 });
 
-describe('CT-507 — o índice de débito fecha nas duas pontas', () => {
+describe('CT-907 — o índice de débito fecha nas duas pontas', () => {
   const instrucoes = ler(CAMINHO_DAS_INSTRUCOES);
 
   const doIndice = new Set(
@@ -329,7 +334,7 @@ describe('CT-507 — o índice de débito fecha nas duas pontas', () => {
   });
 });
 
-describe('CT-508 — controle de não-cegueira da detecção de marcador', () => {
+describe('CT-908 — controle de não-cegueira da detecção de marcador', () => {
   it('a expressão POSITIVA reconhece um marcador na forma canônica', () => {
     const exemplo = '// DÉBITO COM GATILHO — D99 · F7/T3 · registrado 2026-01-01';
     const achados = [...exemplo.matchAll(PADRAO_DE_MARCADOR)];
@@ -358,12 +363,12 @@ describe('CT-508 — controle de não-cegueira da detecção de marcador', () =>
   });
 });
 
-describe('CT-509 — controle de não-vacuidade da varredura', () => {
+describe('CT-909 — controle de não-vacuidade da varredura', () => {
   it('a varredura enxerga arquivos de verdade e exclui saída de build', () => {
     const arquivos = arquivosDeCodigo();
 
     // Sem este controle, uma varredura quebrada (caminho errado, filtro que casa nada) ficaria
-    // verde por não enxergar — e as asserções do CT-507 seriam vacuamente verdadeiras.
+    // verde por não enxergar — e as asserções do CT-907 seriam vacuamente verdadeiras.
     expect(arquivos.length).toBeGreaterThan(50);
     expect(arquivos.some((caminho) => caminho.split('/').includes('dist'))).toBe(false);
     // Defeito medido durante a construção desta barreira: o pnpm symlinka os pacotes do
@@ -372,7 +377,7 @@ describe('CT-509 — controle de não-vacuidade da varredura', () => {
     expect(arquivos.some((caminho) => caminho.split('/').includes('node_modules'))).toBe(false);
     expect(arquivos).not.toContain(ARQUIVO_DESTA_BARREIRA);
     // O caminho canônico deste arquivo TEM de ser o que a varredura veria — senão a exclusão
-    // acima é vacuamente verdadeira e o CT-507 volta a acusar a si mesmo.
+    // acima é vacuamente verdadeira e o CT-907 volta a acusar a si mesmo.
     expect(ARQUIVO_DESTA_BARREIRA).toBe('packages/shared/test/protocolo-antirregressao.spec.ts');
   });
 
@@ -383,12 +388,12 @@ describe('CT-509 — controle de não-vacuidade da varredura', () => {
   });
 });
 
-describe('CT-510 — a comparação de contagem não mede replay de cache', () => {
+describe('CT-910 — a comparação de contagem não mede replay de cache', () => {
   it('a tarefa de teste do orquestrador de build declara cache desligado', () => {
     const turbo = ler('turbo.json');
     const tarefaDeTeste = recortarSecao(turbo, '"test": {', '}');
 
-    // Se o runner reaproveitar resultado cacheado, a "contagem anterior" do CT-505/L2 é replay,
+    // Se o runner reaproveitar resultado cacheado, a "contagem anterior" do CT-905/L2 é replay,
     // e a comparação passa a provar que o cache está íntegro — não que os testes estão.
     expect(tarefaDeTeste).toContain('"cache": false');
   });
