@@ -1,0 +1,2406 @@
+{
+ "schema_version": 1,
+ "framework": "sdd",
+ "feature": "cobranca-e-mora",
+ "version": "v1",
+ "atualizado_em": "2026-08-09",
+ "ajustes_do_arquiteto": [
+  "CT-511 — os caminhos de leitura comparados passam a ser os QUATRO efetivamente publicados por esta fatia (item, lista sem filtro, lista filtrada por contrato, lista filtrada por status). O gerador propôs 'a projeção embutida na leitura do contrato', que não existe: esta fatia não acrescenta cobranças ao esquema do contrato, e criá-la seria crescimento de superfície publicada sem requisito.",
+  "CT-515 — removido o passo que exercita valor de canal de comunicação (RN-17). Medição: os únicos campos de canal do produto (`canalAVencer`, `canalVencida`, `canal`) pertencem à configuração da régua e ao log de envio, ambos da fatia 2. Esta fatia não publica campo de canal, logo não há valor a recusar. Ver §21 do tech_spec.",
+  "CT-530 — o D36 (F2/T8) NÃO é fechado nesta fatia. O gatilho é a F3, mas quem decide se o carimbo 'CANCELADO' é pré-condição ou efeito é a fatia 2, que produz o documento. O marcador permanece e é reafirmado, não removido.",
+  "CT-538 e CT-539 — acrescentados pelo `/agent-spec-challenge-spec` de 2026-08-09, e NÃO pelo gerador. Os 37 casos originais provavam a mora apurada (CT-522 a CT-529) e a autorização das rotas (CT-533/534), mas nenhum exercitava o comportamento das duas rotas de `/v1/multa-e-juros`: nem o `PUT` bem-sucedido, nem o upsert, nem o `GET` da empresa sem linha (RD-21), nem qualquer das recusas de entrada declaradas na §6.1 da tech_spec. Os dois casos fecham esse vão e vivem em `apps/api/test/mora.e2e.spec.ts`.",
+  "Distribuição por task (task-plan de 2026-08-09): CT-511 e CT-521 NÃO ficaram na task das rotas de leitura (T5). O CT-511 monta cobranças PAGA e CANCELADA pelas rotas, e o CT-521 executa as três operações destrutivas incluindo o cancelamento em cascata — os dois só são implementáveis depois de T7 e T10, respectivamente.",
+  "CT-540 a CT-545 acrescentados por invocação de fallback do agent-spec-qa-test-generator para a T2 (contrato de tipos da cobrança), única task sem CT correspondente entre os 39. Numeração global continuada a partir de CT-539. Eles fecham um vão real: as seis regras de entrada de esquemaDeCobrancaNova declaradas na §6.1 do tech spec não tinham caso na camada de contrato puro."
+ ],
+ "stack_discovery": {
+  "fonte": "testing_stack_rule",
+  "stack": "TypeScript 7.0.2 strict / Node 24.18.1 · NestJS 11 + Fastify · Drizzle + postgres.js · PostgreSQL 18 com RLS forçada · Zod 4 · ts-rest · pnpm 11 + Turborepo · bash para os verificadores de infraestrutura e de caracterização",
+  "framework_teste": "Vitest (unitário e integração) + `embedded-postgres` (instância efêmera própria por execução) · E2E em Vitest sobre HTTP real em porta dinâmica (`*.e2e.spec.ts` em `apps/api/test/`) · verificadores em bash com o vocabulário `caso`/`ok`/`falhar`/`afirmar_igual`/`afirmar_diferente`/`fechar_caso`",
+  "comando_teste": "pnpm test (→ turbo run test) · subset: pnpm --filter @sysloc/<pacote> test · verificadores: bash deploy/scripts/caracterizacao/verificar-golden.sh e bash deploy/scripts/caracterizacao/verificar-captura.sh",
+  "discovery_needed": false,
+  "lacunas": []
+ },
+ "erros_leitura": [
+  {
+   "arquivo": "docs/specs/features/caracterizacao-regras-legadas/v1/golden/marcar-cobrancas-vencidas.json",
+   "impacto": "Não aberto pelo gerador (economia de leitura). O arquiteto o leu: ele registra `pagamento_confirmado` e `status_cobranca` como colunas do legado, e a rotina noturna escreve `Vencida`. O CT-512 deve nomear explicitamente essas colunas entre as NÃO portadas."
+  },
+  {
+   "arquivo": "docs/specs/features/caracterizacao-regras-legadas/v1/golden/atualizar-atrasos-cobrancas.json",
+   "impacto": "Idem. O arquiteto o leu: registra `data_inicio_atraso` e `data_ultima_atualizacao_atraso`, escritas pela rotina, e o caso `AAC-04` mostra que `pagamento_confirmado` é eixo independente de `status_cobranca` no legado — eixo que esta fatia colapsa em `pago_em`."
+  }
+ ],
+ "resumo": {
+  "total_casos_teste": 45,
+  "por_tipo": {
+   "unitario": 10,
+   "integracao": 15,
+   "componente": 0,
+   "e2e": 14,
+   "seguranca": 6,
+   "acessibilidade": 0
+  }
+ },
+ "casos_teste": [
+  {
+   "id": "CT-501",
+   "task_id": "T1",
+   "titulo": "O golden da régua de cobrança existe, tem forma declarada e está em bijeção com o PROCEDENCIA.md",
+   "tipo": "INTEGRACAO",
+   "categoria": "caminho_feliz",
+   "invariant": "A captura da régua produz artefato golden versionado cujas chaves de topo (`modulo`, `regra`, `funcoes`, `entrada`, `retorno`, `estado_resultante`) existem, cujos cenários somam a contagem declarada, e cujo conjunto de máscaras `<[A-Z_]+>` presentes no arquivo é IGUAL ao conjunto declarado na §2 do `PROCEDENCIA.md` — sem máscara órfã em nenhuma das duas direções.",
+   "owning_layer": "unit",
+   "existing_suite": "deploy/scripts/caracterizacao/verificar-golden.sh",
+   "real_execution_boundary": "filesystem",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-503",
+    "input_invalido": "golden truncado (um cenário a menos) e máscara declarada no PROCEDENCIA.md sem ocorrência no artefato",
+    "assertion_esperada": "o caso reprova com `falhar` nomeando a contagem obtida contra a esperada e o marcador órfão pelo nome literal; `falhas_totais > 0` e `exit 1`"
+   },
+   "precondicao_privilegiada": {
+    "presente": false,
+    "descricao": "",
+    "caminho_legitimo": "",
+    "teste_analogo": ""
+   },
+   "camada": "caracterização (frente shell)",
+   "pre_condicoes": [
+    "`capturar.py` estendido com a frente da régua e já executado contra site efêmero",
+    "artefato golden novo versionado em `docs/specs/features/caracterizacao-regras-legadas/v1/golden/`",
+    "`PROCEDENCIA.md` reescrito pela captura"
+   ],
+   "dados_entrada": {
+    "descricao": "O artefato golden novo da régua e o manifesto de procedência, lidos do disco versionado.",
+    "valores": {
+     "artefato": "docs/specs/features/caracterizacao-regras-legadas/v1/golden/regua-de-cobranca.json",
+     "manifesto": "docs/specs/features/caracterizacao-regras-legadas/v1/golden/PROCEDENCIA.md"
+    }
+   },
+   "passos": [
+    "Abrir `caso \"CT-501\"` no `verificar-golden.sh`, no molde do `CT-433` (dois artefatos novos, forma e bijeção).",
+    "Afirmar por `afirmar_igual` a presença de cada chave de topo obrigatória.",
+    "Contar os cenários de cada bloco e comparar por `afirmar_igual` com a contagem declarada.",
+    "Extrair com `grep -o '<[A-Z_]\\+>'` o conjunto de máscaras do artefato e o declarado na §2 do `PROCEDENCIA.md`, ordenar os dois e compará-los por `afirmar_igual`.",
+    "`fechar_caso \"CT-501\"`."
+   ],
+   "resultado_esperado": "Todas as chaves de topo presentes; contagem de cenários por bloco igual à declarada; conjunto ordenado de máscaras do artefato IGUAL, cadeia por cadeia, ao declarado no `PROCEDENCIA.md`; `falhas_totais == 0` e `exit 0`.",
+   "criterios_aceitacao_validados": [
+    "CA-01"
+   ],
+   "observacoes": "Estende o verificador existente — não cria arquivo. A varredura `<[A-Z_]+>` não casa dígito: máscara nova da régua deve ser nomeada sem algarismo, sob pena de escapar da bijeção (nota já registrada no PROCEDENCIA.md)."
+  },
+  {
+   "id": "CT-502",
+   "task_id": "T1",
+   "titulo": "A captura da régua registra destinatário, assunto e corpo, e o despachante real nunca é invocado",
+   "tipo": "SEGURANCA",
+   "categoria": "seguranca",
+   "invariant": "Durante a captura, os dois pontos de despacho de `emailer.py` (`:203` e `:251`) são substituídos por um registrador em memória; o golden registra, por cenário, a tripla (destinatário, assunto, corpo) de cada mensagem que a régua decidiu enviar, e o contador de invocações do despachante real do arcabouço vale exatamente `0`.",
+   "owning_layer": "unit",
+   "existing_suite": "deploy/scripts/caracterizacao/verificar-captura.sh",
+   "real_execution_boundary": "filesystem",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "este é o caso negativo: ele prova a AUSÊNCIA de efeito externo",
+    "assertion_esperada": "contador de invocações do despachante real igual a `0`; `capturar.py` sem nenhuma chamada ao despachante do arcabouço em posição executável"
+   },
+   "precondicao_privilegiada": {
+    "presente": false,
+    "descricao": "",
+    "caminho_legitimo": "",
+    "teste_analogo": ""
+   },
+   "camada": "caracterização (frente shell)",
+   "pre_condicoes": [
+    "`capturar.py` executando `core.py`, `runner.py` e `emailer.py` da régua contra site efêmero",
+    "cenários sintéticos semeados: configuração da régua e histórico de envio"
+   ],
+   "dados_entrada": {
+    "descricao": "O fonte de `capturar.py` e o golden produzido pela captura.",
+    "valores": {
+     "fonte": "deploy/scripts/caracterizacao/capturar.py",
+     "pontos_substituidos": "emailer.py:203, emailer.py:251"
+    }
+   },
+   "passos": [
+    "PROVA ESTÁTICA: afirmar que `capturar.py` substitui o despachante nos dois pontos e que `grep -c` do nome do despachante fora de comentário e fora do bloco de substituição dá `0`.",
+    "PROVA DE FALSIFICAÇÃO: copiar `capturar.py` para diretório temporário, remover a substituição de UM dos dois pontos, aplicar a asserção commitada e exigir que REPROVE nomeando o ponto restante; aplicar ao íntegro e exigir passe limpo.",
+    "PROVA COMPORTAMENTAL: afirmar que o golden traz, por cenário, mensagens registradas com `destinatario`, `assunto` e `corpo` não vazios, e que o campo que conta invocações do despachante real vale `0`.",
+    "`fechar_caso \"CT-502\"`."
+   ],
+   "resultado_esperado": "A asserção estática passa no arquivo íntegro e REPROVA na cópia com um dos pontos removido, nomeando literalmente `emailer.py:203` ou `emailer.py:251`. Cada cenário do golden traz ≥ 1 mensagem com as três chaves não vazias, e o contador de despacho real vale exatamente `0`.",
+   "criterios_aceitacao_validados": [
+    "CA-01"
+   ],
+   "observacoes": "Prova de falsificação OBRIGATÓRIA — a asserção inspeciona o texto do SUT (`.claude/rules/testing-stack.md`). A ordem de queda do D5 (substituir despachante → servidor local que descarta → piso das frentes puras) deve constar do `PROCEDENCIA.md` com o nível efetivamente alcançado, e o caso afirma qual nível o golden declara."
+  },
+  {
+   "id": "CT-503",
+   "task_id": "T1",
+   "titulo": "O golden registra a divergência de estado entre o caminho automático e o manual da régua",
+   "tipo": "INTEGRACAO",
+   "categoria": "teste_negativo",
+   "invariant": "Para uma cobrança CANCELADA e com vencimento passado, o golden registra que `get_status_template` (`core.py`) resolve o template `Fechada` e que `get_status_template_manual` (`emailer.py`) resolve `Vencida` — valores DIFERENTES para o mesmo fato, com o caminho manual tendo produzido mensagem registrada onde o automático não produziu nenhuma.",
+   "owning_layer": "unit",
+   "existing_suite": "deploy/scripts/caracterizacao/verificar-golden.sh",
+   "real_execution_boundary": "filesystem",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "cobrança simultaneamente cancelada e vencida — o caso que discrimina os dois resolvedores",
+    "assertion_esperada": "`template_automatico == 'Fechada'`, `template_manual == 'Vencida'`, `afirmar_diferente` entre os dois, e `1` mensagem registrada no manual contra `0` no automático"
+   },
+   "precondicao_privilegiada": {
+    "presente": false,
+    "descricao": "",
+    "caminho_legitimo": "",
+    "teste_analogo": ""
+   },
+   "camada": "caracterização (frente shell)",
+   "pre_condicoes": [
+    "CT-501 e CT-502 aprovados",
+    "cenário sintético com cobrança cancelada E vencida semeado na captura"
+   ],
+   "dados_entrada": {
+    "descricao": "O cenário do golden que cruza cancelamento com vencimento passado.",
+    "valores": {
+     "cenario": "cobranca_cancelada_e_vencida",
+     "resolvedor_automatico": "core.get_status_template",
+     "resolvedor_manual": "emailer.get_status_template_manual"
+    }
+   },
+   "passos": [
+    "Localizar no golden o cenário `cobranca_cancelada_e_vencida`.",
+    "`afirmar_igual` do template automático contra a cadeia literal `Fechada`.",
+    "`afirmar_igual` do template manual contra a cadeia literal `Vencida`.",
+    "`afirmar_diferente` entre os dois — a divergência é o fato capturado, e nomeá-la impede que uma recaptura futura a apague em silêncio.",
+    "`afirmar_igual` do número de mensagens registradas: `1` no manual, `0` no automático.",
+    "`fechar_caso \"CT-503\"`."
+   ],
+   "resultado_esperado": "`template_automatico` exatamente `Fechada`; `template_manual` exatamente `Vencida`; os dois diferem; manual registrou 1 mensagem e automático 0. É o oráculo da divergência que a fatia seguinte NÃO deve portar.",
+   "criterios_aceitacao_validados": [
+    "CA-01"
+   ],
+   "observacoes": "Esta divergência é a razão declarada na §2 do PRD e no tech-alignment para a unicidade estrutural do estado. Sem este caso, o golden capturaria a régua e perderia justamente o defeito que motivou a ADR-0023."
+  },
+  {
+   "id": "CT-504",
+   "task_id": "T8",
+   "titulo": "`derivarParcelasDoContrato` reproduz os três cenários do bloco `cobrancas` do golden, campo a campo",
+   "tipo": "UNITARIO",
+   "categoria": "caminho_feliz",
+   "invariant": "Para cada um dos 3 cenários do bloco `cobrancas` de `contrato-ativacao.json`, a função devolve lista de comprimento igual ao `prazo_meses` do cenário, e cada parcela iguala o registro do golden em `competencia`, `dataVencimento`, `referencia` e `valorOriginal` — igualdade exata de cadeia e de número, sem tolerância.",
+   "owning_layer": "unit",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "none",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-505",
+    "input_invalido": "contrato iniciado em `2027-01-31` com prazo 4 — a fórmula não-iterativa `addMeses(inicioOriginal, i)` produz `31/03/2027` no terceiro período",
+    "assertion_esperada": "o controle não-iterativo diverge do golden no terceiro período (`31/03/2027` obtido contra `28/03/2027` esperado), e a divergência é NOMEADA pelo índice do período"
+   },
+   "precondicao_privilegiada": {
+    "presente": false,
+    "descricao": "",
+    "caminho_legitimo": "",
+    "teste_analogo": ""
+   },
+   "camada": "função pura (packages/db)",
+   "pre_condicoes": [
+    "`packages/db/src/derivacao-de-cobranca.ts` implementado no molde de `derivacao-de-contrato.ts`",
+    "golden lido DO ARQUIVO versionado, nunca redigitado no teste"
+   ],
+   "dados_entrada": {
+    "descricao": "Os três cenários de `entrada.cobrancas`, casados por `id` com `retorno.cobrancas`.",
+    "valores": {
+     "dia_seguro_tres_meses": "inicio 2027-01-15, diaVencimento 10, prazo 3, valorMensal 1500.00 → 3 parcelas",
+     "inicio_no_dia_trinta_e_um_quatro_meses": "inicio 2027-01-31, diaVencimento 28, prazo 4, valorMensal 1500.00 → 4 parcelas",
+     "inicio_no_dia_trinta_e_um_treze_meses": "inicio 2027-01-31, diaVencimento 5, prazo 13, valorMensal 1000.00 → 13 parcelas"
+    }
+   },
+   "passos": [
+    "Ler o golden do disco e afirmar por igualdade que `entrada.cobrancas` tem exatamente 3 cenários e que todo `id` casa com um `id` de `retorno.cobrancas` (bijeção).",
+    "Para cada cenário, invocar `derivarParcelasDoContrato`.",
+    "Afirmar o comprimento da lista contra o `prazo_meses` (3, 4 e 13).",
+    "Afirmar, parcela a parcela, igualdade de `competencia`, `dataVencimento`, `referencia` e `valorOriginal` contra o golden.",
+    "Afirmar a contagem TOTAL de parcelas comparadas: 3 + 4 + 13 = 20 — sem isso, um laço que parasse cedo deixaria o caso verde tendo provado um punhado de parcelas."
+   ],
+   "resultado_esperado": "As 20 parcelas iguais ao golden campo a campo. `dia_seguro_tres_meses` produz competências `2027-01-01`/`2027-02-01`/`2027-03-01`, vencimentos `2027-01-10`/`2027-02-10`/`2027-03-10` e referências `15/01/2027 à 14/02/2027`, `15/02/2027 à 14/03/2027`, `15/03/2027 à 14/04/2027`; `inicio_no_dia_trinta_e_um_treze_meses` fecha em competência `2028-01-01`, vencimento `2028-01-05` e referência `28/01/2028 à 27/02/2028`.",
+   "criterios_aceitacao_validados": [
+    "CA-02"
+   ],
+   "observacoes": "Arquivo novo proposto: `packages/db/test/derivacao-de-cobranca.spec.ts`, no molde de `packages/db/test/derivacao-de-contrato.spec.ts` (cabeçalho INVARIANTES, golden lido do disco, contagem por bloco afirmada). Nenhuma suíte existente cobre esta invariante: `derivacao-de-contrato.spec.ts` afirma sobre os blocos `derivacao`/`validacao`/`fluxo`, e o bloco `cobrancas` não é tocado por caso algum."
+  },
+  {
+   "id": "CT-505",
+   "task_id": "T8",
+   "titulo": "A saturação da referência é ITERATIVA — o terceiro período de `2027-01-31` é `28/03`, e não `31/03`",
+   "tipo": "UNITARIO",
+   "categoria": "fronteira",
+   "invariant": "O início de cada período é derivado do início do período ANTERIOR (`inicio[i] = addMeses(inicio[i-1], 1)` com saturação no último dia do mês), nunca do início original — de modo que para `2027-01-31` os inícios são `31/01`, `28/02`, `28/03`, `28/04`, e a saturação de fevereiro é HERDADA pelos meses seguintes.",
+   "owning_layer": "unit",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "none",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "controle não-iterativo `addMeses(inicioOriginal, i)` aplicado ao mesmo contrato",
+    "assertion_esperada": "o controle devolve `31/03/2027 à 30/04/2027` no terceiro período; a asserção afirma essa divergência explicitamente antes de afirmar o valor correto"
+   },
+   "precondicao_privilegiada": {
+    "presente": false,
+    "descricao": "",
+    "caminho_legitimo": "",
+    "teste_analogo": ""
+   },
+   "camada": "função pura (packages/db)",
+   "pre_condicoes": [
+    "CT-504 implementado — o golden é o oráculo"
+   ],
+   "dados_entrada": {
+    "descricao": "O cenário discriminador do golden e um controle não-iterativo escrito no próprio teste.",
+    "valores": {
+     "contrato": "dataInicioLocacao 2027-01-31, diaVencimento 28, prazoMeses 4, valorMensal 1500.00",
+     "referencias_esperadas": "31/01/2027 à 27/02/2027 · 28/02/2027 à 27/03/2027 · 28/03/2027 à 27/04/2027 · 28/04/2027 à 27/05/2027"
+    }
+   },
+   "passos": [
+    "Invocar a função para `inicio_no_dia_trinta_e_um_quatro_meses`.",
+    "Afirmar as 4 referências por igualdade de cadeia contra o golden.",
+    "Escrever um controle não-iterativo no teste e afirmar que ele produz `31/03/2027` como início do TERCEIRO período.",
+    "Afirmar `expect(controle[2]).not.toEqual(golden[2])` — a discriminação é medida, não presumida.",
+    "Repetir o par (implementação, controle) no cenário de 13 meses e afirmar que o controle diverge em pelo menos 11 dos 13 períodos, nomeando os índices."
+   ],
+   "resultado_esperado": "As 4 referências iguais a `31/01/2027 à 27/02/2027`, `28/02/2027 à 27/03/2027`, `28/03/2027 à 27/04/2027`, `28/04/2027 à 27/05/2027`. O controle devolve `31/03/2027 à 30/04/2027` no terceiro período e a asserção de divergência passa nomeando o índice 2.",
+   "criterios_aceitacao_validados": [
+    "CA-02"
+   ],
+   "observacoes": "Arquivo novo proposto: `packages/db/test/derivacao-de-cobranca.spec.ts`. É o discriminador declarado do golden — sem ele, a implementação não-iterativa acerta os 3 períodos do cenário de 3 meses e passa despercebida. Mesmo desenho dos controles de saturação e `-1 dia` do `CT-401`."
+  },
+  {
+   "id": "CT-506",
+   "task_id": "T8",
+   "titulo": "A derivação de parcelas é indiferente ao fuso do processo, e não usa `Date.UTC` nem `new Date(ano, mes, dia)`",
+   "tipo": "UNITARIO",
+   "categoria": "caso_extremo",
+   "invariant": "A função devolve as mesmas cadeias `YYYY-MM-DD` e `DD/MM/YYYY à DD/MM/YYYY` sob `TZ=UTC`, `TZ=America/Sao_Paulo` e `TZ=Pacific/Kiritimati` (UTC+14), e o fonte de `derivacao-de-cobranca.ts` não contém `Date.UTC(` nem `new Date(` com três ou mais argumentos numéricos em posição executável.",
+   "owning_layer": "unit",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "none",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "controle que constrói o instante no relógio local, e contrato com ano de destino entre 1 e 99",
+    "assertion_esperada": "o controle local devolve competência deslocada em um dia em `Pacific/Kiritimati`; um controle com `Date.UTC` devolve `1950` no lugar de `0050`, e as duas divergências são afirmadas antes do valor correto"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "O caso precisa executar sob três fusos horários distintos, que o processo Node fixa na inicialização.",
+    "caminho_legitimo": "Imitar o `CT-432` de `packages/db/test/derivacao-de-contrato.spec.ts`: fixar o fuso pelo mecanismo nativo do runtime e AFIRMAR a fixação pelos deslocamentos observados (`0`, `180`, `-840`) antes de afirmar o resultado — sem isso o caso ficaria verde sem ter trocado de fuso. **Nunca** acrescentar parâmetro de fuso, flag ou ramo à função de produção.",
+    "teste_analogo": "packages/db/test/derivacao-de-contrato.spec.ts (CT-432)"
+   },
+   "camada": "função pura (packages/db)",
+   "pre_condicoes": [
+    "`derivacao-de-cobranca.ts` implementado"
+   ],
+   "dados_entrada": {
+    "descricao": "Um cenário do golden mais um contrato de ano baixo, para o remapeamento de século.",
+    "valores": {
+     "cenario_golden": "dataInicioLocacao 2027-01-31, diaVencimento 28, prazoMeses 4",
+     "ano_baixo": "dataInicioLocacao 0050-03-15, diaVencimento 10, prazoMeses 2",
+     "fusos": "UTC (0), America/Sao_Paulo (180), Pacific/Kiritimati (-840)"
+    }
+   },
+   "passos": [
+    "Para cada fuso: afirmar o deslocamento observado contra o esperado, provando que o fuso trocou de fato.",
+    "Invocar a função para o cenário do golden e afirmar que as 4 parcelas são idênticas nos três fusos, campo a campo.",
+    "Escrever um controle que construa o instante no relógio local e afirmar que ele devolve competência `2026-12-01` em `Pacific/Kiritimati`.",
+    "Invocar para o contrato de ano `0050` e afirmar competência `0050-04-01`, não `1950-04-01`; escrever controle com `Date.UTC` e afirmar que ele devolve `1950`.",
+    "PROVA ESTÁTICA COM FALSIFICAÇÃO: `grep` exigindo `0` ocorrências de `Date.UTC(` e de `new Date(` com três argumentos numéricos, fora de comentário; copiar o arquivo, reintroduzir `Date.UTC` e exigir que a asserção commitada REPROVE; aplicar ao íntegro e exigir passe limpo. Rodar por `pnpm --filter @sysloc/db test`, nunca por `vitest run` avulso."
+   ],
+   "resultado_esperado": "As 4 parcelas idênticas nos três fusos. O controle local devolve `2026-12-01` em `Pacific/Kiritimati` contra `2027-01-01` correto. Para `0050-03-15`, competência `0050-04-01`; o controle com `Date.UTC` devolve `1950-04-01`. A asserção estática dá 0 ocorrências no íntegro e REPROVA na cópia mutada.",
+   "criterios_aceitacao_validados": [
+    "CA-02"
+   ],
+   "observacoes": "Arquivo novo proposto: `packages/db/test/derivacao-de-cobranca.spec.ts`. As duas proibições são MEDIDAS: o remapeamento de século de `Date.UTC` foi o defeito D21, fechado em 2026-08-09 (commit 3697027), e o deslocamento por fuso é o que o `CT-432` mede."
+  },
+  {
+   "id": "CT-507",
+   "task_id": "T8",
+   "titulo": "Prazo de N meses produz N parcelas, todas de natureza ALUGUEL e valor igual ao mensal",
+   "tipo": "UNITARIO",
+   "categoria": "fronteira",
+   "invariant": "Para prazo `N ∈ {1, 3, 4, 12, 13}` a função devolve exatamente `N` parcelas; toda parcela tem `natureza === 'ALUGUEL'` e `valorOriginal === valorMensal`; a competência da parcela `i` é o primeiro dia do mês obtido avançando `i` meses a partir do mês de `dataInicioLocacao`; e `dataVencimento` tem sempre `diaVencimento` como dia do mês, sem saturar.",
+   "owning_layer": "unit",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "none",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "prazo `0`, prazo negativo, e `diaVencimento = 29` (acima do teto medido no legado)",
+    "assertion_esperada": "prazo `0` devolve lista vazia e prazo negativo levanta; `diaVencimento = 29` é recusado por `esquemaDeContratoNovo` com `422`, e o caso afirma a recusa pelo esquema em vez de a função saturar em silêncio"
+   },
+   "precondicao_privilegiada": {
+    "presente": false,
+    "descricao": "",
+    "caminho_legitimo": "",
+    "teste_analogo": ""
+   },
+   "camada": "função pura (packages/db)",
+   "pre_condicoes": [
+    "`derivacao-de-cobranca.ts` implementado"
+   ],
+   "dados_entrada": {
+    "descricao": "Tabela parametrizada de prazos, com dia de vencimento nas duas pontas admitidas.",
+    "valores": {
+     "prazos": "1, 3, 4, 12, 13",
+     "dias_de_vencimento": "1 (piso) e 28 (teto)",
+     "valorMensal": "1500.00 e 1333.33"
+    }
+   },
+   "passos": [
+    "Para cada par (prazo, diaVencimento), invocar a função.",
+    "Afirmar `parcelas.length === prazo`.",
+    "Afirmar `natureza === 'ALUGUEL'` em toda parcela — igualdade de cadeia, nunca `toBeDefined`.",
+    "Afirmar `valorOriginal === valorMensal` em toda parcela, por igualdade de número.",
+    "Afirmar que o dia de `dataVencimento` é exatamente `diaVencimento`, inclusive nas competências de fevereiro.",
+    "Afirmar que as competências são estritamente crescentes e todas terminam em `-01`."
+   ],
+   "resultado_esperado": "Para prazo 13 e `diaVencimento = 28`, as 13 competências vão de `2027-01-01` a `2028-01-01` e todos os vencimentos terminam em `-28`, inclusive `2027-02-28`. Nenhuma parcela com `natureza` diferente de `ALUGUEL`; nenhuma com `valorOriginal` diferente de `valorMensal`.",
+   "criterios_aceitacao_validados": [
+    "CA-02"
+   ],
+   "observacoes": "Arquivo novo proposto: `packages/db/test/derivacao-de-cobranca.spec.ts`. Teste parametrizado (padrão 6 do catálogo): 5 prazos × 2 dias de vencimento num caso só valem mais que 10 casos separados."
+  },
+  {
+   "id": "CT-508",
+   "task_id": "T9",
+   "titulo": "Ativar um contrato de 3 meses cria 3 cobranças e a resposta publica `efeitos.cobrancasGeradas: 3`",
+   "tipo": "E2E",
+   "categoria": "caminho_feliz",
+   "invariant": "`POST /v1/contratos/:codigo/ativacao` responde `200` com `efeitos.cobrancasGeradas` igual ao `prazoMeses` do contrato, e `SELECT count(*) FROM negocio.cobranca WHERE contrato_id = <id>` devolve o mesmo número; os códigos emitidos casam `^COB-\\d{4}-\\d{7}$`, são distintos e consecutivos dentro do escopo `(empresa, ano)`.",
+   "owning_layer": "route-integration",
+   "existing_suite": "apps/api/test/contratos.e2e.spec.ts",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-509",
+    "input_invalido": "contrato cujo imóvel já tem contrato vigente — a ativação é recusada",
+    "assertion_esperada": "`422` com o envelope da ADR-0017 nomeando o motivo, e `count(*)` de cobranças do contrato igual a `0` DEPOIS da recusa"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Sessão autenticada de Usuário Empresa alcançando a área de contratos, com `app.empresa_id` fixado pela barreira de admissão.",
+    "caminho_legitimo": "Imitar o acessório de sessão que `apps/api/test/contratos.e2e.spec.ts` já usa: montar a sessão pelo caminho real de admissão (login efetivo) e deixar o contexto de tenant ser fixado pela guarda de produção. **Nunca** exportar símbolo novo, abrir rota de teste, nem fixar `app.empresa_id` por fora da barreira.",
+    "teste_analogo": "apps/api/test/contratos.e2e.spec.ts"
+   },
+   "camada": "rota HTTP + banco efêmero",
+   "pre_condicoes": [
+    "instância efêmera com migrações `0009` e `0010` aplicadas",
+    "empresa, imóvel livre, locatário e contrato em `RASCUNHO` semeados",
+    "servidor HTTP real em porta dinâmica"
+   ],
+   "dados_entrada": {
+    "descricao": "Contrato pronto para ativação com prazo 3 e dia de vencimento 10.",
+    "valores": {
+     "prazoMeses": 3,
+     "diaVencimento": 10,
+     "valorMensal": "1500.00",
+     "dataInicioLocacao": "2027-01-15"
+    }
+   },
+   "passos": [
+    "Contar `negocio.cobranca` da empresa ANTES da ativação.",
+    "`POST /v1/contratos/CTR-2027-00001/ativacao` com a sessão que alcança a área.",
+    "Afirmar `status === 200` e `corpo.efeitos.cobrancasGeradas === 3` por igualdade de número.",
+    "Consultar o banco sob o contexto da empresa e afirmar `count(*) === 3` para o contrato.",
+    "Afirmar que os 3 códigos casam `^COB-\\d{4}-\\d{7}$`, são distintos, e que os sufixos são consecutivos.",
+    "Afirmar que as 3 competências, vencimentos, referências e valores são exatamente os do cenário `dia_seguro_tres_meses` do golden — o mesmo oráculo do CT-504, agora pela rota."
+   ],
+   "resultado_esperado": "`200`; `efeitos.cobrancasGeradas === 3`; `count(*)` sobe de 0 para 3; códigos `COB-2027-0000001`, `COB-2027-0000002`, `COB-2027-0000003`; competências `2027-01-01`/`2027-02-01`/`2027-03-01`; vencimentos `2027-01-10`/`2027-02-10`/`2027-03-10`; referências `15/01/2027 à 14/02/2027`, `15/02/2027 à 14/03/2027`, `15/03/2027 à 14/04/2027`.",
+   "criterios_aceitacao_validados": [
+    "CA-02"
+   ],
+   "observacoes": "Estende a suíte canônica das rotas de contrato. ATENÇÃO ANTIRREGRESSÃO: `EFEITOS_ESPERADOS = { cobrancasGeradas: false }` em `apps/api/test/contratos.e2e.spec.ts:936` deixa de valer; alterá-la exige a linha `SUT_IS_CORRECT_BECAUSE:` declarando que o literal `false` era o registro de uma fatia que não gerava cobrança e que o `DÉBITO COM GATILHO — D28 · F2/T7` de `apps/api/src/contratos/contrato.service.ts` disparou aqui. O marcador D28 e a linha correspondente do índice do `CLAUDE.md` saem no MESMO commit."
+  },
+  {
+   "id": "CT-509",
+   "task_id": "T9",
+   "titulo": "Ativação recusada não deixa parcela alguma — a contagem é feita DEPOIS da recusa",
+   "tipo": "E2E",
+   "categoria": "teste_negativo",
+   "invariant": "Quando a ativação é recusada, a resposta é `422` com o envelope da ADR-0017 nomeando o motivo, o contrato permanece no estado anterior, e `SELECT count(*) FROM negocio.cobranca WHERE contrato_id = <id>` vale `0` — a unidade de trabalho da ativação e a da geração de parcelas são a MESMA, e o desfazimento alcança as duas.",
+   "owning_layer": "route-integration",
+   "existing_suite": "apps/api/test/contratos.e2e.spec.ts",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "contrato cujo imóvel já tem contrato vigente; e contrato em estado diferente de RASCUNHO",
+    "assertion_esperada": "`422`, `corpo.codigo` nomeando o motivo, `contrato.status` inalterado, e `count(*) === 0` de cobranças"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Sessão autenticada alcançando a área de contratos, e uma condição de recusa montada no dado (imóvel já vinculado a contrato vigente).",
+    "caminho_legitimo": "Montar a condição pelo caminho real: ativar um PRIMEIRO contrato sobre o imóvel pela própria rota e só então tentar o segundo. **Nunca** injetar estado inválido por escrita direta que a produção não admite, nem acrescentar ramo de falha à produção para tornar a recusa alcançável.",
+    "teste_analogo": "apps/api/test/contratos.e2e.spec.ts"
+   },
+   "camada": "rota HTTP + banco efêmero",
+   "pre_condicoes": [
+    "um imóvel com contrato já ATIVO",
+    "um segundo contrato em RASCUNHO apontando para o mesmo imóvel, com prazo 13"
+   ],
+   "dados_entrada": {
+    "descricao": "Contrato de 13 meses cuja ativação será recusada pelo imóvel ocupado.",
+    "valores": {
+     "prazoMeses": 13,
+     "condicao_de_recusa": "imóvel com contrato vigente"
+    }
+   },
+   "passos": [
+    "Contar `negocio.cobranca` da empresa ANTES da tentativa.",
+    "`POST /v1/contratos/<codigo>/ativacao` sobre o contrato do imóvel ocupado.",
+    "Afirmar `status === 422` e o envelope de erro INTEIRO por igualdade de objeto, nomeando o motivo.",
+    "Afirmar `count(*) === 0` de cobranças para AQUELE contrato — a contagem é o ponto do caso.",
+    "Afirmar que a contagem TOTAL de `negocio.cobranca` da empresa é a mesma de antes.",
+    "Afirmar `contrato.status === 'RASCUNHO'` e que o código de série do contrato não foi reemitido.",
+    "Repetir para a segunda condição de recusa (contrato já ATIVO), com as mesmas asserções."
+   ],
+   "resultado_esperado": "`422` com o envelope da ADR-0017 nomeando o motivo; `count(*)` de cobranças do contrato recusado igual a `0`; contagem total da empresa idêntica à de antes; `contrato.status === 'RASCUNHO'`. Se 13 parcelas aparecerem, a geração não está na unidade de trabalho da ativação.",
+   "criterios_aceitacao_validados": [
+    "CA-03"
+   ],
+   "observacoes": "Estende a suíte canônica. Ponto 5 do briefing: a contagem TEM de ser feita depois da recusa — afirmar apenas o `422` deixaria passar uma implementação que gera as parcelas numa transação própria e commita antes."
+  },
+  {
+   "id": "CT-510",
+   "task_id": "T5",
+   "titulo": "Não existe segunda derivação do estado da cobrança — nenhum `status` é calculado em TypeScript",
+   "tipo": "SEGURANCA",
+   "categoria": "integridade_dados",
+   "invariant": "Os quatro valores de `status_cobranca` não aparecem em posição EXECUTÁVEL de decisão em nenhum fonte de `packages/db/src/**` nem de `apps/api/src/**` — só como membros do enum publicado por `@sysloc/contracts` e como projeção lida da view; e `negocio.cobranca` não tem coluna `status` no catálogo.",
+   "owning_layer": "unit",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "cópia de `apps/api/src/cobrancas/cobranca.service.ts` com um ternário que recalcula `status` a partir de `pagoEm`/`canceladoEm`/`dataVencimento`",
+    "assertion_esperada": "a asserção commitada REPROVA na cópia, nomeando o arquivo da segunda derivação; passa limpa no íntegro"
+   },
+   "precondicao_privilegiada": {
+    "presente": false,
+    "descricao": "",
+    "caminho_legitimo": "",
+    "teste_analogo": ""
+   },
+   "camada": "asserção estática sobre fonte + introspecção do catálogo",
+   "pre_condicoes": [
+    "view `negocio.cobranca_derivada` criada pela migração `0010`",
+    "acessório `packages/db/test/varredura-de-fontes.ts` disponível"
+   ],
+   "dados_entrada": {
+    "descricao": "Os fontes dos dois pacotes que leem cobrança, e o catálogo da instância efêmera.",
+    "valores": {
+     "fontes_varridos": "packages/db/src/**/*.ts, apps/api/src/**/*.ts",
+     "literais_proibidos_em_posicao_executavel": "A_VENCER, VENCIDA, PAGA, CANCELADA",
+     "excecao_legitima": "a declaração do enum em packages/contracts/src/cobranca.ts"
+    }
+   },
+   "passos": [
+    "Varrer os fontes com o acessório existente, ignorando comentários e cadeias de documentação.",
+    "Afirmar que o conjunto de arquivos com os quatro literais em posição executável é EXATAMENTE o esperado, por igualdade de lista ordenada — nunca `toContain`.",
+    "Consultar `information_schema.columns` e afirmar que `negocio.cobranca` NÃO tem coluna `status`, comparando a lista de colunas por igualdade.",
+    "Afirmar que `negocio.cobranca_derivada` TEM a coluna `status` e que o tipo dela é `negocio.status_cobranca`.",
+    "PROVA DE FALSIFICAÇÃO: copiar `cobranca.service.ts`, acrescentar o ternário, aplicar a asserção commitada e exigir que REPROVE nomeando o arquivo; aplicar ao íntegro e exigir passe limpo. Rodar por `pnpm --filter @sysloc/db test`."
+   ],
+   "resultado_esperado": "A lista ordenada de arquivos com os literais em posição executável iguala exatamente `['packages/contracts/src/cobranca.ts']`. `negocio.cobranca` sem coluna `status`; `negocio.cobranca_derivada` com `status` do tipo `negocio.status_cobranca`. A cópia com o ternário REPROVA nomeando `apps/api/src/cobrancas/cobranca.service.ts`.",
+   "criterios_aceitacao_validados": [
+    "CA-04"
+   ],
+   "observacoes": "Arquivo novo proposto: `packages/db/test/fonte-unica-do-estado.spec.ts`. Nenhuma suíte existente cobre isto: `catalogo.spec.ts` audita ISOLAMENTO por espécie de objeto, não unicidade de derivação. Mesmo mecanismo do CT-012 da F2 (índice do pacote auditado por igualdade). Prova de falsificação obrigatória — asserção estática sobre o texto do SUT."
+  },
+  {
+   "id": "CT-511",
+   "task_id": "T7",
+   "titulo": "O estado e o valor total são idênticos em todos os caminhos de leitura publicados",
+   "tipo": "E2E",
+   "categoria": "integracao",
+   "invariant": "Para a MESMA cobrança, o par (`status`, `valorTotal`) devolvido pelos QUATRO caminhos de leitura publicados por esta fatia — `GET /v1/cobrancas/:codigo`, o item correspondente de `GET /v1/cobrancas` sem filtro, o de `GET /v1/cobrancas?contrato=…` e o de `GET /v1/cobrancas?status=…` — é idêntico, por igualdade de cadeia e de número, nos quatro estados possíveis.",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-510",
+    "input_invalido": "uma segunda derivação de `status` escrita em TypeScript num dos caminhos de leitura",
+    "assertion_esperada": "a asserção estática do CT-510 reprova nomeando o arquivo; e este caso reprova por divergência de `status` entre dois caminhos, com os dois valores impressos"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Sessão autenticada alcançando `TELA:financeiro`, e quatro cobranças posicionadas nos quatro estados.",
+    "caminho_legitimo": "Montar a sessão pelo caminho real de admissão (imitar `apps/api/test/contratos.e2e.spec.ts`) e posicionar os estados pelas ROTAS de produção — vencimento por deslocamento relativo a `negocio.data_corrente_da_operacao()`, pagamento e cancelamento pelas rotas próprias. **Nunca** escrever `status` no banco (a coluna não existe) nem parametrizar a data corrente da produção.",
+    "teste_analogo": "apps/api/test/contratos.e2e.spec.ts"
+   },
+   "camada": "rota HTTP + banco efêmero",
+   "pre_condicoes": [
+    "configuração de mora com multa 2% e juros 1%/mês",
+    "quatro cobranças do mesmo contrato, uma em cada estado"
+   ],
+   "dados_entrada": {
+    "descricao": "Quatro cobranças de `1000.00`, posicionadas por deslocamento relativo ao dia corrente.",
+    "valores": {
+     "a_vencer": "vencimento = data corrente + 10 dias",
+     "vencida": "vencimento = data corrente - 30 dias",
+     "paga": "vencida há 30 dias e depois paga pela rota",
+     "cancelada": "vencida há 30 dias e depois cancelada pela rota"
+    }
+   },
+   "passos": [
+    "Para cada cobrança, ler por `GET /v1/cobrancas/:codigo` e guardar (`status`, `valorTotal`).",
+    "Ler `GET /v1/cobrancas` sem filtro e localizar cada item pelo `codigo`.",
+    "Ler `GET /v1/cobrancas?contrato=<codigo>` e localizar cada item.",
+    "Ler `GET /v1/cobrancas?status=<estado>` para cada um dos quatro estados e localizar o item correspondente.",
+    "Afirmar, por cobrança, a igualdade estrita dos QUATRO pares — nunca `toMatchObject`.",
+    "Afirmar os valores concretos por estado, para que o caso não fique verde com os quatro caminhos concordando num valor errado."
+   ],
+   "resultado_esperado": "A_VENCER → (`A_VENCER`, `1000.00`) nos quatro caminhos. VENCIDA há 30 dias → (`VENCIDA`, `1030.00`) nos quatro (multa 20.00 + juros 10.00). PAGA → (`PAGA`, `1030.00`) nos quatro, com os carimbos publicados. CANCELADA → (`CANCELADA`, `1000.00`) nos quatro. Qualquer divergência reprova nomeando os dois valores.",
+   "criterios_aceitacao_validados": [
+    "CA-04"
+   ],
+   "observacoes": "Arquivo novo proposto: `apps/api/test/cobrancas.e2e.spec.ts`. AJUSTE DO ARQUITETO: o gerador propôs como quarto caminho 'a projeção embutida na leitura do contrato', que não existe — esta fatia não acrescenta cobranças ao esquema do contrato. Os quatro caminhos acima são todos publicados e exercitam consultas distintas sobre a mesma view. É a metade COMPORTAMENTAL do CA-04 — a ESTRUTURAL é o CT-510, e o ponto 1 do briefing exige as duas."
+  },
+  {
+   "id": "CT-512",
+   "task_id": "T4",
+   "titulo": "A cobrança consta VENCIDA sem que nenhuma rotina tenha rodado — a ausência de gatilho é afirmada",
+   "tipo": "INTEGRACAO",
+   "categoria": "integridade_dados",
+   "invariant": "Uma cobrança com `data_vencimento < negocio.data_corrente_da_operacao()`, sem `pago_em` e sem `cancelado_em`, é publicada com `status = 'VENCIDA'` na PRIMEIRA leitura após a inserção, e a linha física não sofre escrita alguma: o `xmin` da tupla é idêntico antes e depois, e não há coluna `status` a ser escrita.",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-513",
+    "input_invalido": "vencimento igual à data corrente e vencimento no futuro",
+    "assertion_esperada": "`status === 'A_VENCER'` nos dois e `dias_atraso === 0`; um controle com `<=` no lugar de `<` publica `VENCIDA` para o vencimento de hoje, e a divergência é afirmada"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "A cobrança precisa estar com vencimento no passado em relação à data corrente do banco, sem que o relógio seja falseado.",
+    "caminho_legitimo": "Posicionar o DADO por deslocamento relativo: `data_vencimento = negocio.data_corrente_da_operacao() - INTERVAL '30 days'`. É a convenção que os goldens das rotinas já adotam (offset em dias relativo ao dia da captura, `PROCEDENCIA.md` §2) e a que o D2 do tech-alignment fixa. **Nunca** acrescentar parâmetro de data à função de produção, substituir o relógio, nem forçar a virada por `SET timezone` na sessão.",
+    "teste_analogo": "packages/db/test/janela.spec.ts"
+   },
+   "camada": "porta de dados + banco efêmero",
+   "pre_condicoes": [
+    "migrações `0009` e `0010` aplicadas",
+    "contexto de empresa fixado por `SET LOCAL app.empresa_id`",
+    "nenhum trabalhador de fila iniciado na suíte"
+   ],
+   "dados_entrada": {
+    "descricao": "Uma cobrança recém-inserida com vencimento no passado.",
+    "valores": {
+     "valor_original": "1000.00",
+     "data_vencimento": "data corrente - 30 dias",
+     "pago_em": null,
+     "cancelado_em": null
+    }
+   },
+   "passos": [
+    "Inserir a cobrança e ler o `xmin` da tupla.",
+    "Ler `negocio.cobranca_derivada` pela primeira vez e afirmar `status === 'VENCIDA'` e `dias_atraso === 30`.",
+    "Reler o `xmin` e afirmar igualdade — nenhuma escrita ocorreu.",
+    "Afirmar por `information_schema.columns` que `negocio.cobranca` não tem coluna `status`, nem `pagamento_confirmado`, nem `data_inicio_atraso`, nem `data_ultima_atualizacao_atraso` — as quatro que as rotinas noturnas do legado escreviam, nomeadas por extenso.",
+    "Afirmar que a fila BullMQ tem `0` tarefas enfileiradas e que a lista de unidades `systemd` do repositório é igual à da fatia anterior — nenhum timer novo.",
+    "Ler uma segunda vez e afirmar que `status` continua `VENCIDA` e o `xmin` continua idêntico."
+   ],
+   "resultado_esperado": "`status === 'VENCIDA'` e `dias_atraso === 30` já na primeira leitura; `xmin` idêntico nas três medições; `negocio.cobranca` sem as quatro colunas do legado; `0` tarefas na fila; lista de timers inalterada.",
+   "criterios_aceitacao_validados": [
+    "CA-05"
+   ],
+   "observacoes": "Arquivo novo proposto: `packages/db/test/cobranca.spec.ts`, módulo canônico da porta de cobrança, no molde de `packages/db/test/contrato.spec.ts`. Ponto 9 do briefing: provar a AUSÊNCIA do gatilho, não só o valor — daí `xmin`, ausência de coluna, contagem de fila e de timers. As quatro colunas nomeadas vêm dos goldens `marcar-cobrancas-vencidas.json` (`status_cobranca`, `pagamento_confirmado`) e `atualizar-atrasos-cobrancas.json` (`data_inicio_atraso`, `data_ultima_atualizacao_atraso`), lidos pelo arquiteto."
+  },
+  {
+   "id": "CT-513",
+   "task_id": "T4",
+   "titulo": "A fronteira do vencimento é estrita — vencer HOJE é A_VENCER, e não VENCIDA",
+   "tipo": "INTEGRACAO",
+   "categoria": "fronteira",
+   "invariant": "`status = 'VENCIDA'` exige `data_vencimento < negocio.data_corrente_da_operacao()`, estritamente: vencimento igual à data corrente publica `A_VENCER` com `dias_atraso = 0` e mora zero; vencimento de ontem publica `VENCIDA` com `dias_atraso = 1`.",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "vencimento igual à data corrente — o único ponto em que `<` e `<=` discordam",
+    "assertion_esperada": "`status === 'A_VENCER'`, `dias_atraso === 0`, `valor_multa === '0.00'`, `valor_total === valor_original`; o mutante `<=` publica `VENCIDA` e o caso reprova"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Três cobranças posicionadas em `-1`, `0` e `+1` dia relativos à data corrente do banco.",
+    "caminho_legitimo": "Posicionar por `negocio.data_corrente_da_operacao() + INTERVAL 'N days'` na própria inserção, como no CT-512. **Nunca** falsear o relógio nem depender de a suíte rodar em hora específica — a função é `STABLE` e devolve a data em `America/Sao_Paulo` independentemente do fuso da sessão, o que é ele mesmo afirmado abaixo.",
+    "teste_analogo": "packages/db/test/janela.spec.ts"
+   },
+   "camada": "porta de dados + banco efêmero",
+   "pre_condicoes": [
+    "migrações `0009` e `0010` aplicadas",
+    "configuração multa 2% / juros 1%"
+   ],
+   "dados_entrada": {
+    "descricao": "Três cobranças de `1000.00` nas três posições de fronteira.",
+    "valores": {
+     "ontem": "data corrente - 1 dia",
+     "hoje": "data corrente + 0 dias",
+     "amanha": "data corrente + 1 dia"
+    }
+   },
+   "passos": [
+    "Inserir as três por deslocamento relativo.",
+    "Ler as três da view: ontem → `VENCIDA`/`dias_atraso 1`; hoje → `A_VENCER`/`0`; amanhã → `A_VENCER`/`0`.",
+    "Afirmar os valores monetários de cada uma por igualdade de cadeia `numeric`.",
+    "Afirmar que `negocio.data_corrente_da_operacao()` devolve o mesmo valor com `SET LOCAL TIME ZONE 'UTC'` e com `SET LOCAL TIME ZONE 'Pacific/Kiritimati'`.",
+    "PROVA DE FALSIFICAÇÃO: recriar a view em instância dedicada trocando `<` por `<=` e exigir que `hoje` passe a devolver `VENCIDA`; reverter e exigir `A_VENCER`."
+   ],
+   "resultado_esperado": "ontem → `VENCIDA`, `dias_atraso 1`, `valor_multa '20.00'`, `valor_juros '0.33'`, `valor_total '1020.33'`. hoje e amanhã → `A_VENCER`, `dias_atraso 0`, `'0.00'`/`'0.00'`/`'1000.00'`. `data_corrente_da_operacao()` idêntica nos dois fusos de sessão. O mutante `<=` faz `hoje` virar `VENCIDA` e o caso REPROVAR.",
+   "criterios_aceitacao_validados": [
+    "CA-05"
+   ],
+   "observacoes": "Arquivo novo proposto: `packages/db/test/cobranca.spec.ts`. A asserção do fuso da sessão fecha o invariante nascido do D2 do tech-alignment: sem `AT TIME ZONE 'America/Sao_Paulo'` fixado na função, a virada do dia dependeria de com que fuso a conexão abriu."
+  },
+  {
+   "id": "CT-514",
+   "task_id": "T5",
+   "titulo": "Cobrança avulsa de natureza AGUA nasce vinculada ao contrato e é distinguível sem interpretar texto",
+   "tipo": "E2E",
+   "categoria": "caminho_feliz",
+   "invariant": "`POST /v1/cobrancas` com `natureza: 'AGUA'` cria a cobrança vinculada ao contrato informado, com código de série próprio; a lista filtrada por `natureza=ALUGUEL` NÃO a traz e a filtrada por `natureza=AGUA` traz exatamente ela — a distinção é pelo campo, não pelo conteúdo de `referencia`.",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-515",
+    "input_invalido": "natureza fora da lista fechada, e requisição sem `contratoCodigo`",
+    "assertion_esperada": "`422` com o envelope da ADR-0017; `campo` igual a `natureza` e a `contratoCodigo`; `count(*)` de cobranças inalterada"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Sessão de Usuário Empresa alcançando `TELA:financeiro`.",
+    "caminho_legitimo": "Imitar a montagem de sessão com área de tela específica de `apps/api/test/autorizacao-do-dominio.e2e.spec.ts`: conceder a área pelo caminho real de administração e admitir a sessão pelo login. **Nunca** exportar helper de produção nem publicar rota de teste para conceder área.",
+    "teste_analogo": "apps/api/test/autorizacao-do-dominio.e2e.spec.ts"
+   },
+   "camada": "rota HTTP + banco efêmero",
+   "pre_condicoes": [
+    "contrato ATIVO com 3 parcelas de aluguel já geradas",
+    "sessão com `TELA:financeiro`"
+   ],
+   "dados_entrada": {
+    "descricao": "Uma cobrança avulsa de água para o mesmo contrato.",
+    "valores": {
+     "contratoCodigo": "CTR-2027-00001",
+     "natureza": "AGUA",
+     "referencia": "Consumo de janeiro/2027 — hidrômetro 4471",
+     "competencia": "2027-01-01",
+     "dataVencimento": "2027-01-20",
+     "valorOriginal": "87.40"
+    }
+   },
+   "passos": [
+    "`POST /v1/cobrancas` com o corpo acima.",
+    "Afirmar `status === 201`, `corpo.codigo` casando `^COB-\\d{4}-\\d{7}$` e diferente dos 3 códigos das parcelas.",
+    "Afirmar `corpo.natureza === 'AGUA'`, `corpo.contratoCodigo === 'CTR-2027-00001'`, `corpo.valorOriginal === '87.40'`.",
+    "`GET /v1/cobrancas?contrato=CTR-2027-00001&natureza=ALUGUEL` → exatamente 3 itens, nenhum é o novo.",
+    "`GET /v1/cobrancas?contrato=CTR-2027-00001&natureza=AGUA` → exatamente 1 item, o novo.",
+    "`GET /v1/cobrancas?contrato=CTR-2027-00001` sem filtro → 4 itens.",
+    "Afirmar que o locatário publicado iguala o do contrato — não existe `locatario_id` próprio (RN-01)."
+   ],
+   "resultado_esperado": "`201`; código novo distinto e no formato; `natureza === 'AGUA'`; filtro ALUGUEL devolve 3 itens sem a nova; filtro AGUA devolve 1; sem filtro, 4. Locatário publicado igual ao do contrato.",
+   "criterios_aceitacao_validados": [
+    "CA-06"
+   ],
+   "observacoes": "Arquivo novo proposto: `apps/api/test/cobrancas.e2e.spec.ts`. A contagem exata por filtro é o que prova que a distinção é pelo campo: uma implementação que filtrasse por `referencia LIKE` traria 0 ou 4 no filtro de ALUGUEL."
+  },
+  {
+   "id": "CT-515",
+   "task_id": "T5",
+   "titulo": "Natureza fora da lista fechada, cobrança sem contrato e valor não positivo são recusados na entrada",
+   "tipo": "E2E",
+   "categoria": "teste_negativo",
+   "invariant": "`POST /v1/cobrancas` recusa com `422` e o envelope da ADR-0017: natureza fora de `{ALUGUEL, AGUA, CONDOMINIO, ENERGIA, OUTRO}`; ausência de `contratoCodigo`; e `valorOriginal` menor ou igual a zero — em nenhum caso a linha é criada.",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "natureza `GAS`; corpo sem `contratoCodigo`; `valorOriginal '0.00'` e `'-10.00'`; e corpo com chave desconhecida",
+    "assertion_esperada": "`422` com `campo` igual a `natureza`, `contratoCodigo`, `valorOriginal` e `corpo`; `count(*)` idêntica antes e depois das quatro tentativas"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Sessão de Usuário Empresa alcançando `TELA:financeiro`.",
+    "caminho_legitimo": "Mesma receita do CT-514 — conceder a área pelo caminho real de administração e admitir a sessão pelo login.",
+    "teste_analogo": "apps/api/test/autorizacao-do-dominio.e2e.spec.ts"
+   },
+   "camada": "rota HTTP + banco efêmero",
+   "pre_condicoes": [
+    "contrato ATIVO existente",
+    "sessão com `TELA:financeiro`"
+   ],
+   "dados_entrada": {
+    "descricao": "Quatro corpos inválidos, um por classe de recusa.",
+    "valores": {
+     "natureza_invalida": "GAS",
+     "sem_contrato": "corpo sem a chave contratoCodigo",
+     "valor_nao_positivo": "0.00 e -10.00",
+     "chave_desconhecida": "corpo com uma chave que o strictObject não admite"
+    }
+   },
+   "passos": [
+    "Contar `negocio.cobranca` da empresa antes das tentativas.",
+    "Enviar os quatro corpos inválidos, um a um.",
+    "Afirmar `422` em cada um e comparar o envelope INTEIRO por igualdade de objeto contra o formato da ADR-0017.",
+    "Afirmar o `campo` de cada um por igualdade de cadeia.",
+    "Afirmar que a contagem final iguala a inicial.",
+    "Afirmar independentemente que o CHECK `valor_original > 0` do banco levanta violação de restrição na inserção direta sob contexto de empresa."
+   ],
+   "resultado_esperado": "Quatro respostas `422` com o envelope da ADR-0017; campos `natureza`, `contratoCodigo`, `valorOriginal` e `corpo`; contagem idêntica antes e depois; o CHECK do banco levanta SQLSTATE `23514` na inserção direta com valor não positivo.",
+   "criterios_aceitacao_validados": [
+    "CA-06"
+   ],
+   "observacoes": "Arquivo novo proposto: `apps/api/test/cobrancas.e2e.spec.ts`. A dupla asserção (borda Zod + CHECK do banco) é deliberada: a borda recusa a requisição, e o CHECK garante que nenhum caminho de escrita futuro a contorne. AJUSTE DO ARQUITETO: o gerador incluíra um passo exercitando valor de canal de comunicação (RN-17); ele foi REMOVIDO porque esta fatia não publica campo de canal algum — os únicos do produto pertencem à configuração da régua e ao log de envio, ambos da fatia 2 (ver §21 do tech_spec). A quarta classe de recusa passa a ser a chave desconhecida, que exercita o `strictObject`."
+  },
+  {
+   "id": "CT-516",
+   "task_id": "T7",
+   "titulo": "Acusar pagamento congela os quatro carimbos com os centavos que a view publicava no instante anterior",
+   "tipo": "E2E",
+   "categoria": "caminho_feliz",
+   "invariant": "`POST /v1/cobrancas/:codigo/pagamento` sobre cobrança VENCIDA responde `200` com `status: 'PAGA'`, grava `pago_em` e `valor_pago`, e grava os quatro carimbos IGUAIS, centavo a centavo, aos valores que a view publicava na leitura imediatamente anterior ao pagamento.",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-517",
+    "input_invalido": "acusar pagamento de cobrança já PAGA e de cobrança CANCELADA",
+    "assertion_esperada": "`422` nomeando o estado atual no envelope da ADR-0017; `pago_em` e os quatro carimbos permanecem com os valores originais; o CHECK do banco recusa `pago_em` e `cancelado_em` simultâneos"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Sessão com `TELA:financeiro` e uma cobrança vencida há número conhecido de dias.",
+    "caminho_legitimo": "Sessão pelo caminho real (CT-514); vencimento posicionado por deslocamento relativo a `negocio.data_corrente_da_operacao()` (CT-512). **Nunca** escrever os carimbos diretamente para montar o cenário — eles são o efeito sob prova.",
+    "teste_analogo": "apps/api/test/autorizacao-do-dominio.e2e.spec.ts"
+   },
+   "camada": "rota HTTP + banco efêmero",
+   "pre_condicoes": [
+    "configuração multa 2% / juros 1%",
+    "cobrança de `2000.00` vencida há 52 dias"
+   ],
+   "dados_entrada": {
+    "descricao": "O caso canônico do golden `calcular-mora.json`, agora pela rota.",
+    "valores": {
+     "valorOriginal": "2000.00",
+     "dias_atraso": 52,
+     "multa_percentual": "2.00",
+     "juros_percentual": "1.00",
+     "valorPago": "2074.67"
+    }
+   },
+   "passos": [
+    "Ler a cobrança ANTES do pagamento e guardar `valorMulta`, `valorJuros`, `valorTotal`.",
+    "Afirmar que os valores lidos são `40.00`, `34.67` e `2074.67` — o caso canônico do golden.",
+    "`POST /v1/cobrancas/COB-2027-0000001/pagamento` com `valorPago: '2074.67'` e a data.",
+    "Afirmar `200` e `corpo.status === 'PAGA'`.",
+    "Reler e afirmar `pagoEm` igual à data informada e `valorPago === '2074.67'`.",
+    "Afirmar os quatro carimbos: `multaAplicada '40.00'`, `jurosAplicados '34.67'`, `multaPercentualAplicado '2.00'`, `jurosPercentualAplicado '1.00'`.",
+    "Afirmar que `valorMulta`/`valorJuros`/`valorTotal` publicados para a PAGA são os CARIMBOS, iguais aos de antes — e não uma reapuração (o `dias_atraso` continuaria crescendo)."
+   ],
+   "resultado_esperado": "`200`; `status === 'PAGA'`; `pagoEm` e `valorPago === '2074.67'`; carimbos `40.00`, `34.67`, `2.00`, `1.00`; publicação da paga com `valorMulta '40.00'`, `valorJuros '34.67'`, `valorTotal '2074.67'`.",
+   "criterios_aceitacao_validados": [
+    "CA-07"
+   ],
+   "observacoes": "Arquivo novo proposto: `apps/api/test/cobrancas.e2e.spec.ts`. Os valores esperados vêm do golden (`exemplo_canonico_2074_67`), não de literal escolhido pelo teste."
+  },
+  {
+   "id": "CT-517",
+   "task_id": "T7",
+   "titulo": "As restrições do banco impedem estado impossível: pago e cancelado juntos, e carimbo sem pagamento",
+   "tipo": "INTEGRACAO",
+   "categoria": "teste_negativo",
+   "invariant": "O CHECK de `negocio.cobranca` recusa linha com `pago_em` e `cancelado_em` ambos não nulos, e recusa linha em que algum dos quatro carimbos seja não nulo com `pago_em` nulo — a impossibilidade é do banco, não da aplicação. Pela rota, acusar pagamento de cobrança PAGA ou CANCELADA responde `422` sem alterar linha alguma.",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "INSERT com `pago_em` e `cancelado_em` simultâneos; UPDATE fixando `multa_aplicada` com `pago_em` nulo; e as duas chamadas de rota sobre estados terminais",
+    "assertion_esperada": "as escritas diretas levantam SQLSTATE `23514` nomeando a restrição; as chamadas de rota devolvem `422` e o `xmin` das tuplas fica idêntico"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Escrita direta na tabela sob contexto de empresa, para exercitar os CHECK sem passar pela aplicação.",
+    "caminho_legitimo": "Abrir a conexão pelo papel da APLICAÇÃO e fixar o contexto por `SET LOCAL app.empresa_id` dentro da unidade de trabalho, como `packages/db/test/contrato.spec.ts` já faz. **Nunca** conectar como dona nem desligar a RLS para conseguir escrever — o CHECK e a política precisam valer os dois.",
+    "teste_analogo": "packages/db/test/contrato.spec.ts"
+   },
+   "camada": "porta de dados + rota HTTP",
+   "pre_condicoes": [
+    "migrações `0009` e `0010` aplicadas",
+    "uma cobrança PAGA e uma CANCELADA criadas pelas rotas"
+   ],
+   "dados_entrada": {
+    "descricao": "Escritas diretas que violam cada CHECK, e duas chamadas de rota sobre estados terminais.",
+    "valores": {
+     "violacao_1": "pago_em e cancelado_em ambos preenchidos",
+     "violacao_2": "multa_aplicada = '10.00' com pago_em NULL",
+     "violacao_3": "juros_percentual_aplicado = '1.00' com pago_em NULL",
+     "controle_positivo": "os quatro carimbos junto com pago_em"
+    }
+   },
+   "passos": [
+    "Tentar cada uma das três escritas ilegítimas e afirmar SQLSTATE `23514` nomeando a restrição declarada na migração `0010`.",
+    "Executar a escrita LEGÍTIMA e afirmar que é aceita — controle positivo, sem o qual o caso ficaria verde com um CHECK que recusa tudo.",
+    "Ler o `xmin` das duas cobranças terminais e chamar as duas rotas de pagamento.",
+    "Afirmar `422` nas duas, com o envelope da ADR-0017 nomeando `PAGA` e `CANCELADA` em `detalhes.estadoAtual`.",
+    "Reler o `xmin` das duas tuplas e afirmar igualdade."
+   ],
+   "resultado_esperado": "As três escritas ilegítimas levantam `23514` nomeando a restrição; a legítima é aceita; as duas chamadas devolvem `422` nomeando `PAGA` e `CANCELADA`; `xmin` idêntico antes e depois.",
+   "criterios_aceitacao_validados": [
+    "CA-07",
+    "CA-10"
+   ],
+   "observacoes": "Arquivos novos propostos: `packages/db/test/cobranca.spec.ts` (parte de banco) e `apps/api/test/cobrancas.e2e.spec.ts` (parte de rota). O controle positivo é obrigatório: sem ele, um CHECK escrito ao contrário passaria as três asserções negativas."
+  },
+  {
+   "id": "CT-518",
+   "task_id": "T7",
+   "titulo": "Alterar a multa DEPOIS do pagamento não move um centavo do que ficou registrado",
+   "tipo": "E2E",
+   "categoria": "integridade_dados",
+   "invariant": "Após uma cobrança ser paga, `PUT /v1/multa-e-juros` não altera nenhum dos quatro carimbos nem os valores publicados para aquela cobrança — a releitura devolve exatamente as mesmas cadeias `numeric`.",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-529",
+    "input_invalido": "a MESMA alteração de configuração, aplicada a uma cobrança ainda em aberto",
+    "assertion_esperada": "a cobrança em aberto passa a publicar `valorMulta` pela configuração NOVA, e a divergência (paga imóvel, aberta móvel) é afirmada no mesmo caso"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Sessão com `TELA:financeiro` (para pagar) e com `TELA:multa_e_juros` (para alterar) — duas áreas distintas.",
+    "caminho_legitimo": "Conceder as duas áreas pelo caminho real de administração e admitir a sessão pelo login, imitando `apps/api/test/autorizacao-do-dominio.e2e.spec.ts`. Se forem perfis distintos por decisão de produto, montar DUAS sessões — nunca alargar a declaração de exigência de uma rota para simplificar o teste.",
+    "teste_analogo": "apps/api/test/autorizacao-do-dominio.e2e.spec.ts"
+   },
+   "camada": "rota HTTP + banco efêmero",
+   "pre_condicoes": [
+    "configuração inicial multa 2% / juros 1%",
+    "cobrança de `2000.00` vencida há 52 dias e paga (CT-516)"
+   ],
+   "dados_entrada": {
+    "descricao": "A configuração alterada depois do pagamento.",
+    "valores": {
+     "configuracao_inicial": "multa 2.00, juros 1.00",
+     "configuracao_nova": "multa 10.00, juros 5.00"
+    }
+   },
+   "passos": [
+    "Pagar a cobrança e guardar o objeto publicado inteiro.",
+    "`PUT /v1/multa-e-juros` com multa `10.00` e juros `5.00`; afirmar `200` e que `GET /v1/multa-e-juros` devolve os valores novos.",
+    "Reler a cobrança paga.",
+    "Afirmar, por igualdade de OBJETO, que a publicação é idêntica à guardada — não por presença de campo nem por subconjunto.",
+    "Afirmar nominalmente os quatro carimbos: `40.00`, `34.67`, `2.00`, `1.00` — os PERCENTUAIS gravados são os antigos, e é isso que prova que o carimbo inclui a configuração vigente.",
+    "Afirmar `valorTotal === '2074.67'` — e não `2373.33`, que é o que uma reapuração pela configuração nova daria."
+   ],
+   "resultado_esperado": "Publicação da cobrança paga idêntica campo a campo à de antes. Carimbos `40.00`, `34.67`, `2.00`, `1.00`; `valorTotal '2074.67'`. Reapuração daria `2373.33` e o caso reprova nomeando os dois valores.",
+   "criterios_aceitacao_validados": [
+    "CA-08"
+   ],
+   "observacoes": "Arquivo novo proposto: `apps/api/test/cobrancas.e2e.spec.ts`. A asserção dos PERCENTUAIS é o discriminador: uma implementação que carimbasse só os valores passaria numa releitura ingênua, mas perderia a configuração vigente que a ADR-0022 manda gravar. Ponto 6 do briefing."
+  },
+  {
+   "id": "CT-519",
+   "task_id": "T7",
+   "titulo": "Cancelar uma cobrança preserva o registro legível e libera a emissão de substituta com código novo",
+   "tipo": "E2E",
+   "categoria": "caminho_feliz",
+   "invariant": "`POST /v1/cobrancas/:codigo/cancelamento` sobre cobrança A_VENCER responde `200` com `status: 'CANCELADA'` e grava `cancelado_em`; a cobrança segue legível por `GET /v1/cobrancas/:codigo` (`200`, nunca `404`) e aparece na lista; e uma substituta para o mesmo contrato recebe código DIFERENTE — o número da cancelada não é reusado.",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-520",
+    "input_invalido": "cancelar cobrança PAGA e cancelar cobrança já CANCELADA",
+    "assertion_esperada": "`422` nomeando o estado atual; `cancelado_em` da já cancelada permanece com o instante ORIGINAL, e a paga permanece `PAGA`"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Sessão com `TELA:financeiro`.",
+    "caminho_legitimo": "Mesma receita do CT-514.",
+    "teste_analogo": "apps/api/test/autorizacao-do-dominio.e2e.spec.ts"
+   },
+   "camada": "rota HTTP + banco efêmero",
+   "pre_condicoes": [
+    "contrato ATIVO",
+    "uma cobrança A_VENCER criada pela rota"
+   ],
+   "dados_entrada": {
+    "descricao": "Uma cobrança a vencer, cancelada, e uma substituta com os mesmos dados de negócio.",
+    "valores": {
+     "cobranca_original": "COB-2027-0000004, natureza AGUA, valor 87.40",
+     "substituta": "mesma natureza, mesma competência, valor 92.10"
+    }
+   },
+   "passos": [
+    "Contar `negocio.cobranca` do contrato antes.",
+    "`POST /v1/cobrancas/COB-2027-0000004/cancelamento`; afirmar `200` e `status === 'CANCELADA'`.",
+    "`GET /v1/cobrancas/COB-2027-0000004`; afirmar `200` (não `404`), `status === 'CANCELADA'`, `canceladoEm` não nulo, e `natureza`/`referencia`/`competencia`/`valorOriginal` originais.",
+    "`GET /v1/cobrancas?contrato=<codigo>` e afirmar que a cancelada CONSTA da lista.",
+    "Criar a substituta e afirmar código diferente de `COB-2027-0000004`, com sufixo MAIOR.",
+    "Afirmar que a contagem subiu em exatamente 1.",
+    "Afirmar que o esquema publicado NÃO tem campo de vínculo com a cancelada — decisão registrada no ponto 3 dos pontos em aberto; as chaves são afirmadas por igualdade."
+   ],
+   "resultado_esperado": "`200` com `status === 'CANCELADA'`; releitura `200` com campos de negócio íntegros; a cancelada consta da lista; substituta `COB-2027-0000005`; contagem de N para N+1; esquema sem campo de vínculo.",
+   "criterios_aceitacao_validados": [
+    "CA-09",
+    "CA-10"
+   ],
+   "observacoes": "Arquivo novo proposto: `apps/api/test/cobrancas.e2e.spec.ts`. Afirmar `200` e não `404` na releitura é o que separa *cancelar* de *retirar de circulação* — e é a materialização do invariante da ADR-0014 nesta fatia (o registro permanece legível por quem já o referencia)."
+  },
+  {
+   "id": "CT-520",
+   "task_id": "T7",
+   "titulo": "Cancelar cobrança PAGA ou já CANCELADA é recusado, e nada muda",
+   "tipo": "E2E",
+   "categoria": "teste_negativo",
+   "invariant": "`POST /v1/cobrancas/:codigo/cancelamento` sobre cobrança PAGA ou já CANCELADA responde `422` nomeando o estado atual; `cancelado_em` da já cancelada preserva o instante ORIGINAL e a paga preserva `pago_em`, `valor_pago` e os quatro carimbos.",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "cobrança já PAGA e cobrança já CANCELADA — dois estados terminais",
+    "assertion_esperada": "`422` nos dois; `xmin` das tuplas idêntico antes e depois; `cancelado_em` da já cancelada igual ao instante original, por igualdade de timestamp"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Sessão com `TELA:financeiro`, e duas cobranças já em estado terminal.",
+    "caminho_legitimo": "Montar os estados terminais pelas ROTAS de produção (pagamento e cancelamento), nunca por escrita direta. Sessão pela receita do CT-514.",
+    "teste_analogo": "apps/api/test/autorizacao-do-dominio.e2e.spec.ts"
+   },
+   "camada": "rota HTTP + banco efêmero",
+   "pre_condicoes": [
+    "uma cobrança PAGA (CT-516) e uma CANCELADA (CT-519)"
+   ],
+   "dados_entrada": {
+    "descricao": "Duas cobranças em estado terminal.",
+    "valores": {
+     "paga": "COB-2027-0000001",
+     "ja_cancelada": "COB-2027-0000004"
+    }
+   },
+   "passos": [
+    "Ler `xmin`, `cancelado_em` e `pago_em` das duas tuplas.",
+    "`POST /v1/cobrancas/COB-2027-0000001/cancelamento` → afirmar `422` com o envelope inteiro, nomeando `PAGA`.",
+    "`POST /v1/cobrancas/COB-2027-0000004/cancelamento` → afirmar `422` com o envelope inteiro, nomeando `CANCELADA`.",
+    "Reler o `xmin` das duas e afirmar igualdade.",
+    "Afirmar que `cancelado_em` da já cancelada iguala o instante original — um cancelamento idempotente que recarimbasse reprovaria aqui.",
+    "Afirmar que os quatro carimbos da paga permanecem com os valores do CT-516."
+   ],
+   "resultado_esperado": "Duas respostas `422` nomeando `PAGA` e `CANCELADA`; `xmin` idêntico antes e depois; `cancelado_em` da já cancelada preservado; carimbos da paga preservados.",
+   "criterios_aceitacao_validados": [
+    "CA-09",
+    "CA-10"
+   ],
+   "observacoes": "Arquivo novo proposto: `apps/api/test/cobrancas.e2e.spec.ts`. A asserção de `xmin` distingue *recusado* de *aceito sem efeito visível* — um `UPDATE ... WHERE cancelado_em IS NULL` respondendo `200` passaria numa asserção de estado só."
+  },
+  {
+   "id": "CT-521",
+   "task_id": "T10",
+   "titulo": "Nenhuma operação apaga cobrança — contagem preservada, sem `retirado_em` e sem rota de exclusão",
+   "tipo": "INTEGRACAO",
+   "categoria": "integridade_dados",
+   "invariant": "A contagem de linhas de `negocio.cobranca` da empresa é idêntica antes e depois de pagamento, cancelamento e cancelamento em cascata; a tabela não tem coluna `retirado_em`; e a superfície publicada não tem manipulador `DELETE` sob `/v1/cobrancas`.",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "as três operações destrutivas plausíveis, em sequência sobre a mesma carteira",
+    "assertion_esperada": "contagem final IGUAL à inicial; lista de colunas afirmada por igualdade e sem `retirado_em`; nenhum par com método `DELETE` sob `/v1/cobrancas`"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Uma carteira com cobranças nos quatro estados e um contrato a cancelar.",
+    "caminho_legitimo": "Montar os estados pelas rotas de produção e posicionar vencimentos por deslocamento relativo (CT-512).",
+    "teste_analogo": "packages/db/test/contrato.spec.ts"
+   },
+   "camada": "porta de dados + banco efêmero",
+   "pre_condicoes": [
+    "contrato ATIVO com 4 cobranças",
+    "migrações `0009` e `0010` aplicadas"
+   ],
+   "dados_entrada": {
+    "descricao": "Quatro cobranças e as três operações previstas.",
+    "valores": {
+     "cobrancas": "1 A_VENCER, 1 VENCIDA, 1 PAGA, 1 CANCELADA",
+     "operacoes": "acusar pagamento, cancelar cobrança, cancelar contrato"
+    }
+   },
+   "passos": [
+    "Contar `negocio.cobranca` da empresa e guardar `N`.",
+    "Executar as três operações, recontando após cada uma.",
+    "Afirmar que a contagem vale `N` nas quatro medições — quatro asserções de igualdade.",
+    "Consultar `information_schema.columns` e afirmar a lista ORDENADA de colunas de `negocio.cobranca` por igualdade contra a declarada na migração `0009` — prova simultaneamente a ausência de `retirado_em` e de `status`, e impede coluna nova entrar sem decisão.",
+    "Consultar a cobertura de autorização e afirmar que o conjunto de métodos sob `/v1/cobrancas` iguala `['GET','POST']`."
+   ],
+   "resultado_esperado": "Contagem `N` nas quatro medições. Lista ordenada de colunas igual à declarada, sem `retirado_em` e sem `status`. Conjunto de métodos sob `/v1/cobrancas` igual a `['GET','POST']`.",
+   "criterios_aceitacao_validados": [
+    "CA-10"
+   ],
+   "observacoes": "Arquivo novo proposto: `packages/db/test/cobranca.spec.ts`. Ponto 10 do briefing. A ausência de `retirado_em` é decisão declarada e ESCALADA (conflito com a ADR-0014, resolvido na §21 do tech_spec): a cobrança não circula — ela transita de estado —, e o invariante da ADR (nunca removida fisicamente, registro legível) é cumprido pelo CT-519. Afirmá-la por igualdade da lista de colunas é o que a torna irreversível sem que alguém decida de novo."
+  },
+  {
+   "id": "CT-522",
+   "task_id": "T3",
+   "titulo": "Duas empresas com multas diferentes apuram cada uma pela própria configuração, sem se enxergarem",
+   "tipo": "INTEGRACAO",
+   "categoria": "seguranca",
+   "invariant": "Sob o contexto de A, `negocio.cobranca_derivada` devolve apenas linhas de A e apura pela configuração de A; sob o de B, apenas linhas de B pela configuração de B — mesmo com cobranças de valor e atraso IDÊNTICOS e configurações dez vezes distintas.",
+   "owning_layer": "service-integration",
+   "existing_suite": "packages/db/test/isolamento.spec.ts",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-523",
+    "input_invalido": "a mesma view recriada SEM `security_invoker = true`, por dona privilegiada",
+    "assertion_esperada": "a leitura sob o contexto de A passa a devolver os identificadores de B, e a guarda de `verificarCoberturaDeIsolamento` nomeia a view com `VISAO_NAO_DELEGA_ISOLAMENTO`"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Duas empresas com dado equivalente e contextos de tenant alternados na mesma conexão.",
+    "caminho_legitimo": "Imitar a montagem de duas empresas e a alternância de `app.empresa_id` que `packages/db/test/isolamento.spec.ts` já faz (`CONTEXTO_DE_A`, `CONTEXTO_DE_B`, `lerIdsDe`). **Nunca** conectar como dona nem desligar a RLS para montar o cenário.",
+    "teste_analogo": "packages/db/test/isolamento.spec.ts"
+   },
+   "camada": "porta de dados + banco efêmero",
+   "pre_condicoes": [
+    "migrações `0009` e `0010` aplicadas",
+    "duas empresas semeadas com contratos próprios"
+   ],
+   "dados_entrada": {
+    "descricao": "Cobranças equivalentes em duas empresas com políticas de mora diferentes.",
+    "valores": {
+     "empresa_A": "multa 2.00, juros 1.00 — cobrança 2000.00 vencida há 30 dias",
+     "empresa_B": "multa 10.00, juros 5.00 — cobrança 2000.00 vencida há 30 dias"
+    }
+   },
+   "passos": [
+    "Fixar o contexto de A e ler a view; afirmar que o conjunto ordenado de identificadores iguala o de A.",
+    "Afirmar que a interseção com os identificadores de B é `[]` — companheiro negativo explícito, no molde do CT-107.",
+    "Afirmar `valor_multa '40.00'`, `valor_juros '20.00'`, `valor_total '2060.00'` para A.",
+    "Fixar o contexto de B e repetir as três asserções com o conjunto de B e interseção `[]` com A.",
+    "Afirmar `valor_multa '200.00'`, `valor_juros '100.00'`, `valor_total '2300.00'` para B.",
+    "Afirmar que os dois resultados DIFEREM — se coincidirem, a configuração de uma alcançou a outra.",
+    "Ler a view SEM contexto fixado e afirmar resultado vazio — contexto ausente resulta em vazio, nunca em dado alheio."
+   ],
+   "resultado_esperado": "Sob A: só identificadores de A, interseção `[]` com B, `40.00`/`20.00`/`2060.00`. Sob B: só de B, interseção `[]` com A, `200.00`/`100.00`/`2300.00`. Sem contexto: conjunto vazio.",
+   "criterios_aceitacao_validados": [
+    "CA-11"
+   ],
+   "observacoes": "Estende a suíte canônica de isolamento, onde o `CT-107` e o `CT-007` já vivem — Gate 2 satisfeito sem arquivo novo. A leitura sem contexto é o terceiro pé que impede o caso de ficar verde com uma view que ignora `empresa_id` e devolve tudo para todos. Ponto 7 do briefing."
+  },
+  {
+   "id": "CT-523",
+   "task_id": "T3",
+   "titulo": "`security_invoker` da view é falsificado — sem ele a cobrança de outra empresa vaza e a guarda acusa",
+   "tipo": "SEGURANCA",
+   "categoria": "seguranca",
+   "invariant": "A ausência de `WITH (security_invoker = true)` em `negocio.cobranca_derivada` é detectada por duas vias independentes: `verificarCoberturaDeIsolamento` nomeia a view com `VISAO_NAO_DELEGA_ISOLAMENTO`, e a leitura sob o contexto de A passa a devolver os identificadores de B.",
+   "owning_layer": "service-integration",
+   "existing_suite": "packages/db/test/isolamento.spec.ts",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "a view recriada sem o atributo, por dona privilegiada — o mutante é a própria entrada do caso",
+    "assertion_esperada": "com o atributo: interseção com B igual a `[]` e `excecoes` igual a `[]`. Sem o atributo: interseção com B IGUAL ao conjunto ordenado de B, e `excecoes` contendo `{ objeto: 'negocio.cobranca_derivada', motivo: 'VISAO_NAO_DELEGA_ISOLAMENTO' }`"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Criar duas variantes da view — uma que delega e uma que não — exige DDL por papéis diferentes (papel de migração e superusuária).",
+    "caminho_legitimo": "Imitar integralmente o `CT-107` de `packages/db/test/isolamento.spec.ts`: instância efêmera DEDICADA (as views são DDL e criá-las na compartilhada mudaria o que os demais casos examinam), `conexaoDeMigracao` para a que delega, `conexaoSuperusuaria` para a que vaza, e a leitura por `abrir(banco.cadeiaConexao)` — o mesmo papel de aplicação nas duas pernas, para que a diferença fique na view e não no chamador. **Nunca** alterar a migração `0010` versionada nem publicar atalho de produção para recriar a view.",
+    "teste_analogo": "packages/db/test/isolamento.spec.ts (CT-107)"
+   },
+   "camada": "porta de dados + banco efêmero dedicado",
+   "pre_condicoes": [
+    "instância efêmera DEDICADA a este caso",
+    "duas empresas com cobranças semeadas",
+    "corpo da view lido da migração `0010` do disco, nunca recomposto no teste"
+   ],
+   "dados_entrada": {
+    "descricao": "Duas variantes da mesma view, com e sem o atributo.",
+    "valores": {
+     "variante_que_delega": "CREATE VIEW ... WITH (security_invoker = true) — pelo papel de migração",
+     "variante_que_vaza": "CREATE VIEW ... (sem a opção) — pela superusuária, com GRANT SELECT ao papel da aplicação"
+    }
+   },
+   "passos": [
+    "Ler o corpo da view do arquivo `packages/db/migracoes/0010_seguranca_cobranca.sql` — recompô-lo no teste faria a asserção concordar com quem a escreveu.",
+    "Criar as duas variantes conforme acima.",
+    "Perna 1 (delega): ler sob o contexto de A e afirmar conjunto ordenado igual ao de A e interseção `[]` com B.",
+    "Perna 2 (vaza): ler com o MESMO contexto de A e afirmar interseção com B igual ao conjunto ordenado de B — se não vazar, a premissa mudou e o que se reavalia é o critério de `catalogo.ts`, não o teste.",
+    "Afirmar `not.toEqual` entre os dois resultados — o vazamento não é ausência de contexto, é a view.",
+    "Invocar `verificarCoberturaDeIsolamento`: com a que delega, `excecoes === []`; com a que vaza, `excecoes` contém exatamente `{ objeto: 'negocio.cobranca_derivada', motivo: 'VISAO_NAO_DELEGA_ISOLAMENTO' }`.",
+    "PROVA DE FALSIFICAÇÃO DA MIGRAÇÃO: copiar `0010_seguranca_cobranca.sql`, remover o atributo, aplicar numa instância e exigir que o CT-522 REPROVE; reverter e exigir verde. Rodar por `pnpm --filter @sysloc/db test`, nunca por `vitest run` avulso."
+   ],
+   "resultado_esperado": "Com o atributo: só identificadores de A, interseção `[]`, `excecoes === []`. Sem: interseção com B igual ao conjunto ordenado de B, e `excecoes` com a view nomeada por `VISAO_NAO_DELEGA_ISOLAMENTO`. A migração `0010` mutada faz o CT-522 reprovar.",
+   "criterios_aceitacao_validados": [
+    "CA-11"
+   ],
+   "observacoes": "Estende `packages/db/test/isolamento.spec.ts`, junto do `CT-107` que já estabeleceu a mecânica. A guarda de `packages/db/src/catalogo.ts` precisa ganhar a espécie VIEW na cobertura, com o motivo `VISAO_NAO_DELEGA_ISOLAMENTO`. Ponto 2 do briefing — sem ele, a view entrega cobrança de outra empresa em silêncio."
+  },
+  {
+   "id": "CT-524",
+   "task_id": "T4",
+   "titulo": "Empresa sem configuração de mora apura mora ZERO, e o total é o valor original",
+   "tipo": "INTEGRACAO",
+   "categoria": "caso_extremo",
+   "invariant": "Para empresa que ainda não registrou configuração de mora, a view publica `valor_multa '0.00'`, `valor_juros '0.00'` e `valor_total = valor_original` mesmo para cobrança VENCIDA há 60 dias — o `LEFT JOIN` com `COALESCE(..., 0)` faz a ausência apurar zero, e não desaparecer a linha.",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "empresa nova, sem linha em `negocio.configuracao_de_mora`, com cobrança vencida há 60 dias",
+    "assertion_esperada": "a linha CONSTA da view (`count === 1`, não zero — um `INNER JOIN` a faria sumir), com `VENCIDA`, `dias_atraso 60`, `'0.00'`/`'0.00'`, e `valor_total` igual a `valor_original`"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Uma empresa deliberadamente sem configuração de mora, com cobrança vencida.",
+    "caminho_legitimo": "Criar empresa e contrato pelo caminho real e simplesmente NÃO chamar `PUT /v1/multa-e-juros` — a ausência é o cenário. Vencimento por deslocamento relativo (CT-512).",
+    "teste_analogo": "packages/db/test/isolamento.spec.ts"
+   },
+   "camada": "porta de dados + banco efêmero",
+   "pre_condicoes": [
+    "empresa recém-criada, sem linha em `negocio.configuracao_de_mora`",
+    "cobrança de `1500.00` vencida há 60 dias"
+   ],
+   "dados_entrada": {
+    "descricao": "Uma empresa no primeiro dia, com cobrança já vencida.",
+    "valores": {
+     "valor_original": "1500.00",
+     "dias_atraso": 60,
+     "configuracao_de_mora": "ausente"
+    }
+   },
+   "passos": [
+    "Afirmar que `count(*)` de `negocio.configuracao_de_mora` sob o contexto da empresa vale `0`.",
+    "Ler a cobrança da view e afirmar que a linha CONSTA (`count === 1`) — distingue `LEFT JOIN` de `INNER JOIN`; cobrança que sumisse da carteira por falta de configuração seria pior que mora errada.",
+    "Afirmar `status === 'VENCIDA'` e `dias_atraso === 60`.",
+    "Afirmar `valor_multa '0.00'`, `valor_juros '0.00'`, `valor_total '1500.00'`.",
+    "CONTROLE POSITIVO: registrar a configuração com multa 2% e juros 0% e reler; afirmar `valor_multa '30.00'`, `valor_juros '0.00'`, `valor_total '1530.00'` — impede o caso de ficar verde com uma view que sempre devolve zero."
+   ],
+   "resultado_esperado": "Sem configuração: linha consta, `VENCIDA`, `dias_atraso 60`, `0.00`/`0.00`/`1500.00`. Depois de multa 2%: `30.00`/`0.00`/`1530.00`.",
+   "criterios_aceitacao_validados": [
+    "CA-11"
+   ],
+   "observacoes": "Arquivo novo proposto: `packages/db/test/cobranca.spec.ts`. Fecha o ponto 4 dos pontos em aberto do tech-alignment — ausência de configuração é caso alcançável no primeiro dia de uma empresa nova."
+  },
+  {
+   "id": "CT-525",
+   "task_id": "T4",
+   "titulo": "A view reproduz os 6 casos e as 9 invocações do golden `calcular-mora.json`, centavo a centavo",
+   "tipo": "INTEGRACAO",
+   "categoria": "integridade_dados",
+   "invariant": "Para cada uma das 9 invocações registradas nos 6 casos de `calcular-mora.json`, a view publica `valor_multa`, `valor_juros` e `valor_total` IGUAIS aos do golden — igualdade exata de valor `numeric`, jamais tolerância.",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-527",
+    "input_invalido": "cobranças A_VENCER e CANCELADA com a mesma configuração e o mesmo valor",
+    "assertion_esperada": "`valor_multa '0.00'`, `valor_juros '0.00'` e `valor_total` igual a `valor_original` — a mora só é apurada quando VENCIDA"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Nove cobranças em atrasos exatos (5, 17, 30, 52, 60 e 500 dias) e configurações de mora distintas.",
+    "caminho_legitimo": "Posicionar cada atraso por `negocio.data_corrente_da_operacao() - INTERVAL 'N days'` (CT-512), e usar empresas distintas quando a configuração precisar divergir — `configuracao_de_mora` é `unique(empresa_id)`. **Nunca** parametrizar a data ou os percentuais na produção para encurtar o cenário.",
+    "teste_analogo": "packages/db/test/isolamento.spec.ts"
+   },
+   "camada": "porta de dados + banco efêmero",
+   "pre_condicoes": [
+    "migrações `0009` e `0010` aplicadas",
+    "golden lido do arquivo versionado, nunca redigitado"
+   ],
+   "dados_entrada": {
+    "descricao": "As 9 invocações do golden, lidas do disco e replicadas como cobranças reais.",
+    "valores": {
+     "arquivo": "docs/specs/features/caracterizacao-regras-legadas/v1/golden/calcular-mora.json",
+     "casos": 6,
+     "invocacoes": 9,
+     "atrasos": "5, 17, 30, 52, 60, 500 dias",
+     "multas": "2% e 50%"
+    }
+   },
+   "passos": [
+    "Ler o golden e afirmar por igualdade que `casos.length === 6` e que a soma dos `invocacoes.length` vale `9`.",
+    "Para cada invocação: registrar a configuração com os percentuais da entrada, inserir a cobrança com o `valor_original` e o vencimento deslocado em `dias_atraso` dias, e ler a view.",
+    "Afirmar `dias_atraso` publicado igual ao da entrada.",
+    "Afirmar `valor_multa`, `valor_juros` e `valor_total` por igualdade EXATA contra a saída do golden — 27 asserções.",
+    "Afirmar a contagem de invocações efetivamente comparadas: `9`.",
+    "Afirmar explicitamente `juros_nao_incidem_sobre_a_multa`: com multa 2% e com 50%, o `valor_juros` é o MESMO (`34.67`)."
+   ],
+   "resultado_esperado": "As 27 asserções passam por igualdade exata: (2000, 2%, 1%, 52d) → `40.00`/`34.67`/`2074.67`; (2000, 2%, 1%, 30d) → `40.00`/`20.00`/`2060.00`; (2000, 2%, 1%, 60d) → `40.00`/`40.00`/`2080.00`; (2000, 50%, 1%, 52d) → `1000.00`/`34.67`/`3034.67`; (2000, 2%, 1%, 5d) → `40.00`/`3.33`/`2043.33`; (2000, 2%, 1%, 500d) → `40.00`/`333.33`/`2373.33`; (1234.56, 2%, 1%, 17d) → `24.69`/`7.00`/`1266.25`. Invocações comparadas: `9`.",
+   "criterios_aceitacao_validados": [
+    "CA-12"
+   ],
+   "observacoes": "Arquivo novo proposto: `packages/db/test/cobranca.spec.ts`. O golden é o ORÁCULO — se a view divergir, o errado é a view. Redigitar os valores faria a asserção concordar com quem a escreveu (mesma disciplina do cabeçalho de `derivacao-de-contrato.spec.ts`). O `CT-011` do `verificar-golden.sh` já verifica a FORMA deste golden; este caso verifica a EQUIVALÊNCIA do sistema novo. Ponto 3 do briefing."
+  },
+  {
+   "id": "CT-526",
+   "task_id": "T4",
+   "titulo": "`1234.56` com 5 e com 17 dias discrimina o arredondamento, e a aritmética não passa por ponto flutuante",
+   "tipo": "INTEGRACAO",
+   "categoria": "fronteira",
+   "invariant": "Para `valor_original = 1234.56`, multa 2% e juros 1%/mês, a view publica `valor_juros '7.00'` aos 17 dias e `'2.06'` aos 5 dias — os dois pontos em que o arredondamento a duas casas decide o centavo; e a expressão da view não contém `float8`, `double precision`, `::real` nem `::float` em posição executável.",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "cópia da migração `0010` com a aritmética passando por `double precision`, e uma segunda cópia que arredonda ANTES da divisão por 30",
+    "assertion_esperada": "a asserção estática REPROVA na primeira cópia nomeando o cast; a segunda cópia devolve `7.02` aos 17 dias em vez de `7.00`, e o caso comportamental reprova nomeando os dois valores"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Duas cobranças do mesmo valor em atrasos diferentes, com a mesma configuração.",
+    "caminho_legitimo": "Posicionar por deslocamento relativo (CT-512); a migração `0010` é lida do disco para a asserção estática, e o mutante é aplicado a uma CÓPIA em diretório temporário, nunca ao arquivo versionado.",
+    "teste_analogo": "packages/db/test/coerencia-de-migracoes.spec.ts"
+   },
+   "camada": "porta de dados + banco efêmero",
+   "pre_condicoes": [
+    "configuração multa 2% / juros 1%",
+    "duas cobranças de `1234.56`"
+   ],
+   "dados_entrada": {
+    "descricao": "O caso `total_e_soma_das_partes` do golden e o seu par aos 5 dias.",
+    "valores": {
+     "valor_original": "1234.56",
+     "atraso_do_golden": 17,
+     "atraso_pareado": 5,
+     "multa_percentual": "2.00",
+     "juros_percentual": "1.00"
+    }
+   },
+   "passos": [
+    "Ler a cobrança de 17 dias e afirmar `valor_multa '24.69'`, `valor_juros '7.00'`, `valor_total '1266.25'` — os três do golden.",
+    "Ler a de 5 dias e afirmar `valor_multa '24.69'`, `valor_juros '2.06'`, `valor_total '1261.31'` — derivados da MESMA fórmula declarada no bloco `formula` do golden (`ROUND_HALF_UP`, 2 casas, base de mês comercial 30).",
+    "Afirmar que a multa é idêntica nos dois (`24.69`) — ela não depende dos dias.",
+    "PROVA ESTÁTICA COM FALSIFICAÇÃO: `grep` sobre `packages/db/migracoes/0010_seguranca_cobranca.sql` exigindo `0` ocorrências de `float8`, `double precision`, `::real`, `::float` fora de comentário; copiar, trocar a expressão de juros por uma que passe por `double precision`, aplicar a asserção commitada e exigir que REPROVE nomeando o cast; aplicar ao íntegro e exigir passe limpo.",
+    "PROVA COMPORTAMENTAL DO MUTANTE DE ARREDONDAMENTO: aplicar numa instância dedicada uma cópia que arredonde `valor_original * juros_percentual / 100` ANTES de dividir por 30, e afirmar que a leitura de 17 dias devolve `7.02` em vez de `7.00` — é a posição do único `round` que está sob prova, e não só o tipo numérico."
+   ],
+   "resultado_esperado": "17 dias → `24.69`/`7.00`/`1266.25`. 5 dias → `24.69`/`2.06`/`1261.31`. A asserção estática dá 0 ocorrências no íntegro e REPROVA na cópia; a instância com arredondamento antecipado devolve `7.02`.",
+   "criterios_aceitacao_validados": [
+    "CA-12"
+   ],
+   "observacoes": "Arquivo novo proposto: `packages/db/test/cobranca.spec.ts`. O valor de 5 dias (`2.06`) é DERIVADO da fórmula declarada no bloco `formula` do próprio golden, não escolhido pelo teste. O mutante de arredondamento antecipado foi ACRESCENTADO pelo arquiteto: ele é a armadilha registrada na §6.3 do tech_spec, e sem ele a prova cobriria o tipo numérico e deixaria a posição do `round` sem asserção. Ponto 3 do briefing."
+  },
+  {
+   "id": "CT-527",
+   "task_id": "T7",
+   "titulo": "A_VENCER e CANCELADA publicam mora zero; PAGA publica os carimbos gravados e não recalcula",
+   "tipo": "INTEGRACAO",
+   "categoria": "teste_negativo",
+   "invariant": "A mora só é apurada quando `status = 'VENCIDA'`. A_VENCER e CANCELADA publicam `'0.00'`/`'0.00'` e `valor_total = valor_original`, mesmo com configuração não nula e mesmo quando a CANCELADA teve vencimento no passado. PAGA publica os carimbos GRAVADOS, e nem a configuração nem o passar dos dias os movem.",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "cobrança CANCELADA cujo vencimento passou há 60 dias — o caso que uma implementação ingênua trataria como vencida",
+    "assertion_esperada": "`status === 'CANCELADA'`, `dias_atraso === 0`, `'0.00'`/`'0.00'`, `valor_total` igual a `valor_original` — e NÃO `VENCIDA` com mora de 60 dias"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Quatro cobranças nos quatro estados, com a CANCELADA tendo vencimento no passado.",
+    "caminho_legitimo": "Montar os estados terminais pelas rotas de produção e os vencimentos por deslocamento relativo (CT-512).",
+    "teste_analogo": "packages/db/test/contrato.spec.ts"
+   },
+   "camada": "porta de dados + banco efêmero",
+   "pre_condicoes": [
+    "configuração multa 2% / juros 1%",
+    "quatro cobranças de `2000.00` nos quatro estados"
+   ],
+   "dados_entrada": {
+    "descricao": "As quatro cobranças, com a cancelada vencida há 60 dias.",
+    "valores": {
+     "a_vencer": "vencimento + 10 dias",
+     "vencida": "vencimento - 60 dias",
+     "paga": "vencida há 52 dias, paga",
+     "cancelada": "vencimento - 60 dias, cancelada"
+    }
+   },
+   "passos": [
+    "Ler as quatro da view.",
+    "A_VENCER: `dias_atraso 0`, `'0.00'`, `'0.00'`, `valor_total '2000.00'`.",
+    "CANCELADA: `status 'CANCELADA'` (não `VENCIDA`), `dias_atraso 0`, `'0.00'`, `'0.00'`, `'2000.00'` — é o caso que reproduziria a divergência do legado (CT-503) se a precedência estivesse errada.",
+    "VENCIDA: `valor_multa '40.00'`, `valor_juros '40.00'`, `valor_total '2080.00'` — controle positivo, sem o qual o caso ficaria verde com uma view que zera tudo.",
+    "PAGA: afirmar que os valores publicados são exatamente os CARIMBOS (`40.00`/`34.67`/`2074.67` do CT-516), e que `dias_atraso` publicado não é o atraso corrente, que continuaria crescendo.",
+    "Afirmar a ORDEM DE PRECEDÊNCIA diretamente: cobrança com `pago_em` e vencimento no passado publica `PAGA`, não `VENCIDA`."
+   ],
+   "resultado_esperado": "A_VENCER → `0.00`/`0.00`/`2000.00`. CANCELADA (vencida há 60d) → `CANCELADA`, `0.00`/`0.00`/`2000.00`. VENCIDA → `40.00`/`40.00`/`2080.00`. PAGA → carimbos `40.00`/`34.67`/`2074.67`. Paga com vencimento passado publica `PAGA`, nunca `VENCIDA`.",
+   "criterios_aceitacao_validados": [
+    "CA-12",
+    "CA-04"
+   ],
+   "observacoes": "Arquivo novo proposto: `packages/db/test/cobranca.spec.ts`. A ordem CANCELADA → PAGA → VENCIDA → A_VENCER é o que impede o produto novo de reproduzir a divergência que o CT-503 capturou do legado."
+  },
+  {
+   "id": "CT-528",
+   "task_id": "T4",
+   "titulo": "Juros são simples: 60 dias valem o dobro de 30, e a multa é a mesma",
+   "tipo": "INTEGRACAO",
+   "categoria": "fronteira",
+   "invariant": "Com a mesma configuração e o mesmo valor original, o `valor_juros` de 60 dias é exatamente o dobro do de 30 dias, e o `valor_multa` é idêntico nos dois — não há composição, e a multa é aplicada uma vez só.",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "o par (5 dias, 500 dias) do golden, cem vezes mais distante, exercitando a mesma propriedade",
+    "assertion_esperada": "`valor_juros` de 500 dias igual a `333.33` contra `3.33` de 5 dias, e `valor_multa` idêntico `40.00` nos dois"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Quatro cobranças com atrasos exatos de 5, 30, 60 e 500 dias.",
+    "caminho_legitimo": "Posicionar por deslocamento relativo (CT-512).",
+    "teste_analogo": "packages/db/test/contrato.spec.ts"
+   },
+   "camada": "porta de dados + banco efêmero",
+   "pre_condicoes": [
+    "configuração multa 2% / juros 1%",
+    "quatro cobranças de `2000.00`"
+   ],
+   "dados_entrada": {
+    "descricao": "Os pares de dias que o golden usa para provar linearidade e unicidade da multa.",
+    "valores": {
+     "pares": "(30, 60) de `juros_lineares_sem_composicao` e (5, 500) de `multa_unica_independe_dos_dias`",
+     "valor_original": "2000.00"
+    }
+   },
+   "passos": [
+    "Ler as quatro cobranças da view.",
+    "Afirmar `valor_juros` de 30 dias igual a `'20.00'` e de 60 dias igual a `'40.00'`.",
+    "Afirmar a RELAÇÃO diretamente: o valor de 60 dias é exatamente o dobro do de 30 — é a relação que o CA-13 enuncia.",
+    "Afirmar `valor_multa` idêntico (`'40.00'`) nas duas.",
+    "Afirmar `valor_juros` de 5 dias `'3.33'` e de 500 dias `'333.33'`, com `valor_multa '40.00'` nas duas.",
+    "Afirmar que os juros de 30 dias (`20.00`) valem exatamente 1% de `2000.00` — taxa mensal com base de mês comercial de 30 dias."
+   ],
+   "resultado_esperado": "30d → `20.00`/`40.00`. 60d → `40.00` (exatamente o dobro)/`40.00`. 5d → `3.33`/`40.00`. 500d → `333.33`/`40.00`. A relação dobro é afirmada como relação, não só pelos dois valores.",
+   "criterios_aceitacao_validados": [
+    "CA-13"
+   ],
+   "observacoes": "Arquivo novo proposto: `packages/db/test/cobranca.spec.ts`. Os quatro valores vêm dos casos `juros_lineares_sem_composicao` e `multa_unica_independe_dos_dias` do golden."
+  },
+  {
+   "id": "CT-529",
+   "task_id": "T7",
+   "titulo": "Alterar a multa alcança as cobranças em aberto e só elas — a paga não se move no mesmo ato",
+   "tipo": "E2E",
+   "categoria": "interacao_usuario",
+   "invariant": "Após `PUT /v1/multa-e-juros`, a cobrança VENCIDA da mesma empresa passa a publicar `valor_multa` e `valor_total` calculados pela configuração NOVA, na leitura seguinte e sem que nada tenha rodado; a cobrança PAGA da mesma empresa continua publicando os carimbos antigos, no MESMO ato.",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-518",
+    "input_invalido": "a cobrança PAGA, submetida à mesma alteração de configuração",
+    "assertion_esperada": "os quatro carimbos e o `valorTotal` da paga permanecem idênticos, comparados por igualdade de objeto"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Sessão com `TELA:multa_e_juros` (para alterar) e com `TELA:financeiro` (para ler as cobranças).",
+    "caminho_legitimo": "Conceder as áreas pelo caminho real de administração; se forem perfis distintos por decisão de produto, montar duas sessões. **Nunca** alargar a exigência declarada de uma rota para reaproveitar uma sessão.",
+    "teste_analogo": "apps/api/test/autorizacao-do-dominio.e2e.spec.ts"
+   },
+   "camada": "rota HTTP + banco efêmero",
+   "pre_condicoes": [
+    "configuração inicial multa 2% / juros 1%",
+    "uma cobrança VENCIDA há 30 dias e uma PAGA na mesma empresa"
+   ],
+   "dados_entrada": {
+    "descricao": "Duas cobranças de `2000.00`, uma aberta e uma paga, e a alteração da política.",
+    "valores": {
+     "configuracao_inicial": "multa 2.00, juros 1.00",
+     "configuracao_nova": "multa 5.00, juros 1.00"
+    }
+   },
+   "passos": [
+    "Ler as duas cobranças e guardar as publicações.",
+    "Afirmar que a VENCIDA publica `valorMulta '40.00'` e `valorTotal '2060.00'` antes da alteração.",
+    "`PUT /v1/multa-e-juros` com multa `5.00`; afirmar `200` e que `GET /v1/multa-e-juros` devolve `multaPercentual '5.00'` e `jurosPercentual '1.00'`.",
+    "Reler a VENCIDA e afirmar `valorMulta '100.00'` e `valorTotal '2120.00'`.",
+    "Reler a PAGA e afirmar, por igualdade de OBJETO, que a publicação é idêntica à guardada.",
+    "Afirmar que o `xmin` da tupla da VENCIDA é o mesmo de antes da alteração — a mudança de valor veio da derivação, não de uma escrita na cobrança."
+   ],
+   "resultado_esperado": "Antes: VENCIDA `40.00`/`20.00`/`2060.00`. Depois de 2%→5%: VENCIDA `100.00`/`20.00`/`2120.00`. A PAGA idêntica campo a campo nos dois momentos. `xmin` da VENCIDA inalterado.",
+   "criterios_aceitacao_validados": [
+    "CA-14"
+   ],
+   "observacoes": "Arquivo novo proposto: `apps/api/test/cobrancas.e2e.spec.ts`. A asserção de `xmin` separa *derivado* de *materializado por gatilho na alteração da configuração* — uma implementação que reescrevesse as abertas ao salvar a configuração passaria pelos valores e reprovaria aqui, que é o desejado."
+  },
+  {
+   "id": "CT-530",
+   "task_id": "T10",
+   "titulo": "Cancelar o contrato cancela só as cobranças canceláveis; as pagas e as já canceladas ficam intactas",
+   "tipo": "E2E",
+   "categoria": "caminho_feliz",
+   "invariant": "`POST /v1/contratos/:codigo/cancelamento` cancela exatamente as cobranças do contrato com `pago_em IS NULL AND cancelado_em IS NULL`, e não toca as pagas nem as já canceladas: `pago_em`, `valor_pago`, os quatro carimbos e o `cancelado_em` original permanecem idênticos, e a contagem de linhas é preservada.",
+   "owning_layer": "route-integration",
+   "existing_suite": "apps/api/test/contratos.e2e.spec.ts",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-531",
+    "input_invalido": "cancelamento de contrato recusado (estado diferente de ATIVO)",
+    "assertion_esperada": "`422` nomeando o estado, e o `xmin` de TODAS as cobranças do contrato idêntico antes e depois — nenhuma cascata parcial"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Contrato ATIVO com quatro cobranças nos quatro estados, e sessão que alcança as áreas de contrato e de financeiro.",
+    "caminho_legitimo": "Montar os quatro estados pelas rotas de produção e os vencimentos por deslocamento relativo (CT-512); sessão pelo caminho real de admissão.",
+    "teste_analogo": "apps/api/test/contratos.e2e.spec.ts"
+   },
+   "camada": "rota HTTP + banco efêmero",
+   "pre_condicoes": [
+    "contrato ATIVO com 4 cobranças: A_VENCER, VENCIDA, PAGA, CANCELADA"
+   ],
+   "dados_entrada": {
+    "descricao": "A carteira de quatro estados do contrato a cancelar.",
+    "valores": {
+     "a_vencer": "COB-2027-0000001",
+     "vencida": "COB-2027-0000002",
+     "paga": "COB-2027-0000003",
+     "ja_cancelada": "COB-2027-0000004"
+    }
+   },
+   "passos": [
+    "Guardar a publicação inteira das quatro, o `xmin` de cada tupla e a contagem de linhas do contrato.",
+    "`POST /v1/contratos/<codigo>/cancelamento` e afirmar `200`.",
+    "Afirmar que as duas primeiras passam a `CANCELADA` com `canceladoEm` não nulo.",
+    "Afirmar que a PAGA continua `PAGA`, com `pagoEm`, `valorPago` e os quatro carimbos idênticos — igualdade de objeto.",
+    "Afirmar que a já CANCELADA continua `CANCELADA` com `canceladoEm` EXATAMENTE igual ao instante original.",
+    "Afirmar que o `xmin` das tuplas PAGA e já CANCELADA é idêntico ao guardado — a cascata não as tocou fisicamente.",
+    "Afirmar que a contagem de linhas do contrato é a mesma (4).",
+    "Afirmar que as quatro seguem legíveis por `GET /v1/cobrancas/:codigo` com `200`."
+   ],
+   "resultado_esperado": "`200`; A_VENCER e VENCIDA passam a `CANCELADA` com `canceladoEm` não nulo; PAGA e já CANCELADA com publicação e `xmin` idênticos; contagem 4 antes e depois; as quatro legíveis com `200`.",
+   "criterios_aceitacao_validados": [
+    "CA-15",
+    "CA-10"
+   ],
+   "observacoes": "Estende a suíte canônica das rotas de contrato. A asserção de `xmin` distingue *não alterou* de *reescreveu com o mesmo valor* — a segunda passaria numa comparação de campos e é o que a RN-13 proíbe. AJUSTE DO ARQUITETO: o gerador sugeriu resolver o `DÉBITO COM GATILHO — D36 · F2/T8` nesta task; ele NÃO é fechado aqui. O gatilho é a F3, mas quem decide se o carimbo 'CANCELADO' é pré-condição ou efeito é a fatia 2, que produz o documento — o marcador permanece e é reafirmado (§21 do tech_spec)."
+  },
+  {
+   "id": "CT-531",
+   "task_id": "T10",
+   "titulo": "Cancelamento de contrato recusado não cancela cobrança nenhuma",
+   "tipo": "E2E",
+   "categoria": "teste_negativo",
+   "invariant": "Quando o cancelamento do contrato é recusado (estado diferente de ATIVO), a resposta é `422` nomeando o estado e NENHUMA cobrança do contrato muda: o `xmin` de todas as tuplas é idêntico antes e depois — não existe cascata parcial.",
+   "owning_layer": "route-integration",
+   "existing_suite": "apps/api/test/contratos.e2e.spec.ts",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "contrato em `RASCUNHO` e contrato já `CANCELADO`, os dois com cobranças em aberto",
+    "assertion_esperada": "`422` nos dois nomeando o estado; `xmin` e `status` de todas as cobranças idênticos antes e depois"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Um contrato em estado que recusa cancelamento, mas com cobranças em aberto vinculadas.",
+    "caminho_legitimo": "Ativar o contrato, gerar as cobranças pela rota, cancelá-lo uma vez pela rota (deixando-o `CANCELADO`) e então tentar cancelá-lo de novo — o cenário é montado só por rotas de produção.",
+    "teste_analogo": "apps/api/test/contratos.e2e.spec.ts"
+   },
+   "camada": "rota HTTP + banco efêmero",
+   "pre_condicoes": [
+    "um contrato já CANCELADO com cobranças e um contrato em RASCUNHO"
+   ],
+   "dados_entrada": {
+    "descricao": "Duas condições de recusa, mais o caso de carteira vazia.",
+    "valores": {
+     "condicao_1": "contrato já CANCELADO",
+     "condicao_2": "contrato em RASCUNHO",
+     "fronteira": "contrato ATIVO sem cobrança alguma"
+    }
+   },
+   "passos": [
+    "Guardar o `xmin` e o `status` de todas as cobranças dos dois contratos.",
+    "Tentar `POST /v1/contratos/<codigo>/cancelamento` nos dois.",
+    "Afirmar `422` nos dois, com o envelope da ADR-0017 nomeando o estado atual.",
+    "Reler todas as cobranças e afirmar `xmin` idêntico ao guardado em cada tupla.",
+    "Afirmar `status` de cada cobrança idêntico ao guardado.",
+    "Afirmar que a contagem de linhas dos dois contratos é a mesma.",
+    "FRONTEIRA: cancelar um contrato ATIVO SEM cobrança alguma responde `200` e a contagem permanece `0` — a cascata sobre conjunto vazio não é erro."
+   ],
+   "resultado_esperado": "Duas respostas `422` nomeando `CANCELADO` e `RASCUNHO`; `xmin` e `status` de todas as cobranças idênticos; contagens preservadas. Contrato ATIVO sem cobrança: `200` e contagem `0`.",
+   "criterios_aceitacao_validados": [
+    "CA-15"
+   ],
+   "observacoes": "Estende a suíte canônica das rotas de contrato. O caso da carteira vazia é o controle que impede a implementação de tratar `0 linhas afetadas` como erro."
+  },
+  {
+   "id": "CT-532",
+   "task_id": "T7",
+   "titulo": "Acusar pagamento NÃO apaga nenhum dos seis campos de conciliação bancária — divergência declarada do legado",
+   "tipo": "INTEGRACAO",
+   "categoria": "integridade_dados",
+   "invariant": "Com `nosso_numero`, `linha_digitavel`, `codigo_barras`, `data_credito`, `valor_creditado` e `boleto_arquivo` preenchidos, acusar o pagamento preserva os seis com os MESMOS valores — o legado os zera, e o produto novo não.",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "os seis campos preenchidos com valores distintos e não nulos, para que o zeramento seja detectável campo a campo",
+    "assertion_esperada": "os seis comparados por igualdade individual após o pagamento; um `UPDATE` que os zerasse deixaria seis asserções reprovando com `null` obtido contra o valor esperado"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Os seis campos nascem nulos e não têm rota nesta fatia (a emissão de boleto é da F4), de modo que preenchê-los exige escrita direta.",
+    "caminho_legitimo": "Escrever os seis por `UPDATE` sob o contexto de empresa, pelo papel da APLICAÇÃO com `SET LOCAL app.empresa_id` dentro da unidade de trabalho — mesma receita do CT-517. **Nunca** publicar rota de conciliação nesta fatia só para montar o cenário: a superfície publicada é declarada e auditada pelo CT-533, e abrir uma oitava rota faria a âncora de 82 reprovar — que é o efeito desejado.",
+    "teste_analogo": "packages/db/test/contrato.spec.ts"
+   },
+   "camada": "porta de dados + banco efêmero",
+   "pre_condicoes": [
+    "uma cobrança VENCIDA com os seis campos preenchidos",
+    "configuração de mora registrada"
+   ],
+   "dados_entrada": {
+    "descricao": "Os seis campos de conciliação com valores distintos e reconhecíveis.",
+    "valores": {
+     "nosso_numero": "00000000000123456789",
+     "linha_digitavel": "75690.00001 00000.000000 00000.000000 1 00000000200000",
+     "codigo_barras": "75691000000000200000000010000000000000000000",
+     "data_credito": "data corrente - 2 dias",
+     "valor_creditado": "2000.00",
+     "boleto_arquivo": "boletos/2027/COB-2027-0000001.pdf"
+    }
+   },
+   "passos": [
+    "Preencher os seis e reler, afirmando os seis por igualdade individual — controle de que a escrita valeu.",
+    "Acusar o pagamento por `POST /v1/cobrancas/:codigo/pagamento`.",
+    "Afirmar `200` e `status === 'PAGA'`.",
+    "Reler a linha e afirmar os SEIS campos por igualdade individual contra os valores escritos — seis asserções nomeadas, nunca uma comparação de objeto que possa mascarar um campo esquecido.",
+    "Afirmar simultaneamente que os quatro carimbos de mora FORAM gravados — a preservação da conciliação não impediu a escrita do que devia ser escrito.",
+    "Afirmar que a tabela NÃO tem coluna `pagamento_confirmado` (o booleano do legado não é portado), pela lista de colunas comparada por igualdade — `pago_em` responde à mesma pergunta."
+   ],
+   "resultado_esperado": "Os seis campos de conciliação idênticos, um a um, antes e depois do pagamento; os quatro carimbos de mora gravados; `negocio.cobranca` sem coluna `pagamento_confirmado`.",
+   "criterios_aceitacao_validados": [
+    "CA-16"
+   ],
+   "observacoes": "Arquivo novo proposto: `packages/db/test/cobranca.spec.ts`. É a divergência declarada do legado registrada na §4 do tech-alignment e no ponto 2 dos pontos em aberto; sem este caso, uma futura 'harmonização com o legado' reintroduziria o zeramento sem que nada acusasse. Vale registrar `DECISÃO FECHADA` no ponto do serviço que acusa o pagamento, com `REVERTER EXIGE` nomeando a prova de que a F4 não depende dos seis campos preservados."
+  },
+  {
+   "id": "CT-533",
+   "task_id": "T11",
+   "titulo": "As 7 rotas novas entram na cobertura de autorização, `semDeclaracao` continua vazio e a âncora sobe para 82",
+   "tipo": "SEGURANCA",
+   "categoria": "seguranca",
+   "invariant": "A cobertura declara as 7 rotas novas: as 5 de `/v1/cobrancas` exigindo EXATAMENTE `TELA:financeiro` e as 2 de `/v1/multa-e-juros` exigindo EXATAMENTE `TELA:multa_e_juros`; nenhuma exige chave `ACAO:*`; `semDeclaracao` continua `[]`; e a superfície publicada sobe de 75 para 82 pares.",
+   "owning_layer": "route-integration",
+   "existing_suite": "apps/api/test/cobertura-de-autorizacao.e2e.spec.ts",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-534",
+    "input_invalido": "sessão sem a área de tela exigida, exercitando cada uma das 7 rotas",
+    "assertion_esperada": "`403` com o envelope da ADR-0017, indistinguível entre perfis, e nenhuma alteração de estado"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Montar a aplicação de produção inteira para enumerar a superfície publicada.",
+    "caminho_legitimo": "Imitar o `CT-427` de `apps/api/test/cobertura-de-autorizacao.e2e.spec.ts`, que já monta a aplicação real e enumera os pares por DUAS medições independentes. **Nunca** acrescentar rota, flag ou exportação de teste à aplicação para tornar a enumeração possível.",
+    "teste_analogo": "apps/api/test/cobertura-de-autorizacao.e2e.spec.ts (CT-427)"
+   },
+   "camada": "rota HTTP + aplicação de produção montada",
+   "pre_condicoes": [
+    "módulos `cobrancas` e `mora` registrados na aplicação",
+    "as 7 rotas publicadas sob `/v1`"
+   ],
+   "dados_entrada": {
+    "descricao": "A superfície publicada da aplicação de produção montada.",
+    "valores": {
+     "rotas_novas": "POST /v1/cobrancas · GET /v1/cobrancas · GET /v1/cobrancas/:codigo · POST /v1/cobrancas/:codigo/pagamento · POST /v1/cobrancas/:codigo/cancelamento · GET /v1/multa-e-juros · PUT /v1/multa-e-juros",
+     "ancora_anterior": "75 pares / 60 manipuladores"
+    }
+   },
+   "passos": [
+    "Enumerar a cobertura pela aplicação de produção montada, pelas mesmas duas medições independentes do `CT-427`.",
+    "Afirmar `cobertura.semDeclaracao` igual a `[]` — igualdade de lista, não `toHaveLength(0)`.",
+    "Afirmar que a estrutura declarada de cada uma das 7 iguala, por igualdade de objeto, o par esperado: as 5 de cobrança com exatamente `['TELA:financeiro']` e as 2 de mora com exatamente `['TELA:multa_e_juros']`.",
+    "Afirmar que NENHUMA das 7 declara chave iniciada por `ACAO:` — o catálogo fechado da ADR-0011 não é aberto; a asserção nomeia qualquer chave encontrada.",
+    "Afirmar o total de pares igual a `82` (75 + 7) e o de manipuladores igual a `67` (60 + 7), pelas duas medições independentes; se elas divergirem entre si, o caso reprova nomeando os dois números.",
+    "Afirmar que o catálogo de permissões continua com as mesmas chaves de área da fatia anterior — nenhuma área de tela nova."
+   ],
+   "resultado_esperado": "`semDeclaracao === []`; as 7 rotas declaradas com exatamente as áreas acima e nenhuma chave `ACAO:*`; total de pares `82` e de manipuladores `67`, concordantes nas duas medições; catálogo de áreas inalterado.",
+   "criterios_aceitacao_validados": [
+    "CA-17"
+   ],
+   "observacoes": "Estende a suíte canônica de cobertura. ATENÇÃO ANTIRREGRESSÃO: alterar `ROTAS_PUBLICADAS_EM_PRODUCAO = 75` exige a linha `SUT_IS_CORRECT_BECAUSE:` — o docblock em `apps/api/test/cobertura-de-autorizacao.e2e.spec.ts:854-881` registra por que a âncora é 75 e não 77, e a razão (supressão do `HEAD` derivado) CONTINUA valendo: 7 rotas somam 7 pares, não 14. Se a medição divergir de `67` manipuladores, o errado é a âncora e não a medição, e a divergência entra com a mesma linha de justificativa. Ponto 8 do briefing."
+  },
+  {
+   "id": "CT-534",
+   "task_id": "T11",
+   "titulo": "Sem a área de tela exigida, cancelar e acusar pagamento são recusados e nada muda",
+   "tipo": "SEGURANCA",
+   "categoria": "seguranca",
+   "invariant": "Uma sessão sem `TELA:financeiro` recebe `403` com o envelope da ADR-0017 em qualquer das 5 rotas de cobrança, e uma sem `TELA:multa_e_juros` recebe `403` nas 2 de mora; em nenhum caso o estado muda — o `xmin` das tuplas alvo e a configuração de mora são idênticos antes e depois.",
+   "owning_layer": "route-integration",
+   "existing_suite": "apps/api/test/autorizacao-do-dominio.e2e.spec.ts",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "sessão de Usuário Empresa legítima, porém sem a área de tela exigida por cada rota",
+    "assertion_esperada": "`403` nas 7 rotas com o envelope da ADR-0017; `xmin` das tuplas e valores da configuração idênticos; corpo da recusa indistinguível entre perfis"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Sessões deliberadamente SEM a área de tela exigida, e um controle positivo com a área.",
+    "caminho_legitimo": "Conceder e RETIRAR a área pelo caminho real de administração (a matriz admite ajuste bidirecional) e admitir a sessão pelo login — exatamente como `apps/api/test/autorizacao-do-dominio.e2e.spec.ts` já faz para as áreas do domínio. **Nunca** forjar sessão nem manipular `versaoPermissoes` por fora da barreira de admissão.",
+    "teste_analogo": "apps/api/test/autorizacao-do-dominio.e2e.spec.ts"
+   },
+   "camada": "rota HTTP + banco efêmero",
+   "pre_condicoes": [
+    "cobrança A_VENCER existente",
+    "configuração de mora registrada com multa 2%",
+    "duas sessões: uma sem `TELA:financeiro`, outra sem `TELA:multa_e_juros`, e uma com as duas"
+   ],
+   "dados_entrada": {
+    "descricao": "As 7 rotas exercitadas sem a área exigida, mais um controle positivo.",
+    "valores": {
+     "sessao_sem_financeiro": "usuário com as demais áreas, sem TELA:financeiro",
+     "sessao_sem_mora": "usuário com as demais áreas, sem TELA:multa_e_juros",
+     "controle_positivo": "sessão com as duas áreas"
+    }
+   },
+   "passos": [
+    "Guardar o `xmin` da cobrança alvo e os valores da configuração de mora.",
+    "Chamar as 5 rotas de cobrança com a sessão sem `TELA:financeiro` e afirmar `403` em cada uma, comparando o envelope INTEIRO por igualdade de objeto.",
+    "Chamar as 2 rotas de mora com a sessão sem `TELA:multa_e_juros` e afirmar `403` com o mesmo envelope.",
+    "Reler a cobrança e afirmar `status` inalterado e `xmin` idêntico.",
+    "Reler a configuração e afirmar `multaPercentual '2.00'` e `jurosPercentual` inalterados.",
+    "CONTROLE POSITIVO: repetir as 7 chamadas com a sessão que tem as duas áreas e afirmar que nenhuma devolve `403`.",
+    "Afirmar que o corpo do `403` é indistinguível entre a sessão sem a área e um perfil diferente, no molde de `apps/api/test/recusa-indistinguivel.e2e.spec.ts`."
+   ],
+   "resultado_esperado": "Sete respostas `403` com o envelope da ADR-0017, idênticas entre si; `xmin` da cobrança e valores da configuração inalterados; o controle positivo não devolve `403` em nenhuma das 7; o corpo da recusa é indistinguível entre perfis.",
+   "criterios_aceitacao_validados": [
+    "CA-17"
+   ],
+   "observacoes": "Estende a suíte canônica de autorização do domínio. O controle positivo é obrigatório e é a lição registrada da F0: provou-se o que era fácil provar (a recusa) e deixou-se sem asserção o que discrimina (que a permissão certa passa)."
+  },
+  {
+   "id": "CT-535",
+   "task_id": "T3",
+   "titulo": "As funções da série de cobrança não aceitam empresa por parâmetro, guardam o ano e não concedem a sequência",
+   "tipo": "INTEGRACAO",
+   "categoria": "seguranca",
+   "invariant": "`negocio.garantir_contador_de_cobranca` e `negocio.proximo_numero_de_cobranca` não têm parâmetro de empresa em nenhuma assinatura do catálogo; as duas levantam com `app.empresa_id` ausente; as duas guardam a faixa `2000–2999` e recusam `NULL`; as duas são `SECURITY DEFINER` com `SET search_path = pg_catalog, pg_temp`; e `sysloc_app` tem `EXECUTE` sobre elas e NENHUM privilégio sobre as sequências do contador.",
+   "owning_layer": "service-integration",
+   "existing_suite": "packages/db/test/catalogo.spec.ts",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "chamada sem contexto fixado; `p_ano` igual a `NULL`, `1999` e `3000`; e `nextval` direto sobre a sequência do contador pelo papel da aplicação",
+    "assertion_esperada": "as três primeiras levantam com a mensagem declarada na migração `0010`; o `nextval` direto levanta SQLSTATE `42501` (insufficient_privilege) — se SUCEDER, existe um segundo caminho para o número e a decisão fechada do `0008` foi violada"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Introspecção do catálogo (`pg_proc`, `pg_proc.proconfig`, `has_function_privilege`, `has_sequence_privilege`) e tentativa de `nextval` direto pelo papel da aplicação.",
+    "caminho_legitimo": "Imitar o `CT-406` e o `CT-431` da fatia de contratos, que fazem exatamente esta introspecção sobre `garantir_contador_de_contrato`/`proximo_numero_de_contrato` — o catálogo é legível por qualquer papel que consiga conectar, e a tentativa de `nextval` corre pelo papel `sysloc_app`. **Nunca** conceder privilégio à sequência para 'poder testar', e nunca alterar a assinatura das funções para aceitar empresa.",
+    "teste_analogo": "packages/db/test/catalogo.spec.ts (CT-421) e a mecânica dos CT-406/CT-431 da fatia de contratos"
+   },
+   "camada": "porta de dados + banco efêmero",
+   "pre_condicoes": [
+    "migração `0010` aplicada",
+    "contexto de empresa fixado para os casos positivos"
+   ],
+   "dados_entrada": {
+    "descricao": "As duas funções novas e a sequência que elas criam.",
+    "valores": {
+     "funcoes": "negocio.garantir_contador_de_cobranca(integer, bigint) e negocio.proximo_numero_de_cobranca(integer)",
+     "anos_recusados": "NULL, 1999, 3000",
+     "anos_aceitos": "2000, 2027, 2999"
+    }
+   },
+   "passos": [
+    "Consultar `pg_proc` e afirmar, por igualdade de lista de tipos de argumento, que nenhuma das duas assinaturas contém `uuid` — o pedido cruzado é IRREPRESENTÁVEL, não conferido.",
+    "Afirmar `prosecdef = true` e que `proconfig` contém exatamente `search_path=pg_catalog, pg_temp` nas duas.",
+    "Chamar as duas SEM contexto fixado e afirmar que levantam com a mensagem `contexto de empresa ausente` declarada na migração.",
+    "Chamar com `p_ano` igual a `NULL`, `1999` e `3000` e afirmar que as duas levantam `ano do contador fora da faixa admitida` — a guarda é a MESMA nas duas superfícies.",
+    "CONTROLE POSITIVO: chamar com `2000`, `2027` e `2999` e afirmar sucesso — sem ele, guardas escritas ao contrário passariam as asserções negativas.",
+    "Afirmar `has_function_privilege('sysloc_app', ..., 'EXECUTE')` verdadeiro para as duas.",
+    "Afirmar `has_sequence_privilege('sysloc_app', <sequência do contador>, 'USAGE')`, `'SELECT'` e `'UPDATE'` FALSOS nos três.",
+    "Tentar `nextval` direto sobre a sequência pelo papel da aplicação e afirmar SQLSTATE `42501`."
+   ],
+   "resultado_esperado": "Nenhuma assinatura com `uuid`; `prosecdef = true` e `search_path` fixado nas duas; contexto ausente levanta; `NULL`/`1999`/`3000` levantam; `2000`/`2027`/`2999` sucedem; `EXECUTE` concedido; `USAGE`/`SELECT`/`UPDATE` sobre a sequência todos falsos; `nextval` direto levanta `42501`.",
+   "criterios_aceitacao_validados": [
+    "CA-02",
+    "CA-09"
+   ],
+   "observacoes": "Estende `packages/db/test/catalogo.spec.ts`, onde o `CT-421` já examina o contrato pelo catálogo. É o análogo do `DECISÃO FECHADA — T3 · 2026-08-09` de `packages/db/migracoes/0008_seguranca_contrato.sql` §5, e a migração `0010` deve REFERENCIAR aquele raciocínio em vez de recopiá-lo (trade-off declarado no D3 do tech-alignment)."
+  },
+  {
+   "id": "CT-536",
+   "task_id": "T4",
+   "titulo": "O código `COB-{ano}-{7 dígitos}` é por empresa e ano, admite furo e nunca reusa número",
+   "tipo": "INTEGRACAO",
+   "categoria": "integridade_dados",
+   "invariant": "O código emitido casa `^COB-\\d{4}-\\d{7}$` com largura de 7 dígitos; a sequência corre por escopo `(empresa, ano)`, de modo que duas empresas emitem `COB-2027-0000001` cada uma sem colisão (garantida por `unique(empresa_id, codigo)`); e uma transação abortada QUEIMA o número — a seguinte recebe o próximo, nunca o descartado.",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "transação de criação abortada entre a emissão do número e o commit; e tentativa de inserir o mesmo `codigo` duas vezes na mesma empresa",
+    "assertion_esperada": "após o aborto, a criação seguinte recebe o sufixo `N+2` e NUNCA `N+1` (o furo é aceito por escrito na ADR-0015); a inserção duplicada levanta SQLSTATE `23505` nomeando `unique(empresa_id, codigo)`"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Provocar aborto de transação entre a emissão do número e o commit, e alternar entre duas empresas.",
+    "caminho_legitimo": "Abortar a unidade de trabalho pelo mecanismo que a produção já usa (levantar dentro da transação, de modo que o desfazimento normal ocorra), e alternar empresas fixando `app.empresa_id` — a mesma mecânica que a fatia de contratos usa para o mesmo invariante. **Nunca** publicar rota ou flag de teste para forçar o aborto.",
+    "teste_analogo": "packages/db/test/contrato.spec.ts"
+   },
+   "camada": "porta de dados + banco efêmero",
+   "pre_condicoes": [
+    "migração `0010` aplicada",
+    "duas empresas com contratos ATIVOS"
+   ],
+   "dados_entrada": {
+    "descricao": "Emissões sucessivas em duas empresas e no mesmo ano, com um aborto no meio.",
+    "valores": {
+     "empresa_A": "3 emissões, com a 2ª abortada",
+     "empresa_B": "1 emissão no mesmo ano",
+     "ano": 2027
+    }
+   },
+   "passos": [
+    "Emitir a primeira cobrança de A e afirmar `codigo === 'COB-2027-0000001'` — a largura 7 é afirmada pelo valor literal, não só pela expressão regular.",
+    "Abrir a segunda unidade de trabalho, emitir o número e abortar; afirmar que nenhuma linha foi criada.",
+    "Emitir a terceira e afirmar `codigo === 'COB-2027-0000003'` — o `0000002` foi QUEIMADO, e o furo é a decisão da ADR-0015, não defeito.",
+    "Emitir a primeira de B no mesmo ano e afirmar `codigo === 'COB-2027-0000001'` — as duas empresas convivem com o mesmo código.",
+    "Afirmar que a inserção de um `codigo` duplicado na MESMA empresa levanta SQLSTATE `23505` nomeando a restrição `unique(empresa_id, codigo)`.",
+    "Afirmar que a expressão regular `^COB-\\d{4}-\\d{7}$` casa os quatro códigos emitidos, e que nenhum tem 5 ou 6 dígitos no sufixo."
+   ],
+   "resultado_esperado": "A → `COB-2027-0000001`, aborto sem linha, depois `COB-2027-0000003`. B → `COB-2027-0000001` no mesmo ano, sem colisão. Duplicata na mesma empresa levanta `23505`. Os quatro códigos casam `^COB-\\d{4}-\\d{7}$` com sufixo de exatamente 7 dígitos.",
+   "criterios_aceitacao_validados": [
+    "CA-02",
+    "CA-09"
+   ],
+   "observacoes": "Arquivo novo proposto: `packages/db/test/cobranca.spec.ts`. A largura 7 é MEDIDA no legado (`autoname = COB-.YYYY.-.#######`, série viva em `COB-2026-0000058`), não escolhida — exige `DECISÃO FECHADA` no ponto de `packages/contracts/src/cobranca.ts` que fixa o formato, no molde exato do que `packages/contracts/src/contrato.ts` já faz para os 5 dígitos de `CTR-{ano}-{#####}` (invariante 5 do projeto). Sem esse marcador, uma rodada futura 'harmoniza' a largura com a do contrato."
+  },
+  {
+   "id": "CT-537",
+   "task_id": "T9",
+   "titulo": "`efeitos.cobrancasGeradas` deixa de ser `z.literal(false)` e passa a exigir inteiro não negativo",
+   "tipo": "UNITARIO",
+   "categoria": "fronteira",
+   "invariant": "`esquemaDaAtivacaoDeContrato` aceita `efeitos: { cobrancasGeradas: <inteiro >= 0> }`, RECUSA `false` e recusa não-inteiro; o `strictObject` continua recusando campo extra dentro de `efeitos`.",
+   "owning_layer": "unit",
+   "existing_suite": "packages/contracts/test/esquemas.spec.ts",
+   "real_execution_boundary": "none",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "`cobrancasGeradas: false`, `cobrancasGeradas: -1`, `cobrancasGeradas: 2.5`, e `efeitos: { cobrancasGeradas: 3, boletosEmitidos: 3 }`",
+    "assertion_esperada": "os quatro reprovam com `resultado.success === false` e `resultado.error.issues[0].path` igual a `['efeitos','cobrancasGeradas']` nos três primeiros e a `['efeitos','boletosEmitidos']` no quarto"
+   },
+   "precondicao_privilegiada": {
+    "presente": false,
+    "descricao": "",
+    "caminho_legitimo": "",
+    "teste_analogo": ""
+   },
+   "camada": "contrato publicado (packages/contracts)",
+   "pre_condicoes": [
+    "`packages/contracts/src/contrato.ts` alterado",
+    "`packages/contracts/src/cobranca.ts` criado"
+   ],
+   "dados_entrada": {
+    "descricao": "Respostas de ativação válidas e inválidas.",
+    "valores": {
+     "validos": "cobrancasGeradas 0, 3, 13",
+     "invalidos": "false, -1, 2.5, e campo extra boletosEmitidos"
+    }
+   },
+   "passos": [
+    "Afirmar que `cobrancasGeradas: 0`, `3` e `13` são aceitos e que o valor sobrevive à análise por igualdade de número.",
+    "Afirmar que `false` é RECUSADO, com `path` igual a `['efeitos','cobrancasGeradas']` — é o que substitui a asserção do `CT-429`.",
+    "Afirmar que `-1` e `2.5` são recusados, com o mesmo `path`.",
+    "Afirmar que campo extra dentro de `efeitos` continua recusado, com `path` igual a `['efeitos','boletosEmitidos']` — o `strictObject` não foi afrouxado.",
+    "Afirmar que o enum `natureza_cobranca` publicado tem exatamente os cinco membros `['ALUGUEL','AGUA','CONDOMINIO','ENERGIA','OUTRO']`, por igualdade de lista ordenada, e o `status_cobranca` exatamente `['A_VENCER','VENCIDA','PAGA','CANCELADA']`."
+   ],
+   "resultado_esperado": "`0`, `3` e `13` aceitos; `false`, `-1` e `2.5` recusados com `path` `['efeitos','cobrancasGeradas']`; campo extra recusado com `path` `['efeitos','boletosEmitidos']`; os dois enums publicados com exatamente os membros listados, em igualdade de lista ordenada.",
+   "criterios_aceitacao_validados": [
+    "CA-02",
+    "CA-06"
+   ],
+   "observacoes": "Estende `packages/contracts/test/esquemas.spec.ts`. ATENÇÃO ANTIRREGRESSÃO MÁXIMA: este caso SUBSTITUI o `CT-429` (`esquemas.spec.ts:1148`), que afirma o literal `false`. A substituição exige a linha `SUT_IS_CORRECT_BECAUSE:` declarando que o `z.literal(false)` era o registro fiel de uma fatia que não gerava cobrança e que o `DÉBITO COM GATILHO — D28 · F2/T7` (`apps/api/src/contratos/contrato.service.ts:432`) tem por gatilho exatamente esta fatia. O caso NÃO pode simplesmente sumir: o `CT-429` sai e este entra, e a contagem total da suíte não pode cair (P5 do Protocolo Antirregressão). O marcador D28 e a linha do índice do `CLAUDE.md` saem no MESMO commit."
+  },
+  {
+   "id": "CT-538",
+   "task_id": "T6",
+   "titulo": "A política de mora é gravada, regravada e lida; empresa que nunca configurou lê zero sem que linha alguma nasça",
+   "tipo": "E2E",
+   "categoria": "interacao_usuario",
+   "invariant": "`PUT /v1/multa-e-juros` grava a política da empresa do contexto e a regravação ATUALIZA a mesma linha em vez de acrescentar outra; `GET /v1/multa-e-juros` devolve sempre o último par gravado, e devolve `{ multaPercentual: 0, jurosPercentual: 0 }` com `200` quando a empresa nunca configurou — sem criar linha e sem `404` (RD-21).",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-539",
+    "input_invalido": "corpos fora de faixa, fora de escala, parciais e com chave desconhecida",
+    "assertion_esperada": "`422` com o envelope da ADR-0017 nomeando o campo, e a política gravada permanece intacta na releitura"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Sessão com `TELA:multa_e_juros` nas duas empresas envolvidas (A e B).",
+    "caminho_legitimo": "Conceder a área pelo caminho real de administração e montar a sessão pelo caminho real de admissão. **Nunca** fixar `app.empresa_id` por fora da barreira nem alargar a exigência declarada da rota.",
+    "teste_analogo": "apps/api/test/autorizacao-do-dominio.e2e.spec.ts"
+   },
+   "camada": "rota HTTP + banco efêmero",
+   "pre_condicoes": [
+    "duas empresas, A e B, criadas pelo caminho real",
+    "nenhuma das duas chamou `PUT /v1/multa-e-juros` ainda"
+   ],
+   "dados_entrada": {
+    "descricao": "Dois pares de percentuais aplicados em sequência na empresa A, e um par distinto na empresa B.",
+    "valores": {
+     "primeiro_par_A": "multa 2.00, juros 1.00",
+     "segundo_par_A": "multa 5.00, juros 0.50",
+     "par_B": "multa 10.00, juros 2.00"
+    }
+   },
+   "passos": [
+    "`GET /v1/multa-e-juros` na empresa A, que nunca configurou: afirmar `200` e o corpo `{ multaPercentual: 0, jurosPercentual: 0 }`.",
+    "Contar as linhas de `negocio.configuracao_de_mora` da empresa A e afirmar `0` — a LEITURA não criou linha (RD-21).",
+    "`PUT /v1/multa-e-juros` com o primeiro par: afirmar `200` e que o corpo da resposta ecoa o par gravado.",
+    "`GET` e afirmar o primeiro par.",
+    "`PUT` com o segundo par: afirmar `200`; `GET` e afirmar o segundo par.",
+    "Contar de novo as linhas da empresa A e afirmar **`1`** — a regravação atualizou a linha existente (`ON CONFLICT (empresa_id) DO UPDATE`), não acrescentou uma segunda.",
+    "Na empresa B, `PUT` com o par dela e `GET`: afirmar o par de B, e afirmar que o `GET` de A continua devolvendo o segundo par de A."
+   ],
+   "resultado_esperado": "Empresa A sem configuração: `200` com zeros e contagem `0`. Depois de dois `PUT`: `GET` devolve `5.00`/`0.50` e a contagem é `1`, nunca `2`. Empresa B devolve `10.00`/`2.00`, e a leitura de A não muda por causa de B.",
+   "criterios_aceitacao_validados": [
+    "CA-11"
+   ],
+   "observacoes": "Caso acrescentado pelo `/agent-spec-challenge-spec` de 2026-08-09 — não veio do gerador. Arquivo novo: `apps/api/test/mora.e2e.spec.ts`. **A contagem de linhas é o discriminador do upsert**: sem ela, uma implementação que inserisse uma linha por chamada passaria em todas as leituras (a última inserida venceria a leitura) e só quebraria quando a restrição `UNIQUE (empresa_id)` fosse consultada. A contagem `0` da primeira medição é o que separa RD-21 de uma implementação que cria a linha zerada na leitura."
+  },
+  {
+   "id": "CT-539",
+   "task_id": "T6",
+   "titulo": "A entrada da política de mora recusa fora de faixa, fora de escala, corpo parcial e chave desconhecida — e a recusa não escreve",
+   "tipo": "E2E",
+   "categoria": "validacao_entrada",
+   "invariant": "Todo corpo que viole a faixa `[0, 100]`, a escala `0.01`, a completude do `strictObject` ou o conjunto fechado de chaves é recusado com `422` nomeando o campo, e a política já gravada permanece byte a byte a mesma — recusa nunca é escrita parcial. As bordas `0` e `100` são ACEITAS: a faixa é fechada nos dois extremos.",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-539",
+    "input_invalido": "os pares `{0, 0}` e `{100, 100}`, nas bordas exatas da faixa",
+    "assertion_esperada": "os dois são ACEITOS com `200` — é o controle positivo que impede o caso de passar com uma validação que recuse tudo"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "Sessão com `TELA:multa_e_juros`.",
+    "caminho_legitimo": "Conceder a área pelo caminho real de administração; montar a sessão pelo caminho real de admissão.",
+    "teste_analogo": "apps/api/test/autorizacao-do-dominio.e2e.spec.ts"
+   },
+   "camada": "rota HTTP + banco efêmero",
+   "pre_condicoes": [
+    "uma empresa com a política já gravada em multa 2.00 / juros 1.00"
+   ],
+   "dados_entrada": {
+    "descricao": "Seis corpos malformados e dois corpos de borda, todos contra a mesma empresa já configurada.",
+    "valores": {
+     "abaixo_da_faixa": "{ \"multaPercentual\": -1, \"jurosPercentual\": 1 }",
+     "acima_da_faixa": "{ \"multaPercentual\": 100.01, \"jurosPercentual\": 1 }",
+     "fora_da_escala": "{ \"multaPercentual\": 2, \"jurosPercentual\": 0.005 }",
+     "chave_desconhecida": "{ \"multaPercentual\": 2, \"jurosPercentual\": 1, \"moraPercentual\": 3 }",
+     "corpo_vazio": "{}",
+     "corpo_parcial": "{ \"multaPercentual\": 3 }",
+     "borda_inferior": "{ \"multaPercentual\": 0, \"jurosPercentual\": 0 }",
+     "borda_superior": "{ \"multaPercentual\": 100, \"jurosPercentual\": 100 }"
+    }
+   },
+   "passos": [
+    "`PUT` com `multaPercentual: -1`: afirmar `422` e o envelope INTEIRO da ADR-0017, com `campo: 'multaPercentual'`.",
+    "`PUT` com `multaPercentual: 100.01`: afirmar `422` e `campo: 'multaPercentual'`.",
+    "`PUT` com `jurosPercentual: 0.005`: afirmar `422` e `campo: 'jurosPercentual'` — a escala é `0.01`, e o valor está dentro da faixa.",
+    "`PUT` com a chave desconhecida `moraPercentual`: afirmar `422` e `campo: 'corpo'` — é o `strictObject`.",
+    "`PUT` com `{}` e `PUT` com só `multaPercentual`: afirmar `422` nos dois, com `campo: 'corpo'` ou o campo ausente nomeado. **Campo ausente é recusa, nunca 'preserve o valor atual'** (§4.1.1).",
+    "`GET /v1/multa-e-juros` e afirmar `{ multaPercentual: 2, jurosPercentual: 1 }` — nenhuma das seis recusas escreveu.",
+    "Controle positivo: `PUT` com `{0, 0}` e depois com `{100, 100}`: afirmar `200` nos dois e a leitura correspondente."
+   ],
+   "resultado_esperado": "Seis `422` com o envelope da ADR-0017, nomeando `multaPercentual`, `multaPercentual`, `jurosPercentual`, `corpo`, `corpo` e `corpo`. A releitura devolve `2.00`/`1.00` intacto. Os dois corpos de borda respondem `200`.",
+   "criterios_aceitacao_validados": [
+    "CA-11"
+   ],
+   "observacoes": "Caso acrescentado pelo `/agent-spec-challenge-spec` de 2026-08-09 — não veio do gerador. Arquivo: `apps/api/test/mora.e2e.spec.ts`. As regras que ele prova estavam DECLARADAS na §6.1 da tech_spec e não tinham caso algum: a fatia publicava duas rotas cuja entrada nenhum teste exercitava. **O controle positivo das bordas é obrigatório**: sem ele, uma validação que recusasse todo corpo passaria nos seis primeiros passos. A releitura final é o que separa *recusado* de *aceito com efeito parcial*."
+  },
+  {
+   "id": "CT-540",
+   "task_id": "T2",
+   "titulo": "Natureza e estado da cobrança são uniões fechadas de exatamente cinco e quatro valores, na ordem declarada",
+   "tipo": "UNITARIO",
+   "categoria": "fronteira",
+   "invariant": "`NATUREZAS_DE_COBRANCA` publica exatamente `['ALUGUEL','AGUA','CONDOMINIO','ENERGIA','OUTRO']` e `ESTADOS_DA_COBRANCA` exatamente `['A_VENCER','VENCIDA','PAGA','CANCELADA']`, nesta ordem; `esquemaDaCobranca` aprova cada um dos nove rótulos devolvendo o recurso verbatim e recusa qualquer outro valor nomeando o campo (`natureza` ou `status`).",
+   "owning_layer": "unit",
+   "existing_suite": "packages/contracts/test/esquemas.spec.ts",
+   "real_execution_boundary": "none",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "`natureza: 'IPTU'`, `natureza: 'agua'`, `status: 'ATIVO'`, `status: 'EM_ABERTO'`",
+    "assertion_esperada": "`resultado.success === false` e `resultado.error.issues[0].path` igual a `['natureza']` nos dois primeiros e a `['status']` nos dois últimos"
+   },
+   "precondicao_privilegiada": {
+    "presente": false,
+    "descricao": "",
+    "caminho_legitimo": "",
+    "teste_analogo": ""
+   },
+   "camada": "Contrato (`packages/contracts/src/cobranca.ts`)",
+   "pre_condicoes": [
+    "`NATUREZAS_DE_COBRANCA`, `ESTADOS_DA_COBRANCA` e `esquemaDaCobranca` exportados por `index.ts`, símbolo a símbolo",
+    "Uma constante `COBRANCA_PUBLICADA` no arquivo de teste, com os 18 campos do recurso, no molde de `CONTRATO_PUBLICADO`"
+   ],
+   "dados_entrada": {
+    "descricao": "As duas listas escritas por extenso no arquivo de teste e um recurso publicado válido remendado por rótulo.",
+    "valores": {
+     "naturezas_declaradas": [
+      "ALUGUEL",
+      "AGUA",
+      "CONDOMINIO",
+      "ENERGIA",
+      "OUTRO"
+     ],
+     "estados_declarados": [
+      "A_VENCER",
+      "VENCIDA",
+      "PAGA",
+      "CANCELADA"
+     ],
+     "recusados_natureza": [
+      "IPTU",
+      "agua"
+     ],
+     "recusados_status": [
+      "ATIVO",
+      "EM_ABERTO"
+     ]
+    }
+   },
+   "passos": [
+    "Afirmar `expect([...NATUREZAS_DE_COBRANCA]).toEqual([...NATUREZAS_DECLARADAS])` e o mesmo para os estados.",
+    "Para cada uma das 5 naturezas, `esquemaDaCobranca.safeParse` e afirmar sucesso e `data` profundamente igual ao objeto enviado.",
+    "Para cada um dos 4 estados, o mesmo sobre `status`.",
+    "Para cada valor recusado, afirmar `success === false` e o `path` do primeiro `issue`.",
+    "Afirmar `Object.isFrozen` verdadeiro nos dois arranjos."
+   ],
+   "resultado_esperado": "`NATUREZAS_DE_COBRANCA` com comprimento 5 igual elemento a elemento e na ordem; `ESTADOS_DA_COBRANCA` com comprimento 4; os dois `Object.isFrozen`. Os 9 rótulos aprovados e devolvidos verbatim. `IPTU`/`agua` com `path === ['natureza']`; `ATIVO`/`EM_ABERTO` com `path === ['status']`.",
+   "criterios_aceitacao_validados": [
+    "Aceite técnico 1 — os dois enums congelados, com exatamente 5 e 4 valores, na ordem declarada"
+   ],
+   "observacoes": "Molde literal do describe do CT-424 (esquemas.spec.ts:698). As listas são escritas por extenso: derivá-las das constantes deixaria as duas pontas andando juntas. A ordem é conteúdo — a T3 deriva os enums do banco deste arranjo."
+  },
+  {
+   "id": "CT-541",
+   "task_id": "T2",
+   "titulo": "O código da cobrança é canonizado num ponto único e a largura é de SETE dígitos — a rede da `DECISÃO FECHADA`",
+   "tipo": "UNITARIO",
+   "categoria": "fronteira",
+   "invariant": "`PREFIXO_DO_CODIGO_DE_COBRANCA === 'COB'` e `LARGURA_DO_SEQUENCIAL_DE_COBRANCA === 7`; `ESQUEMA_DO_CODIGO_DE_COBRANCA` aplica `trim` → `toUpperCase` e aceita exatamente `COB-\\d{4}-\\d{7}`, recusando as larguras 5, 6 e 8; e todo código que `formatarCodigoDeCobranca` emite dentro da largura é aceito pelo esquema.",
+   "owning_layer": "unit",
+   "existing_suite": "packages/contracts/test/esquemas.spec.ts",
+   "real_execution_boundary": "none",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "`'COB-2026-00058'` (cinco dígitos — a largura do contrato de locação), `'COB-2026-000058'`, `'COB-2026-000000058'`, `'CTR-2026-0000058'`, `'COB-26-0000058'`, `'COB-2026-000005A'`, `'   '`",
+    "assertion_esperada": "`success === false` e `issues[0].code === 'invalid_format'` nos sete; e, dentro do recurso, `path` igual a `['codigo']`"
+   },
+   "precondicao_privilegiada": {
+    "presente": false,
+    "descricao": "",
+    "caminho_legitimo": "",
+    "teste_analogo": ""
+   },
+   "camada": "Contrato (`packages/contracts/src/cobranca.ts`)",
+   "pre_condicoes": [
+    "As quatro exportações publicadas por `index.ts`",
+    "A expressão regular do esquema é construída a partir das constantes, nunca redigitada"
+   ],
+   "dados_entrada": {
+    "descricao": "Códigos em grafias diferentes da canônica, malformados por largura e por prefixo, e sequenciais dentro e fora da largura. `0000058` é a série viva medida no legado.",
+    "valores": {
+     "prefixo_declarado": "COB",
+     "largura_declarada": 7,
+     "aceitos": {
+      "COB-2026-0000058": "COB-2026-0000058",
+      "cob-2026-0000058": "COB-2026-0000058",
+      "  COB-2026-0000058  ": "COB-2026-0000058",
+      " Cob-2026-0000001 ": "COB-2026-0000001"
+     },
+     "sequenciais_dentro_da_largura": [
+      1,
+      58,
+      9999999
+     ],
+     "sequencial_alem_da_largura": 12345678
+    }
+   },
+   "passos": [
+    "Afirmar `[PREFIXO, LARGURA]` igual a `['COB', 7]`, com os valores por extenso.",
+    "Para cada entrada aceita, afirmar `data` igual à forma canônica — valor exato.",
+    "Para cada recusada, afirmar `issues[0].code === 'invalid_format'`.",
+    "Para cada sequencial dentro da largura, afirmar que o esquema reaceita o código do formatador.",
+    "Afirmar o preenchimento por valor exato nos três casos.",
+    "Afirmar que o formatador não trunca além da largura.",
+    "Afirmar que a recusa nomeia o campo dentro do recurso publicado."
+   ],
+   "resultado_esperado": "`['COB', 7]`; as quatro aceitas canonizadas; as sete recusadas com `invalid_format`; `(2026,1) === 'COB-2026-0000001'`, `(2026,58) === 'COB-2026-0000058'`, `(2026,9_999_999) === 'COB-2026-9999999'`, `(2026,12_345_678) === 'COB-2026-12345678'`. Dentro do recurso, cinco dígitos dá `path === ['codigo']`.",
+   "criterios_aceitacao_validados": [
+    "Aceite técnico 2 — o formato é declarado uma vez",
+    "Aceite técnico 3 — a largura 7 afirmada por valor literal",
+    "Aceite técnico 4 — canonização num ponto único"
+   ],
+   "observacoes": "Molde do CT-428 (esquemas.spec.ts:893). É a REDE exigida pelo P4 para o marcador DECISÃO FECHADA da largura 7: sem ela, harmonizar para 5 passaria pela suíte. Os literais pegam o mutante que derivar-das-constantes não pega."
+  },
+  {
+   "id": "CT-542",
+   "task_id": "T2",
+   "titulo": "O corpo da cobrança nova é fechado em seis campos e recusa tudo que o servidor decide",
+   "tipo": "SEGURANCA",
+   "categoria": "seguranca",
+   "invariant": "`esquemaDeCobrancaNova` declara exatamente os seis campos `contratoCodigo`, `natureza`, `referencia`, `competencia`, `dataVencimento` e `valorOriginal`, nenhum opcional, e recusa `codigo`, `status`, `locatarioId`, `valorMulta`, `pagoEm` e `empresaId` com `issues[0].code === 'unrecognized_keys'` nomeando a chave enviada.",
+   "owning_layer": "unit",
+   "existing_suite": "packages/contracts/test/esquemas.spec.ts",
+   "real_execution_boundary": "none",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "o corpo válido acrescido, uma chave por vez, das seis que o servidor decide; e o corpo válido com cada um dos seis campos omitido",
+    "assertion_esperada": "`unrecognized_keys` com `keys` igual à chave enviada; e, para cada omissão, `issues[0].path` igual ao campo omitido"
+   },
+   "precondicao_privilegiada": {
+    "presente": false,
+    "descricao": "",
+    "caminho_legitimo": "",
+    "teste_analogo": ""
+   },
+   "camada": "Contrato (`packages/contracts/src/cobranca.ts`)",
+   "pre_condicoes": [
+    "`esquemaDeCobrancaNova` é `z.strictObject`, sem campo opcional e sem `default`",
+    "Os três esquemas de entrada alcançáveis pela varredura `ESQUEMAS_DE_ENTRADA`"
+   ],
+   "dados_entrada": {
+    "descricao": "O corpo da §4.1.1 do tech spec, literal, mais as seis chaves decididas pelo servidor.",
+    "valores": {
+     "corpo_valido": {
+      "contratoCodigo": "CTR-2026-00007",
+      "natureza": "AGUA",
+      "referencia": "Conta de água — 03/2026",
+      "competencia": "2026-03-01",
+      "dataVencimento": "2026-03-10",
+      "valorOriginal": 187.42
+     },
+     "chaves_recusadas": [
+      "codigo",
+      "status",
+      "locatarioId",
+      "valorMulta",
+      "pagoEm",
+      "empresaId"
+     ]
+    }
+   },
+   "passos": [
+    "Afirmar `Object.keys(esquemaDeCobrancaNova.shape)` igual aos seis nomes na ordem.",
+    "Afirmar que o corpo válido é aprovado e devolvido verbatim.",
+    "Para cada chave recusada, afirmar código e `keys` do primeiro `issue`.",
+    "Para cada campo omitido, afirmar o `path` do primeiro `issue`.",
+    "Registrar os três esquemas na tabela `ESQUEMAS_DE_ENTRADA` com corpo válido em `CORPOS_VALIDOS`, e subir `QUANTIDADE_DE_ESQUEMAS_DE_ENTRADA` em 3."
+   ],
+   "resultado_esperado": "Os seis nomes na ordem; corpo válido aprovado; seis `unrecognized_keys` nomeando cada chave; seis omissões com o `path` do campo. Após o registro, CT-336 e CT-337 examinam 13 esquemas em vez de 10 e seguem verdes.",
+   "criterios_aceitacao_validados": [
+    "Aceite técnico 5 — o corpo recusa as seis chaves decididas pelo servidor"
+   ],
+   "observacoes": "O último passo NÃO é opcional: a tabela ESQUEMAS_DE_ENTRADA (esquemas.spec.ts:414) LEVANTA ao encontrar esquema de entrada sem corpo em CORPOS_VALIDOS, e QUANTIDADE_DE_ESQUEMAS_DE_ENTRADA (literal 10, linha 379) é a guarda contra 'nenhum esquema foi olhado'. Jamais trocar o literal por .length."
+  },
+  {
+   "id": "CT-543",
+   "task_id": "T2",
+   "titulo": "Cada campo do corpo da cobrança recusa fora da fronteira nomeando o próprio campo",
+   "tipo": "UNITARIO",
+   "categoria": "fronteira",
+   "invariant": "`competencia` só é aceita quando é o primeiro dia do mês; `valorOriginal` só é aceito quando é maior que zero, menor ou igual a `MAIOR_VALOR_MONETARIO` e múltiplo de `ESCALA_MONETARIA`; `referencia` só é aceita quando não é vazia e cabe em `MAIOR_TEXTO_CURTO`; e toda recusa reporta o `path` do próprio campo, nunca da raiz do objeto.",
+   "owning_layer": "unit",
+   "existing_suite": "packages/contracts/test/esquemas.spec.ts",
+   "real_execution_boundary": "none",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "`competencia` '2026-03-02', '2026-03-31', '2026-02-30', '2026-03-01T00:00:00Z'; `valorOriginal` 0, -187.42, 1e30, 187.425; `referencia` '   ' e com 201 caracteres; `dataVencimento` '2026-02-30'",
+    "assertion_esperada": "`success === false` em todos, com `issues[0].path` igual ao campo remendado"
+   },
+   "precondicao_privilegiada": {
+    "presente": false,
+    "descricao": "",
+    "caminho_legitimo": "",
+    "teste_analogo": ""
+   },
+   "camada": "Contrato (`packages/contracts/src/cobranca.ts`)",
+   "pre_condicoes": [
+    "`MAIOR_VALOR_MONETARIO`, `ESCALA_MONETARIA` e `MAIOR_TEXTO_CURTO` importados dos pontos únicos",
+    "O `refine` do primeiro dia do mês declara `path: ['competencia']`"
+   ],
+   "dados_entrada": {
+    "descricao": "Remendos de um campo por vez sobre o corpo válido. Os aceitos incluem as fronteiras exatas do dinheiro e duas dízimas do binário.",
+    "valores": {
+     "aceitos": [
+      {
+       "competencia": "2026-03-01"
+      },
+      {
+       "competencia": "2026-02-01"
+      },
+      {
+       "competencia": "2027-01-01"
+      },
+      {
+       "valorOriginal": 0.01
+      },
+      {
+       "valorOriginal": 187.42
+      },
+      {
+       "valorOriginal": 1200.29
+      },
+      {
+       "valorOriginal": 8.11
+      },
+      {
+       "valorOriginal": 9999999999999.99
+      },
+      {
+       "referencia": "A"
+      }
+     ],
+     "referencia_no_teto": "'x'.repeat(MAIOR_TEXTO_CURTO)"
+    }
+   },
+   "passos": [
+    "Para cada remendo aceito, afirmar sucesso e o valor exato de volta.",
+    "Afirmar a fronteira superior do texto: 200 aceito, 201 recusado nomeando `referencia`.",
+    "Para cada remendo recusado, afirmar o `path` exato do primeiro `issue`.",
+    "Afirmar `[MAIOR_VALOR_MONETARIO, ESCALA_MONETARIA]` igual a `[9_999_999_999_999.99, 0.01]`."
+   ],
+   "resultado_esperado": "Os nove aceitos devolvem o valor exato; 200 caracteres aceito e 201 recusado. Os quatro de competência com `path === ['competencia']`; os quatro de valor com `['valorOriginal']`; `'   '` com `['referencia']`; `dataVencimento` inexistente com `['dataVencimento']`.",
+   "criterios_aceitacao_validados": [
+    "Aceite técnico 6 — competência no 1º dia do mês",
+    "Aceite técnico 7 — valorOriginal em faixa e escala"
+   ],
+   "observacoes": "As dízimas do binário (1200.29, 8.11) vêm do CT-428(b) e do CT-340: um resto de escala ingênuo as recusaria. 1e30 é o valor que motivou MAIOR_VALOR_MONETARIO — sem o teto, o driver levanta 22003 e a borda devolve 500 onde a §6.1 manda 422."
+  },
+  {
+   "id": "CT-544",
+   "task_id": "T2",
+   "titulo": "O recurso publicado da cobrança tem forma fechada, não expõe o UUID interno e não replica a escala na saída",
+   "tipo": "UNITARIO",
+   "categoria": "integridade_dados",
+   "invariant": "`esquemaDaCobranca` declara exatamente os 18 campos publicados, não declara `id` e descarta um `id` que chegue de fora (ADR-0017); e as grandezas monetárias de saída não carregam restrição de escala, aceitando o resíduo de ponto flutuante que a derivação produz.",
+   "owning_layer": "unit",
+   "existing_suite": "packages/contracts/test/esquemas.spec.ts",
+   "real_execution_boundary": "none",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "o recurso acrescido de `id`; e o recurso com `codigo: null`, `status: 'A_VENCER '` e sem `valorTotal`",
+    "assertion_esperada": "com `id`, `success === true` e `data` igual ao recurso SEM `id`; os três remendos com o `path` do campo"
+   },
+   "precondicao_privilegiada": {
+    "presente": false,
+    "descricao": "",
+    "caminho_legitimo": "",
+    "teste_analogo": ""
+   },
+   "camada": "Contrato (`packages/contracts/src/cobranca.ts`)",
+   "pre_condicoes": [
+    "`esquemaDaCobranca` construído com `z.object` (saída), não `strictObject`",
+    "`COBRANCA_PUBLICADA` espelha o exemplo da §4.1.1"
+   ],
+   "dados_entrada": {
+    "descricao": "O recurso publicado da §4.1.1 e um recurso derivado com resíduo de ponto flutuante.",
+    "valores": {
+     "campos_publicados": [
+      "codigo",
+      "contratoCodigo",
+      "locatarioId",
+      "natureza",
+      "referencia",
+      "competencia",
+      "dataVencimento",
+      "valorOriginal",
+      "status",
+      "diasAtraso",
+      "valorMulta",
+      "valorJuros",
+      "valorTotal",
+      "pagoEm",
+      "valorPago",
+      "canceladoEm",
+      "multaPercentualAplicado",
+      "jurosPercentualAplicado"
+     ],
+     "recurso_com_residuo": {
+      "valorJuros": 6.239999999999999,
+      "valorTotal": 193.66999999999996
+     }
+    }
+   },
+   "passos": [
+    "Afirmar `Object.keys(shape)` igual aos 18 nomes na ordem.",
+    "Afirmar que o shape não contém `id` e que o recurso com `id` volta sem ele.",
+    "Afirmar que os cinco anuláveis aceitam `null`.",
+    "Afirmar que o recurso com resíduo é APROVADO e devolve os valores intactos.",
+    "Para cada remendo negativo, afirmar o `path` do primeiro `issue`."
+   ],
+   "resultado_esperado": "Os 18 nomes na ordem, sem `id`; o recurso com `id` aprovado devolvendo `data` sem a chave; os cinco anuláveis com `null`; o resíduo aprovado intacto; `codigo: null` com `['codigo']`, `status: 'A_VENCER '` com `['status']`, `valorTotal` ausente com `['valorTotal']`.",
+   "criterios_aceitacao_validados": [
+    "Aceite técnico 8 — o recurso não expõe o UUID interno",
+    "Aceite técnico 9 — a escala não é replicada na saída"
+   ],
+   "observacoes": "A metade do resíduo é a rede da assimetria entrada/saída: um multipleOf na saída não produz 422, derruba a rota (razão 1 do DECISÃO FECHADA de comum.ts). Os dois números do resíduo devem ser MEDIDOS contra a aritmética da RD-07, não estimados."
+  },
+  {
+   "id": "CT-545",
+   "task_id": "T2",
+   "titulo": "`MAIOR_VALOR_MONETARIO` e `ESCALA_MONETARIA` têm definição única no pacote, e a cobrança as consome por importação",
+   "tipo": "UNITARIO",
+   "categoria": "integridade_dados",
+   "invariant": "Em `packages/contracts/src/`, existe exatamente uma declaração de `MAIOR_VALOR_MONETARIO` e exatamente uma de `ESCALA_MONETARIA`, ambas em `contrato.ts`; `cobranca.ts` as obtém por `import … from './contrato.js'` e não redeclara nenhuma das duas.",
+   "owning_layer": "unit",
+   "existing_suite": "packages/contracts/test/esquemas.spec.ts",
+   "real_execution_boundary": "filesystem",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "mutante 1: acrescentar `export const ESCALA_MONETARIA = 0.01;` a `cobranca.ts`; mutante 2: trocar o import por redeclaração local",
+    "assertion_esperada": "a varredura devolve 2 declarações e o caso reprova nomeando `src/cobranca.ts`; no segundo, `cobranca.ts` deixa de conter o especificador e o caso reprova nomeando o arquivo"
+   },
+   "precondicao_privilegiada": {
+    "presente": false,
+    "descricao": "",
+    "caminho_legitimo": "",
+    "teste_analogo": ""
+   },
+   "camada": "Contrato (`packages/contracts/src/`) — asserção estática sobre o fonte",
+   "pre_condicoes": [
+    "Fontes de `packages/contracts/src/` legíveis do disco",
+    "Acessório de varredura de `folha.spec.ts` disponível"
+   ],
+   "dados_entrada": {
+    "descricao": "Os fontes de `packages/contracts/src/` lidos do disco, no molde de `folha.spec.ts`.",
+    "valores": {
+     "constantes": [
+      "MAIOR_VALOR_MONETARIO",
+      "ESCALA_MONETARIA"
+     ],
+     "arquivo_dono": "packages/contracts/src/contrato.ts",
+     "consumidor": "packages/contracts/src/cobranca.ts",
+     "padrao_de_declaracao": "^export const (MAIOR_VALOR_MONETARIO|ESCALA_MONETARIA)\\b"
+    }
+   },
+   "passos": [
+    "Listar os fontes pelo acessório `listarFontesTs`, que LEVANTA se o diretório sumir.",
+    "Afirmar que o número de arquivos varridos é maior que zero.",
+    "Para cada constante, afirmar exatamente uma declaração exportada, apontando `src/contrato.ts`.",
+    "Ler `src/cobranca.ts` e afirmar o import de `'./contrato.js'` com os dois símbolos e zero declarações exportadas deles.",
+    "Afirmar `[MAIOR_VALOR_MONETARIO, ESCALA_MONETARIA]` igual a `[9_999_999_999_999.99, 0.01]`."
+   ],
+   "resultado_esperado": "Mais de zero arquivos varridos; 1 declaração de cada em `src/contrato.ts`; `src/cobranca.ts` com o especificador e zero declarações; as constantes com os valores exatos.",
+   "criterios_aceitacao_validados": [
+    "Aceite técnico 10 — definição única, consumida por importação"
+   ],
+   "observacoes": "Asserção ESTÁTICA — prova de falsificação OBRIGATÓRIA, por `pnpm --filter @sysloc/contracts test`. É a rede do DÉBITO COM GATILHO do import, e o que impede a repetição da forma do D3. Reusar listarFontesTs/varrerArquivos — não recopiar o varredor. O acessório chega por caminho relativo profundo, sob o D28 (F0/T5); não alargar esse débito."
+  }
+ ],
+ "cenarios_nao_cobertos": [
+  {
+   "descricao": "Concorrência real na emissão do código: duas transações simultâneas pedindo `proximo_numero_de_cobranca` para o mesmo `(empresa, ano)`.",
+   "motivo": "O mecanismo é o MESMO do contrato (sequência do banco fora do desfazimento, ADR-0020), já provado na fatia `contratos-de-locacao`. Reprovar aqui seria duplicação cross-layer (AP-23). O que esta fatia prova é a instância nova: assinatura sem empresa, guarda de faixa e ausência de privilégio sobre a sequência (CT-535), mais o furo aceito (CT-536)."
+  },
+  {
+   "descricao": "Desempenho da view `negocio.cobranca_derivada` sob carteira grande (milhares de cobranças, filtro e ordenação por `status`).",
+   "motivo": "Teste de carga está fora do escopo por decisão de projeto. Registrado como risco em `recomendacoes` e na §12.3 do tech_spec: a view é a leitura mais pesada do produto e o `LEFT JOIN` com `configuracao_de_mora` corre por linha."
+  },
+  {
+   "descricao": "Virada do dia durante a execução da suíte (uma cobrança que era A_VENCER às 23:59:59 e vira VENCIDA às 00:00:00).",
+   "motivo": "O D2 do tech-alignment fixa que a fronteira de virada se monta pelo DADO, não pelo relógio; o CT-513 cobre a fronteira `<` versus `<=` por deslocamento relativo. Um caso que dependesse da hora de execução seria flaky por construção, e a `.claude/rules/testing-stack.md` proíbe retry."
+  },
+  {
+   "descricao": "Emissão de boleto, baixa bancária e uso efetivo dos 6 campos de conciliação.",
+   "motivo": "Fora do escopo declarado (§4.2 do PRD) — é a F4. Os campos nascem nulos e sem rota; o CT-532 prova apenas que o pagamento não os apaga."
+  },
+  {
+   "descricao": "Porte da régua de cobrança em si (envio ao inadimplente, templates, agendamento).",
+   "motivo": "Fora do escopo (§4.2). Esta fatia apenas CAPTURA a referência (CT-501 a CT-503); portá-la é a fatia irmã."
+  },
+  {
+   "descricao": "Recusa de valor de canal de comunicação não implementado (RN-17).",
+   "motivo": "AJUSTE DO ARQUITETO. Medição: os únicos campos de canal do produto (`canalAVencer`, `canalVencida` da configuração da régua; `canal` do log de envio) pertencem à fatia 2. Esta fatia não publica campo de canal algum, logo não há valor a recusar. A RN-17 também não tem CA no PRD. Registrado como vão do PRD na §21 do tech_spec, e migra para a fatia 2 junto com a entidade que a hospeda."
+  }
+ ],
+ "recomendacoes": [
+  "Emitir `DECISÃO FECHADA` em três pontos desta fatia, os três com `REVERTER EXIGE` preenchido: (1) em `packages/contracts/src/cobranca.ts`, sobre a largura de 7 dígitos de `COB-{ano}-{#######}` — a largura é MEDIDA no legado e a tentação de 'harmonizar' com os 5 do contrato é previsível; (2) em `packages/db/src/cobranca.ts`, sobre toda leitura atravessar a view `cobranca_derivada`; (3) em `packages/db/migracoes/0010_seguranca_cobranca.sql`, sobre o `security_invoker = true` e sobre a ausência de privilégio de `sysloc_app` nas sequências do contador, referenciando o marcador irmão de `0008_seguranca_contrato.sql` §5 em vez de recopiá-lo.",
+  "Fechar o `DÉBITO COM GATILHO — D28 (F2/T7)` em `apps/api/src/contratos/contrato.service.ts:432`: o marcador e a linha correspondente do índice do `CLAUDE.md` saem no MESMO commit da correção (§3-B da `nao-regressao.md`). O **D36 (F2/T8)** e o **D44 (F2/T10)** NÃO são fechados nesta fatia — o primeiro pertence à fatia 2 (quem produz o documento decide se o carimbo é pré-condição ou efeito) e o segundo depende de uma restrição de banco que esta fatia não cria. Os dois marcadores permanecem.",
+  "Estender `packages/db/src/catalogo.ts` para cobrir a espécie VIEW com o motivo `VISAO_NAO_DELEGA_ISOLAMENTO`, que é o que o CT-523 falsifica. Sem isso a guarda de cobertura da ADR-0009 fica cega para o objeto novo, e a única detecção seria o vazamento comportamental.",
+  "Risco de desempenho registrado, não testado: `negocio.cobranca_derivada` é a leitura mais pesada do produto e faz `LEFT JOIN` com `configuracao_de_mora` por linha. Se a F4 ou a F5 introduzirem paginação por `status` sobre carteiras grandes, medir antes de assumir. Não é defeito desta fatia — é a contrapartida declarada da escolha D1.",
+  "Prova de falsificação obrigatória em SEIS casos desta fatia (CT-502, CT-506, CT-510, CT-513, CT-523, CT-526). Rodar TODOS os mutantes por `pnpm --filter @sysloc/<pacote> test` ou `pnpm test` — `vitest run` avulso é INVÁLIDO para trabalho de mutante e produziria falso negativo em qualquer suíte que carregue o SUT pela fronteira do pacote (`.claude/rules/testing-stack.md`).",
+  "Aplicar o P1/P5 do Protocolo Antirregressão nesta fatia com atenção redobrada à CONTAGEM: a baseline é 665 casos. O CT-537 SUBSTITUI o CT-429 e o CT-508 altera `EFEITOS_ESPERADOS` em `contratos.e2e.spec.ts:936` — as duas alterações exigem `SUT_IS_CORRECT_BECAUSE:`, e a contagem final não pode cair.",
+  "Os cinco valores da lista fechada de `natureza_cobranca` são criação do produto, e não porte: medido no legado, o DocType `Cobranca` (48 campos inspecionados) NÃO tem campo de natureza — 'novo título' se distingue apenas pelo texto de `referencia`. Não há lista real a confirmar contra o dado antigo; o CT-537 afirma os cinco por igualdade de lista ordenada e é ele que os congela."
+ ],
+ "mock_budget_observado": true,
+ "gates_aplicados": [
+  "invariant_first",
+  "owning_layer",
+  "real_execution",
+  "failure_means_fix_production",
+  "no_snapshot_without_contract",
+  "no_self_set_mock_assertion",
+  "negative_companion"
+ ]
+}

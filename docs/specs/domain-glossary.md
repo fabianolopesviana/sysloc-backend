@@ -116,6 +116,38 @@ _Evitar_: área, área total, metragem do imóvel, tamanho
 O identificador do imóvel perante a prefeitura, informado no cadastro, obrigatório e único dentro de cada empresa. É o identificador externo do imóvel — não se confunde com a chave que a API expõe.
 _Evitar_: inscrição, matrícula, IPTU, cadastro municipal, código do imóvel
 
+**Cobrança**:
+O fato financeiro que a imobiliária lança contra um contrato de locação — um valor a receber com competência, vencimento e natureza próprios. Tem código legível próprio, nasce da ativação do contrato ou de lançamento avulso, e nunca é apagada.
+_Evitar_: título, fatura, lançamento, conta a receber, débito, parcela
+
+**Cobrança em aberto**:
+Cobrança que ainda pode ser paga ou cancelada — não foi liquidada nem cancelada. Operacionalmente: sem data de pagamento e sem instante de cancelamento. É sobre ela, e só sobre ela, que a mora é apurada.
+_Evitar_: cobrança pendente, cobrança ativa, em atraso, dívida aberta
+
+**Mora**:
+O acréscimo devido pelo atraso de uma cobrança — a multa somada aos juros. É derivada da política vigente enquanto a cobrança está em aberto, e vira carimbo no ato que a liquida.
+_Evitar_: atraso, encargo, acréscimo, juros e multa, penalidade
+
+**Configuração de mora**:
+A política de multa e juros **de uma empresa** — um par de percentuais, um por empresa. Empresa que nunca a definiu apura mora zero: a ausência e o par zerado são a mesma coisa.
+_Evitar_: atraso, parâmetros de multa, regra de juros, política de cobrança
+
+**Carimbo**:
+O valor que era derivado e passa a ser gravado no instante do ato que liquida um fato financeiro, junto da configuração que o produziu. Depois de carimbado não muda mais, e mudar a política não o alcança.
+_Evitar_: snapshot, congelamento, valor fixado, histórico
+
+**Natureza da cobrança**:
+Aquilo que a cobrança cobra, escolhido de uma lista fechada — aluguel, água, condomínio, energia ou outro. É campo próprio, e a distinção nunca se faz interpretando texto.
+_Evitar_: tipo, categoria, espécie, classificação, tipo de título
+
+**Competência**:
+O mês a que a cobrança se refere, representado sempre pelo primeiro dia dele. Não se confunde com o vencimento, que é quando ela deve ser paga.
+_Evitar_: mês de referência, período, mês, data-base
+
+**Referência**:
+O rótulo em texto livre que descreve a cobrança para quem a lê — no aluguel, o intervalo do período coberto. É legenda, nunca critério: somar por tipo se faz pela **Natureza da cobrança**.
+_Evitar_: descrição, histórico, observação, título, memorando
+
 **Retirada de circulação**:
 A operação que tira um cadastro das escolhas e das listagens sem apagá-lo: ele deixa de ser oferecido ao montar um contrato, permanece legível por quem já o referencia, e pode voltar à circulação.
 _Evitar_: exclusão, excluir, remoção, desativação, arquivamento, soft delete
@@ -123,6 +155,12 @@ _Evitar_: exclusão, excluir, remoção, desativação, arquivamento, soft delet
 ## Relacionamentos
 
 - Uma **Cobrança** pode originar um boleto junto a um **Provedor**.
+- Toda **Cobrança** pertence a exatamente um **Contrato de locação**, e o **Locatário** dela é o do contrato — nunca um vínculo próprio.
+- Toda **Cobrança** consome, ao nascer, um número da **Série declarada** dela, cujo escopo inclui o ano.
+- Uma **Cobrança em aberto** apura **Mora** pela **Configuração de mora** da **Empresa** dela; uma cobrança liquidada publica **Carimbos** e não reapura.
+- Uma **Empresa** tem no máximo uma **Configuração de mora**; a ausência dela equivale ao par zerado.
+- Toda **Cobrança** tem exatamente uma **Natureza da cobrança**, uma **Competência** e uma **Referência**.
+- A **Ativação de contrato** produz zero ou mais **Cobranças**; o **Cancelamento de contrato** cancela as que estiverem em aberto.
 - Todo boleto emitido consome exatamente um valor do **Contador sequencial**.
 - Um **Boleto em aberto** pertence a uma **Cobrança** e foi emitido sob uma configuração de um **Provedor**.
 - Toda informação de negócio pertence a exatamente uma **Empresa**.
@@ -156,5 +194,9 @@ _Evitar_: exclusão, excluir, remoção, desativação, arquivamento, soft delet
 - "Cadastro" era usado tanto para as entidades de negócio quanto para pessoas do sistema. Resolvido: cadastro é entidade de negócio (**Conjunto**, **Imóvel**, **Locador**, **Locatário**, **Fiador**, **Contrato de locação**); quem entra no sistema é pessoa, com **Vínculo de acesso**.
 - "Contador sequencial" nomeava dois números incompatíveis: o do boleto perante o provedor, que **nunca reinicia**, e o de um código legível como `CTR-2026-00001`, que **reinicia a cada ano**. Resolvido: o primeiro continua sendo o **Contador sequencial** (exigência do provedor); o segundo é o contador de uma **Série declarada**, cujo escopo cada série declara.
 - "Carteira" nomeava tanto a árvore de conjuntos com os imóveis de cada um quanto a lista de contratos da empresa. Resolvido: **Carteira** é sempre qualificada — de imóveis, de contratos, de cobranças —, e o termo desqualificado não é usado.
+- "Novo título" era o texto pelo qual o sistema antigo distinguia uma cobrança que não é aluguel — a **Natureza da cobrança** não existia lá, e a distinção se fazia lendo a **Referência**. Resolvido: são campos distintos, e a natureza é a única que se soma, filtra e agrupa; a referência é legenda.
+- "Em aberto" nomeava tanto o **Boleto em aberto** quanto a **Cobrança em aberto**. Resolvido: são níveis diferentes — a cobrança é o fato financeiro; o boleto é o instrumento que um **Provedor** emite para ela. Nem toda cobrança em aberto tem boleto.
+- "Atraso" nomeava três coisas: o fato de estar vencida, o valor devido pelo atraso e a política que o calcula. Resolvido: o estado é *vencida*; o valor é a **Mora**; a política é a **Configuração de mora**.
+- "Cancelar uma cobrança" e "excluir uma cobrança" eram lidos como a mesma coisa. Resolvido: cancelar é transição de estado que preserva o registro e o código consumido — e é a única que existe. Cobrança **nunca é apagada**, e a **Retirada de circulação** não a alcança: ela é operação sobre cadastro, não sobre fato financeiro.
 - "Cancelar" e "encerrar" eram usados como sinônimos para tirar um contrato de vigência. Resolvido: são estados distintos e têm produtores distintos — o **Cancelamento de contrato** é decisão de uma pessoa, com ação sensível própria; o encerramento é consequência do vencimento do prazo, escrito por rotina agendada.
 - "Excluir um contrato" era lido tanto como cancelá-lo quanto como tirá-lo das listagens. Resolvido: cancelar é transição de estado que libera o **Imóvel**; **Retirada de circulação** é visibilidade e não libera nada. Um rascunho abandonado se retira, não se cancela.

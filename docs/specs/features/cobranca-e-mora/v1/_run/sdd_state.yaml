@@ -1,0 +1,25 @@
+feature: "Cobrança e mora por empresa, com estado de fonte única no servidor"
+current_step: task_plan
+variant: backend
+source: recommended
+steps:
+  prd:
+    status: completed
+    summary: "10 US, 17 CA. Cobrança como fato financeiro da empresa, sempre filha de contrato, com estado derivado e mora travada no pagamento."
+  tech_alignment:
+    status: completed
+    summary: "5 decisões (D1-D5). Derivação dependente de data no banco; 1 candidata a ADR pendente de registro."
+  tech_spec:
+    status: completed
+    variant: backend
+    summary: "negocio.cobranca + negocio.configuracao_de_mora, view cobranca_derivada com security_invoker como fonte única do estado e da mora, 2 funções SECURITY DEFINER da série COB-{ano}-{7 dígitos}, função pura de parcelas; 7 rotas novas (75 → 82); migrações 0009 (gerada) e 0010 (autoral); 39 casos de teste cobrindo os 17 CA; fecha o D28."
+  validation:
+    status: completed
+    summary: "challenge-spec: 6 questões, 17 ajustes inline. Corrigiu a ordem de 'estender catalogo.ts' (a cobertura de VIEW já existe, sob DECISÃO FECHADA); escreveu o fluxo F (POST /v1/cobrancas) com as duas unidades do contador, ausente e capaz de quebrar a 1ª cobrança do ano; fixou RD-21 (GET /v1/multa-e-juros sem linha = 200 com zeros, nunca 404); acrescentou CT-538 e CT-539, fechando o vão das 2 rotas de mora (37 → 39); fixou a origem das constantes monetárias com débito com gatilho; registrou a fronteira estrita como decisão, não porte. 8 termos canonizados no glossário global."
+  task_plan:
+    status: completed
+    summary: "11 tasks, 5 fases, 0 paralelizáveis (derivado — nenhum par da mesma fase sobrevive ao invariante). US cobertas: 10/10. 45 CTs distribuídos, 1 por task: 39 redistribuídos do JSON e 6 (CT-540..545) de uma invocação de fallback para a T2, única task sem CT correspondente. CT-511 e CT-521 realocados para T7 e T10 (exigem as transições e a cascata). As âncoras de superfície sobem em três tasks (75→78→80→82) e T11 confere por dupla medição."
+  execution:
+    status: pending
+    tasks_total: 11
+    tasks_completed: 0

@@ -37,7 +37,7 @@ se partir pelo mesmo motivo; quando isso acontecer, as fatias novas aparecem aqu
 | **F0** | Stack instalada e provada | ✅ concluída | 7/7 tasks |
 | **F1** | Fundação SaaS — isolamento, identidade e autorização | ✅ concluída | 20/20 tasks |
 | **F2** | Domínio de locação | ✅ concluída | 21/21 tasks |
-| **F3** | Cobrança, mora e documentos | ⬜ não iniciada | — |
+| **F3** | Cobrança, mora e documentos | 📋 especificada, execução pendente | — |
 | **F4** | Integração bancária (Sicoob) | ⬜ não iniciada | — |
 | **F5** | Automações agendadas | ⬜ não iniciada | — |
 | **F6** | Frontend religado — só o handoff sai daqui | ⬜ não iniciada | — |
@@ -194,9 +194,9 @@ empresa A apontando `Imovel` da B é **recusado pelo banco**.
 o `reply_to` da empresa certa.
 
 <!-- ESTADO:F3:INICIO -->
-> ⬜ **não iniciada**
+> 📋 **especificada, execução pendente**
 >
-> ⬜ `cobranca-mora-e-documentos/v1`
+> 📋 `cobranca-mora-e-documentos/v1`
 <!-- ESTADO:F3:FIM -->
 
 ---

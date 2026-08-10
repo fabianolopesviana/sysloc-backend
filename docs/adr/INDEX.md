@@ -1,6 +1,6 @@
 # Architecture Decision Records — INDEX
 
-> Ultima atualizacao: 2026-08-09 (21 ADRs)
+> Ultima atualizacao: 2026-08-09 (23 ADRs)
 
 <!-- ADR-INDEX-START -->
 | ID | Titulo | Status | Tags | Problema (1-linha) | Decisao (1-linha) |
@@ -26,4 +26,6 @@
 | 0019 | Transição de estado de negócio é rota própria governada por ação sensível | superseded-by:0021 | state-management, architecture | O contrato é a primeira entidade do produto com ciclo de vida governado, e a cobrança (F3) é a | Toda transição de estado de entidade de negócio é uma rota própria, governada pela chave de ação |
 | 0020 | Número de série declarada é emitido por contador do banco fora do desfazimento | accepted | data, architecture | A ADR-0015 fixa a política de todo contador — único por empresa, escopo declarado por série, furo | Todo número de série declarada deste produto é emitido por contador do próprio banco, um por |
 | 0021 | Transição de estado de negócio é rota própria, governada conforme a natureza do ato | accepted | state-management, architecture | A ADR-0019 fixou que toda transição de estado é rota própria governada pela chave de ação sensível | Toda transição de estado de entidade de negócio é uma rota própria — nunca um campo gravado por |
+| 0022 | O que se grava e o que se deriva num fato financeiro | accepted | data, architecture | Multa e juros passam a ser configuráveis por empresa, e a configuração muda ao longo do tempo — | Todo valor monetário derivado de configuração é derivado enquanto o fato financeiro está aberto, |
+| 0023 | Onde vive a derivação de valor não persistido | accepted | architecture, data | O produto publica valores que não são colunas. Até aqui todos eles serviam apenas à apresentação de | A derivação de um valor não persistido vive no banco quando ela participa de seleção — filtro, |
 <!-- ADR-INDEX-END -->
