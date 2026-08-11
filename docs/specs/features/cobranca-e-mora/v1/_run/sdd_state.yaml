@@ -20,7 +20,7 @@ steps:
     status: completed
     summary: "11 tasks, 5 fases, 0 paralelizáveis (derivado — nenhum par da mesma fase sobrevive ao invariante). US cobertas: 10/10. 45 CTs distribuídos, 1 por task: 39 redistribuídos do JSON e 6 (CT-540..545) de uma invocação de fallback para a T2, única task sem CT correspondente. CT-511 e CT-521 realocados para T7 e T10 (exigem as transições e a cascata). As âncoras de superfície sobem em três tasks (75→78→80→82) e T11 confere por dupla medição."
   execution:
-    status: in_progress
+    status: completed
     tasks_total: 11
-    tasks_completed: 10
-    summary: "10/11 tasks concluídas e aprovadas nos dois gates, todas staged sem commit. Suíte 687 → 834, build e lint verdes. Falta apenas a T1 — captura do oráculo da régua de cobrança —, diferida por decisão: exige sudo interativo e o site efêmero do /opt/frappe, e a §7 dela declara que nenhum subagente a conduz. 10 dos 13 Critérios de Conclusão da Feature satisfeitos; os 3 abertos dependem exclusivamente da T1. Nenhuma task bloqueada."
+    tasks_completed: 11
+    summary: "11/11 tasks concluidas e aprovadas nos dois gates, todas staged sem commit. Suite 687 -> 835, build e lint verdes. Os 13 Criterios de Conclusao da Feature satisfeitos. A T1 fechou por ultimo, em rodada unica: a premissa que a diferia (exigir sudo interativo) foi refutada por medicao — o roteiro de deploy/scripts/caracterizacao/ nao invoca sudo, a exigencia e da frente deploy/scripts/instalacao/. Alcancou o nivel 1 da ordem de queda do D5, o melhor possivel: despachante substituido no processo, invocacoes do despachante real = 0. Nenhuma task bloqueada. 3 debitos anotaveis novos (D44, D45, D46), todos BAIXO."

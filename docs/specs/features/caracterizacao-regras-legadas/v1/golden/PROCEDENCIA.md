@@ -9,12 +9,13 @@
 
 | Campo | Valor |
 |---|---|
-| Data e hora da captura | 2026-08-09T00:50:10 |
+| Data e hora da captura | 2026-08-10T21:44:54 |
 | Site de captura | caracterizacao.localhost |
-| Dump de origem | sites/frontend/private/backups/20260809_004612-frontend-database.sql.gz |
-| Timestamp do dump | 2026-08-09T00:46:19 |
+| Dump de origem | sites/frontend/private/backups/20260810_213713-frontend-database.sql.gz |
+| Timestamp do dump | 2026-08-10T21:37:21 |
 | Versão do app (commit) | 5a4e5197ee1d4e1cd262b6886c054ddf9a0da9b2 |
 | Versões do bench | erpnext 15.4.0 · frappe 15.4.0 |
+| Nível da ordem de queda alcançado (régua) | 1 — despachante substituído dentro do processo de captura, com o percurso completo da régua executando |
 
 O dump de origem é o único vínculo com o ambiente que atende a operação, e ele
 recebeu exclusivamente `bench backup` — comando que produz arquivo e não altera
@@ -25,21 +26,26 @@ do fluxo.
 
 | Marcador | Artefato | Campo mascarado | Motivo |
 |---|---|---|---|
-| `<DATA_EXECUCAO>` | `marcar-cobrancas-vencidas.json`, `encerrar-contratos-vencidos.json`, `atualizar-atrasos-cobrancas.json` | `retorno.data_execucao`; `estado_resultante.*.data_inicio_atraso`; `estado_resultante.*.data_ultima_atualizacao_atraso` | As três rotinas derivam de `nowdate()`. Gravar a data absoluta faria o golden expirar no dia seguinte; o marcador representa o offset zero — o próprio dia da execução. |
+| `<DATA_EXECUCAO>` | `marcar-cobrancas-vencidas.json`, `encerrar-contratos-vencidos.json`, `atualizar-atrasos-cobrancas.json`, `regua-de-cobranca.json` | `retorno.data_execucao`; `estado_resultante.*.data_inicio_atraso`; `estado_resultante.*.data_ultima_atualizacao_atraso`; na régua, o `hoje=` do resumo do `runner.py` e `estado_resultante.configuracao_da_regua.ultima_execucao_em` | As três rotinas derivam de `nowdate()`, e a régua também. Gravar a data absoluta faria o golden expirar no dia seguinte; o marcador representa o offset zero — o próprio dia da execução. |
 | `<DATA_GERACAO_EXTENSO>` | `contrato-pdf.txt` | Data por extenso do fecho do contrato (`DD de MÊS de AAAA`), montada pelo Server Script com `nowdate()` | É o único campo do documento que muda a cada geração. Sem a máscara, a comparação textual acusaria diferença todo dia, onde não há diferença de comportamento. |
 | `<PDF_CONTRATO_CODIFICADO>` | `contrato-cancelamento.json` | `entrada.contratos[].pdf_contrato`; `estado_resultante.contratos[].pdf_contrato`; `retorno.retorno.pdf_contrato` | O campo guarda o documento inteiro codificado, com megabytes que mudam a cada geração. O que a regra observa é a PRESENÇA — é ela que libera ou bloqueia o cancelamento —, e é a presença que o marcador preserva; ausência continua gravada como `null`. |
 | `<ARQUIVO_PDF_PRIVADO>` | `contrato-cancelamento.json` | `entrada.contratos[].pdf_contrato_arquivo`; `estado_resultante.contratos[].pdf_contrato_arquivo`; `retorno.retorno.pdf_contrato_arquivo` | O caminho do anexo privado carrega identificador sorteado pelo arcabouço a cada gravação, e duas capturas nunca coincidiriam. A troca de `pdf_contrato` por `pdf_contrato_arquivo` é o efeito observável do cancelamento, e o par marcador/`null` a preserva. |
+| `<HORA_EXECUCAO>` | `regua-de-cobranca.json` | O `agora=` do resumo que o `runner.py` grava em `Automacao Cobranca Config.ultimo_erro_execucao` | A régua compara o relógio da execução com o horário configurado, e grava os dois no resumo. O `agora=` muda a cada minuto; os demais `HH:MM` do resumo são CONFIGURAÇÃO e ficam sem máscara de propósito — apagá-los tiraria do oráculo a janela com que a régua rodou. |
+| `<DATA_VENCIMENTO_FORMATADA>` | `regua-de-cobranca.json` | A data de vencimento renderizada em `dd/MM/yyyy` dentro do corpo de cada mensagem (`retorno.template[].corpo`, `retorno.automatico.mensagens[].corpo`, `retorno.manual[].mensagens[].corpo`) | O corpo é parte do oráculo — a régua decide a quem cobrar **e com que texto** —, mas a data que ele imprime deriva de `nowdate()` pelo offset do cenário. Sem a máscara o corpo mudaria todo dia; o offset continua gravado em `entrada.cobrancas[].vencimento_offset_dias`. |
+| `<IDENTIFICADOR_DE_REQUISICAO>` | `regua-de-cobranca.json` | `retorno.manual[].resultado.retorno.request_id` | O identificador de requisição do envio manual embute `now()` com precisão de microssegundo, e duas capturas nunca coincidiriam. O que a trava de intervalo observa é o PREFIXO, e ele fica preservado por extenso em `estado_resultante.log_envio_cobranca[].prefixo_request_id`. |
 
-Os dois marcadores acima são nomeados **sem algarismo** de propósito: a bijeção do
-`verificar-golden.sh` varre `<[A-Z_]+>`, que não casa dígito, e um nome como
-`<PDF_CONTRATO_BASE64>` escaparia da varredura — viraria máscara órfã justamente
-no verificador que existe para achar máscara órfã.
+Os cinco marcadores acrescentados são nomeados **sem algarismo** de propósito: a
+bijeção do `verificar-golden.sh` varre `<[A-Z_]+>`, que não casa dígito, e um nome
+como `<PDF_CONTRATO_BASE64>` escaparia da varredura — viraria máscara órfã
+justamente no verificador que existe para achar máscara órfã.
 
 Todas as demais datas dos golden das rotinas são gravadas como **offset inteiro
 de dias** relativo à data de captura (`vencimento_offset_dias`,
 `data_fim_locacao_offset_dias`), nunca como data absoluta. É o que permite à F5
 reconstruir o mesmo cenário em qualquer dia. O mesmo vale para
-`contrato-cancelamento.json`, que não grava data absoluta nenhuma.
+`contrato-cancelamento.json` e para `regua-de-cobranca.json`, que não gravam data
+absoluta nenhuma — na régua, o vencimento de cada cobrança e a data de cada linha
+do histórico de envio são offsets (`vencimento_offset_dias`, `envio_offset_dias`).
 
 **`contrato-ativacao.json` é a exceção declarada, e ela é o próprio objeto da
 captura.** Ali as datas são absolutas porque a derivação
@@ -98,6 +104,26 @@ byte a byte acusaria diferença onde não há. Nenhum byte de PDF é versionado.
 - **Filtro de cobranças provado nos dois sentidos.** O contrato cancelado tem uma
   cobrança `Pendente`, uma `Vencida`, uma `Paga` e uma já `Cancelada`. Sem as duas
   últimas, "cancelou as canceláveis" seria indistinguível de "cancelou tudo".
+- **Horário da régua fixado em `00:00`.** `is_hora_execucao` compara o relógio da
+  execução com o horário configurado; com o `09:00` de produção, uma captura das
+  03h não entraria em bloco nenhum e o golden dependeria da hora do dia. A janela
+  de horário não fica sem oráculo por isso — ela é capturada à parte, como função
+  pura (`normalize_hhmm`, `is_hora_execucao`), com o "agora" passado explicitamente.
+- **A régua roda por último, e a carteira que ela enxerga é maior que os cenários
+  dela.** O `SELECT` do `runner.py` não filtra por contrato: ele varre toda
+  cobrança em aberto do site. Antecipar a fase poria as cobranças da régua dentro
+  do conjunto que as três rotinas de estado varrem, e aqueles seis artefatos são de
+  fatia fechada. A contrapartida está registrada, não escondida: as cobranças que
+  sobraram das fases anteriores entram no `SELECT` e aparecem em
+  `entrada.carteira_herdada`, separadas dos cenários próprios.
+- **Histórico e fila zerados antes de semear.** O site restaurado traz `Log Envio
+  Cobranca` e `Email Queue` reais do dump. Sem a purga, a trava de intervalo ficaria
+  sujeita a log de produção e a contagem final da fila do arcabouço não poderia
+  afirmar nada sobre esta execução. Nenhuma fase anterior lê essas duas tabelas.
+- **Trava de intervalo provada com o negativo que discrimina.** Além dos envios
+  recente e antigo, o histórico traz uma linha de status `Erro` recente. Sem ela,
+  "a trava só conta envio bem-sucedido" seria indistinguível de "a trava conta
+  qualquer linha" — e o filtro de status poderia sumir sem que nada acusasse.
 
 ## 4. Observações sobre o comportamento capturado
 
@@ -117,8 +143,25 @@ defeitos**. Nenhum resultado foi corrigido, arredondado ou completado.
   prova a função pura. O golden preserva os 6 casos do teste e as 7 tuplas de
   entrada distintas que eles exercitam — deduplicar por caso perderia a evidência
   de linearidade dos juros e de independência entre juros e multa.
-- **A régua de cobrança (`cobranca_automation`) não foi caracterizada.** Ela tem
-  efeito colateral de envio de e-mail e ficou fora do escopo desta captura.
+- **A régua de cobrança (`cobranca_automation`) FOI caracterizada, no nível
+  1 da ordem de queda:** despachante substituído dentro do processo de captura, com o percurso completo da régua executando. Os dois pontos de despacho do
+  arcabouço — `emailer.py:203`, em `enviar_email_automacao`, e `emailer.py:251`, em
+  `enviar_email_manual` — foram cobertos por um registrador em memória, e os pontos
+  que o registrador efetivamente observou durante a captura foram `emailer.py:203`, `emailer.py:251`. O
+  contador de despacho real vale `0` e a fila de e-mail do
+  arcabouço terminou com `0` documento(s). Nenhuma mensagem saiu;
+  o percurso inteiro executou.
+- **Os dois resolvedores de estado da régua discordam, e a divergência é o achado
+  desta captura.** `get_status_template` (`core.py`) tem o ramo `Fechada`, que sai
+  de `STATUS_FECHADA = ("paga","pago","cancelada","cancelado")`;
+  `get_status_template_manual` (`emailer.py`) **não tem esse ramo** e testa o
+  vencimento antes de qualquer estado. O cenário `cobranca_cancelada_e_vencida`
+  registra o efeito: o caminho automático nunca alcança a cobrança, porque o
+  `SELECT` do `runner.py` exclui `["Paga","Cancelada"]`, enquanto o envio manual
+  monta o template `Vencida` e cobra por uma dívida cancelada — `is_cobranca_paga`
+  conhece `Paga` e não conhece `Cancelada`. O contraste que discrimina está no
+  cenário `cobranca_paga`, ao lado, em que o manual É barrado. Gravado como veio,
+  sem correção: é o defeito que motiva a unicidade estrutural do estado.
 - **`min(dia_vencimento, 28)` é inalcançável pelo caminho real.**
   `montar_dados_cobrancas_contrato` chama `validar_contrato_para_ativacao` na
   primeira linha, e essa validação recusa `dia_vencimento` fora de 1..28. O teto

@@ -4,7 +4,7 @@
 - **Feature/Projeto**: Cobrança e mora por empresa, com estado de fonte única no servidor (fatia 1 de 2 da F3)
 - **Responsável (Tech Lead)**: sysloc (neuberagil@icloud.com)
 - **Data**: 2026-08-09
-- **Status**: Rascunho
+- **Status**: Concluído
 - **TECH_SPEC**: `docs/specs/features/cobranca-e-mora/v1/tech_spec.md`
 - **PRD**: `docs/prds/features/cobranca-e-mora/v1/prd.md`
 - **Variante**: `backend` — sem `design.md`, por decisão registrada no `CLAUDE.md` (este repositório não produz interface)
@@ -45,7 +45,7 @@ As quatro primeiras vêm da **§11 do PRD** (Roadmap / Fases). A quinta é acré
 
 | ID | Nome da Task | Arquivo | Fase | Dependências | Pode Rodar em Paralelo? (derivado) | Status |
 |----|--------------|---------|------|--------------|------------------------------------|--------|
-| T1 | Capturar o oráculo da régua de cobrança do sistema antigo, sem despachar mensagem | [T1](tasks/T1.md) | 1 | — | Não | A Fazer |
+| T1 | Capturar o oráculo da régua de cobrança do sistema antigo, sem despachar mensagem | [T1](tasks/T1.md) | 1 | — | Não | Concluído |
 | T2 | Contrato de tipos da cobrança em `@sysloc/contracts` | [T2](tasks/T2.md) | 2 | — | Não | Concluído |
 | T3 | Schema e migrações da cobrança — tabelas isoladas, a view de fonte única e o contador da série | [T3](tasks/T3.md) | 2 | T2 | Não | Concluído |
 | T4 | Porta de dados da cobrança — leitura pela view, emissão da série e a prova da mora contra o golden | [T4](tasks/T4.md) | 2 | T2, T3 | Não | Concluído |
@@ -104,14 +104,14 @@ O flag foi **computado** pelo Invariante de Paralelismo (Regra 10d), não autora
 
 | User Story (PRD) | Definição Técnica (SPEC) | Tasks Relacionadas | Status |
 |------------------|--------------------------|--------------------|--------|
-| US-01 — Capturar a referência da régua antes do desligamento | §17 US-01 · captura com despachante substituído, fora da API | T1 | A Fazer |
+| US-01 — Capturar a referência da régua antes do desligamento | §17 US-01 · captura com despachante substituído, fora da API | T1 | Concluído |
 | US-02 — Ativar contrato gera as parcelas do período | §6.3 RD-05, RD-18, RD-19, RD-20 · §5.1 fluxo B | T2, T3, T4, T8, T9 | Concluído |
 | US-03 — Estado da cobrança com significado único | §6.3 RD-04 · view `cobranca_derivada` · §3.3 (proibição em TypeScript) | T2, T3, T4, T5 | Concluído |
-| US-04 — Cobranças que não são aluguel, distinguíveis por natureza | §6.3 RD-03 · enum `natureza_cobranca` | T2, T5 | A Fazer |
-| US-05 — Acusar pagamento e registrar o recebido | §6.3 RD-09, RD-15 · §5.1 fluxo D | T2, T7, T11 | Em Progresso |
-| US-06 — Cancelar lançamento errado e emitir substituta | §6.3 RD-12, RD-02 · §5.1 fluxos E e F | T4, T7, T11 | Em Progresso |
+| US-04 — Cobranças que não são aluguel, distinguíveis por natureza | §6.3 RD-03 · enum `natureza_cobranca` | T2, T5 | Concluído |
+| US-05 — Acusar pagamento e registrar o recebido | §6.3 RD-09, RD-15 · §5.1 fluxo D | T2, T7, T11 | Concluído |
+| US-06 — Cancelar lançamento errado e emitir substituta | §6.3 RD-12, RD-02 · §5.1 fluxos E e F | T4, T7, T11 | Concluído |
 | US-07 — Multa e juros da própria imobiliária | §6.3 RD-11, RD-21 · `negocio.configuracao_de_mora` sob RLS | T3, T6 | Concluído |
-| US-08 — Mora calculada pelo sistema | §6.3 RD-07, RD-08, RD-16 · expressões em `numeric` | T3, T4 | A Fazer |
+| US-08 — Mora calculada pelo sistema | §6.3 RD-07, RD-08, RD-16 · expressões em `numeric` | T3, T4 | Concluído |
 | US-09 — Mudar a multa não altera o que já foi pago | §6.3 RD-09, RD-10 · o carimbo com a configuração vigente | T6, T7 | Concluído |
 | US-10 — Cancelar contrato cancela as cobranças canceláveis | §6.3 RD-13 · cascata na mesma unidade | T10 | Concluído |
 
@@ -148,18 +148,20 @@ O flag foi **computado** pelo Invariante de Paralelismo (Regra 10d), não autora
 
 ## 7. Critérios de Conclusão da Feature
 
-> **Conferidos em 2026-08-10, ao fim do run. 10 dos 13 estão satisfeitos; os 3 abertos dependem
-> EXCLUSIVAMENTE da T1**, que é execução do operador (`sudo` interativo mais o site efêmero do
-> `/opt/frappe`) e que a §7 da própria task declara que **nenhum subagente conduz**. Nenhum dos três
-> depende de trabalho das outras dez tasks.
+> **Conferidos em 2026-08-10, ao fim do run, e REconferidos no fecho da T1 no mesmo dia. Os 13 estão
+> satisfeitos.** Os três que dependiam exclusivamente da T1 fecharam quando ela rodou: a premissa de
+> que a captura exigia `sudo` interativo foi **refutada por medição** (o roteiro de
+> `deploy/scripts/caracterizacao/` não invoca `sudo` em ponto algum — a exigência é da frente
+> `deploy/scripts/instalacao/`, e fora generalizada indevidamente), a §7 da task foi corrigida, e a
+> T1 correu pelo pipeline normal com os dois gates, como as outras dez.
 
-- [ ] As 11 tasks concluídas e aprovadas nos dois gates — **10/11**; só a **T1** falta, diferida por decisão
+- [x] As 11 tasks concluídas e aprovadas nos dois gates — **11/11**; a **T1** fechou em 2026-08-10, `APROVADO_COM_OBSERVACOES` nos dois gates, rodada única, 0 bloqueantes
 - [x] `pnpm build`, `pnpm lint` e `pnpm test` verdes, com a contagem comparada contra a baseline de **687 casos** — crescimento monotônico, nenhum pacote encolhendo em nenhuma rodada; **queda inexplicada é regressão de prova** · **687 → 834**, medido POR PACOTE (contracts 227 · shared 212 · api 175 · auth 89 · db 115 · worker 16); nenhum pacote encolheu em nenhuma rodada do run
 - [x] Os 17 critérios de aceite do PRD com ao menos um caso rastreado — **45 CTs distribuídos, cada um em exatamente 1 task** · **17/17** rastreados; o **CA-01** é o único cujos CTs (CT-501/502/503) vivem na T1 e portanto ainda não executaram
 - [x] Superfície publicada em **82 rotas / 67 manipuladores**, `semDeclaracao` vazio, contagens **refeitas por varredura** e concordantes nas duas medições independentes · fechado pelo **CT-533** (T11), aprovado nos dois gates; a independência das duas medições foi verificada pelo Gate 2 lendo as duas fontes
 - [x] `verificarCoberturaDeIsolamento` sem exceções, com as duas tabelas novas **e a view** em `tabelasExaminadas` · `TABELAS_LEGITIMAS` tem 13 entradas incluindo `TABELA_DE_COBRANCA`, `VISAO_DA_COBRANCA_DERIVADA` e `TABELA_DE_CONFIGURACAO_DE_MORA`, comparadas por **igualdade** (`toEqual`)
-- [ ] `verificar-golden.sh` afirma **10** artefatos e os CT-501/CT-503 passam; os seis anteriores inalterados — **afirma 9** (o 10º é o `regua-de-cobranca.json` da T1). ⚠️ O **CT-013 reprova por causa PRÉ-EXISTENTE**, provada idêntica no HEAD limpo `fb93915`: a agulha de credencial é uma palavra de dicionário de 5 caracteres e colide com literais de teste do `@sysloc/auth` e da semente do `@sysloc/db`. **Não é regressão desta fatia** — nenhum dos arquivos apontados foi tocado por ela
-- [ ] A captura da régua declara no `PROCEDENCIA.md` **qual nível da ordem de queda foi alcançado**, e o contador de despacho real vale `0` — depende da **T1**
+- [x] `verificar-golden.sh` afirma **10** artefatos e os CT-501/CT-503 passam; os seis anteriores inalterados · **afirma 10**, por composição de sublista (1 manifesto + 6 da captura original + 2 de contrato + 1 da régua) e não por número literal, e o `git ls-files` sobre `golden/` devolve 10 caminhos; o Gate 2 conferiu a contagem de forma independente. Os seis anteriores estão **byte a byte intocados** — o diff em `golden/` alcança só o `PROCEDENCIA.md` e o artefato novo. ⚠️ O **CT-013 segue reprovando por causa PRÉ-EXISTENTE**, provada idêntica no HEAD limpo `fb93915`: a agulha de credencial é uma palavra de dicionário de 5 caracteres e colide com literais de teste do `@sysloc/auth` e da semente do `@sysloc/db`. **Não é regressão desta fatia nem da T1** — os três arquivos apontados são de `packages/` e não aparecem no diff. A comparação que vale é **caso a caso**, não o código de saída: os 4 casos verdes seguem verdes e os 2 novos passam
+- [x] A captura da régua declara no `PROCEDENCIA.md` **qual nível da ordem de queda foi alcançado**, e o contador de despacho real vale `0` · **nível 1 alcançado** — o melhor da ordem do D5: o despachante foi substituído dentro do processo de captura, com o percurso completo da régua executando. `pontos_substituidos` = `emailer.py:203` e `emailer.py:251`, `invocacoes_do_despachante_real = 0`, fila de e-mail do arcabouço = 0. O CT-502 prova a substituição por asserção estática **com prova de falsificação nos dois sentidos** — cada mutante que remove um dos pontos reprova nomeando o que sobrou, e o arquivo íntegro passa limpo
 - [x] **O débito D28 (F2/T7) está fechado**: o literal afrouxado, a ativação gerando as parcelas, o marcador removido do código **e** a linha removida do bloco do `CLAUDE.md`, no mesmo commit · fechado na **T9**; `grep "D28 · F2/T7"` retorna vazio, e o `D28` que resta no índice é o **da F0/T5**, homônimo e vivo em 22 arquivos
 - [x] O marcador do **D36 (F2/T8) permanece**, reafirmado e não removido · o Gate 2 da T10 o conferiu **byte a byte** em `contrato.service.ts:854`, com os cinco campos e a natureza não trocada
 - [x] Os três marcadores `DECISÃO FECHADA` exigidos pela §21 do tech spec estão no código: largura 7 (T2), leitura só pela view (T4) e `security_invoker` (T3) — mais o quarto, da conciliação bancária intocada (T7) · os quatro presentes: `contracts/src/cobranca.ts:177`, `db/src/cobranca.ts:812`, `migracoes/0010:263` e `:505`, e `cobranca.service.ts:343`

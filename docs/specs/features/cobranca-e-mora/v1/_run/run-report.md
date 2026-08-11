@@ -4,15 +4,20 @@
 
 ## 1. Resumo do Run
 
-Status: **10/11 tasks concluídas** · suíte **687 → 834** casos, verde · `pnpm build` e `pnpm lint` verdes.
+Status: **11/11 tasks concluídas** · suíte **687 → 835** casos, verde · `pnpm build` e `pnpm lint` verdes.
 
-**A única task restante é a T1**, diferida por decisão do usuário — ela exige `sudo` com senha
-interativa e o site efêmero do `/opt/frappe` de pé, e **nenhum subagente a executa**. Nada nas outras
-dez depende dela. Enquanto ela não rodar, a fatia fica em **10/11** e o Status geral do `task_plan.md`
-**não** vai a `Concluído`.
+**A fatia está FECHADA.** A T1 — a última — rodou em 2026-08-10, depois de a premissa que a diferia
+ser **refutada por medição**: ela não exige `sudo`. O roteiro de `deploy/scripts/caracterizacao/` não
+invoca `sudo` em nenhuma das suas 4.623 linhas — todo o acesso ao `/opt/frappe` passa por
+`docker compose`, e o usuário do host pertence ao grupo `docker`. A exigência de `sudo` registrada na
+`.claude/rules/testing-stack.md` é verdadeira para a frente **`deploy/scripts/instalacao/`**, que toca
+o SO, e fora generalizada indevidamente para esta. Escalado ao usuário por contrariar decisão
+registrada em spec; decidido rodar pelo pipeline normal, com os dois gates, como as outras dez. Os
+**13 Critérios de Conclusão da Feature** estão satisfeitos.
 
 | Task | Nome | Modelo | Arquivos | QA | Tech Review |
 |------|------|--------|----------|-----|-------------|
+| T1 | Capturar o oráculo da régua de cobrança do sistema antigo, sem despachar mensagem | opus | 1 criado, 5 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
 | T2 | Contrato de tipos da cobrança em `@sysloc/contracts` | opus | 2 criados, 3 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
 | T3 | Schema e migrações da cobrança — tabelas isoladas, a view de fonte única e o contador da série | opus | 3 criados, 9 mod | ✅ APROVADO_COM_OBSERVACOES (2 rodadas) | ✅ APROVADO_COM_OBSERVACOES (2 rodadas) |
 | T4 | Porta de dados da cobrança — leitura pela view, emissão da série e a prova da mora contra o golden | opus | 2 criados, 6 mod | ✅ APROVADO_COM_OBSERVACOES (2 rodadas) | ✅ APROVADO_COM_OBSERVACOES (2 rodadas) |
@@ -24,12 +29,19 @@ dez depende dela. Enquanto ela não rodar, a fatia fica em **10/11** e o Status 
 | T10 | O cancelamento do contrato cancela as cobranças em cascata, na mesma unidade | opus | 0 criados, 8 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
 | T11 | Cobertura de autorização das sete rotas novas e as âncoras finais da superfície | opus | 0 criados, 2 mod | ✅ APROVADO_COM_OBSERVACOES | ✅ APROVADO_COM_OBSERVACOES |
 
-> **T1 não está nesta tabela por decisão de ordenação, não por bloqueio.** Ela exige `sudo` com senha
-> interativa e o site efêmero do `/opt/frappe` de pé — nenhum subagente a executa. Fica para o fim do
-> run, como execução conduzida pelo operador. Nada nas outras dez tasks depende dela: `Dependências`
-> de T2..T11 nunca a citam, ela não cria símbolo de código, e os arquivos que ela toca
+> **A T1 correu por ÚLTIMO, e a ordem não a prejudicou.** O plano a punha em primeiro por **prazo**
+> — a janela do `/opt/frappe` fecha na F7 —, não por dependência: `Dependências` de T2..T11 nunca a
+> citam, ela não cria símbolo de código, e os arquivos que ela toca
 > (`deploy/scripts/caracterizacao/` e a pasta golden da fatia `caracterizacao-regras-legadas`) não
-> intersectam os de nenhuma outra task.
+> intersectam os de nenhuma outra task. A janela seguia aberta quando ela rodou.
+>
+> **Ela alcançou o NÍVEL 1 da ordem de queda do D5** — o melhor possível, e não o piso: o despachante
+> foi substituído dentro do processo de captura, com o percurso completo da régua executando.
+> `invocacoes_do_despachante_real = 0`, fila de e-mail do arcabouço = 0, e os dois pontos
+> (`emailer.py:203` e `emailer.py:251`) provados substituídos por asserção estática **com prova de
+> falsificação nos dois sentidos**. O oráculo registra a divergência que motivou a fatia inteira:
+> para a cobrança cancelada e vencida, o caminho automático resolve `Fechada` e o manual resolve
+> `Vencida`, com **1** mensagem no manual contra **0** no automático.
 
 ## 2. Débitos Técnicos Não Resolvidos
 
@@ -809,6 +821,24 @@ ambíguo o único identificador que a §3-B da `nao-regressao.md` reconhece.
 - **O que fazer:** compor o nome a partir do parâmetro (por exemplo `Pessoa de teste (${perfil})`), ou
   aceitar o nome como argumento com o literal atual como padrão.
 
+### D44 · baixo · tests · T1 · QA
+- **Onde:** `deploy/scripts/caracterizacao/verificar-captura.sh:1763`
+- **Problema:** literais `emailer.py:203`/`:251` repetidos sem constante nomeada no nível do script.
+- **Impacto:** os dois pontos de despacho aparecem 5 vezes — duas dentro dos programas Python transportados (1637 e 1795, onde a independência do auditor justifica a cópia) e **três no corpo shell do próprio `ct_502`** (1754, 1763, 1764), sem constante. O arquivo já tem `ARQ_REGUA_GOLDEN` como precedente, e o `verificar-golden.sh` documenta a razão de nomear (linhas 97-99: *"três literais soltos divergiriam"*). A convenção não foi aplicada aqui.
+- **O que fazer:** declarar `PONTO_DE_DESPACHO_AUTOMATICO="emailer.py:203"` e `PONTO_DE_DESPACHO_MANUAL="emailer.py:251"` no topo do bloco do CT-502 e consumi-las nas três linhas. As duas ocorrências dentro dos heredocs Python **permanecem literais de propósito** — são programas autônomos, e derivá-las do shell reintroduziria o acoplamento que o docblock do auditor recusa.
+
+### D45 · baixo · documentation · T1 · QA
+- **Onde:** `docs/specs/features/cobranca-e-mora/v1/tasks/T1.md:93`
+- **Problema:** o último critério da §4 cita baseline Vitest de **687** casos, e a baseline real é **835**.
+- **Impacto:** o número foi escrito quando a T1 era a primeira task da fatia; as dez seguintes levaram a suíte de 687 a 835, e a T1 correu por último. O requisito operativo — suíte verde com contagem comparada — **está cumprido** (835 → 835, sem regressão); o que ficou desatualizado é o número escrito. O risco é o mesmo padrão que o `CLAUDE.md` já registra para o *"77 rotas"* e para *"quatro dígitos"*: um agente futuro lê 687 e "corrige" na direção errada.
+- **O que fazer:** trocar `687 casos` por `835 casos`, com a nota de que o número subiu ao longo da fatia porque a T1 foi executada por último.
+
+### D46 · BAIXO · code_quality · T1 · Tech Review
+- **Onde:** `docs/specs/features/caracterizacao-regras-legadas/v1/golden/PROCEDENCIA.md:46` (gerado por `deploy/scripts/caracterizacao/capturar.py`, `montar_procedencia`)
+- **Problema:** o manifesto afirma que `regua-de-cobranca.json` não grava data absoluta, e ele grava duas.
+- **Impacto:** a §2 estende ao artefato novo uma frase que era verdadeira só para `contrato-cancelamento.json` (que de fato tem zero `\d{4}-\d{2}-\d{2}`); o `regua-de-cobranca.json` tem **duas** — `2026-01-15 14:30:00` (linha 355) e `2026-01-15T14:30:00` (linha 360). **Nenhum impacto funcional**: são literais estáticos de *entrada* de `normalize_hhmm`, não valores derivados de `nowdate()`, então o golden não expira — que é o invariante real que a frase protege. O impacto é de confiabilidade do manifesto, que é o documento que a F5 abre para saber o que pode reconstruir. **Nenhum verificador cobre esta afirmação**: CT-014 e CT-501 conferem a bijeção de máscaras, não a ausência de data absoluta.
+- **O que fazer:** ajustar a frase no gerador (nunca no arquivo — ele é regerado) para ressalvar a exceção, no mesmo tratamento que o parágrafo seguinte já dá a `contrato-ativacao.json`. Alternativa mais forte: acrescentar ao CT-501 a asserção de que toda `\d{4}-\d{2}-\d{2}` do artefato está sob `entrada.normalize_hhmm[].valor`, o que tornaria a afirmação invariante conferido em vez de prosa.
+
 ## 3. Tasks Bloqueadas
 
 ✅ Nenhuma task bloqueada.
@@ -968,6 +998,46 @@ ambíguo o único identificador que a §3-B da `nao-regressao.md` reconhece.
   regressão da task.
 
 ---
+
+### A premissa que diferia a T1 era falsa, e a medição que a derrubou custou quatro comandos
+
+A T1 ficou fora do run por uma razão registrada em três lugares — a §7 da própria task, o
+`task_plan.md` e o índice do `CLAUDE.md` —, todos afirmando que ela **exige `sudo` com senha
+interativa** e que **nenhum subagente a conduz**. A afirmação era falsa para esta frente, e conferi-la
+custou quatro comandos:
+
+- `grep -n sudo` nos quatro arquivos de `deploy/scripts/caracterizacao/` (4.623 linhas) → **vazio**;
+- `id` → o usuário do host pertence ao grupo `docker` (990);
+- `bench --site caracterizacao.localhost list-apps` **executou sem elevação**, confirmando de passagem
+  que o site efêmero não existia (destruído ao fim da fatia anterior, como o ciclo de vida manda);
+- `ls -l /opt/frappe/docker-compose.yaml` → legível, sem `sudo`.
+
+**De onde veio o erro**: a `.claude/rules/testing-stack.md` registra, corretamente, que *"os
+verificadores de `deploy/scripts/instalacao/` que tocam o SO exigem `sudo`, e `sudo` neste host pede
+senha interativa"*. A T1 herdou essa frase da T1 da fatia anterior e trocou o sujeito — a exigência
+passou a valer para "a captura" em vez de "os verificadores de instalação". **A distinção é por
+frente, não por host**, e essa é a forma corrigida na §7.
+
+O segundo obstáculo registrado — *"disco em 94%, e o script restaura o dump"* — é **real e não
+apertava**: o dump é de 8,8 MB comprimido e a restauração custa ~200 MB, contra 1,9 GB livres.
+
+**O que isto custou**: a T1 é a task de **prazo** da fatia, a única cuja janela fecha e não reabre. Ela
+ficou diferida por uma premissa que quatro comandos refutariam. Vale como aviso para as fatias
+seguintes: **premissa que bloqueia trabalho com prazo merece ser medida antes de ser registrada**, e a
+prosa de spec propaga o erro para todo agente que a lê — foi o que aconteceu aqui, em três arquivos.
+
+### O que o oráculo da régua capturou, e por que ele importa para a fatia 2
+
+O artefato registra a **divergência de estado entre os dois resolvedores**, que é o defeito de origem
+desta fatia inteira. Para uma cobrança **cancelada e vencida**: `get_status_template` (`core.py`)
+resolve `Fechada`, e `get_status_template_manual` (`emailer.py`) resolve `Vencida` — valores
+diferentes para o mesmo fato, com **1** mensagem registrada no manual contra **0** no automático. É o
+comportamento que faz o envio manual do sistema antigo cobrar por uma dívida cancelada, e é
+**exatamente o que a fatia 2 NÃO deve portar**. Capturá-lo era a razão de a task existir.
+
+O `CT-503` fixa essa divergência por `afirmar_diferente` além dos dois `afirmar_igual` — o Gate 1
+verificou que a asserção não é tautológica: existe estado real em que só ela reprova (uma recaptura em
+que a divergência tenha sido fechada a montante e alguém iguale as duas constantes).
 
 ## 5. Intervenção dirigida de 2026-08-10 — o que foi fechado, e o parecer sobre o resto
 

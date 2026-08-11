@@ -2,7 +2,8 @@
 #
 # Verificação OFFLINE dos artefatos golden da caracterização (TC-001).
 #
-# Casos cobertos: CT-010, CT-011, CT-013 (metade estática), CT-014, CT-433.
+# Casos cobertos: CT-010, CT-011, CT-013 (metade estática), CT-014, CT-433,
+# CT-501, CT-503.
 #
 # Este script não fala com o Frappe. Ele lê apenas o que está versionado no
 # repositório, e por isso continua executável depois que o backend legado for
@@ -42,6 +43,13 @@ GOLDEN_DE_CONTRATO=(
 	"contrato-cancelamento.json"
 )
 
+# Sublista da fatia `cobranca-e-mora`. Entra na composição abaixo em vez de subir a
+# contagem à mão: é a mesma razão registrada no bloco seguinte — número literal e
+# conjunto literal divergem, e o esquecimento não é detectável.
+GOLDEN_DA_REGUA=(
+	"regua-de-cobranca.json"
+)
+
 # Fonte única do conjunto esperado E da contagem. A contagem sai do tamanho desta
 # lista de propósito: enquanto o número era literal, acrescentar um artefato exigia
 # lembrar de dois lugares, e esquecer o segundo deixava a asserção de número
@@ -58,6 +66,7 @@ GOLDEN_ESPERADOS=(
 	"PROCEDENCIA.md"
 	"${GOLDEN_DA_CAPTURA_ORIGINAL[@]}"
 	"${GOLDEN_DE_CONTRATO[@]}"
+	"${GOLDEN_DA_REGUA[@]}"
 )
 
 # Marcadores introduzidos pela fase de cancelamento. Nomeá-los aqui é o que separa
@@ -67,6 +76,125 @@ MASCARAS_DE_CONTRATO=(
 	"<PDF_CONTRATO_CODIFICADO>"
 	"<ARQUIVO_PDF_PRIVADO>"
 )
+
+ARQ_REGUA="regua-de-cobranca.json"
+MODULO_DA_REGUA="locacao_automation.cobranca_automation"
+
+# Contagem ESPERADA de cada bloco de cenários da régua, escrita aqui e não lida de
+# um campo do próprio artefato. Contagem que o produtor declara e o verificador
+# confere contra o que o produtor gravou é tautologia: as duas saem do mesmo
+# `len()`, no mesmo instante, e um golden truncado sairia com a contagem truncada
+# junto. Escrita no verificador, ela reprova o truncamento — que é o negativo do
+# CT-501.
+CENARIOS_REGUA_COBRANCAS=10
+CENARIOS_REGUA_NORMALIZE_HHMM=8
+CENARIOS_REGUA_HORA_EXECUCAO=3
+CENARIOS_REGUA_INTERVALO=6
+CENARIOS_REGUA_TEMPLATE=10
+CENARIOS_REGUA_DIVERGENCIA=10
+CENARIOS_REGUA_MANUAL=10
+
+# O cenário que cruza cancelamento com vencimento passado, e os quatro fatos que a
+# fatia seguinte NÃO deve portar. Constantes nomeadas porque as mesmas cadeias
+# aparecem no CT-503 e no manifesto — três literais soltos divergiriam.
+CENARIO_DA_DIVERGENCIA="cobranca_cancelada_e_vencida"
+TEMPLATE_AUTOMATICO_DA_DIVERGENCIA="Fechada"
+TEMPLATE_MANUAL_DA_DIVERGENCIA="Vencida"
+
+medidas_da_regua=""
+
+# Uma única leitura dos dois artefatos, consumida por CT-501 e CT-503. Cada caso a
+# invoca por conta própria: o card do CT-503 exige caso auto-contido, que reprove
+# sozinho quando executado fora de sequência.
+medir_regua() {
+	medidas_da_regua="$(python3 - "${DIR_GOLDEN}" "${ARQ_REGUA}" "${CENARIO_DA_DIVERGENCIA}" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+golden, nome_artefato, cenario_alvo = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+caminho = golden / nome_artefato
+
+if not caminho.is_file():
+    print("artefato_ausente=1")
+    raise SystemExit(0)
+
+print("artefato_ausente=0")
+try:
+    dados = json.loads(caminho.read_text(encoding="utf-8"))
+except json.JSONDecodeError as exc:
+    print("json_invalido=1")
+    print(f"json_erro={exc}")
+    raise SystemExit(0)
+print("json_invalido=0")
+
+FORMA_CANONICA = ("modulo", "regra", "funcoes", "entrada", "retorno", "estado_resultante")
+for chave in FORMA_CANONICA:
+    print(f"chave_{chave}={'presente' if chave in dados else 'ausente'}")
+print("modulo=" + str(dados.get("modulo") or ""))
+
+entrada = dados.get("entrada") or {}
+retorno = dados.get("retorno") or {}
+for rotulo, colecao in (
+    ("cobrancas", entrada.get("cobrancas")),
+    ("normalize_hhmm", retorno.get("normalize_hhmm")),
+    ("is_hora_execucao", retorno.get("is_hora_execucao")),
+    ("intervalo", retorno.get("intervalo")),
+    ("template", retorno.get("template")),
+    ("divergencia_de_estado", retorno.get("divergencia_de_estado")),
+    ("manual", retorno.get("manual")),
+):
+    print(f"cenarios_{rotulo}={len(colecao) if isinstance(colecao, list) else -1}")
+
+texto = caminho.read_text(encoding="utf-8")
+mascaras = sorted(set(re.findall(r"<[A-Z_]+>", texto)))
+print("mascaras_no_artefato=" + " ".join(mascaras))
+
+# Marcador nomeado com algarismo escapa de `<[A-Z_]+>` — a varredura da bijeção
+# não o enxerga, e ele vira máscara órfã invisível justamente no verificador que
+# existe para achar máscara órfã. A busca aqui é DELIBERADAMENTE mais larga.
+com_algarismo = sorted(
+    set(m for m in re.findall(r"<[A-Z_0-9]+>", texto) if any(c.isdigit() for c in m))
+)
+print("mascaras_com_algarismo=" + " ".join(com_algarismo))
+
+manifesto = (golden / "PROCEDENCIA.md").read_text(encoding="utf-8")
+secao = re.search(r"\n## 2\. Máscaras aplicadas\n(.*?)(?=\n## )", manifesto, re.DOTALL)
+declaradas = set()
+if secao:
+    for linha in secao.group(1).splitlines():
+        if not linha.strip().startswith("|"):
+            continue
+        colunas = [c.strip() for c in linha.strip().strip("|").split("|")]
+        if len(colunas) < 4:
+            continue
+        artefatos = re.findall(r"`([^`]+\.(?:json|txt|md))`", colunas[1])
+        if nome_artefato in artefatos:
+            declaradas |= set(re.findall(r"<[A-Z_]+>", colunas[0]))
+print("mascaras_no_manifesto=" + " ".join(sorted(declaradas)))
+
+alvo = next(
+    (
+        item
+        for item in (retorno.get("divergencia_de_estado") or [])
+        if item.get("id") == cenario_alvo
+    ),
+    None,
+)
+if alvo is None:
+    print("divergencia_presente=0")
+else:
+    print("divergencia_presente=1")
+    print("divergencia_template_automatico=" + str(alvo.get("template_automatico")))
+    print("divergencia_template_manual=" + str(alvo.get("template_manual")))
+    print("divergencia_mensagens_automatico=" + str(alvo.get("mensagens_automatico")))
+    print("divergencia_mensagens_manual=" + str(alvo.get("mensagens_manual")))
+PY
+	)"
+}
+
+medida() { printf '%s\n' "${medidas_da_regua}" | sed -n "s/^$1=//p" | head -1; }
 
 falhas_totais=0
 falhas_caso=0
@@ -1035,6 +1163,117 @@ PY
 	fechar_caso "CT-433"
 }
 
+# --------------------------------------------------------------------------- #
+# CT-501 — o golden da régua existe, tem a forma canônica, a contagem de cenários
+#          declarada, e está em bijeção com o `PROCEDENCIA.md`.
+#
+# INVARIANTE: a captura da régua produz artefato golden versionado cujas chaves de
+# topo existem, cujos cenários somam a contagem esperada bloco a bloco, e cujo
+# conjunto de máscaras `<[A-Z_]+>` presentes no arquivo é IGUAL ao conjunto que a
+# §2 do manifesto declara PARA ELE — sem órfã em nenhuma das duas direções.
+#
+# O QUE ESTE CASO NÃO FAZ: ele não reexecuta a régua nem rederiva template algum.
+# O golden É o oráculo; um verificador que reimplementasse `get_status_template`
+# aprovaria um golden errado desde que errasse igual. O que se afere aqui é FORMA e
+# COBERTURA. O conteúdo que discrimina é do CT-503.
+# --------------------------------------------------------------------------- #
+ct_501() {
+	caso "CT-501" "regua-de-cobranca.json — forma, contagem de cenários e bijeção com o manifesto"
+
+	local versionados
+	versionados="$(caminhos_versionados_do_golden)"
+	afirmar_igual "git ls-files sobre golden/ retorna ${#GOLDEN_ESPERADOS[@]} caminhos" \
+		"${#GOLDEN_ESPERADOS[@]}" "$(printf '%s\n' "${versionados}" | grep -c . || true)"
+
+	local nome ausentes=0
+	for nome in "${GOLDEN_DA_REGUA[@]}"; do
+		printf '%s\n' "${versionados}" | grep -qxF "${REL_GOLDEN}/${nome}" ||
+			ausentes=$((ausentes + 1))
+	done
+	afirmar_igual "o artefato da régua está versionado" "0" "${ausentes}"
+
+	medir_regua
+	afirmar_igual "${ARQ_REGUA} presente em golden/" "0" "$(medida artefato_ausente)"
+	if [[ "$(medida artefato_ausente)" != "0" ]]; then
+		fechar_caso "CT-501"
+		return
+	fi
+	afirmar_igual "${ARQ_REGUA} é JSON válido" "0" "$(medida json_invalido)"
+
+	local chave
+	for chave in modulo regra funcoes entrada retorno estado_resultante; do
+		afirmar_igual "chave de topo '${chave}'" "presente" "$(medida "chave_${chave}")"
+	done
+	afirmar_igual "módulo de origem" "${MODULO_DA_REGUA}" "$(medida modulo)"
+
+	afirmar_igual "cenários de cobrança" \
+		"${CENARIOS_REGUA_COBRANCAS}" "$(medida cenarios_cobrancas)"
+	afirmar_igual "cenários de normalize_hhmm" \
+		"${CENARIOS_REGUA_NORMALIZE_HHMM}" "$(medida cenarios_normalize_hhmm)"
+	afirmar_igual "cenários de is_hora_execucao" \
+		"${CENARIOS_REGUA_HORA_EXECUCAO}" "$(medida cenarios_is_hora_execucao)"
+	afirmar_igual "cenários da trava de intervalo" \
+		"${CENARIOS_REGUA_INTERVALO}" "$(medida cenarios_intervalo)"
+	afirmar_igual "cenários de template resolvido e corpo montado" \
+		"${CENARIOS_REGUA_TEMPLATE}" "$(medida cenarios_template)"
+	afirmar_igual "cenários de divergência de estado" \
+		"${CENARIOS_REGUA_DIVERGENCIA}" "$(medida cenarios_divergencia_de_estado)"
+	afirmar_igual "cenários de envio manual" \
+		"${CENARIOS_REGUA_MANUAL}" "$(medida cenarios_manual)"
+
+	afirmar_igual "conjunto de máscaras do artefato igual ao declarado na §2 do manifesto" \
+		"$(medida mascaras_no_manifesto)" "$(medida mascaras_no_artefato)"
+	afirmar_igual "nenhuma máscara nomeada com algarismo" "" "$(medida mascaras_com_algarismo)"
+
+	fechar_caso "CT-501"
+}
+
+# --------------------------------------------------------------------------- #
+# CT-503 — o golden registra a divergência entre o caminho automático e o manual.
+#
+# INVARIANTE: para uma cobrança CANCELADA e com vencimento passado,
+# `get_status_template` (`core.py`) resolve `Fechada` e `get_status_template_manual`
+# (`emailer.py`) resolve `Vencida` — valores DIFERENTES para o mesmo fato —, e o
+# caminho manual produziu mensagem onde o automático não produziu nenhuma.
+#
+# Nomear a divergência é o que impede uma recaptura futura de apagá-la em silêncio.
+# Sem este caso, o golden capturaria o mecanismo da régua e perderia justamente o
+# defeito que motiva substituí-la: `is_cobranca_paga` conhece `Paga` e não conhece
+# `Cancelada`, e o envio manual cobra por uma dívida cancelada.
+# --------------------------------------------------------------------------- #
+ct_503() {
+	caso "CT-503" "o golden registra a divergência automático × manual da régua"
+
+	medir_regua
+	afirmar_igual "o cenário ${CENARIO_DA_DIVERGENCIA} está no golden" \
+		"1" "$(medida divergencia_presente)"
+	if [[ "$(medida divergencia_presente)" != "1" ]]; then
+		fechar_caso "CT-503"
+		return
+	fi
+
+	local automatico manual
+	automatico="$(medida divergencia_template_automatico)"
+	manual="$(medida divergencia_template_manual)"
+
+	afirmar_igual "core.get_status_template resolve o template do estado fechado" \
+		"${TEMPLATE_AUTOMATICO_DA_DIVERGENCIA}" "${automatico}"
+	afirmar_igual "emailer.get_status_template_manual resolve pelo vencimento" \
+		"${TEMPLATE_MANUAL_DA_DIVERGENCIA}" "${manual}"
+	# A desigualdade é o fato capturado, e não uma consequência das duas asserções
+	# acima: se um dia as duas constantes forem editadas para o mesmo valor, esta
+	# linha reprova e denuncia a edição.
+	afirmar_diferente "os dois resolvedores discordam sobre o mesmo fato" \
+		"${automatico}" "${manual}"
+
+	afirmar_igual "o caminho automático não produziu mensagem para a cobrança cancelada" \
+		"0" "$(medida divergencia_mensagens_automatico)"
+	afirmar_igual "o caminho manual produziu exatamente uma mensagem" \
+		"1" "$(medida divergencia_mensagens_manual)"
+
+	fechar_caso "CT-503"
+}
+
 main() {
 	printf 'Verificação offline dos golden — %s\n' "${DIR_GOLDEN}"
 
@@ -1048,10 +1287,12 @@ main() {
 	ct_013_estatico
 	ct_014
 	ct_433
+	ct_501
+	ct_503
 
 	printf '\n'
 	if [[ "${falhas_totais}" -eq 0 ]]; then
-		printf 'verificar-golden: 5/5 casos aprovados (CT-010, CT-011, CT-013, CT-014, CT-433)\n'
+		printf 'verificar-golden: 7/7 casos aprovados (CT-010, CT-011, CT-013, CT-014, CT-433, CT-501, CT-503)\n'
 		exit 0
 	fi
 	printf 'verificar-golden: %d falha(s) — REPROVADO\n' "${falhas_totais}" >&2

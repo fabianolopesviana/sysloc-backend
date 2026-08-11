@@ -3,7 +3,7 @@
 # Verificação da captura da caracterização das regras legadas (TC-001).
 #
 # Casos cobertos: CT-001, CT-002, CT-003, CT-004, CT-005, CT-006, CT-007,
-# CT-008, CT-009, CT-012 e a metade de logs do CT-013.
+# CT-008, CT-009, CT-012, CT-502 e a metade de logs do CT-013.
 #
 # EXIGE O SITE EFÊMERO DE PÉ. Rode entre `capturar.py` e
 # `preparar-site-efemero.sh destruir` — dez dos catorze casos leem o site
@@ -78,6 +78,18 @@ afirmar_igual() {
 		ok "$1"
 	else
 		falhar "$1 — esperado [$2], obtido [$3]"
+	fi
+}
+
+# Réplica literal da do `verificar-golden.sh`. Faz parte do vocabulário canônico da
+# frente shell (`.claude/rules/testing-stack.md`) e faltava aqui: sem ela, um caso
+# que precise da negativa cai em `command not found`, e sob `set -e` isso ABORTA a
+# suíte no meio em vez de reprovar um caso.
+afirmar_diferente() { # afirmar_diferente <descricao> <nao_esperado> <obtido>
+	if [[ "$2" != "$3" ]]; then
+		ok "$1"
+	else
+		falhar "$1 — obtido [$3], que não deveria ser [$2]"
 	fi
 }
 
@@ -167,6 +179,7 @@ GOLDEN_DE_CARACTERIZACAO=(
 	"encerrar-contratos-vencidos.json"
 	"marcar-cobrancas-vencidas.json"
 	"metragem.json"
+	"regua-de-cobranca.json"
 )
 
 sha_dos_golden_de_caracterizacao() {
@@ -1568,6 +1581,315 @@ PY
 }
 
 # --------------------------------------------------------------------------- #
+# CT-502 — a captura da régua registra a tripla (destinatário, assunto, corpo) e o
+#          despachante real nunca é invocado.
+#
+# INVARIANTE: durante a captura, os DOIS pontos de despacho de `emailer.py`
+# (`:203`, em `enviar_email_automacao`, e `:251`, em `enviar_email_manual`) são
+# cobertos por um registrador em memória; o golden registra, por cenário, a tripla
+# de cada mensagem que a régua DECIDIU enviar; e o contador de invocações do
+# despachante real vale exatamente `0`.
+#
+# O caso tem TRÊS pernas, e nenhuma delas basta sozinha:
+#   1. estática — o fonte não tem um segundo caminho capaz de despachar;
+#   2. falsificação — a asserção estática REPROVA numa cópia com um dos dois
+#      pontos removido, nomeando o que restou (obrigatória: a perna 1 inspeciona o
+#      TEXTO do SUT, `.claude/rules/testing-stack.md`);
+#   3. comportamental — o golden traz mensagens completas vindas dos dois pontos, e
+#      o contador de despacho real zerado. A guarda de não-vacuidade está aqui: sem
+#      ela, uma captura que não registrasse mensagem nenhuma satisfaria "nenhuma
+#      mensagem incompleta" e "zero despachos reais" de graça.
+# --------------------------------------------------------------------------- #
+ARQ_REGUA_GOLDEN="regua-de-cobranca.json"
+
+escrever_auditor_do_despachante() {
+	cat >"${DIR_TRABALHO}/auditar-despachante.py" <<'PY'
+"""Audita, no fonte de `capturar.py`, a substituição do despachante do arcabouço.
+
+Duas propriedades, e a segunda é a que a falsificação ataca:
+
+(a) o nome do despachante do arcabouço só aparece em posição executável DENTRO do
+    bloco delimitado — fora dele, e fora de comentário, a contagem é zero. É o que
+    torna a substituição uma barreira única em vez de um caminho entre vários;
+(b) os dois call sites da régua estão DECLARADOS um a um na tupla de pontos
+    esperados. A substituição é uma atribuição só e cobre os dois de uma vez —
+    sem a declaração, "cobre os dois" seria indistinguível de "cobre um", e não
+    haveria o que falsificar.
+
+A extração de (b) é da TUPLA, e não do arquivo inteiro de propósito: os mesmos
+literais aparecem no texto do manifesto que este script monta, e um `grep` sobre o
+arquivo continuaria verde com a tupla mutilada.
+
+A tupla vive DENTRO do programa que `capturar.py` transporta para o contêiner, que
+no arquivo é uma cadeia crua. Por isso a leitura é em dois passos: o AST do arquivo
+entrega o programa, e o AST do programa entrega a tupla. Ler a cadeia por expressão
+regular voltaria a ser o `grep` que o parágrafo acima descarta.
+"""
+import ast
+import re
+import sys
+
+NOME_DO_DESPACHANTE = "frappe.sendmail"
+MARCA_INICIO = "SUBSTITUICAO-DO-DESPACHANTE: INICIO"
+MARCA_FIM = "SUBSTITUICAO-DO-DESPACHANTE: FIM"
+PROGRAMA_TRANSPORTADO = "PROGRAMA_NO_CONTAINER"
+TUPLA_DOS_PONTOS = "PONTOS_DE_DESPACHO_ESPERADOS"
+PONTOS_EXIGIDOS = ("emailer.py:203", "emailer.py:251")
+SENTINELAS_DE_SMTP = ("smtplib.SMTP", "smtplib.SMTP_SSL")
+
+caminho = sys.argv[1]
+texto = open(caminho, encoding="utf-8").read()
+linhas = texto.splitlines()
+erros = []
+
+
+def cadeia_atribuida(arvore, nome):
+    for no in ast.walk(arvore):
+        if not isinstance(no, ast.Assign):
+            continue
+        if not any(isinstance(a, ast.Name) and a.id == nome for a in no.targets):
+            continue
+        if isinstance(no.value, ast.Constant) and isinstance(no.value.value, str):
+            return no.value.value
+    return None
+
+inicios = [n for n, linha in enumerate(linhas) if MARCA_INICIO in linha]
+fins = [n for n, linha in enumerate(linhas) if MARCA_FIM in linha]
+if len(inicios) != 1 or len(fins) != 1 or inicios[0] >= fins[0]:
+    erros.append(
+        f"bloco de substituição mal delimitado: {len(inicios)} marca(s) de início e "
+        f"{len(fins)} de fim"
+    )
+    dentro = range(0, 0)
+else:
+    dentro = range(inicios[0], fins[0] + 1)
+
+fora = 0
+substituicao_declarada = False
+sentinelas_instaladas = set()
+for numero, linha in enumerate(linhas):
+    if NOME_DO_DESPACHANTE not in linha:
+        continue
+    if linha.strip().startswith("#"):
+        continue
+    if numero not in dentro:
+        fora += 1
+        erros.append(
+            f"{caminho}:{numero + 1}: o despachante do arcabouço é nomeado em posição "
+            "executável fora do bloco de substituição — há um segundo caminho de despacho"
+        )
+    elif re.search(r"^\s*" + re.escape(NOME_DO_DESPACHANTE) + r"\s*(,[^=]*)?=", linha):
+        substituicao_declarada = True
+
+for numero in dentro:
+    for sentinela in SENTINELAS_DE_SMTP:
+        if re.search(r"^\s*" + re.escape(sentinela) + r"\s*=\s*sentinela\b", linhas[numero]):
+            sentinelas_instaladas.add(sentinela)
+
+if not substituicao_declarada:
+    erros.append(
+        "o bloco de substituição não atribui o registrador ao despachante do arcabouço"
+    )
+faltando_sentinela = sorted(set(SENTINELAS_DE_SMTP) - sentinelas_instaladas)
+if faltando_sentinela:
+    erros.append(
+        f"a sentinela de despacho real não cobre {faltando_sentinela} — o contador de "
+        "invocações do despachante real ficaria sem instrumentação"
+    )
+
+declarados = []
+programa = cadeia_atribuida(ast.parse(texto), PROGRAMA_TRANSPORTADO)
+if programa is None:
+    erros.append(f"a cadeia {PROGRAMA_TRANSPORTADO} não foi encontrada em {caminho}")
+else:
+    for no in ast.walk(ast.parse(programa)):
+        if not isinstance(no, ast.Assign):
+            continue
+        alvos = [a.id for a in no.targets if isinstance(a, ast.Name)]
+        if TUPLA_DOS_PONTOS not in alvos:
+            continue
+        if isinstance(no.value, (ast.Tuple, ast.List)):
+            declarados = [
+                item.value for item in no.value.elts
+                if isinstance(item, ast.Constant) and isinstance(item.value, str)
+            ]
+
+if not declarados:
+    erros.append(f"a tupla {TUPLA_DOS_PONTOS} não foi encontrada ou está vazia")
+for ponto in PONTOS_EXIGIDOS:
+    if ponto not in declarados:
+        erros.append(
+            f"ponto de despacho ausente da declaração: {ponto} — declarados no arquivo: "
+            f"{declarados}"
+        )
+
+print("ocorrencias_fora_do_bloco=" + str(fora))
+print("pontos_declarados=" + " ".join(declarados))
+for erro in erros:
+    print(erro, file=sys.stderr)
+sys.exit(1 if erros else 0)
+PY
+}
+
+ct_502() {
+	caso "CT-502" "a captura da régua registra a tripla e o despachante real nunca é invocado"
+
+	escrever_auditor_do_despachante
+	local auditor="${DIR_TRABALHO}/auditar-despachante.py"
+
+	# ---- perna 1: prova estática sobre o arquivo íntegro ----
+	set +e
+	python3 "${auditor}" "${CAPTURAR}" \
+		>"${DIR_TRABALHO}/auditoria-integro.out" 2>"${DIR_TRABALHO}/auditoria-integro.err"
+	local codigo_integro=$?
+	set -e
+	afirmar_igual "a auditoria do despachante passa limpa no capturar.py íntegro" \
+		"0" "${codigo_integro}"
+	if [[ "${codigo_integro}" -ne 0 ]]; then
+		cat "${DIR_TRABALHO}/auditoria-integro.err" >&2
+	fi
+	afirmar_igual "o despachante do arcabouço não é nomeado fora do bloco de substituição" \
+		"0" "$(sed -n 's/^ocorrencias_fora_do_bloco=//p' "${DIR_TRABALHO}/auditoria-integro.out")"
+	afirmar_igual "os dois call sites da régua estão declarados no fonte" \
+		"emailer.py:203 emailer.py:251" \
+		"$(sed -n 's/^pontos_declarados=//p' "${DIR_TRABALHO}/auditoria-integro.out")"
+
+	# ---- perna 2: prova de falsificação por cópia mutada ----
+	# `.claude/rules/testing-stack.md`: asserção que inspeciona o TEXTO do SUT exige
+	# a demonstração de que ela pode reprovar. O mutante remove UM dos dois pontos da
+	# tupla; o literal removido continua existindo no arquivo (o manifesto o cita por
+	# extenso), de modo que uma auditoria por `grep` ingênuo sobreviveria ao mutante.
+	local mutante="${DIR_TRABALHO}/capturar-mutante.py"
+	local ponto_removido="emailer.py:203"
+	local ponto_restante="emailer.py:251"
+	awk -v alvo="\"${ponto_removido}\"," '
+		index($0, alvo) && !removido { removido = 1; next }
+		{ print }
+	' "${CAPTURAR}" >"${mutante}"
+
+	afirmar_igual "o mutante perdeu exatamente uma linha do fonte" "1" \
+		"$(($(wc -l <"${CAPTURAR}") - $(wc -l <"${mutante}")))"
+
+	set +e
+	python3 "${auditor}" "${mutante}" \
+		>"${DIR_TRABALHO}/auditoria-mutante.out" 2>"${DIR_TRABALHO}/auditoria-mutante.err"
+	local codigo_mutante=$?
+	set -e
+	afirmar_diferente "a auditoria REPROVA a cópia com um dos dois pontos removido" \
+		"0" "${codigo_mutante}"
+	afirmar_contem "a reprovação nomeia o ponto ausente" \
+		"${DIR_TRABALHO}/auditoria-mutante.err" "${ponto_removido}"
+	afirmar_contem "a reprovação nomeia o ponto que restou declarado" \
+		"${DIR_TRABALHO}/auditoria-mutante.err" "${ponto_restante}"
+
+	# ---- perna 3: prova comportamental sobre o golden produzido ----
+	if python3 - "${DIR_GOLDEN}" "${ARQ_REGUA_GOLDEN}" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+golden, nome = Path(sys.argv[1]), sys.argv[2]
+erros = []
+
+PONTOS_EXIGIDOS = {"emailer.py:203", "emailer.py:251"}
+FUNCOES_EXIGIDAS = {"enviar_email_automacao", "enviar_email_manual"}
+CHAVES_DA_TRIPLA = ("destinatario", "assunto", "corpo")
+
+dados = json.loads((golden / nome).read_text(encoding="utf-8"))
+despacho = dados.get("despacho") or {}
+
+nivel = despacho.get("nivel_da_ordem_de_queda")
+if nivel not in (1, 2, 3):
+    erros.append(f"nível da ordem de queda ausente ou fora de 1..3: {nivel!r}")
+
+manifesto = (golden / "PROCEDENCIA.md").read_text(encoding="utf-8")
+casamento = re.search(
+    r"^\|\s*Nível da ordem de queda alcançado \(régua\)\s*\|\s*(\d+)\s*—", manifesto,
+    re.MULTILINE,
+)
+if not casamento:
+    erros.append("PROCEDENCIA.md não declara o nível da ordem de queda alcançado")
+elif int(casamento.group(1)) != nivel:
+    erros.append(
+        f"o nível declarado no manifesto ({casamento.group(1)}) diverge do gravado no "
+        f"golden ({nivel})"
+    )
+
+if despacho.get("invocacoes_do_despachante_real") != 0:
+    erros.append(
+        "o contador de invocações do despachante real não vale 0: "
+        f"{despacho.get('invocacoes_do_despachante_real')!r}"
+    )
+if despacho.get("emails_na_fila_do_arcabouco") != 0:
+    erros.append(
+        "a fila de e-mail do arcabouço não terminou vazia: "
+        f"{despacho.get('emails_na_fila_do_arcabouco')!r}"
+    )
+if set(despacho.get("pontos_esperados") or []) != PONTOS_EXIGIDOS:
+    erros.append(f"pontos esperados divergem: {despacho.get('pontos_esperados')!r}")
+if set(despacho.get("pontos_substituidos") or []) != PONTOS_EXIGIDOS:
+    erros.append(
+        "os pontos efetivamente observados pelo registrador não são os dois da régua: "
+        f"{despacho.get('pontos_substituidos')!r}"
+    )
+
+retorno = dados.get("retorno") or {}
+mensagens = list((retorno.get("automatico") or {}).get("mensagens") or [])
+for cenario in retorno.get("manual") or []:
+    mensagens.extend(cenario.get("mensagens") or [])
+
+# Guarda de NÃO-VACUIDADE: sem ela, um golden sem mensagem alguma satisfaria todas
+# as asserções acima — nenhuma mensagem incompleta, nenhum despacho real. É o modo
+# de falha que transforma "não despachou" em "não executou".
+if not mensagens:
+    erros.append(
+        "nenhuma mensagem registrada: o golden não distingue 'a régua decidiu não "
+        "enviar' de 'o percurso da régua não executou'"
+    )
+
+funcoes_observadas = {mensagem.get("funcao") for mensagem in mensagens}
+faltando = sorted(FUNCOES_EXIGIDAS - funcoes_observadas)
+if faltando:
+    erros.append(f"nenhuma mensagem registrada vinda de {faltando}")
+
+for mensagem in mensagens:
+    vazias = [c for c in CHAVES_DA_TRIPLA if not str(mensagem.get(c) or "").strip()]
+    if vazias:
+        erros.append(
+            f"mensagem de {mensagem.get('cobranca')!r} sem {vazias} — a tripla "
+            "(destinatário, assunto, corpo) é o oráculo do texto que a régua cobra"
+        )
+    if mensagem.get("origem") not in PONTOS_EXIGIDOS:
+        erros.append(
+            f"mensagem registrada com origem inesperada: {mensagem.get('origem')!r}"
+        )
+
+# Cada cenário com mensagem registrada é um cenário cuja tripla o golden guarda; o
+# número é impresso para que uma queda futura seja visível no log do verificador.
+cenarios_com_mensagem = {
+    mensagem.get("cobranca") for mensagem in mensagens if mensagem.get("cobranca")
+}
+print(
+    f"    ..   mensagens registradas: {len(mensagens)}"
+    f" · cenários com mensagem: {len(cenarios_com_mensagem)}"
+    f" · despachos reais: {despacho.get('invocacoes_do_despachante_real')}"
+)
+
+for erro in erros:
+    print(erro, file=sys.stderr)
+sys.exit(1 if erros else 0)
+PY
+	then
+		ok "a tripla está registrada por cenário, vinda dos dois pontos, sem despacho real"
+	else
+		falhar "o golden da régua não registra a tripla ou o despachante real foi invocado (acima)"
+	fi
+
+	fechar_caso "CT-502"
+}
+
+# --------------------------------------------------------------------------- #
 main() {
 	if [[ ! -f "${PREPARAR}" ]]; then
 		printf 'ERRO: script não encontrado: %s\n' "${PREPARAR}" >&2
@@ -1623,10 +1945,11 @@ main() {
 	ct_003
 	ct_012
 	ct_013_logs
+	ct_502
 
 	printf '\n'
 	if [[ "${falhas_totais}" -eq 0 ]]; then
-		printf 'verificar-captura: 10/10 casos aprovados (CT-001..CT-009, CT-012) + metade de logs do CT-013\n'
+		printf 'verificar-captura: 11/11 casos aprovados (CT-001..CT-009, CT-012, CT-502) + metade de logs do CT-013\n'
 		exit 0
 	fi
 	printf 'verificar-captura: %d falha(s) — REPROVADO\n' "${falhas_totais}" >&2

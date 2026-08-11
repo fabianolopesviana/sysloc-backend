@@ -266,3 +266,25 @@
 - Sinal: `repeated_fixture` · Origem: `agent-spec-qa-validator` · 2026-08-10T17:10:00Z
 
 ---
+
+## [repeated_assertion_shape] Inventário do golden reafirmado por caso
+
+**Regra que isto sugere:** todo caso do verificador de golden reafirma a cardinalidade do inventário versionado, mesmo quando outro caso já o fez.
+
+**O que ela faria (simples):** três casos distintos abrem afirmando o mesmo fato — quantos caminhos o `git ls-files` devolve para `golden/` — porque cada card exige caso auto-contido, que reprove sozinho fora de sequência. É convenção real do arquivo, defendida em comentário, mas não escrita em lugar nenhum: quem acrescentar o próximo caso não tem como saber que deve repetir a asserção em vez de confiar na do caso anterior.
+
+- Evidência: `afirmar_igual "git ls-files sobre golden/ retorna N caminhos"` repetido em CT-010, CT-433 e CT-501 — `deploy/scripts/caracterizacao/verificar-golden.sh:255`, `:814`, `:1185` — T1 / verificador de golden da caracterização
+- Sinal: `repeated_assertion_shape` · Origem: `agent-spec-qa-validator` · 2026-08-10T21:30:00Z
+
+---
+
+## [repeated_fixture] Leitura única do golden compartilhada entre casos
+
+**Regra que isto sugere:** a leitura de um artefato golden mora numa função de medição única, invocada por cada caso que a consome — nunca repetida no corpo do caso.
+
+**O que ela faria (simples):** dois casos precisam dos mesmos números extraídos do mesmo par de arquivos, e a extração foi centralizada numa função que cada caso chama por conta própria. Sem regra escrita, o próximo caso tende a copiar o bloco de leitura para dentro de si, e as duas cópias divergem sem que nada acuse.
+
+- Evidência: `medir_regua()` definida em uma linha e invocada por CT-501 e CT-503 — `deploy/scripts/caracterizacao/verificar-golden.sh:1195`, `:1247` — T1 / verificador de golden da caracterização
+- Sinal: `repeated_fixture` · Origem: `agent-spec-qa-validator` · 2026-08-10T21:30:00Z
+
+---

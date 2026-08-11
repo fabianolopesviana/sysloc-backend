@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Captura a caracterização das regras de negócio legadas (TC-001 e F2/T1).
+"""Captura a caracterização das regras de negócio legadas (TC-001, F2/T1 e F3/T1).
 
-Oito artefatos golden: os seis da captura original (TC-001) mais os dois de
-ativação e cancelamento de contrato, acrescentados pela T1 da fatia
-`contratos-de-locacao`.
+Nove artefatos golden: os seis da captura original (TC-001), os dois de ativação
+e cancelamento de contrato acrescentados pela T1 da fatia `contratos-de-locacao`,
+e o da régua de cobrança acrescentado pela T1 da fatia `cobranca-e-mora`.
 
 A captura roda **dentro do container `backend`** do Frappe, contra o site efêmero
 `caracterizacao.localhost` criado por `preparar-site-efemero.sh` (ADR-0006 — o
@@ -22,7 +22,7 @@ Ordem de execução obrigatória do fluxo completo:
     preparar-site-efemero.sh destruir
 
 Códigos de saída:
-    0  captura concluída, oito artefatos golden + manifesto gravados
+    0  captura concluída, nove artefatos golden + manifesto gravados
     1  falha de ambiente ou de execução
     2  gate de sanidade reprovado — nenhum arquivo de `golden/` é tocado
 """
@@ -142,7 +142,9 @@ PROGRAMA_NO_CONTAINER = r'''
 import base64
 import io
 import json
+import os
 import re
+import smtplib
 import sys
 
 import frappe
@@ -164,6 +166,13 @@ MARCADOR_DATA_PDF = "<DATA_GERACAO_EXTENSO>"
 # para pegar.
 MARCADOR_PDF_CONTRATO = "<PDF_CONTRATO_CODIFICADO>"
 MARCADOR_ARQUIVO_PDF = "<ARQUIVO_PDF_PRIVADO>"
+
+# Marcadores da fase da régua de cobrança. Mesma regra dos dois de cima, e pela
+# mesma razão: nenhum algarismo no nome, ou o marcador escapa de `<[A-Z_]+>` e
+# vira máscara órfã invisível para a bijeção.
+MARCADOR_HORA_EXECUCAO = "<HORA_EXECUCAO>"
+MARCADOR_DATA_VENCIMENTO = "<DATA_VENCIMENTO_FORMATADA>"
+MARCADOR_REQUISICAO = "<IDENTIFICADOR_DE_REQUISICAO>"
 
 # Sentinela gravada no campo agregado ANTES do save. Se o Server Script de
 # metragem não executar, o valor sobrevive e denuncia a regra inativa.
@@ -1285,6 +1294,601 @@ def capturar_contrato_cancelamento(hoje):
     }
 
 
+# --------------------------------------------------------------------------- #
+# Fase H — régua de cobrança (`cobranca_automation`)
+#
+# ORDEM É DECISÃO, e é a mesma das fases F e G, por uma razão nova: o `SELECT` do
+# `runner.py` NÃO filtra por contrato — ele varre toda cobrança em aberto do site.
+# Rodar a régua antes poria as cobranças dela dentro do conjunto que
+# `marcar_cobrancas_vencidas`, `encerrar_contratos_vencidos` e
+# `atualizar_atrasos_cobrancas` varrem, e os seis artefatos daquelas fases são de
+# fatia FECHADA.
+#
+# A contrapartida é declarada, não escondida: ao chegar aqui o site já tem
+# cobranças das fases anteriores, e parte delas continua em aberto. Elas ENTRAM no
+# `SELECT` da régua — é assim que a régua se comporta contra uma carteira real —, e
+# o golden as registra em `entrada.carteira_herdada`, separadas dos cenários
+# próprios. Inventar isolamento aqui exigiria apagar ou adulterar cobrança de fase
+# anterior, e o `verificar-captura.sh` confere o estado daquelas cobranças no site
+# depois da captura.
+# --------------------------------------------------------------------------- #
+DOCTYPE_CFG_REGUA = "Automacao Cobranca Config"
+DOCTYPE_LOG_REGUA = "Log Envio Cobranca"
+
+# Nível efetivamente alcançado da ordem de queda do D5 (tech alignment):
+#   1 = despachante substituído dentro do processo, percurso completo executando
+#   2 = servidor de recebimento local que aceita e descarta
+#   3 = piso — só as frentes que não produzem envio
+NIVEL_DA_ORDEM_DE_QUEDA = 1
+
+# Os DOIS call sites do despachante do arcabouço dentro da régua legada, nomeados
+# um a um. A substituição é uma atribuição só — ela cobre os dois de uma vez —, e é
+# exatamente por isso que os pontos precisam ser DECLARADOS: sem a lista, "cobre os
+# dois" seria indistinguível de "cobre um", e o CT-502 não teria o que falsificar.
+# O que fecha o par é o registrador ler a origem do QUADRO CHAMADOR: a lista abaixo
+# é a expectativa, e `despacho.pontos_substituidos` do golden é o que foi observado.
+PONTOS_DE_DESPACHO_ESPERADOS = (
+    "emailer.py:203",
+    "emailer.py:251",
+)
+
+# Configuração da régua imposta pela captura. Os dois horários são "00:00:00" por
+# DETERMINISMO, não por conveniência: `is_hora_execucao` compara o relógio da
+# execução com o horário configurado, e com "09:00" uma captura das 03h não entraria
+# em bloco nenhum — o golden mudaria conforme a hora do dia em que a captura rodasse.
+# A janela de horário não fica sem oráculo por isso: ela é capturada à parte, como
+# função pura, com o "agora" passado explicitamente.
+CONFIGURACAO_DA_REGUA = (
+    ("ativo", 1),
+    ("nao_enviar_a_vencer", 0),
+    ("dias_antes_vencimento", 10),
+    ("intervalo_dias_a_vencer", 3),
+    ("horario_a_vencer", "00:00:00"),
+    ("canal_a_vencer", "ambos"),
+    ("intervalo_dias_vencida", 2),
+    ("horario_vencida", "00:00:00"),
+    ("canal_vencida", "ambos"),
+)
+
+CAMPOS_CFG_REGUA = tuple(campo for campo, _ in CONFIGURACAO_DA_REGUA)
+
+# (id, name, offset de vencimento, valor original, status, pagamento_confirmado)
+#
+# Os quatro últimos existem para DISCRIMINAR, não para somar: `pagamento_confirmado`
+# e `cobranca_paga` são os dois eixos do filtro do `SELECT`, `cancelada_e_vencida` é
+# o cenário que separa os dois resolvedores de estado, e `sem_locatario` é o único
+# ramo de recusa de `enviar_email_automacao` alcançável sem mexer no vencimento.
+CENARIOS_REGUA_COBRANCAS = (
+    ("a_vencer_dentro_da_janela", "COB-CARACT-REG-01", 5, 1100.00, "Pendente", 0),
+    ("a_vencer_fora_da_janela", "COB-CARACT-REG-02", 40, 1200.00, "Pendente", 0),
+    ("vencida_sem_envio_previo", "COB-CARACT-REG-03", -12, 1300.00, "Vencida", 0),
+    ("vencida_com_envio_recente", "COB-CARACT-REG-04", -20, 1400.00, "Vencida", 0),
+    ("vencida_com_envio_antigo", "COB-CARACT-REG-05", -30, 1500.00, "Vencida", 0),
+    ("cobranca_com_pagamento_confirmado", "COB-CARACT-REG-06", -8, 1600.00, "Pendente", 1),
+    ("cobranca_paga", "COB-CARACT-REG-07", -15, 1700.00, "Paga", 0),
+    ("cobranca_cancelada_e_vencida", "COB-CARACT-REG-08", -25, 1800.00, "Cancelada", 0),
+    ("cobranca_sem_locatario", "COB-CARACT-REG-09", 3, 1900.00, "Pendente", 0),
+    ("vencida_com_envio_de_prefixo_legado", "COB-CARACT-REG-10", -18, 2000.00, "Vencida", 0),
+)
+
+COBRANCA_SEM_LOCATARIO = "COB-CARACT-REG-09"
+
+PREFIXO_REQUISICAO_VENCIDA = "REQ-AUTO-VC-"
+PREFIXO_REQUISICAO_A_VENCER = "REQ-AUTO-AV-"
+PREFIXO_REQUISICAO_LEGADO = "REQ-AUTO-EMAIL-"
+
+# (name, fatura, prefixo do request_id, offset de dias do envio, status)
+#
+# O log de status `Erro` não é enfeite: `get_ultimo_envio_sucesso` filtra por
+# `status = "Sucesso"`, e sem uma linha de erro recente "a trava olha só o sucesso"
+# ficaria sem contraprova — um filtro de status removido continuaria passando.
+CENARIOS_REGUA_HISTORICO = (
+    ("LOG-CARACT-REG-01", "COB-CARACT-REG-04", PREFIXO_REQUISICAO_VENCIDA, -1, "Sucesso"),
+    ("LOG-CARACT-REG-02", "COB-CARACT-REG-05", PREFIXO_REQUISICAO_VENCIDA, -10, "Sucesso"),
+    ("LOG-CARACT-REG-03", "COB-CARACT-REG-10", PREFIXO_REQUISICAO_LEGADO, -1, "Sucesso"),
+    ("LOG-CARACT-REG-04", "COB-CARACT-REG-01", PREFIXO_REQUISICAO_A_VENCER, -1, "Erro"),
+)
+
+# (id, valor recebido, fallback) — `normalize_hhmm`
+CENARIOS_REGUA_NORMALIZE_HHMM = (
+    ("vazio_cai_no_fallback", "", "09:00"),
+    ("hora_e_minuto_com_um_digito", "7:5", "09:00"),
+    ("datetime_com_espaco", "2026-01-15 14:30:00", "09:00"),
+    ("datetime_com_t", "2026-01-15T14:30:00", "09:00"),
+    ("sem_separador_cai_no_fallback", "0930", "09:00"),
+    ("hora_acima_do_limite", "25:00", "09:00"),
+    ("minuto_acima_do_limite", "10:75", "09:00"),
+    ("limite_superior_aceito", "23:59", "09:00"),
+)
+
+# (id, agora, horário configurado) — `is_hora_execucao`
+CENARIOS_REGUA_HORA_EXECUCAO = (
+    ("antes_do_horario", "08:59", "09:00"),
+    ("no_minuto_do_horario", "09:00", "09:00"),
+    ("depois_do_horario", "23:59", "09:00"),
+)
+
+# (id, fatura, intervalo em dias, tipo) — `pode_enviar_por_intervalo`
+CENARIOS_REGUA_INTERVALO = (
+    ("sem_historico_libera", "COB-CARACT-REG-03", 2, "Vencida"),
+    ("envio_recente_bloqueia", "COB-CARACT-REG-04", 2, "Vencida"),
+    ("envio_antigo_libera", "COB-CARACT-REG-05", 2, "Vencida"),
+    ("prefixo_legado_conta_para_vencida", "COB-CARACT-REG-10", 2, "Vencida"),
+    ("prefixo_legado_nao_conta_para_a_vencer", "COB-CARACT-REG-10", 2, "A vencer"),
+    ("envio_com_erro_nao_bloqueia", "COB-CARACT-REG-01", 3, "A vencer"),
+)
+
+CAMPOS_ESTADO_COBRANCA_REGUA = ("status_cobranca", "data_vencimento", "valor_original",
+                                "valor_total", "pagamento_confirmado", "locatario")
+
+RE_DATA_VENCIMENTO_BR = re.compile(r"\b\d{2}/\d{2}/\d{4}\b")
+RE_RESUMO_AGORA = re.compile(r"agora=\d{1,2}:\d{2}")
+RE_RESUMO_HOJE = re.compile(r"hoje=\d{4}-\d{2}-\d{2}")
+RE_PREFIXO_REQUISICAO = re.compile(r"^(REQ-[A-Z]+(?:-[A-Z]+)*-)")
+
+
+def mascarar_corpo_da_mensagem(texto):
+    """A data de vencimento entra no corpo já formatada em `dd/MM/yyyy`.
+
+    Ela é ABSOLUTA e deriva de `nowdate()` pelo offset do cenário: sem a máscara o
+    corpo mudaria todo dia, e o golden da régua expiraria em 24 horas. O offset
+    continua registrado em `entrada.cobrancas[].vencimento_offset_dias`, que é o
+    que a F5 usa para reconstruir o cenário.
+    """
+    return RE_DATA_VENCIMENTO_BR.sub(MARCADOR_DATA_VENCIMENTO, texto)
+
+
+def mascarar_resumo_da_execucao(texto):
+    """Mascara SÓ os dois campos voláteis do resumo do `runner.py`.
+
+    `agora=` é o relógio e `hoje=` é a data — os dois derivam da execução. Os
+    demais `HH:MM` do resumo (`horario_a_vencer=`, `horario_vencida=`) são
+    CONFIGURAÇÃO e fazem parte do oráculo: uma máscara larga sobre `\\d{2}:\\d{2}`
+    os apagaria e o golden deixaria de registrar com que janela a régua rodou.
+    """
+    texto = RE_RESUMO_AGORA.sub("agora=" + MARCADOR_HORA_EXECUCAO, texto)
+    return RE_RESUMO_HOJE.sub("hoje=" + MARCADOR_DATA_EXECUCAO, texto)
+
+
+def prefixo_de_requisicao(request_id):
+    casamento = RE_PREFIXO_REQUISICAO.match(str(request_id or ""))
+    return casamento.group(1) if casamento else str(request_id or "")
+
+
+class RegistradorDeDespacho(object):
+    """Substitui o despachante do arcabouço: registra em memória e NÃO despacha.
+
+    É o nível 1 da ordem de queda do D5. O percurso inteiro da régua executa — a
+    seleção, a janela, a trava de intervalo, a resolução do template e a montagem
+    do corpo —, e o único elo que não acontece é a saída da mensagem.
+
+    A ORIGEM de cada mensagem sai do quadro chamador (`arquivo:linha`), e não de um
+    parâmetro que a captura passasse: é isso que faz de "os dois pontos de despacho
+    foram exercitados" um fato OBSERVADO. O mesmo quadro entrega a cobrança em curso
+    (`cobranca` é o nome do parâmetro nos dois pontos), que é o que permite atribuir
+    cada mensagem ao cenário que a produziu — sem essa atribuição, `1 mensagem no
+    manual e 0 no automático` seria incontável.
+    """
+
+    def __init__(self):
+        self.mensagens = []
+
+    def __call__(self, recipients=None, subject=None, message=None, **_ignorados):
+        quadro = sys._getframe(1)
+        alvo = recipients[0] if isinstance(recipients, (list, tuple)) and recipients else recipients
+        cobranca = quadro.f_locals.get("cobranca")
+        self.mensagens.append({
+            "origem": os.path.basename(quadro.f_code.co_filename) + ":" + str(quadro.f_lineno),
+            "funcao": quadro.f_code.co_name,
+            "cobranca": str(getattr(cobranca, "name", "") or ""),
+            "destinatario": str(alvo or ""),
+            "assunto": str(subject or ""),
+            "corpo": mascarar_corpo_da_mensagem(str(message or "")),
+        })
+        return None
+
+    def mensagens_de(self, cobranca, funcao):
+        return [
+            mensagem for mensagem in self.mensagens
+            if mensagem["cobranca"] == cobranca and mensagem["funcao"] == funcao
+        ]
+
+
+class SentinelaDeDespachoReal(object):
+    """Conta — e aborta — qualquer tentativa de despacho REAL durante a captura.
+
+    O contador não observa a função substituída: quem foi substituído não é mais
+    alcançável pelo nome, e contá-lo seria tautologia. Ele observa o EFEITO que o
+    despachante produziria, no gargalo por onde todo envio do arcabouço passa
+    obrigatoriamente — a abertura da conexão SMTP. Se a substituição não pegasse,
+    a fila de e-mail do arcabouço seria processada e a conexão apareceria aqui.
+    """
+
+    def __init__(self):
+        self.invocacoes = 0
+
+    def __call__(self, *_args, **_ignorados):
+        self.invocacoes += 1
+        raise RuntimeError(
+            "tentativa de despacho real interceptada durante a captura — a "
+            "substituição do despachante não alcançou algum caminho de envio"
+        )
+
+
+# ---- SUBSTITUICAO-DO-DESPACHANTE: INICIO ----
+# Único ponto do arquivo em que o despachante do arcabouço é nomeado em posição
+# executável. O CT-502 audita esta fronteira estaticamente: fora daqui e fora de
+# comentário, a contagem do nome tem de ser zero — senão haveria um segundo caminho
+# capaz de despachar, e a substituição deixaria de ser uma barreira única.
+def instalar_substituicao_do_despacho(registrador, sentinela):
+    frappe_sendmail_original = frappe.sendmail
+    frappe.sendmail = registrador
+    smtp_original, smtp_ssl_original = smtplib.SMTP, smtplib.SMTP_SSL
+    smtplib.SMTP = sentinela
+    smtplib.SMTP_SSL = sentinela
+    return (frappe_sendmail_original, smtp_original, smtp_ssl_original)
+
+
+def desfazer_substituicao_do_despacho(originais):
+    frappe.sendmail, smtplib.SMTP, smtplib.SMTP_SSL = originais
+# ---- SUBSTITUICAO-DO-DESPACHANTE: FIM ----
+
+
+def purgar_estado_de_envio():
+    """Fecha o conjunto de histórico e de fila ANTES de semear os cenários.
+
+    O site efêmero é restaurado do dump, e o dump traz dezenas de `Log Envio
+    Cobranca` e de `Email Queue` reais. Sem a purga, `pode_enviar_por_intervalo`
+    ficaria sujeito a log de produção e a contagem final da fila do arcabouço não
+    poderia afirmar coisa alguma sobre ESTA execução. Nenhuma fase anterior lê
+    essas duas tabelas, então a purga é acréscimo puro.
+    """
+    for tabela in (DOCTYPE_LOG_REGUA, "Email Queue Recipient", "Email Queue"):
+        if frappe.db.exists("DocType", tabela):
+            frappe.db.sql("DELETE FROM `tab{0}`".format(tabela))
+    frappe.db.commit()
+
+
+def configurar_regua():
+    doc_cfg = frappe.get_doc(DOCTYPE_CFG_REGUA, DOCTYPE_CFG_REGUA)
+    for campo, valor in CONFIGURACAO_DA_REGUA:
+        doc_cfg.set(campo, valor)
+    # Zerado para que o carimbo lido no `estado_resultante` seja o desta execução,
+    # e não o que sobrou do dump de produção.
+    doc_cfg.ultima_execucao_em = None
+    doc_cfg.ultimo_status_execucao = None
+    doc_cfg.ultimo_erro_execucao = None
+    doc_cfg.save(ignore_permissions=True)
+    frappe.db.commit()
+
+
+def ler_configuracao_da_regua():
+    """Lê do banco o que a régua vai enxergar — o fato, não a intenção da captura."""
+    doc_cfg = frappe.get_doc(DOCTYPE_CFG_REGUA, DOCTYPE_CFG_REGUA)
+    return {campo: str(doc_cfg.get(campo)) for campo in CAMPOS_CFG_REGUA}
+
+
+def log_de_envio_dict(name, fatura, prefixo, offset_dias, status):
+    return {
+        "doctype": DOCTYPE_LOG_REGUA,
+        "name": name,
+        "fatura_id": fatura,
+        "locatario": "LOCATARIO-CARACT",
+        "locatario_nome": "Joao Locatario",
+        "canal": "email",
+        "tipo_envio": "automacao",
+        "status": status,
+        "erro": None,
+        # Sem carimbo de relógio no identificador: o do legado embute
+        # `now()` e duas capturas nunca coincidiriam. O que a trava de intervalo
+        # observa é o PREFIXO, e ele é preservado inteiro.
+        "request_id": prefixo + "CARACT",
+        "data_envio": add_days(nowdate(), offset_dias) + " 09:00:00",
+    }
+
+
+def semear_cenarios_da_regua():
+    for _id, name, off_venc, valor, status, pago in CENARIOS_REGUA_COBRANCAS:
+        inserir(cobranca_dict(name, off_venc, valor, status, pagamento_confirmado=pago))
+    # Escrita direta pela mesma razão das fases D e F: o campo é obrigatório na
+    # interface, e o caminho que a régua precisa exibir é justamente o do vínculo
+    # ausente. Nenhuma bandeira de simulação entra na regra.
+    frappe.db.set_value("Cobranca", COBRANCA_SEM_LOCATARIO, "locatario", None,
+                        update_modified=False)
+    for name, fatura, prefixo, offset_dias, status in CENARIOS_REGUA_HISTORICO:
+        inserir(log_de_envio_dict(name, fatura, prefixo, offset_dias, status))
+    frappe.db.commit()
+
+
+def estado_da_cobranca_regua(name, hoje):
+    valores = frappe.db.get_value(
+        "Cobranca", name, list(CAMPOS_ESTADO_COBRANCA_REGUA), as_dict=True
+    )
+    return {
+        "name": name,
+        "status_cobranca": valores["status_cobranca"],
+        "vencimento_offset_dias": offset_de(valores["data_vencimento"], hoje),
+        "valor_original": valores["valor_original"],
+        "valor_total": valores["valor_total"],
+        "pagamento_confirmado": valores["pagamento_confirmado"],
+        "locatario": valores["locatario"],
+    }
+
+
+def carteira_herdada_das_fases_anteriores(hoje):
+    """As cobranças que já estavam no site quando a régua rodou.
+
+    Registradas com os DOIS campos que o filtro do `runner.py` observa. Sem esta
+    lista, `rows_abertas=N` no resumo seria um número sem referente e o golden não
+    permitiria reconstruir por que a régua escolheu quem escolheu.
+    """
+    nomes_da_regua = {name for _id, name, _o, _v, _s, _p in CENARIOS_REGUA_COBRANCAS}
+    herdadas = []
+    for linha in frappe.get_all("Cobranca", fields=["name"], order_by="name asc"):
+        if linha["name"] in nomes_da_regua:
+            continue
+        herdadas.append(estado_da_cobranca_regua(linha["name"], hoje))
+    return herdadas
+
+
+def historico_de_envio_registrado(hoje):
+    linhas = frappe.get_all(
+        DOCTYPE_LOG_REGUA,
+        fields=["fatura_id", "tipo_envio", "canal", "status", "erro", "request_id",
+                "data_envio"],
+    )
+    registros = [
+        {
+            "fatura_id": linha["fatura_id"],
+            "tipo_envio": linha["tipo_envio"],
+            "canal": linha["canal"],
+            "status": linha["status"],
+            "erro": linha["erro"],
+            "prefixo_request_id": prefixo_de_requisicao(linha["request_id"]),
+            "envio_offset_dias": offset_de(linha["data_envio"], hoje),
+        }
+        for linha in linhas
+    ]
+    # Ordem estável por CONTEÚDO: o `name` destes documentos é sorteado pelo
+    # arcabouço quando quem os cria é a própria régua, e ordenar por ele faria duas
+    # capturas idênticas produzirem golden diferentes.
+    registros.sort(key=lambda item: json.dumps(item, ensure_ascii=False, sort_keys=True))
+    return registros
+
+
+def capturar_regua_janela_e_intervalo():
+    from locacao_automation.cobranca_automation.core import pode_enviar_por_intervalo
+    from locacao_automation.cobranca_automation.helpers import (
+        is_hora_execucao,
+        normalize_hhmm,
+    )
+
+    normalizacoes = [
+        {"id": chave, "saida": normalize_hhmm(valor, fallback)}
+        for chave, valor, fallback in CENARIOS_REGUA_NORMALIZE_HHMM
+    ]
+    horas = [
+        {"id": chave, "saida": is_hora_execucao(agora, configurado)}
+        for chave, agora, configurado in CENARIOS_REGUA_HORA_EXECUCAO
+    ]
+    intervalos = [
+        {"id": chave, "saida": pode_enviar_por_intervalo(fatura, dias, tipo)}
+        for chave, fatura, dias, tipo in CENARIOS_REGUA_INTERVALO
+    ]
+    return normalizacoes, horas, intervalos
+
+
+def capturar_regua_templates(hoje):
+    """`get_status_template` e o corpo montado, cenário a cenário.
+
+    As duas frentes são puras e não tocam o banco além da leitura — por isso rodam
+    ANTES da execução da régua, com o histórico ainda igual ao semeado.
+    """
+    from locacao_automation.cobranca_automation.core import get_status_template
+    from locacao_automation.cobranca_automation.emailer import template_email
+
+    cenarios = []
+    for chave, name, _off, _valor, _status, _pago in CENARIOS_REGUA_COBRANCAS:
+        documento = frappe.get_doc("Cobranca", name)
+        tipo = get_status_template(documento, hoje)
+        montado = template_email(documento, "Joao Locatario", tipo)
+        cenarios.append({
+            "id": chave,
+            "name": name,
+            "status_template": tipo,
+            "assunto": montado["assunto"],
+            "corpo": mascarar_corpo_da_mensagem(montado["mensagem"]),
+        })
+    return cenarios
+
+
+def capturar_regua_divergencia(hoje, registrador):
+    """O defeito de origem da fatia: dois resolvedores discordam sobre o mesmo fato.
+
+    `get_status_template` (`core.py`) tem o ramo `Fechada`, que sai de
+    `STATUS_FECHADA`; `get_status_template_manual` (`emailer.py`) não tem esse ramo
+    e testa o vencimento antes de qualquer estado. A consequência medida é o
+    cenário `cobranca_cancelada_e_vencida`: o caminho automático nunca a alcança
+    (o `SELECT` do `runner.py` exclui `Cancelada`), e o manual monta o template
+    `Vencida` e cobra por uma dívida cancelada — porque `is_cobranca_paga` conhece
+    `Paga` e NÃO conhece `Cancelada`.
+
+    O contraste que discrimina está ao lado, em `cobranca_paga`: ali o manual É
+    barrado. Sem os dois cenários juntos, "o manual não filtra estado fechado"
+    seria indistinguível de "o manual não filtra nada".
+    """
+    from locacao_automation.cobranca_automation.core import get_status_template
+    from locacao_automation.cobranca_automation.emailer import (
+        get_status_template_manual,
+        is_cobranca_paga,
+    )
+
+    cenarios = []
+    for chave, name, _off, _valor, _status, _pago in CENARIOS_REGUA_COBRANCAS:
+        documento = frappe.get_doc("Cobranca", name)
+        cenarios.append({
+            "id": chave,
+            "name": name,
+            "template_automatico": get_status_template(documento, hoje),
+            "template_manual": get_status_template_manual(documento),
+            "is_cobranca_paga": is_cobranca_paga(documento),
+            "mensagens_automatico": len(
+                registrador.mensagens_de(name, "enviar_email_automacao")
+            ),
+            "mensagens_manual": len(
+                registrador.mensagens_de(name, "enviar_email_manual")
+            ),
+        })
+    return cenarios
+
+
+def capturar_regua_automatico(registrador):
+    from locacao_automation.cobranca_automation.runner import run_automation_real
+
+    marca = len(registrador.mensagens)
+    resultado = executar_capturando_recusa(run_automation_real)
+    frappe.db.commit()
+
+    doc_cfg = frappe.get_doc(DOCTYPE_CFG_REGUA, DOCTYPE_CFG_REGUA)
+    return {
+        "resultado": resultado,
+        "ultimo_status_execucao": doc_cfg.get("ultimo_status_execucao"),
+        # O resumo é o registro AUTORITATIVO da seleção: ele sai do próprio
+        # `runner.py` e nomeia `rows_abertas`, cada cobrança que entrou em cada
+        # bloco e o veredito da trava de intervalo. Reexecutar o `SELECT` aqui para
+        # "listar as candidatas" seria reimplementar o leitor dentro do capturador.
+        "resumo": mascarar_resumo_da_execucao(str(doc_cfg.get("ultimo_erro_execucao") or "")),
+        "mensagens": registrador.mensagens[marca:],
+    }
+
+
+def capturar_regua_manual(registrador):
+    from locacao_automation.cobranca_automation.emailer import enviar_email_manual
+
+    cenarios = []
+    for chave, name, _off, _valor, _status, _pago in CENARIOS_REGUA_COBRANCAS:
+        documento = frappe.get_doc("Cobranca", name)
+        marca = len(registrador.mensagens)
+        resultado = executar_capturando_recusa(enviar_email_manual, documento)
+        if resultado.get("aceito"):
+            corpo = dict(resultado["retorno"])
+            corpo["request_id"] = MARCADOR_REQUISICAO
+            resultado = dict(resultado, retorno=corpo)
+        frappe.db.commit()
+        cenarios.append({
+            "id": chave,
+            "name": name,
+            "resultado": resultado,
+            "mensagens": registrador.mensagens[marca:],
+        })
+    return cenarios
+
+
+def capturar_regua_de_cobranca(hoje):
+    """Agrega as cinco frentes da régua num artefato só.
+
+    A ORDEM interna é decisão: as frentes puras (janela, trava de intervalo,
+    template e divergência) rodam ANTES da execução da régua, porque
+    `enviar_email_automacao` grava `Log Envio Cobranca` e a trava de intervalo lê
+    exatamente essa tabela — invertê-la faria a frente do intervalo observar o
+    histórico que a própria captura acabou de escrever. O envio manual vem por
+    último, e a divergência é recontada depois dos dois para poder afirmar quantas
+    mensagens cada caminho produziu por cenário.
+    """
+    purgar_estado_de_envio()
+    configurar_regua()
+    semear_cenarios_da_regua()
+
+    entrada_cobrancas = [
+        dict(estado_da_cobranca_regua(name, hoje), id=chave)
+        for chave, name, _off, _valor, _status, _pago in CENARIOS_REGUA_COBRANCAS
+    ]
+    entrada_carteira = carteira_herdada_das_fases_anteriores(hoje)
+    entrada_historico = historico_de_envio_registrado(hoje)
+    configuracao = ler_configuracao_da_regua()
+
+    registrador = RegistradorDeDespacho()
+    sentinela = SentinelaDeDespachoReal()
+    originais = instalar_substituicao_do_despacho(registrador, sentinela)
+    try:
+        normalizacoes, horas, intervalos = capturar_regua_janela_e_intervalo()
+        templates = capturar_regua_templates(hoje)
+        automatico = capturar_regua_automatico(registrador)
+        manual = capturar_regua_manual(registrador)
+        divergencia = capturar_regua_divergencia(hoje, registrador)
+    finally:
+        desfazer_substituicao_do_despacho(originais)
+
+    origens = sorted({mensagem["origem"] for mensagem in registrador.mensagens})
+    emails_na_fila = frappe.db.count("Email Queue") if frappe.db.exists(
+        "DocType", "Email Queue"
+    ) else 0
+
+    return {
+        "regra": "régua de cobrança",
+        "modulo": "locacao_automation.cobranca_automation",
+        "funcoes": [
+            "helpers.normalize_hhmm",
+            "helpers.is_hora_execucao",
+            "core.get_status_template",
+            "core.pode_enviar_por_intervalo",
+            "emailer.get_status_template_manual",
+            "emailer.is_cobranca_paga",
+            "emailer.template_email",
+            "emailer.enviar_email_automacao",
+            "emailer.enviar_email_manual",
+            "runner.run_automation_real",
+        ],
+        "despacho": {
+            "nivel_da_ordem_de_queda": NIVEL_DA_ORDEM_DE_QUEDA,
+            "pontos_esperados": list(PONTOS_DE_DESPACHO_ESPERADOS),
+            "pontos_substituidos": origens,
+            "invocacoes_do_despachante_real": sentinela.invocacoes,
+            "emails_na_fila_do_arcabouco": emails_na_fila,
+        },
+        "entrada": {
+            "configuracao_da_regua": configuracao,
+            "cobrancas": entrada_cobrancas,
+            "carteira_herdada": entrada_carteira,
+            "historico_de_envio": entrada_historico,
+            "normalize_hhmm": [
+                {"id": chave, "valor": valor, "fallback": fallback}
+                for chave, valor, fallback in CENARIOS_REGUA_NORMALIZE_HHMM
+            ],
+            "is_hora_execucao": [
+                {"id": chave, "agora": agora, "horario_configurado": configurado}
+                for chave, agora, configurado in CENARIOS_REGUA_HORA_EXECUCAO
+            ],
+            "intervalo": [
+                {"id": chave, "fatura_id": fatura, "intervalo_dias": dias, "tipo": tipo}
+                for chave, fatura, dias, tipo in CENARIOS_REGUA_INTERVALO
+            ],
+        },
+        "retorno": {
+            "normalize_hhmm": normalizacoes,
+            "is_hora_execucao": horas,
+            "intervalo": intervalos,
+            "template": templates,
+            "divergencia_de_estado": divergencia,
+            "automatico": automatico,
+            "manual": manual,
+        },
+        "estado_resultante": {
+            "cobrancas": [
+                estado_da_cobranca_regua(name, hoje)
+                for _chave, name, _off, _valor, _status, _pago in CENARIOS_REGUA_COBRANCAS
+            ],
+            "log_envio_cobranca": historico_de_envio_registrado(hoje),
+            "configuracao_da_regua": {
+                "ultimo_status_execucao": automatico["ultimo_status_execucao"],
+                "ultima_execucao_em": normalizar_data(
+                    frappe.db.get_single_value(DOCTYPE_CFG_REGUA, "ultima_execucao_em"), hoje
+                ),
+            },
+        },
+    }
+
+
 def main():
     frappe.init(site=SITE)
     frappe.connect()
@@ -1330,6 +1934,10 @@ def main():
     # e G. Inverter a ordem regride os seis artefatos da captura original.
     envelope["contrato_ativacao"] = capturar_contrato_ativacao()
     envelope["contrato_cancelamento"] = capturar_contrato_cancelamento(hoje)
+
+    # Por último, e não por arrumação: o `SELECT` da régua varre toda cobrança em
+    # aberto do site. Ver o cabeçalho da fase H.
+    envelope["regua_de_cobranca"] = capturar_regua_de_cobranca(hoje)
 
     frappe.db.commit()
     frappe.destroy()
@@ -1460,6 +2068,17 @@ def divergencias_de_metragem(metragem: dict) -> list[tuple[str, object, float]]:
     return achados
 
 
+# Os três níveis da ordem de queda do D5, fixados ANTES da captura. O manifesto
+# declara qual foi ALCANÇADO — cair para o 2 ou para o 3 é resultado registrado, e
+# o que a task recusa é cair em silêncio.
+DESCRICAO_DA_ORDEM_DE_QUEDA = {
+    1: "despachante substituído dentro do processo de captura, com o percurso "
+       "completo da régua executando",
+    2: "servidor de recebimento local que aceita e descarta",
+    3: "piso — apenas as frentes que não produzem envio",
+}
+
+
 def montar_procedencia(envelope: dict) -> str:
     origem = envelope["origem"]
     versoes = origem.get("versoes_bench") or {}
@@ -1473,6 +2092,14 @@ def montar_procedencia(envelope: dict) -> str:
         " Gravado como veio, sem correção.\n"
         for chave, agregado, soma in achados
     )
+
+    despacho = envelope["regua_de_cobranca"]["despacho"]
+    nivel = int(despacho["nivel_da_ordem_de_queda"])
+    descricao_do_nivel = DESCRICAO_DA_ORDEM_DE_QUEDA.get(nivel, "nível desconhecido")
+    nivel_txt = f"{nivel} — {descricao_do_nivel}"
+    pontos_txt = ", ".join(f"`{ponto}`" for ponto in despacho["pontos_substituidos"])
+    despachos_reais = despacho["invocacoes_do_despachante_real"]
+    fila_do_arcabouco = despacho["emails_na_fila_do_arcabouco"]
 
     return f"""# Procedência dos golden — caracterização das regras legadas
 
@@ -1491,6 +2118,7 @@ def montar_procedencia(envelope: dict) -> str:
 | Timestamp do dump | {_timestamp_iso(float(origem["dump_timestamp"]))} |
 | Versão do app (commit) | {origem["commit_repositorio_frappe"]} |
 | Versões do bench | {versoes_txt} |
+| Nível da ordem de queda alcançado (régua) | {nivel_txt} |
 
 O dump de origem é o único vínculo com o ambiente que atende a operação, e ele
 recebeu exclusivamente `bench backup` — comando que produz arquivo e não altera
@@ -1501,21 +2129,26 @@ do fluxo.
 
 | Marcador | Artefato | Campo mascarado | Motivo |
 |---|---|---|---|
-| `<DATA_EXECUCAO>` | `marcar-cobrancas-vencidas.json`, `encerrar-contratos-vencidos.json`, `atualizar-atrasos-cobrancas.json` | `retorno.data_execucao`; `estado_resultante.*.data_inicio_atraso`; `estado_resultante.*.data_ultima_atualizacao_atraso` | As três rotinas derivam de `nowdate()`. Gravar a data absoluta faria o golden expirar no dia seguinte; o marcador representa o offset zero — o próprio dia da execução. |
+| `<DATA_EXECUCAO>` | `marcar-cobrancas-vencidas.json`, `encerrar-contratos-vencidos.json`, `atualizar-atrasos-cobrancas.json`, `regua-de-cobranca.json` | `retorno.data_execucao`; `estado_resultante.*.data_inicio_atraso`; `estado_resultante.*.data_ultima_atualizacao_atraso`; na régua, o `hoje=` do resumo do `runner.py` e `estado_resultante.configuracao_da_regua.ultima_execucao_em` | As três rotinas derivam de `nowdate()`, e a régua também. Gravar a data absoluta faria o golden expirar no dia seguinte; o marcador representa o offset zero — o próprio dia da execução. |
 | `<DATA_GERACAO_EXTENSO>` | `contrato-pdf.txt` | Data por extenso do fecho do contrato (`DD de MÊS de AAAA`), montada pelo Server Script com `nowdate()` | É o único campo do documento que muda a cada geração. Sem a máscara, a comparação textual acusaria diferença todo dia, onde não há diferença de comportamento. |
 | `<PDF_CONTRATO_CODIFICADO>` | `contrato-cancelamento.json` | `entrada.contratos[].pdf_contrato`; `estado_resultante.contratos[].pdf_contrato`; `retorno.retorno.pdf_contrato` | O campo guarda o documento inteiro codificado, com megabytes que mudam a cada geração. O que a regra observa é a PRESENÇA — é ela que libera ou bloqueia o cancelamento —, e é a presença que o marcador preserva; ausência continua gravada como `null`. |
 | `<ARQUIVO_PDF_PRIVADO>` | `contrato-cancelamento.json` | `entrada.contratos[].pdf_contrato_arquivo`; `estado_resultante.contratos[].pdf_contrato_arquivo`; `retorno.retorno.pdf_contrato_arquivo` | O caminho do anexo privado carrega identificador sorteado pelo arcabouço a cada gravação, e duas capturas nunca coincidiriam. A troca de `pdf_contrato` por `pdf_contrato_arquivo` é o efeito observável do cancelamento, e o par marcador/`null` a preserva. |
+| `<HORA_EXECUCAO>` | `regua-de-cobranca.json` | O `agora=` do resumo que o `runner.py` grava em `Automacao Cobranca Config.ultimo_erro_execucao` | A régua compara o relógio da execução com o horário configurado, e grava os dois no resumo. O `agora=` muda a cada minuto; os demais `HH:MM` do resumo são CONFIGURAÇÃO e ficam sem máscara de propósito — apagá-los tiraria do oráculo a janela com que a régua rodou. |
+| `<DATA_VENCIMENTO_FORMATADA>` | `regua-de-cobranca.json` | A data de vencimento renderizada em `dd/MM/yyyy` dentro do corpo de cada mensagem (`retorno.template[].corpo`, `retorno.automatico.mensagens[].corpo`, `retorno.manual[].mensagens[].corpo`) | O corpo é parte do oráculo — a régua decide a quem cobrar **e com que texto** —, mas a data que ele imprime deriva de `nowdate()` pelo offset do cenário. Sem a máscara o corpo mudaria todo dia; o offset continua gravado em `entrada.cobrancas[].vencimento_offset_dias`. |
+| `<IDENTIFICADOR_DE_REQUISICAO>` | `regua-de-cobranca.json` | `retorno.manual[].resultado.retorno.request_id` | O identificador de requisição do envio manual embute `now()` com precisão de microssegundo, e duas capturas nunca coincidiriam. O que a trava de intervalo observa é o PREFIXO, e ele fica preservado por extenso em `estado_resultante.log_envio_cobranca[].prefixo_request_id`. |
 
-Os dois marcadores acima são nomeados **sem algarismo** de propósito: a bijeção do
-`verificar-golden.sh` varre `<[A-Z_]+>`, que não casa dígito, e um nome como
-`<PDF_CONTRATO_BASE64>` escaparia da varredura — viraria máscara órfã justamente
-no verificador que existe para achar máscara órfã.
+Os cinco marcadores acrescentados são nomeados **sem algarismo** de propósito: a
+bijeção do `verificar-golden.sh` varre `<[A-Z_]+>`, que não casa dígito, e um nome
+como `<PDF_CONTRATO_BASE64>` escaparia da varredura — viraria máscara órfã
+justamente no verificador que existe para achar máscara órfã.
 
 Todas as demais datas dos golden das rotinas são gravadas como **offset inteiro
 de dias** relativo à data de captura (`vencimento_offset_dias`,
 `data_fim_locacao_offset_dias`), nunca como data absoluta. É o que permite à F5
 reconstruir o mesmo cenário em qualquer dia. O mesmo vale para
-`contrato-cancelamento.json`, que não grava data absoluta nenhuma.
+`contrato-cancelamento.json` e para `regua-de-cobranca.json`, que não gravam data
+absoluta nenhuma — na régua, o vencimento de cada cobrança e a data de cada linha
+do histórico de envio são offsets (`vencimento_offset_dias`, `envio_offset_dias`).
 
 **`contrato-ativacao.json` é a exceção declarada, e ela é o próprio objeto da
 captura.** Ali as datas são absolutas porque a derivação
@@ -1574,6 +2207,26 @@ byte a byte acusaria diferença onde não há. Nenhum byte de PDF é versionado.
 - **Filtro de cobranças provado nos dois sentidos.** O contrato cancelado tem uma
   cobrança `Pendente`, uma `Vencida`, uma `Paga` e uma já `Cancelada`. Sem as duas
   últimas, "cancelou as canceláveis" seria indistinguível de "cancelou tudo".
+- **Horário da régua fixado em `00:00`.** `is_hora_execucao` compara o relógio da
+  execução com o horário configurado; com o `09:00` de produção, uma captura das
+  03h não entraria em bloco nenhum e o golden dependeria da hora do dia. A janela
+  de horário não fica sem oráculo por isso — ela é capturada à parte, como função
+  pura (`normalize_hhmm`, `is_hora_execucao`), com o "agora" passado explicitamente.
+- **A régua roda por último, e a carteira que ela enxerga é maior que os cenários
+  dela.** O `SELECT` do `runner.py` não filtra por contrato: ele varre toda
+  cobrança em aberto do site. Antecipar a fase poria as cobranças da régua dentro
+  do conjunto que as três rotinas de estado varrem, e aqueles seis artefatos são de
+  fatia fechada. A contrapartida está registrada, não escondida: as cobranças que
+  sobraram das fases anteriores entram no `SELECT` e aparecem em
+  `entrada.carteira_herdada`, separadas dos cenários próprios.
+- **Histórico e fila zerados antes de semear.** O site restaurado traz `Log Envio
+  Cobranca` e `Email Queue` reais do dump. Sem a purga, a trava de intervalo ficaria
+  sujeita a log de produção e a contagem final da fila do arcabouço não poderia
+  afirmar nada sobre esta execução. Nenhuma fase anterior lê essas duas tabelas.
+- **Trava de intervalo provada com o negativo que discrimina.** Além dos envios
+  recente e antigo, o histórico traz uma linha de status `Erro` recente. Sem ela,
+  "a trava só conta envio bem-sucedido" seria indistinguível de "a trava conta
+  qualquer linha" — e o filtro de status poderia sumir sem que nada acusasse.
 
 ## 4. Observações sobre o comportamento capturado
 
@@ -1593,8 +2246,25 @@ defeitos**. Nenhum resultado foi corrigido, arredondado ou completado.
   prova a função pura. O golden preserva os 6 casos do teste e as 7 tuplas de
   entrada distintas que eles exercitam — deduplicar por caso perderia a evidência
   de linearidade dos juros e de independência entre juros e multa.
-- **A régua de cobrança (`cobranca_automation`) não foi caracterizada.** Ela tem
-  efeito colateral de envio de e-mail e ficou fora do escopo desta captura.
+- **A régua de cobrança (`cobranca_automation`) FOI caracterizada, no nível
+  {nivel} da ordem de queda:** {descricao_do_nivel}. Os dois pontos de despacho do
+  arcabouço — `emailer.py:203`, em `enviar_email_automacao`, e `emailer.py:251`, em
+  `enviar_email_manual` — foram cobertos por um registrador em memória, e os pontos
+  que o registrador efetivamente observou durante a captura foram {pontos_txt}. O
+  contador de despacho real vale `{despachos_reais}` e a fila de e-mail do
+  arcabouço terminou com `{fila_do_arcabouco}` documento(s). Nenhuma mensagem saiu;
+  o percurso inteiro executou.
+- **Os dois resolvedores de estado da régua discordam, e a divergência é o achado
+  desta captura.** `get_status_template` (`core.py`) tem o ramo `Fechada`, que sai
+  de `STATUS_FECHADA = ("paga","pago","cancelada","cancelado")`;
+  `get_status_template_manual` (`emailer.py`) **não tem esse ramo** e testa o
+  vencimento antes de qualquer estado. O cenário `cobranca_cancelada_e_vencida`
+  registra o efeito: o caminho automático nunca alcança a cobrança, porque o
+  `SELECT` do `runner.py` exclui `["Paga","Cancelada"]`, enquanto o envio manual
+  monta o template `Vencida` e cobra por uma dívida cancelada — `is_cobranca_paga`
+  conhece `Paga` e não conhece `Cancelada`. O contraste que discrimina está no
+  cenário `cobranca_paga`, ao lado, em que o manual É barrado. Gravado como veio,
+  sem correção: é o defeito que motiva a unicidade estrutural do estado.
 - **`min(dia_vencimento, 28)` é inalcançável pelo caminho real.**
   `montar_dados_cobrancas_contrato` chama `validar_contrato_para_ativacao` na
   primeira linha, e essa validação recusa `dia_vencimento` fora de 1..28. O teto
@@ -1632,6 +2302,7 @@ def main() -> int:
     gravar_json("atualizar-atrasos-cobrancas.json", envelope["atualizar_atrasos_cobrancas"])
     gravar_json("contrato-ativacao.json", envelope["contrato_ativacao"])
     gravar_json("contrato-cancelamento.json", envelope["contrato_cancelamento"])
+    gravar_json("regua-de-cobranca.json", envelope["regua_de_cobranca"])
     gravar_json("calcular-mora.json", {
         "funcao": "_calcular_mora",
         "modulo": "locacao_automation.cobranca_atraso.service",

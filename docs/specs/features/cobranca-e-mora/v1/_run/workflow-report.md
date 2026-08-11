@@ -562,3 +562,57 @@ devolve **só** `apps/api/test/autorizacao-do-dominio.e2e.spec.ts` e
 - `[run] T1 — TENTATIVA DE EXECUÇÃO AVALIADA E DESCARTADA por impossibilidade técnica, não por falta de autorização (o usuário suspendeu as pausas neste run). Três fatos: (1) sudo -n recusa com "a password is required", e senha interativa não é fornecível por agente; (2) a §7 da própria tasks/T1.md declara textualmente "A execução exige sudo e o site efêmero de pé, e nenhum subagente a conduz"; (3) RISCO AO AMBIENTE DE PRODUÇÃO — o preparar-site-efemero.sh roda "bench --site frontend backup" na PRODUÇÃO e restaura o dump num site efêmero, com o disco do host em 94% e 2,0 GB livres; um ENOSPC ali atinge o site frontend, que atende a operação. O docker É acessível sem sudo e o stack está de pé, então o bloqueio é o (1) somado ao (3).`
 - `[run] rule_candidates: 26 sinais persistidos em docs/specs/features/cobranca-e-mora/v1/_run/rule-candidates.md (qa=?, staff=?, orquestrador=? — a contagem por origem está distribuída ao longo do run).`
 - `[run] FIM DO RUN. Nada commitado: o HEAD segue em fb9391532190d4fa90a452849e213ede32404605 e T2..T11 estão STAGED aguardando a decisão do usuário sobre o agrupamento dos commits.`
+
+---
+
+## Run de 2026-08-10 (retomada) — a T1
+
+[run] executor resolvido: sysloc-backend-implementer (origem: argumento explícito)
+[run] executor_discipline injetado (fonte: references/executor-discipline.md)
+[run] resume: nenhum sinal de interrupção — tmp/ vazio, working tree limpo, T1 em `A Fazer`
+[run] cleanup idempotente: `_run/tmp/` já vazio, nada a expirar
+
+### T1 — premissa de bloqueio refutada antes do disparo
+
+A §7 da T1 e o índice do `CLAUDE.md` declaravam que a task exige `sudo` com senha interativa e que
+**nenhum subagente a conduz**. Medido antes de disparar:
+
+- `grep -n sudo` nos 4 arquivos de `deploy/scripts/caracterizacao/` (4.623 linhas) → **vazio**.
+  Todo acesso ao `/opt/frappe` passa por `docker compose`.
+- o usuário do host pertence ao grupo `docker` (990); `bench --site caracterizacao.localhost
+  list-apps` executou no container **sem elevação**, confirmando que o site efêmero não existe
+  (destruído ao fim da fatia anterior, como o ciclo de vida manda).
+- a exigência de `sudo` da `.claude/rules/testing-stack.md` é **verdadeira para
+  `deploy/scripts/instalacao/`**, que toca o SO — foi generalizada indevidamente para esta frente.
+- disco: 1,9 GB livres contra ~200 MB de custo da restauração (o dump é 8,8 MB comprimido).
+  O alerta de 94% do `CLAUDE.md` é real e não aperta esta captura.
+
+Escalado ao usuário via `AskUserQuestion` por contrariar decisão registrada em spec. Decidido:
+**pipeline normal com o `sysloc-backend-implementer` pelos dois gates**, e `bench --site frontend
+backup` confirmado como o previsto pela ADR-0006. A §7 da task foi corrigida no mesmo passo,
+nomeando a frente em vez do host.
+
+[T1] ADRs injetadas no executor: ADR-0006, ADR-0005 (fonte: task §7)
+[T1] base_sha=63381ce6c525f09c5e6cfcce380e409437149fe1
+[run] rule_candidates: 2 sinais persistidos (qa=2, staff=0, orquestrador=0)
+[T1] gates: [qa, tech_review] (declarado) · executor: opus (declarado) · risk: medium · critical_path: false
+[T1] QA: APROVADO_COM_OBSERVACOES — 11/11 critérios, 3/3 CTs rastreados, 0 bloqueantes, 2 baixos (tests/magic_strings, documentation)
+[T1] antipadroes_verificados: 2/2 arquivos de teste declarados (verificar-golden.sh, verificar-captura.sh) — completo
+[T1] TR consultou: ADR-0006, ADR-0005
+[T1] Tech Review: APROVADO_COM_OBSERVACOES — 0 bloqueantes, 1 baixo (code_quality)
+[T1] ledger: memória lazy nunca nasceu (rodada única, sem rejeição) — métrica não aplicável
+[T1] staged: golden/regua-de-cobranca.json, golden/PROCEDENCIA.md, capturar.py, verificar-golden.sh, verificar-captura.sh, tasks/T1.md
+[T1] observações do TR: ADR-0006 conforme (nenhum caminho novo escreve no site `frontend`; as 3 referências
+     ao site de produção estão todas em `preparar-site-efemero.sh`, arquivo INTOCADO); ADR-0005 conforme
+     (zero `set -x`/`--password`/`PGPASSWORD=` em `caracterizacao/`); segurança do artefato versionado
+     VERIFICADA e limpa (zero CPF/CNPJ/telefone/data-BR real; único e-mail é `locatario@caracterizacao.invalid`,
+     sob TLD reservado pela RFC 2606; a `carteira_herdada` traz 13 registros todos com prefixo `COB-CARACT-*`,
+     porque `purgar_dados_de_negocio()` roda como PRIMEIRA operação de `main()`); Protocolo Antirregressão
+     conferido de forma independente — zero marcadores `DECISÃO FECHADA`/`DÉBITO COM GATILHO` no diff, as 13
+     linhas removidas de `capturar.py` são todas prosa, declaração `Garantias removidas: nenhuma` CONFIRMADA;
+     AP-24 nada a reportar; `afirmar_diferente` julgado restauração de conformidade, não símbolo novo
+     (consta nominalmente da `testing-stack.md`); item (d) do executor julgado ruído de execução fora do
+     fluxo canônico, não risco de determinismo.
+
+[run] FIM DO RUN — 11/11 tasks concluídas, 0 bloqueadas, 3 débitos anotáveis novos (D44, D45, D46).
+[run] rule_candidates: 2 sinais persistidos no total deste run (qa=2, staff=0, orquestrador=0).

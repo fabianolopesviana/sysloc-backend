@@ -59,34 +59,42 @@ commitadas, incluindo a **T7**, cuja recuperação foi provada por **reinício r
 A fatia `caracterizacao-regras-legadas` (v1) também está **concluída**: os 6 artefatos golden
 estão versionados e são o oráculo das regras legadas para a F3 e a F5.
 
-**Fase 3 EM ANDAMENTO — é aqui que o trabalho está.** A fase foi **partida em duas fatias** no
+**Fase 3 EM ANDAMENTO — a fatia 1 FECHOU, a fatia 2 é o trabalho.** A fase foi **partida em duas fatias** no
 pré-refinamento (`docs/specs/features/cobranca-mora-e-documentos/v1/pre-refinement.md`), pelo corte
 **por efeito colateral**: a fatia 1 não toca nada fora do banco, a fatia 2 é toda ação sobre o mundo.
 
-1. **`cobranca-e-mora` (v1) — 10 de 11 tasks concluídas; só a T1 falta.** `negocio.cobranca` e
+1. **`cobranca-e-mora` (v1) — CONCLUÍDA em 2026-08-10. As 11 tasks aprovadas nos dois gates.** `negocio.cobranca` e
    `negocio.configuracao_de_mora`, a view `cobranca_derivada` com `security_invoker` como **fonte
    única do estado e da mora**, a série `COB-{ano}-{7 dígitos}` atrás de duas funções
    `SECURITY DEFINER`, e as **7 rotas novas** (superfície em **82/67**). **Fechou o D28 (F2/T7)** na T9,
    com o marcador e a linha do índice saindo no mesmo commit. Deixou o **D1**, o **D26** e — pela
-   intervenção dirigida abaixo — o **D20** com marcador e gatilho (índice abaixo). Suíte **687 → 835**.
+   intervenção dirigida abaixo — o **D20** com marcador e gatilho (índice abaixo). Suíte **687 → 835**. A **T1** fechou por último e
+   capturou o **oráculo da régua de cobrança** — o 10º artefato golden —, alcançando o **nível 1 da
+   ordem de queda** (o melhor: despachante substituído no processo, `invocacoes_do_despachante_real = 0`).
+   Ela registra a **divergência automático × manual** que motivou a fatia: para a cobrança cancelada e
+   vencida, `core.py` resolve `Fechada` e `emailer.py` resolve `Vencida`, com 1 mensagem no manual
+   contra 0 no automático — é o defeito que a **fatia 2 NÃO deve portar**.
 2. **`regua-e-documentos` (v1) — não iniciada.** Régua com fila (fecha o **D32 (F0/T6)**), PDF de
    contrato contra o golden textual, carnê com `pdf-lib` no servidor (fecha o **D36 (F2/T8)**).
    ~1.800 LOC — o pré-refinamento registra que ela **pode precisar partir de novo**.
 
-> ✅ **O run da fatia 1 TERMINOU em 2026-08-10** — retomado da segunda pausa pelo caminho
-> **"Retomar nos gates"**, os dois gates da T11 rodaram e **aprovaram** (`APROVADO_COM_OBSERVACOES` nos
-> dois, 0 bloqueantes, rodada única). **As dez tasks executáveis estão concluídas e staged**, e
-> **10 dos 13 Critérios de Conclusão da Feature** estão satisfeitos e conferidos um a um na §7 do
-> `task_plan.md`.
+> ✅ **O run da fatia 1 TERMINOU em 2026-08-10, e ela está FECHADA** — as **11 tasks** concluídas e
+> staged, e os **13 Critérios de Conclusão da Feature** satisfeitos e conferidos um a um na §7 do
+> `task_plan.md`. A T11 fechou pelo caminho **"Retomar nos gates"** da segunda pausa; a T1, por
+> último, em rodada única (`APROVADO_COM_OBSERVACOES` nos dois gates, 0 bloqueantes).
 >
-> **Os TRÊS critérios abertos dependem exclusivamente da T1**, que segue **diferida por decisão**: as
-> 11 tasks (hoje 10/11), o `verificar-golden.sh` afirmando **10** artefatos (afirma **9** — o 10º é o
-> `regua-de-cobranca.json` que ela produz) e o `PROCEDENCIA.md` declarando o nível da ordem de queda.
-> A T1 exige **`sudo` com senha interativa** (o `sudo -n` recusa) e o site efêmero do `/opt/frappe`, e a
-> **§7 da própria task declara que nenhum subagente a conduz**. Some-se um risco medido: o script roda
-> `bench --site frontend backup` na **produção** e restaura o dump, com o disco em **94% e 2,0 GB
-> livres**. É execução do operador, não de agente. **Enquanto ela não rodar, o Status geral do
-> `task_plan.md` não vai a `Concluído`.**
+> ⚠️ **A T1 esteve diferida por uma premissa FALSA, e vale saber por quê — o padrão se repete.** Três
+> artefatos (a §7 da task, o `task_plan.md` e este arquivo) afirmavam que a captura **exige `sudo` com
+> senha interativa** e que **nenhum subagente a conduz**. Refutado por quatro comandos: `grep -n sudo`
+> nos quatro arquivos de `deploy/scripts/caracterizacao/` (4.623 linhas) retorna **vazio**, o acesso ao
+> `/opt/frappe` é todo por `docker compose`, e o usuário do host está no grupo `docker`. A exigência de
+> `sudo` que a `.claude/rules/testing-stack.md` registra é **verdadeira para
+> `deploy/scripts/instalacao/`**, que toca o SO — a T1 herdou a frase da fatia anterior e trocou o
+> sujeito. **A distinção é por FRENTE, não por host.** O segundo obstáculo registrado (disco em 94%)
+> era real e não apertava: o dump tem 8,8 MB e a restauração custa ~200 MB contra 1,9 GB livres. Custo
+> do erro: a task de **prazo** da fatia — a única cuja janela fecha e não reabre — ficou parada por uma
+> premissa que quatro comandos derrubariam. **Premissa que bloqueia trabalho com prazo merece ser
+> medida antes de ser registrada.**
 >
 > ⚠️ **Achado PRÉ-EXISTENTE que o fechamento encontrou**: o `verificar-golden.sh` termina REPROVADO no
 > **`CT-013`** (*"a credencial aparece na árvore versionada"*, apontando `senha.spec.ts`, `pessoa.ts` e
@@ -281,7 +289,8 @@ O marco está alcançado quando **todos** os sete itens forem verdadeiros:
 
 - [ ] **F1 a F5 concluídas** — todas as tasks aprovadas nos dois gates, suíte verde, critérios de
       aceitação de cada fatia verificados · **F1 fechada em 2026-08-05, F2 em 2026-08-09; a F3 está
-      EM ANDAMENTO** (fatia 1 em 4/11 tasks, run pausado), **e faltam F4 e F5**
+      EM ANDAMENTO** (fatia 1 `cobranca-e-mora` **concluída em 2026-08-10, 11/11 tasks**; falta a
+      fatia 2 `regua-e-documentos`), **e faltam F4 e F5**
 - [ ] **Superfície da API congelada** — nenhuma fatia posterior acrescenta, remove ou altera rota;
       o congelamento é o que torna o handoff confiável · **sem condição pendente** desde que a
       ADR-0021 fechou o D43 · ⚠️ mas **F3 a F5 ainda publicam rota** (cobrança, webhook Sicoob,
@@ -522,9 +531,9 @@ exige (`.claude/rules/nao-regressao.md`, P1 e P5).
 (`docker compose exec -T backend bench --site frontend ...`), mas:
 
 - O site `frontend` é **produção**. Nada destrutivo.
-- A **caracterização das regras de negócio** (em
-  `docs/specs/features/caracterizacao-regras-legadas/v1/tasks/task-01-capturar-caracterizacao-regras-legadas.md`)
-  precisa rodar contra ele **antes da F3** — é a prova de equivalência do gerador de contrato de
-  752 linhas.
+- A **caracterização das regras de negócio** já rodou, e os **10 artefatos golden** estão versionados:
+  os 6 da captura original, os 2 de contrato (fatia `contratos-de-locacao`) e o
+  `regua-de-cobranca.json`, capturado pela **T1 da fatia `cobranca-e-mora`** em 2026-08-10. **Não há
+  mais captura pendente.**
 - A credencial de API do ERPNext segue **exposta em texto claro** no bundle público da porta
   8300 enquanto ele existir. Pendência aberta.

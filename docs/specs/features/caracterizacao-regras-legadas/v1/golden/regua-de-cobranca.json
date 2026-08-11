@@ -1,0 +1,1189 @@
+{
+  "despacho": {
+    "emails_na_fila_do_arcabouco": 0,
+    "invocacoes_do_despachante_real": 0,
+    "nivel_da_ordem_de_queda": 1,
+    "pontos_esperados": [
+      "emailer.py:203",
+      "emailer.py:251"
+    ],
+    "pontos_substituidos": [
+      "emailer.py:203",
+      "emailer.py:251"
+    ]
+  },
+  "entrada": {
+    "carteira_herdada": [
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-AAC-01",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Vencida",
+        "valor_original": 2000.0,
+        "valor_total": 2074.67,
+        "vencimento_offset_dias": -52
+      },
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-AAC-02",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Vencida",
+        "valor_original": 1234.56,
+        "valor_total": 1261.31,
+        "vencimento_offset_dias": -5
+      },
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-AAC-03",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Vencida",
+        "valor_original": 1500.0,
+        "valor_total": 1511.1,
+        "vencimento_offset_dias": 7
+      },
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-AAC-04",
+        "pagamento_confirmado": 1,
+        "status_cobranca": "Vencida",
+        "valor_original": 900.0,
+        "valor_total": 900.0,
+        "vencimento_offset_dias": -20
+      },
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-AAC-05",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Pendente",
+        "valor_original": 800.0,
+        "valor_total": 800.0,
+        "vencimento_offset_dias": -30
+      },
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-CAN-01",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Cancelada",
+        "valor_original": 1200.0,
+        "valor_total": 1200.0,
+        "vencimento_offset_dias": -20
+      },
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-CAN-02",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Cancelada",
+        "valor_original": 1300.0,
+        "valor_total": 1300.0,
+        "vencimento_offset_dias": -50
+      },
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-CAN-03",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Paga",
+        "valor_original": 1400.0,
+        "valor_total": 1400.0,
+        "vencimento_offset_dias": 10
+      },
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-CAN-04",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Cancelada",
+        "valor_original": 1500.0,
+        "valor_total": 1500.0,
+        "vencimento_offset_dias": 40
+      },
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-MCV-01",
+        "pagamento_confirmado": 1,
+        "status_cobranca": "Vencida",
+        "valor_original": 1500.0,
+        "valor_total": 1500.0,
+        "vencimento_offset_dias": -12
+      },
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-MCV-02",
+        "pagamento_confirmado": 1,
+        "status_cobranca": "Vencida",
+        "valor_original": 980.5,
+        "valor_total": 980.5,
+        "vencimento_offset_dias": -3
+      },
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-MCV-03",
+        "pagamento_confirmado": 1,
+        "status_cobranca": "Pendente",
+        "valor_original": 1200.0,
+        "valor_total": 1200.0,
+        "vencimento_offset_dias": 15
+      },
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-MCV-04",
+        "pagamento_confirmado": 1,
+        "status_cobranca": "Paga",
+        "valor_original": 700.0,
+        "valor_total": 700.0,
+        "vencimento_offset_dias": -40
+      }
+    ],
+    "cobrancas": [
+      {
+        "id": "a_vencer_dentro_da_janela",
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-REG-01",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Pendente",
+        "valor_original": 1100.0,
+        "valor_total": 1100.0,
+        "vencimento_offset_dias": 5
+      },
+      {
+        "id": "a_vencer_fora_da_janela",
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-REG-02",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Pendente",
+        "valor_original": 1200.0,
+        "valor_total": 1200.0,
+        "vencimento_offset_dias": 40
+      },
+      {
+        "id": "vencida_sem_envio_previo",
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-REG-03",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Vencida",
+        "valor_original": 1300.0,
+        "valor_total": 1300.0,
+        "vencimento_offset_dias": -12
+      },
+      {
+        "id": "vencida_com_envio_recente",
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-REG-04",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Vencida",
+        "valor_original": 1400.0,
+        "valor_total": 1400.0,
+        "vencimento_offset_dias": -20
+      },
+      {
+        "id": "vencida_com_envio_antigo",
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-REG-05",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Vencida",
+        "valor_original": 1500.0,
+        "valor_total": 1500.0,
+        "vencimento_offset_dias": -30
+      },
+      {
+        "id": "cobranca_com_pagamento_confirmado",
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-REG-06",
+        "pagamento_confirmado": 1,
+        "status_cobranca": "Pendente",
+        "valor_original": 1600.0,
+        "valor_total": 1600.0,
+        "vencimento_offset_dias": -8
+      },
+      {
+        "id": "cobranca_paga",
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-REG-07",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Paga",
+        "valor_original": 1700.0,
+        "valor_total": 1700.0,
+        "vencimento_offset_dias": -15
+      },
+      {
+        "id": "cobranca_cancelada_e_vencida",
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-REG-08",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Cancelada",
+        "valor_original": 1800.0,
+        "valor_total": 1800.0,
+        "vencimento_offset_dias": -25
+      },
+      {
+        "id": "cobranca_sem_locatario",
+        "locatario": null,
+        "name": "COB-CARACT-REG-09",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Pendente",
+        "valor_original": 1900.0,
+        "valor_total": 1900.0,
+        "vencimento_offset_dias": 3
+      },
+      {
+        "id": "vencida_com_envio_de_prefixo_legado",
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-REG-10",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Vencida",
+        "valor_original": 2000.0,
+        "valor_total": 2000.0,
+        "vencimento_offset_dias": -18
+      }
+    ],
+    "configuracao_da_regua": {
+      "ativo": "1",
+      "canal_a_vencer": "ambos",
+      "canal_vencida": "ambos",
+      "dias_antes_vencimento": "10",
+      "horario_a_vencer": "00:00:00",
+      "horario_vencida": "00:00:00",
+      "intervalo_dias_a_vencer": "3",
+      "intervalo_dias_vencida": "2",
+      "nao_enviar_a_vencer": "0"
+    },
+    "historico_de_envio": [
+      {
+        "canal": "email",
+        "envio_offset_dias": -1,
+        "erro": null,
+        "fatura_id": "COB-CARACT-REG-01",
+        "prefixo_request_id": "REQ-AUTO-AV-",
+        "status": "Erro",
+        "tipo_envio": "automacao"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": -1,
+        "erro": null,
+        "fatura_id": "COB-CARACT-REG-04",
+        "prefixo_request_id": "REQ-AUTO-VC-",
+        "status": "Sucesso",
+        "tipo_envio": "automacao"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": -1,
+        "erro": null,
+        "fatura_id": "COB-CARACT-REG-10",
+        "prefixo_request_id": "REQ-AUTO-EMAIL-",
+        "status": "Sucesso",
+        "tipo_envio": "automacao"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": -10,
+        "erro": null,
+        "fatura_id": "COB-CARACT-REG-05",
+        "prefixo_request_id": "REQ-AUTO-VC-",
+        "status": "Sucesso",
+        "tipo_envio": "automacao"
+      }
+    ],
+    "intervalo": [
+      {
+        "fatura_id": "COB-CARACT-REG-03",
+        "id": "sem_historico_libera",
+        "intervalo_dias": 2,
+        "tipo": "Vencida"
+      },
+      {
+        "fatura_id": "COB-CARACT-REG-04",
+        "id": "envio_recente_bloqueia",
+        "intervalo_dias": 2,
+        "tipo": "Vencida"
+      },
+      {
+        "fatura_id": "COB-CARACT-REG-05",
+        "id": "envio_antigo_libera",
+        "intervalo_dias": 2,
+        "tipo": "Vencida"
+      },
+      {
+        "fatura_id": "COB-CARACT-REG-10",
+        "id": "prefixo_legado_conta_para_vencida",
+        "intervalo_dias": 2,
+        "tipo": "Vencida"
+      },
+      {
+        "fatura_id": "COB-CARACT-REG-10",
+        "id": "prefixo_legado_nao_conta_para_a_vencer",
+        "intervalo_dias": 2,
+        "tipo": "A vencer"
+      },
+      {
+        "fatura_id": "COB-CARACT-REG-01",
+        "id": "envio_com_erro_nao_bloqueia",
+        "intervalo_dias": 3,
+        "tipo": "A vencer"
+      }
+    ],
+    "is_hora_execucao": [
+      {
+        "agora": "08:59",
+        "horario_configurado": "09:00",
+        "id": "antes_do_horario"
+      },
+      {
+        "agora": "09:00",
+        "horario_configurado": "09:00",
+        "id": "no_minuto_do_horario"
+      },
+      {
+        "agora": "23:59",
+        "horario_configurado": "09:00",
+        "id": "depois_do_horario"
+      }
+    ],
+    "normalize_hhmm": [
+      {
+        "fallback": "09:00",
+        "id": "vazio_cai_no_fallback",
+        "valor": ""
+      },
+      {
+        "fallback": "09:00",
+        "id": "hora_e_minuto_com_um_digito",
+        "valor": "7:5"
+      },
+      {
+        "fallback": "09:00",
+        "id": "datetime_com_espaco",
+        "valor": "2026-01-15 14:30:00"
+      },
+      {
+        "fallback": "09:00",
+        "id": "datetime_com_t",
+        "valor": "2026-01-15T14:30:00"
+      },
+      {
+        "fallback": "09:00",
+        "id": "sem_separador_cai_no_fallback",
+        "valor": "0930"
+      },
+      {
+        "fallback": "09:00",
+        "id": "hora_acima_do_limite",
+        "valor": "25:00"
+      },
+      {
+        "fallback": "09:00",
+        "id": "minuto_acima_do_limite",
+        "valor": "10:75"
+      },
+      {
+        "fallback": "09:00",
+        "id": "limite_superior_aceito",
+        "valor": "23:59"
+      }
+    ]
+  },
+  "estado_resultante": {
+    "cobrancas": [
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-REG-01",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Pendente",
+        "valor_original": 1100.0,
+        "valor_total": 1100.0,
+        "vencimento_offset_dias": 5
+      },
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-REG-02",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Pendente",
+        "valor_original": 1200.0,
+        "valor_total": 1200.0,
+        "vencimento_offset_dias": 40
+      },
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-REG-03",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Vencida",
+        "valor_original": 1300.0,
+        "valor_total": 1300.0,
+        "vencimento_offset_dias": -12
+      },
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-REG-04",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Vencida",
+        "valor_original": 1400.0,
+        "valor_total": 1400.0,
+        "vencimento_offset_dias": -20
+      },
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-REG-05",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Vencida",
+        "valor_original": 1500.0,
+        "valor_total": 1500.0,
+        "vencimento_offset_dias": -30
+      },
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-REG-06",
+        "pagamento_confirmado": 1,
+        "status_cobranca": "Pendente",
+        "valor_original": 1600.0,
+        "valor_total": 1600.0,
+        "vencimento_offset_dias": -8
+      },
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-REG-07",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Paga",
+        "valor_original": 1700.0,
+        "valor_total": 1700.0,
+        "vencimento_offset_dias": -15
+      },
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-REG-08",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Cancelada",
+        "valor_original": 1800.0,
+        "valor_total": 1800.0,
+        "vencimento_offset_dias": -25
+      },
+      {
+        "locatario": null,
+        "name": "COB-CARACT-REG-09",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Pendente",
+        "valor_original": 1900.0,
+        "valor_total": 1900.0,
+        "vencimento_offset_dias": 3
+      },
+      {
+        "locatario": "LOCATARIO-CARACT",
+        "name": "COB-CARACT-REG-10",
+        "pagamento_confirmado": 0,
+        "status_cobranca": "Vencida",
+        "valor_original": 2000.0,
+        "valor_total": 2000.0,
+        "vencimento_offset_dias": -18
+      }
+    ],
+    "configuracao_da_regua": {
+      "ultima_execucao_em": "<DATA_EXECUCAO>",
+      "ultimo_status_execucao": "Sucesso"
+    },
+    "log_envio_cobranca": [
+      {
+        "canal": "email",
+        "envio_offset_dias": -1,
+        "erro": null,
+        "fatura_id": "COB-CARACT-REG-01",
+        "prefixo_request_id": "REQ-AUTO-AV-",
+        "status": "Erro",
+        "tipo_envio": "automacao"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": -1,
+        "erro": null,
+        "fatura_id": "COB-CARACT-REG-04",
+        "prefixo_request_id": "REQ-AUTO-VC-",
+        "status": "Sucesso",
+        "tipo_envio": "automacao"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": -1,
+        "erro": null,
+        "fatura_id": "COB-CARACT-REG-10",
+        "prefixo_request_id": "REQ-AUTO-EMAIL-",
+        "status": "Sucesso",
+        "tipo_envio": "automacao"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": -10,
+        "erro": null,
+        "fatura_id": "COB-CARACT-REG-05",
+        "prefixo_request_id": "REQ-AUTO-VC-",
+        "status": "Sucesso",
+        "tipo_envio": "automacao"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": 0,
+        "erro": "Ignorado: cobranca sem locatario",
+        "fatura_id": "COB-CARACT-REG-09",
+        "prefixo_request_id": "REQ-AUTO-AV-",
+        "status": "Erro",
+        "tipo_envio": "automacao"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": 0,
+        "erro": null,
+        "fatura_id": "COB-CARACT-AAC-01",
+        "prefixo_request_id": "REQ-AUTO-VC-",
+        "status": "Sucesso",
+        "tipo_envio": "automacao"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": 0,
+        "erro": null,
+        "fatura_id": "COB-CARACT-AAC-02",
+        "prefixo_request_id": "REQ-AUTO-VC-",
+        "status": "Sucesso",
+        "tipo_envio": "automacao"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": 0,
+        "erro": null,
+        "fatura_id": "COB-CARACT-AAC-03",
+        "prefixo_request_id": "REQ-AUTO-VC-",
+        "status": "Sucesso",
+        "tipo_envio": "automacao"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": 0,
+        "erro": null,
+        "fatura_id": "COB-CARACT-AAC-05",
+        "prefixo_request_id": "REQ-AUTO-VC-",
+        "status": "Sucesso",
+        "tipo_envio": "automacao"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": 0,
+        "erro": null,
+        "fatura_id": "COB-CARACT-REG-01",
+        "prefixo_request_id": "REQ-AUTO-AV-",
+        "status": "Sucesso",
+        "tipo_envio": "automacao"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": 0,
+        "erro": null,
+        "fatura_id": "COB-CARACT-REG-01",
+        "prefixo_request_id": "REQ-MAN-EMAIL-",
+        "status": "Sucesso",
+        "tipo_envio": "manual"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": 0,
+        "erro": null,
+        "fatura_id": "COB-CARACT-REG-02",
+        "prefixo_request_id": "REQ-MAN-EMAIL-",
+        "status": "Sucesso",
+        "tipo_envio": "manual"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": 0,
+        "erro": null,
+        "fatura_id": "COB-CARACT-REG-03",
+        "prefixo_request_id": "REQ-AUTO-VC-",
+        "status": "Sucesso",
+        "tipo_envio": "automacao"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": 0,
+        "erro": null,
+        "fatura_id": "COB-CARACT-REG-03",
+        "prefixo_request_id": "REQ-MAN-EMAIL-",
+        "status": "Sucesso",
+        "tipo_envio": "manual"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": 0,
+        "erro": null,
+        "fatura_id": "COB-CARACT-REG-04",
+        "prefixo_request_id": "REQ-MAN-EMAIL-",
+        "status": "Sucesso",
+        "tipo_envio": "manual"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": 0,
+        "erro": null,
+        "fatura_id": "COB-CARACT-REG-05",
+        "prefixo_request_id": "REQ-AUTO-VC-",
+        "status": "Sucesso",
+        "tipo_envio": "automacao"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": 0,
+        "erro": null,
+        "fatura_id": "COB-CARACT-REG-05",
+        "prefixo_request_id": "REQ-MAN-EMAIL-",
+        "status": "Sucesso",
+        "tipo_envio": "manual"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": 0,
+        "erro": null,
+        "fatura_id": "COB-CARACT-REG-08",
+        "prefixo_request_id": "REQ-MAN-EMAIL-",
+        "status": "Sucesso",
+        "tipo_envio": "manual"
+      },
+      {
+        "canal": "email",
+        "envio_offset_dias": 0,
+        "erro": null,
+        "fatura_id": "COB-CARACT-REG-10",
+        "prefixo_request_id": "REQ-MAN-EMAIL-",
+        "status": "Sucesso",
+        "tipo_envio": "manual"
+      }
+    ]
+  },
+  "funcoes": [
+    "helpers.normalize_hhmm",
+    "helpers.is_hora_execucao",
+    "core.get_status_template",
+    "core.pode_enviar_por_intervalo",
+    "emailer.get_status_template_manual",
+    "emailer.is_cobranca_paga",
+    "emailer.template_email",
+    "emailer.enviar_email_automacao",
+    "emailer.enviar_email_manual",
+    "runner.run_automation_real"
+  ],
+  "modulo": "locacao_automation.cobranca_automation",
+  "regra": "régua de cobrança",
+  "retorno": {
+    "automatico": {
+      "mensagens": [
+        {
+          "assunto": "Aviso de vencimento - Fatura de aluguel COB-CARACT-REG-01",
+          "cobranca": "COB-CARACT-REG-01",
+          "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Informamos que a fatura do aluguel referente a COB-CARACT-REG-01 vencera em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 1100,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para pagamento, utilize o boleto disponivel em: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+          "destinatario": "locatario@caracterizacao.invalid",
+          "funcao": "enviar_email_automacao",
+          "origem": "emailer.py:203"
+        },
+        {
+          "assunto": "Pendencia financeira - Fatura de aluguel vencida COB-CARACT-REG-05",
+          "cobranca": "COB-CARACT-REG-05",
+          "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Identificamos pendencia de pagamento da fatura do aluguel referente a COB-CARACT-REG-05, com vencimento em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 1500,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para regularizacao, acesse o boleto: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+          "destinatario": "locatario@caracterizacao.invalid",
+          "funcao": "enviar_email_automacao",
+          "origem": "emailer.py:203"
+        },
+        {
+          "assunto": "Pendencia financeira - Fatura de aluguel vencida COB-CARACT-REG-03",
+          "cobranca": "COB-CARACT-REG-03",
+          "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Identificamos pendencia de pagamento da fatura do aluguel referente a COB-CARACT-REG-03, com vencimento em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 1300,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para regularizacao, acesse o boleto: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+          "destinatario": "locatario@caracterizacao.invalid",
+          "funcao": "enviar_email_automacao",
+          "origem": "emailer.py:203"
+        },
+        {
+          "assunto": "Pendencia financeira - Fatura de aluguel vencida COB-CARACT-AAC-02",
+          "cobranca": "COB-CARACT-AAC-02",
+          "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Identificamos pendencia de pagamento da fatura do aluguel referente a COB-CARACT-AAC-02, com vencimento em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 1261,31.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para regularizacao, acesse o boleto: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+          "destinatario": "locatario@caracterizacao.invalid",
+          "funcao": "enviar_email_automacao",
+          "origem": "emailer.py:203"
+        },
+        {
+          "assunto": "Pendencia financeira - Fatura de aluguel vencida COB-CARACT-AAC-01",
+          "cobranca": "COB-CARACT-AAC-01",
+          "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Identificamos pendencia de pagamento da fatura do aluguel referente a COB-CARACT-AAC-01, com vencimento em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 2074,67.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para regularizacao, acesse o boleto: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+          "destinatario": "locatario@caracterizacao.invalid",
+          "funcao": "enviar_email_automacao",
+          "origem": "emailer.py:203"
+        },
+        {
+          "assunto": "Pendencia financeira - Fatura de aluguel vencida COB-CARACT-AAC-05",
+          "cobranca": "COB-CARACT-AAC-05",
+          "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Identificamos pendencia de pagamento da fatura do aluguel referente a COB-CARACT-AAC-05, com vencimento em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 800,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para regularizacao, acesse o boleto: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+          "destinatario": "locatario@caracterizacao.invalid",
+          "funcao": "enviar_email_automacao",
+          "origem": "emailer.py:203"
+        },
+        {
+          "assunto": "Pendencia financeira - Fatura de aluguel vencida COB-CARACT-AAC-03",
+          "cobranca": "COB-CARACT-AAC-03",
+          "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Identificamos pendencia de pagamento da fatura do aluguel referente a COB-CARACT-AAC-03, com vencimento em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 1511,10.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para regularizacao, acesse o boleto: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+          "destinatario": "locatario@caracterizacao.invalid",
+          "funcao": "enviar_email_automacao",
+          "origem": "emailer.py:203"
+        }
+      ],
+      "resultado": {
+        "aceito": true,
+        "retorno": null
+      },
+      "resumo": "agora=<HORA_EXECUCAO> | hoje=<DATA_EXECUCAO> | nao_enviar_a_vencer=False | canal_a_vencer=ambos | horario_a_vencer=00:00 | dias_antes=10 | intervalo_a_vencer=3 | canal_vencida=ambos | horario_vencida=00:00 | intervalo_vencida=2 | rows_abertas=11 | cobranca_a_vencer=COB-CARACT-REG-09,status_cobranca=Pendente,status_template=A vencer,dias_restantes=3 | cobranca_a_vencer=COB-CARACT-REG-09,pode=True | cobranca_a_vencer=COB-CARACT-REG-02,status_cobranca=Pendente,status_template=A vencer,dias_restantes=40 | cobranca_a_vencer=COB-CARACT-REG-01,status_cobranca=Pendente,status_template=A vencer,dias_restantes=5 | cobranca_a_vencer=COB-CARACT-REG-01,pode=True | entrou_a_vencer=True | rows_a_vencer=3 | cobranca_vencida=COB-CARACT-REG-10,status_cobranca=Vencida,status_template=Vencida,dias_atraso=18 | cobranca_vencida=COB-CARACT-REG-10,pode=False | cobranca_vencida=COB-CARACT-REG-05,status_cobranca=Vencida,status_template=Vencida,dias_atraso=30 | cobranca_vencida=COB-CARACT-REG-05,pode=True | cobranca_vencida=COB-CARACT-REG-04,status_cobranca=Vencida,status_template=Vencida,dias_atraso=20 | cobranca_vencida=COB-CARACT-REG-04,pode=False | cobranca_vencida=COB-CARACT-REG-03,status_cobranca=Vencida,status_template=Vencida,dias_atraso=12 | cobranca_vencida=COB-CARACT-REG-03,pode=True | cobranca_vencida=COB-CARACT-AAC-02,status_cobranca=Vencida,status_template=Vencida,dias_atraso=5 | cobranca_vencida=COB-CARACT-AAC-02,pode=True | cobranca_vencida=COB-CARACT-AAC-01,status_cobranca=Vencida,status_template=Vencida,dias_atraso=52 | cobranca_vencida=COB-CARACT-AAC-01,pode=True | cobranca_vencida=COB-CARACT-AAC-05,status_cobranca=Pendente,status_template=Vencida,dias_atraso=30 | cobranca_vencida=COB-CARACT-AAC-05,pode=True | cobranca_vencida=COB-CARACT-AAC-03,status_cobranca=Vencida,status_template=Vencida,dias_atraso=-7 | cobranca_vencida=COB-CARACT-AAC-03,pode=True | entrou_vencida=True | rows_vencida=8 | elegiveis_a_vencer=2 | elegiveis_vencida=6 | enviados=7 | ignorados=1 | erros=0",
+      "ultimo_status_execucao": "Sucesso"
+    },
+    "divergencia_de_estado": [
+      {
+        "id": "a_vencer_dentro_da_janela",
+        "is_cobranca_paga": false,
+        "mensagens_automatico": 1,
+        "mensagens_manual": 1,
+        "name": "COB-CARACT-REG-01",
+        "template_automatico": "A vencer",
+        "template_manual": "A vencer"
+      },
+      {
+        "id": "a_vencer_fora_da_janela",
+        "is_cobranca_paga": false,
+        "mensagens_automatico": 0,
+        "mensagens_manual": 1,
+        "name": "COB-CARACT-REG-02",
+        "template_automatico": "A vencer",
+        "template_manual": "A vencer"
+      },
+      {
+        "id": "vencida_sem_envio_previo",
+        "is_cobranca_paga": false,
+        "mensagens_automatico": 1,
+        "mensagens_manual": 1,
+        "name": "COB-CARACT-REG-03",
+        "template_automatico": "Vencida",
+        "template_manual": "Vencida"
+      },
+      {
+        "id": "vencida_com_envio_recente",
+        "is_cobranca_paga": false,
+        "mensagens_automatico": 0,
+        "mensagens_manual": 1,
+        "name": "COB-CARACT-REG-04",
+        "template_automatico": "Vencida",
+        "template_manual": "Vencida"
+      },
+      {
+        "id": "vencida_com_envio_antigo",
+        "is_cobranca_paga": false,
+        "mensagens_automatico": 1,
+        "mensagens_manual": 1,
+        "name": "COB-CARACT-REG-05",
+        "template_automatico": "Vencida",
+        "template_manual": "Vencida"
+      },
+      {
+        "id": "cobranca_com_pagamento_confirmado",
+        "is_cobranca_paga": true,
+        "mensagens_automatico": 0,
+        "mensagens_manual": 0,
+        "name": "COB-CARACT-REG-06",
+        "template_automatico": "Vencida",
+        "template_manual": "Vencida"
+      },
+      {
+        "id": "cobranca_paga",
+        "is_cobranca_paga": true,
+        "mensagens_automatico": 0,
+        "mensagens_manual": 0,
+        "name": "COB-CARACT-REG-07",
+        "template_automatico": "Fechada",
+        "template_manual": "Vencida"
+      },
+      {
+        "id": "cobranca_cancelada_e_vencida",
+        "is_cobranca_paga": false,
+        "mensagens_automatico": 0,
+        "mensagens_manual": 1,
+        "name": "COB-CARACT-REG-08",
+        "template_automatico": "Fechada",
+        "template_manual": "Vencida"
+      },
+      {
+        "id": "cobranca_sem_locatario",
+        "is_cobranca_paga": false,
+        "mensagens_automatico": 0,
+        "mensagens_manual": 0,
+        "name": "COB-CARACT-REG-09",
+        "template_automatico": "A vencer",
+        "template_manual": "A vencer"
+      },
+      {
+        "id": "vencida_com_envio_de_prefixo_legado",
+        "is_cobranca_paga": false,
+        "mensagens_automatico": 0,
+        "mensagens_manual": 1,
+        "name": "COB-CARACT-REG-10",
+        "template_automatico": "Vencida",
+        "template_manual": "Vencida"
+      }
+    ],
+    "intervalo": [
+      {
+        "id": "sem_historico_libera",
+        "saida": true
+      },
+      {
+        "id": "envio_recente_bloqueia",
+        "saida": false
+      },
+      {
+        "id": "envio_antigo_libera",
+        "saida": true
+      },
+      {
+        "id": "prefixo_legado_conta_para_vencida",
+        "saida": false
+      },
+      {
+        "id": "prefixo_legado_nao_conta_para_a_vencer",
+        "saida": true
+      },
+      {
+        "id": "envio_com_erro_nao_bloqueia",
+        "saida": true
+      }
+    ],
+    "is_hora_execucao": [
+      {
+        "id": "antes_do_horario",
+        "saida": false
+      },
+      {
+        "id": "no_minuto_do_horario",
+        "saida": true
+      },
+      {
+        "id": "depois_do_horario",
+        "saida": true
+      }
+    ],
+    "manual": [
+      {
+        "id": "a_vencer_dentro_da_janela",
+        "mensagens": [
+          {
+            "assunto": "Aviso de vencimento - Fatura de aluguel COB-CARACT-REG-01",
+            "cobranca": "COB-CARACT-REG-01",
+            "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Informamos que a fatura do aluguel referente a COB-CARACT-REG-01 vencera em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 1100,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para pagamento, utilize o boleto disponivel em: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+            "destinatario": "locatario@caracterizacao.invalid",
+            "funcao": "enviar_email_manual",
+            "origem": "emailer.py:251"
+          }
+        ],
+        "name": "COB-CARACT-REG-01",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "canal": "email",
+            "fatura_id": "COB-CARACT-REG-01",
+            "log_gravado": true,
+            "ok": true,
+            "request_id": "<IDENTIFICADOR_DE_REQUISICAO>",
+            "status": "Sucesso",
+            "tipo_template": "A vencer"
+          }
+        }
+      },
+      {
+        "id": "a_vencer_fora_da_janela",
+        "mensagens": [
+          {
+            "assunto": "Aviso de vencimento - Fatura de aluguel COB-CARACT-REG-02",
+            "cobranca": "COB-CARACT-REG-02",
+            "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Informamos que a fatura do aluguel referente a COB-CARACT-REG-02 vencera em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 1200,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para pagamento, utilize o boleto disponivel em: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+            "destinatario": "locatario@caracterizacao.invalid",
+            "funcao": "enviar_email_manual",
+            "origem": "emailer.py:251"
+          }
+        ],
+        "name": "COB-CARACT-REG-02",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "canal": "email",
+            "fatura_id": "COB-CARACT-REG-02",
+            "log_gravado": true,
+            "ok": true,
+            "request_id": "<IDENTIFICADOR_DE_REQUISICAO>",
+            "status": "Sucesso",
+            "tipo_template": "A vencer"
+          }
+        }
+      },
+      {
+        "id": "vencida_sem_envio_previo",
+        "mensagens": [
+          {
+            "assunto": "Pendencia financeira - Fatura de aluguel vencida COB-CARACT-REG-03",
+            "cobranca": "COB-CARACT-REG-03",
+            "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Identificamos pendencia de pagamento da fatura do aluguel referente a COB-CARACT-REG-03, com vencimento em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 1300,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para regularizacao, acesse o boleto: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+            "destinatario": "locatario@caracterizacao.invalid",
+            "funcao": "enviar_email_manual",
+            "origem": "emailer.py:251"
+          }
+        ],
+        "name": "COB-CARACT-REG-03",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "canal": "email",
+            "fatura_id": "COB-CARACT-REG-03",
+            "log_gravado": true,
+            "ok": true,
+            "request_id": "<IDENTIFICADOR_DE_REQUISICAO>",
+            "status": "Sucesso",
+            "tipo_template": "Vencida"
+          }
+        }
+      },
+      {
+        "id": "vencida_com_envio_recente",
+        "mensagens": [
+          {
+            "assunto": "Pendencia financeira - Fatura de aluguel vencida COB-CARACT-REG-04",
+            "cobranca": "COB-CARACT-REG-04",
+            "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Identificamos pendencia de pagamento da fatura do aluguel referente a COB-CARACT-REG-04, com vencimento em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 1400,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para regularizacao, acesse o boleto: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+            "destinatario": "locatario@caracterizacao.invalid",
+            "funcao": "enviar_email_manual",
+            "origem": "emailer.py:251"
+          }
+        ],
+        "name": "COB-CARACT-REG-04",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "canal": "email",
+            "fatura_id": "COB-CARACT-REG-04",
+            "log_gravado": true,
+            "ok": true,
+            "request_id": "<IDENTIFICADOR_DE_REQUISICAO>",
+            "status": "Sucesso",
+            "tipo_template": "Vencida"
+          }
+        }
+      },
+      {
+        "id": "vencida_com_envio_antigo",
+        "mensagens": [
+          {
+            "assunto": "Pendencia financeira - Fatura de aluguel vencida COB-CARACT-REG-05",
+            "cobranca": "COB-CARACT-REG-05",
+            "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Identificamos pendencia de pagamento da fatura do aluguel referente a COB-CARACT-REG-05, com vencimento em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 1500,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para regularizacao, acesse o boleto: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+            "destinatario": "locatario@caracterizacao.invalid",
+            "funcao": "enviar_email_manual",
+            "origem": "emailer.py:251"
+          }
+        ],
+        "name": "COB-CARACT-REG-05",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "canal": "email",
+            "fatura_id": "COB-CARACT-REG-05",
+            "log_gravado": true,
+            "ok": true,
+            "request_id": "<IDENTIFICADOR_DE_REQUISICAO>",
+            "status": "Sucesso",
+            "tipo_template": "Vencida"
+          }
+        }
+      },
+      {
+        "id": "cobranca_com_pagamento_confirmado",
+        "mensagens": [],
+        "name": "COB-CARACT-REG-06",
+        "resultado": {
+          "aceito": false,
+          "excecao": "ValidationError",
+          "mensagem": "Fatura ja esta paga. Envio de cobranca cancelado."
+        }
+      },
+      {
+        "id": "cobranca_paga",
+        "mensagens": [],
+        "name": "COB-CARACT-REG-07",
+        "resultado": {
+          "aceito": false,
+          "excecao": "ValidationError",
+          "mensagem": "Fatura ja esta paga. Envio de cobranca cancelado."
+        }
+      },
+      {
+        "id": "cobranca_cancelada_e_vencida",
+        "mensagens": [
+          {
+            "assunto": "Pendencia financeira - Fatura de aluguel vencida COB-CARACT-REG-08",
+            "cobranca": "COB-CARACT-REG-08",
+            "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Identificamos pendencia de pagamento da fatura do aluguel referente a COB-CARACT-REG-08, com vencimento em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 1800,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para regularizacao, acesse o boleto: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+            "destinatario": "locatario@caracterizacao.invalid",
+            "funcao": "enviar_email_manual",
+            "origem": "emailer.py:251"
+          }
+        ],
+        "name": "COB-CARACT-REG-08",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "canal": "email",
+            "fatura_id": "COB-CARACT-REG-08",
+            "log_gravado": true,
+            "ok": true,
+            "request_id": "<IDENTIFICADOR_DE_REQUISICAO>",
+            "status": "Sucesso",
+            "tipo_template": "Vencida"
+          }
+        }
+      },
+      {
+        "id": "cobranca_sem_locatario",
+        "mensagens": [],
+        "name": "COB-CARACT-REG-09",
+        "resultado": {
+          "aceito": false,
+          "excecao": "ValidationError",
+          "mensagem": "Cobranca sem locatario vinculado."
+        }
+      },
+      {
+        "id": "vencida_com_envio_de_prefixo_legado",
+        "mensagens": [
+          {
+            "assunto": "Pendencia financeira - Fatura de aluguel vencida COB-CARACT-REG-10",
+            "cobranca": "COB-CARACT-REG-10",
+            "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Identificamos pendencia de pagamento da fatura do aluguel referente a COB-CARACT-REG-10, com vencimento em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 2000,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para regularizacao, acesse o boleto: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+            "destinatario": "locatario@caracterizacao.invalid",
+            "funcao": "enviar_email_manual",
+            "origem": "emailer.py:251"
+          }
+        ],
+        "name": "COB-CARACT-REG-10",
+        "resultado": {
+          "aceito": true,
+          "retorno": {
+            "canal": "email",
+            "fatura_id": "COB-CARACT-REG-10",
+            "log_gravado": true,
+            "ok": true,
+            "request_id": "<IDENTIFICADOR_DE_REQUISICAO>",
+            "status": "Sucesso",
+            "tipo_template": "Vencida"
+          }
+        }
+      }
+    ],
+    "normalize_hhmm": [
+      {
+        "id": "vazio_cai_no_fallback",
+        "saida": "09:00"
+      },
+      {
+        "id": "hora_e_minuto_com_um_digito",
+        "saida": "07:05"
+      },
+      {
+        "id": "datetime_com_espaco",
+        "saida": "14:30"
+      },
+      {
+        "id": "datetime_com_t",
+        "saida": "14:30"
+      },
+      {
+        "id": "sem_separador_cai_no_fallback",
+        "saida": "09:00"
+      },
+      {
+        "id": "hora_acima_do_limite",
+        "saida": "09:00"
+      },
+      {
+        "id": "minuto_acima_do_limite",
+        "saida": "09:00"
+      },
+      {
+        "id": "limite_superior_aceito",
+        "saida": "23:59"
+      }
+    ],
+    "template": [
+      {
+        "assunto": "Aviso de vencimento - Fatura de aluguel COB-CARACT-REG-01",
+        "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Informamos que a fatura do aluguel referente a COB-CARACT-REG-01 vencera em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 1100,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para pagamento, utilize o boleto disponivel em: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+        "id": "a_vencer_dentro_da_janela",
+        "name": "COB-CARACT-REG-01",
+        "status_template": "A vencer"
+      },
+      {
+        "assunto": "Aviso de vencimento - Fatura de aluguel COB-CARACT-REG-02",
+        "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Informamos que a fatura do aluguel referente a COB-CARACT-REG-02 vencera em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 1200,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para pagamento, utilize o boleto disponivel em: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+        "id": "a_vencer_fora_da_janela",
+        "name": "COB-CARACT-REG-02",
+        "status_template": "A vencer"
+      },
+      {
+        "assunto": "Pendencia financeira - Fatura de aluguel vencida COB-CARACT-REG-03",
+        "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Identificamos pendencia de pagamento da fatura do aluguel referente a COB-CARACT-REG-03, com vencimento em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 1300,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para regularizacao, acesse o boleto: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+        "id": "vencida_sem_envio_previo",
+        "name": "COB-CARACT-REG-03",
+        "status_template": "Vencida"
+      },
+      {
+        "assunto": "Pendencia financeira - Fatura de aluguel vencida COB-CARACT-REG-04",
+        "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Identificamos pendencia de pagamento da fatura do aluguel referente a COB-CARACT-REG-04, com vencimento em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 1400,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para regularizacao, acesse o boleto: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+        "id": "vencida_com_envio_recente",
+        "name": "COB-CARACT-REG-04",
+        "status_template": "Vencida"
+      },
+      {
+        "assunto": "Pendencia financeira - Fatura de aluguel vencida COB-CARACT-REG-05",
+        "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Identificamos pendencia de pagamento da fatura do aluguel referente a COB-CARACT-REG-05, com vencimento em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 1500,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para regularizacao, acesse o boleto: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+        "id": "vencida_com_envio_antigo",
+        "name": "COB-CARACT-REG-05",
+        "status_template": "Vencida"
+      },
+      {
+        "assunto": "Pendencia financeira - Fatura de aluguel vencida COB-CARACT-REG-06",
+        "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Identificamos pendencia de pagamento da fatura do aluguel referente a COB-CARACT-REG-06, com vencimento em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 1600,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para regularizacao, acesse o boleto: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+        "id": "cobranca_com_pagamento_confirmado",
+        "name": "COB-CARACT-REG-06",
+        "status_template": "Vencida"
+      },
+      {
+        "assunto": "Aviso de vencimento - Fatura de aluguel COB-CARACT-REG-07",
+        "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Informamos que a fatura do aluguel referente a COB-CARACT-REG-07 vencera em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 1700,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para pagamento, utilize o boleto disponivel em: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+        "id": "cobranca_paga",
+        "name": "COB-CARACT-REG-07",
+        "status_template": "Fechada"
+      },
+      {
+        "assunto": "Aviso de vencimento - Fatura de aluguel COB-CARACT-REG-08",
+        "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Informamos que a fatura do aluguel referente a COB-CARACT-REG-08 vencera em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 1800,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para pagamento, utilize o boleto disponivel em: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+        "id": "cobranca_cancelada_e_vencida",
+        "name": "COB-CARACT-REG-08",
+        "status_template": "Fechada"
+      },
+      {
+        "assunto": "Aviso de vencimento - Fatura de aluguel COB-CARACT-REG-09",
+        "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Informamos que a fatura do aluguel referente a COB-CARACT-REG-09 vencera em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 1900,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para pagamento, utilize o boleto disponivel em: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+        "id": "cobranca_sem_locatario",
+        "name": "COB-CARACT-REG-09",
+        "status_template": "A vencer"
+      },
+      {
+        "assunto": "Pendencia financeira - Fatura de aluguel vencida COB-CARACT-REG-10",
+        "corpo": "Mensagem automatica do Sistema de Locacao de Imoveis.<br>NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.<br><br>Prezado(a) Joao Locatario,<br>Identificamos pendencia de pagamento da fatura do aluguel referente a COB-CARACT-REG-10, com vencimento em <DATA_VENCIMENTO_FORMATADA>, no valor de R$ 2000,00.<br>Dados do imovel: Imovel COB-001 (Conjunto Caracterizacao).<br>Para regularizacao, acesse o boleto: Boleto indisponivel.<br>Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.<br>Permanecemos a disposicao para esclarecimentos.<br>Atenciosamente,<br>Equipe Financeira",
+        "id": "vencida_com_envio_de_prefixo_legado",
+        "name": "COB-CARACT-REG-10",
+        "status_template": "Vencida"
+      }
+    ]
+  }
+}
