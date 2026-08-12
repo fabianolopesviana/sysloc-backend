@@ -18,17 +18,20 @@
 
 **Fase × fatia.** Uma fase é uma unidade do plano; uma **fatia** é uma feature do agent-spec, com
 `v1` próprio, que se executa num run. Quase toda fase é uma fatia só — mas quando a amplitude não
-cabe num run, ela se parte. **A F1, a F2 e a F3 foram partidas em duas**, e nenhuma das três
-partições foi prevista no plano: as três se decidiram no pré-refinamento da fase. A F1 cortou *depois
-da autenticação*; a F2 corta *por agregado*, com imóveis e pessoas antes de contratos; a F3 corta
-*por efeito*, com o dado e o cálculo antes do que age e do que sai. Outras fases podem se partir pelo
-mesmo motivo; quando isso acontecer, as fatias novas aparecem aqui.
+cabe num run, ela se parte. **A F1 e a F2 foram partidas em duas, e a F3 em três**, e nenhuma dessas
+partições foi prevista no plano: todas se decidiram em pré-refinamento. A F1 cortou *depois da
+autenticação*; a F2 corta *por agregado*, com imóveis e pessoas antes de contratos; a F3 corta *por
+efeito*, com o dado e o cálculo antes do que age e do que sai — e a **segunda fatia dela partiu de
+novo**, por *objeto × natureza de prova*, separando o que age do que sai. Outras fases podem se
+partir pelo mesmo motivo; quando isso acontecer, as fatias novas aparecem aqui.
 
 > **O pré-refinamento de uma fase partida tem casa própria.** O da F2 vive em
 > `docs/specs/features/dominio-locacao/v1/pre-refinement.md` e o da F3 em
-> `docs/specs/features/cobranca-mora-e-documentos/v1/pre-refinement.md`; cada um cobre as **duas**
-> fatias da sua fase. Nenhum dos dois é fatia executável, e por isso não aparecem no painel — nem no
-> mapa `FATIAS_DA_FASE` do gerador.
+> `docs/specs/features/cobranca-mora-e-documentos/v1/pre-refinement.md`; cada um cobre as fatias da
+> sua fase. A sub-partição da fatia 2 da F3 tem o seu próprio, em
+> `docs/specs/features/regua-e-documentos/v1/pre-refinement.md`, que é a **entrada dos dois runs**
+> (2a e 2b). Nenhum dos três é fatia executável, e por isso não aparecem no painel — nem no mapa
+> `FATIAS_DA_FASE` do gerador.
 
 ---
 
@@ -40,7 +43,7 @@ mesmo motivo; quando isso acontecer, as fatias novas aparecem aqui.
 | **F0** | Stack instalada e provada | ✅ concluída | 7/7 tasks |
 | **F1** | Fundação SaaS — isolamento, identidade e autorização | ✅ concluída | 20/20 tasks |
 | **F2** | Domínio de locação | ✅ concluída | 21/21 tasks |
-| **F3** | Cobrança, mora e documentos | 🔄 em andamento | 1 de 2 fatias · 11/11 tasks |
+| **F3** | Cobrança, mora e documentos | 🔄 em andamento | 2 de 3 fatias · 23/23 tasks |
 | **F4** | Integração bancária (Sicoob) | ⬜ não iniciada | — |
 | **F5** | Automações agendadas | ⬜ não iniciada | — |
 | **F6** | Frontend religado — só o handoff sai daqui | ⬜ não iniciada | — |
@@ -182,10 +185,15 @@ empresa A apontando `Imovel` da B é **recusado pelo banco**.
 
 **O que é:** o dinheiro. Ciclo de cobrança, cálculo de mora e os documentos que o cliente recebe.
 
-**Por que foi partida em duas:** o corte é **por efeito colateral**, e três critérios independentes
-(efeito, objeto e oráculo) coincidem no mesmo ponto. A fatia 1 não toca nada fora do banco; a fatia 2
-é toda ela ação sobre o mundo — fila, e-mail, PDF. A viabilidade decidiu: a F2 inteira fez ~1.000 LOC
-em 2 fatias e 21 tasks, e a F3 num run só seria o dobro disso.
+**Por que foi partida em duas — e depois a segunda partiu de novo:** o primeiro corte é **por efeito
+colateral**, e três critérios independentes (efeito, objeto e oráculo) coincidem no mesmo ponto. A
+fatia 1 não toca nada fora do banco; a fatia 2 é toda ela ação sobre o mundo — fila, e-mail, PDF. A
+viabilidade decidiu: a F2 inteira fez ~1.000 LOC em 2 fatias e 21 tasks, e a F3 num run só seria o
+dobro disso. O aviso de que a fatia 2 "pode precisar partir de novo" **se confirmou** no
+pré-refinamento dela, em 2026-08-11: o segundo corte é **objeto × natureza de prova**, que coincidem
+— a **2a** é o que age, com oráculo executável de 51 KB; a **2b** é o que sai, com oráculo textual ou
+nenhum. A 2a veio primeiro porque carregava a **task de prazo** que extrai o fonte do PDF do banco do
+Frappe antes do desligamento.
 
 ### Fatia 1 — `cobranca-e-mora`
 
@@ -194,20 +202,34 @@ O agregado `Cobranca`, o **`status` com fonte única no servidor** (view `cobran
 **mora por empresa** e a série `COB-{ano}-{7 dígitos}`. Fecha o **D28 (F2/T7)**: a ativação do
 contrato passa a gerar as parcelas na mesma unidade de trabalho.
 
-### Fatia 2 — `regua-e-documentos`
+### Fatia 2a — `regua-de-cobranca`
 
 A régua de cobrança com a fila (é a **primeira fatia que enfileira tarefa de negócio**, e por isso
-fecha o **D32 (F0/T6)**), o **PDF de contrato** validado contra o golden textual e o porte do
-`locatario_email_confirmacao`. Fecha o **D36 (F2/T8)**. ⚠️ Concentra ~1.800 LOC e
-**pode precisar partir de novo** — a decisão fica para o briefing dela.
+fechou o **D32 (F0/T6)** nas duas pontas). Entrega `negocio.politica_de_aviso` e
+`negocio.envio_de_cobranca` sob RLS forçada, o **predicado de elegibilidade no banco** sobre
+`cobranca_derivada`, o pacote **`@sysloc/regua`** e 4 rotas novas sob `/v1/automacao-de-cobranca`.
+A **política é por empresa** — o legado a tinha **Single**, uma para o SaaS inteiro, o mesmo defeito
+que a mora corrigiu na fatia 1.
+
+### Fatia 2b — `documentos-e-confirmacao`
+
+O que sai: o **PDF de contrato** portado para `@react-pdf/renderer` e validado contra o golden
+textual, e o porte do `locatario_email_confirmacao`. Fecha o **D36 (F2/T8)** — e **por construção**:
+com o PDF derivado sob demanda não existe arquivo preexistente de que o cancelamento possa depender.
+⚠️ Ela **já tem pré-refinamento** (o de `regua-e-documentos/v1`, que cobre as duas sub-fatias) e o
+que falta é o run próprio; o ⬜ do painel é o gerador não distinguindo esse caso. **Duas ADRs são
+pré-requisito**: o critério para uma rota de negócio dispensar sessão, e o que o contrato publica
+para uma rota que devolve bytes.
 
 ⚠️ **O carnê NÃO está mais aqui** — foi para a **F4** em 2026-08-10, por decisão do pré-refinamento
 da fase: a fonte de cada página é o **boleto emitido**, e a emissão é F4 inteira.
 
-⚠️ **Duas peças desta fatia vivem só no banco do Frappe, e o fonte delas morre na F7**: o Server
-Script `PDF contrato` (752 linhas, `After Save` sobre `Contrato`) e o `Automacao cobranca config
-api` (154 linhas), que é a configuração da régua. Nenhum dos dois está em arquivo ou em git — lê-los
-antes do desligamento é pré-condição de portar. Detalhe em
+⚠️ **Duas peças desta fatia viviam só no banco do Frappe, e o fonte delas morre na F7. Uma já foi
+salva.** O Server Script `PDF contrato` (752 linhas, `After Save` sobre `Contrato`) foi **extraído
+pela T1 da 2a** e está versionado em `golden/contrato-pdf-fonte.py` — a janela de prazo da 2b, essa,
+fechou bem. O `Automacao cobranca config api` (154 linhas), a configuração **Single** da régua,
+**continua só no banco e sem golden**; a 2a a substituiu por `politica_de_aviso` por empresa, então
+cabe à 2b decidir se ainda precisa lê-lo. Detalhe em
 `docs/plano-backend-novo/briefings/f3-fatia2-regua-e-documentos.md`.
 
 **Entrega:**
@@ -235,10 +257,11 @@ antes do desligamento é pré-condição de portar. Detalhe em
 o `reply_to` da empresa certa.
 
 <!-- ESTADO:F3:INICIO -->
-> 🔄 **em andamento** — 1 de 2 fatias · 11/11 tasks
+> 🔄 **em andamento** — 2 de 3 fatias · 23/23 tasks
 >
 > ✅ `cobranca-e-mora/v1` — 11/11 tasks
-> 📋 `regua-e-documentos/v1`
+> ✅ `regua-de-cobranca/v1` — 12/12 tasks
+> ⬜ `documentos-e-confirmacao/v1`
 <!-- ESTADO:F3:FIM -->
 
 ---
