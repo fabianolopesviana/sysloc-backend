@@ -21,6 +21,11 @@
  * | CA-16    | CT-609 | Código de cobrança **inexistente** devolve lista de comprimento `0` e total
  * |          | (c)    | `0` — nunca exceção. É a metade desta camada do `CT-632`, cuja outra metade
  * |          |        | (o `404` com o envelope inteiro) é da T10, onde há HTTP. |
+ * | CA-16    | CT-646 | O mesmo código inexistente na porta de **escrita** faz o oposto, por decisão:
+ * |          |        | `registrarEnvioDeCobranca` **rejeita** pela sentinela específica, e a
+ * |          |        | contagem crua da tabela fica intacta. Acrescentado pela intervenção
+ * |          |        | dirigida de 2026-08-12 que fechou o `D16 (F3/T5)` — o `throw` era declarado
+ * |          |        | alcançável e nenhum caso o exercitava. |
  * | CA-04    | CT-610 | Para `{ diasAntesDoVencimento: 10, intervaloMinimoDias: 2 }`, o predicado
  * | CA-06    |        | devolve EXATAMENTE `[L5, L3, L1]` — igualdade de lista **ordenada** de
  * | CA-08    |        | códigos, nunca `toContain` e nunca contagem. Entram: `A_VENCER` dentro dos
@@ -453,6 +458,47 @@ describe('CT-609 — o registro de toda tentativa e o histórico da cobrança', 
           async (tx) => await contarEnviosDaCobranca(tx, COBRANCA_INEXISTENTE),
         ),
       ).toBe(NENHUMA_TENTATIVA);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  /**
+   * A guarda de ESCRITA para o mesmo arranjo do `CT-609 (c)` — o `D16 (F3/T5)` fechado.
+   *
+   * O `CT-609 (c)` prova que as duas portas de **leitura** devolvem vazio sem exceção quando o código
+   * não alcança cobrança alguma. A porta de **escrita** faz o oposto, por decisão: ela levanta. O
+   * `throw` já existia e o docblock dele declarava-o **ALCANÇÁVEL** — ao contrário das guardas gêmeas
+   * de `lerHoraCorrenteDaOperacao` e `gravarPoliticaDeAviso`, documentadas como inalcançáveis —, mas
+   * **nenhum caso o exercitava**: trocá-lo por um `as` ou por um retorno silencioso passava verde.
+   *
+   * A garantia que ele carrega é forte: impedir que uma tentativa **não registrada** atravesse como
+   * se tivesse sido gravada. É o registro que impede o reenvio na passagem seguinte — uma tentativa
+   * que se dá por gravada sem estar reabre a cobrança para ser avisada de novo.
+   *
+   * A asserção é pela **sentinela específica**, nunca `rejects.toThrow()` genérico: qualquer erro do
+   * banco satisfaria o genérico, inclusive um que significasse o contrário do que o caso mede.
+   */
+  it(
+    'CT-646 — registrar tentativa cujo código não alcança cobrança REJEITA, e nada é gravado',
+    async () => {
+      const cenario = await semearCenario('recusa-de-registro');
+
+      const antes = await contarLinhasDeEnvio(cenario.contexto);
+
+      await expect(
+        emUnidade(
+          cenario.contexto,
+          async (tx) =>
+            await registrarEnvioDeCobranca(tx, {
+              cobrancaCodigo: COBRANCA_INEXISTENTE,
+              ...TENTATIVAS_DO_CT609[0],
+            }),
+        ),
+      ).rejects.toThrow(/o contexto não alcança a cobrança/);
+
+      // O efeito: a recusa não deixa resíduo. Sem esta linha o caso provaria só que ALGO levantou —
+      // e uma implementação que gravasse a linha e levantasse depois passaria.
+      expect(await contarLinhasDeEnvio(cenario.contexto)).toBe(antes);
     },
     LIMITE_DO_CASO_MS,
   );

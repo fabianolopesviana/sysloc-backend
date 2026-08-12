@@ -89,7 +89,13 @@ export const VARIAVEL_DO_TRANSPORTE = 'SMTP_URL';
  * achado `BAIXO-002` do Gate 1 sobre a mensagem irmã. O que os dois compartilham é o que importa
  * para o critério da credencial: publicam o **nome da variável**, jamais o valor.
  */
-export const MOTIVO_DE_TRANSPORTE_INUTILIZAVEL =
+// D25 (F3/T6) fechado — a ausência de `export` é a decisão, e ela converte em IMPOSSIBILIDADE
+// ESTRUTURAL o que a `DECISÃO FECHADA` de `test/coordenadas-do-transporte.spec.ts` só proibia em
+// prosa: que o oráculo do texto publicado venha do módulo sob prova. Enquanto a constante era
+// exportada, a porta que aquele marcador fecha continuava aberta no nível da linguagem — bastava um
+// import para a igualdade voltar a mover as duas pontas juntas, que é o defeito que três mutantes
+// medidos atravessavam em 19/19 verde. Ela nunca teve consumidor externo depois da rodada 7.
+const MOTIVO_DE_TRANSPORTE_INUTILIZAVEL =
   'o adaptador de e-mail não é construído com esta variável em forma que não serve de transporte';
 
 /** Os dois esquemas que o transporte de e-mail aceita — a lista fechada da recusa por forma. */
@@ -113,7 +119,10 @@ const PORTA_DE_SUBMISSAO = 587;
  * `user` e `pass` são nomes de fronteira externa — o que o `nodemailer` lê —, e por isso escapam da
  * nomenclatura em português do resto do pacote, como já escapam `connectionTimeout` e `socketTimeout`.
  */
-export interface CredencialDoTransporte {
+// Privada pela mesma razão do `MOTIVO_…` acima (D25). Ela continua alcançável de fora por
+// `CoordenadasDoTransporte['auth']`, que é a forma correta — o consumidor recebe o tipo pelo objeto
+// que o contém, sem que o módulo publique uma segunda porta de entrada para o mesmo dado.
+interface CredencialDoTransporte {
   readonly user: string;
   readonly pass: string;
 }

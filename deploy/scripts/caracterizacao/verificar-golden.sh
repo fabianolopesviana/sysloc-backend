@@ -1646,6 +1646,17 @@ from tempfile import TemporaryDirectory
 
 golden, arq_capturar = Path(sys.argv[1]), Path(sys.argv[2])
 
+# D4 (F3/T1) fechado — a linha abaixo vem ANTES de qualquer `exec_module`, e é a
+# origem, não a limpeza depois. O `SourceFileLoader` grava o bytecode AO LADO do
+# fonte por padrão, de modo que toda execução deste verificador criava
+# `deploy/scripts/caracterizacao/__pycache__/capturar.cpython-3NN.pyc` (105 KB,
+# binário) DENTRO do diretório versionado que ele existe para conferir — e o
+# cabeçalho deste arquivo declara que ele "lê apenas o que está versionado".
+# Medido em 2026-08-12: o resíduo chegou a ser commitado e derrubou a âncora
+# `CT-626 (d)` do `packages/db`, que audita as classes de arquivo da árvore por
+# igualdade. Apagar no `trap` fecharia a ponta e deixaria a escrita acontecendo.
+sys.dont_write_bytecode = True
+
 # O módulo é carregado do CAMINHO, e não do nome: o que se prova é o comportamento
 # do arquivo versionado, e um `import capturar` qualquer poderia resolver para
 # outro lugar do `sys.path`.
@@ -1687,7 +1698,20 @@ with TemporaryDirectory() as caixa:
 # Entrada única de escrita: qualquer outro caminho que gravasse o manifesto teria
 # de nomeá-lo, e nomeá-lo é o que estas duas contagens tornam visível.
 fonte = arq_capturar.read_text(encoding="utf-8")
-print(f"literal_do_manifesto={len(re.findall(chr(34) + 'PROCEDENCIA[.]md' + chr(34), fonte))}")
+
+# D5 (F3/T1) fechado — a classe alcança as DUAS formas de aspa. A expressão anterior
+# usava `chr(34)` nas duas pontas e enxergava só a aspa dupla: um segundo autor
+# escrito com aspa simples — `(DIR_GOLDEN / 'PROCEDENCIA.md').write_text(...)` —
+# deixava as NOVE asserções do CT-640 verdes, porque as seis comportamentais chamam
+# `gravar_procedencia` diretamente e ela continua correta. O manifesto voltava a ter
+# dois autores com o caso inteiro aprovado. O que se perdia não era a detecção do
+# efeito (o CT-601 acusaria na execução seguinte), era a ATRIBUIÇÃO — que é
+# precisamente o que tornava o defeito original silencioso.
+# O estilo `chr()` é preservado de propósito: o heredoc é `<<'PY'` e não expande,
+# mas escrever aspas cruas aqui convida a próxima edição a quebrá-lo.
+ASPAS = chr(34) + chr(39)
+MOLDE_DO_MANIFESTO = "[" + ASPAS + "]PROCEDENCIA[.]md[" + ASPAS + "]"
+print(f"literal_do_manifesto={len(re.findall(MOLDE_DO_MANIFESTO, fonte))}")
 usos = [
     linha
     for linha in fonte.splitlines()

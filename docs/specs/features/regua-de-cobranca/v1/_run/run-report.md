@@ -45,7 +45,9 @@ Bate exatamente com o número declarado no `task_plan.md`. Nenhum pacote encolhe
 
 ## 2. Débitos Técnicos Não Resolvidos
 
-> Anotados pela política débito-controlado com bloqueio seletivo por categoria: baixos de qualquer categoria e médios de categoria anotável não bloqueiam. Resolva tudo de uma vez com `/agent-spec-debt-resolution docs/specs/features/regua-de-cobranca/v1/`.
+> Anotados pela política débito-controlado com bloqueio seletivo por categoria: baixos de qualquer categoria e médios de categoria anotável não bloqueiam.
+>
+> ⚠️ **Sobre rodar `/agent-spec-debt-resolution` nestes 57, o parecer é NÃO** — e ele é medido, não herdado; está na §4.0.3 abaixo. **Sete já estão fechados**, marcados `— ✅ FECHADO` no cabeçalho do bloco, pela **intervenção dirigida de 2026-08-12**, que colheu o valor real da lista em ~3 h contra as 10-14 h que a skill custaria. Os 50 restantes ficam escriturados, que é o estado correto para eles: **7 têm marcador `DÉBITO COM GATILHO` no código**, e o `P2` do Protocolo manda grepar esta §2 antes de editar.
 
 ### D1 · BAIXO · testability · T1 · Tech Review
 - **Onde:** `deploy/scripts/caracterizacao/verificar-captura.sh` (`ct_603`, e a linha dele na lista de casos do `main`)
@@ -65,17 +67,21 @@ Bate exatamente com o número declarado no `task_plan.md`. Nenhum pacote encolhe
 - **Impacto:** endurecer uma cópia deixa a outra para trás. O caminho tem três propriedades de segurança que precisam valer **juntas** — autenticar como usuário da base e nunca `root`, credencial por `stdin` e nunca em `argv`, e nunca ecoada — e elas agora vivem em dois lugares que ninguém obriga a se manterem iguais. É a mesma forma do `D1` e do `D26` já indexados no `CLAUDE.md`, cujo gatilho declarado é o terceiro consumidor.
 - **O que fazer:** não refatorar dentro desta fatia. O marcador está emitido com `QUANDO FECHA: o quarto consumidor do caminho de leitura autenticada do legado, ou a primeira alteração das garantias de transporte da credencial`. Não existe biblioteca shell compartilhada neste projeto e criar uma seria ela própria um desvio; a `.claude/rules/testing-stack.md` documenta a replicação do vocabulário deste diretório como convenção aceita.
 
-### D4 · médio · code_quality · T1 · QA
+### D4 · médio · code_quality · T1 · QA — ✅ FECHADO
 - **Onde:** `deploy/scripts/caracterizacao/verificar-golden.sh:1654` (metade 1 do `CT-640`)
 - **Problema:** a metade 1 do `CT-640` carrega `capturar.py` por caminho (`spec_from_file_location` + `exec_module`). O `SourceFileLoader` grava o bytecode ao lado do fonte, de modo que **toda execução de `verificar-golden.sh`** cria `deploy/scripts/caracterizacao/__pycache__/capturar.cpython-312.pyc` (105 KB, binário) dentro do diretório versionado. Medido: removido o diretório e reexecutado o verificador, ele reaparece; `git check-ignore` confirma que **não** está coberto pelo `.gitignore` (que não tem `__pycache__` nem `*.pyc`), então ele aparece como `??` em todo `git status` posterior.
 - **Impacto:** sem contaminação de asserção — reexecutado com o `__pycache__` presente, o `CT-013` mede as mesmas 72 ocorrências e o `CT-012` segue verde. O risco é de higiene e de **contrato**: o cabeçalho do próprio `verificar-golden.sh` declara *"lê apenas o que está versionado"*, e a `.claude/rules/testing-stack.md` manda o shell operar *"sempre em sandbox descartável — nunca na árvore de trabalho quando houver sandbox equivalente"*; a metade 2 do `CT-640` respeita isso exemplarmente e a metade 1 não. Um `git add` de diretório versionaria bytecode compilado de um script que lê a credencial do banco de operação. O Staff **avaliou e não escalou**: o `.pyc` é bytecode de um fonte já versionado em texto claro, não carrega credencial nem dado de runtime.
 - **O que fazer:** uma linha resolve, no próprio heredoc: `sys.dont_write_bytecode = True` antes do `exec_module` (ou invocar o `python3` do `medir_autoria_do_manifesto` com `PYTHONDONTWRITEBYTECODE=1`). Alternativa equivalente: acrescentar `rm -rf "${DIR_SCRIPTS}/__pycache__"` ao `limpar()` do `trap EXIT`. **Ignorar por `.gitignore` fecha só a ponta do versionamento** e deixa o verificador escrevendo na árvore que ele existe para conferir — prefira a supressão na origem.
 
-### D5 · BAIXO · testability · T1 · Tech Review (rodada 2)
+- **✅ Fechado na intervenção dirigida de 2026-08-12:** `sys.dont_write_bytecode = True` antes do `exec_module`, na ORIGEM — não limpeza no `trap`. ⚠️ **O débito mordeu durante a própria intervenção**: o `verificar-golden.sh` rodado na auditoria criou o `.pyc`, ele foi commitado por engano em `3a596fc` e **derrubou a âncora `CT-626 (d)`** do `packages/db`, que audita as classes de arquivo da árvore por igualdade. O arquivo saiu do git (`git rm --cached`), o `.gitignore` ganhou `__pycache__/` e `*.pyc` como segunda barreira, e a suíte do `db` voltou a 148/148. Mutante: removida a linha, o verificador volta a gravar; controle: árvore limpa e `CT-640 aprovado`.
+
+### D5 · BAIXO · testability · T1 · Tech Review (rodada 2) — ✅ FECHADO
 - **Onde:** `deploy/scripts/caracterizacao/verificar-golden.sh:1699` (asserção de ponto único do `CT-640`)
 - **Problema:** a medição do ponto único é `re.findall(chr(34) + 'PROCEDENCIA[.]md' + chr(34), fonte)` — `chr(34)` é a aspa **dupla**, e a expressão não alcança `'PROCEDENCIA.md'`. Considere o mutante **aditivo**: alguém acrescenta, em qualquer ponto de `capturar.py`, `(DIR_GOLDEN / 'PROCEDENCIA.md').write_text(...)` mantendo `gravar_procedencia` intacta. As nove asserções do `CT-640` passam todas — `literal_do_manifesto` = 1, `usos_da_constante` = 1, `uso_fora_do_ponto_unico` = vazio, e as seis comportamentais passam porque `medir_autoria_do_manifesto` chama `gravar_procedencia` diretamente e ela continua correta. O manifesto volta a ter dois autores com o `CT-640` inteiramente verde.
 - **Impacto:** baixo e contido — mesmo com o `CT-640` verde, o efeito do segundo autor faria o `CT-601` reprovar na próxima execução do `verificar-captura.sh` (a §5 sumiria da árvore versionada). O que se perde não é a **detecção** do defeito, é a **atribuição** — que é precisamente o que tornava o defeito original silencioso e o que o `CT-640` existe para restituir. `capturar.py` tem 104 KB em aspas duplas e apenas 9 aspas simples no total, o que torna o escape improvável; mas a asserção declara *"nomeia o manifesto em um único ponto"*, e ela não prova isso.
 - **O que fazer:** trocar o padrão por uma classe de aspas, mantendo o resto: `re.findall("['\"]PROCEDENCIA[.]md['\"]", fonte)` (ou `chr(34)+chr(39)` numa classe, para preservar o estilo `chr()` que o caso já usa e evitar colisão com o heredoc `<<'PY'`). O contrato do caso e a mensagem da asserção não mudam. A prova de falsificação exigida pela `.claude/rules/testing-stack.md` custa **um quarto mutante**: o aditivo de aspas simples, que hoje sobrevive e passaria a reprovar.
+
+- **✅ Fechado na intervenção dirigida de 2026-08-12:** a expressão passou a usar uma **classe com as duas aspas** no lugar do `chr(34)` nas duas pontas, preservando o estilo `chr()` que o caso já usava. **Quarto mutante medido** — o aditivo com aspa simples, que antes sobrevivia com as nove asserções verdes: `FALHA capturar.py nomeia o manifesto em um único ponto — esperado [1], obtido [2]`. Controle `OK`.
 
 ### D6 · BAIXO · project_pattern · T2 · Tech Review
 - **Onde:** `docs/specs/features/regua-de-cobranca/v1/tasks/T2.md`, §6.5 linhas 161 e 163 — **as duas já corrigidas pelo orquestrador no fechamento da task**
@@ -137,11 +143,13 @@ Bate exatamente com o número declarado no `task_plan.md`. Nenhum pacote encolhe
 - **Impacto:** nenhum hoje. O débito é a **assimetria**: o arquivo irmão da mesma task (`politica-de-aviso.spec.ts:210`) resolve o mesmo problema de forma determinística (`9900000000${marca}`), e duas formas convivendo ensinam a próxima a copiar a pior.
 - **O que fazer:** trocar por documento inteiramente derivado do contador, no molde de `politica-de-aviso.spec.ts:210` — ex.: `9910000000${String(sequenciaDoCenario).padStart(4, '0')}`. Uma linha, sem efeito sobre asserção alguma.
 
-### D16 · BAIXO · testability · T5 · QA + Tech Review
+### D16 · BAIXO · testability · T5 · QA + Tech Review — ✅ FECHADO
 - **Onde:** `packages/db/src/envio-de-cobranca.ts` (`registrarEnvioDeCobranca`, o `throw` do contexto que não alcança a cobrança)
 - **Problema:** os **dois gates** convergiram. A porta levanta `'a tentativa de envio não foi gravada: o contexto não alcança a cobrança'`, e o próprio docblock a declara **ALCANÇÁVEL** — ao contrário das guardas gêmeas de `lerHoraCorrenteDaOperacao` e `gravarPoliticaDeAviso`, documentadas como inalcançáveis. O Gate 2 confirmou o alcance por leitura do SQL: código inexistente esvazia a CTE `alvo`, o `INSERT … SELECT FROM alvo` grava zero linhas, `gravado` sai vazio e o `SELECT` final não devolve nada. **Nenhum caso a exercita**: `COBRANCA_INEXISTENTE` é usado apenas contra as duas portas de **leitura**, no CT-609 (c) — o arranjo idêntico já está montado ao lado, do outro lado da fronteira.
 - **Impacto:** a garantia é forte — impedir que uma tentativa não registrada atravesse como se tivesse sido gravada, sendo o registro o que impede o reenvio na passagem seguinte — e hoje é afirmação de docblock sem prova. Trocar o `throw` por um `as` ou por um retorno silencioso, exatamente o que o comentário do ponto existe para desencorajar, **passaria verde**.
 - **O que fazer:** fechar na **T8**, junto do **CT-621**, que já é o dono do alcance cross-tenant do envio: acrescentar a asserção de que `registrarEnvioDeCobranca` com código inexistente **rejeita** — `rejects.toThrow(/o contexto não alcança a cobrança/)`, pela mensagem/sentinela específica e **nunca** `rejects.toThrow()` genérico —, mais a contagem crua de `negocio.envio_de_cobranca` intacta depois da recusa. É o mesmo molde de controle que o CT-609 (b) já usa. **Não bloqueia a T5**: a §6.4 não pede o cenário e a §6.5 defere o alcance cross-tenant à T8.
+
+- **✅ Fechado na intervenção dirigida de 2026-08-12:** nasceu o **CT-646** em `packages/db/test/envio-de-cobranca.spec.ts`, irmão do `CT-609 (c)` — mesmo arranjo, o outro lado da fronteira. Afirma a rejeição pela **sentinela específica** (a mensagem do contexto que não alcança a cobrança, nunca `rejects.toThrow()` genérico) e a contagem crua intacta. Mutante: o `throw` trocado por retorno silencioso reprova com `promise resolved … instead of rejecting`. `db` 147 → 148.
 
 ### D17 · BAIXO · code_quality · T5 · Tech Review
 - **Onde:** `packages/db/src/envio-de-cobranca.ts` (docblock de `selecionarCandidatasAoAviso`)
@@ -155,11 +163,13 @@ Bate exatamente com o número declarado no `task_plan.md`. Nenhum pacote encolhe
 - **Impacto:** o item (1) é o que morde: um leitor futuro que tome a §3.2 como autoritativa e "convirja" o código para o `IN` literal **derruba o CT-510**. A rede existe e é executável, então o defeito é caro em rodada, não em produção. Os itens (2) e (3) são ruído de leitura.
 - **O que fazer:** emendar a §3.2 nos três pontos — trocar o `IN` ilustrativo por `= ANY(ESTADOS_EM_ABERTO::negocio.status_cobranca[])` **com nota de que o literal é proibido pelo CT-510**; corrigir a ordem esperada do card do CT-610 para `[L5, L3, L1]` nomeando o `ORDER BY` como fonte; e acrescentar o desempate `id DESC` à descrição de `lerEnviosDaCobranca`, com a razão do carimbo idêntico. Acrescentar à §5.2 os três arquivos consequentes (`tsconfig.json`, `test/unidade-de-trabalho.spec.ts`, `pnpm-lock.yaml`).
 
-### D19 · BAIXO · architecture · T6 · Tech Review
+### D19 · BAIXO · architecture · T6 · Tech Review — ✅ FECHADO
 - **Onde:** `packages/regua/src/index.ts` (a publicação de `criarCapturadorDeEmail`) — **dono nomeado: T8/T10**
 - **Problema:** o modo de falha **INVERSO** da CA-17 não tem âncora. `criarCapturadorDeEmail` é publicado pelo barrel e, a partir da T8, alcançável pela **composição de produção** pela mesma fronteira e com a mesma interface do adaptador real — a régua, por desenho, **não sabe qual dos dois recebeu**. Toda a prova da T6 corre numa direção só: o CT-626 afirma que teste nenhum alcança o adaptador de produção; **nada afirma que composição de produção nenhuma alcança o capturador**.
 - **Impacto:** uma composição que fiasse o capturador em produção **engoliria todo aviso em silêncio** — a régua gravaria `ENVIADA` com `causa: null` para cada candidata, a trava de intervalo prenderia cada cobrança, e nenhuma mensagem sairia. **É pior de detectar que o da CA-17**: não há caixa alheia acusando, não há linha `FALHOU`, e o histórico que o operador consulta **afirmaria positivamente que o aviso saiu**. O risco foi levantado no Gate 2 da **T4** e re-reportado no da T6.
 - **O que fazer:** na **T8** (ou na T10, junto do crescimento já previsto de `ARQUIVOS_QUE_LIGAM_O_ADAPTADOR`), acrescentar a **âncora simétrica** em `barreira-de-envio.spec.ts`, reusando `caminharPeloRepositorio` e `semComentarios`: *"a lista dos arquivos sob `apps/*/src/**` que ligam `criarCapturadorDeEmail` é, por igualdade, `[]`"*. É **mais barata** que a existente (o conjunto é um prefixo, não a árvore inteira) e o mutante é uma linha em memória. **Não é caso de despublicar o capturador** — os quatro diretórios de teste dependem dele legitimamente.
+
+- **✅ Fechado na intervenção dirigida de 2026-08-12:** ⚠️ **JÁ ESTAVA PAGO** — a auditoria contra o código encontrou a âncora completa em `packages/db/test/barreira-de-envio.spec.ts`, no `CT-626 (f)`, fechada pela **T10** com igualdade, guarda antivácuo por diretório, testemunha positiva e prova de falsificação com dois controles. O que faltava era a baixa aqui. `criarCapturadorDeEmail` tem **0 ligações em produção e 6 em teste**, medido.
 
 ### D20 · MEDIO · documentation · T6 · QA
 - **Onde:** `packages/db/test/barreira-de-envio.spec.ts` (a afirmação de exaustividade do cabeçalho e o docblock de `classeDoCaminho`)
@@ -191,11 +201,13 @@ Bate exatamente com o número declarado no `task_plan.md`. Nenhum pacote encolhe
 - **Impacto:** **nulo hoje**, e medido em três vias pelo QA: `shared.getLogger({})` e `shared.getLogger({ logger: false })` devolvem o **mesmo** objeto (seis chaves, corpo `() => false`); com uma `SMTP_URL` contendo `SENHA_SECRETA`, exercitar `info/debug/error` produz **0 bytes** em stdout+stderr. O risco é contido porque o manifesto **pina `"nodemailer": "7.0.13"` em versão exata, sem `^`**. O residual é estreito: **se o padrão do `getLogger` mudar num bump, nada na suíte acusa**.
 - **O que fazer:** ⚠️ **NÃO restaurar no ponto de chamada** — está **medido** que qualquer literal de objeto ali **reprova o `CT-641 (c)`**, que é a única barreira contra o defeito do TR-P1. O caminho certo, quando a T8/T10 abrir aquele módulo por outra razão: acrescentar `readonly logger: false` e `readonly debug: false` a `CoordenadasDoTransporte`, devolvê-las no objeto, e estendê-las nas duas igualdades estritas do `CT-641 (a)`/`(b)`. O QA **se retratou** explicitamente da premissa de "custo zero" que dera na rodada 6.
 
-### D25 · BAIXO · dead_code · T6 · QA + Tech Review
+### D25 · BAIXO · dead_code · T6 · QA + Tech Review — ✅ FECHADO
 - **Onde:** `packages/regua/src/coordenadas-do-transporte.ts` (`MOTIVO_DE_TRANSPORTE_INUTILIZAVEL`, e em menor grau `CredencialDoTransporte`)
 - **Problema:** a correção da rodada 7 removeu o **único** import externo da constante (o teste passou a escrever o literal). `grep -rn` em `apps` e `packages` devolve **duas** ocorrências, ambas dentro do próprio módulo, e o `index.ts` não publica nada dali. O `export` virou **superfície sem consumidor**.
 - **Impacto:** nenhum hoje. O ponto é outro: a `DECISÃO FECHADA` de `coordenadas-do-transporte.spec.ts` existe justamente para **proibir** que o oráculo do texto venha desta constante, e o `export` mantém aberta, **no nível da linguagem**, a porta que o marcador fecha **só em prosa**.
 - **O que fazer:** retirar o `export` de `MOTIVO_DE_TRANSPORTE_INUTILIZAVEL` e de `CredencialDoTransporte` (este último continua alcançável por `CoordenadasDoTransporte['auth']`), citando o marcador no docblock. **Converte a proibição em impossibilidade estrutural.** ⚠️ Cuidado: o `CT-641 (a)`/`(b)` usa `satisfies CoordenadasDoTransporte`, que **não** depende de nenhum dos dois.
+
+- **✅ Fechado na intervenção dirigida de 2026-08-12:** o `export` saiu das duas — a proibição virou **impossibilidade estrutural**. Mutante: um teste que tente importar o oráculo do módulo sob prova agora **não compila**, com `TS2459 … declares locally, but it is not exported`. Controle: `regua` 30/30. O tipo segue alcançável pelo campo do objeto que o contém.
 
 ### D26 · BAIXO · security · T6 · Tech Review
 - **Onde:** `packages/regua/test/coordenadas-do-transporte.spec.ts:74` — `new URL(\`../src/adaptador${'-'}smtp.ts\`, import.meta.url)`
@@ -227,11 +239,13 @@ Bate exatamente com o número declarado no `task_plan.md`. Nenhum pacote encolhe
 - **Impacto:** baixo — nenhuma mudança de comportamento, nenhuma asserção enfraquecida. O custo é de auditoria: o Gate 2 teve de reconstruir por leitura o que a §5.2 deveria declarar, e um arraste que atravessa a suíte de uma **fatia FECHADA** (`eco.spec.ts`, 16/16 da F0) é exatamente onde uma edição não declarada passaria despercebida.
 - **O que fazer:** completar a §5.2 com os quatro e a razão de cada um. **Para tasks futuras de `refactor_cross_module`**: quando a §1 renomeia símbolo público existente, a §5.2 lista **todos** os consumidores dele — o `grep` do nome antigo é a checagem, e custa um comando. Emitido também como candidato a regra.
 
-### D31 · BAIXO · best_practices · T7 · Tech Review
+### D31 · BAIXO · best_practices · T7 · Tech Review — ✅ FECHADO
 - **Onde:** `packages/shared/src/index.ts` e `packages/shared/src/fila.ts` (`TENTATIVAS_POR_TAREFA`, `ESPERA_ENTRE_TENTATIVAS_MS`, `TAREFAS_CONCLUIDAS_RETIDAS`, `TAREFAS_FALHAS_RETIDAS`)
 - **Problema:** das nove exportações novas, **quatro não têm consumidor algum** na árvore — verificado por varredura: fora do módulo onde nascem, do barrel e da lista de dados do CT-638, só aparecem no artefato da task. O próprio **CT-638 confirma pela outra ponta**: a asserção de consumo pela fronteira exige do `worker` exatamente **cinco** símbolos, e as quatro não estão entre eles.
 - **Impacto:** API pública morta no pacote que **todos** importam — e, pior, um **segundo caminho, mais fraco**, para a política de repetição: publicá-las oferece as peças para um produtor futuro montar `{ attempts: …, backoff: … }` à mão, que é **exatamente a divergência que o D32 existe para fechar**. Retirar depois o que se publicou é mudança incompatível.
 - **O que fazer:** rebaixar as quatro para `const` **privado** de `packages/shared/src/fila.ts` e removê-las do barrel, mantendo `OPCOES_PADRAO_DA_TAREFA` como o **único** caminho publicado. ⚠️ **O CT-638 não muda**: `definicaoDe()` casa `(?:export\s+)?(?:const|…)`, de modo que a definição privada continua encontrada e a unicidade continua provada. Se a decisão for manter publicadas, **a razão vai no docblock** — hoje ele justifica o objeto, não as peças.
+
+- **✅ Fechado na intervenção dirigida de 2026-08-12:** as quatro desceram a `const` privado e saíram do barrel; `OPCOES_PADRAO_DA_TAREFA` é o único caminho publicado. Nasceu o **CT-645** em `superficie-publica.spec.ts` — a rede que faltava —, com **controle positivo** (o objeto publicado presente, senão uma resolução quebrada aprovaria por ausência de tudo). Mutante: a peça de volta ao barrel reprova **nomeando-a**. `shared` 218 → 219.
 
 ### D32 · BAIXO · code_quality · T7 · Tech Review
 > ⚠️ **Este `D32` é da `regua-de-cobranca` e NÃO é o D32 (F0/T6) que esta mesma task acabou de fechar.** A sequência corre dentro da §2 da fatia (§3-B da `nao-regressao.md`), e o identificador é o par — `D32 · F0/T6` era o contrato da fila duplicado, e está **fechado**; `D32 · F3/T7` é o de baixo. A coincidência é infeliz e legítima.
@@ -282,11 +296,13 @@ Bate exatamente com o número declarado no `task_plan.md`. Nenhum pacote encolhe
 - **Impacto:** não é regressão da T8 — o `git diff --numstat` sobre o provisionador é **74/0**, todas em código novo. E a função nova `garantir_chaves_de_conteudo` faz o **contrário**, ancorando em `grep -q '^EMAIL_REMETENTE='` (existência da **linha**), o que o QA mediu no cenário (s4).
 - **O que fazer:** trocar o critério de ausência do laço para **existência de linha**, alinhando-o ao que a função nova já adota, e acrescentar ao bloco (l) de `verificar-provisionamento.sh` um cenário com **chave presente e vazia**. ⚠️ **Fora do escopo** — o conserto passa pela função que o bloco (l) do verificador **sonda por igualdade**.
 
-### D40 · BAIXO · error_handling · T8 · Tech Review
+### D40 · BAIXO · error_handling · T8 · Tech Review — ✅ FECHADO
 - **Onde:** `deploy/scripts/instalacao/provisionar-base.sh:719-721` (`garantir_chaves_de_conteudo`) e, pela mesma classe, as linhas 1329-1330
 - **Problema:** a semeadura faz `printf 'EMAIL_REMETENTE=%s\n' … >>"${arquivo}"` **sem conferir se o arquivo preexistente termina em `\n`**. Se a última linha não tiver quebra final (arquivo editado à mão por editor que não a acrescenta), o acréscimo **se cola nela**: `SMTP_URL=smtp://127.0.0.1:1025EMAIL_REMETENTE=avisos@sysloc.invalid`.
 - **Impacto:** **duplamente ruim** — `EMAIL_REMETENTE` continua ausente (a partida segue recusada, que é o defeito que o TR-P1 existia para fechar) **e** a `SMTP_URL` fica corrompida, de modo que a execução seguinte aborta acusando divergência de `SMTP_URL` e **manda o operador corrigir uma linha cuja causa foi a execução anterior**. O `shellcheck --severity=error` não pega, e o script **não foi executado** (exige `sudo`). ⚠️ A classe é **PRÉ-EXISTENTE** — os acréscimos de 1329-1330 têm o mesmo desenho —, e o que a torna reportável é que **a instância nova dispara no caminho de ATUALIZAÇÃO**, que é justamente aquele para o qual o TR-P1 foi aberto.
 - **O que fazer:** antes do `printf`: `[[ -s "${arquivo}" && -n "$(tail -c1 "${arquivo}")" ]] && printf '\n' >>"${arquivo}"`. **Preferir fechar a CLASSE**: extrair `acrescentar_linha_ao_ambiente()` e fazer os **três** pontos (720, 1329, 1330) passarem por ela.
+
+- **✅ Fechado na intervenção dirigida de 2026-08-12:** fechado por **CLASSE**: nasceu `acrescentar_linha_ao_ambiente()` como entrada única, e os **três** pontos de acréscimo (a semeadura do remetente e as duas do P06) passam por ela. Nasceu o **CT-647** no `verificar-provisionamento.sh`. ⚠️ Aquele verificador exige `sudo` no `main`, então a lógica do caso foi provada **isolada**, por harness que extrai a função pelo mesmo idioma dos casos vizinhos: mutante (guarda removida) reprova nas **duas** asserções — a chave semeada some E a linha anterior é corrompida —, com o controle da quebra em dobro seguindo `OK`.
 
 ### D41 · BAIXO · project_pattern · T8 · Tech Review
 - **Onde:** `apps/worker/test/ambiente.spec.ts` (toda a maquinaria do `CT-643`, ~150 linhas) — **dono: T10**
@@ -450,6 +466,43 @@ rede contra *"o laço não ter percorrido tudo"*. A correção conta as células
 do laço**, e o QA **reproduziu o par de mutantes com o controle**: o mesmo mutante **sobrevive** na
 versão antiga e **reprova** na nova. É a demonstração mais limpa deste run de que a diferença entre
 prova e decoração é medível.
+
+### 4.0.3 O parecer sobre `/agent-spec-debt-resolution`, e a intervenção dirigida que o seguiu
+
+**Auditoria de 2026-08-12, contra o código** — não contra a prosa que descreve os débitos.
+
+**O parecer é NÃO rodar a skill sobre os 57**, e as razões são medidas:
+
+1. **Custo.** O gargalo do cleanup não é o executor, é o **Gate 1, que executa a suíte** — uma task de
+   débito trivial paga a suíte inteira do pacote. Telemetria deste próprio run: a T12 custou **73 min**
+   e ~880k tokens de subagente; o QA sozinho, 10,5 min e 264k. Piso realista de 10-15 min por débito ⇒
+   **10 a 14 horas** e 5-12M tokens para 57, mais a geração da `v2-debits/` e a adjudicação das ondas.
+2. **O Gate 2 desliga onde ele importa.** O default da skill é `gates: [qa]`, e o Gate 2 é quem a
+   `nao-regressao.md` §6 encarrega de detectar violação de `DECISÃO FECHADA`. Os débitos vizinhos de
+   marcador vivem em `packages/regua/src`, `packages/db/test`, `apps/worker/test` e `deploy/scripts` —
+   **nenhum casa com Critical Paths**, logo nenhum ganharia Tech Review. Casos nominais: **D24** (está
+   medido que qualquer literal de objeto ali reprova o `CT-641 (c)`), **D42**, **D43 (b)** (exige
+   escalada ao usuário), **D49** (código sob marcador) e **D50** (dentro de um `SUT_IS_CORRECT_BECAUSE`).
+3. **Sete débitos moram na fronteira shell**, e quatro deles (**D8**, **D38**, **D39**, **D40**) tocam
+   scripts que exigem `sudo` interativo — o Gate 1 **não consegue executar o que mudou**.
+4. **Treze pedem, no próprio texto, para não serem tocados agora.**
+
+⚠️ **Uma correção ao parecer da fatia anterior**, medida antes de ser repetida: a afirmação de que *"a
+coleta descarta os campos `Gatilho:` e `Por que não agora:`"* **não vale para esta §2** — aqui os avisos
+estão dentro do campo *O que fazer*, que mapeia para `correcao_sugerida` e viaja inteiro. O que a skill
+não lê é o **marcador no código**. O crédito é da qualidade dos blocos, não da skill.
+
+**A intervenção dirigida que se fez em vez dela** fechou **sete** — D4, D5, D16, D19, D25, D31 e D40 —,
+cada um com mutante medido e revertido, em ~3 h. Dois achados que só a auditoria contra o código daria:
+
+- **o D19 já estava pago** desde a T10, e continuava listado;
+- **o D4 mordeu durante a própria auditoria** — o `verificar-golden.sh` gravou o `.pyc` na árvore, ele
+  foi commitado por engano em `3a596fc` e derrubou a âncora de segurança `CT-626 (d)`. Foi removido do
+  git e fechado na origem.
+
+Suíte **1002 → 1004** (CT-645 e CT-646 novos; o CT-647 é da frente shell). Restam **50 débitos**
+escriturados, quase todos `BAIXO` de higiene local, **7 deles com marcador `DÉBITO COM GATILHO`** — que é
+o mecanismo por que voltam sozinhos quando a fatia certa abrir o arquivo certo.
 
 ### 4.1 O `CT-013` do `verificar-golden.sh` reprova, e **não é regressão desta fatia**
 

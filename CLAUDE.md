@@ -91,7 +91,7 @@ pré-refinamento (`docs/specs/features/cobranca-mora-e-documentos/v1/pre-refinem
    `cobranca_derivada`, o pacote **`@sysloc/regua`** (pacotes 4 → 5), o **contrato da fila em
    `@sysloc/shared`** — que **fechou o D32 (F0/T6)** nas duas pontas na T7 —, e as **4 rotas novas**
    sob `/v1/automacao-de-cobranca`, levando a superfície de **82/67 a 86/71**, conferida por **dupla
-   medição independente** com a igualdade entre os dois eixos afirmada (CT-635). Suíte **835 → 1002**,
+   medição independente** com a igualdade entre os dois eixos afirmada (CT-635). Suíte **835 → 1004**,
    por pacote e monotônica. A **equivalência com o oráculo** fecha com **uma única** divergência —
    `('REG-08','manual')`, por vitória —, com os dez vereditos escritos **antes** da execução e o lado
    do oráculo **lido do golden**. A T1 extraiu o fonte do Server Script `PDF contrato` (o **11º**
@@ -217,6 +217,24 @@ EXIGE:` de uma `DECISÃO FECHADA`. O parecer está na **§5 do `_run/run-report.
 **reafirma o NÃO** a `/agent-spec-debt-resolution`, agora com uma razão nova e medida: a coleta da
 skill **descarta os campos `Gatilho:` e `Por que não agora:`**, que é justamente o que desautoriza
 resolver o D1 e o D26.
+
+**Intervenção dirigida de 2026-08-12**, sobre os **57 débitos da fatia `regua-de-cobranca`**, depois de
+a fatia ser commitada — e precedida de auditoria **contra o código**, com parecer registrado na
+**§4.0.3 do `_run/run-report.md`** daquela fatia. O parecer **reafirma o NÃO** a
+`/agent-spec-debt-resolution`, agora com custo **medido pela telemetria do próprio run** (a T12 custou
+73 min; o piso por débito é 10-15 min, logo 10-14 h para os 57) e com a razão mais forte de todas: o
+default `gates: [qa]` desliga o Gate 2 **exatamente onde os débitos vizinhos de marcador moram** —
+`packages/regua/src`, `packages/db/test`, `apps/worker/test` e `deploy/scripts` não casam com
+Critical Paths. ⚠️ E **corrige uma razão do parecer anterior**: a alegação de que a coleta *"descarta os
+campos `Gatilho:` e `Por que não agora:`"* **não vale para a §2 daquela fatia**, onde os avisos moram
+dentro do campo *O que fazer* e viajam inteiros no `correcao_sugerida`; o que a skill não lê é o
+**marcador no código**. **Sete débitos fechados** — D4, D5, D16, D19, D25, D31 e D40 —, cada um com
+mutante medido e revertido, em ~3 h. Dois achados que só a auditoria contra o código daria: o **D19 já
+estava pago** desde a T10 e continuava listado; e o **D4 mordeu durante a própria auditoria** — o
+`verificar-golden.sh` gravou `__pycache__/*.pyc` na árvore versionada, o arquivo foi **commitado por
+engano** em `3a596fc` e derrubou a âncora de segurança `CT-626 (d)`, que audita as classes de arquivo
+da árvore por igualdade. Saiu do git, e a gravação foi fechada **na origem**
+(`sys.dont_write_bytecode`), com o `.gitignore` como segunda barreira. Suíte **1002 → 1004**.
 
 **Endurecimento do Protocolo Antirregressão — 2026-08-09**, também fora do pipeline. A §6 do
 protocolo atribui obrigações aos dois gates e ao orquestrador, e **nenhuma delas estava escrita nos

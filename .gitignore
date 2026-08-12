@@ -61,3 +61,9 @@ packages/db/*-falsificad*.mjs
 # Marcador de configuração do git-flow — estado POR CLONE (identidade, credencial,
 # modo de fluxo). Não é do projeto, é da máquina.
 .claude/git-flow.local.json
+
+# Bytecode derivado dos scripts Python de caracterização. A supressão na ORIGEM é
+# `sys.dont_write_bytecode` dentro do verificador (D4 · F3/T1); esta linha é a
+# segunda barreira, para invocação de python feita fora dele.
+__pycache__/
+*.pyc

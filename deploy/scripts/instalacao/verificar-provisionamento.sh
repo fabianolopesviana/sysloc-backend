@@ -1999,6 +1999,64 @@ ct_030() {
 }
 
 # =========================================================================== #
+# --------------------------------------------------------------------------- #
+# CT-647 — o acréscimo de chave nasce em linha própria, mesmo sem quebra final
+#
+# A rede do D40 (F3/T8), fechada pela intervenção dirigida de 2026-08-12. Ela não
+# exige privilégio nenhum de si: `acrescentar_linha_ao_ambiente` e
+# `garantir_chaves_de_conteudo` só fazem `grep` e `printf` sobre um caminho recebido
+# por parâmetro. O `sudo` vem do `main` deste verificador, não deste caso.
+#
+# As duas funções são carregadas do provisionador pelo mesmo idioma que os casos
+# vizinhos usam (`eval` do corpo extraído por `sed`) — o provisionador termina em
+# `main "$@"` e não pode ser lido por `source`.
+# --------------------------------------------------------------------------- #
+ct_647() {
+	caso "CT-647" "Chave acrescentada nasce em linha própria mesmo sem quebra final, e não corrompe a anterior"
+
+	local arq="${DIR_TEMPORARIO}/ambiente-sem-quebra.env"
+
+	# O ARRANJO que discrimina: última linha SEM `\n` final, que é o arquivo editado
+	# à mão por editor que não a acrescenta. Com `printf … >>` cru, o acréscimo cola.
+	printf 'DATABASE_URL=postgresql://a:b@127.0.0.1:5432/c\nSMTP_URL=smtp://127.0.0.1:1025' >"${arq}"
+
+	(
+		REMETENTE_PADRAO_DO_AVISO="avisos@sysloc.invalid"
+		eval "$(sed -n '/^acrescentar_linha_ao_ambiente() {/,/^}/p' "${SCRIPT_PROVISIONAR}")"
+		eval "$(sed -n '/^garantir_chaves_de_conteudo() {/,/^}/p' "${SCRIPT_PROVISIONAR}")"
+		[[ "$(type -t acrescentar_linha_ao_ambiente)" == "function" ]] || exit 8
+		[[ "$(type -t garantir_chaves_de_conteudo)" == "function" ]] || exit 8
+		garantir_chaves_de_conteudo "${arq}"
+	) || falhar "a semeadura abortou sobre o arquivo sem quebra final"
+
+	# A ASSERÇÃO que pega o defeito: a chave semeada tem de existir em linha PRÓPRIA.
+	afirmar_igual "a chave semeada nasce em linha própria" \
+		"1" "$(grep -c '^EMAIL_REMETENTE=avisos@sysloc.invalid$' "${arq}")"
+
+	# A OUTRA metade do dano, e ela é independente: colada, a linha anterior deixaria
+	# de casar consigo mesma e a execução seguinte abortaria acusando divergência de
+	# `SMTP_URL` — mandando o operador corrigir uma linha que a execução anterior quebrou.
+	afirmar_igual "a linha anterior sobrevive intacta" \
+		"1" "$(grep -c '^SMTP_URL=smtp://127.0.0.1:1025$' "${arq}")"
+
+	# O CONTROLE: sobre arquivo que JÁ termina em quebra, nada de quebra em dobro —
+	# senão a correção trocaria um defeito por outro (linha vazia acumulando a cada
+	# execução idempotente).
+	local arq_ok="${DIR_TEMPORARIO}/ambiente-com-quebra.env"
+	printf 'SMTP_URL=smtp://127.0.0.1:1025\n' >"${arq_ok}"
+	(
+		REMETENTE_PADRAO_DO_AVISO="avisos@sysloc.invalid"
+		eval "$(sed -n '/^acrescentar_linha_ao_ambiente() {/,/^}/p' "${SCRIPT_PROVISIONAR}")"
+		eval "$(sed -n '/^garantir_chaves_de_conteudo() {/,/^}/p' "${SCRIPT_PROVISIONAR}")"
+		garantir_chaves_de_conteudo "${arq_ok}"
+	) || falhar "a semeadura abortou sobre o arquivo com quebra final"
+
+	afirmar_igual "arquivo já terminado em quebra não ganha linha vazia" \
+		"2" "$(grep -c . "${arq_ok}")"
+
+	fechar_caso "CT-647"
+}
+
 main() {
 	exigir_privilegio
 
@@ -2058,6 +2116,7 @@ main() {
 	ct_004
 	ct_005
 	ct_030
+	ct_647
 
 	printf '\n'
 	if [[ "${falhas_totais}" -eq 0 ]]; then

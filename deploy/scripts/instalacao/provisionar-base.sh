@@ -717,9 +717,39 @@ garantir_chaves_de_conteudo() {
 	CHAVES_SEMEADAS=""
 
 	if ! grep -q '^EMAIL_REMETENTE=' "${arquivo}" 2>/dev/null; then
-		printf 'EMAIL_REMETENTE=%s\n' "${REMETENTE_PADRAO_DO_AVISO}" >>"${arquivo}"
+		acrescentar_linha_ao_ambiente "${arquivo}" \
+			"EMAIL_REMETENTE=${REMETENTE_PADRAO_DO_AVISO}"
 		CHAVES_SEMEADAS="EMAIL_REMETENTE"
 	fi
+}
+
+# Acrescenta UMA linha ao arquivo de ambiente, garantindo que ela nasça em linha
+# própria. É a ENTRADA ÚNICA de acréscimo — D40 (F3/T8) fechado por classe, e não
+# por ocorrência: os três pontos que acrescentam chave (a semeadura do remetente
+# acima e as duas do passo P06) passam por aqui.
+#
+# ⚠️ O QUE ELA IMPEDE: `printf '%s\n' … >>arquivo` cola o acréscimo na última linha
+# quando o arquivo preexistente NÃO termina em `\n` — o que acontece com arquivo
+# editado à mão por editor que não a acrescenta. O resultado é duplamente ruim:
+#
+#     SMTP_URL=smtp://127.0.0.1:1025EMAIL_REMETENTE=avisos@sysloc.invalid
+#
+# a chave semeada continua ausente (a partida segue recusada, que é o defeito que
+# a semeadura existia para fechar) E a `SMTP_URL` fica corrompida — de modo que a
+# execução seguinte aborta acusando divergência de `SMTP_URL` e manda o operador
+# corrigir uma linha cuja causa foi a execução anterior.
+#
+# A substituição de comando descarta as quebras finais, então `$(tail -c1)` devolve
+# vazio exatamente quando o último byte JÁ é `\n` — que é o caso em que nada se
+# acrescenta. Arquivo inexistente ou vazio também não recebe quebra de cortesia.
+acrescentar_linha_ao_ambiente() { # acrescentar_linha_ao_ambiente <arquivo> <linha>
+	local arquivo="$1" linha="$2"
+
+	if [[ -s "${arquivo}" && -n "$(tail -c1 "${arquivo}")" ]]; then
+		printf '\n' >>"${arquivo}"
+	fi
+
+	printf '%s\n' "${linha}" >>"${arquivo}"
 }
 
 # --------------------------------------------------------------------------- #
@@ -1326,8 +1356,14 @@ passo_p06_arquivo_ambiente() {
 			local chave
 			for chave in ${CHAVES_AUSENTES}; do
 				case "${chave}" in
-				REDIS_URL) printf 'REDIS_URL=redis://127.0.0.1:%s\n' "${PORTA_FILA}" >>"${ARQ_AMBIENTE}" ;;
-				SMTP_URL) printf 'SMTP_URL=smtp://127.0.0.1:%s\n' "${PORTA_SMTP_CAPTURADOR}" >>"${ARQ_AMBIENTE}" ;;
+				REDIS_URL)
+					acrescentar_linha_ao_ambiente "${ARQ_AMBIENTE}" \
+						"REDIS_URL=redis://127.0.0.1:${PORTA_FILA}"
+					;;
+				SMTP_URL)
+					acrescentar_linha_ao_ambiente "${ARQ_AMBIENTE}" \
+						"SMTP_URL=smtp://127.0.0.1:${PORTA_SMTP_CAPTURADOR}"
+					;;
 				*)
 					abortar "${ARQ_AMBIENTE} não declara '${chave}', e este script não sabe reconstruí-la sem a credencial" \
 						"salve uma cópia do arquivo em local seguro, remova o original e execute de novo — o script gerará o arquivo inteiro, e você precisará aplicar a credencial nova a quem já a consumia"

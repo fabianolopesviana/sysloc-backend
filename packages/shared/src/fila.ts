@@ -42,11 +42,25 @@
  * ter rodado.
  */
 
+/**
+ * As quatro constantes abaixo são **privadas do módulo**, e a ausência de `export` é a decisão.
+ *
+ * Publicá-las oferece a um produtor futuro as peças para montar `{ attempts, backoff, … }` à mão —
+ * um **segundo caminho, mais fraco**, para a mesma política, que é exatamente a divergência que o
+ * fecho do `D32 (F0/T6)` existiu para eliminar quando o contrato da fila desceu para cá. Quem
+ * enfileira consome `OPCOES_PADRAO_DA_TAREFA`, que é o **único** caminho publicado.
+ *
+ * Elas nasceram exportadas na T7 e não tinham consumidor algum fora deste pacote — o `CT-638`
+ * confirma pela outra ponta, exigindo do `worker` exatamente cinco símbolos, nenhum deles aqui.
+ * O `CT-638` continua provando a unicidade da definição: `definicaoDe()` casa
+ * `(?:export\s+)?(?:const|…)`, de modo que a definição privada segue encontrada.
+ */
+
 /** Tentativas de execução de uma tarefa antes de ela ser dada por falha. */
-export const TENTATIVAS_POR_TAREFA = 3;
+const TENTATIVAS_POR_TAREFA = 3;
 
 /** Espera antes da segunda tentativa; as seguintes dobram a partir dela. */
-export const ESPERA_ENTRE_TENTATIVAS_MS = 1_000;
+const ESPERA_ENTRE_TENTATIVAS_MS = 1_000;
 
 /**
  * Quantas tarefas terminadas o servidor de fila retém.
@@ -56,8 +70,8 @@ export const ESPERA_ENTRE_TENTATIVAS_MS = 1_000;
  * contínuo. O que se retém é o suficiente para diagnosticar o passado recente; falha é retida por
  * mais tempo que sucesso porque é ela que alguém volta para ler.
  */
-export const TAREFAS_CONCLUIDAS_RETIDAS = 1_000;
-export const TAREFAS_FALHAS_RETIDAS = 5_000;
+const TAREFAS_CONCLUIDAS_RETIDAS = 1_000;
+const TAREFAS_FALHAS_RETIDAS = 5_000;
 
 /**
  * Nome da fila do trabalho da régua de cobrança.

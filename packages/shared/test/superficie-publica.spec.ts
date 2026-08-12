@@ -8,6 +8,9 @@
  * - CT-009: a resolução do especificador público devolve um módulo que expõe os símbolos de
  *   runtime `CodigoErro`, `ErroDeAplicacao`, `criarLogger`, `conferirDocumento` e
  *   `somenteDigitos`; caminho profundo para arquivo interno não é resolvível.
+ * - CT-645: a superfície pública NÃO expõe as quatro peças da política de repetição de tarefa —
+ *   `OPCOES_PADRAO_DA_TAREFA` é o único caminho publicado. Acrescentado pela intervenção dirigida
+ *   de 2026-08-12 que fechou o `D31 (F3/T7)`; é a rede que faltava para a decisão de não publicá-las.
  *
  * Fronteira real exercida: filesystem. A importação acontece num processo Node de verdade,
  * fora do resolvedor do executor de testes — é o algoritmo de resolução que a aplicação vai
@@ -97,6 +100,35 @@ describe('CT-009 — superfície pública resolve pelo especificador do pacote',
     expect(publico.codigos).toContain('CAMPO_INVALIDO');
     expect(publico.tipos.conferirDocumento).toBe('function');
     expect(publico.tipos.somenteDigitos).toBe('function');
+  });
+
+  it('CT-645 — a superfície NÃO publica as peças da política de repetição', async () => {
+    const resolucao = await resolverEmProcessoNode(ESPECIFICADOR_PUBLICO);
+
+    expect(resolucao.resolveu).toBe(true);
+    const publico = resolucao as ResolucaoBemSucedida;
+
+    // O CONTROLE POSITIVO, e ele é indispensável: uma resolução quebrada devolveria `tipos` vazio,
+    // e as quatro ausências abaixo passariam sem que nada tivesse sido carregado. Esta linha prova
+    // que o módulo resolveu E que o caminho publicado da política existe.
+    expect(publico.tipos.OPCOES_PADRAO_DA_TAREFA).toBe('object');
+
+    // A ASSERÇÃO. Por igualdade de conjunto sobre a interseção — quando reprovar, ela nomeia a peça
+    // que voltou a ser publicada, em vez de dizer só que "alguma coisa" mudou.
+    const PECAS_DA_POLITICA = [
+      'TENTATIVAS_POR_TAREFA',
+      'ESPERA_ENTRE_TENTATIVAS_MS',
+      'TAREFAS_CONCLUIDAS_RETIDAS',
+      'TAREFAS_FALHAS_RETIDAS',
+    ];
+    const publicadas = PECAS_DA_POLITICA.filter((peca) => peca in publico.tipos);
+
+    expect(
+      publicadas,
+      `peça da política de repetição publicada pelo barrel: ${publicadas.join(', ')} — ` +
+        'ela oferece um segundo caminho para montar a política à mão, que é a divergência que o ' +
+        'fecho do D32 (F0/T6) eliminou. O caminho publicado é OPCOES_PADRAO_DA_TAREFA.',
+    ).toEqual([]);
   });
 
   it('não resolve caminho profundo para arquivo interno', async () => {
