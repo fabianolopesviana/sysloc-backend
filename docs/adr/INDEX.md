@@ -1,6 +1,6 @@
 # Architecture Decision Records — INDEX
 
-> Ultima atualizacao: 2026-08-11 (26 ADRs)
+> Ultima atualizacao: 2026-08-12 (28 ADRs)
 
 <!-- ADR-INDEX-START -->
 | ID | Titulo | Status | Tags | Problema (1-linha) | Decisao (1-linha) |
@@ -31,4 +31,6 @@
 | 0024 | Origem legítima do contexto de tenant quando não há requisição | accepted | architecture, security, data | A ADR-0008 fixa que o isolamento é propriedade do banco e que o contexto que a RLS consome é fixado | Toda execução que ocorre fora de uma requisição estabelece o contexto de tenant a partir da carga |
 | 0025 | O domínio declara a porta; o adaptador depende dele, nunca o contrário | accepted | architecture | O produto pratica camadas por fora e estilo hexagonal por dentro, mas nunca declarou de que lado | Em toda fronteira entre domínio e infraestrutura, o pacote de domínio declara o tipo do dado que |
 | 0026 | O relógio da operação mora no banco — a aplicação nunca lê o do processo | accepted | architecture, data | Decisões de negócio dependem de que dia é hoje e que horas são: a transição de uma cobrança para | Toda leitura de tempo que decide comportamento de negócio vem do banco, através de função cujo |
+| 0027 | Critério para uma rota de negócio dispensar sessão, e o que ela carrega em troca | accepted | auth, security, http | Toda rota de negócio deste backend exige sessão, com autorização declarada por rota e default que | Uma rota de negócio dispensa sessão apenas quando o ato é exercido pelo titular do dado que ele |
+| 0028 | O que o contrato publica para uma rota que devolve bytes | accepted | http, architecture | Todo corpo de resposta deste backend é JSON derivado de esquema, e a ADR-0016 faz do esquema a fonte | A rota que devolve bytes permanece no contrato e declara três coisas: o tipo de mídia, o |
 <!-- ADR-INDEX-END -->

@@ -105,9 +105,12 @@ pré-refinamento (`docs/specs/features/cobranca-mora-e-documentos/v1/pre-refinem
    ~700); o gerador do PDF é o **Server Script `PDF contrato`**, 752 linhas de fonte **existindo só
    no banco** (o golden tem 174 linhas — é a saída, não o fonte); e a quinta peça ativa é o
    `Automacao cobranca config api` (154 linhas, a configuração **Single** da régua).
-   **Duas ADRs são pré-requisito da 2b** — o critério para uma rota de negócio dispensar sessão, e o
-   que o contrato publica para uma rota que devolve bytes; a terceira candidata (granularidade da
-   fila) foi **recusada** por repetir o que o RLS e a F5 já forçam. ⚠️ **Cinco premissas do briefing
+   **As duas ADRs pré-requisito da 2b já estão registradas** (2026-08-12): a **0027**, com o critério
+   para uma rota de negócio dispensar sessão, e a **0028**, com o que o contrato publica para uma rota
+   que devolve bytes; a terceira candidata (granularidade da fila) foi **recusada** por repetir o que o
+   RLS e a F5 já forçam. A **2b também já está pré-refinada** — o artefato é
+   `docs/specs/features/documentos-e-confirmacao/v1/pre-refinement.md`, que especializa o partilhado e
+   **confirma SDD**; o próximo passo dela é `/agent-spec-sdd-generate-prd`. ⚠️ **Cinco premissas do briefing
    foram refutadas por medição em 2026-08-11** — entre elas, que o `email_token_hash` do legado
    **não é hash e o token não é aleatório** (é o ID do locatário mais o timestamp, guardado em
    claro), e que a divergência automático × manual tem **três naturezas, não uma** (só REG-08 é
@@ -398,7 +401,7 @@ pelo número, e sem os dois arquivos de `.claude/plans/` essas referências fica
 | 3 | `.claude/plans/plano-saas-decisoes.md` | As **40 decisões fechadas** — o plano de execução as cita por número |
 | 4 | `.claude/plans/plano-saas.md` | Arquitetura-alvo, os 3 perfis, as **10 telas × 7 ações sensíveis**, a especificação do webhook Sicoob |
 | 5 | `docs/plano-backend-novo/levantamento-frontend.md` | O frontend React: inventário dos **35 endpoints**, o **modelo de domínio que a API deve falar**, os acoplamentos a remover |
-| 6 | `docs/adr/` | ADRs. **21 registradas, 15 `accepted`**: 0001, 0005, 0006, 0008, 0009, 0010, 0011, 0013, 0014, 0015, 0016, 0017, 0018, 0020 e 0021. **Vinculantes para a F2**: 0006, 0008, 0009, 0011, 0013, 0014, 0015, 0016, 0017, 0018, 0020 e 0021. As **0002, 0003 e 0004** morreram com o Frappe — `deprecated` desde 2026-08-04, porque nomeiam primitivas dele (DocType, fixture, `Custom DocPerm`, Server Script). Há **duas cadeias de supersede**, e nas duas só a última se cita: a forma canônica do contrato da API é **0007 → 0012 → 0017**, vigente a **0017** (três classes de chave exposta: código legível quando há série declarada, UUID quando não há); e a transição de estado é **0019 → 0021**, vigente a **0021** (rota própria sempre; a chave de ação só quando o ato é sensível — atributo operacional do cadastro exige apenas a área). ⚠️ **Citar ADR exige abrir a `Decision`** — esta linha e o `INDEX.md` são paráfrases, e já divergiram do texto real |
+| 6 | `docs/adr/` | ADRs. **28 registradas, 22 `accepted`**: 0001, 0005, 0006, 0008, 0009, 0010, 0011, 0013, 0014, 0015, 0016, 0017, 0018, 0020, 0021, 0022, 0023, 0024, 0025, 0026, 0027 e 0028. **Vinculantes para a F2**: 0006, 0008, 0009, 0011, 0013, 0014, 0015, 0016, 0017, 0018, 0020 e 0021. **Vinculantes para a sub-fatia 2b da F3**: 0008, 0011, 0016, 0017, 0018, 0021, 0022, 0023 e 0024, mais as duas que nasceram dela — a **0027** (uma rota de negócio dispensa sessão só quando o ato é do titular do dado, e sempre com portador de segredo) e a **0028** (a rota que devolve bytes permanece no contrato, declarando mídia, nome do arquivo e o mesmo envelope de erro). As **0002, 0003 e 0004** morreram com o Frappe — `deprecated` desde 2026-08-04, porque nomeiam primitivas dele (DocType, fixture, `Custom DocPerm`, Server Script). Há **duas cadeias de supersede**, e nas duas só a última se cita: a forma canônica do contrato da API é **0007 → 0012 → 0017**, vigente a **0017** (três classes de chave exposta: código legível quando há série declarada, UUID quando não há); e a transição de estado é **0019 → 0021**, vigente a **0021** (rota própria sempre; a chave de ação só quando o ato é sensível — atributo operacional do cadastro exige apenas a área). ⚠️ **Citar ADR exige abrir a `Decision`** — esta linha e o `INDEX.md` são paráfrases, e já divergiram do texto real |
 
 Por fase: a **F4** exige `docs/specs/features/integracao-bancaria-configuravel/`; a **F6** exige
 o levantamento do frontend (item 5).
