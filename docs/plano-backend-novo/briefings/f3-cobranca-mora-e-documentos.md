@@ -32,6 +32,33 @@ pequenas e bem delimitadas; aqui são quatro peças de porte, somando **~1.800 l
 | E-mail de confirmação ao locatário | `locatario_email_confirmacao` | **222 LOC** |
 | Mora | `cobranca_atraso` | **151 LOC** |
 
+> ⚠️ **Correção de 2026-08-11 — três premissas desta tabela foram medidas contra o `/opt/frappe` e
+> não se sustentam.** O texto acima fica como estava (é o insumo que o pré-refinamento consumiu); o
+> que vale hoje é isto, e está detalhado em `f3-fatia2-regua-e-documentos.md` §4.3, §4.7 e §4.8:
+>
+> 1. **A régua tem 837 LOC, não ~700** — a conta omitia `helpers.py` (103), `service.py` (25) e
+>    `scheduler.py` (13). O pré-refinamento já corrigiu isso na §3-B.2.
+> 2. **"O gerador de contrato" não é um módulo.** É o Server Script **`PDF contrato`**,
+>    `Document Event / After Save` sobre `Contrato`, **ativo**, **existindo apenas no banco**. O
+>    `contrato_pdf/service.py` (61 linhas) só **serve** o PDF armazenado. E as 752 linhas são o
+>    **fonte**: o golden `contrato-pdf.txt` tem **174 linhas** de saída. O fonte não está em arquivo
+>    nem em git, e **a janela para lê-lo fecha na F7**.
+> 3. **Falta uma quinta peça, e ela é ativa**: o Server Script `Automacao cobranca config api`
+>    (**154 linhas**, só no banco), a configuração da régua sobre o DocType
+>    `Automacao Cobranca Config`, que é **Single** — uma configuração para o SaaS inteiro.
+> 4. **O `locatario_email_confirmacao` não é e-mail de cobrança.** É **double opt-in** do endereço
+>    do locatário, com token, rota **`allow_guest`** (pública, sem sessão) e página de confirmação
+>    que **vive no Frappe**.
+>
+> Consequência de dimensionamento: a fatia 2 é maior do que as ~1.800 LOC sugerem, e a §4.1 do
+> briefing dela reabre a decisão de partir.
+>
+> **E uma quinta divergência, esta anterior — decidida pelo próprio pré-refinamento que consumiu
+> este briefing:** o **carnê saiu da F3 e foi para a F4** (ramo E-II, direção **E4**), porque a
+> fonte de cada página é o **boleto emitido** e a emissão é F4 inteira. Toda menção ao carnê abaixo
+> — §1, item 5 do escopo, §4.5 e a §5 — descreve o escopo **anterior** a essa decisão. Propagado
+> aos artefatos do plano em 2026-08-11.
+
 O escopo declarado está na **§F3 do `plano-execucao.md`**, em sete itens. Leia-o na íntegra — o
 resumo abaixo é ponteiro, não substituto:
 
@@ -191,6 +218,11 @@ na *"primeira fatia que enfileirar tarefa de negócio"*. A régua é forte candi
 O **PDF de contrato** tem golden: `contrato-pdf.txt`, o texto extraído das 752 linhas, e o critério de
 aceitação é *"o texto extraído do PDF gerado bate com a referência"*. A biblioteca muda
 (`@react-pdf/renderer`), então a comparação é **de texto extraído**, não de bytes.
+
+> ⚠️ **Correção de 2026-08-11**: o golden tem **174 linhas**, e são a **saída**. As 752 são o
+> **fonte** do Server Script `PDF contrato`, que existe só no banco — o golden prova o resultado e
+> **não substitui a leitura do fonte** na hora de portar. Ver a nota da §1 e a §4.3 de
+> `f3-fatia2-regua-e-documentos.md`.
 
 O **carnê** não tem golden — ele hoje é montado **no browser**, que baixa N boletos, e a F3 o traz
 para o servidor com `pdf-lib`. É funcionalidade que **muda de lugar**, não que se porta.

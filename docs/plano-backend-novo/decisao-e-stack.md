@@ -60,8 +60,15 @@ Requisitos declarados pelo usuário, literalmente:
 
 - **8.489 LOC** de Python de produção (89 arquivos `.py`)
 - **9.735 LOC** de testes Python
-- `PDF contrato`: **752 linhas**, existindo apenas no banco (Server Script)
-- 19 Server Scripts desativados
+- **25 Server Scripts** no banco — **6 ativos** e **19 desativados** (medido em 2026-08-11). Dos 6
+  ativos, quatro já foram portados na F1 e na F2 (`Autenticacao`, `Todos imoveis`,
+  `Atualizar cômodo`, `Cálculo metragem imóvel`) e **dois seguem por portar, ambos na fatia 2 da
+  F3**:
+  - `PDF contrato`: **752 linhas**, `Document Event / After Save` sobre `Contrato`
+  - `Automacao cobranca config api`: **154 linhas**, a configuração da régua (DocType
+    `Automacao Cobranca Config`, **Single**)
+- **Server Script existe apenas no banco** — não está em arquivo, em git nem em backup versionado.
+  O fonte dos dois acima morre com o `/opt/frappe` na F7.
 - 6 rotinas de cron; 4 scripts de backup/restore
 
 ---
@@ -213,10 +220,11 @@ Resultado: **as telas não mudam, o comportamento não muda, só a camada de dad
 |---|---|
 | `cobranca_sicoob/*` (~1.700 LOC) — emissão, sincronização, consulta, baixa, sequencial, auth | **porta** → `@sysloc/banking` |
 | `cobranca_bancaria/*` (~1.500) — modelo canônico, adapter Sicoob, certificado | **porta** → `@sysloc/banking` |
-| `cobranca_automation/*` (~700) — régua, emailer, runner | **porta** → `apps/worker` + `@sysloc/domain` |
+| `cobranca_automation/*` (**837** medidos) — régua, emailer, runner, helpers, service, scheduler | **porta** → `apps/worker` + `@sysloc/domain` |
+| `Automacao cobranca config api` (154, só no banco, **ativo**) — a configuração da régua, hoje **Single** | **porta** → configuração **por empresa**, no molde da mora |
 | `contrato_ativacao`, `contrato_cancelamento`, `cobranca_atraso` (~665) | **porta** → `@sysloc/domain` |
-| `locatario_email_confirmacao` (222) | **porta** |
-| `PDF contrato` (752, só no banco) | **porta** → `@react-pdf/renderer` |
+| `locatario_email_confirmacao` (222) — **double opt-in do e-mail do locatário**, com token e rota `allow_guest` | **porta parcial** — a rota e o contrato; a página do link é frontend, logo **handoff** |
+| `PDF contrato` (752 de **fonte**, só no banco; a saída capturada tem 174 linhas) | **porta** → `@react-pdf/renderer` |
 | `integracao_bancaria_api/service.py` (1.524) | **porta parcial** — boa parte é encanamento do Frappe |
 | `patches/v1_0/*` (~540) | **morre** — patches de migração do Frappe |
 | `deploy/scripts/portao_orfaos.py`, `veredito_suite.sh` | **morrem** — existem por causa do `remove_orphan_doctypes` |
@@ -295,7 +303,7 @@ histórico do git.
 das regras de negócio com o original ainda ativo, e ela já foi **capturada e concluída** na fatia
 `caracterizacao-regras-legadas/v1`, cujos 6 artefatos golden estão versionados em
 `docs/specs/features/caracterizacao-regras-legadas/v1/golden/`. É ela a especificação executável
-do que portar e a prova de equivalência do gerador de contrato de 752 linhas.
+do que portar e a prova de equivalência do gerador de contrato — o Server Script de 752 linhas.
 
 O que o run abandonado deixou como lição — e que continua valendo — está registrado na §1: 9
 rodadas de gate numa única task, sem entregar multi-tenancy, foi parte do argumento para trocar

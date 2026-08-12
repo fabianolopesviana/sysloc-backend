@@ -59,8 +59,9 @@ _Painel gerado por `deploy/scripts/roadmap/atualizar-roadmap.sh` — não edite 
 substituído, para que a reimplementação tenha um oráculo em vez de uma leitura de código.
 
 Produziu **6 artefatos golden** versionados, que são o critério de equivalência das regras portadas
-na F2 e na F3 — entre eles o texto extraído do PDF de contrato de 752 linhas. Sem eles, "o PDF novo
-está certo" seria opinião.
+na F2 e na F3 — entre eles o texto extraído do PDF de contrato, 174 linhas de saída produzidas por
+um Server Script de 752 linhas que existe **só no banco**. Sem eles, "o PDF novo está certo" seria
+opinião.
 
 ✅ **Concluída.** Os goldens estão em `docs/specs/features/caracterizacao-regras-legadas/v1/golden/`.
 
@@ -196,9 +197,18 @@ contrato passa a gerar as parcelas na mesma unidade de trabalho.
 ### Fatia 2 — `regua-e-documentos`
 
 A régua de cobrança com a fila (é a **primeira fatia que enfileira tarefa de negócio**, e por isso
-fecha o **D32 (F0/T6)**), o **PDF de contrato** de 752 linhas validado contra o golden textual e o
-**carnê** montado com `pdf-lib` no servidor. Fecha o **D36 (F2/T8)**. ⚠️ Concentra ~1.800 LOC e
+fecha o **D32 (F0/T6)**), o **PDF de contrato** validado contra o golden textual e o porte do
+`locatario_email_confirmacao`. Fecha o **D36 (F2/T8)**. ⚠️ Concentra ~1.800 LOC e
 **pode precisar partir de novo** — a decisão fica para o briefing dela.
+
+⚠️ **O carnê NÃO está mais aqui** — foi para a **F4** em 2026-08-10, por decisão do pré-refinamento
+da fase: a fonte de cada página é o **boleto emitido**, e a emissão é F4 inteira.
+
+⚠️ **Duas peças desta fatia vivem só no banco do Frappe, e o fonte delas morre na F7**: o Server
+Script `PDF contrato` (752 linhas, `After Save` sobre `Contrato`) e o `Automacao cobranca config
+api` (154 linhas), que é a configuração da régua. Nenhum dos dois está em arquivo ou em git — lê-los
+antes do desligamento é pré-condição de portar. Detalhe em
+`docs/plano-backend-novo/briefings/f3-fatia2-regua-e-documentos.md`.
 
 **Entrega:**
 
@@ -206,10 +216,19 @@ fecha o **D32 (F0/T6)**), o **PDF de contrato** de 752 linhas validado contra o 
    cliente por `normalizeStatus`, o que significa que duas telas podem discordar.
 2. **Mora por empresa**: multa e juros deixam de ser configuração global única. `_calcular_mora()` é
    pura e idempotente.
-3. **Régua de cobrança** — porte de ~700 linhas: core, emailer e runner.
-4. **PDF de contrato**: as 752 linhas em `@react-pdf/renderer`, validadas contra o golden textual.
-5. **Carnê** montado com `pdf-lib` **no servidor** — sai do browser, que hoje baixa N boletos.
-6. **WhatsApp**: os campos permanecem no modelo porque o frontend os lê, mas o canal **não é
+3. **Régua de cobrança** — porte de **837 linhas** medidas (core, emailer, runner, helpers, service,
+   scheduler), mais a **configuração que a governa**: o Server Script `Automacao cobranca config
+   api` (154 linhas, só no banco), hoje **Single** — uma configuração para o SaaS inteiro, o mesmo
+   defeito que o item 2 corrige na mora.
+4. **PDF de contrato**: o Server Script `PDF contrato` — **752 linhas de fonte, existindo apenas no
+   banco** — portado para `@react-pdf/renderer` e validado contra o golden textual, que tem **174
+   linhas** de saída. O 752 é o fonte; o 174 é o que ele produz.
+5. ~~**Carnê** montado com `pdf-lib` no servidor.~~ **Movido para a F4** — ver a seção dela.
+6. **`locatario_email_confirmacao`** (222 LOC) — apesar do nome, **não é e-mail de cobrança**: é a
+   **verificação do endereço do locatário** (double opt-in) com token. A rota de confirmação é
+   pública, **sem sessão** (`allow_guest`), e a página que recebe o link vive no Frappe — ou seja, é
+   **handoff**, não trabalho deste repositório.
+7. **WhatsApp**: os campos permanecem no modelo porque o frontend os lê, mas o canal **não é
    implementado** — `whatsapp`/`ambos` são recusados na validação Zod, em vez de aceitos em silêncio.
 
 **Aceitação:** o texto extraído do PDF gerado bate com a referência · o e-mail sai com o remetente e
@@ -219,7 +238,7 @@ o `reply_to` da empresa certa.
 > 🔄 **em andamento** — 1 de 2 fatias · 11/11 tasks
 >
 > ✅ `cobranca-e-mora/v1` — 11/11 tasks
-> ⬜ `regua-e-documentos/v1`
+> 📋 `regua-e-documentos/v1`
 <!-- ESTADO:F3:FIM -->
 
 ---
@@ -241,6 +260,9 @@ e credenciais seguem válidos, então isto é trabalho de código, não espera d
    do **documento encontrado, nunca do payload**. Idempotência por identificador de baixa.
 5. **A API é a fonte da verdade** — o payload não decide nada; reconciliação diária substitui o
    polling 7×/dia.
+6. **Carnê** montado com `pdf-lib` **no servidor** — sai do browser, que hoje baixa N boletos.
+   ⚠️ **Veio da F3** em 2026-08-10: a fonte de cada página é o **boleto emitido**, que nasce nesta
+   fase. Depende dos itens 1 a 4, e o critério de pronto **não é aceitação visual**.
 
 ⚠️ **Pré-condição não resolvida:** confirmar contra boleto real que o `seuNumero` de 18 caracteres
 **retorna íntegro** da API. Se truncar, uma decisão precisa ser revista **antes** desta fase.

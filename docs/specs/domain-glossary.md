@@ -152,9 +152,34 @@ _Evitar_: descrição, histórico, observação, título, memorando
 A operação que tira um cadastro das escolhas e das listagens sem apagá-lo: ele deixa de ser oferecido ao montar um contrato, permanece legível por quem já o referencia, e pode voltar à circulação.
 _Evitar_: exclusão, excluir, remoção, desativação, arquivamento, soft delete
 
+**Aviso**:
+A mensagem que o sistema entrega ao **Locatário** sobre uma **Cobrança** que vai vencer ou já venceu.
+_Evitar_: cobrança (para a mensagem), e-mail de cobrança, notificação, lembrete, comunicado
+
+**Régua de cobrança**:
+O trabalho que percorre as cobranças em aberto de uma **Empresa** e decide quais delas recebem **Aviso**.
+_Evitar_: régua (desqualificada), automação de cobrança, rotina de cobrança, política de cobrança
+
+**Janela de horário**:
+O intervalo do dia, declarado pela **Empresa**, dentro do qual a **Régua de cobrança** tem permissão de entregar **Avisos** — ela diz *quando é permitido*, nunca *quando acontece*.
+_Evitar_: horário de envio, agendamento, gatilho de horário, janela de execução
+
+**Tentativa de envio**:
+O fato registrado a cada vez que o sistema tenta entregar um **Aviso** — existe mesmo quando nada saiu, e nunca é apagada nem alterada.
+_Evitar_: envio (para a tentativa que falhou), log de e-mail, histórico de disparo
+
+**Desfecho**:
+O que aconteceu com uma **Tentativa de envio**: entregue, falhou, ou não havia endereço de contato.
+_Evitar_: status do envio, resultado, situação da mensagem
+
 ## Relacionamentos
 
 - Uma **Cobrança** pode originar um boleto junto a um **Provedor**.
+- Uma **Empresa** tem no máximo uma configuração da **Régua de cobrança**, e ela nasce desligada.
+- A **Régua de cobrança** é sempre de uma **Empresa** só — não existe percurso que atravesse empresas.
+- Um **Aviso** é sobre exatamente uma **Cobrança**, e vai ao **Locatário** do **Contrato de locação** dela.
+- Toda entrega de **Aviso** produz exatamente uma **Tentativa de envio**, que tem exatamente um **Desfecho**.
+- Uma **Cobrança** paga ou cancelada **nunca** origina **Aviso**, por caminho nenhum.
 - Toda **Cobrança** pertence a exatamente um **Contrato de locação**, e o **Locatário** dela é o do contrato — nunca um vínculo próprio.
 - Toda **Cobrança** consome, ao nascer, um número da **Série declarada** dela, cujo escopo inclui o ano.
 - Uma **Cobrança em aberto** apura **Mora** pela **Configuração de mora** da **Empresa** dela; uma cobrança liquidada publica **Carimbos** e não reapura.
@@ -200,3 +225,5 @@ _Evitar_: exclusão, excluir, remoção, desativação, arquivamento, soft delet
 - "Cancelar uma cobrança" e "excluir uma cobrança" eram lidos como a mesma coisa. Resolvido: cancelar é transição de estado que preserva o registro e o código consumido — e é a única que existe. Cobrança **nunca é apagada**, e a **Retirada de circulação** não a alcança: ela é operação sobre cadastro, não sobre fato financeiro.
 - "Cancelar" e "encerrar" eram usados como sinônimos para tirar um contrato de vigência. Resolvido: são estados distintos e têm produtores distintos — o **Cancelamento de contrato** é decisão de uma pessoa, com ação sensível própria; o encerramento é consequência do vencimento do prazo, escrito por rotina agendada.
 - "Excluir um contrato" era lido tanto como cancelá-lo quanto como tirá-lo das listagens. Resolvido: cancelar é transição de estado que libera o **Imóvel**; **Retirada de circulação** é visibilidade e não libera nada. Um rascunho abandonado se retira, não se cancela.
+- "Cobrança" era usado tanto para o **fato financeiro** quanto, coloquialmente, para a mensagem que o sistema envia ao inadimplente. Resolvido: são conceitos distintos — o fato é a **Cobrança**; a mensagem é o **Aviso**. ⚠️ A chave do catálogo `ACAO:enviar_cobranca_manual` preserva o nome histórico (o catálogo é fechado desde a F1 e persistido em `acesso_usuario_permissao` — não renomeável), e **não** redefine "cobrança": o que ela governa é o envio de um **Aviso**. Mesmo caso, e mesma resolução, de `ACAO:excluir_cadastro` acima.
+- "Régua" nomeava tanto a **configuração** quanto o **trabalho** que a aplica. Resolvido: o trabalho é a **Régua de cobrança**; a configuração que ele lê é a *política de aviso*, termo do glossário da feature `regua-de-cobranca`. O pacote `@sysloc/regua` e a fila `regua-de-cobranca` nomeiam o trabalho, coerentes com esta resolução.

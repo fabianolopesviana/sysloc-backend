@@ -57,8 +57,8 @@ da mesma feature*, não *próxima fase*.
 | F0 | `fundacao-stack-nativa/v1` | **miniSpec** | 8 entregas com CA executáveis, zero persona, zero regra de negócio |
 | F1 | `fundacao-multitenancy-identidade/v1` | **SDD** | 3 perfis, matriz 10×7, RLS + FK composta + `AsyncLocalStorage` |
 | F2 | `dominio-locacao/v1` | **SDD** | 8 entidades, 3 regras portadas, primeiros contratos ts-rest |
-| F3 | `cobranca-mora-e-documentos/v1` | **SDD** | ciclo de cobrança, mora por empresa, régua, PDF de 752 linhas, carnê |
-| F4 | `integracao-bancaria-sicoob/v1` | **SDD** | mTLS, webhook, `seu_numero` único do SaaS; consome a ADR-0001 |
+| F3 | `cobranca-mora-e-documentos/v1` | **SDD** | ciclo de cobrança, mora por empresa, régua, PDF de contrato (Server Script, só no banco) |
+| F4 | `integracao-bancaria-sicoob/v1` | **SDD** | mTLS, webhook, `seu_numero` único do SaaS, **carnê** (veio da F3); consome a ADR-0001 |
 | F5 | `automacoes-agendadas/v1` | **miniSpec** | porte com CA claros; o gatilho (systemd timers) já está decidido |
 | F6 | `frontend-religado/v1` | **só handoff** (revisão 3) | o fonte do React não está neste servidor; a implementação inteira sai deste repositório |
 | F7 | `virada-e-desinstalacao/v1` | **miniSpec, partida em duas** (revisão 3) | backup/restore e runbook entram no marco de entrega; virada e desinstalação viram sessão operacional futura |
@@ -255,11 +255,36 @@ da empresa A apontando `Imovel` da B é recusado **pelo banco**, não por valida
    cliente por `normalizeStatus`).
 2. **Mora**: multa e juros por empresa — `Atraso` deixa de ser Single global. Porta de
    `cobranca_atraso` (151 LOC); `_calcular_mora()` é pura e idempotente.
-3. **Régua de cobrança**: porta de `cobranca_automation` (~700 LOC) — core, emailer, runner.
-4. **PDF de contrato**: as 752 linhas, em `@react-pdf/renderer`, validadas contra a caracterização
-   textual (§ Caracterização).
-5. **Carnê**: montagem com `pdf-lib` **no servidor** — sai do browser, que hoje baixa N boletos.
-6. `locatario_email_confirmacao` (222 LOC) portado.
+3. **Régua de cobrança**: porta de `cobranca_automation` (837 LOC medidos — core, emailer, runner,
+   helpers, service, scheduler) **mais a configuração que a governa**: o Server Script
+   `Automacao cobranca config api` (154 linhas, **ativo**, existindo apenas no banco) sobre o
+   DocType `Automacao Cobranca Config`, que é **Single** no Frappe — uma configuração para o SaaS
+   inteiro, o mesmo defeito que a mora tinha e que o item 2 corrige. Os nove campos estão gravados
+   em `entrada.configuracao_da_regua` do golden `regua-de-cobranca.json`.
+4. **PDF de contrato**: o Server Script **`PDF contrato`** — 752 linhas, `Document Event / After
+   Save` sobre `Contrato`, **ativo**, **existindo apenas no banco** —, portado para
+   `@react-pdf/renderer` e validado contra a caracterização textual (§ Caracterização). ⚠️ As 752
+   linhas são o **fonte**, não a saída: o golden `contrato-pdf.txt` tem **174 linhas** de texto
+   extraído. E o fonte **não está em arquivo nem em git** — `contrato_pdf/service.py` (61 linhas)
+   apenas **serve** o PDF já armazenado em `pdf_contrato_arquivo`. Ler o fonte é pré-condição de
+   portar, e a janela para lê-lo **fecha na F7**, como a da régua fechava.
+5. ~~**Carnê**: montagem com `pdf-lib` **no servidor** — sai do browser, que hoje baixa N
+   boletos.~~ ⚠️ **MOVIDO PARA A F4 em 2026-08-10**, pelo pré-refinamento da fase
+   (`docs/specs/features/cobranca-mora-e-documentos/v1/pre-refinement.md` §3-B.4 e ramo E-II,
+   direção **E4**), e propagado aos artefatos em 2026-08-11. **A razão é factual e não estava
+   disponível quando este plano foi escrito**: a fonte de cada página do carnê é o **boleto
+   emitido**, e a emissão é F4 inteira (mTLS, certificado por empresa, webhook) — montar o
+   continente sem o conteúdo não é entregável nem testável. O item **fica numerado aqui** porque a
+   spec da F3 o cita como *"§F3, item 5"*; a entrega vive agora no **item 6 da §F4**.
+6. `locatario_email_confirmacao` (222 LOC) portado. ⚠️ Apesar do nome, **não é e-mail transacional
+   de cobrança**: é **verificação do endereço de e-mail do locatário** (double opt-in) com token —
+   `_gerar_token` grava `email_token_hash`/`email_token_gerado_em`, o link é enviado, e
+   `confirmar_email_locatario` valida, grava `email_token_usado_em` e apaga o hash. Duas
+   consequências que o porte precisa tratar: a rota de confirmação é **`allow_guest=True`**, ou
+   seja **pública, sem sessão** — decisão de segurança contra a barreira única de admissão da F1 e
+   a guarda de cobertura com `semDeclaracao` vazio —, e a página que recebe o link
+   (`www/validacao-email.html`) **vive no Frappe** e morre com ele: é frontend, logo **handoff**,
+   não trabalho deste repositório.
 7. **WhatsApp**: campos permanecem no modelo (o frontend os lê), canal **não implementado**;
    `whatsapp`/`ambos` recusados na validação Zod em vez de aceitos silenciosamente.
 
@@ -291,6 +316,13 @@ porte de cliente, não espera de banco.
    de validação. Empresa suspensa → registra sem aplicar; aplica na reativação.
 5. **API é a fonte da verdade** — o payload não decide nada. Reconciliação diária (o polling
    7×/dia cai para 1×).
+6. **Carnê**: montagem com `pdf-lib` **no servidor** — sai do browser, que hoje baixa N boletos.
+   ⚠️ **Veio da §F3, item 5, em 2026-08-10**: a fonte de cada página é o **boleto emitido**, que
+   nasce nesta fase. Depende dos itens 1 a 4 — sem emissão não há o que concatenar. O critério de
+   pronto **não é visual**: prova por snapshot aceito sem leitura é o que a
+   `.claude/rules/nao-regressao.md` §4.4 nomeia como prova mais frouxa, e a alternativa de entregar
+   o carnê com fonte provisória na F3 (direção **E5**) foi podada por produzir documento que esta
+   fase descartaria.
 
 **Decisões consumidas**: 9, 17, 18, 19, 20, 21, 23, 24, 33, 37 · **ADR-0001**.
 
@@ -470,8 +502,10 @@ absorvida em `docs/specs/features/caracterizacao-regras-legadas/v1/tasks/task-01
 
 - Regra de agregação (metragem): valor produzido para imóvel sem cômodo, com um, com vários, e com
   metragem nula em algum.
-- Regra que gera documento (contrato, 752 linhas): **texto extraído** do PDF, nunca os bytes — o
-  artefato carrega metadados de geração que variam a cada execução.
+- Regra que gera documento (o Server Script `PDF contrato`, 752 linhas de fonte no banco): **texto
+  extraído** do PDF, nunca os bytes — o artefato carrega metadados de geração que variam a cada
+  execução. O golden resultante (`contrato-pdf.txt`) tem **174 linhas**: ele prova a **saída**, e
+  não substitui a leitura do fonte na hora de portar.
 
 **Escopo — ampliação da revisão 2:**
 
@@ -485,7 +519,9 @@ absorvida em `docs/specs/features/caracterizacao-regras-legadas/v1/tasks/task-01
   entrada da F3.
 
 **Por que existe**: é a especificação executável do que portar e a prova de equivalência do gerador
-de contrato. Sem ela, a F3 porta 752 linhas sem ter contra o que comparar.
+de contrato. Sem ela, a F3 porta as 752 linhas do Server Script sem ter contra o que comparar.
+⚠️ A caracterização cobre a **saída**; o **fonte** continua vivendo só no banco, e lê-lo antes da
+F7 é obrigação separada — ver o item 4 da §F3.
 
 **Por que agora, e não "a qualquer momento antes da F3"**: é o **único ativo do projeto com prazo de
 validade** — depende de um sistema que será desligado. "Fora do caminho crítico" é verdade em

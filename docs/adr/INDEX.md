@@ -1,6 +1,6 @@
 # Architecture Decision Records — INDEX
 
-> Ultima atualizacao: 2026-08-09 (23 ADRs)
+> Ultima atualizacao: 2026-08-11 (26 ADRs)
 
 <!-- ADR-INDEX-START -->
 | ID | Titulo | Status | Tags | Problema (1-linha) | Decisao (1-linha) |
@@ -28,4 +28,7 @@
 | 0021 | Transição de estado de negócio é rota própria, governada conforme a natureza do ato | accepted | state-management, architecture | A ADR-0019 fixou que toda transição de estado é rota própria governada pela chave de ação sensível | Toda transição de estado de entidade de negócio é uma rota própria — nunca um campo gravado por |
 | 0022 | O que se grava e o que se deriva num fato financeiro | accepted | data, architecture | Multa e juros passam a ser configuráveis por empresa, e a configuração muda ao longo do tempo — | Todo valor monetário derivado de configuração é derivado enquanto o fato financeiro está aberto, |
 | 0023 | Onde vive a derivação de valor não persistido | accepted | architecture, data | O produto publica valores que não são colunas. Até aqui todos eles serviam apenas à apresentação de | A derivação de um valor não persistido vive no banco quando ela participa de seleção — filtro, |
+| 0024 | Origem legítima do contexto de tenant quando não há requisição | accepted | architecture, security, data | A ADR-0008 fixa que o isolamento é propriedade do banco e que o contexto que a RLS consome é fixado | Toda execução que ocorre fora de uma requisição estabelece o contexto de tenant a partir da carga |
+| 0025 | O domínio declara a porta; o adaptador depende dele, nunca o contrário | accepted | architecture | O produto pratica camadas por fora e estilo hexagonal por dentro, mas nunca declarou de que lado | Em toda fronteira entre domínio e infraestrutura, o pacote de domínio declara o tipo do dado que |
+| 0026 | O relógio da operação mora no banco — a aplicação nunca lê o do processo | accepted | architecture, data | Decisões de negócio dependem de que dia é hoje e que horas são: a transição de uma cobrança para | Toda leitura de tempo que decide comportamento de negócio vem do banco, através de função cujo |
 <!-- ADR-INDEX-END -->
