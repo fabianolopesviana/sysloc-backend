@@ -40,6 +40,8 @@
 
 import { randomBytes } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
+import type { PoliticaDeAvisoNova } from '@sysloc/contracts';
+import type { TransactionSql } from 'postgres';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho DISPARADO nesta task (2026-08-02)
 // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o código abaixo.)
 // O QUÊ: este import atravessa a fronteira de `@sysloc/shared` por CAMINHO DE ARQUIVO, fora do
@@ -59,6 +61,11 @@ import { readdir, readFile } from 'node:fs/promises';
 //        escalada ao orquestrador, não decisão desta task.
 // ÍNDICE: docs/specs/features/fundacao-stack-nativa/v1/_run/run-report.md §2, D28
 import { type BancoEfemero, postgresEfemero } from '../../shared/test/postgres-efemero.ts';
+import {
+  criarPessoa,
+  type DadosDaPessoa,
+  type PessoaCadastrada,
+} from '../src/cadastro-de-pessoa.ts';
 import { abrirConexao } from '../src/conexao.ts';
 import { semear } from '../src/semente.ts';
 
@@ -272,4 +279,99 @@ function comporCadeias(
     `postgresql://${papel}:${encodeURIComponent(senhas[papel])}@127.0.0.1:${instancia.porta}/${banco}`;
 
   return { aplicacao: cadeia(PAPEL_APLICACAO), migracao: cadeia(PAPEL_MIGRACAO) };
+}
+
+// ===========================================================================
+// Auxiliares de semeadura da régua de cobrança — T5 da fatia `regua-de-cobranca`
+// ===========================================================================
+//
+// ⚠️ **São AUXILIARES, e jamais semente automática.** Nada abaixo é invocado por
+// {@link bancoEfemero}, e a ausência é a decisão: semear política de aviso por padrão faria toda
+// instância nascer com uma linha em `negocio.politica_de_aviso`, e a **contagem crua `0`** do
+// CT-606 — que é o único discriminador entre uma leitura que não escreve e um `upsert` escondido
+// nela — passaria a valer `1` sem que o SUT tivesse mudado. Um acessório que quebra a asserção que
+// ele deveria servir é pior do que acessório nenhum.
+//
+// Eles moram aqui, e não no arquivo de cada caso, porque se **prevê** mais de um consumidor nesta
+// fatia: a do job (T7/T8) e a das rotas (T9/T10) montam a mesma precondição.
+// Duas escritas da mesma semeadura ficariam livres para divergir, e a divergência apareceria como
+// dois arranjos que dizem montar o mesmo cenário e montam cenários diferentes.
+//
+// ⚠️ Hoje **só `semearLocatarioSemContato` tem consumidor** (`envio-de-cobranca.spec.ts`). A T5
+// não chegou a consumir `semearPoliticaDeAviso`: os dois casos que precisavam de política
+// preferiram a porta real `gravarPoliticaDeAviso`, que é a escolha certa quando a política é o
+// objeto e não a precondição. Ver o `DÉBITO COM GATILHO — D13` sobre ele.
+
+/**
+ * Grava a política de aviso da empresa do contexto **por instrução própria**, sem passar pelo SUT.
+ *
+ * A distinção é o ponto: `gravarPoliticaDeAviso` (`../src/politica-de-aviso.ts`) é código sob prova,
+ * e um arranjo que a use faz o caso depender do que ele mede. Este acessório existe para os casos em
+ * que a política é **precondição**, e não objeto — o predicado da T5, a janela do job, as rotas.
+ * Quem prova a porta é o CT-606, e ele a chama diretamente.
+ *
+ * A instrução corre com o papel da aplicação, sob a política de linha, e **não compara `empresa_id`
+ * com coisa alguma**: a empresa sai da mesma expressão que as políticas avaliam, e o `WITH CHECK` é
+ * quem aceita ou recusa a linha (ADR-0008). Mesmo desenho, e mesma razão, de `registrarPolitica` em
+ * `cobranca.spec.ts`.
+ *
+ * O `ON CONFLICT` existe porque um caso pode gravar a política **depois** de já ter lido sem ela: é o
+ * mesmo `upsert` de um comando só que a `politica_de_aviso_empresa_key` foi criada para ser alvo.
+ */
+// DÉBITO COM GATILHO — D13 · F3/T5 · registrado 2026-08-11
+// O QUÊ: este auxiliar nasce SEM consumidor algum — a T5 não o chamou —, e por isso o `ON CONFLICT
+//        ON CONSTRAINT politica_de_aviso_empresa_key` que ele escreve NUNCA EXECUTOU. A porta de
+//        produção escreve a mesma coisa como `ON CONFLICT (empresa_id)`: duas grafias do mesmo
+//        alvo, e só uma tem prova.
+// QUANDO FECHA: a primeira suíte que precisar da política como PRECONDIÇÃO sem ser objeto —
+//        prevista para a T7/T8 (a janela do job) ou a T9/T10 (as rotas). Ao ganhar o primeiro
+//        consumidor, alinhar a cláusula com a da produção (ou declarar por que a grafia por
+//        restrição é a certa aqui) e remover este marcador.
+// POR QUE NÃO AGORA: removê-lo contraria a §5.2 da T5, que o declara entregável; e alinhar a
+//        cláusula sem consumidor seria mexer em SQL que nada exercita — a mudança não teria como
+//        ser provada nem refutada nesta task.
+// ÍNDICE: docs/specs/features/regua-de-cobranca/v1/_run/run-report.md §2, D13
+export async function semearPoliticaDeAviso(
+  tx: TransactionSql,
+  politica: PoliticaDeAvisoNova,
+): Promise<void> {
+  await tx`
+    INSERT INTO negocio.politica_de_aviso (
+      empresa_id, ativo, dias_antes_do_vencimento, intervalo_minimo_dias,
+      janela_inicio, janela_fim, canal
+    )
+    VALUES (
+      nullif(current_setting('app.empresa_id', true), '')::uuid,
+      ${politica.ativo}, ${politica.diasAntesDoVencimento}, ${politica.intervaloMinimoDias},
+      ${politica.janelaInicio}, ${politica.janelaFim}, ${politica.canal}
+    )
+        ON CONFLICT ON CONSTRAINT politica_de_aviso_empresa_key
+        DO UPDATE
+       SET ativo = EXCLUDED.ativo,
+           dias_antes_do_vencimento = EXCLUDED.dias_antes_do_vencimento,
+           intervalo_minimo_dias = EXCLUDED.intervalo_minimo_dias,
+           janela_inicio = EXCLUDED.janela_inicio,
+           janela_fim = EXCLUDED.janela_fim,
+           canal = EXCLUDED.canal
+  `;
+}
+
+/**
+ * Cria um locatário **sem endereço de contato** — o cadastro que a RD-11 existe para registrar.
+ *
+ * Ele nasce pela **porta de produção** (`criarPessoa`), e não por `INSERT` cru: o caminho é o mesmo
+ * que a rota de cadastro usa por dentro, e é isso que impede o arranjo de montar um estado que a
+ * operação não alcança. `negocio.locatario.email` é `NOT NULL` e **aceita a cadeia vazia** — o
+ * cabeçalho de `envioDeCobranca`, em `../src/esquema/negocio.ts`, registra por que uma restrição de
+ * endereço bem formado tornaria impublicável justamente a linha que a tabela existe para guardar.
+ *
+ * O endereço é sobrescrito **aqui**, e não deixado a cargo de quem chama, porque é isso que o nome
+ * promete: um chamador que passasse `email: 'x@y'` por engano montaria um locatário com contato sob
+ * um acessório que diz o contrário, e o caso adiante provaria outra coisa em silêncio.
+ */
+export async function semearLocatarioSemContato(
+  tx: TransactionSql,
+  dados: DadosDaPessoa,
+): Promise<PessoaCadastrada> {
+  return await criarPessoa(tx, 'locatario', { ...dados, email: '' });
 }

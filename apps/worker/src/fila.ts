@@ -1,14 +1,19 @@
 /**
- * Conexão com o servidor de fila, nome da fila e políticas de repetição.
+ * Conexão com o servidor de fila e políticas de reconexão e encerramento.
  *
  * ---------------------------------------------------------------------------
- * Por que o nome da fila é constante EXPORTADA
+ * O contrato da fila NÃO mora aqui — ele vem de `@sysloc/shared`
  * ---------------------------------------------------------------------------
  *
- * Quem enfileira e quem consome precisam do mesmo nome, e um literal repetido dos dois lados é
- * uma divergência que nenhuma ferramenta apanha: o produtor grava em `eco`, o consumidor escuta
- * `Eco`, e o trabalho fica parado sem erro nenhum. Com a constante, o desencontro deixa de ser
- * possível — quem enfileira importa {@link NOME_FILA_ECO} do mesmo módulo que o processador usa.
+ * Nome, opções de repetição e tipos de carga são **importados**, e a razão fechou o D32 (F0/T6):
+ * este pacote é aplicação privada e sem `exports`, de modo que produtor nenhum — a API, o relógio
+ * da F5, a suíte — conseguiria importar o que fosse definido aqui. Cada um construiria a própria
+ * fila e ou repetiria as opções, ou as ignoraria: `defaultJobOptions` vale só para a **instância**
+ * que as declara, e a política documentada como "a de produção" passaria a valer só neste
+ * processo. O detalhe da decisão está no cabeçalho de `packages/shared/src/fila.ts`.
+ *
+ * O que fica aqui é o que **depende da biblioteca de fila**: a conexão, o tipo `Job<…>`, o
+ * registro de processadores e o encerramento.
  *
  * ---------------------------------------------------------------------------
  * Duas políticas de repetição, que resolvem problemas diferentes
@@ -38,7 +43,14 @@
  * que é exatamente o estado em que a queda do servidor de fila o deixa.
  */
 
-import type { Logger } from '@sysloc/shared';
+import {
+  type CargaDaRegua,
+  type CargaDoEco,
+  FILA_DA_REGUA,
+  FILA_DO_ECO,
+  type Logger,
+  OPCOES_PADRAO_DA_TAREFA,
+} from '@sysloc/shared';
 import { type Job, Queue, Worker } from 'bullmq';
 import { Redis } from 'ioredis';
 
@@ -54,19 +66,6 @@ import { Redis } from 'ioredis';
 //          o que `apps/api` já fixa — uma versão do cliente no monorepo inteiro.
 // REVERTER EXIGE: demonstrar que a linha 6.x parou de receber correção em cadência diária e que
 //                 CT-001 a CT-004 — a CA-10 inclusive — passam contra ela.
-
-/**
- * Nome da fila da tarefa de ida e volta.
- *
- * É o único nome de fila desta fatia: nenhuma tarefa de negócio existe ainda.
- */
-export const NOME_FILA_ECO = 'eco';
-
-/** Tentativas de execução de uma tarefa antes de ela ser dada por falha. */
-const TENTATIVAS_POR_TAREFA = 3;
-
-/** Espera antes da segunda tentativa; as seguintes dobram a partir dela. */
-const ESPERA_ENTRE_TENTATIVAS_MS = 1_000;
 
 /** Espera entre tentativas de reconexão do cliente, e seu teto. */
 const PASSO_DE_RECONEXAO_MS = 200;
@@ -92,25 +91,11 @@ const MAIOR_ESPERA_DE_RECONEXAO_MS = 5_000;
 //                 `TimeoutStopSec` com folga sobre este valor.
 const LIMITE_DE_DESLIGAMENTO_MS = 15_000;
 
-/**
- * Quantas tarefas terminadas o servidor de fila retém.
- *
- * O padrão da biblioteca é reter **todas**, e o servidor desta fatia grava tudo em disco (a
- * persistência ligada em T2) — reter sem limite faria a fila crescer para sempre em memória e no
- * registro contínuo. O que se retém é o suficiente para diagnosticar o passado recente; falha é
- * retida por mais tempo que sucesso porque é ela que alguém volta para ler.
- */
-const TAREFAS_CONCLUIDAS_RETIDAS = 1_000;
-const TAREFAS_FALHAS_RETIDAS = 5_000;
-
-/** Carga útil da tarefa de ida e volta. */
-export interface CargaDeEco {
-  /** O valor que a tarefa devolve inalterado. */
-  readonly valor: string;
-}
-
 /** Uma tarefa de eco, como o processador a recebe. */
-export type TarefaDeEco = Job<CargaDeEco, string>;
+export type TarefaDeEco = Job<CargaDoEco, string>;
+
+/** Uma tarefa da régua de cobrança, como o processador a recebe. */
+export type TarefaDaRegua = Job<CargaDaRegua, void>;
 
 /**
  * Como o encerramento terminou.
@@ -131,15 +116,48 @@ export type DesfechoDoEncerramento =
  * O registrador chega por parâmetro, e não por variável de módulo, porque quem o cria é a
  * composição raiz — é ela que conhece `LOG_LEVEL` e o destino do registro. É também o que permite
  * ao ponto de entrada e à verificação exercitarem exatamente a mesma fiação.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que ele é PARAMETRIZADO pela carga e pelo resultado
+ * ---------------------------------------------------------------------------
+ *
+ * Até a T7 o consumo era de **uma** fila, e o tipo trazia a carga do eco escrita por dentro. Com o
+ * trabalho da régua o processo passa a consumir duas filas com cargas e resultados diferentes, e
+ * as duas saídas para isso não são equivalentes: um tipo por fila multiplicaria a fiação de
+ * registro, e um tipo frouxo (`Job<unknown, unknown>`) devolveria à borda a conferência que o
+ * compilador já faz. Parametrizar mantém **um** caminho de registro e faz o par carga/resultado ser
+ * conferido no ponto do registro — ver {@link Fila.processar}, que recebe o próprio produtor.
  */
-export type ProcessadorDeTarefa = (tarefa: TarefaDeEco, logger: Logger) => Promise<string>;
+export type ProcessadorDeTarefa<Carga, Resultado> = (
+  tarefa: Job<Carga, Resultado>,
+  logger: Logger,
+) => Promise<Resultado>;
 
 /** A fila conectada: o lado que enfileira, o lado que consome e o encerramento dos dois. */
 export interface Fila {
   /** Lado produtor da fila de eco, já com a política de repetição de tarefa declarada. */
-  readonly eco: Queue<CargaDeEco, string>;
-  /** Registra um processador para a fila de eco. Ele passa a consumir de imediato. */
-  processar(processador: ProcessadorDeTarefa): void;
+  readonly eco: Queue<CargaDoEco, string>;
+  /**
+   * Lado produtor da fila da régua de cobrança, com a mesma política de repetição.
+   *
+   * Ele nasce com {@link OPCOES_PADRAO_DA_TAREFA} e é encerrado junto com os demais recursos — uma
+   * fila construída à parte, depois, é exatamente o que o D32 previa. O consumidor dela é
+   * registrado pela composição raiz, com {@link processar}.
+   */
+  readonly regua: Queue<CargaDaRegua, void>;
+  /**
+   * Registra o processador de uma das filas **deste** módulo. Ele passa a consumir de imediato.
+   *
+   * O primeiro parâmetro é o **produtor**, e não o nome da fila, e a escolha é o mecanismo: dele
+   * saem o nome que o consumidor escuta e o par carga/resultado que o processador precisa honrar,
+   * de modo que (a) não há como registrar processador para uma fila que este módulo não construiu
+   * — e portanto não encerra —, e (b) um processador com a carga da outra fila não compila. Com o
+   * nome por cadeia, as duas coisas seriam convenção, e a segunda nem existiria.
+   */
+  processar<Carga, Resultado>(
+    produtor: Queue<Carga, Resultado>,
+    processador: ProcessadorDeTarefa<Carga, Resultado>,
+  ): void;
   /**
    * Encerra os consumidores — **esperando a tarefa em andamento terminar** —, depois o lado
    * produtor e, por último, a conexão.
@@ -162,31 +180,6 @@ const OPCOES_DE_CONEXAO = {
     Math.min(tentativa * PASSO_DE_RECONEXAO_MS, MAIOR_ESPERA_DE_RECONEXAO_MS),
 } as const;
 
-// DÉBITO COM GATILHO — D32 · F0/T6 · registrado 2026-08-01
-// (Natureza DIFERENTE das duas `DECISÃO FECHADA` deste arquivo — aquelas PROTEGEM o que está sob
-//  elas e não se alteram sem satisfazer o `REVERTER EXIGE`; esta AGENDA o que ainda vai mudar.)
-// O QUÊ: o lado produtor mora dentro de `apps/worker`, uma aplicação privada e sem `exports`, que o
-//        primeiro produtor real NÃO poderá importar — `apps/api` inclusive. Ele terá de construir a
-//        própria fila e ou duplicar as opções abaixo (`attempts`/`backoff`/`removeOnComplete`/
-//        `removeOnFail`), ou ignorá-las: `defaultJobOptions` só vale para tarefas enfileiradas PELA
-//        INSTÂNCIA que as declara. O cabeçalho deste módulo argumenta que exportar a constante do
-//        NOME impede a divergência produtor/consumidor; as OPÇÕES correm o mesmo risco e não têm
-//        proteção equivalente. Hoje o efeito é nulo: fila ociosa no processo do processador.
-// QUANDO FECHA: na PRIMEIRA fatia que enfileirar tarefa de negócio. Fechar extraindo nome, opções e
-//        tipos de carga para um pacote compartilhado, OU declarando a repetição como deliberada com
-//        marcador nos DOIS lados. Sem isso, a política de repetição documentada como "a de produção"
-//        vale só no processo da verificação, e a decisão terá sido tomada por omissão.
-// POR QUE NÃO AGORA: extrair um pacote de fila nesta fatia seria abstração antecipada — não há
-//        segundo produtor, e a T6 proíbe tarefa de negócio, então a forma da carga real é desconhecida.
-// ÍNDICE: docs/specs/features/fundacao-stack-nativa/v1/_run/run-report.md §2, D32
-/** Opções aplicadas a toda tarefa enfileirada. Ver o cabeçalho. */
-const OPCOES_PADRAO_DA_TAREFA = {
-  attempts: TENTATIVAS_POR_TAREFA,
-  backoff: { type: 'exponential', delay: ESPERA_ENTRE_TENTATIVAS_MS },
-  removeOnComplete: { count: TAREFAS_CONCLUIDAS_RETIDAS },
-  removeOnFail: { count: TAREFAS_FALHAS_RETIDAS },
-} as const;
-
 /**
  * Conecta ao servidor de fila e devolve o lado produtor, o registro de processadores e o
  * encerramento.
@@ -205,24 +198,52 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
     logger.warn({ erro }, 'cliente da fila reportou falha de conexão');
   });
 
-  const eco = new Queue<CargaDeEco, string>(NOME_FILA_ECO, {
+  const eco = new Queue<CargaDoEco, string>(FILA_DO_ECO, {
     connection: conexao,
     defaultJobOptions: OPCOES_PADRAO_DA_TAREFA,
   });
-  // Nível de diagnóstico, e não de alerta: o que a fila emite aqui é o MESMO defeito de conexão
-  // que o cliente acima já reportou uma vez, repassado adiante. O ouvinte existe para o evento
-  // chegar ao journal em vez de ser descartado, não para duplicar a linha de alerta.
-  eco.on('error', (erro: Error) => {
-    logger.debug({ erro, origem: 'fila' }, 'a fila repassou uma falha da conexão');
+  const regua = new Queue<CargaDaRegua, void>(FILA_DA_REGUA, {
+    connection: conexao,
+    defaultJobOptions: OPCOES_PADRAO_DA_TAREFA,
   });
 
-  const consumidores: Worker<CargaDeEco, string>[] = [];
+  // Nível de diagnóstico, e não de alerta: o que a fila emite aqui é o MESMO defeito de conexão
+  // que o cliente acima já reportou uma vez, repassado adiante. O ouvinte existe para o evento
+  // chegar ao journal em vez de ser descartado, não para duplicar a linha de alerta. Vale para
+  // cada fila: sem ouvinte, a biblioteca descarta o evento em silêncio.
+  for (const [nome, produtor] of [
+    [FILA_DO_ECO, eco],
+    [FILA_DA_REGUA, regua],
+  ] as const) {
+    produtor.on('error', (erro: Error) => {
+      logger.debug({ erro, origem: 'fila', fila: nome }, 'a fila repassou uma falha da conexão');
+    });
+  }
 
   /**
-   * Devolve consumidores e lado produtor, na ordem, **sem prazo** — quem impõe o prazo é
+   * O que o encerramento precisa saber de um consumidor: como fechá-lo.
+   *
+   * O arranjo é tipado pelo que se **faz** com ele, e não pela carga que ele consome: com duas
+   * filas de cargas diferentes registradas no mesmo processo, um arranjo tipado por uma das cargas
+   * ou (a) excluiria a outra, ou (b) exigiria alargar a assinatura até `any` — e `any` aqui
+   * apagaria justamente a conferência que {@link Fila.processar} faz. O que `devolverGraciosamente`
+   * chama é `close()`, e é só isso que este tipo promete.
+   */
+  interface ConsumidorEncerravel {
+    close(): Promise<void>;
+  }
+
+  const consumidores: ConsumidorEncerravel[] = [];
+
+  /**
+   * Devolve consumidores e lados produtores, na ordem, **sem prazo** — quem impõe o prazo é
    * {@link Fila.encerrar}. Os consumidores primeiro, e um de cada vez: `close()` espera a tarefa
    * em andamento terminar, que é o que impede o trabalho de ser abandonado no meio quando o
    * supervisor encerra o processo.
+   *
+   * **Todo produtor construído aqui é fechado aqui** — inclusive o que ainda não tem consumidor.
+   * Fila aberta e não devolvida deixa ouvinte preso ao laço de eventos, e o sintoma é o processo
+   * que não termina no desligamento.
    */
   const devolverGraciosamente = async (): Promise<void> => {
     for (const consumidor of consumidores) {
@@ -231,6 +252,7 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
     consumidores.length = 0;
 
     await eco.close();
+    await regua.close();
   };
 
   /** O encerramento já pedido, se houver. Ver {@link Fila.encerrar}. */
@@ -260,8 +282,14 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
         // Desistir por decisão própria, dizendo no journal por quê, é melhor do que ser morto
         // pelo supervisor sem registro: a linha abaixo é a única pista de que uma tarefa em voo
         // pode ter ficado para trás.
+        // O campo é a LISTA das filas devolvidas, e não o nome de uma delas (D32 · F3/T7). A
+        // mensagem fala do "restante", e a partir da T8 há tarefa de negócio na segunda fila:
+        // nomear só a primeira faria uma tarefa da régua abandonada no desligamento produzir uma
+        // linha que nomeia `eco`. Os nomes saem dos próprios produtores que
+        // `devolverGraciosamente` fecha, e não de literais — uma fila acrescentada ao encerramento
+        // não tem como ficar de fora daqui.
         logger.error(
-          { limiteMs: LIMITE_DE_DESLIGAMENTO_MS, fila: NOME_FILA_ECO },
+          { limiteMs: LIMITE_DE_DESLIGAMENTO_MS, filas: [eco.name, regua.name] },
           'o encerramento excedeu o limite — devolvendo a conexão sem esperar o restante',
         );
       }
@@ -283,23 +311,30 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
 
   return {
     eco,
+    regua,
 
-    processar(processador: ProcessadorDeTarefa): void {
-      const consumidor = new Worker<CargaDeEco, string>(
-        NOME_FILA_ECO,
-        (tarefa: TarefaDeEco) => processador(tarefa, logger),
+    processar<Carga, Resultado>(
+      produtor: Queue<Carga, Resultado>,
+      processador: ProcessadorDeTarefa<Carga, Resultado>,
+    ): void {
+      const consumidor = new Worker<Carga, Resultado>(
+        produtor.name,
+        (tarefa: Job<Carga, Resultado>) => processador(tarefa, logger),
         { connection: conexao },
       );
 
       consumidor.on('error', (erro: Error) => {
-        logger.debug({ erro, origem: 'consumidor' }, 'o consumidor repassou uma falha da conexão');
+        logger.debug(
+          { erro, origem: 'consumidor', fila: produtor.name },
+          'o consumidor repassou uma falha da conexão',
+        );
       });
 
       // Tarefa que termina em falha some do processo sem deixar rastro se ninguém a registrar: o
       // motivo fica gravado no servidor de fila, e ninguém o lê antes de o problema ser notado.
-      consumidor.on('failed', (tarefa: TarefaDeEco | undefined, erro: Error) => {
+      consumidor.on('failed', (tarefa: Job<Carga, Resultado> | undefined, erro: Error) => {
         logger.error(
-          { idTarefa: tarefa?.id, fila: NOME_FILA_ECO, tentativa: tarefa?.attemptsMade, erro },
+          { idTarefa: tarefa?.id, fila: produtor.name, tentativa: tarefa?.attemptsMade, erro },
           'tarefa terminou em falha',
         );
       });

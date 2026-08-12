@@ -1,8 +1,9 @@
 /**
  * Os esquemas de `@sysloc/contracts` — CT-334 a CT-338, CT-340, CT-341, mais CT-424 e CT-428, que a
- * fatia `contratos-de-locacao` acrescenta, e CT-537 mais CT-540 a CT-545, que a fatia
- * `cobranca-e-mora` acrescenta. O **CT-537 substitui o CT-429** daquela fatia: ver o parágrafo dedicado
- * abaixo, e a linha `SUT_IS_CORRECT_BECAUSE:` no ponto do caso.
+ * fatia `contratos-de-locacao` acrescenta, CT-537 mais CT-540 a CT-545, que a fatia
+ * `cobranca-e-mora` acrescenta, e CT-604 e CT-605, que a fatia `regua-de-cobranca` acrescenta. O
+ * **CT-537 substitui o CT-429** daquela fatia: ver o parágrafo dedicado abaixo, e a linha
+ * `SUT_IS_CORRECT_BECAUSE:` no ponto do caso.
  *
  * ---------------------------------------------------------------------------
  * INVARIANTES
@@ -75,6 +76,22 @@
  * |          |        | `MAIOR_VALOR_MONETARIO` e uma de `ESCALA_MONETARIA`, ambas em `contrato.ts`;
  * |          |        | `cobranca.ts` as obtém por `import … from './contrato.js'` e não redeclara
  * |          |        | nenhuma das duas, sob `export` ou sem ele. |
+ * | CA-15    | CT-604 | `esquemaDaPoliticaDeAvisoNova` declara exatamente os SEIS campos publicados e
+ * |          |        | aprova o corpo completo e as bordas fechadas de cada faixa —
+ * |          |        | `diasAntesDoVencimento` 0 e 90, `intervaloMinimoDias` 1 e 90, `00:00`/`23:59`
+ * |          |        | e a janela de instante único —, devolvendo objeto ESTRITAMENTE igual ao de
+ * |          |        | entrada, sem coerção nem descarte. |
+ * | CA-15    | CT-604 | A linha do registro de envio publica `id` **UUID** e `cobrancaCodigo` pelo
+ * | CA-11    | (b)    | `ESQUEMA_DO_CODIGO_DE_COBRANCA` importado (que canoniza a caixa); aceita
+ * |          |        | `destinatario` **vazio** com causa preenchida (RD-11) e recusa `null`; os dois
+ * |          |        | enums do registro publicam exatamente `['AUTOMATICO','MANUAL']` e
+ * |          |        | `['ENVIADA','FALHOU','SEM_DESTINATARIO']`, congelados; e os dois esquemas de
+ * |          |        | SAÍDA são ABERTOS enquanto o de ENTRADA recusa a mesma chave. |
+ * | CA-15    | CT-605 | Todo corpo que viole o conjunto fechado do canal, a completude do
+ * |          |        | `strictObject`, a faixa de cada inteiro, o molde `HH:MM` ou a ordem da janela é
+ * |          |        | recusado com **exatamente uma** questão, cujo `path` é o do campo ofensor e
+ * |          |        | cujo `code` é o da cláusula violada; chave desconhecida — inclusive
+ * |          |        | `empresaId` — é recusada por `unrecognized_keys` nomeando a chave em `keys`. |
  *
  * Rastreabilidade: `CA-02 → CT-334, CT-335 (RN-10)` · `CA-14 → CT-337 (RN-01)` ·
  * `CA-15 → CT-338 (RN-06)` · `CA-16 → CT-336, CT-340, CT-341 (RN-11)` ·
@@ -83,7 +100,8 @@
  * `CA-§4.1 → CT-540 (RD-03, RD-04)` ·
  * `CA-§4.2/§4.3/§4.4 → CT-541 (RD-02)` · `CA-§4.5 → CT-542 (RD-01)` ·
  * `CA-§4.6/§4.7 → CT-543 (RD-03, RD-16)` · `CA-§4.9 → CT-544 (RD-04, RD-09)` ·
- * `CA-§4.10 → CT-545 (RD-16)`.
+ * `CA-§4.10 → CT-545 (RD-16)` · `CA-15 → CT-604, CT-605 (RN-13)` ·
+ * `CA-15, CA-11 → CT-604 (b) (RD-08, RD-11)`.
  *
  * ---------------------------------------------------------------------------
  * Por que os casos vêm em pares, e por que nenhum deles sozinho serve
@@ -152,6 +170,41 @@
  * card sugeria (`6.2399999999999995`, `193.66999999999996`) são aprovados pela tolerância do zod,
  * medido, e um caso construído sobre eles seguiria verde com a escala replicada na saída. Os que
  * ficaram foram MEDIDOS contra a aritmética da RD-07 e são recusados; é o par que detecta.
+ *
+ * **CT-604 × CT-605.** O par é o que discrimina, e nenhum dos dois serve sozinho: a tabela de 22
+ * recusas do CT-605 seria satisfeita, byte a byte, por um esquema que recusasse **todo** corpo — é
+ * exatamente o modo de falha que uma tabela de recusas não pega —, e as três linhas aceitas do CT-604
+ * seriam satisfeitas por um esquema sem faixa, sem enum e sem molde de hora. As bordas do CT-604 são
+ * **fechadas dos dois lados** pelo companheiro: `diasAntesDoVencimento` 0 aceito contra `-1` recusado,
+ * 90 aceito contra `91` recusado, `intervaloMinimoDias` 1 aceito contra `0` recusado. E a janela de
+ * instante único (`janelaFim === janelaInicio`) é a borda que pega a troca de `>=` por `>`, que
+ * nenhuma linha de recusa alcança.
+ *
+ * **CT-604 (b)** carrega as duas propriedades do registro que nenhum outro caso do pacote alcança. A
+ * primeira é a **cadeia vazia em `destinatario`**: sem ela, um `z.email()` ou um `min(1)` passaria
+ * pela suíte e tornaria a linha da RD-11 impublicável justamente no caso que ela existe para
+ * registrar. A segunda é o **consumo** de `ESQUEMA_DO_CODIGO_DE_COBRANCA` em vez de um molde
+ * redigitado, e ela vem em par: a largura 5 recusada (a harmonização tentadora com a série do
+ * contrato) e a caixa canonizada — um `z.string()` no lugar do esquema importado passaria no primeiro
+ * eixo se ele fosse só "recusa algo", e é a canonização que o discrimina.
+ *
+ * **TRÊS MUTANTES EXECUTADOS — MT-T2-A/B/C (2026-08-11).** As asserções destes três casos são
+ * **comportamentais** e por isso não exigiriam a prova (`.claude/rules/testing-stack.md`); os
+ * mutantes foram medidos assim mesmo, porque cada um deles é uma decisão registrada por extenso no
+ * cabeçalho de `src/automacao-de-cobranca.ts`, e decisão sem rede é o que a rodada seguinte reabre.
+ * Os três rodaram pelo **script do pacote** (`pnpm --filter @sysloc/contracts test`), nunca por
+ * `vitest run` avulso, e os três foram revertidos com `sha256sum` idêntico ao estado pré-mutante,
+ * com o controle de volta a `267 passed`.
+ *
+ * - **MT-T2-A — a solidão do enum**: `CANAIS_DE_AVISO` passa a `['EMAIL', 'SMS']`. Resultado:
+ *   `2 failed | 265 passed` — reprovam a amarra literal e a linha que recusa `SMS`. É o par que
+ *   prova que a lista literal do caso não deriva da constante: derivada, as duas pontas andariam
+ *   juntas e o canal inventado passaria.
+ * - **MT-T2-B — a borda da janela**: `janelaFim >= janelaInicio` vira `janelaFim > janelaInicio`.
+ *   Resultado: `1 failed | 266 passed` — reprova exatamente a linha da **janela de instante único**,
+ *   e nenhuma das 22 recusas do CT-605 a pega. É a medida de por que a borda aceita precisa existir.
+ * - **MT-T2-C — o destinatário ausente**: `destinatario: z.string()` vira `z.email()`. Resultado:
+ *   `1 failed | 266 passed` — reprova só a linha da RD-11, que é a única cadeia vazia do arquivo.
  *
  * Sem colaborador algum: os esquemas são funções puras. Fronteira real de execução: **nenhuma** —
  * salvo no CT-545, que é `filesystem`. As demais asserções são comportamentais — exercitam o esquema
@@ -226,6 +279,9 @@ import {
 import { MAIOR_TEXTO_CURTO } from '../src/comum.ts';
 import * as contratos from '../src/index.ts';
 import {
+  CAMINHOS_DO_AVISO,
+  CANAIS_DE_AVISO,
+  DESFECHOS_DO_AVISO,
   ESCALA_DA_METRAGEM,
   ESCALA_MONETARIA,
   ESQUEMA_DO_CODIGO_DE_COBRANCA,
@@ -236,12 +292,15 @@ import {
   esquemaDaAtivacaoDeContrato,
   esquemaDaCobranca,
   esquemaDaJanela,
+  esquemaDaPoliticaDeAviso,
+  esquemaDaPoliticaDeAvisoNova,
   esquemaDeCobrancaNova,
   esquemaDeComodoNovo,
   esquemaDeContratoNovo,
   esquemaDeImovelNovo,
   esquemaDePessoaNova,
   esquemaDoContrato,
+  esquemaDoEnvioDeCobranca,
   esquemaDoImovel,
   formatarCodigoDeCobranca,
   formatarCodigoDeContrato,
@@ -376,6 +435,23 @@ const COBRANCA_PUBLICADA = {
   canceladoEm: null,
   multaPercentualAplicado: null,
   jurosPercentualAplicado: null,
+} as const;
+
+/**
+ * O corpo canônico de `PUT /v1/automacao-de-cobranca` (tech spec §4.1.1), completo e sem opcional.
+ *
+ * Os **seis** campos vão declarados por extenso: nenhum deles é opcional, e um corpo que omitisse
+ * qualquer um seria recusado antes de a varredura do CT-336/CT-337 medir o que ela existe para medir.
+ * É também o corpo típico do CT-604 — o mesmo objeto alimenta a varredura e o controle positivo, e
+ * não duas listas de campos livres para divergir.
+ */
+const CORPO_DA_POLITICA_DE_AVISO = {
+  ativo: true,
+  diasAntesDoVencimento: 10,
+  intervaloMinimoDias: 2,
+  janelaInicio: '09:00',
+  janelaFim: '18:00',
+  canal: 'EMAIL',
 } as const;
 
 /** Identificador de outra empresa — o valor que a metade comportamental do CT-337 tenta enfiar. */
@@ -542,6 +618,12 @@ const PREFIXO_DE_ENTRADA_DE_ENTIDADE = 'esquemaDe';
  * **exatamente** o esquema em que as duas afirmações mais importam, porque é a única porta de
  * requisição que escreve os percentuais que a carteira inteira cobra — um corpo aberto aceitaria
  * `empresaId` e escreveria a política de outra empresa. Nenhum alvo sai daqui; o conjunto só cresce.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T2 da fatia `regua-de-cobranca` publicou `esquemaDaPoliticaDeAvisoNova` —
+ * o corpo do `PUT` que define a política de aviso da empresa. Pelo mesmo motivo dos parágrafos acima
+ * ele escaparia às duas varreduras, por começar com `esquemaDa` e não com `esquemaDe`; e ele é o corpo
+ * pelo qual a régua inteira é ligada, de modo que um corpo aberto aceitaria `empresaId` e ligaria a
+ * régua de outra empresa. Nenhum alvo sai daqui; o conjunto só cresce.
  */
 const NOMES_DAS_ENTRADAS_FORA_DO_PREFIXO = [
   'esquemaDaConfiguracaoDeMoraNova',
@@ -549,6 +631,7 @@ const NOMES_DAS_ENTRADAS_FORA_DO_PREFIXO = [
   'esquemaDaJanelaComCirculacao',
   'esquemaDaJanelaDaCarteira',
   'esquemaDaJanelaDeCobrancas',
+  'esquemaDaPoliticaDeAvisoNova',
   'esquemaDaSituacaoDeLocacao',
   'esquemaDoPagamentoDeCobranca',
 ] as const;
@@ -593,8 +676,15 @@ const NOMES_DAS_ENTRADAS_FORA_DO_PREFIXO = [
  * aqui, palavra por palavra, o parágrafo anterior: o literal é o que impede *"nenhum esquema
  * violou"* de ser indistinguível de *"nenhum esquema foi olhado"*, a âncora **sobe** e segue exata, e
  * nenhum alvo saiu.
+ *
+ * SUT_IS_CORRECT_BECAUSE: subiu de 14 para 15 porque a T2 da fatia `regua-de-cobranca` publicou
+ * `esquemaDaPoliticaDeAvisoNova` — o corpo do `PUT` da política de aviso, que nasce nesta fonte única
+ * pela mesma ADR-0016. Ele entra pela lista de nomes fora do prefixo, logo acima. Vale aqui, palavra
+ * por palavra, o parágrafo anterior: o literal é o que impede *"nenhum esquema violou"* de ser
+ * indistinguível de *"nenhum esquema foi olhado"*, a âncora **sobe** e segue exata, e nenhum alvo
+ * saiu.
  */
-const QUANTIDADE_DE_ESQUEMAS_DE_ENTRADA = 14;
+const QUANTIDADE_DE_ESQUEMAS_DE_ENTRADA = 15;
 
 /** Um corpo válido por esquema de entrada, indexado pelo nome exportado. */
 const CORPOS_VALIDOS = new Map<string, Record<string, unknown>>([
@@ -603,6 +693,9 @@ const CORPOS_VALIDOS = new Map<string, Record<string, unknown>>([
   // seria recusado antes de a varredura medir o que ela existe para medir. Valores diferentes em cada
   // campo é o que impede uma troca acidental entre eles de passar despercebida.
   ['esquemaDaConfiguracaoDeMoraNova', { multaPercentual: 2, jurosPercentual: 1 }],
+  // Os seis campos vêm do corpo canônico declarado acima, e não de uma segunda lista: é o mesmo
+  // objeto que o CT-604 exercita como controle positivo.
+  ['esquemaDaPoliticaDeAvisoNova', { ...CORPO_DA_POLITICA_DE_AVISO }],
   ['esquemaDeConjuntoNovo', { nome: 'Edifício Aurora' }],
   ['esquemaDeImovelNovo', { ...CORPO_DE_IMOVEL, statusLocacao: 'DISPONIVEL' }],
   // O corpo da alteração é o da criação **sem** `statusLocacao`, que é exatamente o que o `omit`
@@ -2162,4 +2255,391 @@ describe('CT-545 — as constantes monetárias têm definição única no pacote
     // com uma definição só e errada.
     expect([MAIOR_VALOR_MONETARIO, ESCALA_MONETARIA]).toEqual([9_999_999_999_999.99, 0.01]);
   });
+});
+
+/**
+ * Os seis campos da política, na ordem em que o esquema os declara.
+ *
+ * A lista é escrita **por extenso** e amarrada ao `shape` no primeiro caso do CT-604: é ela que
+ * governa as seis linhas de campo ausente do CT-605, e derivá-la do próprio esquema faria as duas
+ * pontas andarem juntas — um campo que virasse `.optional()` sairia da varredura junto com a
+ * asserção que deveria pegá-lo.
+ */
+const CAMPOS_DA_POLITICA_DE_AVISO = [
+  'ativo',
+  'diasAntesDoVencimento',
+  'intervaloMinimoDias',
+  'janelaInicio',
+  'janelaFim',
+  'canal',
+] as const;
+
+/** O corpo canônico da política **sem** um dos campos — a entrada das seis linhas de ausência. */
+function corpoDaPoliticaSemOCampo(campo: string): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(CORPO_DA_POLITICA_DE_AVISO).filter(([nome]) => nome !== campo),
+  );
+}
+
+describe('CT-604 — o esquema da política aceita o corpo completo e as bordas exatas de cada faixa', () => {
+  it('declara exatamente os seis campos publicados, na ordem do contrato', () => {
+    expect(Object.keys(esquemaDaPoliticaDeAvisoNova.shape)).toEqual([
+      ...CAMPOS_DA_POLITICA_DE_AVISO,
+    ]);
+  });
+
+  const ACEITOS: readonly {
+    readonly rotulo: string;
+    readonly corpo: Record<string, unknown>;
+  }[] = [
+    // O piso de cada faixa numa linha só: `diasAntesDoVencimento` em 0 (avisar no próprio dia do
+    // vencimento) e `intervaloMinimoDias` em 1 (o menor intervalo que ainda é trava). Sem esta linha,
+    // um piso mais alto no esquema — `min(1)` nos dias — passaria pela suíte inteira.
+    {
+      rotulo: 'o piso de cada faixa e a janela do dia inteiro',
+      corpo: {
+        ativo: false,
+        diasAntesDoVencimento: 0,
+        intervaloMinimoDias: 1,
+        janelaInicio: '00:00',
+        janelaFim: '23:59',
+        canal: 'EMAIL',
+      },
+    },
+    // O teto de cada faixa, e a janela de instante único (`janelaFim === janelaInicio`), que é a
+    // borda ACEITA da comparação: um `refine` escrito com `>` em vez de `>=` recusaria este corpo.
+    {
+      rotulo: 'o teto de cada faixa e a janela de instante único',
+      corpo: {
+        ativo: true,
+        diasAntesDoVencimento: 90,
+        intervaloMinimoDias: 90,
+        janelaInicio: '23:59',
+        janelaFim: '23:59',
+        canal: 'EMAIL',
+      },
+    },
+    { rotulo: 'o corpo típico do contrato', corpo: { ...CORPO_DA_POLITICA_DE_AVISO } },
+  ];
+
+  for (const { rotulo, corpo } of ACEITOS) {
+    it(`aprova ${rotulo} devolvendo o corpo verbatim`, () => {
+      const resultado = esquemaDaPoliticaDeAvisoNova.safeParse(corpo);
+
+      expect(resultado.success).toBe(true);
+      // Estritamente igual ao enviado: o esquema não acrescenta, não remove e não coage. É o que
+      // impede um `.default()` distraído de ligar a régua de quem não a ligou.
+      expect(resultado.data).toStrictEqual(corpo);
+    });
+  }
+});
+
+describe('CT-604 (b) — a linha do registro de envio publica UUID, código de cobrança e destinatário vazio', () => {
+  /** Os dois enums do registro, escritos por extenso — a ordem é a que o enum do banco guarda. */
+  const CAMINHOS_DECLARADOS = ['AUTOMATICO', 'MANUAL'] as const;
+  const DESFECHOS_DECLARADOS = ['ENVIADA', 'FALHOU', 'SEM_DESTINATARIO'] as const;
+
+  /** Uma tentativa entregue, como a rota do histórico a devolve (tech spec §4.1.1). */
+  const ENVIO_PUBLICADO = {
+    id: '7c9e0000-0000-4000-8000-000000000042',
+    cobrancaCodigo: 'COB-2026-0000059',
+    criadoEm: '2026-03-10T11:05:00.000Z',
+    caminho: 'AUTOMATICO',
+    desfecho: 'ENVIADA',
+    destinatario: 'ana@exemplo.com.br',
+    causa: null,
+  } as const;
+
+  it('os dois enums do registro publicam exatamente os rótulos declarados, e estão congelados', () => {
+    expect([[...CAMINHOS_DO_AVISO], [...DESFECHOS_DO_AVISO]]).toEqual([
+      [...CAMINHOS_DECLARADOS],
+      [...DESFECHOS_DECLARADOS],
+    ]);
+    // Congelados em EXECUÇÃO: os dois arranjos são exportados por referência, e um `push` de
+    // consumidor alargaria a união para o processo inteiro — inclusive para o enum que a T3 deriva.
+    expect([Object.isFrozen(CAMINHOS_DO_AVISO), Object.isFrozen(DESFECHOS_DO_AVISO)]).toEqual([
+      true,
+      true,
+    ]);
+  });
+
+  it('aprova a tentativa entregue devolvendo o recurso verbatim', () => {
+    const resultado = esquemaDoEnvioDeCobranca.safeParse(ENVIO_PUBLICADO);
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data).toStrictEqual({ ...ENVIO_PUBLICADO });
+  });
+
+  it('aprova a tentativa SEM destinatário — cadeia vazia com causa preenchida (RD-11)', () => {
+    const semDestinatario = {
+      ...ENVIO_PUBLICADO,
+      desfecho: 'SEM_DESTINATARIO',
+      destinatario: '',
+      causa: 'o locatário não tem endereço de e-mail cadastrado',
+    };
+
+    const resultado = esquemaDoEnvioDeCobranca.safeParse(semDestinatario);
+
+    // Sem esta linha o esquema poderia exigir `z.email()` ou `min(1)`, e a linha do registro seria
+    // impublicável justamente no caso que ela existe para registrar: a rota do histórico levantaria
+    // na serialização por causa de um cadastro incompleto.
+    expect(resultado.success).toBe(true);
+    expect(resultado.data).toStrictEqual(semDestinatario);
+  });
+
+  it('canoniza a caixa do código — a prova de que o esquema importado é quem confere', () => {
+    const resultado = esquemaDoEnvioDeCobranca.safeParse({
+      ...ENVIO_PUBLICADO,
+      cobrancaCodigo: '  cob-2026-0000059  ',
+    });
+
+    // `trim` + maiúsculas só existem em `ESQUEMA_DO_CODIGO_DE_COBRANCA`. Um `z.string()` redigitado
+    // aqui devolveria o valor cru, e a comparação com o que o banco guarda responderia `false` sobre
+    // a mesma cobrança.
+    expect(resultado.success).toBe(true);
+    expect(resultado.data?.cobrancaCodigo).toBe('COB-2026-0000059');
+  });
+
+  const RECUSADOS: readonly {
+    readonly rotulo: string;
+    readonly remendo: Record<string, unknown>;
+    readonly campo: string;
+  }[] = [
+    { rotulo: 'um id que não é UUID', remendo: { id: 'COB-2026-0000059' }, campo: 'id' },
+    // Cinco dígitos é a largura da série do CONTRATO, e é a harmonização tentadora de quem lê os dois
+    // arquivos lado a lado. Ela precisa ser recusada aqui também: sem esta linha, `cobrancaCodigo`
+    // poderia ter virado `z.string()` sem que nada acusasse.
+    {
+      rotulo: 'um código na largura da série do contrato',
+      remendo: { cobrancaCodigo: 'COB-2026-00059' },
+      campo: 'cobrancaCodigo',
+    },
+    {
+      rotulo: 'um instante que não é ISO',
+      remendo: { criadoEm: '2026-03-10 11:05:00' },
+      campo: 'criadoEm',
+    },
+    { rotulo: 'um caminho fora da união', remendo: { caminho: 'AGENDADO' }, campo: 'caminho' },
+    { rotulo: 'um desfecho fora da união', remendo: { desfecho: 'PENDENTE' }, campo: 'desfecho' },
+    {
+      rotulo: 'um destinatário nulo — a ausência é cadeia vazia, nunca null',
+      remendo: { destinatario: null },
+      campo: 'destinatario',
+    },
+  ];
+
+  for (const { rotulo, remendo, campo } of RECUSADOS) {
+    it(`recusa ${rotulo} nomeando ${campo}`, () => {
+      const resultado = esquemaDoEnvioDeCobranca.safeParse({ ...ENVIO_PUBLICADO, ...remendo });
+
+      expect(resultado.success).toBe(false);
+      expect(resultado.error?.issues[0]?.path).toEqual([campo]);
+    });
+  }
+
+  it('os dois esquemas de SAÍDA são abertos, e o de ENTRADA é fechado', () => {
+    // A assimetria da ADR-0016: `strictObject` emitiria `additionalProperties: false` no documento
+    // publicado, e um cliente gerado passaria a recusar campo acrescentado no futuro NESTAS rotas,
+    // enquanto tolera o mesmo acréscimo em todas as outras.
+    const politica = esquemaDaPoliticaDeAviso.safeParse({
+      ...CORPO_DA_POLITICA_DE_AVISO,
+      [CHAVE_EXTRA]: 'x',
+    });
+    const envio = esquemaDoEnvioDeCobranca.safeParse({ ...ENVIO_PUBLICADO, [CHAVE_EXTRA]: 'x' });
+
+    expect([politica.success, envio.success]).toEqual([true, true]);
+    // O campo desconhecido é descartado, e não ecoado: a saída publica o que o contrato declara.
+    expect(politica.data).toStrictEqual({ ...CORPO_DA_POLITICA_DE_AVISO });
+    expect(envio.data).toStrictEqual({ ...ENVIO_PUBLICADO });
+
+    // A outra metade da assimetria, sem a qual "aberto" seria indistinguível de "aberto em tudo": a
+    // MESMA chave, no esquema de ENTRADA, é recusada.
+    const entrada = esquemaDaPoliticaDeAvisoNova.safeParse({
+      ...CORPO_DA_POLITICA_DE_AVISO,
+      [CHAVE_EXTRA]: 'x',
+    });
+
+    expect(entrada.success).toBe(false);
+    expect(entrada.error?.issues[0]?.code).toBe('unrecognized_keys');
+  });
+});
+
+describe('CT-605 — o esquema recusa canal não implementado, campo ausente, faixa estourada e chave extra', () => {
+  /**
+   * O conjunto de canais, escrito **por extenso** — e a única coisa deste caso que é literal.
+   *
+   * Os corpos recusados abaixo não derivam da constante, de propósito: um canal acrescentado a
+   * `CANAIS_DE_AVISO` faria as duas pontas andarem juntas e o caso seguiria verde. Este literal é o
+   * que torna a solidão do enum uma **decisão**, e não um valor que o teste descobre a cada rodada.
+   * Mesmo desenho de `TETO_DECLARADO_DA_PAGINA` no CT-338, e pela mesma razão escrita lá.
+   */
+  const CANAIS_DECLARADOS = ['EMAIL'] as const;
+
+  it('o canal publicado tem exatamente um valor, e ele está congelado', () => {
+    expect([...CANAIS_DE_AVISO]).toEqual([...CANAIS_DECLARADOS]);
+    expect(Object.isFrozen(CANAIS_DE_AVISO)).toBe(true);
+  });
+
+  /**
+   * As recusas que nomeiam um campo — canal, ausência, faixa, formato de hora e janela invertida.
+   *
+   * A tabela do card trazia 14 linhas; ela **cresceu** para 20, e nenhuma saiu: os cinco moldes de
+   * hora que o aceite técnico §4 enumera (`8:00`, `08:0`, `24:00`, `08:60`, `08:00:00`), a janela
+   * invertida e o inteiro fracionário entraram porque cada um deles é uma cláusula do esquema que,
+   * sem a linha correspondente, poderia sumir sem que nada acusasse.
+   *
+   * O `codigo` de cada linha é asserido junto com o `path` porque os dois discriminam coisas
+   * diferentes: o `path` diz **qual campo** foi recusado, e o `codigo` diz **por qual cláusula** — sem
+   * ele, trocar `.max(90)` por `.max(9)` continuaria produzindo `too_big` no mesmo campo, mas trocar
+   * a faixa inteira por `z.number()` cru também "recusaria" `-1` por outra razão qualquer.
+   */
+  const RECUSADOS: readonly {
+    readonly rotulo: string;
+    readonly corpo: Record<string, unknown>;
+    readonly campo: string;
+    readonly codigo: string;
+  }[] = [
+    {
+      rotulo: 'o canal de um provedor que o produto não implementa',
+      corpo: { ...CORPO_DA_POLITICA_DE_AVISO, canal: 'SMS' },
+      campo: 'canal',
+      codigo: 'invalid_value',
+    },
+    {
+      rotulo: 'outro canal que o produto não implementa',
+      corpo: { ...CORPO_DA_POLITICA_DE_AVISO, canal: 'WHATSAPP' },
+      campo: 'canal',
+      codigo: 'invalid_value',
+    },
+    {
+      rotulo: 'o canal certo em minúsculas — o enum não canoniza caixa',
+      corpo: { ...CORPO_DA_POLITICA_DE_AVISO, canal: 'email' },
+      campo: 'canal',
+      codigo: 'invalid_value',
+    },
+    ...CAMPOS_DA_POLITICA_DE_AVISO.map((campo) => ({
+      rotulo: `o corpo sem ${campo} — nunca "preserve o valor atual"`,
+      corpo: corpoDaPoliticaSemOCampo(campo),
+      campo,
+      // O código do campo ausente é `invalid_type` em cinco dos seis, e `invalid_value` em `canal`:
+      // medido no zod deste pacote, a união fechada reporta a AUSÊNCIA como valor fora do conjunto,
+      // porque `undefined` não é um dos rótulos. O código continua asserido por igualdade — o que
+      // muda é qual igualdade, não a força da asserção.
+      codigo: campo === 'canal' ? 'invalid_value' : 'invalid_type',
+    })),
+    {
+      rotulo: 'um dia abaixo do piso',
+      corpo: { ...CORPO_DA_POLITICA_DE_AVISO, diasAntesDoVencimento: -1 },
+      campo: 'diasAntesDoVencimento',
+      codigo: 'too_small',
+    },
+    {
+      rotulo: 'um dia acima do teto',
+      corpo: { ...CORPO_DA_POLITICA_DE_AVISO, diasAntesDoVencimento: 91 },
+      campo: 'diasAntesDoVencimento',
+      codigo: 'too_big',
+    },
+    {
+      rotulo: 'um dia fracionário — a coluna é integer',
+      corpo: { ...CORPO_DA_POLITICA_DE_AVISO, diasAntesDoVencimento: 10.5 },
+      campo: 'diasAntesDoVencimento',
+      codigo: 'invalid_type',
+    },
+    // Zero desligaria a trava que protege a caixa do locatário, e desligar a régua se faz por
+    // `ativo`. Sem esta linha, o piso poderia cair para 0 sem que nada acusasse.
+    {
+      rotulo: 'o intervalo zerado — desligar a trava se faz por `ativo`',
+      corpo: { ...CORPO_DA_POLITICA_DE_AVISO, intervaloMinimoDias: 0 },
+      campo: 'intervaloMinimoDias',
+      codigo: 'too_small',
+    },
+    {
+      rotulo: 'um intervalo acima do teto',
+      corpo: { ...CORPO_DA_POLITICA_DE_AVISO, intervaloMinimoDias: 91 },
+      campo: 'intervaloMinimoDias',
+      codigo: 'too_big',
+    },
+    {
+      rotulo: 'a hora vinte e quatro — o dia acaba em 23:59',
+      corpo: { ...CORPO_DA_POLITICA_DE_AVISO, janelaInicio: '24:00' },
+      campo: 'janelaInicio',
+      codigo: 'invalid_format',
+    },
+    {
+      rotulo: 'a hora sem preenchimento',
+      corpo: { ...CORPO_DA_POLITICA_DE_AVISO, janelaInicio: '8:00' },
+      campo: 'janelaInicio',
+      codigo: 'invalid_format',
+    },
+    {
+      rotulo: 'o minuto sessenta',
+      corpo: { ...CORPO_DA_POLITICA_DE_AVISO, janelaInicio: '08:60' },
+      campo: 'janelaInicio',
+      codigo: 'invalid_format',
+    },
+    {
+      rotulo: 'o minuto incompleto',
+      corpo: { ...CORPO_DA_POLITICA_DE_AVISO, janelaFim: '08:0' },
+      campo: 'janelaFim',
+      codigo: 'invalid_format',
+    },
+    // A forma que `z.iso.time()` aprovaria, e que o driver devolveria se a projeção do banco não
+    // fosse `to_char(coluna, 'HH24:MI')`. É a linha que prende a decisão de NÃO usar `z.iso.time()`.
+    {
+      rotulo: 'a hora com segundos',
+      corpo: { ...CORPO_DA_POLITICA_DE_AVISO, janelaFim: '08:00:00' },
+      campo: 'janelaFim',
+      codigo: 'invalid_format',
+    },
+    // Janela invertida não é "a noite inteira": é engano do cliente, e adivinhar seria pior. A recusa
+    // nomeia `janelaFim` porque é o campo que o `refine` aponta.
+    {
+      rotulo: 'a janela invertida',
+      corpo: { ...CORPO_DA_POLITICA_DE_AVISO, janelaInicio: '18:00', janelaFim: '09:00' },
+      campo: 'janelaFim',
+      codigo: 'custom',
+    },
+  ];
+
+  for (const { rotulo, corpo, campo, codigo } of RECUSADOS) {
+    it(`recusa ${rotulo} nomeando ${campo}`, () => {
+      const resultado = esquemaDaPoliticaDeAvisoNova.safeParse(corpo);
+
+      expect(resultado.success).toBe(false);
+      // UMA questão, e uma só. Um horário malformado que produzisse duas — o formato e a comparação
+      // da janela — faria a borda reportar o campo da PRIMEIRA, e o cliente ouviria o nome errado.
+      expect(resultado.error?.issues).toHaveLength(1);
+      expect(resultado.error?.issues[0]?.path).toEqual([campo]);
+      expect(resultado.error?.issues[0]?.code).toBe(codigo);
+    });
+  }
+
+  /**
+   * As duas recusas por chave desconhecida.
+   *
+   * Elas ficam fora da tabela acima porque o `path` de `unrecognized_keys` é a **raiz do objeto** —
+   * medido no zod deste pacote —, e o nome da chave culpada viaja em `keys`. Asserir os dois é o que
+   * distingue "recusado por chave desconhecida" de "recusado por qualquer outra razão".
+   */
+  const CHAVES_DESCONHECIDAS: readonly { readonly rotulo: string; readonly chave: string }[] = [
+    { rotulo: 'um campo inventado pelo cliente', chave: 'remetente' },
+    // `empresaId` é recusado pelo `strictObject`, sem uma linha de verificação escrita à mão: a
+    // empresa sai da sessão (ADR-0008), e a ausência do campo é o mecanismo.
+    { rotulo: 'a empresa proposta pelo corpo', chave: 'empresaId' },
+  ];
+
+  for (const { rotulo, chave } of CHAVES_DESCONHECIDAS) {
+    it(`recusa ${rotulo} (${chave}) por chave desconhecida`, () => {
+      const resultado = esquemaDaPoliticaDeAvisoNova.safeParse({
+        ...CORPO_DA_POLITICA_DE_AVISO,
+        [chave]: chave === 'empresaId' ? EMPRESA_ALHEIA : 'x',
+      });
+
+      expect(resultado.success).toBe(false);
+      expect(resultado.error?.issues).toHaveLength(1);
+      expect(resultado.error?.issues[0]?.code).toBe('unrecognized_keys');
+      expect(resultado.error?.issues[0]?.path).toEqual([]);
+      expect(resultado.error?.issues[0]).toMatchObject({ keys: [chave] });
+    });
+  }
 });

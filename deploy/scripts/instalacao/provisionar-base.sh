@@ -211,6 +211,24 @@ readonly DIR_ESTADO_CAPTURADOR="/var/lib/sysloc-mailpit"
 readonly ARQ_UNIDADE_CAPTURADOR="/etc/systemd/system/sysloc-mailpit.service"
 readonly UNIDADE_CAPTURADOR="sysloc-mailpit.service"
 
+# Endereço que assina o aviso de cobrança — o `From` da mensagem que a régua
+# entrega, e a quinta chave do arquivo de ambiente.
+#
+# CAUSA de existir: o processador de trabalho passou a EXIGIR `EMAIL_REMETENTE`
+# na partida, e a exigência recusa a subida quando a variável falta. Sem esta
+# constante o arquivo nasceria sem a chave numa instalação de máquina nova, a
+# unidade recusaria a partida nomeando a variável, o supervisor tentaria 5 vezes
+# e desistiria — o modo de falha exato que o `DÉBITO COM GATILHO — D39` descreve
+# e que respondeu por 11 das 14 falhas da bateria agregada da F0.
+#
+# Ela NÃO é segredo, e é por isso que tem valor PADRÃO declarado em vez de ser
+# gerada como a credencial do banco: é conteúdo de negócio. O domínio `.invalid`
+# é reservado pela RFC 6761 justamente para não resolver em lugar nenhum — o
+# valor é utilizável de imediato contra o capturador local (que é para onde a
+# `SMTP_URL` provisionada aponta) e é obviamente um substituto a trocar quando a
+# instalação passar a falar com um servidor de e-mail de verdade.
+readonly REMETENTE_PADRAO_DO_AVISO="avisos@sysloc.invalid"
+
 readonly UNIDADE_BANCO="postgresql.service"
 
 readonly DIR_CONFIG="/etc/sysloc"
@@ -661,6 +679,47 @@ conferir_coordenadas_do_ambiente() {
 		return 2
 	fi
 	return 0
+}
+
+# Resultado de `garantir_chaves_de_conteudo`.
+CHAVES_SEMEADAS=""
+
+# Garante que o arquivo de ambiente DECLARE as chaves de CONTEÚDO, semeando cada
+# uma com o valor padrão quando a linha não existir.
+#
+# POR QUE ELAS NÃO ENTRAM NA CONFERÊNCIA DE COORDENADAS ACIMA. As chaves de lá
+# descrevem ONDE este script pôs cada serviço, e por isso são cobradas por
+# igualdade: valor diferente do provisionado significa que a aplicação falaria
+# com outro processo, e a divergência aborta. `EMAIL_REMETENTE` não descreve
+# coordenada nenhuma — é o endereço que assina o aviso de cobrança, conteúdo de
+# negócio que o operador troca legitimamente ao apontar a instalação para um
+# servidor de e-mail de verdade. Cobrá-la por igualdade faria o provisionamento
+# ABORTAR na edição mais legítima que existe neste arquivo, mandando restaurar um
+# substituto: conserto pior que o defeito.
+#
+# CAUSA de existir: a variável passou a ser EXIGIDA na partida do processador de
+# trabalho (`apps/worker/src/main.ts`, `lerAmbiente`), e ausência ali recusa a
+# subida. Sem esta semeadura, o arquivo de uma instalação anterior à exigência
+# nunca ganharia a linha, a unidade recusaria a partida nomeando a variável, o
+# supervisor tentaria 5 vezes e desistiria — sem que ninguém fosse avisado.
+#
+# ⚠️ O critério é a EXISTÊNCIA DA LINHA, e não o valor dela. A diferença é o que
+# separa semear de estragar: com o critério do valor, um `EMAIL_REMETENTE=` que o
+# operador tenha esvaziado de propósito ganharia uma SEGUNDA atribuição da mesma
+# chave, e a execução seguinte abortaria em `extrair_credencial_db` — que recusa
+# o arquivo ambíguo. Linha existente e vazia é deixada como está: a recusa de
+# partida a nomeia, que é o diagnóstico correto e é ruidoso.
+#
+# Sem efeito colateral além do acréscimo, e só é chamada DEPOIS da conferência de
+# coordenadas — um arquivo que aborta por divergência não pode ter sido tocado.
+garantir_chaves_de_conteudo() {
+	local arquivo="$1"
+	CHAVES_SEMEADAS=""
+
+	if ! grep -q '^EMAIL_REMETENTE=' "${arquivo}" 2>/dev/null; then
+		printf 'EMAIL_REMETENTE=%s\n' "${REMETENTE_PADRAO_DO_AVISO}" >>"${arquivo}"
+		CHAVES_SEMEADAS="EMAIL_REMETENTE"
+	fi
 }
 
 # --------------------------------------------------------------------------- #
@@ -1284,6 +1343,14 @@ passo_p06_arquivo_ambiente() {
 			;;
 		esac
 
+		# DEPOIS da conferência, e nunca antes: um arquivo que aborta por
+		# divergência precisa sair desta função sem ter sido tocado.
+		garantir_chaves_de_conteudo "${ARQ_AMBIENTE}"
+		if [[ -n "${CHAVES_SEMEADAS}" ]]; then
+			detalhes="${detalhes}chave(s) de conteúdo semeada(s) com o valor padrão: ${CHAVES_SEMEADAS}; "
+			mudancas=$((mudancas + 1))
+		fi
+
 		if [[ "$(stat -c '%a %U' "${ARQ_AMBIENTE}")" != "600 ${DONO_ARQ_AMBIENTE}" ]]; then
 			chmod 0600 "${ARQ_AMBIENTE}"
 			chown "${DONO_ARQ_AMBIENTE}:${DONO_ARQ_AMBIENTE}" "${ARQ_AMBIENTE}"
@@ -1327,10 +1394,17 @@ passo_p06_arquivo_ambiente() {
 		printf '#      chave pode ser atribuída UMA única vez neste arquivo. O systemd\n'
 		printf '#      usaria a última atribuição e o provisionamento se recusa a\n'
 		printf '#      adivinhar qual vale, então ele também aborta.\n'
+		printf '#\n'
+		printf '# EMAIL_REMETENTE NÃO é segredo: é o endereço que assina o aviso de\n'
+		printf '# cobrança. Ele nasce com um substituto em domínio reservado (.invalid),\n'
+		printf '# que não resolve em lugar nenhum. Troque-o pelo endereço real ANTES de\n'
+		printf '# apontar a SMTP_URL para um servidor de e-mail de verdade: o\n'
+		printf '# provisionamento cobra a PRESENÇA desta linha, e nunca o conteúdo dela.\n'
 		printf '\n'
 		printf 'DATABASE_URL=%s\n' "$(montar_url_do_banco "${senha_db}" "${porta_banco}")"
 		printf 'REDIS_URL=redis://127.0.0.1:%s\n' "${PORTA_FILA}"
 		printf 'SMTP_URL=smtp://127.0.0.1:%s\n' "${PORTA_SMTP_CAPTURADOR}"
+		printf 'EMAIL_REMETENTE=%s\n' "${REMETENTE_PADRAO_DO_AVISO}"
 	} >"${ARQ_AMBIENTE}"
 
 	criado "P06" "arquivo de ambiente ${ARQ_AMBIENTE} criado (0600 ${DONO_ARQ_AMBIENTE}, credencial gerada em tempo de execução)"

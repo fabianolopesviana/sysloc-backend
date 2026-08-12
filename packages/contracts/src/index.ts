@@ -29,6 +29,19 @@
  */
 
 export type {
+  EnvioDeCobranca,
+  PoliticaDeAviso,
+  PoliticaDeAvisoNova,
+} from './automacao-de-cobranca.js';
+export {
+  CAMINHOS_DO_AVISO,
+  CANAIS_DE_AVISO,
+  DESFECHOS_DO_AVISO,
+  esquemaDaPoliticaDeAviso,
+  esquemaDaPoliticaDeAvisoNova,
+  esquemaDoEnvioDeCobranca,
+} from './automacao-de-cobranca.js';
+export type {
   Cobranca,
   CobrancaNova,
   CodigoDeCobranca,

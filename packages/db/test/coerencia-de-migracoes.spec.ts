@@ -18,6 +18,22 @@
  * |          |             | `when` que não cresce — e a entrada ausente é falsificada sobre as
  * |          |             | DUAS migrações autorais, a `0008` e a `0010`. O controle — cópia
  * |          |             | íntegra — passa limpo. |
+ * | CA-02    | CT-608      | Por introspecção do catálogo de uma instância migrada, as duas
+ * | CA-12    |             | tabelas da `0011` têm `empresa_id NOT NULL`, `relrowsecurity` E
+ * |          |             | `relforcerowsecurity` verdadeiros, EXATAMENTE uma política `FOR
+ * |          |             | ALL` cada, com `qual` textualmente idêntico a `with_check` e à
+ * |          |             | expressão que a `0010` já usa em `negocio.cobranca`; a FK de
+ * |          |             | `envio_de_cobranca` é COMPOSTA — `['cobranca_id','empresa_id']` →
+ * |          |             | `negocio.cobranca['id','empresa_id']` —; as duas restrições
+ * |          |             | `UNIQUE` da política são `(id, empresa_id)` e `(empresa_id)`; os
+ * |          |             | três enums têm rótulos e ORDEM estritamente iguais aos arranjos
+ * |          |             | congelados de `@sysloc/contracts`; o índice da trava é PARCIAL em
+ * |          |             | `desfecho = 'ENVIADA'` e o do histórico não é, os dois com
+ * |          |             | `criado_em DESC`; os padrões de coluna são `false`, `0`, `1`,
+ * |          |             | `00:00`, `23:59` e `EMAIL`; `sysloc_app` tem `USAGE` nos três
+ * |          |             | tipos; e um valor `time` projetado CRU **reprova**
+ * |          |             | `esquemaDaPoliticaDeAviso` enquanto o mesmo valor projetado por
+ * |          |             | `to_char(…, 'HH24:MI')` **passa**. |
  *
  * ===========================================================================
  * Por que o identificador NÃO é um `CT-4xx`
@@ -35,10 +51,17 @@
  *
  * Os quatro arquivos de teste declarados na T3 (`catalogo`, `isolamento`, `papel-de-conexao`,
  * `unidade-de-trabalho`) sobem instância efêmera de PostgreSQL num `beforeAll` de dezenas de
- * segundos, porque tudo que eles afirmam é comportamento contra banco real. Este caso não toca
- * banco: ele lê um diretório e um JSON. Hospedá-lo em qualquer um dos quatro o faria esperar a
+ * segundos, porque tudo que eles afirmam é comportamento contra banco real. O caso `RG-T3-01` não
+ * toca banco: ele lê um diretório e um JSON. Hospedá-lo em qualquer um dos quatro o faria esperar a
  * subida da instância para nada e amarraria uma afirmação sobre o LEDGER à coesão de um arquivo
  * sobre isolamento, catálogo ou privilégio.
+ *
+ * ⚠️ **O CT-608, acrescentado pela T3 da fatia `regua-de-cobranca`, TOCA banco** — e a designação é
+ * da spec, não escolha deste arquivo (§5.2 da task e §3.6 do `tech_spec.md`). Ela é coerente: o que
+ * ele afirma é a **coerência entre o que a migração declara e o que o catálogo passou a ter** —
+ * mesma pergunta do `RG-T3-01`, um degrau adiante, com o banco no lugar do JSON. A instância vive
+ * num `describe` PRÓPRIO, com `beforeAll`/`afterAll` próprios, de modo que o `RG-T3-01` continua
+ * afirmando o que sempre afirmou, sem depender dela.
  *
  * O acessório `varredura-de-fontes.ts` também não serve: ele lista `.ts` recursivamente e casa
  * LINHA de fonte com comentários removidos. Aqui os artefatos são um nome de arquivo e um documento
@@ -112,7 +135,15 @@ import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import {
+  CAMINHOS_DO_AVISO,
+  CANAIS_DE_AVISO,
+  DESFECHOS_DO_AVISO,
+  esquemaDaPoliticaDeAviso,
+} from '@sysloc/contracts';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { abrirConexao } from '../src/conexao.ts';
+import { type BancoMigrado, bancoEfemero } from './banco-efemero.ts';
 
 /** Onde vivem as migrações deste pacote — o mesmo diretório que `banco-efemero.ts` aplica. */
 const DIRETORIO_DE_MIGRACOES = fileURLToPath(new URL('../migracoes/', import.meta.url));
@@ -481,4 +512,543 @@ describe('coerência do ledger de migrações', () => {
       await rm(raiz, { recursive: true, force: true });
     }
   });
+});
+
+// ===========================================================================
+// CT-608 — o que a `0011` e a `0012` DECLARAM, e o que o catálogo passou a ter
+// ===========================================================================
+//
+// ---------------------------------------------------------------------------
+// Por que introspecção, e não leitura do texto das migrações
+// ---------------------------------------------------------------------------
+//
+// Ler o `.sql` provaria que a instrução está escrita; o que importa é que ela **produziu o efeito**.
+// A distinção não é acadêmica: `FORCE ROW LEVEL SECURITY` escrito na migração e uma migração que
+// nunca é aplicada dão o mesmo texto e estados opostos, e um `CREATE POLICY` cuja expressão
+// divergisse por um `nullif` continuaria casando qualquer `grep`. O catálogo é a autoridade sobre o
+// estado real — é a mesma razão pela qual `src/catalogo.ts` consulta `pg_class` em vez de manter
+// lista (ADR-0009).
+//
+// ---------------------------------------------------------------------------
+// A expressão da política é ancorada na da COBRANÇA, e não redigitada aqui
+// ---------------------------------------------------------------------------
+//
+// O caso não escreve o texto esperado de `USING`/`WITH CHECK`: ele o **lê da política de
+// `negocio.cobranca`**, declarada pela `0010` — arquivo que esta fatia não toca — e exige igualdade.
+// Redigitar a expressão aqui criaria a segunda redação do mesmo isolamento que o cabeçalho da
+// `0012` existe para impedir, e ela ficaria livre para divergir junto com a errada. A âncora é
+// **externa à fatia**, que é o que a torna capaz de reprovar.
+//
+// ---------------------------------------------------------------------------
+// MUTANTES EXECUTADOS — MT-R1 e MT-R2 (2026-08-11)
+// ===========================================================================
+//
+// A asserção é ESTRUTURAL (observa catálogo, não comportamento de domínio) ⇒ prova de falsificação
+// obrigatória (`.claude/rules/testing-stack.md`). Os dois mutantes do card foram aplicados aos
+// artefatos REAIS e a suíte foi invocada pelo **script do pacote** (`pnpm --filter @sysloc/db test`),
+// nunca por `vitest run` avulso:
+//
+//   * **controle** — árvore íntegra: `117 passed`;
+//   * **MT-R1 · `FORCE ROW LEVEL SECURITY` das duas tabelas removido da `0012`** — `15 failed |
+//     102 passed`. O CT-608 reprova NOMEANDO as duas tabelas:
+//     `- { tabela: 'envio_de_cobranca', habilitada: true, forcada: true }` contra
+//     `+ { tabela: 'envio_de_cobranca', habilitada: true, forcada: false }`, e o mesmo para
+//     `politica_de_aviso`. O CT-607 reprova pelo passo 7, e a guarda de cobertura de
+//     `catalogo.spec.ts` acusa as duas com `RLS_NAO_FORCADA` em onze casos — as vias independentes,
+//     como no par CT-522/CT-523. **O alcance largo é a rede funcionando**: `FORCE` ausente é
+//     defeito de schema, e a suíte inteira que depende dele cai junto;
+//   * **MT-R2 · a FK composta trocada por FK simples sobre `cobranca(id)`** — `1 failed | 116
+//     passed`, com a mensagem exigida pelo card: `['cobranca_id']` obtido contra
+//     `['cobranca_id','empresa_id']` esperado. **Nenhum outro caso da suíte acusa**, o que é
+//     exatamente o ponto: sem o CT-608, a FK simples entraria em produção verde — a diferença entre
+//     as duas formas só aparece quando alguém tenta o apontamento cruzado, e nada mais a persegue;
+//   * **reversão** — os dois arquivos foram restaurados e conferidos por `sha256sum` idêntico ao
+//     original (`d0051c6d…` e `b2a819ad…`), e o controle voltou a `117 passed`.
+//
+// ---------------------------------------------------------------------------
+// Precondição privilegiada
+// ---------------------------------------------------------------------------
+//
+// Nenhuma. A instância é a de `bancoEfemero()`, migrada pelos MESMOS arquivos que
+// `migrar-banco.sh` aplica, e a conexão é a do papel `sysloc_app` — `conexaoDeMigracao` e
+// `conexaoSuperusuaria` não aparecem aqui. O catálogo do sistema é legível por qualquer papel, e
+// nenhuma linha de negócio é gravada: o caso observa ESTRUTURA.
+
+/** A instância sobe uma vez por arquivo, e a subida leva dezenas de segundos nesta máquina. */
+const LIMITE_SUBIDA_MS = 90_000;
+const LIMITE_DO_CASO_MS = 60_000;
+
+/** As duas tabelas da régua, pelo nome com que existem no catálogo. */
+const TABELA_DA_POLITICA = 'politica_de_aviso';
+const TABELA_DO_ENVIO = 'envio_de_cobranca';
+
+/** A tabela cuja política serve de ÂNCORA da expressão — declarada pela `0010`, intocada aqui. */
+const TABELA_ANCORA = 'cobranca';
+
+interface EstadoDeRls {
+  readonly tabela: string;
+  readonly habilitada: boolean;
+  readonly forcada: boolean;
+}
+
+interface PoliticaDoCatalogo {
+  readonly tabela: string;
+  readonly nome: string;
+  readonly comando: string;
+  readonly permissiva: string;
+  readonly usando: string | null;
+  readonly comVerificacao: string | null;
+}
+
+interface ColunaDoCatalogo {
+  readonly tabela: string;
+  readonly coluna: string;
+  readonly tipo: string;
+  readonly naoNula: boolean;
+  readonly padrao: string | null;
+}
+
+interface RestricaoDoCatalogo {
+  readonly tabela: string;
+  readonly nome: string;
+  readonly tipo: string;
+  readonly colunas: string[];
+  readonly tabelaReferida: string | null;
+  readonly colunasReferidas: string[] | null;
+}
+
+describe('CT-608 — as tabelas da régua nascem isoladas, e o catálogo é quem responde', () => {
+  let banco: BancoMigrado;
+
+  beforeAll(async () => {
+    banco = await bancoEfemero();
+  }, LIMITE_SUBIDA_MS);
+
+  afterAll(async () => {
+    await banco?.parar();
+  }, LIMITE_SUBIDA_MS);
+
+  it(
+    'CT-608 — RLS forçada, política `FOR ALL` com `USING` = `WITH CHECK`, FK composta, enums e índices',
+    async () => {
+      const sql = abrirConexao(banco.cadeiaConexao, { maximoDeConexoes: 1 });
+
+      try {
+        // --- 1. RLS habilitada E FORÇADA nas duas -----------------------------------------
+        //
+        // As duas metades numa asserção só, e por igualdade de objeto: `ENABLE` sem `FORCE` é o
+        // estado em que o isolamento existe para quem não é dono e some para o dono — exatamente o
+        // que a `0011` sozinha produziria (o gerador não emite `FORCE`).
+        const rls = await sql<EstadoDeRls[]>`
+          SELECT c.relname             AS tabela,
+                 c.relrowsecurity      AS habilitada,
+                 c.relforcerowsecurity AS forcada
+            FROM pg_catalog.pg_class c
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+           WHERE n.nspname = 'negocio'
+             AND c.relname IN (${TABELA_DO_ENVIO}, ${TABELA_DA_POLITICA})
+           ORDER BY c.relname
+        `;
+        expect(rls.map((linha) => ({ ...linha }))).toEqual([
+          { tabela: TABELA_DO_ENVIO, habilitada: true, forcada: true },
+          { tabela: TABELA_DA_POLITICA, habilitada: true, forcada: true },
+        ]);
+
+        // --- 2. Exatamente UMA política por tabela, `FOR ALL`, `USING` = `WITH CHECK` -------
+        const politicas = await sql<PoliticaDoCatalogo[]>`
+          SELECT tablename  AS tabela,
+                 policyname AS nome,
+                 cmd        AS comando,
+                 permissive AS permissiva,
+                 qual       AS usando,
+                 with_check AS "comVerificacao"
+            FROM pg_catalog.pg_policies
+           WHERE schemaname = 'negocio'
+             AND tablename IN (${TABELA_DO_ENVIO}, ${TABELA_DA_POLITICA}, ${TABELA_ANCORA})
+           ORDER BY tablename, policyname
+        `;
+
+        const daRegua = politicas.filter((politica) => politica.tabela !== TABELA_ANCORA);
+        // A contagem vem ANTES: duas políticas na mesma tabela seriam OU lógico entre elas, e a
+        // segunda poderia alargar o que a primeira restringe sem que a inspeção da primeira acusasse.
+        expect(daRegua).toHaveLength(2);
+        expect(
+          daRegua.map((politica) => [politica.tabela, politica.nome, politica.comando]),
+        ).toEqual([
+          [TABELA_DO_ENVIO, 'envio_de_cobranca_isolamento_empresa', 'ALL'],
+          [TABELA_DA_POLITICA, 'politica_de_aviso_isolamento_empresa', 'ALL'],
+        ]);
+        expect(daRegua.map((politica) => politica.permissiva)).toEqual([
+          'PERMISSIVE',
+          'PERMISSIVE',
+        ]);
+
+        // A expressão é lida da política da COBRANÇA, e não redigitada aqui — ver o cabeçalho.
+        const ancora = politicas.find((politica) => politica.tabela === TABELA_ANCORA);
+        // Sem esta linha, uma âncora ausente faria as igualdades abaixo compararem `undefined` com
+        // `undefined` e passarem por vacuidade.
+        expect(typeof ancora?.usando).toBe('string');
+        expect(ancora?.usando).toBe(ancora?.comVerificacao);
+
+        for (const politica of daRegua) {
+          // `USING` e `WITH CHECK` idênticos entre si: divergi-los abriria o caso "enxerga só o
+          // seu, grava para o alheio" — o `WITH CHECK` que faltasse seria SUBSTITUÍDO pelo `USING`
+          // em silêncio, e o que ficasse mais largo passaria a valer para a gravação.
+          expect(politica.usando).toBe(politica.comVerificacao);
+          // …e idênticos à expressão já aplicada na cobrança: duas redações do mesmo isolamento são
+          // livres para divergir, e a divergência não faz barulho.
+          expect(politica.usando).toBe(ancora?.usando);
+        }
+
+        // --- 3. As colunas: `empresa_id NOT NULL`, os tipos e os PADRÕES --------------------
+        //
+        // Os padrões entram por igualdade porque `ativo` nascer `false` é decisão de produto (a
+        // régua entra em produção DESLIGADA), e `intervalo_minimo_dias` nascer `1` é a trava que
+        // protege a caixa do locatário. Um padrão trocado não quebra nada visível — e é exatamente
+        // por isso que ele precisa de asserção.
+        const colunas = await sql<ColunaDoCatalogo[]>`
+          SELECT c.relname                                        AS tabela,
+                 a.attname                                        AS coluna,
+                 pg_catalog.format_type(a.atttypid, a.atttypmod)  AS tipo,
+                 a.attnotnull                                     AS "naoNula",
+                 pg_catalog.pg_get_expr(d.adbin, d.adrelid)       AS padrao
+            FROM pg_catalog.pg_attribute a
+            JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+           WHERE n.nspname = 'negocio'
+             AND c.relname IN (${TABELA_DO_ENVIO}, ${TABELA_DA_POLITICA})
+             AND a.attnum > 0
+             AND NOT a.attisdropped
+           ORDER BY c.relname, a.attnum
+        `;
+
+        expect(colunas.map((linha) => ({ ...linha }))).toEqual([
+          {
+            tabela: TABELA_DO_ENVIO,
+            coluna: 'id',
+            tipo: 'uuid',
+            naoNula: true,
+            padrao: 'gen_random_uuid()',
+          },
+          {
+            tabela: TABELA_DO_ENVIO,
+            coluna: 'empresa_id',
+            tipo: 'uuid',
+            naoNula: true,
+            padrao: null,
+          },
+          {
+            tabela: TABELA_DO_ENVIO,
+            coluna: 'cobranca_id',
+            tipo: 'uuid',
+            naoNula: true,
+            padrao: null,
+          },
+          {
+            tabela: TABELA_DO_ENVIO,
+            coluna: 'criado_em',
+            tipo: 'timestamp with time zone',
+            naoNula: true,
+            padrao: 'now()',
+          },
+          {
+            tabela: TABELA_DO_ENVIO,
+            coluna: 'caminho',
+            tipo: 'negocio.caminho_do_aviso',
+            naoNula: true,
+            padrao: null,
+          },
+          {
+            tabela: TABELA_DO_ENVIO,
+            coluna: 'desfecho',
+            tipo: 'negocio.desfecho_do_aviso',
+            naoNula: true,
+            padrao: null,
+          },
+          // `NOT NULL` e sem padrão: a cadeia VAZIA do caso `SEM_DESTINATARIO` é valor gravado de
+          // propósito (RD-11), e não ausência de valor.
+          {
+            tabela: TABELA_DO_ENVIO,
+            coluna: 'destinatario',
+            tipo: 'text',
+            naoNula: true,
+            padrao: null,
+          },
+          // A única coluna ANULÁVEL das duas tabelas — e a bicondicional abaixo é quem a pareia
+          // com o desfecho.
+          { tabela: TABELA_DO_ENVIO, coluna: 'causa', tipo: 'text', naoNula: false, padrao: null },
+          {
+            tabela: TABELA_DA_POLITICA,
+            coluna: 'id',
+            tipo: 'uuid',
+            naoNula: true,
+            padrao: 'gen_random_uuid()',
+          },
+          {
+            tabela: TABELA_DA_POLITICA,
+            coluna: 'empresa_id',
+            tipo: 'uuid',
+            naoNula: true,
+            padrao: null,
+          },
+          {
+            tabela: TABELA_DA_POLITICA,
+            coluna: 'ativo',
+            tipo: 'boolean',
+            naoNula: true,
+            padrao: 'false',
+          },
+          {
+            tabela: TABELA_DA_POLITICA,
+            coluna: 'dias_antes_do_vencimento',
+            tipo: 'integer',
+            naoNula: true,
+            padrao: '0',
+          },
+          {
+            tabela: TABELA_DA_POLITICA,
+            coluna: 'intervalo_minimo_dias',
+            tipo: 'integer',
+            naoNula: true,
+            padrao: '1',
+          },
+          {
+            tabela: TABELA_DA_POLITICA,
+            coluna: 'janela_inicio',
+            tipo: 'time without time zone',
+            naoNula: true,
+            padrao: "'00:00:00'::time without time zone",
+          },
+          {
+            tabela: TABELA_DA_POLITICA,
+            coluna: 'janela_fim',
+            tipo: 'time without time zone',
+            naoNula: true,
+            padrao: "'23:59:00'::time without time zone",
+          },
+          {
+            tabela: TABELA_DA_POLITICA,
+            coluna: 'canal',
+            tipo: 'negocio.canal_de_aviso',
+            naoNula: true,
+            padrao: "'EMAIL'::negocio.canal_de_aviso",
+          },
+        ] satisfies ColunaDoCatalogo[]);
+
+        // --- 4. As restrições: a FK COMPOSTA, as duas `UNIQUE` e os três `CHECK` ------------
+        const restricoes = await sql<RestricaoDoCatalogo[]>`
+          SELECT c.relname   AS tabela,
+                 con.conname AS nome,
+                 con.contype::text AS tipo,
+                 (SELECT array_agg(att.attname ORDER BY u.ord)
+                    FROM unnest(con.conkey) WITH ORDINALITY AS u(attnum, ord)
+                    JOIN pg_catalog.pg_attribute att
+                      ON att.attrelid = con.conrelid AND att.attnum = u.attnum) AS colunas,
+                 alvo.relname AS "tabelaReferida",
+                 (SELECT array_agg(att.attname ORDER BY u.ord)
+                    FROM unnest(con.confkey) WITH ORDINALITY AS u(attnum, ord)
+                    JOIN pg_catalog.pg_attribute att
+                      ON att.attrelid = con.confrelid AND att.attnum = u.attnum) AS "colunasReferidas"
+            FROM pg_catalog.pg_constraint con
+            JOIN pg_catalog.pg_class c ON c.oid = con.conrelid
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            LEFT JOIN pg_catalog.pg_class alvo ON alvo.oid = con.confrelid
+           WHERE n.nspname = 'negocio'
+             AND c.relname IN (${TABELA_DO_ENVIO}, ${TABELA_DA_POLITICA})
+             AND con.contype IN ('f', 'u')
+           ORDER BY c.relname, con.conname
+        `;
+
+        // A lista INTEIRA por igualdade, e não uma busca pela FK composta: uma busca ficaria verde
+        // com a FK simples convivendo ao lado, que é a forma em que o defeito de fato voltaria.
+        expect(restricoes.map((linha) => ({ ...linha }))).toEqual([
+          {
+            tabela: TABELA_DO_ENVIO,
+            nome: 'envio_de_cobranca_cobranca_empresa_fkey',
+            tipo: 'f',
+            colunas: ['cobranca_id', 'empresa_id'],
+            tabelaReferida: 'cobranca',
+            colunasReferidas: ['id', 'empresa_id'],
+          },
+          {
+            tabela: TABELA_DO_ENVIO,
+            nome: 'envio_de_cobranca_empresa_id_empresa_id_fk',
+            tipo: 'f',
+            colunas: ['empresa_id'],
+            tabelaReferida: 'empresa',
+            colunasReferidas: ['id'],
+          },
+          {
+            tabela: TABELA_DO_ENVIO,
+            nome: 'envio_de_cobranca_id_empresa_key',
+            tipo: 'u',
+            colunas: ['id', 'empresa_id'],
+            tabelaReferida: null,
+            colunasReferidas: null,
+          },
+          {
+            tabela: TABELA_DA_POLITICA,
+            nome: 'politica_de_aviso_empresa_id_empresa_id_fk',
+            tipo: 'f',
+            colunas: ['empresa_id'],
+            tabelaReferida: 'empresa',
+            colunasReferidas: ['id'],
+          },
+          // O alvo do `ON CONFLICT` da T5 — é ela que torna "uma linha por empresa" propriedade do
+          // banco, e não da disciplina de quem escreve.
+          {
+            tabela: TABELA_DA_POLITICA,
+            nome: 'politica_de_aviso_empresa_key',
+            tipo: 'u',
+            colunas: ['empresa_id'],
+            tabelaReferida: null,
+            colunasReferidas: null,
+          },
+          {
+            tabela: TABELA_DA_POLITICA,
+            nome: 'politica_de_aviso_id_empresa_key',
+            tipo: 'u',
+            colunas: ['id', 'empresa_id'],
+            tabelaReferida: null,
+            colunasReferidas: null,
+          },
+        ] satisfies RestricaoDoCatalogo[]);
+
+        // Os três `CHECK` declarados, pela expressão que o catálogo reconstrói. A bicondicional do
+        // `causa_chk` é afirmada pelo TEXTO porque ela é a decisão: uma implicação simples
+        // (`causa IS NOT NULL OR desfecho = 'ENVIADA'`) deixaria passar a falha sem causa.
+        const verificacoes = await sql<{ nome: string; expressao: string }[]>`
+          SELECT con.conname AS nome,
+                 pg_catalog.pg_get_constraintdef(con.oid) AS expressao
+            FROM pg_catalog.pg_constraint con
+            JOIN pg_catalog.pg_class c ON c.oid = con.conrelid
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+           WHERE n.nspname = 'negocio'
+             AND c.relname IN (${TABELA_DO_ENVIO}, ${TABELA_DA_POLITICA})
+             AND con.contype = 'c'
+           ORDER BY con.conname
+        `;
+        expect(verificacoes.map((linha) => linha.nome)).toEqual([
+          'envio_de_cobranca_causa_chk',
+          'politica_de_aviso_faixa_chk',
+          'politica_de_aviso_janela_chk',
+        ]);
+        expect(verificacoes.map((linha) => linha.expressao)).toEqual([
+          "CHECK (((desfecho = 'ENVIADA'::negocio.desfecho_do_aviso) = (causa IS NULL)))",
+          'CHECK ((((dias_antes_do_vencimento >= 0) AND (dias_antes_do_vencimento <= 90)) AND ' +
+            '((intervalo_minimo_dias >= 1) AND (intervalo_minimo_dias <= 90))))',
+          'CHECK ((janela_fim >= janela_inicio))',
+        ]);
+
+        // --- 5. Os três enums, com rótulos e ORDEM vindos do CONTRATO ----------------------
+        //
+        // O esperado é o arranjo congelado de `@sysloc/contracts` — nunca uma lista redigitada aqui.
+        // É o que fecha a ADR-0016 nas duas pontas: o schema Drizzle deriva do contrato e a
+        // asserção confere contra a MESMA fonte, de modo que um rótulo acrescentado só no banco (ou
+        // só no contrato) reprova. A ORDEM é conteúdo: um enum do PostgreSQL a guarda, e é ela que
+        // governa comparação e ordenação do tipo.
+        const enums = await sql<{ tipo: string; rotulos: string[] }[]>`
+          SELECT t.typname AS tipo,
+                 array_agg(e.enumlabel ORDER BY e.enumsortorder) AS rotulos
+            FROM pg_catalog.pg_type t
+            JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+            JOIN pg_catalog.pg_enum e ON e.enumtypid = t.oid
+           WHERE n.nspname = 'negocio'
+             AND t.typname IN ('canal_de_aviso', 'caminho_do_aviso', 'desfecho_do_aviso')
+           GROUP BY t.typname
+           ORDER BY t.typname
+        `;
+        expect(enums.map((linha) => ({ tipo: linha.tipo, rotulos: linha.rotulos }))).toEqual([
+          { tipo: 'caminho_do_aviso', rotulos: [...CAMINHOS_DO_AVISO] },
+          { tipo: 'canal_de_aviso', rotulos: [...CANAIS_DE_AVISO] },
+          { tipo: 'desfecho_do_aviso', rotulos: [...DESFECHOS_DO_AVISO] },
+        ]);
+
+        // `USAGE` concedido a `sysloc_app` nos três, um a um: sem ele a aplicação não grava valor em
+        // coluna do tipo, e a `0012` é o único lugar em que essa concessão está escrita.
+        const [privilegios] = await sql<{ canal: boolean; caminho: boolean; desfecho: boolean }[]>`
+          SELECT has_type_privilege('sysloc_app', 'negocio.canal_de_aviso', 'USAGE')    AS canal,
+                 has_type_privilege('sysloc_app', 'negocio.caminho_do_aviso', 'USAGE')  AS caminho,
+                 has_type_privilege('sysloc_app', 'negocio.desfecho_do_aviso', 'USAGE') AS desfecho
+        `;
+        expect(privilegios).toEqual({ canal: true, caminho: true, desfecho: true });
+
+        // --- 6. Os dois índices, e o PARCIAL sendo parcial ---------------------------------
+        //
+        // A definição inteira por igualdade: é ela que carrega o `DESC` e o `WHERE`, e trocar
+        // qualquer um dos dois é mudança silenciosa — a consulta continua correta e passa a varrer
+        // o que o índice existia para não varrer.
+        //
+        // O `NULLS LAST` é do gerador, e não decisão: `DESC` sem qualificação já ordena os nulos
+        // primeiro no PostgreSQL, e `criado_em` é `NOT NULL`, de modo que a cláusula não discrimina
+        // linha alguma. Ela entra no esperado porque o esperado é o TEXTO que o catálogo
+        // reconstrói — escrevê-lo "mais limpo" faria a asserção reprovar um schema íntegro.
+        const indices = await sql<{ nome: string; definicao: string }[]>`
+          SELECT indexname AS nome, indexdef AS definicao
+            FROM pg_catalog.pg_indexes
+           WHERE schemaname = 'negocio' AND tablename = ${TABELA_DO_ENVIO}
+             AND indexname LIKE '%_idx'
+           ORDER BY indexname
+        `;
+        expect(indices.map((linha) => ({ ...linha }))).toEqual([
+          {
+            nome: 'envio_de_cobranca_historico_idx',
+            definicao:
+              'CREATE INDEX envio_de_cobranca_historico_idx ON negocio.envio_de_cobranca ' +
+              'USING btree (empresa_id, cobranca_id, criado_em DESC NULLS LAST)',
+          },
+          {
+            nome: 'envio_de_cobranca_trava_idx',
+            definicao:
+              'CREATE INDEX envio_de_cobranca_trava_idx ON negocio.envio_de_cobranca ' +
+              'USING btree (empresa_id, cobranca_id, criado_em DESC NULLS LAST) ' +
+              "WHERE (desfecho = 'ENVIADA'::negocio.desfecho_do_aviso)",
+          },
+        ]);
+
+        // --- 7. A PROJEÇÃO dos dois horários — a rede do risco carregado da T2 -------------
+        //
+        // A coluna é `time` (afirmado no passo 3), e o contrato publica `HH:MM` por expressão
+        // ANCORADA. O que o passo abaixo mede é que as duas coisas **não se encaixam sozinhas**: o
+        // valor projetado cru sai `'09:00:00'` e é RECUSADO por `esquemaDaPoliticaDeAviso`, e a
+        // recusa de um esquema de SAÍDA não produz `422` — ela levanta na serialização e derruba a
+        // rota de leitura da política (T9). A projeção `to_char(coluna, 'HH24:MI')` é, portanto,
+        // parte da declaração da coluna, e não detalhe de quem consulta.
+        //
+        // O par positivo/negativo é o que discrimina: sem o positivo, "o esquema recusa" ficaria
+        // verde sobre um esquema que recusasse tudo.
+        const [projecao] = await sql<{ cru: string; projetado: string }[]>`
+          SELECT janela.valor::text                      AS cru,
+                 to_char(janela.valor, 'HH24:MI')        AS projetado
+            FROM (SELECT '09:00'::time AS valor) AS janela
+        `;
+        expect(projecao).toEqual({ cru: '09:00:00', projetado: '09:00' });
+
+        const politicaPublicada = {
+          ativo: true,
+          diasAntesDoVencimento: 3,
+          intervaloMinimoDias: 7,
+          janelaFim: '18:00',
+          canal: 'EMAIL',
+        } as const;
+
+        expect(
+          esquemaDaPoliticaDeAviso.safeParse({
+            ...politicaPublicada,
+            janelaInicio: projecao?.cru,
+          }).success,
+        ).toBe(false);
+        expect(
+          esquemaDaPoliticaDeAviso.safeParse({
+            ...politicaPublicada,
+            janelaInicio: projecao?.projetado,
+          }).success,
+        ).toBe(true);
+      } finally {
+        await sql.end();
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
 });

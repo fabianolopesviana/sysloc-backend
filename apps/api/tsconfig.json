@@ -17,11 +17,17 @@
   // As três referências pelo MESMO motivo, e `@sysloc/auth` traz `@sysloc/db` junto por ser ele
   // próprio um consumidor declarado — mas as duas são declaradas aqui assim mesmo, porque `src/`
   // importa as duas pelo especificador público e a referência é o que ordena a construção.
+  //
+  // `@sysloc/regua` entra na T10 pela MESMA razão, e não por simetria: a partir dela o **disparo
+  // manual** envia de dentro deste processo, e `src/` passa a importar a régua e o adaptador de SMTP
+  // pelo especificador público. Sem a referência, `pnpm --filter @sysloc/api test` compilaria contra
+  // um `dist/` de irmão obsoleto — e um mutante no fonte da régua não alcançaria a suíte daqui.
   "references": [
     { "path": "../../packages/shared" },
     { "path": "../../packages/contracts" },
     { "path": "../../packages/db" },
-    { "path": "../../packages/auth" }
+    { "path": "../../packages/auth" },
+    { "path": "../../packages/regua" }
   ],
   "include": ["src/**/*.ts"]
 }

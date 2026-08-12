@@ -183,6 +183,13 @@ readonly CAMINHO_ENTRADA_DB="${RAIZ_REPO}/packages/db/dist/index.js"
 #   ATUALIZADA EM 2026-08-10 pela T3 da fatia `cobranca-e-mora`, no mesmo commit
 #   das migrações `0009_dominio_cobranca.sql` e `0010_seguranca_cobranca.sql`,
 #   que acrescentam a cobrança, a configuração de mora e a VISÃO derivada.
+#   ATUALIZADA EM 2026-08-11 pela T3 da fatia `regua-de-cobranca`, no mesmo commit
+#   das migrações `0011_dominio_regua.sql` e `0012_seguranca_regua.sql`, que
+#   acrescentam a política de aviso e o registro de envios. Esta lista é a MESMA
+#   `TABELAS_DE_NEGOCIO_ESPERADAS` que `packages/db/test/papel-de-conexao.spec.ts`
+#   declara — as duas frentes de teste (shell e Vitest) a mantêm em paralelo, e o
+#   cabeçalho de `packages/db/src/esquema/negocio.ts` nomeia as duas. Esquecer uma
+#   delas faz a outra reprovar sozinha, que é a rede funcionando.
 #
 #   A VISÃO ENTRA AQUI, e a sequência continua fora — a distinção não é
 #   arbitrária, é a espécie: `negocio.cobranca_derivada` é `relkind = 'v'`, que a
@@ -198,7 +205,7 @@ readonly CAMINHO_ENTRADA_DB="${RAIZ_REPO}/packages/db/dist/index.js"
 #   exclui `relkind = 'S'` do exame POR CONSTRUÇÃO, então ela nunca aparece no
 #   resultado que esta lista compara. Acrescentá-la faria a asserção (b) reprovar
 #   um schema íntegro.
-readonly TABELAS_DE_NEGOCIO_ESPERADAS="negocio.acesso_usuario_app negocio.acesso_usuario_permissao negocio.cobranca negocio.cobranca_derivada negocio.comodo negocio.configuracao_de_mora negocio.conjunto negocio.contrato negocio.contrato_fiador negocio.fiador negocio.imovel negocio.locador negocio.locatario"
+readonly TABELAS_DE_NEGOCIO_ESPERADAS="negocio.acesso_usuario_app negocio.acesso_usuario_permissao negocio.cobranca negocio.cobranca_derivada negocio.comodo negocio.configuracao_de_mora negocio.conjunto negocio.contrato negocio.contrato_fiador negocio.envio_de_cobranca negocio.fiador negocio.imovel negocio.locador negocio.locatario negocio.politica_de_aviso"
 
 # Os quatro transportes de segredo que a ADR-0005 proíbe. O `[=]` é classe de
 # caractere de UM elemento — casa exatamente o que o sinal solto casaria, sem

@@ -1,6 +1,8 @@
 /**
  * A **fonte única do estado da cobrança** — a metade ESTRUTURAL do CA-04, provada por asserção
- * estática sobre os fontes e por introspecção do catálogo. T5 da fatia `cobranca-e-mora`.
+ * estática sobre os fontes e por introspecção do catálogo. T5 da fatia `cobranca-e-mora`, estendida
+ * pela **T8** da fatia `regua-de-cobranca` com o eixo do RELÓGIO (`CT-612`) e o do ESCRITOR DE
+ * CONTEXTO (`CT-624`).
  *
  * ---------------------------------------------------------------------------
  * INVARIANTES
@@ -10,10 +12,21 @@
  * |---|---|---|
  * | CA-04 | CT-510 | Os quatro rótulos de `negocio.status_cobranca` — `A_VENCER`, `VENCIDA`, `PAGA`
  * |       |        | e `CANCELADA` — não aparecem em posição EXECUTÁVEL em nenhum fonte de
- * |       |        | `packages/db/src/**` nem de `apps/api/src/**`. O conjunto de arquivos que os
- * |       |        | carregam, varrido também sobre `packages/contracts/src/**`, é **EXATAMENTE**
+ * |       |        | `packages/db/src/**`, `apps/api/src/**`, `packages/regua/src/**` nem
+ * |       |        | `apps/worker/src/**`. O conjunto de arquivos que os carregam, varrido também
+ * |       |        | sobre `packages/contracts/src/**`, é **EXATAMENTE**
  * |       |        | `['packages/contracts/src/cobranca.ts']` — igualdade de lista ordenada, nunca
  * |       |        | `toContain`. (ADR-0022, ADR-0023) |
+ * | CA-05 | CT-612 | **Zero** leituras do relógio do PROCESSO (`new Date(`, `Date.now(`,
+ * | CA-08 |        | `getHours(`, `getMinutes(`) em posição executável em `packages/regua/src/**` e
+ * | CA-09 |        | em `apps/worker/src/tarefas/**`; e a consulta de elegibilidade
+ * |       |        | (`selecionarCandidatasAoAviso`) tem `negocio.cobranca_derivada` como **única**
+ * |       |        | origem de estado — nenhuma ocorrência de `negocio.cobranca` fora dela. |
+ * | CA-12 | CT-624 | A lista ordenada de arquivos de PRODUÇÃO que chamam
+ * |       |        | `contextoDeTenant.executarCom` é EXATAMENTE **dois** — um por borda: a guarda
+ * |       |        | HTTP de `apps/api` e a borda do job de `apps/worker` (ADR-0024). E as duas
+ * |       |        | listas vizinhas são igualmente declaradas: quem nomeia `app.empresa_id` em
+ * |       |        | posição executável, e quem emite SQL sobre `identidade.empresa`. |
  * | CA-04 | CT-510 | `negocio.cobranca` **não tem** coluna `status`: a lista de colunas dela é
  * |       | (b)    | afirmada por igualdade, na ordem do catálogo. O estado não é coluna gravada, e
  * |       |        | é a **ausência da coluna** que impede a rotina que o legado tinha. |
@@ -25,7 +38,8 @@
  * |       |        | recalcula `status` a partir de `pagoEm`/`canceladoEm`/`dataVencimento`,
  * |       |        | REPROVA nomeando o arquivo; aplicada ao fonte ÍNTEGRO, passa limpa. |
  *
- * Rastreabilidade: `CA-04 → CT-510 (RD-04)`.
+ * Rastreabilidade: `CA-04 → CT-510 (RD-04)`. Acrescida pela T8 da fatia `regua-de-cobranca`:
+ * `CA-05 → CT-612 (RD-06)` · `CA-08, CA-09 → CT-612 (RD-01)` · `CA-12 → CT-624 (RD-10)`.
  *
  * ===========================================================================
  * Por que esta prova é ESTÁTICA, e por que ela é indispensável
@@ -122,7 +136,12 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { abrirConexao, type Sql } from '../src/conexao.ts';
 import { type BancoMigrado, bancoEfemero } from './banco-efemero.ts';
-import { listarFontesTs, semComentarios, varrerArquivos } from './varredura-de-fontes.ts';
+import {
+  listarFontesTs,
+  semComentarios,
+  type VarreduraDeFontes,
+  varrerArquivos,
+} from './varredura-de-fontes.ts';
 
 /** Subir a instância, provisionar papéis, migrar e semear leva dezenas de segundos nesta máquina. */
 const LIMITE_SUBIDA_MS = 90_000;
@@ -134,13 +153,19 @@ const LIMITE_DO_CASO_MS = 60_000;
 const RAIZ_DO_REPOSITORIO = fileURLToPath(new URL('../../../', import.meta.url));
 
 /**
- * Os três diretórios de fonte varridos.
+ * Os **cinco** diretórios de fonte varridos.
  *
- * `packages/db/src` e `apps/api/src` são os alvos da proibição — são eles que leem cobrança e são
- * eles onde uma segunda derivação nasceria. `packages/contracts/src` entra porque é lá que mora a
- * **única** ocorrência legítima, e varrê-lo é o que transforma a asserção de *"não existe em dois
- * lugares"* em *"existe exatamente num"*: sem ele, a lista esperada seria vazia, e uma varredura que
- * não lesse arquivo nenhum passaria verde.
+ * `packages/db/src` e `apps/api/src` são os alvos originais da proibição — são eles que leem
+ * cobrança e são eles onde uma segunda derivação nasceria. `packages/contracts/src` entra porque é
+ * lá que mora a **única** ocorrência legítima, e varrê-lo é o que transforma a asserção de *"não
+ * existe em dois lugares"* em *"existe exatamente num"*: sem ele, a lista esperada seria vazia, e
+ * uma varredura que não lesse arquivo nenhum passaria verde.
+ *
+ * ⚠️ **`packages/regua/src` e `apps/worker/src` entram na T8 da fatia `regua-de-cobranca`, e a
+ * ausência deles seria um vão real, não uma formalidade**: o pacote da régua é justamente o lugar em
+ * que a segunda derivação do estado nasceria por conveniência — ele decide *quem é avisado* — e a
+ * borda do job é quem chama tudo. Sem estendê-los, o pacote novo ficaria **fora da guarda**, e o
+ * caso seguiria verde afirmando uma propriedade sobre um conjunto que deixou de conter o suspeito.
  *
  * `packages/auth/src` e `packages/shared/src` ficam de fora porque não conhecem cobrança — incluí-los
  * alargaria o alvo sem acrescentar poder de detecção, e a §11.2 já os mantém sem alcance ao domínio.
@@ -148,7 +173,9 @@ const RAIZ_DO_REPOSITORIO = fileURLToPath(new URL('../../../', import.meta.url))
 const DIRETORIOS_VARRIDOS: readonly string[] = [
   'packages/contracts/src',
   'packages/db/src',
+  'packages/regua/src',
   'apps/api/src',
+  'apps/worker/src',
 ];
 
 /**
@@ -368,4 +395,494 @@ function rotulosExecutaveisDe(fonte: string): string[] {
   return semComentarios(fonte)
     .split('\n')
     .flatMap((linha) => rotulosNaLinha(linha));
+}
+
+// ===========================================================================
+// CT-612 — o relógio da operação mora no banco, e o predicado lê a VIEW
+// ===========================================================================
+
+/**
+ * ⚠️ **Este é o caso mais importante da fatia, e a razão é o modo de falha do defeito que ele pega.**
+ *
+ * `dentroDaJanela` (em `@sysloc/regua`) é **pura** e recebe o `HH:MM` **por parâmetro**. A
+ * consequência é dura: **nenhum caso comportamental pode pegar um erro na ORIGEM desse parâmetro**.
+ * Trocar `lerHoraCorrenteDaOperacao(tx)` por `new Date().getHours()` na borda do job **passa em toda
+ * a suíte** — o host está em `America/Sao_Paulo`, e as duas leituras coincidem. O defeito só
+ * aparece no dia em que o processo rodar sob outro fuso: `TZ` **não é declarada por nenhuma das duas
+ * unidades systemd**, e sob UTC a régua dispararia três horas fora da janela que a imobiliária
+ * configurou, sem uma linha vermelha em lugar nenhum (ADR-0026).
+ *
+ * Esta asserção estática é a **única** rede desse defeito. O que ela mede é a **ausência** das
+ * quatro formas pelas quais o relógio do processo é lido em TypeScript, em posição executável, nos
+ * dois lugares onde a decisão de tempo poderia ser tomada.
+ *
+ * ---------------------------------------------------------------------------
+ * MUTANTE EXECUTADO sobre o SUT (2026-08-12) — o mutante do relógio
+ * ---------------------------------------------------------------------------
+ *
+ * Além da falsificação PERMANENTE na suíte (o `CT-612 (b)`, com as duas pernas sobre uma cópia em
+ * memória), o defeito foi reintroduzido **no fonte de produção** e medido. Invocado pelo **script do
+ * pacote** (`pnpm --filter @sysloc/db test`), nunca por `vitest run` avulso; controle: `143 passed`.
+ *
+ *   * **M-RELOGIO · a hora vinda do processo** — em `apps/worker/src/tarefas/regua.ts`, o import de
+ *     `lerHoraCorrenteDaOperacao` removido e a leitura trocada por uma função local que compõe o
+ *     `HH:MM` a partir de `new Date()`, `getHours()` e `getMinutes()` — a forma exata que um autor
+ *     futuro escreveria por conveniência, e que **compila**. Resultado: `2 failed | 141 passed`,
+ *     com o caso principal nomeando as três linhas ofensoras da borda e o `CT-612 (b)` recebendo
+ *     `['new Date(', 'getHours(', 'getMinutes(']` onde esperava lista vazia;
+ *   * **a outra metade da medição, e é ela que justifica este caso existir**: com o MESMO mutante
+ *     aplicado, `pnpm --filter @sysloc/worker test` devolveu **`32 passed`** — a suíte
+ *     comportamental inteira, com fila e banco reais, **verde**. O defeito acerta por acidente
+ *     porque o host está em `America/Sao_Paulo`. Nenhum outro caso do repositório o pega;
+ *   * **reversão** — o fonte foi restaurado do backup e conferido por `sha256sum -c` contra o
+ *     estado pré-mutante, e o controle voltou a `143 passed`.
+ *
+ * ---------------------------------------------------------------------------
+ * MUTANTE EXECUTADO sobre o SUT (2026-08-12) — a segunda origem de estado
+ * ---------------------------------------------------------------------------
+ *
+ *   * **M-VIEW · o predicado lendo a tabela crua** — em `packages/db/src/envio-de-cobranca.ts`, o
+ *     `FROM negocio.cobranca_derivada cd` do predicado trocado por `FROM negocio.cobranca cd`.
+ *     Resultado: `11 failed | 132 passed`, com o `CT-612 (c)` reprovando pela **perna positiva** —
+ *     `expected 'export async function selecionarCandi…' to contain 'negocio.cobranca_derivada'` —,
+ *     que é o modo de falha desejado: o recorte por símbolo continuou funcionando e o que sumiu foi
+ *     a citação da visão. Aqui, diferente do mutante do relógio, os casos comportamentais **também**
+ *     reprovam, porque a tabela crua não publica `status` nem `valor_total`;
+ *   * **reversão** — restaurado do backup e conferido por `sha256sum -c`.
+ */
+
+/** Os diretórios onde a decisão de tempo poderia ser tomada, e onde ela é proibida. */
+const DIRETORIOS_SEM_RELOGIO_DE_PROCESSO: readonly string[] = [
+  'packages/regua/src',
+  'apps/worker/src/tarefas',
+];
+
+/**
+ * As quatro formas de ler o relógio do processo, escritas **por extenso**.
+ *
+ * Literais, e não derivadas de nada: é esta lista que declara **o que** o caso proíbe, e o detector
+ * abaixo é composto a partir dela — a lista e o que se procura são o mesmo fato.
+ */
+const LEITURAS_DO_RELOGIO_DO_PROCESSO: readonly string[] = [
+  'new Date(',
+  'Date.now(',
+  'getHours(',
+  'getMinutes(',
+];
+
+/** O detector, composto a partir da lista acima — ver {@link LEITURAS_DO_RELOGIO_DO_PROCESSO}. */
+const LEITURA_DE_RELOGIO = new RegExp(
+  LEITURAS_DO_RELOGIO_DO_PROCESSO.map((forma) =>
+    forma.replace(/[.()[\]{}*+?^$|\\]/g, (caractere) => `\\${caractere}`),
+  ).join('|'),
+);
+
+/** O fonte da borda do job — o sujeito da falsificação do eixo do relógio. */
+const CAMINHO_DA_BORDA_DO_JOB = 'apps/worker/src/tarefas/regua.ts';
+
+/**
+ * O defeito literal que a falsificação injeta: a hora saindo do relógio do PROCESSO.
+ *
+ * É a forma exata que um autor futuro escreveria por conveniência — ela é mais curta que a chamada
+ * ao banco, não precisa de `tx`, e produz o mesmo resultado nesta máquina.
+ */
+const RELOGIO_DO_PROCESSO_REINTRODUZIDO = [
+  '',
+  'function horaCorrenteDoProcesso(): string {',
+  '  const agora = new Date();',
+  '  const hora = agora.getHours();',
+  '  const minuto = agora.getMinutes();',
+  '',
+  '  return String(hora) + String(minuto);',
+  '}',
+  '',
+].join('\n');
+
+/** O fonte do predicado de elegibilidade — o segundo eixo do CT-612. */
+const CAMINHO_DO_PREDICADO = 'packages/db/src/envio-de-cobranca.ts';
+
+/**
+ * Os símbolos cujos corpos são auditados. A âncora é SIMBÓLICA, nunca número de linha.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a lista tinha **um** elemento porque, até a T9, o predicado era a única
+ * consulta que lia estado de cobrança neste módulo. A **T10** acrescenta `localizarCandidataAoAviso`
+ * — a leitura do **disparo manual** —, e ela é exatamente a segunda consulta que o `CT-612 (c)`
+ * existe para vigiar: se ela lesse `negocio.cobranca` em vez da visão, o caminho manual voltaria a
+ * avaliar o estado por conta própria, que é o defeito de origem do legado (REG-08). O caso **não foi
+ * afrouxado** — ele passou a correr, com as três mesmas asserções, sobre **cada** símbolo da lista, e
+ * a perna positiva de cada um continua exigindo a citação da visão. **Nenhuma entrada anterior saiu.**
+ *
+ * ⚠️ A T10 tentou extrair o `FROM` e as quatro junções das duas consultas para um fragmento comum, e
+ * **reverteu**: a extração tirava a citação da visão do corpo recortado aqui e deixava esta asserção
+ * cega, que é regressão de prova (R2) com o SQL correto. A duplicação das quatro junções é o preço
+ * declarado dessa rede — ver o docblock de `localizarCandidataAoAviso`.
+ */
+const SIMBOLOS_COM_ESTADO_DA_COBRANCA = [
+  'selecionarCandidatasAoAviso',
+  'localizarCandidataAoAviso',
+] as const;
+
+/** A visão que publica o estado — a fonte única (ADR-0022). */
+const VISAO_DO_ESTADO = 'negocio.cobranca_derivada';
+
+/**
+ * A tabela crua, e **não** a visão — o que o predicado não pode citar como origem de estado.
+ *
+ * A âncora negativa `(?!_derivada)` é o mecanismo: sem ela, a própria visão casaria e a asserção
+ * reprovaria o código correto. `negocio.envio_de_cobranca` **não** casa — o caractere antes de
+ * `cobranca` ali é `_`, e não `.` —, e é isso que permite o predicado juntar o histórico sem virar
+ * culpado.
+ */
+const TABELA_CRUA_DE_COBRANCA = /negocio\.cobranca(?!_derivada)/g;
+
+/**
+ * O corpo do predicado, isolado do resto do módulo e já sem comentários.
+ *
+ * O recorte vai da declaração do símbolo até a próxima declaração exportada — a âncora é o **nome**,
+ * e não a posição, justamente porque a posição se move na primeira edição do arquivo. Um recorte que
+ * falhasse produziria corpo sem a visão, e a perna positiva do caso reprovaria em vez de passar em
+ * silêncio.
+ */
+function corpoDoPredicado(fonte: string, simbolo: string): string {
+  const semProsa = semComentarios(fonte);
+  const inicio = semProsa.indexOf(`export async function ${simbolo}`);
+
+  if (inicio < 0) {
+    throw new Error(`${simbolo} não foi encontrado em ${CAMINHO_DO_PREDICADO}`);
+  }
+
+  const seguinte = semProsa.indexOf('\nexport ', inicio + 1);
+
+  return seguinte < 0 ? semProsa.slice(inicio) : semProsa.slice(inicio, seguinte);
+}
+
+describe('CT-612 — a régua consulta a fonte única e não lê o relógio do processo', () => {
+  it(
+    'CT-612 — zero leituras do relógio do processo na régua e na borda do job',
+    async () => {
+      const fontes: string[] = [];
+      for (const diretorio of DIRETORIOS_SEM_RELOGIO_DE_PROCESSO) {
+        // Diretório ausente LEVANTA — é a decisão do acessório, e é ela que impede a cobertura de
+        // cair a zero em silêncio quando um alvo é renomeado.
+        fontes.push(...(await listarFontesTs(`${RAIZ_DO_REPOSITORIO}${diretorio}`)));
+      }
+
+      const varredura = await varrerArquivos(fontes, (linha) => LEITURA_DE_RELOGIO.test(linha));
+
+      // Âncora de não-vacuidade em valor EXATO: "nenhuma leitura de relógio" sobre zero arquivos
+      // lidos é verdade vazia, e é assim que esta asserção apodreceria em silêncio.
+      expect(varredura.arquivos).toBe(fontes.length);
+      expect(varredura.arquivos).toBeGreaterThan(0);
+
+      expect(
+        varredura.ocorrencias.map((lugar) => relative(RAIZ_DO_REPOSITORIO, lugar)),
+        `leitura do relógio do processo onde a hora tem de vir do banco (ADR-0026): ${varredura.linhas.join(' | ')}`,
+      ).toEqual([]);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-612 (b) — a MESMA varredura REPROVA a borda com o relógio do processo e passa no íntegro',
+    async () => {
+      const caminho = `${RAIZ_DO_REPOSITORIO}${CAMINHO_DA_BORDA_DO_JOB}`;
+      const integro = await readFile(caminho, 'utf8');
+
+      // CONTROLE: o fonte como ele está na árvore. Nenhuma leitura de relógio em posição executável.
+      expect(leiturasDeRelogioDe(integro)).toEqual([]);
+
+      // MUTANTE: o mesmo fonte com a hora saindo do processo. A cópia vive em memória — escrever no
+      // disco durante a suíte deixaria o defeito no fonte se o processo morresse no meio. Um
+      // detector que devolvesse sempre `[]` passaria no controle e reprovaria aqui; um que
+      // devolvesse sempre algo faria o contrário. Nenhum dos dois passa nos dois.
+      expect(leiturasDeRelogioDe(integro + RELOGIO_DO_PROCESSO_REINTRODUZIDO)).toEqual([
+        'new Date(',
+        'getHours(',
+        'getMinutes(',
+      ]);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-612 (c) — as consultas de estado da cobrança têm a VIEW como única origem',
+    async () => {
+      const fonte = await readFile(`${RAIZ_DO_REPOSITORIO}${CAMINHO_DO_PREDICADO}`, 'utf8');
+
+      // A varredura corre sobre CADA símbolo que lê estado de cobrança neste módulo, e não sobre um
+      // só: o disparo manual e a passagem automática precisam ler a MESMA fonte, e é a unicidade —
+      // não uma guarda escrita na régua — que torna impossível os dois discordarem (REG-08).
+      for (const simbolo of SIMBOLOS_COM_ESTADO_DA_COBRANCA) {
+        const corpo = corpoDoPredicado(fonte, simbolo);
+
+        // A perna POSITIVA: a consulta cita a visão. Sem ela, "não cita a tabela crua" seria
+        // verdade vazia sobre um recorte que falhou.
+        expect(corpo, simbolo).toContain(VISAO_DO_ESTADO);
+
+        // A perna NEGATIVA: nenhuma ocorrência de `negocio.cobranca` que não seja a visão. A junção
+        // com `negocio.envio_de_cobranca`, que o predicado faz, não casa — ver o detector.
+        expect(
+          [...corpo.matchAll(TABELA_CRUA_DE_COBRANCA)].map((achado) => achado[0]),
+          simbolo,
+        ).toEqual([]);
+
+        // MUTANTE, sobre o corpo REAL: trocar a visão pela tabela crua é o defeito de origem do
+        // legado — a segunda avaliação do estado, que coincidiria com a da visão na quase totalidade
+        // dos casos e atravessaria a suíte comportamental sem uma recusa.
+        const comTabelaCrua = corpo.replaceAll(VISAO_DO_ESTADO, 'negocio.cobranca');
+
+        expect(
+          [...comTabelaCrua.matchAll(TABELA_CRUA_DE_COBRANCA)].map((achado) => achado[0]),
+          simbolo,
+        ).toEqual(['negocio.cobranca']);
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});
+
+/** As formas de leitura de relógio em posição executável de um fonte, na ordem em que aparecem. */
+function leiturasDeRelogioDe(fonte: string): string[] {
+  const global = new RegExp(LEITURA_DE_RELOGIO.source, 'g');
+
+  return [...semComentarios(fonte).matchAll(global)].map((achado) => achado[0]);
+}
+
+// ===========================================================================
+// CT-624 — o escritor de contexto continua único POR BORDA (ADR-0024)
+// ===========================================================================
+
+/**
+ * O que este caso acrescenta ao `CT-014` de `unidade-de-trabalho.spec.ts`, e por que os dois existem.
+ *
+ * O `CT-014` audita o **mesmo símbolo** por outro eixo: ele descobre os alvos no disco, percorrendo
+ * todo pacote de `apps/` e `packages/` que tenha `src/`, e é isso que faz um **pacote novo** entrar
+ * na auditoria sem que ninguém se lembre de acrescentá-lo. Ele é a rede da topologia.
+ *
+ * Este caso é a rede da **decisão**: ele fixa o elenco por borda que a ADR-0024 declara, sobre os
+ * quatro diretórios em que a fatia da régua escreve, e — o que o `CT-014` não faz — audita junto as
+ * **duas listas vizinhas** sem as quais a afirmação "o contexto tem escritor único" é contornável
+ * por outro caminho:
+ *
+ * 1. quem nomeia `app.empresa_id` em posição executável — porque escrever a variável de sessão à
+ *    mão estabelece contexto **sem passar pelo escritor**, e nenhuma varredura por `executarCom`
+ *    veria isso;
+ * 2. quem emite SQL sobre `identidade.empresa` — porque a enumeração de tenants é, pela ADR-0024, a
+ *    **única** leitura legítima sem contexto de empresa, e ela vive no schema sem noção de tenant
+ *    (ADR-0009). Uma borda de trabalho que a consultasse por si passaria a escolher empresas em vez
+ *    de recebê-las.
+ *
+ * Perder qualquer um dos dois casos deixaria um dos eixos sem oráculo. Eles não se substituem.
+ *
+ * ---------------------------------------------------------------------------
+ * MUTANTES EXECUTADOS sobre o SUT (2026-08-12) — os dois caminhos de contorno
+ * ---------------------------------------------------------------------------
+ *
+ * Asserção estática ⇒ prova de falsificação obrigatória. Invocados pelo **script do pacote**
+ * (`pnpm --filter @sysloc/db test`), nunca por `vitest run` avulso; controle: `143 passed`.
+ * Os dois foram aplicados **juntos**, e cada um reprovou o seu eixo:
+ *
+ *   * **M1 · o terceiro escritor** — `export function sobOutraEmpresa(…)` acrescentada a
+ *     `apps/worker/src/tarefas/eco.ts`, chamando `contextoDeTenant.executarCom`. Reprovou o caso
+ *     principal **nomeando o arquivo e a linha** (`…/apps/worker/src/tarefas/eco.ts:77`), com a
+ *     lista real de **três** elementos contra os dois esperados. Reprovou também o `CT-014` de
+ *     `unidade-de-trabalho.spec.ts`, que audita o mesmo símbolo pelo eixo da topologia — os dois
+ *     acusam por caminhos diferentes, e é o par que detecta;
+ *   * **M2 · o `SET LOCAL` escrito à mão** — `export async function fixarContextoNaMao(…)`
+ *     acrescentada a `apps/worker/src/tarefas/regua.ts`, compondo a fixação por `tx.unsafe`.
+ *     **Nenhuma varredura por `executarCom` o vê** — e foi exatamente esse o resultado: o caso
+ *     principal não o acusou, e quem o acusou foi o `CT-624 (b)`, nomeando
+ *     `…/apps/worker/src/tarefas/regua.ts:242` com a lista de **quatro** elementos contra os três
+ *     esperados. É a demonstração de que os dois eixos não são redundantes;
+ *   * a soma foi `4 failed | 139 passed`, e o `CT-624 (c)` entrou entre as reprovações pela sua
+ *     perna de **controle** — o fonte da borda deixou de estar limpo —, o que mostra que aquele
+ *     controle não é vácuo;
+ *   * **reversão** — os dois fontes foram restaurados do backup e conferidos por `sha256sum -c`
+ *     contra o estado pré-mutante, e o controle voltou a `143 passed`.
+ */
+
+/** Os quatro diretórios de produção que a fatia da régua alcança. */
+const DIRETORIOS_DE_PRODUCAO_DA_REGUA: readonly string[] = [
+  'apps/api/src',
+  'apps/worker/src',
+  'packages/db/src',
+  'packages/regua/src',
+];
+
+/**
+ * A CHAMADA ao escritor, e não a declaração.
+ *
+ * `export function executarCom<T>(…` traz `<T>` entre o nome e o parêntese e **não** casa — é a
+ * mesma discriminação que o `CT-014` usa, e a perna de controle abaixo a prova sobre o arquivo real.
+ */
+const CHAMADA_AO_ESCRITOR_DE_CONTEXTO = /\bexecutarCom\s*\(/;
+
+/**
+ * **Um escritor por borda** — o elenco que a ADR-0024 declara, por igualdade.
+ *
+ * Dois, e a razão de cada um está escrita ao lado. Um terceiro reprova nomeando o arquivo: é o
+ * modo de falha desejado, porque o defeito que a ADR-0008 declara impossível de pegar por revisão
+ * nasce assim — *"um por vez, cada um legítimo quando foi escrito"*.
+ */
+const BORDAS_QUE_ESCREVEM_CONTEXTO: readonly string[] = [
+  // A borda HTTP: a empresa vem da sessão autenticada.
+  'apps/api/src/autenticacao/contexto.guard.ts',
+  // A borda do trabalho enfileirado: a empresa vem da carga do próprio trabalho (ADR-0024).
+  'apps/worker/src/tarefas/regua.ts',
+].sort();
+
+/** A variável de sessão que as políticas de `negocio` consultam. */
+const VARIAVEL_DE_CONTEXTO = 'app.empresa_id';
+
+/**
+ * Quem pode **nomear** a variável de sessão em posição executável — elenco declarado, por igualdade.
+ *
+ * ⚠️ São **três**, e a medição é o que fixa o número: a especificação desta task previa *"exatamente
+ * um"*, e a árvore refuta — dois dos três não a **fixam**, eles a **leem** ou a usam para semear.
+ * O que a igualdade protege é o que importa: nenhum arquivo de `apps/worker/src/**` nem de
+ * `packages/regua/src/**` a nomeia, e portanto nenhuma borda nova estabelece contexto por fora do
+ * escritor. Estreitar esta lista para um sem mover o código faria a asserção reprovar a árvore
+ * íntegra; alargá-la exige escrever por quê, aqui, ao lado do arquivo.
+ */
+const FONTES_QUE_NOMEIAM_A_VARIAVEL_DE_CONTEXTO: readonly string[] = [
+  // Quem a FIXA — o único, e sob duas `DECISÃO FECHADA`.
+  'packages/db/src/unidade-de-trabalho.ts',
+  // Quem a LÊ, para compor a expressão de `empresa_id` das escritas.
+  'packages/db/src/contexto-de-escrita.ts',
+  // A carga inicial da verificação, que semeia vínculos sob o contexto de cada empresa.
+  'packages/db/src/semente.ts',
+].sort();
+
+/** O schema sem noção de tenant, onde a enumeração de empresas vive (ADR-0009). */
+const TABELA_DE_EMPRESAS = 'identidade.empresa';
+
+/**
+ * Quem pode emitir SQL sobre `identidade.empresa` — elenco declarado, por igualdade.
+ *
+ * Os dois vivem em `@sysloc/db`, que é a porta única de acesso a dado: a leitura sem contexto de
+ * empresa fica confinada ao pacote que a publica, e nem a borda do job nem o domínio da régua
+ * alcançam a tabela. É o que faz o `empresaId` **chegar** ao trabalho em vez de ser escolhido por
+ * ele.
+ */
+const FONTES_QUE_LEEM_EMPRESAS: readonly string[] = [
+  'packages/db/src/empresa.ts',
+  'packages/db/src/semente.ts',
+].sort();
+
+/** A fixação escrita à mão — o segundo mutante, e o caminho que contorna o escritor. */
+const FIXACAO_ESCRITA_A_MAO = [
+  '',
+  'export async function fixarContextoNaMao(tx: TransactionSql, empresaId: string): Promise<void> {',
+  '  await tx.unsafe("SET LOCAL app.empresa_id = " + empresaId);',
+  '}',
+  '',
+].join('\n');
+
+/** A terceira chamada ao escritor — o primeiro mutante. */
+const TERCEIRA_CHAMADA_AO_ESCRITOR = [
+  '',
+  'export function sobOutraEmpresa<T>(empresaId: string, trabalho: () => T): T {',
+  '  return contextoDeTenant.executarCom({ empresaId }, trabalho);',
+  '}',
+  '',
+].join('\n');
+
+describe('CT-624 — o escritor de contexto é único por borda, e as duas listas vizinhas também', () => {
+  it(
+    'CT-624 — os arquivos de produção que chamam `executarCom` são EXATAMENTE as duas bordas',
+    async () => {
+      const varredura = await varrerFontesDaRegua(CHAMADA_AO_ESCRITOR_DE_CONTEXTO);
+
+      expect(
+        arquivosDe(varredura.ocorrencias),
+        `chamada ao escritor de contexto fora das bordas declaradas: ${varredura.ocorrencias.join(', ')}`,
+      ).toEqual([...BORDAS_QUE_ESCREVEM_CONTEXTO]);
+
+      // Igualdade de LISTA, e não `toContain`: `toContain` passaria verde com um terceiro, um
+      // quarto e um décimo escritor. E as duas bordas continuam PRESENTES — uma lista que
+      // encolhesse (a guarda deixando de abrir contexto, por exemplo) reprova aqui do mesmo jeito.
+      expect(arquivosDe(varredura.ocorrencias)).toHaveLength(2);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-624 (b) — `app.empresa_id` e `identidade.empresa` só aparecem no elenco declarado',
+    async () => {
+      const daVariavel = await varrerFontesDaRegua(
+        new RegExp(VARIAVEL_DE_CONTEXTO.replace('.', '\\.')),
+      );
+      const dasEmpresas = await varrerFontesDaRegua(
+        new RegExp(TABELA_DE_EMPRESAS.replace('.', '\\.')),
+      );
+
+      expect(
+        arquivosDe(daVariavel.ocorrencias),
+        `a variável de contexto é nomeada fora do elenco: ${daVariavel.ocorrencias.join(', ')}`,
+      ).toEqual([...FONTES_QUE_NOMEIAM_A_VARIAVEL_DE_CONTEXTO]);
+
+      expect(
+        arquivosDe(dasEmpresas.ocorrencias),
+        `a enumeração de empresas escapou de @sysloc/db: ${dasEmpresas.ocorrencias.join(', ')}`,
+      ).toEqual([...FONTES_QUE_LEEM_EMPRESAS]);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-624 (c) — os DOIS mutantes reprovam nomeando o arquivo, e o controle passa limpo',
+    async () => {
+      const caminho = `${RAIZ_DO_REPOSITORIO}${CAMINHO_DA_BORDA_DO_JOB}`;
+      const integro = await readFile(caminho, 'utf8');
+
+      // CONTROLE — a borda íntegra chama o escritor UMA vez, e não nomeia a variável de sessão.
+      expect(linhasQueCasam(integro, CHAMADA_AO_ESCRITOR_DE_CONTEXTO)).toHaveLength(1);
+      expect(linhasQueCasam(integro, new RegExp(VARIAVEL_DE_CONTEXTO.replace('.', '\\.')))).toEqual(
+        [],
+      );
+
+      // MUTANTE 1 — uma TERCEIRA chamada ao escritor, num arquivo que já é borda. A varredura
+      // passa a ver duas ocorrências aqui, e a lista de arquivos do caso principal continuaria com
+      // dois elementos — é por isso que o mutante que importa é medido também no fonte, e está
+      // registrado no relatório da task. Aqui o que se prova é que o detector as **conta**.
+      expect(
+        linhasQueCasam(integro + TERCEIRA_CHAMADA_AO_ESCRITOR, CHAMADA_AO_ESCRITOR_DE_CONTEXTO),
+      ).toHaveLength(2);
+
+      // MUTANTE 2 — o `SET LOCAL` escrito à mão, que estabeleceria contexto SEM passar pelo
+      // escritor. Nenhuma varredura por `executarCom` o veria; quem o vê é o elenco da variável.
+      const nomeacoes = linhasQueCasam(
+        integro + FIXACAO_ESCRITA_A_MAO,
+        new RegExp(VARIAVEL_DE_CONTEXTO.replace('.', '\\.')),
+      );
+
+      expect(nomeacoes).toHaveLength(1);
+      expect(nomeacoes[0]).toContain('SET LOCAL app.empresa_id');
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});
+
+/** Varre os quatro diretórios de produção da fatia com o predicado informado. */
+async function varrerFontesDaRegua(padrao: RegExp): Promise<VarreduraDeFontes> {
+  const fontes: string[] = [];
+  for (const diretorio of DIRETORIOS_DE_PRODUCAO_DA_REGUA) {
+    fontes.push(...(await listarFontesTs(`${RAIZ_DO_REPOSITORIO}${diretorio}`)));
+  }
+
+  const varredura = await varrerArquivos(fontes, (linha) => padrao.test(linha));
+
+  // Âncora de não-vacuidade: elenco declarado sobre zero arquivos lidos é verdade vazia.
+  expect(varredura.arquivos).toBe(fontes.length);
+  expect(varredura.arquivos).toBeGreaterThan(0);
+
+  return varredura;
+}
+
+/** As linhas EXECUTÁVEIS de um fonte que casam o padrão — o detector das pernas de falsificação. */
+function linhasQueCasam(fonte: string, padrao: RegExp): string[] {
+  return semComentarios(fonte)
+    .split('\n')
+    .filter((linha) => padrao.test(linha))
+    .map((linha) => linha.trim());
 }

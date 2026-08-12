@@ -8,7 +8,7 @@
  *
  * | Critério | Caso | Invariante |
  * |---|---|---|
- * | CA-5  | CT-001 | Tarefa enfileirada em `NOME_FILA_ECO` é consumida, termina CONCLUÍDA com
+ * | CA-5  | CT-001 | Tarefa enfileirada em `FILA_DO_ECO` é consumida, termina CONCLUÍDA com
  * | CA-6  |        | resultado igual ao valor enviado, e o registro estruturado emite o término
  * |       |        | carregando o identificador que o servidor de fila atribuiu. |
  * | CA-5  | CT-002 | Carga útil sem o campo de valor termina em FALHA, com razão não vazia que
@@ -95,7 +95,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { criarLogger } from '@sysloc/shared';
+import { type CargaDoEco, criarLogger, FILA_DA_REGUA, FILA_DO_ECO } from '@sysloc/shared';
 import { Queue } from 'bullmq';
 import { describe, expect, it, onTestFinished } from 'vitest';
 import {
@@ -108,13 +108,7 @@ import {
   type FilaEfemera,
   redisEfemero,
 } from '../../../packages/shared/test/redis-efemero.ts';
-import {
-  type CargaDeEco,
-  conectarFila,
-  type Fila,
-  NOME_FILA_ECO,
-  type TarefaDeEco,
-} from '../src/fila.ts';
+import { conectarFila, type Fila, type TarefaDeEco } from '../src/fila.ts';
 import { processarEco } from '../src/tarefas/eco.ts';
 
 /** Limite de um caso que sobe instância própria de fila. */
@@ -426,7 +420,7 @@ async function derrubarComTarefaEnfileirada(): Promise<CicloDeQueda> {
   // Enfileira SEM consumidor registrado: é o que remove a corrida entre consumo e queda sem
   // precisar de pausa arbitrária.
   const valor = `eco-${randomUUID()}`;
-  const id = identificadorDe(await fila.eco.add(NOME_FILA_ECO, { valor }));
+  const id = identificadorDe(await fila.eco.add(FILA_DO_ECO, { valor }));
   expect(await fila.eco.getWaitingCount()).toBe(1);
 
   // Queda REAL do processo do servidor de fila, preservando o diretório de dados. Fechar apenas a
@@ -465,7 +459,7 @@ async function enfileirarNaJanelaDeQueda(
   valor: string,
 ): Promise<FalhaAoEnfileirar> {
   const endereco = new URL(cadeiaConexao);
-  const sonda = new Queue<CargaDeEco, string>(NOME_FILA_ECO, {
+  const sonda = new Queue<CargaDoEco, string>(FILA_DO_ECO, {
     connection: {
       host: endereco.hostname,
       port: Number.parseInt(endereco.port, 10),
@@ -477,7 +471,7 @@ async function enfileirarNaJanelaDeQueda(
 
   const inicio = performance.now();
   const erro = await Promise.race([
-    sonda.add(NOME_FILA_ECO, { valor }).then(
+    sonda.add(FILA_DO_ECO, { valor }).then(
       (criada) => {
         throw new Error(
           `enfileirar criou a tarefa ${criada.id} com o servidor de fila derrubado — ` +
@@ -497,13 +491,13 @@ describe('processador de trabalho (T6)', () => {
     'CT-001 — tarefa de eco enfileirada é consumida, devolve o mesmo valor e registra o término',
     async () => {
       const { instancia, fila, journal } = await montarFila();
-      fila.processar(processarEco);
+      fila.processar(fila.eco, processarEco);
 
       // Fila vazia na partida: sem isto, "1 concluída" poderia ser resíduo de outra execução.
       expect(await fila.eco.getCompletedCount()).toBe(0);
 
       const valor = `eco-${randomUUID()}`;
-      const id = identificadorDe(await fila.eco.add(NOME_FILA_ECO, { valor }));
+      const id = identificadorDe(await fila.eco.add(FILA_DO_ECO, { valor }));
 
       const terminada = await aguardarEstadoTerminal(fila, id);
 
@@ -516,7 +510,7 @@ describe('processador de trabalho (T6)', () => {
       expect(doTermino).toHaveLength(1);
       expect(doTermino[0]?.mensagem).toBe(MENSAGEM_DE_TERMINO);
       expect(doTermino[0]?.nivel).toBe('info');
-      expect(doTermino[0]?.fila).toBe(NOME_FILA_ECO);
+      expect(doTermino[0]?.fila).toBe(FILA_DO_ECO);
       expect(doTermino[0]?.valor).toBe(valor);
 
       // Nenhuma linha carrega a cadeia de conexão da fila nem credencial.
@@ -544,12 +538,12 @@ describe('processador de trabalho (T6)', () => {
     'CT-002 — tarefa com carga sem o valor esperado termina em falha e não entra nas concluídas ($cenario)',
     async ({ carga }) => {
       const { fila } = await montarFila();
-      fila.processar(processarEco);
+      fila.processar(fila.eco, processarEco);
 
       // A conversão é o ponto do caso: a carga que chega do lado de fora do processo não obedece ao
       // tipo declarado, e é isso que o processador precisa recusar.
       const id = identificadorDe(
-        await fila.eco.add(NOME_FILA_ECO, carga as unknown as CargaDeEco, {
+        await fila.eco.add(FILA_DO_ECO, carga as unknown as CargaDoEco, {
           // Redução para UMA tentativa nas opções do enfileiramento — a política declarada em
           // `apps/worker/src/fila.ts` continua sendo a de produção.
           attempts: UMA_TENTATIVA,
@@ -591,7 +585,7 @@ describe('processador de trabalho (T6)', () => {
       expect(await fila.eco.getWaitingCount()).toBe(1);
 
       // Só agora o consumidor sobe: a tarefa que sobreviveu é consumida e concluída normalmente.
-      fila.processar(processarEco);
+      fila.processar(fila.eco, processarEco);
       const terminada = await aguardarEstadoTerminal(fila, id);
       expect(await terminada.getState()).toBe('completed');
       expect(terminada.returnvalue).toBe(valor);
@@ -689,14 +683,14 @@ describe('processador de trabalho (T6)', () => {
       });
 
       let tarefaEmVoo = false;
-      fila.processar(async (tarefa) => {
+      fila.processar(fila.eco, async (tarefa) => {
         tarefaEmVoo = true;
         await tarefaBloqueada;
         return tarefa.data.valor;
       });
 
       const valor = `eco-${randomUUID()}`;
-      await fila.eco.add(NOME_FILA_ECO, { valor });
+      await fila.eco.add(FILA_DO_ECO, { valor });
 
       // Sondagem por estado observável — o consumidor ENTROU no processador. É a precondição que
       // torna o travamento de `close()` certo, e ela é afirmada, não suposta.
@@ -739,7 +733,16 @@ describe('processador de trabalho (T6)', () => {
       expect(doEstouro).toHaveLength(1);
       expect(doEstouro[0]?.nivel).toBe('error');
       expect(doEstouro[0]?.limiteMs).toBe(PRAZO_DE_DESLIGAMENTO_DECLARADO_MS);
-      expect(doEstouro[0]?.fila).toBe(NOME_FILA_ECO);
+      // SUT_IS_CORRECT_BECAUSE: o campo era `fila: FILA_DO_ECO` — o nome de UMA das filas —, numa
+      // linha cuja mensagem fala do "restante" e cujo encerramento devolve DUAS. Enquanto a segunda
+      // fila não tinha consumidor, o campo era apenas impreciso; a partir da T8 há tarefa de
+      // NEGÓCIO nela, e uma passagem da régua abandonada no desligamento produziria uma linha que
+      // nomeia `eco` — o operador procuraria o trabalho perdido na fila errada. É o `D32 · F3/T7`,
+      // atribuído nominalmente a esta task pelo Gate 2 da T7. A asserção **não foi afrouxada**: ela
+      // trocou um valor por uma IGUALDADE DE LISTA que subsume o valor antigo (`FILA_DO_ECO`
+      // continua sendo cobrado, agora na posição em que a linha o escreve) e passa a cobrar também
+      // a segunda fila — uma fila que sumisse do encerramento reprova aqui.
+      expect(doEstouro[0]?.filas).toEqual([FILA_DO_ECO, FILA_DA_REGUA]);
 
       // A conexão foi DEVOLVIDA, e não apenas deixada para trás. É o que distingue "o
       // encerramento retornou" de "o encerramento devolveu o que abriu": uma conexão de pé com

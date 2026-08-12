@@ -32,8 +32,8 @@
  * identificador que o servidor de fila atribuiu, que é o que liga o registro à tarefa enfileirada.
  */
 
-import type { Logger } from '@sysloc/shared';
-import { type CargaDeEco, NOME_FILA_ECO, type TarefaDeEco } from '../fila.js';
+import { type CargaDoEco, FILA_DO_ECO, type Logger } from '@sysloc/shared';
+import type { TarefaDeEco } from '../fila.js';
 
 /** Nome do campo que a carga útil precisa trazer. */
 const CAMPO_DO_VALOR = 'valor';
@@ -50,7 +50,7 @@ const CAMPO_DO_VALOR = 'valor';
 export async function processarEco(tarefa: TarefaDeEco, logger: Logger): Promise<string> {
   // A conversão é deliberada: `data` chega de fora do processo, e o tipo declarado é o contrato
   // que esta função verifica — não uma garantia que ela possa assumir.
-  const { valor } = (tarefa.data ?? {}) as Partial<CargaDeEco>;
+  const { valor } = (tarefa.data ?? {}) as Partial<CargaDoEco>;
 
   if (typeof valor !== 'string' || valor.length === 0) {
     throw new Error(
@@ -59,7 +59,7 @@ export async function processarEco(tarefa: TarefaDeEco, logger: Logger): Promise
     );
   }
 
-  logger.info({ idTarefa: tarefa.id, fila: NOME_FILA_ECO, valor }, 'tarefa de eco concluída');
+  logger.info({ idTarefa: tarefa.id, fila: FILA_DO_ECO, valor }, 'tarefa de eco concluída');
 
   return valor;
 }

@@ -215,6 +215,69 @@
  * ausência de linha nos zeros que a apuração da view já produz por `COALESCE` (RD-21 concordando com
  * a RD-08). Nenhuma das duas recebe `empresaId`: o escopo é da política do banco.
  *
+ * `./politica-de-aviso.js` entra pela mesma pergunta, e com a mesma resposta: as **duas** operações
+ * da política da régua **recebem** o executor de quem já abriu a unidade, não abrem conexão nem
+ * transação e não devolvem executor. Elas repetem as razões de `./configuracao-de-mora.js`, que é o
+ * molde exato — a escrita é um `upsert` de um comando só, e a leitura tem lar único porque é ela que
+ * traduz a **ausência de linha** na régua desligada (RD-03) —, e acrescentam a que é própria desta
+ * entidade: a **projeção `to_char(coluna, 'HH24:MI')`** dos dois horários. Ela não é detalhe de quem
+ * consulta: sem ela o driver devolve `'09:00:00'`, o esquema de SAÍDA recusa, e a recusa de um esquema
+ * de saída **não produz `422`** — ela levanta na serialização e derruba a rota de leitura. Publicar a
+ * porta é o que faz a projeção existir num lugar só; o `CT-608` prova a obrigação, e este é o ponto
+ * onde ela é cumprida.
+ *
+ * `POLITICA_DE_AVISO_AUSENTE` sai junto, e é a única constante de valor deste índice fora das da carga
+ * inicial. Ela entra por critério próprio: é **contrato publicado** — o corpo que a leitura devolve a
+ * toda empresa que nunca configurou —, e não caminho para dado nenhum. Publicá-la é o que permite ao
+ * job e à borda dizerem *"a régua está desligada"* pelo mesmo objeto congelado que a porta devolve, em
+ * vez de cada um recompor os seis campos. Ela diverge do gêmeo `POLITICA_AUSENTE` de
+ * `./configuracao-de-mora.js`, que fica **dentro**, e a diferença tem causa: lá o único consumidor é a
+ * própria leitura, aqui há dois fora do pacote.
+ *
+ * `./envio-de-cobranca.js` entra pela mesma pergunta, e com a mesma resposta: as **seis** operações
+ * da régua **recebem** o executor de quem já abriu a unidade, não abrem conexão nem transação e não
+ * devolvem executor. Elas repetem as razões das anteriores — enumerabilidade do alcance a `negocio`,
+ * um lugar único sob a política, a chave da porta sendo o código legível (ADR-0017) — e acrescentam
+ * **duas** que são próprias desta fatia.
+ *
+ * A primeira é o **predicado de elegibilidade**. `selecionarCandidatasAoAviso` é uma consulta só,
+ * ancorada em `negocio.cobranca_derivada`, e é lá que a ADR-0023 manda a derivação que participa de
+ * seleção morar. Publicar a porta é o que impede o job de compor por fora o par "listar a carteira,
+ * decidir quem entra" — que seria a segunda avaliação do estado que o marcador `DECISÃO FECHADA` de
+ * `./cobranca.ts` existe para tornar impossível, e que traria a carteira inteira para a memória antes
+ * de filtrar. A **trava do intervalo é apurada no mesmo predicado**, e ela tem marcador
+ * `DECISÃO FECHADA` próprio: conta apenas o desfecho `ENVIADA`, contra o texto literal da RN-06, por
+ * medição contra o oráculo. Leia-o antes de tocar a consulta.
+ *
+ * A segunda é a **direção da dependência** (ADR-0025): este módulo importa `CandidataAoAviso` e
+ * `TentativaDeEnvio` de `@sysloc/regua` para **satisfazer** as portas que o domínio declarou. A seta é
+ * `db → regua`, e não a inversa — o cabeçalho de `packages/regua/src/porta-de-dados.ts` registra as
+ * três consequências de "corrigi-la", uma delas um ciclo medido que o Turborepo aborta.
+ *
+ * `lerHoraCorrenteDaOperacao` sai daqui pelo mesmo critério de `lerAnoDaSerieDeCobranca`: recebe o
+ * executor e devolve um texto. Ela é publicada porque é o **eixo único de hora do dia** da fatia
+ * (ADR-0026) — e ter o eixo com nome é o que torna verificável a afirmação de que não há segundo
+ * relógio: ele apareceria como um segundo símbolo neste índice, e não como um `new Date()` escondido
+ * no job. `registrarEnvioDeCobranca` é publicada porque **toda** tentativa deixa registro, e é o
+ * registro que entrega a idempotência da repetição do job; ela não abre parâmetro de instante, de modo
+ * que quando a tentativa aconteceu é fato do banco e de mais ninguém. `lerEnviosDaCobranca` e
+ * `contarEnviosDaCobranca` são o par que serve o histórico do operador, e o `total` é o do conjunto
+ * inteiro — as duas correm na mesma unidade pela razão que `listarCobrancas` registra.
+ *
+ * `localizarCandidataAoAviso` (T10) é a sexta, e entra pelo mesmo critério das outras cinco. Ela é a
+ * leitura do **disparo manual**, e o que a torna publicável — em vez de uma consulta escrita na borda
+ * — é a projeção: ela devolve a **mesma** `CandidataAoAviso` que o predicado devolve, do mesmo
+ * fragmento de colunas e das mesmas quatro junções, de modo que os dois caminhos entregam ao domínio
+ * objetos indistinguíveis. Ela **não** aplica os três eixos de oportunidade nem recorta estado — a
+ * dispensa é parâmetro da admissão, e a recusa da cobrança terminal é do compositor, que é o lar
+ * único do discriminador de estado (REG-08).
+ *
+ * De lá **não** saem `candidataPublicada`, `envioPublicado`, `DESFECHO_QUE_TRAVA` nem os quatro
+ * formatos, e as ausências são deliberadas: são o mecanismo interno da tradução e do predicado, pelo
+ * mesmo critério de `cobrancaPublicada`, de `colunasDaCobranca` e de `empresaDoContexto`. Publicar o
+ * desfecho que trava daria a quem chama a peça com que recompor o predicado por fora, que é
+ * exatamente o que a ADR-0023 mantém no banco.
+ *
  * `./derivacao-de-cobranca.js` entra pelo MESMO critério de `somarMetragem` e das duas derivações do
  * contrato, e não pelo das portas: `derivarParcelasDoContrato` é **pura** sobre valor já em mãos — não
  * recebe executor, não toca o banco, não lê relógio e não é caminho para dado nenhum. Ela sai daqui
@@ -399,6 +462,15 @@ export {
   reativarEmpresa,
   suspenderEmpresa,
 } from './empresa.js';
+export {
+  contarEnviosDaCobranca,
+  type JanelaDeEnvios,
+  lerEnviosDaCobranca,
+  lerHoraCorrenteDaOperacao,
+  localizarCandidataAoAviso,
+  registrarEnvioDeCobranca,
+  selecionarCandidatasAoAviso,
+} from './envio-de-cobranca.js';
 export * as esquemaIdentidade from './esquema/identidade.js';
 export * as esquemaNegocio from './esquema/negocio.js';
 export {
@@ -443,6 +515,11 @@ export {
   type PessoaDoContexto,
   type PessoaPersistida,
 } from './pessoa.js';
+export {
+  gravarPoliticaDeAviso,
+  lerPoliticaDeAviso,
+  POLITICA_DE_AVISO_AUSENTE,
+} from './politica-de-aviso.js';
 export {
   ACESSOS_DA_EMPRESA_A,
   ACESSOS_DA_EMPRESA_B,

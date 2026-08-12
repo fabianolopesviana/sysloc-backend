@@ -47,6 +47,9 @@ importers:
       '@sysloc/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@sysloc/regua':
+        specifier: workspace:*
+        version: link:../../packages/regua
       '@sysloc/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -87,6 +90,15 @@ importers:
 
   apps/worker:
     dependencies:
+      '@sysloc/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@sysloc/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@sysloc/regua':
+        specifier: workspace:*
+        version: link:../../packages/regua
       '@sysloc/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -96,10 +108,16 @@ importers:
       ioredis:
         specifier: 5.11.1
         version: 5.11.1
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
     devDependencies:
       '@types/node':
         specifier: 24.13.3
         version: 24.13.3
+      postgres:
+        specifier: 3.4.9
+        version: 3.4.9
       typescript:
         specifier: 7.0.2
         version: 7.0.2
@@ -156,6 +174,9 @@ importers:
       '@sysloc/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@sysloc/regua':
+        specifier: workspace:*
+        version: link:../regua
       '@sysloc/shared':
         specifier: workspace:*
         version: link:../shared
@@ -175,6 +196,28 @@ importers:
       embedded-postgres:
         specifier: 18.4.0-beta.17
         version: 18.4.0-beta.17
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.1))
+
+  packages/regua:
+    dependencies:
+      '@sysloc/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      nodemailer:
+        specifier: 7.0.13
+        version: 7.0.13
+    devDependencies:
+      '@types/node':
+        specifier: 24.13.3
+        version: 24.13.3
+      '@types/nodemailer':
+        specifier: 7.0.12
+        version: 7.0.12
       typescript:
         specifier: 7.0.2
         version: 7.0.2
@@ -1204,6 +1247,9 @@ packages:
   '@types/node@24.13.3':
     resolution: {integrity: sha512-Dh8vAsV36ig5wa9OX4pXvMc9D3Veibfw2wix0CUwYODLD8nkj9UsLjASr49nPg+2eKzxhBV+v7L8pXvT4e639Q==}
 
+  '@types/nodemailer@7.0.12':
+    resolution: {integrity: sha512-80vKwiIsVSyFA1rRovH59jNPLBOuc6dRZIHEu40gXTkBkZnQv8vog1xSGEb9j5q/tdMAs5ivvDR2pLTU0hGHXA==}
+
   '@typescript/typescript-aix-ppc64@7.0.2':
     resolution: {integrity: sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ==}
     engines: {node: '>=16.20.0'}
@@ -1889,6 +1935,10 @@ packages:
   node-gyp-build-optional-packages@5.2.2:
     resolution: {integrity: sha512-s+w+rBWnpTMwSFbaE0UXsRlg7hU4FjekKU4eyAih5T8nJuNZT1nNsskXpxmeqSK9UzkBl6UgRlnKc8hz8IEqOw==}
     hasBin: true
+
+  nodemailer@7.0.13:
+    resolution: {integrity: sha512-PNDFSJdP+KFgdsG3ZzMXCgquO7I6McjY2vlqILjtJd0hy8wEvtugS9xKRF2NWlPNGxvLCXlTNIae4serI7dinw==}
+    engines: {node: '>=6.0.0'}
 
   obug@2.1.4:
     resolution: {integrity: sha512-4a+OsYv9UktOJKE+l1A4OufDgdRF9PifWj+tJnHURo/P+WOxpG4GzUFL9qCalmWauao6ogiG+QvnCovwPoyAWA==}
@@ -2888,6 +2938,10 @@ snapshots:
     dependencies:
       undici-types: 7.18.2
 
+  '@types/nodemailer@7.0.12':
+    dependencies:
+      '@types/node': 24.13.3
+
   '@typescript/typescript-aix-ppc64@7.0.2':
     optional: true
 
@@ -3447,6 +3501,8 @@ snapshots:
     dependencies:
       detect-libc: 2.1.2
     optional: true
+
+  nodemailer@7.0.13: {}
 
   obug@2.1.4: {}
 

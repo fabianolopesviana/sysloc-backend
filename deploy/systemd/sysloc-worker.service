@@ -10,13 +10,21 @@
 # cabeçalho de `sysloc-api.service` para o arranjo completo — ele é o mesmo.
 #
 # ---------------------------------------------------------------------------
-# O conjunto de variáveis deste processo é PRÓPRIO, e menor
+# O conjunto de variáveis deste processo é PRÓPRIO — e ele CRESCEU
 # ---------------------------------------------------------------------------
 #
-# `apps/worker/src/main.ts` valida exatamente DUAS variáveis: `LOG_LEVEL` e
-# `REDIS_URL`. Ele não escuta porta e não fala com o banco nesta fatia, de modo
-# que `PORT` e `DATABASE_URL` não são exigidas aqui — e declará-las como se
-# fossem produziria diagnóstico enganoso no dia em que uma delas faltasse.
+# `apps/worker/src/main.ts` valida exatamente CINCO variáveis: `LOG_LEVEL`,
+# `REDIS_URL`, `DATABASE_URL`, `SMTP_URL` e `EMAIL_REMETENTE`. Ele continua sem
+# escutar porta, de modo que `PORT` não é exigida aqui — e declará-la como se
+# fosse produziria diagnóstico enganoso no dia em que ela faltasse.
+#
+# As três últimas entraram na T8 da fatia `regua-de-cobranca`, quando este
+# processo mudou de natureza: ele passou a falar com o BANCO e com um SERVIDOR
+# DE E-MAIL para executar a régua de cobrança de cada empresa. Todas as três
+# chegam pelo `EnvironmentFile` 0600 abaixo, nunca por `Environment=` inline:
+# duas delas carregam credencial, e `Environment=` é revisável na árvore
+# versionada — é a fronteira que a ADR-0005 e o invariante 3 do `CLAUDE.md`
+# fixam.
 #
 # A distinção não é acadêmica: o `.env.example` versionado documenta `LOG_LEVEL`
 # sob o cabeçalho "Serviço de aplicação", o que era verdade até T5 e deixou de
@@ -26,6 +34,13 @@
 # `provisionar-base.sh` a grava, apontando para a instância de fila própria) e
 # `LOG_LEVEL` vem da diretiva `Environment=` abaixo, como no serviço de
 # aplicação.
+#
+# ⚠️ A partida FALHA FECHADO, e é deliberado (CA-17): sem `SMTP_URL` ou sem
+# `EMAIL_REMETENTE` o processo recusa subir nomeando a variável, em vez de subir
+# e descobrir o problema na primeira passagem da régua. Aqui o modo perigoso é o
+# inverso do habitual — "tentar mesmo assim" é o que alcança a caixa de uma
+# pessoa real, porque um transporte construído a partir de cadeia vazia aponta
+# para o `localhost` que a biblioteca assume por omissão.
 #
 # ---------------------------------------------------------------------------
 # ExecStart depende de artefato CONSTRUÍDO
@@ -51,10 +66,23 @@ Documentation=file:/opt/sysloc-backend/docs/specs/features/fundacao-stack-nativa
 #      prazo interno de 15 s é pago por inteiro e uma linha de erro é gravada no
 #      journal a CADA desligamento do servidor.
 #
+# ⚠️ `postgresql.service` entra na T8 da fatia `regua-de-cobranca`, e a razão é a
+# mesma nas DUAS pontas da ordenação:
+#
+#   1. no arranque, o processador não tenta executar a régua antes de o banco
+#      responder — sem a linha, a primeira tarefa consumida depois de um reboot
+#      cairia contra um banco que ainda não subiu, e o job seria retentado com
+#      espera crescente até o servidor aparecer (funcionaria, com ruído);
+#   2. no DESLIGAMENTO, esta unidade é encerrada ANTES do banco, e o
+#      encerramento gracioso encontra as duas dependências de pé. Sem ela, o
+#      banco poderia parar primeiro e a devolução da reserva de conexões pagaria
+#      o prazo declarado em `apps/worker/src/main.ts` por inteiro, a cada
+#      desligamento do servidor.
+#
 # `Wants=` e não `Requires=`, pela mesma razão declarada em `sysloc-api.service`:
 # falha de dependência não é reiniciada por `Restart=always`.
-After=network.target redis-server@sysloc.service
-Wants=redis-server@sysloc.service
+After=network.target postgresql.service redis-server@sysloc.service
+Wants=postgresql.service redis-server@sysloc.service
 
 # Guarda contra laço de reinício — ver `sysloc-api.service` para a aritmética.
 StartLimitIntervalSec=60
@@ -67,11 +95,11 @@ Group=sysloc
 WorkingDirectory=/opt/sysloc-backend/apps/worker
 
 # Segredos: apenas aqui, e apenas por referência. É o mesmo arquivo que o
-# serviço de aplicação consome; deste processo, só `REDIS_URL` é lida.
+# serviço de aplicação consome; deste processo são lidas `REDIS_URL`,
+# `DATABASE_URL`, `SMTP_URL` e `EMAIL_REMETENTE`.
 EnvironmentFile=/etc/sysloc/backend.env
 
-# Coordenadas revisáveis — nenhuma delas é segredo. Sem `PORT` e sem
-# `DATABASE_URL`, ver o cabeçalho.
+# Coordenadas revisáveis — nenhuma delas é segredo. Sem `PORT`, ver o cabeçalho.
 Environment=NODE_ENV=production
 Environment=LOG_LEVEL=info
 

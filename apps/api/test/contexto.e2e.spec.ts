@@ -152,6 +152,7 @@ import {
 import { NaoExigePermissao } from '../src/autenticacao/exigencia.decorator.ts';
 import { CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO } from '../src/autenticacao/senha.controller.ts';
 import { CAMINHO_DA_SESSAO } from '../src/autenticacao/sessao.controller.ts';
+import { CAMINHO_DA_AUTOMACAO_DE_COBRANCA } from '../src/automacao/automacao.controller.ts';
 import { CAMINHO_DOS_FIADORES } from '../src/cadastros/fiador.controller.ts';
 import { CAMINHO_DOS_LOCADORES } from '../src/cadastros/locador.controller.ts';
 import { CAMINHO_DOS_LOCATARIOS } from '../src/cadastros/locatario.controller.ts';
@@ -432,9 +433,20 @@ const CAMINHOS_PUBLICOS_ACEITOS: readonly string[] = [
  * inalterado, e a igualdade segue exata nos dois sentidos — **nada foi afrouxado**, o `toEqual`
  * continua sendo igualdade de conjunto contra um inventário escrito à mão.
  *
+ * SUT_IS_CORRECT_BECAUSE: a T9 da fatia `regua-de-cobranca` publicou as **duas rotas da política de
+ * aviso**, e as duas são **protegidas**: vale a exigência da classe,
+ * `@ExigeChave('TELA:automacao_de_cobranca')`, nenhuma é marcada `@RotaPublica()`, e por isso a sonda
+ * sem cookie recebe `401 NAO_AUTENTICADO` da guarda. Pela classificação por **caminho** deste caso
+ * elas entram como **uma** entrada só — o `GET` e o `PUT` atendem o mesmo caminho, porque o recurso é
+ * singular por empresa e não tem `:id` —, exatamente como as duas de `/v1/multa-e-juros`. Vale o mesmo
+ * dos parágrafos acima: nenhuma entrada anterior saiu, o conjunto público continua inalterado, e a
+ * igualdade segue exata nos dois sentidos — **nada foi afrouxado**, o `toEqual` continua sendo
+ * igualdade de conjunto contra um inventário escrito à mão.
+ *
  * **Este arquivo não está na §5.2 da T7 nem na da T9, nem na da T6, da T7 e da T8 da fatia de
- * contratos, nem na da T5, na da T6 e na da T7 da fatia `cobranca-e-mora`** — divergência declarada nas
- * oito, e
+ * contratos, nem na da T5, na da T6 e na da T7 da fatia `cobranca-e-mora`, nem na da T9 da fatia
+ * `regua-de-cobranca`** — divergência declarada nas
+ * nove, e
  * é o débito **D26 (F2/T6)**, cuja recomendação
  * literal é declará-lo nas §5.2 de T7, T8 e T10. A T10 **também não o declara**, e a divergência
  * volta a ser anotada aqui pela quinta vez. Ele é blast radius por construção: a âncora afirma por
@@ -477,6 +489,17 @@ const ROTAS_PROTEGIDAS_ACEITAS: readonly string[] = [
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_IMOVEIS}/:id/retirada`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_IMOVEIS}/:id/situacao-de-locacao`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DE_MULTA_E_JUROS}`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_AUTOMACAO_DE_COBRANCA}`,
+  // SUT_IS_CORRECT_BECAUSE: a **T10** publicou as duas rotas de aviso, e elas entram como **uma**
+  // entrada só — o `GET` e o `POST` atendem o MESMO caminho, e este inventário recorta por caminho,
+  // não por par método+caminho (quem recorta por par é `cobertura-de-autorizacao.e2e.spec.ts`, e a
+  // razão de os dois existirem está no docblock daquele arquivo). As duas exigem sessão, e é isso que
+  // a entrada afirma: o disparo exige, além dela, a conjunção área + ação, que **este** caso não
+  // mede. **Nenhuma entrada anterior saiu**, o conjunto público continua inalterado, e a igualdade
+  // segue exata nos dois sentidos — nada foi afrouxado. É a **décima** anotação do débito
+  // **D26 (F2/T6)**: a §5.2 da T10 também não declara este arquivo, e a divergência é registrada
+  // aqui em vez de silenciada.
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_AUTOMACAO_DE_COBRANCA}/cobrancas/:codigo/avisos`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas/:id/admin`,

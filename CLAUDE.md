@@ -59,7 +59,7 @@ commitadas, incluindo a **T7**, cuja recuperação foi provada por **reinício r
 A fatia `caracterizacao-regras-legadas` (v1) também está **concluída**: os 6 artefatos golden
 estão versionados e são o oráculo das regras legadas para a F3 e a F5.
 
-**Fase 3 EM ANDAMENTO — a fatia 1 FECHOU, a fatia 2 é o trabalho.** A fase foi **partida em duas fatias** no
+**Fase 3 EM ANDAMENTO — a fatia 1 e a sub-fatia 2a FECHARAM; falta só a 2b.** A fase foi **partida em duas fatias** no
 pré-refinamento (`docs/specs/features/cobranca-mora-e-documentos/v1/pre-refinement.md`), pelo corte
 **por efeito colateral**: a fatia 1 não toca nada fora do banco, a fatia 2 é toda ação sobre o mundo.
 
@@ -74,9 +74,45 @@ pré-refinamento (`docs/specs/features/cobranca-mora-e-documentos/v1/pre-refinem
    Ela registra a **divergência automático × manual** que motivou a fatia: para a cobrança cancelada e
    vencida, `core.py` resolve `Fechada` e `emailer.py` resolve `Vencida`, com 1 mensagem no manual
    contra 0 no automático — é o defeito que a **fatia 2 NÃO deve portar**.
-2. **`regua-e-documentos` (v1) — não iniciada.** Régua com fila (fecha o **D32 (F0/T6)**), PDF de
-   contrato contra o golden textual, carnê com `pdf-lib` no servidor (fecha o **D36 (F2/T8)**).
-   ~1.800 LOC — o pré-refinamento registra que ela **pode precisar partir de novo**.
+2. **`regua-e-documentos` (v1) — PRÉ-REFINADA em 2026-08-11, e ela PARTIU EM DUAS.** O
+   pré-refinamento é `docs/specs/features/regua-e-documentos/v1/pre-refinement.md`, e é a **entrada
+   dos dois runs**; ele permanece sob este nome, como o da fase permaneceu sob
+   `cobranca-mora-e-documentos/`. O corte é **objeto × natureza de prova**, que coincidem:
+   **2a `regua-de-cobranca`** (o que age; oráculo executável de 51 KB) e
+   **2b `documentos-e-confirmacao`** (o que sai; oráculo textual, ou nenhum). A **2a vem primeiro**,
+   porque carrega a **task de prazo** que extrai o fonte do PDF — o precedente é a T1 da fatia 1.
+   O **D32 (F0/T6)** fechou na 2a (T7); o **D36 (F2/T8)** fecha na 2b, e **por construção**: com o PDF
+   derivado sob demanda não existe arquivo preexistente de que o cancelamento possa depender.
+
+   ✅ **2a `regua-de-cobranca` (v1) — CONCLUÍDA em 2026-08-12. As 12 tasks aprovadas nos dois gates,
+   nenhuma bloqueada, e os 18 Critérios de Conclusão da Feature conferidos um a um na §7 do
+   `task_plan.md`.** Entrega `negocio.politica_de_aviso` e `negocio.envio_de_cobranca` sob RLS
+   forçada (migrações `0011`/`0012`, 3 enums), o **predicado de elegibilidade no banco** sobre
+   `cobranca_derivada`, o pacote **`@sysloc/regua`** (pacotes 4 → 5), o **contrato da fila em
+   `@sysloc/shared`** — que **fechou o D32 (F0/T6)** nas duas pontas na T7 —, e as **4 rotas novas**
+   sob `/v1/automacao-de-cobranca`, levando a superfície de **82/67 a 86/71**, conferida por **dupla
+   medição independente** com a igualdade entre os dois eixos afirmada (CT-635). Suíte **835 → 1002**,
+   por pacote e monotônica. A **equivalência com o oráculo** fecha com **uma única** divergência —
+   `('REG-08','manual')`, por vitória —, com os dez vereditos escritos **antes** da execução e o lado
+   do oráculo **lido do golden**. A T1 extraiu o fonte do Server Script `PDF contrato` (o **11º**
+   artefato golden) antes do desligamento. Deixou **quatro** débitos com gatilho novos (**D3**,
+   **D12**, **D13**, **D14**) mais o **D49**, o **D54** e o **D57** — todos no índice abaixo. Duas
+   rejeições no run inteiro, e as duas sobre o **mesmo antipadrão**: o AP-29 na T11 (Gate 1) e na T12
+   (Gate 2, que **elevou** o `BAIXO` que o Gate 1 lhe delegou — a rubrica do catálogo é mecânica, e
+   *"o que se perde não é cobertura, e sim a garantia NOMEADA"*).
+   ⚠️ **O carnê NÃO é desta fatia** — foi para a **F4** em 2026-08-10, porque a fonte de cada página
+   é o boleto emitido. O dimensionamento medido continua valendo: a régua tem **837 LOC** (não
+   ~700); o gerador do PDF é o **Server Script `PDF contrato`**, 752 linhas de fonte **existindo só
+   no banco** (o golden tem 174 linhas — é a saída, não o fonte); e a quinta peça ativa é o
+   `Automacao cobranca config api` (154 linhas, a configuração **Single** da régua).
+   **Duas ADRs são pré-requisito da 2b** — o critério para uma rota de negócio dispensar sessão, e o
+   que o contrato publica para uma rota que devolve bytes; a terceira candidata (granularidade da
+   fila) foi **recusada** por repetir o que o RLS e a F5 já forçam. ⚠️ **Cinco premissas do briefing
+   foram refutadas por medição em 2026-08-11** — entre elas, que o `email_token_hash` do legado
+   **não é hash e o token não é aleatório** (é o ID do locatário mais o timestamp, guardado em
+   claro), e que a divergência automático × manual tem **três naturezas, não uma** (só REG-08 é
+   defeito; REG-02, REG-04 e REG-10 são o manual ignorando janela e trava, e **preservam-se**). O
+   detalhe está na §3-B do pré-refinamento — não o reproduza aqui.
 
 > ✅ **O run da fatia 1 TERMINOU em 2026-08-10, e ela está FECHADA** — as **11 tasks** concluídas e
 > staged, e os **13 Critérios de Conclusão da Feature** satisfeitos e conferidos um a um na §7 do
@@ -146,9 +182,14 @@ de locação inteiro em **21 tasks**, todas aprovadas nos dois gates, nenhuma bl
 fechou a F2 em **75 rotas / 60 manipuladores**, `semDeclaracao` vazio, 42 rotas do domínio com
 esquema derivado de `@sysloc/contracts`. Na fatia `cobranca-e-mora` ela sobe em **três tasks**:
 a **T5** levou a **78/63**, a **T6** a **80/65** e a **T7** a **82/67** — as três aprovadas nos dois
-gates. A conferência final por **dupla medição independente** é o **CT-533**, na T11: o executor dela
-já mediu **82 pelo roteador e 82 pela composição**, com **67** manipuladores, e ⚠️ **os dois gates da
-T11 ainda não rodaram** — o número só fecha quando rodarem. ⚠️ **O número da F2 era 75, e não 77** — o `77` que
+gates. A conferência final por **dupla medição independente** foi o **CT-533**, na T11 daquela fatia:
+**82 pelo roteador e 82 pela composição**, com **67** manipuladores, aprovada nos dois gates.
+Na sub-fatia `regua-de-cobranca` ela sobe de novo em **duas tasks** — a **T9** levou a **84/69** e a
+**T10** a **86/71** —, e o **CT-635**, na T12, fechou o número por **dupla medição independente com a
+igualdade entre os dois eixos afirmada explicitamente**, mais três mutantes: o disparo declarando só
+a ação, uma rota de área sem declaração e uma rota acrescentada fora da contagem — **cada um reprova
+nomeando o item ofensor**. **A superfície de hoje é 86 rotas / 71 manipuladores**, `semDeclaracao`
+vazio. ⚠️ **O número da F2 era 75, e não 77** — o `77` que
 circulou no `tech_spec.md` vinha de uma premissa que a medição refutou (*"cada `GET` entra em dobro
 por causa do `HEAD`"*), e o módulo `cobertura-de-autorizacao.ts` **suprime** o `HEAD` derivado. Não
 "corrija" para 77, nem propague a premissa para as contagens novas.
@@ -289,12 +330,13 @@ O marco está alcançado quando **todos** os sete itens forem verdadeiros:
 
 - [ ] **F1 a F5 concluídas** — todas as tasks aprovadas nos dois gates, suíte verde, critérios de
       aceitação de cada fatia verificados · **F1 fechada em 2026-08-05, F2 em 2026-08-09; a F3 está
-      EM ANDAMENTO** (fatia 1 `cobranca-e-mora` **concluída em 2026-08-10, 11/11 tasks**; falta a
-      fatia 2 `regua-e-documentos`), **e faltam F4 e F5**
+      EM ANDAMENTO** (fatia 1 `cobranca-e-mora` **concluída em 2026-08-10, 11/11 tasks**; sub-fatia
+      **2a `regua-de-cobranca` concluída em 2026-08-12, 12/12 tasks**; falta a **2b
+      `documentos-e-confirmacao`**), **e faltam F4 e F5**
 - [ ] **Superfície da API congelada** — nenhuma fatia posterior acrescenta, remove ou altera rota;
       o congelamento é o que torna o handoff confiável · **sem condição pendente** desde que a
       ADR-0021 fechou o D43 · ⚠️ mas **F3 a F5 ainda publicam rota** (cobrança, webhook Sicoob,
-      rotinas) — a F3 já leva de 75 a 82 —, então o congelamento é o *depois* delas
+      rotinas) — a F3 já levou de 75 a **86** —, então o congelamento é o *depois* delas
 - [ ] **`@sysloc/contracts` publicado** no GitHub privado e versionado — é o artefato que o React
       importa para trocar tipos e cliente ts-rest
 - [ ] **`handoff-frontend.md` gerado** por `/agent-spec-backend-contract-handoff`, carregando o
@@ -434,11 +476,16 @@ Específicos deste domínio: **undici** (mTLS do Sicoob), **`node:crypto` `X509C
 > grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 > ```
 
-Treze débitos têm gatilho que dispara fora da fatia que os criou: **D28** e **D32** vêm da F0;
+Dezenove débitos têm gatilho que dispara fora da fatia que os criou: **D28** vem da F0;
 **D23**, **D39**, **D24**, **D27** e **D37** nasceram na F1 — os três últimos na fatia
 `autorizacao-e-ciclo-de-acesso` —; três nasceram na F2, o **D3** na fatia
 `cadastro-de-imoveis-e-pessoas` e o **D36** e o **D44** na fatia `contratos-de-locacao`;
-e três nasceram na F3, o **D1**, o **D26** e o **D20**, na fatia `cobranca-e-mora`.
+e dez nasceram na F3 — o **D1**, o **D26** e o **D20** na fatia `cobranca-e-mora`, e o **D3**,
+o **D12**, o **D13**, o **D14**, o **D49**, o **D54** e o **D57** na fatia `regua-de-cobranca`.
+⚠️ **Os dois `D3` são débitos DIFERENTES** e a coincidência é legítima: a sequência corre dentro da
+§2 da fatia que registrou cada um, de modo que o identificador é o par — `D3 · F2/T1` é a definição
+dupla de `ESQUEMA_DO_IDENTIFICADOR`, e `D3 · F3/T1` é a terceira cópia do caminho de leitura
+autenticada do legado.
 O **D27** partilha com o D23 o gatilho e o fato que falta: qual é o salto confiável da borda. O
 **D26** e o **D1** têm a mesma forma: os dois agendam a **promoção de um símbolo duplicado** para
 quando o terceiro consumidor chegar. O **D44** foi emitido na intervenção dirigida de 2026-08-09, e
@@ -454,7 +501,12 @@ pela natureza do ato.
 registrou: a sequência corre dentro da §2 da fatia que registrou cada um (§3-B da
 `nao-regressao.md`), de modo que dois `Dnn` homônimos são débitos diferentes.
 **Ele já disparou e segue aberto** — na F1/T2.
-Oito saíram daqui por terem sido fechados — **este índice lista só débito vivo**: o D28 da F2/T7, na
+Dez saíram daqui por terem sido fechados — **este índice lista só débito vivo**: o D34 da F3/T8, na
+T10 daquela mesma fatia, quando `exigirDeclarada` desceu para `packages/regua/src/exigencia-de-variavel.ts`
+— módulo cujo nome não é `adaptador-smtp` — e passou a ser exercitada pelo `CT-640`, fechando o `AP-28`
+que a mantinha inalcançável; o D32 da F0/T6, na
+T7 da fatia `regua-de-cobranca`, quando nome, opções de repetição e tipos de carga desceram para
+`packages/shared/src/fila.ts` e o `worker` passou a importá-los em vez de defini-los; o D28 da F2/T7, na
 T9 da fatia `cobranca-e-mora`, quando a ativação do contrato passou a derivar as parcelas e a
 gravá-las na mesma unidade de trabalho, e `esquemaDaAtivacaoDeContrato.efeitos.cobrancasGeradas`
 deixou de ser o literal `false` para publicar quantas nasceram; o D7 da F3/T4, na
@@ -491,7 +543,6 @@ intervenção dirigida de limpeza de 2026-08-05, quando `esquemaDoErro` ganhou d
 | Débito | Onde | Dispara quando |
 |---|---|---|
 | **D28** (F0/T5) | `grep -rln --exclude-dir=dist "D28 · F0/T5" apps packages deploy` — a contagem sai do comando, que não envelhece | **JÁ DISPAROU (F1/T2)** — consumidor novo de `packages/shared/test/` por caminho relativo profundo |
-| **D32** (F0/T6) | `apps/worker/src/fila.ts` | a primeira fatia que **enfileirar tarefa de negócio** |
 | **D23** (F1/T8) | `apps/api/src/autenticacao/autenticacao.module.ts` | a **publicação atrás do servidor de borda na F7** — origem confiável derivada do endereço de retorno |
 | **D39** (F1/fechamento) | `deploy/scripts/instalacao/provisionar-base.sh` | a **próxima instalação do zero** — o provisionamento não gera `BETTER_AUTH_SECRET` e a API não sobe |
 | **D24** (F1/T5, fatia `autorizacao-e-ciclo-de-acesso`) | `apps/api/src/main.ts` | a **publicação atrás do servidor de borda na F7** — `/docs*` atende sem sessão por decisão registrada, que vale só enquanto a API é local |
@@ -503,6 +554,13 @@ intervenção dirigida de limpeza de 2026-08-05, quando `esquemaDoErro` ganhou d
 | **D1** (F3/T2, fatia `cobranca-e-mora`) | `packages/contracts/src/cobranca.ts` (ponto do import) | o **terceiro consumidor monetário do pacote** — `MAIOR_VALOR_MONETARIO` e `ESCALA_MONETARIA` sobem para `comum.ts` |
 | **D26** (F3/T8, fatia `cobranca-e-mora`) | `packages/db/src/derivacao-de-cobranca.ts` (`ultimoDiaDoMes`) | o **terceiro consumidor de aritmética de calendário do pacote** — `ultimoDiaDoMes` e `ehBissexto` sobem para módulo próprio |
 | **D20** (F3/T7, fatia `cobranca-e-mora`) | `packages/db/migracoes/0010_seguranca_cobranca.sql` (bloco da emenda) | a **primeira aplicação da `0010` a banco durável** — a partir dela o arquivo é imutável e o `sha256sum` do `migrar-banco.sh` aborta a instalação |
+| **D3** (F3/T1, fatia `regua-de-cobranca`) | `deploy/scripts/caracterizacao/extrair-fonte-do-pdf.sh` (`consultar_o_legado`) | o **quarto consumidor** do caminho de leitura autenticada do legado, ou a **primeira alteração das garantias de transporte da credencial** — hoje são três cópias e endurecer uma deixa as outras para trás |
+| **D12** (F3/T4, fatia `regua-de-cobranca`) | `packages/regua/src/mensagem.ts` (a desestruturação de `ESTADOS_DA_COBRANCA`) | a **primeira task que abrir `packages/contracts/src/cobranca.ts`** por outra razão — ali nasce `ESTADOS_AVISAVEIS` como tupla `as const` e a escolha do molde deixa de depender de posição |
+| **D13** (F3/T5, fatia `regua-de-cobranca`) | `packages/db/test/banco-efemero.ts` (`semearPoliticaDeAviso`) | a **primeira suíte que precisar da política como precondição sem ser objeto** (T7/T8 ou T9/T10) — o auxiliar nasceu sem consumidor e o `ON CONFLICT` dele nunca executou |
+| **D14** (F3/T5, fatia `regua-de-cobranca`) | `packages/db/src/envio-de-cobranca.ts` (`FUSO_DA_OPERACAO`) | a **primeira migração que redefinir `negocio.data_corrente_da_operacao()`** — o fuso tem duas declarações executáveis e nada as amarra |
+| **D49** (F3/T10, fatia `regua-de-cobranca`) | `apps/worker/test/ambiente.spec.ts` (docblock do `CT-643`) | a **escalada que autorize mover o bloco sob `DECISÃO FECHADA — T8 / Gate 1 rodada 2`**, ou o **terceiro processo** que precisar da maquinaria — hoje o detector de exigência de ambiente tem duas cópias e endurecer uma deixa a outra para trás |
+| **D54** (F3/T11, fatia `regua-de-cobranca`) | `apps/api/test/equivalencia-com-o-oraculo.spec.ts` (`CODIGO_NO_ASSUNTO`) | o **quarto consumidor** do molde de extração do código de cobrança, ou a **primeira alteração da forma do código** — hoje são três cópias e elas já divergem na flag `u` |
+| **D57** (F3/T12, fatia `regua-de-cobranca`) | `apps/api/test/autorizacao-do-dominio.e2e.spec.ts` (a montagem instrumentada) | a **terceira suíte** que precisar da montagem instrumentada, ou a **primeira vez que `criarAplicacao()` registrar um global fora do `AppModule`** — a divergência entre a montagem que atende e a instrumentada não reprova caso algum |
 
 ---
 

@@ -60,9 +60,48 @@
  * |       |        | contagem crua de `negocio.cobranca` são idênticos antes e depois. A sessão que tem
  * |       |        | **as duas áreas** alcança as MESMAS sete com `2xx`. (ADR-0011, ADR-0017, ADR-0021)
  *
+ * | CA-14 | CT-633 | Nas **quatro rotas da fatia `regua-de-cobranca`**, a sessão de `USUARIO_EMPRESA`
+ * |       |        | com a **matriz padrão** — só `TELA:resumo`, sem ajuste algum escrito — recebe
+ * |       |        | `403` com o envelope INTEIRO da ADR-0017 e `detalhes.exigido` igual a
+ * |       |        | `TELA:automacao_de_cobranca` nas quatro; **nenhuma responde `404`**, e as quatro
+ * |       |        | recusas são idênticas entre si **byte a byte**. **Nada muda**: a política de
+ * |       |        | aviso relida é estritamente igual, as contagens cruas de
+ * |       |        | `negocio.politica_de_aviso` e de `negocio.envio_de_cobranca` são as mesmas, e
+ * |       |        | nenhuma mensagem sai. (ADR-0011, ADR-0017) |
+ * | CA-13 | CT-634 | Com `TELA:automacao_de_cobranca` e **sem** `ACAO:enviar_cobranca_manual`, as três
+ * |       |        | rotas de área respondem `200` e **só** o disparo manual recebe `403`, nomeando a
+ * |       |        | **AÇÃO** — a primeira ausente da conjunção —, sem que mensagem alguma saia nem
+ * |       |        | linha alguma nasça. Concedida a ação à MESMA pessoa, o efetivo publicado cresce
+ * |       |        | de **exatamente uma** chave nos dois sentidos, e o disparo passa a responder
+ * |       |        | `200` com **+1** captura para o endereço do locatário e **+1** linha crua.
+ * |       |        | (ADR-0011, ADR-0018) |
+ *
  * Rastreabilidade: `CA-12 → CT-319 (RN-14)`, `CA-13 → CT-320 (RN-14)`, `CA-14 → CT-321 (RN-01)`,
  * `CA-16 → CT-320 (b) (RN-13)`, `CA-17 → CT-320 (c) (RN-07)`.
  * Acrescida pela T11 da fatia `cobranca-e-mora`: `CA-17 → CT-534 (RN-14)`.
+ * Acrescida pela T12 da fatia `regua-de-cobranca`: `CA-14 → CT-633 (RN-14)`,
+ * `CA-13 → CT-634 (RN-12)`.
+ *
+ * ===========================================================================
+ * O CT-633 e o CT-634 medem o COMPORTAMENTO; quem audita a declaração é o CT-635
+ * ===========================================================================
+ *
+ * A divisão é a mesma do par `CT-534` × `CT-533`, e pela mesma razão: o `CT-635`, em
+ * `test/cobertura-de-autorizacao.e2e.spec.ts`, lê o **metadado** das quatro rotas e afirma o retrato
+ * devido — e ficaria verde numa aplicação cuja guarda não fosse consultada, porque declaração escrita
+ * não é decisão aplicada. Estes dois **sondam a borda**.
+ *
+ * Entre eles, a divisão é por **eixo da exigência**: o `CT-633` mede a ausência da **área**, que
+ * derruba as quatro; o `CT-634` mede a ausência da **ação**, que derruba **uma**. Nenhum implica o
+ * outro, e é o par que discrimina: uma guarda que exigisse apenas a área nas quatro passaria pelo
+ * primeiro inteiro, e uma que exigisse a ação nas quatro passaria pelo eixo negativo do segundo.
+ *
+ * A metade de estado é o que separa *recusou* de *recusou depois de gravar*, e ela tem três formas
+ * porque as quatro rotas tocam três coisas distintas: a **linha da política** (que o `PUT`
+ * reescreveria), a **contagem crua de tentativas** (que o disparo faria nascer) e a **lista de
+ * capturas** (a mensagem que teria saído para o mundo). Nenhuma das três implica as outras — um
+ * disparo que gravasse a linha sem falar com a porta, ou o contrário, é exatamente a distinção entre
+ * *não enviar* e *não registrar*.
  *
  * ===========================================================================
  * O CT-534 mede o COMPORTAMENTO; quem audita a declaração é o CT-533
@@ -195,6 +234,30 @@
  * As âncoras destes registros são **simbólicas** — o `@ExigeChaves` do manipulador de retirada de
  * `imovel.controller.ts` —, e nunca número de linha.
  *
+ * ---------------------------------------------------------------------------
+ * MUTANTES DA T12 — MT12-1 e MT12-2 (2026-08-12), medidos sobre o controlador da automação
+ * ---------------------------------------------------------------------------
+ *
+ * Os dois foram aplicados a `apps/api/src/automacao/automacao.controller.ts` para falsificar o
+ * `CT-635` (o registro por extenso está no cabeçalho de `test/cobertura-de-autorizacao.e2e.spec.ts`),
+ * e **estes dois casos reprovaram junto** — que é o que prova que eles discriminam na borda o mesmo
+ * defeito que aquele acusa por estrutura. A suíte foi invocada pelo script do pacote
+ * (`pnpm --filter @sysloc/api test`). **Controle**: `203 passed`.
+ *
+ *   * **MT12-1 · o disparo declarando SÓ a ação** (`@ExigeChaves(AREA, ACAO)` → `@ExigeChave(ACAO)`,
+ *     o defeito literal que a ADR-0018 nasceu para impedir): o **`CT-633`** reprova com *"a recusa de
+ *     POST /v1/automacao-de-cobranca/cobrancas/:codigo/avisos mudou de forma"*, e o corpo mostra
+ *     `exigido` indo de `TELA:automacao_de_cobranca` para `ACAO:enviar_cobranca_manual`. ⚠️ O
+ *     **`CT-634` SOBREVIVE** a este mutante, e a assimetria é conteúdo: a sessão dele **tem** a área e
+ *     **não** tem a ação, de modo que a recusa continua nomeando a ação e o eixo positivo continua
+ *     passando com as duas chaves. É por isso que os dois casos existem, e é por isso que nenhum deles
+ *     substitui o `CT-635`;
+ *   * **MT12-2 · a exigência sai da CLASSE e vai para UM só manipulador**: os **dois** reprovam — o
+ *     `CT-633` porque duas das quatro rotas passaram a atender sem decisão alguma (o `403` esperado
+ *     vira `200`), e o `CT-634` pelo mesmo motivo no eixo que ele mede;
+ *   * **reversão** — o fonte foi restaurado do backup e conferido por `diff -q` e `sha256sum`
+ *     idênticos ao original, e o controle voltou a `203 passed`.
+ *
  * ===========================================================================
  * Precondição privilegiada — tudo pelo caminho REAL
  * ===========================================================================
@@ -212,7 +275,11 @@
  *     negadas`, e sem a negação o piso do perfil poderia já conceder a área;
  *   * **cadastro** — criado e retirado **pelas rotas**, nunca por conexão privilegiada. Nenhuma
  *     cláusula deste arquivo compara `empresa_id`: o isolamento é observado pela resposta da borda,
- *     que é o que a ADR-0008 autoriza.
+ *     que é o que a ADR-0008 autoriza;
+ *   * **o destino da mensagem** (T12) — por `overrideProvider` sobre o token que a composição já
+ *     publica, e **nada mais**: a aplicação continua sendo a de produção montada por inteiro (ver
+ *     {@link aplicacaoComCaptura}). O `CT-633` **não escreve ajuste algum** — a ausência da área é a
+ *     precondição dele, e é afirmada pela igualdade do efetivo com a matriz padrão do perfil.
  *
  * Cada caso arranja o **próprio sujeito**: a pessoa cujo efetivo o `CT-320` altera não é usada por
  * nenhum outro caso, e nenhuma sessão é compartilhada entre casos que escrevem permissão.
@@ -228,7 +295,8 @@
  */
 
 import { randomBytes, randomUUID } from 'node:crypto';
-import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import { Test } from '@nestjs/testing';
 import { type ChaveDoCatalogo, validarCoerenciaDeAjustes } from '@sysloc/auth';
 import {
   type AcessoAoBanco,
@@ -238,6 +306,7 @@ import {
   escreverAjustes,
   SENHA_DA_CARGA,
 } from '@sysloc/db';
+import { type CapturadorDeEmail, criarCapturadorDeEmail } from '@sysloc/regua';
 import { CodigoErro } from '@sysloc/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)
@@ -259,14 +328,20 @@ import {
 } from '../../../packages/auth/test/identidade-efemera.ts';
 import { reservarPorta } from '../../../packages/shared/test/efemero-comum.ts';
 import { type FilaEfemera, redisEfemero } from '../../../packages/shared/test/redis-efemero.ts';
+import { AppModule } from '../src/app.module.ts';
 import { PREFIXO_DAS_ROTAS_DE_IDENTIDADE } from '../src/autenticacao/autenticacao.module.ts';
 import { CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO } from '../src/autenticacao/senha.controller.ts';
 import { CAMINHO_DA_SESSAO } from '../src/autenticacao/sessao.controller.ts';
+import { CAMINHO_DA_AUTOMACAO_DE_COBRANCA } from '../src/automacao/automacao.controller.ts';
 import { CAMINHO_DOS_FIADORES } from '../src/cadastros/fiador.controller.ts';
 import { CAMINHO_DOS_LOCADORES } from '../src/cadastros/locador.controller.ts';
 import { CAMINHO_DOS_LOCATARIOS } from '../src/cadastros/locatario.controller.ts';
 import { CAMINHO_DAS_COBRANCAS } from '../src/cobrancas/cobranca.controller.ts';
-import { ENDERECO_DE_ESCUTA, PREFIXO_DE_VERSAO } from '../src/configuracao/ambiente.ts';
+import {
+  ENDERECO_DE_ESCUTA,
+  PREFIXO_DE_VERSAO,
+  TOKEN_PORTA_DE_EMAIL,
+} from '../src/configuracao/ambiente.ts';
 import { CAMINHO_DOS_CONTRATOS } from '../src/contratos/contrato.controller.ts';
 import { CAMINHO_DOS_COMODOS } from '../src/imoveis/comodo.controller.ts';
 import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
@@ -365,6 +440,88 @@ const RECURSO_DE_MULTA_E_JUROS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DE_MULTA_E_JUR
 const ROTAS_DA_FATIA_DE_COBRANCA = 7;
 
 /**
+ * A área de tela e a ação sensível que governam a superfície da fatia `regua-de-cobranca` — o eixo
+ * do `CT-633` e do `CT-634` (§4.1, §11.2 da tech spec).
+ *
+ * Literais escritos à mão, e **não** importados de `automacao.controller.ts`: as duas constantes de
+ * lá são privadas de propósito, e derivá-las da mesma fonte que o SUT usa para declarar faria a
+ * asserção concordar com ele — trocar a exigência do controlador deixaria de reprovar caso algum.
+ * Elas são o valor que o cliente lê em `detalhes.exigido`, e por isso a expectativa é escrita.
+ *
+ * **Três das quatro rotas exigem só a área; o disparo manual exige a CONJUNÇÃO**, e é essa
+ * assimetria que os dois casos medem por ângulos opostos: o `CT-633` mostra que sem a área **as
+ * quatro** recusam, e o `CT-634` mostra que com a área e sem a ação **só o disparo** recusa. Quem
+ * audita isso por **estrutura** é o `CT-635`.
+ */
+const AREA_DA_AUTOMACAO_DE_COBRANCA: ChaveDoCatalogo = 'TELA:automacao_de_cobranca';
+const ACAO_DE_ENVIO_MANUAL: ChaveDoCatalogo = 'ACAO:enviar_cobranca_manual';
+
+/**
+ * A única área que a matriz padrão de `USUARIO_EMPRESA` concede — o **piso** do perfil (ADR-0010).
+ *
+ * Ela é a precondição do `CT-633` escrita por extenso: o sujeito daquele caso não recebe ajuste
+ * algum, e é este conjunto que `GET /v1/sessao` tem de publicar para que a recusa seja atribuível à
+ * ausência da área, e não a uma sessão quebrada. Literal, e não derivada de `MATRIZ_POR_PERFIL`, pela
+ * mesma razão das duas chaves acima.
+ */
+const AREA_DO_PISO_DO_USUARIO: ChaveDoCatalogo = 'TELA:resumo';
+
+/** O recurso **singular** da política de aviso, sob o prefixo de versão — duas das quatro rotas. */
+const RECURSO_DA_AUTOMACAO = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_AUTOMACAO_DE_COBRANCA}`;
+
+/** A coleção de avisos de uma cobrança — as outras duas. Composta, nunca escrita à mão. */
+function rotaDosAvisos(codigo: string): string {
+  return `${RECURSO_DA_AUTOMACAO}/cobrancas/${codigo}/avisos`;
+}
+
+/** Quantas rotas a fatia `regua-de-cobranca` publica — duas de política e duas de aviso. */
+const ROTAS_DA_FATIA_DA_REGUA = 4;
+
+/**
+ * O corpo completo da política de aviso do cenário — os seis campos, nenhum opcional.
+ *
+ * Ele é gravado pela sessão **privilegiada** antes dos casos, e é ele que o `CT-633` relê depois das
+ * quatro recusas: sem uma política já gravada, *"nada muda"* seria afirmado sobre a ausência, que é
+ * o estado que uma escrita indevida também produziria se falhasse.
+ */
+const POLITICA_DE_AVISO_DO_CENARIO = {
+  ativo: true,
+  diasAntesDoVencimento: 5,
+  intervaloMinimoDias: 3,
+  janelaInicio: '08:00',
+  janelaFim: '17:00',
+  canal: 'EMAIL',
+} as const;
+
+/**
+ * Os dois arranjos do `CT-634`, sobre a MESMA pessoa — e eles diferem por **exatamente uma** chave.
+ *
+ * O segundo é **derivado** do primeiro, e não uma segunda lista: escrever os dois à mão deixaria a
+ * diferença livre para virar duas, e é a diferença de uma chave só que prende a exigência do disparo
+ * à AÇÃO em vez de à área. A diferença é afirmada no caso, sobre o efetivo publicado, e não presumida
+ * daqui.
+ */
+const ARRANJO_SO_COM_A_AREA: readonly ChaveDoCatalogo[] = [AREA_DA_AUTOMACAO_DE_COBRANCA];
+const ARRANJO_COM_A_ACAO: readonly ChaveDoCatalogo[] = [
+  ...ARRANJO_SO_COM_A_AREA,
+  ACAO_DE_ENVIO_MANUAL,
+];
+
+/**
+ * A distância, em dias, entre o relógio do banco e o vencimento da cobrança do cenário da régua —
+ * **negativa**, e é ela que a torna `VENCIDA`.
+ *
+ * O disparo manual ignora a janela, a trava e o recorte de antecedência, mas **não** ignora o estado:
+ * `PAGA` e `CANCELADA` são recusadas com `422`. Uma cobrança vencida é, portanto, o que faz o efeito
+ * ser possível — e sem efeito possível o eixo positivo do `CT-634` mediria a guarda de estado em vez
+ * da de autorização.
+ */
+const DIAS_DESDE_O_VENCIMENTO = -20;
+
+/** O estado que a cobrança do cenário da régua publica — afirmado, nunca presumido do deslocamento. */
+const ESTADO_VENCIDO = 'VENCIDA';
+
+/**
  * A política de mora do cenário do `CT-534` — multa de 2% e juros de 1% ao mês.
  *
  * Os dois são **diferentes entre si** de propósito: uma leitura que trocasse os dois campos de lugar
@@ -451,6 +608,31 @@ let cookieDeB: string;
 /** Os recursos da empresa A que a tabela das 33 rotas endereça. */
 let alvos: AlvosDoDominio;
 
+/**
+ * A aplicação **instrumentada** dos casos da régua, e o capturador que ela recebe no lugar do SMTP.
+ *
+ * ⚠️ **Ela é a aplicação de produção montada POR INTEIRO**, e não uma montagem reduzida: a mesma
+ * composição raiz, o mesmo roteador, as mesmas guardas e o mesmo prefixo global. A substituição é
+ * feita pelo **arcabouço de teste** (`overrideProvider` sobre o token que a composição já publica) e
+ * alcança **só o destino da mensagem**: `criarAplicacao()` não ganhou parâmetro, nada em
+ * `apps/api/src` ganhou bandeira ou ramo, e o capturador implementa a MESMA `PortaDeEnvioDeEmail` do
+ * adaptador de produção — de dentro, a régua não sabe qual dos dois recebeu (Iron Law #6).
+ *
+ * Ela existe porque *"nada muda"* e *"+1 captura"* são metade do que o `CT-633` e o `CT-634` medem, e
+ * a lista de capturas é a única forma de observar o que **saiu para o mundo** sem falar com um SMTP
+ * de verdade. É o mesmo mecanismo, sobre o mesmo token, de `automacao-de-cobranca.e2e.spec.ts`.
+ *
+ * Ela divide a instância efêmera de banco com a aplicação acima — as sessões são estado do banco —, e
+ * tem porta reservada própria, porque o arcabouço de identidade confere a origem das requisições com
+ * cookie contra o endereço base.
+ */
+let aplicacaoComCaptura: NestFastifyApplication;
+let baseComCaptura: string;
+let capturador: CapturadorDeEmail;
+
+/** A sessão plena da empresa A **na aplicação instrumentada** — quem grava a precondição dos casos. */
+let cookiePlenoComCaptura: string;
+
 const VARIAVEIS_MONTADAS = [
   'NODE_ENV',
   'PORT',
@@ -491,9 +673,54 @@ beforeAll(async () => {
   ]);
 
   alvos = await criarAlvosDoDominio(cookiePleno);
+
+  // -------------------------------------------------------------------------------------------
+  // A aplicação INSTRUMENTADA dos casos da régua — a porta de e-mail trocada de fora (T12)
+  // -------------------------------------------------------------------------------------------
+  capturador = criarCapturadorDeEmail();
+
+  const portaComCaptura = await reservarPorta();
+  baseComCaptura = `http://${ENDERECO_DE_ESCUTA}:${String(portaComCaptura)}`;
+  process.env.PORT = String(portaComCaptura);
+
+  // DÉBITO COM GATILHO — D57 · F3/T12 · registrado 2026-08-12
+  // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o bloco abaixo.)
+  // O QUÊ: esta é a SEGUNDA cópia literal da montagem instrumentada — a primeira está em
+  //        `apps/api/test/automacao-de-cobranca.e2e.spec.ts`. Ela não deriva de `criarAplicacao()`
+  //        e por isso omite `logger: false`, `abortOnError: false`, o `exclude` do prefixo,
+  //        `publicarContrato()` e `enableShutdownHooks()`. NENHUMA delas alcança o que os casos
+  //        medem — guarda, filtro de erro e interceptador de contexto são registrados por
+  //        `APP_GUARD`/`APP_FILTER`/`APP_INTERCEPTOR` DENTRO do `AppModule`.
+  // QUANDO FECHA: a TERCEIRA suíte que precisar da montagem instrumentada, ou a primeira vez que
+  //        `criarAplicacao()` registrar um global FORA do `AppModule` — o que vier antes. A partir
+  //        daí a divergência entre a montagem que atende e a instrumentada deixa de ser inócua, e
+  //        ela não reprova caso algum: a asserção que a acusaria não existe.
+  // POR QUE NÃO AGORA: a convenção deste repositório agenda a promoção de símbolo duplicado no
+  //        TERCEIRO consumidor (é a forma do D1 · F3/T2 e do D26 · F3/T8), e aqui são dois.
+  // ÍNDICE: docs/specs/features/regua-de-cobranca/v1/_run/run-report.md §2, D57
+  const modulo = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(TOKEN_PORTA_DE_EMAIL)
+    .useValue(capturador)
+    .compile();
+
+  aplicacaoComCaptura = modulo.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+  // Sem as exclusões da aplicação real, de propósito: nenhum caso desta aplicação toca as rotas de
+  // saúde nem o contrato publicado, e reproduzir a lista aqui criaria uma segunda cópia dela livre
+  // para divergir. O que importa é que `/v1/auth` e as quatro rotas da área atendam sob o prefixo.
+  aplicacaoComCaptura.setGlobalPrefix(PREFIXO_DE_VERSAO);
+  await aplicacaoComCaptura.listen({ port: portaComCaptura, host: ENDERECO_DE_ESCUTA });
+
+  cookiePlenoComCaptura = await entrar(ADMIN_DE_A.email, SENHA_DA_CARGA, baseComCaptura);
+
+  // A precondição da sessão privilegiada é AFIRMADA, e não presumida da matriz do perfil: é ela que
+  // grava a política e o histórico dos dois casos, e um `403` aqui os faria medir outra coisa.
+  const efetivoPleno = await efetivoDe(cookiePlenoComCaptura, baseComCaptura);
+  expect(efetivoPleno.telas).toContain(AREA_DA_AUTOMACAO_DE_COBRANCA);
+  expect(efetivoPleno.acoes).toContain(ACAO_DE_ENVIO_MANUAL);
 }, LIMITE_DE_MONTAGEM_MS);
 
 afterAll(async () => {
+  await aplicacaoComCaptura?.close();
   await aplicacao?.close();
   await acessoAoNegocio?.encerrar();
   await fila?.parar();
@@ -1153,6 +1380,285 @@ describe('as provas de segurança sobre as rotas do domínio (T11) e sobre as a�
     },
     LIMITE_CASO_MS,
   );
+
+  it(
+    'CT-633 — sem a área da automação, as quatro rotas da régua recusam com 403 e NADA muda',
+    async () => {
+      // ---------------------------------------------------------------------------------------
+      // O cenário e a PRECONDIÇÃO com conteúdo: política e histórico gravados por OUTRA pessoa
+      // ---------------------------------------------------------------------------------------
+      //
+      // Sem uma política já gravada e um aviso já registrado, *"nada muda"* seria afirmado sobre a
+      // ausência — e a ausência é justamente o que uma escrita indevida que falhasse também
+      // produziria. Os dois nascem pela mão da sessão privilegiada, e pelas rotas reais.
+      const cenario = await cenarioDoDisparoManual();
+
+      await definirPoliticaDeAviso(cookiePlenoComCaptura);
+
+      const primeiroAviso = await pedir(rotaDosAvisos(cenario.codigo), {
+        metodo: 'POST',
+        cookie: cookiePlenoComCaptura,
+        corpo: {},
+        base: baseComCaptura,
+      });
+
+      expect(primeiroAviso.status, `o aviso da precondição respondeu ${primeiroAviso.texto}`).toBe(
+        200,
+      );
+
+      // ---------------------------------------------------------------------------------------
+      // O sujeito: `USUARIO_EMPRESA` com a MATRIZ PADRÃO — nenhum ajuste é escrito
+      // ---------------------------------------------------------------------------------------
+      //
+      // A ausência da área **é** a precondição, e por isso ela não se escreve: escrever a negação
+      // produziria o mesmo efetivo por um caminho que o caso não mede. Ela é AFIRMADA por
+      // `GET /v1/sessao` antes das quatro chamadas — sem isso, um `403` seria indistinguível de
+      // sessão quebrada, e as quatro recusas provariam apenas que a sessão não serve para nada.
+      //
+      // A igualdade de arranjo, e não um `not.toContain`, é o que prende o piso do perfil: a matriz
+      // de `USUARIO_EMPRESA` é **só** `TELA:resumo` (ADR-0010), e um piso que crescesse em silêncio
+      // faria este caso deixar de medir a ausência que ele exercita.
+      const semAArea = await pessoaOperandoComSenhaTrocada(
+        'sem.automacao',
+        'USUARIO_EMPRESA',
+        baseComCaptura,
+      );
+      const efetivo = await efetivoDe(semAArea.cookie, baseComCaptura);
+
+      expect(efetivo.telas).toEqual([AREA_DO_PISO_DO_USUARIO]);
+      expect(efetivo.acoes).toEqual([]);
+      expect(efetivo.telas).not.toContain(AREA_DA_AUTOMACAO_DE_COBRANCA);
+
+      const tabela = rotasDaFatiaDaRegua(cenario.codigo);
+
+      // A tabela cobre a superfície inteira da fatia — afirmado sobre ela ANTES de percorrê-la.
+      // Tabela truncada é o modo de falha silencioso desta classe de caso.
+      expect(tabela.length).toBe(ROTAS_DA_FATIA_DA_REGUA);
+      expect(tabela.filter((rota) => rota.exigeAAcao).length).toBe(1);
+
+      // --- Passo 2: as três medições ANTES ------------------------------------------------------
+      const politicaAntes = await lerPoliticaDeAviso(cookiePlenoComCaptura);
+      const politicasAntes = await contarPoliticasDeAviso();
+      const enviosAntes = await contarEnviosDeCobranca();
+      const capturasAntes = capturador.capturas.length;
+
+      // A precondição tem conteúdo, e isso é afirmado: há política e há histórico.
+      expect(politicasAntes).toBe(1);
+      expect(enviosAntes).toBeGreaterThan(0);
+
+      // --- Passo 3: as quatro recusam, e NENHUMA responde `404` ---------------------------------
+      const recusadas: string[] = [];
+      const corposDaRecusa: string[] = [];
+
+      for (const rota of tabela) {
+        const resposta = await pedir(rota.alvo, {
+          metodo: rota.metodo,
+          cookie: semAArea.cookie,
+          base: baseComCaptura,
+          ...(rota.corpo === undefined ? {} : { corpo: rota.corpo }),
+        });
+
+        // `403`, e **nunca** `404`: a recusa diz *"você não alcança"*, e um `404` diria *"isto não
+        // existe"* — a diferença entre as duas respostas é informação sobre o que existe, e as duas
+        // rotas de aviso endereçam uma cobrança que **existe** de propósito, para que a distinção
+        // tenha o que revelar.
+        //
+        // DECISÃO FECHADA — T12 / Gate 2 (P1) · 2026-08-12
+        // O QUÊ: a negativa `not.toBe(404)` vem ANTES da igualdade `toBe(403)`, e não depois.
+        // POR QUÊ: na ordem idiomática (igualdade primeiro) a negativa é INFALÍVEL — o `expect`
+        //          lança ao reprovar, de modo que ela só chega a ser avaliada quando o status já
+        //          é `403`, estado em que ela passa por necessidade. Não existiria estado do SUT,
+        //          nem o `404` que o caso persegue, em que a mensagem nomeada fosse exibida
+        //          (AP-29, `tautological_assertion`). Invertidas, a negativa é avaliada sobre o
+        //          status cru e é ELA que reprova no vazamento de existência; a igualdade não
+        //          perde nada, porque `not.toBe(404)` não implica `toBe(403)`. A mesma ordem já
+        //          é praticada em `autenticacao.e2e.spec.ts` (CT-018 (d), l. 621-622).
+        // REVERTER EXIGE: demonstrar que a negativa, na posição posterior, reprova em algum
+        //                 estado do SUT — o que exigiria que a igualdade anterior não abortasse.
+        expect(resposta.status, `${rota.rotulo} vazou a existência do recurso`).not.toBe(404);
+        expect(resposta.status, `${rota.rotulo} respondeu ${String(resposta.status)}`).toBe(403);
+
+        // O envelope INTEIRO por igualdade (ADR-0017): `detalhes.exigido` é a **área**, inclusive no
+        // disparo, porque a recusa nomeia a PRIMEIRA chave ausente da conjunção e a área vem antes.
+        // Não há `campo`, porque a recusa não é de entrada.
+        expect(resposta.corpo, `a recusa de ${rota.rotulo} mudou de forma`).toEqual({
+          codigo: CodigoErro.ACESSO_NEGADO,
+          mensagem: MENSAGEM_DE_ACESSO_NEGADO,
+          detalhes: { exigido: AREA_DA_AUTOMACAO_DE_COBRANCA },
+        });
+
+        recusadas.push(rota.rotulo);
+        corposDaRecusa.push(JSON.stringify(resposta.corpo));
+      }
+      expect(recusadas.length).toBe(ROTAS_DA_FATIA_DA_REGUA);
+
+      // As quatro recusas são idênticas entre si **byte a byte** — uma única forma na serialização.
+      // A igualdade do laço acima é profunda e não alcança a ordem das chaves; esta linha alcança, e
+      // é ela que impede a recusa de virar oráculo por diferença de forma entre duas das quatro.
+      expect(
+        new Set(corposDaRecusa).size,
+        'as recusas das quatro rotas não são idênticas byte a byte',
+      ).toBe(1);
+
+      // --- Passos 4 e 5: NADA mudou -------------------------------------------------------------
+      //
+      // A política relida é estritamente igual — o que pega o `PUT` que tivesse gravado —, as duas
+      // contagens cruas são as mesmas — o que pega a linha que tivesse nascido —, e o comprimento
+      // das capturas é o mesmo — o que pega a mensagem que tivesse saído para o mundo. As três medem
+      // coisas distintas e nenhuma implica as outras.
+      expect(await lerPoliticaDeAviso(cookiePlenoComCaptura)).toEqual(politicaAntes);
+      expect(await contarPoliticasDeAviso()).toBe(politicasAntes);
+      expect(await contarEnviosDeCobranca()).toBe(enviosAntes);
+      expect(capturador.capturas.length).toBe(capturasAntes);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-634 — com a área e sem a ação, SÓ o disparo é recusado; concedida a ação, ele passa',
+    async () => {
+      const cenario = await cenarioDoDisparoManual();
+      const tabela = rotasDaFatiaDaRegua(cenario.codigo);
+
+      expect(tabela.length).toBe(ROTAS_DA_FATIA_DA_REGUA);
+
+      // A política precisa existir para que o `GET` da régua e o `PUT` do eixo positivo respondam
+      // sobre um estado conhecido — e ela é gravada por quem administra, não pelo sujeito do caso.
+      await definirPoliticaDeAviso(cookiePlenoComCaptura);
+
+      // ---------------------------------------------------------------------------------------
+      // Arranjo 1 — a MESMA pessoa, com a área e SEM a ação
+      // ---------------------------------------------------------------------------------------
+      //
+      // O sujeito é exclusivo deste caso, pela mesma razão do `CT-320`: é o efetivo dele que está sob
+      // prova, e nenhuma sessão é compartilhada entre casos que escrevem permissão.
+      const sujeito = await pessoaOperandoComSenhaTrocada(
+        'so.a.area.da.automacao',
+        'USUARIO_EMPRESA',
+        baseComCaptura,
+      );
+
+      await ajustar(
+        sujeito.usuarioId,
+        EMPRESA_A.id,
+        ARRANJO_SO_COM_A_AREA.map((chave) => ({ chave, efeito: 'CONCEDIDA' as const })),
+      );
+
+      const primeiroEfetivo = await efetivoDe(sujeito.cookie, baseComCaptura);
+
+      expect(primeiroEfetivo.telas).toContain(AREA_DA_AUTOMACAO_DE_COBRANCA);
+      expect(primeiroEfetivo.acoes).not.toContain(ACAO_DE_ENVIO_MANUAL);
+
+      // --- Passo 2: as TRÊS rotas de área respondem `200` ---------------------------------------
+      //
+      // A asserção é de sucesso EXATO, e não de "diferente de 403": as três requisições são
+      // bem-formadas e endereçam recursos que existem, de modo que qualquer outra recusa — `404` de
+      // alcance, `422` de esquema — também seria defeito. Sem este eixo, tudo abaixo seria satisfeito
+      // por uma guarda que recusasse a área inteira.
+      const alcancadas: string[] = [];
+      for (const rota of tabela.filter((candidata) => !candidata.exigeAAcao)) {
+        const resposta = await pedir(rota.alvo, {
+          metodo: rota.metodo,
+          cookie: sujeito.cookie,
+          base: baseComCaptura,
+          ...(rota.corpo === undefined ? {} : { corpo: rota.corpo }),
+        });
+
+        expect(
+          resposta.status,
+          `${rota.rotulo} respondeu ${String(resposta.status)} a quem TEM a área: ${resposta.texto}`,
+        ).toBe(200);
+        alcancadas.push(rota.rotulo);
+      }
+      expect(alcancadas.length).toBe(ROTAS_DA_FATIA_DA_REGUA - 1);
+
+      // --- Passo 3: o disparo é recusado nomeando a AÇÃO, e nada acontece ------------------------
+      const capturasAntes = capturador.capturas.length;
+      const enviosAntes = await contarEnviosDeCobranca();
+
+      const disparo = tabela.find((rota) => rota.exigeAAcao);
+      if (disparo === undefined) {
+        throw new Error('a tabela da fatia não tem a rota de disparo');
+      }
+
+      const recusa = await pedir(disparo.alvo, {
+        metodo: disparo.metodo,
+        cookie: sujeito.cookie,
+        base: baseComCaptura,
+        ...(disparo.corpo === undefined ? {} : { corpo: disparo.corpo }),
+      });
+
+      expect(recusa.status, `${disparo.rotulo} respondeu ${String(recusa.status)}`).toBe(403);
+      // `detalhes.exigido` é a **AÇÃO**, e não a área que a sessão já possui: a conjunção é declarada
+      // com a área primeiro, e a recusa nomeia a PRIMEIRA ausente (ADR-0018). Uma declaração que
+      // trocasse a ordem, ou que exigisse só a área, reprova nesta linha.
+      expect(recusa.corpo, `a recusa de ${disparo.rotulo} mudou de forma`).toEqual({
+        codigo: CodigoErro.ACESSO_NEGADO,
+        mensagem: MENSAGEM_DE_ACESSO_NEGADO,
+        detalhes: { exigido: ACAO_DE_ENVIO_MANUAL },
+      });
+
+      // A recusa acontece ANTES de qualquer efeito: nenhuma mensagem saiu, e nenhuma linha nasceu.
+      expect(capturador.capturas.length).toBe(capturasAntes);
+      expect(await contarEnviosDeCobranca()).toBe(enviosAntes);
+
+      // ---------------------------------------------------------------------------------------
+      // Arranjo 2 — a MESMA pessoa, e a diferença é de EXATAMENTE UMA chave
+      // ---------------------------------------------------------------------------------------
+      //
+      // O efetivo é reafirmado por `GET /v1/sessao` **após o ajuste**: a sessão relê a versão de
+      // permissões quando ela diverge, e sem esta leitura o segundo arranjo poderia não ter alcançado
+      // a sessão — o `200` de baixo passaria a ser sobre outra coisa.
+      await ajustar(
+        sujeito.usuarioId,
+        EMPRESA_A.id,
+        ARRANJO_COM_A_ACAO.map((chave) => ({ chave, efeito: 'CONCEDIDA' as const })),
+      );
+
+      const segundoEfetivo = await efetivoDe(sujeito.cookie, baseComCaptura);
+
+      expect(segundoEfetivo.telas).toContain(AREA_DA_AUTOMACAO_DE_COBRANCA);
+      expect(segundoEfetivo.acoes).toContain(ACAO_DE_ENVIO_MANUAL);
+
+      // A diferença é medida sobre o EFETIVO PUBLICADO, nos dois sentidos, e não sobre os arranjos
+      // escritos: é o que o cliente da rota enxerga, e é isso que prende a mudança de comportamento
+      // à ação — e a nada mais. Nada saiu, e entrou uma chave só.
+      const antesDoAjuste = [...primeiroEfetivo.telas, ...primeiroEfetivo.acoes];
+      const depoisDoAjuste = [...segundoEfetivo.telas, ...segundoEfetivo.acoes];
+
+      expect(depoisDoAjuste.filter((chave) => !antesDoAjuste.includes(chave))).toEqual([
+        ACAO_DE_ENVIO_MANUAL,
+      ]);
+      expect(antesDoAjuste.filter((chave) => !depoisDoAjuste.includes(chave))).toEqual([]);
+
+      // --- Passo 5: o disparo passa, e o efeito é de EXATAMENTE uma mensagem e uma linha ---------
+      const aceito = await pedir(disparo.alvo, {
+        metodo: disparo.metodo,
+        cookie: sujeito.cookie,
+        base: baseComCaptura,
+        ...(disparo.corpo === undefined ? {} : { corpo: disparo.corpo }),
+      });
+
+      expect(
+        aceito.status,
+        `${disparo.rotulo} respondeu ${String(aceito.status)}: ${aceito.texto}`,
+      ).toBe(200);
+      expect(aceito.corpo).toMatchObject({
+        cobrancaCodigo: cenario.codigo,
+        caminho: 'MANUAL',
+        desfecho: 'ENVIADA',
+        destinatario: cenario.emailDoLocatario,
+        causa: null,
+      });
+
+      // O comprimento é o discriminador: sem ele, uma implementação que entregasse duas vezes — ou
+      // nenhuma, gravando `ENVIADA` sem falar com a porta — passaria em tudo acima.
+      expect(capturador.capturas.length).toBe(capturasAntes + 1);
+      expect(capturador.capturas.at(-1)?.destinatario).toBe(cenario.emailDoLocatario);
+      expect(await contarEnviosDeCobranca()).toBe(enviosAntes + 1);
+    },
+    LIMITE_CASO_MS,
+  );
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -1605,8 +2111,17 @@ async function lerPolitica(credencial: string): Promise<unknown> {
  * `cobranca_competencia_no_primeiro_dia_chk` do banco exigem. A projeção é feita por `to_char` no
  * banco, e não por `Date` em JavaScript: as duas viajam como `YYYY-MM-DD`, e construir um `Date` aqui
  * reintroduziria o deslocamento de dia por fuso que a coluna `date` existe para evitar.
+ *
+ * O **deslocamento é parâmetro**, com o do `CT-534` por padrão — o valor que o chamador anterior
+ * usava, de modo que ele não muda de comportamento. Ele existe porque o cenário da régua precisa do
+ * sinal oposto: lá a cobrança tem de estar **vencida** para que o disparo tenha efeito possível
+ * ({@link DIAS_DESDE_O_VENCIMENTO}), enquanto o `CT-534` precisa dela **em aberto** para que as duas
+ * transições sejam admitidas.
  */
-async function corpoDeCobranca(contratoCodigo: string): Promise<Record<string, unknown>> {
+async function corpoDeCobranca(
+  contratoCodigo: string,
+  dias: number = DIAS_ATE_O_VENCIMENTO,
+): Promise<Record<string, unknown>> {
   const datas = await contextoDeTenant.executarCom(
     { empresaId: EMPRESA_A.id },
     async () =>
@@ -1615,14 +2130,12 @@ async function corpoDeCobranca(contratoCodigo: string): Promise<Record<string, u
           SELECT to_char(
                    date_trunc(
                      'month',
-                     negocio.data_corrente_da_operacao()
-                       + make_interval(days => ${DIAS_ATE_O_VENCIMENTO})
+                     negocio.data_corrente_da_operacao() + make_interval(days => ${dias})
                    ),
                    'YYYY-MM-DD'
                  ) AS competencia,
                  to_char(
-                   negocio.data_corrente_da_operacao()
-                     + make_interval(days => ${DIAS_ATE_O_VENCIMENTO}),
+                   negocio.data_corrente_da_operacao() + make_interval(days => ${dias}),
                    'YYYY-MM-DD'
                  ) AS vencimento
         `;
@@ -1713,6 +2226,203 @@ async function contarCobrancas(empresaId: string): Promise<number> {
       await acessoAoNegocio.emUnidadeDeTrabalho(async (tx) => {
         const [linha] = await tx<{ total: string }[]>`
           SELECT count(*) AS total FROM negocio.cobranca
+        `;
+
+        return Number(linha?.total ?? 0);
+      }),
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// A tabela das QUATRO rotas da fatia `regua-de-cobranca` — o eixo do CT-633 e do CT-634
+// ---------------------------------------------------------------------------------------------
+
+/** Uma das quatro rotas da fatia, no que o `CT-633` e o `CT-634` precisam saber dela. */
+interface RotaDaFatiaDaRegua {
+  /** Método e caminho, para a mensagem de falha nomear a rota exata. */
+  readonly rotulo: string;
+  readonly metodo: string;
+  readonly alvo: string;
+  readonly corpo?: Record<string, unknown>;
+  /**
+   * `true` só no disparo manual — a única das quatro que exige a AÇÃO além da área.
+   *
+   * É por este campo que o `CT-634` parte a tabela em três mais uma, e é ele que dá conteúdo à
+   * afirmação *"só o disparo é recusado"*: sem ele, o caso teria de repetir o caminho da rota, e a
+   * partição passaria a depender de uma cadeia escrita duas vezes.
+   */
+  readonly exigeAAcao: boolean;
+}
+
+/**
+ * As **quatro** rotas da fatia, compostas a partir do dono do segmento — nunca redigitadas.
+ *
+ * Cada uma carrega um corpo **válido** onde há corpo, e a validade é obrigatória por causa do eixo
+ * positivo do `CT-634`: é a MESMA chamada que roda com a sessão que alcança a área, e um corpo
+ * malformado responderia `422` ali, esvaziando o controle. No eixo negativo o corpo não muda nada — a
+ * guarda decide antes de o manipulador ler a requisição —, e é justamente essa ordem que a contagem
+ * crua inalterada mede do outro lado.
+ *
+ * O corpo do `PUT` é o **mesmo** que o cenário já gravou: a rota é idempotente por construção (corpo
+ * completo, sem campo opcional), de modo que o eixo positivo exercita a escrita **sem** invalidar o
+ * que o `CT-633` afirmou sobre a política.
+ */
+function rotasDaFatiaDaRegua(codigo: string): readonly RotaDaFatiaDaRegua[] {
+  const avisos = rotaDosAvisos(codigo);
+
+  return [
+    {
+      rotulo: `GET ${RECURSO_DA_AUTOMACAO}`,
+      metodo: 'GET',
+      alvo: RECURSO_DA_AUTOMACAO,
+      exigeAAcao: false,
+    },
+    {
+      rotulo: `PUT ${RECURSO_DA_AUTOMACAO}`,
+      metodo: 'PUT',
+      alvo: RECURSO_DA_AUTOMACAO,
+      corpo: { ...POLITICA_DE_AVISO_DO_CENARIO },
+      exigeAAcao: false,
+    },
+    {
+      rotulo: `GET ${RECURSO_DA_AUTOMACAO}/cobrancas/:codigo/avisos`,
+      metodo: 'GET',
+      alvo: avisos,
+      exigeAAcao: false,
+    },
+    {
+      rotulo: `POST ${RECURSO_DA_AUTOMACAO}/cobrancas/:codigo/avisos`,
+      metodo: 'POST',
+      alvo: avisos,
+      // Corpo **vazio e fechado**: não há o que parametrizar num ato cujo conteúdo inteiro é
+      // derivado do estado já publicado.
+      corpo: {},
+      exigeAAcao: true,
+    },
+  ];
+}
+
+/** O cenário dos dois casos da régua: a cobrança avisável e o endereço para onde o aviso iria. */
+interface CenarioDaRegua {
+  readonly codigo: string;
+  readonly emailDoLocatario: string;
+}
+
+/**
+ * Monta, **pelas rotas reais**, uma cobrança `VENCIDA` cujo locatário tem endereço de contato.
+ *
+ * O contrato nasce com `gerarCobrancasAutomaticamente: false` e **não é ativado**: o lançamento
+ * avulso exige apenas que o contrato exista, e a visão que decide o estado publicado junta cobrança e
+ * contrato sem olhar o `status` dele. Ativá-lo faria nascer as parcelas do prazo inteiro, e as
+ * contagens cruas que os dois casos comparam passariam a depender do calendário.
+ *
+ * O endereço do locatário é lido **pela rota**, e não montado a partir do corpo que o criou: é ele que
+ * o `CT-634` compara com o destinatário da captura, e lê-lo de volta é o que torna a comparação uma
+ * afirmação sobre o que o produto guardou.
+ *
+ * O estado é **AFIRMADO**, e não presumido do deslocamento: sem essa conferência, uma cobrança em
+ * aberto faria o eixo positivo do `CT-634` medir a guarda de estado em vez da de autorização.
+ */
+async function cenarioDoDisparoManual(): Promise<CenarioDaRegua> {
+  const partes = await criarAlvosDoDominio(cookiePleno);
+  const montagem = await pedir(COLECAO_DE_CONTRATOS, {
+    metodo: 'POST',
+    cookie: cookiePleno,
+    corpo: { ...corpoDeContrato(partes), gerarCobrancasAutomaticamente: false },
+  });
+
+  if (montagem.status !== 201) {
+    throw new Error(
+      `a montagem do contrato respondeu ${String(montagem.status)}: ${montagem.texto}`,
+    );
+  }
+
+  const contratoCodigo = (montagem.corpo as { codigo: string }).codigo;
+  const cobranca = await lancarCobranca(
+    cookiePleno,
+    await corpoDeCobranca(contratoCodigo, DIAS_DESDE_O_VENCIMENTO),
+  );
+
+  if (cobranca.status !== ESTADO_VENCIDO) {
+    throw new Error(`a cobrança ${cobranca.codigo} nasceu ${cobranca.status}`);
+  }
+
+  const locatario = (await lerPor(
+    `${colecao(CAMINHO_DOS_LOCATARIOS)}/${partes.locatarioId}`,
+    cookiePleno,
+  )) as { email: string };
+
+  return { codigo: cobranca.codigo, emailDoLocatario: locatario.email };
+}
+
+/** Define a política de aviso pela rota real, na aplicação instrumentada. A falha levanta. */
+async function definirPoliticaDeAviso(credencial: string): Promise<void> {
+  const resposta = await pedir(RECURSO_DA_AUTOMACAO, {
+    metodo: 'PUT',
+    cookie: credencial,
+    corpo: { ...POLITICA_DE_AVISO_DO_CENARIO },
+    base: baseComCaptura,
+  });
+
+  if (resposta.status !== 200) {
+    throw new Error(
+      `a definição da política de aviso respondeu ${String(resposta.status)}: ${resposta.texto}`,
+    );
+  }
+}
+
+/** Lê a política de aviso pela rota real, na aplicação instrumentada. A falha levanta. */
+async function lerPoliticaDeAviso(credencial: string): Promise<unknown> {
+  const resposta = await pedir(RECURSO_DA_AUTOMACAO, {
+    cookie: credencial,
+    base: baseComCaptura,
+  });
+
+  if (resposta.status !== 200) {
+    throw new Error(
+      `a leitura da política de aviso respondeu ${String(resposta.status)}: ${resposta.texto}`,
+    );
+  }
+
+  return resposta.corpo;
+}
+
+/**
+ * Quantas linhas de `negocio.politica_de_aviso` o contexto da empresa A alcança.
+ *
+ * A contagem é **crua** e sem recorte: o que o `CT-633` mede é se alguma linha nasceu ou sumiu.
+ * Nenhum `WHERE empresa_id` é escrito — quem recorta é a política (ADR-0008) —, e a empresa entra
+ * pelo **contexto**, que é o mesmo mecanismo que a aplicação usa.
+ */
+async function contarPoliticasDeAviso(): Promise<number> {
+  return await contextoDeTenant.executarCom(
+    { empresaId: EMPRESA_A.id },
+    async () =>
+      await acessoAoNegocio.emUnidadeDeTrabalho(async (tx) => {
+        const [linha] = await tx<{ total: string }[]>`
+          SELECT count(*) AS total FROM negocio.politica_de_aviso
+        `;
+
+        return Number(linha?.total ?? 0);
+      }),
+  );
+}
+
+/**
+ * Quantas tentativas de envio existem na empresa A — contagem **crua**, sem recorte.
+ *
+ * É a medição que separa *recusado* de *recusado depois de registrar*, e ela é da **tabela** inteira,
+ * não de uma cobrança: um disparo que nascesse sobre outra linha continuaria sendo uma linha que não
+ * devia existir. Vale aqui, palavra por palavra, o parágrafo de {@link contarPoliticasDeAviso} sobre a
+ * ausência de filtro por empresa.
+ */
+async function contarEnviosDeCobranca(): Promise<number> {
+  return await contextoDeTenant.executarCom(
+    { empresaId: EMPRESA_A.id },
+    async () =>
+      await acessoAoNegocio.emUnidadeDeTrabalho(async (tx) => {
+        const [linha] = await tx<{ total: string }[]>`
+          SELECT count(*) AS total FROM negocio.envio_de_cobranca
         `;
 
         return Number(linha?.total ?? 0);
@@ -1922,8 +2632,11 @@ async function lerPor(item: string, credencial: string): Promise<unknown> {
 }
 
 /** O efetivo publicado da sessão — toda precondição de permissão é AFIRMADA por aqui. */
-async function efetivoDe(credencial: string): Promise<SessaoPublicada> {
-  const resposta = await pedir(CAMINHO_DA_SESSAO_CORRENTE, { cookie: credencial });
+async function efetivoDe(credencial: string, endereco: string = base): Promise<SessaoPublicada> {
+  const resposta = await pedir(CAMINHO_DA_SESSAO_CORRENTE, {
+    cookie: credencial,
+    base: endereco,
+  });
 
   if (resposta.status !== 200) {
     throw new Error(`a sessão respondeu ${String(resposta.status)}: ${resposta.texto}`);
@@ -1979,10 +2692,17 @@ async function ajustar(
  * anteriores usavam, de modo que nenhum deles muda de comportamento. Ele existe porque o eixo de
  * indistinguibilidade do `CT-534` precisa de duas sessões de **perfis diferentes** recusadas pela mesma
  * rota, e os dois perfis administráveis pela rota do Admin são exatamente estes dois.
+ *
+ * O **endereço também é parâmetro**, com a aplicação real por padrão, e ele alcança só a *entrada* e a
+ * *troca*: a pessoa nasce pela rota do Admin na aplicação real, e o banco é o mesmo nas duas montagens
+ * — o que precisa acontecer contra a instrumentada é a sessão, porque o arcabouço de identidade
+ * confere a origem da requisição com cookie contra o endereço base daquela aplicação. É a T12 que o
+ * usa, para os sujeitos do `CT-633` e do `CT-634`.
  */
 async function pessoaOperandoComSenhaTrocada(
   prefixo: string,
   perfil: 'ADMIN_EMPRESA' | 'USUARIO_EMPRESA' = 'USUARIO_EMPRESA',
+  endereco: string = base,
 ): Promise<PessoaEmOperacao> {
   const criada = await pedir(CAMINHO_DAS_PESSOAS, {
     metodo: 'POST',
@@ -2004,11 +2724,12 @@ async function pessoaOperandoComSenhaTrocada(
     senhaProvisoria: string;
   };
 
-  const restrita = await entrar(email, senhaProvisoria);
+  const restrita = await entrar(email, senhaProvisoria, endereco);
   const troca = await pedir(ROTA_DE_TROCA_DE_SENHA, {
     metodo: 'POST',
     cookie: restrita,
     corpo: { senhaAtual: senhaProvisoria, senhaNova: SENHA_TROCADA },
+    base: endereco,
   });
 
   if (troca.status !== 200) {
@@ -2053,6 +2774,15 @@ interface OpcoesDoPedido {
   readonly metodo?: string;
   readonly corpo?: Record<string, unknown>;
   readonly cookie?: string;
+  /**
+   * Contra qual das duas aplicações a requisição corre — a real, por omissão.
+   *
+   * O parâmetro nasceu na T12, quando o `CT-633` e o `CT-634` passaram a exercitar a aplicação
+   * **instrumentada** (a que recebeu o capturador por `overrideProvider`). Ele é opcional de
+   * propósito: os casos anteriores continuam batendo na aplicação real, sem uma linha alterada. É a
+   * mesma forma, e a mesma razão, do parâmetro homônimo de `automacao-de-cobranca.e2e.spec.ts`.
+   */
+  readonly base?: string;
 }
 
 /**
@@ -2062,7 +2792,8 @@ interface OpcoesDoPedido {
  * navegador enviaria, e é o que o arcabouço confere nas requisições que carregam cookie.
  */
 async function pedir(alvo: string, opcoes: OpcoesDoPedido = {}): Promise<Resposta> {
-  const cabecalhos: Record<string, string> = { connection: 'close', origin: base };
+  const endereco = opcoes.base ?? base;
+  const cabecalhos: Record<string, string> = { connection: 'close', origin: endereco };
 
   if (opcoes.corpo !== undefined) {
     cabecalhos['content-type'] = 'application/json';
@@ -2071,7 +2802,7 @@ async function pedir(alvo: string, opcoes: OpcoesDoPedido = {}): Promise<Respost
     cabecalhos.cookie = opcoes.cookie;
   }
 
-  const resposta = await fetch(new URL(alvo, base), {
+  const resposta = await fetch(new URL(alvo, endereco), {
     method: opcoes.metodo ?? 'GET',
     headers: cabecalhos,
     ...(opcoes.corpo === undefined ? {} : { body: JSON.stringify(opcoes.corpo) }),
@@ -2101,10 +2832,11 @@ function credencialDe(cookies: readonly string[]): string | undefined {
 }
 
 /** Entra pelo caminho REAL — a rota pública de entrada. Nenhum estado de sessão é forjado. */
-async function entrar(email: string, senha: string): Promise<string> {
+async function entrar(email: string, senha: string, endereco: string = base): Promise<string> {
   const entrada = await pedir(ROTA_DE_ENTRADA, {
     metodo: 'POST',
     corpo: { email, password: senha },
+    base: endereco,
   });
 
   if (entrada.status !== 200) {

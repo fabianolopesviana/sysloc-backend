@@ -20,6 +20,7 @@
     "@sysloc/auth": "workspace:*",
     "@sysloc/contracts": "workspace:*",
     "@sysloc/db": "workspace:*",
+    "@sysloc/regua": "workspace:*",
     "@sysloc/shared": "workspace:*",
     "fastify": "5.10.0",
     "ioredis": "5.11.1",

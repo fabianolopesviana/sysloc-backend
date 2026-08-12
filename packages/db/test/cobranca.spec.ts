@@ -358,8 +358,15 @@ const CAMINHO_DA_MIGRACAO = join(
 /** Onde vivem as unidades `systemd` do repositório — o CT-512 (b) as enumera. */
 const DIRETORIO_DE_UNIDADES = join(RAIZ_DO_REPOSITORIO, 'deploy/systemd');
 
-/** O módulo que declara as filas do trabalhador — o CT-512 (b) as enumera. */
-const CAMINHO_DA_FILA = join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/fila.ts');
+/**
+ * O módulo que declara as filas — o CT-512 (b) as enumera.
+ *
+ * Era `apps/worker/src/fila.ts`; passou a ser o contrato compartilhado quando a T7 da fatia
+ * `regua-de-cobranca` fechou o **D32 (F0/T6)** e desceu nome, opções e cargas para
+ * `@sysloc/shared`. Apontar para o lugar antigo deixaria o leitor **cego** — devolvendo lista
+ * vazia, que é o pior desfecho de uma asserção estática.
+ */
+const CAMINHO_DA_FILA = join(RAIZ_DO_REPOSITORIO, 'packages/shared/src/fila.ts');
 
 /**
  * O controlador que **declara o segmento** `/v1/cobrancas` — o fonte que o CT-521 varre.
@@ -464,21 +471,29 @@ const UNIDADES_DECLARADAS: readonly string[] = Object.freeze([
 ]);
 
 /**
- * As filas BullMQ que o repositório declara — **uma**, a de eco da F0, sem carga de negócio.
+ * As filas BullMQ que o repositório declara — **duas**, e nenhuma delas move estado publicado.
  *
  * O card pede *"a fila tem `0` tarefas enfileiradas"*. Contra uma fila real isso exigiria subir Redis
  * dentro da suíte da camada de dados, o que atravessaria uma fronteira que este pacote não tem; e a
  * asserção seria **mais fraca**, porque uma fila vazia num instante não diz nada sobre a fatia. A
- * forma acima é mais forte e é a que o débito `D32 · F0/T6` já usa como gatilho (*"a primeira fatia
- * que enfileirar tarefa de negócio"*): **não existe fila de cobrança para enfileirar nada**.
+ * forma abaixo é mais forte: ela enumera, por igualdade, **toda** fila que existe.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a lista era `['eco']` e citava o gatilho do `D32 · F0/T6` — *"a primeira
+ * fatia que enfileirar tarefa de negócio"* — como razão de não haver fila de negócio nenhuma. Esse
+ * gatilho **chegou**: a fatia `regua-de-cobranca` declara `regua-de-cobranca`, e o código de
+ * produção está certo. O que a ADR-0022 proíbe é estado publicado **movido por rotina**, e a régua
+ * lê `negocio.cobranca_derivada` e grava apenas `negocio.envio_de_cobranca` — não existe coluna de
+ * estado para ela mover, o que o Passo 4 deste mesmo caso continua provando. A asserção **não
+ * afrouxa**: segue por igualdade sobre a lista inteira, de modo que uma terceira fila — uma
+ * `cobranca-vencida`, que é a forma exata do defeito — reprova o caso nomeando-a.
  */
-const FILAS_DECLARADAS: readonly string[] = Object.freeze(['eco']);
+const FILAS_DECLARADAS: readonly string[] = Object.freeze(['eco', 'regua-de-cobranca']);
 
 /** O agendamento que a falsificação do CT-512 (b) acrescenta à cópia — nunca à árvore versionada. */
 const TIMER_FALSIFICADO = 'sysloc-cobranca-vencida.timer';
 
-/** Como `apps/worker/src/fila.ts` nomeia cada fila — o padrão que {@link lerFilasDeclaradas} lê. */
-const DECLARACAO_DE_FILA = /NOME_FILA_[A-Z_]+ = '([^']+)'/g;
+/** Como o contrato compartilhado nomeia cada fila — o padrão que {@link lerFilasDeclaradas} lê. */
+const DECLARACAO_DE_FILA = /FILA_[A-Z_]+ = '([^']+)'/g;
 
 /**
  * As quatro colunas que as rotinas noturnas do legado escreviam, **nomeadas por extenso**.
@@ -615,11 +630,15 @@ describe('CT-512 — a cobrança consta VENCIDA sem escrita alguma na linha fís
         const filaMutada = join(raizTemporaria, 'fila-mutada.ts');
         await writeFile(
           filaMutada,
-          `${await readFile(CAMINHO_DA_FILA, 'utf8')}\nexport const NOME_FILA_COBRANCA = 'cobranca';\n`,
+          `${await readFile(CAMINHO_DA_FILA, 'utf8')}\nexport const FILA_DA_COBRANCA = 'cobranca';\n`,
           'utf8',
         );
 
-        expect(await lerFilasDeclaradas(filaMutada)).toEqual([...FILAS_DECLARADAS, 'cobranca']);
+        // Ordenado pela mesma razão do timer acima: o leitor ordena, e comparar contra a
+        // concatenação crua faria a asserção depender da posição em que o nome novo cai.
+        expect(await lerFilasDeclaradas(filaMutada)).toEqual(
+          [...FILAS_DECLARADAS, 'cobranca'].sort(),
+        );
       } finally {
         await rm(raizTemporaria, { recursive: true, force: true });
       }
@@ -2794,11 +2813,16 @@ function comMetodoDeExclusao(fonte: string): string {
   return trocarUmaVez(fonte, "  @Get(':codigo')", "  @Delete(':codigo')\n  @Get(':codigo')");
 }
 
-/** As filas que o módulo do trabalhador declara, na ordem em que ele as nomeia. */
+/**
+ * As filas que o contrato compartilhado declara, **ordenadas**.
+ *
+ * A ordenação é a mesma disciplina de {@link lerUnidades}: a lista esperada não deve depender da
+ * posição em que cada declaração aparece no fonte, que é acidente de escrita.
+ */
 async function lerFilasDeclaradas(caminho: string): Promise<string[]> {
   const fonte = await readFile(caminho, 'utf8');
 
-  return [...fonte.matchAll(DECLARACAO_DE_FILA)].map(([, nome]) => nome ?? '');
+  return [...fonte.matchAll(DECLARACAO_DE_FILA)].map(([, nome]) => nome ?? '').sort();
 }
 
 /**

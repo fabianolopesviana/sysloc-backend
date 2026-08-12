@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Mesmo arranjo de `packages/contracts`, `packages/db` e `packages/shared`: este pacote será
+    // REFERENCIADO por `packages/db` (a partir da T5) e pelos dois pontos de entrada, e referência
+    // de projeto só é aceita sobre projeto composto. É o que faz `tsc --build` do consumidor
+    // construir este aqui ANTES de compilar a si mesmo — sem isso, o `dist/` que o `exports` do
+    // manifesto resolve pode não existir (árvore limpa) ou corresponder a um `src/` anterior.
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "types": ["node"]
+  },
+  // A ÚNICA referência é o contrato, e a ausência de `../db` é a decisão desta task, não uma
+  // omissão (ADR-0025): quem declara `CandidataAoAviso`, `PortaDeCandidatas` e `PortaDeRegistro` é
+  // este pacote, e é `@sysloc/db` que importa daqui para dizer que as satisfaz. A aresta de volta —
+  // ainda que só em `devDependencies`, "para o teste enxergar o banco" — fecha um ciclo, e o
+  // Turborepo ABORTA antes de compilar qualquer coisa:
+  //
+  //     x Cyclic dependency detected: @sysloc/db#build, @sysloc/regua#build
+  //
+  // Foi medido neste repositório com um par equivalente (`@sysloc/contracts` recebendo
+  // `@sysloc/db`). A consequência prática está na §4.3 do `task_plan.md` da fatia: os casos que
+  // precisam de banco moram em `packages/db/test/`, onde o encontro já é legítimo.
+  "references": [{ "path": "../contracts" }],
+  "include": ["src/**/*.ts"]
+}

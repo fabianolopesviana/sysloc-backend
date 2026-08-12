@@ -28,9 +28,10 @@
  * |          |        | contador incrementado nem linha gravada, e escrita que não toca permissão
  * |          |        | (o nome da pessoa) deixa o contador onde estava. |
  * | CA-02    | CT-014 | O escritor do contexto de tenant (`contextoDeTenant.executarCom`) é chamado
- * |          |        | em exatamente o conjunto declarado de arquivos de produção — exatamente um
- * |          |        | desde a T9, a guarda de CONTEXTO de `apps/api` (`GuardaDeContexto`).
- * |          |        | Qualquer outro chamador reprova. |
+ * |          |        | em exatamente o conjunto declarado de arquivos de produção — **um por
+ * |          |        | BORDA**: a guarda de CONTEXTO de `apps/api` (`GuardaDeContexto`) e, desde a
+ * |          |        | T8 da fatia `regua-de-cobranca`, a borda do trabalho enfileirado
+ * |          |        | (`apps/worker/src/tarefas/regua.ts`, ADR-0024). Qualquer outro reprova. |
  * | CA-03    | CT-310 | A recusa da restrição de unicidade do identificador municipal desfaz **só a
  * | CA-02    | (c)    | instrução recusada**: numa unidade de trabalho ÚNICA, o conjunto e o imóvel
  * |          |        | gravados antes dela sobrevivem, a unidade segue utilizável depois da recusa
@@ -635,6 +636,25 @@ const SIMBOLOS_ESPERADOS = [
   'esquemaNegocio.configuracaoDeMora',
   'esquemaNegocio.naturezaCobranca',
   'esquemaNegocio.statusCobranca',
+  // T3 da fatia `regua-de-cobranca` — as DUAS tabelas da régua e os TRÊS enums, criados pela
+  // migração `0011`.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T3 publica cinco símbolos novos no schema por decisão declarada na §1
+  // da task (`Símbolos públicos criados`). Eles entram pelo mesmo critério dos quatro da T3
+  // anterior: são **declaração de estrutura**, não caminho para dado — quem os tem em mãos ainda
+  // precisa de um executor para chegar ao banco, e o executor não sai do índice.
+  //
+  // O `FORCE ROW LEVEL SECURITY`, as duas políticas e os três `GRANT USAGE ON TYPE` **não aparecem
+  // aqui** pela mesma razão que a visão e as funções da cobrança não apareciam: são objetos e
+  // atributos do BANCO, criados pela migração autoral `0012`, e não símbolos deste pacote. Quem
+  // publicará a PORTA destas duas tabelas como função de domínio é a T5, em
+  // `packages/db/src/automacao-de-cobranca.ts`.
+  'esquemaNegocio.caminhoDoAviso',
+  'esquemaNegocio.canalDeAviso',
+  'esquemaNegocio.desfechoDoAviso',
+  'esquemaNegocio.envioDeCobranca',
+  'esquemaNegocio.politicaDeAviso',
   // T4 da fatia `cobranca-e-mora` — a PORTA da cobrança: as três operações do ciclo de vida, as DUAS
   // da série e a classe de erro da tradução de unicidade, ordenadas no conjunto pela posição de cada
   // nome (a comparação é sobre a lista ordenada).
@@ -769,6 +789,73 @@ const SIMBOLOS_ESPERADOS = [
   // entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
   'gravarConfiguracaoDeMora',
   'lerConfiguracaoDeMora',
+  // T5 da fatia `regua-de-cobranca` — as DUAS portas da régua: a política de aviso
+  // (`src/politica-de-aviso.ts`) e o predicado, o relógio, o registro e o histórico
+  // (`src/envio-de-cobranca.ts`).
+  //
+  // ⚠️ O comentário da T3, acima, antecipava um arquivo único chamado `automacao-de-cobranca.ts`. A
+  // T5 os partiu em DOIS, e o corte é por objeto: a política é configuração singular por empresa (o
+  // molde de `configuracao-de-mora.ts`), o envio é fato registrado mais o predicado que o consome.
+  // Fundi-los poria a leitura de `GET /v1/automacao-de-cobranca` no mesmo arquivo da consulta mais
+  // cara da fatia, e nenhum dos dois cabeçalhos poderia declarar uma decisão só.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T5 publica OITO símbolos novos no índice por decisão declarada na §1
+  // da task (`Símbolos públicos criados`). Sete entram pelo critério de todas as portas anteriores:
+  // **recebem** o executor de quem já abriu a unidade de trabalho, não abrem conexão, não reservam,
+  // não devolvem executor e nenhuma recebe `empresaId` — o escopo é da política do banco (ADR-0008).
+  //
+  // `selecionarCandidatasAoAviso` é publicada porque a elegibilidade **participa de seleção**, e a
+  // ADR-0023 manda a derivação que participa morar no banco: publicar a porta é o que impede o job de
+  // compor por fora o par "listar a carteira, decidir quem entra", que seria a segunda avaliação do
+  // estado que o marcador `DECISÃO FECHADA` de `src/cobranca.ts` existe para tornar impossível. Ela é
+  // também o que **satisfaz** `PortaDeCandidatas`, declarada em `@sysloc/regua` (ADR-0025) — a seta é
+  // `db → regua`, e a inversa fecha um ciclo que o Turborepo aborta.
+  //
+  // `lerHoraCorrenteDaOperacao` entra pelo MESMO critério de `lerAnoDaSerieDeCobranca`: é o **eixo
+  // único de hora do dia** da fatia (ADR-0026), e ter o eixo com nome é o que torna verificável a
+  // afirmação de que não há segundo relógio — ele apareceria aqui como símbolo excedente, e não como
+  // um `new Date()` escondido no job.
+  //
+  // `POLITICA_DE_AVISO_AUSENTE` entra por critério diferente das sete, e é o que o torna admissível:
+  // é **contrato publicado** — o corpo que a leitura devolve a toda empresa que nunca configurou —, e
+  // não caminho para dado nenhum. Ele diverge do gêmeo `POLITICA_AUSENTE` de
+  // `src/configuracao-de-mora.ts`, que fica dentro, porque aqui há consumidores fora do pacote: o job
+  // e a borda dizem *"a régua está desligada"* pelo mesmo objeto congelado, em vez de cada um
+  // recompor os seis campos.
+  //
+  // O que **não** sai do pacote, e as ausências são deliberadas: `colunasDaPolitica`,
+  // `politicaPublicada`, `candidataPublicada`, `envioPublicado`, `DESFECHO_QUE_TRAVA` e os quatro
+  // formatos de projeção. Pelo critério de `colunasDaCobranca` e de `empresaDoContexto`, são
+  // fragmentos de SQL e mecanismo interno da tradução — e publicar o desfecho que trava daria a quem
+  // chama a peça com que recompor o predicado por fora, que é o que a ADR-0023 mantém no banco.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o defeito
+  // que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia. **Nenhuma
+  // entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // O tipo que elas publicam (`JanelaDeEnvios`) não aparece aqui porque não existe em tempo de
+  // execução, e este caso observa o módulo carregado.
+  //
+  // SUT_IS_CORRECT_BECAUSE: a **T10** publica o NONO símbolo desta seção,
+  // `localizarCandidataAoAviso`, e ele entra pelo mesmo critério das sete portas acima: recebe o
+  // executor de quem já abriu a unidade, não abre conexão, não devolve executor e não recebe
+  // `empresaId` — o escopo é da política do banco. Ele é a leitura do **disparo manual**, e é
+  // publicado porque entrega a **mesma** `CandidataAoAviso` que o predicado entrega, do mesmo
+  // fragmento de colunas e das mesmas quatro junções: fosse escrito na borda, a projeção do manual
+  // ficaria livre para divergir da do automático, que é exatamente o defeito de origem da fatia
+  // (REG-08). Os dois fragmentos que a igualdade produziu — `colunasDaCandidata` e
+  // `origemDaCandidata` — **não** saem do pacote, pelo critério de `colunasDaCobranca`. **Nenhuma
+  // entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  'POLITICA_DE_AVISO_AUSENTE',
+  'contarEnviosDaCobranca',
+  'gravarPoliticaDeAviso',
+  'lerEnviosDaCobranca',
+  'lerHoraCorrenteDaOperacao',
+  'lerPoliticaDeAviso',
+  'localizarCandidataAoAviso',
+  'registrarEnvioDeCobranca',
+  'selecionarCandidatasAoAviso',
   // T4 da fatia `contratos-de-locacao` — as DUAS derivações puras da ativação.
   //
   // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
@@ -1068,18 +1155,31 @@ const AREAS_DE_PRODUCAO = ['apps', 'packages'] as const;
 /**
  * Os arquivos de produção que podem chamar o escritor. Igualdade de conjunto.
  *
- * **Exatamente um, desde a T9**: a guarda de contexto de `apps/api`, que deriva a empresa da sessão
- * autenticada. Até a T8 o conjunto era vazio — a fatia entregava a unidade de trabalho e ninguém
- * ainda estabelecia contexto —, e a entrada abaixo é literalmente a que este comentário previa
- * ("na T9 entra exatamente um"). O crescimento é a mudança que o caso existe para **exigir
- * revisão**, não para impedir: um SEGUNDO chamador continua reprovando aqui, e é essa a rede.
+ * **Exatamente dois, desde a T8 da fatia `regua-de-cobranca`**: um escritor por **borda**. O
+ * crescimento é a mudança que o caso existe para **exigir revisão**, não para impedir — um TERCEIRO
+ * chamador continua reprovando aqui, e é essa a rede.
  *
  * O caminho é composto a partir da raiz do repositório, e não escrito absoluto: a varredura devolve
  * caminho absoluto, e um literal amarraria o caso ao diretório em que a máquina o hospeda.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a lista tinha **um** elemento porque, até aqui, toda execução do produto
+ * nascia de uma requisição — e a ADR-0008 não dizia qual é a origem do contexto quando **não há
+ * requisição**. A **ADR-0024** (`accepted`, 2026-08-11) fecha essa lacuna e o faz **nomeando esta
+ * consequência**: *"acrescenta um segundo escritor legítimo a um símbolo cujo cabeçalho hoje nomeia
+ * um só — exige emenda desse cabeçalho e marcador no ponto"*. O segundo elemento é a borda do
+ * trabalho enfileirado, que abre o contexto **uma vez**, a partir da carga, pelo **mesmo** escritor
+ * único. As duas alternativas que evitariam esta linha estão descartadas por nome na mesma ADR — a
+ * sessão de serviço sintética e o papel de banco sem RLS. A asserção **não foi afrouxada**: ela
+ * continua sendo IGUALDADE de conjunto, com `excedentes` e `ausentes` nomeados, e o caso segue
+ * reprovando qualquer chamador fora desta lista.
  */
 const CHAMADORES_LEGITIMOS: readonly string[] = [
+  // A borda HTTP: a guarda que deriva a empresa da sessão autenticada.
   join(RAIZ_DO_REPOSITORIO, 'apps/api/src/autenticacao/contexto.guard.ts'),
-];
+  // A borda do TRABALHO ENFILEIRADO: o processador da régua, que deriva a empresa da carga do
+  // próprio trabalho (ADR-0024). Não há sessão aqui, e nenhuma é simulada.
+  join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/regua.ts'),
+].sort();
 
 /**
  * A chamada, e não a declaração: `export function executarCom<T>(…` traz `<T>` entre o nome e o
@@ -1215,6 +1315,17 @@ const ABRIDORES_LEGITIMOS: readonly string[] = [
   // serviços — a decisão D1 governa a superfície do domínio de locação, e não os reescreve.
   join(RAIZ_DO_REPOSITORIO, 'apps/api/src/master/empresa.service.ts'),
   join(RAIZ_DO_REPOSITORIO, 'apps/api/src/usuarios/usuario.service.ts'),
+  // A borda do TRABALHO ENFILEIRADO (T8 da fatia `regua-de-cobranca`).
+  //
+  // SUT_IS_CORRECT_BECAUSE: o elenco enumera **bordas**, e a decisão D1 é literalmente *"a unidade
+  // abre na BORDA, e o serviço recebe o executor"*. Até a T7 toda borda do produto era HTTP; a
+  // ADR-0024 acrescenta a primeira execução sem requisição, e o arquivo abaixo é a borda dela — ele
+  // abre a unidade e entrega o `tx` às portas que o domínio (`@sysloc/regua`) recebe por parâmetro,
+  // que é exatamente o desenho que este caso existe para preservar. O que ele NÃO é: um serviço
+  // abrindo unidade própria — `@sysloc/regua` não abre nenhuma, não conhece `AcessoAoBanco` e não
+  // importa `@sysloc/db`. A asserção **não foi afrouxada**: continua sendo igualdade de conjunto
+  // com `excedentes` e `ausentes` nomeados, e qualquer arquivo fora desta lista reprova.
+  join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/regua.ts'),
 ].sort();
 
 /**

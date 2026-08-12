@@ -2,7 +2,7 @@
   "name": "@sysloc/worker",
   "version": "0.0.0",
   "private": true,
-  "description": "Processador de trabalho em segundo plano do backend Sysloc — consome a fila persistente",
+  "description": "Processador de trabalho em segundo plano do backend Sysloc — consome a fila persistente e executa a régua de cobrança por empresa",
   "license": "UNLICENSED",
   "type": "module",
   "main": "./dist/main.js",
@@ -12,12 +12,17 @@
     "test": "tsc --build && tsc -p tsconfig.test.json && vitest run"
   },
   "dependencies": {
+    "@sysloc/contracts": "workspace:*",
+    "@sysloc/db": "workspace:*",
+    "@sysloc/regua": "workspace:*",
     "@sysloc/shared": "workspace:*",
     "bullmq": "5.81.3",
-    "ioredis": "5.11.1"
+    "ioredis": "5.11.1",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "24.13.3",
+    "postgres": "3.4.9",
     "typescript": "7.0.2",
     "vitest": "4.1.10"
   }

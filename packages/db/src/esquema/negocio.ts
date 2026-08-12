@@ -16,7 +16,7 @@
  *      e não apenas verificada.
  *
  * Falta a quinta, que **não mora neste arquivo**: `FORCE ROW LEVEL SECURITY` e as políticas
- * `USING`/`WITH CHECK` vivem em migração de segurança escrita à mão. São **quatro**, e quem
+ * `USING`/`WITH CHECK` vivem em migração de segurança escrita à mão. São **cinco**, e quem
  * acrescentar tabela aqui precisa saber qual delas emendar — a resposta é sempre *nenhuma*, e a
  * lista existe para dizer onde cada tabela já protegida foi protegida:
  *
@@ -28,21 +28,25 @@
  *     `contrato_fiador`), mais o mecanismo de emissão da série declarada (ADR-0020);
  *   * `migracoes/0010_seguranca_cobranca.sql` — a cobrança e a configuração de mora (`cobranca` e
  *     `configuracao_de_mora`), mais a view `cobranca_derivada`, a data corrente da operação e a
- *     segunda série declarada do produto.
+ *     segunda série declarada do produto;
+ *   * `migracoes/0012_seguranca_regua.sql` — a política de aviso e o registro de envios
+ *     (`politica_de_aviso` e `envio_de_cobranca`), mais os três tipos enumerados da régua.
  *
- * São quatro porque **gerado e autoral nunca convivem no mesmo arquivo** — uma regeração futura da
+ * São cinco porque **gerado e autoral nunca convivem no mesmo arquivo** — uma regeração futura da
  * gerada sobrescreveria o trecho autoral em silêncio. O que **obriga** a parceira autoral não é a
  * predecessora ser gerada: é **nascer tabela em `negocio`**, porque o gerador não emite `FORCE` nem
  * política. Toda migração que criar tabela aqui leva junto uma parceira autoral própria — nunca um
- * acréscimo à `0001`, à `0006`, à `0008` ou à `0010`, que descrevem schemas já aplicados e são,
- * portanto, imutáveis.
+ * acréscimo à `0001`, à `0006`, à `0008`, à `0010` ou à `0012`, que descrevem schemas já aplicados e
+ * são, portanto, imutáveis. ⚠️ A `0010` tem, além disso, o `DÉBITO COM GATILHO — D20` no ponto da
+ * emenda que ela já sofreu: **leia-o antes de qualquer tentativa de tocá-la**.
  *
  * O diretório de migrações é a conferência da regra, e ele recusa a forma mais larga dela: a
  * `0002_campos_do_arcabouco.sql` e a `0003_autorizacao.sql` são **geradas e não têm parceira** —
  * nenhuma das duas cria tabela, elas só alteram o que já existia —, e a `0004_desfecho_de_recusa.sql`
- * é **autoral avulsa**, sem gerada a quem se parear. Só a `0000`, a `0005`, a `0007` e a `0009` criam
- * tabela em `negocio`, e são exatamente elas que têm parceira. Ler o gatilho como "toda gerada ganha
- * uma parceira" produziria uma migração de segurança vazia, sem `FORCE` nem política a declarar.
+ * é **autoral avulsa**, sem gerada a quem se parear. Só a `0000`, a `0005`, a `0007`, a `0009` e a
+ * `0011` criam tabela em `negocio`, e são exatamente elas que têm parceira. Ler o gatilho como "toda
+ * gerada ganha uma parceira" produziria uma migração de segurança vazia, sem `FORCE` nem política a
+ * declarar.
  *
  * O gerador de migração declara RLS e a política que se declare aqui, mas **não emite `FORCE`** — e
  * sem `FORCE` o dono das tabelas ignora a política, o que faria a suíte de isolamento ficar verde
@@ -86,6 +90,9 @@
  */
 
 import {
+  CAMINHOS_DO_AVISO,
+  CANAIS_DE_AVISO,
+  DESFECHOS_DO_AVISO,
   ESTADOS_DA_COBRANCA,
   ESTADOS_DO_CONTRATO,
   NATUREZAS_DE_COBRANCA,
@@ -104,6 +111,7 @@ import {
   numeric,
   pgSchema,
   text,
+  time,
   timestamp,
   unique,
   uniqueIndex,
@@ -1004,6 +1012,249 @@ export const configuracaoDeMora = negocio
       check(
         'configuracao_de_mora_faixa_chk',
         sql`${tabela.multaPercentual} BETWEEN 0 AND 100 AND ${tabela.jurosPercentual} BETWEEN 0 AND 100`,
+      ),
+    ],
+  )
+  .enableRLS();
+
+// ===========================================================================
+// A régua de cobrança — a política que ela obedece, e o registro de toda tentativa
+// ===========================================================================
+//
+// Os três enums abaixo derivam dos literais de `@sysloc/contracts`, pela mesma razão e na mesma
+// direção dos seis anteriores (ADR-0016): o contrato é **folha**, e é ele que o frontend importa no
+// marco de entrega. Declará-los aqui obrigaria o contrato a importar `@sysloc/db` para falar de
+// canal, de caminho e de desfecho. A ORDEM dos rótulos é conteúdo — um enum do PostgreSQL guarda a
+// ordem, e é ela que governa comparação e ordenação do tipo.
+//
+// **O que NÃO é declarável aqui**, e por isso vive em `migracoes/0012_seguranca_regua.sql`: o
+// `FORCE ROW LEVEL SECURITY`, as duas políticas `FOR ALL` e os três `GRANT USAGE ON TYPE`. O que
+// mora aqui são as duas TABELAS e os três tipos, e só eles.
+
+/** O único canal de aviso implementado (RN-13). Ordem e valores vêm do contrato, nunca redigitados. */
+export const canalDeAviso = negocio.enum('canal_de_aviso', CANAIS_DE_AVISO);
+
+/** Como a tentativa nasceu — a passagem da régua ou o disparo manual. Valores vindos do contrato. */
+export const caminhoDoAviso = negocio.enum('caminho_do_aviso', CAMINHOS_DO_AVISO);
+
+/** As três naturezas de desfecho de uma tentativa (RD-08). Valores vindos do contrato. */
+export const desfechoDoAviso = negocio.enum('desfecho_do_aviso', DESFECHOS_DO_AVISO);
+
+/**
+ * A política de aviso da empresa — **uma linha por empresa**, e a régua nasce DESLIGADA.
+ *
+ * ---------------------------------------------------------------------------
+ * `ativo` nasce `false`, e o padrão é a decisão
+ * ---------------------------------------------------------------------------
+ *
+ * Toda empresa do produto — inclusive as que já existem quando a migração roda — passa a ter uma
+ * régua possível. Um padrão `true` faria a fatia entrar em produção enviando mensagem para a caixa
+ * de locatário de toda empresa que nunca pediu isso, e o dano de um aviso indevido não se desfaz.
+ * A ausência de linha e a régua explicitamente desligada são a **mesma coisa publicada** (RD-03), de
+ * modo que o padrão desligado é também o que faz a leitura concordar com o que a passagem da régua
+ * faz numa empresa sem política: nada.
+ *
+ * ---------------------------------------------------------------------------
+ * `politica_de_aviso_empresa_key` é o alvo do `ON CONFLICT`, não índice de leitura
+ * ---------------------------------------------------------------------------
+ *
+ * Mesma razão registrada em {@link configuracaoDeMora}, e ela não envelheceu: sem a unicidade, a
+ * escrita teria de ler antes de gravar — e leitura-antes-de-gravar é corrida disfarçada. Entre o
+ * `SELECT` que não achou e o `INSERT`, outra transação grava, e a empresa passaria a ter duas
+ * políticas com nada que decida qual vale.
+ *
+ * `politica_de_aviso_id_empresa_key` existe pela ADR-0008 ainda que **nada a referencie hoje**: a
+ * forma de referência entre entidades tenantizadas é a chave estrangeira composta, e ela precisa de
+ * destino. A guarda de cobertura de `src/catalogo.ts` a cobra de toda tabela deste schema.
+ *
+ * `empresa_id` ganha chave estrangeira **simples** para `identidade.empresa` porque esta tabela não
+ * tem pai tenantizado a quem se referir pelo par — mesmo caso de {@link configuracaoDeMora} e de
+ * {@link conjunto}.
+ *
+ * ---------------------------------------------------------------------------
+ * OS DOIS HORÁRIOS SÃO `time`, E A PROJEÇÃO DELES É `to_char(coluna, 'HH24:MI')`
+ * ---------------------------------------------------------------------------
+ *
+ * **Quem for escrever a porta de leitura desta tabela precisa ler este parágrafo antes.** O contrato
+ * publica `janelaInicio` e `janelaFim` no molde `HH:MM` **ancorado nas duas pontas**
+ * (`esquemaDaPoliticaDeAviso`, em `packages/contracts/src/automacao-de-cobranca.ts`), e o driver
+ * devolve uma coluna `time` como `'08:00:00'`. A âncora recusa essa forma — e a recusa de um esquema
+ * de SAÍDA **não produz `422`**: ela levanta na serialização e **derruba a rota de leitura**.
+ *
+ * A projeção correta é, portanto, parte da declaração desta coluna, e não detalhe de quem consulta:
+ *
+ * ```sql
+ * SELECT to_char(janela_inicio, 'HH24:MI') AS "janelaInicio",
+ *        to_char(janela_fim,    'HH24:MI') AS "janelaFim"
+ * ```
+ *
+ * A alternativa — guardar os horários como `text` — foi descartada: a coluna `time` é o que dá ao
+ * `politica_de_aviso_janela_chk` uma comparação de **ordem temporal** em vez de comparação
+ * lexicográfica sobre texto livre, e é ela que recusa `'24:00'` e `'8:0'` no próprio tipo.
+ *
+ * A obrigação tem prova executável no **CT-608** (`test/coerencia-de-migracoes.spec.ts`): o caso lê
+ * a mesma linha pelas duas projeções e afirma que a crua **reprova** `esquemaDaPoliticaDeAviso` e a
+ * `to_char` **passa**. Não é comentário pedindo boa-fé — é asserção que fica vermelha se a projeção
+ * se perder.
+ *
+ * ---------------------------------------------------------------------------
+ * Os dois `CHECK` são a REDE, nunca a primeira linha de defesa
+ * ---------------------------------------------------------------------------
+ *
+ * As faixas e a ordem da janela também são conferidas pelo Zod, na borda, e a ordem importa: quem
+ * recusa primeiro é o esquema de entrada, com `422` nomeando o campo. Estas restrições existem para
+ * impedir que um caminho de escrita futuro — carga, correção manual, fatia nova — grave o que a
+ * regra não admite. Mesmo desenho dos três limites de {@link contrato} e do de
+ * {@link configuracaoDeMora}.
+ *
+ * O piso de `intervalo_minimo_dias` é **1**, e não 0: zero desligaria a trava que protege a caixa do
+ * locatário, e desligar a régua se faz por `ativo`, nunca por valor de borda de um campo que
+ * significa outra coisa. O piso de `dias_antes_do_vencimento` é **0**, e ali o zero tem significado
+ * legítimo — avisar no próprio dia do vencimento.
+ */
+export const politicaDeAviso = negocio
+  .table(
+    'politica_de_aviso',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      empresaId: uuid('empresa_id')
+        .notNull()
+        .references(() => empresa.id),
+      /** A régua nasce desligada em toda empresa — ver o cabeçalho. */
+      ativo: boolean('ativo').notNull().default(false),
+      /** Quantos dias antes do vencimento a cobrança `A_VENCER` passa a ser elegível (RD-04). */
+      diasAntesDoVencimento: integer('dias_antes_do_vencimento').notNull().default(0),
+      /** O intervalo mínimo entre dois avisos da MESMA cobrança — a trava da RD-05. */
+      intervaloMinimoDias: integer('intervalo_minimo_dias').notNull().default(1),
+      /** Início da janela de horário. Projetada por `to_char(…, 'HH24:MI')` — ver o cabeçalho. */
+      janelaInicio: time('janela_inicio').notNull().default('00:00'),
+      /**
+       * Fim da janela. O par padrão é `00:00`–`23:59`, e não `00:00`–`00:00`: a janela que nunca
+       * fecha é a das duas bordas, porque `00:00`–`00:00` fecharia tudo menos um minuto.
+       */
+      janelaFim: time('janela_fim').notNull().default('23:59'),
+      /** Enum de UM valor: o canal que o produto não implementa é irrepresentável (RN-13). */
+      canal: canalDeAviso('canal').notNull().default('EMAIL'),
+    },
+    (tabela) => [
+      unique('politica_de_aviso_id_empresa_key').on(tabela.id, tabela.empresaId),
+      // Uma linha por empresa — ver o cabeçalho: é o alvo do `ON CONFLICT`, e não índice de leitura.
+      unique('politica_de_aviso_empresa_key').on(tabela.empresaId),
+      check(
+        'politica_de_aviso_faixa_chk',
+        sql`${tabela.diasAntesDoVencimento} BETWEEN 0 AND 90 AND ${tabela.intervaloMinimoDias} BETWEEN 1 AND 90`,
+      ),
+      // Janela invertida é RECUSADA, e não reinterpretada: `18:00`–`09:00` poderia ser lido como "a
+      // noite inteira", e adivinhar seria pior do que recusar — o cliente que trocou os dois campos
+      // de lugar receberia uma régua enviando de madrugada, sem nada que acusasse o engano.
+      //
+      // A comparação é `>=`, e não `>`: a janela de um minuto (`09:00`–`09:00`) é legítima.
+      check('politica_de_aviso_janela_chk', sql`${tabela.janelaFim} >= ${tabela.janelaInicio}`),
+    ],
+  )
+  .enableRLS();
+
+/**
+ * O registro de **toda** tentativa de envio — o que sustenta a trava, o histórico e a auditoria.
+ *
+ * ---------------------------------------------------------------------------
+ * A linha nunca é apagada nem alterada, e a ausência de `retirado_em` é decisão
+ * ---------------------------------------------------------------------------
+ *
+ * Não há `UPDATE` nem `DELETE` sobre esta tabela em lugar nenhum do produto: ela é registro de
+ * **fato**. A ADR-0014 não a alcança, e não por exceção — o discriminador dela é *"ser
+ * referenciável"*, e o registro não é. Retenção e expurgo vão para a **F7**, junto de
+ * `identidade.tentativa_login`, que tem exatamente a mesma natureza.
+ *
+ * ---------------------------------------------------------------------------
+ * `destinatario` é NOT NULL e aceita cadeia vazia — é o caso `SEM_DESTINATARIO`
+ * ---------------------------------------------------------------------------
+ *
+ * O locatário sem endereço produz uma tentativa que **não travou o laço** e **foi registrada assim
+ * mesmo** (RD-11). Um `NULL` obrigaria todo leitor a decidir de novo o que fazer com ele, e uma
+ * restrição de endereço bem formado tornaria impublicável justamente a linha que a tabela existe
+ * para registrar.
+ *
+ * ---------------------------------------------------------------------------
+ * `envio_de_cobranca_causa_chk` é BICONDICIONAL — as duas incoerências, não uma
+ * ---------------------------------------------------------------------------
+ *
+ * `(desfecho = 'ENVIADA') = (causa IS NULL)` recusa **as duas** direções de uma vez:
+ *
+ *   * **sucesso com causa** seria um envio que deu certo carregando o diagnóstico de uma falha, e o
+ *     histórico passaria a exibir motivo de erro em linha entregue;
+ *   * **falha sem causa** é a metade que dói, e é a que uma implicação simples deixaria aberta: a
+ *     tentativa que não saiu sem dizer por quê é exatamente a linha que a RD-10 existe para
+ *     produzir, e ela não é recuperável depois — o transporte já respondeu e ninguém guardou.
+ *
+ * Mesma forma, e mesma razão, de `cobranca_carimbo_coerente_chk` em {@link cobranca}.
+ *
+ * ---------------------------------------------------------------------------
+ * Os DOIS índices, e por que o da trava é PARCIAL
+ * ---------------------------------------------------------------------------
+ *
+ * `envio_de_cobranca_trava_idx` cobre `(empresa_id, cobranca_id, criado_em DESC)` **apenas onde
+ * `desfecho = 'ENVIADA'`**, porque é exatamente o conjunto que a trava consulta (RD-05): ela conta
+ * só a tentativa entregue, e um índice que carregasse as falhas seria maior sem servir ao predicado.
+ * `envio_de_cobranca_historico_idx` cobre as mesmas colunas **sem** a condição, porque o histórico lê
+ * **todas** — e por isso os dois não são redundantes: um índice parcial é inalcançável pela consulta
+ * que não repete a condição dele, como a medição registrada em `migracoes/0009_dominio_cobranca.sql`
+ * já mostrou para `cobranca_aberta_idx`.
+ *
+ * A ordem `criado_em DESC` é conteúdo nos dois: as duas leituras querem a tentativa **mais recente**
+ * primeiro — a trava para comparar com o intervalo mínimo, o histórico para exibir.
+ */
+export const envioDeCobranca = negocio
+  .table(
+    'envio_de_cobranca',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      empresaId: uuid('empresa_id')
+        .notNull()
+        .references(() => empresa.id),
+      cobrancaId: uuid('cobranca_id').notNull(),
+      /**
+       * O instante da tentativa, pelo relógio do BANCO (ADR-0026) — nunca pelo do processo.
+       *
+       * É por ele que o histórico ordena e a trava conta o intervalo, e é `timestamptz` porque é um
+       * ATO. Mesmo desenho de `cobranca.cancelado_em`.
+       */
+      criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+      caminho: caminhoDoAviso('caminho').notNull(),
+      desfecho: desfechoDoAviso('desfecho').notNull(),
+      /** Cadeia **vazia** quando não havia endereço — ver o cabeçalho. */
+      destinatario: text('destinatario').notNull(),
+      /** Nula quando a mensagem saiu, preenchida quando não saiu — a bicondicional abaixo é a rede. */
+      causa: text('causa'),
+    },
+    (tabela) => [
+      // O alvo da chave estrangeira composta de quem vier a apontar para o registro, e o que a
+      // guarda de cobertura de `src/catalogo.ts` cobra de toda tabela deste schema.
+      unique('envio_de_cobranca_id_empresa_key').on(tabela.id, tabela.empresaId),
+      // A chave estrangeira COMPOSTA da ADR-0008 — a única da tabela. Ela recusa, no banco, um
+      // registro da empresa A apontando para cobrança da empresa B: o par `(cobranca_id, empresa_id)`
+      // teria de existir no pai, e não existe. É recusa ESTRUTURAL — nenhuma validação de aplicação
+      // é consultada no caminho, e é por isso que a forma simples (`REFERENCES cobranca(id)`) não
+      // serve nem "por enquanto": ela aceitaria o apontamento cruzado em silêncio.
+      foreignKey({
+        name: 'envio_de_cobranca_cobranca_empresa_fkey',
+        columns: [tabela.cobrancaId, tabela.empresaId],
+        foreignColumns: [cobranca.id, cobranca.empresaId],
+      }),
+      check(
+        'envio_de_cobranca_causa_chk',
+        sql`(${tabela.desfecho} = 'ENVIADA') = (${tabela.causa} IS NULL)`,
+      ),
+      // A trava da RD-05 — índice PARCIAL, ver o cabeçalho. Convertê-lo em índice total o faria
+      // crescer com todo o histórico de falhas, que é justamente o que ele não precisa varrer.
+      index('envio_de_cobranca_trava_idx')
+        .on(tabela.empresaId, tabela.cobrancaId, tabela.criadoEm.desc())
+        .where(sql`desfecho = 'ENVIADA'`),
+      // O histórico da cobrança (§4.1), que lê TODAS as tentativas.
+      index('envio_de_cobranca_historico_idx').on(
+        tabela.empresaId,
+        tabela.cobrancaId,
+        tabela.criadoEm.desc(),
       ),
     ],
   )

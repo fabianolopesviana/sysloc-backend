@@ -90,11 +90,13 @@ const PAPEL_DONO = 'sysloc_migracao';
  * SUT_IS_CORRECT_BECAUSE: o valor esperado é do CASO, não do SUT — ele existe justamente para que
  * uma consulta que não alcançasse tabela nenhuma não passe por verde. A T2 da fatia
  * `cadastro-de-imoveis-e-pessoas` criou SEIS tabelas em `negocio` pela migração `0005`, a T3 da
- * fatia `contratos-de-locacao` acrescentou DUAS pela `0007`, e a T3 da fatia `cobranca-e-mora`
- * acrescenta DUAS pela `0009`. O papel da conexão — que é o que estes casos provam — não mudou:
- * `sysloc_app` continua sem privilégio, e as tabelas novas continuam pertencendo a
- * `sysloc_migracao`. Declarar as doze é a atualização legítima; derivar a lista da própria consulta
- * faria o esperado vir da mesma fonte que o obtido, e a asserção deixaria de poder falhar.
+ * fatia `contratos-de-locacao` acrescentou DUAS pela `0007`, a T3 da fatia `cobranca-e-mora`
+ * acrescentou DUAS pela `0009`, e a T3 da fatia `regua-de-cobranca` acrescenta DUAS pela `0011`. O
+ * papel da conexão — que é o que estes casos provam — não mudou: `sysloc_app` continua sem
+ * privilégio, e as tabelas novas continuam pertencendo a `sysloc_migracao`. Declarar as quatorze é a
+ * atualização legítima; derivar a lista da própria consulta faria o esperado vir da mesma fonte que
+ * o obtido, e a asserção deixaria de poder falhar. **Crescimento da lista esperada é o caminho
+ * legítimo; trocar a igualdade por contenção (`toContain`) seria regressão de prova.**
  *
  * A VISÃO `negocio.cobranca_derivada`, criada pela `0010`, **não aparece aqui**, e a ausência não é
  * esquecimento: a consulta que alimenta estes casos lê `pg_tables`, e o que eles afirmam é o DONO de
@@ -109,10 +111,12 @@ const TABELAS_DE_NEGOCIO_ESPERADAS = [
   'conjunto',
   'contrato',
   'contrato_fiador',
+  'envio_de_cobranca',
   'fiador',
   'imovel',
   'locador',
   'locatario',
+  'politica_de_aviso',
 ] as const;
 
 interface TabelaDeNegocio {
@@ -304,7 +308,7 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
 
       // A contagem é afirmada ANTES da propriedade, e é deliberada: sem ela, um schema `negocio`
       // vazio faria a asserção seguinte passar sem examinar tabela alguma.
-      expect(observado.tabelasDeNegocio).toHaveLength(12);
+      expect(observado.tabelasDeNegocio).toHaveLength(14);
       expect(observado.tabelasDeNegocio.map((linha) => linha.tabela)).toEqual([
         'acesso_usuario_app',
         'acesso_usuario_permissao',
@@ -314,15 +318,19 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
         'conjunto',
         'contrato',
         'contrato_fiador',
+        'envio_de_cobranca',
         'fiador',
         'imovel',
         'locador',
         'locatario',
+        'politica_de_aviso',
       ]);
-      // As doze escritas por extenso, e não `map(() => …)`: a propriedade é afirmada POR TABELA, de
+      // As quatorze escritas por extenso, e não `map(() => …)`: a propriedade é afirmada POR TABELA, de
       // modo que uma delas que nascesse com outro dono apareça pela posição. Derivar a lista do
       // tamanho da anterior faria a contagem responder no lugar da propriedade.
       expect(observado.tabelasDeNegocio.map((linha) => linha.dono)).toEqual([
+        'sysloc_migracao',
+        'sysloc_migracao',
         'sysloc_migracao',
         'sysloc_migracao',
         'sysloc_migracao',
@@ -356,7 +364,8 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
         "pg_has_role(current_user, 'sysloc_migracao', 'MEMBER') = true",
         "tableowner = current_user ('sysloc_migracao') em acesso_usuario_app, " +
           'acesso_usuario_permissao, cobranca, comodo, configuracao_de_mora, conjunto, contrato, ' +
-          'contrato_fiador, fiador, imovel, locador, locatario',
+          'contrato_fiador, envio_de_cobranca, fiador, imovel, locador, locatario, ' +
+          'politica_de_aviso',
       ]);
 
       const superusuario = await conferirPapelDaConexao(conexaoSuperusuaria(banco));

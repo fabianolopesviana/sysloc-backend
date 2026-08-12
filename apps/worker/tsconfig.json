@@ -15,6 +15,16 @@
   // no grafo do Turborepo (`test.dependsOn: ["^build"]`), que `pnpm --filter @sysloc/worker test`
   // — a forma canônica de rodar um subset (`.claude/rules/testing-stack.md`) — não atravessa.
   // Foi o bloqueante de T5 na primeira passagem do Gate 2; a mesma declaração fecha o caso aqui.
-  "references": [{ "path": "../../packages/shared" }],
+  //
+  // `@sysloc/db` e `@sysloc/regua` entram na T8 pela MESMA razão, e não por simetria: a partir dela
+  // o processador fala com o banco e com o servidor de e-mail, e os dois pacotes também resolvem
+  // só para `dist/`. Sem a referência, `pnpm --filter @sysloc/worker test` compilaria contra um
+  // artefato de irmão obsoleto — e um mutante no fonte da régua não alcançaria a suíte daqui.
+  "references": [
+    { "path": "../../packages/contracts" },
+    { "path": "../../packages/db" },
+    { "path": "../../packages/regua" },
+    { "path": "../../packages/shared" }
+  ],
   "include": ["src/**/*.ts"]
 }

@@ -1,0 +1,31 @@
+{
+  "name": "@sysloc/regua",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Domínio da régua de cobrança — declara as portas que a infraestrutura satisfaz (ADR-0025), a janela de horário e a composição do aviso. Não conhece banco",
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "test": "tsc --build && tsc -p tsconfig.test.json && vitest run"
+  },
+  "dependencies": {
+    "@sysloc/contracts": "workspace:*",
+    "nodemailer": "7.0.13"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "@types/nodemailer": "7.0.12",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

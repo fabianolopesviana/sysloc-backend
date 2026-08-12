@@ -16,11 +16,35 @@
  * Escritor e leitor separados — a assimetria é o ponto
  * ---------------------------------------------------------------------------
  *
- * `executarCom` é do lado de quem **estabelece** o contexto: a guarda de contexto de `apps/api`,
- * que o deriva da sessão autenticada. `corrente` é do lado de quem **consome**: a unidade de
- * trabalho. Um símbolo único que fizesse as duas coisas convidaria qualquer camada intermediária a
- * reescrever o contexto no meio do caminho — que é exatamente o caminho pelo qual a empresa da
- * sessão deixaria de ser a empresa da transação.
+ * `executarCom` é do lado de quem **estabelece** o contexto; `corrente` é do lado de quem
+ * **consome**: a unidade de trabalho. Um símbolo único que fizesse as duas coisas convidaria
+ * qualquer camada intermediária a reescrever o contexto no meio do caminho — que é exatamente o
+ * caminho pelo qual a empresa da sessão deixaria de ser a empresa da transação.
+ *
+ * ---------------------------------------------------------------------------
+ * O escritor é único POR BORDA — e as bordas são duas (ADR-0024)
+ * ---------------------------------------------------------------------------
+ *
+ * Até a fatia `regua-de-cobranca` havia **um** chamador legítimo, e este cabeçalho o nomeava como
+ * *"a guarda de contexto de `apps/api`"*. A **ADR-0024** acrescenta o segundo, e a emenda é exigida
+ * por ela mesma, no `Cons`: sem esta linha, o próximo leitor trataria a borda nova como violação.
+ *
+ * Os dois, e a razão de cada um:
+ *
+ * 1. **A borda HTTP** — `apps/api/src/autenticacao/contexto.guard.ts`, que deriva a empresa da
+ *    **sessão autenticada**, uma vez por requisição.
+ * 2. **A borda do trabalho enfileirado** — `apps/worker/src/tarefas/regua.ts`, que a deriva da
+ *    **carga do próprio trabalho**, uma vez por tarefa. Fora do ciclo de uma requisição não existe
+ *    sessão, e a ADR-0024 declara que a origem legítima passa a ser a carga — cujo identificador é
+ *    produzido por quem já detinha direito a ele, e **nunca aceito de fonte externa**. As duas
+ *    saídas alternativas estão descartadas por nome naquela ADR: a **sessão de serviço sintética**
+ *    (credencial de longa duração, ato de auditoria atribuído a um usuário que não existe) e o
+ *    **papel de banco sem RLS** (contorna o isolamento em vez de usá-lo).
+ *
+ * O que **não** mudou é o que importa: continua sendo **um escritor por borda**, e nada abaixo de
+ * uma borda reescreve o contexto. O conjunto é auditado por igualdade — `CT-014`
+ * (`test/unidade-de-trabalho.spec.ts`) e `CT-624` (`test/fonte-unica-do-estado.spec.ts`) —, de modo
+ * que um terceiro chamador reprova nomeando o arquivo.
  *
  * ---------------------------------------------------------------------------
  * Ausência de empresa é valor de domínio, não sentinela
@@ -55,9 +79,11 @@ const armazenamento = new AsyncLocalStorage<ContextoDeTenant>();
 /**
  * Executa `trabalho` com o contexto informado — o **escritor**.
  *
- * Consumidor legítimo: a guarda de contexto de `apps/api`, uma vez por requisição, com o valor
- * derivado da sessão. O contexto vale para toda a cadeia assíncrona iniciada aqui dentro e some
- * quando ela termina, o que é o que impede uma requisição de herdar o contexto de outra.
+ * Consumidores legítimos: **um por borda** — a guarda de contexto de `apps/api`, uma vez por
+ * requisição, com o valor derivado da sessão; e a borda do trabalho enfileirado de `apps/worker`,
+ * uma vez por tarefa, com o valor derivado da carga (ADR-0024). Ver o cabeçalho deste módulo. O
+ * contexto vale para toda a cadeia assíncrona iniciada aqui dentro e some quando ela termina, o que
+ * é o que impede uma requisição — ou uma tarefa — de herdar o contexto de outra.
  */
 export function executarCom<T>(contexto: ContextoDeTenant, trabalho: () => T): T {
   return armazenamento.run(contexto, trabalho);

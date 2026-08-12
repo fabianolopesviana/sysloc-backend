@@ -79,6 +79,17 @@
  * |          |        | `{ tabela: 'negocio.cobranca_derivada', motivo: 'VISAO_NAO_DELEGA_ISOLAMENTO' }`.
  * |          |        | Restaurada pelo papel de migração e com o atributo, as duas vias voltam ao
  * |          |        | verde. |
+ * | CA-02    | CT-607 | Sob o contexto da empresa B, nenhuma linha de `negocio.politica_de_aviso`
+ * | CA-12    |        | nem de `negocio.envio_de_cobranca` da empresa A é legível (contagem CRUA
+ * |          |        | `0` nas duas), atualizável ou apagável (`rowCount` `0` nos quatro
+ * |          |        | comandos, e sem erro), e toda inserção com `empresa_id` de A é recusada
+ * |          |        | pelo `WITH CHECK` com `42501` e a mensagem da política de linha — a recusa
+ * |          |        | vem do BANCO, não da aplicação. Sob A, o retrato das duas relações
+ * |          |        | permanece igual ao gravado, campo a campo; sem contexto e com empresa nula
+ * |          |        | a leitura devolve vazio, sem erro, enquanto a mesma leitura sob A segue
+ * |          |        | devolvendo as linhas. E as duas tabelas têm `relrowsecurity` E
+ * |          |        | `relforcerowsecurity` verdadeiros. Nenhuma das consultas emitidas escreve
+ * |          |        | filtro por `empresa_id`. |
  *
  * ===========================================================================
  * Por que os predicados são funções, e não asserções soltas
@@ -1944,6 +1955,295 @@ async function semearAsDuasCarteiras(acesso: AcessoAoBanco): Promise<void> {
 }
 
 // ===========================================================================
+// CT-607 — a régua: a política de aviso e o registro de envios de cada empresa
+// ===========================================================================
+//
+// Ele não entra em `rodarBateria`, pela razão já registrada para o CT-207, para os CT-302/303/304 e
+// para o CT-522: a bateria afirma o conjunto EXATO de predicados reprovados por mutante do CT-007, e
+// acrescentar predicados mudaria o esperado dos quatro mutantes — nenhum dos quais tem relação com
+// estas duas relações.
+//
+// O que ele prova, e que nenhum caso anterior alcança, são as DUAS tabelas da migração `0011`. O
+// isolamento desta suíte é auditado **por conjunto, e não por amostra**: relação de `negocio` sem
+// entrada aqui é relação sem prova comportamental de isolamento, e é exatamente a lacuna que o
+// CT-302/303/304 fechou para o cadastro e o CT-522 para a cobrança.
+//
+// A montagem reusa `semearAsDuasCarteiras`: o registro de envio aponta para a cobrança pelo par
+// `(cobranca_id, empresa_id)`, de modo que a cobrança de cada empresa — e, antes dela, o contrato —
+// precisa existir.
+
+/** A política de aviso descartável de cada empresa, e a que a tentativa cruzada usaria. */
+const POLITICA_DE_A = 'dddddddd-aaaa-4000-8000-000000000001';
+const POLITICA_DE_B = 'dddddddd-aaaa-4000-8000-000000000002';
+const POLITICA_CRUZADA = 'dddddddd-aaaa-4000-8000-000000000003';
+
+/** Os três envios da empresa A — um por desfecho — e o que a tentativa cruzada usaria. */
+const ENVIO_ENTREGUE_EM_A = 'dddddddd-bbbb-4000-8000-000000000001';
+const ENVIO_FALHO_EM_A = 'dddddddd-bbbb-4000-8000-000000000002';
+const ENVIO_SEM_ENDERECO_EM_A = 'dddddddd-bbbb-4000-8000-000000000003';
+const ENVIO_CRUZADO = 'dddddddd-bbbb-4000-8000-000000000004';
+
+/**
+ * A política que a empresa A grava, com valor DISTINTO do padrão em cada campo.
+ *
+ * A distinção é o que dá poder ao passo final: com os padrões da migração (`false`, `0`, `1`,
+ * `00:00`, `23:59`), "a política de A permanece intacta" ficaria verde também sobre uma linha que
+ * tivesse sido recriada do zero por uma escrita alheia.
+ */
+const POLITICA_GRAVADA_EM_A = {
+  ativo: true,
+  diasAntesDoVencimento: 3,
+  intervaloMinimoDias: 7,
+  janelaInicio: '09:00',
+  janelaFim: '18:00',
+  canal: 'EMAIL',
+} as const;
+
+/**
+ * Os três envios da empresa A, um por desfecho — e a `causa` pareada com cada um.
+ *
+ * Os três desfechos estão presentes de propósito: `envio_de_cobranca_causa_chk` é BICONDICIONAL, e
+ * uma semeadura só com `ENVIADA` deixaria a metade "falha COM causa" sem exercício nenhum. O
+ * `destinatario` de `SEM_DESTINATARIO` é **cadeia vazia**, que é o contrato da RD-11.
+ */
+const ENVIOS_DE_A = [
+  {
+    id: ENVIO_ENTREGUE_EM_A,
+    caminho: 'AUTOMATICO',
+    desfecho: 'ENVIADA',
+    destinatario: 'locatario.a@exemplo.com.br',
+    causa: null,
+  },
+  {
+    id: ENVIO_FALHO_EM_A,
+    caminho: 'AUTOMATICO',
+    desfecho: 'FALHOU',
+    destinatario: 'locatario.a@exemplo.com.br',
+    causa: 'o servidor de correio recusou a mensagem',
+  },
+  {
+    id: ENVIO_SEM_ENDERECO_EM_A,
+    caminho: 'MANUAL',
+    desfecho: 'SEM_DESTINATARIO',
+    destinatario: '',
+    causa: 'o locatário não tem endereço de correio cadastrado',
+  },
+] as const;
+
+/**
+ * As leituras da régua, **declaradas como valor** para que a ausência de filtro por empresa seja
+ * CONFERIDA e não apenas prometida (ADR-0008) — mesmo mecanismo de {@link CONSULTAS_DE_NEGOCIO} e de
+ * {@link CONSULTA_DA_DERIVADA}.
+ *
+ * Os dois horários saem por `to_char(coluna, 'HH24:MI')`, e não crus: a coluna é `time`, o driver
+ * devolveria `'09:00:00'`, e o molde ancorado que `esquemaDaPoliticaDeAviso` publica recusa essa
+ * forma. A decisão está por extenso no cabeçalho da tabela em `src/esquema/negocio.ts` e tem prova
+ * própria no CT-608 — aqui ela é apenas OBEDECIDA, para que o retrato comparado seja o mesmo que a
+ * porta de leitura da T5 vai produzir.
+ */
+const CONSULTA_DA_POLITICA_DE_AVISO =
+  'SELECT id, ativo, dias_antes_do_vencimento AS "diasAntesDoVencimento", ' +
+  'intervalo_minimo_dias AS "intervaloMinimoDias", ' +
+  `to_char(janela_inicio, 'HH24:MI') AS "janelaInicio", ` +
+  `to_char(janela_fim, 'HH24:MI') AS "janelaFim", ` +
+  'canal::text AS canal FROM negocio.politica_de_aviso ORDER BY id';
+
+const CONSULTA_DOS_ENVIOS =
+  'SELECT id, caminho::text AS caminho, desfecho::text AS desfecho, destinatario, causa ' +
+  'FROM negocio.envio_de_cobranca ORDER BY id';
+
+/** As duas contagens CRUAS — `count(*)` sem projeção nenhuma, que é o que mede invisibilidade. */
+const CONTAGEM_DE_POLITICAS = 'SELECT count(*)::integer AS total FROM negocio.politica_de_aviso';
+const CONTAGEM_DE_ENVIOS = 'SELECT count(*)::integer AS total FROM negocio.envio_de_cobranca';
+
+/** A política como o retrato a compara — a linha inteira, e não campo a campo. */
+interface LinhaDePolitica {
+  readonly id: string;
+  readonly ativo: boolean;
+  readonly diasAntesDoVencimento: number;
+  readonly intervaloMinimoDias: number;
+  readonly janelaInicio: string;
+  readonly janelaFim: string;
+  readonly canal: string;
+}
+
+/** Um envio como o retrato o compara. */
+interface LinhaDeEnvio {
+  readonly id: string;
+  readonly caminho: string;
+  readonly desfecho: string;
+  readonly destinatario: string;
+  readonly causa: string | null;
+}
+
+/** Semeia, sob o contexto da PRÓPRIA empresa, a política de aviso e os três envios. */
+async function semearReguaDeA(acesso: AcessoAoBanco): Promise<void> {
+  await contextoDeTenant.executarCom(CONTEXTO_DE_A, async () => {
+    await acesso.emUnidadeDeTrabalho(async (tx) => {
+      await tx`
+        INSERT INTO negocio.politica_de_aviso
+                    (id, empresa_id, ativo, dias_antes_do_vencimento, intervalo_minimo_dias,
+                     janela_inicio, janela_fim, canal)
+        VALUES (${POLITICA_DE_A}, ${EMPRESA_A.id}, ${POLITICA_GRAVADA_EM_A.ativo},
+                ${POLITICA_GRAVADA_EM_A.diasAntesDoVencimento},
+                ${POLITICA_GRAVADA_EM_A.intervaloMinimoDias},
+                ${POLITICA_GRAVADA_EM_A.janelaInicio}::time,
+                ${POLITICA_GRAVADA_EM_A.janelaFim}::time,
+                ${POLITICA_GRAVADA_EM_A.canal}::negocio.canal_de_aviso)
+      `;
+      for (const envio of ENVIOS_DE_A) {
+        await tx`
+          INSERT INTO negocio.envio_de_cobranca
+                      (id, empresa_id, cobranca_id, caminho, desfecho, destinatario, causa)
+          VALUES (${envio.id}, ${EMPRESA_A.id}, ${COBRANCA_DE_A},
+                  ${envio.caminho}::negocio.caminho_do_aviso,
+                  ${envio.desfecho}::negocio.desfecho_do_aviso,
+                  ${envio.destinatario}, ${envio.causa})
+        `;
+      }
+    });
+  });
+}
+
+/**
+ * Remove as linhas descartáveis da régua, **pelo identificador** — nunca por `empresa_id`.
+ *
+ * Corre nos DOIS contextos, porque com o isolamento íntegro cada linha só é alcançável pelo contexto
+ * da própria empresa; e ANTES de `limparCobrancas`, porque o envio referencia a cobrança.
+ */
+async function limparRegua(cadeiaDeConexao: string): Promise<void> {
+  const acesso = abrir(cadeiaDeConexao);
+  try {
+    for (const contexto of [CONTEXTO_DE_A, CONTEXTO_DE_B]) {
+      await contextoDeTenant.executarCom(contexto, async () => {
+        await acesso.emUnidadeDeTrabalho(async (tx) => {
+          for (const id of [...ENVIOS_DE_A.map((envio) => envio.id), ENVIO_CRUZADO]) {
+            await tx`DELETE FROM negocio.envio_de_cobranca WHERE id = ${id}`;
+          }
+          for (const id of [POLITICA_DE_A, POLITICA_DE_B, POLITICA_CRUZADA]) {
+            await tx`DELETE FROM negocio.politica_de_aviso WHERE id = ${id}`;
+          }
+        });
+      });
+    }
+  } finally {
+    await acesso.encerrar();
+  }
+}
+
+/** Lê as duas relações da régua sob o contexto dado, pelas consultas DECLARADAS acima. */
+async function lerRegua(
+  acesso: AcessoAoBanco,
+  contexto: Contexto | typeof SEM_CONTEXTO,
+): Promise<{ politicas: LinhaDePolitica[]; envios: LinhaDeEnvio[] }> {
+  return noContexto(contexto, async () =>
+    acesso.emUnidadeDeTrabalho(async (tx) => {
+      const politicas = await tx.unsafe<LinhaDePolitica[]>(CONSULTA_DA_POLITICA_DE_AVISO);
+      const envios = await tx.unsafe<LinhaDeEnvio[]>(CONSULTA_DOS_ENVIOS);
+      return {
+        politicas: politicas.map((linha) => ({ ...linha })),
+        envios: envios.map((linha) => ({ ...linha })),
+      };
+    }),
+  );
+}
+
+/** As duas contagens CRUAS sob o contexto dado — o que mede invisibilidade sem passar por projeção. */
+async function contarRegua(
+  acesso: AcessoAoBanco,
+  contexto: Contexto | typeof SEM_CONTEXTO,
+): Promise<{ politicas: number; envios: number }> {
+  return noContexto(contexto, async () =>
+    acesso.emUnidadeDeTrabalho(async (tx) => {
+      const [politicas] = await tx.unsafe<{ total: number }[]>(CONTAGEM_DE_POLITICAS);
+      const [envios] = await tx.unsafe<{ total: number }[]>(CONTAGEM_DE_ENVIOS);
+      return { politicas: politicas?.total ?? -1, envios: envios?.total ?? -1 };
+    }),
+  );
+}
+
+/**
+ * As quatro escritas cruzadas que **alcançam linha existente da outra empresa** — e não devem
+ * alcançar nenhuma.
+ *
+ * Elas são `UPDATE`/`DELETE` porque é o par que a política recusa **sem erro**: `USING` não casa a
+ * linha, o comando afeta zero linhas e o cliente não recebe exceção alguma. A ausência de exceção é
+ * conteúdo — um caso que só afirmasse "levantou" ficaria verde sobre um banco que recusasse tudo.
+ *
+ * O produto **não** atualiza nem apaga `negocio.envio_de_cobranca` em lugar nenhum (o registro é
+ * fato, não cadastro): as duas linhas de envio abaixo existem para provar que **nem por esse
+ * caminho** a linha alheia é alcançável, e não para descrever uma operação do produto.
+ */
+const ESCRITAS_CRUZADAS_NA_REGUA: readonly { readonly nome: string; readonly sql: string }[] = [
+  {
+    nome: 'politica/update',
+    sql: `UPDATE negocio.politica_de_aviso SET ativo = false WHERE id = '${POLITICA_DE_A}'`,
+  },
+  {
+    nome: 'politica/delete',
+    sql: `DELETE FROM negocio.politica_de_aviso WHERE id = '${POLITICA_DE_A}'`,
+  },
+  {
+    nome: 'envio/update',
+    sql:
+      "UPDATE negocio.envio_de_cobranca SET destinatario = 'invasor@exemplo.com.br' " +
+      `WHERE id = '${ENVIO_ENTREGUE_EM_A}'`,
+  },
+  {
+    nome: 'envio/delete',
+    sql: `DELETE FROM negocio.envio_de_cobranca WHERE id = '${ENVIO_ENTREGUE_EM_A}'`,
+  },
+];
+
+/** O retrato da régua de A, escrito por extenso — é ele que o passo final compara por igualdade. */
+const REGUA_INTACTA_DE_A = {
+  politicas: [{ id: POLITICA_DE_A, ...POLITICA_GRAVADA_EM_A }],
+  envios: ENVIOS_DE_A.map((envio) => ({
+    id: envio.id,
+    caminho: envio.caminho,
+    desfecho: envio.desfecho,
+    destinatario: envio.destinatario,
+    causa: envio.causa,
+  })),
+} as const;
+
+/** O que o catálogo responde sobre a RLS de uma tabela — as duas metades, nunca só a primeira. */
+interface EstadoDeRls {
+  readonly tabela: string;
+  readonly habilitada: boolean;
+  readonly forcada: boolean;
+}
+
+/**
+ * Lê `relrowsecurity` e `relforcerowsecurity` das duas tabelas novas.
+ *
+ * Ela existe DENTRO deste caso, e não só no CT-608, porque as duas metades respondem perguntas
+ * diferentes: o comportamento cruzado acima ficaria verde sem `FORCE` (o papel da aplicação não é
+ * dono das tabelas), e é o `FORCE` que impede uma suíte futura conectada com o dono de ficar verde
+ * contra um schema sem isolamento (ADR-0008, Cons).
+ */
+async function lerEstadoDeRls(
+  acesso: AcessoAoBanco,
+  contexto: Contexto,
+  tabelas: readonly string[],
+): Promise<EstadoDeRls[]> {
+  return contextoDeTenant.executarCom(contexto, () =>
+    acesso.emUnidadeDeTrabalho(async (tx) => {
+      const linhas = await tx<EstadoDeRls[]>`
+        SELECT c.relname                AS tabela,
+               c.relrowsecurity         AS habilitada,
+               c.relforcerowsecurity    AS forcada
+          FROM pg_catalog.pg_class c
+          JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'negocio' AND c.relname = ANY(${tabelas as string[]})
+         ORDER BY c.relname
+      `;
+      return linhas.map((linha) => ({ ...linha }));
+    }),
+  );
+}
+
+// ===========================================================================
 // A bateria — a MESMA função de conferência para o caso e para o mutante
 // ===========================================================================
 
@@ -3479,6 +3779,168 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
       } finally {
         await acessoVirgem?.encerrar();
         await acesso.encerrar();
+        await limparCobrancas(banco.cadeiaConexao);
+        await limparCadastros(banco.cadeiaConexao);
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-607 — a política de aviso e os envios de uma empresa são inalcançáveis sob o contexto da outra',
+    async () => {
+      await limparRegua(banco.cadeiaConexao);
+      await limparCobrancas(banco.cadeiaConexao);
+      await limparCadastros(banco.cadeiaConexao);
+      const acesso = abrir(banco.cadeiaConexao);
+      let acessoVirgem: AcessoAoBanco | undefined;
+
+      try {
+        // A ausência de filtro por empresa é INVARIANTE (ADR-0008), e por isso é conferida no
+        // próprio texto das consultas que o caso emite — mesmo mecanismo do CT-003, do CT-302 e do
+        // CT-522. Quem escopa a leitura é a política das duas tabelas, e nada mais.
+        for (const consulta of [
+          CONSULTA_DA_POLITICA_DE_AVISO,
+          CONSULTA_DOS_ENVIOS,
+          CONTAGEM_DE_POLITICAS,
+          CONTAGEM_DE_ENVIOS,
+        ]) {
+          expect(consulta.toLowerCase()).not.toContain('empresa_id');
+          expect(consulta.toLowerCase()).not.toContain('where');
+        }
+
+        // --- Passo 1: cada empresa grava as PRÓPRIAS linhas, sob o próprio contexto -----------
+        //
+        // Nunca por conexão privilegiada, nunca uma escrevendo pela outra, e nunca com
+        // `app.empresa_id` fixado por fora da barreira: o caminho é o real da porta —
+        // `executarCom` na borda, `SET LOCAL` por transação.
+        await semearAsDuasCarteiras(acesso);
+        await semearReguaDeA(acesso);
+
+        // A reserva virgem é aberta DEPOIS do preparo, para que a conexão dela nunca tenha atendido
+        // outra unidade — padrão `acessoVirgem` do CT-005, do CT-302 e do CT-522.
+        acessoVirgem = abrir(banco.cadeiaConexao);
+
+        // --- Passo 2: sob B, a contagem CRUA das duas tabelas é zero -------------------------
+        //
+        // `count(*)` sem projeção nenhuma: é a forma que mede invisibilidade sem passar por coluna,
+        // e a que continuaria contando se a política deixasse de valer.
+        expect(await contarRegua(acesso, CONTEXTO_DE_B)).toEqual({ politicas: 0, envios: 0 });
+        expect(await lerRegua(acesso, CONTEXTO_DE_B)).toEqual({ politicas: [], envios: [] });
+
+        // --- Passo 3: sob B, `UPDATE` e `DELETE` nas linhas de A afetam ZERO linhas ----------
+        //
+        // Sem erro: `USING` não casa a linha, e o comando simplesmente não a alcança. A ausência de
+        // exceção é conteúdo — um caso que só afirmasse "levantou" ficaria verde sobre um banco que
+        // recusasse tudo, inclusive o legítimo.
+        const efeitoDasEscritasCruzadas = await contextoDeTenant.executarCom(
+          CONTEXTO_DE_B,
+          async () =>
+            acesso.emUnidadeDeTrabalho(async (tx) => {
+              const linhas: string[] = [];
+              for (const escrita of ESCRITAS_CRUZADAS_NA_REGUA) {
+                const resultado = await tx.unsafe(escrita.sql);
+                linhas.push(`${escrita.nome}: ${resultado.count} linha(s)`);
+              }
+              return linhas;
+            }),
+        );
+        expect(efeitoDasEscritasCruzadas).toEqual([
+          'politica/update: 0 linha(s)',
+          'politica/delete: 0 linha(s)',
+          'envio/update: 0 linha(s)',
+          'envio/delete: 0 linha(s)',
+        ]);
+
+        // --- Passo 4: sob B, `INSERT` com `empresa_id` de A é RECUSADO pelo banco ------------
+        //
+        // `42501` (`insufficient_privilege`) com a mensagem da política de linha: a recusa vem do
+        // `WITH CHECK`, e não de validação de aplicação nenhuma. A mensagem é afirmada junto do
+        // código porque `42501` sozinho também sai de uma concessão faltando.
+        const insercaoCruzadaDaPolitica = await tentar(() =>
+          contextoDeTenant.executarCom(CONTEXTO_DE_B, () =>
+            acesso.emUnidadeDeTrabalho(
+              (tx) => tx`
+                INSERT INTO negocio.politica_de_aviso (id, empresa_id)
+                VALUES (${POLITICA_CRUZADA}, ${EMPRESA_A.id})
+              `,
+            ),
+          ),
+        );
+        expect(insercaoCruzadaDaPolitica.ok).toBe(false);
+        expect(
+          sqlstate(insercaoCruzadaDaPolitica.ok ? undefined : insercaoCruzadaDaPolitica.erro),
+        ).toBe('42501');
+        expect(
+          mensagemDo(insercaoCruzadaDaPolitica.ok ? undefined : insercaoCruzadaDaPolitica.erro),
+        ).toContain('row-level security policy');
+
+        const insercaoCruzadaDoEnvio = await tentar(() =>
+          contextoDeTenant.executarCom(CONTEXTO_DE_B, () =>
+            acesso.emUnidadeDeTrabalho(
+              (tx) => tx`
+                INSERT INTO negocio.envio_de_cobranca
+                            (id, empresa_id, cobranca_id, caminho, desfecho, destinatario, causa)
+                VALUES (${ENVIO_CRUZADO}, ${EMPRESA_A.id}, ${COBRANCA_DE_A},
+                        ${'AUTOMATICO'}::negocio.caminho_do_aviso,
+                        ${'ENVIADA'}::negocio.desfecho_do_aviso,
+                        ${'invasor@exemplo.com.br'}, ${null})
+              `,
+            ),
+          ),
+        );
+        expect(insercaoCruzadaDoEnvio.ok).toBe(false);
+        expect(sqlstate(insercaoCruzadaDoEnvio.ok ? undefined : insercaoCruzadaDoEnvio.erro)).toBe(
+          '42501',
+        );
+        expect(
+          mensagemDo(insercaoCruzadaDoEnvio.ok ? undefined : insercaoCruzadaDoEnvio.erro),
+        ).toContain('row-level security policy');
+
+        // --- Passo 5: sob A, TUDO permanece exatamente como foi gravado ----------------------
+        //
+        // O retrato inteiro por igualdade, e não campo a campo: é o objeto completo que discrimina
+        // uma escrita cruzada que tivesse alcançado a linha. Ele vem DEPOIS das quatro tentativas —
+        // "zero linhas afetadas" não distingue "não alcançou" de "alcançou e o desfazimento
+        // apagou", e este passo é quem fecha essa terceira leitura.
+        expect(await lerRegua(acesso, CONTEXTO_DE_A)).toEqual(REGUA_INTACTA_DE_A);
+        expect(await contarRegua(acesso, CONTEXTO_DE_A)).toEqual({
+          politicas: 1,
+          envios: ENVIOS_DE_A.length,
+        });
+
+        // --- Passo 6: sem contexto e com empresa nula, VAZIO — e sem erro --------------------
+        //
+        // O que impede o caso de ficar verde sobre tabelas que ignorassem `empresa_id` e
+        // devolvessem tudo para todos: contexto ausente resulta em vazio, nunca em dado alheio.
+        expect(await contarRegua(acessoVirgem, SEM_CONTEXTO)).toEqual({ politicas: 0, envios: 0 });
+        expect(await contarRegua(acesso, CONTEXTO_SEM_EMPRESA)).toEqual({
+          politicas: 0,
+          envios: 0,
+        });
+
+        // O companheiro POSITIVO, lido DEPOIS dos vazios e na mesma reserva: sem ele, "vazio" não
+        // distingue isolamento de banco sem dado.
+        expect(await contarRegua(acesso, CONTEXTO_DE_A)).toEqual({
+          politicas: 1,
+          envios: ENVIOS_DE_A.length,
+        });
+
+        // --- Passo 7: RLS habilitada E FORÇADA nas duas -------------------------------------
+        //
+        // O comportamento acima ficaria verde sem `FORCE`, porque `sysloc_app` não é dono das
+        // tabelas. É esta asserção que impede o isolamento de existir só para quem não é dono —
+        // ADR-0008, Cons: "suíte que conecte com o papel errado fica verde sem provar nada".
+        expect(
+          await lerEstadoDeRls(acesso, CONTEXTO_DE_A, ['envio_de_cobranca', 'politica_de_aviso']),
+        ).toEqual([
+          { tabela: 'envio_de_cobranca', habilitada: true, forcada: true },
+          { tabela: 'politica_de_aviso', habilitada: true, forcada: true },
+        ]);
+      } finally {
+        await acessoVirgem?.encerrar();
+        await acesso.encerrar();
+        await limparRegua(banco.cadeiaConexao);
         await limparCobrancas(banco.cadeiaConexao);
         await limparCadastros(banco.cadeiaConexao);
       }

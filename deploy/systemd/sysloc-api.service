@@ -77,6 +77,19 @@ Group=sysloc
 WorkingDirectory=/opt/sysloc-backend/apps/api
 
 # Segredos: apenas aqui, e apenas por referência.
+#
+# ⚠️ A partir da T8 da fatia `regua-de-cobranca` este arquivo carrega também
+# `SMTP_URL` e `EMAIL_REMETENTE`, e a razão de elas chegarem AQUI é o disparo
+# manual do aviso de cobrança: ele envia de dentro deste processo, o que torna a
+# `api` o SEGUNDO ponto do produto capaz de alcançar a caixa de uma pessoa. As
+# duas continuam vindo por referência, nunca por `Environment=` inline — a
+# `SMTP_URL` carrega credencial, e `Environment=` é revisável na árvore
+# versionada (ADR-0005, invariante 3 do `CLAUDE.md`).
+#
+# A conferência delas na partida deste processo é da T10; enquanto ela não
+# chegar, a ausência derruba o disparo manual e não a subida — é por isso que a
+# linha entra aqui junto com a do processador, e não depois: o arquivo de
+# ambiente é UM SÓ, e as duas unidades o leem.
 EnvironmentFile=/etc/sysloc/backend.env
 
 # Coordenadas revisáveis — nenhuma delas é segredo.

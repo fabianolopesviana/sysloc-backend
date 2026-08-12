@@ -22,6 +22,14 @@
  * | CT-906 | As 3 cópias do bloco de disciplina do executor são byte-idênticas. |
  * | CT-907 | O índice de débito fecha nas DUAS pontas, e todo campo `ÍNDICE` de marcador vivo
  * |        | aponta para arquivo existente. |
+ * | CT-638 | O contrato da fila tem definição ÚNICA em `packages/shared/src/fila.ts`, é consumido
+ * |        | pela fronteira do pacote, e o D32 saiu do código E do índice — as duas pontas. |
+ *
+ * **Por que o CT-638 foge da faixa 9xx**: os casos acima nasceram com a barreira e provam o
+ * substrato do pipeline; este prova o **fecho de um débito concreto** (o D32 · F0/T6) e teve o
+ * número alocado pelo plano da fatia `regua-de-cobranca`, que é quem o fecha. O número está
+ * reservado lá — a colisão que motivou a faixa 9xx não se aplica a ele. Caso de meta-verificação
+ * que nasça **aqui**, sem dono numa fatia, continua entrando no 9xx.
  *
  * ---------------------------------------------------------------------------
  * Por que uma barreira, e por que ELA e não outra coisa
@@ -79,6 +87,34 @@ const COPIAS_DA_DISCIPLINA = [
 
 /** Diretórios varridos em busca de marcadores vivos. */
 const AREAS_DE_CODIGO = ['apps', 'packages', 'deploy'];
+
+/** Onde o contrato da fila passou a morar quando o D32 fechou. */
+const CASA_DO_CONTRATO_DA_FILA = 'packages/shared/src/fila.ts';
+
+/** O consumidor que existia antes do fecho, e que agora importa em vez de definir. */
+const CONSUMIDOR_DO_CONTRATO_DA_FILA = 'apps/worker/src/fila.ts';
+
+/** O débito fechado nesta fatia, no identificador canônico da §3-B (`D{n} · F{n}/{origem}`). */
+const IDENTIFICADOR_DO_D32 = 'D32 · F0/T6';
+
+/**
+ * Os símbolos do contrato da fila — nome, política de repetição e cargas.
+ *
+ * A lista é o que o D32 mandava extrair, e cada um deles é um ponto onde a duplicação reabre: o
+ * nome desencontra produtor e consumidor em silêncio, e as opções valem só para a instância que as
+ * declara.
+ */
+const SIMBOLOS_DO_CONTRATO_DA_FILA = [
+  'CargaDaRegua',
+  'CargaDoEco',
+  'ESPERA_ENTRE_TENTATIVAS_MS',
+  'FILA_DA_REGUA',
+  'FILA_DO_ECO',
+  'OPCOES_PADRAO_DA_TAREFA',
+  'TAREFAS_CONCLUIDAS_RETIDAS',
+  'TAREFAS_FALHAS_RETIDAS',
+  'TENTATIVAS_POR_TAREFA',
+];
 
 /**
  * Este arquivo cita os marcadores como dado. Sem a exclusão, a varredura o encontraria e o
@@ -168,6 +204,131 @@ function marcadoresVivos(): Set<string> {
   memoriaDosMarcadores = identificadores;
   return identificadores;
 }
+
+/**
+ * Reconhece a **definição** de um símbolo — nunca a menção nem o import dele.
+ *
+ * A distinção é o caso inteiro: a asserção do CT-638 mede quantos arquivos **definem** cada
+ * símbolo, e uma expressão que casasse `OPCOES_PADRAO_DA_TAREFA,` numa lista de import contaria
+ * todo consumidor legítimo como redefinição — a contagem passaria de 1 e o caso reprovaria a
+ * árvore correta. A discriminação é exercitada no controle de não-cegueira, abaixo.
+ *
+ * **O que vem DEPOIS do nome é obrigatório**, e não ornamento: medido durante a construção deste
+ * caso, a forma curta (`(?:const|…|type)\s+NOME`) casava a linha `  type CargaDaRegua,` de uma
+ * lista de import de várias linhas — e acusava como redefinição tanto o consumidor quanto o
+ * próprio barril do pacote. Declaração de valor é seguida de `=` ou de anotação; apelido de tipo é
+ * seguido de `=`; e `interface`/`class`/`function`/`enum` já se distinguem pela palavra.
+ */
+function definicaoDe(simbolo: string): RegExp {
+  return new RegExp(
+    `^\\s*(?:export\\s+)?(?:(?:const|let|var)\\s+${simbolo}\\s*[:=]` +
+      `|(?:function|class|interface|enum)\\s+${simbolo}\\b` +
+      `|type\\s+${simbolo}\\s*=)`,
+    'm',
+  );
+}
+
+/**
+ * Para cada símbolo do contrato da fila, os arquivos versionados que o **definem**.
+ *
+ * Uma passada só sobre a árvore, pela mesma razão que a varredura de marcadores é memoizada: três
+ * casos consomem este resultado, e refazer a caminhada em cada um estourava o teto sob a suíte
+ * completa.
+ */
+let memoriaDasDefinicoes: Map<string, string[]> | undefined;
+
+function arquivosQueDefinemOContratoDaFila(): Map<string, string[]> {
+  if (memoriaDasDefinicoes !== undefined) return memoriaDasDefinicoes;
+
+  const busca = SIMBOLOS_DO_CONTRATO_DA_FILA.map((simbolo) => ({
+    simbolo,
+    padrao: definicaoDe(simbolo),
+    arquivos: [] as string[],
+  }));
+
+  for (const caminho of arquivosDeCodigo()) {
+    const conteudo = readFileSync(join(RAIZ, caminho), 'utf8');
+    for (const alvo of busca) {
+      if (alvo.padrao.test(conteudo)) alvo.arquivos.push(caminho);
+    }
+  }
+
+  memoriaDasDefinicoes = new Map(busca.map((alvo) => [alvo.simbolo, alvo.arquivos.sort()]));
+  return memoriaDasDefinicoes;
+}
+
+/**
+ * Recorta cada bloco `DECISÃO FECHADA` de um fonte, do cabeçalho até a última linha de comentário.
+ *
+ * O corte por "linha que deixa de ser comentário" é o que permite comparar o bloco **byte a byte**
+ * sem depender da linha em que ele está — o arquivo encolheu nesta task, e amarrar a asserção a um
+ * número de linha a faria reprovar por movimento em vez de por alteração.
+ */
+function decisoesFechadasDe(texto: string): string[] {
+  const linhas = texto.split('\n');
+  const blocos: string[] = [];
+
+  for (const [indice, linha] of linhas.entries()) {
+    if (!linha.startsWith('// DECISÃO FECHADA')) continue;
+
+    const bloco: string[] = [];
+    for (let i = indice; i < linhas.length; i += 1) {
+      const atual = linhas[i] ?? '';
+      if (!atual.startsWith('//')) break;
+      bloco.push(atual);
+    }
+    blocos.push(bloco.join('\n'));
+  }
+
+  return blocos;
+}
+
+/**
+ * Os dois marcadores de `apps/worker/src/fila.ts`, como estavam ANTES desta fatia.
+ *
+ * A cópia literal é o instrumento: eles são `DECISÃO FECHADA`, e a task que extraiu o contrato da
+ * fila editou o arquivo inteiro ao redor deles. Comparar o texto por igualdade é o que separa
+ * "editei sob o débito", que é normal, de "editei sob a decisão", que é violação crítica.
+ */
+const DECISOES_FECHADAS_DA_FILA_DO_WORKER = [
+  [
+    '// DECISÃO FECHADA — T6 · 2026-08-01',
+    '// O QUÊ: a biblioteca de fila é fixada na linha 5.x (`bullmq` 5.81.3), e não na major 6.x, que já',
+    '//        existe e é a escolha óbvia de quem instala hoje.',
+    '// POR QUÊ: a 6.0.0 saiu em 2026-07-30 e acumulou CINCO correções em 48 horas (6.0.1 a 6.0.5), e a',
+    '//          major move o cliente de Redis para dependência de par opcional com armazenamento',
+    '//          plugável — mudança estrutural no ponto exato que esta fatia existe para provar. A CA-10',
+    '//          (trabalho enfileirado sobrevive à queda do servidor de fila) é a única prova da decisão',
+    '//          de ligar persistência em disco tomada em T2, e apostá-la numa linha em correção diária',
+    '//          troca uma base provada por churn. A 5.81.3 traz o cliente `ioredis` 5.11.1, exatamente',
+    '//          o que `apps/api` já fixa — uma versão do cliente no monorepo inteiro.',
+    '// REVERTER EXIGE: demonstrar que a linha 6.x parou de receber correção em cadência diária e que',
+    '//                 CT-001 a CT-004 — a CA-10 inclusive — passam contra ela.',
+  ].join('\n'),
+  [
+    '// DECISÃO FECHADA — T6 / Gate 2 · 2026-08-01',
+    '// O QUÊ: o encerramento gracioso INTEIRO corre contra um prazo (`LIMITE_DE_DESLIGAMENTO_MS`), e',
+    '//        a devolução da conexão acontece num `finally` — em vez de esperar indefinidamente que',
+    '//        cada etapa devolva o seu recurso, que é a forma óbvia e a que estava escrita.',
+    '// POR QUÊ: com o servidor de fila fora do ar, a espera não termina. O `close` do consumidor',
+    '//          fecha uma conexão que a biblioteca DUPLICA por dentro (`shared: false`), e o',
+    '//          fechamento dela emite `QUIT`; a política de reconexão desta fatia é infinita e',
+    '//          `maxRetriesPerRequest` é nulo, então o comando fica na fila de espera local para',
+    '//          sempre. Verificado nesta máquina: com a fila derrubada, o processo não terminou em',
+    '//          40 s após o `SIGTERM` — reconectava sem parar. E o cenário não é hipotético: é o',
+    '//          desligamento do sistema com a unidade da fila parando antes da do processador.',
+    '// REVERTER EXIGE: (a) que o par ordenação-de-unidades + política de reconexão garanta que',
+    '//                 nenhuma etapa do encerramento possa esperar por um servidor de fila ausente, e',
+    '//                 (b) que o `TimeoutStopSec` das unidades de T7 seja o único prazo em jogo. Este',
+    '//                 limite é deliberadamente MENOR que aquele: quem desiste primeiro precisa ser o',
+    '//                 processo, que sabe explicar no journal por que desistiu — o supervisor só sabe',
+    '//                 mandar SIGKILL. Alterar um dos dois sem o outro quebra o par: T7 declara',
+    '//                 `TimeoutStopSec` com folga sobre este valor.',
+  ].join('\n'),
+];
+
+/** Os quatro campos obrigatórios da forma canônica da §3 da rule. */
+const CAMPOS_DA_DECISAO_FECHADA = ['DECISÃO FECHADA —', 'O QUÊ:', 'POR QUÊ:', 'REVERTER EXIGE:'];
 
 describe('CT-901 — a rule do protocolo carrega em TODA sessão', () => {
   it('declara escopo de carregamento universal', () => {
@@ -385,6 +546,107 @@ describe('CT-909 — controle de não-vacuidade da varredura', () => {
     // Se um dia o último marcador sair, a §3-B manda apagar o bloco do `CLAUDE.md` inteiro — e
     // este caso é o que obriga a revisitar a barreira em vez de deixá-la vacuamente verde.
     expect(marcadoresVivos().size).toBeGreaterThan(0);
+  });
+});
+
+describe('CT-638 — o contrato da fila tem definição única, e o D32 fechou nas duas pontas', () => {
+  it('cada símbolo do contrato é definido em UM arquivo só, e é o do pacote compartilhado', () => {
+    const definicoes = arquivosQueDefinemOContratoDaFila();
+
+    for (const simbolo of SIMBOLOS_DO_CONTRATO_DA_FILA) {
+      // Igualdade, e não `toContain`: o que o D32 nomeia é a SEGUNDA definição, e uma asserção de
+      // presença é justamente a que não a enxerga. O arquivo intruso aparece no diff da falha.
+      expect(definicoes.get(simbolo), `definições de ${simbolo}`).toEqual([
+        CASA_DO_CONTRATO_DA_FILA,
+      ]);
+    }
+  });
+
+  it('o consumidor do `worker` importa o contrato pela fronteira do pacote', () => {
+    const consumidor = ler(CONSUMIDOR_DO_CONTRATO_DA_FILA);
+    const lista = /import\s*\{([\s\S]*?)\}\s*from\s*'@sysloc\/shared'/.exec(consumidor)?.[1] ?? '';
+    const importados = lista
+      .split(',')
+      .map((nome) => nome.replace(/\btype\b/, '').trim())
+      .filter((nome) => nome.length > 0);
+
+    // Igualdade sobre os símbolos DO CONTRATO (os demais imports do módulo ficam livres para
+    // crescer): sem esta asserção, um consumidor que voltasse a escrever o literal `'eco'` na
+    // chamada satisfaria a unicidade acima e reabriria o desencontro por outro caminho.
+    expect(SIMBOLOS_DO_CONTRATO_DA_FILA.filter((simbolo) => importados.includes(simbolo))).toEqual([
+      'CargaDaRegua',
+      'CargaDoEco',
+      'FILA_DA_REGUA',
+      'FILA_DO_ECO',
+      'OPCOES_PADRAO_DA_TAREFA',
+    ]);
+  });
+
+  it('o contrato desceu SEM trazer a biblioteca de fila junto', () => {
+    // A restrição é parte da decisão: com `bullmq` aqui, todo consumidor de registro estruturado e
+    // de erros do monorepo — a API inclusive — passaria a arrastar a biblioteca de fila.
+    expect(ler(CASA_DO_CONTRATO_DA_FILA)).not.toMatch(/^import\s/m);
+
+    const manifesto = ler('packages/shared/package.json');
+    for (const biblioteca of ['bullmq', 'ioredis']) {
+      expect(manifesto, `@sysloc/shared passou a depender de ${biblioteca}`).not.toContain(
+        `"${biblioteca}"`,
+      );
+    }
+  });
+
+  it('o marcador do D32 saiu do código E a linha saiu do índice — as duas pontas', () => {
+    const noCodigo = [...marcadoresVivos()].filter(
+      (identificador) => identificador === IDENTIFICADOR_DO_D32,
+    );
+    const noIndice = [...ler(CAMINHO_DAS_INSTRUCOES).matchAll(PADRAO_DE_LINHA_DE_INDICE)]
+      .map((achado) => `${achado[1]} · ${achado[2]}`)
+      .filter((identificador) => identificador === IDENTIFICADOR_DO_D32);
+
+    // As duas pontas na MESMA asserção, de propósito (§3-B): fechar uma e esquecer a outra produz
+    // marcador órfão ou linha órfã, e o objeto da falha nomeia qual das duas ficou para trás.
+    expect({ noCodigo, noIndice }).toEqual({ noCodigo: [], noIndice: [] });
+  });
+
+  it('as duas `DECISÃO FECHADA` do consumidor continuam byte a byte, com os quatro campos', () => {
+    const blocos = decisoesFechadasDe(ler(CONSUMIDOR_DO_CONTRATO_DA_FILA));
+
+    // Editar sob o `DÉBITO COM GATILHO` é normal — é o que a task fez. Sob a `DECISÃO FECHADA` é
+    // violação crítica, e esta é a única asserção da base que a apanha neste arquivo.
+    expect(blocos).toEqual(DECISOES_FECHADAS_DA_FILA_DO_WORKER);
+
+    for (const [indice, bloco] of blocos.entries()) {
+      for (const campo of CAMPOS_DA_DECISAO_FECHADA) {
+        expect(bloco, `marcador ${indice + 1} perdeu o campo ${campo}`).toContain(campo);
+      }
+    }
+  });
+
+  it('controle de não-cegueira: a expressão de definição não casa import nem menção', () => {
+    const padrao = definicaoDe('OPCOES_PADRAO_DA_TAREFA');
+
+    expect(padrao.test('export const OPCOES_PADRAO_DA_TAREFA = {')).toBe(true);
+    expect(padrao.test('const OPCOES_PADRAO_DA_TAREFA = {')).toBe(true);
+    // A carga é `interface`, e não `const`: se a expressão só reconhecesse declaração de valor, a
+    // duplicação do TIPO passaria despercebida — e é ela que carrega a decisão da ADR-0024.
+    expect(definicaoDe('CargaDaRegua').test('export interface CargaDaRegua {')).toBe(true);
+
+    // Se a expressão casasse qualquer uma das formas abaixo, TODO consumidor legítimo seria
+    // contado como redefinição — e a asserção de unicidade reprovaria a árvore correta.
+    for (const consumo of [
+      '  OPCOES_PADRAO_DA_TAREFA,',
+      "import { OPCOES_PADRAO_DA_TAREFA } from '@sysloc/shared';",
+      '    defaultJobOptions: OPCOES_PADRAO_DA_TAREFA,',
+    ]) {
+      expect(padrao.test(consumo), `casou consumo como definição: ${consumo}`).toBe(false);
+    }
+
+    // Defeito medido na construção deste caso: a linha de uma lista de import quebrada em várias
+    // linhas começa por `type NOME,` e era lida como apelido de tipo — o consumidor e o barril do
+    // pacote apareciam como redefinição da carga.
+    const daCarga = definicaoDe('CargaDaRegua');
+    expect(daCarga.test('  type CargaDaRegua,'), 'casou item de lista de import').toBe(false);
+    expect(daCarga.test('export type CargaDaRegua = { empresaId: string };')).toBe(true);
   });
 });
 

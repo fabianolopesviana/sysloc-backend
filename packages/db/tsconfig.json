@@ -30,6 +30,15 @@
   // aquele manifesto também resolve `"."` só para `dist/`. A dependência saiu de `devDependencies`
   // para `dependencies` no mesmo passo — ela deixou de ser só do acessório de teste e passou a ser
   // de execução. Não há ciclo: `@sysloc/shared` não depende de pacote algum do workspace.
-  "references": [{ "path": "../contracts" }, { "path": "../shared" }],
+  //
+  // A referência a `../regua` entra na T5 da fatia `regua-de-cobranca`, e a direção é `db` → `regua`
+  // — **a inversa da leitura ingênua do grafo**, e ela é a ADR-0025 inteira. Quem declara
+  // `CandidataAoAviso` e `TentativaDeEnvio` é o **domínio**; é `src/envio-de-cobranca.ts` que os
+  // importa para dizer que satisfaz `PortaDeCandidatas` e `PortaDeRegistro`. Não a "corrija" para
+  // `regua` → `db`: a aresta de volta fecha um ciclo, e o Turborepo aborta antes de compilar
+  // qualquer coisa (`Cyclic dependency detected: @sysloc/db#build, @sysloc/regua#build`, medido
+  // neste repositório). O cabeçalho de `packages/regua/src/porta-de-dados.ts` registra as três
+  // consequências por extenso.
+  "references": [{ "path": "../contracts" }, { "path": "../regua" }, { "path": "../shared" }],
   "include": ["src/**/*.ts"]
 }

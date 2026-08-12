@@ -350,6 +350,18 @@ const DEFINIDOR_ESPERADO = 'comum/validacao.ts';
 const IMPORTADORES_ESPERADOS = [
   'autenticacao/senha.controller.ts',
   // SUT_IS_CORRECT_BECAUSE: o código de produção está certo, e é esta lista que descrevia o estado
+  // anterior. A T9 da fatia `regua-de-cobranca` publica a **décima primeira** borda — as duas rotas
+  // de `/v1/automacao-de-cobranca` —, e ela **importa** a tradução única em vez de copiá-la, que é
+  // exatamente o desfecho que o `CT-343` existe para premiar. Vale aqui, palavra por palavra, o
+  // parágrafo acima: a ponta da DEFINIÇÃO permanece em um elemento, {@link ANALISADORES_ESPERADOS}
+  // não muda (o controlador novo chama `validar`, e não `safeParse`), e a igualdade (nunca
+  // contenção) segue sendo asserida nas três pontas.
+  //
+  // **Este arquivo não está na §5.2 da T9** — divergência declarada: a âncora afirma por igualdade de
+  // conjunto, e publicar borda nova a faz reprovar, que é exatamente o que ela existe para fazer. A
+  // âncora **sobe**; ela não vira contenção.
+  'automacao/automacao.controller.ts',
+  // SUT_IS_CORRECT_BECAUSE: o código de produção está certo, e é esta lista que descrevia o estado
   // anterior. A T9 publica a **sétima** borda — as dezoito rotas de `/v1/locadores`,
   // `/v1/locatarios` e `/v1/fiadores` —, e ela **importa** a tradução única em vez de copiá-la, que é
   // exatamente o desfecho que o `CT-343` existe para premiar.
@@ -469,7 +481,15 @@ const DEFINIDOR_DO_CORPO_VAZIO_ESPERADO = 'comum/esquema-de-corpo-vazio.ts';
  * em vez de copiar é o D23 continuando fechado —, e crescê-lo aqui exige a linha
  * `SUT_IS_CORRECT_BECAUSE:` junto, como as edições anteriores desta suíte.
  */
+// SUT_IS_CORRECT_BECAUSE: a **T10** publica o `POST` do disparo manual, cujo corpo é **vazio e
+// fechado**, e `automacao/automacao.controller.ts` passa a IMPORTAR a definição única em vez de
+// copiá-la — que é exatamente o comportamento que este caso existe para premiar. O que ele reprova é
+// a **segunda definição**, e essa ponta ({@link DEFINIDOR_DO_CORPO_VAZIO_ESPERADO}) **não mudou**: o
+// conjunto dos definidores continua com um elemento. A asserção NÃO foi afrouxada — segue sendo
+// igualdade exata sobre o conjunto inteiro, com um consumidor a mais, e **nenhuma entrada anterior
+// saiu**. É a mesma leitura do docblock acima: *"o conjunto que pode crescer é o dos consumidores"*.
 const IMPORTADORES_DO_CORPO_VAZIO_ESPERADOS = [
+  'automacao/automacao.controller.ts',
   'cadastros/superficie-de-cadastro.ts',
   'cobrancas/cobranca.controller.ts',
   'contratos/contrato.controller.ts',
@@ -649,7 +669,7 @@ describe('CT-343 — `validar` é definida num arquivo só e importada pelas bor
 });
 
 describe('CT-357 — `ESQUEMA_DO_CORPO_VAZIO` é definido num arquivo só e importado pelas bordas', () => {
-  it('não restou cópia: uma definição em comum/esquema-de-corpo-vazio.ts e cinco importadores', async () => {
+  it('não restou cópia: uma definição em comum/esquema-de-corpo-vazio.ts e seis importadores', async () => {
     const arquivos = await listarFontesTs(FONTE_DA_APLICACAO);
     const definicoes = await varrerArquivos(arquivos, (linha) =>
       DEFINICAO_DO_CORPO_VAZIO.test(linha),
@@ -674,7 +694,7 @@ describe('CT-357 — `ESQUEMA_DO_CORPO_VAZIO` é definido num arquivo só e impo
     const importadores = [...new Set(importacoes.ocorrencias.map(arquivoDaOcorrencia))].sort();
     expect(
       importadores,
-      `os importadores de ESQUEMA_DO_CORPO_VAZIO deixaram de ser as cinco bordas revisadas: ${importadores.join(', ')}`,
+      `os importadores de ESQUEMA_DO_CORPO_VAZIO deixaram de ser as seis bordas revisadas: ${importadores.join(', ')}`,
     ).toEqual(IMPORTADORES_DO_CORPO_VAZIO_ESPERADOS);
   });
 });

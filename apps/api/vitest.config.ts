@@ -35,7 +35,7 @@ export default defineConfig({
     // no meio e deixaria exatamente o resíduo que a CA-7 proíbe.
     teardownTimeout: 60_000,
     // -----------------------------------------------------------------------------------------
-    // Segredo de assinatura de sessão do PROCESSO DE VERIFICAÇÃO (T8)
+    // Segredo de assinatura de sessão e COORDENADAS INERTES DO TRANSPORTE (T8, T10)
     // -----------------------------------------------------------------------------------------
     //
     // A partir da T8 a validação de partida exige `BETTER_AUTH_SECRET`, e todo caso que sobe a
@@ -50,8 +50,25 @@ export default defineConfig({
     // demonstra a falha por ausência e por valor curto demais, sem depender do ambiente do
     // processo. E não fere a ADR-0006: nada aqui é coordenada de conexão, e nada é lido do
     // ambiente — o valor é fixado, não herdado.
+    //
+    // `SMTP_URL` e `EMAIL_REMETENTE` entram na **T10** pela MESMA razão, palavra por palavra: a
+    // partir dela o disparo manual envia de dentro deste processo, a validação de partida exige as
+    // duas, e **todo** caso que sobe a aplicação real passa por ela — inclusive `saude.e2e.spec.ts`,
+    // que não tem nada a ver com envio de aviso. Declará-las aqui é o que evita editar vinte
+    // arquivos de verificação por causa desta task, e é o precedente que a T8 abriu.
+    //
+    // ⚠️ **Os dois valores são deliberadamente INERTES, e a escolha é conteúdo.** A porta `1` é
+    // reservada e recusa a conexão de imediato, e `.invalid` é o domínio que a RFC 6761 garante não
+    // resolver: uma mensagem que escapasse por aqui não teria para onde ir. Eles NÃO enfraquecem a
+    // barreira da CA-17 — quem a sustenta é a substituição do provedor por `overrideProvider` e a
+    // varredura do `CT-626`, que afirma por igualdade que arquivo de teste nenhum nomeia o adaptador
+    // de produção. E não ferem a ADR-0006 pela mesma razão do segredo acima: nada é lido do
+    // ambiente, e o destino é impossível por construção. Quem prova que as duas são **obrigatórias**
+    // é `test/ambiente.spec.ts` (CT-639), que chama a validação com a fonte por PARÂMETRO.
     env: {
       BETTER_AUTH_SECRET: 'segredo-de-verificacao-sem-valor-operacional',
+      SMTP_URL: 'smtp://127.0.0.1:1',
+      EMAIL_REMETENTE: 'avisos@exemplo.invalid',
     },
   },
 });

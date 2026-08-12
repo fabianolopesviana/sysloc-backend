@@ -125,6 +125,25 @@ const ESQUEMA = z.object({
       COMPRIMENTO_MINIMO_DO_SEGREDO,
       `deve ter ao menos ${COMPRIMENTO_MINIMO_DO_SEGREDO} caracteres`,
     ),
+  // As DUAS variáveis do transporte de e-mail entram na T10 da fatia `regua-de-cobranca`, e não por
+  // simetria com o processador de trabalho: o **disparo manual** envia de dentro deste processo, que
+  // passa a ser o SEGUNDO capaz de alcançar a caixa de uma pessoa real. Aqui o modo perigoso é o
+  // inverso do habitual — *"subir mesmo assim"* constrói um transporte que aponta para o `localhost`
+  // que a biblioteca assume por omissão —, e por isso a partida é **recusada** nomeando a variável,
+  // em vez de o processo subir e falhar no primeiro disparo. A conferência é a MESMA que
+  // `apps/worker/src/main.ts` faz, e o par de casos que a prova nos dois processos é `CT-625`/`CT-639`.
+  //
+  // A **forma** da cadeia não é conferida aqui, e a ausência é decisão: quem recusa a `SMTP_URL` que
+  // não serve como endereço é `coordenadasDoTransporte` (em `@sysloc/regua`), num lugar só. Uma
+  // segunda conferência de forma escrita nesta composição ficaria livre para divergir da do outro
+  // processo — e é justamente a divergência entre dois pontos que decidem o mesmo fato que esta fatia
+  // existe para não ter.
+  //
+  // O piso de um caractere não é redundante com {@link selecionar}: ele é a barreira que sobrevive a
+  // qualquer mudança futura naquela normalização, e `SMTP_URL` é a variável em que o valor vazio
+  // atravessando custa uma mensagem entregue no endereço errado.
+  SMTP_URL: z.string().min(1, 'deve ser declarada'),
+  EMAIL_REMETENTE: z.string().min(1, 'deve ser declarada'),
 });
 
 /**
@@ -160,6 +179,16 @@ export interface Ambiente {
    * vazamento, e é por isso que ele vive em `EnvironmentFile` 0600 fora da árvore (§11.6).
    */
   readonly segredoDeSessao: string;
+  /**
+   * Cadeia de conexão do servidor de e-mail, de `SMTP_URL`. **Carrega credencial.**
+   *
+   * Ela não é registrada, não viaja em `argv` e não é ecoada em mensagem de erro: a recusa de partida
+   * nomeia a **variável**, e a falha de entrega nomeia o **código** do transporte. Mesma disciplina, e
+   * mesmos nomes de campo, de `apps/worker/src/main.ts`.
+   */
+  readonly urlDoTransporte: string;
+  /** Endereço que assina o aviso, de `EMAIL_REMETENTE`. */
+  readonly remetenteDoAviso: string;
 }
 
 /**
@@ -225,6 +254,24 @@ export const TOKEN_ACESSO_A_IDENTIDADE = Symbol('AcessoAIdentidade');
 export const TOKEN_ACESSO_AO_NEGOCIO = Symbol('AcessoAoBanco');
 
 /**
+ * Token de injeção da **porta de saída de e-mail** (T10 da fatia `regua-de-cobranca`).
+ *
+ * Mora aqui, ao lado dos quatro tokens acima, pelo mesmo motivo deles — e não porque a verificação
+ * precise dele. O que ele publica é a `PortaDeEnvioDeEmail` que `@sysloc/regua` declara: a operação
+ * recebe o adaptador de SMTP, e a verificação substitui o provedor pelo **capturador**, pela mesma
+ * interface e pelo mesmo mecanismo do arcabouço de teste (`overrideProvider`) que
+ * `contexto.e2e.spec.ts` e `saude.e2e.spec.ts` já usam para o registrador.
+ *
+ * ⚠️ **`criarAplicacao()` NÃO ganha parâmetro por causa disto**, e a ausência é a decisão: uma opção
+ * de composição que só a suíte passasse seria símbolo de produção a serviço do teste — o seam que a
+ * disciplina do executor proíbe —, e ela seria também um segundo caminho para escolher o adaptador,
+ * exatamente o `if (ehTeste)` que o cabeçalho de `packages/regua/src/adaptador-smtp.ts` recusa. A
+ * barreira da CA-17 é **estrutural**: quem monta o processo escolhe, e o que a suíte faz é trocar o
+ * provedor de fora, sem que exista bandeira, ambiente ou ramo no meio.
+ */
+export const TOKEN_PORTA_DE_EMAIL = Symbol('PortaDeEnvioDeEmail');
+
+/**
  * Lê e valida as variáveis de ambiente exigidas.
  *
  * @param fonte Registro de variáveis — `process.env` na partida, objeto montado na verificação.
@@ -252,6 +299,8 @@ export function carregarAmbiente(fonte: FonteDeVariaveis): Ambiente {
     cadeiaConexaoBanco: validado.DATABASE_URL,
     cadeiaConexaoFila: validado.REDIS_URL,
     segredoDeSessao: validado.BETTER_AUTH_SECRET,
+    urlDoTransporte: validado.SMTP_URL,
+    remetenteDoAviso: validado.EMAIL_REMETENTE,
   };
 }
 
