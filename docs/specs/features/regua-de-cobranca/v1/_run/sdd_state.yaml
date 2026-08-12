@@ -1,0 +1,28 @@
+feature: "Régua de cobrança por empresa — o aviso ao inadimplente, configurável, auditado e sem cobrar dívida que não existe"
+current_step: execution
+variant: backend
+source: recommended
+source_note: "Sub-fatia 2a de 2. O pré-refinamento vive em docs/specs/features/regua-e-documentos/v1/pre-refinement.md e é a entrada dos dois runs; a §15.2 recomenda SDD com um run por sub-fatia, na ordem 2a → 2b, e a §15.4 escreve exatamente este comando como próximo passo."
+steps:
+  prd:
+    status: completed
+    summary: "9 US, 17 CA. Régua de cobrança por empresa: aviso automático ao inadimplente segundo política própria, disparo manual com concessão própria, registro de toda tentativa, e nenhum aviso para cobrança paga ou cancelada por nenhum caminho."
+  tech_alignment:
+    status: completed
+    summary: "6 decisões (D1..D6): pacote de domínio próprio executando no worker com o contrato da fila extraído para pacote compartilhado; contexto de tenant vindo da carga do job; porta de aplicação enfileirável sem rota de acionamento; elegibilidade derivada no banco; porta de e-mail com adaptador de captura e barreira que falha fechado; retentativa na unidade do job da empresa."
+  tech_spec:
+    status: completed
+    variant: backend
+    summary: "Pacote novo @sysloc/regua (pacotes 4→5) consumido pelos dois caminhos; contrato da fila desce para @sysloc/shared e fecha o D32 (F0/T6); 2 tabelas novas em negocio (politica_de_aviso, envio_de_cobranca) com RLS forçada e FK composta, por 2 migrações (0011_dominio_regua, 0012_seguranca_regua) e 3 enums; predicado de elegibilidade no banco sobre cobranca_derivada; 4 rotas novas sob /v1/automacao-de-cobranca levando a superfície de 82/67 para 86/71; 38 casos de teste (CT-601..CT-638) cobrindo os 17 CA. Emenda declarada à RN-06/CA-06: a trava de intervalo conta apenas a tentativa ENVIADA."
+  validation:
+    status: completed
+    summary: "challenge-spec: 6 questões, 24 ajustes inline. Furos fechados: a candidata não tinha projeção declarada (a view não carrega contato nem imóvel — junção declarada na §5.1-B′ com o tipo CandidataAoAviso); a §3.3 se contradizia sobre a direção das dependências (o domínio passa a ser dono da porta, seta db→regua); a hora da janela não tinha origem declarada e acertava pela TZ do host (passa a vir do banco, com asserção estática no CT-612); a equivalência com o oráculo não declarava o colapso das duas trilhas do legado (tabela de mapeamento sete→seis na §21.2); a barreira da CA-17 não tinha prova na api (CT-639 novo, 38→39 casos). Glossário: 5 termos no global, 5 no da feature, com as 2 ambiguidades da §21.6 resolvidas. 2 candidatas a ADR confirmadas (5/5)."
+  task_plan:
+    status: completed
+    summary: "12 tasks, 6 fases, 0 paralelizáveis (derivado). US cobertas: 9/9. Os 39 CTs (CT-601..CT-639) distribuídos por redistribuição do _run/test-cases.json, cada um em exatamente 1 task, sem reinvocar o gerador — o CT-639, nascido no challenge-spec, foi reconstruído e anexado ao JSON. Achado que mudou a decomposição: a seta db→regua da ADR-0025 mais os testes de packages/regua que precisam de banco fechariam CICLO no Turborepo (medido neste repositório: turbo aborta com Cyclic dependency detected), de modo que 8 casos foram relocados — CT-615..CT-620 e CT-626 para packages/db/test/, CT-636 e CT-637 para apps/api/test/. A T7 fecha o D32 (F0/T6) nas duas pontas; T1 é a task de PRAZO e não exige sudo."
+  execution:
+    status: completed
+    tasks_total: 12
+    tasks_completed: 12
+    summary: "12/12 tasks concluídas e aprovadas nos dois gates; nenhuma bloqueada. Suíte 835 → 1002 casos, medida por pacote, com crescimento monotônico. Superfície fechada em 86 rotas / 71 manipuladores por dupla medição independente (CT-635), semDeclaracao vazio. O D32 (F0/T6) foi fechado na T7 nas duas pontas; os marcadores do D1, D26 e D20 permanecem, e nasceram quatro débitos com gatilho novos (D3, D12, D13, D14) mais o D49, o D54 e o D57. Duas rejeições no run inteiro: uma do Gate 1 na T11 (AP-29) e uma do Gate 2 na T12 (o mesmo AP-29, elevado do BAIXO que o Gate 1 lhe delegou)."
+
