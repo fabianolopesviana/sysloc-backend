@@ -546,13 +546,23 @@ pública decide o que a US da confirmação promete), e a **task de prazo** vive
 dele.
 
 ```bash
-# 1) Agora — as duas decisões transversais, que a F4 e o handoff vão consumir
-/agent-spec-adr-create "critério para uma rota de negócio dispensar sessão, e o que ela carrega em troca"
-/agent-spec-adr-create "o que o contrato publica para uma rota que devolve bytes"
+# 1) FEITO em 2026-08-12 — as duas decisões transversais, que a F4 e o handoff vão consumir
+#    /agent-spec-adr-create "critério para uma rota de negócio dispensar sessão, e o que ela carrega em troca"   → ADR-0027
+#    /agent-spec-adr-create "o que o contrato publica para uma rota que devolve bytes"                            → ADR-0028
 
-# 2) Depois das ADRs — a sub-fatia que fecha a F3
-/agent-spec-sdd-generate-prd "contrato em PDF derivado sob demanda com carimbo de cancelamento por composição, e confirmação de e-mail do locatário com token aleatório de uso único"
+# 2) Agora — a sub-fatia que fecha a F3. O PATH VAI JUNTO DA DESCRIÇÃO, e não é ornamento (ver a nota)
+/agent-spec-sdd-generate-prd docs/specs/features/documentos-e-confirmacao/v1/pre-refinement.md "contrato em PDF derivado sob demanda com carimbo de cancelamento por composição, e confirmação de e-mail do locatário com token aleatório de uso único"
 ```
+
+> ⚠️ **Por que o path do pré-refinamento entra no comando.** A Etapa 0.0 do
+> `agent-spec-sdd-generate-prd` casa qualquer token terminado em `pre-refinement.md` que exista no
+> disco, e trata o resto do argumento como descrição. **Sem o path**, ela cai na Etapa 0.1, que deriva
+> `{feature}` em kebab-case **a partir da descrição** — e esta descrição derivaria
+> `contrato-em-pdf-derivado-sob-demanda`, que não existe. O run gravaria `source: no_discovery` e o
+> PRD nasceria sem os ramos convergidos, sem as decisões fora de negociação e sem as dúvidas em
+> aberto. Com o path, a Etapa 0.2 confere a aderência, não emite aviso (a recomendação é SDD) e
+> instrumenta `source: recommended`. **Vale para toda fatia cujo nome não seja dedutível da
+> descrição** — o caso comum, não a exceção.
 
 > A feature é **`documentos-e-confirmacao`**, versão `v1`, variante `backend`. O pré-refinamento
 > **partilhado** (`regua-e-documentos/v1/pre-refinement.md`) permanece intacto — ele é a entrada dos
