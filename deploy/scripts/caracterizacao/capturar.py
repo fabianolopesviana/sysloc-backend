@@ -2030,6 +2030,54 @@ def gravar_texto(nome: str, conteudo: str) -> None:
     destino.write_text(conteudo, encoding="utf-8")
 
 
+# --------------------------------------------------------------------------- #
+# O manifesto tem DOIS autores, e esta é a fronteira entre eles.
+#
+# DECISÃO FECHADA — T1 / Gate 2 · 2026-08-11
+# O QUÊ: `PROCEDENCIA.md` é escrito por um ponto ÚNICO (`gravar_procedencia`), e
+#        a fronteira de autoria é a seção 5: as seções 1 a 4 saem de
+#        `montar_procedencia`, aqui; da 5 em diante o dono é
+#        `deploy/scripts/caracterizacao/extrair-fonte-do-pdf.sh`, e o que ele
+#        escreveu é RECORTADO e REANEXADO a cada captura, sem ser interpretado.
+# POR QUÊ: até esta correção a gravação era `write_text(montar_procedencia(...))`
+#        — reescrita inteira do arquivo. Como `verificar-captura.sh` executa
+#        `capturar.py` dentro do próprio `main` (CT-001, CT-004 e CT-005), toda
+#        execução daquele verificador apagava a §5 EM SILÊNCIO: o CT-004 exclui
+#        `PROCEDENCIA.md` do diff de determinismo por contrato, e o CT-603 só
+#        observa a janela do extrator. O CT-601 passava a reprovar sem que nada
+#        acusasse a causa, e a §5 só voltava por um caminho preso a três
+#        pré-condições do `/opt/frappe` — que desaparece na virada (F7).
+# REVERTER EXIGE: provar que `PROCEDENCIA.md` voltou a ter UM autor, isto é, que
+#        nenhuma seção do arquivo é produzida fora de `montar_procedencia`.
+# --------------------------------------------------------------------------- #
+ARQ_PROCEDENCIA = "PROCEDENCIA.md"
+
+# O corte é por PREFIXO, e não pelo título inteiro, de propósito: preservar demais
+# é inócuo (o texto volta como veio), preservar de menos é o defeito que esta
+# fronteira fecha. `extrair-fonte-do-pdf.sh` recorta pelo mesmo prefixo, do mesmo
+# lado — as duas pontas têm de casar, senão uma duplica o que a outra apaga.
+PREFIXO_DA_PRIMEIRA_SECAO_ALHEIA = "## 5. "
+
+
+def compor_manifesto(corpo: str, anterior: str) -> str:
+    """Junta as seções desta captura ao que já existia da §5 em diante.
+
+    `corpo` é o que `montar_procedencia` produziu (seções 1 a 4). `anterior` é o
+    conteúdo do manifesto no disco. Sem §5 no anterior, o corpo vale sozinho —
+    esta função não inventa seção que não existe.
+    """
+    posicao = anterior.find("\n" + PREFIXO_DA_PRIMEIRA_SECAO_ALHEIA)
+    if posicao == -1:
+        return corpo
+    return corpo.rstrip("\n") + "\n\n" + anterior[posicao + 1:]
+
+
+def gravar_procedencia(caminho: Path, corpo: str) -> None:
+    """Ponto único de escrita do manifesto — ver a DECISÃO FECHADA acima."""
+    anterior = caminho.read_text(encoding="utf-8") if caminho.is_file() else ""
+    caminho.write_text(compor_manifesto(corpo, anterior), encoding="utf-8")
+
+
 def _timestamp_iso(epoch: float) -> str:
     from datetime import datetime, timezone
 
@@ -2317,9 +2365,7 @@ def main() -> int:
         },
         "casos": CASOS_CALCULAR_MORA,
     })
-    (DIR_GOLDEN / "PROCEDENCIA.md").write_text(
-        montar_procedencia(envelope), encoding="utf-8"
-    )
+    gravar_procedencia(DIR_GOLDEN / ARQ_PROCEDENCIA, montar_procedencia(envelope))
 
     print(f"[capturar] site: {envelope['site']}")
     print(f"[capturar] data de execução no site: {envelope['data_execucao']}")

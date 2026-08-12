@@ -1,0 +1,8 @@
+# O artefato golden com o fonte do Server Script `PDF contrato` é gravado byte a
+# byte como está no banco do sistema legado, e o campo lá guarda quebras de linha
+# CRLF. Este host tem `core.autocrlf=input`, que normalizaria o arquivo para LF no
+# índice: o blob passaria a divergir do que
+# `deploy/scripts/caracterizacao/extrair-fonte-do-pdf.sh` produz, e a conferência de
+# determinismo (CT-603, `verificar-captura.sh`) reprovaria num clone novo por
+# infraestrutura, não por defeito. `-text` desliga a conversão só para este caminho.
+docs/specs/features/caracterizacao-regras-legadas/v1/golden/contrato-pdf-fonte.py -text

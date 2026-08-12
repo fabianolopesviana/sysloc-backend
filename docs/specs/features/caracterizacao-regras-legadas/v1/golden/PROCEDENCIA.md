@@ -180,3 +180,43 @@ defeitos**. Nenhum resultado foi corrigido, arredondado ou completado.
   efeito externo e irreversível, fora do que a ADR-0006 admite. Todas as cobranças
   do cenário nascem sem boleto, e o ramo capturado é o `ignoradas /
   sem_boleto_sicoob`, que é o único alcançável sem tocar a rede.
+
+## 5. Inventário dos artefatos
+
+> Seção mantida por `deploy/scripts/caracterizacao/extrair-fonte-do-pdf.sh`. A
+> lista é DECLARADA no script, nunca derivada do diretório: derivá-la faria a
+> bijeção do CT-601 comparar o `ls` consigo mesmo, e um artefato apagado sairia
+> dos dois lados sem reprovar nada.
+>
+> **Este manifesto tem dois autores, e a fronteira é esta seção.** As seções 1 a
+> 4 saem de `capturar.py`, que ao reescrever o arquivo RECORTA e REANEXA tudo o
+> que vem daqui em diante (`compor_manifesto`). Desta seção em diante o dono é
+> o extrator, e ela é regravável sem o sistema legado de pé:
+> `bash deploy/scripts/caracterizacao/extrair-fonte-do-pdf.sh --so-manifesto`.
+
+| Artefato | Produzido por | O que é |
+|---|---|---|
+| `PROCEDENCIA.md` | `capturar.py` | este manifesto: identificação da captura, máscaras e convenções |
+| `atualizar-atrasos-cobrancas.json` | `capturar.py` | oráculo da rotina de atualização de atraso |
+| `calcular-mora.json` | `capturar.py` | os 6 casos canônicos de `_calcular_mora`, portados sem reexecução |
+| `contrato-ativacao.json` | `capturar.py` | oráculo da ativação de contrato, com a virada de mês |
+| `contrato-cancelamento.json` | `capturar.py` | oráculo do cancelamento de contrato e da cascata |
+| `contrato-pdf-fonte.py` | `extrair-fonte-do-pdf.sh` | o FONTE do Server Script `PDF contrato` — a regra que compõe o documento |
+| `contrato-pdf.txt` | `capturar.py` | a SAÍDA da regra do documento: texto extraído do PDF gerado |
+| `encerrar-contratos-vencidos.json` | `capturar.py` | oráculo da rotina de encerramento de contrato vencido |
+| `marcar-cobrancas-vencidas.json` | `capturar.py` | oráculo da rotina que marca cobrança vencida |
+| `metragem.json` | `capturar.py` | oráculo da metragem derivada dos cômodos |
+| `regua-de-cobranca.json` | `capturar.py` | oráculo da régua de cobrança, com a divergência automático × manual |
+
+O 11º artefato não sai de `capturar.py`: `contrato-pdf-fonte.py` é o FONTE do
+Server Script `PDF contrato`, que existe apenas dentro do banco do sistema
+legado e desaparece com ele na virada. Ele foi lido por `SELECT` no serviço de
+banco, autenticado como o usuário da base — nenhum `bench` foi apontado para o
+site que atende a operação, e nada foi escrito lá (ADR-0006). O conteúdo é
+byte a byte o do campo `script`, sem máscara alguma: não há dado volátil nem
+credencial nele, e mascarar a regra destruiria justamente o que se captura.
+
+Última alteração da regra no legado (`modified`): `2026-03-10 14:24:24.623970`. É esse o
+carimbo que o cabeçalho do artefato repete — o instante da EXTRAÇÃO fica de
+fora dos dois de propósito, para que recapturar produza byte a byte o mesmo
+arquivo e o determinismo (CT-603) seja verificável.

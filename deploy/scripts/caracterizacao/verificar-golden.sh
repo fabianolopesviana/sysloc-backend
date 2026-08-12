@@ -3,7 +3,7 @@
 # Verificação OFFLINE dos artefatos golden da caracterização (TC-001).
 #
 # Casos cobertos: CT-010, CT-011, CT-013 (metade estática), CT-014, CT-433,
-# CT-501, CT-503.
+# CT-501, CT-503, CT-601, CT-602, CT-640.
 #
 # Este script não fala com o Frappe. Ele lê apenas o que está versionado no
 # repositório, e por isso continua executável depois que o backend legado for
@@ -50,6 +50,15 @@ GOLDEN_DA_REGUA=(
 	"regua-de-cobranca.json"
 )
 
+# Sublista da fatia `regua-de-cobranca`. O artefato é o FONTE do Server Script que
+# compõe o documento do contrato — a REGRA. O `contrato-pdf.txt` da captura
+# original, logo acima, é a SAÍDA de rodá-la; os dois convivem e não se
+# substituem, e nomeá-los em sublistas separadas é o que impede uma fatia futura de
+# trocar um pelo outro achando que são o mesmo artefato.
+GOLDEN_DO_FONTE_DO_PDF=(
+	"contrato-pdf-fonte.py"
+)
+
 # Fonte única do conjunto esperado E da contagem. A contagem sai do tamanho desta
 # lista de propósito: enquanto o número era literal, acrescentar um artefato exigia
 # lembrar de dois lugares, e esquecer o segundo deixava a asserção de número
@@ -67,6 +76,7 @@ GOLDEN_ESPERADOS=(
 	"${GOLDEN_DA_CAPTURA_ORIGINAL[@]}"
 	"${GOLDEN_DE_CONTRATO[@]}"
 	"${GOLDEN_DA_REGUA[@]}"
+	"${GOLDEN_DO_FONTE_DO_PDF[@]}"
 )
 
 # Marcadores introduzidos pela fase de cancelamento. Nomeá-los aqui é o que separa
@@ -101,7 +111,38 @@ CENARIO_DA_DIVERGENCIA="cobranca_cancelada_e_vencida"
 TEMPLATE_AUTOMATICO_DA_DIVERGENCIA="Fechada"
 TEMPLATE_MANUAL_DA_DIVERGENCIA="Vencida"
 
+# --------------------------------------------------------------------------- #
+# Forma esperada do fonte do Server Script `PDF contrato` (CT-601 / CT-602).
+#
+# Os números e as cadeias abaixo são escritos AQUI, e não lidos do artefato: um
+# verificador que tirasse a contagem do próprio arquivo que confere aprovaria um
+# artefato truncado com a contagem truncada junto — é a mesma razão registrada nas
+# contagens de cenário da régua, e é o que o mutante M1 do CT-602 exercita.
+# --------------------------------------------------------------------------- #
+ARQ_FONTE_DO_PDF="contrato-pdf-fonte.py"
+LINHAS_DO_FONTE_DO_PDF=752
+LINHAS_DO_CABECALHO_DO_PDF=7
+CABECALHO_DO_FONTE_DO_PDF="# CAPTURADO DO SISTEMA LEGADO — NÃO EDITAR À MÃO"
+DELIMITADOR_DO_FONTE_DO_PDF="# ----- fonte capturado abaixo, byte a byte: nada acrescentado, removido ou reordenado -----"
+
+# A versão DA REGRA no sistema legado, e não o instante da extração. Fixá-la aqui é
+# o que faz uma alteração da regra no legado — depois desta captura e antes da
+# virada — reprovar em vez de entrar em silêncio na próxima recaptura.
+MODIFICADO_NO_LEGADO_DO_PDF="2026-03-10 14:24:24.623970"
+
 medidas_da_regua=""
+
+# Sandbox descartável dos mutantes do CT-602. Nunca a árvore de trabalho: o caso
+# aplica defeito de propósito, e aplicá-lo no repositório deixaria o artefato
+# mutilado se o script morresse no meio.
+DIR_TRABALHO="$(mktemp -d)"
+
+limpar() {
+	local codigo=$?
+	rm -rf "${DIR_TRABALHO}"
+	exit "${codigo}"
+}
+trap limpar EXIT INT TERM HUP
 
 # Uma única leitura dos dois artefatos, consumida por CT-501 e CT-503. Cada caso a
 # invoca por conta própria: o card do CT-503 exige caso auto-contido, que reprove
@@ -1274,6 +1315,483 @@ ct_503() {
 	fechar_caso "CT-503"
 }
 
+# --------------------------------------------------------------------------- #
+# CT-601 / CT-602 — o FONTE do Server Script `PDF contrato`.
+#
+# INVARIANTE: o fonte da regra que compõe o documento do contrato existe como
+# artefato versionado em `golden/`, é legível sem o sistema antigo de pé, abre com
+# o cabeçalho canônico de procedência, traz exatamente LINHAS_DO_FONTE_DO_PDF
+# linhas com o terminador do legado preservado, e a lista ordenada de artefatos do
+# diretório é idêntica à declarada no `PROCEDENCIA.md` — bijeção nas duas direções.
+#
+# O QUE ESTE CASO NÃO FAZ, e por quê: ele não interpreta, não executa e não
+# reformata o fonte. O artefato É o oráculo da regra, e um verificador que
+# rederivasse qualquer coisa a partir dele estaria conferindo o oráculo contra a
+# suposição de quem o escreveu. O que se afere é FORMA e PROCEDÊNCIA — as duas
+# propriedades que ainda podem ser perdidas depois da virada, quando não houver
+# mais como recapturar. Portar a regra é da sub-fatia 2b.
+#
+# A medição é uma função separada porque o CT-602 aplica a MESMA asserção a cópias
+# defeituosas: asserção reescrita no caso negativo prova o verificador contra si
+# mesmo, e já aprovou 5/5 um SUT com o defeito de volta neste repositório.
+# --------------------------------------------------------------------------- #
+medidas_do_fonte=""
+
+medir_fonte_do_pdf() { # medir_fonte_do_pdf <dir_golden>
+	medidas_do_fonte="$(python3 - "$1" "${ARQ_FONTE_DO_PDF}" \
+		"${CABECALHO_DO_FONTE_DO_PDF}" "${DELIMITADOR_DO_FONTE_DO_PDF}" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+golden, nome, cabecalho, delimitador = (
+    Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4]
+)
+caminho = golden / nome
+
+if not caminho.is_file():
+    print("artefato_ausente=1")
+    raise SystemExit(0)
+print("artefato_ausente=0")
+
+bruto = caminho.read_bytes()
+print(f"bytes_nul={bruto.count(chr(0).encode())}")
+try:
+    texto = bruto.decode("utf-8")
+except UnicodeDecodeError:
+    print("utf8_invalido=1")
+    raise SystemExit(0)
+print("utf8_invalido=0")
+
+
+def sem_retorno(linha):
+    return linha[:-1] if linha.endswith("\r") else linha
+
+
+linhas = texto.split("\n")
+if linhas and linhas[-1] == "":
+    linhas.pop()
+
+print("primeira_linha=" + (sem_retorno(linhas[0]) if linhas else ""))
+print("cabecalho_canonico=" + cabecalho)
+
+indice = next(
+    (i for i, linha in enumerate(linhas) if sem_retorno(linha) == delimitador), -1
+)
+print(f"delimitador_presente={0 if indice < 0 else 1}")
+print(f"linhas_do_cabecalho={indice + 1 if indice >= 0 else -1}")
+
+CAMPOS = (
+    "# Origem:",
+    "# Campo:",
+    "# Última alteração no legado (modified):",
+    "# Comando:",
+    "# Procedência:",
+)
+do_cabecalho = [sem_retorno(linha) for linha in linhas[:indice]] if indice > 0 else []
+print(
+    "campos_ausentes_do_cabecalho="
+    + " ".join(
+        campo
+        for campo in CAMPOS
+        if not any(linha.startswith(campo) for linha in do_cabecalho)
+    )
+)
+
+PREFIXO_MODIFICADO = "# Última alteração no legado (modified):"
+print(
+    "modificado_no_cabecalho="
+    + next(
+        (
+            linha[len(PREFIXO_MODIFICADO):].strip()
+            for linha in do_cabecalho
+            if linha.startswith(PREFIXO_MODIFICADO)
+        ),
+        "",
+    )
+)
+
+# O corpo é o que vem DEPOIS do delimitador: contar o arquivo inteiro somaria o
+# cabeçalho de procedência ao fonte, e a contagem deixaria de dizer quantas linhas
+# de regra o legado tem.
+corpo = linhas[indice + 1:] if indice >= 0 else []
+print(f"linhas_do_fonte={len(corpo)}")
+print(
+    "linhas_do_fonte_sem_crlf="
+    + str(sum(1 for linha in corpo if not linha.endswith("\r")))
+)
+
+manifesto_arquivo = golden / "PROCEDENCIA.md"
+if not manifesto_arquivo.is_file():
+    print("manifesto_ausente=1")
+    raise SystemExit(0)
+print("manifesto_ausente=0")
+manifesto = manifesto_arquivo.read_text(encoding="utf-8")
+
+casamento = re.search(
+    r"Última alteração da regra no legado \(`modified`\): `([^`]+)`", manifesto
+)
+print("modificado_no_manifesto=" + (casamento.group(1) if casamento else ""))
+
+secao = re.search(
+    r"\n## 5\. Inventário dos artefatos\n(.*?)(?=\n## |\Z)", manifesto, re.DOTALL
+)
+print(f"inventario_ausente={0 if secao else 1}")
+
+declarados = []
+if secao:
+    for linha in secao.group(1).splitlines():
+        if not linha.strip().startswith("|"):
+            continue
+        colunas = [c.strip() for c in linha.strip().strip("|").split("|")]
+        if len(colunas) < 3:
+            continue
+        # O cabeçalho da tabela e a linha de separação não trazem nome em crase, e
+        # é assim que saem da varredura sem precisar de contagem de linha.
+        declarados.extend(re.findall(r"`([^`]+)`", colunas[0]))
+
+no_diretorio = sorted(item.name for item in golden.iterdir() if item.is_file())
+print("artefatos_no_diretorio=" + " ".join(no_diretorio))
+print("artefatos_no_manifesto=" + " ".join(sorted(declarados)))
+print("artefatos_orfaos=" + " ".join(sorted(set(no_diretorio) - set(declarados))))
+print("entradas_orfas=" + " ".join(sorted(set(declarados) - set(no_diretorio))))
+print(
+    "entradas_repetidas="
+    + " ".join(sorted(n for n in set(declarados) if declarados.count(n) > 1))
+)
+PY
+	)"
+}
+
+medida_do_fonte() { printf '%s\n' "${medidas_do_fonte}" | sed -n "s/^$1=//p" | head -1; }
+
+# A asserção do CT-601, isolada para que o CT-602 a aplique LITERALMENTE às cópias
+# defeituosas. Recebe o diretório porque o mutante mora em sandbox descartável.
+afirmar_forma_do_fonte_do_pdf() { # afirmar_forma_do_fonte_do_pdf <dir_golden>
+	medir_fonte_do_pdf "$1"
+
+	afirmar_igual "${ARQ_FONTE_DO_PDF} presente em golden/" \
+		"0" "$(medida_do_fonte artefato_ausente)"
+	if [[ "$(medida_do_fonte artefato_ausente)" != "0" ]]; then
+		return
+	fi
+	afirmar_igual "o artefato decodifica em UTF-8 estrito" \
+		"0" "$(medida_do_fonte utf8_invalido)"
+	afirmar_igual "o artefato não tem byte NUL" "0" "$(medida_do_fonte bytes_nul)"
+
+	afirmar_igual "a primeira linha é o cabeçalho canônico de procedência" \
+		"${CABECALHO_DO_FONTE_DO_PDF}" "$(medida_do_fonte primeira_linha)"
+	afirmar_igual "o delimitador que separa procedência de fonte está presente" \
+		"1" "$(medida_do_fonte delimitador_presente)"
+	afirmar_igual "o cabeçalho de procedência tem ${LINHAS_DO_CABECALHO_DO_PDF} linhas" \
+		"${LINHAS_DO_CABECALHO_DO_PDF}" "$(medida_do_fonte linhas_do_cabecalho)"
+	afirmar_igual "o cabeçalho declara origem, campo, versão da regra, comando e procedência" \
+		"" "$(medida_do_fonte campos_ausentes_do_cabecalho)"
+
+	afirmar_igual "o fonte capturado tem ${LINHAS_DO_FONTE_DO_PDF} linhas" \
+		"${LINHAS_DO_FONTE_DO_PDF}" "$(medida_do_fonte linhas_do_fonte)"
+	afirmar_igual "toda linha do fonte preserva o terminador CRLF do legado" \
+		"0" "$(medida_do_fonte linhas_do_fonte_sem_crlf)"
+
+	afirmar_igual "a versão da regra no legado é a auditada" \
+		"${MODIFICADO_NO_LEGADO_DO_PDF}" "$(medida_do_fonte modificado_no_cabecalho)"
+	afirmar_igual "o manifesto declara a mesma versão da regra que o artefato" \
+		"$(medida_do_fonte modificado_no_cabecalho)" "$(medida_do_fonte modificado_no_manifesto)"
+
+	afirmar_igual "o manifesto existe em golden/" "0" "$(medida_do_fonte manifesto_ausente)"
+	afirmar_igual "a §5 do manifesto declara o inventário" \
+		"0" "$(medida_do_fonte inventario_ausente)"
+	afirmar_igual "nenhum artefato de golden/ está fora do inventário do manifesto" \
+		"" "$(medida_do_fonte artefatos_orfaos)"
+	afirmar_igual "nenhuma entrada do inventário está sem artefato em golden/" \
+		"" "$(medida_do_fonte entradas_orfas)"
+	afirmar_igual "nenhuma entrada repetida no inventário" \
+		"" "$(medida_do_fonte entradas_repetidas)"
+	afirmar_igual "a lista de artefatos do diretório é idêntica à do manifesto" \
+		"$(medida_do_fonte artefatos_no_diretorio)" "$(medida_do_fonte artefatos_no_manifesto)"
+}
+
+ct_601() {
+	caso "CT-601" "contrato-pdf-fonte.py — o FONTE da regra do documento, com forma e bijeção"
+
+	afirmar_forma_do_fonte_do_pdf "${DIR_GOLDEN}"
+
+	local versionados
+	versionados="$(caminhos_versionados_do_golden)"
+	afirmar_igual "git ls-files sobre golden/ retorna ${#GOLDEN_ESPERADOS[@]} caminhos" \
+		"${#GOLDEN_ESPERADOS[@]}" "$(printf '%s\n' "${versionados}" | grep -c . || true)"
+
+	local nome ausentes=0
+	for nome in "${GOLDEN_DO_FONTE_DO_PDF[@]}"; do
+		printf '%s\n' "${versionados}" | grep -qxF "${REL_GOLDEN}/${nome}" ||
+			ausentes=$((ausentes + 1))
+	done
+	afirmar_igual "o fonte do Server Script está versionado" "0" "${ausentes}"
+
+	# Sem esta declaração o "byte a byte" é falso fora desta máquina: o host tem
+	# `core.autocrlf=input`, o git normalizaria o CRLF do legado no índice, e o
+	# artefato de um clone novo divergiria do que a recaptura produz — o CT-603
+	# reprovaria por infraestrutura, não por defeito.
+	afirmar_igual "o git não normaliza o terminador de linha do artefato" \
+		"${REL_GOLDEN}/${ARQ_FONTE_DO_PDF}: text: unset" \
+		"$(git -C "${RAIZ_REPO}" check-attr text -- "${REL_GOLDEN}/${ARQ_FONTE_DO_PDF}")"
+
+	fechar_caso "CT-601"
+}
+
+# Executa a asserção do CT-601 sobre um diretório qualquer SEM contaminar a
+# contagem do script: o subshell isola `falhas_totais`, o `stdout` vai para o vazio
+# e as linhas de FALHA ficam no arquivo, que é o que o CT-602 inspeciona.
+#
+# O subshell isola TAMBÉM o global `medidas_do_fonte` — a atribuição feita aqui
+# dentro não atravessa a fronteira. Quem chamar esta função não precisa remedir o
+# artefato real depois, e uma remedição "por precaução" seria linha morta com
+# comentário descrevendo um mecanismo que não existe.
+avaliar_forma_em_sandbox() { # avaliar_forma_em_sandbox <dir_golden> <arquivo_de_falhas>
+	(
+		falhas_totais=0
+		falhas_caso=0
+		afirmar_forma_do_fonte_do_pdf "$1" >/dev/null 2>"$2"
+		printf '%d' "${falhas_totais}"
+	)
+}
+
+ct_602() {
+	caso "CT-602" "prova de falsificação — artefato truncado e inventário sem a entrada REPROVAM"
+
+	local caixa="${DIR_TRABALHO}/ct602"
+	local m1="${caixa}/m1" m2="${caixa}/m2" controle="${caixa}/controle"
+	rm -rf "${caixa}"
+	mkdir -p "${m1}" "${m2}" "${controle}"
+	cp -a "${DIR_GOLDEN}/." "${m1}/"
+	cp -a "${DIR_GOLDEN}/." "${m2}/"
+	cp -a "${DIR_GOLDEN}/." "${controle}/"
+
+	# M1 — o fonte truncado a 100 linhas. `head -n` corta por quebra de linha e
+	# preserva o CRLF das que sobram: o único desvio é a contagem, e é ela que a
+	# asserção precisa pegar.
+	head -n "$((LINHAS_DO_CABECALHO_DO_PDF + 100))" "${m1}/${ARQ_FONTE_DO_PDF}" \
+		>"${caixa}/truncado" && mv "${caixa}/truncado" "${m1}/${ARQ_FONTE_DO_PDF}"
+
+	# M2 — o inventário do manifesto sem a entrada do artefato novo.
+	grep -v "^| \`${ARQ_FONTE_DO_PDF}\` |" "${m2}/PROCEDENCIA.md" \
+		>"${caixa}/manifesto" && mv "${caixa}/manifesto" "${m2}/PROCEDENCIA.md"
+
+	local falhas_m1 falhas_m2 falhas_controle
+	falhas_m1="$(avaliar_forma_em_sandbox "${m1}" "${caixa}/m1.err")"
+	falhas_m2="$(avaliar_forma_em_sandbox "${m2}" "${caixa}/m2.err")"
+	falhas_controle="$(avaliar_forma_em_sandbox "${controle}" "${caixa}/controle.err")"
+
+	afirmar_igual "M1 (fonte truncado a 100 linhas) reprova com exatamente uma falha" \
+		"1" "${falhas_m1}"
+	afirmar_igual "a falha de M1 nomeia ${LINHAS_DO_FONTE_DO_PDF} esperado contra 100 obtido" \
+		"1" "$(grep -cF "esperado [${LINHAS_DO_FONTE_DO_PDF}], obtido [100]" "${caixa}/m1.err" || true)"
+
+	# Duas falhas, e as duas são o mesmo defeito visto pelas duas asserções da
+	# bijeção: o artefato órfão nomeado, e a igualdade das listas ordenadas.
+	afirmar_igual "M2 (inventário sem a entrada) reprova com exatamente duas falhas" \
+		"2" "${falhas_m2}"
+	afirmar_igual "a falha de M2 nomeia o artefato órfão" \
+		"1" "$(grep -cF "fora do inventário do manifesto — esperado [], obtido [${ARQ_FONTE_DO_PDF}]" \
+			"${caixa}/m2.err" || true)"
+
+	afirmar_igual "o controle íntegro passa sem nenhuma falha" "0" "${falhas_controle}"
+	afirmar_igual "o controle íntegro não emite linha de falha" \
+		"0" "$(grep -c . "${caixa}/controle.err" || true)"
+
+	fechar_caso "CT-602"
+}
+
+# --------------------------------------------------------------------------- #
+# CT-640 — o manifesto tem DOIS autores, e nenhum apaga a seção do outro.
+#
+# INVARIANTE: a §5 do `PROCEDENCIA.md` — o inventário que a bijeção do CT-601
+# confere — sobrevive a uma gravação de `capturar.py` e é regravável SEM o sistema
+# legado de pé. As duas metades são exercitadas contra os scripts reais: a
+# gravação, chamando o ponto único de escrita de `capturar.py`; o reparo, rodando
+# `extrair-fonte-do-pdf.sh --so-manifesto` numa árvore de sandbox com o `docker`
+# mudo no PATH.
+#
+# POR QUE ESTE CASO EXISTE: `capturar.py` reescrevia o manifesto INTEIRO, e
+# `montar_procedencia` não conhece a §5. Como `verificar-captura.sh` executa
+# `capturar.py` dentro do próprio `main` (CT-001, CT-004 e CT-005), rodar aquele
+# verificador apagava a §5 e deixava o CT-601 vermelho — em silêncio, porque o
+# CT-004 exclui `PROCEDENCIA.md` do diff de determinismo por contrato e o CT-603 só
+# observa a janela do extrator. Nenhum caso cobria a INTERAÇÃO entre os dois
+# geradores, e foi essa lacuna que tornou o defeito invisível.
+#
+# POR QUE O REPARO ENTRA AQUI, E NÃO NO `verificar-captura.sh`: o caminho que
+# regrava a §5 tem de continuar existindo depois da virada, e este é o verificador
+# cujo cabeçalho declara sobreviver a ela. Um caso de reparo que só rodasse com o
+# legado de pé provaria exatamente o que não interessa.
+#
+# O NEGATIVO QUE DISCRIMINA está nas duas pontas: a gravação afirma que as seções
+# 1 a 4 FORAM substituídas (senão "preservou tudo" seria indistinguível de "não
+# escreveu nada"), e o reparo afirma que o golden mutilado REPROVA na asserção do
+# CT-601 antes de ser reparado (senão "passou depois" seria indistinguível de
+# "nunca esteve quebrado").
+# --------------------------------------------------------------------------- #
+ARQ_CAPTURAR="capturar.py"
+FALHAS_DO_MANIFESTO_SEM_INVENTARIO=4
+
+medidas_da_autoria=""
+
+medir_autoria_do_manifesto() { # medir_autoria_do_manifesto <dir_golden> <capturar.py>
+	medidas_da_autoria="$(python3 - "$1" "$2" <<'PY'
+import importlib.util
+import re
+import sys
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+golden, arq_capturar = Path(sys.argv[1]), Path(sys.argv[2])
+
+# O módulo é carregado do CAMINHO, e não do nome: o que se prova é o comportamento
+# do arquivo versionado, e um `import capturar` qualquer poderia resolver para
+# outro lugar do `sys.path`.
+especificacao = importlib.util.spec_from_file_location("capturar_sob_teste", arq_capturar)
+capturar = importlib.util.module_from_spec(especificacao)
+especificacao.loader.exec_module(capturar)
+
+original = (golden / "PROCEDENCIA.md").read_text(encoding="utf-8")
+posicao = original.find("\n## 5. ")
+print(f"secao_alheia_presente={0 if posicao < 0 else 1}")
+if posicao < 0:
+    raise SystemExit(0)
+secao_alheia = original[posicao + 1:]
+
+# Corpo sintético no lugar do que `montar_procedencia` produziria: o que se afere é
+# a JUNÇÃO, e montar o corpo de verdade exigiria o envelope de uma captura.
+CORPO = "# Procedência dos golden\n\n## 1. Identificação da captura\n\ncorpo desta captura\n"
+
+with TemporaryDirectory() as caixa:
+    alvo = Path(caixa) / "PROCEDENCIA.md"
+    alvo.write_text(original, encoding="utf-8")
+    capturar.gravar_procedencia(alvo, CORPO)
+    depois = alvo.read_text(encoding="utf-8")
+
+    print(f"secao_alheia_sobreviveu={1 if depois.endswith(secao_alheia) else 0}")
+    print(f"corpo_novo_aplicado={1 if depois.startswith(CORPO.rstrip(chr(10))) else 0}")
+    print(f"juncao_exata={1 if depois == CORPO.rstrip(chr(10)) + 2 * chr(10) + secao_alheia else 0}")
+    # O corpo antigo tinha as seções 2 a 4; se sobrou alguma, a gravação não
+    # aconteceu e a preservação seria vacuidade.
+    print(f"corpo_antigo_removido={1 if '## 4. ' not in depois else 0}")
+
+    virgem = Path(caixa) / "sem-secao-alheia.md"
+    capturar.gravar_procedencia(virgem, CORPO)
+    print(
+        "sem_anterior_grava_o_corpo="
+        + str(1 if virgem.read_text(encoding="utf-8") == CORPO else 0)
+    )
+
+# Entrada única de escrita: qualquer outro caminho que gravasse o manifesto teria
+# de nomeá-lo, e nomeá-lo é o que estas duas contagens tornam visível.
+fonte = arq_capturar.read_text(encoding="utf-8")
+print(f"literal_do_manifesto={len(re.findall(chr(34) + 'PROCEDENCIA[.]md' + chr(34), fonte))}")
+usos = [
+    linha
+    for linha in fonte.splitlines()
+    if "ARQ_PROCEDENCIA" in linha and not linha.startswith("ARQ_PROCEDENCIA =")
+]
+print(f"usos_da_constante={len(usos)}")
+print(
+    "uso_fora_do_ponto_unico="
+    + " ".join(linha.strip() for linha in usos if "gravar_procedencia(" not in linha)
+)
+PY
+	)"
+}
+
+medida_da_autoria() { printf '%s\n' "${medidas_da_autoria}" | sed -n "s/^$1=//p" | head -1; }
+
+ct_604() {
+	caso "CT-640" "a §5 do manifesto sobrevive à captura e é regravável sem o legado"
+
+	# ---- metade 1: `capturar.py` grava sem apagar a seção que não é dele ----
+	medir_autoria_do_manifesto "${DIR_GOLDEN}" "${DIR_SCRIPTS}/${ARQ_CAPTURAR}"
+
+	afirmar_igual "o manifesto versionado tem a seção do extrator" \
+		"1" "$(medida_da_autoria secao_alheia_presente)"
+	afirmar_igual "a seção do extrator sobrevive byte a byte a uma gravação de ${ARQ_CAPTURAR}" \
+		"1" "$(medida_da_autoria secao_alheia_sobreviveu)"
+	afirmar_igual "as seções da captura são substituídas pelo corpo novo" \
+		"1" "$(medida_da_autoria corpo_novo_aplicado)"
+	afirmar_igual "nenhuma seção do corpo antigo sobra no manifesto gravado" \
+		"1" "$(medida_da_autoria corpo_antigo_removido)"
+	afirmar_igual "o manifesto gravado é exatamente corpo novo + seção preservada" \
+		"1" "$(medida_da_autoria juncao_exata)"
+	afirmar_igual "sem seção alheia no disco, a gravação não inventa seção" \
+		"1" "$(medida_da_autoria sem_anterior_grava_o_corpo)"
+
+	afirmar_igual "${ARQ_CAPTURAR} nomeia o manifesto em um único ponto" \
+		"1" "$(medida_da_autoria literal_do_manifesto)"
+	afirmar_igual "a constante do manifesto é consumida uma única vez" \
+		"1" "$(medida_da_autoria usos_da_constante)"
+	afirmar_igual "nenhum uso do manifesto fora do ponto único de escrita" \
+		"" "$(medida_da_autoria uso_fora_do_ponto_unico)"
+
+	# ---- metade 2: a seção é reparável sem o sistema legado de pé ----
+	# Árvore de sandbox com a mesma forma do repositório: o extrator deriva a raiz
+	# do próprio caminho, então rodá-lo de dentro do sandbox faz `DIR_GOLDEN`
+	# apontar para a cópia. Nunca a árvore de trabalho — o caso mutila o manifesto
+	# de propósito, e mutilá-lo no repositório deixaria o oráculo pela metade se o
+	# script morresse no meio.
+	local caixa="${DIR_TRABALHO}/ct604"
+	local golden_sandbox="${caixa}/${REL_GOLDEN}"
+	rm -rf "${caixa}"
+	mkdir -p "${golden_sandbox}" "${caixa}/${REL_SCRIPTS}" "${caixa}/bin-mudo"
+	cp -a "${DIR_GOLDEN}/." "${golden_sandbox}/"
+	cp -a "${DIR_SCRIPTS}/extrair-fonte-do-pdf.sh" "${caixa}/${REL_SCRIPTS}/"
+
+	# O defeito exato que uma execução de `capturar.py` produzia antes da correção.
+	python3 - "${golden_sandbox}/PROCEDENCIA.md" <<'PY'
+import sys
+from pathlib import Path
+
+caminho = Path(sys.argv[1])
+texto = caminho.read_text(encoding="utf-8")
+posicao = texto.find("\n## 5. ")
+caminho.write_text(texto if posicao < 0 else texto[: posicao + 1], encoding="utf-8")
+PY
+
+	afirmar_igual "o manifesto mutilado reprova na asserção do CT-601" \
+		"${FALHAS_DO_MANIFESTO_SEM_INVENTARIO}" \
+		"$(avaliar_forma_em_sandbox "${golden_sandbox}" "${caixa}/antes.err")"
+	afirmar_igual "a falha nomeia o inventário ausente" \
+		"1" "$(grep -cF "a §5 do manifesto declara o inventário — esperado [0], obtido [1]" \
+			"${caixa}/antes.err" || true)"
+
+	# `docker` que responde erro a tudo, antes no PATH: se o modo offline tocasse
+	# qualquer pré-condição do legado, o script sairia com o código de
+	# indisponibilidade em vez de zero. É a mesma fronteira que o CT-603 usa.
+	printf '#!/usr/bin/env bash\nexit 1\n' >"${caixa}/bin-mudo/docker"
+	chmod +x "${caixa}/bin-mudo/docker"
+
+	local codigo=0
+	set +e
+	PATH="${caixa}/bin-mudo:${PATH}" bash "${caixa}/${REL_SCRIPTS}/extrair-fonte-do-pdf.sh" \
+		--so-manifesto >"${caixa}/reparo.out" 2>"${caixa}/reparo.err"
+	codigo=$?
+	set -e
+
+	afirmar_igual "o reparo da §5 termina com sucesso sem o legado disponível" "0" "${codigo}"
+	afirmar_igual "o reparo não emite AVISO de indisponibilidade do legado" \
+		"0" "$(grep -c 'AVISO' "${caixa}/reparo.err" || true)"
+	afirmar_igual "o manifesto reparado é byte a byte o versionado" \
+		"$(sha256sum "${DIR_GOLDEN}/PROCEDENCIA.md" | cut -d' ' -f1)" \
+		"$(sha256sum "${golden_sandbox}/PROCEDENCIA.md" | cut -d' ' -f1)"
+	afirmar_igual "o golden reparado volta a passar na asserção do CT-601" \
+		"0" "$(avaliar_forma_em_sandbox "${golden_sandbox}" "${caixa}/depois.err")"
+
+	# O reparo é do MANIFESTO, e só dele: o modo offline não recapta o fonte, e um
+	# artefato tocado ali denunciaria que ele fala com o legado por outro caminho.
+	afirmar_igual "o reparo não altera o fonte do Server Script" \
+		"$(sha256sum "${DIR_GOLDEN}/${ARQ_FONTE_DO_PDF}" | cut -d' ' -f1)" \
+		"$(sha256sum "${golden_sandbox}/${ARQ_FONTE_DO_PDF}" | cut -d' ' -f1)"
+
+	fechar_caso "CT-640"
+}
+
 main() {
 	printf 'Verificação offline dos golden — %s\n' "${DIR_GOLDEN}"
 
@@ -1289,10 +1807,13 @@ main() {
 	ct_433
 	ct_501
 	ct_503
+	ct_601
+	ct_602
+	ct_604
 
 	printf '\n'
 	if [[ "${falhas_totais}" -eq 0 ]]; then
-		printf 'verificar-golden: 7/7 casos aprovados (CT-010, CT-011, CT-013, CT-014, CT-433, CT-501, CT-503)\n'
+		printf 'verificar-golden: 10/10 casos aprovados (CT-010, CT-011, CT-013, CT-014, CT-433, CT-501, CT-503, CT-601, CT-602, CT-640)\n'
 		exit 0
 	fi
 	printf 'verificar-golden: %d falha(s) — REPROVADO\n' "${falhas_totais}" >&2

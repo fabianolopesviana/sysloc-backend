@@ -3,7 +3,7 @@
 # Verificação da captura da caracterização das regras legadas (TC-001).
 #
 # Casos cobertos: CT-001, CT-002, CT-003, CT-004, CT-005, CT-006, CT-007,
-# CT-008, CT-009, CT-012, CT-502 e a metade de logs do CT-013.
+# CT-008, CT-009, CT-012, CT-502, CT-603 e a metade de logs do CT-013.
 #
 # EXIGE O SITE EFÊMERO DE PÉ. Rode entre `capturar.py` e
 # `preparar-site-efemero.sh destruir` — dez dos catorze casos leem o site
@@ -1516,6 +1516,145 @@ PY
 }
 
 # --------------------------------------------------------------------------- #
+# CT-603 — a recaptura do fonte do Server Script `PDF contrato` é determinística,
+#          e a extração não escreve no sistema que atende a operação.
+#
+# INVARIANTE: rodar `extrair-fonte-do-pdf.sh` duas vezes produz artefato byte a
+# byte idêntico ao versionado — os três `sha256sum` são a mesma cadeia —, e os
+# controles do legado (a contagem de `Server Script` e o `modified` do documento)
+# são exatamente os mesmos antes e depois.
+#
+# POR QUE ESTE CASO EXISTE: o fonte da regra do documento só existe dentro do banco
+# do Frappe, e a janela para trazê-lo fecha na virada (F7) sem reabrir. Determinismo
+# é o que separa "o artefato foi capturado" de "o artefato pode ser reconferido
+# contra a origem enquanto ela existir"; e a ausência de escrita é o que mantém a
+# leitura dentro do que a ADR-0006 admite para o ambiente que atende a operação.
+#
+# ONDE ELE RODA, E POR QUÊ: antes do CT-012, de propósito. A janela [t0, t1] que
+# aquele caso audita passa a conter a execução do extrator, de modo que uma escrita
+# não atribuível vinda daqui reprova lá também. E antes do CT-013, cuja varredura
+# alcança `*.out`/`*.err` do diretório de trabalho: as saídas do extrator entram no
+# conjunto examinado, e o não-vazamento das credenciais passa a valer também para
+# ele — que é um script que LÊ a credencial da base.
+#
+# O PREÇO DESSE LUGAR, declarado: este caso NÃO depende do site efêmero — ele lê o
+# banco do site que atende a operação e grava em diretório temporário —, mas o
+# `main` deste script exige o site efêmero de pé, então executá-lo exige
+# `preparar-site-efemero.sh criar` como qualquer outro caso daqui. A dependência é
+# do arquivo, não do caso, e paga-se por ela em troca de o CT-012 e o CT-013
+# alcançarem o extrator. Mover o caso para o `verificar-golden.sh` sairia mais
+# barato de rodar e tiraria a extração das duas varreduras — que é justamente o que
+# se quer dela.
+# --------------------------------------------------------------------------- #
+EXTRAIR_FONTE_DO_PDF="${DIR_SCRIPTS}/extrair-fonte-do-pdf.sh"
+ARQ_FONTE_DO_PDF="contrato-pdf-fonte.py"
+DOCUMENTO_DO_PDF="PDF contrato"
+DOCTYPE_DO_SERVER_SCRIPT="tabServer Script"
+
+executar_extrator() { # executar_extrator <destino> <rotulo>
+	local destino="$1" rotulo="$2"
+	set +e
+	bash "${EXTRAIR_FONTE_DO_PDF}" "${destino}" \
+		>"${DIR_TRABALHO}/extrair-${rotulo}.out" \
+		2>"${DIR_TRABALHO}/extrair-${rotulo}.err"
+	ultimo_codigo=$?
+	set -e
+}
+
+# Os dois controles numa consulta só, para que sejam lidos no mesmo instante: lidos
+# em duas viagens, uma rotina agendada do próprio ambiente poderia correr entre elas
+# e o par deixaria de descrever um estado único.
+controles_do_legado() {
+	consultar_banco_de_producao \
+		"SELECT (SELECT COUNT(*) FROM \\\`${DOCTYPE_DO_SERVER_SCRIPT}\\\`), (SELECT modified FROM \\\`${DOCTYPE_DO_SERVER_SCRIPT}\\\` WHERE name='${DOCUMENTO_DO_PDF}');" |
+		tr -d '\r'
+}
+
+ct_603() {
+	caso "CT-603" "o fonte do Server Script recaptura idêntico e o legado sai sem uma escrita"
+
+	local controles_antes controles_depois
+	controles_antes="$(controles_do_legado)"
+
+	local contagem_antes modificado_antes
+	IFS=$'\t' read -r contagem_antes modificado_antes <<<"${controles_antes}"
+
+	# Guarda de não-vacuidade: com o documento ausente, "idêntico antes e depois"
+	# seria a comparação de dois vazios, e o caso aprovaria sem ter medido nada.
+	afirmar_diferente "a contagem de Server Script do legado não é vazia" "" "${contagem_antes}"
+	afirmar_diferente "o modified de '${DOCUMENTO_DO_PDF}' não é vazio" "" "${modificado_antes}"
+	if [[ -z "${contagem_antes}" || -z "${modificado_antes}" ]]; then
+		fechar_caso "CT-603"
+		return
+	fi
+
+	local estado_git_antes estado_git_depois
+	estado_git_antes="$(estado_git_dos_golden)"
+
+	executar_extrator "${DIR_TRABALHO}/fonte-um.py" "um"
+	afirmar_igual "a primeira recaptura termina com sucesso" "0" "${ultimo_codigo}"
+	executar_extrator "${DIR_TRABALHO}/fonte-dois.py" "dois"
+	afirmar_igual "a segunda recaptura termina com sucesso" "0" "${ultimo_codigo}"
+
+	local sha_versionado sha_um sha_dois
+	sha_versionado="$(sha256sum "${DIR_GOLDEN}/${ARQ_FONTE_DO_PDF}" | cut -d' ' -f1)"
+	sha_um="$(sha256sum "${DIR_TRABALHO}/fonte-um.py" 2>/dev/null | cut -d' ' -f1)"
+	sha_dois="$(sha256sum "${DIR_TRABALHO}/fonte-dois.py" 2>/dev/null | cut -d' ' -f1)"
+
+	afirmar_igual "a primeira recaptura é byte a byte o artefato versionado" \
+		"${sha_versionado}" "${sha_um}"
+	afirmar_igual "a segunda recaptura é byte a byte o artefato versionado" \
+		"${sha_versionado}" "${sha_dois}"
+	# Esta terceira asserção não reprova sozinha — quando ela cai, ao menos uma das
+	# duas acima já caiu. O que ela acrescenta é DISCRIMINAR A CAUSA: com as duas
+	# primeiras vermelhas e esta verde, as recapturas concordam entre si e quem está
+	# defasado é o oráculo versionado; com esta vermelha, a extração deixou de ser
+	# determinística. Sem ela, os dois defeitos produziriam a mesma tela.
+	afirmar_igual "as duas recapturas são idênticas entre si" "${sha_um}" "${sha_dois}"
+
+	controles_depois="$(controles_do_legado)"
+	local contagem_depois modificado_depois
+	IFS=$'\t' read -r contagem_depois modificado_depois <<<"${controles_depois}"
+	afirmar_igual "a contagem de Server Script do legado é a mesma depois da extração" \
+		"${contagem_antes}" "${contagem_depois}"
+	afirmar_igual "o modified de '${DOCUMENTO_DO_PDF}' é o mesmo depois da extração" \
+		"${modificado_antes}" "${modificado_depois}"
+
+	# Recaptura para conferência não pode reescrever o oráculo: o `mv` do extrator
+	# só alcança o destino informado, e a árvore versionada tem de sair intocada.
+	estado_git_depois="$(estado_git_dos_golden)"
+	afirmar_igual "a recaptura em destino temporário não altera a árvore versionada" \
+		"${estado_git_antes}" "${estado_git_depois}"
+
+	# ---- legado indisponível: aviso explícito e saída não-zero, nunca verde ----
+	# A indisponibilidade é produzida na FRONTEIRA, como no CT-005: um `docker` de
+	# mesmo nome, antes no PATH, que não responde. Nada do ambiente legado é parado
+	# — derrubar um serviço para provar uma degradação seria destrutivo no site que
+	# atende a operação.
+	mkdir -p "${DIR_TRABALHO}/bin-legado-mudo"
+	printf '#!/usr/bin/env bash\nexit 1\n' >"${DIR_TRABALHO}/bin-legado-mudo/docker"
+	chmod +x "${DIR_TRABALHO}/bin-legado-mudo/docker"
+
+	set +e
+	PATH="${DIR_TRABALHO}/bin-legado-mudo:${PATH}" bash "${EXTRAIR_FONTE_DO_PDF}" \
+		"${DIR_TRABALHO}/fonte-nunca-gravado.py" \
+		>"${DIR_TRABALHO}/extrair-mudo.out" \
+		2>"${DIR_TRABALHO}/extrair-mudo.err"
+	ultimo_codigo=$?
+	set -e
+
+	afirmar_igual "legado indisponível encerra com o código de indisponibilidade" \
+		"3" "${ultimo_codigo}"
+	afirmar_igual "legado indisponível emite AVISO nomeando o serviço que não respondeu" \
+		"1" "$(grep -c 'AVISO: o serviço .* do ambiente legado não está de pé' \
+			"${DIR_TRABALHO}/extrair-mudo.err" || true)"
+	afirmar_igual "legado indisponível não grava artefato nenhum" \
+		"0" "$(ls -1 "${DIR_TRABALHO}/fonte-nunca-gravado.py" 2>/dev/null | grep -c . || true)"
+
+	fechar_caso "CT-603"
+}
+
+# --------------------------------------------------------------------------- #
 # CT-013 (metade de logs) — a credencial não vaza para a saída dos scripts
 # --------------------------------------------------------------------------- #
 ct_013_logs() {
@@ -1943,13 +2082,14 @@ main() {
 	ct_001
 	ct_002
 	ct_003
+	ct_603
 	ct_012
 	ct_013_logs
 	ct_502
 
 	printf '\n'
 	if [[ "${falhas_totais}" -eq 0 ]]; then
-		printf 'verificar-captura: 11/11 casos aprovados (CT-001..CT-009, CT-012, CT-502) + metade de logs do CT-013\n'
+		printf 'verificar-captura: 12/12 casos aprovados (CT-001..CT-009, CT-012, CT-502, CT-603) + metade de logs do CT-013\n'
 		exit 0
 	fi
 	printf 'verificar-captura: %d falha(s) — REPROVADO\n' "${falhas_totais}" >&2
