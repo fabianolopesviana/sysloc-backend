@@ -2131,6 +2131,35 @@ alvo.write_text(mutado, encoding="utf-8")
 PY
 }
 
+# Acréscimo de uma seção de eixo BEM-FORMADA ao manifesto, usada pelo M6. Ela
+# precisa ser bem-formada de propósito: o mutante existe para exercitar UMA
+# asserção — a segunda direção da bijeção produtor↔expectativa —, e uma seção
+# malformada faria o caso reprovar por outras (desfecho ausente, consulta vazia,
+# contagem não-zero), o que deixaria a asserção sob prova sem evidência de que foi
+# ELA que pegou o defeito.
+acrescentar_secao_de_ausencia() { # acrescentar_secao_de_ausencia <PROCEDENCIA.md> <eixo> <título>
+	python3 - "$1" "$2" "$3" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+alvo, eixo, titulo = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+texto = alvo.read_text(encoding="utf-8")
+secao = re.search("\n" + re.escape(titulo) + r"(.*?)(?=\n## \d)", texto, re.DOTALL)
+if not secao:
+    raise SystemExit("mutante M6: a seção `" + titulo + "` não foi encontrada no manifesto")
+bloco = (
+    "\n### `" + eixo + "` — ausência medida\n\n"
+    "- Artefato: nenhum\n"
+    "- Consulta:\n\n"
+    "```sql\nSELECT 1 WHERE false;\n```\n\n"
+    "- Contratos que o exercitam: **0**\n"
+)
+fim = secao.end(1)
+alvo.write_text(texto[:fim] + bloco + texto[fim:], encoding="utf-8")
+PY
+}
+
 ct_701() {
 	caso "CT-701" "caminhos do documento sem oráculo — um desfecho por eixo, capturado ou ausência medida"
 
@@ -2146,14 +2175,14 @@ ct_701() {
 	afirmar_igual "todo artefato capturado está versionado (${#GOLDEN_DOS_CAMINHOS_SEM_ORACULO[@]})" \
 		"0" "${ausentes}"
 
-	# ---- prova de falsificação: cinco defeitos reintroduzidos, e o controle ----
+	# ---- prova de falsificação: seis defeitos reintroduzidos, e o controle ----
 	local caixa="${DIR_TRABALHO}/ct701"
 	local m1="${caixa}/m1" m2="${caixa}/m2" m3="${caixa}/m3" m4="${caixa}/m4"
-	local m5="${caixa}/m5" controle="${caixa}/controle"
+	local m5="${caixa}/m5" m6="${caixa}/m6" controle="${caixa}/controle"
 	rm -rf "${caixa}"
-	mkdir -p "${m1}" "${m2}" "${m3}" "${m4}" "${m5}" "${controle}"
+	mkdir -p "${m1}" "${m2}" "${m3}" "${m4}" "${m5}" "${m6}" "${controle}"
 	local caixa_de_mutante
-	for caixa_de_mutante in "${m1}" "${m2}" "${m3}" "${m4}" "${m5}" "${controle}"; do
+	for caixa_de_mutante in "${m1}" "${m2}" "${m3}" "${m4}" "${m5}" "${m6}" "${controle}"; do
 		cp -a "${DIR_GOLDEN}/." "${caixa_de_mutante}/"
 	done
 
@@ -2229,12 +2258,45 @@ if mutado == texto:
 alvo.write_text(mutado, encoding="utf-8")
 PY
 
-	local falhas_m1 falhas_m2 falhas_m3 falhas_m4 falhas_m5 falhas_controle
+	# M6 — a direção CONTRÁRIA do M5, e a que estava sem mutante. O M5 REMOVE um
+	# eixo do produtor; nenhum mutante ACRESCENTAVA um. As duas direções da bijeção
+	# são asserções distintas (`eixos_esperados_ausentes_no_produtor` e
+	# `eixos_do_produtor_fora_do_esperado`), e a segunda nasceu sem prova de
+	# falsificação — a `.claude/rules/testing-stack.md` a torna obrigatória para
+	# asserção estática, e sem ela nada garantia que aquela linha pudesse reprovar.
+	# O defeito que ela pega é concreto: um eixo entra em `capturar.py` e passa a
+	# produzir artefato sem que o CA-01 o tenha declarado — captura que ninguém
+	# pediu, num script que lê o site de PRODUÇÃO.
+	local eixo_inventado='eixo_inventado'
+	local capturar_m6="${caixa}/capturar-m6.py"
+	cp -a "${DIR_SCRIPTS}/${ARQ_CAPTURAR}" "${capturar_m6}"
+	acrescentar_secao_de_ausencia "${m6}/PROCEDENCIA.md" "${eixo_inventado}" \
+		"${TITULO_DOS_CAMINHOS}"
+	python3 - "${capturar_m6}" "${eixo_inventado}" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+alvo = Path(sys.argv[1])
+texto = alvo.read_text(encoding="utf-8")
+mutado, trocas = re.subn(
+    r"(ARTEFATO_POR_EIXO = \{\n)",
+    r'\1    "' + sys.argv[2] + '": "contrato-pdf-inventado.txt",\n',
+    texto,
+    count=1,
+)
+if trocas == 0:
+    raise SystemExit("mutante M6: `ARTEFATO_POR_EIXO` não foi encontrado no produtor")
+alvo.write_text(mutado, encoding="utf-8")
+PY
+
+	local falhas_m1 falhas_m2 falhas_m3 falhas_m4 falhas_m5 falhas_m6 falhas_controle
 	falhas_m1="$(avaliar_caminhos_em_sandbox "${m1}" "${caixa}/m1.err")"
 	falhas_m2="$(avaliar_caminhos_em_sandbox "${m2}" "${caixa}/m2.err")"
 	falhas_m3="$(avaliar_caminhos_em_sandbox "${m3}" "${caixa}/m3.err")"
 	falhas_m4="$(avaliar_caminhos_em_sandbox "${m4}" "${caixa}/m4.err")"
 	falhas_m5="$(avaliar_caminhos_em_sandbox "${m5}" "${caixa}/m5.err" "${capturar_m5}")"
+	falhas_m6="$(avaliar_caminhos_em_sandbox "${m6}" "${caixa}/m6.err" "${capturar_m6}")"
 	falhas_controle="$(avaliar_caminhos_em_sandbox "${controle}" "${caixa}/controle.err")"
 
 	afirmar_diferente "M1 (eixo sem seção no manifesto) reprova" "0" "${falhas_m1}"
@@ -2258,6 +2320,11 @@ PY
 	afirmar_igual "a falha de M5 nomeia o eixo que sumiu dos dois lados" \
 		"1" "$(grep -cF "declara os ${#EIXOS_SEM_ORACULO[@]} eixos do CA-01 — esperado [], obtido [${eixo_ausente}]" \
 			"${caixa}/m5.err" || true)"
+
+	afirmar_diferente "M6 (eixo acrescentado ao produtor fora do CA-01) reprova" "0" "${falhas_m6}"
+	afirmar_igual "a falha de M6 nomeia o eixo que o produtor declarou sem a expectativa" \
+		"1" "$(grep -cF "não declara eixo fora dos ${#EIXOS_SEM_ORACULO[@]} esperados — esperado [], obtido [${eixo_inventado}]" \
+			"${caixa}/m6.err" || true)"
 
 	afirmar_igual "o controle íntegro passa sem nenhuma falha" "0" "${falhas_controle}"
 	afirmar_igual "o controle íntegro não emite linha de falha" \
