@@ -69,7 +69,7 @@
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 const RAIZ = resolve(import.meta.dirname, '..', '..', '..');
 
@@ -329,6 +329,37 @@ const DECISOES_FECHADAS_DA_FILA_DO_WORKER = [
 
 /** Os quatro campos obrigatórios da forma canônica da §3 da rule. */
 const CAMPOS_DA_DECISAO_FECHADA = ['DECISÃO FECHADA —', 'O QUÊ:', 'POR QUÊ:', 'REVERTER EXIGE:'];
+
+/**
+ * Aquece a memória da varredura ANTES do primeiro caso.
+ *
+ * A memória logo acima resolve a repetição — do segundo consumidor em diante ninguém refaz a
+ * caminhada. Ela não resolve o PRIMEIRO: quem chega antes paga a leitura das três áreas inteiras
+ * dentro do próprio `it`, e o teto de CASO deste pacote é o padrão de 5 s, mantido de propósito
+ * (ver `vitest.config.ts` — afrouxá-lo faria todo caso travado levar 90 s para reprovar em vez
+ * de 5 s).
+ *
+ * Medido sob a suíte completa, com os oito pacotes disputando CPU e as instâncias efêmeras de
+ * banco disputando IO: o arquivo inteiro levava **6.064 ms para 28 casos**, dos quais **5.464 ms
+ * num único `it`** — o `CT-907 (a)`, o primeiro a consumir a varredura. Ele expirava; os outros
+ * 27 somavam ~600 ms. O custo não era do caso, era do setup que ele bancava por acidente de
+ * ordem.
+ *
+ * Pagar aqui é o conserto da CAUSA: `beforeAll` corre sob `hookTimeout`, que este pacote já
+ * declara em 90 s exatamente para setup caro, e o teto de caso continua fazendo o trabalho para
+ * o qual existe — pegar caso travado. Alargar `testTimeout` seria o conserto do SINTOMA, e
+ * contrariaria a decisão escrita na configuração.
+ *
+ * ⚠️ Isto NÃO enfraquece nada. As mesmas funções, as mesmas asserções, os mesmos quatro casos
+ * consumidores em três `describe` (CT-907, CT-909, CT-638). O que muda é onde a conta é paga —
+ * e, se a caminhada quebrar, o arquivo inteiro reprova aqui em vez de um `it` só, que é mais
+ * barulhento e não menos.
+ */
+beforeAll(() => {
+  arquivosDeCodigo();
+  marcadoresVivos();
+  arquivosQueDefinemOContratoDaFila();
+});
 
 describe('CT-901 — a rule do protocolo carrega em TODA sessão', () => {
   it('declara escopo de carregamento universal', () => {

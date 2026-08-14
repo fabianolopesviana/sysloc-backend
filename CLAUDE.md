@@ -183,9 +183,14 @@ pré-refinamento (`docs/specs/features/cobranca-mora-e-documentos/v1/pre-refinem
 > pagamento e o cancelamento de **cobrança** estão nele por nome.
 >
 > Dois fatos operacionais que não estão em artefato de spec e mordem quem rodar a suíte:
-> o **`CT-907` é flaky PRÉ-EXISTENTE** (expira no teto de 5000ms sob disputa de CPU no `pnpm test`
-> completo, e passa 3/3 isolado — falha por **timeout** é o flake, falha por **asserção** é achado);
-> e o **disco do host está em ~93%**, com resíduos de `/tmp/sysloc-banco-*` já tendo produzido
+> ✅ o **`CT-907` DEIXOU de ser flaky em 2026-08-14** — não o leia mais como flake conhecido. Ele
+> expirava no teto de 5000 ms sob disputa de CPU porque a **caminhada da árvore versionada era paga
+> dentro do primeiro `it` que a consumia** (medido: 6.064 ms para 28 casos, dos quais **5.464 ms num
+> único caso**). A intervenção dirigida a moveu para um `beforeAll` — que roda sob o `hookTimeout` de
+> 90 s que `packages/shared/vitest.config.ts` já declarava —, e o teto de **caso** ficou intocado, de
+> propósito. ⚠️ **Consequência que vale saber**: o caso agora só pode falhar **por asserção**, e falha
+> em ~15 ms; se ele reprovar, é achado — não há mais o desfecho "timeout" para descartar;
+> e o **disco do host está em ~96%**, com resíduos de `/tmp/sysloc-banco-*` já tendo produzido
 > `No space left on device`, que **se disfarça de teste vermelho**. Rode `rm -rf /tmp/sysloc-banco-*`
 > entre execuções. E **meça a suíte POR PACOTE** (`pnpm --filter @sysloc/<pacote> test`): o
 > `turbo run test` **aborta os pacotes irmãos** quando um falha, e a saída agregada não carrega
