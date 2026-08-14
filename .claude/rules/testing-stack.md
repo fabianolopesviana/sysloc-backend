@@ -86,7 +86,25 @@ Este projeto testa em **duas linguagens, com propósitos disjuntos**. Confundi-l
   | `fechar_caso` | fecha e contabiliza |
   | `aviso` / `nota` | degradação declarada e diagnóstico — nunca contam como falha |
 
-- **Contrato de saída**: `exit 0` só com `falhas_totais == 0`; senão `exit 1` com o resumo em `stderr`
+- **Contrato de saída** — **o invariante primeiro, os códigos depois**. `exit 0` **se e somente se**
+  `falhas_totais == 0`; qualquer código **não-zero é reprovação**, sempre com o resumo em `stderr`.
+  Sobre esse invariante, os códigos em uso:
+
+  | Código | Significa |
+  |---|---|
+  | `0` | zero falhas — e **nenhum outro caminho** produz verde |
+  | `1` | reprovou **o que o verificador existe para provar** |
+  | `2` | o que o verificador prova está **íntegro**, e o único vermelho é a **saúde da suíte daquele host** — com o pacote e a contagem **nomeados** na linha de fecho |
+
+  O `2` nasceu em `deploy/scripts/documentos/verificar-isolamento-de-verificacao.sh` (T12 da fatia
+  `documentos-e-confirmacao`), **por prescrição do Gate 2**, e a razão é medida: fundir as duas
+  naturezas num código só faz o verificador **nunca sair verde** num host com flake conhecido — e a
+  primeira reação a um vermelho recorrente é deixar de lê-lo, levando junto o dia em que a asserção
+  de verdade reprovar. Um verificador **não é obrigado** a usar o `2`; quem usar, documenta os
+  códigos no próprio cabeçalho.
+  ⚠️ **Verificador que agrega outros compara com `0`, nunca com `1`.** É o que mantém qualquer código
+  novo lido como reprovação sem emendar o agregador — `verificar-fundacao.sh` já faz assim
+  (`afirmar_igual "${nome} sai 0" "0" "${codigo}"`), e é por isso que o `2` não abriu buraco nele.
 - **Degradação**: ferramenta ausente no host **nunca** faz o caso passar em silêncio — emita `aviso` explícito nomeando o que foi pulado
 
 ## Rastreabilidade — convenção herdada, obrigatória
