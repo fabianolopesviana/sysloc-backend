@@ -6,6 +6,15 @@
  * gera as parcelas de aluguel na MESMA unidade de trabalho** (T9) e **o cancelamento cancela em cascata
  * as cobranças canceláveis — e só elas — na mesma unidade** (T10).
  *
+ * SUT_IS_CORRECT_BECAUSE: a T7 da fatia `documentos-e-confirmacao` publicou a rota do documento e
+ * **fechou o débito D36 da fatia `contratos-de-locacao` por construção** — sem documento armazenado, não existe arquivo preexistente
+ * de que o cancelamento possa depender. **Nenhuma asserção dos vinte e dois casos anteriores foi
+ * removida nem afrouxada**, e duas coisas mudaram, as duas declaradas no ponto: o `describe` novo que
+ * o `CT-710` ocupa e a linha correspondente da tabela de INVARIANTES. O **`CT-415` não foi tocado** —
+ * ele já afirma o corpo **inteiro** do cancelamento por igualdade, e é ele que continua provando que a
+ * resposta não ganhou campo algum; o que o `CT-710` acrescenta é a afirmação sobre o **conjunto de
+ * chaves**, que reprova uma referência a artefato armazenado com qualquer outro nome.
+ *
  * SUT_IS_CORRECT_BECAUSE: a T10 da fatia `cobranca-e-mora` fez o cancelamento do contrato cancelar em
  * cascata as cobranças canceláveis dele, na mesma unidade de trabalho. **Nenhuma asserção dos vinte e um
  * casos anteriores foi removida nem afrouxada**, e duas coisas mudaram, as duas declaradas no ponto: a
@@ -188,6 +197,17 @@
  * |       |        | cobrança alguma** é cancelado com `200`, a carteira permanece vazia e o imóvel
  * |       |        | volta a `DISPONIVEL` — `0` linhas afetadas **não é erro**. (RN-13) |
  *
+ * | CA-05 | CT-710 | Cancelar um contrato `ATIVO` depende **só** do estado — nunca da existência de
+ * |       |        | um documento gerado. O contrato que o legado recusaria (`contrato_sem_pdf`,
+ * |       |        | *"O contrato nao possui PDF privado disponivel"*) é cancelado com `200`,
+ * |       |        | `status: 'CANCELADO'`, e o `Object.keys` do corpo é **exatamente** as catorze
+ * |       |        | chaves publicadas — sem `pdfContratoArquivo` nem qualquer equivalente. O imóvel
+ * |       |        | volta a `DISPONIVEL`. É a divergência **DV-05**, veredito **PRODUTO_VENCE**,
+ * |       |        | escrita antes da execução, e o fecho do débito D36 da fatia
+ * |       |        | `contratos-de-locacao`, por construção. O negativo simétrico — cancelar
+ * |       |        | `RASCUNHO`/`CANCELADO` continua `422` — já é do
+ * |       |        | `CT-415`, e **não** se reescreve. |
+ *
  * Rastreabilidade: `CA-01 → CT-408 (RN-01)`, `CA-03 → CT-408 (RN-06)`, `CA-04 → CT-408 (RN-04)`,
  * `CA-02 → CT-409 (RN-05)`, `CA-03 → CT-410 (RN-06)`, `CA-08 → CT-411 (RN-08)`,
  * `CA-11 → CT-411 (b) (RN-14)`, `CA-11 → CT-411 (c) (RN-14)`, `CA-15 → CT-417 (RN-15)`,
@@ -200,6 +220,7 @@
  * Acrescida pela T9 da fatia `cobranca-e-mora`: `CA-02 → CT-508 (RN-06)`, `CA-03 → CT-509 (RN-06)`.
  * Acrescida pela T10 da fatia `cobranca-e-mora`: `CA-15 → CT-530 (RN-13)`, `CA-10 → CT-530 (RN-12)`,
  * `CA-15 → CT-531 (RN-13)`.
+ * Acrescida pela T7 da fatia `documentos-e-confirmacao`: `CA-05 → CT-710 (RN-03)`.
  *
  * ===========================================================================
  * POR QUE O CT-530 E O CT-531 VÊM EM PAR — e por que o `xmin` é o eixo dos dois
@@ -1383,7 +1404,6 @@ describe('cadastro de contratos de locação (T6)', () => {
           dataFimLocacao: null,
           valorTotalContrato: null,
           gerarCobrancasAutomaticamente: true,
-          pdfContratoArquivo: null,
           retiradoEm: null,
         });
 
@@ -1435,6 +1455,14 @@ describe('cadastro de contratos de locação (T6)', () => {
       //
       // O corpo é COMPLETO e diferente em tudo o que pode mudar — partes, termos e fiadores —, para
       // que a asserção seguinte prove que a alteração de fato persistiu.
+      //
+      // SUT_IS_CORRECT_BECAUSE: este era o ÚNICO caso da suíte que enviava `pdfContratoArquivo` e o
+      // afirmava de volta. O campo deixou de existir no contrato publicado por decisão registrada
+      // (CA-07, ADR-0030) — a coluna saiu na migração `0013` e o `strictObject` de
+      // `esquemaDeContratoNovo` passou a recusar a chave —, de modo que o SUT está certo e a
+      // asserção é que envelheceu. O caso **não** foi deletado: ele segue provando que a alteração
+      // de um rascunho persiste, agora sobre os campos que restaram. A recusa da chave removida tem
+      // prova própria no `CT-713`.
       const alteracao = await pedir(`${COLECAO_DE_CONTRATOS}/${rascunho.codigo}`, {
         metodo: 'PUT',
         cookie,
@@ -1444,7 +1472,6 @@ describe('cadastro de contratos de locação (T6)', () => {
           valorMensal: 3100.5,
           diaVencimento: 5,
           gerarCobrancasAutomaticamente: false,
-          pdfContratoArquivo: 'contratos/2026/rascunho.pdf',
         }),
       });
 
@@ -1465,7 +1492,6 @@ describe('cadastro de contratos de locação (T6)', () => {
         dataFimLocacao: null,
         valorTotalContrato: null,
         gerarCobrancasAutomaticamente: false,
-        pdfContratoArquivo: 'contratos/2026/rascunho.pdf',
         retiradoEm: null,
       });
 
@@ -1904,7 +1930,6 @@ describe('cadastro de contratos de locação (T6)', () => {
         dataFimLocacao: null,
         valorTotalContrato: null,
         gerarCobrancasAutomaticamente: true,
-        pdfContratoArquivo: null,
         retiradoEm: null,
       });
 
@@ -1922,7 +1947,6 @@ describe('cadastro de contratos de locação (T6)', () => {
         dataFimLocacao: DATA_DE_FIM_DA_ATIVACAO,
         valorTotalContrato: VALOR_TOTAL_DA_ATIVACAO,
         gerarCobrancasAutomaticamente: true,
-        pdfContratoArquivo: null,
         retiradoEm: null,
       });
 
@@ -2105,7 +2129,6 @@ describe('ativação do contrato — a primeira transição de estado governada 
         dataFimLocacao: FIM_DERIVADO_NA_VIRADA,
         valorTotalContrato: TOTAL_DERIVADO_REDONDO,
         gerarCobrancasAutomaticamente: true,
-        pdfContratoArquivo: null,
         retiradoEm: null,
         efeitos: EFEITOS_ESPERADOS,
       });
@@ -2739,8 +2762,15 @@ describe('cancelamento do contrato — a segunda transição governada (T8)', ()
       //   * `retiradoEm` continua **nulo** — cancelar não retira de circulação. São operações
       //     distintas, e é isso que mantém o contrato na carteira.
       //
-      // E `pdfContratoArquivo` nulo, com o cancelamento respondendo `200`, é a forma de a
-      // **não-portabilidade da RN-13** ficar provada: o sistema antigo recusaria este mesmo contrato.
+      // E a **não-portabilidade da RN-13** continua provada aqui, por um eixo que MUDOU DE LUGAR e
+      // ficou mais forte. Antes, ela vinha de `pdfContratoArquivo` nulo com o cancelamento
+      // respondendo `200`: o sistema antigo recusaria este mesmo contrato, porque a pré-condição
+      // dele era *"sem PDF, não cancela"*. Com a coluna removida pela migração `0013` (ADR-0030), a
+      // pré-condição deixou de ser **representável** — não há campo cujo nulo se pudesse consultar,
+      // e nenhum caminho de escrita a que ela se pudesse agarrar. A prova passa a ser a **ausência
+      // da coluna**, medida por introspecção no `CT-712`, mais o `CT-710`, que afirma a chave a
+      // chave o que a resposta publica. O `200` abaixo segue sendo o companheiro comportamental
+      // disso: o cancelamento não consulta documento nenhum.
       expect(cancelamento.corpo).toEqual({
         codigo: contrato.codigo,
         status: 'CANCELADO',
@@ -2755,7 +2785,6 @@ describe('cancelamento do contrato — a segunda transição governada (T8)', ()
         dataFimLocacao: DATA_DE_FIM_DA_ATIVACAO,
         valorTotalContrato: VALOR_TOTAL_DA_ATIVACAO,
         gerarCobrancasAutomaticamente: true,
-        pdfContratoArquivo: null,
         retiradoEm: null,
       });
 
@@ -2957,6 +2986,71 @@ describe('cancelamento do contrato — a segunda transição governada (T8)', ()
       expect(aceita.status, aceita.texto).toBe(200);
       expect((aceita.corpo as ContratoPublicado).status).toBe('CANCELADO');
       expect(await situacaoDoImovel(sujeito.cookie, partes.imovelId)).toBe('DISPONIVEL');
+    },
+    LIMITE_CASO_MS,
+  );
+});
+
+describe('a divergência DV-05 — cancelar não depende de documento algum (T7 · documentos)', () => {
+  it(
+    'CT-710 — o contrato que o legado recusaria por não ter PDF é cancelado com 200, e o corpo não fala de documento',
+    async () => {
+      // O contrato nasce e passa a valer pelas **rotas reais**, e o corpo da montagem **não tem
+      // nenhum campo de documento** — ele não existe mais no esquema desde a T3. É esta a condição
+      // que o legado recusava: em `contrato-cancelamento.json`, o cenário `contrato_sem_pdf` é
+      // rejeitado com *"ValidationError: O contrato nao possui PDF privado disponivel"*.
+      const partes = await montarPartes(cookie, 1);
+      const contrato = await criarContratoPor(cookie, partes);
+
+      const ativacao = await transitar(cookie, contrato.codigo, 'ativacao');
+      expect(ativacao.status, ativacao.texto).toBe(200);
+
+      // A precondição do cenário, AFIRMADA e não suposta: o contrato está `ATIVO`, e nenhum
+      // documento foi gerado, anexado ou pedido em ponto algum deste caso. Não há rota que o
+      // armazene — a rota do documento **compõe sob demanda** (ADR-0030) —, e é essa ausência que
+      // torna a pré-condição legada irrepresentável.
+      const vigente = await lerContrato(cookie, contrato.codigo);
+      expect(vigente.status).toBe('ATIVO');
+
+      // --- O ato: cancelar sem documento algum --------------------------------------------------
+      const cancelamento = await transitar(cookie, contrato.codigo, 'cancelamento');
+
+      // A divergência **por vitória**: `200`, e não o `422` que a porta legada produziria. É o
+      // veredito `PRODUTO_VENCE` da `DV-05`, escrito antes da execução, e é ele que fecha o débito
+      // D36 da fatia `contratos-de-locacao`, por construção — a guarda de lá protegia o carimbo
+      // sobre um arquivo, não o negócio, e aqui não existe arquivo.
+      expect(cancelamento.status, cancelamento.texto).toBe(200);
+      expect((cancelamento.corpo as ContratoPublicado).status).toBe('CANCELADO');
+
+      // --- E o corpo NÃO fala de documento -------------------------------------------------------
+      //
+      // `Object.keys` sobre o corpo publicado, por **igualdade de conjunto**: não basta afirmar que
+      // `pdfContratoArquivo` sumiu — uma chave equivalente com outro nome (`documentoUrl`,
+      // `arquivoDoContrato`) passaria por um `not.toContain`. A lista fechada é o que reprova
+      // qualquer referência a artefato armazenado, tenha ela o nome que tiver.
+      expect(Object.keys(cancelamento.corpo as Record<string, unknown>).sort()).toEqual(
+        [
+          'codigo',
+          'dataFimLocacao',
+          'dataInicioLocacao',
+          'diaVencimento',
+          'fiadores',
+          'gerarCobrancasAutomaticamente',
+          'imovelId',
+          'locadorId',
+          'locatarioId',
+          'prazoMeses',
+          'retiradoEm',
+          'status',
+          'valorMensal',
+          'valorTotalContrato',
+        ].sort(),
+      );
+
+      // O efeito que a transição de fato tem, e que a recusa legada teria impedido: o imóvel volta a
+      // ficar disponível. Sem esta linha, o `200` acima seria compatível com um cancelamento que não
+      // fez nada — e a divergência declarada perderia o lado positivo.
+      expect(await situacaoDoImovel(cookie, partes.imovelId)).toBe('DISPONIVEL');
     },
     LIMITE_CASO_MS,
   );
@@ -3653,7 +3747,6 @@ function corpoDeContrato(
     valorMensal: VALOR_MENSAL,
     diaVencimento: DIA_DE_VENCIMENTO,
     gerarCobrancasAutomaticamente: true,
-    pdfContratoArquivo: null,
     ...ajustes,
   };
 }
@@ -4366,7 +4459,6 @@ interface ContratoPublicado {
   readonly dataFimLocacao: string | null;
   readonly valorTotalContrato: number | null;
   readonly gerarCobrancasAutomaticamente: boolean;
-  readonly pdfContratoArquivo: string | null;
   readonly retiradoEm: string | null;
 }
 

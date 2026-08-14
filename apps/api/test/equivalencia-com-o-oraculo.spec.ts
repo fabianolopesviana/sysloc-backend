@@ -978,7 +978,6 @@ async function contratoAtivo(opcoes: { readonly semContato: boolean }): Promise<
       valorMensal: VALOR_DA_PARCELA,
       diaVencimento: 10,
       gerarCobrancasAutomaticamente: false,
-      pdfContratoArquivo: null,
     },
   });
 

@@ -42,7 +42,7 @@
  */
 
 import { z } from 'zod';
-import { ESQUEMA_DO_IDENTIFICADOR, MAIOR_TEXTO_CURTO } from './comum.js';
+import { ESQUEMA_DO_IDENTIFICADOR } from './comum.js';
 
 /**
  * Os quatro estados do contrato (RD-02), na ordem em que o enum do banco os declara.
@@ -278,9 +278,10 @@ export const esquemaDeContratoNovo = z
     valorMensal: z.number().gt(0).max(MAIOR_VALOR_MONETARIO).multipleOf(ESCALA_MONETARIA),
     diaVencimento: z.number().int().min(MENOR_DIA_DE_VENCIMENTO).max(MAIOR_DIA_DE_VENCIMENTO),
     gerarCobrancasAutomaticamente: z.boolean().default(true),
-    // Guarda **caminho**, nunca bytes (§7.2). O vazio é aceito como em `complemento` e `observacoes`
-    // da fatia anterior: distinguir `''` de `null` seria regra que ninguém declarou.
-    pdfContratoArquivo: z.string().trim().max(MAIOR_TEXTO_CURTO).nullable(),
+    // `pdfContratoArquivo` SAIU daqui, e a ausência é o mecanismo: o `strictObject` acima converte
+    // a chave removida em recusa `unrecognized_keys`, de modo que o cliente que ainda a enviar
+    // recebe `422` nomeando o campo — nunca um aceite silencioso que grave em lugar nenhum. Ver o
+    // cabeçalho de `esquemaDoContrato` para a razão (ADR-0030), e o `CT-713` para a prova.
   })
   // A conferência é CONJUNTA porque a restrição é conjunta: `MAIOR_VALOR_MONETARIO` e
   // `MAIOR_PRAZO_EM_MESES` limitam cada fator, e nenhum teto de campo isolado impede que o PRODUTO
@@ -318,6 +319,21 @@ export type ContratoNovo = z.infer<typeof esquemaDeContratoNovo>;
  *
  * As grandezas monetárias saem **sem restrição de escala**, de propósito — ver
  * {@link ESCALA_MONETARIA}.
+ *
+ * ---------------------------------------------------------------------------
+ * `pdfContratoArquivo` SAIU das duas superfícies, e é mudança incompatível deliberada
+ * ---------------------------------------------------------------------------
+ *
+ * Ele deixou de ser aceito na entrada e de ser devolvido na saída, junto com a coluna
+ * `negocio.contrato.pdf_contrato_arquivo` que a migração `0013` removeu. A razão é a **ADR-0030**: o
+ * documento do contrato é composto no instante do pedido e nunca armazenado, de modo que não existe
+ * caminho de escrita dele — e um campo que publicasse o caminho de um arquivo que não é gravado
+ * mentiria sobre o que o produto guarda.
+ *
+ * É a **única mudança incompatível deliberada** do produto até aqui, e ela é declarada nas três
+ * pontas: a coluna (medida por introspecção no `CT-712`), a entrada (recusa `unrecognized_keys` no
+ * `CT-713`) e a resposta real da rota (`CT-714`). Reintroduzi-lo aqui "por compatibilidade" faria o
+ * contrato publicar um campo que nenhuma coluna alimenta.
  */
 export const esquemaDoContrato = z.object({
   codigo: ESQUEMA_DO_CODIGO_DE_CONTRATO,
@@ -333,7 +349,6 @@ export const esquemaDoContrato = z.object({
   dataFimLocacao: z.iso.date().nullable(),
   valorTotalContrato: z.number().nullable(),
   gerarCobrancasAutomaticamente: z.boolean(),
-  pdfContratoArquivo: z.string().nullable(),
   retiradoEm: z.iso.datetime().nullable(),
 });
 

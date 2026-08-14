@@ -92,3 +92,38 @@ export const esquemaDaPessoa = z.object({
 
 /** O cadastro de pessoa como a API o devolve. */
 export type Pessoa = z.infer<typeof esquemaDaPessoa>;
+
+/**
+ * O **locatário** como a API o devolve — o cadastro de pessoa mais o instante da confirmação.
+ *
+ * ---------------------------------------------------------------------------
+ * Crescimento em símbolo NOVO, nunca emenda no esquema compartilhado
+ * ---------------------------------------------------------------------------
+ *
+ * {@link esquemaDaPessoa} serve aos três papéis, e acrescentar `emailConfirmadoEm` a ele publicaria
+ * o campo também para **locador e fiador**, que não têm confirmação alguma a publicar — um recurso
+ * afirmando um fato que não existe para ele. A extensão nasce, portanto, em símbolo próprio,
+ * consumido pelas seis rotas de locatário e por nenhuma outra.
+ *
+ * E é **um** símbolo, não seis extensões escritas no ponto de uso: `esquemaDaPessoa.extend({…})`
+ * repetido em cada rota seria seis declarações do mesmo fato, livres para divergir na primeira
+ * emenda — que é exatamente o que a ADR-0016 fecha.
+ *
+ * ---------------------------------------------------------------------------
+ * O que se publica é o INSTANTE, e não um "confirmado: true"
+ * ---------------------------------------------------------------------------
+ *
+ * Pela ADR-0022, grava-se o **fato** e publica-se o que dele se deriva: a coluna guarda
+ * `email_confirmado_em`, e o contrato expõe o mesmo instante. Um booleano publicado seria uma
+ * segunda representação do mesmo fato — perderia *quando* a confirmação aconteceu, que é o que a
+ * tela precisa mostrar, e passaria a poder divergir do instante gravado.
+ *
+ * `null` é o cadastro cujo endereço ainda não foi confirmado, e ele é o estado em que todo locatário
+ * nasce; a alteração do e-mail o devolve a `null`, porque a confirmação é do endereço, não da pessoa.
+ */
+export const esquemaDoLocatario = esquemaDaPessoa.extend({
+  emailConfirmadoEm: z.iso.datetime().nullable(),
+});
+
+/** O locatário como a API o devolve — as seis rotas de `/v1/locatarios`. */
+export type Locatario = z.infer<typeof esquemaDoLocatario>;

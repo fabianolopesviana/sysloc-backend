@@ -162,6 +162,27 @@
  *
  * Nenhuma descrição de corpo ou de resposta é escrita à mão aqui: `esquemaPublicado` traduz o mesmo
  * objeto que confere a entrada.
+ *
+ * A **única** exceção é a rota do documento, e ela é autorizada por ADR: a **ADR-0028** decide que a
+ * rota que devolve bytes permanece no contrato e declara **mídia**, **nome sugerido de arquivo** e o
+ * **mesmo envelope de erro** — e nada além disso. Ver o docblock de
+ * {@link ContratoController.documento}.
+ *
+ * ---------------------------------------------------------------------------
+ * A ROTA DO DOCUMENTO herda a exigência da CLASSE, e NADA declara própria (ADR-0018)
+ * ---------------------------------------------------------------------------
+ *
+ * `GET /:codigo/documento` é a **sétima** rota desta superfície, e ela é a única das quatro últimas
+ * que **não** declara `@ExigeChaves` no método. A diferença não é esquecimento: baixar o documento é
+ * **leitura** do que a área já dá — quem alcança `TELA:contratos` já lê o contrato inteiro por
+ * `GET /:codigo` —, e nenhuma ação sensível do catálogo fechado corresponde a esse ato. Criar uma
+ * seria contrato novo sem fonte (ADR-0011).
+ *
+ * ⚠️ **Declarar `@ExigeChave('TELA:contratos')` no método seria pior do que redundante.**
+ * `getAllAndOverride` faz a declaração do método **substituir** a da classe, de modo que a linha
+ * "óbvia" instalaria um segundo lugar por onde a área desta rota pode sumir em silêncio. O `CT-355`
+ * varre a aplicação inteira e acusa manipulador que exija **menos** do que a classe dele — ele é a
+ * rede, não a razão.
  */
 
 import {
@@ -175,6 +196,7 @@ import {
   Put,
   Query,
   Req,
+  Res,
 } from '@nestjs/common';
 import {
   ApiCreatedResponse,
@@ -198,7 +220,7 @@ import {
 } from '@sysloc/contracts';
 import type { AcessoAoBanco } from '@sysloc/db';
 import { CodigoErro, type Logger } from '@sysloc/shared';
-import type { FastifyRequest } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ExigeChave, ExigeChaves } from '../autenticacao/exigencia.decorator.js';
 import { CobrancaService } from '../cobrancas/cobranca.service.js';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
@@ -258,6 +280,26 @@ const CAMPO_DA_CONSULTA = 'limite';
 
 /** A entidade nomeada na linha de trilha desta superfície — escrita uma vez, usada nas duas. */
 const ENTIDADE_DA_TRILHA = 'contrato';
+
+/**
+ * O que a rota do documento declara, conforme a **ADR-0028** — os três valores, nomeados uma vez.
+ *
+ * Eles são **contrato publicado**, e aparecem em **dois** lugares cada: no documento OpenAPI, que o
+ * frontend lê para gerar o cliente, e no cabeçalho que a resposta de fato escreve. É justamente a
+ * coincidência entre os dois que faz a declaração ser verdade — dois literais ficariam livres para
+ * divergir, e o modo de falha é o pior possível: o documento anunciaria um tipo de mídia e a resposta
+ * traria outro, sem que nada acusasse.
+ *
+ * Os nomes dos cabeçalhos são escritos em minúsculas porque é assim que o adaptador HTTP os
+ * normaliza; o valor de `Content-Disposition` é composto no ponto da resposta, porque a metade dele
+ * é o código do contrato.
+ */
+const TIPO_DE_MIDIA_DO_DOCUMENTO = 'application/pdf';
+const CABECALHO_DO_TIPO = 'content-type';
+const CABECALHO_DA_DISPOSICAO = 'content-disposition';
+
+/** A extensão do nome de arquivo sugerido — a outra metade de `attachment; filename="…"`. */
+const EXTENSAO_DO_DOCUMENTO = '.pdf';
 
 // O corpo das duas rotas de circulação **e** o das duas transições — **vazio e fechado** (§4.1.1) —
 // é `ESQUEMA_DO_CORPO_VAZIO`, importado de `comum/esquema-de-corpo-vazio.js`. A marca de retirada e
@@ -396,6 +438,117 @@ export class ContratoController {
       requisicao,
       async (tx) => await this.contratos.ler(tx, codigo),
     );
+  }
+
+  @Get(':codigo/documento')
+  // NADA é declarado aqui, e a ausência é o mecanismo: a exigência de `TELA:contratos` vem da
+  // CLASSE, e `getAllAndOverride` é override — não união. Ver o cabeçalho deste arquivo.
+  @ApiOperation({
+    summary: 'Baixa o documento do contrato em PDF',
+    description:
+      'Devolve o contrato de locação **em PDF**, composto a partir do cadastro no instante do ' +
+      'pedido (ADR-0030): o documento **não é armazenado** em lugar nenhum, e por isso não existe ' +
+      'ato de regeração — alterar o contrato e pedir de novo já devolve o texto novo. Um contrato ' +
+      '`CANCELADO` sai com a **marca de cancelamento** logo abaixo do título; um `RASCUNHO` sai ' +
+      'com o valor total derivado de `valorMensal × prazoMeses`, ainda que o campo do contrato ' +
+      'esteja nulo. A resposta é `application/pdf` com `Content-Disposition: attachment` sugerindo ' +
+      '`<codigo>.pdf`. Contrato de outra empresa é indistinguível de inexistente: `404` com o ' +
+      'mesmo corpo. Código malformado é recusado com `422` **sem tocar o banco**.',
+  })
+  // A ÚNICA declaração de resposta desta superfície que não deriva de um esquema, e a ADR-0028 é
+  // quem a autoriza: a rota permanece no contrato publicado e declara **mídia**, **nome sugerido de
+  // arquivo** e o **mesmo envelope de erro** das demais.
+  //
+  // ⚠️ `format: 'binary'` NÃO é declaração de forma — é o idioma que o OpenAPI tem para dizer *"isto
+  // é uma sequência de bytes opaca"*, isto é, a declaração da AUSÊNCIA de forma. O que a `Decision`
+  // proíbe, e o que esta rota não faz, é declarar a ESTRUTURA do sucesso: não há `esquemaPublicado`
+  // aqui, nem objeto, nem campo. A leitura conjunta está registrada na §21.3 (1) do tech spec da
+  // fatia, para que um gate futuro não leia violação onde houve leitura conjunta.
+  //
+  // E a **cláusula de exceção da ADR-0028 não se ativa**, o que foi MEDIDO e não suposto:
+  // `ApiResponseCommonMetadata extends Omit<ResponseObject, 'description'>`, e `ResponseObject`
+  // aceita `content` e `headers`. Não se escreve exceção declarada onde ela não é necessária.
+  @ApiOkResponse({
+    description: 'O contrato em PDF, composto no instante do pedido.',
+    content: { [TIPO_DE_MIDIA_DO_DOCUMENTO]: { schema: { type: 'string', format: 'binary' } } },
+    headers: {
+      [CABECALHO_DA_DISPOSICAO]: {
+        schema: { type: 'string' },
+        description: 'attachment; filename="CTR-2026-00001.pdf"',
+      },
+    },
+  })
+  @ApiUnauthorizedResponse({ schema: esquemaDoErro([CodigoErro.NAO_AUTENTICADO]) })
+  @ApiForbiddenResponse({ schema: esquemaDoErro([CodigoErro.ACESSO_NEGADO]) })
+  @ApiNotFoundResponse({ schema: esquemaDoErro([CodigoErro.RECURSO_NAO_ENCONTRADO]) })
+  @ApiUnprocessableEntityResponse({ schema: esquemaDoErro([CodigoErro.CAMPO_INVALIDO]) })
+  async documento(
+    @Param('codigo') identificador: string,
+    @Req() requisicao: FastifyRequest,
+    // `passthrough: true` porque o corpo continua sendo o **valor devolvido** — o que a resposta
+    // precisa da instância é apenas dois cabeçalhos que dependem do `:codigo`. Sem `passthrough`, o
+    // manipulador passaria a ser responsável por escrever a resposta inteira, e a forma dele
+    // divergiria das outras seis desta classe sem ganho algum.
+    @Res({ passthrough: true }) resposta: FastifyReply,
+  ): Promise<Uint8Array> {
+    const codigo = validar(ESQUEMA_DO_CODIGO_DE_CONTRATO, identificador, CAMPO_DO_CODIGO);
+
+    // DECISÃO FECHADA — T7 / Gate 2 · 2026-08-13
+    // (Ele PROTEGE — ao contrário de um `DÉBITO COM GATILHO`, que AGENDA. Alcance: a EXTENSÃO da
+    //  unidade de trabalho deste manipulador, isto é, a repartição entre o que corre dentro da
+    //  continuação e o que corre depois dela, aqui e nas duas assinaturas do serviço que a
+    //  sustentam.)
+    // O QUÊ: a unidade de trabalho desta rota cobre **apenas a leitura do agregado**; a composição e
+    //        a renderização correm FORA dela. É a única rota desta borda em que a unidade não cobre
+    //        o manipulador inteiro, e a exceção é deliberada.
+    // POR QUÊ: `sobContextoDaSessao` é um `sql.begin` real, e a renderização custa ~0,5 s MEDIDOS
+    //          pelo Gate 2 na rodada 1 — 5 amostras (784,9 / 416,7 / 501,1 / 655,8 / 601,4 ms) sobre
+    //          o contrato mínimo, de 1 fiador e 14.960 bytes. Dentro da unidade ela reservava uma
+    //          conexão física do pool — que é UM SÓ para o processo inteiro, no tamanho padrão de
+    //          `postgres.js`, e é disputado por todas as outras rotas — e deixava um
+    //          `idle in transaction` de meio segundo por download, segurando o horizonte de vacuum.
+    //          Sob concorrência modesta o pool esgota e TODA outra rota passa a esperar por conexão:
+    //          a degradação aparece longe da causa, e nenhum caso desta suíte mede concorrência. Por
+    //          isso a rede é a asserção de TOPOLOGIA do `CT-714 (b)` — e por isso a decisão precisa
+    //          deste marcador além dela: teste se altera com `SUT_IS_CORRECT_BECAUSE:`, marcador
+    //          exige escalada.
+    // REVERTER EXIGE: medir sob CONCORRÊNCIA o que a rodada 1 mediu em série, e demonstrar uma das
+    //                 duas: (a) que `sobContextoDaSessao` deixou de reservar conexão física do pool
+    //                 pelo tempo da continuação — hoje falso por construção, porque conexão
+    //                 reservada é o que uma transação de `postgres.js` É —, ou (b) que a
+    //                 renderização deixou de custar tempo da ordem da consulta que ela acompanha,
+    //                 pela mesma metodologia registrada no docblock de
+    //                 `ContratoService.renderizarDocumento`. Citar a medição em série NÃO satisfaz:
+    //                 ela é a evidência do defeito, não da ausência dele. E, demonstrada qualquer
+    //                 das duas, `renderizarDocumento` continua SEM `tx` na assinatura — é a ausência
+    //                 do executor, e não a ordem das linhas, que a impede de tocar o banco.
+    //
+    // ⚠️ **Não "uniformize" isto de volta** para uma continuação só, por parecer-se com as outras
+    // seis rotas desta classe: o desenho é deliberado, e o `CT-714 (b)` reprova quem o desfizer. O
+    // que separa as duas metades é a assinatura — `renderizarDocumento` não recebe `tx` e não pode
+    // tocar o banco —, e o `404` continua saindo do ponto único, DENTRO da unidade.
+    const agregado = await sobContextoDaSessao(
+      this.banco,
+      requisicao,
+      async (tx) => await this.contratos.agregadoDoDocumento(tx, codigo),
+    );
+
+    const bytes = await this.contratos.renderizarDocumento(agregado);
+
+    // Os DOIS cabeçalhos são escritos **depois** de os bytes existirem, e a ordem é conteúdo: o
+    // filtro global responde pela MESMA instância de `FastifyReply`, de modo que um `Content-Type:
+    // application/pdf` definido antes da leitura sobreviveria à recusa e o envelope de erro da
+    // ADR-0017 sairia anunciando-se como PDF. É a metade do `CT-715` que mede exatamente isso.
+    resposta.header(CABECALHO_DO_TIPO, TIPO_DE_MIDIA_DO_DOCUMENTO);
+    // O nome sugerido é o **código canonizado** — `ESQUEMA_DO_CODIGO_DE_CONTRATO` já validou a forma
+    // `CTR-{ano}-{5 dígitos}` e passou a caixa para maiúsculas —, e por isso não há aqui aspa, quebra
+    // de linha ou caractere de controle a escapar: o que chega do cliente não atravessa esta linha.
+    resposta.header(
+      CABECALHO_DA_DISPOSICAO,
+      `attachment; filename="${codigo}${EXTENSAO_DO_DOCUMENTO}"`,
+    );
+
+    return bytes;
   }
 
   @Put(':codigo')

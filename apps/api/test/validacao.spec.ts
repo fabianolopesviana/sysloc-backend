@@ -374,6 +374,23 @@ const IMPORTADORES_ESPERADOS = [
   // Vale o resto do parágrafo acima: a ponta da DEFINIÇÃO permanece em um elemento,
   // {@link ANALISADORES_ESPERADOS} não muda (a superfície nova chama `validar`, e não `safeParse`), e
   // a igualdade (nunca contenção) segue sendo asserida nas três pontas.
+  // SUT_IS_CORRECT_BECAUSE: o código de produção está certo, e é esta lista que descrevia o estado
+  // anterior. A **T9** da fatia `documentos-e-confirmacao` publica a **décima segunda** borda —
+  // `POST /v1/locatarios/:id/confirmacao-de-email`, a única rota que este controlador declara por
+  // conta própria —, e ela **importa** a tradução única em vez de copiá-la, que é exatamente o
+  // desfecho que o `CT-343` existe para premiar.
+  //
+  // Ela entra como linha própria, ao lado de `cadastros/superficie-de-cadastro.ts`, e a distinção é
+  // conteúdo: a superfície continua sendo o **único** lugar onde as seis operações dos três papéis
+  // estão escritas, e o que nasce aqui é uma rota que só o locatário tem. Não é a cópia do
+  // comportamento que aquela linha existe para impedir.
+  //
+  // **Este arquivo não está na §5.2 da T9** — divergência declarada, no mesmo molde da anotação que
+  // a T9 da fatia `regua-de-cobranca` deixou acima. Vale o resto do parágrafo do docblock: a ponta
+  // da DEFINIÇÃO permanece em um elemento, {@link ANALISADORES_ESPERADOS} não muda (o manipulador
+  // novo chama `validar`, e não `safeParse`), e a igualdade (nunca contenção) segue sendo asserida
+  // nas três pontas.
+  'cadastros/locatario.controller.ts',
   'cadastros/superficie-de-cadastro.ts',
   // SUT_IS_CORRECT_BECAUSE: o código de produção está certo, e é esta lista que descrevia o estado
   // anterior. A T5 da fatia `cobranca-e-mora` publica a **nona** borda — as três rotas de
@@ -383,6 +400,19 @@ const IMPORTADORES_ESPERADOS = [
   // controlador novo chama `validar`, e não `safeParse`), e a igualdade (nunca contenção) segue sendo
   // asserida nas três pontas.
   'cobrancas/cobranca.controller.ts',
+  // SUT_IS_CORRECT_BECAUSE: o código de produção está certo, e é esta lista que descrevia o estado
+  // anterior. A **T11** da fatia `documentos-e-confirmacao` publica a **décima terceira** borda —
+  // `POST /v1/confirmacoes-de-email`, a única rota de negócio sem sessão do produto —, e ela
+  // **importa** a tradução única em vez de copiá-la, que é exatamente o desfecho que o `CT-343`
+  // existe para premiar. Aqui isso pesa mais do que nas doze anteriores: é a borda que atende **sem
+  // sessão**, e uma tradução própria de recusa nela seria a mais exposta de todas — o `422` dela é o
+  // que qualquer pessoa da internet consegue provocar.
+  //
+  // **Este arquivo não está na §5.2 da T11** — divergência declarada, no mesmo molde das anotações
+  // acima. Vale o resto do parágrafo do docblock: a ponta da DEFINIÇÃO permanece em um elemento,
+  // {@link ANALISADORES_ESPERADOS} não muda (o manipulador novo chama `validar`, e não `safeParse`),
+  // e a igualdade (nunca contenção) segue sendo asserida nas três pontas.
+  'confirmacoes/confirmacao.controller.ts',
   // SUT_IS_CORRECT_BECAUSE: o código de produção está certo, e é esta lista que descrevia o estado
   // anterior. A T6 da fatia `contratos-de-locacao` publica a **oitava** borda — as seis rotas de
   // cadastro de `/v1/contratos` —, e ela **importa** a tradução única em vez de copiá-la, que é
@@ -488,8 +518,21 @@ const DEFINIDOR_DO_CORPO_VAZIO_ESPERADO = 'comum/esquema-de-corpo-vazio.ts';
 // conjunto dos definidores continua com um elemento. A asserção NÃO foi afrouxada — segue sendo
 // igualdade exata sobre o conjunto inteiro, com um consumidor a mais, e **nenhuma entrada anterior
 // saiu**. É a mesma leitura do docblock acima: *"o conjunto que pode crescer é o dos consumidores"*.
+// SUT_IS_CORRECT_BECAUSE: a **T9** da fatia `documentos-e-confirmacao` publica
+// `POST /v1/locatarios/:id/confirmacao-de-email`, cujo corpo é **vazio e fechado**, e
+// `cadastros/locatario.controller.ts` passa a IMPORTAR a definição única em vez de copiá-la — que é
+// exatamente o comportamento que este caso existe para premiar. O que ele reprova é a **segunda
+// definição**, e essa ponta ({@link DEFINIDOR_DO_CORPO_VAZIO_ESPERADO}) **não mudou**: o conjunto dos
+// definidores continua com um elemento. A asserção NÃO foi afrouxada — segue sendo igualdade exata
+// sobre o conjunto inteiro, com um consumidor a mais, e **nenhuma entrada anterior saiu**.
+//
+// **Este arquivo não está na §5.2 da T9** — divergência declarada, e é a mesma que a T10 da fatia
+// anterior registrou logo acima: a âncora afirma por igualdade de conjunto, e publicar borda nova a
+// faz reprovar, que é exatamente o que ela existe para fazer. A âncora **sobe**; ela não vira
+// contenção.
 const IMPORTADORES_DO_CORPO_VAZIO_ESPERADOS = [
   'automacao/automacao.controller.ts',
+  'cadastros/locatario.controller.ts',
   'cadastros/superficie-de-cadastro.ts',
   'cobrancas/cobranca.controller.ts',
   'contratos/contrato.controller.ts',

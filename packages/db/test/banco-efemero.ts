@@ -67,6 +67,7 @@ import {
   type PessoaCadastrada,
 } from '../src/cadastro-de-pessoa.ts';
 import { abrirConexao } from '../src/conexao.ts';
+import { derivarSegredo, emitirPortador } from '../src/portador-de-confirmacao.ts';
 import { semear } from '../src/semente.ts';
 
 /** Papel dono dos objetos e único que aplica migração. Não é superusuário e não atende requisição. */
@@ -74,6 +75,21 @@ const PAPEL_MIGRACAO = 'sysloc_migracao';
 
 /** Papel que a aplicação usa para atender requisição. Não é dono de nada. */
 const PAPEL_APLICACAO = 'sysloc_app';
+
+/**
+ * Papel de propósito único: ser DONO da função que resolve o portador da confirmação (`0014`).
+ *
+ * Ele **não conecta** (`NOLOGIN`, e nenhuma senha é sorteada para ele) e não é dono de tabela
+ * alguma. Existe porque `SECURITY DEFINER` sozinho **não** atravessa `FORCE ROW LEVEL SECURITY`: a
+ * função roda como o DONO dela, e enquanto esse dono era `sysloc_migracao` — que é também o dono da
+ * tabela, e é exatamente o papel que o `FORCE` deixou de isentar — a resolução sem contexto devolvia
+ * zero linhas. Ver o bloco 2 da `0014`, que é quem materializa a decisão.
+ *
+ * Ele nasce AQUI, no provisionamento, e não na migração, porque `sysloc_migracao` é `NOCREATEROLE`:
+ * a tentativa devolve `42501 · Only roles with the CREATEROLE attribute may create roles` — medido.
+ * É a mesma razão pela qual os schemas nascem no provisionamento (§7.3 da tech spec da F1).
+ */
+const PAPEL_RESOLUCAO = 'sysloc_resolucao';
 
 /** Os dois schemas da ADR-0009. Criados pelo provisionamento, nunca pela migração. */
 const SCHEMAS = ['identidade', 'negocio'] as const;
@@ -189,11 +205,14 @@ function exigirPrivilegiadas(banco: BancoMigrado): CadeiasPrivilegiadas {
 }
 
 /**
- * Executa, com a conexão superusuário, o que `provisionar-base.sh` executa em operação: os dois
- * papéis sem privilégio administrativo e os dois schemas com dono `sysloc_migracao`.
+ * Executa, com a conexão superusuário, o que `provisionar-base.sh` executa em operação: os **três**
+ * papéis sem privilégio administrativo — dois com `LOGIN`, e um `NOLOGIN` de propósito único — e os
+ * dois schemas com dono `sysloc_migracao`.
  *
  * Nada aqui cria tabela: isso é da migração, e é a migração que faz as tabelas nascerem do papel de
- * migração sem nenhum `ALTER ... OWNER` (§7.3 da tech spec).
+ * migração. Nenhuma **tabela** troca de dono neste caminho; a única exceção é
+ * `ALTER FUNCTION negocio.resolver_portador_de_confirmacao(text) OWNER TO "sysloc_resolucao"`, na
+ * `0014`, e ela alcança UMA função e NENHUMA tabela (§7.3 da tech spec).
  */
 async function provisionar(instancia: BancoEfemero, senhas: SenhasDosPapeis): Promise<string> {
   const sql = abrirConexao(instancia.cadeiaConexao);
@@ -220,6 +239,23 @@ async function provisionar(instancia: BancoEfemero, senhas: SenhasDosPapeis): Pr
     // Nenhum dos dois papéis pertence ao outro: é o `pg_has_role(...,'MEMBER') = false` do CT-001.
     // A ausência de `GRANT ... TO ...` entre eles é a decisão — não há linha a ler, então ela fica
     // escrita aqui.
+
+    // O terceiro papel, sem `LOGIN` e sem senha: ele nunca atende conexão, e por isso não entra no
+    // laço acima nem em `SenhasDosPapeis`. O `NOBYPASSRLS` é conteúdo — a travessia que ele permite
+    // é NOMINAL, dada por uma política declarada na `0014`, e não um papel que ignora política
+    // (que é o que a ADR-0008 rejeita por escrito).
+    await sql.unsafe(
+      `CREATE ROLE "${PAPEL_RESOLUCAO}" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE ` +
+        'NOREPLICATION NOBYPASSRLS',
+    );
+    // …e a migração precisa PODER trocar o dono da função para ele: o PostgreSQL exige que quem
+    // executa `ALTER … OWNER TO` seja membro do papel de destino. `INHERIT FALSE` é o mínimo que
+    // faz isso funcionar — `sysloc_migracao` pode assumir o papel deliberadamente, mas **não**
+    // herda os privilégios dele nas consultas comuns, de modo que a leitura irrestrita continua
+    // exigindo um `SET ROLE` explícito em vez de acontecer por acidente.
+    await sql.unsafe(
+      `GRANT "${PAPEL_RESOLUCAO}" TO "${PAPEL_MIGRACAO}" WITH INHERIT FALSE, SET TRUE`,
+    );
 
     for (const schema of SCHEMAS) {
       await sql.unsafe(`CREATE SCHEMA "${schema}" AUTHORIZATION "${PAPEL_MIGRACAO}"`);
@@ -297,10 +333,15 @@ function comporCadeias(
 // Duas escritas da mesma semeadura ficariam livres para divergir, e a divergência apareceria como
 // dois arranjos que dizem montar o mesmo cenário e montam cenários diferentes.
 //
-// ⚠️ Hoje **só `semearLocatarioSemContato` tem consumidor** (`envio-de-cobranca.spec.ts`). A T5
-// não chegou a consumir `semearPoliticaDeAviso`: os dois casos que precisavam de política
+// ⚠️ A T5 não chegou a consumir `semearPoliticaDeAviso`: os dois casos que precisavam de política
 // preferiram a porta real `gravarPoliticaDeAviso`, que é a escolha certa quando a política é o
-// objeto e não a precondição. Ver o `DÉBITO COM GATILHO — D13` sobre ele.
+// objeto e não a precondição. O **primeiro** consumidor chegou na T8 da fatia
+// `documentos-e-confirmacao` (o `CT-730`), e foi ele que fechou o **D13 (F3/T5)** — o docblock do
+// auxiliar registra o que mudou e por quê.
+//
+// O terceiro auxiliar, `semearPortadorDeConfirmacao`, é da mesma T8 e mora aqui pela mesma razão dos
+// dois primeiros: a T11 monta a mesma precondição pela ponta HTTP, e duas escritas da mesma
+// semeadura ficariam livres para divergir.
 
 /**
  * Grava a política de aviso da empresa do contexto **por instrução própria**, sem passar pelo SUT.
@@ -317,20 +358,23 @@ function comporCadeias(
  *
  * O `ON CONFLICT` existe porque um caso pode gravar a política **depois** de já ter lido sem ela: é o
  * mesmo `upsert` de um comando só que a `politica_de_aviso_empresa_key` foi criada para ser alvo.
+ *
+ * ---------------------------------------------------------------------------
+ * A cláusula nomeia a COLUNA, como a de produção — o D13 (F3/T5) fechou aqui
+ * ---------------------------------------------------------------------------
+ *
+ * Ela escreveu `ON CONFLICT ON CONSTRAINT politica_de_aviso_empresa_key` da T5 até a **T8 da fatia
+ * `documentos-e-confirmacao`**, e o débito registrava exatamente isso: eram **duas grafias do mesmo
+ * alvo** — esta e a `ON CONFLICT (empresa_id)` de `gravarPoliticaDeAviso` —, e só a de produção
+ * tinha prova, porque este auxiliar nasceu sem consumidor algum.
+ *
+ * O gatilho escrito no marcador era literal — *"a primeira suíte que precisar da política como
+ * PRECONDIÇÃO sem ser objeto"* — e chegou com o **CT-730**, em `execucao-da-regua.spec.ts`. As duas
+ * pontas do débito foram fechadas ali: a cláusula passou a ser a **mesma** da produção, de modo que
+ * não sobra segunda grafia para divergir, e o ramo de conflito passou a **executar de fato** — o
+ * caso reafirma a política entre as duas medições, para que o único eixo que muda entre elas seja o
+ * estado de confirmação do locatário.
  */
-// DÉBITO COM GATILHO — D13 · F3/T5 · registrado 2026-08-11
-// O QUÊ: este auxiliar nasce SEM consumidor algum — a T5 não o chamou —, e por isso o `ON CONFLICT
-//        ON CONSTRAINT politica_de_aviso_empresa_key` que ele escreve NUNCA EXECUTOU. A porta de
-//        produção escreve a mesma coisa como `ON CONFLICT (empresa_id)`: duas grafias do mesmo
-//        alvo, e só uma tem prova.
-// QUANDO FECHA: a primeira suíte que precisar da política como PRECONDIÇÃO sem ser objeto —
-//        prevista para a T7/T8 (a janela do job) ou a T9/T10 (as rotas). Ao ganhar o primeiro
-//        consumidor, alinhar a cláusula com a da produção (ou declarar por que a grafia por
-//        restrição é a certa aqui) e remover este marcador.
-// POR QUE NÃO AGORA: removê-lo contraria a §5.2 da T5, que o declara entregável; e alinhar a
-//        cláusula sem consumidor seria mexer em SQL que nada exercita — a mudança não teria como
-//        ser provada nem refutada nesta task.
-// ÍNDICE: docs/specs/features/regua-de-cobranca/v1/_run/run-report.md §2, D13
 export async function semearPoliticaDeAviso(
   tx: TransactionSql,
   politica: PoliticaDeAvisoNova,
@@ -345,8 +389,7 @@ export async function semearPoliticaDeAviso(
       ${politica.ativo}, ${politica.diasAntesDoVencimento}, ${politica.intervaloMinimoDias},
       ${politica.janelaInicio}, ${politica.janelaFim}, ${politica.canal}
     )
-        ON CONFLICT ON CONSTRAINT politica_de_aviso_empresa_key
-        DO UPDATE
+        ON CONFLICT (empresa_id) DO UPDATE
        SET ativo = EXCLUDED.ativo,
            dias_antes_do_vencimento = EXCLUDED.dias_antes_do_vencimento,
            intervalo_minimo_dias = EXCLUDED.intervalo_minimo_dias,
@@ -374,4 +417,82 @@ export async function semearLocatarioSemContato(
   dados: DadosDaPessoa,
 ): Promise<PessoaCadastrada> {
   return await criarPessoa(tx, 'locatario', { ...dados, email: '' });
+}
+
+/** O que o arranjo pede a mais do portador semeado — nada, por padrão. */
+export interface AjusteDoPortador {
+  /**
+   * Retrocede `expira_em` para o passado, tornando o portador **vencido**.
+   *
+   * Ele é o único ajuste que precisa de instrução própria, e a razão é a Iron Law #6: o prazo nasce
+   * de `pg_catalog.now() + interval` **dentro** da porta de produção, que não tem — e não deve ter —
+   * por onde receber um instante. Invalidação e consumo, ao contrário, têm porta real e são obtidos
+   * por ela.
+   */
+  readonly vencido?: boolean;
+}
+
+/** O portador semeado: o claro que só o chamador tem, e o derivado que o banco guarda. */
+export interface PortadorSemeado {
+  readonly segredo: string;
+  readonly derivado: string;
+}
+
+/** O ajuste omitido — congelado porque é constante compartilhada por toda chamada sem opção. */
+const PORTADOR_NO_PRAZO: AjusteDoPortador = Object.freeze({});
+
+/**
+ * Emite um portador de confirmação para o locatário, pela **porta de produção**, e devolve o par
+ * `(segredo, derivado)`.
+ *
+ * ---------------------------------------------------------------------------
+ * O CAMINHO É O REAL, e é isso que impede o arranjo de montar estado impossível
+ * ---------------------------------------------------------------------------
+ *
+ * A linha nasce por {@link emitirPortador} — a mesma função que a borda do disparo chama por dentro
+ * —, e não por `INSERT` cru. Um `INSERT` escrito aqui gravaria um derivado que a produção nunca
+ * gravaria (a começar por não passar por {@link derivarSegredo}), e o caso adiante provaria a
+ * resolução de algo que a operação não produz.
+ *
+ * O **derivado** é devolvido junto do claro porque é ele que a resolução recebe, e recomputá-lo no
+ * caso significaria escrever uma segunda derivação no arranjo — a mesma duplicação que a porta
+ * existe para não ter.
+ *
+ * ---------------------------------------------------------------------------
+ * O VENCIMENTO É POR `UPDATE` no carimbo, DEPOIS de a linha existir
+ * ---------------------------------------------------------------------------
+ *
+ * É o molde de `semearTentativaEm` em `execucao-da-regua.spec.ts`: **nenhum mecanismo novo de
+ * "avançar o relógio"** é criado, e nenhum símbolo é acrescentado à produção para que o arranjo
+ * exista. O deslocamento sai de `pg_catalog.now()`, o mesmo relógio que a função de resolução
+ * compara — fixá-lo por um `Date` do processo faria o caso medir a diferença entre dois relógios.
+ *
+ * A instrução corre com o papel da aplicação, sob a política de linha, e **não compara `empresa_id`
+ * com coisa alguma**: quem recorta é a política (ADR-0008). O alcance é conferido, porque um
+ * `UPDATE` que não achasse a linha deixaria o caso adiante provar outra coisa em silêncio.
+ */
+export async function semearPortadorDeConfirmacao(
+  tx: TransactionSql,
+  locatarioId: string,
+  ajuste: AjusteDoPortador = PORTADOR_NO_PRAZO,
+): Promise<PortadorSemeado> {
+  const { segredo } = await emitirPortador(tx, locatarioId);
+  const derivado = derivarSegredo(segredo);
+
+  if (ajuste.vencido === true) {
+    const retrocedidas = await tx`
+      UPDATE negocio.portador_de_confirmacao
+         SET expira_em = pg_catalog.now() - interval '1 hour'
+       WHERE derivado = ${derivado}
+    `;
+
+    if (retrocedidas.count !== 1) {
+      throw new Error(
+        `o arranjo não conseguiu vencer o portador do locatário ${locatarioId} ` +
+          `(${String(retrocedidas.count)} linhas alcançadas)`,
+      );
+    }
+  }
+
+  return { segredo, derivado };
 }

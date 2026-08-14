@@ -173,6 +173,22 @@ readonly BANCO_DB="sysloc"
 # — ser dono das tabelas já é o poder que ele precisa ter, e nenhum a mais.
 readonly PAPEL_MIGRACAO="sysloc_migracao"
 
+# Papel de PROPÓSITO ÚNICO: ser dono da função `negocio.resolver_portador_de_confirmacao`
+# (migração `0014`). Ele não conecta (`NOLOGIN`, e nenhuma credencial é gerada
+# para ele) e não é dono de tabela alguma.
+#
+# Ele existe porque `SECURITY DEFINER` NÃO atravessa `FORCE ROW LEVEL SECURITY`:
+# a função roda como o dono dela, e enquanto esse dono era `${PAPEL_MIGRACAO}` —
+# que é também o dono das tabelas, e é exatamente o papel que o `FORCE` deixou de
+# isentar — a resolução do portador sem contexto devolvia zero linhas. A
+# travessia passa a ser NOMINAL: uma política que alcança só este papel, e não um
+# privilégio que ignora política. O detalhe está no bloco 2 da `0014`.
+#
+# Ele nasce AQUI, e não na migração, pela mesma razão dos schemas: `${PAPEL_MIGRACAO}`
+# é NOCREATEROLE, e criar papel de lá devolve
+# `42501 · Only roles with the CREATEROLE attribute may create roles`.
+readonly PAPEL_RESOLUCAO="sysloc_resolucao"
+
 # Banco DESCARTÁVEL que a bateria `verificar-migracao.sh` cria e remove para
 # exercitar o mutante de cobertura. Ele NÃO é criado aqui e não deve existir em
 # repouso; o nome mora nesta constante por um motivo só: a regra de autenticação
@@ -228,6 +244,26 @@ readonly UNIDADE_CAPTURADOR="sysloc-mailpit.service"
 # `SMTP_URL` provisionada aponta) e é obviamente um substituto a trocar quando a
 # instalação passar a falar com um servidor de e-mail de verdade.
 readonly REMETENTE_PADRAO_DO_AVISO="avisos@sysloc.invalid"
+
+# Endereço público do aplicativo, sobre o qual o link de confirmação de e-mail é
+# composto — a sexta chave do arquivo de ambiente.
+#
+# CAUSA de existir: a T9 da fatia `documentos-e-confirmacao` fez a `api` EXIGIR
+# `URL_BASE_DA_CONFIRMACAO` na partida, e a T10 fará o mesmo no processador de
+# trabalho, que é quem de fato compõe o link. O arquivo de ambiente é UM SÓ e é o
+# `EnvironmentFile=` das duas unidades (§16.3 da tech spec da fatia), de modo que
+# semeá-lo aqui entrega a chave aos DOIS processos de uma vez — a alternativa,
+# declará-la por `Environment=` em cada unidade, criaria duas atribuições
+# literais da mesma coordenada, livres para divergir.
+#
+# Ela NÃO é segredo: é o endereço que qualquer pessoa digita no navegador. Por
+# isso tem valor PADRÃO declarado, como o remetente acima, em vez de ser gerada.
+# O domínio `.invalid` é reservado pela RFC 6761 e não resolve em lugar nenhum:
+# o valor é obviamente um substituto, e o endereço real é decidido na VIRADA
+# (F7), quando o aplicativo passa a ser publicado atrás do servidor de borda. A
+# partida dos serviços é recusada sem a linha, de modo que a troca não pode ser
+# esquecida em silêncio.
+readonly URL_BASE_PADRAO_DA_CONFIRMACAO="https://sysloc.invalid"
 
 readonly UNIDADE_BANCO="postgresql.service"
 
@@ -720,6 +756,18 @@ garantir_chaves_de_conteudo() {
 		acrescentar_linha_ao_ambiente "${arquivo}" \
 			"EMAIL_REMETENTE=${REMETENTE_PADRAO_DO_AVISO}"
 		CHAVES_SEMEADAS="EMAIL_REMETENTE"
+	fi
+
+	# A segunda chave de conteúdo, pela MESMA razão e com o MESMO critério: ela
+	# passou a ser exigida na partida (a `api` na T9, o processador de trabalho na
+	# T10), e sem esta semeadura o arquivo de uma instalação anterior à exigência
+	# nunca ganharia a linha. O acúmulo em ${CHAVES_SEMEADAS} é o que faz o
+	# relatório do passo P06 nomear as duas quando as duas faltarem — a atribuição
+	# direta as esconderia uma atrás da outra.
+	if ! grep -q '^URL_BASE_DA_CONFIRMACAO=' "${arquivo}" 2>/dev/null; then
+		acrescentar_linha_ao_ambiente "${arquivo}" \
+			"URL_BASE_DA_CONFIRMACAO=${URL_BASE_PADRAO_DA_CONFIRMACAO}"
+		CHAVES_SEMEADAS="${CHAVES_SEMEADAS:+${CHAVES_SEMEADAS}, }URL_BASE_DA_CONFIRMACAO"
 	fi
 }
 
@@ -1436,11 +1484,19 @@ passo_p06_arquivo_ambiente() {
 		printf '# que não resolve em lugar nenhum. Troque-o pelo endereço real ANTES de\n'
 		printf '# apontar a SMTP_URL para um servidor de e-mail de verdade: o\n'
 		printf '# provisionamento cobra a PRESENÇA desta linha, e nunca o conteúdo dela.\n'
+		printf '#\n'
+		printf '# URL_BASE_DA_CONFIRMACAO também NÃO é segredo: é o endereço público do\n'
+		printf '# aplicativo, sobre o qual o link de confirmação de e-mail é composto.\n'
+		printf '# Mesmo critério do acima — substituto em .invalid, presença cobrada e\n'
+		printf '# conteúdo nunca. Ela mora AQUI, e não numa diretiva Environment= de\n'
+		printf '# cada unidade, porque as duas unidades leem este arquivo e uma segunda\n'
+		printf '# declaração literal da mesma coordenada ficaria livre para divergir.\n'
 		printf '\n'
 		printf 'DATABASE_URL=%s\n' "$(montar_url_do_banco "${senha_db}" "${porta_banco}")"
 		printf 'REDIS_URL=redis://127.0.0.1:%s\n' "${PORTA_FILA}"
 		printf 'SMTP_URL=smtp://127.0.0.1:%s\n' "${PORTA_SMTP_CAPTURADOR}"
 		printf 'EMAIL_REMETENTE=%s\n' "${REMETENTE_PADRAO_DO_AVISO}"
+		printf 'URL_BASE_DA_CONFIRMACAO=%s\n' "${URL_BASE_PADRAO_DA_CONFIRMACAO}"
 	} >"${ARQ_AMBIENTE}"
 
 	criado "P06" "arquivo de ambiente ${ARQ_AMBIENTE} criado (0600 ${DONO_ARQ_AMBIENTE}, credencial gerada em tempo de execução)"
@@ -2036,10 +2092,39 @@ passo_p15_papel_migracao() {
 		mudancas=$((mudancas + 1))
 	fi
 
+	# O papel de RESOLUÇÃO, sem credencial e sem LOGIN. Ele não entra no bloco
+	# acima porque não há segredo a gerar nem arquivo de ambiente a escrever: o
+	# que ele carrega é a propriedade de UMA função, e nada mais.
+	#
+	# Nenhuma instrução aqui traz segredo, então o registro de comandos não
+	# precisa ser desligado — ao contrário do CREATE ROLE com PASSWORD acima.
+	if [[ "$(psql_consulta "SELECT count(*) FROM pg_roles WHERE rolname = '${PAPEL_RESOLUCAO}'")" != "1" ]]; then
+		printf 'CREATE ROLE "%s" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;\n' \
+			"${PAPEL_RESOLUCAO}" | psql_admin >/dev/null
+		detalhes="${detalhes}papel '${PAPEL_RESOLUCAO}' criado (NOLOGIN, dono da resolução do portador); "
+		mudancas=$((mudancas + 1))
+	fi
+
+	# A membership existe para UMA coisa: o `ALTER FUNCTION … OWNER TO` da `0014`
+	# exige que quem executa seja membro do papel de destino. `INHERIT FALSE` é o
+	# mínimo que a torna suficiente — o migrador pode ASSUMIR o papel
+	# deliberadamente, mas não herda os privilégios dele nas consultas comuns, de
+	# modo que a leitura irrestrita do portador continua exigindo um `SET ROLE`
+	# explícito em vez de acontecer por acidente.
+	#
+	# Conferida antes de concedida: `GRANT` repetido não erra, mas reportaria
+	# mudança em toda execução e este passo deixaria de convergir.
+	if [[ "$(psql_consulta "SELECT pg_has_role('${PAPEL_MIGRACAO}', '${PAPEL_RESOLUCAO}', 'MEMBER')")" != "t" ]]; then
+		printf 'GRANT "%s" TO "%s" WITH INHERIT FALSE, SET TRUE;\n' \
+			"${PAPEL_RESOLUCAO}" "${PAPEL_MIGRACAO}" | psql_admin >/dev/null
+		detalhes="${detalhes}'${PAPEL_MIGRACAO}' passou a ser membro de '${PAPEL_RESOLUCAO}' (INHERIT FALSE), o que a migração 0014 exige para trocar o dono da função; "
+		mudancas=$((mudancas + 1))
+	fi
+
 	if [[ "${mudancas}" -gt 0 ]]; then
 		criado "P15" "papel de migração e credencial dele (${detalhes%; })"
 	else
-		ja_ok "P15" "papel de banco '${PAPEL_MIGRACAO}' já existe e ${ARQ_AMBIENTE_MIGRACAO} já está íntegro (credencial preservada)"
+		ja_ok "P15" "papéis '${PAPEL_MIGRACAO}' e '${PAPEL_RESOLUCAO}' já existem e ${ARQ_AMBIENTE_MIGRACAO} já está íntegro (credencial preservada)"
 	fi
 }
 

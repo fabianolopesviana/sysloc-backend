@@ -89,7 +89,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import type { EnvelopeDeLista, Janela, Pessoa, PessoaNova } from '@sysloc/contracts';
+import type { EnvelopeDeLista, Janela, Locatario, Pessoa, PessoaNova } from '@sysloc/contracts';
 import {
   alterarPessoa,
   criarPessoa,
@@ -110,6 +110,36 @@ import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
 export type PaginaDePessoas = EnvelopeDeLista<Pessoa>;
 
 /**
+ * O cadastro como a **alteração** o devolve: o corpo publicado, e o que a instrução fez com o
+ * `email`.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que o segundo campo NÃO viaja dentro do primeiro
+ * ---------------------------------------------------------------------------
+ *
+ * O que o manipulador devolve **é** o corpo da resposta: nenhum esquema de saída é aplicado em
+ * tempo de execução, e um campo a mais no objeto publicado chega ao cliente sem que nada o barre.
+ * `emailMudou` é decisão interna da borda — ela governa o disparo da confirmação e nada mais —, e
+ * anexá-lo à {@link Pessoa} o publicaria nas dezoito rotas dos três papéis.
+ *
+ * O envelope é, portanto, a forma que mantém as duas coisas separadas por construção: quem publica
+ * lê `pessoa`, quem decide o disparo lê `emailMudou`, e não há como confundi-los.
+ */
+export interface CadastroAlterado {
+  /** O cadastro como ele ficou — exatamente o que a rota publica. */
+  readonly pessoa: Pessoa;
+  /**
+   * Se o `UPDATE` trocou o endereço de e-mail, apurado pelo **próprio comando** em
+   * `packages/db/src/cadastro-de-pessoa.ts` (`OLD.email IS DISTINCT FROM NEW.email`).
+   *
+   * ⚠️ Ele **não** é "o corpo trouxe o campo". O `PUT` desta superfície é substituição integral e
+   * carrega `email` **sempre**, de modo que um disparo condicionado à presença do campo ocorreria
+   * em toda alteração — inclusive na que só corrige o telefone. É o defeito que o `CT-718` mede.
+   */
+  readonly emailMudou: boolean;
+}
+
+/**
  * O campo culpado da recusa por documento inválido, como o cliente o conhece (camelCase, ADR-0017).
  *
  * Constante nomeada, e não literal no ponto da recusa: ele é **contrato publicado** — o cliente o usa
@@ -126,6 +156,30 @@ const CAMPO_DO_DOCUMENTO = 'documentoPrincipal';
  * um nome escolhido por conveniência de um lado faria a comparação reprovar por divergência de forma.
  */
 const DISCRIMINADOR_DO_CONFLITO = 'conflito';
+
+/**
+ * Os papéis cuja forma publicada carrega o instante da confirmação de e-mail — hoje só o locatário.
+ *
+ * ---------------------------------------------------------------------------
+ * A parametrização se abriu POR COMPOSIÇÃO, como o cabeçalho deste arquivo previu
+ * ---------------------------------------------------------------------------
+ *
+ * O cabeçalho afirma que nenhum método ramifica por papel, e antecipa exatamente este momento:
+ * *"se um papel divergir no futuro (o locatário ganha a máquina de verificação de e-mail), a
+ * parametrização se abre **por composição, não por cópia**"*. É o que {@link publicar} faz — uma
+ * projeção, com um acréscimo declarado por tabela.
+ *
+ * A divergência é **estrutural, e não uma preferência**: a coluna `email_confirmado_em` existe só em
+ * `negocio.locatario`. `packages/db/src/cadastro-de-pessoa.ts` já registra os dois pontos em que
+ * pergunta "é locatário?" pela mesma razão, e os nomeia para que sejam enumeráveis; esta tabela é o
+ * terceiro, do lado da publicação, e é o **único** deste arquivo.
+ *
+ * O que ela impede: acrescentar `emailConfirmadoEm` a {@link Pessoa} publicaria o campo também para
+ * **locador e fiador**, que não têm confirmação alguma a publicar — um recurso afirmando um fato que
+ * não existe para ele. É a mesma razão pela qual `esquemaDoLocatario` nasceu em símbolo próprio, em
+ * vez de emendar `esquemaDaPessoa`.
+ */
+const PAPEIS_QUE_PUBLICAM_A_CONFIRMACAO: readonly PapelDePessoa[] = ['locatario'];
 
 @Injectable()
 export class CadastroDePessoaService {
@@ -144,6 +198,7 @@ export class CadastroDePessoaService {
     this.exigirDocumentoValido(entrada.documentoPrincipal);
 
     return publicar(
+      papel,
       this.exigirGravada(
         await this.gravarTraduzindoConflito(
           tx,
@@ -175,7 +230,7 @@ export class CadastroDePessoaService {
     const { pessoas, total } = await listarPessoas(tx, papel, janela, opcoes);
 
     return {
-      itens: pessoas.map(publicar),
+      itens: pessoas.map((pessoa) => publicar(papel, pessoa)),
       total,
       limite: janela.limite,
       deslocamento: janela.deslocamento,
@@ -190,7 +245,7 @@ export class CadastroDePessoaService {
    * mesmo `:id`.
    */
   async ler(tx: TransactionSql, papel: PapelDePessoa, id: string): Promise<Pessoa> {
-    return publicar(this.exigir(await localizarPessoa(tx, papel, id)));
+    return publicar(papel, this.exigir(await localizarPessoa(tx, papel, id)));
   }
 
   /**
@@ -202,25 +257,47 @@ export class CadastroDePessoaService {
    * E pela **mesma** tradução de conflito: um `PUT` que aponte para um documento já ocupado por outro
    * cadastro do mesmo papel é a mesma colisão da criação, e responde a mesma coisa. Um caminho que só
    * tratasse a criação deixaria a alteração devolver `500` ao cliente.
+   *
+   * ---------------------------------------------------------------------------
+   * `emailMudou` é observado DENTRO do `escrever`, e a posição é a decisão da T8
+   * ---------------------------------------------------------------------------
+   *
+   * {@link alterarPessoa} devolve `PessoaAlterada`, que é {@link PessoaCadastrada} **mais** o campo
+   * apurado pelo próprio comando. O envoltório de unicidade tem tipo **concreto**
+   * ({@link PessoaCadastrada}) por decisão registrada no docblock de
+   * `gravarCadastroSobRestricaoDeUnicidade`, de modo que o campo a mais chega **no valor e não no
+   * tipo** — e alargar o retorno de lá reabriria a conversão de `UnwrapPromiseArray` que aquele
+   * parágrafo recusa por escrito.
+   *
+   * O caminho que ele prescreve é este: observar o resultado de {@link alterarPessoa} **onde ela o
+   * produz**, dentro do próprio `escrever`. A variável abaixo é isso, e não um atalho — ela é local
+   * à chamada, e portanto não é estado compartilhado entre requisições concorrentes.
    */
   async alterar(
     tx: TransactionSql,
     papel: PapelDePessoa,
     id: string,
     entrada: PessoaNova,
-  ): Promise<Pessoa> {
+  ): Promise<CadastroAlterado> {
     this.exigirDocumentoValido(entrada.documentoPrincipal);
 
-    return publicar(
-      this.exigir(
-        await this.gravarTraduzindoConflito(
-          tx,
-          papel,
-          entrada.documentoPrincipal,
-          async (escrita) => await alterarPessoa(escrita, papel, id, entrada),
-        ),
+    let emailMudou = false;
+
+    const alterada = this.exigir(
+      await this.gravarTraduzindoConflito(
+        tx,
+        papel,
+        entrada.documentoPrincipal,
+        async (escrita) => {
+          const pessoa = await alterarPessoa(escrita, papel, id, entrada);
+          emailMudou = pessoa?.emailMudou ?? false;
+
+          return pessoa;
+        },
       ),
     );
+
+    return { pessoa: publicar(papel, alterada), emailMudou };
   }
 
   /**
@@ -236,7 +313,10 @@ export class CadastroDePessoaService {
     id: string,
     emCirculacao: boolean,
   ): Promise<Pessoa> {
-    return publicar(this.exigir(await definirCirculacaoDaPessoa(tx, papel, id, emCirculacao)));
+    return publicar(
+      papel,
+      this.exigir(await definirCirculacaoDaPessoa(tx, papel, id, emCirculacao)),
+    );
   }
 
   /**
@@ -340,9 +420,25 @@ export class CadastroDePessoaService {
  * (`z.iso.datetime()`); nulo continua nulo, e é ele que diz que o cadastro circula. Os demais campos
  * são copiados um a um, e não por espalhamento: o espalhamento publicaria qualquer coluna que a
  * projeção da porta venha a ganhar — inclusive `empresa_id`, que é justamente o que não pode sair.
+ *
+ * ---------------------------------------------------------------------------
+ * O acréscimo do locatário é COMPOSIÇÃO sobre a mesma projeção, e não uma segunda forma
+ * ---------------------------------------------------------------------------
+ *
+ * Os quinze campos acima são montados **uma vez** para os três papéis, e o locatário recebe
+ * `emailConfirmadoEm` por cima deles — ver {@link PAPEIS_QUE_PUBLICAM_A_CONFIRMACAO} para por que a
+ * divergência é estrutural. Duas projeções escritas por extenso ficariam livres para divergir em
+ * qualquer um dos quinze campos comuns, e a divergência apareceria como campo que some da resposta
+ * de um papel só.
+ *
+ * O tipo devolvido é {@link Pessoa} porque é o **denominador comum dos três papéis**, e é o que a
+ * superfície compartilhada pode prometer. Quem declara o campo a mais é o contrato publicado da
+ * superfície de locatário (`esquemaDoLocatario`, ADR-0016), que é a fonte única do que o cliente
+ * recebe — e a variável intermediária tipada como {@link Locatario} é o que faz o compilador
+ * conferir o acréscimo contra aquele esquema, em vez de deixá-lo como objeto solto.
  */
-function publicar(pessoa: PessoaCadastrada): Pessoa {
-  return {
+function publicar(papel: PapelDePessoa, pessoa: PessoaCadastrada): Pessoa {
+  const comum: Pessoa = {
     id: pessoa.id,
     nome: pessoa.nome,
     tipoPessoa: pessoa.tipoPessoa,
@@ -359,4 +455,16 @@ function publicar(pessoa: PessoaCadastrada): Pessoa {
     cep: pessoa.cep,
     retiradoEm: pessoa.retiradoEm === null ? null : pessoa.retiradoEm.toISOString(),
   };
+
+  if (!PAPEIS_QUE_PUBLICAM_A_CONFIRMACAO.includes(papel)) {
+    return comum;
+  }
+
+  const doLocatario: Locatario = {
+    ...comum,
+    emailConfirmadoEm:
+      pessoa.emailConfirmadoEm === null ? null : pessoa.emailConfirmadoEm.toISOString(),
+  };
+
+  return doLocatario;
 }

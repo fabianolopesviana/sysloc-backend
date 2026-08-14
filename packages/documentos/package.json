@@ -1,0 +1,45 @@
+{
+  "name": "@sysloc/documentos",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Domínio do documento do contrato e da mensagem de confirmação — declara a porta de renderização que a infraestrutura satisfaz (ADR-0025). Não conhece banco, HTTP nem SMTP",
+  "//": [
+    "FRONTEIRA — `react` neste manifesto NÃO é código de interface do produto, e não a viola.",
+    "O que a Fronteira do projeto proíbe (CLAUDE.md) é escrever aqui a interface que o usuário vê:",
+    "o fonte React do produto vive na máquina local do usuário e é implementado lá, por outro agente.",
+    "`@react-pdf/renderer` usa React como motor de renderização SERVER-SIDE — sem DOM, sem navegador,",
+    "sem componente entregue ao frontend. O que sai daqui são bytes de PDF, compostos sob demanda e",
+    "nunca armazenados (ADR-0030). O único arquivo do repositório que conhece o motor é",
+    "`src/renderizador-pdf.ts`, e o docblock dele repete esta afirmação; a terceira cópia está na §3.3",
+    "do tech spec da fatia. O risco que as três fecham é de LEITURA, não de comportamento.",
+    "`pdfjs-dist` é dependência de VERIFICAÇÃO, e por isso está em `devDependencies`: ela extrai o",
+    "texto de volta do PDF renderizado, que é a segunda ponta do D3 (CT-708)."
+  ],
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "test": "tsc --build && tsc -p tsconfig.test.json && vitest run"
+  },
+  "dependencies": {
+    "@react-pdf/renderer": "4.6.0",
+    "@sysloc/contracts": "workspace:*",
+    "react": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.18",
+    "pdfjs-dist": "6.2.108",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

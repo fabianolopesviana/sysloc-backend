@@ -49,6 +49,7 @@ import {
 import type { AcessoAoBanco, PapelDePessoa } from '@sysloc/db';
 import type { Logger } from '@sysloc/shared';
 import type { FastifyRequest } from 'fastify';
+import type { TransactionSql } from 'postgres';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
 import { ESQUEMA_DO_CORPO_VAZIO } from '../comum/esquema-de-corpo-vazio.js';
 import { validar } from '../comum/validacao.js';
@@ -138,6 +139,44 @@ export const DESCRICOES = Object.freeze({
 });
 
 /**
+ * O que a borda faz quando o endereço de e-mail de um cadastro **nasce ou muda**.
+ *
+ * ---------------------------------------------------------------------------
+ * DOIS momentos, UM símbolo — e a razão de eles não serem dois parâmetros
+ * ---------------------------------------------------------------------------
+ *
+ * A função corre **dentro** da unidade de trabalho, junto da escrita do cadastro, e devolve a
+ * continuação que corre **depois do `COMMIT`**. Os dois momentos viajam num símbolo só de propósito:
+ * separá-los em dois ganchos daria à superfície a chance de executar o primeiro e esquecer o
+ * segundo — o cadastro ficaria com portador gravado e mensagem que nunca sai, que é exatamente o
+ * modo de falha que o gancho existe para não ter.
+ *
+ * ---------------------------------------------------------------------------
+ * A superfície NÃO SABE o que ele faz, e a ignorância é o mecanismo
+ * ---------------------------------------------------------------------------
+ *
+ * Esta classe é **compartilhada pelos três papéis** — locador, locatário e fiador constroem a mesma
+ * instância com o `papel` fixado no construtor. Um efeito escrito aqui dentro sem condição
+ * alcançaria os três; e um ramo que comparasse `this.papel` com o literal de um deles seria
+ * comportamento específico de papel no lugar que existe justamente para não tê-lo. **A comparação
+ * não aparece neste arquivo — nem em comentário**, e a ausência é conferível por `grep`: o aceite
+ * técnico da task a cobra devolvendo zero, e uma citação em prosa a faria devolver um.
+ *
+ * A saída é a inversão: o gancho é **opcional**, e quem o supre é só o controlador do papel que o
+ * tem. A superfície não importa nada da confirmação de e-mail, não conhece portador, não conhece
+ * fila — ela apenas garante os dois momentos. Trocar o efeito, ou dá-lo a um segundo papel, não
+ * toca uma linha deste arquivo.
+ *
+ * @returns A continuação a ser acionada depois do `COMMIT`. Ela **não rejeita**: o efeito externo
+ * de um cadastro já gravado não pode derrubar a resposta dele.
+ */
+export type AoGravarEmail = (
+  tx: TransactionSql,
+  cadastroId: string,
+  empresaId: string,
+) => Promise<() => Promise<void>>;
+
+/**
  * As seis operações de um papel, com o papel **fixado na construção**.
  *
  * Cada método recebe a requisição e devolve o que a rota publica. A unidade de trabalho abre aqui, na
@@ -153,22 +192,49 @@ export class SuperficieDeCadastro {
     private readonly banco: AcessoAoBanco,
     private readonly cadastros: CadastroDePessoaService,
     private readonly logger: Logger,
+    /**
+     * O que fazer quando o endereço de e-mail nasce ou muda — **ausente na maioria dos papéis**.
+     *
+     * Opcional porque a maioria não tem efeito algum a disparar, e é a ausência que mantém locador e
+     * fiador exatamente como estavam: nenhuma linha de comportamento nova corre para eles. Ver
+     * {@link AoGravarEmail}.
+     */
+    private readonly aoGravarEmail?: AoGravarEmail,
   ) {}
 
-  /** `POST` da coleção. */
+  /**
+   * `POST` da coleção.
+   *
+   * O gancho é acionado **incondicionalmente** aqui, e a assimetria com {@link alterar} é conteúdo:
+   * `esquemaDePessoaNova` exige `email`, de modo que todo cadastro nasce com endereço — "o e-mail
+   * mudou" é verdadeiro por definição na criação.
+   */
   async criar(corpo: unknown, requisicao: FastifyRequest): Promise<Pessoa> {
     const entrada = validar(esquemaDePessoaNova, corpo, CAMPO_DO_CORPO);
 
-    return await sobContextoDaSessao(this.banco, requisicao, async (tx, sessao) => {
-      const criado = await this.cadastros.criar(tx, this.papel, entrada);
+    const { publicado, entregar } = await sobContextoDaSessao(
+      this.banco,
+      requisicao,
+      async (tx, sessao) => {
+        const criado = await this.cadastros.criar(tx, this.papel, entrada);
 
-      this.logger.info(
-        { empresaId: sessao.empresaId, entidade: this.papel, id: criado.id },
-        'cadastro criado',
-      );
+        this.logger.info(
+          { empresaId: sessao.empresaId, entidade: this.papel, id: criado.id },
+          'cadastro criado',
+        );
 
-      return criado;
-    });
+        return {
+          publicado: criado,
+          entregar: await this.aoGravarEmail?.(tx, criado.id, sessao.empresaId),
+        };
+      },
+    );
+
+    // DEPOIS do `COMMIT`, e é esta linha que o afirma: o que corre aqui já não pode ser desfeito
+    // pela unidade, e o efeito externo não é enfileirado para um cadastro que talvez não exista.
+    await entregar?.();
+
+    return publicado;
   }
 
   /** `GET` da coleção. */
@@ -203,7 +269,15 @@ export class SuperficieDeCadastro {
     );
   }
 
-  /** `PUT` de `:id`. */
+  /**
+   * `PUT` de `:id`.
+   *
+   * ⚠️ **O gancho é condicionado a `emailMudou`, e nunca à presença do campo no corpo.** O `PUT`
+   * desta superfície é substituição integral e carrega `email` **sempre**, de modo que um disparo
+   * condicionado ao corpo ocorreria em toda alteração — inclusive na que só corrige o telefone. Quem
+   * apura a mudança é o próprio `UPDATE` (`OLD.email IS DISTINCT FROM NEW.email`), e o valor
+   * atravessa até aqui pelo envelope `CadastroAlterado` do serviço.
+   */
   async alterar(
     identificador: string,
     corpo: unknown,
@@ -212,11 +286,25 @@ export class SuperficieDeCadastro {
     const id = validar(ESQUEMA_DO_IDENTIFICADOR, identificador, CAMPO_DO_IDENTIFICADOR);
     const entrada = validar(esquemaDePessoaNova, corpo, CAMPO_DO_CORPO);
 
-    return await sobContextoDaSessao(
+    const { publicado, entregar } = await sobContextoDaSessao(
       this.banco,
       requisicao,
-      async (tx) => await this.cadastros.alterar(tx, this.papel, id, entrada),
+      async (tx, sessao) => {
+        const { pessoa, emailMudou } = await this.cadastros.alterar(tx, this.papel, id, entrada);
+
+        return {
+          publicado: pessoa,
+          entregar: emailMudou
+            ? await this.aoGravarEmail?.(tx, pessoa.id, sessao.empresaId)
+            : undefined,
+        };
+      },
     );
+
+    // Mesma razão da criação: o efeito externo corre depois do `COMMIT`, e nunca dentro dele.
+    await entregar?.();
+
+    return publicado;
   }
 
   /**

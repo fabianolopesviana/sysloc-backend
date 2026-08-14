@@ -16,7 +16,7 @@
  *      e não apenas verificada.
  *
  * Falta a quinta, que **não mora neste arquivo**: `FORCE ROW LEVEL SECURITY` e as políticas
- * `USING`/`WITH CHECK` vivem em migração de segurança escrita à mão. São **cinco**, e quem
+ * `USING`/`WITH CHECK` vivem em migração de segurança escrita à mão. São **seis**, e quem
  * acrescentar tabela aqui precisa saber qual delas emendar — a resposta é sempre *nenhuma*, e a
  * lista existe para dizer onde cada tabela já protegida foi protegida:
  *
@@ -30,23 +30,30 @@
  *     `configuracao_de_mora`), mais a view `cobranca_derivada`, a data corrente da operação e a
  *     segunda série declarada do produto;
  *   * `migracoes/0012_seguranca_regua.sql` — a política de aviso e o registro de envios
- *     (`politica_de_aviso` e `envio_de_cobranca`), mais os três tipos enumerados da régua.
+ *     (`politica_de_aviso` e `envio_de_cobranca`), mais os três tipos enumerados da régua;
+ *   * `migracoes/0014_seguranca_confirmacao.sql` — o portador da confirmação de endereço
+ *     (`portador_de_confirmacao`), mais a função `SECURITY DEFINER` que o resolve **sem** contexto
+ *     de empresa (ADR-0024).
  *
- * São cinco porque **gerado e autoral nunca convivem no mesmo arquivo** — uma regeração futura da
+ * São seis porque **gerado e autoral nunca convivem no mesmo arquivo** — uma regeração futura da
  * gerada sobrescreveria o trecho autoral em silêncio. O que **obriga** a parceira autoral não é a
  * predecessora ser gerada: é **nascer tabela em `negocio`**, porque o gerador não emite `FORCE` nem
  * política. Toda migração que criar tabela aqui leva junto uma parceira autoral própria — nunca um
- * acréscimo à `0001`, à `0006`, à `0008`, à `0010` ou à `0012`, que descrevem schemas já aplicados e
- * são, portanto, imutáveis. ⚠️ A `0010` tem, além disso, o `DÉBITO COM GATILHO — D20` no ponto da
- * emenda que ela já sofreu: **leia-o antes de qualquer tentativa de tocá-la**.
+ * acréscimo à `0001`, à `0006`, à `0008`, à `0010`, à `0012` ou à `0014`, que descrevem schemas já
+ * aplicados e são, portanto, imutáveis. ⚠️ A `0010` tem, além disso, o `DÉBITO COM GATILHO — D20` no
+ * ponto da emenda que ela já sofreu: **leia-o antes de qualquer tentativa de tocá-la**.
  *
  * O diretório de migrações é a conferência da regra, e ele recusa a forma mais larga dela: a
  * `0002_campos_do_arcabouco.sql` e a `0003_autorizacao.sql` são **geradas e não têm parceira** —
  * nenhuma das duas cria tabela, elas só alteram o que já existia —, e a `0004_desfecho_de_recusa.sql`
- * é **autoral avulsa**, sem gerada a quem se parear. Só a `0000`, a `0005`, a `0007`, a `0009` e a
- * `0011` criam tabela em `negocio`, e são exatamente elas que têm parceira. Ler o gatilho como "toda
- * gerada ganha uma parceira" produziria uma migração de segurança vazia, sem `FORCE` nem política a
- * declarar.
+ * é **autoral avulsa**, sem gerada a quem se parear. Só a `0000`, a `0005`, a `0007`, a `0009`, a
+ * `0011` e a `0013` criam tabela em `negocio`, e são exatamente elas que têm parceira. Ler o gatilho
+ * como "toda gerada ganha uma parceira" produziria uma migração de segurança vazia, sem `FORCE` nem
+ * política a declarar.
+ *
+ * A `0013` é, além disso, a primeira **destrutiva** do produto: ela remove
+ * `contrato.pdf_contrato_arquivo` (ADR-0030) e **não tem descida**. Reverter o esquema exige
+ * restauração de backup, que é o item 1 da F7 e ainda não está entregue.
  *
  * O gerador de migração declara RLS e a política que se declare aqui, mas **não emite `FORCE`** — e
  * sem `FORCE` o dono das tabelas ignora a política, o que faria a suíte de isolamento ficar verde
@@ -536,13 +543,41 @@ export const locador = negocio
   ])
   .enableRLS();
 
-/** Locatário — quem ocupa o imóvel. Mesma forma do locador; ver {@link camposDeCadastroDePessoa}. */
+/**
+ * Locatário — quem ocupa o imóvel. Mesma forma do locador, MAIS uma coluna; ver
+ * {@link camposDeCadastroDePessoa}.
+ *
+ * ---------------------------------------------------------------------------
+ * `email_confirmado_em` mora SÓ aqui, e é FATO — não estado (ADR-0022)
+ * ---------------------------------------------------------------------------
+ *
+ * Ela é a primeira coluna que quebra a simetria das três tabelas de pessoa, e a assimetria é a
+ * decisão: quem confirma endereço de correio é o **locatário**, porque é ele quem recebe cobrança e
+ * é dele que a rota sem sessão trata (ADR-0027). Acrescentá-la a `camposDeCadastroDePessoa()` a
+ * daria também ao locador e ao fiador, criando duas colunas que nenhum caminho de escrita preenche
+ * — e uma coluna que ninguém move é convite para alguém inventar o que ela significa.
+ *
+ * O que se grava é o **instante da confirmação**, e não um `boolean confirmado`: o estado publicado
+ * é derivado do fato (ADR-0022), de modo que não existe rotina que "vire a bandeira" e possa deixar
+ * de rodar. Nulo significa *nunca confirmou*; preenchido, *confirmou naquele instante* — e a
+ * reapresentação do mesmo portador **não o reescreve** (RN-10), que é o que torna o ato único.
+ *
+ * `timestamptz` porque é um ATO, e o relógio é o do banco (ADR-0026) — mesmo desenho de
+ * `envio_de_cobranca.criado_em`. Sem `defaultNow()`: o padrão faria toda pessoa nascer confirmada.
+ */
 export const locatario = negocio
-  .table('locatario', camposDeCadastroDePessoa(), (tabela) => [
-    unique('locatario_id_empresa_key').on(tabela.id, tabela.empresaId),
-    unique('locatario_empresa_documento_key').on(tabela.empresaId, tabela.documentoPrincipal),
-    index('locatario_empresa_retirado_idx').on(tabela.empresaId, tabela.retiradoEm),
-  ])
+  .table(
+    'locatario',
+    {
+      ...camposDeCadastroDePessoa(),
+      emailConfirmadoEm: timestamp('email_confirmado_em', { withTimezone: true }),
+    },
+    (tabela) => [
+      unique('locatario_id_empresa_key').on(tabela.id, tabela.empresaId),
+      unique('locatario_empresa_documento_key').on(tabela.empresaId, tabela.documentoPrincipal),
+      index('locatario_empresa_retirado_idx').on(tabela.empresaId, tabela.retiradoEm),
+    ],
+  )
   .enableRLS();
 
 /** Fiador — quem garante o contrato. Mesma forma do locador; ver {@link camposDeCadastroDePessoa}. */
@@ -633,8 +668,25 @@ export const contrato = negocio
       gerarCobrancasAutomaticamente: boolean('gerar_cobrancas_automaticamente')
         .notNull()
         .default(true),
-      /** Guarda **caminho**, nunca bytes (§7.2). */
-      pdfContratoArquivo: text('pdf_contrato_arquivo'),
+      // ---------------------------------------------------------------------------
+      // A coluna que SAIU daqui, e a ausência é a decisão (ADR-0030)
+      // ---------------------------------------------------------------------------
+      //
+      // Havia `pdf_contrato_arquivo text`, herdada do legado, que guardava o CAMINHO do documento
+      // composto e gravado. A migração `0013` a removeu, e nada a substitui: o documento do contrato
+      // é **composto no instante do pedido** e nunca armazenado, de modo que não existe caminho de
+      // escrita dele — a coerência entre artefato e cadastro vem da **ausência de cópia**, e não de
+      // uma rotina de invalidação que precisaria alcançar todo caminho de escrita presente e futuro.
+      //
+      // A ausência não é economia de espaço: é o que torna irrepresentável a pré-condição
+      // *"sem PDF, não cancela"* que o legado criou para proteger o carimbo que gravaria sobre o
+      // arquivo (o débito **D36** da fatia `contratos-de-locacao`). Uma coluna de caminho
+      // reintroduzida aqui "por conveniência de cache" reabre a decisão inteira — a ADR-0030 registra
+      // que reaproveitamento por cache é compatível, mas cópia **durável** como fonte de verdade é a
+      // reversão dela, e o caminho legítimo seria superseder a ADR.
+      //
+      // A ausência é medida por introspecção no `CT-712` (`packages/db/test/contrato.spec.ts`), que
+      // consulta o catálogo do PostgreSQL — nunca o texto desta declaração.
       retiradoEm: timestamp('retirado_em', { withTimezone: true }),
     },
     (tabela) => [
@@ -877,7 +929,16 @@ export const cobranca = negocio
       codigoBarras: text('codigo_barras'),
       dataCredito: date('data_credito'),
       valorCreditado: numeric('valor_creditado', { precision: 15, scale: 2 }),
-      /** Guarda **caminho**, nunca bytes — mesmo desenho de `pdf_contrato_arquivo`. */
+      /**
+       * Guarda **caminho**, nunca bytes.
+       *
+       * ⚠️ O desenho gêmeo que este comentário citava — `contrato.pdf_contrato_arquivo` — **deixou
+       * de existir** (migração `0013`, ADR-0030), e a coluna daqui **não** o segue: o boleto é
+       * **fato recebido de terceiro**, e a `Decision` da ADR-0030 o exclui por escrito do alcance
+       * dela (*"boleto emitido pelo provedor … não é artefato derivado"*). Ninguém o recompõe, e
+       * guardá-lo é o único caminho. Não confundir os dois na F4: o carnê é derivado e se compõe sob
+       * demanda; o boleto é fato e se guarda.
+       */
       boletoArquivo: text('boleto_arquivo'),
     },
     (tabela) => [
@@ -1255,6 +1316,115 @@ export const envioDeCobranca = negocio
         tabela.empresaId,
         tabela.cobrancaId,
         tabela.criadoEm.desc(),
+      ),
+    ],
+  )
+  .enableRLS();
+
+// ===========================================================================
+// O portador da confirmação de endereço — o que resolve um ato SEM sessão
+// ===========================================================================
+
+/**
+ * O portador que autoriza a confirmação de endereço de correio do locatário (ADR-0027).
+ *
+ * ---------------------------------------------------------------------------
+ * Não há coluna do segredo em claro, e a AUSÊNCIA é a decisão
+ * ---------------------------------------------------------------------------
+ *
+ * O que chega ao locatário é um segredo aleatório que só o correio dele conhece; o que esta tabela
+ * guarda é o **derivado** dele. Quem lê o banco inteiro — dump, réplica, backup, operador de
+ * suporte — não consegue montar um pedido que confirme endereço nenhum, porque não existe coluna de
+ * onde extrair o segredo. Acrescentá-la "para depurar" desfaz a propriedade inteira em uma linha, e
+ * nenhuma outra guarda a substitui.
+ *
+ * ---------------------------------------------------------------------------
+ * `derivado` é UNIQUE GLOBAL, e não por empresa — deliberado (ADR-0024)
+ * ---------------------------------------------------------------------------
+ *
+ * A resolução acontece **antes** de existir contexto de tenant: é ela que descobre a empresa, e não
+ * o contrário. Uma unicidade por empresa (`unique(empresa_id, derivado)`) admitiria duas linhas com
+ * o mesmo derivado em empresas diferentes, e a função `SECURITY DEFINER` que as resolve teria de
+ * desempatar — desempate que só poderia vir do pedido, que é exatamente a segunda origem de contexto
+ * que a ADR-0024 fecha. Com a unicidade global a colisão é **impossível de passar em silêncio**, e o
+ * empate deixa de existir em vez de ser resolvido.
+ *
+ * Repare que não há restrição `unique(empresa_id, …)` nenhuma aqui, e nem por isso o isolamento
+ * afrouxa: ele vem da política de `0014_seguranca_confirmacao.sql` e da chave estrangeira composta
+ * abaixo, como em toda tabela deste arquivo.
+ *
+ * ---------------------------------------------------------------------------
+ * Os TRÊS instantes, e por que nenhum deles é `boolean`
+ * ---------------------------------------------------------------------------
+ *
+ *   * `expira_em` — **não nulo**. O prazo é do banco, e a comparação vive no `WHERE` da função
+ *     `SECURITY DEFINER` (ADR-0026): portador vencido produz zero linhas, indistinguível de
+ *     inexistente, de modo que a recusa é propriedade do banco e não um `if` na borda que alguém
+ *     pode reordenar;
+ *   * `consumido_em` — anulável, e o portador consumido **permanece** (RN-10). Ele não é apagado nem
+ *     invalidado pelo consumo: a reapresentação dentro da validade precisa continuar resolvendo,
+ *     senão a pré-visualização de link pelo provedor de correio queimaria a confirmação antes de o
+ *     locatário clicar. **Uso único é o EFEITO, não a RESOLUÇÃO** — a unicidade é imposta pelo
+ *     `UPDATE … WHERE consumido_em IS NULL RETURNING`, nunca por filtro na resolução;
+ *   * `invalidado_em` — anulável; o reenvio marca os anteriores (RN-09), e **esse** filtro está no
+ *     `WHERE` da função. É o que impede um portador antigo de continuar valendo depois de o
+ *     locatário pedir outro.
+ *
+ * Nenhum deles é `boolean`: grava-se o **fato** e deriva-se o estado (ADR-0022).
+ *
+ * ---------------------------------------------------------------------------
+ * O que NÃO existe aqui
+ * ---------------------------------------------------------------------------
+ *
+ * Não há `retirado_em`. A ADR-0014 não alcança esta tabela: o discriminador dela é *ser
+ * referenciável*, e nada aponta para uma linha de portador. Ela nunca é apagada, mas por outra razão
+ * — a RN-10 precisa distinguir *"já foi usado"* de *"nunca existiu"*. Retenção e expurgo vão para a
+ * **F7**, junto de `identidade.tentativa_login` e `negocio.envio_de_cobranca`, que têm a mesma
+ * natureza.
+ */
+export const portadorDeConfirmacao = negocio
+  .table(
+    'portador_de_confirmacao',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      empresaId: uuid('empresa_id')
+        .notNull()
+        .references(() => empresa.id),
+      locatarioId: uuid('locatario_id').notNull(),
+      /** O DERIVADO do segredo — nunca o segredo. Ver o cabeçalho. */
+      derivado: text('derivado').notNull(),
+      expiraEm: timestamp('expira_em', { withTimezone: true }).notNull(),
+      /** Nulo enquanto não foi consumido. A linha consumida PERMANECE (RN-10). */
+      consumidoEm: timestamp('consumido_em', { withTimezone: true }),
+      /** Nulo enquanto vale. O reenvio marca os anteriores (RN-09). */
+      invalidadoEm: timestamp('invalidado_em', { withTimezone: true }),
+      /** O instante da emissão, pelo relógio do BANCO (ADR-0026) — nunca pelo do processo. */
+      criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+    },
+    (tabela) => [
+      // O alvo da chave estrangeira composta de quem vier a apontar para o portador, e o que a
+      // guarda de cobertura de `src/catalogo.ts` cobra de toda tabela deste schema.
+      unique('portador_de_confirmacao_id_empresa_key').on(tabela.id, tabela.empresaId),
+      // A unicidade GLOBAL do derivado — ver o cabeçalho. Ela é também o índice pelo qual a função
+      // `SECURITY DEFINER` da `0014` busca: a resolução é uma leitura por chave única, e não uma
+      // varredura.
+      unique('portador_de_confirmacao_derivado_key').on(tabela.derivado),
+      // A chave estrangeira COMPOSTA da ADR-0008 — a única da tabela. Ela recusa, no banco, um
+      // portador da empresa A apontando para locatário da empresa B: o par
+      // `(locatario_id, empresa_id)` teria de existir no pai, e não existe. É recusa ESTRUTURAL, e é
+      // por isso que a forma simples (`REFERENCES locatario(id)`) não serve nem "por enquanto" —
+      // ela aceitaria o apontamento cruzado em silêncio, e aqui o preço seria confirmar o endereço
+      // de uma pessoa de outra empresa.
+      foreignKey({
+        name: 'portador_de_confirmacao_locatario_empresa_fkey',
+        columns: [tabela.locatarioId, tabela.empresaId],
+        foreignColumns: [locatario.id, locatario.empresaId],
+      }),
+      // A leitura por locatário (a invalidação em massa do reenvio, RN-09) — é ela que o índice
+      // cobre, e não `empresa_id` sozinho.
+      index('portador_de_confirmacao_empresa_locatario_idx').on(
+        tabela.empresaId,
+        tabela.locatarioId,
       ),
     ],
   )

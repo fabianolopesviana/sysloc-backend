@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@sysloc/contracts": "workspace:*",
+    "@sysloc/documentos": "workspace:*",
     "@sysloc/regua": "workspace:*",
     "@sysloc/shared": "workspace:*",
     "drizzle-orm": "0.45.2",

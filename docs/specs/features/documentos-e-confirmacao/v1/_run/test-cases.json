@@ -1,0 +1,1432 @@
+{
+  "schema_version": 1,
+  "framework": "sdd",
+  "feature": "documentos-e-confirmacao",
+  "version": "v1",
+  "atualizado_em": "2026-08-12",
+  "stack_discovery": {
+    "fonte": "testing_stack_rule",
+    "stack": "Node 24 LTS · TypeScript strict · NestJS + Fastify · Drizzle + PostgreSQL 18 (RLS) · Zod · BullMQ + ioredis + Redis 7 (AOF) · @react-pdf/renderer 4.6.0 (nova) · pdfjs-dist 6.2.108 (nova, só verificação) · Bash para infraestrutura",
+    "framework_teste": "Vitest + embedded-postgres (instância efêmera própria) para TypeScript; convenção própria em Bash para a frente shell",
+    "comando_teste": "pnpm --filter @sysloc/<pacote> test (subset) · pnpm test → turbo run test (suíte completa) · bash deploy/scripts/<área>/verificar-<alvo>.sh (shell)",
+    "discovery_needed": false,
+    "lacunas": []
+  },
+  "erros_leitura": [
+    {
+      "arquivo": "packages/db/src/contrato.ts",
+      "impacto": "Lido por Read (primeiras 981 de 1261 linhas) e complementado por grep para o restante (cancelarContrato, definirCirculacaoDoContrato, ativarContrato). Suficiente para desenhar os casos de CA-05/CA-06/D5; não impede nenhum caso deste lote."
+    },
+    {
+      "arquivo": "packages/db/src/esquema/negocio.ts",
+      "impacto": "Lido por Read (primeiras 862 de 1262 linhas), cobrindo contrato e contrato_fiador por inteiro. O restante (cobrança/regua) não é tocado por esta sub-fatia e foi dispensado por Economia de Leitura."
+    },
+    {
+      "arquivo": "apps/api/test/automacao-de-cobranca.e2e.spec.ts",
+      "impacto": "Lido parcialmente (primeiras 1079 de 1807 linhas) — o suficiente para extrair o molde de precondição privilegiada (sign-in real + concessão de chave pelo caminho real + capturador de e-mail) reusado nos casos de confirmação. O restante do arquivo (histórico paginado) não é precedente necessário para este lote."
+    }
+  ],
+  "resumo": {
+    "total_casos_teste": 33,
+    "por_tipo": {
+      "unitario": 8,
+      "integracao": 9,
+      "componente": 0,
+      "e2e": 8,
+      "seguranca": 8,
+      "acessibilidade": 0
+    }
+  },
+  "casos_teste": [
+    {
+      "id": "CT-701",
+      "task_id": "T1",
+      "titulo": "Captura, no legado, dos caminhos do documento ainda sem oráculo (fiador, PJ, sem RG) — task de prazo",
+      "tipo": "INTEGRACAO",
+      "categoria": "integracao",
+      "invariant": "Para cada um dos três eixos ainda sem golden (contrato com fiador, locatário pessoa jurídica, parte sem documento de identidade), OU existe contrato real no legado que o exercite e ele é capturado como artefato golden versionado, OU a ausência é registrada como ausência medida — nunca inferida — e nada é escrito no `/opt/frappe` para produzi-lo.",
+      "owning_layer": "e2e",
+      "existing_suite": "deploy/scripts/caracterizacao/extrair-fonte-do-pdf.sh",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "eixo procurado e NÃO encontrado entre os contratos reais do legado (ex.: nenhum contrato com fiador ativo)",
+        "assertion_esperada": "o script termina com código 0, emite `aviso` nomeando o eixo ausente (nunca `falhar`), e NÃO grava nenhum artefato golden para aquele eixo — a ausência entra registrada em `PROCEDENCIA.md`, distinta de um golden capturado"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "acesso autenticado e não destrutivo ao `/opt/frappe` (produção) via `docker compose exec -T backend bench --site frontend ...`",
+        "caminho_legitimo": "reutilizar `consultar_o_legado` de `deploy/scripts/caracterizacao/extrair-fonte-do-pdf.sh` (ou `capturar.py`) tal como está — NÃO escrever uma quarta cópia do caminho de leitura autenticada, porque o D3 (F3/T1, regua-de-cobranca) já registra três cópias e dispara no quarto consumidor; se a task precisar de uma consulta nova, ela entra como parâmetro do script existente, não como acesso próprio",
+        "teste_analogo": "deploy/scripts/caracterizacao/extrair-fonte-do-pdf.sh (a T1 da fatia regua-de-cobranca, que capturou o 11º artefato golden pelo mesmo caminho)"
+      },
+      "camada": "deploy/scripts/caracterizacao (shell)",
+      "pre_condicoes": [
+        "/opt/frappe de pé e respondendo (docker compose up)",
+        "disco do host com espaço livre suficiente (checar antes de rodar — o disco já esteve em ~93-94%)"
+      ],
+      "dados_entrada": {
+        "descricao": "os três eixos a procurar, como filtro de consulta ao legado",
+        "valores": {
+          "eixos": [
+            "contrato_com_fiador",
+            "locatario_pessoa_juridica",
+            "parte_sem_documento_identidade"
+          ]
+        }
+      },
+      "passos": [
+        "Para cada eixo, consultar contratos reais do legado que o exercitem (leitura autenticada, não destrutiva)",
+        "Se encontrado: capturar o PDF via o mesmo caminho da T1 (Server Script `PDF contrato`) e versionar como golden novo em docs/specs/features/caracterizacao-regras-legadas/v1/golden/",
+        "Se não encontrado: registrar 'ausência medida' em PROCEDENCIA.md, nomeando o eixo e a consulta que não retornou nada",
+        "Não escrever, alterar ou fabricar contrato algum no /opt/frappe em nenhum dos dois ramos"
+      ],
+      "resultado_esperado": "Ao final, cada um dos três eixos tem exatamente um de dois desfechos registrados por extenso: 'capturado' (com o caminho do golden novo) ou 'ausência medida' (com a consulta que a comprova) — nunca um terceiro estado implícito, e o /opt/frappe termina sem nenhuma escrita nova.",
+      "criterios_aceitacao_validados": [
+        "CA-01"
+      ],
+      "observacoes": "Task de prazo — só é exequível enquanto /opt/frappe está de pé (janela que fecha na F7). Rode ANTES de qualquer outra task desta sub-fatia, no molde da T1 da fatia regua-de-cobranca."
+    },
+    {
+      "id": "CT-702",
+      "task_id": "T5",
+      "titulo": "A composição do documento é função pura do dado — reflete alteração imediatamente, sem estado entre chamadas",
+      "tipo": "UNITARIO",
+      "categoria": "caminho_feliz",
+      "invariant": "Dado o mesmo agregado de contrato (mesmos valores), a composição produz sempre a mesma representação textual intermediária; dado um agregado alterado (ex.: valorMensal mudou), a composição produz uma representação que reflete exatamente a alteração — sem cache, sem estado retido entre chamadas.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-703",
+        "input_invalido": "agregado com uma parte ausente (ex.: fiadores vazio quando o contrato tinha fiador na chamada anterior)",
+        "assertion_esperada": "a cláusula de fiador desaparece do bloco de qualificação da segunda composição — nunca uma versão 'fantasma' do fiador da primeira chamada sobrevivendo por efeito de cache/memoização"
+      },
+      "camada": "packages/documentos (unit puro)",
+      "pre_condicoes": [
+        "nenhuma — função pura, sem infraestrutura"
+      ],
+      "dados_entrada": {
+        "descricao": "dois agregados de contrato, o segundo com um campo alterado",
+        "valores": {
+          "agregadoV1": {
+            "valorMensal": 2500.0,
+            "diaVencimento": 10
+          },
+          "agregadoV2": {
+            "valorMensal": 2800.0,
+            "diaVencimento": 10
+          }
+        }
+      },
+      "passos": [
+        "Compor o documento (representação textual intermediária) com agregadoV1",
+        "Compor o documento de novo, na MESMA instância do composer, com agregadoV2",
+        "Comparar as duas representações"
+      ],
+      "resultado_esperado": "A cláusula sétima da segunda composição contém a string 'R$ 2.800,00' e NÃO contém 'R$ 2.500,00'; a primeira composição permanece com 'R$ 2.500,00' inalterada (nenhuma mutação retroativa) — provado por comparação de string exata do trecho da cláusula, não por 'contém algum valor'.",
+      "criterios_aceitacao_validados": [
+        "CA-02"
+      ],
+      "observacoes": "É a metade UNITÁRIA da prova de CA-02; a metade end-to-end (que prova ausência de cache também na borda HTTP) é o CT-714. Justificativa de NO_SUITE_FOUND: `@sysloc/documentos` é pacote novo desta task (D2), não há suíte candidata em pacote existente."
+    },
+    {
+      "id": "CT-703",
+      "task_id": "T5",
+      "titulo": "Companheiro negativo — bloco de qualificação da parte não vaza estado de uma composição para a seguinte",
+      "tipo": "UNITARIO",
+      "categoria": "teste_negativo",
+      "invariant": "Compor o documento de um contrato SEM fiador logo após compor um contrato COM fiador (na mesma instância do composer) produz um documento sem qualquer traço textual do fiador anterior.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "segunda composição sem fiador, imediatamente após uma composição com fiador",
+        "assertion_esperada": "o texto da segunda composição não contém o nome do fiador da primeira, em nenhum bloco (preâmbulo, cláusulas, fecho de assinaturas)"
+      },
+      "camada": "packages/documentos (unit puro)",
+      "pre_condicoes": [
+        "nenhuma"
+      ],
+      "dados_entrada": {
+        "descricao": "dois agregados na mesma instância do composer: um com fiador 'Carlos Fiador', outro sem fiador algum",
+        "valores": {
+          "comFiador": {
+            "fiadores": [
+              {
+                "id": "uuid-1",
+                "nome": "Carlos Fiador"
+              }
+            ]
+          },
+          "semFiador": {
+            "fiadores": []
+          }
+        }
+      },
+      "passos": [
+        "Instanciar o composer uma única vez",
+        "Compor o documento com o agregado comFiador",
+        "Compor o documento com o agregado semFiador, na mesma instância",
+        "Buscar 'Carlos Fiador' no texto da segunda composição"
+      ],
+      "resultado_esperado": "A busca por 'Carlos Fiador' no texto da segunda composição retorna índice -1 (ausência total) — prova que o composer não retém estado entre chamadas.",
+      "criterios_aceitacao_validados": [
+        "CA-02"
+      ],
+      "observacoes": "Companheiro do CT-702; sanidade: remover esta asserção deixaria uma suíte que não distingue composer com estado de composer puro."
+    },
+    {
+      "id": "CT-704",
+      "task_id": "T5",
+      "titulo": "Qualificação de parte por eixo — PF com RG, PF sem RG e PJ produzem o bloco correto (table-driven)",
+      "tipo": "UNITARIO",
+      "categoria": "fronteira",
+      "invariant": "O bloco de qualificação de uma parte resolve, exatamente uma vez, os três eixos condicionais medidos no legado (tipo de pessoa, presença de RG, presença de fiador) e produz o texto de qualificação correspondente — sem reabrir a condição nas 21 cláusulas que consomem o resultado.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-705",
+        "input_invalido": "tipoPessoa fora da união fechada (valor não é 'PESSOA_FISICA' nem 'PESSOA_JURIDICA')",
+        "assertion_esperada": "a composição lança/recusa com erro nomeado (nunca produz um documento com bloco de qualificação vazio ou 'undefined' silencioso)"
+      },
+      "camada": "packages/documentos (unit puro)",
+      "pre_condicoes": [
+        "nenhuma"
+      ],
+      "dados_entrada": {
+        "descricao": "três partes: PF com RG, PF sem RG (rg: null), PJ (rg sempre null)",
+        "valores": {
+          "casos": [
+            {
+              "tipoPessoa": "PESSOA_FISICA",
+              "rg": "MG-1234567",
+              "esperado_contem": "cédula de identidade civil número MG-1234567"
+            },
+            {
+              "tipoPessoa": "PESSOA_FISICA",
+              "rg": null,
+              "esperado_nao_contem": "cédula de identidade civil"
+            },
+            {
+              "tipoPessoa": "PESSOA_JURIDICA",
+              "rg": null,
+              "esperado_contem_forma_juridica": true
+            }
+          ]
+        }
+      },
+      "passos": [
+        "Para cada um dos três casos, compor só o bloco de qualificação da parte",
+        "Verificar a presença/ausência exata do trecho esperado"
+      ],
+      "resultado_esperado": "Caso 1: contém literalmente 'cédula de identidade civil número MG-1234567'. Caso 2: NÃO contém a substring 'cédula de identidade civil' em lugar nenhum do bloco. Caso 3: o bloco qualifica a parte como pessoa jurídica (razão social/CNPJ), nunca com o molde de RG.",
+      "criterios_aceitacao_validados": [
+        "CA-03"
+      ],
+      "observacoes": "Prova por composição (E3) do Ramo A2/E — granularidade de bloco, não de documento inteiro. Parametrizado: 1 teste, 3 cenários."
+    },
+    {
+      "id": "CT-705",
+      "task_id": "T5",
+      "titulo": "Companheiro negativo — tipo de pessoa fora da união fechada é recusado antes de compor",
+      "tipo": "UNITARIO",
+      "categoria": "teste_negativo",
+      "invariant": "A composição nunca produz documento parcial silencioso para dado fora do contrato de tipos — ela recusa explicitamente.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "tipoPessoa: 'ESTRANGEIRO' (valor fora de TIPOS_DE_PESSOA)",
+        "assertion_esperada": "lança erro com nome/tipo identificável (ex.: TypeError de discriminação exaustiva do TypeScript, ou erro de domínio nomeado) — nunca retorna string vazia nem undefined encaixado no documento"
+      },
+      "camada": "packages/documentos (unit puro)",
+      "pre_condicoes": [
+        "nenhuma"
+      ],
+      "dados_entrada": {
+        "descricao": "parte com tipoPessoa inválido",
+        "valores": {
+          "tipoPessoa": "ESTRANGEIRO"
+        }
+      },
+      "passos": [
+        "Chamar a composição do bloco de qualificação com o valor inválido"
+      ],
+      "resultado_esperado": "A chamada lança, e a mensagem/tipo do erro nomeia o valor recusado ou o campo — nunca undefined silencioso propagando para o texto final.",
+      "criterios_aceitacao_validados": [
+        "CA-03"
+      ],
+      "observacoes": "Defesa de fronteira; na prática o Zod upstream já bloqueia isso antes de chegar aqui, mas o composer não deve confiar cegamente nisso (Iron Law #1 — teste que não pode falhar é decorativo; este pode)."
+    },
+    {
+      "id": "CT-706",
+      "task_id": "T5",
+      "titulo": "A marca de cancelamento é parâmetro da composição — presente só quando o status é CANCELADO",
+      "tipo": "UNITARIO",
+      "categoria": "fronteira",
+      "invariant": "O documento de um contrato traz a marca de cancelamento visível se e somente se o status do contrato, no instante da composição, é CANCELADO; para RASCUNHO, ATIVO e ENCERRADO ela está ausente — e a marca nunca é aplicada sobre bytes prontos, só compõe junto do resto.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "status ATIVO, ENCERRADO e RASCUNHO (os três negativos, no mesmo teste parametrizado)",
+        "assertion_esperada": "para os três, a marca de cancelamento está AUSENTE do texto composto — mesma asserção de ausência usada para CANCELADO=presente"
+      },
+      "camada": "packages/documentos (unit puro)",
+      "pre_condicoes": [
+        "nenhuma"
+      ],
+      "dados_entrada": {
+        "descricao": "o mesmo agregado de contrato, variando só o status",
+        "valores": {
+          "status": [
+            "RASCUNHO",
+            "ATIVO",
+            "CANCELADO",
+            "ENCERRADO"
+          ]
+        }
+      },
+      "passos": [
+        "Compor o documento uma vez para cada um dos quatro estados",
+        "Buscar a marca de cancelamento (termo canônico a definir no challenge — ex.: 'CANCELADO' em destaque) no texto de cada composição"
+      ],
+      "resultado_esperado": "Só a composição com status CANCELADO contém a marca; as outras três não contêm nenhum traço dela — parametrizado, 4 cenários, 1 teste.",
+      "criterios_aceitacao_validados": [
+        "CA-04"
+      ],
+      "observacoes": "Como não existe mais arquivo armazenado, a garantia 'nunca aplicada sobre bytes prontos' passa a ser estrutural (não há bytes prontos para aplicar sobre) — este caso prova a metade observável (presença condicional pelo status corrente)."
+    },
+    {
+      "id": "CT-707",
+      "task_id": "T4",
+      "titulo": "A normalização do texto é declarada, fechada e provada por falsificação",
+      "tipo": "UNITARIO",
+      "categoria": "integridade_dados",
+      "invariant": "A função de normalização aplicada antes da comparação com o golden tolera exatamente o que está declarado (espaço redundante, quebra de linha de layout, a ligadura 'ﬁ'→'fi') e NADA além disso — uma normalização mais frouxa que a declarada deixa de detectar uma divergência de conteúdo real.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "dois textos que diferem em CONTEÚDO (não em formatação) — ex.: 'R$ 2.500,00' vs 'R$ 2.550,00'",
+        "assertion_esperada": "a normalização NÃO os torna iguais — a comparação pós-normalização continua falsa"
+      },
+      "camada": "packages/documentos (unit puro)",
+      "pre_condicoes": [
+        "nenhuma"
+      ],
+      "dados_entrada": {
+        "descricao": "pares de texto: (a) mesma frase com espaçamento/quebra de linha diferentes e ligadura 'ﬁ' vs 'fi' — devem normalizar igual; (b) mesma frase com um valor monetário diferente — não devem normalizar igual",
+        "valores": {
+          "par_tolerado": [
+            "identiﬁcado como\nImovel PDF-001",
+            "identificado como Imovel PDF-001"
+          ],
+          "par_nao_tolerado": [
+            "R$ 2.500,00",
+            "R$ 2.550,00"
+          ]
+        }
+      },
+      "passos": [
+        "Aplicar a normalização aos dois textos do par tolerado e comparar",
+        "Aplicar a normalização aos dois textos do par não tolerado e comparar",
+        "PROVA DE FALSIFICAÇÃO: gerar uma cópia da função de normalização com a regra afrouxada (ex.: remover TODOS os dígitos antes de comparar) e demonstrar que ela FAZ o par não tolerado passar como igual — depois reverter"
+      ],
+      "resultado_esperado": "Par tolerado: normaliza para o mesmo texto (igualdade estrita). Par não tolerado: normaliza para textos DIFERENTES (desigualdade). A cópia com a normalização afrouxada faz o par de conteúdo diferente passar como igual, provando que a asserção commitada reprovaria esse defeito se ele fosse reintroduzido.",
+      "criterios_aceitacao_validados": [
+        "CA-03"
+      ],
+      "observacoes": "Prova de falsificação OBRIGATÓRIA conforme instruções (D3 é o ponto mais delicado da fatia). Sem este caso, uma normalização frouxa transformaria toda a prova de equivalência num carimbo — é o risco nomeado explicitamente no tech-alignment (D3, [DÚVIDA] C)."
+    },
+    {
+      "id": "CT-708",
+      "task_id": "T6",
+      "titulo": "Ao menos um caso renderiza o PDF de fato e prova que a renderização não perde, reordena nem trunca conteúdo",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "Renderizando a representação textual intermediária em PDF real (@react-pdf/renderer) e extraindo o texto de volta (pdfjs-dist), o conteúdo extraído contém, na MESMA ordem relativa, todas as 21 cláusulas e o preâmbulo — nenhum bloco desaparece, nenhum se repete, nenhum troca de posição.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "PROVA DE FALSIFICAÇÃO: composer mutante que omite deliberadamente a cláusula décima quarta (conservação) na composição",
+        "assertion_esperada": "o texto extraído do PDF do mutante NÃO contém o cabeçalho 'CLÁUSULA DÉCIMA QUARTA' — a asserção de presença de todas as 21 cláusulas reprova"
+      },
+      "camada": "packages/documentos (integração com filesystem/renderer real)",
+      "pre_condicoes": [
+        "@react-pdf/renderer e pdfjs-dist instalados como dependências do pacote (pdfjs-dist só em devDependencies, por ser dependência de verificação)"
+      ],
+      "dados_entrada": {
+        "descricao": "um agregado de contrato completo (PF, com RG, sem fiador — o cenário do golden atual)",
+        "valores": {
+          "agregado": "o mesmo do CT-709/golden"
+        }
+      },
+      "passos": [
+        "Compor a representação textual intermediária",
+        "Renderizar o PDF de verdade a partir dela, escrevendo em arquivo temporário (tmpdir real)",
+        "Ler os bytes do PDF gerado e extrair o texto com pdfjs-dist",
+        "Contar as ocorrências dos 21 cabeçalhos de cláusula ('CLÁUSULA PRIMEIRA' a 'CLÁUSULA VIGÉSIMA PRIMEIRA') no texto extraído",
+        "Verificar a ordem relativa dos cabeçalhos"
+      ],
+      "resultado_esperado": "As 21 ocorrências de cabeçalho de cláusula aparecem exatamente uma vez cada, na ordem crescente (PRIMEIRA antes de SEGUNDA antes de TERCEIRA...) — contagem exata 21, nunca 'pelo menos algumas'.",
+      "criterios_aceitacao_validados": [
+        "CA-03"
+      ],
+      "observacoes": "Esta é a ponta (b) do D3: sem ela, o passo que produz o artefato ENTREGUE ao operador (o PDF real) ficaria sem oráculo nenhum — só a representação intermediária seria provada. Escreve em tmpdir real e o remove ao final (não deixa arquivo residual)."
+    },
+    {
+      "id": "CT-709",
+      "task_id": "T5",
+      "titulo": "Igualdade normalizada com o golden contrato-pdf.txt no cenário que ele cobre (PF, sem fiador, com RG)",
+      "tipo": "UNITARIO",
+      "categoria": "integridade_dados",
+      "invariant": "Para os mesmos dados de entrada do contrato de referência capturado no legado, o texto normalizado composto pelo produto é EXATAMENTE igual ao golden normalizado da mesma forma — exceto pelas divergências declaradas antes da execução (extenso em inglês, ligadura ﬁ, quebra de linha do wkhtmltopdf), e nenhuma outra.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "comparação line-by-line fora das linhas de divergência declarada",
+        "assertion_esperada": "toda linha do golden que NÃO está na lista de divergências declaradas é igual, byte a byte após normalização, à linha correspondente do produto — uma linha divergente fora da lista reprova nomeando o número da linha"
+      },
+      "camada": "packages/documentos (unit puro, contra o golden versionado)",
+      "pre_condicoes": [
+        "docs/specs/features/caracterizacao-regras-legadas/v1/golden/contrato-pdf.txt lido do disco, nunca redigitado no teste"
+      ],
+      "dados_entrada": {
+        "descricao": "os dados exatos do contrato de referência do golden (Maria Locadora / Joao Locatario / Imovel PDF-001, aluguel R$ 2.500,00, prazo 12 meses)",
+        "valores": {
+          "locador": "Maria Locadora, MG-1234567, CPF 111.222.333-44",
+          "locatario": "Joao Locatario, MG-7654321, CPF 555.666.777-88",
+          "valorMensal": 2500.0,
+          "prazoMeses": 12
+        }
+      },
+      "passos": [
+        "Ler o golden do disco (nunca redigitar)",
+        "Compor o documento com os dados do cenário de referência",
+        "Normalizar os dois textos (golden e composto) com a MESMA função normalizadora do CT-707",
+        "Comparar linha a linha, excluindo apenas as linhas cobertas pela lista de divergências declaradas"
+      ],
+      "resultado_esperado": "Todas as linhas fora da lista de divergências declaradas são estritamente iguais; a diferença do valor por extenso ('two thousand, five hundred only reais' vs o que o produto produzir) é a ÚNICA classe de divergência tolerada nessa linha, e ela está listada — nenhuma divergência nova aparece.",
+      "criterios_aceitacao_validados": [
+        "CA-03"
+      ],
+      "observacoes": "É o CT-636/CT-637 desta sub-fatia (molde de apps/api/test/equivalencia-com-o-oraculo.spec.ts). O lado do golden é LIDO do arquivo (Gate 6 — fonte externa verificável), nunca redigitado."
+    },
+    {
+      "id": "CT-710",
+      "task_id": "T7",
+      "titulo": "Divergência por vitória — contrato sem PDF no legado é cancelado normalmente no produto (fecha D36)",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "Cancelar um contrato ATIVO no produto depende só das condições de negócio (RD-05: estado ATIVO), nunca da existência de um documento gerado — divergindo deliberadamente do legado, que recusava CTR-CARACT-CAN-SEM-PDF com 'ValidationError: O contrato nao possui PDF privado disponivel'.",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/contratos.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "referência ao golden contrato-cancelamento.json, cenário 'contrato_sem_pdf' — a recusa do legado NÃO é portada",
+        "assertion_esperada": "POST .../cancelamento sobre o contrato ATIVO responde 200 (não 422), sem que exista campo pdfContratoArquivo em lugar nenhum do corpo"
+      },
+      "camada": "apps/api (E2E HTTP real + banco real)",
+      "pre_condicoes": [
+        "sessão real de operador com @ExigeChave('TELA:contratos') concedida pelo caminho real",
+        "contrato criado e ativado pelas rotas reais, sem NENHUM campo de PDF no corpo"
+      ],
+      "dados_entrada": {
+        "descricao": "um contrato ATIVO, criado e ativado sem qualquer campo relacionado a documento",
+        "valores": {
+          "status_antes": "ATIVO"
+        }
+      },
+      "passos": [
+        "Criar e ativar um contrato pelas rotas reais",
+        "POST /v1/contratos/:codigo/cancelamento",
+        "Verificar o status resultante e a ausência de qualquer referência a documento no corpo"
+      ],
+      "resultado_esperado": "200, corpo com status: 'CANCELADO', e Object.keys(corpo) NÃO contém 'pdfContratoArquivo' nem qualquer chave equivalente — divergência declarada e afirmada, fechando o D36 por construção.",
+      "criterios_aceitacao_validados": [
+        "CA-05"
+      ],
+      "observacoes": "O negativo simétrico (cancelar contrato já CANCELADO/RASCUNHO continua recusado com 422) já está coberto pela suíte existente de contratos.e2e.spec.ts (CT-415) e não precisa ser reescrito aqui — Economia de Reuso."
+    },
+    {
+      "id": "CT-711",
+      "task_id": "T3",
+      "titulo": "Contrato sem imóvel é irrepresentável — a impossibilidade é do banco, não de validação de aplicação",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "É estruturalmente impossível gravar uma linha em negocio.contrato com imovel_id nulo — a coluna é NOT NULL e não existe caminho de escrita nesta porta que a omita — de modo que a recusa 'ValidationError: O Contrato nao possui imovel vinculado' do legado não tem equivalente porque o estado que ela recusava não existe.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/contrato.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "INSERT direto em negocio.contrato com imovel_id = NULL (bypassando a porta de aplicação, direto no banco efêmero)",
+        "assertion_esperada": "o banco recusa com erro de NOT NULL constraint (23502) — nunca aceita a linha"
+      },
+      "camada": "packages/db (integração com Postgres real)",
+      "pre_condicoes": [
+        "instância efêmera de banco migrada até a migração corrente"
+      ],
+      "dados_entrada": {
+        "descricao": "tentativa de INSERT com imovel_id nulo",
+        "valores": {
+          "imovel_id": null
+        }
+      },
+      "passos": [
+        "Sob o contexto de uma empresa válida, tentar INSERT INTO negocio.contrato (..., imovel_id, ...) VALUES (..., NULL, ...) direto pelo executor de transação",
+        "Capturar o erro"
+      ],
+      "resultado_esperado": "A instrução rejeita com SQLSTATE 23502 (not_null_violation) nomeando a coluna imovel_id — nunca insere a linha.",
+      "criterios_aceitacao_validados": [
+        "CA-06"
+      ],
+      "observacoes": "Registra, por prova executável, que 'contrato_sem_imovel' é irrepresentável no produto — a divergência declarada não é uma recusa aplicada e sim ausência estrutural do estado, conforme RN-04 e CA-06."
+    },
+    {
+      "id": "CT-712",
+      "task_id": "T3",
+      "titulo": "A coluna pdf_contrato_arquivo não existe mais no catálogo depois da migração 0013",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "Depois de aplicada a migração que remove pdf_contrato_arquivo, o catálogo do PostgreSQL (information_schema.columns) não lista essa coluna para negocio.contrato — a ausência é medida por introspecção, nunca presumida do texto da migração.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/contrato.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "PROVA DE FALSIFICAÇÃO: reintroduzir a coluna (mutante que não aplica a migração 0013 ou a reverte) contra o MESMO teste",
+        "assertion_esperada": "com a coluna presente, a asserção de ausência reprova nomeando 'pdf_contrato_arquivo' encontrada — prova que a asserção detecta o defeito se ele voltar"
+      },
+      "camada": "packages/db (integração com Postgres real)",
+      "pre_condicoes": [
+        "instância efêmera de banco migrada até a migração 0013 (inclusive)"
+      ],
+      "dados_entrada": {
+        "descricao": "consulta ao catálogo por colunas de negocio.contrato",
+        "valores": {}
+      },
+      "passos": [
+        "SELECT column_name FROM information_schema.columns WHERE table_schema='negocio' AND table_name='contrato'",
+        "Verificar que 'pdf_contrato_arquivo' não está no conjunto",
+        "PROVA DE FALSIFICAÇÃO: rodar a mesma consulta contra uma instância NÃO migrada até a 0013 (só até a 0012) e demonstrar que a asserção de ausência REPROVA (a coluna aparece)"
+      ],
+      "resultado_esperado": "Pós-0013: o conjunto de colunas não contém 'pdf_contrato_arquivo' (afirmado por .not.toContain, não por comprimento). Pré-0013 (controle): a coluna aparece, e a mesma asserção reprova — provando que ela detectaria a regressão.",
+      "criterios_aceitacao_validados": [
+        "CA-07"
+      ],
+      "observacoes": "É a métrica nº 2 do PRD ('ausência de qualquer documento armazenado') na sua ponta de banco. No molde do CT-430 (ausência de retirado_em em contrato_fiador)."
+    },
+    {
+      "id": "CT-713",
+      "task_id": "T3",
+      "titulo": "O contrato publicado não aceita nem devolve pdfContratoArquivo — mudança incompatível deliberada",
+      "tipo": "UNITARIO",
+      "categoria": "teste_negativo",
+      "invariant": "esquemaDeContratoNovo recusa um corpo que traga a chave pdfContratoArquivo (chave desconhecida, strictObject), e esquemaDoContrato — a forma de saída — não declara essa chave em sua superfície de tipo.",
+      "owning_layer": "unit",
+      "existing_suite": "packages/contracts/test/esquemas.spec.ts",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "corpo de criação/alteração de contrato com { ..., pdfContratoArquivo: '/algum/caminho.pdf' }",
+        "assertion_esperada": "esquemaDeContratoNovo.safeParse(corpo).success === false, com issues contendo um item de código 'unrecognized_keys' apontando pdfContratoArquivo"
+      },
+      "camada": "packages/contracts (unit puro)",
+      "pre_condicoes": [
+        "nenhuma"
+      ],
+      "dados_entrada": {
+        "descricao": "corpo de contrato válido em todos os outros campos, mais a chave pdfContratoArquivo",
+        "valores": {
+          "pdfContratoArquivo": "/frappe/private/files/contrato.pdf"
+        }
+      },
+      "passos": [
+        "Montar um corpo de ContratoNovo válido acrescido de pdfContratoArquivo",
+        "safeParse contra esquemaDeContratoNovo",
+        "Verificar que a superfície de tipo Contrato (esquemaDoContrato) não expõe a chave"
+      ],
+      "resultado_esperado": "safeParse.success é false; o issue nomeia 'pdfContratoArquivo' como chave desconhecida (unrecognized_keys) — CA-07 provado na ponta do contrato publicado.",
+      "criterios_aceitacao_validados": [
+        "CA-07"
+      ],
+      "observacoes": "Complementa o CT-712 (banco) e o CT-714 (rota) — as TRÊS superfícies que D4 nomeia (migração, camada de dados, contrato publicado) ficam cada uma com prova própria."
+    },
+    {
+      "id": "CT-714",
+      "task_id": "T7",
+      "titulo": "GET /v1/contratos/:codigo/documento devolve bytes de PDF que refletem o dado corrente, sem cache entre pedidos",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "A rota do documento devolve, a cada pedido, bytes compostos a partir do estado GRAVADO naquele instante — pedir duas vezes com uma alteração no meio produz dois PDFs com conteúdo textual (extraído) diferente, refletindo a alteração, sem ato intermediário de regeneração.",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/contratos.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-715",
+        "input_invalido": "ver CT-715 — acesso sem autorização/sessão/empresa correta",
+        "assertion_esperada": "ver CT-715"
+      },
+      "camada": "apps/api (E2E HTTP real + banco real)",
+      "pre_condicoes": [
+        "sessão real de operador com @ExigeChave('TELA:contratos') na empresa dona do contrato, concedida pelo caminho real (sign-in + escreverAjustes sob o contexto real)"
+      ],
+      "dados_entrada": {
+        "descricao": "um contrato ativo, com valorMensal inicial e um PUT de alteração entre os dois GETs",
+        "valores": {
+          "valorMensalInicial": 2500.0,
+          "valorMensalNovo": 2800.0
+        }
+      },
+      "passos": [
+        "GET /v1/contratos/:codigo/documento — capturar os bytes",
+        "PUT /v1/contratos/:codigo alterando valorMensal para o novo valor",
+        "GET /v1/contratos/:codigo/documento de novo — capturar os bytes",
+        "Extrair texto dos dois PDFs (pdfjs-dist) e comparar o trecho da cláusula sétima"
+      ],
+      "resultado_esperado": "Content-Type: application/pdf nos dois pedidos; Content-Disposition sugere um nome de arquivo (ADR-0028); o texto extraído do segundo PDF contém 'R$ 2.800,00' e NÃO contém 'R$ 2.500,00' — prova de que não existe cache/arquivo intermediário entre os dois pedidos.",
+      "criterios_aceitacao_validados": [
+        "CA-02",
+        "CA-07"
+      ],
+      "observacoes": "É a metade end-to-end da prova de ausência de armazenamento (a unitária é CT-702). Cobre também ADR-0028 (mídia + nome sugerido + mesmo envelope de erro)."
+    },
+    {
+      "id": "CT-715",
+      "task_id": "T7",
+      "titulo": "Companheiro negativo — nenhum dos três acessos ilegítimos recebe o documento (outra empresa, sem área, sem sessão)",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "O documento do contrato só é entregue a quem tem sessão válida, alcança a área Contratos, E pertence à empresa dona do contrato — a ausência de qualquer uma das três condições recusa, sem devolver bytes.",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/contratos.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "três pedidos, parametrizados: (a) sessão de empresa B pedindo contrato de A; (b) sessão de A sem a chave TELA:contratos; (c) pedido sem cookie de sessão algum",
+        "assertion_esperada": "os três recebem envelope de erro (nunca bytes de PDF): (a) e (b) 403/404 conforme a semântica existente de acesso negado por escopo; (c) 401 — nenhum tem Content-Type application/pdf"
+      },
+      "camada": "apps/api (E2E HTTP real + banco real)",
+      "pre_condicoes": [
+        "contrato pertencente à empresa A",
+        "sessão de operador da empresa B (sem qualquer chave sobre o contrato de A)",
+        "sessão de operador da empresa A SEM a chave TELA:contratos concedida"
+      ],
+      "dados_entrada": {
+        "descricao": "três pedidos ao mesmo GET .../documento, cada um com uma condição de acesso violada",
+        "valores": {
+          "cenarios": [
+            "outra_empresa",
+            "sem_area_contratos",
+            "sem_sessao"
+          ]
+        }
+      },
+      "passos": [
+        "GET .../documento com cookie da empresa B",
+        "GET .../documento com cookie de operador de A sem a chave TELA:contratos",
+        "GET .../documento sem cookie nenhum",
+        "Verificar Content-Type e corpo de cada resposta"
+      ],
+      "resultado_esperado": "Nenhum dos três tem Content-Type application/pdf; os três devolvem o envelope de erro padrão da ADR-0017 (não bytes) — parametrizado, 3 subcasos em 1 teste.",
+      "criterios_aceitacao_validados": [
+        "CA-08"
+      ],
+      "observacoes": "Companheiro negativo do CT-714. Sanidade: remover qualquer um dos três subcasos deixaria um vetor de vazamento sem cobertura (RN-05)."
+    },
+    {
+      "id": "CT-717",
+      "task_id": "T9",
+      "titulo": "Criar locatário com e-mail dispara a confirmação automática — mesma tarefa do reenvio manual (ADR-0029)",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "Ao criar um locatário com endereço de e-mail, o produto grava o endereço como não confirmado, cria um registro de portador com prazo de 72h e enfileira, na fila de confirmação, a MESMA tarefa que o reenvio manual enfileira — nunca um envio síncrono na borda HTTP.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-718",
+        "input_invalido": "ver CT-718 — alteração de campo que NÃO é o e-mail",
+        "assertion_esperada": "ver CT-718"
+      },
+      "camada": "apps/api (E2E HTTP real) + fila real (BullMQ/Redis efêmero)",
+      "pre_condicoes": [
+        "sessão real de operador com @ExigeChave('TELA:cadastros')",
+        "fila de confirmação efêmera acessível para introspecção (contagem de jobs, nome da fila)"
+      ],
+      "dados_entrada": {
+        "descricao": "corpo de criação de locatário com e-mail válido",
+        "valores": {
+          "email": "locataria.nova@exemplo.com.br"
+        }
+      },
+      "passos": [
+        "POST /v1/locatarios com corpo válido incluindo email",
+        "Ler o locatário criado (GET) e verificar emailConfirmadoEm",
+        "Consultar a tabela negocio.portador_de_confirmacao e a fila de confirmação"
+      ],
+      "resultado_esperado": "201; emailConfirmadoEm é null na leitura; existe exatamente UMA linha em negocio.portador_de_confirmacao para o locatário, com expira_em ~72h à frente e consumido_em nulo; a fila de confirmação recebeu exatamente 1 tarefa nova, com o MESMO nome de fila usado pelo reenvio manual (CT-719).",
+      "criterios_aceitacao_validados": [
+        "CA-09"
+      ],
+      "observacoes": "Justificativa NO_SUITE_FOUND: primeira rota de locatário que dispara efeito assíncrono; molde emprestado de automacao-de-cobranca.e2e.spec.ts (sign-in real + concessão real de chave)."
+    },
+    {
+      "id": "CT-718",
+      "task_id": "T9",
+      "titulo": "Companheiro negativo — alterar campo diferente do e-mail não reseta a confirmação nem enfileira nova tarefa",
+      "tipo": "E2E",
+      "categoria": "teste_negativo",
+      "invariant": "A alteração do locatário dispara confirmação nova SOMENTE quando o e-mail muda de valor — alterar telefone, nome ou endereço com o mesmo e-mail não marca o endereço como não confirmado outra vez nem enfileira tarefa nova.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "PUT alterando só o campo telefone, com o mesmo e-mail já confirmado anteriormente",
+        "assertion_esperada": "emailConfirmadoEm permanece com o MESMO valor de antes (toBe, não toBeTruthy), a contagem crua de negocio.portador_de_confirmacao para o locatário permanece a mesma, e nenhuma tarefa nova aparece na fila"
+      },
+      "camada": "apps/api (E2E HTTP real) + banco real",
+      "pre_condicoes": [
+        "locatário criado e com e-mail já CONFIRMADO (via fluxo real de confirmação)"
+      ],
+      "dados_entrada": {
+        "descricao": "PUT no locatário alterando apenas telefone",
+        "valores": {
+          "telefone": "31999998888"
+        }
+      },
+      "passos": [
+        "Confirmar o e-mail do locatário pelo fluxo real (criar → capturar link → confirmar)",
+        "Registrar emailConfirmadoEm e a contagem de portadores",
+        "PUT /v1/locatarios/:id com corpo completo, telefone alterado e o MESMO e-mail",
+        "Reler emailConfirmadoEm e a contagem de portadores"
+      ],
+      "resultado_esperado": "emailConfirmadoEm antes e depois são EXATAMENTE o mesmo instante (toBe); a contagem de portadores não aumenta; nenhuma tarefa nova é enfileirada.",
+      "criterios_aceitacao_validados": [
+        "CA-09"
+      ],
+      "observacoes": "Sem este caso, uma implementação que reenviasse confirmação a QUALQUER PUT (mesmo sem trocar e-mail) passaria despercebida — regressão de UX que incomodaria o locatário com e-mails repetidos."
+    },
+    {
+      "id": "CT-719",
+      "task_id": "T9",
+      "titulo": "Reenvio manual por operador com área Cadastros — 202 sem desfecho de SMTP, link anterior invalidado",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "POST /v1/locatarios/:id/confirmacao-de-email, exercido por quem alcança TELA:cadastros, cria um portador novo com prazo de 72h, invalida (RN-09) todos os portadores anteriores daquele locatário, e responde 202 com { reenviadoEm, expiraEm } — sem devolver desfecho de entrega de e-mail.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-720",
+        "input_invalido": "ver CT-720 — operador sem área Cadastros",
+        "assertion_esperada": "ver CT-720"
+      },
+      "camada": "apps/api (E2E HTTP real) + banco real",
+      "pre_condicoes": [
+        "locatário criado com e-mail (portador automático já existe)",
+        "sessão de operador com @ExigeChave('TELA:cadastros') concedida pelo caminho real"
+      ],
+      "dados_entrada": {
+        "descricao": "identificador do locatário; corpo vazio",
+        "valores": {}
+      },
+      "passos": [
+        "Criar locatário com e-mail (nasce o portador P1)",
+        "POST /v1/locatarios/:id/confirmacao-de-email",
+        "Verificar corpo e status da resposta",
+        "Consultar negocio.portador_de_confirmacao"
+      ],
+      "resultado_esperado": "202; corpo é EXATAMENTE { reenviadoEm: <ISO-8601>, expiraEm: <ISO-8601 ~72h à frente> } — nenhuma outra chave (Object.keys igual ao par declarado, nunca campo de desfecho de e-mail); P1 passa a ter uma condição de invalidação marcada e um portador novo P2 existe com expiração própria.",
+      "criterios_aceitacao_validados": [
+        "CA-10"
+      ],
+      "observacoes": "Decisão desta sessão (2): o reenvio NÃO devolve desfecho de SMTP — a asserção de igualdade de chaves do corpo é o que torna essa decisão verificável e não apenas declarada."
+    },
+    {
+      "id": "CT-720",
+      "task_id": "T9",
+      "titulo": "Companheiro negativo — operador sem área Cadastros não consegue reenviar",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "POST /v1/locatarios/:id/confirmacao-de-email exige TELA:cadastros — sem essa chave, o pedido é recusado e nada muda no estado do portador nem na fila.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "sessão de operador SEM a chave TELA:cadastros concedida",
+        "assertion_esperada": "403 ACESSO_NEGADO; a contagem crua de portadores do locatário permanece igual à anterior; nenhuma tarefa nova na fila"
+      },
+      "camada": "apps/api (E2E HTTP real) + banco real",
+      "pre_condicoes": [
+        "locatário com e-mail já cadastrado",
+        "sessão de operador SEM TELA:cadastros (perfil USUARIO_EMPRESA sem ajuste, cuja matriz padrão não inclui essa área)"
+      ],
+      "dados_entrada": {
+        "descricao": "mesmo pedido do CT-719, com sessão sem a área",
+        "valores": {}
+      },
+      "passos": [
+        "Registrar a contagem de portadores do locatário antes",
+        "POST /v1/locatarios/:id/confirmacao-de-email com a sessão sem a área",
+        "Reler a contagem de portadores"
+      ],
+      "resultado_esperado": "403 com o envelope { codigo: 'ACESSO_NEGADO', ... } da ADR-0017; a contagem de portadores não muda.",
+      "criterios_aceitacao_validados": [
+        "CA-10"
+      ],
+      "observacoes": "Companheiro do CT-719 — RN-13, catálogo 10×7 permanece fechado (nenhuma ação sensível nova)."
+    },
+    {
+      "id": "CT-721",
+      "task_id": "T11",
+      "titulo": "Confirmação com segredo válido, dentro de 72h, sem sessão — POST público confirma o endereço",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "POST /v1/confirmacoes-de-email, com o segredo válido no CORPO (nunca no caminho) apresentado dentro de 72h e sem qualquer cookie de sessão, marca o endereço do locatário dono do portador como confirmado e responde 200 { confirmado: true }.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-723",
+        "input_invalido": "ver CT-723 — os três modos de recusa indistinguível",
+        "assertion_esperada": "ver CT-723"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "o segredo em claro do link de confirmação, que o produto NUNCA guarda (só o SHA-256 dele)",
+        "caminho_legitimo": "criar o locatário pelo caminho real (POST /v1/locatarios com e-mail), deixar a tarefa automática ser processada pelo worker real contra o capturador de e-mail (a mesma PortaDeEnvioDeEmail da produção, substituída de fora via overrideProvider — nunca um ramo de ambiente no adaptador), e extrair o link/segredo do CONTEÚDO da mensagem capturada em capturador.capturas — exatamente como o locatário real o receberia. Nunca inserir o segredo direto no banco nem fabricar hash compatível.",
+        "teste_analogo": "apps/api/test/automacao-de-cobranca.e2e.spec.ts (arranjo com capturador de e-mail via overrideProvider(TOKEN_PORTA_DE_EMAIL))"
+      },
+      "camada": "apps/api (E2E HTTP real, sem sessão) + banco real + fila/worker reais",
+      "pre_condicoes": [
+        "aplicação instrumentada com capturador de e-mail no lugar do adaptador SMTP",
+        "worker real processando a fila de confirmação contra o mesmo banco efêmero"
+      ],
+      "dados_entrada": {
+        "descricao": "o segredo extraído do e-mail capturado, no CORPO do POST",
+        "valores": {
+          "segredo": "<extraído de capturador.capturas.at(-1).mensagem>"
+        }
+      },
+      "passos": [
+        "Criar locatário com e-mail pelo caminho real",
+        "Aguardar o worker processar a tarefa e capturar a mensagem",
+        "Extrair o segredo do corpo/link da mensagem capturada",
+        "POST /v1/confirmacoes-de-email SEM cookie algum, com { segredo } no corpo",
+        "Reler o locatário (rota com sessão de operador) e verificar emailConfirmadoEm"
+      ],
+      "resultado_esperado": "200 { confirmado: true } (igualdade estrita de corpo, sem campo extra); emailConfirmadoEm do locatário deixa de ser null e passa a ser um instante ISO-8601 válido; o segredo nunca aparece em nenhum log de acesso nem na URL (POST usa corpo, não path/query).",
+      "criterios_aceitacao_validados": [
+        "CA-11"
+      ],
+      "observacoes": "Rota declarada @RotaPublica() — a única sem sessão desta fatia. O molde de capturador de e-mail é o de porta-de-email.ts (não é mock: é implementação legítima da porta, no lugar do adaptador SMTP)."
+    },
+    {
+      "id": "CT-722",
+      "task_id": "T11",
+      "titulo": "Reenvio invalida o link anterior — apresentá-lo depois do reenvio recebe a mesma recusa indistinguível",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "RN-09: reenviar invalida TODOS os portadores anteriores daquele locatário — um link emitido antes do reenvio, mesmo ainda dentro das 72h originais, deixa de confirmar depois que um reenvio aconteceu.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "segredo do PRIMEIRO link, apresentado depois de um reenvio manual (POST .../confirmacao-de-email) ter emitido um segundo link",
+        "assertion_esperada": "a apresentação do primeiro segredo recebe EXATAMENTE a mesma resposta e o mesmo status da recusa indistinguível (CT-723) — e o e-mail permanece não confirmado"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "dois segredos em claro (do primeiro envio automático e do reenvio manual), ambos só existentes nas mensagens capturadas",
+        "caminho_legitimo": "criar locatário (1º segredo capturado) → POST .../confirmacao-de-email como operador com TELA:cadastros (2º segredo capturado) → extrair os dois segredos das duas mensagens em capturador.capturas, nunca do banco",
+        "teste_analogo": "apps/api/test/automacao-de-cobranca.e2e.spec.ts + CT-719/CT-721 deste lote"
+      },
+      "camada": "apps/api (E2E HTTP real, sem sessão para a confirmação) + banco real",
+      "pre_condicoes": [
+        "worker real processando a fila; capturador de e-mail"
+      ],
+      "dados_entrada": {
+        "descricao": "o primeiro segredo emitido, apresentado depois do reenvio",
+        "valores": {}
+      },
+      "passos": [
+        "Criar locatário (captura o 1º segredo)",
+        "Reenviar como operador (captura o 2º segredo; invalida o 1º)",
+        "POST /v1/confirmacoes-de-email com o 1º segredo",
+        "Verificar resposta e estado do locatário",
+        "POST /v1/confirmacoes-de-email com o 2º segredo (controle positivo)",
+        "Verificar que o 2º confirma normalmente"
+      ],
+      "resultado_esperado": "1º segredo: mesma resposta/status da recusa indistinguível (CT-723) e emailConfirmadoEm continua null. 2º segredo: 200 { confirmado: true } e emailConfirmadoEm passa a ter valor — o controle positivo prova que a recusa do 1º não é um defeito geral da rota.",
+      "criterios_aceitacao_validados": [
+        "CA-10"
+      ],
+      "observacoes": "Sem o controle positivo (2º segredo), a recusa do 1º poderia ser causada por qualquer defeito genérico na rota, não especificamente pela invalidação por reenvio."
+    },
+    {
+      "id": "CT-723",
+      "task_id": "T11",
+      "titulo": "Recusa indistinguível — inválido, vencido e consumido-fora-da-validade produzem exatamente a mesma resposta e não alteram estado",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "RN-14: link inválido (nunca existiu), link vencido (>72h) e link consumido apresentado fora da validade produzem exatamente a mesma resposta, byte a byte, e nenhum dos três altera o estado do locatário nem do portador visado.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-721",
+        "input_invalido": "os três modos de recusa, comparados entre si e contra o caso positivo",
+        "assertion_esperada": "as três respostas são idênticas entre si por toStrictEqual (status + corpo), e diferentes da resposta de sucesso do CT-721"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "um portador vencido (>72h) e um portador consumido cuja janela de 72h já passou",
+        "caminho_legitimo": "o portador VENCIDO é obtido criando o locatário pelo caminho real (captura o segredo) e então ajustando o carimbo expira_em daquela linha via UPDATE direto no banco efêmero de teste — no MESMO molde de `lancarEm`/`semearTentativa` de automacao-de-cobranca.e2e.spec.ts, que já retrocede vencimento/carimbo de tentativa por UPDATE direto em fixture de teste. O portador CONSUMIDO-FORA-DA-VALIDADE nasce confirmando pelo caminho real dentro da janela e depois tendo seu expira_em/consumido_em ajustado pelo mesmo mecanismo. Nunca fabricar hash nem inserir portador do zero sem passar pela criação real.",
+        "teste_analogo": "apps/api/test/automacao-de-cobranca.e2e.spec.ts (helper lancarEm, que retrocede data_vencimento por UPDATE direto após criação pela rota real)"
+      },
+      "camada": "apps/api (E2E HTTP real, sem sessão) + banco real",
+      "pre_condicoes": [
+        "worker real e capturador de e-mail"
+      ],
+      "dados_entrada": {
+        "descricao": "três apresentações: segredo aleatório nunca emitido; segredo real com expira_em retrocedido; segredo real consumido com expira_em retrocedido depois do consumo",
+        "valores": {
+          "cenarios": [
+            "nunca_existiu",
+            "vencido",
+            "consumido_fora_da_validade"
+          ]
+        }
+      },
+      "passos": [
+        "Cenário 1: gerar um segredo aleatório (base64url de 256 bits) que nunca foi emitido; POST /v1/confirmacoes-de-email",
+        "Cenário 2: criar locatário, capturar o segredo, retroceder expira_em do portador via UPDATE direto; POST com esse segredo",
+        "Cenário 3: criar outro locatário, capturar o segredo, confirmar normalmente (dentro da validade), depois retroceder expira_em; POST de novo com o MESMO segredo",
+        "Comparar as três respostas entre si e contra a resposta de sucesso do CT-721",
+        "Reler emailConfirmadoEm dos locatários dos cenários 2 e 3"
+      ],
+      "resultado_esperado": "As três respostas são estritamente iguais entre si (mesmo status HTTP e mesmo corpo, sem detalhar qual dos três motivos ocorreu) e diferentes da resposta 200 do CT-721; emailConfirmadoEm do cenário 2 continua null; emailConfirmadoEm do cenário 3 permanece com o instante da primeira confirmação real, NÃO sobrescrito pela segunda tentativa.",
+      "criterios_aceitacao_validados": [
+        "CA-13"
+      ],
+      "observacoes": "Este é o caso mais delicado da fatia (RN-14). A asserção usa toStrictEqual entre as três respostas — nunca comparação campo a campo, que deixaria passar uma diferença não prevista em um campo não conferido. O status/código concretos são os fixados na §10.1 do tech_spec (404 RECURSO_NAO_ENCONTRADO)."
+    },
+    {
+      "id": "CT-724",
+      "task_id": "T11",
+      "titulo": "Reapresentar o mesmo link já consumido, dentro da validade, responde sucesso e não reescreve o instante de confirmação",
+      "tipo": "E2E",
+      "categoria": "caso_extremo",
+      "invariant": "RN-10: apresentar de novo, dentro das 72h, um link já consumido responde sucesso (mesma resposta do CT-721) e não altera NADA — em particular, o instante de emailConfirmadoEm gravado na primeira confirmação permanece byte a byte o mesmo.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-723",
+        "input_invalido": "ver CT-723, cenário 'consumido_fora_da_validade' — o mesmo link fora da janela",
+        "assertion_esperada": "ver CT-723"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "um link já consumido, ainda dentro da janela de 72h original",
+        "caminho_legitimo": "criar locatário pelo caminho real, capturar o segredo do e-mail, confirmar uma vez (POST real), e reapresentar o MESMO segredo em seguida — sem qualquer manipulação de relógio, porque a segunda apresentação acontece na mesma execução, ainda dentro da janela",
+        "teste_analogo": "CT-721 deste mesmo lote (a precondição é o próprio caminho feliz repetido)"
+      },
+      "camada": "apps/api (E2E HTTP real, sem sessão) + banco real",
+      "pre_condicoes": [
+        "worker real e capturador de e-mail"
+      ],
+      "dados_entrada": {
+        "descricao": "o mesmo segredo, apresentado duas vezes em sequência",
+        "valores": {}
+      },
+      "passos": [
+        "Criar locatário, capturar segredo",
+        "POST /v1/confirmacoes-de-email — primeira apresentação",
+        "Ler emailConfirmadoEm (instanteA)",
+        "POST /v1/confirmacoes-de-email — segunda apresentação, mesmo segredo",
+        "Ler emailConfirmadoEm de novo (instanteB)"
+      ],
+      "resultado_esperado": "A segunda apresentação responde 200 { confirmado: true }, igual à primeira; instanteA === instanteB (comparação de string ISO-8601 exata, toBe) — o instante NÃO é reescrito pela segunda apresentação.",
+      "criterios_aceitacao_validados": [
+        "CA-12"
+      ],
+      "observacoes": "É o caso que impede uma pré-visualização de provedor de e-mail (que abre o link automaticamente) de 'queimar' o link antes do locatário de verdade clicar — mitigação central da RN-10."
+    },
+    {
+      "id": "CT-725",
+      "task_id": "T11",
+      "titulo": "Apresentar o valor guardado (o hash) como se fosse o segredo é recusado — não dá para derivar segredo válido do que está guardado",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "RN-11/CA-14: o banco guarda SHA-256(segredo), nunca o segredo; apresentar esse hash no lugar do segredo no corpo do POST é recusado exatamente como qualquer segredo inválido — porque a comparação busca por SHA-256(apresentado), e SHA-256(SHA-256(segredo)) não casa com o valor guardado.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "o hash SHA-256 armazenado, lido diretamente da tabela negocio.portador_de_confirmacao, apresentado como se fosse o segredo",
+        "assertion_esperada": "a mesma resposta de recusa indistinguível do CT-723 (não um erro diferente que revelasse 'isto é um hash, não um segredo')"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "o valor armazenado na coluna do derivado (SHA-256) de um portador real",
+        "caminho_legitimo": "criar locatário pelo caminho real e ler a coluna do derivado via consulta direta ao banco efêmero de teste, no molde de qualquer leitura de asserção de estado já usada nos demais casos (ex.: contarPoliticas em automacao-de-cobranca.e2e.spec.ts). Não é precondição PRIVILEGIADA no sentido de exigir sessão — é leitura de coluna de tabela, legítima em teste de integração.",
+        "teste_analogo": "packages/db/test/politica-de-aviso.spec.ts (leitura direta de coluna para montar asserção/precondição)"
+      },
+      "camada": "apps/api (E2E HTTP real, sem sessão) + banco real",
+      "pre_condicoes": [
+        "worker real e capturador de e-mail"
+      ],
+      "dados_entrada": {
+        "descricao": "o valor da coluna derivado (hash) apresentado como segredo",
+        "valores": {}
+      },
+      "passos": [
+        "Criar locatário pelo caminho real",
+        "Ler diretamente a coluna do derivado (hash) da linha de portador recém-criada",
+        "POST /v1/confirmacoes-de-email com esse hash no lugar do segredo",
+        "Comparar a resposta com a do CT-723"
+      ],
+      "resultado_esperado": "Resposta idêntica (toStrictEqual) à recusa indistinguível do CT-723; emailConfirmadoEm permanece null.",
+      "criterios_aceitacao_validados": [
+        "CA-14"
+      ],
+      "observacoes": "Prova direta de RN-11 ('o que o sistema guarda não permite reconstruir o segredo') — sem este caso, um defeito que comparasse hash-com-hash em vez de derivar o apresentado passaria despercebido. ⚠️ Nota do arquiteto: com o molde do esquema fechado em [A-Za-z0-9_-]{43}, o hash hexadecimal de 64 caracteres é recusado já pelo esquema (422). O caso deve afirmar a recusa em AMBAS as camadas, ou declarar explicitamente qual das duas está exercitando."
+    },
+    {
+      "id": "CT-726",
+      "task_id": "T11",
+      "titulo": "Isolamento — o link de um locatário confirma só o dono dele, sem que o pedido informe empresa",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Apresentar o link de confirmação do locatário da empresa A não altera, sob hipótese alguma, o estado de nenhum locatário da empresa B — e a rota nunca recebe identificador de empresa em nenhum lugar do pedido (nem corpo, nem query, nem cabeçalho custom).",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "corpo do POST com um campo extra empresaId, tentando influenciar o contexto",
+        "assertion_esperada": "o esquema de entrada do POST público (strictObject) recusa a chave desconhecida com 422 — o contexto de empresa nunca muda por causa dela; o par correto continua sendo resolvido só pelo segredo"
+      },
+      "camada": "apps/api (E2E HTTP real, sem sessão) + banco real",
+      "pre_condicoes": [
+        "dois locatários, um da empresa A e outro da empresa B, cada um com portador próprio, pelo caminho real"
+      ],
+      "dados_entrada": {
+        "descricao": "o segredo do locatário de A, apresentado uma vez com corpo simples e uma vez com empresaId de B injetado",
+        "valores": {
+          "segredoDeA": "<extraído da mensagem capturada de A>"
+        }
+      },
+      "passos": [
+        "Criar locatário na empresa A (captura segredoA) e locatário na empresa B (captura segredoB)",
+        "POST /v1/confirmacoes-de-email com { segredo: segredoA }",
+        "Ler o locatário de A (sessão de operador de A) e o de B (sessão de operador de B)",
+        "Repetir com { segredo: segredoA, empresaId: <id de B> } (tentativa de influência)"
+      ],
+      "resultado_esperado": "Depois da primeira apresentação: locatário de A confirmado; locatário de B continua não confirmado. Depois da tentativa com empresaId injetado: o pedido é recusado pelo strictObject (422) e, em qualquer caso, o estado de B permanece inalterado.",
+      "criterios_aceitacao_validados": [
+        "CA-15"
+      ],
+      "observacoes": "Prova RN-12 (contexto vem do registro que o portador resolve, nunca da requisição) na ponta observável pela API."
+    },
+    {
+      "id": "CT-727",
+      "task_id": "T8",
+      "titulo": "A função SECURITY DEFINER que resolve o portador não aceita empresa por parâmetro e devolve só o necessário",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "A função SECURITY DEFINER de superfície mínima que resolve o portador (D5) recebe apenas o derivado do segredo e devolve, no máximo, o par {empresaId, locatarioId} (mais o carimbo de consumo) ou vazio — a assinatura não tem parâmetro de empresa, tornando o pedido cruzado irrepresentável pela própria função.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/contrato.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-728",
+        "input_invalido": "ver CT-728 — derivado inexistente",
+        "assertion_esperada": "ver CT-728"
+      },
+      "camada": "packages/db (integração com Postgres real, introspecção de catálogo)",
+      "pre_condicoes": [
+        "instância efêmera migrada até a migração 0014 (portador de confirmação)"
+      ],
+      "dados_entrada": {
+        "descricao": "introspecção de pg_proc/information_schema.routines para a função de resolução do portador",
+        "valores": {}
+      },
+      "passos": [
+        "Consultar information_schema.parameters para a função de resolução do portador",
+        "Verificar a lista de parâmetros (deve conter só o derivado; não deve conter empresa_id nem qualquer variante)",
+        "Chamar a função com um derivado real (de um portador válido) e verificar que ela devolve exatamente as colunas mínimas necessárias — nenhum campo extra (não devolve o próprio hash, não devolve expira_em, não devolve dados do locatário além do id)",
+        "PROVA DE FALSIFICAÇÃO: um mutante da função que aceitasse empresa_id por parâmetro reprovaria a asserção de lista de parâmetros"
+      ],
+      "resultado_esperado": "A lista de parâmetros da função é EXATAMENTE ['p_derivado'] — sem qualquer parâmetro de empresa; o conjunto de colunas devolvidas é EXATAMENTE o declarado na §7.3 do tech_spec (empresa_id, locatario_id, consumido_em), por igualdade de conjunto ordenado, nunca 'inclui pelo menos'.",
+      "criterios_aceitacao_validados": [
+        "CA-15"
+      ],
+      "observacoes": "No molde do CT-406 (introspecção do catálogo provando ausência de parâmetro de empresa nas funções de série de contrato). D5 é o ponto mais delicado desta metade da fatia."
+    },
+    {
+      "id": "CT-728",
+      "task_id": "T8",
+      "titulo": "Companheiro negativo — derivado inexistente devolve vazio, sem revelar 'não existe' vs 'expirou' também na camada de dados",
+      "tipo": "SEGURANCA",
+      "categoria": "teste_negativo",
+      "invariant": "Chamar a função de resolução do portador com um derivado que não corresponde a portador algum devolve conjunto vazio (nunca erro nomeado, nunca exceção que revele a causa) — a indistinguibilidade de RN-14 vale também na camada de banco, não só na borda HTTP.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/contrato.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "SHA-256 de uma string aleatória que nunca foi gravada como derivado de portador algum",
+        "assertion_esperada": "a função devolve zero linhas, sem levantar exceção alguma"
+      },
+      "camada": "packages/db (integração com Postgres real)",
+      "pre_condicoes": [
+        "instância efêmera migrada até a migração 0014"
+      ],
+      "dados_entrada": {
+        "descricao": "um derivado (hash) que nunca foi gravado",
+        "valores": {}
+      },
+      "passos": [
+        "Gerar um SHA-256 de uma string aleatória",
+        "Chamar a função de resolução do portador com esse derivado",
+        "Comparar com a chamada usando o derivado de um portador VENCIDO (também deve devolver vazio, pela mesma via)",
+        "Comparar com a chamada usando o derivado de um portador INVALIDADO por reenvio (idem)"
+      ],
+      "resultado_esperado": "As três chamadas (derivado nunca existiu, derivado de portador vencido, derivado de portador invalidado) devolvem o MESMO resultado vazio, sem exceção — nenhuma delas é distinguível da outra pela função.",
+      "criterios_aceitacao_validados": [
+        "CA-13"
+      ],
+      "observacoes": "Companheiro do CT-727; garante que a indistinguibilidade de RN-14 não depende só da borda HTTP tratar igual dois erros diferentes — ela já nasce indistinguível na fonte."
+    },
+    {
+      "id": "CT-729",
+      "task_id": "T8",
+      "titulo": "O segredo é gerado por fonte criptográfica de 256 bits e o banco nunca guarda o valor em claro",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "O gerador do segredo usa node:crypto (fonte criptográfica), produz 256 bits de entropia transportados em base64url; a coluna que guarda o portador nunca contém o segredo em claro — só o SHA-256 dele, sob restrição de unicidade.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "PROVA DE FALSIFICAÇÃO: varredura estática do código de geração do portador procurando gravação do segredo em claro (grep por INSERT que referencie a variável do segredo bruto em vez do hash)",
+        "assertion_esperada": "a varredura não encontra nenhuma instrução de escrita que grave o segredo em claro; um mutante que acrescentasse `segredo` (não `hash`) ao INSERT faria a varredura reprovar, nomeando o arquivo"
+      },
+      "camada": "packages/db (unit do gerador + integração com Postgres real para a coluna)",
+      "pre_condicoes": [
+        "instância efêmera migrada"
+      ],
+      "dados_entrada": {
+        "descricao": "geração de dois segredos consecutivos",
+        "valores": {}
+      },
+      "passos": [
+        "Gerar dois segredos com a função de geração (randomBytes(32) ou equivalente)",
+        "Verificar o comprimento decodificado (32 bytes = 256 bits) e que os dois são diferentes",
+        "Gravar um portador e ler a coluna correspondente diretamente do banco",
+        "Verificar que o valor gravado NÃO é igual ao segredo em claro (é o SHA-256 dele)",
+        "PROVA DE FALSIFICAÇÃO: grep no módulo de gravação do portador por qualquer referência à variável do segredo bruto fora do cálculo do hash"
+      ],
+      "resultado_esperado": "randomBytes(32) produz 32 bytes; dois segredos consecutivos são diferentes; a coluna gravada é igual a createHash('sha256').update(segredo).digest('hex'), NUNCA igual ao segredo; a varredura estática não encontra ocorrência de gravação em claro.",
+      "criterios_aceitacao_validados": [
+        "CA-14"
+      ],
+      "observacoes": "Cobre D6 (aleatório de 256 bits, SHA-256 indexado, sem derivação cara — desnecessária para alta entropia)."
+    },
+    {
+      "id": "CT-730",
+      "task_id": "T8",
+      "titulo": "A régua continua avisando os dois locatários (confirmado e não confirmado) exatamente como antes — sem regressão na sub-fatia irmã",
+      "tipo": "INTEGRACAO",
+      "categoria": "integracao",
+      "invariant": "O estado de confirmação de e-mail do locatário NÃO participa do predicado de elegibilidade ao aviso (selecionarCandidatasAoAviso) — dois locatários com cobrança elegível, um confirmado e outro não, são AMBOS selecionados e avisados exatamente como a sub-fatia regua-de-cobranca já provou.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/execucao-da-regua.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "cenário com um locatário CONFIRMADO e uma cobrança elegível — a suspeita a afastar é que uma implementação errada excluísse o confirmado (ou o não confirmado) do predicado",
+        "assertion_esperada": "os dois aparecem no conjunto de candidatas selecionadas, sem distinção — a contagem de candidatas é a MESMA com e sem a coluna de confirmação populada"
+      },
+      "camada": "packages/db (integração com Postgres real, réplica do molde de execucao-da-regua.spec.ts)",
+      "pre_condicoes": [
+        "política de aviso ativa e dentro da janela",
+        "dois locatários com cobrança vencida elegível: um com email_confirmado_em preenchido, outro com null"
+      ],
+      "dados_entrada": {
+        "descricao": "duas cobranças elegíveis, cada uma de um locatário com estado de confirmação diferente",
+        "valores": {
+          "locatarioConfirmado": true,
+          "locatarioNaoConfirmado": true
+        }
+      },
+      "passos": [
+        "Semear os dois cenários (via caminho real de dados, no molde já provado pela suíte de execução da régua)",
+        "Chamar selecionarCandidatasAoAviso sob o contexto da empresa",
+        "Verificar que as duas cobranças aparecem no conjunto de candidatas"
+      ],
+      "resultado_esperado": "O conjunto de candidatas contém as DUAS cobranças (por código), independentemente do estado de confirmação do locatário dono de cada uma — igualdade de conjunto, não 'pelo menos uma'.",
+      "criterios_aceitacao_validados": [
+        "CA-16"
+      ],
+      "observacoes": "Prova regressiva explícita — a sub-fatia irmã (régua) não é tocada por esta feature, e este caso é a rede que garante isso na ponta mais sensível (RD-06/predicado). ⚠️ Este é o caso que provavelmente FECHA o débito D13 (F3/T5), cujo gatilho é 'a primeira suíte que precisar da política como precondição sem ser objeto'."
+    },
+    {
+      "id": "CT-731",
+      "task_id": "T2",
+      "titulo": "esquemaDoLocatario publica emailConfirmadoEm; esquemaDaPessoa (locador/fiador) permanece intacto",
+      "tipo": "UNITARIO",
+      "categoria": "fronteira",
+      "invariant": "esquemaDoLocatario = esquemaDaPessoa.extend({ emailConfirmadoEm }) é publicado SÓ pelas 6 rotas de locatário; locador e fiador continuam usando esquemaDaPessoa sem o campo — um locador com o campo emailConfirmadoEm no corpo de resposta seria uma regressão de forma.",
+      "owning_layer": "unit",
+      "existing_suite": "packages/contracts/test/esquemas.spec.ts",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "parse de um objeto de locador que contenha emailConfirmadoEm, contra esquemaDaPessoa (não esquemaDoLocatario)",
+        "assertion_esperada": "o resultado de esquemaDaPessoa.parse não expõe emailConfirmadoEm nas chaves — a serialização de saída de locador/fiador NUNCA inclui essa chave, ainda que presente no objeto de entrada"
+      },
+      "camada": "packages/contracts (unit puro)",
+      "pre_condicoes": [
+        "nenhuma"
+      ],
+      "dados_entrada": {
+        "descricao": "um objeto de pessoa válido, com emailConfirmadoEm extra",
+        "valores": {
+          "emailConfirmadoEm": "2026-08-12T10:00:00.000Z"
+        }
+      },
+      "passos": [
+        "esquemaDoLocatario.parse de um locatário com emailConfirmadoEm válido → sucesso, campo presente no resultado",
+        "esquemaDaPessoa.parse do MESMO objeto (papel locador) → o campo NÃO aparece nas chaves do resultado"
+      ],
+      "resultado_esperado": "Object.keys do resultado de esquemaDoLocatario.parse contém 'emailConfirmadoEm'; Object.keys do resultado de esquemaDaPessoa.parse NÃO contém 'emailConfirmadoEm' — os dois por igualdade de conjunto de chaves, nunca 'inclui pelo menos'.",
+      "criterios_aceitacao_validados": [
+        "CA-16"
+      ],
+      "observacoes": "Materializa a Decisão desta sessão (1). A prova end-to-end de que a rota real de locatário publica o campo é implícita nos CT-717/718/721, que leem emailConfirmadoEm por HTTP real."
+    },
+    {
+      "id": "CT-732",
+      "task_id": "T12",
+      "titulo": "Dupla medição independente da superfície — 3 rotas novas, 89 pares / 74 manipuladores, semDeclaracao vazio",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "Medida pelo roteador e pela composição, a superfície publicada cresce de 86/71 para EXATAMENTE 89 pares / 74 manipuladores, as duas medições concordam entre si, e o conjunto semDeclaracao permanece vazio — as três rotas novas (documento, confirmação manual, confirmação pública) declaram exigência (ou @RotaPublica) por extenso.",
+      "owning_layer": "unit",
+      "existing_suite": "apps/api/test/cobertura-de-autorizacao.e2e.spec.ts",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "mutante: uma das três rotas registrada sem @ExigeChave nem @RotaPublica",
+        "assertion_esperada": "cobertura.semDeclaracao deixa de ser [] e nomeia { metodo, caminho, controlador } da rota ofensora — nunca um comprimento genérico"
+      },
+      "camada": "apps/api (introspecção da tabela do roteador + composição, no molde do CT-635)",
+      "pre_condicoes": [
+        "aplicação Nest inicializada (init(), sem listen()) — suficiente para a tabela do roteador"
+      ],
+      "dados_entrada": {
+        "descricao": "o inventário declarado das 3 rotas da sub-fatia, afirmado antes de comparar",
+        "valores": {
+          "rotas": [
+            {
+              "metodo": "GET",
+              "caminho": "/v1/contratos/:codigo/documento"
+            },
+            {
+              "metodo": "POST",
+              "caminho": "/v1/locatarios/:id/confirmacao-de-email"
+            },
+            {
+              "metodo": "POST",
+              "caminho": "/v1/confirmacoes-de-email"
+            }
+          ]
+        }
+      },
+      "passos": [
+        "Afirmar que o inventário desta sub-fatia tem exatamente 3 pares (sanidade antes de comparar)",
+        "verificarCoberturaDeAutorizacao(aplicacaoReal) — leitura pelo roteador",
+        "Medição independente pela composição (rotasDaTabelaDoRoteador + manipuladores publicados)",
+        "Comparar as duas medições entre si e contra o total esperado, afirmando a igualdade entre os dois eixos explicitamente",
+        "Verificar semDeclaracao vazio e o conteúdo exato da exigência de cada uma das 3 rotas"
+      ],
+      "resultado_esperado": "As duas medições concordam: 89 pares / 74 manipuladores nas duas. cobertura.semDeclaracao é []. A rota do documento exige TELA:contratos (herdada da classe); a de reenvio exige TELA:cadastros (herdada da classe, sem ação nova); a de confirmação pública está em cobertura.publicas.",
+      "criterios_aceitacao_validados": [
+        "CA-17"
+      ],
+      "observacoes": "Molde direto do CT-635/CT-533/CT-427. A ordem 86→89 e 71→74 é a mesma que o pré-refinamento e o PRD fixam (3 rotas novas; o disparo automático é evento interno, não rota)."
+    },
+    {
+      "id": "CT-733",
+      "task_id": "T12",
+      "titulo": "Nenhuma verificação alcança destinatário real; nenhuma escreve no sistema antigo; suíte cresce monotonicamente por pacote a partir de 1004",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "Toda a suíte nova desta sub-fatia usa exclusivamente o capturador de e-mail (nunca um adaptador SMTP real) e nenhum caso de teste emite comando de escrita contra /opt/frappe — e a contagem de casos por pacote (pnpm --filter <pacote> test) não diminui em nenhum pacote entre o baseline (1004) e o fim da fatia.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "PROVA DE FALSIFICAÇÃO: varredura estática (grep) sobre os arquivos de teste novos desta sub-fatia procurando por nodemailer.createTransport com host real, ou por qualquer comando docker compose exec ... bench ... com verbo de escrita (insert/save/delete) contra o site 'frontend'",
+        "assertion_esperada": "a varredura não encontra ocorrência alguma; um arquivo de teste mutante com uma dessas duas formas faz a varredura reprovar, nomeando o arquivo:linha"
+      },
+      "camada": "deploy/scripts (shell, varredura estática) + orquestração de pnpm --filter",
+      "pre_condicoes": [
+        "todos os arquivos de teste novos desta sub-fatia versionados"
+      ],
+      "dados_entrada": {
+        "descricao": "os caminhos dos arquivos de teste novos (packages/documentos/test, packages/db/test/portador-de-confirmacao.spec.ts, apps/api/test/confirmacao-de-email.e2e.spec.ts, apps/worker/test/confirmacao-de-email.spec.ts)",
+        "valores": {}
+      },
+      "passos": [
+        "Rodar pnpm test (por pacote) e registrar a contagem de casos verdes por pacote — comparar com o baseline de 1004",
+        "grep -rn 'createTransport\\|nodemailer' nos arquivos de teste novos — deve encontrar SÓ o uso do capturador, nunca configuração de host SMTP real",
+        "grep -rn 'docker compose exec' nos arquivos de teste novos — não deve haver nenhuma ocorrência (toda leitura ao legado, se houver, mora em deploy/scripts/caracterizacao, não em teste de aplicação)",
+        "PROVA DE FALSIFICAÇÃO: inserir num arquivo de cópia um `nodemailer.createTransport({host: 'smtp.real.com'})` e demonstrar que a varredura reprova"
+      ],
+      "resultado_esperado": "Contagem por pacote é monotonicamente crescente ou igual (nunca menor) em relação a 1004; as duas varreduras não encontram ocorrência nos arquivos reais; a cópia mutante faz a varredura reprovar nomeando o arquivo.",
+      "criterios_aceitacao_validados": [
+        "CA-18"
+      ],
+      "observacoes": "É a materialização executável de RN-16. Justificativa NO_SUITE_FOUND: nenhum verificador shell existente cobre especificamente 'nenhuma verificação de teste alcança SMTP real' — proposta de script novo deploy/scripts/documentos/verificar-isolamento-de-verificacao.sh."
+    },
+    {
+      "id": "CT-734",
+      "task_id": "T10",
+      "titulo": "O processador da tarefa de confirmação exige os campos obrigatórios na carga e recusa carga malformada antes de qualquer leitura",
+      "tipo": "INTEGRACAO",
+      "categoria": "tratamento_erro",
+      "invariant": "No molde de processarReguaDeCobranca, o processador da tarefa de confirmação valida a carga por esquema ANTES de abrir contexto de tenant; carga sem os campos obrigatórios é recusada nomeando o(s) campo(s) faltante(s), sem revelar o conteúdo recebido, e sem executar leitura alguma no banco.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "carga { empresaId: '<uuid válido>' } sem os demais campos obrigatórios",
+        "assertion_esperada": "a chamada lança ANTES de qualquer emUnidadeDeTrabalho — nenhuma tentativa de leitura no banco ocorre, e a mensagem nomeia os campos faltantes"
+      },
+      "camada": "apps/worker (integração com fila e banco reais)",
+      "pre_condicoes": [
+        "fila e banco efêmeros reais; um portador real criado pelo caminho HTTP"
+      ],
+      "dados_entrada": {
+        "descricao": "duas cargas: uma válida completa, uma incompleta",
+        "valores": {
+          "cargaValida": {
+            "empresaId": "<uuid>",
+            "locatarioId": "<uuid>",
+            "segredo": "<43 chars base64url>"
+          },
+          "cargaInvalida": {
+            "empresaId": "<uuid>"
+          }
+        }
+      },
+      "passos": [
+        "Processar a tarefa com a cargaValida (criada pelo fluxo real de criação de locatário) — deve completar sem erro e a mensagem chega ao capturador",
+        "Processar a tarefa com a cargaInvalida — deve lançar antes de qualquer leitura",
+        "Verificar que nenhuma linha de negocio.portador_de_confirmacao foi tocada pela chamada com carga inválida"
+      ],
+      "resultado_esperado": "cargaValida: processamento completa e o e-mail chega ao capturador. cargaInvalida: lança Error nomeando os campos faltantes (nunca o conteúdo de empresaId); nenhuma consulta ao banco foi disparada por essa chamada.",
+      "criterios_aceitacao_validados": [
+        "CA-09"
+      ],
+      "observacoes": "Espelha empresaDaCarga de apps/worker/src/tarefas/regua.ts — mesma disciplina: a recusa nomeia o campo, nunca o valor recebido (valor pode ser dado de outra empresa). ⚠️ Nota do arquiteto: a §4.3 do tech_spec fixa a forma exata da carga; ajuste os nomes dos campos ao que ela declara."
+    }
+  ],
+  "cenarios_nao_cobertos": [
+    {
+      "descricao": "Termo canônico para a 'marca de cancelamento' (o glossário já usa Carimbo com outro sentido)",
+      "motivo": "Delegado ao challenge/SDD (`[DELEGAR_TECH_SPEC]` no PRD §9) — não é decisão testável até o termo ser canonizado; CT-706 usa o termo provisório do PRD."
+    },
+    {
+      "descricao": "Registro explícito no artefato de que o link de confirmação aponta para uma página fora deste repositório (F6)",
+      "motivo": "É item de handoff/documentação, não comportamento executável — não gera caso de teste."
+    },
+    {
+      "descricao": "Prazo de vida do registro do portador depois de consumido/vencido (retenção)",
+      "motivo": "Fora de escopo desta sub-fatia por decisão (retenção é F7); os testes deste lote provam que o registro CONTINUA existindo depois de consumido (RN-10), não a retenção dele."
+    },
+    {
+      "descricao": "Limitador de taxa na rota pública de confirmação",
+      "motivo": "Explicitamente fora de escopo (depende de origem confiável só disponível na F7); a mitigação testada aqui é uso único + expiração."
+    },
+    {
+      "descricao": "Perda da mensagem quando o processo morre entre o COMMIT e o enfileiramento (§9.2 do tech_spec)",
+      "motivo": "Janela declarada e aceita por decisão (D8/YAGNI sobre outbox); a rede de produto é a RN-13 (reenvio manual), já coberta por CT-719."
+    }
+  ],
+  "recomendacoes": [
+    "A T1 desta fatia (CA-01, CT-701) deve rodar ANTES de qualquer outra — é a única com janela que fecha (o /opt/frappe é desligado na F7), no mesmo padrão que fez a T1 da fatia regua-de-cobranca ser tratada como prioridade.",
+    "O veredito escrito ANTES da execução para 'contrato_sem_pdf' (CA-05, portado por vitória — CT-710) e 'contrato_sem_imovel' (CA-06, irrepresentável — CT-711) deve ser redigido e revisado ANTES de qualquer código de cancelamento ser tocado — descobrir a divergência durante a execução é falha de método por RN-15. (Já redigido na §21.1 do tech_spec, DV-01 a DV-07.)",
+    "Considerar mover a prova de falsificação da normalização (CT-707) e da renderização real (CT-708) para o início do desenvolvimento do pacote @sysloc/documentos: são as duas provas mais caras de reconstruir depois, e é onde o pré-refinamento nomeia o maior risco da fatia (D3).",
+    "O nome exato da tabela/módulo de portador de confirmação está fixado na §7.2 e na §3.5 do tech_spec (negocio.portador_de_confirmacao e packages/db/src/portador-de-confirmacao.ts) — os CTs deste lote usam esse nome por convenção do gerador, e ele foi confirmado pelo arquiteto.",
+    "Nenhum teste deste lote depende de esperar 72h de verdade — todos os cenários de vencimento usam o padrão já provado em automacao-de-cobranca.e2e.spec.ts (UPDATE direto no carimbo, depois de criar a linha pelo caminho real). Preserve esse padrão na implementação; não crie mecanismo de 'avançar o relógio' novo.",
+    "Nota do arquiteto: a numeração dos CT pula o CT-716 (o lote vai de CT-701 a CT-715 e de CT-717 a CT-734). O vão é intencional e preservado — renumerar dessincronizaria este JSON das tabelas do tech_spec sem ganho algum."
+  ],
+  "mock_budget_observado": true,
+  "gates_aplicados": [
+    "invariant_first",
+    "owning_layer",
+    "real_execution",
+    "failure_means_fix_production",
+    "no_snapshot_without_contract",
+    "no_self_set_mock_assertion",
+    "negative_companion"
+  ]
+}

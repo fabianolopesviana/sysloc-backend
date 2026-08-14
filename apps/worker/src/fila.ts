@@ -44,8 +44,10 @@
  */
 
 import {
+  type CargaDaConfirmacao,
   type CargaDaRegua,
   type CargaDoEco,
+  FILA_DA_CONFIRMACAO,
   FILA_DA_REGUA,
   FILA_DO_ECO,
   type Logger,
@@ -98,6 +100,15 @@ export type TarefaDeEco = Job<CargaDoEco, string>;
 export type TarefaDaRegua = Job<CargaDaRegua, void>;
 
 /**
+ * Uma tarefa de entrega de confirmação de endereço, como o processador a recebe.
+ *
+ * Ela é a **primeira** tarefa deste processo com produtor em produção: quem enfileira é a borda HTTP
+ * (`apps/api`), pelos dois gatilhos que convergem no mesmo caminho. O tipo da carga vem de
+ * `@sysloc/shared`, e não é redigitado aqui — ver o cabeçalho.
+ */
+export type TarefaDaConfirmacao = Job<CargaDaConfirmacao, void>;
+
+/**
  * Como o encerramento terminou.
  *
  * O desfecho é DEVOLVIDO a quem pediu, em vez de ficar guardado aqui, porque a decisão que ele
@@ -145,6 +156,16 @@ export interface Fila {
    * registrado pela composição raiz, com {@link processar}.
    */
   readonly regua: Queue<CargaDaRegua, void>;
+  /**
+   * Lado produtor da fila da confirmação de endereço de e-mail, com a mesma política de repetição.
+   *
+   * Ele nasce aqui **mesmo sendo a borda HTTP quem enfileira em produção**, e a razão é o
+   * encerramento: quem constrói é quem devolve, e uma fila cujo produtor deste processo não
+   * existisse deixaria o consumidor sem o caminho tipado de {@link processar} — o nome viraria
+   * cadeia, e a conferência do par carga/resultado deixaria de existir. O produtor da borda é outro
+   * objeto, em outro processo, sobre o **mesmo** contrato de `@sysloc/shared`.
+   */
+  readonly confirmacao: Queue<CargaDaConfirmacao, void>;
   /**
    * Registra o processador de uma das filas **deste** módulo. Ele passa a consumir de imediato.
    *
@@ -206,6 +227,10 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
     connection: conexao,
     defaultJobOptions: OPCOES_PADRAO_DA_TAREFA,
   });
+  const confirmacao = new Queue<CargaDaConfirmacao, void>(FILA_DA_CONFIRMACAO, {
+    connection: conexao,
+    defaultJobOptions: OPCOES_PADRAO_DA_TAREFA,
+  });
 
   // Nível de diagnóstico, e não de alerta: o que a fila emite aqui é o MESMO defeito de conexão
   // que o cliente acima já reportou uma vez, repassado adiante. O ouvinte existe para o evento
@@ -214,6 +239,7 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
   for (const [nome, produtor] of [
     [FILA_DO_ECO, eco],
     [FILA_DA_REGUA, regua],
+    [FILA_DA_CONFIRMACAO, confirmacao],
   ] as const) {
     produtor.on('error', (erro: Error) => {
       logger.debug({ erro, origem: 'fila', fila: nome }, 'a fila repassou uma falha da conexão');
@@ -253,6 +279,7 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
 
     await eco.close();
     await regua.close();
+    await confirmacao.close();
   };
 
   /** O encerramento já pedido, se houver. Ver {@link Fila.encerrar}. */
@@ -289,7 +316,7 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
         // `devolverGraciosamente` fecha, e não de literais — uma fila acrescentada ao encerramento
         // não tem como ficar de fora daqui.
         logger.error(
-          { limiteMs: LIMITE_DE_DESLIGAMENTO_MS, filas: [eco.name, regua.name] },
+          { limiteMs: LIMITE_DE_DESLIGAMENTO_MS, filas: [eco.name, regua.name, confirmacao.name] },
           'o encerramento excedeu o limite — devolvendo a conexão sem esperar o restante',
         );
       }
@@ -312,6 +339,7 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
   return {
     eco,
     regua,
+    confirmacao,
 
     processar<Carga, Resultado>(
       produtor: Queue<Carga, Resultado>,

@@ -237,8 +237,11 @@ export type PoliticaDeAvisoNova = z.infer<typeof esquemaDaPoliticaDeAvisoNova>;
  * (RD-03). É o que faz a leitura concordar com o que a passagem da régua faz — nada.
  *
  * **Ele é `z.object`, e o irmão de entrada é `strictObject` — a assimetria é a convenção, não
- * descuido.** Todo esquema de SAÍDA deste pacote é aberto e todo esquema de ENTRADA é fechado, sem
- * exceção. A razão está por extenso no cabeçalho de `./configuracao-de-mora.ts`: pela **ADR-0016** o
+ * descuido.** Todo esquema de SAÍDA deste pacote é aberto e todo esquema de ENTRADA é fechado, com
+ * **uma única exceção registrada** — as duas respostas de `./confirmacao-de-email.ts`, onde o
+ * conjunto fechado de chaves **é** o conteúdo do contrato. A razão da convenção está por extenso no
+ * cabeçalho de `./configuracao-de-mora.ts`, e o discriminador da exceção também — é lá que se
+ * confere se um esquema de saída novo pode fechar, **antes** de fechá-lo: pela **ADR-0016** o
  * documento OpenAPI **deriva** daqui, e um `strictObject` emite `additionalProperties: false` — um
  * cliente gerado passaria a recusar campo acrescentado no futuro nestas rotas, enquanto tolera o
  * mesmo acréscimo em todas as outras.

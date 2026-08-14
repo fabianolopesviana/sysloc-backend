@@ -38,10 +38,21 @@
  * | CA-02    | CT-620 | Duas empresas com políticas divergentes avisam conjuntos **diferentes**: A
  * | CA-12    |        | avisa **2** e B avisa **0**, com as contagens cruas `3` e `1` sob cada
  * |          |        | contexto. Os códigos capturados são afirmados por igualdade de lista ordenada. |
+ * | CA-16    | CT-730 | ⚠️ **Da T8 da fatia `documentos-e-confirmacao`, e é prova REGRESSIVA**: o
+ * | (2b)     |        | estado de confirmação de e-mail do locatário **não** participa do predicado de
+ * |          |        | elegibilidade. Com dois locatários com cobrança elegível, o conjunto que
+ * |          |        | `selecionarCandidatasAoAviso` devolve é o **mesmo**, por igualdade de lista
+ * |          |        | ordenada, antes e depois de um deles confirmar o endereço pelo caminho real. |
  *
  * Rastreabilidade: `CA-04 → CT-615 (RD-16)` · `CA-17 → CT-615 (RD-15)` · `CA-08 → CT-615 (b)
  * (RD-02)` · `CA-13 → CT-615 (b) (RD-07)` · `CA-05 → CT-616 (RD-06)` · `CA-03 → CT-617 (RD-03)` ·
- * `CA-10 → CT-618 (RD-09)` · `CA-16 → CT-619 (RD-11)` · `CA-02 → CT-620 (RD-10)`.
+ * `CA-10 → CT-618 (RD-09)` · `CA-16 → CT-619 (RD-11)` · `CA-02 → CT-620 (RD-10)` ·
+ * `CA-16 (2b) → CT-730 (RD-06)`.
+ *
+ * ⚠️ **O CT-730 não altera asserção alguma dos seis casos anteriores**, e a ausência de alteração é
+ * o conteúdo dele: a sub-fatia irmã (a régua) **não é tocada** por esta feature, e este caso é a
+ * rede que o afirma na ponta mais sensível — o predicado. `packages/db/src/envio-de-cobranca.ts`
+ * não foi tocado pela T8.
  *
  * ===========================================================================
  * POR QUE ESTES CASOS MORAM EM `packages/db/test/`, e não no pacote da régua
@@ -105,7 +116,7 @@ import {
 } from '@sysloc/regua';
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { criarPessoa, type DadosDaPessoa } from '../src/cadastro-de-pessoa.ts';
+import { criarPessoa, type DadosDaPessoa, localizarPessoa } from '../src/cadastro-de-pessoa.ts';
 import {
   cancelarCobranca,
   criarCobranca,
@@ -133,9 +144,16 @@ import {
 } from '../src/envio-de-cobranca.ts';
 import { criarImovel } from '../src/imovel.ts';
 import { gravarPoliticaDeAviso, lerPoliticaDeAviso } from '../src/politica-de-aviso.ts';
+import { consumirPortador } from '../src/portador-de-confirmacao.ts';
 import { EMPRESA_A } from '../src/semente.ts';
 import { type AcessoAoBanco, abrirAcessoAoBanco } from '../src/unidade-de-trabalho.ts';
-import { type BancoMigrado, bancoEfemero, semearLocatarioSemContato } from './banco-efemero.ts';
+import {
+  type BancoMigrado,
+  bancoEfemero,
+  semearLocatarioSemContato,
+  semearPoliticaDeAviso,
+  semearPortadorDeConfirmacao,
+} from './banco-efemero.ts';
 
 // ---------------------------------------------------------------------------
 // Limites de tempo — constantes nomeadas, nunca número mágico no meio do caso
@@ -268,7 +286,6 @@ const TERMOS_DO_CONTRATO = {
   indiceReajuste: 'IGPM',
   gerarCobrancasAutomaticamente: false,
   observacoes: null,
-  pdfContratoArquivo: null,
 } as const;
 
 /** A competência de todas as cobranças do arranjo — não participa do recorte. */
@@ -810,6 +827,78 @@ describe('CT-620 — duas empresas, duas políticas, dois conjuntos diferentes',
 });
 
 // ===========================================================================
+// CT-730 — a confirmação de e-mail NÃO entra no predicado de elegibilidade
+// ===========================================================================
+
+describe('CT-730 — a régua continua avisando os dois locatários, confirmado e não confirmado', () => {
+  it(
+    'CT-730 — o conjunto de candidatas é o MESMO com e sem a coluna de confirmação populada',
+    async () => {
+      const contexto = await admitirEmpresaNova('confirmacao');
+      const doConfirmado = await semearCenario('confirmacao-sim', contexto);
+      const doNaoConfirmado = await semearCenario('confirmacao-nao', contexto);
+
+      // A política entra como **precondição**, e não como objeto: quem prova a porta de escrita é o
+      // CT-606. É por isso que o arranjo usa `semearPoliticaDeAviso` — e é este consumo que fechou o
+      // **D13 (F3/T5)**, cujo gatilho escrito era literalmente *"a primeira suíte que precisar da
+      // política como precondição sem ser objeto"*.
+      await emUnidade(contexto, async (tx) => {
+        await semearPoliticaDeAviso(tx, POLITICA_LIGADA);
+      });
+
+      const doConfirmadoVencida = await lancar(doConfirmado, VENCIDA_ANTIGA);
+      const doNaoConfirmadoVencida = await lancar(doNaoConfirmado, VENCIDA_RECENTE);
+
+      // O veredito ESCRITO ANTES da execução: as duas entram, na ordem do predicado
+      // (`data_vencimento`, `codigo`) — a mais antiga primeiro.
+      const esperadas = [doConfirmadoVencida.codigo, doNaoConfirmadoVencida.codigo];
+
+      // --- Medição 1: os DOIS locatários ainda não confirmados ---------------------------------
+      //
+      // Ela é a linha de base do caso. Sem ela, a medição 2 sozinha não distinguiria "a confirmação
+      // não muda o conjunto" de "o conjunto sempre foi esse por outro motivo".
+      expect(await confirmacaoDe(contexto, doConfirmado.locatarioId)).toBeNull();
+      expect(await confirmacaoDe(contexto, doNaoConfirmado.locatarioId)).toBeNull();
+      expect(await codigosCandidatos(contexto)).toStrictEqual(esperadas);
+
+      // --- O eixo que muda, e é o ÚNICO: um dos dois confirma o endereço ------------------------
+      //
+      // Pelo caminho real — portador emitido e consumido pelas portas de produção —, e não por
+      // `UPDATE` no carimbo: é o consumo que grava `email_confirmado_em`, e montar o estado por fora
+      // faria o caso provar a coluna em vez do fato.
+      const consumo = await emUnidade(contexto, async (tx) => {
+        const portador = await semearPortadorDeConfirmacao(tx, doConfirmado.locatarioId);
+        return await consumirPortador(tx, portador.derivado);
+      });
+
+      if (consumo === undefined) {
+        throw new Error('o arranjo não conseguiu confirmar o endereço do locatário');
+      }
+
+      // A precondição da medição 2, afirmada: um confirmado e outro não. Sem estas duas linhas, uma
+      // confirmação que não tivesse acontecido faria a igualdade abaixo ser trivialmente verdadeira.
+      expect(await confirmacaoDe(contexto, doConfirmado.locatarioId)).toEqual(consumo.confirmadoEm);
+      expect(await confirmacaoDe(contexto, doNaoConfirmado.locatarioId)).toBeNull();
+
+      // A política é **reafirmada** entre as duas medições, para que o único eixo diferente entre
+      // elas seja o estado de confirmação. É esta segunda gravação que exercita o `ON CONFLICT` do
+      // auxiliar — o caminho que o D13 registrava como nunca executado.
+      await emUnidade(contexto, async (tx) => {
+        await semearPoliticaDeAviso(tx, POLITICA_LIGADA);
+      });
+
+      // --- Medição 2: o MESMO conjunto, por igualdade de lista ordenada -------------------------
+      //
+      // Igualdade, nunca "pelo menos uma": é ela que reprova **as duas** direções do defeito — o
+      // predicado que passasse a exigir a confirmação (perderia a segunda) e o que passasse a
+      // excluir o confirmado (perderia a primeira). Uma asserção de contenção sobreviveria às duas.
+      expect(await codigosCandidatos(contexto)).toStrictEqual(esperadas);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});
+
+// ===========================================================================
 // Acessórios do arranjo — nenhum deles alcança o banco fora de uma unidade de trabalho
 // ===========================================================================
 
@@ -822,6 +911,11 @@ interface Contexto {
 interface Cenario {
   readonly contexto: Contexto;
   readonly contratoId: string;
+  /**
+   * O locatário do contrato — publicado pelo cenário a partir do **CT-730**, que precisa confirmar
+   * o endereço de um deles pelo caminho real para provar que a confirmação não move o predicado.
+   */
+  readonly locatarioId: string;
   readonly nomeDoLocatario: string;
   readonly destinatario: string;
   readonly imovel: string;
@@ -965,6 +1059,43 @@ async function candidataDe(
   };
 }
 
+/**
+ * Os códigos que o **predicado real** seleciona sob o contexto, na ordem em que ele os devolve.
+ *
+ * A política é lida pela porta (`lerPoliticaDeAviso`), como o job a lê — montá-la em memória faria o
+ * caso medir uma política que a operação não produz. E a seleção é a mesma
+ * `selecionarCandidatasAoAviso` que `portaDeCandidatas` injeta na régua: o que muda é só o ponto de
+ * observação, porque o CT-730 mede o **conjunto**, e não o efeito do envio.
+ */
+async function codigosCandidatos(contexto: Contexto): Promise<string[]> {
+  const politica = await emUnidade(contexto, lerPoliticaDeAviso);
+  const candidatas = await emUnidade(
+    contexto,
+    async (tx) => await selecionarCandidatasAoAviso(tx, politica),
+  );
+
+  return candidatas.map((candidata) => candidata.codigo);
+}
+
+/**
+ * O instante de confirmação do locatário, pela **porta pública** de leitura do cadastro.
+ *
+ * Ela lê por `localizarPessoa`, e não crua, porque o que interessa é o que a porta publica — que é o
+ * mesmo valor que as seis rotas de locatário devolvem. O ramo impossível levanta em vez de virar
+ * `null`, que é justamente um dos valores esperados.
+ */
+async function confirmacaoDe(contexto: Contexto, locatarioId: string): Promise<Date | null> {
+  return await emUnidade(contexto, async (tx) => {
+    const locatario = await localizarPessoa(tx, 'locatario', locatarioId);
+
+    if (locatario === undefined) {
+      throw new Error(`o arranjo não alcançou o locatário ${locatarioId}`);
+    }
+
+    return locatario.emailConfirmadoEm;
+  });
+}
+
 /** Grava a política pela porta de produção — o mesmo caminho que a rota da T9 usa por dentro. */
 async function gravar(contexto: Contexto, politica: PoliticaDeAvisoNova): Promise<void> {
   await emUnidade(contexto, async (tx) => await gravarPoliticaDeAviso(tx, politica));
@@ -1068,6 +1199,7 @@ async function semearCenario(
   return {
     contexto,
     contratoId: contrato.id,
+    locatarioId: cadastros.locatarioId,
     nomeDoLocatario,
     destinatario: opcoes.locatarioSemContato === true ? '' : contato,
     imovel,

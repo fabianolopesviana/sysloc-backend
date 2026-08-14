@@ -43,7 +43,7 @@ partir pelo mesmo motivo; quando isso acontecer, as fatias novas aparecem aqui.
 | **F0** | Stack instalada e provada | ✅ concluída | 7/7 tasks |
 | **F1** | Fundação SaaS — isolamento, identidade e autorização | ✅ concluída | 20/20 tasks |
 | **F2** | Domínio de locação | ✅ concluída | 21/21 tasks |
-| **F3** | Cobrança, mora e documentos | 🔄 em andamento | 2 de 3 fatias · 23/23 tasks |
+| **F3** | Cobrança, mora e documentos | 🔄 em andamento | 2 de 3 fatias · 31/35 tasks |
 | **F4** | Integração bancária (Sicoob) | ⬜ não iniciada | — |
 | **F5** | Automações agendadas | ⬜ não iniciada | — |
 | **F6** | Frontend religado — só o handoff sai daqui | ⬜ não iniciada | — |
@@ -257,11 +257,11 @@ cabe à 2b decidir se ainda precisa lê-lo. Detalhe em
 o `reply_to` da empresa certa.
 
 <!-- ESTADO:F3:INICIO -->
-> 🔄 **em andamento** — 2 de 3 fatias · 23/23 tasks
+> 🔄 **em andamento** — 2 de 3 fatias · 31/35 tasks
 >
 > ✅ `cobranca-e-mora/v1` — 11/11 tasks
 > ✅ `regua-de-cobranca/v1` — 12/12 tasks
-> ⬜ `documentos-e-confirmacao/v1`
+> 🔄 `documentos-e-confirmacao/v1` — 8/12 tasks
 <!-- ESTADO:F3:FIM -->
 
 ---

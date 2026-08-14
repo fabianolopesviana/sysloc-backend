@@ -22,12 +22,19 @@
   // manual** envia de dentro deste processo, e `src/` passa a importar a régua e o adaptador de SMTP
   // pelo especificador público. Sem a referência, `pnpm --filter @sysloc/api test` compilaria contra
   // um `dist/` de irmão obsoleto — e um mutante no fonte da régua não alcançaria a suíte daqui.
+  //
+  // `@sysloc/documentos` entra na T7 da fatia `documentos-e-confirmacao`, e pela MESMA razão: a
+  // rota do documento importa `comporDocumentoDoContrato`, `criarRenderizadorPdf` e
+  // `PortaDeRenderizacao` pelo especificador público. Sem a referência, um mutante no fonte da
+  // composição não alcançaria a suíte daqui — ela leria o `dist/` da compilação anterior, e o verde
+  // se leria como "sobreviveu".
   "references": [
     { "path": "../../packages/shared" },
     { "path": "../../packages/contracts" },
     { "path": "../../packages/db" },
     { "path": "../../packages/auth" },
-    { "path": "../../packages/regua" }
+    { "path": "../../packages/regua" },
+    { "path": "../../packages/documentos" }
   ],
   "include": ["src/**/*.ts"]
 }

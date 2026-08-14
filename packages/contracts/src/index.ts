@@ -87,6 +87,16 @@ export {
   esquemaDaConfiguracaoDeMoraNova,
 } from './configuracao-de-mora.js';
 export type {
+  ApresentacaoDoPortador,
+  Confirmacao,
+  ReenvioDeConfirmacao,
+} from './confirmacao-de-email.js';
+export {
+  esquemaDaApresentacaoDoPortador,
+  esquemaDaConfirmacao,
+  esquemaDoReenvioDeConfirmacao,
+} from './confirmacao-de-email.js';
+export type {
   Conjunto,
   ConjuntoComImoveis,
   ConjuntoNovo,
@@ -140,5 +150,10 @@ export {
   SITUACOES_INFORMAVEIS,
   TIPOS_DE_IMOVEL,
 } from './imovel.js';
-export type { Pessoa, PessoaNova, TipoDePessoa } from './pessoa.js';
-export { esquemaDaPessoa, esquemaDePessoaNova, TIPOS_DE_PESSOA } from './pessoa.js';
+export type { Locatario, Pessoa, PessoaNova, TipoDePessoa } from './pessoa.js';
+export {
+  esquemaDaPessoa,
+  esquemaDePessoaNova,
+  esquemaDoLocatario,
+  TIPOS_DE_PESSOA,
+} from './pessoa.js';

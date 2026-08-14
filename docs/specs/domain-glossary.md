@@ -172,6 +172,22 @@ _Evitar_: envio (para a tentativa que falhou), log de e-mail, histórico de disp
 O que aconteceu com uma **Tentativa de envio**: entregue, falhou, ou não havia endereço de contato.
 _Evitar_: status do envio, resultado, situação da mensagem
 
+**Documento do contrato**:
+A representação em PDF de um **Contrato de locação**, composta a partir do cadastro no instante em que é pedida e nunca guardada.
+_Evitar_: PDF do contrato, arquivo do contrato, contrato gerado, minuta
+
+**Marca de cancelamento**:
+O que o **Documento do contrato** passa a carregar quando o contrato está cancelado, produzido como parâmetro da composição e nunca mesclado sobre um arquivo pronto.
+_Evitar_: carimbo, tarja, selo, watermark, marca d'água
+
+**Portador de confirmação**:
+O segredo sorteado que autoriza o **Locatário** a confirmar o próprio endereço de e-mail sem ter sessão, guardado apenas como derivado, com prazo e de efeito único.
+_Evitar_: token, link mágico, chave de confirmação, magic link
+
+**Veredito de divergência**:
+A decisão, escrita **antes** da execução, sobre o que fazer com cada diferença medida entre o produto novo e o sistema antigo — quem vence, ou por que a diferença não é diferença.
+_Evitar_: exceção, desvio aceito, diff conhecido, waiver
+
 ## Relacionamentos
 
 - Uma **Cobrança** pode originar um boleto junto a um **Provedor**.
@@ -206,6 +222,10 @@ _Evitar_: status do envio, resultado, situação da mensagem
 - Todo **Contrato de locação** consome, ao nascer, um número da **Série declarada** dele — e o consome para sempre, mesmo que a criação seja abortada.
 - A **Ativação de contrato** e o **Cancelamento de contrato** são **Ações sensíveis**, ambas dentro da **Área de tela** Contratos.
 - A **Retirada de circulação** de um **Contrato de locação** não muda o estado dele nem libera o **Imóvel** — ela é ortogonal ao ciclo de vida.
+- Todo **Contrato de locação** tem exatamente um **Documento do contrato**, e ele não existe entre um pedido e outro: é composto a cada vez, de modo que documento e cadastro não têm como discordar.
+- O **Cancelamento de contrato** faz o **Documento do contrato** passar a carregar a **Marca de cancelamento**, sem que nada seja regravado.
+- Um **Locatário** tem zero ou mais **Portadores de confirmação**; emitir um novo invalida os anteriores daquele locatário.
+- Um **Portador de confirmação** resolve exatamente um **Locatário** de exatamente uma **Empresa**, e é dele que sai a empresa do ato — nunca do pedido.
 
 ## Ambiguidades resolvidas
 
@@ -213,6 +233,7 @@ _Evitar_: status do envio, resultado, situação da mensagem
 - "Banco" era usado tanto para a instituição financeira quanto para o banco de dados. Resolvido: a instituição é **Provedor**; banco de dados permanece "banco de dados".
 - "Usuário" era usado tanto para qualquer pessoa autenticada quanto para o perfil sem poderes administrativos. Resolvido: pessoa autenticada é "pessoa" ou "conta"; o perfil é **Usuário Empresa**.
 - "Empresa" e "tenant" apareciam como sinônimos em textos técnicos. Resolvido: o termo do produto é **Empresa**; "tenant" fica restrito à discussão de isolamento no banco, nunca à API nem à interface.
+- "Carimbo" era o nome que o sistema antigo dava à marca do documento cancelado, e o produto já usa **Carimbo** para o valor financeiro gravado no instante da liquidação. Resolvido: são conceitos distintos e sem parentesco — a marca do documento é **Marca de cancelamento**, e **Carimbo** permanece exclusivamente financeiro. A colisão é a razão de o termo novo existir.
 - "Permissão" era usado tanto para uma chave isolada quanto para o conjunto que a pessoa alcança. Resolvido: a chave é uma **Área de tela** ou uma **Ação sensível**; o conjunto é o **Efetivo de permissão**.
 - "Excluir cadastro" nomeia a **Ação sensível** do catálogo (chave `ACAO:excluir_cadastro`, fechada desde a F1 e persistida em `acesso_usuario_permissao` — não renomeável), mas a operação que ela governa **não exclui**: ela é a **Retirada de circulação**, e nada é apagado (ADR-0014). Resolvido: a chave preserva o nome histórico; o termo do domínio, das rotas e da documentação é *retirada de circulação*.
 - "Metragem" era usada tanto para a metragem de um **Cômodo** quanto para a do imóvel inteiro. Resolvido: a do cômodo é *metragem*; a do imóvel é **Metragem total**, e é derivada, nunca informada.

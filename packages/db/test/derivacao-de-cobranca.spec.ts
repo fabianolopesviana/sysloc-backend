@@ -591,7 +591,6 @@ const CORPO_DE_CONTRATO = {
   prazoMeses: 4,
   valorMensal: 1500,
   diaVencimento: 28,
-  pdfContratoArquivo: null,
 } as const;
 
 describe('CT-507 — o comprimento é o prazo, a natureza é ALUGUEL e o vencimento não satura', () => {

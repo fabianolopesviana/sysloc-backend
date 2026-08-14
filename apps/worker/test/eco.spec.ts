@@ -95,7 +95,13 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { type CargaDoEco, criarLogger, FILA_DA_REGUA, FILA_DO_ECO } from '@sysloc/shared';
+import {
+  type CargaDoEco,
+  criarLogger,
+  FILA_DA_CONFIRMACAO,
+  FILA_DA_REGUA,
+  FILA_DO_ECO,
+} from '@sysloc/shared';
 import { Queue } from 'bullmq';
 import { describe, expect, it, onTestFinished } from 'vitest';
 import {
@@ -742,7 +748,15 @@ describe('processador de trabalho (T6)', () => {
       // trocou um valor por uma IGUALDADE DE LISTA que subsume o valor antigo (`FILA_DO_ECO`
       // continua sendo cobrado, agora na posição em que a linha o escreve) e passa a cobrar também
       // a segunda fila — uma fila que sumisse do encerramento reprova aqui.
-      expect(doEstouro[0]?.filas).toEqual([FILA_DO_ECO, FILA_DA_REGUA]);
+      //
+      // SUT_IS_CORRECT_BECAUSE: a T10 da fatia `documentos-e-confirmacao` acrescenta a TERCEIRA
+      // fila — a da confirmação de endereço, que é a primeira com produtor em produção —, e ela é
+      // construída e devolvida pelo mesmo `conectarFila`. A lista do estouro sai dos produtores que
+      // `devolverGraciosamente` fecha, e não de literais; deixá-la com duas faria a linha do
+      // operador omitir justamente a fila cuja tarefa chega da borda HTTP. A asserção **não foi
+      // afrouxada**: continua sendo igualdade de lista ordenada, agora com o terceiro nome — e uma
+      // fila que sumisse do encerramento segue reprovando.
+      expect(doEstouro[0]?.filas).toEqual([FILA_DO_ECO, FILA_DA_REGUA, FILA_DA_CONFIRMACAO]);
 
       // A conexão foi DEVOLVIDA, e não apenas deixada para trás. É o que distingue "o
       // encerramento retornou" de "o encerramento devolveu o que abriu": uma conexão de pé com

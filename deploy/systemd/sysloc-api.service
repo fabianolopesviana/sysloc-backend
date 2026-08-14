@@ -90,6 +90,24 @@ WorkingDirectory=/opt/sysloc-backend/apps/api
 # chegar, a ausência derruba o disparo manual e não a subida — é por isso que a
 # linha entra aqui junto com a do processador, e não depois: o arquivo de
 # ambiente é UM SÓ, e as duas unidades o leem.
+#
+# ⚠️ A partir da T9 da fatia `documentos-e-confirmacao` ele carrega também
+# `URL_BASE_DA_CONFIRMACAO` — o endereço público do aplicativo, sobre o qual o
+# link de confirmação de e-mail é composto. Ela NÃO é segredo, e ainda assim vem
+# daqui e não por `Environment=` inline: quem compõe o link é o PROCESSADOR DE
+# TRABALHO, e as duas unidades leem este mesmo arquivo. Uma declaração inline em
+# cada unidade seriam duas atribuições literais da mesma coordenada, livres para
+# divergir — é o precedente já escrito para `EMAIL_REMETENTE` no `.env.example`.
+# Esta unidade a EXIGE na partida por completude do arquivo, e não porque a leia:
+# `apps/api/src/configuracao/ambiente.ts` não a publica como campo.
+#
+# O valor semeado por `provisionar-base.sh` é um SUBSTITUTO deliberado, em
+# domínio reservado pela RFC 6761 (`.invalid`), que não resolve em lugar nenhum —
+# o mesmo critério do `REMETENTE_PADRAO_DO_AVISO`. O endereço real é decidido na
+# VIRADA (F7), quando o aplicativo passa a ser publicado atrás do servidor de
+# borda; até lá não há endereço público a declarar, e fixar um palpite seria
+# adivinhar. A partida é recusada sem a linha, de modo que a troca não pode ser
+# esquecida em silêncio.
 EnvironmentFile=/etc/sysloc/backend.env
 
 # Coordenadas revisáveis — nenhuma delas é segredo.

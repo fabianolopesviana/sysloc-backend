@@ -685,18 +685,25 @@ beforeAll(async () => {
 
   // DÉBITO COM GATILHO — D57 · F3/T12 · registrado 2026-08-12
   // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o bloco abaixo.)
-  // O QUÊ: esta é a SEGUNDA cópia literal da montagem instrumentada — a primeira está em
-  //        `apps/api/test/automacao-de-cobranca.e2e.spec.ts`. Ela não deriva de `criarAplicacao()`
+  // O QUÊ: esta é a TERCEIRA cópia literal da montagem instrumentada — as outras duas estão em
+  //        `apps/api/test/automacao-de-cobranca.e2e.spec.ts` e em
+  //        `apps/api/test/equivalencia-com-o-oraculo.spec.ts`. Ela não deriva de `criarAplicacao()`
   //        e por isso omite `logger: false`, `abortOnError: false`, o `exclude` do prefixo,
   //        `publicarContrato()` e `enableShutdownHooks()`. NENHUMA delas alcança o que os casos
   //        medem — guarda, filtro de erro e interceptador de contexto são registrados por
   //        `APP_GUARD`/`APP_FILTER`/`APP_INTERCEPTOR` DENTRO do `AppModule`.
-  // QUANDO FECHA: a TERCEIRA suíte que precisar da montagem instrumentada, ou a primeira vez que
-  //        `criarAplicacao()` registrar um global FORA do `AppModule` — o que vier antes. A partir
-  //        daí a divergência entre a montagem que atende e a instrumentada deixa de ser inócua, e
+  // QUANDO FECHA: ⚠️ **A PRIMEIRA METADE DO GATILHO JÁ ESTÁ SATISFEITA** — a terceira suíte
+  //        instrumentada já existe, e existe desde ANTES da sub-fatia `documentos-e-confirmacao`
+  //        (a T12 dela apenas MEDIU o fato; a correção não é dela, porque fechar o débito
+  //        reescreveria três arquivos fora da lista de impacto — proibição 5 do Protocolo). O dono
+  //        é quem abrir a PRÓXIMA suíte que precisar da montagem instrumentada, ou a primeira
+  //        edição de qualquer uma das três por outra razão. Segue valendo, como segundo gatilho, a
+  //        primeira vez que `criarAplicacao()` registrar um global FORA do `AppModule`. A partir
+  //        daqui a divergência entre a montagem que atende e a instrumentada deixa de ser inócua, e
   //        ela não reprova caso algum: a asserção que a acusaria não existe.
   // POR QUE NÃO AGORA: a convenção deste repositório agenda a promoção de símbolo duplicado no
-  //        TERCEIRO consumidor (é a forma do D1 · F3/T2 e do D26 · F3/T8), e aqui são dois.
+  //        TERCEIRO consumidor (é a forma do D1 · F3/T2 e do D26 · F3/T8) — o terceiro chegou, e o
+  //        que adia o fecho hoje é escopo de task, não a contagem.
   // ÍNDICE: docs/specs/features/regua-de-cobranca/v1/_run/run-report.md §2, D57
   const modulo = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(TOKEN_PORTA_DE_EMAIL)
@@ -2583,7 +2590,6 @@ function corpoDeContrato(alvos: AlvosDoDominio): Record<string, unknown> {
     valorMensal: 2500,
     diaVencimento: 10,
     gerarCobrancasAutomaticamente: true,
-    pdfContratoArquivo: null,
   };
 }
 

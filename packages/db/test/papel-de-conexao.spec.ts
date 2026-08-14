@@ -36,6 +36,16 @@
  * |          |         | a lista de concessões das duas funções é exatamente
  * |          |         | `{sysloc_app, sysloc_migracao} × EXECUTE`: **`PUBLIC` não está nela**, e
  * |          |         | `sysloc_app` não tem privilégio algum sobre a sequência. |
+ * | CA-15    | CT-735  | Chamada por `sysloc_app` e **SEM `app.empresa_id` fixado**,
+ * |          |         | `negocio.resolver_portador_de_confirmacao` devolve a tripla
+ * |          |         | `(empresa_id, locatario_id, consumido_em)` do portador vivo — a resolução
+ * |          |         | ACONTECE sem contexto, que é a propriedade central da rota sem sessão
+ * |          |         | (ADR-0027). Os companheiros negativos — derivado inexistente, portador
+ * |          |         | VENCIDO e portador INVALIDADO — devolvem zero linhas e são
+ * |          |         | indistinguíveis entre si (RN-14). E a mesma leitura, feita DIRETO na
+ * |          |         | tabela sem contexto, continua devolvendo vazio, enquanto com contexto
+ * |          |         | devolve as três linhas: a política segue fechada, e o que atravessa é a
+ * |          |         | função — não um isolamento afrouxado. |
  *
  * ===========================================================================
  * Por que este arquivo é o mais importante da fatia
@@ -63,6 +73,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { criarPessoa } from '../src/cadastro-de-pessoa.ts';
 import { abrirConexao } from '../src/conexao.ts';
 import { ACESSOS_DA_EMPRESA_A, ACESSOS_DA_EMPRESA_B, EMPRESA_A } from '../src/semente.ts';
 import {
@@ -91,9 +102,10 @@ const PAPEL_DONO = 'sysloc_migracao';
  * uma consulta que não alcançasse tabela nenhuma não passe por verde. A T2 da fatia
  * `cadastro-de-imoveis-e-pessoas` criou SEIS tabelas em `negocio` pela migração `0005`, a T3 da
  * fatia `contratos-de-locacao` acrescentou DUAS pela `0007`, a T3 da fatia `cobranca-e-mora`
- * acrescentou DUAS pela `0009`, e a T3 da fatia `regua-de-cobranca` acrescenta DUAS pela `0011`. O
+ * acrescentou DUAS pela `0009`, a T3 da fatia `regua-de-cobranca` acrescentou DUAS pela `0011`, e a
+ * T3 da sub-fatia `documentos-e-confirmacao` acrescenta UMA pela `0013`. O
  * papel da conexão — que é o que estes casos provam — não mudou: `sysloc_app` continua sem
- * privilégio, e as tabelas novas continuam pertencendo a `sysloc_migracao`. Declarar as quatorze é a
+ * privilégio, e a tabela nova continua pertencendo a `sysloc_migracao`. Declarar as quinze é a
  * atualização legítima; derivar a lista da própria consulta faria o esperado vir da mesma fonte que
  * o obtido, e a asserção deixaria de poder falhar. **Crescimento da lista esperada é o caminho
  * legítimo; trocar a igualdade por contenção (`toContain`) seria regressão de prova.**
@@ -117,6 +129,7 @@ const TABELAS_DE_NEGOCIO_ESPERADAS = [
   'locador',
   'locatario',
   'politica_de_aviso',
+  'portador_de_confirmacao',
 ] as const;
 
 interface TabelaDeNegocio {
@@ -308,7 +321,7 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
 
       // A contagem é afirmada ANTES da propriedade, e é deliberada: sem ela, um schema `negocio`
       // vazio faria a asserção seguinte passar sem examinar tabela alguma.
-      expect(observado.tabelasDeNegocio).toHaveLength(14);
+      expect(observado.tabelasDeNegocio).toHaveLength(15);
       expect(observado.tabelasDeNegocio.map((linha) => linha.tabela)).toEqual([
         'acesso_usuario_app',
         'acesso_usuario_permissao',
@@ -324,11 +337,13 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
         'locador',
         'locatario',
         'politica_de_aviso',
+        'portador_de_confirmacao',
       ]);
-      // As quatorze escritas por extenso, e não `map(() => …)`: a propriedade é afirmada POR TABELA, de
+      // As quinze escritas por extenso, e não `map(() => …)`: a propriedade é afirmada POR TABELA, de
       // modo que uma delas que nascesse com outro dono apareça pela posição. Derivar a lista do
       // tamanho da anterior faria a contagem responder no lugar da propriedade.
       expect(observado.tabelasDeNegocio.map((linha) => linha.dono)).toEqual([
+        'sysloc_migracao',
         'sysloc_migracao',
         'sysloc_migracao',
         'sysloc_migracao',
@@ -365,7 +380,7 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
         "tableowner = current_user ('sysloc_migracao') em acesso_usuario_app, " +
           'acesso_usuario_permissao, cobranca, comodo, configuracao_de_mora, conjunto, contrato, ' +
           'contrato_fiador, envio_de_cobranca, fiador, imovel, locador, locatario, ' +
-          'politica_de_aviso',
+          'politica_de_aviso, portador_de_confirmacao',
       ]);
 
       const superusuario = await conferirPapelDaConexao(conexaoSuperusuaria(banco));
@@ -717,6 +732,35 @@ describe('emissão da série declarada — contexto e privilégio', () => {
           seguranca: 'DEFINER',
           caminhoDeBusca: 'search_path=pg_catalog, pg_temp',
         },
+        // SUT_IS_CORRECT_BECAUSE: a lista é do CASO e é EXATA de propósito, e a T3 da sub-fatia
+        // `documentos-e-confirmacao` cria UMA função nova por decisão declarada — a resolução do
+        // portador (`0014`). O caso reprovaria não porque a superfície cresceu por descuido, que é o
+        // defeito que ele existe para pegar, mas porque cresceu por decisão que ele ainda não
+        // conhecia. **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo
+        // asserida.
+        //
+        // Esta linha é, além disso, a prova de catálogo de DUAS propriedades que nenhum teste
+        // comportamental dá:
+        //
+        //   * o único parâmetro é `p_derivado text` — **não há parâmetro de empresa** (ADR-0024). O
+        //     contexto vem do registro que o portador resolve, e um `p_empresa uuid` acrescentado
+        //     "para filtrar" apareceria aqui como diferença literal, exatamente como nas quatro da
+        //     série;
+        //   * `DEFINER` mais `search_path` fixo com o schema temporário em ÚLTIMO lugar — sem o
+        //     `SET`, quem chama escolheria o caminho de resolução de nome e executaria objeto
+        //     próprio com os direitos da dona. Numa função que atravessa a política de linha, essa
+        //     é a diferença entre um furo declarado e um furo aberto.
+        //
+        // O que esta linha **não** prova é a superfície de RETORNO (as três colunas da §7.3, e
+        // nenhuma a mais): `pg_get_function_arguments` devolve só os parâmetros de entrada — medido
+        // nesta task, contra a instância efêmera. Quem afirma o retorno é o `CT-727`, na T8, e
+        // prometer aqui o que a asserção não verifica seria asserção infalível.
+        {
+          nome: 'resolver_portador_de_confirmacao',
+          argumentos: 'p_derivado text',
+          seguranca: 'DEFINER',
+          caminhoDeBusca: 'search_path=pg_catalog, pg_temp',
+        },
       ] satisfies AssinaturaDeFuncao[]);
 
       // --- Passo 4: o companheiro POSITIVO -----------------------------------------------------
@@ -834,6 +878,24 @@ describe('emissão da série declarada — contexto e privilégio', () => {
         'proximo_numero_de_cobranca -> sysloc_migracao -> EXECUTE',
         'proximo_numero_de_contrato -> sysloc_app -> EXECUTE',
         'proximo_numero_de_contrato -> sysloc_migracao -> EXECUTE',
+        // SUT_IS_CORRECT_BECAUSE: a T3 da sub-fatia `documentos-e-confirmacao` cria a resolução do
+        // portador com o MESMO par `REVOKE ALL … FROM PUBLIC` / `GRANT EXECUTE … TO "sysloc_app"`
+        // (bloco 4 da `0014`). As duas linhas abaixo são o que a igualdade cobra: se o `REVOKE`
+        // sumisse do arquivo, apareceria aqui uma terceira,
+        // `resolver_portador_de_confirmacao -> PUBLIC -> EXECUTE` — e ela significaria que qualquer
+        // papel capaz de conectar resolveria portador de qualquer empresa, atravessando a política
+        // pelo `SECURITY DEFINER`. **Nenhuma entrada anterior sai.**
+        //
+        // SUT_IS_CORRECT_BECAUSE (rodada 2): a segunda linha diz `sysloc_resolucao`, e não
+        // `sysloc_migracao`, porque a `0014` termina com `ALTER FUNCTION … OWNER TO
+        // "sysloc_resolucao"` — a correção do achado CRÍTICO da Revisão Técnica. Ela **não** é uma
+        // concessão nova: é a entrada implícita do DONO, que o `ALTER … OWNER` reescreve junto com a
+        // propriedade. O papel de destino é `NOLOGIN` e não é dono de tabela alguma; o que ele
+        // carrega é a política nominal do bloco 2 da `0014`, sem a qual a função devolve vazio. A
+        // troca aparecer AQUI é a propriedade útil deste caso: mudar o dono de uma `SECURITY
+        // DEFINER` é mudar com quais direitos ela roda, e a igualdade não deixa isso passar calado.
+        'resolver_portador_de_confirmacao -> sysloc_app -> EXECUTE',
+        'resolver_portador_de_confirmacao -> sysloc_resolucao -> EXECUTE',
       ]);
 
       // E nenhum dos três privilégios de sequência alcança o papel da aplicação. A afirmação é por
@@ -854,6 +916,317 @@ describe('emissão da série declarada — contexto e privilégio', () => {
         }
       })();
       expect(privilegiosDaSequencia).toEqual({ usa: false, le: false, escreve: false });
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});
+
+// ===========================================================================
+// CT-735 — a resolução do portador acontece SEM contexto, e a política segue fechada
+// ===========================================================================
+//
+// Este caso nasceu na rodada 2 da T3, e a razão dele é a razão de existir do mecanismo que a `0014`
+// instala: a Revisão Técnica mediu que `SECURITY DEFINER` **não** basta para atravessar
+// `FORCE ROW LEVEL SECURITY`. `DEFINER` troca `current_user` pelo DONO da função, e o dono era
+// `sysloc_migracao` — que é também o dono da tabela, e é exatamente o papel que o `FORCE` deixa de
+// isentar. Sem contexto, a política vira `empresa_id = NULL` e a função devolvia `[]` em 100% das
+// chamadas do único cenário que ela existe para atender.
+//
+// O que a T3 tinha era cobertura de CATÁLOGO — assinatura, `prosecdef`, `search_path` e as duas
+// concessões, todas no `CT-406`/`CT-431`. As quatro passavam integralmente sobre uma função morta. A
+// lição está registrada porque ela se repete: **asserção de catálogo sobre um mecanismo prova que
+// ele foi DECLARADO, nunca que ele FUNCIONA.**
+//
+// As três pernas deste caso não são redundantes entre si, e a ordem é conteúdo:
+//
+//   1. a leitura DIRETA da tabela sem contexto devolve vazio — a política de empresa continua
+//      valendo, e nada foi afrouxado para a função passar;
+//   2. a MESMA leitura com contexto devolve as três linhas — sem ela, a perna 1 ficaria verde contra
+//      uma semeadura que não gravou nada, e o caso inteiro seria vácuo;
+//   3. a função, sem contexto, devolve a tripla exata do portador vivo — é a travessia, e é o que a
+//      rota sem sessão (ADR-0027) precisa que seja verdade.
+//
+// Ele **não** duplica o `CT-727` da T8: aquele mede a SUPERFÍCIE DE RETORNO (o conjunto de colunas,
+// e o que ela não devolve); este mede que a RESOLUÇÃO ACONTECE.
+
+/** O locatário semeado, e os três portadores dele — nomes literais, resolvidos por instância. */
+const DERIVADO_VIVO = 'derivado-ct735-vivo';
+const DERIVADO_VENCIDO = 'derivado-ct735-vencido';
+const DERIVADO_INVALIDADO = 'derivado-ct735-invalidado';
+/** O quarto derivado NUNCA é gravado: é o companheiro "inexistente" da indistinguibilidade. */
+const DERIVADO_INEXISTENTE = 'derivado-ct735-que-nunca-existiu';
+
+/** A tripla que a função publica, tal como o driver a devolve. */
+interface PortadorResolvido {
+  readonly empresa_id: string;
+  readonly locatario_id: string;
+  readonly consumido_em: Date | null;
+}
+
+/**
+ * Semeia um locatário da empresa A e os TRÊS portadores dele, pelo caminho da operação.
+ *
+ * O locatário nasce por `criarPessoa` — a porta de produção —, e os portadores por instrução própria
+ * sob o contexto da empresa: a emissão em `packages/db/src/portador-de-confirmacao.ts` é da T8, e
+ * antecipá-la aqui faria este caso depender de código que ainda não existe.
+ *
+ * `expira_em` sai de `pg_catalog.now()` (ADR-0026), e nunca de um `Date` do processo: o prazo é
+ * comparado DENTRO da função, com o relógio do banco, e fixá-lo pelo relógio do Node faria o caso
+ * medir a diferença entre dois relógios.
+ */
+async function semearPortadoresDaEmpresaA(cadeia: string): Promise<string> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+
+  try {
+    return await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.empresa_id', ${EMPRESA_A.id}, true)`;
+
+      const locatario = await criarPessoa(tx, 'locatario', {
+        nome: 'Locatária do CT-735',
+        tipoPessoa: 'PESSOA_FISICA',
+        documentoPrincipal: '39053344705',
+        rg: null,
+        email: 'ct735@exemplo.test',
+        telefone: '11999990000',
+        logradouro: 'Rua da Resolução',
+        numero: '735',
+        complemento: null,
+        bairro: 'Centro',
+        cidade: 'São Paulo',
+        estado: 'SP',
+        cep: '01001000',
+      });
+
+      await tx`
+        INSERT INTO negocio.portador_de_confirmacao
+                    (empresa_id, locatario_id, derivado, expira_em, invalidado_em)
+        VALUES
+          (${EMPRESA_A.id}, ${locatario.id}, ${DERIVADO_VIVO},
+           pg_catalog.now() + interval '1 day', NULL),
+          (${EMPRESA_A.id}, ${locatario.id}, ${DERIVADO_VENCIDO},
+           pg_catalog.now() - interval '1 day', NULL),
+          (${EMPRESA_A.id}, ${locatario.id}, ${DERIVADO_INVALIDADO},
+           pg_catalog.now() + interval '1 day', pg_catalog.now())
+      `;
+
+      return locatario.id;
+    });
+  } finally {
+    await sql.end();
+  }
+}
+
+/** Chama a função **sem contexto algum** — o estado exato de uma conexão que ninguém preparou. */
+async function resolverSemContexto(cadeia: string, derivado: string): Promise<PortadorResolvido[]> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+  try {
+    const linhas = await sql<PortadorResolvido[]>`
+      SELECT * FROM negocio.resolver_portador_de_confirmacao(${derivado})
+    `;
+    return linhas.map((linha) => ({ ...linha }));
+  } finally {
+    await sql.end();
+  }
+}
+
+/** Quantos portadores a tabela devolve pela leitura DIRETA, com o contexto dado ou sem nenhum. */
+async function contarPortadores(cadeia: string, empresaId: string | null): Promise<number> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+  try {
+    return await sql.begin(async (tx) => {
+      if (empresaId !== null) {
+        await tx`SELECT set_config('app.empresa_id', ${empresaId}, true)`;
+      }
+      const [linha] = await tx<{ total: string }[]>`
+        SELECT count(*)::text AS total FROM negocio.portador_de_confirmacao
+      `;
+      return Number(linha?.total ?? '-1');
+    });
+  } finally {
+    await sql.end();
+  }
+}
+
+/** O papel `NOLOGIN` que a `0014` instala como dono da função, e nada mais. */
+const PAPEL_RESOLUCAO = 'sysloc_resolucao';
+
+/** O mecanismo inteiro, tal como o catálogo o guarda — dono, políticas e privilégio do papel. */
+interface RetratoDoMecanismo {
+  readonly donoDaFuncao: string;
+  readonly politicas: readonly string[];
+  readonly papel: {
+    readonly conecta: boolean;
+    readonly superusuario: boolean;
+    readonly contornaPolitica: boolean;
+    readonly usaSchema: boolean;
+    readonly criaNoSchema: boolean;
+    readonly lePortador: boolean;
+    readonly escrevePortador: boolean;
+    readonly tabelasDeQueEhDono: number;
+  };
+}
+
+/**
+ * Lê do catálogo as três peças de que a travessia depende, para afirmá-las numa igualdade só.
+ *
+ * Elas estão juntas de propósito: separadas, cada uma seria uma asserção de catálogo do tipo que já
+ * ficou verde sobre uma função morta (ver o cabeçalho deste bloco). Aqui elas vêm DEPOIS das três
+ * pernas comportamentais, e o que fazem é nomear QUAL peça caiu quando o comportamento cair —
+ * papel virou dono de tabela, `CREATE` ficou concedido, a política nominal alargou.
+ */
+async function retratoDoMecanismo(cadeia: string): Promise<RetratoDoMecanismo> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+
+  try {
+    const [dono] = await sql<{ dono: string }[]>`
+      SELECT pg_get_userbyid(p.proowner) AS dono
+        FROM pg_catalog.pg_proc p
+        JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'negocio' AND p.proname = 'resolver_portador_de_confirmacao'
+    `;
+
+    // As políticas da tabela, inteiras: nome, comando, papéis alcançados e as duas expressões. É a
+    // lista que CRESCEU nesta correção, e ela é cobrada por igualdade — uma terceira política, ou
+    // um `TO` alargado para `public`, aparece como diferença literal.
+    const politicas = await sql<{ linha: string }[]>`
+      SELECT policyname || ' | ' || cmd || ' | ' || array_to_string(roles, ',') ||
+             ' | usando=' || coalesce(qual, '(nenhum)') ||
+             ' | checando=' || coalesce(with_check, '(nenhum)') AS linha
+        FROM pg_catalog.pg_policies
+       WHERE schemaname = 'negocio' AND tablename = 'portador_de_confirmacao'
+       ORDER BY policyname
+    `;
+
+    const [papel] = await sql<
+      {
+        conecta: boolean;
+        superusuario: boolean;
+        contornaPolitica: boolean;
+        usaSchema: boolean;
+        criaNoSchema: boolean;
+        lePortador: boolean;
+        escrevePortador: boolean;
+        tabelasDeQueEhDono: string;
+      }[]
+    >`
+      SELECT r.rolcanlogin  AS conecta,
+             r.rolsuper     AS "superusuario",
+             r.rolbypassrls AS "contornaPolitica",
+             has_schema_privilege(${PAPEL_RESOLUCAO}, 'negocio', 'USAGE')  AS "usaSchema",
+             has_schema_privilege(${PAPEL_RESOLUCAO}, 'negocio', 'CREATE') AS "criaNoSchema",
+             has_table_privilege(
+               ${PAPEL_RESOLUCAO}, 'negocio.portador_de_confirmacao', 'SELECT') AS "lePortador",
+             has_table_privilege(
+               ${PAPEL_RESOLUCAO}, 'negocio.portador_de_confirmacao', 'UPDATE') AS "escrevePortador",
+             (SELECT count(*)::text FROM pg_tables
+               WHERE schemaname = 'negocio' AND tableowner = ${PAPEL_RESOLUCAO})
+                                            AS "tabelasDeQueEhDono"
+        FROM pg_catalog.pg_roles r
+       WHERE r.rolname = ${PAPEL_RESOLUCAO}
+    `;
+
+    if (dono === undefined || papel === undefined) {
+      throw new Error(
+        'o catálogo não devolveu a função `resolver_portador_de_confirmacao` ou o papel ' +
+          `'${PAPEL_RESOLUCAO}' — sem eles este caso não teria o que examinar`,
+      );
+    }
+
+    return {
+      donoDaFuncao: dono.dono,
+      politicas: politicas.map((politica) => politica.linha),
+      papel: {
+        conecta: papel.conecta,
+        superusuario: papel.superusuario,
+        contornaPolitica: papel.contornaPolitica,
+        usaSchema: papel.usaSchema,
+        criaNoSchema: papel.criaNoSchema,
+        lePortador: papel.lePortador,
+        escrevePortador: papel.escrevePortador,
+        tabelasDeQueEhDono: Number(papel.tabelasDeQueEhDono),
+      },
+    };
+  } finally {
+    await sql.end();
+  }
+}
+
+/** A expressão de isolamento por empresa, tal como as seis migrações de segurança a escrevem. */
+const EXPRESSAO_DE_ISOLAMENTO =
+  "(empresa_id = (NULLIF(current_setting('app.empresa_id'::text, true), ''::text))::uuid)";
+
+describe('CT-735 — a função resolve o portador sem contexto, e a política continua fechada', () => {
+  let banco: BancoMigrado;
+  let locatarioId: string;
+
+  beforeAll(async () => {
+    banco = await bancoEfemero();
+    locatarioId = await semearPortadoresDaEmpresaA(banco.cadeiaConexao);
+  }, LIMITE_SUBIDA_MS);
+
+  afterAll(async () => {
+    await banco?.parar();
+  }, LIMITE_SUBIDA_MS);
+
+  it(
+    'CT-735 — sem `app.empresa_id`, a resolução devolve a tripla do portador vivo; vencido, invalidado e inexistente devolvem o MESMO vazio',
+    async () => {
+      // --- Perna 1: a política continua fechada para a leitura direta -------------------------
+      expect(await contarPortadores(banco.cadeiaConexao, null)).toBe(0);
+
+      // --- Perna 2: e as linhas existem — sem isto, a perna 1 seria vácuo ---------------------
+      expect(await contarPortadores(banco.cadeiaConexao, EMPRESA_A.id)).toBe(3);
+
+      // --- Perna 3: a travessia ---------------------------------------------------------------
+      //
+      // Igualdade sobre a tripla inteira, e não `toHaveLength(1)`: o que a borda sem sessão precisa
+      // é do `empresa_id` CERTO — um caso que só contasse linhas ficaria verde diante de uma função
+      // que resolvesse o portador de outra empresa.
+      expect(await resolverSemContexto(banco.cadeiaConexao, DERIVADO_VIVO)).toEqual([
+        { empresa_id: EMPRESA_A.id, locatario_id: locatarioId, consumido_em: null },
+      ]);
+
+      // --- Os companheiros negativos, e a indistinguibilidade entre eles -----------------------
+      //
+      // As três recusas são coletadas e comparadas ENTRE SI, além de com o vazio: a RN-14 não pede
+      // apenas que cada uma devolva nada, e sim que nenhuma delas seja distinguível da outra — é o
+      // que impede a borda de vazar "existe, mas expirou".
+      const recusas = [
+        await resolverSemContexto(banco.cadeiaConexao, DERIVADO_INEXISTENTE),
+        await resolverSemContexto(banco.cadeiaConexao, DERIVADO_VENCIDO),
+        await resolverSemContexto(banco.cadeiaConexao, DERIVADO_INVALIDADO),
+      ];
+      expect(recusas).toEqual([[], [], []]);
+
+      // --- Perna 4: o mecanismo, pelo catálogo, para NOMEAR a peça quando ela cair --------------
+      //
+      // Igualdade sobre o retrato inteiro. As duas políticas aparecem como lista, e é ela que
+      // cresceu: a de isolamento por empresa continua `ALL` para `public`, com `USING` e
+      // `WITH CHECK` idênticos, e a nova alcança **um papel só**, em `SELECT`. Alargar o `TO` para
+      // `public`, ou dar-lhe `ALL`, aparece como diferença literal — e seria o furo real, porque
+      // `USING (true)` fora de um papel nominal é a política de isolamento desligada.
+      expect(await retratoDoMecanismo(banco.cadeiaConexao)).toEqual({
+        donoDaFuncao: PAPEL_RESOLUCAO,
+        politicas: [
+          `portador_de_confirmacao_isolamento_empresa | ALL | public | usando=${EXPRESSAO_DE_ISOLAMENTO} | checando=${EXPRESSAO_DE_ISOLAMENTO}`,
+          `portador_de_confirmacao_resolucao_sem_contexto | SELECT | ${PAPEL_RESOLUCAO} | usando=true | checando=(nenhum)`,
+        ],
+        papel: {
+          // Ele não conecta e não contorna política nenhuma: a travessia é NOMINAL, dada pela
+          // política acima, e não um `BYPASSRLS` disfarçado — que é o que a ADR-0008 rejeita.
+          conecta: false,
+          superusuario: false,
+          contornaPolitica: false,
+          // O privilégio de estado final: `USAGE` no schema e `SELECT` em UMA tabela. O `CREATE`
+          // que o `ALTER … OWNER` exige é emprestado e devolvido dentro da própria `0014`, e é
+          // esta linha que prova a devolução.
+          usaSchema: true,
+          criaNoSchema: false,
+          lePortador: true,
+          escrevePortador: false,
+          tabelasDeQueEhDono: 0,
+        },
+      } satisfies RetratoDoMecanismo);
     },
     LIMITE_DO_CASO_MS,
   );

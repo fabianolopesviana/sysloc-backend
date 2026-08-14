@@ -39,14 +39,15 @@
  * |          |        | escritas em `identidade` (schema SEM RLS, ADR-0009) vem do alcance ao
  * |          |        | vínculo em `negocio`, e não de uma comparação escrita na aplicação. |
  * | CA-14    | CT-302 | Com uma linha descartável semeada nas duas empresas, a leitura de cada uma
- * |          |        | das OITO relações de `negocio` que a fatia de cadastro e a de contrato
- * |          |        | criaram (`conjunto`, `imovel`, `comodo`, `locador`, `locatario`, `fiador`,
- * |          |        | `contrato`, `contrato_fiador`) sob o contexto de A devolve o conjunto exato
+ * |          |        | das NOVE relações de `negocio` que a fatia de cadastro, a de contrato e a
+ * |          |        | de confirmação criaram (`conjunto`, `imovel`, `comodo`, `locador`,
+ * |          |        | `locatario`, `fiador`, `contrato`, `contrato_fiador`,
+ * |          |        | `portador_de_confirmacao`) sob o contexto de A devolve o conjunto exato
  * |          |        | de identificadores de A e interseção vazia com os de B; sob B, o simétrico; e
  * |          |        | sob contexto ausente e sob contexto de empresa nula devolve zero linhas nas
- * |          |        | oito, sem erro — enquanto a mesma leitura sob A segue devolvendo conjunto
+ * |          |        | nove, sem erro — enquanto a mesma leitura sob A segue devolvendo conjunto
  * |          |        | não vazio. Nenhuma das consultas escreve filtro por `empresa_id`. |
- * | CA-14    | CT-303 | Sob o contexto da empresa A, `INSERT` em qualquer das oito relações com
+ * | CA-14    | CT-303 | Sob o contexto da empresa A, `INSERT` em qualquer das nove relações com
  * |          |        | `empresa_id` de B é recusado com `42501` e mensagem contendo 'row-level
  * |          |        | security policy'; `UPDATE` e `DELETE` sobre linha existente de B afetam ZERO
  * |          |        | linhas, sem erro; o estado de B, lido em seguida no contexto de B, é
@@ -1133,7 +1134,8 @@ async function contarVinculosDe(
 }
 
 // ===========================================================================
-// CT-302 · CT-303 · CT-304 — as oito relações do domínio (seis de cadastro, duas de contrato)
+// CT-302 · CT-303 · CT-304 — as nove relações do domínio (seis de cadastro, duas de contrato,
+// uma de confirmação)
 // ===========================================================================
 //
 // Os três NÃO entram em `rodarBateria`, e o motivo é o mesmo já registrado para o CT-207: a bateria
@@ -1147,7 +1149,7 @@ async function contarVinculosDe(
 // `packages/db/src/**` para que estes casos existam — as linhas de cadastro nascem de SQL do
 // próprio caso, sob o contexto da empresa DONA, que é o caminho que a aplicação usará.
 
-/** Os dados de uma linha descartável de cadastro. Um só formato para as oito relações. */
+/** Os dados de uma linha descartável de cadastro. Um só formato para as nove relações. */
 interface DadosDeCadastro {
   readonly id: string;
   readonly empresaId: string;
@@ -1192,19 +1194,29 @@ interface EntidadeDeCadastro {
   /** A leitura do retrato: identificador mais a coluna livre, para comparação bit a bit. */
   readonly consultaDoRetrato: string;
   /**
-   * Coluna de texto que **não participa de restrição de unicidade alguma**. A atualização cruzada
-   * do CT-303 mede visibilidade; colidir com outra regra confundiria o diagnóstico.
+   * Coluna reescrevível que **não participa de restrição de unicidade alguma**. A atualização
+   * cruzada do CT-303 mede visibilidade; colidir com outra regra confundiria o diagnóstico.
+   *
+   * Ela é de **texto** na maioria das entidades, e nessas o valor gravado sai de
+   * {@link TEXTO_DA_ESCRITA_CRUZADA}. Onde a entidade não tem coluna de texto livre — hoje TRÊS
+   * delas: `contrato_fiador` (`uuid`), `contrato` (`numeric`) e `portador_de_confirmacao`
+   * (`timestamptz`) —, a coluna é **tipada** e o valor vem de {@link valorDaEscritaCruzada}.
    */
   readonly colunaLivre: string;
   /**
    * O valor que a atualização cruzada do CT-303 tenta gravar em {@link colunaLivre}. Omitido, é
    * {@link TEXTO_DA_ESCRITA_CRUZADA} — o que vale para toda coluna de texto.
    *
-   * Ele existe por causa de `contrato_fiador`, que é **vínculo puro** e não tem coluna de texto
+   * Ele nasceu por causa de `contrato_fiador`, que é **vínculo puro** e não tem coluna de texto
    * alguma: a ADR-0014 o exclui da exclusão lógica, e o sistema antigo mede um único campo na
    * tabela-filha correspondente. A única coluna reescrevível dele é uma referência `uuid`, e um
    * texto ali seria recusado na conversão do parâmetro — ANTES de a política ser consultada —,
    * fazendo o caso provar tipagem em vez de isolamento.
+   *
+   * Hoje **três** entidades o declaram, pela mesma razão e com tipos diferentes: `contrato_fiador`
+   * (`uuid`), `contrato` (`numeric(15,2)`) e `portador_de_confirmacao` (`timestamptz`). O plural
+   * está escrito porque a lista cresce a cada fatia, e um docblock no singular convida a próxima a
+   * tratar o campo como exceção de uma entidade só.
    */
   readonly valorDaEscritaCruzada?: string;
   /** Todo identificador que os três casos usam nesta entidade — a lista que a limpeza percorre. */
@@ -1223,6 +1235,7 @@ const CADASTROS_DE_A = {
   fiador: 'dddddddd-4444-4000-8000-000000000006',
   contrato: 'dddddddd-4444-4000-8000-000000000007',
   contrato_fiador: 'dddddddd-4444-4000-8000-000000000008',
+  portador_de_confirmacao: 'dddddddd-4444-4000-8000-000000000009',
 } as const;
 
 const CADASTROS_DE_B = {
@@ -1234,6 +1247,7 @@ const CADASTROS_DE_B = {
   fiador: 'dddddddd-5555-4000-8000-000000000006',
   contrato: 'dddddddd-5555-4000-8000-000000000007',
   contrato_fiador: 'dddddddd-5555-4000-8000-000000000008',
+  portador_de_confirmacao: 'dddddddd-5555-4000-8000-000000000009',
 } as const;
 
 /** As linhas que a empresa A tenta gravar com `empresa_id` da empresa B (CT-303). */
@@ -1246,6 +1260,7 @@ const CADASTROS_CRUZADOS = {
   fiador: 'dddddddd-6666-4000-8000-000000000006',
   contrato: 'dddddddd-6666-4000-8000-000000000007',
   contrato_fiador: 'dddddddd-6666-4000-8000-000000000008',
+  portador_de_confirmacao: 'dddddddd-6666-4000-8000-000000000009',
 } as const;
 
 // As seis tentativas do CT-304: a legítima e as duas cruzadas, para cada uma das duas relações
@@ -1310,7 +1325,7 @@ function consultaDeRetrato(relacao: string, colunaLivre: string): string {
 }
 
 /**
- * As oito, na ordem PAI → FILHO.
+ * As nove, na ordem PAI → FILHO.
  *
  * A ordem é normativa em dois pontos: a semeadura precisa criar o conjunto antes do imóvel, o imóvel
  * antes do cômodo, e as três pontas do contrato (imóvel, locador, locatário) antes dele — e o
@@ -1432,11 +1447,29 @@ const ENTIDADES_DE_CADASTRO: readonly EntidadeDeCadastro[] = [
     nome: 'contrato',
     relacao: 'negocio.contrato',
     consulta: consultaDeIds('negocio.contrato'),
-    // `pdf_contrato_arquivo` é a única coluna de texto do contrato fora de restrição de unicidade:
-    // `codigo` participa de `contrato_empresa_codigo_key`, e reescrevê-lo faria o caso disputar com
-    // a unicidade em vez de medir visibilidade.
-    consultaDoRetrato: consultaDeRetrato('negocio.contrato', 'pdf_contrato_arquivo'),
-    colunaLivre: 'pdf_contrato_arquivo',
+    // ---------------------------------------------------------------------------
+    // O contrato não tem MAIS coluna de texto livre, e a substituta é tipada
+    // ---------------------------------------------------------------------------
+    //
+    // A coluna livre era `pdf_contrato_arquivo`, a única de texto do contrato fora de restrição de
+    // unicidade — `codigo` participa de `contrato_empresa_codigo_key`, e reescrevê-lo faria o caso
+    // disputar com a unicidade em vez de medir visibilidade. A migração `0013` a **removeu**
+    // (ADR-0030), e depois do `DROP` a tabela fica sem coluna de texto livre alguma.
+    //
+    // A substituta aplica o precedente que o próprio arquivo instalou para `contrato_fiador` (ver o
+    // docblock de {@link EntidadeDeCadastro.valorDaEscritaCruzada}): coluna reescrevível **tipada**,
+    // com `valorDaEscritaCruzada` explícito. `valor_total_contrato` é `numeric(15,2)` ANULÁVEL, sem
+    // unicidade e sem `CHECK` — as demais ou são `NOT NULL`, ou carregam `CHECK`
+    // (`dia_vencimento`, `prazo_meses`, `valor_mensal`), ou são chave estrangeira. Ela é derivada na
+    // ativação (RD-10) e as linhas que este caso semeia são `RASCUNHO`, logo nasce `NULL` e nada
+    // mais no produto disputa aquele valor.
+    //
+    // `'9999.99'` é literal numérico VÁLIDO, e é isso que importa: sem ele, a conversão do parâmetro
+    // recusaria ANTES de a política ser consultada e o caso passaria a medir tipagem em vez de
+    // política — exatamente o risco que aquele docblock nomeia.
+    consultaDoRetrato: consultaDeRetrato('negocio.contrato', 'valor_total_contrato'),
+    colunaLivre: 'valor_total_contrato',
+    valorDaEscritaCruzada: '9999.99',
     descartaveis: [CADASTROS_DE_A.contrato, CADASTROS_DE_B.contrato, CADASTROS_CRUZADOS.contrato],
     gravar: async (tx, dados) => {
       // `RASCUNHO` de propósito: o índice parcial `contrato_imovel_vigente_uidx` só alcança
@@ -1446,11 +1479,11 @@ const ENTIDADES_DE_CADASTRO: readonly EntidadeDeCadastro[] = [
         INSERT INTO negocio.contrato
                     (id, empresa_id, codigo, imovel_id, locador_id, locatario_id, status,
                      data_inicio_locacao, prazo_meses, valor_mensal, dia_vencimento,
-                     gerar_cobrancas_automaticamente, pdf_contrato_arquivo)
+                     gerar_cobrancas_automaticamente)
         VALUES (${dados.id}, ${dados.empresaId}, ${`CTR-2026-${dados.marca}`}, ${dados.imovelId},
                 ${dados.locadorId}, ${dados.locatarioId},
                 ${'RASCUNHO'}::negocio.status_contrato,
-                ${'2026-01-10'}::date, ${12}, ${'1500.00'}, ${10}, ${true}, ${null})
+                ${'2026-01-10'}::date, ${12}, ${'1500.00'}, ${10}, ${true})
       `;
       return resultado.count;
     },
@@ -1482,6 +1515,66 @@ const ENTIDADES_DE_CADASTRO: readonly EntidadeDeCadastro[] = [
       const resultado = await tx`
         INSERT INTO negocio.contrato_fiador (id, empresa_id, contrato_id, fiador_id)
         VALUES (${dados.id}, ${dados.empresaId}, ${dados.contratoId}, ${dados.fiadorId})
+      `;
+      return resultado.count;
+    },
+  },
+  // -------------------------------------------------------------------------
+  // T3 da fatia `documentos-e-confirmacao` — a relação da migração `0013`
+  // -------------------------------------------------------------------------
+  //
+  // Ela entra aqui, e não em caso próprio, pela razão escrita no docblock de
+  // {@link EntidadeDeCadastro}: o mecanismo dos CT-302/303/304 já é o alvo declarado de TODA relação
+  // de `negocio`, e o que faltava era a linha na lista. Nenhuma asserção anterior foi afrouxada — os
+  // conjuntos esperados cresceram em uma entrada cada, e continuam cobrados por igualdade.
+  //
+  // O portador é filho do LOCATÁRIO, que já vem antes nesta lista, então a posição no fim satisfaz a
+  // ordem pai → filho da semeadura; a limpeza percorre ao contrário e o remove primeiro.
+  //
+  // ⚠️ O que este bloco NÃO prova é a função `SECURITY DEFINER` da `0014` — ela existe justamente
+  // para atravessar a política que os três casos aqui medem, e é a T8 que a exercita (CT-727,
+  // CT-728). Aqui se prova a outra metade: **fora** daquela função, o portador de uma empresa é
+  // inalcançável pela outra, como qualquer tabela deste schema.
+  {
+    nome: 'portador_de_confirmacao',
+    relacao: 'negocio.portador_de_confirmacao',
+    consulta: consultaDeIds('negocio.portador_de_confirmacao'),
+    // ---------------------------------------------------------------------------
+    // A coluna livre é um INSTANTE, e o valor da escrita cruzada é explícito
+    // ---------------------------------------------------------------------------
+    //
+    // A tabela não tem coluna de texto reescrevível: `derivado` é o único `text`, e ele carrega a
+    // unicidade GLOBAL `portador_de_confirmacao_derivado_key` — reescrevê-lo faria o caso disputar
+    // com ela em vez de medir visibilidade, e a colisão seria entre empresas, que é exatamente o
+    // ruído a evitar.
+    //
+    // `invalidado_em` é `timestamptz` anulável, sem unicidade e sem `CHECK`, e nasce `NULL` na
+    // semeadura — nada mais no produto disputa aquele valor nas linhas descartáveis. Mesmo
+    // precedente de `contrato_fiador` e de `contrato`: coluna tipada com `valorDaEscritaCruzada`
+    // explícito, para que a conversão do parâmetro passe e o caso volte a medir POLÍTICA.
+    consultaDoRetrato: consultaDeRetrato('negocio.portador_de_confirmacao', 'invalidado_em'),
+    colunaLivre: 'invalidado_em',
+    valorDaEscritaCruzada: '2026-01-01T00:00:00.000Z',
+    descartaveis: [
+      CADASTROS_DE_A.portador_de_confirmacao,
+      CADASTROS_DE_B.portador_de_confirmacao,
+      CADASTROS_CRUZADOS.portador_de_confirmacao,
+    ],
+    gravar: async (tx, dados) => {
+      // `derivado` é único GLOBALMENTE (e não por empresa): a marca entra nele pela mesma razão do
+      // comentário de `DadosDeCadastro.marca` — com valor repetido, o banco recusaria por `23505`
+      // ANTES de a política ou a chave composta serem consultadas, e o caso passaria a provar a
+      // unicidade em vez do isolamento. Aqui isso vale em dobro, porque a unicidade atravessa as
+      // duas empresas.
+      //
+      // `expira_em` fica no FUTURO e é composto pelo relógio do BANCO (ADR-0026), nunca por um
+      // `Date` do processo: o prazo não é o que este caso mede, e fixá-lo pelo relógio do Node
+      // reintroduziria a dependência de fuso que a `0014` existe para remover.
+      const resultado = await tx`
+        INSERT INTO negocio.portador_de_confirmacao
+                    (id, empresa_id, locatario_id, derivado, expira_em)
+        VALUES (${dados.id}, ${dados.empresaId}, ${dados.locatarioId},
+                ${`derivado-${dados.marca}`}, pg_catalog.now() + interval '1 day')
       `;
       return resultado.count;
     },
@@ -1602,7 +1695,7 @@ function idDe(ids: Record<string, string>, nome: string): string {
 }
 
 /**
- * O estado das oito relações sob um contexto, comparável **caractere a caractere**.
+ * O estado das nove relações sob um contexto, comparável **caractere a caractere**.
  *
  * Carrega o identificador E a coluna livre: sem a segunda, uma atualização cruzada que tivesse
  * passado não moveria o retrato, e "nada mudou" ficaria verde sobre uma escrita que mudou tudo.
@@ -1700,6 +1793,7 @@ const ESPERADO_SOB_A: readonly string[] = [
   porEntidade('fiador', [CADASTROS_DE_A.fiador]),
   porEntidade('contrato', [CADASTROS_DE_A.contrato]),
   porEntidade('contrato_fiador', [CADASTROS_DE_A.contrato_fiador]),
+  porEntidade('portador_de_confirmacao', [CADASTROS_DE_A.portador_de_confirmacao]),
 ];
 
 const ESPERADO_SOB_B: readonly string[] = [
@@ -1711,10 +1805,11 @@ const ESPERADO_SOB_B: readonly string[] = [
   porEntidade('fiador', [CADASTROS_DE_B.fiador]),
   porEntidade('contrato', [CADASTROS_DE_B.contrato]),
   porEntidade('contrato_fiador', [CADASTROS_DE_B.contrato_fiador]),
+  porEntidade('portador_de_confirmacao', [CADASTROS_DE_B.portador_de_confirmacao]),
 ];
 
-/** As oito relações sem linha alcançável. Escrito por extenso: o nome de cada uma importa. */
-const OITO_LISTAS_VAZIAS: readonly string[] = [
+/** As nove relações sem linha alcançável. Escrito por extenso: o nome de cada uma importa. */
+const NOVE_LISTAS_VAZIAS: readonly string[] = [
   porEntidade('conjunto', []),
   porEntidade('imovel', []),
   porEntidade('comodo', []),
@@ -1723,10 +1818,11 @@ const OITO_LISTAS_VAZIAS: readonly string[] = [
   porEntidade('fiador', []),
   porEntidade('contrato', []),
   porEntidade('contrato_fiador', []),
+  porEntidade('portador_de_confirmacao', []),
 ];
 
-/** As oito escritas cruzadas que não alcançam linha nenhuma — zero linhas, e nunca erro. */
-const OITO_ESCRITAS_SEM_EFEITO: readonly string[] = [
+/** As nove escritas cruzadas que não alcançam linha nenhuma — zero linhas, e nunca erro. */
+const NOVE_ESCRITAS_SEM_EFEITO: readonly string[] = [
   'conjunto: 0 linha(s)',
   'imovel: 0 linha(s)',
   'comodo: 0 linha(s)',
@@ -1735,6 +1831,7 @@ const OITO_ESCRITAS_SEM_EFEITO: readonly string[] = [
   'fiador: 0 linha(s)',
   'contrato: 0 linha(s)',
   'contrato_fiador: 0 linha(s)',
+  'portador_de_confirmacao: 0 linha(s)',
 ];
 
 /** Grava uma linha de cadastro sob o contexto informado, coletando o desfecho em vez de abortar. */
@@ -3096,13 +3193,13 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
 
         // …e a interseção vazia, que é a outra metade: sem ela, uma leitura que devolvesse TUDO
         // ainda conteria o conjunto esperado como subconjunto se a igualdade acima fosse afrouxada.
-        expect(invasaoEmA).toEqual(OITO_LISTAS_VAZIAS);
-        expect(invasaoEmB).toEqual(OITO_LISTAS_VAZIAS);
+        expect(invasaoEmA).toEqual(NOVE_LISTAS_VAZIAS);
+        expect(invasaoEmB).toEqual(NOVE_LISTAS_VAZIAS);
 
-        // Sem contexto e com empresa nula: vazio nas oito, e SEM erro. Não é recusa — é
+        // Sem contexto e com empresa nula: vazio nas nove, e SEM erro. Não é recusa — é
         // invisibilidade, que é o que a política produz para qualquer leitura fora do tenant.
-        expect(semContexto).toEqual(OITO_LISTAS_VAZIAS);
-        expect(contextoNulo).toEqual(OITO_LISTAS_VAZIAS);
+        expect(semContexto).toEqual(NOVE_LISTAS_VAZIAS);
+        expect(contextoNulo).toEqual(NOVE_LISTAS_VAZIAS);
 
         // O companheiro POSITIVO, lido DEPOIS dos vazios e na mesma reserva: sem ele, "vazio" não
         // distingue isolamento de banco sem dado.
@@ -3207,13 +3304,17 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
           // aceitando os dois códigos** — se isso acontecer, o conserto é dar a B um segundo fiador,
           // não afrouxar a asserção.
           'contrato_fiador: 42501 · row-level security policy',
+          // O portador é filho do LOCATÁRIO de B, e o `derivado` cruzado é distinto do semeado (a
+          // marca entra nele), de modo que nem a chave composta nem a unicidade global disputam com
+          // a política — a recusa aqui é da política, e só dela.
+          'portador_de_confirmacao: 42501 · row-level security policy',
         ]);
 
         // Zero linhas afetadas é o desfecho CORRETO, e é diferente de erro: sob `USING`, a linha
         // alheia simplesmente não existe para quem escreve. Asserir "lançou exceção" aqui seria
         // asserir o comportamento errado.
-        expect(atualizacoes).toEqual(OITO_ESCRITAS_SEM_EFEITO);
-        expect(remocoes).toEqual(OITO_ESCRITAS_SEM_EFEITO);
+        expect(atualizacoes).toEqual(NOVE_ESCRITAS_SEM_EFEITO);
+        expect(remocoes).toEqual(NOVE_ESCRITAS_SEM_EFEITO);
 
         // O estado de B, lido numa unidade SEPARADA e no contexto de B — nunca por conexão
         // privilegiada: a auditoria não pode ser mais poderosa que o ato que ela audita.
@@ -3247,6 +3348,7 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
           'fiador: 1 linha(s)',
           'contrato: 1 linha(s)',
           'contrato_fiador: 1 linha(s)',
+          'portador_de_confirmacao: 1 linha(s)',
         ]);
       } finally {
         await acesso.encerrar();
@@ -3426,12 +3528,13 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
           porEntidade('locador', [CADASTROS_DE_A.locador]),
           porEntidade('locatario', [CADASTROS_DE_A.locatario]),
           porEntidade('fiador', [CADASTROS_DE_A.fiador]),
-          // As duas relações do contrato não participam das seis tentativas de referência deste
-          // caso — as chaves compostas que ele exercita são `imovel → conjunto` e `comodo → imovel`
-          // —, mas continuam SEMEADAS por `semearCadastros`, e portanto continuam legíveis sob A.
-          // Omiti-las aqui esconderia da igualdade duas relações inteiras.
+          // As duas relações do contrato e a do portador não participam das seis tentativas de
+          // referência deste caso — as chaves compostas que ele exercita são `imovel → conjunto` e
+          // `comodo → imovel` —, mas continuam SEMEADAS por `semearCadastros`, e portanto continuam
+          // legíveis sob A. Omiti-las aqui esconderia da igualdade três relações inteiras.
           porEntidade('contrato', [CADASTROS_DE_A.contrato]),
           porEntidade('contrato_fiador', [CADASTROS_DE_A.contrato_fiador]),
+          porEntidade('portador_de_confirmacao', [CADASTROS_DE_A.portador_de_confirmacao]),
         ]);
         expect(finalEmB).toEqual(ESPERADO_SOB_B);
       } finally {

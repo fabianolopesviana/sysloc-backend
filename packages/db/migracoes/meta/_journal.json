@@ -92,6 +92,20 @@
       "when": 1786474980486,
       "tag": "0012_seguranca_regua",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786593970438,
+      "tag": "0013_dominio_documentos_e_confirmacao",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1786593971438,
+      "tag": "0014_seguranca_confirmacao",
+      "breakpoints": true
     }
   ]
 }

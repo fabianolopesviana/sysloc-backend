@@ -144,6 +144,31 @@ const ESQUEMA = z.object({
   // atravessando custa uma mensagem entregue no endereço errado.
   SMTP_URL: z.string().min(1, 'deve ser declarada'),
   EMAIL_REMETENTE: z.string().min(1, 'deve ser declarada'),
+  // O endereço público do aplicativo, sobre o qual o link de confirmação é composto (T9 da fatia
+  // `documentos-e-confirmacao`). Ela **não é segredo** — é o endereço que qualquer pessoa digita no
+  // navegador.
+  //
+  // ⚠️ **ESTE processo NÃO compõe link algum**, e a exigência aqui não finge o contrário: quem monta
+  // o endereço da confirmação é o processador de trabalho (T10), e é lá que o valor é LIDO. O que a
+  // linha abaixo cobra é **completude do arquivo de ambiente**, que é UM SÓ e é o `EnvironmentFile=`
+  // das duas unidades (§16.3 da tech spec). A diferença é operacional e vale a linha: a `api` é o
+  // processo que o operador acompanha na instalação e na virada, de modo que um arquivo incompleto é
+  // recusado ali, nomeando a variável — em vez de as duas unidades subirem e a falta aparecer horas
+  // depois, como um link que não leva a lugar nenhum na caixa de um locatário real.
+  //
+  // É por isso que ela **não** vira campo de {@link Ambiente}: exigir não é consumir, e publicar um
+  // valor que nenhum código deste processo lê ensinaria o leitor seguinte que a `api` emite links.
+  //
+  // A mensagem de recusa nomeia a **variável**, nunca o valor — a disciplina é a mesma de todas as
+  // demais, e vale mesmo para o que não é segredo: a regra é do formato da mensagem, e abri-la
+  // "só para esta" cria a exceção que a próxima variável herda.
+  //
+  // A **forma** do endereço não é conferida aqui, e a ausência é decisão: quem compõe o link é o
+  // processador de trabalho (T10), e uma conferência de forma escrita nesta composição ficaria livre
+  // para divergir da que o outro processo fizer — a divergência entre dois pontos que decidem o
+  // mesmo fato é o que esta fatia existe para não ter. O piso de um caractere é a barreira que
+  // sobrevive a qualquer mudança futura em {@link selecionar}.
+  URL_BASE_DA_CONFIRMACAO: z.string().min(1, 'deve ser declarada'),
 });
 
 /**
@@ -189,6 +214,11 @@ export interface Ambiente {
   readonly urlDoTransporte: string;
   /** Endereço que assina o aviso, de `EMAIL_REMETENTE`. */
   readonly remetenteDoAviso: string;
+  // ⚠️ `URL_BASE_DA_CONFIRMACAO` é EXIGIDA na partida e **não** tem campo aqui. A ausência é a
+  // decisão, e a razão está no esquema, junto da linha que a exige: este processo confere a
+  // completude do arquivo de ambiente compartilhado e NÃO compõe link nenhum — quem lê o valor é o
+  // processador de trabalho. Publicar um campo que ninguém deste processo consome ensinaria o
+  // contrário a quem chegasse depois.
 }
 
 /**
@@ -270,6 +300,26 @@ export const TOKEN_ACESSO_AO_NEGOCIO = Symbol('AcessoAoBanco');
  * provedor de fora, sem que exista bandeira, ambiente ou ramo no meio.
  */
 export const TOKEN_PORTA_DE_EMAIL = Symbol('PortaDeEnvioDeEmail');
+
+/**
+ * Token de injeção da **porta de renderização do documento** (T7 da fatia
+ * `documentos-e-confirmacao`).
+ *
+ * Mora aqui, ao lado dos cinco tokens acima, pelo mesmo motivo deles — e há um a mais, que é
+ * estrutural: declará-lo em `contratos/contratos.module.ts` fecharia importação circular, porque o
+ * módulo importa o controlador, o controlador importa o serviço, e é o **serviço** quem precisa do
+ * token. O que ele publica é a `PortaDeRenderizacao` que `@sysloc/documentos` declara (ADR-0025):
+ * quem monta o processo escolhe o adaptador, e a composição do documento continua sem saber que
+ * existe um motor de PDF.
+ *
+ * ⚠️ **Ele não abre um segundo caminho para escolher o motor.** O único ponto do repositório que
+ * conhece `@react-pdf/renderer` continua sendo `packages/documentos/src/renderizador-pdf.ts`, e o
+ * único que decide qual adaptador entra em produção é `ContratosModule` — não há bandeira, não há
+ * variável de ambiente e não há ramo `if (ehTeste)` no meio. A verificação exercita o adaptador
+ * **real**: os bytes do documento são a coisa sob prova, e dublar o renderizador seria dublar
+ * exatamente o que se quer medir.
+ */
+export const TOKEN_PORTA_DE_RENDERIZACAO = Symbol('PortaDeRenderizacao');
 
 /**
  * Lê e valida as variáveis de ambiente exigidas.

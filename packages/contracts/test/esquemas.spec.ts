@@ -1,9 +1,10 @@
 /**
  * Os esquemas de `@sysloc/contracts` — CT-334 a CT-338, CT-340, CT-341, mais CT-424 e CT-428, que a
  * fatia `contratos-de-locacao` acrescenta, CT-537 mais CT-540 a CT-545, que a fatia
- * `cobranca-e-mora` acrescenta, e CT-604 e CT-605, que a fatia `regua-de-cobranca` acrescenta. O
- * **CT-537 substitui o CT-429** daquela fatia: ver o parágrafo dedicado abaixo, e a linha
- * `SUT_IS_CORRECT_BECAUSE:` no ponto do caso.
+ * `cobranca-e-mora` acrescenta, CT-604 e CT-605, que a fatia `regua-de-cobranca` acrescenta, e
+ * CT-713 e CT-731, que a sub-fatia `documentos-e-confirmacao` acrescenta. O **CT-537 substitui o
+ * CT-429** daquela fatia: ver o parágrafo dedicado abaixo, e a linha `SUT_IS_CORRECT_BECAUSE:` no
+ * ponto do caso.
  *
  * ---------------------------------------------------------------------------
  * INVARIANTES
@@ -92,6 +93,23 @@
  * |          |        | recusado com **exatamente uma** questão, cujo `path` é o do campo ofensor e
  * |          |        | cujo `code` é o da cláusula violada; chave desconhecida — inclusive
  * |          |        | `empresaId` — é recusada por `unrecognized_keys` nomeando a chave em `keys`. |
+ * | CA-16    | CT-731 | `esquemaDoLocatario` publica os 15 campos de `esquemaDaPessoa` **mais**
+ * |          |        | `emailConfirmadoEm`, anulável e ISO-8601; e `esquemaDaPessoa` segue com
+ * |          |        | exatamente os 15 de sempre — o mesmo objeto com o campo extra, analisado por
+ * |          |        | ele, **não** o expõe. Os dois lados por igualdade de CONJUNTO de chaves. |
+ * | CA-11    | CT-731 | O corpo da apresentação do portador aprova o segredo de 43 caracteres do
+ * | CA-15    | (b)    | alfabeto base64url devolvendo-o verbatim, e recusa nomeando `segredo` toda
+ * |          |        | forma vizinha — 42, 44, o digest hexadecimal de 64, o alfabeto do base64
+ * |          |        | clássico e o mesmo segredo com espaço em volta; chave desconhecida —
+ * |          |        | inclusive `empresaId` — é recusada por `unrecognized_keys`. |
+ * | CA-13    | CT-731 | `esquemaDaConfirmacao` admite **só** `{ confirmado: true }`, recusando `false`;
+ * | CA-12    | (c)    | e `esquemaDoReenvioDeConfirmacao` declara exatamente `reenviadoEm` e
+ * |          |        | `expiraEm`, sem chave alguma de desfecho de e-mail. |
+ * | CA-07    | CT-713 | `esquemaDeContratoNovo` RECUSA o corpo que traga `pdfContratoArquivo`, com
+ * |          |        | **exatamente uma** questão de código `unrecognized_keys` nomeando a chave em
+ * |          |        | `keys`, enquanto o MESMO corpo sem ela é aprovado verbatim; e
+ * |          |        | `esquemaDoContrato` declara exatamente as CATORZE chaves que restaram, por
+ * |          |        | igualdade de conjunto — nunca por ausência isolada. |
  *
  * Rastreabilidade: `CA-02 → CT-334, CT-335 (RN-10)` · `CA-14 → CT-337 (RN-01)` ·
  * `CA-15 → CT-338 (RN-06)` · `CA-16 → CT-336, CT-340, CT-341 (RN-11)` ·
@@ -101,7 +119,9 @@
  * `CA-§4.2/§4.3/§4.4 → CT-541 (RD-02)` · `CA-§4.5 → CT-542 (RD-01)` ·
  * `CA-§4.6/§4.7 → CT-543 (RD-03, RD-16)` · `CA-§4.9 → CT-544 (RD-04, RD-09)` ·
  * `CA-§4.10 → CT-545 (RD-16)` · `CA-15 → CT-604, CT-605 (RN-13)` ·
- * `CA-15, CA-11 → CT-604 (b) (RD-08, RD-11)`.
+ * `CA-15, CA-11 → CT-604 (b) (RD-08, RD-11)` · `CA-16 → CT-731 (RD-06, RD-07)` ·
+ * `CA-11, CA-15 → CT-731 (b) (RD-11, RD-12)` · `CA-12, CA-13 → CT-731 (c) (RD-10)` ·
+ * `CA-07 → CT-713 (RN-01)`.
  *
  * ---------------------------------------------------------------------------
  * Por que os casos vêm em pares, e por que nenhum deles sozinho serve
@@ -206,6 +226,55 @@
  * - **MT-T2-C — o destinatário ausente**: `destinatario: z.string()` vira `z.email()`. Resultado:
  *   `1 failed | 266 passed` — reprova só a linha da RD-11, que é a única cadeia vazia do arquivo.
  *
+ * **CT-731 é o par CRESCIMENTO × INTOCABILIDADE, e nenhuma das duas metades serve sozinha.** A
+ * primeira afirma que `esquemaDoLocatario` publica `emailConfirmadoEm`; sozinha, ela ficaria verde
+ * com o campo acrescentado diretamente a `esquemaDaPessoa` — que é a forma **errada** de entregar o
+ * mesmo requisito, porque publicaria o campo também em locador e fiador, dois recursos que não têm
+ * confirmação alguma a afirmar. A segunda metade é o companheiro negativo (`ct_id: self`): o
+ * **mesmo** objeto, com o campo presente na entrada, analisado por `esquemaDaPessoa`, não o expõe na
+ * saída.
+ *
+ * As duas são por **igualdade de conjunto de chaves**, e não por `toContain`. A troca de igualdade
+ * por presença é o furo herdado que a F2 fechou quando `esquemaDoImovel` ganhou `contratoVigente`:
+ * *"inclui pelo menos"* seguiria verde com um campo a mais em qualquer dos dois lados, que é
+ * exatamente a regressão de forma que este caso existe para pegar.
+ *
+ * **CT-731 (b)** prende o molde do segredo pelos dois lados, e as recusas são as **vizinhas**, não
+ * as fáceis: 42 e 44 caracteres cercam o comprimento exato (um `{43,}` ou um `{42,44}` reprova), o
+ * digest hexadecimal de 64 é o valor que o banco guarda e que a rota pública **não** pode aceitar no
+ * lugar do original, o alfabeto do base64 clássico (`+`/`/`) discrimina o alfabeto declarado, e o
+ * segredo com espaço em volta é o que pega a expressão sem âncora. Um caso que recusasse só `'abc'`
+ * ficaria verde com `z.string().min(1)`.
+ *
+ * **CT-731 (c)** carrega a única propriedade desta task que **nenhuma camada acima alcança**:
+ * `confirmado: z.literal(true)` e `confirmado: z.boolean()` produzem a MESMA resposta HTTP no
+ * caminho feliz, de modo que a prova por rota (CT-721, T11) é cega para a diferença. Só o eixo
+ * recusado — `{ confirmado: false }` — a discrimina, e é por isso que ele mora aqui, na camada mais
+ * baixa que falha quando a invariante quebra.
+ *
+ * **QUATRO MUTANTES EXECUTADOS — MT-T2b-A/B/C/D (2026-08-13).** As asserções destes três casos são
+ * **comportamentais** e por isso não exigiriam a prova (`.claude/rules/testing-stack.md`); os
+ * mutantes foram medidos assim mesmo, porque cada um deles é uma decisão registrada por extenso nos
+ * cabeçalhos de `src/confirmacao-de-email.ts` e de `src/pessoa.ts`, e decisão sem rede é o que a
+ * rodada seguinte reabre. Os quatro rodaram pelo **script do pacote**
+ * (`pnpm --filter @sysloc/contracts test`), nunca por `vitest run` avulso, e os quatro foram
+ * revertidos com `sha256sum` idêntico ao estado pré-mutante, com o controle de volta a `293 passed`.
+ *
+ * - **MT-T2b-A — a entrega pela forma errada**: `emailConfirmadoEm` acrescentado diretamente a
+ *   `esquemaDaPessoa`. Resultado: `2 failed | 291 passed` — reprovam a declaração dos quinze campos
+ *   e o companheiro negativo. As três asserções positivas do locatário seguem **verdes**, que é
+ *   exatamente o motivo de o par existir: sozinhas, elas aprovariam a forma que publica o campo em
+ *   locador e fiador.
+ * - **MT-T2b-B — o booleano no lugar do fato**: `confirmado: z.literal(true)` vira `z.boolean()`.
+ *   Resultado: `1 failed | 292 passed` — reprova só o eixo recusado, e nenhuma outra asserção do
+ *   pacote a alcança. É a medida de que a prova por rota seria cega para este mutante.
+ * - **MT-T2b-C — o comprimento vira piso**: `{43}` vira `{43,}` na expressão do segredo. Resultado:
+ *   `2 failed | 291 passed` — reprovam os 44 caracteres e o digest hexadecimal de 64. As demais
+ *   recusas seguem verdes, e é o cerco pelas vizinhas que detecta.
+ * - **MT-T2b-D — a resposta aberta**: `esquemaDoReenvioDeConfirmacao` vira `z.object`. Resultado:
+ *   `1 failed | 292 passed` — reprova a chave `desfecho`, que é a única que o `202` não pode
+ *   afirmar.
+ *
  * Sem colaborador algum: os esquemas são funções puras. Fronteira real de execução: **nenhuma** —
  * salvo no CT-545, que é `filesystem`. As demais asserções são comportamentais — exercitam o esquema
  * e observam o desfecho —, e por isso não exigem prova de falsificação.
@@ -249,6 +318,7 @@
  * duas pontas juntas.
  */
 
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -289,9 +359,12 @@ import {
   ESTADOS_DA_COBRANCA,
   ESTADOS_DO_CONTRATO,
   ESTADOS_EM_ABERTO,
+  esquemaDaApresentacaoDoPortador,
   esquemaDaAtivacaoDeContrato,
   esquemaDaCobranca,
+  esquemaDaConfirmacao,
   esquemaDaJanela,
+  esquemaDaPessoa,
   esquemaDaPoliticaDeAviso,
   esquemaDaPoliticaDeAvisoNova,
   esquemaDeCobrancaNova,
@@ -302,6 +375,8 @@ import {
   esquemaDoContrato,
   esquemaDoEnvioDeCobranca,
   esquemaDoImovel,
+  esquemaDoLocatario,
+  esquemaDoReenvioDeConfirmacao,
   formatarCodigoDeCobranca,
   formatarCodigoDeContrato,
   LARGURA_DO_SEQUENCIAL_DE_COBRANCA,
@@ -350,6 +425,59 @@ const CORPO_DE_PESSOA = {
   cep: '01000000',
 } as const;
 
+/**
+ * O cadastro de pessoa como a API o devolve — o corpo de entrada mais o que o servidor decide.
+ *
+ * Ele é montado **sobre** {@link CORPO_DE_PESSOA}, e não redigitado: uma segunda lista dos treze
+ * campos comuns ficaria livre para divergir da primeira na próxima emenda do cadastro.
+ */
+const PESSOA_PUBLICADA = {
+  id: '5d2f0000-0000-4000-8000-000000000003',
+  ...CORPO_DE_PESSOA,
+  retiradoEm: null,
+} as const;
+
+/**
+ * As chaves que `esquemaDaPessoa` publica — as **quinze**, na ordem em que o arquivo as declara.
+ *
+ * A lista é literal de propósito: derivá-la de `Object.keys(esquemaDaPessoa.shape)` faria as duas
+ * pontas andarem juntas, e o campo acrescentado ao esquema entraria também na expectativa — a
+ * asserção infalível (AP-29) que o CT-731 existe justamente para não ser.
+ */
+const CHAVES_DA_PESSOA = [
+  'id',
+  'nome',
+  'tipoPessoa',
+  'documentoPrincipal',
+  'rg',
+  'email',
+  'telefone',
+  'logradouro',
+  'numero',
+  'complemento',
+  'bairro',
+  'cidade',
+  'estado',
+  'cep',
+  'retiradoEm',
+] as const;
+
+/** O campo que **só** o locatário publica. */
+const CHAVE_DA_CONFIRMACAO = 'emailConfirmadoEm';
+
+/** O instante da confirmação usado pelo CT-731 — o do card do caso. */
+const INSTANTE_DA_CONFIRMACAO = '2026-08-12T10:00:00.000Z';
+
+/**
+ * Um segredo de portador bem formado — 43 caracteres do alfabeto base64url.
+ *
+ * Os 43 são os dez dígitos, as 26 minúsculas, os dois caracteres que distinguem o base64url (`-` e
+ * `_`) e cinco maiúsculas: o alfabeto inteiro aparece, de modo que um molde que esquecesse qualquer
+ * uma das quatro classes reprovaria aqui. É a forma exata que `randomBytes(32).toString('base64url')`
+ * produz — 32 bytes, sem enchimento.
+ */
+const SEGREDO_DO_PORTADOR = '0123456789abcdefghijklmnopqrstuvwxyz-_ABCDE';
+
 /** O identificador do fiador do contrato — o único item de `fiadoresIds`. */
 const FIADOR = '3c4d5e6f-7081-4920-a3b4-c5d6e7f80912';
 
@@ -364,7 +492,6 @@ const CORPO_DE_CONTRATO = {
   valorMensal: 2500,
   diaVencimento: 10,
   gerarCobrancasAutomaticamente: true,
-  pdfContratoArquivo: null,
 } as const;
 
 /**
@@ -387,7 +514,6 @@ const CONTRATO_PUBLICADO = {
   dataFimLocacao: null,
   valorTotalContrato: null,
   gerarCobrancasAutomaticamente: true,
-  pdfContratoArquivo: null,
   retiradoEm: null,
 } as const;
 
@@ -624,8 +750,17 @@ const PREFIXO_DE_ENTRADA_DE_ENTIDADE = 'esquemaDe';
  * ele escaparia às duas varreduras, por começar com `esquemaDa` e não com `esquemaDe`; e ele é o corpo
  * pelo qual a régua inteira é ligada, de modo que um corpo aberto aceitaria `empresaId` e ligaria a
  * régua de outra empresa. Nenhum alvo sai daqui; o conjunto só cresce.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T2 da sub-fatia `documentos-e-confirmacao` publicou
+ * `esquemaDaApresentacaoDoPortador` — o corpo pelo qual o portador de confirmação é apresentado.
+ * Pelo mesmo motivo dos parágrafos acima ele escaparia às duas varreduras, por começar com
+ * `esquemaDa` e não com `esquemaDe`; e ele é o esquema em que as duas afirmações mais importam de
+ * todo o pacote, porque é o corpo da **única rota sem sessão** do produto (ADR-0027): um corpo aberto
+ * ali aceitaria `empresaId` vindo do mundo, e o contexto de tenant tem de sair do registro que o
+ * portador resolve, nunca do pedido. Nenhum alvo sai daqui; o conjunto só cresce.
  */
 const NOMES_DAS_ENTRADAS_FORA_DO_PREFIXO = [
+  'esquemaDaApresentacaoDoPortador',
   'esquemaDaConfiguracaoDeMoraNova',
   'esquemaDaJanela',
   'esquemaDaJanelaComCirculacao',
@@ -683,11 +818,21 @@ const NOMES_DAS_ENTRADAS_FORA_DO_PREFIXO = [
  * por palavra, o parágrafo anterior: o literal é o que impede *"nenhum esquema violou"* de ser
  * indistinguível de *"nenhum esquema foi olhado"*, a âncora **sobe** e segue exata, e nenhum alvo
  * saiu.
+ *
+ * SUT_IS_CORRECT_BECAUSE: subiu de 15 para 16 porque a T2 da sub-fatia `documentos-e-confirmacao`
+ * publicou `esquemaDaApresentacaoDoPortador` — o corpo da apresentação do portador, que nasce nesta
+ * fonte única pela mesma ADR-0016. Ele entra pela lista de nomes fora do prefixo, logo acima. Vale
+ * aqui, palavra por palavra, o parágrafo anterior: o literal é o que impede *"nenhum esquema
+ * violou"* de ser indistinguível de *"nenhum esquema foi olhado"*, a âncora **sobe** e segue exata, e
+ * nenhum alvo saiu.
  */
-const QUANTIDADE_DE_ESQUEMAS_DE_ENTRADA = 15;
+const QUANTIDADE_DE_ESQUEMAS_DE_ENTRADA = 16;
 
 /** Um corpo válido por esquema de entrada, indexado pelo nome exportado. */
 const CORPOS_VALIDOS = new Map<string, Record<string, unknown>>([
+  // O segredo vai declarado por extenso porque é o único campo deste esquema: um corpo que o
+  // omitisse seria recusado antes de a varredura medir o que ela existe para medir.
+  ['esquemaDaApresentacaoDoPortador', { segredo: SEGREDO_DO_PORTADOR }],
   // Os dois percentuais vão declarados **por extenso**, e com valores distintos entre si: são os
   // únicos campos que este esquema tem, nenhum deles é opcional, e um corpo que omitisse qualquer um
   // seria recusado antes de a varredura medir o que ela existe para medir. Valores diferentes em cada
@@ -2642,4 +2787,329 @@ describe('CT-605 — o esquema recusa canal não implementado, campo ausente, fa
       expect(resultado.error?.issues[0]).toMatchObject({ keys: [chave] });
     });
   }
+});
+
+describe('CT-731 — o locatário cresce com emailConfirmadoEm, e a pessoa fica intacta', () => {
+  /** O locatário como as seis rotas de `/v1/locatarios` o devolvem. */
+  const LOCATARIO_PUBLICADO = {
+    ...PESSOA_PUBLICADA,
+    [CHAVE_DA_CONFIRMACAO]: INSTANTE_DA_CONFIRMACAO,
+  };
+
+  it('esquemaDaPessoa declara exatamente os quinze campos de sempre', () => {
+    expect(Object.keys(esquemaDaPessoa.shape)).toEqual([...CHAVES_DA_PESSOA]);
+  });
+
+  it('esquemaDoLocatario declara os mesmos quinze MAIS emailConfirmadoEm', () => {
+    expect(Object.keys(esquemaDoLocatario.shape)).toEqual([
+      ...CHAVES_DA_PESSOA,
+      CHAVE_DA_CONFIRMACAO,
+    ]);
+  });
+
+  it('o locatário confirmado publica o instante, e o conjunto de chaves é o dos dezesseis', () => {
+    const resultado = esquemaDoLocatario.parse(LOCATARIO_PUBLICADO);
+
+    // Igualdade de CONJUNTO, nos dois lados — nunca "inclui pelo menos". Uma asserção de presença
+    // seguiria verde com um campo a mais, que é justamente a regressão de forma que este caso pega.
+    expect(Object.keys(resultado).sort()).toEqual(
+      [...CHAVES_DA_PESSOA, CHAVE_DA_CONFIRMACAO].sort(),
+    );
+    expect(resultado.emailConfirmadoEm).toBe(INSTANTE_DA_CONFIRMACAO);
+    // Verbatim: o esquema não acrescenta, não remove e não transforma nenhum dos dezesseis.
+    expect(resultado).toEqual(LOCATARIO_PUBLICADO);
+  });
+
+  it('o locatário ainda não confirmado publica null, e não a AUSÊNCIA do campo', () => {
+    const naoConfirmado = { ...PESSOA_PUBLICADA, [CHAVE_DA_CONFIRMACAO]: null };
+
+    const resultado = esquemaDoLocatario.parse(naoConfirmado);
+
+    expect(Object.keys(resultado).sort()).toEqual(
+      [...CHAVES_DA_PESSOA, CHAVE_DA_CONFIRMACAO].sort(),
+    );
+    expect(resultado.emailConfirmadoEm).toBeNull();
+  });
+
+  /**
+   * O companheiro NEGATIVO do caso (`ct_id: self`), e a metade que o card fixa por extenso.
+   *
+   * O objeto é o **mesmo** do locatário — o campo vem presente na ENTRADA —, e o esquema da pessoa
+   * não o expõe na SAÍDA. É o que impede a entrega do requisito pela forma errada: acrescentar
+   * `emailConfirmadoEm` a `esquemaDaPessoa` satisfaria as três asserções positivas acima e
+   * publicaria o campo em locador e fiador, que não têm confirmação alguma a afirmar.
+   */
+  it('o MESMO objeto analisado por esquemaDaPessoa não expõe emailConfirmadoEm', () => {
+    const resultado = esquemaDaPessoa.parse(LOCATARIO_PUBLICADO);
+
+    expect(Object.keys(resultado).sort()).toEqual([...CHAVES_DA_PESSOA].sort());
+    expect(Object.keys(resultado)).not.toContain(CHAVE_DA_CONFIRMACAO);
+    expect(resultado).toEqual(PESSOA_PUBLICADA);
+  });
+
+  it('recusa instante malformado nomeando o próprio campo', () => {
+    const resultado = esquemaDoLocatario.safeParse({
+      ...PESSOA_PUBLICADA,
+      [CHAVE_DA_CONFIRMACAO]: '12/08/2026',
+    });
+
+    expect(resultado.success).toBe(false);
+    expect(resultado.error?.issues).toHaveLength(1);
+    expect(resultado.error?.issues[0]?.path).toEqual([CHAVE_DA_CONFIRMACAO]);
+    expect(resultado.error?.issues[0]?.code).toBe('invalid_format');
+  });
+});
+
+describe('CT-731 (b) — o corpo da apresentação do portador fecha o molde do segredo', () => {
+  /**
+   * O digest do segredo, nas duas grafias — é o que o banco guarda, e é a forma que a rota pública
+   * **não** pode confundir com o original.
+   *
+   * Ele é derivado de verdade, e não escrito à mão, porque o par que discrimina é o comprimento:
+   * em hexadecimal são 64 caracteres e o esquema recusa; o **mesmo** digest em base64url são 43 e o
+   * esquema aprova, indo morrer na busca do banco. Um molde com piso (`{43,}`) aprovaria os dois.
+   */
+  const DIGEST_EM_HEXADECIMAL = createHash('sha256')
+    .update(SEGREDO_DO_PORTADOR, 'utf8')
+    .digest('hex');
+  const DIGEST_EM_BASE64URL = createHash('sha256')
+    .update(SEGREDO_DO_PORTADOR, 'utf8')
+    .digest('base64url');
+
+  it('aprova o segredo bem formado e o devolve verbatim', () => {
+    const corpo = { segredo: SEGREDO_DO_PORTADOR };
+
+    const resultado = esquemaDaApresentacaoDoPortador.safeParse(corpo);
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data).toEqual(corpo);
+  });
+
+  it('aprova a forma de 43 caracteres do digest em base64url — a recusa dele é da busca, não do molde', () => {
+    const resultado = esquemaDaApresentacaoDoPortador.safeParse({ segredo: DIGEST_EM_BASE64URL });
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data).toEqual({ segredo: DIGEST_EM_BASE64URL });
+  });
+
+  /**
+   * As formas RECUSADAS, todas **vizinhas** da aceita.
+   *
+   * Um caso que recusasse só `'abc'` ficaria verde com `z.string().min(1)`. O que discrimina o molde
+   * declarado é o cerco: 42 e 44 cercam o comprimento exato, o hexadecimal de 64 é o derivado, `+` e
+   * `/` são o alfabeto do base64 clássico que o base64url substitui, e o segredo com espaço ou quebra
+   * de linha em volta é o que pega a expressão sem âncora.
+   */
+  const SEGREDOS_RECUSADOS: readonly { readonly rotulo: string; readonly segredo: string }[] = [
+    { rotulo: 'a cadeia vazia', segredo: '' },
+    { rotulo: 'três caracteres', segredo: 'abc' },
+    { rotulo: 'quarenta e dois caracteres', segredo: SEGREDO_DO_PORTADOR.slice(1) },
+    { rotulo: 'quarenta e quatro caracteres', segredo: `${SEGREDO_DO_PORTADOR}A` },
+    { rotulo: 'o digest em hexadecimal (64)', segredo: DIGEST_EM_HEXADECIMAL },
+    {
+      rotulo: 'o alfabeto do base64 clássico',
+      segredo: `${SEGREDO_DO_PORTADOR.slice(0, 41)}+/`,
+    },
+    { rotulo: 'o segredo com espaço em volta', segredo: ` ${SEGREDO_DO_PORTADOR} ` },
+    { rotulo: 'o segredo com quebra de linha ao fim', segredo: `${SEGREDO_DO_PORTADOR}\n` },
+  ];
+
+  for (const { rotulo, segredo } of SEGREDOS_RECUSADOS) {
+    it(`recusa ${rotulo} nomeando segredo`, () => {
+      const resultado = esquemaDaApresentacaoDoPortador.safeParse({ segredo });
+
+      expect(resultado.success).toBe(false);
+      expect(resultado.error?.issues).toHaveLength(1);
+      expect(resultado.error?.issues[0]?.path).toEqual(['segredo']);
+      expect(resultado.error?.issues[0]?.code).toBe('invalid_format');
+    });
+  }
+
+  /**
+   * As duas recusas por chave desconhecida, com o segredo VÁLIDO ao lado.
+   *
+   * O CT-337 já varre `empresaId` sobre a tabela inteira dos esquemas de entrada — este esquema
+   * inclusive, desde que entrou nela. O caso permanece aqui porque nomeia a rota em que a propriedade
+   * decide o isolamento: é a única sem sessão do produto, e o contexto de empresa tem de sair do
+   * registro que o portador resolve (ADR-0027), nunca do corpo. A varredura prova a regra geral; esta
+   * é a linha que reprova nomeando o ponto onde ela custa caro.
+   */
+  const CHAVES_RECUSADAS: readonly { readonly chave: string; readonly valor: string }[] = [
+    { chave: CHAVE_EXTRA, valor: 'x' },
+    { chave: 'empresaId', valor: EMPRESA_ALHEIA },
+  ];
+
+  for (const { chave, valor } of CHAVES_RECUSADAS) {
+    it(`recusa ${chave} por chave desconhecida, mesmo com o segredo válido`, () => {
+      const resultado = esquemaDaApresentacaoDoPortador.safeParse({
+        segredo: SEGREDO_DO_PORTADOR,
+        [chave]: valor,
+      });
+
+      expect(resultado.success).toBe(false);
+      expect(resultado.error?.issues).toHaveLength(1);
+      expect(resultado.error?.issues[0]?.code).toBe('unrecognized_keys');
+      expect(resultado.error?.issues[0]?.path).toEqual([]);
+      expect(resultado.error?.issues[0]).toMatchObject({ keys: [chave] });
+    });
+  }
+});
+
+describe('CT-731 (c) — as duas respostas da confirmação afirmam só o que já aconteceu', () => {
+  /** O corpo do `202` do reenvio — os dois instantes, e nada mais. */
+  const REENVIO_PUBLICADO = {
+    reenviadoEm: INSTANTE_DA_CONFIRMACAO,
+    expiraEm: '2026-08-15T10:00:00.000Z',
+  } as const;
+
+  it('a confirmação aprova { confirmado: true } e o devolve verbatim', () => {
+    const resultado = esquemaDaConfirmacao.safeParse({ confirmado: true });
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data).toEqual({ confirmado: true });
+  });
+
+  /**
+   * O eixo que **nenhuma camada acima alcança**: `z.literal(true)` e `z.boolean()` produzem a mesma
+   * resposta no caminho feliz, e a prova por rota (CT-721, T11) é cega para a diferença. Não existe
+   * `{ confirmado: false }` nesta superfície — quem não confirma recebe o `404` indistinguível.
+   */
+  it('a confirmação RECUSA { confirmado: false } — a rota não publica esse estado', () => {
+    const resultado = esquemaDaConfirmacao.safeParse({ confirmado: false });
+
+    expect(resultado.success).toBe(false);
+    expect(resultado.error?.issues).toHaveLength(1);
+    expect(resultado.error?.issues[0]?.path).toEqual(['confirmado']);
+    expect(resultado.error?.issues[0]?.code).toBe('invalid_value');
+    expect(resultado.error?.issues[0]).toMatchObject({ values: [true] });
+  });
+
+  it('o reenvio declara EXATAMENTE reenviadoEm e expiraEm, e nenhuma chave de desfecho', () => {
+    expect(Object.keys(esquemaDoReenvioDeConfirmacao.shape)).toEqual(['reenviadoEm', 'expiraEm']);
+  });
+
+  it('o reenvio aprova os dois instantes e os devolve verbatim', () => {
+    const resultado = esquemaDoReenvioDeConfirmacao.safeParse(REENVIO_PUBLICADO);
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data).toEqual(REENVIO_PUBLICADO);
+  });
+
+  /**
+   * A estritude das duas respostas é a decisão, e não a convenção do pacote — ver o cabeçalho de
+   * `src/confirmacao-de-email.ts`. `desfecho` é a chave que a borda **não** pode afirmar: a entrega
+   * corre fora da requisição (ADR-0029), e publicá-la seria o `202` mentindo sobre o que sabe.
+   */
+  const RESPOSTAS_FECHADAS: readonly {
+    readonly rotulo: string;
+    readonly esquema: z.ZodObject;
+    readonly corpo: Record<string, unknown>;
+    readonly chave: string;
+  }[] = [
+    {
+      rotulo: 'a confirmação',
+      esquema: esquemaDaConfirmacao,
+      corpo: { confirmado: true },
+      chave: CHAVE_EXTRA,
+    },
+    {
+      rotulo: 'o reenvio',
+      esquema: esquemaDoReenvioDeConfirmacao,
+      corpo: { ...REENVIO_PUBLICADO },
+      chave: 'desfecho',
+    },
+  ];
+
+  for (const { rotulo, esquema, corpo, chave } of RESPOSTAS_FECHADAS) {
+    it(`${rotulo} recusa a chave ${chave} por chave desconhecida`, () => {
+      const resultado = esquema.safeParse({ ...corpo, [chave]: 'ENVIADA' });
+
+      expect(resultado.success).toBe(false);
+      expect(resultado.error?.issues).toHaveLength(1);
+      expect(resultado.error?.issues[0]?.code).toBe('unrecognized_keys');
+      expect(resultado.error?.issues[0]).toMatchObject({ keys: [chave] });
+    });
+  }
+});
+
+// ===========================================================================
+// CT-713 — a chave removida: `pdfContratoArquivo` sai da ENTRADA e da SAÍDA
+// ===========================================================================
+//
+// Este caso é a ponta de CONTRATO PUBLICADO da única mudança incompatível deliberada do produto
+// (CA-07, ADR-0030). Ele tem dois irmãos, e os três não se substituem porque medem superfícies
+// diferentes: o `CT-712` mede o **catálogo do banco** por introspecção, o `CT-714` (T7) mede a
+// **resposta real da rota** por `Object.keys`, e este mede o **esquema**, que é a fonte de que os
+// dois documentos publicados derivam (ADR-0016).
+//
+// As duas metades abaixo são o par CRESCIMENTO × RECUSA, e nenhuma serve sozinha:
+//
+//   * a metade da ENTRADA é comportamental — o corpo que traz a chave é RECUSADO, com o código
+//     `unrecognized_keys` NOMEANDO o campo. Sem ela, um esquema que voltasse a aceitar a chave e a
+//     ignorasse em silêncio passaria, e o cliente que ainda envia o campo continuaria achando que
+//     ele foi gravado;
+//   * a metade da SAÍDA é declarativa — a chave não está no `shape`. Sem ela, a saída poderia voltar
+//     a declarar um campo que nenhuma coluna alimenta, e a asserção de entrada nada diria.
+//
+// A entrada canônica **não é remendada** aqui: `CORPO_DE_CONTRATO` já perdeu a chave, de modo que o
+// caso positivo do CT-424 (b) e este negativo leem a mesma fonte. Se alguém reintroduzir o campo no
+// esquema de entrada, a primeira metade fica vermelha; se reintroduzir só na saída, a segunda.
+describe('CT-713 — o contrato publicado não aceita nem devolve pdfContratoArquivo', () => {
+  /**
+   * O valor com que o legado povoava a coluna — o caminho de um arquivo no `/opt/frappe`.
+   *
+   * Ele é o valor do card do caso, e não um texto qualquer: o corpo que um cliente do sistema antigo
+   * ainda enviaria é exatamente este, e é ele que precisa ser recusado com o campo nomeado.
+   */
+  const CAMINHO_DO_LEGADO = '/frappe/private/files/contrato.pdf';
+
+  it('a ENTRADA recusa a chave, nomeando-a como desconhecida', () => {
+    const resultado = esquemaDeContratoNovo.safeParse({
+      ...CORPO_DE_CONTRATO,
+      pdfContratoArquivo: CAMINHO_DO_LEGADO,
+    });
+
+    expect(resultado.success).toBe(false);
+    expect(resultado.error?.issues).toHaveLength(1);
+    expect(resultado.error?.issues[0]?.code).toBe('unrecognized_keys');
+    expect(resultado.error?.issues[0]).toMatchObject({ keys: ['pdfContratoArquivo'] });
+  });
+
+  it('o companheiro POSITIVO: o MESMO corpo, sem a chave, é aprovado verbatim', () => {
+    // Sem esta metade, a recusa acima ficaria verde também sobre um esquema que recusasse tudo — e
+    // o caso deixaria de discriminar a chave removida de um corpo simplesmente inválido.
+    const resultado = esquemaDeContratoNovo.safeParse({ ...CORPO_DE_CONTRATO });
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data).toEqual({ ...CORPO_DE_CONTRATO });
+  });
+
+  it('a SAÍDA não declara a chave, e continua declarando as catorze que restaram', () => {
+    // Igualdade de conjunto, e não `not.toContain`: a segunda ficaria verde sobre um esquema que
+    // tivesse perdido metade dos campos junto. É o mesmo desenho das listas por igualdade do
+    // `catalogo.spec.ts`.
+    expect(Object.keys(esquemaDoContrato.shape).sort()).toEqual([
+      'codigo',
+      'dataFimLocacao',
+      'dataInicioLocacao',
+      'diaVencimento',
+      'fiadores',
+      'gerarCobrancasAutomaticamente',
+      'imovelId',
+      'locadorId',
+      'locatarioId',
+      'prazoMeses',
+      'retiradoEm',
+      'status',
+      'valorMensal',
+      'valorTotalContrato',
+    ]);
+  });
+
+  it('a SAÍDA aprova o contrato publicado sem a chave, devolvendo-o verbatim', () => {
+    const resultado = esquemaDoContrato.safeParse({ ...CONTRATO_PUBLICADO });
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data).toEqual({ ...CONTRATO_PUBLICADO });
+  });
 });

@@ -42,11 +42,37 @@
  * Os três compartilham **um** provedor: `CadastroDePessoaService`, parametrizado pelo papel. É a
  * composição que torna verdadeira a afirmação da T8 — um serviço, três montagens —, e é por isso que
  * o papel entra por argumento na construção de cada controlador, e não por um provedor por papel.
+ *
+ * ---------------------------------------------------------------------------
+ * Ele é o DONO do produtor de fila da aplicação (ADR-0029)
+ * ---------------------------------------------------------------------------
+ *
+ * A confirmação de endereço de e-mail é o primeiro efeito externo que a borda HTTP dispara, e a
+ * ADR-0029 manda que ele saia **por fila**. Isso faz da `api` produtora, e a conexão com o servidor
+ * de fila precisa de um dono — quem a abre é quem a **encerra**, e o gancho de desligamento abaixo é
+ * o par da fábrica acima. É a mesma decisão, com a mesma razão, que `automacao/automacao.module.ts`
+ * registra para a porta de saída de e-mail.
+ *
+ * ⚠️ **O provedor fica fora de qualquer `exports`**, e a contenção é o ponto: a única superfície que
+ * alcança a fila desta aplicação é a desta área. Publicá-lo daria a todo controlador do produto a
+ * capacidade de enfileirar trabalho, que é justamente a capacidade que se quer enumerável.
+ *
+ * ⚠️ **Ele não abre um segundo acesso ao banco.** A unidade de trabalho continua vindo de
+ * `AutenticacaoModule`, pela razão dos parágrafos acima — o que nasce aqui é a conexão com a fila,
+ * que nenhum outro módulo abre.
  */
 
-import { Module } from '@nestjs/common';
+import { Inject, Module, type OnApplicationShutdown } from '@nestjs/common';
+import type { Logger } from '@sysloc/shared';
 import { AutenticacaoModule } from '../autenticacao/autenticacao.module.js';
+import {
+  conectarProdutorDeFila,
+  type ProdutorDeFila,
+  TOKEN_PRODUTOR_DE_FILA,
+} from '../comum/produtor-de-fila.js';
+import { type Ambiente, TOKEN_AMBIENTE, TOKEN_LOGGER } from '../configuracao/ambiente.js';
 import { CadastroDePessoaService } from './cadastro-de-pessoa.service.js';
+import { ConfirmacaoDeEmailService } from './confirmacao-de-email.service.js';
 import { FiadorController } from './fiador.controller.js';
 import { LocadorController } from './locador.controller.js';
 import { LocatarioController } from './locatario.controller.js';
@@ -54,6 +80,30 @@ import { LocatarioController } from './locatario.controller.js';
 @Module({
   imports: [AutenticacaoModule],
   controllers: [LocadorController, LocatarioController, FiadorController],
-  providers: [CadastroDePessoaService],
+  providers: [
+    CadastroDePessoaService,
+    ConfirmacaoDeEmailService,
+    {
+      provide: TOKEN_PRODUTOR_DE_FILA,
+      useFactory: (ambiente: Ambiente, logger: Logger): ProdutorDeFila =>
+        conectarProdutorDeFila(ambiente.cadeiaConexaoFila, logger),
+      inject: [TOKEN_AMBIENTE, TOKEN_LOGGER],
+    },
+  ],
 })
-export class CadastrosModule {}
+export class CadastrosModule implements OnApplicationShutdown {
+  constructor(@Inject(TOKEN_PRODUTOR_DE_FILA) private readonly produtor: ProdutorDeFila) {}
+
+  /**
+   * Devolve a conexão com o servidor de fila aberta na construção.
+   *
+   * Quem abre é dono do recurso, e a devolução não é cortesia: enquanto a conexão estiver de pé, o
+   * temporizador de reconexão do cliente segura o laço de eventos, e o desligamento gracioso que o
+   * ponto de entrada arma deixaria de ser gracioso — viraria morte por temporizador do supervisor.
+   * É a mesma razão, e o mesmo lugar (o módulo que provê), do encerramento das duas reservas de
+   * conexão em `autenticacao/autenticacao.module.ts`.
+   */
+  async onApplicationShutdown(): Promise<void> {
+    await this.produtor.encerrar();
+  }
+}

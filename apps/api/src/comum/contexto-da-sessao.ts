@@ -46,6 +46,24 @@ import type { TransactionSql } from 'postgres';
 import { type SessaoDoProduto, sessaoDaRequisicao } from '../autenticacao/contexto.guard.js';
 
 /**
+ * A sessão **já conferida** por esta borda: a mesma de sempre, com a empresa garantida.
+ *
+ * Ela existe porque a recusa acima é uma promessa que o tipo não estava cumprindo: todo trabalho que
+ * corre aqui dentro já passou pela guarda de `empresaId === null`, e ainda assim recebia
+ * `string | null` — de modo que quem precisasse do identificador (o disparo da confirmação é o
+ * primeiro que precisa) teria de reconferi-lo, ou de convertê-lo. Reconferir duplicaria a recusa em
+ * cada borda; converter apagaria a única prova de que ela existe.
+ *
+ * O estreitamento mora **no ponto único** que faz a recusa, e é isso que fecha a classe: não há um
+ * segundo caminho para abrir unidade sob a sessão, de modo que nenhum consumidor pode ficar de fora.
+ *
+ * ⚠️ Ele **não afrouxa nada e não remove a guarda** — a recusa segue sendo a de sempre, no mesmo
+ * lugar, com o mesmo código. Quem declarar o trabalho tipando o parâmetro como
+ * {@link SessaoDoProduto} continua compilando, porque este é um subtipo dela.
+ */
+export type SessaoComEmpresa = SessaoDoProduto & { readonly empresaId: string };
+
+/**
  * Abre a unidade de trabalho da operação sob a sessão corrente e entrega o executor ao trabalho.
  *
  * @param banco       A porta única para transação, injetada no controlador por
@@ -58,7 +76,7 @@ import { type SessaoDoProduto, sessaoDaRequisicao } from '../autenticacao/contex
 export async function sobContextoDaSessao<T>(
   banco: AcessoAoBanco,
   requisicao: FastifyRequest,
-  trabalho: (tx: TransactionSql, sessao: SessaoDoProduto) => Promise<T>,
+  trabalho: (tx: TransactionSql, sessao: SessaoComEmpresa) => Promise<T>,
 ): Promise<T> {
   const sessao = sessaoDaRequisicao(requisicao);
 
@@ -69,5 +87,9 @@ export async function sobContextoDaSessao<T>(
     );
   }
 
-  return await banco.emUnidadeDeTrabalho(async (tx) => await trabalho(tx, sessao));
+  // A conversão é a materialização da recusa logo acima, e não um atalho sobre ela: o ramo que a
+  // torna verdadeira está à vista, três linhas atrás, e é o mesmo que já existia.
+  const comEmpresa = sessao as SessaoComEmpresa;
+
+  return await banco.emUnidadeDeTrabalho(async (tx) => await trabalho(tx, comEmpresa));
 }

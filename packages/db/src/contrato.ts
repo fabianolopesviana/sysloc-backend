@@ -229,7 +229,6 @@ export interface DadosDoContrato {
   readonly valorMensal: number;
   readonly diaVencimento: number;
   readonly gerarCobrancasAutomaticamente: boolean;
-  readonly pdfContratoArquivo: string | null;
 }
 
 /**
@@ -289,7 +288,6 @@ export interface ContratoPersistido {
   /** Nulo enquanto o contrato não foi ativado (RD-10). */
   readonly valorTotalContrato: number | null;
   readonly gerarCobrancasAutomaticamente: boolean;
-  readonly pdfContratoArquivo: string | null;
   /** A marca da exclusão lógica (ADR-0014): nula enquanto circula, o instante da retirada depois. */
   readonly retiradoEm: Date | null;
 }
@@ -392,8 +390,14 @@ const ESTADO_CANCELADO: EstadoDoContrato = 'CANCELADO';
  *
  * Escrito uma vez e usado nas duas colunas da projeção: duas grafias ficariam livres para divergir, e
  * a divergência apareceria como uma data deslocada num campo que o CA-20 compara contra o oráculo.
+ *
+ * **Ela é exportada para o módulo vizinho, e não pelo índice do pacote.** `./documento-de-contrato.ts`
+ * precisa da MESMA cadeia para a data de emissão que o documento imprime, e uma segunda grafia
+ * cairia exatamente no defeito que este docblock descreve — agora num campo que ninguém confere por
+ * leitura. Ela **não** entra em `./index.ts`: é detalhe da camada de dados, e publicá-la daria a
+ * `apps/api` um formato de data para escolher.
  */
-const FORMATO_ISO_DA_DATA = 'YYYY-MM-DD';
+export const FORMATO_ISO_DA_DATA = 'YYYY-MM-DD';
 
 /**
  * A projeção publicada, escrita **uma vez** e reusada por todas as consultas deste arquivo.
@@ -426,7 +430,6 @@ function colunasDoContrato(tx: TransactionSql): Fragment {
     to_char(data_fim_locacao, ${FORMATO_ISO_DA_DATA}) AS "dataFimLocacao",
     valor_total_contrato AS "valorTotalContrato",
     gerar_cobrancas_automaticamente AS "gerarCobrancasAutomaticamente",
-    pdf_contrato_arquivo AS "pdfContratoArquivo",
     retirado_em AS "retiradoEm"
   `;
 }
@@ -476,7 +479,6 @@ function contratoPublicado(
     dataFimLocacao: linha.dataFimLocacao,
     valorTotalContrato: linha.valorTotalContrato === null ? null : Number(linha.valorTotalContrato),
     gerarCobrancasAutomaticamente: linha.gerarCobrancasAutomaticamente,
-    pdfContratoArquivo: linha.pdfContratoArquivo,
     retiradoEm: linha.retiradoEm,
   };
 }
@@ -745,13 +747,13 @@ export async function criarContrato(
       INSERT INTO negocio.contrato (
         empresa_id, codigo, imovel_id, locador_id, locatario_id, status,
         data_inicio_locacao, prazo_meses, valor_mensal, dia_vencimento,
-        gerar_cobrancas_automaticamente, pdf_contrato_arquivo
+        gerar_cobrancas_automaticamente
       )
       VALUES (
         ${empresaDoContexto(escrita)}, ${codigo}, ${dados.imovelId}, ${dados.locadorId},
         ${dados.locatarioId}, ${ESTADO_INICIAL},
         ${dados.dataInicioLocacao}, ${dados.prazoMeses}, ${dados.valorMensal},
-        ${dados.diaVencimento}, ${dados.gerarCobrancasAutomaticamente}, ${dados.pdfContratoArquivo}
+        ${dados.diaVencimento}, ${dados.gerarCobrancasAutomaticamente}
       )
       RETURNING ${colunasDoContrato(escrita)}
     `;
@@ -909,8 +911,7 @@ export async function alterarContrato(
                prazo_meses = ${dados.prazoMeses},
                valor_mensal = ${dados.valorMensal},
                dia_vencimento = ${dados.diaVencimento},
-               gerar_cobrancas_automaticamente = ${dados.gerarCobrancasAutomaticamente},
-               pdf_contrato_arquivo = ${dados.pdfContratoArquivo}
+               gerar_cobrancas_automaticamente = ${dados.gerarCobrancasAutomaticamente}
          WHERE codigo = ${codigo}
         RETURNING ${colunasDoContrato(escrita)}
       `;

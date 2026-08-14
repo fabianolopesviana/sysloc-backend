@@ -1,6 +1,7 @@
 /**
  * A porta de dados do contrato contra banco real — CT-403, CT-403 (b), CT-403 (c), CT-404, CT-405,
- * CT-407 e CT-407 (b). T5 da fatia `contratos-de-locacao`.
+ * CT-407 e CT-407 (b), da T5 da fatia `contratos-de-locacao`; mais CT-711 e CT-712, que a T3 da
+ * sub-fatia `documentos-e-confirmacao` acrescenta.
  *
  * ===========================================================================
  * INVARIANTES
@@ -41,10 +42,20 @@
  * |          |        | `ErroDeImovelComContratoVigente`, discriminada pelo vigente do imóvel de
  * |          |        | **destino** — nunca pelo contrato que está sendo movido —, nada é gravado, e
  * |          |        | o mesmo movimento para um imóvel livre **passa**. |
+ * | CA-06    | CT-711 | `negocio.contrato` recusa `imovel_id` nulo com SQLSTATE **23502** NOMEANDO
+ * |          |        | a coluna, e a contagem crua de contratos não muda — enquanto a MESMA
+ * |          |        | instrução com o imóvel do cenário grava exatamente uma linha. A recusa é do
+ * |          |        | BANCO: a instrução contorna a porta de aplicação. O estado que a
+ * |          |        | `ValidationError` do legado recusava é **irrepresentável** (DV-06). |
+ * | CA-07    | CT-712 | Depois da migração `0013`, o catálogo do PostgreSQL (`pg_attribute`, colunas
+ * |          |        | vivas) **não lista** `pdf_contrato_arquivo` para `negocio.contrato`, e lista
+ * |          |        | por IGUALDADE de conjunto as quinze que restaram. A ausência é medida por
+ * |          |        | introspecção, nunca presumida do texto da migração. |
  *
  * Rastreabilidade: `CA-04 → CT-403 (RN-04)` · `CA-04 → CT-403 (b) (RN-04)` ·
  * `CA-04 → CT-403 (c) (RN-04)` · `CA-04 → CT-404 (RN-04)` · `CA-04 → CT-405 (RN-04)` ·
- * `CA-07 → CT-407 (RN-09)` · `CA-07 → CT-407 (b) (RN-09)`.
+ * `CA-07 → CT-407 (RN-09)` · `CA-07 → CT-407 (b) (RN-09)` · `CA-06 → CT-711 (RN-04)` ·
+ * `CA-07 → CT-712 (RN-01)`.
  *
  * ===========================================================================
  * POR QUE A CONCORRÊNCIA É REAL, E NÃO SIMULADA
@@ -243,7 +254,6 @@ const TERMOS_DO_CONTRATO = {
   valorMensal: 2500.5,
   diaVencimento: 10,
   gerarCobrancasAutomaticamente: true,
-  pdfContratoArquivo: null,
 } as const;
 
 let banco: BancoMigrado;
@@ -779,6 +789,148 @@ describe('CT-407 (b) — mover um contrato vigente para imóvel ocupado recebe a
   );
 });
 
+// ===========================================================================
+// CT-711 — contrato sem imóvel é IRREPRESENTÁVEL, e a impossibilidade é do banco
+// ===========================================================================
+//
+// O sistema antigo recusava o contrato sem imóvel com uma `ValidationError` de aplicação
+// (*"O Contrato nao possui imovel vinculado"*). Ela **não tem equivalente** aqui, e a ausência é a
+// decisão: o estado que ela recusava não existe no armazenamento — `imovel_id` é `NOT NULL`, e não
+// há caminho de escrita nesta porta que o omita.
+//
+// Por isso o caso ataca o banco DIRETO, contornando a porta de aplicação: uma recusa provada pela
+// porta provaria a porta, e a porta é justamente o que não decide nada aqui. O que se afirma é que
+// **o estado é irrepresentável**, e é isso que torna a divergência declarada **DV-06** uma ausência
+// estrutural em vez de uma regra que alguém precise lembrar de escrever (RN-04, CA-06).
+describe('CT-711 — `negocio.contrato` recusa `imovel_id` nulo pelo BANCO, e nada é gravado', () => {
+  it(
+    'a instrução rejeita com SQLSTATE 23502 nomeando `imovel_id`, e a contagem crua não muda',
+    async () => {
+      const cenario = await semearCenario(CONTEXTO_DE_A, 'ct711');
+
+      // A contagem CRUA antes e depois é o que separa "respondeu com erro" de "respondeu com erro E
+      // não gravou". Sem ela, um banco que aceitasse a linha e levantasse depois ficaria verde.
+      const antes = await contarContratosCrus(CONTEXTO_DE_A);
+
+      const tentativa = await tentar(
+        async () =>
+          await emUnidade(acesso, CONTEXTO_DE_A, async (tx) => {
+            // Todos os demais `NOT NULL` são preenchidos com valores LEGÍTIMOS, e os três `CHECK`
+            // da tabela são respeitados: a única coisa errada nesta instrução é o `imovel_id`. Sem
+            // esse cuidado, o caso ficaria verde por qualquer outra recusa, e deixaria de
+            // discriminar a coluna que ele nomeia.
+            await tx`
+              INSERT INTO negocio.contrato
+                          (empresa_id, codigo, imovel_id, locador_id, locatario_id, status,
+                           data_inicio_locacao, prazo_meses, valor_mensal, dia_vencimento,
+                           gerar_cobrancas_automaticamente)
+              VALUES (${EMPRESA_A.id}, ${'CTR-2001-99999'}, ${null},
+                      ${cenario.locadorId}, ${cenario.locatarioId},
+                      ${'RASCUNHO'}::negocio.status_contrato,
+                      ${'2026-03-01'}::date, ${12}, ${'2500.50'}, ${10}, ${true})
+            `;
+          }),
+      );
+
+      // O SQLSTATE **e** a coluna, e não só "lançou": `23502` sozinho diria que alguma coluna não
+      // nula foi violada, e a nomeada é o conteúdo do caso.
+      expect(tentativa.ok).toBe(false);
+      expect(sqlstate(erroDe(tentativa))).toBe('23502');
+      expect(nomeDaColuna(erroDe(tentativa))).toBe('imovel_id');
+
+      expect(await contarContratosCrus(CONTEXTO_DE_A)).toBe(antes);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'o companheiro POSITIVO: a MESMA instrução, com o imóvel do cenário, grava exatamente uma linha',
+    async () => {
+      // Sem esta perna, a recusa acima ficaria verde também sobre um banco que recusasse toda
+      // escrita crua nesta tabela — por privilégio, por política ou por qualquer outra restrição —,
+      // e o caso deixaria de provar que o que falta é o IMÓVEL.
+      const cenario = await semearCenario(CONTEXTO_DE_A, 'ct711-positivo');
+      const antes = await contarContratosCrus(CONTEXTO_DE_A);
+
+      const gravadas = await emUnidade(acesso, CONTEXTO_DE_A, async (tx) => {
+        const resultado = await tx`
+          INSERT INTO negocio.contrato
+                      (empresa_id, codigo, imovel_id, locador_id, locatario_id, status,
+                       data_inicio_locacao, prazo_meses, valor_mensal, dia_vencimento,
+                       gerar_cobrancas_automaticamente)
+          VALUES (${EMPRESA_A.id}, ${'CTR-2001-99998'}, ${cenario.imovelId},
+                  ${cenario.locadorId}, ${cenario.locatarioId},
+                  ${'RASCUNHO'}::negocio.status_contrato,
+                  ${'2026-03-01'}::date, ${12}, ${'2500.50'}, ${10}, ${true})
+        `;
+        return resultado.count;
+      });
+
+      expect(gravadas).toBe(1);
+      expect(await contarContratosCrus(CONTEXTO_DE_A)).toBe(antes + 1);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});
+
+// ===========================================================================
+// CT-712 — a coluna `pdf_contrato_arquivo` sumiu do CATÁLOGO
+// ===========================================================================
+//
+// A ausência é **medida por introspecção**, e nunca presumida do texto da migração: ler o `.sql` do
+// disco provaria o que está escrito no arquivo, e não o que o banco aplicou — a mesma razão pela qual
+// a guarda de cobertura pergunta ao `pg_class` em vez de ler a declaração em Drizzle. É o molde do
+// `CT-430` (a ausência de `retirado_em` em `contrato_fiador`), com a diferença de que aqui a coluna
+// **existia** e foi removida (ADR-0030, CA-07).
+//
+// PROVA DE FALSIFICAÇÃO EXECUTADA (T3, pelo script do pacote — `pnpm --filter @sysloc/db test`,
+// nunca `vitest run` avulso):
+//
+//   * **mutante** — a última instrução de `migracoes/0013_dominio_documentos_e_confirmacao.sql`
+//     (`ALTER TABLE "negocio"."contrato" DROP COLUMN "pdf_contrato_arquivo";`) foi comentada, de
+//     modo que a instância efêmera nasce com a coluna de volta — exatamente a regressão que este
+//     caso existe para pegar. O `CT-712` **reprovou**, nomeando `'pdf_contrato_arquivo'` no conjunto
+//     obtido;
+//   * **reversão** — o arquivo foi restaurado e conferido idêntico, e o caso voltou ao verde.
+//
+// O resultado da medição está no sumário da task. A asserção é `not.toContain` sobre o conjunto de
+// colunas vivas, acompanhada do controle POSITIVO abaixo: sem ele, a ausência ficaria verde também
+// sobre uma consulta que não alcançasse tabela nenhuma.
+describe('CT-712 — `negocio.contrato` não tem mais a coluna `pdf_contrato_arquivo`', () => {
+  it(
+    'o catálogo não lista a coluna removida, e continua listando as que restaram',
+    async () => {
+      const colunas = await colunasCruasDoContrato(CONTEXTO_DE_A);
+
+      // A ausência, afirmada sobre o conjunto REAL do catálogo.
+      expect(colunas).not.toContain('pdf_contrato_arquivo');
+
+      // O controle POSITIVO, e ele é por IGUALDADE de conjunto — não por presença de uma coluna
+      // qualquer. Uma consulta que devolvesse lista vazia (tabela errada, schema errado, privilégio
+      // ausente) satisfaria o `not.toContain` acima e reprovaria aqui; e uma migração futura que
+      // removesse outra coluna por descuido também reprova, em vez de passar em silêncio.
+      expect(colunas).toEqual([
+        'codigo',
+        'data_fim_locacao',
+        'data_inicio_locacao',
+        'dia_vencimento',
+        'empresa_id',
+        'gerar_cobrancas_automaticamente',
+        'id',
+        'imovel_id',
+        'locador_id',
+        'locatario_id',
+        'prazo_meses',
+        'retirado_em',
+        'status',
+        'valor_mensal',
+        'valor_total_contrato',
+      ]);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});
+
 // ---------------------------------------------------------------------------------------------
 // Acessórios — todo acesso pela API pública do pacote, sob o contexto de cada empresa
 // ---------------------------------------------------------------------------------------------
@@ -946,6 +1098,49 @@ async function lerCodigosCrus(contexto: Contexto): Promise<string[]> {
   });
 }
 
+/**
+ * Quantos contratos a empresa do contexto alcança — a contagem CRUA do CT-711.
+ *
+ * `count(*)` sem projeção nenhuma, e sem `WHERE empresa_id`: quem recorta é a política, e escrever o
+ * filtro aqui provaria a aplicação em vez do banco (ADR-0008). Mesmo desenho de
+ * {@link lerCodigosCrus}.
+ */
+async function contarContratosCrus(contexto: Contexto): Promise<number> {
+  return await emUnidade(acesso, contexto, async (tx) => {
+    const [linha] = await tx<{ total: number }[]>`
+      SELECT count(*)::integer AS total FROM negocio.contrato
+    `;
+    return linha?.total ?? -1;
+  });
+}
+
+/**
+ * As colunas VIVAS de `negocio.contrato`, ordenadas pelo nome — a introspecção do CT-712.
+ *
+ * Vem de `pg_attribute`, e não do esquema Drizzle: derivá-la da declaração faria a asserção
+ * concordar com o mesmo lugar de onde a coluna seria reintroduzida, e a ausência deixaria de ser
+ * verificável. `NOT a.attisdropped` é conteúdo, e não zelo: o PostgreSQL **não apaga** a entrada de
+ * catálogo de uma coluna removida por `DROP COLUMN` — ele a marca. Sem o predicado, este caso
+ * reprovaria sobre um banco corretamente migrado, e "consertá-lo" tirando o `not.toContain` seria a
+ * regressão de prova. Mesmo mecanismo de `colunasDe` em `catalogo.spec.ts`.
+ */
+async function colunasCruasDoContrato(contexto: Contexto): Promise<string[]> {
+  return await emUnidade(acesso, contexto, async (tx) => {
+    const linhas = await tx<{ coluna: string }[]>`
+      SELECT a.attname AS coluna
+        FROM pg_catalog.pg_attribute a
+        JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'negocio'
+         AND c.relname = 'contrato'
+         AND a.attnum > 0
+         AND NOT a.attisdropped
+       ORDER BY a.attname
+    `;
+    return linhas.map((linha) => linha.coluna);
+  });
+}
+
 /** Quantos contratos vigentes o imóvel tem — a contagem que o índice parcial limita a um. */
 async function contarVigentesDoImovel(imovelId: string): Promise<number> {
   return await emUnidade(acesso, CONTEXTO_DE_A, async (tx) => {
@@ -1075,6 +1270,18 @@ function sqlstate(erro: unknown): string | undefined {
  */
 function nomeDaRestricao(erro: unknown): string | undefined {
   const nome = (erro as { constraint_name?: unknown } | null)?.constraint_name;
+  return typeof nome === 'string' ? nome : undefined;
+}
+
+/**
+ * A COLUNA que o servidor apontou — o que discrimina a recusa por `NOT NULL` (CT-711).
+ *
+ * `23502` sozinho diz apenas que alguma coluna obrigatória ficou sem valor, e `negocio.contrato` tem
+ * onze delas: sem o nome, o caso ficaria verde sobre uma instrução malformada em qualquer outro
+ * campo. É o irmão de {@link nomeDaRestricao}, para a família de erro que não tem restrição nomeada.
+ */
+function nomeDaColuna(erro: unknown): string | undefined {
+  const nome = (erro as { column_name?: unknown } | null)?.column_name;
   return typeof nome === 'string' ? nome : undefined;
 }
 

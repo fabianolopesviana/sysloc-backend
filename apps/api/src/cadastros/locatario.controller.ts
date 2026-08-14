@@ -1,6 +1,29 @@
 /**
- * As **seis rotas do locatário** — um dos três papéis de cadastro de pessoa, no molde que a T5
- * estabeleceu.
+ * As **sete rotas do locatário** — as seis do cadastro de pessoa, no molde que a T5 estabeleceu,
+ * mais o **reenvio da confirmação de e-mail**, que é só dele.
+ *
+ * ---------------------------------------------------------------------------
+ * A SÉTIMA rota, e por que ela mora aqui em vez de num controlador próprio
+ * ---------------------------------------------------------------------------
+ *
+ * `POST /v1/locatarios/:id/confirmacao-de-email` age sobre o **cadastro do locatário**, é governada
+ * pela **mesma área** (`TELA:cadastros`) e alcança o mesmo recurso pelo mesmo `:id`. Um controlador
+ * próprio teria de redeclarar a etiqueta, a exigência e a leitura do identificador — três lugares
+ * novos para divergir —, e a rota deixaria de herdar a exigência da classe, que é justamente o
+ * mecanismo que a ADR-0018 governa aqui.
+ *
+ * Ela é o **gatilho manual** da RN-13. O gatilho automático não é rota: é o gancho que este
+ * controlador supre à superfície compartilhada, e os dois convergem no **mesmo** caminho —
+ * `ConfirmacaoDeEmailService.disparar`.
+ *
+ * ---------------------------------------------------------------------------
+ * A superfície publicada do locatário é `esquemaDoLocatario`, e não `esquemaDaPessoa`
+ * ---------------------------------------------------------------------------
+ *
+ * As seis rotas de cadastro deste arquivo declaram `esquemaDoLocatario`, que é o cadastro de pessoa
+ * **mais** `emailConfirmadoEm`. Locador e fiador seguem com `esquemaDaPessoa`, e a assimetria é o
+ * conteúdo: a coluna existe só em `negocio.locatario`, e publicar o campo para os outros dois seria
+ * um recurso afirmando um fato que não existe para ele.
  *
  * ---------------------------------------------------------------------------
  * O COMPORTAMENTO mora em `superficie-de-cadastro.ts`; aqui moram os DECORADORES
@@ -77,6 +100,7 @@ import {
   Req,
 } from '@nestjs/common';
 import {
+  ApiAcceptedResponse,
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
@@ -86,20 +110,30 @@ import {
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
-import { esquemaDaPessoa, type Pessoa } from '@sysloc/contracts';
+import {
+  ESQUEMA_DO_IDENTIFICADOR,
+  envelopeDeLista,
+  esquemaDoLocatario,
+  esquemaDoReenvioDeConfirmacao,
+  type Pessoa,
+  type ReenvioDeConfirmacao,
+} from '@sysloc/contracts';
 import { type AcessoAoBanco, PAPEIS_DE_PESSOA } from '@sysloc/db';
 import { CodigoErro, type Logger } from '@sysloc/shared';
 import type { FastifyRequest } from 'fastify';
 import { ExigeChave, ExigeChaves } from '../autenticacao/exigencia.decorator.js';
+import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
+import { ESQUEMA_DO_CORPO_VAZIO } from '../comum/esquema-de-corpo-vazio.js';
 import { esquemaDoErro } from '../comum/esquema-de-erro.js';
 import { esquemaPublicado } from '../comum/esquema-publicado.js';
+import { validar } from '../comum/validacao.js';
 import { TOKEN_ACESSO_AO_NEGOCIO, TOKEN_LOGGER } from '../configuracao/ambiente.js';
 import { CadastroDePessoaService, type PaginaDePessoas } from './cadastro-de-pessoa.service.js';
+import { ConfirmacaoDeEmailService } from './confirmacao-de-email.service.js';
 import {
   ACAO_DE_CIRCULACAO,
   AREA_DO_CADASTRO,
   DESCRICOES,
-  ESQUEMA_DA_PAGINA,
   SuperficieDeCadastro,
 } from './superficie-de-cadastro.js';
 
@@ -114,6 +148,30 @@ export const CAMINHO_DOS_LOCATARIOS = 'locatarios';
  */
 const PAPEL = PAPEIS_DE_PESSOA[1];
 
+/**
+ * O segmento da rota de reenvio, relativo ao `:id` do locatário.
+ *
+ * Constante nomeada porque o literal é **contrato publicado**: ele aparece no decorador e é o que a
+ * âncora de superfície de `test/cobertura-de-autorizacao.e2e.spec.ts` compõe para conferir o par
+ * método+caminho.
+ */
+const SEGMENTO_DA_CONFIRMACAO = 'confirmacao-de-email';
+
+/** Nome de campo da recusa que não tem caminho a nomear — o identificador da rota. */
+const CAMPO_DO_IDENTIFICADOR = 'id';
+
+/** Nome de campo da recusa do corpo, quando o Zod não tem caminho a nomear. */
+const CAMPO_DO_CORPO = 'corpo';
+
+/**
+ * O envelope de lista **do locatário**, derivado do esquema dele — nunca redigitado (ADR-0016).
+ *
+ * Ele não reusa o `ESQUEMA_DA_PAGINA` da superfície compartilhada, e a diferença é o conteúdo: aquele
+ * deriva de `esquemaDaPessoa` e serve a locador e fiador, que **não** publicam a confirmação. Um
+ * envelope só para os três faria a listagem de locatários declarar menos do que ela devolve.
+ */
+const ESQUEMA_DA_PAGINA_DE_LOCATARIOS = envelopeDeLista(esquemaDoLocatario);
+
 @ApiTags('locatarios')
 @Controller(CAMINHO_DOS_LOCATARIOS)
 @ExigeChave(AREA_DO_CADASTRO)
@@ -124,18 +182,35 @@ export class LocatarioController {
   constructor(
     // A porta única para transação. É dela que sai o executor que os métodos do serviço recebem, e é
     // ela que torna a operação inteira um commit só.
-    @Inject(TOKEN_ACESSO_AO_NEGOCIO) banco: AcessoAoBanco,
+    @Inject(TOKEN_ACESSO_AO_NEGOCIO) private readonly banco: AcessoAoBanco,
     @Inject(CadastroDePessoaService) cadastros: CadastroDePessoaService,
     @Inject(TOKEN_LOGGER) logger: Logger,
+    // O disparo da confirmação — a única dependência que **não** é dos três papéis. Ver o gancho
+    // logo abaixo: ele é suprido aqui, e em nenhum outro controlador.
+    @Inject(ConfirmacaoDeEmailService) private readonly confirmacao: ConfirmacaoDeEmailService,
   ) {
-    this.superficie = new SuperficieDeCadastro(PAPEL, banco, cadastros, logger);
+    this.superficie = new SuperficieDeCadastro(
+      PAPEL,
+      banco,
+      cadastros,
+      logger,
+      // O GANCHO do disparo automático (RN-07), e este é o único lugar do produto onde ele é
+      // suprido. `SuperficieDeCadastro` é compartilhada pelos três papéis e **não sabe** o que ele
+      // faz — a ignorância dela é o que impede o disparo de alcançar locador e fiador sem que uma
+      // linha de comportamento específico de papel tenha de ser escrita lá dentro.
+      async (tx, locatarioId, empresaId) => {
+        const disparo = await this.confirmacao.disparar(tx, locatarioId, empresaId, 'cadastro');
+
+        return disparo.entregar;
+      },
+    );
   }
 
   @Post()
   @ApiOperation({ summary: 'Cria um locatário', description: DESCRICOES.criar })
   @ApiCreatedResponse({
     description: 'O cadastro foi criado.',
-    schema: esquemaPublicado(esquemaDaPessoa, 'output'),
+    schema: esquemaPublicado(esquemaDoLocatario, 'output'),
   })
   @ApiUnauthorizedResponse({ schema: esquemaDoErro([CodigoErro.NAO_AUTENTICADO]) })
   @ApiForbiddenResponse({ schema: esquemaDoErro([CodigoErro.ACESSO_NEGADO]) })
@@ -148,7 +223,7 @@ export class LocatarioController {
   @ApiOperation({ summary: 'Lista os locatários da empresa', description: DESCRICOES.listar })
   @ApiOkResponse({
     description: 'A página pedida.',
-    schema: esquemaPublicado(ESQUEMA_DA_PAGINA, 'output'),
+    schema: esquemaPublicado(ESQUEMA_DA_PAGINA_DE_LOCATARIOS, 'output'),
   })
   @ApiUnauthorizedResponse({ schema: esquemaDoErro([CodigoErro.NAO_AUTENTICADO]) })
   @ApiForbiddenResponse({ schema: esquemaDoErro([CodigoErro.ACESSO_NEGADO]) })
@@ -164,7 +239,7 @@ export class LocatarioController {
   @ApiOperation({ summary: 'Lê um locatário pelo identificador', description: DESCRICOES.ler })
   @ApiOkResponse({
     description: 'O cadastro pedido.',
-    schema: esquemaPublicado(esquemaDaPessoa, 'output'),
+    schema: esquemaPublicado(esquemaDoLocatario, 'output'),
   })
   @ApiUnauthorizedResponse({ schema: esquemaDoErro([CodigoErro.NAO_AUTENTICADO]) })
   @ApiForbiddenResponse({ schema: esquemaDoErro([CodigoErro.ACESSO_NEGADO]) })
@@ -181,7 +256,7 @@ export class LocatarioController {
   @ApiOperation({ summary: 'Reescreve um locatário', description: DESCRICOES.alterar })
   @ApiOkResponse({
     description: 'O cadastro como ele ficou.',
-    schema: esquemaPublicado(esquemaDaPessoa, 'output'),
+    schema: esquemaPublicado(esquemaDoLocatario, 'output'),
   })
   @ApiUnauthorizedResponse({ schema: esquemaDoErro([CodigoErro.NAO_AUTENTICADO]) })
   @ApiForbiddenResponse({ schema: esquemaDoErro([CodigoErro.ACESSO_NEGADO]) })
@@ -208,7 +283,7 @@ export class LocatarioController {
   })
   @ApiOkResponse({
     description: 'O cadastro, agora com a marca de retirada.',
-    schema: esquemaPublicado(esquemaDaPessoa, 'output'),
+    schema: esquemaPublicado(esquemaDoLocatario, 'output'),
   })
   @ApiUnauthorizedResponse({ schema: esquemaDoErro([CodigoErro.NAO_AUTENTICADO]) })
   @ApiForbiddenResponse({ schema: esquemaDoErro([CodigoErro.ACESSO_NEGADO]) })
@@ -233,7 +308,7 @@ export class LocatarioController {
   })
   @ApiOkResponse({
     description: 'O cadastro, de volta à circulação.',
-    schema: esquemaPublicado(esquemaDaPessoa, 'output'),
+    schema: esquemaPublicado(esquemaDoLocatario, 'output'),
   })
   @ApiUnauthorizedResponse({ schema: esquemaDoErro([CodigoErro.NAO_AUTENTICADO]) })
   @ApiForbiddenResponse({ schema: esquemaDoErro([CodigoErro.ACESSO_NEGADO]) })
@@ -245,5 +320,60 @@ export class LocatarioController {
     @Req() requisicao: FastifyRequest,
   ): Promise<Pessoa> {
     return await this.superficie.definirCirculacao(identificador, corpo, requisicao, true);
+  }
+
+  @Post(`:id/${SEGMENTO_DA_CONFIRMACAO}`)
+  @HttpCode(202)
+  // ⚠️ **NENHUMA declaração de exigência aqui, e a ausência é a decisão.** `TELA:cadastros` vem da
+  // CLASSE, e `getAllAndOverride` é substituição, não união (ADR-0018): declarar `@ExigeChave` no
+  // método — mesmo repetindo a área — trocaria a exigência herdada por uma cópia dela, e nesta
+  // superfície o erro seria **invisível por comportamento**, porque `TELA:cadastros` é exatamente
+  // `MAPA_ACAO_TELA['ACAO:excluir_cadastro']`. Ver o cabeçalho deste arquivo.
+  //
+  // E **nenhuma chave de ação nasce**: o catálogo 10×7 permanece fechado (RN-13). Reenviar a
+  // confirmação é o mesmo ato de cadastro que a área já governa —
+  // `packages/auth/src/catalogo-de-permissoes.ts` não é tocado.
+  @ApiOperation({
+    summary: 'Reenvia a confirmação de e-mail de um locatário',
+    description:
+      'Emite um portador novo, com prazo de 72 h, e **invalida todos os anteriores** do locatário ' +
+      '(RN-09) — é a saída de quem não recebeu a mensagem. O corpo é vazio e fechado. A resposta é ' +
+      '`202`, e não `200`, porque ela afirma só o que **já** aconteceu: o portador foi gravado e os ' +
+      'anteriores foram invalidados. A **entrega corre fora da requisição** (ADR-0029), e por isso ' +
+      'nenhuma chave do corpo fala sobre ela — um `200` prometeria um desfecho que a borda não tem.',
+  })
+  @ApiAcceptedResponse({
+    description: 'O reenvio foi aceito; a entrega corre fora da requisição.',
+    schema: esquemaPublicado(esquemaDoReenvioDeConfirmacao, 'output'),
+  })
+  @ApiUnauthorizedResponse({ schema: esquemaDoErro([CodigoErro.NAO_AUTENTICADO]) })
+  @ApiForbiddenResponse({ schema: esquemaDoErro([CodigoErro.ACESSO_NEGADO]) })
+  @ApiNotFoundResponse({ schema: esquemaDoErro([CodigoErro.RECURSO_NAO_ENCONTRADO]) })
+  @ApiUnprocessableEntityResponse({ schema: esquemaDoErro([CodigoErro.CAMPO_INVALIDO]) })
+  async reenviarConfirmacao(
+    @Param('id') identificador: string,
+    @Body() corpo: unknown,
+    @Req() requisicao: FastifyRequest,
+  ): Promise<ReenvioDeConfirmacao> {
+    const id = validar(ESQUEMA_DO_IDENTIFICADOR, identificador, CAMPO_DO_IDENTIFICADOR);
+    validar(ESQUEMA_DO_CORPO_VAZIO, corpo ?? {}, CAMPO_DO_CORPO);
+
+    const disparo = await sobContextoDaSessao(
+      this.banco,
+      requisicao,
+      async (tx, sessao) => await this.confirmacao.reenviar(tx, id, sessao.empresaId),
+    );
+
+    // DEPOIS do `COMMIT`, exatamente como no disparo automático: o portador já existe quando a
+    // tarefa nasce, e a falha do servidor de fila não desfaz o que foi gravado.
+    await disparo.entregar();
+
+    // As DUAS chaves, e nenhuma outra. O corpo é montado aqui campo a campo, e não por espalhamento
+    // do que o serviço devolveu: `ConfirmacaoDisparada` carrega também a continuação, e um
+    // espalhamento a publicaria. O `CT-719` afirma o conjunto de chaves por igualdade.
+    return {
+      reenviadoEm: disparo.reenviadoEm.toISOString(),
+      expiraEm: disparo.expiraEm.toISOString(),
+    };
   }
 }

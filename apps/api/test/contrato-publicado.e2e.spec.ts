@@ -141,6 +141,8 @@ import {
   esquemaDoConjuntoComImoveis,
   esquemaDoContrato,
   esquemaDoImovel,
+  esquemaDoLocatario,
+  esquemaDoReenvioDeConfirmacao,
   SITUACOES_DE_LOCACAO,
   TIPOS_DE_IMOVEL,
   TIPOS_DE_PESSOA,
@@ -262,8 +264,29 @@ const ROTAS_DE_SITUACAO_DE_LOCACAO = 1;
  * locação do imóvel, pela mesma razão dos parágrafos acima. O valor é `33 + 8 + 1`, e as **três**
  * partições passam a ser afirmadas separadamente — ver {@link ROTAS_DE_SITUACAO_DE_LOCACAO} para por
  * que a terceira precisou nascer. Com ela, a superfície de domínio desta fatia está completa.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T9** da fatia `documentos-e-confirmacao` acrescentou **uma** rota
+ * (42 → 43), o reenvio da confirmação de e-mail, pela mesma razão dos parágrafos acima — deixar a
+ * âncora em `42` faria o caso passar sobre uma tabela que ignora a rota nova. O valor é
+ * `33 + 8 + 1 + 1`, e as **quatro** partições passam a ser afirmadas separadamente; ver
+ * {@link ROTAS_DA_CONFIRMACAO} para por que a quarta precisou nascer.
+ *
+ * ⚠️ A rota do **documento do contrato** (T7 da mesma fatia) **não** entra nesta tabela, e a ausência
+ * não é omissão: ela devolve **bytes** (`application/pdf`), e não um corpo derivado de esquema — não
+ * há `esquemaPublicado` com que comparar. Quem prova o contrato dela é `documento-do-contrato.e2e.spec.ts`.
  */
-const ROTAS_DESCRITAS = 42;
+const ROTAS_DESCRITAS = 43;
+
+/**
+ * Quantas rotas a fatia `documentos-e-confirmacao` publica com corpo derivado de esquema — hoje
+ * **uma**, o reenvio da confirmação.
+ *
+ * Ela nasce como **quarta partição** pela mesma razão que a terceira nasceu: a rota vive sob
+ * `/v1/locatarios`, e o prefixo a confundiria com as trinta e três da fatia de cadastro. Filtrada
+ * pelo **sufixo** do caminho, ela responde pelo próprio crescimento, e a subtração continua provando
+ * que nenhuma linha das partições anteriores saiu.
+ */
+const ROTAS_DA_CONFIRMACAO = 1;
 
 /**
  * Quantas rotas de escrita a fatia `cadastro-de-imoveis-e-pessoas` publica: `POST` e `PUT` das seis
@@ -354,7 +377,7 @@ afterAll(async () => {
   }
 }, LIMITE_DE_MONTAGEM_MS);
 
-describe('o contrato publicado das 42 rotas do domínio (T11)', () => {
+describe('o contrato publicado das 43 rotas do domínio (T11)', () => {
   it(
     'CT-327 — o documento publicado é DERIVADO dos esquemas que validam a entrada',
     async () => {
@@ -379,7 +402,15 @@ describe('o contrato publicado das 42 rotas do domínio (T11)', () => {
       );
       expect(daSituacaoDeLocacao.length).toBe(ROTAS_DE_SITUACAO_DE_LOCACAO);
 
-      expect(tabela.length - doContrato.length - daSituacaoDeLocacao.length).toBe(ROTAS_DA_FATIA);
+      // A QUARTA partição: a rota da fatia `documentos-e-confirmacao` que vive sob `/v1/locatarios`.
+      // Pelo sufixo, e não pelo prefixo, pela mesma razão da terceira — ver
+      // {@link ROTAS_DA_CONFIRMACAO}.
+      const daConfirmacao = tabela.filter((rota) => rota.caminho.endsWith('/confirmacao-de-email'));
+      expect(daConfirmacao.length).toBe(ROTAS_DA_CONFIRMACAO);
+
+      expect(
+        tabela.length - doContrato.length - daSituacaoDeLocacao.length - daConfirmacao.length,
+      ).toBe(ROTAS_DA_FATIA);
 
       const conferidas: string[] = [];
       for (const rota of tabela) {
@@ -690,11 +721,27 @@ const ESQUEMAS_POR_ROTA: readonly EsquemaDeRota[] = [
     esquema: esquemaDoImovel,
   },
   ...esquemasDeUmCadastro(CAMINHO_DOS_LOCADORES, esquemaDaPessoa, envelopeDeLista(esquemaDaPessoa)),
+  // SUT_IS_CORRECT_BECAUSE: a **T9** da fatia `documentos-e-confirmacao` fez as **seis** rotas de
+  // locatário publicarem `esquemaDoLocatario` — o cadastro de pessoa **mais** `emailConfirmadoEm` —,
+  // e locador e fiador seguem com `esquemaDaPessoa`. O código de produção está certo e era esta
+  // tabela que descrevia a superfície anterior: a assimetria é o conteúdo, porque a coluna existe só
+  // em `negocio.locatario`. **Nenhuma linha saiu**, a igualdade profunda segue exata, e as duas
+  // linhas vizinhas — locador e fiador — continuam apontando para o esquema de sempre, o que é
+  // exatamente o que faz esta edição ser conferível.
   ...esquemasDeUmCadastro(
     CAMINHO_DOS_LOCATARIOS,
-    esquemaDaPessoa,
-    envelopeDeLista(esquemaDaPessoa),
+    esquemaDoLocatario,
+    envelopeDeLista(esquemaDoLocatario),
   ),
+  // A rota do **reenvio da confirmação** (T9). Ela aponta para `esquemaDoReenvioDeConfirmacao`, e não
+  // para o esquema do locatário: o `202` afirma só o que já aconteceu — o portador foi gravado e os
+  // anteriores foram invalidados — e **cala sobre a entrega**, que corre fora da requisição
+  // (ADR-0029). É a própria escolha da rota que esta linha afirma.
+  {
+    caminho: `${caminhoDoDocumento(CAMINHO_DOS_LOCATARIOS)}/{id}/confirmacao-de-email`,
+    metodo: 'post',
+    esquema: esquemaDoReenvioDeConfirmacao,
+  },
   ...esquemasDeUmCadastro(CAMINHO_DOS_FIADORES, esquemaDaPessoa, envelopeDeLista(esquemaDaPessoa)),
   ...esquemasDeCadastroDeContrato(),
 ];

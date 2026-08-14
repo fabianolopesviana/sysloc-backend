@@ -162,6 +162,7 @@ import {
   PREFIXO_DE_VERSAO,
   TOKEN_LOGGER,
 } from '../src/configuracao/ambiente.ts';
+import { CAMINHO_DAS_CONFIRMACOES } from '../src/confirmacoes/confirmacao.controller.ts';
 import { CAMINHO_DOS_CONTRATOS } from '../src/contratos/contrato.controller.ts';
 import { CAMINHO_DOS_COMODOS } from '../src/imoveis/comodo.controller.ts';
 import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
@@ -297,6 +298,21 @@ const CAMINHOS_PUBLICOS_ACEITOS: readonly string[] = [
   '/saude',
   '/saude/pronto',
   `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/*`,
+  // SUT_IS_CORRECT_BECAUSE: a **T11** da fatia `documentos-e-confirmacao` publicou
+  // `POST /v1/confirmacoes-de-email`, a **única rota de negócio sem sessão do produto** (ADR-0027), e
+  // este é o lado da igualdade a que ela pertence: a sonda sem cookie **não** recebe `401
+  // NAO_AUTENTICADO` dela — recebe `422 CAMPO_INVALIDO`, porque o corpo vazio morre no esquema, o que
+  // é ele próprio a prova de que a requisição **atravessou** a guarda em vez de ser barrada por ela.
+  // É a primeira entrada deste inventário que não é saúde, arcabouço de identidade ou contrato
+  // publicado, e por isso ela é a que mais precisa estar aqui nomeada: sem a linha, a rota entraria
+  // como **excedente** e o caso reprovaria — que é exatamente o comportamento desejado para uma
+  // dispensa que ninguém revisou. **Nenhuma entrada saiu** de conjunto nenhum, e a igualdade segue
+  // exata nos dois sentidos.
+  //
+  // ⚠️ **Este arquivo não está na §5.2 da T11** — é a **décima segunda** anotação consecutiva do
+  // débito **D26 (F2/T6)**: a §5.2 das tasks não conta as âncoras de inventário que a publicação de
+  // rota obriga a tocar. A divergência é registrada aqui em vez de silenciada.
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_CONFIRMACOES}`,
 ].sort();
 
 /**
@@ -443,10 +459,25 @@ const CAMINHOS_PUBLICOS_ACEITOS: readonly string[] = [
  * igualdade segue exata nos dois sentidos — **nada foi afrouxado**, o `toEqual` continua sendo
  * igualdade de conjunto contra um inventário escrito à mão.
  *
+ * SUT_IS_CORRECT_BECAUSE: a T7 da fatia `documentos-e-confirmacao` publicou
+ * `GET /v1/contratos/:codigo/documento` — a rota de **bytes** do documento do contrato —, e ela é
+ * **protegida**: vale a exigência da classe, `@ExigeChave('TELA:contratos')`, ela **não** declara
+ * nada no método (ADR-0018), não é marcada `@RotaPublica()`, e por isso a sonda sem cookie recebe
+ * `401 NAO_AUTENTICADO` da guarda. Pela classificação por **caminho** deste caso ela entra como
+ * **uma** entrada nova, porque nenhum outro método atende aquele caminho. Vale o mesmo dos
+ * parágrafos acima: nenhuma entrada anterior saiu, o conjunto público continua inalterado, e a
+ * igualdade segue exata nos dois sentidos — **nada foi afrouxado**, o `toEqual` continua sendo
+ * igualdade de conjunto contra um inventário escrito à mão.
+ *
+ * ⚠️ **Ela é a rota de bytes, e continua entrando aqui pela mesma régua das demais**: o que este
+ * inventário classifica é *"a guarda recusa sem sessão?"*, e o tipo de mídia da resposta bem-sucedida
+ * não participa da pergunta. A rota **sem sessão** desta fatia — a confirmação de e-mail, T11 — é que
+ * mudará o conjunto **público**, e ela ainda não existe.
+ *
  * **Este arquivo não está na §5.2 da T7 nem na da T9, nem na da T6, da T7 e da T8 da fatia de
  * contratos, nem na da T5, na da T6 e na da T7 da fatia `cobranca-e-mora`, nem na da T9 da fatia
- * `regua-de-cobranca`** — divergência declarada nas
- * nove, e
+ * `regua-de-cobranca`, nem na da T7 da fatia `documentos-e-confirmacao`** — divergência declarada nas
+ * dez, e
  * é o débito **D26 (F2/T6)**, cuja recomendação
  * literal é declará-lo nas §5.2 de T7, T8 e T10. A T10 **também não o declara**, e a divergência
  * volta a ser anotada aqui pela quinta vez. Ele é blast radius por construção: a âncora afirma por
@@ -465,6 +496,19 @@ const ROTAS_PROTEGIDAS_ACEITAS: readonly string[] = [
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_LOCADORES}/:id/retirada`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_LOCATARIOS}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_LOCATARIOS}/:id`,
+  // SUT_IS_CORRECT_BECAUSE: a **T9** da fatia `documentos-e-confirmacao` publicou
+  // `POST /v1/locatarios/:id/confirmacao-de-email`, e ela é **protegida** — não é marcada
+  // `@RotaPublica()`, de modo que a sonda sem cookie recebe `401 NAO_AUTENTICADO` da guarda como
+  // qualquer outra daqui. Ela entra pelo mesmo lado da igualdade que as anteriores; **nenhuma
+  // entrada saiu**, o conjunto público continua inalterado, e a igualdade segue exata nos dois
+  // sentidos — uma rota nova que tivesse dispensado sessão apareceria no OUTRO conjunto e
+  // reprovaria como excedente. (A rota **sem sessão** desta fatia é a da T11, e o lugar dela é o
+  // conjunto público, não este.)
+  //
+  // ⚠️ **Este arquivo não está na §5.2 da T9** — é a **décima primeira** anotação consecutiva do
+  // débito **D26 (F2/T6)**: a §5.2 das tasks não conta as âncoras de inventário que a publicação de
+  // rota obriga a tocar. A divergência é registrada aqui em vez de silenciada.
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_LOCATARIOS}/:id/confirmacao-de-email`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_LOCATARIOS}/:id/recirculacao`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_LOCATARIOS}/:id/retirada`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONJUNTOS}`,
@@ -479,6 +523,7 @@ const ROTAS_PROTEGIDAS_ACEITAS: readonly string[] = [
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo/ativacao`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo/cancelamento`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo/documento`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo/recirculacao`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo/retirada`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_COMODOS}`,

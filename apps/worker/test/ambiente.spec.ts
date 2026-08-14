@@ -13,9 +13,13 @@
  * |       |        | nunca devolvendo configuração, e nunca ecoando o valor recebido. |
  * | CA-15 | CT-007 | Com todas presentes e válidas, devolve a configuração com cada campo
  * |       |        | derivado da SUA variável de origem, e nada além delas. |
- * | CA-17 | CT-625 | A barreira FALHA FECHADO: sem `SMTP_URL`, sem `EMAIL_REMETENTE` ou sem
- * |       |        | `DATABASE_URL` — ausentes ou vazias —, `lerAmbiente` devolve erro que nomeia
- * |       |        | a variável faltante; com as cinco declaradas, devolve o ambiente completo por
+ * | CA-17 | CT-625 | A barreira FALHA FECHADO: sem `SMTP_URL`, sem `EMAIL_REMETENTE`, sem
+ * |       |        | `DATABASE_URL` ou sem `URL_BASE_DA_CONFIRMACAO` — ausentes ou vazias —,
+ * |       |        | `lerAmbiente` devolve erro que nomeia a variável faltante; e a
+ * |       |        | `URL_BASE_DA_CONFIRMACAO` **declarada e sem forma de endereço** é recusada do
+ * |       |        | mesmo jeito, nomeando a exigência e nunca o valor, enquanto as formas
+ * |       |        | legítimas continuam ACEITAS e chegam ao campo **sem normalização**. Com as
+ * |       |        | **seis** declaradas, devolve o ambiente completo por
  * |       |        | `toStrictEqual`. Nunca devolve ambiente parcial, nunca degrada em silêncio, e
  * |       |        | nunca aborta o processo por conta própria. |
  * | CA-17 | CT-643 | **Toda** variável que `lerAmbiente` exige tem caminho de provisionamento: o
@@ -118,10 +122,16 @@ import { type Ambiente, lerAmbiente } from '../src/main.ts';
 /**
  * As variáveis que o processador exige — e o `.env.example` documenta.
  *
- * ⚠️ **São CINCO desde a T8, e o crescimento é a natureza do processo mudando**: ele deixou de ser
- * um consumidor que só fala com a fila e passou a falar com o banco e com um servidor de e-mail.
- * A lista é a fonte das duas tabelas de caso abaixo, de modo que uma variável acrescentada a
- * `lerAmbiente` sem entrar aqui **não é exercitada** — e uma que saia daqui sem sair de lá reprova.
+ * ⚠️ **São SEIS desde a T10 da fatia `documentos-e-confirmacao`, e o crescimento é a natureza do
+ * processo mudando**: ele deixou de ser um consumidor que só fala com a fila (T6), passou a falar com
+ * o banco e com um servidor de e-mail (T8) e agora **monta o link** que o locatário recebe. A lista é
+ * a fonte das duas tabelas de caso abaixo, de modo que uma variável acrescentada a `lerAmbiente` sem
+ * entrar aqui **não é exercitada** — e uma que saia daqui sem sair de lá reprova.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a lista descrevia as cinco variáveis que o processo exigia até a T8, e a
+ * T10 leva a exigência a seis. Nenhuma asserção foi afrouxada — as duas tabelas de caso percorrem a
+ * lista e passam a cobrar **também** a sexta, e a âncora antivácuo do `CT-643` compara este conjunto
+ * com o que a execução de `lerAmbiente` revela: uma variável acrescentada só aqui reprovaria lá.
  */
 const VARIAVEIS_EXIGIDAS = [
   'LOG_LEVEL',
@@ -129,6 +139,7 @@ const VARIAVEIS_EXIGIDAS = [
   'DATABASE_URL',
   'SMTP_URL',
   'EMAIL_REMETENTE',
+  'URL_BASE_DA_CONFIRMACAO',
 ] as const;
 
 /** Senha embutida nas cadeias de conexão, para provar que a falha não a ecoa. */
@@ -153,6 +164,7 @@ function ambienteCompleto(): Record<string, string> {
     DATABASE_URL: `postgresql://sysloc_app:${SENHA_NA_CADEIA}@127.0.0.1:15432/sysloc`,
     SMTP_URL: `smtps://avisos:${SENHA_NA_CADEIA}@smtp.exemplo.invalid:465`,
     EMAIL_REMETENTE: 'avisos@exemplo.invalid',
+    URL_BASE_DA_CONFIRMACAO: 'https://app.exemplo.invalid',
   };
 }
 
@@ -265,19 +277,22 @@ describe('lerAmbiente (T6 · CA-15)', () => {
     // Cada campo vale exatamente o valor da SUA variável de origem.
     //
     // SUT_IS_CORRECT_BECAUSE: a igualdade de chaves valia dois campos porque o processo lia duas
-    // variáveis; a T8 leva a leitura a cinco. A asserção continua sendo de IGUALDADE de conjunto —
-    // é ela que faz um campo acrescentado à configuração sem caso próprio reprovar aqui —, e
-    // ganhou a comparação do objeto INTEIRO logo abaixo, que é mais forte do que a de chaves.
+    // variáveis; a T8 leva a leitura a cinco, e a T10 a seis — a base do link, que ESTE processo
+    // consome ao compor a mensagem de confirmação. A asserção continua sendo de IGUALDADE de
+    // conjunto — é ela que faz um campo acrescentado à configuração sem caso próprio reprovar aqui
+    // —, e a comparação do objeto INTEIRO logo abaixo, mais forte do que a de chaves, também cresceu.
     expect(ambiente.nivelDeLog).toBe(SEVERIDADE);
     expect(ambiente.cadeiaConexaoFila).toBe(fonte.REDIS_URL);
     expect(ambiente.cadeiaConexaoBanco).toBe(fonte.DATABASE_URL);
     expect(ambiente.urlDoTransporte).toBe(fonte.SMTP_URL);
     expect(ambiente.remetenteDoAviso).toBe(fonte.EMAIL_REMETENTE);
+    expect(ambiente.urlBaseDaConfirmacao).toBe(fonte.URL_BASE_DA_CONFIRMACAO);
     expect(Object.keys(ambiente).sort()).toEqual([
       'cadeiaConexaoBanco',
       'cadeiaConexaoFila',
       'nivelDeLog',
       'remetenteDoAviso',
+      'urlBaseDaConfirmacao',
       'urlDoTransporte',
     ]);
   });
@@ -313,18 +328,79 @@ describe('lerAmbiente (T6 · CA-15)', () => {
 // ===========================================================================
 
 /**
- * As quatro linhas inválidas da barreira, com a variável que cada uma deve nomear.
+ * As linhas inválidas **por ausência ou vacuidade**, com a variável que cada uma deve nomear.
  *
  * A tabela é declarada ANTES do caso e nomeia o resultado esperado de cada linha — ela não é
- * derivada da execução. As três primeiras são a **ausência**; a quarta é a cadeia vazia, que é o
- * que um `EnvironmentFile` copiado do `.env.example` sem preenchimento entrega, e que a versão
- * ingênua desta validação (`fonte.SMTP_URL !== undefined`) aceitaria.
+ * derivada da execução. Umas são a **ausência**; as outras são a cadeia vazia, que é o que um
+ * `EnvironmentFile` copiado do `.env.example` sem preenchimento entrega, e que a versão ingênua
+ * desta validação (`fonte.SMTP_URL !== undefined`) aceitaria.
+ *
+ * O eixo da **forma** — variável declarada que não serve — tem tabela própria
+ * ({@link FORMAS_RECUSADAS_DA_BASE}), porque a mensagem esperada é outra: ela nomeia a exigência, e
+ * não a ausência.
  */
 const LINHAS_INVALIDAS = [
   { cenario: 'sem SMTP_URL', ausente: 'SMTP_URL', vazia: undefined },
   { cenario: 'sem EMAIL_REMETENTE', ausente: 'EMAIL_REMETENTE', vazia: undefined },
   { cenario: 'sem DATABASE_URL', ausente: 'DATABASE_URL', vazia: undefined },
   { cenario: 'SMTP_URL vazia', ausente: 'SMTP_URL', vazia: 'SMTP_URL' },
+  // As duas linhas da T10: a base do link segue a mesma barreira, e pela mesma razão. Um link
+  // montado sobre base vazia sai como caminho relativo, que não abre em cliente de e-mail nenhum —
+  // e o defeito só apareceria na caixa do locatário, depois de a mensagem já ter saído.
+  {
+    cenario: 'sem URL_BASE_DA_CONFIRMACAO',
+    ausente: 'URL_BASE_DA_CONFIRMACAO',
+    vazia: undefined,
+  },
+  {
+    cenario: 'URL_BASE_DA_CONFIRMACAO vazia',
+    ausente: 'URL_BASE_DA_CONFIRMACAO',
+    vazia: 'URL_BASE_DA_CONFIRMACAO',
+  },
+] as const;
+
+/**
+ * As formas da base do link que a partida recusa — a variável está **declarada e não serve**.
+ *
+ * Ela é o companheiro NEGATIVO de {@link FORMAS_ACEITAS_DA_BASE}, e a tabela é escrita ANTES do
+ * caso: cada linha nomeia uma forma que um arquivo de ambiente real produz, e não uma variação
+ * sintática qualquer. A primeira é a que motivou o degrau — a digitação mais provável de um
+ * operador, que a barreira de presença aceitava e que chegaria à caixa do locatário como link que
+ * não abre, **depois** de o processo ter subido verde e a tarefa ter concluído.
+ *
+ * As três últimas discriminam o degrau da conferência ingênua: `javascript:` e `mailto:` **são**
+ * URLs absolutas para o interpretador, de modo que uma barreira que só chamasse `URL.parse` as
+ * aceitaria; o valor com aspas é o que um `EnvironmentFile` retém, e é o mesmo caminho que a
+ * `SMTP_URL` já mediu em `coordenadas-do-transporte.ts`.
+ */
+const FORMAS_RECUSADAS_DA_BASE = [
+  { forma: 'sem esquema, como o operador a digita', valor: 'app.sysloc.com.br' },
+  { forma: 'caminho relativo', valor: '/confirmar-email' },
+  { forma: 'endereço sem protocolo, ao estilo do navegador', valor: '//app.exemplo.invalid' },
+  { forma: 'esquema alheio ao navegador', valor: 'ftp://app.exemplo.invalid' },
+  {
+    forma: 'esquema de correio, que não abre página alguma',
+    valor: 'mailto:avisos@exemplo.invalid',
+  },
+  { forma: 'esquema executável', valor: 'javascript:alert(1)' },
+  { forma: 'aspas retidas pelo arquivo de ambiente', valor: '"https://app.exemplo.invalid"' },
+] as const;
+
+/**
+ * As formas da base que a partida ACEITA — o companheiro positivo, sem o qual a prova é vazia.
+ *
+ * Uma conferência que recusasse tudo passaria em toda linha da tabela acima. A segunda entrada é o
+ * valor que `provisionar-base.sh` semeia numa instalação de máquina nova (`URL_BASE_PADRAO_DA_CONFIRMACAO`),
+ * e ela é o que impede este degrau de derrubar a partida que o provisionamento entrega; a terceira e
+ * a quarta são as duas variações que um operador escreve — barra final e caminho de prefixo —, e as
+ * duas seguem legítimas porque quem normaliza a barra é a composição da mensagem, não esta barreira.
+ */
+const FORMAS_ACEITAS_DA_BASE = [
+  'https://app.exemplo.invalid',
+  'https://sysloc.invalid',
+  'https://app.exemplo.invalid/',
+  'https://app.exemplo.invalid/sistema',
+  'http://localhost:5173',
 ] as const;
 
 /** O ambiente completo, já traduzido para os campos que a configuração publica. */
@@ -335,6 +411,7 @@ function configuracaoEsperada(fonte: Record<string, string>): Record<string, str
     cadeiaConexaoBanco: fonte.DATABASE_URL,
     urlDoTransporte: fonte.SMTP_URL,
     remetenteDoAviso: fonte.EMAIL_REMETENTE,
+    urlBaseDaConfirmacao: fonte.URL_BASE_DA_CONFIRMACAO,
   };
 }
 
@@ -357,7 +434,48 @@ describe('lerAmbiente (T8 · CA-17) — a barreira de partida do transporte', ()
     },
   );
 
-  it('CT-625 — com as cinco declaradas, devolve o ambiente INTEIRO por igualdade estrita', () => {
+  it.each(FORMAS_RECUSADAS_DA_BASE)(
+    'CT-625 — URL_BASE_DA_CONFIRMACAO $forma: a partida é recusada nomeando a EXIGÊNCIA',
+    ({ valor }) => {
+      // O degrau que faltava, e o modo de falha que ele fecha: a barreira de presença aceitava
+      // QUALQUER cadeia não-vazia, e a composição da mensagem só remove barras finais e concatena —
+      // de modo que uma base sem esquema subia verde, a tarefa concluía, o journal gravava
+      // "confirmação de e-mail entregue" e o locatário recebia um endereço que não abre. A falha é
+      // silenciosa e POSTERIOR à entrega; e o valor real só é escrito à mão na virada, quando não
+      // existe mais task que possa pegá-la.
+      const fonte = { ...ambienteCompleto(), URL_BASE_DA_CONFIRMACAO: valor };
+
+      // `falhaDe` REPROVA quando a chamada devolve configuração: um `lerAmbiente` que apenas
+      // registrasse a suspeita e seguisse cairia aqui.
+      const falha = falhaDe(fonte);
+
+      // A cadeia EXATA da recusa por forma, distinta da recusa por ausência: a variável ESTÁ
+      // declarada, e uma mensagem que dissesse "ausente" mandaria o operador procurar o eixo errado.
+      expect(falha.message).toContain(
+        'URL_BASE_DA_CONFIRMACAO: deve ser um endereço interpretável começando com http:// ou https://',
+      );
+      expect(falha.message).not.toContain('URL_BASE_DA_CONFIRMACAO: ausente');
+      // A disciplina da mensagem vale mesmo para o que não é segredo — a regra é do formato, e
+      // abri-la "só para esta" cria a exceção que a próxima variável herda.
+      expect(falha.message).not.toContain(valor);
+      expect(falha.message).not.toContain(SENHA_NA_CADEIA);
+    },
+  );
+
+  it.each(FORMAS_ACEITAS_DA_BASE.map((valor) => ({ valor })))(
+    'CT-625 — URL_BASE_DA_CONFIRMACAO $valor é ACEITA e chega ao campo sem normalização',
+    ({ valor }) => {
+      // O companheiro positivo: sem ele, uma conferência que recusasse toda base passaria na tabela
+      // acima e derrubaria a partida de toda instalação — inclusive a que o provisionamento semeia.
+      const ambiente = lerAmbiente({ ...ambienteCompleto(), URL_BASE_DA_CONFIRMACAO: valor });
+
+      // O valor LIDO, e não a forma canônica do interpretador (que devolveria `https://x/` para
+      // `https://x`): quem normaliza a barra final é a composição da mensagem, num lugar só.
+      expect(ambiente.urlBaseDaConfirmacao).toBe(valor);
+    },
+  );
+
+  it('CT-625 — com as seis declaradas, devolve o ambiente INTEIRO por igualdade estrita', () => {
     const fonte = ambienteCompleto();
 
     const ambiente = lerAmbiente(fonte);
@@ -382,8 +500,17 @@ describe('lerAmbiente (T8 · CA-17) — a barreira de partida do transporte', ()
       expect(() => lerAmbiente(fonte)).toThrowError(Error);
     }
 
+    // A recusa por FORMA passa pelo mesmo caminho, e a afirmação vale igual para ela: a barreira
+    // nova levanta, e não termina o processo por conta própria — se o fizesse, este arquivo de
+    // teste morreria no meio.
+    for (const { valor } of FORMAS_RECUSADAS_DA_BASE) {
+      expect(() =>
+        lerAmbiente({ ...ambienteCompleto(), URL_BASE_DA_CONFIRMACAO: valor }),
+      ).toThrowError(Error);
+    }
+
     expect(process.exitCode).toBe(codigoAntes);
-    // E o caminho feliz segue utilizável depois das quatro recusas — nenhuma delas deixou estado.
+    // E o caminho feliz segue utilizável depois de TODAS as recusas — nenhuma delas deixou estado.
     expect(lerAmbiente(ambienteCompleto()).nivelDeLog).toBe(SEVERIDADE);
   });
 });

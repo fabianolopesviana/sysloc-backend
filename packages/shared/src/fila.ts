@@ -83,6 +83,17 @@ const TAREFAS_FALHAS_RETIDAS = 5_000;
 export const FILA_DA_REGUA = 'regua-de-cobranca';
 
 /**
+ * Nome da fila da entrega da confirmação de endereço de e-mail do locatário.
+ *
+ * Ela é a **primeira fila com produtor em produção**: quem enfileira é a borda HTTP (`apps/api`),
+ * pelos dois gatilhos que convergem no mesmo caminho — o automático do cadastro e o manual do
+ * operador —, e quem consome é o processador de trabalho. Vale aqui, palavra por palavra, a razão
+ * de {@link FILA_DA_REGUA}: um literal repetido dos dois lados é a divergência que nenhuma
+ * ferramenta apanha, porque o trabalho fica parado **sem erro nenhum**.
+ */
+export const FILA_DA_CONFIRMACAO = 'confirmacao-de-email';
+
+/**
  * Nome da fila da tarefa de ida e volta.
  *
  * Ela não tem produtor em produção: existe para provar que o caminho fila → processador funciona
@@ -115,6 +126,44 @@ export interface CargaDaRegua {
    * banco**: ela é disciplina de quem enfileira, provada por teste.
    */
   readonly empresaId: string;
+}
+
+/**
+ * Carga útil da entrega de **uma** confirmação de endereço de e-mail.
+ *
+ * ---------------------------------------------------------------------------
+ * Os TRÊS campos são obrigatórios, e o terceiro é o SEGREDO EM CLARO
+ * ---------------------------------------------------------------------------
+ *
+ * A obrigatoriedade de `empresaId` é a mesma decisão de {@link CargaDaRegua}, com a mesma razão da
+ * ADR-0024 — ver o cabeçalho deste módulo. O que é próprio desta carga é o terceiro campo, e ele
+ * merece o parágrafo abaixo porque parece um descuido e não é.
+ *
+ * **É `segredo`, e não o identificador do portador.** A borda sorteia o segredo, grava apenas
+ * `sha256(segredo)` e descarta o claro ao fim da transação: nem ela consegue reconstruí-lo depois —
+ * é exatamente a impossibilidade que a RN-11 exige, e ela vale **também para o nosso próprio
+ * processo**. Quem monta o link precisa do claro; carregar o identificador do portador seria
+ * inútil, porque o consumidor leria o derivado e continuaria sem o que pôr no link.
+ *
+ * O que fecha o risco de o claro viajar aqui, e cada metade é verificável: (a) ele **nunca** é
+ * gravado no banco — a coluna do claro não existe; (b) `segredo` está na lista de radicais
+ * **redigidos** do despacho único de redação de `./log.ts`, de modo que ele não aparece em registro
+ * nenhum; (c) ele vive no servidor de fila apenas pelo tempo da tarefa. A exposição residual — a
+ * retenção de tarefas concluídas declarada em {@link OPCOES_PADRAO_DA_TAREFA} — é **declarada**, e
+ * não descoberta.
+ */
+export interface CargaDaConfirmacao {
+  /**
+   * A empresa do locatário cujo endereço será confirmado.
+   *
+   * Obrigatório por decisão da ADR-0024, e produzido por quem **já detinha direito a ele** — a
+   * sessão que atendeu o pedido —, nunca aceito de fonte externa.
+   */
+  readonly empresaId: string;
+  /** O locatário a quem a mensagem se destina. O endereço é lido do cadastro, sob a política. */
+  readonly locatarioId: string;
+  /** O segredo em claro do portador recém-emitido. Ver o cabeçalho desta interface. */
+  readonly segredo: string;
 }
 
 /** Carga útil da tarefa de ida e volta. */

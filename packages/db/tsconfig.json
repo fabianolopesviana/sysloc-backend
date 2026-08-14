@@ -39,6 +39,20 @@
   // qualquer coisa (`Cyclic dependency detected: @sysloc/db#build, @sysloc/regua#build`, medido
   // neste repositório). O cabeçalho de `packages/regua/src/porta-de-dados.ts` registra as três
   // consequências por extenso.
-  "references": [{ "path": "../contracts" }, { "path": "../regua" }, { "path": "../shared" }],
+  //
+  // A referência a `../documentos` entra na T7 da fatia `documentos-e-confirmacao`, e a direção é
+  // `db` → `documentos` — a MESMA inversão da leitura ingênua, e pela MESMA razão. Quem declara
+  // `DadosDoContratoParaDocumento` é o **domínio do documento**; é `src/documento-de-contrato.ts`
+  // que o importa para dizer que a consulta o satisfaz (ADR-0025). Não a "corrija" para
+  // `documentos` → `db`: o cabeçalho de `packages/documentos/tsconfig.json` registra que a aresta de
+  // volta — ainda que só em `devDependencies`, "para o teste enxergar o banco" — fecha o ciclo e
+  // aborta o build inteiro do Turborepo. O caso que precisa de banco mora em `test/` deste pacote,
+  // onde o encontro já é legítimo.
+  "references": [
+    { "path": "../contracts" },
+    { "path": "../documentos" },
+    { "path": "../regua" },
+    { "path": "../shared" }
+  ],
   "include": ["src/**/*.ts"]
 }

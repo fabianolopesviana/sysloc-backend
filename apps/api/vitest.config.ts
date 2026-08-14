@@ -65,10 +65,23 @@ export default defineConfig({
     // de produção. E não ferem a ADR-0006 pela mesma razão do segredo acima: nada é lido do
     // ambiente, e o destino é impossível por construção. Quem prova que as duas são **obrigatórias**
     // é `test/ambiente.spec.ts` (CT-639), que chama a validação com a fonte por PARÂMETRO.
+    //
+    // `URL_BASE_DA_CONFIRMACAO` entra na **T9** da fatia `documentos-e-confirmacao` pela MESMA
+    // razão, e o precedente vale palavra por palavra: a partida passa a exigi-la, e **todo** caso
+    // que sobe a aplicação real passa pela validação — inclusive `saude.e2e.spec.ts`, que não tem
+    // nada a ver com confirmação de e-mail. Declará-la aqui é o que evita editar vinte arquivos de
+    // verificação por causa desta task.
+    //
+    // O valor é INERTE pelo mesmo critério: `.invalid` é o domínio que a RFC 6761 garante não
+    // resolver, de modo que um link composto sobre ele não leva a lugar nenhum. Ele **não**
+    // enfraquece a exigência — quem prova que a variável é obrigatória é `test/ambiente.spec.ts`,
+    // que chama a validação com a fonte por PARÂMETRO e demonstra a recusa por ausência e por
+    // cadeia em branco. E não fere a ADR-0006: nada é lido do ambiente, e o valor é fixado.
     env: {
       BETTER_AUTH_SECRET: 'segredo-de-verificacao-sem-valor-operacional',
       SMTP_URL: 'smtp://127.0.0.1:1',
       EMAIL_REMETENTE: 'avisos@exemplo.invalid',
+      URL_BASE_DA_CONFIRMACAO: 'https://app.exemplo.invalid',
     },
   },
 });

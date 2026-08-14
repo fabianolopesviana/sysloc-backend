@@ -39,6 +39,17 @@
  * endereço** — construído antes de qualquer recurso ser aberto, de modo que a recusa dele não
  * deixa reserva nem conexão para trás.
  *
+ * ⚠️ **Para a base do link de confirmação os DOIS degraus moram aqui**, e a diferença não é
+ * inconsistência: a `SMTP_URL` tem um segundo conferidor porque alguém a **constrói**
+ * (`coordenadasDoTransporte`, na partida); a `URL_BASE_DA_CONFIRMACAO` não tem construtor nenhum —
+ * quem a consome é uma composição **pura** de `@sysloc/documentos`, que remove barras finais e
+ * concatena, de modo que qualquer cadeia não-vazia produziria link. E a `api` **deferiu a forma a
+ * este processo por escrito** (`apps/api/src/configuracao/ambiente.ts`), justamente para que ela
+ * seja decidida num lugar só. Sem o degrau de forma, uma base sem esquema — `app.sysloc.com.br`, a
+ * digitação mais provável de um operador — sobe verde, a tarefa conclui, o journal grava
+ * *"confirmação de e-mail entregue"* e o locatário recebe um endereço que não abre: falha
+ * silenciosa e **posterior à entrega**, que é o pior desfecho desta borda.
+ *
  * ---------------------------------------------------------------------------
  * A composição raiz escolhe as portas — e é a ÚNICA que as escolhe
  * ---------------------------------------------------------------------------
@@ -68,6 +79,7 @@ import {
   type NivelDeLog,
 } from '@sysloc/shared';
 import { conectarFila, type DesfechoDoEncerramento, type Fila } from './fila.js';
+import { processarConfirmacaoDeEmail } from './tarefas/confirmacao-de-email.js';
 import { processarEco } from './tarefas/eco.js';
 import { processarReguaDeCobranca } from './tarefas/regua.js';
 
@@ -101,24 +113,97 @@ export interface Ambiente {
   readonly urlDoTransporte: string;
   /** Endereço que assina o aviso, de `EMAIL_REMETENTE`. */
   readonly remetenteDoAviso: string;
+  /**
+   * Endereço público do aplicativo, de `URL_BASE_DA_CONFIRMACAO` — a base do link de confirmação.
+   *
+   * Ele **é campo aqui**, e não é do lado do serviço de aplicação: quem monta o link é este
+   * processo, e a composição da mensagem recebe a base **por parâmetro** (ADR-0025). Na `api` a
+   * variável é exigida na partida e não vira campo, porque lá ela não tem consumidor — a diferença
+   * está registrada no `ambiente.ts` daquele lado, e não é descuido de nenhum dos dois.
+   *
+   * **Não é segredo** — é o endereço público do app —, mas é exigida na partida pela mesma razão que
+   * as demais: um link montado sobre base vazia chega quebrado à caixa do locatário, e nada no
+   * processo acusaria. Pela **mesma** razão a **forma** dela é conferida na partida
+   * ({@link ehBaseDeConfirmacaoValida}): base sem esquema tem falha idêntica, e igualmente muda.
+   */
+  readonly urlBaseDaConfirmacao: string;
+}
+
+/**
+ * Os esquemas que a base do link de confirmação aceita — lista **fechada**, e só os dois.
+ *
+ * O valor vira o endereço que o locatário abre no navegador. `mailto:`, `file:` e `javascript:` são
+ * URLs absolutas legítimas para o interpretador e não levam à página de confirmação — recusar por
+ * lista fechada é o que impede a barreira de ficar dependente de quais digitações erradas alguém
+ * lembrou de enumerar.
+ */
+const ESQUEMAS_DA_BASE_DA_CONFIRMACAO = ['http:', 'https:'] as const;
+
+/**
+ * O que a recusa por **forma** diz — a exigência, e nunca o valor recebido.
+ *
+ * O texto é **derivado** da lista acima, e não redigitado, pela mesma razão de
+ * `EXIGENCIA_DA_CADEIA_DE_FILA` em `@sysloc/shared`: mensagem que diverge da regra manda o operador
+ * procurar o problema errado, e é divergência que ferramenta nenhuma apanha.
+ */
+const EXIGENCIA_DA_BASE_DA_CONFIRMACAO = `deve ser um endereço interpretável começando com ${ESQUEMAS_DA_BASE_DA_CONFIRMACAO.map(
+  (esquema) => `${esquema}//`,
+).join(' ou ')}`;
+
+/**
+ * A base declarada serve como endereço público do aplicativo?
+ *
+ * São dois requisitos, e os dois importam: a **interpretabilidade** (uma base sem esquema não é URL
+ * absoluta, e concatenada ao caminho produz um endereço relativo que cliente de e-mail nenhum abre)
+ * e o **esquema** (o interpretador aceita `javascript:` e `file:` como URLs absolutas, e nenhum dos
+ * dois leva à página).
+ *
+ * A ordem é conteúdo: interpretar primeiro é o que dispensa um terceiro requisito. Para os dois
+ * esquemas aceitos, o interpretador **exige** servidor — medido nesta máquina: `https://` e
+ * `http://:8080` levantam, e não há valor aceito por `URL.parse` com esquema `http`/`https` e
+ * `hostname` vazio. Um ramo para o servidor vazio seria inalcançável, e asserção que não pode falhar
+ * é o que a `.claude/rules/testing-stack.md` proíbe.
+ *
+ * ⚠️ O valor **não é normalizado aqui**, e a ausência é decisão: quem remove barras finais é a
+ * composição da mensagem (`packages/documentos/src/mensagem-de-confirmacao.ts`), num lugar só. Esta
+ * função **decide**, e não transforma — devolver a forma canônica faria a configuração publicar um
+ * valor diferente do que o operador escreveu, e a normalização passaria a ter duas definições.
+ */
+function ehBaseDeConfirmacaoValida(valor: string): boolean {
+  const endereco = URL.parse(valor);
+
+  return (
+    endereco !== null &&
+    ESQUEMAS_DA_BASE_DA_CONFIRMACAO.some((esquema) => esquema === endereco.protocol)
+  );
 }
 
 /**
  * Lê e valida as variáveis que o processador exige.
  *
- * São **cinco** desde a T8, e o crescimento é a natureza do processo mudando: ele deixou de ser um
- * consumidor que só fala com a fila e passou a falar com o **banco** e com um **servidor de
- * e-mail**. O conjunto continua PRÓPRIO deste processo (ele não escuta porta, e `PORT` não entra),
+ * São **seis** desde a T10 da fatia `documentos-e-confirmacao`, e o crescimento é a natureza do
+ * processo mudando: ele deixou de ser um consumidor que só fala com a fila (T6), passou a falar com o
+ * **banco** e com um **servidor de e-mail** (T8), e agora **monta um link** para o titular do dado.
+ * O conjunto continua PRÓPRIO deste processo (ele não escuta porta, e `PORT` não entra),
  * mas as **regras** das duas variáveis originais vêm do pacote compartilhado: os dois processos
  * sobem do mesmo `EnvironmentFile`, e duas definições independentes do que é uma severidade ou uma
  * cadeia de fila válida divergiriam em silêncio até um arquivo subir um processo e recusar o outro
  * — no boot.
  *
- * Das três novas, o que se exige aqui é **presença e não-vacuidade**, e a divisão é deliberada:
- * a forma da `SMTP_URL` é conferida por `coordenadasDoTransporte` (em `@sysloc/regua`), que a
- * recusa por esquema e por hospedeiro **também na partida**, quando o adaptador é construído.
+ * De **três** das quatro novas, o que se exige aqui é **presença e não-vacuidade**, e a divisão é
+ * deliberada: a forma da `SMTP_URL` é conferida por `coordenadasDoTransporte` (em `@sysloc/regua`),
+ * que a recusa por esquema e por hospedeiro **também na partida**, quando o adaptador é construído.
  * Reimplementar aquela conferência aqui criaria duas definições do que é um transporte utilizável,
  * e a segunda escaparia da primeira.
+ *
+ * A **quarta** — a `URL_BASE_DA_CONFIRMACAO` — tem a **forma conferida aqui**
+ * ({@link ehBaseDeConfirmacaoValida}), e isso não contraria a divisão acima: ela a completa. O
+ * critério é *"onde já se decide o mesmo fato"*, e para a base do link **não há segundo ponto** —
+ * nenhum construtor a recebe, quem a consome é uma composição pura que concatena, e a `api` deferiu
+ * a forma a este processo por escrito. Conferi-la na composição da mensagem seria conferir **por
+ * tarefa**, depois de o processo já estar no ar e o operador já ter ido embora; conferi-la aqui é o
+ * mesmo degrau que a `SMTP_URL` tem, no mesmo instante, com a mesma forma de mensagem — a exigência
+ * nomeada, o valor jamais.
  *
  * Valor em branco é tratado como **ausente** porque o `.env.example` versionado declara toda
  * variável sem valor, e um arquivo copiado dele sem preenchimento entrega cadeias vazias.
@@ -162,6 +247,13 @@ export function lerAmbiente(fonte: Readonly<Record<string, string | undefined>>)
     problemas.push('EMAIL_REMETENTE: ausente');
   }
 
+  const urlBaseDaConfirmacao = fonte.URL_BASE_DA_CONFIRMACAO?.trim() ?? '';
+  if (urlBaseDaConfirmacao === '') {
+    problemas.push('URL_BASE_DA_CONFIRMACAO: ausente');
+  } else if (!ehBaseDeConfirmacaoValida(urlBaseDaConfirmacao)) {
+    problemas.push(`URL_BASE_DA_CONFIRMACAO: ${EXIGENCIA_DA_BASE_DA_CONFIRMACAO}`);
+  }
+
   if (problemas.length > 0) {
     throw new Error(
       `configuração inválida na partida: ${problemas.join('; ')}. ` +
@@ -175,6 +267,7 @@ export function lerAmbiente(fonte: Readonly<Record<string, string | undefined>>)
     cadeiaConexaoBanco: banco,
     urlDoTransporte: transporte,
     remetenteDoAviso: remetente,
+    urlBaseDaConfirmacao,
   };
 }
 
@@ -307,6 +400,17 @@ async function principal(): Promise<void> {
       async (tarefa, registrador) =>
         await processarReguaDeCobranca(tarefa, registrador, { banco, email }),
     );
+    fila.processar(
+      fila.confirmacao,
+      async (tarefa, registrador) =>
+        await processarConfirmacaoDeEmail(tarefa, registrador, {
+          banco,
+          email,
+          // A base do link atravessa a borda até a composição por PARÂMETRO: o domínio não lê
+          // ambiente, e uma segunda leitura escaparia desta conferência de partida.
+          urlBaseDaConfirmacao: ambiente.urlBaseDaConfirmacao,
+        }),
+    );
   } catch (erro) {
     // Devolver o que já foi aberto é o que permite ao processo terminar: uma conexão de pé
     // seguraria o laço de eventos e o processador ficaria vivo sem consumir nada. A falha da
@@ -319,7 +423,10 @@ async function principal(): Promise<void> {
   }
 
   instalarDesligamentoGracioso(fila, banco, logger);
-  logger.info({ filas: [fila.eco.name, fila.regua.name] }, 'processador de trabalho no ar');
+  logger.info(
+    { filas: [fila.eco.name, fila.regua.name, fila.confirmacao.name] },
+    'processador de trabalho no ar',
+  );
 }
 
 /** Este módulo foi executado como programa, ou apenas importado? */

@@ -45,17 +45,58 @@
  * Ele **não** publica rota de cobrança nem toca a área de tela dela: `TELA:financeiro` continua
  * governando `/v1/cobrancas`, e esta superfície continua exigindo `TELA:contratos`. O que atravessa a
  * fronteira é uma garantia de contador, não autorização.
+ *
+ * ---------------------------------------------------------------------------
+ * É AQUI que o motor de renderização do documento é ESCOLHIDO (ADR-0025)
+ * ---------------------------------------------------------------------------
+ *
+ * A partir da T7 da fatia `documentos-e-confirmacao`, este módulo compõe `criarRenderizadorPdf()` e
+ * o entrega ao serviço pelo token `TOKEN_PORTA_DE_RENDERIZACAO`. **Quem monta o processo escolhe o
+ * adaptador**: nem o serviço, nem o controlador, nem a composição do documento sabem que existe um
+ * motor de PDF — o que eles conhecem é a `PortaDeRenderizacao`, que o **domínio** declara e o
+ * adaptador satisfaz.
+ *
+ * É o mesmo desenho, e a mesma razão, de `automacao/automacao.module.ts` compor o adaptador de SMTP
+ * atrás de `TOKEN_PORTA_DE_EMAIL`. A alternativa — o serviço importar `criarRenderizadorPdf`
+ * diretamente — faria a regra de domínio depender do motor e daria ao processo um **segundo** lugar
+ * onde escolhê-lo.
+ *
+ * A fábrica **não recebe nada do ambiente**, e a ausência é fato do adaptador, não omissão daqui:
+ * o custo de partida do motor (React e o reconciliador) é do carregamento do módulo, uma vez por
+ * processo, e não há coordenada, credencial ou destino a configurar. Por isso ela entra como
+ * `useFactory` sem `inject`, e não como `useValue`: `useValue` construiria o adaptador no momento em
+ * que **este arquivo** fosse carregado, e não quando o contêiner monta o módulo.
  */
 
 import { Module } from '@nestjs/common';
+import { criarRenderizadorPdf, type PortaDeRenderizacao } from '@sysloc/documentos';
 import { AutenticacaoModule } from '../autenticacao/autenticacao.module.js';
 import { CobrancasModule } from '../cobrancas/cobrancas.module.js';
+import { TOKEN_PORTA_DE_RENDERIZACAO } from '../configuracao/ambiente.js';
 import { ContratoController } from './contrato.controller.js';
 import { ContratoService } from './contrato.service.js';
+
+/**
+ * Constrói a porta de renderização de produção — o adaptador sobre `@react-pdf/renderer`.
+ *
+ * Ela é o **único** ponto da composição que nomeia o motor, e não há bandeira, variável de ambiente
+ * ou ramo `if (ehTeste)` no meio: a verificação exercita este mesmo adaptador, porque os bytes do
+ * documento são a coisa sob prova e dublar o renderizador seria dublar exatamente o que se quer
+ * medir.
+ */
+function criarPortaDeRenderizacao(): PortaDeRenderizacao {
+  return criarRenderizadorPdf();
+}
 
 @Module({
   imports: [AutenticacaoModule, CobrancasModule],
   controllers: [ContratoController],
-  providers: [ContratoService],
+  providers: [
+    ContratoService,
+    {
+      provide: TOKEN_PORTA_DE_RENDERIZACAO,
+      useFactory: criarPortaDeRenderizacao,
+    },
+  ],
 })
 export class ContratosModule {}

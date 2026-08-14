@@ -13,8 +13,10 @@ export { CodigoErro, type CorpoErro, ErroDeAplicacao, type OpcoesDeErro } from '
 // ausência é a decisão — ver o docblock delas em `fila.ts`. `OPCOES_PADRAO_DA_TAREFA` é o único
 // caminho publicado.
 export {
+  type CargaDaConfirmacao,
   type CargaDaRegua,
   type CargaDoEco,
+  FILA_DA_CONFIRMACAO,
   FILA_DA_REGUA,
   FILA_DO_ECO,
   OPCOES_PADRAO_DA_TAREFA,

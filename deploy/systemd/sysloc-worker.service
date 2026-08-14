@@ -97,6 +97,13 @@ WorkingDirectory=/opt/sysloc-backend/apps/worker
 # Segredos: apenas aqui, e apenas por referência. É o mesmo arquivo que o
 # serviço de aplicação consome; deste processo são lidas `REDIS_URL`,
 # `DATABASE_URL`, `SMTP_URL` e `EMAIL_REMETENTE`.
+#
+# ⚠️ A partir da T9 da fatia `documentos-e-confirmacao` o arquivo carrega também
+# `URL_BASE_DA_CONFIRMACAO`, semeada por `provisionar-base.sh`, e é ESTE processo
+# quem a lê: é ele que compõe o link da confirmação de e-mail (T10). Ela chega
+# pelo arquivo compartilhado, e não por `Environment=` inline em cada unidade,
+# justamente para que a mesma coordenada não tenha duas declarações literais
+# livres para divergir — o precedente é o de `EMAIL_REMETENTE`.
 EnvironmentFile=/etc/sysloc/backend.env
 
 # Coordenadas revisáveis — nenhuma delas é segredo. Sem `PORT`, ver o cabeçalho.

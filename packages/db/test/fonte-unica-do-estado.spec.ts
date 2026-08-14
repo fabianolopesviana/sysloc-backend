@@ -23,8 +23,9 @@
  * |       |        | (`selecionarCandidatasAoAviso`) tem `negocio.cobranca_derivada` como **única**
  * |       |        | origem de estado — nenhuma ocorrência de `negocio.cobranca` fora dela. |
  * | CA-12 | CT-624 | A lista ordenada de arquivos de PRODUÇÃO que chamam
- * |       |        | `contextoDeTenant.executarCom` é EXATAMENTE **dois** — um por borda: a guarda
- * |       |        | HTTP de `apps/api` e a borda do job de `apps/worker` (ADR-0024). E as duas
+ * |       |        | `contextoDeTenant.executarCom` é EXATAMENTE **quatro** — um por borda: a guarda
+ * |       |        | HTTP de `apps/api`, as **duas** bordas de job de `apps/worker` e a borda do
+ * |       |        | **ato do titular** (a rota sem sessão), todas sob a ADR-0024. E as duas
  * |       |        | listas vizinhas são igualmente declaradas: quem nomeia `app.empresa_id` em
  * |       |        | posição executável, e quem emite SQL sobre `identidade.empresa`. |
  * | CA-04 | CT-510 | `negocio.cobranca` **não tem** coluna `status`: a lista de colunas dela é
@@ -720,15 +721,56 @@ const CHAMADA_AO_ESCRITOR_DE_CONTEXTO = /\bexecutarCom\s*\(/;
 /**
  * **Um escritor por borda** — o elenco que a ADR-0024 declara, por igualdade.
  *
- * Dois, e a razão de cada um está escrita ao lado. Um terceiro reprova nomeando o arquivo: é o
+ * Três, e a razão de cada um está escrita ao lado. Um quarto reprova nomeando o arquivo: é o
  * modo de falha desejado, porque o defeito que a ADR-0008 declara impossível de pegar por revisão
  * nasce assim — *"um por vez, cada um legítimo quando foi escrito"*.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a lista tinha duas bordas porque o processo consumia **uma** fila de
+ * negócio; a T10 da fatia `documentos-e-confirmacao` acrescenta a borda da entrega da confirmação,
+ * que é uma tarefa de fila como a da régua e estabelece o contexto pela mesma regra da ADR-0024 —
+ * `contextoDeTenant.executarCom({ empresaId }, …)`, uma vez, com o `empresaId` da carga já conferido
+ * por esquema. A asserção **não foi afrouxada**: ela continua sendo igualdade de conjunto, e um
+ * quarto arquivo — ou o mesmo escritor chamado de um serviço em vez de uma borda — segue reprovando
+ * nominalmente.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a lista tinha três bordas porque toda execução do produto ou nascia de uma
+ * requisição **autenticada**, ou de uma tarefa da fila; a T11 da fatia `documentos-e-confirmacao`
+ * acrescenta a quarta — o **ato do titular**, a única rota de negócio sem sessão (ADR-0027). Ela é
+ * borda pelo mesmo discriminador das outras três: o contexto é estabelecido **uma vez**, no ponto em
+ * que o pedido entra, a partir de um identificador que a própria borda **descobriu** (o registro que
+ * o portador resolve) e que nenhuma camada abaixo dela reescreve. O que ela NÃO é: um serviço
+ * abrindo contexto próprio no meio de um fluxo já contextualizado — não há sessão nem carga que
+ * pudesse tê-lo aberto antes, e é justamente essa ausência que a ADR-0024 endereça. A asserção **não
+ * foi afrouxada**: continua sendo igualdade de conjunto, e um quinto arquivo segue reprovando
+ * nominalmente.
+ *
+ * ---------------------------------------------------------------------------
+ * MUTANTE EXECUTADO — a borda nova FORA das duas listas (2026-08-13)
+ * ---------------------------------------------------------------------------
+ *
+ * A entrada acrescentada é asserção estática, e a `.claude/rules/testing-stack.md` cobra a prova de
+ * falsificação. Ela foi medida pelo **script do pacote** (`pnpm --filter @sysloc/db test`), nunca por
+ * `vitest run` avulso:
+ *
+ *   * **mutante** — a linha de `apps/api/src/confirmacoes/confirmacao.service.ts` retirada desta
+ *     lista **e** de {@link ../unidade-de-trabalho.spec.ts CHAMADORES_LEGITIMOS}, com o fonte de
+ *     produção intacto: `2 failed | 165 passed`, e as duas falhas **nomeiam o arquivo e a linha** —
+ *     `…/confirmacoes/confirmacao.service.ts:177`. É o modo de falha desejado: a borda nova não passa
+ *     despercebida por nenhuma das duas âncoras;
+ *   * **controle** — as duas listas restauradas do backup: `167 passed`, com o `git diff` das duas
+ *     conferido contra o estado revisado.
  */
 const BORDAS_QUE_ESCREVEM_CONTEXTO: readonly string[] = [
   // A borda HTTP: a empresa vem da sessão autenticada.
   'apps/api/src/autenticacao/contexto.guard.ts',
   // A borda do trabalho enfileirado: a empresa vem da carga do próprio trabalho (ADR-0024).
   'apps/worker/src/tarefas/regua.ts',
+  // A borda da entrega da confirmação de endereço: mesma regra, mesma carga como origem (ADR-0024).
+  'apps/worker/src/tarefas/confirmacao-de-email.ts',
+  // A borda do ATO DO TITULAR: a empresa vem do registro que o portador de segredo resolve, e a
+  // resolução acontece **fora** de contexto de propósito — a empresa é o resultado dela, não a
+  // entrada (ADR-0027 + ADR-0024). É a única borda do produto sem sessão nem carga de fila.
+  'apps/api/src/confirmacoes/confirmacao.service.ts',
 ].sort();
 
 /** A variável de sessão que as políticas de `negocio` consultam. */
@@ -778,8 +820,16 @@ const FIXACAO_ESCRITA_A_MAO = [
   '',
 ].join('\n');
 
-/** A terceira chamada ao escritor — o primeiro mutante. */
-const TERCEIRA_CHAMADA_AO_ESCRITOR = [
+/**
+ * A chamada EXCEDENTE ao escritor — o primeiro mutante.
+ *
+ * O nome não fixa ordinal de propósito: a terceira chamada é **legítima** desde a T10 da fatia
+ * `documentos-e-confirmacao` (a borda da confirmação de e-mail), e um identificador que a nomeasse
+ * passaria a descrever o mundo anterior a cada borda nova. O que o mutante é — e sempre foi — é uma
+ * chamada **a mais** num arquivo que já é borda, que é o caminho por onde o contexto voltaria a ser
+ * estabelecido fora do escritor único.
+ */
+const CHAMADA_EXCEDENTE_AO_ESCRITOR = [
   '',
   'export function sobOutraEmpresa<T>(empresaId: string, trabalho: () => T): T {',
   '  return contextoDeTenant.executarCom({ empresaId }, trabalho);',
@@ -789,7 +839,7 @@ const TERCEIRA_CHAMADA_AO_ESCRITOR = [
 
 describe('CT-624 — o escritor de contexto é único por borda, e as duas listas vizinhas também', () => {
   it(
-    'CT-624 — os arquivos de produção que chamam `executarCom` são EXATAMENTE as duas bordas',
+    'CT-624 — os arquivos de produção que chamam `executarCom` são EXATAMENTE as quatro bordas',
     async () => {
       const varredura = await varrerFontesDaRegua(CHAMADA_AO_ESCRITOR_DE_CONTEXTO);
 
@@ -798,10 +848,23 @@ describe('CT-624 — o escritor de contexto é único por borda, e as duas lista
         `chamada ao escritor de contexto fora das bordas declaradas: ${varredura.ocorrencias.join(', ')}`,
       ).toEqual([...BORDAS_QUE_ESCREVEM_CONTEXTO]);
 
-      // Igualdade de LISTA, e não `toContain`: `toContain` passaria verde com um terceiro, um
-      // quarto e um décimo escritor. E as duas bordas continuam PRESENTES — uma lista que
+      // Igualdade de LISTA, e não `toContain`: `toContain` passaria verde com um quinto, um
+      // sexto e um décimo escritor. E as quatro bordas continuam PRESENTES — uma lista que
       // encolhesse (a guarda deixando de abrir contexto, por exemplo) reprova aqui do mesmo jeito.
-      expect(arquivosDe(varredura.ocorrencias)).toHaveLength(2);
+      //
+      // SUT_IS_CORRECT_BECAUSE: a contagem literal era `2` porque havia duas bordas; a T10 da fatia
+      // `documentos-e-confirmacao` acrescenta a terceira — a entrega da confirmação de endereço,
+      // que é trabalho enfileirado e estabelece o contexto pela ADR-0024, como a da régua. A
+      // asserção **não foi afrouxada**: continua sendo contagem EXATA ao lado da igualdade de lista
+      // acima, e a razão de cada borda está escrita em `BORDAS_QUE_ESCREVEM_CONTEXTO`.
+      //
+      // SUT_IS_CORRECT_BECAUSE: a **T11** da mesma fatia acrescenta a quarta — a borda do **ato do
+      // titular**, que abre o contexto a partir do registro que o portador de segredo resolve, sem
+      // sessão e sem carga de fila (ADR-0027 + ADR-0024). Ela é o único caminho pelo qual aquele
+      // ato alcança dado de negócio, e o contexto é estabelecido **uma vez**, na entrada. A
+      // asserção **não foi afrouxada** pela mesma razão do parágrafo acima: contagem EXATA ao lado
+      // da igualdade de lista, e um quinto chamador reprova nominalmente.
+      expect(arquivosDe(varredura.ocorrencias)).toHaveLength(4);
     },
     LIMITE_DO_CASO_MS,
   );
@@ -841,12 +904,12 @@ describe('CT-624 — o escritor de contexto é único por borda, e as duas lista
         [],
       );
 
-      // MUTANTE 1 — uma TERCEIRA chamada ao escritor, num arquivo que já é borda. A varredura
-      // passa a ver duas ocorrências aqui, e a lista de arquivos do caso principal continuaria com
-      // dois elementos — é por isso que o mutante que importa é medido também no fonte, e está
+      // MUTANTE 1 — uma chamada EXCEDENTE ao escritor, num arquivo que já é borda. A varredura passa
+      // a ver duas ocorrências neste arquivo, e a lista de arquivos do caso principal continuaria
+      // com três elementos — é por isso que o mutante que importa é medido também no fonte, e está
       // registrado no relatório da task. Aqui o que se prova é que o detector as **conta**.
       expect(
-        linhasQueCasam(integro + TERCEIRA_CHAMADA_AO_ESCRITOR, CHAMADA_AO_ESCRITOR_DE_CONTEXTO),
+        linhasQueCasam(integro + CHAMADA_EXCEDENTE_AO_ESCRITOR, CHAMADA_AO_ESCRITOR_DE_CONTEXTO),
       ).toHaveLength(2);
 
       // MUTANTE 2 — o `SET LOCAL` escrito à mão, que estabeleceria contexto SEM passar pelo

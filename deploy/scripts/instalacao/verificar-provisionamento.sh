@@ -22,10 +22,12 @@
 #           servidor de fila;
 #   CT-005  o provisionamento não alterou o ambiente legado nem colidiu com
 #           suas portas;
-#   CT-030  no cluster real, os dois papéis — o da aplicação e o de migração —
-#           existem, nenhum deles tem privilégio capaz de contornar a política de
-#           linha, nenhum pertence ao outro, e os dois schemas pertencem ao papel
-#           de migração com uso concedido ao papel da aplicação.
+#   CT-030  no cluster real, os três papéis — o da aplicação, o de migração e o
+#           de resolução — existem, nenhum deles tem privilégio capaz de
+#           contornar a política de linha, o da aplicação não pertence a nenhum
+#           dos outros dois, a membership do migrador no de resolução é
+#           `INHERIT FALSE`, e os dois schemas pertencem ao papel de migração com
+#           uso concedido ao papel da aplicação.
 #
 # ---------------------------------------------------------------------------
 # Como esta bateria é executada
@@ -106,6 +108,10 @@ readonly BANCO_DB="sysloc"
 # Acrescentados pela T5 da fatia `fundacao-multitenancy-identidade`, junto com os
 # passos P15 e P16 do provisionamento. Ver o CT-030.
 readonly PAPEL_MIGRACAO="sysloc_migracao"
+# Acrescentado pela T3 da sub-fatia `documentos-e-confirmacao`, junto com o
+# terceiro papel do P15. Ele é `NOLOGIN` e de propósito único: carrega a
+# propriedade de UMA função `SECURITY DEFINER` e nada mais. Ver o CT-030.
+readonly PAPEL_RESOLUCAO="sysloc_resolucao"
 readonly SCHEMA_IDENTIDADE="identidade"
 readonly SCHEMA_NEGOCIO="negocio"
 readonly PORTA_FILA=6380
@@ -1912,7 +1918,7 @@ ct_005() {
 }
 
 # =========================================================================== #
-# CT-030 — No cluster real, os dois papéis existem e nenhum deles tem privilégio
+# CT-030 — No cluster real, os três papéis existem e nenhum deles tem privilégio
 #          capaz de contornar o isolamento.
 #
 # O CT-001 da suíte de `packages/db` cobre a mesma classe de invariante contra uma
@@ -1933,9 +1939,41 @@ ct_005() {
 # a propriedade que interessa neles é a mesma: dono errado no schema faz as
 # tabelas nascerem do papel errado, e o isolamento volta a depender de com qual
 # papel alguém conectou.
+#
+# --------------------------------------------------------------------------- #
+# O TERCEIRO papel, e por que ele é o mais sensível dos três
+# --------------------------------------------------------------------------- #
+#
+# A T3 da sub-fatia `documentos-e-confirmacao` acrescentou ao P15 o papel
+# `sysloc_resolucao`: `NOLOGIN`, sem credencial, dono de UMA função
+# `SECURITY DEFINER` — a que resolve o portador de confirmação. Ele é o único
+# papel do produto para o qual a política de linha da tabela do portador é
+# NOMINALMENTE atravessável, e por isso a lista de papéis conferidos aqui deixou
+# de ser literal-de-dois: um papel de fora da enumeração não fica vermelho, ele
+# fica INVISÍVEL.
+#
+# Três propriedades entram, e cada uma fecha um cenário que a bateria não
+# detectaria de outro jeito:
+#
+#   1. os atributos dele, mais o `rolcanlogin` — o P15 só cria o papel quando
+#      ele está AUSENTE, e o bloco `DO` da migração `0014` confere apenas o
+#      NOME. Um `sysloc_resolucao` preexistente com `LOGIN` ou `BYPASSRLS`
+#      viraria dono da função `DEFINER` sem que nada acusasse;
+#   2. `sysloc_app` NÃO é membro dele — é a única concessão que, sozinha, daria
+#      ao papel que atende requisição leitura irrestrita daquela tabela pela
+#      política nominal, e ela não produziria erro nenhum;
+#   3. a membership do migrador nele é `INHERIT FALSE` — é o que mantém a
+#      leitura irrestrita atrás de um `SET ROLE` deliberado em vez de acontecer
+#      por herança em consulta comum.
+#
+# O `CT-735` de `packages/db` afirma a propriedade 1 por igualdade, mas contra o
+# provisionamento EFÊMERO de `banco-efemero.ts` — outro caminho de código, que
+# por construção não detecta deriva de `provisionar-base.sh`. É a mesma divisão
+# de trabalho que o parágrafo acima declara para o CT-001: os dois são
+# necessários, e é este que olha para o cluster onde a operação acontece.
 # =========================================================================== #
 ct_030() {
-	caso "CT-030" "No cluster real, os dois papéis existem e nenhum deles tem privilégio capaz de contornar o isolamento"
+	caso "CT-030" "No cluster real, os três papéis existem e nenhum deles tem privilégio capaz de contornar o isolamento"
 
 	if ! command -v psql >/dev/null 2>&1 || ! getent passwd postgres >/dev/null 2>&1; then
 		falhar "o cliente do banco ou o usuário 'postgres' não existem nesta máquina — depois do provisionamento os dois têm de existir, e sem eles este caso não tem como consultar o catálogo"
@@ -1948,9 +1986,9 @@ ct_030() {
 	consulta_cluster() { runuser -u postgres -- psql -X -q -A -t -c "$1" 2>/dev/null || printf 'INDISPONIVEL'; }
 	consulta_banco() { runuser -u postgres -- psql -X -q -A -t -d "${BANCO_DB}" -c "$1" 2>/dev/null || printf 'INDISPONIVEL'; }
 
-	# (a) os dois papéis existem ---------------------------------------------- #
-	afirmar_igual "(a) contagem de papéis encontrados entre '${PAPEL_DB}' e '${PAPEL_MIGRACAO}'" "2" \
-		"$(consulta_cluster "SELECT count(*) FROM pg_roles WHERE rolname IN ('${PAPEL_DB}', '${PAPEL_MIGRACAO}')")"
+	# (a) os três papéis existem ---------------------------------------------- #
+	afirmar_igual "(a) contagem de papéis encontrados entre '${PAPEL_DB}', '${PAPEL_MIGRACAO}' e '${PAPEL_RESOLUCAO}'" "3" \
+		"$(consulta_cluster "SELECT count(*) FROM pg_roles WHERE rolname IN ('${PAPEL_DB}', '${PAPEL_MIGRACAO}', '${PAPEL_RESOLUCAO}')")"
 
 	# (b) nenhum atributo capaz de contornar a política ----------------------- #
 	#
@@ -1959,24 +1997,55 @@ ct_030() {
 	# obtido f|t|f" e o operador teria de contar colunas para saber o que está
 	# ligado. Assim o resumo em stderr já nomeia o papel e o atributo.
 	local papel atributo valor
-	for papel in "${PAPEL_DB}" "${PAPEL_MIGRACAO}"; do
+	for papel in "${PAPEL_DB}" "${PAPEL_MIGRACAO}" "${PAPEL_RESOLUCAO}"; do
 		for atributo in rolsuper rolbypassrls rolcreaterole; do
 			valor="$(consulta_cluster "SELECT ${atributo} FROM pg_roles WHERE rolname = '${papel}'")"
 			afirmar_igual "(b) ${papel}: ${atributo} desligado" "f" "${valor}"
 		done
 	done
 
-	# (c) o papel da aplicação não pertence ao papel dono --------------------- #
+	# `rolcanlogin` só é afirmado para o papel de resolução: ele é o único
+	# `NOLOGIN` dos três, e os outros dois existem justamente para atender
+	# conexão. É a diferença que mais importa — um `sysloc_resolucao` capaz de
+	# logar seria um caminho de conexão com travessia nominal da política.
+	afirmar_igual "(b) ${PAPEL_RESOLUCAO}: rolcanlogin desligado" "f" \
+		"$(consulta_cluster "SELECT rolcanlogin FROM pg_roles WHERE rolname = '${PAPEL_RESOLUCAO}'")"
+
+	# (c) o papel da aplicação não pertence a nenhum dos outros dois ---------- #
 	#
-	# Os dois sentidos são afirmados. O que importa de verdade é o primeiro — o
-	# papel que atende requisição herdando a propriedade das tabelas —, mas o
-	# inverso também quebraria a separação: o dono passaria a alcançar o que quer
-	# que seja concedido ao papel da aplicação, e a topologia de dois papéis
-	# viraria um papel com dois nomes.
+	# Entre o papel da aplicação e o papel dono, os dois sentidos são afirmados.
+	# O que importa de verdade é o primeiro — o papel que atende requisição
+	# herdando a propriedade das tabelas —, mas o inverso também quebraria a
+	# separação: o dono passaria a alcançar o que quer que seja concedido ao
+	# papel da aplicação, e a topologia de papéis separados viraria um papel com
+	# dois nomes.
 	afirmar_igual "(c) '${PAPEL_DB}' NÃO é membro de '${PAPEL_MIGRACAO}'" "f" \
 		"$(consulta_cluster "SELECT pg_has_role('${PAPEL_DB}', '${PAPEL_MIGRACAO}', 'MEMBER')")"
 	afirmar_igual "(c) '${PAPEL_MIGRACAO}' NÃO é membro de '${PAPEL_DB}'" "f" \
 		"$(consulta_cluster "SELECT pg_has_role('${PAPEL_MIGRACAO}', '${PAPEL_DB}', 'MEMBER')")"
+
+	# O papel que atende requisição também não pertence ao papel de resolução, e
+	# esta é a asserção mais importante das três: `pg_has_role` é TRANSITIVO, de
+	# modo que ela recusa tanto a concessão direta quanto a que chegasse por um
+	# papel intermediário. Uma concessão futura aqui daria a `sysloc_app` leitura
+	# irrestrita da tabela do portador — a empresa inteira, sem contexto — pela
+	# política nominal da `0014`, e não produziria erro algum.
+	afirmar_igual "(c) '${PAPEL_DB}' NÃO é membro de '${PAPEL_RESOLUCAO}'" "f" \
+		"$(consulta_cluster "SELECT pg_has_role('${PAPEL_DB}', '${PAPEL_RESOLUCAO}', 'MEMBER')")"
+
+	# A membership que EXISTE de propósito — a do migrador — é conferida na
+	# forma, e não só na presença. `INHERIT FALSE` é o que a torna mínima: o
+	# migrador pode ASSUMIR o papel para executar o `ALTER … OWNER TO` da `0014`,
+	# mas não herda os privilégios dele em consulta comum. Concedida com o
+	# `INHERIT` do banco (`t`), a leitura irrestrita passaria a acontecer por
+	# herança, sem `SET ROLE` e sem nenhuma linha nova em lugar nenhum.
+	#
+	# `pg_auth_members` é a concessão DIRETA, e por isso o sentinela `AUSENTE`:
+	# sem ele, a membership sumida devolveria vazio e a asserção compararia ""
+	# com "f", reprovando por motivo ilegível. `CASE` em vez de `::text` porque
+	# `-A -t` rende booleano como `t`/`f`, e o cast renderia `true`/`false`.
+	afirmar_igual "(c) a membership de '${PAPEL_MIGRACAO}' em '${PAPEL_RESOLUCAO}' existe e é INHERIT FALSE" "f" \
+		"$(consulta_cluster "SELECT coalesce((SELECT CASE WHEN m.inherit_option THEN 't' ELSE 'f' END FROM pg_auth_members m JOIN pg_roles concedido ON concedido.oid = m.roleid JOIN pg_roles membro ON membro.oid = m.member WHERE concedido.rolname = '${PAPEL_RESOLUCAO}' AND membro.rolname = '${PAPEL_MIGRACAO}'), 'AUSENTE')")"
 
 	# (d) os dois schemas, com dono e uso -------------------------------------- #
 	local schema
@@ -2022,6 +2091,7 @@ ct_647() {
 
 	(
 		REMETENTE_PADRAO_DO_AVISO="avisos@sysloc.invalid"
+		URL_BASE_PADRAO_DA_CONFIRMACAO="https://sysloc.invalid"
 		eval "$(sed -n '/^acrescentar_linha_ao_ambiente() {/,/^}/p' "${SCRIPT_PROVISIONAR}")"
 		eval "$(sed -n '/^garantir_chaves_de_conteudo() {/,/^}/p' "${SCRIPT_PROVISIONAR}")"
 		[[ "$(type -t acrescentar_linha_ao_ambiente)" == "function" ]] || exit 8
@@ -2032,6 +2102,12 @@ ct_647() {
 	# A ASSERÇÃO que pega o defeito: a chave semeada tem de existir em linha PRÓPRIA.
 	afirmar_igual "a chave semeada nasce em linha própria" \
 		"1" "$(grep -c '^EMAIL_REMETENTE=avisos@sysloc.invalid$' "${arq}")"
+
+	# A SEGUNDA chave de conteúdo (T9): o acréscimo em sequência é o caso em que o
+	# defeito do D40 reapareceria — a primeira linha acrescentada passa a ser a
+	# "última linha" da segunda, e é ela que a colagem corromperia.
+	afirmar_igual "a segunda chave semeada nasce em linha própria" \
+		"1" "$(grep -c '^URL_BASE_DA_CONFIRMACAO=https://sysloc.invalid$' "${arq}")"
 
 	# A OUTRA metade do dano, e ela é independente: colada, a linha anterior deixaria
 	# de casar consigo mesma e a execução seguinte abortaria acusando divergência de
@@ -2046,13 +2122,19 @@ ct_647() {
 	printf 'SMTP_URL=smtp://127.0.0.1:1025\n' >"${arq_ok}"
 	(
 		REMETENTE_PADRAO_DO_AVISO="avisos@sysloc.invalid"
+		URL_BASE_PADRAO_DA_CONFIRMACAO="https://sysloc.invalid"
 		eval "$(sed -n '/^acrescentar_linha_ao_ambiente() {/,/^}/p' "${SCRIPT_PROVISIONAR}")"
 		eval "$(sed -n '/^garantir_chaves_de_conteudo() {/,/^}/p' "${SCRIPT_PROVISIONAR}")"
 		garantir_chaves_de_conteudo "${arq_ok}"
 	) || falhar "a semeadura abortou sobre o arquivo com quebra final"
 
+	# O esperado é a linha preexistente MAIS uma por chave de conteúdo semeada, e
+	# nada além: linha vazia entre elas apareceria aqui como contagem a mais. O
+	# valor cresceu de 2 para 3 quando a T9 acrescentou a segunda chave — ele é
+	# função de quantas `garantir_chaves_de_conteudo` semeia, e não uma constante
+	# do arranjo.
 	afirmar_igual "arquivo já terminado em quebra não ganha linha vazia" \
-		"2" "$(grep -c . "${arq_ok}")"
+		"3" "$(grep -c . "${arq_ok}")"
 
 	fechar_caso "CT-647"
 }

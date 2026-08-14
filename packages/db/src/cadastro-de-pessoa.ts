@@ -104,6 +104,27 @@
  * interface. O motivo por extenso está no cabeçalho de {@link ./conjunto.ts}, e vale igual aqui.
  *
  * ---------------------------------------------------------------------------
+ * A CONFIRMAÇÃO DE E-MAIL É DO LOCATÁRIO, e só dele — em DOIS pontos nomeados
+ * ---------------------------------------------------------------------------
+ *
+ * `email_confirmado_em` existe **só** em `negocio.locatario` (`migracoes/0013`), e é o **fato** de
+ * que o estado publicado se deriva (ADR-0022). A assimetria alcança este arquivo em dois lugares, e
+ * em nenhum outro: {@link confirmacaoProjetada}, que a lê (e projeta `NULL::timestamptz` nos outros
+ * dois papéis), e {@link atribuicoesDaPessoa}, que a zera **condicionalmente** na alteração.
+ *
+ * Os dois pontos são funções nomeadas de propósito. O ramo por papel não é regra de negócio escrita
+ * aqui — é a estrutura do schema: projetar ou atribuir a coluna nas outras duas tabelas seria erro
+ * de coluna inexistente, e não um `null` benigno. Tê-los com nome é o que torna *"há exatamente dois
+ * pontos que perguntam pelo papel"* uma afirmação verificável por `grep`, em vez de uma condição
+ * espalhada pelas seis funções.
+ *
+ * **Quem confirma não é este arquivo.** A escrita de `email_confirmado_em` para o valor não nulo
+ * mora em {@link ./portador-de-confirmacao.ts}, junto do consumo do portador que a autoriza, porque
+ * as duas escritas são o mesmo fato e viajam numa instrução só. Aqui a coluna só é **lida** e
+ * **zerada** — e zerada apenas quando o endereço muda, que é quando a confirmação anterior deixa de
+ * dizer respeito ao que está gravado.
+ *
+ * ---------------------------------------------------------------------------
  * O ESCOPO DE TENANT VEM DO BANCO (ADR-0008)
  * ---------------------------------------------------------------------------
  *
@@ -231,6 +252,39 @@ export interface PessoaCadastrada {
   readonly cep: string;
   /** A marca da exclusão lógica (ADR-0014): nula enquanto circula, o instante da retirada depois. */
   readonly retiradoEm: Date | null;
+  /**
+   * O instante em que o endereço de e-mail foi confirmado pelo titular — **o fato** (ADR-0022).
+   *
+   * A coluna existe **só em `negocio.locatario`**, e para os outros dois papéis este campo vale
+   * sempre `null`, projetado como `NULL::timestamptz`. A alternativa — declarar o campo apenas no
+   * tipo do locatário — exigiria duas projeções e duas formas de linha na porta parametrizada, que
+   * é justamente a triplicação que o cabeçalho deste arquivo existe para não ter.
+   *
+   * O que **não** acontece por causa disso: locador e fiador não passam a publicar o campo. As
+   * rotas deles derivam de `esquemaDaPessoa`, e só as seis de locatário derivam de
+   * `esquemaDoLocatario` (`packages/contracts/src/pessoa.ts`) — o cabeçalho daquele símbolo
+   * registra por que o crescimento nasceu em esquema próprio.
+   */
+  readonly emailConfirmadoEm: Date | null;
+}
+
+/**
+ * A linha como a **alteração** a devolve: o cadastro, mais o que a instrução fez com o `email`.
+ *
+ * É **crescimento** sobre {@link PessoaCadastrada}, e não uma segunda forma de linha: quem só quer o
+ * cadastro continua tratando o retorno de {@link alterarPessoa} como antes. O campo existe porque a
+ * borda precisa decidir o disparo da confirmação **sem** ler o corpo do pedido — ver
+ * {@link atribuicoesDaPessoa} para por que a leitura do corpo produziria o disparo errado.
+ */
+export interface PessoaAlterada extends PessoaCadastrada {
+  /**
+   * Se o `UPDATE` trocou o endereço de e-mail — apurado pelo **próprio comando**, comparando a linha
+   * anterior com a nova (`OLD.email IS DISTINCT FROM NEW.email`).
+   *
+   * Ele descreve o que aconteceu com a **coluna**, e vale nos três papéis. Quem o consome é a borda
+   * do locatário; para locador e fiador ele é informação sem consumidor, e não comportamento novo.
+   */
+  readonly emailMudou: boolean;
 }
 
 /** A página lida, com o total do papel inteiro — os dois da MESMA transação. */
@@ -309,8 +363,21 @@ function tabelaDoPapel(tx: TransactionSql, papel: PapelDePessoa) {
  * traduzir aqui, num ponto só, é o que impede seis traduções livres para divergir. E `empresa_id`
  * **não** está na lista — o que a porta devolve é o que o contrato publica, e a coluna de tenant não
  * é publicada.
+ *
+ * ---------------------------------------------------------------------------
+ * A ÚLTIMA COLUNA DEPENDE DO PAPEL, e a dependência é da TABELA
+ * ---------------------------------------------------------------------------
+ *
+ * `email_confirmado_em` existe **só** em `negocio.locatario` (`migracoes/0013`), e projetá-la nos
+ * outros dois papéis seria erro de coluna inexistente — não um `null` benigno. O ramo é, portanto, a
+ * própria estrutura do schema, e não uma regra de negócio escrita aqui: os outros dois recebem
+ * `NULL::timestamptz`, que é a **mesma forma de linha** e mantém a porta parametrizada com uma
+ * projeção só.
+ *
+ * A conversão explícita não é ornamento: `NULL` sem tipo chega ao driver como `unknown`, e a coluna
+ * do resultado sairia sem tipo declarado.
  */
-function colunasDaPessoa(tx: TransactionSql): Fragment {
+function colunasDaPessoa(tx: TransactionSql, papel: PapelDePessoa): Fragment {
   return tx`
     id,
     nome,
@@ -326,8 +393,23 @@ function colunasDaPessoa(tx: TransactionSql): Fragment {
     cidade,
     estado,
     cep,
-    retirado_em AS "retiradoEm"
+    retirado_em AS "retiradoEm",
+    ${confirmacaoProjetada(tx, papel)}
   `;
+}
+
+/**
+ * A coluna da confirmação, no papel que a tem — e o nulo tipado nos que não a têm.
+ *
+ * Ela é fragmento próprio, e não um `?:` embutido na projeção, para que o **único** ponto em que
+ * este arquivo pergunta "é locatário?" seja nomeado e enumerável: são dois, este e
+ * {@link atribuicoesDaPessoa}, e os dois pela mesma razão estrutural — a coluna só existe numa das
+ * três tabelas.
+ */
+function confirmacaoProjetada(tx: TransactionSql, papel: PapelDePessoa): Fragment {
+  return papel === 'locatario'
+    ? tx`email_confirmado_em AS "emailConfirmadoEm"`
+    : tx`NULL::timestamptz AS "emailConfirmadoEm"`;
 }
 
 /**
@@ -381,7 +463,7 @@ export async function criarPessoa(
       ${gravaveis.logradouro}, ${gravaveis.numero}, ${gravaveis.complemento}, ${gravaveis.bairro},
       ${gravaveis.cidade}, ${gravaveis.estado}, ${gravaveis.cep}
     )
-    RETURNING ${colunasDaPessoa(tx)}
+    RETURNING ${colunasDaPessoa(tx, papel)}
   `;
 
   if (pessoa === undefined) {
@@ -412,7 +494,7 @@ export async function listarPessoas(
   opcoes: OpcoesDeCirculacao = SO_EM_CIRCULACAO,
 ): Promise<PaginaDePessoasCadastradas> {
   const pessoas = await tx<PessoaCadastrada[]>`
-    SELECT ${colunasDaPessoa(tx)}
+    SELECT ${colunasDaPessoa(tx, papel)}
       FROM ${tabelaDoPapel(tx, papel)}
      WHERE ${predicadoDeCirculacao(tx, opcoes)}
      ORDER BY nome, id
@@ -451,7 +533,7 @@ export async function localizarPessoa(
   id: string,
 ): Promise<PessoaCadastrada | undefined> {
   const [pessoa] = await tx<PessoaCadastrada[]>`
-    SELECT ${colunasDaPessoa(tx)}
+    SELECT ${colunasDaPessoa(tx, papel)}
       FROM ${tabelaDoPapel(tx, papel)}
      WHERE id = ${id}
   `;
@@ -510,7 +592,7 @@ export async function localizarPessoas(
   }
 
   const pessoas = await tx<PessoaCadastrada[]>`
-    SELECT ${colunasDaPessoa(tx)}
+    SELECT ${colunasDaPessoa(tx, papel)}
       FROM ${tabelaDoPapel(tx, papel)}
      WHERE id = ANY(${[...ids]}::uuid[])
   `;
@@ -520,6 +602,63 @@ export async function localizarPessoas(
   }
 
   return porId;
+}
+
+/**
+ * As atribuições do `UPDATE`, e a única do papel `locatario` — o zeramento **condicional**.
+ *
+ * ---------------------------------------------------------------------------
+ * A CONDIÇÃO MORA NO COMANDO, e não numa leitura antes dele
+ * ---------------------------------------------------------------------------
+ *
+ * `PUT /v1/locatarios/:id` é **substituição integral** (§4.1.1): todo pedido carrega `email`, mudado
+ * ou não. Uma decisão tomada por *"o corpo trouxe o campo"* desconfirmaria o endereço em **toda**
+ * alteração — inclusive na correção de um telefone —, que é exatamente o defeito que o `CT-718`
+ * persegue.
+ *
+ * A referência **não qualificada** a `email` dentro do `SET` é o valor **anterior** da linha, por
+ * semântica do SQL — a atribuição de uma coluna não é visível às demais do mesmo comando. É isso que
+ * torna `email IS DISTINCT FROM ${novo}` uma comparação entre o que está gravado e o que chegou, sem
+ * `SELECT` prévio e sem a corrida que ele abriria.
+ *
+ * `IS DISTINCT FROM`, e não `<>`: `<>` devolve nulo quando um dos lados é nulo, e o `CASE` cairia no
+ * ramo `ELSE` sem que ninguém tivesse decidido isso. A coluna é `NOT NULL` hoje, e a forma correta
+ * não depende de ela continuar sendo.
+ *
+ * Para locador e fiador o fragmento **não** acrescenta nada, e a ausência é estrutural: a coluna não
+ * existe naquelas duas tabelas (`migracoes/0013`).
+ */
+function atribuicoesDaPessoa(
+  tx: TransactionSql,
+  papel: PapelDePessoa,
+  gravaveis: DadosDaPessoa,
+): Fragment {
+  const comuns = tx`
+    nome = ${gravaveis.nome},
+    tipo_pessoa = ${gravaveis.tipoPessoa},
+    documento_principal = ${gravaveis.documentoPrincipal},
+    rg = ${gravaveis.rg},
+    email = ${gravaveis.email},
+    telefone = ${gravaveis.telefone},
+    logradouro = ${gravaveis.logradouro},
+    numero = ${gravaveis.numero},
+    complemento = ${gravaveis.complemento},
+    bairro = ${gravaveis.bairro},
+    cidade = ${gravaveis.cidade},
+    estado = ${gravaveis.estado},
+    cep = ${gravaveis.cep}
+  `;
+
+  return papel === 'locatario'
+    ? tx`
+        ${comuns},
+        email_confirmado_em = CASE
+                                WHEN email IS DISTINCT FROM ${gravaveis.email}
+                                THEN NULL
+                                ELSE email_confirmado_em
+                              END
+      `
+    : comuns;
 }
 
 /**
@@ -536,32 +675,40 @@ export async function localizarPessoas(
  *
  * O documento passa pela **mesma** normalização da criação: um `PUT` que gravasse a máscara faria a
  * linha escapar da restrição única, e a segunda gravação do mesmo documento passaria a ser aceita.
+ *
+ * ---------------------------------------------------------------------------
+ * `emailMudou` sai do PRÓPRIO comando, e é o que a borda consome para disparar
+ * ---------------------------------------------------------------------------
+ *
+ * `RETURNING … (OLD.email IS DISTINCT FROM NEW.email)` é recurso do **PostgreSQL 18**, e a versão
+ * foi conferida nas duas frentes (`psql 18.4` no host, `embedded-postgres 18.4.0-beta.17` na suíte).
+ * Numa base anterior isto é **erro de sintaxe**, e não resultado errado — a falha é alta e imediata,
+ * que é o desejável.
+ *
+ * Ele é devolvido nos **três** papéis, e a uniformidade é deliberada: o campo descreve o que a
+ * instrução fez com a coluna `email`, que existe nas três tabelas. Quem decide o que fazer com a
+ * informação é a borda, e só o controlador de locatário a consome (T9) — um ramo por papel escrito
+ * aqui devolveria ao dado a assimetria que a projeção já resolve.
+ *
+ * As colunas não qualificadas do `RETURNING` são as da linha **nova**, por padrão do comando; só
+ * `OLD.email` olha para trás. Sem o par `OLD`/`NEW`, a única forma de saber se o endereço mudou
+ * seria lê-lo antes — e aí a resposta descreveria um estado anterior à escrita, com uma janela de
+ * corrida no meio.
  */
 export async function alterarPessoa(
   tx: TransactionSql,
   papel: PapelDePessoa,
   id: string,
   dados: DadosDaPessoa,
-): Promise<PessoaCadastrada | undefined> {
+): Promise<PessoaAlterada | undefined> {
   const gravaveis = comDocumentoNormalizado(dados);
 
-  const [pessoa] = await tx<PessoaCadastrada[]>`
+  const [pessoa] = await tx<PessoaAlterada[]>`
     UPDATE ${tabelaDoPapel(tx, papel)}
-       SET nome = ${gravaveis.nome},
-           tipo_pessoa = ${gravaveis.tipoPessoa},
-           documento_principal = ${gravaveis.documentoPrincipal},
-           rg = ${gravaveis.rg},
-           email = ${gravaveis.email},
-           telefone = ${gravaveis.telefone},
-           logradouro = ${gravaveis.logradouro},
-           numero = ${gravaveis.numero},
-           complemento = ${gravaveis.complemento},
-           bairro = ${gravaveis.bairro},
-           cidade = ${gravaveis.cidade},
-           estado = ${gravaveis.estado},
-           cep = ${gravaveis.cep}
+       SET ${atribuicoesDaPessoa(tx, papel, gravaveis)}
      WHERE id = ${id}
-    RETURNING ${colunasDaPessoa(tx)}
+    RETURNING ${colunasDaPessoa(tx, papel)},
+              (OLD.email IS DISTINCT FROM NEW.email) AS "emailMudou"
   `;
 
   return pessoa;
@@ -609,7 +756,7 @@ export async function definirCirculacaoDaPessoa(
                            ELSE coalesce(retirado_em, now())
                          END
      WHERE id = ${id}
-    RETURNING ${colunasDaPessoa(tx)}
+    RETURNING ${colunasDaPessoa(tx, papel)}
   `;
 
   return pessoa;
@@ -650,6 +797,12 @@ export async function definirCirculacaoDaPessoa(
  * `UnwrapPromiseArray` do driver — uma conversão no caminho da tradução de erro é justamente onde ela
  * não deve existir. A ausência de linha é possível porque {@link alterarPessoa} a devolve quando o
  * contexto não alcança o cadastro; quem a interpreta é a borda.
+ *
+ * ⚠️ **Consequência para quem for consumir `emailMudou` através deste envoltório**: o tipo concreto
+ * acima é {@link PessoaCadastrada}, de modo que o campo a mais de {@link PessoaAlterada} **chega no
+ * valor e não no tipo**. Alargar o retorno daqui reabriria a conversão que este parágrafo recusa; o
+ * caminho é a borda observar o resultado de {@link alterarPessoa} onde ela o produz, dentro do
+ * próprio `escrever`.
  */
 export async function gravarCadastroSobRestricaoDeUnicidade(
   tx: TransactionSql,

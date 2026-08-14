@@ -21,10 +21,19 @@
 #
 # Decorre daí a divisão de trabalho com `provisionar-base.sh`: os papéis e os dois
 # schemas nascem LÁ, com privilégio administrativo; aqui só nascem TABELAS, que
-# pertencem ao migrador por consequência de ele ser quem as cria. Não há nenhum
-# `ALTER ... OWNER` neste caminho, e não pode haver: transferir propriedade exige
-# pertencer ao papel de destino, e esse pertencimento é exatamente o que a suíte
-# de isolamento prova não existir.
+# pertencem ao migrador por consequência de ele ser quem as cria. Nenhuma TABELA
+# troca de dono neste caminho, e nenhuma pode: transferir propriedade exige
+# pertencer ao papel de destino, e o pertencimento entre o papel da aplicação e o
+# papel dono é exatamente o que a suíte de isolamento prova não existir.
+#
+# A única exceção, e ela é NOMINAL: a `0014` faz `ALTER FUNCTION
+# negocio.resolver_portador_de_confirmacao(text) OWNER TO "sysloc_resolucao"`.
+# `sysloc_resolucao` é um papel NOLOGIN de propósito único, criado no P15 do
+# provisionamento e do qual o migrador é membro `WITH INHERIT FALSE` — só para
+# poder executar aquele `ALTER`. A razão está no bloco 2 da `0014`: `SECURITY
+# DEFINER` NÃO atravessa `FORCE ROW LEVEL SECURITY`, porque a função roda como o
+# dono dela, e o dono da tabela é justamente quem o `FORCE` deixa de isentar. A
+# exceção alcança UMA função e NENHUMA tabela.
 #
 # ---------------------------------------------------------------------------
 # ADR-0005 — idempotência e transporte do segredo

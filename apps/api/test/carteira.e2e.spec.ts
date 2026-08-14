@@ -440,7 +440,6 @@ const TERMOS_DO_CONTRATO = {
   valorMensal: 2500,
   diaVencimento: 10,
   gerarCobrancasAutomaticamente: true,
-  pdfContratoArquivo: null,
 } as const;
 
 /**

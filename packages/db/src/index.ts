@@ -293,6 +293,72 @@
  * contrato que já tem em mãos, sem precisar nomear o tipo. `ParcelaDerivada`, sim, sai: é o que a porta
  * de escrita em lote recebe, e o consumidor precisa nomeá-lo para transportar a lista.
  *
+ * `./documento-de-contrato.js` entra pela mesma pergunta, e com a mesma resposta: a operação
+ * **recebe** o executor de quem já abriu a unidade, não abre conexão nem transação e não devolve
+ * executor. Ela repete as razões das anteriores — enumerabilidade do alcance a `negocio`, um lugar
+ * único sob a política, a chave da porta sendo o código legível (ADR-0017) — e acrescenta **duas**
+ * que são próprias desta fatia.
+ *
+ * A primeira é a **consulta única**. O documento imprime cinco entidades, e a forma idiomática — ler
+ * o contrato pela porta que já existe e depois cada parte pela porta dela — poria o número de idas ao
+ * banco nas mãos de quantos fiadores o contrato tem. Publicar esta porta é o que impede a borda de
+ * compor o laço por fora, pelo mesmo motivo de `lerFiadoresDeContratos` e de
+ * `lerContratosVigentesDeImoveis` existirem em lote.
+ *
+ * A segunda é o **`COALESCE` do valor total**, e ela é a ADR-0023 aplicada à letra: a coluna é
+ * anulável e nasce nula em `RASCUNHO`, estado que o documento compõe, de modo que a derivação do que
+ * falta corre **no banco**, em `numeric`. Recompor `valorMensal × prazoMeses` em TypeScript faria o
+ * mesmo contrato publicar `null` no JSON da rota e um valor no documento — textualmente o defeito que
+ * o `Context` daquela ADR nomeia como origem dela. `derivarValorTotal` **não** é reusada ali, e o
+ * cabeçalho daquele módulo registra por quê.
+ *
+ * A **direção da dependência** é a mesma de `./envio-de-cobranca.js` (ADR-0025): o módulo importa
+ * `DadosDoContratoParaDocumento` de `@sysloc/documentos` para **satisfazer** a forma que o domínio
+ * declarou. A seta é `db → documentos`, e não a inversa — o cabeçalho de
+ * `packages/documentos/tsconfig.json` registra o ciclo que a inversão fecha.
+ *
+ * De lá **não** saem `parteEmJson` nem `imovelEmJson`, e a ausência é deliberada: são o mecanismo
+ * interno da projeção, pelo mesmo critério de `colunasDoContrato` e de `cobrancaPublicada`.
+ *
+ * `./portador-de-confirmacao.js` entra pela mesma pergunta, e com a mesma resposta: as **quatro**
+ * operações do portador **recebem** o executor de quem já abriu a unidade, não abrem conexão nem
+ * transação e não devolvem executor. `resolverPortador` não abre exceção ao que as funções de série
+ * já registram: ela invoca, pelo executor recebido, a função `SECURITY DEFINER` que a migração `0014`
+ * criou — e é justamente por isso que a aplicação nunca precisa (nem pode) ler a tabela sem contexto.
+ *
+ * Elas repetem as razões das anteriores — enumerabilidade do alcance a `negocio`, um lugar único sob
+ * a política — e acrescentam **duas** que são próprias desta entidade.
+ *
+ * A primeira é o **ponto único da derivação**. `derivarSegredo` sai daqui pelo critério de
+ * `somarMetragem` e das duas derivações do contrato: é função **pura**, não recebe executor e não é
+ * caminho para dado nenhum. Ela é publicada porque a borda precisa derivar o segredo apresentado
+ * antes de resolvê-lo, e ter o ponto com nome é o que torna verificável a afirmação de que não há
+ * uma segunda derivação: ela apareceria como um segundo símbolo neste índice — que o `CT-012` audita
+ * por igualdade —, e não como um `createHash` escondido num serviço. `gerarSegredo` sai junto pelo
+ * **mesmo critério**, e por ser o par simétrico dela: o sorteio e a derivação do mesmo segredo são um
+ * fato só, e publicar metade dele deixaria o índice sugerindo que sortear em outro lugar é legítimo —
+ * um segundo `randomBytes` de segredo apareceria como símbolo a mais aqui, exatamente como uma
+ * segunda derivação apareceria.
+ *
+ * ⚠️ **A publicação de `gerarSegredo` NÃO é justificada por prova**, e o registro disso é deliberado:
+ * hoje **nenhum** consumidor fora deste pacote a importa — a borda recebe o claro já pronto de
+ * `emitirPortador` —, e o `CT-729` a alcança pelo caminho direto do módulo
+ * (`../src/portador-de-confirmacao.ts`), não por esta fronteira. Publicar símbolo para o teste
+ * enxergar é o que a Iron Law #6 proíbe, e seria o que este parágrafo estaria confessando se a razão
+ * fosse a prova.
+ *
+ * A segunda é a **assimetria de contexto**. `resolverPortador` corre **fora** de qualquer contexto de
+ * tenant — a empresa é o resultado dela, e não a entrada (ADR-0024, ADR-0027) —, enquanto as outras
+ * três correm sob o contexto que ela descobriu. Publicar a porta é o que impede a borda de compor por
+ * fora o par "ler o portador, decidir se já foi usado, gravar", que passa em todos os casos felizes e
+ * perde a corrida entre duas apresentações do mesmo segredo: o consumo é
+ * `UPDATE … WHERE consumido_em IS NULL RETURNING`, e a ausência de retorno é ela própria o resultado.
+ *
+ * De lá **não** sai constante alguma — nem os 32 bytes do sorteio, nem o prazo de validade —, e a
+ * ausência é deliberada: são o mecanismo interno da emissão, pelo mesmo critério de
+ * `empresaDoContexto` e de `colunasDaCobranca`. O que a borda precisa saber sobre a forma do segredo
+ * já é contrato publicado, e vive em `@sysloc/contracts`.
+ *
  * `./derivacao-de-contrato.js` entra pelo MESMO critério de `somarMetragem`, e não pelo das portas:
  * as duas funções são **puras** sobre valor já em mãos — não recebem executor, não tocam o banco,
  * não leem relógio e não são caminho para dado nenhum. Elas saem daqui porque são a materialização
@@ -363,6 +429,7 @@ export {
   PAPEIS_DE_PESSOA,
   type PaginaDePessoasCadastradas,
   type PapelDePessoa,
+  type PessoaAlterada,
   type PessoaCadastrada,
 } from './cadastro-de-pessoa.js';
 export {
@@ -447,6 +514,10 @@ export {
 } from './derivacao-de-cobranca.js';
 export { derivarTerminoDaLocacao, derivarValorTotal } from './derivacao-de-contrato.js';
 export {
+  type AgregadoDoDocumentoDoContrato,
+  lerAgregadoDoContrato,
+} from './documento-de-contrato.js';
+export {
   type AlvoDeReemissao,
   admitirEmpresa,
   type EmpresaNova,
@@ -520,6 +591,17 @@ export {
   lerPoliticaDeAviso,
   POLITICA_DE_AVISO_AUSENTE,
 } from './politica-de-aviso.js';
+export {
+  type ConsumoDoPortador,
+  consumirPortador,
+  derivarSegredo,
+  emitirPortador,
+  gerarSegredo,
+  invalidarPortadoresDoLocatario,
+  type PortadorEmitido,
+  type PortadorResolvido,
+  resolverPortador,
+} from './portador-de-confirmacao.js';
 export {
   ACESSOS_DA_EMPRESA_A,
   ACESSOS_DA_EMPRESA_B,

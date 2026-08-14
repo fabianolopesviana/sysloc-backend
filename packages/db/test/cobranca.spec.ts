@@ -456,7 +456,6 @@ const TERMOS_DO_CONTRATO = {
   valorMensal: 2500,
   diaVencimento: 10,
   gerarCobrancasAutomaticamente: true,
-  pdfContratoArquivo: null,
 } as const;
 
 /**
@@ -486,8 +485,23 @@ const UNIDADES_DECLARADAS: readonly string[] = Object.freeze([
  * estado para ela mover, o que o Passo 4 deste mesmo caso continua provando. A asserção **não
  * afrouxa**: segue por igualdade sobre a lista inteira, de modo que uma terceira fila — uma
  * `cobranca-vencida`, que é a forma exata do defeito — reprova o caso nomeando-a.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T9** da fatia `documentos-e-confirmacao` declara a fila
+ * `confirmacao-de-email`, e o código de produção está certo. O que a ADR-0022 proíbe é estado
+ * publicado **movido por rotina**, e esta fila não move nenhum: o que ela carrega é a **entrega de
+ * uma mensagem** — o consumidor lê o cadastro e envia o e-mail, e nada mais. Quem grava
+ * `negocio.locatario.email_confirmado_em` é o **titular do endereço**, apresentando o portador na
+ * rota sem sessão (T11), e não um processo de fundo: o fato é de um ato humano, e a coluna registra
+ * **quando ele aconteceu** (ADR-0022), exatamente como a `data_vencimento` registra o fato de que a
+ * derivação de estado depende. A asserção **não afrouxa**: segue por igualdade sobre a lista
+ * inteira, de modo que uma quarta fila reprova o caso nomeando-a, e o Passo 4 continua provando que
+ * não existe coluna de estado de cobrança para rotina alguma mover.
  */
-const FILAS_DECLARADAS: readonly string[] = Object.freeze(['eco', 'regua-de-cobranca']);
+const FILAS_DECLARADAS: readonly string[] = Object.freeze([
+  'confirmacao-de-email',
+  'eco',
+  'regua-de-cobranca',
+]);
 
 /** O agendamento que a falsificação do CT-512 (b) acrescenta à cópia — nunca à árvore versionada. */
 const TIMER_FALSIFICADO = 'sysloc-cobranca-vencida.timer';

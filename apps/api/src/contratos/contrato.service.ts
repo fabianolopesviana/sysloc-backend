@@ -14,8 +14,10 @@
  * e é a saída que o próprio marcador `DECISÃO FECHADA` de `packages/db/src/unidade-de-trabalho.ts`
  * aponta como preferível. **A decisão fechada não é tocada.**
  *
- * A ausência de construtor é o mecanismo: o acesso ao banco **não** é injetado aqui, porque injetá-lo
- * daria a este serviço exatamente a capacidade que ele não pode ter.
+ * A ausência de `AcessoAoBanco` no construtor é o mecanismo: o acesso ao banco **não** é injetado
+ * aqui, porque injetá-lo daria a este serviço exatamente a capacidade que ele não pode ter. O
+ * construtor que existe carrega **uma** dependência, e ela não é dado: a
+ * {@link PortaDeRenderizacao} do documento, composta pelo módulo (ADR-0025). Ver o docblock dela.
  *
  * ---------------------------------------------------------------------------
  * ELE ORQUESTRA — não escreve consulta, e não compara empresa
@@ -170,8 +172,16 @@
  *   * **não é idempotente.** Repetir o pedido é transição inválida e recebe `422` com
  *     `estadoAtual: 'CANCELADO'`, porque o segundo pedido significa que quem o fez **não sabia o
  *     estado** — e responder `200` o deixaria acreditar que acabou de cancelar algo;
- *   * **não exige o PDF do contrato.** Ver o marcador `DÉBITO COM GATILHO` no ponto do método: é a
- *     única regra do oráculo deliberadamente não portada, e o gatilho é a F3.
+ *   * **não exige o documento do contrato**, e a divergência com o oráculo é **deliberada e está
+ *     decidida** — é a `DV-05`, veredito `PRODUTO_VENCE`, escrito antes da execução. No sistema
+ *     antigo, `cancelar_contrato` começa por `obter_pdf_privado_bytes` e recusa quando não há PDF
+ *     privado (o golden captura a recusa em `contrato_sem_pdf`); a guarda de lá protege o **carimbo**
+ *     — o cancelamento existe para carimbar o arquivo —, e não o negócio. Aqui não há arquivo: o
+ *     documento é composto sob demanda e **nunca armazenado** (ADR-0030), de modo que não existe
+ *     artefato preexistente de que este ato possa depender. A pré-condição legada não é portada
+ *     porque **não tem sobre o que incidir**, e é isso que fechou o débito D36 da fatia
+ *     `contratos-de-locacao`, por construção, na T7 da fatia `documentos-e-confirmacao`. O `CT-710`
+ *     afirma o `200`.
  *
  * ---------------------------------------------------------------------------
  * A CASCATA alcança as CANCELÁVEIS — e só elas — na MESMA unidade (RD-13)
@@ -283,7 +293,7 @@
  * razão, de `traduzirConflitoDeIdentificador` em {@link ../imoveis/imovel.service.js}.
  */
 
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import type {
   AtivacaoDeContrato,
   Contrato,
@@ -294,6 +304,7 @@ import type {
   SituacaoDeLocacao,
 } from '@sysloc/contracts';
 import {
+  type AgregadoDoDocumentoDoContrato,
   alterarContrato,
   ativarContrato,
   type ContratoPersistido,
@@ -313,6 +324,7 @@ import {
   emitirNumeroDeContrato,
   emitirNumerosDeCobranca,
   garantirContadorDeContrato,
+  lerAgregadoDoContrato,
   lerAnoDaSerieDeContrato,
   listarContratos,
   localizarContrato,
@@ -322,9 +334,11 @@ import {
   type OpcoesDeCirculacao,
   type PapelDePessoa,
 } from '@sysloc/db';
+import { comporDocumentoDoContrato, type PortaDeRenderizacao } from '@sysloc/documentos';
 import { CodigoErro, ErroDeAplicacao } from '@sysloc/shared';
 import type { TransactionSql } from 'postgres';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
+import { TOKEN_PORTA_DE_RENDERIZACAO } from '../configuracao/ambiente.js';
 
 /** A página de contratos, na forma canônica de lista da ADR-0017. */
 export type PaginaDeContratos = EnvelopeDeLista<Contrato>;
@@ -437,6 +451,20 @@ const CHAVE_DO_CONTRATO_VIGENTE = 'contratoVigente';
 const ESTADO_ALTERAVEL: EstadoDoContrato = 'RASCUNHO';
 const ESTADO_ATIVAVEL: EstadoDoContrato = 'RASCUNHO';
 const ESTADO_CANCELAVEL: EstadoDoContrato = 'ATIVO';
+
+/**
+ * O estado que **produz a marca de cancelamento** no documento (RN-02).
+ *
+ * Ele é uma **quarta** constante, e não o destino de `ESTADO_CANCELAVEL`: aquele é o estado de que a
+ * transição **parte** (`ATIVO`), e este é o estado em que o contrato **está** quando o documento é
+ * pedido. Derivar um do outro amarraria a marca à máquina de estados — e bastaria a máquina ganhar
+ * uma origem de cancelamento a mais para a marca sumir, ou aparecer, sem que nada acusasse.
+ *
+ * Ele existe aqui, e não em `@sysloc/documentos`, porque a composição **não conhece `status`**: a
+ * marca chega a ela por parâmetro, e é essa ignorância que impede a marca de virar consequência de
+ * outra coisa. O docblock de `OpcoesDoDocumentoDoContrato` registra a decisão do lado de lá.
+ */
+const ESTADO_COM_MARCA_DE_CANCELAMENTO: EstadoDoContrato = 'CANCELADO';
 const ALTERACAO = 'ALTERACAO';
 const ATIVACAO = 'ATIVACAO';
 const CANCELAMENTO = 'CANCELAMENTO';
@@ -571,7 +599,23 @@ const PAPEL_DO_FIADOR: PapelDePessoa = 'fiador';
 
 @Injectable()
 export class ContratoService {
-  // Sem construtor, e a ausência é o ponto: ver o cabeçalho deste arquivo.
+  /**
+   * A **única** dependência injetada, e o que ela não é importa tanto quanto o que ela é.
+   *
+   * `AcessoAoBanco` **não** está aqui, e a ausência continua sendo o mecanismo da decisão D1 — ver o
+   * cabeçalho deste arquivo. O que entra é a porta de **saída** do documento, e ela chega por
+   * composição do módulo (ADR-0025): quem monta o processo escolhe o adaptador, e nem este serviço
+   * nem a composição do documento sabem que existe um motor de PDF.
+   *
+   * Importar `criarRenderizadorPdf` aqui seria a saída mais curta e a errada: ela faria este arquivo
+   * — que é regra de domínio — depender do motor de renderização, e daria ao processo um segundo
+   * lugar onde escolher o adaptador. É a mesma decisão, e a mesma razão, de
+   * {@link ../automacao/automacao.service.js} receber a porta de e-mail em vez de construir o
+   * transporte de SMTP.
+   */
+  constructor(
+    @Inject(TOKEN_PORTA_DE_RENDERIZACAO) private readonly renderizacao: PortaDeRenderizacao,
+  ) {}
 
   /**
    * Garante o contador do escopo `(empresa da sessão, ano)` e devolve **o ano lido**.
@@ -667,6 +711,120 @@ export class ContratoService {
    */
   async ler(tx: TransactionSql, codigo: string): Promise<Contrato> {
     return publicarContrato(this.exigir(await localizarContrato(tx, codigo)));
+  }
+
+  /**
+   * Lê o agregado de que o documento é composto — **a única etapa da rota do documento que exige o
+   * executor**.
+   *
+   * ---------------------------------------------------------------------------
+   * O DOCUMENTO SAI EM DUAS METADES, e a divisão é POR EXIGÊNCIA DE EXECUTOR
+   * ---------------------------------------------------------------------------
+   *
+   * Esta metade toca o banco; {@link ContratoService.renderizarDocumento} não toca, e por isso as
+   * duas **não** podem ser um método só. A razão está por extenso no docblock daquele método, e é
+   * ela que governa o ponto de chamada no controlador — leia-a antes de fundi-las de volta.
+   *
+   * ---------------------------------------------------------------------------
+   * O AGREGADO VEM DE UMA CONSULTA, e o `404` sai do PONTO ÚNICO
+   * ---------------------------------------------------------------------------
+   *
+   * {@link lerAgregadoDoContrato} traz contrato, locador, locatário, imóvel e fiadores de uma vez,
+   * sob RLS. Contrato de outra empresa **não retorna linha** — quem decide é a política do banco, e
+   * não uma comparação escrita aqui —, e a ausência atravessa {@link ContratoService.exigir}, o
+   * mesmo ponto que as outras cinco rotas de `:codigo` usam. É o que faz o contrato alheio e o
+   * contrato inexistente responderem o **mesmo** `404`, byte a byte.
+   *
+   * **A tradução da ausência fica AQUI, e não sobe para a segunda metade**: ela é a única das três
+   * etapas que sabe que houve uma consulta, e é dentro da unidade de trabalho que a ausência de
+   * linha significa alguma coisa. Traduzi-la depois obrigaria a segunda metade a receber
+   * `AgregadoDoDocumentoDoContrato | undefined` e a ter uma **segunda** tradução da mesma ausência —
+   * exatamente o que o ponto único existe para impedir.
+   */
+  async agregadoDoDocumento(
+    tx: TransactionSql,
+    codigo: string,
+  ): Promise<AgregadoDoDocumentoDoContrato> {
+    return this.exigir(await lerAgregadoDoContrato(tx, codigo));
+  }
+
+  /**
+   * Compõe o **documento do contrato** e devolve os bytes dele — **fora da unidade de trabalho**.
+   *
+   * ---------------------------------------------------------------------------
+   * ELA NÃO RECEBE EXECUTOR, e a ausência é o mecanismo (Gate 2 / T7, rodada 1)
+   * ---------------------------------------------------------------------------
+   *
+   * As duas etapas daqui — a função pura da composição e a porta de renderização — **não tocam o
+   * banco**, e a assinatura sem `tx` é o que torna isso verdade por construção, e não por promessa.
+   * Ela existe separada de {@link ContratoService.agregadoDoDocumento} porque a renderização custa
+   * **~0,5 s medidos** por pedido (5 amostras entre 417 e 785 ms, sobre o contrato mínimo), e o
+   * `sobContextoDaSessao` da borda é um `sql.begin` real: mantê-la dentro da unidade reservava uma
+   * conexão física do pool — que é **um só para o processo inteiro**, no tamanho padrão de
+   * `postgres.js` — e deixava um `idle in transaction` de meio segundo por download, segurando o
+   * horizonte de vacuum. Sob concorrência modesta o pool esgota e **toda outra rota do processo
+   * passa a esperar por conexão**: a degradação aparece longe da causa, e nenhum caso desta suíte
+   * mede concorrência.
+   *
+   * ⚠️ **Esta é a primeira rota desta borda cuja unidade de trabalho NÃO cobre o manipulador
+   * inteiro, e a exceção é deliberada.** A regra da §5.1 continua valendo — a unidade abre na borda,
+   * e o serviço recebe o executor; o que muda é a **extensão** dela, que passa a cobrir só o que
+   * exige executor. Nada aqui contraria a decisão D1: este método não abre unidade nenhuma, e a
+   * ordem dos cabeçalhos no controlador não muda, porque os bytes continuam existindo antes deles.
+   * Uniformizar de volta — pôr as três etapas numa continuação só, "como as outras seis rotas" —
+   * reabre o defeito de desempenho medido acima. O `CT-714 (b)` é a rede.
+   *
+   * **A decisão está escriturada onde a tentação acontece**, e não aqui: o marcador
+   * `DECISÃO FECHADA — T7 / Gate 2` mora em `contratos/contrato.controller.ts`, imediatamente acima
+   * do `sobContextoDaSessao` da rota do documento, que é o ponto em que alguém fundiria as duas
+   * metades. Ele carrega o `REVERTER EXIGE`; este docblock é o detalhe por extenso, e **não** é um
+   * segundo marcador — uma decisão tem um marcador só, e o outro ponto referencia.
+   *
+   * ---------------------------------------------------------------------------
+   * NADA É GRAVADO, e a ausência de caminho de escrita É a garantia (ADR-0030)
+   * ---------------------------------------------------------------------------
+   *
+   * As três etapas da rota são leitura, função pura e renderização em memória. Não existe, aqui nem
+   * abaixo daqui, uma escrita de documento: a coerência entre o que o documento diz e o que o
+   * cadastro guarda não vem de alguém lembrar de invalidar uma cópia — vem de **não haver cópia**. É
+   * a decisão central da fatia, e a alternativa (guardar os bytes e invalidá-los quando o cadastro
+   * mudar) é exatamente a classe de defeito que a RN-01 fecha.
+   *
+   * Reaproveitamento por cache continua sendo otimização compatível com a ADR-0030 — *"ele muda o
+   * custo, não o que o produto promete"* —, e está **adiado por escrito** no PRD. Ele não entra aqui
+   * por conta de desempenho: instalado neste ponto, o cache passa a ser a fonte, e a propriedade que
+   * o `CT-714` guarda some. Se um dia houver exigência probatória de instante passado, o caminho
+   * legítimo é **superseder a ADR-0030**, nunca guardar cópia por baixo dela.
+   *
+   * ---------------------------------------------------------------------------
+   * A MARCA DE CANCELAMENTO É DERIVADA AQUI — e a composição não conhece `status`
+   * ---------------------------------------------------------------------------
+   *
+   * `{ cancelado: status === 'CANCELADO' }` é a **única** origem da marca (RN-02), e ela é
+   * parâmetro. O agregado que a composição recebe não carrega `status`, de modo que não existe, lá
+   * dentro, um segundo caminho capaz de ligá-la — nem um `retiradoEm`, nem uma data de fim, nem um
+   * valor zerado. O legado *mesclava* a marca sobre os bytes de um PDF já gravado e regravava o
+   * arquivo (`DV-07`); aqui não há bytes prontos para mesclar, e a garantia é **estrutural**.
+   *
+   * A derivação acompanha a renderização, e não a leitura: é aqui que `status` deixa de existir para
+   * o resto do caminho, e é aqui que ela precisa estar para que a composição continue ignorando-o.
+   *
+   * **A falha da renderização não é tratada aqui**, e a ausência é a decisão: a porta rejeita quando
+   * não conseguiu produzir o documento, e a rejeição sobe intacta até o filtro global, virando
+   * `500 ERRO_INTERNO` com a linha `error` no journal. Um tratamento próprio neste ponto teria de
+   * escolher um código do vocabulário fechado para uma falha que não é do cliente — e
+   * `REQUISICAO_RECUSADA` é proibido a código de negócio pelo marcador `DECISÃO FECHADA` de
+   * `comum/filtro-excecao.ts`. Não há repetição e não há timeout, pela razão que o cabeçalho de
+   * `porta-de-renderizacao.ts` registra: não existe processo externo a esperar. **A rejeição
+   * acontecer fora da unidade não muda nada disso**: a leitura não gravou coisa alguma, e não há
+   * efeito a desfazer.
+   */
+  async renderizarDocumento(agregado: AgregadoDoDocumentoDoContrato): Promise<Uint8Array> {
+    const representacao = comporDocumentoDoContrato(agregado.dados, {
+      cancelado: agregado.status === ESTADO_COM_MARCA_DE_CANCELAMENTO,
+    });
+
+    return await this.renderizacao.renderizar(representacao);
   }
 
   /**
@@ -854,19 +1012,6 @@ export class ContratoService {
    * contrato publicado é caro de tirar depois.
    */
   async cancelar(tx: TransactionSql, codigo: string): Promise<ResultadoDoCancelamento> {
-    // DÉBITO COM GATILHO — D36 · F2/T8 · registrado 2026-08-09
-    // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o código abaixo.)
-    // O QUÊ: a pré-condição legada **"sem PDF privado, não cancela"** não é portada. No sistema
-    //        antigo ela é a PRIMEIRA coisa que `cancelar_contrato` faz — `obter_pdf_privado_bytes`
-    //        seguido de `frappe.throw` —, e o golden a captura na recusa `contrato_sem_pdf`.
-    // QUANDO FECHA: na **F3**, a fatia que produz o documento do contrato — é ela que decide se o
-    //        carimbo "CANCELADO" no PDF é **pré-condição** do ato ou **efeito** dele. Enquanto a
-    //        decisão não existir, não há o que conferir aqui.
-    // POR QUE NÃO AGORA: portada literal, ela tornaria o cancelamento **impossível** nesta fatia (o
-    //        PDF é F3) e **permanentemente impossível** para todo contrato sem PDF anexado. É
-    //        acidente do desenho legado: lá o cancelamento existe PARA carimbar o PDF, e a guarda
-    //        protege o carimbo, não o negócio.
-    // ÍNDICE: docs/specs/features/contratos-de-locacao/v1/_run/run-report.md §2, D36
     const atual = this.exigir(await localizarContrato(tx, codigo));
 
     // A guarda de estado, no MESMO ponto único que a alteração e a ativação usam — a recusa muda de
@@ -1139,14 +1284,30 @@ export class ContratoService {
   }
 
   /**
-   * Traduz a ausência em `404` — **ponto único** das quatro rotas de `:codigo`.
+   * Traduz a ausência em `404` — **ponto único** das rotas de `:codigo`.
    *
-   * É aqui, e em nenhum outro lugar, que a fronteira de tenant do contrato vira resposta. Quatro
-   * traduções da mesma ausência ficariam livres para divergir no código e no status, e a forma do erro
+   * É aqui, e em nenhum outro lugar, que a fronteira de tenant do contrato vira resposta. Traduções
+   * separadas da mesma ausência ficariam livres para divergir no código e no status, e a forma do erro
    * é contrato: o contrato de outra empresa responde `404` com o corpo **idêntico** ao do contrato que
    * não existe, porque a borda não tem como distinguir os dois — e não deve ter.
+   *
+   * **Ela é genérica desde a T7 da fatia `documentos-e-confirmacao`, e a generalização é o que a
+   * mantém única.** A rota do documento não lê `ContratoPersistido`: ela lê
+   * {@link AgregadoDoDocumentoDoContrato}, que é outra projeção do mesmo contrato. Tipada na forma
+   * antiga, ela obrigaria aquela rota a escrever a própria tradução — e uma segunda tradução da
+   * mesma ausência é precisamente o que este ponto único existe para impedir. O parâmetro continua
+   * sendo `T | undefined`, de modo que nada além da ausência é tratado aqui.
+   *
+   * **O limite do genérico é o ROSTER das projeções admitidas, e não `unknown`.** Sem ele, este
+   * ponto traduziria a ausência de qualquer coisa em `404 RECURSO_NAO_ENCONTRADO` — inclusive de um
+   * valor que não é o contrato, caso em que o status mentiria sobre o que faltou. Acrescentar uma
+   * projeção à união é **decisão**, e não conveniência: ela aparece no diff, e quem a acrescenta
+   * afirma que a ausência daquela leitura significa *"este contrato não é alcançável por esta
+   * sessão"*.
    */
-  private exigir(contrato: ContratoPersistido | undefined): ContratoPersistido {
+  private exigir<T extends ContratoPersistido | AgregadoDoDocumentoDoContrato>(
+    contrato: T | undefined,
+  ): T {
     if (contrato === undefined) {
       throw new ErroDeAplicacao(
         CodigoErro.RECURSO_NAO_ENCONTRADO,
@@ -1193,7 +1354,6 @@ export function publicarContrato(contrato: ContratoPersistido): Contrato {
     dataFimLocacao: contrato.dataFimLocacao,
     valorTotalContrato: contrato.valorTotalContrato,
     gerarCobrancasAutomaticamente: contrato.gerarCobrancasAutomaticamente,
-    pdfContratoArquivo: contrato.pdfContratoArquivo,
     retiradoEm: contrato.retiradoEm === null ? null : contrato.retiradoEm.toISOString(),
   };
 }

@@ -28,6 +28,14 @@
  * |          |        | tipos**. Que cada papel aponte para a **sua** tabela é afirmado pelo
  * |          |        | `CT-350`, no comportamento; a totalidade das chaves do mapa é do
  * |          |        | compilador, pelo `Readonly<Record<PapelDePessoa, string>>`. |
+ * | CA-16    | apoio  | A projeção emite `emailConfirmadoEm` **só** para o papel `locatario`: com um
+ * |          | (T8 da | cadastro de cada papel e o do locatário confirmado pelo caminho real, a leitura
+ * |          | fatia  | dos três devolve o instante para ele e `null` para locador e fiador — **os três
+ * |          | 2b)    | na mesma asserção**. |
+ * | CA-09    | apoio  | `emailMudou` é verdadeiro **só** quando o valor muda, e o zeramento acompanha:
+ * |          | (idem) | `PUT` com o MESMO e-mail devolve `false` e deixa `emailConfirmadoEm` intacto;
+ * |          |        | `PUT` com e-mail diferente devolve `true` e zera o carimbo. Nos outros dois
+ * |          |        | papéis `emailMudou` continua sendo apurado, e nada mais muda. |
  * | CA-09    | CT-352 | O documento é gravado **só com dígitos**: a coluna lida crua vale
  * |          |        | `'12345678909'` para o CPF mascarado e `'11222333000181'` para o CNPJ
  * |          |        | mascarado; e por isso a segunda gravação do mesmo documento na outra
@@ -67,6 +75,19 @@
  * **CT-352.** As duas metades são obrigatórias: a asserção sobre a coluna sozinha não prova que a
  * unicidade **alcança as duas grafias**, e a recusa sozinha não distingue *"normalizou"* de
  * *"recusou por coincidência de texto"*. Cobre CPF **e** CNPJ, em papéis diferentes.
+ *
+ * **Apoio da projeção.** Os três papéis entram na MESMA asserção pela razão das contagens do
+ * `CT-350`: afirmar só o locatário não distingue *"a coluna é dele"* de *"a coluna é de todos"*, e
+ * afirmar só os outros dois ficaria verde sobre uma projeção que nunca lê a coluna. O locatário é
+ * confirmado pelo **caminho real** (o consumo do portador), e não por `UPDATE` no carimbo, porque o
+ * caminho existe — e é ele que faz o instante lido ser o mesmo fato que a operação grava.
+ *
+ * **Apoio do `emailMudou`.** O par *"mesmo e-mail"* + *"e-mail diferente"* é o que discrimina: a
+ * primeira metade sozinha ficaria verde com uma implementação que **nunca** zera, e a segunda
+ * sozinha com uma que zera **sempre** — que é exatamente o defeito que a condição no comando existe
+ * para fechar, já que o `PUT` é substituição integral e todo pedido carrega `email`. E o carimbo é
+ * afirmado nas duas metades, não só o campo devolvido: `emailMudou` correto com o zeramento errado
+ * seria um contrato que descreve o que a instrução não fez.
  *
  * ===========================================================================
  * Precondição privilegiada
@@ -167,9 +188,10 @@ import {
   type PapelDePessoa,
 } from '../src/cadastro-de-pessoa.ts';
 import * as contextoDeTenant from '../src/contexto.ts';
+import { consumirPortador } from '../src/portador-de-confirmacao.ts';
 import { EMPRESA_A } from '../src/semente.ts';
 import { type AcessoAoBanco, abrirAcessoAoBanco } from '../src/unidade-de-trabalho.ts';
-import { type BancoMigrado, bancoEfemero } from './banco-efemero.ts';
+import { type BancoMigrado, bancoEfemero, semearPortadorDeConfirmacao } from './banco-efemero.ts';
 
 // ---------------------------------------------------------------------------
 // Limites de tempo — constantes nomeadas, nunca número mágico no meio do caso
@@ -249,6 +271,20 @@ const DOCUMENTO_RETIRADO: Readonly<Record<PapelDePessoa, string>> = {
   locatario: '12345678909',
   fiador: '52998224725',
 };
+
+/** Um documento por papel para os dois casos de apoio da T8 — distintos dos demais casos. */
+const DOCUMENTO_DA_CONFIRMACAO: Readonly<Record<PapelDePessoa, string>> = {
+  locador: '86288366757',
+  locatario: '15350946056',
+  fiador: '84175331830',
+};
+
+/** O documento do locatário do segundo caso de apoio — o do `emailMudou`. */
+const DOCUMENTO_DE_QUEM_TROCA_EMAIL = '73301866700';
+
+/** O endereço com que o locatário do apoio nasce, e o que ele passa a ter. Literais do caso. */
+const EMAIL_ORIGINAL = 'titular@exemplo.invalid';
+const EMAIL_NOVO = 'outro-titular@exemplo.invalid';
 
 /** Os dois pares de grafia do `CT-352` — o mesmo documento mascarado e cru, em papéis distintos. */
 const PARES_DE_GRAFIA = [
@@ -458,6 +494,49 @@ describe('a porta parametrizada pelo papel, sob o contexto da empresa A', () => 
     });
   }
 
+  /**
+   * O instante de confirmação que a **projeção da porta** devolve para cada um dos três papéis.
+   *
+   * Ela lê pela porta pública (`localizarPessoa`), e não crua, porque o que os casos de apoio
+   * afirmam é o que a porta **publica** — a leitura crua da coluna serve a outra pergunta, e tem
+   * acessório próprio ({@link lerConfirmacaoCrua}).
+   */
+  async function lerConfirmacaoDosTres(
+    ids: Partial<Record<PapelDePessoa, string>>,
+  ): Promise<Record<string, Date | null | undefined>> {
+    return emUnidade(async (tx) => {
+      const porPapel: Record<string, Date | null | undefined> = {};
+      for (const papel of PAPEIS_DE_PESSOA) {
+        const id = ids[papel];
+        porPapel[papel] =
+          id === undefined ? undefined : (await localizarPessoa(tx, papel, id))?.emailConfirmadoEm;
+      }
+      return porPapel;
+    });
+  }
+
+  /**
+   * O carimbo da confirmação como a COLUNA o guarda — só o papel que a tem.
+   *
+   * Ela existe para que a metade que zera seja afirmada **no disco**, e não apenas no que o
+   * `RETURNING` devolveu: um `RETURNING` que projetasse a linha anterior publicaria o carimbo
+   * intacto sobre uma coluna já zerada, e a asserção sobre o retorno sozinha não distinguiria os
+   * dois.
+   */
+  async function lerConfirmacaoCrua(
+    papel: Extract<PapelDePessoa, 'locatario'>,
+    id: string,
+  ): Promise<Date | null | undefined> {
+    return emUnidade(async (tx) => {
+      const [linha] = await tx<{ confirmadoEm: Date | null }[]>`
+        SELECT email_confirmado_em AS "confirmadoEm"
+          FROM ${tx(TABELAS_DECLARADAS[papel])}
+         WHERE id = ${id}
+      `;
+      return linha?.confirmadoEm;
+    });
+  }
+
   /** O documento como a COLUNA o guarda — leitura crua, sem passar pela projeção da porta. */
   async function lerDocumentoCru(papel: PapelDePessoa, id: string): Promise<string | undefined> {
     return emUnidade(async (tx) => {
@@ -476,9 +555,15 @@ describe('a porta parametrizada pelo papel, sob o contexto da empresa A', () => 
    * `DELETE` sem `WHERE` corre **sob a política**, e é justamente isso que o torna correto aqui: ele
    * alcança só as linhas da empresa do contexto. Cada caso começa e termina com as três vazias, que
    * é o que torna as contagens cruas afirmações com conteúdo.
+   *
+   * ⚠️ **O portador de confirmação sai primeiro, e a ordem é obrigatória**: ele referencia o
+   * locatário por chave estrangeira **composta** (`portador_de_confirmacao_locatario_empresa_fkey`),
+   * e o banco recusa apagar a mãe antes da filha. A limpeza é única de propósito — um segundo ponto
+   * de limpeza ficaria livre para esquecer a tabela nova, e o caso seguinte falharia longe da causa.
    */
   async function limpar(): Promise<void> {
     await emUnidade(async (tx) => {
+      await tx`DELETE FROM negocio.portador_de_confirmacao`;
       await tx`DELETE FROM negocio.locador`;
       await tx`DELETE FROM negocio.locatario`;
       await tx`DELETE FROM negocio.fiador`;
@@ -720,6 +805,164 @@ describe('a porta parametrizada pelo papel, sob o contexto da empresa A', () => 
         } finally {
           await limpar();
         }
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'apoio (T8 · 2b) — a projeção emite `emailConfirmadoEm` só para o locatário',
+    async () => {
+      await limpar();
+
+      try {
+        const gravados: Partial<Record<PapelDePessoa, string>> = {};
+        for (const papel of PAPEIS_DE_PESSOA) {
+          const gravada = await emUnidade(
+            async (tx) =>
+              await criarPessoa(
+                tx,
+                papel,
+                dadosDe('Pessoa da Confirmação', DOCUMENTO_DA_CONFIRMACAO[papel]),
+              ),
+          );
+          gravados[papel] = gravada.id;
+        }
+
+        const idDoLocatario = gravados.locatario;
+        if (idDoLocatario === undefined) {
+          throw new Error('o arranjo não gravou o locatário');
+        }
+
+        // Todo cadastro nasce **não confirmado**, nos três papéis — e afirmar isso antes é o que dá
+        // conteúdo à asserção seguinte: sem esta linha, um instante que já estivesse lá por outro
+        // motivo passaria por confirmação.
+        expect(await lerConfirmacaoDosTres(gravados)).toEqual({
+          locador: null,
+          locatario: null,
+          fiador: null,
+        });
+
+        // A confirmação corre pelo **caminho real**: o portador é emitido pela porta de produção e
+        // consumido por ela. Um `UPDATE` no carimbo montaria um estado que a operação não produz, e
+        // este caso deixaria de dizer que o campo publicado é o fato que o consumo grava.
+        const consumo = await emUnidade(async (tx) => {
+          const portador = await semearPortadorDeConfirmacao(tx, idDoLocatario);
+          return await consumirPortador(tx, portador.derivado);
+        });
+
+        if (consumo === undefined) {
+          throw new Error('o arranjo não conseguiu consumir o portador do locatário');
+        }
+
+        // OS TRÊS na MESMA asserção, pela razão das contagens do `CT-350`: afirmar só o locatário
+        // não distinguiria "a coluna é dele" de "a coluna é de todos".
+        expect(await lerConfirmacaoDosTres(gravados)).toEqual({
+          locador: null,
+          locatario: consumo.confirmadoEm,
+          fiador: null,
+        });
+
+        // E o que a porta devolve é o instante que a instrução gravou — não um valor recomposto.
+        expect(consumo.confirmadoEm).toBeInstanceOf(Date);
+      } finally {
+        await limpar();
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'apoio (T8 · 2b) — `emailMudou` é verdadeiro só quando o e-mail muda, e o zeramento acompanha',
+    async () => {
+      await limpar();
+
+      try {
+        const original = dadosDe('Titular do Endereço', DOCUMENTO_DE_QUEM_TROCA_EMAIL);
+        const gravada = await emUnidade(
+          async (tx) => await criarPessoa(tx, 'locatario', { ...original, email: EMAIL_ORIGINAL }),
+        );
+
+        const consumo = await emUnidade(async (tx) => {
+          const portador = await semearPortadorDeConfirmacao(tx, gravada.id);
+          return await consumirPortador(tx, portador.derivado);
+        });
+
+        if (consumo === undefined) {
+          throw new Error('o arranjo não conseguiu confirmar o endereço do locatário');
+        }
+
+        // --- Metade 1: o MESMO e-mail. O `PUT` é substituição integral, então ele viaja de novo ---
+        //
+        // É a metade que reprova a implementação que zera **sempre** — a que uma decisão tomada por
+        // "o corpo trouxe o campo" produziria, desconfirmando o endereço numa correção de telefone.
+        const semTroca = await emUnidade(
+          async (tx) =>
+            await alterarPessoa(tx, 'locatario', gravada.id, {
+              ...original,
+              email: EMAIL_ORIGINAL,
+              telefone: '11988887777',
+            }),
+        );
+
+        expect({
+          emailMudou: semTroca?.emailMudou,
+          emailConfirmadoEm: semTroca?.emailConfirmadoEm,
+          telefone: semTroca?.telefone,
+        }).toEqual({
+          emailMudou: false,
+          emailConfirmadoEm: consumo.confirmadoEm,
+          telefone: '11988887777',
+        });
+
+        // --- Metade 2: e-mail DIFERENTE ------------------------------------------------------
+        //
+        // É a metade que reprova a implementação que **nunca** zera. As duas juntas fixam o
+        // `IS DISTINCT FROM`; nenhuma sozinha o faz.
+        const comTroca = await emUnidade(
+          async (tx) =>
+            await alterarPessoa(tx, 'locatario', gravada.id, {
+              ...original,
+              email: EMAIL_NOVO,
+            }),
+        );
+
+        expect({
+          emailMudou: comTroca?.emailMudou,
+          emailConfirmadoEm: comTroca?.emailConfirmadoEm,
+          email: comTroca?.email,
+        }).toEqual({ emailMudou: true, emailConfirmadoEm: null, email: EMAIL_NOVO });
+
+        // E a coluna do disco concorda com o que o `RETURNING` publicou: um `RETURNING` que lesse a
+        // linha ANTIGA devolveria o carimbo intacto sobre uma coluna já zerada.
+        expect(await lerConfirmacaoCrua('locatario', gravada.id)).toBeNull();
+
+        // --- O papel sem a coluna: `emailMudou` continua sendo apurado, e nada mais muda ------
+        //
+        // O campo descreve o que a instrução fez com `email`, que existe nas três tabelas. Sem esta
+        // perna, uma implementação que só apurasse o campo no ramo do locatário passaria — e a T9
+        // receberia `undefined` onde espera um booleano.
+        const locador = await emUnidade(
+          async (tx) =>
+            await criarPessoa(tx, 'locador', {
+              ...dadosDe('Locador do Apoio', DOCUMENTO_DA_CONFIRMACAO.locador),
+              email: EMAIL_ORIGINAL,
+            }),
+        );
+        const locadorAlterado = await emUnidade(
+          async (tx) =>
+            await alterarPessoa(tx, 'locador', locador.id, {
+              ...dadosDe('Locador do Apoio', DOCUMENTO_DA_CONFIRMACAO.locador),
+              email: EMAIL_NOVO,
+            }),
+        );
+
+        expect({
+          emailMudou: locadorAlterado?.emailMudou,
+          emailConfirmadoEm: locadorAlterado?.emailConfirmadoEm,
+        }).toEqual({ emailMudou: true, emailConfirmadoEm: null });
+      } finally {
+        await limpar();
       }
     },
     LIMITE_DO_CASO_MS,

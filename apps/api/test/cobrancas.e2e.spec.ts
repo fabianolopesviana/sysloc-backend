@@ -1622,7 +1622,6 @@ async function contratoAtivo(credencial: string = cookie): Promise<CenarioDeCont
       // Ver o docblock acima: a ativação gera as parcelas desde a T9, e o `false` é o que mantém este
       // arquivo medindo o LANÇAMENTO AVULSO como única origem de cobrança.
       gerarCobrancasAutomaticamente: false,
-      pdfContratoArquivo: null,
     },
   });
 

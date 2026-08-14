@@ -115,13 +115,24 @@ export type ConfiguracaoDeMoraNova = z.infer<typeof esquemaDaConfiguracaoDeMoraN
  * já produz mora zero (RD-08).
  *
  * **Ele é `z.object`, e o irmão de entrada é `strictObject` — a assimetria é a convenção, não
- * descuido.** Todo esquema de SAÍDA deste pacote é aberto e todo esquema de ENTRADA é fechado, sem
- * exceção. A razão não fica no pacote: pela **ADR-0016** o documento OpenAPI **deriva** daqui, e um
- * `strictObject` emite `additionalProperties: false` — um cliente gerado passaria a recusar campo
- * acrescentado no futuro **nestas duas rotas**, enquanto tolera o mesmo acréscimo em todas as
- * outras. Crescimento aditivo deixaria de ser aditivo num ponto só da API, que é o pior lugar para
- * uma exceção morar. Fechar a saída é decisão de contrato que vale para a superfície inteira, nunca
- * para duas rotas; se algum dia for tomada, é aqui que ela precisa estar escrita por extenso.
+ * descuido.** Todo esquema de SAÍDA deste pacote é aberto e todo esquema de ENTRADA é fechado, com
+ * **uma única exceção registrada**, escrita por extenso logo abaixo. A razão não fica no pacote:
+ * pela **ADR-0016** o documento OpenAPI **deriva** daqui, e um `strictObject` emite
+ * `additionalProperties: false` — um cliente gerado passaria a recusar campo acrescentado no futuro
+ * **nestas duas rotas**, enquanto tolera o mesmo acréscimo em todas as outras. Crescimento aditivo
+ * deixaria de ser aditivo num ponto só da API, que é o pior lugar para uma exceção morar. Fechar a
+ * saída é decisão de contrato que vale para a superfície inteira, nunca para duas rotas; se algum
+ * dia for tomada, é aqui que ela precisa estar escrita por extenso.
+ *
+ * **A exceção, e o discriminador que a autoriza.** `esquemaDaConfirmacao` e
+ * `esquemaDoReenvioDeConfirmacao` são esquemas de **saída** declarados `strictObject`, por decisão
+ * registrada por extenso no cabeçalho de `./confirmacao-de-email.ts`. Ela não revoga a convenção
+ * nem a alarga: vale **só** quando o conjunto fechado de chaves **É o conteúdo do contrato** — o
+ * `202` do reenvio, que não pode afirmar entrega porque ela corre fora da requisição (ADR-0029), e
+ * o `confirmado: z.literal(true)`, que não tem `false` nesta superfície. Nos dois, a chave
+ * acrescentada no futuro não seria evolução tolerável do corpo: seria a rota afirmando justamente o
+ * que a decisão fecha. **Não** vale quando fechar a saída é apenas parecer mais estrito — aí o
+ * parágrafo acima governa, e o `additionalProperties: false` volta a ser o defeito que ele descreve.
  */
 export const esquemaDaConfiguracaoDeMora = z.object({
   multaPercentual: z.number(),

@@ -993,7 +993,6 @@ describe('circulação de imóvel OCUPADO por contrato vigente (T8)', () => {
           fiadoresIds: [],
           ...TERMOS_DO_CONTRATO_OCUPANTE,
           gerarCobrancasAutomaticamente: true,
-          pdfContratoArquivo: null,
         },
       });
       expect(criacao.status, criacao.texto).toBe(201);

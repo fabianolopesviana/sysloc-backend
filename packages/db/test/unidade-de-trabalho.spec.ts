@@ -29,9 +29,13 @@
  * |          |        | (o nome da pessoa) deixa o contador onde estava. |
  * | CA-02    | CT-014 | O escritor do contexto de tenant (`contextoDeTenant.executarCom`) é chamado
  * |          |        | em exatamente o conjunto declarado de arquivos de produção — **um por
- * |          |        | BORDA**: a guarda de CONTEXTO de `apps/api` (`GuardaDeContexto`) e, desde a
- * |          |        | T8 da fatia `regua-de-cobranca`, a borda do trabalho enfileirado
- * |          |        | (`apps/worker/src/tarefas/regua.ts`, ADR-0024). Qualquer outro reprova. |
+ * |          |        | BORDA**: a guarda de CONTEXTO de `apps/api` (`GuardaDeContexto`), a borda
+ * |          |        | do trabalho enfileirado da régua (`apps/worker/src/tarefas/regua.ts`, T8 da
+ * |          |        | fatia `regua-de-cobranca`), a da entrega da confirmação
+ * |          |        | (`apps/worker/src/tarefas/confirmacao-de-email.ts`, T10 da fatia
+ * |          |        | `documentos-e-confirmacao`) e a do **ato do titular**
+ * |          |        | (`apps/api/src/confirmacoes/confirmacao.service.ts`, T11 da mesma fatia) —
+ * |          |        | as três pela ADR-0024. Qualquer outro reprova. |
  * | CA-03    | CT-310 | A recusa da restrição de unicidade do identificador municipal desfaz **só a
  * | CA-02    | (c)    | instrução recusada**: numa unidade de trabalho ÚNICA, o conjunto e o imóvel
  * |          |        | gravados antes dela sobrevivem, a unidade segue utilizável depois da recusa
@@ -41,9 +45,10 @@
  * | CA-02    | CT-326 | O conjunto de arquivos de PRODUÇÃO que **abrem** unidade de trabalho
  * |          |        | (`emUnidadeDeTrabalho(…)`) é exatamente o conjunto declarado das bordas —
  * |          |        | a guarda de contexto, o ponto único do domínio de locação
- * |          |        | (`sobContextoDaSessao`) e os dois chamadores já legítimos da F1. Nenhum
- * |          |        | serviço abre unidade própria, e qualquer arquivo novo que passe a abrir
- * |          |        | aparece nomeado como excedente. |
+ * |          |        | (`sobContextoDaSessao`), os dois chamadores já legítimos da F1, as **duas**
+ * |          |        | bordas de trabalho enfileirado e a do **ato do titular**, a rota sem sessão.
+ * |          |        | Nenhum serviço abre unidade própria, e qualquer arquivo novo que passe a
+ * |          |        | abrir aparece nomeado como excedente. |
  *
  * Rastreabilidade acrescida pela T6 da fatia `cadastro-de-imoveis-e-pessoas`:
  * `CA-03 → CT-310 (c) (RN-03)`. Pela T11 da mesma fatia: `CA-02 → CT-326 (RN-03)`.
@@ -655,6 +660,26 @@ const SIMBOLOS_ESPERADOS = [
   'esquemaNegocio.desfechoDoAviso',
   'esquemaNegocio.envioDeCobranca',
   'esquemaNegocio.politicaDeAviso',
+  // T3 da fatia `documentos-e-confirmacao` — a tabela do portador da confirmação, criada pela
+  // migração `0013`.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T3 publica UM símbolo novo no schema por decisão declarada na §1 da
+  // task (`Símbolos públicos criados`). Ele entra pelo mesmo critério dos cinco da T3 anterior: é
+  // **declaração de estrutura**, não caminho para dado — quem o tem em mãos ainda precisa de um
+  // executor para chegar ao banco, e o executor não sai do índice.
+  //
+  // A coluna nova de `locatario` (`email_confirmado_em`) **não aparece aqui**, e não é esquecimento:
+  // ela é campo de uma tabela já declarada, e `esquemaNegocio.locatario` já consta do conjunto desde
+  // a T2 da fatia de cadastro. O `FORCE ROW LEVEL SECURITY`, a política e a função
+  // `resolver_portador_de_confirmacao` também não aparecem, pela mesma razão que a visão e as
+  // funções da cobrança não apareciam: são objetos e atributos do BANCO, criados pela migração
+  // autoral `0014`, e não símbolos deste pacote. Quem publicará a PORTA desta tabela como função de
+  // domínio é a T8, em `packages/db/src/portador-de-confirmacao.ts`.
+  //
+  // **Nenhuma entrada anterior sai por acréscimo**; a única saída desta task é de CAMPO, não de
+  // símbolo (`pdfContratoArquivo`, ADR-0030), e campo não é observável por este caso.
+  'esquemaNegocio.portadorDeConfirmacao',
   // T4 da fatia `cobranca-e-mora` — a PORTA da cobrança: as três operações do ciclo de vida, as DUAS
   // da série e a classe de erro da tradução de unicidade, ordenadas no conjunto pela posição de cada
   // nome (a comparação é sobre a lista ordenada).
@@ -949,6 +974,75 @@ const SIMBOLOS_ESPERADOS = [
   'listarContratos',
   'localizarContrato',
   'substituirFiadoresDoContrato',
+  // T7 da fatia `documentos-e-confirmacao` — a leitura do AGREGADO do documento do contrato.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T7 publica UM símbolo novo no índice por decisão declarada na §1 e na
+  // §5.2 da task (`Símbolos públicos criados: lerAgregadoDoContrato`). Ela entra pelo MESMO critério
+  // de todas as portas anteriores: **recebe** o executor de quem já abriu a unidade de trabalho, não
+  // abre conexão, não reserva e não devolve executor. O eixo das marcas de cliente continua valendo
+  // sobre ela.
+  //
+  // Ela é publicada porque é a materialização da *consulta única* que a §12.2 do tech spec exige: o
+  // documento imprime cinco entidades, e sem esta porta a borda comporia por fora o laço "ler o
+  // contrato, ler cada parte", em que o número de idas ao banco passaria a ser escolhido por quantos
+  // fiadores o contrato tem. Uma segunda leitura do mesmo agregado apareceria aqui como símbolo
+  // excedente, e não como um laço a mais escondido no serviço que responde a rota.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o defeito
+  // que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia. **Nenhuma
+  // entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // O que **não** sai do pacote, e a ausência é deliberada: `parteEmJson` e `imovelEmJson`, de
+  // `src/documento-de-contrato.ts`. São o mecanismo interno da projeção, pelo mesmo critério de
+  // `colunasDoContrato`. E o tipo `AgregadoDoDocumentoDoContrato` não aparece aqui porque não existe
+  // em tempo de execução, e este caso observa o módulo carregado.
+  'lerAgregadoDoContrato',
+  // T8 da fatia `documentos-e-confirmacao` — a PORTA do portador da confirmação: as QUATRO operações
+  // sobre a tabela, mais as DUAS funções puras do segredo.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T8 publica seis símbolos novos no índice por decisão declarada na §1
+  // da task (`Símbolos públicos criados`). As quatro operações entram pelo critério de todas as
+  // portas anteriores: **recebem** o executor de quem já abriu a unidade de trabalho, não abrem
+  // conexão, não reservam, não devolvem executor e nenhuma recebe `empresaId` — o escopo é da
+  // política do banco (ADR-0008). `resolverPortador` não abre exceção: ela invoca, pelo executor
+  // recebido, a função `SECURITY DEFINER` da migração `0014`, exatamente como as quatro da série
+  // invocam as delas.
+  //
+  // `derivarSegredo` e `gerarSegredo` entram por critério diferente das quatro, e é o que as torna
+  // admissíveis: são funções **puras** — não recebem executor, não abrem conexão, não tocam o banco
+  // e não leem relógio —, mesmo critério de `somarMetragem` e das três derivações. A primeira é
+  // publicada porque é o **ponto único de derivação** do produto: a borda precisa derivar o segredo
+  // apresentado antes de resolvê-lo, e uma segunda derivação apareceria aqui como símbolo excedente,
+  // e não como um `createHash` escondido num serviço. A segunda sai pelo **par simétrico** da
+  // primeira: o sorteio e a derivação do mesmo segredo são um fato só, e publicar metade dele
+  // deixaria o índice sugerindo que sortear em outro lugar é legítimo — um segundo `randomBytes` de
+  // segredo apareceria aqui como símbolo excedente, exatamente como uma segunda derivação
+  // apareceria. Ela **não** é publicada por prova: nenhum consumidor fora deste pacote a importa, e
+  // o `CT-729` a alcança pelo caminho direto do módulo (Iron Law #6).
+  //
+  // O que **não** sai do pacote, e as ausências são deliberadas: `BYTES_DO_SEGREDO` e
+  // `PRAZO_DE_VALIDADE`, de `src/portador-de-confirmacao.ts`. São o mecanismo interno da emissão,
+  // pelo critério de `empresaDoContexto` e dos acessórios de calendário — e publicá-los daria à borda
+  // as peças com que recompor o sorteio e o prazo por fora, que é justamente o que a porta mantém
+  // dentro. O que a borda precisa saber sobre a **forma** do segredo já é contrato publicado, e vive
+  // em `@sysloc/contracts`.
+  //
+  // Os tipos que elas publicam (`ConsumoDoPortador`, `PortadorEmitido`, `PortadorResolvido`) não
+  // aparecem aqui porque não existem em tempo de execução, e este caso observa o módulo carregado —
+  // o mesmo vale para `PessoaAlterada`, o crescimento que a mesma task deu ao retorno de
+  // `alterarPessoa`.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o defeito
+  // que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia. **Nenhuma
+  // entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  'consumirPortador',
+  'derivarSegredo',
+  'emitirPortador',
+  'gerarSegredo',
+  'invalidarPortadoresDoLocatario',
+  'resolverPortador',
   'incrementarVersaoPermissoes',
   'lerAjustesDaPessoa',
   // T8 da fatia `autorizacao-e-ciclo-de-acesso` — as SEIS operações do ciclo de vida das pessoas de
@@ -1155,8 +1249,8 @@ const AREAS_DE_PRODUCAO = ['apps', 'packages'] as const;
 /**
  * Os arquivos de produção que podem chamar o escritor. Igualdade de conjunto.
  *
- * **Exatamente dois, desde a T8 da fatia `regua-de-cobranca`**: um escritor por **borda**. O
- * crescimento é a mudança que o caso existe para **exigir revisão**, não para impedir — um TERCEIRO
+ * **Exatamente quatro, desde a T11 da fatia `documentos-e-confirmacao`**: um escritor por **borda**.
+ * O crescimento é a mudança que o caso existe para **exigir revisão**, não para impedir — um QUINTO
  * chamador continua reprovando aqui, e é essa a rede.
  *
  * O caminho é composto a partir da raiz do repositório, e não escrito absoluto: a varredura devolve
@@ -1179,6 +1273,29 @@ const CHAMADORES_LEGITIMOS: readonly string[] = [
   // A borda do TRABALHO ENFILEIRADO: o processador da régua, que deriva a empresa da carga do
   // próprio trabalho (ADR-0024). Não há sessão aqui, e nenhuma é simulada.
   join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/regua.ts'),
+  // A segunda borda de trabalho enfileirado: a entrega da confirmação de endereço (T10 da fatia
+  // `documentos-e-confirmacao`).
+  //
+  // SUT_IS_CORRECT_BECAUSE: a lista enumera BORDAS, e esta é uma — a tarefa chega do servidor de
+  // fila, o `empresaId` vem da carga já conferida por esquema, e o contexto é aberto UMA vez pelo
+  // mesmo escritor único, exatamente como a ADR-0024 manda. O que ela NÃO é: um serviço abrindo
+  // contexto próprio — o domínio que ela compõe (`@sysloc/documentos`) é função pura e não conhece
+  // banco. A asserção **não foi afrouxada**: continua sendo igualdade de conjunto, com
+  // `excedentes` e `ausentes` nomeados, e um quarto chamador segue reprovando nominalmente.
+  join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/confirmacao-de-email.ts'),
+  // A borda do ATO DO TITULAR: a rota sem sessão que confirma o endereço de e-mail (T11 da mesma
+  // fatia).
+  //
+  // SUT_IS_CORRECT_BECAUSE: a lista enumera BORDAS, e esta é a terceira classe delas — nem sessão,
+  // nem carga de fila. A ADR-0027 institui o portador de segredo como governança do ato do titular,
+  // e a ADR-0024 dá a origem do contexto quando não há requisição autenticada: aqui ele vem do
+  // **registro que o portador resolve**, descoberto por uma função `SECURITY DEFINER` chamada
+  // deliberadamente **fora** de contexto, e é aberto UMA vez, na entrada. O que ela NÃO é: um
+  // serviço reabrindo contexto no meio de um fluxo que já o tinha — não existe contexto anterior a
+  // ela neste caminho, e é essa ausência que a ADR-0024 endereça. A asserção **não foi afrouxada**:
+  // continua sendo igualdade de conjunto, com `excedentes` e `ausentes` nomeados, e um quinto
+  // chamador segue reprovando nominalmente.
+  join(RAIZ_DO_REPOSITORIO, 'apps/api/src/confirmacoes/confirmacao.service.ts'),
 ].sort();
 
 /**
@@ -1326,6 +1443,25 @@ const ABRIDORES_LEGITIMOS: readonly string[] = [
   // importa `@sysloc/db`. A asserção **não foi afrouxada**: continua sendo igualdade de conjunto
   // com `excedentes` e `ausentes` nomeados, e qualquer arquivo fora desta lista reprova.
   join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/regua.ts'),
+  // A segunda borda de trabalho enfileirado — a entrega da confirmação de endereço (T10 da fatia
+  // `documentos-e-confirmacao`). Ela abre a unidade para UMA leitura, sob o contexto que acabou de
+  // estabelecer a partir da carga, e entrega o resto — composição e envio — a portas que recebe por
+  // parâmetro. Vale, palavra por palavra, o `SUT_IS_CORRECT_BECAUSE` do vizinho acima.
+  join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/confirmacao-de-email.ts'),
+  // A borda do ATO DO TITULAR — a única rota de negócio sem sessão do produto (T11 da mesma fatia).
+  //
+  // SUT_IS_CORRECT_BECAUSE: o elenco enumera **bordas**, e esta é uma — ela é o ponto onde o pedido
+  // entra, e não uma camada intermediária. Ela abre **duas** unidades, e as duas são propriedade da
+  // borda, não do domínio: a primeira **sem contexto**, porque a empresa é o resultado da resolução
+  // (a função `SECURITY DEFINER` existe justamente para atravessar esse estado), e a segunda **sob**
+  // o contexto descoberto, para o consumo. O caminho de `sobContextoDaSessao` — o abridor único das
+  // rotas com sessão, logo acima — **não a alcança**: ele lê a sessão que a guarda publicou, e aqui
+  // não existe sessão nenhuma a ler (ADR-0027). O que ela NÃO é: um serviço de domínio abrindo
+  // unidade própria — `packages/db/src/portador-de-confirmacao.ts` **recebe** o `tx` nas quatro
+  // operações e não conhece `AcessoAoBanco`. A asserção **não foi afrouxada**: continua sendo
+  // igualdade de conjunto com `excedentes` e `ausentes` nomeados, e qualquer arquivo fora desta
+  // lista reprova nominalmente.
+  join(RAIZ_DO_REPOSITORIO, 'apps/api/src/confirmacoes/confirmacao.service.ts'),
 ].sort();
 
 /**

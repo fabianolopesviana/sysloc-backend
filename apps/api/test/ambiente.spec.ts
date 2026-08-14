@@ -63,6 +63,7 @@ import { describe, expect, it, onTestFinished } from 'vitest';
 // ÍNDICE: docs/specs/features/fundacao-stack-nativa/v1/_run/run-report.md §2, D28
 import {
   chavesDeclaradasNaUnidade,
+  chavesDeclaradasPor,
   chavesEmitidasPor,
   fonteDeclarando,
   type LeituraDeAmbiente,
@@ -114,6 +115,11 @@ function ambienteCompleto(): Record<string, string> {
     // valer para ela de graça, e uma mensagem que a ecoasse reprova.
     SMTP_URL: `smtps://avisos:${SENHA_NA_CADEIA}@smtp.exemplo.invalid:465`,
     EMAIL_REMETENTE: 'avisos@exemplo.invalid',
+    // A variável do link de confirmação entra na T9 da fatia `documentos-e-confirmacao`. Ela NÃO é
+    // segredo — é o endereço público do aplicativo —, e o valor é distinguível dos demais pela
+    // mesma razão de todos: um campo da configuração alimentado pela variável errada passaria
+    // despercebido com valores parecidos.
+    URL_BASE_DA_CONFIRMACAO: 'https://app.exemplo.invalid',
   };
 }
 
@@ -223,6 +229,13 @@ describe('carregarAmbiente (T5 · CA-15)', () => {
     expect(ambiente.segredoDeSessao).toBe(fonte.BETTER_AUTH_SECRET);
     expect(ambiente.urlDoTransporte).toBe(fonte.SMTP_URL);
     expect(ambiente.remetenteDoAviso).toBe(fonte.EMAIL_REMETENTE);
+    // SUT_IS_CORRECT_BECAUSE: a rodada 1 da T9 publicava `urlBaseDaConfirmacao` como campo, e o
+    // Gate 2 mediu que NENHUM código da `api` o lê — quem compõe o link é o processador de trabalho
+    // (T10). O código de produção está certo agora: `URL_BASE_DA_CONFIRMACAO` segue EXIGIDA na
+    // partida (completude do arquivo de ambiente, que é um só para as duas unidades) e deixou de
+    // virar campo. A asserção de igualdade não foi removida — foi **substituída pela negativa que
+    // discrimina**, e esta reprova se o valor voltar a atravessar para a configuração publicada.
+    expect(Object.values(ambiente)).not.toContain(fonte.URL_BASE_DA_CONFIRMACAO);
   });
 
   it('CT-008 — o ambiente do processo não é lido, e o que não é exigido não entra na configuração', () => {
@@ -266,6 +279,15 @@ describe('carregarAmbiente (T5 · CA-15)', () => {
     // de produção está certo e o literal é que descrevia o processo anterior. A asserção continua
     // sendo igualdade exata sobre o conjunto inteiro — **nenhum elemento saiu** —, e por isso ela
     // segue reprovando campo que apareça sem ser declarado.
+    //
+    // SUT_IS_CORRECT_BECAUSE: a rodada 1 da **T9** da fatia `documentos-e-confirmacao` acrescentara
+    // aqui o campo `urlBaseDaConfirmacao`, e o Gate 2 mediu que ele **não tem consumidor** na `api`
+    // — quem compõe o link é o processador de trabalho (T10). O código de produção está certo agora:
+    // `URL_BASE_DA_CONFIRMACAO` continua EXIGIDA na partida, por completude do arquivo de ambiente
+    // compartilhado (§16.3 da tech spec), e deixou de ser publicada como campo. Este é o ÚNICO
+    // elemento que sai deste literal, e ele sai porque o campo deixou de existir — a asserção segue
+    // sendo igualdade exata sobre o conjunto inteiro, e por isso ela reprova tanto um campo novo não
+    // declarado quanto a volta deste.
     expect(Object.keys(ambiente).sort()).toEqual([
       'ambiente',
       'cadeiaConexaoBanco',
@@ -309,6 +331,8 @@ function configuracaoEsperada(fonte: Record<string, string>): Record<string, str
     segredoDeSessao: fonte.BETTER_AUTH_SECRET as string,
     urlDoTransporte: fonte.SMTP_URL as string,
     remetenteDoAviso: fonte.EMAIL_REMETENTE as string,
+    // `URL_BASE_DA_CONFIRMACAO` NÃO entra: ela é exigida na partida e não vira campo — ver o
+    // `SUT_IS_CORRECT_BECAUSE:` do CT-008.
   };
 }
 
@@ -429,7 +453,12 @@ describe('carregarAmbiente (T10 · CA-17) — a barreira de partida do transport
     },
   );
 
-  it('CT-639 — com as OITO declaradas, devolve o ambiente INTEIRO por igualdade estrita', () => {
+  // SUT_IS_CORRECT_BECAUSE: o nome do caso dizia **OITO**, e a T9 acrescentou `URL_BASE_DA_CONFIRMACAO`
+  // à partida — são NOVE. O que a asserção mede não mudou e não foi afrouxado: continua sendo a
+  // igualdade estrita do objeto inteiro contra {@link configuracaoEsperada}, que também cresceu pelo
+  // mesmo campo. Corrigir o rótulo é obrigatório mesmo sendo prosa: número desatualizado convida a
+  // próxima task a "corrigir" a âncora executável para baixo.
+  it('CT-639 — com as NOVE declaradas, devolve o ambiente INTEIRO por igualdade estrita', () => {
     // O controle positivo, sem o qual tudo acima seria satisfeito por uma validação que recusasse
     // todo ambiente. O objeto inteiro, e não campo a campo: é a igualdade estrita que faz um campo a
     // mais — ou um campo com valor de outra variável — reprovar aqui.
@@ -443,6 +472,74 @@ describe('carregarAmbiente (T10 · CA-17) — a barreira de partida do transport
     // percorre: uma variável no esquema e fora dela deixaria de ser exercitada por aquela tabela.
     expect(VARIAVEIS_EXIGIDAS).toContain('SMTP_URL');
     expect(VARIAVEIS_EXIGIDAS).toContain('EMAIL_REMETENTE');
+  });
+});
+
+// ===========================================================================
+// A barreira de partida do LINK DE CONFIRMAÇÃO (T9 · CA-09)
+// ===========================================================================
+
+/**
+ * As duas linhas inválidas da variável do link, com o que cada uma deve produzir.
+ *
+ * Declaradas ANTES do caso e nomeando o resultado esperado — elas **não** são derivadas da execução.
+ * A primeira é a ausência; a segunda é a cadeia em branco, que é o que um `EnvironmentFile` copiado
+ * do `.env.example` sem preenchimento entrega, e que uma validação ingênua
+ * (`fonte.URL_BASE_DA_CONFIRMACAO !== undefined`) aceitaria — e o produto passaria a emitir links
+ * começados por `undefined`.
+ */
+const LINHAS_DO_LINK_DE_CONFIRMACAO = [
+  { cenario: 'sem URL_BASE_DA_CONFIRMACAO', embranco: undefined },
+  { cenario: 'URL_BASE_DA_CONFIRMACAO em branco', embranco: 'URL_BASE_DA_CONFIRMACAO' },
+] as const;
+
+describe('carregarAmbiente (T9 · CA-09) — a barreira de partida do link de confirmação', () => {
+  it.each(LINHAS_DO_LINK_DE_CONFIRMACAO)(
+    'CT-007 — $cenario: a partida é recusada nomeando a variável, sem devolver ambiente parcial',
+    ({ embranco }) => {
+      const fonte =
+        embranco === undefined
+          ? ambienteSem('URL_BASE_DA_CONFIRMACAO')
+          : { ...ambienteCompleto(), [embranco]: '   ' };
+
+      // `falhaDe` REPROVA quando a chamada devolve configuração: é assim que "nunca sobe com o link
+      // por declarar" fica asserido, e não apenas afirmado no docblock.
+      const falha = falhaDe(fonte);
+
+      // A cadeia EXATA da variável faltante, e não "a mensagem não está vazia".
+      expect(falha.message).toContain('URL_BASE_DA_CONFIRMACAO: ausente');
+      // E a credencial das cadeias de conexão não atravessa para o journal — a disciplina da
+      // mensagem vale para a partida inteira, e não só para a variável que a motivou.
+      expect(falha.message).not.toContain(SENHA_NA_CADEIA);
+    },
+  );
+
+  it('CT-007 — `VARIAVEIS_EXIGIDAS` contém a variável do link, e ela TEM caminho de provisionamento', () => {
+    // A lista é o que a seleção e a mensagem de falha consomem, e é ela que a tabela do CT-007
+    // percorre: uma variável no esquema e fora dela deixaria de ser exercitada por aquela tabela.
+    expect(VARIAVEIS_EXIGIDAS).toContain('URL_BASE_DA_CONFIRMACAO');
+
+    // SUT_IS_CORRECT_BECAUSE: a rodada 1 da T9 entregava a variável por `Environment=` inline na
+    // unidade DESTE processo, e o Gate 2 mediu que quem a consome é o processador de trabalho —
+    // cuja unidade não a tinha. A §16.3 da tech spec declara o destino certo, e é para lá que ela
+    // foi: o `EnvironmentFile` que as DUAS unidades leem, semeado pelo provisionamento. A asserção
+    // não foi afrouxada — mudou de fonte junto com o SUT, e continua sendo `toContain` sobre a
+    // fonte que de fato entrega a chave. O caso
+    // `CT-639 — as duas variáveis do transporte TÊM caminho de provisionamento` cobre a outra
+    // ponta, afirmando por igualdade que **nenhuma** exigida ficou sem caminho além da testemunha
+    // medida do D39 — e é ele que reprovaria se esta linha mudasse de fonte sem que o SUT mudasse.
+    expect(chavesEmitidasPor(lerDoRepositorio(CAMINHO_DO_PROVISIONADOR))).toContain(
+      'URL_BASE_DA_CONFIRMACAO',
+    );
+    // E a NEGATIVA que fixa a decisão: ela não volta a ter uma segunda declaração literal na
+    // unidade. Sem esta linha, um `Environment=` reintroduzido conviveria com o arquivo de
+    // ambiente, e as duas coordenadas ficariam livres para divergir sem que nada acusasse.
+    expect(
+      chavesDeclaradasNaUnidade(lerDoRepositorio(CAMINHO_DA_UNIDADE_DESTE_PROCESSO)),
+    ).not.toContain('URL_BASE_DA_CONFIRMACAO');
+    expect(chavesDeclaradasPor(lerDoRepositorio(CAMINHO_DO_EXEMPLO))).toContain(
+      'URL_BASE_DA_CONFIRMACAO',
+    );
   });
 });
 

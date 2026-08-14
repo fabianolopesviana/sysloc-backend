@@ -1,0 +1,259 @@
+/**
+ * O contrato da fila da **confirmação de endereço de e-mail** — a definição é uma, e é deste
+ * pacote.
+ *
+ * ---------------------------------------------------------------------------
+ * INVARIANTES
+ * ---------------------------------------------------------------------------
+ *
+ * | Critério | Caso   | Invariante |
+ * |---|---|---|
+ * | CA-09 | apoio  | O nome da fila e a forma da carga da confirmação são definidos em **um**
+ * |       |        | arquivo só da árvore versionada — `packages/shared/src/fila.ts` —, e a lista
+ * |       |        | dos arquivos que os definem é afirmada por **igualdade**, nunca por presença.
+ * |       |        | Os dois símbolos saem pelo barril do pacote, de modo que produtor e consumidor
+ * |       |        | os alcancem pela **fronteira** em vez de os redigitarem. |
+ * | CA-09 | apoio  | Companheiro negativo do detector: a **segunda definição** é reconhecida (em
+ * |       |        | cópia em memória, com o defeito reintroduzido), e a **importação** e a
+ * |       |        | **menção** do mesmo símbolo **não** são — sem esta metade, um detector cego
+ * |       |        | acusaria todo consumidor legítimo, e um detector frouxo não veria a cópia. |
+ *
+ * Rastreabilidade: `CA-09 → apoio (RN-07)`.
+ *
+ * ===========================================================================
+ * Por que este arquivo existe ao lado do `CT-638`
+ * ===========================================================================
+ *
+ * O `CT-638` (em `protocolo-antirregressao.spec.ts`) afirma a unicidade dos **nove símbolos que o
+ * D32 mandou extrair**, e a lista dele é literal e fechada — ela descreve o débito que foi pago, e
+ * crescê-la mudaria o que aquele caso registra. Os dois símbolos da fila nova nascem depois do
+ * fecho, com um produtor **de produção** do outro lado (a borda HTTP), e por isso ganham prova
+ * própria: o que se mede aqui é a mesma propriedade, sobre outro par, sem tocar o registro
+ * histórico daquele débito.
+ *
+ * ===========================================================================
+ * A asserção é ESTÁTICA — e a prova de falsificação é permanente, não um experimento
+ * ===========================================================================
+ *
+ * Ela inspeciona o **texto** do código, e a `.claude/rules/testing-stack.md` é literal quanto ao
+ * preço disso: uma asserção que não pode falhar pelo defeito que persegue consta como feita e não
+ * protege nada. O detector aqui é função **pura sobre texto**, o que permite aplicá-lo a cópias em
+ * memória com o defeito de volta — o segundo caso —, sem escrever byte algum no disco.
+ *
+ * As duas metades do controle são exigidas juntas: um padrão que casasse a linha de import contaria
+ * **todo consumidor legítimo** como redefinição e reprovaria a árvore correta; um padrão que só
+ * casasse `export const` deixaria passar a cópia declarada sem `export`, que é justamente a forma
+ * em que uma segunda definição nasce por reflexo.
+ */
+
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import type { CargaDaConfirmacao } from '../src/fila.js';
+import { FILA_DA_CONFIRMACAO } from '../src/fila.js';
+
+/** Raiz do monorepo — dois níveis acima de `packages/shared/test`. */
+const RAIZ = dirname(dirname(dirname(import.meta.dirname)));
+
+/** Diretórios varridos em busca de definição. Os mesmos três do `CT-638`. */
+const AREAS_DE_CODIGO = ['apps', 'packages', 'deploy'];
+
+/** Onde o contrato da fila mora, desde o fecho do `D32 (F0/T6)`. */
+const CASA_DO_CONTRATO_DA_FILA = 'packages/shared/src/fila.ts';
+
+/** O barril do pacote — a fronteira pela qual os dois lados alcançam o contrato. */
+const BARRIL_DO_PACOTE = 'packages/shared/src/index.ts';
+
+/**
+ * Os dois símbolos do contrato da fila da confirmação.
+ *
+ * O nome desencontra produtor e consumidor **em silêncio** — a tarefa é aceita, é gravada e nunca é
+ * consumida —, e a carga carrega a decisão da ADR-0024: uma segunda declaração dela ficaria livre
+ * para tornar `empresaId` opcional, que é o pior modo de falha da ADR-0008.
+ */
+const SIMBOLOS_DA_CONFIRMACAO = ['FILA_DA_CONFIRMACAO', 'CargaDaConfirmacao'];
+
+/** O valor que os dois lados precisam ver — literal, e não derivado do próprio símbolo. */
+const NOME_ESPERADO_DA_FILA = 'confirmacao-de-email';
+
+/**
+ * Teto do caso que varre a árvore inteira — **declarado**, e não herdado do padrão de 5 s.
+ *
+ * A razão é **medida**, e o número importa: isolado, o caso leva ~3,6 s contra o teto padrão de 5 s
+ * — margem de pouco mais de um segundo, que é o mesmo regime em que o `CT-907` vizinho já expira sob
+ * a suíte completa. Sob ela — arquivos em paralelo, mais as instâncias efêmeras de banco disputando
+ * CPU e disco — essa margem não sobrevive, e o caso expiraria por **tempo**, não por asserção.
+ *
+ * ⚠️ **Alargar o teto é a SEGUNDA metade do conserto, nunca a primeira.** O
+ * `protocolo-antirregressao.spec.ts` registra a ordem, e ele registra o oposto do que este docblock
+ * já afirmou: *"memoizar é o conserto da causa; alargar o teto seria conserto do sintoma"*. Este
+ * arquivo faz **as duas coisas**, e nessa ordem: a caminhada é memoizada em
+ * {@link memoriaDosArquivos}, de modo que os três casos a paguem uma vez só, e o teto declarado
+ * cobre o custo que sobra — ler todo `.ts` de `apps`, `packages` e `deploy` uma vez, que é
+ * intrínseco ao que se afirma e não sintoma de asserção mal escrita. O limite é constante nomeada no
+ * topo, como a `.claude/rules/testing-stack.md` exige.
+ */
+const LIMITE_DA_VARREDURA_MS = 60_000;
+
+/**
+ * Reconhece a **definição** de um símbolo — nunca a menção nem o import dele.
+ *
+ * Mesma expressão do `CT-638`, e ela é copiada por decisão: aquele caso está sob um arquivo que
+ * registra o fecho de um débito histórico, e importar dali criaria acoplamento entre uma prova viva
+ * e um registro que não se reescreve. O que impede as duas de divergirem sem que nada acuse é o
+ * controle de não-cegueira abaixo, que exercita as três formas discriminadas.
+ */
+function definicaoDe(simbolo: string): RegExp {
+  return new RegExp(
+    `^\\s*(?:export\\s+)?(?:(?:const|let|var)\\s+${simbolo}\\s*[:=]` +
+      `|(?:function|class|interface|enum)\\s+${simbolo}\\b` +
+      `|type\\s+${simbolo}\\s*=)`,
+    'm',
+  );
+}
+
+/**
+ * Os arquivos versionados de código, sem `dist/` (saída de build) nem `node_modules/`.
+ *
+ * Memoizada pela mesma razão do `CT-638`: dois casos deste arquivo a consomem, e refazer a
+ * caminhada em cada um custa a mesma varredura completa duas vezes, sob a suíte inteira em
+ * paralelo — o custo que já fez casos expirarem no teto neste repositório.
+ */
+let memoriaDosArquivos: readonly string[] | undefined;
+
+function arquivosDeCodigo(): readonly string[] {
+  if (memoriaDosArquivos !== undefined) return memoriaDosArquivos;
+
+  const encontrados: string[] = [];
+
+  for (const area of AREAS_DE_CODIGO) {
+    for (const entrada of readdirSync(join(RAIZ, area), {
+      recursive: true,
+      withFileTypes: true,
+    })) {
+      if (!entrada.isFile()) continue;
+      const caminho = relative(RAIZ, join(entrada.parentPath, entrada.name));
+      const segmentos = caminho.split('/');
+      // `dist/` espelha o fonte e contaria a mesma definição duas vezes; `node_modules/` guarda os
+      // vínculos que o gerenciador cria para os pacotes do workspace, e alcançaria cada arquivo do
+      // monorepo por caminhos não-canônicos.
+      if (segmentos.includes('dist') || segmentos.includes('node_modules')) continue;
+      if (!caminho.endsWith('.ts')) continue;
+      encontrados.push(caminho);
+    }
+  }
+
+  memoriaDosArquivos = encontrados;
+  return encontrados;
+}
+
+/** Para cada símbolo, os arquivos que o **definem** — uma passada só sobre a árvore. */
+function arquivosQueDefinem(simbolos: readonly string[]): Map<string, string[]> {
+  const busca = simbolos.map((simbolo) => ({
+    simbolo,
+    padrao: definicaoDe(simbolo),
+    arquivos: [] as string[],
+  }));
+
+  for (const caminho of arquivosDeCodigo()) {
+    const conteudo = readFileSync(join(RAIZ, caminho), 'utf8');
+    for (const alvo of busca) {
+      if (alvo.padrao.test(conteudo)) {
+        alvo.arquivos.push(caminho);
+      }
+    }
+  }
+
+  return new Map(busca.map((alvo) => [alvo.simbolo, alvo.arquivos.sort()]));
+}
+
+describe('apoio (T9) — o contrato da fila da confirmação tem definição única', () => {
+  it(
+    'cada símbolo é definido em UM arquivo só, e é o do pacote compartilhado',
+    () => {
+      const definicoes = arquivosQueDefinem(SIMBOLOS_DA_CONFIRMACAO);
+
+      // Âncora antivácuo: uma varredura que não lesse arquivo algum produziria listas vazias, e as
+      // igualdades abaixo reprovariam por ausência, sem dizer por quê.
+      expect(
+        arquivosDeCodigo().length,
+        'a varredura não leu arquivo algum: a unicidade seria vácua por construção',
+      ).toBeGreaterThan(0);
+
+      for (const simbolo of SIMBOLOS_DA_CONFIRMACAO) {
+        // Igualdade, e não `toContain`: o que se persegue aqui é a SEGUNDA definição, e uma asserção
+        // de presença é justamente a que não a enxerga. O arquivo intruso aparece no diff da falha.
+        expect(definicoes.get(simbolo), `definições de ${simbolo}`).toEqual([
+          CASA_DO_CONTRATO_DA_FILA,
+        ]);
+      }
+    },
+    LIMITE_DA_VARREDURA_MS,
+  );
+
+  it('os dois símbolos saem pelo barril, e o nome da fila é o valor que os dois lados esperam', () => {
+    const barril = readFileSync(join(RAIZ, BARRIL_DO_PACOTE), 'utf8');
+
+    // A definição única não basta: um símbolo definido e não publicado obriga o consumidor a
+    // redigitá-lo, que é exatamente a duplicação que o caso acima persegue pela outra ponta.
+    for (const simbolo of SIMBOLOS_DA_CONFIRMACAO) {
+      expect(barril, `${simbolo} não sai pelo barril do pacote`).toContain(simbolo);
+    }
+
+    // E o VALOR, por igualdade literal — escrito à mão aqui, e não derivado do próprio símbolo:
+    // derivá-lo faria a asserção concordar consigo mesma, e trocar o nome da fila deixaria de
+    // reprovar caso algum. É este valor que o produtor grava e o consumidor escuta.
+    expect(FILA_DA_CONFIRMACAO).toBe(NOME_ESPERADO_DA_FILA);
+
+    // A carga é interface, e existe só em tempo de compilação: a linha abaixo é o que faz o
+    // consumo dela ser conferido pelo compilador em vez de ficar só no docblock. Os três campos são
+    // obrigatórios — omitir qualquer um não compila.
+    const carga: CargaDaConfirmacao = {
+      empresaId: '00000000-0000-4000-8000-000000000001',
+      locatarioId: '00000000-0000-4000-8000-000000000002',
+      segredo: 'nao-e-um-segredo-de-verdade-so-preenche-o-campo',
+    };
+    expect(Object.keys(carga).sort()).toEqual(['empresaId', 'locatarioId', 'segredo']);
+  });
+
+  it('PROVA DE FALSIFICAÇÃO: a segunda definição é vista, e o import e a menção não são', () => {
+    const padraoDoNome = definicaoDe('FILA_DA_CONFIRMACAO');
+    const padraoDaCarga = definicaoDe('CargaDaConfirmacao');
+
+    // As formas em que a SEGUNDA definição nasce por reflexo — inclusive sem `export`, que é a que
+    // um detector ancorado em `export const` deixaria passar.
+    for (const copia of [
+      "export const FILA_DA_CONFIRMACAO = 'confirmacao-de-email';",
+      "const FILA_DA_CONFIRMACAO = 'confirmacao-de-email';",
+      '  const FILA_DA_CONFIRMACAO: string = obterNome();',
+    ]) {
+      expect(padraoDoNome.test(copia), `cópia não detectada: ${copia}`).toBe(true);
+    }
+    for (const copia of [
+      'export interface CargaDaConfirmacao {',
+      'interface CargaDaConfirmacao {',
+      'export type CargaDaConfirmacao = { empresaId: string };',
+    ]) {
+      expect(padraoDaCarga.test(copia), `cópia não detectada: ${copia}`).toBe(true);
+    }
+
+    // E o outro lado, que é o que impede a asserção de reprovar a árvore CORRETA: consumo legítimo
+    // — import numa linha, item de lista de import de várias linhas, e menção no corpo — não conta
+    // como redefinição. O item de lista foi o defeito medido na construção do `CT-638`: a linha
+    // `  type CargaDaRegua,` era lida como apelido de tipo.
+    for (const consumo of [
+      "import { FILA_DA_CONFIRMACAO } from '@sysloc/shared';",
+      '  FILA_DA_CONFIRMACAO,',
+      '  const fila = new Queue(FILA_DA_CONFIRMACAO, opcoes);',
+    ]) {
+      expect(padraoDoNome.test(consumo), `consumo contado como definição: ${consumo}`).toBe(false);
+    }
+    for (const consumo of [
+      "import type { CargaDaConfirmacao } from '@sysloc/shared';",
+      '  type CargaDaConfirmacao,',
+      '  async enfileirar(carga: CargaDaConfirmacao): Promise<void> {',
+    ]) {
+      expect(padraoDaCarga.test(consumo), `consumo contado como definição: ${consumo}`).toBe(false);
+    }
+  });
+});

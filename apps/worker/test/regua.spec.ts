@@ -194,7 +194,6 @@ const TERMOS_DO_CONTRATO = {
   indiceReajuste: 'IGPM',
   gerarCobrancasAutomaticamente: false,
   observacoes: null,
-  pdfContratoArquivo: null,
 } as const;
 
 /** A competência de todas as cobranças do arranjo — não participa do recorte. */

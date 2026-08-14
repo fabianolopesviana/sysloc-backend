@@ -1,6 +1,6 @@
 # Architecture Decision Records — INDEX
 
-> Ultima atualizacao: 2026-08-12 (28 ADRs)
+> Ultima atualizacao: 2026-08-13 (30 ADRs)
 
 <!-- ADR-INDEX-START -->
 | ID | Titulo | Status | Tags | Problema (1-linha) | Decisao (1-linha) |
@@ -33,4 +33,6 @@
 | 0026 | O relógio da operação mora no banco — a aplicação nunca lê o do processo | accepted | architecture, data | Decisões de negócio dependem de que dia é hoje e que horas são: a transição de uma cobrança para | Toda leitura de tempo que decide comportamento de negócio vem do banco, através de função cujo |
 | 0027 | Critério para uma rota de negócio dispensar sessão, e o que ela carrega em troca | accepted | auth, security, http | Toda rota de negócio deste backend exige sessão, com autorização declarada por rota e default que | Uma rota de negócio dispensa sessão apenas quando o ato é exercido pelo titular do dado que ele |
 | 0028 | O que o contrato publica para uma rota que devolve bytes | accepted | http, architecture | Todo corpo de resposta deste backend é JSON derivado de esquema, e a ADR-0016 faz do esquema a fonte | A rota que devolve bytes permanece no contrato e declara três coisas: o tipo de mídia, o |
+| 0029 | Efeito externo de ato de negócio sai por fila, nunca em linha na borda | accepted | architecture, cross-cutting | Atos de negócio deste backend alcançam o mundo fora do banco: aviso de cobrança por e-mail, | Todo efeito externo cujo resultado não compõe a resposta do pedido — envio de mensagem, |
+| 0030 | Artefato derivado de dado gravado é composto sob demanda, nunca armazenado | accepted | architecture, data | O sistema antigo compunha o contrato em PDF, convertia e guardava o resultado num campo do próprio | Artefato derivado de dado gravado é composto no instante do pedido e nunca armazenado: não |
 <!-- ADR-INDEX-END -->

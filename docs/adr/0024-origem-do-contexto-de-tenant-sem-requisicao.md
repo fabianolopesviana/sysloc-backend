@@ -29,6 +29,38 @@ direito a ele**: a sessão que enfileirou, ou a enumeração de tenants; ele nun
 externa. A enumeração de tenants é a **única** leitura legítima sem contexto de empresa, e vive no
 schema sem noção de tenant.
 
+> **Emenda de 2026-08-13.** A última frase acima era verdadeira na data em que foi escrita: a única
+> execução sem requisição que existia era o trabalho enfileirado, e a única leitura sem contexto de
+> que ele precisava era a enumeração de tenants. A **ADR-0027** (`accepted`, 2026-08-12) institui
+> depois o **ato do titular** — uma rota de negócio sem sessão, em que o contexto sai do registro que
+> um **portador de segredo** resolve. Resolver esse portador é, necessariamente, uma leitura **sem**
+> contexto de empresa (a empresa é o *resultado* dela, não a entrada) e ela ocorre em `negocio`, um
+> schema que **tem** noção de tenant. Lida ao pé da letra, a cláusula de exclusividade proibiria o
+> mecanismo que a 0027 institui, e que esta ADR governa. **A decisão não mudou**: mudou o registro
+> dela, que passa a declarar as **duas** leituras legítimas e — o que importa mais — o
+> **discriminador** que separa uma delas de um contorno do isolamento:
+>
+> 1. a **enumeração de tenants**, que vive no schema sem noção de tenant (ADR-0009);
+> 2. a **resolução de um portador de segredo** instituída pela ADR-0027, que vive num schema
+>    tenantizado e por isso só é legítima quando a travessia é **nominal e auditável**: função
+>    `SECURITY DEFINER` pertencente a um papel `NOLOGIN` de **propósito único**, que não conecta e
+>    não é dono de tabela alguma; política própria endereçada a esse papel; `GRANT` mínimo (`USAGE`
+>    no schema e `SELECT` sobre a única tabela alcançada); `EXECUTE` revogado de `PUBLIC` e concedido
+>    nominalmente; e a função **sem parâmetro de empresa**, para que o contexto continue vindo do
+>    registro resolvido. **Travessia por privilégio de dono segue rejeitada** — é a segunda das
+>    *Alternativas* abaixo, e nada aqui a reabre.
+>
+> Daí que a exclusividade que esta ADR sustenta é de **critério**, e não de contagem: leitura sem
+> contexto que não exiba a travessia nominal do item 2 não é legítima, por mais que se pareça com
+> estas duas. É essa forma que uma borda futura herda, em vez de redecidir — o **retorno de
+> integração externa** que o `Context` acima nomeia é o webhook bancário da F4, e quem decidir de
+> onde vem o contexto dele precisa do critério, não de um número.
+>
+> O que tornou a emenda necessária foi o Gate 2 da **T11** da fatia `documentos-e-confirmacao`, que
+> leu o texto literal e mediu a contradição: o código citava esta ADR como fundamento de uma leitura
+> que a letra dela proibia. É exatamente o custo que a emenda de 2026-08-10 da ADR-0021 registra —
+> *"um gate futuro leria violação onde houve decisão"*.
+
 ## Consequences
 
 **Pros:**
@@ -73,3 +105,6 @@ schema sem noção de tenant.
 
 - `regua-de-cobranca (v1)` — docs/specs/features/regua-de-cobranca/v1/tech-alignment.md (decisão D2 —
   o trabalho por empresa da régua é a primeira execução sem sessão do produto)
+- `documentos-e-confirmacao (v1)` — docs/specs/features/documentos-e-confirmacao/v1/tech_spec.md
+  (§21.3 — a segunda leitura sem contexto, e a leitura conjunta com a ADR-0027 que a emenda de
+  2026-08-13 registra)
