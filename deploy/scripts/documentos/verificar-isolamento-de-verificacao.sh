@@ -65,10 +65,18 @@
 # A partição existe porque a asserção *"nenhum caso reprovou"* é legítima e mais
 # forte que a monotonia — retirá-la seria afrouxar a prova, e ela FICA —, mas
 # fundida num único código de saída ela transfere ao artefato a saúde inteira da
-# suíte NAQUELE host, defeito conhecido e intermitente incluído (o `CT-907`
-# expira por timeout sob disputa de CPU). Um verificador que nunca sai verde no
-# host real deixa de ser lido, e no dia em que (b) ou (c) reprovar de verdade —
-# envio real, escrita no `/opt/frappe` — o achado passa junto com o ruído.
+# suíte NAQUELE host, defeito intermitente incluído. Um verificador que nunca sai
+# verde no host real deixa de ser lido, e no dia em que (b) ou (c) reprovar de
+# verdade — envio real, escrita no `/opt/frappe` — o achado passa junto com o ruído.
+#
+# ⚠️ O caso que MOTIVOU a partição era o `CT-907`, e ele foi CONSERTADO na causa em
+# 2026-08-14 (a varredura da árvore passou a ser paga em `beforeAll`). Hoje este
+# verificador sai **0** no host real, e o `2` não tem ocorrência conhecida. A
+# partição FICA assim mesmo, e a razão não é apego: ela é o que impede que o
+# próximo intermitente — e haverá um, num host que roda oito pacotes com banco e
+# fila efêmeros — volte a se disfarçar de falha de isolamento. Verificador cujo
+# vermelho só aparece quando alguém já sabe o motivo não precisa de partição
+# nenhuma; é o vermelho INESPERADO que ela existe para classificar.
 #
 # A alternativa descartada foi acomodar o flake por lista de exceções nomeadas:
 # é a válvula que apodrece, porque a lista cresce e ninguém a poda. Aqui NADA é
@@ -112,7 +120,13 @@ preservar_evidencia() { evidencia_a_preservar=1; }
 limpar() {
 	local codigo=$?
 	if [[ "${evidencia_a_preservar}" -ne 0 ]]; then
-		printf '\nlogs preservados em %s\n' "${DIR_TRABALHO}" >&2
+		# O descarte viaja na MESMA linha que o operador lê. Sem ele, a preservação —
+		# que dispara também no ramo do `aviso`, e portanto numa execução verde — vira
+		# acúmulo silencioso em `/tmp`, no host cujo disco cheio já se disfarçou de
+		# teste vermelho. Sem poda automática e sem retenção por idade: o volume
+		# medido (4 K a 396 K por caixa) não justifica a maquinaria.
+		printf '\nlogs preservados em %s — remova a caixa quando terminar (rm -rf %s)\n' \
+			"${DIR_TRABALHO}" "${DIR_TRABALHO}" >&2
 	else
 		rm -rf "${DIR_TRABALHO}"
 	fi
@@ -124,18 +138,24 @@ trap limpar EXIT INT TERM HUP
 # A BASELINE, por pacote — de onde cada número sai
 # --------------------------------------------------------------------------- #
 #
-# É o estado ao fim da sub-fatia `regua-de-cobranca` MAIS a intervenção dirigida de
-# 2026-08-12, que é o `1004` que a §3.2 da T12 fixa. A decomposição não é
-# estimada: o `_run/run-report.md` daquela sub-fatia registra `1002` por pacote
-# (shared 218 · contracts 267 · auth 89 · db 147 · api 203 · worker 48 · regua 30),
-# e os dois casos que a intervenção acrescentou têm dono medido por `grep` —
-# `CT-645` em `packages/shared/test/superficie-publica.spec.ts` (218 → 219) e
-# `CT-646` em `packages/db/test/envio-de-cobranca.spec.ts` (147 → 148).
+# É o estado ao fim da sub-fatia `documentos-e-confirmacao`, medido pacote a pacote
+# pelo próprio script na intervenção dirigida de 2026-08-14 — não estimado, e não
+# lido de relatório. A decomposição é a saída daquela execução, e é reprodutível:
+# basta rodar este verificador e ler as linhas `<pacote>: N casos verdes`.
 #
-# `documentos` entra com **zero**, e o zero é conteúdo: o pacote nasceu na T4 desta
-# sub-fatia. Omiti-lo da lista faria a suíte dele poder sumir inteira sem que nada
-# reprovasse; declará-lo em zero mantém o pacote sob a mesma regra dos outros a
-# partir daqui.
+# O piso ANTERIOR era `1004` (fim da `regua-de-cobranca` mais a intervenção de
+# 2026-08-12), e ele sobreviveu à sub-fatia inteira sem subir. O custo disso foi
+# medido no fecho: **244 casos de folga** — a distância entre o piso e a suíte real
+# —, dentro da qual a suíte podia ENCOLHER com este caso verde. O pior deles era o
+# `documentos`, declarado em **zero**.
+#
+# ⚠️ O zero do `documentos` foi decisão CORRETA quando escrita e ERRADA quando
+# mantida, e a distinção importa porque ela se repete. Na T12 o pacote acabava de
+# nascer, e declará-lo em zero era melhor que omiti-lo da lista: omitido, ele
+# ficaria fora da regra; em zero, ficava dentro dela com piso vazio. O que não
+# podia era o zero SOBREVIVER ao fecho — com 151 casos no pacote e piso zero, o
+# pacote inteiro que a fatia criou podia sumir sem que nada reprovasse. É
+# exatamente o modo de falha que a regra de manutenção abaixo existe para impedir.
 #
 # A monotonia é afirmada POR PACOTE e não pelo total: um pacote que encolhesse
 # enquanto outro crescesse manteria o total e passaria — que é exatamente a forma
@@ -155,23 +175,33 @@ trap limpar EXIT INT TERM HUP
 # acrescentadas**. Aqui vale o mesmo: o valor sobe no fecho da fatia, com a
 # contagem medida por pacote, e nunca por estimativa.
 #
-# Valor corrente: fim da sub-fatia `regua-de-cobranca` + intervenção dirigida de
-# 2026-08-12 (1004). A sub-fatia `documentos-e-confirmacao` sobe estes números no
-# seu fecho, com a contagem por pacote medida ali.
+# Valor corrente: fim da sub-fatia `documentos-e-confirmacao` (1248), medido pacote
+# a pacote na intervenção dirigida de 2026-08-14 — não estimado. Subiu do piso
+# anterior (1004, fim da `regua-de-cobranca` + intervenção de 2026-08-12), que a
+# esta altura já deixava 244 casos de folga: `documentos` estava em ZERO, ou seja,
+# o pacote inteiro que a fatia acabara de criar podia sumir com este caso verde.
+#
+# ⚠️ Sobre o piso de `shared`, que exigiu decisão: ele fecha em **222**, e não em
+# 221. A diferença era o `CT-907`, que expirava no teto de 5 s sob a suíte
+# completa. A mesma intervenção que subiu esta baseline consertou aquele caso na
+# CAUSA — a varredura da árvore passou a ser paga em `beforeAll`, sob o
+# `hookTimeout` de 90 s que o pacote já declarava, em vez de dentro do primeiro
+# `it` que a consumia. Fixar 221 teria assado um caso cronicamente vermelho no
+# piso, que é a normalização de flake que a política de qualidade proíbe.
 PACOTES=(contracts auth db regua worker api shared documentos)
 
 declare -A BASELINE=(
-	[contracts]=267
+	[contracts]=297
 	[auth]=89
-	[db]=148
+	[db]=167
 	[regua]=30
-	[worker]=48
-	[api]=203
-	[shared]=219
-	[documentos]=0
+	[worker]=65
+	[api]=227
+	[shared]=222
+	[documentos]=151
 )
 
-BASELINE_TOTAL=1004
+BASELINE_TOTAL=1248
 
 # --------------------------------------------------------------------------- #
 # Os arquivos de teste NOVOS da sub-fatia — o alvo das duas varreduras
