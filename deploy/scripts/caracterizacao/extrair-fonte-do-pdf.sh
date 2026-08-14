@@ -110,6 +110,7 @@ INVENTARIO=(
 	"marcar-cobrancas-vencidas.json|capturar.py|oráculo da rotina que marca cobrança vencida"
 	"metragem.json|capturar.py|oráculo da metragem derivada dos cômodos"
 	"regua-de-cobranca.json|capturar.py|oráculo da régua de cobrança, com a divergência automático × manual"
+	"contrato-pdf-pessoa-juridica.txt|capturar.py|o documento de contrato REAL nos ramos que o sintético não exercita — locatário pessoa jurídica e parte sem identidade civil"
 )
 
 DIR_TRABALHO="$(mktemp -d)"
@@ -350,7 +351,7 @@ secao = "\n".join(
         "|---|---|---|",
         *linhas,
         "",
-        "O 11º artefato não sai de `capturar.py`: `contrato-pdf-fonte.py` é o FONTE do",
+        "Um único artefato não sai de `capturar.py`: `contrato-pdf-fonte.py` é o FONTE do",
         "Server Script `PDF contrato`, que existe apenas dentro do banco do sistema",
         "legado e desaparece com ele na virada. Ele foi lido por `SELECT` no serviço de",
         "banco, autenticado como o usuário da base — nenhum `bench` foi apontado para o",

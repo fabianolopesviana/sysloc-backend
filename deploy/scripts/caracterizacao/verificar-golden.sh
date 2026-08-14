@@ -3,7 +3,7 @@
 # Verificação OFFLINE dos artefatos golden da caracterização (TC-001).
 #
 # Casos cobertos: CT-010, CT-011, CT-013 (metade estática), CT-014, CT-433,
-# CT-501, CT-503, CT-601, CT-602, CT-640.
+# CT-501, CT-503, CT-601, CT-602, CT-640, CT-701.
 #
 # Este script não fala com o Frappe. Ele lê apenas o que está versionado no
 # repositório, e por isso continua executável depois que o backend legado for
@@ -59,6 +59,16 @@ GOLDEN_DO_FONTE_DO_PDF=(
 	"contrato-pdf-fonte.py"
 )
 
+# Sublista da sub-fatia `documentos-e-confirmacao` (F3/2b, T1): o documento de
+# contrato REAL nos ramos que o contrato sintético da captura não exercita. A lista
+# tem UM nome porque um eixo terminou capturado e o outro compartilha o mesmo
+# artefato — o terceiro é ausência medida, e ausência não gera arquivo. Ela é
+# DECLARADA, e não derivada do diretório: derivá-la faria um artefato apagado sair
+# dos dois lados da comparação sem que nada reprovasse.
+GOLDEN_DOS_CAMINHOS_SEM_ORACULO=(
+	"contrato-pdf-pessoa-juridica.txt"
+)
+
 # Fonte única do conjunto esperado E da contagem. A contagem sai do tamanho desta
 # lista de propósito: enquanto o número era literal, acrescentar um artefato exigia
 # lembrar de dois lugares, e esquecer o segundo deixava a asserção de número
@@ -77,6 +87,7 @@ GOLDEN_ESPERADOS=(
 	"${GOLDEN_DE_CONTRATO[@]}"
 	"${GOLDEN_DA_REGUA[@]}"
 	"${GOLDEN_DO_FONTE_DO_PDF[@]}"
+	"${GOLDEN_DOS_CAMINHOS_SEM_ORACULO[@]}"
 )
 
 # Marcadores introduzidos pela fase de cancelamento. Nomeá-los aqui é o que separa
@@ -129,6 +140,53 @@ DELIMITADOR_DO_FONTE_DO_PDF="# ----- fonte capturado abaixo, byte a byte: nada a
 # o que faz uma alteração da regra no legado — depois desta captura e antes da
 # virada — reprovar em vez de entrar em silêncio na próxima recaptura.
 MODIFICADO_NO_LEGADO_DO_PDF="2026-03-10 14:24:24.623970"
+
+# --------------------------------------------------------------------------- #
+# Forma esperada do desfecho dos caminhos sem oráculo (CT-701).
+#
+# A lista de eixos é DECLARADA aqui, e não lida do produtor (`capturar.py`). Ela
+# foi lida dele até a rodada 1 desta task, e a consequência é medida: apagar um
+# eixo de `ARTEFATO_POR_EIXO` E a seção correspondente da §4.1 o removia dos DOIS
+# lados da comparação ao mesmo tempo, de modo que a bijeção aprovava o
+# desaparecimento e o caso seguia verde com dois eixos — ou com um. É a mesma razão
+# já registrada em `GOLDEN_ESPERADOS` e em `GOLDEN_DOS_CAMINHOS_SEM_ORACULO` acima;
+# só esta lista escapava dela. Declarada, a garantia passa a ser "os TRÊS eixos do
+# CA-01 têm desfecho", e não "os eixos que o produtor declarar têm desfecho".
+#
+# O que se escreve aqui, portanto, é o ORÁCULO em três peças: quais eixos existem,
+# qual é a marca do ramo de cada um (no corpo do medidor) e qual é o contraste que
+# discrimina — nenhuma delas derivável do artefato que elas conferem.
+# --------------------------------------------------------------------------- #
+ARQ_CAPTURAR="capturar.py"
+TITULO_DOS_CAMINHOS="## 4.1 Caminhos do documento sem oráculo"
+
+# Os três eixos do CA-01. A comparação com o produtor é feita nos dois sentidos,
+# então a ordem aqui não é observável.
+EIXOS_SEM_ORACULO=(
+	"contrato_com_fiador"
+	"locatario_pessoa_juridica"
+	"parte_sem_documento_identidade"
+)
+
+# O documento que o mutante M3 do CT-701 devolve ao artefato, no lugar do marcador
+# que a captura pôs ali. É o MESMO valor sintético que `capturar.py` grava no
+# locador da caracterização (`11122233344`, linha 314) e que o golden
+# `contrato-pdf.txt` já publica formatado — nada de novo entra na árvore versionada.
+#
+# Ele é REPROVADO no primeiro dígito verificador (o algoritmo do CPF exige 9 para
+# `111.222.333`, e o valor traz 4), e essa propriedade é deliberada: a asserção que
+# o mutante exercita é a forma `\d{3}\.\d{3}\.\d{3}-\d{2}` de `RESIDUOS_PESSOAIS`,
+# que casa a FORMA e nunca a validade. Um número que não pode ser de ninguém
+# discrimina exatamente igual, e não deixa na árvore um literal indistinguível de
+# dado pessoal — que é o que esta captura inteira existe para evitar (Invariante 3).
+CPF_SINTETICO_DO_MUTANTE="111.222.333-44"
+MARCADOR_DO_DOCUMENTO_DO_LOCADOR="<DOCUMENTO_DO_LOCADOR>"
+
+# A forma que a regra usa quando a parte TEM identidade civil. Ela está no golden
+# sintético e é o contraste que discrimina: sem ela, "o artefato capturado exercita
+# o ramo sem RG" seria indistinguível de "o artefato capturado é o mesmo texto".
+TRECHO_COM_IDENTIDADE_CIVIL="portador(a) da cédula de identidade civil número"
+ARQ_PDF_SINTETICO="contrato-pdf.txt"
 
 medidas_da_regua=""
 
@@ -1816,6 +1874,398 @@ PY
 	fechar_caso "CT-640"
 }
 
+# --------------------------------------------------------------------------- #
+# CT-701 — os caminhos do documento sem oráculo: um desfecho por eixo, e nada
+#          além dos dois admitidos.
+#
+# INVARIANTE: para cada um dos três eixos ainda sem golden (contrato com fiador,
+# locatário pessoa jurídica, parte sem documento de identidade), OU existe contrato
+# real que o exercite e ele está capturado como artefato versionado, OU a ausência
+# está registrada como ausência MEDIDA — com a consulta que executou e não retornou
+# linha — e nunca inferida. Nunca um terceiro estado, nunca os dois.
+#
+# O QUE ESTE CASO NÃO FAZ, e por quê: ele não fala com o sistema legado e não
+# reexecuta consulta nenhuma. A metade que exige o legado de pé é a própria captura;
+# esta aqui é a metade que SOBREVIVE à virada, e o que ela confere é que o
+# resultado registrado é internamente consistente — eixo declarado pelo produtor
+# com desfecho no manifesto, desfecho capturado com artefato presente, desfecho de
+# ausência sem artefato, e o artefato exercitando de fato o ramo que ele declara.
+#
+# A lista de eixos é DECLARADA no topo (`EIXOS_SEM_ORACULO`), nunca lida do
+# produtor: enquanto era lida, um eixo removido de `capturar.py` sumia do manifesto
+# E da expectativa ao mesmo tempo, e a bijeção aprovava o desaparecimento. O caso
+# confere, portanto, TRÊS eixos e não "os que houver" — é o que o mutante M5
+# exercita.
+# --------------------------------------------------------------------------- #
+medidas_dos_caminhos=""
+
+medir_caminhos_sem_oraculo() { # medir_caminhos_sem_oraculo <dir_golden> <capturar.py>
+	medidas_dos_caminhos="$(python3 - "$1" "$2" "${TITULO_DOS_CAMINHOS}" \
+		"${TRECHO_COM_IDENTIDADE_CIVIL}" "${ARQ_PDF_SINTETICO}" \
+		"${EIXOS_SEM_ORACULO[*]}" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+golden, capturar = Path(sys.argv[1]), Path(sys.argv[2])
+TITULO, TRECHO_COM_IDENTIDADE, ARQ_SINTETICO = sys.argv[3], sys.argv[4], sys.argv[5]
+EIXOS_ESPERADOS = set(sys.argv[6].split())
+
+DESFECHOS_ADMITIDOS = ("capturado", "ausência medida")
+
+# A marca do ramo é o ORÁCULO, e por isso é escrita aqui e não lida do artefato:
+# um verificador que tirasse a marca do próprio arquivo que confere aprovaria um
+# artefato que não exercita ramo nenhum. Para o eixo sem identidade civil a marca é
+# a forma CURTA da qualificação — a que a regra usa quando o RG está vazio.
+MARCA_DO_RAMO = {
+    "contrato_com_fiador": "FIADOR (A) (S):",
+    "locatario_pessoa_juridica": "portador(a) do CNPJ número",
+    "parte_sem_documento_identidade": "portador(a) do ",
+}
+
+RESIDUOS_PESSOAIS = (
+    ("CPF", re.compile(r"\d{3}\.\d{3}\.\d{3}-\d{2}")),
+    ("CNPJ", re.compile(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}")),
+    ("CEP", re.compile(r"\d{5}-\d{3}")),
+    ("email", re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")),
+)
+
+
+def normalizado(texto):
+    return re.sub(r"\s+", " ", texto)
+
+
+fonte_do_produtor = capturar.read_text(encoding="utf-8")
+bloco = re.search(r"ARTEFATO_POR_EIXO = \{(.*?)\n\}", fonte_do_produtor, re.DOTALL)
+declarados = dict(re.findall(r'"([a-z_]+)":\s*"([^"]+)"', bloco.group(1))) if bloco else {}
+print("eixos_declarados=" + " ".join(sorted(declarados)))
+print("artefatos_declarados=" + " ".join(sorted(set(declarados.values()))))
+
+# Confronto do produtor com a expectativa ESCRITA no verificador, nos dois
+# sentidos. É o que impede um eixo de sair do produtor e do manifesto ao mesmo
+# tempo sem que nada reprove: a expectativa não se move junto.
+print("eixos_esperados_ausentes_no_produtor="
+      + " ".join(sorted(EIXOS_ESPERADOS - set(declarados))))
+print("eixos_do_produtor_fora_do_esperado="
+      + " ".join(sorted(set(declarados) - EIXOS_ESPERADOS)))
+
+manifesto = (golden / "PROCEDENCIA.md").read_text(encoding="utf-8")
+secao = re.search(
+    "\n" + re.escape(TITULO) + r"(.*?)(?=\n## \d)", manifesto, re.DOTALL
+)
+print("secao_ausente=" + ("0" if secao else "1"))
+corpo = secao.group(1) if secao else ""
+
+desfechos = {}
+repetidos = []
+invalidos = []
+for eixo, desfecho in re.findall(r"\n### `([a-z_]+)` — (.+)", corpo):
+    desfecho = desfecho.strip()
+    if eixo in desfechos:
+        repetidos.append(eixo)
+    desfechos[eixo] = desfecho
+    if desfecho not in DESFECHOS_ADMITIDOS:
+        invalidos.append(eixo + "=" + desfecho)
+
+print("eixos_no_manifesto=" + " ".join(sorted(desfechos)))
+print("eixos_sem_desfecho=" + " ".join(sorted(set(declarados) - set(desfechos))))
+print("eixos_nao_declarados=" + " ".join(sorted(set(desfechos) - set(declarados))))
+print("eixos_com_desfecho_repetido=" + " ".join(sorted(set(repetidos))))
+print("desfechos_invalidos=" + " ".join(sorted(invalidos)))
+
+# Cada eixo é recortado do corpo para que o artefato citado, a contagem e a
+# consulta pertençam ao eixo que os declara — varrer o corpo inteiro deixaria um
+# eixo herdar a evidência do vizinho.
+blocos = {}
+for casamento in re.finditer(r"\n### `([a-z_]+)` — .+?(?=\n### |\Z)", corpo, re.DOTALL):
+    blocos[casamento.group(1)] = casamento.group(0)
+
+capturados_sem_artefato = []
+ausencias_com_artefato = []
+ausencias_sem_consulta = []
+ausencias_com_contagem = []
+ramos_nao_exercitados = []
+residuo_pessoal = []
+artefatos_citados = set()
+
+for eixo, desfecho in sorted(desfechos.items()):
+    trecho = blocos.get(eixo, "")
+    citado = re.search(r"Artefato: `([^`]+)`", trecho)
+    consulta = re.search(r"```sql\n(.*?)```", trecho, re.DOTALL)
+    contagem = re.search(r"que o exercitam: \*\*(\d+)\*\*", trecho)
+
+    if desfecho == "capturado":
+        if not citado or not (golden / citado.group(1)).is_file():
+            capturados_sem_artefato.append(eixo)
+            continue
+        artefatos_citados.add(citado.group(1))
+        texto = normalizado((golden / citado.group(1)).read_text(encoding="utf-8"))
+        marca = MARCA_DO_RAMO.get(eixo)
+        if marca and normalizado(marca) not in texto:
+            ramos_nao_exercitados.append(eixo)
+        for rotulo, expressao in RESIDUOS_PESSOAIS:
+            achado = expressao.search(texto)
+            if achado:
+                residuo_pessoal.append(citado.group(1) + ":" + rotulo)
+    else:
+        arquivo = declarados.get(eixo)
+        if arquivo and (golden / arquivo).is_file():
+            ausencias_com_artefato.append(eixo)
+        if not consulta or not consulta.group(1).strip():
+            ausencias_sem_consulta.append(eixo)
+        if not contagem or contagem.group(1) != "0":
+            ausencias_com_contagem.append(eixo)
+
+print("capturados_sem_artefato=" + " ".join(sorted(capturados_sem_artefato)))
+print("ausencias_com_artefato=" + " ".join(sorted(ausencias_com_artefato)))
+print("ausencias_sem_consulta=" + " ".join(sorted(ausencias_sem_consulta)))
+print("ausencias_com_contagem_nao_zero=" + " ".join(sorted(ausencias_com_contagem)))
+print("ramos_nao_exercitados=" + " ".join(sorted(ramos_nao_exercitados)))
+print("residuo_pessoal=" + " ".join(sorted(set(residuo_pessoal))))
+
+# Artefato de caminho presente no diretório que eixo nenhum reivindica: o outro
+# sentido da bijeção, e o que pega um golden que sobreviveu à mudança de desfecho.
+orfaos = [
+    nome for nome in sorted(set(declarados.values()))
+    if (golden / nome).is_file() and nome not in artefatos_citados
+]
+print("artefatos_de_caminho_orfaos=" + " ".join(orfaos))
+
+sintetico = golden / ARQ_SINTETICO
+texto_sintetico = normalizado(sintetico.read_text(encoding="utf-8")) if sintetico.is_file() else ""
+print("sintetico_com_identidade_civil="
+      + ("1" if normalizado(TRECHO_COM_IDENTIDADE) in texto_sintetico else "0"))
+print("sintetico_com_forma_curta="
+      + ("1" if normalizado(MARCA_DO_RAMO["parte_sem_documento_identidade"]) in texto_sintetico
+         else "0"))
+PY
+	)"
+}
+
+medida_dos_caminhos() {
+	printf '%s\n' "${medidas_dos_caminhos}" | sed -n "s/^$1=//p" | head -1
+}
+
+# A asserção do CT-701, isolada para que os mutantes a apliquem LITERALMENTE às
+# cópias defeituosas — mesmo mecanismo do par CT-601/CT-602.
+afirmar_desfecho_dos_caminhos() { # afirmar_desfecho_dos_caminhos <dir_golden> <capturar.py>
+	medir_caminhos_sem_oraculo "$1" "$2"
+
+	afirmar_igual "a §4.1 do manifesto existe" "0" "$(medida_dos_caminhos secao_ausente)"
+
+	# O par que amarra o produtor à expectativa DECLARADA, e não a si mesmo. A
+	# asserção que estava aqui até a rodada 1 exigia apenas conjunto não-vazio, e
+	# com ela o caso seguia verde depois de um eixo sumir do produtor e do manifesto
+	# ao mesmo tempo — provava "os eixos que houver têm desfecho" em vez de "os três
+	# eixos do CA-01 têm desfecho". Ver o bloco de `EIXOS_SEM_ORACULO` no topo.
+	afirmar_igual "o produtor declara os ${#EIXOS_SEM_ORACULO[@]} eixos do CA-01" \
+		"" "$(medida_dos_caminhos eixos_esperados_ausentes_no_produtor)"
+	afirmar_igual "o produtor não declara eixo fora dos ${#EIXOS_SEM_ORACULO[@]} esperados" \
+		"" "$(medida_dos_caminhos eixos_do_produtor_fora_do_esperado)"
+
+	afirmar_igual "todo eixo declarado pelo produtor tem desfecho no manifesto" \
+		"" "$(medida_dos_caminhos eixos_sem_desfecho)"
+	afirmar_igual "nenhum desfecho no manifesto para eixo que o produtor não declara" \
+		"" "$(medida_dos_caminhos eixos_nao_declarados)"
+	afirmar_igual "nenhum eixo com mais de um desfecho" \
+		"" "$(medida_dos_caminhos eixos_com_desfecho_repetido)"
+	afirmar_igual "nenhum desfecho fora dos dois admitidos" \
+		"" "$(medida_dos_caminhos desfechos_invalidos)"
+
+	afirmar_igual "todo eixo capturado nomeia artefato presente em golden/" \
+		"" "$(medida_dos_caminhos capturados_sem_artefato)"
+	afirmar_igual "nenhum eixo de ausência medida tem artefato gravado" \
+		"" "$(medida_dos_caminhos ausencias_com_artefato)"
+	afirmar_igual "toda ausência medida traz a consulta que executou" \
+		"" "$(medida_dos_caminhos ausencias_sem_consulta)"
+	afirmar_igual "toda ausência medida declara zero contratos que a exercitam" \
+		"" "$(medida_dos_caminhos ausencias_com_contagem_nao_zero)"
+	afirmar_igual "nenhum artefato de caminho sem eixo que o reivindique" \
+		"" "$(medida_dos_caminhos artefatos_de_caminho_orfaos)"
+
+	afirmar_igual "todo artefato capturado exercita o ramo do eixo que o declara" \
+		"" "$(medida_dos_caminhos ramos_nao_exercitados)"
+	afirmar_igual "nenhum dado pessoal em forma reconhecível nos artefatos capturados" \
+		"" "$(medida_dos_caminhos residuo_pessoal)"
+
+	# O contraste que discrimina: o golden sintético qualifica a parte COM identidade
+	# civil, e o capturado usa a forma curta. Sem este par, "o ramo novo foi
+	# alcançado" seria indistinguível de "o texto capturado é o mesmo de antes".
+	afirmar_igual "o golden sintético qualifica a parte com identidade civil" \
+		"1" "$(medida_dos_caminhos sintetico_com_identidade_civil)"
+	afirmar_igual "o golden sintético NÃO usa a forma curta da qualificação" \
+		"0" "$(medida_dos_caminhos sintetico_com_forma_curta)"
+}
+
+# O terceiro parâmetro é o produtor a conferir, e existe para o M5: os quatro
+# primeiros mutantes deformam a cópia do golden, e o M5 deforma o PRODUTOR. Sem
+# ele, `capturar.py` seria sempre lido do original e a classe "eixo removido dos
+# dois lados" ficaria sem mutante que a exercitasse.
+avaliar_caminhos_em_sandbox() { # avaliar_caminhos_em_sandbox <dir_golden> <falhas> [capturar.py]
+	(
+		falhas_totais=0
+		falhas_caso=0
+		afirmar_desfecho_dos_caminhos "$1" "${3:-${DIR_SCRIPTS}/${ARQ_CAPTURAR}}" \
+			>/dev/null 2>"$2"
+		printf '%d' "${falhas_totais}"
+	)
+}
+
+# Remoção da seção de um eixo do manifesto, usada por DOIS mutantes: o M1, que a
+# aplica sozinha, e o M5, que a aplica junto com a remoção do eixo no produtor. As
+# duas classes são distintas e se separam justamente pelo que MAIS muda — a mutação
+# comum é uma função para que as duas não divirjam em silêncio.
+mutar_manifesto_sem_o_eixo() { # mutar_manifesto_sem_o_eixo <PROCEDENCIA.md> <eixo>
+	python3 - "$1" "$2" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+alvo = Path(sys.argv[1])
+texto = alvo.read_text(encoding="utf-8")
+mutado = re.sub(r"\n### `" + re.escape(sys.argv[2]) + r"` — .*?(?=\n### |\n## )", "\n",
+                texto, flags=re.DOTALL)
+if mutado == texto:
+    raise SystemExit("mutante: a seção de `" + sys.argv[2] + "` não foi encontrada no manifesto")
+alvo.write_text(mutado, encoding="utf-8")
+PY
+}
+
+ct_701() {
+	caso "CT-701" "caminhos do documento sem oráculo — um desfecho por eixo, capturado ou ausência medida"
+
+	afirmar_desfecho_dos_caminhos "${DIR_GOLDEN}" "${DIR_SCRIPTS}/${ARQ_CAPTURAR}"
+
+	local versionados
+	versionados="$(caminhos_versionados_do_golden)"
+	local nome ausentes=0
+	for nome in "${GOLDEN_DOS_CAMINHOS_SEM_ORACULO[@]}"; do
+		printf '%s\n' "${versionados}" | grep -qxF "${REL_GOLDEN}/${nome}" ||
+			ausentes=$((ausentes + 1))
+	done
+	afirmar_igual "todo artefato capturado está versionado (${#GOLDEN_DOS_CAMINHOS_SEM_ORACULO[@]})" \
+		"0" "${ausentes}"
+
+	# ---- prova de falsificação: cinco defeitos reintroduzidos, e o controle ----
+	local caixa="${DIR_TRABALHO}/ct701"
+	local m1="${caixa}/m1" m2="${caixa}/m2" m3="${caixa}/m3" m4="${caixa}/m4"
+	local m5="${caixa}/m5" controle="${caixa}/controle"
+	rm -rf "${caixa}"
+	mkdir -p "${m1}" "${m2}" "${m3}" "${m4}" "${m5}" "${controle}"
+	local caixa_de_mutante
+	for caixa_de_mutante in "${m1}" "${m2}" "${m3}" "${m4}" "${m5}" "${controle}"; do
+		cp -a "${DIR_GOLDEN}/." "${caixa_de_mutante}/"
+	done
+
+	local eixo_capturado="locatario_pessoa_juridica"
+	local eixo_ausente="contrato_com_fiador"
+	local artefato_capturado="${GOLDEN_DOS_CAMINHOS_SEM_ORACULO[0]}"
+
+	# M1 — a seção de um eixo desaparece do manifesto: o eixo fica sem desfecho.
+	mutar_manifesto_sem_o_eixo "${m1}/PROCEDENCIA.md" "${eixo_ausente}"
+
+	# M2 — o desfecho de um eixo capturado vira ausência medida, e o artefato fica.
+	python3 - "${m2}/PROCEDENCIA.md" "${eixo_capturado}" <<'PY'
+import sys
+from pathlib import Path
+
+alvo = Path(sys.argv[1])
+alvo.write_text(
+    alvo.read_text(encoding="utf-8").replace(
+        "### `" + sys.argv[2] + "` — capturado",
+        "### `" + sys.argv[2] + "` — ausência medida",
+    ),
+    encoding="utf-8",
+)
+PY
+
+	# M3 — o dado pessoal volta ao artefato, na forma que a máscara tirou. O valor
+	# entra por argumento, e não como literal no corpo do mutante: ele é a constante
+	# `CPF_SINTETICO_DO_MUTANTE`, cuja razão de ser sintética e inválida está escrita
+	# junto da declaração, no topo.
+	python3 - "${m3}/${artefato_capturado}" "${MARCADOR_DO_DOCUMENTO_DO_LOCADOR}" \
+		"${CPF_SINTETICO_DO_MUTANTE}" <<'PY'
+import sys
+from pathlib import Path
+
+alvo = Path(sys.argv[1])
+alvo.write_text(
+    alvo.read_text(encoding="utf-8").replace(sys.argv[2], sys.argv[3], 1),
+    encoding="utf-8",
+)
+PY
+
+	# M4 — a marca do ramo some do artefato: ele deixa de exercitar o eixo que
+	# declara, e continuaria versionado como se exercitasse.
+	python3 - "${m4}/${artefato_capturado}" <<'PY'
+import sys
+from pathlib import Path
+
+alvo = Path(sys.argv[1])
+alvo.write_text(
+    alvo.read_text(encoding="utf-8").replace("do CNPJ", "do CPF"),
+    encoding="utf-8",
+)
+PY
+
+	# M5 — o eixo some do PRODUTOR e do manifesto ao mesmo tempo. É a classe que a
+	# lista lida do produtor não podia pegar: o eixo saía dos dois lados da bijeção
+	# e o caso seguia verde com dois eixos. Só a expectativa DECLARADA o reprova, e
+	# é por isso que este mutante deforma `capturar.py` — nenhum dos outros quatro o
+	# toca.
+	local capturar_m5="${caixa}/capturar-m5.py"
+	cp -a "${DIR_SCRIPTS}/${ARQ_CAPTURAR}" "${capturar_m5}"
+	mutar_manifesto_sem_o_eixo "${m5}/PROCEDENCIA.md" "${eixo_ausente}"
+	python3 - "${capturar_m5}" "${eixo_ausente}" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+alvo = Path(sys.argv[1])
+texto = alvo.read_text(encoding="utf-8")
+mutado = re.sub(r'\n *"' + re.escape(sys.argv[2]) + r'": "[^"]+",', "", texto, count=1)
+if mutado == texto:
+    raise SystemExit("mutante M5: `" + sys.argv[2] + "` não está em ARTEFATO_POR_EIXO")
+alvo.write_text(mutado, encoding="utf-8")
+PY
+
+	local falhas_m1 falhas_m2 falhas_m3 falhas_m4 falhas_m5 falhas_controle
+	falhas_m1="$(avaliar_caminhos_em_sandbox "${m1}" "${caixa}/m1.err")"
+	falhas_m2="$(avaliar_caminhos_em_sandbox "${m2}" "${caixa}/m2.err")"
+	falhas_m3="$(avaliar_caminhos_em_sandbox "${m3}" "${caixa}/m3.err")"
+	falhas_m4="$(avaliar_caminhos_em_sandbox "${m4}" "${caixa}/m4.err")"
+	falhas_m5="$(avaliar_caminhos_em_sandbox "${m5}" "${caixa}/m5.err" "${capturar_m5}")"
+	falhas_controle="$(avaliar_caminhos_em_sandbox "${controle}" "${caixa}/controle.err")"
+
+	afirmar_diferente "M1 (eixo sem seção no manifesto) reprova" "0" "${falhas_m1}"
+	afirmar_igual "a falha de M1 nomeia o eixo que ficou sem desfecho" \
+		"1" "$(grep -cF "obtido [${eixo_ausente}]" "${caixa}/m1.err" || true)"
+
+	afirmar_diferente "M2 (capturado rebaixado a ausência medida) reprova" "0" "${falhas_m2}"
+	afirmar_igual "a falha de M2 nomeia o eixo cuja ausência tem artefato gravado" \
+		"1" "$(grep -cF "ausência medida tem artefato gravado — esperado [], obtido [${eixo_capturado}]" \
+			"${caixa}/m2.err" || true)"
+
+	afirmar_diferente "M3 (documento pessoal de volta ao artefato) reprova" "0" "${falhas_m3}"
+	afirmar_igual "a falha de M3 nomeia o artefato e a classe do dado" \
+		"1" "$(grep -cF "obtido [${artefato_capturado}:CPF]" "${caixa}/m3.err" || true)"
+
+	afirmar_diferente "M4 (marca do ramo apagada do artefato) reprova" "0" "${falhas_m4}"
+	afirmar_igual "a falha de M4 nomeia o eixo cujo ramo deixou de ser exercitado" \
+		"1" "$(grep -cF "obtido [${eixo_capturado}]" "${caixa}/m4.err" || true)"
+
+	afirmar_diferente "M5 (eixo removido do produtor E do manifesto) reprova" "0" "${falhas_m5}"
+	afirmar_igual "a falha de M5 nomeia o eixo que sumiu dos dois lados" \
+		"1" "$(grep -cF "declara os ${#EIXOS_SEM_ORACULO[@]} eixos do CA-01 — esperado [], obtido [${eixo_ausente}]" \
+			"${caixa}/m5.err" || true)"
+
+	afirmar_igual "o controle íntegro passa sem nenhuma falha" "0" "${falhas_controle}"
+	afirmar_igual "o controle íntegro não emite linha de falha" \
+		"0" "$(grep -c . "${caixa}/controle.err" || true)"
+
+	fechar_caso "CT-701"
+}
+
 main() {
 	printf 'Verificação offline dos golden — %s\n' "${DIR_GOLDEN}"
 
@@ -1834,10 +2284,11 @@ main() {
 	ct_601
 	ct_602
 	ct_604
+	ct_701
 
 	printf '\n'
 	if [[ "${falhas_totais}" -eq 0 ]]; then
-		printf 'verificar-golden: 10/10 casos aprovados (CT-010, CT-011, CT-013, CT-014, CT-433, CT-501, CT-503, CT-601, CT-602, CT-640)\n'
+		printf 'verificar-golden: 11/11 casos aprovados (CT-010, CT-011, CT-013, CT-014, CT-433, CT-501, CT-503, CT-601, CT-602, CT-640, CT-701)\n'
 		exit 0
 	fi
 	printf 'verificar-golden: %d falha(s) — REPROVADO\n' "${falhas_totais}" >&2

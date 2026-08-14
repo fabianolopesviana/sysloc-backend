@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Captura a caracterização das regras de negócio legadas (TC-001, F2/T1 e F3/T1).
 
-Nove artefatos golden: os seis da captura original (TC-001), os dois de ativação
-e cancelamento de contrato acrescentados pela T1 da fatia `contratos-de-locacao`,
-e o da régua de cobrança acrescentado pela T1 da fatia `cobranca-e-mora`.
+Nove artefatos golden fixos: os seis da captura original (TC-001), os dois de
+ativação e cancelamento de contrato acrescentados pela T1 da fatia
+`contratos-de-locacao`, e o da régua de cobrança acrescentado pela T1 da fatia
+`cobranca-e-mora`. Mais os CONDICIONAIS da fase B-2, acrescentada pela T1 da
+sub-fatia `documentos-e-confirmacao`: o documento de contrato REAL, um artefato
+por eixo do documento que o contrato sintético não exercita — e nenhum artefato
+para o eixo cuja ausência foi medida.
 
 A captura roda **dentro do container `backend`** do Frappe, contra o site efêmero
 `caracterizacao.localhost` criado por `preparar-site-efemero.sh` (ADR-0006 — o
@@ -22,7 +26,9 @@ Ordem de execução obrigatória do fluxo completo:
     preparar-site-efemero.sh destruir
 
 Códigos de saída:
-    0  captura concluída, nove artefatos golden + manifesto gravados
+    0  captura concluída, nove artefatos golden + manifesto gravados — e também
+       quando um eixo da fase B-2 termina em ausência medida, que é DESFECHO e não
+       falha: o eixo sai por `aviso` nomeado, sem artefato e sem código de erro
     1  falha de ambiente ou de execução
     2  gate de sanidade reprovado — nenhum arquivo de `golden/` é tocado
 """
@@ -50,6 +56,26 @@ DIR_GOLDEN = (
 
 SENTINELA_INICIO = "-----CARACTERIZACAO-ENVELOPE-INICIO-----"
 SENTINELA_FIM = "-----CARACTERIZACAO-ENVELOPE-FIM-----"
+
+# Artefato golden de cada eixo dos caminhos sem oráculo (F3/2b, T1). Os nomes são
+# DECLARADOS aqui, e não derivados do identificador do eixo: eles são a superfície
+# que a fatia consumidora importa, e derivá-los faria renomear um eixo trocar o
+# nome do artefato em silêncio. Eixo sem contrato real que o exercite não gera
+# arquivo — a ausência medida vive no manifesto, e placeholder vazio seria um
+# oráculo que não oraculiza nada.
+ARTEFATO_POR_EIXO = {
+    "contrato_com_fiador": "contrato-pdf-com-fiador.txt",
+    "locatario_pessoa_juridica": "contrato-pdf-pessoa-juridica.txt",
+    "parte_sem_documento_identidade": "contrato-pdf-sem-rg.txt",
+}
+
+# Cabeçalho e delimitador do artefato capturado de contrato real. Mesma forma do
+# `contrato-pdf-fonte.py`, e pela mesma razão: quem abrir o arquivo precisa saber,
+# na primeira linha, que ele veio do sistema legado e que o dado pessoal saiu.
+CABECALHO_DO_CAMINHO = "# CAPTURADO DO SISTEMA LEGADO — NÃO EDITAR À MÃO"
+DELIMITADOR_DO_CAMINHO = (
+    "# ----- texto do documento abaixo, com o dado pessoal trocado por marcador -----"
+)
 
 TIMEOUT_CAPTURA_S = 1800
 
@@ -173,6 +199,25 @@ MARCADOR_ARQUIVO_PDF = "<ARQUIVO_PDF_PRIVADO>"
 MARCADOR_HORA_EXECUCAO = "<HORA_EXECUCAO>"
 MARCADOR_DATA_VENCIMENTO = "<DATA_VENCIMENTO_FORMATADA>"
 MARCADOR_REQUISICAO = "<IDENTIFICADOR_DE_REQUISICAO>"
+
+# Marcadores da fase dos caminhos sem oráculo. Mesma regra de nomeação das duas
+# famílias acima — nenhum algarismo —, e um motivo próprio para existirem: o texto
+# capturado ali vem de contrato REAL, e carrega nome, documento e endereço de
+# pessoa. O que o oráculo precisa daquele texto é a FORMA que a regra compõe
+# (rótulo `CPF` contra `CNPJ`, presença ou ausência do trecho de identidade civil),
+# nunca o valor. Cada marcador é o papel da parte, e não o campo, porque é o papel
+# que a regra usa para decidir o que escrever.
+MARCADOR_NOME = "<NOME_DO_{papel}>"
+MARCADOR_DOCUMENTO = "<DOCUMENTO_DO_{papel}>"
+MARCADOR_IDENTIDADE = "<IDENTIDADE_DO_{papel}>"
+MARCADOR_ENDERECO = "<ENDERECO_DO_{papel}>"
+MARCADOR_IDENTIFICADOR_DO_IMOVEL = "<IDENTIFICADOR_DO_IMOVEL>"
+
+# A regra fecha o documento com a CIDADE DO IMÓVEL mais a data, fora do endereço
+# composto — é uma segunda ocorrência da localidade, e foi ela que a varredura de
+# resíduo pegou na primeira execução desta fase. Marcador próprio porque ali a
+# regra escreve `cidade - estado`, e não o endereço inteiro.
+MARCADOR_PRACA_DO_FECHO = "<PRACA_DO_FECHO>"
 
 # Sentinela gravada no campo agregado ANTES do save. Se o Server Script de
 # metragem não executar, o valor sobrevive e denuncia a regra inativa.
@@ -434,6 +479,500 @@ def capturar_contrato_pdf():
         "paginas": len(leitor.pages),
         "mascaras_aplicadas": mascaras,
         "texto": texto_mascarado,
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Fase B-2 — os ramos do documento que a fase B NÃO alcança (F3/2b, T1).
+#
+# POR QUE ELA EXISTE: a fase B monta um contrato sintético, e esse contrato exibe
+# um caminho só — locatário pessoa física, com identidade civil, sem fiador. O
+# fonte da regra (`golden/contrato-pdf-fonte.py`) tem três ramos condicionais que
+# aquele caminho nunca executa: o bloco do fiador, a qualificação por CNPJ, e a
+# OMISSÃO do trecho de identidade civil quando a parte não tem RG. O oráculo deles
+# só existe enquanto o sistema legado estiver de pé.
+#
+# POR QUE ELA RODA ANTES DA PURGA, e não junto das outras: ela é a única fase que
+# lê DADO REAL. `purgar_dados_de_negocio()` apaga exatamente o conjunto em que os
+# ramos podem ser procurados, e depois dele a consulta responderia "nenhum" para
+# todo eixo — uma ausência produzida pela própria captura, indistinguível da
+# ausência do legado. É o defeito que faria o desfecho mentir.
+#
+# POR QUE NADA É FABRICADO: contrato inventado para completar cobertura não é
+# oráculo de nada — é o produto novo comparado com uma suposição de quem o
+# escreveu. Quando o eixo não existe, o desfecho é `ausencia_medida`, com a
+# consulta que rodou e não retornou linha. Não há terceiro estado.
+# --------------------------------------------------------------------------- #
+DOCUMENTO_DA_REGRA_DO_PDF = "PDF contrato"
+
+# Onde o resultado desta fase fica DENTRO do site efêmero, entre duas execuções da
+# mesma captura. Ver o docblock de `capturar_caminhos_sem_oraculo`.
+ARQUIVO_DOS_CAMINHOS_SEM_ORACULO = "caracterizacao-caminhos-sem-oraculo.json"
+
+# O predicado de cada eixo, escrito como consulta EXECUTADA. É ela que vai para o
+# manifesto: "ausência medida" só é desfecho legítimo quando a consulta que a
+# comprova está nomeada e rodou.
+#
+# Os predicados reproduzem o fonte da regra, e não o senso comum sobre ele. O de
+# pessoa jurídica é o caso a observar: o fonte decide por `"jur" in tipo` PRIMEIRO,
+# só cai no comprimento do documento quando o tipo não diz nem jurídica nem física,
+# e por isso o `NOT LIKE` das duas grafias precede a contagem de dígitos. Trocar a
+# ordem incluiria pessoa física com documento de 14 dígitos, que a regra qualifica
+# como CPF.
+CONSULTA_CONTRATO_COM_FIADOR = """
+SELECT c.name
+  FROM `tabContrato` c
+ WHERE EXISTS (SELECT 1
+                 FROM `tabFiadores` f
+                WHERE f.parent = c.name
+                  AND f.parenttype = 'Contrato'
+                  AND TRIM(COALESCE(f.fiador, '')) <> '')
+ ORDER BY c.name
+"""
+
+CONSULTA_LOCATARIO_PESSOA_JURIDICA = """
+SELECT c.name
+  FROM `tabContrato` c
+  JOIN `tabLocatario` l ON l.name = c.locatario
+ WHERE LOWER(COALESCE(l.tipo_locatario, '')) LIKE '%jur%'
+    OR (LOWER(COALESCE(l.tipo_locatario, '')) NOT LIKE '%fis%'
+        AND LOWER(COALESCE(l.tipo_locatario, '')) NOT LIKE '%fís%'
+        AND CHAR_LENGTH(REGEXP_REPLACE(COALESCE(l.documento_principal, ''),
+                                       '[^0-9]', '')) = 14)
+ ORDER BY c.name
+"""
+
+CONSULTA_PARTE_SEM_DOCUMENTO_IDENTIDADE = """
+SELECT c.name
+  FROM `tabContrato` c
+  LEFT JOIN `tabLocador` d ON d.name = c.locador
+  LEFT JOIN `tabLocatario` l ON l.name = c.locatario
+ WHERE TRIM(COALESCE(d.rg, '')) = ''
+    OR TRIM(COALESCE(l.rg, '')) = ''
+    OR EXISTS (SELECT 1
+                 FROM `tabFiadores` f
+                 JOIN `tabFiador` fi ON fi.name = f.fiador
+                WHERE f.parent = c.name
+                  AND f.parenttype = 'Contrato'
+                  AND TRIM(COALESCE(fi.rg, '')) = '')
+ ORDER BY c.name
+"""
+
+# A ordem é significativa: quando o MESMO contrato real exercita mais de um eixo,
+# o artefato nasce sob o primeiro eixo desta tupla e os seguintes registram o
+# desfecho apontando para ele. Gravar dois arquivos com o mesmo texto sob nomes
+# diferentes seria duas cópias do mesmo fato, livres para divergir na recaptura
+# seguinte.
+EIXOS_SEM_ORACULO = (
+    (
+        "contrato_com_fiador",
+        "o bloco de qualificação do fiador e as cláusulas que o referenciam",
+        CONSULTA_CONTRATO_COM_FIADOR,
+    ),
+    (
+        "locatario_pessoa_juridica",
+        "a qualificação por CNPJ no lugar do par CPF + identidade civil",
+        CONSULTA_LOCATARIO_PESSOA_JURIDICA,
+    ),
+    (
+        "parte_sem_documento_identidade",
+        "a OMISSÃO do trecho de identidade civil, no lugar de um trecho vazio",
+        CONSULTA_PARTE_SEM_DOCUMENTO_IDENTIDADE,
+    ),
+)
+
+# Papel de cada parte nomeada diretamente pelo contrato, o cadastro de onde ela é
+# lida, o campo do contrato que a aponta e o campo de onde sai o nome. O papel é o
+# que nomeia o marcador, porque é por papel que a regra decide o que escrever. Os
+# fiadores não entram aqui: eles vêm da tabela filha, em número variável.
+PARTES_DO_CONTRATO = (
+    ("LOCADOR", "Locador", "locador", "locador_nome"),
+    ("LOCATARIO", "Locatario", "locatario", "locatario_nome"),
+)
+
+CAMPOS_DE_ENDERECO = (
+    "logradouro", "numero", "complemento", "bairro", "cidade", "estado", "cep",
+)
+
+# Separador entre dois componentes do endereço composto. A regra os junta com
+# vírgula, o par cidade/estado com hífen e o CEP com o próprio rótulo; o extrator
+# de texto do PDF ainda quebra linha no meio. O padrão tolera os quatro casos sem
+# reimplementar a composição — reimplementá-la faria a máscara depender de uma
+# cópia da regra, que divergiria dela em silêncio.
+SEPARADOR_DO_ENDERECO = r"[\s,\-–]*(?:CEP\s*)?"
+
+# Formas que sobreviveriam a uma máscara incompleta e denunciariam dado pessoal no
+# artefato versionado. São conferidas DEPOIS de mascarar: nenhuma delas pode
+# sobrar, e sobrar aborta a captura em vez de gravar o golden.
+RE_RESIDUO_DE_CPF = re.compile(r"\d{3}\.\d{3}\.\d{3}-\d{2}")
+RE_RESIDUO_DE_CNPJ = re.compile(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}")
+RE_RESIDUO_DE_CEP = re.compile(r"\d{5}-\d{3}")
+RE_RESIDUO_DE_EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+
+
+def _somente_digitos(valor):
+    return "".join(c for c in str(valor or "") if c.isdigit())
+
+
+def _padrao_tolerante(valor):
+    """Casa o valor mesmo quebrado em linha pelo extrator de texto do PDF."""
+    tokens = str(valor or "").split()
+    if not tokens:
+        return None
+    return r"\s+".join(re.escape(token) for token in tokens)
+
+
+def _formas_do_documento(valor):
+    """O documento no banco vem cru; no texto, como a regra o formatou."""
+    bruto = str(valor or "").strip()
+    digitos = _somente_digitos(bruto)
+    formas = [bruto, digitos]
+    if len(digitos) == 11:
+        formas.append(
+            digitos[0:3] + "." + digitos[3:6] + "." + digitos[6:9] + "-" + digitos[9:11]
+        )
+    elif len(digitos) == 14:
+        formas.append(
+            digitos[0:2] + "." + digitos[2:5] + "." + digitos[5:8] + "/" +
+            digitos[8:12] + "-" + digitos[12:14]
+        )
+    return [forma for forma in formas if forma]
+
+
+def _formas_do_cep(valor):
+    bruto = str(valor or "").strip()
+    digitos = _somente_digitos(bruto)
+    formas = [bruto, digitos]
+    if len(digitos) == 8:
+        formas.append(digitos[0:5] + "-" + digitos[5:8])
+    return [forma for forma in formas if forma]
+
+
+def _padrao_do_endereco(campos):
+    """Padrão do endereço composto, na ordem em que a regra monta os componentes."""
+    componentes = []
+    for campo in CAMPOS_DE_ENDERECO:
+        valor = str(campos.get(campo) or "").strip()
+        if not valor:
+            continue
+        if campo == "cep":
+            # O CEP entra pela forma que a regra imprime; a crua fica para a
+            # auditoria de resíduo.
+            valor = _formas_do_cep(valor)[-1]
+        padrao = _padrao_tolerante(valor)
+        if padrao:
+            componentes.append(padrao)
+    if not componentes:
+        return None
+    return SEPARADOR_DO_ENDERECO.join(componentes)
+
+
+def _ler_parte(doctype, nome, campo_do_nome, papel):
+    if not nome:
+        return None
+    campos = frappe.db.get_value(
+        doctype, nome,
+        [campo_do_nome, "documento_principal", "rg", "email", "telefone", "endereco"]
+        + list(CAMPOS_DE_ENDERECO),
+        as_dict=1,
+    )
+    if not campos:
+        return None
+    return {
+        "papel": papel,
+        "nome": str(campos.get(campo_do_nome) or "").strip(),
+        "documento": str(campos.get("documento_principal") or "").strip(),
+        "identidade": str(campos.get("rg") or "").strip(),
+        "campos": campos,
+    }
+
+
+def partes_do_documento(doc):
+    """As partes que a regra qualifica no texto: locador, locatário e fiadores."""
+    partes = []
+    for papel, doctype, campo_do_contrato, campo_do_nome in PARTES_DO_CONTRATO:
+        parte = _ler_parte(doctype, doc.get(campo_do_contrato), campo_do_nome, papel)
+        if parte:
+            partes.append(parte)
+
+    for item in (doc.fiadores or []):
+        fiador = str(item.get("fiador") or "").strip()
+        parte = _ler_parte("Fiador", fiador, "nome_fiador", "FIADOR")
+        if parte:
+            partes.append(parte)
+    return partes
+
+
+def _substituir(texto, padrao, marcador):
+    if not padrao:
+        return texto, 0
+    return re.subn(padrao, marcador, texto)
+
+
+def mascarar_dado_pessoal(texto, doc):
+    """Troca por marcador tudo o que identifica pessoa, e devolve o que aplicou.
+
+    O que sobra é o que interessa ao oráculo: o rótulo do documento, a presença ou
+    ausência do trecho de identidade civil, e as cláusulas que a regra compõe. O
+    valor de cada campo é irreproduzível pelo produto novo e não é o que se
+    compara — versioná-lo seria publicar dado pessoal de terceiro num repositório.
+    """
+    aplicados = {}
+    exigidos_sem_casamento = []
+
+    def aplicar(formas, marcador, obrigatorio):
+        """Aplica todas as formas do MESMO campo e exige que ao menos uma case."""
+        nonlocal texto
+        casos = 0
+        for forma in formas:
+            texto, quantas = _substituir(texto, _padrao_tolerante(forma), marcador)
+            casos += quantas
+        if casos:
+            aplicados[marcador] = aplicados.get(marcador, 0) + casos
+        elif obrigatorio:
+            exigidos_sem_casamento.append(marcador)
+
+    partes = partes_do_documento(doc)
+    imovel = frappe.db.get_value(
+        "Imovel", doc.imovel, ["nome_imovel"] + list(CAMPOS_DE_ENDERECO), as_dict=1
+    ) or {}
+
+    # Os endereços compostos vêm primeiro, e a ordem é decisão: o identificador do
+    # imóvel aparece DENTRO do endereço dele (entra como complemento), e mascarar o
+    # identificador antes deixaria o padrão do endereço sem o que casar.
+    # `obrigatório` significa "este valor EXISTE no cadastro, logo tem de aparecer no
+    # texto": campo vazio no legado não é máscara que falhou, é campo que a regra
+    # imprime como `-`. Exigir casamento de valor inexistente abortaria a captura por
+    # um cadastro incompleto, que é dado do sistema antigo como qualquer outro.
+    alvos_de_endereco = []
+    for campos, papel in [(imovel, "IMOVEL")] + [
+        (parte["campos"], parte["papel"]) for parte in partes
+    ]:
+        padrao = _padrao_do_endereco(campos)
+        alvos_de_endereco.append(
+            (padrao, MARCADOR_ENDERECO.format(papel=papel), bool(padrao))
+        )
+    for padrao, marcador, obrigatorio in alvos_de_endereco:
+        texto, casos = _substituir(texto, padrao, marcador)
+        if casos:
+            aplicados[marcador] = aplicados.get(marcador, 0) + casos
+        elif obrigatorio:
+            exigidos_sem_casamento.append(marcador)
+
+    # Depois, campo a campo, do mais longo para o mais curto: um valor curto contido
+    # noutro maior faria a substituição partir o maior ao meio.
+    cidade_do_imovel = str(imovel.get("cidade") or "").strip()
+    estado_do_imovel = str(imovel.get("estado") or "").strip()
+    praca_do_fecho = cidade_do_imovel
+    if cidade_do_imovel and estado_do_imovel:
+        praca_do_fecho = cidade_do_imovel + " - " + estado_do_imovel
+
+    alvos = [
+        ([imovel.get("nome_imovel")], MARCADOR_IDENTIFICADOR_DO_IMOVEL,
+         bool(str(imovel.get("nome_imovel") or "").strip())),
+        # A forma composta primeiro, a cidade sozinha depois: o fecho traz o par, e
+        # a segunda forma só age se a regra tiver escrito a cidade sem o estado.
+        ([praca_do_fecho, cidade_do_imovel], MARCADOR_PRACA_DO_FECHO,
+         bool(cidade_do_imovel)),
+    ]
+    for parte in partes:
+        papel = parte["papel"]
+        alvos.append(([parte["nome"]], MARCADOR_NOME.format(papel=papel),
+                      bool(parte["nome"])))
+        alvos.append((_formas_do_documento(parte["documento"]),
+                      MARCADOR_DOCUMENTO.format(papel=papel), bool(parte["documento"])))
+        if parte["identidade"]:
+            alvos.append(([parte["identidade"]],
+                          MARCADOR_IDENTIDADE.format(papel=papel), True))
+
+    def _maior_forma(alvo):
+        return max((len(str(forma or "")) for forma in alvo[0]), default=0)
+
+    for formas, marcador, obrigatorio in sorted(alvos, key=_maior_forma, reverse=True):
+        aplicar([forma for forma in formas if str(forma or "").strip()],
+                marcador, obrigatorio)
+
+    if exigidos_sem_casamento:
+        raise RuntimeError(
+            "Máscara sem casamento no texto do contrato " + str(doc.name) + ": "
+            + ", ".join(sorted(set(exigidos_sem_casamento)))
+            + " — o golden carregaria dado pessoal não mascarado."
+        )
+
+    residuos = auditar_residuo_pessoal(texto, partes, imovel)
+    if residuos:
+        raise RuntimeError(
+            "Dado pessoal sobreviveu à máscara no contrato " + str(doc.name) + ": "
+            + ", ".join(sorted(set(residuos)))
+        )
+    return texto, aplicados
+
+
+def auditar_residuo_pessoal(texto, partes, imovel):
+    """Segunda barreira, independente da primeira, e sem ela a primeira não prova.
+
+    A substituição afirma que ENCONTROU o valor; esta varredura afirma que NÃO
+    SOBROU nenhum. As duas juntas é que sustentam a gravação do artefato: uma
+    máscara que casou uma ocorrência e deixou outra passaria pela primeira.
+    """
+    residuos = []
+    valores = []
+    for parte in partes:
+        campos = parte["campos"]
+        valores.append(parte["nome"])
+        valores.extend(_formas_do_documento(parte["documento"]))
+        valores.append(parte["identidade"])
+        valores.extend(_formas_do_cep(campos.get("cep")))
+        for campo in ("email", "telefone", "endereco", "logradouro", "bairro", "cidade"):
+            valores.append(campos.get(campo))
+    valores.append(imovel.get("nome_imovel"))
+    valores.extend(_formas_do_cep(imovel.get("cep")))
+    for campo in ("logradouro", "bairro", "cidade"):
+        valores.append(imovel.get(campo))
+
+    for valor in valores:
+        # Valor de 3 caracteres ou menos não discrimina: a sigla de estado colide
+        # com o foro que a regra escreve por extenso, e acusaria resíduo onde há
+        # texto fixo. O endereço inteiro, que os contém, já foi mascarado acima.
+        if not valor or len(str(valor).strip()) <= 3:
+            continue
+        padrao = _padrao_tolerante(valor)
+        if padrao and re.search(padrao, texto):
+            residuos.append(str(valor))
+
+    for rotulo, expressao in (
+        ("CPF", RE_RESIDUO_DE_CPF),
+        ("CNPJ", RE_RESIDUO_DE_CNPJ),
+        ("CEP", RE_RESIDUO_DE_CEP),
+        ("email", RE_RESIDUO_DE_EMAIL),
+    ):
+        achado = expressao.search(texto)
+        if achado:
+            residuos.append(rotulo + " em forma reconhecível: " + achado.group(0))
+    return residuos
+
+
+def texto_do_documento_do_contrato(nome):
+    """Compõe o documento do contrato REAL executando a própria regra do legado.
+
+    A regra é um Server Script de evento (`Contrato / After Save`) e o contrato em
+    questão já está submetido — o evento não voltará a disparar sozinho. Executá-la
+    por `execute_doc` é o mesmo caminho que o arcabouço usa no evento, com o mesmo
+    documento; o que muda é só o gatilho. Nada disso alcança o site que atende a
+    operação: roda no site efêmero, que é cópia restaurada (ADR-0006).
+    """
+    doc = frappe.get_doc("Contrato", nome)
+    frappe.get_doc("Server Script", DOCUMENTO_DA_REGRA_DO_PDF).execute_doc(doc)
+
+    pdf_base64 = frappe.db.get_value("Contrato", nome, "pdf_contrato")
+    if not pdf_base64:
+        raise RuntimeError(
+            "Contrato " + str(nome) + " ficou sem documento depois de executar a "
+            "regra '" + DOCUMENTO_DA_REGRA_DO_PDF + "'."
+        )
+    pdf_bytes = base64.b64decode(pdf_base64)
+    if pdf_bytes[:5] != b"%PDF-":
+        raise RuntimeError("O conteúdo produzido para " + str(nome) + " não é um PDF.")
+
+    from pypdf import PdfReader
+
+    leitor = PdfReader(io.BytesIO(pdf_bytes))
+    texto = "\n".join((pagina.extract_text() or "") for pagina in leitor.pages)
+
+    texto, datas = RE_DATA_EXTENSO.subn(MARCADOR_DATA_PDF, texto)
+    if datas == 0:
+        raise RuntimeError(
+            "Nenhuma data por extenso no documento de " + str(nome) + " — a máscara "
+            "de campo volátil não foi aplicada e o golden seria instável."
+        )
+    texto, mascaras = mascarar_dado_pessoal(texto, doc)
+    mascaras[MARCADOR_DATA_PDF] = datas
+    return {
+        "contrato_ref": nome,
+        "paginas": len(leitor.pages),
+        "texto": texto,
+        "mascaras_aplicadas": mascaras,
+    }
+
+
+def capturar_caminhos_sem_oraculo():
+    """Resultado da fase B-2, computado na PRIMEIRA execução e reusado nas demais.
+
+    Esta é a única fase cuja precondição a própria captura destrói: os contratos
+    reais vêm do dump, e `purgar_dados_de_negocio()` os apaga. `capturar.py` é
+    re-executável no mesmo site por contrato — o CT-004 o executa duas vezes e
+    exige artefatos byte a byte idênticos, e o CT-005 uma terceira com o relógio
+    deslocado —, e na segunda execução o conjunto que a consulta varre é o dos
+    contratos SINTÉTICOS que a primeira criou. Recomputar ali produziria "ausência
+    medida" para todo eixo: uma ausência fabricada pela captura anterior, que
+    apagaria do manifesto os desfechos verdadeiros e deixaria o artefato gravado
+    com marcadores que a §2 não declara mais — a bijeção do CT-014 reprovaria, e a
+    causa não estaria em lugar nenhum.
+
+    O resultado fica no próprio site efêmero, ao lado de `caracterizacao-origem.json`
+    e com o mesmo ciclo de vida: nasce com o site restaurado e morre com ele. Não é
+    memória entre capturas — é memória DENTRO de uma, e o que a torna repetível.
+    """
+    caminho_do_cache = frappe.get_site_path(ARQUIVO_DOS_CAMINHOS_SEM_ORACULO)
+    if os.path.exists(caminho_do_cache):
+        with open(caminho_do_cache, encoding="utf-8") as arquivo:
+            return json.load(arquivo)
+
+    resultado = procurar_caminhos_sem_oraculo()
+    with open(caminho_do_cache, "w", encoding="utf-8") as arquivo:
+        json.dump(resultado, arquivo, ensure_ascii=False, sort_keys=True)
+    return resultado
+
+
+def procurar_caminhos_sem_oraculo():
+    """Procura cada eixo entre os contratos REAIS e fecha um desfecho para cada um.
+
+    Roda ANTES de `purgar_dados_de_negocio()` — ver o cabeçalho desta fase.
+    """
+    total_de_contratos = frappe.db.sql("SELECT COUNT(*) FROM `tabContrato`")[0][0]
+    desfechos = []
+    capturados_por_contrato = {}
+
+    for eixo, ramo, consulta in EIXOS_SEM_ORACULO:
+        contratos = [linha[0] for linha in frappe.db.sql(consulta)]
+        registro = {
+            "eixo": eixo,
+            "ramo_da_regra": ramo,
+            "consulta": consulta.strip(),
+            "contratos_examinados": total_de_contratos,
+            "contratos_que_exercitam": len(contratos),
+        }
+        if not contratos:
+            registro["desfecho"] = "ausencia_medida"
+            desfechos.append(registro)
+            continue
+
+        escolhido = contratos[0]
+        registro["desfecho"] = "capturado"
+        registro["contrato_ref"] = escolhido
+        if escolhido in capturados_por_contrato:
+            # O mesmo contrato exercita mais de um eixo: o artefato já existe, e o
+            # desfecho deste eixo aponta para ele.
+            registro["artefato_do_eixo"] = capturados_por_contrato[escolhido]
+            desfechos.append(registro)
+            continue
+
+        documento = texto_do_documento_do_contrato(escolhido)
+        registro["artefato_do_eixo"] = eixo
+        registro["paginas"] = documento["paginas"]
+        registro["mascaras_aplicadas"] = documento["mascaras_aplicadas"]
+        registro["texto"] = documento["texto"]
+        capturados_por_contrato[escolhido] = eixo
+        desfechos.append(registro)
+
+    frappe.db.commit()
+    return {
+        "regra": DOCUMENTO_DA_REGRA_DO_PDF,
+        "tipo": "Server Script (DocType Event)",
+        "doctype": "Contrato",
+        "evento": "After Save",
+        "contratos_examinados": total_de_contratos,
+        "eixos": desfechos,
     }
 
 
@@ -1904,6 +2443,11 @@ def main():
         frappe.destroy()
         return 2
 
+    # PRIMEIRA de todas as fases, e a posição é a decisão — ver o cabeçalho da fase
+    # B-2. Ela é a única que lê dado REAL, e `purgar_dados_de_negocio()` logo abaixo
+    # apaga exatamente o conjunto em que os três eixos podem ser procurados.
+    caminhos_sem_oraculo = capturar_caminhos_sem_oraculo()
+
     # `in_import` preserva o `name` que atribuímos: sem ele o Frappe sorteia hash
     # (Imovel/Locador/Locatario) ou consome a série (Contrato/Cobranca), e dois
     # runs jamais produziriam o mesmo golden.
@@ -1921,6 +2465,7 @@ def main():
         "data_execucao": str(hoje),
         "capturado_em": frappe.utils.now(),
         "origem": origem,
+        "caminhos_sem_oraculo": caminhos_sem_oraculo,
         "metragem": capturar_metragem(),
         "contrato_pdf": capturar_contrato_pdf(),
     }
@@ -2021,6 +2566,38 @@ def gravar_json(nome: str, conteudo) -> None:
         json.dumps(conteudo, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+
+def gravar_caminhos_sem_oraculo(envelope: dict) -> list[str]:
+    """Grava o artefato de cada eixo CAPTURADO — e só dele.
+
+    Eixo sem contrato real que o exercite não produz arquivo: a ausência medida
+    vive na §4.1 do manifesto, com a consulta que a comprova. Arquivo vazio ou
+    placeholder seria um oráculo que nada oraculiza, e a fatia consumidora não teria
+    como distingui-lo de uma captura truncada.
+    """
+    eixos_por_artefato = _eixos_por_artefato(envelope)
+    gravados = []
+    for registro in envelope["caminhos_sem_oraculo"]["eixos"]:
+        if "texto" not in registro:
+            continue
+        nome = ARTEFATO_POR_EIXO[registro["eixo"]]
+        cabecalho = [
+            CABECALHO_DO_CAMINHO,
+            f"# Origem: regra `{envelope['caminhos_sem_oraculo']['regra']}`"
+            f" ({envelope['caminhos_sem_oraculo']['tipo']} ·"
+            f" {envelope['caminhos_sem_oraculo']['doctype']} /"
+            f" {envelope['caminhos_sem_oraculo']['evento']}) sobre o contrato real"
+            f" {registro['contrato_ref']}",
+            "# Eixos exercitados: " + ", ".join(sorted(eixos_por_artefato[nome])),
+            f"# Páginas do documento: {registro['paginas']}",
+            "# Dado pessoal: trocado por marcador — ver PROCEDENCIA.md §2 e §4.1",
+            "# Comando: python3 deploy/scripts/caracterizacao/capturar.py",
+            DELIMITADOR_DO_CAMINHO,
+        ]
+        gravar_texto(nome, "\n".join(cabecalho) + "\n" + registro["texto"])
+        gravados.append(nome)
+    return gravados
 
 
 def gravar_texto(nome: str, conteudo: str) -> None:
@@ -2127,6 +2704,142 @@ DESCRICAO_DA_ORDEM_DE_QUEDA = {
 }
 
 
+# Classe de cada marcador de dado pessoal, com o campo que ele cobre e a razão de
+# mascará-lo. A chave é a classe do marcador (`<CLASSE_DO_PAPEL>`), e não o
+# marcador inteiro, porque o papel varia com as partes do contrato capturado —
+# escrever uma entrada por papel deixaria a tabela do manifesto incompleta no dia
+# em que um contrato com fiador aparecer.
+CLASSES_DE_MASCARA_PESSOAL = {
+    "NOME": (
+        "nome da parte, na qualificação e na linha de assinatura",
+        "O documento vem de contrato REAL: o nome identifica pessoa, não é "
+        "reproduzível pelo produto novo e não é o que se compara. O que o oráculo "
+        "precisa é a POSIÇÃO em que a regra o escreve, e o marcador a preserva.",
+    ),
+    "DOCUMENTO": (
+        "número do CPF ou do CNPJ, na forma em que a regra o imprime",
+        "O RÓTULO que a regra escolhe — `CPF` contra `CNPJ` — é o próprio objeto do "
+        "eixo `locatario_pessoa_juridica` e fica sem máscara; o número é dado "
+        "pessoal e sai.",
+    ),
+    "IDENTIDADE": (
+        "número da cédula de identidade civil da parte",
+        "A PRESENÇA do trecho de identidade civil é o objeto do eixo "
+        "`parte_sem_documento_identidade` e fica preservada; o número é dado "
+        "pessoal e sai.",
+    ),
+    "ENDERECO": (
+        "endereço composto da parte ou do imóvel, com CEP",
+        "A composição do endereço já tem oráculo em `contrato-pdf.txt`, que a exibe "
+        "inteira com dado fabricado. Aqui o valor é real e localiza pessoa.",
+    ),
+    "IDENTIFICADOR": (
+        "identificador do imóvel exibido na cláusula primeira",
+        "Identifica o imóvel real do contrato. O que o oráculo precisa é a posição "
+        "em que a regra o escreve, e o marcador a preserva.",
+    ),
+    "PRACA": (
+        "cidade e estado do imóvel na linha de fecho, antes da data",
+        "A regra escreve a localidade do imóvel uma SEGUNDA vez no fecho, fora do "
+        "endereço composto. Sem marcador próprio ela sobrevive à máscara do "
+        "endereço — e foi exatamente o que a varredura de resíduo pegou.",
+    ),
+}
+
+
+def artefatos_dos_caminhos(envelope: dict) -> dict:
+    """Artefato golden de cada eixo capturado, na ordem em que os eixos correm."""
+    artefatos = {}
+    for registro in envelope["caminhos_sem_oraculo"]["eixos"]:
+        if "texto" in registro:
+            artefatos[registro["eixo"]] = ARTEFATO_POR_EIXO[registro["eixo"]]
+    return artefatos
+
+
+def _eixos_por_artefato(envelope: dict) -> dict:
+    """Eixos que cada artefato capturado exercita — pode ser mais de um."""
+    agrupados: dict[str, list[str]] = {}
+    for registro in envelope["caminhos_sem_oraculo"]["eixos"]:
+        dono = registro.get("artefato_do_eixo")
+        if not dono:
+            continue
+        agrupados.setdefault(ARTEFATO_POR_EIXO[dono], []).append(registro["eixo"])
+    return agrupados
+
+
+def mascaras_dos_caminhos(envelope: dict) -> str:
+    """Linhas da tabela da §2 para os marcadores de dado pessoal efetivamente aplicados.
+
+    Derivadas do que a captura aplicou, nunca declaradas à mão: a bijeção do CT-014
+    reprova marcador documentado e ausente tanto quanto marcador aplicado e não
+    documentado, e uma lista escrita à mão erra sempre que as partes do contrato
+    capturado mudam.
+    """
+    por_marcador: dict[str, set[str]] = {}
+    for registro in envelope["caminhos_sem_oraculo"]["eixos"]:
+        if "texto" not in registro:
+            continue
+        artefato = ARTEFATO_POR_EIXO[registro["eixo"]]
+        for marcador in registro["mascaras_aplicadas"]:
+            if marcador == "<DATA_GERACAO_EXTENSO>":
+                continue
+            por_marcador.setdefault(marcador, set()).add(artefato)
+
+    linhas = []
+    for marcador in sorted(por_marcador):
+        classe = marcador.strip("<>").split("_DO_")[0]
+        campo, motivo = CLASSES_DE_MASCARA_PESSOAL[classe]
+        artefatos = ", ".join(f"`{nome}`" for nome in sorted(por_marcador[marcador]))
+        linhas.append(f"| `{marcador}` | {artefatos} | {campo} | {motivo} |")
+    return "".join(linha + "\n" for linha in linhas)
+
+
+def bloco_dos_caminhos_sem_oraculo(envelope: dict) -> str:
+    """A §4.1: um desfecho por eixo, e a consulta que o sustenta."""
+    caminhos = envelope["caminhos_sem_oraculo"]
+    eixos_por_artefato = _eixos_por_artefato(envelope)
+    partes = [
+        f"Contratos reais examinados nesta captura: **{caminhos['contratos_examinados']}**.",
+        "",
+    ]
+    for registro in caminhos["eixos"]:
+        eixo = registro["eixo"]
+        cabecalho = "capturado" if registro["desfecho"] == "capturado" else "ausência medida"
+        partes.append(f"### `{eixo}` — {cabecalho}")
+        partes.append("")
+        partes.append(f"Ramo da regra sem oráculo até aqui: {registro['ramo_da_regra']}.")
+        partes.append(
+            f"Contratos reais que o exercitam: **{registro['contratos_que_exercitam']}** "
+            f"de **{registro['contratos_examinados']}**."
+        )
+        if registro["desfecho"] == "capturado":
+            artefato = ARTEFATO_POR_EIXO[registro["artefato_do_eixo"]]
+            partes.append(
+                f"Artefato: `{artefato}` · contrato de origem: "
+                f"`{registro['contrato_ref']}`."
+            )
+            if registro["artefato_do_eixo"] != eixo:
+                partes.append(
+                    f"O artefato é o do eixo `{registro['artefato_do_eixo']}`: o mesmo "
+                    "contrato real exercita os dois ramos, e o texto é um só. Gravá-lo "
+                    "duas vezes sob nomes diferentes seria duas cópias do mesmo fato, "
+                    "livres para divergir na recaptura seguinte — os eixos que ele "
+                    f"cobre são {', '.join('`' + nome + '`' for nome in eixos_por_artefato[artefato])}."
+                )
+        else:
+            partes.append(
+                "Nenhum artefato foi gravado para este eixo, e **nada foi criado no "
+                "sistema legado** para produzir um: contrato fabricado não é oráculo "
+                "de coisa alguma. A consulta abaixo executou e não retornou linha."
+            )
+        partes.append("")
+        partes.append("```sql")
+        partes.append(registro["consulta"])
+        partes.append("```")
+        partes.append("")
+    return "\n".join(partes)
+
+
 def montar_procedencia(envelope: dict) -> str:
     origem = envelope["origem"]
     versoes = origem.get("versoes_bench") or {}
@@ -2139,6 +2852,13 @@ def montar_procedencia(envelope: dict) -> str:
         f" regra: `{agregado}` · soma aritmética dos cômodos não nulos: `{soma}`."
         " Gravado como veio, sem correção.\n"
         for chave, agregado, soma in achados
+    )
+
+    linhas_de_mascara_pessoal = mascaras_dos_caminhos(envelope)
+    bloco_caminhos = bloco_dos_caminhos_sem_oraculo(envelope)
+    artefatos_com_data_extenso = ", ".join(
+        f"`{nome}`"
+        for nome in ["contrato-pdf.txt"] + sorted(set(artefatos_dos_caminhos(envelope).values()))
     )
 
     despacho = envelope["regua_de_cobranca"]["despacho"]
@@ -2178,12 +2898,23 @@ do fluxo.
 | Marcador | Artefato | Campo mascarado | Motivo |
 |---|---|---|---|
 | `<DATA_EXECUCAO>` | `marcar-cobrancas-vencidas.json`, `encerrar-contratos-vencidos.json`, `atualizar-atrasos-cobrancas.json`, `regua-de-cobranca.json` | `retorno.data_execucao`; `estado_resultante.*.data_inicio_atraso`; `estado_resultante.*.data_ultima_atualizacao_atraso`; na régua, o `hoje=` do resumo do `runner.py` e `estado_resultante.configuracao_da_regua.ultima_execucao_em` | As três rotinas derivam de `nowdate()`, e a régua também. Gravar a data absoluta faria o golden expirar no dia seguinte; o marcador representa o offset zero — o próprio dia da execução. |
-| `<DATA_GERACAO_EXTENSO>` | `contrato-pdf.txt` | Data por extenso do fecho do contrato (`DD de MÊS de AAAA`), montada pelo Server Script com `nowdate()` | É o único campo do documento que muda a cada geração. Sem a máscara, a comparação textual acusaria diferença todo dia, onde não há diferença de comportamento. |
+| `<DATA_GERACAO_EXTENSO>` | {artefatos_com_data_extenso} | Data por extenso do fecho do contrato (`DD de MÊS de AAAA`), montada pelo Server Script com `nowdate()` | É o único campo do documento que muda a cada geração. Sem a máscara, a comparação textual acusaria diferença todo dia, onde não há diferença de comportamento. |
 | `<PDF_CONTRATO_CODIFICADO>` | `contrato-cancelamento.json` | `entrada.contratos[].pdf_contrato`; `estado_resultante.contratos[].pdf_contrato`; `retorno.retorno.pdf_contrato` | O campo guarda o documento inteiro codificado, com megabytes que mudam a cada geração. O que a regra observa é a PRESENÇA — é ela que libera ou bloqueia o cancelamento —, e é a presença que o marcador preserva; ausência continua gravada como `null`. |
 | `<ARQUIVO_PDF_PRIVADO>` | `contrato-cancelamento.json` | `entrada.contratos[].pdf_contrato_arquivo`; `estado_resultante.contratos[].pdf_contrato_arquivo`; `retorno.retorno.pdf_contrato_arquivo` | O caminho do anexo privado carrega identificador sorteado pelo arcabouço a cada gravação, e duas capturas nunca coincidiriam. A troca de `pdf_contrato` por `pdf_contrato_arquivo` é o efeito observável do cancelamento, e o par marcador/`null` a preserva. |
 | `<HORA_EXECUCAO>` | `regua-de-cobranca.json` | O `agora=` do resumo que o `runner.py` grava em `Automacao Cobranca Config.ultimo_erro_execucao` | A régua compara o relógio da execução com o horário configurado, e grava os dois no resumo. O `agora=` muda a cada minuto; os demais `HH:MM` do resumo são CONFIGURAÇÃO e ficam sem máscara de propósito — apagá-los tiraria do oráculo a janela com que a régua rodou. |
 | `<DATA_VENCIMENTO_FORMATADA>` | `regua-de-cobranca.json` | A data de vencimento renderizada em `dd/MM/yyyy` dentro do corpo de cada mensagem (`retorno.template[].corpo`, `retorno.automatico.mensagens[].corpo`, `retorno.manual[].mensagens[].corpo`) | O corpo é parte do oráculo — a régua decide a quem cobrar **e com que texto** —, mas a data que ele imprime deriva de `nowdate()` pelo offset do cenário. Sem a máscara o corpo mudaria todo dia; o offset continua gravado em `entrada.cobrancas[].vencimento_offset_dias`. |
 | `<IDENTIFICADOR_DE_REQUISICAO>` | `regua-de-cobranca.json` | `retorno.manual[].resultado.retorno.request_id` | O identificador de requisição do envio manual embute `now()` com precisão de microssegundo, e duas capturas nunca coincidiriam. O que a trava de intervalo observa é o PREFIXO, e ele fica preservado por extenso em `estado_resultante.log_envio_cobranca[].prefixo_request_id`. |
+{linhas_de_mascara_pessoal}
+Os marcadores por PAPEL (`…_DO_LOCADOR`, `…_DO_LOCATARIO`, `…_DO_FIADOR`,
+`…_DO_IMOVEL`) são os da §4.1 e existem por uma razão diferente da das demais
+máscaras desta tabela: ali o documento vem de contrato **real**, e o texto
+carregaria nome, documento e endereço de pessoa para dentro da árvore versionada.
+O que a regra DECIDE — o rótulo `CPF` contra `CNPJ`, a presença ou a ausência do
+trecho de identidade civil — fica sem máscara, porque é justamente o oráculo do
+eixo; o que sai é o valor. A captura recusa gravar o artefato quando alguma
+máscara não casa, e recusa de novo quando qualquer valor sobrevive à varredura de
+resíduo — são duas barreiras independentes, e a segunda existe porque a primeira
+prova que ENCONTROU, não que não sobrou.
 
 Os cinco marcadores acrescentados são nomeados **sem algarismo** de propósito: a
 bijeção do `verificar-golden.sh` varre `<[A-Z_]+>`, que não casa dígito, e um nome
@@ -2331,7 +3062,23 @@ defeitos**. Nenhum resultado foi corrigido, arredondado ou completado.
   efeito externo e irreversível, fora do que a ADR-0006 admite. Todas as cobranças
   do cenário nascem sem boleto, e o ramo capturado é o `ignoradas /
   sem_boleto_sicoob`, que é o único alcançável sem tocar a rede.
-"""
+
+## 4.1 Caminhos do documento sem oráculo — um desfecho por eixo
+
+> Fase B-2 de `capturar.py`, e a única que lê dado **real**: ela roda ANTES da
+> purga, porque é a purga que apaga o conjunto onde os eixos podem ser procurados.
+> Cada eixo termina com **exatamente um** desfecho — `capturado`, com o artefato e
+> o contrato de origem, ou **ausência medida**, com a consulta que executou e não
+> retornou linha. **Não existe terceiro estado**: "provavelmente não há" não é
+> desfecho, e ausência inferida não é ausência medida.
+>
+> Nada foi escrito no site que atende a operação. A composição do documento
+> executa a própria regra do legado sobre o contrato REAL, e essa regra persiste
+> `pdf_contrato` no contrato — tudo dentro do site efêmero restaurado do dump
+> (ADR-0006), que é destruído ao fim. Nenhum contrato foi criado, alterado em
+> cadastro ou fabricado para completar cobertura.
+
+{bloco_caminhos}"""
 
 
 def main() -> int:
@@ -2345,6 +3092,7 @@ def main() -> int:
     # reprovado não pode deixar meio golden no disco.
     gravar_json("metragem.json", envelope["metragem"])
     gravar_texto("contrato-pdf.txt", envelope["contrato_pdf"]["texto"])
+    caminhos_gravados = gravar_caminhos_sem_oraculo(envelope)
     gravar_json("marcar-cobrancas-vencidas.json", envelope["marcar_cobrancas_vencidas"])
     gravar_json("encerrar-contratos-vencidos.json", envelope["encerrar_contratos_vencidos"])
     gravar_json("atualizar-atrasos-cobrancas.json", envelope["atualizar_atrasos_cobrancas"])
@@ -2369,6 +3117,27 @@ def main() -> int:
 
     print(f"[capturar] site: {envelope['site']}")
     print(f"[capturar] data de execução no site: {envelope['data_execucao']}")
+    for registro in envelope["caminhos_sem_oraculo"]["eixos"]:
+        if registro["desfecho"] == "capturado":
+            print(
+                f"[capturar] eixo {registro['eixo']}: capturado de "
+                f"{registro['contrato_ref']} → "
+                f"{ARTEFATO_POR_EIXO[registro['artefato_do_eixo']]}"
+            )
+        else:
+            # Ausência é DESFECHO, não falha: o código de saída continua 0 e nenhum
+            # artefato é gravado para o eixo. Tratá-la como erro ensinaria quem
+            # opera a "consertar" o único desfecho honesto possível quando o
+            # sistema legado não tem o dado.
+            print(
+                f"[capturar] AVISO: eixo {registro['eixo']}: ausência medida — "
+                f"{registro['contratos_que_exercitam']} de "
+                f"{registro['contratos_examinados']} contratos reais o exercitam; "
+                "nenhum artefato gravado",
+                file=sys.stderr,
+            )
+    if caminhos_gravados:
+        print(f"[capturar] caminhos sem oráculo gravados: {', '.join(caminhos_gravados)}")
     print(f"[capturar] artefatos gravados em: {DIR_GOLDEN}")
     for arquivo in sorted(os.listdir(DIR_GOLDEN)):
         print(f"[capturar]   - {arquivo}")

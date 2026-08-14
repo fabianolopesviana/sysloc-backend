@@ -9,10 +9,10 @@
 
 | Campo | Valor |
 |---|---|
-| Data e hora da captura | 2026-08-10T21:44:54 |
+| Data e hora da captura | 2026-08-12T23:20:26 |
 | Site de captura | caracterizacao.localhost |
-| Dump de origem | sites/frontend/private/backups/20260810_213713-frontend-database.sql.gz |
-| Timestamp do dump | 2026-08-10T21:37:21 |
+| Dump de origem | sites/frontend/private/backups/20260812_231735-frontend-database.sql.gz |
+| Timestamp do dump | 2026-08-12T23:17:43 |
 | Versão do app (commit) | 5a4e5197ee1d4e1cd262b6886c054ddf9a0da9b2 |
 | Versões do bench | erpnext 15.4.0 · frappe 15.4.0 |
 | Nível da ordem de queda alcançado (régua) | 1 — despachante substituído dentro do processo de captura, com o percurso completo da régua executando |
@@ -27,12 +27,32 @@ do fluxo.
 | Marcador | Artefato | Campo mascarado | Motivo |
 |---|---|---|---|
 | `<DATA_EXECUCAO>` | `marcar-cobrancas-vencidas.json`, `encerrar-contratos-vencidos.json`, `atualizar-atrasos-cobrancas.json`, `regua-de-cobranca.json` | `retorno.data_execucao`; `estado_resultante.*.data_inicio_atraso`; `estado_resultante.*.data_ultima_atualizacao_atraso`; na régua, o `hoje=` do resumo do `runner.py` e `estado_resultante.configuracao_da_regua.ultima_execucao_em` | As três rotinas derivam de `nowdate()`, e a régua também. Gravar a data absoluta faria o golden expirar no dia seguinte; o marcador representa o offset zero — o próprio dia da execução. |
-| `<DATA_GERACAO_EXTENSO>` | `contrato-pdf.txt` | Data por extenso do fecho do contrato (`DD de MÊS de AAAA`), montada pelo Server Script com `nowdate()` | É o único campo do documento que muda a cada geração. Sem a máscara, a comparação textual acusaria diferença todo dia, onde não há diferença de comportamento. |
+| `<DATA_GERACAO_EXTENSO>` | `contrato-pdf.txt`, `contrato-pdf-pessoa-juridica.txt` | Data por extenso do fecho do contrato (`DD de MÊS de AAAA`), montada pelo Server Script com `nowdate()` | É o único campo do documento que muda a cada geração. Sem a máscara, a comparação textual acusaria diferença todo dia, onde não há diferença de comportamento. |
 | `<PDF_CONTRATO_CODIFICADO>` | `contrato-cancelamento.json` | `entrada.contratos[].pdf_contrato`; `estado_resultante.contratos[].pdf_contrato`; `retorno.retorno.pdf_contrato` | O campo guarda o documento inteiro codificado, com megabytes que mudam a cada geração. O que a regra observa é a PRESENÇA — é ela que libera ou bloqueia o cancelamento —, e é a presença que o marcador preserva; ausência continua gravada como `null`. |
 | `<ARQUIVO_PDF_PRIVADO>` | `contrato-cancelamento.json` | `entrada.contratos[].pdf_contrato_arquivo`; `estado_resultante.contratos[].pdf_contrato_arquivo`; `retorno.retorno.pdf_contrato_arquivo` | O caminho do anexo privado carrega identificador sorteado pelo arcabouço a cada gravação, e duas capturas nunca coincidiriam. A troca de `pdf_contrato` por `pdf_contrato_arquivo` é o efeito observável do cancelamento, e o par marcador/`null` a preserva. |
 | `<HORA_EXECUCAO>` | `regua-de-cobranca.json` | O `agora=` do resumo que o `runner.py` grava em `Automacao Cobranca Config.ultimo_erro_execucao` | A régua compara o relógio da execução com o horário configurado, e grava os dois no resumo. O `agora=` muda a cada minuto; os demais `HH:MM` do resumo são CONFIGURAÇÃO e ficam sem máscara de propósito — apagá-los tiraria do oráculo a janela com que a régua rodou. |
 | `<DATA_VENCIMENTO_FORMATADA>` | `regua-de-cobranca.json` | A data de vencimento renderizada em `dd/MM/yyyy` dentro do corpo de cada mensagem (`retorno.template[].corpo`, `retorno.automatico.mensagens[].corpo`, `retorno.manual[].mensagens[].corpo`) | O corpo é parte do oráculo — a régua decide a quem cobrar **e com que texto** —, mas a data que ele imprime deriva de `nowdate()` pelo offset do cenário. Sem a máscara o corpo mudaria todo dia; o offset continua gravado em `entrada.cobrancas[].vencimento_offset_dias`. |
 | `<IDENTIFICADOR_DE_REQUISICAO>` | `regua-de-cobranca.json` | `retorno.manual[].resultado.retorno.request_id` | O identificador de requisição do envio manual embute `now()` com precisão de microssegundo, e duas capturas nunca coincidiriam. O que a trava de intervalo observa é o PREFIXO, e ele fica preservado por extenso em `estado_resultante.log_envio_cobranca[].prefixo_request_id`. |
+| `<DOCUMENTO_DO_LOCADOR>` | `contrato-pdf-pessoa-juridica.txt` | número do CPF ou do CNPJ, na forma em que a regra o imprime | O RÓTULO que a regra escolhe — `CPF` contra `CNPJ` — é o próprio objeto do eixo `locatario_pessoa_juridica` e fica sem máscara; o número é dado pessoal e sai. |
+| `<DOCUMENTO_DO_LOCATARIO>` | `contrato-pdf-pessoa-juridica.txt` | número do CPF ou do CNPJ, na forma em que a regra o imprime | O RÓTULO que a regra escolhe — `CPF` contra `CNPJ` — é o próprio objeto do eixo `locatario_pessoa_juridica` e fica sem máscara; o número é dado pessoal e sai. |
+| `<ENDERECO_DO_IMOVEL>` | `contrato-pdf-pessoa-juridica.txt` | endereço composto da parte ou do imóvel, com CEP | A composição do endereço já tem oráculo em `contrato-pdf.txt`, que a exibe inteira com dado fabricado. Aqui o valor é real e localiza pessoa. |
+| `<ENDERECO_DO_LOCADOR>` | `contrato-pdf-pessoa-juridica.txt` | endereço composto da parte ou do imóvel, com CEP | A composição do endereço já tem oráculo em `contrato-pdf.txt`, que a exibe inteira com dado fabricado. Aqui o valor é real e localiza pessoa. |
+| `<ENDERECO_DO_LOCATARIO>` | `contrato-pdf-pessoa-juridica.txt` | endereço composto da parte ou do imóvel, com CEP | A composição do endereço já tem oráculo em `contrato-pdf.txt`, que a exibe inteira com dado fabricado. Aqui o valor é real e localiza pessoa. |
+| `<IDENTIFICADOR_DO_IMOVEL>` | `contrato-pdf-pessoa-juridica.txt` | identificador do imóvel exibido na cláusula primeira | Identifica o imóvel real do contrato. O que o oráculo precisa é a posição em que a regra o escreve, e o marcador a preserva. |
+| `<NOME_DO_LOCADOR>` | `contrato-pdf-pessoa-juridica.txt` | nome da parte, na qualificação e na linha de assinatura | O documento vem de contrato REAL: o nome identifica pessoa, não é reproduzível pelo produto novo e não é o que se compara. O que o oráculo precisa é a POSIÇÃO em que a regra o escreve, e o marcador a preserva. |
+| `<NOME_DO_LOCATARIO>` | `contrato-pdf-pessoa-juridica.txt` | nome da parte, na qualificação e na linha de assinatura | O documento vem de contrato REAL: o nome identifica pessoa, não é reproduzível pelo produto novo e não é o que se compara. O que o oráculo precisa é a POSIÇÃO em que a regra o escreve, e o marcador a preserva. |
+| `<PRACA_DO_FECHO>` | `contrato-pdf-pessoa-juridica.txt` | cidade e estado do imóvel na linha de fecho, antes da data | A regra escreve a localidade do imóvel uma SEGUNDA vez no fecho, fora do endereço composto. Sem marcador próprio ela sobrevive à máscara do endereço — e foi exatamente o que a varredura de resíduo pegou. |
+
+Os marcadores por PAPEL (`…_DO_LOCADOR`, `…_DO_LOCATARIO`, `…_DO_FIADOR`,
+`…_DO_IMOVEL`) são os da §4.1 e existem por uma razão diferente da das demais
+máscaras desta tabela: ali o documento vem de contrato **real**, e o texto
+carregaria nome, documento e endereço de pessoa para dentro da árvore versionada.
+O que a regra DECIDE — o rótulo `CPF` contra `CNPJ`, a presença ou a ausência do
+trecho de identidade civil — fica sem máscara, porque é justamente o oráculo do
+eixo; o que sai é o valor. A captura recusa gravar o artefato quando alguma
+máscara não casa, e recusa de novo quando qualquer valor sobrevive à varredura de
+resíduo — são duas barreiras independentes, e a segunda existe porque a primeira
+prova que ENCONTROU, não que não sobrou.
 
 Os cinco marcadores acrescentados são nomeados **sem algarismo** de propósito: a
 bijeção do `verificar-golden.sh` varre `<[A-Z_]+>`, que não casa dígito, e um nome
@@ -181,6 +201,81 @@ defeitos**. Nenhum resultado foi corrigido, arredondado ou completado.
   do cenário nascem sem boleto, e o ramo capturado é o `ignoradas /
   sem_boleto_sicoob`, que é o único alcançável sem tocar a rede.
 
+## 4.1 Caminhos do documento sem oráculo — um desfecho por eixo
+
+> Fase B-2 de `capturar.py`, e a única que lê dado **real**: ela roda ANTES da
+> purga, porque é a purga que apaga o conjunto onde os eixos podem ser procurados.
+> Cada eixo termina com **exatamente um** desfecho — `capturado`, com o artefato e
+> o contrato de origem, ou **ausência medida**, com a consulta que executou e não
+> retornou linha. **Não existe terceiro estado**: "provavelmente não há" não é
+> desfecho, e ausência inferida não é ausência medida.
+>
+> Nada foi escrito no site que atende a operação. A composição do documento
+> executa a própria regra do legado sobre o contrato REAL, e essa regra persiste
+> `pdf_contrato` no contrato — tudo dentro do site efêmero restaurado do dump
+> (ADR-0006), que é destruído ao fim. Nenhum contrato foi criado, alterado em
+> cadastro ou fabricado para completar cobertura.
+
+Contratos reais examinados nesta captura: **1**.
+
+### `contrato_com_fiador` — ausência medida
+
+Ramo da regra sem oráculo até aqui: o bloco de qualificação do fiador e as cláusulas que o referenciam.
+Contratos reais que o exercitam: **0** de **1**.
+Nenhum artefato foi gravado para este eixo, e **nada foi criado no sistema legado** para produzir um: contrato fabricado não é oráculo de coisa alguma. A consulta abaixo executou e não retornou linha.
+
+```sql
+SELECT c.name
+  FROM `tabContrato` c
+ WHERE EXISTS (SELECT 1
+                 FROM `tabFiadores` f
+                WHERE f.parent = c.name
+                  AND f.parenttype = 'Contrato'
+                  AND TRIM(COALESCE(f.fiador, '')) <> '')
+ ORDER BY c.name
+```
+
+### `locatario_pessoa_juridica` — capturado
+
+Ramo da regra sem oráculo até aqui: a qualificação por CNPJ no lugar do par CPF + identidade civil.
+Contratos reais que o exercitam: **1** de **1**.
+Artefato: `contrato-pdf-pessoa-juridica.txt` · contrato de origem: `CTR-2026-00020`.
+
+```sql
+SELECT c.name
+  FROM `tabContrato` c
+  JOIN `tabLocatario` l ON l.name = c.locatario
+ WHERE LOWER(COALESCE(l.tipo_locatario, '')) LIKE '%jur%'
+    OR (LOWER(COALESCE(l.tipo_locatario, '')) NOT LIKE '%fis%'
+        AND LOWER(COALESCE(l.tipo_locatario, '')) NOT LIKE '%fís%'
+        AND CHAR_LENGTH(REGEXP_REPLACE(COALESCE(l.documento_principal, ''),
+                                       '[^0-9]', '')) = 14)
+ ORDER BY c.name
+```
+
+### `parte_sem_documento_identidade` — capturado
+
+Ramo da regra sem oráculo até aqui: a OMISSÃO do trecho de identidade civil, no lugar de um trecho vazio.
+Contratos reais que o exercitam: **1** de **1**.
+Artefato: `contrato-pdf-pessoa-juridica.txt` · contrato de origem: `CTR-2026-00020`.
+O artefato é o do eixo `locatario_pessoa_juridica`: o mesmo contrato real exercita os dois ramos, e o texto é um só. Gravá-lo duas vezes sob nomes diferentes seria duas cópias do mesmo fato, livres para divergir na recaptura seguinte — os eixos que ele cobre são `locatario_pessoa_juridica`, `parte_sem_documento_identidade`.
+
+```sql
+SELECT c.name
+  FROM `tabContrato` c
+  LEFT JOIN `tabLocador` d ON d.name = c.locador
+  LEFT JOIN `tabLocatario` l ON l.name = c.locatario
+ WHERE TRIM(COALESCE(d.rg, '')) = ''
+    OR TRIM(COALESCE(l.rg, '')) = ''
+    OR EXISTS (SELECT 1
+                 FROM `tabFiadores` f
+                 JOIN `tabFiador` fi ON fi.name = f.fiador
+                WHERE f.parent = c.name
+                  AND f.parenttype = 'Contrato'
+                  AND TRIM(COALESCE(fi.rg, '')) = '')
+ ORDER BY c.name
+```
+
 ## 5. Inventário dos artefatos
 
 > Seção mantida por `deploy/scripts/caracterizacao/extrair-fonte-do-pdf.sh`. A
@@ -207,8 +302,9 @@ defeitos**. Nenhum resultado foi corrigido, arredondado ou completado.
 | `marcar-cobrancas-vencidas.json` | `capturar.py` | oráculo da rotina que marca cobrança vencida |
 | `metragem.json` | `capturar.py` | oráculo da metragem derivada dos cômodos |
 | `regua-de-cobranca.json` | `capturar.py` | oráculo da régua de cobrança, com a divergência automático × manual |
+| `contrato-pdf-pessoa-juridica.txt` | `capturar.py` | o documento de contrato REAL nos ramos que o sintético não exercita — locatário pessoa jurídica e parte sem identidade civil |
 
-O 11º artefato não sai de `capturar.py`: `contrato-pdf-fonte.py` é o FONTE do
+Um único artefato não sai de `capturar.py`: `contrato-pdf-fonte.py` é o FONTE do
 Server Script `PDF contrato`, que existe apenas dentro do banco do sistema
 legado e desaparece com ele na virada. Ele foi lido por `SELECT` no serviço de
 banco, autenticado como o usuário da base — nenhum `bench` foi apontado para o
