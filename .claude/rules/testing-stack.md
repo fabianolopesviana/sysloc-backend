@@ -13,7 +13,8 @@ paths:
 
 # Stack de Teste do Projeto
 
-> Gerada por `agent-spec-testing-stack-bootstrap` em 2026-07-31. Atualize via a mesma skill.
+> Gerada por `agent-spec-testing-stack-bootstrap` em 2026-07-31, **enriquecida em 2026-08-16**.
+> Atualize via a mesma skill.
 > Fonte de verdade de stack para os agentes de QA — eles não carregam idiomas de linguagem nenhuma; tudo que é específico deste projeto vive aqui.
 
 ## Identificação
@@ -21,6 +22,7 @@ paths:
 - **Linguagens**: TypeScript 7.0.2 (código de aplicação) · Bash (infraestrutura e instalação)
 - **Runtime**: Node 24.18.1, fixado em `.mise.toml`
 - **Gerenciador de pacotes**: pnpm 11.18.0 (monorepo com Turborepo 2.10.7)
+- **Runner**: Vitest 4.1.10 — declarado na raiz; cada pacote traz o próprio `vitest.config.ts`, e a raiz só declara quem participa
 - **Frente**: backend. Sem UI, sem mobile.
 
 ## As duas frentes de teste — leia antes de decidir onde um teste mora
@@ -30,11 +32,16 @@ Este projeto testa em **duas linguagens, com propósitos disjuntos**. Confundi-l
 | Frente | Objeto sob teste | Runner |
 |---|---|---|
 | **Shell** | O que só existe fora do processo Node: pacotes instalados no SO, unidades systemd, portas, permissão de arquivo, idempotência de script, higiene de segredo na árvore versionada | `bash`, sem framework |
-| **TypeScript** | Código de aplicação: regra de domínio, rota HTTP, processador de fila, contrato de erro | Vitest (chega em T4 da F0) |
+| **TypeScript** | Código de aplicação: regra de domínio, rota HTTP, processador de fila, contrato de erro | Vitest |
 
 **Critério**: se o invariante só é observável inspecionando o sistema operacional, o git ou o filesystem, é shell. Se é observável chamando código, é Vitest. Um teste de shell que poderia ser Vitest está no lugar errado — e o contrário também.
 
-> **Estado em 2026-07-31**: a frente shell existe e tem 4 verificadores versionados. A frente TypeScript está **declarada e ainda não instalada** — `pnpm test` resolve para `turbo run test` e nenhum pacote declara a tarefa `test` porque `apps/` e `packages/` estão vazios. Isso é esperado até T4, não defeito. **O QA não deve reportar `discovery_needed` por causa disso**: a stack está decidida, só não materializada.
+> **As duas frentes estão materializadas.** Todo pacote do workspace declara a tarefa `test`, e os
+> verificadores de shell vivem em `deploy/scripts/<área>/verificar-<alvo>.sh`. **Não presuma
+> contagem**: o número de casos e de verificadores muda a cada fatia, e um total escrito aqui
+> apodrece na seguinte. Meça quando precisar — `pnpm --filter @sysloc/<pacote> test` por pacote (o
+> `turbo run test` **aborta os pacotes irmãos** quando um falha, e a saída agregada não carrega
+> contagem confiável dos interrompidos), e `ls deploy/scripts/*/verificar-*.sh` para a frente shell.
 
 ## Frameworks de teste por camada
 
@@ -120,20 +127,40 @@ Este projeto testa em **duas linguagens, com propósitos disjuntos**. Confundi-l
 
 **Camadas que DEVEM atravessar fronteira real**: repositório, rota HTTP, processador de fila, e todo verificador de infraestrutura.
 
-**Mock**: evitado por decisão. Nesta fatia mock não prova recuperação, persistência nem idempotência — as três coisas que a F0 existe para provar. Quando um dublê for inevitável, asserte argumentos e número de chamadas, nunca apenas "foi chamado".
+**Mock**: evitado por decisão, e a medição mostra que a decisão pegou — o dublê existe em **um** arquivo de suíte. Não presuma esse número: a conta se refaz em uma linha.
+
+```bash
+grep -rlnE --include='*.spec.ts' --exclude-dir=dist 'vi\.(mock|fn|spyOn|useFakeTimers|setSystemTime)' apps packages
+```
+
+A razão original vale além da F0, que é onde ela foi escrita: mock não prova recuperação, persistência nem idempotência — justamente as propriedades que as camadas de fronteira real existem para provar. Quando um dublê for inevitável, asserte argumentos e número de chamadas, nunca apenas "foi chamado".
 
 ## ADRs de teste grep-detectáveis
 
 - **ADR-0006** (a suíte nunca executa contra o ambiente que atende a operação): o helper de banco efêmero **ignora `process.env.DATABASE_URL` por construção**. Grep: `process\.env\.DATABASE_URL` em `packages/*/test/**` e `apps/*/test/**` — qualquer ocorrência num helper de fixture é violação. A prova positiva é um caso que exporte `DATABASE_URL` apontando para destino impossível e demonstre que a suíte subiu a instância efêmera assim mesmo.
 - **ADR-0006** (imposição em shell): verificador que reinicie serviço ou reexecute provisionamento consulta `recusar_bateria_em_producao` antes do primeiro caso. Grep: presença do guarda no `main` de `deploy/scripts/instalacao/verificar-*.sh`.
 - **ADR-0005** (nenhum script carrega credencial): grep `set[[:space:]]+-x` = 0 e `(--password[= ]|--dbpassword[= ]|PGPASSWORD=)` = 0 em `deploy/scripts/**/*.sh`. Segredo trafega por **entrada padrão** ou arquivo 0600 (`PGPASSFILE`) — **nunca** por `argv`, nunca por variável exportada.
-- **ADR-0007** (forma canônica do contrato da API): o corpo de erro asserido nos testes de rota corresponde **literalmente** ao envelope da ADR — asserte o objeto inteiro, não a presença de campos.
+- **ADR-0017** (forma canônica do contrato, três classes de chave): o corpo de erro asserido nos testes de rota corresponde **literalmente** ao envelope da ADR — `{ codigo, mensagem, campo?, detalhes? }`, com `codigo` de enum fechado, sobre status HTTP semântico. Asserte o **objeto inteiro**, nunca a presença de campos. A forma vai reproduzida aqui de propósito: a ADR da forma do contrato já foi substituída duas vezes, e um ponteiro sozinho passa a apontar para texto morto a cada elo da cadeia — sem que quem lê a rule descubra que precisa resolvê-la.
+- **ADR-0032** (segredo operável de terceiro não retorna por superfície alguma): a `Decision` é literal quanto ao **método**, e não apenas quanto ao fato — a ausência de vazamento é afirmada por **medição da saída real**, nunca por leitura do código. Não há grep que a prove; o que se grepa é a **violação do método**: asserção de não-vazamento que inspecione o fonte em vez de varrer o que saiu. A forma canônica está em `apps/api/test/segredo-nao-escapa.e2e.spec.ts` (corpo de resposta, corpo de erro, arquivo de diário do processo, documento publicado e estado em repouso no banco) e em `packages/shared/test/segredo-operavel.spec.ts` (as três serializações do invólucro). ⚠️ **Toda varredura carrega controle positivo** — a mesma função aplicada a um objeto onde as agulhas foram plantadas canal a canal, com a lista de achados afirmada por igualdade. Sem ele, a varredura que nunca acha nada aprovaria um produto vazando tudo, que é o **AP-29** (`tautological_assertion`).
+
+## Rules irmãs que o QA carrega junto
+
+Duas rules do host alcançam diretamente como um teste afirma, e não se duplicam aqui:
+
+- `.claude/rules/ancoras-de-superficie.md` — superfície publicada se afirma por **igualdade de conjunto** com controle antivácuo, nunca por contenção; a âncora nasce no **mesmo diff** da publicação, e a §5.2 da task declara os arquivos-âncora que vão crescer.
+- `.claude/rules/contrato-publicado.md` — entrada fechada (`z.strictObject`), saída aberta (`z.object`); a direção decide a estritude.
+
+Ponteiro, e não cópia: as duas são rules vivas deste repositório, sem cadeia de supersede — diferente do envelope da ADR-0017 acima, reproduzido de propósito porque a ADR dele já foi substituída duas vezes.
 
 ## Política de qualidade
 
-### Cobertura — **não é sinal neste projeto**
+### Cobertura — **medida, sem bloquear** (decisão de 2026-08-16)
 
-Não medimos nem bloqueamos. O gate julga por **rastreabilidade `CA → CT`** e **qualidade de asserção** — que é o que os gates efetivamente usaram para reprovar cinco vezes na F0. Cobertura mede quantidade; 80% com asserção fraca passa, e foi asserção fraca que produziu todos os defeitos reais deste projeto até aqui.
+⚠️ **Decidida, ainda não instrumentada.** Não existe provider de cobertura no repositório hoje: nenhum `@vitest/coverage-*` nos dez manifests, nenhuma chave `coverage` no `vitest.config.ts`. Materializar exige acrescentar `@vitest/coverage-v8` e invocar `--coverage`. **Até lá o número não existe, e o Gate 1 não deve reportá-lo nem cobrá-lo** — ausência de cobertura não é `discovery_needed` nem achado.
+
+Quando existir, a cobertura é **informativa e nunca bloqueia**: nenhum piso reprova task. A razão de não bloquear é medida e não mudou com esta decisão — o gate julga por **rastreabilidade `CA → CT`** e **qualidade de asserção**, que é o que os gates efetivamente usaram para reprovar cinco vezes na F0. Cobertura mede quantidade; 80% com asserção fraca passa, e foi asserção fraca que produziu todos os defeitos reais deste projeto até aqui.
+
+E ela **não alcança a frente shell**, que é metade da suíte: um número alto segue compatível com verificador de infraestrutura sem asserção nenhuma. Ler cobertura como saúde da verificação, aqui, mede metade e conclui sobre o todo.
 
 ### Prova de falsificação — **obrigatória para asserção estática**
 
@@ -153,51 +180,77 @@ Asserção **comportamental** (exercita o SUT e observa resultado) não exige a 
 
 #### Como invocar a suíte durante a prova — **a escolha do comando decide a validade**
 
-> **Todo mutante sobre fonte de `packages/*` roda pelo script `test` do pacote consumidor:**
-> `pnpm --filter @sysloc/<pacote> test` (que é `tsc --build && tsc -p tsconfig.test.json && vitest run`),
-> ou `pnpm test` para a suíte inteira. **`vitest run` avulso é INVÁLIDO para trabalho de mutante** e
-> não deve ser usado para concluir nada sobre sobrevivência.
+> **Toda prova de falsificação sobre fonte de `packages/*` roda pelo script `test` do pacote
+> consumidor:** `pnpm --filter @sysloc/<pacote> test` (que é
+> `tsc --build && tsc -p tsconfig.test.json && vitest run`), ou `pnpm test` para a suíte inteira.
+> **`vitest run` avulso é INVÁLIDO para concluir qualquer coisa sobre uma prova de falsificação.**
 
-A razão é o modo de falha, que é silencioso e **inverte a conclusão**: verde lido como *"o mutante
-sobreviveu"* quando o mutante nunca foi executado.
+A razão é o modo de falha, que é silencioso e **inverte a conclusão**: verde lido como *"a asserção
+não pega o defeito"* quando o defeito reintroduzido nunca chegou a ser executado.
 
-Os quatro pacotes resolvem `"."` por `exports` para `./dist/index.js`. Uma suíte que carregue o SUT
-**pela fronteira do pacote** (`from '@sysloc/auth'`) continua lendo o `dist/` da compilação anterior
-quando invocada por `vitest run` avulso — o mutante fica no fonte e não alcança o que executa.
+**Sete dos nove pacotes** resolvem `"."` por `exports` para `./dist/index.js` — todos os de
+`packages/` (`auth`, `cobranca-bancaria`, `contracts`, `db`, `documentos`, `regua`, `shared`); só
+`apps/api` e `apps/worker` não publicam `exports`. Uma suíte que carregue o SUT **pela fronteira do
+pacote** (`from '@sysloc/auth'`) continua lendo o `dist/` da compilação anterior quando invocada por
+`vitest run` avulso — o defeito fica no fonte e não alcança o que executa.
 
-**O discriminador é COMO a suíte carrega o SUT, não onde o mutante foi aplicado** — e por isso a
-regra é "sempre pelo script", em vez de um julgamento caso a caso. As duas medições que a fixam,
+**O discriminador é COMO a suíte carrega o SUT, não onde o defeito foi reintroduzido** — e por isso
+a regra é "sempre pelo script", em vez de um julgamento caso a caso. As duas medições que a fixam,
 ambas feitas neste repositório:
 
-| Mutante | Como a suíte carrega | `vitest run` avulso | Script `test` do pacote |
+| Defeito reintroduzido | Como a suíte carrega | `vitest run` avulso | Script `test` do pacote |
 |---|---|---|---|
 | `RESTRICOES_DE_SESSAO` invertida (`packages/auth/src/admissao.ts`) | `apps/api/test/sessao-restrita.spec.ts` lê `@sysloc/auth` | **10 passed — falso negativo** | reprova em `CT-105` |
 | `COMPRIMENTO_MINIMO_DE_SENHA` 10→3 (`packages/auth/src/senha.ts`) | `packages/auth/test/senha.spec.ts` lê `../src/senha.ts` | reprova (2 casos) | reprova (2 casos) |
 
 A segunda linha é o contraexemplo que impede a leitura errada da primeira: quando a suíte importa o
-fonte por caminho relativo, o mutante alcança mesmo sem build. **Não conte com isso**, por duas
-razões medidas:
+fonte por caminho relativo, o defeito reintroduzido alcança mesmo sem build. **Não conte com isso**,
+por duas razões medidas:
 
 - **A forma de carregar não se lê no arquivo de teste.** `packages/auth/test/recusa-nao-credencial.spec.ts`
   importa apenas `@sysloc/db` diretamente, e ainda assim alcança o fonte de `@sysloc/auth` — porque o
-  acessório `identidade-efemera.ts` importa `../src/autenticacao.ts`. Um mutante em
+  acessório `identidade-efemera.ts` importa `../src/autenticacao.ts`. Um defeito reintroduzido em
   `packages/auth/src/autenticacao.ts` reprova ali nos dois caminhos. **Apurar isso exige seguir a
   cadeia de acessórios**, e é trabalho que a regra "sempre pelo script" torna desnecessário.
 - **A exposição é por DIREÇÃO, não por arquivo.** O que atravessa `dist/` é o consumo
-  *cross-package*: `apps/api/test/**` alcança `@sysloc/auth` e `@sysloc/db` só pela fronteira, e
-  `packages/auth/test/**` alcança `@sysloc/db` pela fronteira. Nessas direções, mutante sem build
-  não chega.
+  *cross-package*, e ele hoje alcança **oito dos nove** pacotes — só `packages/regua/test/**` não
+  importa irmão algum pela fronteira. Inclusive `packages/shared/test/**` consome `@sysloc/shared`,
+  isto é, **um pacote alcança o próprio fonte por `dist/`**. Nessas direções, defeito reintroduzido
+  sem build não chega. **Não presuma a matriz** — ela muda a cada fatia, e se refaz em uma linha:
+
+```bash
+for d in apps/*/test packages/*/test; do
+  echo "$d -> $(grep -rho "from '@sysloc/[a-z-]*'" --include='*.ts' --exclude-dir=dist "$d" | sort -u | tr '\n' ' ')"
+done
+```
 
 Numa fatia cujo eixo é segurança, **prova inconclusiva é pior que prova ausente — ela consta como
 feita.**
 
-### Mutation testing — sem ferramenta, com método
+### Mutation testing — **fora da stack** (decisão de 2026-08-16)
 
-Não adotamos Stryker nem equivalente: não alcançaria os verificadores em shell, que são metade da suíte. O **método** de mutante manual descrito acima é a forma canônica, e cobre as duas frentes.
+Não faz parte da stack de teste deste projeto: sem ferramenta, sem score, e **não se pede campanha
+de mutantes** em task nem em gate. A linha existe para dizê-lo explicitamente, porque a doutrina do
+framework (`agent-spec-testing-best-practices`, padrão nº 11) lista mutation score como padrão —
+aqui ele **não se aplica**, e o Gate 1 não deve cobrá-lo.
 
-### Flaky — sem retry, correção imediata
+⚠️ **Isto não alcança a prova de falsificação acima**, que segue **obrigatória**. Ela é escopada a um
+defeito conhecido numa asserção estática, e o **P4** de `.claude/rules/nao-regressao.md` a exige de
+todo defeito corrigido — protocolo que prevalece sobre esta rule. O que sai é o *score* e a
+*campanha*; o que fica é a prova que fecha um defeito.
 
-**Nenhum mecanismo de retry automático**, em nenhuma das frentes. Teste instável é defeito: para a fila até ser corrigido ou removido com justificativa registrada.
+Registros históricos de mutantes — commits `c0453d2` e `79d17f2`, e os relatórios de `_run/` — são
+registro e **não se reescrevem**.
+
+### Espera e determinismo — **convenções vinculantes**
+
+> **Sem política formal de flaky/quarentena** (decisão de 2026-08-16). Não há disposição sobre retry
+> automático, SLA de quarentena ou dono nomeado: o tratamento de um caso instável é decidido caso a
+> caso por quem o encontra.
+
+As três convenções abaixo **continuam vinculantes**. Elas não são política de flaky — são exigências
+de determinismo, e o código as cita pelo nome (`apps/api/src/comum/produtor-de-fila.ts`,
+`apps/worker/test/eco.spec.ts`):
 
 - Espera por estado observável é feita por **sondagem com limite de tempo declarado**, nunca por `sleep` fixo.
 - Todo limite de tempo é constante nomeada no topo do arquivo, não número mágico no meio do caso.
@@ -208,7 +261,24 @@ Não adotamos Stryker nem equivalente: não alcançaria os verificadores em shel
 | Eixo | Escolha | Alternativas consideradas | Origem |
 |---|---|---|---|
 | 1 · Base de execução | Node 24.18.1 + pnpm 11.18.0 + TS 7.0.2; bash para infraestrutura | fixar só o runtime sem o gerenciador; usar `npm`/`yarn` | `[derivado]` — `.mise.toml`, `package.json` |
-| 2 · Frameworks por camada | Vitest + `embedded-postgres` (declarado, chega em T4); shell com convenção própria (existe) | Jest; Node test runner nativo | `[derivado]` — `CLAUDE.md`, `decisao-e-stack.md` §4, 4 verificadores versionados |
+| 2 · Frameworks por camada | Vitest 4.1.10 + `embedded-postgres`; shell com convenção própria | Jest; Node test runner nativo | `[derivado]` — `CLAUDE.md`, `decisao-e-stack.md` §4; **materializado** nos 9 pacotes e em `deploy/scripts/*/verificar-*.sh` |
 | 3 · Comando & convenções | `pnpm test` → `turbo run test`; `test/` por pacote, `*.spec.ts`; `verificar-*.sh` com um bloco por `CT-NNN` | co-localizar testes com `src/`; `__tests__/` | `[derivado]` — `package.json`, specs de T4/T5/T6, precedentes em `deploy/scripts/` |
 | 4 · Fronteira de execução real | Instância efêmera própria (banco e fila) + HTTP real + sandbox descartável no shell | in-memory/sqlite; real só no gate final | `[derivado]` — ADR-0006, scope §3.6 |
-| 5 · Política de qualidade | Sem cobertura · falsificação obrigatória para asserção estática · sem retry em flaky · mutação por método manual | cobertura bloqueante com mínimo; quarentena com SLA; Stryker bloqueante | `[usuário]` |
+| 5 · Política de qualidade | Cobertura medida sem bloquear · falsificação obrigatória para asserção estática · sem política formal de flaky · **mutation testing fora da stack** | cobertura bloqueante com mínimo; quarentena com SLA e dono; Stryker informativo ou bloqueante | `[usuário]` — revisto em 2026-08-16 |
+
+### Enriquecimentos posteriores
+
+> Acrescenta, não substitui: a tabela acima guarda a escolha de cada eixo; esta guarda o que mudou
+> depois e por quê. Estados conforme a Fase E da skill (`vazio` · `stale` · `novo sinal` · `coerente`).
+
+| Data | Campo | Estado | O que mudou |
+|---|---|---|---|
+| 2026-08-16 | Eixo 2 · auditoria | `stale` | *"declarado, chega em T4"* e *"4 verificadores"* eram a foto de 2026-07-31; hoje são 9 pacotes com tarefa `test` e 8 verificadores |
+| 2026-08-16 | Eixo 4 · pacotes com `exports` | `stale` | **quatro → sete**; a exposição por direção deixou de ser enumerada e passou a ter comando que a remede |
+| 2026-08-16 | Eixo 4 · mock | `stale` | *"nesta fatia … a F0"* substituído pela razão permanente mais o comando de medição |
+| 2026-08-16 | Eixo 5 · cobertura | `[usuário]` | *não é sinal* → **medida sem bloquear**; registrada a ausência de instrumentação |
+| 2026-08-16 | Eixo 5 · mutation testing | `[usuário]` | método manual → **fora da stack**, com a ressalva de que não alcança a prova de falsificação (P4) |
+| 2026-08-16 | Eixo 5 · flaky | `[usuário]` | sai a disposição de retry/quarentena; ficam as três convenções de determinismo que o código cita |
+| 2026-08-16 | ADRs grep-detectáveis | `novo sinal` | entra a **ADR-0032** — método de medição da saída real e controle positivo obrigatório |
+| 2026-08-16 | Rules irmãs | `novo sinal` | ponteiro para `ancoras-de-superficie.md` e `contrato-publicado.md` |
+| 2026-08-16 | `paths` | `coerente` | matcher já era código + testes do host + skills de QA; intocado |
