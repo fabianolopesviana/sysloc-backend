@@ -444,6 +444,7 @@ o precedente são os CT-533, CT-635 e CT-732.
 - **Risco de produto / aceitação**: o webhook é o caminho normal de baixa, mas o Sicoob **não autentica** a notificação (rodada 5b, LACUNA 1). → **Mitigação**: decisão 20 (a API é a verdade) + decisão 21 (descartar sem chamar a API o que não casa) + segredo opaco no caminho — as três cláusulas da ADR candidata do ramo B.
 - **Risco de escopo**: a fase é 6,6× a régua e tem três peças que não existem em lugar nenhum. → **Mitigação**: partição A3, com a fatia mais arriscada (iii) por último e dependente das duas anteriores.
 - **Risco técnico**: a **§8.1 continua em aberto** — se o `seuNumero` de 18 caracteres truncar na API, **a decisão 24 precisa ser revista antes da fase**, porque ele é a chave de roteamento. M5 mostra que o banco **não responde** isso. → **Mitigação**: consultar um boleto real pela API antes de a fatia (ii) começar (`[DÚVIDA] 1`).
+  - ⚠️ **SUPERADO em 2026-08-16 — não cite o item acima sem ler a §13-A.1.** A mitigação foi executada: o `seuNumero` retorna **íntegro** (3/3, igualdade exata), a decisão 24 **se sustenta** e este risco **não se materializou**. O item fica preservado como registro do que se sabia em 2026-08-14. ⚠️ **O risco datado que ocupa o lugar dele é outro** — o **certificado A1 vence em 2026-08-22** (§13-A.2), e esse tem prazo.
 - **Risco operacional**: a borda pública toca 80/443, hoje do CloudPanel, com o Frappe atendendo a operação. → **Mitigação**: vhost aditivo só para o caminho da notificação; reverter é remover a entrada.
 - **Risco de privacidade / segurança**: primeiro segredo de **terceiro** que o produto guarda, colocado perto da maquinaria que já vazou segredo por `err.command.args` na 2b. E o `payload_recebido` carrega **dado pessoal do pagador** (nome, documento, endereço). → **Mitigação**: prova por **medição** de que nada alcança caminho não redigido; a não-exposição das notificações recusadas por rota (C-2); e RLS forçada em tudo que é roteado.
 - **Risco de método**: prescrição de gate **é hipótese, não ordem** — precedente da 2b, onde o executor divergiu declarando e medindo por três vezes e nas três o gate lhe deu razão.
@@ -458,6 +459,82 @@ o precedente são os CT-533, CT-635 e CT-732.
 3. `[DÚVIDA]` **A homologação segue válida por data?** Confirmar a validade do certificado e das credenciais por data de expiração, não por memória.
 4. `[DÚVIDA]` **A borda pública: qual vhost e qual caminho?** Decisão operacional a fechar no início da fatia (iii) — qual hostname atende, e se o D24 fecha ou apenas dispara.
 5. `[DÚVIDA]` **Onde os bytes do boleto moram no filesystem**, com que política de expurgo, e o que a instalação do zero precisa provisionar (o D39, da F1, já sinaliza que o provisionamento tem lacuna).
+
+---
+
+## 13-A. EMENDA de 2026-08-16 — desfecho medido das dúvidas 1 e 3
+
+> **O texto da §13 acima está preservado byte a byte**, no molde das emendas das ADRs 0001, 0017,
+> 0021 e 0024. Esta seção **não o corrige** — ela registra o que a medição respondeu, e é vinculante
+> sobre a §13 onde as duas divergirem. Autorizada pelo usuário em 2026-08-16, antes da abertura do
+> PRD da fatia (ii).
+>
+> **Por que a emenda mora aqui, e não só no PRD da fatia (ii):** este arquivo é o discovery que as
+> fatias (ii) **e (iii)** abrem, e a §12 declara a `[DÚVIDA] 1` bloqueante. Registrada só no PRD da
+> (ii), a fatia (iii) leria a dúvida ainda em aberto — que é o mecanismo de *premissa herdada por
+> citação* documentado na §6.3 do `run-report.md` da `fundacao-bancaria`, e que ali custou duas fases.
+
+### 13-A.1 · `[DÚVIDA] 1` — **RESOLVIDA. O `seuNumero` de 18 caracteres retorna ÍNTEGRO.**
+
+Sonda de **leitura pura** contra a API de produção do Sicoob (`GET /cobranca-bancaria/v3/boletos`),
+sob mTLS com o certificado da configuração existente, token `client_credentials` — **sem escrita**
+no Frappe (o caminho `consultar_boleto_sicoob` foi **evitado** justamente porque faz `db_set` +
+evento + `commit`) e sem alteração no provedor.
+
+| Cobrança | `seu_numero` gravado | `seuNumero` retornado | len | Íntegro |
+|---|---|---|---|---|
+| COB-2026-0000054 | `202605000000000031` | `202605000000000031` | 18 | ✅ |
+| COB-2026-0000047 | `202605000000000024` | `202605000000000024` | 18 | ✅ |
+| COB-2026-0000057 | `202607000000000037` | `202607000000000037` | 18 | ✅ |
+
+`HTTP 200` nos três; igualdade **exata**, sem truncamento, sem preenchimento, sem reordenação. Os
+**14** boletos já emitidos no legado têm `seu_numero` de largura **18** — a distribuição medida é
+`[(18, 14)]`, sem nenhuma outra largura.
+
+**Consequência:** a **decisão 24** (roteamento por `seu_numero`) **se sustenta**, e o gatilho de
+*upgrade* da §15.5 que dependia de truncamento **não disparou**. A fatia (ii) abre sem redesenho.
+
+⚠️ **Alcance da prova — não a escreva mais larga do que ela é.** Isto prova o **caminho de
+consulta**. **Não** prova o payload do **webhook**, que é a superfície onde a decisão 24 de fato
+roteia, é da fatia (iii), e permanece inauditável: a **M4** mediu `origem_evento = api` em 100% dos
+1.864 eventos — o webhook nunca recebeu tráfego. A fatia (iii) trata isso como pergunta ainda aberta.
+
+### 13-A.2 · `[DÚVIDA] 3` — **RESPONDIDA, e o desfecho é ADVERSO.**
+
+O certificado A1 em uso **vence em 2026-08-22 19:17 UTC** — **6 dias** após esta medição.
+
+| Atributo | Valor medido |
+|---|---|
+| Titular | `CN=TECHTEL TECNOLOGIA EM TELECOMUNICACOES LTDA:07719758000123` |
+| Emissor | `CN=AC DIGITAL MULTIPLA G1, OU=AC DIGITAL MAIS, O=ICP-Brasil, C=BR` |
+| Vigência | 2025-08-22 → **2026-08-22** |
+| Senha da configuração abre o arquivo | sim |
+| Token `client_credentials` | `HTTP 200`, scope concedido = scope pedido |
+
+⚠️ **Isto refuta a premissa em vigor.** O `plano-execucao.md` §F4 e a §F4 do `roadmap.md` afirmam que
+*"certificado e credenciais seguem válidos"* — verdadeiro na data em que foi escrito, e com **prazo**.
+**Decisão do usuário em 2026-08-16:** assumir a renovação do A1 e tratar o vencimento como **risco
+datado** no PRD da fatia (ii), que segue o plano — inclusive com chamada real ao provedor onde ela
+for a única prova possível.
+
+### 13-A.3 · Duas premissas colaterais que a medição refutou
+
+1. **Existe UMA configuração, não duas.** A §13.1 fala em *"uma das 2 configurações existentes"*;
+   `tabConfiguracao Integracao Sicoob` tem **1** registro (`2dd758f872`).
+2. **A integração está DESLIGADA em produção desde 2026-07-21.** O registro está com `ativo = 0`, e o
+   certificado foi renomeado para `certificado.bak` — o `pfx_path` gravado aponta para
+   `certificado.pfx`, **que não existe**. A sonda só funcionou apontando para o `.bak` explicitamente.
+   Nenhuma das duas coisas foi alterada por esta medição.
+
+### 13-A.4 · Dados de desenho para a fatia (ii), colhidos de brinde
+
+- **O token expira em 300 s** (5 min). Pesa diretamente no pool por empresa e na estratégia de cache.
+- **A resposta vem envelopada em `resultado`** — o corpo útil não está na raiz.
+- **`nossoNumero` retorna como INTEIRO** no JSON, não como texto. O contrato Zod da fatia (ii) precisa
+  coagir na fronteira em vez de supor `string`.
+- **Existe um campo `identificacaoBoletoEmpresa`**, que retornou **25 espaços** em todos os três. É
+  vizinho semântico do `seuNumero` e **não deve ser confundido com ele** no mapeamento — é ele, e não
+  o `seuNumero`, o candidato natural a truncar.
 
 ---
 
