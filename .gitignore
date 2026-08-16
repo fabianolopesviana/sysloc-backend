@@ -67,3 +67,11 @@ packages/db/*-falsificad*.mjs
 # segunda barreira, para invocação de python feita fora dele.
 __pycache__/
 *.pyc
+
+# Relatórios de mineração de candidatos a regra, gerados por
+# `/agent-spec-mine-rule-candidates`. São INSUMO regenerável: o que importa é o
+# que sobrevive ao teste de fricção da `/agent-spec-curate-project-rules` e vira
+# regra em `.claude/rules/` ou no `CLAUDE.md`. Versioná-los acrescentaria
+# artefato derivado à árvore, contra a mesma convenção que mantém a saída de run
+# em `_run/`.
+docs/specs/.rule-mining/
