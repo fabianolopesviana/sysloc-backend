@@ -1312,6 +1312,25 @@ interface ParDoProvedor {
   zerar(): void;
 }
 
+// DÉBITO COM GATILHO — D63 · F4/fechamento · registrado 2026-08-16
+// (Marcador de DÉBITO, não de decisão: nada aqui está congelado. Ele diz o que falta, não o que
+//  não se pode tocar.)
+// O QUÊ: os acessórios de arranjo das suítes E2E desta aplicação não têm casa única — cada suíte
+//        nova os REDECLARA. Medido em 2026-08-16 sobre `apps/api/test/*.e2e.spec.ts`: `pedir` em
+//        **24 de 24** suítes, `entrar` em 22, `conceder` em 9, `credencialDeSessao` em 7. Não é
+//        divergência de estilo: endurecer um deles — um cabeçalho novo, um tempo-limite, a redação
+//        de uma credencial — deixa as outras 23 cópias para trás, em silêncio.
+// QUANDO FECHA: a **próxima suíte E2E** que precisar destes acessórios. Ali eles descem para uma
+//        casa compartilhada em `apps/api/test/` e as suítes passam a importá-los, em vez de a
+//        vigésima quinta cópia nascer. Fechar exige tocar as 24 suítes de uma vez, com a própria
+//        suíte como rede — por isso o gatilho é a próxima que os consumir, e não "algum dia".
+// POR QUE NÃO AGORA: a casa **não existe**, e criá-la é refatoração de 24 arquivos de teste, fora
+//        do escopo de qualquer fatia aberta. Sem ela, uma regra que mandasse importar apontaria
+//        para lugar nenhum — foi por isso que a curadoria de 2026-08-16 recusou transformar este
+//        achado em regra de projeto e o registrou como débito: o `.claude/rules/` não deve conter
+//        instrução que o repositório ainda não permite cumprir.
+// ÍNDICE: docs/specs/features/fundacao-bancaria/v1/_run/run-report.md §2, D63
+
 /**
  * Gera um material com a validade relativa pedida, pela autoridade descartável **do caso**.
  *
