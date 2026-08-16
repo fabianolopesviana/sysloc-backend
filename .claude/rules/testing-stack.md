@@ -156,9 +156,13 @@ Ponteiro, e não cópia: as duas são rules vivas deste repositório, sem cadeia
 
 ### Cobertura — **medida, sem bloquear** (decisão de 2026-08-16)
 
-⚠️ **Decidida, ainda não instrumentada.** Não existe provider de cobertura no repositório hoje: nenhum `@vitest/coverage-*` nos dez manifests, nenhuma chave `coverage` no `vitest.config.ts`. Materializar exige acrescentar `@vitest/coverage-v8` e invocar `--coverage`. **Até lá o número não existe, e o Gate 1 não deve reportá-lo nem cobrá-lo** — ausência de cobertura não é `discovery_needed` nem achado.
+**Instrumentada desde 2026-08-16**: `@vitest/coverage-v8` na raiz, configuração em `vitest.config.ts` (chave `test.coverage`), medição por **`pnpm coverage`** — que é `vitest run --coverage` na raiz e cobre os nove projetos de uma vez.
 
-Quando existir, a cobertura é **informativa e nunca bloqueia**: nenhum piso reprova task. A razão de não bloquear é medida e não mudou com esta decisão — o gate julga por **rastreabilidade `CA → CT`** e **qualidade de asserção**, que é o que os gates efetivamente usaram para reprovar cinco vezes na F0. Cobertura mede quantidade; 80% com asserção fraca passa, e foi asserção fraca que produziu todos os defeitos reais deste projeto até aqui.
+⚠️ **Ela não entra no `pnpm test`, de propósito.** `pnpm test` é a baseline que o P1/P5 do `.claude/rules/nao-regressao.md` mandam comparar antes e depois de cada edição; pendurar a instrumentação nela mudaria o custo e o comportamento do comando que existe justamente para não mudar. Quem quer o número o pede por nome.
+
+A cobertura é **informativa e nunca bloqueia**: **não há `thresholds` na configuração**, e a ausência é a decisão, não esquecimento — um piso ali reintroduziria pela configuração o critério que esta rule recusou por medição. Nenhum piso reprova task, e **o Gate 1 não deve cobrar cobertura nem tratá-la como achado**.
+
+Duas leituras que a configuração já barra, e que quem ler o número precisa saber: ela roda com **`all: true`**, para que o arquivo que nenhum caso importa entre na conta com 0% em vez de ficar fora dela — sem isso o número sobe por causa do que **não** é testado; e ela mede só `apps/*/src` e `packages/*/src`, com `dist/`, `test/` e configuração excluídos. A razão de não bloquear é medida e não mudou com esta decisão — o gate julga por **rastreabilidade `CA → CT`** e **qualidade de asserção**, que é o que os gates efetivamente usaram para reprovar cinco vezes na F0. Cobertura mede quantidade; 80% com asserção fraca passa, e foi asserção fraca que produziu todos os defeitos reais deste projeto até aqui.
 
 E ela **não alcança a frente shell**, que é metade da suíte: um número alto segue compatível com verificador de infraestrutura sem asserção nenhuma. Ler cobertura como saúde da verificação, aqui, mede metade e conclui sobre o todo.
 
@@ -277,6 +281,7 @@ de determinismo, e o código as cita pelo nome (`apps/api/src/comum/produtor-de-
 | 2026-08-16 | Eixo 4 · pacotes com `exports` | `stale` | **quatro → sete**; a exposição por direção deixou de ser enumerada e passou a ter comando que a remede |
 | 2026-08-16 | Eixo 4 · mock | `stale` | *"nesta fatia … a F0"* substituído pela razão permanente mais o comando de medição |
 | 2026-08-16 | Eixo 5 · cobertura | `[usuário]` | *não é sinal* → **medida sem bloquear**; registrada a ausência de instrumentação |
+| 2026-08-16 | Eixo 5 · cobertura | `[usuário]` | **instrumentada**: `@vitest/coverage-v8` na raiz, `pnpm coverage`, `all: true`, sem `thresholds` e fora do `pnpm test` |
 | 2026-08-16 | Eixo 5 · mutation testing | `[usuário]` | método manual → **fora da stack**, com a ressalva de que não alcança a prova de falsificação (P4) |
 | 2026-08-16 | Eixo 5 · flaky | `[usuário]` | sai a disposição de retry/quarentena; ficam as três convenções de determinismo que o código cita |
 | 2026-08-16 | ADRs grep-detectáveis | `novo sinal` | entra a **ADR-0032** — método de medição da saída real e controle positivo obrigatório |

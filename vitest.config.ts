@@ -43,5 +43,36 @@ export default defineConfig({
     // sem correspondência é tolerado; declará-lo agora evita uma edição de configuração
     // escondida no meio daquelas tasks.
     projects: ['packages/*/vitest.config.ts', 'apps/*/vitest.config.ts'],
+
+    // -----------------------------------------------------------------------------------------
+    // Cobertura — INFORMATIVA, e nunca bloqueante
+    // -----------------------------------------------------------------------------------------
+    //
+    // Mora aqui, e não no `vitest.config.ts` de cada pacote, porque com `projects` a cobertura é
+    // opção de RAIZ: declarada num projeto, ela é ignorada. É também o que dá um relatório único
+    // em vez de nove parciais que ninguém soma.
+    //
+    // Ela NÃO entra no script `test` de nenhum pacote, de propósito. `pnpm test` é a baseline que
+    // o Protocolo Antirregressão manda comparar antes e depois de cada edição; pendurar a
+    // instrumentação nela mudaria o custo e o comportamento do comando que existe para não mudar.
+    // A medição tem comando próprio: `pnpm coverage`.
+    //
+    // Não há `thresholds`, e a ausência é a decisão — não um esquecimento. A
+    // `.claude/rules/testing-stack.md` fixa que o gate julga por rastreabilidade `CA → CT` e
+    // qualidade de asserção; um piso de porcentagem aqui reintroduziria pela configuração o
+    // critério que a rule recusou por medição.
+    coverage: {
+      provider: 'v8',
+      // `text` para quem está no terminal, `html` para quem quer navegar arquivo a arquivo.
+      reporter: ['text', 'html'],
+      // Denominador honesto: sem isto, um arquivo que NENHUM caso importa fica fora da conta e o
+      // número sobe justamente por causa do que não é testado — que é o modo de mentir que a rule
+      // adverte. Com `all`, o arquivo sem teste aparece com 0%.
+      all: true,
+      // Só fonte de produção. `dist/` é build (espelharia o fonte e contaria duas vezes), `test/`
+      // é o instrumento de medida, e configuração não é comportamento.
+      include: ['apps/*/src/**/*.ts', 'packages/*/src/**/*.ts'],
+      exclude: ['**/dist/**', '**/node_modules/**', '**/*.config.ts', '**/*.d.ts'],
+    },
   },
 });

@@ -12,12 +12,14 @@
   "scripts": {
     "build": "turbo run build",
     "test": "turbo run test",
+    "coverage": "vitest run --coverage",
     "lint": "biome check . && pnpm lint:shell && turbo run lint",
     "lint:shell": "find deploy/scripts -name '*.sh' -print0 | xargs -0 -r shellcheck --severity=error",
     "dev": "mprocs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.6",
+    "@vitest/coverage-v8": "4.1.10",
     "turbo": "2.10.7",
     "typescript": "7.0.2",
     "vitest": "4.1.10"
