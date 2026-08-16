@@ -30,6 +30,31 @@ fala o modelo de domínio em camelCase; `status` é calculado no servidor, nunca
 resposta de sucesso vai no root, e lista retorna `{ itens, total, limite, deslocamento }`; o erro é
 status HTTP semântico mais `{ codigo, mensagem, campo?, detalhes? }`, com `codigo` de enum fechado.
 
+> **Emenda de 2026-08-16.** A referência *"o contador que a produz é governado pela ADR-0015"*
+> permanece acima como foi escrita, e **está desatualizada desde 2026-08-14**: a **ADR-0033**
+> superseded a 0015 naquela data. **A decisão não mudou** — mudou o alvo do ponteiro, e o lugar onde
+> ele precisava ser corrigido:
+>
+> 1. **Leia `ADR-0015` acima como `ADR-0033`.** A 0033 fixa que **cada série declara o próprio
+>    escopo** — contrato e cobrança em `(empresa, ano)`, o identificador perante o provedor pelo
+>    **SaaS** —, com furo aceito e número nunca reusado. A cláusula que esta `Decision` de fato
+>    depende — *existe uma série declarada para a entidade, ou não existe* — sobrevive intacta à
+>    substituição, porque ela é sobre **haver** série, não sobre o escopo do contador.
+> 2. **Não "corrija" o contador bancário para ser por empresa** citando a 0015. Foi exatamente o
+>    quantificador universal dela (*"todo contador sequencial deste produto é único por empresa"*)
+>    que a série do provedor falsificou, e foi isso que motivou a substituição.
+> 3. **O número da ADR do contador é ponteiro, não conteúdo.** O que esta ADR decide é **quem expõe
+>    código legível**; o escopo do número é governado alhures, e essa fronteira é o que se preserva
+>    quando a outra cadeia avançar de novo.
+>
+> **Por que a emenda foi necessária, se a substituição já estava registrada**: ela estava — em
+> `Consequences → Neutros`, logo abaixo, e com a data certa. Mas a convenção deste repositório é que
+> **citar ADR exige abrir a `Decision`**, e era só a `Decision` que continuava nomeando a ADR morta.
+> Quem seguisse a regra de citação encontrava o ponteiro vencido e não tinha como saber que a
+> correção existia dois parágrafos adiante. É o mesmo vão que a emenda de 2026-08-15 da **ADR-0001**
+> fechou — lá a justificativa morava no tech spec e num docblock; aqui, na seção que o leitor de uma
+> citação não abre.
+
 ## Consequences
 
 **Pros:**
