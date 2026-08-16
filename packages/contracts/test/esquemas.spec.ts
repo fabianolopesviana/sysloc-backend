@@ -3789,16 +3789,28 @@ describe('CT-850 — LIMIAR_DE_VENCIMENTO_EM_DIAS tem definição única em todo
   ] as const;
 
   /**
-   * Os diretórios declarados que **ainda não nasceram** — hoje, só o pacote bancário, que a T8 cria.
+   * Os diretórios declarados que **ainda não nasceram** — hoje, **nenhum**.
    *
    * A ausência é **afirmada**, e não engolida: `listarFontesTs` levanta em diretório inexistente
    * justamente para que um `src/` renomeado não reduza a varredura a zero arquivos em silêncio, e
    * repetir aqui um `.catch(() => [])` reabriria esse buraco. A asserção abaixo é na direção que
    * preserva o invariante — **nenhum diretório fora desta lista pode estar ausente** —, de modo que
-   * (a) renomear `packages/db/src` ou `apps/api/src` reprova nomeando o culpado, e (b) o dia em que a
-   * T8 criar o pacote bancário ele entra na varredura **sozinho**, sem que ninguém precise lembrar.
+   * renomear qualquer um dos quatro reprova nomeando o culpado.
+   *
+   * ⚠️ **A lista vazia é o estado forte, e ela não deve voltar a crescer para acomodar um diretório
+   * que sumiu.** Cada entrada aqui é uma isenção viva: enquanto `packages/cobranca-bancaria/src`
+   * esteve nela — e ele permaneceu por toda a fatia que o CRIOU —, apagar aquele `src/` seria
+   * tolerado em silêncio e a varredura cairia de quatro diretórios para três sem nada acusar, que é
+   * exatamente o buraco que este desenho existe para fechar. Entrada só se justifica para diretório
+   * que ainda **não nasceu**, e sai no mesmo passo em que ele nascer.
    */
-  const DIRETORIOS_AINDA_INEXISTENTES = ['packages/cobranca-bancaria/src'] as const;
+  // SUT_IS_CORRECT_BECAUSE: a entrada saiu na intervenção dirigida de 2026-08-16, e o motivo é que
+  // ela já era FALSA — `packages/cobranca-bancaria/src` foi criado pela T8 desta mesma fatia, e a
+  // isenção sobreviveu ao fato que a justificava (é o débito `D29`, categoria `dead_code`). Nenhuma
+  // cobertura sai com ela: a varredura opera sobre `diretoriosPresentes()`, derivado do filesystem,
+  // de modo que o pacote bancário já vinha sendo varrido. O que sai é a tolerância morta, e a
+  // asserção fica ESTRITAMENTE mais forte.
+  const DIRETORIOS_AINDA_INEXISTENTES = [] as const;
 
   /** O único arquivo de produção que pode declarar o limiar. */
   const DONO_DO_LIMIAR = 'packages/contracts/src/integracao-bancaria.ts';

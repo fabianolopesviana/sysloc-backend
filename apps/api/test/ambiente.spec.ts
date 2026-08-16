@@ -421,39 +421,40 @@ function lerDoRepositorio(relativo: string): string {
 }
 
 /**
- * A variável exigida por este processo que **nenhuma** fonte de provisionamento entrega.
+ * As variáveis exigidas por este processo que **nenhuma** fonte de provisionamento entrega.
  *
- * É o `DÉBITO COM GATILHO — D39 · F1/fechamento`, aberto por decisão registrada: o provisionamento
- * não gera `BETTER_AUTH_SECRET`, e a `api` não sobe numa instalação do zero. Ele é declarado aqui
- * como **valor esperado**, e não filtrado do conjunto: é a testemunha que separa este caso de uma
- * tautologia — um detector que respondesse "provisionada" para tudo devolveria `[]` e reprovaria.
+ * **Hoje é o conjunto vazio, e essa é a afirmação forte do caso**: toda variável que a partida exige
+ * tem caminho de provisionamento. A constante permanece — em vez de o caso comparar contra `[]`
+ * literal — porque é ela que dá nome ao que está sendo afirmado e porque o dia em que uma exigência
+ * nova nascer sem provisionamento, a mensagem de falha a nomeia.
  *
- * ⚠️ Esta constante NÃO fecha o D39. Quando ele for fechado, o caso abaixo reprova, e a correção é
- * trocar o valor esperado por `[]` — **jamais** afrouxar a igualdade para `toContain`.
+ * ⚠️ **Ela nunca volta a crescer para "documentar" uma lacuna.** Uma exigência nova sem caminho de
+ * provisionamento é DEFEITO — o processo não sobe numa instalação do zero —, e a correção é ensinar
+ * o provisionador a entregá-la, jamais acrescentá-la aqui. Foi assim que o D39 ficou aberto por duas
+ * fases: a lista era o lugar onde a lacuna parecia registrada em vez de resolvida.
  */
-// SUT_IS_CORRECT_BECAUSE: a **T11** da fatia `fundacao-bancaria` acrescenta duas variáveis exigidas,
-// e a lista cresce por elas porque a MEDIÇÃO diz que nenhuma das duas tem caminho de
-// provisionamento. A medição foi feita por LEITURA dos dois scripts — `provisionar-base.sh` e
-// `verificar-provisionamento.sh` exigem `sudo` com senha interativa e não são executados por agente
-// algum deste pipeline —, e o que ela achou é literal: o bloco redirecionado para `${ARQ_AMBIENTE}`
-// do provisionador emite `DATABASE_URL`, `REDIS_URL`, `SMTP_URL`, `EMAIL_REMETENTE` e
-// `URL_BASE_DA_CONFIRMACAO`, e a unidade `sysloc-api.service` declara `NODE_ENV`, `PORT` e
-// `LOG_LEVEL` por `Environment=`. Nenhuma das duas novas aparece em nenhuma das duas fontes; as
-// duas passam a ser documentadas no `.env.example`, que é a outra metade da conjunção do detector.
+// SUT_IS_CORRECT_BECAUSE: a **intervenção dirigida de 2026-08-16** fechou o débito
+// `D39 · F1/fechamento` (o marcador saiu do provisionador no mesmo passo, e a linha saiu do índice
+// do `CLAUDE.md`), e a lista esvazia porque a MEDIÇÃO diz que as três
+// passaram a ter caminho de provisionamento — não por afrouxamento. O `provisionar-base.sh` agora
+// emite `BETTER_AUTH_SECRET`, `CHAVE_DE_CIFRA_DO_CERTIFICADO` e `ENDERECO_DO_PROVEDOR_BANCARIO` no
+// bloco redirecionado para `${ARQ_AMBIENTE}` (arquivo criado do zero) e as semeia por existência de
+// linha em `garantir_segredos_do_ambiente`/`garantir_chaves_de_conteudo` (arquivo preexistente),
+// gerando os dois segredos e NUNCA os regerando.
 //
-// O código de produção está certo: fechar o caminho de provisionamento exige tocar script com
-// privilégio, fora do que esta task pede, e é exatamente isso que o `D39` agenda — ele **cresceu**, e
-// a consequência do maior deles é pior que a do original: *sem `BETTER_AUTH_SECRET` ninguém entra;
-// sem a chave de cifra, nenhuma empresa cobra*.
+// A premissa que mantinha o débito aberto — *"a única prova possível é a bateria privilegiada"* — foi
+// **refutada por execução**: as funções do provisionador são carregáveis sem privilégio pelo idioma
+// que o `CT-647` do `verificar-provisionamento.sh` já usa (`eval` do corpo extraído por `sed`), e o
+// arquivo que elas produzem foi submetido ao validador REAL desta aplicação, que ACEITOU a partida
+// com `chaveDeCifraDoCertificado` de exatos 32 bytes. Dois mutantes fecham a classe pelo outro lado:
+// a chave gerada por `gerar_segredo` (alfanumérico de 32, que decodifica para 24 bytes) e a gerada
+// com recorte não-canônico são as duas RECUSADAS, nomeando a variável — é por isso que
+// `gerar_chave_de_cifra` existe separada, e não por estética.
 //
-// A asserção NÃO foi afrouxada — segue sendo `toEqual` sobre a lista inteira, e a lista continua
-// sendo a **testemunha medida** que separa este caso de uma tautologia. Trocá-la por `toContain`
-// seria regressão de prova (R2), e está proibido.
-const EXIGIDAS_SEM_PROVISIONAMENTO = [
-  'BETTER_AUTH_SECRET',
-  'CHAVE_DE_CIFRA_DO_CERTIFICADO',
-  'ENDERECO_DO_PROVEDOR_BANCARIO',
-];
+// A asserção NÃO foi afrouxada: segue sendo `toEqual` sobre o conjunto inteiro, e esvaziar o esperado
+// é a direção MAIS FORTE (de "estas três podem faltar" para "nenhuma pode"). Trocá-la por
+// `toContain` seria regressão de prova (R2), e continua proibido.
+const EXIGIDAS_SEM_PROVISIONAMENTO: readonly string[] = [];
 
 /** A variável que os mutantes desta seção acrescentam — nenhuma fonte real a entrega. */
 const SEXTA_EXIGENCIA = 'WEBHOOK_SICOOB_SEGREDO';
@@ -663,8 +664,10 @@ describe('CT-639 (T10 · CA-17) — a exigência de partida e o provisionamento 
   });
 
   it('CT-639 — as duas variáveis do transporte TÊM caminho de provisionamento', () => {
-    // A lista das culpadas, e não um booleano: quando reprovar, a mensagem nomeia a variável. E o
-    // valor esperado é a testemunha MEDIDA do D39, não `[]` — ver `EXIGIDAS_SEM_PROVISIONAMENTO`.
+    // A lista das culpadas, e não um booleano: quando reprovar, a mensagem nomeia a variável. O
+    // valor esperado é hoje o conjunto VAZIO — toda variável exigida tem caminho de provisionamento
+    // desde que o D39 foi fechado —, e o que impede isso de virar tautologia são as duas testemunhas
+    // positivas logo abaixo. Ver `EXIGIDAS_SEM_PROVISIONAMENTO`.
     expect(
       semCaminhoDeProvisionamento(exigidas, fonteDoProvisionador, fonteDaUnidade, fonteDoExemplo),
     ).toEqual(EXIGIDAS_SEM_PROVISIONAMENTO);

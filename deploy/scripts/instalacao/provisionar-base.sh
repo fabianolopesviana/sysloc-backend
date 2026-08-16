@@ -245,8 +245,10 @@ readonly UNIDADE_CAPTURADOR="sysloc-mailpit.service"
 # na partida, e a exigência recusa a subida quando a variável falta. Sem esta
 # constante o arquivo nasceria sem a chave numa instalação de máquina nova, a
 # unidade recusaria a partida nomeando a variável, o supervisor tentaria 5 vezes
-# e desistiria — o modo de falha exato que o `DÉBITO COM GATILHO — D39` descreve
-# e que respondeu por 11 das 14 falhas da bateria agregada da F0.
+# e desistiria — o modo de falha exato que o débito `D39 · F1/fechamento`
+# descrevia, e que respondeu por 11 das 14 falhas da bateria agregada da F0. (Ele
+# foi fechado em 2026-08-16; o modo de falha continua sendo a razão desta
+# constante existir.)
 #
 # Ela NÃO é segredo, e é por isso que tem valor PADRÃO declarado em vez de ser
 # gerada como a credencial do banco: é conteúdo de negócio. O domínio `.invalid`
@@ -275,6 +277,25 @@ readonly REMETENTE_PADRAO_DO_AVISO="avisos@sysloc.invalid"
 # partida dos serviços é recusada sem a linha, de modo que a troca não pode ser
 # esquecida em silêncio.
 readonly URL_BASE_PADRAO_DA_CONFIRMACAO="https://sysloc.invalid"
+
+# Endereço do provedor bancário contra o qual a identidade da empresa é
+# verificada — a sétima chave do arquivo de ambiente.
+#
+# CAUSA de existir: a T11 da fatia `fundacao-bancaria` fez a `api` EXIGIR
+# `ENDERECO_DO_PROVEDOR_BANCARIO` na partida. Ele vem do AMBIENTE e nunca do
+# corpo nem da sessão, e é essa origem que fecha a requisição forjada do lado do
+# servidor: nenhuma entrada de cliente decide para onde o produto conecta
+# apresentando o certificado de uma empresa.
+#
+# Ela NÃO é segredo — é um endereço —, e por isso tem valor PADRÃO declarado em
+# vez de ser gerada, pelo mesmo critério das duas chaves de conteúdo acima. O
+# domínio `.invalid` (RFC 6761) não resolve em lugar nenhum: o valor é
+# obviamente um substituto, e o endereço real do provedor é decidido quando a
+# empresa passa a cobrar de verdade. A FORMA não é conferida aqui nem na leitura
+# do ambiente — quem recusa o endereço que não serve é a construção do
+# adaptador, num lugar só —, de modo que este substituto não precisa satisfazer
+# nada além de existir.
+readonly ENDERECO_PADRAO_DO_PROVEDOR_BANCARIO="https://provedor.sysloc.invalid"
 
 readonly UNIDADE_BANCO="postgresql.service"
 
@@ -472,6 +493,22 @@ psql_consulta() {
 # codificação percentual viraria defeito silencioso no consumidor.
 gerar_segredo() {
 	head -c 96 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | cut -c1-32
+}
+
+# Gera a chave de cifra do certificado: 32 bytes CRUS em base64 canônico.
+#
+# ⚠️ Ela NÃO pode ser produzida por `gerar_segredo`, e a diferença não é estética.
+# O consumidor (`apps/api/src/configuracao/ambiente.ts`) DECODIFICA o valor e
+# exige `bytes.length === 32` — é a chave do AES-256-GCM, e um texto de 32
+# caracteres alfanuméricos decodifica para 24 bytes, que o esquema recusa na
+# partida. Ele exige ainda que a codificação seja CANÔNICA
+# (`bytes.toString('base64') === valor`), o que proíbe tanto o `tr -dc` (que
+# comeria `+`, `/` e o `=` de preenchimento) quanto qualquer recorte por `cut`.
+#
+# Por isso a saída de `base64` vai inteira, e só se remove a quebra de linha que
+# o próprio `base64` acrescenta — 32 bytes produzem exatamente 44 caracteres.
+gerar_chave_de_cifra() {
+	head -c 32 /dev/urandom | base64 | tr -d '\n'
 }
 
 # O invariante de formato da credencial, num lugar só — usado na GERAÇÃO, na
@@ -679,42 +716,24 @@ conferir_coordenadas_do_ambiente() {
 		fi
 	fi
 
-	# DÉBITO COM GATILHO — D39 · F1/fechamento · registrado 2026-08-02
-	# (Marcador de DÉBITO, não de decisão: nada aqui está congelado. Esta lista VAI
-	#  crescer, e o marcador só diz quando e sob que cuidado.)
-	# O QUÊ: esta lista não conhece TRÊS variáveis EXIGIDAS na partida
-	#        (`apps/api/src/configuracao/ambiente.ts`) e documentadas no
-	#        `.env.example`, e o provisionamento não gera nem cobra nenhuma delas:
-	#          1. `BETTER_AUTH_SECRET`        (F1/T8)  — sem ela ninguém entra;
-	#          2. `CHAVE_DE_CIFRA_DO_CERTIFICADO` (F4/T11) — sem ela NENHUMA
-	#             empresa cobra: é a chave que abre o material do provedor;
-	#          3. `ENDERECO_DO_PROVEDOR_BANCARIO`  (F4/T11) — sem ela a
-	#             verificação da identidade não tem destino.
-	#        Uma instalação do zero produz um `${ARQ_AMBIENTE}` com que a API
-	#        **não sobe**: ela recusa a partida nomeando a variável, o supervisor
-	#        tenta 5 vezes e desiste. Medido neste servidor em 2026-08-02 com a
-	#        primeira, e é o que fez 11 das 14 falhas da bateria agregada; as duas
-	#        de 2026-08-15 foram medidas por LEITURA dos dois scripts (que exigem
-	#        `sudo` interativo e nenhum agente executa).
-	#        ⚠️ A lista é MANTIDA EM DIA por testemunha executável:
-	#        `EXIGIDAS_SEM_PROVISIONAMENTO`, em `apps/api/test/ambiente.spec.ts`,
-	#        é comparada por igualdade contra o conjunto observado — uma quarta
-	#        exigência sem caminho de provisionamento reprova LÁ antes de este
-	#        marcador envelhecer. Acrescentar só a primeira à mão continua
-	#        deixando a instalação quebrada.
-	# QUANDO FECHA: a **próxima instalação do zero** — a virada da F7, ou qualquer
-	#        provisionamento de máquina nova. Até lá o servidor existente segue de
-	#        pé com os valores acrescentados à mão.
-	# POR QUE NÃO AGORA: fechar exige gerar credencial e escrevê-la em `/etc` com
-	#        a mesma garantia de idempotência das demais — gerar se ausente e
-	#        **nunca** regerar, porque regerar invalida toda sessão em curso no
-	#        caso da primeira, e torna ILEGÍVEL todo material já cifrado no caso
-	#        da segunda (rotacioná-la obriga a recifrar o acervo de todas as
-	#        empresas). A única prova disso é a bateria privilegiada, que exige
-	#        `sudo` interativo e que nenhum agente executa; código privilegiado
-	#        sem prova é o que a `.claude/rules/testing-stack.md` chama de prova
-	#        inconclusiva. Escalado ao usuário, que decidiu adiar com gatilho.
-	# ÍNDICE: docs/specs/features/fundacao-multitenancy-identidade/v1/_run/run-report.md §2, D39
+	# ⚠️ SÓ COORDENADA ENTRA AQUI, e a fronteira é o que impede esta lista de virar
+	# o lugar errado para a pergunta certa. O que se cobra por IGUALDADE é o que
+	# este script pôs em algum lugar: valor diferente do provisionado significa que
+	# a aplicação falaria com outro processo, e a divergência aborta.
+	#
+	# As três variáveis que o `D39` mantinha em aberto — `BETTER_AUTH_SECRET`,
+	# `CHAVE_DE_CIFRA_DO_CERTIFICADO` e `ENDERECO_DO_PROVEDOR_BANCARIO` — foram
+	# fechadas na intervenção dirigida de 2026-08-16 e NÃO entram nesta conferência,
+	# por naturezas diferentes e ambas legítimas: as duas primeiras são SEGREDOS
+	# gerados nesta máquina (cobrá-las por igualdade exigiria que este script
+	# conhecesse o valor, que é exatamente o que ele não deve fazer), e a terceira é
+	# conteúdo que o operador troca ao sair do substituto para o provedor real.
+	# Quem garante as três é a semeadura por EXISTÊNCIA DA LINHA —
+	# `garantir_segredos_do_ambiente` e `garantir_chaves_de_conteudo` —, e quem
+	# impede a lacuna de voltar é `EXIGIDAS_SEM_PROVISIONAMENTO`, em
+	# `apps/api/test/ambiente.spec.ts`: ela é comparada por igualdade contra o
+	# conjunto observado, hoje vazio, de modo que uma exigência NOVA sem caminho de
+	# provisionamento reprova sozinha, sem depender de alguém se lembrar desta nota.
 	local chave esperado encontrado
 	for chave in REDIS_URL SMTP_URL; do
 		case "${chave}" in
@@ -795,6 +814,65 @@ garantir_chaves_de_conteudo() {
 			"URL_BASE_DA_CONFIRMACAO=${URL_BASE_PADRAO_DA_CONFIRMACAO}"
 		CHAVES_SEMEADAS="${CHAVES_SEMEADAS:+${CHAVES_SEMEADAS}, }URL_BASE_DA_CONFIRMACAO"
 	fi
+
+	# A terceira chave de conteúdo (F4/T11), pelo MESMO critério das duas acima: o
+	# endereço do provedor bancário passou a ser exigido na partida da `api`, não é
+	# segredo, e um arquivo de instalação anterior à exigência nunca ganharia a
+	# linha. Ele NÃO entra na conferência de coordenadas: aquela cobra por
+	# igualdade o que este script provisionou, e o endereço do provedor é
+	# justamente o que o operador troca ao sair do substituto para o banco real.
+	if ! grep -q '^ENDERECO_DO_PROVEDOR_BANCARIO=' "${arquivo}" 2>/dev/null; then
+		acrescentar_linha_ao_ambiente "${arquivo}" \
+			"ENDERECO_DO_PROVEDOR_BANCARIO=${ENDERECO_PADRAO_DO_PROVEDOR_BANCARIO}"
+		CHAVES_SEMEADAS="${CHAVES_SEMEADAS:+${CHAVES_SEMEADAS}, }ENDERECO_DO_PROVEDOR_BANCARIO"
+	fi
+}
+
+# Resultado de `garantir_segredos_do_ambiente`.
+SEGREDOS_SEMEADOS=""
+
+# Garante que o arquivo de ambiente declare os SEGREDOS que a partida exige,
+# GERANDO cada um quando a linha não existir.
+#
+# POR QUE NÃO ENTRA EM `garantir_chaves_de_conteudo`. Aquela semeia valor PADRÃO
+# declarado, e valor padrão de segredo é um defeito com outro nome: toda
+# instalação nasceria com a mesma chave, e a primeira que vazasse abriria o
+# acervo de todas. Aqui cada valor é gerado de `/dev/urandom` na máquina, e por
+# isso a função é separada — o que se compartilha é o CRITÉRIO (a existência da
+# linha), não a origem do valor.
+#
+# ⚠️ GERAR SE AUSENTE E NUNCA REGERAR, e as consequências de errar isto são
+# assimétricas e graves:
+#   - `BETTER_AUTH_SECRET` regerado INVALIDA toda sessão em curso — todo mundo
+#     cai. É alavanca de emergência deliberada (o `.env.example` a documenta como
+#     tal), nunca efeito colateral de rodar o provisionamento de novo.
+#   - `CHAVE_DE_CIFRA_DO_CERTIFICADO` regerada torna ILEGÍVEL todo o material já
+#     cifrado em `negocio.certificado_do_provedor` — e material vindo de terceiro
+#     ninguém recompõe. Rotacioná-la obriga a recifrar o acervo de TODAS as
+#     empresas, o que é operação com runbook, não passo de instalação.
+# Por isso o critério é a EXISTÊNCIA DA LINHA e jamais o valor dela: linha
+# existente e vazia é deixada como está, e a recusa de partida a nomeia — que é o
+# diagnóstico correto e é ruidoso. Trocar isto por um teste de valor faria o
+# provisionamento destruir o acervo de quem esvaziou a linha por engano.
+#
+# Sem efeito colateral além do acréscimo, e chamada só DEPOIS da conferência de
+# coordenadas, como a irmã acima.
+garantir_segredos_do_ambiente() {
+	local arquivo="$1"
+	SEGREDOS_SEMEADOS=""
+
+	local chave valor
+	for chave in BETTER_AUTH_SECRET CHAVE_DE_CIFRA_DO_CERTIFICADO; do
+		if grep -q "^${chave}=" "${arquivo}" 2>/dev/null; then
+			continue
+		fi
+		case "${chave}" in
+		BETTER_AUTH_SECRET) valor="$(gerar_segredo)" ;;
+		CHAVE_DE_CIFRA_DO_CERTIFICADO) valor="$(gerar_chave_de_cifra)" ;;
+		esac
+		acrescentar_linha_ao_ambiente "${arquivo}" "${chave}=${valor}"
+		SEGREDOS_SEMEADOS="${SEGREDOS_SEMEADOS:+${SEGREDOS_SEMEADOS}, }${chave}"
+	done
 }
 
 # Acrescenta UMA linha ao arquivo de ambiente, garantindo que ela nasça em linha
@@ -1461,6 +1539,16 @@ passo_p06_arquivo_ambiente() {
 			mudancas=$((mudancas + 1))
 		fi
 
+		# Os segredos, pelo mesmo critério de existência da linha — mas GERADOS, e
+		# nunca com valor padrão. O relatório nomeia a chave e JAMAIS o valor: esta
+		# linha vai para a saída do provisionamento, que o operador cola em registro
+		# de instalação.
+		garantir_segredos_do_ambiente "${ARQ_AMBIENTE}"
+		if [[ -n "${SEGREDOS_SEMEADOS}" ]]; then
+			detalhes="${detalhes}segredo(s) gerado(s) em tempo de execução: ${SEGREDOS_SEMEADOS}; "
+			mudancas=$((mudancas + 1))
+		fi
+
 		if [[ "$(stat -c '%a %U' "${ARQ_AMBIENTE}")" != "600 ${DONO_ARQ_AMBIENTE}" ]]; then
 			chmod 0600 "${ARQ_AMBIENTE}"
 			chown "${DONO_ARQ_AMBIENTE}:${DONO_ARQ_AMBIENTE}" "${ARQ_AMBIENTE}"
@@ -1480,6 +1568,29 @@ passo_p06_arquivo_ambiente() {
 	if [[ "${#senha_db}" -ne 32 ]] || ! credencial_manuseavel "${senha_db}"; then
 		abortar "a geração da credencial não produziu 32 caracteres alfanuméricos" \
 			"confira se /dev/urandom está acessível nesta máquina e execute de novo"
+	fi
+
+	# O segredo de assinatura de sessão. O piso que o consumidor exige são 32
+	# caracteres, e `gerar_segredo` entrega exatamente 32 — a conferência existe
+	# porque uma geração truncada (urandom curto, `base64` ausente) produziria um
+	# valor NÃO-VAZIO e curto, que atravessaria um guarda de presença e só seria
+	# recusado na partida do serviço, longe daqui.
+	local segredo_sessao chave_de_cifra
+	segredo_sessao="$(gerar_segredo)"
+	if [[ "${#segredo_sessao}" -ne 32 ]] || ! credencial_manuseavel "${segredo_sessao}"; then
+		abortar "a geração do segredo de sessão não produziu 32 caracteres alfanuméricos" \
+			"confira se /dev/urandom está acessível nesta máquina e execute de novo"
+	fi
+
+	# A chave de cifra do certificado: 32 bytes crus, que em base64 canônico são
+	# exatamente 44 caracteres. A conferência é do COMPRIMENTO CODIFICADO porque é
+	# o que este script consegue observar sem decodificar — e ela discrimina o modo
+	# de falha real: chave curta passa por qualquer teste de presença e só reprova
+	# quando a primeira empresa tentar cobrar, que é o pior momento possível.
+	chave_de_cifra="$(gerar_chave_de_cifra)"
+	if [[ "${#chave_de_cifra}" -ne 44 ]]; then
+		abortar "a geração da chave de cifra não produziu 32 bytes em base64 (44 caracteres)" \
+			"confira se /dev/urandom e base64 estão acessíveis nesta máquina e execute de novo"
 	fi
 
 	# `install` cria o arquivo já com 0600 ANTES de qualquer byte de segredo
@@ -1517,12 +1628,33 @@ passo_p06_arquivo_ambiente() {
 		printf '# conteúdo nunca. Ela mora AQUI, e não numa diretiva Environment= de\n'
 		printf '# cada unidade, porque as duas unidades leem este arquivo e uma segunda\n'
 		printf '# declaração literal da mesma coordenada ficaria livre para divergir.\n'
+		printf '#\n'
+		printf '# BETTER_AUTH_SECRET e CHAVE_DE_CIFRA_DO_CERTIFICADO são SEGREDOS, gerados\n'
+		printf '# nesta máquina em tempo de execução e nunca regerados pelas execuções\n'
+		printf '# seguintes. As consequências de trocá-los são diferentes, e as duas são\n'
+		printf '# graves:\n'
+		printf '#\n'
+		printf '#   - trocar BETTER_AUTH_SECRET invalida toda sessão em curso (todo mundo\n'
+		printf '#     precisa entrar de novo). É a alavanca de emergência para suspeita de\n'
+		printf '#     vazamento, e existe para ser usada de propósito.\n'
+		printf '#   - trocar CHAVE_DE_CIFRA_DO_CERTIFICADO torna ILEGÍVEL todo o material\n'
+		printf '#     de certificado já guardado, de TODAS as empresas — e material vindo\n'
+		printf '#     de terceiro ninguém recompõe. Rotacioná-la obriga a recifrar o\n'
+		printf '#     acervo inteiro na mesma janela; não a troque sem esse procedimento.\n'
+		printf '#\n'
+		printf '# ENDERECO_DO_PROVEDOR_BANCARIO NÃO é segredo: é para onde o produto\n'
+		printf '# conecta ao verificar a identidade da empresa perante o banco. Nasce com\n'
+		printf '# um substituto em domínio reservado (.invalid) e é trocado pelo endereço\n'
+		printf '# real do provedor quando a instalação passar a cobrar de verdade.\n'
 		printf '\n'
 		printf 'DATABASE_URL=%s\n' "$(montar_url_do_banco "${senha_db}" "${porta_banco}")"
 		printf 'REDIS_URL=redis://127.0.0.1:%s\n' "${PORTA_FILA}"
 		printf 'SMTP_URL=smtp://127.0.0.1:%s\n' "${PORTA_SMTP_CAPTURADOR}"
 		printf 'EMAIL_REMETENTE=%s\n' "${REMETENTE_PADRAO_DO_AVISO}"
 		printf 'URL_BASE_DA_CONFIRMACAO=%s\n' "${URL_BASE_PADRAO_DA_CONFIRMACAO}"
+		printf 'BETTER_AUTH_SECRET=%s\n' "${segredo_sessao}"
+		printf 'CHAVE_DE_CIFRA_DO_CERTIFICADO=%s\n' "${chave_de_cifra}"
+		printf 'ENDERECO_DO_PROVEDOR_BANCARIO=%s\n' "${ENDERECO_PADRAO_DO_PROVEDOR_BANCARIO}"
 	} >"${ARQ_AMBIENTE}"
 
 	criado "P06" "arquivo de ambiente ${ARQ_AMBIENTE} criado (0600 ${DONO_ARQ_AMBIENTE}, credencial gerada em tempo de execução)"

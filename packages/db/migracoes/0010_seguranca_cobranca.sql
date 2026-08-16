@@ -249,6 +249,15 @@ $$;--> statement-breakpoint
 -- POR QUE NÃO AGORA: hoje a emenda é a escolha CORRETA, e a alternativa é pior — ver o parágrafo
 --                    acima. A janela está aberta e nada além de instância efêmera executou este
 --                    arquivo; o que faltava era ela fechar sem ser em silêncio.
+-- MEDIDO EM 2026-08-16: a janela CONTINUA ABERTA, e agora por medição e não por presunção.
+--                    `select arquivo from identidade.migracao_aplicada` no banco durável deste
+--                    servidor devolve TRÊS linhas — `0000`, `0001` e `0002` —, contra as 17 do
+--                    repositório. Esta migração não está entre elas.
+--                    ⚠️ E a medição diz ALGO MAIS, que torna o gatilho concreto: há 14 migrações
+--                    pendentes, de modo que a primeira execução de `migrar-banco.sh` neste
+--                    servidor aplica a `0003` até a `0016` DE UMA VEZ — e fecha esta janela junto,
+--                    numa única passagem. É exatamente o "fecha em silêncio" que este marcador
+--                    existe para não deixar acontecer sem aviso.
 -- ÍNDICE: docs/specs/features/cobranca-e-mora/v1/_run/run-report.md §2, D20
 --
 -- ---------------------------------------------------------------------------

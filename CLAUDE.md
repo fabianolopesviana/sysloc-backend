@@ -73,10 +73,13 @@ eixos afirmada** (CT-836). Suíte **1248 → 1418** casos, por pacote e monotôn
 **0031**, **0032** e **0033** — esta última **supersede a 0015** —, e ela **EMENDOU a ADR-0001** em
 2026-08-15 (texto original preservado byte a byte): a cláusula do *"apenas uma porta"* ficara
 incompleta diante da porta de **identidade**, que é ato de configuração e não de cobrança. ⚠️ **Não
-cite a `Decision` da 0001 sem ler a emenda, e não cite a 0015 como vigente.** O **D39 (F1/fechamento)
-CRESCEU** — são três variáveis exigidas sem caminho de provisionamento, e a pior delas é a chave de
-cifra: *sem `BETTER_AUTH_SECRET` ninguém entra; sem a chave de cifra, nenhuma empresa cobra* — e
-**não foi fechado**, porque fechá-lo exige script com privilégio. Deixou **quatro** débitos com
+cite a `Decision` da 0001 sem ler a emenda, e não cite a 0015 como vigente.** O débito D39 da F1
+**CRESCEU nesta fatia** — passaram a ser três variáveis exigidas sem caminho de provisionamento — e
+**foi FECHADO na intervenção dirigida de 2026-08-16**: o `provisionar-base.sh` gera e grava as três,
+e o `CT-639` passou a exigir o conjunto **vazio**. ⚠️ A premissa que o mantinha aberto por duas fases
+(*"a única prova possível é a bateria privilegiada"*) foi **refutada por execução** — as funções do
+provisionador são carregáveis sem privilégio, e o arquivo que elas produzem foi aceito pelo validador
+real da aplicação. Deixou **quatro** débitos com
 gatilho novos (**D25**, **D27**, **D36**, **D58**) e 60 anotados na §2 do `_run/run-report.md`.
 ⚠️ **Três achados graves, os três pegos por MEDIÇÃO e nenhum por leitura**: a comparação de vigência
 promovendo `date` ao **fuso da sessão** — que este repositório não declara em lugar nenhum —, de modo
@@ -311,6 +314,35 @@ estava pago** desde a T10 e continuava listado; e o **D4 mordeu durante a própr
 engano** em `3a596fc` e derrubou a âncora de segurança `CT-626 (d)`, que audita as classes de arquivo
 da árvore por igualdade. Saiu do git, e a gravação foi fechada **na origem**
 (`sys.dont_write_bytecode`), com o `.gitignore` como segunda barreira. Suíte **1002 → 1004**.
+
+**Intervenção dirigida de 2026-08-16** — a **quarta** —, sobre os **368 blocos de débito das dez
+fatias** (~280-300 abertos). Parecer e detalhe na **§6 do `_run/run-report.md` da `fundacao-bancaria`**.
+O **NÃO** a `/agent-spec-debt-resolution` é reafirmado, com duas razões novas e medidas: (1) o match de
+**Critical Path é textual em inglês** (`**/auth/**`, `**/migrations/**`, `**/payment/**`) contra uma
+árvore toda em **português** (`autorizacao/`, `migracoes/`, `cobranca-bancaria/`), de modo que o default
+`gates: [qa]` prevalece e o Gate 2 fica desligado justo onde a dívida mora; e (2) o **alvo nº 1 dos
+débitos é o próprio `CLAUDE.md`** (20 dos 652 ponteiros `Onde:`), hoje sob barreira executável — logo
+toda task de cleanup converge no mesmo arquivo protegido e de alta contenção, e o paralelismo que a
+skill assume é **zero**. ⚠️ **Fechou o D39 (F1/fechamento)**, o de maior consequência operacional do
+repositório, e o que o destravou foi a **refutação de uma premissa**, não uma dispensa de prova: a frase
+*"a única prova possível é a bateria privilegiada"* era **falsa desde a T7 da `regua-de-cobranca`** (o
+`CT-647` já carregava as funções do provisionador **sem privilégio**, por `eval` do corpo extraído), e
+sobreviveu duas fases por ser **herdada por citação**. Fechou também o **D29** (isenção viva que tolerava
+a ausência de um diretório que a própria fatia criara) e achou o **D14 já pago** — a **quarta vez**
+consecutiva que uma auditoria contra o código encontra débito pago ainda listado, agora **um dia** depois
+do run. ⚠️ **E produziu uma regressão, pega pelo P5 e corrigida na origem**: fechar o D39 matou a
+testemunha negativa do `CT-643` (`apps/worker/test/ambiente.spec.ts`), que usava `BETTER_AUTH_SECRET` —
+negativa **só enquanto o débito estivesse aberto**. Trocada por `MIGRATION_DATABASE_URL`, cuja
+negatividade é **estrutural** (a credencial de migração nunca entra no `EnvironmentFile` das unidades,
+§11.6). Suíte **1418 → 1418**, por pacote, nenhum encolheu. **Lição de método que vale guardar: a frase
+que explica por que algo não pode ser feito envelhece mais rápido que o débito que ela justifica.**
+⚠️ **O D20 foi MEDIDO e o gatilho NÃO disparou** — `identidade.migracao_aplicada` no banco durável tem
+**3** linhas (`0000`-`0002`) contra as **17** do repositório, então a janela para emendar a `0010`
+segue aberta e o marcador fica. **Fato operacional que a medição rendeu, e que vale a toda sessão**:
+são **14 migrações pendentes** neste servidor, de modo que a primeira execução de `migrar-banco.sh`
+aplica `0003`-`0016` de uma vez **e fecha a janela do D20 junto**; e o `sysloc-api` que está de pé
+responde contra um schema de F1 inicial — `/saude/pronto` afere **conectividade**, não completude de
+schema, e **não** deve ser lido como "o banco está em dia".
 
 **Endurecimento do Protocolo Antirregressão — 2026-08-09**, também fora do pipeline. A §6 do
 protocolo atribui obrigações aos dois gates e ao orquestrador, e **nenhuma delas estava escrita nos
@@ -573,8 +605,8 @@ Específicos deste domínio: **undici** (mTLS do Sicoob), **`node:crypto` `X509C
 > grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 > ```
 
-Vinte e quatro débitos têm gatilho que dispara fora da fatia que os criou: **D28** vem da F0;
-**D23**, **D39**, **D24**, **D27** e **D37** nasceram na F1 — os três últimos na fatia
+Vinte e três débitos têm gatilho que dispara fora da fatia que os criou: **D28** vem da F0;
+**D23**, **D24**, **D27** e **D37** nasceram na F1 — os três últimos na fatia
 `autorizacao-e-ciclo-de-acesso` —; dois nasceram na F2, o **D3** na fatia
 `cadastro-de-imoveis-e-pessoas` e o **D44** na fatia `contratos-de-locacao`;
 onze nasceram na F3 — o **D1**, o **D26** e o **D20** na fatia `cobranca-e-mora`, o **D3**,
@@ -655,7 +687,6 @@ intervenção dirigida de limpeza de 2026-08-05, quando `esquemaDoErro` ganhou d
 |---|---|---|
 | **D28** (F0/T5) | `grep -rln --exclude-dir=dist "D28 · F0/T5" apps packages deploy` — a contagem sai do comando, que não envelhece | **JÁ DISPAROU (F1/T2)** — consumidor novo de `packages/shared/test/` por caminho relativo profundo |
 | **D23** (F1/T8) | `apps/api/src/autenticacao/autenticacao.module.ts` | a **publicação atrás do servidor de borda na F7** — origem confiável derivada do endereço de retorno |
-| **D39** (F1/fechamento) | `deploy/scripts/instalacao/provisionar-base.sh` | a **próxima instalação do zero** — o provisionamento não gera **três** variáveis exigidas e a API não sobe; sem a chave de cifra, nenhuma empresa cobra |
 | **D24** (F1/T5, fatia `autorizacao-e-ciclo-de-acesso`) | `apps/api/src/main.ts` | a **publicação atrás do servidor de borda na F7** — `/docs*` atende sem sessão por decisão registrada, que vale só enquanto a API é local |
 | **D27** (F1/T6, fatia `autorizacao-e-ciclo-de-acesso`) | `packages/auth/src/autenticacao.ts` | a **publicação atrás do servidor de borda na F7** — sem ela o limitador não tem eixo de origem |
 | **D37** (F1/T8, fatia `autorizacao-e-ciclo-de-acesso`) | `apps/api/src/master/empresa.controller.ts` | a **primeira comparação do `:id` do Master com identidade da sessão** — o esquema de lá não canoniza a caixa do UUID |

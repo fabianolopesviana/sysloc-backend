@@ -903,19 +903,34 @@ describe('CT-643 (T8 · CA-17) — a exigência de partida e o provisionamento s
     expect(emitidas).toContain('SMTP_URL');
     expect(chavesDeclaradasNaUnidade(fonteDaUnidade)).toContain('LOG_LEVEL');
 
-    // Testemunha NEGATIVA, e ela é o que separa este caso de uma tautologia: `BETTER_AUTH_SECRET` é
-    // EXIGIDA na partida da API e **nenhuma** das duas fontes a entrega — é o `DÉBITO COM GATILHO —
-    // D39`, aberto por decisão registrada. Um detector que respondesse "sim" para tudo aprovaria
-    // aqui, e é por isso que a asserção é `not.toContain`, sobre as duas fontes daquele processo.
+    // Testemunha NEGATIVA, e ela é o que separa este caso de uma tautologia: um detector que
+    // respondesse "sim" para tudo aprovaria as quatro linhas acima, e é por isso que existe uma
+    // asserção `not.toContain` sobre as duas fontes do processo da API.
     //
-    // ⚠️ Esta linha NÃO fecha o D39, e não deve ser lida como se o fechasse: quando ele for
-    // fechado, esta asserção reprova, e a correção é trocar a testemunha negativa por outra
-    // variável comprovadamente não provisionada — jamais apagar a testemunha.
+    // ⚠️ **A negatividade desta testemunha é ESTRUTURAL, e é isso que a torna a escolha certa.**
+    // `MIGRATION_DATABASE_URL` é gravada pelo provisionamento — mas em `${ARQ_AMBIENTE_MIGRACAO}`,
+    // um arquivo SEPARADO, e nunca no `${ARQ_AMBIENTE}` que é o `EnvironmentFile=` das unidades de
+    // serviço (§11.6 da tech spec da fatia `fundacao-multitenancy-identidade`). A razão é de
+    // segurança: fossem o mesmo arquivo, o processo que atende requisição carregaria no ambiente a
+    // credencial do papel DONO das tabelas. Logo ela não pode "virar positiva" pelo fechamento de
+    // débito nenhum — e se um dia virar, este caso reprovando é exatamente o comportamento certo.
+    //
+    // SUT_IS_CORRECT_BECAUSE: até 2026-08-16 a testemunha negativa era `BETTER_AUTH_SECRET`, e a
+    // negatividade dela era **temporária** — valia só enquanto o débito `D39 · F1/fechamento`
+    // estivesse aberto, como o comentário anterior registrava por escrito, prescrevendo a correção:
+    // *"quando ele for fechado, esta asserção reprova, e a correção é trocar a testemunha negativa
+    // por outra variável comprovadamente não provisionada — jamais apagar a testemunha"*. O débito
+    // foi fechado na intervenção dirigida daquele dia (o provisionamento passou a emitir as três
+    // variáveis que faltavam), o código de produção está CERTO, e é a testemunha que precisava
+    // mudar. A troca foi MEDIDA contra o detector real, não presumida: `chavesEmitidasPor` devolve
+    // as oito chaves do arquivo de ambiente e `MIGRATION_DATABASE_URL` não está entre elas, porque
+    // o `destinoDaEmissao` daquele `printf` é o arquivo do migrador. Nada foi afrouxado — a
+    // asserção segue sendo `not.toContain` sobre as mesmas duas fontes.
     const fontesDaApi = [
       ...emitidas,
       ...chavesDeclaradasNaUnidade(lerDoRepositorio('deploy/systemd/sysloc-api.service')),
     ];
-    expect(fontesDaApi).not.toContain('BETTER_AUTH_SECRET');
+    expect(fontesDaApi).not.toContain('MIGRATION_DATABASE_URL');
   });
 
   it('CT-643 (b) — PROVA DE FALSIFICAÇÃO: sem a emissão, o detector nomeia a variável', () => {

@@ -183,11 +183,12 @@ O item 3 revelou um **defeito de processo, não de caso**: classe de erro nova n
 - **✅ FECHADO NA T14 (2026-08-16), nas DUAS metades**, com a janela do `sha256sum` **medida antes** de a `0015` ser tocada — a medição, nos cinco eixos, está na **§5.6**. A (1) reescreve o bloco da `0015` separando o desfecho comum (o schema nasce no provisionamento) da **razão**, que para `plataforma` é o gerador não o conhecer, e nomeia a consequência na fatia (iii) mais a correção intuitiva errada; a (2) registra o mesmo em `drizzle.config.ts`, junto do `schemaFilter`. **Nenhuma instrução SQL foi tocada** — só comentário.
 - **O que fazia falta:** duas frases, e **a segunda é a que sobrevive**. (1) Na `0015`, acrescentar ao bloco: *"⚠️ Para `plataforma` a razão é OUTRA — ele não está no `schemaFilter` e nenhum objeto dele é declarado no Drizzle, de modo que o gerador não o conhece. Declarar tabela ali (fatia iii) fará o gerador propor `CREATE SCHEMA "plataforma"`, e a supressão manual volta a ser obrigatória."* (2) Em `drizzle.config.ts`, junto do `schemaFilter`, registrar por que `plataforma` fica de fora e o que muda quando a primeira tabela dele for declarada. **A (2) não expira** — aquele arquivo não entra no `sha256sum`. **Dono: a T14** (fecho da fatia), que é o limite recomendado pelo próprio gate.
 
-### D14 · BAIXO · code_quality · T4 · Tech Review
+### D14 · BAIXO · code_quality · T4 · Tech Review — ✅ **JÁ ESTAVA PAGO** (achado da auditoria de 2026-08-16)
 - **Onde:** `packages/db/migracoes/0016_seguranca_bancaria.sql` (~215-230), o segundo marcador `DECISÃO FECHADA`
 - **Problema:** o marcador protege uma **ausência** (`sysloc_app` sem privilégio sobre a sequência) e **não mora onde a tentação acontece**.
 - **Impacto:** a forma é canônica e os quatro campos estão lá; o `POR QUÊ` **referencia** os marcadores da `0010` e da `0008` em vez de recopiá-los, que é exatamente o que a regra pede de um ponteiro. O problema é o mesmo da T3: não há código sob ele, e a tentação que ele previne acontece numa migração **futura** que escreva `GRANT USAGE ON SEQUENCE`, ou no `provisionar-base.sh` — não na `0016`, que ninguém reabre para conceder privilégio. **O gate aplicou deliberadamente a mesma régua da T3**, registrando que *"mudar de régua entre T3 e T4 seria pior que o próprio achado"*. **Mitigação parcial já entregue**: o `provisionar-base.sh` escreve a prosa no ponto certo, faltando-lhe apenas ser um marcador.
 - **O que fazer:** quando a **T6** criar `packages/db/src/identificador-bancario.ts` — o único consumidor legítimo do contador —, replicar ali um ponteiro curto ao marcador da `0016`, no molde do `ÍNDICE:`, de modo que quem for tentado a chamar `nextval` direto encontre a decisão **antes** de escrevê-la. Alternativa mais barata: promover o comentário já existente no `provisionar-base.sh` a `DECISÃO FECHADA` que referencia o da `0016`.
+- ✅ **Status (auditoria de 2026-08-16): a T6 JÁ FEZ o que este débito pede, e ele foi registrado como aberto por engano.** `packages/db/src/identificador-bancario.ts:27-28` carrega o ponteiro exato — *"O `DECISÃO FECHADA — F4/T4` do bloco 3 de `migracoes/0016_seguranca_bancaria.sql` é a outra ponta da mesma decisão; **leia-o antes de mexer na chamada abaixo**"* —, que é literalmente a saída pedida (ponteiro curto, no ponto onde a tentação de chamar `nextval` direto acontece). Nada a fazer; o bloco fica como registro. **É a quarta vez que uma auditoria contra o código acha débito pago ainda listado** (7 em 2026-08-08, 4 em 2026-08-09, o D19 em 2026-08-12, este agora) — e a mais rápida delas: um dia depois do run.
 
 ### D15 · baixo · documentation · T5 · QA
 - **Onde:** `docs/specs/features/fundacao-bancaria/v1/tasks/T5.md:84` (A1) e `:13` (§1), mais `tech_spec.md` §7.3
@@ -273,11 +274,12 @@ O item 3 revelou um **defeito de processo, não de caso**: classe de erro nova n
 - **Impacto:** a mesma invariante passa a quebrar em **dois pacotes** quando o enum mudar, **sem ganho de detecção** — o objeto asserido aqui é o **mesmo objeto importado** de `@sysloc/contracts`, não uma cópia local. Anotável e não bloqueante: `AP-23` está no conjunto de manutenibilidade da partição, e não mascara regressão. ⚠️ **A metade substantiva do achado original JÁ FOI FECHADA**: o A5 (*"importado, nunca redeclarado"*) não tinha asserção que o provasse, e a rodada 2 acrescentou a varredura de **ligação local** com controle positivo — medida pelo mutante que redeclara o enum em `src/` e faz a varredura reprovar **enquanto a igualdade passa verde**.
 - **O que fazer:** ⚠️ **NÃO remova a igualdade** — o passo 1 do card do `CT-835` (§6.6 da task) a exige literalmente (*"por igualdade de conjunto **e** de ordem"*), e os dois gates advertiram para preservá-la. O que sobra é a duplicação em si, e ela só se resolve decidindo **qual dos dois pacotes é o dono** da asserção de conteúdo do enum — decisão que pertence a uma passagem de limpeza, não a esta fatia.
 
-### D29 · baixo · dead_code · T8 · QA
+### D29 · baixo · dead_code · T8 · QA — ✅ **FECHADO** na intervenção dirigida de 2026-08-16
 - **Onde:** `packages/contracts/test/esquemas.spec.ts:3801` (`DIRETORIOS_AINDA_INEXISTENTES`)
 - **Problema:** a lista isenta `packages/cobranca-bancaria/src`, e esse diretório **passou a existir** com esta task. O docblock (3791-3799) explica que a entrada existia porque o pacote ainda não tinha nascido.
 - **Impacto:** o caso segue verde e a varredura passou a alcançar o pacote novo **sozinha**, como o próprio docblock previa (conferido: `@sysloc/contracts` em 356, inalterado). O resíduo é uma **tolerância inerte**: enquanto a entrada permanecer, **apagar ou renomear `packages/cobranca-bancaria/src` deixaria de reprovar** — que é exatamente o que a asserção da linha 3853 existe para pegar nos outros três diretórios. O executor identificou e **não editou**, por estar fora da lista da task; decisão correta pela proibição 5 da `.claude/rules/nao-regressao.md`.
 - **O que fazer:** esvaziar a lista (`const DIRETORIOS_AINDA_INEXISTENTES = [] as const;`) e ajustar o docblock registrando que a última entrada saiu quando a T8 criou o pacote. **Prova de falsificação barata e obrigatória**: renomear temporariamente o diretório, confirmar que o caso da linha 3853 reprova **nomeando** o ausente, e reverter.
+- ✅ **Feito em 2026-08-16, exatamente como pedido.** Lista esvaziada e docblock reescrito. **Prova de falsificação medida**: com `packages/cobranca-bancaria/src` movido para fora da árvore, o caso reprova com `AssertionError: expected [ 'packages/cobranca-bancaria/src' ] to deeply equal []` — **nomeando o ausente**, que é o que o débito exigia demonstrar; diretório restaurado e `git status` conferido sem resíduo. `@sysloc/contracts` em **356**, inalterado. O docblock ganhou a advertência que faltava: **entrada nesta lista é isenção viva**, só se justifica para diretório que ainda não nasceu, e sai no mesmo passo em que ele nascer — foi por não ter essa regra escrita que a entrada sobreviveu à fatia que criou o diretório.
 
 ### D30 · BAIXO · project_pattern · T8 · Tech Review
 - **Onde:** `docs/adr/0001-modelo-canonico-cobranca-bancaria-adaptador-por-provedor.md`, seção `## Applied in` (linha 81)
@@ -328,11 +330,13 @@ O item 3 revelou um **defeito de processo, não de caso**: classe de erro nova n
 - **O que fazer:** decidir na **T14** entre (a) fechar o D27 promovendo os quatro textos a constantes do **domínio**, com o adaptador importando-as e `detalhe` virando `(typeof DETALHES)[number] | null` — o compilador passa a cobrar a cláusula da ADR-0001 no lugar da boa-fé —, ou (b) manter o marcador e emendar o `QUANDO FECHA` para nomear a saída (a), registrando que a saída por medição já foi paga na T10. ⚠️ **Não deixar como está**: gatilho chegado com marcador intacto é escrituração vencida, e é o que a §3-B chama de índice que mente sobre o estado do código.
 - **✅ DESPACHADO NA T14 (2026-08-16) pela saída (b)**, nas **três** pontas: o `QUANDO FECHA` do marcador passa a nomear **a fatia (ii), ao consumir o campo `detalhe` na tela do Admin**, registrando que o gatilho original já disparou e que a saída por medição foi paga na T10; a linha do índice do `CLAUDE.md` ganhou o **`JÁ DISPAROU (F4/T10)`**, no molde do D28 e do D57; e a razão da escolha — a ADR-0025 aponta a dependência ao contrário, de modo que promover os textos ao domínio moveria a fronteira do pacote no fecho da fatia — está na **§5.7**. **O marcador NÃO foi removido**: o débito segue aberto, e é a saída estrutural que resta.
 
-### D38 · baixo · tests · T10 · QA
+### D38 · baixo · tests · T10 · QA — ⚠️ **GATILHO VENCIDO** (a T11 passou sem cumpri-lo; medido em 2026-08-16)
 - **Onde:** `packages/cobranca-bancaria/src/adaptador-sicoob.ts:225` (`resolverDestino` / `recusarPorForma`)
 - **Problema:** a guarda de construção recusa endereço que não seja `https:` absoluta com servidor nomeado, e o docblock a trata como garantia de **SSRF** (§3.9 da task) — mas **nenhum dos sete CTs a exercita**: nem URL malformada, nem `http:`, nem servidor vazio. `smell: happy_path_only`.
 - **Impacto:** a garantia existe sem prova; se uma refatoração futura a remover, nada reprova. O Gate 1 **rebaixou a BAIXO com a razão escrita**: (a) nenhum critério A1-A11 nem card da §6.6 a exige — o executor a acrescentou por conta própria, como craft; (b) a propriedade central tem companheiros negativos fartos, de modo que o rótulo alcança um ramo **periférico**, não o caso positivo principal; (c) o risco medido é pequeno, porque `request()` fixa `protocol: 'https:'` nas opções e a variável é configuração de partida do operador, nunca entrada de usuário.
 - **O que fazer:** na **T11**, onde a conferência de partida lê `ENDERECO_DO_PROVEDOR_BANCARIO` e a guarda ganha **consumidor real** e ID de CT alocado pelo plano: caso barato **sem fronteira de rede** — `expect(() => criarAdaptadorSicoob({ enderecoDoProvedor: 'http://127.0.0.1:1' })).toThrow(...)` mais uma cadeia que não é URL, afirmando que a mensagem nomeia a **variável** e **não** o valor recusado (que é o que impede o `TypeError` do `new URL` de ecoar a entrada). ⚠️ Deferir foi a alternativa que o **próprio Gate 1 legitimou por escrito** na rodada 1; um caso novo na T10 exigiria **inventar** um ID de CT, já que o CT-845 pertence a outra task da fatia.
+
+- ⚠️ **Status (auditoria de 2026-08-16): o gatilho declarado — *"na T11"* — DISPAROU e NÃO foi cumprido.** Medido: nenhum caso exercita `recusarPorForma` com `http:` nem com cadeia que não seja URL; o único uso de `VARIAVEL_DO_ENDERECO` em `packages/cobranca-bancaria/test/adaptador-sicoob.spec.ts` é o acessório `apontarEnderecoDoProvedor`, que aponta o destino e **não** exercita a guarda de forma. **Deliberadamente NÃO pago nesta intervenção**: fechá-lo exige alocar um ID de CT novo, que é precisamente o objeto de outro débito desta mesma §2 (o sinal `[convention_drift] Numeração de CT nascido fora dos cards`, do `_run/rule-candidates.md`) — pagá-lo isolado reproduziria o defeito que aquele registra. O dono natural é a fatia **(ii)**, que já reabre o adaptador; até lá o débito fica com o gatilho **marcado como vencido**, que é o estado honesto.
 
 ### D39 · BAIXO · error_handling · T10 · Tech Review
 - **Onde:** `packages/cobranca-bancaria/src/adaptador-sicoob.ts` (`resolverDestino`)
@@ -564,6 +568,29 @@ impede o marcador de voltar a envelhecer: uma quarta exigência sem caminho de p
 possível é a bateria privilegiada, que exige `sudo` interativo e que **nenhum agente deste pipeline
 executa**. É a mesma razão de 2026-08-02, sem fato novo que a supere.
 
+> ⚠️ **EMENDA de 2026-08-16 — o D39 FOI FECHADO, e o parágrafo acima estava errado na premissa, não
+> na conclusão.** O texto original fica intacto porque registra o que se sabia na T14; o que segue é a
+> correção medida.
+>
+> A afirmação *"a única prova possível é a bateria privilegiada"* é **falsa desde a T7 da fatia
+> `regua-de-cobranca`**, que instalou no `verificar-provisionamento.sh` o `CT-647` — cujo próprio
+> cabeçalho diz que o caso *"não exige privilégio nenhum de si"*, porque carrega as funções do
+> provisionador por `eval` do corpo extraído com `sed` e as roda sobre um caminho recebido por
+> parâmetro. **A premissa foi herdada por citação através de duas fases e nunca remedida** — o mesmo
+> padrão que a T1 da fatia `cobranca-e-mora` documentou (*"premissa que bloqueia trabalho com prazo
+> merece ser medida antes de ser registrada"*), e aqui ela bloqueou o débito de maior consequência
+> operacional do repositório.
+>
+> Fechado na **intervenção dirigida de 2026-08-16**, pelos dois caminhos que produzem o arquivo, com
+> quatro provas medidas sem privilégio — comportamental (o arquivo produzido foi ACEITO pelo validador
+> real, com chave de exatos 32 bytes), idempotência (`diff` vazio na segunda execução), falsificação
+> do gerador (a chave alfanumérica de 32 caracteres decodifica para **24 bytes** e é recusada) e
+> falsificação da emissão (o `CT-639` reprova **nomeando a variável** ofensora). O detalhe está na §2
+> da fatia de origem. **`EXIGIDAS_SEM_PROVISIONAMENTO` foi para `[]`**, com a igualdade preservada.
+>
+> O que continua verdadeiro do parágrafo acima: a bateria privilegiada segue sendo a confirmação em
+> servidor real — ela deixou de ser **pré-requisito** e passou a ser **confirmação**.
+
 ### 5.3 Duas cláusulas para o runbook de resguardo da F7
 
 As duas saem da §11.3 e da §16.6 do `tech_spec.md`, e as duas são de **operação** — a mitigação é
@@ -663,3 +690,96 @@ do `CLAUDE.md`.
 
 O caminho que se mostrou barato e seguro continua sendo a **intervenção dirigida**: escolher os poucos
 com prazo ou poder de detecção, fechar cada um com mutante medido, e escriturar o resto.
+
+---
+
+## 6. Intervenção dirigida de 2026-08-16 — a quarta, e o que ela mediu
+
+> **Fora do pipeline**, no molde das três anteriores (2026-08-09, 2026-08-10 e 2026-08-12). Precedida
+> da auditoria dos **368 blocos de débito das dez fatias** — ~280-300 abertos — e da leitura da
+> mecânica de `/agent-spec-debt-resolution` contra o código, não contra a descrição dela.
+
+### 6.1 O parecer sobre a skill — NÃO, agora com duas razões que ninguém tinha medido
+
+O parecer da §5.5 é **reafirmado**, e ganha duas razões novas:
+
+1. **O match de Critical Path é textual em inglês, e esta árvore é toda em português.** As categorias
+   da `agent-spec-workflow-rules.md` são globs `**/auth/**`, `**/authorization/**`, `**/migrations/**`,
+   `**/payment/**` — e aqui os diretórios se chamam `autorizacao/`, `migracoes/`, `cobranca-bancaria/`,
+   `seguranca`. A rule declara o match "semântico", mas o caminho textual falha, e o default do
+   `gates:` da skill é `[qa]`. Somado aos alvos que **não casam de forma alguma** — `CLAUDE.md`,
+   `docs/`, `apps/api/test/`, `deploy/scripts/`, `packages/db/src`, `packages/regua`,
+   `packages/documentos` —, a esmagadora maioria das tasks de cleanup rodaria **sem Gate 2**, que é
+   quem a `nao-regressao.md` §6 encarrega de detectar violação de `DECISÃO FECHADA`.
+2. **O alvo nº 1 de todos os débitos é o `CLAUDE.md` (20 dos 652 ponteiros `Onde:`), e ele hoje tem
+   barreira executável** — 28 casos em `packages/shared/test/protocolo-antirregressao.spec.ts`, que o
+   leem por `fs`, com o `CT-907` auditando o índice **nas duas pontas**. Como toda task que fecha um
+   débito precisa mexer nesse índice, **todas convergem no mesmo arquivo protegido**, que é também
+   "arquivo de alta contenção" pela própria rule: o paralelismo que a skill assume é **zero**.
+
+**Evidência histórica que pesa nos dois sentidos**, colhida das cinco versões `-debits` herdadas do
+repositório antigo: a favor, o cleanup de um `BAIXO` em `contencao-credencial-exposta/v2-debits`
+descobriu que o patch `criar_papel_servico_app` **nunca reexecutava** — nem em site novo — e corrigiu
+uma ADR que afirmava o falso; contra, a **T4 de `integracao-bancaria-configuravel/v4-debits`
+INTRODUZIU** um defeito sério ao corrigir um débito (passou a commitar um pendente parcial com senha
+enquanto a API respondia *"nenhuma alteração foi feita"*), e **quem o pegou foi o Tech Review, ligado
+só porque aquele path casava Critical Path**. Sob o default deste repositório, teria passado.
+
+### 6.2 O que foi pago
+
+| Débito | O que fechou | Prova |
+|---|---|---|
+| **D39 · F1/fechamento** | o provisionamento passa a gerar e gravar as **três** variáveis exigidas, nos dois caminhos que produzem o arquivo | validador real ACEITA a partida (chave de **32 bytes**); `diff` vazio na 2ª execução (não regera); 2 mutantes de gerador recusados; `CT-639` reprova **nomeando** a variável quando a emissão sai |
+| **D29 · F4/T8** | `DIRETORIOS_AINDA_INEXISTENTES` esvaziada — a isenção nomeava um diretório que a própria fatia criou | mutante: com o diretório removido, o caso reprova nomeando-o; com a isenção viva, era tolerado em silêncio |
+| **D14 · F4/T4** | ✅ **já estava pago** — a T6 fez o que ele pedia e ele continuou listado | ponteiro em `identificador-bancario.ts:27-28`, literal ao pedido |
+
+### 6.3 O achado de método — a premissa que bloqueou o débito mais grave por duas fases
+
+O D39 esteve aberto desde 2026-08-02 por uma premissa: *"a única prova possível é a bateria
+privilegiada, que exige `sudo` interativo"*. Ela é **falsa desde a T7 da fatia `regua-de-cobranca`**,
+que instalou o `CT-647` — cujo cabeçalho declara que o caso *"não exige privilégio nenhum de si"*,
+porque carrega as funções do provisionador por `eval` do corpo extraído com `sed`.
+
+**A premissa foi herdada por citação, atravessou duas fases e nunca foi remedida** — exatamente o
+padrão que a T1 da fatia `cobranca-e-mora` documentou (*"premissa que bloqueia trabalho com prazo
+merece ser medida antes de ser registrada"*). O custo: o débito de maior consequência operacional do
+repositório — *sem a chave de cifra, nenhuma empresa cobra* — ficou parado por duas fases atrás de uma
+frase que um comando derruba. **A lição não é sobre o D39; é sobre onde procurar da próxima vez: a
+frase que explica por que algo não pode ser feito envelhece mais rápido que o débito que ela justifica.**
+
+### 6.4 O que NÃO foi tocado, e por quê
+
+- **D20 · F3/T7** — ✅ **MEDIDO, e o gatilho NÃO disparou: o marcador está correto e fica como está.**
+  A hipótese de trabalho era o disparo **provável** (`sysloc-api` ativo contra um cluster Postgres 18
+  online); a medição a **refutou**. `select arquivo from identidade.migracao_aplicada` no banco durável
+  devolve **três** linhas — `0000`, `0001`, `0002` — contra as **17** do repositório, e a `0010` não
+  está entre elas. A janela segue aberta.
+  ⚠️ **A medição rendeu um fato operacional que ninguém tinha**: são **14 migrações pendentes**
+  (`0003` a `0016`), de modo que a primeira execução de `migrar-banco.sh` neste servidor as aplica
+  **de uma vez** e fecha a janela do D20 **na mesma passagem** — que é precisamente o desfecho
+  silencioso contra o qual o marcador foi emitido. A medição, com a data e os números, foi
+  acrescentada ao próprio marcador em `packages/db/migracoes/0010_seguranca_cobranca.sql`, para que
+  quem o abrir não precise repetir a consulta privilegiada. **Editar a `0010` é seguro hoje e só
+  hoje** — é a janela que o marcador descreve, e ela se fecha na primeira aplicação.
+  ⚠️ **Consequência que vale ao operador**: o `sysloc-api` que está de pé responde contra um schema
+  de F1 inicial, catorze migrações atrás do que o código do repositório espera. `/saude/pronto`
+  devolve `disponivel` porque afere **conectividade**, não completude de schema — não o leia como
+  "o banco está em dia".
+- **D54 · F4/T12** — a ação correta **não é corrigir código** (o Gate 2 foi explícito: *"as três
+  edições devem permanecer como estão"*), e sim promover a convenção a **regra**. O cluster está
+  maduro e mapeado: o mesmo sinal aparece em **cinco fatias** — `[scope_deviation] Consumidores de
+  símbolo compartilhado na §5.2` (`autorizacao-e-ciclo-de-acesso`), `[convention_drift] Âncoras de
+  igualdade na §5.2 da task` (`contratos-de-locacao`), `[convention_drift] Consequência obrigatória
+  fora da §5.2` (`cobranca-e-mora`, "nona ocorrência"), `[repeated_assertion_shape] Âncoras de
+  superfície fora da §5.2 da task` (`regua-de-cobranca`, "décima reincidência") e o próprio D54 ("13ª
+  ocorrência"). **A promoção é do usuário**: `/agent-spec-mine-rule-candidates` e
+  `/agent-spec-curate-project-rules` têm `disable-model-invocation: true`, e escrever a regra à mão
+  contornaria o teste de fricção e a decisão de colocação que pertencem a elas.
+- **D38 · F4/T10** — o gatilho (**T11**) **disparou e não foi cumprido**: nenhum caso exercita
+  `recusarPorForma` com `http:` ou cadeia não-URL. Fechá-lo exige alocar ID de CT, que é o objeto de
+  outro débito da mesma §2 (`[convention_drift] Numeração de CT nascido fora dos cards`) — pagá-lo
+  isolado reproduziria o defeito que aquele registra. Fica anotado com o gatilho **marcado como
+  vencido**.
+- **Os ~280 restantes** — quase todos prosa em artefato de fatia fechada, ou com dono declarado numa
+  fatia futura. Vários dizem no próprio texto para **não** serem tocados agora: o D28 (*"NÃO remova a
+  igualdade"*), o D52 (*"NÃO introduzir retry"*), o D60 (*"NÃO trocar"*) e o próprio D54.
