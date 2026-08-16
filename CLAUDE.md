@@ -59,6 +59,34 @@ commitadas, incluindo a **T7**, cuja recuperação foi provada por **reinício r
 A fatia `caracterizacao-regras-legadas` (v1) também está **concluída**: os 6 artefatos golden
 estão versionados e são o oráculo das regras legadas para a F3 e a F5.
 
+**Fase 4 EM ANDAMENTO — a fatia (i) `fundacao-bancaria` (v1) CONCLUÍDA em 2026-08-15, com as 14 tasks
+entregues e nenhuma bloqueada.** Ela é a **primeira das três** fatias da F4: a (i) é a
+fundação (identidade da empresa perante o banco), a **(ii) `emissao-e-conciliacao`** e a **(iii)** do
+carnê ainda publicam rota, e por isso o congelamento da superfície continua sendo o *depois* delas e
+da F5. Entrega o pacote **`@sysloc/cobranca-bancaria`** (pacotes **6 → 7**), o schema
+**`plataforma`** (a primeira tabela sem dono-empresa do produto, ADR-0031),
+`negocio.certificado_do_provedor` sob RLS forçada com **substituição atômica**, as migrações
+`0015`/`0016`, o **segredo operável** cifrado em AES-256-GCM com invólucro opaco (ADR-0032), o
+adaptador mTLS **com cliente por chamada**, e as **3 rotas novas** sob `/v1/integracoes-bancarias`,
+levando a superfície de **89/74 a 92/77** por dupla medição independente **com a igualdade entre os
+eixos afirmada** (CT-836). Suíte **1248 → 1418** casos, por pacote e monotônica. Nasceram dela as ADRs
+**0031**, **0032** e **0033** — esta última **supersede a 0015** —, e ela **EMENDOU a ADR-0001** em
+2026-08-15 (texto original preservado byte a byte): a cláusula do *"apenas uma porta"* ficara
+incompleta diante da porta de **identidade**, que é ato de configuração e não de cobrança. ⚠️ **Não
+cite a `Decision` da 0001 sem ler a emenda, e não cite a 0015 como vigente.** O **D39 (F1/fechamento)
+CRESCEU** — são três variáveis exigidas sem caminho de provisionamento, e a pior delas é a chave de
+cifra: *sem `BETTER_AUTH_SECRET` ninguém entra; sem a chave de cifra, nenhuma empresa cobra* — e
+**não foi fechado**, porque fechá-lo exige script com privilégio. Deixou **quatro** débitos com
+gatilho novos (**D25**, **D27**, **D36**, **D58**) e 60 anotados na §2 do `_run/run-report.md`.
+⚠️ **Três achados graves, os três pegos por MEDIÇÃO e nenhum por leitura**: a comparação de vigência
+promovendo `date` ao **fuso da sessão** — que este repositório não declara em lugar nenhum —, de modo
+que sob `UTC` um certificado **vencido era aceito** (T7, Gate 2, e nenhum dos sete CTs pegou porque o
+`initdb` deste host acerta por acidente); `https.request()` construindo o contexto seguro de forma
+**síncrona** e **lançando**, o que fazia a porta **rejeitar** contra o contrato dela e vazava
+temporizador e `Agent` (T10, Gate 2); e a sondagem de largura do identificador que podia **derrubar a
+subida de quatro processos** no `import` (T6, Gate 2). ⚠️ **Precedente de método confirmado pela quinta
+vez**: o executor divergiu de prescrição **declarando e medindo**, e os gates lhe deram razão em todas.
+
 **Fase 3 CONCLUÍDA em 2026-08-13 — as três fatias fecharam.** A fase foi **partida em duas fatias** no
 pré-refinamento (`docs/specs/features/cobranca-mora-e-documentos/v1/pre-refinement.md`), pelo corte
 **por efeito colateral**: a fatia 1 não toca nada fora do banco, a fatia 2 é toda ação sobre o mundo.
@@ -231,8 +259,12 @@ nomeando o item ofensor**. Na sub-fatia `documentos-e-confirmacao` ela sobe pela
 reenvio da confirmação, o **primeiro `202` do produto**) e a **T11** a **89/74** (a **única rota de
 negócio sem sessão**, sob `@RotaPublica()`) —, e o **CT-732**, na T12, fechou o número pela mesma dupla
 medição, com a igualdade entre os eixos afirmada e o mutante da rota sem declaração **nomeando
-`{ metodo, caminho, controlador }`** da ofensora. **A superfície de hoje é 89 rotas / 74 manipuladores**,
-`semDeclaracao` vazio e `publicas` com **exatamente uma** entrada nova.
+`{ metodo, caminho, controlador }`** da ofensora. Na fatia `fundacao-bancaria` ela sobe em **duas
+tasks** — a **T11** levou a **91/76** (o registro e a consulta do certificado do provedor) e a **T12**
+a **92/77** (a verificação da identidade) —, e o **CT-836**, na T14, fechou o número pela mesma dupla
+medição, com a igualdade entre os eixos afirmada e o inventário de **3 pares** afirmado **antes** da
+comparação com o total. **A superfície de hoje é 92 rotas / 77 manipuladores**, `semDeclaracao` vazio
+e `publicas` **inalterado em 19** — esta fatia não publica rota sem sessão.
 ⚠️ **O número da F2 era 75, e não 77** — o `77` que
 circulou no `tech_spec.md` vinha de uma premissa que a medição refutou (*"cada `GET` entra em dobro
 por causa do `HEAD`"*), e o módulo `cobertura-de-autorizacao.ts` **suprime** o `HEAD` derivado. Não
@@ -330,7 +362,8 @@ ela a fase.
    **A superfície de autenticação e autorização fechou aqui**: 15 rotas ao fim desta fatia, mais a
    de troca de senha do produto; a nativa de `/v1/auth/change-password` deixou de ser publicada, e o
    inventário de `/v1/auth` caiu de 6 para 5. (O total do produto **não** parou em 15 — a F2
-   acrescentou 60 e a superfície hoje é de **75 rotas**.)
+   acrescentou 60 e a superfície **ao fim da F1 era de 75 rotas**; ela seguiu crescendo na F3 e na
+   F4, e o número vigente está no bloco da superfície, acima.)
 
 **O que a PRIMEIRA FATIA deixou aberto, e que a próxima sessão precisa saber** — os caminhos abaixo
 são relativos a `docs/specs/features/fundacao-multitenancy-identidade/v1/`:
@@ -393,11 +426,14 @@ O marco está alcançado quando **todos** os sete itens forem verdadeiros:
 - [ ] **F1 a F5 concluídas** — todas as tasks aprovadas nos dois gates, suíte verde, critérios de
       aceitação de cada fatia verificados · **F1 fechada em 2026-08-05, F2 em 2026-08-09 e a F3 em
       2026-08-13** (fatia 1 `cobranca-e-mora`, 11/11 tasks; sub-fatia **2a `regua-de-cobranca`**,
-      12/12; sub-fatia **2b `documentos-e-confirmacao`**, 12/12) — **faltam F4 e F5**
+      12/12; sub-fatia **2b `documentos-e-confirmacao`**, 12/12) · a **F4 está em andamento**, com a
+      fatia **(i) `fundacao-bancaria`** fechada em 2026-08-15 (14/14 tasks) e as fatias **(ii)
+      `emissao-e-conciliacao`** e **(iii)** do carnê pela frente — **faltam o resto da F4 e a F5**
 - [ ] **Superfície da API congelada** — nenhuma fatia posterior acrescenta, remove ou altera rota;
       o congelamento é o que torna o handoff confiável · **sem condição pendente** desde que a
       ADR-0021 fechou o D43 · ⚠️ mas **F4 e F5 ainda publicam rota** (webhook Sicoob,
-      rotinas) — a F3 já levou de 75 a **89** —, então o congelamento é o *depois* delas
+      rotinas) — a F3 levou de 75 a **89**, e a fatia (i) da F4 a **92** —, então o congelamento é o
+      *depois* das fatias (ii) e (iii) da F4 e da F5
 - [ ] **`@sysloc/contracts` publicado** no GitHub privado e versionado — é o artefato que o React
       importa para trocar tipos e cliente ts-rest
 - [ ] **`handoff-frontend.md` gerado** por `/agent-spec-backend-contract-handoff`, carregando o
@@ -441,7 +477,7 @@ pelo número, e sem os dois arquivos de `.claude/plans/` essas referências fica
 | 3 | `.claude/plans/plano-saas-decisoes.md` | As **40 decisões fechadas** — o plano de execução as cita por número |
 | 4 | `.claude/plans/plano-saas.md` | Arquitetura-alvo, os 3 perfis, as **10 telas × 7 ações sensíveis**, a especificação do webhook Sicoob |
 | 5 | `docs/plano-backend-novo/levantamento-frontend.md` | O frontend React: inventário dos **35 endpoints**, o **modelo de domínio que a API deve falar**, os acoplamentos a remover |
-| 6 | `docs/adr/` | ADRs. **30 registradas, 24 `accepted`**: 0001, 0005, 0006, 0008, 0009, 0010, 0011, 0013, 0014, 0015, 0016, 0017, 0018, 0020, 0021, 0022, 0023, 0024, 0025, 0026, 0027, 0028, 0029 e 0030. **Vinculantes para a F2**: 0006, 0008, 0009, 0011, 0013, 0014, 0015, 0016, 0017, 0018, 0020 e 0021. **Vinculantes para a sub-fatia 2b da F3**: 0008, 0011, 0016, 0017, 0018, 0021, 0022, 0023, 0024, 0025 e 0026, mais as **quatro que nasceram dela** — a **0027** (uma rota de negócio dispensa sessão só quando o ato é do titular do dado, e sempre com portador de segredo), a **0028** (a rota que devolve bytes permanece no contrato, declarando mídia, nome do arquivo e o mesmo envelope de erro), a **0029** (efeito externo cujo resultado não compõe a resposta sai por fila, nunca em linha na borda) e a **0030** (artefato derivado de dado gravado é composto sob demanda e nunca armazenado — com **cláusula de exclusão**: fato recebido de terceiro, como o boleto do provedor, não é derivado e está fora do alcance dela). As **0002, 0003 e 0004** morreram com o Frappe — `deprecated` desde 2026-08-04, porque nomeiam primitivas dele (DocType, fixture, `Custom DocPerm`, Server Script). Há **duas cadeias de supersede**, e nas duas só a última se cita: a forma canônica do contrato da API é **0007 → 0012 → 0017**, vigente a **0017** (três classes de chave exposta: código legível quando há série declarada, UUID quando não há); e a transição de estado é **0019 → 0021**, vigente a **0021** (rota própria sempre; a chave de ação só quando o ato é sensível — atributo operacional do cadastro exige apenas a área). ⚠️ **Citar ADR exige abrir a `Decision`** — esta linha e o `INDEX.md` são paráfrases, e já divergiram do texto real |
+| 6 | `docs/adr/` | ADRs. **33 registradas, 26 `accepted`**: 0001, 0005, 0006, 0008, 0009, 0010, 0011, 0013, 0014, 0016, 0017, 0018, 0020, 0021, 0022, 0023, 0024, 0025, 0026, 0027, 0028, 0029, 0030, 0031, 0032 e 0033. **Vinculantes para a F2**: 0006, 0008, 0009, 0011, 0013, 0014, 0016, 0017, 0018, 0020, 0021 e 0033. **Vinculantes para a sub-fatia 2b da F3**: 0008, 0011, 0016, 0017, 0018, 0021, 0022, 0023, 0024, 0025 e 0026, mais as **quatro que nasceram dela** — a **0027** (uma rota de negócio dispensa sessão só quando o ato é do titular do dado, e sempre com portador de segredo), a **0028** (a rota que devolve bytes permanece no contrato, declarando mídia, nome do arquivo e o mesmo envelope de erro), a **0029** (efeito externo cujo resultado não compõe a resposta sai por fila, nunca em linha na borda) e a **0030** (artefato derivado de dado gravado é composto sob demanda e nunca armazenado — com **cláusula de exclusão**: fato recebido de terceiro, como o boleto do provedor, não é derivado e está fora do alcance dela). As **0002, 0003 e 0004** morreram com o Frappe — `deprecated` desde 2026-08-04, porque nomeiam primitivas dele (DocType, fixture, `Custom DocPerm`, Server Script). Há **três cadeias de supersede**, e nas três só a última se cita: a forma canônica do contrato da API é **0007 → 0012 → 0017**, vigente a **0017** (três classes de chave exposta: código legível quando há série declarada, UUID quando não há); a transição de estado é **0019 → 0021**, vigente a **0021** (rota própria sempre; a chave de ação só quando o ato é sensível — atributo operacional do cadastro exige apenas a área); e a política de série sequencial é **0015 → 0033**, vigente a **0033** desde 2026-08-14 (**cada série declara o próprio escopo** — contrato e cobrança em `(empresa, ano)`, o identificador perante o provedor pelo **SaaS** —, com furo aceito e número nunca reusado). ⚠️ **A 0033 nasceu de um conflito que o challenge da `fundacao-bancaria` pegou ao abrir a `Decision`**: a 0015 abria com *"todo contador sequencial deste produto é único por empresa"*, quantificador universal que o contador bancário falsifica. **Não cite a 0015 como vigente, e não "corrija" o contador para ser por empresa.** A **0020** segue vigente e é complementar, não concorrente: a 0033 fixa o *escopo*, a 0020 o *mecanismo*. **Vinculantes para a fatia (i) da F4** (`fundacao-bancaria`): 0001, 0005, 0006, 0008, 0009, 0011, 0013, 0016, 0017, 0018, 0025, 0026 e 0029, mais as **três que nasceram dela** — a **0031** (tabela sem dono-empresa vive em schema próprio da plataforma, sem `empresa_id`), a **0032** (segredo operável de terceiro é cifrado de forma reversível, nunca retorna por superfície alguma, e a ausência de vazamento se prova **por medição da saída real**) e a **0033**. ⚠️ **A ADR-0001 foi EMENDADA em 2026-08-15** (texto original preservado byte a byte), porque a cláusula do *"apenas"* uma porta ficara incompleta diante da porta de **identidade** — que é ato de configuração, não de cobrança; a emenda ataca o **contorno por renomeação**, e não a contagem de portas. **Não cite a `Decision` dela sem ler a emenda.** ⚠️ **Citar ADR exige abrir a `Decision`** — esta linha e o `INDEX.md` são paráfrases, e já divergiram do texto real |
 
 Por fase: a **F4** exige `docs/specs/features/integracao-bancaria-configuravel/`; a **F6** exige
 o levantamento do frontend (item 5).
@@ -537,20 +573,23 @@ Específicos deste domínio: **undici** (mTLS do Sicoob), **`node:crypto` `X509C
 > grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 > ```
 
-Dezenove débitos têm gatilho que dispara fora da fatia que os criou: **D28** vem da F0;
+Vinte e quatro débitos têm gatilho que dispara fora da fatia que os criou: **D28** vem da F0;
 **D23**, **D39**, **D24**, **D27** e **D37** nasceram na F1 — os três últimos na fatia
 `autorizacao-e-ciclo-de-acesso` —; dois nasceram na F2, o **D3** na fatia
 `cadastro-de-imoveis-e-pessoas` e o **D44** na fatia `contratos-de-locacao`;
-e onze nasceram na F3 — o **D1**, o **D26** e o **D20** na fatia `cobranca-e-mora`, o **D3**,
+onze nasceram na F3 — o **D1**, o **D26** e o **D20** na fatia `cobranca-e-mora`, o **D3**,
 o **D12**, o **D14**, o **D49**, o **D54** e o **D57** na fatia `regua-de-cobranca`, e o
-**D5** e o **D12** na fatia `documentos-e-confirmacao`.
+**D5** e o **D12** na fatia `documentos-e-confirmacao`; e cinco nasceram na F4 — o **D25**, o
+**D27**, o **D36**, o **D58** e o **D61**, os cinco na fatia `fundacao-bancaria`.
 ⚠️ **Os dois `D3` são débitos DIFERENTES** e a coincidência é legítima: a sequência corre dentro da
 §2 da fatia que registrou cada um, de modo que o identificador é o par — `D3 · F2/T1` é a definição
 dupla de `ESQUEMA_DO_IDENTIFICADOR`, e `D3 · F3/T1` é a terceira cópia do caminho de leitura
 autenticada do legado. **O mesmo vale para os dois `D12`**, e pela mesma razão: `D12 · F3/T4` é a
 escolha do molde do aviso pela ordem de `ESTADOS_DA_COBRANCA`, e `D12 · F3/T10` é a segunda
-declaração estrutural da mensagem de e-mail.
-O **D27** partilha com o D23 o gatilho e o fato que falta: qual é o salto confiável da borda. O
+declaração estrutural da mensagem de e-mail. **E o mesmo vale para os dois `D27`**, desde
+2026-08-15: `D27 · F1/T6` é o eixo de origem que falta ao limitador de taxa, e `D27 · F4/T8` é o
+campo `detalhe` da porta de identidade, cuja restrição vive só em prosa.
+O **D27 · F1/T6** partilha com o D23 o gatilho e o fato que falta: qual é o salto confiável da borda. O
 **D26** e o **D1** têm a mesma forma: os dois agendam a **promoção de um símbolo duplicado** para
 quando o terceiro consumidor chegar. O **D44** foi emitido na intervenção dirigida de 2026-08-09, e
 não num run — o débito existia desde a T10 e chegava ao futuro só por um parágrafo de docblock.
@@ -616,7 +655,7 @@ intervenção dirigida de limpeza de 2026-08-05, quando `esquemaDoErro` ganhou d
 |---|---|---|
 | **D28** (F0/T5) | `grep -rln --exclude-dir=dist "D28 · F0/T5" apps packages deploy` — a contagem sai do comando, que não envelhece | **JÁ DISPAROU (F1/T2)** — consumidor novo de `packages/shared/test/` por caminho relativo profundo |
 | **D23** (F1/T8) | `apps/api/src/autenticacao/autenticacao.module.ts` | a **publicação atrás do servidor de borda na F7** — origem confiável derivada do endereço de retorno |
-| **D39** (F1/fechamento) | `deploy/scripts/instalacao/provisionar-base.sh` | a **próxima instalação do zero** — o provisionamento não gera `BETTER_AUTH_SECRET` e a API não sobe |
+| **D39** (F1/fechamento) | `deploy/scripts/instalacao/provisionar-base.sh` | a **próxima instalação do zero** — o provisionamento não gera **três** variáveis exigidas e a API não sobe; sem a chave de cifra, nenhuma empresa cobra |
 | **D24** (F1/T5, fatia `autorizacao-e-ciclo-de-acesso`) | `apps/api/src/main.ts` | a **publicação atrás do servidor de borda na F7** — `/docs*` atende sem sessão por decisão registrada, que vale só enquanto a API é local |
 | **D27** (F1/T6, fatia `autorizacao-e-ciclo-de-acesso`) | `packages/auth/src/autenticacao.ts` | a **publicação atrás do servidor de borda na F7** — sem ela o limitador não tem eixo de origem |
 | **D37** (F1/T8, fatia `autorizacao-e-ciclo-de-acesso`) | `apps/api/src/master/empresa.controller.ts` | a **primeira comparação do `:id` do Master com identidade da sessão** — o esquema de lá não canoniza a caixa do UUID |
@@ -633,6 +672,11 @@ intervenção dirigida de limpeza de 2026-08-05, quando `esquemaDoErro` ganhou d
 | **D57** (F3/T12, fatia `regua-de-cobranca`) | `apps/api/test/autorizacao-do-dominio.e2e.spec.ts` (a montagem instrumentada) | **JÁ DISPAROU** — a terceira suíte instrumentada já existe (`equivalencia-com-o-oraculo.spec.ts`); segue valendo o segundo gatilho, `criarAplicacao()` registrar um global fora do `AppModule` |
 | **D5** (F3/T7, fatia `documentos-e-confirmacao`) | `apps/api/test/documento-do-contrato.e2e.spec.ts` (`extrairTextoDePdf`) | o **terceiro consumidor** de extração de texto de PDF (o carnê da F4), ou a **primeira alteração das opções do extrator** — hoje são duas cópias e endurecer uma deixa a outra para trás |
 | **D12** (F3/T10, fatia `documentos-e-confirmacao`) | `packages/documentos/src/mensagem-de-confirmacao.ts` | a **terceira** mensagem de e-mail do produto (o boleto, na F4) — ali `MensagemDeEmail` e a porta de envio sobem para `@sysloc/shared` |
+| **D25** (F4/T7, fatia `fundacao-bancaria`) | `packages/db/src/certificado-do-provedor.ts` (`recusarCertificadoVencido`) | a criação de `negocio.dia_da_operacao(timestamptz)`, ou o **quarto consumidor** do fuso da operação no pacote — hoje são três declarações e nada as amarra |
+| **D27** (F4/T8, fatia `fundacao-bancaria`) | `packages/cobranca-bancaria/src/modelo-canonico.ts` (campo `detalhe`) | **JÁ DISPAROU (F4/T10)** — a T10 escolheu as constantes e pagou a saída por medição; o gatilho emendado é a fatia **(ii)**, ao consumir `detalhe` na tela do Admin (a saída estrutural) |
+| **D36** (F4/T10, fatia `fundacao-bancaria`) | `packages/cobranca-bancaria/src/adaptador-sicoob.ts` (`criarAdaptadorSicoob`) | a fatia **(ii)** trazer `client_id` e `scope` ao envelope cifrado — a sonda sobe para o `client_credentials` e o desfecho positivo perde a ressalva de alcance |
+| **D58** (F4/T13, fatia `fundacao-bancaria`) | `apps/api/src/integracoes-bancarias/certificado.service.ts` (`verificarIdentidade`) | a **primeira carga de tarefa que transportar o segredo operável** (a fatia **(ii)**) — ali a superfície `fila` entra na enumeração da ADR-0032 e cobra caso que a meça |
+| **D61** (F4/T14, fatia `fundacao-bancaria`) | `apps/api/test/cobertura-de-autorizacao.e2e.spec.ts` (cabeçalho; alcança CT-533, CT-635 e CT-732) | o **próximo caso de fecho de superfície** neste arquivo, ou a **primeira alteração de um dos três** — neles a igualdade do retrato precede a garantia nomeada, e a ordem canônica é a do CT-836 |
 
 ---
 

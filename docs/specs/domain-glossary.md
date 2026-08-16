@@ -13,8 +13,24 @@ Instituição financeira que recebe as operações de cobrança bancária, acess
 _Evitar_: banco, integração, gateway, PSP
 
 **Contador sequencial**:
-Número único e contínuo mantido pela imobiliária para identificar cada boleto emitido **perante o provedor**. Nunca reinicia — nem na virada de mês, nem na troca de conta bancária. Compõe o identificador enviado ao provedor junto de um prefixo de competência. É exigência do provedor, não do domínio: não confundir com o contador de uma **Série declarada**, que reinicia quando o escopo dela inclui o ano.
-_Evitar_: seu número, sequencial do boleto, numeração, contador de emissão, contador da série
+Número único e contínuo **em todo o SaaS** — não de uma **Empresa** — que identifica cada boleto emitido **perante o provedor**. Nunca reinicia: nem na virada de mês, nem na troca de conta bancária, nem entre empresas. Compõe o **Identificador perante o provedor** junto de um prefixo de competência. É exigência do provedor, não do domínio: não confundir com o contador de uma **Série declarada**, que é por empresa e reinicia quando o escopo dela inclui o ano.
+_Evitar_: seu número, sequencial do boleto, numeração, contador de emissão, contador da série, contador da empresa
+
+**Identificador perante o provedor**:
+A cadeia de 18 posições que identifica uma cobrança junto ao **Provedor** — 6 de prefixo de competência mais 12 do **Contador sequencial** preenchido à esquerda. É a composição enviada, nunca o valor incremental sozinho, e é por ela que a notificação recebida do provedor descobre a que **Empresa** pertence.
+_Evitar_: nosso número, seu número, nosso numero, identificador do boleto, número do título
+
+**Certificado do provedor**:
+O material que identifica uma **Empresa** perante o **Provedor**, entregue pelo **Admin Empresa** junto da senha que o abre. Toda empresa que cobra tem o seu: não existe identidade de reserva nem compartilhada. O que o produto publica dele é titular, validade, impressão digital, quem o registrou e desde quando — nunca o material nem a senha.
+_Evitar_: certificado digital, pfx, certificado A1, credencial do banco, identidade bancária
+
+**Segredo operável**:
+Segredo de terceiro que o produto precisa **usar**, e não apenas conferir — por isso guardado cifrado de forma reversível, com a chave fora da árvore versionada, e jamais devolvido por superfície alguma. Opõe-se ao segredo verificável (**Senha provisória**, **Portador de confirmação**), que vai ao banco como resumo irreversível e nada recupera.
+_Evitar_: credencial, segredo reversível, segredo criptografado, chave do cliente
+
+**Meio de recebimento**:
+A forma pela qual uma **Cobrança** é recebida junto ao **Provedor** — boleto ou pix. É conceito do modelo canônico do produto, escolhido de lista fechada; pix está previsto e sem operação.
+_Evitar_: forma de pagamento, tipo de cobrança, modalidade, método de pagamento
 
 **Empresa**:
 A imobiliária atendida pelo produto — a unidade de isolamento de dados do sistema, à qual toda informação de negócio pertence.
@@ -202,7 +218,11 @@ _Evitar_: exceção, desvio aceito, diff conhecido, waiver
 - Uma **Empresa** tem no máximo uma **Configuração de mora**; a ausência dela equivale ao par zerado.
 - Toda **Cobrança** tem exatamente uma **Natureza da cobrança**, uma **Competência** e uma **Referência**.
 - A **Ativação de contrato** produz zero ou mais **Cobranças**; o **Cancelamento de contrato** cancela as que estiverem em aberto.
-- Todo boleto emitido consome exatamente um valor do **Contador sequencial**.
+- Todo boleto emitido consome exatamente um valor do **Contador sequencial**, e recebe um **Identificador perante o provedor** que o compõe com o prefixo de competência.
+- Uma **Empresa** tem no máximo um **Certificado do provedor** valendo por vez; registrar um novo substitui o anterior, cujo **Segredo operável** deixa de existir no mesmo ato.
+- Uma **Empresa** sem **Certificado do provedor** não opera contra o **Provedor** — e a recusa a nomeia, em vez de recorrer à identidade de outra.
+- O material e a senha de um **Certificado do provedor** são um **Segredo operável**; a **Senha provisória** e o **Portador de confirmação** não são.
+- Toda **Cobrança** que vai ao **Provedor** o faz por exatamente um **Meio de recebimento**.
 - Um **Boleto em aberto** pertence a uma **Cobrança** e foi emitido sob uma configuração de um **Provedor**.
 - Toda informação de negócio pertence a exatamente uma **Empresa**.
 - Um **Admin Empresa** e um **Usuário Empresa** pertencem a exatamente uma **Empresa**; um **Sysloc Master** não pertence a nenhuma.
@@ -229,7 +249,10 @@ _Evitar_: exceção, desvio aceito, diff conhecido, waiver
 
 ## Ambiguidades resolvidas
 
-- "Seu número" era usado tanto para o **Contador sequencial** quanto para o identificador completo enviado ao provedor (prefixo + contador). Resolvido: são conceitos distintos — o contador é o valor incremental; o identificador é a composição enviada.
+- "Seu número" era usado tanto para o **Contador sequencial** quanto para o identificador completo enviado ao provedor (prefixo + contador). Resolvido: são conceitos distintos — o contador é o valor incremental; a composição enviada é o **Identificador perante o provedor**, que agora tem termo próprio.
+- **"Contador sequencial" foi definido como *"mantido pela imobiliária"*, e isso era falso.** Resolvido no challenge de `fundacao-bancaria` (2026-08-14): o escopo dele é **o SaaS inteiro**. A definição antiga vinha de um sistema que atendia uma empresa só, onde os dois escopos coincidiam; com duas imobiliárias emitindo no mesmo mês, um contador por empresa faz dois boletos disputarem o mesmo número. A regra geral que reconcilia os três contadores do produto é que **cada série declara o próprio escopo** — duas por `(empresa, ano)`, uma pelo SaaS —, e ela está fixada na **ADR-0033** (2026-08-14), que superseded a ADR-0015 por esta exata razão: a `Decision` de lá abria com *"todo contador sequencial deste produto é único por empresa"*, quantificador universal que este contador falsifica.
+- "Certificado" era usado tanto para o material que a empresa entrega ao produto quanto para o registro que o produto publica sobre ele. Resolvido: o termo é **Certificado do provedor** e nomeia o registro; o material e a senha dentro dele são o **Segredo operável**, e é essa metade que nunca volta.
+- "Segredo" nomeava indistintamente o que se confere e o que se usa. Resolvido: o que se confere vai resumido e irreversível (**Senha provisória**, **Portador de confirmação**); o que se **usa** é o **Segredo operável**, cifrado de forma reversível. A distinção existe para que ninguém "corrija" a cifra reversível em nome da coerência.
 - "Banco" era usado tanto para a instituição financeira quanto para o banco de dados. Resolvido: a instituição é **Provedor**; banco de dados permanece "banco de dados".
 - "Usuário" era usado tanto para qualquer pessoa autenticada quanto para o perfil sem poderes administrativos. Resolvido: pessoa autenticada é "pessoa" ou "conta"; o perfil é **Usuário Empresa**.
 - "Empresa" e "tenant" apareciam como sinônimos em textos técnicos. Resolvido: o termo do produto é **Empresa**; "tenant" fica restrito à discussão de isolamento no banco, nunca à API nem à interface.

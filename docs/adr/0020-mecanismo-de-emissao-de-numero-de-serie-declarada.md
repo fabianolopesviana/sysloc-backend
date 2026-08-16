@@ -10,9 +10,12 @@ tags: [data, architecture]
 
 ## Context
 
-A ADR-0015 fixa a **política** de todo contador — único por empresa, escopo declarado por série, furo
-aceito, número nunca reusado nem por criação abortada — e deliberadamente não diz **como** o número
-nasce. O contrato é a primeira entidade a precisar de um, e a cobrança da F3 e o `seu_numero` da
+A ADR-0033 fixa a **política** de toda série — escopo declarado pela própria série, furo aceito,
+número nunca reusado nem por criação abortada — e deliberadamente não diz **como** o número nasce.
+(Quando esta ADR foi escrita, a política vigente era a **ADR-0015**, que declarava o escopo fixo em
+`empresa`; a 0033 a superseded em 2026-08-14 ao admitir série de escopo SaaS. **O mecanismo abaixo
+não mudou** — ele é indiferente ao escopo, e é justamente essa indiferença que o deixou valer para as
+três séries do produto.) O contrato é a primeira entidade a precisar de um, e a cobrança da F3 e o `seu_numero` da
 integração bancária vêm logo atrás. As duas cláusulas daquela política se excluem sob o mecanismo mais
 óbvio: uma linha de contador incrementada na mesma transação da criação trava a linha até o commit
 (criações concorrentes esperam) e **devolve o número no desfazimento** (o próximo registro o reusa).
@@ -42,7 +45,9 @@ O contrato instancia a regra com escopo `(empresa, ano)`.
 - Semear valor inicial passa a ser operação sobre objeto de banco, não escrita em tabela.
 
 **Neutros:**
-- Não altera a ADR-0015: aquela decide escopo, furo e não-reuso; esta decide o mecanismo.
+- Não altera a política da série — hoje a **ADR-0033**, antes a ADR-0015: aquela decide escopo, furo
+  e não-reuso; esta decide o mecanismo. As citações à 0015 no restante deste documento são
+  **históricas** — registram contra o que as alternativas foram rejeitadas em 2026-08-08.
 - Quais entidades expõem código legível é da ADR-0017; o formato textual de cada série é da fatia dela.
 - Alargar o privilégio do papel da aplicação para criar o objeto **não** é o caminho: ele passaria a
   poder criar tabela no schema de negócio, contornando a guarda de cobertura da ADR-0008.

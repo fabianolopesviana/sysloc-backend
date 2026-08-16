@@ -103,9 +103,10 @@ const PAPEL_DONO = 'sysloc_migracao';
  * `cadastro-de-imoveis-e-pessoas` criou SEIS tabelas em `negocio` pela migração `0005`, a T3 da
  * fatia `contratos-de-locacao` acrescentou DUAS pela `0007`, a T3 da fatia `cobranca-e-mora`
  * acrescentou DUAS pela `0009`, a T3 da fatia `regua-de-cobranca` acrescentou DUAS pela `0011`, e a
- * T3 da sub-fatia `documentos-e-confirmacao` acrescenta UMA pela `0013`. O
+ * T3 da sub-fatia `documentos-e-confirmacao` acrescentou UMA pela `0013`, e a T4 da fatia
+ * `fundacao-bancaria` acrescenta UMA pela `0015`. O
  * papel da conexão — que é o que estes casos provam — não mudou: `sysloc_app` continua sem
- * privilégio, e a tabela nova continua pertencendo a `sysloc_migracao`. Declarar as quinze é a
+ * privilégio, e a tabela nova continua pertencendo a `sysloc_migracao`. Declarar as dezesseis é a
  * atualização legítima; derivar a lista da própria consulta faria o esperado vir da mesma fonte que
  * o obtido, e a asserção deixaria de poder falhar. **Crescimento da lista esperada é o caminho
  * legítimo; trocar a igualdade por contenção (`toContain`) seria regressão de prova.**
@@ -113,10 +114,15 @@ const PAPEL_DONO = 'sysloc_migracao';
  * A VISÃO `negocio.cobranca_derivada`, criada pela `0010`, **não aparece aqui**, e a ausência não é
  * esquecimento: a consulta que alimenta estes casos lê `pg_tables`, e o que eles afirmam é o DONO de
  * cada tabela. Quem responde pela visão é a guarda de cobertura, em `catalogo.spec.ts`.
+ *
+ * Os objetos que a `0016` cria em **`plataforma`** também não aparecem aqui, e por duas razões que se
+ * somam: a consulta é filtrada pelo schema `negocio`, e nenhum dos dois é tabela — são uma sequência
+ * e uma função (ADR-0031, cujo roster de tabelas de `plataforma` é hoje **vazio**).
  */
 const TABELAS_DE_NEGOCIO_ESPERADAS = [
   'acesso_usuario_app',
   'acesso_usuario_permissao',
+  'certificado_do_provedor',
   'cobranca',
   'comodo',
   'configuracao_de_mora',
@@ -321,10 +327,11 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
 
       // A contagem é afirmada ANTES da propriedade, e é deliberada: sem ela, um schema `negocio`
       // vazio faria a asserção seguinte passar sem examinar tabela alguma.
-      expect(observado.tabelasDeNegocio).toHaveLength(15);
+      expect(observado.tabelasDeNegocio).toHaveLength(16);
       expect(observado.tabelasDeNegocio.map((linha) => linha.tabela)).toEqual([
         'acesso_usuario_app',
         'acesso_usuario_permissao',
+        'certificado_do_provedor',
         'cobranca',
         'comodo',
         'configuracao_de_mora',
@@ -339,10 +346,11 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
         'politica_de_aviso',
         'portador_de_confirmacao',
       ]);
-      // As quinze escritas por extenso, e não `map(() => …)`: a propriedade é afirmada POR TABELA, de
-      // modo que uma delas que nascesse com outro dono apareça pela posição. Derivar a lista do
+      // As dezesseis escritas por extenso, e não `map(() => …)`: a propriedade é afirmada POR TABELA,
+      // de modo que uma delas que nascesse com outro dono apareça pela posição. Derivar a lista do
       // tamanho da anterior faria a contagem responder no lugar da propriedade.
       expect(observado.tabelasDeNegocio.map((linha) => linha.dono)).toEqual([
+        'sysloc_migracao',
         'sysloc_migracao',
         'sysloc_migracao',
         'sysloc_migracao',
@@ -378,9 +386,9 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
         "current_user = 'sysloc_migracao' (esperado 'sysloc_app')",
         "pg_has_role(current_user, 'sysloc_migracao', 'MEMBER') = true",
         "tableowner = current_user ('sysloc_migracao') em acesso_usuario_app, " +
-          'acesso_usuario_permissao, cobranca, comodo, configuracao_de_mora, conjunto, contrato, ' +
-          'contrato_fiador, envio_de_cobranca, fiador, imovel, locador, locatario, ' +
-          'politica_de_aviso, portador_de_confirmacao',
+          'acesso_usuario_permissao, certificado_do_provedor, cobranca, comodo, ' +
+          'configuracao_de_mora, conjunto, contrato, contrato_fiador, envio_de_cobranca, fiador, ' +
+          'imovel, locador, locatario, politica_de_aviso, portador_de_confirmacao',
       ]);
 
       const superusuario = await conferirPapelDaConexao(conexaoSuperusuaria(banco));

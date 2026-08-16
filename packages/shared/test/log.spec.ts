@@ -6,6 +6,9 @@
  * → CT-006, CT-007, CT-008.
  * Rastreabilidade: T1/F1 §4 (terceiro eixo de redação, por forma do valor, que fecha o débito
  * D25) e CA-15 (nenhum segredo legível no registro interno) → CT-027, CT-028.
+ * Rastreabilidade: T3/F4 §4 (três radicais novos no eixo do nome — `pfx`, `passphrase` e
+ * `material` — e `certificado` deliberadamente fora) e CA-12 (nenhum segredo em registro, erro ou
+ * diagnóstico) → CT-829.
  *
  * INVARIANTES
  * - CT-006: cada evento chega ao destino como uma linha JSON única e parseável, carregando o
@@ -35,6 +38,12 @@
  *   endereço e **nada além disso** — como chave do evento ele não mascara, e `statusCode` e
  *   `errorCode` chegam ao destino com o valor informado. As duas metades convivem no mesmo
  *   evento: sem a negativa, mover o radical para a lista de chaves não reprovaria nada.
+ * - CT-829: chave cujo nome case `material`, `pfx` ou `passphrase` não chega ao destino em forma
+ *   legível — nem no primeiro nível, nem aninhada, nem como propriedade própria de exceção, nem
+ *   como vínculo de logger filho, nem como nome de parâmetro de endereço —, **e** o
+ *   `certificadoId` do MESMO evento chega **com o valor**, porque `certificado` não é radical e a
+ *   ausência dele é a decisão. As duas metades convivem no mesmo evento: sem a segunda, acrescentar
+ *   `certificado` à lista cegaria o diagnóstico passando verde.
  * - CT-028: endereço legítimo, **sem** parâmetro sensível, atravessa byte a byte idêntico nas
  *   três posições — inclusive com `@`, `=` ou `?` no valor de um parâmetro inocente, e com
  *   `callbackURL`, que é alvo de retorno e não credencial. É o companheiro que cobre o endereço
@@ -1025,5 +1034,208 @@ describe('CT-028 — endereço legítimo sem parâmetro sensível atravessa byte
     const evento = JSON.parse(linhasNaoVazias(conteudo)[0] as string) as Record<string, unknown>;
     // Igualdade literal com o que foi informado — caractere a caractere, sem exceção.
     expect(extrair(evento), `endereço mutilado: ${endereco}`).toBe(montar(endereco));
+  });
+});
+
+/**
+ * Os três radicais que o **segredo operável** do provedor bancário introduz — e o `certificadoId`
+ * que precisa sobreviver a eles.
+ *
+ * Por que exatamente três, e por que estes: a medição M4 desta fatia registrou dois vetores que a
+ * redação **não alcançava**, os dois chegando ao destino em claro — `materialDoCertificado` e
+ * `{ certificado: { pfx, passphrase } }`. `material` fecha o primeiro; `pfx` e `passphrase` fecham o
+ * segundo **pelas chaves internas**, que é onde o valor de fato está: a chave externa `certificado`
+ * carrega um objeto, não um segredo.
+ *
+ * ⚠️ **A METADE QUE IMPEDE A "CORREÇÃO" ÓBVIA.** O casamento é por radical contido na chave
+ * normalizada, de modo que o radical `certificado` — a escolha idiomática, que pareceria cobrir
+ * tudo de uma vez — alcançaria **`certificadoId`**, o único eixo pelo qual uma falha registrada se
+ * liga à linha do banco. Ele trocaria vazamento por cegueira operacional: o diagnóstico sairia
+ * `[REDIGIDO]` sem cobrir um byte a mais de segredo. Por isso o caso afirma, no MESMO evento, que
+ * as sentinelas somem **e** que o identificador chega com o valor — sem a segunda metade,
+ * acrescentar `certificado` à lista passaria verde e ninguém veria.
+ *
+ * ⚠️ **A redação é a SEGUNDA barreira, nunca a garantia** (ADR-0032). A primeira é estrutural — o
+ * material e a senha não são campo de objeto que viaje para registro —, e a prova sobre as quatro
+ * superfícies de saída real é de outra task. Este bloco prova o que é desta: que o eixo do nome
+ * passou a reconhecer os três radicais, em todas as rotas por onde uma chave é reconhecida.
+ */
+describe('CT-829 — radicais do segredo operável redigidos, com o `certificadoId` legível', () => {
+  const EVENTO_BASE = { evento: 'certificado_recusado', idCorrelacao: 'corr-seguranca-829' };
+
+  /** O eixo que liga a falha registrada à linha do banco — e que a redação NÃO pode alcançar. */
+  const CERTIFICADO_ID = '9c2f1b7a-4d38-4e6f-8a51-0b7d3e5c6a24';
+
+  const SENTINELA_DO_MATERIAL = 'MATERIAL-NAO-VAZAR-4b7e';
+  const SENTINELA_DO_PFX = 'PFX-NAO-VAZAR-8c31';
+  const SENTINELA_DA_PASSPHRASE = 'PASSPHRASE-NAO-VAZAR-0d92';
+
+  /** A ordem é a do filtro abaixo, e é o que torna a lista de achados comparável por igualdade. */
+  const SENTINELAS = [SENTINELA_DO_MATERIAL, SENTINELA_DO_PFX, SENTINELA_DA_PASSPHRASE] as const;
+
+  /** Endereço do provedor — o eixo de endereço herda os radicais novos pelo *spread* já existente. */
+  const ENDERECO = 'https://api.sicoob.com.br:443/cobranca';
+
+  /** Destino do controle positivo — nome próprio, para nunca colidir com o do arquivo sob exame. */
+  const ARQUIVO_DE_CONTROLE = 'controle.log';
+
+  function agulhasEncontradas(conteudo: string): readonly string[] {
+    return SENTINELAS.filter((sentinela) => conteudo.includes(sentinela));
+  }
+
+  /**
+   * **O controle positivo da varredura, e ele é indispensável** (AP-29): afirmar que a agulha não
+   * está na palha não prova nada enquanto não se souber que esta busca a **acha** quando ela está
+   * lá — uma varredura quebrada passa verde e não prova coisa alguma.
+   *
+   * O plantio usa o **mesmo registrador**, o **mesmo tipo de destino** e as **mesmas posições** do
+   * caso, trocando apenas os nomes das chaves por nomes inócuos. Assim ele falsifica, de uma vez,
+   * as três maneiras de a asserção principal ser vacuamente verde: busca quebrada, registrador que
+   * não escreveu nada, e valor truncado antes de chegar ao arquivo.
+   */
+  async function agulhasNoControle(emitir: (logger: Logger) => void): Promise<readonly string[]> {
+    const destino = join(diretorio, ARQUIVO_DE_CONTROLE);
+    const logger = criarLogger({ nivel: 'info', destino });
+    emitir(logger);
+    await esvaziar(logger);
+    return agulhasEncontradas(await readFile(destino, 'utf8'));
+  }
+
+  it('redige `materialDoCertificado`, `pfx` e `passphrase`, e deixa `certificadoId` legível', async () => {
+    // (a) CONTROLE POSITIVO — as mesmas três sentinelas, nas mesmas posições, sob nomes inócuos:
+    //     a busca tem de achar as três antes de a ausência delas significar alguma coisa.
+    const achadasNoControle = await agulhasNoControle((logger) =>
+      logger.warn({
+        ...EVENTO_BASE,
+        controleRaso: SENTINELA_DO_MATERIAL,
+        envelopeDeControle: { controleAninhado: SENTINELA_DO_PFX },
+        alvo: `${ENDERECO}?pagina=${SENTINELA_DA_PASSPHRASE}`,
+      }),
+    );
+    expect(achadasNoControle, 'a varredura não acha a agulha nem quando ela está plantada').toEqual(
+      [SENTINELA_DO_MATERIAL, SENTINELA_DO_PFX, SENTINELA_DA_PASSPHRASE],
+    );
+
+    const { logger, destino } = loggerEmArquivo('info');
+
+    logger.warn({
+      ...EVENTO_BASE,
+      certificadoId: CERTIFICADO_ID,
+      materialDoCertificado: SENTINELA_DO_MATERIAL,
+      certificado: { pfx: SENTINELA_DO_PFX, passphrase: SENTINELA_DA_PASSPHRASE },
+      alvo: `${ENDERECO}?passphrase=${SENTINELA_DA_PASSPHRASE}&pagina=2`,
+    });
+    await esvaziar(logger);
+
+    const conteudo = await readFile(destino, 'utf8');
+
+    // (b) A VARREDURA — sobre o arquivo INTEIRO, e não sobre um campo escolhido: foi asserir só o
+    //     campo que deixou a mensagem promovida vazar em silêncio numa fatia anterior.
+    expect(agulhasEncontradas(conteudo), 'sentinela vazada no arquivo de eventos').toEqual([]);
+    expect(conteudo).not.toContain('NAO-VAZAR');
+
+    const linhas = linhasNaoVazias(conteudo);
+    expect(linhas).toHaveLength(1);
+    const evento = JSON.parse(linhas[0] as string) as Record<string, unknown>;
+    const certificado = evento.certificado as Record<string, unknown> | undefined;
+
+    // (c) PRESENÇA, NÃO AUSÊNCIA — as três chaves seguem na linha, carregando o sentinela. Um
+    //     evento silenciado, ou um objeto `certificado` inteiro colapsado, passaria em (b) sem
+    //     redigir coisa alguma; aqui reprova.
+    expect({
+      materialDoCertificado: evento.materialDoCertificado,
+      pfx: certificado?.pfx,
+      passphrase: certificado?.passphrase,
+    }).toEqual({
+      materialDoCertificado: SENTINELA_REDIGIDO,
+      pfx: SENTINELA_REDIGIDO,
+      passphrase: SENTINELA_REDIGIDO,
+    });
+
+    // (d) A OUTRA METADE — o identificador chega com o valor. É esta linha que reprova o dia em que
+    //     alguém acrescentar `certificado` à lista de radicais.
+    expect(evento.certificadoId, '`certificadoId` redigido — é diagnóstico, não segredo').toBe(
+      CERTIFICADO_ID,
+    );
+
+    // (e) Mascarar não é silenciar: o evento continua sendo emitido, com os demais campos.
+    expect(evento.evento).toBe('certificado_recusado');
+    expect(evento.idCorrelacao).toBe('corr-seguranca-829');
+    expect(evento.nivel).toBe('warn');
+
+    // (f) O EIXO DE ENDEREÇO, alcançado por consequência do *spread* que deriva a lista de nomes de
+    //     parâmetro — sem segunda lista. Sai o valor do parâmetro sensível; o esquema, o
+    //     hospedeiro, a porta, o caminho e o parâmetro inocente atravessam intactos.
+    expect(evento.alvo, 'endereço mutilado além do parâmetro sensível').toBe(
+      `${ENDERECO}?passphrase=${SENTINELA_REDIGIDO}&pagina=2`,
+    );
+  });
+
+  /**
+   * As duas portas que reconhecem uma chave por **rota própria**, e que o evento acima não
+   * atravessa: a propriedade própria de uma exceção — `redigirErro` consulta o predicado numa
+   * segunda posição, separada da de `redigirObjeto` — e o vínculo de um logger filho, que o pino
+   * monta fora do formatador de campos e que é por onde o contexto da requisição viaja.
+   *
+   * Radical que valesse só numa das rotas vazaria pela outra em silêncio — foi exatamente assim que
+   * a classe reapareceu quatro vezes neste repositório, cada correção fechando o caminho apontado.
+   */
+  it('alcança a propriedade própria da exceção e o vínculo do logger filho', async () => {
+    // (a) CONTROLE POSITIVO — as mesmas três sentinelas, nas mesmas duas rotas, sob nomes inócuos.
+    const achadasNoControle = await agulhasNoControle((logger) =>
+      logger.child({ controleNoVinculo: SENTINELA_DA_PASSPHRASE }).error(
+        {
+          ...EVENTO_BASE,
+          err: Object.assign(new Error('falha no aperto de mão com o provedor'), {
+            controleNaExcecao: SENTINELA_DO_MATERIAL,
+            outroNaExcecao: SENTINELA_DO_PFX,
+          }),
+        },
+        'falha ao registrar o certificado',
+      ),
+    );
+    expect(achadasNoControle, 'a varredura não acha a agulha nem quando ela está plantada').toEqual(
+      [SENTINELA_DO_MATERIAL, SENTINELA_DO_PFX, SENTINELA_DA_PASSPHRASE],
+    );
+
+    const { logger, destino } = loggerEmArquivo('info');
+
+    logger.child({ passphrase: SENTINELA_DA_PASSPHRASE }).error(
+      {
+        ...EVENTO_BASE,
+        certificadoId: CERTIFICADO_ID,
+        err: Object.assign(new Error('falha no aperto de mão com o provedor'), {
+          materialDoCertificado: SENTINELA_DO_MATERIAL,
+          pfx: SENTINELA_DO_PFX,
+        }),
+      },
+      'falha ao registrar o certificado',
+    );
+    await esvaziar(logger);
+
+    const conteudo = await readFile(destino, 'utf8');
+    expect(agulhasEncontradas(conteudo), 'sentinela vazada no arquivo de eventos').toEqual([]);
+    expect(conteudo).not.toContain('NAO-VAZAR');
+
+    const evento = JSON.parse(linhasNaoVazias(conteudo)[0] as string) as Record<string, unknown>;
+    const erroRegistrado = evento.err as Record<string, unknown> | undefined;
+
+    // Presença nas duas rotas, mais o vínculo do filho — que chega como campo de topo da linha.
+    expect({
+      materialDoCertificado: erroRegistrado?.materialDoCertificado,
+      pfx: erroRegistrado?.pfx,
+      passphrase: evento.passphrase,
+    }).toEqual({
+      materialDoCertificado: SENTINELA_REDIGIDO,
+      pfx: SENTINELA_REDIGIDO,
+      passphrase: SENTINELA_REDIGIDO,
+    });
+
+    // Mascarar não é apagar, nas duas metades: o identificador e o diagnóstico da falha sobrevivem.
+    expect(evento.certificadoId, '`certificadoId` redigido — é diagnóstico, não segredo').toBe(
+      CERTIFICADO_ID,
+    );
+    expect(erroRegistrado?.mensagem).toBe('falha no aperto de mão com o provedor');
+    expect(evento.mensagem).toBe('falha ao registrar o certificado');
   });
 });

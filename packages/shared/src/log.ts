@@ -124,8 +124,17 @@ const CHAVE_DA_MENSAGEM = 'mensagem';
  */
 const CHAVE_DO_VALOR_AVULSO = 'valor';
 
-/** Valor que substitui o conteúdo de um campo sensível. */
-const SENTINELA_REDIGIDO = '[REDIGIDO]';
+/**
+ * Valor que substitui o conteúdo de um campo sensível.
+ *
+ * Exportada **dentro do pacote** desde que o segredo operável nasceu: o invólucro de
+ * `./segredo-operavel.ts` devolve exatamente esta sentinela nas três formas de serialização, e
+ * redeclarar o literal lá faria a redação do registrador e a opacidade do invólucro ficarem livres
+ * para divergir — dois fatos executáveis dizendo a mesma coisa, com nada que acuse a divergência.
+ * Ela **não** entra na superfície pública do pacote (`./index.ts`), pelo critério que aquele arquivo
+ * declara: é detalhe de construção, e publicá-la convidaria a duplicar a decisão em vez de usá-la.
+ */
+export const SENTINELA_REDIGIDO = '[REDIGIDO]';
 
 /** Valor que substitui uma referência já visitada no caminho atual. */
 const SENTINELA_CICLO = '[CICLO]';
@@ -152,6 +161,14 @@ const SENTINELA_CICLO = '[CICLO]';
  * são radicais distintos porque a biblioteca fala inglês e o produto fala português, e a chave
  * pode nascer de qualquer dos dois lados.
  *
+ * Os **três últimos** entram com o segredo operável do provedor bancário, e a escolha é medida, não
+ * suposta: a redação não alcançava `materialDoCertificado` nem
+ * `{ certificado: { pfx, passphrase } }`, e os dois chegavam ao destino em claro. `material` fecha
+ * o primeiro; `pfx` e `passphrase` fecham o segundo **pelas chaves internas**, que é onde o valor
+ * de fato está — a chave externa `certificado` carrega um objeto, não um segredo. Os dois nomes em
+ * inglês são o vocabulário da biblioteca de TLS (`https.request({ pfx, passphrase })`), que é a
+ * forma sob a qual o par viaja quando alguém registra as opções do aperto de mão.
+ *
  * **O que esta lista deliberadamente NÃO cobre**: a senha do PostgreSQL, que neste projeto não
  * chega sob chave chamada `senha` — chega dentro de `DATABASE_URL`, cujo formato o
  * `.env.example` versionado documenta como `postgres://USUARIO:SEGREDO@HOSPEDEIRO:PORTA/BANCO`
@@ -172,6 +189,25 @@ const RADICAIS_SENSIVEIS: readonly string[] = [
   'segredo',
   'chavecifra',
   'cpf',
+  // DECISÃO FECHADA — T3 (F4) / medição M4 · 2026-08-14
+  // O QUÊ: `certificado` NÃO é radical sensível. Os três abaixo alcançam o segredo operável do
+  //        provedor pelas chaves que de fato o carregam, e a chave externa `certificado` fica
+  //        FORA de propósito. Isto NÃO congela a lista: radical novo entra por acréscimo, como
+  //        estes três entraram — o que não entra é este nome.
+  // POR QUÊ: o casamento é por radical CONTIDO na chave normalizada, de modo que `certificado`
+  //          alcançaria `certificadoId` — o campo que os eventos desta fatia registram e o único
+  //          eixo pelo qual uma falha se liga à linha do banco. Acrescentá-lo trocaria vazamento
+  //          por cegueira operacional: o diagnóstico sairia `[REDIGIDO]` sem cobrir um byte a mais
+  //          de segredo, já que material e senha estão sob `material`, `pfx` e `passphrase`.
+  // REVERTER EXIGE: (1) demonstrar que `certificadoId` deixou de ser o eixo de diagnóstico dos
+  //                 eventos do certificado, ou que passou a carregar segredo; (2) retirar, ANTES
+  //                 de incluir o radical, a asserção que a defende — o `certificadoId` legível do
+  //                 CT-829 (`packages/shared/test/log.spec.ts`), nas suas duas metades —, com a
+  //                 linha `SUT_IS_CORRECT_BECAUSE:` que o P5 da `.claude/rules/nao-regressao.md`
+  //                 exige.
+  'pfx',
+  'passphrase',
+  'material',
 ];
 
 /**

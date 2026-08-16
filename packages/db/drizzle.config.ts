@@ -71,6 +71,28 @@ export default defineConfig({
   // las de novo, e `deploy/scripts/instalacao/verificar-migracao.sh` (T5) é o que reprova se elas
   // voltarem. Uma geração INCREMENTAL não as reemite, porque `migracoes/meta/0000_snapshot.json`
   // já registra os dois schemas como existentes.
+  //
+  // ---------------------------------------------------------------------------
+  // Por que `plataforma` NÃO está nesta lista — e o que muda quando ele tiver tabela
+  // ---------------------------------------------------------------------------
+  //
+  // O terceiro schema do produto (`plataforma`, criado pelo provisionamento e povoado pela
+  // `0016_seguranca_bancaria.sql`) fica de fora **de propósito**, e não por esquecimento: hoje ele
+  // guarda apenas a sequência do identificador perante o provedor e as duas funções que a cercam,
+  // objetos que vivem só em migração autoral. **Nenhum objeto de `plataforma` é declarado no
+  // Drizzle**, de modo que não há o que introspectar nem o que comparar — pôr o nome aqui não
+  // acrescentaria nada e sugeriria, falsamente, que o gerador governa aquele schema.
+  //
+  // ⚠️ O que muda quando a PRIMEIRA tabela de `plataforma` for declarada no Drizzle (a notificação
+  // crua do provedor, prevista para a fatia (iii)): como nenhum snapshot anterior registra o schema
+  // — medido, `meta/0000_snapshot.json` e `meta/0015_snapshot.json` não contêm a cadeia
+  // `plataforma` —, o gerador **proporá `CREATE SCHEMA "plataforma"`** já na primeira geração
+  // incremental, e a supressão manual descrita acima volta a ser obrigatória naquele arquivo.
+  //
+  // ⚠️ E acrescentar `plataforma` a esta lista **não** evita isso: como a medição acima registra,
+  // `schemaFilter` não suprime linha alguma da saída de `generate` — ele restringe a introspecção de
+  // `pull`/`push`. A correção intuitiva é a errada; a correta continua sendo remover o
+  // `CREATE SCHEMA` à mão, com `verificar-migracao.sh` (asserção `(e)`) reprovando se ele voltar.
   schemaFilter: ['identidade', 'negocio'],
   verbose: true,
   strict: true,

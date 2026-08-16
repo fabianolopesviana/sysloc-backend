@@ -1,0 +1,1639 @@
+/**
+ * **A medição que a ADR-0032 exige** — T13 da fatia `fundacao-bancaria`.
+ *
+ * A `Decision` da ADR-0032 é literal quanto ao MÉTODO, e não apenas quanto ao fato: o segredo
+ * operável *"não retorna por superfície alguma do produto — consulta, erro ou diagnóstico —, e a
+ * ausência de vazamento é afirmada por **medição da saída real**, nunca por leitura do código"*.
+ * Este arquivo é essa medição, e ele **não lê o fonte de nada**: ele envia segredo de verdade pelas
+ * três rotas de pé e varre o que **saiu** — corpo de resposta, corpo de erro, arquivo de diário do
+ * processo, documento publicado — mais o **estado em repouso** no banco.
+ *
+ * ===========================================================================
+ * INVARIANTES
+ * ===========================================================================
+ *
+ * | Critério | Caso | Invariante |
+ * |---|---|---|
+ * | A1    | CT-823 | Os **três** corpos de resposta — registro, consulta e verificação —,
+ * | CA-02 |        | serializados **por inteiro** (texto cru, `JSON.stringify` e `util.inspect` do
+ * |       |        | objeto desserializado) e acompanhados da **linha de cabeçalho** de cada uma,
+ * |       |        | não contêm a senha nem os bytes do material, em forma alguma; e **nenhuma
+ * |       |        | linha do arquivo de diário** os carrega depois do registro **aceito** e da
+ * |       |        | verificação. O material **de fato circulou** pelas três: a impressão digital
+ * |       |        | publicada é a do cofre enviado, e as duas linhas de trilha do caminho de
+ * |       |        | sucesso **existem** no diário. |
+ * | A2    | CT-830 | Os **dois** envelopes `422` do registro — o do esquema e o da validade já
+ * | CA-12 |        | encerrada — não ecoam o material nem a senha, nem em `mensagem`, nem em
+ * |       |        | `campo`, nem em `detalhes`, nem no corpo inteiro, nem na linha de cabeçalho,
+ * |       |        | medidos na **saída HTTP real** e não presumidos do `ZodError`. O segundo é o
+ * |       |        | caminho em que o cofre **abriu** e `cifrarSegredo` correu, e é o único que
+ * |       |        | publica `detalhes` — de modo que aquela superfície é varrida **com conteúdo**,
+ * |       |        | afirmado por igualdade de chaves antes da varredura. |
+ * | A3    | CT-831 | Nenhuma linha do arquivo de diário **do processo real** carrega a senha ou os
+ * | CA-12 |        | bytes, nos **três** cenários de recusa do registro — senha que não abre,
+ * |       |        | material ilegível e validade encerrada; e as linhas dos três eventos
+ * |       |        | **existem**, com os três motivos internos do vocabulário na ordem das
+ * |       |        | requisições e as três recusas registradas. |
+ * | A4    | CT-832 | O documento publicado das três rotas declara **exatamente** o conjunto de
+ * | CA-02 |        | chaves esperado — nenhuma a mais — e **nenhuma** das chaves proibidas, contando
+ * | CA-12 |        | também as que aparecem em exemplo. |
+ * | A5    | CT-833 | Os bytes gravados em `segredo_cifrado` **diferem** do claro e não o contêm;
+ * | CA-02 |        | decifrar com outra chave de 32 bytes **levanta sem devolver nada**; e decifrar
+ * | CA-12 |        | com a chave da operação devolve o par **byte a byte** — a coluna guarda o
+ * |       |        | segredo, não lixo. |
+ * | A6    | os cinco | **Cada** varredura é aplicada antes a um objeto de controle onde as agulhas
+ * |       |        | foram plantadas canal a canal, e a lista de achados é afirmada por igualdade. |
+ * | A7    | os cinco | As agulhas são derivadas do dado **que de fato circulou**: a senha é a senha
+ * |       |        | real enviada, e os bytes são os bytes reais apresentados. |
+ *
+ * Rastreabilidade: `A1 → CT-823 (CA-02)` · `A2 → CT-830 (CA-12)` · `A3 → CT-831 (CA-12)` ·
+ * `A4 → CT-832 (CA-02, CA-12)` · `A5 → CT-833 (CA-02, CA-12)` · `A6/A7 → CT-823, CT-830, CT-831,
+ * CT-832, CT-833`.
+ *
+ * ===========================================================================
+ * TODA VARREDURA CARREGA CONTROLE POSITIVO — e a razão é medida
+ * ===========================================================================
+ *
+ * Uma varredura que **nunca acha nada** aprovaria um produto vazando tudo: é o **AP-29**
+ * (`tautological_assertion`), a causa de rejeição repetida desta fatia e da anterior. Por isso os
+ * cinco casos aplicam **a mesma** função de varredura ({@link ocorrenciasDe}) a um objeto de
+ * controle onde cada agulha está plantada num canal diferente — mensagem, campo aninhado, item de
+ * lista, `Buffer` inspecionado —, e afirmam por **igualdade** a lista de achados. Se a busca
+ * quebrar, o controle reprova nomeando qual canal deixou de ser alcançado.
+ *
+ * E as agulhas não são cadeias inventadas: são a **senha real** enviada e os **bytes reais**
+ * apresentados, em base64 e em recorte hexadecimal. Derivar a agulha do dado real é o que impede a
+ * variante oca — *"procurei uma cadeia que nunca entrou"*.
+ *
+ * ⚠️ **As agulhas são mutuamente não-substring**, e isso é conteúdo: o recorte do material vai
+ * em **hexadecimal**, e não em base64, porque um recorte em base64 seria substring do material
+ * completo — o controle positivo passaria a achar duas agulhas no canal de uma, e a igualdade que
+ * prova a varredura viraria uma lista escrita para bater com o efeito colateral.
+ *
+ * ⚠️ **A propriedade tem uma segunda ponta, e ela só apareceu quando dois materiais passaram a
+ * circular no mesmo caso**: a agulha também precisa ser deste cofre, e não daquele emissor. O recorte
+ * tirado a 64 bytes do começo **não era** — dois cofres da mesma autoridade têm os 107 primeiros
+ * bytes idênticos (cabeçalho ASN.1 e os OIDs do PBES2/PBKDF2), de modo que as agulhas hexadecimais
+ * dos dois materiais eram a **mesma cadeia**. Quem pegou foi o controle positivo, reprovando por
+ * excesso — cada canal achava duas agulhas. O recorte passou a sair da **metade** do cofre, que é
+ * chave privada cifrada, e o detalhe está em {@link BYTES_DO_RECORTE}.
+ *
+ * ===========================================================================
+ * ORDEM DAS ASSERÇÕES: o que discrimina vem ANTES da igualdade que fixa
+ * ===========================================================================
+ *
+ * É a `DECISÃO FECHADA — T10 / Gate 1` de `packages/cobranca-bancaria/test/adaptador-sicoob.spec.ts`,
+ * aplicada aqui pelo mesmo motivo mecânico: o `toEqual` **aborta o caso ao falhar**, de modo que uma
+ * asserção posta depois de uma igualdade que já reprovou nunca executa. Por isso, em cada caso, o
+ * **controle positivo** e as asserções que discriminam o vazamento vêm antes das igualdades que
+ * fixam a forma do corpo, do envelope ou do conjunto de chaves.
+ *
+ * ===========================================================================
+ * A VERIFICAÇÃO CORRE CONTRA O DESTINO INERTE, e a escolha é deliberada
+ * ===========================================================================
+ *
+ * Nenhum par TLS é montado aqui: a aplicação recebe o adaptador **de produção** que a composição
+ * escolhe a partir de `ENDERECO_DO_PROVEDOR_BANCARIO`, declarado inerte em `apps/api/vitest.config.ts`
+ * (`.invalid`, o domínio que a RFC 6761 garante não resolver). O desfecho, portanto, é `200` com
+ * `aceito: false`.
+ *
+ * Isso **não** enfraquece a medição — fortalece. O claro é aberto **antes** de qualquer decisão de
+ * rede (`criarAdaptadorSicoob` abre o invólucro e passa `pfx`/`passphrase` às opções da requisição),
+ * de modo que o material e a senha atravessam exatamente o **caminho de falha** da biblioteca — que
+ * é onde o achado crítico da fase anterior nasceu: o `bullmq` empurrava `job.data` como argumento de
+ * comando Redis, o `ioredis` o anexava ao erro, e a redação não alcançava. Medir o desfecho feliz
+ * deixaria de fora justamente a classe de vazamento que motivou a ADR-0032.
+ *
+ * ⚠️ Nada aqui toca o provedor real (ADR-0006): o destino não resolve por construção.
+ *
+ * ===========================================================================
+ * O DIÁRIO É MEDIDO NOS DOIS CAMINHOS — e o de SUCESSO é o que a ADR-0032 cobra
+ * ===========================================================================
+ *
+ * O CT-831 mede o diário nos **três** caminhos de recusa; o CT-823 o mede no caminho de **sucesso**.
+ * Os dois são necessários, e o que os une é a classe que motivou a ADR: o achado crítico da fase
+ * anterior nasceu **no caminho em que o segredo estava em uso** — `job.data` empurrado como argumento
+ * de comando Redis, anexado ao erro pela biblioteca, sob uma chave que a redação não cobre.
+ *
+ * ⚠️ **"Em uso" não é sinônimo de "bem-sucedido", e a distinção custou uma rodada.** Das três recusas,
+ * duas nascem **antes** de o cofre abrir — a senha não abre, os bytes não são um PKCS#12 — e uma nasce
+ * **depois**: a validade encerrada. Nessa terceira, `lerMaterial` já abriu o PKCS#12 com a senha
+ * apresentada e `cifrarSegredo` já correu dentro da transação quando o `warn` sai. Ela é, portanto, um
+ * caminho de **recusa** com o segredo tão vivo quanto o de sucesso — e enquanto não foi exercitada, a
+ * ausência de vazamento nela era afirmada por leitura do código, que é o método que a `Decision`
+ * proíbe. **Enumerar superfície não basta: o que fecha é enumerar caminho.**
+ *
+ * A medição que fixou isto foi feita com dois mutantes, e a diferença entre eles é a prova de que o
+ * buraco era de **cobertura de caminho**, não de varredura: o mesmo vazamento, com a mesma chave
+ * neutra, **sobrevivia** quando plantado no registro bem-sucedido e **reprovava** quando movido para a
+ * recusa. Enquanto o CT-823 não olhasse o diário, a ausência de vazamento naquela superfície era
+ * afirmada **por leitura do código** — precisamente o método que a `Decision` proíbe.
+ *
+ * ⚠️ **Mutante de vazamento em diário neste projeto exige chave NEUTRA.** `RADICAIS_SENSIVEIS` de
+ * `packages/shared/src/log.ts` casa por radical **contido** na chave normalizada: uma agulha plantada
+ * sob `senhaMUTANTE` é redigida antes de alcançar o arquivo, e o verde resultante é **inconclusivo**,
+ * não sobrevivência. Use `argumentos`, `contexto`, `detalhe` — nomes que a redação legitimamente não
+ * alcança, que são exatamente os que a biblioteca de terceiro escolheria.
+ *
+ * ===========================================================================
+ * AS SUPERFÍCIES DE SAÍDA, e quais destas cinco medições alcança cada uma
+ * ===========================================================================
+ *
+ * A completude é afirmada por enumeração, porque é o que permite reconhecer o que **falta**:
+ *
+ *   * **corpo HTTP** — CT-823 (as três rotas, em três serializações) e CT-830 (as **duas** recusas
+ *     `422` do registro — a do esquema e a da validade encerrada);
+ *   * **cabeçalho HTTP** — CT-823 e CT-830, pela mesma {@link superficiesDaResposta}: *"o que saiu"*
+ *     inclui a linha de cabeçalho, e não apenas o corpo;
+ *   * **arquivo de diário do processo real** — CT-823 no caminho de **sucesso** e CT-831 nos **três**
+ *     de recusa, os dois varrendo o arquivo **inteiro**, e não o trecho do caso;
+ *   * **documento publicado** — CT-832;
+ *   * **estado em repouso** — CT-833, na coluna e nos bytes que ela decodifica.
+ *
+ * ===========================================================================
+ * ENUMERAR SUPERFÍCIE NÃO BASTA — a enumeração que fecha é a de CAMINHO
+ * ===========================================================================
+ *
+ * A lista acima diz **onde** se olha; ela não diz **em que ramo do produto** se estava olhando. Foi
+ * exatamente aí que a versão anterior deste arquivo falhou: `detalhes` constava como superfície
+ * medida, mas a única recusa exercitada era a do esquema — cujo envelope não tem `detalhes` —, de
+ * modo que a varredura corria sobre a cadeia literal `'undefined'`. Uma superfície pode estar na
+ * lista e ainda assim ser **vácua**, se o caminho que a preenche nunca for percorrido.
+ *
+ * Por isso a enumeração que vale é esta, por **caminho de saída** das três rotas — quatorze ao todo,
+ * dos quais **sete são medidos** aqui:
+ *
+ *   1. registro · `422` do esquema, antes de `criarSegredoOperavel` — **medido** (CT-830, ato 1). O
+ *      segredo **não entrou** no produto: o que existe é a cadeia crua que o esquema recusou;
+ *   2. registro · `422` `SENHA_NAO_ABRE` — **medido** (CT-831, cenário 1: corpo e diário);
+ *   3. registro · `422` `MATERIAL_ILEGIVEL` — **medido** (CT-831, cenário 2);
+ *   4. registro · `422` `JA_VENCIDO` — **medido** (CT-830 ato 2, no corpo, no `detalhes` **com
+ *      conteúdo** e no cabeçalho; CT-831 cenário 3, no diário). É o único ramo de recusa **posterior**
+ *      à abertura do cofre e à invocação de `cifrarSegredo`;
+ *   5. registro · `201` — **medido** (CT-823, corpo/cabeçalho/diário; CT-833, em repouso);
+ *   6. consulta · `200` — **medido** (CT-823);
+ *   7. verificação · `200`, com `aceito: false` pelo destino inerte — **medido** (CT-823). A decifra
+ *      correu e o claro foi entregue ao cliente TLS.
+ *
+ * **Os sete NÃO medidos, e a razão de cada um.**
+ *
+ * ⚠️ **A razão NÃO é comum aos sete, e a versão anterior deste cabeçalho a generalizava**: nos itens
+ * 8 a 11 e no 14 o segredo operável **não está em escopo** — ou não entrou no produto, ou não existe
+ * carga que o carregue. Nos itens **12 e 13 ele ESTÁ**, e o que os mantém fora da medição é outra
+ * coisa: o 12 é **inalcançável por construção** (ADR-0006), e o 13 **não é alcançável por entrada do
+ * cliente**, com a **cifra** — nunca o claro — sendo o que chega ao cliente de banco. Uma frase que
+ * dispensasse os sete pela mesma razão dispensaria de medir justamente os dois em que há o que medir,
+ * e seria contradita pelo **item 7**, três linhas acima, que escreve por extenso que ali *"a decifra
+ * correu e o claro foi entregue ao cliente TLS"*. Não há defeito hoje; o que essa forma criava era
+ * **licença escrita para não medir amanhã**, numa fatia de segurança.
+ *
+ *   8. as três rotas · `401`/`403` da guarda — a recusa acontece **antes** do manipulador, e o corpo
+ *      da requisição sequer é lido; nada entra no produto. Quem mede essa recusa é a T14;
+ *   9. consulta · `404` da empresa sem certificado — nada é enviado e nada é lido do banco além da
+ *      ausência; a forma do envelope é medida pelo `CT-824 (d)` de
+ *      `certificado-do-provedor.e2e.spec.ts`;
+ *  10. verificação · `404` pela mesma ausência — `lerIdentidadeGuardada` tem **duas** pernas de recusa,
+ *      e a conclusão sobrevive intacta nas duas. A do **vigente ausente** recusa **antes** de
+ *      `obterEnvelopeCifradoDoVigente`, de modo que nem o envelope cifrado chega a existir no escopo; a
+ *      do **envelope ausente** recusa **depois** daquela chamada, e o que ela devolveu foi `undefined`
+ *      — estado que a `CHECK` da RN-13 torna irrepresentável. Em nenhuma das duas existe claro: a
+ *      decifra só acontece em `verificarIdentidade`, que não chega a correr;
+ *  11. verificação · `422` do corpo não vazio — recusa em `validar()`, antes de qualquer leitura;
+ *  12. verificação · `200` com `aceito: true` — ⚠️ **aqui o segredo operável ESTÁ em escopo**: este
+ *      caminho percorre a **mesma instrução** do item 7 (`verificarIdentidade`), dentro da qual o
+ *      envelope é decifrado e o claro é entregue ao cliente mTLS; quem decide entre `true` e `false` é
+ *      o par remoto, **depois** disso. O que o mantém fora é ser **inalcançável por construção** neste
+ *      arquivo: exigiria par TLS de verdade, e a ADR-0006 proíbe a suíte tocar o ambiente que atende a
+ *      operação. Medi-lo pertence a quem montar par próprio, e a razão do item 7 **não se estende a
+ *      ele**;
+ *  13. registro e verificação · `500` de falha **não traduzida** (o `throw erro` que ambos preservam)
+ *      — ⚠️ **aqui o segredo operável também ESTÁ em escopo**, e no registro ele está **em claro**: o
+ *      cofre já abriu e `cifrarSegredo` já correu quando uma falha de infraestrutura levanta. O que o
+ *      mantém fora é não ser alcançável por entrada do cliente — exige defeito de infraestrutura —, e o
+ *      que chega ao cliente de banco é a **cifra**, nunca o claro; ao solicitante sai o envelope
+ *      genérico do filtro global, sem campo livre que o corpo alimente;
+ *  14. fila · **não existe nesta fatia**. Nenhuma das três rotas enfileira nada, e por isso não há
+ *      carga de tarefa a varrer — é o `DÉBITO COM GATILHO — D58 · F4/T13` instalado em
+ *      `apps/api/src/integracoes-bancarias/certificado.service.ts`, que cobra a medição da fatia (ii).
+ *
+ * **O que continua fora do alcance destas cinco superfícies, e por quê**: a saída padrão do processo
+ * (aqui o registrador tem destino em arquivo, que é o outro destino previsto pela unidade systemd —
+ * medir o arquivo mede o mesmo caminho de escrita); o corpo de resposta de rota **fora** desta
+ * superfície (o segredo não circula por elas, e a varredura do diário é do arquivo inteiro, o que
+ * alcança qualquer linha que o processo emita); e o material em trânsito na rede até o provedor, que
+ * é onde o cofre **deve** ir e cuja proteção é o mTLS, não a ausência.
+ *
+ * ===========================================================================
+ * DUAS APLICAÇÕES, e cada uma pela propriedade que só ela oferece
+ * ===========================================================================
+ *
+ * A aplicação da montagem entra por `Test.createTestingModule`, com **um único** provedor
+ * substituído — `TOKEN_LOGGER`, por um registrador cujo destino é um **arquivo temporário**. É o
+ * caminho legítimo já praticado por `packages/shared/test/log.spec.ts`, e é o mesmo parâmetro
+ * `destino` que a unidade systemd usa em operação; sem ele não existe *"arquivo de diário do processo
+ * real"* a varrer. `criarAplicacao()` **não ganhou parâmetro**, nada em `apps/api/src` foi tocado, e
+ * nenhum outro provedor é substituído.
+ *
+ * O **CT-832** monta a segunda, e ela é a de produção (`criarAplicacao()`), dentro do próprio caso e
+ * fechada em `onTestFinished`: o documento OpenAPI é publicado por `SwaggerModule.setup` lá dentro, e
+ * gerá-lo aqui a partir de um `DocumentBuilder` próprio seria escrever à mão a descrição que a
+ * ADR-0016 manda derivar — o caso passaria a medir o documento **do teste**, não o do produto.
+ *
+ * ===========================================================================
+ * NENHUM COMPORTAMENTO DE PRODUÇÃO É TOCADO POR ESTA TASK
+ * ===========================================================================
+ *
+ * Se alguma destas cinco medições achar vazamento, a correção pertence à task **dona do vetor**, e
+ * esta registra o achado. Corrigi-la aqui fecharia **um caminho** deixando os outros abertos, que é
+ * literalmente o padrão que a §7 da `.claude/rules/nao-regressao.md` documenta com quatro rodadas.
+ *
+ * A única escrita desta task fora de `apps/api/test/` é **comentário puro**: o marcador
+ * `DÉBITO COM GATILHO — D58 · F4/T13` junto de `verificarIdentidade`, em
+ * `apps/api/src/integracoes-bancarias/certificado.service.ts`. Ele agenda a medição da superfície
+ * `fila` para a fatia (ii) — o item 14 da enumeração acima —, e mora ali porque é o arquivo que
+ * aquela fatia vai abrir; o `_run/` que ela grepar será o **dela**, e não este.
+ *
+ * ===========================================================================
+ * MUTANTE EXECUTADO (2026-08-15) — a prova de falsificação do CT-832
+ * ===========================================================================
+ *
+ * Quatro dos cinco casos são **comportamentais** — enviam segredo real e observam a saída —, e por
+ * isso a exigência de prova de falsificação da `.claude/rules/testing-stack.md` não incide sobre
+ * eles; o controle positivo embutido em cada um é a rede que o P4 do Protocolo Antirregressão pede.
+ * O **CT-832 é diferente**: ele inspeciona uma **descrição** (o documento publicado), e é asserção
+ * dessa natureza que a regra obriga a falsificar. A suíte foi invocada pelo **script do pacote**
+ * (`pnpm --filter @sysloc/api test`), nunca por `vitest run` avulso — `apps/api` alcança
+ * `@sysloc/contracts` pela fronteira do pacote e leria o `dist/` da compilação anterior.
+ *
+ *   * **controle** — árvore íntegra: `277 passed` (`32` arquivos);
+ *   * **M7 · o esquema de saída volta a declarar o segredo** — `senha: z.string().optional()`
+ *     acrescentado a `esquemaDoCertificado`, em `packages/contracts/src/integracao-bancaria.ts`:
+ *     `1 failed | 276 passed`, **só no CT-832**, e a reprovação é a asserção que discrimina —
+ *     *"expected [ 'senha' ] to deeply equal []"*, em `proibidasEntre(declaradas)`. Ela **nomeia a
+ *     chave ofensora**, que é o efeito para o qual a ordem das asserções foi escolhida: a igualdade
+ *     de conjunto teria abortado o caso exibindo dezessete nomes;
+ *   * **por que o campo é opcional, e não obrigatório** — obrigatório muda `z.infer`, e `Certificado`
+ *     passaria a exigir a senha de todo produtor: a compilação cai antes de a suíte rodar e o
+ *     mutante fica **inconclusivo**. Opcional entra em `properties` sem entrar em `required`, que é
+ *     o suficiente para a coleta deste caso enxergar. É o mesmo raciocínio, e o mesmo precedente, do
+ *     `MT11-3` registrado em `contrato-publicado.e2e.spec.ts`;
+ *   * **reversão** — o fonte foi restaurado do backup, conferido por `git diff` vazio e por `grep`
+ *     do mutante (zero ocorrências), o `dist/` foi reconstruído por `pnpm build`, e o controle voltou
+ *     a `277 passed`.
+ *
+ * ===========================================================================
+ * MUTANTE EXECUTADO (2026-08-15) — M-D′, o vazamento no CAMINHO DE SUCESSO
+ * ===========================================================================
+ *
+ * O CT-823 é comportamental, e a exigência de falsificação da `.claude/rules/testing-stack.md` não
+ * incide sobre ele. Este mutante foi executado assim mesmo, e por outra razão: ele é a **rede do P4**
+ * do Protocolo Antirregressão para um defeito **medido** — a superfície `diário × caminho de sucesso`
+ * não tinha agulha em escopo, e um vazamento real ali passava verde.
+ *
+ *   * **M-D′ · a forma exata do achado da fase anterior** — `argumentos: [entrada.senha,
+ *     entrada.material]` acrescentado ao `logger.info` do registro **bem-sucedido** de
+ *     `certificado.controller.ts`. Chave **neutra**, como a de uma biblioteca de terceiro que anexa o
+ *     que recebeu;
+ *   * **antes desta correção**: `277 passed` — **o mutante SOBREVIVIA**, com a senha real e o
+ *     material inteiro em base64 gravados no arquivo de diário do processo real;
+ *   * **depois desta correção**: `1 failed | 276 passed`, **só no CT-823**, e a reprovação nomeia a
+ *     linha e as duas agulhas — *"expected [ 'linha 1/senha', …(1) ] to deeply equal []"*, com
+ *     `linha 1/senha` e `linha 1/materialEmBase64`;
+ *   * **reversão** — o fonte restaurado do backup e conferido por `sha256sum` idêntico, `grep` do
+ *     mutante em zero, `git status` do controlador sem modificação e o `dist/` reconstruído.
+ *
+ * ===========================================================================
+ * MUTANTES EXECUTADOS (2026-08-15) — M-JV e M-JW, o caminho `JA_VENCIDO`
+ * ===========================================================================
+ *
+ * Pela mesma razão do M-D′, e sobre o caminho que ele deixou de fora: o `JA_VENCIDO` é o único ramo de
+ * saída do registro em que o cofre **abriu** e `cifrarSegredo` correu, e nenhuma das cinco medições o
+ * exercitava. Os dois mutantes atacam as duas superfícies daquele ramo, e o alvo do vazamento é a
+ * **senha que abriu o cofre** — não uma cadeia recusada pelo esquema.
+ *
+ *   * **M-JV · o segredo no `detalhes` da recusa** — `contexto: segredo.abrir().senha` acrescentado ao
+ *     `detalhes` do `ErroDeAplicacao` de `certificado.service.ts`, sob chave **neutra**. Resultado:
+ *     `3 failed | 274 passed`, e no CT-830 a reprovação nomeia **quatro** superfícies com a agulha —
+ *     *"envelope do vencimento (detalhes)/senhaDoVencido"* mais as três serializações da resposta
+ *     (texto cru, json, inspeção). O CT-831 também reprova, em `linha 11/senhaDoVencido`: o filtro
+ *     global registra a exceção inteira, de modo que um `detalhes` envenenado alcança o diário. O
+ *     `CT-824 (c)` de `certificado-do-provedor.e2e.spec.ts` reprova junto — **rede a mais**, não
+ *     divergência, pelo mesmo raciocínio com que o Gate 1 leu o CT-834;
+ *   * **M-JW · o segredo no `warn` do ramo** — `argumentos: [segredo.abrir().senha,
+ *     segredo.abrir().material.toString('base64')]` acrescentado ao `logger.warn` do `JA_VENCIDO`,
+ *     chave **neutra**, na forma exata do achado da fase anterior. Resultado: `1 failed | 276 passed`,
+ *     **só no CT-831**, nomeando `linha 10/senhaDoVencido` e `linha 10/materialVencidoEmBase64`;
+ *   * **o que o M-JV corrigiu no PRÓPRIO caso** — a primeira execução dele reprovou o CT-830 na
+ *     **âncora antivácuo** do `detalhes`, que era uma igualdade de chaves e abortava o caso antes da
+ *     varredura: a reprovação nomeava a **chave** (`contexto`) e nunca a **agulha**. A âncora passou a
+ *     ser mínima — *"tem conteúdo"* —, e quem fixa a forma é a igualdade de corpo inteiro no fim. É a
+ *     mesma lei de ordem que o cabeçalho já declara, aplicada a uma asserção que a violava;
+ *   * **reversão** — o fonte restaurado do backup e conferido por `sha256sum` idêntico, `grep` dos dois
+ *     mutantes em zero, `git diff` do serviço limitado ao marcador de débito, e o `dist/`
+ *     reconstruído; o controle voltou a `277 passed`.
+ *
+ * ===========================================================================
+ * De onde vêm o banco, a fila, a credencial, a chave e o MATERIAL (ADR-0006, invariante 3)
+ * ===========================================================================
+ *
+ * De instâncias efêmeras próprias e da memória deste processo. Nenhuma coordenada de conexão é lida
+ * do ambiente: o ambiente é **montado** a partir do que os acessórios devolvem. A chave de cifra é
+ * sorteada por execução — é isso que permite ao CT-833 conhecer a chave **certa** e exibir uma
+ * **outra** de 32 bytes sem que nenhuma das duas exista fora deste processo. O material PKCS#12 é
+ * gerado em execução por `packages/cobranca-bancaria/test/material-de-teste.ts`, e nenhum `.pfx`
+ * entra na árvore versionada.
+ */
+
+import { randomBytes } from 'node:crypto';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { inspect } from 'node:util';
+import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import { Test } from '@nestjs/testing';
+import { MAIOR_MATERIAL_CODIFICADO } from '@sysloc/contracts';
+import { EMPRESA_A, SENHA_DA_CARGA } from '@sysloc/db';
+import {
+  CodigoErro,
+  criarLogger,
+  decifrarSegredo,
+  ErroDeSegredoAdulterado,
+  type Logger,
+} from '@sysloc/shared';
+import postgres from 'postgres';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
+// DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)
+// (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o código abaixo.)
+// O QUÊ: os imports a seguir atravessam a fronteira de `@sysloc/auth`, `@sysloc/db`,
+//        `@sysloc/shared` e `@sysloc/cobranca-bancaria` por CAMINHO DE ARQUIVO, fora do `exports` e
+//        do `files` daqueles manifestos. As dependências de workspace estão declaradas, então não há
+//        dependência oculta; o que não existe é FRONTEIRA para os diretórios `test/`.
+// QUANDO FECHA: o gatilho já disparou e o fechamento segue pendente; ele é o mesmo de sempre —
+//        declarar o subpath `"./test"` nos manifestos e importar por `@sysloc/<pacote>/test`, ou
+//        extrair um `@sysloc/test-utils`.
+// POR QUE NÃO AGORA: fechar exige editar os manifestos de quatro pacotes e todos os consumidores,
+//        nenhum deles no escopo desta task — que declara `5.2 Arquivos a Modificar: N/A`.
+// ÍNDICE: docs/specs/features/fundacao-stack-nativa/v1/_run/run-report.md §2, D28
+import {
+  type IdentidadeEfemera,
+  identidadeEfemera,
+  pessoaSemeada,
+} from '../../../packages/auth/test/identidade-efemera.ts';
+import {
+  type AutoridadeDeTeste,
+  gerarAutoridadeDeTeste,
+  gerarMaterialDeTeste,
+  type MaterialDeTeste,
+} from '../../../packages/cobranca-bancaria/test/material-de-teste.ts';
+import { conexaoDeMigracao } from '../../../packages/db/test/banco-efemero.ts';
+import { reservarPorta } from '../../../packages/shared/test/efemero-comum.ts';
+import { type FilaEfemera, redisEfemero } from '../../../packages/shared/test/redis-efemero.ts';
+import { AppModule } from '../src/app.module.ts';
+import { PREFIXO_DAS_ROTAS_DE_IDENTIDADE } from '../src/autenticacao/autenticacao.module.ts';
+import { CAMINHO_DA_SESSAO } from '../src/autenticacao/sessao.controller.ts';
+import {
+  ENDERECO_DE_ESCUTA,
+  PREFIXO_DE_VERSAO,
+  TOKEN_LOGGER,
+} from '../src/configuracao/ambiente.ts';
+import {
+  CAMINHO_DAS_INTEGRACOES_BANCARIAS,
+  SEGMENTO_DA_CONSULTA,
+  SEGMENTO_DA_VERIFICACAO,
+  SEGMENTO_DO_REGISTRO,
+} from '../src/integracoes-bancarias/certificado.controller.ts';
+import { CAMINHO_DO_DOCUMENTO, criarAplicacao } from '../src/main.ts';
+
+/** Limite da montagem: banco migrado, semente com credencial, fila e a aplicação real. */
+const LIMITE_DE_MONTAGEM_MS = 240_000;
+
+/** Limite de um caso que gera material, atravessa HTTP e volta ao banco. */
+const LIMITE_CASO_MS = 120_000;
+
+/** Sufixo do nome do cookie de sessão do arcabouço — o prefixo vem da configuração. */
+const SUFIXO_DO_COOKIE_DE_SESSAO = 'session_token';
+
+/** A rota de entrada, composta a partir do prefixo real. Nunca escrita à mão. */
+const ROTA_DE_ENTRADA = `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/sign-in/email`;
+
+/** Caminho, relativo à raiz, da rota de sessão do produto. Composto, nunca escrito à mão. */
+const CAMINHO_DA_SESSAO_CORRENTE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_SESSAO}`;
+
+/** Caminho, relativo à raiz, do **registro** — composto das constantes que o controlador publica. */
+const ROTA_DO_REGISTRO = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DO_REGISTRO}`;
+
+/** Caminho, relativo à raiz, da **consulta**. */
+const ROTA_DA_CONSULTA = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DA_CONSULTA}`;
+
+/** Caminho, relativo à raiz, da **verificação** — composto, nunca escrito à mão. */
+const ROTA_DA_VERIFICACAO = `${ROTA_DA_CONSULTA}/${SEGMENTO_DA_VERIFICACAO}`;
+
+/**
+ * A área e a ação que a superfície exige — afirmadas no efetivo da sessão, nunca supostas.
+ *
+ * Literais, e **não** importadas do controlador: derivá-las do SUT faria a asserção concordar com
+ * ele, e trocar a exigência declarada deixaria de reprovar caso algum.
+ */
+const AREA_DAS_INTEGRACOES_BANCARIAS = 'TELA:integracoes_bancarias';
+const ACAO_DE_CONFIGURACAO = 'ACAO:configurar_integracao';
+
+/** Quem age: a `ADMIN_EMPRESA` da carga, cujo perfil alcança o catálogo inteiro. */
+const QUEM_ADMINISTRA = pessoaSemeada('admin.a@exemplo.com.br');
+
+/** Validade folgada, em dias de calendário — nenhum caso daqui mede vigência. */
+const DIAS_DE_VALIDADE = 45;
+
+/**
+ * A validade **já encerrada**, em dias de calendário: o material terminou ontem.
+ *
+ * Ela existe para alcançar o caminho `JA_VENCIDO`, e não para medir vigência — quem mede a régua da
+ * validade é o `CT-824 (c)` de `certificado-do-provedor.e2e.spec.ts`, de onde este valor vem. O que
+ * este arquivo precisa dela é a **posição** do ramo: é o único caminho de recusa do registro que
+ * corre **depois** de o cofre PKCS#12 ter aberto e de `cifrarSegredo` ter sido invocado dentro da
+ * transação — isto é, o caminho em que o segredo está mais vivo.
+ */
+const DIAS_DE_VALIDADE_ENCERRADA = -1;
+
+/** Comprimento da chave do AES-256, em bytes — o que a partida exige da chave de cifra. */
+const BYTES_DA_CHAVE_DE_CIFRA = 32;
+
+/**
+ * Quanto o recorte do material toma, e de onde — **da metade do cofre**, nunca de um deslocamento
+ * fixo perto do começo.
+ *
+ * O início não é zero de propósito: o começo de um PKCS#12 é cabeçalho ASN.1 comum a qualquer cofre,
+ * e uma agulha tirada dali casaria com material que não é este.
+ *
+ * ⚠️ **O deslocamento fixo de 64 bytes que esta constante tinha era insuficiente, e a medição o
+ * refutou**: dois cofres emitidos pela mesma autoridade, com a mesma configuração, têm os **107
+ * primeiros bytes idênticos** — o cabeçalho, o OID do PBES2 e o do PBKDF2 —, e a primeira divergência
+ * é o **sal** do derivador. Quem pegou isso foi o controle positivo, no instante em que dois materiais
+ * passaram a circular no mesmo caso: as duas agulhas hexadecimais eram a **mesma cadeia**, e cada
+ * canal do controle achava as duas. Uma agulha assim não prova o que o A7 promete — ela casaria com
+ * qualquer cofre daquele emissor.
+ *
+ * A metade do material cai dentro da chave privada **cifrada**, que é conteúdo daquela emissão e de
+ * mais nenhuma; e derivá-la do tamanho, em vez de fixar um deslocamento maior, é o que impede a
+ * escolha de envelhecer junto com a versão da ferramenta que emite o cofre.
+ */
+const BYTES_DO_RECORTE = 32;
+
+/** Quantos bytes de ruído compõem o material ilegível do CT-831 — nada abre isso. */
+const BYTES_DO_MATERIAL_ILEGIVEL = 512;
+
+/** A mensagem canônica do `422` — literal, e não lida do SUT. */
+const MENSAGEM_DE_REQUISICAO_INVALIDA = 'requisição inválida';
+
+/** A mensagem da recusa por validade encerrada — literal, e não lida do SUT, pela mesma razão. */
+const MENSAGEM_DO_CERTIFICADO_VENCIDO = 'a validade do certificado apresentado já terminou';
+
+/** O campo que a recusa do material nomeia — o do **corpo**, nunca `material` nem `senha`. */
+const CAMPO_DO_CORPO = 'corpo';
+
+/** O discriminador que a recusa por vencimento publica dentro de `detalhes`. */
+const DISCRIMINADOR_DA_VALIDADE = 'validoAte';
+
+/**
+ * Os **três** motivos internos do vocabulário desta trilha — literais, nunca importados.
+ *
+ * São os três que o operador filtra no journal, e os três aparecem por **medição** neste arquivo: os
+ * dois primeiros no cenário de leitura recusada, o terceiro no cenário em que o cofre abriu e a
+ * validade já tinha terminado. Um vocabulário observado pela metade deixaria sem agulha em escopo
+ * justamente o caminho em que o segredo esteve vivo.
+ */
+const MOTIVO_DA_SENHA = 'SENHA_NAO_ABRE';
+const MOTIVO_DO_MATERIAL = 'MATERIAL_ILEGIVEL';
+const MOTIVO_DO_VENCIDO = 'JA_VENCIDO';
+
+/**
+ * A entidade que as linhas de trilha desta superfície nomeiam — literal, e **não** importada do
+ * controlador.
+ *
+ * É o eixo pelo qual o CT-823 reconhece, no arquivo de diário, as duas linhas do **caminho de
+ * sucesso**. Importá-la do SUT faria a âncora concordar com ele: um controlador que parasse de
+ * registrar sob esta entidade deixaria de reprovar, e a varredura de ausência voltaria a passar sobre
+ * um trecho sem evento algum.
+ */
+const ENTIDADE_DA_TRILHA = 'certificado_do_provedor';
+
+/**
+ * As chaves que o documento publicado das três rotas **pode** declarar — por extenso, em ordem.
+ *
+ * É o conjunto derivado dos três esquemas que as rotas usam (`esquemaDoCertificado`,
+ * `esquemaDoResultadoDaVerificacao`) mais o envelope de erro da ADR-0017. Ele é escrito à mão, e
+ * **não** derivado dos esquemas: derivá-lo faria os dois lados da comparação mudarem juntos, e um
+ * campo de segredo acrescentado ao contrato passaria despercebido — que é exatamente o que este caso
+ * existe para pegar.
+ *
+ * A asserção é de **igualdade de conjunto**, e não de ausência: é a igualdade que pega o campo a
+ * mais que ninguém pediu.
+ */
+const CHAVES_ESPERADAS: readonly string[] = [
+  'aceito',
+  'campo',
+  'codigo',
+  'detalhe',
+  'detalhes',
+  'diasParaVencer',
+  'estado',
+  'id',
+  'impressaoDigital',
+  'mensagem',
+  'nome',
+  'registradoEm',
+  'registradoPor',
+  'titular',
+  'validoAte',
+  'validoDe',
+  'verificadoEm',
+];
+
+/**
+ * As chaves que **nenhuma** superfície publicada pode declarar, escritas por extenso.
+ *
+ * Elas cobrem os nomes pelos quais o segredo operável entra no produto (`material`, `senha`), os
+ * nomes pelos quais ele viaja para o cliente TLS nativo (`pfx`, `passphrase`), o nome com que a
+ * coluna o guarda nas duas grafias, e os nomes plausíveis de uma exposição futura. A lista é escrita
+ * aqui, e não importada de lugar nenhum: ela é a declaração do que se proíbe, não um reflexo do que
+ * o produto faz.
+ */
+const CHAVES_PROIBIDAS: readonly string[] = [
+  'chave',
+  'chaveDeCifra',
+  'envelope',
+  'envelopeCifrado',
+  'material',
+  'passphrase',
+  'password',
+  'pfx',
+  'segredo',
+  'segredoCifrado',
+  'segredo_cifrado',
+  'senha',
+];
+
+/** As variáveis que a montagem fixa e o encerramento restaura. */
+const VARIAVEIS_MONTADAS = [
+  'NODE_ENV',
+  'PORT',
+  'LOG_LEVEL',
+  'DATABASE_URL',
+  'REDIS_URL',
+  'BETTER_AUTH_SECRET',
+  'CHAVE_DE_CIFRA_DO_CERTIFICADO',
+] as const;
+
+let identidade: IdentidadeEfemera;
+let fila: FilaEfemera;
+let aplicacao: NestFastifyApplication;
+let base: string;
+let ambienteAnterior: NodeJS.ProcessEnv;
+let cookie: string;
+let diretorioDoDiario: string;
+let arquivoDoDiario: string;
+let registrador: Logger;
+
+/**
+ * A chave com que **a aplicação** cifra o segredo nesta execução — sorteada, e não a inerte do
+ * arranjo do arcabouço.
+ *
+ * Ela é montada no ambiente antes de a composição correr, pelo mesmo caminho que `BETTER_AUTH_SECRET`
+ * já usa nesta suíte. Sorteá-la é o que permite ao CT-833 apresentar **a chave certa** e **outra**
+ * chave de 32 bytes sabendo que as duas diferem e que nenhuma existe fora deste processo.
+ */
+let chaveDaOperacao: Buffer;
+
+beforeAll(async () => {
+  identidade = await identidadeEfemera();
+  fila = await redisEfemero();
+
+  chaveDaOperacao = randomBytes(BYTES_DA_CHAVE_DE_CIFRA);
+
+  ambienteAnterior = { ...process.env };
+  process.env.NODE_ENV = 'test';
+  process.env.LOG_LEVEL = 'fatal';
+  process.env.DATABASE_URL = identidade.banco.cadeiaConexao;
+  process.env.REDIS_URL = fila.cadeiaConexao;
+  process.env.BETTER_AUTH_SECRET = randomBytes(32).toString('base64url');
+  process.env.CHAVE_DE_CIFRA_DO_CERTIFICADO = chaveDaOperacao.toString('base64');
+
+  const porta = await reservarPorta();
+  base = `http://${ENDERECO_DE_ESCUTA}:${String(porta)}`;
+  process.env.PORT = String(porta);
+
+  // O DESTINO DO REGISTRADOR É UM ARQUIVO, e é isso que torna o CT-831 uma medição do diário do
+  // processo real em vez de uma inspeção de memória. O caminho é o legítimo — o mesmo parâmetro
+  // `destino` que a unidade systemd usa em operação (`packages/shared/test/log.spec.ts`).
+  //
+  // O nível é `info`, e não o `fatal` do ambiente montado: as recusas do registro saem em `warn` e
+  // as linhas de trilha em `info`. Baixar o degrau **acrescenta** o que se captura, que é o que o
+  // CT-831 varre; calá-lo faria a varredura de ausência passar sobre um arquivo vazio.
+  diretorioDoDiario = await mkdtemp(join(tmpdir(), 'sysloc-diario-'));
+  arquivoDoDiario = join(diretorioDoDiario, 'eventos.log');
+  registrador = criarLogger({ nivel: 'info', destino: arquivoDoDiario });
+
+  const modulo = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(TOKEN_LOGGER)
+    .useValue(registrador)
+    .compile();
+
+  aplicacao = modulo.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+  aplicacao.setGlobalPrefix(PREFIXO_DE_VERSAO);
+  await aplicacao.listen({ port: porta, host: ENDERECO_DE_ESCUTA });
+
+  cookie = await entrar(QUEM_ADMINISTRA.email, SENHA_DA_CARGA);
+
+  // Precondição AFIRMADA, e não suposta: sem estas linhas, um `403` nas rotas do certificado seria
+  // indistinguível de um defeito delas — e a varredura passaria sobre um corpo de recusa.
+  const sessao = (await pedir(CAMINHO_DA_SESSAO_CORRENTE, { cookie })).corpo as SessaoPublicada;
+
+  expect(sessao.telas).toContain(AREA_DAS_INTEGRACOES_BANCARIAS);
+  expect(sessao.acoes).toContain(ACAO_DE_CONFIGURACAO);
+}, LIMITE_DE_MONTAGEM_MS);
+
+afterAll(async () => {
+  await aplicacao?.close();
+  await fila?.parar();
+  await identidade?.parar();
+
+  if (diretorioDoDiario !== undefined) {
+    await rm(diretorioDoDiario, { recursive: true, force: true });
+  }
+
+  for (const nome of VARIAVEIS_MONTADAS) {
+    const valor = ambienteAnterior?.[nome];
+    if (valor === undefined) {
+      delete process.env[nome];
+    } else {
+      process.env[nome] = valor;
+    }
+  }
+}, LIMITE_DE_MONTAGEM_MS);
+
+describe('o segredo operável não escapa por superfície alguma (T13, ADR-0032)', () => {
+  it(
+    'CT-823 — os três corpos de resposta, serializados por inteiro, não carregam o material nem a senha',
+    async () => {
+      const autoridade = await gerarAutoridadeDeTeste('ct823');
+      const material = await gerarMaterial(autoridade, 'senha-sentinela-do-ct823-nao-deve-sair');
+      const agulhas = agulhasDo(material);
+
+      // O CONTROLE POSITIVO, antes de qualquer afirmação de ausência: sem ele, uma varredura
+      // quebrada devolveria lista vazia e este caso aprovaria um produto vazando tudo (AP-29).
+      expect(ocorrenciasDe(controleComAsAgulhas(agulhas), agulhas)).toEqual(
+        rotulosDoControle(agulhas),
+      );
+
+      const linhasAntes = (await lerLinhasDoDiario()).length;
+
+      const registro = await registrarMaterial(material);
+      const consulta = await pedir(ROTA_DA_CONSULTA, { cookie });
+      const verificacao = await pedir(ROTA_DA_VERIFICACAO, { metodo: 'POST', cookie });
+
+      expect(registro.status).toBe(201);
+      expect(consulta.status).toBe(200);
+      expect(verificacao.status).toBe(200);
+
+      // A ÂNCORA ANTIVÁCUO: o material **de fato circulou** por estas rotas. Sem ela, um `404` de
+      // corpo curto passaria limpo em toda varredura abaixo e o caso não significaria nada. A
+      // impressão digital é conferida contra o que o `openssl` declarou, por caminho independente
+      // do SUT.
+      expect((registro.corpo as CertificadoPublicado).impressaoDigital).toBe(
+        material.impressaoDigital,
+      );
+      expect((consulta.corpo as CertificadoPublicado).impressaoDigital).toBe(
+        material.impressaoDigital,
+      );
+      // E a verificação apresentou a identidade guardada: o desfecho é resposta, e não falha —
+      // recusado pelo destino inerte, com o par de campos que o contrato publica.
+      expect((verificacao.corpo as ResultadoPublicado).aceito).toBe(false);
+
+      await esvaziar(registrador);
+
+      const linhas = await lerLinhasDoDiario();
+
+      // ⚠️ REGISTROU, e não vazou — a metade positiva vem antes, como no CT-831 e pela mesma razão:
+      // um registrador silenciado passaria em qualquer varredura de ausência, e o que este caso
+      // precisa provar é que o **caminho de sucesso** produziu linha. São duas, na ordem dos atos: a
+      // do registro, que nomeia a impressão digital do material que entrou, e a da verificação, que
+      // nomeia o desfecho. A consulta não registra, por decisão do controlador — e a ausência de uma
+      // terceira linha é afirmada pela igualdade.
+      expect(trilhaDoCertificadoEm(linhas.slice(linhasAntes))).toEqual([
+        { entidade: ENTIDADE_DA_TRILHA, impressaoDigital: material.impressaoDigital, aceito: null },
+        { entidade: ENTIDADE_DA_TRILHA, impressaoDigital: null, aceito: false },
+      ]);
+
+      // A MEDIÇÃO: as três respostas, cada uma em quatro superfícies — o texto cru que saiu do fio, o
+      // `JSON.stringify` do objeto desserializado, a inspeção profunda dele e a **linha de
+      // cabeçalho** —, mais o arquivo de diário **inteiro**. Um campo novo que carregasse o segredo
+      // aninhado escaparia de uma conferência por chave, e não escapa daqui.
+      //
+      // ⚠️ O diário entra aqui, e não só no CT-831, porque as agulhas deste caso são as do material
+      // que ATRAVESSOU o registro aceito e a verificação — que é o caminho em que o segredo está em
+      // uso, e é onde o achado crítico da fase anterior nasceu. Medi-lo apenas no caminho de recusa
+      // deixava a superfície `diário × sucesso` afirmada por leitura do código (ADR-0032).
+      const ocorrencias = [
+        ...superficiesDaResposta(`POST ${ROTA_DO_REGISTRO}`, registro),
+        ...superficiesDaResposta(`GET ${ROTA_DA_CONSULTA}`, consulta),
+        ...superficiesDaResposta(`POST ${ROTA_DA_VERIFICACAO}`, verificacao),
+        ...superficiesDoDiario(linhas),
+      ];
+
+      // A igualdade com lista vazia, e não `toHaveLength(0)`: é ela que faz a reprovação **nomear**
+      // a rota, o canal e a agulha ofensora.
+      expect(ocorrenciasDe(ocorrencias, agulhas)).toEqual([]);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-830 — os dois envelopes 422 do registro não ecoam o material nem a senha, medidos na saída HTTP real',
+    async () => {
+      const autoridade = await gerarAutoridadeDeTeste('ct830');
+      const material = await gerarMaterial(autoridade, 'senha-sentinela-do-ct830-nao-deve-sair');
+      // O SEGUNDO material, e ele é o do caminho que faltava: validade encerrada, senha **certa**.
+      // A senha é propositalmente de outra família textual — nenhuma das duas é substring da outra,
+      // que é a propriedade de que o controle positivo depende.
+      const vencido = await gerarMaterial(
+        autoridade,
+        'chave-do-cofre-vencido-do-ct830-nao-deve-sair',
+        DIAS_DE_VALIDADE_ENCERRADA,
+      );
+      const agulhas = { ...agulhasDo(material), ...agulhasDoAtoVencido(vencido) };
+
+      expect(ocorrenciasDe(controleComAsAgulhas(agulhas), agulhas)).toEqual(
+        rotulosDoControle(agulhas),
+      );
+
+      // ATO 1 — a recusa do ESQUEMA. O corpo excedente é composto **do dado real**: a senha e o
+      // material que de fato circulariam, repetidos até passar do teto declarado. Um preenchimento
+      // de caracteres inventados mediria a recusa do esquema sem pôr agulha nenhuma no que o produto
+      // vai recusar.
+      //
+      // ⚠️ Este ato recusa em `validar()`, **antes** de `criarSegredoOperavel`: o segredo nunca chega
+      // a entrar no produto, e é por isso que ele sozinho não bastava — é o caminho em que há
+      // **menos** a vazar.
+      const semente = `${agulhas.senha}${agulhas.materialEmBase64}`;
+      const excedente = semente.repeat(Math.ceil((MAIOR_MATERIAL_CODIFICADO + 1) / semente.length));
+
+      expect(excedente.length).toBeGreaterThan(MAIOR_MATERIAL_CODIFICADO);
+
+      const recusaDoEsquema = await pedir(ROTA_DO_REGISTRO, {
+        metodo: 'POST',
+        cookie,
+        corpo: { material: excedente, senha: agulhas.senha },
+      });
+
+      // ATO 2 — a recusa por VALIDADE ENCERRADA, pela rota real e com o corpo bem formado. É o
+      // caminho em que o segredo está mais vivo: `lerMaterial` **abriu** o cofre PKCS#12 com a senha
+      // apresentada, `criarSegredoOperavel` já embrulhou o claro e `cifrarSegredo` já correu dentro
+      // da transação quando `registrarCertificado` recusa. É também o único ramo de recusa desta
+      // superfície que publica `detalhes` — e, portanto, o único que dá **conteúdo** à superfície
+      // homônima varrida abaixo.
+      const recusaDoVencido = await registrarMaterial(vencido);
+
+      expect(recusaDoEsquema.status).toBe(422);
+      expect(recusaDoVencido.status).toBe(422);
+
+      const doEsquema = recusaDoEsquema.corpo as EnvelopeDeErro;
+      const doVencido = recusaDoVencido.corpo as EnvelopeDeErro;
+
+      // A ÂNCORA ANTIVÁCUO DA SUPERFÍCIE `detalhes`, e ela vem antes da varredura pela mesma razão
+      // que a trilha vem antes no CT-823: `inspect(undefined)` é a cadeia `'undefined'`, e varrer
+      // ausência sobre ela é afirmar que não há vazamento num canal que não existe. O `?? {}` está
+      // aqui para que um `detalhes` ausente reprove **por asserção**, nomeando a lista vazia, em vez
+      // de derrubar o caso com erro de tipo.
+      //
+      // ⚠️ Ela é DELIBERADAMENTE MÍNIMA — afirma que o canal **tem conteúdo**, e não *qual* —, e a
+      // razão foi medida: uma igualdade de chaves aqui aborta o caso antes da varredura, de modo que
+      // um vazamento sob chave nova reprovaria nomeando a **chave** e nunca a **agulha**. Foi o que
+      // o mutante `M-JV` mostrou na primeira execução. Quem fixa a forma de `detalhes` é a igualdade
+      // de corpo inteiro, no fim do caso, depois de o que discrimina já ter corrido.
+      expect(Object.keys((doVencido.detalhes ?? {}) as object).length).toBeGreaterThan(0);
+
+      // A MEDIÇÃO, campo a campo nos **dois** envelopes — `mensagem`, `campo` e `detalhes` —, mais o
+      // corpo inteiro e a linha de cabeçalho de cada resposta: a saída é **observada**, e não
+      // presumida do `ZodError`. A M2 mediu que o Zod 4.4.3 não carrega o valor recusado; o risco não
+      // some, ele se desloca para quem registre o corpo cru, e é este caso que transforma o achado de
+      // ontem em rede permanente.
+      const superficies = [
+        { rotulo: 'envelope do esquema (mensagem)', texto: doEsquema.mensagem },
+        { rotulo: 'envelope do esquema (campo)', texto: doEsquema.campo ?? '' },
+        {
+          rotulo: 'envelope do esquema (detalhes)',
+          texto: inspect(doEsquema.detalhes, { depth: null }),
+        },
+        ...superficiesDaResposta(`POST ${ROTA_DO_REGISTRO} (esquema)`, recusaDoEsquema),
+        { rotulo: 'envelope do vencimento (mensagem)', texto: doVencido.mensagem },
+        { rotulo: 'envelope do vencimento (campo)', texto: doVencido.campo ?? '' },
+        {
+          rotulo: 'envelope do vencimento (detalhes)',
+          texto: inspect(doVencido.detalhes, { depth: null }),
+        },
+        ...superficiesDaResposta(`POST ${ROTA_DO_REGISTRO} (vencimento)`, recusaDoVencido),
+      ];
+
+      expect(ocorrenciasDe(superficies, agulhas)).toEqual([]);
+
+      // E os envelopes são os da ADR-0017, inteiros. As igualdades vêm por último porque abortam o
+      // caso ao falhar — a varredura acima é o que discrimina o vazamento, e precisa executar antes.
+      expect(recusaDoEsquema.corpo).toEqual({
+        codigo: CodigoErro.CAMPO_INVALIDO,
+        mensagem: MENSAGEM_DE_REQUISICAO_INVALIDA,
+        campo: 'material',
+      });
+      // O do vencimento carrega `detalhes` com a data em que a validade terminou (CA-06) — e a
+      // igualdade de corpo inteiro é o que prova que **só** ela está ali.
+      expect(recusaDoVencido.corpo).toEqual({
+        codigo: CodigoErro.CAMPO_INVALIDO,
+        mensagem: MENSAGEM_DO_CERTIFICADO_VENCIDO,
+        campo: CAMPO_DO_CORPO,
+        detalhes: { [DISCRIMINADOR_DA_VALIDADE]: vencido.validoAte.toISOString() },
+      });
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-831 — os três cenários de recusa registram, e nenhuma linha do arquivo de diário carrega o segredo',
+    async () => {
+      const autoridade = await gerarAutoridadeDeTeste('ct831');
+      const material = await gerarMaterial(autoridade, 'senha-sentinela-do-ct831-nao-deve-sair');
+      const materialIlegivel = randomBytes(BYTES_DO_MATERIAL_ILEGIVEL);
+      // O material do **terceiro** cenário: o cofre abre com a senha apresentada e a validade já
+      // terminou. Ele é o único dos três que atravessa `lerMaterial` com sucesso e chega à
+      // transação com o segredo embrulhado — e por isso o único cujo `warn` sai **depois** de
+      // `cifrarSegredo` ter corrido.
+      const vencido = await gerarMaterial(
+        autoridade,
+        'chave-do-cofre-vencido-do-ct831-nao-deve-sair',
+        DIAS_DE_VALIDADE_ENCERRADA,
+      );
+      // A quarta agulha é o material que o **segundo** cenário apresenta: bytes que nada abre, mas
+      // que circularam pelo corpo tanto quanto o cofre legítimo do primeiro. As três últimas são as
+      // do terceiro cenário, sob nomes próprios.
+      const agulhas = {
+        ...agulhasDo(material),
+        materialIlegivelEmBase64: materialIlegivel.toString('base64'),
+        ...agulhasDoAtoVencido(vencido),
+      };
+
+      expect(ocorrenciasDe(controleComAsAgulhas(agulhas), agulhas)).toEqual(
+        rotulosDoControle(agulhas),
+      );
+
+      const linhasAntes = (await lerLinhasDoDiario()).length;
+
+      // Cenário 1 — o material é bom, a senha não abre. A senha enviada é a sentinela DO CASO com um
+      // sufixo: ela é a que de fato viajou, e é ela que não pode aparecer em linha alguma.
+      const comSenhaErrada = await pedir(ROTA_DO_REGISTRO, {
+        metodo: 'POST',
+        cookie,
+        corpo: { material: agulhas.materialEmBase64, senha: `${agulhas.senha}-alterada` },
+      });
+
+      // Cenário 2 — a senha abre cofre nenhum porque os bytes não são um PKCS#12.
+      const comMaterialIlegivel = await pedir(ROTA_DO_REGISTRO, {
+        metodo: 'POST',
+        cookie,
+        corpo: { material: agulhas.materialIlegivelEmBase64, senha: agulhas.senha },
+      });
+
+      // Cenário 3 — o cofre ABRE e a validade já terminou. Ele é o caminho em que o segredo está
+      // mais vivo de todos os medidos aqui: quando este `warn` sai, o claro já foi aberto pelo
+      // adaptador e já foi cifrado dentro da transação. Enquanto ele não fosse exercitado, a
+      // ausência de vazamento no diário **deste** ramo era afirmada por leitura do código — o método
+      // que a `Decision` da ADR-0032 proíbe.
+      const comValidadeEncerrada = await registrarMaterial(vencido);
+
+      expect(comSenhaErrada.status).toBe(422);
+      expect(comMaterialIlegivel.status).toBe(422);
+      expect(comValidadeEncerrada.status).toBe(422);
+
+      await esvaziar(registrador);
+
+      const linhas = await lerLinhasDoDiario();
+      const desdeAqui = linhas.slice(linhasAntes);
+
+      // ⚠️ REGISTROU, e não vazou — as duas metades, e a primeira vem antes: um registrador
+      // silenciado passaria em qualquer varredura de ausência, e o que se quer provar é que o
+      // journal **tem** o que o operador precisa ler. Os **três** motivos internos, na ordem das
+      // três requisições, é o que separa "três linhas saíram" de "cada causa saiu com o motivo
+      // dela" — e é a igualdade que faz o vocabulário ser observado inteiro, e não pela metade.
+      expect(motivosEm(desdeAqui)).toEqual([
+        MOTIVO_DA_SENHA,
+        MOTIVO_DO_MATERIAL,
+        MOTIVO_DO_VENCIDO,
+      ]);
+      // E as três recusas do filtro global, com o código e o status que o cliente recebeu — escritas
+      // por extenso, uma por requisição.
+      expect(recusasEm(desdeAqui)).toEqual([
+        { codigo: CodigoErro.CAMPO_INVALIDO, status: 422 },
+        { codigo: CodigoErro.CAMPO_INVALIDO, status: 422 },
+        { codigo: CodigoErro.CAMPO_INVALIDO, status: 422 },
+      ]);
+
+      // A MEDIÇÃO: o arquivo **inteiro**, linha a linha — não apenas o trecho deste caso. Uma linha
+      // emitida em outro ponto do processo que carregasse este segredo reprova aqui, e a reprovação
+      // nomeia a posição da linha e a agulha.
+      expect(ocorrenciasDe(superficiesDoDiario(linhas), agulhas)).toEqual([]);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-832 — o documento publicado das três rotas não declara campo de material nem de senha, nem em exemplo',
+    async () => {
+      // O CONTROLE POSITIVO da coleta, antes de tudo: uma operação de controle que declara `senha`
+      // em `properties`, `material` dentro de um exemplo e `pfx` aninhado num exemplo de lista. Sem
+      // ele, uma coleta que não descesse aos exemplos devolveria conjunto vazio e o caso aprovaria
+      // um documento publicando o segredo.
+      const doControle = chavesDeclaradasEm(OPERACAO_DE_CONTROLE);
+
+      expect([...doControle].sort()).toEqual(['id', 'material', 'pfx', 'senha']);
+      expect(proibidasEntre(doControle)).toEqual(['material', 'pfx', 'senha']);
+
+      // O documento vem da aplicação de PRODUÇÃO montada — `criarAplicacao()` é quem publica o
+      // contrato —, e não de um `DocumentBuilder` escrito aqui: um documento gerado pelo teste
+      // descreveria a aplicação do teste (ADR-0016).
+      const documento = await documentoDaAplicacaoDeProducao();
+      // Os caminhos são os das rotas, sem tradução: nenhuma das três tem parâmetro de caminho, de
+      // modo que o documento as escreve exatamente como o cliente as chama.
+      const operacoes = [
+        operacaoDoDocumento(documento, ROTA_DO_REGISTRO, 'post'),
+        operacaoDoDocumento(documento, ROTA_DA_CONSULTA, 'get'),
+        operacaoDoDocumento(documento, ROTA_DA_VERIFICACAO, 'post'),
+      ];
+
+      const declaradas = chavesDeclaradasEm(operacoes);
+
+      // A asserção que DISCRIMINA vem primeiro, e a ordem é conteúdo: ela reprova **nomeando** a
+      // chave de segredo que apareceu, enquanto a igualdade abaixo aborta o caso mostrando o
+      // conjunto inteiro. É a mesma razão da `DECISÃO FECHADA — T10 / Gate 1` de
+      // `packages/cobranca-bancaria/test/adaptador-sicoob.spec.ts`.
+      expect(proibidasEntre(declaradas)).toEqual([]);
+
+      // E a IGUALDADE de conjunto, que é o que pega o campo a mais que ninguém pediu — a mera
+      // ausência das proibidas deixaria passar um campo novo com nome insuspeito carregando o
+      // segredo.
+      expect([...declaradas].sort()).toEqual([...CHAVES_ESPERADAS].sort());
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-833 — o material em repouso é cifra, e o banco por si não o reconstitui',
+    async () => {
+      const autoridade = await gerarAutoridadeDeTeste('ct833');
+      const material = await gerarMaterial(autoridade, 'senha-sentinela-do-ct833-nao-deve-sair');
+      const agulhas = agulhasDo(material);
+
+      expect(ocorrenciasDe(controleComAsAgulhas(agulhas), agulhas)).toEqual(
+        rotulosDoControle(agulhas),
+      );
+
+      // O registro corre pela ROTA REAL — nada é gravado por instrução direta. O que a conexão
+      // privilegiada faz abaixo é **só ler**.
+      expect((await registrarMaterial(material)).status).toBe(201);
+
+      const guardado = await lerSegredoCifradoCru(EMPRESA_A.id);
+      const bytesGuardados = Buffer.from(guardado, 'base64');
+
+      // A MEDIÇÃO sobre a coluna, nas duas formas em que ela pode ser lida — o texto do envelope e
+      // os bytes que ele decodifica.
+      expect(
+        ocorrenciasDe(
+          [
+            { rotulo: 'coluna segredo_cifrado (texto)', texto: guardado },
+            {
+              rotulo: 'coluna segredo_cifrado (bytes)',
+              texto: inspect(bytesGuardados, { depth: null }),
+            },
+          ],
+          agulhas,
+        ),
+      ).toEqual([]);
+
+      // Os bytes gravados **diferem** do claro e não o contêm em posição alguma: um envelope que
+      // apenas prefixasse cabeçalho ao material passaria numa comparação de igualdade.
+      expect(bytesGuardados.equals(material.material)).toBe(false);
+      expect(bytesGuardados.includes(material.material)).toBe(false);
+
+      // O NEGATIVO: outra chave de 32 bytes não abre, e o desfecho é levantar **sem devolver nada**
+      // — nem bytes parciais, nem os originais.
+      const outraChave = randomBytes(BYTES_DA_CHAVE_DE_CIFRA);
+
+      expect(outraChave.equals(chaveDaOperacao)).toBe(false);
+
+      const comChaveAlheia = desfechoDe(() => decifrarSegredo(guardado, outraChave));
+
+      expect(comChaveAlheia.devolvido).toBeUndefined();
+      expect(comChaveAlheia.erro).toBeInstanceOf(ErroDeSegredoAdulterado);
+
+      // E o COMPANHEIRO que impede o caso de aprovar uma coluna que guardasse lixo: com a chave da
+      // operação, o envelope devolve o par **byte a byte** — a mesma senha e o mesmo material que
+      // entraram pela rota.
+      const aberto = decifrarSegredo(guardado, chaveDaOperacao).abrir();
+
+      expect(aberto.senha).toBe(material.senha);
+      expect(aberto.material.equals(material.material)).toBe(true);
+    },
+    LIMITE_CASO_MS,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// As agulhas, a varredura e o controle positivo
+// ---------------------------------------------------------------------------
+
+/** Uma superfície varrida: o texto que saiu e o rótulo que a reprovação vai nomear. */
+interface Superficie {
+  readonly rotulo: string;
+  readonly texto: string;
+}
+
+/**
+ * As três agulhas de um ato — declaradas como tipo de objeto, e não como `interface`, para que o
+ * conjunto possa ser **estendido** por um caso (o CT-831 acrescenta o material ilegível) e continuar
+ * atribuível ao mapa que {@link ocorrenciasDe} percorre.
+ */
+type AgulhasDoAto = {
+  readonly senha: string;
+  readonly materialEmBase64: string;
+  readonly recorteDoMaterialEmHexadecimal: string;
+};
+
+/**
+ * As agulhas de um ato, derivadas do dado **que de fato circulou** (A7).
+ *
+ * São três, e a escolha das formas é conteúdo: a senha exatamente como foi enviada, o material
+ * exatamente como foi codificado no corpo, e um recorte dele em **hexadecimal** — que é a forma em
+ * que bytes crus aparecem numa inspeção de `Buffer` e num despejo de diagnóstico. O recorte não vai
+ * em base64 porque seria substring do material completo, e o controle positivo passaria a achar duas
+ * agulhas onde plantou uma.
+ */
+function agulhasDo(material: MaterialDeTeste): AgulhasDoAto {
+  return {
+    senha: material.senha,
+    materialEmBase64: material.material.toString('base64'),
+    recorteDoMaterialEmHexadecimal: recorteEmHexadecimalDe(material.material),
+  };
+}
+
+/**
+ * As três agulhas do ato **vencido** — tipo nomeado pela mesma razão de {@link AgulhasDoAto}, e
+ * `type` em vez de `interface` pelo mesmo motivo mecânico (atribuibilidade ao mapa que
+ * {@link ocorrenciasDe} percorre). Declará-lo, em vez de devolver `Record<string, string>`, é o que
+ * faz uma agulha nova do ato vencido precisar ser **nomeada aqui** para existir.
+ */
+type AgulhasDoAtoVencido = {
+  readonly senhaDoVencido: string;
+  readonly materialVencidoEmBase64: string;
+  readonly recorteDoVencidoEmHexadecimal: string;
+};
+
+/**
+ * As agulhas do material **vencido**, sob nomes próprios (A7).
+ *
+ * Elas são um conjunto separado, e não uma segunda chamada de {@link agulhasDo}, porque os dois
+ * materiais circulam no **mesmo** caso e as chaves precisam ser distintas: é o nome da agulha que a
+ * reprovação exibe, e é ele que diz qual dos dois cofres escapou. A senha vai junto de propósito —
+ * ela é a senha que **abriu** o cofre, isto é, a que atravessou `lerMaterial` com sucesso, e é a
+ * única deste arquivo de que isso é verdade num caminho de recusa.
+ */
+function agulhasDoAtoVencido(material: MaterialDeTeste): AgulhasDoAtoVencido {
+  return {
+    senhaDoVencido: material.senha,
+    materialVencidoEmBase64: material.material.toString('base64'),
+    recorteDoVencidoEmHexadecimal: recorteEmHexadecimalDe(material.material),
+  };
+}
+
+/**
+ * O recorte do miolo do material, em hexadecimal — a forma em que bytes crus aparecem num despejo.
+ *
+ * O início é a **metade** do cofre, pela razão medida em {@link BYTES_DO_RECORTE}: um deslocamento
+ * fixo perto do começo cai em estrutura comum a qualquer emissão daquela ferramenta, e a agulha
+ * deixaria de ser deste material.
+ *
+ * A guarda é do acessório, e não asserção do SUT: um material curto demais para o recorte produziria
+ * uma agulha vazia, e cadeia vazia está contida em qualquer texto — a varredura acharia tudo.
+ */
+function recorteEmHexadecimalDe(bytes: Buffer): string {
+  const inicio = Math.floor(bytes.length / 2);
+
+  if (bytes.length < inicio + BYTES_DO_RECORTE) {
+    throw new Error(`o material de teste tem ${String(bytes.length)} bytes, curto para o recorte`);
+  }
+
+  return bytes.subarray(inicio, inicio + BYTES_DO_RECORTE).toString('hex');
+}
+
+/**
+ * As ocorrências das agulhas nas superfícies, rotuladas por `${superfície}/${agulha}`.
+ *
+ * Cada superfície é buscada em **duas formas**: crua e sem espaço em branco. A segunda existe porque
+ * a inspeção de um `Buffer` imprime os bytes em hexadecimal **separados por espaço**
+ * (`<Buffer 1a 2b …>`), e sem a normalização um segredo viajando como bytes crus escaparia da busca —
+ * exatamente o modo de falha que o controle positivo planta para provar que não escapa.
+ *
+ * A ordem do resultado é determinística — superfície por superfície, agulha por agulha na ordem
+ * declarada —, o que é o que permite afirmá-lo por igualdade em vez de por contenção.
+ */
+function ocorrenciasDe(
+  superficies: readonly Superficie[],
+  agulhas: Readonly<Record<string, string>>,
+): string[] {
+  const achados: string[] = [];
+
+  for (const superficie of superficies) {
+    const formas = [superficie.texto, superficie.texto.replace(/\s/g, '')];
+
+    for (const [nome, agulha] of Object.entries(agulhas)) {
+      if (formas.some((forma) => forma.includes(agulha))) {
+        achados.push(`${superficie.rotulo}/${nome}`);
+      }
+    }
+  }
+
+  return achados;
+}
+
+/**
+ * O que **saiu** numa resposta: as três serializações do corpo mais a linha de cabeçalho.
+ *
+ * O cabeçalho está aqui porque *"o que saiu"* é a resposta inteira, e não só o corpo: um segredo
+ * devolvido em cabeçalho próprio — ou reeditado num `set-cookie` — sairia pelo fio exatamente como
+ * sairia no corpo, e uma varredura que só olhasse o corpo o aprovaria. É superfície de custo marginal
+ * zero, já que o transporte coleta os pares de qualquer modo.
+ */
+function superficiesDaResposta(rotulo: string, resposta: Resposta): Superficie[] {
+  return [
+    { rotulo: `${rotulo} (texto cru)`, texto: resposta.texto },
+    // `?? null` porque `JSON.stringify(undefined)` não devolve cadeia: uma resposta sem corpo JSON
+    // produziria `undefined` aqui, e `undefined.includes` derrubaria a varredura com erro de tipo em
+    // vez de reprovar por asserção.
+    { rotulo: `${rotulo} (json)`, texto: JSON.stringify(resposta.corpo ?? null) },
+    { rotulo: `${rotulo} (inspeção)`, texto: inspect(resposta.corpo, { depth: null }) },
+    { rotulo: `${rotulo} (cabeçalhos)`, texto: inspect(resposta.cabecalhos, { depth: null }) },
+  ];
+}
+
+/**
+ * O arquivo de diário como superfícies, uma por linha, rotuladas pela **posição**.
+ *
+ * Definida uma vez e consumida pelos **dois** casos que leem o diário — o CT-823, no caminho de
+ * sucesso, e o CT-831, no de recusa —, para que a forma do rótulo que a reprovação exibe seja a mesma
+ * nos dois: um vazamento achado num caminho e no outro nomeia a linha do mesmo jeito.
+ */
+function superficiesDoDiario(linhas: readonly string[]): Superficie[] {
+  return linhas.map((texto, posicao) => ({ rotulo: `linha ${String(posicao + 1)}`, texto }));
+}
+
+/**
+ * O CONTROLE POSITIVO: uma superfície por agulha, cada uma num canal diferente.
+ *
+ * Os canais são os que uma exposição real usaria — texto de mensagem, campo aninhado num objeto
+ * serializado, item de lista, e `Buffer` cru inspecionado. É o quarto que obriga a normalização de
+ * espaço em branco de {@link ocorrenciasDe} a existir: sem ela, bytes crus escapariam da busca.
+ *
+ * Uma agulha por canal, e o mapeamento por nome: assim a lista esperada é
+ * {@link rotulosDoControle}, e uma agulha nova sem canal reprova por **falta** em vez de passar
+ * despercebida.
+ */
+function controleComAsAgulhas(agulhas: Readonly<Record<string, string>>): Superficie[] {
+  return Object.entries(agulhas).map(([nome, agulha], posicao) => ({
+    rotulo: `controle (${nome})`,
+    texto: canalDeControle(posicao, agulha),
+  }));
+}
+
+/** Os rótulos que o controle positivo tem de devolver — um por agulha, na ordem declarada. */
+function rotulosDoControle(agulhas: Readonly<Record<string, string>>): string[] {
+  return Object.keys(agulhas).map((nome) => `controle (${nome})/${nome}`);
+}
+
+/**
+ * O canal em que a agulha de controle é plantada, escolhido pela posição dela.
+ *
+ * São quatro formas, e elas se alternam: mensagem interpolada, campo aninhado em objeto serializado,
+ * item de lista, e `Buffer` cru inspecionado. A alternância é o que garante que **todo** conjunto de
+ * agulhas exercite mais de um canal, inclusive o dos bytes crus.
+ *
+ * ⚠️ Uma agulha hexadecimal plantada como `Buffer` só é achada se a varredura normalizar o espaço em
+ * branco; uma agulha que não seja hexadecimal cairia fora daquele canal, e por isso o `Buffer` é
+ * montado apenas quando o texto é hexadecimal — do contrário o canal seria o da mensagem.
+ */
+function canalDeControle(posicao: number, agulha: string): string {
+  if (/^[0-9a-f]+$/.test(agulha) && agulha.length % 2 === 0) {
+    return inspect({ bytes: Buffer.from(agulha, 'hex') }, { depth: null });
+  }
+
+  const canais = [
+    (valor: string): string => `o registro trouxe ${valor} por engano`,
+    (valor: string): string => JSON.stringify({ certificado: { pfx: valor } }),
+    (valor: string): string => JSON.stringify({ detalhes: [valor] }),
+  ];
+
+  return (canais[posicao % canais.length] as (valor: string) => string)(agulha);
+}
+
+// ---------------------------------------------------------------------------
+// O documento publicado
+// ---------------------------------------------------------------------------
+
+/**
+ * A operação de CONTROLE do CT-832 — um documento plausível que declara o segredo de três jeitos.
+ *
+ * `senha` entra por `properties`, `material` por um exemplo de objeto, e `pfx` por um exemplo dentro
+ * de uma lista. É o que prova que {@link chavesDeclaradasEm} desce aos exemplos, e não só aos
+ * esquemas — que é justamente o eixo que a CA-02 cobra (*"nem em exemplo"*).
+ */
+const OPERACAO_DE_CONTROLE = {
+  responses: {
+    '200': {
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: { id: { type: 'string' }, senha: { type: 'string' } },
+            required: ['id'],
+          },
+          example: { material: 'MIIK…' },
+          examples: [{ pfx: 'MIIK…' }],
+        },
+      },
+    },
+  },
+} as const;
+
+/**
+ * Todos os nomes de campo que um trecho do documento **declara** — em esquema ou em exemplo.
+ *
+ * A coleta é por nome de campo, e não por texto: a descrição em prosa do `POST` fala, legitimamente,
+ * do *"material PKCS#12 em base64 e a senha que o abre"*, e uma varredura textual reprovaria a
+ * documentação por dizer o que a rota recebe. O que a CA-02 proíbe é a rota **declarar** o campo.
+ */
+function chavesDeclaradasEm(no: unknown): Set<string> {
+  const achadas = new Set<string>();
+  coletarChaves(no, achadas);
+  return achadas;
+}
+
+function coletarChaves(no: unknown, achadas: Set<string>): void {
+  if (Array.isArray(no)) {
+    for (const item of no) {
+      coletarChaves(item, achadas);
+    }
+    return;
+  }
+
+  if (no === null || typeof no !== 'object') {
+    return;
+  }
+
+  for (const [chave, valor] of Object.entries(no as Record<string, unknown>)) {
+    if (chave === 'properties' && valor !== null && typeof valor === 'object') {
+      for (const nome of Object.keys(valor as Record<string, unknown>)) {
+        achadas.add(nome);
+      }
+    }
+
+    if (chave === 'required' && Array.isArray(valor)) {
+      for (const nome of valor) {
+        if (typeof nome === 'string') {
+          achadas.add(nome);
+        }
+      }
+    }
+
+    if (chave === 'example' || chave === 'examples') {
+      coletarChavesDeExemplo(valor, achadas);
+    }
+
+    coletarChaves(valor, achadas);
+  }
+}
+
+/** Num exemplo, **toda** chave de objeto é nome de campo — inclusive dentro de lista. */
+function coletarChavesDeExemplo(valor: unknown, achadas: Set<string>): void {
+  if (Array.isArray(valor)) {
+    for (const item of valor) {
+      coletarChavesDeExemplo(item, achadas);
+    }
+    return;
+  }
+
+  if (valor === null || typeof valor !== 'object') {
+    return;
+  }
+
+  for (const [chave, aninhado] of Object.entries(valor as Record<string, unknown>)) {
+    achadas.add(chave);
+    coletarChavesDeExemplo(aninhado, achadas);
+  }
+}
+
+/** As chaves proibidas presentes no conjunto, em ordem — vazio é o desfecho esperado. */
+function proibidasEntre(chaves: ReadonlySet<string>): string[] {
+  return CHAVES_PROIBIDAS.filter((proibida) => chaves.has(proibida));
+}
+
+/**
+ * O documento OpenAPI da aplicação de **produção**, montada e fechada dentro do caso.
+ *
+ * `criarAplicacao()` é quem publica o contrato (`SwaggerModule.setup`), e é por isso que ele não sai
+ * da aplicação da montagem — que existe para outra propriedade, o registrador com destino em arquivo.
+ * A aplicação é encerrada em `onTestFinished`: uma aplicação viva depois do caso seguraria a porta e
+ * a reserva de conexões.
+ */
+async function documentoDaAplicacaoDeProducao(): Promise<unknown> {
+  const porta = await reservarPorta();
+  const producao = await criarAplicacao();
+
+  onTestFinished(async () => {
+    await producao.close();
+  });
+
+  await producao.listen({ port: porta, host: ENDERECO_DE_ESCUTA });
+
+  const endereco = `http://${ENDERECO_DE_ESCUTA}:${String(porta)}/${CAMINHO_DO_DOCUMENTO}`;
+  const resposta = await fetch(endereco, { headers: { connection: 'close' } });
+  const texto = await resposta.text();
+
+  if (resposta.status !== 200) {
+    throw new Error(`o documento respondeu ${String(resposta.status)}: ${texto}`);
+  }
+
+  return JSON.parse(texto) as unknown;
+}
+
+/**
+ * A operação do documento, ou uma exceção nomeando o que falta.
+ *
+ * Ausência levanta em vez de devolver `undefined`: uma rota que sumisse do documento produziria
+ * conjunto vazio de chaves, e conjunto vazio não contém chave proibida nenhuma — a varredura
+ * aprovaria a ausência da rota como se fosse a ausência do segredo.
+ */
+function operacaoDoDocumento(documento: unknown, caminho: string, metodo: string): unknown {
+  const paths = (documento as { paths?: Record<string, Record<string, unknown>> }).paths;
+  const operacao = paths?.[caminho]?.[metodo];
+
+  if (operacao === undefined) {
+    throw new Error(`o documento não descreve ${metodo.toUpperCase()} ${caminho}`);
+  }
+
+  return operacao;
+}
+
+// ---------------------------------------------------------------------------
+// O diário, o banco e o material
+// ---------------------------------------------------------------------------
+
+/** Aguarda o esvaziamento pelo mecanismo do próprio registrador — nunca por espera fixa. */
+async function esvaziar(logger: Logger): Promise<void> {
+  await new Promise<void>((resolver, rejeitar) => {
+    logger.flush((erro) => {
+      if (erro) {
+        rejeitar(erro);
+        return;
+      }
+      resolver();
+    });
+  });
+}
+
+/** As linhas não vazias do arquivo de diário, na ordem em que foram escritas. */
+async function lerLinhasDoDiario(): Promise<string[]> {
+  const conteudo = await readFile(arquivoDoDiario, 'utf8');
+
+  return conteudo.split('\n').filter((linha) => linha.trim() !== '');
+}
+
+/**
+ * Os motivos internos emitidos nas linhas informadas, na ordem em que saíram.
+ *
+ * O campo é lido do evento estruturado, e não casado no texto: é o `motivo` que o serviço emite, e a
+ * ordem é a das requisições — é ela que faz a igualdade discriminar qual causa produziu qual recusa,
+ * e não apenas que duas linhas saíram.
+ */
+function motivosEm(linhas: readonly string[]): string[] {
+  return linhas
+    .map((linha) => (JSON.parse(linha) as { motivo?: string }).motivo)
+    .filter((motivo): motivo is string => motivo !== undefined);
+}
+
+/**
+ * As linhas de trilha **desta superfície** entre as informadas, na forma normalizada que discrimina
+ * qual ato produziu cada uma.
+ *
+ * O filtro é por `entidade`, e os dois campos devolvidos são os que separam os dois eventos do
+ * caminho de sucesso: o registro nomeia a **impressão digital** do material que entrou (e não tem
+ * `aceito`), a verificação nomeia o **desfecho** (e não tem impressão digital). Normalizar o ausente
+ * como `null` é o que permite afirmar as duas linhas por **igualdade** — e é a igualdade que faz uma
+ * linha a mais, uma a menos ou fora de ordem reprovar.
+ */
+function trilhaDoCertificadoEm(
+  linhas: readonly string[],
+): { entidade: string; impressaoDigital: string | null; aceito: boolean | null }[] {
+  return linhas
+    .map(
+      (linha) =>
+        JSON.parse(linha) as { entidade?: string; impressaoDigital?: string; aceito?: boolean },
+    )
+    .filter(
+      (evento): evento is { entidade: string; impressaoDigital?: string; aceito?: boolean } =>
+        evento.entidade === ENTIDADE_DA_TRILHA,
+    )
+    .map((evento) => ({
+      entidade: evento.entidade,
+      impressaoDigital: evento.impressaoDigital ?? null,
+      aceito: evento.aceito ?? null,
+    }));
+}
+
+/** O par (código, status) de cada recusa registrada pelo filtro global nas linhas informadas. */
+function recusasEm(linhas: readonly string[]): { codigo: string; status: number }[] {
+  return linhas
+    .map((linha) => JSON.parse(linha) as { codigo?: string; status?: number })
+    .filter(
+      (evento): evento is { codigo: string; status: number } =>
+        evento.codigo !== undefined && evento.status !== undefined,
+    )
+    .map((evento) => ({ codigo: evento.codigo, status: evento.status }));
+}
+
+/**
+ * Lê `segredo_cifrado` **cru**, pela conexão do papel **dono** dos objetos.
+ *
+ * O privilégio é o ponto do caso: a tabela tem `FORCE ROW LEVEL SECURITY`, de modo que nem o dono
+ * escapa da política — por isso o contexto é fixado por `set_config` antes da leitura, exatamente
+ * como `packages/db/test/certificado-do-provedor.spec.ts` faz. A reserva é de **uma** conexão porque
+ * `set_config(…, false)` vale pela sessão.
+ *
+ * O que este caminho acrescenta ao acesso da aplicação é a força da afirmação: quem alcança o banco
+ * com o maior privilégio que o produto usa **ainda assim** não reconstitui o segredo.
+ */
+async function lerSegredoCifradoCru(empresaId: string): Promise<string> {
+  const sql = postgres(conexaoDeMigracao(identidade.banco), { max: 1 });
+
+  try {
+    await sql`SELECT set_config('app.empresa_id', ${empresaId}, false)`;
+
+    const [linha] = await sql<{ segredoCifrado: string | null }[]>`
+      SELECT segredo_cifrado AS "segredoCifrado"
+        FROM negocio.certificado_do_provedor
+       WHERE substituido_em IS NULL
+    `;
+
+    if (linha?.segredoCifrado === undefined || linha.segredoCifrado === null) {
+      throw new Error('a leitura crua não achou o segredo do certificado vigente');
+    }
+
+    return linha.segredoCifrado;
+  } finally {
+    await sql.end();
+  }
+}
+
+/**
+ * Gera um material com a senha sentinela **do caso**, pela autoridade descartável dele.
+ *
+ * A autoridade é parâmetro, e nasce dentro de cada `it`, porque a limpeza dela é registrada em
+ * `onTestFinished` — que o arcabouço só admite de dentro de um caso.
+ *
+ * A validade é parâmetro com valor padrão folgado: o único caso em que ela importa é o do material
+ * cuja vigência já terminou, e ele a declara por {@link DIAS_DE_VALIDADE_ENCERRADA}.
+ */
+async function gerarMaterial(
+  autoridade: AutoridadeDeTeste,
+  senha: string,
+  diasDeValidade: number = DIAS_DE_VALIDADE,
+): Promise<MaterialDeTeste> {
+  return await gerarMaterialDeTeste({ autoridade, senha, diasDeValidade });
+}
+
+/** Registra o material pela rota real, com a sessão da administradora. */
+async function registrarMaterial(material: MaterialDeTeste): Promise<Resposta> {
+  return await pedir(ROTA_DO_REGISTRO, {
+    metodo: 'POST',
+    cookie,
+    corpo: { material: material.material.toString('base64'), senha: material.senha },
+  });
+}
+
+/**
+ * Executa e devolve o par (o que voltou, o que foi levantado).
+ *
+ * Existe para que o CT-833 possa afirmar as **duas** metades do desfecho: que a exceção é a esperada
+ * e que **nada** foi devolvido. Um `toThrow()` provaria só a primeira.
+ */
+function desfechoDe(executar: () => unknown): { devolvido: unknown; erro: unknown } {
+  try {
+    return { devolvido: executar(), erro: undefined };
+  } catch (erro) {
+    return { devolvido: undefined, erro };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// HTTP
+// ---------------------------------------------------------------------------
+
+interface SessaoPublicada {
+  readonly telas: readonly string[];
+  readonly acoes: readonly string[];
+}
+
+interface CertificadoPublicado {
+  readonly id: string;
+  readonly impressaoDigital: string;
+}
+
+interface ResultadoPublicado {
+  readonly aceito: boolean;
+  readonly detalhe: string | null;
+}
+
+interface EnvelopeDeErro {
+  readonly codigo: string;
+  readonly mensagem: string;
+  readonly campo?: string;
+  readonly detalhes?: unknown;
+}
+
+interface Resposta {
+  readonly status: number;
+  readonly texto: string;
+  readonly corpo: unknown;
+  readonly cookies: readonly string[];
+  /** Os pares de cabeçalho que voltaram, na ordem em que o transporte os entrega. */
+  readonly cabecalhos: readonly (readonly [string, string])[];
+}
+
+interface OpcoesDoPedido {
+  readonly metodo?: string;
+  readonly corpo?: Record<string, unknown>;
+  readonly cookie?: string;
+}
+
+/**
+ * Executa uma requisição HTTP real contra a aplicação.
+ *
+ * O cabeçalho `Origin` acompanha toda requisição com a MESMA origem da aplicação — é o que um
+ * navegador enviaria, e é o que o arcabouço confere nas requisições que carregam cookie.
+ */
+async function pedir(alvo: string, opcoes: OpcoesDoPedido = {}): Promise<Resposta> {
+  const cabecalhos: Record<string, string> = { connection: 'close', origin: base };
+
+  if (opcoes.corpo !== undefined) {
+    cabecalhos['content-type'] = 'application/json';
+  }
+  if (opcoes.cookie !== undefined) {
+    cabecalhos.cookie = opcoes.cookie;
+  }
+
+  const resposta = await fetch(new URL(alvo, base), {
+    method: opcoes.metodo ?? 'GET',
+    headers: cabecalhos,
+    ...(opcoes.corpo === undefined ? {} : { body: JSON.stringify(opcoes.corpo) }),
+  });
+
+  const texto = await resposta.text();
+  const tipoDeConteudo = resposta.headers.get('content-type') ?? '';
+
+  return {
+    status: resposta.status,
+    texto,
+    corpo:
+      tipoDeConteudo.includes('application/json') && texto.length > 0
+        ? (JSON.parse(texto) as unknown)
+        : undefined,
+    cookies: resposta.headers.getSetCookie(),
+    // Os cabeçalhos são coletados aqui e varridos por {@link superficiesDaResposta}: sem eles, *"o
+    // que saiu"* seria só o corpo, e um segredo devolvido em cabeçalho próprio passaria limpo.
+    cabecalhos: [...resposta.headers],
+  };
+}
+
+/** Entra pelo caminho REAL — a rota pública de entrada. Nenhum estado de sessão é forjado. */
+async function entrar(email: string, senha: string): Promise<string> {
+  const entrada = await pedir(ROTA_DE_ENTRADA, {
+    metodo: 'POST',
+    corpo: { email, password: senha },
+  });
+
+  if (entrada.status !== 200) {
+    throw new Error(`a entrada de ${email} respondeu ${String(entrada.status)}: ${entrada.texto}`);
+  }
+
+  const credencial = entrada.cookies.find((bruto) =>
+    (bruto.split(';')[0] ?? '').split('=')[0]?.trim().endsWith(SUFIXO_DO_COOKIE_DE_SESSAO),
+  );
+
+  if (credencial === undefined) {
+    throw new Error('a entrada bem-sucedida não devolveu cookie de sessão');
+  }
+
+  return credencial.split(';')[0] ?? '';
+}

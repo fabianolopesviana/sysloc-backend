@@ -52,6 +52,7 @@ import {
 import { ConfirmacoesModule } from './confirmacoes/confirmacoes.module.js';
 import { ContratosModule } from './contratos/contratos.module.js';
 import { ImoveisModule } from './imoveis/imoveis.module.js';
+import { IntegracoesBancariasModule } from './integracoes-bancarias/integracoes-bancarias.module.js';
 import { MasterModule } from './master/master.module.js';
 import { MoraModule } from './mora/mora.module.js';
 import { SaudeModule } from './saude/saude.module.js';
@@ -70,6 +71,7 @@ import { UsuariosModule } from './usuarios/usuarios.module.js';
     CobrancasModule,
     MoraModule,
     AutomacaoModule,
+    IntegracoesBancariasModule,
     // A **única** superfície de negócio sem sessão do produto (ADR-0027). Ela é registrada aqui como
     // qualquer outro módulo, e é isso que importa: a dispensa não vem de um caminho de composição
     // próprio, vem de `@RotaPublica()` no manipulador — de modo que a guarda global continua

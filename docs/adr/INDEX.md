@@ -1,6 +1,6 @@
 # Architecture Decision Records — INDEX
 
-> Ultima atualizacao: 2026-08-13 (30 ADRs)
+> Ultima atualizacao: 2026-08-14 (33 ADRs)
 
 <!-- ADR-INDEX-START -->
 | ID | Titulo | Status | Tags | Problema (1-linha) | Decisao (1-linha) |
@@ -19,7 +19,7 @@
 | 0012 | Forma canônica do contrato da API, com a chave exposta variando por classe de entidade | superseded-by:0017 | http, architecture, error-handling | A API do Frappe vazou sua forma para dentro do frontend: name é chave e rótulo exibido em 11 inte... | Todo recurso da API obedece a cinco regras de forma. A chave exposta depende da classe da entidad... |
 | 0013 | O alcance da garantia do operador do SaaS — vale para a sessão dele, não para credencial que ele emite | accepted | security, auth | O produto tem um perfil de operador do SaaS que administra empresas e não alcança dado de negócio | A garantia de que o operador do SaaS não alcança dado de negócio é uma propriedade da sessão |
 | 0014 | Entidade de cadastro do domínio nunca é apagada — a exclusão é lógica | accepted | data, architecture | O domínio de locação nasce na F2 e é referenciado por todas as fases seguintes: cobrança aponta | Entidade de cadastro do domínio — a que o usuário cria, nomeia e referencia de outro registro |
-| 0015 | Contador sequencial por empresa, com furo aceito e número nunca reusado | accepted | data, architecture | Entidades que expõem código legível (CTR-2026-00020 no contrato, COB-… na cobrança, e o | Todo contador sequencial deste produto é único por empresa, e cada série declara o próprio |
+| 0015 | Contador sequencial por empresa, com furo aceito e número nunca reusado | superseded-by:0033 | data, architecture | Entidades que expõem código legível (CTR-2026-00020 no contrato, COB-… na cobrança, e o | Todo contador sequencial deste produto é único por empresa, e cada série declara o próprio |
 | 0016 | O esquema é a fonte única do contrato — validação e documento derivam dele | accepted | http, architecture | A API descreve hoje o mesmo contrato duas vezes: o esquema que confere a entrada e a descrição | O esquema declarado no pacote de contratos é a fonte única: a conferência de entrada, o tipo da |
 | 0017 | Forma canônica do contrato da API, com três classes de chave exposta | accepted | http, architecture, error-handling | A ADR-0012 partiu as entidades em duas classes e fixou que toda entidade de negócio tenantizada | Todo recurso da API obedece a cinco regras de forma, das quais a primeira passa a ter três |
 | 0018 | Uma rota compõe exigências, e a cobertura de autorização confere conteúdo — não só existência | accepted | auth, security, architecture | A ADR-0011 fixou que toda rota declara o que exige e que a rota sem declaração é recusada, com a | Uma rota pode declarar uma conjunção de exigências, e a recusa nomeia a primeira ausente na |
@@ -35,4 +35,7 @@
 | 0028 | O que o contrato publica para uma rota que devolve bytes | accepted | http, architecture | Todo corpo de resposta deste backend é JSON derivado de esquema, e a ADR-0016 faz do esquema a fonte | A rota que devolve bytes permanece no contrato e declara três coisas: o tipo de mídia, o |
 | 0029 | Efeito externo de ato de negócio sai por fila, nunca em linha na borda | accepted | architecture, cross-cutting | Atos de negócio deste backend alcançam o mundo fora do banco: aviso de cobrança por e-mail, | Todo efeito externo cujo resultado não compõe a resposta do pedido — envio de mensagem, |
 | 0030 | Artefato derivado de dado gravado é composto sob demanda, nunca armazenado | accepted | architecture, data | O sistema antigo compunha o contrato em PDF, convertia e guardava o resultado num campo do próprio | Artefato derivado de dado gravado é composto no instante do pedido e nunca armazenado: não |
+| 0031 | Tabela sem dono-empresa vive em schema próprio da plataforma, sem empresa_id | accepted | architecture, data, security | A ADR-0008 fixa que toda tabela de negócio nasce com empresaid e RLS forçada, e a ADR-0009 parte | Tabela que não é dado de negócio de nenhuma empresa vive fora do schema de negócio, num terceiro |
+| 0032 | Segredo operável é cifrado, nunca retorna e se prova por medição | accepted | security, data | Todo segredo que este produto guardou até aqui é verificável e irreversível — senha de acesso e | Segredo de terceiro que o produto precisa usar, e não apenas conferir, é guardado cifrado de forma |
+| 0033 | Cada série declara o próprio escopo, com furo aceito e número nunca reusado | accepted | data, architecture | A ADR-0015 fixou que todo contador sequencial do produto é único por empresa. A premissa era | Toda série sequencial deste produto declara o próprio escopo, e o escopo é parte da definição da |
 <!-- ADR-INDEX-END -->

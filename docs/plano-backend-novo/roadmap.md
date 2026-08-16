@@ -43,8 +43,8 @@ partir pelo mesmo motivo; quando isso acontecer, as fatias novas aparecem aqui.
 | **F0** | Stack instalada e provada | ✅ concluída | 7/7 tasks |
 | **F1** | Fundação SaaS — isolamento, identidade e autorização | ✅ concluída | 20/20 tasks |
 | **F2** | Domínio de locação | ✅ concluída | 21/21 tasks |
-| **F3** | Cobrança, mora e documentos | 🔄 em andamento | 2 de 3 fatias · 31/35 tasks |
-| **F4** | Integração bancária (Sicoob) | ⬜ não iniciada | — |
+| **F3** | Cobrança, mora e documentos | ✅ concluída | 35/35 tasks |
+| **F4** | Integração bancária (Sicoob) | 🔄 em andamento | 0 de 3 fatias · 11/14 tasks |
 | **F5** | Automações agendadas | ⬜ não iniciada | — |
 | **F6** | Frontend religado — só o handoff sai daqui | ⬜ não iniciada | — |
 | **F7** | Virada e desinstalação — partida em duas | ⬜ não iniciada | — |
@@ -257,11 +257,11 @@ cabe à 2b decidir se ainda precisa lê-lo. Detalhe em
 o `reply_to` da empresa certa.
 
 <!-- ESTADO:F3:INICIO -->
-> 🔄 **em andamento** — 2 de 3 fatias · 31/35 tasks
+> ✅ **concluída** — 35/35 tasks
 >
 > ✅ `cobranca-e-mora/v1` — 11/11 tasks
 > ✅ `regua-de-cobranca/v1` — 12/12 tasks
-> 🔄 `documentos-e-confirmacao/v1` — 8/12 tasks
+> ✅ `documentos-e-confirmacao/v1` — 12/12 tasks
 <!-- ESTADO:F3:FIM -->
 
 ---
@@ -291,9 +291,11 @@ e credenciais seguem válidos, então isto é trabalho de código, não espera d
 **retorna íntegro** da API. Se truncar, uma decisão precisa ser revista **antes** desta fase.
 
 <!-- ESTADO:F4:INICIO -->
-> ⬜ **não iniciada**
+> 🔄 **em andamento** — 0 de 3 fatias · 11/14 tasks
 >
-> ⬜ `integracao-bancaria-sicoob/v1`
+> 🔄 `fundacao-bancaria/v1` — 11/14 tasks
+> ⬜ `emissao-e-conciliacao/v1`
+> ⬜ `webhook-e-carne/v1`
 <!-- ESTADO:F4:FIM -->
 
 ---

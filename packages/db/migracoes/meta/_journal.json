@@ -106,6 +106,20 @@
       "when": 1786593971438,
       "tag": "0014_seguranca_confirmacao",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1786747493909,
+      "tag": "0015_dominio_bancario",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1786747494909,
+      "tag": "0016_seguranca_bancaria",
+      "breakpoints": true
     }
   ]
 }

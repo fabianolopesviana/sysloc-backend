@@ -77,11 +77,34 @@ export default defineConfig({
     // enfraquece a exigência — quem prova que a variável é obrigatória é `test/ambiente.spec.ts`,
     // que chama a validação com a fonte por PARÂMETRO e demonstra a recusa por ausência e por
     // cadeia em branco. E não fere a ADR-0006: nada é lido do ambiente, e o valor é fixado.
+    //
+    // `CHAVE_DE_CIFRA_DO_CERTIFICADO` e `ENDERECO_DO_PROVEDOR_BANCARIO` entram na **T11** da fatia
+    // `fundacao-bancaria` pela MESMA razão, e o precedente das três acima vale palavra por palavra:
+    // a partida passa a exigir as duas, e **todo** caso que sobe a aplicação real passa pela
+    // validação — inclusive `saude.e2e.spec.ts`, que não tem nada a ver com certificado de provedor.
+    // Declará-las aqui é o que evita editar vinte e oito arquivos de verificação por causa desta
+    // task.
+    //
+    // Os dois valores são INERTES pelo mesmo critério das anteriores, e cada um por uma razão
+    // própria. A chave decodifica exatamente para o texto `chave-de-verificacao-sem-valor!!` — 32
+    // bytes, o comprimento que o AES-256-GCM exige, escolhido para ser **legível** ao ser
+    // decodificado: ela não protege segredo nenhum, porque cifra e decifra o material que a
+    // instância efêmera do caso leva embora. O endereço aponta para `.invalid`, o domínio que a RFC
+    // 6761 garante não resolver, de modo que uma verificação que escapasse por aqui não teria com
+    // quem apertar a mão.
+    //
+    // Eles **não** enfraquecem as barreiras: quem prova que as duas são obrigatórias é
+    // `test/ambiente.spec.ts` (CT-851 a CT-853), que chama a validação com a fonte por PARÂMETRO e
+    // demonstra a recusa por ausência, por cadeia em branco e por chave de comprimento inaceitável.
+    // E não ferem a ADR-0006 pela razão de sempre: nada é lido do ambiente, e os valores são
+    // fixados.
     env: {
       BETTER_AUTH_SECRET: 'segredo-de-verificacao-sem-valor-operacional',
       SMTP_URL: 'smtp://127.0.0.1:1',
       EMAIL_REMETENTE: 'avisos@exemplo.invalid',
       URL_BASE_DA_CONFIRMACAO: 'https://app.exemplo.invalid',
+      CHAVE_DE_CIFRA_DO_CERTIFICADO: 'Y2hhdmUtZGUtdmVyaWZpY2FjYW8tc2VtLXZhbG9yISE=',
+      ENDERECO_DO_PROVEDOR_BANCARIO: 'https://provedor.exemplo.invalid',
     },
   },
 });

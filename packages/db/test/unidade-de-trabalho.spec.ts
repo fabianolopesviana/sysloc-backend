@@ -680,6 +680,26 @@ const SIMBOLOS_ESPERADOS = [
   // **Nenhuma entrada anterior sai por acréscimo**; a única saída desta task é de CAMPO, não de
   // símbolo (`pdfContratoArquivo`, ADR-0030), e campo não é observável por este caso.
   'esquemaNegocio.portadorDeConfirmacao',
+  // T4 da fatia `fundacao-bancaria` — a tabela do certificado do provedor, criada pela migração
+  // `0015`.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T4 publica UM símbolo novo no schema por decisão declarada na §1 da
+  // task (`Símbolos públicos criados`). Ele entra pelo mesmo critério do símbolo da T3 anterior: é
+  // **declaração de estrutura**, não caminho para dado — quem o tem em mãos ainda precisa de um
+  // executor para chegar ao banco, e o executor não sai do índice.
+  //
+  // Os objetos que a migração autoral `0016` cria **não aparecem aqui**, e não é esquecimento: o
+  // `FORCE ROW LEVEL SECURITY`, a política, a sequência `plataforma.identificador_bancario_seq` e a
+  // função `plataforma.proximo_identificador_bancario()` são objetos e atributos do BANCO, e não
+  // símbolos deste pacote — a mesma razão pela qual a visão e as funções da cobrança nunca
+  // apareceram. **O schema `plataforma` também não é declarado no Drizzle**: ele não tem tabela
+  // alguma (o roster da ADR-0031 é vazio nesta fatia), e declarar um `pgSchema` sem tabela publicaria
+  // um símbolo que não descreve estrutura nenhuma. Quem publicará a PORTA desta tabela como função de
+  // domínio é a T7, em `packages/db/src/certificado-do-provedor.ts`.
+  //
+  // **Nenhuma entrada anterior sai.**
+  'esquemaNegocio.certificadoDoProvedor',
   // T4 da fatia `cobranca-e-mora` — a PORTA da cobrança: as três operações do ciclo de vida, as DUAS
   // da série e a classe de erro da tradução de unicidade, ordenadas no conjunto pela posição de cada
   // nome (a comparação é sobre a lista ordenada).
@@ -1079,6 +1099,94 @@ const SIMBOLOS_ESPERADOS = [
   // `MotivoDeExcecao`) não aparecem aqui porque não existem em tempo de execução, e este caso
   // observa o módulo carregado.
   'verificarCoberturaDeIsolamento',
+  // T5 da fatia `fundacao-bancaria` — a guarda de admissão do schema `plataforma`, a SEGUNDA metade
+  // da ADR-0031 (a primeira é `verificarCoberturaDeIsolamento`, logo acima).
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T5 publica UM símbolo de tempo de execução novo no índice por decisão
+  // declarada na §5.2 da task. Ela entra pelo MESMO critério da guarda de cobertura: é PERGUNTA sobre
+  // o catálogo do sistema, não caminho para dado de negócio — não devolve cliente nem transação, e
+  // abre e encerra por dentro a conexão que usa. O caso reprovaria por `excedentes` não porque a
+  // superfície cresceu por descuido — que é o defeito que ele existe para pegar —, mas porque cresceu
+  // por decisão que ele ainda não conhecia. **Nenhuma entrada anterior sai**, e a igualdade (nunca
+  // contenção) segue sendo asserida.
+  //
+  // Os tipos que ela publica (`AdmissaoDePlataforma`, `ExcecaoDeAdmissao`, `MotivoDeAdmissao`) não
+  // aparecem aqui porque não existem em tempo de execução, e este caso observa o módulo carregado.
+  // `ROSTER_DE_PLATAFORMA` **não** é publicado pelo índice, e a ausência é deliberada: ele é
+  // declaração interna da guarda, sem consumidor fora do pacote — o cabeçalho de `../src/index.ts`
+  // registra por quê.
+  'conferirAdmissaoDePlataforma',
+  // T6 da fatia `fundacao-bancaria` — o mecanismo do identificador perante o provedor: o consumo do
+  // contador do SaaS e a composição das 18 posições.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T6 publica QUATRO símbolos novos no índice por decisão declarada na §1
+  // e na §5.2 da task. `proximoIdentificadorBancario` entra pelo critério de sempre — **recebe** o
+  // executor de quem já abriu a unidade de trabalho, não abre conexão, não reserva e não devolve
+  // executor —, e não abre exceção ao que as funções de série já registram: ela invoca, pelo executor
+  // recebido, a função `SECURITY DEFINER` que a migração `0016` criou, e é por isso que a aplicação
+  // nunca precisa (nem pode) tocar a sequência (ADR-0020). `comporIdentificadorBancario` e
+  // `LARGURA_DO_CONTADOR_BANCARIO` entram pelo critério de `somarMetragem`: são **puros** sobre valor
+  // já em mãos, não recebem executor e não são caminho para dado nenhum.
+  // `ErroDeContadorForaDaLargura` entra pelo MESMO critério de `ErroDeUnidadeAninhada` e de
+  // `ErroDeCodigoDeCobrancaEmUso`: é classe de erro, não caminho para dado.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o defeito
+  // que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia. **Nenhuma
+  // entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // `FORMATO_DA_COMPETENCIA` **não** é publicado, e a ausência é deliberada: ele é o mecanismo
+  // interno da composição — o cabeçalho de `../src/index.ts` registra por quê. As larguras vêm
+  // importadas de `@sysloc/contracts`, e por isso não há símbolo de largura a mais para publicar aqui
+  // além de `LARGURA_DO_CONTADOR_BANCARIO`. O conjunto abaixo é o MESMO da rodada 1 — quatro entradas,
+  // nenhuma acrescentada e nenhuma retirada.
+  'ErroDeContadorForaDaLargura',
+  'LARGURA_DO_CONTADOR_BANCARIO',
+  'comporIdentificadorBancario',
+  'proximoIdentificadorBancario',
+  // T7 da fatia `fundacao-bancaria` — as QUATRO operações do certificado do provedor, mais a única
+  // recusa nomeada do módulo.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T7 publica cinco símbolos novos no índice por decisão declarada na §1
+  // e na §5.2 da task. As quatro operações entram pelo critério de sempre — **recebem** o executor de
+  // quem já abriu a unidade de trabalho, não abrem conexão, não reservam e não devolvem executor —,
+  // com duas razões próprias desta fatia: a **substituição atômica** (anular o anterior e inserir o
+  // novo é um commit só, e compor o par por fora deixaria a empresa sem identidade e sem substituto
+  // quando a segunda metade falha) e a **separação do envelope** (`obterEnvelopeCifradoDoVigente` é a
+  // única das quatro que devolve `segredo_cifrado`, e ter o caminho com nome é o que torna
+  // verificável a afirmação de que ele é um só).
+  //
+  // `ErroDeCertificadoVencido` entra pelo MESMO critério de `ErroDeUnidadeAninhada` e de
+  // `ErroDeContadorForaDaLargura`: é classe de erro, não caminho para dado.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o defeito
+  // que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia. **Nenhuma
+  // entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // `colunasDoCertificado` **não** é publicado, e a ausência é deliberada: é o mecanismo interno da
+  // projeção — o cabeçalho de `../src/index.ts` registra por quê. Os tipos que as portas publicam
+  // (`CertificadoGravado`, `DadosDoCertificado`) não aparecem aqui porque não existem em tempo de
+  // execução, e este caso observa o módulo carregado.
+  'ErroDeCertificadoVencido',
+  'lerCertificadoVigente',
+  'lerHistoricoDeCertificados',
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a **T11** publica `lerVigenciaObservada` por decisão registrada no
+  // cabeçalho de `../src/index.ts`. Ela entra pelo mesmo critério das quatro acima — recebe o
+  // executor de quem já abriu a unidade, não abre conexão, não reserva e não devolve executor — e
+  // por uma razão própria: é o eixo de data da operação chegando à borda *"já resolvido, por
+  // parâmetro"* (ADR-0026), com a redução do instante a dia feita onde o fuso da operação já mora.
+  // Sem ela, a derivação do estado publicado declararia aquele fuso do outro lado da fronteira, e as
+  // duas declarações fariam a recusa do registro e o estado da consulta divergirem no mesmo dia.
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o
+  // defeito que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia.
+  // **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida. O tipo
+  // `VigenciaObservada` não aparece aqui porque não existe em tempo de execução.
+  'lerVigenciaObservada',
+  'obterEnvelopeCifradoDoVigente',
+  'registrarCertificado',
 ] as const;
 
 /** As propriedades que denunciam um cliente `postgres.js` — a marca do executor cru. */

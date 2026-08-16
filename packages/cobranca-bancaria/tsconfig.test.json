@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // O `tsconfig.json` ao lado existe para EMITIR o pacote, e por isso seu `include` alcança só o
+    // que vira `dist/`. Verificar tipos é outro problema: o rigor de `tsconfig.base.json` precisa
+    // alcançar também o código que PROVA o pacote, senão uma conversão deliberada do teste que
+    // deixou de valer compilaria, rodaria e passaria em silêncio.
+    "noEmit": true,
+    // A verificação importa o SUT pelo caminho REAL (`../src/porta-de-identidade.ts`), e não pelo
+    // artefato compilado — é o molde de `packages/contracts/test/`, `packages/regua/test/` e
+    // `packages/documentos/test/`. Além de dispensar o `dist/`, é o que faz o mutante da prova de
+    // falsificação alcançar de fato o que executa. Só é aceito com emissão desligada, e aqui ela
+    // está.
+    "allowImportingTsExtensions": true,
+    // `rootDir` volta à raiz do pacote porque `test/` está fora de `src/`. A suíte desta task lê os
+    // próprios fontes de `src/` como TEXTO — é asserção estática sobre a superfície declarada, e
+    // interface de TypeScript não existe em execução para ser introspectada de outro modo.
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "rootDir": "."
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

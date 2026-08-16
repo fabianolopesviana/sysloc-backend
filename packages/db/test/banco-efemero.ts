@@ -91,8 +91,22 @@ const PAPEL_APLICACAO = 'sysloc_app';
  */
 const PAPEL_RESOLUCAO = 'sysloc_resolucao';
 
-/** Os dois schemas da ADR-0009. Criados pelo provisionamento, nunca pela migração. */
-const SCHEMAS = ['identidade', 'negocio'] as const;
+/**
+ * Os schemas do produto. Criados pelo provisionamento, nunca pela migração.
+ *
+ * Os **dois primeiros** são os da ADR-0009: `identidade` opera antes de existir contexto de empresa,
+ * e `negocio` tem toda tabela vinculada a empresa, com RLS forçada. O **terceiro** é o da ADR-0031 —
+ * o que não é dado de empresa nenhuma vive fora do schema de negócio e não carrega `empresa_id`; ele
+ * guarda hoje a sequência e a função do identificador perante o provedor (`0016`), e **nenhuma
+ * tabela**.
+ *
+ * Esta lista é o espelho de `sql_preparar_banco_para_migracao()` de
+ * `deploy/scripts/instalacao/provisionar-base.sh`, que é quem os cria em operação. Manter as duas em
+ * paralelo é o que faz a verificação exercitar a mesma estrutura que a operação tem: um schema que
+ * exista só de um lado produz migração que aplica num ambiente e falha no outro — e falha longe da
+ * causa, com a suíte inteira vermelha por "schema inexistente".
+ */
+const SCHEMAS = ['identidade', 'negocio', 'plataforma'] as const;
 
 /** Diretório dos arquivos de migração, resolvido a partir deste módulo. */
 const DIRETORIO_MIGRACOES = new URL('../migracoes/', import.meta.url);

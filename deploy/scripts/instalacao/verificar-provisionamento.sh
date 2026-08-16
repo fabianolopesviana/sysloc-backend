@@ -114,6 +114,11 @@ readonly PAPEL_MIGRACAO="sysloc_migracao"
 readonly PAPEL_RESOLUCAO="sysloc_resolucao"
 readonly SCHEMA_IDENTIDADE="identidade"
 readonly SCHEMA_NEGOCIO="negocio"
+# Acrescentado pela T4 da fatia `fundacao-bancaria`, junto do terceiro schema do
+# P16. Ele é o schema da ADR-0031 — o que não é dado de empresa nenhuma —, e as
+# três asserções do laço do CT-030 valem para ele sem exceção: dono
+# '${PAPEL_MIGRACAO}', `USAGE` concedido a '${PAPEL_DB}' e `CREATE` negado.
+readonly SCHEMA_PLATAFORMA="plataforma"
 readonly PORTA_FILA=6380
 readonly ARQ_FILA_CONF="/etc/redis/redis-sysloc.conf"
 readonly DIR_FILA_DADOS="/var/lib/redis/sysloc"
@@ -2047,9 +2052,15 @@ ct_030() {
 	afirmar_igual "(c) a membership de '${PAPEL_MIGRACAO}' em '${PAPEL_RESOLUCAO}' existe e é INHERIT FALSE" "f" \
 		"$(consulta_cluster "SELECT coalesce((SELECT CASE WHEN m.inherit_option THEN 't' ELSE 'f' END FROM pg_auth_members m JOIN pg_roles concedido ON concedido.oid = m.roleid JOIN pg_roles membro ON membro.oid = m.member WHERE concedido.rolname = '${PAPEL_RESOLUCAO}' AND membro.rolname = '${PAPEL_MIGRACAO}'), 'AUSENTE')")"
 
-	# (d) os dois schemas, com dono e uso -------------------------------------- #
+	# (d) os três schemas, com dono e uso -------------------------------------- #
+	#
+	# O laço percorre a lista literal, e não o que o catálogo devolver: derivá-la de
+	# `pg_namespace` faria o esperado vir da mesma fonte que o obtido, e um schema
+	# que nunca tivesse sido criado sairia da varredura junto com a asserção que o
+	# cobraria. É o mesmo motivo pelo qual `TABELAS_DE_NEGOCIO_ESPERADAS` de
+	# `verificar-migracao.sh` é escrita à mão.
 	local schema
-	for schema in "${SCHEMA_IDENTIDADE}" "${SCHEMA_NEGOCIO}"; do
+	for schema in "${SCHEMA_IDENTIDADE}" "${SCHEMA_NEGOCIO}" "${SCHEMA_PLATAFORMA}"; do
 		afirmar_igual "(d) o schema '${schema}' pertence a '${PAPEL_MIGRACAO}'" "${PAPEL_MIGRACAO}" \
 			"$(consulta_banco "SELECT coalesce((SELECT r.rolname FROM pg_namespace n JOIN pg_roles r ON r.oid = n.nspowner WHERE n.nspname = '${schema}'), 'AUSENTE')")"
 		afirmar_igual "(d) '${PAPEL_DB}' alcança o schema '${schema}'" "t" \

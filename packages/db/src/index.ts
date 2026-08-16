@@ -35,6 +35,72 @@
  * código de saída. A alternativa seria o verificador reimplementar a consulta, que é o antipadrão
  * registrado em `.claude/rules/testing-stack.md`.
  *
+ * `./catalogo-de-plataforma.js` entra pelo MESMO critério de `./catalogo.js`, e não pelo das portas:
+ * `conferirAdmissaoDePlataforma` publica uma PERGUNTA sobre o catálogo do sistema — não devolve
+ * cliente nem transação, não alcança linha de tabela alguma, e abre e encerra por dentro a conexão
+ * que usa. Ela precisa sair daqui pela mesma razão da irmã: o verificador de infraestrutura a invoca
+ * de fora do pacote, pelo especificador público, e traduz `excecoes` em código de saída — e a
+ * alternativa seria ele reimplementar a consulta, que é o antipadrão registrado em
+ * `.claude/rules/testing-stack.md`.
+ *
+ * Ela é a **segunda metade da ADR-0031**, e a primeira é a de `./catalogo.js`: uma responde por
+ * `negocio` (nenhuma tabela sem RLS forçada), a outra por `plataforma` (nenhuma tabela com coluna de
+ * empresa, e nenhuma fora do roster enumerado). São dois módulos, e não um, porque a direção da lista
+ * é oposta — o cabeçalho do arquivo novo registra por extenso por que enumerar seria defeito lá e é a
+ * decisão aqui, e por que `./catalogo.ts` **não** é editado por isso.
+ *
+ * De lá **não** sai `ROSTER_DE_PLATAFORMA`, e a ausência é deliberada: hoje nenhum consumidor fora
+ * deste pacote o lê — quem afirma a igualdade contra ele é a suíte, que o alcança pelo caminho direto
+ * do módulo —, e publicar declaração interna só porque ela é interessante é o que este índice existe
+ * para não fazer. Ele sai daqui no dia em que houver quem o consuma de fora, e não antes.
+ *
+ * `./certificado-do-provedor.js` entra pela mesma pergunta, e com a mesma resposta: as **quatro**
+ * operações do certificado **recebem** o executor de quem já abriu a unidade, não abrem conexão nem
+ * transação e não devolvem executor. Elas repetem as razões das anteriores — enumerabilidade do
+ * alcance a `negocio`, um lugar único sob a política, a chave da porta sendo o UUID (ADR-0017, que
+ * não tem série declarada para esta entidade) — e acrescentam **duas** que são próprias desta fatia.
+ *
+ * A primeira é a **substituição atômica**. `registrarCertificado` anula o vigente anterior e insere o
+ * novo na MESMA unidade de trabalho, e publicar a porta é o que impede a borda de compor por fora o
+ * par "anular, inserir" — cujo desfecho, quando a segunda metade falha, é a empresa sem identidade e
+ * sem substituto, com o segredo do anterior perdido. Material vindo de terceiro ninguém recompõe: é
+ * dano sem recurso, e é por isso que a ordem das três instruções está registrada no cabeçalho
+ * daquele arquivo em vez de deixada a quem chama.
+ *
+ * A segunda é a **separação do envelope**. `obterEnvelopeCifradoDoVigente` é a ÚNICA das quatro que
+ * devolve `segredo_cifrado`, e as outras três compartilham uma projeção em que a coluna não existe.
+ * Publicar as quatro é o que torna verificável a afirmação de que o envelope tem um caminho só — um
+ * segundo apareceria como símbolo a mais neste índice, que o `CT-012` compara por igualdade, e não
+ * como um `SELECT` a mais escondido num serviço. O que sai dali é **opaco** (ADR-0032): o pacote
+ * guarda o cifrado e não sabe abri-lo, e quem decifra é o módulo de cifra, fora daqui.
+ *
+ * `ErroDeCertificadoVencido` sai pelo mesmo critério de `ErroDeUnidadeAninhada` e de
+ * `ErroDeContadorForaDaLargura`: é **classe de erro**, não caminho para dado. Ela é a única recusa
+ * nomeada do módulo, porque a vigência é a única condição da RN-03 que o banco não impõe — nem
+ * poderia, já que a linha permanece no histórico depois de vencer (CA-09). As violações que o banco
+ * **impõe** (`23505` do vigente único, `23514` da bicondicional do segredo) sobem intactas e não são
+ * traduzidas em bloco, pela razão que `./comodo.ts` e `./cobranca.ts` já registram.
+ *
+ * **Para quem elas saem daqui**: a borda do registro e da consulta (T11) e a verificação da
+ * identidade no provedor (T12), que é o consumidor único do envelope. Hoje esses consumidores fora do
+ * pacote **ainda não existem**, e o registro disso é deliberado — publicar não se justifica por
+ * consumidor presente, e sim por ser este o ponto único de exportação, onde a afirmação *"não há
+ * segundo caminho para o certificado"* é verificável.
+ *
+ * A **quinta** operação daquele módulo, `lerVigenciaObservada`, entra na T11 pelo mesmo critério das
+ * quatro e por uma razão que é dela: ela é o **eixo de data da operação** chegando à borda *"já
+ * resolvido, por parâmetro"*, como a ADR-0026 exige, e com a redução do instante a dia feita onde o
+ * fuso da operação já mora. Sem ela, a derivação do estado publicado (RN-04) teria de declarar aquele
+ * fuso do outro lado da fronteira — e o que as duas declarações fariam divergir é a coerência entre a
+ * recusa do registro e o estado da consulta, no mesmo dia e sobre o mesmo certificado. Ela não lê
+ * linha de tabela alguma, não decide nada e não conhece o limiar de vencimento: quem classifica é
+ * `derivarEstadoDaVigencia`, na borda, que é pura (ADR-0023).
+ *
+ * De lá **não** sai `colunasDoCertificado`, e a ausência é deliberada: ele é o mecanismo interno da
+ * projeção, pelo mesmo critério de `colunasDaCobranca` e de `empresaDoContexto`. Publicá-lo daria a
+ * quem chama a peça com que montar por fora uma consulta à tabela — e é a **ausência** da coluna do
+ * segredo nesse fragmento que responde pela RN-02.
+ *
  * `./empresa.js` entra pela mesma pergunta, e com a mesma resposta: as oito operações **recebem** o
  * executor de quem já abriu a unidade, não abrem conexão nem transação e não devolvem executor. Elas
  * existem por uma razão a mais, e ela é a que este índice serve: a contenção da §11.2 impede
@@ -400,6 +466,34 @@
  * leitura por documento sem passar pela recusa que a justifica. `somenteDigitos` de `@sysloc/shared`
  * também não é reexportado: quem precisa dele fora daqui o importa de lá.
  *
+ * `./identificador-bancario.js` entra pela mesma pergunta — **isto é um caminho para dado de negócio
+ * fora da unidade de trabalho? NÃO** —, e com duas respostas, porque são duas naturezas.
+ * `proximoIdentificadorBancario` **recebe** o executor de quem já abriu a unidade, não abre conexão
+ * nem transação e não devolve executor; ela não abre exceção ao que as funções de série já registram,
+ * porque invoca pelo executor recebido a função `SECURITY DEFINER` que a migração `0016` criou — e é
+ * por isso que a aplicação nunca precisa (nem pode) tocar a sequência (ADR-0020).
+ * `comporIdentificadorBancario` e `LARGURA_DO_CONTADOR_BANCARIO` entram pelo critério de
+ * `somarMetragem` e das duas derivações do contrato: são **puros** sobre valor já em mãos — não
+ * recebem executor, não tocam o banco e não leem relógio.
+ *
+ * **Para quem eles saem daqui**: para a **emissão**, na fatia seguinte da integração bancária, que é
+ * quem compõe o identificador que vai ao provedor e quem precisa decompô-lo de volta. Esta fatia
+ * entrega o mecanismo e não o exerce em rota nenhuma — de modo que hoje o consumidor deles fora deste
+ * pacote **não existe ainda**, e o registro disso é deliberado: publicar não se justifica por
+ * consumidor presente, e sim por ser este o ponto único de exportação do pacote, onde a afirmação
+ * *"não há segundo caminho para o contador do SaaS"* é verificável — um segundo apareceria como
+ * símbolo a mais no conjunto que o `CT-012` compara por igualdade.
+ *
+ * `ErroDeContadorForaDaLargura` sai pelo mesmo critério de `ErroDeUnidadeAninhada` e de
+ * `ErroDeCodigoDeCobrancaEmUso`: é **classe de erro**, não caminho para dado.
+ *
+ * De lá **não** sai `FORMATO_DA_COMPETENCIA`, e a ausência é deliberada: ele é o molde de `to_char`
+ * com que aquele módulo pergunta a competência ao banco — mecanismo interno da composição, pelo mesmo
+ * critério de `empresaDoContexto` e de `colunasDaCobranca`. O que se pode saber de fora sobre a
+ * **forma** do identificador já é contrato publicado, e vive em `@sysloc/contracts`: as duas larguras
+ * são importadas de lá, e `LARGURA_DO_CONTADOR_BANCARIO` é o nome com que este pacote publica a do
+ * contador para quem for decompor o identificador.
+ *
  * A igualdade é sobre a superfície ACHATADA, e a distinção não é detalhe: as três linhas
  * `export * as …` abaixo publicam tudo o que o módulo de origem exporta, hoje e no futuro. Um
  * conjunto que só comparasse os nomes de topo veria `contextoDeTenant` como UM nome e deixaria
@@ -438,6 +532,23 @@ export {
   type MotivoDeExcecao,
   verificarCoberturaDeIsolamento,
 } from './catalogo.js';
+export {
+  type AdmissaoDePlataforma,
+  conferirAdmissaoDePlataforma,
+  type ExcecaoDeAdmissao,
+  type MotivoDeAdmissao,
+} from './catalogo-de-plataforma.js';
+export {
+  type CertificadoGravado,
+  type DadosDoCertificado,
+  ErroDeCertificadoVencido,
+  lerCertificadoVigente,
+  lerHistoricoDeCertificados,
+  lerVigenciaObservada,
+  obterEnvelopeCifradoDoVigente,
+  registrarCertificado,
+  type VigenciaObservada,
+} from './certificado-do-provedor.js';
 export {
   acusarPagamentoDeCobranca,
   cancelarCobranca,
@@ -544,6 +655,12 @@ export {
 } from './envio-de-cobranca.js';
 export * as esquemaIdentidade from './esquema/identidade.js';
 export * as esquemaNegocio from './esquema/negocio.js';
+export {
+  comporIdentificadorBancario,
+  ErroDeContadorForaDaLargura,
+  LARGURA_DO_CONTADOR_BANCARIO,
+  proximoIdentificadorBancario,
+} from './identificador-bancario.js';
 export {
   alterarImovel,
   type ConflitoDeIdentificador,

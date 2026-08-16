@@ -66,6 +66,43 @@ const MAIOR_PORTA = 65_535;
 const COMPRIMENTO_MINIMO_DO_SEGREDO = 32;
 
 /**
+ * Comprimento **exato**, em bytes, da chave que cifra o segredo do certificado do provedor.
+ *
+ * É o que o AES-256-GCM exige, e por isso o piso e o teto são o mesmo número: uma chave de 31 ou de
+ * 33 bytes não é "uma chave fraca", é uma chave que o algoritmo **não aceita**, e o processo que
+ * subisse com ela falharia no primeiro registro — depois de o Admin ter entregado o material.
+ *
+ * ⚠️ **Ele é a segunda declaração executável deste número no monorepo**, e a duplicação é assumida
+ * com rede: a primeira é `BYTES_DA_CHAVE`, privada de `packages/shared/src/segredo-operavel.ts`, que
+ * é detalhe de construção da cifra e não sai do pacote por decisão registrada no índice dele. Se as
+ * duas divergirem, quem recusa é a cifra — `exigirChaveDeCifra` levanta
+ * `ErroDeChaveDeCifraInvalida` nas duas pontas, cifrando e decifrando —, de modo que o pior desfecho
+ * da divergência é a partida aceitar uma chave que a primeira operação recusa **nomeadamente**, e
+ * nunca um envelope gravado com chave de comprimento errado.
+ */
+const BYTES_DA_CHAVE_DE_CIFRA = 32;
+
+/** A exigência que a recusa de partida publica — nomeia a variável e o tamanho, jamais o valor. */
+const EXIGENCIA_DA_CHAVE_DE_CIFRA = `deve ser exatamente ${BYTES_DA_CHAVE_DE_CIFRA} bytes em base64`;
+
+/**
+ * A chave decodifica para **exatamente** 32 bytes, e o texto recebido é base64 canônico?
+ *
+ * As duas metades são uma conferência só, de propósito: `Buffer.from(valor, 'base64')` **ignora em
+ * silêncio** todo caractere fora do alfabeto, de modo que uma chave copiada com um espaço no meio
+ * decodificaria para outros bytes sem que nada acusasse — e o acervo cifrado com ela ficaria
+ * ilegível no dia em que alguém "consertasse" o valor. A volta (`toString('base64')`) é o que torna
+ * a decodificação **reversível**, e portanto o que faz o valor do arquivo de ambiente e a chave em
+ * uso serem o mesmo fato. É o que `openssl rand -base64 32` produz, e é o que o `.env.example`
+ * manda gerar.
+ */
+function ehChaveDeCifraAceitavel(valor: string): boolean {
+  const bytes = Buffer.from(valor, 'base64');
+
+  return bytes.length === BYTES_DA_CHAVE_DE_CIFRA && bytes.toString('base64') === valor;
+}
+
+/**
  * Endereço em que o serviço escuta.
  *
  * Somente o endereço de retorno: este servidor é compartilhado com o ambiente que ainda atende a
@@ -169,6 +206,47 @@ const ESQUEMA = z.object({
   // mesmo fato é o que esta fatia existe para não ter. O piso de um caractere é a barreira que
   // sobrevive a qualquer mudança futura em {@link selecionar}.
   URL_BASE_DA_CONFIRMACAO: z.string().min(1, 'deve ser declarada'),
+  // A chave que abre o envelope do certificado do provedor (T11 da fatia `fundacao-bancaria`).
+  //
+  // ⚠️ **Aqui o modo perigoso é o INVERSO do habitual**, e é por isso que a partida é recusada em vez
+  // de o processo subir: sem a chave, o serviço atenderia normalmente até o primeiro registro de
+  // certificado — e o Admin descobriria a falta **acreditando ter entregado o material ao produto**.
+  // Recusar na partida põe o custo no operador, na instalação, onde ele é barato; subir mesmo assim
+  // o põe no dia em que a empresa precisa cobrar.
+  //
+  // A conferência é de **comprimento decodificado**, não de presença: um esquema que apenas exigisse
+  // a variável deixaria subir um processo com chave de 31 bytes, que o AES-256-GCM recusa na
+  // primeira operação. É a mesma forma do par que já existe para `BETTER_AUTH_SECRET`, e a razão é
+  // mais forte: o segredo de sessão trocado invalida sessões; **a chave de cifra trocada torna o
+  // acervo cifrado ilegível**, e material vindo de terceiro ninguém recompõe.
+  //
+  // A recusa nomeia a **variável e o tamanho exigido**, e JAMAIS o valor recebido — ela vai para o
+  // journal, e este valor abre o envelope de todas as empresas do SaaS. A distinção entre "ausente"
+  // e "inaceitável" é preservada por {@link descrever}: o operador que procura no lugar errado
+  // perde a instalação inteira.
+  //
+  // A transformação para `Buffer` acontece **aqui**, e a posição é conteúdo: a conferência já
+  // decodifica, e publicar o texto obrigaria toda borda a decodificar de novo — uma segunda
+  // declaração da codificação, livre para divergir da que conferiu.
+  CHAVE_DE_CIFRA_DO_CERTIFICADO: z
+    .string()
+    .refine(ehChaveDeCifraAceitavel, EXIGENCIA_DA_CHAVE_DE_CIFRA)
+    .transform((valor) => Buffer.from(valor, 'base64')),
+  // O endereço do provedor bancário, sobre o qual a verificação de identidade aperta a mão (T12).
+  //
+  // ⚠️ **Ele vem do ambiente, nunca do corpo nem da sessão**, e é essa origem que fecha a requisição
+  // forjada do lado do servidor: nenhuma entrada de cliente decide para onde o produto conecta
+  // apresentando o certificado de uma empresa. `IdentidadeParaVerificar` deliberadamente não o
+  // carrega.
+  //
+  // A **forma** não é conferida aqui, e a ausência é decisão — o precedente literal é o de
+  // `SMTP_URL`, três parágrafos acima: quem recusa o endereço que não serve é `resolverDestino`, em
+  // `@sysloc/cobranca-bancaria`, num lugar só, na **construção** do adaptador. Uma segunda
+  // conferência de forma escrita nesta composição ficaria livre para divergir daquela, e é
+  // justamente a divergência entre dois pontos que decidem o mesmo fato que esta fatia existe para
+  // não ter. O piso de um caractere é a barreira que sobrevive a qualquer mudança em
+  // {@link selecionar}.
+  ENDERECO_DO_PROVEDOR_BANCARIO: z.string().min(1, 'deve ser declarada'),
 });
 
 /**
@@ -214,6 +292,27 @@ export interface Ambiente {
   readonly urlDoTransporte: string;
   /** Endereço que assina o aviso, de `EMAIL_REMETENTE`. */
   readonly remetenteDoAviso: string;
+  /**
+   * A chave que cifra e decifra o segredo do certificado do provedor, de
+   * `CHAVE_DE_CIFRA_DO_CERTIFICADO`. **É o segredo mais forte deste processo.**
+   *
+   * Ela chega **já decodificada**, porque é assim que a cifra a consome e porque a conferência de
+   * partida precisou decodificá-la para medir os 32 bytes — uma segunda decodificação na borda seria
+   * uma segunda declaração da codificação.
+   *
+   * Ela não é registrada, não viaja em `argv` e não é ecoada em mensagem de erro: a recusa de partida
+   * nomeia a **variável e o tamanho exigido**. Trocá-la **não** invalida sessões — torna ilegível
+   * todo envelope já gravado —, e é por isso que ela vive em `EnvironmentFile` 0600 fora da árvore.
+   */
+  readonly chaveDeCifraDoCertificado: Buffer;
+  /**
+   * O endereço do provedor bancário, de `ENDERECO_DO_PROVEDOR_BANCARIO`.
+   *
+   * Ele **não é segredo** — é o endereço público de uma instituição —, e mora aqui porque é a
+   * composição que constrói o adaptador a partir dele (T12). A forma é conferida lá, na construção,
+   * e não nesta leitura: ver a razão junto da linha que o exige.
+   */
+  readonly enderecoDoProvedorBancario: string;
   // ⚠️ `URL_BASE_DA_CONFIRMACAO` é EXIGIDA na partida e **não** tem campo aqui. A ausência é a
   // decisão, e a razão está no esquema, junto da linha que a exige: este processo confere a
   // completude do arquivo de ambiente compartilhado e NÃO compõe link nenhum — quem lê o valor é o
@@ -322,6 +421,34 @@ export const TOKEN_PORTA_DE_EMAIL = Symbol('PortaDeEnvioDeEmail');
 export const TOKEN_PORTA_DE_RENDERIZACAO = Symbol('PortaDeRenderizacao');
 
 /**
+ * Token de injeção da **porta de identidade bancária** (fatia `fundacao-bancaria`).
+ *
+ * Mora aqui, ao lado dos seis tokens acima, pelo mesmo motivo deles, e com o mesmo agravante
+ * estrutural do anterior: declará-lo em `integracoes-bancarias/integracoes-bancarias.module.ts`
+ * fecharia importação circular, porque o módulo importa o controlador, o controlador importa o
+ * serviço, e é o **serviço** quem pede o token no construtor — avaliado enquanto o módulo ainda está
+ * sendo carregado. O que ele publica é a `PortaDeIdentidadeBancaria` que `@sysloc/cobranca-bancaria`
+ * declara (ADR-0025): quem monta o processo escolhe o adaptador, e o domínio segue sem saber que
+ * existe um provedor com endereço.
+ *
+ * ⚠️ **Ele nasce nesta task e o provedor que o satisfaz é registrado na seguinte**, que é quem
+ * publica a rota de verificação e constrói o adaptador a partir de
+ * {@link Ambiente.enderecoDoProvedorBancario}. A antecipação é deliberada, e o que ela compra é
+ * nome: o token é a identidade da porta, e declará-lo junto dos seis irmãos — na mesma task que
+ * publica a área e a variável de ambiente que o alimenta — é o que impede a task seguinte de abrir um
+ * segundo nome, ou de declará-lo dentro do módulo e reabrir a importação circular descrita acima.
+ * Registrar aqui um provedor sem consumidor seria pior: ele construiria o cliente do provedor na
+ * montagem de **toda** aplicação, inclusive nas que não verificam identidade nenhuma.
+ *
+ * ⚠️ **Ele não abre um segundo caminho para escolher o adaptador**: não há bandeira de ambiente, não
+ * há `if (ehTeste)` e `criarAplicacao()` não ganha parâmetro — as três alternativas estão recusadas
+ * por escrito no cabeçalho de `packages/regua/src/adaptador-smtp.ts` e no docblock de
+ * {@link TOKEN_PORTA_DE_EMAIL}. A verificação troca o **provedor inteiro** de fora, pela mesma
+ * interface e pelo mesmo mecanismo (`overrideProvider`).
+ */
+export const TOKEN_PORTA_DE_IDENTIDADE_BANCARIA = Symbol('PortaDeIdentidadeBancaria');
+
+/**
  * Lê e valida as variáveis de ambiente exigidas.
  *
  * @param fonte Registro de variáveis — `process.env` na partida, objeto montado na verificação.
@@ -351,6 +478,8 @@ export function carregarAmbiente(fonte: FonteDeVariaveis): Ambiente {
     segredoDeSessao: validado.BETTER_AUTH_SECRET,
     urlDoTransporte: validado.SMTP_URL,
     remetenteDoAviso: validado.EMAIL_REMETENTE,
+    chaveDeCifraDoCertificado: validado.CHAVE_DE_CIFRA_DO_CERTIFICADO,
+    enderecoDoProvedorBancario: validado.ENDERECO_DO_PROVEDOR_BANCARIO,
   };
 }
 

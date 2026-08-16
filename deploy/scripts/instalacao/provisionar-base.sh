@@ -202,6 +202,17 @@ readonly BANCO_VERIFICACAO="sysloc_verificacao"
 # nascem AQUI, e não na migração — ver `sql_preparar_banco_para_migracao`.
 readonly SCHEMA_IDENTIDADE="identidade"
 readonly SCHEMA_NEGOCIO="negocio"
+# O terceiro schema, da ADR-0031: o que NÃO é dado de empresa nenhuma vive fora do
+# schema de negócio e não carrega `empresa_id`. Ele guarda hoje a sequência e a
+# função do identificador perante o provedor bancário (migração `0016`), e
+# NENHUMA tabela — o roster de tabelas dele é vazio nesta fatia, e o vazio é o
+# conteúdo: tabela nova ali só entra por alteração explícita e revisada.
+#
+# Nele NÃO há política de linha a impor (sequência não tem RLS): a proteção do que
+# mora ali é papel e privilégio, e é por isso que `${PAPEL_DB}` recebe `USAGE` no
+# schema e NADA sobre a sequência — só `EXECUTE` sobre a função, concedido pela
+# própria `0016`.
+readonly SCHEMA_PLATAFORMA="plataforma"
 
 # Endereço em que o cluster escuta e que a cadeia de conexão declara. Endereço de
 # retorno literal, e não `localhost`: o nome resolve para 127.0.0.1 e ::1 conforme
@@ -671,22 +682,37 @@ conferir_coordenadas_do_ambiente() {
 	# DÉBITO COM GATILHO — D39 · F1/fechamento · registrado 2026-08-02
 	# (Marcador de DÉBITO, não de decisão: nada aqui está congelado. Esta lista VAI
 	#  crescer, e o marcador só diz quando e sob que cuidado.)
-	# O QUÊ: esta lista não conhece `BETTER_AUTH_SECRET`, que a F1/T8 tornou
-	#        EXIGIDA na partida da API (`apps/api/src/configuracao/ambiente.ts`) e
-	#        documentou no `.env.example`. O provisionamento não a gera nem a
-	#        cobra, então uma instalação do zero produz um `${ARQ_AMBIENTE}` com
-	#        que a API **não sobe**: ela recusa a partida nomeando a variável, o
-	#        supervisor tenta 5 vezes e desiste. Medido neste servidor em
-	#        2026-08-02, e é o que fez 11 das 14 falhas da bateria agregada.
+	# O QUÊ: esta lista não conhece TRÊS variáveis EXIGIDAS na partida
+	#        (`apps/api/src/configuracao/ambiente.ts`) e documentadas no
+	#        `.env.example`, e o provisionamento não gera nem cobra nenhuma delas:
+	#          1. `BETTER_AUTH_SECRET`        (F1/T8)  — sem ela ninguém entra;
+	#          2. `CHAVE_DE_CIFRA_DO_CERTIFICADO` (F4/T11) — sem ela NENHUMA
+	#             empresa cobra: é a chave que abre o material do provedor;
+	#          3. `ENDERECO_DO_PROVEDOR_BANCARIO`  (F4/T11) — sem ela a
+	#             verificação da identidade não tem destino.
+	#        Uma instalação do zero produz um `${ARQ_AMBIENTE}` com que a API
+	#        **não sobe**: ela recusa a partida nomeando a variável, o supervisor
+	#        tenta 5 vezes e desiste. Medido neste servidor em 2026-08-02 com a
+	#        primeira, e é o que fez 11 das 14 falhas da bateria agregada; as duas
+	#        de 2026-08-15 foram medidas por LEITURA dos dois scripts (que exigem
+	#        `sudo` interativo e nenhum agente executa).
+	#        ⚠️ A lista é MANTIDA EM DIA por testemunha executável:
+	#        `EXIGIDAS_SEM_PROVISIONAMENTO`, em `apps/api/test/ambiente.spec.ts`,
+	#        é comparada por igualdade contra o conjunto observado — uma quarta
+	#        exigência sem caminho de provisionamento reprova LÁ antes de este
+	#        marcador envelhecer. Acrescentar só a primeira à mão continua
+	#        deixando a instalação quebrada.
 	# QUANDO FECHA: a **próxima instalação do zero** — a virada da F7, ou qualquer
 	#        provisionamento de máquina nova. Até lá o servidor existente segue de
-	#        pé com o valor acrescentado à mão.
+	#        pé com os valores acrescentados à mão.
 	# POR QUE NÃO AGORA: fechar exige gerar credencial e escrevê-la em `/etc` com
 	#        a mesma garantia de idempotência das demais — gerar se ausente e
-	#        **nunca** regerar, porque regerar invalida toda sessão em curso. A
-	#        única prova disso é a bateria privilegiada, que exige `sudo`
-	#        interativo e que nenhum agente executa; código privilegiado sem prova
-	#        é o que a `.claude/rules/testing-stack.md` chama de prova
+	#        **nunca** regerar, porque regerar invalida toda sessão em curso no
+	#        caso da primeira, e torna ILEGÍVEL todo material já cifrado no caso
+	#        da segunda (rotacioná-la obriga a recifrar o acervo de todas as
+	#        empresas). A única prova disso é a bateria privilegiada, que exige
+	#        `sudo` interativo e que nenhum agente executa; código privilegiado
+	#        sem prova é o que a `.claude/rules/testing-stack.md` chama de prova
 	#        inconclusiva. Escalado ao usuário, que decidiu adiar com gatilho.
 	# ÍNDICE: docs/specs/features/fundacao-multitenancy-identidade/v1/_run/run-report.md §2, D39
 	local chave esperado encontrado
@@ -1973,8 +1999,10 @@ sql_preparar_banco_para_migracao() {
 		"${SCHEMA_IDENTIDADE}" "${PAPEL_MIGRACAO}"
 	printf 'CREATE SCHEMA IF NOT EXISTS "%s" AUTHORIZATION "%s";\n' \
 		"${SCHEMA_NEGOCIO}" "${PAPEL_MIGRACAO}"
-	printf 'GRANT USAGE ON SCHEMA "%s", "%s" TO "%s";\n' \
-		"${SCHEMA_IDENTIDADE}" "${SCHEMA_NEGOCIO}" "${PAPEL_DB}"
+	printf 'CREATE SCHEMA IF NOT EXISTS "%s" AUTHORIZATION "%s";\n' \
+		"${SCHEMA_PLATAFORMA}" "${PAPEL_MIGRACAO}"
+	printf 'GRANT USAGE ON SCHEMA "%s", "%s", "%s" TO "%s";\n' \
+		"${SCHEMA_IDENTIDADE}" "${SCHEMA_NEGOCIO}" "${SCHEMA_PLATAFORMA}" "${PAPEL_DB}"
 }
 
 # Consulta de leitura DENTRO de um banco específico. `psql_consulta` conecta ao
@@ -2147,7 +2175,7 @@ passo_p16_banco_preparado() {
 	# convergir. Trocar o dono é decisão com consequência sobre objeto já criado —
 	# ela é do operador, não deste script.
 	local schema dono
-	for schema in "${SCHEMA_IDENTIDADE}" "${SCHEMA_NEGOCIO}"; do
+	for schema in "${SCHEMA_IDENTIDADE}" "${SCHEMA_NEGOCIO}" "${SCHEMA_PLATAFORMA}"; do
 		dono="$(psql_consulta_no_banco "${BANCO_DB}" \
 			"SELECT coalesce((SELECT r.rolname FROM pg_namespace n JOIN pg_roles r ON r.oid = n.nspowner WHERE n.nspname = '${schema}'), 'AUSENTE')")"
 		if [[ "${dono}" != "AUSENTE" && "${dono}" != "${PAPEL_MIGRACAO}" ]]; then
@@ -2156,16 +2184,24 @@ passo_p16_banco_preparado() {
 		fi
 	done
 
+	# A contagem é literal e casa com o número de schemas do laço acima. Ela é o que
+	# faz um schema AUSENTE reprovar o predicado: sem ela, o `bool_and` correria
+	# sobre as linhas que existem e um schema que nunca tivesse sido criado
+	# passaria por "já preparado" — a preparação não rodaria, e a migração que o
+	# referencia falharia depois, longe da causa.
+	#
+	# QUANDO ATUALIZAR: a fatia que acrescentar schema atualiza o laço acima, este
+	# número e o `IN` abaixo, no mesmo commit.
 	local ja_preparado
 	ja_preparado="$(psql_consulta_no_banco "${BANCO_DB}" "
 		SELECT (
-			count(*) FILTER (WHERE r.rolname = '${PAPEL_MIGRACAO}') = 2
+			count(*) FILTER (WHERE r.rolname = '${PAPEL_MIGRACAO}') = 3
 			AND bool_and(has_schema_privilege('${PAPEL_DB}', n.nspname, 'USAGE'))
 			AND has_database_privilege('${PAPEL_MIGRACAO}', '${BANCO_DB}', 'CONNECT')
 		)
 		FROM pg_namespace n
 		JOIN pg_roles r ON r.oid = n.nspowner
-		WHERE n.nspname IN ('${SCHEMA_IDENTIDADE}', '${SCHEMA_NEGOCIO}')")"
+		WHERE n.nspname IN ('${SCHEMA_IDENTIDADE}', '${SCHEMA_NEGOCIO}', '${SCHEMA_PLATAFORMA}')")"
 
 	if [[ "${ja_preparado}" != "t" ]]; then
 		sql_preparar_banco_para_migracao "${BANCO_DB}" | psql_admin -d "${BANCO_DB}" >/dev/null
@@ -2198,7 +2234,7 @@ passo_p16_banco_preparado() {
 	fi
 
 	if [[ "${mudancas}" -gt 0 ]]; then
-		criado "P16" "banco '${BANCO_DB}' preparado para a migração: schemas '${SCHEMA_IDENTIDADE}' e '${SCHEMA_NEGOCIO}' com dono '${PAPEL_MIGRACAO}', uso concedido a '${PAPEL_DB}', e a credencial de migração conecta"
+		criado "P16" "banco '${BANCO_DB}' preparado para a migração: schemas '${SCHEMA_IDENTIDADE}', '${SCHEMA_NEGOCIO}' e '${SCHEMA_PLATAFORMA}' com dono '${PAPEL_MIGRACAO}', uso concedido a '${PAPEL_DB}', e a credencial de migração conecta"
 	else
 		ja_ok "P16" "banco '${BANCO_DB}' já preparado para a migração e a credencial de '${PAPEL_MIGRACAO}' conecta"
 	fi

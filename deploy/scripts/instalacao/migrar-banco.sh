@@ -92,6 +92,11 @@ readonly PAPEL_MIGRACAO="sysloc_migracao"
 readonly PAPEL_DB="sysloc_app"
 readonly SCHEMA_IDENTIDADE="identidade"
 readonly SCHEMA_NEGOCIO="negocio"
+# O terceiro schema, da ADR-0031 — o que não é dado de empresa nenhuma. Ele é
+# referenciado pela migração `0016`, e por isso entra na conferência de
+# pré-condição abaixo: sem ele lá, a `0016` abortaria no meio da aplicação com
+# 'schema "plataforma" does not exist', que é o sintoma, e não a causa.
+readonly SCHEMA_PLATAFORMA="plataforma"
 readonly ARQ_AMBIENTE_MIGRACAO="/etc/sysloc/migracao.env"
 readonly ARQ_PG_HBA="/etc/postgresql/18/main/pg_hba.conf"
 
@@ -282,21 +287,29 @@ exigir_ferramentas() {
 	fi
 }
 
-# Os dois schemas precisam existir E pertencer ao migrador. Sem esta conferência,
+# Os três schemas precisam existir E pertencer ao migrador. Sem esta conferência,
 # a primeira migração falharia com "permission denied for database" — mensagem que
 # aponta para o sintoma e esconde a causa, que é o provisionamento não ter rodado.
+#
+# A comparação é por IGUALDADE da lista inteira, ordenada pelo nome, e não por
+# contenção: um schema ausente sai do `string_agg` junto com a exigência dele, e a
+# migração que o referencia só falharia lá na frente. É o que já aconteceria com a
+# `0016` se `${SCHEMA_PLATAFORMA}` não estivesse aqui.
+#
+# QUANDO ATUALIZAR: a fatia que acrescentar schema ao provisionamento atualiza
+# esta lista NO MESMO COMMIT da migração que o referencia.
 exigir_schemas_do_provisionamento() {
-	local esperado="${SCHEMA_IDENTIDADE}=${PAPEL_MIGRACAO} ${SCHEMA_NEGOCIO}=${PAPEL_MIGRACAO}"
+	local esperado="${SCHEMA_IDENTIDADE}=${PAPEL_MIGRACAO} ${SCHEMA_NEGOCIO}=${PAPEL_MIGRACAO} ${SCHEMA_PLATAFORMA}=${PAPEL_MIGRACAO}"
 	local obtido
 	obtido="$(psql_migrador -c "
 		SELECT string_agg(n.nspname || '=' || r.rolname, ' ' ORDER BY n.nspname)
 		FROM pg_catalog.pg_namespace n
 		JOIN pg_catalog.pg_roles r ON r.oid = n.nspowner
-		WHERE n.nspname IN ('${SCHEMA_IDENTIDADE}', '${SCHEMA_NEGOCIO}')" 2>/dev/null || true)"
+		WHERE n.nspname IN ('${SCHEMA_IDENTIDADE}', '${SCHEMA_NEGOCIO}', '${SCHEMA_PLATAFORMA}')" 2>/dev/null || true)"
 
 	if [[ "${obtido}" != "${esperado}" ]]; then
 		abortar "o banco '${banco_alvo}' não está preparado para receber migração — esperava os schemas [${esperado}] e encontrei [${obtido:-nenhum}]" \
-			"execute 'sudo bash deploy/scripts/instalacao/provisionar-base.sh' antes desta migração: é ele quem cria os dois schemas com dono '${PAPEL_MIGRACAO}', porque criá-los aqui exigiria conceder CREATE sobre o banco ao migrador"
+			"execute 'sudo bash deploy/scripts/instalacao/provisionar-base.sh' antes desta migração: é ele quem cria os três schemas com dono '${PAPEL_MIGRACAO}', porque criá-los aqui exigiria conceder CREATE sobre o banco ao migrador"
 	fi
 }
 

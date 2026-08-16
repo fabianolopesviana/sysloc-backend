@@ -106,6 +106,11 @@ readonly BANCO_DB="sysloc"
 readonly BANCO_VERIFICACAO="sysloc_verificacao"
 readonly SCHEMA_IDENTIDADE="identidade"
 readonly SCHEMA_NEGOCIO="negocio"
+# O terceiro schema, da ADR-0031, acrescentado pela T4 da fatia
+# `fundacao-bancaria`. Ele entra no retrato do catálogo e nas asserções de
+# privilégio, e NÃO na lista de tabelas: o roster de tabelas dele é vazio, e os
+# objetos que a `0016` cria lá são uma sequência e uma função.
+readonly SCHEMA_PLATAFORMA="plataforma"
 readonly ARQ_AMBIENTE_MIGRACAO="/etc/sysloc/migracao.env"
 readonly ARQ_MARCADOR_PRODUCAO="/etc/sysloc/producao"
 
@@ -135,11 +140,13 @@ readonly -a ESPELHOS_DE_CONSTANTE=(
 	"${SCRIPT_PROVISIONAR}|readonly BANCO_VERIFICACAO=\"${BANCO_VERIFICACAO}\""
 	"${SCRIPT_PROVISIONAR}|readonly SCHEMA_IDENTIDADE=\"${SCHEMA_IDENTIDADE}\""
 	"${SCRIPT_PROVISIONAR}|readonly SCHEMA_NEGOCIO=\"${SCHEMA_NEGOCIO}\""
+	"${SCRIPT_PROVISIONAR}|readonly SCHEMA_PLATAFORMA=\"${SCHEMA_PLATAFORMA}\""
 	"${SCRIPT_PROVISIONAR}|readonly ARQ_AMBIENTE_MIGRACAO=\"${ARQ_AMBIENTE_MIGRACAO}\""
 	"${SCRIPT_MIGRAR}|readonly PAPEL_DB=\"${PAPEL_DB}\""
 	"${SCRIPT_MIGRAR}|readonly PAPEL_MIGRACAO=\"${PAPEL_MIGRACAO}\""
 	"${SCRIPT_MIGRAR}|readonly SCHEMA_IDENTIDADE=\"${SCHEMA_IDENTIDADE}\""
 	"${SCRIPT_MIGRAR}|readonly SCHEMA_NEGOCIO=\"${SCHEMA_NEGOCIO}\""
+	"${SCRIPT_MIGRAR}|readonly SCHEMA_PLATAFORMA=\"${SCHEMA_PLATAFORMA}\""
 	"${SCRIPT_MIGRAR}|readonly ARQ_AMBIENTE_MIGRACAO=\"${ARQ_AMBIENTE_MIGRACAO}\""
 	"${SCRIPT_MIGRAR}|readonly TABELA_REGISTRO=\"\${SCHEMA_IDENTIDADE}.migracao_aplicada\""
 	"${SCRIPT_VERIFICAR_PROVISIONAMENTO}|readonly ARQ_MARCADOR_PRODUCAO=\"${ARQ_MARCADOR_PRODUCAO}\""
@@ -191,6 +198,17 @@ readonly CAMINHO_ENTRADA_DB="${RAIZ_REPO}/packages/db/dist/index.js"
 #   `0014_seguranca_confirmacao.sql`, que acrescentam o portador da confirmação de
 #   endereço. A mesma `0013` REMOVE a coluna `contrato.pdf_contrato_arquivo`
 #   (ADR-0030), e isso não move esta lista: ela enumera OBJETOS, nunca colunas.
+#   ATUALIZADA EM 2026-08-14 pela T4 da fatia `fundacao-bancaria`, no mesmo commit
+#   das migrações `0015_dominio_bancario.sql` e `0016_seguranca_bancaria.sql`, que
+#   acrescentam o certificado do provedor.
+#
+#   OS OBJETOS DE '${SCHEMA_PLATAFORMA}' NÃO ENTRAM AQUI, e a ausência é a decisão,
+#   por duas razões que se somam: esta lista é comparada com o que a guarda de
+#   cobertura devolve, e a guarda examina '${SCHEMA_NEGOCIO}'; e nenhum dos dois
+#   objetos que a `0016` cria lá é tabela — são uma sequência e uma função. O
+#   roster de TABELAS daquele schema é vazio nesta fatia, e o vazio é o conteúdo
+#   (ADR-0031). Acrescentar qualquer um deles faria a asserção (b) reprovar um
+#   schema íntegro, exatamente como acrescentar a sequência do contador faria.
 #   Esta lista é a MESMA
 #   `TABELAS_DE_NEGOCIO_ESPERADAS` que `packages/db/test/papel-de-conexao.spec.ts`
 #   declara — as duas frentes de teste (shell e Vitest) a mantêm em paralelo, e o
@@ -211,7 +229,7 @@ readonly CAMINHO_ENTRADA_DB="${RAIZ_REPO}/packages/db/dist/index.js"
 #   exclui `relkind = 'S'` do exame POR CONSTRUÇÃO, então ela nunca aparece no
 #   resultado que esta lista compara. Acrescentá-la faria a asserção (b) reprovar
 #   um schema íntegro.
-readonly TABELAS_DE_NEGOCIO_ESPERADAS="negocio.acesso_usuario_app negocio.acesso_usuario_permissao negocio.cobranca negocio.cobranca_derivada negocio.comodo negocio.configuracao_de_mora negocio.conjunto negocio.contrato negocio.contrato_fiador negocio.envio_de_cobranca negocio.fiador negocio.imovel negocio.locador negocio.locatario negocio.politica_de_aviso negocio.portador_de_confirmacao"
+readonly TABELAS_DE_NEGOCIO_ESPERADAS="negocio.acesso_usuario_app negocio.acesso_usuario_permissao negocio.certificado_do_provedor negocio.cobranca negocio.cobranca_derivada negocio.comodo negocio.configuracao_de_mora negocio.conjunto negocio.contrato negocio.contrato_fiador negocio.envio_de_cobranca negocio.fiador negocio.imovel negocio.locador negocio.locatario negocio.politica_de_aviso negocio.portador_de_confirmacao"
 
 # Os quatro transportes de segredo que a ADR-0005 proíbe. O `[=]` é classe de
 # caractere de UM elemento — casa exatamente o que o sinal solto casaria, sem
@@ -576,20 +594,20 @@ instantaneo_do_catalogo() {
 			|| ' acl=' || coalesce(c.relacl::text, '(padrao)')
 		FROM pg_catalog.pg_class c
 		JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-		WHERE n.nspname IN ('${SCHEMA_IDENTIDADE}', '${SCHEMA_NEGOCIO}')
+		WHERE n.nspname IN ('${SCHEMA_IDENTIDADE}', '${SCHEMA_NEGOCIO}', '${SCHEMA_PLATAFORMA}')
 		ORDER BY 1"
 	psql_admin_no_banco "${banco}" "
 		SELECT 'COLUNA ' || table_schema || '.' || table_name || '.' || column_name
 			|| ' ' || data_type || ' nulo=' || is_nullable
 		FROM information_schema.columns
-		WHERE table_schema IN ('${SCHEMA_IDENTIDADE}', '${SCHEMA_NEGOCIO}')
+		WHERE table_schema IN ('${SCHEMA_IDENTIDADE}', '${SCHEMA_NEGOCIO}', '${SCHEMA_PLATAFORMA}')
 		ORDER BY 1"
 	psql_admin_no_banco "${banco}" "
 		SELECT 'POLITICA ' || schemaname || '.' || tablename || '.' || policyname
 			|| ' usando=' || coalesce(qual, '(nenhum)')
 			|| ' checando=' || coalesce(with_check, '(nenhum)')
 		FROM pg_policies
-		WHERE schemaname IN ('${SCHEMA_IDENTIDADE}', '${SCHEMA_NEGOCIO}')
+		WHERE schemaname IN ('${SCHEMA_IDENTIDADE}', '${SCHEMA_NEGOCIO}', '${SCHEMA_PLATAFORMA}')
 		ORDER BY 1"
 	psql_admin_no_banco "${banco}" "
 		SELECT 'REGISTRO ' || arquivo || ' ' || soma_sha256
@@ -896,10 +914,10 @@ ct_031() {
 		"$(psql_admin_no_banco "${BANCO_DB}" "
 			SELECT count(*) FROM pg_catalog.pg_tables
 			WHERE schemaname = '${SCHEMA_NEGOCIO}' AND tableowner <> '${PAPEL_MIGRACAO}'")"
-	afirmar_igual "(c) o papel da aplicação não é dono de tabela alguma nos dois schemas" "0" \
+	afirmar_igual "(c) o papel da aplicação não é dono de tabela alguma nos três schemas" "0" \
 		"$(psql_admin_no_banco "${BANCO_DB}" "
 			SELECT count(*) FROM pg_catalog.pg_tables
-			WHERE schemaname IN ('${SCHEMA_IDENTIDADE}', '${SCHEMA_NEGOCIO}')
+			WHERE schemaname IN ('${SCHEMA_IDENTIDADE}', '${SCHEMA_NEGOCIO}', '${SCHEMA_PLATAFORMA}')
 			  AND tableowner = '${PAPEL_DB}'")"
 	afirmar_diferente "(c) há tabela de negócio a examinar (a asserção acima teria objeto)" "0" \
 		"$(psql_admin_no_banco "${BANCO_DB}" "
@@ -931,13 +949,21 @@ ct_031() {
 		"$(psql_admin_no_banco "${BANCO_DB}" "SELECT has_schema_privilege('${PAPEL_DB}', '${SCHEMA_NEGOCIO}', 'CREATE')")"
 	afirmar_igual "(d) '${PAPEL_DB}' não pode criar objeto em '${SCHEMA_IDENTIDADE}'" "f" \
 		"$(psql_admin_no_banco "${BANCO_DB}" "SELECT has_schema_privilege('${PAPEL_DB}', '${SCHEMA_IDENTIDADE}', 'CREATE')")"
-	# As duas abaixo impedem que as duas acima sejam vacuamente verdadeiras: um
+	afirmar_igual "(d) '${PAPEL_DB}' não pode criar objeto em '${SCHEMA_PLATAFORMA}'" "f" \
+		"$(psql_admin_no_banco "${BANCO_DB}" "SELECT has_schema_privilege('${PAPEL_DB}', '${SCHEMA_PLATAFORMA}', 'CREATE')")"
+	# As três abaixo impedem que as três acima sejam vacuamente verdadeiras: um
 	# papel sem alcance NENHUM aos schemas também não pode criar objeto neles, e
 	# passaria pelas asserções de CREATE sem que a concessão de uso existisse.
 	afirmar_igual "(d) '${PAPEL_DB}' alcança '${SCHEMA_IDENTIDADE}'" "t" \
 		"$(psql_admin_no_banco "${BANCO_DB}" "SELECT has_schema_privilege('${PAPEL_DB}', '${SCHEMA_IDENTIDADE}', 'USAGE')")"
 	afirmar_igual "(d) '${PAPEL_DB}' alcança '${SCHEMA_NEGOCIO}'" "t" \
 		"$(psql_admin_no_banco "${BANCO_DB}" "SELECT has_schema_privilege('${PAPEL_DB}', '${SCHEMA_NEGOCIO}', 'USAGE')")"
+	# `USAGE` em '${SCHEMA_PLATAFORMA}' é pré-condição de a aplicação sequer
+	# RESOLVER o nome da função do identificador bancário — sem ele a chamada morre
+	# em 42501 antes de o `EXECUTE` concedido importar. Ele vem das duas frentes: do
+	# provisionamento (P16) e da própria `0016`.
+	afirmar_igual "(d) '${PAPEL_DB}' alcança '${SCHEMA_PLATAFORMA}'" "t" \
+		"$(psql_admin_no_banco "${BANCO_DB}" "SELECT has_schema_privilege('${PAPEL_DB}', '${SCHEMA_PLATAFORMA}', 'USAGE')")"
 
 	# A tabela de REGISTRO da migração, que a fatia introduziu, é o ponto em que a
 	# mesma classe de erro reaparece por um caminho que nenhuma asserção acima

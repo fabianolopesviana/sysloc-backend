@@ -1,0 +1,45 @@
+{
+  "name": "@sysloc/cobranca-bancaria",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Domínio da cobrança bancária — declara o vocabulário canônico e a porta que o adaptador do provedor satisfaz (ADR-0025). Nenhum campo, URL ou termo de provedor atravessa a porta (ADR-0001)",
+  "//": [
+    "ZERO DEPENDÊNCIA EXTERNA, e a ausência de três nomes é decisão medida da fatia:",
+    "`undici` fica de fora porque o cliente nativo (`node:https` com `pfx`/`passphrase`) entrega o",
+    "aperto de mão mútuo que esta fatia exerce — medido (tech spec §21.1, M3) —, e o que o `undici`",
+    "acrescenta é o AGRUPAMENTO de conexões, que a decisão D6-b adia por manter o material decifrado",
+    "residente por tempo indefinido. Ele pertence à fatia (ii), que emite em lote.",
+    "Biblioteca de terceiro que interprete PKCS#12 fica de fora porque alargaria a superfície de",
+    "confiança exatamente sobre o segredo que esta fatia existe para conter (D2-c).",
+    "E `@sysloc/db` fica de fora nas DUAS listas — nem como dependência de teste 'para enxergar o",
+    "banco': a aresta de volta fecha ciclo e o Turborepo aborta antes de compilar qualquer coisa.",
+    "Ver o cabeçalho de `tsconfig.json`.",
+    "`@sysloc/shared` entra em `dependencies`, e não em `devDependencies`, porque `SegredoOperavel`",
+    "aparece na SUPERFÍCIE publicada deste pacote — o `.d.ts` de `IdentidadeParaVerificar` o cita.",
+    "Dependência de tipo que atravessa o `exports` é dependência de consumo, não de desenvolvimento."
+  ],
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "test": "tsc --build && tsc -p tsconfig.test.json && vitest run"
+  },
+  "dependencies": {
+    "@sysloc/contracts": "workspace:*",
+    "@sysloc/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

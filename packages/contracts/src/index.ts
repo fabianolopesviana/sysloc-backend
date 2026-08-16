@@ -150,6 +150,26 @@ export {
   SITUACOES_INFORMAVEIS,
   TIPOS_DE_IMOVEL,
 } from './imovel.js';
+export type {
+  Certificado,
+  CertificadoNovo,
+  EstadoDoCertificado,
+  MeioDeRecebimento,
+  ResultadoDaVerificacao,
+} from './integracao-bancaria.js';
+export {
+  ESQUEMA_DO_IDENTIFICADOR_BANCARIO,
+  ESTADOS_DO_CERTIFICADO,
+  esquemaDoCertificado,
+  esquemaDoCertificadoNovo,
+  esquemaDoResultadoDaVerificacao,
+  LARGURA_DA_COMPETENCIA,
+  LARGURA_DO_CONTADOR,
+  LIMIAR_DE_VENCIMENTO_EM_DIAS,
+  MAIOR_MATERIAL_CODIFICADO,
+  MAIOR_SENHA_DO_MATERIAL,
+  MEIOS_DE_RECEBIMENTO,
+} from './integracao-bancaria.js';
 export type { Locatario, Pessoa, PessoaNova, TipoDePessoa } from './pessoa.js';
 export {
   esquemaDaPessoa,

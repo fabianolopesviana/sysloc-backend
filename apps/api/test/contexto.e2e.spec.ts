@@ -167,6 +167,12 @@ import { CAMINHO_DOS_CONTRATOS } from '../src/contratos/contrato.controller.ts';
 import { CAMINHO_DOS_COMODOS } from '../src/imoveis/comodo.controller.ts';
 import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
 import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
+import {
+  CAMINHO_DAS_INTEGRACOES_BANCARIAS,
+  SEGMENTO_DA_CONSULTA,
+  SEGMENTO_DA_VERIFICACAO,
+  SEGMENTO_DO_REGISTRO,
+} from '../src/integracoes-bancarias/certificado.controller.ts';
 import { CAMINHO_DO_CONTRATO, CAMINHO_DO_DOCUMENTO, criarAplicacao } from '../src/main.ts';
 import { CAMINHO_DO_MASTER } from '../src/master/empresa.controller.ts';
 import { CAMINHO_DE_MULTA_E_JUROS } from '../src/mora/mora.controller.ts';
@@ -545,6 +551,50 @@ const ROTAS_PROTEGIDAS_ACEITAS: readonly string[] = [
   // **D26 (F2/T6)**: a §5.2 da T10 também não declara este arquivo, e a divergência é registrada
   // aqui em vez de silenciada.
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_AUTOMACAO_DE_COBRANCA}/cobrancas/:codigo/avisos`,
+  // SUT_IS_CORRECT_BECAUSE: a **T11** da fatia `fundacao-bancaria` publicou as **duas rotas do
+  // certificado do provedor**, e as duas são **protegidas**: vale a exigência da classe,
+  // `@ExigeChave('TELA:integracoes_bancarias')`, nenhuma é marcada `@RotaPublica()`, e por isso a
+  // sonda sem cookie recebe `401 NAO_AUTENTICADO` da guarda. Pela classificação por **caminho**
+  // deste caso elas entram como **duas** entradas, porque cada uma atende um caminho próprio — o
+  // registro é plural (`/certificados`, a coleção a que se acrescenta) e a consulta é singular
+  // (`/certificado`, o único que vigora) —, e nenhum outro método os atende.
+  //
+  // ⚠️ **A rota que registra é a mais sensível da superfície do produto** — o corpo dela carrega o
+  // material do certificado e a senha que o abre —, e ela entra aqui pela mesma régua das demais: o
+  // que este inventário classifica é *"a guarda recusa sem sessão?"*. Que ela exija, ALÉM da sessão,
+  // a conjunção área + ação é o que `cobertura-de-autorizacao.e2e.spec.ts` mede, e não este caso.
+  //
+  // **Nenhuma entrada anterior saiu**, o conjunto público continua inalterado — esta fatia **não**
+  // publica rota sem sessão —, e a igualdade segue exata nos dois sentidos: uma das duas que tivesse
+  // dispensado sessão apareceria no OUTRO conjunto e reprovaria como excedente.
+  //
+  // **Este arquivo não está na §5.2 da T11** — é a **décima segunda** anotação consecutiva do débito
+  // **D26 (F2/T6)**: a §5.2 das tasks não conta as âncoras de inventário que a publicação de rota
+  // obriga a tocar. A divergência é registrada aqui em vez de silenciada. A âncora **sobe**; ela não
+  // vira contenção.
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DA_CONSULTA}`,
+  // SUT_IS_CORRECT_BECAUSE: a **T12** da mesma fatia publicou a **verificação da identidade**, e ela
+  // é protegida pela mesma régua das duas acima: vale a exigência da classe,
+  // `@ExigeChave('TELA:integracoes_bancarias')`, ela **não** é marcada `@RotaPublica()`, e a sonda sem
+  // cookie recebe `401 NAO_AUTENTICADO` da guarda. Pela classificação por **caminho** deste caso ela é
+  // uma entrada própria, porque o caminho é próprio (`/certificado/verificacao`) — ela é sufixo do
+  // recurso singular, e o `POST` dela não colide com o `GET` da consulta.
+  //
+  // ⚠️ A rota **alcança um terceiro** com o material decifrado, e ainda assim exige apenas a área: a
+  // ação sensível governa o registro, que troca a identidade, e não a verificação, que a **RN-06**
+  // declara sem efeito. Quem governa a exigência é a **ADR-0011** com a **ADR-0018** — a ADR-0021
+  // entra só por analogia de critério, porque a `Decision` dela fala de **transição de estado**, que
+  // esta rota não é. O que este inventário classifica continua sendo *"a guarda recusa sem
+  // sessão?"*; a conjunção é medida por `cobertura-de-autorizacao.e2e.spec.ts`.
+  //
+  // **Nenhuma entrada anterior saiu**, o conjunto público continua inalterado — esta fatia **não**
+  // publica rota sem sessão —, e a igualdade segue exata nos dois sentidos.
+  //
+  // ⚠️ **Este arquivo não está na §5.2 da T12** — é a **décima terceira** anotação consecutiva do
+  // débito **D26 (F2/T6)**: a §5.2 das tasks não conta as âncoras de inventário que a publicação de
+  // rota obriga a tocar. A âncora **sobe**; ela não vira contenção.
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DA_CONSULTA}/${SEGMENTO_DA_VERIFICACAO}`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DO_REGISTRO}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas/:id/admin`,

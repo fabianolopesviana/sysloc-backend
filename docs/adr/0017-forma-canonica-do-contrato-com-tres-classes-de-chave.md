@@ -49,8 +49,9 @@ status HTTP semântico mais `{ codigo, mensagem, campo?, detalhes? }`, com `codi
   por feature, como manda a convenção de supersede.
 
 **Neutros:**
-- Não altera a **ADR-0015**, que governa o contador (único por empresa, furo aceito, número nunca
-  reusado). Esta diz *quem* expõe código; aquela diz *como* o número nasce.
+- Não altera a política do contador — hoje a **ADR-0033** (escopo declarado pela própria série, furo
+  aceito, número nunca reusado); era a **ADR-0015** quando esta foi escrita, e a 0033 a superseded em
+  2026-08-14. Esta diz *quem* expõe código; aquela diz o *escopo* do número.
 - Não altera a **ADR-0016**, que fixa o esquema como fonte única do contrato. Esta decide a forma;
   aquela, de onde a forma nasce.
 - O envelope de erro e o de lista permanecem exatamente como a 0012 os fixou.

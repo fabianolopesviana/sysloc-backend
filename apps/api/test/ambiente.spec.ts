@@ -24,7 +24,23 @@
  * |       |        | **PROVAS DE FALSIFICAÇÃO permanentes**: uma exigência a mais escrita por dois
  * |       |        | idiomas diferentes, e a emissão de `SMTP_URL` removida do provisionador. |
  *
+ * | CA-12 | CT-851 | A barreira FALHA FECHADO também para a integração bancária: sem
+ * |       |        | `CHAVE_DE_CIFRA_DO_CERTIFICADO` ou sem `ENDERECO_DO_PROVEDOR_BANCARIO` —
+ * |       |        | ausentes ou em branco —, `carregarAmbiente` recusa a partida com a cadeia
+ * |       |        | EXATA `<NOME>: ausente` e NUNCA devolve configuração; nenhuma sentinela
+ * |       |        | atravessa para a mensagem. |
+ * | CA-12 | CT-852 | `CHAVE_DE_CIFRA_DO_CERTIFICADO` só é aceita quando decodifica para
+ * |       |        | **exatamente 32 bytes** em base64 canônico: 31, 33 e uma cadeia que não é
+ * |       |        | base64 recusam nomeando a variável **e o tamanho exigido**, jamais o valor
+ * |       |        | recebido — e a recusa é DISTINGUÍVEL de *"ausente"*. |
+ * | CA-12 | CT-853 | Com as duas declaradas, a partida é ACEITA: a configuração sai inteira por
+ * |       |        | igualdade estrita, `VARIAVEIS_EXIGIDAS` passa a conter as duas, o conjunto de
+ * |       |        | campos cresce por **exatamente dois**, e a chave sai DECODIFICADA em 32 bytes.
+ * |       |        | É o controle positivo sem o qual CT-851 e CT-852 seriam satisfeitos por uma
+ * |       |        | validação que recusasse todo ambiente. |
+ *
  * Rastreabilidade acrescida pela T10: `CA-17 → CT-639 (RD-15)`.
+ * Rastreabilidade acrescida pela T11 da fatia `fundacao-bancaria`: `CA-12 → CT-851, CT-852, CT-853`.
  *
  * A fonte de variáveis é PARÂMETRO da função (Padrão 14: fail-fast testável). Um único caso planta
  * valor em `process.env` — o que PROVA que o ambiente do processo não prevalece sobre a fonte — e
@@ -97,6 +113,33 @@ const SEGREDO_DE_SESSAO = 'segredoDeSessaoCom32Caracteres!!';
 const SEGREDO_CURTO = 'curtoDemaisParaAssinarSessao';
 
 /**
+ * Chave de cifra **aceitável** — base64 canônico de exatamente 32 bytes, e distinguível.
+ *
+ * O claro dela é o texto `chave-de-cifra-do-ct851-sentinel`, escolhido para ser reconhecível na
+ * mensagem de uma reprovação e para não se parecer com nenhum outro valor da tabela: com valores
+ * parecidos, um campo da configuração alimentado pela variável errada passaria despercebido.
+ *
+ * Ela é o **controle positivo** dos dois casos negativos abaixo: sem uma chave que a partida aceite,
+ * o CT-851 e o CT-852 seriam satisfeitos por uma validação que recusasse todo ambiente.
+ */
+const CHAVE_DE_CIFRA_SENTINELA = 'Y2hhdmUtZGUtY2lmcmEtZG8tY3Q4NTEtc2VudGluZWw=';
+
+/**
+ * As três chaves **inaceitáveis** do CT-852, e o que cada uma discrimina.
+ *
+ * As duas primeiras são base64 perfeito de 31 e de 33 bytes — elas separam *"é base64"* de *"tem o
+ * comprimento que o AES-256-GCM exige"*, e uma validação que apenas conferisse a forma as aceitaria.
+ * A terceira nem é base64, e ela é a que impede a recusa de depender de aritmética de comprimento
+ * sobre um texto que o decodificador atravessa engolindo caracteres.
+ *
+ * As três são construídas de textos sentinela distinguíveis, para que a asserção de **não-eco** não
+ * possa casar por acaso.
+ */
+const CHAVE_DE_CIFRA_CURTA = 'Y2hhdmUtZGUtY2lmcmEtY29tLTMxLWJ5dGVzISEhIQ==';
+const CHAVE_DE_CIFRA_LONGA = 'Y2hhdmUtZGUtY2lmcmEtY29tLTMzLWJ5dGVzISEhISEh';
+const CHAVE_DE_CIFRA_SEM_FORMA = 'chave!!de!!cifra!!invalida###';
+
+/**
  * Ambiente completo e válido, com valor único por variável.
  *
  * Valores distinguíveis são o que permite afirmar que nenhum campo da configuração recebeu o
@@ -120,6 +163,13 @@ function ambienteCompleto(): Record<string, string> {
     // mesma razão de todos: um campo da configuração alimentado pela variável errada passaria
     // despercebido com valores parecidos.
     URL_BASE_DA_CONFIRMACAO: 'https://app.exemplo.invalid',
+    // As DUAS da integração bancária entram na T11 da fatia `fundacao-bancaria` — ver o bloco do
+    // CT-851, no fim do arquivo. A chave é o **segredo mais forte do processo** (trocá-la torna
+    // ilegível todo o material já cifrado), e por isso ela é a agulha das asserções de não-eco dos
+    // CT-851 e CT-852. O endereço não é segredo, e o valor é distinguível dos demais pela mesma
+    // razão de todos.
+    CHAVE_DE_CIFRA_DO_CERTIFICADO: CHAVE_DE_CIFRA_SENTINELA,
+    ENDERECO_DO_PROVEDOR_BANCARIO: 'https://provedor.exemplo.invalid',
   };
 }
 
@@ -288,10 +338,21 @@ describe('carregarAmbiente (T5 · CA-15)', () => {
     // elemento que sai deste literal, e ele sai porque o campo deixou de existir — a asserção segue
     // sendo igualdade exata sobre o conjunto inteiro, e por isso ela reprova tanto um campo novo não
     // declarado quanto a volta deste.
+    //
+    // SUT_IS_CORRECT_BECAUSE: a **T11** da fatia `fundacao-bancaria` acrescenta OUTROS DOIS campos,
+    // `chaveDeCifraDoCertificado` e `enderecoDoProvedorBancario`, e os dois **têm consumidor nesta
+    // aplicação** — que é o critério que a T9 fixou ao recusar `urlBaseDaConfirmacao`: a chave é
+    // lida pelo serviço do certificado, que cifra o envelope com ela, e o endereço é lido pela
+    // composição que constrói o adaptador do provedor. O código de produção está certo e o literal é
+    // que descrevia o processo anterior. A asserção continua sendo igualdade exata sobre o conjunto
+    // inteiro — **nenhum elemento saiu** —, e por isso ela segue reprovando campo que apareça sem
+    // ser declarado, inclusive a volta de `urlBaseDaConfirmacao`.
     expect(Object.keys(ambiente).sort()).toEqual([
       'ambiente',
       'cadeiaConexaoBanco',
       'cadeiaConexaoFila',
+      'chaveDeCifraDoCertificado',
+      'enderecoDoProvedorBancario',
       'nivelDeLog',
       'porta',
       'remetenteDoAviso',
@@ -321,7 +382,9 @@ const LINHAS_DO_TRANSPORTE = [
 ] as const;
 
 /** O ambiente completo, já traduzido para os campos que a configuração publica. */
-function configuracaoEsperada(fonte: Record<string, string>): Record<string, string | number> {
+function configuracaoEsperada(
+  fonte: Record<string, string>,
+): Record<string, string | number | Buffer> {
   return {
     ambiente: fonte.NODE_ENV as string,
     porta: Number(fonte.PORT),
@@ -331,6 +394,11 @@ function configuracaoEsperada(fonte: Record<string, string>): Record<string, str
     segredoDeSessao: fonte.BETTER_AUTH_SECRET as string,
     urlDoTransporte: fonte.SMTP_URL as string,
     remetenteDoAviso: fonte.EMAIL_REMETENTE as string,
+    // Derivado da FONTE, e não de `carregarAmbiente`: o esperado decodifica o mesmo texto que a
+    // fonte declara, de modo que uma leitura que devolvesse a chave de outra variável — ou o texto
+    // em vez dos bytes — reprova na igualdade estrita.
+    chaveDeCifraDoCertificado: Buffer.from(fonte.CHAVE_DE_CIFRA_DO_CERTIFICADO as string, 'base64'),
+    enderecoDoProvedorBancario: fonte.ENDERECO_DO_PROVEDOR_BANCARIO as string,
     // `URL_BASE_DA_CONFIRMACAO` NÃO entra: ela é exigida na partida e não vira campo — ver o
     // `SUT_IS_CORRECT_BECAUSE:` do CT-008.
   };
@@ -363,7 +431,29 @@ function lerDoRepositorio(relativo: string): string {
  * ⚠️ Esta constante NÃO fecha o D39. Quando ele for fechado, o caso abaixo reprova, e a correção é
  * trocar o valor esperado por `[]` — **jamais** afrouxar a igualdade para `toContain`.
  */
-const EXIGIDAS_SEM_PROVISIONAMENTO = ['BETTER_AUTH_SECRET'];
+// SUT_IS_CORRECT_BECAUSE: a **T11** da fatia `fundacao-bancaria` acrescenta duas variáveis exigidas,
+// e a lista cresce por elas porque a MEDIÇÃO diz que nenhuma das duas tem caminho de
+// provisionamento. A medição foi feita por LEITURA dos dois scripts — `provisionar-base.sh` e
+// `verificar-provisionamento.sh` exigem `sudo` com senha interativa e não são executados por agente
+// algum deste pipeline —, e o que ela achou é literal: o bloco redirecionado para `${ARQ_AMBIENTE}`
+// do provisionador emite `DATABASE_URL`, `REDIS_URL`, `SMTP_URL`, `EMAIL_REMETENTE` e
+// `URL_BASE_DA_CONFIRMACAO`, e a unidade `sysloc-api.service` declara `NODE_ENV`, `PORT` e
+// `LOG_LEVEL` por `Environment=`. Nenhuma das duas novas aparece em nenhuma das duas fontes; as
+// duas passam a ser documentadas no `.env.example`, que é a outra metade da conjunção do detector.
+//
+// O código de produção está certo: fechar o caminho de provisionamento exige tocar script com
+// privilégio, fora do que esta task pede, e é exatamente isso que o `D39` agenda — ele **cresceu**, e
+// a consequência do maior deles é pior que a do original: *sem `BETTER_AUTH_SECRET` ninguém entra;
+// sem a chave de cifra, nenhuma empresa cobra*.
+//
+// A asserção NÃO foi afrouxada — segue sendo `toEqual` sobre a lista inteira, e a lista continua
+// sendo a **testemunha medida** que separa este caso de uma tautologia. Trocá-la por `toContain`
+// seria regressão de prova (R2), e está proibido.
+const EXIGIDAS_SEM_PROVISIONAMENTO = [
+  'BETTER_AUTH_SECRET',
+  'CHAVE_DE_CIFRA_DO_CERTIFICADO',
+  'ENDERECO_DO_PROVEDOR_BANCARIO',
+];
 
 /** A variável que os mutantes desta seção acrescentam — nenhuma fonte real a entrega. */
 const SEXTA_EXIGENCIA = 'WEBHOOK_SICOOB_SEGREDO';
@@ -458,7 +548,13 @@ describe('carregarAmbiente (T10 · CA-17) — a barreira de partida do transport
   // igualdade estrita do objeto inteiro contra {@link configuracaoEsperada}, que também cresceu pelo
   // mesmo campo. Corrigir o rótulo é obrigatório mesmo sendo prosa: número desatualizado convida a
   // próxima task a "corrigir" a âncora executável para baixo.
-  it('CT-639 — com as NOVE declaradas, devolve o ambiente INTEIRO por igualdade estrita', () => {
+  // SUT_IS_CORRECT_BECAUSE: o nome do caso dizia **NOVE**, e a T11 da fatia `fundacao-bancaria`
+  // acrescentou `CHAVE_DE_CIFRA_DO_CERTIFICADO` e `ENDERECO_DO_PROVEDOR_BANCARIO` à partida — são
+  // ONZE. O que a asserção mede não mudou e não foi afrouxado: continua sendo a igualdade estrita do
+  // objeto inteiro contra {@link configuracaoEsperada}, que também cresceu pelos mesmos dois campos.
+  // Corrigir o rótulo é obrigatório mesmo sendo prosa, pela razão que a linha acima já registra:
+  // número desatualizado convida a próxima task a "corrigir" a âncora executável para baixo.
+  it('CT-639 — com as ONZE declaradas, devolve o ambiente INTEIRO por igualdade estrita', () => {
     // O controle positivo, sem o qual tudo acima seria satisfeito por uma validação que recusasse
     // todo ambiente. O objeto inteiro, e não campo a campo: é a igualdade estrita que faz um campo a
     // mais — ou um campo com valor de outra variável — reprovar aqui.
@@ -624,5 +720,143 @@ describe('CT-639 (T10 · CA-17) — a exigência de partida e o provisionamento 
       .concat('\n# printf \'SMTP_URL=%s\\n\' "$SMTP_PADRAO"\n');
 
     expect(chavesEmitidasPor(soEmComentario)).not.toContain('SMTP_URL');
+  });
+});
+
+// ===========================================================================
+// CT-851 a CT-853 — a barreira de partida da INTEGRAÇÃO BANCÁRIA (T11 · CA-12)
+// ===========================================================================
+
+/**
+ * As quatro linhas inválidas da barreira, com a variável que cada uma deve nomear.
+ *
+ * A tabela é declarada ANTES do caso e nomeia o resultado esperado de cada linha — ela **não** é
+ * derivada da execução. As duas primeiras são a **ausência**; as duas últimas são a cadeia em branco,
+ * que é o que um `EnvironmentFile` copiado do `.env.example` sem preenchimento entrega, e que a
+ * versão ingênua desta validação (`fonte.CHAVE_DE_CIFRA_DO_CERTIFICADO !== undefined`) aceitaria.
+ *
+ * Aqui o modo perigoso é o **inverso** do habitual, e é por isso que a barreira existe: o processo
+ * que subisse sem a chave atenderia normalmente até o primeiro registro de certificado — e o Admin
+ * descobriria a falta **acreditando ter entregado o material ao produto**.
+ */
+const LINHAS_DA_INTEGRACAO_BANCARIA = [
+  {
+    cenario: 'sem CHAVE_DE_CIFRA_DO_CERTIFICADO',
+    ausente: 'CHAVE_DE_CIFRA_DO_CERTIFICADO',
+    embranco: undefined,
+  },
+  {
+    cenario: 'sem ENDERECO_DO_PROVEDOR_BANCARIO',
+    ausente: 'ENDERECO_DO_PROVEDOR_BANCARIO',
+    embranco: undefined,
+  },
+  {
+    cenario: 'CHAVE_DE_CIFRA_DO_CERTIFICADO em branco',
+    ausente: 'CHAVE_DE_CIFRA_DO_CERTIFICADO',
+    embranco: 'CHAVE_DE_CIFRA_DO_CERTIFICADO',
+  },
+  {
+    cenario: 'ENDERECO_DO_PROVEDOR_BANCARIO em branco',
+    ausente: 'ENDERECO_DO_PROVEDOR_BANCARIO',
+    embranco: 'ENDERECO_DO_PROVEDOR_BANCARIO',
+  },
+] as const;
+
+/**
+ * As três chaves presentes e **inaceitáveis** do CT-852, cada uma com o que ela discrimina.
+ *
+ * O `rotulo` entra no nome do caso; o `valor` é a agulha da asserção de não-eco. Declarados antes do
+ * caso, e não derivados da execução.
+ */
+const CHAVES_DE_CIFRA_INACEITAVEIS = [
+  { rotulo: 'base64 de 31 bytes', valor: CHAVE_DE_CIFRA_CURTA },
+  { rotulo: 'base64 de 33 bytes', valor: CHAVE_DE_CIFRA_LONGA },
+  { rotulo: 'cadeia que não é base64', valor: CHAVE_DE_CIFRA_SEM_FORMA },
+] as const;
+
+describe('carregarAmbiente (T11 · CA-12) — a barreira de partida da integração bancária', () => {
+  it.each(LINHAS_DA_INTEGRACAO_BANCARIA)(
+    'CT-851 — $cenario: a partida é recusada nomeando a variável, sem devolver ambiente parcial',
+    ({ ausente, embranco }) => {
+      const fonte =
+        embranco === undefined
+          ? ambienteSem(ausente)
+          : { ...ambienteCompleto(), [embranco]: '   ' };
+
+      // `falhaDe` REPROVA quando a chamada devolve configuração — é assim que "nunca sobe pela
+      // metade" fica asserido, e não apenas afirmado no docblock. Um `carregarAmbiente` que
+      // devolvesse `{ …, chaveDeCifraDoCertificado: Buffer.alloc(0) }` cairia ali.
+      const falha = falhaDe(fonte);
+
+      // A cadeia EXATA da variável faltante, e não "a mensagem não está vazia".
+      expect(falha.message).toContain(`${ausente}: ausente`);
+      // E nenhuma credencial atravessa para o journal — nem a do banco, nem a do transporte, nem a
+      // chave que abre o envelope de TODAS as empresas do SaaS.
+      expect(falha.message).not.toContain(SENHA_NA_CADEIA);
+      expect(falha.message).not.toContain(SEGREDO_DE_SESSAO);
+      expect(falha.message).not.toContain(CHAVE_DE_CIFRA_SENTINELA);
+    },
+  );
+
+  it.each(CHAVES_DE_CIFRA_INACEITAVEIS)(
+    'CT-852 — chave de cifra presente e inaceitável ($rotulo) recusa dizendo o tamanho exigido',
+    ({ valor }) => {
+      // O par positivo/negativo desta variável: a ausência já é coberta pelo CT-851 e pela tabela
+      // derivada do CT-007. O que falta é o valor PRESENTE e inaceitável — sem ele, um esquema que
+      // apenas exigisse a variável passaria, e o processo subiria com uma chave de 31 bytes,
+      // falhando na primeira operação de AES-256-GCM.
+      const fonte = { ...ambienteCompleto(), CHAVE_DE_CIFRA_DO_CERTIFICADO: valor };
+
+      const falha = falhaDe(fonte);
+
+      expect(falha.message).toContain('CHAVE_DE_CIFRA_DO_CERTIFICADO');
+      // O TAMANHO exigido, e não uma recusa genérica: sem ele o operador não sabe o que gerar.
+      expect(falha.message).toContain('32 bytes');
+      // A mensagem vai para o diário, e este valor abre o envelope de todas as empresas do SaaS.
+      expect(falha.message).not.toContain(valor);
+      // E a recusa é DISTINGUÍVEL de "ausente": a variável foi preenchida, só que com valor que o
+      // algoritmo não aceita — quem lê "ausente" procura no lugar errado e perde a instalação.
+      expect(falha.message).not.toContain('CHAVE_DE_CIFRA_DO_CERTIFICADO: ausente');
+    },
+  );
+
+  it('CT-853 — com as duas declaradas, a partida é aceita e o ambiente cresce por exatamente dois', () => {
+    // O CONTROLE POSITIVO, sem o qual o CT-851 e o CT-852 seriam satisfeitos por uma validação que
+    // recusasse todo ambiente. O objeto inteiro por igualdade ESTRITA, e não campo a campo: é ela
+    // que faz um campo a mais — ou um campo com o valor de outra variável — reprovar aqui.
+    const fonte = ambienteCompleto();
+
+    expect(carregarAmbiente(fonte)).toStrictEqual(configuracaoEsperada(fonte));
+
+    // A lista é o que a seleção e a mensagem de falha consomem, e é ela que a tabela do CT-007
+    // percorre: uma variável no esquema e fora dela deixaria de ser exercitada por aquela tabela.
+    expect(VARIAVEIS_EXIGIDAS).toContain('CHAVE_DE_CIFRA_DO_CERTIFICADO');
+    expect(VARIAVEIS_EXIGIDAS).toContain('ENDERECO_DO_PROVEDOR_BANCARIO');
+
+    const ambiente = carregarAmbiente(fonte);
+
+    // A enumeração exaustiva dos campos publicados — a mesma âncora do CT-008, repetida aqui com os
+    // DEZ nomes porque é este caso que afirma o crescimento por exatamente dois.
+    expect(Object.keys(ambiente).sort()).toEqual([
+      'ambiente',
+      'cadeiaConexaoBanco',
+      'cadeiaConexaoFila',
+      'chaveDeCifraDoCertificado',
+      'enderecoDoProvedorBancario',
+      'nivelDeLog',
+      'porta',
+      'remetenteDoAviso',
+      'segredoDeSessao',
+      'urlDoTransporte',
+    ]);
+
+    // Cada campo novo vale exatamente o valor da SUA variável de origem: o endereço sai verbatim, e
+    // a chave sai DECODIFICADA — 32 bytes, que é a forma em que a cifra a consome. Publicar o texto
+    // obrigaria toda borda a decodificar de novo, com uma segunda declaração da codificação.
+    expect(ambiente.enderecoDoProvedorBancario).toBe(fonte.ENDERECO_DO_PROVEDOR_BANCARIO);
+    expect(ambiente.chaveDeCifraDoCertificado.length).toBe(32);
+    expect(ambiente.chaveDeCifraDoCertificado.toString('base64')).toBe(
+      fonte.CHAVE_DE_CIFRA_DO_CERTIFICADO,
+    );
   });
 });

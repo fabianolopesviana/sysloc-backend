@@ -288,6 +288,13 @@ Status: ✅ **11/11 tasks concluídas** · suíte verde com **271 casos** · `pn
 - **O que fazer:** acrescentar a chave à lista cobrada e gerá-la no passo que escreve o arquivo, com a mesma disciplina das demais credenciais — **gerar se ausente e NUNCA regerar**, porque regerar invalida toda sessão em curso (o `.env.example` registra isso como alavanca de emergência deliberada, não como acidente). Valor alfanumérico, pelo mesmo motivo dos outros segredos: o leitor do arquivo recusa `@ : / ? & # %`.
 - **Por que não foi feito na intervenção:** a única prova possível é a bateria privilegiada, que exige `sudo` interativo e que nenhum agente executa. Código que escreve credencial em `/etc` sem prova é o que a `testing-stack.md` chama de prova inconclusiva. **Escalado ao usuário, que decidiu adiar com gatilho.**
 
+> ⚠️ **O débito CRESCEU em 2026-08-15, na fatia `fundacao-bancaria` (F4) — e NÃO foi fechado.** A T11 daquela fatia tornou exigidas na partida mais **duas** variáveis sem caminho de provisionamento, e a T14 atualizou o marcador em `provisionar-base.sh` e esta entrada. **O gatilho não mudou**: continua sendo *"a próxima instalação do zero"*.
+>
+> - **São três, e não duas** — a medição é a testemunha executável `EXIGIDAS_SEM_PROVISIONAMENTO`, em `apps/api/test/ambiente.spec.ts`, comparada **por igualdade** contra o conjunto observado: `['BETTER_AUTH_SECRET', 'CHAVE_DE_CIFRA_DO_CERTIFICADO', 'ENDERECO_DO_PROVEDOR_BANCARIO']`. Uma quarta exigência sem caminho de provisionamento reprova **lá**, antes de o marcador envelhecer — é o que impede esta entrada de voltar a ficar para trás, como ficou entre a T11 e a T14.
+> - **A consequência do item novo é pior que a do original**, e é por isso que o crescimento importa: *sem `BETTER_AUTH_SECRET` ninguém entra; **sem a chave de cifra, nenhuma empresa cobra*** — ela é a chave que abre o material do provedor, e o material cifrado sem ela é ilegível.
+> - **Fechar ganhou uma exigência a mais**: a chave de cifra não é só "gerar se ausente e nunca regerar". **Rotacioná-la obriga a recifrar o material de todas as empresas**, porque o envelope AES-256-GCM gravado em `negocio.certificado_do_provedor` foi selado com a chave anterior. As duas cláusulas que isto impõe ao runbook de resguardo da F7 estão registradas na §5 do `run-report.md` da fatia `fundacao-bancaria`.
+> - **Por que continua aberto**: fechá-lo exige tocar script com privilégio, e a única prova possível segue sendo a bateria que exige `sudo` interativo — a mesma razão de 2026-08-02, sem fato novo que a supere.
+
 ## 3. Tasks Bloqueadas
 
 ✅ Nenhuma task bloqueada.

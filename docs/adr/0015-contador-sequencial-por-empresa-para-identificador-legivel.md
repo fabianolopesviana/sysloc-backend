@@ -1,7 +1,7 @@
 ---
 id: 0015
 title: Contador sequencial por empresa, com furo aceito e número nunca reusado
-status: accepted
+status: superseded-by:0033
 date: 2026-08-05
 tags: [data, architecture]
 ---
@@ -48,6 +48,8 @@ e o número **nunca é reusado**, nem por registro excluído, nem por criação 
 - O formato textual de cada série (prefixo, largura do sequencial) é decisão de cada fatia.
 - Combina com a **ADR-0014**: registro retirado de circulação continua ocupando o número, o que é
   consistente com o não-reuso.
+
+> Superseded by 0033 - Cada série declara o próprio escopo, com furo aceito e número nunca reusado em 2026-08-14.
 
 ## Alternatives considered
 

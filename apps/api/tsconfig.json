@@ -28,13 +28,20 @@
   // `PortaDeRenderizacao` pelo especificador público. Sem a referência, um mutante no fonte da
   // composição não alcançaria a suíte daqui — ela leria o `dist/` da compilação anterior, e o verde
   // se leria como "sobreviveu".
+  //
+  // `@sysloc/cobranca-bancaria` entra na T11 da fatia `fundacao-bancaria`, e pela MESMA razão: a
+  // borda do registro importa `lerMaterial` e as duas classes de erro que ela levanta pelo
+  // especificador público, e é do **tipo** delas que a recusa indistinguível é montada. Sem a
+  // referência, um mutante no fonte da leitura do material não alcançaria a suíte daqui — ela leria
+  // o `dist/` da compilação anterior, e o verde se leria como "sobreviveu".
   "references": [
     { "path": "../../packages/shared" },
     { "path": "../../packages/contracts" },
     { "path": "../../packages/db" },
     { "path": "../../packages/auth" },
     { "path": "../../packages/regua" },
-    { "path": "../../packages/documentos" }
+    { "path": "../../packages/documentos" },
+    { "path": "../../packages/cobranca-bancaria" }
   ],
   "include": ["src/**/*.ts"]
 }

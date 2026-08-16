@@ -39,15 +39,16 @@
  * |          |        | escritas em `identidade` (schema SEM RLS, ADR-0009) vem do alcance ao
  * |          |        | vínculo em `negocio`, e não de uma comparação escrita na aplicação. |
  * | CA-14    | CT-302 | Com uma linha descartável semeada nas duas empresas, a leitura de cada uma
- * |          |        | das NOVE relações de `negocio` que a fatia de cadastro, a de contrato e a
- * |          |        | de confirmação criaram (`conjunto`, `imovel`, `comodo`, `locador`,
- * |          |        | `locatario`, `fiador`, `contrato`, `contrato_fiador`,
- * |          |        | `portador_de_confirmacao`) sob o contexto de A devolve o conjunto exato
+ * |          |        | das DEZ relações de `negocio` que a fatia de cadastro, a de contrato, a
+ * |          |        | de confirmação e a bancária criaram (`conjunto`, `imovel`, `comodo`,
+ * |          |        | `locador`, `locatario`, `fiador`, `contrato`, `contrato_fiador`,
+ * |          |        | `portador_de_confirmacao`, `certificado_do_provedor`) sob o contexto de A
+ * |          |        | devolve o conjunto exato
  * |          |        | de identificadores de A e interseção vazia com os de B; sob B, o simétrico; e
  * |          |        | sob contexto ausente e sob contexto de empresa nula devolve zero linhas nas
- * |          |        | nove, sem erro — enquanto a mesma leitura sob A segue devolvendo conjunto
+ * |          |        | dez, sem erro — enquanto a mesma leitura sob A segue devolvendo conjunto
  * |          |        | não vazio. Nenhuma das consultas escreve filtro por `empresa_id`. |
- * | CA-14    | CT-303 | Sob o contexto da empresa A, `INSERT` em qualquer das nove relações com
+ * | CA-14    | CT-303 | Sob o contexto da empresa A, `INSERT` em qualquer das dez relações com
  * |          |        | `empresa_id` de B é recusado com `42501` e mensagem contendo 'row-level
  * |          |        | security policy'; `UPDATE` e `DELETE` sobre linha existente de B afetam ZERO
  * |          |        | linhas, sem erro; o estado de B, lido em seguida no contexto de B, é
@@ -1134,8 +1135,8 @@ async function contarVinculosDe(
 }
 
 // ===========================================================================
-// CT-302 · CT-303 · CT-304 — as nove relações do domínio (seis de cadastro, duas de contrato,
-// uma de confirmação)
+// CT-302 · CT-303 · CT-304 — as dez relações do domínio (seis de cadastro, duas de contrato,
+// uma de confirmação, uma bancária)
 // ===========================================================================
 //
 // Os três NÃO entram em `rodarBateria`, e o motivo é o mesmo já registrado para o CT-207: a bateria
@@ -1149,10 +1150,21 @@ async function contarVinculosDe(
 // `packages/db/src/**` para que estes casos existam — as linhas de cadastro nascem de SQL do
 // próprio caso, sob o contexto da empresa DONA, que é o caminho que a aplicação usará.
 
-/** Os dados de uma linha descartável de cadastro. Um só formato para as nove relações. */
+/** Os dados de uma linha descartável de cadastro. Um só formato para as dez relações. */
 interface DadosDeCadastro {
   readonly id: string;
   readonly empresaId: string;
+  /**
+   * O usuário que "registrou" o certificado do provedor. Ignorado pelas demais entidades.
+   *
+   * Diferente dos outros pais deste registro, ele **não** é uma linha descartável criada pelo caso:
+   * é um usuário da CARGA INICIAL, e por isso não varia por tentativa — varia por empresa, como o
+   * próprio `empresaId`. A chave estrangeira composta cobra o par `(registrado_por, empresa_id)`,
+   * de modo que a escrita cruzada do CT-303 precisa apontar para o usuário da empresa ALHEIA: com
+   * um usuário de A, o banco recusaria pela chave composta ANTES de a política ser consultada, e o
+   * caso passaria a provar a referência em vez do isolamento.
+   */
+  readonly usuarioId: string;
   /** O pai tenantizado de `imovel`. Ignorado pelas entidades que não têm pai. */
   readonly conjuntoId: string;
   /** O pai tenantizado de `comodo` — e um dos três de `contrato`. */
@@ -1236,6 +1248,7 @@ const CADASTROS_DE_A = {
   contrato: 'dddddddd-4444-4000-8000-000000000007',
   contrato_fiador: 'dddddddd-4444-4000-8000-000000000008',
   portador_de_confirmacao: 'dddddddd-4444-4000-8000-000000000009',
+  certificado_do_provedor: 'dddddddd-4444-4000-8000-000000000010',
 } as const;
 
 const CADASTROS_DE_B = {
@@ -1248,6 +1261,7 @@ const CADASTROS_DE_B = {
   contrato: 'dddddddd-5555-4000-8000-000000000007',
   contrato_fiador: 'dddddddd-5555-4000-8000-000000000008',
   portador_de_confirmacao: 'dddddddd-5555-4000-8000-000000000009',
+  certificado_do_provedor: 'dddddddd-5555-4000-8000-000000000010',
 } as const;
 
 /** As linhas que a empresa A tenta gravar com `empresa_id` da empresa B (CT-303). */
@@ -1261,6 +1275,7 @@ const CADASTROS_CRUZADOS = {
   contrato: 'dddddddd-6666-4000-8000-000000000007',
   contrato_fiador: 'dddddddd-6666-4000-8000-000000000008',
   portador_de_confirmacao: 'dddddddd-6666-4000-8000-000000000009',
+  certificado_do_provedor: 'dddddddd-6666-4000-8000-000000000010',
 } as const;
 
 // As seis tentativas do CT-304: a legítima e as duas cruzadas, para cada uma das duas relações
@@ -1579,6 +1594,66 @@ const ENTIDADES_DE_CADASTRO: readonly EntidadeDeCadastro[] = [
       return resultado.count;
     },
   },
+  // -------------------------------------------------------------------------
+  // T4 da fatia `fundacao-bancaria` — a relação da migração `0015`
+  // -------------------------------------------------------------------------
+  //
+  // Ela entra aqui, e não em caso próprio, pela razão escrita no docblock de
+  // {@link EntidadeDeCadastro}: o mecanismo dos CT-302/303/304 já é o alvo declarado de TODA relação
+  // de `negocio`, e o que faltava era a linha na lista. Nenhuma asserção anterior foi afrouxada — os
+  // conjuntos esperados cresceram em uma entrada cada, e continuam cobrados por igualdade.
+  //
+  // O pai tenantizado dela é `identidade.usuario`, que vem da CARGA INICIAL e não desta lista, de
+  // modo que a posição no fim não impõe ordem nenhuma — ver {@link DadosDeCadastro.usuarioId}.
+  //
+  // ⚠️ O que este bloco NÃO prova é a função de `plataforma` da `0016` — ela não toca esta tabela e
+  // não tem política de linha a atravessar (sequência não tem RLS). Quem a exercita é a T6.
+  {
+    nome: 'certificado_do_provedor',
+    relacao: 'negocio.certificado_do_provedor',
+    consulta: consultaDeIds('negocio.certificado_do_provedor'),
+    // A coluna livre é de TEXTO, e o valor da escrita cruzada é o padrão do arquivo: `titular` é
+    // `text` `NOT NULL` sem restrição de forma e fora de restrição de unicidade alguma.
+    //
+    // ⚠️ **Nunca `segredo_cifrado`.** A `CHECK` de `certificado_do_provedor_segredo_chk` a amarra a
+    // `substituido_em` por bicondicional (RN-13), de modo que reescrevê-la faria o banco recusar
+    // pela restrição em vez de pela política — e o CT-303 passaria a provar a `CHECK`, não o
+    // isolamento. É a mesma armadilha que `derivado` seria no portador, por outro mecanismo.
+    consultaDoRetrato: consultaDeRetrato('negocio.certificado_do_provedor', 'titular'),
+    colunaLivre: 'titular',
+    descartaveis: [
+      CADASTROS_DE_A.certificado_do_provedor,
+      CADASTROS_DE_B.certificado_do_provedor,
+      CADASTROS_CRUZADOS.certificado_do_provedor,
+    ],
+    gravar: async (tx, dados) => {
+      // ---------------------------------------------------------------------------
+      // A linha nasce SUBSTITUÍDA, e é isso que a tira do caminho do índice parcial
+      // ---------------------------------------------------------------------------
+      //
+      // `certificado_do_provedor_vigente_uidx` é único sobre `empresa_id` **onde `substituido_em` é
+      // nulo** (RN-12). Semeadas vigentes, a linha cruzada que o CT-303 tenta gravar com a empresa
+      // de B colidiria com a de B pelo índice, e o desfecho passaria a depender de o `WITH CHECK`
+      // ser avaliado antes do índice — o caso mediria ordem de avaliação em vez de isolamento.
+      //
+      // É o mesmo precedente pelo qual o contrato é semeado `RASCUNHO` (o índice parcial dele só
+      // alcança `ATIVO`), pelo qual as posições de cômodo são distintas por tentativa e pelo qual a
+      // marca entra no documento: **tirar do caminho toda restrição que não seja a política**.
+      //
+      // Substituído com `segredo_cifrado` nulo é o único estado que a bicondicional da RN-13 admite
+      // junto de `substituido_em` preenchido — gravar o par ao contrário seria recusado, e a recusa
+      // apareceria como um caso vermelho longe da causa.
+      const resultado = await tx`
+        INSERT INTO negocio.certificado_do_provedor
+                    (id, empresa_id, titular, valido_de, valido_ate, impressao_digital,
+                     segredo_cifrado, registrado_por, substituido_em)
+        VALUES (${dados.id}, ${dados.empresaId}, ${`Titular ${dados.marca}`},
+                pg_catalog.now() - interval '1 day', pg_catalog.now() + interval '365 days',
+                ${`impressao-${dados.marca}`}, NULL, ${dados.usuarioId}, pg_catalog.now())
+      `;
+      return resultado.count;
+    },
+  },
 ];
 
 /** As duas relações tenantizadas do CT-304, tomadas da lista acima — nunca redeclaradas. */
@@ -1599,6 +1674,24 @@ const IDS_SEMEADOS_EM_A = Object.values(CADASTROS_DE_A);
 const IDS_SEMEADOS_EM_B = Object.values(CADASTROS_DE_B);
 
 /**
+ * O usuário da carga inicial de cada empresa — o `registrado_por` do certificado do provedor.
+ *
+ * Ele é **derivado da carga**, e não um literal reescrito aqui: o par `(usuario, empresa)` que a
+ * chave estrangeira composta cobra é o mesmo que `semente.ts` gravou, e copiar o identificador
+ * criaria uma segunda declaração livre para divergir da carga que a instância efêmera aplica.
+ */
+function exigirUsuarioDaCarga(acessos: readonly { usuarioId: string }[], empresa: string): string {
+  const primeiro = acessos[0];
+  if (primeiro === undefined) {
+    throw new Error(`a carga inicial não tem vínculo de acesso da empresa ${empresa}`);
+  }
+  return primeiro.usuarioId;
+}
+
+const USUARIO_DE_A = exigirUsuarioDaCarga(ACESSOS_DA_EMPRESA_A, 'A');
+const USUARIO_DE_B = exigirUsuarioDaCarga(ACESSOS_DA_EMPRESA_B, 'B');
+
+/**
  * Cria, sob o contexto da PRÓPRIA empresa, uma linha descartável de cada entidade.
  *
  * Tudo numa unidade só, na ordem pai → filho: a chave estrangeira composta exige que o conjunto
@@ -1608,6 +1701,7 @@ async function semearCadastros(
   acesso: AcessoAoBanco,
   contexto: Contexto,
   empresaId: string,
+  usuarioId: string,
   ids: Record<string, string>,
   marca: string,
 ): Promise<void> {
@@ -1617,6 +1711,7 @@ async function semearCadastros(
         await entidade.gravar(tx, {
           id: idDe(ids, entidade.nome),
           empresaId,
+          usuarioId,
           conjuntoId: ids.conjunto ?? '',
           imovelId: ids.imovel ?? '',
           locadorId: ids.locador ?? '',
@@ -1695,7 +1790,7 @@ function idDe(ids: Record<string, string>, nome: string): string {
 }
 
 /**
- * O estado das nove relações sob um contexto, comparável **caractere a caractere**.
+ * O estado das dez relações sob um contexto, comparável **caractere a caractere**.
  *
  * Carrega o identificador E a coluna livre: sem a segunda, uma atualização cruzada que tivesse
  * passado não moveria o retrato, e "nada mudou" ficaria verde sobre uma escrita que mudou tudo.
@@ -1794,6 +1889,7 @@ const ESPERADO_SOB_A: readonly string[] = [
   porEntidade('contrato', [CADASTROS_DE_A.contrato]),
   porEntidade('contrato_fiador', [CADASTROS_DE_A.contrato_fiador]),
   porEntidade('portador_de_confirmacao', [CADASTROS_DE_A.portador_de_confirmacao]),
+  porEntidade('certificado_do_provedor', [CADASTROS_DE_A.certificado_do_provedor]),
 ];
 
 const ESPERADO_SOB_B: readonly string[] = [
@@ -1806,10 +1902,11 @@ const ESPERADO_SOB_B: readonly string[] = [
   porEntidade('contrato', [CADASTROS_DE_B.contrato]),
   porEntidade('contrato_fiador', [CADASTROS_DE_B.contrato_fiador]),
   porEntidade('portador_de_confirmacao', [CADASTROS_DE_B.portador_de_confirmacao]),
+  porEntidade('certificado_do_provedor', [CADASTROS_DE_B.certificado_do_provedor]),
 ];
 
-/** As nove relações sem linha alcançável. Escrito por extenso: o nome de cada uma importa. */
-const NOVE_LISTAS_VAZIAS: readonly string[] = [
+/** As dez relações sem linha alcançável. Escrito por extenso: o nome de cada uma importa. */
+const DEZ_LISTAS_VAZIAS: readonly string[] = [
   porEntidade('conjunto', []),
   porEntidade('imovel', []),
   porEntidade('comodo', []),
@@ -1819,10 +1916,11 @@ const NOVE_LISTAS_VAZIAS: readonly string[] = [
   porEntidade('contrato', []),
   porEntidade('contrato_fiador', []),
   porEntidade('portador_de_confirmacao', []),
+  porEntidade('certificado_do_provedor', []),
 ];
 
-/** As nove escritas cruzadas que não alcançam linha nenhuma — zero linhas, e nunca erro. */
-const NOVE_ESCRITAS_SEM_EFEITO: readonly string[] = [
+/** As dez escritas cruzadas que não alcançam linha nenhuma — zero linhas, e nunca erro. */
+const DEZ_ESCRITAS_SEM_EFEITO: readonly string[] = [
   'conjunto: 0 linha(s)',
   'imovel: 0 linha(s)',
   'comodo: 0 linha(s)',
@@ -1832,6 +1930,7 @@ const NOVE_ESCRITAS_SEM_EFEITO: readonly string[] = [
   'contrato: 0 linha(s)',
   'contrato_fiador: 0 linha(s)',
   'portador_de_confirmacao: 0 linha(s)',
+  'certificado_do_provedor: 0 linha(s)',
 ];
 
 /** Grava uma linha de cadastro sob o contexto informado, coletando o desfecho em vez de abortar. */
@@ -2027,8 +2126,8 @@ async function lerDerivada(
 
 /** Semeia cadastro e cobrança das DUAS empresas, cada uma sob o próprio contexto. */
 async function semearAsDuasCarteiras(acesso: AcessoAoBanco): Promise<void> {
-  await semearCadastros(acesso, CONTEXTO_DE_A, EMPRESA_A.id, CADASTROS_DE_A, 'a');
-  await semearCadastros(acesso, CONTEXTO_DE_B, EMPRESA_B.id, CADASTROS_DE_B, 'b');
+  await semearCadastros(acesso, CONTEXTO_DE_A, EMPRESA_A.id, USUARIO_DE_A, CADASTROS_DE_A, 'a');
+  await semearCadastros(acesso, CONTEXTO_DE_B, EMPRESA_B.id, USUARIO_DE_B, CADASTROS_DE_B, 'b');
   await semearCobranca(
     acesso,
     CONTEXTO_DE_A,
@@ -3156,8 +3255,22 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
 
         // Cada empresa cria as PRÓPRIAS linhas, dentro do próprio contexto — nunca por conexão
         // privilegiada, e nunca uma escrevendo pela outra.
-        await semearCadastros(acesso, CONTEXTO_DE_A, EMPRESA_A.id, CADASTROS_DE_A, 'a');
-        await semearCadastros(acesso, CONTEXTO_DE_B, EMPRESA_B.id, CADASTROS_DE_B, 'b');
+        await semearCadastros(
+          acesso,
+          CONTEXTO_DE_A,
+          EMPRESA_A.id,
+          USUARIO_DE_A,
+          CADASTROS_DE_A,
+          'a',
+        );
+        await semearCadastros(
+          acesso,
+          CONTEXTO_DE_B,
+          EMPRESA_B.id,
+          USUARIO_DE_B,
+          CADASTROS_DE_B,
+          'b',
+        );
 
         // A reserva virgem é aberta DEPOIS do preparo, para que a conexão dela nunca tenha atendido
         // outra unidade. É assim que o cenário "ninguém chamou o escritor de contexto" é obtido
@@ -3193,13 +3306,13 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
 
         // …e a interseção vazia, que é a outra metade: sem ela, uma leitura que devolvesse TUDO
         // ainda conteria o conjunto esperado como subconjunto se a igualdade acima fosse afrouxada.
-        expect(invasaoEmA).toEqual(NOVE_LISTAS_VAZIAS);
-        expect(invasaoEmB).toEqual(NOVE_LISTAS_VAZIAS);
+        expect(invasaoEmA).toEqual(DEZ_LISTAS_VAZIAS);
+        expect(invasaoEmB).toEqual(DEZ_LISTAS_VAZIAS);
 
-        // Sem contexto e com empresa nula: vazio nas nove, e SEM erro. Não é recusa — é
+        // Sem contexto e com empresa nula: vazio nas dez, e SEM erro. Não é recusa — é
         // invisibilidade, que é o que a política produz para qualquer leitura fora do tenant.
-        expect(semContexto).toEqual(NOVE_LISTAS_VAZIAS);
-        expect(contextoNulo).toEqual(NOVE_LISTAS_VAZIAS);
+        expect(semContexto).toEqual(DEZ_LISTAS_VAZIAS);
+        expect(contextoNulo).toEqual(DEZ_LISTAS_VAZIAS);
 
         // O companheiro POSITIVO, lido DEPOIS dos vazios e na mesma reserva: sem ele, "vazio" não
         // distingue isolamento de banco sem dado.
@@ -3231,7 +3344,14 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
         // `conjunto` de B para o `imovel`, um `imovel` de B para o `comodo`): sem isso, a chave
         // composta recusaria ANTES da política e o caso provaria a referência em vez do isolamento
         // — a armadilha que o comentário de `PESSOA_CRUZADA_EM_B` documenta.
-        await semearCadastros(acesso, CONTEXTO_DE_B, EMPRESA_B.id, CADASTROS_DE_B, 'b');
+        await semearCadastros(
+          acesso,
+          CONTEXTO_DE_B,
+          EMPRESA_B.id,
+          USUARIO_DE_B,
+          CADASTROS_DE_B,
+          'b',
+        );
 
         const antes = await retratoDosCadastros(acesso, CONTEXTO_DE_B);
 
@@ -3243,6 +3363,9 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
           const cruzada = await tentarGravarCadastro(acesso, entidade, CONTEXTO_DE_A, {
             id: idDe(CADASTROS_CRUZADOS, entidade.nome),
             empresaId: EMPRESA_B.id,
+            // O usuário de B, e não o de A: ver {@link DadosDeCadastro.usuarioId}. Com o de A, a
+            // chave composta recusaria antes da política e o caso mediria a referência.
+            usuarioId: USUARIO_DE_B,
             conjuntoId: CADASTROS_DE_B.conjunto,
             imovelId: CADASTROS_DE_B.imovel,
             locadorId: CADASTROS_DE_B.locador,
@@ -3308,13 +3431,18 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
           // marca entra nele), de modo que nem a chave composta nem a unicidade global disputam com
           // a política — a recusa aqui é da política, e só dela.
           'portador_de_confirmacao: 42501 · row-level security policy',
+          // O certificado é filho do USUÁRIO de B (carga inicial), e a linha cruzada nasce
+          // SUBSTITUÍDA — de modo que nem a chave composta, nem a `CHECK` da RN-13, nem o índice
+          // único parcial do vigente disputam com a política. A recusa aqui é da política, e só
+          // dela. Ver o comentário de `gravar` na entrada de `certificado_do_provedor`.
+          'certificado_do_provedor: 42501 · row-level security policy',
         ]);
 
         // Zero linhas afetadas é o desfecho CORRETO, e é diferente de erro: sob `USING`, a linha
         // alheia simplesmente não existe para quem escreve. Asserir "lançou exceção" aqui seria
         // asserir o comportamento errado.
-        expect(atualizacoes).toEqual(NOVE_ESCRITAS_SEM_EFEITO);
-        expect(remocoes).toEqual(NOVE_ESCRITAS_SEM_EFEITO);
+        expect(atualizacoes).toEqual(DEZ_ESCRITAS_SEM_EFEITO);
+        expect(remocoes).toEqual(DEZ_ESCRITAS_SEM_EFEITO);
 
         // O estado de B, lido numa unidade SEPARADA e no contexto de B — nunca por conexão
         // privilegiada: a auditoria não pode ser mais poderosa que o ato que ela audita.
@@ -3349,6 +3477,7 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
           'contrato: 1 linha(s)',
           'contrato_fiador: 1 linha(s)',
           'portador_de_confirmacao: 1 linha(s)',
+          'certificado_do_provedor: 1 linha(s)',
         ]);
       } finally {
         await acesso.encerrar();
@@ -3365,8 +3494,22 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
       const acesso = abrir(banco.cadeiaConexao);
 
       try {
-        await semearCadastros(acesso, CONTEXTO_DE_A, EMPRESA_A.id, CADASTROS_DE_A, 'a');
-        await semearCadastros(acesso, CONTEXTO_DE_B, EMPRESA_B.id, CADASTROS_DE_B, 'b');
+        await semearCadastros(
+          acesso,
+          CONTEXTO_DE_A,
+          EMPRESA_A.id,
+          USUARIO_DE_A,
+          CADASTROS_DE_A,
+          'a',
+        );
+        await semearCadastros(
+          acesso,
+          CONTEXTO_DE_B,
+          EMPRESA_B.id,
+          USUARIO_DE_B,
+          CADASTROS_DE_B,
+          'b',
+        );
 
         // Os identificadores alheios são obtidos LENDO sob o contexto de B — nunca por consulta
         // privilegiada. Assim o caso prova também o outro lado: conhecer o identificador de outra
@@ -3386,6 +3529,7 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
               await tentarGravarCadastro(acesso, ENTIDADE_IMOVEL, CONTEXTO_DE_A, {
                 id: IMOVEL_LEGITIMO_EM_A,
                 empresaId: EMPRESA_A.id,
+                usuarioId: '',
                 conjuntoId: CADASTROS_DE_A.conjunto,
                 imovelId: '',
                 locadorId: '',
@@ -3405,6 +3549,7 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
               await tentarGravarCadastro(acesso, ENTIDADE_IMOVEL, CONTEXTO_DE_A, {
                 id: IMOVEL_CRUZADO_A_PARA_B,
                 empresaId: EMPRESA_A.id,
+                usuarioId: '',
                 conjuntoId: CADASTROS_DE_B.conjunto,
                 imovelId: '',
                 locadorId: '',
@@ -3424,6 +3569,7 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
               await tentarGravarCadastro(acesso, ENTIDADE_IMOVEL, CONTEXTO_DE_B, {
                 id: IMOVEL_CRUZADO_B_PARA_A,
                 empresaId: EMPRESA_B.id,
+                usuarioId: '',
                 conjuntoId: CADASTROS_DE_A.conjunto,
                 imovelId: '',
                 locadorId: '',
@@ -3445,6 +3591,7 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
               await tentarGravarCadastro(acesso, ENTIDADE_COMODO, CONTEXTO_DE_A, {
                 id: COMODO_LEGITIMO_EM_A,
                 empresaId: EMPRESA_A.id,
+                usuarioId: '',
                 conjuntoId: '',
                 imovelId: CADASTROS_DE_A.imovel,
                 locadorId: '',
@@ -3464,6 +3611,7 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
               await tentarGravarCadastro(acesso, ENTIDADE_COMODO, CONTEXTO_DE_A, {
                 id: COMODO_CRUZADO_A_PARA_B,
                 empresaId: EMPRESA_A.id,
+                usuarioId: '',
                 conjuntoId: '',
                 imovelId: CADASTROS_DE_B.imovel,
                 locadorId: '',
@@ -3483,6 +3631,7 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
               await tentarGravarCadastro(acesso, ENTIDADE_COMODO, CONTEXTO_DE_B, {
                 id: COMODO_CRUZADO_B_PARA_A,
                 empresaId: EMPRESA_B.id,
+                usuarioId: '',
                 conjuntoId: '',
                 imovelId: CADASTROS_DE_A.imovel,
                 locadorId: '',
@@ -3528,13 +3677,15 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
           porEntidade('locador', [CADASTROS_DE_A.locador]),
           porEntidade('locatario', [CADASTROS_DE_A.locatario]),
           porEntidade('fiador', [CADASTROS_DE_A.fiador]),
-          // As duas relações do contrato e a do portador não participam das seis tentativas de
-          // referência deste caso — as chaves compostas que ele exercita são `imovel → conjunto` e
-          // `comodo → imovel` —, mas continuam SEMEADAS por `semearCadastros`, e portanto continuam
-          // legíveis sob A. Omiti-las aqui esconderia da igualdade três relações inteiras.
+          // As duas relações do contrato, a do portador e a do certificado não participam das seis
+          // tentativas de referência deste caso — as chaves compostas que ele exercita são
+          // `imovel → conjunto` e `comodo → imovel` —, mas continuam SEMEADAS por `semearCadastros`,
+          // e portanto continuam legíveis sob A. Omiti-las aqui esconderia da igualdade quatro
+          // relações inteiras.
           porEntidade('contrato', [CADASTROS_DE_A.contrato]),
           porEntidade('contrato_fiador', [CADASTROS_DE_A.contrato_fiador]),
           porEntidade('portador_de_confirmacao', [CADASTROS_DE_A.portador_de_confirmacao]),
+          porEntidade('certificado_do_provedor', [CADASTROS_DE_A.certificado_do_provedor]),
         ]);
         expect(finalEmB).toEqual(ESPERADO_SOB_B);
       } finally {

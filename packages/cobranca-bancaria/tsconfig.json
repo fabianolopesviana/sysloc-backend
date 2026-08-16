@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Mesmo arranjo de `packages/contracts`, `packages/db`, `packages/shared`, `packages/regua` e
+    // `packages/documentos`: este pacote será REFERENCIADO pela borda que compõe o processo (T11) e
+    // pelo módulo que registra a porta (T12), e referência de projeto só é aceita sobre projeto
+    // composto. É o que faz o `tsc --build` do consumidor construir este aqui ANTES de compilar a si
+    // mesmo — sem isso, o `dist/` que o `exports` do manifesto resolve pode não existir (árvore
+    // limpa) ou corresponder a um `src/` anterior.
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "types": ["node"]
+  },
+  // As DUAS referências são o contrato e o transversal, e a ausência de `../db` é a decisão desta
+  // task, não uma omissão (ADR-0025): quem declara `PortaDeIdentidadeBancaria`,
+  // `IdentidadeParaVerificar` e `ResultadoDaVerificacaoDeIdentidade` é este pacote, e é o adaptador
+  // (T10) que importa daqui para dizer que os satisfaz. A aresta de volta — ainda que só em
+  // `devDependencies`, "para o teste enxergar o banco" — fecha um ciclo, e o Turborepo ABORTA antes
+  // de compilar qualquer coisa:
+  //
+  //     x Cyclic dependency detected: @sysloc/db#build, @sysloc/cobranca-bancaria#build
+  //
+  // Foi medido neste repositório com um par equivalente, na fatia `regua-de-cobranca`. A
+  // consequência prática: caso que precisa de banco mora em `packages/db/test/`, onde o encontro já
+  // é legítimo — e é lá que a camada de dados guarda o ENVELOPE CIFRADO, sem saber o que há dentro
+  // dele. Inverter a aresta poria o material em claro dentro do pacote que monta consulta, que é
+  // exatamente o vetor pelo qual um cliente de banco anexa parâmetros ao erro (tech spec §3.3).
+  //
+  // `../shared` entra porque `SegredoOperavel` — o invólucro opaco do material e da senha — é o que
+  // atravessa a porta, e o `exports` daquele manifesto resolve `"."` só para `dist/`, que o
+  // `.gitignore` barra. Não há ciclo: `@sysloc/shared` não depende de pacote algum do workspace.
+  "references": [{ "path": "../contracts" }, { "path": "../shared" }],
+  "include": ["src/**/*.ts"]
+}

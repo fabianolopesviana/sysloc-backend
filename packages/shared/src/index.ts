@@ -28,3 +28,17 @@ export {
   type NivelDeLog,
   type OpcoesDeLogger,
 } from './log.js';
+// `SENTINELA_REDIGIDO` fica de fora por ser detalhe de construção da redação — quem precisa dela é
+// código deste pacote, e publicá-la convidaria a duplicar a decisão em vez de usá-la. Pela mesma
+// razão, `SegredoOperavel` sai como **tipo**: construir o invólucro é ato de `criarSegredoOperavel`
+// e de `decifrarSegredo`, e publicar o construtor abriria uma segunda entrada para o claro.
+export {
+  cifrarSegredo,
+  criarSegredoOperavel,
+  decifrarSegredo,
+  ErroDeChaveDeCifraInvalida,
+  ErroDeSegredoAdulterado,
+  ErroDeVersaoDeEnvelopeDesconhecida,
+  type SegredoEmClaro,
+  type SegredoOperavel,
+} from './segredo-operavel.js';

@@ -2,9 +2,9 @@
  * Os esquemas de `@sysloc/contracts` — CT-334 a CT-338, CT-340, CT-341, mais CT-424 e CT-428, que a
  * fatia `contratos-de-locacao` acrescenta, CT-537 mais CT-540 a CT-545, que a fatia
  * `cobranca-e-mora` acrescenta, CT-604 e CT-605, que a fatia `regua-de-cobranca` acrescenta, e
- * CT-713 e CT-731, que a sub-fatia `documentos-e-confirmacao` acrescenta. O **CT-537 substitui o
- * CT-429** daquela fatia: ver o parágrafo dedicado abaixo, e a linha `SUT_IS_CORRECT_BECAUSE:` no
- * ponto do caso.
+ * CT-713 e CT-731, que a sub-fatia `documentos-e-confirmacao` acrescenta, e CT-845 a CT-850, que a
+ * fatia `fundacao-bancaria` acrescenta. O **CT-537 substitui o CT-429** daquela fatia: ver o
+ * parágrafo dedicado abaixo, e a linha `SUT_IS_CORRECT_BECAUSE:` no ponto do caso.
  *
  * ---------------------------------------------------------------------------
  * INVARIANTES
@@ -110,6 +110,38 @@
  * |          |        | `keys`, enquanto o MESMO corpo sem ela é aprovado verbatim; e
  * |          |        | `esquemaDoContrato` declara exatamente as CATORZE chaves que restaram, por
  * |          |        | igualdade de conjunto — nunca por ausência isolada. |
+ * | CA-14    | CT-845 | `MEIOS_DE_RECEBIMENTO` é exatamente `['BOLETO','PIX']` e
+ * | CA-04    |        | `ESTADOS_DO_CERTIFICADO` exatamente `['VIGENTE','VENCENDO','VENCIDO']`, nesta
+ * |          |        | ordem, e **nenhum consumidor consegue alargar qualquer um dos dois em
+ * |          |        | execução** — a mutação lança `TypeError` e o conteúdo permanece idêntico. Os
+ * |          |        | três estados declarados são aprovados pela projeção devolvendo o recurso
+ * |          |        | verbatim, e os quatro vizinhos recusados nomeiam `estado`. |
+ * | §4.1.1   | CT-846 | `esquemaDoCertificadoNovo` declara exatamente `['material','senha']`, aprova o
+ * |          |        | corpo completo devolvendo-o verbatim, e ausência de campo **nunca** significa
+ * |          |        | "preserve o valor atual" — o campo omitido é NOMEADO na recusa, e cada uma
+ * |          |        | das seis chaves decididas pelo servidor (`empresaId` entre elas) reprova com
+ * |          |        | `unrecognized_keys` nomeando a chave ofensora. |
+ * | CA-02    | CT-847 | O teto declarado é aprovado e o teto + 1 é recusado nomeando o próprio campo,
+ * | CA-12    |        | para `material` (`too_big` sobre cadeia base64 LEGAL de 8196) e para `senha`;
+ * |          |        | as constantes valem 8192 e 128; e **nenhuma recusa carrega o valor
+ * |          |        | recebido** — medido sobre o erro inteiro serializado. |
+ * | CA-02    | CT-848 | `esquemaDoCertificado` declara exatamente os NOVE campos publicados na ordem
+ * | CA-12    |        | da §4.1.1 e `esquemaDoResultadoDaVerificacao` exatamente
+ * |          |        | `['aceito','verificadoEm','detalhe']`, com `detalhe` **anulável** nos dois
+ * |          |        | desfechos; nenhuma das duas — **nem `registradoPor`** — declara chave de
+ * |          |        | segredo, e o objeto que traga uma é recusado nomeando-a, sem ecoar o valor. |
+ * | CA-10    | CT-849 | `ESQUEMA_DO_IDENTIFICADOR_BANCARIO` aprova exatamente as cadeias de 18
+ * |          |        | caracteres, todas dígitos, devolvendo a cadeia idêntica, e recusa 17, 19,
+ * |          |        | não-dígito, espaço em volta e vazio com `invalid_format` — a largura é
+ * |          |        | fechada dos DOIS lados, e as larguras **publicadas** valem 6 e 12 por
+ * |          |        | igualdade campo a campo, além de somarem 18. A igualdade campo a campo é o
+ * |          |        | que discrimina: `4 + 14` também soma 18 e passaria pela expressão inteira,
+ * |          |        | e é o consumidor de `@sysloc/db` que preencheria à esquerda errado. |
+ * | §4.2     | CT-850 | Existe **exatamente uma** declaração exportada de
+ * | CA-04    |        | `LIMIAR_DE_VENCIMENTO_EM_DIAS` em todo o código de produção varrido, ela mora
+ * |          |        | em `packages/contracts/src/integracao-bancaria.ts` e vale **30**; nenhum
+ * |          |        | outro arquivo LIGA o nome, nem sem `export`; e nenhum diretório varrido está
+ * |          |        | ausente fora da lista declarada de inexistentes. |
  *
  * Rastreabilidade: `CA-02 → CT-334, CT-335 (RN-10)` · `CA-14 → CT-337 (RN-01)` ·
  * `CA-15 → CT-338 (RN-06)` · `CA-16 → CT-336, CT-340, CT-341 (RN-11)` ·
@@ -121,7 +153,9 @@
  * `CA-§4.10 → CT-545 (RD-16)` · `CA-15 → CT-604, CT-605 (RN-13)` ·
  * `CA-15, CA-11 → CT-604 (b) (RD-08, RD-11)` · `CA-16 → CT-731 (RD-06, RD-07)` ·
  * `CA-11, CA-15 → CT-731 (b) (RD-11, RD-12)` · `CA-12, CA-13 → CT-731 (c) (RD-10)` ·
- * `CA-07 → CT-713 (RN-01)`.
+ * `CA-07 → CT-713 (RN-01)` · `CA-14, CA-04 → CT-845 (RN-04, RN-11)` ·
+ * `CA-§4.1.1 → CT-846 (RN-02, RN-03)` · `CA-02, CA-12 → CT-847, CT-848 (RN-02)` ·
+ * `CA-10 → CT-849 (RN-07)` · `CA-04, CA-§4.2 → CT-850 (RN-04)`.
  *
  * ---------------------------------------------------------------------------
  * Por que os casos vêm em pares, e por que nenhum deles sozinho serve
@@ -276,8 +310,8 @@
  *   afirmar.
  *
  * Sem colaborador algum: os esquemas são funções puras. Fronteira real de execução: **nenhuma** —
- * salvo no CT-545, que é `filesystem`. As demais asserções são comportamentais — exercitam o esquema
- * e observam o desfecho —, e por isso não exigem prova de falsificação.
+ * salvo no CT-545 e no CT-850, que são `filesystem`. As demais asserções são comportamentais —
+ * exercitam o esquema e observam o desfecho —, e por isso não exigem prova de falsificação.
  *
  * ---------------------------------------------------------------------------
  * CT-545 é ESTÁTICO — a prova de falsificação, medida
@@ -316,11 +350,98 @@
  * controle voltou a `219 passed`. A asserção é comportamental, e o par de literais do primeiro caso
  * é o que pega o mutante que derivar-das-constantes não pegaria — alargar a constante moveria as
  * duas pontas juntas.
+ *
+ * ---------------------------------------------------------------------------
+ * CT-845 a CT-850 — por que cada um vem em par, e nenhuma metade serve sozinha
+ * ---------------------------------------------------------------------------
+ *
+ * **CT-845.** `MEIOS_DE_RECEBIMENTO` **não entra em esquema nenhum** desta fatia — o pix é declarado
+ * sem operação (RN-11) —, de modo que o eixo comportamental dela é o **congelamento em execução**, e
+ * não uma recusa de parse. É a metade que sobrevive ao build: o `as const` fecha a união em
+ * compilação e o consumidor do pacote compilado recebe um arranjo comum. A reafirmação do conteúdo
+ * **depois** do `push` recusado é a terceira ponta — "lançou" e "não alterou" são propriedades
+ * diferentes. Este caso **não substitui o CT-835** (T8), que prova a lista de operações sobre `PIX`
+ * vazia: ali a pergunta é o que o **domínio** faz; aqui, o que o **contrato declara**.
+ *
+ * **CT-846.** A tabela de **ausência** é o que distingue *"fechado e obrigatório"* de *"fechado e
+ * opcional"*: um `.optional()` acrescentado a qualquer dos dois campos passaria por **toda a suíte da
+ * borda** — o serviço simplesmente receberia `undefined` — sem uma recusa sequer. `empresaId` entra
+ * na lista dos recusados porque é a chave cujo vazamento **cruzaria empresa**.
+ *
+ * **CT-847.** O excesso do material é **8196**, e não 8193, de propósito: base64 canônico tem
+ * comprimento múltiplo de quatro, e 8193 seria recusado tanto pelo teto **quanto pela forma** — a
+ * recusa passaria com um esquema que não tivesse teto nenhum. **O `code === 'too_big'` é o
+ * discriminador.** Os dois tetos são escritos por extenso pela razão do CT-543: derivá-los das
+ * constantes faria as duas pontas andarem juntas. Este caso não substitui o CT-830 (T13), que mede o
+ * mesmo não-eco na **saída HTTP real**.
+ *
+ * **CT-848.** As duas metades são **indivisíveis**, e é o par que detecta: a declarativa não
+ * distingue *"não declarado"* de *"declarado e ignorado na leitura"*; a comportamental não distingue
+ * *"recusado"* de *"nunca chegou"*. E o `detalhe: null` é o **único eixo do produto que nenhuma outra
+ * camada exercita** — a borda preenche `detalhe` nos dois desfechos hoje, e sem esta linha o
+ * `nullable()` poderia cair sem uma recusa, com a fatia (ii) descobrindo isso em produção.
+ *
+ * **CT-849.** O 17 e o 19 são as duas pontas exatas porque o defeito plausível é o preenchimento à
+ * esquerda errado **por uma posição** — um `{18,}` ou um `{17,19}` na expressão passaria por qualquer
+ * asserção que só aprovasse a forma canônica. `'000000000000000000'` entra de propósito entre os
+ * aceitos: o esquema **não** valida a semântica do mês, e escrever esse aceito impede que alguém
+ * aperte o esquema com uma validação que a spec não pede. Ele complementa o **CT-804** (T6) sem
+ * duplicá-lo: lá o SUT é a **composição** em `packages/db`; aqui é o **reconhecimento** no contrato.
+ *
+ * ---------------------------------------------------------------------------
+ * CT-850 é ESTÁTICO — a prova de falsificação, medida (2026-08-14)
+ * ---------------------------------------------------------------------------
+ *
+ * Ele inspeciona o **texto** do fonte, e por isso a prova é OBRIGATÓRIA
+ * (`.claude/rules/testing-stack.md`). Os dois mutantes foram aplicados ao fonte de produção, medidos
+ * e revertidos, e os dois rodaram pelo SCRIPT do pacote — `pnpm --filter @sysloc/contracts test` —, e
+ * não por `vitest run` avulso. O controle antes e depois é `356 passed`, e a reversão foi conferida
+ * por `sha256sum` idêntico ao estado pré-mutante.
+ *
+ * - **Mutante 1 — a segunda definição exportada do mesmo fato**:
+ *   `export const LIMIAR_DE_VENCIMENTO_EM_DIAS = 30;` acrescentado a
+ *   `packages/db/src/derivacao-de-cobranca.ts` — um **terceiro** arquivo, que é a forma exata do
+ *   débito **D14**. Resultado: `2 failed | 354 passed`, e as duas falhas **nomeiam o arquivo
+ *   culpado** (`+ "packages/db/src/derivacao-de-cobranca.ts"`).
+ * - **Mutante 2 — a redeclaração LOCAL, sem `export`**: o mesmo nome ligado por `const` sem `export`
+ *   no mesmo arquivo. Resultado: `1 failed | 355 passed` — reprova **só** a metade que varre qualquer
+ *   ligação, e o caso da declaração exportada segue **verde**. É exatamente isso que prova as duas
+ *   metades serem carregadas, e não redundantes. ⚠️ O card manda aplicá-lo *"no arquivo que deriva o
+ *   estado"*, que só nasce na **T2**; a forma fiel disponível hoje é a redeclaração local em qualquer
+ *   arquivo de produção varrido, e é a que foi medida.
+ *
+ * A varredura sai do fonte **sem comentários**, o que impede o modo de falha literal da rule —
+ * asserção que casa o alvo dentro de um comentário reprova código correto — e permite que um futuro
+ * marcador de débito cite o nome em prosa sem derrubar o caso.
+ *
+ * ---------------------------------------------------------------------------
+ * QUATRO MUTANTES COMPORTAMENTAIS — MT-T1-A/B/C/D (2026-08-14)
+ * ---------------------------------------------------------------------------
+ *
+ * As asserções de CT-845 a CT-849 são **comportamentais** e por isso não exigiriam a prova; os
+ * mutantes foram medidos assim mesmo, porque cada um deles é uma decisão registrada por extenso no
+ * cabeçalho de `src/integracao-bancaria.ts`, e decisão sem rede é o que a rodada seguinte reabre. Os
+ * quatro rodaram pelo **script do pacote** e foram revertidos com `sha256sum` idêntico ao estado
+ * pré-mutante, com o controle de volta a `356 passed`.
+ *
+ * - **MT-T1-A — o congelamento que só existe em compilação**: `Object.freeze` sai de
+ *   `MEIOS_DE_RECEBIMENTO`. Resultado: `1 failed | 355 passed` — reprova só a linha do congelamento,
+ *   e as asserções de igualdade e ordem seguem verdes. É a medida de que o `as const` sozinho não
+ *   fecha o alargamento em execução.
+ * - **MT-T1-B — o teto que some**: `z.base64().max(MAIOR_MATERIAL_CODIFICADO)` vira `z.base64()`.
+ *   Resultado: `2 failed | 354 passed` — reprovam a recusa por `too_big` e a varredura de não-eco
+ *   daquela linha. O material fora do alfabeto segue recusado, que é o que torna o par necessário.
+ * - **MT-T1-C — a saída que readmite o segredo**: `esquemaDoCertificado` vira `z.object`. Resultado:
+ *   `2 failed | 354 passed` — reprovam as duas variantes que trazem `material` e `senha` de volta.
+ * - **MT-T1-D — o detalhe que deixa de ser anulável**: `z.string().nullable()` vira `z.string()`.
+ *   Resultado: `2 failed | 354 passed` — reprovam os dois desfechos com `detalhe: null`, e nenhuma
+ *   outra asserção do pacote os alcança.
  */
 
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)
@@ -356,7 +477,9 @@ import {
   ESCALA_MONETARIA,
   ESQUEMA_DO_CODIGO_DE_COBRANCA,
   ESQUEMA_DO_CODIGO_DE_CONTRATO,
+  ESQUEMA_DO_IDENTIFICADOR_BANCARIO,
   ESTADOS_DA_COBRANCA,
+  ESTADOS_DO_CERTIFICADO,
   ESTADOS_DO_CONTRATO,
   ESTADOS_EM_ABERTO,
   esquemaDaApresentacaoDoPortador,
@@ -372,19 +495,28 @@ import {
   esquemaDeContratoNovo,
   esquemaDeImovelNovo,
   esquemaDePessoaNova,
+  esquemaDoCertificado,
+  esquemaDoCertificadoNovo,
   esquemaDoContrato,
   esquemaDoEnvioDeCobranca,
   esquemaDoImovel,
   esquemaDoLocatario,
   esquemaDoReenvioDeConfirmacao,
+  esquemaDoResultadoDaVerificacao,
   formatarCodigoDeCobranca,
   formatarCodigoDeContrato,
+  LARGURA_DA_COMPETENCIA,
+  LARGURA_DO_CONTADOR,
   LARGURA_DO_SEQUENCIAL_DE_COBRANCA,
   LARGURA_DO_SEQUENCIAL_DE_CONTRATO,
+  LIMIAR_DE_VENCIMENTO_EM_DIAS,
+  MAIOR_MATERIAL_CODIFICADO,
   MAIOR_METRAGEM,
   MAIOR_PAGINA,
   MAIOR_PRAZO_EM_MESES,
+  MAIOR_SENHA_DO_MATERIAL,
   MAIOR_VALOR_MONETARIO,
+  MEIOS_DE_RECEBIMENTO,
   NATUREZAS_DE_COBRANCA,
   PAGINA_PADRAO,
   PREFIXO_DO_CODIGO_DE_COBRANCA,
@@ -3111,5 +3243,674 @@ describe('CT-713 — o contrato publicado não aceita nem devolve pdfContratoArq
 
     expect(resultado.success).toBe(true);
     expect(resultado.data).toEqual({ ...CONTRATO_PUBLICADO });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CT-845 a CT-850 — o contrato da integração bancária (fatia `fundacao-bancaria`)
+// ---------------------------------------------------------------------------
+
+/**
+ * A sentinela do material — improvável de propósito, e **base64 legal** de propósito.
+ *
+ * Improvável porque ela é o que a varredura de não-eco procura no erro serializado: um valor comum
+ * ("abc", "senha") casaria por acaso dentro de uma mensagem do zod e a varredura passaria a reprovar
+ * por coincidência, ou — pior — a não reprovar porque ninguém confiaria nela. Base64 legal porque o
+ * corpo canônico precisa ser **aprovado**: uma sentinela ilegal faria todo positivo destes casos
+ * reprovar pela forma, e não pelo que eles existem para provar.
+ *
+ * O comprimento é múltiplo de quatro (36 caracteres), que é a forma canônica do base64 sem
+ * preenchimento.
+ */
+const SENTINELA_DO_MATERIAL = 'MIIsentinelaDoMaterialQueNaoEcoaXYZW';
+
+/** A sentinela da senha — mesma razão, e nenhuma restrição de alfabeto a respeitar. */
+const SENTINELA_DA_SENHA = 'senha-sentinela-que-nunca-pode-ecoar';
+
+/** O corpo canônico de `POST /v1/integracoes-bancarias/certificados` (tech spec §4.1.1). */
+const CORPO_DO_CERTIFICADO = {
+  material: SENTINELA_DO_MATERIAL,
+  senha: SENTINELA_DA_SENHA,
+} as const;
+
+/** O certificado como a API o devolve (tech spec §4.1.1) — o recurso canônico da saída. */
+const CERTIFICADO_PUBLICADO = {
+  id: '0f7c1c4e-6a4e-4f0e-9f9a-2f9b1f0a9c31',
+  titular: 'IMOBILIARIA EXEMPLO LTDA:12345678000199',
+  validoDe: '2026-01-10T12:00:00.000Z',
+  validoAte: '2027-01-10T12:00:00.000Z',
+  impressaoDigital: '3A:F0:C4:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:B6',
+  estado: 'VIGENTE',
+  diasParaVencer: 149,
+  registradoPor: { id: '5d2f0000-0000-4000-8000-000000000003', nome: 'Fulana de Tal' },
+  registradoEm: '2026-08-14T13:00:00.000Z',
+} as const;
+
+/**
+ * As chaves que **nenhuma** projeção publicada pode declarar (RN-02).
+ *
+ * A lista é literal e nomeia as seis grafias plausíveis do mesmo segredo — as duas do corpo de
+ * entrada (`material`, `senha`), as duas do vocabulário da biblioteca (`passphrase`, `pfx`) e as duas
+ * do vocabulário da persistência (`segredoCifrado`, `materialDoCertificado`). Uma projeção montada a
+ * partir da linha do banco erraria por qualquer uma delas, e o nome que ela usaria é justamente o que
+ * quem escreveu o erro tem na cabeça no momento.
+ */
+const CHAVES_PROIBIDAS = [
+  'material',
+  'senha',
+  'passphrase',
+  'pfx',
+  'segredoCifrado',
+  'materialDoCertificado',
+] as const;
+
+/** O erro inteiro em texto — o eixo em que "a recusa não ecoa o valor recebido" é medido. */
+function erroSerializado(resultado: z.ZodSafeParseResult<unknown>): string {
+  return JSON.stringify(resultado.error);
+}
+
+describe('CT-845 — os dois enums são fechados, ordenados e congelados em execução', () => {
+  /**
+   * As duas listas escritas **por extenso** — nunca derivadas das constantes exportadas.
+   *
+   * A razão é a registrada no CT-540: derivá-las faz as duas pontas andarem juntas, e um terceiro
+   * meio de recebimento (ou um quarto estado) atravessaria a suíte **sem uma recusa sequer**.
+   */
+  const MEIOS_DECLARADOS = ['BOLETO', 'PIX'] as const;
+  const ESTADOS_DECLARADOS = ['VIGENTE', 'VENCENDO', 'VENCIDO'] as const;
+
+  /**
+   * Os quatro valores de `estado` fora da união.
+   *
+   * Nenhum deles é aleatório: `'EXPIRADO'` é o sinônimo tentador, `'vigente'` é a divergência de
+   * caixa, `'ATIVO'` é o estado da **outra** máquina do produto (o contrato) e `'VIGENTE '` é o
+   * espaço à direita que uma expressão sem âncora deixaria passar.
+   */
+  const ESTADOS_RECUSADOS = ['EXPIRADO', 'vigente', 'ATIVO', 'VIGENTE '] as const;
+
+  it('as duas listas são exatamente as declaradas, na ordem publicada', () => {
+    expect([...MEIOS_DE_RECEBIMENTO]).toEqual([...MEIOS_DECLARADOS]);
+    expect([...ESTADOS_DO_CERTIFICADO]).toEqual([...ESTADOS_DECLARADOS]);
+  });
+
+  it('os dois arranjos estão congelados, e a mutação LANÇA sem alterar o conteúdo', () => {
+    // O `as const` fecha a união em COMPILAÇÃO e não sobrevive ao build: o consumidor que importa o
+    // pacote compilado recebe um arranjo comum. Só `Object.freeze` fecha o alargamento em EXECUÇÃO,
+    // e é por isso que o eixo comportamental de `MEIOS_DE_RECEBIMENTO` é este — ela não entra em
+    // esquema nenhum desta fatia (o pix é declarado sem operação, RN-11).
+    expect([
+      Object.isFrozen(MEIOS_DE_RECEBIMENTO),
+      Object.isFrozen(ESTADOS_DO_CERTIFICADO),
+    ]).toEqual([true, true]);
+
+    expect(() => (MEIOS_DE_RECEBIMENTO as unknown as string[]).push('TED')).toThrow(TypeError);
+    expect(() => (ESTADOS_DO_CERTIFICADO as unknown as string[]).push('SUSPENSO')).toThrow(
+      TypeError,
+    );
+
+    // Reafirmar DEPOIS da tentativa: "lançou" e "não alterou" são propriedades diferentes, e um
+    // arranjo que lançasse na cópia e mutasse o original passaria pela asserção anterior.
+    expect([...MEIOS_DE_RECEBIMENTO]).toEqual([...MEIOS_DECLARADOS]);
+    expect([...ESTADOS_DO_CERTIFICADO]).toEqual([...ESTADOS_DECLARADOS]);
+  });
+
+  for (const estado of ESTADOS_DECLARADOS) {
+    it(`a projeção publicada aprova o estado ${estado} e devolve o recurso verbatim`, () => {
+      const recurso = { ...CERTIFICADO_PUBLICADO, estado };
+      const resultado = esquemaDoCertificado.safeParse(recurso);
+
+      expect(resultado.success).toBe(true);
+      expect(resultado.data).toEqual(recurso);
+    });
+  }
+
+  for (const estado of ESTADOS_RECUSADOS) {
+    it(`a projeção publicada recusa o estado ${JSON.stringify(estado)} nomeando o campo`, () => {
+      const resultado = esquemaDoCertificado.safeParse({ ...CERTIFICADO_PUBLICADO, estado });
+
+      expect(resultado.success).toBe(false);
+      expect(resultado.error?.issues[0]?.path).toEqual(['estado']);
+    });
+  }
+});
+
+describe('CT-846 — o corpo do registro é fechado em dois campos, nenhum opcional', () => {
+  /**
+   * Os dois campos declarados, na ordem da §4.2 — jamais derivados de `Object.keys(shape)` nos dois
+   * lados da asserção, que é a asserção infalível (AP-29) que o CT-731 existe para não ser.
+   */
+  const CAMPOS_DECLARADOS = ['material', 'senha'] as const;
+
+  /**
+   * As seis chaves **decididas pelo servidor**.
+   *
+   * `empresaId` está na lista porque é a única cujo vazamento **cruzaria empresa**: o contexto de
+   * tenant vem da sessão, nunca do corpo (ADR-0008/0009).
+   */
+  const CHAVES_DO_SERVIDOR = [
+    'id',
+    'titular',
+    'validoAte',
+    'estado',
+    'impressaoDigital',
+    'empresaId',
+  ] as const;
+
+  it('declara exatamente material e senha, na ordem', () => {
+    expect(Object.keys(esquemaDoCertificadoNovo.shape)).toEqual([...CAMPOS_DECLARADOS]);
+  });
+
+  it('aprova o corpo completo e o devolve verbatim', () => {
+    const resultado = esquemaDoCertificadoNovo.safeParse({ ...CORPO_DO_CERTIFICADO });
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data).toEqual({ ...CORPO_DO_CERTIFICADO });
+  });
+
+  for (const campo of CAMPOS_DECLARADOS) {
+    it(`recusa o corpo sem ${campo}, nomeando o campo ausente`, () => {
+      // A tabela de AUSÊNCIA é o que distingue "fechado e obrigatório" de "fechado e opcional": um
+      // `.optional()` em qualquer dos dois atravessaria toda a suíte da borda — o serviço apenas
+      // receberia `undefined` — sem uma recusa sequer.
+      const corpo = Object.fromEntries(
+        Object.entries(CORPO_DO_CERTIFICADO).filter(([nome]) => nome !== campo),
+      );
+      const resultado = esquemaDoCertificadoNovo.safeParse(corpo);
+
+      expect(resultado.success).toBe(false);
+      expect(resultado.error?.issues[0]?.path).toEqual([campo]);
+    });
+  }
+
+  for (const chave of CHAVES_DO_SERVIDOR) {
+    it(`recusa a chave ${chave} como desconhecida, nomeando-a`, () => {
+      const resultado = esquemaDoCertificadoNovo.safeParse({
+        ...CORPO_DO_CERTIFICADO,
+        [chave]: 'decidido-pelo-servidor',
+      });
+
+      expect(resultado.success).toBe(false);
+      expect(resultado.error?.issues).toHaveLength(1);
+      expect(resultado.error?.issues[0]?.code).toBe('unrecognized_keys');
+      expect(resultado.error?.issues[0]).toMatchObject({ keys: [chave] });
+    });
+  }
+});
+
+describe('CT-847 — as duas pontas de cada limite declarado, e a recusa que não ecoa', () => {
+  /**
+   * Os dois tetos escritos **por extenso**, no molde do CT-543 e do CT-428 (b).
+   *
+   * Derivá-los das constantes exportadas deixaria as duas pontas andando juntas, e alargar a
+   * constante passaria pela suíte — que é exatamente o mutante que estes casos precisam detectar.
+   */
+  const TETO_DECLARADO_DO_MATERIAL = 8192;
+  const LARGURA_DECLARADA_DA_SENHA = 128;
+
+  /** Base64 legal de comprimento exato — a sentinela completada com um caractere do alfabeto. */
+  const materialDe = (comprimento: number): string =>
+    SENTINELA_DO_MATERIAL.padEnd(comprimento, 'A');
+
+  /** Senha de comprimento exato que **carrega a sentinela** — é ela que o não-eco procura. */
+  const senhaDe = (comprimento: number): string => SENTINELA_DA_SENHA.padEnd(comprimento, 'x');
+
+  it('as constantes publicadas valem o que a spec declara', () => {
+    // Sem esta amarra, "uma definição só" seria compatível com **uma definição só e errada**.
+    expect([MAIOR_MATERIAL_CODIFICADO, MAIOR_SENHA_DO_MATERIAL]).toEqual([
+      TETO_DECLARADO_DO_MATERIAL,
+      LARGURA_DECLARADA_DA_SENHA,
+    ]);
+  });
+
+  const APROVADOS: readonly {
+    readonly rotulo: string;
+    readonly corpo: { readonly material: string; readonly senha: string };
+  }[] = [
+    {
+      rotulo: 'o material exatamente no teto',
+      corpo: { material: materialDe(TETO_DECLARADO_DO_MATERIAL), senha: SENTINELA_DA_SENHA },
+    },
+    {
+      rotulo: 'a senha de um único caractere',
+      corpo: { material: SENTINELA_DO_MATERIAL, senha: 'x' },
+    },
+    {
+      rotulo: 'a senha exatamente na largura declarada',
+      corpo: { material: SENTINELA_DO_MATERIAL, senha: senhaDe(LARGURA_DECLARADA_DA_SENHA) },
+    },
+  ];
+
+  for (const { rotulo, corpo } of APROVADOS) {
+    it(`aprova ${rotulo} e o devolve verbatim`, () => {
+      const resultado = esquemaDoCertificadoNovo.safeParse(corpo);
+
+      expect(resultado.success).toBe(true);
+      expect(resultado.data).toEqual(corpo);
+    });
+  }
+
+  /**
+   * O excesso do material é **8196**, e não 8193 — a escolha é deliberada.
+   *
+   * Base64 canônico tem comprimento múltiplo de quatro, de modo que 8193 seria recusado tanto pelo
+   * teto **quanto pela forma**: a recusa passaria com um esquema que não tivesse teto nenhum. O
+   * `code === 'too_big'` é o discriminador, e ele só é alcançável com uma cadeia legal.
+   */
+  const RECUSADOS: readonly {
+    readonly rotulo: string;
+    readonly corpo: Record<string, unknown>;
+    readonly campo: string;
+    readonly codigo: string;
+  }[] = [
+    {
+      rotulo: 'o material um bloco acima do teto',
+      corpo: { material: materialDe(8196), senha: SENTINELA_DA_SENHA },
+      campo: 'material',
+      codigo: 'too_big',
+    },
+    {
+      rotulo: 'o material fora do alfabeto base64',
+      corpo: { material: 'MII$$$naoEhBase64', senha: SENTINELA_DA_SENHA },
+      campo: 'material',
+      codigo: 'invalid_format',
+    },
+    {
+      rotulo: 'a senha vazia',
+      corpo: { material: SENTINELA_DO_MATERIAL, senha: '' },
+      campo: 'senha',
+      codigo: 'too_small',
+    },
+    {
+      rotulo: 'a senha um caractere acima da largura',
+      corpo: {
+        material: SENTINELA_DO_MATERIAL,
+        senha: senhaDe(LARGURA_DECLARADA_DA_SENHA + 1),
+      },
+      campo: 'senha',
+      codigo: 'too_big',
+    },
+  ];
+
+  for (const { rotulo, corpo, campo, codigo } of RECUSADOS) {
+    it(`recusa ${rotulo} nomeando ${campo} com ${codigo}`, () => {
+      const resultado = esquemaDoCertificadoNovo.safeParse(corpo);
+
+      expect(resultado.success).toBe(false);
+      expect(resultado.error?.issues[0]?.path).toEqual([campo]);
+      expect(resultado.error?.issues[0]?.code).toBe(codigo);
+    });
+
+    it(`a recusa de ${rotulo} não ecoa nenhuma das duas sentinelas`, () => {
+      // O erro INTEIRO é serializado — mensagem, caminho e todo campo do issue —, e não apenas a
+      // mensagem: o eco por um campo auxiliar do issue seria tão vazamento quanto o eco pelo texto.
+      const resultado = esquemaDoCertificadoNovo.safeParse(corpo);
+
+      // A recusa é pré-condição do que se mede aqui: sem esta linha, um esquema que APROVASSE a
+      // entrada faria o caso falhar por serializar `undefined`, e a falha nomearia a coisa errada.
+      expect(resultado.success).toBe(false);
+
+      const serializado = erroSerializado(resultado);
+
+      expect(serializado).not.toContain(SENTINELA_DO_MATERIAL);
+      expect(serializado).not.toContain(SENTINELA_DA_SENHA);
+    });
+  }
+});
+
+describe('CT-848 — as duas projeções publicadas têm forma fechada, e nenhuma declara segredo', () => {
+  /**
+   * Os nove campos publicados, na ordem da §4.1.1 — escritos **por extenso**.
+   *
+   * Derivá-los do próprio `shape` seria a asserção infalível (AP-29): o campo acrescentado ao esquema
+   * entraria também na expectativa, e a publicação de um segredo novo passaria despercebida.
+   */
+  const CAMPOS_PUBLICADOS = [
+    'id',
+    'titular',
+    'validoDe',
+    'validoAte',
+    'impressaoDigital',
+    'estado',
+    'diasParaVencer',
+    'registradoPor',
+    'registradoEm',
+  ] as const;
+
+  /** Os três campos do desfecho da verificação, na ordem da §4.1.1. */
+  const CAMPOS_DA_VERIFICACAO = ['aceito', 'verificadoEm', 'detalhe'] as const;
+
+  const VERIFICACAO_ACEITA = {
+    aceito: true,
+    verificadoEm: '2026-08-14T13:05:00.000Z',
+    detalhe: 'o provedor aceitou este certificado no aperto de mão',
+  } as const;
+
+  const VERIFICACAO_RECUSADA = {
+    aceito: false,
+    verificadoEm: '2026-08-14T13:05:00.000Z',
+    detalhe: 'o provedor não aceitou a identidade apresentada',
+  } as const;
+
+  it('o certificado declara exatamente os nove campos publicados, na ordem', () => {
+    expect(Object.keys(esquemaDoCertificado.shape)).toEqual([...CAMPOS_PUBLICADOS]);
+  });
+
+  it('o desfecho da verificação declara exatamente os três campos, na ordem', () => {
+    expect(Object.keys(esquemaDoResultadoDaVerificacao.shape)).toEqual([...CAMPOS_DA_VERIFICACAO]);
+  });
+
+  it('nenhuma das duas projeções declara chave de segredo — nem UM NÍVEL ABAIXO', () => {
+    // Metade DECLARATIVA. A asserção devolve a **lista das culpadas**, e não um booleano, para que a
+    // falha nomeie a chave publicada por engano. Sozinha, ela não distingue "não declarado" de
+    // "declarado e ignorado na leitura" — é a metade seguinte que fecha essa diferença.
+    const declaradas = (chaves: readonly string[]): string[] =>
+      CHAVES_PROIBIDAS.filter((proibida) => chaves.includes(proibida));
+
+    expect(declaradas(Object.keys(esquemaDoCertificado.shape))).toEqual([]);
+    expect(declaradas(Object.keys(esquemaDoCertificado.shape.registradoPor.shape))).toEqual([]);
+    expect(declaradas(Object.keys(esquemaDoResultadoDaVerificacao.shape))).toEqual([]);
+  });
+
+  it('o certificado canônico é aprovado e devolvido verbatim', () => {
+    const resultado = esquemaDoCertificado.safeParse({ ...CERTIFICADO_PUBLICADO });
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data).toEqual({ ...CERTIFICADO_PUBLICADO });
+  });
+
+  for (const desfecho of [VERIFICACAO_ACEITA, VERIFICACAO_RECUSADA]) {
+    it(`o desfecho com aceito: ${desfecho.aceito} é aprovado e devolvido verbatim`, () => {
+      const resultado = esquemaDoResultadoDaVerificacao.safeParse({ ...desfecho });
+
+      expect(resultado.success).toBe(true);
+      expect(resultado.data).toEqual({ ...desfecho });
+    });
+
+    it(`o desfecho com aceito: ${desfecho.aceito} aceita detalhe NULO e o devolve nulo`, () => {
+      // Este é o único eixo do produto que NENHUMA outra camada exercita: a borda preenche `detalhe`
+      // nos dois desfechos hoje, e é a fatia (ii) que o zerará no positivo. Sem esta linha, o
+      // `nullable()` poderia cair sem uma recusa, e aquela fatia descobriria isso em produção —
+      // precisando mudar o contrato publicado para fazer o que já está decidido.
+      const resultado = esquemaDoResultadoDaVerificacao.safeParse({ ...desfecho, detalhe: null });
+
+      expect(resultado.success).toBe(true);
+      expect(resultado.data?.detalhe).toBeNull();
+      expect(resultado.data).toEqual({ ...desfecho, detalhe: null });
+    });
+  }
+
+  const VARIANTES_COM_SEGREDO: readonly {
+    readonly rotulo: string;
+    readonly recurso: Record<string, unknown>;
+    readonly caminho: readonly string[];
+    readonly chave: string;
+  }[] = [
+    {
+      rotulo: 'o certificado com o material de volta',
+      recurso: { ...CERTIFICADO_PUBLICADO, material: SENTINELA_DO_MATERIAL },
+      caminho: [],
+      chave: 'material',
+    },
+    {
+      rotulo: 'o certificado com a senha de volta',
+      recurso: { ...CERTIFICADO_PUBLICADO, senha: SENTINELA_DA_SENHA },
+      caminho: [],
+      chave: 'senha',
+    },
+    {
+      rotulo: 'a autoria carregando a passphrase — um nível abaixo',
+      recurso: {
+        ...CERTIFICADO_PUBLICADO,
+        registradoPor: { ...CERTIFICADO_PUBLICADO.registradoPor, passphrase: SENTINELA_DA_SENHA },
+      },
+      caminho: ['registradoPor'],
+      chave: 'passphrase',
+    },
+    {
+      rotulo: 'o desfecho da verificação carregando o envelope cifrado',
+      recurso: { ...VERIFICACAO_ACEITA, segredoCifrado: SENTINELA_DO_MATERIAL },
+      caminho: [],
+      chave: 'segredoCifrado',
+    },
+  ];
+
+  for (const { rotulo, recurso, caminho, chave } of VARIANTES_COM_SEGREDO) {
+    it(`recusa ${rotulo}, nomeando ${chave} e sem ecoar o valor`, () => {
+      // Metade COMPORTAMENTAL. Sozinha, ela não distingue "recusado" de "nunca chegou" — é o PAR com
+      // a metade declarativa que detecta.
+      const esquema =
+        chave === 'segredoCifrado' ? esquemaDoResultadoDaVerificacao : esquemaDoCertificado;
+      const resultado = esquema.safeParse(recurso);
+
+      expect(resultado.success).toBe(false);
+      expect(resultado.error?.issues).toHaveLength(1);
+      expect(resultado.error?.issues[0]?.code).toBe('unrecognized_keys');
+      expect(resultado.error?.issues[0]?.path).toEqual([...caminho]);
+      expect(resultado.error?.issues[0]).toMatchObject({ keys: [chave] });
+
+      const serializado = erroSerializado(resultado);
+      expect(serializado).not.toContain(SENTINELA_DO_MATERIAL);
+      expect(serializado).not.toContain(SENTINELA_DA_SENHA);
+    });
+  }
+});
+
+describe('CT-849 — o identificador bancário é aceito a 18 dígitos e recusado a 17 e a 19', () => {
+  /** As três larguras da RN-07, escritas por extenso — a decomposição como FATO, não comentário. */
+  const LARGURA_DECLARADA_DO_IDENTIFICADOR = 18;
+  const LARGURA_DA_COMPETENCIA_POR_EXTENSO = 6;
+  const LARGURA_DO_CONTADOR_POR_EXTENSO = 12;
+
+  /**
+   * `'000000000000000000'` entra de propósito entre os aceitos.
+   *
+   * O esquema **não** valida a semântica do mês — a §4.2 declara `/^[0-9]{18}$/` —, e escrever este
+   * aceito impede que alguém "aperte" o esquema com uma validação que a spec não pede, o que faria o
+   * contrato recusar um identificador que o provedor aceitaria.
+   */
+  const ACEITOS = [
+    '202608000000000001',
+    '202608000000000042',
+    '202608999999999999',
+    '000000000000000000',
+  ] as const;
+
+  /**
+   * As sete formas ilegais. O 17 e o 19 são as duas pontas **exatas**: o defeito plausível é o
+   * preenchimento à esquerda errado **por uma posição**, e um `{18,}` ou um `{17,19}` na expressão
+   * passaria por qualquer tabela que só aprovasse a forma canônica.
+   */
+  const RECUSADOS = [
+    '20260800000000001',
+    '2026080000000000010',
+    '20260800000000000A',
+    ' 202608000000000001',
+    '202608000000000001 ',
+    '+02608000000000001',
+    '',
+  ] as const;
+
+  it('a decomposição das 18 posições fecha: 6 de competência mais 12 de contador', () => {
+    // As larguras PUBLICADAS, por igualdade contra o valor por extenso — e não a soma de dois
+    // literais locais, que seria verdadeira sozinha e não poderia falhar (AP-29). Elas deixaram de
+    // ser privadas na rodada 2 da T6, e é esta asserção que dá a este pacote como proteger, do lado
+    // dele, o fato que ele passou a publicar: um contrato que declarasse `4 + 14` manteria o total
+    // em 18 e a expressão continuaria aceitando 18 dígitos, de modo que só a igualdade **campo a
+    // campo** acusa a troca — que produziria preenchimento à esquerda errado em `@sysloc/db`.
+    expect([LARGURA_DA_COMPETENCIA, LARGURA_DO_CONTADOR]).toEqual([
+      LARGURA_DA_COMPETENCIA_POR_EXTENSO,
+      LARGURA_DO_CONTADOR_POR_EXTENSO,
+    ]);
+
+    expect(LARGURA_DA_COMPETENCIA + LARGURA_DO_CONTADOR).toBe(LARGURA_DECLARADA_DO_IDENTIFICADOR);
+  });
+
+  for (const identificador of ACEITOS) {
+    it(`aprova ${identificador} e devolve a cadeia exata`, () => {
+      const resultado = ESQUEMA_DO_IDENTIFICADOR_BANCARIO.safeParse(identificador);
+
+      // Valor igual, e não "está definido": é a forma que o banco guarda e que toda comparação a
+      // jusante usa.
+      expect(resultado.success).toBe(true);
+      expect(resultado.data).toBe(identificador);
+      // Amarra a tabela ao invariante: um aceito de outra largura seria defeito do próprio caso.
+      expect(identificador).toHaveLength(LARGURA_DECLARADA_DO_IDENTIFICADOR);
+    });
+  }
+
+  for (const identificador of RECUSADOS) {
+    it(`recusa ${JSON.stringify(identificador)} por forma inválida`, () => {
+      const resultado = ESQUEMA_DO_IDENTIFICADOR_BANCARIO.safeParse(identificador);
+
+      expect(resultado.success).toBe(false);
+      expect(resultado.error?.issues[0]?.code).toBe('invalid_format');
+    });
+  }
+});
+
+describe('CT-850 — LIMIAR_DE_VENCIMENTO_EM_DIAS tem definição única em todo o monorepo', () => {
+  /** A raiz do repositório, derivada da posição deste arquivo. */
+  const RAIZ_DO_REPOSITORIO = fileURLToPath(new URL('../../../', import.meta.url));
+
+  /**
+   * Os quatro lugares onde uma segunda definição do limiar é plausível.
+   *
+   * A varredura vai **além deste pacote de propósito**: o débito `D14` da fase anterior é exatamente
+   * o caso do mesmo fato com uma segunda declaração executável **do outro lado da fronteira do
+   * pacote**, e uma varredura restrita a `packages/contracts/src` seria cega para ele. Quem deriva o
+   * estado (`packages/db/src`), quem monta a resposta (`apps/api/src`) e quem fala com o provedor
+   * (`packages/cobranca-bancaria/src`) são os três candidatos naturais a redeclará-lo.
+   */
+  const DIRETORIOS_VARRIDOS = [
+    'packages/contracts/src',
+    'packages/cobranca-bancaria/src',
+    'packages/db/src',
+    'apps/api/src',
+  ] as const;
+
+  /**
+   * Os diretórios declarados que **ainda não nasceram** — hoje, só o pacote bancário, que a T8 cria.
+   *
+   * A ausência é **afirmada**, e não engolida: `listarFontesTs` levanta em diretório inexistente
+   * justamente para que um `src/` renomeado não reduza a varredura a zero arquivos em silêncio, e
+   * repetir aqui um `.catch(() => [])` reabriria esse buraco. A asserção abaixo é na direção que
+   * preserva o invariante — **nenhum diretório fora desta lista pode estar ausente** —, de modo que
+   * (a) renomear `packages/db/src` ou `apps/api/src` reprova nomeando o culpado, e (b) o dia em que a
+   * T8 criar o pacote bancário ele entra na varredura **sozinho**, sem que ninguém precise lembrar.
+   */
+  const DIRETORIOS_AINDA_INEXISTENTES = ['packages/cobranca-bancaria/src'] as const;
+
+  /** O único arquivo de produção que pode declarar o limiar. */
+  const DONO_DO_LIMIAR = 'packages/contracts/src/integracao-bancaria.ts';
+
+  /** O nome cujo fato do contrato não pode ter uma segunda definição. */
+  const NOME_DO_LIMIAR = 'LIMIAR_DE_VENCIMENTO_EM_DIAS';
+
+  /** Casa a **declaração exportada** — a forma exata do débito D14. */
+  const declaracaoExportada = (linha: string): boolean =>
+    new RegExp(`^export const ${NOME_DO_LIMIAR}\\b`).test(linha);
+
+  /** Casa QUALQUER ligação do nome, exportada ou não — é o que pega a redeclaração local. */
+  const qualquerDeclaracao = (linha: string): boolean =>
+    new RegExp(`\\b(const|let|var)\\s+${NOME_DO_LIMIAR}\\b`).test(linha);
+
+  /**
+   * Só `ENOENT` vira "não existe" — qualquer outra falha do sistema de arquivos **sobe**.
+   *
+   * Uma tolerância larga aqui (um `catch` que engolisse tudo) transformaria permissão negada em
+   * "diretório ausente" e devolveria a varredura ao vácuo silencioso que este desenho evita.
+   */
+  async function existe(caminho: string): Promise<boolean> {
+    try {
+      await stat(caminho);
+      return true;
+    } catch (erro) {
+      if ((erro as NodeJS.ErrnoException).code === 'ENOENT') {
+        return false;
+      }
+      throw erro;
+    }
+  }
+
+  /** Os diretórios declarados que existem hoje, na ordem declarada. */
+  async function diretoriosPresentes(): Promise<string[]> {
+    const presentes: string[] = [];
+    for (const diretorio of DIRETORIOS_VARRIDOS) {
+      if (await existe(join(RAIZ_DO_REPOSITORIO, diretorio))) {
+        presentes.push(diretorio);
+      }
+    }
+    return presentes;
+  }
+
+  it('nenhum diretório varrido está ausente fora da lista declarada de inexistentes', async () => {
+    const presentes = await diretoriosPresentes();
+    const ausentes = DIRETORIOS_VARRIDOS.filter((diretorio) => !presentes.includes(diretorio));
+
+    // Lista das culpadas, e não um booleano: a falha nomeia o diretório que sumiu.
+    expect(
+      ausentes.filter(
+        (diretorio) => !(DIRETORIOS_AINDA_INEXISTENTES as readonly string[]).includes(diretorio),
+      ),
+    ).toEqual([]);
+  });
+
+  it(`${NOME_DO_LIMIAR} é declarado por exatamente um arquivo de produção, e ele é o dono`, async () => {
+    const presentes = await diretoriosPresentes();
+
+    const arquivosQueDeclaram: string[] = [];
+    const contagemPorDiretorio: { diretorio: string; arquivos: number }[] = [];
+
+    for (const diretorio of presentes) {
+      // Diretório presente e ilegível LEVANTA (é o desenho de `listarFontesTs`).
+      const fontes = await listarFontesTs(join(RAIZ_DO_REPOSITORIO, diretorio));
+      const varredura = await varrerArquivos(fontes, declaracaoExportada);
+
+      contagemPorDiretorio.push({ diretorio, arquivos: varredura.arquivos });
+      arquivosQueDeclaram.push(
+        ...varredura.ocorrencias.map((ocorrencia) =>
+          relative(RAIZ_DO_REPOSITORIO, ocorrencia.replace(/:\d+$/, '')),
+        ),
+      );
+    }
+
+    // Lista exata: contagem e dono numa asserção só. Uma segunda definição em qualquer dos quatro
+    // diretórios — a forma exata do D14 — acrescenta um elemento e reprova NOMEANDO o culpado.
+    // Ela é também o **controle positivo** da varredura: um padrão quebrado devolveria `[]`.
+    expect(arquivosQueDeclaram).toEqual([DONO_DO_LIMIAR]);
+
+    // Âncora antivácuo, por diretório: zero arquivo lido em qualquer um deles faria a asserção acima
+    // passar por não ter olhado, e não por não haver o que achar.
+    expect(contagemPorDiretorio.filter(({ arquivos }) => arquivos === 0)).toEqual([]);
+  });
+
+  it('nenhum outro arquivo de produção LIGA o nome, nem sem export', async () => {
+    const presentes = await diretoriosPresentes();
+
+    const arquivosQueLigam: string[] = [];
+    for (const diretorio of presentes) {
+      const fontes = await listarFontesTs(join(RAIZ_DO_REPOSITORIO, diretorio));
+      const varredura = await varrerArquivos(fontes, qualquerDeclaracao);
+
+      arquivosQueLigam.push(
+        ...varredura.ocorrencias.map((ocorrencia) =>
+          relative(RAIZ_DO_REPOSITORIO, ocorrencia.replace(/:\d+$/, '')),
+        ),
+      );
+    }
+
+    // O CONTROLE POSITIVO desta metade: o predicado casa a declaração do dono, e casa uma só vez. Sem
+    // ele, um padrão quebrado devolveria a lista vazia esperada logo abaixo e o caso passaria verde
+    // provando nada — o AP-29 na forma mais barata de cometer.
+    expect(arquivosQueLigam).toEqual([DONO_DO_LIMIAR]);
+
+    // A metade que a varredura anterior não alcança: uma redeclaração **sem `export`** não é
+    // declaração exportada e passaria por ela sem uma ocorrência sequer.
+    expect(arquivosQueLigam.filter((arquivo) => arquivo !== DONO_DO_LIMIAR)).toEqual([]);
+  });
+
+  it('o valor publicado é 30', () => {
+    // A amarra de VALOR: sem ela, "uma definição só" seria compatível com uma definição só e errada.
+    expect(LIMIAR_DE_VENCIMENTO_EM_DIAS).toBe(30);
   });
 });

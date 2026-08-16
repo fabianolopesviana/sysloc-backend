@@ -1,0 +1,76 @@
+feature: "Fundação bancária — identidade por empresa junto ao banco e identificador de cobrança único no SaaS"
+current_step: execution
+variant: backend
+source: recommended
+steps:
+  prd:
+    status: completed
+    summary: "9 US, 14 CA. Cada empresa passa a falar com o banco com a identidade dela, operada por ela, e toda cobrança que vai ao banco nasce com um identificador que não se repete em nenhuma empresa do SaaS."
+  tech_alignment:
+    status: completed
+    summary: "9 decisões técnicas (D1 a D9) mais 4 medições. Material cifrado na própria linha, leitura por aperto de mão em laço local, corpo estruturado na borda, contenção estrutural do segredo, porta com só a operação exercida, cliente por chamada, contador por função sem parâmetro, vigência derivada na aplicação e substituição numa tabela só."
+  tech_spec:
+    status: completed
+    variant: backend
+    summary: "Pacote @sysloc/cobranca-bancaria (pacotes 6 → 7), segredo-operavel em @sysloc/shared, certificado-do-provedor, identificador-bancario e catalogo-de-plataforma em @sysloc/db, módulo integracoes-bancarias na API. 3 rotas novas (superfície 89/74 → 92/77). Tabelas: negocio.certificado_do_provedor (RLS forçada, FK composta, índice único parcial do vigente) e o schema plataforma com a sequência e a função sem parâmetro do contador. Migrações 0015 e 0016. 37 casos de teste (CT-801 a CT-838). Zero dependências externas novas."
+  validation:
+    status: completed
+    summary: "challenge-spec: 8 achados, 8 ajustes inline, NENHUM bloqueio remanescente. O único bloqueante — conflito literal com a Decision da ADR-0015 ('todo contador sequencial deste produto é único por empresa') — foi RESOLVIDO em 2026-08-14 pela ADR-0033, que a supersede; a §21.9 virou registro e a §21.5 lista a 0033 como APLICÁVEL. Decidido o ponto 4 dos Pontos em Aberto do tech-alignment (sonda = aperto de mão mútuo, não obtenção de credencial: o oráculo auth.py exige client_id/scope, que são da fatia ii) com débito com gatilho especificado. Barrado o radical 'certificado' no redator, que apagaria o certificadoId da §13.1. Cláusula 'apenas' da ADR-0001 tratada e nome AdaptadorCobrancaBancaria reservado para a fatia (ii). CT-822b renumerado para CT-818 (37 → 38 casos, fim da lacuna). CT-804 remapeado de CA-01 para CA-10. Precedente recusa-indistinguivel recaracterizado. ADR-0026 conformada literalmente (instante por parâmetro, função pura). Glossário: 4 termos novos + 1 corrigido no global, glossário de feature criado com 4 termos."
+  task_plan:
+    status: completed
+    summary: >-
+      14 tasks, 5 fases, 0 paralelizáveis (derivado: quase toda task toca um barril `index.ts`,
+      classificado como arquivo de alta contenção — a derivação par a par está na §4.2 do
+      task_plan). US cobertas: 9/9; CA cobertos: 14/14. 53 casos de teste, faixa CT-801 a CT-853
+      contígua e sem sufixo — 38 redistribuídos da §19 do tech_spec e 15 GERADOS nesta fase para
+      três arquivos de teste que a §3.5/§3.6 declara e a §19 não enumerava
+      (adaptador-sicoob.spec.ts → CT-839..844; esquemas.spec.ts → CT-845..850;
+      ambiente.spec.ts → CT-851..853). Nenhum CT de 801 a 838 renumerado. Todas as tasks em
+      opus/[qa, tech_review]. Dois achados de raio de impacto que o tech_spec subdeclarava, ambos
+      escriturados na §5.2 da task dona: papel-de-conexao.spec.ts e catalogo.spec.ts quebram com a
+      migração 0015 (T4), e o CT-639 (EXIGIDAS_SEM_PROVISIONAMENTO, comparado por igualdade) quebra
+      com as duas variáveis de ambiente novas (T11). Duas reconciliações de colocação registradas
+      (CT-814/815/816/817 e CT-834), com os invariantes preservados na íntegra.
+      `_run/test-cases.json` REESCRITO — o anterior estava defasado em relação ao challenge de
+      2026-08-14 (apontava a cifra para packages/cobranca-bancaria/src/cifra.ts e supunha duas
+      colunas cifradas).
+  execution:
+    status: completed
+    tasks_total: 14
+    tasks_completed: 14
+    summary: >-
+      FATIA CONCLUIDA em 2026-08-16. As 14 tasks aprovadas nos DOIS gates, NENHUMA BLOQUEADA, e os 17
+      Criterios de Conclusao da Feature conferidos um a um na §7 do task_plan. Suite 1248 (baseline)
+      -> 1418, por pacote e MONOTONICA — nenhum pacote encolheu em nenhuma rodada de nenhuma task.
+      Superficie 89/74 -> 92/77 por DUPLA MEDICAO INDEPENDENTE com a igualdade entre os eixos
+      AFIRMADA (CT-836), publicas em 19 e semDeclaracao vazio. O monorepo passou de 6 para 7 pacotes
+      com o @sysloc/cobranca-bancaria. ZERO dependencias externas novas. 62 debitos anotados na §2, e
+      o indice conferido nas DUAS pontas (24 marcadores <-> 24 linhas), com o CT-907 verde.
+      ⚠️ O PADRAO DO RUN, e ele e o registro mais util: TODO achado que importou veio de MEDICAO, e
+      nenhum de leitura. O Gate 1 da T11 provou com um mutante PROPRIO que a invariante declarada no
+      cabecalho do CT-824 nao tinha rede — a suite ficava 243/243 VERDE com o SUT lendo o relogio
+      errado. O Gate 1 da T13 provou que o diario so era medido no caminho de RECUSA, com dois
+      mutantes que se ISOLAM. O Gate 2 da T14 achou que a asserção de completude comparava o laco
+      contra o proprio arranjo, e o mutante confirmou: sem a ancora, o caso fica VERDE. Em todos, a
+      leitura do codigo teria aprovado.
+      ⚠️ SEGUNDO PADRAO: a classe de defeito dominante nao foi codigo errado, foi RAZAO ESCRITA MAIS
+      LARGA QUE O CONJUNTO QUE ELA DISPENSA. A T13 gastou tres rejeicoes nisso, cada uma numa
+      superficie diferente, e a versao final da enumeracao REGISTRA O PROPRIO ERRO ANTERIOR — que e o
+      que impede a rodada seguinte de reabrir. A T12 gastou duas rodadas numa frase copiada em quatro
+      lugares, e so a VARREDURA CLASSIFICADA (220 mencoes em tres classes, com o conjunto ENUMERAVEL
+      por construcao) fechou a classe.
+      ⚠️ PRECEDENTE DE METODO CONFIRMADO SETE VEZES: "prescricao de gate e hipotese, nao ordem". O
+      executor divergiu declarando e MEDINDO na T10 (quatro vezes), na T11 (duas), na T12 e na T14, e
+      em TODAS teve razao. Na T14 ele divergiu do MOLDE QUE A TASK MANDOU COPIAR, provando que a
+      ordem do precedente tornava a garantia INALCANCAVEL (AP-29) — e os dois gates confirmaram por
+      contrafactual. ⚠️ CONSEQUENCIA REGISTRADA NO D61: tres casos de fatias FECHADAS carregam a
+      mesma fragilidade latente, e o retrofit foi RECUSADO pelos dois gates (Proibicao 5).
+      ⚠️ E OS GATES SE RETRATARAM DUAS VEZES por escrito, depois de reproduzir a medicao do executor.
+      Debitos com gatilho VIVOS desta fatia: D25 (F4/T7), D27 (F4/T8), D36 (F4/T10), D58 (F4/T13) e
+      D61 (F4/T14). O D39 (F1/fechamento) CRESCEU para TRES variaveis — medido, nao copiado do texto
+      da task — e NAO foi fechado. O D13 e o D35 FECHARAM na T14, com prova.
+      ⚠️ PENDENCIA PARA A FATIA (ii), e ela e a mais importante: a superficie FILA x SEGREDO OPERAVEL
+      — que MOTIVOU a ADR-0032 na fase anterior — nao existe nesta fatia POR CONSTRUCAO e por isso
+      nao foi medida. O D58 a agenda, com o marcador no arquivo que a fatia (ii) OBRIGATORIAMENTE
+      abrira. Ela NAO HERDA a propriedade.
+      Proximo passo: COMMIT (o pipeline nunca commita) e depois a fatia (ii), emissao-e-conciliacao.

@@ -35,15 +35,20 @@ FEATURES="$RAIZ/docs/specs/features"
 #
 # ⚠️ Só entra aqui **fatia executável**. O pré-refinamento de uma fase partida tem diretório próprio
 # em `docs/specs/features/` — `dominio-locacao/v1` para a F2, `cobranca-mora-e-documentos/v1` para a
-# F3, e `regua-e-documentos/v1` para a sub-partição da fatia 2 da F3 — e ele NÃO é fatia: não tem
-# `_run/`, não tem task, e listá-lo faz o painel reportar uma fatia "especificada" que ninguém vai
-# executar, escondendo o estado real das que existem.
+# F3, `regua-e-documentos/v1` para a sub-partição da fatia 2 da F3, e `integracao-bancaria-sicoob/v1`
+# para a F4 — e ele NÃO é fatia: não tem `_run/`, não tem task, e listá-lo faz o painel reportar uma
+# fatia "especificada" que ninguém vai executar, escondendo o estado real das que existem.
+#
+# O nome do diretório de pré-refinamento **não avisa** que ele é pré-refinamento: `dominio-locacao` e
+# `integracao-bancaria-sicoob` parecem fatia. O que distingue é a ausência de `_run/`, e é por isso
+# que a lista acima se mantém por extenso: cada vez que uma fase se parte, a entrada dela aqui deixa
+# de valer, e a única barreira contra reintroduzi-la é esta enumeração.
 declare -A FATIAS_DA_FASE=(
   [F0]='fundacao-stack-nativa/v1'
   [F1]='fundacao-multitenancy-identidade/v1;autorizacao-e-ciclo-de-acesso/v1'
   [F2]='cadastro-de-imoveis-e-pessoas/v1;contratos-de-locacao/v1'
   [F3]='cobranca-e-mora/v1;regua-de-cobranca/v1;documentos-e-confirmacao/v1'
-  [F4]='integracao-bancaria-sicoob/v1'
+  [F4]='fundacao-bancaria/v1;emissao-e-conciliacao/v1;webhook-e-carne/v1'
   [F5]='automacoes-agendadas/v1'
   [F6]='frontend-religado/v1'
   [F7]='virada-e-desinstalacao/v1'

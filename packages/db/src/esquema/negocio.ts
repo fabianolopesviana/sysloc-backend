@@ -33,23 +33,28 @@
  *     (`politica_de_aviso` e `envio_de_cobranca`), mais os três tipos enumerados da régua;
  *   * `migracoes/0014_seguranca_confirmacao.sql` — o portador da confirmação de endereço
  *     (`portador_de_confirmacao`), mais a função `SECURITY DEFINER` que o resolve **sem** contexto
- *     de empresa (ADR-0024).
+ *     de empresa (ADR-0024);
+ *   * `migracoes/0016_seguranca_bancaria.sql` — o certificado do provedor
+ *     (`certificado_do_provedor`), mais os objetos do schema `plataforma`: a sequência do
+ *     identificador perante o provedor e a função `SECURITY DEFINER` **sem parâmetro** que a avança
+ *     (ADR-0031 e ADR-0033).
  *
- * São seis porque **gerado e autoral nunca convivem no mesmo arquivo** — uma regeração futura da
+ * São sete porque **gerado e autoral nunca convivem no mesmo arquivo** — uma regeração futura da
  * gerada sobrescreveria o trecho autoral em silêncio. O que **obriga** a parceira autoral não é a
  * predecessora ser gerada: é **nascer tabela em `negocio`**, porque o gerador não emite `FORCE` nem
  * política. Toda migração que criar tabela aqui leva junto uma parceira autoral própria — nunca um
- * acréscimo à `0001`, à `0006`, à `0008`, à `0010`, à `0012` ou à `0014`, que descrevem schemas já
- * aplicados e são, portanto, imutáveis. ⚠️ A `0010` tem, além disso, o `DÉBITO COM GATILHO — D20` no
- * ponto da emenda que ela já sofreu: **leia-o antes de qualquer tentativa de tocá-la**.
+ * acréscimo à `0001`, à `0006`, à `0008`, à `0010`, à `0012`, à `0014` ou à `0016`, que descrevem
+ * schemas já aplicados e são, portanto, imutáveis. ⚠️ A `0010` tem, além disso, o
+ * `DÉBITO COM GATILHO — D20` no ponto da emenda que ela já sofreu: **leia-o antes de qualquer
+ * tentativa de tocá-la**.
  *
  * O diretório de migrações é a conferência da regra, e ele recusa a forma mais larga dela: a
  * `0002_campos_do_arcabouco.sql` e a `0003_autorizacao.sql` são **geradas e não têm parceira** —
  * nenhuma das duas cria tabela, elas só alteram o que já existia —, e a `0004_desfecho_de_recusa.sql`
  * é **autoral avulsa**, sem gerada a quem se parear. Só a `0000`, a `0005`, a `0007`, a `0009`, a
- * `0011` e a `0013` criam tabela em `negocio`, e são exatamente elas que têm parceira. Ler o gatilho
- * como "toda gerada ganha uma parceira" produziria uma migração de segurança vazia, sem `FORCE` nem
- * política a declarar.
+ * `0011`, a `0013` e a `0015` criam tabela em `negocio`, e são exatamente elas que têm parceira. Ler
+ * o gatilho como "toda gerada ganha uma parceira" produziria uma migração de segurança vazia, sem
+ * `FORCE` nem política a declarar.
  *
  * A `0013` é, além disso, a primeira **destrutiva** do produto: ela remove
  * `contrato.pdf_contrato_arquivo` (ADR-0030) e **não tem descida**. Reverter o esquema exige
@@ -1426,6 +1431,118 @@ export const portadorDeConfirmacao = negocio
         tabela.empresaId,
         tabela.locatarioId,
       ),
+    ],
+  )
+  .enableRLS();
+
+// ===========================================================================
+// O certificado do provedor — o que guarda derivado de segredo E histórico
+// ===========================================================================
+
+/**
+ * O certificado com que a empresa se apresenta ao provedor bancário.
+ *
+ * ---------------------------------------------------------------------------
+ * `segredo_cifrado` guarda o CIFRADO, e a bicondicional o amarra ao histórico
+ * ---------------------------------------------------------------------------
+ *
+ * O que a empresa envia é um arquivo protegido por senha; o que esta coluna guarda é o resultado da
+ * cifra dele, e a chave que a desfaz **não vive no banco** — ela é variável de ambiente do processo
+ * (ADR-0032). Quem lê o banco inteiro — dump, réplica, backup, operador de suporte — não consegue
+ * apresentar-se ao provedor em nome de empresa nenhuma.
+ *
+ * A `CHECK` de `certificado_do_provedor_segredo_chk` é uma **bicondicional**, e não duas condições
+ * soltas: `(segredo_cifrado IS NULL) = (substituido_em IS NOT NULL)`. Ela torna dois estados
+ * inexistentes de uma vez — *"substituído e ainda guardando o segredo"* (o material que ninguém mais
+ * usa continuaria no banco, alargando o que um vazamento alcança) e *"vigente sem segredo"* (a
+ * empresa apareceria configurada e nenhuma emissão funcionaria). É a RN-13, imposta pelo banco:
+ * escrever a substituição **é** apagar o segredo, num único `UPDATE`, porque a transação que fizesse
+ * só metade seria recusada.
+ *
+ * ---------------------------------------------------------------------------
+ * Um VIGENTE por empresa — índice único PARCIAL, não restrição
+ * ---------------------------------------------------------------------------
+ *
+ * `substituido_em` nulo **é** a definição de vigente: não há coluna de bandeira, e não há rotina que
+ * "vire" nada. `certificado_do_provedor_vigente_uidx` cobre `empresa_id` apenas onde a coluna é
+ * nula, de modo que dois vigentes na mesma empresa são **irrepresentáveis** (RN-12) — a segunda
+ * gravação é recusada pelo banco, e não por uma leitura-antes-de-gravar que perderia a corrida.
+ *
+ * A forma é `uniqueIndex(...).where(...)` pela mesma razão registrada em {@link contrato}, e ela não
+ * é escolha de estilo: **o PostgreSQL não admite restrição única parcial**. Quem "corrigir" para
+ * `unique('…').on(tabela.empresaId)`, por consistência com a vizinha, remove a condição junto — e a
+ * empresa passa a não poder trocar de certificado nunca mais, porque o histórico disputaria com o
+ * vigente. O defeito só apareceria na primeira renovação, em operação.
+ *
+ * ---------------------------------------------------------------------------
+ * O que NÃO existe aqui, de propósito
+ * ---------------------------------------------------------------------------
+ *
+ *   * **não há `retirado_em`.** A ADR-0014 não alcança esta tabela: o discriminador dela é *ser
+ *     referenciável*, e nada aponta para uma linha de certificado. A linha substituída **permanece**,
+ *     porque é o histórico de com qual material cada emissão foi assinada — e `substituido_em` já
+ *     responde por "saiu de uso" sem tomar emprestada a semântica da exclusão lógica;
+ *   * **não há coluna da senha em claro, nem do arquivo original.** O que se guarda é o cifrado, mais
+ *     os três fatos que a leitura do `.pfx` extrai (`titular`, `valido_de`, `valido_ate`) e a
+ *     `impressao_digital`, que é o que identifica o material sem o revelar;
+ *   * **não há coluna de estado de validade.** Vencido é `valido_ate` no passado, derivado no
+ *     instante da leitura (ADR-0022) — nenhuma rotina precisa rodar para a verdade continuar
+ *     verdadeira.
+ */
+export const certificadoDoProvedor = negocio
+  .table(
+    'certificado_do_provedor',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      empresaId: uuid('empresa_id')
+        .notNull()
+        .references(() => empresa.id),
+      /** O titular declarado pelo próprio material, lido do `.pfx` — nunca digitado. */
+      titular: text('titular').notNull(),
+      validoDe: timestamp('valido_de', { withTimezone: true }).notNull(),
+      validoAte: timestamp('valido_ate', { withTimezone: true }).notNull(),
+      /** Identifica o material sem o revelar — é o que permite conferir "é este mesmo" num log. */
+      impressaoDigital: text('impressao_digital').notNull(),
+      /** O CIFRADO, nunca o segredo. Nulo se e somente se substituído — ver o cabeçalho. */
+      segredoCifrado: text('segredo_cifrado'),
+      /** Quem registrou. Amarrado à empresa pela chave composta abaixo, nunca só pelo `id`. */
+      registradoPor: uuid('registrado_por').notNull(),
+      /** O instante do registro, pelo relógio do BANCO (ADR-0026) — nunca pelo do processo. */
+      criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+      /** Nulo **é** ser o vigente. Preenchê-lo é, pela `CHECK`, apagar o segredo no mesmo ato. */
+      substituidoEm: timestamp('substituido_em', { withTimezone: true }),
+    },
+    (tabela) => [
+      // O alvo da chave estrangeira composta de quem vier a apontar para o certificado, e o que a
+      // guarda de cobertura de `src/catalogo.ts` cobra de toda tabela deste schema.
+      unique('certificado_do_provedor_id_empresa_key').on(tabela.id, tabela.empresaId),
+      // A chave estrangeira COMPOSTA da ADR-0008 — a única da tabela, e ela aponta para
+      // `identidade.usuario`, que carrega `usuario_id_empresa_key` desde a `0003`. Ela recusa, no
+      // banco, um certificado da empresa A registrado por usuário da empresa B: o par
+      // `(registrado_por, empresa_id)` teria de existir no pai, e não existe. A forma simples
+      // (`REFERENCES usuario(id)`) não serve nem "por enquanto" — ela aceitaria o apontamento
+      // cruzado em silêncio, e aqui o preço seria uma trilha que atribui a instalação do material
+      // de uma imobiliária a alguém de outra.
+      foreignKey({
+        name: 'certificado_do_provedor_usuario_empresa_fkey',
+        columns: [tabela.registradoPor, tabela.empresaId],
+        foreignColumns: [usuario.id, usuario.empresaId],
+      }),
+      // A RN-13 como bicondicional — ver o cabeçalho. Os dois estados que ela torna inexistentes
+      // são independentes, e escrevê-la como duas `CHECK` soltas deixaria passar exatamente um
+      // deles conforme qual fosse esquecida.
+      check(
+        'certificado_do_provedor_segredo_chk',
+        sql`(${tabela.segredoCifrado} IS NULL) = (${tabela.substituidoEm} IS NOT NULL)`,
+      ),
+      // A RN-12: um vigente por empresa, imposto pelo banco. ÍNDICE PARCIAL, e a forma não é
+      // escolha de estilo — ver o cabeçalho e a `DECISÃO FECHADA — T3 · 2026-08-09` de
+      // {@link contrato}, que registra a mesma armadilha por extenso.
+      uniqueIndex('certificado_do_provedor_vigente_uidx')
+        .on(tabela.empresaId)
+        .where(sql`substituido_em IS NULL`),
+      // O histórico da empresa (§4.1): o mais recente primeiro, que é a ordem em que ele é lido.
+      index('certificado_do_provedor_historico_idx').on(tabela.empresaId, tabela.criadoEm.desc()),
     ],
   )
   .enableRLS();

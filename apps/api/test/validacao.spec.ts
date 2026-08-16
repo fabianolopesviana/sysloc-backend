@@ -437,6 +437,19 @@ const IMPORTADORES_ESPERADOS = [
   // elemento, {@link ANALISADORES_ESPERADOS} não muda (o controlador novo chama `validar`, e não
   // `safeParse`), e a igualdade (nunca contenção) segue sendo asserida nas três pontas.
   'imoveis/imovel.controller.ts',
+  // SUT_IS_CORRECT_BECAUSE: o código de produção está certo, e é esta lista que descrevia o estado
+  // anterior. A **T11** da fatia `fundacao-bancaria` publica a **décima quarta** borda — as duas
+  // rotas de `/v1/integracoes-bancarias` —, e ela **importa** a tradução única em vez de copiá-la,
+  // que é exatamente o desfecho que o `CT-343` existe para premiar. Aqui isso pesa por uma razão
+  // própria: o corpo que esta borda recusa carrega o material do certificado e a senha que o abre, e
+  // uma tradução própria escrita ali seria o ponto mais provável de alguém ecoar o valor recusado ao
+  // compor a mensagem — que é justamente o que o ponto único não faz.
+  //
+  // **Este arquivo não está na §5.2 da T11** — divergência declarada, no mesmo molde das anotações
+  // acima. Vale o resto do parágrafo do docblock: a ponta da DEFINIÇÃO permanece em um elemento,
+  // {@link ANALISADORES_ESPERADOS} não muda (os dois manipuladores novos chamam `validar`, e não
+  // `safeParse`), e a igualdade (nunca contenção) segue sendo asserida nas três pontas.
+  'integracoes-bancarias/certificado.controller.ts',
   'master/empresa.controller.ts',
   // SUT_IS_CORRECT_BECAUSE: o código de produção está certo, e é esta lista que descrevia o estado
   // anterior. A T6 da fatia `cobranca-e-mora` publica a **décima** borda — as duas rotas de
@@ -530,6 +543,18 @@ const DEFINIDOR_DO_CORPO_VAZIO_ESPERADO = 'comum/esquema-de-corpo-vazio.ts';
 // anterior registrou logo acima: a âncora afirma por igualdade de conjunto, e publicar borda nova a
 // faz reprovar, que é exatamente o que ela existe para fazer. A âncora **sobe**; ela não vira
 // contenção.
+// SUT_IS_CORRECT_BECAUSE: a **T12** da fatia `fundacao-bancaria` publica
+// `POST /v1/integracoes-bancarias/certificado/verificacao`, cujo corpo é **vazio e fechado**, e
+// `integracoes-bancarias/certificado.controller.ts` passa a IMPORTAR a definição única em vez de
+// copiá-la — que é exatamente o comportamento que este caso existe para premiar. O que ele reprova é
+// a **segunda definição**, e essa ponta ({@link DEFINIDOR_DO_CORPO_VAZIO_ESPERADO}) **não mudou**: o
+// conjunto dos definidores continua com um elemento. A asserção NÃO foi afrouxada — segue sendo
+// igualdade exata sobre o conjunto inteiro, com um consumidor a mais, e **nenhuma entrada anterior
+// saiu**.
+//
+// **Este arquivo não está na §5.2 da T12** — divergência declarada, e é a mesma que a T10 e a T9
+// registraram acima: a âncora afirma por igualdade de conjunto, e publicar borda nova a faz reprovar,
+// que é exatamente o que ela existe para fazer. A âncora **sobe**; ela não vira contenção.
 const IMPORTADORES_DO_CORPO_VAZIO_ESPERADOS = [
   'automacao/automacao.controller.ts',
   'cadastros/locatario.controller.ts',
@@ -538,6 +563,7 @@ const IMPORTADORES_DO_CORPO_VAZIO_ESPERADOS = [
   'contratos/contrato.controller.ts',
   'imoveis/conjunto.controller.ts',
   'imoveis/imovel.controller.ts',
+  'integracoes-bancarias/certificado.controller.ts',
 ];
 
 /**

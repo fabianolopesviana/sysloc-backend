@@ -87,6 +87,31 @@
  * |       |        | eixos é afirmada explicitamente**, à parte do valor esperado. (ADR-0011,
  * |       |        | ADR-0018, ADR-0027) |
  *
+ * | CA-01 | CT-836 | As **três rotas da fatia `fundacao-bancaria`** — o registro, a consulta e a
+ * | CA-02 |        | verificação do certificado do provedor — são afirmadas como **exatamente três**,
+ * | CA-03 |        | por extenso e com `{ metodo, caminho, controlador }`, ANTES de qualquer
+ * | CA-07 |        | comparação com o total; as três exibem o retrato devido por igualdade de
+ * | CA-08 |        | OBJETO — `TELA:integracoes_bancarias` pela **CLASSE** na consulta e na
+ * | CA-09 |        | verificação, e a **conjunção inteira** no MÉTODO do registro, com a área antes
+ * |       |        | da ação —, nenhuma é pública, o conjunto público continua com **19** entradas,
+ * |       |        | `semDeclaracao` é vazio, o catálogo segue com **17** chaves e nenhuma ação nova
+ * |       |        | em `TELA:integracoes_bancarias`; e a superfície publicada fecha em **92** pares
+ * |       |        | e **77** manipuladores, por **duas medições independentes cuja igualdade entre
+ * |       |        | os eixos é afirmada explicitamente**, à parte do valor esperado. (ADR-0011,
+ * |       |        | ADR-0018, ADR-0013, ADR-0016) |
+ *
+ * | CA-01 | CT-837 | A sessão de `USUARIO_EMPRESA`, cuja matriz **padrão** é só `TELA:resumo`, recebe
+ * |       |        | `403 ACESSO_NEGADO` nas três rotas, com o envelope canônico inteiro e
+ * |       |        | `detalhes.exigido` nomeando a **PRIMEIRA** exigência ausente na ordem declarada
+ * |       |        | — a ÁREA, inclusive no registro —, e a contagem crua de
+ * |       |        | `negocio.certificado_do_provedor` é **idêntica** antes e depois das três
+ * |       |        | chamadas. (ADR-0011, ADR-0017, ADR-0018) |
+ *
+ * | CA-01 | CT-838 | Sem sessão, as três rotas recusam com `401 NAO_AUTENTICADO` e o envelope
+ * |       |        | canônico **sem `detalhes`**; e as três respostas são **idênticas byte a byte**,
+ * |       |        | de modo que nada nelas varia com o estado da empresa — sem sessão, o produto não
+ * |       |        | revela se há ou não certificado registrado. (ADR-0011, ADR-0017) |
+ *
  * Rastreabilidade: `CA-23 → CT-212 (RN-14)`, `CA-23 → CT-213 (RN-14)`, `CA-23 → CT-355 (RN-14)`.
  * Acrescida pela T11 da fatia `cadastro-de-imoveis-e-pessoas`: `CA-12 → CT-318 (RN-14)`.
  * Acrescida pela T10 da fatia `contratos-de-locacao`: `CA-16 → CT-427 (RN-13)`,
@@ -95,6 +120,38 @@
  * Acrescida pela T12 da fatia `regua-de-cobranca`: `CA-13 → CT-635 (RN-12)`,
  * `CA-14 → CT-635 (RN-14)`.
  * Acrescida pela T12 da sub-fatia `documentos-e-confirmacao`: `CA-17 → CT-732 (RN-13)`.
+ * Acrescida pela T14 da fatia `fundacao-bancaria`: `CA-01 → CT-836 (RN-06)`,
+ * `CA-02 → CT-836 (RN-06)`, `CA-03 → CT-836 (RN-06)`, `CA-01 → CT-837 (RN-06)`,
+ * `CA-01 → CT-838 (RN-06)`.
+ *
+ * ===========================================================================
+ * Por que o CT-836 existe ao lado do CT-732, e por que ele traz DUAS provas de borda junto
+ * ===========================================================================
+ *
+ * O `CT-732` audita **outra** superfície — as três rotas da sub-fatia `documentos-e-confirmacao` — e
+ * as âncoras que ele confere são as daquele fecho (`89`/`74`). Vale aqui, palavra por palavra, o que
+ * o parágrafo abaixo diz do `CT-635`: as duas constantes já valem `92` e `77`, e é o **próprio
+ * `CT-732`** que reprovaria se alguém as movesse sem publicar rota. O que **só** o `CT-836` responde:
+ *
+ *   * **o inventário desta fatia tem exatamente três pares, por extenso**, com
+ *     `{ metodo, caminho, controlador }` — e é afirmado ANTES de qualquer comparação com o total. É
+ *     o que impede o caso de *"fechar a conta"* por acaso quando duas rotas mudarem em direções
+ *     opostas: a soma continuaria batendo, e só a afirmação do inventário pega a compensação;
+ *   * **as três são da mesma natureza, e é isso que a fatia tem de provar**: nenhuma dispensa
+ *     sessão. Onde o `CT-732` afirmou o crescimento do conjunto público em **exatamente 1**, este
+ *     afirma o crescimento **zero** — pelo filtro (nenhuma das três está no público) **e** pela
+ *     contagem (o público continua com 19 entradas), que são direções diferentes e nenhuma implica a
+ *     outra;
+ *   * **a assimetria entre os três manipuladores é conteúdo**, e ela é invisível na borda: a área da
+ *     classe é exatamente `MAPA_ACAO_TELA['ACAO:configurar_integracao']`, de modo que o registro
+ *     declarando **só a ação** continuaria exigindo a área por acidente. Quem o acusa por estrutura é
+ *     o `CT-355`; aqui ele é acusado por **conteúdo**, com a origem da declaração junto do valor.
+ *
+ * E as duas provas de **borda** moram neste arquivo, e não num arquivo próprio, por uma razão de
+ * método: o `CT-836` afirma o que a rota **declara**, e declaração é promessa. O `CT-837` e o
+ * `CT-838` afirmam o que o cliente **recebe** — `403` com a primeira chave ausente nomeada, `401`
+ * sem sessão —, e são eles que transformam a promessa em comportamento observado. Lê-los ao lado da
+ * declaração é o que torna a divergência entre as duas coisas evidente na mesma passagem de olhos.
  *
  * ===========================================================================
  * Por que o CT-732 existe ao lado do CT-635, que já mede a superfície por dois caminhos
@@ -311,6 +368,89 @@
  *     `sha256sum` idênticos aos originais (`bbea7ff2…`, `22e8bfa7…` e `75c20dfe…`), e o controle
  *     voltou a `227 passed`.
  *
+ * ---------------------------------------------------------------------------
+ * MUTANTES DA T14 — MT14-1, MT14-2 e MT14-3 (2026-08-15), a falsificação do `CT-836`
+ * ---------------------------------------------------------------------------
+ *
+ * O `CT-836` é asserção **estática** — ele inspeciona metadado e a tabela do roteador em vez de
+ * exercitar a borda —, e a `.claude/rules/testing-stack.md` exige que seja demonstrada **reprovando**
+ * com o defeito reintroduzido. Os três foram aplicados a
+ * `integracoes-bancarias/certificado-do-provedor.controller.ts` e invocados pelo **script do pacote**
+ * (`pnpm --filter @sysloc/api test`), nunca por `vitest run` avulso: este arquivo carrega
+ * `@sysloc/auth` e `@sysloc/db` pela fronteira do pacote, e um `vitest run` leria o `dist/` da
+ * compilação anterior. **Controle**: `280 passed`.
+ *
+ *   * **MT14-1 · o registro declarando SÓ a ação** — `@ExigeChaves(AREA, ACAO)` trocado por
+ *     `@ExigeChave(ACAO_DE_CONFIGURACAO)` no manipulador `registrar` (e `ExigeChaves` retirado do
+ *     import, senão o mutante **para no `tsc`** por `noUnusedLocals` e a suíte nunca roda):
+ *     `3 failed | 277 passed`. O `CT-836` reprova **na garantia nomeada** — *"manipulador da fatia
+ *     que exige MENOS que a classe: `CertificadoDoProvedorController.registrar`"* —, o `CT-355` o
+ *     acusa pelo mesmo defeito **por estrutura**, e o `CT-837` reprova na **borda**, com
+ *     `detalhes.exigido` virando `ACAO:configurar_integracao` em vez da área. É a prova de que a
+ *     ordem da conjunção é conteúdo: o mutante é invisível para quem só olha o conjunto de átomos,
+ *     porque a área da classe É `MAPA_ACAO_TELA['ACAO:configurar_integracao']`;
+ *   * **MT14-2 · a `@ExigeChave` saindo da CLASSE** — a declaração retirada de
+ *     `CertificadoDoProvedorController`: `20 failed | 260 passed`, e o `CT-836` reprova em
+ *     `semDeclaracao` **nomeando `{ metodo, caminho, controlador }`** das duas ofensoras. O `CT-838`
+ *     reprova na **identidade byte a byte**: a rota sem declaração passa a responder `403` sem
+ *     sessão enquanto a que declara responde `401`, e as três deixam de coincidir — que é
+ *     exatamente o que aquele caso existe para pegar;
+ *   * **MT14-3 · uma rota acrescentada FORA da contagem** — um manipulador a mais no controlador:
+ *     `10 failed | 270 passed`, e o `CT-836` reprova na **dupla medição**, nomeando os números lado
+ *     a lado — `peloRoteador: 93, pelaComposicao: 93, manipuladores: 78` contra `92`, `92` e `77`.
+ *     ⚠️ Como no MT12-3, a asserção de **igualdade entre as duas medições** continua verde (as duas
+ *     mediram `93`), e esse é o desfecho certo: elas concordam porque medem a mesma superfície por
+ *     caminhos independentes, e o que está errado é a **âncora**;
+ *   * **reversão** — o fonte foi restaurado do backup e conferido por `diff -q` e `sha256sum`
+ *     idênticos ao original, e o controle voltou a `280 passed`.
+ *
+ * **A divergência DELIBERADA do molde, e por que ela está aqui e não só num comentário inline**: no
+ * `CT-836` a asserção da garantia nomeada (*"nenhum manipulador exige MENOS que a classe"*) vem
+ * **antes** da igualdade de objeto do retrato, enquanto o `CT-533`, o `CT-635` e o `CT-732` a põem
+ * depois. A razão é o **MT14-1**: com o retrato primeiro, a igualdade **aborta o caso** e a garantia
+ * nomeada nunca executa — que é o AP-29 pelo qual duas tasks desta fatia foram reprovadas. Invertida,
+ * o que sai primeiro é a mensagem com o **nome do ofensor**. Nenhuma asserção foi removida ou
+ * afrouxada, e os casos anteriores não foram tocados — ver o `DÉBITO COM GATILHO — D61` abaixo, que é
+ * o registro dessa fragilidade latente nos três irmãos.
+ *
+ * ---------------------------------------------------------------------------
+ * MT14-4 (2026-08-16) — a falsificação das âncoras de arranjo do `CT-837` e do `CT-838`
+ * ---------------------------------------------------------------------------
+ *
+ * A linha de fecho daqueles dois casos compara o percorrido com o **próprio** arranjo
+ * (`CHAMADAS_DA_FATIA_BANCARIA`), e portanto não pode acusar um arranjo **truncado** — o comentário
+ * que antes reivindicava essa propriedade dizia mais do que a linha entrega, e o Gate 2 o mediu. A
+ * correção acrescentou, no topo de cada caso, duas âncoras contra fontes **independentes** do
+ * arranjo: a cardinalidade contra `PARES_PUBLICADOS_PELA_FATIA_BANCARIA` e a identidade contra
+ * `PARES_DA_FATIA_BANCARIA`. O mutante que a demonstra, pelo **script do pacote**:
+ *
+ *   * **com as âncoras** (estado atual), arranjo truncado de três para duas chamadas (a entrada da
+ *     verificação removida): `2 failed | 278 passed`, e os **dois** casos reprovam na cardinalidade,
+ *     com `expected 2 to be 3` — em `55 ms` e `4 ms`, isto é, **antes de exercitar rota alguma**;
+ *   * **sem as âncoras** (o estado da rodada 1), o MESMO truncamento: `1 failed | 279 passed`, e o
+ *     **`CT-837` fica VERDE** — ele percorre duas rotas onde a fatia publica três e nada acusa. É a
+ *     medição do achado. O `CT-838` reprova assim mesmo, mas **por acidente estrutural**, não por
+ *     garantia: a desestruturação `[doRegistro, daConsulta, daVerificacao]` deixa o terceiro
+ *     `undefined` e a comparação byte a byte cai — com a mensagem de *"a recusa sem sessão varia
+ *     entre as três rotas"*, que **nomeia o defeito errado**;
+ *   * **reversão** — o arquivo foi restaurado do backup e conferido por `diff -q` e `sha256sum`
+ *     idênticos ao original (`0d45152a…`), e o controle voltou a `280 passed`.
+ *
+ * DÉBITO COM GATILHO — D61 · F4/T14 · registrado 2026-08-16
+ * O QUÊ: no `CT-533`, no `CT-635` e no `CT-732` a igualdade de objeto do retrato vem ANTES da
+ *        asserção da garantia nomeada. Como a igualdade aborta o caso ao reprovar, a garantia só é
+ *        alcançada nos estados em que ela não pode falhar — AP-29 latente. O `CT-836` inverteu a
+ *        ordem de propósito (ver o MT14-1 acima), e a ordem dele é a canônica deste arquivo.
+ * QUANDO FECHA: o PRÓXIMO caso de fecho de superfície acrescentado a este arquivo, ou a primeira
+ *        alteração de qualquer um dos três — nos dois casos, a garantia nomeada sobe para antes da
+ *        igualdade do retrato, no molde do `CT-836`.
+ * POR QUE NÃO AGORA: os três são de fatias FECHADAS e o risco foi medido como nulo — naquelas
+ *        superfícies a garantia e a igualdade caem juntas sobre o mesmo defeito, de modo que o custo
+ *        é de mensagem, não de detecção. Retrofitá-los aqui violaria a Proibição 5 da
+ *        `.claude/rules/nao-regressao.md` (*"nunca aproveitar que estou aqui"*), e o Gate 2 confirmou
+ *        a recusa. O que faltava era o registro, e é este.
+ * ÍNDICE: docs/specs/features/fundacao-bancaria/v1/_run/run-report.md §2, D61
+ *
  * ===========================================================================
  * Por que o CT-318 existe ao lado do CT-213, que já afirma o mesmo conjunto
  * ===========================================================================
@@ -456,7 +596,13 @@ import { DiscoveryService, MetadataScanner, ModulesContainer, Reflector } from '
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { CHAVES_DE_TELA, type Exigencia, MAPA_ACAO_TELA } from '@sysloc/auth';
-import { SENHA_DA_CARGA, USUARIO_MASTER } from '@sysloc/db';
+import {
+  type AcessoAoBanco,
+  abrirAcessoAoBanco,
+  contextoDeTenant,
+  SENHA_DA_CARGA,
+  USUARIO_MASTER,
+} from '@sysloc/db';
 import { CodigoErro } from '@sysloc/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)
@@ -506,6 +652,12 @@ import { CAMINHO_DOS_CONTRATOS } from '../src/contratos/contrato.controller.ts';
 import { CAMINHO_DOS_COMODOS } from '../src/imoveis/comodo.controller.ts';
 import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
 import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
+import {
+  CAMINHO_DAS_INTEGRACOES_BANCARIAS,
+  SEGMENTO_DA_CONSULTA,
+  SEGMENTO_DA_VERIFICACAO,
+  SEGMENTO_DO_REGISTRO,
+} from '../src/integracoes-bancarias/certificado.controller.ts';
 import { CAMINHO_DO_CONTRATO, CAMINHO_DO_DOCUMENTO, criarAplicacao } from '../src/main.ts';
 import { CAMINHO_DO_MASTER } from '../src/master/empresa.controller.ts';
 import { CAMINHO_DE_MULTA_E_JUROS } from '../src/mora/mora.controller.ts';
@@ -1261,6 +1413,63 @@ const PARES_DA_FATIA_DE_DOCUMENTOS: readonly string[] = [
 ].sort();
 
 /**
+ * Os **dois** pares que a fatia `fundacao-bancaria` acrescenta na T11 — o certificado do provedor.
+ *
+ * Ela é a **sétima metade** nomeada, pela mesma razão que fez a sexta nascer: a partição do `CT-318`
+ * é por **fatia**, e cada uma responde pelo próprio crescimento, com as metades antigas continuando a
+ * ser afirmadas por igualdade de array.
+ *
+ * São **dois** e não três: `POST .../certificados` é um par, `GET .../certificado` é outro, e o `HEAD`
+ * que o adaptador deriva do `GET` é suprimido pelo módulo verificado — a premissa de que *"cada `GET`
+ * entra em dobro"* é falsa nesta base, e está registrada como tal no cabeçalho deste arquivo.
+ *
+ * As duas declaram exigência, e **por formas diferentes**, que é o que as torna interessantes para o
+ * `CT-355`: a consulta vale pela classe (`@ExigeChave('TELA:integracoes_bancarias')`) e o registro
+ * declara no método a **conjunção inteira**
+ * (`@ExigeChaves('TELA:integracoes_bancarias', 'ACAO:configurar_integracao')`) — nunca só a ação, que
+ * apagaria a área da classe em silêncio. `packages/auth/src/catalogo-de-permissoes.ts` **não foi
+ * tocado**: as duas chaves já existem no catálogo fechado.
+ *
+ * ⚠️ **A rota de verificação (T12) entra aqui quando nascer** — a superfície cresce por decisão de
+ * quem publica rota, nunca em silêncio.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T12** da mesma fatia publicou a terceira e última rota dela,
+ * `POST /v1/integracoes-bancarias/certificado/verificacao`, e o parágrafo acima é exatamente o
+ * combinado: ela entra aqui **ao nascer**, nomeada. São **três** e não quatro, pela mesma razão de
+ * sempre — a rota é `POST`, e só um `GET` traz o `HEAD` derivado, que o módulo verificado suprime de
+ * qualquer forma. Ela declara exigência **pela classe**, e a ausência de declaração no método é a
+ * decisão: a verificação não transfere direito, não move dinheiro e não altera o que outra entidade
+ * pode fazer — a **RN-06** a declara sem efeito —, de modo que a ação sensível continua governando
+ * **só** o registro. A norma é a **ADR-0011** com a **ADR-0018**, e não a ADR-0021: a `Decision`
+ * desta tem por sujeito *"toda transição de estado de entidade de negócio"*, e a verificação não é
+ * uma — ela entra por **analogia de critério** (a mesma régua de natureza do ato), nunca como
+ * cláusula governante. `packages/auth/src/catalogo-de-permissoes.ts` **não foi tocado**. Nenhum par
+ * anterior saiu, a igualdade segue exata, e ela entra no conjunto POSITIVO — o conjunto **público**
+ * continua inalterado, porque esta fatia não publica rota sem sessão.
+ */
+const PARES_DA_FATIA_BANCARIA: readonly string[] = paresDoCertificadoDoProvedor();
+
+/**
+ * Os **três** pares do certificado do provedor, compostos a partir dos donos dos segmentos.
+ *
+ * Escritos à mão e compostos das constantes que o controlador publica, pela mesma razão dos
+ * inventários acima: derivá-los da mesma fonte que o caso classifica faria o caso concordar consigo
+ * mesmo, e escrevê-los como cadeia crua deixaria três textos livres para divergir do caminho real.
+ *
+ * O caminho da verificação é composto **sobre o da consulta**, e não escrito de novo: ele é sufixo do
+ * recurso singular (`certificado/verificacao`), e é assim que o controlador o declara.
+ */
+function paresDoCertificadoDoProvedor(): readonly string[] {
+  const area = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}`;
+
+  return [
+    `GET ${area}/${SEGMENTO_DA_CONSULTA}`,
+    `POST ${area}/${SEGMENTO_DA_CONSULTA}/${SEGMENTO_DA_VERIFICACAO}`,
+    `POST ${area}/${SEGMENTO_DO_REGISTRO}`,
+  ].sort();
+}
+
+/**
  * O inventário de exigência **anterior à fatia `documentos-e-confirmacao`** — as cinco metades
  * somadas.
  *
@@ -1271,6 +1480,18 @@ const PARES_DA_FATIA_DE_DOCUMENTOS: readonly string[] = [
 const EXIGENCIA_ANTERIOR_AOS_DOCUMENTOS: readonly string[] = [
   ...EXIGENCIA_ANTERIOR_A_REGUA,
   ...PARES_DA_FATIA_DA_REGUA,
+].sort();
+
+/**
+ * O inventário de exigência **anterior à fatia `fundacao-bancaria`** — as seis metades somadas.
+ *
+ * É contra ele que a igualdade do conjunto positivo compara o que sobra da superfície depois de tirar
+ * os dois pares desta fatia, e é ele que faz a prova "nenhuma entrada anterior saiu" continuar
+ * valendo com um inventário a mais em jogo.
+ */
+const EXIGENCIA_ANTERIOR_AO_BANCARIO: readonly string[] = [
+  ...EXIGENCIA_ANTERIOR_AOS_DOCUMENTOS,
+  ...PARES_DA_FATIA_DE_DOCUMENTOS,
 ].sort();
 
 /**
@@ -1371,10 +1592,25 @@ const EXIGENCIA_ANTERIOR_AOS_DOCUMENTOS: readonly string[] = [
  * palavra, o parágrafo da T7 da fatia de cadastro, que é o caso análogo (as três rotas de cômodo,
  * todas pela classe): **nenhuma entrada anterior saiu**, a igualdade segue exata, e ela entra no
  * conjunto POSITIVO — o que prova que ela declara exigência em vez de dispensá-la.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T11** da fatia `fundacao-bancaria` publicou as **duas rotas do
+ * certificado do provedor**, e as duas declaram exigência — a consulta pela classe
+ * (`@ExigeChave('TELA:integracoes_bancarias')`) e o registro pelo método, com a **conjunção inteira**
+ * (`@ExigeChaves('TELA:integracoes_bancarias', 'ACAO:configurar_integracao')`), que é a forma que a
+ * ADR-0018 fixa e que o `CT-355` audita por conteúdo. A ação sensível governa **só** o registro, e a
+ * assimetria é decisão: trocar a identidade com que a empresa cobra é o ato sensível desta
+ * superfície — e a chave que o governa já existe no catálogo fechado da **ADR-0011**, declarada na
+ * conjunção que a **ADR-0018** fixa —, enquanto ver qual certificado está valendo é leitura que a
+ * área já dá; a régua de *natureza do ato* é a mesma da ADR-0021, citada por analogia, nunca como
+ * cláusula governante (a `Decision` dela fala de transição de estado). Exigir a
+ * ação na consulta esconderia de quem administra a integração o aviso de que o material vence em uma
+ * semana. `packages/auth/src/catalogo-de-permissoes.ts` **não foi tocado**: as duas chaves já
+ * existem. Vale aqui, palavra por palavra, o parágrafo da T6 da fatia de contratos: **nenhuma
+ * entrada anterior saiu**, a igualdade segue exata, e as duas entram no conjunto POSITIVO.
  */
 const ROTAS_COM_EXIGENCIA: readonly string[] = [
-  ...EXIGENCIA_ANTERIOR_AOS_DOCUMENTOS,
-  ...PARES_DA_FATIA_DE_DOCUMENTOS,
+  ...EXIGENCIA_ANTERIOR_AO_BANCARIO,
+  ...PARES_DA_FATIA_BANCARIA,
 ].sort();
 
 /**
@@ -1605,8 +1841,46 @@ const ROTAS_COM_EXIGENCIA: readonly string[] = [
  * É **um** e não dois pela razão de sempre: a rota é `POST`. Com ele a superfície da **fatia inteira**
  * fecha em `89`, que é o número que a §4.1 do tech spec estimava — e a conferência final por dupla
  * medição, com a igualdade entre os dois eixos afirmada, é o `CT-732`, na T12.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T11** da fatia `fundacao-bancaria` acrescentou **dois** pares
+ * (89 → 91), as rotas `POST /v1/integracoes-bancarias/certificados` e
+ * `GET /v1/integracoes-bancarias/certificado`, e a âncora de contagem existe justamente para que
+ * esse acréscimo passe pela revisão de quem lê este arquivo em vez de entrar sozinho — a igualdade de
+ * conjunto acima nomeia quais são. Nenhum par anterior saiu, e o conjunto **público** continua
+ * inalterado: esta fatia não publica rota sem sessão. A contagem foi **refeita do zero**, e por
+ * **duas** medições independentes que concordam:
+ *
+ *   * **pela enumeração do próprio módulo de cobertura** — `cobertura.rotasEnumeradas` sobre a
+ *     aplicação de produção montada: `91`;
+ *   * **pela composição da superfície**, contada à parte — `76` manipuladores com decorador de rota
+ *     nos arquivos `.controller.ts` de `apps/api/src`, dos quais **um** é o encaminhador de
+ *     identidade (`@All`), que sozinho reivindica os {@link METODOS_DO_ENCAMINHADOR} sete pares:
+ *     `(76 - 1) + 7 + 9 = 91`, com os nove de {@link ROTAS_FORA_DO_ARCABOUCO}.
+ *
+ * São **dois** e não três: o `GET` da consulta não traz o `HEAD` derivado junto — o módulo verificado
+ * o suprime —, e a premissa de que *"cada `GET` entra em dobro"* é falsa nesta base. ⚠️ A rota de
+ * **verificação** chega na T12 e leva a superfície da fatia a `92/77`; a conferência final por dupla
+ * medição é o `CT-836`, na T14.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T12** da fatia `fundacao-bancaria` acrescentou **um** par (91 → 92), a
+ * rota `POST /v1/integracoes-bancarias/certificado/verificacao`, e a âncora de contagem existe
+ * justamente para que esse acréscimo passe pela revisão de quem lê este arquivo em vez de entrar
+ * sozinho — a igualdade de conjunto acima nomeia qual é. Nenhum par anterior saiu, e o conjunto
+ * **público** continua inalterado. A contagem foi **refeita do zero**, e por **duas** medições
+ * independentes que concordam:
+ *
+ *   * **pela enumeração do próprio módulo de cobertura** — `cobertura.rotasEnumeradas` sobre a
+ *     aplicação de produção montada: `92`;
+ *   * **pela composição da superfície**, contada à parte — `77` manipuladores com decorador de rota
+ *     nos arquivos `.controller.ts` de `apps/api/src`, dos quais **um** é o encaminhador de
+ *     identidade (`@All`), que sozinho reivindica os {@link METODOS_DO_ENCAMINHADOR} sete pares:
+ *     `(77 - 1) + 7 + 9 = 92`, com os nove de {@link ROTAS_FORA_DO_ARCABOUCO}.
+ *
+ * É **um** e não dois pela razão de sempre: a rota é `POST`. Com ele a superfície da **fatia inteira**
+ * fecha em `92`, que é o número que a §4.1 do tech spec estimava — e a conferência final por dupla
+ * medição, com a igualdade entre os dois eixos afirmada, é o `CT-836`, na T14.
  */
-const ROTAS_PUBLICADAS_EM_PRODUCAO = 89;
+const ROTAS_PUBLICADAS_EM_PRODUCAO = 92;
 
 /**
  * Quantos **manipuladores** de controlador a aplicação de produção monta — a âncora do `CT-355`.
@@ -1845,8 +2119,40 @@ const ROTAS_PUBLICADAS_EM_PRODUCAO = 89;
  * declaração de método substituindo declaração de classe, porque não há nenhuma das duas; e a rota
  * **não** cai em `semDeclaracao`, porque a marca de rota pública É a declaração dela (ADR-0011). As
  * duas propriedades são medidas por mecanismos diferentes, e as duas continuam afirmadas.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T11** da fatia `fundacao-bancaria` acrescentou **dois manipuladores**
+ * (74 → 76) — o `@Post('certificados')` e o `@Get('certificado')` de
+ * `integracoes-bancarias/certificado.controller.ts` —, e a soma passa a ser
+ * `2 + 1 + 1 + 1 + 6 + 7 + 6 + 7 + 5 + 19 + 9 + 3 + 2 + 4 + 1 + 2 = 76`, com o `2` do controlador
+ * novo no fim. A contagem foi **refeita do zero**, por varredura dos decoradores de rota em
+ * `apps/api/src`, e **não** derivada de {@link ROTAS_PUBLICADAS_EM_PRODUCAO}: a varredura devolve,
+ * por arquivo, `1 + 1 + 1 + 4 + 6 + 6 + 7 + 5 + 9 + 3 + 6 + 7 + 6 + 2 + 2 + 7 + 1 + 2 = 76`.
+ *
+ * ⚠️ **Ele importa para o `CT-355` pelos DOIS lados de uma vez, e é o primeiro manipulador desta
+ * fatia a fazê-lo**: o `@Get` da consulta não declara nada no método, e o caso tem de continuar verde
+ * sobre ele — não declarar nada é o oposto de declarar **menos** que a classe; o `@Post` do registro
+ * declara a **conjunção inteira** no método, de modo que a declaração dele **contém** a da classe em
+ * vez de substituí-la. Uma declaração só com a ação faria o manipulador mais sensível da superfície —
+ * aquele cujo corpo carrega o material do certificado — exigir menos que a classe dele, e é
+ * exatamente isso que aquele caso reprova por conteúdo.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T12** da mesma fatia acrescentou **um manipulador** (76 → 77) — o
+ * `@Post('certificado/verificacao')` de `integracoes-bancarias/certificado.controller.ts` —, e a soma
+ * passa a ser `2 + 1 + 1 + 1 + 6 + 7 + 6 + 7 + 5 + 19 + 9 + 3 + 2 + 4 + 1 + 3 = 77`, com o `3` do
+ * controlador daquela área no fim. A contagem foi **refeita do zero**, por varredura dos decoradores
+ * de rota em `apps/api/src`, e **não** derivada de {@link ROTAS_PUBLICADAS_EM_PRODUCAO}: a varredura
+ * devolve, por arquivo, `1 + 1 + 1 + 4 + 6 + 6 + 7 + 5 + 9 + 3 + 6 + 7 + 6 + 2 + 2 + 7 + 1 + 3 = 77`.
+ *
+ * ⚠️ **Ele importa para o `CT-355` pelo lado que a T11 deixou nomeado**: o manipulador **não declara
+ * nada no método**, e o caso tem de continuar verde sobre ele — não declarar nada é o oposto de
+ * declarar **menos** que a classe. A ausência é decisão registrada, e não esquecimento: a verificação
+ * não transfere direito, não move dinheiro e não altera o que outra entidade pode fazer (RN-06), de
+ * modo que a área basta e a ação sensível continua governando **só** o registro. A norma é a
+ * **ADR-0011** com a **ADR-0018**, e não a ADR-0021: a `Decision` desta tem por sujeito *"toda
+ * transição de estado de entidade de negócio"*, e a verificação não é uma — ela entra por **analogia
+ * de critério** (a mesma régua de natureza do ato), nunca como cláusula governante.
  */
-const MANIPULADORES_EXAMINADOS_EM_PRODUCAO = 74;
+const MANIPULADORES_EXAMINADOS_EM_PRODUCAO = 77;
 
 /**
  * Quantos manipuladores da aplicação de produção atendem **todos** os verbos (`@All`) — hoje um só, o
@@ -2132,6 +2438,146 @@ const ACOES_SENSIVEIS_DOS_CONTRATOS: readonly string[] = [
 const ACOES_SENSIVEIS_DOS_CADASTROS: readonly string[] = ['ACAO:excluir_cadastro'];
 
 /**
+ * Quantos pares a fatia `fundacao-bancaria` publica — os **três** da §4.1 do tech spec dela.
+ *
+ * Ele é a **sanidade do inventário**, e é conferido antes de qualquer comparação com a superfície: os
+ * três moram todos no eixo POSITIVO — esta fatia não publica rota sem sessão —, e uma lista truncada
+ * faria as igualdades de baixo passarem sobre menos rotas do que a fatia entregou, que é o modo de
+ * falha silencioso desta classe.
+ *
+ * São **três** e não quatro: só um dos três pares é `GET`, e o `HEAD` que o adaptador deriva dele é
+ * suprimido pelo módulo verificado. A premissa de que *"cada `GET` entra em dobro"* é falsa nesta
+ * base — ver o cabeçalho.
+ */
+const PARES_PUBLICADOS_PELA_FATIA_BANCARIA = 3;
+
+/**
+ * Quantos pares dispensam sessão na superfície de hoje — os nove do contrato publicado, os dois de
+ * saúde, os sete do encaminhador de identidade e o ato do titular da sub-fatia anterior.
+ *
+ * É a âncora que transforma *"nenhuma rota desta fatia é pública"* em *"o conjunto público não mudou
+ * de tamanho"*. Sem ela, uma rota desta fatia marcada `@RotaPublica()` **e** retirada do inventário
+ * positivo satisfaria os dois filtros ao mesmo tempo; só a contagem a pega. É a mesma técnica do
+ * delta do `CT-318` e do crescimento afirmado pelo `CT-732`, aplicada a um crescimento de **zero** —
+ * que é justamente o que esta fatia deve produzir aqui.
+ */
+const PARES_PUBLICOS_DA_SUPERFICIE = 19;
+
+/**
+ * A área de tela e a ação sensível que governam a superfície da fatia `fundacao-bancaria` (§11.2 do
+ * tech spec dela).
+ *
+ * Literais escritos à mão, e **não** importados do controlador: derivá-los da mesma fonte que o SUT
+ * usa para declarar faria a asserção do `CT-836` concordar consigo mesma — trocar a área ou a ação no
+ * controlador deixaria de reprovar caso algum. É a mesma escolha, e a mesma razão, de
+ * {@link AREA_DO_FINANCEIRO}, de {@link AREA_DA_AUTOMACAO_DE_COBRANCA} e de {@link AREA_DOS_CONTRATOS}.
+ */
+const AREA_DAS_INTEGRACOES_BANCARIAS = 'TELA:integracoes_bancarias';
+const ACAO_DE_CONFIGURACAO_DE_INTEGRACAO = 'ACAO:configurar_integracao';
+
+/**
+ * O retrato devido pelos **três** manipuladores da fatia — o que o `CT-836` audita por igualdade de
+ * OBJETO.
+ *
+ * O rótulo é `Controlador.manipulador`, o mesmo que o `CT-355`, o `CT-427`, o `CT-533`, o `CT-635` e
+ * o `CT-732` já usam.
+ *
+ * **Dois exigem só a área, pela declaração da CLASSE, e o terceiro declara a CONJUNÇÃO INTEIRA no
+ * MÉTODO** — e a assimetria é a decisão registrada na §11.2 do tech spec, com a **RN-06**
+ * classificando o ato: consultar qual certificado está valendo é leitura que a área já dá, e a
+ * verificação alcança um terceiro sem transferir direito, mover dinheiro ou alterar o que outra
+ * entidade pode fazer. O **registro** troca a identidade com que a empresa cobra, e é o ato sensível
+ * desta superfície. Quem governa é a **ADR-0011** com a **ADR-0018**; a ADR-0021 entra só como
+ * analogia de critério, nunca como cláusula governante — a `Decision` dela tem por sujeito *"toda
+ * transição de estado de entidade de negócio"*, e nenhuma das três rotas é uma.
+ *
+ * A ordem dentro da conjunção é conteúdo: a recusa nomeia a **PRIMEIRA** chave ausente, e a área vem
+ * antes para que quem já a tem ouça o nome do que lhe falta (ADR-0018) — é o que o `CT-837` afirma na
+ * borda, com `detalhes.exigido`.
+ *
+ * ⚠️ **Declarar só a ação no `POST` do registro é o defeito que este mapa fecha**, e ele é invisível
+ * para uma igualdade de átomos que ignorasse a origem: `MAPA_ACAO_TELA['ACAO:configurar_integracao']`
+ * **é** `TELA:integracoes_bancarias`, de modo que a área seria exigida por coerência de catálogo e
+ * nenhuma recusa mudaria de forma na borda. Quem o acusa por estrutura é o `CT-355`, e este caso o
+ * acusa por conteúdo, com o rótulo nomeado.
+ *
+ * Ele é **um objeto**, e não três asserções soltas: uma exigência que sumisse de um manipulador
+ * reprovaria com o rótulo dele nomeado, e uma que aparecesse a mais reprovaria pelo excedente — as
+ * duas direções, numa comparação só.
+ */
+const RETRATO_DEVIDO_POR_MANIPULADOR_BANCARIO: Readonly<Record<string, RetratoDaExigencia>> = {
+  'CertificadoDoProvedorController.registrar': {
+    metodo: [AREA_DAS_INTEGRACOES_BANCARIAS, ACAO_DE_CONFIGURACAO_DE_INTEGRACAO],
+  },
+  'CertificadoDoProvedorController.consultar': { classe: [AREA_DAS_INTEGRACOES_BANCARIAS] },
+  'CertificadoDoProvedorController.verificar': { classe: [AREA_DAS_INTEGRACOES_BANCARIAS] },
+};
+
+/** Os três manipuladores auditados, derivados do mapa acima — a ordem é a de inserção dele. */
+const MANIPULADORES_DA_FATIA_BANCARIA: readonly string[] = Object.keys(
+  RETRATO_DEVIDO_POR_MANIPULADOR_BANCARIO,
+);
+
+/** O controlador que publica as três rotas desta fatia — o nome que a falha do `CT-836` nomeia. */
+const CONTROLADOR_DA_FATIA_BANCARIA = 'CertificadoDoProvedorController';
+
+/** Uma entrada do inventário desta fatia, na forma em que a falha a nomeia. */
+interface EntradaDoInventario {
+  readonly metodo: string;
+  readonly caminho: string;
+  readonly controlador: string;
+}
+
+/**
+ * O inventário desta fatia **por extenso** — três entradas, cada uma com
+ * `{ metodo, caminho, controlador }`.
+ *
+ * É a primeira coisa que o `CT-836` afirma, **antes** de qualquer comparação com o total, e a forma é
+ * a mesma que {@link RotaSemDeclaracao} usa para nomear a ofensora: é assim que quem lê a falha
+ * encontra o defeito — o caminho diz onde publicar a declaração, o método diz qual manipulador é, e o
+ * controlador diz em que arquivo procurar.
+ *
+ * Ele é **escrito à mão**, e a redundância com {@link paresDoCertificadoDoProvedor} é a decisão:
+ * aquele COMPÕE os caminhos a partir das constantes que o controlador publica, e este os declara
+ * literalmente. A igualdade entre os dois é afirmada no caso, e é ela que apanha o dia em que um
+ * segmento mudar sem que o inventário revisado acompanhe — derivar um do outro faria o caso concordar
+ * consigo mesmo.
+ *
+ * A ligação do **controlador** com a aplicação montada não é literal: os três rótulos de
+ * {@link MANIPULADORES_DA_FATIA_BANCARIA} são consultados por `retratoDasExigenciasDe`, que
+ * **levanta** quando o rótulo não existe na varredura — de modo que um controlador renomeado reprova
+ * ali, nomeando o rótulo que sumiu.
+ */
+const INVENTARIO_DA_FATIA_BANCARIA: readonly EntradaDoInventario[] = [
+  {
+    metodo: 'POST',
+    caminho: '/v1/integracoes-bancarias/certificados',
+    controlador: CONTROLADOR_DA_FATIA_BANCARIA,
+  },
+  {
+    metodo: 'GET',
+    caminho: '/v1/integracoes-bancarias/certificado',
+    controlador: CONTROLADOR_DA_FATIA_BANCARIA,
+  },
+  {
+    metodo: 'POST',
+    caminho: '/v1/integracoes-bancarias/certificado/verificacao',
+    controlador: CONTROLADOR_DA_FATIA_BANCARIA,
+  },
+];
+
+/**
+ * A única ação sensível que o catálogo fechado enumera dentro de `TELA:integracoes_bancarias`.
+ *
+ * É a metade executável do critério *"nenhuma chave nasceu no catálogo por esta fatia"*: uma ação nova
+ * nesta área — a saída curta para uma rodada que quisesse governar a consulta ou a verificação por
+ * chave própria — reprova aqui, nomeando-a. Abrir o catálogo exigiria supersedê-la ADR-0011.
+ */
+const ACOES_SENSIVEIS_DAS_INTEGRACOES_BANCARIAS: readonly string[] = [
+  ACAO_DE_CONFIGURACAO_DE_INTEGRACAO,
+];
+
+/**
  * Quantos pares a aplicação MUTANTE publica.
  *
  * Ela não publica o contrato — quem o faz é `criarAplicacao()`, e a montagem de verificação usa o
@@ -2214,8 +2660,19 @@ const ACOES_SENSIVEIS_DOS_CADASTROS: readonly string[] = ['ACAO:excluir_cadastro
  * raiz, e o par de `/v1/confirmacoes-de-email` aparece aqui pela mesma razão que aparece no controle
  * (82 → 83). A âncora continua sendo de contagem EXATA, e a diferença de nove para a superfície de
  * produção continua sendo a mesma: os pares do contrato publicado, que esta montagem não registra.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T11** da fatia `fundacao-bancaria` registrou `IntegracoesBancariasModule`
+ * na MESMA composição raiz, e os **dois** pares do certificado do provedor aparecem aqui pela mesma
+ * razão que aparecem no controle (83 → 85). A âncora continua sendo de contagem EXATA, e a diferença
+ * de nove para a superfície de produção continua sendo a mesma: os pares do contrato publicado, que
+ * esta montagem não registra.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T12** da mesma fatia acrescentou o par da **verificação da identidade**
+ * ao MESMO controlador do certificado, já registrado naquela composição raiz, e ele aparece aqui pela
+ * mesma razão que aparece no controle (85 → 86). A âncora continua sendo de contagem EXATA, e a
+ * diferença de nove para a superfície de produção continua sendo a mesma.
  */
-const ROTAS_PUBLICADAS_NO_MUTANTE = 83;
+const ROTAS_PUBLICADAS_NO_MUTANTE = 86;
 
 /**
  * O que seria o inventário público da aplicação mutante **se o mutante não estivesse lá**.
@@ -2241,10 +2698,121 @@ const MASTER = USUARIO_MASTER;
 /** Sujeito do segundo eixo do CT-212: o Admin, cuja matriz é o catálogo inteiro. */
 const ADMIN_DE_A = pessoaSemeada('admin.a@exemplo.com.br');
 
+/**
+ * Sujeito do `CT-837`: a pessoa de perfil `USUARIO_EMPRESA`, cuja matriz **padrão** concede uma única
+ * chave.
+ *
+ * A sessão vem do caminho real e a matriz é a do perfil, **sem concessão fabricada**: é isso que faz o
+ * `403` medir a exigência declarada pela rota, e não um ajuste montado pelo próprio caso.
+ */
+const QUEM_NAO_ALCANCA = pessoaSemeada('usuario.a@exemplo.com.br');
+
+/**
+ * A única chave da matriz padrão de `USUARIO_EMPRESA` (RN-02).
+ *
+ * Literal escrito à mão pela mesma razão das áreas acima, e **afirmado** no `CT-837` antes das três
+ * chamadas: sem essa precondição, um `403` nas rotas da fatia seria indistinguível de um `403` vindo
+ * de uma sessão que perdeu o efetivo por outro motivo.
+ */
+const UNICA_CHAVE_DO_USUARIO_EMPRESA = 'TELA:resumo';
+
+/**
+ * A mensagem canônica de `ACESSO_NEGADO` — a que o `CT-837` afirma nas três rotas.
+ *
+ * É a **mesma constante** de {@link MENSAGEM_SEM_DECLARACAO}, e não um segundo literal com o mesmo
+ * texto: desde o fecho do débito D17, a recusa da rota sem declaração é indistinguível de qualquer
+ * outra recusa de autorização, e dois literais iguais ficariam livres para divergir — a divergência
+ * apagaria justamente a indistinguibilidade que aquela constante existe para provar. O nome novo diz
+ * o papel que ela cumpre aqui.
+ */
+const MENSAGEM_DE_ACESSO_NEGADO = MENSAGEM_SEM_DECLARACAO;
+
+/**
+ * A mensagem canônica de `NAO_AUTENTICADO` — a que o `CT-838` afirma nas três rotas.
+ *
+ * Literal, e **não** importada da tabela do filtro global: derivá-la da mesma fonte que o SUT usa
+ * faria a asserção concordar consigo mesma, e um erro de texto passaria despercebido nos dois lados.
+ */
+const MENSAGEM_SEM_SESSAO = 'sessão inválida ou expirada';
+
+/**
+ * O material que o corpo do registro carrega no `CT-837`.
+ *
+ * Ele é **sintético de propósito**, e o alcance da escolha é exatamente este: a guarda decide antes
+ * de o manipulador correr, de modo que a recusa acontece **antes de o corpo ser lido** — e um material
+ * que abrisse de verdade custaria a emissão de um PKCS#12 sem acrescentar nada ao que o caso mede.
+ * Se a guarda deixasse passar, o desfecho seria `422` e não `403`, e o caso reprovaria do mesmo jeito.
+ */
+const MATERIAL_QUE_A_RECUSA_NUNCA_LE = Buffer.from('a guarda recusa antes de ler').toString(
+  'base64',
+);
+
+/** A senha que acompanha o material acima — pela mesma razão, ela nunca chega a ser conferida. */
+const SENHA_QUE_A_RECUSA_NUNCA_LE = 'senha-que-a-recusa-nunca-le';
+
+/** Uma das três chamadas da fatia, como o cliente a faz. */
+interface ChamadaDaFatiaBancaria {
+  readonly rotulo: string;
+  readonly metodo: string;
+  readonly caminho: string;
+  readonly corpo?: Record<string, unknown>;
+}
+
+/**
+ * As **três** chamadas da fatia, na ordem da §4.1 do tech spec — o arranjo que o `CT-837` e o
+ * `CT-838` percorrem.
+ *
+ * Os caminhos são **compostos a partir das constantes que o controlador publica**, e não escritos
+ * como cadeia crua: caminho escrito duas vezes é livre para divergir, e a divergência apareceria como
+ * `404` num caso que deveria medir autorização. É a mesma composição de
+ * {@link paresDoCertificadoDoProvedor}, e a coincidência entre as duas é o que liga a auditoria
+ * estática do `CT-836` às duas provas de borda.
+ *
+ * Os corpos são os que a rota declara — o registro pede material e senha, a verificação pede o corpo
+ * vazio e fechado, e a consulta não tem corpo. Ver {@link MATERIAL_QUE_A_RECUSA_NUNCA_LE} para por que
+ * o material é sintético.
+ */
+const CHAMADAS_DA_FATIA_BANCARIA: readonly ChamadaDaFatiaBancaria[] = [
+  {
+    rotulo: 'registro',
+    metodo: 'POST',
+    caminho: `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DO_REGISTRO}`,
+    corpo: { material: MATERIAL_QUE_A_RECUSA_NUNCA_LE, senha: SENHA_QUE_A_RECUSA_NUNCA_LE },
+  },
+  {
+    rotulo: 'consulta',
+    metodo: 'GET',
+    caminho: `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DA_CONSULTA}`,
+  },
+  {
+    rotulo: 'verificação',
+    metodo: 'POST',
+    caminho: `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DA_CONSULTA}/${SEGMENTO_DA_VERIFICACAO}`,
+    corpo: {},
+  },
+];
+
 let identidade: IdentidadeEfemera;
 let fila: FilaEfemera;
 
 let aplicacaoReal: NestFastifyApplication;
+
+/**
+ * O endereço base da aplicação de **produção** — o alvo das duas provas de borda desta fatia.
+ *
+ * O `CT-837` e o `CT-838` exercitam a aplicação que `criarAplicacao()` monta, e não a mutante: o que
+ * eles medem é a recusa que o cliente encontra nas três rotas **publicadas**, e a mutante existe para
+ * outra coisa — ela carrega rotas de verificação que a produção não tem.
+ */
+let baseReal: string;
+
+/**
+ * O acesso ao banco de negócio — usado **só** para a contagem crua do `CT-837`.
+ *
+ * Ele não monta precondição nem escreve nada: a única instrução que corre por aqui é o `count(*)` que
+ * separa *"recusou"* de *"recusou depois de escrever"*.
+ */
+let acessoAoNegocio: AcessoAoBanco;
 
 let aplicacaoMutante: NestFastifyApplication;
 let baseMutante: string;
@@ -2281,9 +2849,12 @@ beforeAll(async () => {
   process.env.REDIS_URL = fila.cadeiaConexao;
   process.env.BETTER_AUTH_SECRET = randomBytes(32).toString('base64url');
 
+  acessoAoNegocio = abrirAcessoAoBanco({ cadeiaDeConexao: identidade.banco.cadeiaConexao });
+
   // A aplicação de produção — o CONTROLE. Ela é montada por `criarAplicacao()`, e não remontada
   // aqui: um inventário obtido de uma remontagem descreveria uma aplicação que ninguém sobe.
   const portaReal = await reservarPorta();
+  baseReal = `http://${ENDERECO_DE_ESCUTA}:${String(portaReal)}`;
   process.env.PORT = String(portaReal);
   aplicacaoReal = await criarAplicacao();
   // O roteador só está completo depois de o adaptador ficar pronto: as rotas dos controladores
@@ -2329,6 +2900,7 @@ afterAll(async () => {
   await aplicacaoDeRecurso?.close();
   await aplicacaoMutante?.close();
   await aplicacaoReal?.close();
+  await acessoAoNegocio?.encerrar();
   await fila?.parar();
   await identidade?.parar();
 
@@ -2560,6 +3132,16 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
         ...paresDaAutomacaoDeCobranca(),
         ...paresDoDocumentoDeContrato(),
         ...paresDoReenvioDeConfirmacao(),
+        // SUT_IS_CORRECT_BECAUSE: os **dois** pares do CERTIFICADO DO PROVEDOR entram pela mesma
+        // razão, agora da T11 da fatia `fundacao-bancaria` — o módulo novo é registrado naquela
+        // composição raiz, e eles entram por {@link paresDoCertificadoDoProvedor}, que é escrito à
+        // mão e revisado. Nenhuma entrada anterior saiu, e a igualdade segue exata. Os dois caem no
+        // conjunto POSITIVO por caminhos diferentes: a consulta pela declaração da CLASSE
+        // (`TELA:integracoes_bancarias`, sem nada no método) e o registro pela declaração do MÉTODO,
+        // que é a **conjunção inteira** e portanto contém a da classe. Este eixo mede que os dois
+        // declaram; quem examina o conteúdo — e apanharia uma declaração só com a ação — é o
+        // `CT-355`.
+        ...paresDoCertificadoDoProvedor(),
       ].sort(),
     );
 
@@ -2627,9 +3209,25 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
           !PARES_DA_FATIA_DE_CONTRATOS.includes(par) &&
           !PARES_DA_FATIA_DE_COBRANCA.includes(par) &&
           !PARES_DA_FATIA_DA_REGUA.includes(par) &&
-          !PARES_DA_FATIA_DE_DOCUMENTOS.includes(par),
+          !PARES_DA_FATIA_DE_DOCUMENTOS.includes(par) &&
+          !PARES_DA_FATIA_BANCARIA.includes(par),
       ),
     ).toEqual([...EXIGENCIA_ANTERIOR_A_FATIA]);
+
+    // A sétima metade, afirmada por si — pelo mesmo motivo da sexta: sem esta linha, a subtração
+    // acima esconderia um par desta fatia que sumisse, porque ele sairia do filtro sem que nada
+    // afirmasse que ele está publicado e declarado.
+    //
+    // SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era o filtro que descrevia uma
+    // superfície de seis metades. A T11 da fatia `fundacao-bancaria` publicou **dois** pares que não
+    // são de nenhuma das anteriores, e o filtro anterior os empurraria para dentro da metade
+    // "anterior", fazendo a igualdade reprovar sobre rotas legítimas. O que a asserção mede **não
+    // foi afrouxado**: continua sendo igualdade de array contra um inventário escrito à mão, agora
+    // com a sétima metade nomeada e subtraída explicitamente. Nenhuma entrada saiu de
+    // {@link EXIGENCIA_ANTERIOR_A_FATIA}.
+    expect(cobertura.comExigencia.filter((par) => PARES_DA_FATIA_BANCARIA.includes(par))).toEqual([
+      ...PARES_DA_FATIA_BANCARIA,
+    ]);
 
     // A sexta metade, afirmada por si — pelo mesmo motivo da quinta: sem esta linha, a subtração
     // acima esconderia o par desta fatia se ele sumisse, porque ele sairia do filtro sem que nada
@@ -2709,6 +3307,14 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     // que mantém as duas afirmações verdadeiras ao mesmo tempo. O valor comparado **não muda** —
     // continua sendo `33` —, e a asserção **não foi afrouxada**: continua sendo igualdade exata
     // medida sobre a superfície observada.
+    //
+    // SUT_IS_CORRECT_BECAUSE: vale de novo o parágrafo acima, agora para a fatia
+    // `fundacao-bancaria`: com **dois** pares novos, o delta desta fatia passa a ser medido
+    // descontando também os dela. O valor comparado **não muda** — ele continua sendo `33`, a
+    // superfície que existia antes da fatia de cadastro —, e é justamente essa imutabilidade que faz
+    // a asserção seguir pegando o par antigo que sumisse enquanto um novo entrasse no lugar dele. A
+    // asserção **não foi afrouxada**: continua sendo igualdade exata medida sobre a superfície
+    // observada, e não derivada de `ROTAS_PUBLICADAS_EM_PRODUCAO`.
     expect(
       cobertura.rotasEnumeradas -
         PARES_NOVOS_DA_FATIA.length -
@@ -2716,6 +3322,7 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
         PARES_DA_FATIA_DE_COBRANCA.length -
         PARES_DA_FATIA_DA_REGUA.length -
         PARES_DA_FATIA_DE_DOCUMENTOS.length -
+        PARES_DA_FATIA_BANCARIA.length -
         paresDoAtoDoTitular().length,
     ).toBe(ROTAS_PUBLICADAS_ANTES_DA_FATIA);
   });
@@ -2807,7 +3414,7 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     expect(declaracoesQueSubstituemAClasse(aplicacaoQueCompoe)).toEqual([]);
   });
 
-  it('CT-427 — a conjunção das quatro rotas governadas de contrato é auditada por ESTRUTURA, e a superfície fecha em 80 pares / 65 manipuladores', () => {
+  it('CT-427 — a conjunção das quatro rotas governadas de contrato é auditada por ESTRUTURA, e a superfície fecha contra as âncoras vigentes', () => {
     const cobertura = verificarCoberturaDeAutorizacao(aplicacaoReal);
 
     // ---------------------------------------------------------------------------------------
@@ -2881,7 +3488,7 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     ]);
   });
 
-  it('CT-533 — as sete rotas da fatia exigem a área devida e NENHUMA chave de ação; a superfície fecha em 82 pares / 67 manipuladores pelas duas medições', () => {
+  it('CT-533 — as sete rotas da fatia exigem a área devida e NENHUMA chave de ação; a superfície fecha pelas duas medições', () => {
     const cobertura = verificarCoberturaDeAutorizacao(aplicacaoReal);
 
     // O inventário desta fatia tem sete pares — afirmado sobre o próprio inventário, antes de
@@ -2998,7 +3605,7 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     expect(acoesSensiveisDaArea(AREA_DE_MULTA_E_JUROS)).toEqual([]);
   });
 
-  it('CT-635 — as quatro rotas da régua declaram o retrato devido, `semDeclaracao` continua vazio, e a superfície fecha em 86 pares / 71 manipuladores pelas duas medições', () => {
+  it('CT-635 — as quatro rotas da régua declaram o retrato devido, `semDeclaracao` continua vazio, e a superfície fecha pelas duas medições', () => {
     const cobertura = verificarCoberturaDeAutorizacao(aplicacaoReal);
 
     // O inventário desta fatia tem quatro pares — afirmado sobre o próprio inventário, antes de
@@ -3135,7 +3742,7 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     );
   });
 
-  it('CT-732 — as três rotas da sub-fatia de documentos são exatamente três, as duas governadas exibem o retrato devido, o conjunto público cresceu em 1, e a superfície fecha em 89 pares / 74 manipuladores pelas duas medições, que concordam entre si', () => {
+  it('CT-732 — as três rotas da sub-fatia de documentos são exatamente três, as duas governadas exibem o retrato devido, o conjunto público cresceu em 1, e a superfície fecha pelas duas medições, que concordam entre si', () => {
     const cobertura = verificarCoberturaDeAutorizacao(aplicacaoReal);
 
     // ---------------------------------------------------------------------------------------
@@ -3329,6 +3936,346 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     expect(acoesSensiveisDaArea(AREA_DOS_CONTRATOS)).toEqual(ACOES_SENSIVEIS_DOS_CONTRATOS);
     expect(acoesSensiveisDaArea(AREA_DOS_CADASTROS)).toEqual(ACOES_SENSIVEIS_DOS_CADASTROS);
   });
+
+  it('CT-836 — as três rotas da fatia bancária são exatamente três, exibem o retrato devido, o conjunto público não cresceu, e a superfície fecha em 92 pares / 77 manipuladores pelas duas medições, que concordam entre si', () => {
+    const cobertura = verificarCoberturaDeAutorizacao(aplicacaoReal);
+
+    // ---------------------------------------------------------------------------------------
+    // SANIDADE: o inventário desta fatia tem TRÊS pares — por extenso, e ANTES de comparar
+    // ---------------------------------------------------------------------------------------
+    //
+    // Sobre o próprio inventário, e não sobre a superfície. É o que impede o caso de *"fechar a
+    // conta"* por acaso quando duas rotas mudarem em direções opostas: uma lista truncada faria as
+    // igualdades abaixo passarem sobre menos rotas do que a fatia publica, e a soma continuaria
+    // batendo com a âncora do total.
+    expect(INVENTARIO_DA_FATIA_BANCARIA.length).toBe(PARES_PUBLICADOS_PELA_FATIA_BANCARIA);
+    expect(MANIPULADORES_DA_FATIA_BANCARIA.length).toBe(PARES_PUBLICADOS_PELA_FATIA_BANCARIA);
+
+    // O inventário escrito à mão contra o COMPOSTO das constantes que o controlador publica: um
+    // segmento que mudasse no fonte sem passar pela revisão desta lista reprova aqui, nomeando o par.
+    expect(
+      INVENTARIO_DA_FATIA_BANCARIA.map((entrada) => `${entrada.metodo} ${entrada.caminho}`).sort(),
+      'o caminho publicado divergiu do inventário revisado desta fatia',
+    ).toEqual([...PARES_DA_FATIA_BANCARIA]);
+
+    // E o controlador declarado no inventário é o mesmo que carrega os três rótulos auditados abaixo
+    // — a ligação entre a coluna `controlador` e a aplicação montada, que `retratoDasExigenciasDe`
+    // fecha ao levantar para rótulo inexistente.
+    expect(
+      MANIPULADORES_DA_FATIA_BANCARIA.map((rotulo) => rotulo.split('.')[0]),
+      'o controlador dos manipuladores auditados divergiu do inventário desta fatia',
+    ).toEqual(INVENTARIO_DA_FATIA_BANCARIA.map((entrada) => entrada.controlador));
+
+    // ---------------------------------------------------------------------------------------
+    // O predicado da ADR-0011: `semDeclaracao` VAZIO, por igualdade de lista
+    // ---------------------------------------------------------------------------------------
+    //
+    // Igualdade de lista, e **nunca** `toHaveLength(0)`: a falha precisa nomear
+    // `{ metodo, caminho, controlador, manipulador }` de quem ficou sem declaração — um comprimento
+    // diria apenas que há alguém.
+    expect(cobertura.semDeclaracao).toEqual([]);
+
+    // As três constam do conjunto POSITIVO, nomeadas, e nenhuma escapou por `@RotaPublica()` — a
+    // escapatória que a existência da declaração sozinha não fecha: a guarda retorna antes para rota
+    // pública, e o conjunto sem declaração continuaria vazio.
+    expect(PARES_DA_FATIA_BANCARIA.filter((par) => !cobertura.comExigencia.includes(par))).toEqual(
+      [],
+    );
+    expect(PARES_DA_FATIA_BANCARIA.filter((par) => cobertura.publicas.includes(par))).toEqual([]);
+    expect(
+      PARES_DA_FATIA_BANCARIA.filter((par) => cobertura.foraDoArcabouco.includes(par)),
+    ).toEqual([]);
+
+    // ---------------------------------------------------------------------------------------
+    // O conjunto público NÃO cresceu — e a contagem é o que prova isso
+    // ---------------------------------------------------------------------------------------
+    //
+    // As duas asserções são direções diferentes, e nenhuma implica a outra: o filtro acima diz que
+    // **estas três** não estão no público, e a contagem diz que **nenhuma outra** entrou. Uma rota
+    // desta fatia marcada `@RotaPublica()` e retirada do inventário positivo satisfaria o filtro e
+    // reprovaria só aqui.
+    expect(PARES_PUBLICOS_ACEITOS.length).toBe(PARES_PUBLICOS_DA_SUPERFICIE);
+    expect(
+      cobertura.publicas.length,
+      'o conjunto de rotas que dispensam sessão mudou de tamanho: cada entrada nele é uma rota fora da autorização',
+    ).toBe(PARES_PUBLICOS_DA_SUPERFICIE);
+
+    // ---------------------------------------------------------------------------------------
+    // A GARANTIA NOMEADA vem ANTES da igualdade que fixa o valor — e a ordem é conteúdo
+    // ---------------------------------------------------------------------------------------
+    //
+    // **Nenhum** dos três exige MENOS do que a classe dele, e a asserção NOMEIA o manipulador
+    // ofensor: é o *onde* que decide se houve descuido ou linha copiada — e a coerência do catálogo
+    // esconderia o defeito na borda, porque `MAPA_ACAO_TELA['ACAO:configurar_integracao']` é a
+    // própria área, de modo que o registro declarando só a ação continuaria exigindo-a por acidente.
+    //
+    // ⚠️ **Ela vem antes do retrato, e o `CT-635` e o `CT-732` a põem depois.** A divergência é
+    // deliberada e foi MEDIDA: com o mutante que troca `@ExigeChaves(área, ação)` por
+    // `@ExigeChave(ação)`, a igualdade de objeto do retrato aborta o caso e esta linha **nunca
+    // executa** — que é o AP-29 pelo qual duas tasks desta fatia foram reprovadas. Invertida, o que
+    // sai primeiro é a garantia com o nome do ofensor, e o retrato continua reprovando logo abaixo
+    // quando o defeito for de outra natureza. Nenhuma asserção foi removida nem afrouxada.
+    const substituicoesDaFatia = declaracoesQueSubstituemAClasse(aplicacaoReal).filter((violacao) =>
+      MANIPULADORES_DA_FATIA_BANCARIA.includes(`${violacao.controlador}.${violacao.manipulador}`),
+    );
+
+    expect(
+      substituicoesDaFatia,
+      `manipulador da fatia que exige MENOS que a classe: ${substituicoesDaFatia
+        .map((violacao) => `${violacao.controlador}.${violacao.manipulador}`)
+        .join(', ')}`,
+    ).toEqual([]);
+
+    // ---------------------------------------------------------------------------------------
+    // O CONTEÚDO das três declarações, por igualdade de OBJETO — com a ORIGEM junto
+    // ---------------------------------------------------------------------------------------
+    //
+    // A exigência é a **efetiva** — lida pelo MESMO `getAllAndOverride([alvo, classe])` da guarda —,
+    // e não o que está escrito no fonte: é ela que o cliente encontra. A origem viaja com ela porque
+    // `getAllAndOverride` **substitui**, e sem a origem uma conjunção declarada no método seria
+    // indistinguível da herança da classe (ver {@link RetratoDaExigencia}) — que nas duas rotas que
+    // valem pela classe é o defeito exato, e o único invisível na borda.
+    expect(retratoDasExigenciasDe(aplicacaoReal, MANIPULADORES_DA_FATIA_BANCARIA)).toEqual(
+      RETRATO_DEVIDO_POR_MANIPULADOR_BANCARIO,
+    );
+
+    // O par que discrimina a leitura da ORIGEM: exatamente **um** dos três declara no método, e
+    // declara a conjunção na ORDEM em que o decorador a gravou. Sem esta linha, "dois valem pela
+    // classe" seria satisfeito por uma varredura que não enxergasse declaração de método alguma; sem
+    // a igualdade de arranjo, a ordem invertida — que troca a chave nomeada na recusa — passaria.
+    const noMetodoDaFatia = exigenciasDeclaradasNoMetodo(aplicacaoReal);
+
+    expect(MANIPULADORES_DA_FATIA_BANCARIA.filter((rotulo) => noMetodoDaFatia.has(rotulo))).toEqual(
+      [`${CONTROLADOR_DA_FATIA_BANCARIA}.registrar`],
+    );
+    expect(noMetodoDaFatia.get(`${CONTROLADOR_DA_FATIA_BANCARIA}.registrar`)).toEqual([
+      AREA_DAS_INTEGRACOES_BANCARIAS,
+      ACAO_DE_CONFIGURACAO_DE_INTEGRACAO,
+    ]);
+
+    // ---------------------------------------------------------------------------------------
+    // As duas âncoras FINAIS da fatia, por DUAS medições independentes que têm de concordar
+    // ---------------------------------------------------------------------------------------
+    //
+    // A primeira lê a **tabela do roteador** já montado; a segunda varre os **decoradores dos
+    // controladores** e compõe: cada manipulador reivindica um par, salvo o `@All`, que reivindica os
+    // sete verbos do caminho dele, mais os nove pares registrados direto no adaptador, que não têm
+    // manipulador. Nenhuma é derivada da outra — é essa independência que mediu `75` onde a §11.2 de
+    // uma fatia anterior estimava `77`, e localizou o erro na soma em vez de no escopo entregue.
+    //
+    // É a conferência FINAL da fatia, e o **fecho do número da F4**: as âncoras já foram subidas por
+    // T11 (89 → 91) e T12 (91 → 92), e aqui elas são **conferidas**, nunca acrescentadas — é isso que
+    // impede a superfície de ser derivada de si mesma.
+    const manipuladores = manipuladoresExaminados(aplicacaoReal);
+    const comTodosOsVerbos = manipuladoresQueAtendemTodosOsVerbos(aplicacaoReal);
+    const pelaComposicao =
+      manipuladores -
+      comTodosOsVerbos +
+      comTodosOsVerbos * METODOS_DO_ENCAMINHADOR.length +
+      ROTAS_FORA_DO_ARCABOUCO.length;
+
+    // A igualdade entre os dois eixos é afirmada **explicitamente**, e ANTES da comparação com a
+    // âncora: duas medições que concordassem com o valor esperado por acidente e discordassem entre
+    // si passariam pela comparação de baixo, e é a concordância delas que torna cada uma verificável
+    // pela outra.
+    expect(
+      pelaComposicao,
+      'as duas medições independentes da superfície publicada divergiram entre si: o errado é a âncora, nunca a medição',
+    ).toBe(cobertura.rotasEnumeradas);
+
+    // As quatro grandezas viajam numa comparação só de propósito: se alguma divergir, a falha
+    // **nomeia os números** lado a lado.
+    expect(
+      {
+        peloRoteador: cobertura.rotasEnumeradas,
+        pelaComposicao,
+        manipuladores,
+        comTodosOsVerbos,
+      },
+      'a superfície publicada mudou de tamanho: o inventário desta prova precisa ser revisado',
+    ).toEqual({
+      peloRoteador: ROTAS_PUBLICADAS_EM_PRODUCAO,
+      pelaComposicao: ROTAS_PUBLICADAS_EM_PRODUCAO,
+      manipuladores: MANIPULADORES_EXAMINADOS_EM_PRODUCAO,
+      comTodosOsVerbos: MANIPULADORES_QUE_ATENDEM_TODOS_OS_VERBOS,
+    });
+
+    // ---------------------------------------------------------------------------------------
+    // O catálogo fechado NÃO foi aberto por esta fatia
+    // ---------------------------------------------------------------------------------------
+    //
+    // As dez áreas de tela, por igualdade de arranjo contra a lista escrita à mão: nenhuma área nova
+    // nasceu, e nenhuma saiu. É a metade executável do critério *"`catalogo-de-permissoes.ts` não foi
+    // tocado por task alguma da fatia"* — a outra metade é a conferência do diff, que o Gate 2 faz.
+    expect([...CHAVES_DE_TELA]).toEqual(AREAS_DE_TELA_DO_CATALOGO);
+
+    // E o eixo das ações, na área desta fatia: `TELA:integracoes_bancarias` tem exatamente a da
+    // configuração, anterior a ela. É a asserção que reprova a rodada que "resolvesse" um problema de
+    // autorização criando chave nova em vez de escalar.
+    expect(acoesSensiveisDaArea(AREA_DAS_INTEGRACOES_BANCARIAS)).toEqual(
+      ACOES_SENSIVEIS_DAS_INTEGRACOES_BANCARIAS,
+    );
+
+    // E o catálogo continua com as 17 chaves das duas metades — a âncora que o `CT-212` já usa do
+    // lado da sessão, afirmada aqui do lado da declaração.
+    expect(CHAVES_DE_TELA.length + Object.keys(MAPA_ACAO_TELA).length).toBe(TOTAL_DE_CHAVES);
+  });
+
+  it(
+    'CT-837 — a sessão que não alcança a área recebe 403 nas três rotas, nomeando a PRIMEIRA exigência ausente, e nada é gravado',
+    async () => {
+      // ---------------------------------------------------------------------------------------
+      // SANIDADE DO ARRANJO, no molde do `CT-836` e ANTES de exercitar qualquer rota
+      // ---------------------------------------------------------------------------------------
+      //
+      // O laço abaixo percorre `CHAMADAS_DA_FATIA_BANCARIA`, e a linha de fecho dele compara o que
+      // foi percorrido com **esse mesmo arranjo** — logo um arranjo TRUNCADO passaria por ela sem
+      // acusar nada. Estas duas âncoras são o que fecha esse caminho, e elas comparam contra fontes
+      // **independentes** do arranjo: a cardinalidade contra a constante da fatia, e a identidade
+      // contra o inventário de pares já revisado (`PARES_DA_FATIA_BANCARIA`, composto dos donos dos
+      // segmentos). É a mesma dupla que o `CT-836` usa sobre o inventário estático.
+      expect(CHAMADAS_DA_FATIA_BANCARIA.length).toBe(PARES_PUBLICADOS_PELA_FATIA_BANCARIA);
+      expect(
+        CHAMADAS_DA_FATIA_BANCARIA.map((chamada) => `${chamada.metodo} ${chamada.caminho}`).sort(),
+        'o arranjo de chamadas divergiu do inventário revisado desta fatia',
+      ).toEqual([...PARES_DA_FATIA_BANCARIA]);
+
+      const cookie = await entrar(QUEM_NAO_ALCANCA.email, baseReal);
+
+      // Precondição AFIRMADA, e não suposta: a matriz **padrão** de `USUARIO_EMPRESA` concede uma
+      // única chave, e nenhuma delas é a área desta fatia. Sem esta linha, um `403` abaixo seria
+      // indistinguível de um `403` vindo de uma sessão que perdeu o efetivo por outro motivo.
+      const sessao = await pedir(CAMINHO_DA_SESSAO_CORRENTE, { cookie, base: baseReal });
+      expect(sessao.status).toBe(200);
+      expect(sessao.corpo).toMatchObject({
+        perfil: 'USUARIO_EMPRESA',
+        telas: [UNICA_CHAVE_DO_USUARIO_EMPRESA],
+        acoes: [],
+      });
+
+      const empresaId = QUEM_NAO_ALCANCA.empresaId;
+      if (empresaId === null) {
+        throw new Error(`${QUEM_NAO_ALCANCA.email} não tem empresa na carga`);
+      }
+
+      const antes = await contarCertificados(empresaId);
+
+      const respostas: Resposta[] = [];
+      for (const chamada of CHAMADAS_DA_FATIA_BANCARIA) {
+        respostas.push(await chamar(chamada, cookie));
+      }
+
+      const depois = await contarCertificados(empresaId);
+
+      // ---------------------------------------------------------------------------------------
+      // A GARANTIA que distingue, e por isso ela vem ANTES da igualdade que fixa o corpo
+      // ---------------------------------------------------------------------------------------
+      //
+      // A contagem é o que separa *"recusou"* de *"recusou depois de escrever"*. Ela vem primeiro
+      // porque uma igualdade de corpo que reprovasse abortaria o caso e deixaria esta linha
+      // inalcançável — que é o AP-29 medido nesta fatia.
+      //
+      // Alcance declarado: as duas contagens correm sob o contexto da empresa da sessão, sem
+      // `WHERE empresa_id` — quem recorta é a política (ADR-0008) —, e a instrução é um `count(*)`
+      // cru. O valor não pode ser `0` por silêncio: tabela ausente ou política impeditiva levantam,
+      // e o levantamento reprova o caso. O que ela prova é o **efeito terminal** da recusa; a
+      // gravação pelo caminho legítimo é o que `certificado-do-provedor.e2e.spec.ts` mede.
+      expect(
+        depois,
+        'a recusa por autorização foi acompanhada de escrita em negocio.certificado_do_provedor',
+      ).toBe(antes);
+      expect(antes).toBe(0);
+
+      // ---------------------------------------------------------------------------------------
+      // O envelope canônico da ADR-0017, corpo INTEIRO por igualdade, nas três
+      // ---------------------------------------------------------------------------------------
+      //
+      // `detalhes.exigido` nomeia a **PRIMEIRA** chave ausente na ordem declarada (ADR-0018), e nas
+      // três ela é a ÁREA — inclusive no registro, cuja conjunção declara a área antes da ação. É
+      // isso que faz quem já tem a área ouvir o nome do que lhe falta, e é o que a ordem invertida
+      // trocaria sem mudar quem alcança.
+      const recusadas: string[] = [];
+      for (const [indice, chamada] of CHAMADAS_DA_FATIA_BANCARIA.entries()) {
+        const resposta = respostas[indice];
+
+        expect(resposta?.status, `${chamada.rotulo} não recusou com 403`).toBe(403);
+        expect(resposta?.corpo).toEqual({
+          codigo: CodigoErro.ACESSO_NEGADO,
+          mensagem: MENSAGEM_DE_ACESSO_NEGADO,
+          detalhes: { exigido: AREA_DAS_INTEGRACOES_BANCARIAS },
+        });
+        recusadas.push(chamada.rotulo);
+      }
+
+      // O laço percorreu o arranjo INTEIRO, sem saída antecipada: `recusadas` recebe um rótulo por
+      // volta, depois das asserções, de modo que uma volta que abortasse ou fosse pulada deixaria a
+      // lista curta aqui. ⚠️ Ela compara contra o **próprio** arranjo, e por isso NÃO prova nada
+      // sobre a cardinalidade — quem fecha esse caminho são as duas âncoras do topo do caso, contra
+      // `PARES_PUBLICADOS_PELA_FATIA_BANCARIA` e `PARES_DA_FATIA_BANCARIA`.
+      expect(recusadas).toEqual(CHAMADAS_DA_FATIA_BANCARIA.map((chamada) => chamada.rotulo));
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-838 — sem sessão, as três rotas recusam com 401 antes de tocar o banco, e a resposta não distingue empresa com certificado de empresa sem',
+    async () => {
+      // Sanidade do arranjo, no molde do `CT-836` e pela mesma razão do `CT-837`: a linha de fecho
+      // deste caso compara o percorrido com o próprio arranjo, e só estas duas âncoras — contra a
+      // constante da fatia e contra o inventário de pares revisado — pegam um arranjo truncado.
+      expect(CHAMADAS_DA_FATIA_BANCARIA.length).toBe(PARES_PUBLICADOS_PELA_FATIA_BANCARIA);
+      expect(
+        CHAMADAS_DA_FATIA_BANCARIA.map((chamada) => `${chamada.metodo} ${chamada.caminho}`).sort(),
+        'o arranjo de chamadas divergiu do inventário revisado desta fatia',
+      ).toEqual([...PARES_DA_FATIA_BANCARIA]);
+
+      const respostas: Resposta[] = [];
+      for (const chamada of CHAMADAS_DA_FATIA_BANCARIA) {
+        respostas.push(await chamar(chamada));
+      }
+
+      const [doRegistro, daConsulta, daVerificacao] = respostas;
+
+      // ---------------------------------------------------------------------------------------
+      // A propriedade que DISCRIMINA vem primeiro: as três respostas são idênticas byte a byte
+      // ---------------------------------------------------------------------------------------
+      //
+      // Sem sessão, o produto não pode revelar estado de empresa nenhuma — e a consulta é a rota que
+      // teria o que revelar: com sessão, ela responde `200` para a empresa que registrou e `404`
+      // para a que não registrou. Se a recusa acontecesse depois da leitura, as três respostas
+      // deixariam de coincidir, porque só uma delas leria. A comparação é sobre o **texto cru**, e
+      // não sobre o corpo decodificado: um campo a mais que variasse com o estado apareceria aqui.
+      expect(
+        [daConsulta?.texto, daVerificacao?.texto],
+        'a recusa sem sessão varia entre as três rotas: alguma delas respondeu depois de olhar o estado da empresa',
+      ).toEqual([doRegistro?.texto, doRegistro?.texto]);
+
+      // ---------------------------------------------------------------------------------------
+      // E o envelope canônico da ADR-0017, corpo INTEIRO por igualdade, nas três
+      // ---------------------------------------------------------------------------------------
+      //
+      // **Sem `detalhes`**: não há exigência a nomear para quem não tem sessão, e nomeá-la diria ao
+      // anônimo qual chave libera a rota. O código é `NAO_AUTENTICADO` e não `RECURSO_NAO_ENCONTRADO`
+      // — o `404` que a consulta produziria se a leitura tivesse acontecido —, e é essa diferença que
+      // afirma que a recusa vem antes do banco.
+      const recusadas: string[] = [];
+      for (const [indice, chamada] of CHAMADAS_DA_FATIA_BANCARIA.entries()) {
+        const resposta = respostas[indice];
+
+        expect(resposta?.status, `${chamada.rotulo} não recusou com 401`).toBe(401);
+        expect(resposta?.corpo).toEqual({
+          codigo: CodigoErro.NAO_AUTENTICADO,
+          mensagem: MENSAGEM_SEM_SESSAO,
+        });
+        recusadas.push(chamada.rotulo);
+      }
+
+      // Como no `CT-837`: esta linha prova que o laço não saiu antes do fim, e **nada** sobre a
+      // cardinalidade do arranjo — que as âncoras do topo do caso fixam contra fontes independentes.
+      expect(recusadas).toEqual(CHAMADAS_DA_FATIA_BANCARIA.map((chamada) => chamada.rotulo));
+    },
+    LIMITE_CASO_MS,
+  );
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -3877,6 +4824,43 @@ function caminho(rota: string): string {
   return `/${PREFIXO_DE_VERSAO}/${rota}`;
 }
 
+/**
+ * Executa uma das três chamadas da fatia bancária contra a aplicação de **produção**.
+ *
+ * O cookie é opcional, e a ausência dele é o que separa o `CT-838` do `CT-837`: as duas provas
+ * percorrem o MESMO arranjo de chamadas, e o único parâmetro que muda entre elas é a sessão. Escrever
+ * dois laços com endereços copiados deixaria os dois livres para divergir, e a divergência apareceria
+ * como `404` num caso que deveria medir autorização.
+ */
+async function chamar(chamada: ChamadaDaFatiaBancaria, cookie?: string): Promise<Resposta> {
+  return await pedir(chamada.caminho, {
+    metodo: chamada.metodo,
+    base: baseReal,
+    ...(chamada.corpo === undefined ? {} : { corpo: chamada.corpo }),
+    ...(cookie === undefined ? {} : { cookie }),
+  });
+}
+
+/**
+ * Quantas linhas de `negocio.certificado_do_provedor` o contexto da empresa informada alcança — a
+ * contagem crua do `CT-837`.
+ *
+ * Nenhum `WHERE empresa_id` é escrito aqui: quem recorta é a política (ADR-0008), e a empresa entra
+ * pelo **contexto**, que é o mesmo mecanismo que a aplicação usa. É a mesma forma, e a mesma razão, de
+ * `contarCertificados` em `apps/api/test/certificado-do-provedor.e2e.spec.ts`.
+ */
+async function contarCertificados(empresaId: string): Promise<number> {
+  return await contextoDeTenant.executarCom({ empresaId }, async () => {
+    return await acessoAoNegocio.emUnidadeDeTrabalho(async (tx) => {
+      const [linha] = await tx<{ total: string }[]>`
+        SELECT count(*) AS total FROM negocio.certificado_do_provedor
+      `;
+
+      return Number(linha?.total ?? 0);
+    });
+  });
+}
+
 interface Resposta {
   readonly status: number;
   readonly texto: string;
@@ -3888,17 +4872,28 @@ interface OpcoesDoPedido {
   readonly metodo?: string;
   readonly corpo?: Record<string, unknown>;
   readonly cookie?: string;
+  /**
+   * Contra qual das duas montagens a requisição vai — a **mutante** por omissão.
+   *
+   * O padrão preserva o comportamento de todo chamador anterior a esta linha, e o parâmetro existe
+   * porque as duas provas de borda da fatia `fundacao-bancaria` medem a aplicação de **produção**:
+   * as três rotas do certificado são publicadas por ela, e é a recusa dela que o cliente encontra.
+   */
+  readonly base?: string;
 }
 
 /**
- * Executa uma requisição HTTP real contra a aplicação mutante — a única que os casos exercitam por
- * HTTP.
+ * Executa uma requisição HTTP real contra uma das duas montagens — a mutante por omissão, a de
+ * produção quando `base` a nomeia.
  *
- * O cabeçalho `Origin` acompanha toda requisição com a MESMA origem da aplicação: é o que um
- * navegador enviaria, e é o que o arcabouço confere nas requisições que carregam cookie.
+ * O cabeçalho `Origin` acompanha toda requisição com a MESMA origem da aplicação alvo: é o que um
+ * navegador enviaria, e é o que o arcabouço confere nas requisições que carregam cookie. Ele é
+ * derivado do destino, e não fixado numa das duas — uma origem cruzada faria o arcabouço recusar a
+ * entrada e o caso mediria a conferência de origem em vez da autorização.
  */
 async function pedir(alvo: string, opcoes: OpcoesDoPedido = {}): Promise<Resposta> {
-  const cabecalhos: Record<string, string> = { connection: 'close', origin: baseMutante };
+  const destino = opcoes.base ?? baseMutante;
+  const cabecalhos: Record<string, string> = { connection: 'close', origin: destino };
   if (opcoes.corpo !== undefined) {
     cabecalhos['content-type'] = 'application/json';
   }
@@ -3906,7 +4901,7 @@ async function pedir(alvo: string, opcoes: OpcoesDoPedido = {}): Promise<Respost
     cabecalhos.cookie = opcoes.cookie;
   }
 
-  const resposta = await fetch(new URL(alvo, baseMutante), {
+  const resposta = await fetch(new URL(alvo, destino), {
     method: opcoes.metodo ?? 'GET',
     headers: cabecalhos,
     ...(opcoes.corpo === undefined ? {} : { body: JSON.stringify(opcoes.corpo) }),
@@ -3926,11 +4921,18 @@ async function pedir(alvo: string, opcoes: OpcoesDoPedido = {}): Promise<Respost
   };
 }
 
-/** Entra pelo caminho REAL — a rota pública de entrada — e devolve o cookie de sessão. */
-async function entrar(email: string): Promise<string> {
+/**
+ * Entra pelo caminho REAL — a rota pública de entrada — e devolve o cookie de sessão.
+ *
+ * A montagem é a mesma que a requisição seguinte vai usar, e a coincidência é obrigatória: o cookie
+ * vale em qualquer das duas (o registro de sessão está no banco compartilhado), mas o arcabouço
+ * confere a origem contra o endereço base **configurado**, que é o da montagem que emitiu.
+ */
+async function entrar(email: string, base?: string): Promise<string> {
   const entrada = await pedir(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/sign-in/email`, {
     metodo: 'POST',
     corpo: { email, password: SENHA_DA_CARGA },
+    ...(base === undefined ? {} : { base }),
   });
 
   if (entrada.status !== 200) {
