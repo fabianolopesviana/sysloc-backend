@@ -26,8 +26,8 @@
  * também — uma das duas instâncias morria com "address already in use". O sintoma era um caso
  * reprovando de vez em quando, rápido, sob mutante causalmente irrelevante; foi assim que o
  * Gate 1 o encontrou, e foi assim que ele derrubou o CT-001 numa execução de `pnpm test` desta
- * intervenção. `.claude/rules/testing-stack.md` é explícita: teste instável é defeito, e não se
- * corrige com nova tentativa.
+ * intervenção. E não se corrige com nova tentativa: repetir o caso esconde a colisão em vez de
+ * fechá-la — quem a fecha é a trava.
  *
  * O CT-102 é o que impede a rodada seguinte de trocar a trava por qualquer coisa "mais simples":
  * ele executa a forma antiga e exige que ela reprove. Sem esse par, o CT-101 sozinho passaria

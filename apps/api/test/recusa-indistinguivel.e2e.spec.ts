@@ -128,8 +128,8 @@
  *
  * O invariante do CT-017 fala em *"nem o corpo nem o tempo de resposta"*. O tempo **não** ganha
  * asserção neste arquivo, por decisão registrada: medida de latência em suíte é refém da máquina,
- * `.claude/rules/testing-stack.md` trata teste instável como defeito e **proíbe retry**, e uma
- * asserção de relógio aqui seria a primeira fonte de intermitência da fatia.
+ * não há retry automático em nenhuma das frentes que absorvesse a intermitência, e uma asserção de
+ * relógio aqui seria a primeira fonte de instabilidade da fatia.
  *
  * O eixo já está coberto, e por prova determinística: a `DECISÃO FECHADA — T6 / Gate 2 (P3)` de
  * `packages/auth/src/autenticacao.ts` fixa que a recusa **deriva a senha informada e descarta o

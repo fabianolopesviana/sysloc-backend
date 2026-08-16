@@ -16,7 +16,7 @@
  *      opera acima de 75%. O registro abaixo pendura o descarte no mecanismo de encerramento
  *      do runtime, não no `finally` de quem escreveu o teste.
  *   3. **A espera por estado observável.** Sondagem com limite declarado, nunca espera fixa
- *      (`.claude/rules/testing-stack.md`, política de flaky).
+ *      (`.claude/rules/testing-stack.md`, § Espera e determinismo).
  *
  * Este arquivo é infraestrutura de teste: ele não é compilado para `dist/` (o `tsconfig.json`
  * do pacote alcança apenas `src/`) e nada em produção o importa.

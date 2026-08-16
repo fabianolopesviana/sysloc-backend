@@ -651,7 +651,8 @@ describe('processador de trabalho (T6)', () => {
       // acontecia "em cerca de metade das execuções" logo após a queda, e sob a concorrência do
       // Turbo o caso reprovou com `expected 'RECURSOS-DEVOLVIDOS' to be 'PRAZO-ESTOURADO'` — isto
       // é, o caminho gracioso RETORNOU e o caso deixou de observar o defeito que existe para
-      // cortar. A `.claude/rules/testing-stack.md` é explícita: *"flaky é defeito"*.
+      // cortar. E um caso que só observa o defeito em cerca de metade das execuções não o observa:
+      // ele o encontra por sorte, e sorte não é rede.
       //
       // Agora a precondição é construída pelo próprio caso e é observável: um processador que
       // SINALIZA ter começado e então bloqueia numa promessa que só este teste resolve. Com uma
