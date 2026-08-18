@@ -86,9 +86,23 @@ As três são obrigatórias, e cada uma barra um erro diferente:
 rede é consertar uma vez e reabrir o ciclo depois.
 
 - Se a stack tem suíte automatizada: o defeito ganha um caso que **falha com o código antigo e passa
-  com o novo**. Demonstre isso — reintroduza o defeito numa cópia, veja o caso reprovar, reverta.
-  (Neste projeto isso é a **prova de falsificação**, já obrigatória para asserção estática em
-  `.claude/rules/testing-stack.md`; aqui ela se estende a **todo defeito corrigido**.)
+  com o novo**. **Essa rede é obrigatória para TODO defeito corrigido, sem exceção.**
+
+  **Quando a rede precisa ser DEMONSTRADA por execução** — reintroduzir o defeito numa cópia, ver o
+  caso reprovar, reverter — depende da natureza da asserção, e a fronteira é a mesma que
+  `.claude/rules/testing-stack.md` já fixa:
+
+  | Natureza da asserção | Demonstração por execução |
+  |---|---|
+  | **Estática** (inspeciona o *texto* do código: `grep`/`awk` sobre o SUT, auditoria de fonte, contagem de ocorrências) | **OBRIGATÓRIA** — é a única forma de saber se ela pode falhar. É a **prova de falsificação** da `testing-stack.md`, e ela vale integralmente aqui |
+  | **Comportamental** (exercita o SUT e observa o resultado) | **NÃO se executa.** O caso já reprova naturalmente com o código antigo — é o que "falha com o código antigo" significa. Declare em uma linha **qual asserção discrimina** o defeito e por quê; isso é a prova, e ela é de raciocínio, não de execução |
+
+  > ⚠️ **Não converta isto em campanha de mutantes.** Mutation testing está **fora da stack deste
+  > projeto** por decisão registrada (`testing-stack.md`, 2026-08-16), e reintroduzir defeito em
+  > asserção comportamental "para conferir" **é** campanha de mutantes com outro nome — cada execução
+  > custa um `build` mais uma suíte inteira do pacote. Medição do run `emissao-e-conciliacao/v1`: mais
+  > de **20 execuções desse tipo em 6 tasks**, nenhuma exigida por esta rule. O que se exige é a
+  > **rede**, não o ritual.
 - Se o defeito não é testável na stack: registre-o com o marcador `DECISÃO FECHADA` (seção 3) no ponto
   do código, que é a rede possível.
 

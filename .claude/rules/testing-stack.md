@@ -238,10 +238,23 @@ de mutantes** em task nem em gate. A linha existe para dizê-lo explicitamente, 
 framework (`agent-spec-testing-best-practices`, padrão nº 11) lista mutation score como padrão —
 aqui ele **não se aplica**, e o Gate 1 não deve cobrá-lo.
 
-⚠️ **Isto não alcança a prova de falsificação acima**, que segue **obrigatória**. Ela é escopada a um
-defeito conhecido numa asserção estática, e o **P4** de `.claude/rules/nao-regressao.md` a exige de
-todo defeito corrigido — protocolo que prevalece sobre esta rule. O que sai é o *score* e a
-*campanha*; o que fica é a prova que fecha um defeito.
+⚠️ **Isto não alcança a prova de falsificação acima**, que segue **obrigatória** — e o recorte dela é
+**exatamente** o desta seção: ela é escopada a **asserção estática**, e só a ela. O que sai é o
+*score* e a *campanha*; o que fica é a prova que fecha um defeito.
+
+**O P4 de `.claude/rules/nao-regressao.md` não reabre a campanha, e a redação dele diz isso desde
+2026-08-17.** O que o P4 estende a *todo* defeito corrigido é a **rede** — o caso que reprova se o
+defeito voltar. A **demonstração por execução** (reintroduzir o defeito, rodar, reverter) permanece
+escopada à asserção **estática**; para asserção **comportamental** o P4 manda declarar por escrito
+qual asserção discrimina, e **proíbe** executar o mutante. Reintroduzir defeito em asserção
+comportamental "para conferir" é campanha de mutantes com outro nome, e custa um `build` mais uma
+suíte inteira por vez.
+
+> **A leitura antiga desta linha era a que vazava.** Ela dizia que o P4 exigia a prova de "todo
+> defeito corrigido" e que o protocolo prevalece — o que, lido de fora, transformava a decisão
+> *"mutation testing fora da stack"* em letra morta pela nota de rodapé dela mesma. Medição do run
+> `emissao-e-conciliacao/v1`: mais de **20 mutantes executados em 6 tasks** (`MT-M1..M3`,
+> `MT-T4-A..F`, `MT-T5-A..G`, `MT-T6-C..F`), **nenhum** exigido por nenhuma das duas rules.
 
 Registros históricos de mutantes — commits `c0453d2` e `79d17f2`, e os relatórios de `_run/` — são
 registro e **não se reescrevem**.

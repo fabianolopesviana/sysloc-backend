@@ -221,11 +221,22 @@ Convenção obrigatória (herdada, sobrevive à migração): **`CA-xx → CT-xxx
   precondição pelo caminho legítimo indicado na task, ou imite um teste análogo existente.
 - **ADR-0006 é grep-detectável**: nenhum helper de teste lê `process.env.DATABASE_URL`. A suíte
   **nunca** toca o ambiente que atende a operação.
-- **Prova de falsificação obrigatória** para toda asserção estática (que inspeciona texto do código):
+- **Prova de falsificação obrigatória — e SOMENTE — para asserção estática** (a que inspeciona o
+  *texto* do código: `grep`/`awk` sobre o SUT, auditoria de fonte, contagem de ocorrências):
   reintroduza o defeito numa cópia, mostre a asserção reprovar, reverta.
-  ⚠️ **O mutante roda pelo script `test` do pacote** (`pnpm --filter @sysloc/<pacote> test`), nunca
-  por `vitest run` avulso — os pacotes resolvem `"."` para `dist/`, e o mutante no fonte não alcança
-  o que executa. Verde de `vitest run` avulso lê-se como "sobreviveu" e **inverte a conclusão**.
+  ⚠️ **Quando ela se aplica, roda pelo script `test` do pacote** (`pnpm --filter @sysloc/<pacote>
+  test`), nunca por `vitest run` avulso — os pacotes resolvem `"."` para `dist/`, e o defeito
+  reintroduzido no fonte não alcança o que executa. Verde de `vitest run` avulso lê-se como
+  "sobreviveu" e **inverte a conclusão**.
+- 🚫 **Asserção comportamental NÃO ganha mutante.** Ela exercita o SUT e observa o resultado — já
+  reprova naturalmente com o código antigo, e é isso que "o caso falha com o código antigo" quer
+  dizer. Em vez de executar, **declare em uma linha qual asserção discrimina o defeito e por quê**;
+  essa declaração é a prova. Mutation testing está **fora da stack** deste projeto
+  (`.claude/rules/testing-stack.md`, 2026-08-16) e reintroduzir defeito comportamental "para
+  conferir" é campanha de mutantes com outro nome — custa um `build` mais uma suíte inteira por vez,
+  e o run `emissao-e-conciliacao/v1` gastou mais de 20 delas sem que rule alguma as exigisse. **Não
+  imite os blocos `MT-*` que existem em `packages/db/test/` e nas tasks T4–T6**: são registro
+  histórico, não convenção a reproduzir.
 - Sem cobertura como métrica. Sem retry de flaky: espera por estado observável é **sondagem com
   limite nomeado**, nunca `sleep` fixo.
 
