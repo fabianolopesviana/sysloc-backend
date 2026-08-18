@@ -75,3 +75,6 @@ __pycache__/
 # artefato derivado à árvore, contra a mesma convenção que mantém a saída de run
 # em `_run/`.
 docs/specs/.rule-mining/
+
+# Marcador de run ativo — transitório, criado e removido pela skill de execução (guarda de Stop).
+docs/specs/**/_run/.run-ativo

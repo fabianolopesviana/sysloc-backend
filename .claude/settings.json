@@ -13,6 +13,18 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/deploy/scripts/run/guarda-de-run.sh\"",
+            "timeout": 15,
+            "statusMessage": "Conferindo se o run tem despacho devido…"
+          }
+        ]
+      }
     ]
   }
 }

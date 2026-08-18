@@ -283,6 +283,15 @@ Você sempre terá acesso a:
    ```
    Se o arquivo NÃO existir, **NÃO crie** — `agent-spec-sdd-generate-prd` é responsável por isso.
 
+5.1. **Arme a guarda de continuidade do run** (gancho de `Stop` — `.claude/settings.json`):
+   ```bash
+   bash deploy/scripts/run/guarda-de-run.sh --armar <task_plan_path>
+   ```
+   Cria `_run/.run-ativo`, que é o que autoriza o gancho a impedir o encerramento do turno com
+   task devida. **Sem este passo o run corre desprotegido** e a §A3 da
+   [`autonomia-do-run.md`](.claude/rules/autonomia-do-run.md) volta a depender só de boa-fé. O
+   comando é idempotente e nunca aborta o run; se o script não existir, siga em frente.
+
 ### 2. Construção do grafo de dependências
 
 1. **Leia `task_plan.md` UMA VEZ no início** — durante o loop, use a informação carregada. NÃO releia a cada iteração.
@@ -1121,6 +1130,14 @@ A cada regeneração, o orquestrador monta as 4 seções a partir do estado acum
        summary: "<N/N tasks concluidas>. <bloqueadas se houver>"
    ```
 
+4. **Desarme a guarda de continuidade** — este é o passo que declara o run encerrado:
+   ```bash
+   bash deploy/scripts/run/guarda-de-run.sh --desarmar <task_plan_path>
+   ```
+   Remove `_run/.run-ativo`. **Só execute depois de conferir a pré-condição de entrada desta
+   seção**: desarmar com task pendente devolve ao run exatamente a fragilidade que o gancho
+   fechou. Marcador esquecido não prende ninguém (ele vence sozinho em 12h), mas polui o
+   `--estado`.
 ---
 
 ## 🔴 Regras Gerais de Economia e Integridade
@@ -1211,6 +1228,7 @@ Ao final, **(a)** garanta que o snapshot `_run/run-report.md` está regenerado c
 - [ ] Repositório git verificado no início
 - [ ] Cleanup idempotente de memória stale executado
 - [ ] `_run/sdd_state.yaml` atualizado para `execution: in_progress` no início
+- [ ] Guarda de continuidade **armada** no início (`--armar`) e **desarmada** no fim (`--desarmar`)
 - [ ] Bloco "Disciplina do Executor (Iron Rules)" carregado de `references/executor-discipline.md` no início e injetado no prompt de cada executor
 - [ ] Tasks processadas sequencialmente por default (lote paralelo apenas com guards provados); gates da MESMA task sempre sequenciais
 - [ ] `model`/`risk`/`gates` resolvidos por task com logs no terminal

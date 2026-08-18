@@ -136,6 +136,15 @@ Use **exclusivamente** os templates de `.claude/rules/agent-spec-minispec-workfl
    ```
    Se o arquivo NÃO existir, **NÃO crie** — `agent-spec-minispec-generate-intent` é responsável por isso.
 
+7.1. **Arme a guarda de continuidade do run** (gancho de `Stop` — `.claude/settings.json`):
+   ```bash
+   bash deploy/scripts/run/guarda-de-run.sh --armar <task_plan_path>
+   ```
+   Cria `_run/.run-ativo`, que é o que autoriza o gancho a impedir o encerramento do turno com
+   task devida. **Sem este passo o run corre desprotegido** e a §A3 da
+   [`autonomia-do-run.md`](.claude/rules/autonomia-do-run.md) volta a depender só de boa-fé. O
+   comando é idempotente e nunca aborta o run; se o script não existir, siga em frente.
+
 ---
 
 ## FASE 1 — Construção do Grafo de Dependências
@@ -405,6 +414,14 @@ A cada regeneração, o orquestrador monta as 4 seções a partir do estado acum
        summary: "<N/N tasks concluidas>. <bloqueadas se houver>"
    ```
 
+4. **Desarme a guarda de continuidade** — este é o passo que declara o run encerrado:
+   ```bash
+   bash deploy/scripts/run/guarda-de-run.sh --desarmar <task_plan_path>
+   ```
+   Remove `_run/.run-ativo`. **Só execute depois de conferir a pré-condição de entrada desta
+   seção**: desarmar com task pendente devolve ao run exatamente a fragilidade que o gancho
+   fechou. Marcador esquecido não prende ninguém (ele vence sozinho em 12h), mas polui o
+   `--estado`.
 ---
 
 ## Regras Gerais de Economia e Integridade
