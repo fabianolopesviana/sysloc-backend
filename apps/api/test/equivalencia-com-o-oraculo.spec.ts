@@ -120,8 +120,7 @@
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { Test } from '@nestjs/testing';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import {
   type AcessoAoBanco,
   abrirAcessoAoBanco,
@@ -163,7 +162,6 @@ import {
 import { semearLocatarioSemContato } from '../../../packages/db/test/banco-efemero.ts';
 import { reservarPorta } from '../../../packages/shared/test/efemero-comum.ts';
 import { type FilaEfemera, redisEfemero } from '../../../packages/shared/test/redis-efemero.ts';
-import { AppModule } from '../src/app.module.ts';
 import { PREFIXO_DAS_ROTAS_DE_IDENTIDADE } from '../src/autenticacao/autenticacao.module.ts';
 import { CAMINHO_DA_SESSAO } from '../src/autenticacao/sessao.controller.ts';
 import { CAMINHO_DA_AUTOMACAO_DE_COBRANCA } from '../src/automacao/automacao.controller.ts';
@@ -178,6 +176,7 @@ import {
 import { CAMINHO_DOS_CONTRATOS } from '../src/contratos/contrato.controller.ts';
 import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
 import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
+import { montarAplicacaoInstrumentada } from './aplicacao-instrumentada.ts';
 import { cpfValido } from './documento.ts';
 
 // ---------------------------------------------------------------------------
@@ -635,14 +634,11 @@ beforeAll(async () => {
   // não sabe qual dos dois recebeu. Mesmo mecanismo de `automacao-de-cobranca.e2e.spec.ts`.
   capturador = criarCapturadorDeEmail();
 
-  const modulo = await Test.createTestingModule({ imports: [AppModule] })
-    .overrideProvider(TOKEN_PORTA_DE_EMAIL)
-    .useValue(capturador)
-    .compile();
-
-  aplicacao = modulo.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
-  aplicacao.setGlobalPrefix(PREFIXO_DE_VERSAO);
-  await aplicacao.listen({ port: porta, host: ENDERECO_DE_ESCUTA });
+  // A montagem instrumentada tem casa única em `./aplicacao-instrumentada.ts` desde o fecho do
+  // débito `D57 · F3/T12`.
+  aplicacao = await montarAplicacaoInstrumentada(porta, [
+    { token: TOKEN_PORTA_DE_EMAIL, valor: capturador },
+  ]);
 
   cookie = await entrar(QUEM_ADMINISTRA.email, SENHA_DA_CARGA);
 

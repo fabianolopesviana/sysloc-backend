@@ -177,6 +177,15 @@ import type { OpcoesDeCirculacao } from './conjunto.js';
 // política e um segundo caminho para o mesmo recorte é o que a ADR-0008 rejeita. Ele existe para a
 // **escrita**, onde `empresa_id` é `NOT NULL` sem padrão.
 import { empresaDoContexto } from './contexto-de-escrita.js';
+// O molde da DATA tem **casa única** em `./moldes-de-formatacao.ts` desde o fecho do débito
+// `D7 · F4/T3`. A declaração que vivia aqui era exportada lateralmente para
+// `./documento-de-contrato.ts` e `./emissao-em-lote.ts` — remédio que não satisfazia o limiar de
+// três, porque deixava vivas as declarações de `./cobranca.ts` e `./envio-de-cobranca.ts`. As duas
+// colunas `date` desta projeção usam a MESMA cadeia das outras cinco do pacote, e uma segunda grafia
+// apareceria como data deslocada num campo que o CA-20 compara contra o oráculo. Ele **não** entra
+// em `./index.ts`: é detalhe da camada de dados, e publicá-lo daria a `apps/api` um formato de data
+// para escolher.
+import { FORMATO_ISO_DA_DATA } from './moldes-de-formatacao.js';
 
 /** A janela pedida da listagem, já validada na borda. */
 export interface JanelaDeContratos {
@@ -384,20 +393,6 @@ const VIOLACAO_DE_UNICIDADE = '23505';
 const ESTADO_INICIAL: EstadoDoContrato = 'RASCUNHO';
 const ESTADO_VIGENTE: EstadoDoContrato = 'ATIVO';
 const ESTADO_CANCELADO: EstadoDoContrato = 'CANCELADO';
-
-/**
- * O formato em que as duas colunas `date` viajam — **cadeia**, nunca objeto `Date`.
- *
- * Escrito uma vez e usado nas duas colunas da projeção: duas grafias ficariam livres para divergir, e
- * a divergência apareceria como uma data deslocada num campo que o CA-20 compara contra o oráculo.
- *
- * **Ela é exportada para o módulo vizinho, e não pelo índice do pacote.** `./documento-de-contrato.ts`
- * precisa da MESMA cadeia para a data de emissão que o documento imprime, e uma segunda grafia
- * cairia exatamente no defeito que este docblock descreve — agora num campo que ninguém confere por
- * leitura. Ela **não** entra em `./index.ts`: é detalhe da camada de dados, e publicá-la daria a
- * `apps/api` um formato de data para escolher.
- */
-export const FORMATO_ISO_DA_DATA = 'YYYY-MM-DD';
 
 /**
  * A projeção publicada, escrita **uma vez** e reusada por todas as consultas deste arquivo.

@@ -242,6 +242,16 @@ Específicos deste domínio: **`node:https`** (o mTLS do Sicoob — ⚠️ o cli
   trás; com três, elas já divergiram — a terceira cópia de `CODIGO_NO_ASSUNTO` nasceu com a flag
   `u` diferente das anteriores. É o gatilho que os débitos deste repositório já usam de fato
   (D1, D26, D3), e escrevê-lo evita que cada fatia o redecida.
+- **Acessório de suíte se importa, não se copia.** Antes de escrever num arquivo de teste um
+  acessório de arranjo — cliente HTTP, entrada de sessão, montador de corpo, abertura de instância
+  efêmera —, procure a casa compartilhada do diretório (os `.ts` sem `.spec` ao lado, no molde de
+  `apps/api/test/documento.ts` e `base32.ts`): se existir, importe; se não existir, crie-a. Por quê:
+  o Limiar de Três acima pressupõe que **quem duplica sabe contar as cópias**, e quem escreve uma
+  suíte nova copia de **uma** vizinha — para ele é a segunda cópia, nunca a enésima, e o gatilho
+  nunca dispara. É o que fez o cliente HTTP e a entrada de sessão nascerem em quase toda suíte de
+  borda, cada cópia livre para divergir.
+  ✅ `import { pedir, entrar } from './acessorios-de-borda.ts';`
+  ❌ redeclarar `async function pedir(...)` no topo da suíte nova porque a vizinha também o declara
 - **Superfície publicada**: `.claude/rules/ancoras-de-superficie.md` — igualdade de conjunto com
   controle antivácuo, âncora no mesmo diff da publicação, e a §5.2 declarando o que vai crescer.
 - **Contrato publicado**: `.claude/rules/contrato-publicado.md` — entrada fechada
@@ -270,7 +280,7 @@ Específicos deste domínio: **`node:https`** (o mTLS do Sicoob — ⚠️ o cli
 > grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 > ```
 
-São **30**, e a tabela abaixo é a lista viva — ela, e não este parágrafo, é a fonte.
+São **29**, e a tabela abaixo é a lista viva — ela, e não este parágrafo, é a fonte.
 
 ⚠️ **O identificador é o par `Dnn · F{n}/{origem}`, nunca o número sozinho** — a sequência corre
 dentro da §2 da fatia que registrou cada débito. Hoje convivem **dois `D3`**, **dois `D12`**, **dois
@@ -300,13 +310,12 @@ da `.claude/rules/nao-regressao.md`, que é permanente — este bloco é transit
 | **D14** (F3/T5, fatia `regua-de-cobranca`) | `packages/db/src/envio-de-cobranca.ts` (`FUSO_DA_OPERACAO`) | a **primeira migração que redefinir `negocio.data_corrente_da_operacao()`** — o fuso tem duas declarações executáveis e nada as amarra |
 | **D49** (F3/T10, fatia `regua-de-cobranca`) | `apps/worker/test/ambiente.spec.ts` (docblock do `CT-643`) | a **escalada que autorize mover o bloco sob `DECISÃO FECHADA — T8 / Gate 1 rodada 2`**, ou o **terceiro processo** que precisar da maquinaria — hoje o detector de exigência de ambiente tem duas cópias e endurecer uma deixa a outra para trás |
 | **D54** (F3/T11, fatia `regua-de-cobranca`) | `apps/api/test/equivalencia-com-o-oraculo.spec.ts` (`CODIGO_NO_ASSUNTO`) | o **quarto consumidor** do molde de extração do código de cobrança, ou a **primeira alteração da forma do código** — hoje são três cópias e elas já divergem na flag `u` |
-| **D57** (F3/T12, fatia `regua-de-cobranca`) | `apps/api/test/autorizacao-do-dominio.e2e.spec.ts` (a montagem instrumentada) | **JÁ DISPAROU DUAS VEZES** e as duas donas deferiram — hoje são **quatro** cópias; o caminho para o próximo dono é o acessório novo consumido só pelo arquivo novo |
 | **D5** (F3/T7, fatia `documentos-e-confirmacao`) | `apps/api/test/documento-do-contrato.e2e.spec.ts` (`extrairTextoDePdf`) | o **terceiro consumidor** de extração de texto de PDF (o carnê da F4), ou a **primeira alteração das opções do extrator** — hoje são duas cópias e endurecer uma deixa a outra para trás |
 | **D12** (F3/T10, fatia `documentos-e-confirmacao`) | `packages/documentos/src/mensagem-de-confirmacao.ts` | a **terceira** mensagem de e-mail do produto (o boleto, na F4) — ali `MensagemDeEmail` e a porta de envio sobem para `@sysloc/shared` |
 | **D25** (F4/T7, fatia `fundacao-bancaria`) | `packages/db/src/certificado-do-provedor.ts` (`recusarCertificadoVencido`) | a criação de `negocio.dia_da_operacao(timestamptz)`, ou o **quarto consumidor** do fuso da operação no pacote — hoje são três declarações e nada as amarra |
 | **D36** (F4/T10, fatia `fundacao-bancaria`) | `packages/cobranca-bancaria/src/adaptador-sicoob.ts` (`criarAdaptadorSicoob`) | o produto **modelar a identidade da empresa perante o provedor** (identificador da aplicação, endereço de autorização, dados da conta) — gatilho emendado na T8 da fatia (ii), que mediu não haver origem para nenhum dos três |
+| **D38** (F4/T10, fatia `fundacao-bancaria`) | `packages/cobranca-bancaria/src/adaptador-sicoob.ts` (junto de `recusarPorForma`) | ⚠️ **GATILHO VENCIDO** (a T11 passou sem cumprir) — a guarda de forma do endereço não tem caso algum; dono natural é a fatia (iii), que já reabre o arquivo |
 | **D63** (F4/fechamento, fatia `fundacao-bancaria`) | `apps/api/test/certificado-do-provedor.e2e.spec.ts` (junto de `gerarMaterial`) | a **próxima suíte E2E** que precisar dos acessórios de arranjo — `pedir` está em 24 de 24 suítes, e endurecer um deixa 23 para trás |
-| **D7** (F4/T3, fatia `emissao-e-conciliacao`) | `packages/db/src/cobranca.ts` (junto de `FORMATO_ISO_DA_DATA`) | **JÁ DISPAROU (F4/T4)** — o quinto consumidor do molde da data já existe (`emissao-em-lote.ts`); seguem três declarações e a casa (`moldes-de-formatacao.ts`) já existe |
 | **D13** (F4/T6, fatia `emissao-e-conciliacao`) | `packages/db/src/boleto-da-cobranca.ts` (junto de `ErroDeCobrancaNaoAlcancada`) | a fatia que criar no banco a **restrição pareando `linha_digitavel` com `nosso_numero`** — hoje a linha meio preenchida é representável. Mesma classe do D44 · F2/T10 |
 | **D14** (F4/T6, fatia `emissao-e-conciliacao`) | `packages/db/src/esquema/negocio.ts` (a coluna `nosso_numero`) | a **primeira migração que alterar `negocio.cobranca` depois da `0017`**, ou a fatia (iii) ao consumir a coluna — vocabulário do provedor em coluna, com o nome publicado já do produto |
 | **D26** (F4/T9, fatia `emissao-e-conciliacao`) | `packages/cobranca-bancaria/src/guarda-de-boletos.ts` (cabeçalho) | a **F5**, que traz o agendamento, ou a **primeira medição do diretório acima de 20 GB** — não há expurgo dos boletos guardados (~1,4 GB/mês projetados) |

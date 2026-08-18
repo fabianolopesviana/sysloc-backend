@@ -96,11 +96,12 @@ import type {
   ParteDoContrato,
 } from '@sysloc/documentos';
 import type { Fragment, TransactionSql } from 'postgres';
-// O formato das duas colunas `date` da projeção do contrato tem **lar único** em `./contrato.ts`, e
-// é ele que atravessa daqui. Uma segunda grafia da mesma cadeia ficaria livre para divergir, e a
-// divergência apareceria como uma data deslocada dentro do documento — que é o campo mais difícil de
-// conferir por leitura.
-import { FORMATO_ISO_DA_DATA } from './contrato.js';
+// O formato das colunas `date` tem **casa única** em `./moldes-de-formatacao.ts` desde o fecho do
+// débito `D7 · F4/T3`, e é dela que ele atravessa daqui — antes vinha por exportação lateral de
+// `./contrato.ts`, remédio que deixava vivas outras duas declarações do mesmo literal. Uma segunda
+// grafia da mesma cadeia ficaria livre para divergir, e a divergência apareceria como uma data
+// deslocada dentro do documento — que é o campo mais difícil de conferir por leitura.
+import { FORMATO_ISO_DA_DATA } from './moldes-de-formatacao.js';
 
 /**
  * O agregado do documento **mais o estado**, que a composição deliberadamente não conhece.

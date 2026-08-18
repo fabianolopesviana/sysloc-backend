@@ -80,11 +80,11 @@
  * própria (trava atômica, e não `port: 0`): o arcabouço de identidade confere a origem das
  * requisições com cookie contra o endereço base, composto a partir da porta CONFIGURADA.
  *
- * ⚠️ **A montagem instrumentada é a QUARTA cópia literal deste repositório** — as outras três estão
- * em `automacao-de-cobranca.e2e.spec.ts`, `autorizacao-do-dominio.e2e.spec.ts` e
- * `equivalencia-com-o-oraculo.spec.ts`, e o `DÉBITO COM GATILHO — D57 · F3/T12` já registra o fato
- * ali. Fechá-lo aqui reescreveria três arquivos fora da lista de impacto desta task (Proibição 5 da
- * `.claude/rules/nao-regressao.md`); o que esta linha faz é **medir** que o gatilho voltou a disparar.
+ * A montagem instrumentada vem de `./aplicacao-instrumentada.ts`, que é a casa única dela desde o
+ * fecho do débito `D57` (F3/T12) na intervenção dirigida de 2026-08-18. Esta suíte era a QUARTA
+ * cópia literal daquela montagem — as outras três estavam em `automacao-de-cobranca.e2e.spec.ts`,
+ * `autorizacao-do-dominio.e2e.spec.ts` e `equivalencia-com-o-oraculo.spec.ts` —, e as quatro
+ * migraram no mesmo diff.
  *
  * ===========================================================================
  * Precondição privilegiada — tudo pelo caminho REAL
@@ -105,8 +105,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { Test } from '@nestjs/testing';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { type ChaveDoCatalogo, validarCoerenciaDeAjustes } from '@sysloc/auth';
 import type {
   AdaptadorCobrancaBancaria,
@@ -149,7 +148,6 @@ import {
 } from '../../../packages/cobranca-bancaria/test/material-de-teste.ts';
 import { reservarPorta } from '../../../packages/shared/test/efemero-comum.ts';
 import { type FilaEfemera, redisEfemero } from '../../../packages/shared/test/redis-efemero.ts';
-import { AppModule } from '../src/app.module.ts';
 import { PREFIXO_DAS_ROTAS_DE_IDENTIDADE } from '../src/autenticacao/autenticacao.module.ts';
 import { CAMINHO_DA_SESSAO } from '../src/autenticacao/sessao.controller.ts';
 import { CAMINHO_DOS_LOCADORES } from '../src/cadastros/locador.controller.ts';
@@ -173,6 +171,7 @@ import {
   SEGMENTO_DO_REGISTRO,
 } from '../src/integracoes-bancarias/certificado.controller.ts';
 import { CAMINHO_DO_DOCUMENTO, criarAplicacao } from '../src/main.ts';
+import { montarAplicacaoInstrumentada } from './aplicacao-instrumentada.ts';
 import { cpfValido } from './documento.ts';
 
 /** Limite da montagem: banco migrado, semente, fila e as DUAS aplicações. */
@@ -385,17 +384,12 @@ beforeAll(async () => {
   base = `http://${ENDERECO_DE_ESCUTA}:${String(porta)}`;
   process.env.PORT = String(porta);
 
-  const modulo = await Test.createTestingModule({ imports: [AppModule] })
-    .overrideProvider(TOKEN_PORTA_DE_COBRANCA_BANCARIA)
-    .useValue(portaDoProvedor)
-    .compile();
-
-  aplicacao = modulo.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
-  // Sem as exclusões da aplicação real, de propósito: nenhuma requisição feita a ESTA aplicação toca
-  // as rotas de saúde nem o documento, e reproduzir a lista aqui criaria uma segunda cópia dela livre
-  // para divergir.
-  aplicacao.setGlobalPrefix(PREFIXO_DE_VERSAO);
-  await aplicacao.listen({ port: porta, host: ENDERECO_DE_ESCUTA });
+  // A montagem instrumentada tem casa única em `./aplicacao-instrumentada.ts` desde o fecho do
+  // débito `D57 · F3/T12` — inclusive a ausência deliberada das exclusões da aplicação real, que
+  // está documentada lá uma vez em vez de quatro.
+  aplicacao = await montarAplicacaoInstrumentada(porta, [
+    { token: TOKEN_PORTA_DE_COBRANCA_BANCARIA, valor: portaDoProvedor },
+  ]);
 
   // --- A aplicação REAL: só o documento publicado -----------------------------------------------
   const portaReal = await reservarPorta();

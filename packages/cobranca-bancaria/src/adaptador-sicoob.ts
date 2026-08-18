@@ -505,6 +505,26 @@ export interface ConfiguracaoDoProvedorBancario {
   readonly agora?: FonteDeTempo;
 }
 
+// DÉBITO COM GATILHO — D38 · F4/T10 · registrado 2026-08-18 · ⚠️ GATILHO VENCIDO
+// (NÃO é uma `DECISÃO FECHADA`: ele agenda uma prova que falta, não protege o código abaixo.)
+// O QUÊ: `recusarPorForma` e a guarda de `resolverDestino` são tratadas pelo docblock como garantia
+//        de SSRF, e NENHUM caso as exercita: nem URL malformada, nem `http:`, nem servidor vazio.
+//        `smell: happy_path_only`. A garantia existe sem prova — se uma refatoração futura a
+//        remover, nada reprova.
+// QUANDO FECHA: ⚠️ **O GATILHO JÁ DISPAROU E NÃO FOI CUMPRIDO.** O declarado era *"na T11, onde a
+//        conferência de partida lê `ENDERECO_DO_PROVEDOR_BANCARIO` e a guarda ganha consumidor real"*;
+//        a T11 passou sem cumpri-lo, e a auditoria de 2026-08-16 mediu o vazio. O dono natural é a
+//        **fatia (iii) do carnê**, que reabre este arquivo. Fechar é um caso barato e SEM fronteira
+//        de rede — `expect(() => criarAdaptadorSicoob({ enderecoDoProvedor: 'http://127.0.0.1:1' }))
+//        .toThrow(...)` mais uma cadeia que não é URL, afirmando que a mensagem nomeia a VARIÁVEL e
+//        **não** o valor recusado (é o que impede o `TypeError` do `new URL` de ecoar a entrada).
+// POR QUE NÃO AGORA: fechá-lo isolado exige **alocar um ID de CT novo**, que é precisamente o objeto
+//        de outro débito da mesma §2 (o sinal `[convention_drift] Numeração de CT nascido fora dos
+//        cards`) — pagá-lo sozinho reproduziria o defeito que aquele registra. Quem já estiver
+//        abrindo o arquivo com um plano que aloque CT paga os dois de uma vez. O risco medido segue
+//        pequeno: `request()` fixa `protocol: 'https:'` nas opções, e a variável é configuração de
+//        partida do operador, nunca entrada de usuário.
+// ÍNDICE: docs/specs/features/fundacao-bancaria/v1/_run/run-report.md §2, D38
 /** A recusa por forma — nomeia a variável e encerra a construção. */
 function recusarPorForma(): never {
   throw new Error(`${MOTIVO_DE_ENDERECO_INUTILIZAVEL}: ${VARIAVEL_DO_ENDERECO}`);

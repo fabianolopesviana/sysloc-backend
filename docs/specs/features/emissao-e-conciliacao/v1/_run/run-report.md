@@ -199,7 +199,7 @@ Contagem por pacote ao fim da T5: `@sysloc/contracts` **389** (era 356) · `@sys
   **redundante e mantida por precedente**. Para fechar de vez, o critério cabe numa linha de rule de
   esquema — o candidato já está em `_run/rule-candidates.md` (`convention_drift`).
 
-### D7 · baixo · project_pattern · T3 · executor (rodada 2)
+### D7 · baixo · project_pattern · T3 · executor (rodada 2) — ✅ **RESOLVIDO** na intervenção dirigida de 2026-08-18
 
 - **Onde:** `packages/db/src/cobranca.ts` (junto de `FORMATO_ISO_DA_DATA`) — marcador
   `DÉBITO COM GATILHO — D7 · F4/T3`

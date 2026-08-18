@@ -114,11 +114,17 @@ import type { Fragment, TransactionSql } from 'postgres';
 // e um segundo caminho para o mesmo recorte é o que a ADR-0008 rejeita. Ele existe para a
 // **escrita**, onde `empresa_id` é `NOT NULL` sem padrão.
 import { empresaDoContexto } from './contexto-de-escrita.js';
-// O molde do instante tem **casa única** em `./moldes-de-formatacao.ts` desde a T3 da fatia
-// `emissao-e-conciliacao`: o `criadoEm` daqui, o `canceladoEm` de `./cobranca.ts` e o `ocorridoEm` de
-// `./evento-bancario.ts` são o MESMO carimbo, e a declaração local que vivia aqui era a segunda cópia
-// que o limiar de três manda extinguir. Ele não entra em `./index.ts` — ver o cabeçalho de lá.
-import { FORMATO_ISO_DO_INSTANTE } from './moldes-de-formatacao.js';
+// Os DOIS moldes têm **casa única** em `./moldes-de-formatacao.ts`, pela mesma razão e no mesmo
+// molde. O do instante desceu na T3 da fatia `emissao-e-conciliacao`: o `criadoEm` daqui, o
+// `canceladoEm` de `./cobranca.ts` e o `ocorridoEm` de `./evento-bancario.ts` são o MESMO carimbo, e
+// a declaração local que vivia aqui era a segunda cópia que o limiar de três manda extinguir. O da
+// DATA desceu no fecho do débito `D7 · F4/T3`: o `dataVencimento` daqui é a MESMA data de calendário
+// das três colunas de `./cobranca.ts` e das duas de `./contrato.ts`, e o driver a entregaria como
+// `Date` no fuso do processo — reserializá-la desloca a data em um dia para metade dos fusos, que é
+// o defeito que `CandidataAoAviso.dataVencimento` declara impossível ao se dizer *"data de
+// calendário, nunca um instante com fuso"*. Nenhum dos dois entra em `./index.ts` — ver o cabeçalho
+// de lá.
+import { FORMATO_ISO_DA_DATA, FORMATO_ISO_DO_INSTANTE } from './moldes-de-formatacao.js';
 
 /**
  * A janela pedida do histórico de uma cobrança, já validada na borda por `esquemaDaJanela`.
@@ -130,16 +136,6 @@ export interface JanelaDeEnvios {
   readonly limite: number;
   readonly deslocamento: number;
 }
-
-/**
- * O formato em que a coluna `date` do vencimento viaja — **cadeia**, nunca objeto `Date`.
- *
- * Mesma decisão, e mesma razão medida, de `FORMATO_ISO_DA_DATA` em {@link ./cobranca.ts}: o driver
- * entregaria a coluna como `Date` no fuso do processo, e reserializá-lo desloca a data em um dia para
- * metade dos fusos. `CandidataAoAviso.dataVencimento` é declarado *"data de calendário, nunca um
- * instante com fuso"* justamente por isso.
- */
-const FORMATO_ISO_DA_DATA = 'YYYY-MM-DD';
 
 /** O molde `HH:MM` da hora do dia, o mesmo que a política publica — ver {@link ./politica-de-aviso.ts}. */
 const FORMATO_DA_HORA_DO_DIA = 'HH24:MI';

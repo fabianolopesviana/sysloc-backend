@@ -1,5 +1,5 @@
 ---
-description: Convenções do contrato publicado em @sysloc/contracts — a direção do dado decide a estritude do esquema, e como a recusa por chave desconhecida é provada. Carregada ao escrever ou revisar esquema do pacote de contratos, e ao gerar spec que defina a entrada ou a saída de uma rota.
+description: Convenções do contrato publicado em @sysloc/contracts — a direção do dado decide a estritude do esquema, e como cada recusa é provada — por chave desconhecida e por valor inválido. Carregada ao escrever ou revisar esquema do pacote de contratos, e ao gerar spec que defina a entrada ou a saída de uma rota.
 paths:
   - "packages/contracts/**"
   - "docs/specs/**"
@@ -21,3 +21,11 @@ paths:
   qualquer falha de esquema — inclusive uma que nada tem a ver com a chave excedente.
   ✅ `expect(erro.code).toBe('unrecognized_keys');` · `expect(erro.keys).toEqual(['empresaId']);`
   ❌ `expect(resultado.success).toBe(false);`
+
+- **A recusa por valor inválido é afirmada pelo `path` do campo.** Por quê: o booleano de insucesso
+  sozinho aprova **qualquer** falha do esquema — inclusive uma que nada tem a ver com o campo sob
+  teste —, e o `path` da raiz não diz ao cliente **qual** campo corrigir, que é exatamente o que o
+  `422 CAMPO_INVALIDO` promete. É a metade que o bullet acima não cobre: aquele fixa a recusa por
+  chave **excedente**, este a recusa por valor **errado**.
+  ✅ `expect(resultado.error?.issues[0]?.path).toEqual(['statusLocacao']);`
+  ❌ `expect(resultado.success).toBe(false);` sozinho — ou `path` igual a `[]`, que é a raiz

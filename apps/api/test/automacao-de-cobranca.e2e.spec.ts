@@ -149,8 +149,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { Test } from '@nestjs/testing';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { type ChaveDoCatalogo, validarCoerenciaDeAjustes } from '@sysloc/auth';
 import {
   type AcessoAoBanco,
@@ -183,7 +182,6 @@ import {
 } from '../../../packages/auth/test/identidade-efemera.ts';
 import { reservarPorta } from '../../../packages/shared/test/efemero-comum.ts';
 import { type FilaEfemera, redisEfemero } from '../../../packages/shared/test/redis-efemero.ts';
-import { AppModule } from '../src/app.module.ts';
 import { PREFIXO_DAS_ROTAS_DE_IDENTIDADE } from '../src/autenticacao/autenticacao.module.ts';
 import { CAMINHO_DA_SESSAO } from '../src/autenticacao/sessao.controller.ts';
 import { CAMINHO_DA_AUTOMACAO_DE_COBRANCA } from '../src/automacao/automacao.controller.ts';
@@ -199,6 +197,7 @@ import { CAMINHO_DOS_CONTRATOS } from '../src/contratos/contrato.controller.ts';
 import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
 import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
 import { criarAplicacao } from '../src/main.ts';
+import { montarAplicacaoInstrumentada } from './aplicacao-instrumentada.ts';
 import { cpfValido } from './documento.ts';
 
 /** Limite da montagem: banco migrado, semente com credencial, fila e a aplicação real. */
@@ -477,17 +476,12 @@ beforeAll(async () => {
   baseComCaptura = `http://${ENDERECO_DE_ESCUTA}:${String(portaComCaptura)}`;
   process.env.PORT = String(portaComCaptura);
 
-  const modulo = await Test.createTestingModule({ imports: [AppModule] })
-    .overrideProvider(TOKEN_PORTA_DE_EMAIL)
-    .useValue(capturador)
-    .compile();
-
-  aplicacaoComCaptura = modulo.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
-  // Sem as exclusões da aplicação real, de propósito: nenhum caso desta aplicação toca as rotas de
-  // saúde nem o contrato publicado, e reproduzir a lista aqui criaria uma segunda cópia dela livre
-  // para divergir. O que importa é que `/v1/auth` e as quatro rotas da área atendam sob o prefixo.
-  aplicacaoComCaptura.setGlobalPrefix(PREFIXO_DE_VERSAO);
-  await aplicacaoComCaptura.listen({ port: portaComCaptura, host: ENDERECO_DE_ESCUTA });
+  // A montagem instrumentada tem casa única em `./aplicacao-instrumentada.ts` desde o fecho do
+  // débito `D57 · F3/T12` — inclusive a ausência deliberada das exclusões da aplicação real, que
+  // está documentada lá uma vez em vez de quatro.
+  aplicacaoComCaptura = await montarAplicacaoInstrumentada(portaComCaptura, [
+    { token: TOKEN_PORTA_DE_EMAIL, valor: capturador },
+  ]);
 
   cookieDeAdmin = await entrar(QUEM_ADMINISTRA.email, SENHA_DA_CARGA, baseComCaptura);
   cookieDeAdminEmB = await entrar(QUEM_ADMINISTRA_EM_B.email, SENHA_DA_CARGA, baseComCaptura);

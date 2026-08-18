@@ -326,8 +326,7 @@
  */
 
 import { randomBytes, randomUUID } from 'node:crypto';
-import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { Test } from '@nestjs/testing';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { type ChaveDoCatalogo, validarCoerenciaDeAjustes } from '@sysloc/auth';
 import {
   type AcessoAoBanco,
@@ -359,7 +358,6 @@ import {
 } from '../../../packages/auth/test/identidade-efemera.ts';
 import { reservarPorta } from '../../../packages/shared/test/efemero-comum.ts';
 import { type FilaEfemera, redisEfemero } from '../../../packages/shared/test/redis-efemero.ts';
-import { AppModule } from '../src/app.module.ts';
 import { PREFIXO_DAS_ROTAS_DE_IDENTIDADE } from '../src/autenticacao/autenticacao.module.ts';
 import { CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO } from '../src/autenticacao/senha.controller.ts';
 import { CAMINHO_DA_SESSAO } from '../src/autenticacao/sessao.controller.ts';
@@ -385,6 +383,7 @@ import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
 import { criarAplicacao } from '../src/main.ts';
 import { CAMINHO_DE_MULTA_E_JUROS } from '../src/mora/mora.controller.ts';
 import { CAMINHO_DOS_USUARIOS } from '../src/usuarios/usuario.controller.ts';
+import { montarAplicacaoInstrumentada } from './aplicacao-instrumentada.ts';
 import { cpfValido } from './documento.ts';
 
 /** Limite da montagem: banco migrado, semente, fila, aplicação e o arranjo das quatro sessões. */
@@ -764,47 +763,15 @@ beforeAll(async () => {
   baseComCaptura = `http://${ENDERECO_DE_ESCUTA}:${String(portaComCaptura)}`;
   process.env.PORT = String(portaComCaptura);
 
-  // DÉBITO COM GATILHO — D57 · F3/T12 · registrado 2026-08-12
-  // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o bloco abaixo.)
-  // O QUÊ: esta é uma de QUATRO cópias literais da montagem instrumentada — as outras três estão em
-  //        `apps/api/test/automacao-de-cobranca.e2e.spec.ts`,
-  //        `apps/api/test/equivalencia-com-o-oraculo.spec.ts` e
-  //        `apps/api/test/vocabulario-na-saida-real.e2e.spec.ts` (esta última nasceu na T17 da fatia
-  //        `emissao-e-conciliacao`, que DEFERIU o fecho — ver o `QUANDO FECHA`). Ela não deriva de
-  //        `criarAplicacao()`
-  //        e por isso omite `logger: false`, `abortOnError: false`, o `exclude` do prefixo,
-  //        `publicarContrato()` e `enableShutdownHooks()`. NENHUMA delas alcança o que os casos
-  //        medem — guarda, filtro de erro e interceptador de contexto são registrados por
-  //        `APP_GUARD`/`APP_FILTER`/`APP_INTERCEPTOR` DENTRO do `AppModule`.
-  // QUANDO FECHA: ⚠️ **O GATILHO JÁ DISPAROU DUAS VEZES, e as duas donas deferiram.** A terceira
-  //        suíte instrumentada existe desde ANTES da sub-fatia `documentos-e-confirmacao` (a T12
-  //        dela apenas MEDIU o fato). A QUARTA nasceu na T17 da fatia `emissao-e-conciliacao`, que
-  //        também deferiu, invocando a proibição 5 do Protocolo — e o Gate 2 dela registrou que o
-  //        argumento procede para o FECHO INTEGRAL, mas não para a decisão de acrescentar mais uma
-  //        cópia: havia caminho intermediário que não toca arquivo algum fora do escopo, que é
-  //        fazer nascer o acessório e consumi-lo SÓ do arquivo novo. ⚠️ **É esse o caminho para o
-  //        próximo dono** — quem abrir a PRÓXIMA suíte que precisar da montagem instrumentada, ou a
-  //        primeira edição de qualquer uma das QUATRO por outra razão: a casa compartilhada nasce,
-  //        o consumidor novo a usa, e os anteriores migram quando forem abertos por outra razão.
-  //        Segue valendo, como segundo gatilho, a primeira vez que `criarAplicacao()` registrar um
-  //        global FORA do `AppModule`. A divergência entre a montagem que atende e as instrumentadas
-  //        não reprova caso algum: a asserção que a acusaria não existe — e agora ela deixaria
-  //        TRÊS para trás, não duas.
-  // POR QUE NÃO AGORA: a convenção deste repositório agenda a promoção de símbolo duplicado no
-  //        TERCEIRO consumidor (é a forma do D1 · F3/T2 e do D26 · F3/T8) — o terceiro chegou, o
-  //        quarto também, e o que adia o fecho hoje é escopo de task, não a contagem.
-  // ÍNDICE: docs/specs/features/regua-de-cobranca/v1/_run/run-report.md §2, D57
-  const modulo = await Test.createTestingModule({ imports: [AppModule] })
-    .overrideProvider(TOKEN_PORTA_DE_EMAIL)
-    .useValue(capturador)
-    .compile();
-
-  aplicacaoComCaptura = modulo.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
-  // Sem as exclusões da aplicação real, de propósito: nenhum caso desta aplicação toca as rotas de
-  // saúde nem o contrato publicado, e reproduzir a lista aqui criaria uma segunda cópia dela livre
-  // para divergir. O que importa é que `/v1/auth` e as quatro rotas da área atendam sob o prefixo.
-  aplicacaoComCaptura.setGlobalPrefix(PREFIXO_DE_VERSAO);
-  await aplicacaoComCaptura.listen({ port: portaComCaptura, host: ENDERECO_DE_ESCUTA });
+  // A montagem instrumentada tem casa única em `./aplicacao-instrumentada.ts` desde o fecho do
+  // débito `D57 · F3/T12`, que esta suíte registrava. Ela era uma de QUATRO cópias literais, e o
+  // gatilho — o terceiro consumidor — já havia disparado duas vezes; a intervenção dirigida de
+  // 2026-08-18 migrou as quatro no mesmo diff. A ausência deliberada das exclusões da aplicação
+  // real, e a razão de ela não reprovar caso algum, estão documentadas lá — uma vez, em vez de
+  // quatro.
+  aplicacaoComCaptura = await montarAplicacaoInstrumentada(portaComCaptura, [
+    { token: TOKEN_PORTA_DE_EMAIL, valor: capturador },
+  ]);
 
   cookiePlenoComCaptura = await entrar(ADMIN_DE_A.email, SENHA_DA_CARGA, baseComCaptura);
 

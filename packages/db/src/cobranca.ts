@@ -140,11 +140,14 @@ import type { NumeroDaSerie } from './contrato.js';
 // tipo: `derivacao-de-cobranca.ts` não é tocado, e a direção do grafo não muda — aquele módulo é puro
 // e não importa nada deste.
 import type { ParcelaDerivada } from './derivacao-de-cobranca.js';
-// O molde do instante tem **casa única** em `./moldes-de-formatacao.ts` desde a T3 da fatia
-// `emissao-e-conciliacao` — é o limiar de três do `CLAUDE.md` fechado no terceiro consumidor, e não a
-// exportação lateral que deixava a declaração de `./envio-de-cobranca.ts` viva. Ele **não** entra em
-// `./index.ts`: é detalhe da camada de dados, e publicá-lo daria a `apps/api` um formato para escolher.
-import { FORMATO_ISO_DO_INSTANTE } from './moldes-de-formatacao.js';
+// Os DOIS moldes têm **casa única** em `./moldes-de-formatacao.ts` — é o limiar de três do
+// `CLAUDE.md` fechado no terceiro consumidor, e não a exportação lateral que deixava a declaração de
+// `./envio-de-cobranca.ts` viva. O do instante desceu na T3 da fatia `emissao-e-conciliacao`; o da
+// DATA desceu no fecho do débito `D7 · F4/T3`, e as três declarações que ele registrava — esta, a de
+// `./envio-de-cobranca.ts` e a exportada por `./contrato.ts` — saíram no mesmo diff. Nenhum dos dois
+// entra em `./index.ts`: são detalhe da camada de dados, e publicá-los daria a `apps/api` um formato
+// para escolher.
+import { FORMATO_ISO_DA_DATA, FORMATO_ISO_DO_INSTANTE } from './moldes-de-formatacao.js';
 
 /**
  * A janela pedida da carteira, já validada na borda.
@@ -361,34 +364,6 @@ const RESTRICAO_DO_CODIGO = 'cobranca_empresa_codigo_key';
 
 /** `unique_violation` — o `SQLSTATE` que o servidor devolve ao recusar a restrição acima. */
 const VIOLACAO_DE_UNICIDADE = '23505';
-
-/**
- * O formato em que as três colunas `date` viajam — **cadeia**, nunca objeto `Date`.
- *
- * Escrito uma vez e usado nas três colunas da projeção: três grafias ficariam livres para divergir, e
- * a divergência apareceria como uma data deslocada num campo que o CT-525 compara contra o oráculo.
- *
- * O molde do **instante** não mora mais aqui: ele subiu para {@link ./moldes-de-formatacao.ts} ao
- * alcançar o terceiro consumidor. Este, o da **data**, ainda não subiu — e a razão está no marcador
- * abaixo, que é o oposto de uma decisão fechada: ele agenda, não protege.
- */
-// DÉBITO COM GATILHO — D7 · F4/T3 · registrado 2026-08-16
-// O QUÊ: `FORMATO_ISO_DA_DATA` tem TRÊS declarações executáveis do mesmo literal — esta, a de
-//        `./envio-de-cobranca.ts` e a de `./contrato.ts` (que é exportada para
-//        `./documento-de-contrato.ts`). O limiar de três do `CLAUDE.md` já foi ultrapassado, e nada
-//        amarra as três: endurecer uma — outra escala, outro separador — deixa duas para trás.
-// QUANDO FECHA: **JÁ DISPAROU (F4/T4)** — o quarto consumidor era `./documento-de-contrato.ts`, e o
-//        quinto é `./emissao-em-lote.ts`, que importa o molde daqui por `./contrato.ts` em vez de
-//        redeclará-lo. Nenhum dos dois agravou a dívida, e por isso as três declarações continuam de
-//        pé: fechar é descê-las para `./moldes-de-formatacao.ts` — que já existe e já é a casa do
-//        molde do instante — com as locais saindo no mesmo diff, e a linha do índice do arquivo de
-//        instruções saindo junto (a barreira `CT-907` de `@sysloc/shared` cobra as duas pontas).
-// POR QUE NÃO AGORA: as três cópias são dívida **pré-existente**, que esta task não criou nem
-//        agravou — arrastá-las junto da subida do instante seria "aproveitar que estou aqui"
-//        (§4.5 do Protocolo Antirregressão), e cada arquivo a mais no diff é superfície de
-//        regressão em três projeções que o oráculo compara campo a campo.
-// ÍNDICE: docs/specs/features/emissao-e-conciliacao/v1/_run/run-report.md §2, D7
-const FORMATO_ISO_DA_DATA = 'YYYY-MM-DD';
 
 /**
  * A projeção publicada, escrita **uma vez** e reusada pelas duas leituras deste arquivo.

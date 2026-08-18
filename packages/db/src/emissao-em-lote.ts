@@ -159,17 +159,11 @@ import type { Fragment, TransactionSql } from 'postgres';
 // (nenhuma leitura deste arquivo o aplica, porque as duas tabelas já têm política), e existe só para a
 // escrita, onde `empresa_id` é `NOT NULL` sem padrão.
 import { empresaDoContexto } from './contexto-de-escrita.js';
-// O molde da DATA é **importado do vizinho**, e não redeclarado: uma quarta grafia do mesmo literal
-// agravaria o débito D7 registrado junto de `FORMATO_ISO_DA_DATA` em `./cobranca.ts`, cujo gatilho é
-// exatamente o quarto consumidor. Fechá-lo — descer as três declarações para
-// `./moldes-de-formatacao.ts` — exige remover a linha correspondente do índice do arquivo de
-// instruções do repositório no mesmo commit (a barreira `CT-907` de `@sysloc/shared` cobra as duas
-// pontas), e alterar aquele arquivo não pertence a esta task. `./documento-de-contrato.ts` já consome
-// o molde por esta mesma exportação lateral, e é o precedente literal.
-import { FORMATO_ISO_DA_DATA } from './contrato.js';
-// O molde do INSTANTE tem casa única em `./moldes-de-formatacao.ts`, e é importado em vez de
-// recopiado — ver o cabeçalho daquele módulo.
-import { FORMATO_ISO_DO_INSTANTE } from './moldes-de-formatacao.js';
+// Os DOIS moldes têm casa única em `./moldes-de-formatacao.ts`, e são importados em vez de
+// recopiados — ver o cabeçalho daquele módulo. O da DATA chegava aqui por exportação lateral de
+// `./contrato.js` enquanto o débito `D7 · F4/T3` estava aberto; ele foi fechado descendo as três
+// declarações para lá, e o import passou a apontar para a casa.
+import { FORMATO_ISO_DA_DATA, FORMATO_ISO_DO_INSTANTE } from './moldes-de-formatacao.js';
 
 /**
  * O que é preciso para abrir um lote — **dois** campos, e nada mais.

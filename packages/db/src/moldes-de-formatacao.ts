@@ -39,3 +39,24 @@
  * diferentes leem o mesmo carimbo.
  */
 export const FORMATO_ISO_DO_INSTANTE = 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"';
+
+/**
+ * O molde da **data de calendário** — ISO-8601 sem hora, sem fuso e sem instante.
+ *
+ * É a forma em que toda coluna `date` deste pacote viaja: **cadeia**, nunca objeto `Date`. O driver
+ * entregaria a coluna como `Date` no fuso do processo, e reserializá-lo desloca a data em um dia para
+ * metade dos fusos — que é o defeito que este molde existe para impedir, num campo que ninguém
+ * confere por leitura.
+ *
+ * Ele desceu para cá no fecho do débito **D7** (F4/T3), cujo gatilho — o quarto consumidor — já havia
+ * disparado duas vezes. Antes disso o mesmo literal tinha TRÊS declarações executáveis: uma em
+ * {@link ./cobranca.ts} (as três colunas da carteira), uma em {@link ./envio-de-cobranca.ts} (o
+ * vencimento da candidata) e uma em {@link ./contrato.ts}, exportada lateralmente para
+ * {@link ./documento-de-contrato.ts} e {@link ./emissao-em-lote.ts}. Com três declarações, endurecer
+ * uma — outra escala, outro separador — deixava duas para trás; com esta, não há outra a deixar.
+ *
+ * Vale para ele a mesma razão de ausência do barril declarada no cabeçalho deste módulo: publicá-lo
+ * em `./index.ts` daria a `apps/api` um formato de data **para escolher**, e o `CT-012` audita o
+ * barril por igualdade.
+ */
+export const FORMATO_ISO_DA_DATA = 'YYYY-MM-DD';
