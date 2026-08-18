@@ -118,6 +118,32 @@ OBRIGATÓRIO: Antes de produzir o JSON final:
 > [T{N}] veredito reclassificado: QA devolveu REJEITADO sem bloqueante pela partição → APROVADO_COM_OBSERVACOES (médios anotáveis: <categorias>)
 > ```
 
+#### 3.4.0 Convergência do laço: o MÉDIO a partir da rodada 3 (aplica-se aos DOIS gates)
+
+> **Regra canônica**: [`agent-spec-workflow-rules.md`](.claude/rules/agent-spec-workflow-rules.md) → **"Convergência do laço de correção — o MÉDIO a partir da rodada 3"**. **Consulte-a; o que segue é o procedimento.**
+>
+> **É SEU, nunca do gate.** Os gates reportam com honestidade em qualquer rodada — os contratos deles proíbem rebaixar ou omitir por causa da rodada. Quem converte é o orquestrador, porque o estado que a regra lê (número da rodada e `fingerprint` no Ledger) só existe aqui.
+
+Aplique **antes** de montar o conjunto de bloqueantes (3.5), na interpretação do veredito de **cada** gate. `rodada` = `attempt_count + 1`.
+
+1. **Rodada 1 ou 2** → nada a fazer; a partição de categoria vale integralmente.
+2. **Rodada ≥ 3** → considere **apenas** os `MEDIO`/`medio` **de categoria convergível**:
+
+   ```
+   architecture · performance · testability · speculative_complexity
+   ```
+
+   **Categoria fora desta lista NÃO converge, nunca** — `logic`, `data_handling`, `error_handling`, `concurrency`, `security`, `adr_compliance`, `technical_requirement`, `scope_deviation` e `tests` seguem bloqueando como `CRITICO`/`ALTO`. Categoria ausente ou desconhecida também não converge (lista positiva e fechada — ver a rule). Para cada item que sobrar, calcule o `fingerprint`:
+   - **C1 — `fingerprint` INÉDITO no Ledger** ⇒ não bloqueia; entra como `status: aceito_como_debito`, `rodada_origem` = corrente.
+   - **C2 — já no Ledger, `aberto`, tendo bloqueado DUAS rodadas** ⇒ não bloqueia mais; vira `aceito_como_debito` **preservando a `rodada_origem` original**.
+   - Caso contrário ⇒ segue bloqueante.
+3. **`CRITICO`/`ALTO` ficam FORA**, em rodada nenhuma: bloqueiam sempre, sem limite. **Também ficam fora**: teste falhando, CT exigido sem teste e critério de aceite `FALHOU`/`PARCIAL` — os dois primeiros são `CRITICO` por contrato, o terceiro vive em `criterios_falhos[]`, que não é item de severidade. **É por isso que a convergência não pode fechar uma task com a aplicação quebrada.**
+4. **Escriture cada convertido** na §2 do `_run/run-report.md`, com `arquivo`/`linha`/`correcao_sugerida` preservados. Convertido e não escriturado é achado **perdido**.
+5. **Logue** uma linha por item: `[T{N}] convergência (rodada {k}): {C1|C2} · {finding_id} {severidade}/{categoria} → aceito_como_debito · {fingerprint}`.
+6. Se não sobrar bloqueante ⇒ aplique a **Cláusula de divergência** acima e siga o fluxo normal.
+
+> **Por que da 3, e não da 2**: a rodada 2 revisa a primeira correção, e médio novo ali ainda pode ser varredura incompleta da rodada 1 — o que o sweep mecânico e o Ledger existem para pegar. Da terceira em diante o achado novo é, quase sempre, superfície que a **própria correção** criou, e nessa direção a fonte não se esgota.
+
 #### 3.4.1 Conferir a declaração do sweep (`antipadroes_verificados[]`)
 
 > **Executa em TODOS os vereditos** — `APROVADO`, `APROVADO_COM_OBSERVACOES` e `REJEITADO`. NÃO pode viver no loop de correção (3.5): o loop só roda em rejeição, e a **rodada 1 aprovada** é o caminho dominante que esta conferência existe para auditar.
@@ -217,7 +243,7 @@ Se rejeitado:
    > métrica** `{B}`/`{C}` de 3.4.3 — que é exatamente o instrumento que o ledger existe para produzir.
 
 2. **Extraia os problemas do JSON do QA — política débito-controlado com bloqueio seletivo por categoria**:
-   - **Bloqueantes**: `problemas.criticos[]` + `problemas.altos[]` + os `problemas.medios[]` de **categoria bloqueante** (titulo, descricao, arquivo, linha, correcao_sugerida). A partição está em `.claude/rules/agent-spec-workflow-rules.md` → "Bloqueio Seletivo de Severidade MÉDIA por Categoria"; em `categoria: tests`, quem decide é o campo `smell`; categoria ausente/desconhecida ⇒ bloqueante
+   - **Bloqueantes**: `problemas.criticos[]` + `problemas.altos[]` + os `problemas.medios[]` de **categoria bloqueante** (titulo, descricao, arquivo, linha, correcao_sugerida), **menos os médios convertidos pela convergência (3.4.0)** em rodada ≥ 3. A partição está em `.claude/rules/agent-spec-workflow-rules.md` → "Bloqueio Seletivo de Severidade MÉDIA por Categoria"; em `categoria: tests`, quem decide é o campo `smell`; categoria ausente/desconhecida ⇒ bloqueante
    - **Débito anotado**: `problemas.baixos[]` **+ os `problemas.medios[]` de categoria anotável** — entram no prompt como "Observações" (corrigir é opcional); os que não forem corrigidos DEVEM ser acumulados para a §2 do snapshot `_run/run-report.md` ao fechar o loop, preservando `arquivo`/`linha`/`correcao_sugerida`
    - `observacoes[]`
    - `testes_executados.detalhes_falhas[]`

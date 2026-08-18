@@ -164,6 +164,8 @@ NÃO re-execute a suíte de testes salvo nas 3 condições do seu contrato: (1) 
 
 > **Débito-controlado com bloqueio seletivo**: críticos e altos sempre bloqueiam; **médios bloqueiam conforme a categoria** — partição canônica em [`agent-spec-workflow-rules.md`](.claude/rules/agent-spec-workflow-rules.md) → **"Bloqueio Seletivo de Severidade MÉDIA por Categoria"** (**consulte-a; não a reproduza aqui**). Baixos e médios anotáveis são registrados na §2 do `_run/run-report.md` e não impedem a conclusão da task.
 >
+> **Convergência (3.4.0 do `qa-validator-prompt.md`) — aplique AQUI também, antes de decidir a ação.** A partir da **rodada 3**, `MEDIO` **de categoria convergível** (`architecture`, `performance`, `testability`, `speculative_complexity` — e só essas) com `fingerprint` inédito (C1) ou que já bloqueou duas rodadas (C2) **não bloqueia**: viram débito anotado, escriturado e logado. `CRITICO`/`ALTO` seguem bloqueando sempre. Se depois da conversão não sobrar bloqueante, o `PARCIAL`/`REJEITADO` vira `APROVADO_COM_OBSERVACOES` pela Cláusula de divergência — feche a task. **O Gate 2 é o alvo medido da regra**: é dele que vêm os bloqueantes inéditos de rodada tardia que fazem o laço não convergir.
+>
 > **Cláusula de divergência de veredito (OBRIGATÓRIA)**: se o Tech Review devolver `PARCIAL`/`REJEITADO` mas **nenhum** dos problemas for bloqueante pela partição, **NÃO dispare rodada de correção**. Reclassifique para `APROVADO_COM_OBSERVACOES`, siga para 4.5, trate os anotáveis como débito e logue:
 > ```
 > [T{N}] veredito reclassificado: Tech Review devolveu <status> sem bloqueante pela partição → APROVADO_COM_OBSERVACOES (médios anotáveis: <categorias>)

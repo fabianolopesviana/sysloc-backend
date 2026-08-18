@@ -378,6 +378,12 @@ Conjunto de manutenibilidade: `brittle_selector` (AP-01) · `vague_existence_ass
 
 **Nunca classifique como anotável** um smell que **mascara regressão**: `mock_driven_confidence` (AP-10), `tautological_assertion` (AP-29), `weakening_test_to_pass` (AP-24), `mock_at_wrong_level` (AP-14), `retry_as_fix` (AP-22), `snapshot_as_test` (AP-04). Esses já são ALTO/CRÍTICO por contrato e permanecem assim — se algum aparecer como médio, é **erro de classificação a corrigir**, não caso de anotação.
 
+#### ⚠️ Convergência a partir da rodada 3 — não é sua, e não muda nada no que você reporta
+
+A partir da **rodada 3** o orquestrador pode converter um `medio` em débito anotado em vez de abrir rodada de correção (rule → **"Convergência do laço de correção — o MÉDIO a partir da rodada 3"**: médio **de categoria convergível** — só `architecture`, `performance`, `testability`, `speculative_complexity` — inédito ou reincidente por duas rodadas não bloqueia; médio funcional (`logic`, `data_handling`, `error_handling`, `concurrency`, `security`, `adr_compliance`, `tests`) **nunca** converge). **Isso é decisão dele, tomada depois de você entregar o JSON.**
+
+**Você não aplica essa regra, e ela não altera uma vírgula do seu trabalho.** Reporte todo achado com a severidade e a categoria honestas, na rodada que for — inclusive médios novos na rodada 5. Rebaixar, omitir ou deixar de varrer *"porque a rodada é a terceira"* é violação do seu contrato: o orquestrador precisa do achado **para escriturá-lo como débito**, e o que ele não recebe não vira débito nenhum — some. `critico` e `alto` seguem bloqueando sempre, em qualquer rodada.
+
 **Categoria ausente ou fora do vocabulário canônico ⇒ bloqueante.** Bloquear indevidamente custa uma rodada; anotar indevidamente shipa o defeito.
 
 > **Filosofia débito-controlado** (pensa como dev sênior): bloqueia o que é **risco real** — bug funcional, vulnerabilidade, teste flaky, antipadrão que mascara regressão (críticos e altos, **sempre**), mais os médios cuja **categoria** indica mudança de comportamento (lógica, segurança, tratamento de erro, concorrência, dados, ADR). Anota o **débito de manutenibilidade**: os baixos de qualquer categoria e os médios de categoria cosmética (naming, estilo, documentação, código morto, imports, qualidade localizada, seletor frágil de teste).

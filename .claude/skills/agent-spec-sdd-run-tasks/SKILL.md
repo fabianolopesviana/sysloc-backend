@@ -575,6 +575,35 @@ OBRIGATÓRIO: Antes de produzir o JSON final:
 >
 > Isto protege a política da obediência imperfeita do gate — um contrato desatualizado ou uma classificação errada não podem, sozinhos, reabrir o bloqueio global de médios.
 
+#### Passo 4.0 — Convergência do laço: o MÉDIO a partir da rodada 3 (aplica-se aos DOIS gates)
+
+> **Regra canônica**: [`agent-spec-workflow-rules.md`](.claude/rules/agent-spec-workflow-rules.md) → **"Convergência do laço de correção — o MÉDIO a partir da rodada 3"**. **Consulte-a; o que segue é o procedimento, não a doutrina.**
+>
+> **Este passo é SEU, nunca do gate.** Os gates reportam com honestidade em qualquer rodada — os contratos deles proíbem explicitamente rebaixar ou omitir por causa da rodada. Quem converte é você, porque o estado que a regra lê (número da rodada e `fingerprint` no Ledger) só existe aqui.
+
+Aplique **antes** de montar o conjunto `problemas_corrigir` (Passo 5 item 2 / Passo 9 item 2), na interpretação do veredito de **cada** gate. `rodada` = `attempt_count + 1` (rodada 1 = execução inicial; rodada 2 = 1ª correção; rodada 3 = 2ª correção).
+
+1. **Rodada 1 ou 2** → nada a fazer. A partição de categoria vale integralmente, com o rigor de sempre. **Não aplique nenhuma das cláusulas abaixo.**
+2. **Rodada ≥ 3** → considere **apenas** os problemas de severidade `MEDIO`/`medio` **de categoria convergível**:
+
+   ```
+   architecture · performance · testability · speculative_complexity
+   ```
+
+   **Categoria fora desta lista NÃO converge, nunca** — `logic`, `data_handling`, `error_handling`, `concurrency`, `security`, `adr_compliance`, `technical_requirement`, `scope_deviation` e `tests` seguem bloqueando como `CRITICO`/`ALTO`, por quantas rodadas forem. Categoria **ausente ou desconhecida** também não converge (a lista é positiva e fechada — ver a rule). Para cada item que sobrar, calcule o `fingerprint` e decida:
+   - **C1 — `fingerprint` INÉDITO no Ledger** ⇒ **não bloqueia**. Insira no Ledger com `status: aceito_como_debito` e `rodada_origem` = rodada corrente.
+   - **C2 — `fingerprint` já no Ledger, `status: aberto`, com `rodada_ultima_verificacao` cobrindo DUAS rodadas de bloqueio anteriores** ⇒ **não bloqueia mais**. Atualize para `status: aceito_como_debito`, **preservando a `rodada_origem` original**.
+   - **Nenhum dos dois** (médio aberto que bloqueou só uma rodada) ⇒ **segue bloqueante**, normalmente.
+3. **`CRITICO`/`ALTO` NÃO entram neste passo**, em rodada nenhuma. Bloqueiam sempre, inéditos ou reincidentes, sem limite. **Também não entram**: teste falhando, CT exigido sem teste e critério de aceite `FALHOU`/`PARCIAL` — os dois primeiros são `CRITICO` por contrato do Gate 1, e o terceiro vive em `criterios_falhos[]`, que não é item de severidade. **É por isso que a convergência não pode fechar uma task com a aplicação quebrada.**
+4. **Todo item convertido vira débito de primeira classe**: acumule-o para a §2 do snapshot `_run/run-report.md` no formato canônico, com `arquivo`/`linha`/`correcao_sugerida` **preservados**. Item convertido e não escriturado é achado **perdido** — é o único jeito de esta regra causar dano.
+5. **Logue uma linha por item convertido** em `shared.workflow_report.path`:
+   ```
+   [T{N}] convergência (rodada {k}): {C1|C2} · {finding_id} {severidade}/{categoria} → aceito_como_debito · {fingerprint}
+   ```
+6. **Se, depois da conversão, não sobrar bloqueante nenhum** → aplique a **Cláusula de divergência de veredito** acima: reclassifique para `APROVADO_COM_OBSERVACOES` e siga o fluxo normal (Gate 2, ou fechamento da task). **Não abra rodada de correção vazia.**
+
+> **Por que a partir da 3, e não da 2**: a rodada 2 revisa a primeira correção, e um médio novo ali ainda pode ser fruto de varredura incompleta da rodada 1 — que é justamente o que o sweep mecânico e o Ledger existem para pegar. Da terceira em diante, o achado novo é quase sempre superfície que a **própria correção** criou, e nessa direção a fonte não se esgota: no run `emissao-e-conciliacao/v1` a T4 gastou **5 rodadas / 9 invocações de gate**, com `MEDIO/architecture` inédito nas rodadas 3 e 4. Sob esta regra ela teria fechado na 3.
+
 #### Passo 4.1 — Conferir a declaração do sweep (`antipadroes_verificados[]`)
 
 > **Este passo executa em TODOS os vereditos** — `APROVADO`, `APROVADO_COM_OBSERVACOES` e `REJEITADO`. Ele NÃO pode viver no loop de correção: o loop só roda em rejeição, e a **rodada 1 aprovada** é justamente o caminho dominante que esta conferência existe para auditar.
@@ -676,7 +705,7 @@ Se rejeitado:
    > ledger existe para produzir.
 
 2. **Extraia os problemas do JSON do QA — política débito-controlado com bloqueio seletivo por categoria**:
-   - **Bloqueantes**: `problemas.criticos[]` + `problemas.altos[]` + os `problemas.medios[]` de **categoria bloqueante** (titulo, descricao, arquivo, linha, correcao_sugerida). A partição está em `.claude/rules/agent-spec-workflow-rules.md` → "Bloqueio Seletivo de Severidade MÉDIA por Categoria"; em `categoria: tests`, quem decide é o campo `smell`; categoria ausente/desconhecida ⇒ bloqueante
+   - **Bloqueantes**: `problemas.criticos[]` + `problemas.altos[]` + os `problemas.medios[]` de **categoria bloqueante** (titulo, descricao, arquivo, linha, correcao_sugerida), **menos os médios convertidos pelo Passo 4.0** (convergência, rodada ≥ 3). A partição está em `.claude/rules/agent-spec-workflow-rules.md` → "Bloqueio Seletivo de Severidade MÉDIA por Categoria"; em `categoria: tests`, quem decide é o campo `smell`; categoria ausente/desconhecida ⇒ bloqueante
    - **Débito anotado**: `problemas.baixos[]` **+ os `problemas.medios[]` de categoria anotável** — entram no prompt como "Observações" (corrigir é opcional); os que não forem corrigidos DEVEM ser acumulados para a §2 do snapshot `_run/run-report.md` ao fechar o loop, preservando `arquivo`/`linha`/`correcao_sugerida`
    - `observacoes[]`
    - `testes_executados.detalhes_falhas[]`
@@ -911,6 +940,8 @@ NÃO re-execute a suíte de testes salvo nas 3 condições do seu contrato: (1) 
 
 > **Débito-controlado com bloqueio seletivo** (mesma política do Passo 4): críticos e altos sempre bloqueiam; **médios bloqueiam conforme a categoria** (partição na rule); baixos e médios anotáveis são registrados na §2 do `_run/run-report.md` e não impedem a conclusão da task.
 >
+> **Convergência (Passo 4.0) — aplique AQUI também, antes de decidir a linha da tabela.** A partir da **rodada 3**, `MEDIO` **de categoria convergível** (`architecture`, `performance`, `testability`, `speculative_complexity` — e só essas) com `fingerprint` inédito (C1) ou que já bloqueou duas rodadas (C2) **não bloqueia**: viram débito anotado, com log. `CRITICO`/`ALTO` seguem bloqueando sempre. Se depois da conversão não sobrar bloqueante, o `PARCIAL`/`REJEITADO` do TR **vira `APROVADO_COM_OBSERVACOES`** pela Cláusula de divergência — siga para o Passo 8.5 e feche a task. **Este gate é o alvo medido da regra**: foi ele que devolveu `PARCIAL` nas rodadas 2, 3 e 4 da T4 com bloqueante `MEDIO/architecture` inédito a cada vez.
+>
 > **Cláusula de divergência de veredito (OBRIGATÓRIA)**: se o Tech Review devolver `PARCIAL`/`REJEITADO` mas **nenhum** dos problemas for bloqueante pela partição, **NÃO dispare rodada de correção**. Reclassifique para `APROVADO_COM_OBSERVACOES`, siga para o Passo 8.5, trate os anotáveis como débito e logue:
 > ```
 > [T{N}] veredito reclassificado: Tech Review devolveu <status> sem bloqueante pela partição → APROVADO_COM_OBSERVACOES (médios anotáveis: <categorias>)
@@ -953,7 +984,7 @@ Se Tech Review reprovou:
 
 2. **Extraia os problemas — política débito-controlado com bloqueio seletivo por categoria**:
    - `problems[]`: `id`, `severity`, `category`, `title`, `description`, `expected`, `impact`, `suggested_fix`, `adr_referenciada`
-   - **Bloqueantes**: `severity` `CRITICO` ou `ALTO`, **mais os `MEDIO` de categoria bloqueante** pela partição da rule (categoria ausente/desconhecida ⇒ bloqueante). **Débito anotado**: `BAIXO` **+ os `MEDIO` de categoria anotável** (`code_quality`, `project_pattern`, `best_practices`) — entram no prompt como "Observações".
+   - **Bloqueantes**: `severity` `CRITICO` ou `ALTO`, **mais os `MEDIO` de categoria bloqueante** pela partição da rule (categoria ausente/desconhecida ⇒ bloqueante), **menos os médios convertidos pelo Passo 4.0** (convergência, rodada ≥ 3). **Débito anotado**: `BAIXO` **+ os `MEDIO` de categoria anotável** (`code_quality`, `project_pattern`, `best_practices`) **+ os convertidos pela convergência** — entram no prompt como "Observações".
    - **Acumule AGORA os anotáveis para a §2 do snapshot `_run/run-report.md`** (baixos de qualquer categoria + médios de categoria anotável) — um bloco por problema no formato canônico (`### D{n} · {severity} · {category} · T[N] · Tech Review` com Onde/Problema/Impacto/O que fazer); `arquivo`/`linha`/`suggested_fix` vêm do próprio item em `problems[]` — **nunca os descarte**: são o que permite à `/agent-spec-debt-resolution` gerar tasks de cleanup sem reinferir paths. O prompt de correção afirma que eles "já estão anotados na §2"; este é o passo que garante isso.
 
 3. **Monte o prompt de correção**:
@@ -1040,6 +1071,19 @@ Se após 3 tentativas totais o QA ou Tech Review ainda reprovar:
 
 5. **Regenere o snapshot `_run/run-report.md`** (ver "Regeneração do snapshot" abaixo) — toda vez que uma task atinge estado terminal (concluída OU bloqueada — incluindo o `Bloqueado` do Passo 10), reescreva o relatório humano por inteiro a partir do estado acumulado. Isso mantém o arquivo sempre limpo e resiliente a queda no meio do run.
 
+6. **🔁 VOLTE AO §3.0.1 E DESPACHE A PRÓXIMA TASK — NA MESMA RESPOSTA.**
+
+   Este passo fecha o laço iniciado em §3.0.1 (*"Para cada task pronta restante"*). Ele é **o passo mais fácil de perder do arquivo inteiro**, e a razão é estrutural: o passo 5 acima acaba de emitir um relatório com **a mesma forma** do "Relatório Final" lá embaixo, e essa é a próxima seção que você lê. **Emitir o relatório de fecho de UMA task não é chegar ao fim do run.**
+
+   Recalcule as tasks prontas (Status `A Fazer` com todas as dependências `Concluído`) sobre o grafo já carregado em §2 — sem reler o `task_plan.md`:
+
+   - **Existe task pronta** → volte ao **§3.0 / §3.0.1** e execute-a. Emita a linha de log
+     `[T{n}] → despachando T{n+1} (restam {k} de {N})` e **despache o executor na mesma resposta**. NÃO pergunte se pode continuar, NÃO aguarde confirmação, NÃO encerre o turno.
+   - **Não existe task pronta E `tasks_completed == tasks_total`** → só então siga para "Após TODAS as tasks concluídas".
+   - **Não existe task pronta E ainda há task não-terminal** (todas bloqueadas por dependência de uma `Bloqueado`) → siga para "Após TODAS as tasks concluídas" registrando o motivo na §3 do snapshot. Este é o **único** fim antecipado legítimo.
+
+   > **Por que esta instrução existe, e é medida**: no run `emissao-e-conciliacao/v1` o orquestrador parou **duas vezes** após o relatório de fecho de uma task, e o usuário teve de reemitir a autorização de continuidade no meio do run (`_run/workflow-report.md`, linhas 43 e 299). A causa não foi desobediência — foi **ausência de retorno de laço**: a prosa linear deste arquivo termina em "Relatório Final", e nada mandava voltar. Ver `.claude/rules/autonomia-do-run.md` §A3.
+
 ### Regeneração do snapshot `_run/run-report.md`
 
 > O `_run/run-report.md` é um **snapshot regenerável** (NÃO append-only) — estrutura canônica fixa de 4 seções definida em `agent-spec-workflow-rules.md` → "Relatório do Run". Reescreva-o **por inteiro** a cada estado terminal de task e ao fim do run.
@@ -1054,6 +1098,8 @@ A cada regeneração, o orquestrador monta as 4 seções a partir do estado acum
 > **Acúmulo de débito**: mantenha em memória a lista de débitos anotáveis (baixos + médios de categoria anotável) por task (vinda dos JSONs do QA/Tech Review). Como o snapshot é reescrito após cada task atingir estado terminal, no momento de uma eventual queda o `_run/run-report.md` já contém os débitos de todas as tasks finalizadas — não há perda. A telemetria crua (base_sha, retries, paralelismo) fica só no `_run/workflow-report.md`.
 
 ### Após TODAS as tasks concluídas
+
+> ⚠️ **PRÉ-CONDIÇÃO DE ENTRADA (confira antes de ler a linha seguinte)**: esta seção só se aplica quando **não resta task pronta nem task não-terminal desbloqueável** — na prática, `tasks_completed + tasks_bloqueadas == tasks_total`. Se ainda houver task pronta, você entrou aqui **por engano**: volte ao passo 6 de "Atualização de Estado por Task" e despache a próxima. Fechar o run com task pendente é o defeito que a `.claude/rules/autonomia-do-run.md` §A3 nomeia.
 
 1. **Critérios de Conclusão Geral** (seção 7 do task_plan.md): valide e marque `[x]` em cada:
    - [ ] Todas as tasks concluídas
@@ -1128,6 +1174,7 @@ Aplique durante TODA a execução:
 18. **Manter o Ledger de Achados na interpretação do veredito de CADA gate, inclusive na rodada que aprova** (Passo 4.2), e **fazê-lo nascer POPULADO** na primeira rejeição (Passo 5 / Passo 9). O estado `reaberto` é gravado pelo **orquestrador**, comparando pelo `fingerprint`.
 19. **Conferir `antipadroes_verificados[]`** na interpretação do veredito do QA (Passo 4.1) e registrar observação **não-bloqueante** quando ausente ou incompleto.
 20. **Registrar a métrica do ledger** (`[T{N}] ledger: ...`) **antes** de deletar a memória lazy.
+21. **Aplicar a Convergência do laço (Passo 4.0) na interpretação do veredito de CADA gate, a partir da rodada 3** — `MEDIO` **de categoria convergível** (`architecture`, `performance`, `testability`, `speculative_complexity`) com `fingerprint` inédito (C1) ou reincidente por duas rodadas (C2) vira débito anotado, **nunca** rodada de correção; `CRITICO`/`ALTO` e todo `MEDIO` de categoria funcional seguem bloqueando sempre. **Escriturar cada item convertido** na §2 do `_run/run-report.md` com `arquivo`/`linha`/`correcao_sugerida` preservados, e **logar** `[T{N}] convergência (rodada {k}): ...`. Item convertido e não escriturado é achado perdido.
 
 ### NÃO DEVE
 
@@ -1145,6 +1192,8 @@ Aplique durante TODA a execução:
 ---
 
 ## Relatório Final
+
+> ⚠️ **Esta seção descreve o fim do RUN, nunca o fim de uma task.** Ela só executa depois de "Após TODAS as tasks concluídas", cuja pré-condição de entrada você acabou de conferir. O relatório de fecho **por task** é outro artefato — é o passo 5 de "Atualização de Estado por Task", e é seguido pelo passo 6 (**despachar a próxima task**), não por esta seção. Confundir os dois é exatamente como o run para no meio.
 
 Ao final, **(a)** garanta que o snapshot `_run/run-report.md` está regenerado com o estado final (ver "Regeneração do snapshot" em "Atualização de Estado por Task") e **(b)** produza a MESMA saída em stdout para o usuário. O `_run/run-report.md` é o registro humano persistido; o stdout é a cópia imediata na conversa. Ambos têm as seções:
 
@@ -1172,6 +1221,7 @@ Ao final, **(a)** garanta que o snapshot `_run/run-report.md` está regenerado c
 - [ ] Memória lazy criada apenas em rejeição
 - [ ] Stage (`git add`) feito apenas após Tech Review aprovar
 - [ ] Memória lazy `T{N}.md` deletada ao aprovar (se foi criada)
+- [ ] Convergência (Passo 4.0) aplicada em toda rodada ≥ 3, com cada item convertido logado (`[T{N}] convergência (rodada {k}): ...`) **e** escriturado na §2 do `_run/run-report.md`
 - [ ] Tasks bloqueadas escaladas ao usuário (após 3 tentativas)
 - [ ] `task_plan.md` (tabela + critérios gerais) atualizado ao final
 - [ ] `_run/sdd_state.yaml` atualizado para `execution: completed` ao final

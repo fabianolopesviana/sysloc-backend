@@ -650,9 +650,50 @@ A categoria `tests` do QA é **ambígua**: comporta desde seletor frágil (cosm�
 
 Se o item de problema vier **sem** `categoria`/`category`, ou com valor fora dos vocabulários canônicos, trate-o como **bloqueante**. Bloquear indevidamente custa uma rodada; anotar indevidamente shipa o defeito.
 
+### Convergência do laço de correção — o MÉDIO a partir da rodada 3
+
+> **Quem aplica: o ORQUESTRADOR, sempre — nunca o gate.** Os gates continuam reportando cada achado com a severidade e a categoria honestas, na rodada que for. Esta regra decide o que **abre rodada de correção**, e o estado que ela lê (número da rodada, `fingerprint` no Ledger) só existe no orquestrador. Gate que suprima, rebaixe ou deixe de reportar um achado "porque a rodada é a terceira" está violando o próprio contrato.
+
+**O problema que isto resolve.** `base_sha` não muda entre tentativas, mas o **código** muda: da rodada 2 em diante o gate revisa a **correção**, isto é, superfície que a rodada anterior acabou de criar. Corrigir arquitetura muda arquitetura — então a fonte de achado `MEDIO` novo é **inesgotável por construção**, e o laço só termina quando o revisor por acaso não acha nada. Medido no run `emissao-e-conciliacao/v1`: a T4 fechou em **5 rodadas** (9 invocações de gate), com bloqueante `MEDIO/architecture` **inédito** nas rodadas 3 e 4, e o Ledger registrando *"6 achados originados em rodada >1 … nasceram de correções das rodadas anteriores"*. O ponto fixo era alcançado por sorte, não por desenho.
+
+**As duas cláusulas.** A `rodada` é o `attempt_count + 1` da "Semântica de tentativas" (rodada 1 = execução inicial; rodada 2 = 1ª correção; rodada 3 = 2ª correção). As duas valem para **os dois gates**, e **só sobre categoria convergível** (definida logo abaixo):
+
+| # | Cláusula | Efeito |
+|---|---|---|
+| **C1** | **`MEDIO` de categoria convergível com `fingerprint` INÉDITO no Ledger, em rodada ≥ 3, NÃO bloqueia.** | Entra no Ledger com `status: aceito_como_debito` e `rodada_origem` = rodada corrente, e vira bloco de débito na §2 do `_run/run-report.md` |
+| **C2** | **`MEDIO` de categoria convergível que já bloqueou em DUAS rodadas e segue `aberto` na terceira NÃO bloqueia mais.** | Mesmo destino: `aceito_como_debito` na rodada corrente, **preservando a `rodada_origem` original** |
+
+### Categoria convergível — lista POSITIVA e fechada, de 4 itens
+
+```
+architecture · performance · testability · speculative_complexity
+```
+
+**Qualquer outra categoria NUNCA converge** — em rodada nenhuma, por quantas rodadas forem. Nomeadamente, seguem bloqueando como `CRITICO`/`ALTO`: `logic`, `data_handling`, `error_handling`, `concurrency`, `security`, `adr_compliance`, `technical_requirement`, `scope_deviation`, e `tests` (que já se resolve pelo `smell`).
+
+**Por que lista positiva e não subtração.** Categoria **ausente, desconhecida ou nova** cai fora da lista e portanto **não converge** — o default fica do lado seguro sem precisar ser reavaliado toda vez que o vocabulário crescer. Definir por subtração inverteria isso: categoria nova convergiria em silêncio.
+
+**Por que exatamente estas quatro.** São as categorias em que o achado é **craft arquitetural e de forma** — acoplamento, indireção, custo, testabilidade, abstração especulativa. O contrato do Gate 2 declara por escrito que *"nem todo médio é cosmético — `error_handling` estrutural inadequado é defeito real e continua bloqueando"*: essa faixa funcional é justamente a que ficou de fora. **Custo medido da restrição: zero.** Os quatro bloqueantes tardios que motivaram esta regra (T3 rodada 1, T4 rodadas 2, 3 e 4) eram **todos `MEDIO/architecture`** — a T4 converge na rodada 3 exatamente igual.
+
+**`CRITICO` e `ALTO` estão FORA desta regra** e bloqueiam **sempre**, inéditos ou não, em qualquer rodada, sem limite de repetição. É por isso que a convergência **não é afrouxamento**: ela não tolera risco, ela proíbe que o **acúmulo de achado médio de forma** seja fonte infinita de rodada. As rodadas 1 e 2 — onde a varredura deve ser completa e o sweep mecânico é obrigatório — ficam **byte a byte com o rigor de antes**.
+
+> **O que a convergência NÃO alcança, e é o que responde "isto pode shipar bug?"**: ela opera **exclusivamente** sobre itens de `problemas.medios[]`/`problems[]`. Ficam intocados, bloqueando sem limite de rodada: **teste falhando** (o contrato do Gate 1 manda `REJEITADO` + item em `problemas.criticos[]`, regressão em outra área inclusive), **CT exigido sem teste** (`CRITICO`), e **critério de aceite `FALHOU`/`PARCIAL`** (campo `criterios_falhos[]`, que nem sequer é item de severidade). Para uma task fechar com a aplicação quebrada seria preciso a suíte inteira verde, todos os CAs atendidos e todo CT com teste — cenário em que o que restou não é defeito, é dívida de forma.
+
+**Por que C1 e C2 juntas garantem terminação.** A partir da rodada 3 o conjunto de médios capazes de bloquear **encolhe monotonicamente**: nenhum entra (C1) e nenhum sobrevive a três rodadas (C2). Logo o laço só continua enquanto houver `CRITICO`/`ALTO` **aberto** — que é exatamente o caso em que continuar é o certo. C2 é a aplicação literal da §5 de `.claude/rules/nao-regressao.md` (*"segunda rejeição do mesmo item significa que a sua leitura do problema está errada, não que a correção foi tímida"*): insistir numa terceira rodada no mesmo médio não muda a leitura — muda o relatório.
+
+**Log obrigatório**, uma linha por item convertido, em `shared.workflow_report.path`:
+
+```
+[T{N}] convergência (rodada {k}): {C1|C2} · {finding_id} {severidade}/{categoria} → aceito_como_debito · {fingerprint}
+```
+
+> **Sem este log a regra é indistinguível de achado esquecido.** É por ele que se audita, depois, se a convergência anotou o que devia — e é o insumo que cruza com a métrica `{B}`/`{C}` do Ledger.
+
+**O que NÃO muda, e é o ponto**: o achado continua **reportado** pelo gate, **registrado** no Ledger e **escriturado** na §2 do relatório com `arquivo`/`linha`/`correcao_sugerida` intactos — é débito de primeira classe, alimenta a `/agent-spec-debt-resolution` como qualquer outro. Nada some; o que muda é **quando** se paga.
+
 ### Divergência de veredito — o orquestrador reclassifica, nunca dispara correção sem bloqueante
 
-Um gate cujo contrato ainda não foi atualizado (ou que erra a classificação) pode devolver `REJEITADO`/`PARCIAL` **sem nenhum problema bloqueante pela partição acima**. Nesse caso o orquestrador:
+Um gate cujo contrato ainda não foi atualizado (ou que erra a classificação) pode devolver `REJEITADO`/`PARCIAL` **sem nenhum problema bloqueante pela partição acima** — e, a partir da rodada 3, também pelo efeito da **Convergência do laço de correção** acima. Nesse caso o orquestrador:
 
 1. **reclassifica** o veredito para `APROVADO_COM_OBSERVACOES`, seguindo o fluxo normal (avança para o gate seguinte / fecha a task);
 2. trata os médios anotáveis como débito (§2 do `_run/run-report.md`);
@@ -672,6 +713,8 @@ Esta partição é **duplicada de propósito** nos dois contratos de agente. Nã
   - **Nenhuma das duas listas da partição do QA** (MÉDIO bloqueante e MÉDIO anotável) **é reproduzida por orquestrador.** Não confunda com o **vocabulário canônico completo do QA** — as 15 categorias que os prompts dos gates citam ao exigir o campo `categoria`. Esse é outro artefato, com outra finalidade, e a sua reprodução é legítima: ele enumera o domínio de valores possíveis, não como eles se dividem entre bloqueante e anotável.
 - **Os dois contratos de agente PODEM espelhar** a partição integralmente, e **cada espelho DEVE estar marcado** como *"espelho autorizado de `agent-spec-workflow-rules.md` → Bloqueio Seletivo de Severidade MÉDIA por Categoria — em divergência, a rule vence"*. A razão é concreta: subagentes rodam em **contexto isolado** e esta rule carrega **condicionalmente** (tem `paths:` no frontmatter) — um diff que não case com os matchers deixaria o gate sem a partição, e o default conservador (tudo bloqueante) anularia a melhoria **em silêncio**.
 - **Toda alteração da partição aqui DEVE ser replicada nos dois espelhos na mesma passada.**
+- **Exceção nomeada — a lista de "categoria convergível"** (`architecture`, `performance`, `testability`, `speculative_complexity`) **PODE e DEVE aparecer inline nos três orquestradores.** É uma lista **positiva de 4 itens**, e o modo de falha de errá-la é pior que o drift: um orquestrador que a reconstrua de memória converge a categoria errada — anotando defeito funcional como débito —, e a falha é **silenciosa**. Quatro nomes literais custam menos que essa classe de erro.
+- **A "Convergência do laço de correção" NÃO se espelha em contrato de agente, e a assimetria é deliberada.** Ela não é uma lista de categorias — é um **algoritmo sobre estado que só o orquestrador tem** (número da rodada e `fingerprint` no Ledger). Espelhá-la num gate ensinaria o gate a **suprimir achado por causa da rodada**, que é o oposto do que se quer: o gate reporta sempre, com honestidade, e quem converte em débito é o orquestrador. O que os contratos de agente carregam é apenas o **aviso** de que a reclassificação pode ocorrer — nunca a regra.
 
 ---
 

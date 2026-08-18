@@ -359,6 +359,17 @@ Esses 2 campos são **passados INLINE** no prompt do QA (FASE 3) e do Tech Revie
 
 5. **Regenere o snapshot `_run/run-report.md`** (ver "Regeneração do snapshot" abaixo) — toda vez que uma task atinge estado terminal (concluída OU bloqueada), reescreva o relatório humano por inteiro a partir do estado acumulado. Isso mantém o arquivo sempre limpo e resiliente a queda no meio do run.
 
+6. **🔁 VOLTE AO LOOP DE TASKS E DESPACHE A PRÓXIMA — NA MESMA RESPOSTA.**
+
+   Este passo fecha o laço por task. Ele é **o passo mais fácil de perder do arquivo inteiro**: o passo 5 acabou de emitir um relatório com **a mesma forma** do "Relatório Final", e essa é a próxima seção que você lê. **Emitir o relatório de fecho de UMA task não é chegar ao fim do run.**
+
+   Recalcule as tasks prontas (Status `A Fazer` com todas as dependências `Concluído`) sobre o grafo já carregado — sem reler o `task_plan.md`:
+
+   - **Existe task pronta** → volte ao início da execução por task e **despache o executor na mesma resposta**, logando `[T{n}] → despachando T{n+1} (restam {k} de {N})`. NÃO pergunte se pode continuar, NÃO aguarde confirmação, NÃO encerre o turno.
+   - **Não existe task pronta E todas em estado terminal** → só então siga para "Após TODAS as tasks concluídas".
+
+   > Ver `.claude/rules/autonomia-do-run.md` §A3. A ausência deste retorno de laço fez o orquestrador SDD parar duas vezes após o relatório de fecho de uma task no run `emissao-e-conciliacao/v1`.
+
 ### Regeneração do snapshot `_run/run-report.md`
 
 > O `_run/run-report.md` é um **snapshot regenerável** (NÃO append-only) — estrutura canônica fixa de 4 seções definida em `agent-spec-workflow-rules.md` → "Relatório do Run". Reescreva-o **por inteiro** a cada estado terminal de task e ao fim do run.

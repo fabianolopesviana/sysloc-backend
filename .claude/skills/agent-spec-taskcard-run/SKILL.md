@@ -481,6 +481,32 @@ OBRIGATÓRIO: Antes de produzir o JSON final:
 > [TC-id] veredito reclassificado: QA devolveu REJEITADO sem bloqueante pela partição → APROVADO_COM_OBSERVACOES (médios anotáveis: <categorias>)
 > ```
 
+#### Passo 4.4.0 — Convergência do laço: o MÉDIO a partir da rodada 3 (aplica-se aos DOIS gates)
+
+> **Regra canônica**: [`agent-spec-workflow-rules.md`](.claude/rules/agent-spec-workflow-rules.md) → **"Convergência do laço de correção — o MÉDIO a partir da rodada 3"**. **Consulte-a; o que segue é o procedimento.**
+>
+> **É SEU, nunca do gate.** Os gates reportam com honestidade em qualquer rodada — os contratos deles proíbem rebaixar ou omitir por causa da rodada. Quem converte é o orquestrador, porque o estado que a regra lê (número da rodada e `fingerprint` no Ledger) só existe aqui.
+
+Aplique **antes** de montar o conjunto de bloqueantes (Passo 6), na interpretação do veredito de **cada** gate. `rodada` = `attempt_count + 1`.
+
+1. **Rodada 1 ou 2** → nada a fazer; a partição de categoria vale integralmente.
+2. **Rodada ≥ 3** → considere **apenas** os `MEDIO`/`medio` **de categoria convergível**:
+
+   ```
+   architecture · performance · testability · speculative_complexity
+   ```
+
+   **Categoria fora desta lista NÃO converge, nunca** — `logic`, `data_handling`, `error_handling`, `concurrency`, `security`, `adr_compliance`, `technical_requirement`, `scope_deviation` e `tests` seguem bloqueando como `CRITICO`/`ALTO`. Categoria ausente ou desconhecida também não converge (lista positiva e fechada — ver a rule). Para cada item que sobrar, calcule o `fingerprint`:
+   - **C1 — `fingerprint` INÉDITO no Ledger** ⇒ não bloqueia; entra como `status: aceito_como_debito`, `rodada_origem` = corrente.
+   - **C2 — já no Ledger, `aberto`, tendo bloqueado DUAS rodadas** ⇒ não bloqueia mais; vira `aceito_como_debito` **preservando a `rodada_origem` original**.
+   - Caso contrário ⇒ segue bloqueante.
+3. **`CRITICO`/`ALTO` ficam FORA**, em rodada nenhuma: bloqueiam sempre, sem limite. **Também ficam fora**: teste falhando, CT exigido sem teste e critério de aceite `FALHOU`/`PARCIAL` — os dois primeiros são `CRITICO` por contrato, o terceiro vive em `criterios_falhos[]`, que não é item de severidade. **É por isso que a convergência não pode fechar uma TaskCard com a aplicação quebrada.**
+4. **Escriture cada convertido** na §2 do snapshot `_run/run-report.md`, com `arquivo`/`linha`/`correcao_sugerida` preservados. Convertido e não escriturado é achado **perdido**.
+5. **Logue** uma linha por item: `[TC-id] convergência (rodada {k}): {C1|C2} · {finding_id} {severidade}/{categoria} → aceito_como_debito · {fingerprint}`.
+6. Se não sobrar bloqueante ⇒ aplique a **Cláusula de divergência** acima e siga o fluxo normal.
+
+> **Por que da 3, e não da 2**: a rodada 2 revisa a primeira correção, e médio novo ali ainda pode ser varredura incompleta da rodada 1 — o que o sweep mecânico e o Ledger existem para pegar. Da terceira em diante o achado novo é, quase sempre, superfície que a **própria correção** criou, e nessa direção a fonte não se esgota.
+
 #### Passo 4.4.1 — Conferir a declaração do sweep (`antipadroes_verificados[]`)
 
 > **Executa em TODOS os vereditos** — `APROVADO`, `APROVADO_COM_OBSERVACOES` e `REJEITADO`. NÃO pode viver no loop de correção (Passo 6): o loop só roda em rejeição, e a **rodada 1 aprovada** é o caminho dominante que esta conferência existe para auditar.
@@ -676,6 +702,8 @@ NÃO re-execute a suíte de testes salvo nas 3 condições do seu contrato: (1) 
 | `PARCIAL` | ≥ 1 `ALTO`, ou `MEDIO` de categoria **bloqueante** (sem `CRITICO`) | Enviar os bloqueantes ao executor (Passo 6); os anotáveis viram débito anotado |
 | `REJEITADO` | ≥ 1 `CRITICO` | Enviar os bloqueantes ao executor (Passo 6); os anotáveis viram débito anotado |
 | `PULADO_QA_REJEITOU` | TR invocado com QA reprovado | Erro de orquestração: logue em `shared.workflow_report.path` e volte ao loop de correção do QA |
+
+> **Convergência (Passo 4.4.0) — aplique AQUI também, antes de decidir a linha da tabela.** A partir da **rodada 3**, `MEDIO` **de categoria convergível** (`architecture`, `performance`, `testability`, `speculative_complexity` — e só essas) com `fingerprint` inédito (C1) ou que já bloqueou duas rodadas (C2) **não bloqueia**: viram débito anotado, escriturado e logado. `CRITICO`/`ALTO` seguem bloqueando sempre. Se depois da conversão não sobrar bloqueante, o `PARCIAL`/`REJEITADO` vira `APROVADO_COM_OBSERVACOES` pela Cláusula de divergência — feche a TaskCard. **O Gate 2 é o alvo medido da regra**: é dele que vêm os bloqueantes inéditos de rodada tardia que impedem o laço de convergir.
 
 > **Formato do bloco de débito (§2 do snapshot)** — um bloco por problema **anotável** (baixo de qualquer categoria ou médio de categoria anotável), NUNCA descartando arquivo/linha/correção:
 > ```
@@ -981,7 +1009,7 @@ Ao final, **(a)** garanta que o snapshot `_run/run-report.md` está regenerado c
 1. **NUNCA implementar** uma TaskCard diretamente — sempre delegue via `Agent` (a variante "execução direta pelo orquestrador" foi removida).
 2. **NUNCA lançar QA e Tech Review em paralelo** para a mesma TaskCard.
 3. **NUNCA usar Haiku no executor** — rejeite com erro claro se frontmatter declarar.
-4. **Política débito-controlado com bloqueio seletivo por categoria, em retry**: envie ao executor como bloqueantes os problemas `CRITICO`, `ALTO` e os `MEDIO` de **categoria bloqueante** (partição em `.claude/rules/agent-spec-workflow-rules.md` → "Bloqueio Seletivo de Severidade MÉDIA por Categoria"; em `categoria: tests` decide o campo `smell`; categoria ausente/desconhecida ⇒ bloqueante). Os `BAIXO` **e os `MEDIO` de categoria anotável** vão como "Observações" opcionais no mesmo prompt (não exigem correção no ciclo) e ficam anotados na §2 do `_run/run-report.md` para cleanup futuro, preservando `arquivo`/`linha`/`correcao_sugerida`. **Nunca abra rodada de correção sem nenhum bloqueante** — reclassifique para `APROVADO_COM_OBSERVACOES` e logue.
+4. **Política débito-controlado com bloqueio seletivo por categoria, em retry**: envie ao executor como bloqueantes os problemas `CRITICO`, `ALTO` e os `MEDIO` de **categoria bloqueante** (partição em `.claude/rules/agent-spec-workflow-rules.md` → "Bloqueio Seletivo de Severidade MÉDIA por Categoria"; em `categoria: tests` decide o campo `smell`; categoria ausente/desconhecida ⇒ bloqueante). Os `BAIXO` **e os `MEDIO` de categoria anotável** vão como "Observações" opcionais no mesmo prompt (não exigem correção no ciclo) e ficam anotados na §2 do `_run/run-report.md` para cleanup futuro, preservando `arquivo`/`linha`/`correcao_sugerida`. **Nunca abra rodada de correção sem nenhum bloqueante** — reclassifique para `APROVADO_COM_OBSERVACOES` e logue. **A partir da rodada 3, aplique antes a Convergência do laço (Passo 4.4.0)**: `MEDIO` **de categoria convergível** (`architecture`, `performance`, `testability`, `speculative_complexity`) com `fingerprint` inédito ou reincidente por duas rodadas **sai do conjunto bloqueante** e viram débito escriturado com log; `CRITICO`/`ALTO` seguem bloqueando sempre.
 5. **NUNCA usar paths hardcoded** — sempre resolva via templates do `.claude/rules/agent-spec-taskcard-workflow-rules.md` (paths TaskCard) e `.claude/rules/agent-spec-workflow-rules.md` (paths compartilhados).
 6. **NUNCA continuar após 3 tentativas falhas** — escale ao usuário.
 7. **NUNCA commitar** ao final do Tech Review aprovar — apenas `git add`. O usuário commita.
