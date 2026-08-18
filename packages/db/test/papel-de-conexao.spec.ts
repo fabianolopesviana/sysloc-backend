@@ -103,10 +103,11 @@ const PAPEL_DONO = 'sysloc_migracao';
  * `cadastro-de-imoveis-e-pessoas` criou SEIS tabelas em `negocio` pela migração `0005`, a T3 da
  * fatia `contratos-de-locacao` acrescentou DUAS pela `0007`, a T3 da fatia `cobranca-e-mora`
  * acrescentou DUAS pela `0009`, a T3 da fatia `regua-de-cobranca` acrescentou DUAS pela `0011`, e a
- * T3 da sub-fatia `documentos-e-confirmacao` acrescentou UMA pela `0013`, e a T4 da fatia
- * `fundacao-bancaria` acrescenta UMA pela `0015`. O
+ * T3 da sub-fatia `documentos-e-confirmacao` acrescentou UMA pela `0013`, a T4 da fatia
+ * `fundacao-bancaria` acrescentou UMA pela `0015`, e a T2 da fatia `emissao-e-conciliacao`
+ * acrescenta QUATRO pela `0017`. O
  * papel da conexão — que é o que estes casos provam — não mudou: `sysloc_app` continua sem
- * privilégio, e a tabela nova continua pertencendo a `sysloc_migracao`. Declarar as dezesseis é a
+ * privilégio, e a tabela nova continua pertencendo a `sysloc_migracao`. Declarar as vinte é a
  * atualização legítima; derivar a lista da própria consulta faria o esperado vir da mesma fonte que
  * o obtido, e a asserção deixaria de poder falhar. **Crescimento da lista esperada é o caminho
  * legítimo; trocar a igualdade por contenção (`toContain`) seria regressão de prova.**
@@ -125,13 +126,17 @@ const TABELAS_DE_NEGOCIO_ESPERADAS = [
   'certificado_do_provedor',
   'cobranca',
   'comodo',
+  'conferencia_bancaria',
   'configuracao_de_mora',
   'conjunto',
   'contrato',
   'contrato_fiador',
+  'emissao_em_lote',
   'envio_de_cobranca',
+  'evento_bancario',
   'fiador',
   'imovel',
+  'item_da_emissao_em_lote',
   'locador',
   'locatario',
   'politica_de_aviso',
@@ -327,29 +332,37 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
 
       // A contagem é afirmada ANTES da propriedade, e é deliberada: sem ela, um schema `negocio`
       // vazio faria a asserção seguinte passar sem examinar tabela alguma.
-      expect(observado.tabelasDeNegocio).toHaveLength(16);
+      expect(observado.tabelasDeNegocio).toHaveLength(20);
       expect(observado.tabelasDeNegocio.map((linha) => linha.tabela)).toEqual([
         'acesso_usuario_app',
         'acesso_usuario_permissao',
         'certificado_do_provedor',
         'cobranca',
         'comodo',
+        'conferencia_bancaria',
         'configuracao_de_mora',
         'conjunto',
         'contrato',
         'contrato_fiador',
+        'emissao_em_lote',
         'envio_de_cobranca',
+        'evento_bancario',
         'fiador',
         'imovel',
+        'item_da_emissao_em_lote',
         'locador',
         'locatario',
         'politica_de_aviso',
         'portador_de_confirmacao',
       ]);
-      // As dezesseis escritas por extenso, e não `map(() => …)`: a propriedade é afirmada POR TABELA,
+      // As vinte escritas por extenso, e não `map(() => …)`: a propriedade é afirmada POR TABELA,
       // de modo que uma delas que nascesse com outro dono apareça pela posição. Derivar a lista do
       // tamanho da anterior faria a contagem responder no lugar da propriedade.
       expect(observado.tabelasDeNegocio.map((linha) => linha.dono)).toEqual([
+        'sysloc_migracao',
+        'sysloc_migracao',
+        'sysloc_migracao',
+        'sysloc_migracao',
         'sysloc_migracao',
         'sysloc_migracao',
         'sysloc_migracao',
@@ -387,8 +400,9 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
         "pg_has_role(current_user, 'sysloc_migracao', 'MEMBER') = true",
         "tableowner = current_user ('sysloc_migracao') em acesso_usuario_app, " +
           'acesso_usuario_permissao, certificado_do_provedor, cobranca, comodo, ' +
-          'configuracao_de_mora, conjunto, contrato, contrato_fiador, envio_de_cobranca, fiador, ' +
-          'imovel, locador, locatario, politica_de_aviso, portador_de_confirmacao',
+          'conferencia_bancaria, configuracao_de_mora, conjunto, contrato, contrato_fiador, ' +
+          'emissao_em_lote, envio_de_cobranca, evento_bancario, fiador, imovel, ' +
+          'item_da_emissao_em_lote, locador, locatario, politica_de_aviso, portador_de_confirmacao',
       ]);
 
       const superusuario = await conferirPapelDaConexao(conexaoSuperusuaria(banco));

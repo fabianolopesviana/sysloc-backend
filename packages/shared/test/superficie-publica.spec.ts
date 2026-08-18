@@ -8,6 +8,12 @@
  * - CT-009: a resolução do especificador público devolve um módulo que expõe os símbolos de
  *   runtime `CodigoErro`, `ErroDeAplicacao`, `criarLogger`, `conferirDocumento` e
  *   `somenteDigitos`; caminho profundo para arquivo interno não é resolvível.
+ * - CT-009 (T15): a superfície publica também as **duas filas** da cobrança bancária,
+ *   `FILA_DA_EMISSAO_EM_LOTE` e `FILA_DA_CONFERENCIA_BANCARIA`. As cargas delas
+ *   (`CargaDaEmissaoEmLote`, `CargaDaConferenciaBancaria`) são **interfaces** e não existem em
+ *   runtime — quem afirma a publicação delas é `fila.spec.ts`, sobre o texto do barril, e quem
+ *   afirma o conteúdo é o compilador. A asserção aqui é de **presença**, como as demais deste caso,
+ *   pela decisão registrada logo abaixo.
  * - CT-645: a superfície pública NÃO expõe as quatro peças da política de repetição de tarefa —
  *   `OPCOES_PADRAO_DA_TAREFA` é o único caminho publicado. Acrescentado pela intervenção dirigida
  *   de 2026-08-12 que fechou o `D31 (F3/T7)`; é a rede que faltava para a decisão de não publicá-las.
@@ -100,6 +106,13 @@ describe('CT-009 — superfície pública resolve pelo especificador do pacote',
     expect(publico.codigos).toContain('CAMPO_INVALIDO');
     expect(publico.tipos.conferirDocumento).toBe('function');
     expect(publico.tipos.somenteDigitos).toBe('function');
+    // As duas filas da cobrança bancária (T15). Elas entram aqui **no mesmo diff** que as publica:
+    // sem isso, a superfície do pacote cresceria em silêncio, e o produtor da borda e o consumidor
+    // do processo de trabalho passariam a depender de um símbolo que nada afirma existir na
+    // fronteira. A asserção é de **tipo**, e não só de presença, porque o nome de fila é cadeia: um
+    // símbolo que virasse objeto de configuração quebraria os dois lados sem que a chave sumisse.
+    expect(publico.tipos.FILA_DA_EMISSAO_EM_LOTE).toBe('string');
+    expect(publico.tipos.FILA_DA_CONFERENCIA_BANCARIA).toBe('string');
   });
 
   it('CT-645 — a superfície NÃO publica as peças da política de repetição', async () => {

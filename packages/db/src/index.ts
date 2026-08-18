@@ -344,6 +344,127 @@
  * desfecho que trava daria a quem chama a peça com que recompor o predicado por fora, que é
  * exatamente o que a ADR-0023 mantém no banco.
  *
+ * `./evento-bancario.js` entra pela mesma pergunta, e com a mesma resposta: as **duas** operações da
+ * trilha bancária **recebem** o executor de quem já abriu a unidade, não abrem conexão nem transação
+ * e não devolvem executor. Elas repetem as razões das anteriores — enumerabilidade do alcance a
+ * `negocio`, um lugar único sob a política, nenhum `empresaId` em assinatura alguma (ADR-0008) — e
+ * acrescentam **duas** que são próprias desta fatia.
+ *
+ * A primeira é a **ADR-0034**: a trilha publicada registra **efeito**, nunca a tentativa que nada
+ * mudou. Publicar a porta é o que torna verificável a afirmação de que existe **um** caminho para
+ * escrever na trilha — um segundo apareceria como símbolo a mais neste índice, que o `CT-012` compara
+ * por igualdade, e não como um `INSERT` a mais escondido no serviço que conversa com o provedor. É
+ * essa unicidade que mantém o ganho medido da ADR (1.864 → 27 eventos): quem grava é sempre quem já
+ * apurou que algo mudou.
+ *
+ * A segunda é a **indistinguibilidade da ausência**. `lerTrilhaDaCobranca` devolve lista vazia tanto
+ * para a cobrança sem trilha quanto para a de outra empresa, e não há aqui recusa nomeada: a tradução
+ * em `404` é da borda, num ponto único, com o mesmo corpo que `localizarCobranca` já produz
+ * (ADR-0008). Uma leitura escrita fora do pacote teria de reproduzir essa escolha — e a primeira que
+ * a esquecesse diria ao cliente que o identificador existe em algum lugar.
+ *
+ * De lá **não** sai `eventoPublicado`, e a ausência é deliberada: é o mecanismo interno da tradução,
+ * pelo mesmo critério de `envioPublicado` e de `cobrancaPublicada`. `FORMATO_ISO_DO_INSTANTE`
+ * tampouco sai — ele passou a morar em `./moldes-de-formatacao.ts`, **casa única e interna** do molde
+ * que os três consumidores da camada de dados importam (o limiar de três do `CLAUDE.md` fechado no
+ * terceiro), e publicá-lo aqui daria a `apps/api` um formato de instante para escolher.
+ *
+ * `./emissao-em-lote.js` entra pela mesma pergunta, e com a mesma resposta: as **seis** operações do
+ * lote **recebem** o executor de quem já abriu a unidade, não abrem conexão nem transação e não
+ * devolvem executor. Elas repetem as razões das anteriores — enumerabilidade do alcance a `negocio`,
+ * um lugar único sob a política, nenhum `empresaId` em assinatura alguma (ADR-0008) — e acrescentam
+ * **três** que são próprias desta fatia.
+ *
+ * A primeira é o **predicado do conjunto**. `selecionarCobrancasSemBoleto` é uma consulta só, e é dela
+ * — e de nada mais — que sai a idempotência da reexecução da mesma competência (`nosso_numero IS
+ * NULL`). Publicar a porta é o que impede o percurso de compor por fora o par "listar a carteira,
+ * decidir quem entra": seria a segunda regra para o mesmo fato, livre para divergir da primeira, e
+ * traria o conjunto inteiro para a memória antes de filtrar, que é o que a ADR-0023 mantém no banco.
+ *
+ * A segunda são as **duas recusas nomeadas**, que saem daqui pelo mesmo critério de
+ * `ErroDeImovelComContratoVigente` — são classes de erro, não caminho para dado. `ErroDeLoteEmCurso`
+ * carrega o `id` do lote em curso, lido **depois** da recusa do índice único parcial, de dentro de um
+ * `SAVEPOINT`: só de dentro do pacote isso é possível, e sem ele o Admin que clicasse duas vezes
+ * receberia `500` com erro de driver. `ErroDeLoteNaoAlcancado` é a recusa dos **dois desfechos** quando
+ * a escrita não alcança a linha, e ela precisa ser reconhecível **em runtime** fora do pacote porque
+ * zero linhas tem duas causas que esta camada não separa — o **reenvio** da tarefa, benigno e previsto
+ * pela entrega *at-least-once*, e o alvo errado, que é grave. Quem sabe qual delas está acontecendo é o
+ * chamador; com um `Error` de texto ele teria de casar mensagem para decidir.
+ *
+ * A terceira é o **estado derivado**. Não há coluna de estado (ADR-0022), e a derivação dos dois
+ * instantes de desfecho tem lar único em `./emissao-em-lote.ts`: uma segunda apareceria aqui como
+ * símbolo excedente, e não como um `if` escondido no serviço que publica o lote.
+ *
+ * De lá **não** saem `lotePublicado`, `itemPublicado`, `estadoDoLote`, `colunasDoLote` nem
+ * `lerLoteEmCurso`, e as ausências são deliberadas: são o mecanismo interno da projeção, da derivação e
+ * do discriminante, pelo mesmo critério de `cobrancaPublicada` e de `colunasDaCobranca`.
+ *
+ * `./conferencia-bancaria.js` entra pela mesma pergunta, e com a mesma resposta: as **quatro**
+ * operações da conferência **recebem** o executor de quem já abriu a unidade, não abrem conexão nem
+ * transação e não devolvem executor. Elas repetem as razões das anteriores — enumerabilidade do
+ * alcance a `negocio`, um lugar único sob a política, nenhum `empresaId` em assinatura alguma
+ * (ADR-0008), a chave da porta sendo o UUID porque a conferência não tem série declarada (ADR-0017) —
+ * e acrescentam **três** que são próprias desta fatia.
+ *
+ * A primeira é o **predicado do conjunto a conferir**. `selecionarCobrancasAConferir` é uma consulta
+ * só, com a janela dos 30 dias medida contra `negocio.data_corrente_da_operacao()` (ADR-0026):
+ * publicar a porta é o que impede o percurso de compor por fora o par "listar a carteira, decidir quem
+ * entra", que traria o conjunto inteiro para a memória antes de filtrar (ADR-0023) e daria ao processo
+ * de trabalho um **segundo relógio** com que recompor a janela — o eixo do dia estaria no `apps/worker`
+ * e os carimbos no servidor, livres para divergir sem que nada acuse.
+ *
+ * A segunda é o **desfecho duplo da abertura**. `abrirConferencia` devolve `iniciadaAgora`, que separa
+ * *"abri agora"* de *"já estava acontecendo"* sem que a borda releia coisa alguma — e é isso que
+ * permite ao `POST` ser idempotente e responder `200` em vez de um erro que o enum fechado de
+ * `CodigoErro` teria de crescer para acomodar. `lerConferenciaEmCurso` sai junto porque é a leitura que
+ * responde **qual** execução está em curso e desde quando, e ela é o mecanismo do desfecho `false`.
+ *
+ * A terceira é `ErroDeConferenciaNaoAlcancada`, que entra pelo MESMO critério de `ErroDeUnidadeAninhada`
+ * e de `ErroDeLoteNaoAlcancado`: é **classe de erro**, não caminho para dado. Ela precisa ser
+ * reconhecível **fora** do pacote porque zero linhas na conclusão tem duas causas que esta camada não
+ * separa — o **reenvio** da tarefa, benigno e previsto (a entrega da fila é *at-least-once*, com o
+ * `conferenciaId` viajando na carga), e o alvo errado ou o contexto de tenant montado de outro modo,
+ * que é grave. Quem sabe qual delas está acontecendo é o chamador; com um `Error` de texto ele teria de
+ * casar mensagem para decidir.
+ *
+ * De lá **não** saem `conferenciaPublicada`, `colunasDaConferencia` nem
+ * `arbitroDaConferenciaEmAndamento`, e as ausências são deliberadas: são o mecanismo interno da
+ * projeção e da recusa, pelo mesmo critério de `lotePublicado` e de `colunasDaCobranca`. Publicar o
+ * árbitro daria a quem chama a peça com que recompor por fora a inserção que o índice parcial governa.
+ *
+ * `./boleto-da-cobranca.js` entra pela mesma pergunta, e com a mesma resposta: as **cinco** operações
+ * do fato bancário da cobrança **recebem** o executor de quem já abriu a unidade, não abrem conexão nem
+ * transação e não devolvem executor. Elas repetem as razões das anteriores — enumerabilidade do alcance
+ * a `negocio`, um lugar único sob a política, nenhum `empresaId` em assinatura alguma (ADR-0008), a
+ * chave da porta sendo o **código** porque a cobrança tem série declarada (ADR-0017) — e acrescentam
+ * **três** que são próprias desta fatia.
+ *
+ * A primeira é a **RN-07**. `liquidarPeloProvedor` chama `acusarPagamentoDeCobranca` **sem alterá-la**,
+ * de modo que os quatro carimbos de mora da baixa vinda do provedor são, por construção, os mesmos da
+ * baixa manual. Publicar a porta é o que impede o percurso de compor por fora o par "ler a mora, gravar
+ * o pagamento", em que a mora carimbada seria a de uma leitura anterior e a fórmula acabaria reescrita
+ * fora da visão (ADR-0022, ADR-0023) — e é o que mantém a guarda *"cobrança já paga não é repaga"*
+ * dentro da instrução que grava, em vez de num `SELECT` que perde a corrida.
+ *
+ * A segunda são os **desfechos benignos**. As três escritas condicionais devolvem *o que fizeram* —
+ * `NAO_ESTAVA_EM_ABERTO`, `NAO_ESTAVA_PAGA`, `NAO_HAVIA_BOLETO` —, porque a ADR-0034 manda **não**
+ * registrar efeito quando nada mudou, e quem percorre precisa saber disso sem reler o estado. Um `void`
+ * obrigaria o percurso a uma segunda avaliação do mesmo fato; um `throw` transformaria o caminho normal
+ * — o provedor confirmando o que já é verdade — em falha, queimando as tentativas da fila.
+ *
+ * A terceira é `ErroDeCobrancaNaoAlcancada`, que sai daqui pelo MESMO critério de
+ * `ErroDeLoteNaoAlcancado` e de `ErroDeConferenciaNaoAlcancada`: é **classe de erro**, não caminho para
+ * dado. Ela precisa ser reconhecível **em runtime** fora do pacote porque a recusa que ela carrega é
+ * **definitiva** — repetir a tarefa não muda nada, já que a cobrança segue inalcançável pelo contexto
+ * daquela carga —, e confundi-la com falha de driver faz a fila repetir três vezes para terminar
+ * dizendo ao operador o oposto da verdade. O `ato` que ela carrega é o que diz **qual** das quatro
+ * escritas recusou, sem casar texto de mensagem.
+ *
+ * De lá **não** sai `exigirCobrancaAlcancavel`, e a ausência é deliberada: é o mecanismo interno da
+ * separação entre a recusa grave e a benigna, pelo mesmo critério de `lerLoteEmCurso` e de
+ * `cobrancaPublicada`. Publicá-la daria a quem chama uma leitura de existência de cobrança **por
+ * fora** da política de leitura já publicada — e um segundo caminho para o mesmo recorte.
+ *
  * `./derivacao-de-cobranca.js` entra pelo MESMO critério de `somarMetragem` e das duas derivações do
  * contrato, e não pelo das portas: `derivarParcelasDoContrato` é **pura** sobre valor já em mãos — não
  * recebe executor, não toca o banco, não lê relógio e não é caminho para dado nenhum. Ela sai daqui
@@ -509,6 +630,23 @@ export {
   type TabelasDeIdentidade,
 } from './acesso-identidade.js';
 export {
+  type AlvoDoBoleto,
+  type AtoSobreOBoleto,
+  type BoletoDaCobranca,
+  type BoletoEmitido,
+  type DesfechoDaLiquidacao,
+  type DesfechoDoEstorno,
+  ErroDeCobrancaNaoAlcancada,
+  estornarLiquidacao,
+  gravarBoletoDaCobranca,
+  type LiquidacaoInformada,
+  lerBoletoDaCobranca,
+  liquidarPeloProvedor,
+  localizarAlvoDoBoleto,
+  type RevogacaoAplicada,
+  revogarBoleto,
+} from './boleto-da-cobranca.js';
+export {
   alterarPessoa,
   type ConflitoDeDocumento,
   criarPessoa,
@@ -577,6 +715,17 @@ export {
   removerComodo,
 } from './comodo.js';
 export {
+  abrirConferencia,
+  type CobrancaAConferir,
+  type ConferenciaNova,
+  type ContagensDaConferencia,
+  concluirConferencia,
+  ErroDeConferenciaNaoAlcancada,
+  type LinhaDaConferencia,
+  lerConferenciaEmCurso,
+  selecionarCobrancasAConferir,
+} from './conferencia-bancaria.js';
+export {
   type ConfiguracaoDeMoraPersistida,
   gravarConfiguracaoDeMora,
   lerConfiguracaoDeMora,
@@ -629,6 +778,21 @@ export {
   lerAgregadoDoContrato,
 } from './documento-de-contrato.js';
 export {
+  abrirEmissaoEmLote,
+  type CobrancaSemBoleto,
+  concluirLote,
+  type EmissaoEmLoteNova,
+  ErroDeLoteEmCurso,
+  ErroDeLoteNaoAlcancado,
+  type ItemDoLoteNovo,
+  interromperLote,
+  type LinhaDoItemDoLote,
+  type LinhaDoLote,
+  lerLote,
+  registrarItemDoLote,
+  selecionarCobrancasSemBoleto,
+} from './emissao-em-lote.js';
+export {
   type AlvoDeReemissao,
   admitirEmpresa,
   type EmpresaNova,
@@ -655,6 +819,12 @@ export {
 } from './envio-de-cobranca.js';
 export * as esquemaIdentidade from './esquema/identidade.js';
 export * as esquemaNegocio from './esquema/negocio.js';
+export {
+  type EventoBancarioNovo,
+  type LinhaDeEventoBancario,
+  lerTrilhaDaCobranca,
+  registrarEventoBancario,
+} from './evento-bancario.js';
 export {
   comporIdentificadorBancario,
   ErroDeContadorForaDaLargura,

@@ -31,8 +31,36 @@
  * |       |        | incorreta, conta bloqueada, recusa de política e **credencial invalidada por
  * |       |        | reemissão**. (RN-09, RN-10) |
  *
+ * | CA-14 | CT-926 | Uma sessão da empresa **B** que pede o **histórico bancário**, o **boleto** ou a
+ * |       |        | **emissão de boleto** de uma cobrança da empresa **A** recebe, nas três rotas,
+ * |       |        | resposta **idêntica em status e byte a byte** à que receberia para um código
+ * |       |        | que não existe em empresa alguma — mesmo corpo, mesmo conjunto de chaves do
+ * |       |        | corpo e mesmo conjunto de nomes de cabeçalho. E o isolamento é **do banco**: a
+ * |       |        | contagem de `negocio.evento_bancario` da MESMA cobrança é `0` sob o contexto de
+ * |       |        | B e `2` sob o de A — a mesma instrução, sem uma cláusula que compare
+ * |       |        | `empresa_id`. O controle positivo é a dona alcançando a própria cobrança com
+ * |       |        | `200` e a trilha inteira. (ADR-0008, ADR-0017) |
+ *
  * Rastreabilidade: `CA-08 → CT-016 (RN-06)`, `CA-08 → CT-016 (RN-10)`, `CA-13 → CT-017 (RN-10)`,
  * `CA-13 → CT-017 (RN-11)`, `CA-03 → CT-223 (RN-09)`, `CA-03 → CT-223 (RN-10)`.
+ * Acrescida pela T17 da fatia `emissao-e-conciliacao`: `CA-14 → CT-926 (RN-01)`.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que o CT-926 mora AQUI, e por que ele não toca a carga
+ * ---------------------------------------------------------------------------
+ *
+ * Pela mesma razão do `CT-223`: o que ele afirma é **indistinguibilidade**, e ela já tem uma
+ * definição neste arquivo — {@link observavel}, o comparador que os outros três casos usam. Escrevê-lo
+ * em `historico-bancario.e2e.spec.ts` obrigaria a uma segunda definição do que *"duas recusas são
+ * iguais"* significa, e duas definições da mesma coisa divergem. O `CT-925 (b)` de lá é a **outra
+ * metade** da mesma afirmação — o lado do código que não existe —, e as duas juntas é que a fazem
+ * inteira.
+ *
+ * E ele entra no regime do `CT-223` também no arranjo: as **duas empresas nascem dentro do caso**,
+ * pelas rotas do operador. Usar a carga o tornaria refém da ordem — o `CT-017` **suspende a empresa
+ * A**, e uma execução em que ele rodasse primeiro impediria a sessão do arranjo de existir. Nenhuma
+ * pessoa da carga é tocada, e o único estado compartilhado que o caso mexe é o do Master, desfeito no
+ * `finally` pela mesma razão registrada lá.
  *
  * ---------------------------------------------------------------------------
  * O eixo que discrimina é a comparação CRUZADA, e só ela
@@ -156,14 +184,19 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { LIMITE_DE_FALHAS_CONSECUTIVAS } from '@sysloc/auth';
 import {
+  type AcessoAoBanco,
+  abrirAcessoAoBanco,
+  contextoDeTenant,
   EMPRESA_A,
   EMPRESA_B,
   esquemaIdentidade,
+  registrarEventoBancario,
   SENHA_DA_CARGA,
   USUARIO_MASTER,
 } from '@sysloc/db';
 import { CodigoErro } from '@sysloc/shared';
 import { count, eq } from 'drizzle-orm';
+import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)
 // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o código abaixo.)
@@ -186,10 +219,18 @@ import {
 import { reservarPorta } from '../../../packages/shared/test/efemero-comum.ts';
 import { type FilaEfemera, redisEfemero } from '../../../packages/shared/test/redis-efemero.ts';
 import { PREFIXO_DAS_ROTAS_DE_IDENTIDADE } from '../src/autenticacao/autenticacao.module.ts';
+import { CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO } from '../src/autenticacao/senha.controller.ts';
+import { CAMINHO_DOS_LOCADORES } from '../src/cadastros/locador.controller.ts';
+import { CAMINHO_DOS_LOCATARIOS } from '../src/cadastros/locatario.controller.ts';
+import { CAMINHO_DAS_COBRANCAS } from '../src/cobrancas/cobranca.controller.ts';
 import { ENDERECO_DE_ESCUTA, PREFIXO_DE_VERSAO } from '../src/configuracao/ambiente.ts';
+import { CAMINHO_DOS_CONTRATOS } from '../src/contratos/contrato.controller.ts';
+import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
+import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
 import { criarAplicacao } from '../src/main.ts';
 import { CAMINHO_DO_MASTER } from '../src/master/empresa.controller.ts';
 import { decodificarBase32 } from './base32.ts';
+import { cpfValido } from './documento.ts';
 
 /** Limite da montagem: banco migrado, semente com credencial, fila e a aplicação real. */
 const LIMITE_DE_MONTAGEM_MS = 240_000;
@@ -279,8 +320,78 @@ const MASTER = USUARIO_MASTER;
 /** CT-223 · o Admin admitido DENTRO do caso. Ele não existe na carga, e ninguém mais o usa. */
 const EMAIL_DO_ADMIN_REEMITIDO = 'admin.reemitido@exemplo.com.br';
 
+// ---------------------------------------------------------------------------------------------
+// CT-926 — a recusa entre empresas, sobre as três rotas da fatia `emissao-e-conciliacao` (T17)
+// ---------------------------------------------------------------------------------------------
+
+/** As coleções que o arranjo do CT-926 percorre, compostas dos donos dos segmentos. */
+const COLECAO_DE_COBRANCAS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}`;
+const COLECAO_DE_CONTRATOS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}`;
+
+/** A rota de troca de senha **do produto** — a que baixa a marca de senha provisória (RN-09). */
+const ROTA_DE_TROCA_DE_SENHA = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO}`;
+
+/** A senha definitiva com que os dois Admins do CT-926 passam a operar. */
+const SENHA_TROCADA = 'brisa9Verde!';
+
+/** Quantas rotas da fatia `emissao-e-conciliacao` endereçam uma cobrança pelo código. */
+const ROTAS_QUE_ENDERECAM_A_COBRANCA = 3;
+
+/**
+ * A mensagem canônica de `RECURSO_NAO_ENCONTRADO` e o campo que a recusa nomeia — escritos à mão.
+ *
+ * Literais, e **não** importados de `MENSAGEM_POR_CODIGO`: comparar a resposta com a constante que a
+ * produziu faria a âncora concordar consigo mesma. É a mesma escolha, e a mesma razão, de
+ * {@link MENSAGEM_DE_CREDENCIAL_INVALIDA}.
+ */
+const MENSAGEM_DE_NAO_ENCONTRADO = 'recurso não encontrado';
+const CAMPO_DO_CODIGO = 'codigo';
+
+/**
+ * Um código de cobrança **bem formado** que não existe em empresa alguma — a resposta de REFERÊNCIA
+ * do CT-926.
+ *
+ * O ano é 2099 de propósito: ele passa pela validação de forma da borda, e é isso que se quer —
+ * um código malformado seria recusado com `422` antes de qualquer consulta, e mediria a validação em
+ * vez da recusa por ausência. O sequencial segue a largura publicada: **sete** dígitos.
+ */
+const COBRANCA_INEXISTENTE = 'COB-2099-0000001';
+
+/** Os termos do contrato do arranjo — valores quaisquer, dentro das condições de entrada. */
+const DATA_DE_INICIO_DO_CONTRATO = '2026-01-15';
+const PRAZO_EM_MESES = 12;
+const VALOR_MENSAL = 2500;
+const DIA_DE_VENCIMENTO = 10;
+
+/** O valor da cobrança do arranjo, e quantos dias à frente ela vence. */
+const VALOR_DA_COBRANCA = 1500;
+const DIAS_ATE_O_VENCIMENTO = 30;
+
+/** A referência da cobrança — texto livre do operador, e nada o interpreta. */
+const REFERENCIA_DA_COBRANCA = 'Competência do período — parcela';
+
+/**
+ * Os dois efeitos que a trilha da cobrança do arranjo carrega, **em ordem alfabética**.
+ *
+ * São **dois**, e não um: o controle antivácuo sob o contexto da empresa dona afirma a contagem em
+ * valor exato, e um só não distinguiria *"a política devolveu as linhas desta cobrança"* de *"a
+ * política devolveu uma linha qualquer"*.
+ *
+ * ⚠️ **Alfabética, e não cronológica, porque a ORDEM não é o eixo deste caso** — ela é o do `CT-925`,
+ * em `historico-bancario.e2e.spec.ts`, que a produz pelos caminhos reais e a afirma por igualdade de
+ * lista ordenada. Aqui os dois nascem na MESMA unidade de trabalho, e `ocorrido_em` é `now()`, que é
+ * o instante do **início da transação**: os dois carimbos são idênticos por construção, e a ordem
+ * entre eles é a do desempate por identificador — que é sorteado. Afirmá-la aqui seria afirmar o
+ * sorteio, e repeti-la seria duplicação cross-layer (AP-23) sobre prova mais frágil.
+ */
+const EFEITOS_DA_TRILHA: readonly ['BOLETO_EMITIDO', 'BOLETO_REVOGADO'] = [
+  'BOLETO_EMITIDO',
+  'BOLETO_REVOGADO',
+];
+
 let identidade: IdentidadeEfemera;
 let fila: FilaEfemera;
+let acessoAoNegocio: AcessoAoBanco;
 let aplicacao: NestFastifyApplication;
 let base: string;
 let ambienteAnterior: NodeJS.ProcessEnv;
@@ -297,6 +408,9 @@ const VARIAVEIS_MONTADAS = [
 beforeAll(async () => {
   identidade = await identidadeEfemera();
   fila = await redisEfemero();
+  // Usado **só** pelo CT-926, e só para duas coisas: gravar a trilha da cobrança do arranjo e contar
+  // as linhas dela sob cada contexto de tenant. Nenhum outro caso deste arquivo o toca.
+  acessoAoNegocio = abrirAcessoAoBanco({ cadeiaDeConexao: identidade.banco.cadeiaConexao });
 
   ambienteAnterior = { ...process.env };
   process.env.NODE_ENV = 'test';
@@ -319,6 +433,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await aplicacao?.close();
+  await acessoAoNegocio?.encerrar();
   await fila?.parar();
   await identidade?.parar();
 
@@ -673,6 +788,125 @@ describe('recusas indistinguíveis de admissão (T11)', () => {
     },
     LIMITE_CASO_MS,
   );
+
+  it(
+    'CT-926 — histórico, boleto e emissão de uma cobrança de OUTRA empresa respondem como inexistentes',
+    async () => {
+      const cookieDoMaster = await entrarComSegundoFatorCumprido(MASTER.email);
+      let empresaQueLanca = '';
+
+      try {
+        // -----------------------------------------------------------------------------------
+        // O arranjo: DUAS empresas novas, cada uma com o próprio Admin — nada da carga é tocado
+        // -----------------------------------------------------------------------------------
+        //
+        // Pelo mesmo regime do `CT-223`, e pela mesma razão: a carga é o elenco dos dois casos
+        // anteriores, e o `CT-017` **suspende a empresa A**. Um arranjo que entrasse por uma pessoa
+        // da carga passaria a depender da ordem em que os casos rodam — exatamente o que o cabeçalho
+        // deste arquivo existe para impedir. As duas nascem pelas rotas reais do operador.
+        empresaQueLanca = await criarEmpresa(cookieDoMaster);
+        const empresaQuePede = await criarEmpresa(cookieDoMaster);
+
+        expect(empresaQueLanca).not.toBe(empresaQuePede);
+
+        const cookieDeQuemLanca = await administradorEmOperacao(cookieDoMaster, empresaQueLanca);
+        const cookieDeQuemPede = await administradorEmOperacao(cookieDoMaster, empresaQuePede);
+
+        // -----------------------------------------------------------------------------------
+        // A cobrança da empresa que lança, com TRILHA — tudo pelas rotas reais até a trilha
+        // -----------------------------------------------------------------------------------
+        const codigo = await cobrancaComTrilha(cookieDeQuemLanca, empresaQueLanca);
+
+        // -----------------------------------------------------------------------------------
+        // O CONTROLE POSITIVO: a dona alcança a cobrança, e a trilha tem conteúdo
+        // -----------------------------------------------------------------------------------
+        //
+        // Sem ele, *"as duas respostas de B são iguais"* passaria sobre um código que **não existe
+        // para ninguém** — e o caso não teria provado isolamento algum, só que dois `404` se
+        // parecem. A contagem é exata, e não `> 0`: é ela que separa *"a política devolveu as linhas
+        // desta cobrança"* de *"devolveu uma linha qualquer"*.
+        const pelaDona = await pedir(rotaDoHistorico(codigo), { cookie: cookieDeQuemLanca });
+
+        expect(pelaDona.status, `a dona não alcançou a própria cobrança: ${pelaDona.texto}`).toBe(
+          200,
+        );
+        expect(
+          (pelaDona.corpo as { itens: readonly { tipo: string }[] }).itens
+            .map((evento) => evento.tipo)
+            .sort(),
+          'a dona não recebeu a trilha que o arranjo gravou',
+        ).toEqual([...EFEITOS_DA_TRILHA]);
+
+        // -----------------------------------------------------------------------------------
+        // As três rotas, pedidas pela OUTRA empresa — com o código real e com o inexistente
+        // -----------------------------------------------------------------------------------
+        //
+        // A tabela cobre as três rotas que endereçam uma cobrança pelo código, e o tamanho é
+        // afirmado ANTES de percorrê-la: uma tabela truncada faria as comparações abaixo passarem
+        // sobre menos rotas do que a fatia publica.
+        const rotas = rotasQueEnderecamACobranca();
+
+        expect(rotas.length).toBe(ROTAS_QUE_ENDERECAM_A_COBRANCA);
+
+        for (const rota of rotas) {
+          const comOCodigoDeOutra = await pedir(rota.alvo(codigo), {
+            metodo: rota.metodo,
+            cookie: cookieDeQuemPede,
+            ...(rota.corpo === undefined ? {} : { corpo: rota.corpo }),
+          });
+          const comOCodigoInexistente = await pedir(rota.alvo(COBRANCA_INEXISTENTE), {
+            metodo: rota.metodo,
+            cookie: cookieDeQuemPede,
+            ...(rota.corpo === undefined ? {} : { corpo: rota.corpo }),
+          });
+
+          // A ÂNCORA fica sobre a resposta de REFERÊNCIA — a do código que não existe em empresa
+          // alguma, que é a forma que a ADR-0008 manda a outra imitar. Sem ela, duas respostas
+          // idênticas e ERRADAS (um `500` de driver nas duas, por exemplo) passariam na cruzada. É a
+          // mesma escolha, e a mesma razão, do `CT-016`: ancorar a referência deixa a comparação
+          // cruzada carregar sozinha o peso de julgar a recusa POR EMPRESA.
+          expect(
+            comOCodigoInexistente.status,
+            `${rota.rotulo} respondeu ${String(comOCodigoInexistente.status)} ao código inexistente`,
+          ).toBe(404);
+          expect(comOCodigoInexistente.corpo, `a recusa de ${rota.rotulo} mudou de forma`).toEqual({
+            codigo: CodigoErro.RECURSO_NAO_ENCONTRADO,
+            mensagem: MENSAGEM_DE_NAO_ENCONTRADO,
+            campo: CAMPO_DO_CODIGO,
+          });
+
+          // E a CRUZADA, que é o que prova a INDISTINGUIBILIDADE. `observavel` compara status, corpo
+          // desserializado, corpo BYTE A BYTE, o conjunto de chaves do corpo — é ele que reprova um
+          // `detalhes` presente em apenas uma das duas — e o conjunto de nomes de cabeçalho, que é o
+          // que reprova um `content-disposition` sobrando na rota de bytes.
+          expect(
+            observavel(comOCodigoDeOutra),
+            `${rota.rotulo} distingue a cobrança de outra empresa da inexistente`,
+          ).toEqual(observavel(comOCodigoInexistente));
+        }
+
+        // -----------------------------------------------------------------------------------
+        // O ISOLAMENTO É DO BANCO: a trilha não existe sob o contexto da outra empresa
+        // -----------------------------------------------------------------------------------
+        //
+        // As duas contagens são a mesma instrução, sobre a mesma linha, com contextos de tenant
+        // diferentes — nenhuma cláusula aqui compara `empresa_id` com coisa alguma (ADR-0008). Sob o
+        // contexto de quem pede, a política **esconde** as linhas; sob o de quem lança, elas estão
+        // lá. É o par que discrimina: sem a segunda, um `0` viria também de uma trilha que nunca foi
+        // gravada, e o caso passaria sem medir isolamento.
+        const cobrancaId = await identificadorDaCobranca(empresaQueLanca, codigo);
+
+        expect(await contarEventos(empresaQuePede, cobrancaId)).toBe(0);
+        expect(await contarEventos(empresaQueLanca, cobrancaId)).toBe(EFEITOS_DA_TRILHA.length);
+      } finally {
+        // O estado do Master volta ao da carga ACONTEÇA O QUE ACONTECER acima — sem segundo fator e
+        // sem sessão —, porque o `CT-017` afirma, em valor ABSOLUTO, que ele não tem sessão alguma.
+        await desfazerSegundoFator(cookieDoMaster);
+        await pedir(ROTA_DE_SAIDA, { metodo: 'POST', cookie: cookieDoMaster });
+      }
+    },
+    LIMITE_CASO_MS,
+  );
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -1016,11 +1250,15 @@ async function admitirAdministrador(
   cookieDoMaster: string,
   empresaId: string,
   email: string,
+  // O nome é cosmético — nada o assere —, e o parâmetro existe para que o `CT-926` não admita gente
+  // batizada com o identificador de outro caso. O padrão preserva, byte a byte, o que o `CT-223`
+  // sempre enviou.
+  nome = 'Administrador do CT-223',
 ): Promise<AdministradorAdmitido> {
   const admitido = await pedir(`${CAMINHO_DAS_EMPRESAS}/${empresaId}/admin`, {
     metodo: 'POST',
     cookie: cookieDoMaster,
-    corpo: { nome: 'Administrador do CT-223', email },
+    corpo: { nome, email },
   });
 
   if (admitido.status !== 201) {
@@ -1036,4 +1274,356 @@ async function admitirAdministrador(
   }
 
   return corpo;
+}
+
+// ---------------------------------------------------------------------------------------------
+// O arranjo do CT-926 — as rotas reais até a trilha, e a camada de dados só onde não há rota
+// ---------------------------------------------------------------------------------------------
+
+/** Uma das três rotas que endereçam uma cobrança pelo código, no que o `CT-926` precisa dela. */
+interface RotaDaCobranca {
+  /** Método e caminho, para a mensagem de falha nomear a rota exata. */
+  readonly rotulo: string;
+  readonly metodo: string;
+  readonly alvo: (codigo: string) => string;
+  readonly corpo?: Record<string, unknown>;
+}
+
+/**
+ * As **três** rotas da fatia `emissao-e-conciliacao` que endereçam uma cobrança pelo código.
+ *
+ * Compostas do dono do segmento (`CAMINHO_DAS_COBRANCAS`), e nunca escritas como cadeia crua: um
+ * segmento que mudasse no controlador sem passar por aqui faria o caso bater numa rota que não
+ * existe e receber `404` da **ausência de manipulador** — que passaria na comparação cruzada pelo
+ * motivo errado, e é o modo de falha mais enganoso desta classe de prova.
+ *
+ * ⚠️ As três são de naturezas diferentes de propósito: uma devolve **lista** (o histórico), uma
+ * devolve **bytes** (o boleto) e uma é **ato** (a emissão). Se as três fossem da mesma natureza, um
+ * `404` que vazasse existência por um canal exclusivo de uma delas — um `content-disposition` que
+ * sobrasse, um `detalhes` que só o ato publica — não teria como aparecer.
+ */
+function rotasQueEnderecamACobranca(): readonly RotaDaCobranca[] {
+  return [
+    {
+      rotulo: 'GET /v1/cobrancas/:codigo/historico-bancario',
+      metodo: 'GET',
+      alvo: rotaDoHistorico,
+    },
+    {
+      rotulo: 'GET /v1/cobrancas/:codigo/boleto',
+      metodo: 'GET',
+      alvo: (codigo) => `${COLECAO_DE_COBRANCAS}/${codigo}/boleto`,
+    },
+    {
+      rotulo: 'POST /v1/cobrancas/:codigo/emissao-de-boleto',
+      metodo: 'POST',
+      alvo: (codigo) => `${COLECAO_DE_COBRANCAS}/${codigo}/emissao-de-boleto`,
+      corpo: {},
+    },
+  ];
+}
+
+/** A rota do histórico bancário, composta a partir do dono do segmento — nunca escrita à mão. */
+function rotaDoHistorico(codigo: string): string {
+  return `${COLECAO_DE_COBRANCAS}/${codigo}/historico-bancario`;
+}
+
+/**
+ * Admite um Admin na empresa informada e o deixa **operando**: senha trocada e sessão plena.
+ *
+ * A troca é obrigatória (RN-09) e acontece pela rota do produto: sem ela a sessão nasce **restrita**,
+ * e toda rota de negócio responderia `403` da restrição — o `404` que o caso mede nunca aconteceria,
+ * e a comparação cruzada compararia duas recusas de outra coisa.
+ *
+ * ⚠️ **Ela custa uma troca de senha por chamada, e o teto é dez por minuto** — é o
+ * `DÉBITO COM GATILHO — D27 · F1/T6` de `packages/auth/src/autenticacao.ts`: enquanto a chave do
+ * limitador for `no-trusted-ip|/change-password`, a décima primeira troca do mesmo minuto recebe
+ * `429`. Este arquivo gasta **duas**, as do `CT-926`.
+ */
+async function administradorEmOperacao(cookieDoMaster: string, empresaId: string): Promise<string> {
+  const admitido = await admitirAdministrador(
+    cookieDoMaster,
+    empresaId,
+    `admin.${randomUUID()}@exemplo.com.br`,
+    'Administrador do CT-926',
+  );
+
+  const restrita = await entrar(admitido.email, admitido.senhaProvisoria);
+
+  if (restrita.status !== 200) {
+    throw new Error(`a entrada do Admin respondeu ${String(restrita.status)}: ${restrita.texto}`);
+  }
+
+  const cookie = credencialDeSessao(restrita);
+  const troca = await pedir(ROTA_DE_TROCA_DE_SENHA, {
+    metodo: 'POST',
+    cookie,
+    corpo: { senhaAtual: admitido.senhaProvisoria, senhaNova: SENHA_TROCADA },
+  });
+
+  if (troca.status !== 200) {
+    throw new Error(`a troca de senha respondeu ${String(troca.status)}: ${troca.texto}`);
+  }
+
+  // A resposta pode ou não reemitir a credencial de sessão, e as duas formas são aceitas: o que
+  // importa é o cookie que passa a valer, e não por qual das duas ele chegou.
+  const reemitido = troca.cookies.find(ehCookieDeSessao);
+
+  return reemitido === undefined ? cookie : (reemitido.split(';')[0] ?? cookie);
+}
+
+/**
+ * Monta a cobrança do arranjo — conjunto, imóvel, locador, locatário, contrato ATIVO e lançamento —
+ * e grava a trilha bancária dela.
+ *
+ * Tudo pelas **rotas reais**, salvo os dois eventos da trilha. A exceção é deliberada e tem razão
+ * medida: o único produtor de evento bancário em produção é a ida ao **provedor** — a rota de emissão
+ * e o percurso da conferência —, e satisfazê-lo aqui exigiria a montagem instrumentada com
+ * `overrideProvider`, que este arquivo deliberadamente não tem (ver o cabeçalho: a aplicação é a
+ * **real**, a que `criarAplicacao()` monta). O que o `CT-926` mede não é **quem grava** o evento, e
+ * sim **quem consegue lê-lo**: a trilha é a precondição, e o `CT-925` de
+ * `historico-bancario.e2e.spec.ts` é o dono do eixo do produtor.
+ *
+ * A gravação corre pela mesma função de domínio de `@sysloc/db` que o percurso da conferência chama
+ * (`registrarEventoBancario`), sob `contextoDeTenant.executarCom` da empresa dona — escrita de estado
+ * de domínio persistido, no mesmo padrão que este arquivo já usa em {@link desativarPessoa} e em
+ * {@link suspenderEmpresa}. Nenhum símbolo de produção nasceu para o teste enxergar algo.
+ */
+async function cobrancaComTrilha(cookie: string, empresaId: string): Promise<string> {
+  const conjuntoId = (
+    await criarPor(`/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONJUNTOS}`, cookie, {
+      nome: `Edifício ${String(proximo())}`,
+    })
+  ).id;
+  const imovelId = (
+    await criarPor(
+      `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_IMOVEIS}`,
+      cookie,
+      corpoDeImovel(conjuntoId),
+    )
+  ).id;
+  const locadorId = (
+    await criarPor(`/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_LOCADORES}`, cookie, corpoDePessoa())
+  ).id;
+  const locatarioId = (
+    await criarPor(`/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_LOCATARIOS}`, cookie, corpoDePessoa())
+  ).id;
+
+  const montagem = await pedir(COLECAO_DE_CONTRATOS, {
+    metodo: 'POST',
+    cookie,
+    corpo: {
+      imovelId,
+      locadorId,
+      locatarioId,
+      fiadoresIds: [],
+      dataInicioLocacao: DATA_DE_INICIO_DO_CONTRATO,
+      prazoMeses: PRAZO_EM_MESES,
+      valorMensal: VALOR_MENSAL,
+      diaVencimento: DIA_DE_VENCIMENTO,
+      // Sem geração automática: o que o caso endereça é **uma** cobrança conhecida, e doze parcelas
+      // nascidas da ativação encheriam o conjunto sem acrescentar nada ao que se mede.
+      gerarCobrancasAutomaticamente: false,
+    },
+  });
+
+  if (montagem.status !== 201) {
+    throw new Error(
+      `a montagem do contrato respondeu ${String(montagem.status)}: ${montagem.texto}`,
+    );
+  }
+
+  const contrato = (montagem.corpo as { codigo: string }).codigo;
+  const ativacao = await pedir(`${COLECAO_DE_CONTRATOS}/${contrato}/ativacao`, {
+    metodo: 'POST',
+    cookie,
+    corpo: {},
+  });
+
+  if (ativacao.status !== 200) {
+    throw new Error(
+      `a ativação de ${contrato} respondeu ${String(ativacao.status)}: ${ativacao.texto}`,
+    );
+  }
+
+  const vencimento = await dataDeslocada(empresaId, DIAS_ATE_O_VENCIMENTO);
+  const lancamento = await pedir(COLECAO_DE_COBRANCAS, {
+    metodo: 'POST',
+    cookie,
+    corpo: {
+      contratoCodigo: contrato,
+      natureza: 'ALUGUEL',
+      referencia: REFERENCIA_DA_COBRANCA,
+      competencia: `${vencimento.slice(0, 7)}-01`,
+      dataVencimento: vencimento,
+      valorOriginal: VALOR_DA_COBRANCA,
+    },
+  });
+
+  if (lancamento.status !== 201) {
+    throw new Error(`o lançamento respondeu ${String(lancamento.status)}: ${lancamento.texto}`);
+  }
+
+  const codigo = (lancamento.corpo as { codigo: string }).codigo;
+  const cobrancaId = await identificadorDaCobranca(empresaId, codigo);
+
+  await emUnidadeDe(empresaId, async (tx) => {
+    for (const tipo of EFEITOS_DA_TRILHA) {
+      await registrarEventoBancario(tx, { cobrancaId, tipo, origem: 'ATO_DO_ADMIN' });
+    }
+  });
+
+  return codigo;
+}
+
+/** Cria um recurso pela rota informada e devolve o identificador dele. A falha levanta. */
+async function criarPor(
+  colecao: string,
+  cookie: string,
+  corpo: Record<string, unknown>,
+): Promise<{ readonly id: string }> {
+  const resposta = await pedir(colecao, { metodo: 'POST', cookie, corpo });
+
+  if (resposta.status !== 201) {
+    throw new Error(
+      `a criação em ${colecao} respondeu ${String(resposta.status)}: ${resposta.texto}`,
+    );
+  }
+
+  return resposta.corpo as { readonly id: string };
+}
+
+let sequencial = 0;
+
+function proximo(): number {
+  sequencial += 1;
+
+  return sequencial;
+}
+
+/** O corpo completo de um imóvel — os campos que o cadastro exige, com marca única por construção. */
+function corpoDeImovel(conjuntoId: string): Record<string, unknown> {
+  const marca = String(proximo()).padStart(6, '0');
+
+  return {
+    conjuntoId,
+    nomeImovel: `Ap ${marca}`,
+    identificadorMunicipal: `IM-${marca}`,
+    tipoImovel: 'RESIDENCIAL',
+    logradouro: 'Rua das Acácias',
+    numero: '100',
+    complemento: null,
+    bairro: 'Centro',
+    cidade: 'São Paulo',
+    estado: 'SP',
+    cep: '01000000',
+    statusLocacao: 'DISPONIVEL',
+    observacoes: null,
+  };
+}
+
+/** O corpo completo de um cadastro de pessoa, com documento e e-mail únicos por construção. */
+function corpoDePessoa(): Record<string, unknown> {
+  const numero = proximo();
+  const marca = String(numero).padStart(6, '0');
+
+  return {
+    nome: `Parte ${marca}`,
+    tipoPessoa: 'PESSOA_FISICA',
+    documentoPrincipal: cpfValido(numero),
+    rg: null,
+    email: `parte.${marca}@exemplo.com.br`,
+    telefone: '11999990000',
+    logradouro: 'Rua das Acácias',
+    numero: '100',
+    complemento: null,
+    bairro: 'Centro',
+    cidade: 'São Paulo',
+    estado: 'SP',
+    cep: '01000000',
+  };
+}
+
+/**
+ * A data corrente da operação deslocada em `dias`, como cadeia `YYYY-MM-DD`.
+ *
+ * A leitura sai do **mesmo** `negocio.data_corrente_da_operacao()` que a visão consulta — nunca de
+ * `new Date()` do processo, que é o segundo eixo de dia que a ADR-0026 fecha.
+ */
+async function dataDeslocada(empresaId: string, dias: number): Promise<string> {
+  return await emUnidadeDe(empresaId, async (tx) => {
+    const [linha] = await tx<{ data: string }[]>`
+      SELECT to_char(
+               negocio.data_corrente_da_operacao() + make_interval(days => ${dias}),
+               'YYYY-MM-DD'
+             ) AS data
+    `;
+
+    if (linha === undefined) {
+      throw new Error('o relógio do banco não devolveu a data corrente da operação');
+    }
+
+    return linha.data;
+  });
+}
+
+/**
+ * O identificador **interno** da cobrança, lido sob o contexto da empresa dona.
+ *
+ * Por consulta crua, e não por `localizarCobranca`: a porta de dados publica a cobrança pela **chave
+ * exposta** — o código legível —, e o UUID **não sai dela** por decisão da ADR-0017. Ele é
+ * precondição de observação deste caso, e não superfície: é a chave pela qual as duas contagens de
+ * `evento_bancario` perguntam pela **mesma** linha sob contextos de tenant diferentes.
+ *
+ * A leitura corre sob o contexto da dona porque a política a esconderia da outra — e é exatamente
+ * essa a propriedade que o caso mede logo depois.
+ */
+async function identificadorDaCobranca(empresaId: string, codigo: string): Promise<string> {
+  return await emUnidadeDe(empresaId, async (tx) => {
+    const [linha] = await tx<{ id: string }[]>`
+      SELECT id FROM negocio.cobranca WHERE codigo = ${codigo}
+    `;
+
+    if (linha === undefined) {
+      throw new Error(`o arranjo não encontrou a cobrança ${codigo}`);
+    }
+
+    return linha.id;
+  });
+}
+
+/**
+ * Quantas linhas de `negocio.evento_bancario` a cobrança tem **sob o contexto informado**.
+ *
+ * A mesma instrução, sobre a mesma linha, com contextos de tenant diferentes: nenhuma cláusula aqui
+ * compara `empresa_id` com coisa alguma — quem esconde a linha é a política do banco (ADR-0008), e
+ * é exatamente isso que o controle antivácuo do `CT-926` mede.
+ */
+async function contarEventos(empresaId: string, cobrancaId: string): Promise<number> {
+  return await emUnidadeDe(empresaId, async (tx) => {
+    const [linha] = await tx<{ total: string }[]>`
+      SELECT count(*)::text AS total
+        FROM negocio.evento_bancario
+       WHERE cobranca_id = ${cobrancaId}
+    `;
+
+    return Number(linha?.total ?? -1);
+  });
+}
+
+/**
+ * Abre a unidade de trabalho sob o contexto da empresa informada.
+ *
+ * `contextoDeTenant.executarCom` mais `emUnidadeDeTrabalho`: nenhum `SET app.empresa_id` é escrito à
+ * mão. É a via de arranjo e de observação de estado persistido, e não um caminho de produção — na
+ * borda, quem fixa o contexto é `sobContextoDaSessao`, a partir da sessão (ADR-0008).
+ */
+async function emUnidadeDe<T>(
+  empresaId: string,
+  trabalho: (tx: TransactionSql) => Promise<T>,
+): Promise<T> {
+  return await contextoDeTenant.executarCom(
+    { empresaId },
+    async () => await acessoAoNegocio.emUnidadeDeTrabalho(trabalho),
+  );
 }

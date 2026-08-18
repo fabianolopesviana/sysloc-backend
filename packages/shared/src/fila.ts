@@ -102,6 +102,25 @@ export const FILA_DA_CONFIRMACAO = 'confirmacao-de-email';
 export const FILA_DO_ECO = 'eco';
 
 /**
+ * Nome da fila da **emissão em lote** dos boletos de uma competência.
+ *
+ * Quem enfileira é a borda HTTP (`apps/api`), quando o Admin abre o lote; quem consome é o processo
+ * de trabalho, que percorre as cobranças em aberto e sem boleto. Vale aqui, palavra por palavra, a
+ * razão de {@link FILA_DA_REGUA}: um literal repetido dos dois lados é a divergência que nenhuma
+ * ferramenta apanha, porque o trabalho fica parado **sem erro nenhum**.
+ */
+export const FILA_DA_EMISSAO_EM_LOTE = 'emissao-em-lote';
+
+/**
+ * Nome da fila da **conferência bancária** — a apuração periódica junto ao provedor.
+ *
+ * Mesma razão da anterior, e com um agravante próprio: a conferência é o caminho por onde o produto
+ * descobre pagamento feito fora dele. Uma tarefa enfileirada sob nome que ninguém escuta faria o
+ * produto **deixar de acusar pagamento** sem que nada falhasse.
+ */
+export const FILA_DA_CONFERENCIA_BANCARIA = 'conferencia-bancaria';
+
+/**
  * Opções aplicadas a toda tarefa enfileirada, por qualquer produtor.
  *
  * Falha de execução é frequentemente transitória (a dependência que a tarefa consulta piscou): a
@@ -170,4 +189,61 @@ export interface CargaDaConfirmacao {
 export interface CargaDoEco {
   /** O valor que a tarefa devolve inalterado. */
   readonly valor: string;
+}
+
+/**
+ * Carga útil da emissão em lote de **uma** empresa — **dois** identificadores, e nada mais.
+ *
+ * ---------------------------------------------------------------------------
+ * A AUSÊNCIA DE SEGREDO É O MECANISMO, e não uma promessa deste docblock
+ * ---------------------------------------------------------------------------
+ *
+ * A emissão precisa do certificado da empresa para falar com o provedor, e a forma intuitiva —
+ * mandar o material junto, já que quem abriu o lote o tem em mãos — é a que reabre o **vetor exato**
+ * do achado crítico da fase anterior: a carga viaja como argumento de comando do servidor de fila
+ * (`job.data` serializado), a biblioteca de acesso anexa `err.command = { name, args }` a qualquer
+ * erro de resposta, e a redação única alcança chave sensível **pelo nome** — que ali não existe.
+ * O desfecho seria o segredo em claro no diário, publicado pelo próprio `catch` que existe para
+ * protegê-lo.
+ *
+ * Por isso o que viaja são **identificadores**: o processo de trabalho resolve o certificado pelo
+ * **banco**, sob o contexto de tenant que esta mesma carga estabelece, e o decifra com a chave do
+ * próprio ambiente. Não há o que redigir porque não há o que carregar — é a ADR-0032 aplicada à
+ * superfície `fila`, e ela é **medida** pelo `CT-935` de `apps/api/test/segredo-nao-escapa.e2e.spec.ts`,
+ * não afirmada por leitura de código.
+ *
+ * `empresaId` é obrigatório por decisão da ADR-0024 — ver o cabeçalho deste módulo. Um campo
+ * opcional reabriria o pior modo de falha da ADR-0008: sem contexto, a política devolve vazio **em
+ * silêncio** e o trabalho *parece* ter rodado.
+ */
+export interface CargaDaEmissaoEmLote {
+  /**
+   * A empresa cujo lote o trabalho vai percorrer.
+   *
+   * Produzido por quem **já detinha direito a ele** — a sessão que atendeu o pedido —, nunca aceito
+   * de fonte externa.
+   */
+  readonly empresaId: string;
+  /**
+   * O lote **já gravado** que a tarefa executa.
+   *
+   * Ele existe antes de a tarefa ser enfileirada, e é isso que torna a repetição segura: a entrega é
+   * *at-least-once*, e a tarefa repetida opera sobre o **mesmo** registro em vez de criar um segundo.
+   */
+  readonly loteId: string;
+}
+
+/**
+ * Carga útil da conferência bancária de **uma** empresa — **dois** identificadores, e nada mais.
+ *
+ * Vale para ela, palavra por palavra, o cabeçalho de {@link CargaDaEmissaoEmLote}: a conferência
+ * também apresenta a identidade da empresa ao provedor, e também **não** leva material, senha,
+ * envelope cifrado ou credencial — o processo de trabalho os resolve pelo banco. A ausência é o
+ * mecanismo.
+ */
+export interface CargaDaConferenciaBancaria {
+  /** A empresa cujas cobranças a apuração vai percorrer. Obrigatório pela ADR-0024. */
+  readonly empresaId: string;
+  /** A conferência **já aberta** que a tarefa executa — a mesma razão do `loteId`. */
+  readonly conferenciaId: string;
 }

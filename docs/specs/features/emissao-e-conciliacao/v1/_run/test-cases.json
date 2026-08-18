@@ -1,0 +1,1852 @@
+{
+  "schema_version": 1,
+  "framework": "sdd",
+  "feature": "emissao-e-conciliacao",
+  "version": "v1",
+  "atualizado_em": "2026-08-16",
+  "stack_discovery": {
+    "fonte": "testing_stack_rule",
+    "stack": "TypeScript 7.0.2 strict · Node 24.18.1 · NestJS 11 + Fastify 5 · Drizzle + postgres.js · PostgreSQL 18 com RLS · Zod 4 · BullMQ + ioredis · monorepo pnpm 11 + Turborepo",
+    "framework_teste": "Vitest 4.1.10 · embedded-postgres (instância efêmera própria) · HTTP real em porta dinâmica · fila real efêmera · mock evitado por decisão (dublê em 1 arquivo do monorepo)",
+    "comando_teste": "pnpm --filter @sysloc/<pacote> test (por pacote — o turbo run test aborta os irmãos e a saída agregada não é confiável); pnpm test para a suíte inteira",
+    "discovery_needed": false,
+    "lacunas": []
+  },
+  "casos_teste": [
+    {
+      "id": "CT-911",
+      "titulo": "A seleção do lote é exatamente o conjunto da competência em aberto sem boleto",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "A seleção de cobranças de um lote devolve exatamente as cobranças da empresa, da competência informada, com pago_em IS NULL, cancelado_em IS NULL e nosso_numero IS NULL — nem uma a mais, nem uma a menos, medido por igualdade de conjunto contra a lista montada no arranjo.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/cobranca.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "o arranjo planta, na MESMA competência e empresa, uma cobrança já paga, uma cancelada e uma que já tem nosso_numero; e planta na competência vizinha uma cobrança em aberto sem boleto",
+        "assertion_esperada": "diferencasDeConjunto(selecionadas, ESPERADAS) === { excedentes: [], ausentes: [] } e selecionadas.length === ESPERADAS.length; cada uma das quatro intrusas é nomeada por código na lista de excedentes se a consulta as incluir"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "as linhas precisam existir sob o contexto de tenant da empresa, que a produção não expõe por parâmetro de consulta",
+        "caminho_legitimo": "abrir o contexto pela unidade de trabalho real do pacote (contextoDeTenant.executarCom + SET LOCAL app.empresa_id), exatamente como as suítes de packages/db/test/ já fazem — nunca acrescentar parâmetro empresaId à assinatura de produção para facilitar o arranjo",
+        "teste_analogo": "packages/db/test/cobranca.spec.ts (CT-536, CT-532) e packages/db/test/isolamento.spec.ts"
+      },
+      "camada": "Dados — packages/db/src/emissao-em-lote.ts",
+      "pre_condicoes": [
+        "instância efêmera de PostgreSQL com as migrações 0000..0018 aplicadas",
+        "uma empresa A com contrato e cobranças em competências distintas"
+      ],
+      "dados_entrada": {
+        "descricao": "sete cobranças da empresa A: 3 elegíveis (competência 2026-08-01, em aberto, sem boleto), 1 paga, 1 cancelada, 1 já com nosso_numero, 1 elegível porém da competência 2026-07-01",
+        "valores": {
+          "competencia": "2026-08-01",
+          "elegiveis": 3,
+          "intrusas": 4
+        }
+      },
+      "passos": [
+        "Montar as sete cobranças sob o contexto de tenant da empresa A.",
+        "Invocar a função de seleção do lote para a competência 2026-08-01.",
+        "Comparar o conjunto devolvido com a lista das 3 elegíveis por igualdade de conjunto, nos dois sentidos."
+      ],
+      "resultado_esperado": "A seleção devolve exatamente 3 cobranças, cujos códigos são os das 3 elegíveis. `diferencasDeConjunto` devolve `{ excedentes: [], ausentes: [] }`. A cobrança paga, a cancelada, a que já tem `nosso_numero` e a da competência 2026-07-01 estão ausentes do retorno.",
+      "criterios_aceitacao_validados": [
+        "CA-01"
+      ],
+      "observacoes": "Igualdade de conjunto com controle antivácuo (`.claude/rules/ancoras-de-superficie.md`): as 3 elegíveis existem e foram lidas, o que impede a asserção de passar por vacuidade sobre um conjunto vazio.",
+      "task_id": "T4"
+    },
+    {
+      "id": "CT-912",
+      "titulo": "O lote presta contas nomeando cada cobrança recusada e a razão de cada recusa",
+      "tipo": "INTEGRACAO",
+      "categoria": "caminho_feliz",
+      "invariant": "Ao término de um lote em que k cobranças falharam por causa própria, existe exatamente um item_da_emissao_em_lote por cobrança tentada, com desfecho EMITIDO ou RECUSADO, e todo item RECUSADO carrega `motivo` não-nulo e o `cobranca_id` da cobrança que falhou.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-913",
+        "input_invalido": "lote em que 2 das 5 cobranças recebem recusa pontual do adaptador",
+        "assertion_esperada": "os 5 itens existem; os 2 RECUSADOS trazem `motivo` igual ao texto que o adaptador informou, e os códigos das 2 cobranças recusadas por igualdade de conjunto"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "o percurso do lote exige um adaptador que recuse duas cobranças específicas e aceite as demais",
+        "caminho_legitimo": "escrever uma implementação de teste que satisfaz a interface `AdaptadorCobrancaBancaria` e decide por cobrança — é a fronteira externa do SUT (HTTP de terceiro), que é exatamente o que a porta da ADR-0001 existe para permitir substituir. NÃO usar `vi.mock`, e NÃO acrescentar bandeira, ramo ou parâmetro de teste ao adaptador de produção",
+        "teste_analogo": "packages/cobranca-bancaria/test/vocabulario-canonico.spec.ts (CT-809, a implementação de referência anotada com o tipo da porta)"
+      },
+      "camada": "Domínio — packages/cobranca-bancaria/src (executarEmissaoEmLote)",
+      "pre_condicoes": [
+        "instância efêmera de PostgreSQL",
+        "5 cobranças elegíveis da empresa A na competência",
+        "adaptador de teste que recusa a 2ª e a 4ª com motivos distintos"
+      ],
+      "dados_entrada": {
+        "descricao": "lote de 5 cobranças; adaptador recusa 2 delas com textos distintos",
+        "valores": {
+          "total": 5,
+          "recusadas": 2
+        }
+      },
+      "passos": [
+        "Criar o lote e executá-lo com o adaptador de teste.",
+        "Ler os itens de item_da_emissao_em_lote do lote.",
+        "Afirmar a contagem, os desfechos e os motivos."
+      ],
+      "resultado_esperado": "5 itens gravados. 3 com `desfecho = 'EMITIDO'` e `motivo IS NULL`; 2 com `desfecho = 'RECUSADO'`, `motivo` igual, byte a byte, aos dois textos que o adaptador de teste informou, e `cobranca_id` igual ao das 2 cobranças recusadas por igualdade de conjunto. O lote tem `concluido_em` não-nulo e `interrompido_em IS NULL`.",
+      "criterios_aceitacao_validados": [
+        "CA-02"
+      ],
+      "observacoes": "NO_SUITE_FOUND: nenhuma suíte existente cobre emissão em lote — o conceito nasce nesta fatia. Arquivo novo proposto: `packages/cobranca-bancaria/test/emissao-em-lote.spec.ts`. A asserção sobre `motivo` NÃO viola o Gate 6: o valor esperado não é o literal plantado no dublê e re-asserido no mesmo nível — ele é lido do estado observável em repouso no banco (side-effect, alínea (b) da Mock Budget Rule) depois de atravessar o SUT.",
+      "task_id": "T10"
+    },
+    {
+      "id": "CT-913",
+      "titulo": "Recusa de cobrança gera evento EMISSAO_RECUSADA e o lote segue até o fim",
+      "tipo": "INTEGRACAO",
+      "categoria": "tratamento_erro",
+      "invariant": "Falha atribuível a uma cobrança marca apenas aquela cobrança (item RECUSADO + evento EMISSAO_RECUSADA com o diagnóstico do provedor) e não interrompe o lote: as cobranças posteriores à falha são tentadas e emitidas.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "adaptador recusa a 2ª cobrança de 5 com erro de cadastro incompleto",
+        "assertion_esperada": "as cobranças 3, 4 e 5 têm nosso_numero não-nulo (foram tentadas DEPOIS da falha); existe 1 evento tipo='EMISSAO_RECUSADA', origem='ATO_DO_ADMIN', diagnostico igual ao texto do provedor; interrompido_em IS NULL"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "adaptador que recusa por cobrança sem ser falha da empresa",
+        "caminho_legitimo": "implementação de teste da porta que devolve recusa de cobrança para um identificador específico e sucesso para os demais; a distinção cobrança-vs-empresa é do modelo canônico, nunca de código de teste dentro da produção",
+        "teste_analogo": "CT-912 desta mesma geração"
+      },
+      "camada": "Domínio — packages/cobranca-bancaria/src (executarEmissaoEmLote)",
+      "pre_condicoes": [
+        "instância efêmera de PostgreSQL",
+        "5 cobranças elegíveis em ordem determinística"
+      ],
+      "dados_entrada": {
+        "descricao": "lote de 5; a 2ª recebe recusa de cobrança",
+        "valores": {
+          "posicao_da_falha": 2,
+          "total": 5
+        }
+      },
+      "passos": [
+        "Executar o lote.",
+        "Verificar que as cobranças nas posições 3, 4 e 5 receberam boleto.",
+        "Ler os eventos bancários da cobrança recusada."
+      ],
+      "resultado_esperado": "4 cobranças com `nosso_numero` não-nulo (as posições 1, 3, 4, 5); a posição 2 permanece com `nosso_numero IS NULL`. Exatamente 1 evento para a cobrança 2, com `{ tipo: 'EMISSAO_RECUSADA', origem: 'ATO_DO_ADMIN' }` e `diagnostico` igual ao texto informado pelo adaptador. O lote tem `interrompido_em IS NULL` e `motivo_da_interrupcao IS NULL`.",
+      "criterios_aceitacao_validados": [
+        "CA-02"
+      ],
+      "observacoes": "Arquivo novo proposto: `packages/cobranca-bancaria/test/emissao-em-lote.spec.ts`. A asserção sobre as posições 3-5 é o que discrimina 'o lote seguiu' de 'o lote parou' — sem ela o caso ficaria verde num SUT que interrompe.",
+      "task_id": "T10"
+    },
+    {
+      "id": "CT-914",
+      "titulo": "Falha da empresa interrompe o lote no ponto, preserva o emitido e não tenta o resto",
+      "tipo": "INTEGRACAO",
+      "categoria": "tratamento_erro",
+      "invariant": "Falha atribuível à empresa grava interrompido_em e motivo_da_interrupcao no lote e cessa o percurso: nenhuma cobrança posterior ao ponto de falha é tentada (sem item e sem nosso_numero), e toda cobrança já emitida antes dele permanece com o boleto.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "adaptador devolve falha de empresa (certificado inservível) na 3ª de 6 cobranças",
+        "assertion_esperada": "lote com interrompido_em não-nulo e motivo_da_interrupcao não-vazio; itens gravados === 2 (as posições 1 e 2); as posições 4, 5 e 6 têm nosso_numero IS NULL e nenhum item; as posições 1 e 2 têm nosso_numero não-nulo"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "adaptador que devolve falha classificada como da empresa a partir da 3ª chamada",
+        "caminho_legitimo": "implementação de teste da porta com contador próprio no escopo do teste; a classificação empresa-vs-cobrança é campo do modelo canônico, decidida pelo domínio",
+        "teste_analogo": "CT-912 desta mesma geração"
+      },
+      "camada": "Domínio — packages/cobranca-bancaria/src (executarEmissaoEmLote)",
+      "pre_condicoes": [
+        "instância efêmera de PostgreSQL",
+        "6 cobranças elegíveis em ordem determinística"
+      ],
+      "dados_entrada": {
+        "descricao": "lote de 6; falha da empresa na 3ª",
+        "valores": {
+          "posicao_da_falha": 3,
+          "total": 6
+        }
+      },
+      "passos": [
+        "Executar o lote com o adaptador que falha na 3ª por causa da empresa.",
+        "Ler o lote, os itens e o nosso_numero das 6 cobranças.",
+        "Afirmar a contagem exata de itens e o estado de cada posição."
+      ],
+      "resultado_esperado": "O lote tem `interrompido_em` não-nulo e `motivo_da_interrupcao` igual ao texto informado. Exatamente 2 itens gravados, ambos `EMITIDO`, para as posições 1 e 2. As posições 4, 5 e 6 têm `nosso_numero IS NULL` e nenhum item — provando que não foram tentadas. `concluido_em IS NULL`.",
+      "criterios_aceitacao_validados": [
+        "CA-03"
+      ],
+      "observacoes": "A contagem exata de itens (=== 2) é o que separa 'interrompeu' de 'tentou todas e recusou 4'. Uma asserção por presença de interrompido_em passaria nos dois SUTs.",
+      "task_id": "T10"
+    },
+    {
+      "id": "CT-915",
+      "titulo": "Reexecutar a mesma competência tenta apenas quem não tem boleto",
+      "tipo": "INTEGRACAO",
+      "categoria": "fronteira",
+      "invariant": "Um segundo lote da mesma competência seleciona exatamente o complemento do primeiro — as cobranças que permaneceram sem nosso_numero — e nenhuma cobrança termina com dois identificadores de boleto vivos.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "reexecução após um lote que emitiu 4 de 6 (2 recusadas)",
+        "assertion_esperada": "o segundo lote grava exatamente 2 itens, para as 2 cobranças recusadas; o nosso_numero das 4 já emitidas permanece IDÊNTICO ao valor anterior (comparação byte a byte com o retrato tirado antes da reexecução)"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "estado intermediário de um lote parcialmente emitido",
+        "caminho_legitimo": "produzir o estado executando o primeiro lote pelo caminho real, nunca escrevendo nosso_numero direto na tabela pelo teste — o segundo lote precisa enxergar o que a produção grava",
+        "teste_analogo": "CT-912 desta mesma geração"
+      },
+      "camada": "Domínio — packages/cobranca-bancaria/src (executarEmissaoEmLote)",
+      "pre_condicoes": [
+        "instância efêmera de PostgreSQL",
+        "primeiro lote executado com 2 recusas"
+      ],
+      "dados_entrada": {
+        "descricao": "6 cobranças; 1º lote emite 4 e recusa 2; 2º lote na mesma competência com adaptador que aceita tudo",
+        "valores": {
+          "total": 6,
+          "emitidas_no_primeiro": 4
+        }
+      },
+      "passos": [
+        "Executar o 1º lote e tirar o retrato do nosso_numero das 6 cobranças.",
+        "Executar o 2º lote na mesma competência.",
+        "Comparar o retrato posterior contra o anterior, cobrança a cobrança."
+      ],
+      "resultado_esperado": "O 2º lote grava exatamente 2 itens. As 4 cobranças já emitidas mantêm `nosso_numero` idêntico ao retrato anterior (igualdade byte a byte). As 2 recusadas passam a ter `nosso_numero` não-nulo. Nenhuma cobrança tem mais de um identificador vivo. Os seis `identificador_no_provedor` têm 18 posições e são distintos entre si, afirmado por igualdade de conjunto: o contador nunca reusa (ADR-0020/0033).",
+      "criterios_aceitacao_validados": [
+        "CA-04"
+      ],
+      "observacoes": "A comparação contra o retrato anterior é o que prova a idempotência (RN-03). Sem ela, um SUT que reemitisse todas passaria — as 6 teriam nosso_numero não-nulo ao final.",
+      "task_id": "T10"
+    },
+    {
+      "id": "CT-916",
+      "titulo": "O índice único parcial impede dois lotes concorrentes na mesma empresa",
+      "tipo": "INTEGRACAO",
+      "categoria": "concorrencia",
+      "invariant": "Com um lote em curso (concluido_em IS NULL AND interrompido_em IS NULL) da empresa A, a tentativa de inserir um segundo lote da empresa A é recusada PELO BANCO com violação de unicidade — e o mesmo insert para a empresa B é aceito.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/isolamento.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "segundo INSERT em negocio.emissao_em_lote para a mesma empresa com os dois campos de término nulos",
+        "assertion_esperada": "a transação levanta erro do PostgreSQL com code '23505' e constraint nomeando o índice único parcial de emissao_em_lote; o insert equivalente para a empresa B é aceito e devolve id"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "duas empresas com contexto de tenant distinto na mesma instância",
+        "caminho_legitimo": "montar as duas empresas pelo caminho de semente real e abrir cada contexto pela unidade de trabalho, como packages/db/test/isolamento.spec.ts já faz",
+        "teste_analogo": "packages/db/test/isolamento.spec.ts"
+      },
+      "camada": "Dados — packages/db/migracoes/0017_dominio_emissao_e_conciliacao.sql",
+      "pre_condicoes": [
+        "instância efêmera de PostgreSQL",
+        "empresas A e B semeadas"
+      ],
+      "dados_entrada": {
+        "descricao": "um lote aberto da empresa A; tentativa de segundo lote de A e de um lote de B",
+        "valores": {
+          "competencia": "2026-08-01"
+        }
+      },
+      "passos": [
+        "Inserir o lote 1 da empresa A com concluido_em e interrompido_em nulos.",
+        "Tentar inserir o lote 2 da empresa A e capturar o erro.",
+        "Inserir um lote da empresa B e verificar que é aceito.",
+        "Concluir o lote 1 de A e verificar que um novo lote de A passa a ser aceito."
+      ],
+      "resultado_esperado": "O 2º insert de A levanta erro com `code === '23505'`. O insert de B é aceito. Após gravar `concluido_em` no lote 1 de A, um novo lote de A é aceito — provando que o índice é PARCIAL e não total.",
+      "criterios_aceitacao_validados": [
+        "CA-04"
+      ],
+      "observacoes": "O 4º passo é o que discrimina índice parcial de índice total; sem ele, um índice único em (empresa_id) puro passaria e travaria a empresa para sempre. Prova pelo banco, não por validação de aplicação (invariante 1 do projeto).",
+      "task_id": "T4"
+    },
+    {
+      "id": "CT-917",
+      "titulo": "A reemissão revoga o boleto, confirma e só então emite — nesta ordem",
+      "tipo": "UNITARIO",
+      "categoria": "caminho_feliz",
+      "invariant": "Sobre uma cobrança com boleto vivo, reemitirBoleto invoca solicitarRevogacaoDeBoleto, depois confirmarRevogacaoDeBoleto e só depois emitir — e nunca invoca emitir antes de a confirmação ter retornado positiva.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-918",
+        "input_invalido": "confirmação que só vira positiva na 3ª sondagem",
+        "assertion_esperada": "a sequência registrada é ['solicitarRevogacaoDeBoleto','confirmarRevogacaoDeBoleto','confirmarRevogacaoDeBoleto','confirmarRevogacaoDeBoleto','emitir'] por igualdade de lista; nenhum 'emitir' aparece antes do último confirmar"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Domínio — packages/cobranca-bancaria/src (reemitirBoleto)",
+      "pre_condicoes": [
+        "cobrança com nosso_numero não-nulo",
+        "adaptador de teste que registra a sequência de operações invocadas",
+        "espera e relógio injetados pela assinatura de reemitirBoleto — o teste passa uma espera que resolve na hora"
+      ],
+      "dados_entrada": {
+        "descricao": "cobrança com boleto vivo; adaptador confirma a revogação na 3ª sondagem",
+        "valores": {
+          "sondagens_ate_confirmar": 3
+        }
+      },
+      "passos": [
+        "Invocar reemitirBoleto com o adaptador de teste que registra a ordem.",
+        "Afirmar a sequência por igualdade de lista.",
+        "Afirmar que o índice de 'emitir' é maior que o índice do último 'confirmarRevogacaoDeBoleto' positivo."
+      ],
+      "resultado_esperado": "A sequência registrada é exatamente `['solicitarRevogacaoDeBoleto','confirmarRevogacaoDeBoleto','confirmarRevogacaoDeBoleto','confirmarRevogacaoDeBoleto','emitir']`. O ato devolve o novo identificador, e o boleto anterior não consta como vivo.",
+      "criterios_aceitacao_validados": [
+        "CA-05"
+      ],
+      "observacoes": "Arquivo novo proposto: `packages/cobranca-bancaria/test/reemissao.spec.ts`. `real_execution_boundary: none` é deliberado — a invariante é de ORDEM de composição, e é observável sem I/O. O companheiro de integração exigido pela Mock Budget Rule é o CT-931 (mesma invariante, atravessando banco e HTTP reais). O limite da sondagem é constante nomeada no topo do arquivo, nunca número mágico nem pausa fixa (convenção de determinismo de testing-stack.md). ⚠️ CHALLENGE 2026-08-16: a espera entre sondagens e o relógio chegam a reemitirBoleto POR PARÂMETRO, no molde do relógio injetado do CT-943; os dois limites seguem constantes nomeadas no topo e são os valores padrão da composição raiz. Sem isso este caso dormiria três intervalos reais, e a alternativa (vi.useFakeTimers) é a que o CT-943 proíbe no pacote.",
+      "task_id": "T11"
+    },
+    {
+      "id": "CT-918",
+      "titulo": "Revogação confirmada com emissão falha deixa a cobrança sem boleto, declarado e nomeado",
+      "tipo": "INTEGRACAO",
+      "categoria": "tratamento_erro",
+      "invariant": "Quando a revogação é confirmada e a emissão subsequente falha, a cobrança termina com nosso_numero IS NULL, permanece em aberto (pago_em e cancelado_em nulos), a resposta nomeia a cobrança pelo código, e em nenhum instante existiu mais de um identificador de boleto vivo.",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/cobrancas.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "adaptador que confirma a revogação e depois recusa a emissão",
+        "assertion_esperada": "corpo de erro igual ao objeto inteiro { codigo: 'SERVICO_INDISPONIVEL', mensagem: <texto que contém o código da cobrança>, campo: undefined, detalhes: undefined } sobre status 503; e no banco nosso_numero IS NULL, pago_em IS NULL, cancelado_em IS NULL"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessão autenticada de Admin com TELA:financeiro + ACAO:emitir_boleto, e um adaptador que confirma a revogação e recusa a emissão",
+        "caminho_legitimo": "montar a sessão pelo acessório `pedir` já usado por 26 suítes de apps/api/test/ (imitar `apps/api/test/cobrancas.e2e.spec.ts`); o adaptador vem pela composição da aplicação de teste, que já escolhe a implementação a partir do ambiente — NUNCA exportar um símbolo novo da produção nem abrir um ramo de teste no adaptador Sicoob",
+        "teste_analogo": "apps/api/test/cobrancas.e2e.spec.ts e apps/api/test/certificado-do-provedor.e2e.spec.ts (acessório `pedir`, linha 1720)"
+      },
+      "camada": "Apresentação — POST /v1/cobrancas/:codigo/emissao-de-boleto",
+      "pre_condicoes": [
+        "servidor HTTP real em porta dinâmica",
+        "cobrança com boleto vivo",
+        "sessão de Admin da empresa dona"
+      ],
+      "dados_entrada": {
+        "descricao": "reemissão sobre cobrança com boleto vivo; revogação aceita, emissão recusada",
+        "valores": {
+          "codigo": "COB-2026-00001"
+        }
+      },
+      "passos": [
+        "Tirar o retrato do nosso_numero anterior.",
+        "Pedir a reemissão pela rota.",
+        "Afirmar o envelope de erro inteiro e o status.",
+        "Ler a cobrança no banco e afirmar os três campos.",
+        "Ler a trilha e afirmar que existe o evento de revogação e o de recusa."
+      ],
+      "resultado_esperado": "Status 503 com envelope `{ codigo: 'SERVICO_INDISPONIVEL', mensagem: <inclui o código da cobrança> }` asserido como objeto inteiro. No banco: `nosso_numero IS NULL`, `pago_em IS NULL`, `cancelado_em IS NULL`. A trilha tem exatamente 2 eventos novos — `BOLETO_REVOGADO` e `EMISSAO_RECUSADA` —, ambos com `origem = 'ATO_DO_ADMIN'`.",
+      "criterios_aceitacao_validados": [
+        "CA-06"
+      ],
+      "observacoes": "Envelope asserido como objeto inteiro, nunca por presença de campo (ADR-0017 reproduzida em testing-stack.md). É o companheiro de integração do CT-917.",
+      "task_id": "T13"
+    },
+    {
+      "id": "CT-919",
+      "titulo": "A rota do boleto entrega os bytes com mídia e nome de arquivo, e a cobrança publica linha e código de barras",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "GET /v1/cobrancas/:codigo/boleto de uma cobrança emitida responde 200 com Content-Type de PDF, Content-Disposition nomeando o arquivo, e corpo cujos primeiros bytes são a assinatura %PDF-; e a consulta da cobrança publica linhaDigitavel e codigoBarras não-vazios.",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/cobrancas.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-921",
+        "input_invalido": "cobrança sem boleto emitido",
+        "assertion_esperada": "404 com envelope { codigo: 'RECURSO_NAO_ENCONTRADO', mensagem: <nomeia a cobrança e a ausência do boleto> } e corpo SEM bytes de documento"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessão com TELA:financeiro e uma cobrança com boleto já emitido e arquivo no diretório do host",
+        "caminho_legitimo": "sessão pelo acessório `pedir`; o arquivo do boleto nasce pelo caminho real de emissão (rota ou lote), nunca escrito à mão no diretório pelo teste — o teste precisa medir o que a produção grava",
+        "teste_analogo": "apps/api/test/documento-do-contrato.e2e.spec.ts (rota que devolve bytes) e apps/api/test/cobrancas.e2e.spec.ts"
+      },
+      "camada": "Apresentação — GET /v1/cobrancas/:codigo/boleto",
+      "pre_condicoes": [
+        "servidor HTTP real",
+        "diretório de boletos apontado por variável de ambiente para um tmpdir descartável",
+        "cobrança emitida"
+      ],
+      "dados_entrada": {
+        "descricao": "cobrança com boleto emitido e arquivo presente",
+        "valores": {
+          "codigo": "COB-2026-00001"
+        }
+      },
+      "passos": [
+        "Emitir o boleto pela rota unitária.",
+        "Pedir GET do boleto.",
+        "Afirmar status, cabeçalhos e assinatura dos bytes.",
+        "Consultar a cobrança e afirmar linhaDigitavel e codigoBarras."
+      ],
+      "resultado_esperado": "Status 200. `content-type` começa com `application/pdf`. `content-disposition` contém `filename=` com o nome que o contrato declara. Os 5 primeiros bytes do corpo são `%PDF-`. A consulta da cobrança devolve `linhaDigitavel` com 47 dígitos e `codigoBarras` com 44 dígitos, ambos não-vazios.",
+      "criterios_aceitacao_validados": [
+        "CA-07",
+        "CA-19"
+      ],
+      "observacoes": "ADR-0028: a rota declara mídia e nome de arquivo, e NÃO declara forma do corpo de sucesso. O comprimento exato (47/44) é contrato do meio de pagamento, não invenção do teste.",
+      "task_id": "T14"
+    },
+    {
+      "id": "CT-920",
+      "titulo": "Arquivo ausente do disco é rebuscado do provedor e reescrito, sem que quem pediu perceba",
+      "tipo": "INTEGRACAO",
+      "categoria": "caso_extremo",
+      "invariant": "Removido o arquivo do diretório do host, o próximo pedido do boleto responde 200 com os mesmos bytes, recria o arquivo no caminho gravado em boleto_arquivo, e não altera nosso_numero, linha_digitavel nem codigo_barras.",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/cobrancas.e2e.spec.ts",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "arquivo apagado do diretório entre a emissão e o pedido",
+        "assertion_esperada": "status 200 (nunca 404 nem 500); os bytes devolvidos são iguais byte a byte aos da primeira entrega; o arquivo volta a existir em boleto_arquivo; nosso_numero permanece idêntico ao retrato anterior"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "estado em que a coluna aponta para um caminho que não existe mais no disco",
+        "caminho_legitimo": "apagar o ARQUIVO no tmpdir com fs real — o teste opera sobre o filesystem, que é a fronteira, e não sobre a coluna do banco; alterar a coluna simularia outro defeito",
+        "teste_analogo": "apps/api/test/documento-do-contrato.e2e.spec.ts"
+      },
+      "camada": "Infraestrutura — guarda-de-boletos.ts + GET /v1/cobrancas/:codigo/boleto",
+      "pre_condicoes": [
+        "cobrança emitida com arquivo presente",
+        "diretório de boletos em tmpdir real descartável"
+      ],
+      "dados_entrada": {
+        "descricao": "cobrança emitida; arquivo removido do disco antes do 2º pedido",
+        "valores": {
+          "codigo": "COB-2026-00001"
+        }
+      },
+      "passos": [
+        "Pedir o boleto e guardar os bytes e o retrato das colunas.",
+        "Apagar o arquivo do tmpdir e confirmar a ausência com fs.",
+        "Pedir o boleto de novo.",
+        "Afirmar status, bytes, existência do arquivo e as colunas."
+      ],
+      "resultado_esperado": "Antes do 2º pedido, `existsSync(caminho) === false`. O 2º pedido responde 200 com corpo idêntico byte a byte ao 1º. Após ele, `existsSync(caminho) === true`. `nosso_numero`, `linha_digitavel` e `codigo_barras` permanecem idênticos ao retrato. Nenhum evento novo é gravado na trilha (rebusca de cache não é efeito — ADR-0034).",
+      "criterios_aceitacao_validados": [
+        "CA-08"
+      ],
+      "observacoes": "A confirmação da ausência ANTES do 2º pedido é o controle antivácuo: sem ela, um caso em que o arquivo nunca foi apagado passaria trivialmente. A asserção de 'nenhum evento novo' liga este caso à ADR-0034.",
+      "task_id": "T14"
+    },
+    {
+      "id": "CT-921",
+      "titulo": "Boleto nunca emitido é recusa nomeada, jamais documento em branco",
+      "tipo": "INTEGRACAO",
+      "categoria": "teste_negativo",
+      "invariant": "GET do boleto de uma cobrança com nosso_numero IS NULL responde 404 com o envelope canônico nomeando a cobrança, e o corpo não contém bytes de documento algum.",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/cobrancas.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "cobrança existente da própria empresa, em aberto, sem boleto emitido",
+        "assertion_esperada": "status 404; corpo asserido como objeto INTEIRO { codigo: 'RECURSO_NAO_ENCONTRADO', mensagem: <contém o código da cobrança> }; content-type é application/json e NÃO application/pdf; o corpo não começa com '%PDF-' e tem comprimento < 512 bytes"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessão com TELA:financeiro da empresa dona da cobrança",
+        "caminho_legitimo": "acessório `pedir`, imitando cobrancas.e2e.spec.ts",
+        "teste_analogo": "apps/api/test/cobrancas.e2e.spec.ts"
+      },
+      "camada": "Apresentação — GET /v1/cobrancas/:codigo/boleto",
+      "pre_condicoes": [
+        "cobrança em aberto sem boleto",
+        "sessão de usuário da empresa dona"
+      ],
+      "dados_entrada": {
+        "descricao": "cobrança sem nosso_numero",
+        "valores": {
+          "codigo": "COB-2026-00002"
+        }
+      },
+      "passos": [
+        "Pedir GET do boleto da cobrança sem emissão.",
+        "Afirmar status e o envelope inteiro.",
+        "Afirmar que o content-type não é de PDF e que o corpo não carrega assinatura de documento."
+      ],
+      "resultado_esperado": "Status 404 com `{ codigo: 'RECURSO_NAO_ENCONTRADO', mensagem: <inclui 'COB-2026-00002'> }` asserido por igualdade de objeto. `content-type` inclui `application/json`. O corpo não começa com `%PDF-`.",
+      "criterios_aceitacao_validados": [
+        "CA-09"
+      ],
+      "observacoes": "A asserção de que NÃO há documento é o que fecha a classe 'PDF em branco com 200' — status 404 sozinho não a alcança, porque um SUT poderia responder 404 com corpo binário.",
+      "task_id": "T14"
+    },
+    {
+      "id": "CT-922",
+      "titulo": "Liquidação usa data e valor do provedor e mora da política vigente no instante da baixa",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "A baixa vinda da conferência grava pago_em e valor_pago exatamente como o provedor informou, e os quatro carimbos de mora são idênticos aos que a baixa manual produziria sob a mesma política vigente — mesma expressão da view, sem exceção por caminho de entrada.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/cobranca.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-923",
+        "input_invalido": "valor informado pelo provedor diferente do valor esperado pelo produto",
+        "assertion_esperada": "a baixa ocorre assim mesmo, valor_pago === valor do provedor, e existe 1 evento DIVERGENCIA_DE_VALOR com valor_informado igual ao do provedor"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "política de mora vigente no instante da baixa, e uma cobrança gêmea para a comparação com a baixa manual",
+        "caminho_legitimo": "criar DUAS cobranças idênticas sob a mesma política, liquidar uma pelo caminho da conferência e a outra por acusarPagamentoDeCobranca (a baixa manual, que já existe), e comparar os quatro carimbos entre elas — o oráculo é o caminho de produção existente, nunca um valor recalculado pelo teste",
+        "teste_analogo": "packages/db/test/cobranca.spec.ts (CT-527, CT-532) e apps/api/test/mora.e2e.spec.ts"
+      },
+      "camada": "Dados — packages/db/src/cobranca.ts (acusarPagamentoDeCobranca reusado)",
+      "pre_condicoes": [
+        "instância efêmera de PostgreSQL",
+        "política de mora vigente",
+        "duas cobranças gêmeas vencidas há N dias"
+      ],
+      "dados_entrada": {
+        "descricao": "cobrança vencida; provedor informa data de crédito e valor",
+        "valores": {
+          "data_credito": "2026-08-16",
+          "valor_creditado": "1234.56"
+        }
+      },
+      "passos": [
+        "Criar duas cobranças idênticas sob a mesma política de mora.",
+        "Liquidar a primeira pelo caminho da conferência com a data e o valor do provedor.",
+        "Liquidar a segunda pela baixa manual com a MESMA data e valor.",
+        "Comparar os quatro carimbos e os campos pago_em / valor_pago entre as duas."
+      ],
+      "resultado_esperado": "`pago_em` === `'2026-08-16'` e `valor_pago` === `'1234.56'` na cobrança liquidada pela conferência. Os quatro carimbos de mora da cobrança liquidada pela conferência são iguais, campo a campo, aos da liquidada manualmente. Existe 1 evento `{ tipo: 'COBRANCA_LIQUIDADA', origem: 'CONFERENCIA' }`. A cobrança publica `dataCredito` e `valorCreditado`.",
+      "criterios_aceitacao_validados": [
+        "CA-10",
+        "CA-19"
+      ],
+      "observacoes": "A comparação contra a baixa manual é o oráculo que prova RN-07 ('a mesma regra, sem exceção por caminho de entrada'). Re-derivar a mora no teste seria reimplementar o SUT — o antipadrão que a rule de falsificação nomeia como causa de rejeição desta base.",
+      "task_id": "T6"
+    },
+    {
+      "id": "CT-923",
+      "titulo": "Valor divergente baixa assim mesmo e registra DIVERGENCIA_DE_VALOR",
+      "tipo": "INTEGRACAO",
+      "categoria": "caso_extremo",
+      "invariant": "Quando o valor informado pelo provedor difere do esperado, a cobrança é marcada como paga assim mesmo com o valor do provedor, e exatamente um evento DIVERGENCIA_DE_VALOR é gravado com valor_informado igual ao do provedor.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/cobranca.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "provedor informa 1000.00 para uma cobrança cujo valor esperado é 1234.56",
+        "assertion_esperada": "pago_em não-nulo (a baixa NÃO foi impedida), valor_pago === '1000.00', e 2 eventos: COBRANCA_LIQUIDADA e DIVERGENCIA_DE_VALOR com valor_informado === '1000.00'"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "cobrança com valor esperado conhecido e resposta do provedor com valor distinto",
+        "caminho_legitimo": "montar a cobrança pelo caminho real e responder pela porta com o valor divergente; o 'valor esperado' é lido da view cobranca_derivada, não escrito pelo teste",
+        "teste_analogo": "packages/db/test/cobranca.spec.ts (CT-527)"
+      },
+      "camada": "Dados/Domínio — conferência + acusarPagamentoDeCobranca",
+      "pre_condicoes": [
+        "instância efêmera de PostgreSQL",
+        "cobrança em aberto com boleto emitido"
+      ],
+      "dados_entrada": {
+        "descricao": "valor do provedor menor que o esperado",
+        "valores": {
+          "esperado": "1234.56",
+          "informado": "1000.00"
+        }
+      },
+      "passos": [
+        "Conferir a cobrança com o provedor informando valor divergente.",
+        "Ler a cobrança e a trilha.",
+        "Afirmar a baixa e os dois eventos por igualdade de conjunto de tipos."
+      ],
+      "resultado_esperado": "`pago_em` não-nulo e `valor_pago === '1000.00'`. A trilha da cobrança tem exatamente 2 eventos novos, cujos tipos por igualdade de conjunto são `['COBRANCA_LIQUIDADA','DIVERGENCIA_DE_VALOR']`, o segundo com `valor_informado === '1000.00'` e `origem === 'CONFERENCIA'`.",
+      "criterios_aceitacao_validados": [
+        "CA-11"
+      ],
+      "observacoes": "A asserção `pago_em` não-nulo é o que discrimina 'baixou assim mesmo' de 'recusou a baixa e só registrou' — sem ela, um SUT que bloqueasse a baixa passaria por ter gravado o evento.",
+      "task_id": "T6"
+    },
+    {
+      "id": "CT-924",
+      "titulo": "O estorno apaga o fato do pagamento e o estado volta a ser derivado",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "O estorno apaga, numa instrução só, os oito campos que a liquidação escreveu — pago_em, valor_pago, os quatro carimbos e os dois de crédito (data_credito, valor_creditado) —, e o estado publicado volta a ser derivado pela view conforme o vencimento. Os campos de emissão permanecem: estorno não é revogação.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/derivacao-de-cobranca.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "estorno de duas cobranças pagas — uma vencida há 10 dias e outra a vencer em 10 dias",
+        "assertion_esperada": "as duas ficam com os seis campos em NULL; a vencida publica status 'VENCIDA' e a outra publica 'A_VENCER'; cada uma tem exatamente 1 evento LIQUIDACAO_ESTORNADA"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "duas cobranças pagas com vencimentos em lados opostos da data corrente da operação",
+        "caminho_legitimo": "usar negocio.data_corrente_da_operacao() do banco para posicionar os vencimentos, nunca new Date() do processo — packages/db/test/derivacao-de-cobranca.spec.ts (CT-506) já prova que a derivação não passa pelo relógio do processo",
+        "teste_analogo": "packages/db/test/derivacao-de-cobranca.spec.ts e packages/db/test/cobranca.spec.ts (CT-512, CT-513)"
+      },
+      "camada": "Dados — packages/db/src/cobranca.ts (estorno)",
+      "pre_condicoes": [
+        "instância efêmera de PostgreSQL",
+        "duas cobranças pagas com vencimentos opostos"
+      ],
+      "dados_entrada": {
+        "descricao": "estorno informado pelo provedor na conferência",
+        "valores": {
+          "vencida_ha_dias": 10,
+          "a_vencer_em_dias": 10
+        }
+      },
+      "passos": [
+        "Liquidar as duas cobranças e tirar o retrato dos seis campos.",
+        "Aplicar o estorno pelo caminho da conferência.",
+        "Ler os seis campos e o status publicado pela view.",
+        "Ler a trilha de cada uma.",
+        "Afirmar que os dois campos de crédito estão NULL e que os três de emissão continuam preenchidos."
+      ],
+      "resultado_esperado": "Nas duas cobranças: `pago_em IS NULL`, `valor_pago IS NULL` e os quatro carimbos de mora `IS NULL`. A view `cobranca_derivada` publica `status === 'VENCIDA'` para a de vencimento passado e `status === 'A_VENCER'` para a outra. Cada uma tem exatamente 1 evento `{ tipo: 'LIQUIDACAO_ESTORNADA', origem: 'CONFERENCIA' }`. `cancelado_em IS NULL` nas duas. ⚠️ CHALLENGE 2026-08-16: `data_credito` e `valor_creditado` também voltam a NULL — deixá-los para trás publicaria cobrança em aberto com data de crédito. E `nosso_numero`, `linha_digitavel` e `codigo_barras` permanecem NÃO-NULOS, controle que separa estorno de revogação de boleto.",
+      "criterios_aceitacao_validados": [
+        "CA-12"
+      ],
+      "observacoes": "Os dois lados do vencimento no MESMO caso é o que prova que o estado voltou a ser DERIVADO, e não gravado: uma implementação que gravasse um estado fixo acertaria um lado e erraria o outro. Liga-se à ADR-0022 e ao CT-510 de fonte-unica-do-estado.spec.ts.",
+      "task_id": "T6"
+    },
+    {
+      "id": "CT-925",
+      "titulo": "O histórico bancário publica os eventos na ordem em que ocorreram, com data e desfecho",
+      "tipo": "INTEGRACAO",
+      "categoria": "caminho_feliz",
+      "invariant": "GET /v1/cobrancas/:codigo/historico-bancario devolve os eventos daquela cobrança ordenados por ocorrido_em crescente, cada um com tipo, origem, data e diagnóstico, e a sequência de tipos é exatamente a dos efeitos que de fato ocorreram.",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/cobrancas.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-926",
+        "input_invalido": "histórico de cobrança de outra empresa",
+        "assertion_esperada": "404 com { codigo: 'RECURSO_NAO_ENCONTRADO', ... }, indistinguível da resposta a um código inexistente"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "cobrança com quatro efeitos ocorridos em instantes distintos e conhecidos",
+        "caminho_legitimo": "produzir os quatro efeitos pelos caminhos reais (emissão, revogação, emissão nova, liquidação), em ordem, e ler ocorrido_em do que a produção gravou — nunca inserir eventos direto na tabela pelo teste, o que provaria só a consulta e não o produtor",
+        "teste_analogo": "apps/api/test/cobrancas.e2e.spec.ts"
+      },
+      "camada": "Apresentação — GET /v1/cobrancas/:codigo/historico-bancario",
+      "pre_condicoes": [
+        "servidor HTTP real",
+        "cobrança com quatro efeitos encadeados",
+        "sessão com TELA:financeiro"
+      ],
+      "dados_entrada": {
+        "descricao": "cobrança que foi emitida, teve o boleto revogado, foi reemitida e liquidada",
+        "valores": {
+          "efeitos": 4
+        }
+      },
+      "passos": [
+        "Produzir os quatro efeitos, em ordem, pelos caminhos reais.",
+        "Pedir o histórico pela rota.",
+        "Afirmar a sequência de tipos por igualdade de lista ordenada.",
+        "Afirmar que ocorrido_em é monotonicamente crescente."
+      ],
+      "resultado_esperado": "Status 200. A lista de `tipo` é exatamente `['BOLETO_EMITIDO','BOLETO_REVOGADO','BOLETO_EMITIDO','COBRANCA_LIQUIDADA']`, nesta ordem. Cada item traz `ocorridoEm` e `origem`, e a sequência de `ocorridoEm` é não-decrescente. O item de revogação traz `diagnostico` igual ao texto que o provedor informou.",
+      "criterios_aceitacao_validados": [
+        "CA-13"
+      ],
+      "observacoes": "Igualdade de LISTA ORDENADA, não de conjunto: a ordem é o conteúdo da CA-13. Um `toContain` aprovaria uma trilha embaralhada.",
+      "task_id": "T14"
+    },
+    {
+      "id": "CT-926",
+      "titulo": "Histórico e cobrança de outra empresa respondem como inexistentes",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Um usuário da empresa B que pede o histórico bancário, o boleto ou a emissão de uma cobrança da empresa A recebe resposta byte a byte idêntica à que receberia para um código que não existe em empresa alguma — e o isolamento é imposto pela RLS do banco, não por checagem de aplicação.",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/recusa-indistinguivel.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "sessão da empresa B pedindo as três rotas com o código real de uma cobrança da empresa A",
+        "assertion_esperada": "nas três rotas, status e corpo IGUAIS aos da mesma rota chamada com o código inexistente 'COB-2026-99999'; e a consulta direta da tabela evento_bancario sob o contexto de B devolve 0 linhas para aquela cobrança"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "duas empresas, cada uma com sessão própria, e uma cobrança com trilha na empresa A",
+        "caminho_legitimo": "montar as duas empresas e sessões pelos acessórios já existentes de apps/api/test/; a comparação é entre duas respostas REAIS, nunca contra um literal escrito no teste",
+        "teste_analogo": "apps/api/test/recusa-indistinguivel.e2e.spec.ts e packages/db/test/isolamento.spec.ts"
+      },
+      "camada": "Apresentação + Dados (RLS)",
+      "pre_condicoes": [
+        "servidor HTTP real",
+        "empresas A e B com sessões",
+        "cobrança da empresa A com eventos na trilha"
+      ],
+      "dados_entrada": {
+        "descricao": "código real de cobrança da empresa A e código inexistente, ambos pedidos pela sessão de B",
+        "valores": {
+          "codigo_de_a": "COB-2026-00001",
+          "codigo_inexistente": "COB-2026-99999"
+        }
+      },
+      "passos": [
+        "Com a sessão de B, pedir as três rotas com o código de A.",
+        "Com a sessão de B, pedir as três rotas com o código inexistente.",
+        "Comparar status e corpo par a par.",
+        "Consultar evento_bancario sob o contexto de tenant de B e contar as linhas."
+      ],
+      "resultado_esperado": "Para cada uma das três rotas, o par de respostas é idêntico em status e em corpo serializado. A consulta a `negocio.evento_bancario` sob o contexto de B devolve 0 linhas para a cobrança de A, e a mesma consulta sob o contexto de A devolve as linhas existentes (controle antivácuo).",
+      "criterios_aceitacao_validados": [
+        "CA-14"
+      ],
+      "observacoes": "O controle antivácuo sob o contexto de A é essencial: sem ele, uma trilha vazia por defeito de escrita faria o caso passar sem provar isolamento algum.",
+      "task_id": "T17"
+    },
+    {
+      "id": "CT-927",
+      "titulo": "A conferência disparada pelo Admin alcança apenas cobranças da empresa dele",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "A conferência disparada por um Admin da empresa A consulta o provedor exatamente pelas cobranças elegíveis de A, e por nenhuma cobrança elegível de B — medido pela lista de identificadores que a porta recebeu.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "empresas A e B, ambas com cobranças elegíveis; conferência disparada por A",
+        "assertion_esperada": "os identificadores recebidos pela porta são iguais por conjunto aos das elegíveis de A; a interseção com os identificadores de B é vazia; e o conjunto de B é não-vazio (controle antivácuo)"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "duas empresas com cobranças elegíveis simultâneas, e observação de quais identificadores atravessaram a porta",
+        "caminho_legitimo": "implementação de teste da porta que acumula os identificadores recebidos; o contexto de tenant é aberto pela unidade de trabalho real a partir do disparo, nunca por parâmetro acrescentado à produção",
+        "teste_analogo": "packages/db/test/isolamento.spec.ts"
+      },
+      "camada": "Domínio — packages/cobranca-bancaria/src (executarConferenciaDaEmpresa)",
+      "pre_condicoes": [
+        "instância efêmera de PostgreSQL",
+        "empresas A e B com 3 cobranças elegíveis cada"
+      ],
+      "dados_entrada": {
+        "descricao": "conferência da empresa A com B povoada",
+        "valores": {
+          "elegiveis_a": 3,
+          "elegiveis_b": 3
+        }
+      },
+      "passos": [
+        "Semear 3 elegíveis em A e 3 em B.",
+        "Disparar a conferência da empresa A.",
+        "Ler os identificadores que a porta recebeu.",
+        "Comparar com o conjunto de A e com o de B."
+      ],
+      "resultado_esperado": "Os identificadores recebidos pela porta são iguais por conjunto aos das 3 elegíveis de A (`{ excedentes: [], ausentes: [] }`). A interseção com o conjunto de B é vazia. O conjunto de B tem 3 elementos, provando que havia o que vazar.",
+      "criterios_aceitacao_validados": [
+        "CA-15"
+      ],
+      "observacoes": "Arquivo novo proposto: `packages/cobranca-bancaria/test/conferencia.spec.ts`. O conjunto de B não-vazio é o controle antivácuo exigido pela rule de âncoras.",
+      "task_id": "T12"
+    },
+    {
+      "id": "CT-928",
+      "titulo": "Disparo concorrente não inicia uma segunda conferência e informa quem pediu",
+      "tipo": "INTEGRACAO",
+      "categoria": "concorrencia",
+      "invariant": "Com uma conferência da empresa A em curso (concluida_em IS NULL), um segundo disparo da mesma empresa não cria linha nova em conferencia_bancaria e responde informando que já há uma em curso; o disparo da empresa B no mesmo instante é aceito.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "POST /v1/cobranca-bancaria/conferencias com uma conferência de A já aberta",
+        "assertion_esperada": "a contagem de linhas em conferencia_bancaria da empresa A permanece 1 (não 2); a resposta é 200 informando a conferência em curso, com o id dela; o disparo de B cria a linha de B"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "conferência em curso da empresa A no instante do segundo disparo",
+        "caminho_legitimo": "abrir a primeira conferência pela própria rota e mantê-la aberta pelo estado do banco (concluida_em nulo), nunca por pausa fixa nem por sleep; se for preciso esperar, sondagem com limite nomeado no topo do arquivo",
+        "teste_analogo": "apps/api/test/certificado-do-provedor.e2e.spec.ts (acessório `pedir`) e apps/api/test/automacao-de-cobranca.e2e.spec.ts"
+      },
+      "camada": "Apresentação — POST /v1/cobranca-bancaria/conferencias",
+      "pre_condicoes": [
+        "servidor HTTP real",
+        "sessões de A e de B com TELA:financeiro"
+      ],
+      "dados_entrada": {
+        "descricao": "dois disparos consecutivos de A e um de B",
+        "valores": {}
+      },
+      "passos": [
+        "Disparar a conferência de A e deixá-la aberta.",
+        "Disparar de novo por A.",
+        "Contar as linhas de conferencia_bancaria de A.",
+        "Disparar por B e contar as linhas de B."
+      ],
+      "resultado_esperado": "Após o 2º disparo de A, `SELECT count(*) FROM negocio.conferencia_bancaria` sob o contexto de A devolve `1`. A resposta do 2º disparo é 200 informando a conferência em curso e o id dela — o mesmo id da primeira. O disparo de B cria 1 linha em B. Após concluir a de A, um novo disparo de A é aceito e cria a 2ª linha (prova de que o índice é PARCIAL).",
+      "criterios_aceitacao_validados": [
+        "CA-15"
+      ],
+      "observacoes": "Arquivo novo proposto: `apps/api/test/cobranca-bancaria.e2e.spec.ts`. O último passo discrimina índice parcial de índice total, como no CT-916.",
+      "task_id": "T15"
+    },
+    {
+      "id": "CT-929",
+      "titulo": "O conjunto da conferência é exatamente o declarado — nem a mais, nem a menos",
+      "tipo": "INTEGRACAO",
+      "categoria": "fronteira",
+      "invariant": "A seleção da conferência é exatamente a união de (toda cobrança em aberto com boleto emitido) e (toda cobrança paga há 30 dias ou menos com boleto emitido), com a fronteira dos 30 dias medida contra negocio.data_corrente_da_operacao().",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "arranjo com as seis classes de intrusa: em aberto SEM boleto; paga há 30 dias exatos; paga há 31 dias; paga há 29 dias; cancelada com boleto; em aberto com boleto de outra empresa",
+        "assertion_esperada": "diferencasDeConjunto(selecionadas, ESPERADAS) === { excedentes: [], ausentes: [] }; a paga há 30 dias e a paga há 29 estão DENTRO; a paga há 31 está FORA; a em aberto sem boleto está FORA"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "cobranças pagas em datas posicionadas exatamente nas bordas de 29, 30 e 31 dias",
+        "caminho_legitimo": "posicionar pago_em relativamente a negocio.data_corrente_da_operacao() lida do banco, nunca a new Date() do processo — CT-506 e CT-612 já fixam essa disciplina nesta base",
+        "teste_analogo": "packages/db/test/derivacao-de-cobranca.spec.ts (CT-506) e packages/db/test/cobranca.spec.ts (CT-513, a borda de 'vencer hoje')"
+      },
+      "camada": "Dados — packages/db/src/conferencia-bancaria.ts",
+      "pre_condicoes": [
+        "instância efêmera de PostgreSQL",
+        "cobranças montadas nas seis classes"
+      ],
+      "dados_entrada": {
+        "descricao": "matriz de cobranças cobrindo as bordas de 29/30/31 dias e as exclusões",
+        "valores": {
+          "bordas_de_dias": [
+            29,
+            30,
+            31
+          ]
+        }
+      },
+      "passos": [
+        "Montar a matriz de cobranças.",
+        "Invocar a seleção da conferência para a empresa A.",
+        "Comparar por igualdade de conjunto contra a lista esperada.",
+        "Afirmar individualmente cada uma das três bordas."
+      ],
+      "resultado_esperado": "`diferencasDeConjunto` devolve `{ excedentes: [], ausentes: [] }` e as contagens coincidem. A paga há 29 dias e a paga há 30 dias constam do conjunto; a paga há 31 dias não consta. A em aberto sem boleto, a cancelada e a de outra empresa não constam.",
+      "criterios_aceitacao_validados": [
+        "CA-16"
+      ],
+      "observacoes": "Arquivo novo proposto: `packages/cobranca-bancaria/test/conferencia.spec.ts` ou `packages/db/test/conferencia-bancaria.spec.ts`. As três bordas num caso parametrizado valem mais que três casos separados — a borda de 30 é inclusiva por escrito na RN-11 ('30 dias ou menos').",
+      "task_id": "T5"
+    },
+    {
+      "id": "CT-930",
+      "titulo": "Boleto revogado pelo provedor não cancela a cobrança",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "Quando a conferência descobre que o provedor retirou o boleto de circulação — por motivo reconhecido OU por motivo que o produto não reconhece —, a cobrança fica com nosso_numero IS NULL, cancelado_em permanece NULL, o status derivado continua em aberto, e o motivo do provedor é preservado no diagnóstico do evento tal como ele o informou.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "duas cobranças: uma com motivo de revogação reconhecido pelo produto e outra com um motivo textual arbitrário que o produto não mapeia",
+        "assertion_esperada": "nas DUAS: cancelado_em IS NULL, nosso_numero IS NULL, status derivado em ['VENCIDA','A_VENCER']; evento BOLETO_REVOGADO com diagnostico igual byte a byte ao texto do provedor, inclusive o não reconhecido"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "resposta do provedor com um motivo fora de qualquer vocabulário do produto",
+        "caminho_legitimo": "a implementação de teste da porta devolve o motivo como texto opaco no campo de diagnóstico do modelo canônico; o produto não deve ter enum nenhum que o reconheça — é justamente isso que a RN-15 exige",
+        "teste_analogo": "packages/cobranca-bancaria/test/adaptador-sicoob.spec.ts"
+      },
+      "camada": "Domínio + Dados — conferência e trilha",
+      "pre_condicoes": [
+        "instância efêmera de PostgreSQL",
+        "duas cobranças em aberto com boleto emitido"
+      ],
+      "dados_entrada": {
+        "descricao": "provedor informa revogação com dois motivos, um reconhecido e um arbitrário",
+        "valores": {
+          "motivo_desconhecido": "MOTIVO-INEXISTENTE-99"
+        }
+      },
+      "passos": [
+        "Conferir as duas cobranças com o provedor informando revogação.",
+        "Ler cancelado_em, nosso_numero e o status derivado das duas.",
+        "Ler o diagnóstico dos dois eventos."
+      ],
+      "resultado_esperado": "Nas duas cobranças: `cancelado_em IS NULL`, `nosso_numero IS NULL`, e a view publica `status` em `['VENCIDA','A_VENCER']`. Cada uma tem 1 evento `{ tipo: 'BOLETO_REVOGADO', origem: 'CONFERENCIA' }`, com `diagnostico` igual byte a byte ao texto informado — incluindo `'MOTIVO-INEXISTENTE-99'`, que não vira regra nem estado em lugar algum.",
+      "criterios_aceitacao_validados": [
+        "CA-17",
+        "CA-20"
+      ],
+      "observacoes": "Este é o caso que mede a diferença central em relação ao sistema antigo, que cancelava a cobrança. `cancelado_em IS NULL` é a asserção que carrega a métrica de sucesso do PRD §10.",
+      "task_id": "T12"
+    },
+    {
+      "id": "CT-931",
+      "titulo": "Emitir de novo após a revogação ocorre como a primeira vez",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "Uma cobrança que teve o boleto revogado aceita nova emissão pelo caminho normal — sem etapa de revogação, porque não há boleto vivo — e termina com um único identificador válido, diferente do anterior.",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/cobrancas.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "emissão sobre cobrança cujo boleto foi revogado pela conferência",
+        "assertion_esperada": "a sequência de operações que a porta recebeu é exatamente ['emitir'] — sem solicitarRevogacaoDeBoleto nem confirmarRevogacaoDeBoleto; o novo nosso_numero difere do anterior; status 200"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "cobrança que passou por revogação do boleto e sessão de Admin com ACAO:emitir_boleto",
+        "caminho_legitimo": "produzir a revogação pela conferência real (CT-930) e montar a sessão pelo acessório `pedir`; nunca zerar nosso_numero direto na tabela, o que pularia o produtor sob prova",
+        "teste_analogo": "apps/api/test/cobrancas.e2e.spec.ts"
+      },
+      "camada": "Apresentação — POST /v1/cobrancas/:codigo/emissao-de-boleto",
+      "pre_condicoes": [
+        "servidor HTTP real",
+        "cobrança com boleto revogado pela conferência"
+      ],
+      "dados_entrada": {
+        "descricao": "emissão após revogação",
+        "valores": {
+          "codigo": "COB-2026-00001"
+        }
+      },
+      "passos": [
+        "Guardar o identificador anterior à revogação.",
+        "Fazer a conferência descobrir a revogação.",
+        "Pedir a emissão pela rota.",
+        "Afirmar a sequência de operações e o novo identificador."
+      ],
+      "resultado_esperado": "Status 200. A sequência de operações recebidas pela porta na etapa de emissão é exatamente `['emitir']`. O novo `nosso_numero` é não-nulo e diferente do anterior. A trilha ganha 1 evento `BOLETO_EMITIDO` com `origem = 'ATO_DO_ADMIN'`. O novo `identificador_no_provedor` também é não-nulo e diferente do anterior — os dois identificadores são coisas distintas e a asserção separa os dois eixos.",
+      "criterios_aceitacao_validados": [
+        "CA-18"
+      ],
+      "observacoes": "É o companheiro de integração do CT-917 exigido pela Mock Budget Rule: a mesma invariante de composição, agora atravessando HTTP e banco reais. A igualdade `['emitir']` prova que não houve revogação supérflua sobre boleto inexistente.",
+      "task_id": "T13"
+    },
+    {
+      "id": "CT-932",
+      "titulo": "Os campos de conciliação deixam de nascer órfãos, e os cinco publicáveis são publicados",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "Após a emissão, nosso_numero, linha_digitavel, codigo_barras e boleto_arquivo são não-nulos, e o esquema de saída da cobrança publica os quatro; após o crédito, data_credito e valor_creditado são não-nulos e publicados — de modo que o docblock 'nascem nulos e sem produtor' deixa de valer.",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/cobrancas.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "cobrança recém-criada, antes de qualquer emissão",
+        "assertion_esperada": "os seis campos são null no corpo publicado — provando que a publicação distingue ausência de valor, e não devolve string vazia nem omite a chave"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "os três estados da cobrança: recém-criada, emitida e creditada",
+        "caminho_legitimo": "percorrer os três estados pelos caminhos reais (criação, emissão, conferência que liquida), lendo o corpo publicado em cada um",
+        "teste_analogo": "apps/api/test/cobrancas.e2e.spec.ts e packages/db/test/cobranca.spec.ts (CT-532)"
+      },
+      "camada": "Contrato + Apresentação — packages/contracts/src/cobranca.ts e GET /v1/cobrancas/:codigo",
+      "pre_condicoes": [
+        "servidor HTTP real",
+        "cobrança percorrendo os três estados"
+      ],
+      "dados_entrada": {
+        "descricao": "leitura do corpo publicado nos três estados",
+        "valores": {
+          "estados": [
+            "criada",
+            "emitida",
+            "creditada"
+          ]
+        }
+      },
+      "passos": [
+        "Consultar a cobrança recém-criada e afirmar os seis campos nulos.",
+        "Emitir e consultar; afirmar os quatro de emissão não-nulos.",
+        "Liquidar pela conferência e consultar; afirmar os dois de crédito não-nulos.",
+        "Afirmar que as seis chaves constam do conjunto de chaves do corpo em todos os três estados."
+      ],
+      "resultado_esperado": "Estado 1: as seis chaves existem no corpo e valem `null`. Estado 2: `identificadorDoProvedor`, `linhaDigitavel`, `codigoBarras` não-nulos; `dataCredito` e `valorCreditado` ainda `null`. Estado 3: `dataCredito === '2026-08-16'` e `valorCreditado === '1234.56'`. Em todos, o conjunto de chaves do corpo é afirmado por igualdade contra a lista declarada do contrato.",
+      "criterios_aceitacao_validados": [
+        "CA-19"
+      ],
+      "observacoes": "⚠️ O nome publicado do primeiro campo NÃO pode ser `nossoNumero`: esse literal está em `TERMOS_DO_PROVEDOR` da varredura de CA-20 (`packages/cobranca-bancaria/test/vocabulario-canonico.spec.ts`, linha 141). A coluna física pode continuar `nosso_numero`; a CHAVE PUBLICADA precisa de nome canônico do produto. Ver `recomendacoes`. ⚠️ CHALLENGE 2026-08-16: publicáveis são CINCO (numeroDoTituloNoProvedor, linhaDigitavel, codigoDeBarras, dataDoCredito, valorCreditado). `boleto_arquivo` guarda caminho e `identificador_no_provedor` é a chave de correlação do produto — os dois são internos e nenhum esquema de @sysloc/contracts os expõe. A asserção de conjunto de chaves por igualdade contra a lista do contrato é o que impede qualquer um deles de vazar para a saída.",
+      "task_id": "T13"
+    },
+    {
+      "id": "CT-933",
+      "titulo": "A porta declara exatamente as quatro operações, e nenhuma carrega vocabulário do provedor",
+      "tipo": "UNITARIO",
+      "categoria": "seguranca",
+      "invariant": "AdaptadorCobrancaBancaria declara exatamente quatro operações — emitir, solicitarRevogacaoDeBoleto, confirmarRevogacaoDeBoleto, consultarSituacao —, uma implementação de referência anotada com o tipo tem exatamente essas chaves, e nenhum nome de tipo, membro ou literal de enum que atravessa a porta contém termo do provedor.",
+      "owning_layer": "unit",
+      "existing_suite": "packages/cobranca-bancaria/test/vocabulario-canonico.spec.ts",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "objeto sintético cujas chaves são cada um dos termos de TERMOS_DO_PROVEDOR, submetido à MESMA função de varredura",
+        "assertion_esperada": "ocorrenciasDeTermos devolve a lista inteira, item a item, afirmada por igualdade — controle positivo sem o qual a lista vazia do caso real não prova nada (AP-29)"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Domínio — packages/cobranca-bancaria/src/porta-de-cobranca.ts",
+      "pre_condicoes": [
+        "fontes de packages/cobranca-bancaria/src legíveis"
+      ],
+      "dados_entrada": {
+        "descricao": "os fontes do pacote e a lista de operações escrita por extenso",
+        "valores": {
+          "operacoes": [
+            "emitir",
+            "solicitarRevogacaoDeBoleto",
+            "confirmarRevogacaoDeBoleto",
+            "consultarSituacao"
+          ]
+        }
+      },
+      "passos": [
+        "Exercer o extrator de membros contra o FONTE_DE_CONTROLE existente (controle positivo).",
+        "Extrair os membros de AdaptadorCobrancaBancaria do texto do fonte.",
+        "Comparar com a lista escrita por extenso, por igualdade de lista.",
+        "Costurar a ponta de tipo: Object.keys(implementacaoDeReferencia) === membros lidos do fonte.",
+        "Varrer os nomes da assinatura contra TERMOS_DO_PROVEDOR."
+      ],
+      "resultado_esperado": "Os membros são exatamente `['emitir','solicitarRevogacaoDeBoleto','confirmarRevogacaoDeBoleto','consultarSituacao']`. `Object.keys` da implementação de referência é igual à lista lida do fonte. `ocorrenciasDeTermos(nomesDaAssinatura, TERMOS_DO_PROVEDOR)` devolve `[]`, e o controle positivo devolve a lista completa de termos.",
+      "criterios_aceitacao_validados": [
+        "CA-20"
+      ],
+      "observacoes": "⚠️ QUATRO operações, não cinco. A ADR-0001 reserva o roster literal `obter_token, emitir, solicitar_baixa, confirmar_baixa, consultar`; a §3 da tech spec declara divergência quanto a `obter_token` (a credencial é interna ao adaptador, com cache por processo — D5) e registra a razão na §21. O executor deve preservar essa divergência POR ESCRITO no docblock, senão a próxima rodada 'corrige' para cinco. `AdaptadorCobrancaBancaria` sai de TERMOS_DO_PROVEDOR nesta fatia — o nome deixa de ser reservado e passa a ser usado. Asserção estática: exige prova de falsificação (testing-stack.md), rodada por `pnpm --filter @sysloc/cobranca-bancaria test`, nunca por `vitest run` avulso.",
+      "task_id": "T7"
+    },
+    {
+      "id": "CT-934",
+      "titulo": "Nenhum termo do provedor aparece na saída real das sete rotas",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Varridos os corpos de resposta reais das sete rotas novas, o corpo de erro de cada uma e as chaves do documento publicado, nenhum termo do provedor aparece como chave, código ou estado — e o mesmo varredor, aplicado a um objeto de controle com os termos plantados canal a canal, os encontra todos.",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/cobertura-de-autorizacao.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "objeto de controle com cada termo do provedor plantado num canal diferente — chave de topo, campo aninhado, item de lista, valor de enum",
+        "assertion_esperada": "a lista de achados é afirmada por IGUALDADE contra a lista de termos esperada, canal a canal; se a varredura quebrar, o controle reprova nomeando o canal cego"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "as sete rotas exercidas de verdade, em desfecho de sucesso e de erro, com sessão apropriada",
+        "caminho_legitimo": "exercer as rotas pelo acessório `pedir` e varrer o que SAIU — jamais ler o fonte para afirmar ausência de vazamento; é a diferença de método que a ADR-0032 e a testing-stack.md tornam obrigatória, e que o grep de violação procura",
+        "teste_analogo": "apps/api/test/segredo-nao-escapa.e2e.spec.ts (a forma canônica) e packages/cobranca-bancaria/test/vocabulario-canonico.spec.ts"
+      },
+      "camada": "Apresentação — as 7 rotas novas",
+      "pre_condicoes": [
+        "servidor HTTP real",
+        "cobranças em estados que exercitam sucesso e erro nas 7 rotas"
+      ],
+      "dados_entrada": {
+        "descricao": "os 14 corpos (7 de sucesso, 7 de erro) mais o documento publicado",
+        "valores": {
+          "rotas": 7
+        }
+      },
+      "passos": [
+        "Aplicar o varredor ao objeto de controle e afirmar os achados por igualdade.",
+        "Exercer as 7 rotas em sucesso e coletar os corpos.",
+        "Exercer as 7 rotas em erro e coletar os envelopes.",
+        "Varrer os 14 corpos e as chaves do documento publicado."
+      ],
+      "resultado_esperado": "O controle positivo devolve a lista completa de termos, canal a canal, por igualdade. A varredura dos 14 corpos reais devolve `[]`. A varredura das chaves do documento publicado devolve `[]`. Os 14 corpos foram de fato coletados e são não-vazios (âncora antivácuo).",
+      "criterios_aceitacao_validados": [
+        "CA-20"
+      ],
+      "observacoes": "É a metade que o CT-933 não alcança: aquele varre NOMES declarados no fonte; este varre VALORES que saíram em execução. A emenda da ADR-0001 diz que a conformidade à cláusula de vocabulário 'é exigível por medição' — este é o caso que a cumpre. Asserção comportamental: dispensa prova de falsificação, mas o controle positivo continua obrigatório.",
+      "task_id": "T17"
+    },
+    {
+      "id": "CT-935",
+      "titulo": "Nenhum material de certificado e nenhuma senha alcança a carga da tarefa",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "A carga da tarefa de emissão em lote contém exatamente as chaves { empresaId, loteId } e nada mais; e a varredura da carga serializada, do argumento de comando enviado ao servidor de fila e do corpo de erro da fila não encontra a senha nem os bytes do material — enquanto o mesmo varredor os encontra todos no objeto de controle.",
+      "owning_layer": "service-integration",
+      "existing_suite": "apps/api/test/segredo-nao-escapa.e2e.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "objeto de controle com a senha real e um recorte hexadecimal dos bytes reais do material, plantados canal a canal",
+        "assertion_esperada": "a lista de achados no controle é afirmada por igualdade, canal a canal; na carga real a lista é []; e o conjunto de chaves da carga é afirmado por igualdade contra ['empresaId','loteId']"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "um certificado real cifrado registrado para a empresa, e uma tarefa efetivamente enfileirada",
+        "caminho_legitimo": "registrar o material pelo caminho real da rota de certificado e enfileirar pela rota de emissão em lote, lendo depois a carga do servidor de fila efêmero — jamais construir a carga à mão no teste, o que mediria o teste e não o produtor",
+        "teste_analogo": "apps/api/test/segredo-nao-escapa.e2e.spec.ts (agulhas derivadas do dado que de fato circulou; recorte em HEX tirado da METADE do cofre, nunca base64 nem do começo)"
+      },
+      "camada": "Apresentação + Fila — POST /v1/cobranca-bancaria/emissoes",
+      "pre_condicoes": [
+        "fila real efêmera",
+        "certificado registrado para a empresa A",
+        "servidor HTTP real"
+      ],
+      "dados_entrada": {
+        "descricao": "emissão em lote enfileirada com certificado registrado",
+        "valores": {
+          "competencia": "2026-08-01"
+        }
+      },
+      "passos": [
+        "Registrar o material real e guardar a senha e o recorte hexadecimal dos bytes.",
+        "Aplicar o varredor ao objeto de controle e afirmar por igualdade.",
+        "Disparar a emissão em lote pela rota.",
+        "Ler a carga da tarefa do servidor de fila e varrê-la em três serializações.",
+        "Afirmar o conjunto de chaves da carga por igualdade."
+      ],
+      "resultado_esperado": "O controle positivo devolve as agulhas plantadas, canal a canal, por igualdade. `Object.keys(carga)` é exatamente `['empresaId','loteId']`. A varredura da carga em texto cru, `JSON.stringify` e `util.inspect` devolve `[]` nas três. A varredura do corpo de erro da fila devolve `[]`.",
+      "criterios_aceitacao_validados": [
+        "CA-20"
+      ],
+      "observacoes": "É o caso que FECHA o débito D58 · F4/T13 (`apps/api/src/integracoes-bancarias/certificado.service.ts`): a superfície `fila` entra na enumeração da ADR-0032 e passa a ser medida. O marcador `DÉBITO COM GATILHO` sai no mesmo commit, junto da linha do índice do `CLAUDE.md` — as duas pontas. A ADR-0032 enumera 'consulta, erro, diagnóstico' como ILUSTRAÇÃO de 'superfície alguma', não como lista taxativa.",
+      "task_id": "T15"
+    },
+    {
+      "id": "CT-936",
+      "titulo": "O processo de trabalho recusa a partida sem qualquer das três variáveis novas",
+      "tipo": "UNITARIO",
+      "categoria": "tratamento_erro",
+      "invariant": "lerAmbiente do processo de trabalho passa a exigir CHAVE_DE_CIFRA_DO_CERTIFICADO, ENDERECO_DO_PROVEDOR_BANCARIO e DIRETORIO_DOS_BOLETOS: para cada uma, ausência ou valor em branco faz a partida falhar nomeando a variável e jamais o valor; e a lista de exigidas cresce de seis para NOVE, afirmada por igualdade de conjunto.",
+      "owning_layer": "unit",
+      "existing_suite": "apps/worker/test/ambiente.spec.ts",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "para cada uma das três variáveis novas: ambiente completo menos ela, e ambiente com ela em branco ('   ')",
+        "assertion_esperada": "nas seis falhas, a mensagem nomeia a variável correspondente; e nenhuma mensagem ecoa o valor"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Borda de processo — apps/worker/src/main.ts",
+      "pre_condicoes": [
+        "nenhuma — função pura sobre um objeto de ambiente"
+      ],
+      "dados_entrada": {
+        "descricao": "matriz de ambientes: completo, sem cada uma das três novas, e com cada uma em branco",
+        "valores": {
+          "variaveis_exigidas_antes": 6,
+          "variaveis_exigidas_depois": 9,
+          "variaveis_novas": [
+            "CHAVE_DE_CIFRA_DO_CERTIFICADO",
+            "ENDERECO_DO_PROVEDOR_BANCARIO",
+            "DIRETORIO_DOS_BOLETOS"
+          ]
+        }
+      },
+      "passos": [
+        "Acrescentar as três variáveis a VARIAVEIS_EXIGIDAS e afirmar o comprimento 9 e o conjunto por igualdade.",
+        "Rodar o caso parametrizado existente de ausência sobre as 9.",
+        "Rodar o caso parametrizado existente de valor em branco sobre as 9.",
+        "Afirmar que nenhuma mensagem de falha ecoa o valor recebido."
+      ],
+      "resultado_esperado": "`VARIAVEIS_EXIGIDAS.length === 9` e o conjunto igual à lista escrita por extenso, incluindo as três novas. Ausência e valor em branco de cada uma nomeiam a variável. Com as 9 válidas, `lerAmbiente` devolve a configuração com os campos correspondentes preenchidos. Nenhuma mensagem contém o valor.",
+      "criterios_aceitacao_validados": [
+        "CA-20"
+      ],
+      "observacoes": "⚠️ CHALLENGE 2026-08-16: são TRÊS variáveis, e o número medido é 9 — VARIAVEIS_EXIGIDAS tem hoje 6 itens (apps/worker/test/ambiente.spec.ts:136). A versão anterior deste caso cobrava `=== 7` e nomeava só a chave de cifra, enquanto a §3.6 da tech spec pedia 9: o CT-643, que compara este conjunto com o que a execução de lerAmbiente revela, reprovaria a divergência. A suíte já parametriza por VARIAVEIS_EXIGIDAS — acrescentar as três faz os casos existentes cobrarem as novas. O CT-643 cobra caminho de provisionamento para TODA variável exigida: o executor acrescenta as três ao .env.example e à unidade systemd, senão ele reprova — e essa reprovação é correta, não regressão.",
+      "task_id": "T16"
+    },
+    {
+      "id": "CT-937",
+      "titulo": "A superfície publicada fecha em 99 pares e 84 manipuladores, por dupla medição",
+      "tipo": "E2E",
+      "categoria": "integridade_dados",
+      "invariant": "A superfície publicada cresce de 92 para 99 pares e de 77 para 84 manipuladores; as duas medições independentes (pelo roteador da aplicação montada e pela composição da superfície) coincidem; semDeclaracao continua vazio e o catálogo de permissões segue com as mesmas 17 chaves.",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/cobertura-de-autorizacao.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "as sete rotas novas publicadas; e o controle antivácuo de que o roteador foi de fato lido",
+        "assertion_esperada": "ROTAS_PUBLICADAS_EM_PRODUCAO === 99 e MANIPULADORES_EXAMINADOS_EM_PRODUCAO === 84 por IGUALDADE (nunca toContain); peloRoteador === pelaComposicao; semDeclaracao.toEqual([]); TOTAL_DE_CHAVES === 17"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "a aplicação de produção montada por inteiro, para que o roteador seja o real",
+        "caminho_legitimo": "usar a montagem instrumentada que a suíte já tem; NÃO registrar global novo fora do AppModule (é o segundo gatilho do débito D57 · F3/T12)",
+        "teste_analogo": "apps/api/test/cobertura-de-autorizacao.e2e.spec.ts (CT-836, a ordem canônica: igualdade do retrato ANTES da garantia nomeada)"
+      },
+      "camada": "Apresentação — inventário de rotas",
+      "pre_condicoes": [
+        "aplicação de produção montada",
+        "as 7 rotas novas registradas"
+      ],
+      "dados_entrada": {
+        "descricao": "as duas contagens e o catálogo de permissões",
+        "valores": {
+          "pares_antes": 92,
+          "pares_depois": 99,
+          "manipuladores_antes": 77,
+          "manipuladores_depois": 84
+        }
+      },
+      "passos": [
+        "Atualizar ROTAS_PUBLICADAS_EM_PRODUCAO de 92 para 99 e MANIPULADORES_EXAMINADOS_EM_PRODUCAO de 77 para 84.",
+        "Medir pelo roteador da aplicação montada.",
+        "Medir pela composição da superfície, contada à parte.",
+        "Afirmar a igualdade das duas contra as constantes, e semDeclaracao vazio.",
+        "Afirmar que o catálogo segue com 17 chaves e nenhuma ação nova."
+      ],
+      "resultado_esperado": "`peloRoteador === 99`, `pelaComposicao === 99`, `manipuladores === 84`, as três por igualdade contra as constantes. `semDeclaracao` é `[]`. `TOTAL_DE_CHAVES === 17` — o catálogo de permissões é FECHADO em 10 telas × 7 ações e não cresce. As 7 rotas novas aparecem nomeadas no inventário.",
+      "criterios_aceitacao_validados": [
+        "CA-20"
+      ],
+      "observacoes": "⚠️ A §5.2 da task DEVE declarar este arquivo como âncora que cresce (`.claude/rules/ancoras-de-superficie.md`), e a âncora sobe no MESMO diff da publicação. ⚠️ O débito D61 · F4/T14 alcança este arquivo: nos casos de fecho de superfície, a igualdade do retrato precede a garantia nomeada, e a ordem canônica é a do CT-836 — o gatilho dispara aqui, então o marcador deve ser reavaliado. Toda contagem escrita em prosa (CLAUDE.md, tech spec) sobe no mesmo diff.",
+      "task_id": "T17"
+    },
+    {
+      "id": "CT-938",
+      "titulo": "A trilha registra efeito e nunca a tentativa que nada mudou",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "Uma conferência que consulta N cobranças e encontra todas exatamente como estavam grava zero eventos em evento_bancario, e ainda assim registra cobrancas_conferidas = N na conferencia_bancaria — de modo que a passada é auditável sem poluir a trilha publicada.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "conferência de 5 cobranças em que o provedor responde 'sem alteração' para todas, contrastada com uma segunda conferência em que 1 das 5 liquidou",
+        "assertion_esperada": "1ª conferência: count(evento_bancario) === 0 e cobrancas_conferidas === 5 e efeitos === 0. 2ª: count(evento_bancario) === 1 e efeitos === 1 — o par é o que prova que o zero é ausência de efeito, não cegueira do escritor"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "provedor que responde 'nada mudou' para todas as cobranças",
+        "caminho_legitimo": "implementação de teste da porta devolvendo a situação canônica idêntica à gravada; o produto decide o que é efeito, e essa decisão é do domínio",
+        "teste_analogo": "packages/db/test/cobranca.spec.ts (CT-521 — 'nenhuma operação apaga cobrança: contagem preservada')"
+      },
+      "camada": "Domínio — packages/cobranca-bancaria/src (executarConferenciaDaEmpresa)",
+      "pre_condicoes": [
+        "instância efêmera de PostgreSQL",
+        "5 cobranças elegíveis com boleto emitido"
+      ],
+      "dados_entrada": {
+        "descricao": "duas conferências: uma sem efeito, outra com um efeito",
+        "valores": {
+          "cobrancas": 5,
+          "efeitos_na_segunda": 1
+        }
+      },
+      "passos": [
+        "Contar os eventos antes da 1ª conferência.",
+        "Rodar a 1ª conferência com o provedor respondendo 'sem alteração'.",
+        "Contar os eventos e ler cobrancas_conferidas e efeitos.",
+        "Rodar a 2ª conferência com 1 liquidação e repetir as contagens."
+      ],
+      "resultado_esperado": "Após a 1ª: a contagem de eventos é idêntica à de antes (delta `0`), `cobrancas_conferidas === 5` e `efeitos === 0`. Após a 2ª: delta de eventos `=== 1`, `efeitos === 1`. Nenhum evento de tipo `CONFERENCIA` existe — o enum de tipo tem seis valores e nenhum deles é esse.",
+      "criterios_aceitacao_validados": [
+        "CA-13"
+      ],
+      "observacoes": "ADR-0034 (`registra efeito, nunca tentativa`). O contraste com a 2ª conferência é obrigatório: sem ele, um escritor de eventos quebrado produziria zero nos dois casos e passaria. ⚠️ A ADR-0034 EXCLUI explicitamente o registro operacional de diagnóstico — 'nenhuma leitura desta ADR autoriza apagar o segundo'. Este caso NÃO deve asserir ausência de linha de diário; o que ele mede é a trilha PUBLICADA.",
+      "task_id": "T12"
+    },
+    {
+      "id": "CT-939",
+      "titulo": "Os enums da trilha são fechados e o banco recusa valor fora deles",
+      "tipo": "INTEGRACAO",
+      "categoria": "teste_negativo",
+      "invariant": "O enum de tipo de evento tem exatamente seis valores e o de origem exatamente dois; o banco recusa qualquer valor fora deles, e nenhum dos oito literais carrega termo do provedor.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/coerencia-de-migracoes.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "INSERT em evento_bancario com tipo = 'CONFERENCIA' e outro com origem = 'PROVEDOR'",
+        "assertion_esperada": "os dois inserts levantam erro do PostgreSQL com code '22P02' (invalid_text_representation) nomeando o tipo enumerado; e o insert com tipo = 'BOLETO_EMITIDO' e origem = 'ATO_DO_ADMIN' é aceito e devolve id não-nulo"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "leitura dos rótulos do enum diretamente do catálogo do PostgreSQL",
+        "caminho_legitimo": "consultar pg_enum/pg_type na instância efêmera, que é a fonte executável; não derivar do fonte TypeScript, o que poria o artefato sob prova nos dois lados da igualdade",
+        "teste_analogo": "packages/db/test/coerencia-de-migracoes.spec.ts e packages/db/test/catalogo.spec.ts"
+      },
+      "camada": "Dados — packages/db/migracoes/0017_dominio_emissao_e_conciliacao.sql",
+      "pre_condicoes": [
+        "instância efêmera de PostgreSQL com a 0017 aplicada"
+      ],
+      "dados_entrada": {
+        "descricao": "os rótulos lidos do catálogo e dois inserts inválidos",
+        "valores": {
+          "tipos": [
+            "BOLETO_EMITIDO",
+            "BOLETO_REVOGADO",
+            "EMISSAO_RECUSADA",
+            "COBRANCA_LIQUIDADA",
+            "LIQUIDACAO_ESTORNADA",
+            "DIVERGENCIA_DE_VALOR"
+          ],
+          "origens": [
+            "ATO_DO_ADMIN",
+            "CONFERENCIA"
+          ]
+        }
+      },
+      "passos": [
+        "Ler os rótulos dos dois enums do catálogo do PostgreSQL.",
+        "Comparar por igualdade de lista ordenada contra as listas escritas por extenso.",
+        "Tentar inserir tipo='CONFERENCIA' e capturar o erro.",
+        "Tentar inserir origem='PROVEDOR' e capturar o erro.",
+        "Varrer os oito literais contra TERMOS_DO_PROVEDOR."
+      ],
+      "resultado_esperado": "Os rótulos de tipo são exatamente os seis listados, nesta ordem; os de origem são exatamente `['ATO_DO_ADMIN','CONFERENCIA']`. Os dois inserts inválidos levantam erro com `code === '22P02'`. A varredura dos oito literais contra os termos do provedor devolve `[]`, com controle positivo.",
+      "criterios_aceitacao_validados": [
+        "CA-13",
+        "CA-20"
+      ],
+      "observacoes": "A ausência do tipo `CONFERENCIA` é conteúdo da ADR-0034, e o insert que a tenta é o que a torna executável em vez de documental. A ADR-0034 manda que 'cada integração declara quais desfechos são anômalos para ela' — os seis tipos SÃO essa declaração, e a igualdade de lista é o que a fixa.",
+      "task_id": "T3"
+    },
+    {
+      "id": "CT-940",
+      "titulo": "As quatro tabelas novas nascem isoladas: RLS habilitada, forçada e com FK composta",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "evento_bancario, emissao_em_lote, conferencia_bancaria e item_da_emissao_em_lote têm relrowsecurity e relforcerowsecurity verdadeiros, política com USING e WITH CHECK, restrição única (id, empresa_id) e FK composta — e uma linha da empresa A é invisível e ininserível sob o contexto de B.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/isolamento.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "sob o contexto de B, SELECT das linhas de A e INSERT de uma linha com empresa_id de A",
+        "assertion_esperada": "o SELECT devolve 0 linhas (e o mesmo SELECT sob o contexto de A devolve N > 0, controle antivácuo); o INSERT é recusado pelo WITH CHECK com code '42501'"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "contexto de tenant de duas empresas e um papel de conexão sujeito à RLS",
+        "caminho_legitimo": "usar o papel de conexão de aplicação que packages/db/test/papel-de-conexao.spec.ts já exercita — o superusuário contorna RLS e faria o caso passar sem provar nada",
+        "teste_analogo": "packages/db/test/isolamento.spec.ts e packages/db/test/papel-de-conexao.spec.ts"
+      },
+      "camada": "Dados — migrações 0017 e 0018",
+      "pre_condicoes": [
+        "instância efêmera de PostgreSQL",
+        "empresas A e B",
+        "papel de aplicação sem BYPASSRLS"
+      ],
+      "dados_entrada": {
+        "descricao": "as quatro tabelas novas e duas empresas",
+        "valores": {
+          "tabelas": [
+            "evento_bancario",
+            "emissao_em_lote",
+            "conferencia_bancaria",
+            "item_da_emissao_em_lote"
+          ]
+        }
+      },
+      "passos": [
+        "Ler relrowsecurity e relforcerowsecurity das quatro tabelas em pg_class.",
+        "Ler as políticas e afirmar que cada uma tem qual (USING) e with_check.",
+        "Ler as restrições únicas e as FKs compostas.",
+        "Semear linhas em A; sob o contexto de B, tentar ler e inserir."
+      ],
+      "resultado_esperado": "Para as quatro tabelas: `relrowsecurity === true` e `relforcerowsecurity === true`. Cada política tem `qual` e `with_check` não-nulos. Cada tabela tem a única `(id, empresa_id)` e a FK composta para `(cobranca.id, cobranca.empresa_id)` ou `(emissao_em_lote.id, emissao_em_lote.empresa_id)` conforme o caso. Sob B, o SELECT devolve 0 linhas enquanto sob A devolve as N semeadas; o INSERT com `empresa_id` de A é recusado com `code === '42501'`.",
+      "criterios_aceitacao_validados": [
+        "CA-14"
+      ],
+      "observacoes": "Invariante 1 do projeto: 'referência cross-tenant é impossível pelo banco, não impedida por validação de aplicação'. O `relforcerowsecurity` é o que impede o dono da tabela de contornar a política, e é frequentemente esquecido — a leitura direta de pg_class é o que o pega.",
+      "task_id": "T2"
+    },
+    {
+      "id": "CT-941",
+      "titulo": "As 7 rotas novas exigem sessão e a autorização declarada, e nenhuma é pública",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Cada uma das 7 rotas responde 401 sem sessão e 403 com sessão sem a permissão declarada; as 3 rotas de ato exigem também a chave de ação; nenhuma delas é pública e nenhuma cai em semDeclaracao.",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/autorizacao-do-dominio.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "para cada rota: (a) sem cookie de sessão; (b) com sessão de usuário sem TELA:financeiro; (c) para as 3 de ato, com TELA:financeiro mas sem a ACAO correspondente",
+        "assertion_esperada": "(a) 401 com envelope { codigo: 'NAO_AUTENTICADO', ... }; (b) e (c) 403 com { codigo: 'ACESSO_NEGADO', mensagem: 'acesso negado para esta sessão' }, os três asseridos como objeto inteiro"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "três sessões de perfis distintos — sem a tela, com a tela e sem a ação, e com tela e ação",
+        "caminho_legitimo": "montar os perfis pela concessão real de permissões do produto, imitando apps/api/test/autorizacao-do-dominio.e2e.spec.ts; nunca forjar a sessão escrevendo direto na tabela nem expondo símbolo de produção",
+        "teste_analogo": "apps/api/test/autorizacao-do-dominio.e2e.spec.ts e apps/api/test/autorizacao.e2e.spec.ts"
+      },
+      "camada": "Apresentação — as 7 rotas novas",
+      "pre_condicoes": [
+        "servidor HTTP real",
+        "três perfis de sessão semeados"
+      ],
+      "dados_entrada": {
+        "descricao": "matriz 7 rotas × 3 perfis, parametrizada",
+        "valores": {
+          "acoes": {
+            "emissao-de-boleto": "emitir_boleto",
+            "retirada-de-boleto": "solicitar_baixa_de_boleto",
+            "emissoes": "emitir_boleto"
+          }
+        }
+      },
+      "passos": [
+        "Para cada rota, pedir sem sessão e afirmar 401.",
+        "Pedir com sessão sem TELA:financeiro e afirmar 403.",
+        "Para as 3 de ato, pedir com a tela e sem a ação e afirmar 403.",
+        "Pedir com o perfil completo e afirmar que NÃO é 401 nem 403."
+      ],
+      "resultado_esperado": "Nas 7 rotas: sem sessão, 401 com `{ codigo: 'NAO_AUTENTICADO', ... }`; sem a tela, 403 com `{ codigo: 'ACESSO_NEGADO', mensagem: 'acesso negado para esta sessão' }`. Nas 3 de ato, sem a ação, 403 com o mesmo envelope. Com o perfil completo, o status não é 401 nem 403 (controle antivácuo — prova que o 403 vinha da permissão e não de defeito de montagem).",
+      "criterios_aceitacao_validados": [
+        "CA-15"
+      ],
+      "observacoes": "O 4º passo é o controle antivácuo indispensável: sem ele, uma rota quebrada que respondesse 403 sempre passaria nos três primeiros. Envelopes asseridos como objeto inteiro (ADR-0017).",
+      "task_id": "T17"
+    },
+    {
+      "id": "CT-942",
+      "titulo": "O contrato recusa chave desconhecida na entrada nomeando-a, e a saída aceita campo novo",
+      "tipo": "UNITARIO",
+      "categoria": "teste_negativo",
+      "invariant": "Os esquemas de entrada das 3 rotas de ato são z.strictObject e recusam chave desconhecida com code 'unrecognized_keys' e a lista keys nomeando a chave; os esquemas de saída são z.object e aceitam campo novo sem recusar.",
+      "owning_layer": "unit",
+      "existing_suite": "packages/contracts/test/esquemas.spec.ts",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "corpo de entrada com a chave excedente 'empresaId' — a que a produção nunca deve aceitar do cliente",
+        "assertion_esperada": "erro.code === 'unrecognized_keys' e erro.keys toEqual(['empresaId']); NUNCA apenas expect(resultado.success).toBe(false)"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Contrato — packages/contracts/src/cobranca.ts e integracao-bancaria.ts",
+      "pre_condicoes": [
+        "esquemas publicados pelos contratos"
+      ],
+      "dados_entrada": {
+        "descricao": "entradas válidas e entradas com chave excedente; saída com campo extra",
+        "valores": {
+          "chave_excedente": "empresaId"
+        }
+      },
+      "passos": [
+        "Para cada esquema de entrada, submeter o corpo válido e afirmar sucesso.",
+        "Submeter o corpo com 'empresaId' a mais e afirmar code e keys.",
+        "Para cada esquema de saída, submeter um objeto com campo extra e afirmar sucesso."
+      ],
+      "resultado_esperado": "Entradas válidas passam. Entradas com `empresaId` falham com `code === 'unrecognized_keys'` e `keys` igual a `['empresaId']`, por igualdade. Saídas com campo extra passam sem recusa — a direção decide a estritude.",
+      "criterios_aceitacao_validados": [
+        "CA-15"
+      ],
+      "observacoes": "`.claude/rules/contrato-publicado.md`, literal: a recusa se afirma por `code` e pela lista `keys`, jamais só pelo booleano. `empresaId` é a chave certa para o teste porque é exatamente a que o invariante 2 do projeto proíbe ler do request.",
+      "task_id": "T1"
+    },
+    {
+      "id": "CT-943",
+      "titulo": "A credencial de acesso é reaproveitada por processo e por empresa, e renovada por expiração",
+      "tipo": "UNITARIO",
+      "categoria": "caso_extremo",
+      "invariant": "O adaptador obtém a credencial uma vez por empresa e a reaproveita nas chamadas seguintes enquanto viva; passado o prazo de validade, obtém uma nova; e a credencial de uma empresa nunca é usada em chamada de outra.",
+      "owning_layer": "unit",
+      "existing_suite": "packages/cobranca-bancaria/test/adaptador-sicoob.spec.ts",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "10 operações da empresa A seguidas de 10 da empresa B, com o relógio avançado além do prazo entre a 5ª e a 6ª de A",
+        "assertion_esperada": "obtenções de credencial === 3 exatas (A inicial, A renovada, B inicial), nunca 20 nem 2; e a credencial apresentada em cada chamada de B difere da de A"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "controle do tempo para atravessar o prazo de validade sem espera real",
+        "caminho_legitimo": "injetar a fonte de tempo pela assinatura do criador do adaptador (clock injetável é fronteira legítima do SUT, por `fundamentos.md`); NUNCA usar pausa fixa nem sleep, e o prazo é constante nomeada no topo do arquivo",
+        "teste_analogo": "packages/cobranca-bancaria/test/adaptador-sicoob.spec.ts"
+      },
+      "camada": "Infraestrutura — packages/cobranca-bancaria/src/adaptador-sicoob.ts",
+      "pre_condicoes": [
+        "adaptador criado com fonte de tempo injetada e destino inerte"
+      ],
+      "dados_entrada": {
+        "descricao": "20 operações em duas empresas, com o relógio cruzando o prazo",
+        "valores": {
+          "validade_segundos": 300,
+          "operacoes_por_empresa": 10
+        }
+      },
+      "passos": [
+        "Executar 5 operações da empresa A e contar as obtenções.",
+        "Avançar o relógio além de 300 s.",
+        "Executar mais 5 operações de A e contar.",
+        "Executar 10 operações de B e contar.",
+        "Afirmar que a credencial de B nunca foi apresentada numa chamada de A."
+      ],
+      "resultado_esperado": "Após as 5 primeiras de A: exatamente 1 obtenção. Após o avanço e mais 5 de A: exatamente 2. Após as 10 de B: exatamente 3. Nenhuma chamada de A apresenta a credencial de B, nem vice-versa.",
+      "criterios_aceitacao_validados": [
+        "CA-20"
+      ],
+      "observacoes": "D5 da tech spec (cache por processo, chaveado por empresa, renovado por expiração; 300 s medidos). ⚠️ FECHA o débito D36 · F4/T10 (`criarAdaptadorSicoob`): `client_id` e `scope` passam ao envelope cifrado e a sonda de identidade sobe para a obtenção real de credencial — o marcador sai no mesmo commit, com a linha do índice do `CLAUDE.md`. `clock` não conta como fronteira de execução real (Gate 3); o companheiro de integração é o CT-935.",
+      "task_id": "T8"
+    },
+    {
+      "id": "CT-944",
+      "titulo": "A tarefa de emissão em lote abre o contexto de tenant pela carga e recusa carga sem empresa",
+      "tipo": "INTEGRACAO",
+      "categoria": "tratamento_erro",
+      "invariant": "O processador da tarefa de emissão em lote abre o contexto de tenant a partir de empresaId da carga antes de qualquer leitura, e recusa a tarefa cuja carga não traga empresaId válido — sem correr o trabalho e devolver vazio como se fosse sucesso.",
+      "owning_layer": "service-integration",
+      "existing_suite": "apps/worker/test/regua.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "carga sem empresaId; carga com empresaId que não é UUID; carga com campo extra além de { empresaId, loteId }",
+        "assertion_esperada": "nos dois primeiros a tarefa é RECUSADA nomeando o campo, e nenhuma linha é escrita em item_da_emissao_em_lote; no terceiro o campo extra é ignorado e não vira origem de contexto"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "o contexto de tenant precisa nascer da carga, e não de um request",
+        "caminho_legitimo": "invocar o processador com uma tarefa montada pelo contrato de fila de @sysloc/shared, exatamente como apps/worker/test/regua.spec.ts faz; a ordem é recusa PRIMEIRO e contexto depois, que é o desenho registrado no docblock de apps/worker/src/tarefas/regua.ts",
+        "teste_analogo": "apps/worker/test/regua.spec.ts e apps/worker/src/tarefas/regua.ts (ADR-0024)"
+      },
+      "camada": "Borda de tarefa — apps/worker/src/tarefas/emissao-em-lote.ts",
+      "pre_condicoes": [
+        "instância efêmera de PostgreSQL",
+        "lote criado para a empresa A"
+      ],
+      "dados_entrada": {
+        "descricao": "cargas válidas e inválidas",
+        "valores": {
+          "carga_valida": {
+            "empresaId": "<uuid>",
+            "loteId": "<uuid>"
+          }
+        }
+      },
+      "passos": [
+        "Processar a carga válida e verificar que o lote foi percorrido sob o contexto de A.",
+        "Processar a carga sem empresaId e afirmar a recusa nomeando o campo.",
+        "Processar a carga com empresaId não-UUID e afirmar a recusa.",
+        "Processar a carga com campo extra e afirmar que ele é ignorado.",
+        "Contar as linhas de item_da_emissao_em_lote após cada recusa."
+      ],
+      "resultado_esperado": "Carga válida: os itens do lote são gravados sob o contexto de A. Cargas inválidas: a tarefa é recusada com mensagem nomeando `empresaId`, e a contagem de `item_da_emissao_em_lote` permanece a mesma de antes (delta `0`). O campo extra não altera o contexto aberto.",
+      "criterios_aceitacao_validados": [
+        "CA-01",
+        "CA-03"
+      ],
+      "observacoes": "ADR-0024 e ADR-0029. A contagem inalterada após a recusa é o que discrimina 'recusou' de 'correu sem contexto e não achou nada' — que o docblock de `regua.ts` nomeia como 'o pior modo de falha possível'.",
+      "task_id": "T16"
+    },
+    {
+      "id": "CT-945",
+      "titulo": "A rota de bytes permanece no documento publicado, declarando mídia e nome de arquivo",
+      "tipo": "E2E",
+      "categoria": "integridade_dados",
+      "invariant": "GET /v1/cobrancas/:codigo/boleto consta do documento publicado, declarando o tipo de mídia e o nome sugerido do arquivo, e o mesmo envelope de erro das demais rotas — e o caso reprova se a rota desaparecer do documento.",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/contrato-publicado.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "o conjunto de caminhos do documento publicado, comparado por igualdade contra a lista declarada",
+        "assertion_esperada": "o caminho da rota de boleto CONSTA do documento (a asserção reprova se ele sumir); o documento declara media type de PDF e o nome do arquivo; e declara os códigos de erro do enum fechado da ADR-0017"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "o documento publicado gerado pela aplicação real",
+        "caminho_legitimo": "ler o documento pela rota que o publica na aplicação montada, imitando apps/api/test/contrato-publicado.e2e.spec.ts",
+        "teste_analogo": "apps/api/test/contrato-publicado.e2e.spec.ts"
+      },
+      "camada": "Contrato publicado",
+      "pre_condicoes": [
+        "aplicação montada",
+        "documento publicado acessível"
+      ],
+      "dados_entrada": {
+        "descricao": "o documento publicado e o caminho da rota de bytes",
+        "valores": {
+          "caminho": "/v1/cobrancas/{codigo}/boleto"
+        }
+      },
+      "passos": [
+        "Obter o documento publicado.",
+        "Afirmar que o caminho da rota de boleto consta dele.",
+        "Afirmar a declaração de mídia e do nome sugerido do arquivo.",
+        "Afirmar que os códigos de erro declarados pertencem ao enum fechado de 8."
+      ],
+      "resultado_esperado": "O caminho consta do documento. A resposta de sucesso declara `application/pdf` e o nome sugerido do arquivo; não declara forma do corpo de sucesso. As respostas de erro declaradas usam apenas códigos do enum fechado da ADR-0017. Se a rota sumir do documento, o caso reprova nomeando o caminho ausente.",
+      "criterios_aceitacao_validados": [
+        "CA-07",
+        "CA-09"
+      ],
+      "observacoes": "ADR-0028 exige, literalmente, 'prova por caso que reprova se a rota desaparecer do documento publicado' — é a única ADR deste conjunto que nomeia o caso de teste como parte da decisão. Onde o arcabouço não souber exprimir corpo binário, a exceção é declarada NUM PONTO ÚNICO.",
+      "task_id": "T17"
+    },
+    {
+      "id": "CT-946",
+      "titulo": "As migrações novas separam gerado de autoral e o ledger permanece coerente",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "0017_dominio_emissao_e_conciliacao.sql contém apenas DDL gerada e nenhuma cláusula de segurança; 0018_seguranca_emissao_e_conciliacao.sql contém FORCE ROW LEVEL SECURITY e as políticas e nenhuma DDL gerada; e o ledger de migrações permanece coerente com os arquivos em disco.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/coerencia-de-migracoes.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "um fonte de controle sintético que mistura CREATE TABLE com CREATE POLICY no mesmo arquivo",
+        "assertion_esperada": "o detector aplicado ao fonte de controle acusa a mistura nomeando as duas naturezas; aplicado à 0017 e à 0018 reais, devolve [] em cada uma"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Dados — packages/db/migracoes/",
+      "pre_condicoes": [
+        "instância efêmera de PostgreSQL",
+        "as migrações 0017 e 0018 em disco"
+      ],
+      "dados_entrada": {
+        "descricao": "os textos das duas migrações e o ledger",
+        "valores": {
+          "gerada": "0017_dominio_emissao_e_conciliacao.sql",
+          "autoral": "0018_seguranca_emissao_e_conciliacao.sql"
+        }
+      },
+      "passos": [
+        "Exercer o detector contra o fonte de controle misturado (controle positivo).",
+        "Aplicar o detector à 0017 e à 0018.",
+        "Afirmar a coerência do ledger com os arquivos em disco.",
+        "Afirmar que a 0018 declara FORCE ROW LEVEL SECURITY para as quatro tabelas novas."
+      ],
+      "resultado_esperado": "O controle positivo acusa a mistura nomeando as duas naturezas. A 0017 não contém `CREATE POLICY` nem `FORCE ROW LEVEL SECURITY`; a 0018 não contém `CREATE TABLE`. O ledger casa com os arquivos em disco. A 0018 nomeia as quatro tabelas novas em `FORCE ROW LEVEL SECURITY`.",
+      "criterios_aceitacao_validados": [
+        "CA-14"
+      ],
+      "observacoes": "Asserção estática sobre o texto das migrações: exige prova de falsificação (testing-stack.md), com o defeito reintroduzido numa cópia e a asserção commitada reprovando-a. ⚠️ O débito D20 · F3/T7 alcança a 0010 e NÃO esta; nada aqui autoriza editar a 0010, que fica imutável após a primeira aplicação a banco durável.",
+      "task_id": "T2"
+    },
+    {
+      "id": "CT-947",
+      "titulo": "A guarda de boletos não escreve nem lê fora do diretório-base",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Toda gravação e toda leitura da guarda resolvem para um caminho dentro do diretório-base: um identificador que escape da base é recusado ANTES de qualquer chamada de filesystem, e nenhum byte nasce fora da base.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "'../fora', um caminho absoluto ('/etc/sysloc/roubado') e um código com separador embutido",
+        "assertion_esperada": "os três são recusados nomeando o campo e jamais o caminho recebido; readdir do diretório-base E do diretório-pai devolve exatamente o arquivo legítimo, provando que nada nasceu fora"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Infraestrutura — packages/cobranca-bancaria/src/guarda-de-boletos.ts",
+      "pre_condicoes": [
+        "diretório-base em tmpdir descartável, criado pelo próprio caso",
+        "diretório-pai observável, para provar que nada escapou"
+      ],
+      "dados_entrada": {
+        "descricao": "um identificador legítimo e três hostis",
+        "valores": {
+          "legitimo": "COB-2026-0000054",
+          "hostis": [
+            "../fora",
+            "/etc/sysloc/roubado",
+            "COB-2026/0000054"
+          ]
+        }
+      },
+      "passos": [
+        "Gravar os bytes do boleto legítimo pela guarda e lê-los de volta.",
+        "Afirmar que os bytes lidos são idênticos aos gravados (controle antivácuo).",
+        "Para cada entrada hostil, tentar gravar e tentar ler.",
+        "Afirmar a recusa e que nenhuma chamada de filesystem aconteceu fora da base.",
+        "Listar o diretório-base e o diretório-pai e comparar por igualdade de conjunto."
+      ],
+      "resultado_esperado": "O legítimo grava e lê os MESMOS bytes sob a base — sem esse controle, uma guarda que recusasse tudo passaria no caso. As três entradas hostis são recusadas antes de tocar o filesystem, com erro que nomeia o campo e nunca o caminho recebido. `readdir` da base devolve exatamente ['COB-2026-0000054.pdf'] e `readdir` do pai não ganhou entrada nenhuma.",
+      "criterios_aceitacao_validados": [
+        "CA-08"
+      ],
+      "observacoes": "⚠️ CASO NASCIDO NO CHALLENGE 2026-08-16. A §11.4 da tech spec promete que 'o caminho resolvido é conferido contra o diretório-base antes de qualquer leitura ou escrita', e nenhum dos 36 casos anteriores exercitava essa conferência — garantia de segurança declarada sem rede, que o P4 do protocolo antirregressão não admite. A validação de entrada por ESQUEMA_DO_CODIGO_DE_COBRANCA é o primeiro degrau e permanece; este caso prova o segundo, que é o que sobrevive a um chamador futuro que componha o nome por outro caminho. Arquivo novo proposto: packages/cobranca-bancaria/test/guarda-de-boletos.spec.ts.",
+      "task_id": "T9"
+    },
+    {
+      "id": "CT-948",
+      "titulo": "A tarefa de conferência abre o contexto de tenant pela carga e recusa carga sem empresa",
+      "tipo": "INTEGRACAO",
+      "categoria": "tratamento_erro",
+      "invariant": "O processador da tarefa de conferência bancária abre o contexto de tenant a partir de empresaId da carga antes de qualquer leitura, e recusa a tarefa cuja carga não traga empresaId e conferenciaId válidos — sem correr a passada e concluir a conferência como se ela tivesse acontecido.",
+      "owning_layer": "service-integration",
+      "existing_suite": "apps/worker/test/regua.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "carga sem empresaId; carga com empresaId que não é UUID; carga com campo extra além de { empresaId, conferenciaId }",
+        "assertion_esperada": "nos dois primeiros a tarefa é RECUSADA nomeando o campo, e `conferencia_bancaria.concluida_em` permanece NULL (delta 0 de conferências concluídas); no terceiro a recusa é do `strictObject` e nomeia a chave excedente"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "o contexto de tenant precisa nascer da carga, e não de um request",
+        "caminho_legitimo": "invocar o processador com uma tarefa montada pelo contrato de fila de @sysloc/shared, exatamente como apps/worker/test/regua.spec.ts faz; a ordem é recusa PRIMEIRO e contexto depois, que é o desenho registrado no docblock de apps/worker/src/tarefas/regua.ts",
+        "teste_analogo": "apps/worker/test/regua.spec.ts e apps/worker/test/emissao-em-lote.spec.ts (CT-944, o espelho desta classe para a borda do lote)"
+      },
+      "camada": "Borda de tarefa — apps/worker/src/tarefas/conferencia-bancaria.ts",
+      "pre_condicoes": [
+        "instância efêmera de PostgreSQL com as migrações 0000..0018 aplicadas",
+        "conferência aberta para a empresa A, com concluida_em NULL",
+        "cobranças conferíveis semeadas em A"
+      ],
+      "dados_entrada": {
+        "descricao": "cargas válidas e inválidas da tarefa de conferência",
+        "valores": {
+          "carga_valida": {
+            "empresaId": "<uuid>",
+            "conferenciaId": "<uuid>"
+          }
+        }
+      },
+      "passos": [
+        "Processar a carga válida e verificar que a conferência foi percorrida sob o contexto de A (concluida_em preenchido, cobrancas_conferidas > 0).",
+        "Abrir nova conferência e processar a carga sem empresaId; afirmar a recusa nomeando o campo.",
+        "Processar a carga com empresaId não-UUID e afirmar a recusa nomeando o campo.",
+        "Processar a carga com campo extra e afirmar a recusa do strictObject nomeando a chave excedente.",
+        "Contar as conferências concluídas após cada recusa e comparar com a contagem anterior."
+      ],
+      "resultado_esperado": "Carga válida: `concluida_em` deixa de ser NULL e os dois contadores são gravados sob o contexto de A. Cargas inválidas: a tarefa é recusada com mensagem que nomeia `empresaId` (ou a chave excedente), **nunca o valor**, e a contagem de conferências concluídas permanece a mesma de antes (delta `0`).",
+      "criterios_aceitacao_validados": [
+        "CA-15"
+      ],
+      "observacoes": "ACRÉSCIMO DECLARADO na geração do task plan (2026-08-16), por decisão do usuário: a árvore §3.4 da tech spec lista `apps/worker/test/conferencia-bancaria.spec.ts` como suíte nova e a §19 não lhe alocou caso algum — a borda da conferência ficaria sem prova de que recusa a carga ANTES de abrir o contexto, que é o modo de falha que o docblock de `regua.ts` nomeia como o pior possível (correr sem contexto, a RLS devolver vazio, e o trabalho parecer ter rodado). É espelho do CT-944 para a segunda borda, com o mesmo invariante e a mesma âncora antivácuo (delta 0). Com ele a fatia passa de 37 para 38 casos e a faixa fecha em CT-911..CT-948.",
+      "task_id": "T16"
+    }
+  ],
+  "cenarios_nao_cobertos": [
+    {
+      "descricao": "Chamada real contra o provedor Sicoob em produção (mTLS de verdade, credencial real, emissão real de boleto)",
+      "motivo": "ADR-0006 proíbe a suíte de executar contra o ambiente que atende a operação, e a configuração de teste aponta ENDERECO_DO_PROVEDOR_BANCARIO para um domínio .invalid que a RFC 6761 garante não resolver. Some-se o risco datado do PRD §9 (certificado vence em 2026-08-22). A prova de que o identificador volta íntegro alcança só o caminho de consulta, e já foi medida na fatia (i) — não a escreva mais larga do que ela é."
+    },
+    {
+      "descricao": "Carga e desempenho da emissão em lote (47 boletos em sequência) e da conferência diária em escala de 300 empresas",
+      "motivo": "Fora do escopo de teste desta doutrina; o trade-off D2 já aceita por escrito que uma cobrança lenta atrasa as seguintes, com a medição do legado (22 emissões para 16 cobranças) como justificativa. Vira observação de operação, não caso."
+    },
+    {
+      "descricao": "Corrida real entre dois processos de trabalho consumindo a mesma tarefa de lote simultaneamente",
+      "motivo": "O índice único parcial de emissao_em_lote (CT-916) fecha a classe no banco, que é onde a garantia precisa morar. Reproduzir a corrida com dois processos de verdade custaria orquestração de subprocesso para provar o que a restrição já impõe — e a suíte não tem hoje maquinaria de dois worker concorrentes."
+    },
+    {
+      "descricao": "Política de expurgo do diretório de boletos e provisionamento do diretório no host (dono, permissão)",
+      "motivo": "É frente SHELL, não Vitest: o invariante só é observável inspecionando o sistema operacional. Pertence a `deploy/scripts/<área>/verificar-*.sh` e ao débito D39 da F1, que o tech-alignment (D6) já nomeia como lacuna a fechar na instalação."
+    },
+    {
+      "descricao": "Agendamento por horário da conferência diária (systemd timer)",
+      "motivo": "Explicitamente fora do escopo pelo PRD §4.2 — esta fatia entrega a REGRA e o disparo sob comando; o gatilho automático é da F5."
+    }
+  ],
+  "recomendacoes": [
+    "✅ RESOLVIDO NO CHALLENGE 2026-08-16 (era: colisão entre CA-19 e CA-20). A chave publicada é `numeroDoTituloNoProvedor`, termo canonizado no glossário GLOBAL para o identificador que o PROVEDOR atribui; 'número do título' saiu da lista _Evitar_ de 'Identificador perante o provedor', que passou a nomear só as 18 posições que o produto compõe. A coluna física `nosso_numero` permanece como está, com débito e gatilho declarados na §21.5 da tech spec.",
+    "⚠️ NASCEU NO CHALLENGE 2026-08-16: o Identificador perante o provedor (18 posições, composto por proximoIdentificadorBancario e enviado ao provedor) não tinha coluna onde morar — era consumido do contador e descartado, e a fatia (iii) ficaria sem chave de correlação da notificação. A migração 0017 acrescenta `negocio.cobranca.identificador_no_provedor` (text, anulável) com índice único GLOBAL, sem empresa_id: a série é do SaaS (ADR-0033), e parear com a empresa aqui seria o 'corrigir o contador para ser por empresa' que a ADR proíbe. A coluna é interna: nenhum esquema de @sysloc/contracts a expõe, e esquemaDaCobranca segue de 18 para 23 campos.",
+    "⚠️ RENOMEAÇÃO DO CHALLENGE 2026-08-16 — não 'harmonize' de volta. O ato sobre o boleto é REVOGAÇÃO DE BOLETO (solicitarRevogacaoDeBoleto, confirmarRevogacaoDeBoleto, evento BOLETO_REVOGADO, rota /revogacao-de-boleto, detalhes.revogacao). 'Retirada de circulação' já é termo canônico do glossário para visibilidade de CADASTRO, e a seção de ambiguidades registra que ela 'não alcança a cobrança: é operação sobre cadastro, não sobre fato financeiro'. A chave de permissão ACAO:solicitar_baixa_de_boleto NÃO é renomeada — é do catálogo fechado e persistida.",
+    "⚠️ NUMERAÇÃO: a faixa desta fatia é CT-911..CT-947, e foi MEDIDA. Os CT-901..CT-910 já pertencem à barreira executável do Protocolo Antirregressão (packages/shared/test/protocolo-antirregressao.spec.ts, commit c0453d2); a versão anterior deste arquivo colidia em dez IDs. Confira com `grep -rhoE \"CT-[0-9]{3}\" apps packages | sort -u` antes de numerar caso novo.",
+    "⚠️ A PORTA TEM QUATRO OPERAÇÕES, NÃO CINCO — e isso é divergência DECLARADA. A ADR-0001 reserva o roster literal `obter_token, emitir, solicitar_baixa, confirmar_baixa, consultar`; a §3 da tech spec decide que a obtenção da credencial é INTERNA ao adaptador (D5, cache por processo). O executor deve registrar a divergência por escrito no docblock da porta, com a razão, do mesmo modo que `porta-de-identidade.ts` registrou a dele na §21.3 — senão a rodada seguinte 'corrige' para cinco operações e reabre o debate. A emenda da ADR-0001 fecha o contorno por renomeação, não a contagem.",
+    "TRÊS DÉBITOS COM GATILHO FECHAM NESTA FATIA e os marcadores saem no MESMO commit da correção, junto das linhas do índice do `CLAUDE.md` (as duas pontas, conforme §3-B da rule): D58 · F4/T13 (fecha com o CT-935 — a superfície `fila` entra na enumeração da ADR-0032), D36 · F4/T10 (fecha com o CT-943 — `client_id` e `scope` ao envelope cifrado), e D27 · F4/T8 (o gatilho emendado é esta fatia, ao consumir `detalhe` na saída estrutural). O D61 · F4/T14 é disparado pelo CT-937.",
+    "A CONTAGEM DE SUPERFÍCIE 92→99 / 77→84 vem da §4.1 da tech spec e é ESTIMATIVA até a dupla medição independente rodar. A §5.2 da task DEVE declarar `apps/api/test/cobertura-de-autorizacao.e2e.spec.ts` como arquivo-âncora que cresce, e a âncora sobe no mesmo diff da publicação. Se a medição divergir da estimativa, vale a MEDIÇÃO — é precedente confirmado cinco vezes nesta base ('prescrição de gate é hipótese, não ordem'), e o próprio arquivo-âncora carrega o registro de que o `77` de uma fase anterior era aritmética de estimativa e não superfície observada.",
+    "OS DUBLÊS DESTA FATIA SÃO IMPLEMENTAÇÕES DA PORTA, NÃO `vi.mock`. A stack declara mock evitado por decisão (existe em UM arquivo do monorepo). Escrever uma classe/objeto que satisfaz `AdaptadorCobrancaBancaria` é usar a porta para o que ela existe (ADR-0001/0025), e não introduzir dublê — a fronteira é HTTP de terceiro, que `fundamentos.md` lista como 'mockar: sim'. Não use `vi.fn`/`vi.spyOn`/`vi.useFakeTimers`; a fonte de tempo do CT-943 entra por injeção na assinatura, não por relógio falso global.",
+    "TODA PROVA DE FALSIFICAÇÃO DESTA FATIA RODA PELO SCRIPT DO PACOTE (`pnpm --filter @sysloc/<pacote> test`), NUNCA por `vitest run` avulso. Sete dos nove pacotes resolvem `.` por `exports` para `dist/`, e uma suíte que carregue o SUT pela fronteira do pacote leria o `dist/` da compilação anterior — o defeito reintroduzido nunca executaria e o verde seria lido como 'a asserção não pega o defeito'. Numa fatia cujo eixo é segurança, prova inconclusiva é pior que prova ausente.",
+    "AS ASSERÇÕES ESTÁTICAS DESTA GERAÇÃO SÃO TRÊS — CT-933 (vocabulário sobre o texto dos fontes), CT-936 (lista de variáveis exigidas) e CT-946 (natureza das migrações). As três exigem prova de falsificação registrada. Todas as demais são comportamentais e a dispensam. Já o CONTROLE POSITIVO é exigido em TODA varredura de não-vazamento e de vocabulário — CT-933, CT-934, CT-935, CT-939 e CT-946 —, com a lista de achados afirmada por igualdade, canal a canal.",
+    "A ADR-0034 EXCLUI o registro operacional de diagnóstico do seu alcance, com a trava literal 'nenhuma leitura desta ADR autoriza apagar o segundo'. Nenhum caso deve asserir ausência de linha de diário para uma conferência sem efeito — o que a ADR proíbe é o EVENTO na trilha publicada. A ADR também manda que 'cada integração declara quais desfechos são anômalos para ela': os seis tipos do enum são essa declaração, e o CT-939 é o que a torna executável.",
+    "A ADR-0029 registra nos Cons um furo aceito — tarefa perdida entre o commit e o enfileiramento é perda silenciosa, 'o que a torna aceitável hoje é existir saída de produto (reenvio manual)'. A emissão em lote TEM essa saída (reexecutar a competência, CA-04/CT-915), então a decisão continua válida. Se alguma fatia futura criar efeito sem saída de produto, o outbox — hoje 'adiado, não descartado' — reabre.",
+    "CASOS PROPOSTOS EM ARQUIVO NOVO (7 dos 36), todos com justificativa de unicidade: `packages/cobranca-bancaria/test/emissao-em-lote.spec.ts` (CT-912, CT-913, CT-914, CT-915), `packages/cobranca-bancaria/test/conferencia.spec.ts` (CT-927, CT-929, CT-938), `packages/cobranca-bancaria/test/reemissao.spec.ts` (CT-917) e `apps/api/test/cobranca-bancaria.e2e.spec.ts` (CT-928). Nenhuma suíte existente cobre emissão em lote, conferência ou reemissão — os três conceitos nascem nesta fatia. Os outros 29 casos ESTENDEM suítes existentes, conforme o Gate 2.",
+    "O DÉBITO D63 · F4/fechamento dispara aqui: `pedir` está em 24 de 24 suítes E2E e a próxima suíte que precisar dos acessórios de arranjo é o gatilho. `apps/api/test/cobranca-bancaria.e2e.spec.ts` (CT-928) é essa suíte — avalie subir os acessórios para casa compartilhada em vez de fazer a 25ª cópia.",
+    "A DISTRIBUIÇÃO NÃO SEGUE A PIRÂMIDE 60/30/10, e é deliberado: 5 unitários contra 31 casos atravessando fronteira real. As invariantes centrais desta fatia são restrição de banco (índices únicos parciais, RLS forçada, enums fechados), contrato HTTP e ordem de composição contra terceiro — nenhuma delas é observável sem fronteira real, e a stack declara mock evitado por decisão. Forçar a pirâmide aqui produziria unitários com dublê de tudo, que é exatamente o que a Iron Law #4 e a rule de stack recusam."
+  ],
+  "mock_budget_observado": true,
+  "gates_aplicados": [
+    "invariant_first",
+    "owning_layer",
+    "real_execution",
+    "failure_means_fix_production",
+    "no_snapshot_without_contract",
+    "no_self_set_mock_assertion",
+    "negative_companion"
+  ]
+}

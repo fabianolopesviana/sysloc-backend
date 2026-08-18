@@ -120,6 +120,20 @@
       "when": 1786747494909,
       "tag": "0016_seguranca_bancaria",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1786916829835,
+      "tag": "0017_dominio_emissao_e_conciliacao",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786916830835,
+      "tag": "0018_seguranca_emissao_e_conciliacao",
+      "breakpoints": true
     }
   ]
 }

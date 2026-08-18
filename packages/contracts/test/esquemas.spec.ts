@@ -2,9 +2,11 @@
  * Os esquemas de `@sysloc/contracts` — CT-334 a CT-338, CT-340, CT-341, mais CT-424 e CT-428, que a
  * fatia `contratos-de-locacao` acrescenta, CT-537 mais CT-540 a CT-545, que a fatia
  * `cobranca-e-mora` acrescenta, CT-604 e CT-605, que a fatia `regua-de-cobranca` acrescenta, e
- * CT-713 e CT-731, que a sub-fatia `documentos-e-confirmacao` acrescenta, e CT-845 a CT-850, que a
- * fatia `fundacao-bancaria` acrescenta. O **CT-537 substitui o CT-429** daquela fatia: ver o
- * parágrafo dedicado abaixo, e a linha `SUT_IS_CORRECT_BECAUSE:` no ponto do caso.
+ * CT-713 e CT-731, que a sub-fatia `documentos-e-confirmacao` acrescenta, CT-845 a CT-850, que a
+ * fatia `fundacao-bancaria` acrescenta, e CT-942 e CT-953, que a fatia `emissao-e-conciliacao`
+ * acrescenta. O
+ * **CT-537 substitui o CT-429** daquela fatia: ver o parágrafo dedicado abaixo, e a linha
+ * `SUT_IS_CORRECT_BECAUSE:` no ponto do caso.
  *
  * ---------------------------------------------------------------------------
  * INVARIANTES
@@ -69,14 +71,36 @@
  * | §4.7     |        | positivo, no teto e na escala de `numeric(15,2)`; `referencia` só é aceita
  * |          |        | não vazia e dentro de `MAIOR_TEXTO_CURTO` — e toda recusa reporta o `path` do
  * |          |        | próprio campo, nunca da raiz do objeto. |
- * | §4.9     | CT-544 | `esquemaDaCobranca` declara exatamente os 18 campos publicados, não declara
- * |          |        | `id` e descarta o `id` que chegue de fora; e as grandezas monetárias de saída
- * |          |        | não carregam escala, aprovando o resíduo de ponto flutuante que a escala
- * |          |        | de entrada RECUSA. |
+ * | §4.9     | CT-544 | `esquemaDaCobranca` declara exatamente os **23** campos publicados, na ordem,
+ * |          |        | não declara `id` e descarta o `id` que chegue de fora; nenhuma chave dele fala
+ * |          |        | o vocabulário do provedor (`nossoNumero` e os três irmãos), e
+ * |          |        | `identificadorNoProvedor` permanece interno; os cinco campos de conciliação
+ * |          |        | aceitam o boleto emitido devolvendo os valores intactos e RECUSAM as formas
+ * |          |        | vizinhas (instante em `dataDoCredito`, texto em `valorCreditado`); e as
+ * |          |        | grandezas monetárias de saída não carregam escala, aprovando o resíduo de
+ * |          |        | ponto flutuante que a escala de entrada RECUSA. |
  * | §4.10    | CT-545 | Em `packages/contracts/src/` existe exatamente uma declaração exportada de
- * |          |        | `MAIOR_VALOR_MONETARIO` e uma de `ESCALA_MONETARIA`, ambas em `contrato.ts`;
- * |          |        | `cobranca.ts` as obtém por `import … from './contrato.js'` e não redeclara
- * |          |        | nenhuma das duas, sob `export` ou sem ele. |
+ * |          |        | `MAIOR_VALOR_MONETARIO` e uma de `ESCALA_MONETARIA`, ambas em **`comum.ts`**;
+ * |          |        | `cobranca.ts` **e** `contrato.ts` as obtêm por `import … from './comum.js'` e
+ * |          |        | não redeclaram nenhuma das duas, sob `export` ou sem ele. |
+ * | CA-15    | CT-942 | A **direção** decide a estritude: `esquemaDaCompetencia` é `strictObject` e
+ * |          |        | recusa `empresaId` com `code === 'unrecognized_keys'` e `keys` igual a
+ * |          |        | `['empresaId']`, enquanto os SEIS esquemas de SAÍDA da fatia aceitam a MESMA
+ * |          |        | chave e a **descartam**. A competência só é aceita no primeiro dia do mês, de
+ * |          |        | qualquer mês, e toda forma vizinha é recusada nomeando `competencia`; e o item
+ * |          |        | do lote nomeia a cobrança pelo `ESQUEMA_DO_CODIGO_DE_COBRANCA` importado, que
+ * |          |        | canoniza a caixa e mantém a largura de sete dígitos. |
+ * | CA-15    | CT-942 | Os quatro enums da fatia publicam exatamente 6, 2, 3 e 2 rótulos, **nesta
+ * |          | (b)    | ordem**, e nenhum consumidor os alarga em execução — a mutação lança
+ * |          |        | `TypeError` e o conteúdo permanece idêntico. **Não existe tipo de evento
+ * |          |        | `CONFERENCIA`**: o rótulo é recusado em `tipo` nomeando o campo e aceito em
+ * |          |        | `origem` (ADR-0034 · §21.1(2)). O lote publica o estado derivado ao lado dos
+ * |          |        | dois instantes de desfecho e recusa contagem fracionária ou negativa; a
+ * |          |        | conferência publica `iniciadaAgora: false` com os dois contadores distintos. |
+ * | CA-13    | CT-953 | O envelope do histórico bancário tem **uma** declaração, e ela vive no
+ * |          |        | pacote: `esquemaDaTrilhaDaCobranca.shape` publica exatamente `['itens']` —
+ * |          |        | nem `total`, nem `limite`, nem `deslocamento` —, e o item dele **é**
+ * |          |        | `esquemaDoEventoBancario` por identidade, nunca uma cópia dos cinco campos. |
  * | CA-15    | CT-604 | `esquemaDaPoliticaDeAvisoNova` declara exatamente os SEIS campos publicados e
  * |          |        | aprova o corpo completo e as bordas fechadas de cada faixa —
  * |          |        | `diasAntesDoVencimento` 0 e 90, `intervaloMinimoDias` 1 e 90, `00:00`/`23:59`
@@ -130,6 +154,11 @@
  * |          |        | `['aceito','verificadoEm','detalhe']`, com `detalhe` **anulável** nos dois
  * |          |        | desfechos; nenhuma das duas — **nem `registradoPor`** — declara chave de
  * |          |        | segredo, e o objeto que traga uma é recusado nomeando-a, sem ecoar o valor. |
+ * | CA-12    | CT-848 | `detalhe` é **união fechada** sobre os CINCO desfechos de
+ * |          | (b)    | `DETALHES_DA_VERIFICACAO`, congelada em execução: texto fora do conjunto —
+ * |          |        | detrito de runtime, termo do provedor, redação plausível, ou o texto
+ * |          |        | canônico com espaço à direita — é recusado com `invalid_value` nomeando o
+ * |          |        | campo. É o fecho estrutural do débito **D27 · F4/T8** no lado publicado. |
  * | CA-10    | CT-849 | `ESQUEMA_DO_IDENTIFICADOR_BANCARIO` aprova exatamente as cadeias de 18
  * |          |        | caracteres, todas dígitos, devolvendo a cadeia idêntica, e recusa 17, 19,
  * |          |        | não-dígito, espaço em volta e vazio com `invalid_format` — a largura é
@@ -155,7 +184,8 @@
  * `CA-11, CA-15 → CT-731 (b) (RD-11, RD-12)` · `CA-12, CA-13 → CT-731 (c) (RD-10)` ·
  * `CA-07 → CT-713 (RN-01)` · `CA-14, CA-04 → CT-845 (RN-04, RN-11)` ·
  * `CA-§4.1.1 → CT-846 (RN-02, RN-03)` · `CA-02, CA-12 → CT-847, CT-848 (RN-02)` ·
- * `CA-10 → CT-849 (RN-07)` · `CA-04, CA-§4.2 → CT-850 (RN-04)`.
+ * `CA-10 → CT-849 (RN-07)` · `CA-04, CA-§4.2 → CT-850 (RN-04)` ·
+ * `CA-15 → CT-942, CT-942 (b) (RN-13, RN-14, RN-15)` · `CA-13 → CT-953`.
  *
  * ---------------------------------------------------------------------------
  * Por que os casos vêm em pares, e por que nenhum deles sozinho serve
@@ -339,6 +369,28 @@
  *
  * Revertidos os dois, o controle voltou a `219 passed`.
  *
+ * **A prova foi REFEITA em 2026-08-16**, porque a T1 da fatia `emissao-e-conciliacao` mudou a forma
+ * do caso: o dono das duas constantes passou a ser `src/comum.ts`, e os consumidores passaram a ser
+ * **dois** (`cobranca.ts` e `contrato.ts`), importando de `'./comum.js'`. Uma asserção estática que
+ * muda de forma precisa de prova nova — a antiga provava o alvo antigo. Os dois mutantes rodaram pelo
+ * SCRIPT do pacote (`pnpm --filter @sysloc/contracts test`), e a reversão foi conferida por
+ * `sha256sum` idêntico ao estado pré-mutante, com o controle de volta a `389 passed`.
+ *
+ * - **Mutante 1' — a segunda definição exportada**: `export const ESCALA_MONETARIA = 0.01;`
+ *   acrescentado a `src/cobranca-bancaria.ts`, que é um **terceiro** arquivo e a forma exata do débito
+ *   que a promoção fechou. Resultado: `1 failed | 388 passed`, com `arquivosQueDeclaram` igual a
+ *   `['src/cobranca-bancaria.ts', 'src/comum.ts']` — a falha **nomeia o arquivo culpado**. O caso de
+ *   `MAIOR_VALOR_MONETARIO` seguiu verde, que é o que prova a varredura ser por nome e não por
+ *   coincidência.
+ *   ⚠️ Note que o mutante do parágrafo anterior (2026-08-11) usava `src/comum.ts` como terceiro
+ *   arquivo. Ele **deixou de servir**: `comum.ts` é agora o dono, e acrescentar a declaração lá seria
+ *   escrevê-la onde ela já está. É por isso que a prova precisou de alvo novo.
+ * - **Mutante 2' — a redeclaração LOCAL, sem `export`**: em `src/cobranca.ts`, os dois nomes saem do
+ *   `import … from './comum.js'` e entram como `const` local. Resultado: `1 failed | 388 passed`, com
+ *   `monetariasImportadas` vazio e `redeclaracoes` com os dois nomes, numa asserção só. Os dois casos
+ *   da declaração exportada seguiram **verdes** — sem `export`, a redeclaração não aparece na
+ *   varredura deles —, e é isso que prova as duas metades serem carregadas, e não redundantes.
+ *
  * ---------------------------------------------------------------------------
  * CT-541 é a rede do `DECISÃO FECHADA` da largura 7 — e ela foi medida
  * ---------------------------------------------------------------------------
@@ -436,6 +488,62 @@
  * - **MT-T1-D — o detalhe que deixa de ser anulável**: `z.string().nullable()` vira `z.string()`.
  *   Resultado: `2 failed | 354 passed` — reprovam os dois desfechos com `detalhe: null`, e nenhuma
  *   outra asserção do pacote os alcança.
+ *
+ * ---------------------------------------------------------------------------
+ * CT-942 — por que ele vem em par, e por que nenhuma metade serve sozinha
+ * ---------------------------------------------------------------------------
+ *
+ * **O eixo é a DIREÇÃO, e por isso as duas metades usam a MESMA chave.** `empresaId` é recusado por
+ * `esquemaDaCompetencia` e **aceito e descartado** por **todos** os esquemas de saída da fatia — os
+ * que {@link SAIDAS_DA_FATIA} enumera, e a tabela é a fonte. Uma metade
+ * sozinha não prova nada sobre a direção: só a recusa ficaria verde num pacote inteiramente estrito —
+ * o que derrubaria a rota no primeiro campo novo que a view acrescentasse (razão (1) do
+ * `DECISÃO FECHADA` de `ESCALA_DA_METRAGEM`) —, e só a aceitação ficaria verde num pacote inteiramente
+ * aberto, em que `empresaId` entraria pelo corpo do cliente sem uma recusa sequer. A asserção da
+ * recusa é por `code` **e** por `keys`, como a `.claude/rules/contrato-publicado.md` exige
+ * literalmente: o booleano sozinho aprovaria qualquer falha de esquema.
+ *
+ * A linha `expect(resultado.data).toEqual(recurso)` do lado da saída é a terceira ponta: *aceitar* e
+ * *não ecoar* são propriedades diferentes, e um `z.looseObject` satisfaz a primeira publicando ao
+ * consumidor o `empresaId` que acabou de chegar de fora.
+ *
+ * **A metade de ENTRADA se sobrepõe ao CT-337 de propósito, e a justificativa é esta** (AP-26,
+ * `semantically_duplicated_test`, apontado pelo Gate 1 na rodada 1): `esquemaDaCompetencia` entrou em
+ * `ESQUEMAS_DE_ENTRADA` — a âncora de contagem subiu de 16 para 17, com o corpo válido em
+ * `CORPOS_VALIDOS` —, de modo que o CT-337 **já gera por tabela** a recusa de `empresaId` nomeando a
+ * chave para este mesmo esquema. O que ele **não** alcança é o eixo deste caso: o CT-337 varre um lado
+ * só, e *direção* é uma comparação entre dois lados. Sem a metade de entrada aqui, sobraria a
+ * afirmação de que as cinco saídas são abertas — compatível com um pacote inteiramente aberto, que é
+ * exatamente a leitura que o par existe para excluir. **A metade não se remove**: ela é o outro braço
+ * da comparação, e o card §6.6 a exige nominalmente. O que a distingue da cópia inútil é que ela é
+ * lida **junto** da metade de saída, no mesmo caso e com a mesma chave.
+ *
+ * **As competências recusadas são as VIZINHAS**, não as fáceis: o dia 2 e o último dia do mês cercam o
+ * primeiro, o dia 10 é o vencimento típico do produto, e o primeiro dia **com hora** é a forma que um
+ * `regex` sobre o sufixo aceitaria. O companheiro positivo — o primeiro dia de janeiro, fevereiro e
+ * dezembro — é o que impede a "correção" que recusaria tudo.
+ *
+ * **CINCO MUTANTES EXECUTADOS — MT-T1ii-A/B/C/D/E (2026-08-16).** Dois deles (A e B) são a prova
+ * estática obrigatória do CT-545 e estão registrados na seção dele, acima. Os outros três (C, D e E,
+ * enumerados logo abaixo) são **comportamentais** e não exigiriam prova; foram medidos assim mesmo,
+ * porque cada um protege uma decisão registrada por extenso — a da ADR-0034 foi **escalada ao
+ * usuário**. Os cinco rodaram pelo
+ * **script do pacote**, nunca por `vitest run` avulso, e foram revertidos com `sha256sum` idêntico ao
+ * estado pré-mutante, com o controle de volta a `389 passed`.
+ *
+ * - **MT-T1ii-C — o sétimo tipo**: `'CONFERENCIA'` acrescentado a `TIPOS_DE_EVENTO_BANCARIO`, que é
+ *   exatamente o que a §21.1(2) do tech spec decidiu **não** fazer. Resultado: `3 failed | 386 passed`
+ *   — reprovam a igualdade literal do enum, a reafirmação do conteúdo depois do `push` recusado, e o
+ *   caso comportamental que exige a recusa do rótulo em `tipo`. É a rede que o P4 do Protocolo
+ *   Antirregressão pede de uma decisão escalada.
+ * - **MT-T1ii-D — a saída que fecha**: `esquemaDaEmissaoEmLote` vira `z.strictObject`. Resultado:
+ *   `1 failed | 388 passed` — reprova **só** a linha da saída aberta daquele esquema, e as quatro
+ *   irmãs seguem verdes. É a medida de que a tabela examina um a um, e não o conjunto por amostragem.
+ * - **MT-T1ii-E — o refino frouxo**: a conferência do primeiro dia passa a aceitar *qualquer data de
+ *   dez caracteres*. Resultado: `3 failed | 386 passed` — reprovam o dia 2, o último dia do mês e o
+ *   dia do vencimento. As recusas de **forma** (a data que o calendário não tem, o instante, o mês sem
+ *   dia, a cadeia vazia) seguem verdes, porque quem as pega é o `z.iso.date()` — e é justamente essa
+ *   separação que torna os três dias necessários.
  */
 
 import { createHash } from 'node:crypto';
@@ -473,23 +581,30 @@ import {
   CAMINHOS_DO_AVISO,
   CANAIS_DE_AVISO,
   DESFECHOS_DO_AVISO,
+  DESFECHOS_DO_ITEM_DO_LOTE,
+  DETALHES_DA_VERIFICACAO,
   ESCALA_DA_METRAGEM,
   ESCALA_MONETARIA,
   ESQUEMA_DO_CODIGO_DE_COBRANCA,
   ESQUEMA_DO_CODIGO_DE_CONTRATO,
   ESQUEMA_DO_IDENTIFICADOR_BANCARIO,
   ESTADOS_DA_COBRANCA,
+  ESTADOS_DA_EMISSAO_EM_LOTE,
   ESTADOS_DO_CERTIFICADO,
   ESTADOS_DO_CONTRATO,
   ESTADOS_EM_ABERTO,
   esquemaDaApresentacaoDoPortador,
   esquemaDaAtivacaoDeContrato,
   esquemaDaCobranca,
+  esquemaDaCompetencia,
+  esquemaDaConferenciaBancaria,
   esquemaDaConfirmacao,
+  esquemaDaEmissaoEmLote,
   esquemaDaJanela,
   esquemaDaPessoa,
   esquemaDaPoliticaDeAviso,
   esquemaDaPoliticaDeAvisoNova,
+  esquemaDaTrilhaDaCobranca,
   esquemaDeCobrancaNova,
   esquemaDeComodoNovo,
   esquemaDeContratoNovo,
@@ -499,7 +614,9 @@ import {
   esquemaDoCertificadoNovo,
   esquemaDoContrato,
   esquemaDoEnvioDeCobranca,
+  esquemaDoEventoBancario,
   esquemaDoImovel,
+  esquemaDoItemDoLote,
   esquemaDoLocatario,
   esquemaDoReenvioDeConfirmacao,
   esquemaDoResultadoDaVerificacao,
@@ -518,10 +635,12 @@ import {
   MAIOR_VALOR_MONETARIO,
   MEIOS_DE_RECEBIMENTO,
   NATUREZAS_DE_COBRANCA,
+  ORIGENS_DO_EVENTO_BANCARIO,
   PAGINA_PADRAO,
   PREFIXO_DO_CODIGO_DE_COBRANCA,
   PREFIXO_DO_CODIGO_DE_CONTRATO,
   SITUACOES_INFORMAVEIS,
+  TIPOS_DE_EVENTO_BANCARIO,
 } from '../src/index.ts';
 
 /** O corpo canônico de `POST /v1/imoveis` (tech spec §4.1.1), sem `statusLocacao`. */
@@ -673,6 +792,14 @@ const LOCATARIO_DA_COBRANCA = '8f1c0000-0000-4000-8000-000000000007';
  * Os cinco anuláveis vêm nulos porque são o **desfecho**, e a cobrança nasce aberta; `status`,
  * `diasAtraso` e as três grandezas de mora vêm derivados, e é o estado que o `201` do exemplo
  * publica.
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era este objeto que descrevia a cobrança
+ * **antes** da T1 da fatia `emissao-e-conciliacao`. `esquemaDaCobranca` passou a publicar os **cinco**
+ * campos de conciliação bancária por decisão declarada (§4.2 do tech spec: 18 → 23 campos), e eles
+ * entram aqui **nulos** porque a cobrança recém-lançada não tem boleto emitido — que é o mesmo motivo
+ * pelo qual os cinco do desfecho já vinham nulos. Nenhuma asserção foi alterada, afrouxada ou
+ * removida: o objeto continua sendo o controle positivo que os casos comparam por igualdade inteira, e
+ * a variante com boleto emitido vive em {@link COBRANCA_COM_BOLETO}, no CT-544.
  */
 const COBRANCA_PUBLICADA = {
   codigo: 'COB-2026-0000059',
@@ -693,6 +820,11 @@ const COBRANCA_PUBLICADA = {
   canceladoEm: null,
   multaPercentualAplicado: null,
   jurosPercentualAplicado: null,
+  numeroDoTituloNoProvedor: null,
+  linhaDigitavel: null,
+  codigoDeBarras: null,
+  dataDoCredito: null,
+  valorCreditado: null,
 } as const;
 
 /**
@@ -890,9 +1022,18 @@ const PREFIXO_DE_ENTRADA_DE_ENTIDADE = 'esquemaDe';
  * todo o pacote, porque é o corpo da **única rota sem sessão** do produto (ADR-0027): um corpo aberto
  * ali aceitaria `empresaId` vindo do mundo, e o contexto de tenant tem de sair do registro que o
  * portador resolve, nunca do pedido. Nenhum alvo sai daqui; o conjunto só cresce.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T1 da fatia `emissao-e-conciliacao` publicou `esquemaDaCompetencia` — o
+ * corpo com que o Admin abre a emissão em lote, e o **único** corpo de escrita daquela fatia com
+ * campo (as outras três rotas de ato usam o `ESQUEMA_DO_CORPO_VAZIO` da borda). Pelo mesmo motivo dos
+ * parágrafos acima ele escaparia às duas varreduras, por começar com `esquemaDa` e não com
+ * `esquemaDe`; e ele é o corpo que decide **quais cobranças de qual mês** vão ao provedor, de modo que
+ * um corpo aberto ali aceitaria `empresaId` e mandaria emitir boleto da empresa alheia. Nenhum alvo
+ * sai daqui; o conjunto só cresce.
  */
 const NOMES_DAS_ENTRADAS_FORA_DO_PREFIXO = [
   'esquemaDaApresentacaoDoPortador',
+  'esquemaDaCompetencia',
   'esquemaDaConfiguracaoDeMoraNova',
   'esquemaDaJanela',
   'esquemaDaJanelaComCirculacao',
@@ -957,14 +1098,26 @@ const NOMES_DAS_ENTRADAS_FORA_DO_PREFIXO = [
  * aqui, palavra por palavra, o parágrafo anterior: o literal é o que impede *"nenhum esquema
  * violou"* de ser indistinguível de *"nenhum esquema foi olhado"*, a âncora **sobe** e segue exata, e
  * nenhum alvo saiu.
+ *
+ * SUT_IS_CORRECT_BECAUSE: subiu de 16 para 17 porque a T1 da fatia `emissao-e-conciliacao` publicou
+ * `esquemaDaCompetencia` — o corpo de abertura da emissão em lote, que nasce nesta fonte única pela
+ * mesma ADR-0016. Ele entra pela lista de nomes fora do prefixo, logo acima. Vale aqui, palavra por
+ * palavra, o parágrafo anterior: o literal é o que impede *"nenhum esquema violou"* de ser
+ * indistinguível de *"nenhum esquema foi olhado"*, a âncora **sobe** e segue exata, e nenhum alvo
+ * saiu.
  */
-const QUANTIDADE_DE_ESQUEMAS_DE_ENTRADA = 16;
+const QUANTIDADE_DE_ESQUEMAS_DE_ENTRADA = 17;
 
 /** Um corpo válido por esquema de entrada, indexado pelo nome exportado. */
 const CORPOS_VALIDOS = new Map<string, Record<string, unknown>>([
   // O segredo vai declarado por extenso porque é o único campo deste esquema: um corpo que o
   // omitisse seria recusado antes de a varredura medir o que ela existe para medir.
   ['esquemaDaApresentacaoDoPortador', { segredo: SEGREDO_DO_PORTADOR }],
+  // A competência vai declarada por extenso e **no primeiro dia do mês**: é o único campo deste
+  // esquema, e um corpo que a omitisse — ou que trouxesse outro dia — seria recusado antes de a
+  // varredura medir o que ela existe para medir. O mês é o seguinte ao da cobrança canônica de
+  // propósito: emitir boleto de competência ainda por vencer é o caso corrente da CA-01.
+  ['esquemaDaCompetencia', { competencia: '2026-04-01' }],
   // Os dois percentuais vão declarados **por extenso**, e com valores distintos entre si: são os
   // únicos campos que este esquema tem, nenhum deles é opcional, e um corpo que omitisse qualquer um
   // seria recusado antes de a varredura medir o que ela existe para medir. Valores diferentes em cada
@@ -2295,7 +2448,18 @@ describe('CT-543 — cada campo do corpo da cobrança recusa fora da fronteira n
 });
 
 describe('CT-544 — o recurso publicado da cobrança tem forma fechada, sem UUID e sem escala na saída', () => {
-  /** Os dezoito campos publicados, na ordem declarada (tech spec §4.1.1). */
+  /**
+   * Os **vinte e três** campos publicados, na ordem declarada (tech spec §4.1.1).
+   *
+   * SUT_IS_CORRECT_BECAUSE: subiu de 18 para 23 porque a T1 da fatia `emissao-e-conciliacao` publicou
+   * os cinco campos de conciliação bancária, por decisão declarada na §4.2 do tech spec — o cabeçalho
+   * de `src/cobranca.ts` já registrava que *"só a F4 os publica"*, e esta é aquela F4. A âncora
+   * **sobe** e segue exata: continua igualdade de lista com ordem, e um campo que suma daqui reprova
+   * como sempre reprovou. Nenhum alvo saiu.
+   *
+   * A lista é escrita **por extenso**, e não derivada do `shape`: derivá-la poria o artefato sob prova
+   * nos dois lados da igualdade, e um campo acrescentado sem decisão passaria despercebido.
+   */
   const CAMPOS_PUBLICADOS = [
     'codigo',
     'contratoCodigo',
@@ -2315,7 +2479,32 @@ describe('CT-544 — o recurso publicado da cobrança tem forma fechada, sem UUI
     'canceladoEm',
     'multaPercentualAplicado',
     'jurosPercentualAplicado',
+    'numeroDoTituloNoProvedor',
+    'linhaDigitavel',
+    'codigoDeBarras',
+    'dataDoCredito',
+    'valorCreditado',
   ] as const;
+
+  /**
+   * A cobrança com **boleto emitido e já creditado** — o outro estado dos cinco campos novos.
+   *
+   * Sem ela, os cinco entrariam na suíte só como `null`, e um esquema que os declarasse
+   * `z.null()` — ou com o tipo errado (`valorCreditado: z.string()`, `dataDoCredito:
+   * `z.iso.datetime()`) — atravessaria todos os casos deste arquivo sem uma recusa sequer. É o par que
+   * discrimina: o `null` prova a anulabilidade, este prova o **tipo do valor**.
+   *
+   * Os três textos são os do exemplo da §4.1.1, e `dataDoCredito` é data de calendário (`YYYY-MM-DD`),
+   * não instante — trocá-la por ISO-8601 com hora reprova aqui.
+   */
+  const COBRANCA_COM_BOLETO = {
+    ...COBRANCA_PUBLICADA,
+    numeroDoTituloNoProvedor: '17000000012',
+    linhaDigitavel: '75691.11223 34455.667788 99001.122334 5 99230000012345',
+    codigoDeBarras: '75691992300000123451112233445566778899001122',
+    dataDoCredito: '2026-03-12',
+    valorCreditado: 187.42,
+  };
 
   /**
    * O resíduo de ponto flutuante da derivação, **MEDIDO** contra a aritmética da RD-07 — não
@@ -2357,8 +2546,51 @@ describe('CT-544 — o recurso publicado da cobrança tem forma fechada, sem UUI
     jurosPercentualAplicado: 1,
   };
 
-  it('o recurso declara exatamente os dezoito campos, na ordem', () => {
+  it('o recurso declara exatamente os vinte e três campos, na ordem', () => {
     expect(Object.keys(esquemaDaCobranca.shape)).toEqual([...CAMPOS_PUBLICADOS]);
+  });
+
+  it('a chave do identificador do provedor é a do PRODUTO, e nenhuma do provedor entra (ADR-0001)', () => {
+    // A lista dos proibidos é escrita por extenso e vem de `TERMOS_DO_PROVEDOR`
+    // (`packages/cobranca-bancaria/test/vocabulario-canonico.spec.ts`): publicar qualquer um deles
+    // faria aquela varredura reprovar a própria fatia que a CA-19 mandou entregar. Sem esta linha, um
+    // `nossoNumero` no lugar de `numeroDoTituloNoProvedor` passaria por toda a suíte deste pacote — a
+    // contagem continuaria 23 e a igualdade acima continuaria verde com a lista "corrigida" junto.
+    const CHAVES_DO_PROVEDOR = ['nossoNumero', 'seuNumero', 'numeroContrato', 'codigoBeneficiario'];
+    const publicadas = Object.keys(esquemaDaCobranca.shape);
+
+    expect(publicadas.filter((chave) => CHAVES_DO_PROVEDOR.includes(chave))).toEqual([]);
+    expect(publicadas).toContain('numeroDoTituloNoProvedor');
+
+    // E o identificador que o PRODUTO compõe permanece interno (§7.2 e §21.1(3) do tech spec): são
+    // dois identificadores de sentidos opostos, e publicar o segundo levaria o recurso a 24 campos.
+    expect(publicadas).not.toContain('identificadorNoProvedor');
+  });
+
+  it('os cinco campos da conciliação aceitam o boleto emitido e devolvem os valores intactos', () => {
+    const resultado = esquemaDaCobranca.safeParse(COBRANCA_COM_BOLETO);
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data).toEqual(COBRANCA_COM_BOLETO);
+  });
+
+  it('a data do crédito é de CALENDÁRIO, e o valor creditado é número — não texto', () => {
+    // O par que o caso acima não alcança: ele prova que a forma certa passa, e este prova que as
+    // formas vizinhas **não** passam. Sem ele, `dataDoCredito: z.string()` e
+    // `valorCreditado: z.string()` — a forma em que o `numeric` chega do driver — seguiriam verdes.
+    const comInstante = esquemaDaCobranca.safeParse({
+      ...COBRANCA_COM_BOLETO,
+      dataDoCredito: '2026-03-12T00:00:00.000Z',
+    });
+    const comValorEmTexto = esquemaDaCobranca.safeParse({
+      ...COBRANCA_COM_BOLETO,
+      valorCreditado: '187.42',
+    });
+
+    expect(comInstante.success).toBe(false);
+    expect(comInstante.error?.issues[0]?.path).toEqual(['dataDoCredito']);
+    expect(comValorEmTexto.success).toBe(false);
+    expect(comValorEmTexto.error?.issues[0]?.path).toEqual(['valorCreditado']);
   });
 
   it('o recurso publicado NÃO expõe o UUID interno (ADR-0017)', () => {
@@ -2451,9 +2683,34 @@ describe('CT-545 — as constantes monetárias têm definição única no pacote
   /** A raiz deste pacote, derivada da posição deste arquivo — o mesmo cálculo de `folha.spec.ts`. */
   const RAIZ_DO_PACOTE = dirname(import.meta.dirname);
 
-  /** O arquivo que DEVE ser o dono das duas constantes, e o que DEVE consumi-las por importação. */
-  const DONO_DAS_CONSTANTES = 'src/contrato.ts';
-  const CONSUMIDOR = 'src/cobranca.ts';
+  /**
+   * O arquivo que DEVE ser o dono das duas constantes, e os que DEVEM consumi-las por importação.
+   *
+   * SUT_IS_CORRECT_BECAUSE: o dono era `src/contrato.ts` e passou a ser `src/comum.ts` porque a T1 da
+   * fatia `emissao-e-conciliacao` **promoveu** as duas, fechando o débito `D1 · F3/T2` no gatilho que
+   * ele mesmo escrevera — *no terceiro consumidor monetário do pacote*, que é o limiar de três do
+   * `CLAUDE.md`. O que este caso prova **não mudou**: continua sendo *existe uma só declaração, e ela
+   * está no lugar declarado*. O que mudou é o lugar, e ele é afirmado por igualdade como antes.
+   *
+   * A troca tem **duas direções**, e as duas se declaram aqui porque só a primeira é ganho:
+   *
+   *   * **alargou** — a lista de consumidores cresceu de um para dois: `contrato.ts` deixou de ser o
+   *     dono e passou a ser consumidor, ao lado de `cobranca.ts`, de modo que a redeclaração local
+   *     passou a ser varrida também no arquivo onde as duas nasceram — que é justamente de onde uma
+   *     "restauração" as traria de volta;
+   *   * **estreitou** — a asserção do import deixou de comparar o **conjunto completo** dos símbolos
+   *     vindos de `'./contrato.js'` e passou a comparar um **filtro** sobre as duas monetárias vindas
+   *     de `'./comum.js'`. A consequência concreta: a origem de `ESQUEMA_DO_CODIGO_DE_CONTRATO`
+   *     **deixou de ser amarrada por igualdade** neste caso. Ela está fora do invariante declarado no
+   *     título — que é *as duas constantes monetárias têm definição única* —, e o estreitamento é
+   *     deliberado (ver o comentário do filtro, abaixo): amarrar o import inteiro faria um símbolo
+   *     vizinho acrescentado a `comum.ts` reprovar um caso que nada tem com ele.
+   */
+  const DONO_DAS_CONSTANTES = 'src/comum.ts';
+  const CONSUMIDORES = ['src/cobranca.ts', 'src/contrato.ts'] as const;
+
+  /** De onde os consumidores DEVEM importá-las, agora que o dono é o módulo comum. */
+  const MODULO_DO_DONO = './comum.js';
 
   /** Os dois nomes cujo fato do contrato não pode ter uma segunda definição. */
   const CONSTANTES_MONETARIAS = ['MAIOR_VALOR_MONETARIO', 'ESCALA_MONETARIA'] as const;
@@ -2497,35 +2754,37 @@ describe('CT-545 — as constantes monetárias têm definição única no pacote
     });
   }
 
-  it(`${CONSUMIDOR} obtém as duas por importação de './contrato.js', e não redeclara nenhuma`, async () => {
-    const fonte = semComentarios(await readFile(join(RAIZ_DO_PACOTE, CONSUMIDOR), 'utf8'));
+  for (const consumidor of CONSUMIDORES) {
+    it(`${consumidor} obtém as duas por importação de '${MODULO_DO_DONO}', e não redeclara nenhuma`, async () => {
+      const fonte = semComentarios(await readFile(join(RAIZ_DO_PACOTE, consumidor), 'utf8'));
 
-    const importacao = /import\s*\{([^}]*)\}\s*from\s*'\.\/contrato\.js'/.exec(fonte);
-    const simbolosImportados = (importacao?.[1] ?? '')
-      .split(',')
-      .map((simbolo) => simbolo.trim())
-      .filter((simbolo) => simbolo.length > 0)
-      .sort();
+      const importacao = /import\s*\{([^}]*)\}\s*from\s*'\.\/comum\.js'/.exec(fonte);
+      const simbolosImportados = (importacao?.[1] ?? '')
+        .split(',')
+        .map((simbolo) => simbolo.trim())
+        .filter((simbolo) => simbolo.length > 0);
 
-    // O arquivo entra na asserção para que a falha nomeie o culpado — trocar o import por
-    // redeclaração local esvazia esta lista.
-    expect({ arquivo: CONSUMIDOR, simbolosImportados }).toEqual({
-      arquivo: CONSUMIDOR,
-      simbolosImportados: [
-        'ESCALA_MONETARIA',
-        'ESQUEMA_DO_CODIGO_DE_CONTRATO',
-        'MAIOR_VALOR_MONETARIO',
-      ],
+      // Só as duas monetárias entram na igualdade, e não o import inteiro: o que este caso prova é
+      // *de onde vêm as duas*, e amarrar a lista completa faria um símbolo vizinho acrescentado a
+      // `comum.ts` reprovar um caso que nada tem com ele. O arquivo entra no objeto asserido para que
+      // a falha **nomeie o culpado** — trocar o import por redeclaração local esvazia esta lista.
+      const monetariasImportadas = CONSTANTES_MONETARIAS.filter((nome) =>
+        simbolosImportados.includes(nome),
+      );
+
+      // A segunda metade é a que a varredura de declaração exportada não alcança: uma redeclaração
+      // **sem `export`** não é declaração exportada, e passaria por ela sem uma ocorrência sequer.
+      const redeclaracoes = CONSTANTES_MONETARIAS.filter((nome) =>
+        fonte.split('\n').some((linha) => qualquerDeclaracao(nome)(linha)),
+      );
+
+      expect({ arquivo: consumidor, monetariasImportadas, redeclaracoes }).toEqual({
+        arquivo: consumidor,
+        monetariasImportadas: ['MAIOR_VALOR_MONETARIO', 'ESCALA_MONETARIA'],
+        redeclaracoes: [],
+      });
     });
-
-    // A metade que a contagem acima não alcança: uma redeclaração **sem `export`** não é declaração
-    // exportada, e passaria pela varredura anterior sem uma ocorrência sequer.
-    const redeclaracoes = CONSTANTES_MONETARIAS.filter((nome) =>
-      fonte.split('\n').some((linha) => qualquerDeclaracao(nome)(linha)),
-    );
-
-    expect(redeclaracoes).toEqual([]);
-  });
+  }
 
   it('o valor que o pacote publica é a precisão e a escala de numeric(15,2)', () => {
     // A amarra de VALOR, a partir do símbolo importado: sem ela, "uma definição só" seria compatível
@@ -3579,17 +3838,67 @@ describe('CT-848 — as duas projeções publicadas têm forma fechada, e nenhum
   /** Os três campos do desfecho da verificação, na ordem da §4.1.1. */
   const CAMPOS_DA_VERIFICACAO = ['aceito', 'verificadoEm', 'detalhe'] as const;
 
+  /**
+   * Os cinco desfechos que o `detalhe` pode nomear, na ordem declarada — escritos **por extenso**.
+   *
+   * São **cinco**, e não quatro: o quinto (`NAO_INICIADO`) nasceu do caminho medido em que a
+   * construção da requisição segura **lança** antes de qualquer conexão, e reusar qualquer um dos
+   * outros mentiria sobre o que aconteceu. Derivá-los de `Object.keys` poria as duas pontas sob
+   * autoria do caso, e um desfecho novo entraria na expectativa junto com o esquema (AP-29).
+   */
+  const DESFECHOS_DECLARADOS = [
+    'ACEITE',
+    'RECUSA_PELO_PAR',
+    'INDISPONIVEL',
+    'TEMPO_ESGOTADO',
+    'NAO_INICIADO',
+  ] as const;
+
+  /**
+   * Os dois desfechos canônicos, com o `detalhe` **copiado como literal** da fonte única.
+   *
+   * SUT_IS_CORRECT_BECAUSE: os dois traziam texto inventado (*"o provedor aceitou este certificado
+   * no aperto de mão"*), e ele era aceito porque `detalhe` era `z.string()`. O campo passou a ser a
+   * união fechada de {@link DETALHES_DA_VERIFICACAO} — é o fecho estrutural do débito **D27 · F4/T8**
+   * —, e texto fora do conjunto agora é **recusa**, que é exatamente o comportamento pretendido. O
+   * código de produção está certo; o que estava errado era o dado do caso, que afirmava um desfecho
+   * que o produto nunca produziu.
+   *
+   * ⚠️ **Copiados como literal, e não importados de `DETALHES_DA_VERIFICACAO`**, de propósito e pelo
+   * precedente literal de `apps/api/test/certificado-do-provedor.e2e.spec.ts`: importá-los faria o
+   * caso aprovar qualquer texto, inclusive um que colapsasse dois desfechos num só.
+   */
   const VERIFICACAO_ACEITA = {
     aceito: true,
     verificadoEm: '2026-08-14T13:05:00.000Z',
-    detalhe: 'o provedor aceitou este certificado no aperto de mão',
+    detalhe:
+      'a instituição aceitou o certificado desta empresa ao estabelecer a conexão segura. ' +
+      'Isto confirma a identidade da empresa perante ela; não confirma que a emissão de cobrança já ' +
+      'está habilitada, o que depende das credenciais de habilitação',
   } as const;
 
   const VERIFICACAO_RECUSADA = {
     aceito: false,
     verificadoEm: '2026-08-14T13:05:00.000Z',
-    detalhe: 'o provedor não aceitou a identidade apresentada',
+    detalhe:
+      'a instituição não aceitou o certificado desta empresa ao estabelecer a conexão segura. ' +
+      'Confira se o certificado é o que ela emitiu para esta empresa e se continua válido perante ela',
   } as const;
+
+  /**
+   * Os textos que o desfecho **não** pode carregar — a rede do fecho do D27.
+   *
+   * Nenhum é aleatório: o primeiro é detrito do runtime de transporte (o caminho exato que o débito
+   * descrevia), o segundo é texto do dialeto do provedor, o terceiro é a redação plausível que um
+   * adaptador futuro escreveria de próprio punho, e o quarto é o texto canônico com um espaço à
+   * direita — a divergência que uma comparação frouxa deixaria passar.
+   */
+  const DETALHES_RECUSADOS = [
+    'Error: unable to verify the first certificate',
+    'nossoNumero inválido para o beneficiário',
+    'o provedor aceitou este certificado no aperto de mão',
+    'a instituição aceitou o certificado desta empresa ao estabelecer a conexão segura. ',
+  ] as const;
 
   it('o certificado declara exatamente os nove campos publicados, na ordem', () => {
     expect(Object.keys(esquemaDoCertificado.shape)).toEqual([...CAMPOS_PUBLICADOS]);
@@ -3597,6 +3906,23 @@ describe('CT-848 — as duas projeções publicadas têm forma fechada, e nenhum
 
   it('o desfecho da verificação declara exatamente os três campos, na ordem', () => {
     expect(Object.keys(esquemaDoResultadoDaVerificacao.shape)).toEqual([...CAMPOS_DA_VERIFICACAO]);
+  });
+
+  it('o conjunto de detalhes é fechado nos cinco desfechos, e congelado em execução', () => {
+    // Igualdade de conjunto sobre a lista escrita por extenso — jamais derivada do próprio objeto,
+    // que poria as duas pontas sob autoria do caso. Um sexto desfecho entra aqui antes de entrar na
+    // união publicada; um desfecho que suma reprova pela mesma asserção.
+    expect(Object.keys(DETALHES_DA_VERIFICACAO)).toEqual([...DESFECHOS_DECLARADOS]);
+
+    // O `as const` fecha a união em COMPILAÇÃO e não sobrevive ao build; só `Object.freeze` fecha o
+    // alargamento em EXECUÇÃO — é a mesma razão registrada no CT-845 para os dois arranjos.
+    expect(Object.isFrozen(DETALHES_DA_VERIFICACAO)).toBe(true);
+    expect(() => {
+      (DETALHES_DA_VERIFICACAO as unknown as Record<string, string>).INVENTADO = 'texto novo';
+    }).toThrow(TypeError);
+
+    // Reafirmar DEPOIS da tentativa: "lançou" e "não alterou" são propriedades diferentes.
+    expect(Object.keys(DETALHES_DA_VERIFICACAO)).toEqual([...DESFECHOS_DECLARADOS]);
   });
 
   it('nenhuma das duas projeções declara chave de segredo — nem UM NÍVEL ABAIXO', () => {
@@ -3636,6 +3962,24 @@ describe('CT-848 — as duas projeções publicadas têm forma fechada, e nenhum
       expect(resultado.success).toBe(true);
       expect(resultado.data?.detalhe).toBeNull();
       expect(resultado.data).toEqual({ ...desfecho, detalhe: null });
+    });
+  }
+
+  for (const detalhe of DETALHES_RECUSADOS) {
+    it(`o desfecho recusa o detalhe ${JSON.stringify(detalhe.slice(0, 24))}… nomeando o campo`, () => {
+      // A rede do fecho do **D27 · F4/T8**: enquanto `detalhe` era `z.string().nullable()`, cada um
+      // destes quatro atravessava o contrato publicado e chegava à tela do Admin. A recusa é
+      // afirmada por `code` E por `path` — só o booleano de insucesso não distinguiria a recusa do
+      // texto de uma recusa de outro campo qualquer.
+      const resultado = esquemaDoResultadoDaVerificacao.safeParse({
+        ...VERIFICACAO_ACEITA,
+        detalhe,
+      });
+
+      expect(resultado.success).toBe(false);
+      expect(resultado.error?.issues).toHaveLength(1);
+      expect(resultado.error?.issues[0]?.code).toBe('invalid_value');
+      expect(resultado.error?.issues[0]?.path).toEqual(['detalhe']);
     });
   }
 
@@ -3924,5 +4268,412 @@ describe('CT-850 — LIMIAR_DE_VENCIMENTO_EM_DIAS tem definição única em todo
   it('o valor publicado é 30', () => {
     // A amarra de VALOR: sem ela, "uma definição só" seria compatível com uma definição só e errada.
     expect(LIMIAR_DE_VENCIMENTO_EM_DIAS).toBe(30);
+  });
+});
+
+/**
+ * O corpo canônico de `POST /v1/cobranca-bancaria/emissoes` (tech spec §4.1.1) — um campo só.
+ *
+ * A competência é o **primeiro dia** do mês, que é a única forma que o esquema aceita.
+ */
+const CORPO_DA_COMPETENCIA = { competencia: '2026-09-01' } as const;
+
+/** Uma linha da prestação de contas do lote, no desfecho que carrega motivo. */
+const ITEM_DO_LOTE_PUBLICADO = {
+  cobrancaCodigo: 'COB-2026-0000059',
+  desfecho: 'RECUSADO',
+  motivo: 'titulo ja registrado no provedor',
+} as const;
+
+/** A emissão em lote como a API a devolve, recém-aberta (tech spec §4.1.1). */
+const LOTE_PUBLICADO = {
+  id: '7a1c0000-0000-4000-8000-000000000001',
+  competencia: CORPO_DA_COMPETENCIA.competencia,
+  estado: 'EM_ANDAMENTO',
+  criadoEm: '2026-09-01T12:00:00.000Z',
+  concluidoEm: null,
+  interrompidoEm: null,
+  motivoDaInterrupcao: null,
+  emitidas: 0,
+  recusadas: 0,
+  itens: [],
+} as const;
+
+/** A conferência como a API a devolve quando ela é a que acabou de começar (CA-15). */
+const CONFERENCIA_PUBLICADA = {
+  id: '7a1c0000-0000-4000-8000-000000000002',
+  iniciadaEm: '2026-09-01T12:00:00.000Z',
+  concluidaEm: null,
+  iniciadaAgora: true,
+  cobrancasConferidas: 0,
+  efeitos: 0,
+} as const;
+
+/** Uma linha da trilha bancária — o efeito que a conferência descobriu (ADR-0034). */
+const EVENTO_PUBLICADO = {
+  tipo: 'COBRANCA_LIQUIDADA',
+  origem: 'CONFERENCIA',
+  ocorridoEm: '2026-09-02T09:30:00.000Z',
+  diagnostico: null,
+  valorInformado: null,
+} as const;
+
+/**
+ * O histórico bancário como a rota o devolve — o envelope de `itens` com um efeito dentro.
+ *
+ * Ele carrega **um** item, e não zero: o envelope vazio é forma legítima da rota, mas não exercitaria
+ * o item, e a saída aberta do envelope diria pouco se a lista que ela carrega nunca fosse conferida.
+ */
+const TRILHA_PUBLICADA = { itens: [EVENTO_PUBLICADO] } as const;
+
+/**
+ * Os esquemas de SAÍDA que esta fatia publica, mais o da cobrança, que ela estende.
+ *
+ * A tabela é escrita por extenso, e não descoberta por prefixo: o que este caso prova é a **direção**
+ * — que estes, e não outros, são de saída —, e derivá-la de uma convenção de nome faria a asserção
+ * concordar com a convenção em vez de com a decisão.
+ */
+const SAIDAS_DA_FATIA: readonly {
+  readonly rotulo: string;
+  readonly esquema: z.ZodObject;
+  readonly recurso: Record<string, unknown>;
+}[] = [
+  { rotulo: 'esquemaDaEmissaoEmLote', esquema: esquemaDaEmissaoEmLote, recurso: LOTE_PUBLICADO },
+  { rotulo: 'esquemaDoItemDoLote', esquema: esquemaDoItemDoLote, recurso: ITEM_DO_LOTE_PUBLICADO },
+  {
+    rotulo: 'esquemaDaConferenciaBancaria',
+    esquema: esquemaDaConferenciaBancaria,
+    recurso: CONFERENCIA_PUBLICADA,
+  },
+  {
+    rotulo: 'esquemaDoEventoBancario',
+    esquema: esquemaDoEventoBancario,
+    recurso: EVENTO_PUBLICADO,
+  },
+  {
+    rotulo: 'esquemaDaTrilhaDaCobranca',
+    esquema: esquemaDaTrilhaDaCobranca,
+    recurso: TRILHA_PUBLICADA,
+  },
+  { rotulo: 'esquemaDaCobranca', esquema: esquemaDaCobranca, recurso: COBRANCA_PUBLICADA },
+];
+
+describe('CT-942 — a direção decide a estritude: entrada recusa a chave desconhecida, saída a aceita', () => {
+  it('a entrada aprova o corpo válido e o devolve verbatim', () => {
+    const resultado = esquemaDaCompetencia.safeParse(CORPO_DA_COMPETENCIA);
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data).toEqual(CORPO_DA_COMPETENCIA);
+  });
+
+  // A sobreposição com o CT-337 — que já gera esta mesma recusa por tabela, desde que
+  // `esquemaDaCompetencia` entrou em `ESQUEMAS_DE_ENTRADA` — é deliberada, e a razão está por extenso
+  // na seção «CT-942 — por que ele vem em par» do cabeçalho deste arquivo. **Não remova esta metade**:
+  // ela é o braço de entrada da comparação de DIREÇÃO, que o CT-337 não alcança porque varre um lado só.
+  it('a entrada RECUSA empresaId nomeando a chave — jamais só um booleano de insucesso', () => {
+    const resultado = esquemaDaCompetencia.safeParse({
+      ...CORPO_DA_COMPETENCIA,
+      empresaId: EMPRESA_ALHEIA,
+    });
+
+    // As duas linhas juntas são o que a `.claude/rules/contrato-publicado.md` exige, literalmente: o
+    // booleano sozinho aprovaria **qualquer** falha de esquema — inclusive uma que nada tem a ver com
+    // a chave excedente —, e é a lista `keys` que diz QUAL chave foi recusada.
+    expect(resultado.error?.issues[0]?.code).toBe('unrecognized_keys');
+    expect(resultado.error?.issues[0]).toMatchObject({ keys: ['empresaId'] });
+  });
+
+  for (const { rotulo, esquema, recurso } of SAIDAS_DA_FATIA) {
+    it(`${rotulo} é ABERTO: aceita o campo novo e o descarta, sem recusar`, () => {
+      // A MESMA chave que a entrada recusa acima. É o par que discrimina a direção: sem ele, os dois
+      // lados poderiam ser estritos (o que derrubaria a rota ao primeiro campo novo da view) ou os
+      // dois abertos (o que deixaria `empresaId` entrar em silêncio pelo corpo do cliente).
+      const resultado = esquema.safeParse({ ...recurso, empresaId: EMPRESA_ALHEIA });
+
+      expect(resultado.success).toBe(true);
+      // E o campo extra **não atravessa**: a saída aberta descarta o que não declarou, em vez de
+      // ecoá-lo ao consumidor. Sem esta linha, um `z.looseObject` passaria — e ele publicaria o
+      // `empresaId` que acabou de chegar de fora.
+      expect(resultado.data).toEqual(recurso);
+    });
+  }
+
+  /** As formas vizinhas da competência, todas recusadas nomeando o próprio campo. */
+  const COMPETENCIAS_RECUSADAS: readonly { readonly rotulo: string; readonly valor: unknown }[] = [
+    { rotulo: 'o segundo dia do mês', valor: '2026-09-02' },
+    { rotulo: 'o último dia do mês', valor: '2026-09-30' },
+    // O dia 10 é o vencimento típico do produto, e é a grafia em que a troca de `/-01$/` por um
+    // molde frouxo mais provavelmente passaria despercebida.
+    { rotulo: 'o dia do vencimento', valor: '2026-09-10' },
+    { rotulo: 'a data que o calendário não tem', valor: '2026-02-30' },
+    { rotulo: 'o primeiro dia COM hora', valor: '2026-09-01T00:00:00.000Z' },
+    { rotulo: 'o mês sem dia', valor: '2026-09' },
+    { rotulo: 'a competência vazia', valor: '' },
+  ];
+
+  for (const { rotulo, valor } of COMPETENCIAS_RECUSADAS) {
+    it(`a entrada recusa ${rotulo} nomeando competencia`, () => {
+      const resultado = esquemaDaCompetencia.safeParse({ competencia: valor });
+
+      expect(resultado.success).toBe(false);
+      // O `path` é do CAMPO, e não da raiz do objeto: a §6.1 manda `422 CAMPO_INVALIDO` nomeando
+      // `competencia`, e um refino sem `path` explícito reporta a raiz — a recusa chegaria ao cliente
+      // sem dizer que campo corrigir.
+      expect(resultado.error?.issues[0]?.path).toEqual(['competencia']);
+    });
+  }
+
+  it('aprova o primeiro dia de QUALQUER mês — a regra é o dia, não o mês', () => {
+    const primeirosDias = ['2026-01-01', '2026-02-01', '2026-12-01'];
+
+    expect(
+      primeirosDias.map((competencia) => esquemaDaCompetencia.safeParse({ competencia }).success),
+    ).toEqual([true, true, true]);
+  });
+
+  it('o item do lote nomeia a cobrança pelo CÓDIGO, canonizando a caixa (ADR-0017)', () => {
+    // A prova de que o esquema **importado** de `cobranca.ts` é quem confere, e não um molde
+    // redigitado aqui: um `z.string()` aprovaria a cadeia em minúsculas e a devolveria como veio.
+    const resultado = esquemaDoItemDoLote.safeParse({
+      ...ITEM_DO_LOTE_PUBLICADO,
+      cobrancaCodigo: '  cob-2026-0000059  ',
+    });
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data?.cobrancaCodigo).toBe('COB-2026-0000059');
+
+    // E a largura da série da cobrança continua sendo a de SETE dígitos: a do contrato, com cinco,
+    // é a harmonização tentadora que o `DECISÃO FECHADA` de `cobranca.ts` proíbe.
+    const comLarguraDoContrato = esquemaDoItemDoLote.safeParse({
+      ...ITEM_DO_LOTE_PUBLICADO,
+      cobrancaCodigo: 'COB-2026-00059',
+    });
+
+    expect(comLarguraDoContrato.success).toBe(false);
+    expect(comLarguraDoContrato.error?.issues[0]?.path).toEqual(['cobrancaCodigo']);
+  });
+});
+
+describe('CT-942 (b) — os quatro enums da fatia publicam exatamente os rótulos declarados, congelados', () => {
+  /**
+   * Os quatro conjuntos, escritos **por extenso** — nunca derivados das constantes sob prova.
+   *
+   * Derivá-las faria as duas pontas andarem juntas: um rótulo acrescentado à constante entraria na
+   * lista esperada no mesmo instante, e a asserção não poderia falhar (AP-29). É a mesma razão, e o
+   * mesmo desenho, do CT-540 e do CT-845.
+   *
+   * ⚠️ **Não existe um sétimo tipo `CONFERENCIA`**, e a ausência é decisão escalada ao usuário e
+   * registrada na §21.1(2) do tech spec desta fatia: a conferência entra como **origem**, nunca como
+   * tipo, senão a trilha registraria *tentativa* — que é o que a `Decision` da ADR-0034 proíbe. Esta
+   * lista é a rede daquela decisão: acrescentar o tipo reprova aqui.
+   */
+  const ENUMS_PUBLICADOS: readonly {
+    readonly rotulo: string;
+    readonly publicado: readonly string[];
+    readonly declarado: readonly string[];
+  }[] = [
+    {
+      rotulo: 'TIPOS_DE_EVENTO_BANCARIO',
+      publicado: TIPOS_DE_EVENTO_BANCARIO,
+      declarado: [
+        'BOLETO_EMITIDO',
+        'BOLETO_REVOGADO',
+        'EMISSAO_RECUSADA',
+        'COBRANCA_LIQUIDADA',
+        'LIQUIDACAO_ESTORNADA',
+        'DIVERGENCIA_DE_VALOR',
+      ],
+    },
+    {
+      rotulo: 'ORIGENS_DO_EVENTO_BANCARIO',
+      publicado: ORIGENS_DO_EVENTO_BANCARIO,
+      declarado: ['ATO_DO_ADMIN', 'CONFERENCIA'],
+    },
+    {
+      rotulo: 'ESTADOS_DA_EMISSAO_EM_LOTE',
+      publicado: ESTADOS_DA_EMISSAO_EM_LOTE,
+      declarado: ['EM_ANDAMENTO', 'CONCLUIDA', 'INTERROMPIDA'],
+    },
+    {
+      rotulo: 'DESFECHOS_DO_ITEM_DO_LOTE',
+      publicado: DESFECHOS_DO_ITEM_DO_LOTE,
+      declarado: ['EMITIDO', 'RECUSADO'],
+    },
+  ];
+
+  for (const { rotulo, publicado, declarado } of ENUMS_PUBLICADOS) {
+    it(`${rotulo} publica exatamente os rótulos declarados, nesta ordem`, () => {
+      // A ordem é CONTEÚDO: é dela que o enum do PostgreSQL da T2 deriva, e é ela que governa
+      // comparação e ordenação do tipo lá dentro (ADR-0016).
+      expect([...publicado]).toEqual(declarado);
+    });
+
+    it(`${rotulo} está congelado em execução — nenhum consumidor o alarga`, () => {
+      // O `as const` fecha a união em COMPILAÇÃO e some no build; quem chega ao consumidor do pacote
+      // compilado é um arranjo comum. Sem `Object.freeze`, um `push` alargaria o vocabulário do
+      // produto em execução, e o banco recusaria o rótulo que o contrato passou a admitir.
+      expect(() => (publicado as string[]).push('INVENTADO')).toThrow(TypeError);
+      // "Lançou" e "não alterou" são propriedades diferentes — esta é a segunda.
+      expect([...publicado]).toEqual(declarado);
+    });
+  }
+
+  it('o evento RECUSA um tipo CONFERENCIA — a trilha registra efeito, nunca tentativa (ADR-0034)', () => {
+    // A metade comportamental da decisão da §21.1(2): a lista literal acima pega o acréscimo ao enum,
+    // e esta linha pega o esquema que aceitasse o rótulo por fora dele (um `z.string()` em `tipo`).
+    const resultado = esquemaDoEventoBancario.safeParse({
+      ...EVENTO_PUBLICADO,
+      tipo: 'CONFERENCIA',
+    });
+
+    expect(resultado.success).toBe(false);
+    expect(resultado.error?.issues[0]?.path).toEqual(['tipo']);
+
+    // E o mesmo rótulo é legítimo em `origem`, que é onde a conferência aparece na trilha. Sem esta
+    // segunda metade, "recusa CONFERENCIA" seria satisfeito por um esquema que o recusasse nos dois
+    // campos — e a CA-13 ficaria sem como dizer quem descobriu o efeito.
+    const comOrigemDaConferencia = esquemaDoEventoBancario.safeParse({
+      ...EVENTO_PUBLICADO,
+      origem: 'CONFERENCIA',
+    });
+
+    expect(comOrigemDaConferencia.success).toBe(true);
+    expect(comOrigemDaConferencia.data?.origem).toBe('CONFERENCIA');
+  });
+
+  it('o lote publica o estado DERIVADO ao lado dos dois instantes de desfecho (ADR-0022)', () => {
+    const interrompido = esquemaDaEmissaoEmLote.safeParse({
+      ...LOTE_PUBLICADO,
+      estado: 'INTERROMPIDA',
+      interrompidoEm: '2026-09-01T12:05:00.000Z',
+      motivoDaInterrupcao: 'certificado do provedor vencido',
+      emitidas: 3,
+      recusadas: 1,
+      itens: [ITEM_DO_LOTE_PUBLICADO],
+    });
+
+    expect(interrompido.success).toBe(true);
+    expect(interrompido.data?.itens).toEqual([ITEM_DO_LOTE_PUBLICADO]);
+
+    // Os contadores são inteiros não negativos: a contagem fracionária ou negativa é defeito de quem
+    // publica, e o esquema o recusa nomeando o campo. Sem estas duas linhas, `z.number()` passaria.
+    const comContagemQuebrada = esquemaDaEmissaoEmLote.safeParse({
+      ...LOTE_PUBLICADO,
+      emitidas: 2.5,
+    });
+    const comContagemNegativa = esquemaDaEmissaoEmLote.safeParse({
+      ...LOTE_PUBLICADO,
+      recusadas: -1,
+    });
+
+    expect([comContagemQuebrada.success, comContagemNegativa.success]).toEqual([false, false]);
+    expect(comContagemQuebrada.error?.issues[0]?.path).toEqual(['emitidas']);
+    expect(comContagemNegativa.error?.issues[0]?.path).toEqual(['recusadas']);
+  });
+
+  it('a conferência publica iniciadaAgora — o disparo repetido informa, e não é erro (CA-15)', () => {
+    // O outro desfecho do mesmo `200`: uma execução já estava em curso, e o corpo diz **qual** e
+    // **desde quando**. Sem esta linha, `iniciadaAgora: z.literal(true)` passaria por toda a suíte, e
+    // a rota ficaria sem como informar o caso que a CA-15 existe para cobrir.
+    const jaEmCurso = esquemaDaConferenciaBancaria.safeParse({
+      ...CONFERENCIA_PUBLICADA,
+      iniciadaEm: '2026-09-01T11:59:12.000Z',
+      iniciadaAgora: false,
+    });
+
+    expect(jaEmCurso.success).toBe(true);
+    expect(jaEmCurso.data?.iniciadaAgora).toBe(false);
+
+    // E os dois contadores são distintos de propósito: conferiu trinta e nada mudou é `30` e `0`.
+    const semEfeito = esquemaDaConferenciaBancaria.safeParse({
+      ...CONFERENCIA_PUBLICADA,
+      concluidaEm: '2026-09-01T12:02:00.000Z',
+      cobrancasConferidas: 30,
+      efeitos: 0,
+    });
+
+    expect(semEfeito.success).toBe(true);
+    expect(semEfeito.data?.cobrancasConferidas).toBe(30);
+    expect(semEfeito.data?.efeitos).toBe(0);
+  });
+});
+
+/**
+ * CT-953 — a âncora do envelope do histórico bancário, e a razão de ela ser ÚNICA.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que a âncora fica AQUI, e não sobre o corpo observado no E2E
+ * ---------------------------------------------------------------------------
+ *
+ * Depois que a forma do envelope passou a viver em `@sysloc/contracts`, ela tem **uma** declaração, e
+ * dela derivam as duas pontas: o documento OpenAPI, por `esquemaPublicado(...)`, e o tipo de retorno
+ * do manipulador, por `z.infer`. Uma segunda âncora — sobre `Object.keys(corpo)` no E2E da rota —
+ * seria a segunda cópia da mesma lista de chaves, livre para divergir desta: exatamente o defeito que
+ * a mudança que trouxe o envelope para cá existe para fechar.
+ *
+ * E ela basta sozinha porque as duas direções ficam cobertas por caminhos diferentes:
+ *
+ * - **chave a mais no CORPO, sem passar pelo esquema** — `BoletoService.historico` devolve
+ *   `TrilhaDaCobranca`, e o objeto literal do `return` com chave excedente **não compila**
+ *   (`excess property check`, com `strict` do `tsconfig.base.json`). O `pnpm build` reprova antes de
+ *   qualquer suíte;
+ * - **chave a mais no ESQUEMA** — inclusive a opcional, que o compilador aceitaria e que faria o
+ *   documento anunciar um campo que o corpo nunca traz — reprova **aqui**, na igualdade de conjunto
+ *   abaixo. É a direção que a `.claude/rules/ancoras-de-superficie.md` cobra e que nada mais alcança.
+ *
+ * A lista esperada é escrita à mão e **não** derivada do esquema: derivá-la faria a asserção
+ * concordar consigo mesma. O controle antivácuo é a própria comparação por igualdade contra uma lista
+ * literal não-vazia — dois conjuntos vazios não têm como passar aqui.
+ *
+ * Rastreabilidade: `CA-13 → CT-953`.
+ */
+describe('CT-953 — o envelope do histórico bancário publica itens, e só ele', () => {
+  /**
+   * A chave única do envelope, escrita por extenso.
+   *
+   * `total`, `limite` e `deslocamento` — as três da janela — ficam de fora por decisão: não usar
+   * `envelopeDeLista` é o que impede a rota de prometer uma paginação que ela não oferece (ADR-0034).
+   */
+  const CHAVES_DO_ENVELOPE: readonly string[] = ['itens'];
+
+  it('declara exatamente itens — jamais o total, o limite e o deslocamento de uma janela', () => {
+    const publicadas = Object.keys(esquemaDaTrilhaDaCobranca.shape);
+
+    // Igualdade de CONJUNTO, e não contenção: `toContain('itens')` aprovaria tanto a chave que sumiu
+    // quanto a que apareceu sem ninguém decidir, e é a segunda direção que o P2 do Gate 2 cobra. O
+    // controle antivácuo é a própria comparação contra literal NÃO-VAZIO.
+    //
+    // Ela sozinha já reprova as três da janela: `total`, `limite` ou `deslocamento` no esquema — o que
+    // a próxima rodada faria ao "uniformizar" a rota com `envelopeDeLista` — quebra esta igualdade e
+    // nomeia a chave excedente na saída do Vitest. Uma segunda asserção filtrando por essas três seria
+    // implicada por esta (passou a igualdade ⇒ o filtro é vazio) e não teria estado em que disparasse.
+    expect(publicadas).toEqual([...CHAVES_DO_ENVELOPE]);
+  });
+
+  it('carrega o esquema do evento por IDENTIDADE — nunca uma cópia dos cinco campos', () => {
+    // É a asserção que discrimina a redigitação: um `z.object({ tipo, origem, ... })` escrito à mão
+    // aqui satisfaria o `safeParse` do envelope e passaria em toda a suíte, enquanto divergiria do
+    // item no dia em que o evento ganhasse campo. A identidade referencial é o que a ADR-0016 quer
+    // dizer com *"derive do esquema — nunca o duplique"*.
+    expect(esquemaDaTrilhaDaCobranca.shape.itens.element).toBe(esquemaDoEventoBancario);
+  });
+
+  it('aprova a trilha vazia — cobrança sem efeito bancário é 200, e não 404', () => {
+    // A lista vazia é forma legítima do envelope, e o esquema não pode exigir item: a rota responde
+    // `200` com `itens: []` para a cobrança que existe e ainda não teve efeito algum. Sem esta linha,
+    // um `z.array(...).min(1)` passaria por toda a suíte e derrubaria justamente esse caso.
+    const vazia = esquemaDaTrilhaDaCobranca.safeParse({ itens: [] });
+
+    expect(vazia.success).toBe(true);
+    expect(vazia.data).toEqual({ itens: [] });
+
+    // E o item é conferido de fato: um evento com `tipo` fora do enum é recusado nomeando o CAMINHO
+    // dentro da lista. Sem esta metade, `z.array(z.unknown())` satisfaria as duas linhas acima.
+    const comTipoInventado = esquemaDaTrilhaDaCobranca.safeParse({
+      itens: [{ ...EVENTO_PUBLICADO, tipo: 'CONFERENCIA' }],
+    });
+
+    expect(comTipoInventado.success).toBe(false);
+    expect(comTipoInventado.error?.issues[0]?.path).toEqual(['itens', 0, 'tipo']);
   });
 });

@@ -105,6 +105,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@sysloc/cobranca-bancaria':
+        specifier: workspace:*
+        version: link:../../packages/cobranca-bancaria
       '@sysloc/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -126,6 +129,9 @@ importers:
       ioredis:
         specifier: 5.11.1
         version: 5.11.1(supports-color@7.2.0)
+      postgres:
+        specifier: 3.4.9
+        version: 3.4.9
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -133,9 +139,6 @@ importers:
       '@types/node':
         specifier: 24.13.3
         version: 24.13.3
-      postgres:
-        specifier: 3.4.9
-        version: 3.4.9
       typescript:
         specifier: 7.0.2
         version: 7.0.2
@@ -180,9 +183,15 @@ importers:
         specifier: workspace:*
         version: link:../shared
     devDependencies:
+      '@sysloc/db':
+        specifier: workspace:*
+        version: link:../db
       '@types/node':
         specifier: 24.13.3
         version: 24.13.3
+      postgres:
+        specifier: 3.4.9
+        version: 3.4.9
       typescript:
         specifier: 7.0.2
         version: 7.0.2

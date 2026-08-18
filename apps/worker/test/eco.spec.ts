@@ -98,7 +98,9 @@ import { fileURLToPath } from 'node:url';
 import {
   type CargaDoEco,
   criarLogger,
+  FILA_DA_CONFERENCIA_BANCARIA,
   FILA_DA_CONFIRMACAO,
+  FILA_DA_EMISSAO_EM_LOTE,
   FILA_DA_REGUA,
   FILA_DO_ECO,
 } from '@sysloc/shared';
@@ -757,7 +759,22 @@ describe('processador de trabalho (T6)', () => {
       // operador omitir justamente a fila cuja tarefa chega da borda HTTP. A asserção **não foi
       // afrouxada**: continua sendo igualdade de lista ordenada, agora com o terceiro nome — e uma
       // fila que sumisse do encerramento segue reprovando.
-      expect(doEstouro[0]?.filas).toEqual([FILA_DO_ECO, FILA_DA_REGUA, FILA_DA_CONFIRMACAO]);
+      //
+      // SUT_IS_CORRECT_BECAUSE: a T16 da fatia `emissao-e-conciliacao` acrescenta a QUARTA e a
+      // QUINTA — a da emissão em lote e a da conferência bancária —, construídas e devolvidas pelo
+      // mesmo `conectarFila`. As duas carregam tarefa de negócio vinda da borda HTTP, e a da emissão
+      // é a mais cara de perder no desligamento: uma passada abandonada deixa o lote `EM_ANDAMENTO`,
+      // e o índice único parcial recusa toda abertura seguinte da empresa. Deixar a lista com três
+      // faria a linha do operador omitir justamente essas duas. A asserção **não foi afrouxada**:
+      // continua sendo igualdade de lista ordenada, agora com os cinco nomes — e uma fila que
+      // sumisse do encerramento, ou que fosse acrescentada sem ser devolvida, segue reprovando.
+      expect(doEstouro[0]?.filas).toEqual([
+        FILA_DO_ECO,
+        FILA_DA_REGUA,
+        FILA_DA_CONFIRMACAO,
+        FILA_DA_EMISSAO_EM_LOTE,
+        FILA_DA_CONFERENCIA_BANCARIA,
+      ]);
 
       // A conexão foi DEVOLVIDA, e não apenas deixada para trás. É o que distingue "o
       // encerramento retornou" de "o encerramento devolveu o que abriu": uma conexão de pé com

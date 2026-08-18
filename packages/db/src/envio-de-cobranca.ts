@@ -114,6 +114,11 @@ import type { Fragment, TransactionSql } from 'postgres';
 // e um segundo caminho para o mesmo recorte é o que a ADR-0008 rejeita. Ele existe para a
 // **escrita**, onde `empresa_id` é `NOT NULL` sem padrão.
 import { empresaDoContexto } from './contexto-de-escrita.js';
+// O molde do instante tem **casa única** em `./moldes-de-formatacao.ts` desde a T3 da fatia
+// `emissao-e-conciliacao`: o `criadoEm` daqui, o `canceladoEm` de `./cobranca.ts` e o `ocorridoEm` de
+// `./evento-bancario.ts` são o MESMO carimbo, e a declaração local que vivia aqui era a segunda cópia
+// que o limiar de três manda extinguir. Ele não entra em `./index.ts` — ver o cabeçalho de lá.
+import { FORMATO_ISO_DO_INSTANTE } from './moldes-de-formatacao.js';
 
 /**
  * A janela pedida do histórico de uma cobrança, já validada na borda por `esquemaDaJanela`.
@@ -135,17 +140,6 @@ export interface JanelaDeEnvios {
  * instante com fuso"* justamente por isso.
  */
 const FORMATO_ISO_DA_DATA = 'YYYY-MM-DD';
-
-/**
- * O formato do **instante** da tentativa — ISO-8601 em UTC, com milissegundos e `Z` literal.
- *
- * É a forma que `esquemaDoEnvioDeCobranca.criadoEm` (`z.iso.datetime()`) aceita, e ela é composta
- * pelo servidor em vez de por um `Date.toISOString()` na aplicação: o valor atravessa da consulta até
- * o JSON sem passar por relógio nenhum (ADR-0026). O `AT TIME ZONE 'UTC'` fixa o deslocamento no
- * **objeto** em vez de no fuso da sessão, de modo que dois processos com `TZ` diferentes leem o mesmo
- * carimbo. Mesma constante, e mesma razão, de `FORMATO_ISO_DO_INSTANTE` em {@link ./cobranca.ts}.
- */
-const FORMATO_ISO_DO_INSTANTE = 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"';
 
 /** O molde `HH:MM` da hora do dia, o mesmo que a política publica — ver {@link ./politica-de-aviso.ts}. */
 const FORMATO_DA_HORA_DO_DIA = 'HH24:MI';

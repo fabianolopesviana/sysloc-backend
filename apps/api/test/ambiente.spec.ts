@@ -39,8 +39,19 @@
  * |       |        | É o controle positivo sem o qual CT-851 e CT-852 seriam satisfeitos por uma
  * |       |        | validação que recusasse todo ambiente. |
  *
+ * | CA-20 | CT-936 | A barreira FALHA FECHADO também para o diretório dos boletos: ausência e
+ * |       | (api)  | cadeia em branco recusam com a cadeia EXATA `DIRETORIO_DOS_BOLETOS: ausente`;
+ * |       |        | e o valor **presente e inaceitável** — caminho relativo, diretório
+ * |       |        | inexistente e arquivo comum no lugar do diretório — recusa nomeando a
+ * |       |        | variável **e a exigência**, jamais o valor recebido, de forma DISTINGUÍVEL de
+ * |       |        | *"ausente"*. Com o diretório declarado a partida é ACEITA, o campo sai **sem
+ * |       |        | resolução** e o conjunto de campos cresce por **exatamente um** — o controle
+ * |       |        | positivo sem o qual as cinco linhas negativas seriam satisfeitas por uma
+ * |       |        | validação que recusasse todo ambiente. |
+ *
  * Rastreabilidade acrescida pela T10: `CA-17 → CT-639 (RD-15)`.
  * Rastreabilidade acrescida pela T11 da fatia `fundacao-bancaria`: `CA-12 → CT-851, CT-852, CT-853`.
+ * Rastreabilidade acrescida pela T13 da fatia `emissao-e-conciliacao`: `CA-20 → CT-936 (api)`.
  *
  * A fonte de variáveis é PARÂMETRO da função (Padrão 14: fail-fast testável). Um único caso planta
  * valor em `process.env` — o que PROVA que o ambiente do processo não prevalece sobre a fonte — e
@@ -63,7 +74,9 @@
  * `carregarAmbiente` que devolvesse `{ …, urlDoTransporte: '' }` cairia ali.
  */
 
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, onTestFinished } from 'vitest';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)
@@ -140,6 +153,45 @@ const CHAVE_DE_CIFRA_LONGA = 'Y2hhdmUtZGUtY2lmcmEtY29tLTMzLWJ5dGVzISEhISEh';
 const CHAVE_DE_CIFRA_SEM_FORMA = 'chave!!de!!cifra!!invalida###';
 
 /**
+ * O diretório dos boletos **aceitável** — absoluto, existente e gravável, e descartável (T13).
+ *
+ * Ele é o único valor desta tabela que **não** pode ser inerte: a conferência de partida toca o disco
+ * (ver `ehDiretorioGravavel`, em `src/configuracao/ambiente.ts`), e um caminho de fantasia faria todo
+ * caso deste arquivo cair na recusa em vez de exercitar o que ele mede. O diretório nasce no
+ * temporário do sistema operacional, fora da árvore versionada, e o nome carrega o caso para ser
+ * reconhecível numa reprovação.
+ *
+ * Ele é o **controle positivo** das três linhas negativas abaixo: sem um caminho que a partida
+ * aceite, elas seriam satisfeitas por uma validação que recusasse todo ambiente.
+ */
+const DIRETORIO_DOS_BOLETOS_ACEITAVEL = mkdtempSync(join(tmpdir(), 'sysloc-boletos-ct933-'));
+
+/**
+ * Os três caminhos **inaceitáveis**, e o que cada um discrimina.
+ *
+ * O primeiro é **relativo** e aponta para um diretório que existe — ele separa *"dá para escrever"* de
+ * *"é absoluto"*, e uma conferência que só chamasse `access` o aceitaria, deixando o destino dos
+ * boletos dependente de onde o serviço foi iniciado. O segundo é absoluto e **não existe**. O terceiro
+ * é um **arquivo comum** gravável: ele é o que impede a conferência de se contentar com permissão de
+ * escrita, já que a primeira emissão falharia ao criar o intermediário dentro dele.
+ *
+ * Os três carregam textos sentinela distinguíveis, para que a asserção de **não-eco** não case por
+ * acaso.
+ */
+const DIRETORIO_DOS_BOLETOS_RELATIVO = 'boletos-relativos-do-ct933';
+const DIRETORIO_DOS_BOLETOS_INEXISTENTE = '/opt/sysloc-boletos-que-nao-existem-ct933';
+const DIRETORIO_DOS_BOLETOS_QUE_E_ARQUIVO = criarArquivoComumDescartavel();
+
+/** Cria um arquivo comum gravável, dentro do temporário — o terceiro caminho inaceitável. */
+function criarArquivoComumDescartavel(): string {
+  const caminho = join(mkdtempSync(join(tmpdir(), 'sysloc-boletos-ct933-arquivo-')), 'boletos');
+
+  writeFileSync(caminho, '');
+
+  return caminho;
+}
+
+/**
  * Ambiente completo e válido, com valor único por variável.
  *
  * Valores distinguíveis são o que permite afirmar que nenhum campo da configuração recebeu o
@@ -170,6 +222,10 @@ function ambienteCompleto(): Record<string, string> {
     // razão de todos.
     CHAVE_DE_CIFRA_DO_CERTIFICADO: CHAVE_DE_CIFRA_SENTINELA,
     ENDERECO_DO_PROVEDOR_BANCARIO: 'https://provedor.exemplo.invalid',
+    // O diretório dos boletos entra na T13 da fatia `emissao-e-conciliacao` — ver o bloco do CT-933,
+    // no fim do arquivo. Ele **não** é segredo, e é o único valor desta tabela que precisa existir de
+    // verdade: a conferência de partida toca o disco. Ver {@link DIRETORIO_DOS_BOLETOS_ACEITAVEL}.
+    DIRETORIO_DOS_BOLETOS: DIRETORIO_DOS_BOLETOS_ACEITAVEL,
   };
 }
 
@@ -347,11 +403,20 @@ describe('carregarAmbiente (T5 · CA-15)', () => {
     // que descrevia o processo anterior. A asserção continua sendo igualdade exata sobre o conjunto
     // inteiro — **nenhum elemento saiu** —, e por isso ela segue reprovando campo que apareça sem
     // ser declarado, inclusive a volta de `urlBaseDaConfirmacao`.
+    //
+    // SUT_IS_CORRECT_BECAUSE: a **T13** da fatia `emissao-e-conciliacao` acrescenta `diretorioDosBoletos`,
+    // e ele **tem consumidor nesta aplicação** — que é o critério que a T9 fixou ao recusar
+    // `urlBaseDaConfirmacao`: é a composição da superfície de cobranças que constrói a guarda de
+    // boletos a partir dele (`cobrancas.module.ts`), e o pacote de domínio não lê `process.env`
+    // (ADR-0025). O código de produção está certo e o literal é que descrevia o processo anterior. A
+    // asserção continua sendo igualdade exata sobre o conjunto inteiro — **nenhum elemento saiu** —,
+    // e por isso ela segue reprovando campo que apareça sem ser declarado.
     expect(Object.keys(ambiente).sort()).toEqual([
       'ambiente',
       'cadeiaConexaoBanco',
       'cadeiaConexaoFila',
       'chaveDeCifraDoCertificado',
+      'diretorioDosBoletos',
       'enderecoDoProvedorBancario',
       'nivelDeLog',
       'porta',
@@ -399,6 +464,10 @@ function configuracaoEsperada(
     // em vez dos bytes — reprova na igualdade estrita.
     chaveDeCifraDoCertificado: Buffer.from(fonte.CHAVE_DE_CIFRA_DO_CERTIFICADO as string, 'base64'),
     enderecoDoProvedorBancario: fonte.ENDERECO_DO_PROVEDOR_BANCARIO as string,
+    // Ele viaja **como veio**, sem resolução: quem resolve o caminho-base, uma vez, é a guarda de
+    // boletos. Uma resolução escrita aqui faria o esperado concordar com uma configuração que
+    // normalizasse o valor, e a igualdade estrita deixaria de reprovar essa mudança.
+    diretorioDosBoletos: fonte.DIRETORIO_DOS_BOLETOS as string,
     // `URL_BASE_DA_CONFIRMACAO` NÃO entra: ela é exigida na partida e não vira campo — ver o
     // `SUT_IS_CORRECT_BECAUSE:` do CT-008.
   };
@@ -838,13 +907,24 @@ describe('carregarAmbiente (T11 · CA-12) — a barreira de partida da integraç
 
     const ambiente = carregarAmbiente(fonte);
 
-    // A enumeração exaustiva dos campos publicados — a mesma âncora do CT-008, repetida aqui com os
-    // DEZ nomes porque é este caso que afirma o crescimento por exatamente dois.
+    // A enumeração exaustiva dos campos publicados — a mesma âncora do CT-008, repetida aqui porque
+    // é este caso que afirma o crescimento por exatamente dois.
+    //
+    // SUT_IS_CORRECT_BECAUSE: a lista tinha DEZ nomes, e a T13 da fatia `emissao-e-conciliacao`
+    // publica um campo novo por decisão declarada — `diretorioDosBoletos`, que **este** processo
+    // consome: é a composição da superfície de cobranças que constrói a guarda de boletos a partir
+    // dele (ADR-0025). Ele entra por critério diferente do de `URL_BASE_DA_CONFIRMACAO`, que é
+    // exigida e **não** vira campo justamente por não ter consumidor aqui. O que a asserção mede não
+    // mudou e não foi afrouxado: continua sendo a igualdade de arranjo do conjunto inteiro de
+    // chaves, e um campo a mais ou a menos reprova como sempre reprovou. **Nenhuma entrada anterior
+    // saiu**, e o crescimento por dois que este caso afirma é o da T11 — o desta task é medido pelo
+    // `CT-936 (api)`, no bloco abaixo.
     expect(Object.keys(ambiente).sort()).toEqual([
       'ambiente',
       'cadeiaConexaoBanco',
       'cadeiaConexaoFila',
       'chaveDeCifraDoCertificado',
+      'diretorioDosBoletos',
       'enderecoDoProvedorBancario',
       'nivelDeLog',
       'porta',
@@ -861,5 +941,111 @@ describe('carregarAmbiente (T11 · CA-12) — a barreira de partida da integraç
     expect(ambiente.chaveDeCifraDoCertificado.toString('base64')).toBe(
       fonte.CHAVE_DE_CIFRA_DO_CERTIFICADO,
     );
+  });
+});
+
+// ===========================================================================
+// CT-936 (api) — a barreira de partida do DIRETÓRIO DOS BOLETOS (T13 · CA-20)
+// ===========================================================================
+
+/**
+ * As duas linhas de **ausência** da variável do diretório, com o que cada uma deve produzir.
+ *
+ * Declaradas ANTES do caso e nomeando o resultado esperado — elas **não** são derivadas da execução.
+ * A primeira é a ausência; a segunda é a cadeia em branco, que é o que um `EnvironmentFile` copiado
+ * do `.env.example` sem preenchimento entrega, e que uma validação ingênua
+ * (`fonte.DIRETORIO_DOS_BOLETOS !== undefined`) aceitaria — o processo subiria e a primeira emissão
+ * gravaria bytes em `undefined/COB-….pdf`, ou em lugar nenhum.
+ *
+ * ⚠️ **O ID é `CT-936 (api)`, e o sufixo é conteúdo.** O `CT-936` da §19 mede o mesmo invariante no
+ * **processo de trabalho**, e nasce com a T16; esta é a metade da `api`, que é onde a variável passa
+ * a ser exigida primeiro. Reusar o número mantém a rastreabilidade do invariante único; o sufixo
+ * impede que as duas medições sejam lidas como a mesma.
+ */
+const LINHAS_DO_DIRETORIO_DOS_BOLETOS = [
+  { cenario: 'sem DIRETORIO_DOS_BOLETOS', embranco: undefined },
+  { cenario: 'DIRETORIO_DOS_BOLETOS em branco', embranco: 'DIRETORIO_DOS_BOLETOS' },
+] as const;
+
+/**
+ * Os três caminhos **presentes e inaceitáveis**, cada um com o que ele discrimina.
+ *
+ * O `rotulo` entra no nome do caso; o `valor` é a agulha da asserção de não-eco. Declarados antes do
+ * caso, e não derivados da execução — ver os docblocks das três constantes.
+ */
+const DIRETORIOS_DE_BOLETO_INACEITAVEIS = [
+  { rotulo: 'caminho relativo', valor: DIRETORIO_DOS_BOLETOS_RELATIVO },
+  { rotulo: 'diretório inexistente', valor: DIRETORIO_DOS_BOLETOS_INEXISTENTE },
+  { rotulo: 'arquivo comum no lugar do diretório', valor: DIRETORIO_DOS_BOLETOS_QUE_E_ARQUIVO },
+] as const;
+
+describe('carregarAmbiente (T13 · CA-20) — a barreira de partida do diretório dos boletos', () => {
+  it.each(LINHAS_DO_DIRETORIO_DOS_BOLETOS)(
+    'CT-936 (api) — $cenario: a partida é recusada nomeando a variável, sem devolver ambiente parcial',
+    ({ embranco }) => {
+      const fonte =
+        embranco === undefined
+          ? ambienteSem('DIRETORIO_DOS_BOLETOS')
+          : { ...ambienteCompleto(), [embranco]: '   ' };
+
+      // `falhaDe` REPROVA quando a chamada devolve configuração — é assim que "nunca sobe pela
+      // metade" fica asserido. Um `carregarAmbiente` que devolvesse `{ …, diretorioDosBoletos: '' }`
+      // cairia ali, e o produto emitiria títulos sem ter onde guardar os documentos deles.
+      const falha = falhaDe(fonte);
+
+      // A cadeia EXATA da variável faltante, e não "a mensagem não está vazia".
+      expect(falha.message).toContain('DIRETORIO_DOS_BOLETOS: ausente');
+      // E nenhuma credencial atravessa para o journal, nesta recusa como em todas as outras.
+      expect(falha.message).not.toContain(SENHA_NA_CADEIA);
+      expect(falha.message).not.toContain(SEGREDO_DE_SESSAO);
+      expect(falha.message).not.toContain(CHAVE_DE_CIFRA_SENTINELA);
+    },
+  );
+
+  it.each(DIRETORIOS_DE_BOLETO_INACEITAVEIS)(
+    'CT-936 (api) — diretório presente e inaceitável ($rotulo) recusa nomeando a variável e a exigência',
+    ({ valor }) => {
+      // O par positivo/negativo desta variável: a ausência está acima, e o que falta é o valor
+      // PRESENTE e inaceitável. Sem estas três linhas, um esquema que apenas exigisse a variável
+      // passaria — e o processo subiria apontado para um caminho relativo (destino dependente de
+      // onde o serviço foi iniciado), para um diretório que não existe, ou para um arquivo comum.
+      const fonte = { ...ambienteCompleto(), DIRETORIO_DOS_BOLETOS: valor };
+
+      const falha = falhaDe(fonte);
+
+      expect(falha.message).toContain('DIRETORIO_DOS_BOLETOS');
+      // A EXIGÊNCIA, e não uma recusa genérica: sem ela o operador não sabe o que corrigir.
+      expect(falha.message).toContain('deve ser o caminho absoluto de um diretório gravável');
+      // O valor recebido **não** entra na mensagem — a disciplina é a de todas as variáveis, e vale
+      // mesmo para o que não é segredo: abri-la "só para esta" cria a exceção que a próxima herda.
+      expect(falha.message).not.toContain(valor);
+      // E a recusa é DISTINGUÍVEL de "ausente": a variável foi preenchida, só que com um caminho que
+      // não serve — quem lê "ausente" procura no lugar errado.
+      expect(falha.message).not.toContain('DIRETORIO_DOS_BOLETOS: ausente');
+    },
+  );
+
+  it('CT-936 (api) — com o diretório declarado, a partida é aceita e o ambiente cresce por exatamente um', () => {
+    // O CONTROLE POSITIVO, sem o qual as cinco linhas acima seriam satisfeitas por uma validação que
+    // recusasse todo ambiente.
+    const fonte = ambienteCompleto();
+
+    expect(carregarAmbiente(fonte)).toStrictEqual(configuracaoEsperada(fonte));
+
+    // A lista é o que a seleção e a mensagem de falha consomem, e é ela que a tabela do CT-007
+    // percorre: uma variável no esquema e fora dela deixaria de ser exercitada por aquela tabela.
+    expect(VARIAVEIS_EXIGIDAS).toContain('DIRETORIO_DOS_BOLETOS');
+
+    const ambiente = carregarAmbiente(fonte);
+
+    // O campo vale exatamente o valor da variável de origem, **sem resolução**: quem resolve o
+    // caminho-base, uma vez, é `criarGuardaDeBoletos`. Uma segunda resolução na leitura do ambiente
+    // daria ao produto dois caminhos-base para o mesmo diretório.
+    expect(ambiente.diretorioDosBoletos).toBe(fonte.DIRETORIO_DOS_BOLETOS);
+
+    // O crescimento por exatamente UM, medido sobre o mesmo objeto: sem esta contagem, um campo a
+    // mais introduzido junto passaria — e a igualdade estrita acima aprovaria, porque
+    // `configuracaoEsperada` também teria crescido.
+    expect(Object.keys(ambiente)).toHaveLength(11);
   });
 });

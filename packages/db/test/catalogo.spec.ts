@@ -13,7 +13,7 @@
  * |                |                 | `0006_seguranca_dominio.sql`, `0007_dominio_contrato.sql` e
  * |                |                 | `0008_seguranca_contrato.sql` —, a consulta de cobertura
  * |                |                 | devolve lista VAZIA de exceções e a lista de tabelas
- * |                |                 | EXAMINADAS igual, na íntegra, aos DEZESSETE objetos de `negocio`
+ * |                |                 | EXAMINADAS igual, na íntegra, aos VINTE E UM objetos de `negocio`
  * |                |                 | — nem mais, nem menos. As duas metades importam: sem a
  * |                |                 | segunda, "nenhuma exceção" e "nada foi olhado" seriam
  * |                |                 | indistinguíveis, e um schema vazio passaria por verde.
@@ -25,7 +25,7 @@
  * |                |                 | numa instância DEDICADA, a MESMA asserção do CT-300 reprova
  * |                |                 | nomeando aquela tabela com motivo `RLS_NAO_FORCADA` —
  * |                |                 | exatamente uma entrada, não mais —, a lista de examinadas
- * |                |                 | continua com os dezessete, e o controle volta ao verde quando o
+ * |                |                 | continua com os vinte e um, e o controle volta ao verde quando o
  * |                |                 | `FORCE` é restaurado. É o par que impede o CT-300 de passar
  * |                |                 | por vacuidade: sem ele, uma guarda quebrada devolveria
  * |                |                 | `excecoes: []` sobre qualquer schema. |
@@ -33,7 +33,7 @@
  * |                |                 | `empresa_id`, sem RLS forçada ou sem a restrição única
  * |                |                 | `(id, empresa_id)`, ou objeto que não admite isolamento em
  * |                |                 | espécie alguma —, a guarda devolve EXATAMENTE uma exceção,
- * |                |                 | nomeando aquele objeto e aquele motivo; os DEZESSETE objetos
+ * |                |                 | nomeando aquele objeto e aquele motivo; os VINTE E UM objetos
  * |                |                 | legítimas seguem examinadas e fora das exceções; e,
  * |                |                 | removido o defeito, a lista volta a vazia. A lista de
  * |                |                 | EXAMINADAS é cobrada por igualdade de array — posição
@@ -56,7 +56,7 @@
  * |                |                 | o `FORCE` de `negocio.contrato` numa instância DEDICADA, a
  * |                |                 | MESMA asserção reprova nomeando aquela tabela com motivo
  * |                |                 | `RLS_NAO_FORCADA` — exatamente uma entrada —, a lista de
- * |                |                 | examinadas continua com os dezessete, e o controle volta ao verde
+ * |                |                 | examinadas continua com os vinte e um, e o controle volta ao verde
  * |                |                 | quando o `FORCE` é restaurado. No mesmo caso, e sobre o
  * |                |                 | mesmo schema íntegro, `contrato_imovel_vigente_uidx` é
  * |                |                 | ÍNDICE ÚNICO PARCIAL em `status = 'ATIVO'` — afirmado pela
@@ -204,8 +204,21 @@ const TABELA_DE_PORTADOR_DE_CONFIRMACAO = 'negocio.portador_de_confirmacao';
 // quem o afirma é a guarda da T5, não este arquivo.
 const TABELA_DE_CERTIFICADO_DO_PROVEDOR = 'negocio.certificado_do_provedor';
 
+// As quatro tabelas da emissão e da conciliação, criadas pela migração `0017` (T2 da fatia
+// `emissao-e-conciliacao`) e forçadas pela `0018`. Nenhuma delas tem `retirado_em`, e a guarda não a
+// cobra de ninguém: as quatro registram FATO — trilha, lote, item e conferência —, e a ADR-0014
+// alcança entidade de cadastro, que nenhuma é.
+//
+// ⚠️ Elas não movem o roster de `plataforma`, que continua VAZIO: as quatro têm dono-empresa e por
+// isso pertencem a `negocio` (ADR-0031, pela contrapositiva). Quem afirma o vazio é a guarda de
+// `catalogo-de-plataforma.spec.ts`, não este arquivo.
+const TABELA_DE_CONFERENCIA_BANCARIA = 'negocio.conferencia_bancaria';
+const TABELA_DE_EMISSAO_EM_LOTE = 'negocio.emissao_em_lote';
+const TABELA_DE_EVENTO_BANCARIO = 'negocio.evento_bancario';
+const TABELA_DE_ITEM_DA_EMISSAO_EM_LOTE = 'negocio.item_da_emissao_em_lote';
+
 /**
- * Os dezessete, na ordem em que a guarda promete devolvê-los (nome do objeto, intercalação `C`).
+ * Os vinte e um, na ordem em que a guarda promete devolvê-los (nome do objeto, intercalação `C`).
  *
  * Este conjunto é do CASO, não da guarda: é aqui que o nome de tabela pode ser escrito à mão, e é
  * exatamente por escrevê-lo aqui — e nunca em `src/catalogo.ts` — que a comparação tem valor. Uma
@@ -214,7 +227,8 @@ const TABELA_DE_CERTIFICADO_DO_PROVEDOR = 'negocio.certificado_do_provedor';
  * SUT_IS_CORRECT_BECAUSE: até a fatia da fundação eram DUAS, e a igualdade sobre elas é o que
  * reprovou quando a migração `0005` entrou — a rede funcionando, não defeito; a `0007` reprovou do
  * mesmo jeito, pela mesma razão, a `0009`/`0010` reprovou pela terceira vez, a `0011`/`0012` pela
- * quarta, a `0013`/`0014` pela quinta, e a `0015`/`0016` acaba de reprovar pela sexta. A guarda
+ * quarta, a `0013`/`0014` pela quinta, a `0015`/`0016` pela sexta, e a `0017`/`0018` acaba de
+ * reprovar pela sétima — desta vez com QUATRO tabelas de uma só vez. A guarda
  * continua respondendo o que sempre respondeu (todo objeto de `negocio`, ordenado); o que mudou foi
  * o schema, e declarar aqui a tabela nova é a atualização legítima. Enfraquecer a asserção para
  * contê-la (`toContain`) seria regressão de prova: a tabela que nascesse sem isolamento continuaria
@@ -231,13 +245,17 @@ const TABELAS_LEGITIMAS: readonly string[] = [
   TABELA_DE_COBRANCA,
   VISAO_DA_COBRANCA_DERIVADA,
   TABELA_DE_COMODO,
+  TABELA_DE_CONFERENCIA_BANCARIA,
   TABELA_DE_CONFIGURACAO_DE_MORA,
   TABELA_DE_CONJUNTO,
   TABELA_DE_CONTRATO,
   TABELA_DE_CONTRATO_FIADOR,
+  TABELA_DE_EMISSAO_EM_LOTE,
   TABELA_DE_ENVIO_DE_COBRANCA,
+  TABELA_DE_EVENTO_BANCARIO,
   TABELA_DE_FIADOR,
   TABELA_DE_IMOVEL,
+  TABELA_DE_ITEM_DA_EMISSAO_EM_LOTE,
   TABELA_DE_LOCADOR,
   TABELA_DE_LOCATARIO,
   TABELA_DE_POLITICA_DE_AVISO,
@@ -318,10 +336,10 @@ interface VarianteDefeituosa {
    * F0 (o verificador que reimplementava o leitor e aprovava 5/5 um alvo defeituoso).
    *
    * **O que a proibição alcança é a ORDENAÇÃO, não o reúso do nome.** Espalhar
-   * `...TABELAS_LEGITIMAS` é escrever os dezessete legítimos na ordem em que eles já estão escritos
+   * `...TABELAS_LEGITIMAS` é escrever os vinte e um legítimos na ordem em que eles já estão escritos
    * acima — nenhuma ordenação acontece, e a posição do objeto DEFEITUOSO, que é o que discrimina,
    * segue declarada à mão em cada variante. Onde ele não cai no fim da lista, a variante escreve as
-   * dezoito posições por extenso.
+   * vinte e duas posições por extenso.
    */
   readonly examinadasEsperadas: readonly string[];
 }
@@ -369,8 +387,8 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
       'ALTER TABLE negocio.aaa_sem_empresa FORCE ROW LEVEL SECURITY',
     ],
     remover: ['DROP TABLE negocio.aaa_sem_empresa'],
-    // As dezoito posições por extenso: esta é a variante da ORDEM, e espalhar a lista legítima
-    // esconderia justamente o que ela discrimina — a defeituosa vindo ANTES dos dezessete.
+    // As vinte e duas posições por extenso: esta é a variante da ORDEM, e espalhar a lista legítima
+    // esconderia justamente o que ela discrimina — a defeituosa vindo ANTES dos vinte e um.
     examinadasEsperadas: [
       'negocio.aaa_sem_empresa',
       TABELA_DE_ACESSO,
@@ -379,13 +397,17 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
       TABELA_DE_COBRANCA,
       VISAO_DA_COBRANCA_DERIVADA,
       TABELA_DE_COMODO,
+      TABELA_DE_CONFERENCIA_BANCARIA,
       TABELA_DE_CONFIGURACAO_DE_MORA,
       TABELA_DE_CONJUNTO,
       TABELA_DE_CONTRATO,
       TABELA_DE_CONTRATO_FIADOR,
+      TABELA_DE_EMISSAO_EM_LOTE,
       TABELA_DE_ENVIO_DE_COBRANCA,
+      TABELA_DE_EVENTO_BANCARIO,
       TABELA_DE_FIADOR,
       TABELA_DE_IMOVEL,
+      TABELA_DE_ITEM_DA_EMISSAO_EM_LOTE,
       TABELA_DE_LOCADOR,
       TABELA_DE_LOCATARIO,
       TABELA_DE_POLITICA_DE_AVISO,
@@ -514,8 +536,8 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
         'SELECT id, empresa_id FROM negocio.acesso_usuario_app',
     ],
     remover: ['DROP VIEW negocio.espelho_sem_delegacao'],
-    // `espelho_...` ordena entre `envio_de_cobranca` e `fiador`, e não no fim: as dezoito posições
-    // vão por extenso, porque é a POSIÇÃO que a igualdade de array cobra.
+    // `espelho_...` ordena entre `envio_de_cobranca` e `evento_bancario`, e não no fim: as vinte e
+    // duas posições vão por extenso, porque é a POSIÇÃO que a igualdade de array cobra.
     examinadasEsperadas: [
       TABELA_DE_ACESSO,
       TABELA_DE_PERMISSAO,
@@ -523,14 +545,18 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
       TABELA_DE_COBRANCA,
       VISAO_DA_COBRANCA_DERIVADA,
       TABELA_DE_COMODO,
+      TABELA_DE_CONFERENCIA_BANCARIA,
       TABELA_DE_CONFIGURACAO_DE_MORA,
       TABELA_DE_CONJUNTO,
       TABELA_DE_CONTRATO,
       TABELA_DE_CONTRATO_FIADOR,
+      TABELA_DE_EMISSAO_EM_LOTE,
       TABELA_DE_ENVIO_DE_COBRANCA,
       'negocio.espelho_sem_delegacao',
+      TABELA_DE_EVENTO_BANCARIO,
       TABELA_DE_FIADOR,
       TABELA_DE_IMOVEL,
+      TABELA_DE_ITEM_DA_EMISSAO_EM_LOTE,
       TABELA_DE_LOCADOR,
       TABELA_DE_LOCATARIO,
       TABELA_DE_POLITICA_DE_AVISO,
@@ -738,9 +764,9 @@ describe('guarda de cobertura de isolamento — schema íntegro', () => {
     async () => {
       const cobertura = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
 
-      // Igualdade nas DUAS listas, numa asserção só: nenhuma exceção **e** os dezessete objetos
+      // Igualdade nas DUAS listas, numa asserção só: nenhuma exceção **e** os vinte e um objetos
       // examinadas, nem mais nem menos. É o par que detecta — "exceções vazias" sozinho ficaria
-      // verde contra um banco em que a consulta não alcançou tabela nenhuma, e "dezessete examinados"
+      // verde contra um banco em que a consulta não alcançou tabela nenhuma, e "vinte e um examinados"
       // sozinho não diria que todas passaram.
       expect(cobertura).toEqual({
         excecoes: [],
@@ -894,8 +920,8 @@ describe('guarda de cobertura de isolamento — tabela nascida sem isolamento', 
 
         expect(cobertura).toEqual({
           excecoes: [],
-          // A visão segura ordena entre `envio_de_cobranca` e `fiador`, pela mesma razão da irmã
-          // acima.
+          // A visão segura ordena entre `envio_de_cobranca` e `evento_bancario`, pela mesma razão da
+          // irmã acima.
           tabelasExaminadas: [
             TABELA_DE_ACESSO,
             TABELA_DE_PERMISSAO,
@@ -903,14 +929,18 @@ describe('guarda de cobertura de isolamento — tabela nascida sem isolamento', 
             TABELA_DE_COBRANCA,
             VISAO_DA_COBRANCA_DERIVADA,
             TABELA_DE_COMODO,
+            TABELA_DE_CONFERENCIA_BANCARIA,
             TABELA_DE_CONFIGURACAO_DE_MORA,
             TABELA_DE_CONJUNTO,
             TABELA_DE_CONTRATO,
             TABELA_DE_CONTRATO_FIADOR,
+            TABELA_DE_EMISSAO_EM_LOTE,
             TABELA_DE_ENVIO_DE_COBRANCA,
             VISAO_SEGURA,
+            TABELA_DE_EVENTO_BANCARIO,
             TABELA_DE_FIADOR,
             TABELA_DE_IMOVEL,
+            TABELA_DE_ITEM_DA_EMISSAO_EM_LOTE,
             TABELA_DE_LOCADOR,
             TABELA_DE_LOCATARIO,
             TABELA_DE_POLITICA_DE_AVISO,
@@ -985,7 +1015,7 @@ describe('guarda de cobertura de isolamento — tabela nascida sem isolamento', 
 // enxergar `FORCE`, o CT-300 ficaria verde sobre um schema sem isolamento, e é esse o par que falta.
 //
 // Um único mutante, sobre uma única tabela nova, basta: o mecanismo da guarda é o mesmo para as
-// dezessete, e o CT-009 já cobre as demais variantes de defeito (sem coluna, sem única composta, objeto
+// vinte e um, e o CT-009 já cobre as demais variantes de defeito (sem coluna, sem única composta, objeto
 // sem isolamento possível).
 //
 // A instância é DEDICADA e descartada ao fim — nunca a compartilhada pelos demais casos, que
@@ -1025,13 +1055,13 @@ describe('CT-301 — entidade nova sem RLS forçada é nomeada pela guarda', () 
           const comMutante = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
 
           // Exatamente UMA entrada, com a tabela e o motivo exatos — não "alguma exceção". A
-          // igualdade de array é o que impede a guarda de reprovar os dezessete em bloco e ainda assim
+          // igualdade de array é o que impede a guarda de reprovar os vinte e um em bloco e ainda assim
           // passar aqui.
           expect(comMutante.excecoes).toEqual([
             { tabela: TABELA_MUTANTE, motivo: 'RLS_NAO_FORCADA' },
           ]);
 
-          // Os dezessete continuam EXAMINADOS: sem esta metade, uma guarda que tivesse perdido de vista
+          // Os vinte e um continuam EXAMINADOS: sem esta metade, uma guarda que tivesse perdido de vista
           // os doze irmãos reportaria a mesma exceção única e passaria.
           expect(comMutante.tabelasExaminadas).toEqual(TABELAS_LEGITIMAS);
 
@@ -1101,7 +1131,7 @@ describe('CT-421 — o contrato nasce isolado, e a sequência do contador não �
         // --- Passo 1: o schema íntegro ---------------------------------------------------------
         //
         // Controle ANTES: sem ele, "reprovou com o mutante" não distingue a guarda que discrimina
-        // daquela que reprova qualquer coisa. A igualdade cobre as DUAS listas de uma vez — os dezessete
+        // daquela que reprova qualquer coisa. A igualdade cobre as DUAS listas de uma vez — os vinte e um
         // objetos examinados incluem `negocio.contrato` e `negocio.contrato_fiador`, nas posições
         // que a ordem prometida lhes dá, e nenhum deles rende exceção.
         const controle = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
@@ -1225,7 +1255,7 @@ describe('CT-421 — o contrato nasce isolado, e a sequência do contador não �
             { tabela: TABELA_MUTANTE_DO_CONTRATO, motivo: 'RLS_NAO_FORCADA' },
           ]);
 
-          // Os dezessete continuam EXAMINADOS: sem esta metade, uma guarda que tivesse perdido de vista
+          // Os vinte e um continuam EXAMINADOS: sem esta metade, uma guarda que tivesse perdido de vista
           // os doze irmãos reportaria a mesma exceção única e passaria.
           expect(comMutante.tabelasExaminadas).toEqual(TABELAS_LEGITIMAS);
 

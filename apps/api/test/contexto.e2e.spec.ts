@@ -156,6 +156,11 @@ import { CAMINHO_DA_AUTOMACAO_DE_COBRANCA } from '../src/automacao/automacao.con
 import { CAMINHO_DOS_FIADORES } from '../src/cadastros/fiador.controller.ts';
 import { CAMINHO_DOS_LOCADORES } from '../src/cadastros/locador.controller.ts';
 import { CAMINHO_DOS_LOCATARIOS } from '../src/cadastros/locatario.controller.ts';
+import {
+  CAMINHO_DA_COBRANCA_BANCARIA,
+  SEGMENTO_DAS_CONFERENCIAS,
+  SEGMENTO_DAS_EMISSOES,
+} from '../src/cobranca-bancaria/cobranca-bancaria.controller.ts';
 import { CAMINHO_DAS_COBRANCAS } from '../src/cobrancas/cobranca.controller.ts';
 import {
   ENDERECO_DE_ESCUTA,
@@ -521,10 +526,65 @@ const ROTAS_PROTEGIDAS_ACEITAS: readonly string[] = [
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONJUNTOS}/:id`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONJUNTOS}/:id/recirculacao`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONJUNTOS}/:id/retirada`,
+  // SUT_IS_CORRECT_BECAUSE: a **T15** da fatia `emissao-e-conciliacao` publicou as **três rotas de
+  // `/v1/cobranca-bancaria`** — abrir a emissão em lote, acompanhá-la e disparar a conferência —, e
+  // as três são **protegidas**: vale a exigência da classe (`@ExigeChave('TELA:financeiro')`),
+  // nenhuma é marcada `@RotaPublica()`, e a sonda sem cookie recebe `401 NAO_AUTENTICADO` da guarda
+  // antes de qualquer exigência de chave ser avaliada. Pela classificação por **caminho** deste caso
+  // elas entram como **três** entradas, porque cada uma atende um caminho próprio e nenhum outro
+  // método os atende. **Nenhuma entrada anterior saiu**, o conjunto público continua inalterado —
+  // esta fatia **não** publica rota sem sessão —, e a igualdade segue exata nos dois sentidos: uma
+  // das três que tivesse dispensado sessão apareceria no OUTRO conjunto e reprovaria como excedente.
+  //
+  // ⚠️ Que o `POST /emissoes` exija, ALÉM da sessão, a conjunção `área + ação` (ADR-0018) é o que
+  // `cobertura-de-autorizacao.e2e.spec.ts` mede, e não este caso; e que os outros dois exijam apenas
+  // a área é decisão registrada no controlador — o `GET` é leitura, e a conferência é a segunda
+  // classe da ADR-0021.
+  //
+  // ⚠️ **Este arquivo não está na §5.2 da T15** — é a **décima quarta** anotação consecutiva do
+  // débito **D26 (F2/T6)**: a §5.2 das tasks conta `cobertura-de-autorizacao.e2e.spec.ts` e continua
+  // sem contar este inventário, que a publicação de rota obriga a tocar pela mesma razão. A âncora
+  // **sobe**; ela não vira contenção.
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_COBRANCA_BANCARIA}/${SEGMENTO_DAS_CONFERENCIAS}`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_COBRANCA_BANCARIA}/${SEGMENTO_DAS_EMISSOES}`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_COBRANCA_BANCARIA}/${SEGMENTO_DAS_EMISSOES}/:id`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}/:codigo`,
+  // SUT_IS_CORRECT_BECAUSE: a **T14** da fatia `emissao-e-conciliacao` publicou as **duas leituras
+  // sobre o boleto** — a entrega dos bytes e o histórico bancário —, e as duas são **protegidas**:
+  // valem pela exigência da classe (`@ExigeChave('TELA:financeiro')`), nenhuma é marcada
+  // `@RotaPublica()`, e a sonda sem cookie recebe `401 NAO_AUTENTICADO` da guarda antes de qualquer
+  // exigência de chave ser avaliada. Elas **nada declaram no método**, e a ausência é decisão: são
+  // leitura, e a ADR-0021 governa transição de estado. Pela classificação por **caminho** deste caso
+  // entram como **duas** entradas novas, uma por caminho próprio. **Nenhuma entrada anterior saiu**,
+  // o conjunto público continua inalterado, e a igualdade segue exata nos dois sentidos — uma rota
+  // nova que tivesse dispensado sessão apareceria no OUTRO conjunto e reprovaria como excedente.
+  //
+  // ⚠️ **Este arquivo não está na §5.2 da T14** — é a **décima terceira** anotação consecutiva do
+  // débito **D26 (F2/T6)**: a §5.2 das tasks conta `cobertura-de-autorizacao.e2e.spec.ts` e continua
+  // sem contar este inventário, que a publicação de rota obriga a tocar pela mesma razão. A
+  // divergência é registrada aqui em vez de silenciada.
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}/:codigo/boleto`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}/:codigo/cancelamento`,
+  // SUT_IS_CORRECT_BECAUSE: a **T13** da fatia `emissao-e-conciliacao` publicou os **dois atos sobre
+  // o boleto**, e os dois são **protegidos** — nenhum é marcado `@RotaPublica()`, de modo que a sonda
+  // sem cookie recebe `401 NAO_AUTENTICADO` da guarda antes de qualquer exigência de chave ser
+  // avaliada. Eles declaram **mais** que a classe (a conjunção `área + ação` da ADR-0018), o que os
+  // torna, se algo, mais fechados que os vizinhos; pela classificação por **caminho** deste caso eles
+  // entram como **duas** entradas novas, porque cada um atende um caminho próprio. **Nenhuma entrada
+  // anterior saiu**, o conjunto público continua inalterado, e a igualdade segue exata nos dois
+  // sentidos — uma rota nova que tivesse dispensado sessão apareceria no OUTRO conjunto e reprovaria
+  // como excedente.
+  //
+  // ⚠️ **Este arquivo não está na §5.2 da T13** — é a **décima segunda** anotação consecutiva do
+  // débito **D26 (F2/T6)**: a §5.2 das tasks conta `cobertura-de-autorizacao.e2e.spec.ts` e continua
+  // sem contar este inventário, que a publicação de rota obriga a tocar pela mesma razão. A
+  // divergência é registrada aqui em vez de silenciada.
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}/:codigo/emissao-de-boleto`,
+  // A segunda das duas leituras da T14 — ver o bloco acima, que vale para as duas.
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}/:codigo/historico-bancario`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}/:codigo/pagamento`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}/:codigo/revogacao-de-boleto`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo/ativacao`,

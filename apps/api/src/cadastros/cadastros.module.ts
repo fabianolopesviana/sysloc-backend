@@ -53,24 +53,24 @@
  * o par da fábrica acima. É a mesma decisão, com a mesma razão, que `automacao/automacao.module.ts`
  * registra para a porta de saída de e-mail.
  *
- * ⚠️ **O provedor fica fora de qualquer `exports`**, e a contenção é o ponto: a única superfície que
- * alcança a fila desta aplicação é a desta área. Publicá-lo daria a todo controlador do produto a
- * capacidade de enfileirar trabalho, que é justamente a capacidade que se quer enumerável.
+ * ⚠️ **A provisão da fila SAIU daqui na T15, e a contenção não se perdeu — mudou de mecanismo.**
+ * Enquanto havia um produtor só, o provedor morava neste módulo, fora de qualquer `exports`, para
+ * que *"a única superfície que alcança a fila desta aplicação"* fosse a desta área. Com a emissão em
+ * lote e a conferência bancária (ADR-0029), passaram a ser três produtores em duas áreas, e manter
+ * a forma antiga só deixava duas saídas — abrir uma **segunda** conexão na outra área, que o
+ * cabeçalho de `../comum/produtor-de-fila.ts` recusa por escrito, ou fazer o módulo bancário
+ * importar o de **cadastros** para alcançar infraestrutura de processo. O dono passou a ser
+ * `../comum/fila.module.ts`, que é onde a razão inteira está registrada; a capacidade de enfileirar
+ * continua enumerável, agora pela lista dos módulos que declaram `imports: [FilaModule]`.
  *
  * ⚠️ **Ele não abre um segundo acesso ao banco.** A unidade de trabalho continua vindo de
  * `AutenticacaoModule`, pela razão dos parágrafos acima — o que nasce aqui é a conexão com a fila,
  * que nenhum outro módulo abre.
  */
 
-import { Inject, Module, type OnApplicationShutdown } from '@nestjs/common';
-import type { Logger } from '@sysloc/shared';
+import { Module } from '@nestjs/common';
 import { AutenticacaoModule } from '../autenticacao/autenticacao.module.js';
-import {
-  conectarProdutorDeFila,
-  type ProdutorDeFila,
-  TOKEN_PRODUTOR_DE_FILA,
-} from '../comum/produtor-de-fila.js';
-import { type Ambiente, TOKEN_AMBIENTE, TOKEN_LOGGER } from '../configuracao/ambiente.js';
+import { FilaModule } from '../comum/fila.module.js';
 import { CadastroDePessoaService } from './cadastro-de-pessoa.service.js';
 import { ConfirmacaoDeEmailService } from './confirmacao-de-email.service.js';
 import { FiadorController } from './fiador.controller.js';
@@ -78,32 +78,8 @@ import { LocadorController } from './locador.controller.js';
 import { LocatarioController } from './locatario.controller.js';
 
 @Module({
-  imports: [AutenticacaoModule],
+  imports: [AutenticacaoModule, FilaModule],
   controllers: [LocadorController, LocatarioController, FiadorController],
-  providers: [
-    CadastroDePessoaService,
-    ConfirmacaoDeEmailService,
-    {
-      provide: TOKEN_PRODUTOR_DE_FILA,
-      useFactory: (ambiente: Ambiente, logger: Logger): ProdutorDeFila =>
-        conectarProdutorDeFila(ambiente.cadeiaConexaoFila, logger),
-      inject: [TOKEN_AMBIENTE, TOKEN_LOGGER],
-    },
-  ],
+  providers: [CadastroDePessoaService, ConfirmacaoDeEmailService],
 })
-export class CadastrosModule implements OnApplicationShutdown {
-  constructor(@Inject(TOKEN_PRODUTOR_DE_FILA) private readonly produtor: ProdutorDeFila) {}
-
-  /**
-   * Devolve a conexão com o servidor de fila aberta na construção.
-   *
-   * Quem abre é dono do recurso, e a devolução não é cortesia: enquanto a conexão estiver de pé, o
-   * temporizador de reconexão do cliente segura o laço de eventos, e o desligamento gracioso que o
-   * ponto de entrada arma deixaria de ser gracioso — viraria morte por temporizador do supervisor.
-   * É a mesma razão, e o mesmo lugar (o módulo que provê), do encerramento das duas reservas de
-   * conexão em `autenticacao/autenticacao.module.ts`.
-   */
-  async onApplicationShutdown(): Promise<void> {
-    await this.produtor.encerrar();
-  }
-}
+export class CadastrosModule {}

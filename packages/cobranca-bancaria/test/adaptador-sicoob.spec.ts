@@ -1,6 +1,6 @@
 /**
  * Verificação do **adaptador mTLS contra o provedor** — CT-839 a CT-844 e CT-863 da fatia
- * `fundacao-bancaria`.
+ * `fundacao-bancaria`, mais o CT-943 da fatia `emissao-e-conciliacao`.
  *
  * ---------------------------------------------------------------------------
  * INVARIANTES
@@ -29,9 +29,45 @@
  * |          |        | assim a operação **resolve**, com desfecho de texto próprio, sem detrito do
  * |          |        | OpenSSL em superfície alguma, e sem deixar temporizador vivo nem despachante
  * |          |        | por desfazer. |
+ * | CA-20    | CT-943 | O adaptador obtém a credencial de acesso **uma vez por empresa** e a
+ * |          |        | reaproveita enquanto viva; passado o prazo, obtém **uma nova**; e a
+ * |          |        | credencial de uma empresa **nunca** é apresentada em chamada de outra. As
+ * |          |        | obtenções são **`=== 3` exatas** no cenário — nunca 20, nunca 2. |
+ * | CA-20    | CT-943 | O `nossoNumero` que o provedor devolve como **inteiro** atravessa a porta
+ * |          | (b)    | como **cadeia**: a coerção acontece na fronteira do adaptador. |
+ * | CA-20    | CT-949 | Cadeia de terceiro que normalize para propriedade de `Object.prototype`
+ * |          |        | **não vira estado do produto**: as sete recusam com o motivo da situação
+ * |          |        | desconhecida, e a cadeia declarada continua atravessando. |
+ * | CA-20    | CT-950 | Valor pago em grafia **ambígua** é recusado com o motivo da liquidação
+ * |          |        | incompleta, nunca convertido em silêncio; a grafia inequívoca atravessa
+ * |          |        | como o número que o provedor informou. |
+ * | RN-02    | CT-951 | A credencial do ato **não aparece** no motivo quando o provedor ecoa o
+ * |          |        | cabeçalho que a portava — medido sobre a saída real, com controle
+ * |          |        | positivo, e com o resto do texto do provedor preservado íntegro. |
+ * | CA-20    | CT-952 | Credencial cuja validade restante é menor que a margem é **renovada antes
+ * |          |        | de ser apresentada**; fora da margem ela continua sendo reaproveitada. |
  *
  * Rastreabilidade: `CA-07 → CT-839, CT-840, CT-841, CT-863 (RN-06)` ·
- * `CA-13 → CT-840, CT-863 (RN-10)` · `RN-02 → CT-844, CT-863`.
+ * `CA-13 → CT-840, CT-863 (RN-10)` · `RN-02 → CT-844, CT-863, CT-951` ·
+ * `CA-20 → CT-943, CT-949, CT-950, CT-952 (RN-15)`.
+ *
+ * ---------------------------------------------------------------------------
+ * Os QUATRO casos da correção do Gate 2 — e por que eles nasceram fora da faixa
+ * ---------------------------------------------------------------------------
+ *
+ * `CT-949`…`CT-952` são acréscimo da rodada de correção da T8 (2026-08-17). A faixa desta fatia
+ * fecha em `CT-948` e está inteiramente alocada, de modo que os casos novos seguem a numeração para
+ * frente — a contagem escrita em prosa sobe na **T17**, que é quem reconcilia toda a fatia.
+ *
+ * Eles existem porque o Gate 2 mediu **dois** defeitos que vivem exatamente nos ramos que o CT-943
+ * não percorre — o cotejo de situação e o caminho da liquidação —, e cobrou a rede comportamental do
+ * P4 da `nao-regressao.md` junto da correção. Os outros dois fecham os anotáveis da mesma revisão: a
+ * credencial no motivo (`security`) e a margem de renovação (`error_handling`).
+ *
+ * ⚠️ **Nenhum deles tem mutante**, e a ausência é decisão: mutation testing está fora da stack deste
+ * projeto (`.claude/rules/testing-stack.md`, 2026-08-16) e o P4 só exige demonstração por execução
+ * para asserção **estática**. Os quatro são comportamentais, e a asserção que discrimina cada um
+ * está nomeada em comentário no próprio caso.
  *
  * ---------------------------------------------------------------------------
  * QUATRO DIVERGÊNCIAS DECLARADAS DOS CARDS DA §6.6, e as quatro são MEDIDAS
@@ -190,11 +226,32 @@
  * repetir aqui seria `duplicate_cross_layer` (AP-23). Senha que não abre, bytes ilegíveis,
  * certificado vencido, titular e impressão digital são CT-806/807/808/821 — o adaptador recebe o
  * segredo e não o interpreta. Contato com a API real ou de homologação do provedor é **proibido pela
- * ADR-0006**: a fronteira é o laço local, em porta que o próprio processo abre. `client_credentials`
- * não existe nesta fatia (ver o `DÉBITO COM GATILHO` do adaptador). Revogação, agrupamento de
+ * ADR-0006**: a fronteira é o laço local, em porta que o próprio processo abre. Agrupamento de
  * conexões, disjuntor e repetição não existem por decisão (D6-b).
+ *
+ * ---------------------------------------------------------------------------
+ * O CT-943 e o par instrumentado: quem identifica a empresa é o CERTIFICADO
+ * ---------------------------------------------------------------------------
+ *
+ * O par do CT-943 fala o dialeto do provedor **de mentira e por inteiro**: concede credencial de
+ * acesso a quem apresenta certificado, e responde à emissão com o envelope `resultado` e o
+ * `nossoNumero` **inteiro** que a §13-A.4 do discovery mediu. Ele não recebe do produto nenhum
+ * identificador de empresa — quem lhe diz de quem é o ato é o **titular do certificado apresentado no
+ * aperto de mão**, que é como o provedor de verdade também sabe. É isso que torna a asserção
+ * *"a credencial de B nunca acompanhou uma chamada de A"* uma medição sobre o que **saiu do produto**,
+ * e não sobre o que o teste plantou.
+ *
+ * ⚠️ **O relógio chega pela assinatura do criador do adaptador**, e o prazo é a constante do artefato
+ * (`PRAZO_PADRAO_DA_CREDENCIAL_S`). Não há `vi.useFakeTimers` — proibido pela stack de teste deste
+ * projeto — e não há pausa fixa: atravessar cinco minutos de validade custa uma soma.
+ *
+ * ⚠️ A constante do prazo é **importada** do artefato pela mesma razão do teto no CT-842, e pela
+ * mesma assimetria declarada acima: o que se mede aqui é o **efeito** dela — antes do prazo a
+ * credencial é reaproveitada, depois dele é obtida de novo —, e não o texto dela. O valor declarado é
+ * afirmado por igualdade, para que trocar o prazo por outro número reprove.
  */
 
+import type { ServerResponse } from 'node:http';
 import type { Server as ServidorSeguro } from 'node:https';
 import { Agent, createServer as criarParSeguro } from 'node:https';
 import type { Server as ServidorTcp } from 'node:net';
@@ -205,7 +262,19 @@ import { inspect } from 'node:util';
 import { criarSegredoOperavel } from '@sysloc/shared';
 import { describe, expect, it, onTestFinished } from 'vitest';
 import { criarAdaptadorSicoob, TETO_DO_APERTO_DE_MAO_MS } from '../src/adaptador-sicoob.ts';
-import type { ResultadoDaVerificacaoDeIdentidade } from '../src/modelo-canonico.ts';
+import type { FonteDeTempo } from '../src/credencial-de-acesso.ts';
+import {
+  MARGEM_DE_RENOVACAO_S,
+  PRAZO_PADRAO_DA_CREDENCIAL_S,
+} from '../src/credencial-de-acesso.ts';
+import type {
+  ConsultaDeSituacao,
+  DesfechoDaOperacao,
+  PedidoDeEmissao,
+  ResultadoDaVerificacaoDeIdentidade,
+  SituacaoConsultada,
+} from '../src/modelo-canonico.ts';
+import type { AdaptadorCobrancaBancaria } from '../src/porta-de-cobranca.ts';
 import type { PortaDeIdentidadeBancaria } from '../src/porta-de-identidade.ts';
 import type { AutoridadeDeTeste } from './material-de-teste.ts';
 import {
@@ -271,6 +340,129 @@ const TITULAR_DA_EMPRESA = {
   organizacao: 'Locadora Modelo SA',
   nomeComum: '11222333000181',
 } as const;
+
+/** O titular da **segunda** empresa do CT-943 — é por ele que o par instrumentado a distingue. */
+const TITULAR_DA_OUTRA_EMPRESA = {
+  pais: 'BR',
+  organizacao: 'Locadora Vizinha SA',
+  nomeComum: '44555666000199',
+} as const;
+
+/** As duas empresas do CT-943, como o produto as identifica — nunca lidas de requisição. */
+const EMPRESA_A = '3f1c2a7e-9b64-4d0a-9c2e-5f8a1b7d4e60';
+const EMPRESA_B = '7a9d6e13-2c85-4f7b-8d31-6b0e2a5c9f44';
+
+/** Quantas operações cada empresa executa no CT-943, e onde o relógio cruza o prazo. */
+const OPERACOES_POR_EMPRESA = 10;
+const OPERACOES_ANTES_DA_RENOVACAO = 5;
+
+/**
+ * O número que o par instrumentado devolve como **inteiro** — o dialeto medido (§13-A.4).
+ *
+ * Ele é `number` neste arquivo de propósito: é o que o provedor real devolve, e é sobre ele que a
+ * coerção do adaptador é medida. A cadeia esperada é escrita à parte, e não derivada dele, para que
+ * a asserção não repita a conversão que ela existe para provar.
+ */
+const NUMERO_DO_TITULO_INTEIRO = 3009274;
+const NUMERO_DO_TITULO_EM_CADEIA = '3009274';
+
+/** O resto do que o par devolve na emissão — os dois meios de pagamento e os bytes do documento. */
+const LINHA_DIGITAVEL_DO_PAR = '75691112233445566778899001122334455667788990';
+const CODIGO_DE_BARRAS_DO_PAR = '75699890100000100005678901234567890123456789';
+const DOCUMENTO_DO_PAR = Buffer.from('documento-de-boleto-do-par-de-teste');
+
+/** O instante de partida do relógio injetado — valor fixo, para que o caso não dependa do relógio real. */
+const INSTANTE_INICIAL_MS = Date.parse('2026-08-17T09:00:00.000Z');
+
+/** Quanto o relógio avança para atravessar o prazo — **derivado da constante do artefato**. */
+const MILISSEGUNDOS_POR_SEGUNDO = 1_000;
+const AVANCO_ALEM_DO_PRAZO_MS = (PRAZO_PADRAO_DA_CREDENCIAL_S + 1) * MILISSEGUNDOS_POR_SEGUNDO;
+
+/**
+ * Com que folga o CT-952 se aproxima da margem — **pelos dois lados**, e derivada das constantes.
+ *
+ * O caso mede a fronteira, e por isso precisa de um instante **fora** dela (a credencial continua
+ * sendo reaproveitada) e de um **dentro** (ela é renovada antes de ser apresentada). Sem o primeiro,
+ * um cache que renovasse a cada chamada passaria no caso.
+ */
+const FOLGA_EM_TORNO_DA_MARGEM_S = 10;
+const AVANCO_ANTES_DA_MARGEM_MS =
+  (PRAZO_PADRAO_DA_CREDENCIAL_S - MARGEM_DE_RENOVACAO_S - FOLGA_EM_TORNO_DA_MARGEM_S) *
+  MILISSEGUNDOS_POR_SEGUNDO;
+const AVANCO_ATE_DENTRO_DA_MARGEM_MS = 2 * FOLGA_EM_TORNO_DA_MARGEM_S * MILISSEGUNDOS_POR_SEGUNDO;
+
+/**
+ * Os dois motivos da tradução de volta, **copiados** do artefato — jamais importados.
+ *
+ * Mesma disciplina dos cinco `detalhe` acima, e pela mesma razão: importá-los faria o caso aprovar
+ * qualquer texto, inclusive um que colapsasse *"situação que o produto não trata"* em *"pagamento
+ * sem data ou sem valor"*, que são exatamente os dois desfechos que o CT-949 e o CT-950 separam.
+ */
+const MOTIVO_DE_SITUACAO_DESCONHECIDA =
+  'a instituição informou uma situação que o produto não trata';
+
+const MOTIVO_DE_LIQUIDACAO_INCOMPLETA =
+  'a instituição informou o pagamento sem a data ou sem o valor, e ele não pode ser aplicado';
+
+/**
+ * As cadeias que um objeto literal devolveria **sem ninguém as ter declarado** — o eixo do CT-949.
+ *
+ * `constructor` vem primeiro porque é a que **escapava**: ela já é minúscula e sem sublinhado, de
+ * modo que atravessa a normalização intacta, e o acesso a um objeto literal a devolvia como
+ * **função**. As demais eram neutralizadas **por acidente** — `__proto__` perde os sublinhados na
+ * normalização, e as outras não casam em minúscula —, e acidente não é garantia: elas estão aqui
+ * para que a recusa seja afirmada da classe inteira, e não do único caso medido.
+ */
+const CADEIAS_DO_PROTOTIPO = [
+  'constructor',
+  '__proto__',
+  'hasOwnProperty',
+  'toString',
+  'valueOf',
+  'isPrototypeOf',
+  'propertyIsEnumerable',
+] as const;
+
+/** O que o par informa como situação e data quando o caso mede o **valor** do pagamento. */
+const SITUACAO_LIQUIDADA_DO_PAR = 'liquidado';
+const DATA_DO_PAGAMENTO_DO_PAR = '2026-09-10';
+
+/**
+ * As grafias de valor pago que o CT-950 submete, e o que cada uma **tem de** produzir.
+ *
+ * ⚠️ **As quatro primeiras são as inequívocas** — leem-se igual em qualquer convenção — e atravessam
+ * como número. As cinco últimas são ambíguas ou exóticas, e **todas** caem na recusa que já existia:
+ * `1.234` é a que importa, porque era a única que o `Number(valor.replace(',', '.'))` aceitava **e
+ * lia errado**, gravando R$ 1,23 onde o provedor informou R$ 1.234,00.
+ */
+const ROTULO_DO_MILHAR = 'milhar com ponto, sem centavos';
+
+const GRAFIAS_DO_VALOR_PAGO: readonly {
+  readonly rotulo: string;
+  readonly bruto: unknown;
+  readonly esperado: number | string;
+}[] = [
+  { rotulo: 'número, como o dialeto o mede', bruto: 1234.56, esperado: 1234.56 },
+  { rotulo: 'texto com vírgula decimal', bruto: '1234,56', esperado: 1234.56 },
+  { rotulo: 'texto com ponto decimal', bruto: '1234.56', esperado: 1234.56 },
+  { rotulo: 'texto inteiro', bruto: '1234', esperado: 1234 },
+  { rotulo: ROTULO_DO_MILHAR, bruto: '1.234', esperado: MOTIVO_DE_LIQUIDACAO_INCOMPLETA },
+  {
+    rotulo: 'milhar com ponto e centavos',
+    bruto: '1.234,56',
+    esperado: MOTIVO_DE_LIQUIDACAO_INCOMPLETA,
+  },
+  {
+    rotulo: 'milhão com dois pontos',
+    bruto: '1.234.567,89',
+    esperado: MOTIVO_DE_LIQUIDACAO_INCOMPLETA,
+  },
+  { rotulo: 'milhar com vírgula', bruto: '1,234', esperado: MOTIVO_DE_LIQUIDACAO_INCOMPLETA },
+  { rotulo: 'notação científica', bruto: '1e3', esperado: MOTIVO_DE_LIQUIDACAO_INCOMPLETA },
+];
+
+/** O código com que o par recusa a operação no CT-951 — falha **daquela cobrança**, não da empresa. */
+const CODIGO_DE_RECUSA_DA_COBRANCA = 400;
 
 /** Os quatro textos, **copiados** do artefato — jamais importados. Ver o cabeçalho. */
 const DETALHE_ACEITE =
@@ -515,6 +707,136 @@ async function subirParSeguro(
   return Object.assign(observado, { porta });
 }
 
+/** Uma chamada de operação como o par a recebeu — quem a apresentou, e o que ela portava. */
+interface ChamadaObservada {
+  /** O nome comum do certificado apresentado no aperto de mão — é ele que identifica a empresa. */
+  readonly titular: string;
+  /** O cabeçalho de autorização, tal como saiu do produto. */
+  readonly credencial: string;
+  readonly caminho: string;
+  readonly corpo: string;
+}
+
+/**
+ * O provedor de mentira do CT-943: concede credencial a quem apresenta certificado, e responde.
+ *
+ * Ele não recebe identificador de empresa nenhum do produto — quem lhe diz de quem é o ato é o
+ * **titular do certificado**, exatamente como o provedor de verdade sabe. Ver o cabeçalho.
+ */
+interface ProvedorInstrumentado {
+  readonly porta: number;
+  /** O titular de cada obtenção de credencial, na ordem. O comprimento é a contagem do CT-943. */
+  readonly obtencoes: string[];
+  readonly chamadas: ChamadaObservada[];
+}
+
+/** O que o par devolve a uma operação — o código da resposta e o corpo, no dialeto do provedor. */
+interface RespostaDoPar {
+  readonly codigo: number;
+  readonly corpo: unknown;
+}
+
+/** Responde em JSON — o tipo de mídia que o adaptador declara aceitar nas operações. */
+function responderEmJson(resposta: ServerResponse, corpo: unknown, codigo = 200): void {
+  resposta.writeHead(codigo, { 'content-type': 'application/json' });
+  resposta.end(JSON.stringify(corpo));
+}
+
+/** A resposta padrão do par a uma operação — o dialeto da emissão medido na §13-A.4. */
+function respostaDaEmissao(): RespostaDoPar {
+  return {
+    codigo: 200,
+    corpo: {
+      resultado: {
+        nossoNumero: NUMERO_DO_TITULO_INTEIRO,
+        linhaDigitavel: LINHA_DIGITAVEL_DO_PAR,
+        codigoBarras: CODIGO_DE_BARRAS_DO_PAR,
+        pdfBoleto: DOCUMENTO_DO_PAR.toString('base64'),
+      },
+    },
+  };
+}
+
+/**
+ * Sobe o provedor instrumentado em porta dinâmica, exigindo certificado de cliente.
+ *
+ * O discriminador entre *"pedido de credencial"* e *"operação"* é **estrutural e é conteúdo**: o
+ * pedido de credencial é o único que chega **sem** cabeçalho de autorização, porque é ele que a
+ * produz. Distinguir pelo caminho faria o par conhecer um detalhe interno do adaptador; distinguir
+ * pela ausência da credencial mede, de quebra, que a obtenção não apresenta credencial nenhuma.
+ *
+ * ⚠️ **O que o par responde às operações é do CASO, e o padrão continua sendo a emissão.** Os casos
+ * da tradução de volta (CT-949, CT-950 e CT-951) precisam do par falando situações e recusas, e a
+ * alternativa — um segundo par de teste — seria a terceira cópia da maquinaria TLS deste arquivo,
+ * livre para divergir das duas primeiras. A função **não recebe o caminho como discriminador**, pelo
+ * mesmo motivo da nota acima: quem decide é a ordem das chamadas, que o caso controla.
+ */
+async function subirProvedorInstrumentado(
+  autoridade: AutoridadeDeTeste,
+  responderOperacao: (chamada: ChamadaObservada) => RespostaDoPar = respostaDaEmissao,
+): Promise<ProvedorInstrumentado> {
+  const parDoServidor = await gerarParDeServidorDeTeste(autoridade, NOME_DO_PAR);
+  const titularPorSoquete = new Map<Duplex, string>();
+  const pendentes = new Set<Duplex>();
+
+  const observado: ProvedorInstrumentado = { porta: 0, obtencoes: [], chamadas: [] };
+
+  const servidor: ServidorSeguro = criarParSeguro(
+    {
+      key: parDoServidor.chaveEmPem,
+      cert: parDoServidor.certificadoEmPem,
+      ca: [autoridade.certificadoEmPem],
+      requestCert: true,
+      rejectUnauthorized: true,
+    },
+    (pedido, resposta) => {
+      const pedacos: Buffer[] = [];
+      pedido.on('data', (pedaco: Buffer) => {
+        pedacos.push(pedaco);
+      });
+      pedido.on('end', () => {
+        const titular = titularPorSoquete.get(pedido.socket) ?? '(sem titular)';
+        const autorizacao = pedido.headers.authorization;
+
+        if (autorizacao === undefined) {
+          observado.obtencoes.push(titular);
+          responderEmJson(resposta, {
+            access_token: `credencial-${titular}-${observado.obtencoes.length}`,
+            token_type: 'Bearer',
+            expires_in: PRAZO_PADRAO_DA_CREDENCIAL_S,
+          });
+          return;
+        }
+
+        const chamada: ChamadaObservada = {
+          titular,
+          credencial: autorizacao,
+          caminho: pedido.url ?? '(sem caminho)',
+          corpo: Buffer.concat(pedacos).toString('utf8'),
+        };
+        observado.chamadas.push(chamada);
+
+        // O padrão é o envelope `resultado` com o `nossoNumero` INTEIRO — o dialeto da §13-A.4.
+        const devolvido = responderOperacao(chamada);
+        responderEmJson(resposta, devolvido.corpo, devolvido.codigo);
+      });
+    },
+  );
+
+  servidor.on('secureConnection', (ligacao) => {
+    titularPorSoquete.set(ligacao, nomeComumDe(ligacao.getPeerCertificate()?.subject?.CN));
+  });
+  servidor.on('connection', (soquete) => {
+    pendentes.add(soquete);
+    soquete.once('close', () => pendentes.delete(soquete));
+  });
+
+  const porta = await escutarEmPortaDinamica(servidor);
+  onTestFinished(() => encerrar(servidor, pendentes));
+
+  return Object.assign(observado, { porta });
+}
+
 /**
  * Sobe um par **mudo**: aceita o TCP e nunca escreve nada, de modo que o aperto de mão nunca começa.
  *
@@ -602,6 +924,80 @@ function adaptadorApontadoPara(porta: number): PortaDeIdentidadeBancaria {
   return criarAdaptadorSicoob({
     enderecoDoProvedor: apontarEnderecoDoProvedor(enderecoDoPar(porta)),
   });
+}
+
+/**
+ * Constrói o adaptador com o relógio injetado — a fonte de tempo chega pela **assinatura**.
+ *
+ * É a única precondição privilegiada do CT-943, e ela é fronteira legítima do artefato: sem ela,
+ * atravessar o prazo de validade custaria cinco minutos de suíte, e o relógio falso instalado no
+ * runtime está fora da stack de teste deste projeto.
+ */
+function adaptadorComRelogio(
+  porta: number,
+  agora: FonteDeTempo,
+): PortaDeIdentidadeBancaria & AdaptadorCobrancaBancaria {
+  return criarAdaptadorSicoob({
+    enderecoDoProvedor: apontarEnderecoDoProvedor(enderecoDoPar(porta)),
+    agora,
+  });
+}
+
+/** Um pedido de emissão pelo caminho legítimo — o vocabulário do produto, e nada do provedor. */
+function pedidoDeEmissao(
+  empresaId: string,
+  material: ParDeSegredo,
+  ordem: number,
+): PedidoDeEmissao {
+  return {
+    empresaId,
+    segredo: criarSegredoOperavel({ material: material.material, senha: material.senha }),
+    identificadorNoProvedor: `202608${String(ordem).padStart(12, '0')}`,
+    valor: 1234.56,
+    vencimento: '2026-09-10',
+    locatario: {
+      nome: 'Locatario de Teste',
+      documento: '12345678909',
+      logradouro: 'Rua das Flores',
+      numero: '100',
+      complemento: null,
+      bairro: 'Centro',
+      cidade: 'Palmas',
+      estado: 'TO',
+      cep: '77000000',
+    },
+  };
+}
+
+/** Uma consulta de situação pelo caminho legítimo da porta — o vocabulário do produto. */
+function consultaDeSituacao(material: ParDeSegredo): ConsultaDeSituacao {
+  return {
+    empresaId: EMPRESA_A,
+    segredo: criarSegredoOperavel({ material: material.material, senha: material.senha }),
+    numeroDoTituloNoProvedor: NUMERO_DO_TITULO_EM_CADEIA,
+    incluirDocumento: false,
+  };
+}
+
+/** O corpo com que o par informa uma situação — sempre sob o envelope `resultado` do dialeto. */
+function respostaDeSituacao(campos: Record<string, unknown>): RespostaDoPar {
+  return { codigo: 200, corpo: { resultado: campos } };
+}
+
+/**
+ * Faz o par responder as respostas declaradas **na ordem das operações** — uma por chamada.
+ *
+ * A ordem é determinística porque os casos que a usam consultam em sequência, uma consulta por vez.
+ * Uma chamada além das declaradas devolve falha do provedor, para que o excesso apareça como
+ * desfecho errado em vez de repetir a última resposta em silêncio.
+ */
+function respostasEmOrdem(
+  respostas: readonly RespostaDoPar[],
+): (chamada: ChamadaObservada) => RespostaDoPar {
+  let proxima = 0;
+
+  return () =>
+    respostas[proxima++] ?? { codigo: 500, corpo: { erro: 'chamada além das declaradas' } };
 }
 
 /** Invoca a única operação da porta com o material dado, pelo caminho legítimo. */
@@ -1183,5 +1579,389 @@ describe('adaptador do provedor por TLS mútuo', () => {
     // detrito" — a diferença entre engolir a exceção e tratá-la.
     expect(temporizadoresVivos()).toBe(temporizadoresAntes);
     expect(desfazimentos.total).toBe(1);
+  });
+
+  it('CT-943 — a credencial é reaproveitada por empresa, renovada por expiração, e nunca cruza', {
+    timeout: LIMITE_DO_CASO_MS,
+  }, async () => {
+    // O prazo declarado, afirmado sobre a constante IMPORTADA do artefato — mesma disciplina do
+    // teto no CT-842: trocar 300 por outro número reprova aqui, e o avanço do relógio abaixo é
+    // derivado dela, e não de um literal reescrito neste arquivo.
+    expect(PRAZO_PADRAO_DA_CREDENCIAL_S).toBe(300);
+
+    const autoridade = await gerarAutoridadeDeTeste('Sysloc Confiavel');
+    confiarEm(autoridade);
+
+    const materialDeA = await gerarMaterialDeTeste({
+      autoridade,
+      senha: SENHA_SENTINELA,
+      titular: TITULAR_DA_EMPRESA,
+    });
+    const materialDeB = await gerarMaterialDeTeste({
+      autoridade,
+      senha: SENHA_SENTINELA,
+      titular: TITULAR_DA_OUTRA_EMPRESA,
+    });
+
+    const provedor = await subirProvedorInstrumentado(autoridade);
+
+    // O relógio é do caso, e desce ao adaptador pela assinatura. Nenhuma pausa, nenhum `sleep`.
+    let instante = INSTANTE_INICIAL_MS;
+    const adaptador = adaptadorComRelogio(provedor.porta, () => instante);
+
+    const emitir = async (empresaId: string, material: ParDeSegredo, ordem: number) =>
+      adaptador.emitir(pedidoDeEmissao(empresaId, material, ordem));
+
+    // Passo 1 — cinco operações da empresa A.
+    const primeiro = await emitir(EMPRESA_A, materialDeA, 1);
+    for (let ordem = 2; ordem <= OPERACOES_ANTES_DA_RENOVACAO; ordem += 1) {
+      expect((await emitir(EMPRESA_A, materialDeA, ordem)).aceito).toBe(true);
+    }
+
+    // A1 — a credencial foi obtida UMA vez e reaproveitada nas outras quatro. Um adaptador sem
+    // cache faria cinco obtenções aqui, e o valor exato é o que discrimina: `> 0` aprovaria as
+    // cinco, e `< 5` aprovaria duas.
+    expect(provedor.obtencoes.length).toBe(1);
+
+    // Passo 2 — o relógio atravessa o prazo, sem espera real.
+    instante += AVANCO_ALEM_DO_PRAZO_MS;
+
+    // Passo 3 — mais cinco operações da mesma empresa.
+    for (let ordem = 6; ordem <= OPERACOES_POR_EMPRESA; ordem += 1) {
+      expect((await emitir(EMPRESA_A, materialDeA, ordem)).aceito).toBe(true);
+    }
+
+    // A2 — passado o prazo, a credencial é obtida DE NOVO, e uma única vez para as cinco.
+    expect(provedor.obtencoes.length).toBe(2);
+
+    // Passo 4 — dez operações da segunda empresa, com o relógio parado.
+    for (let ordem = 1; ordem <= OPERACOES_POR_EMPRESA; ordem += 1) {
+      expect((await emitir(EMPRESA_B, materialDeB, ordem)).aceito).toBe(true);
+    }
+
+    // A3 — a chave do cache é a EMPRESA: a credencial viva de A não serve para B, e as dez de B
+    // custam uma obtenção. O total é `=== 3` exatas — nunca 20 (cache quebrado), nunca 2
+    // (renovação quebrada, ou credencial de A reaproveitada por B).
+    expect(provedor.obtencoes.length).toBe(3);
+    expect(provedor.obtencoes).toEqual([
+      TITULAR_DA_EMPRESA.nomeComum,
+      TITULAR_DA_EMPRESA.nomeComum,
+      TITULAR_DA_OUTRA_EMPRESA.nomeComum,
+    ]);
+
+    // Âncora antivácuo: as vinte operações de fato chegaram ao par. Sem ela, um adaptador que
+    // falhasse antes de chamar produziria as mesmas listas vazias e as contagens acima seriam
+    // compatíveis com nada ter acontecido.
+    expect(provedor.chamadas.length).toBe(OPERACOES_POR_EMPRESA * 2);
+
+    const credenciaisDeA = [
+      ...new Set(
+        provedor.chamadas
+          .filter((chamada) => chamada.titular === TITULAR_DA_EMPRESA.nomeComum)
+          .map((chamada) => chamada.credencial),
+      ),
+    ];
+    const credenciaisDeB = [
+      ...new Set(
+        provedor.chamadas
+          .filter((chamada) => chamada.titular === TITULAR_DA_OUTRA_EMPRESA.nomeComum)
+          .map((chamada) => chamada.credencial),
+      ),
+    ];
+
+    // A4 — o companheiro negativo, e o eixo do caso: **nenhuma** credencial aparece nas chamadas
+    // das duas empresas. A interseção é afirmada por lista vazia, e não por booleano, para que a
+    // reprovação NOMEIE a credencial que cruzou.
+    expect(credenciaisDeA.filter((credencial) => credenciaisDeB.includes(credencial))).toEqual([]);
+
+    // E as duas listas são exatamente o que as obtenções produziram: A apresentou a inicial nas
+    // cinco primeiras e a renovada nas cinco seguintes; B apresentou a dela nas dez.
+    expect(credenciaisDeA).toEqual([
+      `Bearer credencial-${TITULAR_DA_EMPRESA.nomeComum}-1`,
+      `Bearer credencial-${TITULAR_DA_EMPRESA.nomeComum}-2`,
+    ]);
+    expect(credenciaisDeB).toEqual([`Bearer credencial-${TITULAR_DA_OUTRA_EMPRESA.nomeComum}-3`]);
+
+    // A5 — a coerção da fronteira: o par devolveu `nossoNumero` INTEIRO, e o que atravessa a porta
+    // é CADEIA.
+    //
+    // ⚠️ **ANTES da igualdade**, pela `DECISÃO FECHADA` deste arquivo: `numeroDoTituloNoProvedor` é
+    // campo do objeto que a igualdade abaixo fixa, e posta depois esta asserção seria implicada por
+    // ela — que aborta o caso ao falhar — e nunca poderia reprovar.
+    expect(primeiro.aceito ? typeof primeiro.valor.numeroDoTituloNoProvedor : 'recusado').toBe(
+      'string',
+    );
+
+    // A6 — o desfecho inteiro por igualdade, jamais presença de campo. O documento chega como os
+    // bytes que o par entregou, decodificados do base64 do dialeto.
+    expect(primeiro).toEqual({
+      aceito: true,
+      valor: {
+        numeroDoTituloNoProvedor: NUMERO_DO_TITULO_EM_CADEIA,
+        linhaDigitavel: LINHA_DIGITAVEL_DO_PAR,
+        codigoDeBarras: CODIGO_DE_BARRAS_DO_PAR,
+        documento: DOCUMENTO_DO_PAR,
+      },
+    });
+
+    // A7 — nem a senha nem os bytes do material saem em nada que o ato produza, **também** nas
+    // operações de cobrança. O controle positivo é o do CT-844, aplicado à mesma varredura.
+    const agulhas = agulhasDe(materialDeA);
+    expect(ocorrenciasDe(controleComAsAgulhas(agulhas), agulhas, 'controle')).toEqual([
+      'controle/senha',
+      'controle/material-base64',
+      'controle/material-hex',
+    ]);
+    expect(ocorrenciasDe(primeiro, agulhas, 'emitido')).toEqual([]);
+    expect(ocorrenciasDe(provedor.chamadas, agulhas, 'chamadas')).toEqual([]);
+  });
+
+  it('CT-949 — cadeia herdada do protótipo não vira situação do produto', {
+    timeout: LIMITE_DO_CASO_MS,
+  }, async () => {
+    const autoridade = await gerarAutoridadeDeTeste('Sysloc Confiavel');
+    confiarEm(autoridade);
+
+    const material = await gerarMaterialDeTeste({
+      autoridade,
+      senha: SENHA_SENTINELA,
+      titular: TITULAR_DA_EMPRESA,
+    });
+
+    // A última resposta é a da situação DECLARADA — a âncora antivácuo do caso: sem ela, um
+    // adaptador que recusasse toda consulta passaria com as sete recusas acima.
+    const provedor = await subirProvedorInstrumentado(
+      autoridade,
+      respostasEmOrdem([
+        ...CADEIAS_DO_PROTOTIPO.map((cadeia) => respostaDeSituacao({ situacaoBoleto: cadeia })),
+        respostaDeSituacao({ situacaoBoleto: 'em aberto' }),
+      ]),
+    );
+    const adaptador = adaptadorComRelogio(provedor.porta, () => INSTANTE_INICIAL_MS);
+
+    const herdadas: {
+      readonly cadeia: string;
+      readonly desfecho: DesfechoDaOperacao<SituacaoConsultada>;
+    }[] = [];
+
+    for (const cadeia of CADEIAS_DO_PROTOTIPO) {
+      herdadas.push({
+        cadeia,
+        desfecho: await adaptador.consultarSituacao(consultaDeSituacao(material)),
+      });
+    }
+
+    const declarada = await adaptador.consultarSituacao(consultaDeSituacao(material));
+
+    // A asserção que DISCRIMINA o defeito: nenhum desfecho aceito carrega discriminador que não
+    // seja um dos três estados do produto. Sob o cotejo por objeto literal, `constructor` saía
+    // `constructor: function` aqui — a única das sete que a guarda `=== undefined` não pegava.
+    //
+    // ⚠️ **ANTES das igualdades**, pela `DECISÃO FECHADA` deste arquivo: `situacao` é campo do
+    // objeto que a igualdade abaixo fixa, e posta depois esta asserção nunca poderia reprovar.
+    expect(
+      herdadas.map(
+        ({ cadeia, desfecho }) =>
+          `${cadeia}: ${desfecho.aceito ? typeof desfecho.valor.situacao : 'recusado'}`,
+      ),
+    ).toEqual(CADEIAS_DO_PROTOTIPO.map((cadeia) => `${cadeia}: recusado`));
+
+    // Os desfechos inteiros por igualdade, jamais presença de campo — e o motivo é o da situação
+    // desconhecida, distinto do da liquidação incompleta que o CT-950 mede.
+    expect(herdadas.map(({ desfecho }) => desfecho)).toEqual(
+      CADEIAS_DO_PROTOTIPO.map(() => ({
+        aceito: false,
+        classe: 'DA_COBRANCA',
+        motivo: MOTIVO_DE_SITUACAO_DESCONHECIDA,
+      })),
+    );
+
+    // Âncora antivácuo: a cadeia DECLARADA no cotejo continua atravessando. Sem ela, recusar tudo
+    // — inclusive o que o produto trata — passaria neste caso.
+    expect(declarada).toEqual({ aceito: true, valor: { situacao: 'EM_ABERTO', documento: null } });
+
+    // E as oito consultas de fato chegaram ao par: nenhuma morreu antes da tradução de volta.
+    expect(provedor.chamadas.length).toBe(CADEIAS_DO_PROTOTIPO.length + 1);
+  });
+
+  it('CT-950 — valor pago em grafia ambígua é recusado, nunca convertido em silêncio', {
+    timeout: LIMITE_DO_CASO_MS,
+  }, async () => {
+    const autoridade = await gerarAutoridadeDeTeste('Sysloc Confiavel');
+    confiarEm(autoridade);
+
+    const material = await gerarMaterialDeTeste({
+      autoridade,
+      senha: SENHA_SENTINELA,
+      titular: TITULAR_DA_EMPRESA,
+    });
+
+    const provedor = await subirProvedorInstrumentado(
+      autoridade,
+      respostasEmOrdem(
+        GRAFIAS_DO_VALOR_PAGO.map((grafia) =>
+          respostaDeSituacao({
+            situacaoBoleto: SITUACAO_LIQUIDADA_DO_PAR,
+            dataPagamento: DATA_DO_PAGAMENTO_DO_PAR,
+            valorPago: grafia.bruto,
+          }),
+        ),
+      ),
+    );
+    const adaptador = adaptadorComRelogio(provedor.porta, () => INSTANTE_INICIAL_MS);
+
+    const desfechos: DesfechoDaOperacao<SituacaoConsultada>[] = [];
+    const lidos: string[] = [];
+
+    for (const grafia of GRAFIAS_DO_VALOR_PAGO) {
+      const desfecho = await adaptador.consultarSituacao(consultaDeSituacao(material));
+      desfechos.push(desfecho);
+
+      if (!desfecho.aceito) {
+        lidos.push(`${grafia.rotulo} → ${desfecho.motivo}`);
+      } else if (desfecho.valor.situacao === 'LIQUIDADO') {
+        lidos.push(`${grafia.rotulo} → ${desfecho.valor.valorPago}`);
+      } else {
+        lidos.push(`${grafia.rotulo} → aceito como ${desfecho.valor.situacao}`);
+      }
+    }
+
+    // A asserção que DISCRIMINA o defeito, e o eixo do caso: cada grafia produz **exatamente** o
+    // que a tabela declara. Sob `Number(valor.replace(',', '.'))`, a linha do milhar sem centavos
+    // saía `milhar com ponto, sem centavos → 1.234` — R$ 1,23 gravados onde o provedor informou
+    // R$ 1.234,00 —, e a reprovação nomeia a grafia ofensora pelo rótulo.
+    expect(lidos).toEqual(
+      GRAFIAS_DO_VALOR_PAGO.map((grafia) => `${grafia.rotulo} → ${grafia.esperado}`),
+    );
+
+    // O desfecho inteiro por igualdade nos dois extremos da tabela: o primeiro aceito, com a
+    // liquidação completa, e a grafia que era aceita e lida errado.
+    expect(desfechos[0]).toEqual({
+      aceito: true,
+      valor: {
+        situacao: 'LIQUIDADO',
+        documento: null,
+        pagoEm: DATA_DO_PAGAMENTO_DO_PAR,
+        valorPago: 1234.56,
+      },
+    });
+    expect(
+      desfechos[GRAFIAS_DO_VALOR_PAGO.findIndex((grafia) => grafia.rotulo === ROTULO_DO_MILHAR)],
+    ).toEqual({
+      aceito: false,
+      classe: 'DA_COBRANCA',
+      motivo: MOTIVO_DE_LIQUIDACAO_INCOMPLETA,
+    });
+
+    // Âncora antivácuo: as nove consultas chegaram ao par.
+    expect(provedor.chamadas.length).toBe(GRAFIAS_DO_VALOR_PAGO.length);
+  });
+
+  it('CT-951 — a credencial do ato não sai no motivo quando o provedor a ecoa', {
+    timeout: LIMITE_DO_CASO_MS,
+  }, async () => {
+    const autoridade = await gerarAutoridadeDeTeste('Sysloc Confiavel');
+    confiarEm(autoridade);
+
+    const material = await gerarMaterialDeTeste({
+      autoridade,
+      senha: SENHA_SENTINELA,
+      titular: TITULAR_DA_EMPRESA,
+    });
+
+    // O par ecoa o cabeçalho de autorização que recebeu, que é hábito comum de diagnóstico de erro
+    // — e é o único caminho estrutural pelo qual credencial viva alcança uma superfície gravada.
+    const provedor = await subirProvedorInstrumentado(autoridade, (chamada) => ({
+      codigo: CODIGO_DE_RECUSA_DA_COBRANCA,
+      corpo: { mensagem: `esta credencial não vale: ${chamada.credencial}` },
+    }));
+    const adaptador = adaptadorComRelogio(provedor.porta, () => INSTANTE_INICIAL_MS);
+
+    const credencialDoAto = `credencial-${TITULAR_DA_EMPRESA.nomeComum}-1`;
+    const agulhaDaCredencial: readonly Agulha[] = [
+      { rotulo: 'credencial', valor: credencialDoAto },
+    ];
+
+    const desfecho = await adaptador.consultarSituacao(consultaDeSituacao(material));
+
+    // Controle positivo (AP-29): a MESMA varredura, sobre um objeto que contém a agulha, a devolve.
+    // Sem ele, a lista vazia abaixo seria compatível com um detector cego.
+    expect(
+      ocorrenciasDe(controleComAsAgulhas(agulhaDaCredencial), agulhaDaCredencial, 'controle'),
+    ).toEqual(['controle/credencial']);
+
+    // A asserção que DISCRIMINA o defeito, medida sobre a SAÍDA REAL e nunca por leitura do fonte
+    // (ADR-0032). Sem a redação, esta lista sai `['recusado/credencial']`.
+    //
+    // ⚠️ **ANTES da igualdade**, pela `DECISÃO FECHADA` deste arquivo: `motivo` é campo dela.
+    expect(ocorrenciasDe(desfecho, agulhaDaCredencial, 'recusado')).toEqual([]);
+
+    // Âncora antivácuo: a credencial de fato saiu do produto e voltou no corpo — sem isto, um ato
+    // que falhasse antes da chamada varreria um desfecho onde a agulha nunca poderia estar.
+    expect(provedor.chamadas.map((chamada) => chamada.credencial)).toEqual([
+      `Bearer ${credencialDoAto}`,
+    ]);
+
+    // O desfecho inteiro por igualdade: o texto do provedor atravessa **íntegro** salvo pela
+    // credencial. Redigir o corpo todo — ou devolver o motivo vazio — reprova aqui.
+    expect(desfecho).toEqual({
+      aceito: false,
+      classe: 'DA_COBRANCA',
+      motivo: '{"mensagem":"esta credencial não vale: Bearer «credencial omitida»"}',
+    });
+  });
+
+  it('CT-952 — credencial dentro da margem é renovada antes de ser apresentada', {
+    timeout: LIMITE_DO_CASO_MS,
+  }, async () => {
+    // A margem declarada, afirmada sobre a constante IMPORTADA do artefato — mesma disciplina do
+    // prazo no CT-943: os avanços do relógio abaixo derivam dela, e não de literais deste arquivo.
+    expect(MARGEM_DE_RENOVACAO_S).toBe(30);
+
+    const autoridade = await gerarAutoridadeDeTeste('Sysloc Confiavel');
+    confiarEm(autoridade);
+
+    const material = await gerarMaterialDeTeste({
+      autoridade,
+      senha: SENHA_SENTINELA,
+      titular: TITULAR_DA_EMPRESA,
+    });
+
+    const provedor = await subirProvedorInstrumentado(autoridade);
+
+    let instante = INSTANTE_INICIAL_MS;
+    const adaptador = adaptadorComRelogio(provedor.porta, () => instante);
+    const obtencoesPorPasso: number[] = [];
+
+    const primeiro = await adaptador.emitir(pedidoDeEmissao(EMPRESA_A, material, 1));
+    obtencoesPorPasso.push(provedor.obtencoes.length);
+
+    // Passo 2 — FORA da margem, e com folga: a credencial guardada continua servindo.
+    instante += AVANCO_ANTES_DA_MARGEM_MS;
+    const segundo = await adaptador.emitir(pedidoDeEmissao(EMPRESA_A, material, 2));
+    obtencoesPorPasso.push(provedor.obtencoes.length);
+
+    // Passo 3 — DENTRO da margem, e ainda antes do prazo declarado.
+    instante += AVANCO_ATE_DENTRO_DA_MARGEM_MS;
+    const terceiro = await adaptador.emitir(pedidoDeEmissao(EMPRESA_A, material, 3));
+    obtencoesPorPasso.push(provedor.obtencoes.length);
+
+    // A asserção que DISCRIMINA o defeito: a terceira operação obtém credencial nova **antes** de
+    // o prazo expirar. Sem a margem, a sequência sai `[1, 1, 1]` — a credencial a menos de 20 s do
+    // fim é apresentada a uma chamada que pode custar até o teto de uma operação, e a recusa vira
+    // falha `DA_EMPRESA`, que para o percurso do lote. O passo 2 é o companheiro negativo: um cache
+    // que renovasse a cada chamada sairia `[1, 2, 3]`.
+    expect(obtencoesPorPasso).toEqual([1, 1, 2]);
+
+    // E a terceira chamada apresentou a credencial RENOVADA, não a que estava por vencer — a
+    // contagem de obtenções sozinha não separa "obteve uma nova" de "obteve e seguiu com a velha".
+    expect(provedor.chamadas.map((chamada) => chamada.credencial)).toEqual([
+      `Bearer credencial-${TITULAR_DA_EMPRESA.nomeComum}-1`,
+      `Bearer credencial-${TITULAR_DA_EMPRESA.nomeComum}-1`,
+      `Bearer credencial-${TITULAR_DA_EMPRESA.nomeComum}-2`,
+    ]);
+
+    // Âncora antivácuo: as três emissões de fato aconteceram, e nenhuma falhou.
+    expect([primeiro.aceito, segundo.aceito, terceiro.aceito]).toEqual([true, true, true]);
   });
 });

@@ -6,9 +6,10 @@
  * ===========================================================================
  *
  * A ADR-0001 fixa que *"nenhum campo, URL ou vocabulário específico de provedor cruza a porta"*. É
- * uma propriedade do **vocabulário**, não do número de operações: ela vale igual para uma porta com
- * cinco operações e para a porta de identidade que esta fatia declara (ver o cabeçalho de
- * `./porta-de-identidade.ts` e a §21.3 do tech spec).
+ * uma propriedade do **vocabulário**, não do número de operações: ela vale igual para a porta de
+ * identidade (`./porta-de-identidade.ts`, uma operação) e para a de cobrança
+ * (`./porta-de-cobranca.ts`, quatro). Este módulo carrega o vocabulário das **duas**, e é por isso
+ * que a varredura que o protege é uma só.
  *
  * Na prática, isto é o que este arquivo NÃO tem: nada que se chame como um campo do provedor, nada
  * que carregue código de banco, nada que nomeie recurso da API de lá. Quem traduz o dialeto do
@@ -36,7 +37,7 @@
  * CT-835 afirma essa ausência por lista vazia, que é o que separa uma coisa da outra.
  */
 
-import type { MEIOS_DE_RECEBIMENTO } from '@sysloc/contracts';
+import type { DETALHES_DA_VERIFICACAO, MEIOS_DE_RECEBIMENTO } from '@sysloc/contracts';
 import type { SegredoOperavel } from '@sysloc/shared';
 
 /**
@@ -60,6 +61,31 @@ import type { SegredoOperavel } from '@sysloc/shared';
  * e a limpeza teria custado cobertura. **É o import que mantém a varredura com o que examinar.**
  */
 export type MeioDeRecebimento = (typeof MEIOS_DE_RECEBIMENTO)[number];
+
+/**
+ * O que o `detalhe` de uma verificação de identidade pode dizer — **união fechada**.
+ *
+ * ---------------------------------------------------------------------------
+ * A união é DERIVADA da fonte única, e a derivação é o que fecha o D27
+ * ---------------------------------------------------------------------------
+ *
+ * Os textos têm declaração única em `@sysloc/contracts` (ADR-0016), pela mesma razão escrita no
+ * docblock de {@link MeioDeRecebimento}: duas declarações do mesmo fato divergem sem que nada
+ * acuse. A derivação por `typeof` **não** é uma segunda declaração — ela não escolhe texto nenhum, e
+ * um desfecho novo declarado lá alarga esta união sozinho.
+ *
+ * Enquanto o campo era `string`, a restrição *"o texto sai de um conjunto fechado"* valia por
+ * boa-fé de quem escrevesse o adaptador, e o `CT-834` não podia cobrá-la: ele varre **nomes** —
+ * chaves de tipo, símbolos, literais declarados —, nunca valores em execução. Agora quem cobra é o
+ * compilador, em **todo** caminho de atribuição, e alargar o conjunto obriga a editar o mesmo objeto
+ * que o esquema publicado enumera.
+ *
+ * ⚠️ **Ela não amarra este tipo ao contrato publicado**, e a distinção é a da `DECISÃO FECHADA`
+ * abaixo: o que se importa daqui é o **vocabulário**, e não a forma do corpo que a API devolve. Uma
+ * mudança da projeção publicada segue sem alcançar a assinatura da porta.
+ */
+export type DetalheDaVerificacao =
+  (typeof DETALHES_DA_VERIFICACAO)[keyof typeof DETALHES_DA_VERIFICACAO];
 
 /**
  * O que a porta recebe para verificar uma identidade — **o invólucro opaco, e nada mais**.
@@ -143,42 +169,243 @@ export interface ResultadoDaVerificacaoDeIdentidade {
    */
   readonly verificadoEm: string;
   /**
-   * O alcance do desfecho, em português do produto — anulável desde já.
+   * O alcance do desfecho, em português do produto — **união fechada**, e anulável.
    *
    * Ele carrega, **inclusive no desfecho positivo**, o que a sonda desta fatia afirma e o que ela
-   * não afirma (tech spec §8), para que a tela do Admin não prometa mais do que foi medido. Nasce
-   * anulável porque a fatia (ii) o zera no positivo, quando a sonda passar a responder a pergunta
-   * inteira — sem a anulabilidade agora, aquela fatia mudaria contrato publicado para fazer o que já
-   * está decidido.
+   * não afirma (tech spec §8), para que a tela do Admin não prometa mais do que foi medido. É
+   * anulável porque a fatia que subir a sonda para o `client_credentials` (débito **D36 · F4/T10**)
+   * o zera no positivo, quando ela passar a responder a pergunta inteira — sem a anulabilidade,
+   * aquela fatia mudaria contrato publicado para fazer o que já está decidido.
    *
    * ⚠️ **Nenhum detrito do runtime de transporte entra aqui** — nem código de erro de biblioteca,
-   * nem texto de OpenSSL, nem nome de recurso do provedor. Quem escolhe o texto é o adaptador, de um
-   * conjunto fechado de constantes suas (T10), e é isso que mantém verdadeira a cláusula da
-   * ADR-0001 sobre o que atravessa a porta.
+   * nem texto de OpenSSL, nem nome de recurso do provedor. Isso deixou de depender de boa-fé quando
+   * o tipo subiu de `string` para {@link DetalheDaVerificacao}: quem escolhe o texto é o adaptador,
+   * e só pode escolhê-lo do conjunto fechado que `@sysloc/contracts` declara. Foi o que fechou o
+   * **D27 · F4/T8**, cuja saída estrutural o `CT-834` não alcançava por varrer **nomes**, e nunca
+   * valores em execução.
    */
-  // DÉBITO COM GATILHO — D27 · F4/T8 · registrado 2026-08-15 · gatilho emendado 2026-08-16 (T14)
-  // O QUÊ: a restrição acima — *o texto sai de um conjunto FECHADO de constantes do adaptador* —
-  //        existe só em prosa, e o tipo é `string`. O `CT-834` varre NOMES (chaves de tipo,
-  //        literais de enum, símbolos declarados), nunca VALORES em execução, de modo que este é o
-  //        único ponto por onde texto arbitrário atravessa a porta sem que nada acuse — e ele tem
-  //        caminho direto até a tela do Admin, porque `esquemaDoResultadoDaVerificacao` publica
-  //        `detalhe: z.string().nullable()`.
-  // QUANDO FECHA: a fatia **(ii)** (`emissao-e-conciliacao`), ao CONSUMIR este campo na tela do
-  //        Admin — ali o texto deixa de ser dado inerte e ganha leitor, e o tipo sobe para a união
-  //        dos valores mais `null`, com a cláusula de vocabulário da ADR-0001 exigível pelo
-  //        compilador em vez de pela boa-fé de quem escreve o adaptador.
-  //        ⚠️ O gatilho ORIGINAL — *"a T10, ao escolher o conjunto fechado de constantes"* — JÁ
-  //        DISPAROU: a T10 escolheu as quatro (`DETALHE_ACEITE`, `DETALHE_RECUSA_PELO_PAR`,
-  //        `DETALHE_INDISPONIVEL`, `DETALHE_TEMPO_ESGOTADO`) e **pagou a metade exigível** do
-  //        débito pela segunda saída que ele admitia — *"ganhar caso que afirme a pertinência ao
-  //        conjunto"* —, medida por CT-839/840/841/842, com o CT-840 varrendo 12 termos proibidos
-  //        no desfecho serializado e controle positivo. O que sobra é a saída ESTRUTURAL, e é ela
-  //        que este gatilho novo agenda (T14, 2026-08-16; ver §5.7 do ÍNDICE abaixo).
-  // POR QUE NÃO AGORA: a saída estrutural exige declarar os quatro valores **no domínio**, para que
-  //        o adaptador os importe — e a ADR-0025 aponta a dependência ao contrário: o domínio não
-  //        conhece o adaptador. Movê-la no fecho da fatia, sem adaptador novo que a justifique,
-  //        trocaria a fronteira do pacote por conveniência de escrituração. É parente da razão
-  //        original: assinatura sem quem a chame é abstração especulativa.
-  // ÍNDICE: docs/specs/features/fundacao-bancaria/v1/_run/run-report.md §2, D27
-  readonly detalhe: string | null;
+  readonly detalhe: DetalheDaVerificacao | null;
 }
+
+// ===========================================================================
+// O vocabulário das QUATRO operações de cobrança — o que atravessa a porta
+// ===========================================================================
+
+/**
+ * As duas classes de falha (RN-02) — **o adaptador classifica, o domínio decide o que ela causa**.
+ *
+ * `DA_COBRANCA` é a falha que pertence àquela cobrança e a nenhuma outra: o percurso do lote marca a
+ * cobrança como recusada e **segue**. `DA_EMPRESA` é a falha que valeria igual para a próxima —
+ * certificado vencido, identidade recusada, provedor fora do ar —, e o percurso **para**, deixando
+ * de pé o que já saiu (CA-03).
+ *
+ * A divisão do trabalho é conteúdo, e não estilo: só o adaptador tem como **distinguir** as duas,
+ * porque só ele lê a resposta do provedor; e só o domínio tem como decidir **o que a distinção
+ * provoca**, porque só ele conhece o lote. Reclassificar no domínio traria o vocabulário do provedor
+ * de volta para dentro dele, que é o que a ADR-0001 existe para impedir.
+ *
+ * São **duas**, e não um enum aberto com um ramo padrão: um terceiro valor obrigaria quem percorre o
+ * lote a decidir entre parar e seguir sem que nada o cobrasse. A união fechada faz o compilador
+ * cobrar o ramo novo em todo consumidor.
+ */
+export type ClasseDaFalha = 'DA_COBRANCA' | 'DA_EMPRESA';
+
+/**
+ * O desfecho de uma operação da porta — **a operação resolve sempre, e nunca rejeita**.
+ *
+ * ---------------------------------------------------------------------------
+ * A recusa do provedor é um DESFECHO, e a alternativa idiomática foi descartada
+ * ---------------------------------------------------------------------------
+ *
+ * É a mesma decisão, e a mesma razão, de {@link ResultadoDaVerificacaoDeIdentidade}: levantar faria
+ * a borda traduzir *"o provedor recusou esta cobrança"* em `500`, e quem opera leria *"o sistema
+ * falhou"* onde o fato é *"a emissão foi recusada"* — dois desfechos operacionais opostos (RN-06).
+ * Pior no lote: uma exceção derrubaria o percurso inteiro num ponto em que a decisão correta, na
+ * metade dos casos, é **seguir** para a próxima cobrança.
+ *
+ * A união é **discriminada por `aceito`**, e é isso que impede ler `valor` de um desfecho negativo —
+ * o compilador estreita o tipo no `if`, sem que nada precise ser lembrado por quem escreve.
+ *
+ * `motivo` é **texto opaco**: entra tal como o provedor o informou (RN-15) e nada o interpreta para
+ * decidir. É o mesmo desenho de `diagnostico` em `packages/db/src/evento-bancario.ts`, e a razão é
+ * a mesma — a inocuidade de um motivo desconhecido vem de nada o traduzir. Ele é **valor**, não
+ * nome, e por isso não colide com a cláusula de vocabulário da ADR-0001, que alcança nome de campo,
+ * URL e termo declarado.
+ */
+export type DesfechoDaOperacao<T> =
+  | { readonly aceito: true; readonly valor: T }
+  | { readonly aceito: false; readonly classe: ClasseDaFalha; readonly motivo: string };
+
+/**
+ * O que **toda** operação da porta carrega: de quem é a identidade, e o segredo que a habilita.
+ *
+ * O adaptador é um só para o processo inteiro, e a empresa muda a cada cobrança de um lote — por
+ * isso a identidade viaja no **ato**, e não na construção. É `empresaId` que chaveia o cache de
+ * credencial do adaptador, e é ele que impede a credencial de uma empresa de ser apresentada em
+ * chamada de outra.
+ *
+ * ⚠️ **O segredo chega opaco** (ADR-0032), e quem o abre é o adaptador, no instante do ato. Nada
+ * aqui carrega material decifrado, senha em claro, endereço de destino ou credencial de habilitação:
+ * endereço é propriedade de quem constrói o adaptador — aceitá-lo por aqui faria uma entrada de
+ * usuário decidir o destino da conexão —, e a credencial de habilitação é vocabulário do provedor.
+ */
+interface AtoNoProvedor {
+  /** A empresa em nome de quem o ato acontece — nunca lida de requisição (ADR-0008/0009). */
+  readonly empresaId: string;
+  /** O material e a senha que o abrem, opacos. Quem os lê em claro é o adaptador. */
+  readonly segredo: SegredoOperavel;
+}
+
+/**
+ * O ato sobre um boleto que **já existe** no provedor — as duas revogações e a consulta partem daqui.
+ *
+ * `numeroDoTituloNoProvedor` é o nome do **produto** para o número que o provedor atribuiu ao
+ * título. O termo do dialeto dele está no glossário global entre os que se evitam, e publicá-lo faria
+ * a varredura de vocabulário reprovar a própria porta que ela protege. A coluna física herdada
+ * continua com o nome antigo, e o mapeamento morre na fronteira de dados.
+ *
+ * ⚠️ **Não o confunda com o identificador que o produto compõe** e envia na emissão
+ * ({@link PedidoDeEmissao.identificadorNoProvedor}). São dois números distintos, de donos distintos:
+ * este é atribuído **pelo provedor**; aquele é composto **pelo produto** e é a chave de correlação.
+ */
+export interface AtoSobreBoleto extends AtoNoProvedor {
+  /** O número que o provedor atribuiu ao título — devolvido por {@link BoletoEmitido}. */
+  readonly numeroDoTituloNoProvedor: string;
+}
+
+/**
+ * Quem paga a cobrança, no vocabulário do **produto**.
+ *
+ * ⚠️ **O nome é `locatario`, e a escolha é vinculante**: `pagador` e `sacado` são termos do dialeto
+ * do provedor, e o primeiro permanece na lista de termos que a varredura de vocabulário reprova.
+ * Quem traduz para o nome que a API do banco espera é o adaptador, e a tradução morre nele.
+ *
+ * Os campos são os do cadastro de pessoa que o produto já guarda, e nenhum a mais: o provedor exige
+ * nome, documento e endereço de quem paga para emitir o título — foi medido no dado do sistema
+ * antigo, cujo registro de entrada carrega exatamente esses três grupos.
+ */
+export interface LocatarioDaCobranca {
+  readonly nome: string;
+  /** O documento principal **em dígitos**, como o cadastro o guarda — remascarar é apresentação. */
+  readonly documento: string;
+  readonly logradouro: string;
+  readonly numero: string;
+  readonly complemento: string | null;
+  readonly bairro: string;
+  readonly cidade: string;
+  readonly estado: string;
+  readonly cep: string;
+}
+
+/**
+ * O que o domínio pede para emitir um boleto.
+ *
+ * `identificadorNoProvedor` é o número de 18 posições que o **produto** compõe a partir do contador
+ * declarado pela ADR-0033 e envia junto do pedido. Ele é a chave de correlação que a fatia do carnê
+ * usa para reencontrar o título, e não se recupera depois — por isso ele é gravado no mesmo ato em
+ * que o boleto é gravado.
+ *
+ * `valor` e `vencimento` chegam **já decididos**: nada nesta camada calcula mora, e o vencimento é
+ * data de calendário `YYYY-MM-DD`, nunca um `Date` — objeto de data reserializado no fuso do
+ * processo desloca o dia, que é o defeito que a fronteira de dados deste produto já evita.
+ */
+export interface PedidoDeEmissao extends AtoNoProvedor {
+  /** As 18 posições que o produto compôs — **enviadas**, e não recebidas (ADR-0033). */
+  readonly identificadorNoProvedor: string;
+  /** O valor a cobrar, na mesma grandeza que a fronteira de dados publica. */
+  readonly valor: number;
+  /** Data de calendário `YYYY-MM-DD` — nunca um `Date`. */
+  readonly vencimento: string;
+  readonly locatario: LocatarioDaCobranca;
+}
+
+/**
+ * O boleto que o provedor emitiu — os três identificadores dele mais os bytes do documento.
+ *
+ * Os bytes vêm no mesmo ato, e não numa segunda chamada, porque é o desfecho da emissão que os
+ * produz: buscá-los depois abriria uma janela em que a cobrança tem título e não tem documento, e
+ * quem a atravessasse publicaria um boleto pela metade.
+ *
+ * `linhaDigitavel` e `codigoDeBarras` são o **meio de pagamento**, e não vocabulário do provedor:
+ * quem os lê é a pessoa que paga, em qualquer banco.
+ */
+export interface BoletoEmitido {
+  /** O número que o provedor atribuiu ao título — a chave dele, e não a do produto. */
+  readonly numeroDoTituloNoProvedor: string;
+  readonly linhaDigitavel: string;
+  readonly codigoDeBarras: string;
+  /** Os bytes do documento, tal como o provedor os entregou. Quem os grava é a guarda de boletos. */
+  readonly documento: Buffer;
+}
+
+/**
+ * O que o domínio pergunta ao consultar um título — e `incluirDocumento` é o que evita a quinta
+ * operação.
+ *
+ * A re-obtenção do documento cujo arquivo sumiu do disco (CA-08) é a **mesma** pergunta que a
+ * conferência diária faz, com uma diferença de grau: ali os bytes importam, aqui não. Um sinalizador
+ * no pedido cobre as duas, e uma operação dedicada a "obter o documento" seria uma quinta assinatura
+ * dizendo o que esta já diz — com o custo de a conferência poder chamá-la por engano e trazer o
+ * documento de cada cobrança do dia.
+ *
+ * Ele é **obrigatório**, e não opcional com padrão: quem consulta declara se quer os bytes. O padrão
+ * silencioso decidiria por omissão a única coisa que separa uma consulta barata de uma cara.
+ */
+export interface ConsultaDeSituacao extends AtoSobreBoleto {
+  /** `true` traz os bytes do documento; `false` responde só a situação. */
+  readonly incluirDocumento: boolean;
+}
+
+/** O documento acompanha qualquer situação, e é nulo quando a consulta não o pediu. */
+interface ComDocumento {
+  readonly documento: Buffer | null;
+}
+
+/** O título está de pé e ninguém o pagou. */
+interface SituacaoEmAberto extends ComDocumento {
+  readonly situacao: 'EM_ABERTO';
+}
+
+/** O título foi pago — com a data e o valor **que o provedor informou**, e não os esperados. */
+interface SituacaoLiquidada extends ComDocumento {
+  readonly situacao: 'LIQUIDADO';
+  /** Data de calendário `YYYY-MM-DD` do pagamento, como o provedor a informou. */
+  readonly pagoEm: string;
+  /** O valor efetivamente pago — pode divergir do esperado, e a divergência é registrada. */
+  readonly valorPago: number;
+}
+
+/**
+ * O título foi revogado, e o motivo chega como **texto opaco**.
+ *
+ * O produto não tem — e não deve ter — enum que reconheça os motivos do provedor: é justamente nada
+ * os interpretar que torna um motivo desconhecido inócuo (RN-15). Ele é preservado byte a byte como
+ * diagnóstico da trilha, e nenhum ramo de decisão o lê.
+ */
+interface SituacaoRevogada extends ComDocumento {
+  readonly situacao: 'REVOGADO';
+  readonly motivo: string;
+}
+
+/** O pagamento foi desfeito depois de informado — o oposto de {@link SituacaoLiquidada}. */
+interface SituacaoEstornada extends ComDocumento {
+  readonly situacao: 'ESTORNADO';
+}
+
+/**
+ * A situação do título no provedor, **traduzida** — união discriminada por `situacao`.
+ *
+ * Os quatro estados são os que produzem efeito no produto, e a união fechada é o que faz o
+ * compilador cobrar o ramo de quem os consome: um estado novo não passa despercebido por um `switch`
+ * com ramo padrão. Os ramos não são publicados individualmente porque quem consulta estreita o tipo
+ * pelo discriminador, sem precisar nomeá-los — publicar os quatro alargaria a superfície sem
+ * consumidor que a peça.
+ *
+ * ⚠️ **Nada aqui é código, sigla ou situação do dialeto do provedor.** Quem traduz é o adaptador, e
+ * a tradução morre nele (ADR-0001).
+ */
+export type SituacaoConsultada =
+  | SituacaoEmAberto
+  | SituacaoLiquidada
+  | SituacaoRevogada
+  | SituacaoEstornada;

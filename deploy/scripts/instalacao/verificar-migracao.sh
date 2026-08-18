@@ -200,7 +200,12 @@ readonly CAMINHO_ENTRADA_DB="${RAIZ_REPO}/packages/db/dist/index.js"
 #   (ADR-0030), e isso não move esta lista: ela enumera OBJETOS, nunca colunas.
 #   ATUALIZADA EM 2026-08-14 pela T4 da fatia `fundacao-bancaria`, no mesmo commit
 #   das migrações `0015_dominio_bancario.sql` e `0016_seguranca_bancaria.sql`, que
-#   acrescentam o certificado do provedor.
+#   acrescentam o certificado do provedor. ATUALIZADA EM 2026-08-16 pela T2 da
+#   fatia `emissao-e-conciliacao`, no mesmo commit das migrações
+#   `0017_dominio_emissao_e_conciliacao.sql` e
+#   `0018_seguranca_emissao_e_conciliacao.sql`, que acrescentam as QUATRO tabelas
+#   da emissão e da conciliação — todas em '${SCHEMA_NEGOCIO}', porque têm
+#   dono-empresa (ADR-0031, pela contrapositiva).
 #
 #   OS OBJETOS DE '${SCHEMA_PLATAFORMA}' NÃO ENTRAM AQUI, e a ausência é a decisão,
 #   por duas razões que se somam: esta lista é comparada com o que a guarda de
@@ -229,7 +234,7 @@ readonly CAMINHO_ENTRADA_DB="${RAIZ_REPO}/packages/db/dist/index.js"
 #   exclui `relkind = 'S'` do exame POR CONSTRUÇÃO, então ela nunca aparece no
 #   resultado que esta lista compara. Acrescentá-la faria a asserção (b) reprovar
 #   um schema íntegro.
-readonly TABELAS_DE_NEGOCIO_ESPERADAS="negocio.acesso_usuario_app negocio.acesso_usuario_permissao negocio.certificado_do_provedor negocio.cobranca negocio.cobranca_derivada negocio.comodo negocio.configuracao_de_mora negocio.conjunto negocio.contrato negocio.contrato_fiador negocio.envio_de_cobranca negocio.fiador negocio.imovel negocio.locador negocio.locatario negocio.politica_de_aviso negocio.portador_de_confirmacao"
+readonly TABELAS_DE_NEGOCIO_ESPERADAS="negocio.acesso_usuario_app negocio.acesso_usuario_permissao negocio.certificado_do_provedor negocio.cobranca negocio.cobranca_derivada negocio.comodo negocio.conferencia_bancaria negocio.configuracao_de_mora negocio.conjunto negocio.contrato negocio.contrato_fiador negocio.emissao_em_lote negocio.envio_de_cobranca negocio.evento_bancario negocio.fiador negocio.imovel negocio.item_da_emissao_em_lote negocio.locador negocio.locatario negocio.politica_de_aviso negocio.portador_de_confirmacao"
 
 # Os quatro transportes de segredo que a ADR-0005 proíbe. O `[=]` é classe de
 # caractere de UM elemento — casa exatamente o que o sinal solto casaria, sem

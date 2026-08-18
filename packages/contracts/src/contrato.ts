@@ -42,7 +42,11 @@
  */
 
 import { z } from 'zod';
-import { ESQUEMA_DO_IDENTIFICADOR } from './comum.js';
+// `MAIOR_VALOR_MONETARIO` e `ESCALA_MONETARIA` nasceram neste arquivo e subiram para `comum.ts` na
+// fatia `emissao-e-conciliacao`, ao chegar o terceiro consumidor monetário do pacote — é o gatilho
+// que o débito `D1 · F3/T2` escrevera, e o limiar de três do `CLAUDE.md`. A definição segue **única**
+// (CT-545 a afirma por igualdade de lista); o que mudou foi o arquivo, e quem as quer as importa.
+import { ESCALA_MONETARIA, ESQUEMA_DO_IDENTIFICADOR, MAIOR_VALOR_MONETARIO } from './comum.js';
 
 /**
  * Os quatro estados do contrato (RD-02), na ordem em que o enum do banco os declara.
@@ -149,48 +153,6 @@ export const ESQUEMA_DO_CODIGO_DE_CONTRATO = z
 
 /** O código do contrato, já canonizado. */
 export type CodigoDeContrato = z.infer<typeof ESQUEMA_DO_CODIGO_DE_CONTRATO>;
-
-/**
- * Maior valor monetário aceito — o maior valor que a coluna `numeric(15,2)` representa (§7.2).
- *
- * Mesmo desenho já medido de `MAIOR_METRAGEM`, e pela mesma razão: sendo o teto **igual** à
- * capacidade da coluna, nenhum valor que o contrato aprove pode estourar o `INSERT`. Sem ele,
- * `z.number()` aprovaria `1e30`, o driver levantaria `numeric field overflow` (22003) e a borda
- * devolveria **500 registrado como falha do serviço** por entrada malformada de cliente.
- *
- * O teto **recusa em vez de truncar**, e a recusa nomeia o campo — mesma política do teto da janela.
- */
-export const MAIOR_VALOR_MONETARIO = 9_999_999_999_999.99;
-
-/**
- * A escala do dinheiro — duas casas decimais, o `2` de `numeric(15,2)` (§7.2).
- *
- * {@link MAIOR_VALOR_MONETARIO} fecha a precisão; esta fecha a escala, e as duas juntas é que tornam
- * verdadeira a regra que a ADR-0016 implica: **todo valor que o contrato aprova tem de ser
- * representável a jusante** — e "representável" inclui *representável sem ser alterado*. Sem ela,
- * `2500.555` seria aprovado, gravado como `2500.56` e devolvido ao cliente **diferente do que ele
- * enviou**, sem erro, sem aviso e sem nada que acusasse.
- *
- * ---------------------------------------------------------------------------
- * A restrição vale na ENTRADA e NÃO é replicada na SAÍDA
- * ---------------------------------------------------------------------------
- *
- * É a mesma assimetria deliberada de `ESCALA_DA_METRAGEM`, e pela **primeira** das duas razões que o
- * marcador `DECISÃO FECHADA` dela registra em `comum.ts`: esquema de saída que recusa **não produz
- * `422`** — ele levanta na serialização e derruba a rota. Converter divergência benigna a montante
- * em queda é o defeito pior, e divergência a montante se corrige a montante.
- *
- * Por isso `valorMensal` e `valorTotalContrato` de {@link esquemaDoContrato} são `z.number()` sem
- * escala. **Leia aquele marcador antes de qualquer tentativa de simetrizar**: a justificativa que
- * estava escrita lá até 2026-08-05 era falsa, e a medição a derrubou — quem a verificasse a acharia
- * infundada e concluiria que a exclusão foi excesso de cautela.
- *
- * O que a saída restringe é `codigo`, e a diferença é de natureza: o código tem **forma fixa**
- * produzida pelo ponto único {@link formatarCodigoDeContrato}, e não é soma nem produto de ponto
- * flutuante — é o mesmo caso de `esquemaDoImovel.id: z.uuid()`, restrição de saída que já existe no
- * pacote e que a coluna satisfaz por construção.
- */
-export const ESCALA_MONETARIA = 0.01;
 
 /** Quantos centavos há numa unidade monetária — o fator da aritmética exata abaixo. */
 const CENTAVOS_POR_UNIDADE = 100;

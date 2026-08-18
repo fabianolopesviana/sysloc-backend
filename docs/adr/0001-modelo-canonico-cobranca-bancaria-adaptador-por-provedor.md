@@ -52,6 +52,52 @@ Toda a operação de cobrança bancária passa a trafegar em tipos canônicos ag
 > ADR abrindo a `Decision` dela. É exatamente o custo que a emenda de 2026-08-10 da ADR-0021 já
 > registrava — *"um gate futuro leria violação onde houve decisão"*.
 
+> **Emenda de 2026-08-17** (a decisão que ela registra foi **escalada ao usuário e decidida por ele
+> em 2026-08-16**). A porta que esta ADR reserva — `AdaptadorCobrancaBancaria` — **nasce com QUATRO
+> operações**, e não cinco: `emitir`, `solicitarRevogacaoDeBoleto`, `confirmarRevogacaoDeBoleto` e
+> `consultarSituacao`. A obtenção da credencial de acesso acontece **dentro** do adaptador do
+> provedor e **não cruza a porta**. Ela nasceu assim na fatia `emissao-e-conciliacao` (v1), e a
+> justificativa completa está na **§21.1(1)** do tech spec dela
+> (`docs/specs/features/emissao-e-conciliacao/v1/tech_spec.md`). **A decisão não mudou**: mudou o
+> registro dela — quatro razões, a última medida só agora:
+>
+> 1. **A cláusula de fecho prevalece sobre o parentético.** A mesma `Decision` termina com *"Nenhum
+>    campo, URL ou vocabulário específico de provedor cruza a porta"*, e uma credencial de acesso
+>    `client_credentials` **é** vocabulário do provedor. Declarar `obter_token` na porta satisfaria o
+>    parentético contradizendo a cláusula que o item 2 da emenda de 2026-08-15 declara ser
+>    *"propriedade do **vocabulário**"* — e é a cláusula, não o parentético, que aquela emenda torna
+>    exigível por medição.
+> 2. **O que a exclusividade proíbe é o "por fora", e dentro do adaptador não é por fora.** O item 1
+>    da emenda de 2026-08-15 fixa que o garantido é que nenhuma das cinco capacidades fique
+>    *"alcançável **por fora** da porta que esta ADR reserva"*. A obtenção de credencial é exercida
+>    pelo adaptador, para si mesmo, e por nenhum outro caminho.
+> 3. **Assinatura sem chamador é o defeito que a fatia (i) recusou por escrito**, ao adiar esta porta
+>    — *"seria escolher quatro assinaturas sem quem as chame, e a fatia (ii) as reescreveria contra a
+>    API real"*. Declarar hoje uma operação que nenhum consumidor do domínio chama reintroduziria o
+>    mesmo defeito.
+> 4. **O roster do parentético nunca foi assinatura — é descrição de capacidade —, e a grafia é a
+>    prova.** Ele é de **2026-07-20**, escrito sobre o substrato Frappe, em `snake_case`:
+>    `obter_token`, `solicitar_baixa`, `confirmar_baixa`, `consultar`. **Nenhum** dos nomes
+>    implementados o casa literalmente além de `emitir`. Uma leitura **literal**, nome a nome, nunca
+>    teve como ser satisfeita — o que confirma que o parentético sempre descreveu **capacidades**, e
+>    não a lista de membros de uma interface. Razão medida pelo **Gate 2 da T7 da fatia (ii)**, e não
+>    anotada antes.
+>
+> **Correção ao item 3 da emenda de 2026-08-15.** Onde ali se lê *"O nome
+> `AdaptadorCobrancaBancaria` permanece reservado para a porta das **cinco operações**, que nasce na
+> fatia `integracao-bancaria-configuravel` (ii)"*, leia-se: **o nome permanece reservado para a porta
+> de cobrança bancária, que nasceu na fatia (ii) com as quatro operações acima**. O texto de 2026-08-15
+> fica preservado byte a byte, como manda a prática desta ADR; é esta linha que vale. A frase original
+> descrevia com *"cinco"* exatamente o artefato que a fatia (ii) veio a criar com quatro — e o restante
+> do roster de cinco **não** foi reescrito de propósito, pela razão do parágrafo seguinte.
+>
+> ⚠️ **O roster de cinco NÃO encolheu, e a distinção decide a conformidade.** O que a exclusividade
+> alcança continua sendo as **cinco capacidades** nomeadas na `Decision` — obter credencial, emitir,
+> solicitar baixa, confirmar baixa, consultar —, e nenhuma delas fica alcançável por fora do adaptador
+> do provedor. O que se conta em **quatro** é a **superfície da interface**. Ler *"quatro"* como
+> redução do alcance inverte a emenda de 2026-08-15, que declara a exclusividade *"de critério, e não
+> de contagem"*.
+
 ## Consequences
 
 **Pros:**

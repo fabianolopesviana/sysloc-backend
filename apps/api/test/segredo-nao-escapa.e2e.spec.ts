@@ -41,14 +41,20 @@
  * | CA-02 |        | decifrar com outra chave de 32 bytes **levanta sem devolver nada**; e decifrar
  * | CA-12 |        | com a chave da operação devolve o par **byte a byte** — a coluna guarda o
  * |       |        | segredo, não lixo. |
- * | A6    | os cinco | **Cada** varredura é aplicada antes a um objeto de controle onde as agulhas
+ * | A8    | CT-935 | A carga da tarefa de emissão em lote tem **exatamente** as chaves
+ * | CA-20 |        | `{ empresaId, loteId }`; a varredura dela em texto cru, `JSON.stringify` e
+ * |       |        | `util.inspect` devolve `[]` nas três, e a varredura do **corpo de erro da
+ * |       |        | fila** — o objeto que a biblioteca levanta, e que carrega a carga serializada
+ * |       |        | em `command.args` — devolve `[]` também, enquanto o mesmo varredor acha todas
+ * |       |        | as agulhas no objeto de controle. |
+ * | A6    | os seis | **Cada** varredura é aplicada antes a um objeto de controle onde as agulhas
  * |       |        | foram plantadas canal a canal, e a lista de achados é afirmada por igualdade. |
- * | A7    | os cinco | As agulhas são derivadas do dado **que de fato circulou**: a senha é a senha
+ * | A7    | os seis | As agulhas são derivadas do dado **que de fato circulou**: a senha é a senha
  * |       |        | real enviada, e os bytes são os bytes reais apresentados. |
  *
  * Rastreabilidade: `A1 → CT-823 (CA-02)` · `A2 → CT-830 (CA-12)` · `A3 → CT-831 (CA-12)` ·
- * `A4 → CT-832 (CA-02, CA-12)` · `A5 → CT-833 (CA-02, CA-12)` · `A6/A7 → CT-823, CT-830, CT-831,
- * CT-832, CT-833`.
+ * `A4 → CT-832 (CA-02, CA-12)` · `A5 → CT-833 (CA-02, CA-12)` · `A8 → CT-935 (CA-20)` ·
+ * `A6/A7 → CT-823, CT-830, CT-831, CT-832, CT-833, CT-935`.
  *
  * ===========================================================================
  * TODA VARREDURA CARREGA CONTROLE POSITIVO — e a razão é medida
@@ -56,7 +62,7 @@
  *
  * Uma varredura que **nunca acha nada** aprovaria um produto vazando tudo: é o **AP-29**
  * (`tautological_assertion`), a causa de rejeição repetida desta fatia e da anterior. Por isso os
- * cinco casos aplicam **a mesma** função de varredura ({@link ocorrenciasDe}) a um objeto de
+ * seis casos aplicam **a mesma** função de varredura ({@link ocorrenciasDe}) a um objeto de
  * controle onde cada agulha está plantada num canal diferente — mensagem, campo aninhado, item de
  * lista, `Buffer` inspecionado —, e afirmam por **igualdade** a lista de achados. Se a busca
  * quebrar, o controle reprova nomeando qual canal deixou de ser alcançado.
@@ -136,7 +142,7 @@
  * alcança, que são exatamente os que a biblioteca de terceiro escolheria.
  *
  * ===========================================================================
- * AS SUPERFÍCIES DE SAÍDA, e quais destas cinco medições alcança cada uma
+ * AS SUPERFÍCIES DE SAÍDA, e quais destas seis medições alcança cada uma
  * ===========================================================================
  *
  * A completude é afirmada por enumeração, porque é o que permite reconhecer o que **falta**:
@@ -148,7 +154,15 @@
  *   * **arquivo de diário do processo real** — CT-823 no caminho de **sucesso** e CT-831 nos **três**
  *     de recusa, os dois varrendo o arquivo **inteiro**, e não o trecho do caso;
  *   * **documento publicado** — CT-832;
- *   * **estado em repouso** — CT-833, na coluna e nos bytes que ela decodifica.
+ *   * **estado em repouso** — CT-833, na coluna e nos bytes que ela decodifica;
+ *   * **carga de tarefa na fila** — CT-935, nas três serializações da carga **e** no objeto de erro
+ *     que a biblioteca de fila levanta com a carga serializada dentro. Ela entrou na enumeração com a
+ *     T15, que trouxe as duas filas do produto, e é o fecho do débito `D58` da fatia
+ *     `fundacao-bancaria`;
+ *   * **diário e `failedReason` do PROCESSO DE TRABALHO** — ⚠️ **medidos, e NÃO aqui**: `CT-944 (e)`
+ *     em `apps/worker/test/emissao-em-lote.spec.ts` e `CT-948 (e)` em
+ *     `apps/worker/test/conferencia-bancaria.spec.ts`. Ver o item **15** da enumeração de caminhos
+ *     abaixo para o que cada um alcança e por que a medição mora lá.
  *
  * ===========================================================================
  * ENUMERAR SUPERFÍCIE NÃO BASTA — a enumeração que fecha é a de CAMINHO
@@ -160,8 +174,12 @@
  * modo que a varredura corria sobre a cadeia literal `'undefined'`. Uma superfície pode estar na
  * lista e ainda assim ser **vácua**, se o caminho que a preenche nunca for percorrido.
  *
- * Por isso a enumeração que vale é esta, por **caminho de saída** das três rotas — quatorze ao todo,
- * dos quais **sete são medidos** aqui:
+ * Por isso a enumeração que vale é esta, por **caminho de saída** — **quinze** ao todo, dos quais
+ * **nove são medidos**: oito aqui, e o décimo quinto nas suítes do processo de trabalho. Os treze
+ * primeiros são das três rotas do certificado; o décimo quarto é a **fila**, que não é caminho de
+ * saída delas e entrou com a T15, quando o produto passou a ter produtor de tarefa; o **décimo
+ * quinto** entrou com a T16, quando o produto passou a ter um **segundo** processo capaz de abrir o
+ * segredo:
  *
  *   1. registro · `422` do esquema, antes de `criarSegredoOperavel` — **medido** (CT-830, ato 1). O
  *      segredo **não entrou** no produto: o que existe é a cadeia crua que o esquema recusou;
@@ -175,14 +193,14 @@
  *   7. verificação · `200`, com `aceito: false` pelo destino inerte — **medido** (CT-823). A decifra
  *      correu e o claro foi entregue ao cliente TLS.
  *
- * **Os sete NÃO medidos, e a razão de cada um.**
+ * **Os seis NÃO medidos, e a razão de cada um.**
  *
- * ⚠️ **A razão NÃO é comum aos sete, e a versão anterior deste cabeçalho a generalizava**: nos itens
- * 8 a 11 e no 14 o segredo operável **não está em escopo** — ou não entrou no produto, ou não existe
- * carga que o carregue. Nos itens **12 e 13 ele ESTÁ**, e o que os mantém fora da medição é outra
+ * ⚠️ **A razão NÃO é comum aos seis, e uma versão anterior deste cabeçalho a generalizava**: nos
+ * itens 8 a 11 o segredo operável **não está em escopo** — ele não entrou no produto. Nos itens
+ * **12 e 13 ele ESTÁ**, e o que os mantém fora da medição é outra
  * coisa: o 12 é **inalcançável por construção** (ADR-0006), e o 13 **não é alcançável por entrada do
  * cliente**, com a **cifra** — nunca o claro — sendo o que chega ao cliente de banco. Uma frase que
- * dispensasse os sete pela mesma razão dispensaria de medir justamente os dois em que há o que medir,
+ * dispensasse os seis pela mesma razão dispensaria de medir justamente os dois em que há o que medir,
  * e seria contradita pelo **item 7**, três linhas acima, que escreve por extenso que ali *"a decifra
  * correu e o claro foi entregue ao cliente TLS"*. Não há defeito hoje; o que essa forma criava era
  * **licença escrita para não medir amanhã**, numa fatia de segurança.
@@ -212,11 +230,40 @@
  *      mantém fora é não ser alcançável por entrada do cliente — exige defeito de infraestrutura —, e o
  *      que chega ao cliente de banco é a **cifra**, nunca o claro; ao solicitante sai o envelope
  *      genérico do filtro global, sem campo livre que o corpo alimente;
- *  14. fila · **não existe nesta fatia**. Nenhuma das três rotas enfileira nada, e por isso não há
- *      carga de tarefa a varrer — é o `DÉBITO COM GATILHO — D58 · F4/T13` instalado em
- *      `apps/api/src/integracoes-bancarias/certificado.service.ts`, que cobra a medição da fatia (ii).
+ *  14. fila · **medido** (CT-935) — ⚠️ **este item era o débito com gatilho `D58` da T13 da fatia
+ *      `fundacao-bancaria`, e a T15 o fechou**. Enquanto nenhuma rota enfileirava, não havia carga a varrer e medir teria sido
+ *      asserção vácua; a T15 trouxe as duas filas do produto, e com elas a superfície que **motivou** a
+ *      ADR-0032 — na fase anterior o segredo em claro alcançou o diário por `err.command.args`, porque
+ *      a biblioteca de fila empurra a carga como argumento de comando e a de acesso a anexa ao erro. O
+ *      CT-935 mede as duas pontas: as chaves da carga por igualdade, e o objeto de erro **cru** da
+ *      biblioteca — o canal mais exposto que existe, e o do achado original. O marcador saiu do código
+ *      e a linha saiu do índice do `CLAUDE.md`, no mesmo diff;
+ *  15. **processo de trabalho · diário e `failedReason`** — ⚠️ **medido, e por outro arquivo**:
+ *      `CT-944 (e)` (`apps/worker/test/emissao-em-lote.spec.ts`) e `CT-948 (e)`
+ *      (`apps/worker/test/conferencia-bancaria.spec.ts`). Ele entrou com a **T16**, que fez o
+ *      processo de trabalho **decifrar o segredo operável**: a superfície capaz de abrir o segredo
+ *      mais forte do produto passou de **um** processo para **dois**, e a ADR-0032 cobra que cada
+ *      superfície de saída nova ganhe um caso que a observe de fato. As duas superfícies novas são
+ *      alcançadas pelo **mesmo vetor** que originou a ADR: `apps/worker/src/fila.ts` registra
+ *      `consumidor.on('failed', … { erro })` com o **objeto de exceção cru**, e a biblioteca de fila
+ *      grava a mensagem dele como `failedReason` no servidor.
  *
- * **O que continua fora do alcance destas cinco superfícies, e por quê**: a saída padrão do processo
+ *      **O que é medido lá**: o **arquivo de diário inteiro** do processo (registrador com destino em
+ *      arquivo, o mesmo parâmetro que a unidade systemd usa) e o **`failedReason` lido do servidor de
+ *      fila**, num caminho em que o erro **sobe com o claro em escopo** — o adaptador recebe o
+ *      invólucro decifrado e levanta —, com as agulhas derivadas do material e da senha que o arranjo
+ *      de fato cifrou e gravou, e com controle positivo canal a canal afirmado por igualdade.
+ *
+ *      **O que NÃO é medido, e por quê**: o `stdout` daquele processo (o destino é o arquivo, que é o
+ *      **outro** destino previsto pela unidade — medir o arquivo mede o mesmo caminho de escrita); e o
+ *      trânsito do cofre até o provedor, cuja proteção é o mTLS e não a ausência, como já vale para
+ *      as rotas acima.
+ *
+ *      ⚠️ **A medição mora lá, e não aqui, por razão estrutural**: este arquivo monta a aplicação HTTP,
+ *      e o processo de trabalho é outro processo, com outra composição raiz e outro registrador.
+ *      Reproduzi-lo aqui mediria uma fiação que a operação não tem.
+ *
+ * **O que continua fora do alcance destas seis superfícies, e por quê**: a saída padrão do processo
  * (aqui o registrador tem destino em arquivo, que é o outro destino previsto pela unidade systemd —
  * medir o arquivo mede o mesmo caminho de escrita); o corpo de resposta de rota **fora** desta
  * superfície (o segredo não circula por elas, e a varredura do diário é do arquivo inteiro, o que
@@ -243,21 +290,22 @@
  * NENHUM COMPORTAMENTO DE PRODUÇÃO É TOCADO POR ESTA TASK
  * ===========================================================================
  *
- * Se alguma destas cinco medições achar vazamento, a correção pertence à task **dona do vetor**, e
+ * Se alguma destas seis medições achar vazamento, a correção pertence à task **dona do vetor**, e
  * esta registra o achado. Corrigi-la aqui fecharia **um caminho** deixando os outros abertos, que é
  * literalmente o padrão que a §7 da `.claude/rules/nao-regressao.md` documenta com quatro rodadas.
  *
- * A única escrita desta task fora de `apps/api/test/` é **comentário puro**: o marcador
- * `DÉBITO COM GATILHO — D58 · F4/T13` junto de `verificarIdentidade`, em
- * `apps/api/src/integracoes-bancarias/certificado.service.ts`. Ele agenda a medição da superfície
- * `fila` para a fatia (ii) — o item 14 da enumeração acima —, e mora ali porque é o arquivo que
- * aquela fatia vai abrir; o `_run/` que ela grepar será o **dela**, e não este.
+ * A única escrita da T13 fora de `apps/api/test/` foi **comentário puro**: o marcador do débito com
+ * gatilho `D58`, junto de `verificarIdentidade`, em
+ * `apps/api/src/integracoes-bancarias/certificado.service.ts`. Ele agendava a medição da superfície
+ * `fila` — o item 14 acima —, e **a T15 o cumpriu**: o CT-935 mede, e o marcador saiu do código e do
+ * índice do `CLAUDE.md` no mesmo diff. Marcador de débito já resolvido é pior que nenhum, porque
+ * mente sobre o estado do código.
  *
  * ===========================================================================
  * MUTANTE EXECUTADO (2026-08-15) — a prova de falsificação do CT-832
  * ===========================================================================
  *
- * Quatro dos cinco casos são **comportamentais** — enviam segredo real e observam a saída —, e por
+ * Cinco dos seis casos são **comportamentais** — enviam segredo real e observam a saída —, e por
  * isso a exigência de prova de falsificação da `.claude/rules/testing-stack.md` não incide sobre
  * eles; o controle positivo embutido em cada um é a rede que o P4 do Protocolo Antirregressão pede.
  * O **CT-832 é diferente**: ele inspeciona uma **descrição** (o documento publicado), e é asserção
@@ -354,12 +402,15 @@ import { Test } from '@nestjs/testing';
 import { MAIOR_MATERIAL_CODIFICADO } from '@sysloc/contracts';
 import { EMPRESA_A, SENHA_DA_CARGA } from '@sysloc/db';
 import {
+  type CargaDaEmissaoEmLote,
   CodigoErro,
   criarLogger,
   decifrarSegredo,
   ErroDeSegredoAdulterado,
+  FILA_DA_EMISSAO_EM_LOTE,
   type Logger,
 } from '@sysloc/shared';
+import { Queue } from 'bullmq';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)
@@ -387,10 +438,18 @@ import {
 } from '../../../packages/cobranca-bancaria/test/material-de-teste.ts';
 import { conexaoDeMigracao } from '../../../packages/db/test/banco-efemero.ts';
 import { reservarPorta } from '../../../packages/shared/test/efemero-comum.ts';
-import { type FilaEfemera, redisEfemero } from '../../../packages/shared/test/redis-efemero.ts';
+import {
+  comandoFila,
+  type FilaEfemera,
+  redisEfemero,
+} from '../../../packages/shared/test/redis-efemero.ts';
 import { AppModule } from '../src/app.module.ts';
 import { PREFIXO_DAS_ROTAS_DE_IDENTIDADE } from '../src/autenticacao/autenticacao.module.ts';
 import { CAMINHO_DA_SESSAO } from '../src/autenticacao/sessao.controller.ts';
+import {
+  CAMINHO_DA_COBRANCA_BANCARIA,
+  SEGMENTO_DAS_EMISSOES,
+} from '../src/cobranca-bancaria/cobranca-bancaria.controller.ts';
 import {
   ENDERECO_DE_ESCUTA,
   PREFIXO_DE_VERSAO,
@@ -427,6 +486,27 @@ const ROTA_DA_CONSULTA = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCAR
 
 /** Caminho, relativo à raiz, da **verificação** — composto, nunca escrito à mão. */
 const ROTA_DA_VERIFICACAO = `${ROTA_DA_CONSULTA}/${SEGMENTO_DA_VERIFICACAO}`;
+
+/**
+ * A rota que abre a emissão em lote — composta a partir das constantes que o controlador publica.
+ *
+ * Ela entra neste arquivo com a T15, que trouxe a superfície `fila` para a enumeração da ADR-0032:
+ * é por ela que uma carga de tarefa passa a existir, e é a carga que o CT-935 varre.
+ */
+const ROTA_DAS_EMISSOES = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_COBRANCA_BANCARIA}/${SEGMENTO_DAS_EMISSOES}`;
+
+/** Uma competência válida — primeiro dia do mês, que é o que o esquema de entrada exige. */
+const COMPETENCIA_DA_EMISSAO = '2026-08-01';
+
+/**
+ * Teto de memória imposto ao servidor de fila durante a medição do corpo de erro, em bytes.
+ *
+ * Um byte: qualquer instância já ocupa mais que isso, de modo que a recusa é imediata e não depende
+ * de quanto o servidor tenha acumulado. A política `noeviction` acompanha porque, com política de
+ * despejo, o servidor apagaria chaves em vez de recusar — e o erro que se quer medir não nasceria.
+ * É o mesmo arranjo, com a mesma razão, de `apps/api/test/produtor-de-fila.spec.ts`.
+ */
+const TETO_DE_MEMORIA_BYTES = 1;
 
 /**
  * A área e a ação que a superfície exige — afirmadas no efetivo da sessão, nunca supostas.
@@ -1040,6 +1120,111 @@ describe('o segredo operável não escapa por superfície alguma (T13, ADR-0032)
     },
     LIMITE_CASO_MS,
   );
+
+  it(
+    'CT-935 — nenhum material e nenhuma senha alcança a carga da tarefa de emissão em lote, nem o corpo de erro da fila',
+    async () => {
+      const autoridade = await gerarAutoridadeDeTeste('ct935');
+      const material = await gerarMaterial(autoridade, 'senha-sentinela-do-ct935-nao-deve-sair');
+      const agulhas = agulhasDo(material);
+
+      // O CONTROLE POSITIVO, antes de qualquer afirmação de ausência: sem ele, uma varredura
+      // quebrada devolveria lista vazia e este caso aprovaria um produto vazando tudo (AP-29).
+      expect(ocorrenciasDe(controleComAsAgulhas(agulhas), agulhas)).toEqual(
+        rotulosDoControle(agulhas),
+      );
+
+      const linhasAntes = (await lerLinhasDoDiario()).length;
+
+      // O CERTIFICADO É REGISTRADO PELA ROTA REAL — é ele que faz a empresa ter, neste instante, um
+      // segredo operável guardado. Sem esta precondição a ausência abaixo seria trivial: não haveria
+      // material no produto para escapar por caminho algum.
+      const registro = await registrarMaterial(material);
+
+      expect(registro.status).toBe(201);
+      expect((registro.corpo as CertificadoPublicado).impressaoDigital).toBe(
+        material.impressaoDigital,
+      );
+
+      const emissao = await pedir(ROTA_DAS_EMISSOES, {
+        metodo: 'POST',
+        cookie,
+        corpo: { competencia: COMPETENCIA_DA_EMISSAO },
+      });
+
+      // A ÂNCORA ANTIVÁCUO do arranjo: a emissão foi **aberta**, e portanto há tarefa a varrer. Um
+      // `422` de competência, ou um `403`, faria toda varredura abaixo correr sobre uma fila vazia.
+      expect(emissao.status).toBe(201);
+      const lote = emissao.corpo as LotePublicado;
+
+      const sonda = new Queue<CargaDaEmissaoEmLote, void>(FILA_DA_EMISSAO_EM_LOTE, {
+        connection: { host: '127.0.0.1', port: fila.porta },
+      });
+      onTestFinished(async () => {
+        await sonda.close();
+      });
+      // O servidor de fila é derrubado ao fim do arquivo, e uma sonda sem ouvinte de `error`
+      // derrubaria o processo com `Unhandled error event` em vez de deixar o caso concluir.
+      sonda.on('error', () => undefined);
+
+      const tarefas = await sonda.getJobs(['waiting', 'delayed', 'prioritized']);
+      const carga = tarefas[0]?.data;
+
+      if (carga === undefined) {
+        throw new Error('a emissão em lote respondeu 201 e nenhuma tarefa chegou à fila');
+      }
+
+      // AS CHAVES, por igualdade e na ordem em que a borda as monta. É esta linha que reprova no dia
+      // em que alguém acrescentar `material`, `senha` ou `envelope` à carga "para o worker não
+      // precisar consultar o banco" — a varredura seguinte reprovaria junto, mas esta **nomeia o
+      // campo**, e é ela que discrimina a chave nova da chave renomeada.
+      expect(Object.keys(carga)).toEqual(['empresaId', 'loteId']);
+      expect(carga.loteId).toBe(lote.id);
+
+      // O CORPO DE ERRO DA FILA — o canal do achado crítico da fase anterior, e o mais exposto que
+      // existe: com o servidor recusando escrita, a biblioteca levanta um erro que carrega a carga
+      // **serializada** em `command.args`. A `Queue` aqui é a CRUA, e não o produtor da aplicação, de
+      // propósito: o saneamento do produtor (`DECISÃO FECHADA — T9 / Gate 2`) já é medido pelo
+      // CT-739, e medi-lo de novo esconderia o que este caso persegue — que **a carga em si** não
+      // tem o que vazar, mesmo no canal que não sanea nada.
+      const erroDaFila = await sobMemoriaEsgotada(
+        async () => await rejeicaoDe(sonda.add(FILA_DA_EMISSAO_EM_LOTE, carga)),
+      );
+
+      expect(erroDaFila).toBeInstanceOf(Error);
+      // O CONTROLE POSITIVO DESTE CANAL: o erro **de fato** carrega a carga serializada. Sem esta
+      // linha, uma biblioteca que deixasse de anexar o comando faria a varredura abaixo passar por
+      // vacuidade — exatamente o modo de falha que o CT-738 existe para impedir do outro lado.
+      const comando = (erroDaFila as { command?: { readonly args?: readonly unknown[] } }).command;
+      expect(comando?.args).toContain(JSON.stringify(carga));
+
+      await esvaziar(registrador);
+
+      // A MEDIÇÃO: a carga nas três serializações, o erro da fila nas mesmas três, a resposta da
+      // rota e o arquivo de diário **inteiro**. Um campo novo que carregasse o segredo aninhado
+      // escaparia de uma conferência por chave, e não escapa daqui.
+      const ocorrencias = [
+        { rotulo: 'carga (texto cru)', texto: String(carga) },
+        { rotulo: 'carga (json)', texto: JSON.stringify(carga) },
+        { rotulo: 'carga (inspeção)', texto: inspect(carga, { depth: null }) },
+        { rotulo: 'erro da fila (texto cru)', texto: String(erroDaFila) },
+        {
+          rotulo: 'erro da fila (json)',
+          texto: JSON.stringify(erroDaFila, Object.getOwnPropertyNames(erroDaFila)),
+        },
+        { rotulo: 'erro da fila (inspeção)', texto: inspect(erroDaFila, { depth: null }) },
+        ...superficiesDaResposta(`POST ${ROTA_DAS_EMISSOES}`, emissao),
+        ...superficiesDoDiario(await lerLinhasDoDiario()),
+      ];
+
+      // A igualdade com lista vazia, e não `toHaveLength(0)`: é ela que faz a reprovação **nomear** o
+      // canal e a agulha ofensora.
+      expect(ocorrenciasDe(ocorrencias, agulhas)).toEqual([]);
+      // E o diário registrou o ato — sem esta linha, a varredura dele passaria sobre um trecho vazio.
+      expect((await lerLinhasDoDiario()).length).toBeGreaterThan(linhasAntes);
+    },
+    LIMITE_CASO_MS,
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -1636,4 +1821,43 @@ async function entrar(email: string, senha: string): Promise<string> {
   }
 
   return credencial.split(';')[0] ?? '';
+}
+
+/**
+ * Executa o trabalho com o servidor de fila recusando toda escrita, e devolve o teto ao normal.
+ *
+ * O `finally` é o que impede um caso vermelho de deixar o servidor inutilizável para os seguintes —
+ * a restauração não pode depender do desfecho da medição. Mesmo arranjo, com a mesma razão, de
+ * `apps/api/test/produtor-de-fila.spec.ts`.
+ */
+async function sobMemoriaEsgotada<T>(trabalho: () => Promise<T>): Promise<T> {
+  await comandoFila(fila.porta, 'CONFIG', 'SET', 'maxmemory-policy', 'noeviction');
+  await comandoFila(fila.porta, 'CONFIG', 'SET', 'maxmemory', String(TETO_DE_MEMORIA_BYTES));
+
+  try {
+    return await trabalho();
+  } finally {
+    await comandoFila(fila.porta, 'CONFIG', 'SET', 'maxmemory', '0');
+  }
+}
+
+/**
+ * O motivo da rejeição da promessa informada.
+ *
+ * Escrito assim, e não com `rejects.toThrow`, porque o que o CT-935 mede é o **objeto** rejeitado —
+ * as propriedades que ele carrega e o que uma serialização dele exibe —, e não apenas que houve
+ * rejeição.
+ */
+async function rejeicaoDe(promessa: Promise<unknown>): Promise<unknown> {
+  return await promessa.then(
+    (valor) => {
+      throw new Error(`a promessa resolveu em vez de rejeitar: ${inspect(valor)}`);
+    },
+    (erro: unknown) => erro,
+  );
+}
+
+/** O lote como a rota o publica — apenas o que o CT-935 lê dele. */
+interface LotePublicado {
+  readonly id: string;
 }

@@ -15,8 +15,10 @@
  * `autenticacao/autenticacao.module.ts`.
  *
  * O nome da fila, a forma da carga e as opções de repetição **não moram aqui**: vêm de
- * `@sysloc/shared` (`FILA_DA_CONFIRMACAO`, {@link CargaDaConfirmacao},
- * {@link OPCOES_PADRAO_DA_TAREFA}), que é o fecho do `D32 (F0/T6)`. Escrevê-los aqui à mão
+ * `@sysloc/shared` (`FILA_DA_CONFIRMACAO`, `FILA_DA_EMISSAO_EM_LOTE`,
+ * `FILA_DA_CONFERENCIA_BANCARIA`, {@link CargaDaConfirmacao}, {@link CargaDaEmissaoEmLote},
+ * {@link CargaDaConferenciaBancaria} e {@link OPCOES_PADRAO_DA_TAREFA}), que é o fecho do
+ * `D32 (F0/T6)`. Escrevê-los aqui à mão
  * reabriria exatamente o defeito daquele débito: `defaultJobOptions` vale **só para a instância que
  * as declara**, de modo que uma política escrita neste processo divergiria em silêncio da do
  * consumidor — a tarefa é aceita, roda, e apenas a repetição se comporta diferente.
@@ -41,10 +43,24 @@
  *      existe e o servidor não responde. É o mesmo desenho do encerramento gracioso do processador:
  *      quem desiste primeiro é quem sabe explicar por que desistiu.
  *
- * O desfecho de qualquer uma das três é o mesmo, e é o exigido: {@link ProdutorDeFila.enfileirar}
+ * O desfecho de qualquer uma das três é o mesmo, e é o exigido: o método de enfileiramento
  * **rejeita**, e quem chama a trata — a §10.2 da tech spec é literal em que a falha do
  * enfileiramento nunca derruba a resposta do cadastro, e a rede de produto é o reenvio manual
- * (RN-13).
+ * (RN-13). O que **quem chama** faz com a rejeição varia por ato, e a diferença é de produto, não
+ * de infraestrutura: a confirmação a **absorve** e registra (o cadastro já commitou e o reenvio
+ * manual é a rede); o lote e a conferência a traduzem em `503`, porque ali o pedido do Admin foi
+ * justamente *"execute isto"* e dizer `201` sem ter enfileirado seria mentir sobre o desfecho.
+ *
+ * ---------------------------------------------------------------------------
+ * TRÊS FILAS, UM DESPACHO — e a unicidade é o que mantém a decisão fechada de pé
+ * ---------------------------------------------------------------------------
+ *
+ * A T15 acrescentou a emissão em lote e a conferência bancária (ADR-0029). As três passam pelo
+ * **mesmo** {@link despachar}, e nenhuma tem corpo próprio: uma cópia por fila deixaria livre para
+ * divergir exatamente o `catch` que a `DECISÃO FECHADA — T9 / Gate 2` instalou, e a cópia que
+ * nascesse sem ele publicaria `err.command.args` no diário. É o **limiar de três** do `CLAUDE.md`
+ * chegando dentro de um módulo — com o agravante de que o que se duplicaria aqui é a garantia, e
+ * não o estilo.
  *
  * ---------------------------------------------------------------------------
  * O ouvinte de `error` não é ornamento
@@ -79,8 +95,12 @@
  */
 
 import {
+  type CargaDaConferenciaBancaria,
   type CargaDaConfirmacao,
+  type CargaDaEmissaoEmLote,
+  FILA_DA_CONFERENCIA_BANCARIA,
   FILA_DA_CONFIRMACAO,
+  FILA_DA_EMISSAO_EM_LOTE,
   type Logger,
   OPCOES_PADRAO_DA_TAREFA,
 } from '@sysloc/shared';
@@ -130,11 +150,26 @@ const REENVIOS_POR_COMANDO = 3;
  */
 const LIMITE_DE_ENFILEIRAMENTO_MS = 5_000;
 
+/**
+ * A fila como este módulo a usa — carga `C`, resultado vazio e nome de tarefa em cadeia livre.
+ *
+ * Os **seis** parâmetros de tipo são escritos por extenso, e a verbosidade é o preço de não escrever
+ * uma conversão. A biblioteca deriva `NameType` de `DataTypeOrJob` por tipo condicional, e um
+ * condicional sobre parâmetro genérico **não resolve** dentro de {@link despachar} — o compilador
+ * recusa `fila.add(nome, carga)` com um nome em cadeia. Fixá-los aqui, uma vez, mantém o despacho
+ * único **e** o `add` conferido pelo compilador; a alternativa idiomática (`as never` no nome) daria
+ * o mesmo binário e apagaria a conferência.
+ */
+type FilaDe<C> = Queue<C, void, string, C, void, string>;
+
 /** O que o chamador vê quando o servidor de fila não aceita a tarefa. */
 const RECUSA_DA_TAREFA = 'o servidor de fila não aceitou a tarefa';
 
 /** O que o chamador vê quando a conexão com o servidor de fila falha. */
 const FALHA_DA_CONEXAO = 'a conexão com o servidor de fila falhou';
+
+/** O que o diário registra quando uma das filas não fecha no desligamento. */
+const FALHA_DO_FECHO = 'o fecho de uma fila falhou no desligamento';
 
 // DECISÃO FECHADA — T9 / Gate 2 (P1, CRÍTICO de segurança) · 2026-08-13
 // O QUÊ: nenhum objeto de exceção vindo da biblioteca de fila atravessa a fronteira deste módulo.
@@ -179,6 +214,18 @@ export interface ProdutorDeFila {
    * informação para quem chama, não motivo para derrubar a resposta de quem já gravou.
    */
   enfileirarConfirmacao(carga: CargaDaConfirmacao): Promise<void>;
+  /**
+   * Enfileira a execução de uma emissão em lote **já gravada**.
+   *
+   * A ordem é conteúdo, e a §9.3 da tech spec a registra: a unidade de trabalho commita o lote e
+   * **só então** a borda enfileira. A falha oposta — enfileirar e o commit desfazer — é impossível
+   * por construção, e é o que dispensa a tabela de *outbox*. **Rejeita** como a irmã acima, e o que
+   * quem chama faz com a rejeição é dizer `503`: o lote fica `EM_ANDAMENTO`, e a próxima tentativa
+   * reusa o mesmo pelo índice único parcial.
+   */
+  enfileirarEmissaoEmLote(carga: CargaDaEmissaoEmLote): Promise<void>;
+  /** Enfileira a execução de uma conferência bancária **já aberta**. Mesma disciplina da anterior. */
+  enfileirarConferenciaBancaria(carga: CargaDaConferenciaBancaria): Promise<void>;
   /** Devolve o produtor e a conexão. Chamadas repetidas devolvem o mesmo encerramento. */
   encerrar(): Promise<void>;
 }
@@ -214,52 +261,107 @@ export function conectarProdutorDeFila(cadeiaConexao: string, logger: Logger): P
     );
   });
 
-  const confirmacao = new Queue<CargaDaConfirmacao, void>(FILA_DA_CONFIRMACAO, {
-    connection: conexao,
-    defaultJobOptions: OPCOES_PADRAO_DA_TAREFA,
-  });
+  /**
+   * Cria uma fila desta conexão, já com o ouvinte de `error` instalado.
+   *
+   * Ela existe para que **as três filas** nasçam do mesmo jeito. A alternativa — repetir as opções e
+   * o ouvinte por fila — é a que faz a política divergir em silêncio: a terceira cópia nasceria sem
+   * `defaultJobOptions`, ou sem ouvinte, e nada acusaria. É o **limiar de três** do `CLAUDE.md`
+   * aplicado dentro do módulo, e a razão vale ainda mais aqui do que num símbolo qualquer, porque o
+   * que se duplicaria é comportamento de infraestrutura.
+   *
+   * Nível de diagnóstico, e não de alerta: o que a fila emite aqui é o MESMO defeito de conexão que
+   * o cliente acima já reportou uma vez, repassado adiante. Sem o ouvinte, a biblioteca descarta o
+   * evento em silêncio.
+   */
+  function criarFila<C>(nome: string): FilaDe<C> {
+    const fila: FilaDe<C> = new Queue(nome, {
+      connection: conexao,
+      defaultJobOptions: OPCOES_PADRAO_DA_TAREFA,
+    });
 
-  // Nível de diagnóstico, e não de alerta: o que a fila emite aqui é o MESMO defeito de conexão que
-  // o cliente acima já reportou uma vez, repassado adiante. Sem o ouvinte, a biblioteca descarta o
-  // evento em silêncio.
-  confirmacao.on('error', (erro: Error) => {
-    logger.debug(
-      { erro: semRastroDeComando(FALHA_DA_CONEXAO, erro), origem: 'fila', fila: confirmacao.name },
-      'a fila repassou uma falha da conexão',
-    );
-  });
+    fila.on('error', (erro: Error) => {
+      logger.debug(
+        { erro: semRastroDeComando(FALHA_DA_CONEXAO, erro), origem: 'fila', fila: fila.name },
+        'a fila repassou uma falha da conexão',
+      );
+    });
+
+    return fila;
+  }
+
+  const confirmacao = criarFila<CargaDaConfirmacao>(FILA_DA_CONFIRMACAO);
+  const emissaoEmLote = criarFila<CargaDaEmissaoEmLote>(FILA_DA_EMISSAO_EM_LOTE);
+  const conferenciaBancaria = criarFila<CargaDaConferenciaBancaria>(FILA_DA_CONFERENCIA_BANCARIA);
+
+  /**
+   * As filas abertas por esta conexão, na ordem em que nasceram — a lista que o encerramento fecha.
+   *
+   * Ela é declarada **uma vez**, ao lado da criação, e não repetida no `encerrar`: uma fila nova que
+   * não entrasse na lista ficaria de pé depois do desligamento, e o sintoma seria um processo que não
+   * termina — o mesmo modo de falha que o `disconnect()` incondicional abaixo existe para fechar.
+   */
+  const filas: readonly { readonly name: string; close(): Promise<void> }[] = [
+    confirmacao,
+    emissaoEmLote,
+    conferenciaBancaria,
+  ];
+
+  /**
+   * O DESPACHO ÚNICO — o prazo, o saneamento e a corrida, escritos **uma vez** para as três filas.
+   *
+   * Ele é a razão de as três rotas de enfileiramento desta borda não terem corpo próprio. Uma cópia
+   * por fila deixaria livre para divergir exatamente o que a `DECISÃO FECHADA — T9 / Gate 2` fixou:
+   * o `catch` que embrulha a rejeição da biblioteca. A quarta fila que nascesse com um `add` direto
+   * publicaria `err.command.args` no diário, e nada acusaria — é a mesma classe de defeito que aquele
+   * marcador registra, chegando por caminho novo.
+   *
+   * O nome da tarefa é o **nome da fila**, como já era na confirmação: um segundo vocabulário para o
+   * mesmo fato só daria ao consumidor um discriminador a mais para desencontrar.
+   */
+  async function despachar<C>(fila: FilaDe<C>, carga: C): Promise<void> {
+    let prazo: NodeJS.Timeout | undefined;
+    const expirar = new Promise<never>((_, rejeitar) => {
+      prazo = setTimeout(
+        () =>
+          rejeitar(new Error(`${RECUSA_DA_TAREFA} em ${String(LIMITE_DE_ENFILEIRAMENTO_MS)} ms`)),
+        LIMITE_DE_ENFILEIRAMENTO_MS,
+      );
+    });
+
+    // O SANEAMENTO NA FRONTEIRA — ver o cabeçalho e {@link semRastroDeComando}. Ele envolve a
+    // rejeição AQUI, e não em quem chama, porque a partir desta linha o erro já é da aplicação:
+    // nem a corrida abaixo, nem o `catch` do disparo, nem consumidor futuro algum tem como
+    // alcançar o objeto que a biblioteca levantou.
+    const enfileirada = fila.add(fila.name, carga).catch((erro: unknown) => {
+      throw semRastroDeComando(RECUSA_DA_TAREFA, erro);
+    });
+    // Rejeição TARDIA — depois de o prazo ter estourado e a espera ter sido abandonada — não pode
+    // virar rejeição não tratada e derrubar o processo. Quando a rejeição chega DENTRO do prazo,
+    // é a corrida abaixo que a propaga a quem pediu; este ouvinte apenas a consome.
+    enfileirada.catch(() => undefined);
+
+    try {
+      await Promise.race([enfileirada, expirar]);
+    } finally {
+      clearTimeout(prazo);
+    }
+  }
 
   /** O encerramento já pedido, se houver. Ver {@link ProdutorDeFila.encerrar}. */
   let encerramento: Promise<void> | undefined;
 
   return {
     async enfileirarConfirmacao(carga: CargaDaConfirmacao): Promise<void> {
-      let prazo: NodeJS.Timeout | undefined;
-      const expirar = new Promise<never>((_, rejeitar) => {
-        prazo = setTimeout(
-          () =>
-            rejeitar(new Error(`${RECUSA_DA_TAREFA} em ${String(LIMITE_DE_ENFILEIRAMENTO_MS)} ms`)),
-          LIMITE_DE_ENFILEIRAMENTO_MS,
-        );
-      });
+      await despachar(confirmacao, carga);
+    },
 
-      // O SANEAMENTO NA FRONTEIRA — ver o cabeçalho e {@link semRastroDeComando}. Ele envolve a
-      // rejeição AQUI, e não em quem chama, porque a partir desta linha o erro já é da aplicação:
-      // nem a corrida abaixo, nem o `catch` do disparo, nem consumidor futuro algum tem como
-      // alcançar o objeto que a biblioteca levantou.
-      const enfileirada = confirmacao.add(FILA_DA_CONFIRMACAO, carga).catch((erro: unknown) => {
-        throw semRastroDeComando(RECUSA_DA_TAREFA, erro);
-      });
-      // Rejeição TARDIA — depois de o prazo ter estourado e a espera ter sido abandonada — não pode
-      // virar rejeição não tratada e derrubar o processo. Quando a rejeição chega DENTRO do prazo,
-      // é a corrida abaixo que a propaga a quem pediu; este ouvinte apenas a consome.
-      enfileirada.catch(() => undefined);
+    async enfileirarEmissaoEmLote(carga: CargaDaEmissaoEmLote): Promise<void> {
+      await despachar(emissaoEmLote, carga);
+    },
 
-      try {
-        await Promise.race([enfileirada, expirar]);
-      } finally {
-        clearTimeout(prazo);
-      }
+    async enfileirarConferenciaBancaria(carga: CargaDaConferenciaBancaria): Promise<void> {
+      await despachar(conferenciaBancaria, carga);
     },
 
     encerrar(): Promise<void> {
@@ -267,7 +369,39 @@ export function conectarProdutorDeFila(cadeiaConexao: string, logger: Logger): P
       // reabrir a espera.
       encerramento ??= (async (): Promise<void> => {
         try {
-          await confirmacao.close();
+          // TODAS as filas, e a falha de uma não impede o fecho das outras: `allSettled`, e não
+          // `all`. Com `all`, a primeira rejeição abandonaria as demais abertas — e o desligamento
+          // com o servidor de fila fora, que é justamente quando isto corre, faria o processo ficar
+          // de pé segurando o que ele acabou de pedir para fechar.
+          const fechos = await Promise.allSettled(filas.map(async (fila) => await fila.close()));
+
+          // ...E OS RESULTADOS SÃO LIDOS. `allSettled` nunca rejeita: descartá-los devolveria ao
+          // caminho de fecho exatamente o silêncio que o ouvinte de `error` existe para impedir —
+          // *"o produtor descarta o evento em silêncio"*, no cabeçalho. Enquanto havia uma fila só,
+          // a rejeição subia até `onApplicationShutdown` e o arcabouço a registrava; com três, e
+          // sob `allSettled`, quem não ler aqui não fica sabendo em lugar nenhum.
+          //
+          // ⚠️ A causa entra reduzida a TEXTO, por {@link semRastroDeComando}, e não como o objeto
+          // que a biblioteca rejeitou: é o que a `DECISÃO FECHADA — T9 / Gate 2` exige de tudo que
+          // sai deste módulo, e passar o objeto de `close()` cru ao registrador reabriria o vetor
+          // `err.command.args`. É a armadilha mais provável de quem editar este bloco.
+          //
+          // Nível de diagnóstico, e não de alerta, pela mesma razão do ouvinte de `criarFila`: o
+          // processo está descendo, o desfecho não muda, e o operador que investiga um desligamento
+          // demorado é quem precisa da linha. A ORDEM de `allSettled` é a de entrada — é ela que
+          // liga cada resultado à fila que o produziu.
+          for (const [indice, fecho] of fechos.entries()) {
+            if (fecho.status !== 'rejected') continue;
+
+            logger.debug(
+              {
+                erro: semRastroDeComando(FALHA_DO_FECHO, fecho.reason),
+                origem: 'fila',
+                fila: filas[indice]?.name,
+              },
+              'uma fila não fechou no desligamento',
+            );
+          }
         } finally {
           // Devolução INCONDICIONAL da conexão: enquanto ela estiver de pé, o temporizador de
           // reconexão segura o laço de eventos e o processo não termina. Encerramento incondicional

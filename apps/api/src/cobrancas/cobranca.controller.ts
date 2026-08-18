@@ -1,22 +1,42 @@
 /**
- * As **cinco rotas da cobrança** — lançar avulsa, ler a carteira, ler uma cobrança, acusar o
- * pagamento e cancelar.
+ * As **nove rotas da cobrança** — lançar avulsa, ler a carteira, ler uma cobrança, acusar o
+ * pagamento, cancelar, os **dois atos sobre o boleto** (emitir/reemitir e revogar, T13 da fatia
+ * `emissao-e-conciliacao`) e as **duas leituras** sobre ele: os bytes do documento e o histórico
+ * bancário (T14 da mesma fatia).
  *
  * ---------------------------------------------------------------------------
- * A exigência é declarada na CLASSE, e é de ÁREA — nenhuma chave de ação
+ * A exigência é declarada na CLASSE, e é de ÁREA — nenhuma chave de ação nas CINCO primeiras
  * ---------------------------------------------------------------------------
  *
- * `@ExigeChave(AREA_DO_FINANCEIRO)` na classe vale para os cinco manipuladores — a guarda lê o
- * metadado com `getAllAndOverride`, e a declaração da classe é o que ela encontra quando o método não
- * declara nada próprio. Declarar cinco vezes o mesmo valor criaria cinco lugares para esquecer um.
+ * `@ExigeChave(AREA_DO_FINANCEIRO)` na classe vale para os manipuladores que não declaram nada — a
+ * guarda lê o metadado com `getAllAndOverride`, e a declaração da classe é o que ela encontra quando o
+ * método é silencioso. Declarar cinco vezes o mesmo valor criaria cinco lugares para esquecer um.
  *
- * **Nenhuma das cinco exige chave de ação, e a ausência é decisão registrada** (§11.2 da tech spec):
+ * **Nenhuma das cinco primeiras exige chave de ação, e a ausência é decisão registrada** (§11.2 da
+ * tech spec da fatia `cobranca-e-mora`):
  * o catálogo fechado da ADR-0011 enumera **duas** ações sensíveis dentro de `TELA:financeiro` —
  * `ACAO:emitir_boleto` e `ACAO:solicitar_baixa_de_boleto` — e **nenhuma** para lançar, ler, pagar ou
  * cancelar cobrança. Quem fechou o catálogo tinha as operações de cobrança à vista e concedeu chave
  * própria só às que falam com o banco. Nenhuma chave nova nasce nesta fatia, e
  * `packages/auth/src/catalogo-de-permissoes.ts` **não é tocado** — precisar de uma chave nova aqui
  * seria sinal de escopo mal delimitado, e abrir o catálogo exigiria supersedê-la ADR-0011.
+ *
+ * ---------------------------------------------------------------------------
+ * OS DOIS ATOS SOBRE O BOLETO exigem a CONJUNÇÃO — e é a mesma frase acima que os governa
+ * ---------------------------------------------------------------------------
+ *
+ * As duas chaves que o parágrafo anterior nomeia — `ACAO:emitir_boleto` e
+ * `ACAO:solicitar_baixa_de_boleto` — estavam **reservadas** justamente para estas duas rotas: são as
+ * únicas ações sensíveis que o catálogo enumera dentro de `TELA:financeiro`, e são as que *"falam com
+ * o banco"*. Elas entram como a **segunda** classe da ADR-0021, e não como a primeira: o ato **move
+ * dinheiro** — registra um título cobrável no mundo, ou o derruba — e não tem substituta prevista.
+ *
+ * Cada uma declara no método a **conjunção inteira** (`@ExigeChaves(área, ação)`), e **nunca só a
+ * ação**: `getAllAndOverride` substitui, e uma declaração só com a ação apagaria `TELA:financeiro`
+ * destas duas rotas em silêncio. A coerência do catálogo esconderia o defeito — `MAPA_ACAO_TELA` liga
+ * as duas ações à própria área do Financeiro, de modo que a rota continuaria exigindo-a *por
+ * acidente*, e o `CT-355` existe exatamente para acusar o manipulador que exige menos que a classe.
+ * A **ordem** é área antes de ação, porque a recusa nomeia a primeira chave ausente (ADR-0018).
  *
  * **As duas transições entram por esse mesmo critério, e a classificação é decisão escalada e
  * confirmada antes da spec.** A ADR-0021 dá "apenas a área" ao ato que não transfere direito, não move
@@ -26,12 +46,26 @@
  * supersedê-la ADR-0011, que o PRD §4.2 exclui nominalmente) e estender a ADR-0021 com uma terceira
  * instância declarada. **Não reabra.**
  *
- * Como não há declaração no método, **não existe nesta superfície o risco de substituição** que o
- * marcador `DECISÃO FECHADA` de {@link ../imoveis/conjunto.controller.js} governa: `getAllAndOverride`
- * faz a declaração do método **substituir** a da classe, e é por isso que a rota que precisasse de uma
- * ação teria de declarar a **conjunção inteira**, nunca só a ação. O `CT-355` varre a aplicação e
- * acusa qualquer manipulador que exija menos do que a classe dele; estas cinco exigem exatamente o
- * que a classe exige, que é o que se quer.
+ * Nas **cinco primeiras** não há declaração no método, e por isso o risco de substituição que o
+ * marcador `DECISÃO FECHADA` de {@link ../imoveis/conjunto.controller.js} governa não as alcança;
+ * nas **duas de ato** ele é real, e o que o fecha é a conjunção declarada por extenso. O `CT-355`
+ * varre a aplicação e acusa qualquer manipulador que exija menos do que a classe dele: as cinco
+ * exigem exatamente o que a classe exige, e as duas exigem a classe **mais** a ação.
+ *
+ * ---------------------------------------------------------------------------
+ * AS DUAS LEITURAS SOBRE O BOLETO exigem SÓ A ÁREA, e a ausência é decisão (T14)
+ * ---------------------------------------------------------------------------
+ *
+ * `GET :codigo/boleto` e `GET :codigo/historico-bancario` **nada declaram no método**, e entram no
+ * grupo das que valem pela classe. A régua é a da ADR-0021 lida ao pé da letra: ela governa
+ * **transição de estado**, e nenhuma das duas é transição — não movem dinheiro, não gravam, não
+ * alteram o que outra entidade pode fazer. Quem alcança `TELA:financeiro` já lê a cobrança inteira
+ * por `GET :codigo`, com `linhaDigitavel` e `codigoDeBarras` dentro; exigir uma ação sensível para
+ * baixar o documento negaria a segunda via a quem enxerga o número que ela imprime.
+ *
+ * As duas ações que o catálogo fechado enumera nesta área — `ACAO:emitir_boleto` e
+ * `ACAO:solicitar_baixa_de_boleto` — são das rotas de **ato**, e nenhuma chave nova nasce aqui:
+ * `packages/auth/src/catalogo-de-permissoes.ts` **não é tocado** por esta task.
  *
  * ---------------------------------------------------------------------------
  * A TRANSIÇÃO É ROTA PRÓPRIA, nunca campo de atualização (ADR-0021)
@@ -77,11 +111,21 @@
  * A UNIDADE DE TRABALHO ABRE AQUI, na borda (decisão D1)
  * ---------------------------------------------------------------------------
  *
- * É o controlador que a abre, e o serviço **recebe** o executor. As três passam por
+ * É o controlador que a abre, e o serviço **recebe** o executor. Todas passam por
  * {@link sobContextoDaSessao}, de `comum/contexto-da-sessao.ts`, e nenhuma abre unidade por conta
  * própria nem chama `contextoDeTenant.executarCom`: a única origem legítima do contexto de tenant é a
  * sessão que a guarda publicou (ADR-0008), e propriedade instalada por ponto sobrevive só até o ponto
  * seguinte.
+ *
+ * **Os dois atos sobre o boleto abrem VÁRIAS unidades, e todas nascem aqui.** Eles escrevem no banco
+ * *entre* duas idas ao provedor — a revogação é gravada assim que confirmada, e a emissão do título
+ * novo vem depois —, e as duas escritas não podem estar na mesma transação: se estivessem, a falha da
+ * emissão desfaria a revogação já confirmada junto ao provedor, apagando o desfecho que a CA-06
+ * declara. Por isso o controlador entrega ao serviço a **própria** `sobContextoDaSessao`, aplicada a
+ * esta requisição, e o serviço a chama quando precisa de uma unidade. Nada disso o aproxima da porta
+ * de conexão: ele continua sem `AcessoAoBanco`, e a unidade continua nascendo na borda, sob a sessão.
+ * Nenhuma delas aninha — todas correm **fora** de qualquer `sql.begin` —, de modo que a
+ * `DECISÃO FECHADA` de `packages/db/src/unidade-de-trabalho.ts` não é tocada.
  *
  * ---------------------------------------------------------------------------
  * A chave da rota é o CÓDIGO, e ele é validado e CANONIZADO antes de qualquer consulta
@@ -124,13 +168,25 @@
  * objeto que confere a entrada.
  */
 
-import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  Post,
+  Query,
+  Req,
+  Res,
+} from '@nestjs/common';
 import {
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiServiceUnavailableResponse,
   ApiTags,
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
@@ -141,19 +197,22 @@ import {
   envelopeDeLista,
   esquemaDaCobranca,
   esquemaDaJanelaDeCobrancas,
+  esquemaDaTrilhaDaCobranca,
   esquemaDeCobrancaNova,
   esquemaDoPagamentoDeCobranca,
+  type TrilhaDaCobranca,
 } from '@sysloc/contracts';
 import type { AcessoAoBanco } from '@sysloc/db';
 import { CodigoErro, type Logger } from '@sysloc/shared';
-import type { FastifyRequest } from 'fastify';
-import { ExigeChave } from '../autenticacao/exigencia.decorator.js';
+import type { FastifyReply, FastifyRequest } from 'fastify';
+import { ExigeChave, ExigeChaves } from '../autenticacao/exigencia.decorator.js';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
 import { ESQUEMA_DO_CORPO_VAZIO } from '../comum/esquema-de-corpo-vazio.js';
 import { esquemaDoErro } from '../comum/esquema-de-erro.js';
 import { esquemaPublicado } from '../comum/esquema-publicado.js';
 import { validar } from '../comum/validacao.js';
 import { TOKEN_ACESSO_AO_NEGOCIO, TOKEN_LOGGER } from '../configuracao/ambiente.js';
+import { ATO_DE_EMISSAO, ATO_DE_REVOGACAO, BoletoService } from './boleto.service.js';
 import { CobrancaService, type PaginaDeCobrancas } from './cobranca.service.js';
 
 /** Caminho da superfície de cobranças, relativo ao prefixo de versão (§4.1: `/v1/cobrancas/…`). */
@@ -197,6 +256,75 @@ const ESQUEMA_DA_PAGINA = envelopeDeLista(esquemaDaCobranca);
 const SEGMENTO_DO_PAGAMENTO = ':codigo/pagamento';
 const SEGMENTO_DO_CANCELAMENTO = ':codigo/cancelamento';
 
+/**
+ * Os dois segmentos dos **atos sobre o boleto** (T13 da fatia `emissao-e-conciliacao`).
+ *
+ * Escritos uma vez, como os dois de cima, porque são **contrato publicado**: eles entram no par
+ * método+caminho que a cobertura de autorização audita, e um literal repetido no decorador e no
+ * documento seria livre para divergir.
+ *
+ * O vocabulário é **revogação**, e não *baixa* nem *retirada de circulação*: o glossário já usa
+ * *retirada de circulação* para visibilidade de cadastro, e reusá-lo aqui daria dois conceitos sem
+ * parentesco ao mesmo nome. A chave de permissão continua sendo
+ * {@link ACAO_DE_BAIXA_DE_BOLETO} — ela é do catálogo **persistido** e não se renomeia.
+ */
+const SEGMENTO_DA_EMISSAO_DE_BOLETO = ':codigo/emissao-de-boleto';
+const SEGMENTO_DA_REVOGACAO_DE_BOLETO = ':codigo/revogacao-de-boleto';
+
+/**
+ * Os dois segmentos das **leituras** sobre o boleto (T14 da fatia `emissao-e-conciliacao`).
+ *
+ * Escritos uma vez, como os quatro de cima, e pela mesma razão: eles entram no par método+caminho que
+ * a cobertura de autorização audita, e um literal repetido no decorador e no documento seria livre
+ * para divergir.
+ *
+ * O vocabulário é o do **produto**: `boleto` para o documento, e `historico-bancario` para a trilha —
+ * nunca *extrato* nem *eventos*, que o glossário reserva a outros conceitos.
+ */
+const SEGMENTO_DO_BOLETO = ':codigo/boleto';
+const SEGMENTO_DO_HISTORICO_BANCARIO = ':codigo/historico-bancario';
+
+/**
+ * O que a rota dos bytes declara, conforme a **ADR-0028** — os três valores, nomeados uma vez.
+ *
+ * Eles são **contrato publicado**, e aparecem em **dois** lugares cada: no documento OpenAPI, que o
+ * frontend lê para gerar o cliente, e no cabeçalho que a resposta de fato escreve. É a coincidência
+ * entre os dois que faz a declaração ser verdade — dois literais ficariam livres para divergir, e o
+ * modo de falha é o pior possível: o documento anunciaria um tipo de mídia e a resposta traria outro,
+ * sem que nada acusasse.
+ *
+ * São os **mesmos** valores que {@link ../contratos/contrato.controller.js} já declara na rota do
+ * documento do contrato, e a repetição é deliberada: as duas superfícies publicam o mesmo tipo de
+ * mídia por acaso de domínio — o provedor manda PDF, e o contrato é composto em PDF —, e uma casa
+ * comum para eles ligaria duas decisões que podem mudar em separado. O limiar deste repositório é
+ * **três**, e esta é a segunda.
+ *
+ * Os nomes dos cabeçalhos são escritos em minúsculas porque é assim que o adaptador HTTP os
+ * normaliza; o valor de `Content-Disposition` é composto no ponto da resposta, porque metade dele é
+ * o código da cobrança.
+ */
+const TIPO_DE_MIDIA_DO_BOLETO = 'application/pdf';
+const CABECALHO_DO_TIPO = 'content-type';
+const CABECALHO_DA_DISPOSICAO = 'content-disposition';
+
+/** A extensão do nome de arquivo sugerido — a outra metade de `attachment; filename="…"`. */
+const EXTENSAO_DO_BOLETO = '.pdf';
+
+/**
+ * As duas ações sensíveis que o catálogo fechado enumera dentro de `TELA:financeiro`.
+ *
+ * Constantes nomeadas, e não literais nos decoradores: os valores são **contrato publicado** — eles
+ * aparecem em `detalhes.exigido` no corpo da recusa —, e ter nome é o que permite ao caso de cobertura
+ * auditá-los por conteúdo sem casar uma cadeia escrita em dois lugares.
+ *
+ * ⚠️ **`ACAO:solicitar_baixa_de_boleto` NÃO é renomeada** para acompanhar o vocabulário da revogação:
+ * ela é chave do catálogo **persistido** (`packages/auth/src/catalogo-de-permissoes.ts`), preserva o
+ * sentido do legado, e o catálogo é fechado em 10 × 7 — renomeá-la exigiria migração sobre as
+ * concessões já gravadas e supersedimento da ADR-0011.
+ */
+const ACAO_DE_EMISSAO_DE_BOLETO = 'ACAO:emitir_boleto' as const;
+const ACAO_DE_BAIXA_DE_BOLETO = 'ACAO:solicitar_baixa_de_boleto' as const;
+
 @ApiTags('cobrancas')
 @Controller(CAMINHO_DAS_COBRANCAS)
 @ExigeChave(AREA_DO_FINANCEIRO)
@@ -207,6 +335,11 @@ export class CobrancaController {
     // exprimíveis sem aninhamento.
     @Inject(TOKEN_ACESSO_AO_NEGOCIO) private readonly banco: AcessoAoBanco,
     @Inject(CobrancaService) private readonly cobrancas: CobrancaService,
+    // Os dois atos sobre o boleto (T13). Ele é serviço próprio, e não mais métodos em
+    // `CobrancaService`: aquele arquivo declara por escrito que **não conhece provedor**, e injetar
+    // nele o adaptador e a guarda daria à superfície inteira da cobrança a capacidade de falar com o
+    // banco de fora.
+    @Inject(BoletoService) private readonly boletos: BoletoService,
     @Inject(TOKEN_LOGGER) private readonly logger: Logger,
   ) {}
 
@@ -430,5 +563,271 @@ export class CobrancaController {
 
       return cancelada;
     });
+  }
+
+  @Post(SEGMENTO_DA_EMISSAO_DE_BOLETO)
+  // A **conjunção inteira** no método, e nunca só a ação: `getAllAndOverride` faz a declaração do
+  // método **substituir** a da classe, de modo que `@ExigeChave(ACAO_DE_EMISSAO_DE_BOLETO)` apagaria
+  // `TELA:financeiro` desta rota em silêncio. É o defeito explorável que a `DECISÃO FECHADA` de
+  // {@link ../imoveis/conjunto.controller.js} registra, e a ordem — área antes da ação — é conteúdo:
+  // a recusa nomeia a **primeira** chave ausente (ADR-0018), e quem tem a área precisa ouvir o nome
+  // da ação, que é o que lhe falta.
+  @ExigeChaves(AREA_DO_FINANCEIRO, ACAO_DE_EMISSAO_DE_BOLETO)
+  // `200`, e não o `201` que o arcabouço dá a todo `@Post`: o ato **não cria recurso** — ele muda o
+  // que a cobrança que já existia publica —, mesma razão do pagamento e do cancelamento.
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Emite (ou reemite) o boleto de uma cobrança',
+    description:
+      'Ato de **primeira classe** — ele move dinheiro —, e por isso exige a área do Financeiro **e** ' +
+      'a ação `emitir_boleto` (ADR-0021). Sobre cobrança **sem** boleto vivo, emite direto; sobre ' +
+      'cobrança **com** boleto vivo, revoga o anterior, **espera a confirmação do provedor** e só ' +
+      'então emite o novo — em nenhum instante existem dois boletos pagáveis. O corpo é vazio e ' +
+      'fechado. A resposta é a cobrança inteira, já com `numeroDoTituloNoProvedor`, `linhaDigitavel` ' +
+      'e `codigoDeBarras` preenchidos; `dataDoCredito` e `valorCreditado` seguem `null` até a ' +
+      'conferência apurar o crédito. Cobrança já paga ou cancelada responde `422` nomeando o estado ' +
+      'atual, **sem falar com o provedor**; empresa sem certificado vigente — ou com um vencido — ' +
+      'responde `422` dizendo o que falta. Se a revogação for confirmada e a emissão falhar, a ' +
+      'cobrança fica **sem boleto** e a resposta é `503` nomeando a cobrança, com ' +
+      '`detalhes: { boleto: "SEM_BOLETO", revogacao: "CONFIRMADA" }` — o estado é declarado, não ' +
+      'adivinhado. Cobrança de outra empresa é indistinguível de inexistente: `404` com o mesmo corpo.',
+  })
+  @ApiOkResponse({
+    description: 'A cobrança como ela ficou, com os campos de emissão preenchidos.',
+    schema: esquemaPublicado(esquemaDaCobranca, 'output'),
+  })
+  @ApiUnauthorizedResponse({ schema: esquemaDoErro([CodigoErro.NAO_AUTENTICADO]) })
+  @ApiForbiddenResponse({ schema: esquemaDoErro([CodigoErro.ACESSO_NEGADO]) })
+  @ApiNotFoundResponse({ schema: esquemaDoErro([CodigoErro.RECURSO_NAO_ENCONTRADO]) })
+  @ApiUnprocessableEntityResponse({ schema: esquemaDoErro([CodigoErro.CAMPO_INVALIDO]) })
+  @ApiServiceUnavailableResponse({ schema: esquemaDoErro([CodigoErro.SERVICO_INDISPONIVEL]) })
+  async emitirBoleto(
+    @Param('codigo') identificador: string,
+    @Body() corpo: unknown,
+    @Req() requisicao: FastifyRequest,
+  ): Promise<Cobranca> {
+    const codigo = validar(ESQUEMA_DO_CODIGO_DE_COBRANCA, identificador, CAMPO_DO_CODIGO);
+    validar(ESQUEMA_DO_CORPO_VAZIO, corpo ?? {}, CAMPO_DO_CORPO);
+
+    // PRIMEIRA unidade: as leituras e **todas** as recusas que não custam uma ida ao provedor. Ela
+    // **commita** antes de a conversa começar — a chamada de rede não segura conexão física.
+    const preparo = await sobContextoDaSessao(
+      this.banco,
+      requisicao,
+      async (tx, sessao) =>
+        await this.boletos.prepararAto(tx, sessao.empresaId, codigo, ATO_DE_EMISSAO),
+    );
+
+    // O ato externo, FORA de transação. As unidades que ele precisa no meio do caminho nascem por
+    // esta mesma função — a única origem de contexto continua sendo a sessão (ADR-0008).
+    const emitida = await this.boletos.emitir(preparo, (trabalho) =>
+      sobContextoDaSessao(this.banco, requisicao, trabalho),
+    );
+
+    // Os campos são os que a §13.1 nomeia: **nenhum valor monetário e nenhum dado do locatário**, e
+    // tampouco o número do título — vocabulário do provedor, que a trilha guarda e o journal não.
+    this.logger.info(
+      { empresaId: preparo.empresaId, entidade: ENTIDADE_DA_TRILHA, codigo: emitida.codigo },
+      'boleto emitido',
+    );
+
+    return emitida;
+  }
+
+  @Post(SEGMENTO_DA_REVOGACAO_DE_BOLETO)
+  // A conjunção inteira, pela mesma razão da rota acima — e com a chave do catálogo persistido, que
+  // **não** é renomeada para acompanhar o vocabulário da revogação. Ver {@link ACAO_DE_BAIXA_DE_BOLETO}.
+  @ExigeChaves(AREA_DO_FINANCEIRO, ACAO_DE_BAIXA_DE_BOLETO)
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Revoga o boleto de uma cobrança',
+    description:
+      'Derruba o título junto ao provedor e **espera a confirmação** antes de apagar qualquer coisa: ' +
+      'o provedor não revoga na mesma resposta, e apagar antes deixaria o boleto pagável no mundo ' +
+      'enquanto o produto já o considera morto. Confirmada a revogação, os campos de emissão voltam ' +
+      'a `null`, o arquivo é apagado e a trilha ganha `BOLETO_REVOGADO`. **A cobrança continua em ' +
+      'aberto** — revogar boleto não cancela cobrança —, e emitir de novo depois disto acontece como ' +
+      'a primeira vez. O corpo é vazio e fechado. Cobrança **sem** boleto vivo responde `422` com ' +
+      '`detalhes: { boleto: "SEM_BOLETO" }`; confirmação que não vem dentro do teto responde `503` ' +
+      'com `detalhes: { revogacao: "PEDIDA_NAO_CONFIRMADA" }`, e **nada é apagado**. Cobrança de ' +
+      'outra empresa é indistinguível de inexistente: `404` com o mesmo corpo.',
+  })
+  @ApiOkResponse({
+    description: 'A cobrança como ela ficou, sem boleto e ainda em aberto.',
+    schema: esquemaPublicado(esquemaDaCobranca, 'output'),
+  })
+  @ApiUnauthorizedResponse({ schema: esquemaDoErro([CodigoErro.NAO_AUTENTICADO]) })
+  @ApiForbiddenResponse({ schema: esquemaDoErro([CodigoErro.ACESSO_NEGADO]) })
+  @ApiNotFoundResponse({ schema: esquemaDoErro([CodigoErro.RECURSO_NAO_ENCONTRADO]) })
+  @ApiUnprocessableEntityResponse({ schema: esquemaDoErro([CodigoErro.CAMPO_INVALIDO]) })
+  @ApiServiceUnavailableResponse({ schema: esquemaDoErro([CodigoErro.SERVICO_INDISPONIVEL]) })
+  async revogarBoleto(
+    @Param('codigo') identificador: string,
+    @Body() corpo: unknown,
+    @Req() requisicao: FastifyRequest,
+  ): Promise<Cobranca> {
+    const codigo = validar(ESQUEMA_DO_CODIGO_DE_COBRANCA, identificador, CAMPO_DO_CODIGO);
+    validar(ESQUEMA_DO_CORPO_VAZIO, corpo ?? {}, CAMPO_DO_CORPO);
+
+    // A guarda de estado **não** se aplica aqui, e a ausência é decisão: a cobrança cancelada é
+    // justamente quem tem título vivo a derrubar, e recusá-la manteria o boleto pagável no mundo.
+    const preparo = await sobContextoDaSessao(
+      this.banco,
+      requisicao,
+      async (tx, sessao) =>
+        await this.boletos.prepararAto(tx, sessao.empresaId, codigo, ATO_DE_REVOGACAO),
+    );
+
+    const revogada = await this.boletos.revogar(preparo, (trabalho) =>
+      sobContextoDaSessao(this.banco, requisicao, trabalho),
+    );
+
+    this.logger.info(
+      { empresaId: preparo.empresaId, entidade: ENTIDADE_DA_TRILHA, codigo: revogada.codigo },
+      'boleto revogado',
+    );
+
+    return revogada;
+  }
+
+  @Get(SEGMENTO_DO_BOLETO)
+  // NADA é declarado aqui, e a ausência é o mecanismo: a exigência de `TELA:financeiro` vem da
+  // CLASSE, e `getAllAndOverride` é override — não união. Baixar o boleto é **leitura** do que a área
+  // já dá, e a ADR-0021 governa transição de estado: ela não alcança o que não é transição. As duas
+  // ações sensíveis que o catálogo fechado enumera dentro desta área governam **emitir** e
+  // **revogar** — os atos que movem dinheiro —, e exigir uma delas aqui negaria a segunda via a quem
+  // pode ver a cobrança inteira. É a mesma forma, e a mesma razão, da rota do documento de
+  // {@link ../contratos/contrato.controller.js}.
+  //
+  // ⚠️ **Declarar `@ExigeChave(AREA_DO_FINANCEIRO)` seria pior do que redundante**: instalaria um
+  // segundo lugar por onde a área desta rota pode sumir em silêncio.
+  @ApiOperation({
+    summary: 'Baixa o boleto de uma cobrança em PDF',
+    description:
+      'Devolve os bytes que o **provedor** emitiu, tal como ele os entregou (ADR-0030 — o boleto é ' +
+      'fato recebido de terceiro, e não artefato derivado). Se o arquivo tiver sumido do disco, ele ' +
+      'é **rebuscado do provedor e regravado**, de forma transparente: a resposta é a mesma, e nada ' +
+      'é registrado no histórico bancário, porque rebuscar cache não é efeito (ADR-0034). ' +
+      'Cobrança que **nunca teve** boleto responde `404` nomeando a cobrança, com ' +
+      '`detalhes: { boleto: "NUNCA_EMITIDO" }` — jamais um documento em branco. ⚠️ **A existência do ' +
+      'boleto é decidida pelo estado no banco, nunca pela presença do arquivo**: boleto revogado ' +
+      'cujo arquivo tenha sobrado em disco responde `404` como qualquer outro nunca emitido. ' +
+      'Provedor indisponível na rebusca responde `503`, sem alterar coisa alguma. A resposta é ' +
+      '`application/pdf` com `Content-Disposition: attachment` sugerindo `<codigo>.pdf`. Cobrança de ' +
+      'outra empresa é indistinguível de inexistente: `404` com o mesmo corpo. Código malformado é ' +
+      'recusado com `422` **sem tocar o banco**.',
+  })
+  // A ÚNICA declaração de resposta desta superfície que não deriva de um esquema, e a ADR-0028 é
+  // quem a autoriza: a rota permanece no contrato publicado e declara **mídia**, **nome sugerido de
+  // arquivo** e o **mesmo envelope de erro** das demais.
+  //
+  // ⚠️ `format: 'binary'` NÃO é declaração de forma — é o idioma que o OpenAPI tem para dizer *"isto
+  // é uma sequência de bytes opaca"*, isto é, a declaração da AUSÊNCIA de forma. O que a `Decision`
+  // proíbe, e o que esta rota não faz, é declarar a ESTRUTURA do sucesso: não há `esquemaPublicado`
+  // aqui, nem objeto, nem campo. É o precedente literal da rota do documento do contrato, com a
+  // leitura conjunta já registrada na §21.3 (1) do tech spec da fatia anterior.
+  @ApiOkResponse({
+    description: 'O boleto em PDF, tal como o provedor o emitiu.',
+    content: { [TIPO_DE_MIDIA_DO_BOLETO]: { schema: { type: 'string', format: 'binary' } } },
+    headers: {
+      [CABECALHO_DA_DISPOSICAO]: {
+        schema: { type: 'string' },
+        description: 'attachment; filename="COB-2026-0000001.pdf"',
+      },
+    },
+  })
+  @ApiUnauthorizedResponse({ schema: esquemaDoErro([CodigoErro.NAO_AUTENTICADO]) })
+  @ApiForbiddenResponse({ schema: esquemaDoErro([CodigoErro.ACESSO_NEGADO]) })
+  @ApiNotFoundResponse({ schema: esquemaDoErro([CodigoErro.RECURSO_NAO_ENCONTRADO]) })
+  @ApiUnprocessableEntityResponse({ schema: esquemaDoErro([CodigoErro.CAMPO_INVALIDO]) })
+  @ApiServiceUnavailableResponse({ schema: esquemaDoErro([CodigoErro.SERVICO_INDISPONIVEL]) })
+  async boleto(
+    @Param('codigo') identificador: string,
+    @Req() requisicao: FastifyRequest,
+    // `passthrough: true` porque o corpo continua sendo o **valor devolvido** — o que a resposta
+    // precisa da instância é apenas dois cabeçalhos que dependem do `:codigo`. Sem `passthrough`, o
+    // manipulador passaria a ser responsável por escrever a resposta inteira, e a forma dele
+    // divergiria das outras oito desta classe sem ganho algum. É o molde literal da rota do
+    // documento do contrato.
+    @Res({ passthrough: true }) resposta: FastifyReply,
+  ): Promise<Uint8Array> {
+    const codigo = validar(ESQUEMA_DO_CODIGO_DE_COBRANCA, identificador, CAMPO_DO_CODIGO);
+
+    // A unidade de trabalho cobre **apenas a leitura do estado**, e a repartição é a mesma da rota do
+    // documento do contrato — cuja `DECISÃO FECHADA — T7 / Gate 2` registra a medição que a motivou:
+    // `sobContextoDaSessao` é um `sql.begin` real, e o que corre depois dela aqui é leitura de disco
+    // e, no caminho raro, **conversa de rede com o provedor**, que pode custar segundos. Dentro da
+    // unidade, cada download reservaria uma conexão física da reserva que atende o produto inteiro.
+    // ⚠️ Não "uniformize" isto de volta para uma continuação só.
+    const preparo = await sobContextoDaSessao(
+      this.banco,
+      requisicao,
+      async (tx, sessao) => await this.boletos.prepararEntrega(tx, sessao.empresaId, codigo),
+    );
+
+    // A entrega corre FORA da unidade. A abertura vai por parâmetro porque a rebusca da CA-08 precisa
+    // ler o certificado da empresa — a única ida ao banco do caminho raro —, e ela nasce aqui, na
+    // borda, sob a sessão: a única origem legítima do contexto de tenant (ADR-0008).
+    const bytes = await this.boletos.entregar(preparo, (trabalho) =>
+      sobContextoDaSessao(this.banco, requisicao, trabalho),
+    );
+
+    // Os DOIS cabeçalhos são escritos **depois** de os bytes existirem, e a ordem é conteúdo: o
+    // filtro global responde pela MESMA instância de `FastifyReply`, de modo que um
+    // `Content-Type: application/pdf` definido antes da leitura sobreviveria à recusa e o envelope de
+    // erro da ADR-0017 sairia anunciando-se como PDF — o `MT-2` daquela rota mediu pior ainda: o
+    // `404` virava `500`. É o que o `CT-921` afirma nesta.
+    resposta.header(CABECALHO_DO_TIPO, TIPO_DE_MIDIA_DO_BOLETO);
+    // O nome sugerido é o **código canonizado** — `ESQUEMA_DO_CODIGO_DE_COBRANCA` já validou a forma
+    // `COB-{ano}-{7 dígitos}` e passou a caixa para maiúsculas —, e por isso não há aqui aspa, quebra
+    // de linha ou caractere de controle a escapar: o que chega do cliente não atravessa esta linha.
+    resposta.header(
+      CABECALHO_DA_DISPOSICAO,
+      `attachment; filename="${codigo}${EXTENSAO_DO_BOLETO}"`,
+    );
+
+    return bytes;
+  }
+
+  @Get(SEGMENTO_DO_HISTORICO_BANCARIO)
+  // NADA é declarado aqui, pela mesma razão da rota acima: ler o histórico é leitura do que a área já
+  // dá, e a ADR-0021 não alcança o que não é transição de estado.
+  @ApiOperation({
+    summary: 'Lê o histórico bancário de uma cobrança',
+    description:
+      'Os efeitos que de fato aconteceram com o boleto desta cobrança — emissão, revogação, ' +
+      'liquidação, estorno, divergência de valor e recusa de emissão —, **na ordem em que ' +
+      'ocorreram**, do mais antigo para o mais recente. Cada item traz o instante, a origem (ato do ' +
+      'Admin ou conferência) e o `diagnostico` que o provedor informou, preservado tal como veio. ' +
+      '⚠️ **A trilha registra efeito, nunca tentativa** (ADR-0034): a passada da conferência que ' +
+      'nada mudou, e a revogação pedida e não confirmada, não aparecem aqui. Cobrança que ainda não ' +
+      'teve efeito bancário algum responde `200` com `itens` vazio — que é diferente de `404`. ' +
+      'Cobrança de outra empresa é indistinguível de inexistente: `404` com o mesmo corpo.',
+  })
+  // O envelope vem INTEIRO do pacote, e não é composto aqui como {@link ESQUEMA_DA_PAGINA}: aquele é
+  // `envelopeDeLista` — helper exportado — aplicado ao item; este seria a forma do corpo **escrita à
+  // mão**, e o mesmo objeto que dá o documento dá o tipo de retorno do manipulador (ADR-0016). Não
+  // volte a compor `z.object({ itens })` nesta borda: a chave passaria a existir em dois lugares.
+  @ApiOkResponse({
+    description: 'O histórico da cobrança, do efeito mais antigo para o mais recente.',
+    schema: esquemaPublicado(esquemaDaTrilhaDaCobranca, 'output'),
+  })
+  @ApiUnauthorizedResponse({ schema: esquemaDoErro([CodigoErro.NAO_AUTENTICADO]) })
+  @ApiForbiddenResponse({ schema: esquemaDoErro([CodigoErro.ACESSO_NEGADO]) })
+  @ApiNotFoundResponse({ schema: esquemaDoErro([CodigoErro.RECURSO_NAO_ENCONTRADO]) })
+  @ApiUnprocessableEntityResponse({ schema: esquemaDoErro([CodigoErro.CAMPO_INVALIDO]) })
+  async historicoBancario(
+    @Param('codigo') identificador: string,
+    @Req() requisicao: FastifyRequest,
+  ): Promise<TrilhaDaCobranca> {
+    const codigo = validar(ESQUEMA_DO_CODIGO_DE_COBRANCA, identificador, CAMPO_DO_CODIGO);
+
+    // UMA unidade de trabalho, que cobre o manipulador inteiro: aqui não há rede nem disco depois da
+    // leitura, de modo que a exceção que a rota dos bytes faz não tem razão de ser nesta.
+    return await sobContextoDaSessao(
+      this.banco,
+      requisicao,
+      async (tx) => await this.boletos.historico(tx, codigo),
+    );
   }
 }

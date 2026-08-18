@@ -64,6 +64,14 @@
  * outra empresa não são achados — a política do banco os esconde, e a visão é `security_invoker` —, e
  * a ausência vira `404 RECURSO_NAO_ENCONTRADO` num ponto único ({@link CobrancaService.exigir}).
  *
+ * **E não existe aqui projeção do recurso publicado.** O que `localizarCobranca` e `listarCobrancas`
+ * devolvem já **é** o corpo da §4.1.1, campo a campo, montado no ponto único de `cobrancaPublicada`,
+ * em `packages/db/src/cobranca.ts`. A composição que existia neste arquivo até a T6 da fatia
+ * `emissao-e-conciliacao` — os cinco campos de conciliação escritos como `null` fixo — era o
+ * débito que a T1 daquela fatia registrou, e saiu **inteira** no diff que estendeu `LinhaDeCobranca`
+ * com eles. Não a reintroduza: uma segunda montagem do mesmo recurso é livre para divergir da
+ * primeira, e o que ela publicaria por último venceria em silêncio.
+ *
  * ---------------------------------------------------------------------------
  * A GARANTIA DA SÉRIE mora aqui, e o controlador só ABRE a unidade dela (ADR-0015)
  * ---------------------------------------------------------------------------
@@ -301,6 +309,8 @@ export class CobrancaService {
 
     const { cobrancas, total } = await listarCobrancas(tx, { limite, deslocamento }, filtros);
 
+    // A lista é **copiada**, e não repassada: o que a porta devolve é `readonly`, e o envelope do
+    // contrato declara `itens` como arranjo comum. Mesmo desenho de `AutomacaoService.listarEnvios`.
     return { itens: [...cobrancas], total, limite, deslocamento };
   }
 

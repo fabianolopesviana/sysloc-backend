@@ -89,6 +89,73 @@ export const MEIOS_DE_RECEBIMENTO = Object.freeze(['BOLETO', 'PIX'] as const);
 export type MeioDeRecebimento = (typeof MEIOS_DE_RECEBIMENTO)[number];
 
 /**
+ * Os textos que o desfecho da verificação de identidade pode carregar — **conjunto fechado**.
+ *
+ * ===========================================================================
+ * Por que eles moram AQUI, e não no adaptador que os escolhe
+ * ===========================================================================
+ *
+ * Eles nasceram como constantes privadas de `adaptador-sicoob.ts` (fatia (i), T10), e a restrição
+ * *"o texto sai de um conjunto fechado"* existia **só em prosa**: o campo era `string` no domínio e
+ * `z.string()` aqui. Era o **D27 · F4/T8** — o único ponto por onde texto arbitrário atravessava a
+ * porta com caminho direto até a tela do Admin.
+ *
+ * Fechá-lo estruturalmente exige **uma** declaração alcançável pelos dois lados, e a direção da
+ * dependência decide qual é o lado: o domínio (`@sysloc/cobranca-bancaria`) importa deste pacote, e
+ * este pacote é **folha** — não importa nada do produto. Declarar os textos no domínio fecharia o
+ * lado do compilador e deixaria o esquema publicado com `z.string()`, porque a seta não volta.
+ * Declará-los aqui fecha os dois: o esquema abaixo os enumera em **execução**, e o domínio deriva a
+ * união por `typeof` em **compilação**.
+ *
+ * É a forma, e a razão, de {@link MEIOS_DE_RECEBIMENTO}: vocabulário publicado tem definição única
+ * neste pacote (ADR-0016), e quem o consome o **importa** em vez de redeclará-lo. Duas declarações
+ * do mesmo texto seriam a forma exata do débito **D14** — dois fatos executáveis dizendo a mesma
+ * coisa, livres para divergir, com nada que acuse quando divergirem.
+ *
+ * ---------------------------------------------------------------------------
+ * Nenhum destes textos nomeia a instituição nem cita campo do provedor
+ * ---------------------------------------------------------------------------
+ *
+ * É o que mantém verdadeira a cláusula de vocabulário da ADR-0001 no único campo por onde texto
+ * atravessa a porta. Detrito de runtime de transporte — código de erro de biblioteca, texto de
+ * OpenSSL, nome de recurso da instituição — não entra aqui e não tem por onde entrar: o conjunto é
+ * fechado, e alargá-lo é editar este arquivo.
+ *
+ * `as const` fecha a união em **compilação**; `Object.freeze` fecha o objeto em **execução**, e é a
+ * segunda metade que sobrevive ao build.
+ *
+ * ⚠️ **O texto de `ACEITE` carrega a ressalva de alcance por escrito, e ela continua aqui.** A sonda
+ * da fatia (i) é o aperto de mão mútuo, não a obtenção de credencial de acesso: ela confirma a
+ * identidade da empresa e **não** confirma que a emissão está habilitada. Quem retira a ressalva é a
+ * fatia que sobe a sonda para o `client_credentials` (o débito **D36 · F4/T10**) — retirá-la antes
+ * disso publicaria ao Admin uma afirmação mais larga do que a que foi medida.
+ */
+export const DETALHES_DA_VERIFICACAO = Object.freeze({
+  /** O par completou a conexão e aceitou o certificado — com a ressalva de alcance por escrito. */
+  ACEITE:
+    'a instituição aceitou o certificado desta empresa ao estabelecer a conexão segura. ' +
+    'Isto confirma a identidade da empresa perante ela; não confirma que a emissão de cobrança já ' +
+    'está habilitada, o que depende das credenciais de habilitação',
+  /** O par completou a conexão e **não** aceitou o certificado apresentado. */
+  RECUSA_PELO_PAR:
+    'a instituição não aceitou o certificado desta empresa ao estabelecer a conexão segura. ' +
+    'Confira se o certificado é o que ela emitiu para esta empresa e se continua válido perante ela',
+  /** Não houve conexão: o destino não respondeu ao pedido de ligação, e nada foi apresentado. */
+  INDISPONIVEL:
+    'não foi possível alcançar a instituição no endereço configurado, e o certificado desta empresa ' +
+    'não chegou a ser apresentado. Tente novamente em alguns minutos',
+  /** A conexão abriu e o par não concluiu dentro do teto — desfecho distinto dos outros quatro. */
+  TEMPO_ESGOTADO:
+    'a instituição não concluiu a conferência do certificado dentro do tempo previsto, e por isso ' +
+    'esta tentativa não confirma nem recusa a identidade da empresa. Tente novamente',
+  /** O ato não chegou a começar: a apresentação do certificado falhou antes de qualquer conexão. */
+  NAO_INICIADO:
+    'a verificação não chegou a começar: o certificado desta empresa não foi apresentado e nenhuma ' +
+    'conexão com a instituição foi tentada. Confira o certificado e a senha registrados para esta ' +
+    'empresa e tente novamente',
+} as const);
+
+/**
  * Os três estados do certificado (RN-04), na ordem publicada.
  *
  * O estado é **derivado** da validade contra a data corrente da operação, nunca marca gravada:
@@ -305,6 +372,17 @@ export type Certificado = z.infer<typeof esquemaDoCertificado>;
  * este esquema.
  *
  * ---------------------------------------------------------------------------
+ * `detalhe` é união FECHADA mais o nulo — o `z.string()` era o débito D27
+ * ---------------------------------------------------------------------------
+ *
+ * Enquanto ele era `z.string().nullable()`, a restrição *"o texto sai de um conjunto fechado de
+ * constantes"* vivia só em prosa, e este esquema era o caminho direto por onde texto arbitrário —
+ * um código de erro de biblioteca, uma linha de OpenSSL, um nome de recurso da instituição —
+ * chegaria à tela do Admin. {@link DETALHES_DA_VERIFICACAO} é a declaração única do conjunto, e o
+ * `z.enum` a torna exigível **em execução**, do lado publicado; a união derivada por `typeof` a
+ * torna exigível **em compilação**, do lado do domínio.
+ *
+ * ---------------------------------------------------------------------------
  * `detalhe` é ANULÁVEL, e permanece anulável — a anulabilidade é a decisão
  * ---------------------------------------------------------------------------
  *
@@ -322,7 +400,7 @@ export type Certificado = z.infer<typeof esquemaDoCertificado>;
 export const esquemaDoResultadoDaVerificacao = z.strictObject({
   aceito: z.boolean(),
   verificadoEm: z.iso.datetime(),
-  detalhe: z.string().nullable(),
+  detalhe: z.enum(DETALHES_DA_VERIFICACAO).nullable(),
 });
 
 /** O desfecho da verificação da identidade no provedor. */

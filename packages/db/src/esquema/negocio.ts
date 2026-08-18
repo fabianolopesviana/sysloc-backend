@@ -37,14 +37,17 @@
  *   * `migracoes/0016_seguranca_bancaria.sql` — o certificado do provedor
  *     (`certificado_do_provedor`), mais os objetos do schema `plataforma`: a sequência do
  *     identificador perante o provedor e a função `SECURITY DEFINER` **sem parâmetro** que a avança
- *     (ADR-0031 e ADR-0033).
+ *     (ADR-0031 e ADR-0033);
+ *   * `migracoes/0018_seguranca_emissao_e_conciliacao.sql` — as quatro entidades da emissão e da
+ *     conciliação (`evento_bancario`, `emissao_em_lote`, `item_da_emissao_em_lote` e
+ *     `conferencia_bancaria`).
  *
- * São sete porque **gerado e autoral nunca convivem no mesmo arquivo** — uma regeração futura da
+ * São oito porque **gerado e autoral nunca convivem no mesmo arquivo** — uma regeração futura da
  * gerada sobrescreveria o trecho autoral em silêncio. O que **obriga** a parceira autoral não é a
  * predecessora ser gerada: é **nascer tabela em `negocio`**, porque o gerador não emite `FORCE` nem
  * política. Toda migração que criar tabela aqui leva junto uma parceira autoral própria — nunca um
- * acréscimo à `0001`, à `0006`, à `0008`, à `0010`, à `0012`, à `0014` ou à `0016`, que descrevem
- * schemas já aplicados e são, portanto, imutáveis. ⚠️ A `0010` tem, além disso, o
+ * acréscimo à `0001`, à `0006`, à `0008`, à `0010`, à `0012`, à `0014`, à `0016` ou à `0018`, que
+ * descrevem schemas já aplicados e são, portanto, imutáveis. ⚠️ A `0010` tem, além disso, o
  * `DÉBITO COM GATILHO — D20` no ponto da emenda que ela já sofreu: **leia-o antes de qualquer
  * tentativa de tocá-la**.
  *
@@ -52,9 +55,9 @@
  * `0002_campos_do_arcabouco.sql` e a `0003_autorizacao.sql` são **geradas e não têm parceira** —
  * nenhuma das duas cria tabela, elas só alteram o que já existia —, e a `0004_desfecho_de_recusa.sql`
  * é **autoral avulsa**, sem gerada a quem se parear. Só a `0000`, a `0005`, a `0007`, a `0009`, a
- * `0011`, a `0013` e a `0015` criam tabela em `negocio`, e são exatamente elas que têm parceira. Ler
- * o gatilho como "toda gerada ganha uma parceira" produziria uma migração de segurança vazia, sem
- * `FORCE` nem política a declarar.
+ * `0011`, a `0013`, a `0015` e a `0017` criam tabela em `negocio`, e são exatamente elas que têm
+ * parceira. Ler o gatilho como "toda gerada ganha uma parceira" produziria uma migração de segurança
+ * vazia, sem `FORCE` nem política a declarar.
  *
  * A `0013` é, além disso, a primeira **destrutiva** do produto: ela remove
  * `contrato.pdf_contrato_arquivo` (ADR-0030) e **não tem descida**. Reverter o esquema exige
@@ -91,6 +94,17 @@
  * parágrafo **não** é permissão para afrouxar qualquer uma das quatro: crescimento de lista esperada
  * é o caminho legítimo, troca de igualdade por presença é regressão de prova.
  *
+ * ⚠️ **Acrescentar COLUNA a `negocio.cobranca` move outras duas listas**, e elas não aparecem no
+ * comando acima porque têm o mesmo nome uma da outra: `COLUNAS_DA_COBRANCA`, em
+ * `test/cobranca.spec.ts` (ordem alfabética) e em `test/fonte-unica-do-estado.spec.ts` (ordem do
+ * catálogo). A duplicação é deliberada — cada uma prova a ausência de uma coluna de estado
+ * diferente —, e foi a T2 da fatia `emissao-e-conciliacao` que as descobriu por busca ao acrescentar
+ * `identificador_no_provedor`. O comando que as encontra:
+ *
+ * ```bash
+ * grep -rln --exclude-dir=dist "COLUNAS_DA_COBRANCA" packages
+ * ```
+ *
  * ---------------------------------------------------------------------------
  * O que NÃO existe aqui, de propósito
  * ---------------------------------------------------------------------------
@@ -105,10 +119,13 @@ import {
   CAMINHOS_DO_AVISO,
   CANAIS_DE_AVISO,
   DESFECHOS_DO_AVISO,
+  DESFECHOS_DO_ITEM_DO_LOTE,
   ESTADOS_DA_COBRANCA,
   ESTADOS_DO_CONTRATO,
   NATUREZAS_DE_COBRANCA,
+  ORIGENS_DO_EVENTO_BANCARIO,
   SITUACOES_DE_LOCACAO,
+  TIPOS_DE_EVENTO_BANCARIO,
   TIPOS_DE_IMOVEL,
   TIPOS_DE_PESSOA,
 } from '@sysloc/contracts';
@@ -929,6 +946,18 @@ export const cobranca = negocio
       multaPercentualAplicado: numeric('multa_percentual_aplicado', { precision: 5, scale: 2 }),
       jurosPercentualAplicado: numeric('juros_percentual_aplicado', { precision: 5, scale: 2 }),
       /** Conciliação bancária — nasce nula, sem produtor nesta fatia. Ver o cabeçalho. */
+      // DÉBITO COM GATILHO — D14 · F4/T6 · registrado 2026-08-17
+      // O QUÊ: `nosso_numero` é **vocabulário do provedor** numa coluna do produto. O nome publicado
+      //        já é do produto desde a T1 da fatia `emissao-e-conciliacao`
+      //        (`numeroDoTituloNoProvedor`), e a tradução mora num ponto só — `colunasDaCobranca`, em
+      //        `../cobranca.ts` —, de modo que a dívida é de **esquema físico**, não de contrato.
+      // QUANDO FECHA: a **primeira migração que alterar `negocio.cobranca` depois da `0017`**, ou a
+      //        fatia (iii) ao consumir a coluna. Ali o `RENAME COLUMN` sai de graça no mesmo arquivo,
+      //        junto da recriação de `negocio.cobranca_derivada` (que expande `c.*` no instante da
+      //        criação) e das duas cópias homônimas de `COLUNAS_DA_COBRANCA` em `../../test/`.
+      // POR QUE NÃO AGORA: renomeá-la exigiria migração própria sobre tabela já com dado, fora do
+      //        escopo declarado da T6 — e a coluna não é publicada com este nome em lugar nenhum.
+      // ÍNDICE: docs/specs/features/emissao-e-conciliacao/v1/_run/run-report.md §2, D14
       nossoNumero: text('nosso_numero'),
       linhaDigitavel: text('linha_digitavel'),
       codigoBarras: text('codigo_barras'),
@@ -945,6 +974,41 @@ export const cobranca = negocio
        * demanda; o boleto é fato e se guarda.
        */
       boletoArquivo: text('boleto_arquivo'),
+      /**
+       * O identificador com que **o SaaS** apresenta esta cobrança ao provedor — coluna INTERNA.
+       *
+       * ---------------------------------------------------------------------------
+       * Ela NÃO é `nosso_numero`, e confundi-las custa a conciliação da fatia (iii)
+       * ---------------------------------------------------------------------------
+       *
+       * São dois identificadores distintos, medidos na fatia (i): este o **produto compõe** (18
+       * posições, `AAAAMM` mais o contador de doze de `plataforma.identificador_bancario_seq`) e o
+       * envia; `nosso_numero` é o que o **provedor atribui** e devolve. Guardar só o segundo
+       * descartaria a chave por onde a notificação recebida descobre a que empresa a cobrança
+       * pertence — e a fatia (iii) ficaria sem por onde casar, exigindo migração sobre tabela já com
+       * dado.
+       *
+       * ---------------------------------------------------------------------------
+       * A unicidade é GLOBAL, e parear com `empresa_id` é o erro que a ADR-0033 proíbe
+       * ---------------------------------------------------------------------------
+       *
+       * A série é do **SaaS**, não da empresa: o número identifica o emissor perante um terceiro que
+       * não conhece a fronteira de empresa deste produto, e duas imobiliárias emitindo o mesmo
+       * número é exatamente o defeito do sistema antigo. `unique(empresa_id, …)` admitiria a
+       * colisão entre empresas em silêncio — e é o *"corrigir o contador para ser por empresa"* que
+       * a ADR-0033 nomeia, nascido de um conflito medido no challenge da fatia (i) (a ADR-0015,
+       * morta, abria com *"todo contador sequencial deste produto é único por empresa"*). Mesma
+       * forma, e mesma razão, de `portador_de_confirmacao_derivado_key`.
+       *
+       * Anulável porque a cobrança nasce antes de ser apresentada ao provedor: nulo é *"ainda não
+       * emitida"*, e o PostgreSQL não compara nulos entre si numa restrição única — as não emitidas
+       * não disputam a unicidade umas com as outras.
+       *
+       * **Nenhum esquema de `@sysloc/contracts` a publica**, e a ausência é a decisão: ela é chave de
+       * casamento interno, não campo de domínio. `esquemaDaCobranca` continua com os campos que a T1
+       * publicou.
+       */
+      identificadorNoProvedor: text('identificador_no_provedor'),
     },
     (tabela) => [
       // O alvo da chave estrangeira composta de quem vier a apontar para a cobrança, e o que a
@@ -955,6 +1019,11 @@ export const cobranca = negocio
       // `retirado_em` —, e é por isso que a decisão precisa estar escrita: quem trouxer exclusão
       // lógica para esta tabela no futuro não pode acompanhá-la de um `WHERE retirado_em IS NULL`.
       unique('cobranca_empresa_codigo_key').on(tabela.empresaId, tabela.codigo),
+      // A unicidade GLOBAL do identificador perante o provedor — `empresa_id` fica FORA de
+      // propósito, e a razão está por extenso no cabeçalho da coluna (ADR-0033). Ela é restrição
+      // NOMEADA, e não índice, porque não há condição a impor: a exclusão dos nulos é do próprio
+      // PostgreSQL, que não compara nulos entre si.
+      unique('cobranca_identificador_no_provedor_key').on(tabela.identificadorNoProvedor),
       // A chave estrangeira composta da ADR-0008 — a ÚNICA da tabela, porque o locatário sai da
       // junção com o contrato. Ela recusa, no banco, apontar uma cobrança da empresa A para um
       // contrato da empresa B: o par `(contrato_id, empresa_id)` teria de existir no pai, e não
@@ -1543,6 +1612,385 @@ export const certificadoDoProvedor = negocio
         .where(sql`substituido_em IS NULL`),
       // O histórico da empresa (§4.1): o mais recente primeiro, que é a ordem em que ele é lido.
       index('certificado_do_provedor_historico_idx').on(tabela.empresaId, tabela.criadoEm.desc()),
+    ],
+  )
+  .enableRLS();
+
+// ===========================================================================
+// A emissão e a conciliação — a trilha do efeito, o lote e a conferência
+// ===========================================================================
+//
+// Os três enums abaixo derivam dos literais de `@sysloc/contracts`, pela mesma razão e na mesma
+// direção dos nove anteriores (ADR-0016): o contrato é **folha**, e é ele que o frontend importa no
+// marco de entrega. A ORDEM dos rótulos é conteúdo — um enum do PostgreSQL a guarda, e é ela que
+// governa comparação e ordenação do tipo.
+//
+// **O QUARTO arranjo publicado pela T1 não vira enum aqui, e a ausência é a decisão.**
+// `ESTADOS_DA_EMISSAO_EM_LOTE` não tem tipo no banco nem coluna que o guarde: o estado do lote é
+// DERIVADO dos dois instantes de desfecho — `INTERROMPIDA` quando há `interrompido_em`, `CONCLUIDA`
+// quando há `concluido_em`, `EM_ANDAMENTO` enquanto não há nenhum dos dois —, e o `check` de
+// desfecho único garante que os dois nunca coexistem. Gravá-lo criaria a segunda fonte do mesmo
+// fato, livre para divergir do desfecho que a produziu (ADR-0022, RN-14) — exatamente o que a
+// ausência de `status` em {@link cobranca} já registra.
+//
+// **O que NÃO é declarável aqui**, e por isso vive em
+// `migracoes/0018_seguranca_emissao_e_conciliacao.sql`: o `FORCE ROW LEVEL SECURITY`, as quatro
+// políticas `FOR ALL` e os `GRANT USAGE ON TYPE` dos três tipos. O que mora aqui são as quatro
+// TABELAS e os três tipos, e só eles.
+
+/** Os seis tipos de evento da trilha. Ordem e valores vêm do contrato, nunca redigitados. */
+export const tipoDeEventoBancario = negocio.enum(
+  'tipo_de_evento_bancario',
+  TIPOS_DE_EVENTO_BANCARIO,
+);
+
+/** As duas origens de um evento — quem produziu o efeito. Valores vindos do contrato. */
+export const origemDoEventoBancario = negocio.enum(
+  'origem_do_evento_bancario',
+  ORIGENS_DO_EVENTO_BANCARIO,
+);
+
+/** Os dois desfechos de um item do lote. Valores vindos do contrato. */
+export const desfechoDoItemDoLote = negocio.enum(
+  'desfecho_do_item_do_lote',
+  DESFECHOS_DO_ITEM_DO_LOTE,
+);
+
+/**
+ * A trilha do que **aconteceu** com a cobrança perante o provedor — um fato por linha.
+ *
+ * ---------------------------------------------------------------------------
+ * A linha registra EFEITO, nunca tentativa — e nunca é alterada
+ * ---------------------------------------------------------------------------
+ *
+ * Não há `UPDATE` nem `DELETE` sobre esta tabela em lugar nenhum do produto, pela mesma natureza de
+ * {@link envioDeCobranca}: ela é registro de fato. A ADR-0014 não a alcança — o discriminador dela é
+ * *ser referenciável*, e nada aponta para uma linha de trilha —, e por isso não há `retirado_em`.
+ * Retenção e expurgo vão para a **F7**, junto de `identidade.tentativa_login` e
+ * `negocio.envio_de_cobranca`.
+ *
+ * ---------------------------------------------------------------------------
+ * `origem` é coluna PRÓPRIA, e não mais um rótulo de `tipo`
+ * ---------------------------------------------------------------------------
+ *
+ * Fundir as duas reproduziria, com outro nome, o defeito que `referencia` e `natureza` já evitam em
+ * {@link cobranca}: o leitor do histórico veria *o que* mudou e não *quem* o descobriu, e separar as
+ * duas perguntas exigiria casar texto. `ATO_DO_ADMIN` é o que alguém pediu por rota; `CONFERENCIA`,
+ * o que a apuração junto ao provedor descobriu sozinha.
+ *
+ * ---------------------------------------------------------------------------
+ * As duas colunas ANULÁVEIS, e por que nenhuma `CHECK` as pareia com `tipo`
+ * ---------------------------------------------------------------------------
+ *
+ *   * `diagnostico` — o que o provedor respondeu quando o efeito foi uma recusa. Nem todo tipo o
+ *     tem, e nem todo diagnóstico acompanha recusa: um evento de liquidação pode carregar a
+ *     observação que o extrato trouxe;
+ *   * `valor_informado` — o valor que o provedor declarou, quando o evento carrega valor
+ *     (`COBRANCA_LIQUIDADA`, `DIVERGENCIA_DE_VALOR`). `numeric(15,2)`, nunca ponto flutuante —
+ *     invariante 4 do projeto.
+ *
+ * Uma bicondicional pareando qualquer das duas com um subconjunto de `tipo` **está errada aqui**:
+ * ela congelaria no banco o mapeamento tipo→carga, que é decisão do adaptador do provedor e muda
+ * com o provedor, não com o esquema. Onde a coerência é do PRÓPRIO fato — como em
+ * `item_da_emissao_em_lote` abaixo, em que `RECUSADO` **é** ter motivo —, a bicondicional está
+ * escrita.
+ */
+export const eventoBancario = negocio
+  .table(
+    'evento_bancario',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      empresaId: uuid('empresa_id')
+        .notNull()
+        .references(() => empresa.id),
+      cobrancaId: uuid('cobranca_id').notNull(),
+      tipo: tipoDeEventoBancario('tipo').notNull(),
+      origem: origemDoEventoBancario('origem').notNull(),
+      /**
+       * O instante do fato, pelo relógio do BANCO (ADR-0026) — nunca pelo do processo.
+       *
+       * É por ele que a trilha ordena, e é `timestamptz` porque é um ATO. Mesmo desenho de
+       * `envio_de_cobranca.criado_em`.
+       */
+      ocorridoEm: timestamp('ocorrido_em', { withTimezone: true }).notNull().defaultNow(),
+      /** O que o provedor respondeu, quando respondeu algo. Ver o cabeçalho. */
+      diagnostico: text('diagnostico'),
+      /** Dinheiro em `numeric(15,2)`, nunca ponto flutuante — invariante 4 do projeto. */
+      valorInformado: numeric('valor_informado', { precision: 15, scale: 2 }),
+    },
+    (tabela) => [
+      // O alvo da chave estrangeira composta de quem vier a apontar para o evento, e o que a guarda
+      // de cobertura de `src/catalogo.ts` cobra de toda tabela deste schema.
+      unique('evento_bancario_id_empresa_key').on(tabela.id, tabela.empresaId),
+      // A chave estrangeira COMPOSTA da ADR-0008 — a única da tabela. Ela recusa, no banco, um
+      // evento da empresa A apontando para cobrança da empresa B: o par `(cobranca_id, empresa_id)`
+      // teria de existir no pai, e não existe. É recusa ESTRUTURAL — nenhuma validação de aplicação
+      // é consultada no caminho, e é por isso que a forma simples (`REFERENCES cobranca(id)`) não
+      // serve nem "por enquanto": ela aceitaria o apontamento cruzado em silêncio.
+      foreignKey({
+        name: 'evento_bancario_cobranca_empresa_fkey',
+        columns: [tabela.cobrancaId, tabela.empresaId],
+        foreignColumns: [cobranca.id, cobranca.empresaId],
+      }),
+      // A leitura da trilha de UMA cobrança, do mais recente para o mais antigo (§4.1) — a ordem
+      // `ocorrido_em DESC` é conteúdo, e não estética: é a ordem em que a trilha é exibida.
+      index('evento_bancario_trilha_idx').on(
+        tabela.empresaId,
+        tabela.cobrancaId,
+        tabela.ocorridoEm.desc(),
+      ),
+    ],
+  )
+  .enableRLS();
+
+/**
+ * A emissão em lote — **um lote em andamento por empresa**, e o índice parcial é o mecanismo.
+ *
+ * ---------------------------------------------------------------------------
+ * `emissao_em_lote_em_andamento_uidx` é ÍNDICE ÚNICO PARCIAL, e a forma NÃO é estilo
+ * ---------------------------------------------------------------------------
+ *
+ * Ele cobre `empresa_id` **apenas onde os dois instantes de desfecho são nulos**, de modo que dois
+ * lotes em andamento na mesma empresa são **irrepresentáveis**: o disparo concorrente é recusado
+ * pelo banco, e não por uma leitura-antes-de-gravar que perderia a corrida — entre o `SELECT` que
+ * não achou lote aberto e o `INSERT`, outra transação grava. É a mesma razão registrada em
+ * `configuracao_de_mora_empresa_key`, e a mesma forma de `certificado_do_provedor_vigente_uidx`.
+ *
+ * É `uniqueIndex(...).where(...)`, e não `unique(...)`, porque **o PostgreSQL não admite restrição
+ * única parcial** — ver a `DECISÃO FECHADA — T3 · 2026-08-09` de {@link contrato}, que registra a
+ * armadilha por extenso. Quem "corrigir" isto para restrição, por consistência com as vizinhas,
+ * remove a condição junto: a empresa passaria a poder emitir **uma vez só, para sempre**, porque o
+ * lote concluído continuaria disputando com o próximo. O defeito só apareceria na segunda
+ * competência, em operação.
+ *
+ * ---------------------------------------------------------------------------
+ * Os TRÊS `check`, e por que o terceiro é bicondicional
+ * ---------------------------------------------------------------------------
+ *
+ *   * **competência no primeiro dia** — a competência é o MÊS, e o primeiro dia é a forma canônica
+ *     dele. Mesma restrição, e mesma razão, de `cobranca_competencia_no_primeiro_dia_chk`: sem ela,
+ *     dois lotes do mesmo mês gravariam dias diferentes e nenhuma comparação por competência os
+ *     juntaria;
+ *   * **desfecho único** — concluído E interrompido é irrepresentável. O estado publicado é
+ *     derivado dos dois instantes, e sem esta restrição a derivação estaria escondendo uma linha
+ *     incoerente em vez de descrever uma coerente. Mesma forma de `cobranca_desfecho_unico_chk`;
+ *   * **interrupção coerente** — `(interrompido_em IS NULL) = (motivo_da_interrupcao IS NULL)`
+ *     recusa **as duas** direções de uma vez: *motivo sem interrupção* seria um lote que terminou
+ *     bem carregando a explicação de uma parada, e *interrupção sem motivo* é a metade que dói —
+ *     dizer ao Admin que o lote parou sem dizer por quê é o pior desfecho da CA-03, e o motivo não é
+ *     recuperável depois. Mesma forma, e mesma razão, de `envio_de_cobranca_causa_chk`.
+ *
+ * `empresa_id` ganha chave estrangeira **simples** para `identidade.empresa` além da composta para o
+ * usuário, no mesmo desenho de {@link certificadoDoProvedor}.
+ */
+export const emissaoEmLote = negocio
+  .table(
+    'emissao_em_lote',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      empresaId: uuid('empresa_id')
+        .notNull()
+        .references(() => empresa.id),
+      /**
+       * O mês que o lote cobre, sempre no primeiro dia — a restrição abaixo o impõe.
+       *
+       * Data de calendário, e não instante: o `mode` padrão de `date()` é `'string'`, e o valor
+       * viaja como `YYYY-MM-DD` da consulta até o JSON, sem passar por `Date` com fuso. Mesmo
+       * desenho de `cobranca.competencia`.
+       */
+      competencia: date('competencia').notNull(),
+      /** Quem disparou. Amarrado à empresa pela chave composta abaixo, nunca só pelo `id`. */
+      solicitadoPor: uuid('solicitado_por').notNull(),
+      /** O instante do disparo, pelo relógio do BANCO (ADR-0026) — nunca pelo do processo. */
+      criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+      /** Fato: nulo enquanto o lote não terminou o percurso. */
+      concluidoEm: timestamp('concluido_em', { withTimezone: true }),
+      /** Fato: nulo enquanto o lote não foi interrompido. Anda com o motivo, pela bicondicional. */
+      interrompidoEm: timestamp('interrompido_em', { withTimezone: true }),
+      /** Por que parou. Nulo se e somente se não parou — ver o cabeçalho. */
+      motivoDaInterrupcao: text('motivo_da_interrupcao'),
+    },
+    (tabela) => [
+      // O alvo da chave estrangeira composta de `item_da_emissao_em_lote`, e o que a guarda de
+      // cobertura de `src/catalogo.ts` cobra de toda tabela deste schema.
+      unique('emissao_em_lote_id_empresa_key').on(tabela.id, tabela.empresaId),
+      // A chave estrangeira COMPOSTA da ADR-0008, apontando para `identidade.usuario`, que carrega
+      // `usuario_id_empresa_key` desde a `0003`. Ela recusa, no banco, um lote da empresa A
+      // disparado por usuário da empresa B — a forma simples aceitaria o apontamento cruzado em
+      // silêncio, e o preço seria uma trilha que atribui a emissão de uma imobiliária a alguém de
+      // outra. Mesmo desenho de {@link certificadoDoProvedor}.
+      foreignKey({
+        name: 'emissao_em_lote_usuario_empresa_fkey',
+        columns: [tabela.solicitadoPor, tabela.empresaId],
+        foreignColumns: [usuario.id, usuario.empresaId],
+      }),
+      check(
+        'emissao_em_lote_competencia_no_primeiro_dia_chk',
+        sql`extract(day from ${tabela.competencia}) = 1`,
+      ),
+      check(
+        'emissao_em_lote_desfecho_unico_chk',
+        sql`${tabela.concluidoEm} IS NULL OR ${tabela.interrompidoEm} IS NULL`,
+      ),
+      check(
+        'emissao_em_lote_interrupcao_coerente_chk',
+        sql`(${tabela.interrompidoEm} IS NULL) = (${tabela.motivoDaInterrupcao} IS NULL)`,
+      ),
+      // Um lote em andamento por empresa — ÍNDICE PARCIAL, e a forma não é escolha de estilo. Ver o
+      // cabeçalho e a `DECISÃO FECHADA — T3 · 2026-08-09` de {@link contrato}.
+      uniqueIndex('emissao_em_lote_em_andamento_uidx')
+        .on(tabela.empresaId)
+        .where(sql`concluido_em IS NULL AND interrompido_em IS NULL`),
+      // O histórico da empresa (§4.1): o mais recente primeiro, que é a ordem em que ele é lido.
+      index('emissao_em_lote_historico_idx').on(tabela.empresaId, tabela.criadoEm.desc()),
+    ],
+  )
+  .enableRLS();
+
+/**
+ * Uma linha da prestação de contas do lote — o que o provedor respondeu **por cobrança**.
+ *
+ * ---------------------------------------------------------------------------
+ * `desfecho` é gravado, e a bicondicional o amarra ao motivo
+ * ---------------------------------------------------------------------------
+ *
+ * Diferente do estado do lote, este **não deriva de nada**: é o que o provedor respondeu para
+ * aquela cobrança. `(desfecho = 'RECUSADO') = (motivo IS NOT NULL)` recusa as duas direções de uma
+ * vez — *emitido com motivo* exibiria explicação de falha em linha bem-sucedida, e *recusado sem
+ * motivo* é a metade que dói: a prestação de contas da CA-02 diria que a cobrança não saiu sem
+ * dizer por quê, e a resposta do provedor não é recuperável depois. Mesma forma de
+ * `envio_de_cobranca_causa_chk`.
+ *
+ * ---------------------------------------------------------------------------
+ * `unique(lote_id, cobranca_id)` é o que torna a reexecução segura
+ * ---------------------------------------------------------------------------
+ *
+ * A mesma cobrança não entra duas vezes no mesmo lote — nem por retomada, nem por percurso
+ * concorrente. `empresa_id` fica FORA do par de propósito: ele é funcionalmente determinado por
+ * `lote_id`, que a chave estrangeira composta abaixo amarra a um único lote, e um lote pertence a
+ * uma empresa só. Acrescentá-lo alargaria a chave sem recusar nada a mais — mesmo desenho de
+ * `comodo_imovel_posicao_key` e de `contrato_fiador_contrato_fiador_key`.
+ *
+ * `empresa_id` **não** ganha chave estrangeira própria para `identidade.empresa`: ela seria
+ * implicada pelas duas compostas abaixo, que só aceitam pares já existentes nos pais, e os pais já
+ * referenciam a empresa. Mesmo desenho de {@link contratoFiador}.
+ */
+export const itemDaEmissaoEmLote = negocio
+  .table(
+    'item_da_emissao_em_lote',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      empresaId: uuid('empresa_id').notNull(),
+      loteId: uuid('lote_id').notNull(),
+      cobrancaId: uuid('cobranca_id').notNull(),
+      desfecho: desfechoDoItemDoLote('desfecho').notNull(),
+      /** Nulo se e somente se o desfecho não foi recusa — a bicondicional abaixo é a rede. */
+      motivo: text('motivo'),
+      /** O instante do registro, pelo relógio do BANCO (ADR-0026) — nunca pelo do processo. */
+      registradoEm: timestamp('registrado_em', { withTimezone: true }).notNull().defaultNow(),
+    },
+    (tabela) => [
+      unique('item_da_emissao_em_lote_id_empresa_key').on(tabela.id, tabela.empresaId),
+      // A mesma cobrança não entra duas vezes no mesmo lote — ver o cabeçalho.
+      unique('item_da_emissao_em_lote_lote_cobranca_key').on(tabela.loteId, tabela.cobrancaId),
+      // As DUAS chaves estrangeiras compostas da ADR-0008. Cada uma recusa, no banco, apontar um
+      // item da empresa A para um lote ou uma cobrança da empresa B: o par `(alheio_id, empresa_id)`
+      // teria de existir no pai, e não existe. É recusa ESTRUTURAL — nenhuma validação de aplicação
+      // é consultada no caminho.
+      foreignKey({
+        name: 'item_da_emissao_em_lote_lote_empresa_fkey',
+        columns: [tabela.loteId, tabela.empresaId],
+        foreignColumns: [emissaoEmLote.id, emissaoEmLote.empresaId],
+      }),
+      foreignKey({
+        name: 'item_da_emissao_em_lote_cobranca_empresa_fkey',
+        columns: [tabela.cobrancaId, tabela.empresaId],
+        foreignColumns: [cobranca.id, cobranca.empresaId],
+      }),
+      check(
+        'item_da_emissao_em_lote_motivo_chk',
+        sql`(${tabela.desfecho} = 'RECUSADO') = (${tabela.motivo} IS NOT NULL)`,
+      ),
+      // A leitura da prestação de contas de UM lote (§4.1) — é ela que o índice cobre, e não
+      // `empresa_id` sozinho.
+      index('item_da_emissao_em_lote_empresa_lote_idx').on(tabela.empresaId, tabela.loteId),
+    ],
+  )
+  .enableRLS();
+
+/**
+ * A conferência junto ao provedor — **uma em andamento por empresa**, pelo mesmo mecanismo do lote.
+ *
+ * ---------------------------------------------------------------------------
+ * `solicitada_por` é ANULÁVEL, e a anulabilidade é a decisão
+ * ---------------------------------------------------------------------------
+ *
+ * Hoje quem dispara é o Admin; na **F5** quem dispara é o relógio, e ali não há usuário a nomear.
+ * Declará-la `NOT NULL` obrigaria aquela fatia a inventar um usuário-sistema — uma identidade com
+ * vínculo e permissões que ninguém opera — ou a migrar a coluna sobre tabela já com dado. Nulo
+ * significa *"ninguém pediu; o relógio pediu"*, e é fato, não ausência de informação.
+ *
+ * A chave estrangeira composta continua sendo a da ADR-0008 e continua valendo: `MATCH SIMPLE`, que
+ * é o padrão, só aplica a referência quando **nenhuma** das colunas referenciadoras é nula — de modo
+ * que a linha sem usuário passa, e a linha COM usuário é cobrada pelo par `(solicitada_por,
+ * empresa_id)`. O que não existe é a linha que nomeia usuário de outra empresa.
+ *
+ * ---------------------------------------------------------------------------
+ * `conferencia_bancaria_em_andamento_uidx` é ÍNDICE ÚNICO PARCIAL
+ * ---------------------------------------------------------------------------
+ *
+ * `concluida_em` nulo **é** a definição de em andamento: não há coluna de bandeira, e não há rotina
+ * que "vire" nada (ADR-0022). O índice cobre `empresa_id` apenas onde a coluna é nula, e é ele que
+ * torna a segunda conferência concorrente irrepresentável — recusa do banco, nunca conferência da
+ * aplicação. Ver o cabeçalho de {@link emissaoEmLote} para a armadilha de "corrigi-lo" para
+ * restrição, que removeria a condição junto e faria a empresa conferir **uma vez só, para sempre**.
+ *
+ * ---------------------------------------------------------------------------
+ * Os dois contadores, e por que não há `check` de faixa
+ * ---------------------------------------------------------------------------
+ *
+ * `cobrancas_conferidas` e `efeitos` são prestação de contas do que a apuração percorreu e do que
+ * ela mudou. Nascem `0` porque a linha nasce **antes** do trabalho — a conferência é registrada ao
+ * iniciar, para que o índice parcial recuse a concorrente, e os contadores são fechados ao concluir.
+ * `NOT NULL DEFAULT 0` pelo mesmo desenho de `comodo.metragem`: nulo obrigaria todo leitor a decidir
+ * de novo o que fazer com ele.
+ */
+export const conferenciaBancaria = negocio
+  .table(
+    'conferencia_bancaria',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      empresaId: uuid('empresa_id')
+        .notNull()
+        .references(() => empresa.id),
+      /** O instante do início, pelo relógio do BANCO (ADR-0026) — nunca pelo do processo. */
+      iniciadaEm: timestamp('iniciada_em', { withTimezone: true }).notNull().defaultNow(),
+      /** Nulo **é** estar em andamento. Ver o cabeçalho. */
+      concluidaEm: timestamp('concluida_em', { withTimezone: true }),
+      /** Anulável: na F5 o disparo é do relógio, sem usuário — ver o cabeçalho. */
+      solicitadaPor: uuid('solicitada_por'),
+      /** Quantas cobranças a apuração percorreu. Fechado ao concluir; nasce zero. */
+      cobrancasConferidas: integer('cobrancas_conferidas').notNull().default(0),
+      /** Quantas delas a apuração mudou. Fechado ao concluir; nasce zero. */
+      efeitos: integer('efeitos').notNull().default(0),
+    },
+    (tabela) => [
+      // O alvo da chave estrangeira composta de quem vier a apontar para a conferência, e o que a
+      // guarda de cobertura de `src/catalogo.ts` cobra de toda tabela deste schema.
+      unique('conferencia_bancaria_id_empresa_key').on(tabela.id, tabela.empresaId),
+      // A chave estrangeira COMPOSTA da ADR-0008 — a única da tabela, e ela vale **quando há
+      // usuário**: ver o cabeçalho sobre `MATCH SIMPLE`.
+      foreignKey({
+        name: 'conferencia_bancaria_usuario_empresa_fkey',
+        columns: [tabela.solicitadaPor, tabela.empresaId],
+        foreignColumns: [usuario.id, usuario.empresaId],
+      }),
+      // Uma conferência em andamento por empresa — ÍNDICE PARCIAL, ver o cabeçalho.
+      uniqueIndex('conferencia_bancaria_em_andamento_uidx')
+        .on(tabela.empresaId)
+        .where(sql`concluida_em IS NULL`),
+      // O histórico da empresa (§4.1): a mais recente primeiro, que é a ordem em que ele é lido.
+      index('conferencia_bancaria_historico_idx').on(tabela.empresaId, tabela.iniciadaEm.desc()),
     ],
   )
   .enableRLS();

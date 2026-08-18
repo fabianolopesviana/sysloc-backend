@@ -130,6 +130,35 @@
  *     `diff -q`, e o controle voltou aos números acima.
  *
  * ===========================================================================
+ * MUTANTE EXECUTADO na correção da T1 da fatia `emissao-e-conciliacao` — a ordem da projeção
+ * ===========================================================================
+ *
+ * ⚠️ **Registro histórico: o `CT-514 (d)` que esta medição descreve NÃO existe mais.** Ele saiu na
+ * **T6** da mesma fatia, no diff que fechou o débito que a T1 registrara — e a saída é *por desenho*,
+ * não perda de prova: o que aquele caso auditava era a **ordem dentro de `CobrancaService.publicar`**,
+ * e `publicar` deixou de existir quando `LinhaDeCobranca` passou a carregar os cinco campos. Ele
+ * próprio anunciava esse fim: o extrator **levanta** `assinatura da projeção não encontrada no fonte`
+ * quando o método some, que é falha ruidosa em vez de verde silencioso. O que a T6 põe no lugar é uma
+ * prova mais forte, e comportamental: o `CT-922` afirma que a cobrança liquidada **publica**
+ * `dataCredito` e `valorCreditado` vindos do banco, o que nenhuma composição de `null` fixo
+ * sobreviveria. A medição abaixo fica escrita porque descreve o que de fato aconteceu naquela rodada.
+ *
+ * Mesmo método: mutante no artefato real, suíte invocada pelo **script do pacote**.
+ *
+ *   * **controle** — árvore íntegra: `@sysloc/api` `281 passed` (280 da baseline mais o
+ *     `CT-514 (d)`);
+ *   * **MT-5 · os cinco valores padrão da conciliação voltam para DEPOIS do `...linha`** em
+ *     `CobrancaService.publicar` — que é literalmente o estado que a rodada 1 do Tech Review
+ *     reprovou: `1 failed | 280 passed`, e **só** o `CT-514 (d)` reprova, em
+ *     `expected [ '...linha', …(5) ] to deeply equal [ 'numeroDoTituloNoProvedor', …(5) ]`. Os outros
+ *     280 casos ficam verdes, e é essa medição — e não um argumento — que confirma o achado do gate:
+ *     *"nenhuma prova pega esse caso"* era verdade antes deste caso existir. O corpo publicado não
+ *     muda hoje, porque `LinhaDeCobranca` não declara nenhuma das cinco chaves; o que a inversão
+ *     muda é **quem venceria** quando a T6 as declarar;
+ *   * **reversão** — o arquivo foi restaurado de cópia e conferido idêntico por `diff -q`, e o
+ *     controle voltou a `281 passed`.
+ *
+ * ===========================================================================
  * A INDISTINGUIBILIDADE se prova por IGUALDADE DE CORPO, nunca por status
  * ===========================================================================
  *
@@ -360,27 +389,43 @@ const VALOR_DA_SUBSTITUTA = 92.1;
 const JANELA_LARGA = 200;
 
 /**
- * As **dezoito** chaves que a cobrança publica, em ordem alfabética.
+ * As **vinte e três** chaves que a cobrança publica, em ordem alfabética.
  *
  * Escritas por extenso, e não derivadas de `esquemaDaCobranca` nem do corpo observado: é a igualdade
  * contra esta lista que transforma *"não há campo de vínculo com a cancelada"* numa afirmação que pega
  * **qualquer** grafia — `substituiCodigo`, `canceladaPor`, `substitutaCodigo` —, e não só um nome que
  * o caso tivesse adivinhado. Derivá-la do tipo do SUT faria a asserção concordar consigo mesma.
+ *
+ * SUT_IS_CORRECT_BECAUSE: subiu de 18 para 23 porque a T1 da fatia `emissao-e-conciliacao` publicou os
+ * cinco campos de conciliação bancária, por decisão declarada na §4.2 do tech spec daquela fatia — o
+ * cabeçalho de `packages/contracts/src/cobranca.ts` já registrava, desde a F3, que *"só a F4 os
+ * publica"*. A âncora **sobe** e segue exata: continua igualdade de conjunto, e uma chave a mais ou a
+ * menos reprova como sempre reprovou. Nenhum alvo saiu.
+ *
+ * Os cinco **chegaram nulos entre a T1 e a T6**, compostos na borda enquanto `LinhaDeCobranca` ainda
+ * tinha dezoito campos; a T6 a estendeu para vinte e três, o débito que sustentava a composição foi
+ * fechado e os valores passaram a vir do banco. O que este caso afirma é, e sempre foi, o **conjunto de
+ * chaves** — que não mudou com isso.
  */
 const CHAVES_PUBLICADAS: readonly string[] = [
   'canceladoEm',
   'codigo',
+  'codigoDeBarras',
   'competencia',
   'contratoCodigo',
+  'dataDoCredito',
   'dataVencimento',
   'diasAtraso',
   'jurosPercentualAplicado',
+  'linhaDigitavel',
   'locatarioId',
   'multaPercentualAplicado',
   'natureza',
+  'numeroDoTituloNoProvedor',
   'pagoEm',
   'referencia',
   'status',
+  'valorCreditado',
   'valorJuros',
   'valorMulta',
   'valorOriginal',
@@ -685,6 +730,16 @@ describe('lançamento e leitura da carteira de cobranças (T5)', () => {
         canceladoEm: null,
         multaPercentualAplicado: null,
         jurosPercentualAplicado: null,
+        // SUT_IS_CORRECT_BECAUSE: os cinco de conciliação bancária entraram no corpo publicado com a
+        // T1 da fatia `emissao-e-conciliacao` (18 → 23 campos, §4.2 do tech spec). Eles vêm **nulos**
+        // porque a cobrança acabou de ser lançada e não tem boleto emitido — que é o mesmo motivo dos
+        // cinco anuláveis do desfecho, logo acima. A asserção continua sendo de corpo INTEIRO por
+        // igualdade: um campo a mais reprova aqui, exatamente como antes.
+        numeroDoTituloNoProvedor: null,
+        linhaDigitavel: null,
+        codigoDeBarras: null,
+        dataDoCredito: null,
+        valorCreditado: null,
       });
 
       // O código é da série da COBRANÇA — sete dígitos, e não os cinco do contrato — e é distinto dos
@@ -2144,6 +2199,17 @@ interface CobrancaPublicada {
   readonly canceladoEm: string | null;
   readonly multaPercentualAplicado: number | null;
   readonly jurosPercentualAplicado: number | null;
+  /**
+   * SUT_IS_CORRECT_BECAUSE: os cinco de conciliação bancária passaram a ser publicados pela T1 da
+   * fatia `emissao-e-conciliacao`, e este tipo descreve o corpo que a rota devolve. Sem eles, o tipo
+   * afirmaria uma superfície de dezoito campos que a API não tem mais. Nenhuma asserção mudou por
+   * causa destas linhas.
+   */
+  readonly numeroDoTituloNoProvedor: string | null;
+  readonly linhaDigitavel: string | null;
+  readonly codigoDeBarras: string | null;
+  readonly dataDoCredito: string | null;
+  readonly valorCreditado: number | null;
 }
 
 /** A página da carteira, no envelope que a ADR-0017 fixa. */

@@ -13,18 +13,36 @@
 # O conjunto de variáveis deste processo é PRÓPRIO — e ele CRESCEU
 # ---------------------------------------------------------------------------
 #
-# `apps/worker/src/main.ts` valida exatamente CINCO variáveis: `LOG_LEVEL`,
-# `REDIS_URL`, `DATABASE_URL`, `SMTP_URL` e `EMAIL_REMETENTE`. Ele continua sem
+# `apps/worker/src/main.ts` valida exatamente NOVE variáveis: `LOG_LEVEL`,
+# `REDIS_URL`, `DATABASE_URL`, `SMTP_URL`, `EMAIL_REMETENTE`,
+# `URL_BASE_DA_CONFIRMACAO`, `CHAVE_DE_CIFRA_DO_CERTIFICADO`,
+# `ENDERECO_DO_PROVEDOR_BANCARIO` e `DIRETORIO_DOS_BOLETOS`. Ele continua sem
 # escutar porta, de modo que `PORT` não é exigida aqui — e declará-la como se
 # fosse produziria diagnóstico enganoso no dia em que ela faltasse.
 #
-# As três últimas entraram na T8 da fatia `regua-de-cobranca`, quando este
-# processo mudou de natureza: ele passou a falar com o BANCO e com um SERVIDOR
-# DE E-MAIL para executar a régua de cobrança de cada empresa. Todas as três
-# chegam pelo `EnvironmentFile` 0600 abaixo, nunca por `Environment=` inline:
-# duas delas carregam credencial, e `Environment=` é revisável na árvore
-# versionada — é a fronteira que a ADR-0005 e o invariante 3 do `CLAUDE.md`
-# fixam.
+# A terceira, a quarta e a quinta entraram na T8 da fatia `regua-de-cobranca`,
+# quando este processo mudou de natureza: ele passou a falar com o BANCO e com um
+# SERVIDOR DE E-MAIL para executar a régua de cobrança de cada empresa. A sexta
+# entrou na T10 da fatia `documentos-e-confirmacao`, quando ele passou a COMPOR o
+# link da confirmação de e-mail.
+#
+# As TRÊS ÚLTIMAS entraram na T16 da fatia `emissao-e-conciliacao`, quando ele
+# passou a EMITIR boletos em lote e a CONCILIAR pagamentos junto ao provedor
+# bancário: a chave que abre o envelope do certificado, o endereço do provedor e
+# o diretório onde os bytes do boleto são guardados.
+#
+# ⚠️ A `CHAVE_DE_CIFRA_DO_CERTIFICADO` é o segredo mais forte do produto, e o
+# trade-off de este processo passar a lê-la é DECLARADO: a alternativa —
+# transportar o material do certificado na carga da tarefa — é o vetor exato do
+# achado crítico da fase anterior, porque a carga viaja como argumento de comando
+# do servidor de fila. Este arquivo de ambiente já era compartilhado com o serviço
+# de aplicação, de modo que a chave já chegava fisicamente aqui; o que faltava era
+# consumo declarado.
+#
+# Todas elas chegam pelo `EnvironmentFile` 0600 abaixo, nunca por `Environment=`
+# inline: três carregam credencial e uma é a chave de cifra, e `Environment=` é
+# revisável na árvore versionada — é a fronteira que a ADR-0005 e o invariante 3
+# do `CLAUDE.md` fixam.
 #
 # A distinção não é acadêmica: o `.env.example` versionado documenta `LOG_LEVEL`
 # sob o cabeçalho "Serviço de aplicação", o que era verdade até T5 e deixou de
@@ -96,7 +114,9 @@ WorkingDirectory=/opt/sysloc-backend/apps/worker
 
 # Segredos: apenas aqui, e apenas por referência. É o mesmo arquivo que o
 # serviço de aplicação consome; deste processo são lidas `REDIS_URL`,
-# `DATABASE_URL`, `SMTP_URL` e `EMAIL_REMETENTE`.
+# `DATABASE_URL`, `SMTP_URL`, `EMAIL_REMETENTE`, `URL_BASE_DA_CONFIRMACAO`,
+# `CHAVE_DE_CIFRA_DO_CERTIFICADO`, `ENDERECO_DO_PROVEDOR_BANCARIO` e
+# `DIRETORIO_DOS_BOLETOS`.
 #
 # ⚠️ A partir da T9 da fatia `documentos-e-confirmacao` o arquivo carrega também
 # `URL_BASE_DA_CONFIRMACAO`, semeada por `provisionar-base.sh`, e é ESTE processo
@@ -104,6 +124,14 @@ WorkingDirectory=/opt/sysloc-backend/apps/worker
 # pelo arquivo compartilhado, e não por `Environment=` inline em cada unidade,
 # justamente para que a mesma coordenada não tenha duas declarações literais
 # livres para divergir — o precedente é o de `EMAIL_REMETENTE`.
+#
+# ⚠️ As três da T16 (`CHAVE_DE_CIFRA_DO_CERTIFICADO`,
+# `ENDERECO_DO_PROVEDOR_BANCARIO` e `DIRETORIO_DOS_BOLETOS`) já eram gravadas
+# neste mesmo arquivo por `provisionar-base.sh` desde a fatia anterior, para o
+# serviço de aplicação. NENHUMA linha nova é necessária aqui: o que mudou é que
+# este processo passou a EXIGI-LAS na partida, e o arquivo compartilhado já as
+# entrega. É por isso que o `CT-643` de `apps/worker/test/ambiente.spec.ts` — que
+# cobra caminho de provisionamento para TODA variável exigida — continua verde.
 EnvironmentFile=/etc/sysloc/backend.env
 
 # Coordenadas revisáveis — nenhuma delas é segredo. Sem `PORT`, ver o cabeçalho.

@@ -32,7 +32,7 @@
  * O que se GRAVA e o que se DERIVA — a ADR-0022 em forma de esquema
  * ===========================================================================
  *
- * O recurso publicado tem dezoito campos e o corpo de entrada tem **seis**. A diferença não é
+ * O recurso publicado tem vinte e três campos e o corpo de entrada tem **seis**. A diferença não é
  * omissão: `status`, `diasAtraso`, `valorMulta`, `valorJuros` e `valorTotal` são **derivados** na
  * view enquanto a cobrança está aberta; `pagoEm`, `valorPago`, `canceladoEm`,
  * `multaPercentualAplicado` e `jurosPercentualAplicado` são **carimbados** pelo ato que liquida; e
@@ -44,10 +44,14 @@
  * estado é **rota própria**, nunca campo gravado por atualização do recurso. Aqui isso também não é
  * uma verificação: é a ausência de `status` em {@link esquemaDeCobrancaNova}.
  *
- * Os seis campos de conciliação bancária (`nossoNumero`, `linhaDigitavel`, `codigoBarras`,
- * `dataCredito`, `valorCreditado`, `boletoArquivo`) **não aparecem em esquema nenhum**: eles nascem
- * como colunas nulas e só a F4 os publica. É o que obriga aquela fatia a **tocar este contrato** em
- * vez de mudar o significado da resposta por omissão.
+ * As seis colunas de conciliação bancária nasceram nulas e sem esquema que as publicasse, e o texto
+ * daqui dizia que *"só a F4 as publica — é o que obriga aquela fatia a **tocar este contrato** em vez
+ * de mudar o significado da resposta por omissão"*. **A F4 chegou**: a fatia `emissao-e-conciliacao`
+ * publica **cinco** delas em {@link esquemaDaCobranca}, com nomes do produto e não do provedor, e
+ * deixa de fora `boleto_arquivo`, que são bytes entregues por rota própria (ADR-0028). A obrigação
+ * foi cumprida como escrita — o contrato foi tocado, e o significado da resposta não mudou por
+ * omissão. Ver o docblock daquele esquema para o que cada um carrega e por que a chave é
+ * `numeroDoTituloNoProvedor`.
  *
  * ===========================================================================
  * A restrição de escala vale na ENTRADA e NÃO na SAÍDA
@@ -62,25 +66,13 @@
  */
 
 import { z } from 'zod';
-import { esquemaDaJanela, MAIOR_TEXTO_CURTO } from './comum.js';
-// DÉBITO COM GATILHO — D1 · F3/T2 · registrado 2026-08-09
-// (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege a linha abaixo. O marcador que
-//  PROTEGE neste arquivo é o da largura 7, adiante, e ele não alcança este import.)
-// O QUÊ: `MAIOR_VALOR_MONETARIO` e `ESCALA_MONETARIA` são vocabulário monetário de todo o produto,
-//        mas moram em `contrato.ts` porque foi lá que nasceram — e `cobranca.ts` passa a ser o
-//        SEGUNDO consumidor, importando de um módulo irmão em vez de do comum.
-// QUANDO FECHA: no TERCEIRO consumidor monetário do pacote (a emissão de boleto da F4 é a candidata
-//        óbvia) — aí as duas sobem para `comum.ts` de uma vez, com os três call sites ajustados no
-//        mesmo commit.
-// POR QUE NÃO AGORA: promover exigiria editar superfície publicada de um módulo estável, com
-//        marcador, dentro de uma fatia que não pede isso; e com dois consumidores o import lateral
-//        ainda é a forma mais barata que NÃO duplica a definição.
-// ÍNDICE: docs/specs/features/cobranca-e-mora/v1/_run/run-report.md §2, D1
 import {
   ESCALA_MONETARIA,
-  ESQUEMA_DO_CODIGO_DE_CONTRATO,
+  esquemaDaJanela,
+  MAIOR_TEXTO_CURTO,
   MAIOR_VALOR_MONETARIO,
-} from './contrato.js';
+} from './comum.js';
+import { ESQUEMA_DO_CODIGO_DE_CONTRATO } from './contrato.js';
 
 /**
  * As cinco naturezas de cobrança (RD-03), na ordem em que o enum do banco as declara.
@@ -254,8 +246,21 @@ export type CodigoDeCobranca = z.infer<typeof ESQUEMA_DO_CODIGO_DE_COBRANCA>;
  * aqui reintroduziria exatamente o deslocamento de dia que a projeção por `to_char` existe para
  * evitar. `z.iso.date()` já garante a forma e a validade de calendário antes desta expressão correr,
  * de modo que os dois últimos dígitos **são** o dia.
+ *
+ * ---------------------------------------------------------------------------
+ * Ela é EXPORTADA para o módulo irmão, e não publicada pelo barril
+ * ---------------------------------------------------------------------------
+ *
+ * `esquemaDaCompetencia`, em `cobranca-bancaria.ts`, exige a **mesma** propriedade sobre o mesmo
+ * fato: a competência que o Admin informa ao abrir a emissão em lote é a mesma que a cobrança
+ * carrega. Redigitar `/-01$/` lá criaria a segunda fonte do mesmo fato que a ADR-0016 elimina — duas
+ * expressões livres para divergir no dia em que a regra mudar, sem nada que acuse.
+ *
+ * Ela **não** entra em `index.ts`: é composição interna do contrato, como `camposDeEndereco` em
+ * `comum.ts`, e publicá-la daria ao consumidor de fora uma expressão crua para conferir por conta
+ * própria o que os dois esquemas já conferem.
  */
-const COMPETENCIA_NO_PRIMEIRO_DIA = /-01$/;
+export const COMPETENCIA_NO_PRIMEIRO_DIA = /-01$/;
 
 /**
  * Corpo fechado do lançamento de cobrança avulsa (§4.1.1) — **seis** campos.
@@ -332,7 +337,7 @@ export const esquemaDaJanelaDeCobrancas = esquemaDaJanela.extend({
 export type JanelaDeCobrancas = z.infer<typeof esquemaDaJanelaDeCobrancas>;
 
 /**
- * A cobrança como a API a devolve (§4.1.1) — dezoito campos.
+ * A cobrança como a API a devolve (§4.1.1) — **vinte e três** campos.
  *
  * **Não tem `id`**, e a ausência é a decisão: a chave exposta é o `codigo`, porque a cobrança tem
  * série declarada (ADR-0017). O UUID interno não trafega.
@@ -349,6 +354,34 @@ export type JanelaDeCobrancas = z.infer<typeof esquemaDaJanelaDeCobrancas>;
  *
  * As grandezas monetárias saem **sem restrição de escala**, de propósito — ver o cabeçalho deste
  * arquivo e o marcador `DECISÃO FECHADA` de `ESCALA_DA_METRAGEM`, em `comum.ts`.
+ *
+ * ---------------------------------------------------------------------------
+ * Os CINCO últimos são a conciliação bancária, e nenhum deles fala o vocabulário do provedor
+ * ---------------------------------------------------------------------------
+ *
+ * O cabeçalho deste arquivo dizia que *"os seis campos de conciliação bancária não aparecem em
+ * esquema nenhum: eles nascem como colunas nulas e só a F4 os publica"* — e a fatia
+ * `emissao-e-conciliacao` é exatamente aquela F4. **Cinco** deles chegam agora
+ * (`numeroDoTituloNoProvedor`, `linhaDigitavel`, `codigoDeBarras`, `dataDoCredito`,
+ * `valorCreditado`); o sexto, `boletoArquivo`, **não é publicado** — são bytes, e a rota que os
+ * entrega declara mídia em vez de campo (ADR-0028).
+ *
+ * A chave publicada é **`numeroDoTituloNoProvedor`, jamais `nossoNumero`**, e a diferença não é
+ * estética: *nosso número* é vocabulário **do provedor**, a ADR-0001 fixa que nenhum dele cruza o que
+ * o produto publica, e o glossário global o lista entre os termos a evitar. A coluna física continua
+ * `nosso_numero` — renomeá-la exigiria migração sobre tabela fora do escopo do PRD —, e o mapeamento
+ * morre na fronteira de dados. Publicar o nome do provedor faria a varredura de vocabulário canônico
+ * reprovar a própria fatia que o campo entrega.
+ *
+ * **`identificadorNoProvedor` não existe aqui, e a ausência é a decisão.** São dois identificadores
+ * de sentidos opostos: o *Identificador perante o provedor* (18 posições) é **composto pelo produto**,
+ * vive na coluna `identificador_no_provedor` e é a chave de correlação interna da fatia do carnê; o
+ * `numeroDoTituloNoProvedor` é **atribuído pelo provedor** e é o único dos dois que se publica.
+ *
+ * Os cinco são **anuláveis, e não opcionais**: `null` quer dizer *cobrança sem boleto emitido* (ou,
+ * nos dois últimos, *emitido e ainda não creditado*), que é estado legítimo e frequente. Eles também
+ * **não são pareados por `check` no banco** — `dataDoCredito` e `valorCreditado` nascem depois dos
+ * três primeiros, de modo que um bicondicional recusaria o estado *emitido e ainda não pago*.
  */
 export const esquemaDaCobranca = z.object({
   codigo: ESQUEMA_DO_CODIGO_DE_COBRANCA,
@@ -369,6 +402,18 @@ export const esquemaDaCobranca = z.object({
   canceladoEm: z.iso.datetime().nullable(),
   multaPercentualAplicado: z.number().nullable(),
   jurosPercentualAplicado: z.number().nullable(),
+  // O identificador que o PROVEDOR atribui ao boleto e devolve — não o que o produto compõe e envia.
+  // Chega como inteiro no dialeto do provedor e é coagido para cadeia na fronteira do adaptador, de
+  // modo que aqui ele já é texto.
+  numeroDoTituloNoProvedor: z.string().nullable(),
+  linhaDigitavel: z.string().nullable(),
+  codigoDeBarras: z.string().nullable(),
+  // Data de calendário, e não instante: a coluna é `date` e o valor viaja como `YYYY-MM-DD` (§6.2),
+  // exatamente como `competencia` e `dataVencimento` acima.
+  dataDoCredito: z.iso.date().nullable(),
+  // Sem escala, como as demais grandezas monetárias desta SAÍDA — ver o parágrafo do docblock e o
+  // marcador `DECISÃO FECHADA` de `ESCALA_DA_METRAGEM`, em `comum.ts`.
+  valorCreditado: z.number().nullable(),
 });
 
 /** A cobrança como a API a devolve. */

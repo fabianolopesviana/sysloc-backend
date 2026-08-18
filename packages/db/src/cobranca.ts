@@ -140,6 +140,11 @@ import type { NumeroDaSerie } from './contrato.js';
 // tipo: `derivacao-de-cobranca.ts` não é tocado, e a direção do grafo não muda — aquele módulo é puro
 // e não importa nada deste.
 import type { ParcelaDerivada } from './derivacao-de-cobranca.js';
+// O molde do instante tem **casa única** em `./moldes-de-formatacao.ts` desde a T3 da fatia
+// `emissao-e-conciliacao` — é o limiar de três do `CLAUDE.md` fechado no terceiro consumidor, e não a
+// exportação lateral que deixava a declaração de `./envio-de-cobranca.ts` viva. Ele **não** entra em
+// `./index.ts`: é detalhe da camada de dados, e publicá-lo daria a `apps/api` um formato para escolher.
+import { FORMATO_ISO_DO_INSTANTE } from './moldes-de-formatacao.js';
 
 /**
  * A janela pedida da carteira, já validada na borda.
@@ -219,11 +224,25 @@ export interface DesfechoDoPagamento {
 }
 
 /**
- * Uma linha de `negocio.cobranca_derivada`, na projeção que o contrato publica — **dezoito campos**.
+ * Uma linha de `negocio.cobranca_derivada`, na projeção que o contrato publica — **vinte e três
+ * campos**.
  *
  * Os cinco derivados (`status`, `diasAtraso`, `valorMulta`, `valorJuros`, `valorTotal`) chegam da
- * visão e não são recalculados em lugar nenhum; os cinco anuláveis são os do **desfecho**, e `null`
- * neles quer dizer *cobrança ainda aberta*.
+ * visão e não são recalculados em lugar nenhum; os cinco anuláveis do **desfecho** têm `null` querendo
+ * dizer *cobrança ainda aberta*.
+ *
+ * Os **cinco últimos** são a conciliação bancária, e eles chegaram na T6 da fatia
+ * `emissao-e-conciliacao`: `esquemaDaCobranca` já os publicava desde a T1 (18 → 23 campos), e até aqui
+ * a borda os compunha como `null` fixo, sob o débito que a T1 daquela fatia registrou e que esta
+ * extensão fecha.
+ * Com eles na linha, o recurso publicado sai **inteiro** do ponto único da projeção, e não de duas
+ * fontes que precisariam concordar.
+ *
+ * ⚠️ **`identificadorNoProvedor` NÃO está aqui, e a ausência é a decisão.** A coluna existe desde a
+ * `0017`, é única no SaaS (ADR-0033) e é **interna**: ela é a chave por onde a fatia do carnê casa a
+ * notificação recebida com a empresa dona da cobrança, e esquema nenhum de `@sysloc/contracts` a
+ * publica. Publicá-la aqui a levaria ao JSON pela porta dos fundos, já que o recurso é composto por
+ * espalhamento da linha na borda.
  *
  * **Não há `id`** — ver o cabeçalho deste arquivo. E não há `empresaId`: o que a porta devolve é o que
  * o contrato publica, e a coluna de tenant não é publicada.
@@ -257,14 +276,29 @@ export interface LinhaDeCobranca {
   /** Carimbo da política vigente no ato do pagamento (ADR-0022). */
   readonly multaPercentualAplicado: number | null;
   readonly jurosPercentualAplicado: number | null;
+  /**
+   * A coluna `nosso_numero`, publicada com o nome do **produto**.
+   *
+   * *Nosso número* é vocabulário do provedor, a ADR-0001 fixa que nenhum dele cruza o que o produto
+   * publica, e o glossário global o lista entre os termos a evitar. A coluna física continua
+   * `nosso_numero` — renomeá-la exigiria migração sobre tabela com dado — e o mapeamento morre aqui,
+   * na fronteira de dados. Nulo quer dizer *sem boleto emitido*.
+   */
+  readonly numeroDoTituloNoProvedor: string | null;
+  readonly linhaDigitavel: string | null;
+  readonly codigoDeBarras: string | null;
+  /** Fato do provedor: data de calendário `YYYY-MM-DD`, nula até o crédito acontecer. */
+  readonly dataDoCredito: string | null;
+  readonly valorCreditado: number | null;
 }
 
 /**
  * O que a consulta de fato lê da visão.
  *
- * As sete grandezas `numeric` voltam do driver **em texto**, porque `numeric` não cabe em ponto
+ * As **oito** grandezas `numeric` voltam do driver **em texto**, porque `numeric` não cabe em ponto
  * flutuante sem perda — ver {@link cobrancaPublicada}. `diasAtraso` não está aqui porque é a
- * subtração de duas datas, que o servidor devolve como `integer`.
+ * subtração de duas datas, que o servidor devolve como `integer`, e as datas não estão porque saem da
+ * consulta já formatadas por `to_char`.
  */
 interface LinhaBrutaDeCobranca
   extends Omit<
@@ -276,6 +310,7 @@ interface LinhaBrutaDeCobranca
     | 'valorPago'
     | 'multaPercentualAplicado'
     | 'jurosPercentualAplicado'
+    | 'valorCreditado'
   > {
   readonly valorOriginal: string;
   readonly valorMulta: string;
@@ -284,6 +319,7 @@ interface LinhaBrutaDeCobranca
   readonly valorPago: string | null;
   readonly multaPercentualAplicado: string | null;
   readonly jurosPercentualAplicado: string | null;
+  readonly valorCreditado: string | null;
 }
 
 /** A página lida, com o total do conjunto inteiro — os dois da MESMA transação. */
@@ -331,19 +367,28 @@ const VIOLACAO_DE_UNICIDADE = '23505';
  *
  * Escrito uma vez e usado nas três colunas da projeção: três grafias ficariam livres para divergir, e
  * a divergência apareceria como uma data deslocada num campo que o CT-525 compara contra o oráculo.
- */
-const FORMATO_ISO_DA_DATA = 'YYYY-MM-DD';
-
-/**
- * O formato do **instante** do cancelamento — ISO-8601 em UTC, com milissegundos e `Z` literal.
  *
- * É a forma que `esquemaDaCobranca.canceladoEm` (`z.iso.datetime()`) aceita, e ela é composta pelo
- * servidor em vez de por um `Date.toISOString()` na aplicação pela mesma razão das três datas acima:
- * o valor atravessa da consulta até o JSON sem passar por relógio nenhum. O `AT TIME ZONE 'UTC'` é o
- * que fixa o deslocamento no **objeto** em vez de no fuso da sessão, de modo que dois processos com
- * `TZ` diferentes leem o mesmo carimbo.
+ * O molde do **instante** não mora mais aqui: ele subiu para {@link ./moldes-de-formatacao.ts} ao
+ * alcançar o terceiro consumidor. Este, o da **data**, ainda não subiu — e a razão está no marcador
+ * abaixo, que é o oposto de uma decisão fechada: ele agenda, não protege.
  */
-const FORMATO_ISO_DO_INSTANTE = 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"';
+// DÉBITO COM GATILHO — D7 · F4/T3 · registrado 2026-08-16
+// O QUÊ: `FORMATO_ISO_DA_DATA` tem TRÊS declarações executáveis do mesmo literal — esta, a de
+//        `./envio-de-cobranca.ts` e a de `./contrato.ts` (que é exportada para
+//        `./documento-de-contrato.ts`). O limiar de três do `CLAUDE.md` já foi ultrapassado, e nada
+//        amarra as três: endurecer uma — outra escala, outro separador — deixa duas para trás.
+// QUANDO FECHA: **JÁ DISPAROU (F4/T4)** — o quarto consumidor era `./documento-de-contrato.ts`, e o
+//        quinto é `./emissao-em-lote.ts`, que importa o molde daqui por `./contrato.ts` em vez de
+//        redeclará-lo. Nenhum dos dois agravou a dívida, e por isso as três declarações continuam de
+//        pé: fechar é descê-las para `./moldes-de-formatacao.ts` — que já existe e já é a casa do
+//        molde do instante — com as locais saindo no mesmo diff, e a linha do índice do arquivo de
+//        instruções saindo junto (a barreira `CT-907` de `@sysloc/shared` cobra as duas pontas).
+// POR QUE NÃO AGORA: as três cópias são dívida **pré-existente**, que esta task não criou nem
+//        agravou — arrastá-las junto da subida do instante seria "aproveitar que estou aqui"
+//        (§4.5 do Protocolo Antirregressão), e cada arquivo a mais no diff é superfície de
+//        regressão em três projeções que o oráculo compara campo a campo.
+// ÍNDICE: docs/specs/features/emissao-e-conciliacao/v1/_run/run-report.md §2, D7
+const FORMATO_ISO_DA_DATA = 'YYYY-MM-DD';
 
 /**
  * A projeção publicada, escrita **uma vez** e reusada pelas duas leituras deste arquivo.
@@ -353,12 +398,17 @@ const FORMATO_ISO_DO_INSTANTE = 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"';
  * justificativa, de `colunasDoContrato` em {@link ./contrato.ts}.
  *
  * Os apelidos existem porque as colunas são `snake_case` e o contrato fala camelCase (ADR-0017):
- * traduzir aqui, num ponto só, é o que impede dezoito traduções livres para divergir. E `id` e
- * `empresa_id` **não** estão na lista — o que a porta devolve é o que o contrato publica.
+ * traduzir aqui, num ponto só, é o que impede vinte e três traduções livres para divergir. E `id`,
+ * `empresa_id` e `identificador_no_provedor` **não** estão na lista — o que a porta devolve é o que o
+ * contrato publica, e a chave de correlação com o provedor é interna (ver {@link LinhaDeCobranca}).
  *
- * As três datas saem por `to_char`, e a escolha é conteúdo: o driver entregaria uma coluna `date`
- * como objeto `Date` no fuso do processo, e reserializá-lo desloca a data em um dia para metade dos
- * fusos (§6.2). A cadeia atravessa da consulta até o JSON sem passar por relógio nenhum.
+ * `nosso_numero` sai daqui como `numeroDoTituloNoProvedor`, e a tradução é conteúdo, não estética: é
+ * neste ponto — e em nenhum outro — que o vocabulário do provedor para de existir (ADR-0001).
+ *
+ * As **quatro** datas saem por `to_char`, e a escolha é conteúdo: o driver entregaria uma coluna
+ * `date` como objeto `Date` no fuso do processo, e reserializá-lo desloca a data em um dia para
+ * metade dos fusos (§6.2). A cadeia atravessa da consulta até o JSON sem passar por relógio nenhum, e
+ * `to_char` de nulo é nulo — a cobrança sem crédito atravessa com o campo vazio.
  */
 function colunasDaCobranca(tx: TransactionSql): Fragment {
   return tx`
@@ -379,7 +429,12 @@ function colunasDaCobranca(tx: TransactionSql): Fragment {
     valor_pago AS "valorPago",
     to_char(cancelado_em AT TIME ZONE 'UTC', ${FORMATO_ISO_DO_INSTANTE}) AS "canceladoEm",
     multa_percentual_aplicado AS "multaPercentualAplicado",
-    juros_percentual_aplicado AS "jurosPercentualAplicado"
+    juros_percentual_aplicado AS "jurosPercentualAplicado",
+    nosso_numero AS "numeroDoTituloNoProvedor",
+    linha_digitavel AS "linhaDigitavel",
+    codigo_barras AS "codigoDeBarras",
+    to_char(data_credito, ${FORMATO_ISO_DA_DATA}) AS "dataDoCredito",
+    valor_creditado AS "valorCreditado"
   `;
 }
 
@@ -448,13 +503,15 @@ function predicadoDaCarteira(tx: TransactionSql, filtros: FiltrosDaCarteira): Fr
 /**
  * A linha crua na cobrança que a porta entrega — **o ponto único** da conversão de `numeric`.
  *
- * `Number(…)` sobre o texto do driver é o que faz as sete grandezas monetárias chegarem ao consumidor
- * como número; sem esta função o JSON sairia com `"1266.25"` entre aspas e **nada acusaria**. Mesma
- * decisão, e mesma razão medida, de `contratoPublicado` em {@link ./contrato.ts}.
+ * `Number(…)` sobre o texto do driver é o que faz as **oito** grandezas monetárias chegarem ao
+ * consumidor como número; sem esta função o JSON sairia com `"1266.25"` entre aspas e **nada
+ * acusaria**. Mesma decisão, e mesma razão medida, de `contratoPublicado` em {@link ./contrato.ts}.
  *
  * O nulo atravessa **intacto**: `Number(null)` é `0`, e uma cobrança em aberto passaria a declarar
  * valor pago zero em vez de "ainda não paga" — que é exatamente a distinção que o
- * `cobranca_carimbo_coerente_chk` do banco impõe na escrita.
+ * `cobranca_carimbo_coerente_chk` do banco impõe na escrita. O mesmo vale para `valorCreditado`, que
+ * o banco **não** pareia com carimbo algum: uma cobrança emitida e ainda não creditada passaria a
+ * declarar que o provedor creditou zero, que é o oposto de *"ainda não creditou"*.
  *
  * Os campos são copiados um a um, e não por espalhamento: o espalhamento publicaria qualquer coluna
  * que a projeção venha a ganhar, inclusive `empresa_id` — e a visão expande `c.*`.
@@ -481,6 +538,11 @@ function cobrancaPublicada(linha: LinhaBrutaDeCobranca): LinhaDeCobranca {
       linha.multaPercentualAplicado === null ? null : Number(linha.multaPercentualAplicado),
     jurosPercentualAplicado:
       linha.jurosPercentualAplicado === null ? null : Number(linha.jurosPercentualAplicado),
+    numeroDoTituloNoProvedor: linha.numeroDoTituloNoProvedor,
+    linhaDigitavel: linha.linhaDigitavel,
+    codigoDeBarras: linha.codigoDeBarras,
+    dataDoCredito: linha.dataDoCredito,
+    valorCreditado: linha.valorCreditado === null ? null : Number(linha.valorCreditado),
   };
 }
 

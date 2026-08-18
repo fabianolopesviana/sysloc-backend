@@ -297,6 +297,43 @@ readonly URL_BASE_PADRAO_DA_CONFIRMACAO="https://sysloc.invalid"
 # nada além de existir.
 readonly ENDERECO_PADRAO_DO_PROVEDOR_BANCARIO="https://provedor.sysloc.invalid"
 
+# Diretório onde os BYTES do boleto vivem — a oitava chave do arquivo de ambiente
+# e o único diretório de dados de negócio que este script provisiona.
+#
+# CAUSA de existir: a T9 da fatia `emissao-e-conciliacao` publicou a guarda de
+# boletos (`packages/cobranca-bancaria/src/guarda-de-boletos.ts`), que grava, lê
+# e apaga sob um diretório-base recebido POR PARÂMETRO (ADR-0025 — o pacote não
+# lê o ambiente). Quem lê `DIRETORIO_DOS_BOLETOS` é a composição raiz, e sem esta
+# semeadura o arquivo de uma instalação anterior nunca ganharia a linha.
+#
+# POR QUE O BOLETO SE GUARDA, sendo a ADR-0030 o contrário disso: ele é FATO
+# RECEBIDO DE TERCEIRO, e a cláusula de exclusão da própria ADR o nomeia por
+# escrito. Ninguém o recompõe — quem o compõe é o banco —, de modo que perdê-lo
+# custa uma re-obtenção junto ao provedor. O carnê, esse sim derivado, é composto
+# sob demanda e não passa por aqui.
+#
+# OS BYTES NÃO SÃO CIFRADOS, e a decisão é declarada: o boleto é documento
+# destinado a ser entregue ao locatário, e a linha digitável que ele carrega já é
+# publicada pela API. Cifrá-lo protegeria contra um adversário que já tem leitura
+# no filesystem deste host — que também teria a ${ARQ_AMBIENTE} 0600. O que
+# protege o acervo é o modo do diretório, aplicado abaixo.
+#
+# O caminho fica em /var/lib porque é ESTADO da aplicação, e o nome segue o
+# precedente do capturador de e-mail (`/var/lib/sysloc-mailpit`). Ele está fora
+# da árvore versionada por construção, e não por regra de ignore — que é a
+# condição de entrada da ADR-0005 e o que o verificador de infraestrutura confere.
+readonly DIR_BOLETOS="/var/lib/sysloc-boletos"
+
+# Dono e modo do diretório dos boletos.
+#
+# O dono é o usuário das unidades de serviço (`User=`/`Group=` de
+# `deploy/systemd/sysloc-api.service` e `sysloc-worker.service`): é o processo da
+# aplicação que grava e lê o arquivo, e nenhum outro. O modo 0750 é o mesmo do
+# diretório de dados da fila — dono lê, escreve e percorre; grupo lê; os demais
+# não enxergam sequer os nomes, que são códigos de cobrança de clientes reais.
+readonly DONO_DIR_BOLETOS="sysloc"
+readonly MODO_DIR_BOLETOS="0750"
+
 readonly UNIDADE_BANCO="postgresql.service"
 
 readonly DIR_CONFIG="/etc/sysloc"
@@ -825,6 +862,25 @@ garantir_chaves_de_conteudo() {
 		acrescentar_linha_ao_ambiente "${arquivo}" \
 			"ENDERECO_DO_PROVEDOR_BANCARIO=${ENDERECO_PADRAO_DO_PROVEDOR_BANCARIO}"
 		CHAVES_SEMEADAS="${CHAVES_SEMEADAS:+${CHAVES_SEMEADAS}, }ENDERECO_DO_PROVEDOR_BANCARIO"
+	fi
+
+	# A quarta chave de conteúdo (F4/T9), pelo MESMO critério das três acima. Ela
+	# nomeia o diretório que o passo P17 provisiona, e por isso o valor padrão é a
+	# constante ${DIR_BOLETOS} — e não um substituto em domínio reservado, como os
+	# outros três: aqui o valor semeado é o que a instalação de fato usa.
+	#
+	# ⚠️ Ela NÃO entra na conferência de coordenadas, e a razão é a mesma das outras
+	# três: aquela cobra por IGUALDADE o que este script pôs em algum lugar, e
+	# abortaria na edição mais legítima que existe — o operador que move o acervo de
+	# boletos para um volume próprio. Quem provisiona o diretório declarado aqui é o
+	# P17, que lê a constante; um operador que mude a linha assume mover os bytes e
+	# ajustar dono e modo, e o verificador
+	# `deploy/scripts/cobranca-bancaria/verificar-guarda-de-boletos.sh` confere o
+	# resultado.
+	if ! grep -q '^DIRETORIO_DOS_BOLETOS=' "${arquivo}" 2>/dev/null; then
+		acrescentar_linha_ao_ambiente "${arquivo}" \
+			"DIRETORIO_DOS_BOLETOS=${DIR_BOLETOS}"
+		CHAVES_SEMEADAS="${CHAVES_SEMEADAS:+${CHAVES_SEMEADAS}, }DIRETORIO_DOS_BOLETOS"
 	fi
 }
 
@@ -1646,6 +1702,14 @@ passo_p06_arquivo_ambiente() {
 		printf '# conecta ao verificar a identidade da empresa perante o banco. Nasce com\n'
 		printf '# um substituto em domínio reservado (.invalid) e é trocado pelo endereço\n'
 		printf '# real do provedor quando a instalação passar a cobrar de verdade.\n'
+		printf '#\n'
+		printf '# DIRETORIO_DOS_BOLETOS também NÃO é segredo: é onde os bytes do boleto\n'
+		printf '# que o provedor devolveu ficam guardados. Diferente das três chaves de\n'
+		printf '# conteúdo acima, o valor semeado é o REAL — o mesmo diretório que este\n'
+		printf '# procedimento cria, com dono %s e modo %s. Mudá-lo obriga a mover os\n' \
+			"${DONO_DIR_BOLETOS}" "${MODO_DIR_BOLETOS}"
+		printf '# arquivos e a aplicar dono e modo no destino; o verificador\n'
+		printf '# deploy/scripts/cobranca-bancaria/verificar-guarda-de-boletos.sh confere.\n'
 		printf '\n'
 		printf 'DATABASE_URL=%s\n' "$(montar_url_do_banco "${senha_db}" "${porta_banco}")"
 		printf 'REDIS_URL=redis://127.0.0.1:%s\n' "${PORTA_FILA}"
@@ -1655,6 +1719,7 @@ passo_p06_arquivo_ambiente() {
 		printf 'BETTER_AUTH_SECRET=%s\n' "${segredo_sessao}"
 		printf 'CHAVE_DE_CIFRA_DO_CERTIFICADO=%s\n' "${chave_de_cifra}"
 		printf 'ENDERECO_DO_PROVEDOR_BANCARIO=%s\n' "${ENDERECO_PADRAO_DO_PROVEDOR_BANCARIO}"
+		printf 'DIRETORIO_DOS_BOLETOS=%s\n' "${DIR_BOLETOS}"
 	} >"${ARQ_AMBIENTE}"
 
 	criado "P06" "arquivo de ambiente ${ARQ_AMBIENTE} criado (0600 ${DONO_ARQ_AMBIENTE}, credencial gerada em tempo de execução)"
@@ -2375,6 +2440,35 @@ passo_p16_banco_preparado() {
 # =========================================================================== #
 # Encerramento.
 # =========================================================================== #
+# =========================================================================== #
+# P17 — diretório dos boletos, fora da árvore versionada.
+#
+# ⚠️ Ele roda DEPOIS do P06, que semeia `DIRETORIO_DOS_BOLETOS` no arquivo de
+# ambiente, e a ordem é deliberada: o P06 é o passo que ABORTA diante de arquivo
+# ambíguo ou de coordenada divergente, e criar diretório antes dele deixaria
+# resíduo de uma execução que se recusou a prosseguir. As duas pontas leem a
+# MESMA constante (${DIR_BOLETOS}), de modo que a linha semeada e o diretório
+# criado não podem divergir.
+#
+# A ausência do usuário do serviço ABORTA em vez de degradar para outro dono: um
+# diretório de dono errado faz a aplicação falhar na primeira emissão, com
+# `EACCES` numa gravação que o operador não relacionaria ao provisionamento. É a
+# mesma conduta de `verificar_usuario_dos_servicos`, em `instalar-unidades.sh`.
+# =========================================================================== #
+passo_p17_diretorio_dos_boletos() {
+	if ! getent passwd "${DONO_DIR_BOLETOS}" >/dev/null 2>&1; then
+		abortar "o usuário '${DONO_DIR_BOLETOS}' não existe nesta máquina, e ele é o dono do diretório dos boletos (${DIR_BOLETOS}) — é como quem as unidades de serviço rodam (User=)" \
+			"crie o usuário do serviço (ou ajuste DONO_DIR_BOLETOS no topo deste script, se o nome mudou) e execute de novo — nada além deste passo depende dele"
+	fi
+
+	if aplicar_diretorio "${DIR_BOLETOS}" "${MODO_DIR_BOLETOS}" \
+		"${DONO_DIR_BOLETOS}" "${DONO_DIR_BOLETOS}"; then
+		criado "P17" "diretório dos boletos ${DIR_BOLETOS} criado (${MODO_DIR_BOLETOS} ${DONO_DIR_BOLETOS}:${DONO_DIR_BOLETOS})"
+	else
+		ja_ok "P17" "diretório dos boletos ${DIR_BOLETOS} já existe (${MODO_DIR_BOLETOS} ${DONO_DIR_BOLETOS}:${DONO_DIR_BOLETOS})"
+	fi
+}
+
 resumir() {
 	local disco_depois_mib consumo
 	disco_depois_mib="$(medir_disco_mib "${DESTINO_DISCO}" || true)"
@@ -2390,6 +2484,7 @@ resumir() {
 		erro "O QUE FAZER: o provisionamento terminou, mas a próxima execução vai abortar no guarda de disco. Libere espaço antes de seguir para as etapas seguintes da fatia."
 	fi
 
+	info "bytes de boleto em ${DIR_BOLETOS} (${MODO_DIR_BOLETOS} ${DONO_DIR_BOLETOS}) — fora da árvore versionada, sem cifra por decisão declarada"
 	info "credencial e cadeias de conexão em ${ARQ_AMBIENTE} (0600 ${DONO_ARQ_AMBIENTE}) — fora da árvore versionada"
 	info "credencial do papel de migração em ${ARQ_AMBIENTE_MIGRACAO} (0600 ${DONO_ARQ_AMBIENTE}) — separada da anterior, consumida só por migrar-banco.sh"
 	info "provisionamento concluído"
@@ -2419,6 +2514,7 @@ main() {
 	passo_p14_servico_capturador
 	passo_p15_papel_migracao
 	passo_p16_banco_preparado
+	passo_p17_diretorio_dos_boletos
 
 	resumir
 }

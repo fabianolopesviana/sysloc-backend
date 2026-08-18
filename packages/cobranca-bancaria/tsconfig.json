@@ -19,17 +19,30 @@
   // As DUAS referências são o contrato e o transversal, e a ausência de `../db` é a decisão desta
   // task, não uma omissão (ADR-0025): quem declara `PortaDeIdentidadeBancaria`,
   // `IdentidadeParaVerificar` e `ResultadoDaVerificacaoDeIdentidade` é este pacote, e é o adaptador
-  // (T10) que importa daqui para dizer que os satisfaz. A aresta de volta — ainda que só em
-  // `devDependencies`, "para o teste enxergar o banco" — fecha um ciclo, e o Turborepo ABORTA antes
-  // de compilar qualquer coisa:
+  // (T10) que importa daqui para dizer que os satisfaz. Inverter a aresta poria o material em claro
+  // dentro do pacote que monta consulta, que é exatamente o vetor pelo qual um cliente de banco
+  // anexa parâmetros ao erro (tech spec §3.3) — e daria ao domínio um segundo caminho para o dado.
+  //
+  // ⚠️ EMENDA DA T10 da fatia (ii), 2026-08-17. O texto original desta nota afirmava que a aresta de
+  // volta "ainda que só em `devDependencies`, para o teste enxergar o banco" fecharia um ciclo:
   //
   //     x Cyclic dependency detected: @sysloc/db#build, @sysloc/cobranca-bancaria#build
   //
-  // Foi medido neste repositório com um par equivalente, na fatia `regua-de-cobranca`. A
-  // consequência prática: caso que precisa de banco mora em `packages/db/test/`, onde o encontro já
-  // é legítimo — e é lá que a camada de dados guarda o ENVELOPE CIFRADO, sem saber o que há dentro
-  // dele. Inverter a aresta poria o material em claro dentro do pacote que monta consulta, que é
-  // exatamente o vetor pelo qual um cliente de banco anexa parâmetros ao erro (tech spec §3.3).
+  // Aquilo foi EXTRAPOLADO do par `regua`/`db` da fatia `regua-de-cobranca`, em que `db → regua` já
+  // existe em `dependencies` — e por isso a volta fecha mesmo. Para ESTE par a afirmação é falsa, e
+  // a medição está no `"//"` do `package.json`: `@sysloc/db` não cita este pacote em lista alguma, e
+  // `pnpm turbo run build --dry=json` monta o grafo sem ciclo. `@sysloc/db` entrou, portanto, em
+  // `devDependencies` — e SÓ nelas.
+  //
+  // O que NÃO mudou, e é o que esta nota sempre existiu para dizer: `../db` continua fora das
+  // `references` abaixo e fora de `dependencies`, porque o `src/` deste pacote não conhece a camada
+  // de dados. A dependência de teste não atravessa o `exports`, não aparece em `.d.ts` algum, e o
+  // que ela habilita é a prova do percurso do lote contra BANCO REAL (tech spec §19.2).
+  //
+  // ⚠️ E não leia a ausência abaixo como a BARREIRA: ela não é mais. Medido pelo Gate 2 com
+  // controle, um `import … from '@sysloc/db'` plantado em `src/` compila com estas `references` no
+  // lugar, porque o vínculo de `node_modules/` que a `devDependency` cria basta à resolução. Quem
+  // impõe a propriedade a partir da T10 é o CT-809 (d) de `test/vocabulario-canonico.spec.ts`.
   //
   // `../shared` entra porque `SegredoOperavel` — o invólucro opaco do material e da senha — é o que
   // atravessa a porta, e o `exports` daquele manifesto resolve `"."` só para `dist/`, que o

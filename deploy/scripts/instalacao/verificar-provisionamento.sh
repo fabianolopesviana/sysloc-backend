@@ -2100,9 +2100,17 @@ ct_647() {
 	# à mão por editor que não a acrescenta. Com `printf … >>` cru, o acréscimo cola.
 	printf 'DATABASE_URL=postgresql://a:b@127.0.0.1:5432/c\nSMTP_URL=smtp://127.0.0.1:1025' >"${arq}"
 
+	# ⚠️ As constantes de valor padrão são declaradas AQUI, uma por chave que
+	# `garantir_chaves_de_conteudo` semeia, e a lista cresce com ela: sob `set -u`,
+	# uma constante que ficasse para trás derrubaria o subshell e o `|| falhar`
+	# abaixo nomearia o desfecho. Foram duas na T9 de `documentos-e-confirmacao`,
+	# três desde a T11 de `fundacao-bancaria` (o endereço do provedor) e são quatro
+	# desde a T9 de `emissao-e-conciliacao` (o diretório dos boletos).
 	(
 		REMETENTE_PADRAO_DO_AVISO="avisos@sysloc.invalid"
 		URL_BASE_PADRAO_DA_CONFIRMACAO="https://sysloc.invalid"
+		ENDERECO_PADRAO_DO_PROVEDOR_BANCARIO="https://provedor.sysloc.invalid"
+		DIR_BOLETOS="/var/lib/sysloc-boletos"
 		eval "$(sed -n '/^acrescentar_linha_ao_ambiente() {/,/^}/p' "${SCRIPT_PROVISIONAR}")"
 		eval "$(sed -n '/^garantir_chaves_de_conteudo() {/,/^}/p' "${SCRIPT_PROVISIONAR}")"
 		[[ "$(type -t acrescentar_linha_ao_ambiente)" == "function" ]] || exit 8
@@ -2134,6 +2142,8 @@ ct_647() {
 	(
 		REMETENTE_PADRAO_DO_AVISO="avisos@sysloc.invalid"
 		URL_BASE_PADRAO_DA_CONFIRMACAO="https://sysloc.invalid"
+		ENDERECO_PADRAO_DO_PROVEDOR_BANCARIO="https://provedor.sysloc.invalid"
+		DIR_BOLETOS="/var/lib/sysloc-boletos"
 		eval "$(sed -n '/^acrescentar_linha_ao_ambiente() {/,/^}/p' "${SCRIPT_PROVISIONAR}")"
 		eval "$(sed -n '/^garantir_chaves_de_conteudo() {/,/^}/p' "${SCRIPT_PROVISIONAR}")"
 		garantir_chaves_de_conteudo "${arq_ok}"
@@ -2141,11 +2151,12 @@ ct_647() {
 
 	# O esperado é a linha preexistente MAIS uma por chave de conteúdo semeada, e
 	# nada além: linha vazia entre elas apareceria aqui como contagem a mais. O
-	# valor cresceu de 2 para 3 quando a T9 acrescentou a segunda chave — ele é
-	# função de quantas `garantir_chaves_de_conteudo` semeia, e não uma constante
-	# do arranjo.
+	# valor é função de quantas `garantir_chaves_de_conteudo` semeia, e não uma
+	# constante do arranjo: 2 → 3 na T9 de `documentos-e-confirmacao` (a segunda
+	# chave), 3 → 4 na T11 de `fundacao-bancaria` (o endereço do provedor) e 4 → 5
+	# na T9 de `emissao-e-conciliacao` (o diretório dos boletos).
 	afirmar_igual "arquivo já terminado em quebra não ganha linha vazia" \
-		"3" "$(grep -c . "${arq_ok}")"
+		"5" "$(grep -c . "${arq_ok}")"
 
 	fechar_caso "CT-647"
 }

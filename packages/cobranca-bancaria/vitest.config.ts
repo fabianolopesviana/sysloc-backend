@@ -15,8 +15,21 @@
  * todas, e o custo de uma suíte viraria licença global — folga que ninguém pediu é onde a lentidão de
  * amanhã se esconde.
  *
+ * ⚠️ **EMENDA DA T10 da fatia (ii), 2026-08-17** — o parágrafo acima fica preservado, e a primeira
+ * frase dele **envelheceu**: a suíte deste pacote **atravessa fronteira real** desde a T10. A
+ * previsão de que *"cada uma declara o próprio teto NO CASO"* está honrada e não muda; o que a
+ * previsão errou foi o **nome das fronteiras** — ela antecipou `tls`, e as que de fato chegaram são
+ * o **banco** (instância efêmera própria por `bancoEfemero`, exigida pela tech spec §19.2 para que
+ * o percurso do lote seja provado contra dado real) e o **filesystem** (o diretório temporário onde
+ * a guarda de boletos escreve). Nenhum teto sobe aqui por causa delas, e a razão é a mesma de
+ * sempre: teto alargado no arcabouço vale para todas as suítes, e o custo de uma viraria licença
+ * global.
+ *
  * ADR-0006: nenhuma coordenada de conexão é lida aqui, pela mesma razão escrita nos irmãos. E
  * nenhum caso desta suíte alcança o provedor real — o que ela examina é vocabulário declarado.
+ *
+ * ⚠️ **A frase sobre a ADR-0006 acima permanece VERDADEIRA e não foi emendada**: a instância do
+ * banco é efêmera e própria da execução, e nenhuma coordenada de conexão entra por este arquivo.
  */
 
 import { defineConfig } from 'vitest/config';

@@ -20,7 +20,16 @@
  * |       |        | **não** contém o segredo, **contém** os dois identificadores e **preserva** o
  * |       |        | diagnóstico da falha original. |
  *
- * Rastreabilidade: `CA-09 → CT-738 (RN-11)`, `CA-09 → CT-739 (RN-11)`.
+ * | §13.1 | CT-739 | **T15** · Os pontos de registro do módulo são **exatamente três** — o
+ * | (T15) | (b)    | ouvinte do cliente, o ouvinte de cada fila e o **fecho das três no
+ * |       |        | desligamento** —, afirmados por igualdade sobre o texto do SUT; e em **todos**
+ * |       |        | eles o valor da chave `erro` é `semRastroDeComando(...)`, nunca o objeto que a
+ * |       |        | biblioteca rejeitou. Ela fecha as duas metades do que o caminho de fecho
+ * |       |        | perdera: o resultado de `Promise.allSettled` **descartado sem leitura** (o
+ * |       |        | ponto some da lista) e a causa **crua** no registrador (o valor deixa de ser
+ * |       |        | o saneador). |
+ *
+ * Rastreabilidade: `CA-09 → CT-738 (RN-11)`, `CA-09 → CT-739 (RN-11)`, `CA-09 → CT-739 (b) (RN-11)`.
  *
  * ===========================================================================
  * O DEFEITO QUE ESTE ARQUIVO FECHA, e por que ele não era visível de dentro
@@ -41,6 +50,35 @@
  * protegê-lo. A correção mora na **fronteira** (`apps/api/src/comum/produtor-de-fila.ts`), que é o
  * único ponto da aplicação que conhece a biblioteca — e é aqui que ela é medida, porque tapar o
  * ponto de registro cobriria um chamador e deixaria os outros, presentes e futuros, abertos.
+ *
+ * ===========================================================================
+ * O `CT-739 (b)` É ESTÁTICO — e a razão de ele não ser comportamental foi MEDIDA
+ * ===========================================================================
+ *
+ * O `CT-738` e o `CT-739` medem o SUT em execução, com servidor real, e é assim que se prova o que
+ * se pode provocar. O caminho de **fecho** não é um desses: para observar a leitura do resultado de
+ * `Promise.allSettled` seria preciso um `close()` que **rejeite**, e a medição desta base diz que
+ * ele não rejeita por caminho legítimo — com a instância efêmera **parada** antes do fecho, as duas
+ * filas de uma medição de controle devolveram `fulfilled`, porque a conexão é **compartilhada** e o
+ * fecho da fila não emite comando algum ao servidor. Provocá-la exigiria dublar a biblioteca ou
+ * abrir na produção um ponto de entrada que só o teste usa — o *seam* que a
+ * `.claude/rules/testing-stack.md` proíbe.
+ *
+ * O que resta é a asserção sobre o **texto** do módulo, e ela é discriminante nas duas direções que
+ * importam: remover o registro do fecho tira o ponto da lista afirmada por igualdade, e passar a
+ * causa crua ao registrador troca o valor da chave `erro`. Sendo estática, ela paga o preço que a
+ * `testing-stack.md` e o P4 da `.claude/rules/nao-regressao.md` cobram — a **prova de falsificação
+ * por execução**:
+ *
+ *   1. **controle** — árvore íntegra: os três casos do arquivo verdes;
+ *   2. **mutante F (resultado descartado)** — o `for` de leitura removido do `encerrar` e o
+ *      `allSettled` de volta a `await Promise.allSettled(...)` sem ligação: o caso **reprovou**, com
+ *      `['warn','debug']` contra `['warn','debug','debug']`;
+ *   3. **mutante G (causa crua)** — `erro: fecho.reason` no lugar de
+ *      `erro: semRastroDeComando(FALHA_DO_FECHO, fecho.reason)`: o caso **reprovou** com
+ *      *"o registro 3 (debug) não passa a causa por semRastroDeComando"*, que é o vetor
+ *      `err.command.args` sendo apontado no ponto exato em que ele reentraria;
+ *   4. **reversão** — as cópias foram desfeitas e o controle reexecutado.
  *
  * ===========================================================================
  * COMO A FALHA É PROVOCADA — servidor real, erro real, sem dublê
@@ -65,6 +103,7 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   type CargaDaConfirmacao,
   criarLogger,
@@ -75,16 +114,18 @@ import { Queue } from 'bullmq';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)
 // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o código abaixo.)
-// O QUÊ: os imports a seguir atravessam a fronteira de `@sysloc/shared` por CAMINHO DE ARQUIVO,
-//        fora do `exports` e do `files` daquele manifesto. A dependência de workspace está
-//        declarada, então não há dependência oculta; o que não existe é FRONTEIRA para o diretório
-//        `test/` — e este arquivo é mais um a repetir o padrão.
+// O QUÊ: os imports a seguir atravessam a fronteira de `@sysloc/shared` e de `@sysloc/db` por
+//        CAMINHO DE ARQUIVO, fora do `exports` e do `files` daqueles manifestos. As dependências de
+//        workspace estão declaradas, então não há dependência oculta; o que não existe é FRONTEIRA
+//        para o diretório `test/` — e este arquivo é mais um a repetir o padrão, agora também para
+//        o acessório de varredura de `@sysloc/db`, que o `CT-216` já consome por aqui.
 // QUANDO FECHA: o gatilho já disparou e o fechamento segue pendente; ele é o mesmo de sempre —
-//        declarar o subpath `"./test"` no manifesto e importar por `@sysloc/shared/test`, ou
+//        declarar o subpath `"./test"` nos manifestos e importar por `@sysloc/<pacote>/test`, ou
 //        extrair um `@sysloc/test-utils`.
 // POR QUE NÃO AGORA: fechar exige editar os manifestos de dois pacotes e todos os consumidores,
 //        nenhum deles no escopo desta task, e o índice de débitos do `CLAUDE.md`.
 // ÍNDICE: docs/specs/features/fundacao-stack-nativa/v1/_run/run-report.md §2, D28
+import { semComentarios } from '../../../packages/db/test/varredura-de-fontes.ts';
 import {
   comandoFila,
   type FilaEfemera,
@@ -121,6 +162,35 @@ const TETO_DE_MEMORIA_BYTES = 1;
 
 /** O trecho do erro do servidor que precisa sobreviver à saneamento — mascarar não é apagar. */
 const DIAGNOSTICO_DA_RECUSA = 'OOM';
+
+/** O fonte do SUT, lido pelo `CT-739 (b)`. Arquivo ausente levanta, e não devolve conjunto vazio. */
+const FONTE_DO_PRODUTOR = fileURLToPath(
+  new URL('../src/comum/produtor-de-fila.ts', import.meta.url),
+);
+
+/** A entrada única de saneamento do módulo, protegida pela `DECISÃO FECHADA — T9 / Gate 2`. */
+const SANEADOR_DA_CAUSA = 'semRastroDeComando';
+
+/**
+ * Os pontos de registro do módulo, na ORDEM do arquivo — a expectativa revisada.
+ *
+ * São três, e cada um é uma decisão registrada no cabeçalho do SUT: o `warn` do ouvinte do cliente,
+ * o `debug` do ouvinte instalado em cada fila por `criarFila`, e o `debug` que **lê** o resultado do
+ * `Promise.allSettled` do encerramento. Escritos à mão de propósito: derivá-los da mesma varredura
+ * que o caso classifica faria a asserção concordar consigo mesma.
+ *
+ * ⚠️ O terceiro é o que a T15 acrescentou. Enquanto havia uma fila só, a rejeição do fecho subia até
+ * `onApplicationShutdown` e o arcabouço a registrava; sob `allSettled` — que nunca rejeita — quem
+ * não lê o resultado não fica sabendo em lugar nenhum, e o cabeçalho do SUT condena esse silêncio
+ * por escrito na seção *"O ouvinte de `error` não é ornamento"*.
+ */
+const NIVEIS_DOS_PONTOS_DE_REGISTRO: readonly string[] = ['warn', 'debug', 'debug'];
+
+/** Casa a chave `erro` do objeto registrado e o NOME da função que produz o valor dela. */
+const VALOR_DA_CHAVE_DE_ERRO = /\berro:\s*([A-Za-z_$][A-Za-z0-9_$]*)\(/u;
+
+/** Casa a abertura de uma chamada de registro, qualquer que seja o nível. */
+const ABERTURA_DO_REGISTRO = /\blogger\.([a-z]+)\(/gu;
 
 let fila: FilaEfemera;
 let produtor: ProdutorDeFila;
@@ -244,9 +314,81 @@ describe('a fronteira com a biblioteca de fila (T9)', () => {
   );
 });
 
+describe('o caminho de FECHO do módulo (T15)', () => {
+  it('CT-739 (b) — os três pontos de registro do módulo saneiam a causa, e o fecho das filas é um deles', () => {
+    const fonte = semComentarios(readFileSync(FONTE_DO_PRODUTOR, 'utf8'));
+
+    // Âncora antivácuo: um fonte lido em branco produziria lista vazia, e a igualdade abaixo
+    // reprovaria por ausência sem dizer por quê. O caminho ausente já levanta no `readFileSync`.
+    expect(fonte.length, 'o fonte do produtor foi lido vazio').toBeGreaterThan(0);
+
+    const registros = chamadasDeRegistro(fonte);
+
+    // Igualdade sobre o CONJUNTO de pontos, na ordem do arquivo: o registro REMOVIDO do fecho — que
+    // é o defeito perseguido — some daqui, e um registro NOVO obriga a revisão que esta lista é.
+    expect(
+      registros.map((registro) => registro.nivel),
+      'os pontos de registro do produtor mudaram: ' +
+        registros.map((registro) => registro.nivel).join(', '),
+    ).toEqual([...NIVEIS_DOS_PONTOS_DE_REGISTRO]);
+
+    // E em TODOS eles a causa é reduzida a texto pela entrada única. Não é `toContain` sobre o
+    // argumento inteiro: o que se afirma é o **valor** da chave `erro`, porque um registro que
+    // mantivesse a chamada saneada e acrescentasse a causa crua ao lado satisfaria a presença.
+    registros.forEach((registro, indice) => {
+      const produtorDoValor = VALOR_DA_CHAVE_DE_ERRO.exec(registro.argumentos);
+
+      expect(
+        produtorDoValor?.[1],
+        `o registro ${String(indice + 1)} (${registro.nivel}) não passa a causa por ${SANEADOR_DA_CAUSA}`,
+      ).toBe(SANEADOR_DA_CAUSA);
+    });
+  });
+});
+
 // ---------------------------------------------------------------------------------------------
 // Arranjo e observação
 // ---------------------------------------------------------------------------------------------
+
+/** Uma chamada de registro do módulo: o nível e o texto dos argumentos dela. */
+interface ChamadaDeRegistro {
+  readonly nivel: string;
+  readonly argumentos: string;
+}
+
+/**
+ * As chamadas ao registrador que o fonte declara, na ordem do arquivo.
+ *
+ * O recorte é por **profundidade de parênteses**, e não por linha: as três chamadas do módulo são
+ * multilinha, e um casamento por linha veria a abertura sem enxergar o argumento — que é justamente
+ * onde a causa entra. Os comentários já saíram antes (`semComentarios`), de modo que a prosa do
+ * cabeçalho do SUT, que cita `logger` e `semRastroDeComando` por extenso, não conta como chamada.
+ */
+function chamadasDeRegistro(fonte: string): ChamadaDeRegistro[] {
+  const chamadas: ChamadaDeRegistro[] = [];
+  // `lastIndex` é estado do padrão global: zerado a cada uso para que duas invocações do caso não
+  // partam do meio do arquivo.
+  ABERTURA_DO_REGISTRO.lastIndex = 0;
+
+  let casado = ABERTURA_DO_REGISTRO.exec(fonte);
+  while (casado !== null) {
+    const inicio = casado.index + casado[0].length;
+    let profundidade = 1;
+    let posicao = inicio;
+
+    while (posicao < fonte.length && profundidade > 0) {
+      const caractere = fonte.charAt(posicao);
+      if (caractere === '(') profundidade += 1;
+      else if (caractere === ')') profundidade -= 1;
+      posicao += 1;
+    }
+
+    chamadas.push({ nivel: casado[1] ?? '', argumentos: fonte.slice(inicio, posicao - 1) });
+    casado = ABERTURA_DO_REGISTRO.exec(fonte);
+  }
+
+  return chamadas;
+}
 
 /** Uma carga completa, com o segredo informado. */
 function cargaCom(segredo: string): CargaDaConfirmacao {

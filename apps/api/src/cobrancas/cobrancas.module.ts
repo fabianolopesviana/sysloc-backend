@@ -1,5 +1,5 @@
 /**
- * Módulo da cobrança — hoje as três primeiras rotas de `/v1/cobrancas`.
+ * Módulo da cobrança — as **sete** rotas de `/v1/cobrancas`.
  *
  * ---------------------------------------------------------------------------
  * Ele IMPORTA o módulo de identidade em vez de abrir acesso próprio
@@ -37,19 +37,105 @@
  * sai. Exportar é o que permite a `ContratosModule` **consumir** o símbolo em vez de recriá-lo; provê-lo
  * lá também daria duas instâncias e dois donos da mesma regra.
  *
- * O que a exportação **não** move é autorização: `TELA:financeiro` continua governando as cinco rotas
- * desta superfície, e nada da exigência declarada aqui alcança quem importa o módulo.
+ * O que a exportação **não** move é autorização: `TELA:financeiro` continua governando as rotas desta
+ * superfície, e nada da exigência declarada aqui alcança quem importa o módulo.
+ *
+ * ---------------------------------------------------------------------------
+ * Ele é a COMPOSIÇÃO que constrói o adaptador de cobrança e a guarda de bytes (T13)
+ * ---------------------------------------------------------------------------
+ *
+ * É **aqui, e em nenhum outro ponto da `api`**, que a porta de cobrança bancária e a guarda de boletos
+ * são escolhidas. A forma é a mesma, e a razão é a mesma, de
+ * {@link ../integracoes-bancarias/integracoes-bancarias.module.ts}, que já compõe a porta de
+ * **identidade**: quem monta o processo constrói a implementação a partir do ambiente já conferido, e
+ * a verificação troca o **provedor inteiro** por `overrideProvider`, entregando pela mesma interface
+ * um adaptador instrumentado. Não há bandeira de ambiente, não há `if (ehTeste)` e `criarAplicacao()`
+ * não ganha parâmetro — as três alternativas estão recusadas por escrito no cabeçalho de
+ * `packages/regua/src/adaptador-smtp.ts` e no docblock de `TOKEN_PORTA_DE_EMAIL`.
+ *
+ * ⚠️ **A §3.3 da T13 escreve `main.ts` como a casa desta composição, e a divergência é declarada e
+ * medida.** O ponto de entrada deste produto **não constrói provedor nenhum**: ele monta o
+ * `AppModule`, publica o contrato e escuta. Compor ali exigiria dar parâmetro a `criarAplicacao()` —
+ * o seam que os docblocks dos tokens recusam nominalmente — e tiraria da suíte o
+ * `overrideProvider`, que é como as três portas anteriores desta base são substituídas. O precedente
+ * literal é a fatia (i), cuja §3.6 dizia o mesmo e cuja composição terminou no módulo da área. O que
+ * a task pede — *"constrói o adaptador de cobrança e a guarda, e os injeta"* — está cumprido; o que
+ * muda é **onde**, e a escolha é a que preserva o mecanismo de substituição.
+ *
+ * ⚠️ **Os dois provedores são do módulo, e não globais**: ficam fora de qualquer `exports`, de modo
+ * que a única superfície que alcança a porta de cobrança é a desta área. Publicá-los daria a todo
+ * controlador do produto a capacidade de emitir título em nome de uma empresa.
+ *
+ * A construção mora **dentro do corpo da fábrica**, e a posição é conteúdo: no escopo de módulo, o
+ * simples `import` deste arquivo por uma suíte construiria o cliente do provedor — e, com endereço
+ * malformado, **derrubaria a importação** em vez de recusar a resolução do provedor, porque
+ * `criarAdaptadorSicoob` falha fechado na construção.
  */
 
 import { Module } from '@nestjs/common';
+import {
+  type AdaptadorCobrancaBancaria,
+  criarAdaptadorSicoob,
+  criarGuardaDeBoletos,
+  type GuardaDeBoletos,
+} from '@sysloc/cobranca-bancaria';
 import { AutenticacaoModule } from '../autenticacao/autenticacao.module.js';
+import {
+  type Ambiente,
+  TOKEN_AMBIENTE,
+  TOKEN_GUARDA_DE_BOLETOS,
+  TOKEN_PORTA_DE_COBRANCA_BANCARIA,
+} from '../configuracao/ambiente.js';
+import { BoletoService } from './boleto.service.js';
 import { CobrancaController } from './cobranca.controller.js';
 import { CobrancaService } from './cobranca.service.js';
+
+/**
+ * Constrói a porta de cobrança de produção a partir do ambiente **já validado** na partida.
+ *
+ * Ela recebe valor e não lê `process.env`: quem lê o ambiente é `carregarAmbiente`, num ponto só, e um
+ * segundo leitor escaparia da conferência de partida — e, pior aqui do que em qualquer outra porta,
+ * faria uma alteração do ambiente em execução mudar o destino de um processo já de pé. O endereço é
+ * resolvido **uma vez**, na construção, e o adaptador **recusa** o que não for `https:` absoluta com
+ * servidor nomeado, nomeando a **variável** e jamais o valor (ADR-0032).
+ *
+ * Nenhum teto de tempo e nenhuma credencial entram aqui: o teto é decisão do próprio adaptador, e a
+ * credencial de acesso é obtida **dentro** dele, por `client_credentials`, que é vocabulário do
+ * provedor (emenda de 2026-08-17 da ADR-0001).
+ */
+function criarPortaDeCobranca(ambiente: Ambiente): AdaptadorCobrancaBancaria {
+  return criarAdaptadorSicoob({ enderecoDoProvedor: ambiente.enderecoDoProvedorBancario });
+}
+
+/**
+ * Constrói a guarda dos bytes do boleto sobre o diretório que a partida já conferiu.
+ *
+ * O diretório-base chega **por parâmetro** (ADR-0025): `@sysloc/cobranca-bancaria` não lê
+ * `process.env`, e a guarda **não cria nem confere** o diretório — quem o exige presente, absoluto e
+ * gravável é `carregarAmbiente`, e quem o provisiona com dono e modo é
+ * `deploy/scripts/instalacao/provisionar-base.sh`.
+ */
+function criarGuardaDosBoletos(ambiente: Ambiente): GuardaDeBoletos {
+  return criarGuardaDeBoletos(ambiente.diretorioDosBoletos);
+}
 
 @Module({
   imports: [AutenticacaoModule],
   controllers: [CobrancaController],
-  providers: [CobrancaService],
+  providers: [
+    CobrancaService,
+    BoletoService,
+    {
+      provide: TOKEN_PORTA_DE_COBRANCA_BANCARIA,
+      useFactory: criarPortaDeCobranca,
+      inject: [TOKEN_AMBIENTE],
+    },
+    {
+      provide: TOKEN_GUARDA_DE_BOLETOS,
+      useFactory: criarGuardaDosBoletos,
+      inject: [TOKEN_AMBIENTE],
+    },
+  ],
   exports: [CobrancaService],
 })
 export class CobrancasModule {}

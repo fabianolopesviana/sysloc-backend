@@ -18,6 +18,15 @@
  * |          |             | `when` que não cresce — e a entrada ausente é falsificada sobre as
  * |          |             | DUAS migrações autorais, a `0008` e a `0010`. O controle — cópia
  * |          |             | íntegra — passa limpo. |
+ * | CA-14    | CT-946      | O detector de mistura acusa, num fonte de controle que traz
+ * |          |             | `CREATE TABLE` e `CREATE POLICY` no mesmo arquivo, as DUAS
+ * |          |             | naturezas nomeadas; aplicado à `0017` e à `0018` REAIS devolve
+ * |          |             | `[]` em cada uma, e os dois controles de natureza única também.
+ * |          |             | O ledger permanece coerente com o disco **e** carrega as duas
+ * |          |             | entradas novas nomeadas. E a `0018` declara
+ * |          |             | `FORCE ROW LEVEL SECURITY` para as QUATRO tabelas novas, com o
+ * |          |             | conjunto de tabelas que ela força igual ao conjunto de tabelas
+ * |          |             | para as quais ela cria política. |
  * | CA-02    | CT-608      | Por introspecção do catálogo de uma instância migrada, as duas
  * | CA-12    |             | tabelas da `0011` têm `empresa_id NOT NULL`, `relrowsecurity` E
  * |          |             | `relforcerowsecurity` verdadeiros, EXATAMENTE uma política `FOR
@@ -511,6 +520,302 @@ describe('coerência do ledger de migrações', () => {
     } finally {
       await rm(raiz, { recursive: true, force: true });
     }
+  });
+});
+
+// ===========================================================================
+// CT-946 — gerado e autoral não convivem no mesmo arquivo, e o ledger acompanha
+// ===========================================================================
+//
+// ---------------------------------------------------------------------------
+// O que este caso existe para impedir
+// ---------------------------------------------------------------------------
+//
+// A regra que ele guarda está escrita em todo cabeçalho de migração de segurança desde a `0001`:
+// **gerado e autoral nunca convivem no mesmo arquivo**, porque uma regeração futura da gerada
+// sobrescreve o trecho autoral **em silêncio** — e o trecho autoral é justamente `FORCE ROW LEVEL
+// SECURITY` e as políticas, isto é, o isolamento inteiro. O modo de falha não tem sintoma: o
+// arquivo continua aplicável, a suíte continua verde no dia da mistura, e o dano aparece na
+// primeira regeração, que é sempre outra fatia, meses depois.
+//
+// Até aqui a regra vivia **só em prosa de cabeçalho**. Este caso a torna executável.
+//
+// ---------------------------------------------------------------------------
+// Por que o detector remove COMENTÁRIO antes de olhar
+// ---------------------------------------------------------------------------
+//
+// Os cabeçalhos das duas migrações citam as duas naturezas por extenso — a `0017` explica por que
+// não emite `FORCE ROW LEVEL SECURITY` nem `CREATE POLICY`, e a `0018` explica por que não emite
+// `CREATE TABLE`. Um detector que casasse o texto cru acusaria **as duas** e nunca poderia passar,
+// de modo que a única forma de deixá-lo verde seria apagar a prosa que explica a decisão. É o mesmo
+// defeito que a `.claude/rules/testing-stack.md` registra como primeiro dos três da F0: a asserção
+// que casava `ALTER ROLE` em comentário e mensagem de erro, permanecendo verde num script sem
+// guarda alguma. Aqui ele apareceria na direção oposta — vermelho sem defeito —, e a "correção"
+// intuitiva seria mutilar o arquivo.
+//
+// ---------------------------------------------------------------------------
+// MUTANTE EXECUTADO — MT-M1 (2026-08-16)
+// ---------------------------------------------------------------------------
+//
+// Asserção estática ⇒ prova de falsificação obrigatória (`.claude/rules/testing-stack.md`). Além do
+// controle positivo PERMANENTE na suíte (o fonte sintético misturado), o defeito foi reintroduzido
+// no artefato REAL e medido. A suíte foi invocada pelo **script do pacote**
+// (`pnpm --filter @sysloc/db test`), nunca por `vitest run` avulso.
+//
+//   * **controle** — árvore íntegra: `194 passed`, 26 arquivos;
+//   * **MT-M1 · o `FORCE ROW LEVEL SECURITY` e a política de `evento_bancario` copiados da `0018`
+//     para o fim da `0017`** — a mistura literal que a regra proíbe, escrita como um autor futuro a
+//     escreveria por conveniência ("é tudo da mesma fatia"). `24 failed | 2 passed` em arquivos e
+//     `7 failed | 18 passed | 169 skipped` em casos. O CT-946 reprova NOMEANDO as duas naturezas e
+//     cada instrução culpada da `0017`:
+//     `[ 'AUTORAL · CREATE POLICY', 'AUTORAL · FORCE ROW LEVEL SECURITY', 'GERADA · ADD COLUMN',
+//     'GERADA · ADD CONSTRAINT', 'GERADA · CREATE INDEX', 'GERADA · CREATE TABLE',
+//     'GERADA · CREATE TYPE', 'GERADA · ENABLE ROW LEVEL SECURITY' ]` contra `[]`. **O alcance largo
+//     é a rede funcionando**, e não ruído: a política duplicada faz a `0018` abortar com
+//     `policy … already exists`, de modo que toda suíte que sobe instância migrada cai junto — o que
+//     é exatamente o desfecho que a mistura produziria em operação;
+//   * **MT-M2 · o `FORCE ROW LEVEL SECURITY` de `item_da_emissao_em_lote` removido da `0018`** — o
+//     defeito que a separação existe para tornar impossível, aplicado diretamente. `15 failed | 179
+//     passed`: o passo 5 deste caso reprova nomeando a tabela que sumiu da lista forçada, o CT-940
+//     reprova com `forcada: false` naquela tabela, e a guarda de cobertura de `catalogo.spec.ts`
+//     acusa `RLS_NAO_FORCADA` — três vias independentes, como no par CT-522/CT-523;
+//   * **reversão** — a `0017` e a `0018` foram restauradas e conferidas por `sha256sum` idêntico ao
+//     original (`2c96462a5b…` e `44bbde15c1…`), e o controle voltou a `194 passed`.
+//
+// A âncora deste registro é SIMBÓLICA — {@link naturezasMisturadas} e
+// {@link MIGRACAO_GERADA_DA_EMISSAO} —, e nunca número de linha.
+//
+// ---------------------------------------------------------------------------
+// Precondição privilegiada
+// ---------------------------------------------------------------------------
+//
+// Nenhuma. O caso lê os artefatos reais do pacote, no lugar em que eles vivem, e não escreve nada —
+// os fontes de controle são cadeias declaradas aqui, não arquivos. Nenhum símbolo foi acrescentado a
+// `packages/db/src/**` nem às migrações para este caso existir.
+
+/** As duas naturezas que um arquivo de migração pode ter — e nunca as duas ao mesmo tempo. */
+type NaturezaDeMigracao = 'AUTORAL' | 'GERADA';
+
+/** Uma instrução reconhecível, a natureza que ela denuncia e o rótulo que a nomeia na reprovação. */
+interface MarcaDeNatureza {
+  readonly natureza: NaturezaDeMigracao;
+  readonly rotulo: string;
+  readonly padrao: RegExp;
+}
+
+/**
+ * O vocabulário do detector.
+ *
+ * A partição não é estética: as marcas `GERADA` são o que `drizzle-kit generate` **emite** a partir
+ * do schema declarado, e as `AUTORAL` são exatamente o que ele **nunca** emite — a lista das
+ * ausências está escrita, item a item, no cabeçalho de toda migração de segurança desde a `0001`.
+ * É essa assimetria que torna a mistura detectável por texto: um arquivo que traga marca das duas
+ * classes ou perde o trecho autoral na próxima regeração, ou faz o gerador propor recriar o que já
+ * existe.
+ *
+ * `ENABLE ROW LEVEL SECURITY` é `GERADA` e `FORCE ROW LEVEL SECURITY` é `AUTORAL`, apesar de os dois
+ * serem `ALTER TABLE … ROW LEVEL SECURITY`: o gerador emite o primeiro (a `0017` o faz, quatro
+ * vezes) e não emite o segundo, que é justamente a ausência que obriga a parceira a existir.
+ */
+const MARCAS_DE_NATUREZA: readonly MarcaDeNatureza[] = [
+  { natureza: 'GERADA', rotulo: 'CREATE TABLE', padrao: /\bCREATE\s+TABLE\b/i },
+  { natureza: 'GERADA', rotulo: 'CREATE TYPE', padrao: /\bCREATE\s+TYPE\b/i },
+  { natureza: 'GERADA', rotulo: 'CREATE INDEX', padrao: /\bCREATE\s+(UNIQUE\s+)?INDEX\b/i },
+  { natureza: 'GERADA', rotulo: 'ADD COLUMN', padrao: /\bADD\s+COLUMN\b/i },
+  { natureza: 'GERADA', rotulo: 'ADD CONSTRAINT', padrao: /\bADD\s+CONSTRAINT\b/i },
+  {
+    natureza: 'GERADA',
+    rotulo: 'ENABLE ROW LEVEL SECURITY',
+    padrao: /\bENABLE\s+ROW\s+LEVEL\s+SECURITY\b/i,
+  },
+  {
+    natureza: 'AUTORAL',
+    rotulo: 'FORCE ROW LEVEL SECURITY',
+    padrao: /\bFORCE\s+ROW\s+LEVEL\s+SECURITY\b/i,
+  },
+  { natureza: 'AUTORAL', rotulo: 'CREATE POLICY', padrao: /\bCREATE\s+POLICY\b/i },
+  { natureza: 'AUTORAL', rotulo: 'CREATE FUNCTION', padrao: /\bCREATE\s+FUNCTION\b/i },
+  { natureza: 'AUTORAL', rotulo: 'CREATE SEQUENCE', padrao: /\bCREATE\s+SEQUENCE\b/i },
+  { natureza: 'AUTORAL', rotulo: 'GRANT', padrao: /^\s*GRANT\b/im },
+  { natureza: 'AUTORAL', rotulo: 'REVOKE', padrao: /^\s*REVOKE\b/im },
+];
+
+/**
+ * O texto da migração **sem os comentários** — é sobre ele que o detector corre.
+ *
+ * Ver o cabeçalho: os cabeçalhos das duas migrações citam as duas naturezas por extenso, e casar o
+ * texto cru faria o detector reprovar um par íntegro, empurrando a "correção" para apagar a prosa
+ * que explica a decisão.
+ */
+function semComentarios(fonte: string): string {
+  return fonte
+    .split('\n')
+    .map((linha) => linha.replace(/--.*$/, ''))
+    .join('\n');
+}
+
+/**
+ * As marcas encontradas, **quando há mais de uma natureza** — e a lista vazia quando há uma só.
+ *
+ * A saída nomeia a instrução culpada (`GERADA · CREATE TABLE`), e não apenas a natureza: é o que faz
+ * a reprovação apontar o que remover do arquivo, em vez de exigir que quem lê releia o `.sql`
+ * inteiro. Mesmo movimento de `ausentesNoJournal` no `RG-T3-01`.
+ */
+function naturezasMisturadas(fonte: string): string[] {
+  const executavel = semComentarios(fonte);
+  const encontradas = MARCAS_DE_NATUREZA.filter((marca) => marca.padrao.test(executavel));
+  const naturezas = new Set(encontradas.map((marca) => marca.natureza));
+
+  return naturezas.size > 1
+    ? encontradas.map((marca) => `${marca.natureza} · ${marca.rotulo}`).sort()
+    : [];
+}
+
+/** As duas migrações desta fatia, pelo nome com que vivem no disco e no ledger. */
+const MIGRACAO_GERADA_DA_EMISSAO = '0017_dominio_emissao_e_conciliacao';
+const MIGRACAO_AUTORAL_DA_EMISSAO = '0018_seguranca_emissao_e_conciliacao';
+
+/**
+ * As quatro tabelas da fatia, na ordem em que a `0018` as declara.
+ *
+ * A ordem é do arquivo, e a igualdade a cobra: uma quinta tabela forçada, ou uma das quatro que
+ * ficasse de fora, aparece pela posição. Escritas à mão aqui, e não derivadas do esquema Drizzle —
+ * derivá-las faria a asserção concordar com o mesmo lugar de onde a tabela nasce.
+ */
+const TABELAS_DA_EMISSAO_E_CONCILIACAO: readonly string[] = [
+  'evento_bancario',
+  'emissao_em_lote',
+  'item_da_emissao_em_lote',
+  'conferencia_bancaria',
+];
+
+/**
+ * O fonte de CONTROLE POSITIVO: gerado e autoral no mesmo arquivo.
+ *
+ * Ele é escrito como um autor futuro o escreveria por conveniência — *"é tudo da mesma fatia, por
+ * que dois arquivos?"* —, que é exatamente a forma pela qual a regra é quebrada. Sem esta perna, um
+ * detector que devolvesse `[]` para qualquer entrada aprovaria a `0017` e a `0018` sem provar nada:
+ * é o `AP-29` (`tautological_assertion`).
+ */
+const FONTE_MISTURADO = `
+-- Um arquivo que faz as duas coisas — o defeito que este caso existe para pegar.
+CREATE TABLE "negocio"."exemplo" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"empresa_id" uuid NOT NULL
+);
+ALTER TABLE "negocio"."exemplo" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "negocio"."exemplo" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "exemplo_isolamento_empresa" ON "negocio"."exemplo" FOR ALL
+	USING ("empresa_id" = nullif(current_setting('app.empresa_id', true), '')::uuid)
+	WITH CHECK ("empresa_id" = nullif(current_setting('app.empresa_id', true), '')::uuid);
+`;
+
+/** Controle de natureza ÚNICA — só gerado. O detector tem de passar limpo por ele. */
+const FONTE_SO_GERADO = `
+CREATE TABLE "negocio"."exemplo" ("id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL);
+ALTER TABLE "negocio"."exemplo" ENABLE ROW LEVEL SECURITY;
+CREATE INDEX "exemplo_idx" ON "negocio"."exemplo" USING btree ("id");
+`;
+
+/** Controle de natureza ÚNICA — só autoral. O detector tem de passar limpo por ele. */
+const FONTE_SO_AUTORAL = `
+ALTER TABLE "negocio"."exemplo" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "exemplo_isolamento_empresa" ON "negocio"."exemplo" FOR ALL
+	USING ("empresa_id" = nullif(current_setting('app.empresa_id', true), '')::uuid)
+	WITH CHECK ("empresa_id" = nullif(current_setting('app.empresa_id', true), '')::uuid);
+GRANT USAGE ON TYPE "negocio"."exemplo_enum" TO "sysloc_app";
+`;
+
+/** As tabelas que um fonte declara forçar, na ordem em que ele as declara. */
+function tabelasForcadas(fonte: string): string[] {
+  return [
+    ...semComentarios(fonte).matchAll(
+      /ALTER\s+TABLE\s+"negocio"\."(\w+)"\s+FORCE\s+ROW\s+LEVEL\s+SECURITY/gi,
+    ),
+  ].map((achado) => achado[1] ?? '');
+}
+
+/** As tabelas para as quais um fonte cria política, na ordem em que ele as declara. */
+function tabelasComPolitica(fonte: string): string[] {
+  return [
+    ...semComentarios(fonte).matchAll(/CREATE\s+POLICY\s+"[^"]+"\s+ON\s+"negocio"\."(\w+)"/gi),
+  ].map((achado) => achado[1] ?? '');
+}
+
+/** Lê uma migração do diretório REAL do pacote — nunca de uma cópia. */
+async function lerMigracao(tag: string): Promise<string> {
+  return readFile(join(DIRETORIO_DE_MIGRACOES, `${tag}.sql`), 'utf8');
+}
+
+describe('CT-946 — as migrações da emissão separam gerado de autoral, e o ledger acompanha', () => {
+  it('CT-946 — o detector acusa a mistura no controle, devolve vazio na `0017` e na `0018`, e a `0018` força as quatro tabelas', async () => {
+    // --- 1. Controle POSITIVO: a mistura é acusada, nomeando as duas naturezas ---------------
+    //
+    // Vem PRIMEIRO de propósito: é ele que autoriza a ler `[]` nas duas migrações reais como
+    // "não há mistura" em vez de "o detector não detecta nada".
+    expect(naturezasMisturadas(FONTE_MISTURADO)).toEqual([
+      'AUTORAL · CREATE POLICY',
+      'AUTORAL · FORCE ROW LEVEL SECURITY',
+      'GERADA · CREATE TABLE',
+      'GERADA · ENABLE ROW LEVEL SECURITY',
+    ]);
+
+    // --- 2. Controles de natureza ÚNICA: o detector passa limpo -------------------------------
+    //
+    // O par do controle positivo. Sem eles, um detector que acusasse QUALQUER arquivo satisfaria o
+    // passo 1 e reprovaria os reais — e a leitura seria "as migrações estão erradas".
+    expect(naturezasMisturadas(FONTE_SO_GERADO)).toEqual([]);
+    expect(naturezasMisturadas(FONTE_SO_AUTORAL)).toEqual([]);
+
+    // --- 3. As duas migrações REAIS, uma natureza cada ----------------------------------------
+    const gerada = await lerMigracao(MIGRACAO_GERADA_DA_EMISSAO);
+    const autoral = await lerMigracao(MIGRACAO_AUTORAL_DA_EMISSAO);
+
+    expect(naturezasMisturadas(gerada)).toEqual([]);
+    expect(naturezasMisturadas(autoral)).toEqual([]);
+
+    // As duas asserções acima seriam satisfeitas por dois arquivos VAZIOS — que também têm uma
+    // natureza só. Estas fixam qual natureza cada um tem, e são o controle antivácuo delas: a
+    // `0017` traz a DDL e nenhuma cláusula de segurança autoral; a `0018` traz a segurança e
+    // nenhuma DDL gerada.
+    const executavelDaGerada = semComentarios(gerada);
+    const executavelDaAutoral = semComentarios(autoral);
+
+    expect(/\bCREATE\s+TABLE\b/i.test(executavelDaGerada)).toBe(true);
+    expect(/\bCREATE\s+POLICY\b/i.test(executavelDaGerada)).toBe(false);
+    expect(/\bFORCE\s+ROW\s+LEVEL\s+SECURITY\b/i.test(executavelDaGerada)).toBe(false);
+
+    expect(/\bFORCE\s+ROW\s+LEVEL\s+SECURITY\b/i.test(executavelDaAutoral)).toBe(true);
+    expect(/\bCREATE\s+POLICY\b/i.test(executavelDaAutoral)).toBe(true);
+    expect(/\bCREATE\s+TABLE\b/i.test(executavelDaAutoral)).toBe(false);
+
+    // --- 4. O ledger continua coerente com o disco, e carrega as duas entradas novas ----------
+    //
+    // A coerência inteira é do `RG-T3-01`; o que este passo acrescenta é a ÂNCORA NOMEADA das duas
+    // entradas desta fatia — sem ela, um ledger que perdesse as duas seguiria coerente com um
+    // diretório que também as perdesse, e a igualdade passaria sem falar delas.
+    const coerencia = await coerenciaDoLedger(DIRETORIO_DE_MIGRACOES);
+
+    expect(ausentesNoJournal(coerencia)).toEqual([]);
+    expect(excedentesNoJournal(coerencia)).toEqual([]);
+    expect(coerencia.registradoNoJournal).toEqual(coerencia.derivadoDoDiretorio);
+    expect(coerencia.foraDeOrdem).toEqual([]);
+    expect(
+      coerencia.registradoNoJournal
+        .filter((entrada) => entrada.idx >= 17)
+        .map((entrada) => chave(entrada)),
+    ).toEqual([`17·${MIGRACAO_GERADA_DA_EMISSAO}`, `18·${MIGRACAO_AUTORAL_DA_EMISSAO}`]);
+
+    // --- 5. A `0018` força as QUATRO tabelas, e cria política para exatamente elas ------------
+    //
+    // Igualdade de array, posição inclusive: uma tabela nova que ficasse sem `FORCE` nasceria com o
+    // isolamento existindo só para quem não é dono (ADR-0008, Cons), e a suíte de isolamento
+    // conectada com o dono ficaria verde sem provar nada.
+    expect(tabelasForcadas(autoral)).toEqual(TABELAS_DA_EMISSAO_E_CONCILIACAO);
+    // O conjunto forçado e o conjunto com política são o MESMO: forçar sem política faz o
+    // PostgreSQL negar tudo, e criar política sem forçar deixa o dono passando por cima dela. Os
+    // dois defeitos são independentes, e só a comparação dos dois conjuntos pega ambos.
+    expect(tabelasComPolitica(autoral)).toEqual(TABELAS_DA_EMISSAO_E_CONCILIACAO);
   });
 });
 

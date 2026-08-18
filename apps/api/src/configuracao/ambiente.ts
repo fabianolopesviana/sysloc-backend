@@ -41,6 +41,8 @@
  * comportamento que esta validação existe para impedir.
  */
 
+import { accessSync, constants, statSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import {
   EXIGENCIA_DA_CADEIA_DE_FILA,
   ehCadeiaDeFilaValida,
@@ -100,6 +102,62 @@ function ehChaveDeCifraAceitavel(valor: string): boolean {
   const bytes = Buffer.from(valor, 'base64');
 
   return bytes.length === BYTES_DA_CHAVE_DE_CIFRA && bytes.toString('base64') === valor;
+}
+
+/** A exigência que a recusa do diretório dos boletos publica — nomeia a forma, jamais o valor. */
+const EXIGENCIA_DO_DIRETORIO_DOS_BOLETOS = 'deve ser o caminho absoluto de um diretório gravável';
+
+/**
+ * O caminho é absoluto **e** aponta para um diretório em que este processo consegue escrever?
+ *
+ * ---------------------------------------------------------------------------
+ * As duas metades são UMA conferência só, de propósito
+ * ---------------------------------------------------------------------------
+ *
+ * É o mesmo desenho, e a mesma razão, de {@link ehChaveDeCifraAceitavel}: separá-las produziria duas
+ * recusas para o mesmo defeito operacional — *o produto não tem onde gravar boleto* — e a mensagem
+ * nomearia a variável duas vezes. O que o operador precisa saber é o que a exigência acima já diz.
+ *
+ * O caminho **relativo** é recusado antes de o disco ser tocado, e a ordem é conteúdo: um caminho
+ * relativo é resolvido contra o diretório de trabalho do processo, de modo que ele passaria a
+ * conferência de escrita **e** apontaria para lugares diferentes conforme quem iniciasse o serviço.
+ *
+ * ---------------------------------------------------------------------------
+ * ESTA é a única conferência da partida que consulta o sistema de arquivos
+ * ---------------------------------------------------------------------------
+ *
+ * A leitura é de **permissão**, não de conteúdo: nada é criado, nada é escrito e nada é listado. Ela
+ * existe porque o modo de falha que ela fecha é assimétrico e caro — sem ela o processo sobe, o
+ * provedor **emite o título**, e a gravação dos bytes falha depois: fica um boleto vivo no banco cujo
+ * documento o produto não tem, que é justamente o estado que a CA-08 existe para rebuscar. Recusar na
+ * partida põe o custo no operador, na instalação, onde ele é barato.
+ *
+ * Quem confere o **dono** e o **modo** do diretório na máquina que atende a operação é
+ * `deploy/scripts/cobranca-bancaria/verificar-guarda-de-boletos.sh`, e não há duplicação entre os
+ * dois: lá se mede a higiene do host, aqui a capacidade **deste** processo de escrever.
+ */
+function ehDiretorioGravavel(valor: string): boolean {
+  if (!isAbsolute(valor)) {
+    return false;
+  }
+
+  try {
+    // As duas perguntas na ordem em que o defeito aparece: *é diretório?* antes de *dá para
+    // escrever?*. Um arquivo comum gravável satisfaria a segunda sozinha, e o primeiro boleto
+    // falharia ao tentar criar o intermediário dentro dele.
+    if (!statSync(valor).isDirectory()) {
+      return false;
+    }
+
+    accessSync(valor, constants.W_OK);
+  } catch {
+    // A causa concreta — ausente, sem permissão, caminho quebrado — **não** viaja: a mensagem de
+    // partida nomeia a variável e a exigência, e nunca o valor recebido nem o texto do sistema
+    // operacional, que carregaria o caminho dentro dele.
+    return false;
+  }
+
+  return true;
 }
 
 /**
@@ -247,6 +305,30 @@ const ESQUEMA = z.object({
   // não ter. O piso de um caractere é a barreira que sobrevive a qualquer mudança em
   // {@link selecionar}.
   ENDERECO_DO_PROVEDOR_BANCARIO: z.string().min(1, 'deve ser declarada'),
+  // O diretório onde os bytes do boleto são guardados (T13 da fatia `emissao-e-conciliacao`).
+  //
+  // ⚠️ **Aqui o modo perigoso é o mesmo INVERSO da chave de cifra**, e por isso a partida é recusada
+  // em vez de o processo subir: sem o diretório — ou com um que este processo não consiga escrever —
+  // o serviço atenderia normalmente até a primeira emissão, e a falha aconteceria **depois** de o
+  // provedor ter registrado o título. O boleto existiria no banco e não existiria em disco, que é o
+  // estado que a CA-08 tem de rebuscar do provedor.
+  //
+  // A conferência é de **forma e capacidade**, não de presença: um esquema que apenas exigisse a
+  // variável deixaria subir um processo apontado para um caminho relativo — resolvido contra o
+  // diretório de trabalho de quem iniciou o serviço — ou para um diretório de outro dono. A razão de
+  // as duas metades serem uma conferência só está em {@link ehDiretorioGravavel}, e é a mesma de
+  // `CHAVE_DE_CIFRA_DO_CERTIFICADO`.
+  //
+  // A recusa nomeia a **variável e a exigência**, e JAMAIS o valor recebido — a disciplina é a de
+  // todas as demais, e vale mesmo para o que não é segredo: a regra é do formato da mensagem, e
+  // abri-la "só para esta" cria a exceção que a próxima variável herda.
+  //
+  // ⚠️ **Diferente de `ENDERECO_DO_PROVEDOR_BANCARIO`, a forma é conferida AQUI**, e a assimetria tem
+  // critério: lá quem recusa o endereço que não serve é a **construção do adaptador**, num lugar só,
+  // e uma segunda conferência nesta leitura ficaria livre para divergir daquela. Aqui não há segundo
+  // lugar — `criarGuardaDeBoletos` **resolve** o diretório-base e deliberadamente **não o cria nem o
+  // confere** (ver o cabeçalho dela) —, de modo que esta é a única barreira que existe.
+  DIRETORIO_DOS_BOLETOS: z.string().refine(ehDiretorioGravavel, EXIGENCIA_DO_DIRETORIO_DOS_BOLETOS),
 });
 
 /**
@@ -313,6 +395,19 @@ export interface Ambiente {
    * e não nesta leitura: ver a razão junto da linha que o exige.
    */
   readonly enderecoDoProvedorBancario: string;
+  /**
+   * O diretório onde os bytes do boleto são guardados, de `DIRETORIO_DOS_BOLETOS`.
+   *
+   * Ele **não é segredo** — é um caminho de sistema de arquivos —, e tem campo aqui (diferente de
+   * `URL_BASE_DA_CONFIRMACAO`) porque **este** processo o consome: é a composição da superfície de
+   * cobranças que constrói a guarda de boletos a partir dele (ADR-0025 — o pacote de domínio não lê
+   * `process.env`).
+   *
+   * Ele chega **como veio**, sem resolução: quem o resolve, uma vez, é `criarGuardaDeBoletos`. Uma
+   * segunda resolução aqui daria ao produto dois caminhos-base para o mesmo diretório, livres para
+   * divergir na primeira mudança de convenção de caminho.
+   */
+  readonly diretorioDosBoletos: string;
   // ⚠️ `URL_BASE_DA_CONFIRMACAO` é EXIGIDA na partida e **não** tem campo aqui. A ausência é a
   // decisão, e a razão está no esquema, junto da linha que a exige: este processo confere a
   // completude do arquivo de ambiente compartilhado e NÃO compõe link nenhum — quem lê o valor é o
@@ -449,6 +544,48 @@ export const TOKEN_PORTA_DE_RENDERIZACAO = Symbol('PortaDeRenderizacao');
 export const TOKEN_PORTA_DE_IDENTIDADE_BANCARIA = Symbol('PortaDeIdentidadeBancaria');
 
 /**
+ * Token de injeção da **porta de cobrança bancária** (T13 da fatia `emissao-e-conciliacao`).
+ *
+ * Mora aqui, ao lado dos sete tokens acima, pelo mesmo motivo deles e com o mesmo agravante
+ * estrutural dos dois últimos: declará-lo em `cobrancas/cobrancas.module.ts` fecharia importação
+ * circular, porque o módulo importa o controlador, o controlador importa o serviço, e é o **serviço**
+ * quem pede o token no construtor — avaliado enquanto o módulo ainda está sendo carregado. O que ele
+ * publica é a `AdaptadorCobrancaBancaria` que `@sysloc/cobranca-bancaria` declara (ADR-0025): quem
+ * monta o processo escolhe o adaptador, e o domínio segue sem saber que existe um provedor com
+ * endereço.
+ *
+ * ⚠️ **Ele é IRMÃO, e não substituto, de {@link TOKEN_PORTA_DE_IDENTIDADE_BANCARIA}.** As duas portas
+ * não se fundem por decisão registrada no cabeçalho de `packages/cobranca-bancaria/src/
+ * porta-de-cobranca.ts`: uma responde *"esta identidade serve?"*, que é ato de configuração, e a
+ * outra pelos atos de **cobrança**. Que o mesmo adaptador satisfaça as duas é escolha dele, não da
+ * fronteira — e é por isso que cada área injeta a **sua**, sem que a superfície do certificado ganhe
+ * acesso à emissão ou vice-versa.
+ *
+ * ⚠️ **Ele não abre um segundo caminho para escolher o adaptador**: não há bandeira de ambiente, não
+ * há `if (ehTeste)` e `criarAplicacao()` não ganha parâmetro — as três alternativas estão recusadas
+ * por escrito no cabeçalho de `packages/regua/src/adaptador-smtp.ts` e no docblock de
+ * {@link TOKEN_PORTA_DE_EMAIL}. A verificação troca o **provedor inteiro** de fora, pela mesma
+ * interface e pelo mesmo mecanismo (`overrideProvider`).
+ */
+export const TOKEN_PORTA_DE_COBRANCA_BANCARIA = Symbol('AdaptadorCobrancaBancaria');
+
+/**
+ * Token de injeção da **guarda de bytes do boleto** (T13 da fatia `emissao-e-conciliacao`).
+ *
+ * Mora aqui pelo mesmo motivo do token acima, e o que ele publica é a `GuardaDeBoletos` que
+ * `@sysloc/cobranca-bancaria` declara. O diretório-base chega a ela **por parâmetro**, da composição
+ * (ADR-0025): aquele pacote não lê `process.env`, e é {@link Ambiente.diretorioDosBoletos} — já
+ * conferido na partida — que alimenta a construção.
+ *
+ * ⚠️ **A verificação NÃO troca a guarda por um dublê**, e a ausência é a decisão: os bytes gravados
+ * em disco são a coisa sob prova (CA-08), e dublar a guarda seria dublar exatamente o que se quer
+ * medir. O que a suíte troca é o **diretório**, semeando `DIRETORIO_DOS_BOLETOS` para um caminho
+ * descartável — o mesmo mecanismo, e a mesma razão, do renderizador de PDF em
+ * {@link TOKEN_PORTA_DE_RENDERIZACAO}.
+ */
+export const TOKEN_GUARDA_DE_BOLETOS = Symbol('GuardaDeBoletos');
+
+/**
  * Lê e valida as variáveis de ambiente exigidas.
  *
  * @param fonte Registro de variáveis — `process.env` na partida, objeto montado na verificação.
@@ -480,6 +617,7 @@ export function carregarAmbiente(fonte: FonteDeVariaveis): Ambiente {
     remetenteDoAviso: validado.EMAIL_REMETENTE,
     chaveDeCifraDoCertificado: validado.CHAVE_DE_CIFRA_DO_CERTIFICADO,
     enderecoDoProvedorBancario: validado.ENDERECO_DO_PROVEDOR_BANCARIO,
+    diretorioDosBoletos: validado.DIRETORIO_DOS_BOLETOS,
   };
 }
 

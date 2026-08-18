@@ -12,7 +12,27 @@
  * para a suíte alcançar, em silêncio, o ambiente que atende a operação.
  */
 
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { defineConfig } from 'vitest/config';
+
+/**
+ * O diretório dos boletos da verificação — descartável, criado **na configuração**, fora da árvore.
+ *
+ * Ele não pode ser um literal como as outras variáveis semeadas abaixo: a partida exige o caminho
+ * **presente, absoluto e gravável**, e um valor inerte no molde de `.invalid` faria toda aplicação
+ * real da suíte recusar subir. O diretório é criado uma vez por execução, dentro do diretório
+ * temporário do sistema operacional, e leva embora o que os casos gravarem quando a máquina o
+ * expurgar — nada é escrito na árvore de trabalho, que é o que
+ * `deploy/scripts/cobranca-bancaria/verificar-guarda-de-boletos.sh` mede pelo outro lado.
+ *
+ * Isso **não** enfraquece a barreira de partida: quem prova que a variável é obrigatória, e que
+ * caminho relativo ou diretório inexistente são recusados nomeando a variável, é `test/ambiente.spec.ts`
+ * — que chama a validação com a fonte de variáveis por PARÂMETRO. E não fere a ADR-0006: nada é lido
+ * do ambiente, e o valor é fixado pela própria configuração.
+ */
+const DIRETORIO_DOS_BOLETOS_DA_VERIFICACAO = mkdtempSync(join(tmpdir(), 'sysloc-boletos-api-'));
 
 export default defineConfig({
   // O transformador do arcabouço deduz as opções de TypeScript do `tsconfig.json` que ALCANÇA
@@ -105,6 +125,17 @@ export default defineConfig({
       URL_BASE_DA_CONFIRMACAO: 'https://app.exemplo.invalid',
       CHAVE_DE_CIFRA_DO_CERTIFICADO: 'Y2hhdmUtZGUtdmVyaWZpY2FjYW8tc2VtLXZhbG9yISE=',
       ENDERECO_DO_PROVEDOR_BANCARIO: 'https://provedor.exemplo.invalid',
+      // `DIRETORIO_DOS_BOLETOS` entra na **T13** da fatia `emissao-e-conciliacao` pela MESMA razão das
+      // seis acima, e o precedente vale palavra por palavra: a partida passa a exigi-la, e **todo**
+      // caso que sobe a aplicação real passa pela validação — inclusive `saude.e2e.spec.ts`, que não
+      // tem nada a ver com boleto. Declará-la aqui é o que evita editar trinta e dois arquivos de
+      // verificação por causa desta task.
+      //
+      // ⚠️ **O valor NÃO pode ser inerte como os demais**, e a razão está no docblock de
+      // {@link DIRETORIO_DOS_BOLETOS_DA_VERIFICACAO}: a conferência de partida toca o disco, de modo
+      // que um `.invalid` derrubaria a montagem de toda aplicação real. O que o substitui é um
+      // diretório **descartável**, fora da árvore versionada.
+      DIRETORIO_DOS_BOLETOS: DIRETORIO_DOS_BOLETOS_DA_VERIFICACAO,
     },
   },
 });

@@ -19,9 +19,19 @@
  * |       |        | `URL_BASE_DA_CONFIRMACAO` **declarada e sem forma de endereço** é recusada do
  * |       |        | mesmo jeito, nomeando a exigência e nunca o valor, enquanto as formas
  * |       |        | legítimas continuam ACEITAS e chegam ao campo **sem normalização**. Com as
- * |       |        | **seis** declaradas, devolve o ambiente completo por
+ * |       |        | **nove** declaradas, devolve o ambiente completo por
  * |       |        | `toStrictEqual`. Nunca devolve ambiente parcial, nunca degrada em silêncio, e
  * |       |        | nunca aborta o processo por conta própria. |
+ * | CA-20 | CT-936 | A partida passa a exigir `CHAVE_DE_CIFRA_DO_CERTIFICADO`,
+ * |       |        | `ENDERECO_DO_PROVEDOR_BANCARIO` e `DIRETORIO_DOS_BOLETOS`: o conjunto
+ * |       |        | **derivado da execução** tem NOVE nomes e contém as três; ausência e valor em
+ * |       |        | branco de cada uma recusam nomeando a variável; a chave que não decodifica
+ * |       |        | para 32 bytes em base64 canônico e o diretório que não é caminho absoluto de
+ * |       |        | diretório gravável recusam nomeando a EXIGÊNCIA — nunca "ausente"; e
+ * |       |        | **nenhuma** das quinze recusas ecoa valor algum, com o conjunto de vazamentos
+ * |       |        | afirmado por igualdade e controle antivácuo sobre a contagem de recusas. O
+ * |       |        | companheiro positivo prova que as nove válidas chegam aos campos, com a chave
+ * |       |        | já **decodificada** e o diretório **sem resolução**. |
  * | CA-17 | CT-643 | **Toda** variável que `lerAmbiente` exige tem caminho de provisionamento: o
  * |       |        | conjunto exigido — **observado na execução**, e nunca lido no texto do fonte —
  * |       |        | é igual a {@link VARIAVEIS_EXIGIDAS}, **basta** para a partida ser aceita, e a
@@ -40,7 +50,13 @@
  * |       |        | FALSIFICAÇÃO permanente**: prazos somando 31 s reprovam nomeando a unidade. |
  *
  * Rastreabilidade acrescida pela T8: `CA-17 → CT-625 (RD-15)`, `CA-17 → CT-643 (RD-15)` e
- * `CA-10 → CT-644`.
+ * `CA-10 → CT-644`. Acrescida pela **T16** da fatia `emissao-e-conciliacao`: `CA-20 → CT-936`.
+ *
+ * ⚠️ **O CT-936 NÃO reafirma o conjunto exigido — quem o afirma é o `CT-643`**, comparando o que a
+ * execução revela com {@link VARIAVEIS_EXIGIDAS}. O que o CT-936 acrescenta é o **número** contra a
+ * constante escrita à mão, a presença nomeada das três novas, e os dois eixos que só elas têm: a
+ * recusa por **forma** e a ausência de eco do valor. Creditar-lhe a âncora de conjunto seria escrever
+ * acima da linha um alcance maior do que ela prova.
  *
  * ---------------------------------------------------------------------------
  * Por que este arquivo existe
@@ -113,11 +129,14 @@
  * O `CT-644` é estático nas duas pontas, e traz a falsificação permanente pela mesma razão.
  */
 
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { NIVEIS_DE_LOG } from '@sysloc/shared';
 import { describe, expect, it, onTestFinished } from 'vitest';
 import { type Ambiente, lerAmbiente } from '../src/main.ts';
+import { controleComAsAgulhas, ocorrenciasDe, rotulosDoControle } from './varredura-de-segredo.ts';
 
 /**
  * As variáveis que o processador exige — e o `.env.example` documenta.
@@ -132,6 +151,14 @@ import { type Ambiente, lerAmbiente } from '../src/main.ts';
  * T10 leva a exigência a seis. Nenhuma asserção foi afrouxada — as duas tabelas de caso percorrem a
  * lista e passam a cobrar **também** a sexta, e a âncora antivácuo do `CT-643` compara este conjunto
  * com o que a execução de `lerAmbiente` revela: uma variável acrescentada só aqui reprovaria lá.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T16 da fatia `emissao-e-conciliacao` leva a exigência de **seis a nove**,
+ * e a razão é a mesma de sempre — a natureza do processo mudou outra vez: ele passou a **emitir
+ * boleto e conciliar pagamento junto ao provedor bancário**, o que exige a chave que abre o envelope
+ * do certificado, o endereço do provedor e o diretório onde os bytes do boleto são guardados.
+ * Nenhuma asserção foi afrouxada — as duas tabelas de caso percorrem a lista e passam a cobrar
+ * **também** as três novas, o `CT-936` acrescenta o eixo de **forma** de duas delas, e a âncora
+ * antivácuo do `CT-643` segue comparando este conjunto com o que a execução revela.
  */
 const VARIAVEIS_EXIGIDAS = [
   'LOG_LEVEL',
@@ -140,10 +167,43 @@ const VARIAVEIS_EXIGIDAS = [
   'SMTP_URL',
   'EMAIL_REMETENTE',
   'URL_BASE_DA_CONFIRMACAO',
+  'CHAVE_DE_CIFRA_DO_CERTIFICADO',
+  'ENDERECO_DO_PROVEDOR_BANCARIO',
+  'DIRETORIO_DOS_BOLETOS',
 ] as const;
+
+/**
+ * Quantas variáveis o processo exige — o número escrito **por extenso**, ao lado da lista.
+ *
+ * Ele não é derivado de `VARIAVEIS_EXIGIDAS.length`: derivá-lo faria a asserção concordar consigo
+ * mesma, e acrescentar uma variável à lista sem decidir nada passaria despercebido. É o par
+ * *número escrito à mão* × *lista escrita à mão* que faz a mudança ser deliberada, e é o `CT-643`
+ * que amarra os dois ao que a **execução** de `lerAmbiente` revela.
+ */
+const QUANTIDADE_DE_VARIAVEIS_EXIGIDAS = 9;
 
 /** Senha embutida nas cadeias de conexão, para provar que a falha não a ecoa. */
 const SENHA_NA_CADEIA = 'segredoQueNaoPodeVazar';
+
+/**
+ * A chave de cifra **válida** dos casos — 32 bytes em base64 canônico, distinguível de qualquer
+ * outro valor deste arquivo.
+ *
+ * ⚠️ Ela é o **segredo mais forte do processo**, e por isso serve de sentinela: nenhuma mensagem de
+ * recusa pode conter este texto. Ela é dado de teste, e não a chave de instalação alguma.
+ */
+const CHAVE_DE_CIFRA_SENTINELA = 'Y2hhdmUtZGUtY2lmcmEtZG8tY3Q5MzYtc2VudGluZSE=';
+
+/** O endereço do provedor dos casos — domínio reservado pela RFC 6761, que não resolve. */
+const ENDERECO_DO_PROVEDOR = 'https://provedor.exemplo.invalid';
+
+/**
+ * Um diretório **absoluto, existente e gravável** — o que a conferência de partida exige.
+ *
+ * Ele é criado de fato, e não inventado: a conferência toca o disco (é a única da partida que o faz),
+ * e um caminho fictício reprovaria o caminho feliz. Fica em `tmpdir()`, descartável pelo sistema.
+ */
+const DIRETORIO_DOS_BOLETOS_ACEITAVEL = mkdtempSync(join(tmpdir(), 'sysloc-boletos-ct936-'));
 
 /** Severidade única e distinguível de qualquer valor padrão do registrador. */
 const SEVERIDADE = 'warn';
@@ -165,6 +225,11 @@ function ambienteCompleto(): Record<string, string> {
     SMTP_URL: `smtps://avisos:${SENHA_NA_CADEIA}@smtp.exemplo.invalid:465`,
     EMAIL_REMETENTE: 'avisos@exemplo.invalid',
     URL_BASE_DA_CONFIRMACAO: 'https://app.exemplo.invalid',
+    CHAVE_DE_CIFRA_DO_CERTIFICADO: CHAVE_DE_CIFRA_SENTINELA,
+    ENDERECO_DO_PROVEDOR_BANCARIO: ENDERECO_DO_PROVEDOR,
+    // Um diretório REAL, e não um caminho inventado: diferente de todas as demais, esta conferência
+    // toca o disco. Ver {@link DIRETORIO_DOS_BOLETOS_ACEITAVEL}.
+    DIRETORIO_DOS_BOLETOS: DIRETORIO_DOS_BOLETOS_ACEITAVEL,
   };
 }
 
@@ -287,9 +352,19 @@ describe('lerAmbiente (T6 · CA-15)', () => {
     expect(ambiente.urlDoTransporte).toBe(fonte.SMTP_URL);
     expect(ambiente.remetenteDoAviso).toBe(fonte.EMAIL_REMETENTE);
     expect(ambiente.urlBaseDaConfirmacao).toBe(fonte.URL_BASE_DA_CONFIRMACAO);
+    // As três da T16: a chave chega DECODIFICADA (é assim que a cifra a consome), e as outras duas
+    // chegam como vieram — quem resolve o diretório é a guarda, num lugar só.
+    expect(ambiente.chaveDeCifraDoCertificado).toEqual(
+      Buffer.from(fonte.CHAVE_DE_CIFRA_DO_CERTIFICADO as string, 'base64'),
+    );
+    expect(ambiente.enderecoDoProvedorBancario).toBe(fonte.ENDERECO_DO_PROVEDOR_BANCARIO);
+    expect(ambiente.diretorioDosBoletos).toBe(fonte.DIRETORIO_DOS_BOLETOS);
     expect(Object.keys(ambiente).sort()).toEqual([
       'cadeiaConexaoBanco',
       'cadeiaConexaoFila',
+      'chaveDeCifraDoCertificado',
+      'diretorioDosBoletos',
+      'enderecoDoProvedorBancario',
       'nivelDeLog',
       'remetenteDoAviso',
       'urlBaseDaConfirmacao',
@@ -404,7 +479,9 @@ const FORMAS_ACEITAS_DA_BASE = [
 ] as const;
 
 /** O ambiente completo, já traduzido para os campos que a configuração publica. */
-function configuracaoEsperada(fonte: Record<string, string>): Record<string, string | undefined> {
+function configuracaoEsperada(
+  fonte: Record<string, string>,
+): Record<string, string | Buffer | undefined> {
   return {
     nivelDeLog: fonte.LOG_LEVEL,
     cadeiaConexaoFila: fonte.REDIS_URL,
@@ -412,6 +489,12 @@ function configuracaoEsperada(fonte: Record<string, string>): Record<string, str
     urlDoTransporte: fonte.SMTP_URL,
     remetenteDoAviso: fonte.EMAIL_REMETENTE,
     urlBaseDaConfirmacao: fonte.URL_BASE_DA_CONFIRMACAO,
+    // A chave chega DECODIFICADA — é assim que a cifra a consome, e é a conferência de partida que
+    // decodifica, num lugar só. Comparar o `Buffer` é o que faz um campo que voltasse a publicar o
+    // texto reprovar aqui.
+    chaveDeCifraDoCertificado: Buffer.from(fonte.CHAVE_DE_CIFRA_DO_CERTIFICADO as string, 'base64'),
+    enderecoDoProvedorBancario: fonte.ENDERECO_DO_PROVEDOR_BANCARIO,
+    diretorioDosBoletos: fonte.DIRETORIO_DOS_BOLETOS,
   };
 }
 
@@ -475,7 +558,7 @@ describe('lerAmbiente (T8 · CA-17) — a barreira de partida do transporte', ()
     },
   );
 
-  it('CT-625 — com as seis declaradas, devolve o ambiente INTEIRO por igualdade estrita', () => {
+  it('CT-625 — com as NOVE declaradas, devolve o ambiente INTEIRO por igualdade estrita', () => {
     const fonte = ambienteCompleto();
 
     const ambiente = lerAmbiente(fonte);
@@ -512,6 +595,233 @@ describe('lerAmbiente (T8 · CA-17) — a barreira de partida do transporte', ()
     expect(process.exitCode).toBe(codigoAntes);
     // E o caminho feliz segue utilizável depois de TODAS as recusas — nenhuma delas deixou estado.
     expect(lerAmbiente(ambienteCompleto()).nivelDeLog).toBe(SEVERIDADE);
+  });
+});
+
+// ===========================================================================
+// CT-936 — as TRÊS variáveis da cobrança bancária, e a partida que falha fechado sem elas
+// ===========================================================================
+
+/**
+ * As três variáveis que a T16 acrescenta à partida deste processo, e **por que** cada uma.
+ *
+ * A tabela é escrita ANTES dos casos e é a fonte deles: uma variável acrescentada a `lerAmbiente` e
+ * esquecida aqui não é exercitada por nenhum dos eixos abaixo — e é o `CT-643` que apanha isso, pela
+ * outra ponta, comparando o conjunto **derivado da execução** com {@link VARIAVEIS_EXIGIDAS}.
+ */
+const VARIAVEIS_DA_COBRANCA_BANCARIA = [
+  {
+    nome: 'CHAVE_DE_CIFRA_DO_CERTIFICADO',
+    razao: 'decifra o material do certificado no processo de trabalho',
+  },
+  {
+    nome: 'ENDERECO_DO_PROVEDOR_BANCARIO',
+    razao: 'constrói o adaptador na composição raiz do processo',
+  },
+  { nome: 'DIRETORIO_DOS_BOLETOS', razao: 'o percurso do lote grava os bytes ali' },
+] as const;
+
+/**
+ * As formas da **chave de cifra** que a partida recusa — declarada e inaceitável.
+ *
+ * As duas primeiras são os vizinhos exatos do comprimento exigido: uma chave de 31 ou de 33 bytes não
+ * é "uma chave fraca", é uma chave que o AES-256-GCM **não aceita**. A terceira é a que uma
+ * conferência ingênua de comprimento deixaria passar — `Buffer.from(…, 'base64')` **ignora em
+ * silêncio** todo caractere fora do alfabeto, de modo que um valor com pontuação decodifica para
+ * outros bytes sem que nada acuse, e o acervo cifrado com ela ficaria ilegível no dia em que alguém
+ * "consertasse" o valor.
+ */
+const FORMAS_RECUSADAS_DA_CHAVE = [
+  { forma: 'base64 de 31 bytes', valor: 'Y2hhdmUtZGUtY2lmcmEtY29tLTMxLWJ5dGVzISEhIQ==' },
+  { forma: 'base64 de 33 bytes', valor: 'Y2hhdmUtZGUtY2lmcmEtY29tLTMzLWJ5dGVzISEhISEh' },
+  { forma: 'cadeia que não é base64 canônico', valor: 'chave!!de!!cifra!!invalida###' },
+] as const;
+
+/**
+ * As formas do **diretório dos boletos** que a partida recusa.
+ *
+ * Cada linha é um caminho que um arquivo de ambiente real produz, e não uma variação sintática
+ * qualquer. O **relativo** é o mais perigoso dos três: ele passaria numa conferência de escrita e
+ * apontaria para lugares diferentes conforme quem iniciasse o serviço. O **arquivo comum** é o que
+ * uma conferência de permissão sozinha aceitaria — e a primeira emissão falharia ao tentar criar o
+ * arquivo intermediário dentro dele.
+ */
+const FORMAS_RECUSADAS_DO_DIRETORIO = [
+  { forma: 'caminho relativo', valor: 'boletos-relativos-do-ct936' },
+  { forma: 'diretório inexistente', valor: '/opt/sysloc-boletos-que-nao-existem-ct936' },
+  { forma: 'arquivo comum em vez de diretório', valor: criarArquivoComumDescartavel() },
+] as const;
+
+/**
+ * Quantas recusas a varredura do `CT-936` percorre — **quinze**, escritas por extenso.
+ *
+ * Nove ausências, três formas recusadas da chave de cifra e três do diretório. O número não é
+ * derivado das três constantes que constroem a lista: derivá-lo faria a asserção concordar consigo
+ * mesma, que é o defeito que ela existe para não ter. Mesmo critério de
+ * {@link QUANTIDADE_DE_VARIAVEIS_EXIGIDAS}.
+ */
+const QUANTIDADE_DE_RECUSAS_VARRIDAS = 15;
+
+/** Cria um arquivo comum gravável e devolve o caminho dele — o negativo de "é diretório?". */
+function criarArquivoComumDescartavel(): string {
+  const caminho = join(mkdtempSync(join(tmpdir(), 'sysloc-boletos-ct936-arquivo-')), 'boletos');
+  writeFileSync(caminho, '');
+
+  return caminho;
+}
+
+describe('CT-936 (T16 · CA-20) — a partida do processo de trabalho exige as três da cobrança bancária', () => {
+  it('CT-936 — a EXECUÇÃO exige NOVE variáveis, e as três novas estão entre elas', () => {
+    // O conjunto sai de EXECUTAR `lerAmbiente` — quais nomes ela consulta na fonte, e quais dessas
+    // ela recusa quando faltam. Nenhuma linha desta derivação lê o texto do fonte, e é isso que a
+    // torna cega à redação da recusa (ver o marcador `DECISÃO FECHADA` sobre
+    // `variaveisConsultadasPor`).
+    const exigidas = variaveisExigidasPor(lerAmbiente);
+
+    // O NÚMERO, contra a constante escrita à mão. Ele reprova nos dois sentidos: uma exigência a
+    // mais (oito → dez) e uma a menos (uma das três esquecida) caem aqui, e a lista da falha nomeia
+    // quais são.
+    expect(exigidas).toHaveLength(QUANTIDADE_DE_VARIAVEIS_EXIGIDAS);
+
+    // E as três NOMEADAS, uma a uma: sem esta linha, o número acima seria satisfeito por nove
+    // variáveis quaisquer — trocar `DIRETORIO_DOS_BOLETOS` por outra manteria o total em nove.
+    for (const { nome } of VARIAVEIS_DA_COBRANCA_BANCARIA) {
+      expect(exigidas, `a partida deixou de exigir ${nome}`).toContain(nome);
+    }
+  });
+
+  it.each(VARIAVEIS_DA_COBRANCA_BANCARIA)(
+    'CT-936 — sem $nome ($razao), a partida é recusada nomeando a variável',
+    ({ nome }) => {
+      // `falhaDe` REPROVA quando a chamada devolve configuração — é assim que "nunca devolve ambiente
+      // parcial" fica asserido: um `lerAmbiente` que devolvesse `{ …, diretorioDosBoletos: '' }`
+      // cairia aqui, e o processo subiria para falhar depois de o provedor ter emitido o título.
+      const falha = falhaDe(ambienteSem(nome));
+
+      expect(falha.message).toContain(`${nome}: ausente`);
+    },
+  );
+
+  it.each(VARIAVEIS_DA_COBRANCA_BANCARIA)(
+    'CT-936 — $nome presente e em branco conta como ausente e é nomeada',
+    ({ nome }) => {
+      // Um `EnvironmentFile` copiado do `.env.example` sem preenchimento entrega cadeias vazias, e a
+      // falha tem de dizer "não foi preenchida" — e não "não é base64" ou "não é um diretório".
+      const falha = falhaDe({ ...ambienteCompleto(), [nome]: '   ' });
+
+      expect(falha.message).toContain(`${nome}: ausente`);
+    },
+  );
+
+  it.each(FORMAS_RECUSADAS_DA_CHAVE)(
+    'CT-936 — CHAVE_DE_CIFRA_DO_CERTIFICADO $forma: recusada nomeando a EXIGÊNCIA',
+    ({ valor }) => {
+      const falha = falhaDe({ ...ambienteCompleto(), CHAVE_DE_CIFRA_DO_CERTIFICADO: valor });
+
+      // A cadeia EXATA da recusa por forma, distinta da recusa por ausência: a variável ESTÁ
+      // declarada, e uma mensagem que dissesse "ausente" mandaria o operador procurar o eixo errado.
+      expect(falha.message).toContain(
+        'CHAVE_DE_CIFRA_DO_CERTIFICADO: deve ser exatamente 32 bytes em base64',
+      );
+      expect(falha.message).not.toContain('CHAVE_DE_CIFRA_DO_CERTIFICADO: ausente');
+      // E o valor recebido NÃO viaja: esta variável abre o envelope de todas as empresas do SaaS, e
+      // a mensagem de partida vai para o journal.
+      expect(falha.message).not.toContain(valor);
+    },
+  );
+
+  it.each(FORMAS_RECUSADAS_DO_DIRETORIO)(
+    'CT-936 — DIRETORIO_DOS_BOLETOS $forma: recusado nomeando a EXIGÊNCIA',
+    ({ valor }) => {
+      const falha = falhaDe({ ...ambienteCompleto(), DIRETORIO_DOS_BOLETOS: valor });
+
+      expect(falha.message).toContain(
+        'DIRETORIO_DOS_BOLETOS: deve ser o caminho absoluto de um diretório gravável',
+      );
+      expect(falha.message).not.toContain('DIRETORIO_DOS_BOLETOS: ausente');
+      // A disciplina da mensagem vale mesmo para o que não é segredo — a regra é do formato, e
+      // abri-la "só para esta" cria a exceção que a próxima variável herda.
+      expect(falha.message).not.toContain(valor);
+    },
+  );
+
+  it('CT-936 — NENHUMA das quinze recusas ecoa o valor recebido, inclusive a chave de cifra', () => {
+    // A varredura sobre TODOS os eixos de recusa de uma vez, com as sentinelas afirmadas por
+    // ausência. Ela é o que impede a disciplina de valer "para as que alguém lembrou de conferir".
+    const recusas = [
+      ...VARIAVEIS_EXIGIDAS.map((nome) => ({
+        rotulo: `sem ${nome}`,
+        texto: falhaDe(ambienteSem(nome)).message,
+      })),
+      ...FORMAS_RECUSADAS_DA_CHAVE.map(({ forma, valor }) => ({
+        rotulo: `chave de cifra ${forma}`,
+        texto: falhaDe({ ...ambienteCompleto(), CHAVE_DE_CIFRA_DO_CERTIFICADO: valor }).message,
+      })),
+      ...FORMAS_RECUSADAS_DO_DIRETORIO.map(({ forma, valor }) => ({
+        rotulo: `diretório ${forma}`,
+        texto: falhaDe({ ...ambienteCompleto(), DIRETORIO_DOS_BOLETOS: valor }).message,
+      })),
+    ];
+
+    // A contagem, contra o número ESCRITO POR EXTENSO, como já se faz com
+    // `QUANTIDADE_DE_VARIAVEIS_EXIGIDAS`. Derivá-la das mesmas três constantes que constroem a lista
+    // acima seria a soma por construção — a igualdade concordaria consigo mesma.
+    //
+    // ⚠️ Ela NÃO é o controle antivácuo, e a versão anterior deste caso lhe dava esse crédito: a
+    // hipótese que ela levantava ("uma lista vazia de recusas") é impossível por uma segunda razão —
+    // `falhaDe` LEVANTA quando `lerAmbiente` devolve configuração. Quem presta o controle é o bloco
+    // logo abaixo. Crédito escrito acima do que a linha prova é o que autoriza a rodada seguinte a
+    // confiar nele.
+    expect(recusas).toHaveLength(QUANTIDADE_DE_RECUSAS_VARRIDAS);
+
+    // As sentinelas, nomeadas: é o nome que a reprovação exibe, e é ele que diz QUAL valor escapou.
+    const sentinelas = {
+      'chave de cifra válida': CHAVE_DE_CIFRA_SENTINELA,
+      'senha das cadeias de conexão': SENHA_NA_CADEIA,
+      'diretório aceitável': DIRETORIO_DOS_BOLETOS_ACEITAVEL,
+      ...Object.fromEntries(
+        FORMAS_RECUSADAS_DA_CHAVE.map(({ forma, valor }) => [`chave recusada (${forma})`, valor]),
+      ),
+      ...Object.fromEntries(
+        FORMAS_RECUSADAS_DO_DIRETORIO.map(({ forma, valor }) => [
+          `diretório recusado (${forma})`,
+          valor,
+        ]),
+      ),
+    };
+
+    // ⚠️ O CONTROLE POSITIVO, e é ELE que impede o `AP-29`: a MESMA função de varredura é aplicada a
+    // um objeto de controle onde cada sentinela está plantada num canal diferente, e a lista de
+    // achados é afirmada por IGUALDADE. Sem esta linha, uma busca quebrada — mensagem normalizada,
+    // truncada ou trocada de campo — devolveria `[]` e o caso ficaria verde num processo que vaza a
+    // chave de cifra de TODAS as empresas do SaaS. Ela vem ANTES da ausência porque `toEqual` aborta
+    // o caso ao falhar.
+    expect(ocorrenciasDe(controleComAsAgulhas(sentinelas), sentinelas)).toEqual(
+      rotulosDoControle(sentinelas),
+    );
+
+    // A lista dos achados, e não um booleano: quando reprovar, ela nomeia qual sentinela vazou e em
+    // qual recusa.
+    expect(ocorrenciasDe(recusas, sentinelas)).toEqual([]);
+  });
+
+  it('CT-936 — com as nove válidas, os três campos novos chegam à configuração', () => {
+    // O companheiro POSITIVO, e ele é indispensável: uma conferência que recusasse tudo passaria em
+    // todas as tabelas acima e derrubaria a partida de toda instalação — inclusive a que o
+    // provisionamento entrega.
+    const fonte = ambienteCompleto();
+
+    const ambiente = lerAmbiente(fonte);
+
+    expect(ambiente.chaveDeCifraDoCertificado).toEqual(
+      Buffer.from(CHAVE_DE_CIFRA_SENTINELA, 'base64'),
+    );
+    // 32 bytes, e não o texto: um campo que voltasse a publicar a cadeia obrigaria cada borda a
+    // decodificar de novo — a segunda declaração da codificação que a partida existe para não ter.
+    expect(ambiente.chaveDeCifraDoCertificado).toHaveLength(32);
+    expect(ambiente.enderecoDoProvedorBancario).toBe(ENDERECO_DO_PROVEDOR);
+    // O diretório chega COMO VEIO, sem resolução: quem o resolve, uma vez, é `criarGuardaDeBoletos`.
+    expect(ambiente.diretorioDosBoletos).toBe(DIRETORIO_DOS_BOLETOS_ACEITAVEL);
   });
 });
 

@@ -63,6 +63,30 @@ export {
   NATUREZAS_DE_COBRANCA,
   PREFIXO_DO_CODIGO_DE_COBRANCA,
 } from './cobranca.js';
+export type {
+  Competencia,
+  ConferenciaBancaria,
+  DesfechoDoItemDoLote,
+  EmissaoEmLote,
+  EstadoDaEmissaoEmLote,
+  EventoBancario,
+  ItemDoLote,
+  OrigemDoEventoBancario,
+  TipoDeEventoBancario,
+  TrilhaDaCobranca,
+} from './cobranca-bancaria.js';
+export {
+  DESFECHOS_DO_ITEM_DO_LOTE,
+  ESTADOS_DA_EMISSAO_EM_LOTE,
+  esquemaDaCompetencia,
+  esquemaDaConferenciaBancaria,
+  esquemaDaEmissaoEmLote,
+  esquemaDaTrilhaDaCobranca,
+  esquemaDoEventoBancario,
+  esquemaDoItemDoLote,
+  ORIGENS_DO_EVENTO_BANCARIO,
+  TIPOS_DE_EVENTO_BANCARIO,
+} from './cobranca-bancaria.js';
 export type { Comodo, ComodoNovo } from './comodo.js';
 export { esquemaDeComodoNovo, esquemaDoComodo } from './comodo.js';
 export type {
@@ -73,12 +97,14 @@ export type {
 } from './comum.js';
 export {
   ESCALA_DA_METRAGEM,
+  ESCALA_MONETARIA,
   ESQUEMA_DO_IDENTIFICADOR,
   envelopeDeLista,
   esquemaDaJanela,
   esquemaDaJanelaComCirculacao,
   MAIOR_METRAGEM,
   MAIOR_PAGINA,
+  MAIOR_VALOR_MONETARIO,
   PAGINA_PADRAO,
 } from './comum.js';
 export type { ConfiguracaoDeMora, ConfiguracaoDeMoraNova } from './configuracao-de-mora.js';
@@ -119,7 +145,6 @@ export type {
   EstadoDoContrato,
 } from './contrato.js';
 export {
-  ESCALA_MONETARIA,
   ESQUEMA_DO_CODIGO_DE_CONTRATO,
   ESTADOS_DO_CONTRATO,
   esquemaDaAtivacaoDeContrato,
@@ -128,7 +153,6 @@ export {
   formatarCodigoDeContrato,
   LARGURA_DO_SEQUENCIAL_DE_CONTRATO,
   MAIOR_PRAZO_EM_MESES,
-  MAIOR_VALOR_MONETARIO,
   PREFIXO_DO_CODIGO_DE_CONTRATO,
 } from './contrato.js';
 export type {
@@ -158,6 +182,7 @@ export type {
   ResultadoDaVerificacao,
 } from './integracao-bancaria.js';
 export {
+  DETALHES_DA_VERIFICACAO,
   ESQUEMA_DO_IDENTIFICADOR_BANCARIO,
   ESTADOS_DO_CERTIFICADO,
   esquemaDoCertificado,

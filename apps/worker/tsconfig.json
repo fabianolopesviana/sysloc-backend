@@ -24,7 +24,12 @@
   // `@sysloc/documentos` entra na T10 da fatia `documentos-e-confirmacao`, pela mesma razão outra
   // vez: a partir dela o processador COMPÕE a mensagem de confirmação, e o pacote de domínio também
   // resolve só para `dist/`.
+  //
+  // `@sysloc/cobranca-bancaria` entra na T16 da fatia `emissao-e-conciliacao`, pela mesma razão mais
+  // uma vez: a partir dela o processador EXECUTA a emissão em lote e a conferência bancária, e o
+  // pacote também resolve só para `dist/`.
   "references": [
+    { "path": "../../packages/cobranca-bancaria" },
     { "path": "../../packages/contracts" },
     { "path": "../../packages/db" },
     { "path": "../../packages/documentos" },

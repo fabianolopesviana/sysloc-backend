@@ -17,6 +17,16 @@
  * guarda o **envelope cifrado**, sem saber o que há dentro dele. A aresta de volta fecha um ciclo e
  * o Turborepo aborta antes de compilar qualquer coisa. Ver o cabeçalho de `../tsconfig.json`.
  *
+ * ⚠️ **EMENDA DA T10 da fatia (ii), 2026-08-17** — o parágrafo acima fica preservado, e duas frases
+ * dele **não valem mais**. A do **ciclo** foi falsificada por medição (`pnpm turbo run build
+ * --dry=json` monta o grafo sem ciclo, porque `@sysloc/db` não cita este pacote em lista alguma), e
+ * a da **ausência** vale hoje só para `dependencies` e para as `references`: `@sysloc/db` entrou em
+ * `devDependencies`, porque o percurso do lote é provado contra banco real (tech spec §19.2). Como
+ * o pnpm não distingue as duas listas na resolução de módulo, o `src/` **passou a resolver** a
+ * camada de dados, e a contenção deixou de ser de construção. Quem impõe a propriedade da ADR-0025 a
+ * partir daqui é o **CT-809 (d)** de `test/vocabulario-canonico.spec.ts`. Ver o `"//"` do
+ * `../package.json` para a medição com controle.
+ *
  * ---------------------------------------------------------------------------
  * A superfície é declarada símbolo a símbolo, e não por `export *`
  * ---------------------------------------------------------------------------
@@ -63,6 +73,140 @@
  *
  * O nome da variável de ambiente do endereço **não** sai: ele é o texto da recusa de construção, e
  * publicá-lo convidaria a verificação a compor o esperado a partir do módulo sob prova.
+ *
+ * ---------------------------------------------------------------------------
+ * O que a porta de COBRANÇA acrescenta, e o que ela deliberadamente não publica
+ * ---------------------------------------------------------------------------
+ *
+ * Sai daqui a porta `AdaptadorCobrancaBancaria` — o nome que a ADR-0001 reserva, e que a fatia
+ * anterior protegeu para esta usar — mais o vocabulário que a atravessa: o pedido, o boleto, a
+ * consulta, a situação, o desfecho e a classe de falha. O consumidor de cada um tem nome e existe
+ * nesta fatia: quem percorre o lote, quem reemite, quem confere e a composição raiz que injeta a
+ * implementação.
+ *
+ * ⚠️ **Os quatro ramos de `SituacaoConsultada` não saem**, e a assimetria tem critério: quem consulta
+ * estreita o tipo pelo discriminador `situacao`, sem precisar nomeá-los. Publicá-los seria alargar a
+ * superfície sem consumidor que a peça — a mesma régua pela qual os cinco textos de desfecho saem.
+ *
+ * ⚠️ **`DetalheDaVerificacao` sai como tipo, e os textos dele continuam saindo pelos cinco nomes do
+ * adaptador.** O tipo é derivado da fonte única de `@sysloc/contracts`, que é onde os textos passaram
+ * a morar quando o débito **D27 · F4/T8** foi fechado — publicar aqui uma segunda cópia do arranjo
+ * daria ao produto dois caminhos para o mesmo vocabulário.
+ *
+ * ---------------------------------------------------------------------------
+ * O que a T8 da fatia (ii) acrescentou ao pacote, e por que a superfície NÃO cresceu
+ * ---------------------------------------------------------------------------
+ *
+ * A implementação das quatro operações e o cache da credencial de acesso entraram no pacote, e este
+ * barril continua com os mesmos símbolos. As três razões, uma por artefato:
+ *
+ * - **`credencial-de-acesso.ts` não sai, e a ausência é o mecanismo.** Publicá-lo ofereceria um
+ *   segundo caminho, mais fraco, para a mesma política — credencial viva guardada fora do adaptador,
+ *   sob outra chave, com outro prazo —, e a frase *"a credencial de uma empresa nunca é apresentada
+ *   em chamada de outra"* deixaria de ser propriedade do código. É a mesma régua das quatro
+ *   constantes privadas de `OPCOES_PADRAO_DA_TAREFA` em `@sysloc/shared`.
+ * - **`criarAdaptadorSicoob` passou a satisfazer as duas portas**, e o nome publicado é o mesmo: quem
+ *   recebe continua recebendo **a porta que usa**, por parâmetro (ADR-0025).
+ * - **`TETO_DA_OPERACAO_MS` não sai**, e o teto publicado continua sendo `TETO_DO_APERTO_DE_MAO_MS`,
+ *   que agora **deriva** dele — é um teto só, com o nome antigo preservado porque está na superfície
+ *   e é importado pelo CT-842. Publicar o nome novo alargaria a superfície sem consumidor que o peça,
+ *   que é a régua pela qual os cinco textos de desfecho saem e os ramos de `SituacaoConsultada` não.
+ *
+ * ---------------------------------------------------------------------------
+ * O que a GUARDA DE BOLETOS (T9 da fatia (ii)) acrescenta — dois símbolos, e só dois
+ * ---------------------------------------------------------------------------
+ *
+ * Saem daqui a fábrica `criarGuardaDeBoletos` e o contrato `GuardaDeBoletos`. Os consumidores têm
+ * nome e existem nesta fatia: a composição raiz, que lê `DIRETORIO_DOS_BOLETOS` e injeta a guarda
+ * (ADR-0025 — o diretório-base chega **por parâmetro**, e este pacote não lê `process.env`); o
+ * percurso do lote (T10), que grava; e a entrega do boleto (T14), que lê e regrava.
+ *
+ * ⚠️ **`ErroDeBoletoForaDaGuarda` NÃO sai**, e a assimetria com `ErroDeMaterialIlegivel` /
+ * `ErroDeSenhaQueNaoAbre` tem critério: aqueles dois são **desfechos de negócio** que a borda
+ * traduz em recusa para o Admin, e por isso ela precisa distingui-los pelo tipo. A recusa da guarda
+ * é outra coisa — o código chega a ela **já validado**, vindo de coluna do banco, de modo que uma
+ * recusa ali é defeito de programação e não desfecho que alguém trate. Publicá-la alargaria a
+ * superfície sem consumidor que a peça, que é a mesma régua de `credencial-de-acesso.ts`.
+ *
+ * ---------------------------------------------------------------------------
+ * O que o PERCURSO DO LOTE (T10 da fatia (ii)) acrescenta — três símbolos
+ * ---------------------------------------------------------------------------
+ *
+ * Saem daqui a função `executarEmissaoEmLote`, o desfecho que ela devolve (`DesfechoDoLote`) e o
+ * **tipo de entrada** dela (`TrabalhoDoLote`). O consumidor tem nome e existe nesta fatia: a borda
+ * da tarefa do processo de trabalho (T16), que satisfaz as portas por aplicação parcial e registra o
+ * desfecho.
+ *
+ * ⚠️ **A task nomeia dois símbolos, e são três — a divergência é declarada.** `TrabalhoDoLote` sai
+ * pela razão que o barril de `@sysloc/regua` escreve por extenso ao publicar `TrabalhoDaRegua`:
+ * *"sem eles, a borda não tem como nomear o que monta, e o `.d.ts` da função referenciaria um tipo
+ * inalcançável de fora do pacote"*. É o precedente literal do único percurso de domínio que este
+ * repositório já publicou.
+ *
+ * ⚠️ **As seis portas e os três tipos que elas carregam NÃO saem** — `PortaDoIdentificador`,
+ * `PortaDosDadosDaCobranca`, `PortaDaEmissaoGravada`, `PortaDaRecusaGravada`,
+ * `PortaDaConclusaoDoLote`, `PortaDaInterrupcaoDoLote`, `CobrancaDoLote`, `DadosDaCobrancaAEmitir` e
+ * `BoletoParaConciliar`. A assimetria com o barril da régua — que publica `PortaDeCandidatas` e
+ * `PortaDeRegistro` — tem critério, e ele é o consumidor: lá quem satisfaz as portas é
+ * `@sysloc/db`, que **importa os tipos** para dizer que as satisfaz; aqui quem as satisfaz é a borda
+ * da tarefa, montando um objeto literal que o compilador confere **estruturalmente** contra
+ * `TrabalhoDoLote`. Publicar nome que ninguém precisa escrever alargaria a superfície sem consumidor
+ * que a peça, que é a mesma régua pela qual os quatro ramos de `SituacaoConsultada` não saem.
+ *
+ * ---------------------------------------------------------------------------
+ * O que a REEMISSÃO (T11 da fatia (ii)) acrescenta — seis símbolos
+ * ---------------------------------------------------------------------------
+ *
+ * Saem daqui a função `reemitirBoleto`, o **tipo de entrada** (`TrabalhoDaReemissao`) e o desfecho
+ * (`DesfechoDaReemissao`), mais a classe de erro `ErroDeReemissaoIncompleta` e os **dois limites**
+ * (`INTERVALO_ENTRE_SONDAS_MS`, `TETO_DA_CONFIRMACAO_DA_REVOGACAO_MS`). O consumidor tem nome e
+ * existe nesta fatia: o `BoletoService` da borda (T13), que monta o trabalho, injeta a espera e o
+ * relógio, e traduz a falha em resposta.
+ *
+ * - **A classe de erro sai** pela mesma régua de `ErroDeMaterialIlegivel` e `ErroDeSenhaQueNaoAbre`:
+ *   ela é **desfecho de negócio** que a borda distingue **pelo tipo** para escolher o corpo da
+ *   resposta e os `detalhes` que a operação lê. Não é a régua de `ErroDeBoletoForaDaGuarda`, que é
+ *   defeito de programação e ninguém trata.
+ * - **Os dois limites saem** pela razão que `TETO_DO_APERTO_DE_MAO_MS` já escreve: limite privado
+ *   obriga quem verifica a **reescrever o número**, e a asserção passa a medir o teste em vez do
+ *   artefato. ⚠️ **`TETO_DA_REEMISSAO_MS` NÃO sai** — o teto duro do ato composto não tem consumidor
+ *   que precise nomeá-lo, e publicá-lo convidaria quem chama a escolher outro, que é a segunda regra
+ *   para o mesmo fato. É a mesma assimetria de `TETO_DA_OPERACAO_MS` no adaptador.
+ *
+ * ⚠️ **As quatro portas do ato e os dois tipos que elas carregam NÃO saem** — `PortaDeEspera`,
+ * `PortaDosDadosDaEmissao`, `PortaDaRevogacaoGravada`, `PortaDoBoletoGravado`, `CobrancaAReemitir` e
+ * `DetalhesDaReemissaoIncompleta`. O critério é o mesmo do percurso do lote: quem as satisfaz monta
+ * um objeto literal que o compilador confere **estruturalmente** contra `TrabalhoDaReemissao`, e
+ * quem lê os detalhes da falha os **repassa** ao envelope sem precisar nomear o tipo.
+ *
+ * ---------------------------------------------------------------------------
+ * O que a CONFERÊNCIA (T12 da fatia (ii)) acrescenta — quatro símbolos
+ * ---------------------------------------------------------------------------
+ *
+ * Saem daqui a função `conferirCobrancas`, o **tipo de entrada** (`TrabalhoDaConferencia`), o desfecho
+ * (`DesfechoDaConferencia`) e o vocabulário do efeito (`EfeitoDaConferencia`). O consumidor dos três
+ * primeiros tem nome e existe nesta fatia: a borda da tarefa da conferência (T16), que satisfaz as
+ * portas por aplicação parcial, fecha a conferência e registra o desfecho no diário.
+ *
+ * ⚠️ **`EfeitoDaConferencia` é o único que NÃO aparece na assinatura de `conferirCobrancas`, e a
+ * divergência fica declarada em vez de resolvida por adivinhação.** O que sai daquela função são as
+ * **contagens**; este tipo é a união fechada por que se lê o que a apuração fez em **uma** cobrança, e
+ * `efeitos` é a soma dela. Ele sai porque a §1 da task o nomeia entre os símbolos públicos, e porque
+ * publicá-lo é a escolha conservadora diante da alternativa — divergir da task por um tipo, sem ganho
+ * medido. Se a borda da T16 não precisar nomeá-lo, ele é candidato a sair no fecho da fatia.
+ *
+ * ⚠️ **As cinco portas da apuração e os seis tipos que elas carregam NÃO saem** —
+ * `PortaDoValorEsperado`, `PortaDaLiquidacaoGravada`, `PortaDoEstornoGravado`,
+ * `PortaDaRevogacaoGravada`, `PortaDaConclusaoDaConferencia`, `CobrancaAConferir`,
+ * `LiquidacaoConsultada`, `ContagensDaConferencia`, `DesfechoDaLiquidacao`, `DesfechoDoEstorno` e
+ * `DesfechoDaRevogacao`. O critério é o do percurso do lote e o do ato de reemissão: quem as satisfaz
+ * monta um objeto literal que o compilador confere **estruturalmente** contra `TrabalhoDaConferencia`.
+ *
+ * ⚠️ **`PortaDaRevogacaoGravada` é homônima da porta da reemissão, e as duas são distintas** — aquela
+ * não recebe argumento e devolve `void`, esta recebe a cobrança e o motivo e devolve o desfecho, que é
+ * o que separa *"revogou"* de *"não havia boleto"*. Nenhuma das duas é publicada, de modo que a
+ * homonímia não alcança a superfície; ela existe porque cada percurso declara o **seu** vocabulário
+ * (ADR-0025), e fundi-las obrigaria um dos dois a carregar o que só o outro precisa.
  */
 
 export type { ConfiguracaoDoProvedorBancario } from './adaptador-sicoob.js';
@@ -75,6 +219,16 @@ export {
   DETALHE_TEMPO_ESGOTADO,
   TETO_DO_APERTO_DE_MAO_MS,
 } from './adaptador-sicoob.js';
+export type {
+  DesfechoDaConferencia,
+  EfeitoDaConferencia,
+  TrabalhoDaConferencia,
+} from './conferencia.js';
+export { conferirCobrancas } from './conferencia.js';
+export type { DesfechoDoLote, TrabalhoDoLote } from './emissao-em-lote.js';
+export { executarEmissaoEmLote } from './emissao-em-lote.js';
+export type { GuardaDeBoletos } from './guarda-de-boletos.js';
+export { criarGuardaDeBoletos } from './guarda-de-boletos.js';
 export type { MaterialLido } from './leitura-do-material.js';
 export {
   ErroDeMaterialIlegivel,
@@ -82,8 +236,25 @@ export {
   lerMaterial,
 } from './leitura-do-material.js';
 export type {
+  AtoSobreBoleto,
+  BoletoEmitido,
+  ClasseDaFalha,
+  ConsultaDeSituacao,
+  DesfechoDaOperacao,
+  DetalheDaVerificacao,
   IdentidadeParaVerificar,
+  LocatarioDaCobranca,
   MeioDeRecebimento,
+  PedidoDeEmissao,
   ResultadoDaVerificacaoDeIdentidade,
+  SituacaoConsultada,
 } from './modelo-canonico.js';
+export type { AdaptadorCobrancaBancaria } from './porta-de-cobranca.js';
 export type { PortaDeIdentidadeBancaria } from './porta-de-identidade.js';
+export type { DesfechoDaReemissao, TrabalhoDaReemissao } from './reemissao.js';
+export {
+  ErroDeReemissaoIncompleta,
+  INTERVALO_ENTRE_SONDAS_MS,
+  reemitirBoleto,
+  TETO_DA_CONFIRMACAO_DA_REVOGACAO_MS,
+} from './reemissao.js';

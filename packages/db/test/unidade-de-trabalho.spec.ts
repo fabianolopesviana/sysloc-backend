@@ -700,6 +700,35 @@ const SIMBOLOS_ESPERADOS = [
   //
   // **Nenhuma entrada anterior sai.**
   'esquemaNegocio.certificadoDoProvedor',
+  // T2 da fatia `emissao-e-conciliacao` — as QUATRO tabelas da emissão e da conciliação e os TRÊS
+  // enums que elas usam, criados pela migração `0017`.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T2 publica sete símbolos novos no schema por decisão declarada na §1
+  // da task (`Símbolos públicos criados`). Eles entram pelo mesmo critério do símbolo da T4
+  // anterior: são **declaração de estrutura**, não caminho para dado — quem os tem em mãos ainda
+  // precisa de um executor para chegar ao banco, e o executor não sai do índice.
+  //
+  // O QUARTO arranjo que a T1 publicou em `@sysloc/contracts` — `ESTADOS_DA_EMISSAO_EM_LOTE` — **não
+  // tem símbolo aqui**, e a ausência é a decisão, não esquecimento: o estado do lote é DERIVADO dos
+  // dois instantes de desfecho (ADR-0022), de modo que não há tipo enumerado no banco a declarar. É
+  // a mesma assimetria de `statusCobranca`, na direção oposta: lá o tipo existe sem coluna de tabela
+  // porque a VISÃO o usa; aqui não existe tipo algum porque nada o guarda.
+  //
+  // Os objetos que a migração autoral `0018` cria **não aparecem aqui**, pela razão de sempre: o
+  // `FORCE ROW LEVEL SECURITY`, as quatro políticas e os três `GRANT USAGE ON TYPE` são objetos e
+  // atributos do BANCO, e não símbolos deste pacote. A coluna nova de `cobranca`
+  // (`identificador_no_provedor`) também não: ela é campo de uma tabela já declarada, e
+  // `esquemaNegocio.cobranca` consta do conjunto desde a T3 da fatia `cobranca-e-mora`.
+  //
+  // **Nenhuma entrada anterior sai.**
+  'esquemaNegocio.conferenciaBancaria',
+  'esquemaNegocio.desfechoDoItemDoLote',
+  'esquemaNegocio.emissaoEmLote',
+  'esquemaNegocio.eventoBancario',
+  'esquemaNegocio.itemDaEmissaoEmLote',
+  'esquemaNegocio.origemDoEventoBancario',
+  'esquemaNegocio.tipoDeEventoBancario',
   // T4 da fatia `cobranca-e-mora` — a PORTA da cobrança: as três operações do ciclo de vida, as DUAS
   // da série e a classe de erro da tradução de unicidade, ordenadas no conjunto pela posição de cada
   // nome (a comparação é sobre a lista ordenada).
@@ -1187,6 +1216,201 @@ const SIMBOLOS_ESPERADOS = [
   'lerVigenciaObservada',
   'obterEnvelopeCifradoDoVigente',
   'registrarCertificado',
+  // T3 da fatia `emissao-e-conciliacao` — a PORTA da trilha bancária: a escrita do efeito e a
+  // leitura da trilha de uma cobrança, criadas em `../src/evento-bancario.ts`.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T3 publica DOIS símbolos novos no índice por decisão declarada na §1
+  // e na §5.2 da task. Eles entram pelo critério de todas as portas anteriores: **recebem** o
+  // executor de quem já abriu a unidade, não abrem conexão, não reservam, não devolvem executor e
+  // — o que é a ADR-0008 aplicada à letra — **não recebem `empresaId`**.
+  //
+  // A razão própria delas é a ADR-0034: a trilha publicada registra EFEITO, nunca a tentativa que
+  // nada mudou, e publicar a porta é o que torna verificável a afirmação de que existe UM caminho
+  // para escrever nela — um segundo apareceria aqui como excedente, e não como um `INSERT` a mais
+  // escondido no serviço que conversa com o provedor. `lerTrilhaDaCobranca` devolve lista vazia
+  // tanto para a cobrança sem trilha quanto para a de outra empresa, e a tradução da ausência em
+  // `404` continua sendo da borda, num ponto único.
+  //
+  // `eventoPublicado` **não** é publicado, e a ausência é deliberada: é o mecanismo interno da
+  // tradução, pelo mesmo critério de `envioPublicado` e de `cobrancaPublicada`. Os tipos que a porta
+  // publica (`EventoBancarioNovo`, `LinhaDeEventoBancario`) não aparecem aqui porque não existem em
+  // tempo de execução, e este caso observa o módulo carregado. `FORMATO_ISO_DO_INSTANTE`, que a T3
+  // passou a hospedar em `../src/moldes-de-formatacao.ts` (casa única do molde, no terceiro
+  // consumidor), também não: é módulo **interno** do pacote e **não** chega ao índice — se chegasse,
+  // apareceria aqui como excedente.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o defeito
+  // que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia. **Nenhuma
+  // entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  'lerTrilhaDaCobranca',
+  'registrarEventoBancario',
+  // T4 da fatia `emissao-e-conciliacao` — as SEIS operações do lote e a classe de erro da recusa do
+  // lote concorrente, criadas em `../src/emissao-em-lote.ts`.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T4 publica OITO símbolos novos no índice — os SETE declarados na §1 e
+  // na §5.2 da task, mais `ErroDeLoteNaoAlcancado`, prescrito pelo Gate 2 na rodada 3 e publicado no
+  // MESMO diff que o cria, que é o que a `.claude/rules/ancoras-de-superficie.md` cobra.
+  // As seis operações entram pelo critério de todas as portas anteriores:
+  // **recebem** o executor de quem já abriu a unidade, não abrem conexão, não reservam, não devolvem
+  // executor e — o que é a ADR-0008 aplicada à letra — **não recebem `empresaId`**.
+  //
+  // São TRÊS as razões próprias desta porta. A primeira é o **predicado do conjunto**:
+  // `selecionarCobrancasSemBoleto` é uma consulta só, e é dela que sai a idempotência da reexecução
+  // (`nosso_numero IS NULL`) — publicá-la é o que impede o percurso de compor por fora o par "listar a
+  // carteira, decidir quem entra", que seria a segunda regra para o mesmo fato e traria o conjunto
+  // inteiro para a memória antes de filtrar (ADR-0023). A segunda é o **estado derivado**: não há
+  // coluna de estado (ADR-0022), e a derivação dos dois instantes de desfecho tem lar único no módulo
+  // — uma segunda apareceria aqui como excedente, e não como um `if` escondido no serviço.
+  //
+  // A terceira são as DUAS classes de erro, que entram pelo MESMO critério de `ErroDeUnidadeAninhada`,
+  // de `ErroDeIdentificadorMunicipalEmUso` e de `ErroDeImovelComContratoVigente`: são classe de erro,
+  // não caminho para dado. `ErroDeLoteEmCurso` precisa sair daqui porque quem a traduz no envelope da
+  // ADR-0017 — `422` com `detalhes: { loteEmCurso: '…' }` — é a borda, e a alternativa (reconhecer a
+  // recusa pelo texto da mensagem, ou capturar `23505` em bloco) amarraria a borda ao idioma do
+  // servidor e esconderia as outras duas restrições únicas destas tabelas.
+  //
+  // `ErroDeLoteNaoAlcancado` é a recusa dos DOIS desfechos quando a escrita não alcança a linha, e ela
+  // entrou no índice na rodada 3 por veredito do Gate 2. A razão de ser reconhecível FORA do pacote:
+  // zero linhas tem duas causas que a camada de dados não separa — o **reenvio** da tarefa, benigno e
+  // previsto (a entrega da fila é *at-least-once*, com o `loteId` viajando na carga), e o alvo errado
+  // ou o contexto de tenant montado de outro modo, que é grave. Quem sabe qual delas está acontecendo
+  // é o chamador; sem a classe, a borda do processo de trabalho teria de casar TEXTO de mensagem para
+  // distinguir o reenvio de uma falha de driver, e trataria o reenvio como falha — queimando as três
+  // tentativas. Ela é classe (existe em runtime), e por isso o caso a enxerga, diferente dos tipos.
+  //
+  // O que **não** sai do pacote, e as ausências são deliberadas: `lotePublicado`, `itemPublicado`,
+  // `estadoDoLote`, `colunasDoLote` e `lerLoteEmCurso` — mecanismo interno da projeção, da derivação e
+  // do discriminante, pelo mesmo critério de `cobrancaPublicada` e de `colunasDaCobranca`.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o defeito
+  // que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia. **Nenhuma
+  // entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // Os tipos que a porta publica (`CobrancaSemBoleto`, `EmissaoEmLoteNova`, `ItemDoLoteNovo`,
+  // `LinhaDoItemDoLote`, `LinhaDoLote`) não aparecem aqui porque não existem em tempo de execução, e
+  // este caso observa o módulo carregado.
+  'ErroDeLoteEmCurso',
+  'ErroDeLoteNaoAlcancado',
+  'abrirEmissaoEmLote',
+  'concluirLote',
+  'interromperLote',
+  'lerLote',
+  'registrarItemDoLote',
+  'selecionarCobrancasSemBoleto',
+  // T5 da fatia `emissao-e-conciliacao` — as QUATRO operações da conferência bancária e a classe de
+  // erro da conclusão que não alcança a linha, criadas em `../src/conferencia-bancaria.ts`.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T5 publica CINCO símbolos novos no índice — os QUATRO declarados na §1
+  // e na §5.2 da task, mais `ErroDeConferenciaNaoAlcancada`, publicado no MESMO diff que o cria, que é
+  // o que a `.claude/rules/ancoras-de-superficie.md` cobra. As quatro operações entram pelo critério
+  // de todas as portas anteriores: **recebem** o executor de quem já abriu a unidade, não abrem
+  // conexão, não reservam, não devolvem executor e — o que é a ADR-0008 aplicada à letra — **não
+  // recebem `empresaId`**.
+  //
+  // São TRÊS as razões próprias desta porta. A primeira é o **predicado do conjunto a conferir**:
+  // `selecionarCobrancasAConferir` é uma consulta só, com a janela dos 30 dias medida contra
+  // `negocio.data_corrente_da_operacao()` (ADR-0026) — publicá-la é o que impede o percurso de compor
+  // por fora o par "listar a carteira, decidir quem entra", que traria o conjunto inteiro para a
+  // memória antes de filtrar (ADR-0023) e daria ao processo de trabalho um SEGUNDO relógio com que
+  // recompor a janela.
+  //
+  // A segunda é o **desfecho duplo da abertura**: `abrirConferencia` devolve `iniciadaAgora`, que
+  // separa "abri agora" de "já estava acontecendo" sem que a borda releia coisa alguma — e é isso que
+  // permite ao `POST` ser idempotente e responder `200` em vez de um erro que o enum fechado de
+  // `CodigoErro` teria de crescer para acomodar. `lerConferenciaEmCurso` é a leitura que responde
+  // QUAL execução está em curso e desde quando, e é o mecanismo do desfecho `false`.
+  //
+  // A terceira é `ErroDeConferenciaNaoAlcancada`, que entra pelo MESMO critério de
+  // `ErroDeUnidadeAninhada` e de `ErroDeLoteNaoAlcancado`: é classe de erro, não caminho para dado.
+  // Zero linhas na conclusão tem duas causas que a camada de dados não separa — o **reenvio** da
+  // tarefa, benigno e previsto (a entrega da fila é *at-least-once*, com o `conferenciaId` viajando na
+  // carga `{ empresaId, conferenciaId }`), e o alvo errado ou o contexto de tenant montado de outro
+  // modo, que é grave. Quem sabe qual delas está acontecendo é o chamador; sem a classe, a borda do
+  // processo de trabalho teria de casar TEXTO de mensagem para distinguir o reenvio de uma falha de
+  // driver. Ela é classe (existe em runtime), e por isso o caso a enxerga, diferente dos tipos.
+  //
+  // O que **não** sai do pacote, e as ausências são deliberadas: `conferenciaPublicada`,
+  // `colunasDaConferencia` e `arbitroDaConferenciaEmAndamento` — mecanismo interno da projeção e da
+  // recusa, pelo mesmo critério de `lotePublicado` e de `colunasDaCobranca`.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o defeito
+  // que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia. **Nenhuma
+  // entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // Os tipos que a porta publica (`CobrancaAConferir`, `ConferenciaNova`, `ContagensDaConferencia`,
+  // `LinhaDaConferencia`) não aparecem aqui porque não existem em tempo de execução, e este caso
+  // observa o módulo carregado.
+  'ErroDeConferenciaNaoAlcancada',
+  'abrirConferencia',
+  'concluirConferencia',
+  'lerConferenciaEmCurso',
+  'selecionarCobrancasAConferir',
+  // T6 da fatia `emissao-e-conciliacao` — as CINCO operações do fato bancário da cobrança e a classe
+  // de erro da escrita que não alcança a linha, criadas em `../src/boleto-da-cobranca.ts`.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T6 publica SEIS símbolos novos no índice — os CINCO declarados na §1 e
+  // na §5.2 da task, mais `ErroDeCobrancaNaoAlcancada`, publicado no MESMO diff que o cria, que é o
+  // que a `.claude/rules/ancoras-de-superficie.md` cobra. As cinco operações entram pelo critério de
+  // todas as portas anteriores: **recebem** o executor de quem já abriu a unidade, não abrem conexão,
+  // não reservam, não devolvem executor e — o que é a ADR-0008 aplicada à letra — **não recebem
+  // `empresaId`**.
+  //
+  // São TRÊS as razões próprias desta porta. A primeira é a **RN-07**: `liquidarPeloProvedor` chama
+  // `acusarPagamentoDeCobranca` sem alterá-la, de modo que os quatro carimbos de mora da baixa vinda
+  // do provedor são, por construção, os mesmos da baixa manual — publicar a porta é o que impede a
+  // borda de compor por fora o par "ler a mora, gravar o pagamento", e o que mantém a guarda
+  // *"cobrança já paga não é repaga"* dentro da instrução que grava, em vez de num `SELECT` que perde
+  // a corrida.
+  //
+  // A segunda são os **desfechos benignos** que as três escritas condicionais devolvem: a ADR-0034
+  // manda não registrar efeito quando nada mudou, e quem percorre precisa saber disso sem reler o
+  // estado — um `void` obrigaria a uma segunda avaliação do mesmo fato.
+  //
+  // A terceira é `ErroDeCobrancaNaoAlcancada`, que entra pelo MESMO critério de
+  // `ErroDeUnidadeAninhada`, de `ErroDeLoteNaoAlcancado` e de `ErroDeConferenciaNaoAlcancada`: é
+  // classe de erro, não caminho para dado. A recusa que ela carrega é **definitiva** — repetir a
+  // tarefa não muda nada —, e sem a classe a borda do processo de trabalho teria de casar TEXTO de
+  // mensagem para distingui-la de uma falha de driver. Ela é classe (existe em runtime), e por isso o
+  // caso a enxerga, diferente dos tipos.
+  //
+  // O que **não** sai do pacote, e a ausência é deliberada: `exigirCobrancaAlcancavel` e
+  // `RECUSA_POR_ATO` — mecanismo interno da separação entre a recusa grave e a benigna, pelo mesmo
+  // critério de `lerLoteEmCurso` e de `cobrancaPublicada`.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o defeito
+  // que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia. **Nenhuma
+  // entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // Os tipos que a porta publica (`AtoSobreOBoleto`, `BoletoDaCobranca`, `BoletoEmitido`,
+  // `DesfechoDaLiquidacao`, `DesfechoDoEstorno`, `LiquidacaoInformada`, `RevogacaoAplicada`) não
+  // aparecem aqui porque não existem em tempo de execução, e este caso observa o módulo carregado — o
+  // mesmo vale para os CINCO campos que a mesma task acrescentou a `LinhaDeCobranca`, que são
+  // crescimento de tipo e não de símbolo.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a **T13** da fatia `emissao-e-conciliacao` publica **um** símbolo novo
+  // por decisão declarada: `localizarAlvoDoBoleto`, a leitura que devolve o **UUID interno** da
+  // cobrança pelo código. Ela entra pelo critério de sempre — **recebe** o executor de quem já abriu
+  // a unidade, não abre conexão, não reserva e não devolve executor —, e existe porque
+  // `registrarEventoBancario` exige o UUID e nenhuma das duas leituras publicadas o carrega: a
+  // projeção da cobrança não tem `id` (não é campo do contrato) e `lerBoletoDaCobranca` é afirmada
+  // por igualdade de objeto inteiro em cinco pontos da suíte daquele módulo, de modo que estendê-la
+  // seria fazer prova alheia mudar para acomodar consumidor novo. O caso reprovaria por
+  // `excedentes` não porque a superfície cresceu por descuido — que é o defeito que ele existe para
+  // pegar —, mas porque cresceu por decisão que ele ainda não conhecia. **Nenhuma entrada anterior
+  // sai**, e a igualdade (nunca contenção) segue sendo asserida. O tipo `AlvoDoBoleto` **não**
+  // aparece abaixo pela razão de sempre: tipo não existe em tempo de execução.
+  'ErroDeCobrancaNaoAlcancada',
+  'estornarLiquidacao',
+  'gravarBoletoDaCobranca',
+  'lerBoletoDaCobranca',
+  'liquidarPeloProvedor',
+  'localizarAlvoDoBoleto',
+  'revogarBoleto',
 ] as const;
 
 /** As propriedades que denunciam um cliente `postgres.js` — a marca do executor cru. */
@@ -1404,6 +1628,17 @@ const CHAMADORES_LEGITIMOS: readonly string[] = [
   // continua sendo igualdade de conjunto, com `excedentes` e `ausentes` nomeados, e um quinto
   // chamador segue reprovando nominalmente.
   join(RAIZ_DO_REPOSITORIO, 'apps/api/src/confirmacoes/confirmacao.service.ts'),
+  // As duas bordas da COBRANÇA BANCÁRIA (T16 da fatia `emissao-e-conciliacao`).
+  //
+  // SUT_IS_CORRECT_BECAUSE: a lista enumera BORDAS, e estas são duas — a tarefa chega do servidor de
+  // fila, o `empresaId` vem da carga já conferida por `strictObject` **antes de qualquer leitura**, e
+  // o contexto é aberto UMA vez pelo mesmo escritor único (ADR-0024 / ADR-0029). O que elas NÃO são:
+  // serviços abrindo contexto próprio — o domínio que elas orquestram (`@sysloc/cobranca-bancaria`)
+  // não conhece banco, não importa `@sysloc/db` e recebe todas as portas por parâmetro (ADR-0025). A
+  // asserção **não foi afrouxada**: continua sendo igualdade de conjunto, com `excedentes` e
+  // `ausentes` nomeados, e um sétimo chamador segue reprovando nominalmente.
+  join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/emissao-em-lote.ts'),
+  join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/conferencia-bancaria.ts'),
 ].sort();
 
 /**
@@ -1570,6 +1805,20 @@ const ABRIDORES_LEGITIMOS: readonly string[] = [
   // igualdade de conjunto com `excedentes` e `ausentes` nomeados, e qualquer arquivo fora desta
   // lista reprova nominalmente.
   join(RAIZ_DO_REPOSITORIO, 'apps/api/src/confirmacoes/confirmacao.service.ts'),
+  // A terceira e a quarta bordas de trabalho enfileirado — a emissão em lote e a conferência
+  // bancária (T16 da fatia `emissao-e-conciliacao`).
+  //
+  // SUT_IS_CORRECT_BECAUSE: o elenco enumera **bordas**, e a decisão D1 é literalmente *"a unidade
+  // abre na BORDA, e o serviço recebe o executor"*. Cada uma abre a unidade do preparo — o lote, o
+  // certificado e o conjunto, lidos juntos — e depois **uma por escrita**, entregando o `tx` às
+  // portas que o domínio recebe por parâmetro; a rede corre FORA de qualquer unidade, para não
+  // segurar a conexão física durante o aperto de mão com o provedor. O que elas NÃO são: serviços
+  // abrindo unidade própria — `@sysloc/cobranca-bancaria` não abre nenhuma, não conhece
+  // `AcessoAoBanco` e não importa `@sysloc/db`. A asserção **não foi afrouxada**: continua sendo
+  // igualdade de conjunto com `excedentes` e `ausentes` nomeados, e qualquer arquivo fora desta
+  // lista reprova nominalmente.
+  join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/emissao-em-lote.ts'),
+  join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/conferencia-bancaria.ts'),
 ].sort();
 
 /**

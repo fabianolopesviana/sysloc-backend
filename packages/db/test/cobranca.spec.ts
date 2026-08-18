@@ -496,10 +496,31 @@ const UNIDADES_DECLARADAS: readonly string[] = Object.freeze([
  * derivação de estado depende. A asserção **não afrouxa**: segue por igualdade sobre a lista
  * inteira, de modo que uma quarta fila reprova o caso nomeando-a, e o Passo 4 continua provando que
  * não existe coluna de estado de cobrança para rotina alguma mover.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T15** da fatia `emissao-e-conciliacao` declara **duas** filas —
+ * `emissao-em-lote` e `conferencia-bancaria` —, e o código de produção está certo. Elas são as
+ * primeiras filas desta lista que **tocam a cobrança**, e por isso merecem a distinção que a ADR-0022
+ * exige: o que ela proíbe é **estado publicado movido por rotina**, e nenhuma das duas move um. O
+ * estado da cobrança continua sendo **derivado na leitura** por `negocio.cobranca_derivada` a partir
+ * de `data_vencimento`, `pago_em` e `cancelado_em`, e o Passo 4 deste mesmo caso continua provando
+ * que as quatro colunas do legado **não existem** — não há onde uma rotina escrevesse estado.
+ *
+ * O que as duas gravam são **fatos**, cada um com o instante em que aconteceu: a emissão em lote
+ * grava o número do título e os campos do boleto que o **provedor** emitiu; a conferência grava
+ * `pago_em` e `valor_pago` do pagamento que **já se moveu fora do sistema**. É exatamente a distinção
+ * que a ADR-0022 faz — a coluna registra **quando o fato aconteceu**, como a `data_vencimento` que a
+ * derivação lê —, e é a mesma razão pela qual `email_confirmado_em` entrou na lista com a T9.
+ * Nenhuma das duas roda por relógio: as duas são disparadas por **ato do Admin**, numa rota que
+ * exige sessão.
+ *
+ * A asserção **não afrouxa**: segue por igualdade sobre a lista inteira, de modo que uma sexta fila —
+ * uma `cobranca-vencida`, que é a forma exata do defeito — reprova o caso nomeando-a.
  */
 const FILAS_DECLARADAS: readonly string[] = Object.freeze([
+  'conferencia-bancaria',
   'confirmacao-de-email',
   'eco',
+  'emissao-em-lote',
   'regua-de-cobranca',
 ]);
 
@@ -1967,6 +1988,10 @@ const COLUNAS_DA_COBRANCA: readonly string[] = Object.freeze([
   'data_vencimento',
   'empresa_id',
   'id',
+  // Entrou pela `0017` (T2 da fatia `emissao-e-conciliacao`): coluna INTERNA, única GLOBALMENTE, com
+  // que o SaaS se apresenta ao provedor (ADR-0033). Ela não é coluna de confirmação nem de estado —
+  // entra aqui porque a lista é comparada por igualdade contra o catálogo.
+  'identificador_no_provedor',
   'juros_aplicados',
   'juros_percentual_aplicado',
   'linha_digitavel',

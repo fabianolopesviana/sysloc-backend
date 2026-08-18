@@ -44,10 +44,14 @@
  */
 
 import {
+  type CargaDaConferenciaBancaria,
   type CargaDaConfirmacao,
+  type CargaDaEmissaoEmLote,
   type CargaDaRegua,
   type CargaDoEco,
+  FILA_DA_CONFERENCIA_BANCARIA,
   FILA_DA_CONFIRMACAO,
+  FILA_DA_EMISSAO_EM_LOTE,
   FILA_DA_REGUA,
   FILA_DO_ECO,
   type Logger,
@@ -109,6 +113,19 @@ export type TarefaDaRegua = Job<CargaDaRegua, void>;
 export type TarefaDaConfirmacao = Job<CargaDaConfirmacao, void>;
 
 /**
+ * Uma tarefa de **emissão em lote** dos boletos de uma competência, como o processador a recebe.
+ *
+ * O resultado é `void` pela mesma razão da régua: o que o percurso produz fica **gravado** — os
+ * campos de conciliação, os itens do lote e o desfecho —, e um valor devolvido ao servidor de fila
+ * seria um segundo retrato do mesmo fato, retido pela política de retenção e livre para divergir do
+ * que o banco guarda. Quem lê a prestação de contas é a rota do lote.
+ */
+export type TarefaDaEmissaoEmLote = Job<CargaDaEmissaoEmLote, void>;
+
+/** Uma tarefa de **conferência bancária**, como o processador a recebe. Mesma razão do `void`. */
+export type TarefaDaConferenciaBancaria = Job<CargaDaConferenciaBancaria, void>;
+
+/**
  * Como o encerramento terminou.
  *
  * O desfecho é DEVOLVIDO a quem pediu, em vez de ficar guardado aqui, porque a decisão que ele
@@ -166,6 +183,17 @@ export interface Fila {
    * objeto, em outro processo, sobre o **mesmo** contrato de `@sysloc/shared`.
    */
   readonly confirmacao: Queue<CargaDaConfirmacao, void>;
+  /**
+   * Lado produtor da fila da emissão em lote, com a mesma política de repetição.
+   *
+   * Ele nasce aqui **mesmo sendo a borda HTTP quem enfileira em produção**, pela razão já escrita em
+   * {@link confirmacao}: quem constrói é quem devolve, e uma fila cujo produtor deste processo não
+   * existisse deixaria o consumidor sem o caminho tipado de {@link processar} — o nome viraria
+   * cadeia, e a conferência do par carga/resultado deixaria de existir.
+   */
+  readonly emissaoEmLote: Queue<CargaDaEmissaoEmLote, void>;
+  /** Lado produtor da fila da conferência bancária. Mesma razão de {@link emissaoEmLote}. */
+  readonly conferenciaBancaria: Queue<CargaDaConferenciaBancaria, void>;
   /**
    * Registra o processador de uma das filas **deste** módulo. Ele passa a consumir de imediato.
    *
@@ -231,6 +259,14 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
     connection: conexao,
     defaultJobOptions: OPCOES_PADRAO_DA_TAREFA,
   });
+  const emissaoEmLote = new Queue<CargaDaEmissaoEmLote, void>(FILA_DA_EMISSAO_EM_LOTE, {
+    connection: conexao,
+    defaultJobOptions: OPCOES_PADRAO_DA_TAREFA,
+  });
+  const conferenciaBancaria = new Queue<CargaDaConferenciaBancaria, void>(
+    FILA_DA_CONFERENCIA_BANCARIA,
+    { connection: conexao, defaultJobOptions: OPCOES_PADRAO_DA_TAREFA },
+  );
 
   // Nível de diagnóstico, e não de alerta: o que a fila emite aqui é o MESMO defeito de conexão
   // que o cliente acima já reportou uma vez, repassado adiante. O ouvinte existe para o evento
@@ -240,6 +276,8 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
     [FILA_DO_ECO, eco],
     [FILA_DA_REGUA, regua],
     [FILA_DA_CONFIRMACAO, confirmacao],
+    [FILA_DA_EMISSAO_EM_LOTE, emissaoEmLote],
+    [FILA_DA_CONFERENCIA_BANCARIA, conferenciaBancaria],
   ] as const) {
     produtor.on('error', (erro: Error) => {
       logger.debug({ erro, origem: 'fila', fila: nome }, 'a fila repassou uma falha da conexão');
@@ -280,6 +318,8 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
     await eco.close();
     await regua.close();
     await confirmacao.close();
+    await emissaoEmLote.close();
+    await conferenciaBancaria.close();
   };
 
   /** O encerramento já pedido, se houver. Ver {@link Fila.encerrar}. */
@@ -316,7 +356,16 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
         // `devolverGraciosamente` fecha, e não de literais — uma fila acrescentada ao encerramento
         // não tem como ficar de fora daqui.
         logger.error(
-          { limiteMs: LIMITE_DE_DESLIGAMENTO_MS, filas: [eco.name, regua.name, confirmacao.name] },
+          {
+            limiteMs: LIMITE_DE_DESLIGAMENTO_MS,
+            filas: [
+              eco.name,
+              regua.name,
+              confirmacao.name,
+              emissaoEmLote.name,
+              conferenciaBancaria.name,
+            ],
+          },
           'o encerramento excedeu o limite — devolvendo a conexão sem esperar o restante',
         );
       }
@@ -340,6 +389,8 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
     eco,
     regua,
     confirmacao,
+    emissaoEmLote,
+    conferenciaBancaria,
 
     processar<Carga, Resultado>(
       produtor: Queue<Carga, Resultado>,

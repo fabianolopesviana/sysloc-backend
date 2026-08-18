@@ -76,11 +76,42 @@
  * |       |        | `200` com **+1** captura para o endereço do locatário e **+1** linha crua.
  * |       |        | (ADR-0011, ADR-0018) |
  *
+ * | CA-15 | CT-941 | Nas **sete rotas da fatia `emissao-e-conciliacao`** — as quatro de
+ * |       |        | `/v1/cobrancas` e as três de `/v1/cobranca-bancaria` —, a requisição **sem
+ * |       |        | sessão** recebe `401 NAO_AUTENTICADO` com o envelope INTEIRO e **sem
+ * |       |        | `detalhes`**, e as sete recusas são idênticas **byte a byte**: nenhuma delas é
+ * |       |        | pública. A sessão de `USUARIO_EMPRESA` com a **matriz padrão** recebe `403` nas
+ * |       |        | sete, nomeando a **ÁREA** — a primeira ausente da conjunção (ADR-0018) —, e
+ * |       |        | nenhuma responde `404`. Com `TELA:financeiro` e **sem** as ações, **só os três
+ * |       |        | atos** recusam, nomeando cada um a **AÇÃO** própria, e as quatro leituras
+ * |       |        | deixam de recusar. E, com o perfil COMPLETO, nenhuma das sete responde `401`
+ * |       |        | nem `403` — o controle antivácuo sem o qual uma rota quebrada que recusasse
+ * |       |        | todo mundo passaria nos três passos anteriores. (ADR-0011, ADR-0017, ADR-0018,
+ * |       |        | ADR-0021) |
+ *
  * Rastreabilidade: `CA-12 → CT-319 (RN-14)`, `CA-13 → CT-320 (RN-14)`, `CA-14 → CT-321 (RN-01)`,
  * `CA-16 → CT-320 (b) (RN-13)`, `CA-17 → CT-320 (c) (RN-07)`.
  * Acrescida pela T11 da fatia `cobranca-e-mora`: `CA-17 → CT-534 (RN-14)`.
  * Acrescida pela T12 da fatia `regua-de-cobranca`: `CA-14 → CT-633 (RN-14)`,
  * `CA-13 → CT-634 (RN-12)`.
+ * Acrescida pela T17 da fatia `emissao-e-conciliacao`: `CA-15 → CT-941 (RN-14)`.
+ *
+ * ===========================================================================
+ * O CT-941 mede o COMPORTAMENTO das sete; quem audita a declaração é o CT-937
+ * ===========================================================================
+ *
+ * A divisão é a mesma dos pares `CT-534` × `CT-533` e `CT-633` × `CT-635`, e pela mesma razão: o
+ * `CT-937`, em `test/cobertura-de-autorizacao.e2e.spec.ts`, lê o **metadado** das sete rotas e afirma
+ * o retrato devido — e ficaria verde numa aplicação cuja guarda não fosse consultada, porque
+ * declaração escrita não é decisão aplicada. Este caso **sonda a borda**, nos três eixos que a
+ * declaração não alcança: o `401` de quem não se identificou, o `403` de quem não alcança a área, e a
+ * distinção entre os **três atos** e as **quatro leituras** quando a área já está presente.
+ *
+ * ⚠️ **Os alvos são recursos que NÃO existem, e é isso que torna o caso independente de arranjo**: a
+ * guarda corre antes do manipulador, de modo que o `401` e o `403` não dependem do estado do banco.
+ * A consequência que importa é a do quarto passo — com o perfil completo, nenhuma das sete grava
+ * linha nem enfileira tarefa, porque as que o fariam recebem o corpo recusado de propósito (ver
+ * {@link CHAVE_QUE_NINGUEM_DECLAROU}).
  *
  * ===========================================================================
  * O CT-633 e o CT-634 medem o COMPORTAMENTO; quem audita a declaração é o CT-635
@@ -336,6 +367,11 @@ import { CAMINHO_DA_AUTOMACAO_DE_COBRANCA } from '../src/automacao/automacao.con
 import { CAMINHO_DOS_FIADORES } from '../src/cadastros/fiador.controller.ts';
 import { CAMINHO_DOS_LOCADORES } from '../src/cadastros/locador.controller.ts';
 import { CAMINHO_DOS_LOCATARIOS } from '../src/cadastros/locatario.controller.ts';
+import {
+  CAMINHO_DA_COBRANCA_BANCARIA,
+  SEGMENTO_DAS_CONFERENCIAS,
+  SEGMENTO_DAS_EMISSOES,
+} from '../src/cobranca-bancaria/cobranca-bancaria.controller.ts';
 import { CAMINHO_DAS_COBRANCAS } from '../src/cobrancas/cobranca.controller.ts';
 import {
   ENDERECO_DE_ESCUTA,
@@ -468,6 +504,51 @@ const AREA_DO_PISO_DO_USUARIO: ChaveDoCatalogo = 'TELA:resumo';
 
 /** O recurso **singular** da política de aviso, sob o prefixo de versão — duas das quatro rotas. */
 const RECURSO_DA_AUTOMACAO = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_AUTOMACAO_DE_COBRANCA}`;
+
+// ---------------------------------------------------------------------------------------------
+// O eixo do CT-941 — as SETE rotas da fatia `emissao-e-conciliacao` (T17)
+// ---------------------------------------------------------------------------------------------
+
+/** A coleção de `/v1/cobranca-bancaria`, sob o prefixo de versão — três das sete rotas. */
+const COLECAO_DA_COBRANCA_BANCARIA = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_COBRANCA_BANCARIA}`;
+
+/** Quantas rotas a fatia `emissao-e-conciliacao` publica — quatro de cobrança e três próprias. */
+const ROTAS_DA_FATIA_DE_EMISSAO = 7;
+
+/** Quantas das sete exigem, **além** da área, uma chave de ação — os três atos que movem dinheiro. */
+const ATOS_DA_FATIA_DE_EMISSAO = 3;
+
+/**
+ * A mensagem canônica do `401`, escrita por extenso.
+ *
+ * Literal, e **não** importada de `MENSAGEM_POR_CODIGO`: comparar a resposta com a constante que a
+ * produziu faria a âncora concordar consigo mesma. Ela é contrato — é o que o cliente lê.
+ */
+const MENSAGEM_SEM_SESSAO = 'sessão inválida ou expirada';
+
+/**
+ * Um código de cobrança **bem formado** que não existe em empresa alguma — o alvo das quatro rotas
+ * de `/v1/cobrancas` no `CT-941`.
+ *
+ * O ano é 2099 de propósito: ele passa pela validação de forma da borda, de modo que a recusa que o
+ * caso mede é a da **guarda**, e não a do esquema. É a mesma escolha, e a mesma razão, de
+ * `historico-bancario.e2e.spec.ts` e de `boleto-da-cobranca.e2e.spec.ts`.
+ */
+const COBRANCA_INEXISTENTE = 'COB-2099-0000001';
+
+/** Um identificador bem-formado que não corresponde a lote algum — o alvo do `GET` de emissão. */
+const LOTE_INEXISTENTE = '11111111-1111-4111-8111-111111111111';
+
+/**
+ * Uma chave que **nenhum** esquema de entrada desta fatia declara.
+ *
+ * Ela é o que faz o eixo POSITIVO do `CT-941` parar em `422` sem produzir efeito: com o perfil
+ * completo, a abertura de lote e o disparo da conferência **enfileirariam tarefa** e gravariam
+ * linha se o corpo fosse válido, e o que o caso mede é a autorização — não o percurso. Recusada a
+ * entrada, a guarda já decidiu (ela corre antes do manipulador), e o `422` prova que a decisão foi
+ * *passar*.
+ */
+const CHAVE_QUE_NINGUEM_DECLAROU = 'campoQueNinguemDeclarou';
 
 /** A coleção de avisos de uma cobrança — as outras duas. Composta, nunca escrita à mão. */
 function rotaDosAvisos(codigo: string): string {
@@ -685,25 +766,33 @@ beforeAll(async () => {
 
   // DÉBITO COM GATILHO — D57 · F3/T12 · registrado 2026-08-12
   // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o bloco abaixo.)
-  // O QUÊ: esta é a TERCEIRA cópia literal da montagem instrumentada — as outras duas estão em
-  //        `apps/api/test/automacao-de-cobranca.e2e.spec.ts` e em
-  //        `apps/api/test/equivalencia-com-o-oraculo.spec.ts`. Ela não deriva de `criarAplicacao()`
+  // O QUÊ: esta é uma de QUATRO cópias literais da montagem instrumentada — as outras três estão em
+  //        `apps/api/test/automacao-de-cobranca.e2e.spec.ts`,
+  //        `apps/api/test/equivalencia-com-o-oraculo.spec.ts` e
+  //        `apps/api/test/vocabulario-na-saida-real.e2e.spec.ts` (esta última nasceu na T17 da fatia
+  //        `emissao-e-conciliacao`, que DEFERIU o fecho — ver o `QUANDO FECHA`). Ela não deriva de
+  //        `criarAplicacao()`
   //        e por isso omite `logger: false`, `abortOnError: false`, o `exclude` do prefixo,
   //        `publicarContrato()` e `enableShutdownHooks()`. NENHUMA delas alcança o que os casos
   //        medem — guarda, filtro de erro e interceptador de contexto são registrados por
   //        `APP_GUARD`/`APP_FILTER`/`APP_INTERCEPTOR` DENTRO do `AppModule`.
-  // QUANDO FECHA: ⚠️ **A PRIMEIRA METADE DO GATILHO JÁ ESTÁ SATISFEITA** — a terceira suíte
-  //        instrumentada já existe, e existe desde ANTES da sub-fatia `documentos-e-confirmacao`
-  //        (a T12 dela apenas MEDIU o fato; a correção não é dela, porque fechar o débito
-  //        reescreveria três arquivos fora da lista de impacto — proibição 5 do Protocolo). O dono
-  //        é quem abrir a PRÓXIMA suíte que precisar da montagem instrumentada, ou a primeira
-  //        edição de qualquer uma das três por outra razão. Segue valendo, como segundo gatilho, a
-  //        primeira vez que `criarAplicacao()` registrar um global FORA do `AppModule`. A partir
-  //        daqui a divergência entre a montagem que atende e a instrumentada deixa de ser inócua, e
-  //        ela não reprova caso algum: a asserção que a acusaria não existe.
+  // QUANDO FECHA: ⚠️ **O GATILHO JÁ DISPAROU DUAS VEZES, e as duas donas deferiram.** A terceira
+  //        suíte instrumentada existe desde ANTES da sub-fatia `documentos-e-confirmacao` (a T12
+  //        dela apenas MEDIU o fato). A QUARTA nasceu na T17 da fatia `emissao-e-conciliacao`, que
+  //        também deferiu, invocando a proibição 5 do Protocolo — e o Gate 2 dela registrou que o
+  //        argumento procede para o FECHO INTEGRAL, mas não para a decisão de acrescentar mais uma
+  //        cópia: havia caminho intermediário que não toca arquivo algum fora do escopo, que é
+  //        fazer nascer o acessório e consumi-lo SÓ do arquivo novo. ⚠️ **É esse o caminho para o
+  //        próximo dono** — quem abrir a PRÓXIMA suíte que precisar da montagem instrumentada, ou a
+  //        primeira edição de qualquer uma das QUATRO por outra razão: a casa compartilhada nasce,
+  //        o consumidor novo a usa, e os anteriores migram quando forem abertos por outra razão.
+  //        Segue valendo, como segundo gatilho, a primeira vez que `criarAplicacao()` registrar um
+  //        global FORA do `AppModule`. A divergência entre a montagem que atende e as instrumentadas
+  //        não reprova caso algum: a asserção que a acusaria não existe — e agora ela deixaria
+  //        TRÊS para trás, não duas.
   // POR QUE NÃO AGORA: a convenção deste repositório agenda a promoção de símbolo duplicado no
-  //        TERCEIRO consumidor (é a forma do D1 · F3/T2 e do D26 · F3/T8) — o terceiro chegou, e o
-  //        que adia o fecho hoje é escopo de task, não a contagem.
+  //        TERCEIRO consumidor (é a forma do D1 · F3/T2 e do D26 · F3/T8) — o terceiro chegou, o
+  //        quarto também, e o que adia o fecho hoje é escopo de task, não a contagem.
   // ÍNDICE: docs/specs/features/regua-de-cobranca/v1/_run/run-report.md §2, D57
   const modulo = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(TOKEN_PORTA_DE_EMAIL)
@@ -1666,7 +1755,339 @@ describe('as provas de segurança sobre as rotas do domínio (T11) e sobre as a�
     },
     LIMITE_CASO_MS,
   );
+
+  it(
+    'CT-941 — as 7 rotas da fatia de emissão exigem sessão e a autorização declarada; nenhuma é pública, e o perfil completo passa',
+    async () => {
+      const tabela = rotasDaFatiaDeEmissao();
+
+      // ---------------------------------------------------------------------------------------
+      // A tabela cobre a superfície inteira da fatia — afirmado ANTES de percorrê-la
+      // ---------------------------------------------------------------------------------------
+      //
+      // Tabela truncada é o modo de falha silencioso desta classe de caso: as três varreduras
+      // abaixo passariam sobre menos rotas do que a fatia publica, e nada acusaria.
+      expect(tabela.length).toBe(ROTAS_DA_FATIA_DE_EMISSAO);
+      expect(tabela.filter((rota) => rota.acao !== undefined).length).toBe(
+        ATOS_DA_FATIA_DE_EMISSAO,
+      );
+
+      // ---------------------------------------------------------------------------------------
+      // (a) SEM SESSÃO — `401` nas sete, com o envelope INTEIRO e sem `detalhes`
+      // ---------------------------------------------------------------------------------------
+      //
+      // Nenhuma delas é pública: rota nova nasce protegida, e a marca `@RotaPublica()` é a única
+      // abertura deliberada (ADR-0011). Um `200` aqui seria a superfície aberta, e um `403` seria a
+      // rota respondendo *"você não alcança"* a quem não se identificou — as duas reprovam.
+      const corposSemSessao: string[] = [];
+
+      for (const rota of tabela) {
+        const resposta = await pedir(rota.alvo, {
+          metodo: rota.metodo,
+          ...(rota.corpo === undefined ? {} : { corpo: rota.corpo }),
+        });
+
+        expect(
+          resposta.status,
+          `${rota.rotulo} respondeu ${String(resposta.status)} sem sessão`,
+        ).toBe(401);
+        // O envelope INTEIRO por igualdade (ADR-0017), e **sem** `detalhes`: não há exigência a
+        // nomear para quem não se identificou, e nomear uma diria ao anônimo qual chave o liberaria.
+        expect(resposta.corpo, `a recusa sem sessão de ${rota.rotulo} mudou de forma`).toEqual({
+          codigo: CodigoErro.NAO_AUTENTICADO,
+          mensagem: MENSAGEM_SEM_SESSAO,
+        });
+
+        corposSemSessao.push(JSON.stringify(resposta.corpo));
+      }
+
+      // As sete recusas são idênticas entre si **byte a byte** — uma única forma na serialização. A
+      // igualdade do laço é profunda e não alcança a ordem das chaves; esta linha alcança, e é ela
+      // que impede a recusa de virar oráculo por diferença de forma entre duas das sete.
+      expect(
+        new Set(corposSemSessao).size,
+        'as recusas sem sessão das sete rotas não são idênticas byte a byte',
+      ).toBe(1);
+
+      // ---------------------------------------------------------------------------------------
+      // O sujeito SEM A ÁREA: `USUARIO_EMPRESA` com a MATRIZ PADRÃO — nenhum ajuste é escrito
+      // ---------------------------------------------------------------------------------------
+      //
+      // A ausência da área **é** a precondição, e por isso ela não se escreve: escrever a negação
+      // produziria o mesmo efetivo por um caminho que o caso não mede. A igualdade de arranjo, e não
+      // um `not.toContain`, é o que prende o piso do perfil — um piso que crescesse em silêncio
+      // faria este caso deixar de medir a ausência que ele exercita.
+      //
+      // ⚠️ **É a sessão que o `CT-319` já usa, e reusá-la é deliberado.** Este caso não escreve
+      // ajuste algum para ela — só lê o efetivo dela —, de modo que a regra do arquivo (*"nenhuma
+      // sessão é compartilhada entre casos que escrevem permissão"*) continua valendo. A razão de
+      // não criar mais uma pessoa é medida e está registrada no `DÉBITO COM GATILHO — D27 · F1/T6`
+      // de `packages/auth/src/autenticacao.ts`: enquanto a chave do limitador for
+      // `no-trusted-ip|/change-password`, a **décima primeira** troca de senha do mesmo minuto
+      // recebe `429` — e este arquivo já gasta nove trocas antes de chegar aqui.
+      const efetivoSemAArea = await efetivoDe(cookieSemArea);
+
+      expect(efetivoSemAArea.telas).toEqual([AREA_DO_PISO_DO_USUARIO]);
+      expect(efetivoSemAArea.acoes).toEqual([]);
+
+      // ---------------------------------------------------------------------------------------
+      // (b) COM SESSÃO E SEM A ÁREA — `403` nas sete, nomeando a ÁREA
+      // ---------------------------------------------------------------------------------------
+      //
+      // `detalhes.exigido` é a **área** nas sete, inclusive nos três atos: a recusa nomeia a PRIMEIRA
+      // chave ausente da conjunção, e a área vem antes (ADR-0018). Se um ato nomeasse a ação aqui, a
+      // conjunção dele estaria declarada na ordem trocada — o defeito que esta linha pega.
+      const corposSemArea: string[] = [];
+
+      for (const rota of tabela) {
+        const resposta = await pedir(rota.alvo, {
+          metodo: rota.metodo,
+          cookie: cookieSemArea,
+          ...(rota.corpo === undefined ? {} : { corpo: rota.corpo }),
+        });
+
+        // A negativa vem ANTES da igualdade, e a ordem é a da `DECISÃO FECHADA — T12 / Gate 2 (P1)`
+        // registrada no `CT-633`: na ordem idiomática ela seria infalível, porque o `expect` aborta o
+        // caso ao reprovar e ela só chegaria a ser avaliada com o status já em `403`.
+        expect(resposta.status, `${rota.rotulo} vazou a existência do recurso`).not.toBe(404);
+        expect(resposta.status, `${rota.rotulo} respondeu ${String(resposta.status)}`).toBe(403);
+        expect(resposta.corpo, `a recusa de ${rota.rotulo} mudou de forma`).toEqual({
+          codigo: CodigoErro.ACESSO_NEGADO,
+          mensagem: MENSAGEM_DE_ACESSO_NEGADO,
+          detalhes: { exigido: AREA_DO_FINANCEIRO },
+        });
+
+        corposSemArea.push(JSON.stringify(resposta.corpo));
+      }
+
+      expect(
+        new Set(corposSemArea).size,
+        'as recusas por ausência da área não são idênticas byte a byte',
+      ).toBe(1);
+
+      // ---------------------------------------------------------------------------------------
+      // O sujeito COM A ÁREA E SEM AS AÇÕES — sujeito próprio, porque o efetivo dele é escrito
+      // ---------------------------------------------------------------------------------------
+      //
+      // Ele é exclusivo deste caso, pela mesma razão do `CT-320` e do `CT-634`: é o efetivo dele que
+      // está sob prova, e nenhuma sessão é compartilhada entre casos que escrevem permissão.
+      const semAsAcoes = await pessoaOperandoComSenhaTrocada('so.a.area.do.financeiro');
+
+      await ajustar(semAsAcoes.usuarioId, EMPRESA_A.id, [
+        { chave: AREA_DO_FINANCEIRO, efeito: 'CONCEDIDA' },
+      ]);
+
+      const efetivoSemAsAcoes = await efetivoDe(semAsAcoes.cookie);
+
+      // A precondição é AFIRMADA nos dois eixos, e não presumida: **tem** a área, e **não tem**
+      // nenhuma das duas ações. Sem a segunda metade, o `403` do laço abaixo seria indistinguível do
+      // que o sujeito anterior já recebia.
+      expect(efetivoSemAsAcoes.telas).toContain(AREA_DO_FINANCEIRO);
+      expect(efetivoSemAsAcoes.acoes).toEqual([]);
+
+      // ---------------------------------------------------------------------------------------
+      // (c) COM A ÁREA E SEM A AÇÃO — SÓ os três atos recusam, e a recusa nomeia a AÇÃO
+      // ---------------------------------------------------------------------------------------
+      //
+      // As duas metades são direções diferentes, e nenhuma implica a outra: os **três atos** recusam
+      // nomeando a ação — a primeira ausente agora que a área está presente —, e as **quatro
+      // leituras** deixam de recusar. Sem a segunda, uma guarda que exigisse a ação nas sete passaria
+      // pela primeira inteira.
+      const recusadasComAArea: Record<string, string> = {};
+
+      for (const rota of tabela) {
+        const resposta = await pedir(rota.alvo, {
+          metodo: rota.metodo,
+          cookie: semAsAcoes.cookie,
+          ...(rota.corpo === undefined ? {} : { corpo: rota.corpo }),
+        });
+
+        if (resposta.status === 403) {
+          recusadasComAArea[rota.rotulo] = (resposta.corpo as { detalhes?: { exigido?: string } })
+            .detalhes?.exigido as string;
+          expect(resposta.corpo, `a recusa de ${rota.rotulo} mudou de forma`).toEqual({
+            codigo: CodigoErro.ACESSO_NEGADO,
+            mensagem: MENSAGEM_DE_ACESSO_NEGADO,
+            detalhes: { exigido: rota.acao },
+          });
+        }
+      }
+
+      // O retrato inteiro numa comparação só, e não um contador: ele afirma as DUAS direções ao
+      // mesmo tempo — **quais** rotas recusaram (uma leitura que passasse a exigir ação apareceria
+      // como excedente, e um ato que deixasse de exigi-la como ausente) **e** qual chave cada uma
+      // nomeou. Um `atosRecusados.length === 3` seria implicado pela contagem afirmada no topo, e
+      // não haveria estado do SUT em que ele fosse o primeiro a reprovar (AP-29).
+      expect(
+        recusadasComAArea,
+        'o conjunto de rotas recusadas por falta de AÇÃO deixou de ser o dos três atos',
+      ).toEqual(
+        Object.fromEntries(
+          tabela
+            .filter((rota) => rota.acao !== undefined)
+            .map((rota) => [rota.rotulo, rota.acao as string]),
+        ),
+      );
+
+      // ---------------------------------------------------------------------------------------
+      // (d) O CONTROLE ANTIVÁCUO — com o perfil COMPLETO, nenhuma responde `401` nem `403`
+      // ---------------------------------------------------------------------------------------
+      //
+      // Sem esta perna, uma rota quebrada que respondesse `403` a **todo mundo** passaria nas três
+      // anteriores inteiras — é ela que prova que o `403` vinha da permissão, e não de defeito de
+      // montagem. O sujeito é o Admin da empresa A, cuja matriz de perfil é o catálogo inteiro.
+      //
+      // ⚠️ O desfecho de cada uma é `404` (recurso que não existe) ou `422` (entrada recusada), e as
+      // duas escolhas são deliberadas: com o perfil completo e um corpo válido, a abertura de lote e o
+      // disparo da conferência **gravariam linha e enfileirariam tarefa**, e o que este caso mede é a
+      // autorização — não o percurso.
+      const comOPerfilCompleto: Record<string, number> = {};
+
+      for (const rota of tabela) {
+        const resposta = await pedir(rota.alvo, {
+          metodo: rota.metodo,
+          cookie: cookiePleno,
+          ...(rota.corpo === undefined ? {} : { corpo: rota.corpo }),
+        });
+
+        // As duas negativas vêm ANTES da igualdade de baixo, e a ordem é a da
+        // `DECISÃO FECHADA — T12 / Gate 2 (P1)` do `CT-633`: elas são o invariante literal do card, e
+        // na posição posterior seriam infalíveis — a igualdade abortaria o caso antes.
+        expect(
+          resposta.status,
+          `${rota.rotulo} recusou o perfil COMPLETO com ${String(resposta.status)}: ${resposta.texto}`,
+        ).not.toBe(401);
+        expect(
+          resposta.status,
+          `${rota.rotulo} recusou o perfil COMPLETO com ${String(resposta.status)}: ${resposta.texto}`,
+        ).not.toBe(403);
+
+        comOPerfilCompleto[rota.rotulo] = resposta.status;
+      }
+
+      // E o retrato dos sete status, por igualdade de OBJETO. Ele é o que as duas negativas não
+      // alcançam: um `500` do arcabouço — a rota que atravessa a guarda e **quebra** — satisfaria as
+      // duas e diria que a autorização está certa sobre uma rota que não atende. A falha nomeia a
+      // rota e o número lado a lado.
+      expect(
+        comOPerfilCompleto,
+        'o perfil completo deixou de alcançar as sete rotas pelo desfecho esperado',
+      ).toEqual(
+        Object.fromEntries(tabela.map((rota) => [rota.rotulo, rota.statusComOPerfilCompleto])),
+      );
+    },
+    LIMITE_CASO_MS,
+  );
 });
+
+// ---------------------------------------------------------------------------------------------
+// A tabela das SETE rotas da fatia `emissao-e-conciliacao` — o eixo do CT-941 (T17)
+// ---------------------------------------------------------------------------------------------
+
+/** Uma rota da fatia de emissão, no que o `CT-941` precisa saber dela. */
+interface RotaDaFatiaDeEmissao {
+  /** Método e caminho, para a mensagem de falha nomear a rota exata. */
+  readonly rotulo: string;
+  readonly metodo: string;
+  readonly alvo: string;
+  readonly corpo?: Record<string, unknown>;
+  /**
+   * A chave de **ação** que a rota exige além da área — ausente nas quatro que valem só pela classe.
+   *
+   * É ela que parte a tabela nos dois grupos que o passo (c) mede por direções opostas, e o valor é
+   * o que a recusa tem de nomear em `detalhes.exigido` quando a sessão já alcança a área.
+   */
+  readonly acao?: ChaveDoCatalogo;
+  /**
+   * O status que a rota devolve ao **perfil completo** — o esperado do controle antivácuo.
+   *
+   * Ele é `404` onde o alvo não existe e `422` onde o corpo é recusado de propósito, e as duas
+   * escolhas são conteúdo: com corpo válido, a abertura de lote e o disparo da conferência
+   * **gravariam linha e enfileirariam tarefa**. Escrevê-lo por extenso é o que faz o controle
+   * distinguir *"a guarda deixou passar"* de *"a rota quebrou depois da guarda"* — um `500`
+   * satisfaria as duas negativas sozinho.
+   */
+  readonly statusComOPerfilCompleto: number;
+}
+
+/**
+ * As **sete** rotas que a fatia `emissao-e-conciliacao` publica, com a exigência devida de cada uma.
+ *
+ * Os caminhos são **compostos dos donos dos segmentos** — `CAMINHO_DAS_COBRANCAS`,
+ * `CAMINHO_DA_COBRANCA_BANCARIA`, `SEGMENTO_DAS_EMISSOES` e `SEGMENTO_DAS_CONFERENCIAS` —, e nunca
+ * escritos como cadeia crua: um segmento que mudasse no controlador sem passar por aqui faria o caso
+ * bater numa rota que não existe e receber `404` da ausência de manipulador, que passaria nos passos
+ * (a) e (b) pelo motivo errado.
+ *
+ * ⚠️ **As chaves de ação são literais escritos à mão**, e não importadas dos controladores: as
+ * constantes de lá são privadas de propósito, e derivá-las da mesma fonte que o SUT usa para declarar
+ * faria a asserção concordar com ele — trocar a exigência do controlador deixaria de reprovar caso
+ * algum. Elas são o valor que o cliente lê em `detalhes.exigido`.
+ *
+ * Os alvos são recursos **que não existem**, e a escolha é conteúdo: a guarda corre **antes** do
+ * manipulador, de modo que o `401` e o `403` que os três primeiros passos medem independem do estado
+ * do banco — e o passo (d) fica livre para observar *"não é 401 nem 403"* sem produzir efeito algum.
+ */
+function rotasDaFatiaDeEmissao(): readonly RotaDaFatiaDeEmissao[] {
+  const cobranca = `${COLECAO_DE_COBRANCAS}/${COBRANCA_INEXISTENTE}`;
+  const emissoes = `${COLECAO_DA_COBRANCA_BANCARIA}/${SEGMENTO_DAS_EMISSOES}`;
+
+  return [
+    {
+      rotulo: 'POST /v1/cobrancas/:codigo/emissao-de-boleto',
+      metodo: 'POST',
+      alvo: `${cobranca}/emissao-de-boleto`,
+      corpo: {},
+      acao: ACAO_DE_EMITIR_BOLETO,
+      statusComOPerfilCompleto: 404,
+    },
+    {
+      rotulo: 'POST /v1/cobrancas/:codigo/revogacao-de-boleto',
+      metodo: 'POST',
+      alvo: `${cobranca}/revogacao-de-boleto`,
+      corpo: {},
+      acao: ACAO_DE_SOLICITAR_BAIXA,
+      statusComOPerfilCompleto: 404,
+    },
+    {
+      rotulo: 'GET /v1/cobrancas/:codigo/boleto',
+      metodo: 'GET',
+      alvo: `${cobranca}/boleto`,
+      statusComOPerfilCompleto: 404,
+    },
+    {
+      rotulo: 'GET /v1/cobrancas/:codigo/historico-bancario',
+      metodo: 'GET',
+      alvo: `${cobranca}/historico-bancario`,
+      statusComOPerfilCompleto: 404,
+    },
+    {
+      rotulo: 'POST /v1/cobranca-bancaria/emissoes',
+      metodo: 'POST',
+      alvo: emissoes,
+      // Corpo deliberadamente recusável — ver {@link CHAVE_QUE_NINGUEM_DECLAROU}: com o perfil
+      // completo e uma competência válida, esta rota gravaria o lote e enfileiraria a tarefa.
+      corpo: { [CHAVE_QUE_NINGUEM_DECLAROU]: true },
+      acao: ACAO_DE_EMITIR_BOLETO,
+      statusComOPerfilCompleto: 422,
+    },
+    {
+      rotulo: 'GET /v1/cobranca-bancaria/emissoes/:id',
+      metodo: 'GET',
+      alvo: `${emissoes}/${LOTE_INEXISTENTE}`,
+      statusComOPerfilCompleto: 404,
+    },
+    {
+      rotulo: 'POST /v1/cobranca-bancaria/conferencias',
+      metodo: 'POST',
+      alvo: `${COLECAO_DA_COBRANCA_BANCARIA}/${SEGMENTO_DAS_CONFERENCIAS}`,
+      // Pela mesma razão da abertura de lote: o corpo válido é o objeto **vazio**, e com ele o perfil
+      // completo abriria conferência e enfileiraria tarefa.
+      corpo: { [CHAVE_QUE_NINGUEM_DECLAROU]: true },
+      statusComOPerfilCompleto: 422,
+    },
+  ];
+}
 
 // ---------------------------------------------------------------------------------------------
 // A tabela das 33 rotas — DERIVADA dos donos de segmento, nunca redigitada

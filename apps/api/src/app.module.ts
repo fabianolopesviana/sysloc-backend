@@ -41,6 +41,7 @@ import { AutenticacaoModule } from './autenticacao/autenticacao.module.js';
 import { GuardaDeContexto } from './autenticacao/contexto.guard.js';
 import { AutomacaoModule } from './automacao/automacao.module.js';
 import { CadastrosModule } from './cadastros/cadastros.module.js';
+import { CobrancaBancariaModule } from './cobranca-bancaria/cobranca-bancaria.module.js';
 import { CobrancasModule } from './cobrancas/cobrancas.module.js';
 import { FiltroExcecaoGlobal } from './comum/filtro-excecao.js';
 import {
@@ -69,6 +70,7 @@ import { UsuariosModule } from './usuarios/usuarios.module.js';
     CadastrosModule,
     ContratosModule,
     CobrancasModule,
+    CobrancaBancariaModule,
     MoraModule,
     AutomacaoModule,
     IntegracoesBancariasModule,

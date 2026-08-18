@@ -32,8 +32,15 @@
  * própria resposta, e a `Decision` diz que essa classe *"permanece em linha, e não é exceção"*. O ganho
  * de desenho merece registro: o vetor do achado crítico da fase anterior — o segredo em claro
  * alcançando o journal por `err.command.args`, porque a fila empurra a carga como argumento de comando
- * — **não existe nesta fatia por construção**, já que não há carga de tarefa. A fatia (ii), que terá
- * fila e levará o mesmo material a ela, **não herda essa propriedade**.
+ * — **não existe nesta fatia por construção**, já que não há carga de tarefa.
+ *
+ * ⚠️ **A fatia (ii) chegou, e o desfecho foi MEDIDO** — era o `D58 · F4/T13`, fechado pela T15. Ela
+ * trouxe as duas filas do produto, e a carga de cada uma leva **apenas identificadores**: o processo
+ * de trabalho resolve o certificado pelo banco, sob o contexto de tenant, e o decifra com a chave do
+ * próprio ambiente. A propriedade acima, portanto, **não foi herdada — foi reconstruída por outro
+ * mecanismo**, e a diferença importa: aqui ela vem de não haver fila, ali de não haver o que
+ * carregar. Quem a mede é o `CT-935` de `apps/api/test/segredo-nao-escapa.e2e.spec.ts`, varrendo a
+ * carga real e o objeto de erro **cru** da biblioteca de fila — nunca lendo o código (ADR-0032).
  *
  * ===========================================================================
  * A ORDEM DOS ATOS NÃO É LIVRE, e o que decide é ONDE a transação abre
@@ -453,21 +460,6 @@ export class CertificadoDoProvedorService {
     return { certificadoId: vigente.id, envelopeCifrado };
   }
 
-  // DÉBITO COM GATILHO — D58 · F4/T13 · registrado 2026-08-15
-  // (Ele AGENDA — não é uma `DECISÃO FECHADA`, que protegeria. Editar o método abaixo é normal; o que
-  //  não se pode é editá-lo sem ler o que ainda falta.)
-  // O QUÊ: a superfície `fila × segredo operável` não existe nesta fatia — nenhuma das três rotas
-  //        enfileira nada — e **por isso não é medida** pela T13, cuja enumeração de caminhos de saída
-  //        (`apps/api/test/segredo-nao-escapa.e2e.spec.ts`) a nomeia como o item 14, não medido.
-  // QUANDO FECHA: a primeira carga de tarefa que transportar o segredo operável — a **fatia (ii)**, que
-  //        terá fila e levará o mesmo material a ela. Ali a superfície `fila` entra na enumeração da
-  //        ADR-0032 e **cobra caso que a meça**, pelo vetor exato do achado crítico da fase anterior:
-  //        o `bullmq` empurra `job.data` como argumento de comando Redis, o `ioredis` o anexa ao erro,
-  //        e a redação não alcança.
-  // POR QUE NÃO AGORA: não há carga de tarefa nesta fatia; medir o que não existe seria asserção vácua
-  //        — e asserção vácua numa fatia de segurança é pior que asserção ausente, porque consta como
-  //        feita.
-  // ÍNDICE: docs/specs/features/fundacao-bancaria/v1/_run/run-report.md §2, D58
   /**
    * Verifica a identidade guardada contra o provedor — **fora de qualquer transação** (§3.3).
    *

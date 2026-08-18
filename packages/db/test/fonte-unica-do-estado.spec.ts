@@ -205,6 +205,12 @@ const FONTES_COM_ROTULO_ESPERADAS: readonly string[] = ['packages/contracts/src/
  * coluna `situacao` gravada por rotina, que é o mesmo defeito com outro rótulo.
  *
  * As seis últimas são os campos de conciliação bancária, que nascem nulos e **só a F4** publica.
+ *
+ * A vigésima terceira, `identificador_no_provedor`, entrou pela migração `0017` (T2 da fatia
+ * `emissao-e-conciliacao`) e é INTERNA: nenhum esquema de `@sysloc/contracts` a publica, e ela não é
+ * coluna de estado — é a chave com que o SaaS se apresenta ao provedor, única GLOBALMENTE
+ * (ADR-0033). Ela entra aqui porque a lista é comparada por igualdade contra o catálogo, e o
+ * `ADD COLUMN` a põe no fim.
  */
 const COLUNAS_DA_COBRANCA: readonly string[] = [
   'id',
@@ -229,6 +235,7 @@ const COLUNAS_DA_COBRANCA: readonly string[] = [
   'data_credito',
   'valor_creditado',
   'boleto_arquivo',
+  'identificador_no_provedor',
 ];
 
 /** O fonte do serviço de cobrança — o sujeito da prova de falsificação. */
@@ -744,6 +751,16 @@ const CHAMADA_AO_ESCRITOR_DE_CONTEXTO = /\bexecutarCom\s*\(/;
  * foi afrouxada**: continua sendo igualdade de conjunto, e um quinto arquivo segue reprovando
  * nominalmente.
  *
+ * SUT_IS_CORRECT_BECAUSE: a lista tinha quatro bordas porque o processo de trabalho consumia **duas**
+ * filas de negócio; a T16 da fatia `emissao-e-conciliacao` acrescenta as duas da cobrança bancária —
+ * a emissão em lote e a conferência —, e cada uma é borda pelo **mesmo** discriminador das anteriores:
+ * a tarefa chega do servidor de fila, o `empresaId` vem da carga **já conferida por `strictObject`
+ * antes de qualquer leitura**, e o contexto é aberto UMA vez, pelo mesmo escritor único, sem que nada
+ * abaixo o reescreva (ADR-0024 / ADR-0029). O que elas NÃO são: serviços abrindo contexto próprio — o
+ * domínio que elas orquestram (`@sysloc/cobranca-bancaria`) não conhece banco, não importa
+ * `@sysloc/db` e recebe todas as portas por parâmetro (ADR-0025). A asserção **não foi afrouxada**:
+ * continua sendo igualdade de conjunto, e um sétimo arquivo segue reprovando nominalmente.
+ *
  * ---------------------------------------------------------------------------
  * MUTANTE EXECUTADO — a borda nova FORA das duas listas (2026-08-13)
  * ---------------------------------------------------------------------------
@@ -771,6 +788,13 @@ const BORDAS_QUE_ESCREVEM_CONTEXTO: readonly string[] = [
   // resolução acontece **fora** de contexto de propósito — a empresa é o resultado dela, não a
   // entrada (ADR-0027 + ADR-0024). É a única borda do produto sem sessão nem carga de fila.
   'apps/api/src/confirmacoes/confirmacao.service.ts',
+  // As duas bordas da COBRANÇA BANCÁRIA (T16 da fatia `emissao-e-conciliacao`): a empresa vem da
+  // carga do próprio trabalho, como nas duas irmãs de fila acima. O que é próprio delas é o que a
+  // carga **não** leva — nem material, nem senha, nem envelope cifrado (ADR-0032): o certificado é
+  // resolvido pelo banco **sob este mesmo contexto**, e é por isso que a ordem "recusa primeiro,
+  // contexto depois" importa aqui mais do que em qualquer outra borda.
+  'apps/worker/src/tarefas/emissao-em-lote.ts',
+  'apps/worker/src/tarefas/conferencia-bancaria.ts',
 ].sort();
 
 /** A variável de sessão que as políticas de `negocio` consultam. */
@@ -839,7 +863,7 @@ const CHAMADA_EXCEDENTE_AO_ESCRITOR = [
 
 describe('CT-624 — o escritor de contexto é único por borda, e as duas listas vizinhas também', () => {
   it(
-    'CT-624 — os arquivos de produção que chamam `executarCom` são EXATAMENTE as quatro bordas',
+    'CT-624 — os arquivos de produção que chamam `executarCom` são EXATAMENTE as seis bordas',
     async () => {
       const varredura = await varrerFontesDaRegua(CHAMADA_AO_ESCRITOR_DE_CONTEXTO);
 
@@ -864,7 +888,14 @@ describe('CT-624 — o escritor de contexto é único por borda, e as duas lista
       // ato alcança dado de negócio, e o contexto é estabelecido **uma vez**, na entrada. A
       // asserção **não foi afrouxada** pela mesma razão do parágrafo acima: contagem EXATA ao lado
       // da igualdade de lista, e um quinto chamador reprova nominalmente.
-      expect(arquivosDe(varredura.ocorrencias)).toHaveLength(4);
+      //
+      // SUT_IS_CORRECT_BECAUSE: a **T16** da fatia `emissao-e-conciliacao` acrescenta a quinta e a
+      // sexta — as duas bordas da cobrança bancária, que são trabalho enfileirado e estabelecem o
+      // contexto pela ADR-0024 exatamente como as duas irmãs de fila. A razão de cada uma está
+      // escrita em `BORDAS_QUE_ESCREVEM_CONTEXTO`. A asserção **não foi afrouxada**: continua sendo
+      // contagem EXATA ao lado da igualdade de lista acima, e um sétimo chamador reprova
+      // nominalmente.
+      expect(arquivosDe(varredura.ocorrencias)).toHaveLength(6);
     },
     LIMITE_DO_CASO_MS,
   );

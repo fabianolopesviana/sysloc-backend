@@ -44,8 +44,23 @@
  * |       |        | lista fechada; e a marca de retirada é nula ou cadeia ISO-8601. Nenhum campo
  * |       |        | numérico chega como texto. |
  *
+ * | CA-07 | CT-945 | `GET /v1/cobrancas/{codigo}/boleto` **consta** do documento publicado — e o caso
+ * | CA-09 |        | reprova nomeando o caminho se ela desaparecer (ADR-0028) —, declara
+ * |       |        | `application/pdf` como **único** tipo de mídia do sucesso e o **nome sugerido**
+ * |       |        | do arquivo em `content-disposition`, **não** declara forma do corpo de sucesso
+ * |       |        | (o esquema é exatamente `{ type: 'string', format: 'binary' }`), e os códigos de
+ * |       |        | erro que ela publica, status a status, pertencem ao **enum fechado de oito** da
+ * |       |        | ADR-0017. |
+ *
  * Rastreabilidade: `CA-16 → CT-322 (RN-13)`, `CA-16 → CT-324 (RN-13)`, `CA-16 → CT-327 (RN-16)`,
  * `CA-16 → CT-328 (RN-16)`.
+ * Acrescida pela T17 da fatia `emissao-e-conciliacao`: `CA-07 → CT-945 (RN-16)`,
+ * `CA-09 → CT-945 (RN-16)`.
+ *
+ * ⚠️ **O `CT-945` NÃO entra na tabela do `CT-327`, e a ausência não é omissão**: aquela tabela
+ * compara corpo **derivado de esquema**, e esta rota devolve bytes — não há `esquemaPublicado` com
+ * que comparar. `ROTAS_DESCRITAS` continua em **46** por essa razão, e o `CT-945` é justamente a
+ * prova que a ADR-0028 exige no lugar da comparação que não existe.
  *
  * ===========================================================================
  * Por que estes quatro casos moram no MESMO arquivo
@@ -174,6 +189,7 @@ import { CAMINHO_DA_SESSAO } from '../src/autenticacao/sessao.controller.ts';
 import { CAMINHO_DOS_FIADORES } from '../src/cadastros/fiador.controller.ts';
 import { CAMINHO_DOS_LOCADORES } from '../src/cadastros/locador.controller.ts';
 import { CAMINHO_DOS_LOCATARIOS } from '../src/cadastros/locatario.controller.ts';
+import { CAMINHO_DAS_COBRANCAS } from '../src/cobrancas/cobranca.controller.ts';
 import { esquemaPublicado } from '../src/comum/esquema-publicado.ts';
 import { ENDERECO_DE_ESCUTA, PREFIXO_DE_VERSAO } from '../src/configuracao/ambiente.ts';
 import { CAMINHO_DOS_CONTRATOS } from '../src/contratos/contrato.controller.ts';
@@ -326,6 +342,59 @@ const ROTAS_DA_CONFIRMACAO = 1;
  * afrouxando a âncora em vez de acrescentar a tabela que falta.
  */
 const ROTAS_DE_ESCRITA = 12;
+
+/**
+ * O caminho da rota de **bytes** como o documento OpenAPI o escreve — com `{codigo}`, e não
+ * `:codigo`.
+ *
+ * Composto do dono do segmento (`CAMINHO_DAS_COBRANCAS`), e não escrito como cadeia crua: um
+ * segmento que mudasse no controlador sem passar por esta linha faria o caso procurar um caminho que
+ * a aplicação não publica — e reprovar dizendo *"a rota sumiu do documento"* quando ela só mudou de
+ * nome, que é nomear o defeito errado.
+ */
+const CAMINHO_DO_BOLETO_NO_DOCUMENTO = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}/{codigo}/boleto`;
+
+/** O tipo de mídia que a rota de bytes declara — literal, e nunca lido do controlador. */
+const TIPO_DE_MIDIA_DO_BOLETO = 'application/pdf';
+
+/** O status da única resposta de sucesso com conteúdo — `200`, e não o `201` de criação. */
+const STATUS_DE_SUCESSO_DO_BOLETO = '200';
+
+/** O cabeçalho por onde o nome sugerido do arquivo é publicado. */
+const CABECALHO_DA_DISPOSICAO = 'content-disposition';
+
+/**
+ * A forma do nome sugerido, tal como o documento a descreve.
+ *
+ * Literal, e **não** importada do controlador: é o que o consumidor lê no documento publicado, e
+ * derivá-la da constante que a produz faria a asserção concordar consigo mesma.
+ */
+const DISPOSICAO_DECLARADA_NO_DOCUMENTO = 'attachment; filename="COB-2026-0000001.pdf"';
+
+/**
+ * Os códigos de erro que a rota de bytes declara, status a status — escritos à mão.
+ *
+ * Eles são **contrato**: é o que o cliente do documento programa para tratar. Derivá-los dos
+ * decoradores do controlador faria a asserção concordar com o SUT, e trocar um código lá deixaria de
+ * reprovar caso algum. Cada um pertence ao enum fechado da ADR-0017, e a asserção que prova essa
+ * pertinência é separada desta — as duas são direções diferentes.
+ */
+const CODIGOS_DE_ERRO_DA_ROTA_DE_BYTES: Readonly<Record<string, readonly string[]>> = {
+  '401': [CodigoErro.NAO_AUTENTICADO],
+  '403': [CodigoErro.ACESSO_NEGADO],
+  '404': [CodigoErro.RECURSO_NAO_ENCONTRADO],
+  '422': [CodigoErro.CAMPO_INVALIDO],
+  '503': [CodigoErro.SERVICO_INDISPONIVEL],
+};
+
+/**
+ * Quantos códigos o enum fechado da ADR-0017 tem — **oito**, e ele não cresce.
+ *
+ * Escrito à mão ao lado da leitura do enum, e é o par que discrimina: sem ele, a varredura de
+ * pertinência abaixo aprovaria um código novo pelo simples fato de alguém o ter acrescentado ao
+ * `CodigoErro`. Acrescentar código é decisão de contrato com efeito no handoff, e reprova aqui.
+ */
+const CODIGOS_DO_ENUM_FECHADO = 8;
 
 /** A pessoa que age: Admin da empresa A, cuja matriz do perfil é o catálogo inteiro. */
 const QUEM_AGE = pessoaSemeada('admin.a@exemplo.com.br');
@@ -667,6 +736,113 @@ describe('o contrato publicado das 46 rotas do domínio (T11)', () => {
     },
     LIMITE_CASO_MS,
   );
+
+  it(
+    'CT-945 — a rota de bytes CONSTA do documento publicado, declarando mídia e nome de arquivo, sem forma do corpo de sucesso',
+    async () => {
+      const documento = await documentoPublicado();
+      const caminhos = Object.keys(
+        (documento.paths ?? {}) as Record<string, Record<string, unknown>>,
+      );
+
+      // -----------------------------------------------------------------------------------------
+      // A âncora ANTIVÁCUO, antes de tudo: o documento descreve caminhos
+      // -----------------------------------------------------------------------------------------
+      //
+      // Sem ela, um documento **vazio** faria a asserção de baixo reprovar dizendo "a rota sumiu" —
+      // que nomeia o defeito errado —, e as duas negativas do fim do caso passariam por vacuidade.
+      // O piso é a superfície que o `CT-327` já percorre, e não um `> 0`.
+      expect(caminhos.length).toBeGreaterThanOrEqual(ROTAS_DESCRITAS);
+
+      // -----------------------------------------------------------------------------------------
+      // O CAMINHO CONSTA — e é esta linha que a ADR-0028 nomeia como parte da decisão
+      // -----------------------------------------------------------------------------------------
+      //
+      // A `Decision` da ADR-0028 exige *"prova por caso que reprova se a rota desaparecer do
+      // documento publicado"*: é a única deste conjunto que nomeia o caso de teste. A falha nomeia o
+      // caminho ausente por extenso, e não um booleano.
+      expect(
+        caminhos.filter((caminho) => caminho === CAMINHO_DO_BOLETO_NO_DOCUMENTO),
+        `o documento publicado não descreve mais ${CAMINHO_DO_BOLETO_NO_DOCUMENTO}`,
+      ).toEqual([CAMINHO_DO_BOLETO_NO_DOCUMENTO]);
+
+      const operacao = operacaoPublicada(documento, CAMINHO_DO_BOLETO_NO_DOCUMENTO, 'get');
+      const respostas = operacao.responses ?? {};
+
+      // -----------------------------------------------------------------------------------------
+      // O SUCESSO declara MÍDIA e NOME DE ARQUIVO — e NÃO declara forma do corpo
+      // -----------------------------------------------------------------------------------------
+      //
+      // Há exatamente **uma** resposta `2xx` com conteúdo, e o tipo de mídia dela é afirmado por
+      // igualdade de arranjo: um `application/json` que aparecesse ao lado do PDF — a forma de a
+      // rota deixar de ser de bytes sem sair do documento — reprova aqui, e um `toContain` o
+      // aprovaria.
+      const sucessos = Object.entries(respostas).filter(
+        ([codigo, corpo]) => codigo.startsWith('2') && corpo.content !== undefined,
+      );
+
+      expect(sucessos.map(([codigo]) => codigo)).toEqual([STATUS_DE_SUCESSO_DO_BOLETO]);
+
+      const sucesso = sucessos[0]?.[1];
+
+      expect(Object.keys(sucesso?.content ?? {})).toEqual([TIPO_DE_MIDIA_DO_BOLETO]);
+
+      // ⚠️ `format: 'binary'` **não** é declaração de forma — é o idioma que o OpenAPI tem para
+      // dizer *"isto é uma sequência de bytes opaca"*, isto é, a declaração da AUSÊNCIA de forma. O
+      // que a ADR-0028 proíbe é declarar a ESTRUTURA do sucesso, e a igualdade de objeto abaixo é o
+      // que separa as duas coisas: um `properties`, um `required` ou um `$ref` acrescentado aqui
+      // reprova, porque o objeto inteiro deixa de ser este.
+      expect(
+        sucesso?.content?.[TIPO_DE_MIDIA_DO_BOLETO]?.schema,
+        'a rota de bytes passou a declarar a FORMA do corpo de sucesso (ADR-0028)',
+      ).toEqual({ type: 'string', format: 'binary' });
+
+      // O nome sugerido do arquivo é publicado como CABEÇALHO declarado, e a descrição dele carrega
+      // a forma `attachment; filename="…"` — é ela que diz ao consumidor como o navegador vai
+      // batizar o download. Sem esta metade, "a rota está no documento" seria satisfeito por uma
+      // declaração que não diz nada sobre o nome.
+      const cabecalhos = sucesso?.headers ?? {};
+
+      expect(Object.keys(cabecalhos)).toEqual([CABECALHO_DA_DISPOSICAO]);
+      expect(cabecalhos[CABECALHO_DA_DISPOSICAO]?.description).toBe(
+        DISPOSICAO_DECLARADA_NO_DOCUMENTO,
+      );
+
+      // -----------------------------------------------------------------------------------------
+      // O ENVELOPE DE ERRO é o das demais rotas, e os códigos são do ENUM FECHADO DE OITO
+      // -----------------------------------------------------------------------------------------
+      //
+      // A ADR-0028 declara que a rota de bytes permanece no contrato *"com o mesmo envelope de erro"*,
+      // e a ADR-0017 fecha o enum: a asserção compara os códigos declarados, status a status, por
+      // igualdade de OBJETO — de modo que um código a mais, um a menos, ou um status que sumisse são
+      // as três direções que ela pega numa comparação só.
+      const codigosPorStatus = Object.fromEntries(
+        Object.entries(respostas)
+          .filter(([codigo]) => !codigo.startsWith('2'))
+          .map(([codigo, corpo]) => [
+            codigo,
+            (corpo.content?.['application/json']?.schema as EsquemaDeErroPublicado | undefined)
+              ?.properties?.codigo?.enum,
+          ]),
+      );
+
+      expect(codigosPorStatus).toEqual(CODIGOS_DE_ERRO_DA_ROTA_DE_BYTES);
+
+      // E a rede: **todo** código declarado pertence ao enum fechado da ADR-0017. Sem ela, a
+      // igualdade acima aprovaria um código inventado desde que alguém o escrevesse nos dois lados —
+      // que é exatamente o modo de falha de um esperado escrito à mão. A lista de oito é derivada do
+      // enum de `@sysloc/shared`, e a falha NOMEIA o intruso.
+      const declarados = Object.values(codigosPorStatus).flatMap((codigos) => codigos ?? []);
+      const fechado = new Set<string>(Object.values(CodigoErro));
+
+      expect(fechado.size).toBe(CODIGOS_DO_ENUM_FECHADO);
+      expect(
+        declarados.filter((codigo) => !fechado.has(codigo)),
+        'a rota de bytes declara código de erro fora do enum fechado da ADR-0017',
+      ).toEqual([]);
+    },
+    LIMITE_CASO_MS,
+  );
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -878,6 +1054,44 @@ async function documentoPublicado(): Promise<Record<string, unknown>> {
   }
 
   return resposta.corpo as Record<string, unknown>;
+}
+
+/** O recorte do esquema de erro publicado que o `CT-945` lê — o enum de códigos, e nada mais. */
+interface EsquemaDeErroPublicado {
+  readonly properties?: { readonly codigo?: { readonly enum?: readonly string[] } };
+}
+
+/** Uma operação do documento, no recorte que o `CT-945` observa dela. */
+interface OperacaoPublicada {
+  readonly responses?: Record<
+    string,
+    {
+      readonly content?: Record<string, { readonly schema?: unknown }>;
+      readonly headers?: Record<string, { readonly description?: string }>;
+    }
+  >;
+}
+
+/**
+ * A operação de um caminho do documento publicado.
+ *
+ * Ausência **levanta**, e não devolve `undefined`: uma rota que sumisse do documento faria toda
+ * leitura abaixo virar `undefined`, e `undefined` igual a `undefined` passaria em silêncio — que é o
+ * modo de falha que a ADR-0028 nomeia ao exigir *"caso que reprova se a rota desaparecer"*.
+ */
+function operacaoPublicada(
+  documento: Record<string, unknown>,
+  caminho: string,
+  metodo: string,
+): OperacaoPublicada {
+  const paths = documento.paths as Record<string, Record<string, unknown>> | undefined;
+  const operacao = paths?.[caminho]?.[metodo] as OperacaoPublicada | undefined;
+
+  if (operacao === undefined) {
+    throw new Error(`o documento não descreve ${metodo.toUpperCase()} ${caminho}`);
+  }
+
+  return operacao;
 }
 
 /**

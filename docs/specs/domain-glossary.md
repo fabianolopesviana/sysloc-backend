@@ -17,8 +17,20 @@ Número único e contínuo **em todo o SaaS** — não de uma **Empresa** — qu
 _Evitar_: seu número, sequencial do boleto, numeração, contador de emissão, contador da série, contador da empresa
 
 **Identificador perante o provedor**:
-A cadeia de 18 posições que identifica uma cobrança junto ao **Provedor** — 6 de prefixo de competência mais 12 do **Contador sequencial** preenchido à esquerda. É a composição enviada, nunca o valor incremental sozinho, e é por ela que a notificação recebida do provedor descobre a que **Empresa** pertence.
-_Evitar_: nosso número, seu número, nosso numero, identificador do boleto, número do título
+A cadeia de 18 posições que identifica uma cobrança junto ao **Provedor** — 6 de prefixo de competência mais 12 do **Contador sequencial** preenchido à esquerda. É a composição que **o produto** envia, nunca o valor incremental sozinho, e é por ela que a notificação recebida do provedor descobre a que **Empresa** pertence. Não confundir com o **Número do título no provedor**, que é o identificador que vem no sentido contrário.
+_Evitar_: nosso número, seu número, nosso numero, identificador do boleto
+
+**Número do título no provedor**:
+O identificador que **o Provedor atribui** a um boleto emitido e devolve ao produto — é dele, não do produto, e o produto apenas o guarda e o publica junto da linha digitável e do código de barras. Chega como inteiro no dialeto do provedor e é coagido para cadeia na fronteira do adaptador.
+_Evitar_: nosso número, nosso numero, número do boleto, identificador do boleto
+
+**Revogação de boleto**:
+O ato que torna impagável um boleto vivo junto ao **Provedor**, a pedido do produto ou por decisão do próprio provedor. Não cancela a **Cobrança** nem apaga fato nenhum: a cobrança volta a ser uma cobrança sem boleto, e pode ganhar outro. Não confundir com **Retirada de circulação**, que é visibilidade de cadastro e não alcança fato financeiro.
+_Evitar_: baixa, solicitar baixa, retirada de circulação do boleto, cancelamento do boleto, estorno do boleto
+
+**Liquidação**:
+O ato que registra que uma **Cobrança em aberto** foi paga, gravando data e valor recebidos junto dos **Carimbos** da configuração vigente. Vale por qualquer caminho de entrada — informada por quem opera ou descoberta junto ao **Provedor** —, e é reversível apenas pelo estorno que o provedor informa.
+_Evitar_: baixa, dar baixa, quitação, conciliação
 
 **Certificado do provedor**:
 O material que identifica uma **Empresa** perante o **Provedor**, entregue pelo **Admin Empresa** junto da senha que o abre. Toda empresa que cobra tem o seu: não existe identidade de reserva nem compartilhada. O que o produto publica dele é titular, validade, impressão digital, quem o registrou e desde quando — nunca o material nem a senha.
@@ -219,6 +231,7 @@ _Evitar_: exceção, desvio aceito, diff conhecido, waiver
 - Toda **Cobrança** tem exatamente uma **Natureza da cobrança**, uma **Competência** e uma **Referência**.
 - A **Ativação de contrato** produz zero ou mais **Cobranças**; o **Cancelamento de contrato** cancela as que estiverem em aberto.
 - Todo boleto emitido consome exatamente um valor do **Contador sequencial**, e recebe um **Identificador perante o provedor** que o compõe com o prefixo de competência.
+- Todo boleto emitido tem **dois** identificadores, em sentidos opostos: o **Identificador perante o provedor**, que o produto compõe e envia, e o **Número do título no provedor**, que o provedor atribui e devolve. Ambos são guardados; só o segundo é publicado.
 - Uma **Empresa** tem no máximo um **Certificado do provedor** valendo por vez; registrar um novo substitui o anterior, cujo **Segredo operável** deixa de existir no mesmo ato.
 - Uma **Empresa** sem **Certificado do provedor** não opera contra o **Provedor** — e a recusa a nomeia, em vez de recorrer à identidade de outra.
 - O material e a senha de um **Certificado do provedor** são um **Segredo operável**; a **Senha provisória** e o **Portador de confirmação** não são.
@@ -249,6 +262,9 @@ _Evitar_: exceção, desvio aceito, diff conhecido, waiver
 
 ## Ambiguidades resolvidas
 
+- **"Baixa" nomeava dois atos opostos.** No sistema antigo, *solicitar baixa* é **pedir a revogação** de um boleto vivo — o oposto de receber; no discovery e na fala corrente, "baixa" é **receber**. Resolvido no challenge de `emissao-e-conciliacao` (2026-08-16): a palavra não se usa. O ato que torna o boleto impagável é a **Revogação de boleto**; o ato que registra o pagamento é a **Liquidação**. A chave de permissão `ACAO:solicitar_baixa_de_boleto` preserva o nome histórico — é do catálogo fechado e persistida —, e governa a **revogação**.
+- **"Retirada de circulação" foi reusada para o boleto, e não podia.** Resolvido no mesmo challenge: o termo é do **cadastro** (visibilidade em listagens e escolhas) e esta mesma seção já registrava que ele *"não alcança a cobrança: é operação sobre cadastro, não sobre fato financeiro"*. O ato sobre o instrumento de pagamento é a **Revogação de boleto**, com símbolos, rota e tipo de evento próprios. Dois conceitos sem parentesco não compartilham nome.
+- **"Número do título" estava listado como alias a evitar do Identificador perante o provedor, e passou a nomear conceito próprio.** Resolvido no challenge de `emissao-e-conciliacao` (2026-08-16): o produto guarda **dois** identificadores de sentidos opostos, e a lista de evitados do primeiro tratava o segundo como se fosse ele. O que o produto compõe e envia é o **Identificador perante o provedor**; o que o provedor atribui e devolve é o **Número do título no provedor**, publicado como `numeroDoTituloNoProvedor`. O alias "nosso número" continua proibido para **os dois** — é o vocabulário do provedor que a ADR-0001 barra —, e a coluna física `nosso_numero`, herdada da migração `0009`, permanece com o nome antigo por débito declarado.
 - "Seu número" era usado tanto para o **Contador sequencial** quanto para o identificador completo enviado ao provedor (prefixo + contador). Resolvido: são conceitos distintos — o contador é o valor incremental; a composição enviada é o **Identificador perante o provedor**, que agora tem termo próprio.
 - **"Contador sequencial" foi definido como *"mantido pela imobiliária"*, e isso era falso.** Resolvido no challenge de `fundacao-bancaria` (2026-08-14): o escopo dele é **o SaaS inteiro**. A definição antiga vinha de um sistema que atendia uma empresa só, onde os dois escopos coincidiam; com duas imobiliárias emitindo no mesmo mês, um contador por empresa faz dois boletos disputarem o mesmo número. A regra geral que reconcilia os três contadores do produto é que **cada série declara o próprio escopo** — duas por `(empresa, ano)`, uma pelo SaaS —, e ela está fixada na **ADR-0033** (2026-08-14), que superseded a ADR-0015 por esta exata razão: a `Decision` de lá abria com *"todo contador sequencial deste produto é único por empresa"*, quantificador universal que este contador falsifica.
 - "Certificado" era usado tanto para o material que a empresa entrega ao produto quanto para o registro que o produto publica sobre ele. Resolvido: o termo é **Certificado do provedor** e nomeia o registro; o material e a senha dentro dele são o **Segredo operável**, e é essa metade que nunca volta.

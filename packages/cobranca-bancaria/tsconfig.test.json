@@ -13,14 +13,24 @@
     // falsificação alcançar de fato o que executa. Só é aceito com emissão desligada, e aqui ela
     // está.
     "allowImportingTsExtensions": true,
-    // `rootDir` volta à raiz do pacote porque `test/` está fora de `src/`. A suíte desta task lê os
-    // próprios fontes de `src/` como TEXTO — é asserção estática sobre a superfície declarada, e
-    // interface de TypeScript não existe em execução para ser introspectada de outro modo.
+    // `rootDir` precisa alcançar `test/`, que está fora de `src/` — a suíte de vocabulário lê os
+    // próprios fontes de `src/` como TEXTO, porque interface de TypeScript não existe em execução
+    // para ser introspectada de outro modo.
+    //
+    // ⚠️ EMENDA DA T10 (fatia ii, 2026-08-17): ele era `"."`, a raiz do pacote, e passou a `"../.."`,
+    // a raiz do repositório. A razão é a mesma que `apps/worker/tsconfig.test.json` e
+    // `apps/api/tsconfig.test.json` já escrevem: a verificação do percurso do lote importa os
+    // acessórios de instância efêmera de `packages/db/test/` (que por sua vez alcançam
+    // `packages/shared/test/`), e eles ficam fora deste pacote — com `"."`, o `tsc` recusa com
+    // `TS6059: … is not under 'rootDir'`. Subir a raiz fecha a classe inteira: qualquer acessório de
+    // teste de qualquer pacote passa a ser alcançável, em vez de a próxima suíte reencontrar o mesmo
+    // muro. **Nenhuma verificação sai com isso** — a emissão continua desligada logo acima, e é ela
+    // que torna a mudança inócua para o artefato.
     "composite": false,
     "declaration": false,
     "declarationMap": false,
     "sourceMap": false,
-    "rootDir": "."
+    "rootDir": "../.."
   },
   "include": ["src/**/*.ts", "test/**/*.ts"]
 }

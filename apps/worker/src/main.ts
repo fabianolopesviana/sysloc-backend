@@ -54,10 +54,15 @@
  * A composição raiz escolhe as portas — e é a ÚNICA que as escolhe
  * ---------------------------------------------------------------------------
  *
- * É daqui que saem a reserva de conexões e o adaptador de produção de e-mail, e é por **parâmetro**
- * que eles chegam à borda do trabalho (ADR-0025). A verificação entrega o capturador pelo mesmo
- * parâmetro, e é isso que a torna incapaz de alcançar rede: não existe bandeira, variável de
- * ambiente ou ramo que escolha entre as duas implementações — a escolha é de quem compõe.
+ * É daqui que saem a reserva de conexões, o adaptador de produção de e-mail, o **adaptador do
+ * provedor bancário** e a **guarda dos bytes do boleto**, e é por **parâmetro** que eles chegam à
+ * borda do trabalho (ADR-0025). A verificação entrega os dublês pelos mesmos parâmetros, e é isso que
+ * a torna incapaz de alcançar rede: não existe bandeira, variável de ambiente ou ramo que escolha
+ * entre as implementações — a escolha é de quem compõe.
+ *
+ * ⚠️ **A chave que abre o envelope do certificado também sai daqui**, e é a mesma disciplina: as duas
+ * bordas bancárias a recebem por parâmetro, e nenhuma delas lê `process.env`. É o que mantém a
+ * conferência de partida como a **única** fonte da chave neste processo.
  *
  * ---------------------------------------------------------------------------
  * Por que a partida está atrás de um guarda
@@ -67,7 +72,10 @@
  * como programa. Importá-lo não liga consumidor nenhum.
  */
 
+import { accessSync, constants, statSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { criarAdaptadorSicoob, criarGuardaDeBoletos } from '@sysloc/cobranca-bancaria';
 import { type AcessoAoBanco, abrirAcessoAoBanco } from '@sysloc/db';
 import { criarAdaptadorSmtp } from '@sysloc/regua';
 import {
@@ -79,8 +87,10 @@ import {
   type NivelDeLog,
 } from '@sysloc/shared';
 import { conectarFila, type DesfechoDoEncerramento, type Fila } from './fila.js';
+import { processarConferenciaBancaria } from './tarefas/conferencia-bancaria.js';
 import { processarConfirmacaoDeEmail } from './tarefas/confirmacao-de-email.js';
 import { processarEco } from './tarefas/eco.js';
+import { processarEmissaoEmLote } from './tarefas/emissao-em-lote.js';
 import { processarReguaDeCobranca } from './tarefas/regua.js';
 
 /** Sinais pelos quais o supervisor pede o encerramento. */
@@ -127,6 +137,48 @@ export interface Ambiente {
    * ({@link ehBaseDeConfirmacaoValida}): base sem esquema tem falha idêntica, e igualmente muda.
    */
   readonly urlBaseDaConfirmacao: string;
+  /**
+   * A chave que abre o envelope do certificado do provedor, de `CHAVE_DE_CIFRA_DO_CERTIFICADO`.
+   *
+   * **É o segredo mais forte deste processo**, e ele passa a existir aqui porque a superfície que
+   * pode decifrar o material do certificado passa de **um processo para dois** — o trade-off
+   * declarado da §11.6 da `tech_spec.md`, aceito porque a alternativa (transportar o material na
+   * carga da tarefa) é o vetor exato do achado crítico da fase anterior. O `EnvironmentFile` já é
+   * **compartilhado** entre as duas unidades systemd: este processo já **recebia** a chave
+   * fisicamente; o que faltava era consumo declarado.
+   *
+   * Ela chega **já decodificada**, exatamente como do lado do serviço de aplicação: é assim que a
+   * cifra a consome, e a conferência de partida precisou decodificá-la para medir os 32 bytes — uma
+   * segunda decodificação na borda seria uma segunda declaração da codificação.
+   *
+   * Ela não é registrada, não viaja em `argv`, não entra em carga de tarefa e não é ecoada em
+   * mensagem de erro: a recusa de partida nomeia a **variável e o tamanho exigido**. Trocá-la torna
+   * ilegível todo envelope já gravado, e é por isso que ela vive em `EnvironmentFile` 0600.
+   */
+  readonly chaveDeCifraDoCertificado: Buffer;
+  /**
+   * O endereço do provedor bancário, de `ENDERECO_DO_PROVEDOR_BANCARIO`.
+   *
+   * Ele **não é segredo** — é o endereço público de uma instituição —, e mora aqui porque é esta
+   * composição que constrói o adaptador a partir dele (ADR-0025: o pacote de domínio não lê
+   * `process.env`). Ele vem do ambiente, **nunca** da carga da tarefa: é essa origem que impede uma
+   * entrada externa de decidir para onde o produto conecta apresentando o certificado de uma empresa.
+   *
+   * A **forma** não é conferida na leitura, e a ausência é decisão — o precedente é o da `SMTP_URL`:
+   * quem recusa o endereço que não serve é `resolverDestino`, dentro de `criarAdaptadorSicoob`, num
+   * lugar só, na **construção** do adaptador. É a mesma divisão que o serviço de aplicação já faz, e
+   * com a mesma razão escrita lá.
+   */
+  readonly enderecoDoProvedorBancario: string;
+  /**
+   * O diretório onde os bytes do boleto são guardados, de `DIRETORIO_DOS_BOLETOS`.
+   *
+   * Ele **não é segredo** — é um caminho de sistema de arquivos —, e tem campo aqui porque **este**
+   * processo grava nele: é o percurso do lote que pede à guarda para gravar os bytes que o provedor
+   * devolveu. Ele chega **como veio**, sem resolução: quem o resolve, uma vez, é
+   * `criarGuardaDeBoletos`.
+   */
+  readonly diretorioDosBoletos: string;
 }
 
 /**
@@ -179,26 +231,139 @@ function ehBaseDeConfirmacaoValida(valor: string): boolean {
 }
 
 /**
+ * Comprimento **exato**, em bytes, da chave que cifra o segredo do certificado do provedor.
+ *
+ * É o que o AES-256-GCM exige, e por isso o piso e o teto são o mesmo número: uma chave de 31 ou de
+ * 33 bytes não é "uma chave fraca", é uma chave que o algoritmo **não aceita**, e o processo que
+ * subisse com ela falharia na primeira tarefa de emissão — depois de o Admin ter aberto o lote.
+ */
+const BYTES_DA_CHAVE_DE_CIFRA = 32;
+
+/** A exigência que a recusa da chave publica — nomeia a variável e o tamanho, jamais o valor. */
+const EXIGENCIA_DA_CHAVE_DE_CIFRA = `deve ser exatamente ${BYTES_DA_CHAVE_DE_CIFRA} bytes em base64`;
+
+// DÉBITO COM GATILHO — D51 · F4/T16 · registrado 2026-08-18
+// (NÃO é uma `DECISÃO FECHADA`: ele agenda uma convergência, não protege o código abaixo.)
+// O QUÊ: {@link ehChaveDeCifraAceitavel} e {@link ehDiretorioGravavel} — com as três constantes que
+//        as acompanham — existem DUAS vezes: aqui e em `apps/api/src/configuracao/ambiente.ts`. Os
+//        dois processos sobem do MESMO `EnvironmentFile`, e é exatamente o caso que o cabeçalho de
+//        `packages/shared/src/ambiente.ts` nomeia: com a regra escrita duas vezes, endurecer uma faz
+//        um processo subir e o outro recusar o mesmo arquivo — e a divergência aparece **no boot**,
+//        o momento mais caro para descobri-la.
+// QUANDO FECHA: a primeira task autorizada a abrir `apps/api/src/configuracao/ambiente.ts` por outra
+//        razão, ou o TERCEIRO processo que exigir qualquer uma das duas variáveis. Ali as duas
+//        conferências sobem para `packages/shared/src/ambiente.ts`, que já é a casa declarada das
+//        regras de forma compartilhadas (é de lá que vêm `ehCadeiaDeFilaValida` e `NIVEIS_DE_LOG`).
+// POR QUE NÃO AGORA: `apps/api/src/configuracao/ambiente.ts` e `packages/shared/src/` estão fora da
+//        lista de arquivos da T16, e mover a definição alteraria a composição raiz do processo que
+//        atende requisição — área crítica de `secrets/config` — por uma task cujo escopo declarado é
+//        o processo de trabalho. O que a T16 podia fazer sem alargar escopo era não deixar o
+//        processo de trabalho SEM a conferência, que é o que a §6.1 da `tech_spec.md` cobra dele
+//        nominalmente ("conferência de partida (api **e** worker)").
+// ÍNDICE: docs/specs/features/emissao-e-conciliacao/v1/_run/run-report.md §2, D51
+
+/**
+ * A chave decodifica para **exatamente** 32 bytes, e o texto recebido é base64 canônico?
+ *
+ * As duas metades são uma conferência só, de propósito: `Buffer.from(valor, 'base64')` **ignora em
+ * silêncio** todo caractere fora do alfabeto, de modo que uma chave copiada com um espaço no meio
+ * decodificaria para outros bytes sem que nada acusasse — e o acervo cifrado com ela ficaria
+ * ilegível no dia em que alguém "consertasse" o valor. A volta (`toString('base64')`) é o que torna
+ * a decodificação **reversível**, e portanto o que faz o valor do arquivo de ambiente e a chave em
+ * uso serem o mesmo fato.
+ */
+function ehChaveDeCifraAceitavel(valor: string): boolean {
+  const bytes = Buffer.from(valor, 'base64');
+
+  return bytes.length === BYTES_DA_CHAVE_DE_CIFRA && bytes.toString('base64') === valor;
+}
+
+/** A exigência que a recusa do diretório dos boletos publica — nomeia a forma, jamais o valor. */
+const EXIGENCIA_DO_DIRETORIO_DOS_BOLETOS = 'deve ser o caminho absoluto de um diretório gravável';
+
+/**
+ * O caminho é absoluto **e** aponta para um diretório em que este processo consegue escrever?
+ *
+ * ---------------------------------------------------------------------------
+ * Por que ESTE processo confere, e não só o serviço de aplicação
+ * ---------------------------------------------------------------------------
+ *
+ * É aqui que a gravação de fato acontece: o percurso do lote pede à guarda para gravar os bytes que o
+ * provedor devolveu, uma vez por cobrança. Sem a conferência de partida, o processo sobe, o provedor
+ * **emite o título** e a gravação falha depois — fica um boleto vivo no banco cujo documento o
+ * produto não tem, que é exatamente o estado que a CA-08 existe para rebuscar. Recusar na partida põe
+ * o custo no operador, na instalação, onde ele é barato. A §6.1 da `tech_spec.md` fixa a conferência
+ * nos **dois** processos, nominalmente.
+ *
+ * As duas metades são UMA conferência só, pela mesma razão de {@link ehChaveDeCifraAceitavel}:
+ * separá-las produziria duas recusas para o mesmo defeito operacional — *o produto não tem onde
+ * gravar boleto*. O caminho **relativo** é recusado antes de o disco ser tocado, e a ordem é
+ * conteúdo: um caminho relativo é resolvido contra o diretório de trabalho do processo, de modo que
+ * ele passaria a conferência de escrita **e** apontaria para lugares diferentes conforme quem
+ * iniciasse o serviço.
+ *
+ * A leitura é de **permissão**, não de conteúdo: nada é criado, nada é escrito e nada é listado. Quem
+ * confere o **dono** e o **modo** na máquina que atende a operação é
+ * `deploy/scripts/cobranca-bancaria/verificar-guarda-de-boletos.sh`.
+ */
+function ehDiretorioGravavel(valor: string): boolean {
+  if (!isAbsolute(valor)) {
+    return false;
+  }
+
+  try {
+    // As duas perguntas na ordem em que o defeito aparece: *é diretório?* antes de *dá para
+    // escrever?*. Um arquivo comum gravável satisfaria a segunda sozinha, e o primeiro boleto
+    // falharia ao tentar criar o intermediário dentro dele.
+    if (!statSync(valor).isDirectory()) {
+      return false;
+    }
+
+    accessSync(valor, constants.W_OK);
+  } catch {
+    // A causa concreta — ausente, sem permissão, caminho quebrado — **não** viaja: a mensagem de
+    // partida nomeia a variável e a exigência, e nunca o valor recebido nem o texto do sistema
+    // operacional, que carregaria o caminho dentro dele.
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Lê e valida as variáveis que o processador exige.
  *
- * São **seis** desde a T10 da fatia `documentos-e-confirmacao`, e o crescimento é a natureza do
+ * São **nove** desde a T16 da fatia `emissao-e-conciliacao`, e o crescimento é a natureza do
  * processo mudando: ele deixou de ser um consumidor que só fala com a fila (T6), passou a falar com o
- * **banco** e com um **servidor de e-mail** (T8), e agora **monta um link** para o titular do dado.
+ * **banco** e com um **servidor de e-mail** (T8), passou a **montar um link** para o titular do dado
+ * (T10), e agora **emite boleto e concilia pagamento junto ao provedor bancário** — o que exige a
+ * chave que abre o envelope do certificado, o endereço do provedor e o diretório onde os bytes do
+ * boleto são guardados.
  * O conjunto continua PRÓPRIO deste processo (ele não escuta porta, e `PORT` não entra),
  * mas as **regras** das duas variáveis originais vêm do pacote compartilhado: os dois processos
  * sobem do mesmo `EnvironmentFile`, e duas definições independentes do que é uma severidade ou uma
  * cadeia de fila válida divergiriam em silêncio até um arquivo subir um processo e recusar o outro
  * — no boot.
  *
- * De **três** das quatro novas, o que se exige aqui é **presença e não-vacuidade**, e a divisão é
- * deliberada: a forma da `SMTP_URL` é conferida por `coordenadasDoTransporte` (em `@sysloc/regua`),
- * que a recusa por esquema e por hospedeiro **também na partida**, quando o adaptador é construído.
- * Reimplementar aquela conferência aqui criaria duas definições do que é um transporte utilizável,
+ * O critério que separa *"exigir presença"* de *"exigir forma"* é **onde já se decide o mesmo
+ * fato**, e ele vale para as nove sem exceção. Exigem só presença e não-vacuidade as que têm um
+ * segundo conferidor **na própria partida**: a `SMTP_URL`, recusada por esquema e por hospedeiro em
+ * `coordenadasDoTransporte` (`@sysloc/regua`) quando o adaptador é construído, e a
+ * `ENDERECO_DO_PROVEDOR_BANCARIO`, recusada por `resolverDestino` (`@sysloc/cobranca-bancaria`)
+ * quando o adaptador do provedor é construído — as duas construções acontecem **antes** de qualquer
+ * recurso ser aberto. Reimplementar aquelas conferências aqui criaria duas definições do mesmo fato,
  * e a segunda escaparia da primeira.
  *
- * A **quarta** — a `URL_BASE_DA_CONFIRMACAO` — tem a **forma conferida aqui**
- * ({@link ehBaseDeConfirmacaoValida}), e isso não contraria a divisão acima: ela a completa. O
- * critério é *"onde já se decide o mesmo fato"*, e para a base do link **não há segundo ponto** —
+ * Têm a **forma conferida aqui** as que não têm segundo conferidor: a `URL_BASE_DA_CONFIRMACAO` (ver
+ * abaixo), a `CHAVE_DE_CIFRA_DO_CERTIFICADO` — cuja recusa tardia só apareceria na primeira tarefa de
+ * emissão, depois de o Admin ter aberto o lote — e o `DIRETORIO_DOS_BOLETOS`, cuja recusa tardia é a
+ * pior das três: o provedor já teria **emitido o título** quando a gravação falhasse. A §6.1 da
+ * `tech_spec.md` da fatia `emissao-e-conciliacao` fixa a conferência do diretório nos **dois**
+ * processos, nominalmente.
+ *
+ * A `URL_BASE_DA_CONFIRMACAO` tem a **forma conferida aqui**
+ * ({@link ehBaseDeConfirmacaoValida}), e isso não contraria a divisão acima: ela a ilustra. Para a
+ * base do link **não há segundo ponto** —
  * nenhum construtor a recebe, quem a consome é uma composição pura que concatena, e a `api` deferiu
  * a forma a este processo por escrito. Conferi-la na composição da mensagem seria conferir **por
  * tarefa**, depois de o processo já estar no ar e o operador já ter ido embora; conferi-la aqui é o
@@ -212,8 +377,10 @@ function ehBaseDeConfirmacaoValida(valor: string): boolean {
  * decide abortar é o ponto de entrada, e é isso que torna a validação verificável sem subprocesso.
  *
  * @throws {Error} Quando falta variável exigida ou algum valor é inválido. A mensagem nomeia
- * **todas** as variáveis com problema, e nunca ecoa o valor recebido — a cadeia da fila, a do banco
- * e a do transporte carregam credencial, e a mensagem de falha vai para o journal.
+ * **todas** as variáveis com problema, e nunca ecoa o valor recebido — a cadeia da fila, a do banco,
+ * a do transporte e a chave de cifra carregam segredo, e a mensagem de falha vai para o journal. A
+ * disciplina vale mesmo para o que não é segredo: a regra é do formato da mensagem, e abri-la "só
+ * para esta" cria a exceção que a próxima variável herda.
  */
 export function lerAmbiente(fonte: Readonly<Record<string, string | undefined>>): Ambiente {
   const problemas: string[] = [];
@@ -254,6 +421,25 @@ export function lerAmbiente(fonte: Readonly<Record<string, string | undefined>>)
     problemas.push(`URL_BASE_DA_CONFIRMACAO: ${EXIGENCIA_DA_BASE_DA_CONFIRMACAO}`);
   }
 
+  const chaveDeCifra = fonte.CHAVE_DE_CIFRA_DO_CERTIFICADO?.trim() ?? '';
+  if (chaveDeCifra === '') {
+    problemas.push('CHAVE_DE_CIFRA_DO_CERTIFICADO: ausente');
+  } else if (!ehChaveDeCifraAceitavel(chaveDeCifra)) {
+    problemas.push(`CHAVE_DE_CIFRA_DO_CERTIFICADO: ${EXIGENCIA_DA_CHAVE_DE_CIFRA}`);
+  }
+
+  const enderecoDoProvedor = fonte.ENDERECO_DO_PROVEDOR_BANCARIO?.trim() ?? '';
+  if (enderecoDoProvedor === '') {
+    problemas.push('ENDERECO_DO_PROVEDOR_BANCARIO: ausente');
+  }
+
+  const diretorioDosBoletos = fonte.DIRETORIO_DOS_BOLETOS?.trim() ?? '';
+  if (diretorioDosBoletos === '') {
+    problemas.push('DIRETORIO_DOS_BOLETOS: ausente');
+  } else if (!ehDiretorioGravavel(diretorioDosBoletos)) {
+    problemas.push(`DIRETORIO_DOS_BOLETOS: ${EXIGENCIA_DO_DIRETORIO_DOS_BOLETOS}`);
+  }
+
   if (problemas.length > 0) {
     throw new Error(
       `configuração inválida na partida: ${problemas.join('; ')}. ` +
@@ -268,6 +454,12 @@ export function lerAmbiente(fonte: Readonly<Record<string, string | undefined>>)
     urlDoTransporte: transporte,
     remetenteDoAviso: remetente,
     urlBaseDaConfirmacao,
+    // A transformação para `Buffer` acontece **aqui**, e a posição é conteúdo: a conferência já
+    // decodificou para medir os 32 bytes, e publicar o texto obrigaria cada borda a decodificar de
+    // novo — uma segunda declaração da codificação, livre para divergir da que conferiu.
+    chaveDeCifraDoCertificado: Buffer.from(chaveDeCifra, 'base64'),
+    enderecoDoProvedorBancario: enderecoDoProvedor,
+    diretorioDosBoletos,
   };
 }
 
@@ -390,6 +582,15 @@ async function principal(): Promise<void> {
     urlDoTransporte: ambiente.urlDoTransporte,
     remetente: ambiente.remetenteDoAviso,
   });
+  // Pela MESMA razão, e no mesmo instante: `criarAdaptadorSicoob` recusa a partida quando o endereço
+  // do provedor não serve — é o segundo degrau que a leitura do ambiente deliberadamente não tem —, e
+  // essa recusa precisa acontecer antes de a reserva e a conexão existirem.
+  const provedor = criarAdaptadorSicoob({
+    enderecoDoProvedor: ambiente.enderecoDoProvedorBancario,
+  });
+  // A guarda **resolve** o diretório-base uma vez, aqui, e não o cria nem o confere: quem o confere
+  // é a partida (ver {@link ehDiretorioGravavel}), num lugar só.
+  const guarda = criarGuardaDeBoletos(ambiente.diretorioDosBoletos);
   const banco = abrirAcessoAoBanco({ cadeiaDeConexao: ambiente.cadeiaConexaoBanco });
   const fila = conectarFila(ambiente.cadeiaConexaoFila, logger);
 
@@ -411,6 +612,28 @@ async function principal(): Promise<void> {
           urlBaseDaConfirmacao: ambiente.urlBaseDaConfirmacao,
         }),
     );
+    fila.processar(
+      fila.emissaoEmLote,
+      async (tarefa, registrador) =>
+        await processarEmissaoEmLote(tarefa, registrador, {
+          banco,
+          adaptador: provedor,
+          guarda,
+          // A chave atravessa a borda por PARÂMETRO: o domínio não lê ambiente, e uma segunda
+          // leitura escaparia da conferência de partida.
+          chaveDeCifra: ambiente.chaveDeCifraDoCertificado,
+        }),
+    );
+    fila.processar(
+      fila.conferenciaBancaria,
+      async (tarefa, registrador) =>
+        await processarConferenciaBancaria(tarefa, registrador, {
+          banco,
+          adaptador: provedor,
+          guarda,
+          chaveDeCifra: ambiente.chaveDeCifraDoCertificado,
+        }),
+    );
   } catch (erro) {
     // Devolver o que já foi aberto é o que permite ao processo terminar: uma conexão de pé
     // seguraria o laço de eventos e o processador ficaria vivo sem consumir nada. A falha da
@@ -424,7 +647,15 @@ async function principal(): Promise<void> {
 
   instalarDesligamentoGracioso(fila, banco, logger);
   logger.info(
-    { filas: [fila.eco.name, fila.regua.name, fila.confirmacao.name] },
+    {
+      filas: [
+        fila.eco.name,
+        fila.regua.name,
+        fila.confirmacao.name,
+        fila.emissaoEmLote.name,
+        fila.conferenciaBancaria.name,
+      ],
+    },
     'processador de trabalho no ar',
   );
 }

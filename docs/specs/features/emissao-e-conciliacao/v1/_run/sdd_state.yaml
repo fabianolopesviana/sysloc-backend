@@ -1,0 +1,50 @@
+feature: "emissao-e-conciliacao"
+current_step: task_plan
+variant: backend
+source: "recommended"
+source_note: "O pre-refinement de integracao-bancaria-sicoob/v1 recomenda SDD, um ciclo por fatia (§15.2), e foi o framework invocado."
+steps:
+  prd:
+    status: completed
+    summary: "13 US, 20 CA. Emitir em lote e pontualmente, entregar o boleto, liquidar a partir do provedor, estornar, conferir diariamente e expor o historico bancario por cobranca."
+  tech_alignment:
+    status: completed
+    summary: "6 decisoes tecnicas (D1-D6). Lote no worker com chave de cifra declarada la e carga so com identificadores; uma tarefa por lote; retirada com sondagem de confirmacao antes de emitir; trilha registra efeito, nao tentativa; cache de credencial por processo; bytes do boleto em diretorio provisionado. 1 candidata a ADR."
+  tech_spec:
+    status: completed
+    variant: backend
+    summary: "Porta AdaptadorCobrancaBancaria com 4 operacoes (credencial interna ao adaptador), 7 rotas novas (superficie 92->99 pares / 77->84 manipuladores), 2 filas novas (emissao-em-lote, conferencia-bancaria); tabelas: negocio.evento_bancario, negocio.emissao_em_lote, negocio.item_da_emissao_em_lote, negocio.conferencia_bancaria (migracoes 0017 gerada + 0018 autoral); 37 casos de teste (5 unit, 21 integracao, 4 e2e, 7 seguranca), CT-911..CT-947, cobrindo os 20 CAs; nenhuma dependencia nova; 4 divergencias declaradas na §21.1; fecha D27, D36, D58, D1 e D39. Revisada pelo challenge em 2026-08-16 — ver steps.validation."
+  validation:
+    status: completed
+    summary: "challenge-spec: 11 questoes processadas, 5 escaladas ao usuario, 24 ajustes inline. Achados de maior impacto, todos medidos contra o codigo: (1) o Identificador perante o provedor (18 posicoes) nao tinha coluna — nasce negocio.cobranca.identificador_no_provedor na 0017; (2) CT-901..CT-910 ja existiam (protocolo-antirregressao.spec.ts) — faixa deslocada para CT-911..CT-947; (3) lerAmbiente do worker: §3.6 dizia 9 variaveis e o CT dizia 7 — fixado em 9; (4) guarda-de-boletos.ts ausente da arvore e de Arquivos a Criar; (5) arvore listava 5 suites sem CT e omitia 6 que a §19 estende; (6) sondagem da reemissao sem espera injetada; (7) travessia de caminho prometida sem caso — nasce o CT-947 (37 casos, 7 de seguranca); (8) 'Retirada de circulacao' colidia com termo canonico de cadastro — o ato sobre o boleto vira Revogacao de boleto. (9) a spec contava as tabelas novas ora como tres, ora como quatro — uniformizado em quatro. Glossario GLOBAL: 3 termos canonizados (Numero do titulo no provedor, Revogacao de boleto, Liquidacao) e 3 ambiguidades registradas. Nenhum candidato a ADR novo. test-cases.json REGENERADO a pedido do usuario: 37 casos CT-911..CT-947, conjunto de IDs identico ao da §19, distribuicao 5/21/4/7, 20 CAs cobertos, task_id nulo."
+  task_plan:
+    status: completed
+    summary: "17 tasks, 5 fases, 0 paralelizaveis (flag DERIVADO pela Regra 10d: barril de @sysloc/db com a ancora do CT-012 na F2, barril de cobranca-bancaria na F3, app.module.ts e cobertura-de-autorizacao.e2e.spec.ts na F4, DAG na F1). US cobertas: 13/13. Decomposicao por camada seguindo a direcao de dependencia da ADR-0025: contrato (T1) -> esquema e migracoes (T2) -> dados (T3-T6) -> dominio e adaptador (T7-T12) -> borda HTTP e worker (T13-T16) -> fecho de superficie (T17). Distribuicao dos casos por REDISTRIBUICAO VIA JSON, sem reinvocar o agent-spec-qa-test-generator: os 37 casos lossless do _run/test-cases.json ganharam task_id, e cada CT aparece em exatamente uma task. ACRESCIMO DECLARADO por decisao do usuario em 2026-08-16: CT-948 (borda da tarefa de conferencia, espelho do CT-944) — a arvore §3.4 listava apps/worker/test/conferencia-bancaria.spec.ts sem caso algum alocado pela §19; total 37 -> 38, faixa CT-911..CT-948, e a T17 reconcilia a prosa. PLACEMENT DIVERGENTE DECLARADO: CT-929 mora em packages/db/test/conferencia-bancaria.spec.ts (owning_layer de dados, suite listada na arvore, observacao do proprio caso no JSON admitindo os dois arquivos), e nao no arquivo que a §19 indicou. Todas as tasks em opus e com gates [qa, tech_review] — nenhuma se qualifica para [qa]-only: todas tocam migracao, segredo, contrato publicado, padrao novo ou servico com efeito externo. Debitos fechados pelo plano: D1 (T1), D27 (T7), D36 (T8), D58 (T15) e a lacuna do D39 (T9); abertos: expurgo do diretorio (T9), coerencia dos campos de conciliacao e nosso_numero em coluna (T6)."
+  execution:
+    status: in_progress
+    tasks_total: 17
+    tasks_completed: 9
+    resumed_at: "2026-08-17"
+    summary: >-
+      RUN RETOMADO em 2026-08-17 apos a pausa controlada. T1-T9 concluidas e staged (9/17). A T9 fechou
+      em 2 rodadas / 3 invocacoes de gate: o unico bloqueante (ALTO-001, tests/tautological_assertion,
+      AP-29) era defeito do TESTE, nao do SUT — o acessorio recusaDe filtrava por tipo e tornava
+      INFALIVEL a assercao de tipo que o docblock declarava como discriminante. A correcao moveu o filtro
+      do ARRANJO para a ASSERCAO (recusaDe passou a Promise<unknown>; o toBeInstanceOf migrou para
+      recusaDaGuarda, aplicado aos 5 usos do arquivo) e acrescentou o caso da BASE APAGADA, que o
+      orquestrador promoveu de opcional a OBRIGATORIO por ser a unica prova independente da ORDEM. Gate 1
+      validou enumerando tres classes de mutante (M1/M2/M3 reprovam); Gate 2 refez o julgamento por conta
+      propria e confirmou — os dois concordam por MECANISMO, nao por deferencia. Uma quarta classe (M4:
+      fs -> captura -> confere -> relanca o cru) satisfaz o caso novo mas e reprovada pelo caso (d), de
+      modo que a rede do CT-947 esta COMPLETA. Contagens medidas: 1499 casos nas nove unidades
+      (cobranca-bancaria 41 -> 42); o CLAUDE.md diz 1418 e a T17 reconcilia. HEAD intocado em eef3861;
+      nada commitado; 79 arquivos staged. A T9 abriu 7 debitos anotados (D27..D33), sendo os dois MEDIO
+      anotaveis o D29 (diferencasDeConjunto com 4 declaracoes manuais — e a casa de auth NAO serve, e
+      deliberadamente local; o caminho e uma casa irma em cobranca-bancaria/test/) e o D30 (o
+      provisionador promete que o verificador confere acervo MOVIDO, e o verificador reprova essa exata
+      configuracao). HIGIENE DE ESTADO: resolvida na sessao anterior (ADR-0034 e os 28 arquivos da fatia
+      staged), mas o PADRAO segue vivo — no fechamento da fatia, conferir git status --porcelain INTEIRO.
+      LACUNA DE PLANEJAMENTO para a T17: a tech spec §21.1 e o task_plan §6 prometem o fecho do D36, que
+      NAO fecha por falta de origem para client_id/scope — o criterio de conclusao passa a QUATRO
+      debitos fechados, nao cinco. A faixa CT-911..CT-948 tambem estourou (a T8 criou CT-949..CT-952):
+      a fatia passa de 38 para 42 casos declarados, mais os 12 da T9 — T17 reconcilia.

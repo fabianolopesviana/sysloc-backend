@@ -273,6 +273,69 @@ export const MAIOR_METRAGEM = 99_999_999.99;
 export const ESCALA_DA_METRAGEM = 0.01;
 
 /**
+ * Maior valor monetário aceito — o maior valor que a coluna `numeric(15,2)` representa (§7.2).
+ *
+ * Mesmo desenho já medido de {@link MAIOR_METRAGEM}, e pela mesma razão: sendo o teto **igual** à
+ * capacidade da coluna, nenhum valor que o contrato aprove pode estourar o `INSERT`. Sem ele,
+ * `z.number()` aprovaria `1e30`, o driver levantaria `numeric field overflow` (22003) e a borda
+ * devolveria **500 registrado como falha do serviço** por entrada malformada de cliente.
+ *
+ * O teto **recusa em vez de truncar**, e a recusa nomeia o campo — mesma política do teto da janela.
+ *
+ * ---------------------------------------------------------------------------
+ * Ela nasceu em `contrato.ts` e mora AQUI desde a fatia `emissao-e-conciliacao`
+ * ---------------------------------------------------------------------------
+ *
+ * O lugar antigo era acidente de nascimento: a primeira grandeza monetária do produto foi o aluguel
+ * do contrato, e a constante ficou onde o primeiro consumidor estava. `cobranca.ts` já a importava do
+ * módulo irmão — a forma que o débito **D1 · F3/T2** registrou —, e o gatilho escrito naquele
+ * marcador era literal: *no terceiro consumidor monetário do pacote*. Ele chegou com
+ * `cobranca-bancaria.ts`, e o **limiar de três** do `CLAUDE.md` manda o símbolo subir para a casa
+ * comum em vez de ganhar a terceira cópia — porque com duas cópias endurecer uma deixa a outra para
+ * trás, e com três elas já divergiram.
+ *
+ * A definição continua **única**: o que muda é o arquivo, e quem a queira **importa este nome**. O
+ * CT-545 afirma a unicidade por igualdade de lista, e uma segunda declaração — exportada ou não —
+ * reprova nomeando o arquivo culpado.
+ */
+export const MAIOR_VALOR_MONETARIO = 9_999_999_999_999.99;
+
+/**
+ * A escala do dinheiro — duas casas decimais, o `2` de `numeric(15,2)` (§7.2).
+ *
+ * {@link MAIOR_VALOR_MONETARIO} fecha a precisão; esta fecha a escala, e as duas juntas é que tornam
+ * verdadeira a regra que a ADR-0016 implica: **todo valor que o contrato aprova tem de ser
+ * representável a jusante** — e "representável" inclui *representável sem ser alterado*. Sem ela,
+ * `2500.555` seria aprovado, gravado como `2500.56` e devolvido ao cliente **diferente do que ele
+ * enviou**, sem erro, sem aviso e sem nada que acusasse.
+ *
+ * ---------------------------------------------------------------------------
+ * A restrição vale na ENTRADA e NÃO é replicada na SAÍDA
+ * ---------------------------------------------------------------------------
+ *
+ * É a mesma assimetria deliberada de {@link ESCALA_DA_METRAGEM}, e pela **primeira** das duas razões
+ * que o marcador `DECISÃO FECHADA` dela registra logo acima: esquema de saída que recusa **não produz
+ * `422`** — ele levanta na serialização e derruba a rota. Converter divergência benigna a montante em
+ * queda é o defeito pior, e divergência a montante se corrige a montante.
+ *
+ * Por isso `valorMensal` e `valorTotalContrato` de `esquemaDoContrato` (`contrato.ts`), as sete
+ * grandezas de `esquemaDaCobranca` e o `valorInformado` de `esquemaDoEventoBancario`
+ * (`cobranca-bancaria.ts`) são `z.number()` sem escala. **Leia aquele marcador antes de qualquer
+ * tentativa de simetrizar**: a justificativa que estava escrita nele até 2026-08-05 era falsa, e a
+ * medição a derrubou — quem a verificasse a acharia infundada e concluiria que a exclusão foi excesso
+ * de cautela.
+ *
+ * O que a saída restringe é `codigo`, e a diferença é de natureza: o código tem **forma fixa**
+ * produzida pelo ponto único `formatarCodigoDeContrato`, e não é soma nem produto de ponto
+ * flutuante — é o mesmo caso de `esquemaDoImovel.id: z.uuid()`, restrição de saída que já existe no
+ * pacote e que a coluna satisfaz por construção.
+ *
+ * Sobre por que ela deixou de morar em `contrato.ts`, ver o parágrafo final de
+ * {@link MAIOR_VALOR_MONETARIO} — as duas subiram juntas, no mesmo commit, e por um motivo só.
+ */
+export const ESCALA_MONETARIA = 0.01;
+
+/**
  * Os sete campos de endereço, iguais para imóvel e para pessoa.
  *
  * É uma **função** que devolve a forma, e não uma constante compartilhada, porque o objeto de forma
