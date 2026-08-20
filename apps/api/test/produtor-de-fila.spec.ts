@@ -20,16 +20,36 @@
  * |       |        | **não** contém o segredo, **contém** os dois identificadores e **preserva** o
  * |       |        | diagnóstico da falha original. |
  *
- * | §13.1 | CT-739 | **T15** · Os pontos de registro do módulo são **exatamente três** — o
- * | (T15) | (b)    | ouvinte do cliente, o ouvinte de cada fila e o **fecho das três no
- * |       |        | desligamento** —, afirmados por igualdade sobre o texto do SUT; e em **todos**
- * |       |        | eles o valor da chave `erro` é `semRastroDeComando(...)`, nunca o objeto que a
+ * | §4.3  | CT-967 | **T6** · O que `enfileirarNotificacaoBancaria` põe na fila
+ * | (T6)  | (d)    | `notificacao-bancaria` é **exatamente** `{ notificacaoId }` — uma chave, e
+ * |       |        | nenhuma a mais —, afirmado por igualdade de objeto **e** por igualdade do
+ * |       |        | arranjo de chaves, contra servidor de fila REAL. É o eixo que reprova um
+ * |       |        | `empresaId` acrescentado à carga: a empresa é o **resultado** da travessia
+ * |       |        | nominal, e o único valor disponível na borda viria do recebido — que é o que a
+ * |       |        | ADR-0024 (terceira emenda) e a ADR-0035 proíbem. |
+ *
+ * | §13.1 | CT-739 | **T15** · Os pontos de registro do módulo são afirmados por igualdade sobre
+ * | (T15) | (b)    | o texto do SUT — **o par nível + produtor do valor de `erro`**, ponto a ponto:
+ * |       |        | o ouvinte do cliente, o ouvinte de cada fila, a espera de assentamento
+ * |       |        | abandonada (que **não tem causa**) e o **fecho das filas no desligamento**.
+ * |       |        | Onde há causa, o valor é `semRastroDeComando(...)`, nunca o objeto que a
  * |       |        | biblioteca rejeitou. Ela fecha as duas metades do que o caminho de fecho
  * |       |        | perdera: o resultado de `Promise.allSettled` **descartado sem leitura** (o
  * |       |        | ponto some da lista) e a causa **crua** no registrador (o valor deixa de ser
- * |       |        | o saneador). |
+ * |       |        | o saneador). ⚠️ **T9 (rodada 4)**: o par substituiu a lista de níveis, e é
+ * |       |        | estritamente mais forte — ver `SUT_IS_CORRECT_BECAUSE` em
+ * |       |        | {@link PONTOS_DE_REGISTRO}. |
+ *
+ * | §10.2 | CT-1007 | **T9 (rodada 4)** · O encerramento do produtor **TERMINA** com o servidor
+ * | (T9)  |         | de fila ausente desde antes da conexão — o estado em que as quatro
+ * |       |         | inicializações ficam pendentes e a queda da conexão não as libera. O
+ * |       |         | desfecho é afirmado nas duas pontas: a promessa **resolve** dentro do teto
+ * |       |         | do caso, e o diário traz a linha do prazo abandonado, nomeando as quatro
+ * |       |         | filas — sem ela, o caso passaria sem ter alcançado o estado que mede. |
  *
  * Rastreabilidade: `CA-09 → CT-738 (RN-11)`, `CA-09 → CT-739 (RN-11)`, `CA-09 → CT-739 (b) (RN-11)`.
+ * Acrescida pela T6 da fatia `webhook-e-carne`: `CA-02 → CT-967 (d) (RN-02)`.
+ * Acrescida pela T9 da mesma fatia: `CA-09 → CT-1007 (RN-11)`.
  *
  * ===========================================================================
  * O DEFEITO QUE ESTE ARQUIVO FECHA, e por que ele não era visível de dentro
@@ -106,8 +126,12 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   type CargaDaConfirmacao,
+  type CargaDaNotificacaoBancaria,
   criarLogger,
+  FILA_DA_CONFERENCIA_BANCARIA,
   FILA_DA_CONFIRMACAO,
+  FILA_DA_EMISSAO_EM_LOTE,
+  FILA_DA_NOTIFICACAO_BANCARIA,
   type Logger,
 } from '@sysloc/shared';
 import { Queue } from 'bullmq';
@@ -126,6 +150,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 //        nenhum deles no escopo desta task, e o índice de débitos do `CLAUDE.md`.
 // ÍNDICE: docs/specs/features/fundacao-stack-nativa/v1/_run/run-report.md §2, D28
 import { semComentarios } from '../../../packages/db/test/varredura-de-fontes.ts';
+import { sondarAte } from '../../../packages/shared/test/efemero-comum.ts';
 import {
   comandoFila,
   type FilaEfemera,
@@ -138,6 +163,34 @@ const LIMITE_DE_MONTAGEM_MS = 60_000;
 
 /** Limite de um caso que fala com o servidor de fila algumas vezes. */
 const LIMITE_CASO_MS = 30_000;
+
+/**
+ * Limite do `CT-1007`, e ele é a metade que discrimina.
+ *
+ * Generoso o bastante para a subida da instância efêmera e para o prazo de assentamento do módulo
+ * caberem com folga, e finito porque é justamente o estouro dele que reprova o desligamento que não
+ * termina — o defeito que o caso mede não produz erro, produz **ausência de desfecho**.
+ */
+const LIMITE_DO_DESLIGAMENTO_MS = 60_000;
+
+/**
+ * Teto da espera pelo SINAL de que o cliente do `CT-1007` entrou em reconexão.
+ *
+ * O que o caso aguarda é um **estado observável**, e o sinal dele é a linha que o ouvinte de `error`
+ * do módulo emite quando a primeira tentativa de conexão falha — {@link MARCA_DA_FALHA_DE_CONEXAO},
+ * no mesmo diário que o caso já lê. Antes desse ponto o cliente ainda está em `connecting`, o
+ * `disconnect()` fecha o socket, as esperas assentam sozinhas, e o caso mediria um caminho que nunca
+ * esteve quebrado.
+ *
+ * Este número é **limite de recurso, não calibragem**: ele só se manifesta na falha — a sondagem
+ * retorna assim que o sinal aparece, e numa máquina carregada o sinal apenas demora mais a chegar.
+ * A forma anterior era uma pausa fixa de 300 ms, que comprava o mesmo estado com o relógio: ficava
+ * intermitente exatamente onde esta suíte já gastou quatro rodadas — sob carga.
+ */
+const LIMITE_DA_RECONEXAO_MS = 10_000;
+
+/** A linha que o ouvinte de `error` do módulo emite ao falhar a conexão — o sinal do `CT-1007`. */
+const MARCA_DA_FALHA_DE_CONEXAO = 'o produtor de fila reportou falha de conexão';
 
 /**
  * O segredo sob observação — cadeia sentinela, e não um segredo de verdade.
@@ -168,23 +221,48 @@ const FONTE_DO_PRODUTOR = fileURLToPath(
   new URL('../src/comum/produtor-de-fila.ts', import.meta.url),
 );
 
+/** A linha que o SUT emite quando abandona a espera de assentamento — o controle do `CT-1007`. */
+const MENSAGEM_DO_PRAZO_ABANDONADO = 'o assentamento das inicializações excedeu o limite';
+
 /** A entrada única de saneamento do módulo, protegida pela `DECISÃO FECHADA — T9 / Gate 2`. */
 const SANEADOR_DA_CAUSA = 'semRastroDeComando';
 
 /**
  * Os pontos de registro do módulo, na ORDEM do arquivo — a expectativa revisada.
  *
- * São três, e cada um é uma decisão registrada no cabeçalho do SUT: o `warn` do ouvinte do cliente,
- * o `debug` do ouvinte instalado em cada fila por `criarFila`, e o `debug` que **lê** o resultado do
- * `Promise.allSettled` do encerramento. Escritos à mão de propósito: derivá-los da mesma varredura
- * que o caso classifica faria a asserção concordar consigo mesma.
+ * Cada um é uma decisão registrada no cabeçalho do SUT: o `warn` do ouvinte do cliente, o `debug`
+ * do ouvinte instalado em cada fila por `criarFila`, o `warn` que anuncia a espera de assentamento
+ * **abandonada** no desligamento, e o `debug` que **lê** o resultado do `Promise.allSettled` do
+ * fecho. Escritos à mão de propósito: derivá-los da mesma varredura que o caso classifica faria a
+ * asserção concordar consigo mesma.
  *
- * ⚠️ O terceiro é o que a T15 acrescentou. Enquanto havia uma fila só, a rejeição do fecho subia até
+ * ⚠️ O do fecho é o que a T15 acrescentou. Enquanto havia uma fila só, a rejeição do fecho subia até
  * `onApplicationShutdown` e o arcabouço a registrava; sob `allSettled` — que nunca rejeita — quem
  * não lê o resultado não fica sabendo em lugar nenhum, e o cabeçalho do SUT condena esse silêncio
  * por escrito na seção *"O ouvinte de `error` não é ornamento"*.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T9 (rodada 4) acrescentou o TERCEIRO ponto, e o SUT está certo — a
+ * espera de assentamento que estoura o prazo não tem causa a sanear: ela não recebe exceção alguma,
+ * e o que publica é `{ limiteMs, filas }`. A lista anterior era de NÍVEIS, e cobrava de todo ponto
+ * um `erro:` produzido pelo saneador; declarar o ponto novo ali o faria reprovar por não ter causa.
+ * O par abaixo é ESTRITAMENTE MAIS FORTE que a lista que ele substitui: fixa por igualdade o nível
+ * **e** o produtor do valor de `erro` em cada ponto — de modo que um ponto que passe a causa CRUA
+ * (`erro: erro`, sem chamada) é classificado {@link CAUSA_CRUA} e reprova, o que a lista de níveis
+ * sozinha não pegava. `undefined` significa, e só pode significar, *"este ponto não menciona
+ * causa"*.
  */
-const NIVEIS_DOS_PONTOS_DE_REGISTRO: readonly string[] = ['warn', 'debug', 'debug'];
+const PONTOS_DE_REGISTRO: readonly { readonly nivel: string; readonly causa?: string }[] = [
+  { nivel: 'warn', causa: SANEADOR_DA_CAUSA },
+  { nivel: 'debug', causa: SANEADOR_DA_CAUSA },
+  { nivel: 'warn' },
+  { nivel: 'debug', causa: SANEADOR_DA_CAUSA },
+];
+
+/** Como o caso classifica um registro que menciona `erro` sem passá-lo por função alguma. */
+const CAUSA_CRUA = 'CRUA';
+
+/** Casa a MENÇÃO à chave `erro` no objeto registrado, com ou sem chamada produzindo o valor. */
+const MENCAO_A_CAUSA = /\berro:/u;
 
 /** Casa a chave `erro` do objeto registrado e o NOME da função que produz o valor dela. */
 const VALOR_DA_CHAVE_DE_ERRO = /\berro:\s*([A-Za-z_$][A-Za-z0-9_$]*)\(/u;
@@ -314,8 +392,56 @@ describe('a fronteira com a biblioteca de fila (T9)', () => {
   );
 });
 
+describe('a carga da notícia bancária no transporte (T6)', () => {
+  it(
+    'CT-967 (d) — o que chega à fila da notícia é exatamente `{ notificacaoId }`, e nada mais',
+    async () => {
+      // Identificador de linha, e não um valor qualquer: é o que a borda tem em mãos depois do
+      // `COMMIT`, e é a única coisa que a carga carrega.
+      const notificacaoId = '33333333-3333-4333-8333-333333333333';
+
+      const endereco = new URL(fila.cadeiaConexao);
+      const sonda = new Queue<CargaDaNotificacaoBancaria, void>(FILA_DA_NOTIFICACAO_BANCARIA, {
+        connection: { host: endereco.hostname, port: Number.parseInt(endereco.port, 10) },
+      });
+
+      try {
+        await produtor.enfileirarNotificacaoBancaria({ notificacaoId });
+
+        // A tarefa é lida de volta do servidor REAL: o que se afirma é o que atravessou a
+        // serialização da biblioteca, e não o objeto que o caso acabou de construir.
+        const emEspera = await sonda.getJobs(['waiting', 'delayed', 'prioritized', 'active']);
+
+        // Âncora antivácuo: sem tarefa alguma, as igualdades abaixo passariam por vacuidade sobre
+        // um `undefined` — e a conclusão seria a oposta da verdadeira.
+        expect(emEspera.length, 'a fila da notícia não recebeu tarefa alguma').toBe(1);
+
+        const tarefa = emEspera[0];
+
+        // O NOME DA FILA e o da tarefa, por igualdade: uma carga íntegra numa fila que ninguém
+        // escuta deixa o trabalho parado **sem erro nenhum**, que é o defeito que
+        // `FILA_DA_NOTIFICACAO_BANCARIA` existe para fechar.
+        expect({ fila: tarefa?.queueName, nome: tarefa?.name }).toEqual({
+          fila: FILA_DA_NOTIFICACAO_BANCARIA,
+          nome: FILA_DA_NOTIFICACAO_BANCARIA,
+        });
+
+        // A CARGA, por igualdade de objeto: **um** campo, e nenhum a mais. É esta linha que reprova
+        // um `empresaId` acrescentado — a violação que a terceira emenda da ADR-0024 nomeia.
+        expect(tarefa?.data).toEqual({ notificacaoId });
+        // E as chaves, nomeadas: quando a igualdade acima reprovar, é esta que diz **qual** campo
+        // entrou a mais, em vez de exibir dois objetos para o leitor comparar.
+        expect(Object.keys(tarefa?.data ?? {})).toEqual(['notificacaoId']);
+      } finally {
+        await sonda.close();
+      }
+    },
+    LIMITE_CASO_MS,
+  );
+});
+
 describe('o caminho de FECHO do módulo (T15)', () => {
-  it('CT-739 (b) — os três pontos de registro do módulo saneiam a causa, e o fecho das filas é um deles', () => {
+  it('CT-739 (b) — todo ponto de registro do módulo que tem causa a saneia, e o fecho é um deles', () => {
     const fonte = semComentarios(readFileSync(FONTE_DO_PRODUTOR, 'utf8'));
 
     // Âncora antivácuo: um fonte lido em branco produziria lista vazia, e a igualdade abaixo
@@ -324,25 +450,28 @@ describe('o caminho de FECHO do módulo (T15)', () => {
 
     const registros = chamadasDeRegistro(fonte);
 
-    // Igualdade sobre o CONJUNTO de pontos, na ordem do arquivo: o registro REMOVIDO do fecho — que
-    // é o defeito perseguido — some daqui, e um registro NOVO obriga a revisão que esta lista é.
-    expect(
-      registros.map((registro) => registro.nivel),
-      'os pontos de registro do produtor mudaram: ' +
-        registros.map((registro) => registro.nivel).join(', '),
-    ).toEqual([...NIVEIS_DOS_PONTOS_DE_REGISTRO]);
+    // O par (nível, produtor do valor de `erro`) de cada ponto, na ordem do arquivo. O produtor é o
+    // **valor** da chave, e não a presença dela: um registro que mantivesse a chamada saneada e
+    // acrescentasse a causa crua ao lado satisfaria a presença. O ponto que MENCIONA a causa sem
+    // passá-la por função alguma é classificado à parte — é o defeito perseguido, e ele precisa ter
+    // classificação própria para não se confundir com o ponto que não tem causa nenhuma a sanear.
+    const observados = registros.map((registro) => {
+      if (!MENCAO_A_CAUSA.test(registro.argumentos)) {
+        return { nivel: registro.nivel };
+      }
 
-    // E em TODOS eles a causa é reduzida a texto pela entrada única. Não é `toContain` sobre o
-    // argumento inteiro: o que se afirma é o **valor** da chave `erro`, porque um registro que
-    // mantivesse a chamada saneada e acrescentasse a causa crua ao lado satisfaria a presença.
-    registros.forEach((registro, indice) => {
       const produtorDoValor = VALOR_DA_CHAVE_DE_ERRO.exec(registro.argumentos);
 
-      expect(
-        produtorDoValor?.[1],
-        `o registro ${String(indice + 1)} (${registro.nivel}) não passa a causa por ${SANEADOR_DA_CAUSA}`,
-      ).toBe(SANEADOR_DA_CAUSA);
+      return { nivel: registro.nivel, causa: produtorDoValor?.[1] ?? CAUSA_CRUA };
     });
+
+    // Igualdade sobre o CONJUNTO de pontos: o registro REMOVIDO do fecho — que é o defeito
+    // perseguido — some daqui; um registro NOVO obriga a revisão que esta lista é; e um registro que
+    // deixe de sanear a causa muda o par sem mudar a contagem.
+    expect(
+      observados,
+      `os pontos de registro do produtor mudaram: ${JSON.stringify(observados)}`,
+    ).toEqual([...PONTOS_DE_REGISTRO]);
   });
 });
 
@@ -442,3 +571,80 @@ function linhaRegistrada(marca: string): string {
 
   return linhas[0] ?? '';
 }
+
+// ===========================================================================
+// O DESLIGAMENTO TERMINA — a espera de assentamento contra um servidor ausente
+// ===========================================================================
+
+describe('o desligamento do produtor com o servidor de fila ausente (T9)', () => {
+  it(
+    'CT-1007 — o encerramento termina, e o diário registra a espera abandonada',
+    async () => {
+      // Instância, produtor e diário PRÓPRIOS: este caso derruba o servidor de fila, e usar os do
+      // arranjo compartilhado deixaria os demais casos falando com um servidor morto.
+      const instancia = await redisEfemero();
+      const diretorio = mkdtempSync(join(tmpdir(), 'sysloc-desligamento-produtor-'));
+      const arquivo = join(diretorio, 'produtor.log');
+
+      try {
+        // O SERVIDOR CAI ANTES DE QUALQUER CONEXÃO — e é isso que produz o estado, de forma
+        // determinística e sem depender de carga da máquina: o cliente falha a primeira conexão e
+        // entra em RECONEXÃO, com as quatro inicializações de fila pendentes. A promessa de aptidão
+        // da biblioteca só resolve em `ready`, `end` ou `error`, e o `disconnect()` de um cliente
+        // já em reconexão não produz nenhum dos três.
+        await instancia.parar();
+
+        const registrador = criarLogger({ nivel: 'trace', destino: arquivo });
+        const emDesligamento = conectarProdutorDeFila(instancia.cadeiaConexao, registrador);
+
+        // O ESTADO É ESPERADO PELO SINAL QUE O PRÓPRIO SUT PUBLICA, nunca por relógio: o ouvinte de
+        // `error` do módulo registra a falha da primeira tentativa de conexão neste mesmo diário, e
+        // é exatamente aí que o cliente entra em RECONEXÃO. Sem esta espera o cliente ainda está em
+        // `connecting`, o `disconnect()` fecha o socket, as esperas assentam por conta própria e o
+        // caso mediria outro caminho. O limite é teto de recurso: esgotá-lo levanta, em vez de
+        // seguir adiante medindo o caminho errado — o que a pausa fixa anterior fazia em silêncio.
+        await sondarAte(
+          'a primeira conexão do produtor falhar e o cliente entrar em reconexão',
+          () => readFileSync(arquivo, 'utf8').includes(MARCA_DA_FALHA_DE_CONEXAO),
+          LIMITE_DA_RECONEXAO_MS,
+        );
+
+        // A ASSERÇÃO QUE DISCRIMINA: sem prazo na espera de assentamento, esta promessa não
+        // resolve — nem aqui, nem no `SIGTERM` de uma borda real com o servidor de fila já parado.
+        // O caso reprovaria pelo teto dele mesmo.
+        await emDesligamento.encerrar();
+
+        // CONTROLE ANTIVÁCUO: a linha do prazo prova que o estado medido foi ALCANÇADO. Sem ela, um
+        // encerramento que tivesse assentado sozinho passaria por este caso sem ter exercitado nada.
+        // Leitor PRÓPRIO: o do arranjo compartilhado lê o diário dos outros casos e casa pela
+        // marca que eles plantam — aqui o diário é outro, e a linha é a que o SUT emite sozinho.
+        // A unicidade é afirmada pela mesma razão de lá: duas linhas fariam a asserção medir a
+        // errada, e nada acusaria.
+        const linhas = readFileSync(arquivo, 'utf8')
+          .split('\n')
+          .filter((registrada) => registrada.includes(MENSAGEM_DO_PRAZO_ABANDONADO));
+        expect(linhas).toHaveLength(1);
+
+        const evento = JSON.parse(linhas[0] ?? '') as {
+          limiteMs?: number;
+          filas?: readonly string[];
+        };
+
+        // As QUATRO filas, por igualdade e na ordem em que nascem — nunca "contém": o campo existe
+        // para dizer o que ficou para trás, e uma lista que encolhesse em silêncio seria pior que
+        // nenhuma.
+        expect(evento.filas).toEqual([
+          FILA_DA_CONFIRMACAO,
+          FILA_DA_EMISSAO_EM_LOTE,
+          FILA_DA_CONFERENCIA_BANCARIA,
+          FILA_DA_NOTIFICACAO_BANCARIA,
+        ]);
+        expect(typeof evento.limiteMs).toBe('number');
+      } finally {
+        rmSync(diretorio, { recursive: true, force: true });
+        await instancia.parar();
+      }
+    },
+    LIMITE_DO_DESLIGAMENTO_MS,
+  );
+});

@@ -20,15 +20,28 @@
  * "quando as rotas de Master e de usuários chegarem" — foi descartada por essa mesma razão: mover o
  * provedor sem mover o gancho de desligamento deixaria o recurso sem dono, e mover os dois é
  * refatoração da fatia anterior sem ganho para esta.
+ *
+ * ---------------------------------------------------------------------------
+ * E ele importa o módulo da FILA desde a T9 da fatia `webhook-e-carne`
+ * ---------------------------------------------------------------------------
+ *
+ * A reativação de uma empresa suspensa **retoma as notícias bancárias retidas** (CA-10), e a
+ * retomada sai por fila em vez de correr em linha na resposta (ADR-0029). A capacidade de enfileirar
+ * chega pela mesma porta de sempre — `FilaModule`, dono único da conexão —, e **não** por um
+ * `conectarProdutorDeFila` escrito aqui: o cabeçalho de `comum/produtor-de-fila.ts` recusa a segunda
+ * conexão por escrito, e a lista dos módulos que declaram `imports: [FilaModule]` é justamente o que
+ * mantém a capacidade enumerável. Este acréscimo passa pela revisão de
+ * `apps/api/test/alcance-da-fila.spec.ts`, que fixa essa lista por igualdade de conjunto.
  */
 
 import { Module } from '@nestjs/common';
 import { AutenticacaoModule } from '../autenticacao/autenticacao.module.js';
+import { FilaModule } from '../comum/fila.module.js';
 import { EmpresaController } from './empresa.controller.js';
 import { EmpresaService } from './empresa.service.js';
 
 @Module({
-  imports: [AutenticacaoModule],
+  imports: [AutenticacaoModule, FilaModule],
   controllers: [EmpresaController],
   providers: [EmpresaService],
 })

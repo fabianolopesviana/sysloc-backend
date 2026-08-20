@@ -174,8 +174,6 @@
 
 import { randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { type ChaveDoCatalogo, validarCoerenciaDeAjustes } from '@sysloc/auth';
@@ -190,9 +188,6 @@ import {
 } from '@sysloc/db';
 import { normalizarParaComparacao } from '@sysloc/documentos';
 import { CodigoErro } from '@sysloc/shared';
-// A construção `legacy` é a que o próprio `pdfjs-dist` exige fora do navegador — a de entrada
-// alcança `DOMMatrix` na carga do módulo e derruba a suíte antes do primeiro caso.
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)
 // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o código abaixo.)
@@ -225,7 +220,7 @@ import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
 import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
 import { criarAplicacao } from '../src/main.ts';
 import { CAMINHO_DOS_USUARIOS } from '../src/usuarios/usuario.controller.ts';
-import { cpfValido } from './documento.ts';
+import { cpfValido, extrairTextoDePdf } from './documento.ts';
 
 // ---------------------------------------------------------------------------
 // Limites de tempo — constantes nomeadas, nunca número mágico no meio do caso
@@ -484,70 +479,13 @@ const TIPO_DE_MIDIA_DO_DOCUMENTO = 'application/pdf';
 // A extração do texto do PDF
 // ---------------------------------------------------------------------------
 
-// DÉBITO COM GATILHO — D5 · F3/T7 · registrado 2026-08-13
-// (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o código abaixo.)
-// O QUÊ: `extrairTextoDePdf` é a SEGUNDA leitura de PDF da verificação. A primeira é
-//        `extrairTextoDoPdf` de `packages/documentos/test/renderizador-pdf.spec.ts`, e as duas
-//        diferem na fonte (arquivo em disco lá, bytes da resposta HTTP aqui) e compartilham o
-//        miolo — `getDocument` mais o percurso dos `TextItem`. Duas cópias divergem em silêncio, e
-//        uma que divergiu passa a extrair coisa diferente da que o caso afirma extrair.
-// QUANDO FECHA: o TERCEIRO consumidor de extração de texto de PDF — o **carnê da F4**, cuja fonte é
-//        o boleto emitido —, ou a primeira alteração das opções do extrator (`useSystemFonts`, o
-//        diretório de fontes padrão). Ali o miolo sobe para um acessório único, e os dois formatos
-//        de entrada viram parâmetro.
-// POR QUE NÃO AGORA: promovê-lo exigiria criar um acessório compartilhado entre `packages/documentos`
-//        e `apps/api` e editar a suíte que a T6 acabou de provar — nenhum dos dois no escopo desta
-//        task, cuja lista de arquivos é declarada.
-// ÍNDICE: docs/specs/features/documentos-e-confirmacao/v1/_run/run-report.md §2, D5
-
-/**
- * O diretório das fontes padrão do extrator, resolvido pelo **próprio pacote instalado**.
- *
- * Sem ele o `pdfjs-dist` avisa que não consegue carregar `LiberationSans-Regular.ttf` e a extração
- * passa a depender do que estiver instalado no host. Resolver pelo `package.json` da biblioteca é o
- * que sobrevive ao arranjo de diretórios do pnpm, onde o caminho relativo aparente não é o real.
- */
-const DIRETORIO_DAS_FONTES_PADRAO = join(
-  dirname(createRequire(import.meta.url).resolve('pdfjs-dist/package.json')),
-  'standard_fonts/',
-);
-
-/**
- * Extrai o texto de um PDF recebido **em bytes**, com uma quebra de linha onde o layout quebrou.
- *
- * `useSystemFonts: false` é determinismo, não ornamento: com fontes do sistema operacional em jogo, a
- * extração passaria a depender do host, e o resultado deixaria de ser propriedade do PDF.
- */
-async function extrairTextoDePdf(bytes: Uint8Array): Promise<string> {
-  const tarefa = getDocument({
-    data: bytes,
-    standardFontDataUrl: DIRETORIO_DAS_FONTES_PADRAO,
-    useSystemFonts: false,
-  });
-
-  let texto = '';
-
-  try {
-    const documento = await tarefa.promise;
-
-    for (let pagina = 1; pagina <= documento.numPages; pagina += 1) {
-      const conteudo = await (await documento.getPage(pagina)).getTextContent();
-
-      for (const item of conteudo.items) {
-        // `TextMarkedContent` não carrega texto; só os `TextItem` têm `str`.
-        if (!('str' in item)) continue;
-
-        texto += item.str;
-        if (item.hasEOL) texto += '\n';
-      }
-    }
-  } finally {
-    // Sem isto o processo do extrator fica de pé e a suíte não encerra sozinha.
-    await tarefa.destroy();
-  }
-
-  return texto;
-}
+// O extrator de texto de PDF vinha AQUI, privado, sob um `DÉBITO COM GATILHO` (D5 · F3/T7) cujo
+// `QUANDO FECHA` era *"o TERCEIRO consumidor — o carnê da F4"*. O carnê chegou na T10 da fatia
+// `webhook-e-carne`, e `extrairTextoDePdf` desceu para `./documento.ts`, a casa comum do diretório,
+// **antes** de a terceira cópia nascer. O marcador saiu junto, como a §3-B da
+// `.claude/rules/nao-regressao.md` manda — marcador de débito já fechado mente sobre o estado do
+// código. A função é a mesma, byte a byte, e as opções dela continuam sendo o que torna a extração
+// propriedade do PDF e não do host.
 
 // ---------------------------------------------------------------------------
 // As pessoas da carga

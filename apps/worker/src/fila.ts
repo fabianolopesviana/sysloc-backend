@@ -47,11 +47,13 @@ import {
   type CargaDaConferenciaBancaria,
   type CargaDaConfirmacao,
   type CargaDaEmissaoEmLote,
+  type CargaDaNotificacaoBancaria,
   type CargaDaRegua,
   type CargaDoEco,
   FILA_DA_CONFERENCIA_BANCARIA,
   FILA_DA_CONFIRMACAO,
   FILA_DA_EMISSAO_EM_LOTE,
+  FILA_DA_NOTIFICACAO_BANCARIA,
   FILA_DA_REGUA,
   FILA_DO_ECO,
   type Logger,
@@ -126,6 +128,20 @@ export type TarefaDaEmissaoEmLote = Job<CargaDaEmissaoEmLote, void>;
 export type TarefaDaConferenciaBancaria = Job<CargaDaConferenciaBancaria, void>;
 
 /**
+ * Uma tarefa de **tratamento da notícia bancária**, como o processador a recebe.
+ *
+ * O resultado é `void` pela mesma razão das irmãs: o que a passada produz fica **gravado** — o
+ * desfecho na linha crua, o efeito na cobrança e a linha da trilha —, e um valor devolvido ao
+ * servidor de fila seria um segundo retrato do mesmo fato, retido pela política de retenção e livre
+ * para divergir do que o banco guarda.
+ *
+ * ⚠️ **A carga desta tarefa é a única do produto sem empresa**, e a ausência é a decisão: quem
+ * enfileira não sabe de que empresa o fato é. Ver o cabeçalho de
+ * {@link CargaDaNotificacaoBancaria}, em `@sysloc/shared`.
+ */
+export type TarefaDaNotificacaoBancaria = Job<CargaDaNotificacaoBancaria, void>;
+
+/**
  * Como o encerramento terminou.
  *
  * O desfecho é DEVOLVIDO a quem pediu, em vez de ficar guardado aqui, porque a decisão que ele
@@ -194,6 +210,14 @@ export interface Fila {
   readonly emissaoEmLote: Queue<CargaDaEmissaoEmLote, void>;
   /** Lado produtor da fila da conferência bancária. Mesma razão de {@link emissaoEmLote}. */
   readonly conferenciaBancaria: Queue<CargaDaConferenciaBancaria, void>;
+  /**
+   * Lado produtor da fila do tratamento da notícia bancária. Mesma razão de {@link emissaoEmLote}.
+   *
+   * Em produção quem enfileira é a borda HTTP sem sessão — e, na reativação de uma empresa suspensa,
+   * o Master —, mas o produtor nasce aqui pela regra que as irmãs já registram: **quem constrói é
+   * quem devolve**, e sem ele o consumidor ficaria sem o caminho tipado de {@link processar}.
+   */
+  readonly notificacaoBancaria: Queue<CargaDaNotificacaoBancaria, void>;
   /**
    * Registra o processador de uma das filas **deste** módulo. Ele passa a consumir de imediato.
    *
@@ -267,6 +291,10 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
     FILA_DA_CONFERENCIA_BANCARIA,
     { connection: conexao, defaultJobOptions: OPCOES_PADRAO_DA_TAREFA },
   );
+  const notificacaoBancaria = new Queue<CargaDaNotificacaoBancaria, void>(
+    FILA_DA_NOTIFICACAO_BANCARIA,
+    { connection: conexao, defaultJobOptions: OPCOES_PADRAO_DA_TAREFA },
+  );
 
   // Nível de diagnóstico, e não de alerta: o que a fila emite aqui é o MESMO defeito de conexão
   // que o cliente acima já reportou uma vez, repassado adiante. O ouvinte existe para o evento
@@ -278,6 +306,7 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
     [FILA_DA_CONFIRMACAO, confirmacao],
     [FILA_DA_EMISSAO_EM_LOTE, emissaoEmLote],
     [FILA_DA_CONFERENCIA_BANCARIA, conferenciaBancaria],
+    [FILA_DA_NOTIFICACAO_BANCARIA, notificacaoBancaria],
   ] as const) {
     produtor.on('error', (erro: Error) => {
       logger.debug({ erro, origem: 'fila', fila: nome }, 'a fila repassou uma falha da conexão');
@@ -320,6 +349,7 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
     await confirmacao.close();
     await emissaoEmLote.close();
     await conferenciaBancaria.close();
+    await notificacaoBancaria.close();
   };
 
   /** O encerramento já pedido, se houver. Ver {@link Fila.encerrar}. */
@@ -364,6 +394,7 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
               confirmacao.name,
               emissaoEmLote.name,
               conferenciaBancaria.name,
+              notificacaoBancaria.name,
             ],
           },
           'o encerramento excedeu o limite — devolvendo a conexão sem esperar o restante',
@@ -391,6 +422,7 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
     confirmacao,
     emissaoEmLote,
     conferenciaBancaria,
+    notificacaoBancaria,
 
     processar<Carga, Resultado>(
       produtor: Queue<Carga, Resultado>,

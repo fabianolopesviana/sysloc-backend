@@ -368,10 +368,14 @@ export type JanelaDeCobrancas = z.infer<typeof esquemaDaJanelaDeCobrancas>;
  *
  * A chave publicada é **`numeroDoTituloNoProvedor`, jamais `nossoNumero`**, e a diferença não é
  * estética: *nosso número* é vocabulário **do provedor**, a ADR-0001 fixa que nenhum dele cruza o que
- * o produto publica, e o glossário global o lista entre os termos a evitar. A coluna física continua
- * `nosso_numero` — renomeá-la exigiria migração sobre tabela fora do escopo do PRD —, e o mapeamento
- * morre na fronteira de dados. Publicar o nome do provedor faria a varredura de vocabulário canônico
- * reprovar a própria fatia que o campo entrega.
+ * o produto publica, e o glossário global o lista entre os termos a evitar. Publicar o nome do
+ * provedor faria a varredura de vocabulário canônico reprovar a própria fatia que o campo entrega.
+ *
+ * ⚠️ **A coluna física TAMBÉM já se chama `numero_do_titulo_no_provedor`.** Este parágrafo dizia que
+ * ela *"continua `nosso_numero`"*, porque renomeá-la estaria fora do escopo do PRD daquela fatia —
+ * texto verdadeiro até a `0019` (T2 da fatia `webhook-e-carne`), que fechou o `D14 · F4/T6` com o
+ * `RENAME COLUMN` na tabela e na visão `negocio.cobranca_derivada`. Hoje o nome é o mesmo dos dois
+ * lados, e a tradução que o mapeamento do Drizzle faz é só a de caixa (snake_case → camelCase).
  *
  * **`identificadorNoProvedor` não existe aqui, e a ausência é a decisão.** São dois identificadores
  * de sentidos opostos: o *Identificador perante o provedor* (18 posições) é **composto pelo produto**,

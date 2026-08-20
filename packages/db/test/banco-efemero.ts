@@ -92,6 +92,34 @@ const PAPEL_APLICACAO = 'sysloc_app';
 const PAPEL_RESOLUCAO = 'sysloc_resolucao';
 
 /**
+ * Papel de propósito único: ser DONO da função que roteia a notícia bancária recebida (`0020`).
+ *
+ * Gêmeo de {@link PAPEL_RESOLUCAO} em tudo — `NOLOGIN`, sem senha, dono de nenhuma tabela — e pela
+ * mesma razão medida: `SECURITY DEFINER` sozinho **não** atravessa `FORCE ROW LEVEL SECURITY`, e o
+ * que atravessa é a posse por um papel nominal somada à política endereçada a ele. Ver os blocos
+ * **1, 3 e 7** da `0020` — a conferência do papel, a política endereçada a ele e a troca de dono —,
+ * que juntos materializam a decisão. (O bloco 2 é o `RENAME COLUMN` da visão, de outro assunto.)
+ *
+ * ⚠️ **É um QUARTO papel, e não o reuso do terceiro.** A emenda de 2026-08-13 da ADR-0024 exige
+ * `GRANT` mínimo — `SELECT` sobre *"a única tabela alcançada"* —, e reusar `sysloc_resolucao` o
+ * faria alcançar **duas** tabelas, diluindo a propriedade que a ADR nomeia.
+ *
+ * Ele nasce AQUI, no provisionamento, e não na migração, pela razão que o gêmeo já registra:
+ * `sysloc_migracao` é `NOCREATEROLE`. A `0020` apenas **confere**, e aborta nomeando o passo P15.
+ */
+const PAPEL_ROTEAMENTO = 'sysloc_roteamento';
+
+/**
+ * Os dois papéis `NOLOGIN` de propósito único, na ordem em que as migrações os exigem.
+ *
+ * Lista, e não duas chamadas escritas por extenso, porque {@link erroAoMigrarSemPapelDeRoteamento}
+ * precisa provisionar **um subconjunto** dela: o mesmo caminho, menos um papel. Duas escritas do
+ * mesmo `CREATE ROLE` ficariam livres para divergir, e a divergência apareceria como um caso que
+ * prova o aborto de uma migração contra um provisionamento que a operação nunca faria.
+ */
+const PAPEIS_DE_FUNCAO: readonly string[] = [PAPEL_RESOLUCAO, PAPEL_ROTEAMENTO];
+
+/**
  * Os schemas do produto. Criados pelo provisionamento, nunca pela migração.
  *
  * Os **dois primeiros** são os da ADR-0009: `identidade` opera antes de existir contexto de empresa,
@@ -188,6 +216,76 @@ export async function bancoEfemero(): Promise<BancoMigrado> {
 }
 
 /**
+ * Sobe uma instância provisionada **sem** o papel `sysloc_roteamento`, aplica as migrações e devolve
+ * o erro com que a `0020` aborta.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que ele mora AQUI, e não no arquivo do caso
+ * ---------------------------------------------------------------------------
+ *
+ * O caminho é o mesmo de {@link bancoEfemero} — os mesmos papéis, os mesmos schemas, os mesmos
+ * arquivos de `migracoes/` lidos do disco —, **menos um `CREATE ROLE`**. Escrevê-lo no arquivo do
+ * caso obrigaria a copiar `provisionar()` e `aplicarMigracoes()` inteiros, e duas cópias de um
+ * provisionamento divergem em silêncio: o caso passaria a provar o aborto de uma migração contra um
+ * arranjo que a operação nunca produz. É a mesma razão pela qual os acessórios de semeadura desta
+ * fatia moram aqui.
+ *
+ * ---------------------------------------------------------------------------
+ * Ele devolve o ERRO, e não a instância — e a distinção é o que evita resíduo
+ * ---------------------------------------------------------------------------
+ *
+ * A migração **tem** de falhar; devolver um `BancoMigrado` seria mentir sobre o desfecho, e devolver
+ * a instância de pé deixaria a quem chama o dever de pará-la num caminho que já é de exceção. Aqui a
+ * instância é parada no `finally`, sempre, e o que sai é o único fato que o caso examina: a mensagem
+ * com que a `0020` recusa migrar.
+ *
+ * A ausência de erro também é um resultado, e é o pior deles: significa que a migração **criou** o
+ * papel em silêncio, ou parou de conferi-lo. Por isso este acessório levanta nesse caso, em vez de
+ * devolver `undefined` para o `expect` decidir — um caso que comparasse `undefined` com uma mensagem
+ * reprovaria pela razão certa, mas um que só perguntasse "houve erro?" não.
+ */
+export async function erroAoMigrarSemPapelDeRoteamento(): Promise<Error> {
+  const instancia = await postgresEfemero();
+  const senhas: SenhasDosPapeis = {
+    [PAPEL_MIGRACAO]: randomBytes(24).toString('base64url'),
+    [PAPEL_APLICACAO]: randomBytes(24).toString('base64url'),
+  };
+
+  try {
+    const banco = await provisionar(instancia, senhas, [PAPEL_RESOLUCAO]);
+    const cadeias = comporCadeias(instancia, banco, senhas);
+
+    // O `catch` cerca EXCLUSIVAMENTE a aplicação das migrações. Envolver o resto o faria capturar a
+    // própria recusa de "aplicou sem o papel" e devolvê-la como se fosse o aborto da `0020` — o caso
+    // ficaria verde pelo motivo oposto ao que ele afirma.
+    let recusa: unknown;
+    try {
+      await aplicarMigracoes(cadeias.migracao);
+    } catch (erro) {
+      recusa = erro;
+    }
+
+    if (recusa === undefined) {
+      throw new Error(
+        'as migrações aplicaram SEM o papel "sysloc_roteamento" — ou a 0020 deixou de conferi-lo, ' +
+          'ou ela passou a criá-lo, e nos dois casos a conferência que este acessório existe para ' +
+          'exercitar não está mais lá',
+      );
+    }
+
+    if (!(recusa instanceof Error)) {
+      throw new Error(
+        `a aplicação das migrações falhou com um valor que não é Error: ${String(recusa)}`,
+      );
+    }
+
+    return recusa;
+  } finally {
+    await instancia.parar();
+  }
+}
+
+/**
  * Cadeia do papel **dono** dos objetos. Acesso privilegiado, e por isso um acessório com nome
  * próprio em vez de um campo: quem o usa está declarando que precisa de privilégio, e o `grep` por
  * este nome enumera, em uma linha, todos os pontos da suíte em que isso acontece.
@@ -219,16 +317,21 @@ function exigirPrivilegiadas(banco: BancoMigrado): CadeiasPrivilegiadas {
 }
 
 /**
- * Executa, com a conexão superusuário, o que `provisionar-base.sh` executa em operação: os **três**
- * papéis sem privilégio administrativo — dois com `LOGIN`, e um `NOLOGIN` de propósito único — e os
- * dois schemas com dono `sysloc_migracao`.
+ * Executa, com a conexão superusuário, o que `provisionar-base.sh` executa em operação: os **quatro**
+ * papéis sem privilégio administrativo — dois com `LOGIN`, e dois `NOLOGIN` de propósito único — e os
+ * três schemas com dono `sysloc_migracao`.
  *
  * Nada aqui cria tabela: isso é da migração, e é a migração que faz as tabelas nascerem do papel de
- * migração. Nenhuma **tabela** troca de dono neste caminho; a única exceção é
+ * migração. Nenhuma **tabela** troca de dono neste caminho; as únicas exceções são
  * `ALTER FUNCTION negocio.resolver_portador_de_confirmacao(text) OWNER TO "sysloc_resolucao"`, na
- * `0014`, e ela alcança UMA função e NENHUMA tabela (§7.3 da tech spec).
+ * `0014`, e `ALTER FUNCTION negocio.rotear_notificacao_bancaria(text) OWNER TO "sysloc_roteamento"`,
+ * na `0020` — cada uma alcança UMA função e NENHUMA tabela (§7.3 da tech spec).
  */
-async function provisionar(instancia: BancoEfemero, senhas: SenhasDosPapeis): Promise<string> {
+async function provisionar(
+  instancia: BancoEfemero,
+  senhas: SenhasDosPapeis,
+  papeisDeFuncao: readonly string[] = PAPEIS_DE_FUNCAO,
+): Promise<string> {
   const sql = abrirConexao(instancia.cadeiaConexao);
 
   try {
@@ -254,22 +357,27 @@ async function provisionar(instancia: BancoEfemero, senhas: SenhasDosPapeis): Pr
     // A ausência de `GRANT ... TO ...` entre eles é a decisão — não há linha a ler, então ela fica
     // escrita aqui.
 
-    // O terceiro papel, sem `LOGIN` e sem senha: ele nunca atende conexão, e por isso não entra no
-    // laço acima nem em `SenhasDosPapeis`. O `NOBYPASSRLS` é conteúdo — a travessia que ele permite
-    // é NOMINAL, dada por uma política declarada na `0014`, e não um papel que ignora política
-    // (que é o que a ADR-0008 rejeita por escrito).
-    await sql.unsafe(
-      `CREATE ROLE "${PAPEL_RESOLUCAO}" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE ` +
-        'NOREPLICATION NOBYPASSRLS',
-    );
-    // …e a migração precisa PODER trocar o dono da função para ele: o PostgreSQL exige que quem
+    // Os papéis de FUNÇÃO, sem `LOGIN` e sem senha: eles nunca atendem conexão, e por isso não
+    // entram no laço acima nem em `SenhasDosPapeis`. O `NOBYPASSRLS` é conteúdo — a travessia que
+    // cada um permite é NOMINAL, dada por uma política declarada na migração de segurança
+    // correspondente, e não um papel que ignora política (que é o que a ADR-0008 rejeita por
+    // escrito).
+    //
+    // …e a migração precisa PODER trocar o dono da função para cada um: o PostgreSQL exige que quem
     // executa `ALTER … OWNER TO` seja membro do papel de destino. `INHERIT FALSE` é o mínimo que
     // faz isso funcionar — `sysloc_migracao` pode assumir o papel deliberadamente, mas **não**
     // herda os privilégios dele nas consultas comuns, de modo que a leitura irrestrita continua
     // exigindo um `SET ROLE` explícito em vez de acontecer por acidente.
-    await sql.unsafe(
-      `GRANT "${PAPEL_RESOLUCAO}" TO "${PAPEL_MIGRACAO}" WITH INHERIT FALSE, SET TRUE`,
-    );
+    //
+    // A lista vem por parâmetro **só** para que {@link erroAoMigrarSemPapelDeRoteamento} possa
+    // omitir um deles — ver o docblock de lá. Toda chamada normal usa {@link PAPEIS_DE_FUNCAO}.
+    for (const papel of papeisDeFuncao) {
+      await sql.unsafe(
+        `CREATE ROLE "${papel}" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE ` +
+          'NOREPLICATION NOBYPASSRLS',
+      );
+      await sql.unsafe(`GRANT "${papel}" TO "${PAPEL_MIGRACAO}" WITH INHERIT FALSE, SET TRUE`);
+    }
 
     for (const schema of SCHEMAS) {
       await sql.unsafe(`CREATE SCHEMA "${schema}" AUTHORIZATION "${PAPEL_MIGRACAO}"`);

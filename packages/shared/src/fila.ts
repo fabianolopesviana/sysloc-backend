@@ -40,6 +40,34 @@
  * empresas), **nunca aceito de fonte externa**. Um campo opcional reabriria o pior modo de falha
  * que a ADR-0008 fechou: sem contexto, a RLS devolve vazio **em silêncio** e o trabalho *parece*
  * ter rodado.
+ *
+ * ---------------------------------------------------------------------------
+ * A SEGUNDA CLASSE DE CARGA — a entrada de fato de terceiro, que NÃO carrega empresa
+ * ---------------------------------------------------------------------------
+ *
+ * O parágrafo acima descreve a **primeira** classe, e continua verdadeiro palavra por palavra para
+ * cada uma das cargas que existiam antes desta fatia: {@link CargaDaRegua},
+ * {@link CargaDaConfirmacao}, {@link CargaDaEmissaoEmLote} e {@link CargaDaConferenciaBancaria}
+ * levam `empresaId` porque **quem enfileira já detinha direito a ele** — a sessão que atendeu o
+ * pedido, ou a enumeração de tenants.
+ *
+ * {@link CargaDaNotificacaoBancaria} é a **segunda** classe, e ela não tem empresa alguma. A borda
+ * que a enfileira recebe um **fato produzido por um terceiro** que não é usuário do sistema e nunca
+ * terá sessão (ADR-0035): ela **não sabe — e não pode saber** — de que empresa o fato é, porque
+ * descobrir é justamente o trabalho da tarefa, por travessia nominal ao registro que o próprio
+ * produto emitiu. O único valor de empresa disponível na borda viria do **recebido**, e aceitá-lo é
+ * literalmente a terceira *Alternativa rejeitada* da ADR-0035 e o que a cláusula de procedência da
+ * ADR-0024 proíbe.
+ *
+ * A **terceira emenda da ADR-0024** (2026-08-18) é quem declara este alcance, e ela é a razão de a
+ * ausência do campo **não** ser violação: *"a carga NÃO carrega empresa quando a empresa é o
+ * resultado da travessia nominal… aí o contexto vem do registro resolvido, uma única vez, na borda
+ * que o resolve"*. Sem essa emenda, a abertura da `Decision` — *"estabelece o contexto de tenant a
+ * partir da carga do próprio trabalho"* — leria como exigência universal, e este módulo pareceria
+ * contrariá-la.
+ *
+ * ⚠️ **Acrescentar `empresaId` aqui não seria conformidade, seria violação.** É a armadilha mais
+ * provável de quem editar este arquivo por analogia com as quatro cargas de cima.
  */
 
 /**
@@ -119,6 +147,21 @@ export const FILA_DA_EMISSAO_EM_LOTE = 'emissao-em-lote';
  * produto **deixar de acusar pagamento** sem que nada falhasse.
  */
 export const FILA_DA_CONFERENCIA_BANCARIA = 'conferencia-bancaria';
+
+/**
+ * Nome da fila do **tratamento da notícia bancária** — o fato que o provedor envia sem sessão.
+ *
+ * Quem enfileira é a borda HTTP (`apps/api`), logo depois de gravar o recebido cru; quem consome é o
+ * processo de trabalho, que interpreta, roteia e decide o desfecho. Vale aqui, palavra por palavra,
+ * a razão de {@link FILA_DA_REGUA}: um literal repetido dos dois lados é a divergência que nenhuma
+ * ferramenta apanha, porque o trabalho fica parado **sem erro nenhum**.
+ *
+ * O agravante próprio desta fila é o mesmo de {@link FILA_DA_CONFERENCIA_BANCARIA}, e mais um: a
+ * notícia é o caminho por onde o produto **descobre pagamento no mesmo dia**, e o terceiro que a
+ * envia já recebeu o `204`. Uma tarefa enfileirada sob nome que ninguém escuta ficaria parada em
+ * `RECEBIDO` sem que nada falhasse — e sem que ninguém a reenviasse.
+ */
+export const FILA_DA_NOTIFICACAO_BANCARIA = 'notificacao-bancaria';
 
 /**
  * Opções aplicadas a toda tarefa enfileirada, por qualquer produtor.
@@ -246,4 +289,36 @@ export interface CargaDaConferenciaBancaria {
   readonly empresaId: string;
   /** A conferência **já aberta** que a tarefa executa — a mesma razão do `loteId`. */
   readonly conferenciaId: string;
+}
+
+/**
+ * Carga útil do tratamento de **uma** notícia bancária — **um** identificador, e nada mais.
+ *
+ * ---------------------------------------------------------------------------
+ * A AUSÊNCIA DE EMPRESA É O MECANISMO — ver a "SEGUNDA CLASSE DE CARGA" no cabeçalho
+ * ---------------------------------------------------------------------------
+ *
+ * Esta é a única carga do produto sem `empresaId`, e a ausência é a decisão, não um esquecimento: a
+ * borda que enfileira **não sabe** de que empresa o fato é. Descobrir é o trabalho da tarefa, que o
+ * faz pela travessia nominal `negocio.rotear_notificacao_bancaria` — cuja assinatura, por decisão,
+ * **não tem por onde receber empresa**. O contexto de tenant nasce do **registro resolvido**, uma
+ * vez só, e é a **terceira emenda da ADR-0024** (2026-08-18) que declara esse alcance.
+ *
+ * Acrescentar aqui um campo de empresa exigiria tirá-lo do **recebido** — a única fonte disponível
+ * na borda —, o que é a terceira *Alternativa rejeitada* da ADR-0035 (*"aceitar a empresa declarada
+ * no recebido… faz uma origem externa escolher o tenant"*).
+ *
+ * Vale aqui, também, o cabeçalho de {@link CargaDaEmissaoEmLote}: **nada de segredo viaja**. O que
+ * segue é um identificador de linha, e o recebido cru — que carrega dado pessoal do pagador —
+ * permanece na coluna `jsonb` com prazo de guarda, alcançado pela tarefa a partir deste `id`.
+ */
+export interface CargaDaNotificacaoBancaria {
+  /**
+   * A notícia **já gravada** que a tarefa vai tratar.
+   *
+   * Ela existe antes de a tarefa ser enfileirada, e é isso que torna a repetição segura: a entrega é
+   * *at-least-once*, e a tarefa repetida opera sobre o **mesmo** registro. É a mesma razão do
+   * `loteId` de {@link CargaDaEmissaoEmLote}.
+   */
+  readonly notificacaoId: string;
 }

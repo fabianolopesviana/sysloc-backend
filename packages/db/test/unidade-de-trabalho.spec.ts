@@ -729,6 +729,69 @@ const SIMBOLOS_ESPERADOS = [
   'esquemaNegocio.itemDaEmissaoEmLote',
   'esquemaNegocio.origemDoEventoBancario',
   'esquemaNegocio.tipoDeEventoBancario',
+  // T2 da fatia `webhook-e-carne` — o TERCEIRO schema do produto (`plataforma`, ADR-0031) e os dois
+  // símbolos da notícia crua do provedor, criados pela migração `0019`.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T2 publica três símbolos novos no índice por decisão declarada na §1
+  // da task (`Símbolos públicos criados`). Eles entram pelo mesmo critério de todos os anteriores:
+  // são **declaração de estrutura**, não caminho para dado — quem os tem em mãos ainda precisa de um
+  // executor para chegar ao banco, e o executor não sai do índice. O eixo das marcas de cliente
+  // continua valendo sobre cada um deles.
+  //
+  // ⚠️ **O namespace se chama `esquemaPlataforma`, e não `esquemaNegocio`**, porque a tabela que ele
+  // declara vive fora do schema de negócio por decisão da ADR-0031: ela é gravada antes do
+  // roteamento e, quando o recebido não casa com cobrança alguma, não tem empresa derivável. Ela é a
+  // ÚNICA tabela deste pacote sem `empresa_id` e sem RLS, e as duas ausências são afirmadas contra o
+  // catálogo pelo `CT-994`.
+  //
+  // O `RENAME COLUMN` que a mesma migração aplica a `negocio.cobranca` (`nosso_numero` →
+  // `numero_do_titulo_no_provedor`) **não acrescenta símbolo algum aqui**: é campo de uma tabela já
+  // declarada, e `esquemaNegocio.cobranca` consta do conjunto desde a T3 da fatia `cobranca-e-mora`.
+  // Mesma leitura que a coluna `identificador_no_provedor` recebeu na fatia anterior.
+  //
+  // **Nenhuma entrada anterior sai.**
+  'esquemaPlataforma.desfechoDaNotificacao',
+  'esquemaPlataforma.notificacaoBancaria',
+  'esquemaPlataforma.plataforma',
+  // T3 da fatia `webhook-e-carne` — as SETE operações da notícia crua do provedor, ordenadas no
+  // conjunto pela posição de cada nome (a comparação é sobre a lista ordenada).
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T3 publica sete símbolos novos no índice por decisão declarada na §1
+  // da task (`Símbolos públicos criados`). Elas entram pelo critério de sempre — **recebem** o
+  // executor de quem já abriu a unidade de trabalho, não abrem conexão, não reservam e não devolvem
+  // executor —, com duas razões a mais, próprias desta entidade.
+  //
+  // A primeira é a **ausência de dono**: `plataforma.notificacao_bancaria` não tem `empresa_id`, não
+  // habilita RLS e nenhuma política a alcança (ADR-0031), de modo que não há política a recortar o
+  // que uma consulta escrita fora do pacote veria — o alcance à tabela só é enumerável por símbolo, e
+  // é este conjunto que o torna verificável.
+  //
+  // A segunda é a **assimetria de contexto**: `rotearNotificacaoBancaria` corre fora de qualquer
+  // contexto de tenant — a empresa é o RESULTADO dela — e invoca, pelo executor recebido, a função
+  // `SECURITY DEFINER` da migração `0020`. Publicá-la é o que impede a borda de compor por fora um
+  // `SELECT … WHERE identificador_no_provedor = $1` contra `negocio.cobranca`, que é o segundo
+  // caminho para o dado que a ADR-0008 recusa.
+  //
+  // O que **não** sai do pacote, e a ausência é deliberada: `DIAS_DE_RETENCAO_DO_CRU`, pelo mesmo
+  // critério de `empresaDoContexto` e das constantes do portador — é mecanismo interno do expurgo.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o defeito
+  // que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia. **Nenhuma
+  // entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // Os tipos que elas publicam (`AjustesDoDesfecho`, `DesfechoDoTratamento`,
+  // `NotificacaoBancariaPersistida`, `NotificacaoRecebida`, `NotificacaoRetida`,
+  // `RoteamentoDaNotificacao`) não aparecem aqui porque não existem em tempo de execução, e este caso
+  // observa o módulo carregado.
+  'expurgarNotificacoesVencidas',
+  'houveEfeitoDaLiquidacao',
+  'lerNotificacaoBancaria',
+  'listarRetidas',
+  'marcarDesfecho',
+  'registrarNotificacaoBancaria',
+  'rotearNotificacaoBancaria',
   // T4 da fatia `cobranca-e-mora` — a PORTA da cobrança: as três operações do ciclo de vida, as DUAS
   // da série e a classe de erro da tradução de unicidade, ordenadas no conjunto pela posição de cada
   // nome (a comparação é sobre a lista ordenada).
@@ -1258,7 +1321,7 @@ const SIMBOLOS_ESPERADOS = [
   //
   // São TRÊS as razões próprias desta porta. A primeira é o **predicado do conjunto**:
   // `selecionarCobrancasSemBoleto` é uma consulta só, e é dela que sai a idempotência da reexecução
-  // (`nosso_numero IS NULL`) — publicá-la é o que impede o percurso de compor por fora o par "listar a
+  // (`numero_do_titulo_no_provedor IS NULL`) — publicá-la é o que impede o percurso de compor por fora o par "listar a
   // carteira, decidir quem entra", que seria a segunda regra para o mesmo fato e traria o conjunto
   // inteiro para a memória antes de filtrar (ADR-0023). A segunda é o **estado derivado**: não há
   // coluna de estado (ADR-0022), e a derivação dos dois instantes de desfecho tem lar único no módulo
@@ -1411,6 +1474,46 @@ const SIMBOLOS_ESPERADOS = [
   'liquidarPeloProvedor',
   'localizarAlvoDoBoleto',
   'revogarBoleto',
+  // T9 da fatia `webhook-e-carne` — a leitura do estado de suspensão da empresa, acrescentada a
+  // `../src/empresa.ts`.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T9 publica **um** símbolo novo no índice por decisão declarada: a
+  // borda do tratamento da notícia precisa saber, no passo B.6, se a empresa dona da cobrança está
+  // suspensa (RN-09/CA-10), e a alternativa seria o processo de trabalho escrever
+  // `identidade.empresa` numa cadeia de texto — exatamente o alcance não-enumerável que o cabeçalho
+  // de `../src/empresa.ts` fecha, e que a contenção de TIPO da §11.2 não alcança.
+  //
+  // Ela entra pelo critério de todas as portas anteriores: **recebe** o executor de quem já abriu a
+  // unidade, não abre conexão, não reserva, não devolve executor — e a razão de **não** haver
+  // contexto de tenant a fixar é a ADR-0009 (`identidade` não tem política a aplicar), a mesma que
+  // já sustenta as oito operações irmãs deste módulo.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o
+  // defeito que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia.
+  // **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  'empresaSuspensa',
+  // T10 da fatia `webhook-e-carne` — a seleção do RECORTE do carnê, acrescentada a
+  // `../src/cobranca.ts`.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T10 publica **um** símbolo novo no índice por decisão declarada: o
+  // carnê precisa das cobranças de um contrato num intervalo de competências, **filtradas e
+  // ordenadas pelo banco** (ADR-0023), e a alternativa seria a borda listar a carteira inteira do
+  // contrato e recortá-la em memória — o segundo caminho para o mesmo recorte que o cabeçalho
+  // daquele módulo fecha, e que faria o número de linhas trazidas ser o do contrato inteiro.
+  //
+  // Ela entra pelo critério de todas as portas anteriores: **recebe** o executor de quem já abriu a
+  // unidade, não abre conexão, não reserva, não devolve executor e — a ADR-0008 aplicada à letra —
+  // **não recebe `empresaId`**. Ela lê a **visão** `negocio.cobranca_derivada`, como toda leitura de
+  // cobrança desta camada.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o
+  // defeito que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia.
+  // **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida. Os dois
+  // tipos que a porta publica (`RecorteDeCompetencias`, `CobrancaDoRecorte`) **não** aparecem aqui
+  // pela razão de sempre: tipo não existe em tempo de execução.
+  'selecionarCobrancasDoRecorte',
 ] as const;
 
 /** As propriedades que denunciam um cliente `postgres.js` — a marca do executor cru. */
@@ -1639,6 +1742,30 @@ const CHAMADORES_LEGITIMOS: readonly string[] = [
   // `ausentes` nomeados, e um sétimo chamador segue reprovando nominalmente.
   join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/emissao-em-lote.ts'),
   join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/conferencia-bancaria.ts'),
+  // A TERCEIRA borda de trabalho enfileirado da cobrança bancária — o tratamento da notícia recebida
+  // do provedor (T7 da fatia `webhook-e-carne`).
+  //
+  // SUT_IS_CORRECT_BECAUSE: a lista enumera BORDAS, e esta é uma — a tarefa chega do servidor de
+  // fila. O que é PRÓPRIO dela, e a distingue das seis anteriores, é **de onde vem a empresa**: a
+  // carga desta fila é a única do produto sem `empresaId`, e o contexto nasce do **registro que o
+  // roteamento resolve** — a segunda origem legítima que a ADR-0024 institui, e cujo alcance a
+  // **terceira emenda** dela (2026-08-18) declara. As duas leituras que precedem a resolução (o cru
+  // e o próprio roteamento) correm **fora** de contexto de propósito: a primeira porque
+  // `plataforma.notificacao_bancaria` não tem dono-empresa (ADR-0031), e a segunda porque a empresa
+  // é o **resultado** dela, e a função de banco não tem por onde recebê-la.
+  //
+  // ⚠️ **São dois pontos de chamada no arquivo, e o contexto continua sendo aberto UMA vez por
+  // execução**: eles vivem em ramos mutuamente exclusivos — a recusa por divergência **retorna**, e
+  // a consulta só corre quando ela não aconteceu. Nenhum deles reabre contexto sobre um contexto já
+  // aberto, e nenhum é alcançável a partir do outro.
+  //
+  // O que ela NÃO é: um serviço abrindo contexto próprio — nem `packages/db/src/
+  // notificacao-bancaria.ts` nem `@sysloc/cobranca-bancaria` conhecem `AcessoAoBanco`, e as duas
+  // recebem tudo por parâmetro (ADR-0025). E o que ela não faz é ler empresa do recebido: fazê-lo é
+  // a terceira *Alternativa rejeitada* da ADR-0035. A asserção **não foi afrouxada**: continua sendo
+  // igualdade de conjunto, com `excedentes` e `ausentes` nomeados, e um oitavo chamador segue
+  // reprovando nominalmente.
+  join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/notificacao-bancaria.ts'),
 ].sort();
 
 /**
@@ -1791,7 +1918,8 @@ const ABRIDORES_LEGITIMOS: readonly string[] = [
   // estabelecer a partir da carga, e entrega o resto — composição e envio — a portas que recebe por
   // parâmetro. Vale, palavra por palavra, o `SUT_IS_CORRECT_BECAUSE` do vizinho acima.
   join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/confirmacao-de-email.ts'),
-  // A borda do ATO DO TITULAR — a única rota de negócio sem sessão do produto (T11 da mesma fatia).
+  // A borda do ATO DO TITULAR — a PRIMEIRA rota de negócio sem sessão do produto (T11 da mesma
+  // fatia). Ela deixou de ser a única com a T6 da fatia `webhook-e-carne`, logo adiante.
   //
   // SUT_IS_CORRECT_BECAUSE: o elenco enumera **bordas**, e esta é uma — ela é o ponto onde o pedido
   // entra, e não uma camada intermediária. Ela abre **duas** unidades, e as duas são propriedade da
@@ -1819,6 +1947,51 @@ const ABRIDORES_LEGITIMOS: readonly string[] = [
   // lista reprova nominalmente.
   join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/emissao-em-lote.ts'),
   join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/conferencia-bancaria.ts'),
+  // A borda da ENTRADA DE FATO DE TERCEIRO — a recepção da notícia bancária (T6 da fatia
+  // `webhook-e-carne`). É a SEGUNDA rota de negócio sem sessão do produto, e a primeira em que quem
+  // age não é titular de dado nenhum.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o elenco enumera **bordas**, e esta é uma — o ponto onde o pedido entra,
+  // e não uma camada intermediária. O critério que a põe aqui é o mesmo do vizinho
+  // `confirmacao.service.ts`: `sobContextoDaSessao` é o abridor único das rotas COM sessão, e ele
+  // **não a alcança**, porque ele lê a sessão que a guarda publicou e nesta rota não há sessão
+  // nenhuma a ler — o provedor não é usuário do sistema, não porta segredo e não é titular de dado
+  // algum (ADR-0035). Não existe, portanto, contexto de tenant a estabelecer:
+  // `plataforma.notificacao_bancaria` não tem coluna de empresa, não habilita RLS e nenhuma política
+  // a alcança (ADR-0031), e de que empresa o fato é só se descobre na tarefa, por travessia nominal
+  // — reconstituí-lo aqui a partir do recebido é a terceira *Alternativa rejeitada* da ADR-0035. É
+  // por isso que esta borda entra AQUI e **não** em {@link CHAMADORES_LEGITIMOS}: ela abre unidade,
+  // e não escreve contexto.
+  //
+  // O que ela NÃO é: um serviço de domínio abrindo unidade própria —
+  // `packages/db/src/notificacao-bancaria.ts` **recebe** o `tx` e não conhece `AcessoAoBanco`. E a
+  // abertura não podia subir para o controlador: o enfileiramento tem de acontecer **depois do
+  // `COMMIT`** — enfileirar antes daria à tarefa um identificador que a transação ainda pode
+  // desfazer —, e essa ordenação é decisão sobre o que acontece depois do commit, que a camada de
+  // apresentação não contém. A diferença para o vizinho é que aqui não há segunda unidade nem
+  // `contextoDeTenant.executarCom`.
+  //
+  // A asserção **não foi afrouxada**: continua sendo igualdade de conjunto com `excedentes` e
+  // `ausentes` nomeados, e qualquer arquivo fora desta lista reprova nominalmente.
+  join(RAIZ_DO_REPOSITORIO, 'apps/api/src/notificacoes-bancarias/notificacao-bancaria.service.ts'),
+  // A borda que TRATA a notícia recebida — a tarefa da fila `notificacao-bancaria` (T7 da mesma
+  // fatia). Ela é a outra metade da borda acima: aquela guarda o cru e responde; esta o interpreta.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o elenco enumera **bordas**, e a decisão D1 é literalmente *"a unidade
+  // abre na BORDA, e o serviço recebe o executor"*. Ela abre **uma unidade por escrita** e nunca uma
+  // que envolva a rede: o cru e o roteamento saem de unidades próprias, **sem contexto**; a consulta
+  // ao provedor é aguardada **entre** duas unidades; e o efeito na cobrança comita junto do carimbo
+  // do desfecho, porque os dois são um fato só — `APLICADO` **é** o registro de que o efeito
+  // aconteceu, e separá-los abriria a janela em que o dinheiro entrou e nada o registra.
+  //
+  // O que ela NÃO é: um serviço de domínio abrindo unidade própria — `packages/db/src/
+  // notificacao-bancaria.ts` e `packages/db/src/boleto-da-cobranca.ts` **recebem** o `tx` e não
+  // conhecem `AcessoAoBanco`, e `@sysloc/cobranca-bancaria` não importa `@sysloc/db`. Diferente da
+  // borda de recepção logo acima, esta **também** escreve contexto, e por isso ela entra nas DUAS
+  // listas — ver {@link CHAMADORES_LEGITIMOS}. A asserção **não foi afrouxada**: continua sendo
+  // igualdade de conjunto com `excedentes` e `ausentes` nomeados, e qualquer arquivo fora desta lista
+  // reprova nominalmente.
+  join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/notificacao-bancaria.ts'),
 ].sort();
 
 /**

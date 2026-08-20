@@ -61,9 +61,10 @@
  * ---------------------------------------------------------------------------
  *
  * As quatro escritas trazem o estado admissível na própria cláusula (`pago_em IS NULL AND
- * cancelado_em IS NULL`, `pago_em IS NOT NULL`, `nosso_numero IS NULL`, `nosso_numero IS NOT NULL`), e
- * **nenhuma lê antes de gravar**. A forma intuitiva — perguntar em que estado a cobrança está e só então escrever — passa em
- * todos os casos felizes e perde a corrida: entre o `SELECT` e o `UPDATE` cabe a baixa manual da rota
+ * cancelado_em IS NULL`, `pago_em IS NOT NULL`, `numero_do_titulo_no_provedor IS NULL`,
+ * `numero_do_titulo_no_provedor IS NOT NULL`), e **nenhuma lê antes de gravar**. A forma intuitiva —
+ * perguntar em que estado a cobrança está e só então escrever — passa em todos os casos felizes e
+ * perde a corrida: entre o `SELECT` e o `UPDATE` cabe a baixa manual da rota
  * de pagamento, e o percurso da conferência gravaria por cima de um fato que ele leu antes de existir.
  * É a mesma lei que `concluirLote`, `interromperLote` e `concluirConferencia` já aplicam.
  *
@@ -138,11 +139,12 @@ import { acusarPagamentoDeCobranca } from './cobranca.js';
  *
  * ⚠️ **`identificadorNoProvedor` é obrigatório, e a obrigatoriedade é a decisão.** São **dois**
  * identificadores de sentidos opostos: `numeroDoTituloNoProvedor` é o que o **provedor atribui** e
- * devolve (a coluna `nosso_numero`), e `identificadorNoProvedor` é o que o **produto compõe** — 18
- * posições, `AAAAMM` mais o contador do SaaS — e envia. Gravar só o primeiro descartaria a chave de
- * correlação por onde a fatia do carnê descobre a que empresa uma notificação pertence, e **ela não se
- * recupera depois**: o contador já avançou, e a única saída seria migração sobre tabela com dado. Ver
- * o cabeçalho da coluna em {@link ./esquema/negocio.ts} e a ADR-0033.
+ * devolve (a coluna `numero_do_titulo_no_provedor`), e `identificadorNoProvedor` é o que o
+ * **produto compõe** — 18 posições, `AAAAMM` mais o contador do SaaS — e envia. Gravar só o
+ * primeiro descartaria a chave de correlação por onde a fatia do carnê descobre a que empresa uma
+ * notificação pertence, e **ela não se recupera depois**: o contador já avançou, e a única saída
+ * seria migração sobre tabela com dado. Ver o cabeçalho da coluna em {@link ./esquema/negocio.ts} e
+ * a ADR-0033.
  *
  * `caminhoDoArquivo` é **caminho**, nunca bytes: o boleto é fato recebido de terceiro, que a cláusula
  * de exclusão da ADR-0030 mantém fora do *"artefato derivado se compõe sob demanda"*. Quem escreve e
@@ -153,7 +155,9 @@ import { acusarPagamentoDeCobranca } from './cobranca.js';
  * o adaptador deveria ter recusado antes de chegar ao banco.
  */
 export interface BoletoEmitido {
-  /** A coluna `nosso_numero` — o identificador que o **provedor** atribuiu ao título. */
+  /**
+   * A coluna `numero_do_titulo_no_provedor` — o identificador que o **provedor** atribuiu ao título.
+   */
   readonly numeroDoTituloNoProvedor: string;
   readonly linhaDigitavel: string;
   readonly codigoDeBarras: string;
@@ -327,12 +331,13 @@ export class ErroDeCobrancaNaoAlcancada extends Error {
 
 // DÉBITO COM GATILHO — D13 · F4/T6 · registrado 2026-08-17
 // O QUÊ: nada no banco pareia os campos de conciliação entre si. `linha_digitavel` sem
-//        `nosso_numero` — e qualquer outra combinação meio preenchida — é representável, e o que a
-//        impede hoje é só estas quatro escritas nomearem os campos em bloco.
+//        `numero_do_titulo_no_provedor` — e qualquer outra combinação meio preenchida — é
+//        representável, e o que a impede hoje é só estas quatro escritas nomearem os campos em
+//        bloco.
 // QUANDO FECHA: a fatia que criar no banco a restrição pareando `linha_digitavel` com
-//        `nosso_numero` (a bicondicional dos CINCO campos está descartada por medição: `data_credito`
-//        e `valor_creditado` nascem depois dos três de emissão, e ela recusaria o estado legítimo
-//        *emitido e ainda não pago*). Mesma classe do D44 · F2/T10.
+//        `numero_do_titulo_no_provedor` (a bicondicional dos CINCO campos está descartada por
+//        medição: `data_credito` e `valor_creditado` nascem depois dos três de emissão, e ela
+//        recusaria o estado legítimo *emitido e ainda não pago*). Mesma classe do D44 · F2/T10.
 // POR QUE NÃO AGORA: a `0017` já foi gerada e a restrição exigiria migração própria fora do escopo
 //        declarado desta task, sobre uma tabela cuja migração de segurança (`0010`) é imutável.
 // ÍNDICE: docs/specs/features/emissao-e-conciliacao/v1/_run/run-report.md §2, D13
@@ -392,12 +397,12 @@ async function exigirCobrancaAlcancavel(
  * A CLÁUSULA EXIGE COBRANÇA **SEM BOLETO**, e a exigência é o invariante financeiro da fatia
  * ---------------------------------------------------------------------------
  *
- * `AND nosso_numero IS NULL` é o que impede a emissão de escrever por cima de um boleto **vivo**. Sem
- * ele, uma segunda emissão sobre a mesma cobrança substituiria em silêncio o título registrado no
- * banco — e o boleto anterior continuaria pagável no mundo, sem que o produto tivesse mais o elo por
- * onde reconciliá-lo. É o *"em nenhum instante os dois são pagáveis"* da CA-05 imposto no ponto onde a
- * escrita acontece, e não apenas na composição que a antecede (a reemissão revoga e **confirma** antes
- * de emitir — T11).
+ * `AND numero_do_titulo_no_provedor IS NULL` é o que impede a emissão de escrever por cima de um
+ * boleto **vivo**. Sem ele, uma segunda emissão sobre a mesma cobrança substituiria em silêncio o
+ * título registrado no banco — e o boleto anterior continuaria pagável no mundo, sem que o produto
+ * tivesse mais o elo por onde reconciliá-lo. É o *"em nenhum instante os dois são pagáveis"* da
+ * CA-05 imposto no ponto onde a escrita acontece, e não apenas na composição que a antecede (a
+ * reemissão revoga e **confirma** antes de emitir — T11).
  *
  * Ele **não é leitura prévia**: não há `SELECT`, o predicado é avaliado dentro da própria instrução, e
  * por isso não existe janela entre decidir e gravar.
@@ -424,13 +429,13 @@ export async function gravarBoletoDaCobranca(
 ): Promise<void> {
   const resultado = await tx`
     UPDATE negocio.cobranca
-       SET nosso_numero = ${boleto.numeroDoTituloNoProvedor},
+       SET numero_do_titulo_no_provedor = ${boleto.numeroDoTituloNoProvedor},
            linha_digitavel = ${boleto.linhaDigitavel},
            codigo_barras = ${boleto.codigoDeBarras},
            identificador_no_provedor = ${boleto.identificadorNoProvedor},
            boleto_arquivo = ${boleto.caminhoDoArquivo}
      WHERE codigo = ${codigo}
-       AND nosso_numero IS NULL
+       AND numero_do_titulo_no_provedor IS NULL
   `;
 
   if (resultado.count !== 1) {
@@ -466,11 +471,11 @@ export async function gravarBoletoDaCobranca(
  * palavra por palavra, que faz {@link ErroDeCobrancaNaoAlcancada} ser classe nomeada.
  *
  * A janela é estreita e **real**: `cancelarCobranca` (F3) **não** revoga o boleto, de modo que a
- * cobrança cancelada conserva `nosso_numero` e permanece elegível ao conjunto que o percurso já
- * selecionou. O cancelamento pelo Admin **entre a seleção e a escrita** é a corrida que este arquivo
- * declara existir para fechar — *o predicado de estado mora dentro da instrução, nunca num `SELECT`
- * antes dela*. Com a condição, a cancelada cai no desfecho benigno, que é **literalmente verdadeiro**
- * para ela: não estava em aberto.
+ * cobrança cancelada conserva `numero_do_titulo_no_provedor` e permanece elegível ao conjunto que o
+ * percurso já selecionou. O cancelamento pelo Admin **entre a seleção e a escrita** é a corrida que
+ * este arquivo declara existir para fechar — *o predicado de estado mora dentro da instrução, nunca
+ * num `SELECT` antes dela*. Com a condição, a cancelada cai no desfecho benigno, que é
+ * **literalmente verdadeiro** para ela: não estava em aberto.
  *
  * ⚠️ **As portas irmãs NÃO recebem a mesma condição, e a assimetria é conteúdo.**
  * {@link estornarLiquidacao} já exige `pago_em IS NOT NULL`, e *paga e cancelada* é irrepresentável
@@ -581,10 +586,11 @@ export async function liquidarPeloProvedor(
  * OS TRÊS CAMPOS DE EMISSÃO **PERMANECEM** — estorno não é revogação
  * ---------------------------------------------------------------------------
  *
- * `nosso_numero`, `linha_digitavel` e `codigo_barras` não aparecem no `SET`, e a ausência é a
- * garantia: coluna que não é nomeada não é escrita. O estorno diz *"o pagamento foi desfeito"*, e não
- * *"o título deixou de existir"* — apagar o elo com o provedor aqui destruiria a chave por onde a
- * conferência seguinte pergunta pela situação daquele mesmo boleto, que continua vivo. Quem apaga os
+ * `numero_do_titulo_no_provedor`, `linha_digitavel` e `codigo_barras` não aparecem no `SET`, e a
+ * ausência é a garantia: coluna que não é nomeada não é escrita. O estorno diz *"o pagamento foi
+ * desfeito"*, e não *"o título deixou de existir"* — apagar o elo com o provedor aqui destruiria a
+ * chave por onde a conferência seguinte pergunta pela situação daquele mesmo boleto, que continua
+ * vivo. Quem apaga os
  * campos de emissão é {@link revogarBoleto}, e só ele.
  *
  * `identificador_no_provedor` fica de fora pela mesma razão, com um agravante: ele não se recompõe —
@@ -646,7 +652,7 @@ export async function estornarLiquidacao(
  * Isto é o oposto do que o sistema antigo faz, e é métrica de sucesso do PRD: **o provedor não apaga
  * valor a receber**. A cobrança revogada continua em aberto, volta ao alcance da régua e é recolhida
  * pelo lote seguinte da competência (CA-06) — o predicado daquele conjunto é *"em aberto e sem
- * boleto"*, e é `nosso_numero IS NULL` que a devolve a ele.
+ * boleto"*, e é `numero_do_titulo_no_provedor IS NULL` que a devolve a ele.
  *
  * ---------------------------------------------------------------------------
  * OS DOIS CAMPOS DE CRÉDITO **NÃO** SÃO ZERADOS, e o alcance de "campos de emissão" é o da task
@@ -675,9 +681,9 @@ export async function estornarLiquidacao(
  * identificador interno das duas relações é o que declara que a fotografia lida é a **daquela** linha.
  * Não há `empresa_id` em ponto nenhum — quem recorta as duas pontas é a política (ADR-0008).
  *
- * A cláusula exige `nosso_numero IS NOT NULL` pelas duas razões de {@link estornarLiquidacao}: não
- * reescrever a tupla de quem já está sem boleto, e dar ao percurso o desfecho benigno de quando o
- * provedor informa a revogação de um boleto que a reemissão já revogou.
+ * A cláusula exige `numero_do_titulo_no_provedor IS NOT NULL` pelas duas razões de
+ * {@link estornarLiquidacao}: não reescrever a tupla de quem já está sem boleto, e dar ao percurso o
+ * desfecho benigno de quando o provedor informa a revogação de um boleto que a reemissão já revogou.
  *
  * ⚠️ **Ela NÃO recebe o diagnóstico do provedor, e a ausência é medida.** A §3.1 da task escreve
  * `revogarBoleto(tx, codigo, { diagnostico })`, e não há onde gravá-lo: `negocio.cobranca` não tem
@@ -695,14 +701,14 @@ export async function revogarBoleto(
 ): Promise<RevogacaoAplicada> {
   const [linha] = await tx<{ caminhoDoArquivo: string | null }[]>`
     UPDATE negocio.cobranca AS alvo
-       SET nosso_numero = NULL,
+       SET numero_do_titulo_no_provedor = NULL,
            linha_digitavel = NULL,
            codigo_barras = NULL,
            boleto_arquivo = NULL
       FROM negocio.cobranca AS antes
      WHERE antes.id = alvo.id
        AND alvo.codigo = ${codigo}
-       AND alvo.nosso_numero IS NOT NULL
+       AND alvo.numero_do_titulo_no_provedor IS NOT NULL
     RETURNING antes.boleto_arquivo AS "caminhoDoArquivo"
   `;
 
@@ -739,7 +745,7 @@ export async function lerBoletoDaCobranca(
   codigo: string,
 ): Promise<BoletoDaCobranca | undefined> {
   const [linha] = await tx<BoletoDaCobranca[]>`
-    SELECT nosso_numero AS "numeroDoTituloNoProvedor",
+    SELECT numero_do_titulo_no_provedor AS "numeroDoTituloNoProvedor",
            linha_digitavel AS "linhaDigitavel",
            codigo_barras AS "codigoDeBarras",
            boleto_arquivo AS "caminhoDoArquivo"
@@ -805,7 +811,7 @@ export async function localizarAlvoDoBoleto(
   const [linha] = await tx<AlvoDoBoleto[]>`
     SELECT id,
            codigo,
-           nosso_numero AS "numeroDoTituloNoProvedor"
+           numero_do_titulo_no_provedor AS "numeroDoTituloNoProvedor"
       FROM negocio.cobranca
      WHERE codigo = ${codigo}
   `;

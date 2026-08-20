@@ -1,6 +1,7 @@
 /**
  * Verificação do **adaptador mTLS contra o provedor** — CT-839 a CT-844 e CT-863 da fatia
- * `fundacao-bancaria`, mais o CT-943 da fatia `emissao-e-conciliacao`.
+ * `fundacao-bancaria`, mais o CT-943 da fatia `emissao-e-conciliacao` e o par CT-1008/CT-1009 da
+ * fatia `webhook-e-carne`.
  *
  * ---------------------------------------------------------------------------
  * INVARIANTES
@@ -46,10 +47,17 @@
  * |          |        | positivo, e com o resto do texto do provedor preservado íntegro. |
  * | CA-20    | CT-952 | Credencial cuja validade restante é menor que a margem é **renovada antes
  * |          |        | de ser apresentada**; fora da margem ela continua sendo reaproveitada. |
+ * | —        | CT-1008| A construção **recusa** endereço que não serve — sem esquema, com esquema
+ * |          |        | não-HTTPS e vazio —, sempre com a MESMA mensagem, que nomeia a
+ * |          |        | **variável** e jamais ecoa o valor recusado. Sem fronteira de rede. |
+ * | —        | CT-1009| E o endereço **bem formado** constrói: as três formas boas devolvem um
+ * |          |        | objeto com **exatamente** as cinco capacidades da porta. É o companheiro
+ * |          |        | que impede uma guarda degenerada em *recusa tudo* de satisfazer o
+ * |          |        | CT-1008. |
  *
  * Rastreabilidade: `CA-07 → CT-839, CT-840, CT-841, CT-863 (RN-06)` ·
  * `CA-13 → CT-840, CT-863 (RN-10)` · `RN-02 → CT-844, CT-863, CT-951` ·
- * `CA-20 → CT-943, CT-949, CT-950, CT-952 (RN-15)`.
+ * `CA-20 → CT-943, CT-949, CT-950, CT-952 (RN-15)` · `D38 · F4/T10 → CT-1008, CT-1009`.
  *
  * ---------------------------------------------------------------------------
  * Os QUATRO casos da correção do Gate 2 — e por que eles nasceram fora da faixa
@@ -330,6 +338,72 @@ const LACO_LOCAL = '127.0.0.1';
 
 /** O nome comum do par de teste; o nome alternativo do certificado cobre o laço local. */
 const NOME_DO_PAR = 'par-de-teste.sysloc';
+
+/**
+ * O motivo da recusa por forma, **copiado à mão** do adaptador — nunca importado dele.
+ *
+ * Importá-lo poria o artefato sob prova nos dois lados da igualdade: a asserção continuaria verde com
+ * qualquer redação, inclusive uma que ecoasse o valor recusado. O que ela existe para fixar é
+ * exatamente o contrário — a mensagem nomeia a **variável**, e jamais o endereço que o operador
+ * escreveu errado (o `TypeError` do `new URL` traz a cadeia recusada em `input`, e deixá-lo subir cru
+ * ecoaria a entrada).
+ */
+const MOTIVO_DA_RECUSA_POR_FORMA =
+  'o adaptador do provedor bancário não é construído com esta variável em forma que não serve de ' +
+  'endereço seguro';
+
+/** A recusa por forma, por extenso — motivo mais a variável, e nada além disso. */
+const RECUSA_POR_FORMA_POR_EXTENSO = `${MOTIVO_DA_RECUSA_POR_FORMA}: ${VARIAVEL_DO_ENDERECO}`;
+
+/** Uma forma de endereço que a construção tem de recusar, com o nome do defeito que ela representa. */
+interface FormaRecusada {
+  readonly forma: string;
+  readonly endereco: string;
+}
+
+/**
+ * As **três** formas de endereço inutilizável, cada uma nomeando o defeito que ela representa.
+ *
+ * As três não são a mesma prova, e a escolha cobre os **dois** ramos da guarda: a primeira e a
+ * terceira chegam pelo ramo em que `new URL` lança, e a segunda pelo ramo do esquema. A primeira é a
+ * mais traiçoeira das três, e por isso está aqui: `hospedeiro:porta` **não** faz `new URL` lançar —
+ * ele é aceito como um esquema inventado (`par-de-teste.sysloc:`) com hospedeiro **vazio**, de modo
+ * que uma guarda que só tratasse a exceção do parser deixaria passar um destino sem hospedeiro
+ * nenhum.
+ */
+const FORMAS_RECUSADAS: readonly FormaRecusada[] = [
+  { forma: 'sem esquema', endereco: `${NOME_DO_PAR}:8443` },
+  { forma: 'esquema não-HTTPS', endereco: `http://${NOME_DO_PAR}:8443` },
+  { forma: 'endereço vazio', endereco: '' },
+];
+
+/**
+ * Endereços **bem formados** que a construção tem de aceitar — o companheiro que impede "recusa
+ * tudo" de passar.
+ *
+ * Os três exercitam ramos distintos de {@link resolverDestino}: a porta explícita, a porta **omitida**
+ * (que cai no padrão seguro) e o caminho depois do hospedeiro, que não é destino e é descartado.
+ */
+const ENDERECOS_ACEITOS = [
+  `https://${NOME_DO_PAR}:8443`,
+  `https://${NOME_DO_PAR}`,
+  `https://${NOME_DO_PAR}:8443/cobranca-bancaria/v3`,
+] as const;
+
+/**
+ * As **cinco** capacidades que o adaptador construído publica — as quatro da porta de cobrança mais
+ * a sonda de identidade.
+ *
+ * Escritas por extenso, e jamais derivadas do objeto devolvido: derivar poria o artefato sob prova
+ * nos dois lados da igualdade, e a asserção passaria a não poder falhar.
+ */
+const CAPACIDADES_DO_ADAPTADOR = [
+  'confirmarRevogacaoDeBoleto',
+  'consultarSituacao',
+  'emitir',
+  'solicitarRevogacaoDeBoleto',
+  'verificarIdentidade',
+] as const;
 
 /** A senha **real** do cofre, e a mesma que os casos usam como agulha. */
 const SENHA_SENTINELA = 'senha-real-do-cofre-a7d419fe2c';
@@ -1963,5 +2037,90 @@ describe('adaptador do provedor por TLS mútuo', () => {
 
     // Âncora antivácuo: as três emissões de fato aconteceram, e nenhuma falhou.
     expect([primeiro.aceito, segundo.aceito, terceiro.aceito]).toEqual([true, true, true]);
+  });
+});
+
+// ===========================================================================
+// CT-1008 e CT-1009 — a guarda de FORMA do endereço, que fecha o D38 · F4/T10
+// ===========================================================================
+
+/**
+ * A guarda de forma do endereço — os dois casos que o `D38 · F4/T10` cobrava.
+ *
+ * O débito registrava, com o `smell: happy_path_only`, que `recusarPorForma` e a conferência de
+ * {@link resolverDestino} eram tratadas pelo docblock do adaptador como garantia e **não tinham caso
+ * algum**: nem endereço malformado, nem `http:`, nem hospedeiro vazio. Garantia sem prova é garantia
+ * que a próxima refatoração remove sem que nada reprove.
+ *
+ * Os dois casos **não têm fronteira de rede**, e a ausência é conteúdo: a recusa acontece na
+ * **construção**, antes de qualquer conexão — é essa antecipação que impede o processo de subir com
+ * um adaptador meio-pronto e o Admin de descobrir a configuração errada clicando em *"testar"*. Um
+ * caso que precisasse de par para observá-la estaria medindo outra coisa.
+ *
+ * Os IDs seguem para frente a partir do último alocado no repositório (`CT-1007`), como o próprio
+ * marcador do débito previa ao registrar que fechá-lo exigia **alocar um ID novo**.
+ */
+describe('CT-1008 — a construção recusa endereço que não serve, nomeando a variável', () => {
+  it('recusa as três formas inutilizáveis, sempre com a MESMA mensagem e sem ecoar o valor', () => {
+    // Âncora antivácuo: as três formas foram de fato escritas, e são distintas entre si. Sem ela, a
+    // lista truncada faria o laço abaixo passar examinando menos do que declara.
+    expect(FORMAS_RECUSADAS.length).toBe(3);
+    expect(new Set(FORMAS_RECUSADAS.map((caso) => caso.endereco)).size).toBe(3);
+
+    for (const caso of FORMAS_RECUSADAS) {
+      let levantado: unknown;
+
+      try {
+        criarAdaptadorSicoob({ enderecoDoProvedor: caso.endereco });
+      } catch (erro) {
+        levantado = erro;
+      }
+
+      // Que ALGO foi levantado, e que é `Error` — e não o `TypeError` cru do `new URL`, cuja
+      // mensagem carrega a cadeia recusada em `input`. A distinção é o eixo do caso: deixar o erro
+      // nativo subir seria recusar do mesmo jeito, e ecoar a entrada ao fazê-lo.
+      expect(levantado, `a forma "${caso.forma}" foi ACEITA pela construção`).toBeInstanceOf(Error);
+      expect((levantado as Error).constructor.name, caso.forma).toBe('Error');
+
+      // Igualdade LITERAL da mensagem, e não `toContain`: é ela que fixa, de uma vez, o texto
+      // publicado, o nome da variável e a ausência de qualquer sufixo de diagnóstico — inclusive o
+      // valor recusado, que entraria por concatenação sem que uma asserção de contenção acusasse.
+      expect((levantado as Error).message, caso.forma).toBe(RECUSA_POR_FORMA_POR_EXTENSO);
+
+      // E o eixo do não-eco escrito por extenso, para a forma que tem valor a ecoar. O endereço
+      // vazio fica de fora por construção: `''` está contido em qualquer cadeia, e afirmá-lo ali
+      // seria uma asserção que não pode falhar (AP-29).
+      if (caso.endereco !== '') {
+        expect(
+          (levantado as Error).message.includes(caso.endereco),
+          `a mensagem ecoou o endereço recusado da forma "${caso.forma}"`,
+        ).toBe(false);
+      }
+    }
+  });
+});
+
+describe('CT-1009 — o endereço bem formado constrói o adaptador, e a guarda não recusa tudo', () => {
+  it('aceita as três formas boas e devolve as cinco capacidades da porta', () => {
+    // Âncora antivácuo: as três formas aceitas existem e são distintas.
+    expect(ENDERECOS_ACEITOS.length).toBe(3);
+    expect(new Set(ENDERECOS_ACEITOS).size).toBe(3);
+
+    for (const endereco of ENDERECOS_ACEITOS) {
+      const adaptador = criarAdaptadorSicoob({ enderecoDoProvedor: endereco });
+
+      // Igualdade de conjunto sobre as capacidades, contra a lista escrita por extenso: é o que
+      // separa "construiu" de "construiu o que a porta exige". `toBeDefined` aprovaria qualquer
+      // objeto.
+      expect(
+        Object.keys(adaptador).sort(),
+        `o adaptador construído com ${endereco} não publica as cinco capacidades`,
+      ).toEqual([...CAPACIDADES_DO_ADAPTADOR]);
+
+      expect(
+        Object.values(adaptador).every((capacidade) => typeof capacidade === 'function'),
+        `o adaptador construído com ${endereco} publica capacidade que não é função`,
+      ).toBe(true);
+    }
   });
 });

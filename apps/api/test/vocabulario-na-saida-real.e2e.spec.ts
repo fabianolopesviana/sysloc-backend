@@ -16,8 +16,14 @@
  * |       |        | valor de enum —, encontra todos eles, com a lista afirmada por igualdade em cada
  * |       |        | canal. Os 14 corpos são afirmados **não-vazios**, e os status são exatamente
  * |       |        | sete `2xx` e sete `4xx`. (ADR-0001) |
+ * | CA-21 | CT-992 | Varridos os corpos, os cabeçalhos e o **documento publicado** das **duas
+ * |       |        | rotas novas** da fatia `webhook-e-carne` — a entrada da notícia do provedor e o
+ * |       |        | carnê do contrato —, nenhum termo do dialeto aparece, **embora o dialeto entre
+ * |       |        | inteiro pelo corpo da requisição da notícia**. O mesmo varredor, aplicado aos
+ * |       |        | objetos de controle com os treze termos plantados canal a canal, encontra todos
+ * |       |        | eles, com a lista afirmada por igualdade em cada canal. (ADR-0001, ADR-0034) |
  *
- * Rastreabilidade: `CA-20 → CT-934 (RN-15)`.
+ * Rastreabilidade: `CA-20 → CT-934 (RN-15)` · `CA-21 → CT-992 (RN-18)`.
  *
  * ===========================================================================
  * É a metade que o CT-933 NÃO alcança — e por que as duas precisam existir
@@ -122,6 +128,7 @@ import {
   escreverAjustes,
   SENHA_DA_CARGA,
 } from '@sysloc/db';
+import { criarRenderizadorPdf } from '@sysloc/documentos';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)
 // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o código abaixo.)
@@ -171,6 +178,8 @@ import {
   SEGMENTO_DO_REGISTRO,
 } from '../src/integracoes-bancarias/certificado.controller.ts';
 import { CAMINHO_DO_DOCUMENTO, criarAplicacao } from '../src/main.ts';
+import { CAMINHO_DAS_NOTIFICACOES_BANCARIAS } from '../src/notificacoes-bancarias/notificacao-bancaria.controller.ts';
+import { pedirBytes } from './acessorios-de-borda.ts';
 import { montarAplicacaoInstrumentada } from './aplicacao-instrumentada.ts';
 import { cpfValido } from './documento.ts';
 
@@ -195,8 +204,17 @@ const COLECAO_DE_CONTRATOS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}`;
 const COLECAO_DA_COBRANCA_BANCARIA = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_COBRANCA_BANCARIA}`;
 const ROTA_DO_REGISTRO_DE_CERTIFICADO = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DO_REGISTRO}`;
 
+/** A entrada da notícia do provedor — a primeira das duas rotas novas da fatia `webhook-e-carne`. */
+const ROTA_DA_NOTICIA = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_NOTIFICACOES_BANCARIAS}`;
+
 /**
- * Os **nove** termos do provedor que não podem cruzar a fronteira do que o produto publica.
+ * O segmento do carnê, **escrito à mão**: o controlador o declara em constante privada, e o que se
+ * afirma aqui é o caminho publicado, não o símbolo interno dele.
+ */
+const SEGMENTO_DO_CARNE = 'carne';
+
+/**
+ * Os **treze** termos do provedor que não podem cruzar a fronteira do que o produto publica.
  *
  * Escritos à mão, e **não** importados de `packages/cobranca-bancaria/test/vocabulario-canonico.spec.ts`:
  * eles são o **oráculo** desta medição, e derivá-los da lista que a outra suíte usa faria as duas
@@ -204,13 +222,21 @@ const ROTA_DO_REGISTRO_DE_CERTIFICADO = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INT
  * e a fatia perderia as duas provas de uma vez. São duas cópias, e o limiar de promoção deste
  * repositório é o **terceiro** consumidor.
  *
- * Os nove são: o nome do provedor em duas grafias, os quatro campos que o oráculo do sistema antigo
- * usa, os dois parâmetros do fluxo de credencial de acesso e o `pagador` do payload de emissão.
+ * Os nove primeiros vêm da fatia (i): o nome do provedor em duas grafias, os quatro campos que o
+ * oráculo do sistema antigo usa, os dois parâmetros do fluxo de credencial de acesso e o `pagador`
+ * do payload de emissão.
+ *
+ * ⚠️ **Os QUATRO últimos entraram na T12 da fatia `webhook-e-carne`, e a lista só CRESCE.** São os
+ * nomes que a notícia do provedor traz — o identificador da baixa, o pedido de validação do endereço,
+ * o identificador do próprio aviso — e a **classificação** que o provedor lhe dá, que a RN-18 proíbe
+ * de virar regra do produto. Eles alcançam o `CT-934` junto com o `CT-992`, e isso é deliberado: as
+ * sete rotas da fatia anterior também não podem publicá-los.
  *
  * ⚠️ `BOLETO` **não** entra, e a ausência é deliberada: ele é vocabulário do **produto** (RN-11),
  * publicado por `@sysloc/contracts`, e incluí-lo faria a varredura reprovar o próprio vocabulário
  * canônico que ela existe para proteger. `provedor` também não: é palavra do produto — o modelo
- * canônico da ADR-0001 nomeia *"o provedor"* justamente para não nomear qual.
+ * canônico da ADR-0001 nomeia *"o provedor"* justamente para não nomear qual. E `webhook` sozinho
+ * também não: é o nome da própria fatia, citado em prosa por toda a base.
  */
 const TERMOS_DO_PROVEDOR = [
   'sicoob',
@@ -222,6 +248,10 @@ const TERMOS_DO_PROVEDOR = [
   'client_id',
   'scope',
   'pagador',
+  'numeroIdentificadorBaixa',
+  'validacaoWebhook',
+  'idWebhook',
+  'tipoMovimento',
 ] as const;
 
 /**
@@ -238,10 +268,10 @@ const TERMOS_DO_PROVEDOR = [
  * termo esquecido na repartição nunca seria exercitado por canal algum.
  */
 const CONTROLE_POR_CANAL: Readonly<Record<string, readonly string[]>> = {
-  'chave de topo': ['sicoob', 'nossoNumero'],
-  'campo aninhado': ['bancoob', 'seuNumero'],
-  'item de lista': ['numeroContrato', 'codigoBeneficiario'],
-  'valor de enum': ['client_id', 'scope', 'pagador'],
+  'chave de topo': ['sicoob', 'nossoNumero', 'numeroIdentificadorBaixa'],
+  'campo aninhado': ['bancoob', 'seuNumero', 'validacaoWebhook'],
+  'item de lista': ['numeroContrato', 'codigoBeneficiario', 'idWebhook'],
+  'valor de enum': ['client_id', 'scope', 'pagador', 'tipoMovimento'],
 };
 
 /** Os termos do arranjo do contrato — valores quaisquer, dentro das condições de entrada. */
@@ -299,6 +329,41 @@ const AREA_DO_FINANCEIRO: ChaveDoCatalogo = 'TELA:financeiro';
 const ROTAS_DA_FATIA = 7;
 const CORPOS_COLETADOS = ROTAS_DA_FATIA * 2;
 
+/**
+ * O corpo que o provedor envia — **o dialeto inteiro**, tal como o discovery o mediu.
+ *
+ * Ele é escrito por extenso aqui, e não importado de `./notificacao-bancaria.e2e.spec.ts`, pela
+ * mesma razão de {@link TERMOS_DO_PROVEDOR}: é o **oráculo** desta medição.
+ *
+ * ⚠️ **O ponto do caso é que ele ENTRA.** Uma varredura que só olhasse a saída de uma rota por onde
+ * o dialeto nunca passou provaria muito pouco: o zero seria consequência de o dado não existir, e
+ * não de a tradução funcionar. Mandando os cinco termos do dialeto pela porta de entrada, o zero da
+ * saída passa a ser uma afirmação sobre a **fronteira de tradução**.
+ */
+const AVISO_COM_O_DIALETO_INTEIRO = {
+  idWebhook: 990,
+  tipoMovimento: 7,
+  dados: {
+    seuNumero: '202608000000000042',
+    nossoNumero: 1234567,
+    numeroIdentificadorBaixa: '1600100000000000001',
+    valorPagamento: 1500.0,
+    dataHoraSituacaoBaixa: '2026-08-18T14:03:11Z',
+  },
+} as const;
+
+/** O pedido de validação do endereço, que o provedor faz ao cadastrá-lo (RN-10). */
+const PEDIDO_DE_VALIDACAO_DO_ENDERECO = { idWebhook: 990, validacaoWebhook: true } as const;
+
+/** O texto impresso no boleto do par — vocabulário do **teste**, e de mais nada. */
+const MARCA_DO_BOLETO_DO_PAR = 'boleto do par de teste';
+
+/** Quantos corpos o `CT-992` coleta: dois da notícia, e três do carnê (sucesso e dois erros). */
+const CORPOS_DAS_ROTAS_NOVAS = 5;
+
+/** Um recorte de competências **malformado** — o gatilho do `422` do carnê. */
+const COMPETENCIA_MALFORMADA = '2026-13';
+
 /** A pessoa que age: `USUARIO_EMPRESA` da empresa A, **da carga**. */
 const QUEM_AGE = pessoaSemeada('usuario.a@exemplo.com.br');
 
@@ -335,8 +400,35 @@ let titulosAtribuidos = 0;
  * apontando para o **arranjo** em vez de para o produto, e o caso nomearia o defeito errado. O que se
  * mede aqui é o que o **produto** publica, e não o que o par de teste inventa.
  */
+/** O renderizador real — é ele que faz os bytes do par serem um PDF que a mesclagem aceita. */
+const renderizador = criarRenderizadorPdf();
+
+/** O documento do par, renderizado **uma vez** e reaproveitado — ele não varia entre emissões. */
+let documentoDoPar: Buffer | undefined;
+
+/**
+ * Os bytes de boleto que o par devolve — um PDF **de verdade**.
+ *
+ * ⚠️ **Eles precisam ser um PDF válido desde a T12**, e a razão é o carnê: a rota do carnê **mescla**
+ * os boletos guardados num documento só, e bytes que não são PDF fariam a mesclagem levantar — o
+ * caso reprovaria por `500` do arranjo, e não pelo que ele existe para medir. Medido antes de trocar:
+ * nenhum dos treze termos do dialeto aparece no PDF renderizado nem no mesclado, de modo que a troca
+ * não introduz agulha nenhuma na varredura.
+ */
+async function documentoDeBoletoDoPar(): Promise<Buffer> {
+  if (documentoDoPar === undefined) {
+    documentoDoPar = Buffer.from(
+      await renderizador.renderizar({
+        blocos: [{ rotulo: 'boleto', texto: MARCA_DO_BOLETO_DO_PAR }],
+      }),
+    );
+  }
+
+  return documentoDoPar;
+}
+
 const portaDoProvedor: AdaptadorCobrancaBancaria = {
-  emitir: async (pedido: PedidoDeEmissao): Promise<DesfechoDaOperacao<BoletoEmitido>> => {
+  emitir: async (_pedido: PedidoDeEmissao): Promise<DesfechoDaOperacao<BoletoEmitido>> => {
     titulosAtribuidos += 1;
 
     return {
@@ -345,7 +437,7 @@ const portaDoProvedor: AdaptadorCobrancaBancaria = {
         numeroDoTituloNoProvedor: `1700000000${String(titulosAtribuidos).padStart(3, '0')}`,
         linhaDigitavel: `75691.11223 34455.667788 99001.1223${String(titulosAtribuidos).padStart(2, '0')} 5 99230000012345`,
         codigoDeBarras: `756919923000001234511122334455667788990011${String(titulosAtribuidos).padStart(2, '0')}`,
-        documento: Buffer.from(`%PDF-1.4 documento de ${pedido.identificadorNoProvedor}`),
+        documento: await documentoDeBoletoDoPar(),
       },
     };
   },
@@ -632,6 +724,166 @@ describe('o vocabulário do provedor na saída real das sete rotas (T17)', () =>
   );
 });
 
+describe('o vocabulário do provedor na saída real das DUAS rotas novas (T12)', () => {
+  it(
+    'CT-992 — o dialeto entra inteiro pela notícia e não sai por corpo, cabeçalho ou documento das rotas novas',
+    async () => {
+      // ---------------------------------------------------------------------------------------
+      // 1. O CONTROLE POSITIVO, ANTES de tudo — o varredor acha os treze, canal a canal
+      // ---------------------------------------------------------------------------------------
+      //
+      // Ele vem primeiro pela mesma razão medida no `CT-934`: as varreduras de baixo afirmam `[]`, e
+      // `[]` é também o que um varredor quebrado devolveria. É a `.claude/rules/testing-stack.md` que
+      // torna o controle positivo **parte da asserção**, e não um extra — sem ele, a varredura
+      // apontada para o canal errado passa por vacuidade (AP-29).
+      const plantados = Object.values(CONTROLE_POR_CANAL).flat();
+
+      expect([...plantados].sort()).toEqual([...TERMOS_DO_PROVEDOR].sort());
+
+      // O eixo NEGATIVO do varredor, antes do laço, pela razão registrada no `CT-934`: com
+      // `termos: []` o campo `estado` é a cadeia vazia, e um varredor escrito na direção invertida
+      // (`agulha.includes(texto)`) casaria o vazio com os treze e satisfaria as igualdades abaixo.
+      expect(termosEncontradosEm(textosDe(objetoDeControle('valor de enum', [])))).toEqual([]);
+
+      for (const [canal, termos] of Object.entries(CONTROLE_POR_CANAL)) {
+        const achados = termosEncontradosEm(textosDe(objetoDeControle(canal, termos)));
+
+        expect(achados, `a varredura ficou cega ao canal "${canal}"`).toEqual([...termos].sort());
+      }
+
+      // ---------------------------------------------------------------------------------------
+      // 2. O ARRANJO do carnê — contrato ativo, cobrança e boleto EMITIDO, tudo pelas rotas
+      // ---------------------------------------------------------------------------------------
+      //
+      // O certificado da empresa já foi registrado pelo `CT-934`; ele é da empresa, e não do
+      // contrato, de modo que a emissão daqui o reaproveita. O contrato SEM cobrança nasce ao lado
+      // para dar corpo ao `404` mais rico desta rota — o que carrega `detalhes.carne`.
+      const contratoComParcela = await contratoAtivo();
+      const contratoSemParcela = await contratoAtivo();
+      const vencimento = await dataDeslocada(DIAS_ATE_O_VENCIMENTO);
+      const competencia = `${vencimento.slice(0, 7)}-01`;
+      const codigo = await lancar(contratoComParcela, vencimento, competencia);
+
+      const emissao = await observar('POST /v1/cobrancas/:codigo/emissao-de-boleto (arranjo)', {
+        alvo: `${COLECAO_DE_COBRANCAS}/${codigo}/emissao-de-boleto`,
+        metodo: 'POST',
+        corpo: {},
+      });
+
+      // Precondição AFIRMADA, e não suposta: sem boleto emitido o carnê responderia `404
+      // BOLETO_AUSENTE`, e o caso varreria um envelope de recusa acreditando varrer um PDF.
+      expect(emissao.status, 'o arranjo do carnê não emitiu o boleto').toBe(200);
+
+      const recorte = new URLSearchParams({ de: competencia, ate: competencia });
+      const recorteMalformado = new URLSearchParams({
+        de: COMPETENCIA_MALFORMADA,
+        ate: competencia,
+      });
+
+      // ---------------------------------------------------------------------------------------
+      // 3. AS DUAS ROTAS NOVAS — a notícia com o dialeto INTEIRO, e o carnê nos três desfechos
+      // ---------------------------------------------------------------------------------------
+      //
+      // A notícia é exercida **sem sessão**, que é como o provedor a envia, e leva no corpo os cinco
+      // termos que o dialeto acrescentou. É isso que torna o zero da saída uma afirmação sobre a
+      // tradução, e não sobre a ausência do dado.
+      const observadas: RespostaObservada[] = [
+        await observar('POST /v1/notificacoes-bancarias (aviso)', {
+          alvo: ROTA_DA_NOTICIA,
+          metodo: 'POST',
+          corpo: AVISO_COM_O_DIALETO_INTEIRO,
+          semSessao: true,
+        }),
+        await observar('POST /v1/notificacoes-bancarias (validação do endereço)', {
+          alvo: ROTA_DA_NOTICIA,
+          metodo: 'POST',
+          corpo: PEDIDO_DE_VALIDACAO_DO_ENDERECO,
+          semSessao: true,
+        }),
+        await observarEmBytes(
+          'GET /v1/contratos/:codigo/carne',
+          `${COLECAO_DE_CONTRATOS}/${contratoComParcela}/${SEGMENTO_DO_CARNE}?${recorte.toString()}`,
+        ),
+        await observarEmBytes(
+          'GET /v1/contratos/:codigo/carne (404 sem cobranças)',
+          `${COLECAO_DE_CONTRATOS}/${contratoSemParcela}/${SEGMENTO_DO_CARNE}?${recorte.toString()}`,
+        ),
+        await observarEmBytes(
+          'GET /v1/contratos/:codigo/carne (422 de recorte)',
+          `${COLECAO_DE_CONTRATOS}/${contratoComParcela}/${SEGMENTO_DO_CARNE}?${recorteMalformado.toString()}`,
+        ),
+      ];
+
+      // ---------------------------------------------------------------------------------------
+      // 4. AS ÂNCORAS ANTIVÁCUO — os cinco corpos existem, com o status e o conteúdo certos
+      // ---------------------------------------------------------------------------------------
+      //
+      // As três medem coisas diferentes: a **contagem** pega a lista truncada; a igualdade de
+      // **status**, na ordem, pega o sucesso que virou erro — que varreria um envelope de recusa
+      // acreditando varrer o documento — e o erro que virou sucesso; e a **não-vacuidade** pega o
+      // corpo vazio, sobre o qual varrer não custa nada e não prova nada.
+      expect(observadas.length).toBe(CORPOS_DAS_ROTAS_NOVAS);
+      expect(observadas.map((resposta) => resposta.status)).toEqual([204, 204, 200, 404, 422]);
+      expect(
+        observadas.filter((resposta) => resposta.textos.length === 0).map((r) => r.rotulo),
+        'corpo coletado sem conteúdo algum: varrer o vazio não prova nada',
+      ).toEqual([]);
+
+      // E o canal dos CABEÇALHOS foi mesmo observado no carnê: sem esta linha, o par de cabeçalhos
+      // poderia ter vindo vazio e a varredura deles devolveria zero por não ter o que ler.
+      const carne = observadas[2] as RespostaObservada;
+
+      expect(
+        carne.textos.filter((texto) => texto.startsWith('content-')).length,
+        'o carnê não publicou os dois cabeçalhos que a ADR-0028 exige dele',
+      ).toBe(2);
+
+      // ---------------------------------------------------------------------------------------
+      // 5. A VARREDURA dos cinco — rota a rota, e a falha NOMEIA a rota
+      // ---------------------------------------------------------------------------------------
+      for (const resposta of observadas) {
+        expect(
+          termosEncontradosEm(resposta.textos),
+          `${resposta.rotulo} publicou vocabulário do provedor`,
+        ).toEqual([]);
+      }
+
+      // ---------------------------------------------------------------------------------------
+      // 6. O DOCUMENTO PUBLICADO das DUAS rotas — a superfície que o frontend vai importar
+      // ---------------------------------------------------------------------------------------
+      //
+      // Recortado por rota, e não sobre o documento inteiro: o `CT-934` já varre o todo, e o que
+      // este caso acrescenta é a atribuição — a reprovação diz **qual** das duas rotas declarou a
+      // chave. Só as **chaves**, pela mesma razão de lá: as descrições falam legitimamente do
+      // provedor em português, e é o nome do campo que atravessa para o tipo que o cliente gera.
+      const documento = await documentoPublicado();
+      const rotas = (documento as { paths?: Record<string, unknown> }).paths ?? {};
+      const caminhos = Object.keys(rotas);
+
+      const daNoticia = exigirUnico(
+        caminhos.filter((caminho) => caminho.endsWith(CAMINHO_DAS_NOTIFICACOES_BANCARIAS)),
+        'caminho da notícia no documento publicado',
+      );
+      const doCarne = exigirUnico(
+        caminhos.filter((caminho) => caminho.endsWith(`/${SEGMENTO_DO_CARNE}`)),
+        'caminho do carnê no documento publicado',
+      );
+
+      for (const caminho of [daNoticia, doCarne]) {
+        const chaves = chavesDoDocumento(rotas[caminho]);
+
+        // Âncora antivácuo: o recorte daquela rota existe e tem chaves.
+        expect(chaves.length, `${caminho}: o recorte do documento veio vazio`).toBeGreaterThan(0);
+        expect(
+          termosEncontradosEm(chaves),
+          `${caminho} declara chave com vocabulário do provedor`,
+        ).toEqual([]);
+      }
+    },
+    LIMITE_CASO_MS,
+  );
+});
+
 // ---------------------------------------------------------------------------------------------
 // O varredor e o controle positivo
 // ---------------------------------------------------------------------------------------------
@@ -739,6 +991,14 @@ interface PedidoObservado {
   readonly alvo: string;
   readonly metodo?: string;
   readonly corpo?: Record<string, unknown>;
+  /**
+   * Exercita a rota **sem** a credencial de sessão.
+   *
+   * Existe para a entrada da notícia, e é conteúdo: quem envia é o provedor bancário, que não é
+   * usuário do sistema e nunca terá sessão. Mandar cookie ali mediria uma requisição que o mundo
+   * real não produz.
+   */
+  readonly semSessao?: boolean;
 }
 
 /**
@@ -753,7 +1013,7 @@ async function observar(rotulo: string, pedido: PedidoObservado): Promise<Respos
   const resposta = await pedir(pedido.alvo, {
     ...(pedido.metodo === undefined ? {} : { metodo: pedido.metodo }),
     ...(pedido.corpo === undefined ? {} : { corpo: pedido.corpo }),
-    cookie,
+    ...(pedido.semSessao === true ? {} : { cookie }),
   });
 
   const doCorpo = resposta.corpo === undefined ? [resposta.texto] : textosDe(resposta.corpo);
@@ -764,6 +1024,48 @@ async function observar(rotulo: string, pedido: PedidoObservado): Promise<Respos
     corpo: resposta.corpo,
     textos: [...doCorpo, ...resposta.cabecalhos].filter((texto) => texto.length > 0),
   };
+}
+
+/**
+ * Exerce uma rota que devolve **bytes** e recolhe tudo o que saiu dela.
+ *
+ * Ela existe porque {@link pedir} consome o corpo com `text()`, e um PDF que passe por ali volta
+ * corrompido **em silêncio** — a varredura seguiria devolvendo zero, agora por não haver mais o que
+ * ler. O cliente em bytes tem casa única em `./acessorios-de-borda.ts`, e é de lá que ele vem.
+ *
+ * Os dois cabeçalhos que a rota do carnê publica entram nos textos varridos: o tipo de mídia e a
+ * **disposição**, que carrega o nome sugerido do arquivo — saída publicada tanto quanto o corpo.
+ */
+async function observarEmBytes(rotulo: string, alvo: string): Promise<RespostaObservada> {
+  const resposta = await pedirBytes(base, alvo, { cookie });
+
+  const doCorpo =
+    resposta.corpo === undefined
+      ? [new TextDecoder().decode(resposta.bytes)]
+      : textosDe(resposta.corpo);
+
+  const dosCabecalhos = [
+    `content-type: ${resposta.tipoDeConteudo}`,
+    `content-disposition: ${resposta.disposicao}`,
+  ].filter((linha) => !linha.endsWith(': '));
+
+  return {
+    rotulo,
+    status: resposta.status,
+    corpo: resposta.corpo,
+    textos: [...doCorpo, ...dosCabecalhos].filter((texto) => texto.length > 0),
+  };
+}
+
+/** O único elemento de uma lista, **levantando** quando ela não tem exatamente um. */
+function exigirUnico(lista: readonly string[], rotulo: string): string {
+  const unico = lista[0];
+
+  if (lista.length !== 1 || unico === undefined) {
+    throw new Error(`${rotulo}: esperava exatamente um, achei ${String(lista.length)}`);
+  }
+
+  return unico;
 }
 
 /** O documento publicado, pedido à aplicação REAL — a única que o registra. */

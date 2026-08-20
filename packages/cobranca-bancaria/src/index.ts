@@ -207,6 +207,26 @@
  * o que separa *"revogou"* de *"não havia boleto"*. Nenhuma das duas é publicada, de modo que a
  * homonímia não alcança a superfície; ela existe porque cada percurso declara o **seu** vocabulário
  * (ADR-0025), e fundi-las obrigaria um dos dois a carregar o que só o outro precisa.
+ *
+ * ---------------------------------------------------------------------------
+ * O que o TRATAMENTO DA NOTÍCIA (T4 da fatia (iii)) acrescenta — três símbolos
+ * ---------------------------------------------------------------------------
+ *
+ * Saem daqui as **duas decisões puras** do recebido — `classificarNotificacaoBancaria` e
+ * `ehReentregaDeEfeitoAplicado` — e o tipo do que a primeira devolve
+ * (`NotificacaoBancariaClassificada`). O consumidor de cada uma tem nome e existe nesta fatia: a
+ * tarefa da fila que trata a notícia consome a classificação no passo B.3 e o predicado no passo B.5.
+ *
+ * O **tipo** sai junto porque ele é o que atravessa a fronteira do pacote — mesmo critério de
+ * `DesfechoDoLote`, `DesfechoDaReemissao` e `DesfechoDaConferencia`, e não o dos quatro ramos de
+ * `SituacaoConsultada`: aqui o valor devolvido é **um só objeto** que a borda guarda antes de
+ * ramificar, e não uma união que ela estreita no mesmo `switch` em que a recebe.
+ *
+ * ⚠️ **`DesfechoDaNotificacaoBancaria` NÃO sai.** Ela é a união dos nove desfechos que o enum do
+ * banco declara, e existe aqui apenas para dar tipo ao parâmetro do predicado: quem o chama passa o
+ * valor que leu da camada de dados, sem precisar escrever este nome. Publicá-la ofereceria um segundo
+ * lugar de onde declarar o mesmo conjunto — e a duplicação com o enum já é deliberada e amarrada pelo
+ * ponto de consumo, como o docblock de `tratamento-de-notificacao.ts` registra.
  */
 
 export type { ConfiguracaoDoProvedorBancario } from './adaptador-sicoob.js';
@@ -258,3 +278,8 @@ export {
   reemitirBoleto,
   TETO_DA_CONFIRMACAO_DA_REVOGACAO_MS,
 } from './reemissao.js';
+export type { NotificacaoBancariaClassificada } from './tratamento-de-notificacao.js';
+export {
+  classificarNotificacaoBancaria,
+  ehReentregaDeEfeitoAplicado,
+} from './tratamento-de-notificacao.js';

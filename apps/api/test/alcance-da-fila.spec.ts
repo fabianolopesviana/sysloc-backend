@@ -9,12 +9,12 @@
  * | Critério | Caso   | Invariante |
  * |---|---|---|
  * | §9.3  | apoio  | **T15** · O conjunto dos arquivos de `apps/api/src` que nomeiam `FilaModule`
- * | (T15) | (a)    | é **exatamente** o dono mais **dois** módulos de área — afirmado por igualdade
- * |       |        | de conjunto, com o excedente NOMEADO —, e nos dois a menção é ligação real: a
+ * | (T15) | (a)    | é **exatamente** o dono mais **três** módulos de área — afirmado por igualdade
+ * |       |        | de conjunto, com o excedente NOMEADO —, e nos três a menção é ligação real: a
  * |       |        | linha traz o especificador do módulo dono. Módulo que acrescente
  * |       |        | `imports: [FilaModule]` entra no conjunto e **reprova**. (ADR-0029) |
  * | §9.3  | apoio  | **T15** · O conjunto que nomeia `TOKEN_PRODUTOR_DE_FILA` é **exatamente** a
- * | (T15) | (b)    | fronteira, o dono e os **três** serviços que enfileiram; o que chama
+ * | (T15) | (b)    | fronteira, o dono e os **quatro** serviços que enfileiram; o que chama
  * |       |        | `conectarProdutorDeFila` é **exatamente** a fronteira e o dono; e o que nomeia
  * |       |        | o **especificador da biblioteca de fila** é **exatamente** a fronteira. O
  * |       |        | primeiro fecha o serviço novo que injete o produtor **dentro** de uma área que
@@ -183,14 +183,33 @@ const MODULO_DA_FILA = 'comum/fila.module.ts';
 const FRONTEIRA_DA_FILA = 'comum/produtor-de-fila.ts';
 
 /**
- * Os **dois** módulos de área que alcançam a fila hoje — a expectativa REVISADA.
+ * Os **quatro** módulos de área que alcançam a fila hoje — a expectativa REVISADA.
  *
  * Escrita à mão de propósito: derivá-la da mesma varredura que o caso classifica faria a asserção
  * concordar consigo mesma, que é a forma canônica de âncora que não pode reprovar.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T6** da fatia `webhook-e-carne` publicou a entrada de fato de terceiro
+ * (`POST /v1/notificacoes-bancarias`, ADR-0035), cuja borda enfileira o tratamento da notícia
+ * (ADR-0029) — e o módulo dela importa `FilaModule` em vez de abrir uma segunda conexão, que é
+ * exatamente o que o cabeçalho de `comum/fila.module.ts` manda fazer. A âncora existe para que esse
+ * acréscimo passe pela **revisão** de quem lê este arquivo, e não para impedi-lo: a igualdade segue
+ * exata nos dois sentidos, o quarto importador continua reprovando nominalmente, e **nenhum eixo foi
+ * afrouxado**. Nenhum importador anterior saiu.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T9** da mesma fatia acrescenta o **quarto** — `master/master.module.ts`.
+ * A reativação de uma empresa suspensa retoma as notícias que a suspensão reteve (CA-10), e a
+ * retomada sai por fila (ADR-0029), de modo que o módulo do Master passa a alcançar a capacidade de
+ * enfileirar. Ele a alcança pela via que o cabeçalho de `comum/fila.module.ts` manda — `imports:
+ * [FilaModule]`, sem segunda conexão —, e o acréscimo entra por decisão declarada na §5.2 da task,
+ * no MESMO diff que a publica, que é o que a `.claude/rules/ancoras-de-superficie.md` cobra. O
+ * **quinto** importador continua reprovando nominalmente, nenhum eixo foi afrouxado e nenhum
+ * importador anterior saiu.
  */
 const IMPORTADORES_DO_MODULO_DA_FILA: readonly string[] = [
   'cadastros/cadastros.module.ts',
   'cobranca-bancaria/cobranca-bancaria.module.ts',
+  'master/master.module.ts',
+  'notificacoes-bancarias/notificacoes-bancarias.module.ts',
 ];
 
 /** Quem nomeia `FilaModule`: os dois importadores mais o arquivo que declara a classe. */
@@ -200,16 +219,32 @@ const ARQUIVOS_QUE_NOMEIAM_O_MODULO: readonly string[] = [
 ].sort();
 
 /**
- * Quem nomeia o token — a fronteira que o define, o dono que o provê e os **três** serviços que
+ * Quem nomeia o token — a fronteira que o define, o dono que o provê e os **cinco** serviços que
  * enfileiram.
  *
- * O eixo é diferente do de cima, e não redundante: um serviço novo **dentro** de `cadastros/` ou de
- * `cobranca-bancaria/` injeta o produtor sem que módulo algum ganhe `imports: [FilaModule]`.
+ * O eixo é diferente do de cima, e não redundante: um serviço novo **dentro** de `cadastros/`, de
+ * `cobranca-bancaria/` ou de `notificacoes-bancarias/` injeta o produtor sem que módulo algum ganhe
+ * `imports: [FilaModule]`.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T6** da fatia `webhook-e-carne` acrescentou
+ * `NotificacaoBancariaService`, que enfileira o tratamento da notícia recebida — e o **módulo** dela
+ * também entra no eixo de cima, de modo que os dois inventários crescem juntos desta vez. As duas
+ * listas continuam sendo eixos independentes, e a coincidência aqui é acidente da forma desta fatia:
+ * um serviço que nascesse **dentro** de uma área que já alcança a fila cresceria só este. Nenhum
+ * arquivo anterior saiu, e nenhuma asserção foi afrouxada.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T9** acrescenta `master/empresa.service.ts`, que injeta o produtor para
+ * reenfileirar as notícias retidas na reativação (CA-10, ADR-0029). Os dois inventários crescem
+ * juntos outra vez, e pela mesma forma da T6: o serviço nasce numa área que **não** alcançava a fila,
+ * de modo que o módulo dela também entra no eixo de cima. Nenhum arquivo anterior saiu, nenhuma
+ * asserção foi afrouxada, e a igualdade segue exata nos dois sentidos.
  */
 const ARQUIVOS_QUE_NOMEIAM_O_TOKEN: readonly string[] = [
   'cadastros/confirmacao-de-email.service.ts',
   'cobranca-bancaria/conferencia-bancaria.service.ts',
   'cobranca-bancaria/emissao-em-lote.service.ts',
+  'master/empresa.service.ts',
+  'notificacoes-bancarias/notificacao-bancaria.service.ts',
   MODULO_DA_FILA,
   FRONTEIRA_DA_FILA,
 ].sort();
@@ -300,7 +335,7 @@ function linhasPorArquivo(varredura: VarreduraDeFontes): Map<string, string[]> {
 }
 
 describe('alcance da capacidade de enfileirar (T15)', () => {
-  it('apoio (T15) (a) — só o dono e DOIS módulos de área nomeiam o FilaModule, e os dois o importam', async () => {
+  it('apoio (T15) (a) — só o dono e TRÊS módulos de área nomeiam o FilaModule, e os três o importam', async () => {
     const varredura = await varrerPor(NOME_DO_MODULO);
 
     // Âncora antivácuo: sem ela, uma varredura que não lesse arquivo algum produziria conjunto

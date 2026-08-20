@@ -894,10 +894,11 @@ export const statusCobranca = negocio.enum('status_cobranca', ESTADOS_DA_COBRANC
  *     (RD-12) e o cancelamento é `cancelado_em`, que é fato datado e não marca de retirada. A
  *     ADR-0014 alcança entidade de cadastro; esta não é uma.
  *
- * Os seis campos de conciliação bancária (`nosso_numero`, `linha_digitavel`, `codigo_barras`,
- * `data_credito`, `valor_creditado`, `boleto_arquivo`) nascem **nulos e sem produtor**: nenhuma
- * rota desta fatia os escreve, e nenhum esquema de `@sysloc/contracts` os publica. É a F4 que os
- * preenche, e tê-los aqui desde já é o que evita uma migração de coluna sobre tabela com dado.
+ * Os seis campos de conciliação bancária (`numero_do_titulo_no_provedor`, `linha_digitavel`,
+ * `codigo_barras`, `data_credito`, `valor_creditado`, `boleto_arquivo`) nascem **nulos e sem
+ * produtor**: nenhuma rota desta fatia os escreve, e nenhum esquema de `@sysloc/contracts` os
+ * publica. É a F4 que os preenche, e tê-los aqui desde já é o que evita uma migração de coluna
+ * sobre tabela com dado.
  */
 export const cobranca = negocio
   .table(
@@ -945,20 +946,21 @@ export const cobranca = negocio
       /** Carimbo da configuração VIGENTE no pagamento — é o que faz RD-10 valer sem reescrita. */
       multaPercentualAplicado: numeric('multa_percentual_aplicado', { precision: 5, scale: 2 }),
       jurosPercentualAplicado: numeric('juros_percentual_aplicado', { precision: 5, scale: 2 }),
-      /** Conciliação bancária — nasce nula, sem produtor nesta fatia. Ver o cabeçalho. */
-      // DÉBITO COM GATILHO — D14 · F4/T6 · registrado 2026-08-17
-      // O QUÊ: `nosso_numero` é **vocabulário do provedor** numa coluna do produto. O nome publicado
-      //        já é do produto desde a T1 da fatia `emissao-e-conciliacao`
-      //        (`numeroDoTituloNoProvedor`), e a tradução mora num ponto só — `colunasDaCobranca`, em
-      //        `../cobranca.ts` —, de modo que a dívida é de **esquema físico**, não de contrato.
-      // QUANDO FECHA: a **primeira migração que alterar `negocio.cobranca` depois da `0017`**, ou a
-      //        fatia (iii) ao consumir a coluna. Ali o `RENAME COLUMN` sai de graça no mesmo arquivo,
-      //        junto da recriação de `negocio.cobranca_derivada` (que expande `c.*` no instante da
-      //        criação) e das duas cópias homônimas de `COLUNAS_DA_COBRANCA` em `../../test/`.
-      // POR QUE NÃO AGORA: renomeá-la exigiria migração própria sobre tabela já com dado, fora do
-      //        escopo declarado da T6 — e a coluna não é publicada com este nome em lugar nenhum.
-      // ÍNDICE: docs/specs/features/emissao-e-conciliacao/v1/_run/run-report.md §2, D14
-      nossoNumero: text('nosso_numero'),
+      /**
+       * O número que o **provedor** atribuiu ao título — nulo enquanto não há boleto emitido.
+       *
+       * A coluna se chamou `nosso_numero` da `0009` até a `0019`, e o renome fechou o
+       * **D14 · F4/T6**: *nosso número* é vocabulário do provedor (ADR-0001), e o nome publicado já
+       * era o do produto desde a T1 da fatia `emissao-e-conciliacao`. O gatilho registrado era *"a
+       * fatia (iii) ao consumir a coluna"*, e a fatia `webhook-e-carne` a consome na conferência da
+       * notícia recebida.
+       *
+       * ⚠️ **O renome NÃO alcança o dialeto do provedor.** `nossoNumero` continua existindo em
+       * `packages/cobranca-bancaria/src/`, e ali é onde ele tem de viver: é a fronteira, e é ela que
+       * mantém o termo fora do resto do produto (RN-18/CA-21). Renomeá-lo lá seria o oposto da
+       * decisão.
+       */
+      numeroDoTituloNoProvedor: text('numero_do_titulo_no_provedor'),
       linhaDigitavel: text('linha_digitavel'),
       codigoBarras: text('codigo_barras'),
       dataCredito: date('data_credito'),
@@ -978,15 +980,15 @@ export const cobranca = negocio
        * O identificador com que **o SaaS** apresenta esta cobrança ao provedor — coluna INTERNA.
        *
        * ---------------------------------------------------------------------------
-       * Ela NÃO é `nosso_numero`, e confundi-las custa a conciliação da fatia (iii)
+       * Ela NÃO é `numero_do_titulo_no_provedor`, e confundi-las custa a conciliação
        * ---------------------------------------------------------------------------
        *
        * São dois identificadores distintos, medidos na fatia (i): este o **produto compõe** (18
        * posições, `AAAAMM` mais o contador de doze de `plataforma.identificador_bancario_seq`) e o
-       * envia; `nosso_numero` é o que o **provedor atribui** e devolve. Guardar só o segundo
-       * descartaria a chave por onde a notificação recebida descobre a que empresa a cobrança
-       * pertence — e a fatia (iii) ficaria sem por onde casar, exigindo migração sobre tabela já com
-       * dado.
+       * envia; `numero_do_titulo_no_provedor` é o que o **provedor atribui** e devolve. Guardar só
+       * o segundo descartaria a chave por onde a notificação recebida descobre a que empresa a
+       * cobrança pertence — e a fatia (iii) ficaria sem por onde casar, exigindo migração sobre
+       * tabela já com dado.
        *
        * ---------------------------------------------------------------------------
        * A unicidade é GLOBAL, e parear com `empresa_id` é o erro que a ADR-0033 proíbe

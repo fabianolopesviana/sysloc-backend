@@ -783,6 +783,34 @@ describe('emissão da série declarada — contexto e privilégio', () => {
           seguranca: 'DEFINER',
           caminhoDeBusca: 'search_path=pg_catalog, pg_temp',
         },
+        // SUT_IS_CORRECT_BECAUSE: a lista é do CASO e é EXATA de propósito, e a T3 da fatia
+        // `webhook-e-carne` cria UMA função nova por decisão declarada — o roteamento da notícia
+        // recebida (`0020`). O caso reprovaria não porque a superfície cresceu por descuido, que é o
+        // defeito que ele existe para pegar, mas porque cresceu por decisão que ele ainda não
+        // conhecia. **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo
+        // asserida.
+        //
+        // Ela é a **segunda** travessia nominal do produto, e esta linha prova de catálogo as mesmas
+        // duas propriedades que a de cima, pelas mesmas razões:
+        //
+        //   * o único parâmetro é `p_identificador text` — **não há parâmetro de empresa**
+        //     (ADR-0024, emendas de 2026-08-13 e de 2026-08-18). A empresa é o RESULTADO do
+        //     roteamento, e um `p_empresa uuid` acrescentado "para filtrar" apareceria aqui como
+        //     diferença literal — e seria pior aqui do que nas irmãs, porque a origem que chama esta
+        //     função é um terceiro não autenticado;
+        //   * `DEFINER` mais `search_path` fixo com o schema temporário em ÚLTIMO lugar.
+        //
+        // O que esta linha **não** prova é a posse pelo papel nominal nem a política endereçada a
+        // ele — que é o que de fato atravessa o `FORCE ROW LEVEL SECURITY`, e sem o que a função
+        // devolve zero linhas em 100% das chamadas. Quem afirma isso, junto com o resultado, é o
+        // `CT-973` de `roteamento-sem-contexto.spec.ts`; prometer aqui o que a asserção não verifica
+        // seria asserção infalível.
+        {
+          nome: 'rotear_notificacao_bancaria',
+          argumentos: 'p_identificador text',
+          seguranca: 'DEFINER',
+          caminhoDeBusca: 'search_path=pg_catalog, pg_temp',
+        },
       ] satisfies AssinaturaDeFuncao[]);
 
       // --- Passo 4: o companheiro POSITIVO -----------------------------------------------------
@@ -918,6 +946,17 @@ describe('emissão da série declarada — contexto e privilégio', () => {
         // DEFINER` é mudar com quais direitos ela roda, e a igualdade não deixa isso passar calado.
         'resolver_portador_de_confirmacao -> sysloc_app -> EXECUTE',
         'resolver_portador_de_confirmacao -> sysloc_resolucao -> EXECUTE',
+        // SUT_IS_CORRECT_BECAUSE: a T3 da fatia `webhook-e-carne` cria o roteamento da notícia com o
+        // MESMO par `REVOKE ALL … FROM PUBLIC` / `GRANT EXECUTE … TO "sysloc_app"` (bloco 5 da
+        // `0020`) e a MESMA troca de dono por último (bloco 7). As duas linhas abaixo são o que a
+        // igualdade cobra, e as duas leituras valem aqui como valeram acima: uma terceira linha
+        // `rotear_notificacao_bancaria -> PUBLIC -> EXECUTE` significaria que o `REVOKE` sumiu, e
+        // que qualquer papel capaz de conectar rotearia cobrança de qualquer empresa; e a segunda
+        // linha dizer `sysloc_roteamento` — e não `sysloc_migracao` — é a entrada implícita do DONO,
+        // que é **metade** da travessia, sem a qual a função devolve zero linhas em 100% das
+        // chamadas. **Nenhuma entrada anterior sai.**
+        'rotear_notificacao_bancaria -> sysloc_app -> EXECUTE',
+        'rotear_notificacao_bancaria -> sysloc_roteamento -> EXECUTE',
       ]);
 
       // E nenhum dos três privilégios de sequência alcança o papel da aplicação. A afirmação é por

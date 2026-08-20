@@ -9,7 +9,7 @@
  * |----------|--------|------------|
  * | CA-01    | CT-911 | A seleção de cobranças de um lote devolve exatamente as cobranças da empresa,
  * |          |        | da competência informada, com `pago_em IS NULL`, `cancelado_em IS NULL` e
- * |          |        | `nosso_numero IS NULL` — nem uma a mais, nem uma a menos, medido por igualdade
+ * |          |        | `numero_do_titulo_no_provedor IS NULL` — nem uma a mais, nem uma a menos, medido por igualdade
  * |          |        | de conjunto contra a lista montada no arranjo, com controle antivácuo. A
  * |          |        | mesma chamada, sob o contexto de OUTRA empresa, devolve `[]` — sem que
  * |          |        | assinatura alguma receba `empresaId` (ADR-0008). |
@@ -160,7 +160,7 @@
  * declare onde a execução parou sugere alcance maior do que teve. Onde isso acontece, a ressalva está
  * escrita junto do mutante, com o mutante que discriminaria o resto **nomeado**.
  *
- *   * **MT-T4-A · o predicado sem `AND nosso_numero IS NULL`** — a cobrança que já tem boleto voltando
+ *   * **MT-T4-A · o predicado sem `AND numero_do_titulo_no_provedor IS NULL`** — a cobrança que já tem boleto voltando
  *     ao conjunto, isto é, a idempotência da reexecução desfeita. `1 failed | 199 passed`, e o
  *     `CT-911` reprova **nomeando a intrusa**: `excedentes: ['COB-2026-9110006']`;
  *   * **MT-T4-B · o índice único sem a cláusula `WHERE`** — o defeito reintroduzido na `migracoes/
@@ -258,6 +258,7 @@ import {
 import { EMPRESA_A, EMPRESA_B, USUARIOS, type UsuarioSemeado } from '../src/semente.ts';
 import { type AcessoAoBanco, abrirAcessoAoBanco } from '../src/unidade-de-trabalho.ts';
 import { type BancoMigrado, bancoEfemero } from './banco-efemero.ts';
+import { diferencasDeConjunto } from './conjuntos.ts';
 
 // ---------------------------------------------------------------------------
 // Limites de tempo — constantes nomeadas, nunca número mágico no meio do caso
@@ -323,7 +324,7 @@ interface CobrancaDoArranjo {
   readonly pagoEm: string | null;
   readonly canceladoEm: string | null;
   /** Preenchido ⇒ já tem boleto, e é este campo que dá a idempotência da reexecução. */
-  readonly nossoNumero: string | null;
+  readonly numeroDoTituloNoProvedor: string | null;
 }
 
 function cobranca(
@@ -337,7 +338,11 @@ function cobranca(
   };
 }
 
-const EM_ABERTO_SEM_BOLETO = { pagoEm: null, canceladoEm: null, nossoNumero: null } as const;
+const EM_ABERTO_SEM_BOLETO = {
+  pagoEm: null,
+  canceladoEm: null,
+  numeroDoTituloNoProvedor: null,
+} as const;
 
 /**
  * As **três** elegíveis: competência do lote, em aberto, sem boleto.
@@ -371,7 +376,7 @@ const TOTAL_DE_ELEGIVEIS = 3;
  *
  * Três estão na MESMA competência e na MESMA empresa das elegíveis, e diferem apenas no campo que as
  * exclui; a quarta é elegível em tudo, menos no mês. É o que faz a igualdade de conjunto discriminar
- * qual termo do predicado sumiu: um predicado que perdesse `nosso_numero IS NULL` traria a terceira, e
+ * qual termo do predicado sumiu: um predicado que perdesse `numero_do_titulo_no_provedor IS NULL` traria a terceira, e
  * um que comparasse a competência por ano traria a quarta.
  */
 const INTRUSAS: readonly CobrancaDoArranjo[] = [
@@ -379,19 +384,19 @@ const INTRUSAS: readonly CobrancaDoArranjo[] = [
     competencia: COMPETENCIA,
     pagoEm: '2026-08-05',
     canceladoEm: null,
-    nossoNumero: null,
+    numeroDoTituloNoProvedor: null,
   }),
   cobranca(5, {
     competencia: COMPETENCIA,
     pagoEm: null,
     canceladoEm: '2026-08-06T12:00:00Z',
-    nossoNumero: null,
+    numeroDoTituloNoProvedor: null,
   }),
   cobranca(6, {
     competencia: COMPETENCIA,
     pagoEm: null,
     canceladoEm: null,
-    nossoNumero: '000000000000000001',
+    numeroDoTituloNoProvedor: '000000000000000001',
   }),
   cobranca(7, { competencia: COMPETENCIA_VIZINHA, ...EM_ABERTO_SEM_BOLETO }),
 ];
@@ -585,31 +590,6 @@ function retratoDaRecusa(tentativa: Resultado<unknown>): {
   return { classe: OUTRA_RECUSA, dito: desfechoDaTentativa(tentativa), lote: null };
 }
 
-/**
- * O que sobra e o que falta entre o observado e o declarado, com os nomes.
- *
- * Declarada aqui, e **não importada** de `packages/auth/test/conjuntos.ts`: aquele arquivo é acessório
- * de outro pacote, e alcançá-lo por caminho relativo profundo atravessaria fronteira de pacote — o
- * mesmo `D28` que a nota daquele arquivo nomeia. Esta é a primeira ocorrência em `packages/db/test/`,
- * de modo que o limiar de três do `CLAUDE.md` não manda subir nada: ele dispara na terceira.
- *
- * Ela devolve as diferenças, e não um booleano, pela razão que o original registra: uma reprovação que
- * diz apenas "os conjuntos diferem" obriga quem lê a caçar o item, e é essa fricção que faz a asserção
- * ser afrouxada na rodada seguinte.
- */
-function diferencasDeConjunto(
-  observado: readonly string[],
-  declarado: readonly string[],
-): { excedentes: string[]; ausentes: string[] } {
-  const noDeclarado = new Set(declarado);
-  const noObservado = new Set(observado);
-
-  return {
-    excedentes: [...noObservado].filter((item) => !noDeclarado.has(item)).sort(),
-    ausentes: [...noDeclarado].filter((item) => !noObservado.has(item)).sort(),
-  };
-}
-
 /** O instante reduzido à FORMA — o carimbo bem-formado vira a marca, e o torto entra nomeado. */
 function marcaDoInstante(valor: string): string {
   return INSTANTE_ISO_UTC.test(valor) ? CARIMBO_DO_BANCO : `FORA DO MOLDE: ${valor}`;
@@ -730,13 +710,13 @@ async function semearApoio(): Promise<void> {
                     (id, empresa_id, codigo, contrato_id, natureza, referencia, competencia,
                      data_vencimento, valor_original, pago_em, valor_pago, cancelado_em,
                      multa_aplicada, juros_aplicados, multa_percentual_aplicado,
-                     juros_percentual_aplicado, nosso_numero)
+                     juros_percentual_aplicado, numero_do_titulo_no_provedor)
         VALUES (${linha.id}, ${EMPRESA_A.id}, ${linha.codigo}, ${CONTRATO_DE_A},
                 ${'ALUGUEL'}::negocio.natureza_cobranca, ${'01/08/2026 à 31/08/2026'},
                 ${linha.competencia}::date, ${'2026-08-10'}::date, ${'2000.00'},
                 ${linha.pagoEm}::date, ${valorPago}, ${linha.canceladoEm}::timestamptz,
                 ${carimbo}, ${carimbo}, ${carimbo}, ${carimbo},
-                ${linha.nossoNumero})
+                ${linha.numeroDoTituloNoProvedor})
       `;
     }
   });

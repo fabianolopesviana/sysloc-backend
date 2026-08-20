@@ -50,6 +50,12 @@
  * **A reativação não devolve sessão** (RN-05): ela limpa a marca e nada mais. Quem estava dentro
  * entra de novo — e é isso, e não a restauração do que foi apagado, que a `CA-05` pede.
  *
+ * > **Emenda de 2026-08-18** (T9 da fatia `webhook-e-carne`). O parágrafo acima é preservado byte a
+ * > byte, e o alcance dele é **sessão** — onde ele continua exato. Desde a CA-10 a reativação
+ * > **retoma o trabalho retido**: as notícias bancárias que a suspensão mandou guardar são
+ * > reenfileiradas no ato. A emenda completa, com a razão de o gatilho morar ali e não em outro
+ * > lugar, está no docblock de {@link EmpresaService.reativar}.
+ *
  * ---------------------------------------------------------------------------
  * CRITÉRIO DE NOME DOS TIPOS DE BORDA — distinção por CAMADA (D36)
  * ---------------------------------------------------------------------------
@@ -99,6 +105,7 @@ import {
   encerrarSessoesDaEmpresa,
   lerAlvoDeReemissao,
   listarEmpresas,
+  listarRetidas,
   localizarEmpresa,
   localizarPessoaPorEmail,
   reativarEmpresa,
@@ -106,6 +113,7 @@ import {
 } from '@sysloc/db';
 import { CodigoErro, ErroDeAplicacao, type Logger } from '@sysloc/shared';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
+import { type ProdutorDeFila, TOKEN_PRODUTOR_DE_FILA } from '../comum/produtor-de-fila.js';
 import {
   TOKEN_ACESSO_A_IDENTIDADE,
   TOKEN_ACESSO_AO_NEGOCIO,
@@ -226,6 +234,11 @@ export class EmpresaService {
     @Inject(TOKEN_ACESSO_A_IDENTIDADE) private readonly acesso: AcessoAIdentidade,
     @Inject(TOKEN_AUTENTICACAO) private readonly autenticacao: Autenticacao,
     @Inject(TOKEN_LOGGER) private readonly logger: Logger,
+    // O produtor entra na T9 da fatia `webhook-e-carne`, e **apenas** para a retomada da §7.5: a
+    // reativação reenfileira as notícias que a suspensão reteve (ADR-0029 — o efeito externo sai por
+    // fila, nunca em linha na resposta). Ele chega pelo `FilaModule`, dono único da conexão, e não
+    // por um `conectarProdutorDeFila` deste módulo — ver o cabeçalho daquele arquivo.
+    @Inject(TOKEN_PRODUTOR_DE_FILA) private readonly produtor: ProdutorDeFila,
   ) {}
 
   /**
@@ -422,6 +435,47 @@ export class EmpresaService {
    * restaurar: a suspensão apagou os registros, e devolvê-los exigiria tê-los guardado — que é
    * precisamente a diferença entre "reativar o acesso" e "retomar o que estava em curso". Quem
    * estava dentro entra de novo.
+   *
+   * > **Emenda de 2026-08-18** (T9 da fatia `webhook-e-carne`, CA-10). O parágrafo acima é
+   * > preservado byte a byte porque **continua verdadeiro — sobre SESSÃO**, que é o único assunto de
+   * > que ele fala. O que ele nomeia como impossível é restaurar o que **não foi guardado**: a
+   * > suspensão apagou os registros de sessão, e ressuscitá-los exigiria tê-los preservado.
+   * >
+   * > A notícia bancária **retida** é o caso oposto, e por isso ela não contradiz nada: ela **está**
+   * > guardada, com prazo declarado (90 dias, RN-11), **justamente porque** a empresa estava
+   * > suspensa quando ela chegou. Retomá-la não é restaurar sessão — é aplicar um fato de terceiro
+   * > que a suspensão mandou **reter em vez de descartar**, e cujo único gatilho previsto é este
+   * > ato. A frase de 2026-08-06 separa *"reativar o acesso"* de *"retomar o que estava em curso"*;
+   * > o que esta emenda acrescenta é que **trabalho retido não é sessão**, e o alcance real passa a
+   * > ser: *sessão não se restaura; trabalho retido se retoma.*
+   * >
+   * > **O gatilho mora aqui, e não em outro lugar**, porque o ato de reativar não tem segundo ponto
+   * > por onde passe — instalá-lo noutro lugar criaria um segundo caminho para o mesmo ato
+   * > (`.claude/rules/nao-regressao.md` §5). As duas alternativas foram descartadas no challenge de
+   * > 2026-08-18: um ouvinte de evento de domínio (mecanismo que o produto não tem) e uma varredura
+   * > sem gatilho (que deixaria a CA-10 dependendo de chegar notícia nova, e pode nunca chegar).
+   *
+   * ---------------------------------------------------------------------------
+   * A RETOMADA LÊ IDENTIFICADOR, E SAI POR FILA
+   * ---------------------------------------------------------------------------
+   *
+   * `listarRetidas` devolve **duas colunas** — o `id` e o `recebido_em` que o ordena —, e a escassez
+   * é a ADR-0013: a garantia é propriedade da **sessão do Master**, e publicar aqui o corpo recebido
+   * lhe daria acesso a dado pessoal de terceiro que ela não alcança por nenhum outro caminho. Nada
+   * de `negocio` é lido, e nenhum efeito é aplicado nesta unidade: o tratamento corre no processo de
+   * trabalho, sob o contexto que o **roteamento** descobrir (ADR-0029).
+   *
+   * ⚠️ **A varredura é GLOBAL, e quem isola é o re-roteamento — nunca a consulta.** A tabela crua não
+   * tem `empresa_id` e **não pode** ter (ADR-0031), de modo que não há filtro por empresa a escrever
+   * aqui — e escrevê-lo seria a defesa em profundidade que a ADR-0008 recusa. O que for de outra
+   * empresa ainda suspensa volta a `RETIDO` pelo mesmo passo B.6 que o reteve, e o que já produziu
+   * efeito vira `REENTREGA`: a retomada é **idempotente por construção**.
+   *
+   * ⚠️ **A carga continua sendo `{ notificacaoId }` — sem empresa.** Mesmo aqui, onde este serviço
+   * *sabe* qual empresa está sendo reativada, pôr `empresaId` na carga daria à tarefa uma **segunda**
+   * origem de contexto, que contradiria a primeira exatamente quando a retida fosse de outra
+   * empresa. É a terceira emenda da ADR-0024: na entrada de fato de terceiro a empresa é o
+   * **resultado** da travessia nominal, e o campo não existe na carga.
    */
   async reativar(empresaId: string): Promise<ReativacaoDaEmpresa> {
     const reativada = await this.banco.emUnidadeDeTrabalho(
@@ -437,7 +491,69 @@ export class EmpresaService {
 
     this.logger.info({ empresaId: reativada }, 'empresa reativada pelo operador do SaaS');
 
+    await this.retomarNoticiasRetidas(reativada);
+
     return { id: reativada, estado: 'ATIVA' };
+  }
+
+  /**
+   * Reenfileira as notícias bancárias retidas, **na ordem em que chegaram** (CA-10, RN-09).
+   *
+   * Ela corre **depois** de a reativação estar commitada, e a ordem é conteúdo: a marca é o fato de
+   * negócio, e o reenfileiramento é o efeito externo dele. Fazê-la antes reenfileiraria trabalho de
+   * uma empresa que talvez continuasse suspensa se a marca não fosse alcançada.
+   *
+   * ⚠️ **A falha do enfileiramento NÃO derruba a reativação**, e o `catch` é a mesma decisão — com a
+   * mesma razão — do fluxo alternativo (b) da §5.2: a marca já foi limpa e a resposta já é verdade;
+   * propagar devolveria `503` a um Master cuja empresa **está** ativa, e a repetição do pedido não
+   * teria como desfazer nada. O que a notícia parada em `RETIDO` tem é o `DÉBITO COM GATILHO` da
+   * recepção — a mesma classe de dívida, e o mesmo caminho de fecho.
+   *
+   * ⚠️ **A linha de trilha é emitida SEMPRE, inclusive com `quantidade: 0`**, e aqui o zero é
+   * informação, não ruído: ele é a única evidência de que a varredura **correu** naquela reativação,
+   * e é o observável que separa *"não havia o que retomar"* de *"ninguém procurou"*. É o oposto do
+   * critério do expurgo do processo de trabalho, que roda a cada notícia tratada — este roda uma vez
+   * por ato do operador.
+   */
+  private async retomarNoticiasRetidas(empresaId: string): Promise<void> {
+    // O QUANTO a retomada avançou antes de parar — declarado FORA do `try` porque quem precisa dele
+    // é o `catch`. O laço abaixo é sequencial por desenho, de modo que uma falha na k-ésima abandona
+    // as N−k seguintes; sem estes dois números o operador lê a linha de falha e não distingue
+    // *"nenhuma foi reenfileirada"* de *"sete das dez foram"* — e o que sobrou parado em `RETIDO`
+    // não tem, hoje, quem o reprocesse (o `DÉBITO COM GATILHO` da recepção).
+    //
+    // `total` permanece indefinido enquanto a listagem não retorna, e o campo simplesmente não sai
+    // nesse caminho: é o único em que o número não é conhecido, e a ausência diz isso melhor do que
+    // um zero que se confundiria com *"não havia o que retomar"*.
+    let reenfileiradas = 0;
+    let total: number | undefined;
+
+    try {
+      // Uma unidade só, e de leitura: as notícias são reenfileiradas **fora** dela, porque manter a
+      // transação aberta durante conversas com o servidor de fila reservaria uma conexão física da
+      // reserva que atende o produto inteiro.
+      const retidas = await this.banco.emUnidadeDeTrabalho(async (tx) => await listarRetidas(tx));
+      total = retidas.length;
+
+      // Sequencial, e não `Promise.all`: a ordem de chegada é o que a CA-10 promete, e um lote
+      // paralelo entregaria as tarefas ao servidor de fila numa ordem que ninguém decidiu.
+      for (const retida of retidas) {
+        await this.produtor.enfileirarNotificacaoBancaria({ notificacaoId: retida.id });
+        // DEPOIS do `await`, e a posição é o que faz a contagem ser verdade: a entrega que rejeita
+        // não conta como reenfileirada.
+        reenfileiradas += 1;
+      }
+
+      this.logger.info(
+        { empresaId, quantidade: retidas.length },
+        'notícias bancárias retidas reenfileiradas na reativação da empresa',
+      );
+    } catch (erro) {
+      this.logger.warn(
+        { erro, empresaId, reenfileiradas, total },
+        'a retomada das notícias bancárias retidas falhou, e a empresa permanece reativada',
+      );
+    }
   }
 
   /**

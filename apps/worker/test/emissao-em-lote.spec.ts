@@ -1340,9 +1340,9 @@ async function contarItensDoLote(empresaId: string): Promise<number> {
 async function titulosGravados(empresaId: string): Promise<string[]> {
   return await emUnidade(empresaId, async (tx) => {
     const linhas = await tx<{ titulo: string }[]>`
-      SELECT nosso_numero AS titulo
+      SELECT numero_do_titulo_no_provedor AS titulo
         FROM negocio.cobranca
-       WHERE nosso_numero IS NOT NULL
+       WHERE numero_do_titulo_no_provedor IS NOT NULL
        ORDER BY codigo
     `;
 

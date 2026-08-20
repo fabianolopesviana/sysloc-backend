@@ -56,6 +56,7 @@ import { ImoveisModule } from './imoveis/imoveis.module.js';
 import { IntegracoesBancariasModule } from './integracoes-bancarias/integracoes-bancarias.module.js';
 import { MasterModule } from './master/master.module.js';
 import { MoraModule } from './mora/mora.module.js';
+import { NotificacoesBancariasModule } from './notificacoes-bancarias/notificacoes-bancarias.module.js';
 import { SaudeModule } from './saude/saude.module.js';
 import { UsuariosModule } from './usuarios/usuarios.module.js';
 
@@ -74,12 +75,20 @@ import { UsuariosModule } from './usuarios/usuarios.module.js';
     MoraModule,
     AutomacaoModule,
     IntegracoesBancariasModule,
-    // A **única** superfície de negócio sem sessão do produto (ADR-0027). Ela é registrada aqui como
-    // qualquer outro módulo, e é isso que importa: a dispensa não vem de um caminho de composição
-    // próprio, vem de `@RotaPublica()` no manipulador — de modo que a guarda global continua
-    // correndo para ela, e o inventário de rotas públicas continua sendo a única lista onde ela
-    // aparece.
+    // AS DUAS superfícies de negócio sem sessão do produto, e cada uma tem a ADR que a autoriza:
+    //
+    //   * `ConfirmacoesModule` — o **ato do titular do dado** (ADR-0027): o locatário confirma o
+    //     próprio endereço, apresentando um portador de segredo de uso único;
+    //   * `NotificacoesBancariasModule` — a **entrada de fato de terceiro** (ADR-0035): o provedor
+    //     bancário envia uma notícia, sem ser usuário do sistema, sem portador e sem ser titular de
+    //     dado algum. É por não haver titular nem portador que a ADR-0027 **não** a alcança.
+    //
+    // Os dois são registrados aqui como qualquer outro módulo, e é isso que importa: a dispensa não
+    // vem de um caminho de composição próprio, vem de `@RotaPublica()` no manipulador — de modo que
+    // a guarda global continua correndo para eles, e o inventário de rotas públicas continua sendo a
+    // única lista onde eles aparecem.
     ConfirmacoesModule,
+    NotificacoesBancariasModule,
   ],
   providers: [
     {

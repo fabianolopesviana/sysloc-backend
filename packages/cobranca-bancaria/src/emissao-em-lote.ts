@@ -43,7 +43,7 @@
  *
  * **Não existe neste arquivo nenhuma verificação de *"esta cobrança já foi emitida?"***, e a ausência
  * é a decisão. O conjunto chega já recortado pelo predicado da camada de dados (`competencia = …`
- * mais `pago_em IS NULL`, `cancelado_em IS NULL` e `nosso_numero IS NULL`), e é dele, e de mais nada,
+ * mais `pago_em IS NULL`, `cancelado_em IS NULL` e `numero_do_titulo_no_provedor IS NULL`), e é dele, e de mais nada,
  * que sai a idempotência: o segundo lote da mesma competência seleciona exatamente o **complemento**
  * do primeiro. Uma guarda aqui seria a **segunda regra para o mesmo fato**, livre para divergir da
  * primeira e sem nada que acuse quando divergir.

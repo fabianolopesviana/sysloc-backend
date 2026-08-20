@@ -10,7 +10,7 @@
  * | Critério | Caso | Invariante |
  * |---|---|---|
  * | CA-06 | CT-918 | Revogação **confirmada** seguida de emissão que falha deixa a cobrança
- * |       |        | `nosso_numero IS NULL`, **em aberto** (`pago_em` e `cancelado_em` nulos), e a
+ * |       |        | `numero_do_titulo_no_provedor IS NULL`, **em aberto** (`pago_em` e `cancelado_em` nulos), e a
  * |       |        | resposta é `503` com o envelope da ADR-0017 asserido como **objeto inteiro**,
  * |       |        | nomeando a cobrança pelo **código** e declarando
  * |       |        | `{ boleto: 'SEM_BOLETO', revogacao: 'CONFIRMADA' }`. A trilha ganha
@@ -51,7 +51,7 @@
  * | CA-18 | CT-931 | Cobrança cujo boleto foi revogado **pela conferência real** aceita nova
  * |       |        | emissão pelo caminho normal: a sequência de operações da porta é
  * |       |        | **exatamente `['emitir']`** — sem etapa de revogação supérflua —, o novo
- * |       |        | `nosso_numero` é não-nulo e **diferente** do anterior, o novo
+ * |       |        | `numero_do_titulo_no_provedor` é não-nulo e **diferente** do anterior, o novo
  * |       |        | `identificador_no_provedor` também, e a trilha ganha **um** evento
  * |       |        | `BOLETO_EMITIDO` com `origem = 'ATO_DO_ADMIN'`. |
  * | CA-19 | CT-932 | Os **cinco** campos de conciliação são publicados nos três estados, e
@@ -124,7 +124,7 @@
  *
  * O percurso da T12 (`conferirCobrancas`) é chamado com as portas satisfeitas pelas **mesmas**
  * funções de `@sysloc/db` que a borda da tarefa satisfará, sob o contexto de tenant e dentro da
- * unidade de trabalho. Zerar `nosso_numero` direto na tabela pularia o produtor sob prova, e o caso
+ * unidade de trabalho. Zerar `numero_do_titulo_no_provedor` direto na tabela pularia o produtor sob prova, e o caso
  * passaria a medir a rota contra um estado que o produto nunca produz.
  *
  * ===========================================================================
@@ -1325,7 +1325,7 @@ describe('os dois atos sobre o boleto da cobrança (T13)', () => {
       // Os DOIS eixos, medidos separadamente — eles são coisas distintas
       // ---------------------------------------------------------------------------------------
       //
-      // `nosso_numero` é o que o **provedor** atribuiu; `identificador_no_provedor` é o que **o
+      // `numero_do_titulo_no_provedor` é o que o **provedor** atribuiu; `identificador_no_provedor` é o que **o
       // produto** compôs e enviou (ADR-0033). Nenhum é derivado do outro no arranjo — o primeiro sai
       // da sequência do par instrumentado, o segundo do contador do banco —, e por isso a segunda
       // asserção não é implicada pela primeira.
@@ -2127,14 +2127,14 @@ async function lerTrilha(
 }
 
 /**
- * O `nosso_numero` **cru**, lido da tabela sob o contexto de tenant.
+ * O `numero_do_titulo_no_provedor` **cru**, lido da tabela sob o contexto de tenant.
  *
  * A leitura publicada serviria para ele, e a crua é usada de propósito: o par com
  * {@link identificadorGravado} — que **não** é publicado — mantém as duas medições no mesmo eixo, e
  * evita que o caso pareça afirmar sobre a coluna o que leu do corpo.
  */
 async function numeroDoTituloGravado(codigo: string): Promise<string | null> {
-  return await colunaDaCobranca(codigo, 'nosso_numero');
+  return await colunaDaCobranca(codigo, 'numero_do_titulo_no_provedor');
 }
 
 /** O `identificador_no_provedor` cru — chave de correlação INTERNA, que nenhum esquema publica. */
@@ -2151,13 +2151,13 @@ async function identificadorGravado(codigo: string): Promise<string | null> {
  */
 async function colunaDaCobranca(
   codigo: string,
-  coluna: 'nosso_numero' | 'identificador_no_provedor',
+  coluna: 'numero_do_titulo_no_provedor' | 'identificador_no_provedor',
 ): Promise<string | null> {
   return await emUnidade(async (tx) => {
     const [linha] =
-      coluna === 'nosso_numero'
+      coluna === 'numero_do_titulo_no_provedor'
         ? await tx<{ valor: string | null }[]>`
-            SELECT nosso_numero AS valor FROM negocio.cobranca WHERE codigo = ${codigo}
+            SELECT numero_do_titulo_no_provedor AS valor FROM negocio.cobranca WHERE codigo = ${codigo}
           `
         : await tx<{ valor: string | null }[]>`
             SELECT identificador_no_provedor AS valor
@@ -2502,14 +2502,15 @@ interface RespostaDeBoleto {
 /**
  * Pede o boleto de uma cobrança e devolve status, cabeçalhos e o corpo **em bytes**.
  *
- * ⚠️ **O débito `D63 · F4/fechamento` foi MEDIDO de novo aqui, e adiado de novo** — o marcador dele
- * continua **único**, em `apps/api/test/certificado-do-provedor.e2e.spec.ts`, e esta prosa não é um
- * segundo marcador: replicá-lo daria duas cópias livres para divergir, com o índice do `CLAUDE.md`
- * apontando para uma só. A medição da T13 **não mudou** com esta task — as cópias de `pedir` já
+ * ⚠️ **O débito `D63 · F4/fechamento` FOI FECHADO em 2026-08-19**, pela T6 da fatia
+ * `webhook-e-carne`: a casa única passou a existir em `apps/api/test/acessorios-de-borda.ts`, e o
+ * marcador saiu de `certificado-do-provedor.e2e.spec.ts` junto com a linha do índice do `CLAUDE.md`.
+ * O que aquela task fez foi **criar a casa**, não converter as ~30 suítes — este `pedirBoleto`
+ * continua sendo cópia, e a medição registrada aqui continua valendo: as cópias de `pedir` já
  * divergiram em 11 formas distintas (por hash do corpo), de modo que unificar não é migração
- * mecânica: exige decidir a semântica das 11 variantes e tocar 24 arquivos, nenhum deles no escopo
- * declarado desta task. O que esta task acrescenta é uma cópia de leitor de **bytes**, cuja outra
- * ocorrência (`pedirDocumento`) está fora do alcance dela.
+ * mecânica. A conversão desta suíte acontece pelo caminho normal do `CLAUDE.md` — *acessório de
+ * suíte se importa, não se copia* —, na próxima task autorizada a abrir este arquivo por outra
+ * razão. Esta prosa **não é um marcador**, e não era antes: o débito não tem mais marcador algum.
  *
  * Ele lê o corpo como `ArrayBuffer` sempre — inclusive nas recusas —, e a escolha é conteúdo: um
  * cliente que lesse texto não conseguiria afirmar que a recusa **não** carrega bytes de documento,

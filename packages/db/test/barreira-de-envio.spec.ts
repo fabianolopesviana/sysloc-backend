@@ -441,9 +441,10 @@ const PODAS_TESTEMUNHAS: readonly string[] = ['node_modules'];
  * |---|---|
  * | `.md`, `.txt` | prosa e texto puro — documentação, spec, relatório de gate, golden do PDF |
  * | `.yaml`, `.yml`, `.toml` | dado declarativo — fixture de skill, workflow de CI, `.mise.toml` |
- * | `.sh`, `.py`, `.go`, `.mod` | fonte de outra linguagem, executada em processo próprio |
+ * | `.sh`, `.py`, `.go`, `.mod`, `.awk` | fonte de outra linguagem, executada em processo próprio |
  * | `.sql` | dialeto do banco, consumido pelo servidor e não pelo carregador |
  * | `.service` | unidade do systemd |
+ * | `.conf` | configuração de servidor de borda, consumida pelo nginx e não pelo carregador do Node |
  * | `.example` | amostra inerte de outro arquivo, e o sufixo é o que a declara inerte |
  * | `.gitignore`, `.gitattributes`, `.gitkeep` | configuração e sentinela do próprio git |
  * | `Makefile` | receita do `make` — arquivo **sem extensão** cujo nome é o anúncio |
@@ -460,6 +461,8 @@ const PODAS_TESTEMUNHAS: readonly string[] = ['node_modules'];
  * árvore é a remoção de uma linha, e as duas direções pedem a razão escrita.
  */
 const CLASSES_NAO_CARREGAVEIS: readonly string[] = [
+  '.awk',
+  '.conf',
   '.example',
   '.gitattributes',
   '.gitignore',

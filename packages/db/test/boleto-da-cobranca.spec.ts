@@ -185,7 +185,7 @@
  * `dist/`, e ali o defeito reintroduzido no fonte não chegaria a executar.
  *
  *   * **controle** — árvore íntegra: `214 passed`, 30 arquivos (a baseline da rodada 1 era `210`);
- *   * **MT-T6-C · `AND nosso_numero IS NULL` apagado de `gravarBoletoDaCobranca`** — a guarda que
+ *   * **MT-T6-C · `AND numero_do_titulo_no_provedor IS NULL` apagado de `gravarBoletoDaCobranca`** — a guarda que
  *     impede a emissão de escrever por cima de um boleto vivo. `1 failed | 213 passed`, e o
  *     `CT-922 (c)` reprova **no retrato dos campos gravados**, nomeando o dano em vez da ausência da
  *     recusa: os quatro campos do boleto `7` substituídos pelos do `8`;
@@ -466,7 +466,7 @@ const ASSINATURA_DA_REVOGACAO = 'export async function revogarBoleto(';
 
 /** As quatro colunas que a revogação escreve — e a ausência de `cancelado_em` entre elas é a RN-09. */
 const COLUNAS_ZERADAS_PELA_REVOGACAO: readonly string[] = Object.freeze([
-  'nosso_numero',
+  'numero_do_titulo_no_provedor',
   'linha_digitavel',
   'codigo_barras',
   'boleto_arquivo',
@@ -485,7 +485,7 @@ const COLUNA_DO_CANCELAMENTO = 'cancelado_em';
 const REVOGACAO_COM_O_CANCELAMENTO = `${ASSINATURA_DA_REVOGACAO}
   const [linha] = await tx\`
     UPDATE negocio.cobranca AS alvo
-       SET nosso_numero = NULL,
+       SET numero_do_titulo_no_provedor = NULL,
            linha_digitavel = NULL,
            codigo_barras = NULL,
            boleto_arquivo = NULL,
@@ -803,7 +803,7 @@ describe('CT-922 (c) — a segunda emissão não escreve por cima de um boleto v
 
       // --- Passo 1: a segunda emissão, sobre a MESMA cobrança ----------------------------------
       //
-      // É o invariante financeiro da fatia: sem `AND nosso_numero IS NULL`, esta chamada substituiria em
+      // É o invariante financeiro da fatia: sem `AND numero_do_titulo_no_provedor IS NULL`, esta chamada substituiria em
       // silêncio o título registrado no banco, e o boleto anterior continuaria pagável no mundo — a
       // CA-05 (*"em nenhum instante os dois são pagáveis"*) desfeita no ponto onde a escrita acontece.
       const recusa = await recusaDe(
@@ -891,7 +891,7 @@ describe('CT-922 (d) — a liquidação de cobrança CANCELADA informa, em vez d
       });
 
       // O cancelamento **não** revoga o boleto (`cancelarCobranca`, da F3, só escreve `cancelado_em`),
-      // de modo que a cobrança cancelada conserva `nosso_numero` — e é isso que torna a janela
+      // de modo que a cobrança cancelada conserva `numero_do_titulo_no_provedor` — e é isso que torna a janela
       // alcançável: o percurso a selecionou enquanto estava em aberto, e o Admin cancelou antes de a
       // notícia do provedor chegar.
       await emUnidade(cenario, async (tx) => {

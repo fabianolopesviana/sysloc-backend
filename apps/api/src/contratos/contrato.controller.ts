@@ -183,6 +183,17 @@
  * "óbvia" instalaria um segundo lugar por onde a área desta rota pode sumir em silêncio. O `CT-355`
  * varre a aplicação inteira e acusa manipulador que exija **menos** do que a classe dele — ele é a
  * rede, não a razão.
+ *
+ * **EMENDA — T10 da fatia `webhook-e-carne` (2026-08-19).** O texto acima é preservado; o que segue
+ * o estende. `GET /:codigo/carne` é a **oitava** rota desta superfície, e ela é a **segunda** que não
+ * declara nada no método — de modo que a rota do documento deixou de ser "a única". A razão é a
+ * mesma, palavra por palavra: reunir os boletos das cobranças do contrato é **leitura** do que a área
+ * já dá, nada é gravado (nem no banco nem na trilha — ADR-0034), e o catálogo fechado da ADR-0011 não
+ * tem ação sensível correspondente. `packages/auth/src/catalogo-de-permissoes.ts` **não foi tocado**.
+ *
+ * As duas rotas que devolvem **bytes** desta classe partilham o tipo de mídia, o par de cabeçalhos e
+ * a extensão do nome de arquivo, e a partilha é deliberada — ver o docblock de
+ * {@link SEGMENTO_DO_CARNE}.
  */
 
 import {
@@ -204,6 +215,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiServiceUnavailableResponse,
   ApiTags,
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
@@ -217,11 +229,13 @@ import {
   esquemaDaJanelaComCirculacao,
   esquemaDeContratoNovo,
   esquemaDoContrato,
+  esquemaDoRecorteDoCarne,
 } from '@sysloc/contracts';
 import type { AcessoAoBanco } from '@sysloc/db';
 import { CodigoErro, type Logger } from '@sysloc/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ExigeChave, ExigeChaves } from '../autenticacao/exigencia.decorator.js';
+import { CarneService } from '../cobrancas/carne.service.js';
 import { CobrancaService } from '../cobrancas/cobranca.service.js';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
 import { ESQUEMA_DO_CORPO_VAZIO } from '../comum/esquema-de-corpo-vazio.js';
@@ -278,6 +292,17 @@ const CAMPO_DO_CORPO = 'corpo';
 /** Nome de campo usado quando a recusa é da cadeia de consulta. */
 const CAMPO_DA_CONSULTA = 'limite';
 
+/**
+ * Nome de campo usado quando a recusa do **recorte do carnê** não tem caminho a nomear.
+ *
+ * Ele é `recorte`, e não `de`: o caso sem caminho é a **chave desconhecida** na cadeia de consulta,
+ * que o objeto estrito reporta com caminho vazio — e ali o que está errado não é `de` nem `ate`, é o
+ * conjunto. Nomear uma das duas pontas mandaria quem recebe a recusa corrigir um campo que está
+ * certo. Não se reusa {@link CAMPO_DA_CONSULTA} pela mesma razão ao contrário: `limite` é campo da
+ * janela da carteira, e esta rota não tem janela.
+ */
+const CAMPO_DO_RECORTE = 'recorte';
+
 /** A entidade nomeada na linha de trilha desta superfície — escrita uma vez, usada nas duas. */
 const ENTIDADE_DA_TRILHA = 'contrato';
 
@@ -300,6 +325,46 @@ const CABECALHO_DA_DISPOSICAO = 'content-disposition';
 
 /** A extensão do nome de arquivo sugerido — a outra metade de `attachment; filename="…"`. */
 const EXTENSAO_DO_DOCUMENTO = '.pdf';
+
+/**
+ * O que a rota do **carnê** declara, conforme a ADR-0028 — e por que ela reusa o que já está acima.
+ *
+ * O tipo de mídia, os dois nomes de cabeçalho e a extensão são **os mesmos** da rota do documento, e
+ * a reutilização é deliberada: as duas rotas desta classe devolvem PDF por acaso do mesmo domínio, e
+ * um segundo `'application/pdf'` escrito quatro linhas abaixo do primeiro seria a cópia que diverge
+ * no dia em que uma das duas mudar. Aqui **não há fronteira de fatia entre elas** — é o mesmo
+ * arquivo, o mesmo par de cabeçalhos e a mesma resposta —, ao contrário do que acontece entre este
+ * controlador e o da cobrança, onde a segunda cópia é justificada por escrito.
+ *
+ * O que é **próprio** desta rota é só o segmento e a composição do nome do arquivo, abaixo.
+ */
+const SEGMENTO_DO_CARNE = ':codigo/carne';
+
+/**
+ * Quantos caracteres da competência entram no nome do arquivo — `YYYY-MM`, sem o dia.
+ *
+ * O dia é sempre `01` (é o que `esquemaDoRecorteDoCarne` exige), de modo que carregá-lo no nome
+ * acrescentaria seis caracteres que não distinguem carnê nenhum de outro. O que quem baixa doze
+ * carnês precisa ler na pasta de downloads é o contrato e os dois meses.
+ */
+const CARACTERES_DA_COMPETENCIA_NO_NOME = 7;
+
+/**
+ * O nome sugerido do arquivo do carnê — `<codigo>-<de>-<ate>.pdf`.
+ *
+ * ⚠️ **Nada aqui escapa nada, e a ausência é a decisão**, pela mesma razão registrada na rota do
+ * documento: as três partes já foram **canonizadas pelos esquemas** antes de chegar — o código passou
+ * por `ESQUEMA_DO_CODIGO_DE_CONTRATO`, que fixa `CTR-{ano}-{5 dígitos}` e passa a caixa para
+ * maiúsculas, e as duas competências por `esquemaDoRecorteDoCarne`, que exige data ISO no primeiro
+ * dia do mês. Não há aspa, quebra de linha ou caractere de controle capaz de atravessar esta linha,
+ * porque **o que chega do cliente não chega até aqui**: o que chega é o que os esquemas produziram.
+ */
+function nomeDoArquivoDoCarne(codigo: string, de: string, ate: string): string {
+  const inicio = de.slice(0, CARACTERES_DA_COMPETENCIA_NO_NOME);
+  const fim = ate.slice(0, CARACTERES_DA_COMPETENCIA_NO_NOME);
+
+  return `${codigo}-${inicio}-${fim}${EXTENSAO_DO_DOCUMENTO}`;
+}
 
 // O corpo das duas rotas de circulação **e** o das duas transições — **vazio e fechado** (§4.1.1) —
 // é `ESQUEMA_DO_CORPO_VAZIO`, importado de `comum/esquema-de-corpo-vazio.js`. A marca de retirada e
@@ -325,6 +390,12 @@ export class ContratoController {
     // seria a segunda fonte do mesmo fato, com liberdade para escolher o eixo errado; e é ele que faz
     // `contratos.module.ts` importar `CobrancasModule`, em vez de prover o serviço duas vezes.
     @Inject(CobrancaService) private readonly cobrancas: CobrancaService,
+    // O serviço do CARNÊ, pela mesma razão do de cobrança: ele é **consumido**, e não recriado. Ele
+    // vive em `cobrancas/` porque o que ele compõe são boletos de cobrança — trazê-lo para cá
+    // obrigaria esta superfície, governada por `TELA:contratos`, a receber a porta do provedor e a
+    // guarda dos bytes. Quem o provê é `CobrancasModule`, que `contratos.module.ts` **já** importa
+    // por causa da linha acima: nenhuma dependência de módulo nasceu nesta task.
+    @Inject(CarneService) private readonly carnes: CarneService,
     @Inject(TOKEN_LOGGER) private readonly logger: Logger,
   ) {}
 
@@ -546,6 +617,120 @@ export class ContratoController {
     resposta.header(
       CABECALHO_DA_DISPOSICAO,
       `attachment; filename="${codigo}${EXTENSAO_DO_DOCUMENTO}"`,
+    );
+
+    return bytes;
+  }
+
+  @Get(SEGMENTO_DO_CARNE)
+  // NADA é declarado aqui, e a ausência é o mecanismo: a exigência de `TELA:contratos` vem da
+  // CLASSE, e `getAllAndOverride` é override — não união. É a mesma forma, e a mesma razão, da rota
+  // do documento logo acima: pedir o carnê é **leitura** do que a área já dá — quem alcança
+  // `TELA:contratos` já lê o contrato inteiro e já baixa o documento dele —, e o catálogo fechado da
+  // ADR-0011 não tem ação sensível correspondente. Criar uma seria contrato novo sem fonte.
+  //
+  // ⚠️ **Declarar `@ExigeChave(AREA_DOS_CONTRATOS)` aqui seria pior do que redundante**: instalaria
+  // um segundo lugar por onde a área desta rota pode sumir em silêncio. E a ADR-0021 **não** alcança
+  // esta rota: a `Decision` dela tem por sujeito a transição de estado de entidade de negócio, e
+  // reunir documentos que já existem não transiciona coisa alguma — nada é gravado, nem no banco nem
+  // na trilha (ADR-0034).
+  @ApiOperation({
+    summary: 'Baixa o carnê do contrato em PDF',
+    description:
+      'Reúne, **num documento só**, os boletos das cobranças deste contrato cujas competências ' +
+      'caem no intervalo `de`..`ate` — as duas pontas **inclusive**, cada uma no formato ' +
+      '`YYYY-MM-01`. As parcelas saem na ordem **crescente de vencimento**, que é a ordem em que ' +
+      'quem paga as usa. O documento é composto no instante do pedido e **não é armazenado** em ' +
+      'lugar nenhum (ADR-0030): pedir o mesmo recorte duas vezes devolve o que o cadastro diz ' +
+      'agora. O recorte aceita no máximo **12** competências, e um pedido mais largo é recusado ' +
+      'com `422` nomeando `ate` — o carnê é o caderno de um ano. Se o arquivo de algum boleto ' +
+      'tiver sumido do disco, ele é **rebuscado do provedor e regravado**, de forma transparente: ' +
+      'a resposta é a mesma, e nada é registrado no histórico bancário, porque rebuscar cache não ' +
+      'é efeito (ADR-0034). Recorte que **não alcança cobrança alguma** responde `404` com ' +
+      '`detalhes: { carne: "SEM_COBRANCAS" }`; cobrança do recorte **sem boleto emitido** responde ' +
+      '`404` com `detalhes: { carne: "BOLETO_AUSENTE", cobranca: "<código>" }`, nomeando a ' +
+      '**primeira** na ordem de vencimento — jamais um caderno com parcela faltando. Provedor ' +
+      'indisponível durante a rebusca responde `503`, sem alterar coisa alguma. A resposta é ' +
+      '`application/pdf` com `Content-Disposition: attachment` sugerindo ' +
+      '`<codigo>-<de>-<ate>.pdf`. Contrato de outra empresa é indistinguível de inexistente: ' +
+      '`404` com o mesmo corpo, **sem `detalhes`**. Código ou recorte malformado é recusado com ' +
+      '`422` **sem tocar o banco**.',
+  })
+  // A segunda declaração de resposta desta superfície que não deriva de um esquema, e a ADR-0028 é
+  // quem a autoriza pela mesma leitura registrada na rota do documento: a rota permanece no contrato
+  // publicado e declara **mídia**, **nome sugerido de arquivo** e o **mesmo envelope de erro** das
+  // demais — e nada sobre a estrutura do sucesso, que não tem estrutura.
+  //
+  // ⚠️ **A ENTRADA não é declarada no documento, e a ausência acompanha a base inteira**: nenhuma
+  // rota desta API descreve corpo ou cadeia de consulta no OpenAPI — a rota de listagem logo acima
+  // tem `limite` e `deslocamento` e não os declara. A ADR-0016 é respeitada onde ela alcança: o
+  // `esquemaDoRecorteDoCarne` importado é a fonte **única** que confere a entrada, e nenhuma segunda
+  // descrição dela é escrita à mão em paralelo. Publicar a entrada é trabalho de uma decisão própria
+  // sobre toda a superfície, e não desta rota — antecipá-la aqui criaria a única rota da API que
+  // descreve entrada, com uma forma que nenhuma outra segue.
+  @ApiOkResponse({
+    description: 'O carnê em PDF, composto no instante do pedido.',
+    content: { [TIPO_DE_MIDIA_DO_DOCUMENTO]: { schema: { type: 'string', format: 'binary' } } },
+    headers: {
+      [CABECALHO_DA_DISPOSICAO]: {
+        schema: { type: 'string' },
+        description: 'attachment; filename="CTR-2026-00001-2026-01-2026-06.pdf"',
+      },
+    },
+  })
+  @ApiUnauthorizedResponse({ schema: esquemaDoErro([CodigoErro.NAO_AUTENTICADO]) })
+  @ApiForbiddenResponse({ schema: esquemaDoErro([CodigoErro.ACESSO_NEGADO]) })
+  @ApiNotFoundResponse({ schema: esquemaDoErro([CodigoErro.RECURSO_NAO_ENCONTRADO]) })
+  @ApiUnprocessableEntityResponse({ schema: esquemaDoErro([CodigoErro.CAMPO_INVALIDO]) })
+  // O `503` é da **rebusca**, e ele só existe nesta rota e na do boleto avulso: é o único ponto em
+  // que atender a um `GET` desta base pode depender do provedor bancário estar de pé.
+  @ApiServiceUnavailableResponse({ schema: esquemaDoErro([CodigoErro.SERVICO_INDISPONIVEL]) })
+  async carne(
+    @Param('codigo') identificador: string,
+    @Query() consulta: unknown,
+    @Req() requisicao: FastifyRequest,
+    // `passthrough: true` pela mesma razão da rota do documento: o corpo continua sendo o **valor
+    // devolvido**, e o que a resposta precisa da instância são os dois cabeçalhos que dependem do
+    // `:codigo` e do recorte.
+    @Res({ passthrough: true }) resposta: FastifyReply,
+  ): Promise<Uint8Array> {
+    // As DUAS conferências acontecem antes de qualquer ida ao banco, e a ordem entre elas não é
+    // conteúdo — o que é conteúdo é as duas virem **antes** de `sobContextoDaSessao`: recorte
+    // malformado é `422` sem que uma transação chegue a abrir.
+    const codigo = validar(ESQUEMA_DO_CODIGO_DE_CONTRATO, identificador, CAMPO_DO_CODIGO);
+    const recorte = validar(esquemaDoRecorteDoCarne, consulta, CAMPO_DO_RECORTE);
+
+    // A unidade de trabalho cobre **apenas a leitura do estado**, e a repartição é a mesma da rota do
+    // documento — cuja `DECISÃO FECHADA — T7 / Gate 2` registra a medição que a motivou — e a mesma
+    // da rota do boleto avulso. Aqui a razão é ainda mais forte: o que corre depois dela é leitura de
+    // disco e, no caminho raro, **até doze** conversas de rede com o provedor, com teto de dez
+    // segundos cada. Dentro da unidade, um único carnê seguraria uma conexão física da reserva que
+    // atende o produto inteiro por mais de dois minutos.
+    // ⚠️ Não "uniformize" isto de volta para uma continuação só.
+    const preparos = await sobContextoDaSessao(
+      this.banco,
+      requisicao,
+      async (tx, sessao) =>
+        await this.carnes.prepararRecorte(tx, sessao.empresaId, codigo, recorte),
+    );
+
+    // A composição corre FORA da unidade. A abertura vai por parâmetro porque a rebusca da CA-08
+    // precisa ler o certificado da empresa — a única ida ao banco do caminho raro —, e ela nasce
+    // aqui, na borda, sob a sessão: a única origem legítima do contexto de tenant (ADR-0008). É a
+    // **mesma** abertura que a rota do boleto avulso passa, e não uma segunda forma de abri-la.
+    const bytes = await this.carnes.compor(preparos, (trabalho) =>
+      sobContextoDaSessao(this.banco, requisicao, trabalho),
+    );
+
+    // Os DOIS cabeçalhos são escritos **depois** de os bytes existirem, e a ordem é conteúdo: o
+    // filtro global responde pela MESMA instância de `FastifyReply`, de modo que um `Content-Type:
+    // application/pdf` definido antes da composição sobreviveria à recusa e o envelope de erro da
+    // ADR-0017 sairia anunciando-se como PDF. Nesta rota o risco é maior que nas irmãs, porque as
+    // recusas dela são **três** e uma delas (`503`) acontece depois de vários boletos já lidos.
+    resposta.header(CABECALHO_DO_TIPO, TIPO_DE_MIDIA_DO_DOCUMENTO);
+    resposta.header(
+      CABECALHO_DA_DISPOSICAO,
+      `attachment; filename="${nomeDoArquivoDoCarne(codigo, recorte.de, recorte.ate)}"`,
     );
 
     return bytes;

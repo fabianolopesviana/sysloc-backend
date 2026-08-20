@@ -91,6 +91,7 @@ import { processarConferenciaBancaria } from './tarefas/conferencia-bancaria.js'
 import { processarConfirmacaoDeEmail } from './tarefas/confirmacao-de-email.js';
 import { processarEco } from './tarefas/eco.js';
 import { processarEmissaoEmLote } from './tarefas/emissao-em-lote.js';
+import { processarNotificacaoBancaria } from './tarefas/notificacao-bancaria.js';
 import { processarReguaDeCobranca } from './tarefas/regua.js';
 
 /** Sinais pelos quais o supervisor pede o encerramento. */
@@ -634,6 +635,19 @@ async function principal(): Promise<void> {
           chaveDeCifra: ambiente.chaveDeCifraDoCertificado,
         }),
     );
+    // A terceira borda bancária deste processo, e a única cuja carga NÃO traz empresa: o contexto
+    // nasce do registro que o roteamento resolve (ADR-0024, terceira emenda). As portas são as
+    // mesmas das duas irmãs, e chegam pelo mesmo caminho — parâmetro, nunca ambiente lido lá dentro.
+    fila.processar(
+      fila.notificacaoBancaria,
+      async (tarefa, registrador) =>
+        await processarNotificacaoBancaria(tarefa, registrador, {
+          banco,
+          adaptador: provedor,
+          guarda,
+          chaveDeCifra: ambiente.chaveDeCifraDoCertificado,
+        }),
+    );
   } catch (erro) {
     // Devolver o que já foi aberto é o que permite ao processo terminar: uma conexão de pé
     // seguraria o laço de eventos e o processador ficaria vivo sem consumir nada. A falha da
@@ -654,6 +668,7 @@ async function principal(): Promise<void> {
         fila.confirmacao.name,
         fila.emissaoEmLote.name,
         fila.conferenciaBancaria.name,
+        fila.notificacaoBancaria.name,
       ],
     },
     'processador de trabalho no ar',

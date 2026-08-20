@@ -22,12 +22,12 @@
 #           servidor de fila;
 #   CT-005  o provisionamento não alterou o ambiente legado nem colidiu com
 #           suas portas;
-#   CT-030  no cluster real, os três papéis — o da aplicação, o de migração e o
-#           de resolução — existem, nenhum deles tem privilégio capaz de
-#           contornar a política de linha, o da aplicação não pertence a nenhum
-#           dos outros dois, a membership do migrador no de resolução é
-#           `INHERIT FALSE`, e os dois schemas pertencem ao papel de migração com
-#           uso concedido ao papel da aplicação.
+#   CT-030  no cluster real, os quatro papéis — o da aplicação, o de migração, o
+#           de resolução e o de roteamento — existem, nenhum deles tem privilégio
+#           capaz de contornar a política de linha, o da aplicação não pertence a
+#           nenhum dos outros três, a membership do migrador nos dois papéis de
+#           travessia nominal é `INHERIT FALSE`, e os schemas pertencem ao papel
+#           de migração com uso concedido ao papel da aplicação.
 #
 # ---------------------------------------------------------------------------
 # Como esta bateria é executada
@@ -112,6 +112,12 @@ readonly PAPEL_MIGRACAO="sysloc_migracao"
 # terceiro papel do P15. Ele é `NOLOGIN` e de propósito único: carrega a
 # propriedade de UMA função `SECURITY DEFINER` e nada mais. Ver o CT-030.
 readonly PAPEL_RESOLUCAO="sysloc_resolucao"
+# Acrescentado pela T3 da fatia `webhook-e-carne`, junto do QUARTO papel do P15.
+# Gêmeo do de resolução em propriedades — `NOLOGIN`, sem credencial, dono de UMA
+# função `SECURITY DEFINER` (a que roteia a notícia bancária, migração `0020`) —
+# e papel PRÓPRIO, e não o reuso do terceiro: reusá-lo o faria alcançar DUAS
+# tabelas, diluindo o `GRANT` mínimo que a emenda da ADR-0024 exige. Ver o CT-030.
+readonly PAPEL_ROTEAMENTO="sysloc_roteamento"
 readonly SCHEMA_IDENTIDADE="identidade"
 readonly SCHEMA_NEGOCIO="negocio"
 # Acrescentado pela T4 da fatia `fundacao-bancaria`, junto do terceiro schema do
@@ -1923,8 +1929,8 @@ ct_005() {
 }
 
 # =========================================================================== #
-# CT-030 — No cluster real, os três papéis existem e nenhum deles tem privilégio
-#          capaz de contornar o isolamento.
+# CT-030 — No cluster real, os quatro papéis existem e nenhum deles tem
+#          privilégio capaz de contornar o isolamento.
 #
 # O CT-001 da suíte de `packages/db` cobre a mesma classe de invariante contra uma
 # instância EFÊMERA (`embedded-postgres` em versão beta). Os dois são necessários,
@@ -1946,7 +1952,7 @@ ct_005() {
 # papel alguém conectou.
 #
 # --------------------------------------------------------------------------- #
-# O TERCEIRO papel, e por que ele é o mais sensível dos três
+# Os papéis de TRAVESSIA NOMINAL, e por que são os mais sensíveis de todos
 # --------------------------------------------------------------------------- #
 #
 # A T3 da sub-fatia `documentos-e-confirmacao` acrescentou ao P15 o papel
@@ -1976,9 +1982,36 @@ ct_005() {
 # por construção não detecta deriva de `provisionar-base.sh`. É a mesma divisão
 # de trabalho que o parágrafo acima declara para o CT-001: os dois são
 # necessários, e é este que olha para o cluster onde a operação acontece.
+#
+# --------------------------------------------------------------------------- #
+# O QUARTO papel — e por que a advertência acima teve de ser cobrada de fato
+# --------------------------------------------------------------------------- #
+#
+# A T3 da fatia `webhook-e-carne` acrescentou ao P15 o papel `sysloc_roteamento`:
+# gêmeo do de resolução em tudo — `NOLOGIN`, sem credencial, dono de UMA função
+# `SECURITY DEFINER`, a que roteia a notícia bancária recebida do provedor
+# (migração `0020`) — e papel PRÓPRIO, e não o reuso do terceiro, porque reusá-lo
+# faria um mesmo papel alcançar DUAS tabelas e diluiria o `GRANT` mínimo que a
+# emenda de 2026-08-13 da ADR-0024 exige.
+#
+# Ele nasceu FORA da enumeração deste caso, que é exatamente o modo de falha
+# descrito acima: a bateria não ficou vermelha, ficou cega. As três propriedades
+# do papel de resolução valem para ele **uma a uma**, e a segunda com raio MAIOR:
+# a política nominal da `0020` alcança `negocio.cobranca`, de modo que um
+# `GRANT sysloc_roteamento TO sysloc_app` daria ao papel que atende TODA
+# requisição HTTP a leitura da cobrança de TODAS as empresas — e, como no irmão,
+# sem produzir erro algum. Por isso as asserções abaixo passam a percorrer os
+# quatro papéis, e a não-pertinência e a forma `INHERIT FALSE` são escritas para
+# os DOIS papéis de travessia nominal.
+#
+# O `CT-973` de `packages/db` afirma os ATRIBUTOS e os PRIVILÉGIOS do papel novo
+# por igualdade, e é ele que mede *"a única tabela alcançada"*; o que ele não
+# afirma — e não teria como, por correr contra o provisionamento efêmero — é a
+# membership de TERCEIROS nele no agrupamento durável. É a divisão de trabalho
+# do parágrafo anterior, e é esta metade que mora aqui.
 # =========================================================================== #
 ct_030() {
-	caso "CT-030" "No cluster real, os três papéis existem e nenhum deles tem privilégio capaz de contornar o isolamento"
+	caso "CT-030" "No cluster real, os quatro papéis existem e nenhum deles tem privilégio capaz de contornar o isolamento"
 
 	if ! command -v psql >/dev/null 2>&1 || ! getent passwd postgres >/dev/null 2>&1; then
 		falhar "o cliente do banco ou o usuário 'postgres' não existem nesta máquina — depois do provisionamento os dois têm de existir, e sem eles este caso não tem como consultar o catálogo"
@@ -1991,9 +2024,9 @@ ct_030() {
 	consulta_cluster() { runuser -u postgres -- psql -X -q -A -t -c "$1" 2>/dev/null || printf 'INDISPONIVEL'; }
 	consulta_banco() { runuser -u postgres -- psql -X -q -A -t -d "${BANCO_DB}" -c "$1" 2>/dev/null || printf 'INDISPONIVEL'; }
 
-	# (a) os três papéis existem ---------------------------------------------- #
-	afirmar_igual "(a) contagem de papéis encontrados entre '${PAPEL_DB}', '${PAPEL_MIGRACAO}' e '${PAPEL_RESOLUCAO}'" "3" \
-		"$(consulta_cluster "SELECT count(*) FROM pg_roles WHERE rolname IN ('${PAPEL_DB}', '${PAPEL_MIGRACAO}', '${PAPEL_RESOLUCAO}')")"
+	# (a) os quatro papéis existem -------------------------------------------- #
+	afirmar_igual "(a) contagem de papéis encontrados entre '${PAPEL_DB}', '${PAPEL_MIGRACAO}', '${PAPEL_RESOLUCAO}' e '${PAPEL_ROTEAMENTO}'" "4" \
+		"$(consulta_cluster "SELECT count(*) FROM pg_roles WHERE rolname IN ('${PAPEL_DB}', '${PAPEL_MIGRACAO}', '${PAPEL_RESOLUCAO}', '${PAPEL_ROTEAMENTO}')")"
 
 	# (b) nenhum atributo capaz de contornar a política ----------------------- #
 	#
@@ -2002,21 +2035,24 @@ ct_030() {
 	# obtido f|t|f" e o operador teria de contar colunas para saber o que está
 	# ligado. Assim o resumo em stderr já nomeia o papel e o atributo.
 	local papel atributo valor
-	for papel in "${PAPEL_DB}" "${PAPEL_MIGRACAO}" "${PAPEL_RESOLUCAO}"; do
+	for papel in "${PAPEL_DB}" "${PAPEL_MIGRACAO}" "${PAPEL_RESOLUCAO}" "${PAPEL_ROTEAMENTO}"; do
 		for atributo in rolsuper rolbypassrls rolcreaterole; do
 			valor="$(consulta_cluster "SELECT ${atributo} FROM pg_roles WHERE rolname = '${papel}'")"
 			afirmar_igual "(b) ${papel}: ${atributo} desligado" "f" "${valor}"
 		done
 	done
 
-	# `rolcanlogin` só é afirmado para o papel de resolução: ele é o único
-	# `NOLOGIN` dos três, e os outros dois existem justamente para atender
-	# conexão. É a diferença que mais importa — um `sysloc_resolucao` capaz de
-	# logar seria um caminho de conexão com travessia nominal da política.
+	# `rolcanlogin` só é afirmado para os DOIS papéis de travessia nominal: eles
+	# são os únicos `NOLOGIN` dos quatro, e os outros dois existem justamente para
+	# atender conexão. É a diferença que mais importa — um `sysloc_resolucao` ou um
+	# `sysloc_roteamento` capaz de logar seria um caminho de conexão com travessia
+	# nominal da política.
 	afirmar_igual "(b) ${PAPEL_RESOLUCAO}: rolcanlogin desligado" "f" \
 		"$(consulta_cluster "SELECT rolcanlogin FROM pg_roles WHERE rolname = '${PAPEL_RESOLUCAO}'")"
+	afirmar_igual "(b) ${PAPEL_ROTEAMENTO}: rolcanlogin desligado" "f" \
+		"$(consulta_cluster "SELECT rolcanlogin FROM pg_roles WHERE rolname = '${PAPEL_ROTEAMENTO}'")"
 
-	# (c) o papel da aplicação não pertence a nenhum dos outros dois ---------- #
+	# (c) o papel da aplicação não pertence a nenhum dos outros três ---------- #
 	#
 	# Entre o papel da aplicação e o papel dono, os dois sentidos são afirmados.
 	# O que importa de verdade é o primeiro — o papel que atende requisição
@@ -2029,14 +2065,22 @@ ct_030() {
 	afirmar_igual "(c) '${PAPEL_MIGRACAO}' NÃO é membro de '${PAPEL_DB}'" "f" \
 		"$(consulta_cluster "SELECT pg_has_role('${PAPEL_MIGRACAO}', '${PAPEL_DB}', 'MEMBER')")"
 
-	# O papel que atende requisição também não pertence ao papel de resolução, e
-	# esta é a asserção mais importante das três: `pg_has_role` é TRANSITIVO, de
-	# modo que ela recusa tanto a concessão direta quanto a que chegasse por um
-	# papel intermediário. Uma concessão futura aqui daria a `sysloc_app` leitura
-	# irrestrita da tabela do portador — a empresa inteira, sem contexto — pela
-	# política nominal da `0014`, e não produziria erro algum.
+	# O papel que atende requisição também não pertence aos papéis de travessia
+	# nominal, e estas são as asserções mais importantes de todas: `pg_has_role` é
+	# TRANSITIVO, de modo que cada uma recusa tanto a concessão direta quanto a que
+	# chegasse por um papel intermediário. Uma concessão futura aqui daria a
+	# `sysloc_app` leitura irrestrita da tabela alcançada pela política nominal — a
+	# empresa inteira, sem contexto —, e não produziria erro algum.
 	afirmar_igual "(c) '${PAPEL_DB}' NÃO é membro de '${PAPEL_RESOLUCAO}'" "f" \
 		"$(consulta_cluster "SELECT pg_has_role('${PAPEL_DB}', '${PAPEL_RESOLUCAO}', 'MEMBER')")"
+
+	# A mesma asserção para o papel de roteamento, e aqui o raio é MAIOR: a tabela
+	# que a política nominal da `0020` alcança é `negocio.cobranca`, e não o
+	# portador de confirmação. `GRANT sysloc_roteamento TO sysloc_app` daria ao
+	# papel que atende TODA requisição HTTP, via `SET ROLE` e `USING (true)`, a
+	# leitura da cobrança de TODAS as empresas.
+	afirmar_igual "(c) '${PAPEL_DB}' NÃO é membro de '${PAPEL_ROTEAMENTO}'" "f" \
+		"$(consulta_cluster "SELECT pg_has_role('${PAPEL_DB}', '${PAPEL_ROTEAMENTO}', 'MEMBER')")"
 
 	# A membership que EXISTE de propósito — a do migrador — é conferida na
 	# forma, e não só na presença. `INHERIT FALSE` é o que a torna mínima: o
@@ -2051,6 +2095,13 @@ ct_030() {
 	# `-A -t` rende booleano como `t`/`f`, e o cast renderia `true`/`false`.
 	afirmar_igual "(c) a membership de '${PAPEL_MIGRACAO}' em '${PAPEL_RESOLUCAO}' existe e é INHERIT FALSE" "f" \
 		"$(consulta_cluster "SELECT coalesce((SELECT CASE WHEN m.inherit_option THEN 't' ELSE 'f' END FROM pg_auth_members m JOIN pg_roles concedido ON concedido.oid = m.roleid JOIN pg_roles membro ON membro.oid = m.member WHERE concedido.rolname = '${PAPEL_RESOLUCAO}' AND membro.rolname = '${PAPEL_MIGRACAO}'), 'AUSENTE')")"
+
+	# A mesma forma, pela mesma razão, na membership que a `0020` exige para trocar
+	# o dono da função de roteamento. Concedida com o `INHERIT` do banco (`t`), a
+	# leitura irrestrita de `negocio.cobranca` passaria a acontecer por herança em
+	# consulta comum do migrador, sem `SET ROLE` e sem nenhuma linha nova.
+	afirmar_igual "(c) a membership de '${PAPEL_MIGRACAO}' em '${PAPEL_ROTEAMENTO}' existe e é INHERIT FALSE" "f" \
+		"$(consulta_cluster "SELECT coalesce((SELECT CASE WHEN m.inherit_option THEN 't' ELSE 'f' END FROM pg_auth_members m JOIN pg_roles concedido ON concedido.oid = m.roleid JOIN pg_roles membro ON membro.oid = m.member WHERE concedido.rolname = '${PAPEL_ROTEAMENTO}' AND membro.rolname = '${PAPEL_MIGRACAO}'), 'AUSENTE')")"
 
 	# (d) os três schemas, com dono e uso -------------------------------------- #
 	#

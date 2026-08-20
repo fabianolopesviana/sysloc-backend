@@ -93,7 +93,9 @@
  * | CA-07 |        | comparação com o total; as três exibem o retrato devido por igualdade de
  * | CA-08 |        | OBJETO — `TELA:integracoes_bancarias` pela **CLASSE** na consulta e na
  * | CA-09 |        | verificação, e a **conjunção inteira** no MÉTODO do registro, com a área antes
- * |       |        | da ação —, nenhuma é pública, o conjunto público continua com **19** entradas,
+ * |       |        | da ação —, nenhuma é pública, o conjunto público tem as **20** entradas do
+ * |       |        | total corrente ({@link PARES_PUBLICOS_DA_SUPERFICIE}) e não cresceu por esta
+ * |       |        | fatia,
  * |       |        | `semDeclaracao` é vazio, o catálogo segue com **17** chaves e nenhuma ação nova
  * |       |        | em `TELA:integracoes_bancarias`; e a superfície publicada fecha em **92** pares
  * |       |        | e **77** manipuladores, por **duas medições independentes cuja igualdade entre
@@ -128,12 +130,68 @@
  * |       |        | afirmada explicitamente**, à parte do valor esperado; as **sete** rotas da fatia
  * |       |        | `emissao-e-conciliacao` constam nomeadas do conjunto POSITIVO, por igualdade de
  * |       |        | arranjo ordenado, e nenhuma é pública nem cai fora do arcabouço; o conjunto
- * |       |        | público continua com **19** entradas; nenhum dos sete exige MENOS que a classe,
+ * |       |        | público tem as **20** entradas do total corrente e não cresceu por esta
+ * |       |        | fatia; nenhum dos sete exige MENOS que a classe,
  * |       |        | e a garantia nomeada vem **antes** do retrato; o retrato dos sete é afirmado por
  * |       |        | igualdade de OBJETO **com a origem junto**, e exatamente **três** deles declaram
  * |       |        | no MÉTODO; `semDeclaracao` é vazio; e o catálogo fechado segue com as **mesmas
  * |       |        | 10 áreas** e as **17** chaves, sem ação nova em `TELA:financeiro`. (ADR-0011,
  * |       |        | ADR-0018, ADR-0021) |
+ *
+ * | CA-20 | CT-972 | A **entrada de fato de terceiro** da fatia `webhook-e-carne` —
+ * |       |        | `POST /v1/notificacoes-bancarias` — consta do conjunto **público** e está
+ * |       |        | **ausente** de `semDeclaracao`, que segue vazio com **controle antivácuo**: o
+ * |       |        | total classificado é afirmado contra as rotas enumeradas, e nunca contra zero.
+ * |       |        | O conjunto público cresceu para **20**, por igualdade de arranjo contra o
+ * |       |        | inventário revisado; o manipulador dela **não declara exigência nem no método
+ * |       |        | nem na classe**, afirmado pela mensagem exata que a leitura levanta; e a
+ * |       |        | superfície publicada sobe para **100** pares e **85** manipuladores, por **duas
+ * |       |        | medições independentes cuja igualdade entre os eixos é afirmada
+ * |       |        | explicitamente**, à parte do valor esperado. ⚠️ É o número **desta task**, e não
+ * |       |        | o `101/86` em que a fatia fecha — aquele é do `CT-1004`, na T10. (ADR-0011,
+ * |       |        | ADR-0035) |
+ *
+ * | CA-20 | CT-1004 | A superfície publicada da fatia `webhook-e-carne` — e da **F4 inteira** —
+ * |       |         | **FECHA** em **101** pares e **86** manipuladores, por **duas medições
+ * |       |         | independentes cuja igualdade entre os eixos é afirmada explicitamente**, à
+ * |       |         | parte do valor esperado; o par do **carnê** (`GET /v1/contratos/:codigo/carne`)
+ * |       |         | consta nomeado do conjunto POSITIVO, por igualdade de arranjo ordenado, e
+ * |       |         | **não** é público nem cai fora do arcabouço; o manipulador dele **não exige
+ * |       |         | MENOS que a classe**, e a exigência efetiva dele é **exatamente**
+ * |       |         | `TELA:contratos`, que é a da classe — afirmada por igualdade de arranjo, e não
+ * |       |         | por contenção; o conjunto público segue nas **20** entradas e **não cresceu**
+ * |       |         | por esta task; `semDeclaracao` é vazio com **controle antivácuo**; e o catálogo
+ * |       |         | fechado segue com as **mesmas 10 áreas** e as **17** chaves, sem ação nova.
+ * |       |         | (ADR-0011, ADR-0018, ADR-0021, ADR-0028) |
+ *
+ * **PROVA DE FALSIFICAÇÃO DO `CT-1004`** (2026-08-19, T10 da fatia `webhook-e-carne`), pelo script
+ * do pacote (`pnpm --filter @sysloc/api test -- cobertura-de-autorizacao`), porque a asserção é de
+ * **contagem sobre a tabela do roteador e sobre a composição** e não pode ser aceita sem que se
+ * demonstre que ela reprova:
+ *
+ *   * **controle** — árvore íntegra: **17/17** casos do arquivo verdes;
+ *   * **mutante (a rota do carnê some da composição)** — o decorador `@Get(SEGMENTO_DO_CARNE)`
+ *     retirado do manipulador `carne` em `apps/api/src/contratos/contrato.controller.ts`:
+ *     `12 failed | 5 passed`, e o `CT-1004` reprovou **nomeando a rota ausente** —
+ *     `expected [] to deeply equal [ 'GET /v1/contratos/:codigo/carne' ]`. As demais âncoras do
+ *     arquivo acusaram os números lado a lado: `expected 100 to be 101` (as duas medições da
+ *     superfície), `expected 85 to be 86` (os manipuladores) e `expected 94 to be 95` (a montagem
+ *     mutante). É a prova de que nenhum dos eixos passa por vacuidade;
+ *   * **reversão** — o fonte foi restaurado e o controle voltou ao verde (**17/17**).
+ *
+ * **PROVA DE FALSIFICAÇÃO DO `CT-972`** (2026-08-19, T6 da fatia `webhook-e-carne`), pelo script do
+ * pacote (`pnpm --filter @sysloc/api test cobertura-de-autorizacao`), porque a asserção é de
+ * **contagem sobre a tabela do roteador e sobre a composição** e não pode ser aceita sem que se
+ * demonstre que ela reprova:
+ *
+ *   * **controle** — árvore íntegra: os 16 casos do arquivo verdes;
+ *   * **mutante (a rota some da composição)** — `NotificacoesBancariasModule` retirado dos `imports`
+ *     de `apps/api/src/app.module.ts`, junto do especificador: o `CT-972` **reprovou nos quatro
+ *     eixos**, e cada um nomeando o número — `expected [ 'POST /v1/notificacoes-bancarias' ] to
+ *     deeply equal []` (a rota fora do público), `expected 99 to be 100` (as duas medições),
+ *     `expected 84 to be 85` (os manipuladores) e `expected 19 to be 20` (o conjunto público). É a
+ *     prova de que nenhum dos quatro passa por vacuidade;
+ *   * **reversão** — o fonte foi restaurado e o controle voltou ao verde (16/16).
  *
  * Rastreabilidade: `CA-23 → CT-212 (RN-14)`, `CA-23 → CT-213 (RN-14)`, `CA-23 → CT-355 (RN-14)`.
  * Acrescida pela T11 da fatia `cadastro-de-imoveis-e-pessoas`: `CA-12 → CT-318 (RN-14)`.
@@ -148,6 +206,8 @@
  * `CA-01 → CT-838 (RN-06)`.
  * Acrescida pela T13 da fatia `emissao-e-conciliacao`: `CA-15 → CT-918 (f) (RN-14)`.
  * Acrescida pela T17 da mesma fatia: `CA-20 → CT-937 (RN-14)`.
+ * Acrescida pela T6 da fatia `webhook-e-carne`: `CA-20 → CT-972 (RN-20)`.
+ * Acrescida pela T10 da mesma fatia: `CA-20 → CT-1004 (RN-17)`.
  *
  * ⚠️ **O sufixo `(f)` não é estilo, e sim a única forma disponível**: a faixa `CT-911`…`CT-948`
  * está inteiramente reservada pelos cards das tasks daquela fatia, e reusar um identificador
@@ -704,6 +764,7 @@ import {
 import { CAMINHO_DO_CONTRATO, CAMINHO_DO_DOCUMENTO, criarAplicacao } from '../src/main.ts';
 import { CAMINHO_DO_MASTER } from '../src/master/empresa.controller.ts';
 import { CAMINHO_DE_MULTA_E_JUROS } from '../src/mora/mora.controller.ts';
+import { CAMINHO_DAS_NOTIFICACOES_BANCARIAS } from '../src/notificacoes-bancarias/notificacao-bancaria.controller.ts';
 import { CAMINHO_DOS_USUARIOS } from '../src/usuarios/usuario.controller.ts';
 import { decodificarBase32 } from './base32.ts';
 
@@ -1058,6 +1119,34 @@ function paresDoDocumentoDeContrato(): readonly string[] {
 }
 
 /**
+ * O **par único** que a rota do carnê publica (T10 da fatia `webhook-e-carne`).
+ *
+ * Escrito à mão e composto a partir do dono do segmento (`CAMINHO_DOS_CONTRATOS`), pela mesma razão
+ * dos inventários acima. É **um** par e não dois: o `HEAD` derivado do `GET` não é entrada própria, e
+ * o módulo verificado já o descarta.
+ *
+ * Ele mora numa função separada de {@link paresDeContratos} **e** de
+ * {@link paresDoDocumentoDeContrato}, e a separação é a partição por **fatia**, não por caminho: a
+ * rota é sobre `/v1/contratos`, mas nasceu nesta fatia — a de contratos afirma por escrito estar
+ * *"completa em nove rotas"*, e a do documento é da `documentos-e-confirmacao`. Somá-la a qualquer
+ * uma das duas tornaria o delta do `CT-318` uma soma de coisas diferentes.
+ *
+ * **Ela não declara nada no MÉTODO**, e a ausência é decisão registrada (§4.1 do tech spec desta
+ * fatia): a rota vale pela exigência da classe, `TELA:contratos`, porque reunir os boletos das
+ * cobranças do contrato é **leitura** do que a área já dá — nada é gravado, nem no banco nem na
+ * trilha (ADR-0034) —, e o catálogo fechado da ADR-0011 não tem ação sensível correspondente. É a
+ * **mesma** forma, e a mesma razão, da rota do documento, que vive no mesmo controlador. Para
+ * **este** caso, que mede existência de declaração, ela é uma rota como as que herdam a da classe;
+ * quem examina o conteúdo da declaração é o `CT-355`, e lá a ausência importa pelo lado oposto — não
+ * declarar nada é o contrário de declarar **menos** que a classe.
+ */
+function paresDaEntregaDoCarne(): readonly string[] {
+  const contratos = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}`;
+
+  return [`GET ${contratos}/:codigo/carne`];
+}
+
+/**
  * O **par único** do reenvio da confirmação de e-mail (T9 da fatia `documentos-e-confirmacao`).
  *
  * Escrito à mão e composto a partir do dono do segmento (`CAMINHO_DOS_LOCATARIOS`), pela mesma razão
@@ -1102,6 +1191,27 @@ function paresDoReenvioDeConfirmacao(): readonly string[] {
  */
 function paresDoAtoDoTitular(): readonly string[] {
   return [`POST /${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_CONFIRMACOES}`];
+}
+
+/**
+ * O **par único** da entrada de fato de terceiro (T6 da fatia `webhook-e-carne`) — a **segunda**
+ * rota de negócio do produto sem sessão.
+ *
+ * Composto a partir do dono do segmento (`CAMINHO_DAS_NOTIFICACOES_BANCARIAS`), pela mesma razão dos
+ * inventários acima. É **um** par e não dois: a rota é `POST`, e só um `GET` acrescentaria o segundo
+ * pelo `HEAD` que o adaptador deriva — e que o módulo verificado já descarta.
+ *
+ * ⚠️ **O critério dela NÃO é o da ADR-0027, e a distinção é conteúdo.** Aquela ADR governa o ato do
+ * **titular do dado**, e cobra em troca um portador de segredo; aqui quem age é o provedor bancário,
+ * que não é titular de nada e não apresenta portador algum. O que autoriza a dispensa é a
+ * **ADR-0035** (entrada de fato de terceiro), e em troca ela cobra outra coisa: persistir o cru antes
+ * de interpretar, responder sem que o processamento componha a resposta, e ser declarada `publicas`.
+ * Ela mora numa função própria por essa razão, e **não** é somada a {@link paresDoAtoDoTitular}:
+ * juntá-las faria o `CT-732` medir uma sub-fatia que publicou dois pares públicos, e apagaria por
+ * agregação justamente a diferença de critério que este parágrafo registra.
+ */
+function paresDaEntradaDeTerceiro(): readonly string[] {
+  return [`POST /${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_NOTIFICACOES_BANCARIAS}`];
 }
 
 /**
@@ -1264,6 +1374,16 @@ const PARES_PUBLICOS_ACEITOS: readonly string[] = [
   // saiu**, a igualdade segue exata nos dois sentidos, e `semDeclaracao` continua vazio — uma rota
   // que dispensasse sessão sem revisão apareceria aqui como excedente e reprovaria nominalmente.
   ...paresDoAtoDoTitular(),
+  // SUT_IS_CORRECT_BECAUSE: a **T6** da fatia `webhook-e-carne` publicou a **segunda** rota de
+  // negócio sem sessão do produto — `POST /v1/notificacoes-bancarias` —, e o lugar dela é este
+  // conjunto, não o positivo: ela declara `@RotaPublica()`, e a marca **é** a declaração dela. O
+  // critério que a autoriza é o da **ADR-0035**, e não o da ADR-0027 — ver
+  // {@link paresDaEntradaDeTerceiro} —, o que torna a revisão desta linha ainda mais necessária: é a
+  // primeira dispensa do produto em que quem age não é titular de dado algum. **Nenhuma entrada
+  // anterior saiu**, a igualdade segue exata nos dois sentidos, e `semDeclaracao` continua vazio —
+  // uma rota que dispensasse sessão sem revisão apareceria aqui como excedente e reprovaria
+  // nominalmente.
+  ...paresDaEntradaDeTerceiro(),
 ].sort();
 
 /**
@@ -1654,6 +1774,44 @@ const EXIGENCIA_ANTERIOR_A_EMISSAO: readonly string[] = [
 ].sort();
 
 /**
+ * O par que a fatia `webhook-e-carne` acrescenta ao eixo POSITIVO — o **carnê** (T10).
+ *
+ * Ela é a **nona metade** nomeada, e não uma extensão de {@link PARES_DA_FATIA_DE_EMISSAO} nem de
+ * {@link PARES_DA_FATIA_DE_DOCUMENTOS}: cada fatia responde pelo próprio crescimento, e as metades
+ * antigas continuam sendo afirmadas por igualdade de array. É a mesma razão que fez a terceira
+ * metade nascer na T6 da fatia de contratos, a sexta na T7 da de documentos e a oitava na T13 da
+ * emissão.
+ *
+ * ⚠️ **A outra rota desta fatia NÃO entra aqui**, e a ausência é o ponto: `POST
+ * /v1/notificacoes-bancarias` é `@RotaPublica()` (ADR-0035), e o lugar dela é o conjunto **público**,
+ * que o `CT-972` afirma por igualdade em {@link PARES_PUBLICOS_ACEITOS}. Somá-la aqui faria a
+ * igualdade do eixo positivo reprovar sobre uma rota legítima — e é exatamente por a fatia publicar
+ * **uma de cada** que esta separação fica visível.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T10** publicou `GET /v1/contratos/:codigo/carne`, e ela declara
+ * exigência **pela classe** (`@ExigeChave('TELA:contratos')`) — não declara nada no método, e a
+ * ausência é decisão registrada na §4.1 do tech spec: reunir os boletos das cobranças do contrato é
+ * **leitura** do que a área já dá, nada é gravado, e o catálogo fechado da ADR-0011 não tem ação
+ * sensível para esse ato. `packages/auth/src/catalogo-de-permissoes.ts` **não foi tocado**. Vale
+ * aqui, palavra por palavra, o parágrafo da T7 da fatia `documentos-e-confirmacao`, que é o caso
+ * análogo no mesmo controlador: **nenhuma entrada anterior saiu**, a igualdade segue exata, e ela
+ * entra no conjunto POSITIVO — o que prova que ela declara exigência em vez de dispensá-la.
+ */
+const PARES_DA_FATIA_DO_CARNE: readonly string[] = paresDaEntregaDoCarne();
+
+/**
+ * O inventário de exigência **anterior ao carnê** — as oito metades somadas.
+ *
+ * É contra ele que a igualdade do conjunto positivo compara o que sobra da superfície depois de
+ * tirar o par desta task, e é ele que faz a prova "nenhuma entrada anterior saiu" continuar valendo
+ * com um inventário a mais em jogo.
+ */
+const EXIGENCIA_ANTERIOR_AO_CARNE: readonly string[] = [
+  ...EXIGENCIA_ANTERIOR_A_EMISSAO,
+  ...PARES_DA_FATIA_DE_EMISSAO,
+].sort();
+
+/**
  * Os pares da aplicação de produção que DECLARAM exigência — o eixo positivo da leitura.
  *
  * SUT_IS_CORRECT_BECAUSE: a T7 publicou as **seis rotas do operador do SaaS**, e as seis declaram
@@ -1768,8 +1926,8 @@ const EXIGENCIA_ANTERIOR_A_EMISSAO: readonly string[] = [
  * entrada anterior saiu**, a igualdade segue exata, e as duas entram no conjunto POSITIVO.
  */
 const ROTAS_COM_EXIGENCIA: readonly string[] = [
-  ...EXIGENCIA_ANTERIOR_A_EMISSAO,
-  ...PARES_DA_FATIA_DE_EMISSAO,
+  ...EXIGENCIA_ANTERIOR_AO_CARNE,
+  ...PARES_DA_FATIA_DO_CARNE,
 ].sort();
 
 /**
@@ -1983,7 +2141,10 @@ const ROTAS_COM_EXIGENCIA: readonly string[] = [
  * na T11 e é a que fecha o `89` da §4.1 do tech spec.
  *
  * SUT_IS_CORRECT_BECAUSE: a **T11** da mesma fatia acrescentou **um** par (88 → 89), a rota
- * `POST /v1/confirmacoes-de-email` — a **única rota de negócio sem sessão do produto** —, e a âncora
+ * `POST /v1/confirmacoes-de-email` — a **primeira** rota de negócio sem sessão do produto, o ato do
+ * titular do dado com portador de segredo de uso único (ADR-0027). ⚠️ O texto original dizia
+ * "única", e a **T6** da fatia `webhook-e-carne` o falsificou: hoje são **duas**, e a segunda é
+ * `POST /v1/notificacoes-bancarias`, a entrada de fato de terceiro (ADR-0035). A âncora
  * de contagem existe justamente para que esse acréscimo passe pela revisão de quem lê este arquivo
  * em vez de entrar sozinho. Aqui a revisão vale duas vezes: o par novo entra no conjunto **público**
  * (ver {@link PARES_PUBLICOS_ACEITOS}), e é a igualdade daquele inventário — e não esta contagem —
@@ -2099,8 +2260,44 @@ const ROTAS_COM_EXIGENCIA: readonly string[] = [
  * `HEAD` derivado. ⚠️ **Este é o número em que a fatia FECHA** — a §4.1 do tech spec escreve
  * `99/84`, e a conferência final por dupla medição, com a igualdade entre os dois eixos afirmada, é
  * da **T17**. Aqui a âncora **sobe** e é medida por si; ela não é derivada daquele número.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T6** da fatia `webhook-e-carne` acrescentou **um** par (99 → 100), a
+ * rota `POST /v1/notificacoes-bancarias` — a **entrada de fato de terceiro** (ADR-0035), segunda
+ * superfície de negócio sem sessão do produto —, e a âncora de contagem existe justamente para que
+ * esse acréscimo passe pela revisão de quem lê este arquivo em vez de entrar sozinho. Aqui a revisão
+ * vale duas vezes: o par novo entra no conjunto **público** (ver {@link PARES_PUBLICOS_ACEITOS} e
+ * {@link paresDaEntradaDeTerceiro}), e é a igualdade daquele inventário — não esta contagem — que
+ * impede uma rota de escapar da autorização por `@RotaPublica()`. Nenhum par anterior saiu. A
+ * contagem foi **refeita do zero**, e por **duas** medições independentes que concordam:
+ *
+ *   * **pela enumeração do próprio módulo de cobertura** — `cobertura.rotasEnumeradas` sobre a
+ *     aplicação de produção montada: `100`;
+ *   * **pela composição da superfície**, contada à parte — `85` manipuladores com decorador de rota
+ *     nos arquivos `.controller.ts` de `apps/api/src`, dos quais **um** é o encaminhador de
+ *     identidade (`@All`), que sozinho reivindica os {@link METODOS_DO_ENCAMINHADOR} sete pares:
+ *     `(85 - 1) + 7 + 9 = 100`, com os nove de {@link ROTAS_FORA_DO_ARCABOUCO}.
+ *
+ * É **um** e não dois pela razão de sempre: a rota é `POST`. ⚠️ **A fatia `webhook-e-carne` fecha em
+ * `101/86`**, e o par que falta é o do carnê, na **T10** — é lá que nasce o `CT-1004`, com a
+ * conferência final por dupla medição. Aqui as âncoras **sobem**, e o `CT-972` as confere no valor
+ * desta task; antecipar `101/86` faria a asserção reprovar sobre uma superfície legítima.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T10** da mesma fatia acrescentou **um** par (100 → 101), a rota
+ * `GET /v1/contratos/:codigo/carne` — o **carnê**, que declara exigência pela classe e entra no
+ * conjunto POSITIVO (ver {@link PARES_DA_FATIA_DO_CARNE}). ⚠️ **É aqui que a fatia FECHA**, e é
+ * portanto o número que o parágrafo acima anunciava: a §4.1 do tech spec escreve `101/86`, e a
+ * conferência final por dupla medição com a igualdade entre os eixos afirmada é o **`CT-1004`**,
+ * nesta task. Nenhum par anterior saiu, e o conjunto público **não** mudou — o carnê exige sessão. A
+ * contagem foi **refeita do zero**, e por **duas** medições independentes que concordam:
+ *
+ *   * **pela enumeração do próprio módulo de cobertura** — `cobertura.rotasEnumeradas` sobre a
+ *     aplicação de produção montada: `101`;
+ *   * **pela composição da superfície**, contada à parte — `86` manipuladores com decorador de rota
+ *     nos arquivos `.controller.ts` de `apps/api/src`, dos quais **um** é o encaminhador de
+ *     identidade (`@All`), que sozinho reivindica os {@link METODOS_DO_ENCAMINHADOR} sete pares:
+ *     `(86 - 1) + 7 + 9 = 101`, com os nove de {@link ROTAS_FORA_DO_ARCABOUCO}.
  */
-const ROTAS_PUBLICADAS_EM_PRODUCAO = 99;
+const ROTAS_PUBLICADAS_EM_PRODUCAO = 101;
 
 /**
  * Quantos **manipuladores** de controlador a aplicação de produção monta — a âncora do `CT-355`.
@@ -2419,8 +2616,35 @@ const ROTAS_PUBLICADAS_EM_PRODUCAO = 99;
  * declaração só com a ação no primeiro faria a rota que **move dinheiro** exigir menos que a classe
  * dela, e a coerência do catálogo esconderia o defeito, porque `MAPA_ACAO_TELA['ACAO:emitir_boleto']`
  * **é** a própria `TELA:financeiro`.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T6** da fatia `webhook-e-carne` acrescentou **um manipulador**
+ * (84 → 85) — `receber`, em `notificacoes-bancarias/notificacao-bancaria.controller.ts`, que é
+ * arquivo **novo**. A contagem foi **refeita do zero**, por varredura dos decoradores de rota em
+ * `apps/api/src`, e **não** derivada de {@link ROTAS_PUBLICADAS_EM_PRODUCAO}: a varredura devolve,
+ * por arquivo, `1 + 1 + 1 + 4 + 6 + 6 + 7 + 3 + 9 + 1 + 9 + 3 + 6 + 7 + 3 + 6 + 2 + 2 + 7 + 1 = 85`.
+ * As duas terem crescido um aqui é acidente da forma desta rota — o manipulador reivindica um par
+ * só, e ele não é `@All`.
+ *
+ * ⚠️ **Ele NÃO importa para o `CT-355`**, e a ausência é decisão: o manipulador não declara exigência
+ * nem no método nem na classe, porque a classe dele não tem `@ExigeChave` alguma — a rota é
+ * `@RotaPublica()`. Não há, portanto, declaração de classe que a do método pudesse substituir. É a
+ * mesma forma do ato do titular, e o `CT-972` a afirma pelo conjunto **público**, que é onde ela
+ * precisa estar para não cair em `semDeclaracao`.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T10** da mesma fatia acrescentou **um manipulador** (85 → 86) —
+ * `carne`, em `contratos/contrato.controller.ts`, que passou de **nove** para **dez** manipuladores.
+ * A contagem foi **refeita do zero**, por varredura dos decoradores de rota em `apps/api/src`, e
+ * **não** derivada de {@link ROTAS_PUBLICADAS_EM_PRODUCAO}: a varredura devolve, por arquivo,
+ * `1 + 1 + 1 + 4 + 6 + 6 + 7 + 3 + 9 + 1 + 10 + 3 + 6 + 7 + 3 + 6 + 2 + 2 + 7 + 1 = 86`. As duas
+ * terem crescido um aqui é acidente da forma desta rota — o manipulador reivindica um par só, e ele
+ * não é `@All`.
+ *
+ * ⚠️ **Ele importa para o `CT-355`, e pelo lado da AUSÊNCIA**: o manipulador não declara nada no
+ * método, e a classe declara `@ExigeChave('TELA:contratos')` — de modo que a exigência efetiva dele
+ * **é** a da classe. Não declarar nada é o oposto de declarar **menos**, e é por isso que ele não
+ * aparece entre as violações daquele caso.
  */
-const MANIPULADORES_EXAMINADOS_EM_PRODUCAO = 84;
+const MANIPULADORES_EXAMINADOS_EM_PRODUCAO = 86;
 
 /**
  * Quantos manipuladores da aplicação de produção atendem **todos** os verbos (`@All`) — hoje um só, o
@@ -2679,6 +2903,33 @@ const MANIPULADORES_GOVERNADOS_DOS_DOCUMENTOS: readonly string[] = Object.keys(
 const MANIPULADOR_DO_ATO_DO_TITULAR = 'ConfirmacaoController.confirmar';
 
 /**
+ * O rótulo do manipulador da **entrada de fato de terceiro** (T6 da fatia `webhook-e-carne`).
+ *
+ * Escrito à mão, como o do ato do titular acima, e pela mesma razão: derivá-lo da varredura que o
+ * caso classifica faria a asserção concordar consigo mesma. A ausência de exigência dele é afirmada
+ * pela mensagem que **a leitura levanta**, e não por arranjo vazio — vazio se confundiria com
+ * `@NaoExigePermissao()`, que declara e não exige nada.
+ */
+const MANIPULADOR_DA_ENTRADA_DE_TERCEIRO = 'NotificacaoBancariaController.receber';
+
+/** Quantos pares a fatia `webhook-e-carne` acrescenta ao conjunto público na T6 — um, a notícia. */
+const PARES_PUBLICOS_DA_ENTRADA_DE_TERCEIRO = 1;
+
+/**
+ * O rótulo do manipulador do **carnê** (T10 da fatia `webhook-e-carne`).
+ *
+ * Escrito à mão, como os dois acima, e pela mesma razão: derivá-lo da varredura que o caso classifica
+ * faria a asserção concordar consigo mesma. Ao contrário deles, a exigência dele **existe** e é
+ * afirmada por valor — `TELA:contratos`, herdada da classe —, e não pela mensagem de um erro: o que
+ * se prova aqui é que ele **não declara nada no método**, e por isso a efetiva é exatamente a da
+ * classe.
+ */
+const MANIPULADOR_DA_ENTREGA_DO_CARNE = 'ContratoController.carne';
+
+/** Quantos pares a T10 acrescenta ao eixo POSITIVO — um, o carnê. */
+const PARES_PUBLICADOS_PELA_ENTREGA_DO_CARNE = 1;
+
+/**
  * A mensagem que {@link exigenciaEfetivaDoManipulador} levanta para um manipulador sem exigência
  * alguma.
  *
@@ -2728,8 +2979,15 @@ const PARES_PUBLICADOS_PELA_FATIA_BANCARIA = 3;
  * positivo satisfaria os dois filtros ao mesmo tempo; só a contagem a pega. É a mesma técnica do
  * delta do `CT-318` e do crescimento afirmado pelo `CT-732`, aplicada a um crescimento de **zero** —
  * que é justamente o que esta fatia deve produzir aqui.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T6** da fatia `webhook-e-carne` acrescentou **um** par público
+ * (19 → 20), a entrada de fato de terceiro (ADR-0035) — ver {@link paresDaEntradaDeTerceiro}. O
+ * `CT-836` e o `CT-937` continuam usando esta constante para afirmar que **as fatias deles** não
+ * publicaram rota sem sessão, e o que muda para eles é só o total contra o qual medem: o filtro que
+ * cada um aplica (*nenhum dos meus pares está no público*) continua sendo a metade que discrimina, e
+ * ele **não foi tocado**. Nenhuma pública anterior saiu, e nenhuma asserção foi afrouxada.
  */
-const PARES_PUBLICOS_DA_SUPERFICIE = 19;
+const PARES_PUBLICOS_DA_SUPERFICIE = 20;
 
 /**
  * A área de tela e a ação sensível que governam a superfície da fatia `fundacao-bancaria` (§11.2 do
@@ -3168,8 +3426,22 @@ const RETRATO_DEVIDO_PELA_FATIA_DE_EMISSAO: Readonly<Record<string, RetratoDaExi
  * `/v1/cobranca-bancaria` aparecem aqui pela mesma razão que aparecem no controle (90 → 93). A
  * âncora continua sendo de contagem EXATA, e a diferença de nove para a superfície de produção
  * continua sendo a mesma: os pares do contrato publicado, que esta montagem não registra.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T6** da fatia `webhook-e-carne` registrou `NotificacoesBancariasModule`
+ * na MESMA composição raiz — esta montagem importa o `AppModule` inteiro —, e o par de
+ * `/v1/notificacoes-bancarias` aparece aqui pela mesma razão que aparece no controle (93 → 94). A
+ * âncora continua sendo de contagem EXATA, e a diferença de nove para a superfície de produção
+ * continua sendo a mesma: os pares do contrato publicado, que esta montagem não registra.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T10** da fatia `webhook-e-carne` publicou a rota do **carnê** no MESMO
+ * controlador que esta montagem já carrega — ela importa o `AppModule` inteiro —, e o par de
+ * `/v1/contratos/:codigo/carne` aparece aqui pela mesma razão que aparece no controle (94 → 95). A
+ * âncora continua sendo de contagem EXATA, e a diferença de nove para a superfície de produção
+ * continua sendo a mesma: os pares do contrato publicado, que esta montagem não registra. Ela **não**
+ * entra em {@link PUBLICAS_LEGITIMAS_NO_MUTANTE}: o carnê exige sessão, e o excedente que aquele
+ * caso nomeia continua sendo só o do `ControladorPublicoIndevido`.
  */
-const ROTAS_PUBLICADAS_NO_MUTANTE = 93;
+const ROTAS_PUBLICADAS_NO_MUTANTE = 95;
 
 /**
  * O que seria o inventário público da aplicação mutante **se o mutante não estivesse lá**.
@@ -3187,6 +3459,11 @@ const PUBLICAS_LEGITIMAS_NO_MUTANTE: readonly string[] = [
   // deixaria de discriminar o defeito que ela existe para apanhar. O caminho é o MESMO da aplicação
   // real: as duas montagens aplicam o prefixo de versão a este controlador.
   ...paresDoAtoDoTitular(),
+  // SUT_IS_CORRECT_BECAUSE: a **T6** publicou a segunda rota sem sessão na MESMA composição raiz, e
+  // ela é legítima **também nesta montagem** — o mutante desta prova é o
+  // `ControladorPublicoIndevido`, e não ela. Sem esta entrada, o excedente nomeado pelo caso passaria
+  // a ser dois, e a igualdade deixaria de discriminar o defeito que ela existe para apanhar.
+  ...paresDaEntradaDeTerceiro(),
 ].sort();
 
 /** Sujeito do eixo "sessão de maior alcance" — o operador do SaaS, sem restrição pendente. */
@@ -3673,6 +3950,16 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
         // mede que os três declaram; quem examina o **conteúdo** é o `CT-355`, que acusa a
         // declaração de método que exija MENOS que a classe.
         ...paresDaCobrancaBancaria(),
+        // SUT_IS_CORRECT_BECAUSE: o par do **carnê** entra pela mesma razão, agora da T10 da fatia
+        // `webhook-e-carne` — ele nasce no MESMO controlador de contrato já registrado naquela
+        // composição raiz, que esta montagem importa inteira, e entra por
+        // {@link paresDaEntregaDoCarne}, escrito à mão e revisado. Nenhuma entrada anterior saiu, e
+        // a igualdade segue exata. Ele cai no conjunto POSITIVO pela declaração da CLASSE
+        // (`TELA:contratos`) — não declara nada no método, e a ausência é decisão: reunir boletos é
+        // leitura, e a ADR-0021 governa transição de estado. É a mesma forma, e a mesma razão, da
+        // rota do documento logo acima. ⚠️ **A outra rota desta fatia não entra aqui**: a notícia
+        // bancária é `@RotaPublica()`, e o lugar dela é {@link PUBLICAS_LEGITIMAS_NO_MUTANTE}.
+        ...paresDaEntregaDoCarne(),
       ].sort(),
     );
 
@@ -3751,7 +4038,13 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
           !PARES_DA_FATIA_DA_REGUA.includes(par) &&
           !PARES_DA_FATIA_DE_DOCUMENTOS.includes(par) &&
           !PARES_DA_FATIA_BANCARIA.includes(par) &&
-          !PARES_DA_FATIA_DE_EMISSAO.includes(par),
+          !PARES_DA_FATIA_DE_EMISSAO.includes(par) &&
+          // SUT_IS_CORRECT_BECAUSE: a **T10** da fatia `webhook-e-carne` publicou o par do carnê, que
+          // é desta fatia e não da de cadastro — subtraí-lo aqui é o que mantém a igualdade
+          // comparando `EXIGENCIA_ANTERIOR_A_FATIA` com o que de fato é anterior a ela. Nenhuma
+          // entrada anterior saiu, e a asserção **não foi afrouxada**: continua sendo igualdade
+          // exata contra o inventário revisado.
+          !PARES_DA_FATIA_DO_CARNE.includes(par),
       ),
     ).toEqual([...EXIGENCIA_ANTERIOR_A_FATIA]);
 
@@ -3879,7 +4172,18 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
         PARES_DA_FATIA_DE_DOCUMENTOS.length -
         PARES_DA_FATIA_BANCARIA.length -
         PARES_DA_FATIA_DE_EMISSAO.length -
-        paresDoAtoDoTitular().length,
+        paresDoAtoDoTitular().length -
+        // SUT_IS_CORRECT_BECAUSE: vale de novo o parágrafo acima, agora para a fatia
+        // `webhook-e-carne`: com **um** par novo, o delta desta fatia passa a ser medido descontando
+        // também o dela. O valor comparado **não muda** — ele continua sendo `33` —, e é justamente
+        // essa imutabilidade que faz a asserção seguir pegando o par antigo que sumisse enquanto um
+        // novo entrasse no lugar dele. A asserção **não foi afrouxada**.
+        paresDaEntradaDeTerceiro().length -
+        // SUT_IS_CORRECT_BECAUSE: e de novo para a **T10** da mesma fatia, que publicou o segundo par
+        // dela — o carnê. O valor comparado **não muda** — ele continua sendo `33` —, e é justamente
+        // essa imutabilidade que faz a asserção seguir pegando o par antigo que sumisse enquanto um
+        // novo entrasse no lugar dele. A asserção **não foi afrouxada**.
+        PARES_DA_FATIA_DO_CARNE.length,
     ).toBe(ROTAS_PUBLICADAS_ANTES_DA_FATIA);
   });
 
@@ -4365,18 +4669,33 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     expect(paresDoTitular.filter((par) => !cobertura.publicas.includes(par))).toEqual([]);
     expect(paresDoTitular.filter((par) => cobertura.comExigencia.includes(par))).toEqual([]);
 
+    // SUT_IS_CORRECT_BECAUSE: a **T6** da fatia `webhook-e-carne` publicou uma segunda rota pública,
+    // **posterior** a esta sub-fatia, e este caso mede o delta **dela** — 18 antes, mais 1. Somar o
+    // par novo a `publicasAnteriores` seria factualmente errado (ele não existia antes) e faria a
+    // igualdade de baixo comparar `19` com `18`; deixá-lo em `cobertura.publicas` faria o total
+    // comparar `20` com `19`. Por isso ele é **descontado dos dois lados**, e nada mais muda: as três
+    // direções do bloco continuam sendo as mesmas, o delta afirmado continua sendo **exatamente 1**,
+    // e nenhuma asserção foi afrouxada. Quem afirma o total corrente do conjunto público é o
+    // `CT-972`, com {@link PARES_PUBLICOS_DA_SUPERFICIE}.
+    const paresPosterioresASubFatia = paresDaEntradaDeTerceiro();
     const publicasAnteriores = PARES_PUBLICOS_ACEITOS.filter(
-      (par) => !paresDoTitular.includes(par),
+      (par) => !paresDoTitular.includes(par) && !paresPosterioresASubFatia.includes(par),
+    );
+    const publicasSemAsPosteriores = cobertura.publicas.filter(
+      (par) => !paresPosterioresASubFatia.includes(par),
     );
 
     expect(publicasAnteriores.length).toBe(PARES_PUBLICOS_ANTES_DA_SUB_FATIA);
     expect(
-      cobertura.publicas.filter((par) => !publicasAnteriores.includes(par)),
+      publicasSemAsPosteriores.filter((par) => !publicasAnteriores.includes(par)),
       'o conjunto de rotas que dispensam sessão mudou: cada entrada aqui é uma rota fora da autorização',
     ).toEqual(paresDoTitular);
-    expect(cobertura.publicas.length).toBe(
+    expect(publicasSemAsPosteriores.length).toBe(
       PARES_PUBLICOS_ANTES_DA_SUB_FATIA + PARES_PUBLICOS_DA_SUB_FATIA,
     );
+    // E o total corrente, com as posteriores de volta: sem esta linha o caso deixaria de acusar uma
+    // pública nova que ninguém revisou, que é justamente o que ele existe para pegar.
+    expect(cobertura.publicas.length).toBe(PARES_PUBLICOS_DA_SUPERFICIE);
 
     // E a ausência que a ADR-0027 troca por portador de segredo: o manipulador do ato do titular não
     // declara exigência **nem no método nem na classe**. A asserção é sobre a mensagem exata, e não
@@ -5064,6 +5383,282 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
 
     // E o catálogo continua com as 17 chaves das duas metades — a âncora que o `CT-212` usa do lado
     // da sessão, afirmada aqui do lado da declaração.
+    expect(CHAVES_DE_TELA.length + Object.keys(MAPA_ACAO_TELA).length).toBe(TOTAL_DE_CHAVES);
+  });
+
+  it('CT-972 — a rota da notícia está em `publicas` e ausente de `semDeclaracao`, e a superfície sobe para 100 pares e 85 manipuladores pelas DUAS medições', () => {
+    const cobertura = verificarCoberturaDeAutorizacao(aplicacaoReal);
+
+    // ---------------------------------------------------------------------------------------
+    // SANIDADE: o inventário desta task tem UM par público, ANTES de qualquer comparação
+    // ---------------------------------------------------------------------------------------
+    //
+    // Sobre o próprio inventário, e não sobre a superfície: uma lista vazia faria as igualdades
+    // abaixo passarem sobre rota nenhuma, e a soma final continuaria batendo com a âncora do total —
+    // o modo de falha silencioso desta classe de prova.
+    const paresDaNoticia = paresDaEntradaDeTerceiro();
+    expect(paresDaNoticia.length).toBe(PARES_PUBLICOS_DA_ENTRADA_DE_TERCEIRO);
+
+    // ---------------------------------------------------------------------------------------
+    // A ROTA ESTÁ NO PÚBLICO, e o público é EXATAMENTE o inventário revisado
+    // ---------------------------------------------------------------------------------------
+    //
+    // As três direções, e nenhuma implica as outras: o par novo está no público; ele **não** está no
+    // positivo (a dispensa é declarada por `@RotaPublica()`, e não ausência de declaração); e o
+    // conjunto inteiro é o inventário revisado, por igualdade de arranjo ordenado — uma rota que
+    // dispensasse sessão sem passar por esta lista apareceria como excedente e reprovaria nomeada.
+    expect(paresDaNoticia.filter((par) => !cobertura.publicas.includes(par))).toEqual([]);
+    expect(paresDaNoticia.filter((par) => cobertura.comExigencia.includes(par))).toEqual([]);
+    expect(cobertura.publicas).toEqual([...PARES_PUBLICOS_ACEITOS]);
+
+    // E o tamanho, contra a âncora: uma pública anterior que sumisse enquanto esta entrava não
+    // apareceria em filtro algum acima — só a contagem a pega. É a mesma técnica do delta do
+    // `CT-318`, aplicada a um crescimento de **exatamente um**.
+    expect(PARES_PUBLICOS_ACEITOS.length).toBe(PARES_PUBLICOS_DA_SUPERFICIE);
+    expect(
+      cobertura.publicas.length,
+      'o conjunto de rotas que dispensam sessão mudou de tamanho: cada entrada nele é uma rota fora da autorização',
+    ).toBe(PARES_PUBLICOS_DA_SUPERFICIE);
+
+    // ---------------------------------------------------------------------------------------
+    // `semDeclaracao` VAZIO — com CONTROLE ANTIVÁCUO, e ele é o que separa isto de comparar nada
+    // ---------------------------------------------------------------------------------------
+    //
+    // A igualdade de lista vem primeiro, e nunca `toHaveLength(0)`: a falha precisa nomear
+    // `{ metodo, caminho, controlador, manipulador }` de quem ficou sem declaração.
+    expect(cobertura.semDeclaracao).toEqual([]);
+
+    // O CONTROLE ANTIVÁCUO, na forma que a `.claude/rules/ancoras-de-superficie.md` exige: o total
+    // examinado é afirmado **contra o inventário**, nunca contra zero. Os três conjuntos particionam
+    // as rotas enumeradas (`foraDoArcabouco` é subconjunto de `publicas`, e por isso não entra na
+    // soma), de modo que esta identidade prova que **toda** rota caiu em algum balde — e portanto
+    // que `semDeclaracao` vazio significa *"nenhuma ficou de fora"*, e não *"nada foi examinado"*.
+    expect({
+      classificadas:
+        cobertura.comExigencia.length + cobertura.publicas.length + cobertura.semDeclaracao.length,
+      publicas: cobertura.publicas.length,
+    }).toEqual({
+      classificadas: cobertura.rotasEnumeradas,
+      publicas: PARES_PUBLICOS_DA_SUPERFICIE,
+    });
+
+    // E a ausência que a ADR-0035 troca por outra coisa — persistir o cru e responder sem desfecho:
+    // o manipulador da notícia não declara exigência **nem no método nem na classe**. A asserção é
+    // sobre a mensagem exata, e não sobre "levantou": a mesma função levanta também para rótulo
+    // inexistente, e um erro de digitação no rótulo satisfaria um `toThrow()` genérico sem provar
+    // nada sobre a rota.
+    const semExigencia = capturar(() =>
+      exigenciaEfetivaDoManipulador(aplicacaoReal, MANIPULADOR_DA_ENTRADA_DE_TERCEIRO),
+    );
+
+    expect(semExigencia?.message).toBe(
+      `${MANIPULADOR_DA_ENTRADA_DE_TERCEIRO} ${SEM_EXIGENCIA_NEM_NO_METODO_NEM_NA_CLASSE}`,
+    );
+
+    // ---------------------------------------------------------------------------------------
+    // AS DUAS MEDIÇÕES DA SUPERFÍCIE, e a igualdade ENTRE ELAS antes da âncora
+    // ---------------------------------------------------------------------------------------
+    //
+    // A primeira lê a **tabela do roteador** já montado; a segunda varre os **decoradores dos
+    // controladores** e compõe: cada manipulador reivindica um par, salvo o `@All`, que reivindica
+    // os sete verbos do caminho dele, mais os nove pares registrados direto no adaptador, que não
+    // têm manipulador. Nenhuma é derivada da outra.
+    const manipuladores = manipuladoresExaminados(aplicacaoReal);
+    const comTodosOsVerbos = manipuladoresQueAtendemTodosOsVerbos(aplicacaoReal);
+    const pelaComposicao =
+      manipuladores -
+      comTodosOsVerbos +
+      comTodosOsVerbos * METODOS_DO_ENCAMINHADOR.length +
+      ROTAS_FORA_DO_ARCABOUCO.length;
+
+    // A igualdade entre os dois eixos é afirmada **explicitamente**, e ANTES da comparação com a
+    // âncora: duas medições que concordassem com o valor esperado por acidente e discordassem entre
+    // si passariam pela comparação de baixo, e é a concordância delas que torna cada uma verificável
+    // pela outra.
+    expect(
+      pelaComposicao,
+      'as duas medições independentes da superfície publicada divergiram entre si: o errado é a âncora, nunca a medição',
+    ).toBe(cobertura.rotasEnumeradas);
+
+    // ⚠️ As quatro grandezas numa comparação só, de propósito: se alguma divergir, a falha **nomeia
+    // os números** lado a lado. E o valor conferido é o **desta task** — `100/85` —, não o `101/86`
+    // em que a fatia fecha: o par que falta é o do carnê, na T10, e é lá que nasce o `CT-1004`.
+    // Antecipar o número final aqui faria a asserção reprovar sobre uma superfície legítima, e
+    // "corrigi-la" para passar seria fraude de gate.
+    expect(
+      {
+        peloRoteador: cobertura.rotasEnumeradas,
+        pelaComposicao,
+        manipuladores,
+        comTodosOsVerbos,
+      },
+      'a superfície publicada mudou de tamanho: o inventário desta prova precisa ser revisado',
+    ).toEqual({
+      peloRoteador: ROTAS_PUBLICADAS_EM_PRODUCAO,
+      pelaComposicao: ROTAS_PUBLICADAS_EM_PRODUCAO,
+      manipuladores: MANIPULADORES_EXAMINADOS_EM_PRODUCAO,
+      comTodosOsVerbos: MANIPULADORES_QUE_ATENDEM_TODOS_OS_VERBOS,
+    });
+
+    // ---------------------------------------------------------------------------------------
+    // O catálogo fechado NÃO foi aberto por esta task — ela não governa nada por chave
+    // ---------------------------------------------------------------------------------------
+    //
+    // A rota é pública: não há área a exigir nem ação a reservar. A asserção existe justamente por
+    // isso — é ela que reprova a rodada que "resolvesse" a autorização desta superfície criando
+    // chave nova em vez de assumir a dispensa que a ADR-0035 autoriza.
+    expect([...CHAVES_DE_TELA]).toEqual(AREAS_DE_TELA_DO_CATALOGO);
+    expect(CHAVES_DE_TELA.length + Object.keys(MAPA_ACAO_TELA).length).toBe(TOTAL_DE_CHAVES);
+  });
+
+  it('CT-1004 — a superfície da fatia FECHA em 101 pares e 86 manipuladores pelas DUAS medições, com o carnê no eixo POSITIVO', () => {
+    const cobertura = verificarCoberturaDeAutorizacao(aplicacaoReal);
+
+    // ---------------------------------------------------------------------------------------
+    // SANIDADE: o inventário desta task tem UM par, ANTES de qualquer comparação
+    // ---------------------------------------------------------------------------------------
+    //
+    // Sobre o próprio inventário, e não sobre a superfície: uma lista vazia faria as igualdades
+    // abaixo passarem sobre rota nenhuma, e a soma final continuaria batendo com a âncora do total —
+    // o modo de falha silencioso desta classe de prova.
+    const paresDoCarne = paresDaEntregaDoCarne();
+
+    expect(paresDoCarne.length).toBe(PARES_PUBLICADOS_PELA_ENTREGA_DO_CARNE);
+    expect(PARES_DA_FATIA_DO_CARNE.length).toBe(PARES_PUBLICADOS_PELA_ENTREGA_DO_CARNE);
+
+    // ---------------------------------------------------------------------------------------
+    // O CARNÊ ESTÁ NO EIXO POSITIVO — e não escapou por nenhuma das duas portas laterais
+    // ---------------------------------------------------------------------------------------
+    //
+    // Igualdade de arranjo ordenado contra o inventário revisado, e nunca `toContain`: um par que
+    // sumisse do conjunto que declara exigência reprova como ausente, e um par cujo caminho mudasse
+    // no fonte sem passar por esta lista reprova como excedente.
+    expect(
+      cobertura.comExigencia.filter((par) => PARES_DA_FATIA_DO_CARNE.includes(par)).sort(),
+      'o inventário da rota do carnê divergiu do conjunto que declara exigência',
+    ).toEqual([...PARES_DA_FATIA_DO_CARNE]);
+
+    // As duas escapatórias que a existência da declaração sozinha não fecha: a guarda retorna antes
+    // para rota pública, e `semDeclaracao` continuaria vazio nas duas.
+    expect(PARES_DA_FATIA_DO_CARNE.filter((par) => cobertura.publicas.includes(par))).toEqual([]);
+    expect(
+      PARES_DA_FATIA_DO_CARNE.filter((par) => cobertura.foraDoArcabouco.includes(par)),
+    ).toEqual([]);
+
+    // E o eixo positivo INTEIRO, por igualdade contra o inventário revisado: sem esta linha, um par
+    // anterior que sumisse enquanto o do carnê entrasse satisfaria os três filtros acima.
+    expect(cobertura.comExigencia).toEqual([...ROTAS_COM_EXIGENCIA]);
+
+    // ---------------------------------------------------------------------------------------
+    // O conjunto público NÃO cresceu — o carnê exige sessão
+    // ---------------------------------------------------------------------------------------
+    //
+    // O filtro acima diz que **este** par não está no público; a contagem diz que **nenhum outro**
+    // entrou. Uma rota desta task marcada `@RotaPublica()` e retirada do inventário positivo
+    // satisfaria o filtro e reprovaria só aqui.
+    expect(PARES_PUBLICOS_ACEITOS.length).toBe(PARES_PUBLICOS_DA_SUPERFICIE);
+    expect(
+      cobertura.publicas,
+      'o conjunto de rotas que dispensam sessão mudou: cada entrada nele é uma rota fora da autorização',
+    ).toEqual([...PARES_PUBLICOS_ACEITOS]);
+
+    // ---------------------------------------------------------------------------------------
+    // A EXIGÊNCIA EFETIVA do carnê é EXATAMENTE a da classe — e ela não declara nada no MÉTODO
+    // ---------------------------------------------------------------------------------------
+    //
+    // Duas asserções, e nenhuma implica a outra. A primeira lê a exigência pela MESMA chamada da
+    // guarda (`getAllAndOverride`) e a compara por igualdade de arranjo: um `@ExigeChave` no método
+    // com a área repetida produziria o **mesmo** valor aqui, e por isso ela sozinha não bastaria. A
+    // segunda é o que discrimina — o retrato traz a **origem** junto do valor, e `classe` contra
+    // `metodo` é justamente a diferença que `getAllAndOverride` torna invisível por comportamento.
+    // Declarar a área no método é o defeito descrito no docblock do controlador como *"pior do que
+    // redundante"*, e é este par que o acusa.
+    expect(
+      exigenciaEfetivaDoManipulador(aplicacaoReal, MANIPULADOR_DA_ENTREGA_DO_CARNE),
+      'a exigência efetiva da rota do carnê divergiu da área declarada pela classe',
+    ).toEqual([AREA_DOS_CONTRATOS]);
+
+    expect(
+      retratoDasExigenciasDe(aplicacaoReal, [MANIPULADOR_DA_ENTREGA_DO_CARNE]),
+      'a rota do carnê passou a declarar exigência no MÉTODO: a área da classe deixou de ser a fonte',
+    ).toEqual({ [MANIPULADOR_DA_ENTREGA_DO_CARNE]: { classe: [AREA_DOS_CONTRATOS] } });
+
+    // ---------------------------------------------------------------------------------------
+    // `semDeclaracao` VAZIO — com CONTROLE ANTIVÁCUO
+    // ---------------------------------------------------------------------------------------
+    //
+    // A igualdade de lista vem primeiro, e nunca `toHaveLength(0)`: a falha precisa nomear
+    // `{ metodo, caminho, controlador, manipulador }` de quem ficou sem declaração.
+    expect(cobertura.semDeclaracao).toEqual([]);
+
+    // O CONTROLE ANTIVÁCUO, na forma que a `.claude/rules/ancoras-de-superficie.md` exige: o total
+    // examinado é afirmado **contra as rotas enumeradas**, nunca contra zero. Os três conjuntos
+    // particionam a superfície (`foraDoArcabouco` é subconjunto de `publicas`, e por isso não entra
+    // na soma), de modo que esta identidade prova que **toda** rota caiu em algum balde — e portanto
+    // que `semDeclaracao` vazio significa *"nenhuma ficou de fora"*, e não *"nada foi examinado"*.
+    expect({
+      classificadas:
+        cobertura.comExigencia.length + cobertura.publicas.length + cobertura.semDeclaracao.length,
+      publicas: cobertura.publicas.length,
+    }).toEqual({
+      classificadas: cobertura.rotasEnumeradas,
+      publicas: PARES_PUBLICOS_DA_SUPERFICIE,
+    });
+
+    // ---------------------------------------------------------------------------------------
+    // AS DUAS ÂNCORAS FINAIS DA FATIA — e é aqui que a F4 inteira FECHA
+    // ---------------------------------------------------------------------------------------
+    //
+    // A primeira lê a **tabela do roteador** já montado; a segunda varre os **decoradores dos
+    // controladores** e compõe: cada manipulador reivindica um par, salvo o `@All`, que reivindica os
+    // sete verbos do caminho dele, mais os nove pares registrados direto no adaptador, que não têm
+    // manipulador. Nenhuma é derivada da outra.
+    //
+    // ⚠️ É a conferência **FINAL** da fatia: a âncora subiu por T6 (99 → 100) e por esta task
+    // (100 → 101), e o `101/86` da §4.1 do tech spec é o número em que a superfície publicada do
+    // produto fica até o congelamento.
+    const manipuladores = manipuladoresExaminados(aplicacaoReal);
+    const comTodosOsVerbos = manipuladoresQueAtendemTodosOsVerbos(aplicacaoReal);
+    const pelaComposicao =
+      manipuladores -
+      comTodosOsVerbos +
+      comTodosOsVerbos * METODOS_DO_ENCAMINHADOR.length +
+      ROTAS_FORA_DO_ARCABOUCO.length;
+
+    // A igualdade entre os dois eixos é afirmada **explicitamente**, e ANTES da comparação com a
+    // âncora: duas medições que concordassem com o valor esperado por acidente e discordassem entre
+    // si passariam pela comparação de baixo, e é a concordância delas que torna cada uma verificável
+    // pela outra.
+    expect(
+      pelaComposicao,
+      'as duas medições independentes da superfície publicada divergiram entre si: o errado é a âncora, nunca a medição',
+    ).toBe(cobertura.rotasEnumeradas);
+
+    // As quatro grandezas viajam numa comparação só de propósito: se alguma divergir, a falha
+    // **nomeia os números** lado a lado.
+    expect(
+      {
+        peloRoteador: cobertura.rotasEnumeradas,
+        pelaComposicao,
+        manipuladores,
+        comTodosOsVerbos,
+      },
+      'a superfície publicada mudou de tamanho: o inventário desta prova precisa ser revisado',
+    ).toEqual({
+      peloRoteador: ROTAS_PUBLICADAS_EM_PRODUCAO,
+      pelaComposicao: ROTAS_PUBLICADAS_EM_PRODUCAO,
+      manipuladores: MANIPULADORES_EXAMINADOS_EM_PRODUCAO,
+      comTodosOsVerbos: MANIPULADORES_QUE_ATENDEM_TODOS_OS_VERBOS,
+    });
+
+    // ---------------------------------------------------------------------------------------
+    // O catálogo fechado NÃO foi aberto por esta task — ele é 10 × 7, e não cresce
+    // ---------------------------------------------------------------------------------------
+    //
+    // A rota herda a área da classe e não exige ação alguma: nenhuma chave nasceu para ela. É a
+    // asserção que reprova a rodada que "resolvesse" a autorização do carnê criando uma
+    // `ACAO:baixar_carne` em vez de assumir que ler é leitura.
+    expect([...CHAVES_DE_TELA]).toEqual(AREAS_DE_TELA_DO_CATALOGO);
     expect(CHAVES_DE_TELA.length + Object.keys(MAPA_ACAO_TELA).length).toBe(TOTAL_DE_CHAVES);
   });
 

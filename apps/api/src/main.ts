@@ -137,22 +137,80 @@ function publicarContrato(app: NestFastifyApplication): void {
 }
 
 /**
+ * Maior corpo que o transporte aceita numa requisição — **64 KiB**, declarado e não herdado.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que ele existe, e por que aqui
+ * ---------------------------------------------------------------------------
+ *
+ * Sem esta linha vale o padrão do arcabouço, **1 MiB por requisição**, que era um teto que ninguém
+ * escolheu. Ele deixou de ser aceitável quando a fatia `webhook-e-carne` publicou
+ * `POST /v1/notificacoes-bancarias`. São **duas** as rotas de negócio sem sessão do produto — a da
+ * confirmação de endereço (ADR-0027) e esta (ADR-0035) —, e a distinção que importa aqui é outra: a
+ * da confirmação exige **portador de segredo** de uso único, e esta não exige nada. É, portanto, a
+ * única em que um desconhecido escreve, e ela grava o corpo **verbatim**, de propósito, porque a
+ * ADR-0035 manda persistir o recebido cru antes de interpretá-lo. Com o teto herdado, uma requisição
+ * forjada custava até ~1 MiB persistido com 90 dias de retenção, mais uma tarefa numa fila que
+ * outros três produtores compartilham.
+ *
+ * A §11.5 do tech spec daquela fatia **proíbe limitador de abuso naquela rota**, e a proibição
+ * continua de pé: ela veta o limitador **por origem**, que descartaria uma rajada *legítima* do
+ * provedor — e perder notícia é o dano que a fatia existe para não ter. Um teto de **tamanho** é
+ * controle ortogonal: ele não recusa requisição legítima nenhuma, porque a maior notícia real
+ * medida (o Caso A da §4.1.1) tem **514 bytes** e cabe **127 vezes** aqui dentro. O que a §11.5
+ * afirmava como premissa — *"o custo por notícia forjada é uma escrita pequena"* — passa a ser
+ * imposto por esta constante, em vez de suposto.
+ *
+ * ---------------------------------------------------------------------------
+ * De onde sai o número — é medido, não arredondado por conforto
+ * ---------------------------------------------------------------------------
+ *
+ * O critério é o do erro assimétrico: recusar corpo **legítimo** é o defeito caro, porque não tem
+ * contorno do lado de quem envia. Então o teto é fixado acima do maior corpo que o produto **aceita
+ * hoje**, com folga:
+ *
+ *   * o maior corpo legítimo de toda a API é o registro de certificado — `material` em base64 mais
+ *     `senha`, medido em **8.346 bytes**, e já limitado no contrato por `MAIOR_MATERIAL_CODIFICADO`
+ *     (8192) e `MAIOR_SENHA_DO_MATERIAL` (128). 64 KiB é **7,8×** isso;
+ *   * o segundo maior é a criação de imóvel (~4 KiB, todos os campos em seus tetos);
+ *   * a notícia bancária, que é a rota exposta, é **514 bytes**.
+ *
+ * Ele é **global**, e não por rota, porque a propriedade que se quer é a da montagem: instalado por
+ * rota, o teto seria o controle que a rota seguinte esquece. Nenhum esquema de entrada do produto
+ * tem corpo sem limite — todos são `strictObject` com campos limitados —, de modo que um teto único
+ * generoso não recusa nada que o contrato aceite.
+ *
+ * ⚠️ O valor é **contado em bytes do corpo**, pelo transporte, **antes** do manipulador: a recusa é
+ * do adaptador, e nada chega a ser gravado. É o mesmo caminho pelo qual corpo que não é JSON já é
+ * recusado, e o `CT-020 (e)` de `test/contexto.e2e.spec.ts` mede as duas metades (recusa acima do
+ * teto, aceite abaixo dele) contra **esta** montagem.
+ */
+export const MAIOR_CORPO_ACEITO = 64 * 1024;
+
+/**
  * Monta a aplicação: composição raiz, adaptador HTTP, contrato publicado e ganchos de
  * desligamento. Não escuta — quem decide isso é quem chama.
  */
 export async function criarAplicacao(): Promise<NestFastifyApplication> {
-  const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter(), {
-    // O registrador do arcabouço escreve texto livre na saída padrão, e o projeto registra em
-    // formato estruturado (T3). Deixar os dois ativos entregaria ao journal duas gramáticas
-    // misturadas, e a metade em texto livre não seria consultável.
-    logger: false,
-    // Sem isto, uma falha durante a montagem — configuração incompleta, entre elas — é
-    // interceptada pelo arcabouço, registrada pelo registrador que a linha acima desligou e
-    // encerrada com `process.exit`. O processo morreria com código diferente de zero e **sem
-    // dizer por quê**, que é exatamente o contrário do que a validação de partida existe para
-    // entregar. Com o aborto desligado, a exceção chega a quem chamou.
-    abortOnError: false,
-  });
+  const app = await NestFactory.create<NestFastifyApplication>(
+    AppModule,
+    // O teto de corpo é **declarado**, e a ausência de opções aqui já foi o defeito: ver
+    // {@link MAIOR_CORPO_ACEITO} para por que 64 KiB, e por que ele não é o limitador que a §11.5
+    // da fatia `webhook-e-carne` proíbe.
+    new FastifyAdapter({ bodyLimit: MAIOR_CORPO_ACEITO }),
+    {
+      // O registrador do arcabouço escreve texto livre na saída padrão, e o projeto registra em
+      // formato estruturado (T3). Deixar os dois ativos entregaria ao journal duas gramáticas
+      // misturadas, e a metade em texto livre não seria consultável.
+      logger: false,
+      // Sem isto, uma falha durante a montagem — configuração incompleta, entre elas — é
+      // interceptada pelo arcabouço, registrada pelo registrador que a linha acima desligou e
+      // encerrada com `process.exit`. O processo morreria com código diferente de zero e **sem
+      // dizer por quê**, que é exatamente o contrário do que a validação de partida existe para
+      // entregar. Com o aborto desligado, a exceção chega a quem chamou.
+      abortOnError: false,
+    },
+  );
 
   // ANTES de publicar o contrato: o documento é gerado a partir das rotas já registradas, e o
   // gerador aplica o prefixo global honrando esta mesma lista de exclusão. Publicar primeiro

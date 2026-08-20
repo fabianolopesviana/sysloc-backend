@@ -1,6 +1,6 @@
 # Architecture Decision Records — INDEX
 
-> Ultima atualizacao: 2026-08-16 (34 ADRs)
+> Ultima atualizacao: 2026-08-18 (35 ADRs)
 
 <!-- ADR-INDEX-START -->
 | ID | Titulo | Status | Tags | Problema (1-linha) | Decisao (1-linha) |
@@ -28,7 +28,7 @@
 | 0021 | Transição de estado de negócio é rota própria, governada conforme a natureza do ato | accepted | state-management, architecture | A ADR-0019 fixou que toda transição de estado é rota própria governada pela chave de ação sensível | Toda transição de estado de entidade de negócio é uma rota própria — nunca um campo gravado por |
 | 0022 | O que se grava e o que se deriva num fato financeiro | accepted | data, architecture | Multa e juros passam a ser configuráveis por empresa, e a configuração muda ao longo do tempo — | Todo valor monetário derivado de configuração é derivado enquanto o fato financeiro está aberto, |
 | 0023 | Onde vive a derivação de valor não persistido | accepted | architecture, data | O produto publica valores que não são colunas. Até aqui todos eles serviam apenas à apresentação de | A derivação de um valor não persistido vive no banco quando ela participa de seleção — filtro, |
-| 0024 | Origem legítima do contexto de tenant quando não há requisição | accepted | architecture, security, data | A ADR-0008 fixa que o isolamento é propriedade do banco e que o contexto que a RLS consome é fixado | Toda execução que ocorre fora de uma requisição estabelece o contexto de tenant a partir da carga |
+| 0024 | Origem legítima do contexto de tenant quando não há requisição | accepted | architecture, security, data | A ADR-0008 fixa que o isolamento é propriedade do banco e que o contexto que a RLS consome é fixado | Toda execução que ocorre fora de uma requisição estabelece o contexto de tenant na borda que a recebe, com origem que nunca é externa. ⚠️ EMENDADA (2026-08-13 e 2026-08-18): a carga leva o identificador de empresa quando quem enfileirou já detinha direito a ele; na entrada de fato de terceiro (ADR-0035) a empresa é o resultado da travessia nominal e NÃO viaja na carga. Abra a Decision e as duas emendas |
 | 0025 | O domínio declara a porta; o adaptador depende dele, nunca o contrário | accepted | architecture | O produto pratica camadas por fora e estilo hexagonal por dentro, mas nunca declarou de que lado | Em toda fronteira entre domínio e infraestrutura, o pacote de domínio declara o tipo do dado que |
 | 0026 | O relógio da operação mora no banco — a aplicação nunca lê o do processo | accepted | architecture, data | Decisões de negócio dependem de que dia é hoje e que horas são: a transição de uma cobrança para | Toda leitura de tempo que decide comportamento de negócio vem do banco, através de função cujo |
 | 0027 | Critério para uma rota de negócio dispensar sessão, e o que ela carrega em troca | accepted | auth, security, http | Toda rota de negócio deste backend exige sessão, com autorização declarada por rota e default que | Uma rota de negócio dispensa sessão apenas quando o ato é exercido pelo titular do dado que ele |
@@ -39,4 +39,5 @@
 | 0032 | Segredo operável é cifrado, nunca retorna e se prova por medição | accepted | security, data | Todo segredo que este produto guardou até aqui é verificável e irreversível — senha de acesso e | Segredo de terceiro que o produto precisa usar, e não apenas conferir, é guardado cifrado de forma |
 | 0033 | Cada série declara o próprio escopo, com furo aceito e número nunca reusado | accepted | data, architecture | A ADR-0015 fixou que todo contador sequencial do produto é único por empresa. A premissa era | Toda série sequencial deste produto declara o próprio escopo, e o escopo é parte da definição da |
 | 0034 | Trilha de integração com terceiro registra efeito, não tentativa | accepted | architecture, data, cross-cutting | Integração com terceiro conversa muito e muda pouco. Medido no sistema antigo: 1.837 dos 1.864 | A trilha que o produto publica sobre a conversa com um terceiro registra o efeito — mudança |
+| 0035 | Critério para uma rota de entrada de fato de terceiro sem sessão, e o que ela carrega em troca | accepted | security, http, architecture | O retorno da integração bancária chega por uma URL única, sem sessão e sem portador de segredo: o | Uma rota de entrada dispensa sessão apenas quando recebe um fato produzido por um terceiro que não |
 <!-- ADR-INDEX-END -->

@@ -586,6 +586,31 @@ export const TOKEN_PORTA_DE_COBRANCA_BANCARIA = Symbol('AdaptadorCobrancaBancari
 export const TOKEN_GUARDA_DE_BOLETOS = Symbol('GuardaDeBoletos');
 
 /**
+ * Token de injeção da **porta de mesclagem de documentos** (T10 da fatia `webhook-e-carne`).
+ *
+ * Mora aqui pelo mesmo motivo dos dois tokens acima, e com o mesmo agravante estrutural: declará-lo
+ * em `cobrancas/cobrancas.module.ts` fecharia importação circular, porque o módulo importa o
+ * controlador, o controlador importa o serviço, e é o **serviço** quem pede o token no construtor —
+ * avaliado enquanto o módulo ainda está sendo carregado. O que ele publica é a `PortaDeMesclagem`
+ * que `@sysloc/documentos` declara (ADR-0025): quem monta o processo escolhe o adaptador
+ * (`criarMescladorPdf`), e o domínio segue sem saber que existe um `pdf-lib`.
+ *
+ * ⚠️ **Ele não carrega opção nenhuma, e a ausência é a ADR-0030.** A porta recebe bytes prontos e
+ * devolve bytes; página, margem, cabeçalho, numeração e marca d'água **não** atravessam esta
+ * fronteira, porque o que passa por ela é o boleto que o provedor emitiu — fato recebido de
+ * terceiro, que ninguém recompõe. Ver o cabeçalho de
+ * `packages/documentos/src/porta-de-mesclagem.ts`.
+ *
+ * ⚠️ **Ele não abre um segundo caminho para escolher o adaptador**: não há bandeira de ambiente, não
+ * há `if (ehTeste)` e `criarAplicacao()` não ganha parâmetro — as três alternativas estão recusadas
+ * por escrito no cabeçalho de `packages/regua/src/adaptador-smtp.ts` e no docblock de
+ * {@link TOKEN_PORTA_DE_EMAIL}. E **nenhuma variável de ambiente nasce com ele**: o mesclador não tem
+ * endereço, diretório nem credencial — a composição do carnê acontece em memória e nada é armazenado
+ * (ADR-0030), de modo que não há o que conferir na partida.
+ */
+export const TOKEN_PORTA_DE_MESCLAGEM = Symbol('PortaDeMesclagem');
+
+/**
  * Lê e valida as variáveis de ambiente exigidas.
  *
  * @param fonte Registro de variáveis — `process.env` na partida, objeto montado na verificação.

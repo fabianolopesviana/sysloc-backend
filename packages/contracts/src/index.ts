@@ -41,6 +41,8 @@ export {
   esquemaDaPoliticaDeAvisoNova,
   esquemaDoEnvioDeCobranca,
 } from './automacao-de-cobranca.js';
+export type { RecorteDoCarne } from './carne.js';
+export { esquemaDoRecorteDoCarne, LARGURA_MAXIMA_DO_RECORTE } from './carne.js';
 export type {
   Cobranca,
   CobrancaNova,

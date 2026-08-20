@@ -61,6 +61,43 @@ schema sem noção de tenant.
 > que a letra dela proibia. É exatamente o custo que a emenda de 2026-08-10 da ADR-0021 registra —
 > *"um gate futuro leria violação onde houve decisão"*.
 
+> **Emenda de 2026-08-18.** Duas cláusulas acima eram verdadeiras na data em que foram escritas e
+> ficaram **incompletas** — a abertura da `Decision` (*"estabelece o contexto de tenant a partir da
+> **carga do próprio trabalho**"*) e o `Consequences → Neutros` (*"apenas declara que o identificador
+> de empresa é **campo obrigatório** dela"*). As duas nasceram quando a única execução sem requisição
+> era o **trabalho enfileirado por quem já detinha o direito ao identificador**: a sessão que
+> enfileirou, ou a enumeração de tenants. A **ADR-0035** (`accepted`, 2026-08-18) institui depois a
+> **entrada de fato de terceiro**, e nela quem enfileira é uma borda que **não sabe — e não pode
+> saber** — de que empresa o fato é: descobrir é justamente o trabalho da tarefa. Lidas ao pé da
+> letra, as duas cláusulas obrigariam a carga a levar um `empresaId` que só poderia vir do
+> **recebido**. **A decisão não mudou**: mudou o registro dela, que passa a declarar o
+> **discriminador** da forma da carga.
+>
+> - **A carga carrega o identificador de empresa** quando quem enfileira **já detinha o direito a
+>   ele** — a sessão que enfileirou, ou a enumeração de tenants. É o caso de toda fila do produto
+>   anterior a esta emenda, e nada nelas muda.
+> - **A carga NÃO carrega empresa** quando a empresa é o **resultado** da travessia nominal do item 2
+>   acima. Aí o contexto vem do **registro resolvido**, uma única vez, na borda que o resolve — que é
+>   literalmente o que aquele item já exige ao mandar a função ser *"sem parâmetro de empresa, para
+>   que o contexto continue vindo do registro resolvido"*.
+>
+> Pôr `empresaId` na carga da entrada de terceiro **não seria conformidade, seria violação**: o único
+> valor disponível na borda viria do recebido, e aceitar a empresa que a origem externa declara é
+> exatamente o que a cláusula de procedência desta ADR proíbe, e a terceira *Alternativa rejeitada* da
+> ADR-0035. A obrigatoriedade que o `Neutros` declara é, portanto, **da procedência, não do campo**:
+> o que nunca pode faltar é a resposta a *"quem tinha direito a este identificador"* — e quando a
+> resposta é *"ninguém ainda; ele é o resultado"*, o campo não existe.
+>
+> **Travessia por privilégio de dono segue rejeitada**, e nada aqui a reabre. As cinco exigências do
+> item 2 continuam valendo **integralmente** para a entrada de fato de terceiro: sem elas, a leitura
+> sem contexto não é legítima, por mais que se pareça com as duas que esta ADR admite.
+>
+> O que tornou esta emenda necessária foi o **challenge da fatia `webhook-e-carne`**, em 2026-08-18,
+> ao abrir a `Decision` em vez de citar apenas a emenda de 2026-08-13 — que descreve o mecanismo e
+> **nomeia este webhook**, mas não alcança as duas cláusulas acima. É a mesma classe que aquela
+> emenda registra, e pela terceira vez neste repositório: *"um gate futuro leria violação onde houve
+> decisão"*.
+
 ## Consequences
 
 **Pros:**
@@ -108,3 +145,7 @@ schema sem noção de tenant.
 - `documentos-e-confirmacao (v1)` — docs/specs/features/documentos-e-confirmacao/v1/tech_spec.md
   (§21.3 — a segunda leitura sem contexto, e a leitura conjunta com a ADR-0027 que a emenda de
   2026-08-13 registra)
+- `webhook-e-carne (v1)` — docs/specs/features/webhook-e-carne/v1/tech_spec.md (§21.5 — a entrada de
+  fato de terceiro: a carga da fila **não** carrega empresa, e o contexto vem do registro que
+  `negocio.rotear_notificacao_bancaria` resolve sob o papel `sysloc_roteamento`. É o caso que a
+  emenda de 2026-08-18 declara)

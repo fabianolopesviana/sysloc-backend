@@ -40,6 +40,22 @@
  * O que a exportação **não** move é autorização: `TELA:financeiro` continua governando as rotas desta
  * superfície, e nada da exigência declarada aqui alcança quem importa o módulo.
  *
+ * **EMENDA — T10 da fatia `webhook-e-carne` (2026-08-19).** O texto acima é preservado; o que segue
+ * o estende. A exportação passou a ser de **três** serviços: `CobrancaService`, `BoletoService` e
+ * `CarneService`. O consumidor concreto é `ContratoController`, que injeta o **carnê** para atender
+ * `GET /v1/contratos/:codigo/carne` — e `CarneService` vive aqui, e não sob contratos, porque o que
+ * ele compõe são **boletos de cobrança**: pendurá-lo lá o obrigaria a receber a porta do provedor e
+ * a guarda dos bytes numa superfície governada por `TELA:contratos`.
+ *
+ * ⚠️ **`BoletoService` sai na lista por prescrição declarada da task e da §3.6 do tech spec**, e não
+ * por necessidade de resolução: `CarneService` o injeta **de dentro** deste módulo, onde ele já é
+ * provedor. A distinção fica escrita porque ela é o que um leitor futuro precisa para decidir se
+ * pode retirá-lo: **hoje ele não tem consumidor fora daqui**, e retirá-lo não quebraria o carnê.
+ * O que a exportação dele **não** faz é abrir a emissão a quem quer que seja — os dois provedores do
+ * parágrafo abaixo (`TOKEN_PORTA_DE_COBRANCA_BANCARIA` e `TOKEN_GUARDA_DE_BOLETOS`) continuam
+ * **fora** de `exports`, e a autorização de cada rota segue declarada na borda, sob a chave da área
+ * dela.
+ *
  * ---------------------------------------------------------------------------
  * Ele é a COMPOSIÇÃO que constrói o adaptador de cobrança e a guarda de bytes (T13)
  * ---------------------------------------------------------------------------
@@ -66,6 +82,12 @@
  * que a única superfície que alcança a porta de cobrança é a desta área. Publicá-los daria a todo
  * controlador do produto a capacidade de emitir título em nome de uma empresa.
  *
+ * **EMENDA — T10 (2026-08-19).** O parágrafo acima continua verdadeiro palavra por palavra, e o
+ * provedor que a T10 acrescenta o respeita: `TOKEN_PORTA_DE_MESCLAGEM` é do módulo e **não** entra
+ * em `exports`. Ele é a terceira porta desta composição e a mais inócua das três — não fala com
+ * terceiro, não lê disco e não guarda estado —, mas a régua é a mesma, e abrir exceção para a porta
+ * barata ensina a abri-la para a cara.
+ *
  * A construção mora **dentro do corpo da fábrica**, e a posição é conteúdo: no escopo de módulo, o
  * simples `import` deste arquivo por uma suíte construiria o cliente do provedor — e, com endereço
  * malformado, **derrubaria a importação** em vez de recusar a resolução do provedor, porque
@@ -79,14 +101,17 @@ import {
   criarGuardaDeBoletos,
   type GuardaDeBoletos,
 } from '@sysloc/cobranca-bancaria';
+import { criarMescladorPdf } from '@sysloc/documentos';
 import { AutenticacaoModule } from '../autenticacao/autenticacao.module.js';
 import {
   type Ambiente,
   TOKEN_AMBIENTE,
   TOKEN_GUARDA_DE_BOLETOS,
   TOKEN_PORTA_DE_COBRANCA_BANCARIA,
+  TOKEN_PORTA_DE_MESCLAGEM,
 } from '../configuracao/ambiente.js';
 import { BoletoService } from './boleto.service.js';
+import { CarneService } from './carne.service.js';
 import { CobrancaController } from './cobranca.controller.js';
 import { CobrancaService } from './cobranca.service.js';
 
@@ -125,6 +150,7 @@ function criarGuardaDosBoletos(ambiente: Ambiente): GuardaDeBoletos {
   providers: [
     CobrancaService,
     BoletoService,
+    CarneService,
     {
       provide: TOKEN_PORTA_DE_COBRANCA_BANCARIA,
       useFactory: criarPortaDeCobranca,
@@ -135,7 +161,14 @@ function criarGuardaDosBoletos(ambiente: Ambiente): GuardaDeBoletos {
       useFactory: criarGuardaDosBoletos,
       inject: [TOKEN_AMBIENTE],
     },
+    {
+      provide: TOKEN_PORTA_DE_MESCLAGEM,
+      // Sem `inject`, e a ausência é o contrato do adaptador: `criarMescladorPdf` não recebe
+      // parâmetro nenhum — não há endereço, diretório nem credencial a resolver, porque a composição
+      // acontece em memória e nada é armazenado (ADR-0030).
+      useFactory: criarMescladorPdf,
+    },
   ],
-  exports: [CobrancaService],
+  exports: [CobrancaService, BoletoService, CarneService],
 })
 export class CobrancasModule {}

@@ -71,7 +71,7 @@
  *
  *   * **a paga há 29 dias SEM boleto** existe por causa da **precedência dos operadores**: `AND` liga
  *     mais forte que `OR`, de modo que um predicado escrito sem os parênteses do segundo termo vira
- *     `(nosso_numero IS NOT NULL AND em aberto) OR (paga há ≤30 dias)` — e ela entra no conjunto. É a
+ *     `(numero_do_titulo_no_provedor IS NOT NULL AND em aberto) OR (paga há ≤30 dias)` — e ela entra no conjunto. É a
  *     única intrusa que essa perda faz vazar, e sem ela o defeito passaria despercebido;
  *   * **a de OUTRA empresa** existe porque o recorte é da política: ela é elegível em tudo, e só não
  *     entra porque a RLS a esconde. O **controle antivácuo** dela é a chamada sob o contexto de B, que
@@ -189,6 +189,7 @@ import * as contextoDeTenant from '../src/contexto.ts';
 import { EMPRESA_A, EMPRESA_B, USUARIOS, type UsuarioSemeado } from '../src/semente.ts';
 import { type AcessoAoBanco, abrirAcessoAoBanco } from '../src/unidade-de-trabalho.ts';
 import { type BancoMigrado, bancoEfemero } from './banco-efemero.ts';
+import { diferencasDeConjunto } from './conjuntos.ts';
 
 // ---------------------------------------------------------------------------
 // Limites de tempo — constantes nomeadas, nunca número mágico no meio do caso
@@ -368,7 +369,7 @@ const ELEGIVEL_DE_B = cobranca(8, {
 const ESPERADAS: readonly CobrancaAConferir[] = ELEGIVEIS.map((linha) => ({
   id: linha.id,
   codigo: linha.codigo,
-  // O predicado exige `nosso_numero IS NOT NULL`, então toda elegível o tem — o ramo de recusa existe
+  // O predicado exige `numero_do_titulo_no_provedor IS NOT NULL`, então toda elegível o tem — o ramo de recusa existe
   // para que um arranjo mal montado reprove no carregamento, e não como igualdade silenciosa.
   numeroDoTituloNoProvedor: exigirTitulo(linha),
 }));
@@ -521,31 +522,6 @@ function retratoDaRecusa(tentativa: Resultado<unknown>): {
   }
 
   return { classe: OUTRA_RECUSA, dito: desfechoDaTentativa(tentativa), conferencia: null };
-}
-
-/**
- * O que sobra e o que falta entre o observado e o declarado, com os nomes.
- *
- * Declarada aqui, e **não importada** de `packages/auth/test/conjuntos.ts`: aquele arquivo é acessório
- * de outro pacote, e alcançá-lo por caminho relativo profundo atravessaria fronteira de pacote — o
- * mesmo `D28` que a nota daquele arquivo nomeia. Esta é a **segunda** ocorrência em `packages/db/test/`
- * (a primeira é `emissao-em-lote.spec.ts`), e o limiar de três do `CLAUDE.md` dispara na **terceira**.
- *
- * Ela devolve as diferenças, e não um booleano, pela razão que o original registra: uma reprovação que
- * diz apenas "os conjuntos diferem" obriga quem lê a caçar o item, e é essa fricção que faz a asserção
- * ser afrouxada na rodada seguinte.
- */
-function diferencasDeConjunto(
-  observado: readonly string[],
-  declarado: readonly string[],
-): { excedentes: string[]; ausentes: string[] } {
-  const noDeclarado = new Set(declarado);
-  const noObservado = new Set(observado);
-
-  return {
-    excedentes: [...noObservado].filter((item) => !noDeclarado.has(item)).sort(),
-    ausentes: [...noDeclarado].filter((item) => !noObservado.has(item)).sort(),
-  };
 }
 
 /** O instante reduzido à FORMA — o carimbo bem-formado vira a marca, e o torto entra nomeado. */
@@ -774,7 +750,7 @@ async function semearApoio(
                     (id, empresa_id, codigo, contrato_id, natureza, referencia, competencia,
                      data_vencimento, valor_original, pago_em, valor_pago, cancelado_em,
                      multa_aplicada, juros_aplicados, multa_percentual_aplicado,
-                     juros_percentual_aplicado, nosso_numero)
+                     juros_percentual_aplicado, numero_do_titulo_no_provedor)
         VALUES (${linha.id}, ${contexto.empresaId}, ${linha.codigo}, ${apoio.contrato},
                 ${'ALUGUEL'}::negocio.natureza_cobranca, ${'01/08/2026 à 31/08/2026'},
                 ${'2026-08-01'}::date, ${'2026-08-10'}::date, ${'2000.00'},

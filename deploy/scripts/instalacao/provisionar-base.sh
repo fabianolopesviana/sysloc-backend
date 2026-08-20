@@ -189,6 +189,20 @@ readonly PAPEL_MIGRACAO="sysloc_migracao"
 # `42501 · Only roles with the CREATEROLE attribute may create roles`.
 readonly PAPEL_RESOLUCAO="sysloc_resolucao"
 
+# Papel de PROPÓSITO ÚNICO: ser dono da função
+# `negocio.rotear_notificacao_bancaria` (migração `0020`). Mesmas propriedades
+# de `${PAPEL_RESOLUCAO}` — `NOLOGIN`, sem credencial, dono de NENHUMA tabela —
+# e pela mesma razão: `SECURITY DEFINER` não atravessa `FORCE ROW LEVEL
+# SECURITY`, e o que atravessa é a posse por um papel nominal somada a uma
+# política endereçada a ele.
+#
+# Ele é um QUARTO papel, e NÃO o reuso do terceiro. A emenda de 2026-08-13 da
+# ADR-0024 exige `GRANT` mínimo — `SELECT` sobre *"a única tabela alcançada"* —,
+# e reusar `${PAPEL_RESOLUCAO}` o faria alcançar DUAS tabelas
+# (`negocio.portador_de_confirmacao` e `negocio.cobranca`), diluindo exatamente
+# a propriedade que a ADR nomeia. O custo é este bloco, que é mecânico.
+readonly PAPEL_ROTEAMENTO="sysloc_roteamento"
+
 # Banco DESCARTÁVEL que a bateria `verificar-migracao.sh` cria e remove para
 # exercitar o mutante de cobertura. Ele NÃO é criado aqui e não deve existir em
 # repouso; o nome mora nesta constante por um motivo só: a regra de autenticação
@@ -2330,6 +2344,16 @@ passo_p15_papel_migracao() {
 		mudancas=$((mudancas + 1))
 	fi
 
+	# O papel de ROTEAMENTO, gêmeo do de resolução e pela mesma razão — dono da
+	# função `negocio.rotear_notificacao_bancaria` da `0020`. Ele é um papel
+	# PRÓPRIO, e não o reuso do de resolução: ver o comentário da constante.
+	if [[ "$(psql_consulta "SELECT count(*) FROM pg_roles WHERE rolname = '${PAPEL_ROTEAMENTO}'")" != "1" ]]; then
+		printf 'CREATE ROLE "%s" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;\n' \
+			"${PAPEL_ROTEAMENTO}" | psql_admin >/dev/null
+		detalhes="${detalhes}papel '${PAPEL_ROTEAMENTO}' criado (NOLOGIN, dono do roteamento da notícia bancária); "
+		mudancas=$((mudancas + 1))
+	fi
+
 	# A membership existe para UMA coisa: o `ALTER FUNCTION … OWNER TO` da `0014`
 	# exige que quem executa seja membro do papel de destino. `INHERIT FALSE` é o
 	# mínimo que a torna suficiente — o migrador pode ASSUMIR o papel
@@ -2346,10 +2370,19 @@ passo_p15_papel_migracao() {
 		mudancas=$((mudancas + 1))
 	fi
 
+	# A mesma membership, pela mesma razão, para o papel de roteamento: é o
+	# `ALTER FUNCTION … OWNER TO` da `0020` que a exige.
+	if [[ "$(psql_consulta "SELECT pg_has_role('${PAPEL_MIGRACAO}', '${PAPEL_ROTEAMENTO}', 'MEMBER')")" != "t" ]]; then
+		printf 'GRANT "%s" TO "%s" WITH INHERIT FALSE, SET TRUE;\n' \
+			"${PAPEL_ROTEAMENTO}" "${PAPEL_MIGRACAO}" | psql_admin >/dev/null
+		detalhes="${detalhes}'${PAPEL_MIGRACAO}' passou a ser membro de '${PAPEL_ROTEAMENTO}' (INHERIT FALSE), o que a migração 0020 exige para trocar o dono da função; "
+		mudancas=$((mudancas + 1))
+	fi
+
 	if [[ "${mudancas}" -gt 0 ]]; then
 		criado "P15" "papel de migração e credencial dele (${detalhes%; })"
 	else
-		ja_ok "P15" "papéis '${PAPEL_MIGRACAO}' e '${PAPEL_RESOLUCAO}' já existem e ${ARQ_AMBIENTE_MIGRACAO} já está íntegro (credencial preservada)"
+		ja_ok "P15" "papéis '${PAPEL_MIGRACAO}', '${PAPEL_RESOLUCAO}' e '${PAPEL_ROTEAMENTO}' já existem e ${ARQ_AMBIENTE_MIGRACAO} já está íntegro (credencial preservada)"
 	fi
 }
 

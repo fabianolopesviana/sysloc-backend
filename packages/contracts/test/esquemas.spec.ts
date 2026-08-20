@@ -4462,10 +4462,19 @@ describe('CT-942 (b) — os quatro enums da fatia publicam exatamente os rótulo
    * lista esperada no mesmo instante, e a asserção não poderia falhar (AP-29). É a mesma razão, e o
    * mesmo desenho, do CT-540 e do CT-845.
    *
-   * ⚠️ **Não existe um sétimo tipo `CONFERENCIA`**, e a ausência é decisão escalada ao usuário e
-   * registrada na §21.1(2) do tech spec desta fatia: a conferência entra como **origem**, nunca como
-   * tipo, senão a trilha registraria *tentativa* — que é o que a `Decision` da ADR-0034 proíbe. Esta
-   * lista é a rede daquela decisão: acrescentar o tipo reprova aqui.
+   * ⚠️ **Não existe um tipo `CONFERENCIA`**, e a ausência é decisão escalada ao usuário e registrada
+   * na §21.1(2) do tech spec da fatia `emissao-e-conciliacao`: a conferência entra como **origem**,
+   * nunca como tipo, senão a trilha registraria *tentativa* — que é o que a `Decision` da ADR-0034
+   * proíbe. Esta lista é a rede daquela decisão: acrescentar o tipo reprova aqui.
+   *
+   * SUT_IS_CORRECT_BECAUSE: as duas primeiras listas cresceram na fatia `webhook-e-carne`, por
+   * decisão declarada na §1 da T2 dela. `NOTICIA_RECUSADA` é **desfecho anômalo** — a notícia cujo
+   * número de título diverge do gravado, com nada consultado e nada mudado —, que é a segunda metade
+   * literal da `Decision` da ADR-0034 (*"o efeito **ou o desfecho anômalo**"*); e
+   * `NOTICIA_DO_PROVEDOR` é **origem**, o terceiro produtor de efeito, entrando pela mesma porta por
+   * onde `CONFERENCIA` entrou e pela mesma razão. As duas entram no FIM da lista porque é ali que
+   * `ALTER TYPE … ADD VALUE` as põe no enum do banco, e a igualdade entre as pontas é posicional.
+   * **Nenhum rótulo saiu, nenhuma posição anterior mudou, e a asserção continua por igualdade.**
    */
   const ENUMS_PUBLICADOS: readonly {
     readonly rotulo: string;
@@ -4482,12 +4491,13 @@ describe('CT-942 (b) — os quatro enums da fatia publicam exatamente os rótulo
         'COBRANCA_LIQUIDADA',
         'LIQUIDACAO_ESTORNADA',
         'DIVERGENCIA_DE_VALOR',
+        'NOTICIA_RECUSADA',
       ],
     },
     {
       rotulo: 'ORIGENS_DO_EVENTO_BANCARIO',
       publicado: ORIGENS_DO_EVENTO_BANCARIO,
-      declarado: ['ATO_DO_ADMIN', 'CONFERENCIA'],
+      declarado: ['ATO_DO_ADMIN', 'CONFERENCIA', 'NOTICIA_DO_PROVEDOR'],
     },
     {
       rotulo: 'ESTADOS_DA_EMISSAO_EM_LOTE',

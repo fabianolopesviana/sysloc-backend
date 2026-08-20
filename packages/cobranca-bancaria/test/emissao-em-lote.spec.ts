@@ -23,10 +23,10 @@
  * | CA-03    | CT-914 | Falha atribuível à empresa grava `interrompido_em` e `motivo_da_interrupcao`
  * |          |        | e CESSA o percurso: são EXATAMENTE 2 itens, ambos `EMITIDO`, das posições
  * |          |        | 1 e 2; a do ponto de falha e as três posteriores ficam SEM item e com
- * |          |        | `nosso_numero IS NULL`; `concluido_em IS NULL`; e o adaptador recebeu
+ * |          |        | `numero_do_titulo_no_provedor IS NULL`; `concluido_em IS NULL`; e o adaptador recebeu
  * |          |        | EXATAMENTE 3 pedidos — nenhum depois do ponto. |
  * | CA-04    | CT-915 | Um segundo lote da mesma competência seleciona exatamente o COMPLEMENTO do
- * |          |        | primeiro: grava EXATAMENTE 2 itens, as 4 já emitidas mantêm `nosso_numero`
+ * |          |        | primeiro: grava EXATAMENTE 2 itens, as 4 já emitidas mantêm `numero_do_titulo_no_provedor`
  * |          |        | idêntico ao retrato anterior, as 2 recusadas passam a tê-lo, nenhuma
  * |          |        | cobrança recebe segunda emissão, e os 6 `identificador_no_provedor` têm 18
  * |          |        | posições e são DISTINTOS entre si — o contador nunca reusa (ADR-0020/0033). |
@@ -45,7 +45,7 @@
  * outro nome, e mutation testing está fora da stack deste projeto. O que se declara é qual asserção
  * discrimina:
  *
- *   * **"o lote seguiu" vs "o lote parou"** — as posições **3, 4 e 5** do CT-913 com `nosso_numero`
+ *   * **"o lote seguiu" vs "o lote parou"** — as posições **3, 4 e 5** do CT-913 com `numero_do_titulo_no_provedor`
  *     não-nulo. Sem elas, um percurso que interrompesse na primeira recusa passaria: a cobrança 2
  *     continuaria sem boleto e o item `RECUSADO` continuaria lá.
  *   * **"interrompeu" vs "tentou todas e recusou 4"** — a **contagem exata** de itens (`=== 2`) do
@@ -54,7 +54,7 @@
  *     também grava o carimbo.
  *   * **"a idempotência existe" vs "o segundo lote reemitiu tudo"** — a comparação do CT-915 contra o
  *     **retrato anterior**, cobrança a cobrança. Sem ela, um percurso que reemitisse as seis passaria:
- *     ao final, as seis teriam `nosso_numero` não-nulo do mesmo jeito.
+ *     ao final, as seis teriam `numero_do_titulo_no_provedor` não-nulo do mesmo jeito.
  *   * **"o motivo é preservado" vs "o motivo é resumido/traduzido"** — a igualdade byte a byte do
  *     CT-912 contra os dois textos distintos, lidos do **banco** e não do dublê.
  *
@@ -660,7 +660,7 @@ async function conciliacaoDe(codigos: readonly string[]): Promise<ConciliacaoLid
   const linhas = await emUnidade(async (tx) => {
     return await tx<ConciliacaoLida[]>`
       SELECT codigo,
-             nosso_numero AS "numeroDoTituloNoProvedor",
+             numero_do_titulo_no_provedor AS "numeroDoTituloNoProvedor",
              identificador_no_provedor AS "identificadorNoProvedor"
         FROM negocio.cobranca
        WHERE codigo = ANY(${[...codigos]})

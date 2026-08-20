@@ -948,7 +948,7 @@ interface OpcoesDoCenario {
  * Aposenta tudo o que ainda é conferível na empresa — pela porta de produção.
  *
  * `revogarBoleto` é a mesma porta que a apuração usa, e é ela que tira a cobrança do conjunto: sem
- * `nosso_numero`, o primeiro termo do predicado deixa de alcançá-la. Sem isto, a carteira de um caso
+ * `numero_do_titulo_no_provedor`, o primeiro termo do predicado deixa de alcançá-la. Sem isto, a carteira de um caso
  * sobreviveria ao seguinte — a cobrança **paga** continua conferível por trinta dias (CA-16) —, e as
  * contagens do caso passariam a descrever a carteira acumulada em vez do cenário que ele montou.
  */
@@ -1000,7 +1000,7 @@ function pessoaDe(nome: string): DadosDaPessoa {
  *
  * As cobranças recebem boleto pela porta de produção (`gravarBoletoDaCobranca`), e é isso que as põe
  * dentro do conjunto que `selecionarCobrancasAConferir` recorta: o primeiro termo do predicado exige
- * `nosso_numero IS NOT NULL`.
+ * `numero_do_titulo_no_provedor IS NOT NULL`.
  */
 async function semearCenario(empresaId: string, opcoes: OpcoesDoCenario = {}): Promise<Cenario> {
   sequencia += 1;

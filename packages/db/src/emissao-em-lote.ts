@@ -20,8 +20,8 @@
  *
  * {@link selecionarCobrancasSemBoleto} é **um predicado SQL** — `competencia = …` mais os três
  * `IS NULL` —, e é dele, e de mais nada, que sai a idempotência da reexecução: a cobrança que já
- * recebeu boleto tem `nosso_numero` preenchido e **sai do conjunto por construção**, de modo que o
- * segundo lote da mesma competência seleciona exatamente o complemento.
+ * recebeu boleto tem `numero_do_titulo_no_provedor` preenchido e **sai do conjunto por
+ * construção**, de modo que o segundo lote da mesma competência seleciona exatamente o complemento.
  *
  * Escrever, além dele, uma verificação de *"esta cobrança já foi emitida?"* no percurso seria a
  * segunda regra para o mesmo fato — livre para divergir da primeira, e sem nada que acuse quando
@@ -572,10 +572,11 @@ export async function abrirEmissaoEmLote(
 /**
  * O conjunto do lote: as cobranças da competência **em aberto e sem boleto** — o predicado da ADR-0023.
  *
- * Os quatro termos são o predicado inteiro, e não há um quinto escrito em lugar nenhum: a competência
- * pedida, `pago_em IS NULL`, `cancelado_em IS NULL` e `nosso_numero IS NULL`. É deste último que sai a
- * idempotência da reexecução — ver o cabeçalho para por que uma segunda guarda no percurso seria uma
- * segunda regra livre para divergir desta.
+ * Os quatro termos são o predicado inteiro, e não há um quinto escrito em lugar nenhum: a
+ * competência pedida, `pago_em IS NULL`, `cancelado_em IS NULL` e
+ * `numero_do_titulo_no_provedor IS NULL`. É deste último que sai a idempotência da reexecução — ver
+ * o cabeçalho para por que uma segunda guarda no percurso seria uma segunda regra livre para
+ * divergir desta.
  *
  * **Nada além da competência entra**: o Admin não escolhe cobrança (RN-01), e um parâmetro a mais aqui
  * seria a seleção deixando de ser do sistema.
@@ -607,7 +608,7 @@ export async function selecionarCobrancasSemBoleto(
      WHERE competencia = ${competencia}::date
        AND pago_em IS NULL
        AND cancelado_em IS NULL
-       AND nosso_numero IS NULL
+       AND numero_do_titulo_no_provedor IS NULL
      ORDER BY codigo
   `;
 

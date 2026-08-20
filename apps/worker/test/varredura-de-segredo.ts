@@ -56,8 +56,15 @@ import type { Logger } from '@sysloc/shared';
 //        privados em `apps/api/test/segredo-nao-escapa.e2e.spec.ts`. Endurecer a busca de um lado —
 //        acrescentar uma normalização, um canal de controle — deixa o outro para trás, e a
 //        divergência sai como medição que aprova num processo o que reprovaria no outro.
-// QUANDO FECHA: o TERCEIRO consumidor fora de `apps/worker/test/` (a fatia (iii), do carnê, é a
-//        candidata), ou a primeira alteração das formas buscadas por {@link ocorrenciasDe}.
+// QUANDO FECHA: o TERCEIRO consumidor fora de `apps/worker/test/`, ou a primeira alteração das
+//        formas buscadas por {@link ocorrenciasDe}.
+//        ⚠️ **A candidata registrada era a fatia (iii), do carnê, e a previsão foi REFUTADA por
+//        medição na T8 dela (2026-08-19)**: o `CT-990` de `./notificacao-bancaria.spec.ts` é o
+//        QUARTO consumidor — e é o quarto **dentro** desta casa, ao lado de `./emissao-em-lote.spec.ts`,
+//        `./conferencia-bancaria.spec.ts` e `./ambiente.spec.ts`. Consumidor de dentro **importa** o
+//        molde em vez de copiá-lo, então ele não move o gatilho: as cópias continuam sendo duas, e o
+//        limiar de três do `CLAUDE.md` segue sem disparar. A previsão sai daqui porque a frase que
+//        nomeia a fatia futura envelhece antes do débito que ela justifica.
 // POR QUE NÃO AGORA: a casa comum seria `packages/shared/test/`, e a cópia de `apps/api` carrega
 //        acessórios que só fazem sentido lá (as superfícies de uma resposta HTTP, as agulhas do ato
 //        vencido, a operação de controle do documento publicado). Subir só a metade comum obrigaria

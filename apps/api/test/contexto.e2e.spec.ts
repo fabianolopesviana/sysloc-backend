@@ -33,6 +33,12 @@
  * |       |        | conjunto vem da TABELA DO ROTEADOR já montado, e não do gancho `onRoute`:
  * |       |        | rota registrada direto no adaptador durante a montagem entra no inventário,
  * |       |        | e a perna de controle nomeia as oito que o gancho perde. (§11.1) |
+ * | CA-01 | CT-020 | O transporte da montagem REAL recusa corpo acima de {@link MAIOR_CORPO_ACEITO}
+ * |       | (e)    | com `413 REQUISICAO_RECUSADA`, e **nada é gravado**; o mesmo JSON logo abaixo do
+ * |       |        | teto é aceito com `204` e grava uma linha. O par discrimina o teto DECLARADO do
+ * |       |        | padrão de 1 MiB do arcabouço, sob o qual as duas requisições caberiam. O alvo é
+ * |       |        | a rota de fato de terceiro, que grava o corpo verbatim sem sessão nem portador
+ * |       |        | de segredo. (ADR-0035, §11.5 do tech spec de `webhook-e-carne`) |
  * | CA-15 | CT-029 | Percorrido o fluxo real de entrada, nenhuma linha do registro carrega senha,
  * |       |        | código de segundo fator, valor do cookie de sessão nem o segredo que viajou
  * |       |        | em cadeia de consulta — E o registro NÃO ficou mudo: cada requisição
@@ -178,9 +184,15 @@ import {
   SEGMENTO_DA_VERIFICACAO,
   SEGMENTO_DO_REGISTRO,
 } from '../src/integracoes-bancarias/certificado.controller.ts';
-import { CAMINHO_DO_CONTRATO, CAMINHO_DO_DOCUMENTO, criarAplicacao } from '../src/main.ts';
+import {
+  CAMINHO_DO_CONTRATO,
+  CAMINHO_DO_DOCUMENTO,
+  criarAplicacao,
+  MAIOR_CORPO_ACEITO,
+} from '../src/main.ts';
 import { CAMINHO_DO_MASTER } from '../src/master/empresa.controller.ts';
 import { CAMINHO_DE_MULTA_E_JUROS } from '../src/mora/mora.controller.ts';
+import { CAMINHO_DAS_NOTIFICACOES_BANCARIAS } from '../src/notificacoes-bancarias/notificacao-bancaria.controller.ts';
 import { CAMINHO_DOS_USUARIOS } from '../src/usuarios/usuario.controller.ts';
 import { decodificarBase32 } from './base32.ts';
 
@@ -189,6 +201,26 @@ const LIMITE_DE_MONTAGEM_MS = 240_000;
 
 /** Limite de um caso que atravessa HTTP e banco várias vezes. */
 const LIMITE_CASO_MS = 60_000;
+
+/**
+ * Distância, em bytes, de cada lado do teto de corpo no `CT-020 (e)`.
+ *
+ * Ela existe para que as duas requisições do par fiquem inequivocamente de cada lado da fronteira,
+ * sem depender do tamanho exato do envelope JSON (`{"enchimento":"…"}`, dezessete bytes — quinze
+ * antes do valor e dois depois). Um valor
+ * menor que o envelope faria a requisição "abaixo do teto" cruzá-lo por acidente, e o caso passaria
+ * a medir outra coisa.
+ */
+const MARGEM_DO_TETO = 1024;
+
+/**
+ * O status com que o transporte recusa corpo acima do teto — `413`.
+ *
+ * Constante nomeada, e não número solto no caso, porque ele é a **fronteira** que o `CT-020 (e)`
+ * existe para provar: é o valor que separa "o teto está declarado" de "vale o padrão de 1 MiB do
+ * arcabouço", em que a mesma requisição responderia `204`.
+ */
+const STATUS_DE_CORPO_GRANDE_DEMAIS = 413;
 
 /** Sufixo do nome do cookie de sessão do arcabouço — o prefixo `__Secure-` vem da configuração. */
 const SUFIXO_DO_COOKIE_DE_SESSAO = 'session_token';
@@ -310,8 +342,11 @@ const CAMINHOS_PUBLICOS_ACEITOS: readonly string[] = [
   '/saude/pronto',
   `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/*`,
   // SUT_IS_CORRECT_BECAUSE: a **T11** da fatia `documentos-e-confirmacao` publicou
-  // `POST /v1/confirmacoes-de-email`, a **única rota de negócio sem sessão do produto** (ADR-0027), e
-  // este é o lado da igualdade a que ela pertence: a sonda sem cookie **não** recebe `401
+  // `POST /v1/confirmacoes-de-email`, a **primeira** rota de negócio sem sessão do produto — o ato do
+  // titular do dado, com portador de segredo de uso único (ADR-0027). ⚠️ O texto original dizia
+  // "única", e a **T6** da fatia `webhook-e-carne` o falsificou: hoje são **duas**, e a segunda é
+  // `POST /v1/notificacoes-bancarias`, a entrada de fato de terceiro (ADR-0035) — enumerada logo
+  // abaixo. Este é o lado da igualdade a que a rota da confirmação pertence: a sonda sem cookie **não** recebe `401
   // NAO_AUTENTICADO` dela — recebe `422 CAMPO_INVALIDO`, porque o corpo vazio morre no esquema, o que
   // é ele próprio a prova de que a requisição **atravessou** a guarda em vez de ser barrada por ela.
   // É a primeira entrada deste inventário que não é saúde, arcabouço de identidade ou contrato
@@ -324,6 +359,22 @@ const CAMINHOS_PUBLICOS_ACEITOS: readonly string[] = [
   // débito **D26 (F2/T6)**: a §5.2 das tasks não conta as âncoras de inventário que a publicação de
   // rota obriga a tocar. A divergência é registrada aqui em vez de silenciada.
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_CONFIRMACOES}`,
+  // SUT_IS_CORRECT_BECAUSE: a **T6** da fatia `webhook-e-carne` publicou a **segunda** rota de
+  // negócio sem sessão do produto — `POST /v1/notificacoes-bancarias` —, e este é o lado da
+  // igualdade a que ela pertence: a sonda sem cookie **não** recebe `401 NAO_AUTENTICADO` dela —
+  // recebe `204`, porque o corpo ausente é gravado como fato vazio, o que é ele próprio a prova de
+  // que a requisição **atravessou** a guarda em vez de ser barrada por ela.
+  //
+  // ⚠️ **O critério dela NÃO é o da ADR-0027**, e a distinção é conteúdo: aqui quem age é o provedor
+  // bancário, que não é titular do dado e não apresenta portador de segredo algum. O que autoriza a
+  // dispensa é a **ADR-0035** (entrada de fato de terceiro), e é por isso que ela precisa aparecer
+  // aqui nomeada: a autorização só é auditável se o inventário a registrar. **Nenhuma entrada
+  // anterior saiu**, a igualdade segue exata nos dois sentidos, e `semDeclaracao` continua vazio.
+  //
+  // ⚠️ **Este arquivo não está na §5.2 da T6** — é a **décima terceira** anotação consecutiva do
+  // débito **D26 (F2/T6)**: a §5.2 das tasks não conta as âncoras de inventário que a publicação de
+  // rota obriga a tocar. A divergência é registrada aqui em vez de silenciada.
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_NOTIFICACOES_BANCARIAS}`,
 ].sort();
 
 /**
@@ -589,6 +640,25 @@ const ROTAS_PROTEGIDAS_ACEITAS: readonly string[] = [
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo/ativacao`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo/cancelamento`,
+  // SUT_IS_CORRECT_BECAUSE: a **T10** da fatia `webhook-e-carne` publicou
+  // `GET /v1/contratos/:codigo/carne` — a segunda rota de **bytes** deste controlador —, e ela é
+  // **protegida**: vale a exigência da classe (`@ExigeChave('TELA:contratos')`), ela **não** declara
+  // nada no método (ADR-0018), não é marcada `@RotaPublica()`, e por isso a sonda sem cookie recebe
+  // `401 NAO_AUTENTICADO` da guarda antes de qualquer exigência de chave ser avaliada. Pela
+  // classificação por **caminho** deste caso ela entra como **uma** entrada nova, porque nenhum
+  // outro método atende aquele caminho. **Nenhuma entrada anterior saiu**, o conjunto público
+  // continua inalterado — a rota **sem sessão** desta fatia é a da notícia bancária, publicada pela
+  // T6, e o lugar dela é o conjunto público, não este —, e a igualdade segue exata nos dois
+  // sentidos: uma rota nova que tivesse dispensado sessão apareceria no OUTRO conjunto e reprovaria
+  // como excedente. Vale aqui, palavra por palavra, o parágrafo da T7 da fatia
+  // `documentos-e-confirmacao` no docblock acima — o tipo de mídia da resposta bem-sucedida não
+  // participa da pergunta que este inventário faz.
+  //
+  // ⚠️ **Este arquivo não está na §5.2 da T10** — é a **décima quinta** anotação consecutiva do
+  // débito **D26 (F2/T6)**: a §5.2 das tasks conta `cobertura-de-autorizacao.e2e.spec.ts` e continua
+  // sem contar este inventário, que a publicação de rota obriga a tocar pela mesma razão. A âncora
+  // **sobe**; ela não vira contenção.
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo/carne`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo/documento`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo/recirculacao`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}/:codigo/retirada`,
@@ -1223,6 +1293,67 @@ describe('guarda de contexto, rotas públicas e sessão corrente (T9)', () => {
   );
 
   it(
+    'CT-020 (e) — o transporte da aplicação real recusa corpo acima do teto, e nada é gravado',
+    async () => {
+      // -----------------------------------------------------------------------------------------
+      // Por que este caso mora AQUI, e não na suíte da notícia bancária
+      // -----------------------------------------------------------------------------------------
+      //
+      // O teto é opção do **adaptador HTTP**, declarada em `criarAplicacao()`
+      // ({@link MAIOR_CORPO_ACEITO}). Ele é, portanto, propriedade da montagem que atende em
+      // operação — e esta é a única suíte que a sobe (`aplicacaoReal`) tendo, ao mesmo tempo,
+      // acesso cru ao banco para separar "respondeu" de "respondeu e gravou". Medi-lo contra uma
+      // remontagem de teste provaria o teto da remontagem, que não é o que protege o produto.
+      //
+      // O alvo é `POST /v1/notificacoes-bancarias` porque é a rota em que o teto importa: a única
+      // que grava o corpo verbatim sem exigir sessão nem portador de segredo (ADR-0035).
+      const rotaDaNoticia = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_NOTIFICACOES_BANCARIAS}`;
+      const antes = await notificacoesGravadas();
+
+      // -----------------------------------------------------------------------------------------
+      // O PAR QUE DISCRIMINA — e o que ele reprova
+      // -----------------------------------------------------------------------------------------
+      //
+      // As duas requisições são JSON **bem formado**, e diferem SÓ no tamanho: uma logo abaixo do
+      // teto, outra logo acima. Isso é o que separa a recusa por tamanho da recusa por forma, que já
+      // tem caso próprio (`CT-971 (b)`).
+      //
+      // Sem o teto declarado valeria o padrão do arcabouço, **1 MiB**, e as DUAS caberiam: a de cima
+      // responderia `204` e gravaria uma linha. É essa asserção — o status da requisição acima do
+      // teto, somada ao delta de UMA e não DUAS linhas — que reprova com o código anterior.
+      const abaixo = await pedir(baseReal, rotaDaNoticia, {
+        metodo: 'POST',
+        corpo: { enchimento: 'x'.repeat(MAIOR_CORPO_ACEITO - MARGEM_DO_TETO) },
+      });
+      const acima = await pedir(baseReal, rotaDaNoticia, {
+        metodo: 'POST',
+        corpo: { enchimento: 'x'.repeat(MAIOR_CORPO_ACEITO + MARGEM_DO_TETO) },
+      });
+
+      // Os dois status lado a lado numa comparação só: a falha nomeia qual metade divergiu, e a
+      // metade de baixo é a âncora antivácuo — sem ela, uma rota que não existisse satisfaria a
+      // recusa por não ser nada.
+      expect({ abaixo: abaixo.status, acima: acima.status }).toEqual({
+        abaixo: 204,
+        acima: STATUS_DE_CORPO_GRANDE_DEMAIS,
+      });
+
+      // A recusa sai no envelope canônico do produto, e não na forma do arcabouço: `413` não está na
+      // tabela de status nomeados do filtro, então ele cai na classificação por faixa — recusa de
+      // cliente, com o status de origem preservado.
+      expect(acima.corpo).toEqual({
+        codigo: CodigoErro.REQUISICAO_RECUSADA,
+        mensagem: 'requisição recusada',
+      });
+
+      // A CONTAGEM CRUA é o que separa "respondeu" de "respondeu e gravou": **uma** linha, a da
+      // requisição que coube. O corpo recusado não chegou a ser corpo, e não chegou a ser fato.
+      expect(await notificacoesGravadas()).toBe(antes + 1);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
     'CT-220 — a sessão publica exatamente 11 campos, e os conjuntos são exatamente o efetivo',
     async () => {
       const cookie = await entrar(baseReal, ADMIN_DE_A.email);
@@ -1562,6 +1693,22 @@ interface LeituraDeVinculos {
 /** Identificadores de um conjunto de vínculos da carga, na ordem em que o banco os devolve. */
 function identificadoresOrdenados(acessos: readonly { readonly id: string }[]): string[] {
   return acessos.map((acesso) => acesso.id).sort();
+}
+
+/**
+ * Quantas linhas cruas de notícia bancária existem hoje — a contagem do `CT-020 (e)`.
+ *
+ * É o que separa *"respondeu"* de *"respondeu e gravou"*. A leitura corre **sem** contexto de
+ * tenant, e sucede assim mesmo: `plataforma.notificacao_bancaria` não tem dono-empresa (ADR-0031).
+ */
+async function notificacoesGravadas(): Promise<number> {
+  return await acessoAoNegocio.emUnidadeDeTrabalho(async (tx) => {
+    const [linha] = await tx<{ total: string }[]>`
+      SELECT count(*)::text AS total FROM plataforma.notificacao_bancaria
+    `;
+
+    return Number.parseInt(linha?.total ?? '-1', 10);
+  });
 }
 
 /**

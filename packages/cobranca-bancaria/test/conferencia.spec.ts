@@ -20,7 +20,7 @@
  * |          |        | ponto **permanece**, a 5ª fica intocada, e a conferência é **fechada assim
  * |          |        | mesmo**, com `concluida_em` não-nulo e as contagens do que de fato correu. |
  * | CA-17    | CT-930 | Boleto revogado pelo provedor — por motivo **reconhecido** OU por motivo que
- * | CA-20    |        | o produto **não reconhece** —: `cancelado_em IS NULL`, `nosso_numero IS
+ * | CA-20    |        | o produto **não reconhece** —: `cancelado_em IS NULL`, `numero_do_titulo_no_provedor IS
  * |          |        | NULL`, o estado derivado continua em aberto (`VENCIDA` e `A_VENCER`, um de
  * |          |        | cada), `identificador_no_provedor` **sobrevive**, o arquivo sai do disco, e
  * |          |        | cada uma tem **1** evento `{BOLETO_REVOGADO, CONFERENCIA}` com `diagnostico`
@@ -509,7 +509,7 @@ interface CobrancaSemeada {
  * Aposenta tudo o que ainda é elegível na empresa do cenário — pela porta de produção.
  *
  * `revogarBoleto` é a mesma porta que a apuração usa, e é ela que tira a cobrança do conjunto: sem
- * `nosso_numero`, o primeiro termo do predicado deixa de alcançá-la. Ver o cabeçalho para por que a
+ * `numero_do_titulo_no_provedor`, o primeiro termo do predicado deixa de alcançá-la. Ver o cabeçalho para por que a
  * carteira precisa ser preparada por caso.
  */
 async function esvaziarCarteira(cenario: Cenario): Promise<void> {
@@ -1314,7 +1314,13 @@ describe('CT-938 — a trilha registra efeito e nunca a tentativa que nada mudou
       ]);
 
       // ⚠️ Nenhum evento de tipo `CONFERENCIA` existe — a conferência é **origem**, nunca **tipo**. O
-      // enum tem seis valores, afirmados por igualdade de lista contra a fonte única do contrato.
+      // enum tem sete valores, afirmados por igualdade de lista contra a fonte única do contrato.
+      //
+      // SUT_IS_CORRECT_BECAUSE: eram SEIS até a fatia `webhook-e-carne`, que acrescentou
+      // `NOTICIA_RECUSADA` ao fim por decisão declarada na §1 da T2 dela. Ele é **desfecho anômalo**
+      // — a notícia do provedor cujo número de título diverge do gravado —, que é a segunda metade
+      // literal da `Decision` da ADR-0034, e não tentativa. O que este caso afirma não mudou:
+      // `CONFERENCIA` continua ausente da lista, que é o invariante sob prova aqui.
       expect([...TIPOS_DE_EVENTO_BANCARIO]).toEqual([
         'BOLETO_EMITIDO',
         'BOLETO_REVOGADO',
@@ -1322,6 +1328,7 @@ describe('CT-938 — a trilha registra efeito e nunca a tentativa que nada mudou
         'COBRANCA_LIQUIDADA',
         'LIQUIDACAO_ESTORNADA',
         'DIVERGENCIA_DE_VALOR',
+        'NOTICIA_RECUSADA',
       ]);
 
       const antes = await eventosNaTrilha(CENARIO_DE_A);

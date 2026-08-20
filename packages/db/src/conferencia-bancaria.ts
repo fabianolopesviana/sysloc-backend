@@ -23,16 +23,17 @@
  * com boleto emitido*:
  *
  * ```
- * nosso_numero IS NOT NULL
+ * numero_do_titulo_no_provedor IS NOT NULL
  *   AND ((pago_em IS NULL AND cancelado_em IS NULL)
  *        OR pago_em >= negocio.data_corrente_da_operacao() - INTERVAL '30 days')
  * ```
  *
- * ⚠️ **Os parênteses do segundo termo são conteúdo, não estilo.** `AND` liga mais forte que `OR`, de
- * modo que escrevê-lo sem eles produz `(nosso_numero IS NOT NULL AND em aberto) OR (paga há ≤30 dias)`
- * — e a cobrança **paga e sem boleto** entra no conjunto, isto é, o produto passa a perguntar ao
- * provedor por um título que nunca existiu. O arranjo do `CT-929` carrega exatamente essa intrusa,
- * para que a perda dos parênteses apareça nomeada em vez de passar.
+ * ⚠️ **Os parênteses do segundo termo são conteúdo, não estilo.** `AND` liga mais forte que `OR`,
+ * de modo que escrevê-lo sem eles produz
+ * `(numero_do_titulo_no_provedor IS NOT NULL AND em aberto) OR (paga há ≤30 dias)` — e a cobrança
+ * **paga e sem boleto** entra no conjunto, isto é, o produto passa a perguntar ao provedor por um
+ * título que nunca existiu. O arranjo do `CT-929` carrega
+ * exatamente essa intrusa, para que a perda dos parênteses apareça nomeada em vez de passar.
  *
  * **A janela dos 30 dias é medida contra `negocio.data_corrente_da_operacao()`, e não contra
  * `new Date()`** (ADR-0026): o instante que decide comportamento é fato do banco. Um relógio do
@@ -206,10 +207,10 @@ export interface ContagensDaConferencia {
  * (`liquidarPeloProvedor`, `estornarLiquidacao`, `revogarBoleto`, todas por código) e por onde a
  * prestação de contas a nomeia.
  *
- * `numeroDoTituloNoProvedor` é a coluna `nosso_numero`, publicada aqui **com o nome do produto**: é
- * por ele que se pergunta ao provedor pela situação do título, e é o campo que o primeiro termo do
- * predicado exige não-nulo. Por isso o tipo é `string`, e não `string | null`: a não-nulidade é
- * garantida **pelo predicado**, não por uma conferência escrita depois da leitura.
+ * `numeroDoTituloNoProvedor` é a coluna `numero_do_titulo_no_provedor`, publicada aqui **com o nome
+ * do produto**: é por ele que se pergunta ao provedor pela situação do título, e é o campo que o
+ * primeiro termo do predicado exige não-nulo. Por isso o tipo é `string`, e não `string | null`: a
+ * não-nulidade é garantida **pelo predicado**, não por uma conferência escrita depois da leitura.
  *
  * **E nada além dos três.** Replicar aqui valor, vencimento ou locatário criaria uma segunda projeção
  * da cobrança ao lado de `colunasDaCobranca`, livre para divergir dela — é a razão literal que o
@@ -222,7 +223,10 @@ export interface ContagensDaConferencia {
 export interface CobrancaAConferir {
   readonly id: string;
   readonly codigo: string;
-  /** A coluna `nosso_numero` — não-nula **por força do predicado** que define este conjunto. */
+  /**
+   * A coluna `numero_do_titulo_no_provedor` — não-nula **por força do predicado** que define este
+   * conjunto.
+   */
   readonly numeroDoTituloNoProvedor: string;
 }
 
@@ -423,11 +427,11 @@ export async function abrirConferencia(
 /**
  * O conjunto a conferir: **um** predicado, com a janela dos 30 dias contra o relógio do banco (CA-16).
  *
- * Os termos são o predicado inteiro, e não há um quarto escrito em lugar nenhum: `nosso_numero IS NOT
- * NULL` mais a união de *em aberto* com *paga há 30 dias ou menos*. Ver o cabeçalho deste arquivo para
- * por que os parênteses do segundo termo são conteúdo, por que a borda é inclusiva, e por que a
- * cobrança sem boleto fica de fora **por construção** — com a consequência de a que ficou sem boleto
- * ser recolhida pelo lote seguinte, e não por aqui.
+ * Os termos são o predicado inteiro, e não há um quarto escrito em lugar nenhum:
+ * `numero_do_titulo_no_provedor IS NOT NULL` mais a união de *em aberto* com *paga há 30 dias ou
+ * menos*. Ver o cabeçalho deste arquivo para por que os parênteses do segundo termo são conteúdo,
+ * por que a borda é inclusiva, e por que a cobrança sem boleto fica de fora **por construção** —
+ * com a consequência de a que ficou sem boleto ser recolhida pelo lote seguinte, e não por aqui.
  *
  * **Não há parâmetro nenhum além do executor**, e a ausência é decisão: o conjunto é do sistema, e uma
  * janela de dias recebida de fora daria a quem chama o poder de mudar a regra da RN-11 por chamada.
@@ -454,9 +458,9 @@ export async function selecionarCobrancasAConferir(
   const linhas = await tx<CobrancaAConferir[]>`
     SELECT id,
            codigo,
-           nosso_numero AS "numeroDoTituloNoProvedor"
+           numero_do_titulo_no_provedor AS "numeroDoTituloNoProvedor"
       FROM negocio.cobranca
-     WHERE nosso_numero IS NOT NULL
+     WHERE numero_do_titulo_no_provedor IS NOT NULL
        AND ((pago_em IS NULL AND cancelado_em IS NULL)
             OR pago_em >= negocio.data_corrente_da_operacao() - INTERVAL '30 days')
      ORDER BY codigo

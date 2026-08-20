@@ -470,7 +470,7 @@ const UNIDADES_DECLARADAS: readonly string[] = Object.freeze([
 ]);
 
 /**
- * As filas BullMQ que o repositório declara — **duas**, e nenhuma delas move estado publicado.
+ * As filas BullMQ que o repositório declara — **seis**, e nenhuma delas move estado publicado.
  *
  * O card pede *"a fila tem `0` tarefas enfileiradas"*. Contra uma fila real isso exigiria subir Redis
  * dentro da suíte da camada de dados, o que atravessaria uma fronteira que este pacote não tem; e a
@@ -513,7 +513,17 @@ const UNIDADES_DECLARADAS: readonly string[] = Object.freeze([
  * Nenhuma das duas roda por relógio: as duas são disparadas por **ato do Admin**, numa rota que
  * exige sessão.
  *
- * A asserção **não afrouxa**: segue por igualdade sobre a lista inteira, de modo que uma sexta fila —
+ * SUT_IS_CORRECT_BECAUSE: a **T6** da fatia `webhook-e-carne` declara `notificacao-bancaria`, e o
+ * código de produção está certo. Ela é a **entrada da notícia de terceiro** (ADR-0035): a borda grava
+ * o recebido cru em `plataforma.notificacao_bancaria` e enfileira o tratamento, que é o oposto exato
+ * do que a ADR-0022 proíbe — não há rotina de relógio nenhuma, e o disparo é o **fato chegando de
+ * fora**, nunca um agendamento. O que o tratamento grava adiante são de novo **fatos com o instante
+ * em que aconteceram** (`pago_em`, `valor_pago`), pela mesma leitura que pôs `conferencia-bancaria`
+ * nesta lista com a T15 — e o Passo 4 deste mesmo caso continua provando que as quatro colunas de
+ * estado do legado **não existem** em `negocio.cobranca`, de modo que não há onde uma rotina
+ * escrevesse estado publicado.
+ *
+ * A asserção **não afrouxa**: segue por igualdade sobre a lista inteira, de modo que uma sétima fila —
  * uma `cobranca-vencida`, que é a forma exata do defeito — reprova o caso nomeando-a.
  */
 const FILAS_DECLARADAS: readonly string[] = Object.freeze([
@@ -521,6 +531,7 @@ const FILAS_DECLARADAS: readonly string[] = Object.freeze([
   'confirmacao-de-email',
   'eco',
   'emissao-em-lote',
+  'notificacao-bancaria',
   'regua-de-cobranca',
 ]);
 
@@ -1606,7 +1617,7 @@ describe('CT-532 — acusar pagamento preserva os seis campos de conciliação b
       const depois = await lerConciliacaoCrua(cenario.contexto, cobranca.codigo);
       const esperada = conciliacaoEsperada(dataDeCredito);
 
-      expect(depois.nosso_numero).toBe(esperada.nosso_numero);
+      expect(depois.numero_do_titulo_no_provedor).toBe(esperada.numero_do_titulo_no_provedor);
       expect(depois.linha_digitavel).toBe(esperada.linha_digitavel);
       expect(depois.codigo_barras).toBe(esperada.codigo_barras);
       expect(depois.data_credito).toBe(esperada.data_credito);
@@ -1998,7 +2009,7 @@ const COLUNAS_DA_COBRANCA: readonly string[] = Object.freeze([
   'multa_aplicada',
   'multa_percentual_aplicado',
   'natureza',
-  'nosso_numero',
+  'numero_do_titulo_no_provedor',
   'pago_em',
   'referencia',
   'valor_creditado',
@@ -2013,7 +2024,7 @@ const COLUNAS_DA_COBRANCA: readonly string[] = Object.freeze([
  * repetidos deixariam duas colunas trocadas passarem. A `data_credito` não está aqui porque é
  * posicionada por deslocamento relativo ao relógio do banco — ver {@link conciliacaoEsperada}.
  */
-const NOSSO_NUMERO = '00000000000123456789';
+const NUMERO_DO_TITULO_NO_PROVEDOR = '00000000000123456789';
 const LINHA_DIGITAVEL = '75690.00001 00000.000000 00000.000000 1 00000000200000';
 const CODIGO_DE_BARRAS = '75691000000000200000000010000000000000000000';
 const VALOR_CREDITADO = '2000.00';
@@ -2639,7 +2650,7 @@ async function lerCarimbosCrus(contexto: Contexto, codigo: string): Promise<Cari
 
 /** Os seis campos de conciliação bancária, lidos cruamente da tabela. */
 interface ConciliacaoCrua {
-  readonly nosso_numero: string | null;
+  readonly numero_do_titulo_no_provedor: string | null;
   readonly linha_digitavel: string | null;
   readonly codigo_barras: string | null;
   readonly data_credito: string | null;
@@ -2669,7 +2680,7 @@ async function escreverConciliacao(
   const alcancadas = await emUnidade(contexto, async (tx) => {
     const linhas = await tx<{ codigo: string }[]>`
       UPDATE negocio.cobranca
-         SET nosso_numero = ${NOSSO_NUMERO},
+         SET numero_do_titulo_no_provedor = ${NUMERO_DO_TITULO_NO_PROVEDOR},
              linha_digitavel = ${LINHA_DIGITAVEL},
              codigo_barras = ${CODIGO_DE_BARRAS},
              data_credito = ${dataDeCredito},
@@ -2691,7 +2702,7 @@ async function escreverConciliacao(
 async function lerConciliacaoCrua(contexto: Contexto, codigo: string): Promise<ConciliacaoCrua> {
   return await emUnidade(contexto, async (tx) => {
     const [linha] = await tx<ConciliacaoCrua[]>`
-      SELECT nosso_numero,
+      SELECT numero_do_titulo_no_provedor,
              linha_digitavel,
              codigo_barras,
              to_char(data_credito, 'YYYY-MM-DD') AS data_credito,
@@ -2712,7 +2723,7 @@ async function lerConciliacaoCrua(contexto: Contexto, codigo: string): Promise<C
 /** O que os seis campos têm de valer — a data entra por parâmetro porque é relativa ao relógio. */
 function conciliacaoEsperada(dataDeCredito: string): ConciliacaoCrua {
   return {
-    nosso_numero: NOSSO_NUMERO,
+    numero_do_titulo_no_provedor: NUMERO_DO_TITULO_NO_PROVEDOR,
     linha_digitavel: LINHA_DIGITAVEL,
     codigo_barras: CODIGO_DE_BARRAS,
     data_credito: dataDeCredito,

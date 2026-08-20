@@ -20,8 +20,15 @@
  * |       | (b)    | em empresa alguma — responde `404` com o envelope canônico asserido como
  * |       |        | **objeto inteiro**, e **não** lista vazia: são fatos diferentes, e a lista vazia
  * |       |        | é a resposta legítima da cobrança que existe e ainda não teve efeito bancário. |
+ * | CA-13 | CT-983 | O histórico **distingue a origem** de cada efeito: a cobrança acumula três
+ * |       |        | itens, e a lista ordenada de `(tipo, origem)` é **exatamente**
+ * |       |        | `[(BOLETO_EMITIDO, ATO_DO_ADMIN), (COBRANCA_LIQUIDADA, NOTICIA_DO_PROVEDOR),
+ * |       |        | (BOLETO_REVOGADO, CONFERENCIA)]`. A liquidação nasce da **tarefa real** que
+ * |       |        | trata a notícia recebida do provedor; a revogação, do percurso real da
+ * |       |        | conferência de rotina — que **é o controle**: sem ela, um produto que
+ * |       |        | carimbasse tudo como notícia passaria. |
  *
- * Rastreabilidade: `CA-13 → CT-925, CT-925 (b) (RN-05)`.
+ * Rastreabilidade: `CA-13 → CT-925, CT-925 (b), CT-983 (RN-05)`.
  *
  * ⚠️ **O companheiro negativo por EMPRESA é o `CT-926`, da T17**, em
  * `apps/api/test/recusa-indistinguivel.e2e.spec.ts`: lá a sessão da empresa B pede o histórico com o
@@ -77,6 +84,22 @@
  * da porta de cobrança, por `overrideProvider(TOKEN_PORTA_DE_COBRANCA_BANCARIA)` — o mecanismo do
  * arcabouço de teste, não um caminho aberto no código de produção. É a mesma forma, e a mesma razão,
  * de `boleto-da-cobranca.e2e.spec.ts` e de `certificado-do-provedor.e2e.spec.ts`.
+ *
+ * ===========================================================================
+ * O CT-983 ATRAVESSA A FILA REAL, e a origem `NOTICIA_DO_PROVEDOR` não é escrita à mão
+ * ===========================================================================
+ *
+ * O item de trilha que ele afirma nasce do caminho inteiro: `POST /v1/notificacoes-bancarias` grava o
+ * cru e enfileira na instância **efêmera** que esta suíte já sobe, e o consumidor registrado no
+ * `beforeAll` — a **mesma** fiação de `apps/worker/src/main.ts` — executa a tarefa real, que roteia,
+ * confere, consulta a porta e grava o efeito. Escrever a linha direto em `negocio.evento_bancario`
+ * provaria a **consulta** e não o **produtor**, que é a razão já registrada acima para os quatro
+ * efeitos do `CT-925`.
+ *
+ * ⚠️ **A porta que o consumidor recebe é OUTRA**, e não {@link portaDoProvedor}: aquela recusa a
+ * consulta de propósito, e a decisão dela é preservada. A da tarefa vive junto do caso, responde
+ * `LIQUIDADO` e chega à borda **por parâmetro**, como a composição raiz do processo de trabalho a
+ * entrega (ADR-0025).
  */
 
 import { randomBytes } from 'node:crypto';
@@ -103,12 +126,13 @@ import {
   escreverAjustes,
   liquidarPeloProvedor,
   localizarCobranca,
+  type NotificacaoBancariaPersistida,
   registrarEventoBancario,
   revogarBoleto,
   SENHA_DA_CARGA,
   selecionarCobrancasAConferir,
 } from '@sysloc/db';
-import { criarSegredoOperavel } from '@sysloc/shared';
+import { criarLogger, criarSegredoOperavel } from '@sysloc/shared';
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)
@@ -134,8 +158,16 @@ import {
   gerarAutoridadeDeTeste,
   gerarMaterialDeTeste,
 } from '../../../packages/cobranca-bancaria/test/material-de-teste.ts';
-import { reservarPorta } from '../../../packages/shared/test/efemero-comum.ts';
+import { reservarPorta, sondarAte } from '../../../packages/shared/test/efemero-comum.ts';
 import { type FilaEfemera, redisEfemero } from '../../../packages/shared/test/redis-efemero.ts';
+// A fiação do `worker` é alcançada pelo caminho do fonte, e não por especificador de pacote: ele é
+// aplicação privada, sem `exports`. A razão de estar aqui é o que o cabeçalho declara — a `origem`
+// que o `CT-983` afirma só nasce do produtor real, e o produtor real é a tarefa do processo de
+// trabalho. Nada de `apps/api/src` importa daqui: a aresta existe só na verificação, e só nesta
+// direção. É a mesma aresta, e a mesma razão, de `./confirmacao-de-email.e2e.spec.ts`:
+// ÍNDICE: docs/specs/features/documentos-e-confirmacao/v1/_run/run-report.md §2, D13
+import { conectarFila, type Fila } from '../../worker/src/fila.ts';
+import { processarNotificacaoBancaria } from '../../worker/src/tarefas/notificacao-bancaria.ts';
 import { AppModule } from '../src/app.module.ts';
 import { PREFIXO_DAS_ROTAS_DE_IDENTIDADE } from '../src/autenticacao/autenticacao.module.ts';
 import { CAMINHO_DA_SESSAO } from '../src/autenticacao/sessao.controller.ts';
@@ -156,6 +188,7 @@ import {
   CAMINHO_DAS_INTEGRACOES_BANCARIAS,
   SEGMENTO_DO_REGISTRO,
 } from '../src/integracoes-bancarias/certificado.controller.ts';
+import { CAMINHO_DAS_NOTIFICACOES_BANCARIAS } from '../src/notificacoes-bancarias/notificacao-bancaria.controller.ts';
 import { cpfValido } from './documento.ts';
 
 /** Limite da montagem: banco migrado, semente com credencial, fila e a aplicação instrumentada. */
@@ -284,6 +317,34 @@ const COBRANCA_INEXISTENTE = 'COB-2099-0000001';
 /** A pessoa que age: `USUARIO_EMPRESA` da empresa A, **da carga**. */
 const QUEM_AGE = pessoaSemeada('usuario.a@exemplo.com.br');
 
+/**
+ * O consumidor da notícia bancária — a **mesma** fiação de `apps/worker/src/main.ts`.
+ *
+ * Ele é registrado uma vez, no `beforeAll`, sobre a instância efêmera que esta suíte já sobe: é o
+ * `POST` da rota pública que enfileira, e é ele que trata. Ver o cabeçalho.
+ */
+let filaDoWorker: Fila;
+
+/** A rota **sem sessão** por onde o provedor avisa. Composta, nunca escrita à mão. */
+const ROTA_DA_NOTICIA = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_NOTIFICACOES_BANCARIAS}`;
+
+/**
+ * Os três pares `(tipo, origem)` que o `CT-983` afirma, **na ordem em que ocorreram**.
+ *
+ * Escritos à mão, e não derivados do corpo observado. ⚠️ **A sequência não é palíndroma**, pela mesma
+ * razão registrada no cabeçalho para o `CT-925`: uma rota que publicasse a ordem da porta de dados
+ * reprova aqui. E o item de `CONFERENCIA` **é o controle** — sem ele, um produto que carimbasse tudo
+ * como notícia passaria.
+ */
+const TRILHA_ESPERADA_DO_CT983: readonly { tipo: string; origem: string }[] = [
+  { tipo: 'BOLETO_EMITIDO', origem: 'ATO_DO_ADMIN' },
+  { tipo: 'COBRANCA_LIQUIDADA', origem: 'NOTICIA_DO_PROVEDOR' },
+  { tipo: 'BOLETO_REVOGADO', origem: 'CONFERENCIA' },
+];
+
+/** Limite para a tarefa da notícia alcançar desfecho, folgado sobre a repetição da fila. */
+const LIMITE_DO_DESFECHO_MS = 90_000;
+
 let identidade: IdentidadeEfemera;
 let fila: FilaEfemera;
 let acessoAoNegocio: AcessoAoBanco;
@@ -392,6 +453,32 @@ beforeAll(async () => {
   aplicacao.setGlobalPrefix(PREFIXO_DE_VERSAO);
   await aplicacao.listen({ port: porta, host: ENDERECO_DE_ESCUTA });
 
+  // O consumidor da notícia, com a porta PRÓPRIA dele — ver o cabeçalho para por que ela não é
+  // `portaDoProvedor`, cuja recusa da consulta é decisão preservada.
+  filaDoWorker = conectarFila(
+    fila.cadeiaConexao,
+    criarLogger({
+      nivel: 'fatal',
+      destino: {
+        write(): void {
+          // O registro do processo consumidor é descartado: o que este caso afirma é o EFEITO — o
+          // que ficou na trilha e o que a rota publica —, e não a linha do journal. Quem observa
+          // registro é `apps/worker/test/notificacao-bancaria.spec.ts`.
+        },
+      },
+    }),
+  );
+  filaDoWorker.processar(
+    filaDoWorker.notificacaoBancaria,
+    async (tarefa, logger) =>
+      await processarNotificacaoBancaria(tarefa, logger, {
+        banco: acessoAoNegocio,
+        adaptador: { ...portaDoProvedor, consultarSituacao: consultaQueLiquida },
+        guarda: criarGuardaDeBoletos(diretorioDosBoletos()),
+        chaveDeCifra: aplicacao.get<Ambiente>(TOKEN_AMBIENTE).chaveDeCifraDoCertificado,
+      }),
+  );
+
   cookie = await entrar(QUEM_AGE.email, SENHA_DA_CARGA);
   await conceder(QUEM_AGE.id, EMPRESA_A.id, CHAVES_DO_ARRANJO);
 
@@ -404,6 +491,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await aplicacao?.close();
+  await filaDoWorker?.encerrar();
   await acessoAoNegocio?.encerrar();
   await fila?.parar();
   await identidade?.parar();
@@ -540,6 +628,78 @@ describe('o histórico bancário de uma cobrança (T14)', () => {
         mensagem: MENSAGEM_DE_NAO_ENCONTRADO,
         campo: 'codigo',
       });
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-983 — o item da trilha distingue o aviso do provedor da conferência de rotina',
+    async () => {
+      await registrarCertificadoDaEmpresa('ct983');
+
+      const contrato = await contratoAtivo();
+      const codigo = (await lancar(contrato)).codigo;
+
+      // 1) A emissão — `ATO_DO_ADMIN`, pela rota real.
+      await emitir(codigo);
+
+      const boleto = await chavesDoBoleto(codigo);
+
+      // 2) A NOTÍCIA — `NOTICIA_DO_PROVEDOR`, pelo caminho inteiro: a rota pública grava o cru e
+      //    enfileira, e o consumidor registrado no `beforeAll` executa a tarefa real.
+      const recepcao = await pedir(ROTA_DA_NOTICIA, {
+        metodo: 'POST',
+        corpo: {
+          idWebhook: 990,
+          tipoMovimento: 7,
+          dados: {
+            seuNumero: boleto.identificador,
+            nossoNumero: boleto.numeroDoTitulo,
+            numeroIdentificadorBaixa: '1600100000000000983',
+          },
+        },
+      });
+
+      expect(recepcao.status).toBe(204);
+
+      // A espera é por ESTADO OBSERVÁVEL, com limite nomeado — nunca `sleep` fixo.
+      const desfecho = await desfechoDaNoticia(boleto.identificador);
+      expect(desfecho).toBe('APLICADO');
+
+      // 3) A CONFERÊNCIA de rotina — `CONFERENCIA`, e ela **é o controle** do caso. Só a cobrança
+      //    deste caso é revogada; para as demais do conjunto o par responde *em aberto*, de modo que
+      //    o cenário do `CT-925` não é alterado por este caso.
+      await conferir(codigo, (cobranca) =>
+        cobranca.codigo === codigo
+          ? { situacao: 'REVOGADO', motivo: MOTIVO_DA_REVOGACAO_NO_PROVEDOR, documento: null }
+          : { situacao: 'EM_ABERTO', documento: null },
+      );
+
+      const resposta = await pedir(rotaDoHistorico(codigo), { cookie });
+
+      expect(resposta.status).toBe(200);
+
+      const itens = (resposta.corpo as { readonly itens: readonly EventoPublicado[] }).itens;
+
+      // ---------------------------------------------------------------------------------------
+      // A ORIGEM de cada efeito, por igualdade de LISTA ORDENADA de PARES
+      // ---------------------------------------------------------------------------------------
+      //
+      // O par, e não as duas listas separadas: é ele que impede uma trilha em que os tipos estejam
+      // certos e as origens trocadas de passar. E é o item de `CONFERENCIA` que dá conteúdo ao caso —
+      // sem ele, um produto que carimbasse **tudo** como notícia satisfaria uma asserção que só
+      // procurasse `NOTICIA_DO_PROVEDOR`.
+      expect(itens.map((evento) => ({ tipo: evento.tipo, origem: evento.origem }))).toEqual([
+        ...TRILHA_ESPERADA_DO_CT983,
+      ]);
+
+      // E as duas origens são **distinguíveis no mesmo histórico**: três itens, duas origens
+      // diferentes entre os dois efeitos que o provedor causou.
+      expect([...new Set(itens.map((evento) => evento.origem))].sort()).toEqual([
+        'ATO_DO_ADMIN',
+        'CONFERENCIA',
+        'NOTICIA_DO_PROVEDOR',
+      ]);
     },
     LIMITE_CASO_MS,
   );
@@ -890,6 +1050,87 @@ async function conferir(
       });
     },
   });
+}
+
+/**
+ * A resposta que a porta do **consumidor** dá: o título foi liquidado, com a data corrente e o valor
+ * devido.
+ *
+ * A data sai do relógio do BANCO (ADR-0026), e o valor é o **esperado** — sem divergência a
+ * registrar, para que a trilha do `CT-983` tenha exatamente os três itens que ele declara.
+ */
+async function consultaQueLiquida(): Promise<DesfechoDaOperacao<SituacaoConsultada>> {
+  return {
+    aceito: true,
+    valor: {
+      situacao: 'LIQUIDADO',
+      pagoEm: await dataDeslocada(0),
+      valorPago: VALOR_INFORMADO_PELO_PROVEDOR,
+      documento: null,
+    },
+  };
+}
+
+/** As duas chaves do boleto vivo de uma cobrança — o que a notícia do provedor precisa carregar. */
+async function chavesDoBoleto(
+  codigo: string,
+): Promise<{ readonly identificador: string; readonly numeroDoTitulo: string }> {
+  return await emUnidade(async (tx) => {
+    const [linha] = await tx<{ identificador: string; numeroDoTitulo: string }[]>`
+      SELECT identificador_no_provedor     AS "identificador",
+             numero_do_titulo_no_provedor  AS "numeroDoTitulo"
+        FROM negocio.cobranca
+       WHERE codigo = ${codigo}
+    `;
+
+    if (linha === undefined) {
+      throw new Error(`o arranjo não encontrou o boleto da cobrança ${codigo}`);
+    }
+
+    return linha;
+  });
+}
+
+/**
+ * Espera a tarefa carimbar o desfecho da notícia daquele identificador, e devolve o desfecho.
+ *
+ * A espera é por **estado observável** — a coluna que a tarefa escreve —, com limite nomeado, e
+ * nunca por `sleep` fixo. A linha crua é lida **sem contexto de tenant**: a tabela vive em
+ * `plataforma` e nenhuma política a alcança (ADR-0031).
+ */
+async function desfechoDaNoticia(identificador: string): Promise<string> {
+  let ultimo: NotificacaoBancariaPersistida | undefined;
+
+  await sondarAte(
+    `a notícia de ${identificador} ser tratada`,
+    async () => {
+      ultimo = await acessoAoNegocio.emUnidadeDeTrabalho(async (tx) => {
+        const [linha] = await tx<NotificacaoBancariaPersistida[]>`
+          SELECT id,
+                 recebido,
+                 recebido_em                      AS "recebidoEm",
+                 desfecho,
+                 identificador_perante_o_provedor AS "identificadorPeranteOProvedor",
+                 identificador_da_liquidacao      AS "identificadorDaLiquidacao",
+                 diagnostico,
+                 tratado_em                       AS "tratadoEm"
+            FROM plataforma.notificacao_bancaria
+           WHERE recebido -> 'dados' ->> 'seuNumero' = ${identificador}
+        `;
+
+        return linha;
+      });
+
+      return ultimo !== undefined && ultimo.desfecho !== 'RECEBIDO';
+    },
+    LIMITE_DO_DESFECHO_MS,
+  );
+
+  if (ultimo === undefined) {
+    throw new Error(`a notícia de ${identificador} não foi encontrada no banco`);
+  }
+
+  return ultimo.desfecho;
 }
 
 /**

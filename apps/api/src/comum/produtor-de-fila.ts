@@ -16,8 +16,9 @@
  *
  * O nome da fila, a forma da carga e as opções de repetição **não moram aqui**: vêm de
  * `@sysloc/shared` (`FILA_DA_CONFIRMACAO`, `FILA_DA_EMISSAO_EM_LOTE`,
- * `FILA_DA_CONFERENCIA_BANCARIA`, {@link CargaDaConfirmacao}, {@link CargaDaEmissaoEmLote},
- * {@link CargaDaConferenciaBancaria} e {@link OPCOES_PADRAO_DA_TAREFA}), que é o fecho do
+ * `FILA_DA_CONFERENCIA_BANCARIA`, `FILA_DA_NOTIFICACAO_BANCARIA`, {@link CargaDaConfirmacao},
+ * {@link CargaDaEmissaoEmLote}, {@link CargaDaConferenciaBancaria},
+ * {@link CargaDaNotificacaoBancaria} e {@link OPCOES_PADRAO_DA_TAREFA}), que é o fecho do
  * `D32 (F0/T6)`. Escrevê-los aqui à mão
  * reabriria exatamente o defeito daquele débito: `defaultJobOptions` vale **só para a instância que
  * as declara**, de modo que uma política escrita neste processo divergiria em silêncio da do
@@ -52,15 +53,19 @@
  * justamente *"execute isto"* e dizer `201` sem ter enfileirado seria mentir sobre o desfecho.
  *
  * ---------------------------------------------------------------------------
- * TRÊS FILAS, UM DESPACHO — e a unicidade é o que mantém a decisão fechada de pé
+ * QUATRO FILAS, UM DESPACHO — e a unicidade é o que mantém a decisão fechada de pé
  * ---------------------------------------------------------------------------
  *
- * A T15 acrescentou a emissão em lote e a conferência bancária (ADR-0029). As três passam pelo
- * **mesmo** {@link despachar}, e nenhuma tem corpo próprio: uma cópia por fila deixaria livre para
- * divergir exatamente o `catch` que a `DECISÃO FECHADA — T9 / Gate 2` instalou, e a cópia que
- * nascesse sem ele publicaria `err.command.args` no diário. É o **limiar de três** do `CLAUDE.md`
- * chegando dentro de um módulo — com o agravante de que o que se duplicaria aqui é a garantia, e
- * não o estilo.
+ * A T15 acrescentou a emissão em lote e a conferência bancária (ADR-0029), e a T6 da fatia
+ * `webhook-e-carne` acrescentou a notícia bancária (ADR-0035). As quatro passam pelo **mesmo**
+ * {@link despachar}, e nenhuma tem corpo próprio: uma cópia por fila deixaria livre para divergir
+ * exatamente o `catch` que a `DECISÃO FECHADA — T9 / Gate 2` instalou, e a cópia que nascesse sem
+ * ele publicaria `err.command.args` no diário. É o **limiar de três** do `CLAUDE.md` chegando dentro
+ * de um módulo — com o agravante de que o que se duplicaria aqui é a garantia, e não o estilo.
+ *
+ * ⚠️ **A quarta é a primeira cuja carga não carrega empresa**, e isso não muda nada deste módulo: o
+ * despacho é genérico em `C`, e a decisão sobre a forma da carga é da ADR-0024 (terceira emenda) e
+ * vive em `@sysloc/shared`, não aqui.
  *
  * ---------------------------------------------------------------------------
  * O ouvinte de `error` não é ornamento
@@ -98,9 +103,11 @@ import {
   type CargaDaConferenciaBancaria,
   type CargaDaConfirmacao,
   type CargaDaEmissaoEmLote,
+  type CargaDaNotificacaoBancaria,
   FILA_DA_CONFERENCIA_BANCARIA,
   FILA_DA_CONFIRMACAO,
   FILA_DA_EMISSAO_EM_LOTE,
+  FILA_DA_NOTIFICACAO_BANCARIA,
   type Logger,
   OPCOES_PADRAO_DA_TAREFA,
 } from '@sysloc/shared';
@@ -150,6 +157,41 @@ const REENVIOS_POR_COMANDO = 3;
  */
 const LIMITE_DE_ENFILEIRAMENTO_MS = 5_000;
 
+// DECISÃO FECHADA — T9 da fatia `webhook-e-carne` / Gate 2 rodada 4 · 2026-08-19
+// ⚠️ TERCEIRO marcador deste arquivo, e os três são independentes: o de 2026-08-13 é de OUTRA
+//    fatia (`autorizacao-e-ciclo-de-acesso`) e trata de redação de credencial; o do `encerrar()`
+//    abaixo fixa a ORDEM do fecho. Este fixa a EXISTÊNCIA do prazo, e não altera nenhum dos dois.
+// O QUÊ: a espera pelo assentamento das inicializações corre contra um prazo. Ela NÃO pode voltar
+//        a ser um `await` sem limite, por mais que a leitura do encerramento sugira que a conexão
+//        já derrubada baste.
+// POR QUÊ: essa exata leitura estava escrita aqui e é FALSA — a medição a refutou. Com o servidor
+//          de fila ausente desde antes da conexão, o cliente fica em reconexão; a promessa de
+//          aptidão da biblioteca só resolve em `ready`, `end` ou `error`, e o `disconnect()` não
+//          produz nenhum dos três. Medido: `encerrar()` sem retorno em 10 s, fecho da aplicação
+//          sem retorno em 35 s, e o `CT-002 'fila fora'` de `saude.e2e.spec.ts` reprovando o
+//          hook de 90 s em 3 execuções de 4 sob carga. É a MESMA CLASSE que a `DECISÃO FECHADA —
+//          T6 / Gate 2` de `apps/worker/src/fila.ts` fechou no processo irmão, chegando à borda
+//          por caminho novo — e é por isso que este marcador existe.
+// REVERTER EXIGE: provar que a biblioteca de acesso passou a resolver a espera de aptidão quando
+//                 a conexão é encerrada durante a reconexão, e que o `CT-1007` de
+//                 `apps/api/test/produtor-de-fila.spec.ts` sai verde com o prazo retirado — hoje
+//                 ele mede o desligamento batendo no prazo, e sem o prazo ele não termina.
+/**
+ * Prazo da espera pelo assentamento das inicializações, no desligamento.
+ *
+ * Ele existe porque a premissa que o dispensava era **falsa**, e a refutação é medida — ver
+ * {@link assentarInicializacoes}. É a mesma forma, com a mesma razão, da `DECISÃO FECHADA — T6 /
+ * Gate 2` de `apps/worker/src/fila.ts`: nenhuma etapa de encerramento deste produto pode esperar
+ * indefinidamente por um servidor de fila ausente, porque quem desiste primeiro precisa ser o
+ * processo — ele sabe explicar no diário por que desistiu, e o supervisor só sabe mandar `SIGKILL`.
+ *
+ * Cinco segundos, e não os quinze do processo de trabalho, porque as duas esperas guardam coisas
+ * diferentes: lá o prazo cobre a devolução de tarefas **em voo**; aqui, um aperto de mão que já
+ * assentou em ~3 ms em toda medição desta base — o teto é folga de três ordens de grandeza, e o
+ * caminho em que ele age é o que jamais assentaria.
+ */
+const LIMITE_DO_ASSENTAMENTO_MS = 5_000;
+
 /**
  * A fila como este módulo a usa — carga `C`, resultado vazio e nome de tarefa em cadeia livre.
  *
@@ -161,6 +203,19 @@ const LIMITE_DE_ENFILEIRAMENTO_MS = 5_000;
  * o mesmo binário e apagaria a conferência.
  */
 type FilaDe<C> = Queue<C, void, string, C, void, string>;
+
+/**
+ * O que uma fila é para o **ciclo de vida** deste produtor: um nome, um nascimento e um fecho.
+ *
+ * Ele existe para que a lista de filas seja declarada uma vez só, sem parâmetro de carga — as duas
+ * pontas do ciclo (o assentamento das inicializações e {@link ProdutorDeFila.encerrar}) tratam as
+ * quatro filas do mesmo jeito, e nenhuma delas olha a carga.
+ */
+type FilaNoCicloDeVida = {
+  readonly name: string;
+  close(): Promise<void>;
+  waitUntilReady(): Promise<unknown>;
+};
 
 /** O que o chamador vê quando o servidor de fila não aceita a tarefa. */
 const RECUSA_DA_TAREFA = 'o servidor de fila não aceitou a tarefa';
@@ -226,6 +281,15 @@ export interface ProdutorDeFila {
   enfileirarEmissaoEmLote(carga: CargaDaEmissaoEmLote): Promise<void>;
   /** Enfileira a execução de uma conferência bancária **já aberta**. Mesma disciplina da anterior. */
   enfileirarConferenciaBancaria(carga: CargaDaConferenciaBancaria): Promise<void>;
+  /**
+   * Enfileira o tratamento de uma notícia bancária **já gravada**.
+   *
+   * A ordem é conteúdo, e a §5.1-A da tech spec a registra: a unidade de trabalho commita o cru e
+   * **só então** a borda enfileira. **Rejeita** como as irmãs acima — e o que quem chama faz com a
+   * rejeição é o oposto do lote: ele a **absorve**, porque a resposta ao provedor já é `204` e um
+   * `5xx` provocaria a reentrega que a idempotência existe para absorver, não para causar.
+   */
+  enfileirarNotificacaoBancaria(carga: CargaDaNotificacaoBancaria): Promise<void>;
   /** Devolve o produtor e a conexão. Chamadas repetidas devolvem o mesmo encerramento. */
   encerrar(): Promise<void>;
 }
@@ -293,6 +357,7 @@ export function conectarProdutorDeFila(cadeiaConexao: string, logger: Logger): P
   const confirmacao = criarFila<CargaDaConfirmacao>(FILA_DA_CONFIRMACAO);
   const emissaoEmLote = criarFila<CargaDaEmissaoEmLote>(FILA_DA_EMISSAO_EM_LOTE);
   const conferenciaBancaria = criarFila<CargaDaConferenciaBancaria>(FILA_DA_CONFERENCIA_BANCARIA);
+  const notificacaoBancaria = criarFila<CargaDaNotificacaoBancaria>(FILA_DA_NOTIFICACAO_BANCARIA);
 
   /**
    * As filas abertas por esta conexão, na ordem em que nasceram — a lista que o encerramento fecha.
@@ -300,21 +365,28 @@ export function conectarProdutorDeFila(cadeiaConexao: string, logger: Logger): P
    * Ela é declarada **uma vez**, ao lado da criação, e não repetida no `encerrar`: uma fila nova que
    * não entrasse na lista ficaria de pé depois do desligamento, e o sintoma seria um processo que não
    * termina — o mesmo modo de falha que o `disconnect()` incondicional abaixo existe para fechar.
+   *
+   * ⚠️ Ela é **também** a lista que {@link assentarInicializacoes} espera, e as duas pontas do ciclo
+   * de vida derivam daqui de propósito. Uma lista própria para cada ponta é a alternativa óbvia, e é
+   * a que envelhece: a que for reescrita nasce um dia sem a fila nova, e nada acusa — o parágrafo
+   * acima diz isso da ponta do fecho, e vale palavra por palavra da ponta do nascimento. Derivando
+   * as duas do mesmo lugar, elas não têm como discordar sobre quais filas existem.
    */
-  const filas: readonly { readonly name: string; close(): Promise<void> }[] = [
+  const filas: readonly FilaNoCicloDeVida[] = [
     confirmacao,
     emissaoEmLote,
     conferenciaBancaria,
+    notificacaoBancaria,
   ];
 
   /**
    * O DESPACHO ÚNICO — o prazo, o saneamento e a corrida, escritos **uma vez** para as três filas.
    *
-   * Ele é a razão de as três rotas de enfileiramento desta borda não terem corpo próprio. Uma cópia
-   * por fila deixaria livre para divergir exatamente o que a `DECISÃO FECHADA — T9 / Gate 2` fixou:
-   * o `catch` que embrulha a rejeição da biblioteca. A quarta fila que nascesse com um `add` direto
-   * publicaria `err.command.args` no diário, e nada acusaria — é a mesma classe de defeito que aquele
-   * marcador registra, chegando por caminho novo.
+   * Ele é a razão de as quatro rotas de enfileiramento desta borda não terem corpo próprio. Uma
+   * cópia por fila deixaria livre para divergir exatamente o que a `DECISÃO FECHADA — T9 / Gate 2`
+   * fixou: o `catch` que embrulha a rejeição da biblioteca. A quinta fila que nascesse com um `add`
+   * direto publicaria `err.command.args` no diário, e nada acusaria — é a mesma classe de defeito que
+   * aquele marcador registra, chegando por caminho novo.
    *
    * O nome da tarefa é o **nome da fila**, como já era na confirmação: um segundo vocabulário para o
    * mesmo fato só daria ao consumidor um discriminador a mais para desencontrar.
@@ -348,6 +420,97 @@ export function conectarProdutorDeFila(cadeiaConexao: string, logger: Logger): P
     }
   }
 
+  /**
+   * Espera **toda** inicialização de fila assentar — o primeiro passo do encerramento, e o que
+   * permite a ele fechar as filas sem deixar rejeição órfã para trás.
+   *
+   * ---------------------------------------------------------------------------
+   * ELA É INTERNA DE PROPÓSITO — e a alternativa foi medida antes de ser descartada
+   * ---------------------------------------------------------------------------
+   *
+   * Esta espera já foi um membro de {@link ProdutorDeFila} (`pronto()`), e a publicação foi
+   * recolhida: **nenhum** dos consumidores do produtor a chamava, e o único chamador externo era
+   * arquivo de verificação — símbolo de produção não nasce para o teste enxergar algo. Publicá-la
+   * de volta é pior do que ocioso: pedi-la com o servidor de fila fora e a conexão viva é esperar
+   * por uma reconexão que este módulo tenta para sempre, e uma subida de aplicação que a
+   * aguardasse ficaria pendurada exatamente no cenário em que a rota de prontidão precisa
+   * responder que a fila caiu.
+   *
+   * ---------------------------------------------------------------------------
+   * ELA TEM PRAZO — e a premissa que o dispensava foi REFUTADA por medição
+   * ---------------------------------------------------------------------------
+   *
+   * A redação anterior declarava a ausência de prazo como deliberada, com o argumento de que, no
+   * encerramento, *"o limite vem da conexão já derrubada — sem reconexão não há espera
+   * indefinida"*. **Isso é falso**, e o caminho é este: quando o servidor cai **durante** a
+   * inicialização das filas, o cliente entra em reconexão; a promessa de aptidão da biblioteca só
+   * resolve em `ready`, `end` ou `error`, e o `disconnect()` de um cliente já em reconexão não
+   * produz nenhum dos três. A espera então **nunca** termina — e com ela o desligamento inteiro.
+   *
+   * Medido nesta base, de forma determinística na primeira aplicação de um arquivo de verificação
+   * (a que paga a partida a frio), com a fila derrubada logo após o `listen`: `encerrar()` não
+   * retornou em 10 s e o fecho da aplicação não retornou em 35 s. Fora da verificação, o mesmo é o
+   * `SIGTERM` na borda com o servidor de fila já parado — a ordem de unidades que o desligamento
+   * do sistema produz —, e o desfecho seria o supervisor matando um processo que não explica por
+   * que não terminou. É **a mesma classe** que a `DECISÃO FECHADA — T6 / Gate 2` fechou no
+   * processo de trabalho; a borda era o irmão que ficara sem o prazo.
+   *
+   * O teto age **só** no caminho patológico: o assentamento normal, depois da conexão derrubada,
+   * mede ~3 ms. Ver {@link LIMITE_DO_ASSENTAMENTO_MS}.
+   *
+   * ---------------------------------------------------------------------------
+   * O que ela afirma, e o que ela não afirma
+   * ---------------------------------------------------------------------------
+   *
+   * A lista percorrida é `filas` — a MESMA que o encerramento fecha, e não um arranjo escrito aqui.
+   * É o que faz a quinta fila entrar **por construção**: as duas pontas do ciclo de vida saem da
+   * mesma declaração e não têm como discordar sobre quais filas existem.
+   *
+   * **Nunca rejeita**, e o que ela afirma é o **fim** da inicialização, não o sucesso dela: a falha
+   * de conexão já é registrada pelo ouvinte de `error` que cada fila carrega, e quem responde por
+   * disponibilidade é a rota de prontidão do serviço. `allSettled`, e não `all`, pela razão que
+   * esta função existe para fechar: com `all`, a primeira rejeição resolveria a espera e deixaria
+   * as **demais** sem tratamento — a barreira viraria fonte da rejeição não tratada que ela veio
+   * impedir. É a mesma escolha, com a mesma razão, do fecho abaixo.
+   *
+   * ⚠️ **Quem fecha a classe é a ORDEM do encerramento, não esta espera** — ver o bloco de
+   * comentário em {@link ProdutorDeFila.encerrar}. Lá a conexão cai **antes** do fecho das filas, e
+   * é a queda que faz a inicialização em voo assentar com os ouvintes ainda instalados; esta espera
+   * é apenas o passo seguinte dela.
+   *
+   * Medido nesta base, com registro em arquivo (o `console` de encerramento é descartado pelo
+   * arcabouço de verificação): a primeira aplicação de um arquivo de verificação fecha ~480 ms
+   * depois de conectar, com as **quatro** filas ainda em `initializing` e a conexão em `connect`, e
+   * o desfecho — sem a ordem do fecho e sem esta espera — é **quatro** rejeições não tratadas.
+   */
+  async function assentarInicializacoes(): Promise<void> {
+    let prazo: NodeJS.Timeout | undefined;
+    const expirar = new Promise<'PRAZO-ESTOURADO'>((resolver) => {
+      prazo = setTimeout(() => resolver('PRAZO-ESTOURADO'), LIMITE_DO_ASSENTAMENTO_MS);
+    });
+
+    // `allSettled` NUNCA rejeita, e é o que dispensa aqui o ouvinte de rejeição tardia que o
+    // despacho acima precisa ter: a espera abandonada pelo prazo não vira rejeição sem dono.
+    const assentado = Promise.allSettled(
+      filas.map(async (fila) => await fila.waitUntilReady()),
+    ).then((): 'ASSENTOU' => 'ASSENTOU');
+
+    try {
+      if ((await Promise.race([assentado, expirar])) === 'PRAZO-ESTOURADO') {
+        // A única pista de que o fecho seguinte pode produzir rejeição órfã. Alerta, e não
+        // diagnóstico como as demais linhas do desligamento: as outras dizem que algo já
+        // registrado falhou de novo, esta diz que uma garantia foi ABANDONADA. O campo é a lista
+        // das filas — as mesmas que o fecho percorre —, e não um nome escolhido a dedo.
+        logger.warn(
+          { limiteMs: LIMITE_DO_ASSENTAMENTO_MS, filas: filas.map((fila) => fila.name) },
+          'o assentamento das inicializações excedeu o limite — seguindo com o desligamento',
+        );
+      }
+    } finally {
+      clearTimeout(prazo);
+    }
+  }
+
   /** O encerramento já pedido, se houver. Ver {@link ProdutorDeFila.encerrar}. */
   let encerramento: Promise<void> | undefined;
 
@@ -364,15 +527,74 @@ export function conectarProdutorDeFila(cadeiaConexao: string, logger: Logger): P
       await despachar(conferenciaBancaria, carga);
     },
 
+    async enfileirarNotificacaoBancaria(carga: CargaDaNotificacaoBancaria): Promise<void> {
+      await despachar(notificacaoBancaria, carga);
+    },
+
     encerrar(): Promise<void> {
       // Um pedido de encerramento, um encerramento: o segundo chamador recebe o mesmo, em vez de
       // reabrir a espera.
       encerramento ??= (async (): Promise<void> => {
         try {
+          // DECISÃO FECHADA — T9 da fatia `webhook-e-carne` / Gate 1 rodada 3 · 2026-08-19
+          // ⚠️ NÃO CONFUNDA com a `DECISÃO FECHADA — T9 / Gate 2 · 2026-08-13` acima: aquele "T9" é
+          //    de OUTRA fatia (`autorizacao-e-ciclo-de-acesso`) e trata de redação de credencial.
+          //    São marcadores homônimos e independentes; nenhum dos dois se toca por causa do outro.
+          // O QUÊ: a conexão é derrubada ANTES do fecho das filas, e a espera pelo assentamento das
+          //        inicializações vem entre as duas. A devolução do `finally` continua onde estava.
+          // POR QUÊ: o Gate 1 reprovou o mesmo item DUAS vezes, e as duas leituras anteriores
+          //          erraram o ponto — a primeira atribuiu a `segredo-nao-escapa.e2e.spec.ts`, a
+          //          segunda ao `parar()` do CT-002 de `saude.e2e.spec.ts`. Medido na rodada 3, com
+          //          registro em arquivo: quem produz as quatro rejeições é ESTE fecho, quando ele
+          //          corre com as quatro filas em `initializing`. A barreira posta só na suíte
+          //          fechava um arquivo e deixava os outros ~30 que levantam aplicação real — foi
+          //          medido, e `segredo-nao-escapa.e2e.spec.ts` continuou reprovando 1 em 5.
+          // REVERTER EXIGE: provar que a biblioteca de fila passou a suprimir a rejeição tardia da
+          //                 inicialização TAMBÉM na conexão compartilhada (hoje o `close()` dela
+          //                 condiciona a supressão a `!shared`), e que o bloco
+          //                 `'com as dependências de pé'` de `apps/api/test/saude.e2e.spec.ts` sai 0
+          //                 em execuções repetidas com a ordem invertida de volta — ele saía 1 em
+          //                 8 de 8 antes desta linha.
+          //
+          // A CONEXÃO CAI PRIMEIRO, E A ORDEM É CONTEÚDO — não é a devolução do `finally`, que
+          // continua onde estava e por que estava.
+          //
+          // O fecho de uma fila retira os ouvintes de `error` dela. Se ele acontecer com o aperto
+          // de mão ainda em voo, a inicialização pendente rejeita DEPOIS, e a biblioteca a reemite
+          // como `error` num emissor que já não tem quem escute — o `emit` lança de dentro dela
+          // mesma, e sobra **uma rejeição não tratada por fila**. A supressão que a biblioteca traz
+          // para esse caminho é explicitamente condicionada à conexão NÃO ser compartilhada, e a
+          // deste módulo é compartilhada por desenho: aqui ela não vale.
+          //
+          // Derrubar a conexão antes inverte as duas pontas: é a queda que faz toda inicialização
+          // em voo assentar, e ela assenta ENQUANTO os ouvintes ainda estão instalados — a falha
+          // sai pela linha de diagnóstico que já existe, em vez de virar rejeição órfã. É também o
+          // que torna a espera seguinte **limitada por construção**, sem prazo nenhum: com a
+          // conexão fora, não há reconexão que a faça esperar para sempre — que é o caso contra o
+          // qual {@link assentarInicializacoes} adverte (servidor fora E conexão viva).
+          //
+          // ⚠️ EMENDA de 2026-08-19 (mesma task, rodada 4). O parágrafo acima está preservado na
+          // íntegra, com uma única alteração — o alvo do `{@link}` final, que apontava para um
+          // símbolo removido nesta rodada. Os quatro campos desta decisão estão INTOCADOS. A última
+          // frase do parágrafo é FALSA — a medição a refutou. Quando o servidor já está fora ANTES
+          // da conexão, o cliente entra em reconexão com as inicializações pendentes, e o
+          // `disconnect()` não produz o evento que a espera aguarda: ela não termina, e o
+          // desligamento inteiro fica preso (medido: `encerrar()` sem retorno em 10 s). Quem fecha
+          // isso é o prazo de {@link assentarInicializacoes}, sob marcador próprio. **A ORDEM que
+          // esta decisão fixa segue valendo palavra por palavra** — é ela que mantém os ouvintes
+          // instalados quando a inicialização assenta, e nada nesta emenda a toca.
+          //
+          // Medido nesta base: sem esta ordem, uma aplicação que sobe e fecha em menos de meio
+          // segundo — o que toda suíte de borda faz — produzia QUATRO rejeições não tratadas, uma
+          // por fila, sem reprovar caso algum e fazendo o comando do pacote sair 1.
+          conexao.disconnect();
+          await assentarInicializacoes();
+
           // TODAS as filas, e a falha de uma não impede o fecho das outras: `allSettled`, e não
           // `all`. Com `all`, a primeira rejeição abandonaria as demais abertas — e o desligamento
           // com o servidor de fila fora, que é justamente quando isto corre, faria o processo ficar
-          // de pé segurando o que ele acabou de pedir para fechar.
+          // de pé segurando o que ele acabou de pedir para fechar. A lista percorrida é `filas`, e
+          // não um arranjo escrito aqui: é ela que faz a fila nova entrar no fecho por construção.
           const fechos = await Promise.allSettled(filas.map(async (fila) => await fila.close()));
 
           // ...E OS RESULTADOS SÃO LIDOS. `allSettled` nunca rejeita: descartá-los devolveria ao

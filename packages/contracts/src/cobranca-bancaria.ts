@@ -26,10 +26,15 @@
  *
  * A ADR-0034 decide que a trilha publicada registra o **efeito** — mudança de estado do fato de
  * negócio, ou desfecho anômalo como divergência e recusa —, **nunca a tentativa que nada mudou**. Os
- * seis tipos abaixo são todos efeito ou anomalia, e a conferência que nada achou **não aparece na
+ * sete tipos abaixo são todos efeito ou anomalia, e a conferência que nada achou **não aparece na
  * trilha**: essa ausência é o `Cons` que a própria ADR já declara aceito.
  *
- * **Não acrescente um sétimo tipo `CONFERENCIA`.** A tentação é real — a CA-13 do PRD lista
+ * ⚠️ **A contagem era SEIS até a fatia `webhook-e-carne`**, que acrescentou `NOTICIA_RECUSADA` — e o
+ * acréscimo é da segunda metade da decisão (*"ou desfecho anômalo"*), nunca da primeira. Ele não
+ * reabre o parágrafo seguinte: o que a notícia **casada** produz na trilha continua sendo o efeito
+ * descoberto, com `origem` dizendo quem o descobriu.
+ *
+ * **Não acrescente um tipo `CONFERENCIA`.** A tentação é real — a CA-13 do PRD lista
  * "conferência" entre as coisas que o histórico deve contar —, e a decisão de recusá-lo foi
  * **escalada ao usuário e registrada** (§21.1(2) do tech spec desta fatia, 2026-08-16). O que a
  * conferência descobre entra como o **efeito descoberto**, e a `origem` de cada evento diz quem o
@@ -76,15 +81,26 @@ import { z } from 'zod';
 import { COMPETENCIA_NO_PRIMEIRO_DIA, ESQUEMA_DO_CODIGO_DE_COBRANCA } from './cobranca.js';
 
 /**
- * Os **seis** tipos de evento da trilha bancária (RN-13), na ordem em que o enum do banco os declara.
+ * Os **sete** tipos de evento da trilha bancária (RN-13), na ordem em que o enum do banco os declara.
  *
  * Todos são **efeito ou anomalia**, e a lista é fechada por decisão da ADR-0034 — ver o cabeçalho
- * deste arquivo antes de acrescentar qualquer um, em especial um sétimo chamado `CONFERENCIA`.
+ * deste arquivo antes de acrescentar qualquer um, em especial um chamado `CONFERENCIA`.
  *
  * A ordem vai do ciclo do boleto (emitido, revogado, recusado) ao ciclo do dinheiro (liquidada,
- * estornada), fechando na anomalia que não muda estado nenhum mas precisa ficar registrada
+ * estornada), fechando nas anomalias que não mudam estado nenhum mas precisam ficar registradas
  * (`DIVERGENCIA_DE_VALOR` — o provedor informou um valor diferente do esperado, a baixa acontece
- * assim mesmo e a divergência fica).
+ * assim mesmo e a divergência fica; `NOTICIA_RECUSADA` — o que o provedor notificou não confere com
+ * o que está gravado, e por isso **nada** foi consultado nem mudado).
+ *
+ * ⚠️ **`NOTICIA_RECUSADA` é acréscimo da fatia `webhook-e-carne`, e ele NÃO contradiz a ADR-0034.**
+ * A decisão dela alcança *"o efeito **ou o desfecho anômalo**"*, e a notícia cujo número de título
+ * diverge do gravado é anomalia com as duas propriedades que a ADR cobra: aconteceu de fato e não se
+ * repete a cada varredura. O que continuaria proibido é registrar a notícia que **casou** e nada
+ * mudou — essa não entra na trilha, exatamente como a conferência que nada achou não entra.
+ *
+ * O valor entra no **fim** da lista, e a posição é conteúdo: `ALTER TYPE … ADD VALUE` sem `BEFORE`/
+ * `AFTER` acrescenta ao fim do enum do banco, e é a igualdade posicional entre este arranjo e
+ * `negocio.tipo_de_evento_bancario` que o `CT-939` afirma.
  */
 export const TIPOS_DE_EVENTO_BANCARIO = Object.freeze([
   'BOLETO_EMITIDO',
@@ -93,22 +109,33 @@ export const TIPOS_DE_EVENTO_BANCARIO = Object.freeze([
   'COBRANCA_LIQUIDADA',
   'LIQUIDACAO_ESTORNADA',
   'DIVERGENCIA_DE_VALOR',
+  'NOTICIA_RECUSADA',
 ] as const);
 
 /** União fechada dos tipos de evento bancário. */
 export type TipoDeEventoBancario = (typeof TIPOS_DE_EVENTO_BANCARIO)[number];
 
 /**
- * As **duas** origens de um evento da trilha, na ordem em que o enum do banco as declara.
+ * As **três** origens de um evento da trilha, na ordem em que o enum do banco as declara.
  *
  * É aqui que a conferência aparece na trilha, e **só** aqui: ela não é um tipo de evento (seria
  * registrar tentativa), e sim o **produtor** do efeito que se registrou. `ATO_DO_ADMIN` é o que
- * alguém pediu por rota; `CONFERENCIA`, o que a apuração junto ao provedor descobriu sozinha.
+ * alguém pediu por rota; `CONFERENCIA`, o que a apuração junto ao provedor descobriu sozinha;
+ * `NOTICIA_DO_PROVEDOR`, o que ele veio contar sem que ninguém perguntasse.
  *
  * Sem esta distinção, o leitor do histórico veria *o que* mudou e não *quem* o descobriu — que é
- * metade da pergunta que a CA-13 faz.
+ * metade da pergunta que a CA-13 faz. E as duas últimas **não se fundem**: a conferência é varredura
+ * nossa, com cota e horário; a notícia é iniciativa do provedor, e distinguí-las é o que permite
+ * medir quanto do que se descobre chega por qual caminho.
+ *
+ * O valor entra no **fim** da lista pela mesma razão registrada em {@link TIPOS_DE_EVENTO_BANCARIO}:
+ * `ALTER TYPE … ADD VALUE` acrescenta ao fim, e a igualdade é posicional.
  */
-export const ORIGENS_DO_EVENTO_BANCARIO = Object.freeze(['ATO_DO_ADMIN', 'CONFERENCIA'] as const);
+export const ORIGENS_DO_EVENTO_BANCARIO = Object.freeze([
+  'ATO_DO_ADMIN',
+  'CONFERENCIA',
+  'NOTICIA_DO_PROVEDOR',
+] as const);
 
 /** União fechada das origens de um evento bancário. */
 export type OrigemDoEventoBancario = (typeof ORIGENS_DO_EVENTO_BANCARIO)[number];

@@ -1,8 +1,27 @@
 /**
- * Geração de CPF **válido** para o arranjo das suítes de borda.
+ * Acessórios de arranjo das suítes de borda que lidam com **documento**: a geração de CPF válido e a
+ * extração de texto de PDF.
  *
  * ---------------------------------------------------------------------------
- * Por que num arquivo próprio
+ * O segundo acessório chegou na T10 da fatia `webhook-e-carne` — o fecho do D5
+ * ---------------------------------------------------------------------------
+ *
+ * `extrairTextoDePdf` vinha privado de `./documento-do-contrato.e2e.spec.ts`, com um
+ * `DÉBITO COM GATILHO` (D5 · F3/T7) cujo `QUANDO FECHA` era literal: *"o TERCEIRO consumidor de
+ * extração de texto de PDF — o **carnê da F4** —, ou a primeira alteração das opções do extrator"*.
+ * O carnê chegou, e ele desceu para cá **antes** de a terceira cópia nascer.
+ *
+ * O que a duplicação custava não é estética: as opções do extrator (`standardFontDataUrl`,
+ * `useSystemFonts`) são o que torna a extração **propriedade do PDF** e não do host, e uma cópia
+ * endurecida deixaria a outra para trás em silêncio — as duas suítes continuariam verdes medindo
+ * coisas ligeiramente diferentes. A primeira leitura de PDF da verificação continua sendo
+ * `extrairTextoDoPdf`, privada de `packages/documentos/test/renderizador-pdf.spec.ts`: ela lê de
+ * **arquivo em disco**, atravessa fronteira de pacote e fica onde está — promovê-la exigiria um
+ * acessório compartilhado entre pacotes, que é o que o `D28` (F0/T5) governa, e nada disto acontece
+ * aqui.
+ *
+ * ---------------------------------------------------------------------------
+ * O CPF válido — por que num arquivo próprio
  * ---------------------------------------------------------------------------
  *
  * Ele nasceu duplicado palavra por palavra em `autorizacao-do-dominio.e2e.spec.ts` e
@@ -50,6 +69,12 @@
  * como caso; `tsconfig.test.json` alcança `test/**​/*.ts` e continua a verificar os tipos dele.
  */
 
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+// A construção `legacy` é a que o próprio `pdfjs-dist` exige fora do navegador — a de entrada
+// alcança `DOMMatrix` na carga do módulo e derruba a suíte antes do primeiro caso.
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+
 /**
  * Um CPF **válido**, derivado do sequencial que o chamador fornece.
  *
@@ -77,4 +102,61 @@ function digitoDeControle(digitos: readonly number[], pesoInicial: number): numb
   const resto = (soma * 10) % 11;
 
   return resto >= 10 ? 0 : resto;
+}
+
+// ---------------------------------------------------------------------------
+// Extração de texto de PDF — o segundo acessório deste módulo
+// ---------------------------------------------------------------------------
+
+/**
+ * O diretório das fontes padrão do extrator, resolvido pelo **próprio pacote instalado**.
+ *
+ * Sem ele o `pdfjs-dist` avisa que não consegue carregar `LiberationSans-Regular.ttf` e a extração
+ * passa a depender do que estiver instalado no host. Resolver pelo `package.json` da biblioteca é o
+ * que sobrevive ao arranjo de diretórios do pnpm, onde o caminho relativo aparente não é o real.
+ */
+const DIRETORIO_DAS_FONTES_PADRAO = join(
+  dirname(createRequire(import.meta.url).resolve('pdfjs-dist/package.json')),
+  'standard_fonts/',
+);
+
+/**
+ * Extrai o texto de um PDF recebido **em bytes**, com uma quebra de linha onde o layout quebrou.
+ *
+ * `useSystemFonts: false` é determinismo, não ornamento: com fontes do sistema operacional em jogo, a
+ * extração passaria a depender do host, e o resultado deixaria de ser propriedade do PDF.
+ *
+ * ⚠️ **Isto é arranjo, e não asserção**: nada aqui é comparado contra o SUT. Quem compara é o caso,
+ * entre o texto extraído e o que ele plantou na origem — e é por isso que o extrator não pode ter
+ * duas versões, uma por suíte.
+ */
+export async function extrairTextoDePdf(bytes: Uint8Array): Promise<string> {
+  const tarefa = getDocument({
+    data: bytes,
+    standardFontDataUrl: DIRETORIO_DAS_FONTES_PADRAO,
+    useSystemFonts: false,
+  });
+
+  let texto = '';
+
+  try {
+    const documento = await tarefa.promise;
+
+    for (let pagina = 1; pagina <= documento.numPages; pagina += 1) {
+      const conteudo = await (await documento.getPage(pagina)).getTextContent();
+
+      for (const item of conteudo.items) {
+        // `TextMarkedContent` não carrega texto; só os `TextItem` têm `str`.
+        if (!('str' in item)) continue;
+
+        texto += item.str;
+        if (item.hasEOL) texto += '\n';
+      }
+    }
+  } finally {
+    // Sem isto o processo do extrator fica de pé e a suíte não encerra sozinha.
+    await tarefa.destroy();
+  }
+
+  return texto;
 }

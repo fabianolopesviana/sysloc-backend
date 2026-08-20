@@ -101,7 +101,7 @@
  * quem chama a peça com que montar por fora uma consulta à tabela — e é a **ausência** da coluna do
  * segredo nesse fragmento que responde pela RN-02.
  *
- * `./empresa.js` entra pela mesma pergunta, e com a mesma resposta: as oito operações **recebem** o
+ * `./empresa.js` entra pela mesma pergunta, e com a mesma resposta: as nove operações **recebem** o
  * executor de quem já abriu a unidade, não abrem conexão nem transação e não devolvem executor. Elas
  * existem por uma razão a mais, e ela é a que este índice serve: a contenção da §11.2 impede
  * `apps/api` de **importar** `esquemaIdentidade` e o construtor de consulta, mas — como o cabeçalho
@@ -265,6 +265,16 @@
  * com base numa leitura anterior à escrita. Ela devolve **quantas linhas o banco alcançou**, e não a
  * lista: quem chama publica a contagem numa linha de trilha, e conjunto vazio é resultado legítimo.
  *
+ * Pela T10 da fatia `webhook-e-carne` sai daqui `selecionarCobrancasDoRecorte`, com os dois tipos que
+ * ela usa (`RecorteDeCompetencias`, `CobrancaDoRecorte`), e ela entra pelo critério das demais
+ * leituras: **recebe** o executor de quem já abriu a unidade, não abre conexão nem transação, não
+ * devolve executor e não recebe `empresaId`. A razão própria dela é a **ADR-0023**: o recorte por
+ * competência é predicado SQL e a ordem por vencimento é `ORDER BY`, e publicar a porta é o que
+ * impede a borda de compor o par "listar a carteira do contrato, filtrar e ordenar em memória" — em
+ * que o número de linhas trazidas passaria a ser o do contrato inteiro e a ordem do carnê deixaria de
+ * ser decidida pelo banco. Ela devolve **duas colunas**, e a escassez é a decisão registrada no
+ * docblock dela.
+ *
  * `ErroDeCodigoDeCobrancaEmUso` sai daqui pelo mesmo critério de `ErroDeCodigoEmUso`: é **classe de
  * erro**, não caminho para dado. Ela precisa sair porque quem a traduz no envelope da ADR-0017 é a
  * borda, e a alternativa — reconhecer a recusa pelo texto da mensagem — amarraria a tradução ao
@@ -376,10 +386,11 @@
  * **três** que são próprias desta fatia.
  *
  * A primeira é o **predicado do conjunto**. `selecionarCobrancasSemBoleto` é uma consulta só, e é dela
- * — e de nada mais — que sai a idempotência da reexecução da mesma competência (`nosso_numero IS
- * NULL`). Publicar a porta é o que impede o percurso de compor por fora o par "listar a carteira,
- * decidir quem entra": seria a segunda regra para o mesmo fato, livre para divergir da primeira, e
- * traria o conjunto inteiro para a memória antes de filtrar, que é o que a ADR-0023 mantém no banco.
+ * — e de nada mais — que sai a idempotência da reexecução da mesma competência
+ * (`numero_do_titulo_no_provedor IS NULL`). Publicar a porta é o que impede o percurso de compor por
+ * fora o par "listar a carteira, decidir quem entra": seria a segunda regra para o mesmo fato, livre
+ * para divergir da primeira, e traria o conjunto inteiro para a memória antes de filtrar, que é o
+ * que a ADR-0023 mantém no banco.
  *
  * A segunda são as **duas recusas nomeadas**, que saem daqui pelo mesmo critério de
  * `ErroDeImovelComContratoVigente` — são classes de erro, não caminho para dado. `ErroDeLoteEmCurso`
@@ -615,6 +626,33 @@
  * são importadas de lá, e `LARGURA_DO_CONTADOR_BANCARIO` é o nome com que este pacote publica a do
  * contador para quem for decompor o identificador.
  *
+ * `./notificacao-bancaria.js` entra pela mesma pergunta, e com a mesma resposta: as **sete**
+ * operações da notícia crua **recebem** o executor de quem já abriu a unidade, não abrem conexão nem
+ * transação e não devolvem executor. `rotearNotificacaoBancaria` não abre exceção ao que
+ * `resolverPortador` e as funções de série já registram: ela invoca, pelo executor recebido, a função
+ * `SECURITY DEFINER` que a migração `0020` criou.
+ *
+ * Elas repetem a razão de sempre — enumerabilidade do alcance à tabela, um lugar único para o SQL —
+ * e acrescentam **duas** que são próprias desta entidade.
+ *
+ * A primeira é a **ausência de dono**. `plataforma.notificacao_bancaria` não tem `empresa_id`, não
+ * habilita RLS e nenhuma política a alcança (ADR-0031): seis das sete funções correm sem contexto de
+ * tenant, e é justamente por isso que o alcance a ela precisa ser enumerável **por símbolo** — não há
+ * política a recortar o que uma consulta escrita fora daqui veria. O `CT-012` compara este conjunto
+ * por igualdade, de modo que um segundo caminho para o cru apareceria como símbolo excedente.
+ *
+ * A segunda é a **assimetria de contexto**, gêmea da do portador: `rotearNotificacaoBancaria` corre
+ * fora de qualquer contexto — a empresa é o **resultado** dela, e não a entrada (ADR-0024, emendas de
+ * 2026-08-13 e de 2026-08-18) —, enquanto toda escrita em `negocio` que vier depois corre sob o
+ * contexto que ela descobriu. Publicar a porta é o que impede a borda de compor por fora um `SELECT …
+ * WHERE identificador_no_provedor = $1` contra `negocio.cobranca`, que é exatamente o segundo caminho
+ * para o dado que a ADR-0008 recusa.
+ *
+ * De lá **não** sai `DIAS_DE_RETENCAO_DO_CRU`, e a ausência é deliberada: o prazo é mecanismo interno
+ * do expurgo, pelo mesmo critério de `empresaDoContexto` e das constantes do portador. Nenhum
+ * consumidor decide nada com ele — quem chama `expurgarNotificacoesVencidas` recebe a contagem, não a
+ * política.
+ *
  * A igualdade é sobre a superfície ACHATADA, e a distinção não é detalhe: as três linhas
  * `export * as …` abaixo publicam tudo o que o módulo de origem exporta, hoje e no futuro. Um
  * conjunto que só comparasse os nomes de topo veria `contextoDeTenant` como UM nome e deixaria
@@ -689,6 +727,7 @@ export {
 } from './certificado-do-provedor.js';
 export {
   acusarPagamentoDeCobranca,
+  type CobrancaDoRecorte,
   cancelarCobranca,
   cancelarCobrancasDoContrato,
   criarCobranca,
@@ -706,6 +745,8 @@ export {
   listarCobrancas,
   localizarCobranca,
   type PaginaDeCobrancasPersistidas,
+  type RecorteDeCompetencias,
+  selecionarCobrancasDoRecorte,
 } from './cobranca.js';
 export {
   acrescentarComodo,
@@ -797,6 +838,7 @@ export {
   admitirEmpresa,
   type EmpresaNova,
   type EmpresaPersistida,
+  empresaSuspensa,
   encerrarSessoesDaEmpresa,
   type JanelaDeEmpresas,
   lerAlvoDeReemissao,
@@ -819,6 +861,10 @@ export {
 } from './envio-de-cobranca.js';
 export * as esquemaIdentidade from './esquema/identidade.js';
 export * as esquemaNegocio from './esquema/negocio.js';
+// O terceiro schema (ADR-0031) — o do que não é dado de empresa nenhuma. Ele é publicado no mesmo
+// molde dos dois acima, e não como símbolos avulsos: quem o consome é a migração (via drizzle-kit) e
+// a suíte que afirma a forma da tabela contra o catálogo, e nenhum dos dois quer um nome curto.
+export * as esquemaPlataforma from './esquema/plataforma.js';
 export {
   type EventoBancarioNovo,
   type LinhaDeEventoBancario,
@@ -847,6 +893,21 @@ export {
   type PaginaDeImoveisPersistidos,
   somarMetragem,
 } from './imovel.js';
+export {
+  type AjustesDoDesfecho,
+  type DesfechoDoTratamento,
+  expurgarNotificacoesVencidas,
+  houveEfeitoDaLiquidacao,
+  lerNotificacaoBancaria,
+  listarRetidas,
+  marcarDesfecho,
+  type NotificacaoBancariaPersistida,
+  type NotificacaoRecebida,
+  type NotificacaoRetida,
+  type RoteamentoDaNotificacao,
+  registrarNotificacaoBancaria,
+  rotearNotificacaoBancaria,
+} from './notificacao-bancaria.js';
 export {
   type AjustePersistido,
   type AjustesDaPessoa,

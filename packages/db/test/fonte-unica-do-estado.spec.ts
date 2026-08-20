@@ -38,6 +38,13 @@
  * |       | (d)    | uma cópia de `apps/api/src/cobrancas/cobranca.service.ts` com o ternário que
  * |       |        | recalcula `status` a partir de `pagoEm`/`canceladoEm`/`dataVencimento`,
  * |       |        | REPROVA nomeando o arquivo; aplicada ao fonte ÍNTEGRO, passa limpa. |
+ * | CA-04 | CT-510 | A superfície publicada de `negocio.cobranca_derivada` é afirmada por
+ * |       | (e)    | **igualdade de lista ordenada** contra as 31 colunas escritas à mão: ela
+ * |       |        | publica `numero_do_titulo_no_provedor`, **não** publica `nosso_numero` e
+ * |       |        | **não** publica `identificador_no_provedor`, que é interna. É a rede do
+ * |       |        | `RENAME COLUMN` sobre a visão, que a T3 moveu para o **bloco 2** da parceira
+ * |       |        | `0020_seguranca_webhook_e_carne.sql` — a rede vale onde quer que a instrução
+ * |       |        | viva. (ADR-0001, `ancoras-de-superficie.md`) |
  *
  * Rastreabilidade: `CA-04 → CT-510 (RD-04)`. Acrescida pela T8 da fatia `regua-de-cobranca`:
  * `CA-05 → CT-612 (RD-06)` · `CA-08, CA-09 → CT-612 (RD-01)` · `CA-12 → CT-624 (RD-10)`.
@@ -137,6 +144,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { abrirConexao, type Sql } from '../src/conexao.ts';
 import { type BancoMigrado, bancoEfemero } from './banco-efemero.ts';
+import { diferencasDeConjunto } from './conjuntos.ts';
 import {
   listarFontesTs,
   semComentarios,
@@ -229,13 +237,70 @@ const COLUNAS_DA_COBRANCA: readonly string[] = [
   'juros_aplicados',
   'multa_percentual_aplicado',
   'juros_percentual_aplicado',
-  'nosso_numero',
+  'numero_do_titulo_no_provedor',
   'linha_digitavel',
   'codigo_barras',
   'data_credito',
   'valor_creditado',
   'boleto_arquivo',
   'identificador_no_provedor',
+];
+
+/**
+ * As colunas de `negocio.cobranca_derivada`, na ordem do catálogo — a **superfície publicada** da
+ * fonte única do estado.
+ *
+ * ⚠️ **Escritas à mão, e deliberadamente NÃO derivadas de {@link COLUNAS_DA_COBRANCA}.** A visão
+ * expandiu `c.*` no instante em que a `0010` a criou, de modo que o conjunto dela e o da tabela
+ * **divergiram de propósito**: `identificador_no_provedor`, acrescentada pela `0017`, é coluna
+ * INTERNA e o cabeçalho da `0010` a mantém fora da superfície por escrito (*"a visão é superfície
+ * publicada, e crescer por acidente é como um campo interno vaza"*). Compor esta lista a partir da
+ * outra faria a asserção concordar com o que ela deveria vigiar.
+ *
+ * São 22 colunas herdadas da tabela como ela era na `0009` — com `nosso_numero` já renomeada para
+ * `numero_do_titulo_no_provedor` pelo `RENAME COLUMN` da visão, que vive no **bloco 2** de
+ * `0020_seguranca_webhook_e_carne.sql` — seguidas das 9 que a própria visão calcula, na ordem do
+ * `SELECT`.
+ *
+ * É esta lista que dá rede àquela instrução. Ela nasceu na `0019`, e a T3 da fatia `webhook-e-carne`
+ * a moveu para a `0020` **por causa desta rede**: o cabeçalho da `0019` declara que a regeração dele
+ * é **esperada** (*"a supressão do `CREATE SCHEMA` é obrigatória a cada regeração"*), e uma regeração
+ * sobrescreveria o trecho autoral **em silêncio**. A `0020` é integralmente autoral e nunca regerada.
+ * A igualdade abaixo vale nos dois casos: sem ela, a visão voltaria a publicar `nosso_numero` sem
+ * nenhuma asserção reprovar.
+ */
+const COLUNAS_DA_VISAO_DERIVADA: readonly string[] = [
+  'id',
+  'empresa_id',
+  'codigo',
+  'contrato_id',
+  'natureza',
+  'referencia',
+  'competencia',
+  'data_vencimento',
+  'valor_original',
+  'pago_em',
+  'valor_pago',
+  'cancelado_em',
+  'multa_aplicada',
+  'juros_aplicados',
+  'multa_percentual_aplicado',
+  'juros_percentual_aplicado',
+  'numero_do_titulo_no_provedor',
+  'linha_digitavel',
+  'codigo_barras',
+  'data_credito',
+  'valor_creditado',
+  'boleto_arquivo',
+  'contrato_codigo',
+  'locatario_id',
+  'dias_atraso',
+  'status',
+  'valor_multa',
+  'valor_juros',
+  'multa_percentual_vigente',
+  'juros_percentual_vigente',
+  'valor_total',
 ];
 
 /** O fonte do serviço de cobrança — o sujeito da prova de falsificação. */
@@ -384,6 +449,45 @@ describe('CT-510 — não existe segunda derivação do estado da cobrança', ()
         'VENCIDA',
         'A_VENCER',
       ]);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-510 (e) — a superfície da visão é afirmada inteira, e ela publica o número do título pelo nome do produto',
+    async () => {
+      const colunas = await conexao<{ nome: string }[]>`
+        SELECT column_name AS nome
+          FROM information_schema.columns
+         WHERE table_schema = 'negocio' AND table_name = 'cobranca_derivada'
+         ORDER BY ordinal_position
+      `;
+
+      const observadas = colunas.map((coluna) => coluna.nome);
+
+      // A IGUALDADE de lista ordenada é a rede do `ALTER TABLE … RENAME COLUMN` sobre a visão —
+      // hoje no bloco 2 da `0020`, para onde a T3 o moveu. Ela fecha as TRÊS afirmações de uma vez,
+      // e cada uma reprova sozinha:
+      //
+      //   * a visão publica `numero_do_titulo_no_provedor` — se aquela instrução sumir, o catálogo
+      //     devolve `nosso_numero` na posição 17 e a igualdade reprova nomeando as duas colunas;
+      //   * `nosso_numero` NÃO está mais na superfície — vocabulário do provedor em coluna publicada
+      //     é o que o `D14 · F4/T6` existia para fechar (ADR-0001);
+      //   * `identificador_no_provedor` continua AUSENTE — é a coluna interna que a `0017`
+      //     acrescentou à TABELA e que o cabeçalho da `0010` mantém fora da superfície. Era a
+      //     alegação com que se justificou o `RENAME` em vez de recriar a visão com `c.*`, e até
+      //     aqui ela vivia só em prosa. Recriada com `c.*`, ela apareceria no fim da lista e esta
+      //     igualdade reprovaria.
+      //
+      // Lista ordenada, e não `toContain`: contenção aprovaria tanto a coluna que sumiu quanto a que
+      // apareceu sem ninguém decidir (`.claude/rules/ancoras-de-superficie.md`). A comparação contra
+      // 31 nomes é antivácua por construção — catálogo consultado no schema errado devolve `[]`.
+      expect(
+        observadas,
+        `superfície de negocio.cobranca_derivada divergiu: ${JSON.stringify(
+          diferencasDeConjunto(observadas, COLUNAS_DA_VISAO_DERIVADA),
+        )}`,
+      ).toEqual([...COLUNAS_DA_VISAO_DERIVADA]);
     },
     LIMITE_DO_CASO_MS,
   );
@@ -795,6 +899,14 @@ const BORDAS_QUE_ESCREVEM_CONTEXTO: readonly string[] = [
   // contexto depois" importa aqui mais do que em qualquer outra borda.
   'apps/worker/src/tarefas/emissao-em-lote.ts',
   'apps/worker/src/tarefas/conferencia-bancaria.ts',
+  // A borda do TRATAMENTO DA NOTÍCIA recebida do provedor (T7 da fatia `webhook-e-carne`): a
+  // primeira em que a empresa **não vem da carga**. Ela vem do registro que o roteamento resolve —
+  // a segunda origem legítima da ADR-0024, cujo alcance a terceira emenda dela (2026-08-18) declara
+  // —, e as duas leituras que a precedem correm **fora** de contexto de propósito: o cru, porque a
+  // tabela não tem dono-empresa (ADR-0031); e o roteamento, porque a empresa é o **resultado** dele e
+  // a função de banco não tem por onde recebê-la. Nada do recebido escolhe o tenant, que é a terceira
+  // *Alternativa rejeitada* da ADR-0035.
+  'apps/worker/src/tarefas/notificacao-bancaria.ts',
 ].sort();
 
 /** A variável de sessão que as políticas de `negocio` consultam. */
@@ -895,7 +1007,16 @@ describe('CT-624 — o escritor de contexto é único por borda, e as duas lista
       // escrita em `BORDAS_QUE_ESCREVEM_CONTEXTO`. A asserção **não foi afrouxada**: continua sendo
       // contagem EXATA ao lado da igualdade de lista acima, e um sétimo chamador reprova
       // nominalmente.
-      expect(arquivosDe(varredura.ocorrencias)).toHaveLength(6);
+      //
+      // SUT_IS_CORRECT_BECAUSE: a **T7** da fatia `webhook-e-carne` acrescenta a sétima — o
+      // tratamento da notícia recebida do provedor. Ela é a primeira borda em que o `empresaId`
+      // **não vem da carga**: ele vem do registro que o roteamento resolve, que é a segunda origem
+      // legítima da ADR-0024 e o alcance que a terceira emenda dela declara. As duas leituras
+      // anteriores à resolução correm **fora** de contexto de propósito — o cru, porque a tabela não
+      // tem dono-empresa (ADR-0031), e o roteamento, porque a empresa é o **resultado** dele. A
+      // asserção **não foi afrouxada**: continua sendo contagem EXATA ao lado da igualdade de lista
+      // acima, e um oitavo chamador reprova nominalmente.
+      expect(arquivosDe(varredura.ocorrencias)).toHaveLength(7);
     },
     LIMITE_DO_CASO_MS,
   );

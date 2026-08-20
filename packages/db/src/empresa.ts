@@ -261,6 +261,40 @@ export async function reativarEmpresa(
 }
 
 /**
+ * A empresa está **suspensa**? — a leitura que o tratamento da notícia bancária consulta (RN-09).
+ *
+ * Ela existe para o passo B.6 da borda do processo de trabalho: a notícia cuja cobrança pertence a
+ * uma empresa suspensa é **retida sem efeito**, e a retenção acontece antes de qualquer conferência
+ * e de qualquer ida ao provedor. É por isso que a pergunta é feita aqui, e não derivada de uma
+ * leitura mais larga: quem chama precisa de um predicado, não de uma linha.
+ *
+ * **Sem contexto de tenant, e a ausência é o mecanismo.** `identidade` não tem política a aplicar
+ * (ADR-0009) — ele existe justamente para operar antes de haver empresa no contexto —, e é isso que
+ * torna esta leitura alcançável pela tarefa **antes** de ela abrir o contexto que o roteamento
+ * resolveu. O identificador é **argumento de consulta parametrizada**, e nunca fonte de contexto: a
+ * distinção é a mesma que o cabeçalho deste módulo declara.
+ *
+ * ⚠️ **A empresa que não existe responde `false`, e a fusão é deliberada.** O `empresaId` que chega
+ * aqui é o que a travessia nominal do roteamento **acabou de devolver** a partir de
+ * `negocio.cobranca`, de modo que a empresa existe por construção. Um terceiro estado
+ * (`undefined`) obrigaria a borda a decidir de novo o que o roteamento já decidiu, e o único ramo
+ * que ela poderia escrever seria *"trate como não suspensa"* — que é o que esta assinatura já diz.
+ *
+ * A projeção é o **predicado**, e não a coluna: devolver `suspensa_em` daria a quem chama um
+ * instante de que ele não precisa e faria a decisão de *o que conta como suspensa* ganhar uma
+ * segunda casa, livre para divergir da derivação que a borda do Master já publica.
+ */
+export async function empresaSuspensa(tx: TransactionSql, empresaId: string): Promise<boolean> {
+  const [linha] = await tx<{ suspensa: boolean }[]>`
+    SELECT suspensa_em IS NOT NULL AS suspensa
+      FROM identidade.empresa
+     WHERE id = ${empresaId}
+  `;
+
+  return linha?.suspensa ?? false;
+}
+
+/**
  * Apaga os registros de sessão de **todas** as pessoas da empresa, e devolve quantos foram.
  *
  * Recebe o executor da transação em vez de abrir unidade própria — é a forma que o docblock de

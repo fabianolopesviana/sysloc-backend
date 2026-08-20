@@ -280,12 +280,13 @@ export interface LinhaDeCobranca {
   readonly multaPercentualAplicado: number | null;
   readonly jurosPercentualAplicado: number | null;
   /**
-   * A coluna `nosso_numero`, publicada com o nome do **produto**.
+   * A coluna `numero_do_titulo_no_provedor` — o número que o **provedor** atribuiu ao título.
    *
    * *Nosso número* é vocabulário do provedor, a ADR-0001 fixa que nenhum dele cruza o que o produto
-   * publica, e o glossário global o lista entre os termos a evitar. A coluna física continua
-   * `nosso_numero` — renomeá-la exigiria migração sobre tabela com dado — e o mapeamento morre aqui,
-   * na fronteira de dados. Nulo quer dizer *sem boleto emitido*.
+   * publica, e o glossário global o lista entre os termos a evitar. **A coluna física se chamava
+   * `nosso_numero` até a migração `0019`**, que a renomeou e fechou o `D14 · F4/T6`: desde então o
+   * nome do provedor não existe mais nem no esquema, e não há mais tradução a fazer aqui. Nulo quer
+   * dizer *sem boleto emitido*.
    */
   readonly numeroDoTituloNoProvedor: string | null;
   readonly linhaDigitavel: string | null;
@@ -323,6 +324,34 @@ interface LinhaBrutaDeCobranca
   readonly multaPercentualAplicado: string | null;
   readonly jurosPercentualAplicado: string | null;
   readonly valorCreditado: string | null;
+}
+
+/**
+ * O intervalo **fechado** de competências que o carnê recorta (§4.1 da fatia `webhook-e-carne`).
+ *
+ * As duas cadeias são `YYYY-MM-DD` no primeiro dia do mês, e não `Date`: a coluna é `date`, e um
+ * objeto `Date` reserializado com o fuso do processo desloca a data em um dia para metade dos fusos
+ * — que num par de pontas viraria um mês a mais ou a menos no recorte. Quem confere a forma, a ordem
+ * entre as pontas e a largura é o esquema da borda (`esquemaDoRecorteDoCarne`); esta camada compõe o
+ * predicado com o que já foi conferido, e não repete a conferência.
+ */
+export interface RecorteDeCompetencias {
+  /** A competência da primeira ponta, **inclusive**. */
+  readonly de: string;
+  /** A competência da última ponta, **inclusive**. */
+  readonly ate: string;
+}
+
+/**
+ * O par que a composição do carnê precisa saber de cada cobrança do recorte.
+ *
+ * Ver {@link selecionarCobrancasDoRecorte} para por que são **duas** colunas e não a linha inteira.
+ */
+export interface CobrancaDoRecorte {
+  /** A chave **exposta** (ADR-0017), de que a guarda dos bytes deriva o nome do arquivo. */
+  readonly codigo: string;
+  /** O título vivo; `null` é *nunca emitida, ou já revogada* — e é dele que sai o `BOLETO_AUSENTE`. */
+  readonly numeroDoTituloNoProvedor: string | null;
 }
 
 /** A página lida, com o total do conjunto inteiro — os dois da MESMA transação. */
@@ -377,8 +406,19 @@ const VIOLACAO_DE_UNICIDADE = '23505';
  * `empresa_id` e `identificador_no_provedor` **não** estão na lista — o que a porta devolve é o que o
  * contrato publica, e a chave de correlação com o provedor é interna (ver {@link LinhaDeCobranca}).
  *
- * `nosso_numero` sai daqui como `numeroDoTituloNoProvedor`, e a tradução é conteúdo, não estética: é
- * neste ponto — e em nenhum outro — que o vocabulário do provedor para de existir (ADR-0001).
+ * ⚠️ **O apelido de `numero_do_titulo_no_provedor` deixou de traduzir VOCABULÁRIO — e continua
+ * traduzindo CAIXA.** Este parágrafo dizia que a coluna se chamava `nosso_numero` e que era *"neste
+ * ponto — e em nenhum outro — que o vocabulário do provedor para de existir"*. A migração `0019` a
+ * renomeou e fechou o `D14 · F4/T6`, de modo que a segunda metade da frase se resolveu **um degrau
+ * abaixo**: o termo do provedor não chega mais até aqui. O `AS` permanece porque a coluna é
+ * `snake_case` e o contrato fala camelCase, exatamente como nas vinte e duas linhas vizinhas — a
+ * prescrição da task previa que ele sumisse, e a medição a refuta: sem o apelido, o driver devolveria
+ * a chave `numero_do_titulo_no_provedor` e nenhuma leitura casaria com {@link LinhaDeCobranca}.
+ *
+ * O parágrafo fica, e não some, porque apagá-lo levaria a próxima passada a reintroduzir a tradução
+ * de vocabulário por consistência com o que a memória guarda — a regressão de decisão (R3) que o
+ * Protocolo Antirregressão nomeia. A fronteira do vocabulário continua existindo, um pacote adiante:
+ * `packages/cobranca-bancaria/`, onde `nossoNumero` é o dialeto legítimo do adaptador (RN-18).
  *
  * As **quatro** datas saem por `to_char`, e a escolha é conteúdo: o driver entregaria uma coluna
  * `date` como objeto `Date` no fuso do processo, e reserializá-lo desloca a data em um dia para
@@ -405,7 +445,7 @@ function colunasDaCobranca(tx: TransactionSql): Fragment {
     to_char(cancelado_em AT TIME ZONE 'UTC', ${FORMATO_ISO_DO_INSTANTE}) AS "canceladoEm",
     multa_percentual_aplicado AS "multaPercentualAplicado",
     juros_percentual_aplicado AS "jurosPercentualAplicado",
-    nosso_numero AS "numeroDoTituloNoProvedor",
+    numero_do_titulo_no_provedor AS "numeroDoTituloNoProvedor",
     linha_digitavel AS "linhaDigitavel",
     codigo_barras AS "codigoDeBarras",
     to_char(data_credito, ${FORMATO_ISO_DA_DATA}) AS "dataDoCredito",
@@ -901,6 +941,60 @@ export async function listarCobrancas(
     cobrancas: linhas.map(cobrancaPublicada),
     total: Number(contagem?.total ?? 0),
   };
+}
+
+/**
+ * As cobranças do contrato cujas competências caem no recorte, **ordenadas por vencimento**.
+ *
+ * ---------------------------------------------------------------------------
+ * O recorte e a ordem são do BANCO, e a posição é a ADR-0023 lida ao pé da letra
+ * ---------------------------------------------------------------------------
+ *
+ * Filtrar em memória exigiria trazer a carteira inteira do contrato para depois descartar quase
+ * tudo, e ordenar em memória faria a ordem do carnê depender do arranjo do arranjo — quando ela é
+ * **conteúdo**: quem recebe o caderno paga a primeira parcela primeiro. O desempate por `codigo`
+ * acompanha {@link listarCobrancas} pela mesma razão que ela registra: doze parcelas de uma ativação
+ * compartilham o dia do vencimento, e sem o desempate a ordem entre elas é a que o planejador
+ * escolher — de modo que dois pedidos do mesmo recorte poderiam produzir documentos com as parcelas
+ * trocadas.
+ *
+ * ---------------------------------------------------------------------------
+ * Ela devolve DUAS colunas, e a escassez é a decisão
+ * ---------------------------------------------------------------------------
+ *
+ * O consumidor é a composição do carnê, e o que ela precisa saber de cada cobrança é o par *"que
+ * boleto pedir"* — a chave exposta, de que a guarda deriva o nome do arquivo, e o título vivo, que
+ * decide se **há** boleto. Devolver a linha inteira daria à borda todo o resto do recurso sem
+ * consumidor, incluindo os valores derivados que ela não publica aqui; e o alvo gravado do arquivo
+ * continua **fora**, pela mesma razão de {@link ../../apps/api/src/cobrancas/boleto.service.ts}: o
+ * nome do arquivo é composto num ponto só, dentro da guarda.
+ *
+ * Nulo em `numeroDoTituloNoProvedor` quer dizer *sem boleto emitido* — e é dele que sai o
+ * `404 BOLETO_AUSENTE` que o carnê publica, nomeando a **primeira** na ordem que esta consulta fixa.
+ *
+ * Ela lê a **visão**, como toda leitura de cobrança desta camada (ver a `DECISÃO FECHADA` acima), e
+ * não há `WHERE empresa_id` aqui: o recorte por empresa é da política, e um segundo caminho para o
+ * mesmo recorte é o que a ADR-0008 rejeita. Contrato de outra empresa simplesmente não devolve linha
+ * alguma — mas quem produz o `404` daquele caso é a borda, com {@link ./contrato.ts localizarContrato},
+ * **antes** de chegar aqui: sem essa conferência, o contrato alheio responderia a recusa do recorte
+ * vazio, que é distinguível.
+ *
+ * As duas pontas são **inclusivas**, e o intervalo é fechado nas duas: o recorte de janeiro a março
+ * alcança as três competências, que é o que o cliente lê ao pedir *"de janeiro a março"*.
+ */
+export async function selecionarCobrancasDoRecorte(
+  tx: TransactionSql,
+  contratoCodigo: string,
+  recorte: RecorteDeCompetencias,
+): Promise<readonly CobrancaDoRecorte[]> {
+  return await tx<CobrancaDoRecorte[]>`
+    SELECT codigo,
+           numero_do_titulo_no_provedor AS "numeroDoTituloNoProvedor"
+      FROM negocio.cobranca_derivada
+     WHERE contrato_codigo = ${contratoCodigo}
+       AND competencia BETWEEN ${recorte.de}::date AND ${recorte.ate}::date
+     ORDER BY data_vencimento, codigo
+  `;
 }
 
 /**

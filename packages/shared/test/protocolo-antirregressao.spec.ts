@@ -183,7 +183,12 @@ function arquivosDeCodigo(): string[] {
       // arquivo — nunca casar.
       if (segmentos.includes('node_modules')) continue;
       if (caminho === ARQUIVO_DESTA_BARREIRA) continue;
-      if (!/\.(ts|js|sh|sql|json|md)$/.test(caminho)) continue;
+      // `.conf` entrou na T11 da fatia `webhook-e-carne`, com o PRIMEIRO marcador emitido em
+      // configuração versionada (o vhost da borda externa). Sem ele, a lista decide sozinha que
+      // marcador só existe em arquivo de linguagem: o do `.conf` some da varredura, e a linha
+      // correspondente do índice vira "órfã" — o CT-907 passaria a reprovar o registro CERTO e a
+      // aprovar o índice sem a linha, que é o oposto do que ele existe para garantir.
+      if (!/\.(ts|js|sh|sql|json|md|conf)$/.test(caminho)) continue;
       encontrados.push(caminho);
     }
   }

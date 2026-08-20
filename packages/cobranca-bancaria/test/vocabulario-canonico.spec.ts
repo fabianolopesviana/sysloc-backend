@@ -1,6 +1,7 @@
 /**
  * Verificação do **vocabulário canônico** publicado pelo domínio da cobrança bancária — CT-809,
- * CT-834 e CT-835 da fatia `fundacao-bancaria`.
+ * CT-834 e CT-835 da fatia `fundacao-bancaria`, mais o CT-933 da fatia `emissao-e-conciliacao` e o
+ * CT-991 da fatia `webhook-e-carne`.
  *
  * ---------------------------------------------------------------------------
  * INVARIANTES
@@ -40,9 +41,16 @@
  * |          | (b)    | publicado por este pacote opera sobre ele. Pix é declarado, não
  * |          |        | implementado — e a lista vazia é o que separa *"declarado sem operação"* de
  * |          |        | *"bandeira desligada escondendo código pronto"*. |
+ * | CA-21    | CT-991 | Nenhum termo do dialeto do provedor — os nove da fatia (i) mais os quatro
+ * |          |        | que a notícia acrescentou — aparece em **posição de símbolo publicado**
+ * |          |        | (nome de tipo, membro de tipo, nome de símbolo declarado ou literal de
+ * |          |        | cadeia) nos **três módulos** que a fatia `webhook-e-carne` criou. E a
+ * |          |        | varredura **não** alcança o acesso de propriedade sobre o corpo recebido,
+ * |          |        | que é a fronteira de tradução — as duas metades são afirmadas por
+ * |          |        | igualdade sobre um fonte de controle. (ADR-0001, ADR-0034) |
  *
  * Rastreabilidade: `CA-13 → CT-809, CT-834 (RN-10)` · `CA-14 → CT-835 (RN-11)` ·
- * `CA-20 → CT-933 (RN-15)`.
+ * `CA-20 → CT-933 (RN-15)` · `CA-21 → CT-991 (RN-18)`.
  *
  * ---------------------------------------------------------------------------
  * Estes casos são ESTÁTICOS, e a razão é que interface não existe em execução
@@ -245,6 +253,99 @@ const TERMOS_DO_PROVEDOR = [
   'pagador',
 ] as const;
 
+/**
+ * Os **quatro** nomes que a notícia do provedor acrescenta ao dialeto (fatia `webhook-e-carne`).
+ *
+ * Os três primeiros são campos do corpo que chega — o identificador da baixa, o pedido de validação
+ * do endereço e o identificador que o provedor dá ao próprio aviso —, e o quarto é a **classificação
+ * dele**, que a RN-18 proíbe de virar regra do produto. Escritos por extenso, e jamais derivados do
+ * fonte que eles varrem.
+ *
+ * ⚠️ **`webhook` sozinho NÃO entra**, e a ausência é deliberada: é o nome da própria fatia
+ * (`webhook-e-carne`), citado em dezenas de docblocks e no nome da migração. Incluí-lo faria a
+ * varredura reprovar a documentação que a decisão exige — o mesmo erro que `semComentarios` existe
+ * para não cometer, só que por outra porta.
+ */
+const TERMOS_DO_DIALETO_DA_NOTICIA = [
+  'numeroIdentificadorBaixa',
+  'validacaoWebhook',
+  'idWebhook',
+  'tipoMovimento',
+] as const;
+
+/** O dialeto inteiro — os nove da fatia (i) mais os quatro da notícia. */
+const TERMOS_DO_DIALETO = [...TERMOS_DO_PROVEDOR, ...TERMOS_DO_DIALETO_DA_NOTICIA] as const;
+
+/**
+ * Os três termos do dialeto que o módulo do tratamento **lê** do corpo recebido — a fronteira de
+ * tradução, que é exatamente onde eles TÊM de viver.
+ *
+ * Eles aparecem no fonte como **acesso de propriedade** sobre o recebido, e em nenhuma outra posição.
+ * A varredura do CT-991 alcança **símbolo publicado** — nome de tipo, membro de tipo, nome de símbolo
+ * declarado e literal de cadeia —, e nenhuma dessas quatro posições contém acesso de propriedade. É
+ * a discriminação que separa *"o dialeto morreu na fronteira"* de *"a varredura não olhou"*, e ela é
+ * afirmada por extenso no controle abaixo.
+ */
+const TERMOS_NA_FRONTEIRA_DE_TRADUCAO = ['nossoNumero', 'seuNumero', 'tipoMovimento'] as const;
+
+/**
+ * Os **três módulos** que a fatia `webhook-e-carne` acrescentou, e sobre cujo TEXTO o CT-991 incide.
+ *
+ * Dois deles vivem em pacotes irmãos, e são alcançados por **leitura de arquivo** — nunca por
+ * `import`. A distinção importa: ler o texto não cria dependência de módulo alguma, e por isso este
+ * caso não abre a fronteira que o `CT-809 (d)` fecha logo acima.
+ *
+ * Cada entrada traz, escritos à mão, **três símbolos do produto** que aquele módulo publica. Eles são
+ * a âncora antivácuo do caso: *"nenhum termo do dialeto"* seria satisfeito por um extrator que
+ * devolvesse `[]`, e é essa a forma clássica de uma varredura aprovar tudo por não ter olhado
+ * (AP-29). Uma contagem mínima não bastaria — ela não diz de QUAL arquivo o vocabulário veio.
+ */
+const MODULOS_DA_FATIA = [
+  {
+    caminho: '../../contracts/src/cobranca-bancaria.ts',
+    publica: ['TIPOS_DE_EVENTO_BANCARIO', 'ORIGENS_DO_EVENTO_BANCARIO', 'esquemaDoEventoBancario'],
+  },
+  {
+    caminho: '../../db/src/notificacao-bancaria.ts',
+    publica: [
+      'registrarNotificacaoBancaria',
+      'rotearNotificacaoBancaria',
+      'NotificacaoBancariaPersistida',
+    ],
+  },
+  {
+    caminho: '../src/tratamento-de-notificacao.ts',
+    publica: [
+      'classificarNotificacaoBancaria',
+      'ehReentregaDeEfeitoAplicado',
+      'NotificacaoBancariaClassificada',
+    ],
+  },
+] as const;
+
+/**
+ * Um fonte sintético com o dialeto plantado nas **quatro posições de símbolo publicado** — e, junto,
+ * nas três posições que NÃO são publicação.
+ *
+ * As quatro plantadas são o controle positivo: nome de tipo (`AvisoSicoob`), membro de tipo
+ * (`numeroIdentificadorBaixa`), nome de símbolo declarado (`idWebhook`) e literal de cadeia
+ * (`'validacaoWebhook'`). As três não-plantadas são o eixo **negativo**, e sem elas o caso não
+ * discriminaria a fronteira de tradução legítima do vazamento: o caminho de módulo, o comentário e o
+ * **acesso de propriedade** sobre o corpo recebido.
+ */
+const FONTE_DE_CONTROLE_COM_DIALETO_PUBLICADO = `
+import { algo } from './seuNumero.js';
+/** Um comentário que cita nossoNumero e tipoMovimento sem publicar coisa alguma. */
+export interface AvisoSicoob {
+  readonly numeroIdentificadorBaixa: string;
+}
+export const idWebhook = 990;
+export type Classificacao = 'validacaoWebhook';
+export function lerCorpo(dados: Record<string, unknown>): unknown {
+  return dados.nossoNumero ?? dados.seuNumero;
+}
+`;
+
 /** O nome que a ADR-0001 reserva para a porta de cobrança — e que esta fatia finalmente usa. */
 const NOME_RESERVADO = 'AdaptadorCobrancaBancaria';
 
@@ -291,7 +392,7 @@ const carregar = async () => import('@sysloc/db');
 `;
 
 /**
- * O inventário **completo** da superfície publicada por `src/index.ts` — os 41 símbolos, escritos
+ * O inventário **completo** da superfície publicada por `src/index.ts` — os 44 símbolos, escritos
  * por extenso e jamais derivados do barril.
  *
  * ⚠️ **Eram 26 até a T9 da fatia (ii)**, que publicou a guarda de boletos: `criarGuardaDeBoletos` e
@@ -299,8 +400,10 @@ const carregar = async () => import('@sysloc/db');
  * `DesfechoDoLote` e `TrabalhoDoLote`; **31 até a T11**, que publicou o ato de reemissão —
  * `reemitirBoleto`, `TrabalhoDaReemissao`, `DesfechoDaReemissao`, `ErroDeReemissaoIncompleta` e os
  * **dois limites** da sondagem; e **37 até a T12**, que publicou a apuração da conferência —
- * `conferirCobrancas`, `TrabalhoDaConferencia`, `DesfechoDaConferencia` e `EfeitoDaConferencia`. A
- * contagem em prosa sobe **no mesmo diff** da constante, como
+ * `conferirCobrancas`, `TrabalhoDaConferencia`, `DesfechoDaConferencia` e `EfeitoDaConferencia`; e
+ * **41 até a T4 da fatia (iii)**, que publicou o tratamento da notícia —
+ * `classificarNotificacaoBancaria`, `ehReentregaDeEfeitoAplicado` e
+ * `NotificacaoBancariaClassificada`. A contagem em prosa sobe **no mesmo diff** da constante, como
  * a `.claude/rules/ancoras-de-superficie.md` exige — número narrativo que fica para trás convida a
  * próxima task a "corrigir" a âncora executável para o valor errado.
  *
@@ -365,6 +468,10 @@ const SIMBOLOS_PUBLICADOS = [
   'INTERVALO_ENTRE_SONDAS_MS',
   'reemitirBoleto',
   'TETO_DA_CONFIRMACAO_DA_REVOGACAO_MS',
+  // tratamento-de-notificacao.ts
+  'NotificacaoBancariaClassificada',
+  'classificarNotificacaoBancaria',
+  'ehReentregaDeEfeitoAplicado',
 ] as const;
 
 /**
@@ -398,6 +505,12 @@ const SIMBOLOS_PUBLICADOS = [
  * ⚠️ **As cinco portas da apuração e os seis tipos que elas carregam entraram com a T12**, pelo
  * mesmo critério das anteriores: quem as satisfaz é a borda da tarefa, montando um objeto literal que
  * o compilador confere **estruturalmente** contra `TrabalhoDaConferencia`.
+ *
+ * ⚠️ **`DesfechoDaNotificacaoBancaria` entrou com a T4 da fatia (iii)**, e o critério dela é o
+ * terceiro desta lista: ela é a união dos nove desfechos que o enum do banco declara, e existe no
+ * domínio só para dar tipo ao parâmetro de `ehReentregaDeEfeitoAplicado`. Quem chama passa o valor
+ * lido da camada de dados, sem escrever o nome — publicá-la daria um segundo lugar de onde declarar
+ * o mesmo conjunto, que é o oposto do que a duplicação deliberada com o enum resolve.
  *
  * ⚠️ **`PortaDaRevogacaoGravada` aparece UMA vez nesta lista e é declarada por DOIS módulos** — o ato
  * de reemissão (T11) e a apuração da conferência (T12) —, com assinaturas diferentes. A lista é de
@@ -439,6 +552,7 @@ const SIMBOLOS_NAO_PUBLICADOS = [
   'PortaDaLiquidacaoGravada',
   'PortaDoEstornoGravado',
   'PortaDoValorEsperado',
+  'DesfechoDaNotificacaoBancaria',
 ] as const;
 
 /**
@@ -640,13 +754,21 @@ function tiposDeclarados(fonteBruto: string): TipoDeclarado[] {
  *
  * Alcança as duas formas que este monorepo usa: a declaração com `export` na frente e o bloco
  * `export { … } from`, com ou sem `type`. Num apelido (`X as Y`), o que vale é o nome **publicado**.
+ *
+ * ⚠️ **`async` entrou no molde na T12 da fatia `webhook-e-carne`, e a ausência era um buraco.** Sem
+ * ele, `export async function <nome>` — que é a forma de **toda** função de domínio de
+ * `packages/db/src/` — não era reconhecida como declaração, e um símbolo batizado com nome do
+ * provedor atravessaria a varredura do CT-991 sem que nada acusasse. A lacuna foi medida ao escrever
+ * a âncora antivácuo daquele caso: os três símbolos escritos à mão para
+ * `notificacao-bancaria.ts` não eram alcançados. Acrescentá-lo **alarga** o que a varredura enxerga,
+ * e por isso não afrouxa nenhum caso que já dependia desta função.
  */
 function simbolosDeclarados(fonteBruto: string): string[] {
   const fonte = semComentarios(fonteBruto);
   const nomes: string[] = [];
 
   const declaracao =
-    /\bexport\s+(?:declare\s+)?(?:abstract\s+)?(?:const|let|var|function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/g;
+    /\bexport\s+(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(?:const|let|var|function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/g;
   for (const achado of fonte.matchAll(declaracao)) {
     const nome = achado[1];
     if (nome !== undefined) {
@@ -840,6 +962,30 @@ async function fonteDaPorta(): Promise<string> {
 /** O fonte que declara a porta de cobrança — a das quatro operações. */
 async function fonteDaPortaDeCobranca(): Promise<string> {
   return readFile(new URL('../src/porta-de-cobranca.ts', import.meta.url), 'utf8');
+}
+
+/**
+ * O **vocabulário publicado** de um fonte: as quatro posições em que um nome do provedor viraria
+ * símbolo do produto.
+ *
+ * Nome de tipo, membro de tipo, nome de símbolo declarado e literal de cadeia — e nada além disso. O
+ * que fica **deliberadamente de fora** é o acesso de propriedade sobre o valor recebido, que é a
+ * fronteira de tradução: é ali, e só ali, que o dialeto tem de aparecer.
+ */
+function vocabularioPublicadoDe(fonte: string): string[] {
+  const tipos = tiposDeclarados(fonte);
+
+  return [
+    ...tipos.map((tipo) => tipo.nome),
+    ...tipos.flatMap((tipo) => tipo.membros),
+    ...simbolosDeclarados(fonte),
+    ...literaisDeclarados(fonte),
+  ];
+}
+
+/** O texto de um dos módulos da fatia, lido por caminho relativo a `test/`. */
+async function fonteDoModuloDaFatia(caminho: string): Promise<string> {
+  return readFile(new URL(caminho, import.meta.url), 'utf8');
 }
 
 /** O fonte do vocabulário canônico — o que atravessa as duas portas. */
@@ -1304,5 +1450,99 @@ describe('CT-835 — o meio de recebimento é declarado, e o pix não tem opera�
     ]);
 
     expect(ocorrenciasDeTermos(simbolos, [MEIO_SEM_OPERACAO])).toEqual([]);
+  });
+});
+
+// ===========================================================================
+// CT-991 — o dialeto do provedor não vira símbolo publicado dos módulos novos
+// ===========================================================================
+
+/**
+ * A varredura **estática** do texto-fonte dos três módulos que a fatia `webhook-e-carne` acrescentou
+ * (CA-21 · RN-18 · ADR-0001 · ADR-0034).
+ *
+ * O invariante é *"trocar de provedor não obriga a reescrever o domínio"*: nenhum nome, código ou
+ * desfecho do provedor vira símbolo publicado do produto. O dialeto entra por uma fronteira, é
+ * traduzido ali, e morre ali.
+ *
+ * ⚠️ **Este caso é a metade ESTÁTICA da CA-21**, e a outra é o `CT-992` de
+ * `apps/api/test/vocabulario-na-saida-real.e2e.spec.ts`, que mede a **saída real**. Nenhum dos dois
+ * implica o outro, pela mesma razão já registrada no par `CT-933`/`CT-934`: um valor publicado pode
+ * carregar o termo sem que nome de símbolo algum o carregue, e um símbolo do dialeto pode existir em
+ * `src/` sem chegar a corpo nenhum.
+ *
+ * ⚠️ **Asserção estática exige prova de falsificação por execução** (`.claude/rules/testing-stack.md`,
+ * e o P4 do Protocolo Antirregressão). Ela foi executada na T12, pelo script `test` do pacote:
+ * reintroduzido `nossoNumero` como **membro** de `NotificacaoRecebida` em
+ * `packages/db/src/notificacao-bancaria.ts`, o caso abaixo reprovou nomeando o termo e o módulo; o
+ * defeito foi revertido em seguida, e o controle deste bloco continua passando limpo no mesmo
+ * harness.
+ */
+describe('CT-991 — nenhum símbolo publicado dos módulos novos usa vocabulário do provedor', () => {
+  it('a varredura acha o dialeto nas quatro posições publicadas, e ignora a fronteira de tradução', () => {
+    // Âncora da lista: os treze termos são distintos, e os quatro da notícia de fato entraram.
+    expect(new Set(TERMOS_DO_DIALETO).size).toBe(TERMOS_DO_DIALETO.length);
+    expect(TERMOS_DO_DIALETO.length).toBe(
+      TERMOS_DO_PROVEDOR.length + TERMOS_DO_DIALETO_DA_NOTICIA.length,
+    );
+
+    // Âncora do eixo NEGATIVO: os três termos que o controle planta fora de posição publicada estão
+    // mesmo escritos nele. Sem esta linha, "a varredura não os achou" seria indistinguível de "eles
+    // nunca estiveram lá", e o eixo negativo passaria por vacuidade.
+    for (const termo of TERMOS_NA_FRONTEIRA_DE_TRADUCAO) {
+      expect(FONTE_DE_CONTROLE_COM_DIALETO_PUBLICADO).toContain(termo);
+    }
+
+    const achados = [
+      ...new Set(
+        ocorrenciasDeTermos(
+          vocabularioPublicadoDe(FONTE_DE_CONTROLE_COM_DIALETO_PUBLICADO),
+          TERMOS_DO_DIALETO,
+        ),
+      ),
+    ].sort();
+
+    // Controle POSITIVO (AP-29), por igualdade: os quatro plantados em posição publicada, e apenas
+    // eles. Um extrator cego a qualquer das quatro posições reprova nomeando o que faltou; um
+    // extrator que sobre-case reprova nomeando o excedente.
+    expect(achados).toEqual([
+      'idWebhook em idWebhook',
+      'numeroIdentificadorBaixa em numeroIdentificadorBaixa',
+      'sicoob em AvisoSicoob',
+      'validacaoWebhook em validacaoWebhook',
+    ]);
+
+    // E o eixo NEGATIVO por extenso: nenhum dos três termos da fronteira de tradução foi acusado,
+    // embora os três estejam escritos no controle. É esta linha que impede o caso de reprovar o
+    // `dados.nossoNumero` de `tratamento-de-notificacao.ts`, que é onde o dialeto deve viver.
+    expect(
+      achados.filter((achado) =>
+        TERMOS_NA_FRONTEIRA_DE_TRADUCAO.some((termo) => achado.startsWith(`${termo} em `)),
+      ),
+    ).toEqual([]);
+  });
+
+  it('os três módulos publicam vocabulário do produto, e nenhum termo do dialeto', async () => {
+    for (const modulo of MODULOS_DA_FATIA) {
+      const fonte = await fonteDoModuloDaFatia(modulo.caminho);
+
+      // Âncora antivácuo, arquivo a arquivo: ele existe, tem conteúdo, e o extrator alcançou nele os
+      // três símbolos do produto escritos à mão. Um arquivo vazio, um caminho errado ou um extrator
+      // quebrado reprovam AQUI, nomeando o módulo — e não passam por vacuidade na varredura abaixo.
+      expect(fonte.length, modulo.caminho).toBeGreaterThan(0);
+
+      const vocabulario = vocabularioPublicadoDe(fonte);
+
+      expect(
+        modulo.publica.filter((simbolo) => !vocabulario.includes(simbolo)),
+        `${modulo.caminho}: o extrator não alcançou símbolos que o módulo publica`,
+      ).toEqual([]);
+
+      // A varredura, módulo a módulo: a reprovação nomeia o termo, o portador e o arquivo.
+      expect(
+        ocorrenciasDeTermos(vocabulario, TERMOS_DO_DIALETO),
+        `${modulo.caminho} publica vocabulário do provedor`,
+      ).toEqual([]);
+    }
   });
 });

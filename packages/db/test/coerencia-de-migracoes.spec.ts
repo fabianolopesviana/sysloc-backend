@@ -800,9 +800,15 @@ describe('CT-946 — as migrações da emissão separam gerado de autoral, e o l
     expect(excedentesNoJournal(coerencia)).toEqual([]);
     expect(coerencia.registradoNoJournal).toEqual(coerencia.derivadoDoDiretorio);
     expect(coerencia.foraDeOrdem).toEqual([]);
+    //
+    // SUT_IS_CORRECT_BECAUSE: o recorte era `idx >= 17` porque a `0017` e a `0018` eram as ÚLTIMAS
+    // do ledger quando este caso nasceu — o filtro aberto para cima era a forma de dizer "as desta
+    // fatia". A `0019` é de outra fatia (`webhook-e-carne`) e não pertence a esta âncora, que é
+    // nominal e sobre a fatia `emissao-e-conciliacao`. O que o caso afirma não mudou; o recorte é
+    // que envelheceu, e fechá-lo pelas duas pontas é o que impede a próxima fatia de reabri-lo.
     expect(
       coerencia.registradoNoJournal
-        .filter((entrada) => entrada.idx >= 17)
+        .filter((entrada) => entrada.idx >= 17 && entrada.idx <= 18)
         .map((entrada) => chave(entrada)),
     ).toEqual([`17·${MIGRACAO_GERADA_DA_EMISSAO}`, `18·${MIGRACAO_AUTORAL_DA_EMISSAO}`]);
 

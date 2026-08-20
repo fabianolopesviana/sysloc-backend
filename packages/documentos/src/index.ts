@@ -6,12 +6,16 @@
  * ---------------------------------------------------------------------------
  *
  * Ele decide **o que o documento diz**, e para nisso. Não abre transação, não escreve SQL, não fala
- * com SMTP e não sabe HTTP. De PDF ele conhece exatamente **um ponto**: declara a porta de
- * renderização e hospeda o único arquivo que fala com o motor (`renderizador-pdf.ts`, T6) — a
- * composição continua recebendo a porta **por parâmetro** (ADR-0025), e o instante chega já
- * resolvido, do banco (ADR-0026). É o que a torna exercitável sem o motor de pé: quatro das cinco
- * suítes deste pacote não atravessam fronteira real alguma, e só `test/renderizador-pdf.spec.ts`
- * atravessa `filesystem`, porque a prova exige o PDF de fato.
+ * com SMTP e não sabe HTTP. De PDF ele conhece **dois pontos**, e cada um é uma porta declarada
+ * aqui mais o único arquivo que fala com a biblioteca que a satisfaz: a **renderização**
+ * (`renderizador-pdf.ts`, T6), que produz o documento do contrato a partir do conteúdo, e a
+ * **mesclagem** (`mesclador-pdf.ts`, fatia `webhook-e-carne` T5), que junta documentos já prontos
+ * sem tocá-los. A composição continua recebendo a porta **por parâmetro** (ADR-0025), e o instante
+ * chega já resolvido, do banco (ADR-0026). É o que a torna exercitável sem motor de pé: as suítes
+ * do domínio não atravessam fronteira real alguma, e só as dos **dois adaptadores** exercitam
+ * biblioteca de verdade — `test/renderizador-pdf.spec.ts` atravessando `filesystem`, porque a prova
+ * exige o PDF lido de volta do disco, e `test/mesclador-pdf.spec.ts` em memória, porque o que ela
+ * prova é o conteúdo das páginas copiadas.
  *
  * A única dependência de **workspace** é `@sysloc/contracts`, o pacote folha; `@react-pdf/renderer`
  * e `react` entraram com o adaptador, e a razão de eles não violarem a Fronteira do projeto está
@@ -51,6 +55,19 @@
  * (ADR-0025). O que **não** sai é qualquer peça interna da renderização — folha de estilo, tamanho de
  * página, árvore de componentes: publicá-las convidaria um segundo lugar a decidir a forma do
  * documento, e o ponto único que conhece PDF deixaria de ser único.
+ *
+ * `PortaDeMesclagem` e `criarMescladorPdf` (fatia `webhook-e-carne`, T5) saem pela **mesma régua, e
+ * pela mesma razão**: a porta é o que o `CarneService` exige, e o adaptador é o que a borda escolhe
+ * ao montar o processo. Os dois motores de PDF do pacote são distintos de propósito e **não se
+ * substituem**: `@react-pdf/renderer` renderiza layout e não importa página de documento externo;
+ * `pdf-lib` copia página e não compõe layout nenhum.
+ *
+ * O que **não** sai daí é `ErroDeMesclagemSemDocumentos` nem `ErroDeDocumentoIlegivel`: os dois são
+ * o contrato da porta para quem a **satisfaz** e para quem a **prova**, e nenhum consumidor de fora
+ * do pacote os captura — quem chama o carnê recusa o recorte vazio antes (`404 SEM_COBRANCAS`), e o
+ * documento ilegível é falha interna, que sobe ao filtro global como qualquer outra. Publicá-los
+ * agora seria alargar a superfície sem consumidor, e retirar depois o que se publicou sem querer é
+ * mudança incompatível.
  */
 
 export { CABECALHOS_DAS_CLAUSULAS } from './contrato/clausulas.js';
@@ -70,7 +87,9 @@ export { ErroDeValorForaDeAlcance, valorPorExtenso } from './contrato/extenso.js
 export { ErroDeTipoDePessoaDesconhecido, qualificarParte } from './contrato/qualificacao.js';
 export type { MensagemDeEmail } from './mensagem-de-confirmacao.js';
 export { comporMensagemDeConfirmacao } from './mensagem-de-confirmacao.js';
+export { criarMescladorPdf } from './mesclador-pdf.js';
 export { normalizarParaComparacao } from './normalizacao.js';
+export type { PortaDeMesclagem } from './porta-de-mesclagem.js';
 export type {
   BlocoDoDocumento,
   PortaDeRenderizacao,

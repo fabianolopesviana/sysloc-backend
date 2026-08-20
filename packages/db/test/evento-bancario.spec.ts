@@ -7,15 +7,17 @@
  *
  * | Critério | Caso   | Invariante |
  * |----------|--------|------------|
- * | CA-13    | CT-939 | O enum `negocio.tipo_de_evento_bancario` tem EXATAMENTE os seis rótulos
+ * | CA-13    | CT-939 | O enum `negocio.tipo_de_evento_bancario` tem EXATAMENTE os sete rótulos
  * |          |        | declarados, nesta ordem, e `negocio.origem_do_evento_bancario` exatamente
- * |          |        | `['ATO_DO_ADMIN','CONFERENCIA']` — lidos do catálogo do PostgreSQL, nunca
+ * |          |        | as TRÊS de {@link ORIGENS_DECLARADAS} — `['ATO_DO_ADMIN','CONFERENCIA',
+ * |          |        | 'NOTICIA_DO_PROVEDOR']`, a terceira acrescentada pela `0019` —, lidos do
+ * |          |        | catálogo do PostgreSQL, nunca
  * |          |        | do fonte TypeScript. O `INSERT` com `tipo='CONFERENCIA'` e o com
  * |          |        | `origem='PROVEDOR'` são recusados **pelo banco**, com `code === '22P02'` e
  * |          |        | a mensagem nomeando o tipo enumerado e o rótulo, enquanto o `INSERT` com
  * |          |        | `tipo='BOLETO_EMITIDO'` e `origem='ATO_DO_ADMIN'` — a MESMA instrução,
  * |          |        | variando só os dois rótulos — é aceito e devolve `id` não-nulo. |
- * | CA-20    | CT-939 | Nenhum dos oito literais carrega termo do provedor: a varredura contra
+ * | CA-20    | CT-939 | Nenhum dos dez literais carrega termo do provedor: a varredura contra
  * |          | (b)    | `TERMOS_DO_PROVEDOR` devolve `[]`, e a MESMA varredura aplicada a um objeto
  * |          |        | de controle — uma chave por termo — devolve a lista inteira. |
  * | CA-13    | CT-939 | `registrarEventoBancario` grava as SEIS classes de evento sem receber
@@ -153,11 +155,21 @@ const CONTEXTO_DE_B = { empresaId: EMPRESA_B.id } as const;
 // ---------------------------------------------------------------------------
 
 /**
- * Os **seis** tipos de evento, na ordem em que o enum do banco os declara.
+ * Os **sete** tipos de evento, na ordem em que o enum do banco os declara.
  *
  * Escritos à mão, e jamais importados de `@sysloc/contracts`: o enum do banco **deriva** daquele
  * arranjo (ADR-0016), e comparar um contra o outro seria pôr o artefato sob prova nos dois lados da
- * igualdade — um sétimo rótulo mudaria as duas pontas ao mesmo tempo. Ver o cabeçalho.
+ * igualdade — um rótulo novo mudaria as duas pontas ao mesmo tempo. Ver o cabeçalho.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a lista tinha SEIS até a migração `0019`, que acrescentou
+ * `NOTICIA_RECUSADA` ao fim do enum por decisão da fatia `webhook-e-carne` — a notícia do provedor
+ * cujo número de título diverge do gravado é **desfecho anômalo**, que é a segunda metade literal da
+ * `Decision` da ADR-0034 (*"o efeito **ou o desfecho anômalo**"*), e não tentativa. A lista à mão
+ * segue à mão, e continua sendo a contra-cópia que impede o enum e o contrato de se conferirem um
+ * contra o outro; o que mudou foi o conteúdo que ela descreve.
+ *
+ * ⚠️ **`CONFERENCIA` continua PROIBIDO como tipo** — ver {@link TIPO_RECUSADO} e o cabeçalho do
+ * módulo de contrato. O acréscimo de `NOTICIA_RECUSADA` não abre a porta para ele.
  */
 const TIPOS_DECLARADOS = [
   'BOLETO_EMITIDO',
@@ -166,16 +178,23 @@ const TIPOS_DECLARADOS = [
   'COBRANCA_LIQUIDADA',
   'LIQUIDACAO_ESTORNADA',
   'DIVERGENCIA_DE_VALOR',
+  'NOTICIA_RECUSADA',
 ] as const;
 
-/** As **duas** origens, na ordem em que o enum do banco as declara. Mesma razão da lista acima. */
-const ORIGENS_DECLARADAS = ['ATO_DO_ADMIN', 'CONFERENCIA'] as const;
+/**
+ * As **três** origens, na ordem em que o enum do banco as declara. Mesma razão da lista acima.
+ *
+ * SUT_IS_CORRECT_BECAUSE: eram DUAS até a `0019`, que acrescentou `NOTICIA_DO_PROVEDOR` ao fim. Ela
+ * é o terceiro **produtor** de efeito — o provedor que veio contar sem que ninguém perguntasse —, e
+ * não se funde com `CONFERENCIA`, que é varredura nossa com cota e horário.
+ */
+const ORIGENS_DECLARADAS = ['ATO_DO_ADMIN', 'CONFERENCIA', 'NOTICIA_DO_PROVEDOR'] as const;
 
 /** O par legítimo do controle antivácuo — os dois primeiros rótulos de cada lista. */
 const TIPO_LEGITIMO = TIPOS_DECLARADOS[0];
 const ORIGEM_LEGITIMA = ORIGENS_DECLARADAS[0];
 
-/** O sétimo tipo que a ADR-0034 proíbe — registrar a conferência seria registrar tentativa. */
+/** O tipo que a ADR-0034 proíbe — registrar a conferência seria registrar tentativa. */
 const TIPO_RECUSADO = 'CONFERENCIA';
 
 /** A terceira origem que não existe — quem respondeu não é quem descobriu. */
@@ -463,7 +482,7 @@ describe('CT-939 — os enums da trilha são fechados e o banco recusa valor for
   }, LIMITE_SUBIDA_MS);
 
   it(
-    'CT-939 — seis tipos e duas origens no catálogo, e os dois valores de fora recusados com 22P02',
+    'CT-939 — sete tipos e três origens no catálogo, e os dois valores de fora recusados com 22P02',
     async () => {
       const sql = abrirConexao(banco.cadeiaConexao, { maximoDeConexoes: RESERVA_DE_UMA });
 
@@ -523,12 +542,15 @@ describe('CT-939 — os enums da trilha são fechados e o banco recusa valor for
     LIMITE_DO_CASO_MS,
   );
 
-  it('CT-939 (b) — nenhum dos oito literais carrega termo do provedor, e a varredura acha os que carregam', () => {
-    const oitoLiterais = [...TIPOS_DECLARADOS, ...ORIGENS_DECLARADAS];
+  it('CT-939 (b) — nenhum dos dez literais carrega termo do provedor, e a varredura acha os que carregam', () => {
+    // SUT_IS_CORRECT_BECAUSE: eram OITO até a `0019`. Os dois rótulos que ela acrescentou —
+    // `NOTICIA_RECUSADA` e `NOTICIA_DO_PROVEDOR` — entram no conjunto varrido, e a CA-20 continua
+    // sendo cobrada deles como dos oito anteriores: nenhum dos dois fala o vocabulário do provedor.
+    const dezLiterais = [...TIPOS_DECLARADOS, ...ORIGENS_DECLARADAS];
 
-    // Âncora antivácuo do conjunto varrido: são oito, e uma lista encolhida reprova aqui antes de a
+    // Âncora antivácuo do conjunto varrido: são dez, e uma lista encolhida reprova aqui antes de a
     // varredura decidir qualquer coisa.
-    expect(oitoLiterais).toHaveLength(8);
+    expect(dezLiterais).toHaveLength(10);
 
     // Controle positivo (AP-29): a MESMA função, aplicada a um objeto cuja chave é cada termo,
     // devolve a lista inteira. Sem ele, um detector que nunca acha nada aprovaria um vocabulário
@@ -539,8 +561,8 @@ describe('CT-939 — os enums da trilha são fechados e o banco recusa valor for
       TERMOS_DO_PROVEDOR.map((termo) => `${termo} em ${termo}`),
     );
 
-    // O veredito: nenhum dos oito rótulos publicados carrega vocabulário do provedor (CA-20).
-    expect(ocorrenciasDeTermos(oitoLiterais, TERMOS_DO_PROVEDOR)).toEqual([]);
+    // O veredito: nenhum dos dez rótulos publicados carrega vocabulário do provedor (CA-20).
+    expect(ocorrenciasDeTermos(dezLiterais, TERMOS_DO_PROVEDOR)).toEqual([]);
   });
 
   it(
