@@ -71,13 +71,9 @@
  * marcos uma vez cada, na mesma ordem, e ficaria verde. Por isso a asserção existe separada, em (e).
  */
 
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-// A construção `legacy` é a que o próprio `pdfjs-dist` exige fora do navegador — a de entrada
-// alcança `DOMMatrix` na carga do módulo e derruba a suíte antes do primeiro caso.
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CABECALHOS_DAS_CLAUSULAS } from '../src/contrato/clausulas.ts';
 import { comporDocumentoDoContrato } from '../src/contrato/composicao.ts';
@@ -85,6 +81,7 @@ import type { DadosDoContratoParaDocumento, ParteDoContrato } from '../src/contr
 import { normalizarParaComparacao } from '../src/normalizacao.ts';
 import type { BlocoDoDocumento, RepresentacaoTextual } from '../src/porta-de-renderizacao.ts';
 import { criarRenderizadorPdf } from '../src/renderizador-pdf.ts';
+import { extrairTextoDeArquivoPdf } from './pdf.ts';
 
 // ---------------------------------------------------------------------------
 // Os limites de tempo, nomeados (nunca número solto no meio do caso)
@@ -103,60 +100,6 @@ const TETO_DA_RENDERIZACAO = 30_000;
 // ---------------------------------------------------------------------------
 // A extração — o único ponto do repositório que conhece `pdfjs-dist`
 // ---------------------------------------------------------------------------
-
-/**
- * O diretório das fontes padrão do extrator, resolvido pelo **próprio pacote instalado**.
- *
- * Sem ele o `pdfjs-dist` avisa que não consegue carregar `LiberationSans-Regular.ttf` e a suíte
- * passa a depender do que estiver instalado no host. Resolver pelo `package.json` da biblioteca é o
- * que sobrevive ao arranjo de diretórios do pnpm, onde o caminho relativo aparente não é o real.
- */
-const DIRETORIO_DAS_FONTES_PADRAO = join(
-  dirname(createRequire(import.meta.url).resolve('pdfjs-dist/package.json')),
-  'standard_fonts/',
-);
-
-/**
- * Lê o PDF do disco e devolve o texto **cru**, com uma quebra de linha onde o layout quebrou.
- *
- * O texto sai **sem normalizar** de propósito: é o CT-708 (d) que precisa contar as linhas para
- * provar que a palavra longa de fato encontrou o fim da linha. Quem compara conteúdo normaliza
- * depois.
- *
- * `useSystemFonts: false` é determinismo, não ornamento: com fontes do sistema operacional em jogo,
- * a extração passaria a depender do host, e o resultado deixaria de ser propriedade do PDF.
- */
-async function extrairTextoDoPdf(caminho: string): Promise<string> {
-  const bytes = await readFile(caminho);
-  const tarefa = getDocument({
-    data: new Uint8Array(bytes),
-    standardFontDataUrl: DIRETORIO_DAS_FONTES_PADRAO,
-    useSystemFonts: false,
-  });
-
-  let texto = '';
-
-  try {
-    const documento = await tarefa.promise;
-
-    for (let pagina = 1; pagina <= documento.numPages; pagina += 1) {
-      const conteudo = await (await documento.getPage(pagina)).getTextContent();
-
-      for (const item of conteudo.items) {
-        // `TextMarkedContent` não carrega texto; só os `TextItem` têm `str`.
-        if (!('str' in item)) continue;
-
-        texto += item.str;
-        if (item.hasEOL) texto += '\n';
-      }
-    }
-  } finally {
-    // Sem isto o processo do extrator fica de pé e a suíte não encerra sozinha.
-    await tarefa.destroy();
-  }
-
-  return texto;
-}
 
 // ---------------------------------------------------------------------------
 // Os marcos do documento — escritos à MÃO, e por isso independentes do SUT
@@ -301,7 +244,7 @@ async function renderizarEExtrair(
 
   await writeFile(caminho, bytes);
 
-  return extrairTextoDoPdf(caminho);
+  return extrairTextoDeArquivoPdf(caminho);
 }
 
 describe('CT-708 — o PDF é renderizado de fato, e o texto extraído de volta prova o conteúdo', () => {

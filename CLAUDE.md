@@ -69,18 +69,26 @@ SaaS multi-empresa de gestão de locação de imóveis. Backend em Node/NestJS/P
 > mão, e não duplique aqui o que ele já diz. O detalhe de cada fatia (débitos, achados, decisões) vive
 > na `_run/` dela. Aqui fica **só o que morde quem não abriu nenhum dos dois.**
 
-**F0 a F3 concluídas e commitadas. F4 em andamento**: a fatia (i) `fundacao-bancaria` fechou em
-2026-08-15 (14/14 tasks) e a (ii) `emissao-e-conciliacao` em 2026-08-18 (17/17 tasks); faltam a
-(iii) do carnê e a **F5**.
+**F0 a F4 concluídas. Falta a F5** para o marco de entrega ficar ao alcance. A F4 fechou em
+**2026-08-19**, com 43/43 tasks nas três fatias — (i) `fundacao-bancaria` em 2026-08-15 (14/14),
+(ii) `emissao-e-conciliacao` em 2026-08-18 (17/17) e (iii) `webhook-e-carne` em 2026-08-19 (12/12).
+São **126 tasks** aprovadas nos dois gates. ⚠️ **A (iii) É o carnê** — se este texto voltar a dizer
+que ela falta, foi regressão de índice, não fatia reaberta.
 
-- **Superfície: 99 rotas / 84 manipuladores**, `semDeclaracao` vazio, `publicas` em 19. Medido no
-  fecho da F4 (ii) pelas **duas medições independentes** do `CT-937`, que concordam entre si:
-  `1+1+1+4+6+6+7+3+9+1+9+3+6+7+3+6+2+2+7 = 84` manipuladores e `(84−1)+7+9 = 99` pares. ⚠️ Ela **ainda
-  cresce** (F4 (iii) e F5), então o congelamento é depois delas. **O número da F2 era 75, não 77**
-  — não "corrija" para 77, a premissa do `HEAD` duplicado foi refutada por medição.
-- **Suíte: 1640 casos**, 9 pacotes — `contracts` 398 · `api` 317 · `shared` **249** · `db` 221 ·
-  `documentos` 151 · `worker` 99 · `auth` 89 · `cobranca-bancaria` 86 · `regua` 30. Medidos um a um
-  na T2 da fatia `webhook-e-carne` (2026-08-19). ⚠️ **Meça por pacote**
+- **Superfície: 101 rotas / 86 manipuladores**, `semDeclaracao` vazio, `publicas` em **20**. Medido
+  no fecho da **F4 (iii)** pelo `CT-1004`, com as **duas medições independentes** cuja igualdade
+  entre os eixos é afirmada à parte do valor esperado. ⚠️ **Não conte à mão: os três números são
+  constantes EXECUTÁVEIS** de `apps/api/test/cobertura-de-autorizacao.e2e.spec.ts` —
+  `ROTAS_PUBLICADAS_EM_PRODUCAO`, `MANIPULADORES_EXAMINADOS_EM_PRODUCAO` e
+  `PARES_PUBLICOS_DA_SUPERFICIE` —, de modo que a suíte é a fonte e este texto é a cópia. ⚠️ Ela
+  **ainda cresce**, mas agora **só pela F5**: com a F4 fechada, é a última fase que publica rota, e o
+  congelamento é logo depois dela. **O número da F2 era 75, não 77** — não "corrija" para 77, a
+  premissa do `HEAD` duplicado foi refutada por medição. **E o 99/84 era o da (ii)** — não o
+  reponha.
+- **Suíte: 1713 casos**, 9 pacotes — `contracts` 398 · `api` **349** · `shared` **249** · `db` **227** ·
+  `documentos` **159** · `worker` **122** · `auth` 89 · `cobranca-bancaria` **90** · `regua` 30. Medidos um
+  a um na intervenção dirigida de 2026-08-19. ⚠️ **O número anterior (1640) estava defasado em 73** —
+  ele vinha da T2 da fatia `webhook-e-carne` e não acompanhou as tasks seguintes dela nem da (ii). ⚠️ **Meça por pacote**
   (`pnpm --filter @sysloc/<p> test`): o `turbo run test` aborta os pacotes irmãos e a saída agregada
   não é confiável.
 - ⚠️ **ADRs emendadas — não cite a `Decision` sem ler a emenda**: a **0001** (a cláusula do *"apenas
@@ -90,10 +98,21 @@ SaaS multi-empresa de gestão de locação de imóveis. Backend em Node/NestJS/P
   executor que divergiu **declarando e medindo** teve razão em todas. E o corolário que custou duas
   fases: *a frase que explica por que algo não pode ser feito envelhece mais rápido que o débito que
   ela justifica* — meça a premissa antes de registrá-la.
-- **Dívida**: ~280 débitos abertos em 10 fatias, quase todos `BAIXO` de prosa. O parecer, reafirmado
-  **quatro vezes** e medido, é **NÃO rodar `/agent-spec-debt-resolution`** — o default `gates: [qa]`
-  desliga o Gate 2 justamente onde a dívida mora. O caminho que funciona é a **intervenção dirigida**.
-  Detalhe na §6 do `_run/run-report.md` da `fundacao-bancaria`.
+- **Dívida**: **372 débitos abertos em 13 fatias** — 499 blocos na §2, 127 já com marca de fecho.
+  ⚠️ **O número anterior (~280 em 10) estava defasado**, e por duas razões medidas em 2026-08-19: ele
+  não contava as duas últimas fatias, e **39 débitos já pagos registravam o fecho só no campo
+  `Status:` do corpo**, invisível a quem tria pelo cabeçalho — todos promovidos naquela data. São
+  ~89% `BAIXO`, mas **não** "quase todos de prosa": por alvo são 136 de código de produção, 125 de
+  teste, 57 de doc e 53 de infra. E **138 não são pagáveis hoje** (49 com gatilho que não chegou, 41
+  mirando spec de fatia fechada, 24 dependentes de F5/F7, 21 que mandam NÃO agir, 3 em migração
+  imutável). O parecer, reafirmado **cinco vezes** e medido, é **NÃO rodar
+  `/agent-spec-debt-resolution`** — o default `gates: [qa]` desliga o Gate 2 justamente onde a dívida
+  mora (medido: **91%** das tasks não casariam Critical Path por match textual, 75% nem por leitura
+  semântica de pt-BR), e a skill declara por escrito que *"a §2 já contém apenas débito não
+  resolvido"*, o que **é falso nesta base**. O caminho que funciona é a **intervenção dirigida**:
+  ela responde por **45 dos 127** fechos, contra 20 da skill — e esses 20 são todos do repositório
+  Frappe antigo, com suíte de 113–169 testes. Detalhe na §6 do `_run/run-report.md` da
+  `fundacao-bancaria` e na §7 do da `webhook-e-carne`.
 
 ---
 
@@ -108,8 +127,8 @@ O marco está alcançado quando **todos** os sete itens forem verdadeiros:
 - [ ] **F1 a F5 concluídas** — todas as tasks aprovadas nos dois gates, suíte verde, critérios de
       aceitação verificados. Estado por fase: `docs/plano-backend-novo/roadmap.md`
 - [ ] **Superfície da API congelada** — nenhuma fatia posterior acrescenta, remove ou altera rota;
-      é o que torna o handoff confiável. **Sem condição pendente**, mas **F4 (iii) e F5 ainda
-      publicam rota**, então o congelamento é *depois* delas — a (ii) fechou em **99 rotas / 84
+      é o que torna o handoff confiável. **Sem condição pendente**, e com a F4 fechada resta **só a
+      F5** publicando rota: o congelamento é logo depois dela. A F4 fechou em **101 rotas / 86
       manipuladores**
 - [ ] **`@sysloc/contracts` publicado** no GitHub privado e versionado — é o artefato que o React
       importa para trocar tipos (Zod; ⚠️ **não** há cliente ts-rest — ver a nota da Stack)
@@ -281,7 +300,7 @@ Específicos deste domínio: **`node:https`** (o mTLS do Sicoob — ⚠️ o cli
 > grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 > ```
 
-São **29**, e a tabela abaixo é a lista viva — ela, e não este parágrafo, é a fonte.
+São **32**, e a tabela abaixo é a lista viva — ela, e não este parágrafo, é a fonte.
 
 ⚠️ **O identificador é o par `Dnn · F{n}/{origem}`, nunca o número sozinho** — a sequência corre
 dentro da §2 da fatia que registrou cada débito. Hoje convivem **dois `D3`**, **dois `D12`**, **dois
@@ -301,6 +320,8 @@ da `.claude/rules/nao-regressao.md`, que é permanente — este bloco é transit
 | Débito | Onde | Dispara quando |
 |---|---|---|
 | **D28** (F0/T5) | `grep -rln --exclude-dir=dist "D28 · F0/T5" apps packages deploy` — a contagem sai do comando, que não envelhece | **JÁ DISPAROU (F1/T2)** — consumidor novo de `packages/shared/test/` por caminho relativo profundo |
+| **D9** (F0/T2, fatia `fundacao-stack-nativa`) | `deploy/scripts/instalacao/verificar-provisionamento.sh` (junto de `afirmar_igual`) | a **próxima fatia que escrever um `verificar-*.sh`** — são **10** cópias do esqueleto e elas são **10 formas distintas**; só 2 rodam sem privilégio, então feche COM janela assistida |
+| **D23** (F0/T3, fatia `fundacao-stack-nativa`) | `packages/shared/src/log.ts` (cabeçalho) | ⚠️ **BLOQUEADO por protocolo, não por tempo** — extrair `redacao.ts` moveria código sob as duas `DECISÃO FECHADA` do arquivo; fecha só se elas caírem pelo próprio `REVERTER EXIGE`, ou por autorização expressa do usuário |
 | **D23** (F1/T8) | `apps/api/src/autenticacao/autenticacao.module.ts` | a **publicação atrás do servidor de borda na F7** — origem confiável derivada do endereço de retorno |
 | **D24** (F1/T5, fatia `autorizacao-e-ciclo-de-acesso`) | `apps/api/src/main.ts` | a **publicação atrás do servidor de borda na F7** — `/docs*` atende sem sessão por decisão registrada, que vale só enquanto a API é local |
 | **D27** (F1/T6, fatia `autorizacao-e-ciclo-de-acesso`) | `packages/auth/src/autenticacao.ts` | a **publicação atrás do servidor de borda na F7** — sem ela o limitador não tem eixo de origem |
@@ -319,11 +340,12 @@ da `.claude/rules/nao-regressao.md`, que é permanente — este bloco é transit
 | **D36** (F4/T10, fatia `fundacao-bancaria`) | `packages/cobranca-bancaria/src/adaptador-sicoob.ts` (`criarAdaptadorSicoob`) | o produto **modelar a identidade da empresa perante o provedor** (identificador da aplicação, endereço de autorização, dados da conta) — gatilho emendado na T8 da fatia (ii), que mediu não haver origem para nenhum dos três |
 | **D13** (F4/T6, fatia `emissao-e-conciliacao`) | `packages/db/src/boleto-da-cobranca.ts` (junto de `ErroDeCobrancaNaoAlcancada`) | a fatia que criar no banco a **restrição pareando `linha_digitavel` com `nosso_numero`** — hoje a linha meio preenchida é representável. Mesma classe do D44 · F2/T10 |
 | **D26** (F4/T9, fatia `emissao-e-conciliacao`) | `packages/cobranca-bancaria/src/guarda-de-boletos.ts` (cabeçalho) | a **F5**, que traz o agendamento, ou a **primeira medição do diretório acima de 20 GB** — não há expurgo dos boletos guardados (~1,4 GB/mês projetados) |
-| **D34** (F4/T11, fatia `emissao-e-conciliacao`) | `packages/cobranca-bancaria/src/emissao-em-lote.ts` (junto de `guarda.gravar`) | ⚠️ **GATILHO VENCIDO** (a fatia (iii) chegou na T7) — a notícia dá observabilidade ao órfão, mas **reconciliar** segue sem caminho; medição na §2 (D18) da (iii) |
+| **D34** (F4/T11, fatia `emissao-e-conciliacao`) | `packages/cobranca-bancaria/src/emissao-em-lote.ts` (junto de `guarda.gravar`) | ⚠️ **gatilho EMENDADO em 2026-08-19** (a metade da fatia (iii) venceu e foi refutada: dá observabilidade, não reconciliação) — vigente é **persistir o identificador enviado antes da chamada**, ou ampliar o modelo canônico |
 | **D49** (F4/T16, fatia `emissao-e-conciliacao`) | `apps/worker/src/tarefas/carga-da-tarefa.ts` (cabeçalho) | a **primeira task autorizada a abrir `regua.ts` ou `confirmacao-de-email.ts`** — a tradução de `ZodError` em nome de campo tem três cópias no processo |
 | **D50** (F4/T16, fatia `emissao-e-conciliacao`) | `apps/worker/src/tarefas/emissao-em-lote.ts` (junto de `dadosDaEmissao`) | o **terceiro consumidor** da projeção do pedido de emissão, ou a primeira alteração dos campos que ela leva ao provedor — hoje são duas cópias |
 | **D51** (F4/T16, fatia `emissao-e-conciliacao`) | `apps/worker/src/main.ts` (junto de `ehChaveDeCifraAceitavel`) | a **primeira task autorizada a abrir `apps/api/src/configuracao/ambiente.ts`**, ou o terceiro processo que exigir as mesmas variáveis — as duas conferências de forma têm duas definições |
 | **D52** (F4/T16, fatia `emissao-e-conciliacao`) | `apps/worker/test/varredura-de-segredo.ts` (cabeçalho) | o **terceiro consumidor** do molde de varredura com controle positivo fora de `apps/worker/test/`, ou a primeira alteração das formas buscadas — hoje são duas cópias |
+| **D53** (F4/T16, fatia `emissao-e-conciliacao`) | `packages/shared/src/log.ts` (junto de `redigirErro`) | a **próxima superfície que decifre o segredo operável**, ou a primeira exceção do produto que anexe campo próprio fora de `RADICAIS_SENSIVEIS` — o eixo por nome de chave não a alcança |
 | **D58** (F4/T16, fatia `emissao-e-conciliacao`) | `apps/worker/src/tarefas/emissao-em-lote.ts` (junto da assinatura de `comReentranciaBenigna`) | o **terceiro consumidor** do discriminador, ou a primeira alteração do contrato do sentinela — `<T>` é irrestrito e a reserva de `undefined` vive só no docblock |
 | **D17** (F4/T7, fatia `webhook-e-carne`) | `apps/worker/src/tarefas/notificacao-bancaria.ts` (junto de `conferirNumeroDoTitulo`) | o produto **modelar a identidade da empresa perante o provedor** — mesmo gatilho do D36 · F4/T10; sem ela a CA-08 é cumprida pela metade |
 | **D13** (F4/T6, fatia `webhook-e-carne`) | `apps/api/src/notificacoes-bancarias/notificacao-bancaria.service.ts` (junto do `catch` do enfileiramento) | a **F5**, que traz o agendamento, ou o primeiro caso real de fila indisponível na recepção — notícia parada em `RECEBIDO` não tem quem a reprocesse |

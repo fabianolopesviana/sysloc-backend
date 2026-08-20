@@ -633,7 +633,8 @@ Contagem por pacote ao fim da T5: `@sysloc/contracts` **389** (era 356) · `@sys
   `MODO_ESPERADO` no topo — e corrigir a frase do provisionador e do `.env.example` para dizer isso, em
   vez de prometer conferência automática.
 
-### D31 · BAIXO · security · T9 · Tech Review
+### D31 · BAIXO · security · T9 · Tech Review — ✅ **RESOLVIDO** (intervenção dirigida de 2026-08-19)
+- **Status:** ✅ **RESOLVIDO** — intervenção dirigida de 2026-08-19. O bloco *"O NOME É DERIVADO…"* de `guarda-de-boletos.ts` passou a declarar as quatro coisas que faltavam: que a conferência é **léxica** e que `resolve` não resolve vínculos simbólicos; que `ler` (`readFile`) seguiria um vínculo plantado sob a base, enquanto `gravar` (`rename`) e `apagar` (`unlink`) não têm a exposição; que o que fecha esse caminho **não é este módulo**, e sim o **modo `0750` com dono do serviço** já declarado acima — razão pela qual o achado é de declaração ausente, não de vulnerabilidade explorável; e que **`realpath` foi DESCARTADO porque `gravar` opera sobre alvo inexistente**. Esta última é a frase que o débito pedia com nome próprio: sem ela, a rodada seguinte gasta tempo "endurecendo" com `realpath` e quebra `gravar`. O texto ainda nomeia o caminho certo se a exposição deixar de ser teórica (conferir o vínculo **em `ler`**, com `lstat`/`O_NOFOLLOW`). `@sysloc/cobranca-bancaria` **90 verdes**.
 
 - **Onde:** `packages/cobranca-bancaria/src/guarda-de-boletos.ts` — `resolverBoleto` e o bloco *"O NOME É
   DERIVADO, e a conferência do caminho é o SEGUNDO degrau"*
@@ -1012,7 +1013,8 @@ Contagem por pacote ao fim da T5: `@sysloc/contracts` **389** (era 356) · `@sys
 - **Gatilho:** a **primeira task autorizada a abrir `apps/api/src/configuracao/ambiente.ts`** — ⚠️ **área crítica
   (`secrets/config`), fora da §5 da T16**, que foi a razão declarada de não fazê-lo agora.
 
-### D53 · BAIXO · security · T16 · Tech Review (rodada 1) — ⚠️ **risco ESTRUTURAL medido, e os DOIS gates o refinaram**
+### D53 · BAIXO · security · T16 · Tech Review (rodada 1) — ⚠️ **risco ESTRUTURAL medido, e os DOIS gates o refinaram** — ✅ **RESOLVIDO** (intervenção dirigida de 2026-08-19)
+- **Status:** ✅ **RESOLVIDO** — intervenção dirigida de 2026-08-19, nas **duas** pontas que o débito pedia, e o desenho de `log.ts` segue **inalterado**. (1) A **nota de fronteira** entrou na ADR-0032, sem tocar a `Decision`: uma tabela que separa os dois eixos da redação — a **forma do valor** (`ArrayBuffer.isView`, alcança o material, não depende do nome) e o **nome da chave** (`ehChaveSensivel`, alcança a senha) —, a consequência para quem abrir a próxima superfície, e o que ela obriga: medir a saída **por valor, não por nome de campo**. Ela preserva o estreitamento que o Gate 2 fez sobre o Gate 1, e adverte por escrito para não repetir a formulação larga. (2) O **marcador nasceu** junto de `redigirErro`. Ele faltava *"deliberadamente, porque o alvo estava fora do escopo da T16"* — e este é o registro de que **essa é a única razão que caiu**: a intervenção abriu `log.ts` por outra razão (o `D23 · F0/T3`) e deu ao débito a morada que a §3-B exige. `@sysloc/shared` **249 verdes**.
 
 - **Onde:** `packages/shared/src/log.ts` → `redigirErro` (`:588-618`) e `redigirValor` (`:555-558`)
 - **Problema:** `redigirErro` **copia as propriedades próprias enumeráveis** da exceção e decide o mascaramento por

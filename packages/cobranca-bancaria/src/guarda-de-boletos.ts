@@ -62,6 +62,24 @@
  * ali (M4): valor interpolado em texto de mensagem sobrevive em `mensagem` e `pilha`, onde a
  * redação do registrador não o alcança.
  *
+ * ⚠️ **A CONFERÊNCIA É LÉXICA, e este é o limite dela — declarado no fecho do `D31 · F4/T9`
+ * (2026-08-19).** `resolve` normaliza `.`, `..` e separadores, mas **não resolve vínculos
+ * simbólicos**. Uma entrada `COB-2026-0000054.pdf` que fosse um vínculo simbólico **dentro** da
+ * base passaria nos dois degraus, e `ler` (`readFile`, que segue vínculos) devolveria os bytes do
+ * alvo. `gravar` (`rename`) e `apagar` (`unlink`) **não** têm a exposição — substituem ou removem
+ * o próprio vínculo.
+ *
+ * O que fecha esse caminho **não é este módulo**: é o **modo `0750` com dono do serviço**, já
+ * declarado no bloco acima. Plantar a entrada exige escrita no diretório, e quem escreve ali é o
+ * próprio processo — nenhum outro código do produto o faz. Por isso o achado é de **declaração
+ * ausente**, e não de vulnerabilidade explorável.
+ *
+ * ⚠️ **`realpath` foi DESCARTADO, e a razão importa mais que a alternativa**: `gravar` opera sobre
+ * alvo **inexistente** (é ele que cria o arquivo), e `realpath` sobre caminho que ainda não existe
+ * levanta. Endurecer por aí quebraria `gravar` — não tente. Se um dia a exposição deixar de ser
+ * teórica, o caminho é conferir o vínculo **em `ler`**, depois de abrir e antes de consumir
+ * (`lstat`/`O_NOFOLLOW`), nunca trocar a conferência de caminho por `realpath`.
+ *
  * ===========================================================================
  * O DIRETÓRIO-BASE CHEGA POR PARÂMETRO — este pacote não lê `process.env`
  * ===========================================================================

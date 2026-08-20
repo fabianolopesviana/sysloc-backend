@@ -69,7 +69,8 @@ Status: **12/12 tasks concluídas** · suíte **1710 casos** verdes nos 9 pacote
 - **Impacto:** até aqui a frase era verdadeira: `plataforma` existe desde a `0016` mas guardava só uma sequência e duas funções, **nenhuma tabela**. A `0019` cria a primeira. **Não é violação de mérito**: a ADR-0031 é posterior, `accepted`, autoriza expressamente, nomeia a 0009 na `Context` e declara nos `Prós` que *"o predicado da ADR-0009 continua verdadeiro sem exceção"* — e o predicado verificável (nenhuma tabela de **negócio** sem RLS forçada) segue intacto. O vão é de **registro**: quem cita a 0009 abrindo a `Decision`, que é o que o `CLAUDE.md` manda fazer, lê contradição com o invariante de multi-tenancy e pode "corrigir" a tabela de volta para `negocio` — literalmente a alternativa que a `Context` da 0031 rejeita por escrito. É risco de **R3**, e este repositório já pagou **quatro vezes** por esse mesmo vão (ADRs 0001, 0017, 0021, 0024).
 - **O que fazer:** emenda na ADR-0009 no molde das existentes, com o texto original preservado byte a byte, declarando que o *"dois"* era exaustivo na data em que foi escrito, que a ADR-0031 institui depois o terceiro schema, que o sujeito da 0009 é a fronteira **identidade × negócio** e que o predicado dela continua verdadeiro sem exceção — mais a linha da 0009 no `INDEX.md` com o marcador de emenda. Encerrar com *"não 'corrija' tabela de `plataforma` para `negocio`"*.
 
-### D8 · baixo · documentation · T5 · QA
+### D8 · baixo · documentation · T5 · QA — ✅ **RESOLVIDO** (intervenção dirigida de 2026-08-19)
+- **Status:** ✅ **RESOLVIDO** — intervenção dirigida de 2026-08-19, e por um caminho melhor que o pedido. O `D5 · F3/T7` que este débito mandava marcar como vencido **já havia sido fechado** pela T10: `extrairTextoDePdf` desceu para `apps/api/test/documento.ts` e o marcador saiu. O que restava era a duplicação em si, e a medição achou o dano **real**: as três cópias já haviam divergido no **comportamento**, não só na forma — as duas de `packages/documentos/test/` faziam cópia defensiva do buffer, e a de `apps/api` passava `data: bytes` direto; como o extrator **assume a posse** e transfere o buffer, o arranjo do chamador ficava com `byteLength: 0`, e o que salvava aquela suíte era só a **ordem das linhas** (`textoInicialDe(bytes)` corre antes da extração). Pago em três movimentos: (1) nasceu `packages/documentos/test/pdf.ts`, a casa comum do diretório, com `extrairPaginasDePdf` e `extrairTextoDeArquivoPdf` sobre um núcleo único; (2) as duas suítes do pacote passaram a importá-la (−116 linhas duplicadas); (3) o endurecimento foi **propagado** à terceira cópia. Rede: **`CT-1002 (h)`** — extrair duas vezes os mesmos bytes devolve o mesmo resultado e o `byteLength` não vai a zero. Discrimina por construção: com `data: bytes`, a segunda chamada levanta `DOMException`. `@sysloc/documentos` 158 → **159 verdes**; `@sysloc/api` **349 verdes**.
 - **Onde:** `apps/api/test/documento-do-contrato.e2e.spec.ts:487` (o marcador do **D5 · F3/T7**)
 - **Problema:** o gatilho do débito `D5 · F3/T7` **venceu nesta task** e não foi escriturado.
 - **Impacto:** o marcador declara que fecha com *"o terceiro consumidor de extração de texto de PDF (o carnê da F4)"*, e a suíte da T5 é esse terceiro consumidor — `extrairPaginasDePdf` repete o miolo `getDocument` + percurso de `TextItem` que já existe em `documento-do-contrato.e2e.spec.ts:521` e em `packages/documentos/test/renderizador-pdf.spec.ts:131`. O executor **declarou** a pendência, mas o campo `QUANDO FECHA` segue descrevendo um gatilho já ocorrido e a linha do índice não registra o vencimento. Mesma classe do `D38 · F4/T10`, cujo gatilho já está declarado **VENCIDO** no índice.
@@ -193,7 +194,8 @@ Status: **12/12 tasks concluídas** · suíte **1710 casos** verdes nos 9 pacote
   `esquemaDoCertificadoNovo`, isto é, **superfície publicada**, às vésperas do congelamento da API —
   o que o próprio D36 mede como pior que adiar.
 
-### D18 · BAIXO · project_pattern · T7 · Tech Review (rodada 1, TR-P2)
+### D18 · BAIXO · project_pattern · T7 · Tech Review (rodada 1, TR-P2) — ✅ **RESOLVIDO** (intervenção dirigida de 2026-08-19)
+- **Status:** ✅ **RESOLVIDO** — intervenção dirigida de 2026-08-19, que é a *"primeira task autorizada a abrir aquele arquivo"* que este débito aguardava. O `QUANDO FECHA` do marcador do **D34** em `packages/cobranca-bancaria/src/emissao-em-lote.ts` foi **emendado**, com o texto original preservado byte a byte: a primeira metade do gatilho (*"a fatia que trouxer a notícia recebida do provedor (a (iii))"*) está declarada **VENCIDA e REFUTADA por medição** — a notícia dá observabilidade, não reconciliação —, e o gatilho vigente é o que sobra: *"a fatia que persistir o identificador enviado ANTES da chamada ao provedor, ou a que ampliar o modelo canônico para perguntar por ele"*. A linha do D34 no índice do `CLAUDE.md` acompanhou. O **D34 segue aberto** na sua própria fatia, como este débito sempre disse — o que se pagou aqui foi a escrituração.
 
 > **Escrituração de gatilho vencido — não é débito novo desta fatia.** O débito é o **D34 · F4/T11**,
 > da fatia `emissao-e-conciliacao`, e ele **continua aberto lá**. O que esta entrada registra é que o
@@ -294,13 +296,15 @@ Status: **12/12 tasks concluídas** · suíte **1710 casos** verdes nos 9 pacote
 - **Impacto:** medido — `grep -rln '^afirmar_igual() {' deploy/scripts/` devolve **10 arquivos**; `aviso()` escreve em stderr em duas cópias e não escreve em três outras; `nota()` imprime formato diferente em duas famílias. A cópia da T11 é **a melhor delas** (única que conta a degradação em `avisos_totais` e a reporta no resumo), e é exatamente esse o sintoma: endurecer uma cópia deixa as outras nove para trás. O `avisos_totais` — que impede "medição parcial lida como aprovação completa" — não alcança as outras nove baterias. A convenção violada (*Limiar de Três* + *acessório de suíte se importa, não se copia*) está escrita no `CLAUDE.md`; estamos na décima.
 - **O que fazer:** extrair para casa comum de shell, no molde do que `apps/api/test/acessorios-de-borda.ts` fez para as suítes Vitest — ex. `deploy/scripts/comum/frente-de-verificacao.sh`, carregada por `source` —, migrando as baterias por **conversão dirigida**. ⚠️ **Não é correção desta task**: ela seguiu o molde que a §3.c dela prescreve e que **nove precedentes** estabeleceram; refatorar aqui violaria o *menor delta possível*.
 
-### D29 · BAIXO · security · T11 · Tech Review (rodada 2, P2)
+### D29 · BAIXO · security · T11 · Tech Review (rodada 2, P2) — ✅ **RESOLVIDO** (intervenção dirigida de 2026-08-19)
+- **Status:** ✅ **RESOLVIDO** — intervenção dirigida de 2026-08-19, pelo caminho que o próprio débito indicou **e mais um degrau**. `subir_borda_efemera` passa agora `127.0.0.1:${PORTA_HTTPS}` e `127.0.0.1:${PORTA_HTTP}` a `renderizar_vhost`, de modo que o rendido traz `listen 127.0.0.1:<porta> ssl;` e o nginx deixa de ligar `0.0.0.0`. **Nada muda no gabarito versionado nem na borda de produção** — lá se continua passando `"443"` e `"80"`, sem endereço. O degrau a mais é a **guarda de sanidade**, e ela é do ARQUIVO RENDIDO, não da chamada: igualdade entre as diretivas `listen` em laço local e o total de `listen`, com **controle antivácuo** (vhost sem `listen` nenhum falha nomeando o vácuo, em vez de passar por "não escuta fora do laço"). É o que faz qualquer forma futura de montar a borda que volte a omitir o endereço reprovar — não só esta linha. `bash -n` limpo; `shellcheck -S warning` sem achado novo (os 7 `SC2034` são pré-existentes, nas linhas 638-644).
 - **Onde:** `deploy/scripts/borda/verificar-notificacao-bancaria.sh` (`subir_borda_efemera`, ~linha 745)
 - **Problema:** a borda efêmera do CT-1005 (c) escuta em **todas as interfaces**, enquanto o docblock declara isolamento. O gabarito recebe só o número da porta, produz `listen <porta> ssl;` sem endereço, e o nginx liga `0.0.0.0`.
 - **Impacto:** baixo e transitório — durante os segundos da bateria a borda responde `404` em tudo e `204` no caminho da notícia, **sem dado nenhum atrás** (a trilha vive num `mktemp -d` 0700). O dano concreto é de **determinismo, não de vazamento**: uma requisição de fora no caminho exato incrementaria a trilha e faria a asserção de fecho reprovar — **falso negativo, nunca falso positivo**. Ainda assim, bateria que a ADR-0006 obriga a rodar isolada não deveria abrir superfície de rede num host onde `/opt/frappe` opera.
 - **O que fazer:** passar `127.0.0.1:${PORTA_HTTPS}` e `127.0.0.1:${PORTA_HTTP}` como valor dos marcadores na chamada de `renderizar_vhost` dentro de `subir_borda_efemera` — `listen 127.0.0.1:36011 ssl;` é sintaxe válida, o `--resolve` já aponta para 127.0.0.1, e **nada muda no gabarito versionado nem na produção**. Complementarmente, estender a guarda de sanidade para afirmar que o vhost efêmero só declara `listen` em endereço de laço local.
 
-### D30 · BAIXO · security · T11 · Tech Review (rodada 2, P3)
+### D30 · BAIXO · security · T11 · Tech Review (rodada 2, P3) — ✅ **RESOLVIDO** (intervenção dirigida de 2026-08-19)
+- **Status:** ✅ **RESOLVIDO** — intervenção dirigida de 2026-08-19, **exatamente na forma que o débito prescreve, e só nela**: o registro, não a troca. O cabeçalho do `location` ganhou o bloco que separa os dois cabeçalhos de origem — `X-Real-IP $remote_addr` é o valor **confiável** (endereço do salto imediato, observado pelo servidor) e `X-Forwarded-For $proxy_add_x_forwarded_for` chega **contaminado**, porque apenda ao que o cliente enviou e deixa o elemento mais à esquerda sob escolha de quem chama. O bloco declara também **por que não se mexe agora**: o eixo de origem é matéria dos D23/D24/D27 da F1, cujo gatilho é a publicação na F7, e antecipá-lo aqui desfaria decisão agendada. Nenhum `proxy_set_header` foi alterado.
 - **Onde:** `deploy/nginx/sysloc-notificacao-bancaria.conf` (dentro do `location = /v1/notificacoes-bancarias`)
 - **Problema:** a borda **mais externa** repassa `X-Forwarded-For $proxy_add_x_forwarded_for` (que **apenda** ao valor que o cliente enviou, deixando o elemento mais à esquerda sob escolha de quem chama) e `Host $host`.
 - **Impacto:** **nulo hoje** — nenhuma rota consome esses cabeçalhos, que é precisamente o que os **D23/D24/D27 da F1** registram ao dizer que *"o limitador não tem eixo de origem"*. O risco é de estrutura e se materializa na **F7**: o consumidor que a publicação da API inteira vai escrever herda dois cabeçalhos de origem, um confiável (`X-Real-IP $remote_addr`, já presente e correto) e um contaminado, sem nada no ponto de leitura dizendo qual é qual.
@@ -640,3 +644,107 @@ apenas o Gate 2 — reexecutar do zero descartaria cinco rodadas de correção e
 3. **O D38 · F4/T10 está com o gatilho VENCIDO** e o dono natural é a T12, que o fecha.
 4. **A T11 é a primeira publicação do produto para fora** e se prova **por medição** — o verificador
    afirma que nenhum outro caminho responde e que o vhost da operação não foi tocado.
+
+---
+
+## 7. Intervenção dirigida de 2026-08-19 — a quinta, e o que ela mediu
+
+> **Fora do pipeline**, no molde das quatro anteriores (2026-08-09, 2026-08-10, 2026-08-12 e
+> 2026-08-16). Pedida pelo usuário depois de um parecer sobre rodar `/agent-spec-debt-resolution`
+> sobre o estoque inteiro. Duas frentes, executadas em sequência: a **higienização da §2 das treze
+> fatias** e uma **lista curta de onze débitos de consequência**.
+
+### 7.1 O parecer sobre a skill — NÃO pela quinta vez, com um argumento que ninguém tinha medido
+
+O parecer da §6.1 do `run-report.md` da `fundacao-bancaria` é **reafirmado**, e ganha a razão que
+faltava — a mais decisiva das cinco, porque não é sobre custo, e sim sobre **correção**:
+
+**`references/debt-collection.md` declara que *"a §2 já contém apenas débito não resolvido — não
+precisa de filtro de já-resolvido"*. Isso é FALSO nesta base, e o desvio foi medido: 39 dos 499
+blocos registravam o fecho apenas no campo `Status:` do corpo**, com o cabeçalho
+`### Dnn · sev · cat · Tn · Gate` idêntico ao de um débito aberto. A skill os recolheria como
+abertos e geraria 39 tasks mandando um executor "corrigir" o que já está corrigido — o cenário
+exato da regressão **R3**, que nem compilador, nem suíte, nem gate pegam.
+
+Provado com um caso, e não por argumento: o `D1` e o `D2` de `contratos-de-locacao` mandam instalar
+`CONDICOES_DE_RECUSA` e os seis pares `(dia, ano)` em `verificar-golden.sh`. Os dois **já estão no
+código** (`:951` e `:1108`), pagos na intervenção de 2026-08-09 com mutante discriminante. Uma task
+de cleanup mandaria reescrever exatamente a prova de falsificação que aquele mutante custou.
+
+As demais medições desta rodada, todas novas:
+
+| Medida | Valor |
+|---|---|
+| Blocos na §2 / fechados / **abertos** | 499 / 127 / **372** |
+| Débitos que casam Critical Path por **glob textual** (o Gate 2 ligaria) | **35 de 383 (9%)** |
+| …e por leitura **semântica** generosa de pt-BR | 94 (25%) — logo, **75% rodariam sem Gate 2** |
+| Débitos anotados **pelo Tech Review** (quem não conferiria o pagamento) | 192 de 499 |
+| **Não pagáveis hoje**, por razão registrada no próprio débito | **138** |
+| Fechos por **intervenção dirigida** / pela **skill** | **45** / 20 — e os 20 são todos do repositório Frappe antigo, com suíte de 113–169 testes |
+| Custo de uma execução de suíte (medido, 9 pacotes) | **428 s** — com P1+P5+Gate 1, ~21 min por task |
+
+### 7.2 Frente 1 — higienização da §2 (as duas pontas passam a concordar)
+
+Os **39** blocos cujo fecho vivia só no corpo tiveram a marca promovida ao cabeçalho. **Dois deles
+não eram fechos**: o `D12` e o `D22` de `autorizacao-e-ciclo-de-acesso` estão 🟡 **parciais**, e
+receberam a marca correta em vez de `RESOLVIDO` — promover um parcial como pago seria trocar um
+erro de leitura por outro.
+
+### 7.3 Frente 2 — os onze débitos, e o que a medição fez com cada um
+
+**Sete pagos por inteiro:**
+
+| Débito | O que fechou | Prova |
+|---|---|---|
+| **D8 · F4/T5** (esta fatia) | nasceu `packages/documentos/test/pdf.ts`, a casa comum do diretório; as duas suítes do pacote passaram a importá-la (−116 linhas) | `CT-1002 (h)`; `@sysloc/documentos` 158 → **159** |
+| **D18 · F4/T7** (esta fatia) | o `QUANDO FECHA` do D34 foi **emendado** (original preservado), e a linha do índice acompanhou | a medição da própria T7, citada no marcador |
+| **D29 · F4/T11** (esta fatia) | a borda efêmera passa a escutar **só em laço local**, e uma guarda o afirma sobre o **arquivo rendido** | `bash -n` limpo; `shellcheck` sem achado novo |
+| **D30 · F4/T11** (esta fatia) | o `location` declara qual dos dois cabeçalhos de origem é confiável, e **por que não se mexe agora** | nenhum `proxy_set_header` alterado |
+| **D31 · F4/T9** (`emissao-e-conciliacao`) | a fronteira **léxica** da guarda de boletos, com a razão de `realpath` ter sido descartado | `@sysloc/cobranca-bancaria` **90** |
+| **D53 · F4/T16** (`emissao-e-conciliacao`) | nota de fronteira na **ADR-0032** (sem tocar a `Decision`) + o marcador que faltava, junto de `redigirErro` | `@sysloc/shared` **249**; desenho de `log.ts` **inalterado** |
+| **D10 · F1/T3** (`fundacao-multitenancy-identidade`) | o `CT-014` ganhou o **segundo eixo**: quem **escreve** `app.empresa_id`, por igualdade de conjunto | `CT-014 (b)` + falsificação com controle **negativo** (leitura não casa) e positivo; `@sysloc/db` 225 → **227** |
+
+**Um já estava pago, e o que faltava era a escrituração:** o **D38 · F4/T10** foi fechado pela
+**T12 desta fatia** (`CT-1008`/`CT-1009`, com o eixo do não-eco), e o marcador saiu do fonte na
+mesma ocasião. Verificado por leitura antes de escriturar.
+
+**Três NÃO foram executados como pedido, e em todos a razão é medição, não falta de tempo.** Nos
+três, a conduta seguiu a §3 da `.claude/rules/autonomia-do-run.md`: reconhecer o conflito, nomear a
+recomendada com a razão, **não esperar**, e adotar a **conservadora**.
+
+- **D23 · F0/T3** — extrair `redacao.ts` **moveria código sob duas `DECISÃO FECHADA`**, e a §3.2 do
+  Protocolo proíbe literalmente (*"não altere, não MOVA…"*). Nenhum dos dois `REVERTER EXIGE` se
+  demonstra — um deles pede **nova decisão do usuário**. Pago com o marcador que declara que o
+  débito **não** espera disponibilidade, e sim uma de duas condições nomeadas.
+- **D9 · F0/T2** — o esqueleto de asserções está em **10** verificadores (não 4, não 7), e o achado
+  que muda a natureza do débito é que **as 10 cópias são 10 formas DISTINTAS**, de 35 a 63 linhas,
+  nenhum md5 repetido. Só **2 dos 10** rodam sem privilégio: as outras 8 conversões ficariam sem a
+  baseline que o P1/P5 exige. Pago com o marcador que carrega a medição e manda fechar **com a
+  janela assistida agendada**.
+- **D28 · F0/T5** — são **41 arquivos, 127 ocorrências e 6 `tsconfig`** (contra 3 e ~20). E a
+  correção prometida **não entrega o ganho**: declarar `"./test"` sobre `dist/` exige emitir `test/`,
+  o que `packages/shared/tsconfig.test.json` rejeita por escrito e quebraria os cenários de
+  subprocesso; sobre fonte cru, o `rootDir` alargado **permanece**. Marcador canônico emendado com a
+  medição, a colisão e a advertência: **não comece pela conversão dos 41 arquivos**.
+
+### 7.4 O achado de método — desta vez o inverso do de 2026-08-16
+
+A §6.3 da `fundacao-bancaria` registrou que *"a frase que explica por que algo não pode ser feito
+envelhece mais rápido que o débito que ela justifica"*. Esta rodada encontrou a **forma inversa, e
+ela é mais cara**: **a frase que explica COMO algo deve ser feito também envelhece** — e envelhece
+sem alarme, porque ninguém a relê antes de executá-la.
+
+Três dos onze traziam prescrição que a medição refutou: o `D8` mandava marcar um débito **já
+fechado**; o `D28` promete um ganho que a solução proposta **não produz**; o `D9` prescreve extrair
+um esqueleto que **não é um só**. Nos três, seguir o `O que fazer` ao pé da letra teria produzido
+trabalho errado — e nos três o custo de descobrir foi um comando. **A lição operacional: o campo
+`O que fazer` de um débito é hipótese datada, exatamente como a prescrição de gate — meça a
+premissa antes de executá-la.** É o mesmo precedente que o `CLAUDE.md` já registra para gate,
+agora estendido ao débito.
+
+### 7.5 Nota de baseline (P1) — o que já estava vermelho
+
+`deploy/scripts/instalacao/verificar-workspace.sh` foi executado neste host e **reprova com 7
+falhas**. Estado **pré-existente**, não tocado por esta intervenção, e registrado porque o P1 manda:
+é informação, não obstáculo. Não entra em conserto algum aqui, e reforça a decisão sobre o `D9` —
+nem o único verificador que roda sem privilégio está verde neste servidor.

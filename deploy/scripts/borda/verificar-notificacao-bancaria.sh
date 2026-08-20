@@ -790,9 +790,36 @@ SERVICO
 
 	# O vhost sob prova é o VERSIONADO, renderizado pelo renderizador REAL do
 	# instalador. Reescrevê-lo aqui mediria uma cópia.
-	renderizar_vhost "${GABARITO}" "${HOSTNAME_EFEMERO}" "${PORTA_HTTPS}" "${PORTA_HTTP}" \
+	#
+	# ⚠️ As portas vão PREFIXADAS pelo endereço de laço local — fecho do
+	# `D29 · F4/T11` (fatia `webhook-e-carne`), em 2026-08-19. Passando só o
+	# número, o gabarito rende `listen <porta> ssl;` sem endereço e o nginx liga
+	# `0.0.0.0`: a bateria que a ADR-0006 obriga a rodar ISOLADA abria superfície
+	# de rede num host onde `/opt/frappe` opera. `listen 127.0.0.1:36011 ssl;` é
+	# sintaxe válida, o `--resolve` de toda a bateria já aponta para 127.0.0.1, e
+	# NADA muda no gabarito versionado nem na borda de produção — lá se continua
+	# passando "443" e "80", sem endereço.
+	renderizar_vhost "${GABARITO}" "${HOSTNAME_EFEMERO}" "127.0.0.1:${PORTA_HTTPS}" "127.0.0.1:${PORTA_HTTP}" \
 		"${PREFIXO_DA_BORDA}/cert.pem" "${PREFIXO_DA_BORDA}/chave.pem" \
 		"127.0.0.1:${porta_do_servico}" >"${PREFIXO_DA_BORDA}/vhost.conf" || return 1
+
+	# Guarda de sanidade do isolamento, e ela é do ARQUIVO RENDIDO, não da
+	# chamada acima: qualquer forma futura de montar a borda que volte a omitir o
+	# endereço reprova aqui, e não só esta linha. Igualdade de conjunto sobre as
+	# diretivas `listen`, com controle antivácuo — sem ele, um vhost sem `listen`
+	# nenhum passaria por "não escuta fora do laço".
+	local escutas
+	escutas="$(grep -cE '^[[:space:]]*listen[[:space:]]+127\.0\.0\.1:[0-9]+' "${PREFIXO_DA_BORDA}/vhost.conf" || true)"
+	local escutas_totais
+	escutas_totais="$(grep -cE '^[[:space:]]*listen[[:space:]]' "${PREFIXO_DA_BORDA}/vhost.conf" || true)"
+	if [[ "${escutas_totais}" -eq 0 ]]; then
+		falhar "(c) o vhost efêmero não declara 'listen' nenhum — a guarda de isolamento mediria o vácuo"
+		return 1
+	fi
+	if [[ "${escutas}" -ne "${escutas_totais}" ]]; then
+		falhar "(c) o vhost efêmero escuta fora do laço local: ${escutas}/${escutas_totais} diretivas 'listen' em 127.0.0.1"
+		return 1
+	fi
 
 	cat >"${PREFIXO_DA_BORDA}/nginx.conf" <<CONF
 worker_processes 1;

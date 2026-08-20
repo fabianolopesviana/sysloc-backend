@@ -44,6 +44,35 @@ do código.
 - Onde o material mora e qual o algoritmo o cifra é da fatia que o implementa — esta decisão fixa a classe.
 - Não alcança o segredo do próprio sistema entregue por ambiente, que segue no arquivo restrito de sempre.
 
+### Nota de fronteira — a segunda barreira tem um eixo que depende do NOME DA CHAVE
+
+> Acrescentada em **2026-08-19**, no fecho do débito `D53 · F4/T16` (fatia `emissao-e-conciliacao`), por
+> intervenção dirigida. **Não altera a `Decision`**, que segue como está: é a delimitação de uma das
+> `Alternatives considered` acima — a que mantém a redação do registrador como *"segunda barreira, nunca
+> como a garantia"*. Esta nota existe porque **é este documento que a fatia seguinte abre** ao cobrar a
+> medição nova, e a fronteira precisa estar onde o leitor passa.
+
+A redação de `packages/shared/src/log.ts` reconhece segredo por **dois eixos**, e eles não têm o mesmo alcance:
+
+| Eixo | Alcança | Depende do nome da chave? |
+|---|---|---|
+| **Forma do valor** — `ArrayBuffer.isView(valor)` emite forma e tamanho, nunca os bytes | o **material** operável, que viaja como `Buffer` | **não** |
+| **Nome da chave** — `ehChaveSensivel(chave)` contra `RADICAIS_SENSIVEIS` | a **senha** (cadeia), e material que alguém convertesse a base64 antes de anexar | **sim** |
+
+A consequência prática, para quem abrir a próxima superfície: **uma exceção que carregue segredo sob nome
+neutro** (`argumentos`, `contexto`, `opcoes`) **escapa do segundo eixo** — `redigirErro` copia as propriedades
+próprias enumeráveis da exceção e decide o mascaramento por `ehChaveSensivel(chave)`.
+
+⚠️ **Isto não é vazamento conhecido, e a distinção importa**: a saída real de hoje sai limpa, e isso é
+**medido** — `CT-944 (e)` e `CT-948 (e)` buscam os **valores** das agulhas em todas as chaves de toda linha,
+sem olhar nome de chave, de modo que um claro sob nome neutro **reprova** os dois casos. O que essa rede
+**não** alcança é uma exceção nova numa **outra** superfície que use o mesmo registrador.
+
+**O que isto obriga**, e é a razão de a nota estar aqui: a superfície nova que decifre segredo operável cobra
+a medição da própria saída — **por valor, não por nome de campo** —, exatamente como a `Decision` já exige.
+Confiar no eixo por nome é confiar na barreira que esta ADR classifica como segunda. O marcador
+correspondente vive em `redigirErro` (`packages/shared/src/log.ts`).
+
 ## Alternatives considered
 
 - **Arquivo restrito no sistema de arquivos, com referência no banco** — é como o produto já guarda os segredos do próprio sistema. Motivo da rejeição: cria uma segunda fonte que só vale restaurada junto à primeira, sobre um provisionamento cuja lacuna já está registrada; e arquivo ausente com registro presente é defeito **sem recurso**, porque ninguém recompõe material vindo de terceiro.

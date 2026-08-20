@@ -36,6 +36,14 @@
  * |          |        | `documentos-e-confirmacao`) e a do **ato do titular**
  * |          |        | (`apps/api/src/confirmacoes/confirmacao.service.ts`, T11 da mesma fatia) —
  * |          |        | as três pela ADR-0024. Qualquer outro reprova. |
+ * | CA-02    | CT-014 | Um degrau ABAIXO do escritor: a **variável** `app.empresa_id` é ESCRITA
+ * |          | (b)    | (`SET LOCAL` ou `set_config`) em exatamente dois arquivos de produção — a
+ * |          |        | implementação do escritor único (`unidade-de-trabalho.ts`) e a carga
+ * |          |        | inicial (`semente.ts`). É o eixo que o CT-014 não alcança: quem recebe o
+ * |          |        | `tx` cru de `emUnidadeDeTrabalho` pode refixar a variável DENTRO da
+ * |          |        | transação já aberta, e a RLS obedece ao valor novo até o COMMIT. LEITURA
+ * |          |        | (`current_setting`) não é escrita e não pode casar — é como toda política
+ * |          |        | consulta o contexto. Fecho do `D10 · F1/T3`. |
  * | CA-03    | CT-310 | A recusa da restrição de unicidade do identificador municipal desfaz **só a
  * | CA-02    | (c)    | instrução recusada**: numa unidade de trabalho ÚNICA, o conjunto e o imóvel
  * |          |        | gravados antes dela sobrevivem, a unidade segue utilizável depois da recusa
@@ -1813,6 +1821,55 @@ function varrerChamadasAoEscritor(arquivos: readonly string[]): Promise<Varredur
   return varrerArquivos(arquivos, (linha) => CHAMADA_AO_ESCRITOR.test(linha));
 }
 
+// ---------------------------------------------------------------------------
+// CT-014 (b) — quem ESCREVE a variável de contexto, um degrau abaixo do escritor
+// ---------------------------------------------------------------------------
+
+/**
+ * O segundo eixo do `CT-014`, e a razão de ele existir — fecho do `D10 · F1/T3`, em 2026-08-19.
+ *
+ * O `CT-014` acima audita quem chama `contextoDeTenant.executarCom`, que é o escritor **do
+ * arcabouço**. Ele não alcança o degrau de baixo: `emUnidadeDeTrabalho` entrega ao `trabalho` o
+ * `tx` **cru**, e quem tem o `tx` em mãos pode emitir `SET LOCAL app.empresa_id` para **outro
+ * valor dentro da transação já fixada** — a RLS obedece ao valor novo até o `COMMIT`, e o
+ * invariante 2 do `CLAUDE.md` cai sem que compilação, execução ou o `CT-014` acusem.
+ *
+ * ⚠️ Quando o débito foi registrado (F1/T3) o risco era **latente**: não havia consumidor de
+ * `emUnidadeDeTrabalho` no fonte de produção. A higienização de 2026-08-08 mediu que a latência
+ * acabou — passou a **9 chamadas em 4 arquivos**, todas recebendo o `tx` cru —, e nenhum eixo
+ * estático sobre a variável havia sido acrescentado. O `CT-326` cobre *quem abre a unidade*, não
+ * *o contexto dentro dela*.
+ *
+ * A discriminação é ESCRITA contra LEITURA, e ela é o ponto: `current_setting('app.empresa_id')`
+ * é como o produto **lê** o contexto (`contexto-de-escrita.ts`, e as políticas de RLS), e um
+ * detector que a casasse reprovaria o código correto — o defeito literal que a
+ * `.claude/rules/testing-stack.md` registra. Só `SET LOCAL` e `set_config(...)` escrevem.
+ */
+const ESCRITA_DA_VARIAVEL_DE_CONTEXTO =
+  /(?:\bSET\s+LOCAL\s+(?:app\.empresa_id|\$\{VARIAVEL_DE_CONTEXTO\})|\bset_config\(\s*'app\.empresa_id')/i;
+
+/**
+ * Os dois arquivos de produção que podem ESCREVER a variável de contexto. Igualdade de conjunto.
+ *
+ * **Exatamente dois**, e cada um por uma razão que a ADR-0008 nomeia:
+ *
+ * - `unidade-de-trabalho.ts` é a implementação do escritor único — é ele que compõe o
+ *   `SET LOCAL` da abertura, e o `CT-014` acima é que governa quem o aciona;
+ * - `semente.ts` é a carga inicial, que fixa a variável por `set_config` com parâmetro vinculado
+ *   porque o identificador chega de fora e `SET LOCAL` não aceita vínculo.
+ *
+ * Um TERCEIRO escritor reprova aqui, nominalmente — que é a rede que faltava. Ele não é proibido:
+ * é a mudança que este caso existe para **exigir revisão**, exatamente como o `CT-014`.
+ */
+const ESCRITORES_DA_VARIAVEL_DE_CONTEXTO: readonly string[] = [
+  join(RAIZ_DO_REPOSITORIO, 'packages/db/src/unidade-de-trabalho.ts'),
+  join(RAIZ_DO_REPOSITORIO, 'packages/db/src/semente.ts'),
+].sort();
+
+function varrerEscritasDaVariavel(arquivos: readonly string[]): Promise<VarreduraDeFontes> {
+  return varrerArquivos(arquivos, (linha) => ESCRITA_DA_VARIAVEL_DE_CONTEXTO.test(linha));
+}
+
 /** Os arquivos distintos de uma lista de `<caminho>:<linha>`. */
 function arquivosDe(ocorrencias: readonly string[]): string[] {
   return [...new Set(ocorrencias.map((o) => o.slice(0, o.lastIndexOf(':'))))].sort();
@@ -2679,6 +2736,91 @@ describe('unidade de trabalho', () => {
       // CLAUDE.md cai sem quebrar compilação — muda o conjunto e reprova; contagem não faria isso,
       // porque continuaria em um se a guarda saísse e a camada intrusa entrasse no lugar dela.
       expect(arquivosDe(varredura.ocorrencias)).toEqual(CHAMADORES_LEGITIMOS);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-014 (b) — a variável de contexto é ESCRITA em exatamente dois arquivos de produção',
+    async () => {
+      const fontes = await fontesDeProducao();
+
+      // A mesma âncora antivácuo do caso irmão, e pela mesma razão: sem ela, um descobridor
+      // quebrado provaria "ninguém escreve a variável" com a varredura vazia.
+      expect(Object.keys(fontes.porPacote).sort()).toEqual(
+        expect.arrayContaining(PACOTES_QUE_EXISTEM_HOJE),
+      );
+      for (const [pacote, quantos] of Object.entries(fontes.porPacote)) {
+        expect({ pacote, temFonte: quantos > 0 }).toEqual({ pacote, temFonte: true });
+      }
+
+      const varredura = await varrerEscritasDaVariavel(fontes.arquivos);
+
+      // Igualdade de CONJUNTO, nunca contenção: ela reprova tanto o TERCEIRO escritor que apareceu
+      // — a camada que emite `SET LOCAL` com o `tx` cru dentro de uma transação já fixada — quanto
+      // o legítimo que deixou de escrever. Contagem não faria isso: continuaria em dois se um
+      // saísse e um intruso entrasse no lugar.
+      expect(arquivosDe(varredura.ocorrencias)).toEqual(ESCRITORES_DA_VARIAVEL_DE_CONTEXTO);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-014 (b, falsificação) — o detector pega a reescrita com o `tx` cru e NÃO pega a leitura',
+    async () => {
+      const raiz = await mkdtemp(join(tmpdir(), 'sysloc-escrita-contexto-'));
+
+      try {
+        // Controle NEGATIVO, e é ele que impede o detector de reprovar o código correto: o módulo
+        // que LÊ a variável não é escritor. `current_setting` é como toda política de RLS e o
+        // `contexto-de-escrita.ts` consultam o contexto — um detector que a casasse condenaria o
+        // produto inteiro, que é o defeito literal registrado na `.claude/rules/testing-stack.md`.
+        const leitor = join(raiz, 'contexto-de-escrita.ts');
+        await writeFile(
+          leitor,
+          await readFile(
+            fileURLToPath(new URL('../src/contexto-de-escrita.ts', import.meta.url)),
+            'utf8',
+          ),
+          'utf8',
+        );
+
+        const limpa = await varrerEscritasDaVariavel([leitor]);
+        expect(limpa.arquivos).toBe(1);
+        expect(limpa.ocorrencias).toEqual([]);
+
+        // Controle POSITIVO: o detector tem de casar as DUAS formas de escrita que a árvore usa.
+        // Sem esta perna, uma expressão que nunca casa aprovaria um repositório cheio de escritas.
+        //
+        // O VALOR é irrelevante nos dois sintéticos, e a escolha é deliberada: o detector casa a
+        // FORMA da escrita (`SET LOCAL <variável>` e `set_config('<variável>'`), nunca o que se
+        // escreve. Um literal no lugar da interpolação mantém a forma idêntica à do defeito real e
+        // evita `${` solto dentro de cadeia — que o Biome sinaliza, e com razão, como template
+        // literal provavelmente mal escrito.
+        const porSetLocal = join(raiz, 'repositorio-de-contratos.ts');
+        await writeFile(
+          porSetLocal,
+          'export async function listar(tx: Executor, empresaDoPedido: string) {\n' +
+            '  await tx.unsafe("SET LOCAL app.empresa_id = \'" + empresaDoPedido + "\'");\n' +
+            '  return [];\n' +
+            '}\n',
+          'utf8',
+        );
+        const porSetConfig = join(raiz, 'carga-alternativa.ts');
+        await writeFile(
+          porSetConfig,
+          'export async function semear(tx: Executor) {\n' +
+            "  await tx`SELECT set_config('app.empresa_id', 'alguma-empresa', true)`;\n" +
+            '}\n',
+          'utf8',
+        );
+
+        const suja = await varrerEscritasDaVariavel([leitor, porSetLocal, porSetConfig]);
+        expect(suja.arquivos).toBe(3);
+        expect(arquivosDe(suja.ocorrencias)).toEqual([porSetConfig, porSetLocal].sort());
+      } finally {
+        await rm(raiz, { recursive: true, force: true });
+      }
     },
     LIMITE_DO_CASO_MS,
   );

@@ -126,6 +126,30 @@ import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vites
 // POR QUE NÃO AGORA: impacto baixo enquanto o número de consumidores é pequeno, e declarar o
 //        subpath sem saber que forma os helpers terão nas fatias seguintes congelaria uma superfície
 //        pública cedo demais.
+// ⚠️ EMENDADO em 2026-08-19 na intervenção dirigida (texto original preservado acima, byte a byte).
+//        DUAS coisas mudaram, e a segunda é a que importa.
+//        (1) A MEDIÇÃO: não são mais 3 imports num arquivo, nem os ~20 arquivos da higienização de
+//            2026-08-08. São **41 arquivos e 127 ocorrências**, em `apps/api/test/` e
+//            `apps/worker/test/`, e **6** `tsconfig.test.json` carregam `rootDir: "../.."` — não 3.
+//            Os alvos consumidos de fora são cinco: `efemero-comum.ts` (42), `redis-efemero.ts`
+//            (41), `postgres-efemero.ts` (3), `exigencia-de-ambiente.ts` (3) e
+//            `preparar-artefato.ts` (1).
+//        (2) ⚠️ **A CORREÇÃO PROPOSTA ACIMA COLIDE COM DECISÃO REGISTRADA, e quem for fechar
+//            precisa saber ANTES de tocar 41 arquivos.** O `QUANDO FECHA` promete que declarar
+//            `"./test"` *"também dispensa o `rootDir` alargado"*. Não dispensa, e o obstáculo está
+//            escrito em `packages/shared/tsconfig.test.json`:
+//              · apontar o subpath para `dist/test/**` exige EMITIR `test/`, e aquele arquivo
+//                rejeita a emissão por escrito — *"alargá-lo faria `tsc` emitir `dist/test/**` e
+//                publicá-lo junto do pacote"* —, além de quebrar os cenários de subprocesso, que
+//                carregam o `.ts` DIRETO (`node <arquivo>.ts`, sem etapa de compilação);
+//              · apontar o subpath para o fonte cru (`./test/*.ts`) mantém o consumidor compilando
+//                `.ts` de outro pacote, de modo que o `rootDir` alargado PERMANECE — o ganho
+//                prometido não se realiza, e `files: ["dist"]` sequer inclui `test/`.
+//            Fechar de verdade exige decidir ANTES qual das duas: (a) um pacote próprio
+//            `@sysloc/test-utils`, com build e `exports` seus — a alternativa que o texto original
+//            já nomeia, e a única que entrega o ganho; ou (b) aceitar o `rootDir` alargado como
+//            permanente e fechar só a FRONTEIRA, pelo subpath sobre fonte cru. Não comece pela
+//            conversão dos 41 arquivos: ela é a última etapa, não a primeira.
 // ÍNDICE: docs/specs/features/fundacao-stack-nativa/v1/_run/run-report.md §2, D28
 import { FAIXA_PORTAS_EFEMERAS } from '../../../packages/shared/test/efemero-comum.ts';
 import {

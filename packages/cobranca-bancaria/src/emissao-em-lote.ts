@@ -395,6 +395,19 @@ export async function executarEmissaoEmLote(trabalho: TrabalhoDoLote): Promise<D
     //        que a emenda de 2026-08-17 da ADR-0001 fixa em quatro. O gatilho é, portanto, a fatia
     //        que trouxer a notícia recebida do provedor (a (iii)) ou a que ampliar o modelo canônico
     //        para perguntar pelo identificador enviado.
+    // ⚠️ QUANDO FECHA — EMENDADO em 2026-08-19 (texto original preservado acima, byte a byte).
+    //        A PRIMEIRA metade do gatilho VENCEU e foi REFUTADA por medição: a fatia (iii)
+    //        (`webhook-e-carne`) chegou na T7, e a notícia recebida dá ao órfão OBSERVABILIDADE, não
+    //        RECONCILIAÇÃO — a T7 grava `identificador_perante_o_provedor` na linha crua em todo
+    //        desfecho, inclusive `SEM_CORRESPONDENCIA` (é o que o `CT-974` afirma), de modo que o
+    //        órfão deixa de ser invisível; mas segue sem caminho para virar cobrança conciliada,
+    //        porque a notícia só chega para título que o provedor conhece, e o órfão é justamente
+    //        aquele cujo `identificadorNoProvedor` nunca foi persistido.
+    //        O gatilho vigente é o que SOBRA das duas metades, e só ele:
+    //        **a fatia que persistir o identificador enviado ANTES da chamada ao provedor, ou a que
+    //        ampliar o modelo canônico para perguntar por ele.**
+    //        Não reponha a fatia (iii) aqui — ela já passou, e anunciar como futuro um gatilho já
+    //        chegado ensina a próxima fatia a não procurá-lo. Medição na §2 (D18) da (iii).
     // POR QUE NÃO AGORA: fechá-lo exigiria persistir o identificador ANTES da chamada ao provedor
     //        (migração sobre `negocio.cobranca` depois da `0017`), alterar o predicado de
     //        `selecionarCobrancasAConferir` (T5, fechada) e acrescentar operação à porta — três

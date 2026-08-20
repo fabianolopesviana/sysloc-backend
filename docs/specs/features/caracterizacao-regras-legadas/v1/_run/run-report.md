@@ -16,7 +16,7 @@ Quatro rodadas de execução. O contador de 3 tentativas se esgotou e foi **reab
 
 > Anotados pela política débito-controlado. Os quatro MÉDIOS foram rebaixados por **override explícito do usuário** durante o run, para restringir a última tentativa ao crítico e ao alto. Resolva tudo de uma vez com `/agent-spec-debt-resolution docs/specs/features/caracterizacao-regras-legadas/v1/`.
 
-### D1 · MEDIO · security · TC-001 · Tech Review
+### D1 · MEDIO · security · TC-001 · Tech Review — ✅ RESOLVIDO (ver `Status:`)
 - **Status:** ✅ **RESOLVIDO** em 2026-08-08, por intervenção dirigida fora do pipeline. `consultar_banco_de_producao` passou a autenticar como o **usuário da base** (`-u "${base_producao}"`), com a senha lida do mesmo `sites/<site>/site_config.json` de onde já saía o `db_name`; a credencial root segue apenas em `preparar-site-efemero.sh`, onde `new-site`/`restore`/`drop-site` de fato a exigem. A varredura de não-vazamento do `CT-013` foi estendida para **N agulhas**, e passa a conferir **as duas** credenciais — sem isso ela provaria o não-vazamento de uma credencial que o caminho de consulta já não usa. Validado por `bash -n`, compilação do bloco Python e `shellcheck -S warning`; **não executado contra o `/opt/frappe`**, que atende a operação.
 - **Onde:** `deploy/scripts/caracterizacao/verificar-captura.sh:134`
 - **Problema:** consultas somente-leitura ao banco de produção autenticam como root do MariaDB

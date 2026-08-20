@@ -209,6 +209,37 @@ aviso() { printf '    AVISO %s\n' "$*" >&2; }
 
 nota() { printf '    ..   %s\n' "$*"; }
 
+# DÉBITO COM GATILHO — D9 · F0/T2 · registrado 2026-08-19
+# (NÃO é uma `DECISÃO FECHADA`: agenda uma mudança, não protege o esqueleto abaixo.)
+# O QUÊ: o esqueleto de asserções deste arquivo — `caso`, `fechar_caso`, `falhar`, `limpar`,
+#        `afirmar_igual`, `afirmar_diferente` — está COPIADO nos verificadores do repositório, e o
+#        débito pede promovê-lo a `deploy/scripts/lib/assercoes.sh`. Junto vem a segunda metade:
+#        `ct_003` acumula seis responsabilidades num corpo único e deve virar uma função por bloco.
+# ⚠️ MEDIÇÃO DE 2026-08-19 — o número envelheceu DUAS vezes, e o problema não é o que o
+#        enunciado diz. São **10** verificadores, não 4 (registro) nem 7 (higienização de
+#        2026-08-08): borda/notificacao-bancaria, caracterizacao/{captura,golden},
+#        cobranca-bancaria/guarda-de-boletos, documentos/isolamento-de-verificacao,
+#        instalacao/{apuracao-versao,fundacao,migracao,provisionamento,workspace}.
+#        E o achado que MUDA A NATUREZA do débito: as 10 cópias do núcleo são **10 formas
+#        DISTINTAS entre si** — de 35 a 63 linhas, nenhum md5 repetido. Não é "o mesmo esqueleto
+#        copiado 10 vezes"; são DEZ DIALETOS do mesmo esqueleto. O núcleo comum aos 10 é de 6
+#        funções (as listadas acima); `aviso` está em 7, `afirmar_contem` em 3, e as demais
+#        (`afirmar_desfecho_dos_caminhos`, `afirmar_copia_enxerga_migracoes`,
+#        `afirmar_forma_e_procedencia`, `afirmar_sem_bloqueio`, `afirmar_forma_do_fonte_do_pdf`)
+#        são de domínio e NÃO pertencem à casa comum.
+# QUANDO FECHA: **a próxima fatia que escrever um `verificar-*.sh`** — é o gatilho literal do
+#        débito (*"fixar o formato ANTES da próxima fatia escrever seu verificar-*.sh"*), e ele
+#        vale porque cada verificador novo nasce copiando um vizinho e vira o 11º dialeto.
+#        ⚠️ Quem fechar precisa de BASELINE, e ela é o obstáculo real: apenas 2 dos 10
+#        (`verificar-workspace.sh` e `verificar-golden.sh`) rodam sem privilégio — os outros 8
+#        exigem `sudo`/execução assistida, e converter sem poder executar viola o P1 e o P5 da
+#        `.claude/rules/nao-regressao.md`. Feche COM a janela de execução assistida agendada, não
+#        antes dela.
+# POR QUE NÃO AGORA: o débito diz literalmente *"não refatorar agora — o arquivo está provado por
+#        cinco execuções assistidas"*, e a intervenção dirigida de 2026-08-19 confirmou a razão
+#        por medição: sem baseline para 8 dos 10, a conversão trocaria duplicação conhecida por
+#        regressão invisível em scripts que provam a infraestrutura que opera.
+# ÍNDICE: docs/specs/features/fundacao-stack-nativa/v1/_run/run-report.md §2, D9
 afirmar_igual() {
 	if [[ "$2" == "$3" ]]; then
 		ok "$1"

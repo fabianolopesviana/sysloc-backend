@@ -132,7 +132,15 @@ const DIRETORIO_DAS_FONTES_PADRAO = join(
  */
 export async function extrairTextoDePdf(bytes: Uint8Array): Promise<string> {
   const tarefa = getDocument({
-    data: bytes,
+    // ⚠️ A cópia é a **defesa**, e não ornamento — endurecimento propagado da casa irmã
+    // (`packages/documentos/test/pdf.ts`) ao fechar o `D8 · F4/T5` em 2026-08-19. O extrator
+    // **assume a posse** do buffer que recebe e o transfere: sem a cópia, o arranjo do chamador
+    // fica com `byteLength` **0** e a segunda leitura dos mesmos bytes levanta
+    // `DOMException: Cannot transfer object of unsupported type`. Aqui isto era um defeito
+    // **latente**: o que salvava a suíte era só a ORDEM das linhas em
+    // `documento-do-contrato.e2e.spec.ts`, onde `textoInicialDe(bytes)` corre ANTES da extração.
+    // O custo é do arranjo — o produto não o paga.
+    data: new Uint8Array(bytes),
     standardFontDataUrl: DIRETORIO_DAS_FONTES_PADRAO,
     useSystemFonts: false,
   });

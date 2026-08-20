@@ -34,6 +34,12 @@
  * | —     | CT-1002 (g) | **Asserção estática**: `pdf-lib` é importado por **um** arquivo do
  * |       |             | repositório, e ele é o adaptador. É o que mantém verdadeira a frase que
  * |       |             | permite trocar a biblioteca reescrevendo um arquivo só (ADR-0025). |
+ * | —     | CT-1002 (h) | O extrator do arranjo **preserva o buffer do chamador**: extrair duas
+ * |       |             | vezes os MESMOS bytes devolve o mesmo resultado, e o `byteLength` não
+ * |       |             | vai a zero. É a rede do `D8 · F4/T5` — o extrator transfere a posse do
+ * |       |             | que recebe, e sem a cópia defensiva a segunda leitura levanta
+ * |       |             | `DOMException`. Discrimina por CONSTRUÇÃO: trocada a cópia por
+ * |       |             | `data: bytes`, a segunda chamada rejeita e o caso reprova. |
  *
  * ===========================================================================
  * Por que este arquivo é o portão, e não uma preliminar
@@ -81,12 +87,8 @@
  */
 
 import { readdir, readFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
-import { dirname, join, relative } from 'node:path';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-// A construção `legacy` é a que o próprio `pdfjs-dist` exige fora do navegador — a de entrada
-// alcança `DOMMatrix` na carga do módulo e derruba a suíte antes do primeiro caso.
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { criarMescladorPdf } from '../src/mesclador-pdf.ts';
 import {
@@ -95,6 +97,7 @@ import {
 } from '../src/porta-de-mesclagem.ts';
 import type { RepresentacaoTextual } from '../src/porta-de-renderizacao.ts';
 import { criarRenderizadorPdf } from '../src/renderizador-pdf.ts';
+import { extrairPaginasDePdf } from './pdf.ts';
 
 // ---------------------------------------------------------------------------
 // Os limites de tempo, nomeados (nunca número solto no meio do caso)
@@ -113,69 +116,6 @@ const TETO_DA_COMPOSICAO = 60_000;
 // ---------------------------------------------------------------------------
 // A extração — o texto de volta, PÁGINA A PÁGINA
 // ---------------------------------------------------------------------------
-
-/**
- * O diretório das fontes padrão do extrator, resolvido pelo **próprio pacote instalado**.
- *
- * Sem ele o `pdfjs-dist` avisa que não consegue carregar `LiberationSans-Regular.ttf` e a extração
- * passa a depender do que estiver instalado no host. Resolver pelo `package.json` da biblioteca é o
- * que sobrevive ao arranjo de diretórios do pnpm, onde o caminho relativo aparente não é o real.
- */
-const DIRETORIO_DAS_FONTES_PADRAO = join(
-  dirname(createRequire(import.meta.url).resolve('pdfjs-dist/package.json')),
-  'standard_fonts/',
-);
-
-/**
- * Extrai o texto de um PDF **em bytes**, devolvendo uma entrada por página.
- *
- * A granularidade é o ponto: um extrator que concatenasse o documento inteiro numa cadeia só não
- * conseguiria dizer se a página 3 do mesclado é a página 3 da origem — e é exatamente essa a
- * afirmação do CT-1002 (a). O texto de cada página sai **com o espaço em branco colapsado**, porque
- * o extrator o quebra pelo layout e a comparação é sobre **conteúdo**; a normalização incide sobre
- * os dois lados, de modo que ela não esconde divergência entre eles.
- *
- * `useSystemFonts: false` é determinismo, não ornamento: com fontes do sistema operacional em jogo,
- * a extração passaria a depender do host, e o resultado deixaria de ser propriedade do PDF.
- */
-async function extrairPaginasDePdf(bytes: Uint8Array): Promise<string[]> {
-  const tarefa = getDocument({
-    // O extrator **assume a posse** do buffer que recebe e o transfere. Passar os bytes do SUT
-    // diretamente destruiria o documento que o próprio caso ainda vai comparar — medido nesta
-    // base: depois da primeira extração o arranjo fica com `byteLength` **0**, e a segunda leitura
-    // dos mesmos bytes levanta `DOMException: Cannot transfer object of unsupported type`. A cópia
-    // é a defesa, e ela é do arranjo — o produto não a paga.
-    data: new Uint8Array(bytes),
-    standardFontDataUrl: DIRETORIO_DAS_FONTES_PADRAO,
-    useSystemFonts: false,
-  });
-
-  const paginas: string[] = [];
-
-  try {
-    const documento = await tarefa.promise;
-
-    for (let pagina = 1; pagina <= documento.numPages; pagina += 1) {
-      const conteudo = await (await documento.getPage(pagina)).getTextContent();
-
-      let texto = '';
-      for (const item of conteudo.items) {
-        // `TextMarkedContent` não carrega texto; só os `TextItem` têm `str`.
-        if (!('str' in item)) continue;
-
-        texto += item.str;
-        if (item.hasEOL) texto += ' ';
-      }
-
-      paginas.push(texto.replace(/\s+/gu, ' ').trim());
-    }
-  } finally {
-    // Sem isto o processo do extrator fica de pé e a suíte não encerra sozinha.
-    await tarefa.destroy();
-  }
-
-  return paginas;
-}
 
 // ---------------------------------------------------------------------------
 // As origens — representações escritas aqui, renderizadas pelo caminho normal
@@ -528,6 +468,31 @@ describe('CT-1002 — a mesclagem preserva as páginas de origem sem re-renderiz
       // Igualdade de conjunto, nunca contenção: ela reprova tanto o arquivo novo que se ligou à
       // biblioteca quanto o adaptador que deixou de se ligar a ela.
       expect(ligados.sort()).toEqual([ADAPTADOR]);
+    },
+    TETO_DA_COMPOSICAO,
+  );
+
+  it(
+    'CT-1002 (h) — o extrator do arranjo NÃO destrói o buffer que recebe',
+    async () => {
+      const bytes = naPosicao(bytesDasOrigens, 0, 'bytes da primeira origem');
+
+      // Controle antivácuo: sem bytes de verdade o caso provaria a preservação do nada.
+      expect(bytes.byteLength).toBeGreaterThan(0);
+      const tamanhoAntes = bytes.byteLength;
+
+      const primeira = await extrairPaginasDePdf(bytes);
+      expect(primeira.length).toBeGreaterThan(0);
+
+      // A DISCRIMINAÇÃO está aqui: o extrator assume a posse do buffer e o transfere. Com
+      // `data: bytes` — a forma que `apps/api/test/documento.ts` carregava até o fecho do
+      // `D8 · F4/T5` — o arranjo fica com `byteLength` 0 depois da primeira extração, e esta
+      // segunda chamada levanta `DOMException: Cannot transfer object of unsupported type`.
+      // Nenhum eixo mais frouxo pega isso: uma extração só passa nas duas formas.
+      const segunda = await extrairPaginasDePdf(bytes);
+
+      expect(bytes.byteLength).toBe(tamanhoAntes);
+      expect(segunda).toEqual(primeira);
     },
     TETO_DA_COMPOSICAO,
   );

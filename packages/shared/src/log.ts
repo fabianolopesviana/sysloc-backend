@@ -61,6 +61,40 @@
  * só aparece quando o evento registrado não é um registro de campos.
  */
 
+// DÉBITO COM GATILHO — D23 · F0/T3 · registrado 2026-08-19
+// (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança e não protege o código abaixo. O que
+//  protege são os DOIS marcadores `DECISÃO FECHADA` que este arquivo carrega — e são eles o
+//  motivo de o débito seguir aberto; ver `QUANDO FECHA`.)
+// O QUÊ: este arquivo carrega DUAS responsabilidades separáveis — a fábrica do logger (opções,
+//        destino, ciclo de vida do filho) e o MOTOR DE REDAÇÃO (radicais, padrões de credencial,
+//        despacho por tipo, erro, ciclo). O débito pede extrair o segundo para
+//        `packages/shared/src/redacao.ts`, não exportado por `index.ts`, deixando a fábrica com
+//        ~80 linhas. Ganho: a redação passa a ter arquivo de teste próprio, exercitável sem
+//        montar logger e destino; a lista de radicais cresce sem tocar a fábrica.
+//        ⚠️ MEDIDO em 2026-08-19: o arquivo foi de 447 linhas no registro do débito para 598 na
+//        higienização de 2026-08-08 e **634** agora. Ele cresce, e o débito não encolhe.
+// QUANDO FECHA: ⚠️ **NÃO é "quando alguém tiver tempo" — está BLOQUEADO, e o bloqueio é de
+//        PROTOCOLO.** A extração move código que hoje vive sob as duas `DECISÃO FECHADA` deste
+//        arquivo — a de T3 (F4), dentro de `RADICAIS_SENSIVEIS`, e a de T1 (F1), acima de
+//        `redigirValorEmCadeiaDeConsulta` —, e a §3.2 da `.claude/rules/nao-regressao.md` proíbe
+//        literalmente: *"não altere, não MOVA, não reescreva e não remova o código sob o
+//        marcador"*. Medido na intervenção dirigida de 2026-08-19: nenhum dos dois
+//        `REVERTER EXIGE` se demonstra — o primeiro pede provar que `certificadoId` deixou de ser
+//        o eixo de diagnóstico dos eventos do certificado (é falso), e o segundo pede **escalar
+//        ao usuário e obter NOVA decisão**, porque a vigente é dele.
+//        Fecha, portanto, quando UMA destas for verdadeira, e não antes:
+//          (1) os dois marcadores forem legitimamente retirados pelos seus próprios
+//              `REVERTER EXIGE`; ou
+//          (2) o usuário autorizar EXPRESSAMENTE a movimentação do código sob eles, preservando
+//              os marcadores junto do código movido, byte a byte.
+//        ⚠️ Quem tentar a extração sem uma das duas está cometendo a regressão R3 que o Protocolo
+//        nomeia — desfazer decisão já debatida por não saber que houve debate.
+// POR QUE NÃO AGORA: o Gate 2 que registrou o débito ponderou que *"o código melhorou"* (11
+//        funções pequenas, `redigirValor` é escada linear) e que o que inchou foi a PROSA. Custo
+//        de leitura, nenhum defeito funcional — contra o risco de mexer no módulo cujo vazamento
+//        de credencial sobreviveu a QUATRO correções, e que é a origem do próprio Protocolo.
+// ÍNDICE: docs/specs/features/fundacao-stack-nativa/v1/_run/run-report.md §2, D23
+
 import { URL } from 'node:url';
 import pino from 'pino';
 
@@ -585,6 +619,33 @@ function redigirValor(valor: unknown, emVisita: WeakSet<object>): unknown {
  * essa outra saída é fechada por {@link mascararMensagem}, não aqui. As duas são necessárias:
  * fechar só uma deixa a linha com metade da cadeia mascarada e metade legível.
  */
+// DÉBITO COM GATILHO — D53 · F4/T16 · registrado 2026-08-19
+// (NÃO é uma `DECISÃO FECHADA`: agenda, não protege. O desenho abaixo está CERTO para o que ele
+//  cobre; o que este marcador registra é o que ele NÃO cobre.)
+// O QUÊ: a cópia das propriedades próprias enumeráveis da exceção decide o mascaramento por
+//        `ehChaveSensivel(chave)` — **pelo NOME DA CHAVE**. Uma exceção que carregasse segredo sob
+//        nome NEUTRO (`argumentos`, `contexto`, `opcoes`) escaparia desse eixo.
+//        ⚠️ O ALCANCE EXATO, medido pelo Gate 2 e não pelo enunciado do Gate 1: `redigirValor`
+//        intercepta `ArrayBuffer.isView(valor)` e emite forma e tamanho, NUNCA os bytes — de modo
+//        que o MATERIAL, que viaja como `Buffer`, é redigido PELO TIPO e independe do nome da
+//        chave. O que resta dependendo do eixo por nome é a **SENHA** (cadeia), e um material que
+//        alguém convertesse a base64 antes de anexar. Não repita a formulação larga
+//        (*"material .pfx e senha chegariam legíveis"*): ela foi medida e estreitada.
+// NENHUM VAZAMENTO HOJE, e isto é MEDIÇÃO da saída real, não argumento: `CT-944 (e)` e
+//        `CT-948 (e)` (`apps/worker/test/`) buscam os VALORES das agulhas em todas as chaves de
+//        toda linha, sem olhar nome de chave — se amanhã uma exceção carregar o claro sob nome
+//        neutro nas duas bordas medidas, os dois casos REPROVAM. ⚠️ O que a rede NÃO alcança é
+//        uma exceção nova em OUTRA superfície que use este mesmo registrador.
+// QUANDO FECHA: a próxima superfície que DECIFRE o segredo operável, ou a primeira exceção do
+//        produto que anexe campo próprio não coberto por `RADICAIS_SENSIVEIS`. Quem chegar ali
+//        estende a varredura de valores àquela borda ANTES de confiar no eixo por nome.
+// POR QUE NÃO AGORA: os dois gates convergiram por escrito em que alterar este desenho seria o
+//        *"aproveitar que estou aqui"* que a §4.5 do Protocolo proíbe — o alvo estava fora do
+//        delta e fora da §5 da task que o achou, e o desenho é decisão registrada. A intervenção
+//        dirigida de 2026-08-19 abriu o arquivo por outra razão (o D23) e emitiu ESTE marcador,
+//        que o D53 declarou faltar por não poder tocar aqui — a morada que a §3-B exige. O
+//        desenho segue INALTERADO.
+// ÍNDICE: docs/specs/features/emissao-e-conciliacao/v1/_run/run-report.md §2, D53
 function redigirErro(erro: Error, emVisita: WeakSet<object>): Registro {
   const saida: Registro = { tipo: erro.name, mensagem: mascararCredencial(erro.message) };
   if (erro.stack !== undefined) {
