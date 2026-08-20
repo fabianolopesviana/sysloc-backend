@@ -351,7 +351,7 @@ describe('alcance da capacidade de enfileirar (T15)', () => {
     // QUEM passou a alcançar a fila, em vez de apenas "esperava 3, obteve 4".
     expect(
       alcance,
-      'a capacidade de enfileirar deixou de ser a lista revisada: ' + alcance.join(', '),
+      `a capacidade de enfileirar deixou de ser a lista revisada: ${alcance.join(', ')}`,
     ).toEqual([...ARQUIVOS_QUE_NOMEIAM_O_MODULO]);
 
     // E a menção é LIGAÇÃO, e não uma cadeia de caracteres com o nome dentro: cada módulo de área
@@ -389,7 +389,7 @@ describe('alcance da capacidade de enfileirar (T15)', () => {
     const chamadores = arquivosDa(daFabrica);
     expect(
       chamadores,
-      'a fábrica do produtor passou a ser chamada fora do dono: ' + chamadores.join(', '),
+      `a fábrica do produtor passou a ser chamada fora do dono: ${chamadores.join(', ')}`,
     ).toEqual([...ARQUIVOS_QUE_CHAMAM_A_FABRICA]);
 
     // O QUARTO eixo: a biblioteca em si. Ele é independente dos três acima — uma fila aberta direto
@@ -406,7 +406,7 @@ describe('alcance da capacidade de enfileirar (T15)', () => {
     const importadores = arquivosDa(daBiblioteca);
     expect(
       importadores,
-      'a biblioteca de fila passou a ser importada fora da fronteira: ' + importadores.join(', '),
+      `a biblioteca de fila passou a ser importada fora da fronteira: ${importadores.join(', ')}`,
     ).toEqual([...ARQUIVOS_QUE_NOMEIAM_A_BIBLIOTECA]);
   });
 
@@ -426,7 +426,7 @@ describe('alcance da capacidade de enfileirar (T15)', () => {
     // reprovaria em vez de passar por vacuidade.
     expect(
       decoradores,
-      'os decoradores de topo do módulo dono da fila mudaram: ' + decoradores.join(', '),
+      `os decoradores de topo do módulo dono da fila mudaram: ${decoradores.join(', ')}`,
     ).toEqual([...DECORADORES_DO_MODULO_DA_FILA]);
   });
 });

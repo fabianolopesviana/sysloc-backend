@@ -42,7 +42,15 @@ LIMITE_PNPM_INSTALL=300
 LIMITE_PNPM_LIST=120
 LIMITE_PNPM_BUILD=180
 LIMITE_PNPM_LINT=120
-LIMITE_PNPM_TEST=120
+# ⚠️ 900 s, e não os 120 originais — corrigido em 2026-08-20. O valor da T1 foi
+# dimensionado quando os pacotes do monorepo estavam VAZIOS e `pnpm test` não
+# tinha o que rodar. A suíte hoje tem 1713 casos em 9 pacotes e leva **428 s**
+# MEDIDOS na árvore local com o build já em cache; o clone efêmero compila do
+# zero e sobe instância de Postgres própria, então é estritamente mais lento.
+# O desfecho que isto corrige era `124` — o código do `timeout` do coreutils, e
+# não uma reprovação da suíte. Limite maior NÃO deixa passar defeito: ele só
+# deixa de reprovar suíte que ainda não terminou.
+LIMITE_PNPM_TEST=900
 LIMITE_CICLO_CT001=600
 
 # --------------------------------------------------------------------------- #
@@ -73,11 +81,35 @@ LIMITE_CICLO_CT001=600
 # vencida: quem acrescenta membro ao workspace acrescenta a linha aqui, no mesmo
 # commit. Só não foi pega antes porque esta bateria não tinha agregador que a
 # invocasse (débito D6, fechado na mesma fatia).
+# --------------------------------------------------------------------------- #
+# ⚠️ Atualizada DE NOVO em 2026-08-20, e desta vez com atraso de duas fases — o
+# que esta nota registra é o atraso, não a lista.
+#
+# A regra acima ("quem acrescenta membro acrescenta a linha aqui, no mesmo
+# commit") foi DESCUMPRIDA quatro vezes: `@sysloc/contracts` (F2),
+# `@sysloc/documentos` e `@sysloc/regua` (F3) e `@sysloc/cobranca-bancaria` (F4)
+# entraram no workspace sem a linha correspondente. O espelho reprovou em todas —
+# ele estava certo o tempo inteiro —, e a reprovação foi lida como ruído de
+# fundo em vez de sinal, porque a bateria já vinha vermelha desde a primeira.
+#
+# É a falha de modo que o próprio mecanismo tem: um espelho que reprova por um
+# motivo legítimo e não é consertado passa a esconder todos os motivos seguintes.
+# Enquanto ele estiver vermelho, "quebrou algo" e "é o de sempre" são
+# indistinguíveis — e `verificar-fundacao.sh` (T7) invoca este script na bateria
+# agregadora da F0, de modo que o dano não fica contido aqui.
+#
+# ⚠️ QUEM ACRESCENTAR O DÉCIMO PRIMEIRO MEMBRO ACRESCENTA A LINHA AQUI, NO MESMO
+# COMMIT. Se esta bateria reprovar por contagem de pacote, o defeito é a linha
+# que ninguém escreveu — não este arquivo.
 MEMBROS_DO_WORKSPACE=(
 	"@sysloc/monorepo:"
 	"@sysloc/shared:/packages/shared"
 	"@sysloc/db:/packages/db"
 	"@sysloc/auth:/packages/auth"
+	"@sysloc/contracts:/packages/contracts"
+	"@sysloc/documentos:/packages/documentos"
+	"@sysloc/regua:/packages/regua"
+	"@sysloc/cobranca-bancaria:/packages/cobranca-bancaria"
 	"@sysloc/api:/apps/api"
 	"@sysloc/worker:/apps/worker"
 )
@@ -86,7 +118,7 @@ MEMBROS_DO_WORKSPACE=(
 # motivo da lista acima.
 declare -A PACOTES_POR_DIRETORIO=(
 	[apps]=2
-	[packages]=3
+	[packages]=7
 )
 
 # Variáveis obrigatórias no `.env.example`, com o papel que cada uma cumpre.

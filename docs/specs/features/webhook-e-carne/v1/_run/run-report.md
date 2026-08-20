@@ -744,7 +744,13 @@ agora estendido ao débito.
 
 ### 7.5 Nota de baseline (P1) — o que já estava vermelho
 
-`deploy/scripts/instalacao/verificar-workspace.sh` foi executado neste host e **reprova com 7
-falhas**. Estado **pré-existente**, não tocado por esta intervenção, e registrado porque o P1 manda:
-é informação, não obstáculo. Não entra em conserto algum aqui, e reforça a decisão sobre o `D9` —
-nem o único verificador que roda sem privilégio está verde neste servidor.
+`deploy/scripts/instalacao/verificar-workspace.sh` foi executado neste host e **reprova com 5
+falhas** — o mesmo número que a §4 deste relatório já anotava, medido três vezes durante o run.
+Estado **pré-existente**, não tocado por esta intervenção, e registrado porque o P1 manda: é
+informação, não obstáculo.
+
+⚠️ **Fechado em 2026-08-20**, em intervenção seguinte: o verificador roda **4/4 aprovados**. A causa
+não era envelhecimento — três das cinco falhas eram **linhas de inventário que quatro fatias
+deixaram de escrever** (o contrato está no docblock de `MEMBROS_DO_WORKSPACE`), uma era **timeout**
+(`LIMITE_PNPM_TEST=120` contra 428 s de suíte) e uma era diagnóstico de lint real. Detalhe na §2 do
+`run-report.md` da `fundacao-stack-nativa`, no `D9`.
