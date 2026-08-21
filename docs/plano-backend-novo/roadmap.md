@@ -45,7 +45,7 @@ partir pelo mesmo motivo; quando isso acontecer, as fatias novas aparecem aqui.
 | **F2** | Domínio de locação | ✅ concluída | 21/21 tasks |
 | **F3** | Cobrança, mora e documentos | ✅ concluída | 35/35 tasks |
 | **F4** | Integração bancária (Sicoob) | ✅ concluída | 43/43 tasks |
-| **F5** | Automações agendadas | ⬜ não iniciada | — |
+| **F5** | Integração bancária autônoma e automações | ⬜ não iniciada | — |
 | **F6** | Frontend religado — só o handoff sai daqui | ⬜ não iniciada | — |
 | **F7** | Virada e desinstalação — partida em duas | ⬜ não iniciada | — |
 <!-- PAINEL:FIM -->
@@ -300,9 +300,39 @@ e credenciais seguem válidos, então isto é trabalho de código, não espera d
 
 ---
 
-## F5 — Automações agendadas
+## F5 — Integração bancária autônoma e automações
 
-**O que é:** o que roda sozinho. O gatilho sai do cron e vai para **systemd timers**.
+**Duas fatias, nesta ordem.** A primeira nasceu em **2026-08-21**, de dois achados do mesmo dia
+contra a API e o certificado reais.
+
+### (i) `integracao-bancaria-autonoma/v1` — o que o Admin precisa fazer SOZINHO
+
+**O que é:** hoje, duas coisas da integração bancária **exigem alguém com acesso ao terminal do
+servidor**. Num SaaS com N clientes, isso não escala — é o mesmo tipo de gargalo, visto de dois
+ângulos:
+
+- **Frente A · ativar o webhook.** O cadastro no provedor é **por cliente** (`numeroCliente`), com o
+  certificado e o `client_id` daquele cliente. ⚠️ **A URL é uma só** — os N clientes apontam para o
+  mesmo endereço, e o roteamento é pelo identificador que o produto emitiu (ADR-0033), com a empresa
+  **derivada da cobrança encontrada** (ADR-0024). Nada por cliente na infraestrutura; o que falta é o
+  botão que dispara cadastro→consulta e mostra o motivo quando o provedor recusa.
+- **Frente B · aceitar o certificado como a AC o entrega.** A Autoridade Certificadora entregou em
+  cifra legada (`RC2-40-CBC`) nas **duas emissões consecutivas** — não é exceção, é o padrão dela. O
+  Node 24 recusa, a rota devolve `422` culpando a senha, e quem renova é o **Admin, pela tela**, sem
+  o script de servidor que converte. Fecha o **`D64`**, agravado para `ALTO` em 2026-08-21.
+
+**Por que ela vem primeiro:** é a **última fatia que acrescenta rota** antes do congelamento da
+superfície, e é pré-condição de operação — sem ela, todo cliente novo e toda renovação passam por
+quem opera a máquina.
+
+**Aceitação:** duas empresas ativam o webhook independentemente · a recusa do provedor chega à tela
+com mensagem e código íntegros · material em cifra legada é aceito **pela rota** · as três causas de
+recusa (cifra, senha, validade) produzem três mensagens · com o webhook desabilitado, a conferência
+diária continua liquidando.
+
+### (ii) `automacoes-agendadas/v1` — o que roda sozinho
+
+**O que é:** o gatilho sai do cron e vai para **systemd timers**.
 
 **Entrega:**
 
@@ -320,6 +350,7 @@ rotina parada gera alerta · o instalador roda duas vezes sem duplicar entrada.
 <!-- ESTADO:F5:INICIO -->
 > ⬜ **não iniciada**
 >
+> ⬜ `integracao-bancaria-autonoma/v1`
 > ⬜ `automacoes-agendadas/v1`
 <!-- ESTADO:F5:FIM -->
 

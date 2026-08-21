@@ -335,7 +335,131 @@ aplica uma vez.
 
 ---
 
-## F5 — Automações
+## F5 — Integração bancária autônoma, e automações
+
+> **Duas fatias, nesta ordem.** A `integracao-bancaria-autonoma/v1` vem primeiro: ela é pré-condição
+> de operação — sem ela, **todo cliente novo e toda renovação de certificado dependem de alguém com
+> acesso ao terminal do servidor** —, e é a última coisa que acrescenta rota antes do
+> **congelamento da superfície**.
+
+### F5 (i) — `integracao-bancaria-autonoma/v1`
+
+> **O nome mudou em 2026-08-21, e a razão é conteúdo.** A fatia nasceu como `ativacao-do-webhook`,
+> cobrindo uma frente só. A renovação real do certificado, no mesmo dia, revelou uma **segunda frente
+> da mesma natureza**: o produto não aceita o material que a Autoridade Certificadora entrega, e a
+> renovação também acaba no terminal. As duas são o mesmo problema — **o que o Admin tem de conseguir
+> fazer sozinho, pela tela** —, e separá-las em fatias distintas partiria uma causa comum em duas
+> metades que ninguém veria juntas.
+
+#### Frente A — ativação do webhook por tenant
+
+**Por que ela existe, e por que só agora.** Medido em 2026-08-21, contra a API real do Sicoob: o
+cadastro de webhook é **por cliente** (`numeroCliente`), único por `(cliente, tipo de movimento,
+período)`, e feito com o certificado e o `client_id` **daquele cliente**. Num SaaS multiempresa, isso
+significa que **cada tenant precisa ativar o próprio webhook** — e não há como o operador fazer isso
+por fora sem acesso às credenciais de cada um.
+
+⚠️ **A URL é uma só, e isso já está resolvido.** Os N clientes cadastram webhooks apontando para o
+**mesmo** endereço; o roteamento é pelo identificador que o produto emitiu (`seuNumero`, único no
+SaaS por decisão da ADR-0033), e a empresa é **derivada da cobrança encontrada** (ADR-0024, emenda de
+2026-08-18). Um subdomínio, um vhost, um backend — **nada por cliente na infraestrutura**.
+
+**Entregas:**
+
+1. **Porta irmã de configuração** para as operações de webhook do provedor — cadastrar e consultar.
+   ⚠️ **Não há ADR nova nem emenda a fazer**, e isto está resolvido desde 2026-08-21: a **emenda de
+   2026-08-15 da ADR-0001** enuncia **critério de classe**, não exceção nominal — *"a exclusividade
+   que esta ADR sustenta é de **critério**, e não de contagem de portas"*. Uma porta irmã é conforme
+   por três condições cumulativas: (a) não exerce nenhuma das cinco operações de cobrança; (b) tem
+   consumidor nomeado fora do núcleo (aqui, o Admin na área de integrações); (c) **nenhum campo, URL
+   ou vocabulário do provedor cruza a porta**.
+
+   **O precedente é a `PortaDeIdentidadeBancaria`**, que é porta irmã desde a `fundacao-bancaria` e
+   cuja conformidade **não é afirmada em prosa: é varrida** pelo `CT-809 (b)`. A fatia **estende**
+   aquele caso à porta nova — não inventa maquinaria.
+
+   **A metade cara já foi paga em 2026-08-21**: `codigoTipoMovimento`, `codigoPeriodoMovimento` e
+   `codigoSituacao` foram acrescentados a `TERMOS_DO_DIALETO_DA_NOTICIA` **antes** de existir a porta
+   que os encontraria — `idWebhook`, `validacaoWebhook` e `tipoMovimento` já estavam lá. A
+   antecipação é deliberada: termo que entra na lista junto com o código que o usa **nasce já
+   contornado** e nunca chega a provar nada. O que resta à fatia é **aplicar a varredura à porta
+   nova**, no molde do `CT-809 (b)`.
+2. **Escopos por família de operação.** Medido: a concessão para `/webhooks` exige
+   `webhooks_inclusao webhooks_consulta webhooks_alteracao`; os escopos de boleto obtêm token mas o
+   gateway recusa com `401`. **Não existe `webhooks_exclusao`.** O adaptador hoje tem um escopo só,
+   constante — passa a precisar de escopo **por operação**.
+3. **Rotas de ativação e estado**, na área de integrações bancárias, com as mesmas chaves do
+   certificado (a identidade e o webhook são atos de configuração da mesma tela):
+   - **ativar** — cadastra no provedor e **confirma por consulta**; só declara habilitado se as duas
+     derem positivo;
+   - **consultar o estado** — habilitado ou não, e **quando não, o motivo COMPLETO** devolvido pelo
+     provedor (mensagem e código), para a tela exibir sem interpretação.
+4. **Persistência do estado por empresa**, com o desfecho da última tentativa. A recusa é **dado**,
+   não exceção: ela precisa sobreviver à requisição para a tela mostrar depois.
+5. **Degradação declarada:** com o webhook desabilitado, o produto **opera normalmente** pela
+   conferência diária, que consulta a API e liquida ou estorna. O webhook é o caminho *rápido*; a
+   conferência é o *garantido*. Isso já está implementado — a fatia apenas **declara e testa** a
+   degradação.
+
+#### Frente B — aceitar o material do certificado como a AC o entrega
+
+**Por que ela existe.** Medido em 2026-08-21, na primeira renovação real: a AC entregou o `.pfx` em
+**cifra legada** (`RC2-40-CBC`) nas **duas emissões consecutivas** — julho/2025 e agosto/2026. Não é
+exceção, é o padrão dela. O OpenSSL 3 recusa essa cifra por padrão, e o Node 24 falha com
+`ERR_CRYPTO_UNSUPPORTED_OPERATION`.
+
+⚠️ **Consequência: a renovação pela tela não funciona.** A rota de registro recusa com `422`, e a
+mensagem culpa a senha. Quem renova é o **Admin da imobiliária**, que não tem — nem deve ter —
+acesso ao servidor onde vive o `preparar-material-do-certificado.sh`. Hoje, toda renovação exige
+intervenção de quem opera a máquina; num SaaS com N clientes isso é inviável, pela mesma razão que a
+ativação manual do webhook era.
+
+**Entregas:**
+
+1. **A rota de registro aceita material em cifra legada**, convertendo-o no servidor e preservando o
+   par certificado/chave — série, titular e validade **idênticos**, afirmado por medição, como o
+   script versionado já faz.
+2. **A recusa passa a distinguir as causas**: cifra não suportada, senha incorreta e validade
+   encerrada são três mensagens, não uma. Fecha o **`D64`**, cujo gatilho disparou em 2026-08-21.
+3. **A tela informa o que aconteceu** — se o material foi convertido, o Admin merece saber, porque o
+   arquivo que ele guardou não é byte a byte o que o produto usa.
+
+⚠️ **A forma da conversão é decisão de arquitetura, e NÃO está tomada.** As três candidatas, com
+custo e risco, estão na §2 do `run-report.md` da `fundacao-bancaria`, no `D64`. A mais barata —
+ligar o provider legado do Node — é a que o registro recomenda **recusar**: habilitaria cifra fraca
+no processo que manipula todo segredo operável do produto.
+
+**Aceitação da frente B:** material em cifra legada, **gerado em execução**, é aceito pela ROTA · a
+série e o titular do registrado são idênticos aos do enviado · as três causas de recusa produzem
+três mensagens distintas · nenhum `.pfx` entra na árvore versionada (Invariante 3).
+
+**Decisões consumidas:** 19 (baixa marca `Paga` e o estorno reverte), 24, 33, 35.
+**ADRs vinculantes:** 0001 (com as duas emendas — ver a condição (c)), 0011, 0017, 0018, 0025, 0032.
+
+**Aceitação:** duas empresas ativam independentemente, cada uma com o próprio certificado · a recusa
+do provedor chega à consulta de estado **com mensagem e código íntegros** · nenhum vocabulário do
+provedor atravessa a porta, afirmado por varredura · com o webhook desabilitado, a conferência
+diária continua liquidando · reativar depois de uma recusa percorre o mesmo caminho, sem estado
+preso.
+
+> ### ⚠️ Gatilhos para o handoff do frontend
+>
+> Esta fatia é a **última que acrescenta rota** antes do congelamento. O `handoff-frontend.md`
+> precisa carregar, dela:
+>
+> 1. as **duas rotas** (ativar e consultar estado), com corpo e resposta completos;
+> 2. o **contrato do estado**: habilitado/desabilitado, e o objeto de motivo quando desabilitado —
+>    incluindo **todos** os campos que o provedor devolveu, porque a tela os exibe;
+> 3. que a tela é **um botão "Habilitar webhook"** dentro da integração do provedor, por tenant, que
+>    dispara o ciclo cadastro→consulta; exibe **Habilitado** só com os dois positivos; exibe
+>    **Desabilitado + motivo completo** caso contrário, com **"Tentar novamente"** repetindo o mesmo
+>    ciclo;
+> 4. que **o produto funciona sem o webhook** — a tela informa, não bloqueia;
+> 5. que a ativação é **por empresa**, e que **não há nada a configurar na infraestrutura** por
+>    cliente.
+
+### F5 (ii) — `automacoes-agendadas/v1`
+
 
 Gatilho no **SO**, por systemd timer (decisão 30 refinada).
 

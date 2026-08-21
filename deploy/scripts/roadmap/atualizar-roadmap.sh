@@ -49,7 +49,7 @@ declare -A FATIAS_DA_FASE=(
   [F2]='cadastro-de-imoveis-e-pessoas/v1;contratos-de-locacao/v1'
   [F3]='cobranca-e-mora/v1;regua-de-cobranca/v1;documentos-e-confirmacao/v1'
   [F4]='fundacao-bancaria/v1;emissao-e-conciliacao/v1;webhook-e-carne/v1'
-  [F5]='automacoes-agendadas/v1'
+  [F5]='integracao-bancaria-autonoma/v1;automacoes-agendadas/v1'
   [F6]='frontend-religado/v1'
   [F7]='virada-e-desinstalacao/v1'
 )
@@ -159,7 +159,7 @@ painel() {
     [F2]='Domínio de locação'
     [F3]='Cobrança, mora e documentos'
     [F4]='Integração bancária (Sicoob)'
-    [F5]='Automações agendadas'
+    [F5]='Integração bancária autônoma e automações'
     [F6]='Frontend religado — só o handoff sai daqui'
     [F7]='Virada e desinstalação — partida em duas'
   )

@@ -534,3 +534,82 @@ Cinco acoplamentos de forma, em ordem de custo:
 > **O maior risco não é técnico — é decidir o contrato da nova API antes de escrever qualquer
 > linha**, porque cada decisão (formato de ID, quem calcula `status`, quem faz os joins, transações
 > de boleto) redefine quais arquivos mudam e quanto.
+
+---
+
+# 8. ⚠️ O QUE MUDOU DEPOIS DESTE LEVANTAMENTO — leia antes de gerar o handoff
+
+> **Por que esta seção existe.** As seções 1 a 7 descrevem o frontend **contra o ERPNext**, e foram
+> escritas antes da F1. Da F1 à F4, cinco fases decidiram e implementaram coisas que **mudam o que o
+> frontend precisa fazer** — e boa parte delas **não tem correspondente nos 35 endpoints antigos**,
+> de modo que um mapa endpoint-a-endpoint construído só sobre a §2 as deixaria de fora **por
+> construção**.
+>
+> Esta seção é o complemento obrigatório. Quem gerar o `handoff-frontend.md` lê a §2 **e** esta.
+>
+> Medido em **2026-08-21**, contra a superfície publicada em execução.
+
+## 8.1 Superfície nova, sem correspondente no legado
+
+O backend publica hoje **103 rotas / 88 manipuladores** em 18 áreas. Estas **não existiam** no
+ERPNext e, portanto, não estão na §2:
+
+| Área | Rotas | O que é, e por que o frontend precisa |
+|---|---|---|
+| `master` | 5 | **Painel do operador do SaaS.** ⚠️ É **aplicativo separado**, com domínio e build próprios (`syslocadmin.systera.com.br`) — **não** é tela do Sysloc. Tem handoff próprio: `handoff-master-frontend.md`, já gerado. O handoff do Sysloc apenas **menciona** que existe e está pronto |
+| `integracoes-bancarias` | 4 | Certificado do provedor (registrar/consultar/verificar) e **identidade da empresa perante o provedor**. São telas de configuração que não existiam |
+| `cobranca-bancaria` | 3 | Emissão em lote e conferência — operações que o legado fazia por script |
+| `confirmacoes-de-email` | 1 | Confirmação de endereço **sem sessão**, por portador de segredo. Fluxo novo, com tela própria fora da área autenticada |
+| `automacao-de-cobranca` | 2 | Régua de cobrança configurável |
+| `multa-e-juros` | 1 | Configuração de mora por empresa |
+| `sessao` | 2 | Sessão corrente e troca de senha do produto |
+| `notificacoes-bancarias` | 1 | ⚠️ **NÃO é do frontend.** É a entrada do webhook do banco, sem sessão. Listada aqui só para que ninguém a confunda com rota de tela |
+
+## 8.2 Decisões que mudam o COMPORTAMENTO de tela
+
+Estas não acrescentam rota — mudam como a tela funciona. Ignorá-las produz frontend que compila e
+está errado.
+
+1. **Envelope de erro único (ADR-0017).** Toda recusa devolve `{ codigo, mensagem, campo?, detalhes? }`
+   sobre HTTP semântico. ⚠️ **Classifique pelo `codigo`, nunca pela mensagem** — o texto é para
+   exibir. Acabou o `_server_messages` e o `{data}`/`{message}` do Frappe (§7.3, item 4).
+2. **Sessão gorda com `versaoPermissoes`.** `GET /v1/sessao` devolve perfil, empresa, telas, ações e
+   uma **versão**. Quando a versão muda, o cache de permissões do cliente está velho e precisa ser
+   refeito. Não existe no legado.
+3. **Duas restrições de sessão.** `senhaProvisoria` e `segundoFatorPendente` bloqueiam as rotas de
+   negócio com `403` até serem resolvidas. **A entrada é um fluxo condicional**, não uma tela só —
+   ver o `handoff-master-frontend.md` §3, que descreve o mesmo mecanismo em detalhe.
+4. **Segundo fator obrigatório para o Master**, opcional para os demais perfis.
+5. **Identificadores legíveis com CINCO dígitos** — `CTR-2026-00001`, `COB-2026-00001`. ⚠️ O
+   `plano-execucao.md` §F2 ainda escreve quatro; **cinco é o valor medido e implementado**. Isso
+   afeta largura de campo, rótulo e busca.
+6. **Estado da cobrança é DERIVADO, nunca movido.** Os quatro estados (`A_VENCER`, `VENCIDA`, `PAGA`,
+   `CANCELADA`) saem dos fatos gravados. ⚠️ **Não existe "marcar como paga"**: o pagamento é gravado,
+   e o estado é consequência. Some o acoplamento a `docstatus` (§7.3, item 2).
+7. **Boleto e carnê são rotas de BYTES**, não JSON: devolvem o PDF com mídia e nome de arquivo
+   declarados. O frontend faz download, não renderiza JSON.
+8. **Confirmação de e-mail é fluxo sem sessão**, por portador de uso único — precisa de rota pública
+   no app, fora do shell autenticado.
+9. **O modelo de domínio é camelCase**, como a §6 pedia. Os ~36 mapeadores snake_case→camelCase
+   (§3) **deixam de existir**.
+10. **Sem cadastro público.** Pessoas nascem por ato do Master ou do Admin da empresa, sempre com
+    senha provisória entregue uma única vez.
+
+## 8.3 O que ainda vai mudar antes do congelamento
+
+⚠️ **A superfície ainda cresce**, e quem gerar o handoff precisa saber o que falta:
+
+- **`integracao-bancaria-autonoma/v1`** (primeira fatia da F5) — acrescenta as rotas de **ativar** e
+  **consultar o estado** do webhook do provedor, por empresa. É o botão "Habilitar webhook" da tela
+  de integrações. Ver `plano-execucao.md` §F5.
+- **F5 — automações agendadas** — pode acrescentar tela de saúde e alerta de rotina atrasada.
+
+Depois da F5, a superfície **congela** — é o item 2 do marco de entrega do `CLAUDE.md`.
+
+## 8.4 Regra para quem gerar o handoff
+
+1. Leia a **§2** (o mapa dos 35 caminhos antigos) **e a §8** (o que nasceu depois).
+2. Para cada rota da §8.1, escreva o contrato **completo** — ela não tem "de onde vir" no legado.
+3. Declare explicitamente que o **Painel Master é aplicativo separado, já implementado, com handoff
+   próprio** — e não o misture com as telas do Sysloc.
+4. Carregue as dez decisões da §8.2: elas mudam comportamento, e nenhuma aparece como endpoint.
