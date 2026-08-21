@@ -167,6 +167,9 @@ DIR_TRABALHO="$(mktemp -d)"
 readonly DIR_TRABALHO
 PID_DO_SERVICO=""
 PREFIXO_DA_BORDA=""
+RAIZ_DO_DESAFIO_EFEMERA=""
+TOKEN_DO_DESAFIO=""
+CONTEUDO_DO_DESAFIO=""
 
 falhas_totais=0
 falhas_caso=0
@@ -484,8 +487,12 @@ ct_1005_b() {
 	caso "CT-1005 (b)" "a instalação é idempotente, recusa render quebrado ou implausível, confere a forma dos valores e desfaz a escrita não validada (funções reais do instalador)"
 
 	local fn
-	for fn in renderizar_vhost vhost_diverge posicionar_vhost porta_da_api_na_unidade \
-		hostname_bem_formado caminho_bem_formado restaurar_destino; do
+	local -a funcoes_do_instalador=(
+		renderizar_vhost vhost_diverge posicionar_vhost porta_da_api_na_unidade
+		hostname_bem_formado caminho_bem_formado restaurar_destino
+		vhost_declara_hostname conferir_precedencia_do_vhost
+	)
+	for fn in "${funcoes_do_instalador[@]}"; do
 		if ! carregar_funcao_do_instalador "${fn}"; then
 			falhar "(b) não consegui carregar '${fn}' de ${INSTALADOR} — sem ela a tabela ficaria sem SUT e passaria vazia"
 			fechar_caso "CT-1005 (b)"
@@ -497,17 +504,17 @@ ct_1005_b() {
 		fechar_caso "CT-1005 (b)"
 		return
 	fi
-	ok "(b) as oito funções de instalação carregadas de ${INSTALADOR##*/}"
+	ok "(b) as $((${#funcoes_do_instalador[@]} + 1)) funções de instalação carregadas de ${INSTALADOR##*/}"
 
 	local sonda="${DIR_TRABALHO}/sonda"
-	mkdir -p "${sonda}"
+	mkdir -p "${sonda}" "${sonda}/acme"
 
 	# --- renderização ---------------------------------------------------- #
 	local hostname_de_sonda="borda-de-sonda"
 	local rendido="${sonda}/rendido.conf"
 	local codigo=0
 	renderizar_vhost "${GABARITO}" "${hostname_de_sonda}" "443" "80" \
-		"${sonda}/cert.pem" "${sonda}/chave.pem" "127.0.0.1:3000" >"${rendido}" || codigo=$?
+		"${sonda}/cert.pem" "${sonda}/chave.pem" "127.0.0.1:3000" "${sonda}/acme" >"${rendido}" || codigo=$?
 
 	afirmar_igual "a renderização do gabarito íntegro sai 0" "0" "${codigo}"
 	afirmar_igual "nenhum marcador sobra no renderizado" "0" \
@@ -522,6 +529,13 @@ ct_1005_b() {
 		"$(grep -oE "location = ${CAMINHO_DA_NOTICIA} \{" "${rendido}" | head -1 || true)"
 	afirmar_igual "o renderizado fixa o piso de TLS" "ssl_protocols TLSv1.2 TLSv1.3;" \
 		"$(grep -oE 'ssl_protocols TLSv1\.2 TLSv1\.3;' "${rendido}" | head -1 || true)"
+	# Sem esta linha, um render que perdesse a raiz do desafio passaria: o vhost
+	# continua válido para o nginx, e a RENOVAÇÃO do certificado é que morre —
+	# meses depois, sem sintoma. A forma é a diretiva inteira, não a presença.
+	afirmar_igual "o renderizado serve o desafio da raiz informada" "root ${sonda}/acme;" \
+		"$(grep -oE "root ${sonda}/acme;" "${rendido}" | head -1 || true)"
+	afirmar_igual "e o desafio NÃO é repassado ao serviço no render" "0" \
+		"$(awk '/location \^~ /,/^\t\}/' "${rendido}" | grep -c 'proxy_pass' || true)"
 
 	# NEGATIVO: gabarito com marcador que ninguém substitui é RECUSADO. Sem
 	# isso, um marcador novo entraria em produção pela metade e o vhost
@@ -533,7 +547,7 @@ ct_1005_b() {
 	} >"${gabarito_com_sobra}"
 	codigo=0
 	renderizar_vhost "${gabarito_com_sobra}" "${hostname_de_sonda}" "443" "80" \
-		"${sonda}/cert.pem" "${sonda}/chave.pem" "127.0.0.1:3000" >/dev/null 2>"${sonda}/sobra.err" || codigo=$?
+		"${sonda}/cert.pem" "${sonda}/chave.pem" "127.0.0.1:3000" "${sonda}/acme" >/dev/null 2>"${sonda}/sobra.err" || codigo=$?
 	afirmar_igual "gabarito com marcador remanescente é RECUSADO" "1" "${codigo}"
 	afirmar_igual "a recusa nomeia o marcador que sobrou" "__PORTA_QUE_NINGUEM_SUBSTITUI__" \
 		"$(grep -oE '__[A-Z_]+__' "${sonda}/sobra.err" | head -1 || true)"
@@ -548,7 +562,7 @@ ct_1005_b() {
 	local rendido_quebrado="${sonda}/quebrado.conf"
 	codigo=0
 	renderizar_vhost "${GABARITO}" 'bor|da' "443" "80" \
-		"${sonda}/cert.pem" "${sonda}/chave.pem" "127.0.0.1:3000" \
+		"${sonda}/cert.pem" "${sonda}/chave.pem" "127.0.0.1:3000" "${sonda}/acme" \
 		>"${rendido_quebrado}" 2>"${sonda}/quebrado.err" || codigo=$?
 	afirmar_igual "valor que quebra o 'sed' faz a renderização RECUSAR" "1" "${codigo}"
 	afirmar_igual "e nada sai pela saída padrão quando ela recusa" "0" \
@@ -563,7 +577,7 @@ ct_1005_b() {
 	printf '# gabarito sem servidor nenhum\n' >"${gabarito_mutilado}"
 	codigo=0
 	renderizar_vhost "${gabarito_mutilado}" "${hostname_de_sonda}" "443" "80" \
-		"${sonda}/cert.pem" "${sonda}/chave.pem" "127.0.0.1:3000" \
+		"${sonda}/cert.pem" "${sonda}/chave.pem" "127.0.0.1:3000" "${sonda}/acme" \
 		>/dev/null 2>"${sonda}/mutilado.err" || codigo=$?
 	afirmar_igual "render sem 'server {' é RECUSADO ainda que o 'sed' tenha saído 0" "1" "${codigo}"
 	afirmar_igual "a recusa diz que o render é implausível" "vhost renderizado implausível:" \
@@ -697,6 +711,56 @@ ct_1005_b() {
 		aviso "${unidade} não está legível — a derivação da porta NÃO foi verificada"
 	fi
 
+	# ------------------------------------------------------------------- #
+	# A DISPUTA DE `server_name` — perder é invisível, e é o que esta tabela
+	# impede. O servidor fica com o primeiro vhost que carrega (ordem
+	# lexicográfica do `include`) e ignora o outro com um aviso que ninguém lê:
+	# o `nginx -t` passa, o serviço sobe, e o provedor deixa de ser atendido.
+	# ------------------------------------------------------------------- #
+	local arena="${sonda}/arena"
+	local alvo_da_disputa="borda-em-disputa"
+	local nosso="000-sysloc-notificacao-bancaria.conf"
+	mkdir -p "${arena}"
+
+	# ANTIVÁCUO primeiro: diretório onde NINGUÉM declara o hostname precisa
+	# REPROVAR. Sem esta asserção, a conferência que nunca acha nada aprovaria o
+	# caso em que o vhost sequer foi escrito.
+	printf 'server {\n\tserver_name outro-nome-qualquer;\n}\n' >"${arena}/500-alheio.conf"
+	afirmar_igual "sem NENHUM declarante, a precedência REPROVA (antivácuo)" "1" \
+		"$(conferir_precedencia_do_vhost "${arena}" "${nosso}" "${alvo_da_disputa}" >/dev/null && echo 0 || echo 1)"
+
+	printf 'server {\n\tserver_name %s;\n}\n' "${alvo_da_disputa}" >"${arena}/${nosso}"
+	afirmar_igual "sozinho no diretório, o nosso vhost VENCE" "0" \
+		"$(conferir_precedencia_do_vhost "${arena}" "${nosso}" "${alvo_da_disputa}" >/dev/null && echo 0 || echo 1)"
+	afirmar_igual "e a lista devolvida é exatamente ele" "${nosso}" \
+		"$(conferir_precedencia_do_vhost "${arena}" "${nosso}" "${alvo_da_disputa}" || true)"
+
+	# Rival que ordena DEPOIS: vencemos, e ele aparece na lista — é o que faz o
+	# instalador poder NOMEAR quem está sendo ignorado.
+	printf 'server {\n\tserver_name %s;\n}\n' "${alvo_da_disputa}" >"${arena}/zz-rival.conf"
+	afirmar_igual "com rival que ordena DEPOIS, o nosso vhost VENCE" "0" \
+		"$(conferir_precedencia_do_vhost "${arena}" "${nosso}" "${alvo_da_disputa}" >/dev/null && echo 0 || echo 1)"
+	afirmar_igual "e a lista nomeia os dois, na ordem de carga" "${nosso} zz-rival.conf" \
+		"$(conferir_precedencia_do_vhost "${arena}" "${nosso}" "${alvo_da_disputa}" | tr '\n' ' ' | sed 's/ $//' || true)"
+
+	# Rival que ordena ANTES: é o defeito que esta conferência existe para pegar.
+	# Sem ela, a instalação seguiria e a borda seria ignorada em silêncio.
+	printf 'server {\n\tserver_name %s;\n}\n' "${alvo_da_disputa}" >"${arena}/000-antes.conf"
+	afirmar_igual "com rival que ordena ANTES, a precedência REPROVA" "1" \
+		"$(conferir_precedencia_do_vhost "${arena}" "${nosso}" "${alvo_da_disputa}" >/dev/null && echo 0 || echo 1)"
+	afirmar_igual "e o primeiro da lista é o rival, não o nosso" "000-antes.conf" \
+		"$(conferir_precedencia_do_vhost "${arena}" "${nosso}" "${alvo_da_disputa}" | head -1 || true)"
+
+	# A declaração é por TOKEN. Sem isto, `server_name a.borda-em-disputa;` seria
+	# lido como declaração de `borda-em-disputa` e a conferência acusaria rival
+	# onde não há — ou pior, deixaria de acusar onde há.
+	printf 'server {\n\tserver_name sub.%s;\n}\n' "${alvo_da_disputa}" >"${sonda}/token.conf"
+	afirmar_igual "'server_name sub.X' NÃO declara X (comparação por token)" "1" \
+		"$(vhost_declara_hostname "${sonda}/token.conf" "${alvo_da_disputa}" && echo 0 || echo 1)"
+	printf 'server {\n\tserver_name outro %s;\n}\n' "${alvo_da_disputa}" >"${sonda}/token2.conf"
+	afirmar_igual "'server_name outro X' DECLARA X (lista de nomes)" "0" \
+		"$(vhost_declara_hostname "${sonda}/token2.conf" "${alvo_da_disputa}" && echo 0 || echo 1)"
+
 	fechar_caso "CT-1005 (b)"
 }
 
@@ -744,6 +808,17 @@ requisitar() {
 subir_borda_efemera() {
 	PREFIXO_DA_BORDA="${DIR_TRABALHO}/borda"
 	mkdir -p "${PREFIXO_DA_BORDA}/logs" "${PREFIXO_DA_BORDA}/temp"
+
+	# O desafio de posse do domínio, plantado como o emissor do certificado o
+	# planta: um arquivo de conteúdo conhecido sob `.well-known/acme-challenge/`
+	# do webroot. O conteúdo é AFIRMADO POR IGUALDADE na medição — servir o
+	# arquivo errado, ou servir vazio, reprova.
+	RAIZ_DO_DESAFIO_EFEMERA="${PREFIXO_DA_BORDA}/acme"
+	TOKEN_DO_DESAFIO="token-de-sonda-$$"
+	CONTEUDO_DO_DESAFIO="prova-de-posse-${$}-$(date +%s 2>/dev/null || printf 'sem-relogio')"
+	mkdir -p "${RAIZ_DO_DESAFIO_EFEMERA}/.well-known/acme-challenge"
+	printf '%s' "${CONTEUDO_DO_DESAFIO}" \
+		>"${RAIZ_DO_DESAFIO_EFEMERA}/.well-known/acme-challenge/${TOKEN_DO_DESAFIO}"
 
 	# Guarda de sanidade: esta bateria só escreve dentro de um diretório
 	# descartável. Se o prefixo escorregar para fora dele, ela para.
@@ -801,7 +876,7 @@ SERVICO
 	# passando "443" e "80", sem endereço.
 	renderizar_vhost "${GABARITO}" "${HOSTNAME_EFEMERO}" "127.0.0.1:${PORTA_HTTPS}" "127.0.0.1:${PORTA_HTTP}" \
 		"${PREFIXO_DA_BORDA}/cert.pem" "${PREFIXO_DA_BORDA}/chave.pem" \
-		"127.0.0.1:${porta_do_servico}" >"${PREFIXO_DA_BORDA}/vhost.conf" || return 1
+		"127.0.0.1:${porta_do_servico}" "${RAIZ_DO_DESAFIO_EFEMERA}" >"${PREFIXO_DA_BORDA}/vhost.conf" || return 1
 
 	# Guarda de sanidade do isolamento, e ela é do ARQUIVO RENDIDO, não da
 	# chamada acima: qualquer forma futura de montar a borda que volte a omitir o
@@ -928,6 +1003,32 @@ ct_1005_c() {
 	depois="$(requisicoes_no_servico)"
 	afirmar_igual "em claro, /docs também morre na borda" "404||" "${medida}"
 	afirmar_igual "GET /docs em claro NÃO foi repassado ao serviço" "${antes}" "${depois}"
+
+	# --- passo 3-B: o desafio de posse do domínio, e o contorno dele ------ #
+	# A ÚNICA exceção ao 404 do bloco em claro. Ela existe porque esta borda
+	# vence a disputa de `server_name` da porta 80 do hostname que atende — sem
+	# ela o desafio morre no 404 e a RENOVAÇÃO do certificado falha, em silêncio,
+	# meses depois de instalada. As cinco asserções medem a exceção E o contorno:
+	# servir o desafio não pode ter aberto nada além do desafio.
+	local corpo_do_desafio
+	antes="$(requisicoes_no_servico)"
+	corpo_do_desafio="$(curl -sS --max-time 10 \
+		--resolve "${HOSTNAME_EFEMERO}:${PORTA_HTTP}:127.0.0.1" \
+		"http://${HOSTNAME_EFEMERO}:${PORTA_HTTP}/.well-known/acme-challenge/${TOKEN_DO_DESAFIO}" \
+		2>/dev/null || printf 'NAO-RESPONDEU')"
+	depois="$(requisicoes_no_servico)"
+	afirmar_igual "o desafio em claro é SERVIDO, com o conteúdo exato do arquivo plantado" \
+		"${CONTEUDO_DO_DESAFIO}" "${corpo_do_desafio}"
+	afirmar_igual "e o desafio NÃO foi repassado ao serviço" "${antes}" "${depois}"
+
+	medida="$(requisitar GET "http://${HOSTNAME_EFEMERO}:${PORTA_HTTP}/.well-known/acme-challenge/nao-plantado")"
+	afirmar_igual "desafio inexistente continua 404 — a exceção serve arquivo, não árvore" "404||" "${medida}"
+
+	medida="$(requisitar GET "https://${HOSTNAME_EFEMERO}:${PORTA_HTTPS}/.well-known/acme-challenge/${TOKEN_DO_DESAFIO}")"
+	afirmar_igual "sob TLS o MESMO desafio é 404 — a exceção é só do bloco em claro" "404||" "${medida}"
+
+	medida="$(requisitar GET "http://${HOSTNAME_EFEMERO}:${PORTA_HTTP}/.well-known/outra-coisa")"
+	afirmar_igual "em claro, /.well-known de OUTRA coisa continua 404 — o prefixo é ancorado" "404||" "${medida}"
 
 	# --- piso de TLS ------------------------------------------------------ #
 	local codigo_tls

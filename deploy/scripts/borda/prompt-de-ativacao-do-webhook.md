@@ -118,8 +118,14 @@ As razões reais, todas operacionais:
 
 ## 5. A decisão do hostname — DECIDIDA, com as razões
 
-**Use um subdomínio dedicado.** Por exemplo `webhook.sysloc.systera.com.br` ou
-`notificacoes.systera.com.br`. **Não** use `sysloc.systera.com.br`.
+**Use um subdomínio dedicado. O nome está FIXADO desde 2026-08-20:**
+
+```
+webhooksicoob.sysloc.systera.com.br
+```
+
+Decisão do usuário, e o **registro A já foi criado no registro.br** apontando para este servidor.
+**Não** use `sysloc.systera.com.br` — a §5.1 diz por quê.
 
 ### 5.1 Por que não o hostname do app
 
@@ -212,17 +218,26 @@ do certificado do provedor válido (§8).
 
 ## 7. TRILHA A — passo a passo
 
-### A.0 · Decidir o subdomínio e criar o DNS
+### A.0 · O subdomínio e o DNS ✅ FEITO em 2026-08-20
 
-Escolha o nome (§5) e crie o **registro A** apontando para o IP deste servidor. Confirme:
+O nome está fixado na §5 e o **registro A já foi criado no registro.br**. Confirme a resolução:
 
 ```bash
-dig +short <hostname-escolhido>
+getent ahostsv4 webhooksicoob.sysloc.systera.com.br | awk '{print $1}' | sort -u
+curl -s -4 https://ifconfig.me        # o IP público deste servidor; os dois têm de ser iguais
 ```
 
-### A.1 · Descobrir como o CloudPanel organiza os vhosts
+⚠️ **Não use `dig`.** Ele **não existe neste host**, nem `host`, nem `nslookup` — medido em
+2026-08-20. O `getent` acima consulta o resolvedor do próprio SO e não depende de pacote extra.
 
-⚠️ **Passo obrigatório e ainda não feito** — `/etc/nginx` é 0700 e o run não conseguiu medir.
+### A.1 · Como o CloudPanel organiza os vhosts ✅ MEDIDO em 2026-08-20
+
+**O diretório de vhosts é `/etc/nginx/sites-enabled`**, e não o `conf.d` que o instalador assume:
+o `nginx.conf` inclui `sites-enabled/*.conf` (linha 119) e **não inclui `conf.d`**, que existe mas é
+morto. ⚠️ **Sem `SYSLOC_DIR_DOS_VHOSTS=/etc/nginx/sites-enabled` o instalador ABORTA** — de
+propósito, listando os `include` reais.
+
+Para remedir:
 
 ```bash
 sudo ls -la /etc/nginx/
@@ -234,7 +249,50 @@ O instalador assume `/etc/nginx/conf.d`; se for outro, informe em `SYSLOC_DIR_DO
 
 O instalador **não quebra** se errar: ele **aborta listando os `include` reais**.
 
-### A.2 · Obter o certificado TLS do subdomínio
+### A.2 · O certificado TLS do subdomínio ✅ FEITO em 2026-08-20
+
+Criado no CloudPanel como **site estático** (nunca reverse proxy — ver o porquê abaixo), com
+Let's Encrypt emitido. Medido em 2026-08-20:
+
+| O que | Medido |
+|---|---|
+| Emissor | **Let's Encrypt** (`CN = YR1`), `subject CN = webhooksicoob.sysloc.systera.com.br` |
+| Vigência | **2026-08-20 → 2026-11-18** |
+| Cadeia | fullchain, **3 certificados** |
+| Chave | casa com o certificado (mesmo módulo) |
+| Certificado | `/etc/nginx/ssl-certificates/webhooksicoob.sysloc.systera.com.br.crt` |
+| Chave | `/etc/nginx/ssl-certificates/webhooksicoob.sysloc.systera.com.br.key` |
+
+**Por que estático e não reverse proxy** — é o *modo de falha* na colisão de `server_name`. Se o
+vhost do CloudPanel fosse reverse proxy para a API e vencesse a disputa, a **API inteira** ficaria
+exposta (`/docs`, `/v1/auth/*`, `/saude`), que é o que a asserção 2 do `CT-1005` proíbe e o que
+dispara `D23`/`D24`/`D27` da F1. Estático falha **fechado**; reverse proxy falha **aberto**.
+
+#### ⚠️ A colisão de `server_name` EXISTE, e quem vence é o nosso vhost
+
+O CloudPanel gerou `/etc/nginx/sites-enabled/webhooksicoob.sysloc.systera.com.br.conf`, que
+reivindica `80`, `443 ssl` e `443 quic` para o nome. O nosso entra como
+`sysloc-notificacao-bancaria.conf` e o glob carrega em ordem alfabética —
+`default.conf` → **`sysloc-notificacao-bancaria.conf`** (`-` = 0x2D) → `sysloc.systera.com.br.conf`
+(`.` = 0x2E) → `webhooksicoob…`. **O nosso carrega primeiro e vence as duas portas.** O nginx ignora
+o segundo em silêncio (`conflicting server name`), então **a prova é a A.5, por medição de fora** —
+não a leitura da configuração.
+
+#### ⚠️ O RISCO REAL desta trilha não é a colisão — é a RENOVAÇÃO do certificado
+
+O vhost do CloudPanel força HTTPS com `301` (`if ($scheme != "https") { rewrite ^ ... permanent; }`),
+e esse `if` é de nível *server*: roda **antes** do `location ~ /.well-known`. O desafio ACME em claro
+é, portanto, redirecionado — a emissão só funcionou porque o Let's Encrypt segue redirects. Com o
+nosso vhost dono da 443, `/.well-known/acme-challenge/` cai no `location / { return 404; }` e
+**a renovação automática falha por volta de 2026-10-19** (os 60 dias do Let's Encrypt).
+
+Não há arranjo de portas que resolva: o nosso vhost reivindica 80 **e** 443 e ganha as duas.
+A correção é **um** `location ^~ /.well-known/acme-challenge/` com webroot configurável no bloco em
+claro do gabarito versionado — mudança pequena, mas em artefato aprovado nos dois gates, e por isso
+**fora do escopo desta ativação**. Está registrada como débito com gatilho **datado** na §10.
+
+<details>
+<summary>O texto original desta seção, quando o certificado ainda não existia</summary>
 
 ⚠️ **Aqui mora a única armadilha séria desta trilha — leia antes de clicar.**
 
@@ -251,17 +309,38 @@ Duas saídas, e a escolha depende do que a A.1 revelar:
 
 Em ambos os casos, anote os caminhos de `fullchain` e `privkey`.
 
-> **Se optar por (b), confira depois:** `sudo grep -rn "server_name <hostname>" /etc/nginx/` deve
+> **Se optar por (b), confira depois:** `sudo grep -rn "server_name webhooksicoob.sysloc.systera.com.br" /etc/nginx/` deve
 > devolver **uma** ocorrência.
+
+</details>
 
 ### A.3 · Instalar
 
+⚠️ **Recarrega o servidor de borda que atende `/opt/frappe` em produção.** O instalador valida a
+configuração **inteira** (P04) antes de recarregar (P05) e desfaz a escrita se qualquer passo
+terminar antes disso.
+
 ```bash
-sudo SYSLOC_HOSTNAME_DA_NOTIFICACAO=<hostname> \
-     SYSLOC_CERTIFICADO_DA_BORDA=/caminho/fullchain.pem \
-     SYSLOC_CHAVE_DO_CERTIFICADO_DA_BORDA=/caminho/privkey.pem \
+sudo SYSLOC_HOSTNAME_DA_NOTIFICACAO=webhooksicoob.sysloc.systera.com.br \
+     SYSLOC_CERTIFICADO_DA_BORDA=/etc/nginx/ssl-certificates/webhooksicoob.sysloc.systera.com.br.crt \
+     SYSLOC_CHAVE_DO_CERTIFICADO_DA_BORDA=/etc/nginx/ssl-certificates/webhooksicoob.sysloc.systera.com.br.key \
+     SYSLOC_DIR_DOS_VHOSTS=/etc/nginx/sites-enabled \
+     SYSLOC_RAIZ_DO_DESAFIO_ACME=/home/systera-webhooksicoob-sysloc/htdocs/webhooksicoob.sysloc.systera.com.br \
      bash deploy/scripts/borda/instalar-borda-de-notificacao.sh
 ```
+
+⚠️ **Colar isto no terminal com quebras de linha costuma falhar** — a continuação `\` se perde e o
+`sudo` recebe os argumentos soltos (aconteceu em 2026-08-20). Ponha as variáveis num script e rode
+`sudo bash <script>`, ou grave-as no `backend.env`.
+
+⚠️ **`SYSLOC_RAIZ_DO_DESAFIO_ACME` é obrigatória** desde 2026-08-20, e o instalador **aborta** sem
+ela. É o webroot de quem administra o certificado — sem ele a borda responde `404` ao desafio de
+posse do domínio e a **renovação falha em silêncio**. Ver a §A.6.
+
+⚠️ **Não meça logo depois do P05.** `nginx -s reload` é assíncrono: os workers antigos terminam as
+conexões em curso antes de os novos assumirem, e um `curl` imediato é atendido pela configuração
+VELHA. Foi o que produziu um falso `404` em 2026-08-20 e custou um ciclo de diagnóstico. Sonde com
+limite declarado.
 
 Alternativa permanente: gravar as três chaves em `/etc/sysloc/backend.env` (modo 0600) —
 `HOSTNAME_DA_NOTIFICACAO_BANCARIA`, `CERTIFICADO_DA_BORDA`, `CHAVE_DO_CERTIFICADO_DA_BORDA`.
@@ -269,6 +348,49 @@ Se o diretório de vhosts não for o padrão, acrescente `SYSLOC_DIR_DOS_VHOSTS=
 
 ⚠️ **Chave duplicada no `backend.env`**: o leitor do instalador toma a **primeira** ocorrência,
 enquanto o systemd toma a **última** (débito `D38 · T11` da §2 do run-report). Não duplique chave.
+
+### A.6 · Precedência de `server_name` — leia ANTES de achar que entendeu
+
+**Precedência não é uma fila global de sites.** Ela só existe entre vhosts que declaram o **mesmo
+`server_name` na mesma porta**. Fora disso não significa nada, e o `000-` do nosso arquivo não
+interfere em site nenhum.
+
+Estado medido em 2026-08-20:
+
+| Nome | Quantos vhosts o declaram | Disputa? |
+|---|---|---|
+| `sysloc.systera.com.br` | 1 (CloudPanel) | não |
+| `www.systera.com.br` | 1 (CloudPanel) | não |
+| `systera.com.br` | 1 (CloudPanel) | não |
+| **`webhooksicoob.sysloc.systera.com.br`** | **2** (CloudPanel **+** o nosso) | **sim** |
+
+**Por que só o nosso disputa**: é o único nome para o qual **duas ferramentas** geram configuração —
+o CloudPanel, porque precisamos que ele emita e renove o certificado; e o nosso instalador, porque
+precisamos das garantias do vhost versionado. Todo site comum tem um gerador só.
+
+Quando dois vhosts disputam, o nginx **fica com o primeiro que carrega** (ordem lexicográfica do
+`include`) e ignora o outro com um `[warn]` que ninguém lê. Perder é **invisível**: o `nginx -t`
+passa, o serviço sobe, e o provedor simplesmente deixa de ser atendido.
+
+**As duas defesas, e o que cada uma faz:**
+
+1. **`000-` no nome do arquivo instalado** — torna a precedência **declarada**. Antes ela dependia
+   de `sysloc-` ordenar antes de `webhooksicoob…`, o que era verdade **por acidente**. ⚠️ Não remova
+   o prefixo: a razão está escrita no instalador, junto da constante.
+2. **P03-B, no instalador** — lista todos os vhosts que declaram o hostname, **em ordem de carga**, e
+   **aborta** se o primeiro não for o nosso, nomeando quem está vencendo. Também aborta se
+   **ninguém** declarar o nome (controle antivácuo). É o que garante que nenhuma inversão futura
+   passe em silêncio — inclusive as que não previmos.
+
+**E no futuro?**
+
+- **Site novo comum** (loja, blog, API de terceiro): só o CloudPanel gera aquele nome. **Sem
+  disputa**, precedência irrelevante. Nosso vhost não é `default_server` e declara **um** nome só.
+- **Segundo webhook** (outro banco): aquele nome terá a **própria** disputa, com o vhost do
+  CloudPanel dele, resolvida pelo mesmo padrão. Os dois vhosts do Sysloc **não competem entre si** —
+  nomes diferentes, disputas separadas; dois arquivos `000-` não brigam. ⚠️ O que **falta** para
+  esse caso é outra coisa: `NOME_DO_VHOST` é fixo, então instalar um segundo hostname
+  **sobrescreveria** o primeiro. Ver a §10.
 
 ### A.4 · Provar por medição
 
@@ -284,13 +406,13 @@ asserção.
 De **outra máquina** (não deste servidor):
 
 ```bash
-curl -i -X POST https://<hostname>/v1/notificacoes-bancarias \
+curl -i -X POST https://webhooksicoob.sysloc.systera.com.br/v1/notificacoes-bancarias \
      -H 'content-type: application/json' -d '{}'
 # esperado: 204, sem corpo, SEM redirecionamento
 
-curl -i https://<hostname>/docs
-curl -i https://<hostname>/v1/auth/get-session
-curl -i https://<hostname>/saude
+curl -i https://webhooksicoob.sysloc.systera.com.br/docs
+curl -i https://webhooksicoob.sysloc.systera.com.br/v1/auth/get-session
+curl -i https://webhooksicoob.sysloc.systera.com.br/saude
 # esperado nos três: 404 da borda
 ```
 
@@ -300,7 +422,27 @@ curl -i https://<hostname>/saude
 
 ## 8. TRILHA B — o certificado do provedor e o cadastro
 
-### 8.1 O certificado que vence — o item com prazo real
+### 8.1 O certificado do provedor — ⚠️ A PREMISSA DESTA SEÇÃO FOI REFUTADA em 2026-08-20
+
+**Não há certificado nenhum registrado.** `negocio.certificado_do_provedor` tem **0 linhas**, medido
+em 2026-08-20 por consulta como `postgres` (que ignora RLS, de modo que não é filtro de tenant).
+
+E não é esquecimento: **o banco da operação está vazio por decisão** — 0 empresas, 0 usuários,
+0 imóveis, 0 contratos, 0 cobranças. O `plano-execucao.md` §F7 item 2 registra *"recadastro pelo
+app — o usuário confirmou que os dados atuais não estão em uso. Não há migração de dados a fazer."*
+
+**Consequência para a TRILHA B**: ela não está bloqueada por um certificado a vencer, e sim por
+**sequenciamento**. O certificado pertence a uma empresa (`empresa_id`), então a ordem é:
+
+1. cadastrar **uma empresa** no produto novo;
+2. registrar o **`.pfx` do Sicoob** nela (`certificado.controller.ts` — registro, consulta, verificação);
+3. só então cadastrar o webhook no portal.
+
+Cadastrar o webhook antes disso não quebra nada — a notícia chega, é gravada crua e descartada como
+órfã pela RN-06, sem consulta ao provedor —, mas também não fecha ciclo nenhum.
+
+<details>
+<summary>O texto original, escrito quando se supunha o certificado registrado e a vencer</summary>
 
 O certificado **mTLS do Sicoob** (não o TLS da borda) vencia em **2026-08-22**, medido em 2026-08-16.
 Ele vive **cifrado no banco** (ADR-0032) e **nunca retorna por superfície alguma**.
@@ -313,12 +455,19 @@ que é conversa com o banco.
 nunca sai). Se já venceu ou está a vencer, isso é urgente **independentemente do webhook**: emissão e
 consulta de situação param sem ele.
 
+</details>
+
 ### 8.2 Cadastrar o webhook no portal do Sicoob
+
+⚠️ **ANTES DE CADASTRAR, confirme com o Sicoob se o cadastro é ÚNICO por conta.** Se for, e se já
+houver um endereço cadastrado hoje, apontá-lo para cá **tira a notícia de quem a recebe agora** — e
+o `/opt/frappe` segue operando o ciclo de cobrança real até a F7. Perder baixa em produção é dano
+maior que adiar o webhook. Verifique o que está cadastrado hoje antes de sobrescrever.
 
 Ato operacional seu, no portal do provedor. Informe a URL:
 
 ```
-https://<hostname>/v1/notificacoes-bancarias
+https://webhooksicoob.sysloc.systera.com.br/v1/notificacoes-bancarias
 ```
 
 O provedor envia um **pedido de validação de endereço**. O produto já o reconhece **antes de qualquer
@@ -354,6 +503,9 @@ Não há *feature flag*: a reversibilidade é obtida **por infraestrutura**, e i
 | **`D29`** | a borda **efêmera do teste** liga `0.0.0.0` em vez do laço local | só afeta a bateria; produz falso negativo, nunca falso positivo |
 | **`D31`** | janela residual de microssegundos entre a escrita e o estado `ESCRITA_PENDENTE` | correção sugerida: ligar o estado **antes** de chamar `posicionar_vhost` |
 | **`D23`/`D24`/`D27` (F1)** | **não disparam** com host dedicado — medido | ⚠️ **disparam imediatamente** se o webhook for para o host do app |
+| **Quem vence a disputa de `server_name`** | ✅ **TRATADO em 2026-08-20** — a precedência era acidental e virou **declarada** (`000-` no nome instalado), e o **P03-B** aborta a instalação se outro vhost vencer, nomeando-o. Ver §A.6 | resta o monitoramento periódico: as defesas agem **na instalação**, e uma inversão criada depois dela só aparece na próxima execução ou por medição de fora |
+| **Um hostname só** | `NOME_DO_VHOST` é `readonly` no instalador: rodar com um segundo hostname **sobrescreve** o vhost do primeiro, em vez de criar outro | não é limitação de vhost apenas — a rota é uma (`/v1/notificacoes-bancarias`) e o domínio modela **um** provedor. Multi-banco é mudança de escopo, não de configuração |
+| **Renovação do Let's Encrypt** | ✅ **RESOLVIDO em 2026-08-20** — o bloco em claro passou a servir `/.well-known/acme-challenge/` do webroot do gestor do certificado, e o caminho está **provado por medição em produção** (o desafio volta com o conteúdo exato). O contorno é medido junto: inexistente `404`, sob TLS `404`, `/.well-known` de outra coisa `404` | conferir a vigência antes de **2026-10-19**, que é quando a primeira renovação real acontece — a prova de hoje é do caminho, não de uma renovação de verdade |
 | **R9** | primeira publicação do produto para fora | mitigado pelo verificador, que afirma por medição |
 
 Detalhe de cada um: §2 do `docs/specs/features/webhook-e-carne/v1/_run/run-report.md`.
@@ -362,12 +514,14 @@ Detalhe de cada um: §2 do `docs/specs/features/webhook-e-carne/v1/_run/run-repo
 
 ## 11. Critério de pronto
 
-- [ ] Registro A do subdomínio resolvendo para este servidor
-- [ ] Certificado TLS emitido, **sem** colisão de `server_name` (uma ocorrência no `grep`)
-- [ ] Instalador rodado, idempotente (rodar duas vezes não muda nada)
-- [ ] `verificar-notificacao-bancaria.sh` — **exit 0, 4/4 frentes**
-- [ ] Prova de fora: `204` no caminho da notícia, `404` nos quatro vizinhos, **nenhum `3xx`**
-- [ ] Configuração de `/opt/frappe` **byte a byte igual** (a asserção 5 do CT-1005 prova)
+- [x] Registro A do subdomínio resolvendo para este servidor ✅ 2026-08-20
+- [x] Certificado TLS emitido ✅ 2026-08-20 — ⚠️ **COM** colisão de `server_name`, resolvida por ordem de carga a nosso favor e provada por medição (§10)
+- [x] Instalador rodado, idempotente ✅ 2026-08-20 — 2ª execução: `0 passo(s) com mudança, 2 já correto(s)`, hash do vhost idêntico
+- [x] `verificar-notificacao-bancaria.sh` — **exit 0, 4/4 frentes** ✅ 2026-08-20, antes e depois da instalação
+- [x] Prova de fora ✅ 2026-08-20 — `204` na notícia, `404` nos quatro vizinhos, **nenhum `3xx`**; e o `GET` pelo celular devolveu o envelope da **ADR-0017** (`RECURSO_NAO_ENCONTRADO`), que é a API respondendo: o caminho externo fecha ponta a ponta
+- [x] Configuração de `/opt/frappe` **byte a byte igual** ✅ 2026-08-20 — provado duas vezes: SHA-256 dos 5 arquivos antes/depois e a frente (d) do CT-1005
+- [ ] Certificado **da borda** com vigência conferida — e a conferência repetida antes de 2026-10-19:
+      `openssl x509 -in /etc/nginx/ssl-certificates/webhooksicoob.sysloc.systera.com.br.crt -noout -dates`
 - [ ] Certificado do provedor **válido** (renovado se preciso)
 - [ ] Webhook cadastrado no portal do Sicoob e **validação de endereço respondida**
 - [ ] **Uma notificação real recebida e liquidada** — é a medição que o risco R2 espera, e a única

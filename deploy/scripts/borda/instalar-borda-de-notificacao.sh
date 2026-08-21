@@ -50,6 +50,11 @@
 #   SYSLOC_CERTIFICADO_DA_BORDA      → chave CERTIFICADO_DA_BORDA
 #   SYSLOC_CHAVE_DO_CERTIFICADO_DA_BORDA → chave CHAVE_DO_CERTIFICADO_DA_BORDA
 #   SYSLOC_DIR_DOS_VHOSTS            → diretório de vhosts do servidor de borda
+#   SYSLOC_RAIZ_DO_DESAFIO_ACME      → chave RAIZ_DO_DESAFIO_ACME: o diretório de onde
+#                                      o bloco em claro serve o desafio de posse do
+#                                      domínio. É o webroot de quem administra o
+#                                      certificado deste hostname — sem ele a RENOVAÇÃO
+#                                      falha em silêncio (ver o gabarito)
 #
 # Sem hostname em nenhuma das duas origens, o script ABORTA dizendo o que fazer.
 # Instalar com um hostname adivinhado publicaria o produto num nome que ninguém
@@ -74,7 +79,7 @@
 # Uso
 # ---------------------------------------------------------------------------
 #
-#   sudo SYSLOC_HOSTNAME_DA_NOTIFICACAO=<hostname> \
+#   sudo SYSLOC_HOSTNAME_DA_NOTIFICACAO=<hostname> SYSLOC_RAIZ_DO_DESAFIO_ACME=<webroot> \
 #     bash deploy/scripts/borda/instalar-borda-de-notificacao.sh
 #
 # Verificação correspondente:
@@ -95,7 +100,47 @@ readonly PREFIXO="[instalar-borda]"
 # exatamente a proteção contra divergência silenciosa.
 # --------------------------------------------------------------------------- #
 readonly GABARITO="${RAIZ_REPO}/deploy/nginx/sysloc-notificacao-bancaria.conf"
-readonly NOME_DO_VHOST="sysloc-notificacao-bancaria.conf"
+# O `000-` NÃO é enfeite, e removê-lo reabre um defeito medido em 2026-08-20.
+#
+# Um vhost concorrente pode declarar o MESMO `server_name` — é o que acontece
+# quando o painel que administra o certificado deste hostname gera o próprio
+# bloco. O nginx não funde os dois: ele fica com o PRIMEIRO que carrega e ignora
+# o outro com um `[warn]` que ninguém lê. A ordem de carga é a do `glob` do
+# `include`, isto é, LEXICOGRÁFICA pelo nome do arquivo.
+#
+# Sem o prefixo, a precedência desta borda dependia de `sysloc-` ordenar antes
+# de `webhooksicoob…` — verdade por ACIDENTE, e falsa no dia em que alguém criar
+# um site cujo arquivo ordene antes. O `000-` torna a precedência DECLARADA; e o
+# P03-B abaixo torna a inversão impossível de passar em silêncio, que é o
+# defeito de verdade: perder a disputa não quebra nada visível, apenas faz o
+# provedor deixar de ser atendido.
+readonly NOME_DO_VHOST="000-sysloc-notificacao-bancaria.conf"
+
+# DÉBITO COM GATILHO — D43 · F4/fechamento · registrado 2026-08-20
+# (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o que está
+#  acima. O `000-` do nome, esse sim, não se remove — a razão está logo acima.)
+# O QUÊ: o nome do arquivo instalado é FIXO, de modo que este instalador
+#        comporta UM hostname de notícia bancária. Rodá-lo com um segundo
+#        hostname SOBRESCREVE o vhost do primeiro em vez de criar outro, e o
+#        primeiro deixa de ser atendido sem que nada acuse.
+# QUANDO FECHA: o produto passar a receber notícia de um SEGUNDO provedor
+#        bancário — aí o nome do arquivo precisa derivar do hostname, e o
+#        `remover_vhost_de_nome_legado` precisa parar de alcançar o vhost de
+#        outro hostname.
+# POR QUE NÃO AGORA: não há segundo provedor, e o vhost é a MENOR parte do que
+#        faltaria — a rota publicada é uma só e o domínio modela UM provedor.
+#        Resolver só o nome do arquivo daria a impressão de que multi-provedor
+#        está resolvido, quando não está.
+# ÍNDICE: docs/specs/features/webhook-e-carne/v1/_run/run-report.md §2, D43
+
+# O nome que esta borda usou até 2026-08-20. Fica declarado porque um instalado
+# com o nome antigo, deixado para trás, vira um SEGUNDO vhost nosso disputando o
+# mesmo nome — e o P03 o remove por isso.
+readonly NOME_DO_VHOST_LEGADO="sysloc-notificacao-bancaria.conf"
+
+# Forma que identifica um vhost como DERIVADO do gabarito deste repositório.
+# Sem ela, remover o nome legado apagaria um homônimo alheio.
+readonly ASSINATURA_DO_VHOST="A BORDA EXTERNA DA NOTÍCIA BANCÁRIA"
 readonly MODO_DO_VHOST="0644"
 
 # Arquivo de configuração do produto no host, gravado por `provisionar-base.sh`
@@ -106,6 +151,7 @@ readonly ARQ_AMBIENTE="/etc/sysloc/backend.env"
 readonly CHAVE_HOSTNAME="HOSTNAME_DA_NOTIFICACAO_BANCARIA"
 readonly CHAVE_CERTIFICADO="CERTIFICADO_DA_BORDA"
 readonly CHAVE_DA_CHAVE_DO_CERTIFICADO="CHAVE_DO_CERTIFICADO_DA_BORDA"
+readonly CHAVE_RAIZ_DO_DESAFIO_ACME="RAIZ_DO_DESAFIO_ACME"
 
 # Diretório de vhosts do servidor de borda. É CONFERIDO contra os `include` da
 # configuração do servidor antes de qualquer escrita — instalar num diretório
@@ -292,7 +338,7 @@ caminho_bem_formado() {
 # função é o que passa a ser conferido — não o sintoma.
 renderizar_vhost() {
 	local gabarito="$1" hostname="$2" porta_https="$3" porta_http="$4"
-	local certificado="$5" chave="$6" endereco_api="$7"
+	local certificado="$5" chave="$6" endereco_api="$7" raiz_do_desafio="$8"
 
 	[[ -r "${gabarito}" ]] || {
 		printf 'gabarito ilegível: %s\n' "${gabarito}" >&2
@@ -307,6 +353,7 @@ renderizar_vhost() {
 		-e "s|__CERTIFICADO__|${certificado}|g" \
 		-e "s|__CHAVE_DO_CERTIFICADO__|${chave}|g" \
 		-e "s|__ENDERECO_DA_API__|${endereco_api}|g" \
+		-e "s|__RAIZ_DO_DESAFIO_ACME__|${raiz_do_desafio}|g" \
 		"${gabarito}")" || {
 		printf 'a substituição dos marcadores do gabarito falhou (sed) — nada foi renderizado a partir de %s\n' \
 			"${gabarito}" >&2
@@ -325,7 +372,7 @@ renderizar_vhost() {
 			"${bytes_do_rendido}" "${bytes_do_gabarito}" "${gabarito}" >&2
 		return 1
 	fi
-	for forma in 'server {' 'location = '; do
+	for forma in 'server {' 'location = ' 'location ^~ '; do
 		case "${rendido}" in
 		*"${forma}"*) ;;
 		*)
@@ -430,6 +477,57 @@ CONF
 }
 
 # =========================================================================== #
+# Disputa de `server_name` — quem o servidor de borda de fato atende.
+# =========================================================================== #
+
+# Devolve 0 quando o arquivo declara o hostname em alguma diretiva `server_name`.
+# A comparação é por TOKEN, e não por substring: `server_name a.b.c;` não pode
+# ser lido como declaração de `b.c`, e `server_name x y;` declara os dois.
+vhost_declara_hostname() {
+	local arquivo="$1" alvo="$2"
+	awk -v alvo="${alvo}" '
+		/^[[:space:]]*server_name[[:space:]]/ {
+			linha = $0
+			sub(/;.*$/, "", linha)
+			n = split(linha, campos, /[[:space:]]+/)
+			for (i = 1; i <= n; i++) {
+				if (campos[i] == alvo) { achou = 1 }
+			}
+		}
+		END { exit(achou ? 0 : 1) }
+	' "${arquivo}" 2>/dev/null
+}
+
+# Imprime, EM ORDEM DE CARGA, os vhosts do diretório que declaram o hostname.
+#
+# Devolve 0 somente quando o primeiro deles é o nosso. Devolve 1 quando outro
+# vence — e também quando NINGUÉM declara o hostname, que é o controle
+# antivácuo: uma lista vazia não pode ser lida como "vencemos", senão a
+# conferência aprovaria justamente o caso em que o vhost não foi escrito.
+#
+# A ordem é a do `glob(3)` que o nginx usa no `include`, que ordena na
+# localidade C — daí o `LC_ALL=C` explícito: sob outra localidade o `sort`
+# daqui divergiria da ordem real do servidor, e a conferência mediria uma
+# precedência que não é a que vale.
+conferir_precedencia_do_vhost() {
+	local dir="$1" nosso="$2" alvo="$3"
+	local arquivo
+	local -a declarantes=()
+
+	for arquivo in "${dir}"/*.conf; do
+		[[ -f "${arquivo}" ]] || continue
+		vhost_declara_hostname "${arquivo}" "${alvo}" || continue
+		declarantes+=("${arquivo##*/}")
+	done
+
+	((${#declarantes[@]} > 0)) || return 1
+
+	mapfile -t declarantes < <(printf '%s\n' "${declarantes[@]}" | LC_ALL=C sort)
+	printf '%s\n' "${declarantes[@]}"
+	[[ "${declarantes[0]}" == "${nosso}" ]]
+}
+
+# =========================================================================== #
 # Origem dos valores de configuração.
 # =========================================================================== #
 resolver_hostname() {
@@ -458,12 +556,21 @@ resolver_chave_do_certificado() {
 	printf '%s/%s.key' "${DIR_DOS_CERTIFICADOS_PADRAO}" "$1"
 }
 
+resolver_raiz_do_desafio_acme() {
+	if [[ -n "${SYSLOC_RAIZ_DO_DESAFIO_ACME:-}" ]]; then
+		printf '%s' "${SYSLOC_RAIZ_DO_DESAFIO_ACME}"
+		return 0
+	fi
+	valor_no_arquivo_de_ambiente "${ARQ_AMBIENTE}" "${CHAVE_RAIZ_DO_DESAFIO_ACME}"
+}
+
 # =========================================================================== #
 # Pré-condições. NENHUMA delas altera coisa alguma no sistema.
 # =========================================================================== #
 HOSTNAME_RESOLVIDO=""
 CERTIFICADO_RESOLVIDO=""
 CHAVE_RESOLVIDA=""
+RAIZ_DO_DESAFIO_RESOLVIDA=""
 DIR_DOS_VHOSTS=""
 PORTA_DA_API=""
 
@@ -519,6 +626,23 @@ verificar_precondicoes() {
 		"a chave do certificado não está legível em ${CHAVE_RESOLVIDA}" \
 		"informe o caminho em SYSLOC_CHAVE_DO_CERTIFICADO_DA_BORDA"
 
+	# A raiz do desafio de posse do domínio. Ela NÃO é conveniência: este vhost
+	# vence a disputa de `server_name` da porta 80 do hostname que atende, e sem
+	# ela o desafio em claro morre no 404 — a renovação do certificado falha, e
+	# falha em silêncio, meses depois de quem instalou ter saído da frente.
+	RAIZ_DO_DESAFIO_RESOLVIDA="$(resolver_raiz_do_desafio_acme || true)"
+	if [[ -z "${RAIZ_DO_DESAFIO_RESOLVIDA}" ]]; then
+		abortar "não há raiz do desafio de posse do domínio — nem em SYSLOC_RAIZ_DO_DESAFIO_ACME nem na chave ${CHAVE_RAIZ_DO_DESAFIO_ACME} de ${ARQ_AMBIENTE}" \
+			"informe o webroot de quem administra o certificado deste hostname: 'sudo SYSLOC_RAIZ_DO_DESAFIO_ACME=<diretório> bash deploy/scripts/borda/instalar-borda-de-notificacao.sh'. Sem ele a borda responde 404 ao desafio em claro e a RENOVAÇÃO do certificado falha em silêncio"
+	fi
+	if ! caminho_bem_formado "${RAIZ_DO_DESAFIO_RESOLVIDA}"; then
+		abortar "a raiz do desafio não tem forma de caminho absoluto: [${RAIZ_DO_DESAFIO_RESOLVIDA}]" \
+			"corrija o valor em SYSLOC_RAIZ_DO_DESAFIO_ACME ou na chave ${CHAVE_RAIZ_DO_DESAFIO_ACME} de ${ARQ_AMBIENTE} — ele vira a diretiva 'root' do vhost"
+	fi
+	[[ -d "${RAIZ_DO_DESAFIO_RESOLVIDA}" ]] || abortar \
+		"a raiz do desafio não é um diretório existente: ${RAIZ_DO_DESAFIO_RESOLVIDA}" \
+		"confira o webroot de quem administra o certificado deste hostname — um 'root' inexistente faz o desafio receber 404 e a renovação falhar sem sintoma até o certificado vencer"
+
 	DIR_DOS_VHOSTS="${SYSLOC_DIR_DOS_VHOSTS:-${DIR_DOS_VHOSTS_PADRAO}}"
 	[[ -d "${DIR_DOS_VHOSTS}" ]] || abortar \
 		"o diretório de vhosts ${DIR_DOS_VHOSTS} não existe" \
@@ -549,7 +673,8 @@ passo_p01_renderizar() {
 	renderizar_vhost "${GABARITO}" "${HOSTNAME_RESOLVIDO}" \
 		"${PORTA_HTTPS_PADRAO}" "${PORTA_HTTP_PADRAO}" \
 		"${CERTIFICADO_RESOLVIDO}" "${CHAVE_RESOLVIDA}" \
-		"${ENDERECO_DE_ESCUTA_DA_API}:${PORTA_DA_API}" >"${rendido}" || abortar \
+		"${ENDERECO_DE_ESCUTA_DA_API}:${PORTA_DA_API}" \
+		"${RAIZ_DO_DESAFIO_RESOLVIDA}" >"${rendido}" || abortar \
 		"a renderização do gabarito falhou (ver a linha acima)" \
 		"corrija o gabarito em ${GABARITO} e execute de novo"
 
@@ -566,6 +691,8 @@ passo_p01_renderizar() {
 passo_p03_posicionar() {
 	local rendido="${DIR_TEMPORARIO}/${NOME_DO_VHOST}"
 	local destino="${DIR_DOS_VHOSTS}/${NOME_DO_VHOST}"
+
+	remover_vhost_de_nome_legado
 
 	# O conteúdo anterior é guardado ANTES da escrita: se a validação da
 	# configuração inteira reprovar, o passo P04 restaura o que estava lá. Uma
@@ -586,6 +713,60 @@ passo_p03_posicionar() {
 		criado "P03" "${destino}"
 	else
 		ja_ok "P03" "${destino}"
+	fi
+}
+
+# Um vhost nosso instalado com o nome ANTERIOR, deixado no diretório, declara o
+# mesmo `server_name` que o novo: viram dois blocos nossos disputando o mesmo
+# nome, e o nginx ignora um deles. Remover é idempotente — não havendo arquivo,
+# não há o que fazer.
+#
+# Só se remove o que é RECONHECIDAMENTE derivado do gabarito deste repositório.
+# Um homônimo alheio não se apaga: o instalador avisa e deixa a decisão a quem
+# administra o servidor.
+remover_vhost_de_nome_legado() {
+	local legado="${DIR_DOS_VHOSTS}/${NOME_DO_VHOST_LEGADO}"
+
+	[[ "${NOME_DO_VHOST_LEGADO}" != "${NOME_DO_VHOST}" ]] || return 0
+	[[ -f "${legado}" ]] || return 0
+
+	if ! grep -qF "${ASSINATURA_DO_VHOST}" "${legado}"; then
+		info "P03 ⚠️ ${legado} existe e NÃO é derivado deste repositório — deixado intacto; confira à mão se ele disputa o mesmo hostname"
+		return 0
+	fi
+
+	rm -f "${legado}"
+	criado "P03" "${legado} removido (nome legado desta borda — dois vhosts nossos disputariam o mesmo hostname)"
+}
+
+# P03-B · a disputa de `server_name`, conferida ANTES da recarga.
+#
+# Perder a disputa não quebra nada visível: o servidor sobe, o `nginx -t` passa,
+# e a única pista é um `[warn]` no log. O que acontece é o provedor deixar de
+# ser atendido — descoberto pela cobrança que não baixa. Por isso a conferência
+# é ABORTIVA, e roda enquanto a janela de desfazimento ainda está aberta.
+passo_p03b_conferir_precedencia() {
+	local declarantes="" codigo=0
+	declarantes="$(conferir_precedencia_do_vhost \
+		"${DIR_DOS_VHOSTS}" "${NOME_DO_VHOST}" "${HOSTNAME_RESOLVIDO}")" || codigo=$?
+
+	if [[ "${codigo}" -ne 0 && -z "${declarantes}" ]]; then
+		abortar "nenhum vhost de ${DIR_DOS_VHOSTS} declara ${HOSTNAME_RESOLVIDO} — nem o que este script acabou de escrever" \
+			"o vhost existe e não atende: confira ${DIR_DOS_VHOSTS}/${NOME_DO_VHOST} e o gabarito em ${GABARITO}"
+	fi
+
+	if [[ "${codigo}" -ne 0 ]]; then
+		abortar "outro vhost VENCE a disputa de '${HOSTNAME_RESOLVIDO}' e esta borda seria IGNORADA: $(printf '%s' "${declarantes}" | tr '\n' ' ')" \
+			"o servidor fica com o PRIMEIRO da lista acima (ordem lexicográfica do 'include') e ignora os demais com um aviso que ninguém lê. Renomeie o rival para ordenar depois de ${NOME_DO_VHOST}, ou remova-o — a notícia bancária não chega enquanto ele vencer"
+	fi
+
+	local quantos rivais
+	quantos="$(printf '%s' "${declarantes}" | grep -c . || true)"
+	if [[ "${quantos}" -gt 1 ]]; then
+		rivais="$(printf '%s' "${declarantes}" | grep -vxF "${NOME_DO_VHOST}" | tr '\n' ' ')"
+		info "P03-B ⚠️ ${quantos} vhosts declaram ${HOSTNAME_RESOLVIDO}; esta borda VENCE e os demais são ignorados pelo servidor: ${rivais}"
+	else
+		info "P03-B esta borda é a única a declarar ${HOSTNAME_RESOLVIDO}"
 	fi
 }
 
@@ -642,6 +823,7 @@ main() {
 	verificar_precondicoes
 	passo_p01_renderizar
 	passo_p03_posicionar
+	passo_p03b_conferir_precedencia
 	passo_p04_validar_configuracao_inteira
 	passo_p05_recarregar
 
