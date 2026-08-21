@@ -195,6 +195,7 @@ import type {
   ConsultaDeSituacao,
   DesfechoDaOperacao,
   DetalheDaVerificacao,
+  IdentidadeDoProvedor,
   IdentidadeParaVerificar,
   LocatarioDaCobranca,
   PedidoDeEmissao,
@@ -490,6 +491,18 @@ interface DestinoDoProvedor {
 export interface ConfiguracaoDoProvedorBancario {
   /** O endereço da instituição, tal como `ENDERECO_DO_PROVEDOR_BANCARIO` o declara. */
   readonly enderecoDoProvedor: string;
+  /**
+   * O endereço de AUTORIZAÇÃO — máquina distinta da API no provedor.
+   *
+   * ⚠️ Medido em 2026-08-20 na configuração do sistema antigo: a autorização vive em host próprio
+   * (`auth.…`), e a API de cobrança em outro (`api.…`). Até então o adaptador falava com um host só,
+   * e a concessão era pedida no endereço errado. É do PROVEDOR, e não da empresa — por isso mora
+   * aqui, e não no ato.
+   *
+   * Opcional para não quebrar quem só usa a sonda de identidade, que não obtém credencial (D36):
+   * ausente, a concessão é pedida no mesmo destino da API, que é o comportamento anterior.
+   */
+  readonly enderecoDeAutorizacao?: string;
   /**
    * O relógio do processo — **opcional**, e o padrão é o do runtime.
    *
@@ -1046,9 +1059,13 @@ function falhaDoTransporte(tipo: DesfechoSemResposta): DesfechoDaOperacao<never>
  * alargue o envelope. Ele entra **nesta função**, numa linha, quando o envelope o carregar. Ver o
  * `DÉBITO COM GATILHO` de {@link criarAdaptadorSicoob}.
  */
-function comporPedidoDeCredencial(): CorpoDoPedido {
+function comporPedidoDeCredencial(identificadorDaAplicacao: string): CorpoDoPedido {
   const formulario = new URLSearchParams({
     grant_type: CONCESSAO_PEDIDA,
+    // ⚠️ O identificador da aplicação é OBRIGATÓRIO na concessão, e a ausência dele era o que
+    // impedia o produto de obter credencial — fechamento do `D36 · F4/T10`, em 2026-08-20. O nome
+    // do campo é do dialeto do provedor (`client_id`), como `nossoNumero` e `seuNumero`.
+    client_id: identificadorDaAplicacao,
     scope: PERMISSOES_PEDIDAS,
   });
 
@@ -1093,6 +1110,11 @@ function comporQuemPaga(locatario: LocatarioDaCobranca): Record<string, unknown>
  */
 function comporEmissao(pedido: PedidoDeEmissao): CorpoDoPedido {
   const corpo = {
+    // Os TRÊS da conta, no dialeto do provedor. Sem eles a emissão é recusada: o provedor precisa
+    // saber em qual conta e sob qual modalidade o título nasce. Fechamento do `D36 · F4/T10`.
+    numeroCliente: pedido.identidade.numeroDoCliente,
+    numeroContaCorrente: pedido.identidade.numeroDaContaCorrente,
+    codigoModalidade: pedido.identidade.codigoDaModalidade,
     seuNumero: pedido.identificadorNoProvedor,
     dataVencimento: pedido.vencimento,
     valor: pedido.valor,
@@ -1279,30 +1301,17 @@ function lerSituacao(
  * boletos custar uma obtenção em vez de 47 (D5), e é a chave por empresa dele que impede a credencial
  * de uma empresa de acompanhar a chamada de outra.
  *
- * DÉBITO COM GATILHO — D36 · F4/T10 · registrado 2026-08-15 · emendado 2026-08-17 (F4/T8 da fatia (ii))
- * O QUÊ: a sonda de identidade continua sendo aperto de mão mútuo, e **não** obtenção de credencial
- *        de acesso — o desfecho positivo mantém a ressalva de alcance que {@link DETALHE_ACEITE}
- *        carrega por escrito. As quatro operações de cobrança **obtêm** credencial; a sonda não.
- * QUANDO FECHA: quando o produto passar a modelar a **identidade da empresa perante o provedor** —
- *        o identificador da aplicação, hoje sem origem em lugar nenhum (tech spec §8 o agenda para o
- *        envelope cifrado de `@sysloc/shared`, e nenhuma task desta fatia alarga o envelope); o
- *        endereço de autorização, que no sistema antigo é máquina própria e distinta da API; e os
- *        dados da conta que a emissão exige (número do cliente, modalidade, conta corrente). Com
- *        eles, {@link comporPedidoDeCredencial} e {@link comporEmissao} ganham uma linha cada, a
- *        sonda sobe para a obtenção real de credencial e o desfecho positivo perde a ressalva.
- * POR QUE NÃO AGORA: **medido nesta task, e é o que emenda o gatilho.** Trazer o identificador da
- *        aplicação exige (a) versão nova do quadro em claro de `packages/shared/src/segredo-operavel.ts`,
- *        (b) captura na borda do registro do certificado e (c) dois campos novos em
- *        `esquemaDoCertificadoNovo` — superfície publicada, que congela no marco de entrega. Os três
- *        arquivos estão fora da lista desta task e de todas as 17 desta fatia. Subir a sonda **sem**
- *        o identificador seria pior que não subir: a obtenção seria recusada pelo provedor, e a
- *        verificação de identidade — que hoje funciona — passaria a reprovar certificado bom.
- * ÍNDICE: docs/specs/features/fundacao-bancaria/v1/_run/run-report.md §2, D36
  */
 export function criarAdaptadorSicoob(
   config: ConfiguracaoDoProvedorBancario,
 ): PortaDeIdentidadeBancaria & AdaptadorCobrancaBancaria {
   const destino = resolverDestino(config.enderecoDoProvedor);
+  // Ausente o endereço próprio, a concessão continua indo ao destino da API — o comportamento de
+  // antes de 2026-08-20, preservado para quem só usa a sonda.
+  const destinoDaAutorizacao =
+    config.enderecoDeAutorizacao === undefined
+      ? destino
+      : resolverDestino(config.enderecoDeAutorizacao);
   const agora = config.agora ?? Date.now;
   const credenciais = criarCacheDeCredenciais(agora);
 
@@ -1316,12 +1325,13 @@ export function criarAdaptadorSicoob(
   const obterCredencial = async (
     material: Buffer,
     senha: string,
+    identificadorDaAplicacao: string,
   ): Promise<DesfechoDaOperacao<CredencialConcedida>> => {
-    const desfecho = await falarComOProvedor(destino, material, senha, {
+    const desfecho = await falarComOProvedor(destinoDaAutorizacao, material, senha, {
       metodo: METODO_DE_ENVIO,
       caminho: CAMINHO_DA_CREDENCIAL,
       consumirCorpo: true,
-      corpo: comporPedidoDeCredencial(),
+      corpo: comporPedidoDeCredencial(identificadorDaAplicacao),
     });
 
     if (desfecho.tipo !== 'RESPONDEU') {
@@ -1355,13 +1365,17 @@ export function criarAdaptadorSicoob(
    * chamada — não é copiado, não é mutado e não é retido (ADR-0032, D6-b).
    */
   const executar = async <T>(
-    ato: { readonly empresaId: string; readonly segredo: SegredoOperavel },
+    ato: {
+      readonly empresaId: string;
+      readonly segredo: SegredoOperavel;
+      readonly identidade: IdentidadeDoProvedor;
+    },
     pedido: () => Omit<PedidoAoProvedor, 'credencial' | 'consumirCorpo'>,
     traduzir: (texto: string) => DesfechoDaOperacao<T>,
   ): Promise<DesfechoDaOperacao<T>> => {
     const { material, senha } = ato.segredo.abrir();
     const credencial = await credenciais.credencialDaEmpresa(ato.empresaId, () =>
-      obterCredencial(material, senha),
+      obterCredencial(material, senha, ato.identidade.identificadorDaAplicacao),
     );
 
     if (!credencial.aceito) {

@@ -608,6 +608,7 @@ const SIMBOLOS_ESPERADOS = [
   'esquemaNegocio.comodo',
   'esquemaNegocio.conjunto',
   'esquemaNegocio.fiador',
+  'esquemaNegocio.identidadeNoProvedor',
   'esquemaNegocio.imovel',
   'esquemaNegocio.locador',
   'esquemaNegocio.locatario',
@@ -1271,6 +1272,8 @@ const SIMBOLOS_ESPERADOS = [
   // execução, e este caso observa o módulo carregado.
   'ErroDeCertificadoVencido',
   'lerCertificadoVigente',
+  'lerIdentidadeVigente',
+  'lerIdentidadeParaUso',
   'lerHistoricoDeCertificados',
   // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
   // `SIMBOLOS_ESPERADOS`), e a **T11** publica `lerVigenciaObservada` por decisão registrada no
@@ -1286,7 +1289,9 @@ const SIMBOLOS_ESPERADOS = [
   // `VigenciaObservada` não aparece aqui porque não existe em tempo de execução.
   'lerVigenciaObservada',
   'obterEnvelopeCifradoDoVigente',
+  'obterEnvelopeCifradoDaIdentidade',
   'registrarCertificado',
+  'registrarIdentidadeNoProvedor',
   // T3 da fatia `emissao-e-conciliacao` — a PORTA da trilha bancária: a escrita do efeito e a
   // leitura da trilha de uma cobrança, criadas em `../src/evento-bancario.ts`.
   //

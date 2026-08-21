@@ -103,6 +103,13 @@ import {
 import { diferencasDeConjunto } from './conjuntos.ts';
 
 /** O identificador que o **produto** compôs e enviou — 18 posições, como o Caso A da §4.1.1 o traz. */
+/**
+ * O número do cliente que o corpo de exemplo traz — a SEGUNDA metade da conferência da RN-05,
+ * lida desde 2026-08-20 (fechamento do `D17 · F4/T7`). Nomeada para que o corpo e o esperado
+ * comparem o MESMO valor, em vez de dois literais livres para divergir.
+ */
+const NUMERO_DO_CLIENTE_DO_AVISO = 25546454;
+
 const IDENTIFICADOR_PERANTE_O_PROVEDOR = '202608000000000042';
 
 /**
@@ -123,7 +130,7 @@ const AVISO_COMPLETO = {
   dados: {
     seuNumero: IDENTIFICADOR_PERANTE_O_PROVEDOR,
     nossoNumero: NUMERO_DO_TITULO_NO_PROVEDOR,
-    numeroCliente: 25546454,
+    numeroCliente: NUMERO_DO_CLIENTE_DO_AVISO,
     numeroIdentificadorBaixa: IDENTIFICADOR_DA_LIQUIDACAO,
     codigoBarrasBoleto: '00190000090123456789012345678901234567890123',
     codigoBarrasBaixa: '00190000090123456789012345678901234567890123',
@@ -145,6 +152,7 @@ const AVISO_TRADUZIDO = {
   classificacao: 'AVISO_DE_RECEBIMENTO',
   identificadorPeranteOProvedor: IDENTIFICADOR_PERANTE_O_PROVEDOR,
   numeroDoTituloNoProvedor: '1234567',
+  numeroDoClienteNoProvedor: NUMERO_DO_CLIENTE_DO_AVISO,
   identificadorDaLiquidacao: IDENTIFICADOR_DA_LIQUIDACAO,
 };
 

@@ -138,6 +138,7 @@ import {
   ErroDeLoteNaoAlcancado,
   gravarBoletoDaCobranca,
   interromperLote,
+  lerIdentidadeParaUso,
   lerLote,
   localizarCobranca,
   localizarPessoa,
@@ -191,6 +192,16 @@ const LOTE_EM_ANDAMENTO = 'EM_ANDAMENTO';
  */
 const MOTIVO_SEM_CERTIFICADO =
   'a empresa não tem certificado vigente do provedor bancário: nenhuma cobrança foi tentada';
+
+/**
+ * O motivo da interrupção por identidade ausente — irmão do de cima, e **distinto** dele.
+ *
+ * Distinto de propósito: são duas configurações diferentes, corrigidas em telas diferentes, e um
+ * motivo comum ("falta configuração da integração") mandaria o Admin conferir o certificado quando
+ * o que falta é a identidade. O texto é do PRODUTO — nenhuma chamada ao provedor aconteceu.
+ */
+const MOTIVO_SEM_IDENTIDADE =
+  'a empresa não tem identidade registrada no provedor bancário: nenhuma cobrança foi tentada';
 
 /**
  * O que o percurso da interrupção devolve quando ele **de fato** gravou o desfecho.
@@ -264,14 +275,24 @@ export async function processarEmissaoEmLote(
       return {
         competencia: lote.competencia,
         envelopeCifrado: await obterEnvelopeCifradoDoVigente(tx),
+        identidade: await lerIdentidadeParaUso(tx, chaveDeCifra),
         cobrancas: await selecionarCobrancasSemBoleto(tx, lote.competencia),
       };
     });
 
-    const { envelopeCifrado } = preparo;
+    const { envelopeCifrado, identidade } = preparo;
 
     if (envelopeCifrado === undefined) {
       await interromperSemCertificado(banco, loteId, logger, tarefa.id, empresaId);
+
+      return;
+    }
+
+    // A identidade é pré-condição do MESMO tipo que o certificado: sem ela não há credencial, e
+    // toda emissão do lote seria recusada pelo provedor uma a uma. Interromper aqui é o que
+    // transforma `n` recusas idênticas numa causa declarada.
+    if (identidade === undefined) {
+      await interromperSemIdentidade(banco, loteId, logger, tarefa.id, empresaId);
 
       return;
     }
@@ -285,6 +306,7 @@ export async function processarEmissaoEmLote(
       async () =>
         await executarEmissaoEmLote({
           empresaId,
+          identidade,
           // A decifra acontece DENTRO da expressão que monta o trabalho, e o claro não ganha nome
           // próprio no escopo — ver o cabeçalho.
           segredo: decifrarSegredo(envelopeCifrado, chaveDeCifra),
@@ -462,6 +484,45 @@ async function interromperSemCertificado(
   logger.warn(
     { idTarefa, fila: FILA_DA_EMISSAO_EM_LOTE, empresaId, loteId },
     'emissão em lote interrompida: a empresa não tem certificado vigente',
+  );
+}
+
+/**
+ * Interrompe o lote por identidade ausente — o mesmo percurso da interrupção por certificado.
+ *
+ * Ele é uma função à parte, e não um parâmetro da de cima, porque o que muda entre as duas é o
+ * MOTIVO gravado e a linha do diário — e é justamente isso que quem lê o lote interrompido precisa
+ * distinguir. Unificá-las com uma bandeira devolveria a ambiguidade que os dois textos evitam.
+ */
+async function interromperSemIdentidade(
+  banco: AcessoAoBanco,
+  loteId: string,
+  logger: Logger,
+  idTarefa: string | undefined,
+  empresaId: string,
+): Promise<void> {
+  const interrompidoAgora = await comReentranciaBenigna(
+    banco,
+    loteId,
+    logger,
+    idTarefa,
+    empresaId,
+    async () => {
+      await banco.emUnidadeDeTrabalho(async (tx) => {
+        await interromperLote(tx, loteId, MOTIVO_SEM_IDENTIDADE);
+      });
+
+      return INTERROMPIDO_NESTA_PASSADA;
+    },
+  );
+
+  if (interrompidoAgora === undefined) {
+    return;
+  }
+
+  logger.warn(
+    { idTarefa, fila: FILA_DA_EMISSAO_EM_LOTE, empresaId, loteId },
+    'emissão em lote interrompida: a empresa não tem identidade no provedor',
   );
 }
 

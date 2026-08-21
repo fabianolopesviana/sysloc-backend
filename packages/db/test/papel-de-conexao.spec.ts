@@ -135,6 +135,7 @@ const TABELAS_DE_NEGOCIO_ESPERADAS = [
   'envio_de_cobranca',
   'evento_bancario',
   'fiador',
+  'identidade_no_provedor',
   'imovel',
   'item_da_emissao_em_lote',
   'locador',
@@ -332,7 +333,7 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
 
       // A contagem é afirmada ANTES da propriedade, e é deliberada: sem ela, um schema `negocio`
       // vazio faria a asserção seguinte passar sem examinar tabela alguma.
-      expect(observado.tabelasDeNegocio).toHaveLength(20);
+      expect(observado.tabelasDeNegocio).toHaveLength(21);
       expect(observado.tabelasDeNegocio.map((linha) => linha.tabela)).toEqual([
         'acesso_usuario_app',
         'acesso_usuario_permissao',
@@ -348,6 +349,7 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
         'envio_de_cobranca',
         'evento_bancario',
         'fiador',
+        'identidade_no_provedor',
         'imovel',
         'item_da_emissao_em_lote',
         'locador',
@@ -359,6 +361,7 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
       // de modo que uma delas que nascesse com outro dono apareça pela posição. Derivar a lista do
       // tamanho da anterior faria a contagem responder no lugar da propriedade.
       expect(observado.tabelasDeNegocio.map((linha) => linha.dono)).toEqual([
+        'sysloc_migracao',
         'sysloc_migracao',
         'sysloc_migracao',
         'sysloc_migracao',
@@ -401,7 +404,8 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
         "tableowner = current_user ('sysloc_migracao') em acesso_usuario_app, " +
           'acesso_usuario_permissao, certificado_do_provedor, cobranca, comodo, ' +
           'conferencia_bancaria, configuracao_de_mora, conjunto, contrato, contrato_fiador, ' +
-          'emissao_em_lote, envio_de_cobranca, evento_bancario, fiador, imovel, ' +
+          'emissao_em_lote, envio_de_cobranca, evento_bancario, fiador, ' +
+          'identidade_no_provedor, imovel, ' +
           'item_da_emissao_em_lote, locador, locatario, politica_de_aviso, portador_de_confirmacao',
       ]);
 

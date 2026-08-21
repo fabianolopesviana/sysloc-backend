@@ -172,6 +172,7 @@ import {
   TETO_DA_CONFIRMACAO_DA_REVOGACAO_MS,
   type TrabalhoDaReemissao,
 } from '../src/reemissao.ts';
+import { IDENTIDADE_DE_TESTE } from './material-de-teste.ts';
 
 // ---------------------------------------------------------------------------
 // Os limites da verificação — constantes nomeadas, nunca número no meio do caso
@@ -454,6 +455,7 @@ function montarAmbiente(arranjo: ArranjoDaReemissao): AmbienteDaReemissao {
   const trabalho: TrabalhoDaReemissao = {
     empresaId: EMPRESA_DO_ATO,
     segredo: SEGREDO_DA_EMPRESA,
+    identidade: IDENTIDADE_DE_TESTE,
     cobranca: {
       codigo: CODIGO_DA_COBRANCA,
       numeroDoTituloNoProvedor: arranjo.numeroDoTituloVivo,

@@ -1925,9 +1925,28 @@ const EXIGENCIA_ANTERIOR_AO_CARNE: readonly string[] = [
  * existem. Vale aqui, palavra por palavra, o parágrafo da T6 da fatia de contratos: **nenhuma
  * entrada anterior saiu**, a igualdade segue exata, e as duas entram no conjunto POSITIVO.
  */
+/**
+ * Os **dois** pares da identidade da empresa perante o provedor, acrescentados em 2026-08-20 ao
+ * fechar o `D36 · F4/T10`.
+ *
+ * SUT_IS_CORRECT_BECAUSE: as duas rotas nascem com `@ExigeChaves` das MESMAS chaves do certificado
+ * (`TELA:integracoes_bancarias` + `ACAO:configurar_integracao`) — a identidade é ato de configuração
+ * da integração, como o material. **Nenhuma chave nova nasceu no catálogo**, e o conjunto PÚBLICO
+ * não cresceu: nenhuma das duas dispensa sessão.
+ *
+ * Elas ficam em conjunto PRÓPRIO, e não somadas ao inventário da fatia bancária, porque aquele é o
+ * retrato daquela fatia — o `CT-836` afirma que ela publicou exatamente três, e ampliá-lo apagaria
+ * um registro histórico para acomodar trabalho de outra época.
+ */
+const PARES_DA_IDENTIDADE_NO_PROVEDOR: readonly string[] = [
+  'POST /v1/integracoes-bancarias/identidade',
+  'GET /v1/integracoes-bancarias/identidade',
+];
+
 const ROTAS_COM_EXIGENCIA: readonly string[] = [
   ...EXIGENCIA_ANTERIOR_AO_CARNE,
   ...PARES_DA_FATIA_DO_CARNE,
+  ...PARES_DA_IDENTIDADE_NO_PROVEDOR,
 ].sort();
 
 /**
@@ -2297,7 +2316,7 @@ const ROTAS_COM_EXIGENCIA: readonly string[] = [
  *     identidade (`@All`), que sozinho reivindica os {@link METODOS_DO_ENCAMINHADOR} sete pares:
  *     `(86 - 1) + 7 + 9 = 101`, com os nove de {@link ROTAS_FORA_DO_ARCABOUCO}.
  */
-const ROTAS_PUBLICADAS_EM_PRODUCAO = 101;
+const ROTAS_PUBLICADAS_EM_PRODUCAO = 103;
 
 /**
  * Quantos **manipuladores** de controlador a aplicação de produção monta — a âncora do `CT-355`.
@@ -2644,7 +2663,7 @@ const ROTAS_PUBLICADAS_EM_PRODUCAO = 101;
  * **é** a da classe. Não declarar nada é o oposto de declarar **menos**, e é por isso que ele não
  * aparece entre as violações daquele caso.
  */
-const MANIPULADORES_EXAMINADOS_EM_PRODUCAO = 86;
+const MANIPULADORES_EXAMINADOS_EM_PRODUCAO = 88;
 
 /**
  * Quantos manipuladores da aplicação de produção atendem **todos** os verbos (`@All`) — hoje um só, o
@@ -3441,7 +3460,7 @@ const RETRATO_DEVIDO_PELA_FATIA_DE_EMISSAO: Readonly<Record<string, RetratoDaExi
  * entra em {@link PUBLICAS_LEGITIMAS_NO_MUTANTE}: o carnê exige sessão, e o excedente que aquele
  * caso nomeia continua sendo só o do `ControladorPublicoIndevido`.
  */
-const ROTAS_PUBLICADAS_NO_MUTANTE = 95;
+const ROTAS_PUBLICADAS_NO_MUTANTE = 97;
 
 /**
  * O que seria o inventário público da aplicação mutante **se o mutante não estivesse lá**.
@@ -3916,6 +3935,14 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
         // declaram; quem examina o conteúdo — e apanharia uma declaração só com a ação — é o
         // `CT-355`.
         ...paresDoCertificadoDoProvedor(),
+        // SUT_IS_CORRECT_BECAUSE: os **dois** pares da IDENTIDADE NO PROVEDOR entram pela mesma
+        // razão, agora do fechamento do `D36 · F4/T10` em 2026-08-20 — o controlador novo é
+        // registrado no MESMO módulo de integrações já presente naquela composição raiz. Nenhuma
+        // entrada anterior saiu, e a igualdade segue exata. Os dois caem no conjunto POSITIVO pela
+        // declaração do MÉTODO, que é a conjunção inteira das mesmas chaves do certificado — a
+        // identidade é ato de configuração da integração, e por isso **nenhuma chave nova nasceu no
+        // catálogo**. Nenhum dos dois é público: os dois exigem sessão.
+        ...PARES_DA_IDENTIDADE_NO_PROVEDOR,
         // SUT_IS_CORRECT_BECAUSE: os **dois** pares dos ATOS SOBRE O BOLETO entram pela mesma razão,
         // agora da T13 da fatia `emissao-e-conciliacao` — eles nascem no MESMO controlador de
         // cobrança já registrado naquela composição raiz, e entram por
@@ -4044,7 +4071,12 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
           // comparando `EXIGENCIA_ANTERIOR_A_FATIA` com o que de fato é anterior a ela. Nenhuma
           // entrada anterior saiu, e a asserção **não foi afrouxada**: continua sendo igualdade
           // exata contra o inventário revisado.
-          !PARES_DA_FATIA_DO_CARNE.includes(par),
+          !PARES_DA_FATIA_DO_CARNE.includes(par) &&
+          // SUT_IS_CORRECT_BECAUSE: o fechamento do `D36 · F4/T10`, em 2026-08-20, publicou os dois
+          // pares da identidade no provedor — que são posteriores a esta fatia, e por isso saem da
+          // comparação pela mesma razão do carnê acima. Nenhuma entrada anterior saiu, e a asserção
+          // **não foi afrouxada**: continua igualdade exata contra o inventário revisado.
+          !PARES_DA_IDENTIDADE_NO_PROVEDOR.includes(par),
       ),
     ).toEqual([...EXIGENCIA_ANTERIOR_A_FATIA]);
 
@@ -4183,7 +4215,13 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
         // dela — o carnê. O valor comparado **não muda** — ele continua sendo `33` —, e é justamente
         // essa imutabilidade que faz a asserção seguir pegando o par antigo que sumisse enquanto um
         // novo entrasse no lugar dele. A asserção **não foi afrouxada**.
-        PARES_DA_FATIA_DO_CARNE.length,
+        PARES_DA_FATIA_DO_CARNE.length -
+        // SUT_IS_CORRECT_BECAUSE: e de novo para o fechamento do `D36 · F4/T10`, em 2026-08-20, que
+        // publicou os **dois** pares da identidade no provedor. O valor comparado **não muda** — ele
+        // continua sendo `33` —, e é justamente essa imutabilidade que faz a asserção seguir pegando
+        // o par antigo que sumisse enquanto um novo entrasse no lugar dele. A asserção **não foi
+        // afrouxada**.
+        PARES_DA_IDENTIDADE_NO_PROVEDOR.length,
     ).toBe(ROTAS_PUBLICADAS_ANTES_DA_FATIA);
   });
 

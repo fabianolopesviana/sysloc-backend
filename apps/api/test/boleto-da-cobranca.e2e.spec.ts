@@ -241,9 +241,22 @@ import {
   SEGMENTO_DA_CONSULTA,
   SEGMENTO_DO_REGISTRO,
 } from '../src/integracoes-bancarias/certificado.controller.ts';
+import { SEGMENTO_DA_IDENTIDADE } from '../src/integracoes-bancarias/identidade.controller.ts';
 import { cpfValido } from './documento.ts';
 
 /** Limite da montagem: banco migrado, semente com credencial, fila e a aplicação instrumentada. */
+/**
+ * A identidade da empresa perante o provedor, exigida pelos atos desde 2026-08-20
+ * (`D36 · F4/T10`). Valores fixos: o que os casos afirmam é o efeito do ato, e um valor
+ * sorteado aqui não tornaria a asserção mais forte.
+ */
+const IDENTIDADE_DO_ARRANJO = Object.freeze({
+  identificadorDaAplicacao: 'identificador-do-arranjo',
+  numeroDoCliente: 33065,
+  numeroDaContaCorrente: 380261,
+  codigoDaModalidade: 1,
+});
+
 const LIMITE_DE_MONTAGEM_MS = 240_000;
 
 /** Limite de cada caso: os três montam cadastros pelas rotas reais e falam com o par instrumentado. */
@@ -262,6 +275,9 @@ const CAMINHO_DA_SESSAO_CORRENTE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_SESSAO}`;
 const COLECAO_DE_COBRANCAS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}`;
 const COLECAO_DE_CONTRATOS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}`;
 const ROTA_DO_REGISTRO_DE_CERTIFICADO = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DO_REGISTRO}`;
+
+/** A rota da identidade, composta pelo dono do segmento — nunca literal. */
+const ROTA_DO_REGISTRO_DA_IDENTIDADE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DA_IDENTIDADE}`;
 const ROTA_DA_CONSULTA_DE_CERTIFICADO = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DA_CONSULTA}`;
 
 /**
@@ -1825,6 +1841,27 @@ async function registrarCertificadoDaEmpresa(nome: string): Promise<void> {
       `o registro do certificado respondeu ${String(resposta.status)}: ${resposta.texto}`,
     );
   }
+
+  // A identidade da empresa perante o provedor é pré-condição do MESMO tipo que o certificado
+  // (`D36 · F4/T10`, fechado em 2026-08-20): sem ela os atos recusam com `422` antes de falar com o
+  // provedor. Registrada pela ROTA REAL, como o certificado acima — o arranjo desta suíte é de
+  // borda, e semear por dentro do banco mediria um caminho que a operação não percorre.
+  const identidade = await pedir(ROTA_DO_REGISTRO_DA_IDENTIDADE, {
+    metodo: 'POST',
+    cookie,
+    corpo: {
+      identificadorDaAplicacao: 'identificador-do-arranjo',
+      numeroDoCliente: 33065,
+      numeroDaContaCorrente: 380261,
+      codigoDaModalidade: 1,
+    },
+  });
+
+  if (identidade.status !== 201) {
+    throw new Error(
+      `o registro da identidade respondeu ${String(identidade.status)}: ${identidade.texto}`,
+    );
+  }
 }
 
 /**
@@ -2247,6 +2284,7 @@ async function conferir(
   await conferirCobrancas({
     empresaId: EMPRESA_A.id,
     segredo: SEGREDO_DA_CONFERENCIA,
+    identidade: IDENTIDADE_DO_ARRANJO,
     cobrancas,
     adaptador: {
       // O par da conferência é **próprio deste percurso**, e não o injetado na aplicação: o que a

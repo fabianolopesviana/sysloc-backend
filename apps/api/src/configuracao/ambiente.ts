@@ -305,6 +305,18 @@ const ESQUEMA = z.object({
   // não ter. O piso de um caractere é a barreira que sobrevive a qualquer mudança em
   // {@link selecionar}.
   ENDERECO_DO_PROVEDOR_BANCARIO: z.string().min(1, 'deve ser declarada'),
+  /**
+   * O endereço de AUTORIZAÇÃO do provedor — máquina distinta da API.
+   *
+   * Medido em 2026-08-20 na configuração do sistema antigo: a concessão vive em host próprio
+   * (`auth.…`) e a cobrança em outro (`api.…`). Fechamento do `D36 · F4/T10`.
+   *
+   * ⚠️ **EXIGIDA, e não opcional.** A primeira escrita a fez opcional, e isso quebrava a propriedade
+   * que {@link VARIAVEIS_EXIGIDAS} sustenta — *o esquema é a fonte única do que o processo exige* —,
+   * além de falhar ABERTO: o processo subiria sem ela e só quebraria na primeira emissão, com
+   * recusa do provedor em vez de recusa de partida. Aqui se falha fechado.
+   */
+  ENDERECO_DE_AUTORIZACAO_BANCARIA: z.string().min(1, 'deve ser declarada'),
   // O diretório onde os bytes do boleto são guardados (T13 da fatia `emissao-e-conciliacao`).
   //
   // ⚠️ **Aqui o modo perigoso é o mesmo INVERSO da chave de cifra**, e por isso a partida é recusada
@@ -395,6 +407,8 @@ export interface Ambiente {
    * e não nesta leitura: ver a razão junto da linha que o exige.
    */
   readonly enderecoDoProvedorBancario: string;
+  /** O endereço de autorização do provedor, de `ENDERECO_DE_AUTORIZACAO_BANCARIA`. */
+  readonly enderecoDeAutorizacaoBancaria: string;
   /**
    * O diretório onde os bytes do boleto são guardados, de `DIRETORIO_DOS_BOLETOS`.
    *
@@ -642,6 +656,7 @@ export function carregarAmbiente(fonte: FonteDeVariaveis): Ambiente {
     remetenteDoAviso: validado.EMAIL_REMETENTE,
     chaveDeCifraDoCertificado: validado.CHAVE_DE_CIFRA_DO_CERTIFICADO,
     enderecoDoProvedorBancario: validado.ENDERECO_DO_PROVEDOR_BANCARIO,
+    enderecoDeAutorizacaoBancaria: validado.ENDERECO_DE_AUTORIZACAO_BANCARIA,
     diretorioDosBoletos: validado.DIRETORIO_DOS_BOLETOS,
   };
 }

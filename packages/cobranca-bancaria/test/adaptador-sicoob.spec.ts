@@ -289,6 +289,7 @@ import {
   gerarAutoridadeDeTeste,
   gerarMaterialDeTeste,
   gerarParDeServidorDeTeste,
+  IDENTIDADE_DE_TESTE,
 } from './material-de-teste.ts';
 
 /**
@@ -801,6 +802,13 @@ interface ProvedorInstrumentado {
   readonly porta: number;
   /** O titular de cada obtenção de credencial, na ordem. O comprimento é a contagem do CT-943. */
   readonly obtencoes: string[];
+  /**
+   * O CORPO de cada pedido de concessão, como saiu do produto.
+   *
+   * Guardado desde 2026-08-20: sem ele não há como afirmar que o identificador da aplicação chega
+   * ao provedor, e a ausência dele era o defeito que o `D36 · F4/T10` registrava.
+   */
+  readonly corposDeObtencao: string[];
   readonly chamadas: ChamadaObservada[];
 }
 
@@ -853,7 +861,12 @@ async function subirProvedorInstrumentado(
   const titularPorSoquete = new Map<Duplex, string>();
   const pendentes = new Set<Duplex>();
 
-  const observado: ProvedorInstrumentado = { porta: 0, obtencoes: [], chamadas: [] };
+  const observado: ProvedorInstrumentado = {
+    porta: 0,
+    obtencoes: [],
+    corposDeObtencao: [],
+    chamadas: [],
+  };
 
   const servidor: ServidorSeguro = criarParSeguro(
     {
@@ -874,6 +887,7 @@ async function subirProvedorInstrumentado(
 
         if (autorizacao === undefined) {
           observado.obtencoes.push(titular);
+          observado.corposDeObtencao.push(Buffer.concat(pedacos).toString('utf8'));
           responderEmJson(resposta, {
             access_token: `credencial-${titular}-${observado.obtencoes.length}`,
             token_type: 'Bearer',
@@ -1026,6 +1040,7 @@ function pedidoDeEmissao(
   return {
     empresaId,
     segredo: criarSegredoOperavel({ material: material.material, senha: material.senha }),
+    identidade: IDENTIDADE_DE_TESTE,
     identificadorNoProvedor: `202608${String(ordem).padStart(12, '0')}`,
     valor: 1234.56,
     vencimento: '2026-09-10',
@@ -1048,6 +1063,7 @@ function consultaDeSituacao(material: ParDeSegredo): ConsultaDeSituacao {
   return {
     empresaId: EMPRESA_A,
     segredo: criarSegredoOperavel({ material: material.material, senha: material.senha }),
+    identidade: IDENTIDADE_DE_TESTE,
     numeroDoTituloNoProvedor: NUMERO_DO_TITULO_EM_CADEIA,
     incluirDocumento: false,
   };
@@ -2123,4 +2139,105 @@ describe('CT-1009 — o endereço bem formado constrói o adaptador, e a guarda 
       ).toBe(true);
     }
   });
+});
+
+// ===========================================================================
+// A IDENTIDADE DA EMPRESA PERANTE O PROVEDOR — CA-D36 → CT-880..CT-882 (RN-34)
+//
+// INVARIANTES
+// - o pedido de CONCESSÃO carrega o identificador da aplicação, no campo do dialeto do provedor —
+//   sem ele a credencial é recusada, e era essa a ausência que o `D36 · F4/T10` registrava;
+// - a EMISSÃO carrega os três dados da conta, também no dialeto;
+// - havendo endereço de autorização próprio, a concessão vai a ELE e a operação ao endereço da
+//   API — dois hosts, medido no sistema antigo.
+//
+// As três são COMPORTAMENTAIS: medem o que o produto de fato enviou ao par, lido do lado do
+// servidor, e não a forma da função que compõe o corpo.
+// ===========================================================================
+describe('identidade da empresa perante o provedor', () => {
+  it(
+    'CT-880 — o pedido de concessão carrega o identificador da aplicação',
+    async () => {
+      const autoridade = await gerarAutoridadeDeTeste('ct880');
+      const material = await gerarMaterialDeTeste({
+        autoridade,
+        senha: SENHA_SENTINELA,
+        titular: TITULAR_DA_EMPRESA,
+      });
+      const provedor = await subirProvedorInstrumentado(autoridade);
+      const adaptador = adaptadorComRelogio(provedor.porta, () => INSTANTE_INICIAL_MS);
+
+      expect((await adaptador.emitir(pedidoDeEmissao(EMPRESA_A, material, 1))).aceito).toBe(true);
+
+      expect(provedor.corposDeObtencao).toHaveLength(1);
+
+      const enviado = new URLSearchParams(provedor.corposDeObtencao[0] ?? '');
+
+      // Igualdade contra o valor CONHECIDO do acessório: afirmar só a presença da chave aprovaria
+      // um produto que enviasse o identificador de outra empresa.
+      expect(enviado.get('client_id')).toBe(IDENTIDADE_DE_TESTE.identificadorDaAplicacao);
+      expect(enviado.get('grant_type')).toBe('client_credentials');
+      expect(enviado.get('scope')).toBe('boletos_inclusao boletos_consulta boletos_alteracao');
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-881 — a emissão carrega os três dados da conta, no dialeto do provedor',
+    async () => {
+      const autoridade = await gerarAutoridadeDeTeste('ct881');
+      const material = await gerarMaterialDeTeste({
+        autoridade,
+        senha: SENHA_SENTINELA,
+        titular: TITULAR_DA_EMPRESA,
+      });
+      const provedor = await subirProvedorInstrumentado(autoridade);
+      const adaptador = adaptadorComRelogio(provedor.porta, () => INSTANTE_INICIAL_MS);
+
+      expect((await adaptador.emitir(pedidoDeEmissao(EMPRESA_A, material, 1))).aceito).toBe(true);
+
+      expect(provedor.chamadas).toHaveLength(1);
+
+      const corpo = JSON.parse(provedor.chamadas[0]?.corpo ?? '{}') as Record<string, unknown>;
+
+      expect(corpo.numeroCliente).toBe(IDENTIDADE_DE_TESTE.numeroDoCliente);
+      expect(corpo.numeroContaCorrente).toBe(IDENTIDADE_DE_TESTE.numeroDaContaCorrente);
+      expect(corpo.codigoModalidade).toBe(IDENTIDADE_DE_TESTE.codigoDaModalidade);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-882 — com endereço de autorização próprio, a concessão vai a ELE e a operação à API',
+    async () => {
+      const autoridade = await gerarAutoridadeDeTeste('ct882');
+      const material = await gerarMaterialDeTeste({
+        autoridade,
+        senha: SENHA_SENTINELA,
+        titular: TITULAR_DA_EMPRESA,
+      });
+
+      // DOIS pares, como no provedor real: `auth.…` e `api.…` são máquinas distintas.
+      const autorizacao = await subirProvedorInstrumentado(autoridade);
+      const api = await subirProvedorInstrumentado(autoridade);
+
+      const adaptador = criarAdaptadorSicoob({
+        enderecoDoProvedor: apontarEnderecoDoProvedor(enderecoDoPar(api.porta)),
+        enderecoDeAutorizacao: apontarEnderecoDoProvedor(enderecoDoPar(autorizacao.porta)),
+        agora: () => INSTANTE_INICIAL_MS,
+      });
+
+      expect((await adaptador.emitir(pedidoDeEmissao(EMPRESA_A, material, 1))).aceito).toBe(true);
+
+      // A concessão foi pedida ao par de AUTORIZAÇÃO, e só a ele.
+      expect(autorizacao.corposDeObtencao).toHaveLength(1);
+      expect(api.corposDeObtencao).toHaveLength(0);
+
+      // E a operação foi ao par da API, e só a ele. Sem este par de asserções, um adaptador que
+      // mandasse tudo para o mesmo host passaria na metade de cima.
+      expect(api.chamadas).toHaveLength(1);
+      expect(autorizacao.chamadas).toHaveLength(0);
+    },
+    LIMITE_DO_CASO_MS,
+  );
 });

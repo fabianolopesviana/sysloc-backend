@@ -477,3 +477,20 @@ async function ferramenta(argumentos: readonly string[]): Promise<string> {
     throw new Error(`'${FERRAMENTA} ${subcomando}' falhou no acessório de material: ${causa}`);
   }
 }
+
+/**
+ * A identidade da empresa perante o provedor, para os casos que precisam de um ato COMPLETO.
+ *
+ * Ela mora aqui, e não em cada suíte, pela convenção do projeto: **acessório de suíte se importa,
+ * não se copia**. Cinco arquivos passaram a precisar dela ao mesmo tempo — cinco cópias nasceriam
+ * livres para divergir, e a primeira divergência apareceria como caso que passa por acaso.
+ *
+ * Os valores são plausíveis e **fixos**: o que os casos afirmam é que eles chegam ao provedor, e um
+ * valor sorteado tornaria a asserção uma comparação consigo mesma.
+ */
+export const IDENTIDADE_DE_TESTE = Object.freeze({
+  identificadorDaAplicacao: 'identificador-de-teste-0001',
+  numeroDoCliente: 33065,
+  numeroDaContaCorrente: 380261,
+  codigoDaModalidade: 1,
+});

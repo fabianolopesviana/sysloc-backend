@@ -224,6 +224,7 @@ import type {
 } from '../src/modelo-canonico.ts';
 import type { AdaptadorCobrancaBancaria } from '../src/porta-de-cobranca.ts';
 import { diferencasDeConjunto } from './conjuntos.ts';
+import { IDENTIDADE_DE_TESTE } from './material-de-teste.ts';
 
 // ---------------------------------------------------------------------------
 // Limites de tempo — constantes nomeadas, nunca número mágico no meio do caso
@@ -688,6 +689,7 @@ async function montarTrabalho(
     trabalho: {
       empresaId: cenario.empresaId,
       segredo: SEGREDO_DA_EMPRESA,
+      identidade: IDENTIDADE_DE_TESTE,
       cobrancas: cobrancas.map(({ id, codigo, numeroDoTituloNoProvedor }) => ({
         id,
         codigo,

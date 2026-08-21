@@ -129,7 +129,10 @@ import { CobrancaService } from './cobranca.service.js';
  * provedor (emenda de 2026-08-17 da ADR-0001).
  */
 function criarPortaDeCobranca(ambiente: Ambiente): AdaptadorCobrancaBancaria {
-  return criarAdaptadorSicoob({ enderecoDoProvedor: ambiente.enderecoDoProvedorBancario });
+  return criarAdaptadorSicoob({
+    enderecoDoProvedor: ambiente.enderecoDoProvedorBancario,
+    enderecoDeAutorizacao: ambiente.enderecoDeAutorizacaoBancaria,
+  });
 }
 
 /**

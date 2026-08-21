@@ -140,10 +140,16 @@ import {
   EMPRESA_A,
   EMPRESA_B,
   registrarCertificado,
+  registrarIdentidadeNoProvedor,
   SENHA_DA_CARGA,
 } from '@sysloc/db';
 import { criarRenderizadorPdf } from '@sysloc/documentos';
-import { CodigoErro, cifrarSegredo, criarSegredoOperavel } from '@sysloc/shared';
+import {
+  CodigoErro,
+  cifrarSegredo,
+  cifrarValorOperavel,
+  criarSegredoOperavel,
+} from '@sysloc/shared';
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)
@@ -1178,6 +1184,20 @@ async function registrarCertificadoVigente(
         impressaoDigital: randomUUID(),
         segredoCifrado: envelopeCifrado,
         registradoPor,
+      });
+
+      // A identidade da empresa perante o provedor é pré-condição do MESMO tipo que o certificado
+      // (`D36 · F4/T10`, fechado em 2026-08-20): sem ela os atos recusam com `422` antes de falar com
+      // o provedor. Ela nasce junto, para que o arranjo siga produzindo uma empresa que opera.
+      await registrarIdentidadeNoProvedor(tx, {
+        identificadorDaAplicacaoCifrado: cifrarValorOperavel(
+          'identificador-do-arranjo',
+          aplicacao.get<Ambiente>(TOKEN_AMBIENTE).chaveDeCifraDoCertificado,
+        ),
+        numeroDoCliente: 33065,
+        numeroDaContaCorrente: 380261,
+        codigoDaModalidade: 1,
+        registradoPor: registradoPor,
       });
     });
   });

@@ -262,6 +262,7 @@ export type {
   ConsultaDeSituacao,
   DesfechoDaOperacao,
   DetalheDaVerificacao,
+  IdentidadeDoProvedor,
   IdentidadeParaVerificar,
   LocatarioDaCobranca,
   MeioDeRecebimento,

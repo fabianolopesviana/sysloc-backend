@@ -249,6 +249,7 @@ import {
   type NotificacaoBancariaPersistida,
   reativarEmpresa,
   registrarCertificado,
+  registrarIdentidadeNoProvedor,
   registrarNotificacaoBancaria,
   revogarBoleto,
   suspenderEmpresa,
@@ -258,6 +259,7 @@ import {
 import {
   type CargaDaNotificacaoBancaria,
   cifrarSegredo,
+  cifrarValorOperavel,
   criarLogger,
   criarSegredoOperavel,
   FILA_DA_NOTIFICACAO_BANCARIA,
@@ -338,6 +340,12 @@ const UMA_TENTATIVA = 1;
 
 /** O nome do campo do PRODUTO que a linha de recusa por divergência tem de nomear (§13.1). */
 const CAMPO_DIVERGENTE_ESPERADO = 'numeroDoTituloNoProvedor';
+
+/**
+ * O número do cliente que a identidade do arranjo declara — o valor contra o qual a segunda metade
+ * da RN-05 compara. Fixo, e igual ao que `registrarIdentidadeNoProvedor` semeia.
+ */
+const NUMERO_DO_CLIENTE_DO_ARRANJO = 33065;
 
 /** O rótulo do nível de alerta, tal como `criarLogger` o emite — escrito à mão, nunca lido do SUT. */
 const NIVEL_DE_AVISO = 'warn';
@@ -2090,6 +2098,7 @@ function avisoDe(
   identificador: string,
   numeroDoTitulo: string,
   identificadorDaLiquidacao: string = liquidacaoNova(),
+  numeroCliente: number = NUMERO_DO_CLIENTE_DO_ARRANJO,
 ): {
   readonly idWebhook: number;
   readonly tipoMovimento: number;
@@ -2102,6 +2111,7 @@ function avisoDe(
       seuNumero: identificador,
       nossoNumero: numeroDoTitulo,
       numeroIdentificadorBaixa: identificadorDaLiquidacao,
+      numeroCliente,
       valorPagamento: VALOR_ALEGADO_PELO_AVISO,
       dataHoraSituacaoBaixa: '2026-08-18T14:03:11Z',
     },
@@ -2372,6 +2382,21 @@ async function garantirCertificadoVigente(empresaId: string): Promise<SegredoDoA
       segredoCifrado: envelopeCifrado,
       registradoPor: exigirUsuarioDa(empresaId).id,
     });
+
+    // A identidade da empresa perante o provedor é pré-condição do MESMO tipo que o certificado
+    // (`D36 · F4/T10`, fechado em 2026-08-20): sem ela as tarefas interrompem antes de tentar. Ela
+    // nasce aqui, na mesma unidade, para que o arranjo continue produzindo uma empresa que consegue
+    // operar — e não uma que passa a interromper por configuração faltante.
+    await registrarIdentidadeNoProvedor(tx, {
+      identificadorDaAplicacaoCifrado: cifrarValorOperavel(
+        `identificador-${empresaId.slice(0, 8)}`,
+        CHAVE_DE_CIFRA,
+      ),
+      numeroDoCliente: 33065,
+      numeroDaContaCorrente: 380261,
+      codigoDaModalidade: 1,
+      registradoPor: exigirUsuarioDa(empresaId).id,
+    });
   });
 
   return segredo;
@@ -2579,3 +2604,75 @@ async function reativarPelaPortaDoMaster(empresaId: string): Promise<void> {
     throw new Error(`o arranjo não alcançou a empresa ${empresaId} para reativá-la`);
   }
 }
+
+// ===========================================================================
+// CA-08 → CT-1010 (RN-05) — a SEGUNDA metade da conferência, fechamento do `D17 · F4/T7`
+//
+// INVARIANTES
+// - número do cliente divergente recusa como o título divergente: `DIVERGENTE`, sem tocar a
+//   cobrança e **sem falar com o provedor**;
+// - ausência do campo NÃO é divergência — é o caso que impede que um provedor que deixe de enviá-lo
+//   transforme toda notícia legítima em anomalia.
+// ===========================================================================
+describe('CT-1010 — a divergência do número do cliente recusa sem tocar a cobrança', () => {
+  it(
+    'CT-1010 — cliente divergente termina DIVERGENTE, e a porta não é alcançada',
+    async () => {
+      const cobranca = await semearCobranca(EMPRESA_A.id);
+      const antes = await retratoDaCobranca(cobranca);
+
+      const adaptador = adaptadorQueResponde(() => {
+        throw new Error('a porta não pode ser alcançada por uma notícia de outra conta');
+      });
+      const fila = montarConsumidor(adaptador.porta);
+
+      // O título CONFERE; só o cliente diverge — é o que discrimina esta metade da outra.
+      const notificacaoId = await gravarCru(
+        avisoDe(
+          cobranca.identificador,
+          cobranca.numeroDoTitulo,
+          liquidacaoNova(),
+          NUMERO_DO_CLIENTE_DO_ARRANJO + 1,
+        ),
+      );
+      const tarefa = await executarTarefa(fila, { notificacaoId });
+
+      expect(await tarefa.getState()).toBe('completed');
+      expect((await lerCru(notificacaoId)).desfecho).toBe('DIVERGENTE');
+      expect(adaptador.consultas).toEqual([]);
+      expect(await retratoDaCobranca(cobranca)).toEqual(antes);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-1010 (b) — AUSÊNCIA do número do cliente não é divergência: a notícia segue',
+    async () => {
+      const cobranca = await semearCobranca(EMPRESA_A.id);
+      const adaptador = adaptadorQueResponde(() => ({
+        situacao: 'LIQUIDADO',
+        pagoEm: DATA_DO_PAGAMENTO,
+        valorPago: VALOR_DA_COBRANCA,
+        documento: null,
+      }));
+      const fila = montarConsumidor(adaptador.porta);
+
+      const aviso = avisoDe(cobranca.identificador, cobranca.numeroDoTitulo);
+      const semCliente = {
+        ...aviso,
+        dados: Object.fromEntries(
+          Object.entries(aviso.dados).filter(([chave]) => chave !== 'numeroCliente'),
+        ),
+      };
+
+      const notificacaoId = await gravarCru(semCliente);
+      const tarefa = await executarTarefa(fila, { notificacaoId });
+
+      expect(await tarefa.getState()).toBe('completed');
+      // Sem o campo, a notícia atravessa e o efeito acontece — o oposto do caso acima.
+      expect((await lerCru(notificacaoId)).desfecho).not.toBe('DIVERGENTE');
+      expect(adaptador.consultas.length).toBeGreaterThan(0);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});

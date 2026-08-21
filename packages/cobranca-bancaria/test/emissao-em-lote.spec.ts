@@ -172,6 +172,7 @@ import { criarGuardaDeBoletos } from '../src/guarda-de-boletos.ts';
 import type { ClasseDaFalha, PedidoDeEmissao } from '../src/modelo-canonico.ts';
 import type { AdaptadorCobrancaBancaria } from '../src/porta-de-cobranca.ts';
 import { diferencasDeConjunto } from './conjuntos.ts';
+import { IDENTIDADE_DE_TESTE } from './material-de-teste.ts';
 
 // ---------------------------------------------------------------------------
 // Limites de tempo — constantes nomeadas, nunca número mágico no meio do caso
@@ -502,6 +503,7 @@ async function montarTrabalho(
     trabalho: {
       empresaId: EMPRESA_A.id,
       segredo: SEGREDO_DA_EMPRESA,
+      identidade: IDENTIDADE_DE_TESTE,
       cobrancas: cobrancas.map(({ id, codigo }) => ({ id, codigo })),
       adaptador,
       guarda: criarGuardaDeBoletos(diretorioDosBoletos),
@@ -828,6 +830,11 @@ describe('CT-912 — o lote presta contas nomeando cada cobrança recusada e a r
       expect(adaptador.pedidos[0]).toEqual({
         empresaId: EMPRESA_A.id,
         segredo: SEGREDO_DA_EMPRESA,
+        // A identidade da empresa faz parte do pedido desde 2026-08-20 (`D36 · F4/T10`): sem ela o
+        // provedor recusa a emissão, por não saber em qual conta o título nasce. Ela é afirmada
+        // aqui, e não omitida com `expect.objectContaining`, porque esta asserção existe para dizer
+        // que o pedido carrega **o que a cobrança e o cadastro dizem — e nada além**.
+        identidade: IDENTIDADE_DE_TESTE,
         identificadorNoProvedor: enviados[0],
         valor: VALOR_ESPERADO_NO_PEDIDO,
         vencimento: VENCIMENTO,

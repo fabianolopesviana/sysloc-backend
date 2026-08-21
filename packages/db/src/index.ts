@@ -872,6 +872,15 @@ export {
   registrarEventoBancario,
 } from './evento-bancario.js';
 export {
+  type DadosDaIdentidade,
+  type IdentidadeGravada,
+  type IdentidadeParaUso,
+  lerIdentidadeParaUso,
+  lerIdentidadeVigente,
+  obterEnvelopeCifradoDaIdentidade,
+  registrarIdentidadeNoProvedor,
+} from './identidade-no-provedor.js';
+export {
   comporIdentificadorBancario,
   ErroDeContadorForaDaLargura,
   LARGURA_DO_CONTADOR_BANCARIO,

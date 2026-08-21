@@ -172,6 +172,14 @@ export interface Ambiente {
    */
   readonly enderecoDoProvedorBancario: string;
   /**
+   * O endereço de AUTORIZAÇÃO do provedor, de `ENDERECO_DE_AUTORIZACAO_BANCARIA`.
+   *
+   * No provedor real a concessão vive em host próprio (`auth.…`) e a cobrança em outro (`api.…`) —
+   * medido em 2026-08-20. **Exigida**, pela mesma razão da irmã em `apps/api`: sem ela o processo
+   * subiria e só quebraria na primeira emissão.
+   */
+  readonly enderecoDeAutorizacaoBancaria: string;
+  /**
    * O diretório onde os bytes do boleto são guardados, de `DIRETORIO_DOS_BOLETOS`.
    *
    * Ele **não é segredo** — é um caminho de sistema de arquivos —, e tem campo aqui porque **este**
@@ -430,6 +438,11 @@ export function lerAmbiente(fonte: Readonly<Record<string, string | undefined>>)
   }
 
   const enderecoDoProvedor = fonte.ENDERECO_DO_PROVEDOR_BANCARIO?.trim() ?? '';
+  const enderecoDeAutorizacao = fonte.ENDERECO_DE_AUTORIZACAO_BANCARIA?.trim() ?? '';
+
+  if (enderecoDeAutorizacao === '') {
+    problemas.push('ENDERECO_DE_AUTORIZACAO_BANCARIA: ausente');
+  }
   if (enderecoDoProvedor === '') {
     problemas.push('ENDERECO_DO_PROVEDOR_BANCARIO: ausente');
   }
@@ -460,6 +473,7 @@ export function lerAmbiente(fonte: Readonly<Record<string, string | undefined>>)
     // novo — uma segunda declaração da codificação, livre para divergir da que conferiu.
     chaveDeCifraDoCertificado: Buffer.from(chaveDeCifra, 'base64'),
     enderecoDoProvedorBancario: enderecoDoProvedor,
+    enderecoDeAutorizacaoBancaria: enderecoDeAutorizacao,
     diretorioDosBoletos,
   };
 }
@@ -588,6 +602,9 @@ async function principal(): Promise<void> {
   // essa recusa precisa acontecer antes de a reserva e a conexão existirem.
   const provedor = criarAdaptadorSicoob({
     enderecoDoProvedor: ambiente.enderecoDoProvedorBancario,
+    // ⚠️ Com `...`, e não como propriedade sempre presente: sob `exactOptionalPropertyTypes`,
+    // passar `undefined` não é o mesmo que não passar, e é a segunda forma que preserva o padrão.
+    enderecoDeAutorizacao: ambiente.enderecoDeAutorizacaoBancaria,
   });
   // A guarda **resolve** o diretório-base uma vez, aqui, e não o cria nem o confere: quem o confere
   // é a partida (ver {@link ehDiretorioGravavel}), num lugar só.

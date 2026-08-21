@@ -146,8 +146,8 @@
  * |          |        | das seis chaves decididas pelo servidor (`empresaId` entre elas) reprova com
  * |          |        | `unrecognized_keys` nomeando a chave ofensora. |
  * | CA-02    | CT-847 | O teto declarado é aprovado e o teto + 1 é recusado nomeando o próprio campo,
- * | CA-12    |        | para `material` (`too_big` sobre cadeia base64 LEGAL de 8196) e para `senha`;
- * |          |        | as constantes valem 8192 e 128; e **nenhuma recusa carrega o valor
+ * | CA-12    |        | para `material` (`too_big` sobre cadeia base64 LEGAL de teto+4) e para `senha`;
+ * |          |        | as constantes valem 32768 e 128; e **nenhuma recusa carrega o valor
  * |          |        | recebido** — medido sobre o erro inteiro serializado. |
  * | CA-02    | CT-848 | `esquemaDoCertificado` declara exatamente os NOVE campos publicados na ordem
  * | CA-12    |        | da §4.1.1 e `esquemaDoResultadoDaVerificacao` exatamente
@@ -420,7 +420,7 @@
  * borda** — o serviço simplesmente receberia `undefined` — sem uma recusa sequer. `empresaId` entra
  * na lista dos recusados porque é a chave cujo vazamento **cruzaria empresa**.
  *
- * **CT-847.** O excesso do material é **8196**, e não 8193, de propósito: base64 canônico tem
+ * **CT-847.** O excesso do material é **um bloco** (teto+4), e não teto+1, de propósito: base64 canônico tem
  * comprimento múltiplo de quatro, e 8193 seria recusado tanto pelo teto **quanto pela forma** — a
  * recusa passaria com um esquema que não tivesse teto nenhum. **O `code === 'too_big'` é o
  * discriminador.** Os dois tetos são escritos por extenso pela razão do CT-543: derivá-los das
@@ -628,6 +628,7 @@ import {
   LARGURA_DO_SEQUENCIAL_DE_CONTRATO,
   LIMIAR_DE_VENCIMENTO_EM_DIAS,
   MAIOR_MATERIAL_CODIFICADO,
+  MAIOR_MATERIAL_REAL_OBSERVADO,
   MAIOR_METRAGEM,
   MAIOR_PAGINA,
   MAIOR_PRAZO_EM_MESES,
@@ -3703,8 +3704,11 @@ describe('CT-847 — as duas pontas de cada limite declarado, e a recusa que nã
    * Derivá-los das constantes exportadas deixaria as duas pontas andando juntas, e alargar a
    * constante passaria pela suíte — que é exatamente o mutante que estes casos precisam detectar.
    */
-  const TETO_DECLARADO_DO_MATERIAL = 8192;
+  const TETO_DECLARADO_DO_MATERIAL = 32768;
   const LARGURA_DECLARADA_DA_SENHA = 128;
+
+  /** Um bloco de base64 canônico — quatro caracteres. */
+  const BLOCO_BASE64 = 4;
 
   /** Base64 legal de comprimento exato — a sentinela completada com um caractere do alfabeto. */
   const materialDe = (comprimento: number): string =>
@@ -3719,6 +3723,20 @@ describe('CT-847 — as duas pontas de cada limite declarado, e a recusa que nã
       TETO_DECLARADO_DO_MATERIAL,
       LARGURA_DECLARADA_DA_SENHA,
     ]);
+  });
+
+  // A rede do defeito de 2026-08-20: o teto foi dimensionado sobre uma medição que NÃO era a do
+  // material real do provedor (declarava 2,6 KB; o real tem 8,7 KB), e o registro de produção
+  // reprovava com 422 no campo `material`. A asserção acima fixa o teto contra um literal, e por
+  // isso não pega a classe: ela aprovaria qualquer número, inclusive um pequeno demais de novo.
+  //
+  // Esta compara o teto com a MEDIÇÃO REAL, e é ela que discrimina — com o valor antigo (8192) o
+  // caso reprova, porque 8192 < 12898.
+  it('CT-851 — o teto do material guarda folga declarada sobre o maior material REAL observado', () => {
+    expect(MAIOR_MATERIAL_REAL_OBSERVADO).toBeGreaterThan(0);
+    expect(MAIOR_MATERIAL_CODIFICADO).toBeGreaterThanOrEqual(MAIOR_MATERIAL_REAL_OBSERVADO);
+    // Folga de duas vezes — o critério que o docblock do teto declara, agora verificável.
+    expect(MAIOR_MATERIAL_CODIFICADO).toBeGreaterThanOrEqual(MAIOR_MATERIAL_REAL_OBSERVADO * 2);
   });
 
   const APROVADOS: readonly {
@@ -3749,11 +3767,15 @@ describe('CT-847 — as duas pontas de cada limite declarado, e a recusa que nã
   }
 
   /**
-   * O excesso do material é **8196**, e não 8193 — a escolha é deliberada.
+   * O excesso do material é **um BLOCO** acima do teto, e não um caractere — a escolha é deliberada.
    *
-   * Base64 canônico tem comprimento múltiplo de quatro, de modo que 8193 seria recusado tanto pelo
-   * teto **quanto pela forma**: a recusa passaria com um esquema que não tivesse teto nenhum. O
+   * Base64 canônico tem comprimento múltiplo de quatro, de modo que `teto + 1` seria recusado tanto
+   * pelo teto **quanto pela forma**: a recusa passaria com um esquema que não tivesse teto nenhum. O
    * `code === 'too_big'` é o discriminador, e ele só é alcançável com uma cadeia legal.
+   *
+   * ⚠️ O valor é DERIVADO do teto desde 2026-08-20. Escrito como literal (era `8196`), ele
+   * envelhecia junto com a constante e reprovava este caso quando o teto mudasse — foi o que
+   * aconteceu ao corrigir o teto que recusava o material real do provedor.
    */
   const RECUSADOS: readonly {
     readonly rotulo: string;
@@ -3763,7 +3785,10 @@ describe('CT-847 — as duas pontas de cada limite declarado, e a recusa que nã
   }[] = [
     {
       rotulo: 'o material um bloco acima do teto',
-      corpo: { material: materialDe(8196), senha: SENTINELA_DA_SENHA },
+      corpo: {
+        material: materialDe(TETO_DECLARADO_DO_MATERIAL + BLOCO_BASE64),
+        senha: SENTINELA_DA_SENHA,
+      },
       campo: 'material',
       codigo: 'too_big',
     },

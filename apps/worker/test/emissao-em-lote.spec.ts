@@ -157,12 +157,14 @@ import {
   lerAnoDaSerieDeContrato,
   lerLote,
   registrarCertificado,
+  registrarIdentidadeNoProvedor,
   USUARIOS,
   type UsuarioSemeado,
 } from '@sysloc/db';
 import {
   type CargaDaEmissaoEmLote,
   cifrarSegredo,
+  cifrarValorOperavel,
   criarLogger,
   criarSegredoOperavel,
   FILA_DA_EMISSAO_EM_LOTE,
@@ -1266,6 +1268,21 @@ async function gravarCertificadoVigente(empresaId: string): Promise<SegredoDoArr
       validoAte: validade.ate,
       impressaoDigital: randomUUID(),
       segredoCifrado: envelopeCifrado,
+      registradoPor: exigirUsuarioDa(empresaId).id,
+    });
+
+    // A identidade da empresa perante o provedor é pré-condição do MESMO tipo que o certificado
+    // (`D36 · F4/T10`, fechado em 2026-08-20): sem ela as tarefas interrompem antes de tentar. Ela
+    // nasce aqui, na mesma unidade, para que o arranjo continue produzindo uma empresa que consegue
+    // operar — e não uma que passa a interromper por configuração faltante.
+    await registrarIdentidadeNoProvedor(tx, {
+      identificadorDaAplicacaoCifrado: cifrarValorOperavel(
+        `identificador-${empresaId.slice(0, 8)}`,
+        CHAVE_DE_CIFRA,
+      ),
+      numeroDoCliente: 33065,
+      numeroDaContaCorrente: 380261,
+      codigoDaModalidade: 1,
       registradoPor: exigirUsuarioDa(empresaId).id,
     });
   });

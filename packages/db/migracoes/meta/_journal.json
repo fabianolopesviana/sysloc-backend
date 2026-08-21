@@ -148,6 +148,20 @@
       "when": 1787094394268,
       "tag": "0020_seguranca_webhook_e_carne",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1787251125212,
+      "tag": "0021_dominio_identidade_no_provedor",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1787251125213,
+      "tag": "0022_seguranca_identidade_no_provedor",
+      "breakpoints": true
     }
   ]
 }

@@ -114,7 +114,11 @@
 
 import type { SegredoOperavel } from '@sysloc/shared';
 import type { GuardaDeBoletos } from './guarda-de-boletos.js';
-import type { ClasseDaFalha, LocatarioDaCobranca } from './modelo-canonico.js';
+import type {
+  ClasseDaFalha,
+  IdentidadeDoProvedor,
+  LocatarioDaCobranca,
+} from './modelo-canonico.js';
 // `DesfechoDaOperacao` NÃO é citado, e a ausência é conteúdo: quem estreita a união é o `if` sobre
 // `aceito`, e o compilador o faz sozinho a partir da assinatura da porta. Nomeá-lo aqui seria
 // redigitar o que a porta já declara.
@@ -278,6 +282,8 @@ export interface TrabalhoDoLote {
   readonly empresaId: string;
   /** O material e a senha que o abrem, **opacos** (ADR-0032). Quem os lê em claro é o adaptador. */
   readonly segredo: SegredoOperavel;
+  /** A identidade da empresa perante o provedor — viaja junto do segredo, e é por empresa. */
+  readonly identidade: IdentidadeDoProvedor;
   /** O conjunto do lote, na ordem em que será percorrido — recortado pelo predicado (ADR-0023). */
   readonly cobrancas: readonly CobrancaDoLote[];
   /** A porta do provedor. O de produção e o de verificação são indistintos daqui (ADR-0025). */
@@ -344,7 +350,7 @@ export interface DesfechoDoLote {
  * nada é capturado aqui, e em especial por que a recusa do desfecho do lote pertence à borda.
  */
 export async function executarEmissaoEmLote(trabalho: TrabalhoDoLote): Promise<DesfechoDoLote> {
-  const { adaptador, cobrancas, empresaId, guarda, segredo } = trabalho;
+  const { adaptador, cobrancas, empresaId, guarda, identidade, segredo } = trabalho;
 
   let emitidas = 0;
   let recusadas = 0;
@@ -359,6 +365,7 @@ export async function executarEmissaoEmLote(trabalho: TrabalhoDoLote): Promise<D
     const desfecho = await adaptador.emitir({
       empresaId,
       segredo,
+      identidade,
       identificadorNoProvedor,
       valor: dados.valor,
       vencimento: dados.vencimento,

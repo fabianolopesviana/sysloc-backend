@@ -123,7 +123,7 @@ import type {
   PortaDoIdentificador,
 } from './emissao-em-lote.js';
 import type { GuardaDeBoletos } from './guarda-de-boletos.js';
-import type { AtoSobreBoleto } from './modelo-canonico.js';
+import type { AtoSobreBoleto, IdentidadeDoProvedor } from './modelo-canonico.js';
 import type { AdaptadorCobrancaBancaria } from './porta-de-cobranca.js';
 
 // ---------------------------------------------------------------------------
@@ -310,6 +310,8 @@ export interface TrabalhoDaReemissao {
   readonly empresaId: string;
   /** O material e a senha que o abrem, **opacos** (ADR-0032). Quem os lê em claro é o adaptador. */
   readonly segredo: SegredoOperavel;
+  /** A identidade da empresa perante o provedor — viaja junto do segredo, e é por empresa. */
+  readonly identidade: IdentidadeDoProvedor;
   /** Sobre qual cobrança o ato incide, e o que ela tem de boleto. */
   readonly cobranca: CobrancaAReemitir;
   /** A porta do provedor. O de produção e o de verificação são indistintos daqui (ADR-0025). */
@@ -426,7 +428,7 @@ async function sondarAConfirmacao(sondagem: Sondagem): Promise<DesfechoDaSondage
  * onde o fato é *"o banco não respondeu"*.
  */
 export async function reemitirBoleto(trabalho: TrabalhoDaReemissao): Promise<DesfechoDaReemissao> {
-  const { adaptador, agora, cobranca, empresaId, esperar, guarda, segredo } = trabalho;
+  const { adaptador, agora, cobranca, empresaId, esperar, guarda, identidade, segredo } = trabalho;
 
   const inicioDoAto = agora();
   const fimDoAto = inicioDoAto + TETO_DA_REEMISSAO_MS;
@@ -437,6 +439,7 @@ export async function reemitirBoleto(trabalho: TrabalhoDaReemissao): Promise<Des
     const ato: AtoSobreBoleto = {
       empresaId,
       segredo,
+      identidade,
       numeroDoTituloNoProvedor: numeroDoTituloVivo,
     };
 
@@ -497,6 +500,7 @@ export async function reemitirBoleto(trabalho: TrabalhoDaReemissao): Promise<Des
   const emissao = await adaptador.emitir({
     empresaId,
     segredo,
+    identidade,
     identificadorNoProvedor,
     valor: dados.valor,
     vencimento: dados.vencimento,

@@ -40,8 +40,10 @@ export {
 // e de `decifrarSegredo`, e publicar o construtor abriria uma segunda entrada para o claro.
 export {
   cifrarSegredo,
+  cifrarValorOperavel,
   criarSegredoOperavel,
   decifrarSegredo,
+  decifrarValorOperavel,
   ErroDeChaveDeCifraInvalida,
   ErroDeSegredoAdulterado,
   ErroDeVersaoDeEnvelopeDesconhecida,

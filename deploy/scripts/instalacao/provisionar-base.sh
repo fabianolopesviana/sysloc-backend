@@ -310,6 +310,9 @@ readonly URL_BASE_PADRAO_DA_CONFIRMACAO="https://sysloc.invalid"
 # adaptador, num lugar só —, de modo que este substituto não precisa satisfazer
 # nada além de existir.
 readonly ENDERECO_PADRAO_DO_PROVEDOR_BANCARIO="https://provedor.sysloc.invalid"
+# O substituto do endereço de AUTORIZAÇÃO, em domínio reservado pela RFC 6761 — ele
+# não resolve em lugar nenhum, e a instalação o troca pelo do banco real.
+readonly ENDERECO_PADRAO_DE_AUTORIZACAO_BANCARIA="https://autorizacao.sysloc.invalid"
 
 # Diretório onde os BYTES do boleto vivem — a oitava chave do arquivo de ambiente
 # e o único diretório de dados de negócio que este script provisiona.
@@ -876,6 +879,19 @@ garantir_chaves_de_conteudo() {
 		acrescentar_linha_ao_ambiente "${arquivo}" \
 			"ENDERECO_DO_PROVEDOR_BANCARIO=${ENDERECO_PADRAO_DO_PROVEDOR_BANCARIO}"
 		CHAVES_SEMEADAS="${CHAVES_SEMEADAS:+${CHAVES_SEMEADAS}, }ENDERECO_DO_PROVEDOR_BANCARIO"
+	fi
+
+	# O endereço de AUTORIZAÇÃO, pelo MESMO critério da linha acima e com o mesmo
+	# tratamento: exigido na partida desde o fechamento do `D36 · F4/T10`
+	# (2026-08-20), não é segredo, e um arquivo anterior à exigência nunca ganharia
+	# a linha. No provedor real ele é máquina distinta da API — medido na
+	# configuração do sistema antigo. Também NÃO entra na conferência de
+	# coordenadas, pela razão da irmã: é justamente o que o operador troca ao sair
+	# do substituto para o banco real.
+	if ! grep -q '^ENDERECO_DE_AUTORIZACAO_BANCARIA=' "${arquivo}" 2>/dev/null; then
+		acrescentar_linha_ao_ambiente "${arquivo}" \
+			"ENDERECO_DE_AUTORIZACAO_BANCARIA=${ENDERECO_PADRAO_DE_AUTORIZACAO_BANCARIA}"
+		CHAVES_SEMEADAS="${CHAVES_SEMEADAS:+${CHAVES_SEMEADAS}, }ENDERECO_DE_AUTORIZACAO_BANCARIA"
 	fi
 
 	# A quarta chave de conteúdo (F4/T9), pelo MESMO critério das três acima. Ela
@@ -1712,7 +1728,8 @@ passo_p06_arquivo_ambiente() {
 		printf '#     de terceiro ninguém recompõe. Rotacioná-la obriga a recifrar o\n'
 		printf '#     acervo inteiro na mesma janela; não a troque sem esse procedimento.\n'
 		printf '#\n'
-		printf '# ENDERECO_DO_PROVEDOR_BANCARIO NÃO é segredo: é para onde o produto\n'
+		printf '# ENDERECO_DO_PROVEDOR_BANCARIO e ENDERECO_DE_AUTORIZACAO_BANCARIA NÃO são\n'
+		printf '# segredos: são para onde o produto\n'
 		printf '# conecta ao verificar a identidade da empresa perante o banco. Nasce com\n'
 		printf '# um substituto em domínio reservado (.invalid) e é trocado pelo endereço\n'
 		printf '# real do provedor quando a instalação passar a cobrar de verdade.\n'
@@ -1733,6 +1750,7 @@ passo_p06_arquivo_ambiente() {
 		printf 'BETTER_AUTH_SECRET=%s\n' "${segredo_sessao}"
 		printf 'CHAVE_DE_CIFRA_DO_CERTIFICADO=%s\n' "${chave_de_cifra}"
 		printf 'ENDERECO_DO_PROVEDOR_BANCARIO=%s\n' "${ENDERECO_PADRAO_DO_PROVEDOR_BANCARIO}"
+		printf 'ENDERECO_DE_AUTORIZACAO_BANCARIA=%s\n' "${ENDERECO_PADRAO_DE_AUTORIZACAO_BANCARIA}"
 		printf 'DIRETORIO_DOS_BOLETOS=%s\n' "${DIR_BOLETOS}"
 	} >"${ARQ_AMBIENTE}"
 

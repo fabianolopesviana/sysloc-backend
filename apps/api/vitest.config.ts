@@ -125,6 +125,11 @@ export default defineConfig({
       URL_BASE_DA_CONFIRMACAO: 'https://app.exemplo.invalid',
       CHAVE_DE_CIFRA_DO_CERTIFICADO: 'Y2hhdmUtZGUtdmVyaWZpY2FjYW8tc2VtLXZhbG9yISE=',
       ENDERECO_DO_PROVEDOR_BANCARIO: 'https://provedor.exemplo.invalid',
+      // `ENDERECO_DE_AUTORIZACAO_BANCARIA` entra no fechamento do `D36 · F4/T10` (2026-08-20) pela
+      // MESMA razão das anteriores, e o precedente vale palavra por palavra: a partida passa a
+      // exigi-la, e **todo** caso que sobe a aplicação real passa pela validação. Declará-la aqui é
+      // o que evita editar dezenas de arquivos de verificação por causa desta exigência.
+      ENDERECO_DE_AUTORIZACAO_BANCARIA: 'https://autorizacao.exemplo.invalid',
       // `DIRETORIO_DOS_BOLETOS` entra na **T13** da fatia `emissao-e-conciliacao` pela MESMA razão das
       // seis acima, e o precedente vale palavra por palavra: a partida passa a exigi-la, e **todo**
       // caso que sobe a aplicação real passa pela validação — inclusive `saude.e2e.spec.ts`, que não

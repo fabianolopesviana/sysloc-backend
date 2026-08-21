@@ -188,10 +188,23 @@ import {
   CAMINHO_DAS_INTEGRACOES_BANCARIAS,
   SEGMENTO_DO_REGISTRO,
 } from '../src/integracoes-bancarias/certificado.controller.ts';
+import { SEGMENTO_DA_IDENTIDADE } from '../src/integracoes-bancarias/identidade.controller.ts';
 import { CAMINHO_DAS_NOTIFICACOES_BANCARIAS } from '../src/notificacoes-bancarias/notificacao-bancaria.controller.ts';
 import { cpfValido } from './documento.ts';
 
 /** Limite da montagem: banco migrado, semente com credencial, fila e a aplicação instrumentada. */
+/**
+ * A identidade da empresa perante o provedor, exigida pelos atos desde 2026-08-20
+ * (`D36 · F4/T10`). Valores fixos: o que os casos afirmam é o efeito do ato, e um valor
+ * sorteado aqui não tornaria a asserção mais forte.
+ */
+const IDENTIDADE_DO_ARRANJO = Object.freeze({
+  identificadorDaAplicacao: 'identificador-do-arranjo',
+  numeroDoCliente: 33065,
+  numeroDaContaCorrente: 380261,
+  codigoDaModalidade: 1,
+});
+
 const LIMITE_DE_MONTAGEM_MS = 240_000;
 
 /** Limite de cada caso: o cenário encadeia quatro efeitos pelos caminhos reais. */
@@ -210,6 +223,9 @@ const CAMINHO_DA_SESSAO_CORRENTE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_SESSAO}`;
 const COLECAO_DE_COBRANCAS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}`;
 const COLECAO_DE_CONTRATOS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}`;
 const ROTA_DO_REGISTRO_DE_CERTIFICADO = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DO_REGISTRO}`;
+
+/** A rota da identidade, composta pelo dono do segmento — nunca literal. */
+const ROTA_DO_REGISTRO_DA_IDENTIDADE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DA_IDENTIDADE}`;
 
 /**
  * O arranjo concedido à sessão que age — literal, e **não** derivado da exigência do controlador.
@@ -758,6 +774,24 @@ async function registrarCertificadoDaEmpresa(nome: string): Promise<void> {
       `o registro do certificado respondeu ${String(resposta.status)}: ${resposta.texto}`,
     );
   }
+  // A identidade da empresa perante o provedor é pré-condição do MESMO tipo que o certificado
+  // (`D36 · F4/T10`, fechado em 2026-08-20). Registrada pela ROTA REAL, como o certificado acima.
+  const identidadeRegistrada = await pedir(ROTA_DO_REGISTRO_DA_IDENTIDADE, {
+    metodo: 'POST',
+    cookie,
+    corpo: {
+      identificadorDaAplicacao: 'identificador-do-arranjo',
+      numeroDoCliente: 33065,
+      numeroDaContaCorrente: 380261,
+      codigoDaModalidade: 1,
+    },
+  });
+
+  if (identidadeRegistrada.status !== 201) {
+    throw new Error(
+      `o registro da identidade respondeu ${String(identidadeRegistrada.status)}: ${identidadeRegistrada.texto}`,
+    );
+  }
 }
 
 /** Monta conjunto, imóvel, locador, locatário e um contrato **ATIVO**, todos pelas rotas reais. */
@@ -972,6 +1006,7 @@ async function conferir(
   await conferirCobrancas({
     empresaId: EMPRESA_A.id,
     segredo: SEGREDO_DA_CONFERENCIA,
+    identidade: IDENTIDADE_DO_ARRANJO,
     cobrancas,
     adaptador: {
       ...portaDoProvedor,

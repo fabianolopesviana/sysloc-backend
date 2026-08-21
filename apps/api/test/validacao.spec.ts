@@ -461,6 +461,7 @@ const IMPORTADORES_ESPERADOS = [
   // {@link ANALISADORES_ESPERADOS} não muda (os dois manipuladores novos chamam `validar`, e não
   // `safeParse`), e a igualdade (nunca contenção) segue sendo asserida nas três pontas.
   'integracoes-bancarias/certificado.controller.ts',
+  'integracoes-bancarias/identidade.controller.ts',
   'master/empresa.controller.ts',
   // SUT_IS_CORRECT_BECAUSE: o código de produção está certo, e é esta lista que descrevia o estado
   // anterior. A T6 da fatia `cobranca-e-mora` publica a **décima** borda — as duas rotas de

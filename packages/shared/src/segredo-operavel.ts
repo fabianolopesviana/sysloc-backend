@@ -474,3 +474,105 @@ function exigirChaveDeCifra(chave: Buffer): void {
     throw new ErroDeChaveDeCifraInvalida();
   }
 }
+
+// ===========================================================================
+// VALOR OPERÁVEL — o segredo de terceiro que é TEXTO, e não o par do certificado
+// ===========================================================================
+//
+// Nasceu em 2026-08-20, ao fechar o `D36 · F4/T10`: o identificador da aplicação
+// perante o provedor bancário é segredo de terceiro que o produto precisa USAR
+// (ele compõe o pedido de credencial), e a ADR-0032 alcança exatamente esse
+// caso — *"segredo de terceiro que o produto precisa usar, e não apenas
+// conferir, é guardado cifrado de forma reversível"*.
+//
+// ---------------------------------------------------------------------------
+// POR QUE NÃO ALARGAR O QUADRO DO PAR, que seria o caminho óbvio
+// ---------------------------------------------------------------------------
+//
+// Porque os CICLOS DE VIDA são diferentes, e juntá-los faz um morrer com o
+// outro. O par material+senha é o certificado, que vale um ano e é substituído
+// inteiro a cada renovação; o identificador da aplicação não muda quando o
+// certificado é trocado. No mesmo quadro, cada renovação obrigaria a reinformar
+// o identificador — e esquecê-lo quebraria a obtenção de credencial em silêncio,
+// meses depois, sem que nada acusasse.
+//
+// A `DECISÃO FECHADA` de 2026-08-14 permanece intocada: o quadro do par continua
+// com UM formato, e o byte de versão dele continua conferido antes de qualquer
+// fatiamento. O quadro daqui tem versão PRÓPRIA, pela mesma razão que aquele
+// tem: detecção de formato é estrutural, nunca probabilística.
+//
+// O que se compartilha é o algoritmo, a chave e a forma do envelope
+// (`vetor ‖ etiqueta ‖ cifrado`) — porque duas criptografias no mesmo produto é
+// que seriam duas superfícies para endurecer, e uma delas ficaria para trás.
+
+/**
+ * Versão do quadro em claro do valor.
+ *
+ * ⚠️ **O espaço de versões é COMPARTILHADO com o quadro do par, de propósito, e por isso este
+ * começa em `0x81`.** Os dois envelopes têm a mesma forma externa e são abertos com a mesma chave,
+ * de modo que a única coisa que impede um de ser lido como o outro é este byte. Reusar o `1` do par
+ * fazia o quadro do certificado atravessar a conferência e ser devolvido como TEXTO — medido pelo
+ * `CT-524` na primeira escrita desta primitiva, em 2026-08-20.
+ *
+ * Convenção: `0x01..0x7F` são versões do PAR; `0x81..0xFF`, do VALOR. Quem acrescentar um terceiro
+ * quadro escolhe faixa própria e acrescenta o caso que prova a disjunção.
+ */
+const VERSAO_DO_QUADRO_DE_VALOR = 0x81;
+
+/** Menor envelope de valor que pode ser autêntico: vetor, etiqueta e o byte de versão. */
+const MENOR_ENVELOPE_DE_VALOR = BYTES_DO_VETOR + BYTES_DA_ETIQUETA + 1;
+
+/**
+ * Cifra um valor textual operável e devolve o envelope em base64.
+ *
+ * O vetor é sorteado a cada chamada, de modo que cifrar o **mesmo** valor duas vezes produz
+ * envelopes diferentes — é o que impede concluir, por igualdade da coluna, que duas empresas
+ * registraram o mesmo identificador.
+ */
+export function cifrarValorOperavel(valor: string, chave: Buffer): string {
+  exigirChaveDeCifra(chave);
+
+  const quadro = Buffer.concat([
+    Buffer.from([VERSAO_DO_QUADRO_DE_VALOR]),
+    Buffer.from(valor, 'utf8'),
+  ]);
+  const vetor = randomBytes(BYTES_DO_VETOR);
+  const cifrador = createCipheriv(ALGORITMO, chave, vetor);
+  const textoCifrado = Buffer.concat([cifrador.update(quadro), cifrador.final()]);
+
+  return Buffer.concat([vetor, cifrador.getAuthTag(), textoCifrado]).toString('base64');
+}
+
+/**
+ * Abre o envelope de um valor operável — ou **levanta**, nunca devolve conteúdo duvidoso.
+ *
+ * Como no par, nada do que `update()` produz é usado antes de `final()` completar: até ali o GCM
+ * entrega bytes que **parecem** claro, e usá-los seria devolver valor não autenticado.
+ */
+export function decifrarValorOperavel(envelope: string, chave: Buffer): string {
+  exigirChaveDeCifra(chave);
+
+  const bytes = Buffer.from(envelope, 'base64');
+  if (bytes.length < MENOR_ENVELOPE_DE_VALOR) {
+    throw new ErroDeSegredoAdulterado();
+  }
+
+  const decifrador = createDecipheriv(ALGORITMO, chave, bytes.subarray(0, BYTES_DO_VETOR));
+  decifrador.setAuthTag(bytes.subarray(BYTES_DO_VETOR, BYTES_DO_VETOR + BYTES_DA_ETIQUETA));
+
+  let quadro: Buffer;
+  try {
+    quadro = Buffer.concat([
+      decifrador.update(bytes.subarray(BYTES_DO_VETOR + BYTES_DA_ETIQUETA)),
+      decifrador.final(),
+    ]);
+  } catch {
+    throw new ErroDeSegredoAdulterado();
+  }
+
+  if (quadro.length < 1 || quadro[0] !== VERSAO_DO_QUADRO_DE_VALOR) {
+    throw new ErroDeVersaoDeEnvelopeDesconhecida();
+  }
+
+  return quadro.subarray(1).toString('utf8');
+}

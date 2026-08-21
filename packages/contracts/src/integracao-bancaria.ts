@@ -193,18 +193,47 @@ export type EstadoDoCertificado = (typeof ESTADOS_DO_CERTIFICADO)[number];
 export const LIMIAR_DE_VENCIMENTO_EM_DIAS = 30;
 
 /**
- * Maior tamanho aceito para o material do certificado, **já codificado em base64** — 8 KiB.
+ * Maior tamanho aceito para o material do certificado, **já codificado em base64** — 32 KiB.
  *
- * O número é a capacidade declarada da entrada, e não uma estimativa de conforto: o material medido
- * do provedor tem cerca de 2,6 KB, que viram cerca de 3,5 KB depois da codificação (§6.1). O teto
- * está com folga de mais de duas vezes sobre o medido — um PKCS#12 com cadeia mais longa continua
- * cabendo — e ainda assim fecha a entrada num tamanho que a cifra e a coluna absorvem sem discussão.
+ * ---------------------------------------------------------------------------
+ * ⚠️ O VALOR ANTERIOR (8192) RECUSAVA O CERTIFICADO REAL DO PROVEDOR
+ * ---------------------------------------------------------------------------
+ *
+ * Medido em **2026-08-20**, ao registrar o material de produção pela primeira vez: o `.pfx` real
+ * tem **8.915 bytes**, que viram **11.888 caracteres** em base64 — e o arquivo como a Autoridade
+ * Certificadora o entrega (embalagem legada) tem 9.673 bytes, isto é, **12.898** codificados. O
+ * registro reprovava com `422` no campo `material`.
+ *
+ * O texto anterior declarava *"o material medido do provedor tem cerca de 2,6 KB"*, e o teto de
+ * 8 KiB foi dimensionado com folga generosa **sobre esse número**. A premissa é que estava errada:
+ * o material real é 3,4 vezes maior. É a mesma classe de defeito que a cifra legada do PKCS#12
+ * exibiu no mesmo dia — **toda medição desta fatia foi feita sobre material gerado em execução**
+ * (`gerarMaterialDeTeste`), que é menor e mais moderno que o do provedor, e nenhuma suíte podia
+ * acusar a divergência.
+ *
+ * O valor novo preserva o critério original — folga de mais de duas vezes sobre o medido — agora
+ * sobre a medição certa: 12.898 × 2 ≈ 25,8 KiB, arredondado para **32 KiB**. Continua sendo teto
+ * **anti-abuso**, e não regra de domínio; a coluna que o guarda é `text`, sem limite próprio.
  *
  * Ele é **contado sobre o texto codificado**, que é o que chega no corpo, e não sobre os bytes
  * decodificados: contar sobre o decodificado obrigaria a decodificar antes de decidir se aceita, o
  * que é fazer trabalho sobre entrada não conferida.
  */
-export const MAIOR_MATERIAL_CODIFICADO = 8192;
+export const MAIOR_MATERIAL_CODIFICADO = 32768;
+
+/**
+ * O maior material **real** já observado, em base64 — a medição que o teto acima precisa cobrir.
+ *
+ * Existe para que a folga seja **verificável em vez de prometida**: sem ela, o número acima volta a
+ * ser uma estimativa que ninguém consegue contestar, e a próxima redução "de conforto" reabre o
+ * defeito de 2026-08-20 sem que nada acuse. O caso que a compara com o teto é a rede que o P4 do
+ * Protocolo Antirregressão exige.
+ *
+ * ⚠️ **Não é o tamanho de um material de teste.** É o `.pfx` de produção do provedor, medido no
+ * servidor em 2026-08-20 — 9.673 bytes na embalagem da Autoridade Certificadora. Material gerado em
+ * execução é bem menor, e usá-lo aqui devolveria o problema que esta constante existe para impedir.
+ */
+export const MAIOR_MATERIAL_REAL_OBSERVADO = 12898;
 
 /**
  * Maior comprimento aceito para a senha que abre o material — **128 caracteres**.
@@ -363,6 +392,63 @@ export const esquemaDoCertificado = z.strictObject({
 
 /** O certificado como a API o devolve. */
 export type Certificado = z.infer<typeof esquemaDoCertificado>;
+
+/**
+ * Maior comprimento aceito para o identificador da aplicação perante o provedor — 256.
+ *
+ * Teto **anti-abuso**, e não regra de domínio: quem decide se o identificador está certo é o
+ * provedor, na recusa da credencial. O medido no sistema antigo tem algumas dezenas de caracteres,
+ * e o teto guarda folga de mais de quatro vezes sobre ele.
+ *
+ * ⚠️ **A largura é declarada aqui porque foi medida, e não estimada** — é a lição do
+ * `MAIOR_MATERIAL_CODIFICADO`, cujo teto foi dimensionado sobre um número que não era o do material
+ * real e recusou o certificado de produção (2026-08-20).
+ */
+export const MAIOR_IDENTIFICADOR_DA_APLICACAO = 256;
+
+/**
+ * O corpo do registro da identidade da empresa perante o provedor — **completo e fechado**.
+ *
+ * Fechado porque é ENTRADA (`contrato-publicado.md`), e **completo** pela mesma razão do
+ * certificado: campo ausente é `422`, nunca "preserve o valor atual". Registrar de novo substitui a
+ * identidade inteira, e uma atualização parcial faria a linha nova herdar valor que ninguém
+ * reinformou — dado de conta calado é emissão recusada pelo provedor semanas depois.
+ */
+export const esquemaDaIdentidadeNova = z.strictObject({
+  /** O identificador da aplicação. É SEGREDO OPERÁVEL (ADR-0032): entra, cifra e nunca volta. */
+  identificadorDaAplicacao: z.string().trim().min(1).max(MAIOR_IDENTIFICADOR_DA_APLICACAO),
+  numeroDoCliente: z.number().int().positive(),
+  numeroDaContaCorrente: z.number().int().positive(),
+  codigoDaModalidade: z.number().int().positive(),
+});
+
+/** O corpo aceito no registro (e na substituição) da identidade. */
+export type IdentidadeNova = z.infer<typeof esquemaDaIdentidadeNova>;
+
+/**
+ * A identidade como a API a devolve — **sem o identificador**, por construção.
+ *
+ * ⚠️ `strictObject` numa SAÍDA, o que a `contrato-publicado.md` não pede — e é a mesma exceção
+ * deliberada de {@link esquemaDoCertificado}, pela mesma razão: o campo a mais que pode aparecer
+ * nesta projeção não é grandeza derivada com resíduo, é o **segredo do provedor entrando na
+ * resposta** por uma projeção montada errado. Entre *"a rota cai e o registro acusa"* e *"o
+ * identificador viaja ao cliente"*, a queda é o desfecho preferível — e o esquema estrito é o que a
+ * torna certa em vez de provável.
+ */
+export const esquemaDaIdentidade = z.strictObject({
+  id: z.uuid(),
+  numeroDoCliente: z.number().int(),
+  numeroDaContaCorrente: z.number().int(),
+  codigoDaModalidade: z.number().int(),
+  registradoPor: z.strictObject({
+    id: z.uuid(),
+    nome: z.string(),
+  }),
+  registradoEm: z.iso.datetime(),
+});
+
+/** A identidade como a API a devolve. */
+export type Identidade = z.infer<typeof esquemaDaIdentidade>;
 
 /**
  * O desfecho da verificação da identidade no provedor (§4.1.1) — **três** campos.

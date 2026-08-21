@@ -178,7 +178,7 @@
 
 import type { SegredoOperavel } from '@sysloc/shared';
 import type { GuardaDeBoletos } from './guarda-de-boletos.js';
-import type { ClasseDaFalha, SituacaoConsultada } from './modelo-canonico.js';
+import type { ClasseDaFalha, IdentidadeDoProvedor, SituacaoConsultada } from './modelo-canonico.js';
 import type { AdaptadorCobrancaBancaria } from './porta-de-cobranca.js';
 
 // ---------------------------------------------------------------------------
@@ -395,6 +395,8 @@ export interface TrabalhoDaConferencia {
   readonly empresaId: string;
   /** O material e a senha que o abrem, **opacos** (ADR-0032). Quem os lê em claro é o adaptador. */
   readonly segredo: SegredoOperavel;
+  /** A identidade da empresa perante o provedor — viaja junto do segredo, e é por empresa. */
+  readonly identidade: IdentidadeDoProvedor;
   /** O conjunto a conferir, na ordem em que será percorrido — recortado pelo predicado (ADR-0023). */
   readonly cobrancas: readonly CobrancaAConferir[];
   /** A porta do provedor. O de produção e o de verificação são indistintos daqui (ADR-0025). */
@@ -534,7 +536,7 @@ async function aplicarSituacao(
 export async function conferirCobrancas(
   trabalho: TrabalhoDaConferencia,
 ): Promise<DesfechoDaConferencia> {
-  const { adaptador, cobrancas, empresaId, segredo } = trabalho;
+  const { adaptador, cobrancas, empresaId, identidade, segredo } = trabalho;
 
   let cobrancasConferidas = 0;
   let efeitos = 0;
@@ -546,6 +548,7 @@ export async function conferirCobrancas(
     const consultada = await adaptador.consultarSituacao({
       empresaId,
       segredo,
+      identidade,
       numeroDoTituloNoProvedor: cobranca.numeroDoTituloNoProvedor,
       incluirDocumento: CONFERENCIA_NAO_PEDE_O_DOCUMENTO,
     });

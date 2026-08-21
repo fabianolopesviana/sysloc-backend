@@ -177,6 +177,7 @@ import {
   CAMINHO_DAS_INTEGRACOES_BANCARIAS,
   SEGMENTO_DO_REGISTRO,
 } from '../src/integracoes-bancarias/certificado.controller.ts';
+import { SEGMENTO_DA_IDENTIDADE } from '../src/integracoes-bancarias/identidade.controller.ts';
 import { CAMINHO_DO_DOCUMENTO, criarAplicacao } from '../src/main.ts';
 import { CAMINHO_DAS_NOTIFICACOES_BANCARIAS } from '../src/notificacoes-bancarias/notificacao-bancaria.controller.ts';
 import { pedirBytes } from './acessorios-de-borda.ts';
@@ -203,6 +204,9 @@ const COLECAO_DE_COBRANCAS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_COBRANCAS}`;
 const COLECAO_DE_CONTRATOS = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_CONTRATOS}`;
 const COLECAO_DA_COBRANCA_BANCARIA = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_COBRANCA_BANCARIA}`;
 const ROTA_DO_REGISTRO_DE_CERTIFICADO = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DO_REGISTRO}`;
+
+/** A rota da identidade, composta pelo dono do segmento — nunca literal. */
+const ROTA_DO_REGISTRO_DA_IDENTIDADE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DA_IDENTIDADE}`;
 
 /** A entrada da notícia do provedor — a primeira das duas rotas novas da fatia `webhook-e-carne`. */
 const ROTA_DA_NOTICIA = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_NOTIFICACOES_BANCARIAS}`;
@@ -1105,6 +1109,24 @@ async function registrarCertificadoDaEmpresa(): Promise<void> {
   if (resposta.status !== 201) {
     throw new Error(
       `o registro do certificado respondeu ${String(resposta.status)}: ${resposta.texto}`,
+    );
+  }
+  // A identidade da empresa perante o provedor é pré-condição do MESMO tipo que o certificado
+  // (`D36 · F4/T10`, fechado em 2026-08-20). Registrada pela ROTA REAL, como o certificado acima.
+  const identidadeRegistrada = await pedir(ROTA_DO_REGISTRO_DA_IDENTIDADE, {
+    metodo: 'POST',
+    cookie,
+    corpo: {
+      identificadorDaAplicacao: 'identificador-do-arranjo',
+      numeroDoCliente: 33065,
+      numeroDaContaCorrente: 380261,
+      codigoDaModalidade: 1,
+    },
+  });
+
+  if (identidadeRegistrada.status !== 201) {
+    throw new Error(
+      `o registro da identidade respondeu ${String(identidadeRegistrada.status)}: ${identidadeRegistrada.texto}`,
     );
   }
 }

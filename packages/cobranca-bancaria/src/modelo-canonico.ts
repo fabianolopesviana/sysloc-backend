@@ -249,11 +249,43 @@ export type DesfechoDaOperacao<T> =
  * endereço é propriedade de quem constrói o adaptador — aceitá-lo por aqui faria uma entrada de
  * usuário decidir o destino da conexão —, e a credencial de habilitação é vocabulário do provedor.
  */
+/**
+ * A identidade da empresa perante o provedor — o que o certificado sozinho não diz.
+ *
+ * Nasceu do fechamento do `D36 · F4/T10`, em 2026-08-20. Antes dela, o pedido de credencial saía
+ * **sem `client_id`** e a emissão **sem os dados da conta**: o provedor recusava os dois, e o
+ * produto não tinha de onde tirá-los.
+ *
+ * ⚠️ Ela viaja no ATO, e não na configuração do adaptador, porque é **por empresa** — cada
+ * imobiliária tem a própria aplicação e a própria conta no provedor. O endereço de autorização, que
+ * é do provedor e igual para todas, mora do outro lado, em `ConfiguracaoDoProvedorBancario`.
+ */
+export interface IdentidadeDoProvedor {
+  /**
+   * O identificador da aplicação, **em claro**.
+   *
+   * ⚠️ É segredo operável (ADR-0032): ele vive cifrado no banco e só é decifrado no ponto que vai
+   * usá-lo. Chegar aqui em claro é o uso legítimo — o que não pode é voltar por superfície alguma.
+   */
+  readonly identificadorDaAplicacao: string;
+  readonly numeroDoCliente: number;
+  readonly numeroDaContaCorrente: number;
+  readonly codigoDaModalidade: number;
+}
+
 interface AtoNoProvedor {
   /** A empresa em nome de quem o ato acontece — nunca lida de requisição (ADR-0008/0009). */
   readonly empresaId: string;
   /** O material e a senha que o abrem, opacos. Quem os lê em claro é o adaptador. */
   readonly segredo: SegredoOperavel;
+  /**
+   * A identidade da empresa perante o provedor.
+   *
+   * Obrigatória, e a obrigatoriedade é a rede: com ela no tipo, **nenhuma operação futura consegue
+   * ser escrita sem os dados** que o provedor exige — o compilador recusa o ato incompleto, em vez
+   * de a recusa chegar do banco, semanas depois, como emissão negada.
+   */
+  readonly identidade: IdentidadeDoProvedor;
 }
 
 /**

@@ -141,9 +141,11 @@ import type { Cobranca, EstadoDaCobranca, TrilhaDaCobranca } from '@sysloc/contr
 import { ESTADOS_EM_ABERTO } from '@sysloc/contracts';
 import {
   gravarBoletoDaCobranca,
+  type IdentidadeParaUso,
   type LinhaDeCobranca,
   lerBoletoDaCobranca,
   lerCertificadoVigente,
+  lerIdentidadeParaUso,
   lerTrilhaDaCobranca,
   lerVigenciaObservada,
   localizarAlvoDoBoleto,
@@ -270,6 +272,17 @@ const MENSAGEM_DA_REVOGACAO_INCOMPLETA = 'a revogação do boleto não se comple
 /** A mensagem da recusa por empresa sem certificado — nomeia o que falta, sem identificador. */
 const MENSAGEM_SEM_CERTIFICADO = 'esta empresa não tem certificado do provedor registrado';
 
+/**
+ * A recusa por identidade ausente — irmã da de cima, e **distinta** dela.
+ *
+ * Distinta de propósito: são duas configurações diferentes, corrigidas em pontos diferentes da tela
+ * de integrações. Uma mensagem comum mandaria o Admin conferir o certificado quando o que falta é a
+ * identidade da empresa perante o provedor.
+ */
+const MENSAGEM_SEM_IDENTIDADE = 'esta empresa não tem identidade registrada no provedor';
+const DISCRIMINADOR_DA_IDENTIDADE = 'identidade';
+const IDENTIDADE_AUSENTE = 'AUSENTE';
+
 /** A mensagem da recusa por certificado vencido — a mesma do registro, pelo mesmo fato. */
 const MENSAGEM_DO_CERTIFICADO_VENCIDO = 'a validade do certificado apresentado já terminou';
 
@@ -325,6 +338,14 @@ export interface PreparoDoAtoSobreBoleto {
   readonly numeroDoTituloNoProvedor: string | null;
   /** O material do certificado vigente, **cifrado**. */
   readonly envelopeCifrado: string;
+  /**
+   * A identidade da empresa perante o provedor, **pronta para uso**.
+   *
+   * Viaja no preparo, e não é lida em cada ato, porque é a mesma pré-condição do envelope acima: as
+   * duas são exigidas na abertura da unidade, e uma segunda leitura mais adiante abriria a janela
+   * entre elas.
+   */
+  readonly identidade: IdentidadeParaUso;
 }
 
 /**
@@ -472,6 +493,7 @@ export class BoletoService {
       cobrancaId: alvo.id,
       numeroDoTituloNoProvedor: alvo.numeroDoTituloNoProvedor,
       envelopeCifrado: await this.exigirCertificadoVigente(tx),
+      identidade: await this.exigirIdentidadeVigente(tx),
     };
   }
 
@@ -497,6 +519,7 @@ export class BoletoService {
     try {
       await reemitirBoleto({
         empresaId: preparo.empresaId,
+        identidade: preparo.identidade,
         // A decifra acontece **dentro** da expressão que monta o trabalho, e o claro não ganha nome
         // próprio no escopo: uma variável com o segredo aberto é exatamente o que um registro de
         // diagnóstico futuro acharia à mão, e a ADR-0032 é sobre não haver o que redigir.
@@ -596,6 +619,7 @@ export class BoletoService {
     const ato: AtoSobreBoleto = {
       empresaId: preparo.empresaId,
       segredo: decifrarSegredo(preparo.envelopeCifrado, this.ambiente.chaveDeCifraDoCertificado),
+      identidade: preparo.identidade,
       numeroDoTituloNoProvedor: numeroDoTituloVivo,
     };
 
@@ -752,12 +776,16 @@ export class BoletoService {
     preparo: PreparoDaEntregaDoBoleto,
     abrirUnidade: AberturaDeUnidade,
   ): Promise<Uint8Array> {
-    const envelopeCifrado = await abrirUnidade(
-      async (tx) => await this.exigirCertificadoVigente(tx),
-    );
+    // As duas pré-condições são exigidas na MESMA unidade — lê-las em unidades distintas abriria a
+    // janela em que uma existe e a outra já não.
+    const { envelopeCifrado, identidade } = await abrirUnidade(async (tx) => ({
+      envelopeCifrado: await this.exigirCertificadoVigente(tx),
+      identidade: await this.exigirIdentidadeVigente(tx),
+    }));
 
     const consultada = await this.provedor.consultarSituacao({
       empresaId: preparo.empresaId,
+      identidade,
       // A decifra acontece **dentro** da expressão que monta a consulta, e o claro não ganha nome
       // próprio no escopo — a mesma disciplina, e a mesma razão, de {@link BoletoService.emitir}.
       segredo: decifrarSegredo(envelopeCifrado, this.ambiente.chaveDeCifraDoCertificado),
@@ -1133,6 +1161,25 @@ export class BoletoService {
     }
 
     return envelopeCifrado;
+  }
+
+  /**
+   * A identidade vigente da empresa, **pronta para uso** — ou a recusa que diz o que falta.
+   *
+   * Espelha {@link exigirCertificadoVigente} porque a pré-condição é da mesma natureza: sem ela o
+   * provedor recusa a concessão, e o ato falharia mais adiante com mensagem do provedor em vez da
+   * do produto. Recusar aqui é o que faz o Admin saber **qual** configuração falta.
+   */
+  private async exigirIdentidadeVigente(tx: TransactionSql): Promise<IdentidadeParaUso> {
+    const identidade = await lerIdentidadeParaUso(tx, this.ambiente.chaveDeCifraDoCertificado);
+
+    if (identidade === undefined) {
+      throw new ErroDeAplicacao(CodigoErro.CAMPO_INVALIDO, MENSAGEM_SEM_IDENTIDADE, {
+        detalhes: { [DISCRIMINADOR_DA_IDENTIDADE]: IDENTIDADE_AUSENTE },
+      });
+    }
+
+    return identidade;
   }
 
   /**

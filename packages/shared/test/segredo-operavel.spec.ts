@@ -113,8 +113,10 @@ import { describe, expect, it } from 'vitest';
 import * as moduloDoSegredoOperavel from '../src/segredo-operavel.ts';
 import {
   cifrarSegredo,
+  cifrarValorOperavel,
   criarSegredoOperavel,
   decifrarSegredo,
+  decifrarValorOperavel,
   ErroDeChaveDeCifraInvalida,
   ErroDeSegredoAdulterado,
   ErroDeVersaoDeEnvelopeDesconhecida,
@@ -1078,5 +1080,51 @@ describe('opacidade do invólucro do segredo operável', () => {
       'o segredo operável passou a ler o ambiente — a chave chega por parâmetro, e um segundo ' +
         'leitor escaparia da conferência de partida',
     ).toEqual([]);
+  });
+});
+
+/**
+ * CA-D36 → CT-520..CT-524 (RN-32) — o VALOR operável, irmão do par.
+ *
+ * INVARIANTES
+ * - o valor volta íntegro depois do ciclo, e só com a chave certa;
+ * - dois envelopes do MESMO valor diferem — sem isso, a coluna denuncia por igualdade quem
+ *   registrou o mesmo identificador;
+ * - adulteração e chave errada LEVANTAM, nunca devolvem texto;
+ * - o quadro do valor tem versão PRÓPRIA: um envelope do par não se abre como valor. É o que
+ *   impede que os dois formatos sejam confundidos, e é a razão de o byte de versão existir.
+ */
+describe('CT-520 — o valor operável cifrado', () => {
+  const CHAVE = Buffer.alloc(32, 7);
+  const OUTRA_CHAVE = Buffer.alloc(32, 9);
+  const VALOR = 'identificador-da-aplicacao-1947';
+
+  it('CT-520 — o valor volta íntegro depois do ciclo', () => {
+    expect(decifrarValorOperavel(cifrarValorOperavel(VALOR, CHAVE), CHAVE)).toBe(VALOR);
+  });
+
+  it('CT-521 — dois envelopes do mesmo valor são diferentes', () => {
+    expect(cifrarValorOperavel(VALOR, CHAVE)).not.toBe(cifrarValorOperavel(VALOR, CHAVE));
+  });
+
+  it('CT-522 — a chave errada LEVANTA, e não devolve texto', () => {
+    const envelope = cifrarValorOperavel(VALOR, CHAVE);
+    expect(() => decifrarValorOperavel(envelope, OUTRA_CHAVE)).toThrow();
+  });
+
+  it('CT-523 — envelope adulterado LEVANTA', () => {
+    const bytes = Buffer.from(cifrarValorOperavel(VALOR, CHAVE), 'base64');
+    const ultimo = bytes.length - 1;
+    bytes.writeUInt8(bytes.readUInt8(ultimo) ^ 0xff, ultimo);
+    expect(() => decifrarValorOperavel(bytes.toString('base64'), CHAVE)).toThrow();
+    expect(() => decifrarValorOperavel('', CHAVE)).toThrow();
+  });
+
+  it('CT-524 — o envelope do PAR não se abre como valor (versões próprias)', () => {
+    const doPar = cifrarSegredo(
+      criarSegredoOperavel({ material: Buffer.from('material'), senha: 'senha' }),
+      CHAVE,
+    );
+    expect(() => decifrarValorOperavel(doPar, CHAVE)).toThrow();
   });
 });

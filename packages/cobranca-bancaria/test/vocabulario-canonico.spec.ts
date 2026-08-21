@@ -271,6 +271,13 @@ const TERMOS_DO_DIALETO_DA_NOTICIA = [
   'validacaoWebhook',
   'idWebhook',
   'tipoMovimento',
+  // Os três da família `/webhooks`, medidos contra a API real em 2026-08-21. Entram ANTES da fatia
+  // que os vai encontrar (`ativacao-do-webhook/v1`), e a antecipação é deliberada: a lista é o que
+  // a varredura procura, e um termo que só entra junto com o código que o usa nunca chega a provar
+  // nada — ele nasce já contornado. Aqui eles vigiam a superfície desde antes de existir porta.
+  'codigoTipoMovimento',
+  'codigoPeriodoMovimento',
+  'codigoSituacao',
 ] as const;
 
 /** O dialeto inteiro — os nove da fatia (i) mais os quatro da notícia. */
@@ -452,6 +459,7 @@ const SIMBOLOS_PUBLICADOS = [
   'ConsultaDeSituacao',
   'DesfechoDaOperacao',
   'DetalheDaVerificacao',
+  'IdentidadeDoProvedor',
   'IdentidadeParaVerificar',
   'LocatarioDaCobranca',
   'MeioDeRecebimento',

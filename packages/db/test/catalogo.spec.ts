@@ -204,6 +204,13 @@ const TABELA_DE_PORTADOR_DE_CONFIRMACAO = 'negocio.portador_de_confirmacao';
 // quem o afirma é a guarda da T5, não este arquivo.
 const TABELA_DE_CERTIFICADO_DO_PROVEDOR = 'negocio.certificado_do_provedor';
 
+// A identidade da empresa perante o provedor, criada pela migração `0021` e forçada pela `0022`
+// (fechamento do `D36 · F4/T10`, em 2026-08-20). Ela é tabela PRÓPRIA, e não colunas do
+// certificado, porque os ciclos de vida diferem — ver o docblock de `identidadeNoProvedor` em
+// `src/esquema/negocio.ts`. Como o certificado, não tem `retirado_em` e a guarda não o cobra: a
+// linha substituída PERMANECE como histórico de sob qual identidade cada emissão correu.
+const TABELA_DE_IDENTIDADE_NO_PROVEDOR = 'negocio.identidade_no_provedor';
+
 // As quatro tabelas da emissão e da conciliação, criadas pela migração `0017` (T2 da fatia
 // `emissao-e-conciliacao`) e forçadas pela `0018`. Nenhuma delas tem `retirado_em`, e a guarda não a
 // cobra de ninguém: as quatro registram FATO — trilha, lote, item e conferência —, e a ADR-0014
@@ -254,6 +261,7 @@ const TABELAS_LEGITIMAS: readonly string[] = [
   TABELA_DE_ENVIO_DE_COBRANCA,
   TABELA_DE_EVENTO_BANCARIO,
   TABELA_DE_FIADOR,
+  TABELA_DE_IDENTIDADE_NO_PROVEDOR,
   TABELA_DE_IMOVEL,
   TABELA_DE_ITEM_DA_EMISSAO_EM_LOTE,
   TABELA_DE_LOCADOR,
@@ -406,6 +414,7 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
       TABELA_DE_ENVIO_DE_COBRANCA,
       TABELA_DE_EVENTO_BANCARIO,
       TABELA_DE_FIADOR,
+      TABELA_DE_IDENTIDADE_NO_PROVEDOR,
       TABELA_DE_IMOVEL,
       TABELA_DE_ITEM_DA_EMISSAO_EM_LOTE,
       TABELA_DE_LOCADOR,
@@ -555,6 +564,7 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
       'negocio.espelho_sem_delegacao',
       TABELA_DE_EVENTO_BANCARIO,
       TABELA_DE_FIADOR,
+      TABELA_DE_IDENTIDADE_NO_PROVEDOR,
       TABELA_DE_IMOVEL,
       TABELA_DE_ITEM_DA_EMISSAO_EM_LOTE,
       TABELA_DE_LOCADOR,
@@ -939,6 +949,7 @@ describe('guarda de cobertura de isolamento — tabela nascida sem isolamento', 
             VISAO_SEGURA,
             TABELA_DE_EVENTO_BANCARIO,
             TABELA_DE_FIADOR,
+            TABELA_DE_IDENTIDADE_NO_PROVEDOR,
             TABELA_DE_IMOVEL,
             TABELA_DE_ITEM_DA_EMISSAO_EM_LOTE,
             TABELA_DE_LOCADOR,

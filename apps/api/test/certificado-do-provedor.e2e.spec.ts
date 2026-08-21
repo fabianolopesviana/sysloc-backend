@@ -306,6 +306,7 @@ import {
   SEGMENTO_DA_VERIFICACAO,
   SEGMENTO_DO_REGISTRO,
 } from '../src/integracoes-bancarias/certificado.controller.ts';
+import { SEGMENTO_DA_IDENTIDADE } from '../src/integracoes-bancarias/identidade.controller.ts';
 
 /** Limite da montagem: banco migrado, semente com credencial, fila, aplicação real e os materiais. */
 const LIMITE_DE_MONTAGEM_MS = 240_000;
@@ -327,6 +328,15 @@ const ROTA_DO_REGISTRO = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCAR
 
 /** Caminho, relativo à raiz, da **consulta**. */
 const ROTA_DA_CONSULTA = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DA_CONSULTA}`;
+
+/**
+ * A rota da IDENTIDADE no provedor — recurso próprio, no mesmo módulo.
+ *
+ * Ela vive neste arquivo, e não num spec novo, porque o arranjo é o mesmo (identidade efêmera, fila,
+ * aplicação real e as duas sessões de empresas distintas) e a convenção do projeto manda **importar
+ * o acessório, não copiá-lo**. Um spec próprio duplicaria o `beforeAll` inteiro.
+ */
+const ROTA_DA_IDENTIDADE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DA_IDENTIDADE}`;
 
 /** Caminho, relativo à raiz, da **verificação** — composto, nunca escrito à mão. */
 const ROTA_DA_VERIFICACAO = `${ROTA_DA_CONSULTA}/${SEGMENTO_DA_VERIFICACAO}`;
@@ -1749,3 +1759,109 @@ async function entrar(email: string, senha: string): Promise<string> {
 
   return credencial.split(';')[0] ?? '';
 }
+
+// ===========================================================================
+// A IDENTIDADE DA EMPRESA PERANTE O PROVEDOR — CA-D36 → CT-870..CT-873 (RN-33)
+//
+// INVARIANTES
+// - o registro publica os dados da conta e a autoria, e **nunca** o identificador;
+// - a ausência do identificador é afirmada por MEDIÇÃO DA SAÍDA REAL (ADR-0032), sobre o texto
+//   inteiro da resposta — não por leitura do código nem por inspeção de campos;
+// - sem identidade registrada, a consulta é `404` com o envelope da ADR-0017;
+// - registrar de novo SUBSTITUI, e a consulta passa a devolver a nova.
+// ===========================================================================
+describe('identidade da empresa perante o provedor', () => {
+  /** O identificador de sonda: valor conhecido, para a varredura poder afirmar a ausência dele. */
+  const IDENTIFICADOR_DE_SONDA = 'sonda-identificador-da-aplicacao-9f3c1e';
+
+  const CORPO_DA_IDENTIDADE = {
+    identificadorDaAplicacao: IDENTIFICADOR_DE_SONDA,
+    numeroDoCliente: 33065,
+    numeroDaContaCorrente: 380261,
+    codigoDaModalidade: 1,
+  } as const;
+
+  async function registrarIdentidade(
+    corpo: Record<string, unknown>,
+    credencial = cookie,
+  ): Promise<Resposta> {
+    return await pedir(ROTA_DA_IDENTIDADE, { metodo: 'POST', cookie: credencial, corpo });
+  }
+
+  it(
+    'CT-870 — o registro publica a conta e a autoria, e o identificador NÃO sai na resposta',
+    async () => {
+      const resposta = await registrarIdentidade(CORPO_DA_IDENTIDADE);
+
+      expect(resposta.status).toBe(201);
+
+      const publicada = resposta.corpo as Record<string, unknown>;
+
+      expect(publicada.numeroDoCliente).toBe(33065);
+      expect(publicada.numeroDaContaCorrente).toBe(380261);
+      expect(publicada.codigoDaModalidade).toBe(1);
+      expect((publicada.registradoPor as { id: string }).id).toBe(QUEM_ADMINISTRA.id);
+
+      // A MEDIÇÃO que a ADR-0032 exige: sobre o texto real que saiu, e não sobre os campos que
+      // alguém lembrou de conferir. Um campo novo que carregasse o identificador reprova aqui.
+      expect(resposta.texto).not.toContain(IDENTIFICADOR_DE_SONDA);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-871 — a consulta devolve a vigente, também sem o identificador',
+    async () => {
+      await registrarIdentidade(CORPO_DA_IDENTIDADE);
+
+      const resposta = await pedir(ROTA_DA_IDENTIDADE, { cookie });
+
+      expect(resposta.status).toBe(200);
+      expect((resposta.corpo as { numeroDoCliente: number }).numeroDoCliente).toBe(33065);
+      expect(resposta.texto).not.toContain(IDENTIFICADOR_DE_SONDA);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-872 — registrar de novo SUBSTITUI: a consulta passa a devolver a nova conta',
+    async () => {
+      await registrarIdentidade(CORPO_DA_IDENTIDADE);
+      const segunda = await registrarIdentidade({
+        ...CORPO_DA_IDENTIDADE,
+        numeroDaContaCorrente: 999111,
+      });
+
+      expect(segunda.status).toBe(201);
+      expect(
+        ((await pedir(ROTA_DA_IDENTIDADE, { cookie })).corpo as { numeroDaContaCorrente: number })
+          .numeroDaContaCorrente,
+      ).toBe(999111);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-873 — a empresa B não vê a identidade de A, e o corpo é recusado por forma',
+    async () => {
+      await registrarIdentidade(CORPO_DA_IDENTIDADE);
+
+      // Isolamento medido pela BORDA, e não pela política sozinha: B tem sessão legítima e as mesmas
+      // chaves, e ainda assim não alcança o que é de A.
+      const deB = await pedir(ROTA_DA_IDENTIDADE, { cookie: cookieDeB });
+
+      expect(deB.status).toBe(404);
+      expect((deB.corpo as { codigo: string }).codigo).toBe(CodigoErro.RECURSO_NAO_ENCONTRADO);
+      expect(deB.texto).not.toContain(IDENTIFICADOR_DE_SONDA);
+
+      // ANTIVÁCUO: A continua enxergando a sua — sem isto, uma rota que devolvesse 404 a todos
+      // passaria na asserção acima.
+      expect((await pedir(ROTA_DA_IDENTIDADE, { cookie })).status).toBe(200);
+
+      // Entrada FECHADA: chave desconhecida e campo ausente são recusados, nunca ignorados.
+      expect((await registrarIdentidade({ ...CORPO_DA_IDENTIDADE, sobra: 1 })).status).toBe(422);
+      expect((await registrarIdentidade({ numeroDoCliente: 1 })).status).toBe(422);
+    },
+    LIMITE_CASO_MS,
+  );
+});

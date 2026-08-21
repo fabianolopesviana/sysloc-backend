@@ -237,7 +237,7 @@ export const SEGMENTO_DA_VERIFICACAO = 'verificacao';
  * mesma constante que o registro declara a conjunção, e é isso que impede a área de divergir entre a
  * classe e o método.
  */
-const AREA_DAS_INTEGRACOES_BANCARIAS = 'TELA:integracoes_bancarias' as const;
+export const AREA_DAS_INTEGRACOES_BANCARIAS = 'TELA:integracoes_bancarias' as const;
 
 /**
  * A ação sensível que governa o **registro** — chave do catálogo fechado da ADR-0011, declarada em
@@ -248,7 +248,7 @@ const AREA_DAS_INTEGRACOES_BANCARIAS = 'TELA:integracoes_bancarias' as const;
  * método e o `detalhes.exigido` que a recusa publica. A coincidência entre os três é o que faz a
  * exigência ser verdade, e três literais soltos ficariam livres para divergir.
  */
-const ACAO_DE_CONFIGURACAO = 'ACAO:configurar_integracao' as const;
+export const ACAO_DE_CONFIGURACAO = 'ACAO:configurar_integracao' as const;
 
 /**
  * Nome de campo usado quando a recusa é do corpo e o Zod não tem caminho a nomear.

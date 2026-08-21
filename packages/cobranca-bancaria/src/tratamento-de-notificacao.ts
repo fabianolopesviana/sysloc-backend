@@ -130,6 +130,18 @@ export type NotificacaoBancariaClassificada =
       readonly numeroDoTituloNoProvedor: string;
       /** O identificador que o **provedor** deu à baixa — a chave do efeito único (RN-08). */
       readonly identificadorDaLiquidacao: string;
+      /**
+       * O número do cliente que o **provedor** informou — a segunda metade da conferência da RN-05.
+       *
+       * `undefined` quando o corpo não o traz, e a distinção é conteúdo: **ausência não é
+       * divergência**. Um provedor que deixe de enviar o campo faria toda notícia legítima virar
+       * anomalia se o ausente fosse tratado como diferente.
+       *
+       * ⚠️ Ele serve para **detectar divergência**, e nunca para decidir efeito — o efeito vem da
+       * consulta à API (o corpo do webhook é gatilho, não fonte da verdade). Conferi-lo é o que
+       * acusa uma notícia que chegou para a conta errada.
+       */
+      readonly numeroDoClienteNoProvedor: number | undefined;
     }
   | { readonly classificacao: 'VALIDACAO_DE_ENDERECO' }
   | { readonly classificacao: 'ILEGIVEL' };
@@ -275,6 +287,8 @@ export function classificarNotificacaoBancaria(recebido: unknown): NotificacaoBa
     classificacao: 'AVISO_DE_RECEBIMENTO',
     identificadorPeranteOProvedor: identificador.data,
     numeroDoTituloNoProvedor: numeroDoTitulo,
+    numeroDoClienteNoProvedor:
+      typeof dados.numeroCliente === 'number' ? dados.numeroCliente : undefined,
     identificadorDaLiquidacao,
   };
 }

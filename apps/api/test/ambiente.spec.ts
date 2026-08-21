@@ -222,6 +222,7 @@ function ambienteCompleto(): Record<string, string> {
     // razão de todos.
     CHAVE_DE_CIFRA_DO_CERTIFICADO: CHAVE_DE_CIFRA_SENTINELA,
     ENDERECO_DO_PROVEDOR_BANCARIO: 'https://provedor.exemplo.invalid',
+    ENDERECO_DE_AUTORIZACAO_BANCARIA: 'https://autorizacao.exemplo.invalid',
     // O diretório dos boletos entra na T13 da fatia `emissao-e-conciliacao` — ver o bloco do CT-933,
     // no fim do arquivo. Ele **não** é segredo, e é o único valor desta tabela que precisa existir de
     // verdade: a conferência de partida toca o disco. Ver {@link DIRETORIO_DOS_BOLETOS_ACEITAVEL}.
@@ -417,6 +418,7 @@ describe('carregarAmbiente (T5 · CA-15)', () => {
       'cadeiaConexaoFila',
       'chaveDeCifraDoCertificado',
       'diretorioDosBoletos',
+      'enderecoDeAutorizacaoBancaria',
       'enderecoDoProvedorBancario',
       'nivelDeLog',
       'porta',
@@ -464,6 +466,7 @@ function configuracaoEsperada(
     // em vez dos bytes — reprova na igualdade estrita.
     chaveDeCifraDoCertificado: Buffer.from(fonte.CHAVE_DE_CIFRA_DO_CERTIFICADO as string, 'base64'),
     enderecoDoProvedorBancario: fonte.ENDERECO_DO_PROVEDOR_BANCARIO as string,
+    enderecoDeAutorizacaoBancaria: fonte.ENDERECO_DE_AUTORIZACAO_BANCARIA as string,
     // Ele viaja **como veio**, sem resolução: quem resolve o caminho-base, uma vez, é a guarda de
     // boletos. Uma resolução escrita aqui faria o esperado concordar com uma configuração que
     // normalizasse o valor, e a igualdade estrita deixaria de reprovar essa mudança.
@@ -925,6 +928,7 @@ describe('carregarAmbiente (T11 · CA-12) — a barreira de partida da integraç
       'cadeiaConexaoFila',
       'chaveDeCifraDoCertificado',
       'diretorioDosBoletos',
+      'enderecoDeAutorizacaoBancaria',
       'enderecoDoProvedorBancario',
       'nivelDeLog',
       'porta',
@@ -1046,6 +1050,6 @@ describe('carregarAmbiente (T13 · CA-20) — a barreira de partida do diretóri
     // O crescimento por exatamente UM, medido sobre o mesmo objeto: sem esta contagem, um campo a
     // mais introduzido junto passaria — e a igualdade estrita acima aprovaria, porque
     // `configuracaoEsperada` também teria crescido.
-    expect(Object.keys(ambiente)).toHaveLength(11);
+    expect(Object.keys(ambiente)).toHaveLength(12);
   });
 });

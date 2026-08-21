@@ -67,6 +67,8 @@ import {
 } from '../configuracao/ambiente.js';
 import { CertificadoDoProvedorController } from './certificado.controller.js';
 import { CertificadoDoProvedorService } from './certificado.service.js';
+import { IdentidadeNoProvedorController } from './identidade.controller.js';
+import { IdentidadeNoProvedorService } from './identidade.service.js';
 
 /**
  * Constrói a porta de identidade de produção a partir do ambiente **já validado** na partida.
@@ -81,13 +83,17 @@ import { CertificadoDoProvedorService } from './certificado.service.js';
  * (`TETO_DO_APERTO_DE_MAO_MS`), e credencial de habilitação é da fatia (ii).
  */
 function criarPortaDeIdentidade(ambiente: Ambiente): PortaDeIdentidadeBancaria {
-  return criarAdaptadorSicoob({ enderecoDoProvedor: ambiente.enderecoDoProvedorBancario });
+  return criarAdaptadorSicoob({
+    enderecoDoProvedor: ambiente.enderecoDoProvedorBancario,
+    enderecoDeAutorizacao: ambiente.enderecoDeAutorizacaoBancaria,
+  });
 }
 
 @Module({
   imports: [AutenticacaoModule],
-  controllers: [CertificadoDoProvedorController],
+  controllers: [CertificadoDoProvedorController, IdentidadeNoProvedorController],
   providers: [
+    IdentidadeNoProvedorService,
     CertificadoDoProvedorService,
     {
       provide: TOKEN_PORTA_DE_IDENTIDADE_BANCARIA,

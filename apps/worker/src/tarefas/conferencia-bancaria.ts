@@ -93,6 +93,7 @@ import {
   contextoDeTenant,
   ErroDeConferenciaNaoAlcancada,
   estornarLiquidacao,
+  lerIdentidadeParaUso,
   liquidarPeloProvedor,
   localizarCobranca,
   obterEnvelopeCifradoDoVigente,
@@ -169,12 +170,18 @@ export async function processarConferenciaBancaria(
     // decifra e a rede correm fora dela, para não segurar a conexão física durante a passada.
     const preparo = await banco.emUnidadeDeTrabalho(async (tx) => ({
       envelopeCifrado: await obterEnvelopeCifradoDoVigente(tx),
+      identidade: await lerIdentidadeParaUso(tx, chaveDeCifra),
       cobrancas: await selecionarCobrancasAConferir(tx),
     }));
 
-    const { envelopeCifrado } = preparo;
+    const { envelopeCifrado, identidade } = preparo;
 
-    if (envelopeCifrado === undefined) {
+    if (envelopeCifrado === undefined || identidade === undefined) {
+      // A identidade ausente tem o mesmo efeito prático do certificado ausente — sem credencial
+      // nenhuma cobrança é consultável —, e a conferência conclui do mesmo modo: `0` conferidas e
+      // `0` efeitos, sem tentativa. A distinção entre as duas causas é da EMISSÃO, que interrompe o
+      // lote e precisa dizer ao Admin qual configuração falta; aqui a passada apenas não tem o que
+      // fazer, e um segundo desfecho não mudaria nada do que fica gravado.
       await concluirSemCertificado(banco, conferenciaId, logger, tarefa, empresaId);
 
       return;
@@ -188,6 +195,7 @@ export async function processarConferenciaBancaria(
       async () =>
         conferirCobrancas({
           empresaId,
+          identidade,
           // A decifra acontece DENTRO da expressão que monta o trabalho, e o claro não ganha nome
           // próprio no escopo — ver o cabeçalho de `./emissao-em-lote.ts`.
           segredo: decifrarSegredo(envelopeCifrado, chaveDeCifra),

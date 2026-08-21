@@ -234,7 +234,7 @@ readonly CAMINHO_ENTRADA_DB="${RAIZ_REPO}/packages/db/dist/index.js"
 #   exclui `relkind = 'S'` do exame POR CONSTRUÇÃO, então ela nunca aparece no
 #   resultado que esta lista compara. Acrescentá-la faria a asserção (b) reprovar
 #   um schema íntegro.
-readonly TABELAS_DE_NEGOCIO_ESPERADAS="negocio.acesso_usuario_app negocio.acesso_usuario_permissao negocio.certificado_do_provedor negocio.cobranca negocio.cobranca_derivada negocio.comodo negocio.conferencia_bancaria negocio.configuracao_de_mora negocio.conjunto negocio.contrato negocio.contrato_fiador negocio.emissao_em_lote negocio.envio_de_cobranca negocio.evento_bancario negocio.fiador negocio.imovel negocio.item_da_emissao_em_lote negocio.locador negocio.locatario negocio.politica_de_aviso negocio.portador_de_confirmacao"
+readonly TABELAS_DE_NEGOCIO_ESPERADAS="negocio.acesso_usuario_app negocio.acesso_usuario_permissao negocio.certificado_do_provedor negocio.cobranca negocio.cobranca_derivada negocio.comodo negocio.conferencia_bancaria negocio.configuracao_de_mora negocio.conjunto negocio.contrato negocio.contrato_fiador negocio.emissao_em_lote negocio.envio_de_cobranca negocio.evento_bancario negocio.fiador negocio.identidade_no_provedor negocio.imovel negocio.item_da_emissao_em_lote negocio.locador negocio.locatario negocio.politica_de_aviso negocio.portador_de_confirmacao"
 
 # Os quatro transportes de segredo que a ADR-0005 proíbe. O `[=]` é classe de
 # caractere de UM elemento — casa exatamente o que o sinal solto casaria, sem

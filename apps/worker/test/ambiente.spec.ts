@@ -28,7 +28,7 @@
  * |       |        | branco de cada uma recusam nomeando a variável; a chave que não decodifica
  * |       |        | para 32 bytes em base64 canônico e o diretório que não é caminho absoluto de
  * |       |        | diretório gravável recusam nomeando a EXIGÊNCIA — nunca "ausente"; e
- * |       |        | **nenhuma** das quinze recusas ecoa valor algum, com o conjunto de vazamentos
+ * |       |        | **nenhuma** das dezesseis recusas ecoa valor algum, com o conjunto de vazamentos
  * |       |        | afirmado por igualdade e controle antivácuo sobre a contagem de recusas. O
  * |       |        | companheiro positivo prova que as nove válidas chegam aos campos, com a chave
  * |       |        | já **decodificada** e o diretório **sem resolução**. |
@@ -169,6 +169,7 @@ const VARIAVEIS_EXIGIDAS = [
   'URL_BASE_DA_CONFIRMACAO',
   'CHAVE_DE_CIFRA_DO_CERTIFICADO',
   'ENDERECO_DO_PROVEDOR_BANCARIO',
+  'ENDERECO_DE_AUTORIZACAO_BANCARIA',
   'DIRETORIO_DOS_BOLETOS',
 ] as const;
 
@@ -180,7 +181,7 @@ const VARIAVEIS_EXIGIDAS = [
  * *número escrito à mão* × *lista escrita à mão* que faz a mudança ser deliberada, e é o `CT-643`
  * que amarra os dois ao que a **execução** de `lerAmbiente` revela.
  */
-const QUANTIDADE_DE_VARIAVEIS_EXIGIDAS = 9;
+const QUANTIDADE_DE_VARIAVEIS_EXIGIDAS = 10;
 
 /** Senha embutida nas cadeias de conexão, para provar que a falha não a ecoa. */
 const SENHA_NA_CADEIA = 'segredoQueNaoPodeVazar';
@@ -196,6 +197,8 @@ const CHAVE_DE_CIFRA_SENTINELA = 'Y2hhdmUtZGUtY2lmcmEtZG8tY3Q5MzYtc2VudGluZSE=';
 
 /** O endereço do provedor dos casos — domínio reservado pela RFC 6761, que não resolve. */
 const ENDERECO_DO_PROVEDOR = 'https://provedor.exemplo.invalid';
+/** O endereço de AUTORIZAÇÃO da sonda — máquina distinta da API, como no provedor real. */
+const ENDERECO_DE_AUTORIZACAO = 'https://autorizacao.exemplo.invalid';
 
 /**
  * Um diretório **absoluto, existente e gravável** — o que a conferência de partida exige.
@@ -227,6 +230,7 @@ function ambienteCompleto(): Record<string, string> {
     URL_BASE_DA_CONFIRMACAO: 'https://app.exemplo.invalid',
     CHAVE_DE_CIFRA_DO_CERTIFICADO: CHAVE_DE_CIFRA_SENTINELA,
     ENDERECO_DO_PROVEDOR_BANCARIO: ENDERECO_DO_PROVEDOR,
+    ENDERECO_DE_AUTORIZACAO_BANCARIA: ENDERECO_DE_AUTORIZACAO,
     // Um diretório REAL, e não um caminho inventado: diferente de todas as demais, esta conferência
     // toca o disco. Ver {@link DIRETORIO_DOS_BOLETOS_ACEITAVEL}.
     DIRETORIO_DOS_BOLETOS: DIRETORIO_DOS_BOLETOS_ACEITAVEL,
@@ -358,12 +362,14 @@ describe('lerAmbiente (T6 · CA-15)', () => {
       Buffer.from(fonte.CHAVE_DE_CIFRA_DO_CERTIFICADO as string, 'base64'),
     );
     expect(ambiente.enderecoDoProvedorBancario).toBe(fonte.ENDERECO_DO_PROVEDOR_BANCARIO);
+    expect(ambiente.enderecoDeAutorizacaoBancaria).toBe(fonte.ENDERECO_DE_AUTORIZACAO_BANCARIA);
     expect(ambiente.diretorioDosBoletos).toBe(fonte.DIRETORIO_DOS_BOLETOS);
     expect(Object.keys(ambiente).sort()).toEqual([
       'cadeiaConexaoBanco',
       'cadeiaConexaoFila',
       'chaveDeCifraDoCertificado',
       'diretorioDosBoletos',
+      'enderecoDeAutorizacaoBancaria',
       'enderecoDoProvedorBancario',
       'nivelDeLog',
       'remetenteDoAviso',
@@ -494,6 +500,7 @@ function configuracaoEsperada(
     // texto reprovar aqui.
     chaveDeCifraDoCertificado: Buffer.from(fonte.CHAVE_DE_CIFRA_DO_CERTIFICADO as string, 'base64'),
     enderecoDoProvedorBancario: fonte.ENDERECO_DO_PROVEDOR_BANCARIO,
+    enderecoDeAutorizacaoBancaria: ENDERECO_DE_AUTORIZACAO,
     diretorioDosBoletos: fonte.DIRETORIO_DOS_BOLETOS,
   };
 }
@@ -660,7 +667,7 @@ const FORMAS_RECUSADAS_DO_DIRETORIO = [
  * mesma, que é o defeito que ela existe para não ter. Mesmo critério de
  * {@link QUANTIDADE_DE_VARIAVEIS_EXIGIDAS}.
  */
-const QUANTIDADE_DE_RECUSAS_VARRIDAS = 15;
+const QUANTIDADE_DE_RECUSAS_VARRIDAS = 16;
 
 /** Cria um arquivo comum gravável e devolve o caminho dele — o negativo de "é diretório?". */
 function criarArquivoComumDescartavel(): string {
@@ -671,7 +678,7 @@ function criarArquivoComumDescartavel(): string {
 }
 
 describe('CT-936 (T16 · CA-20) — a partida do processo de trabalho exige as três da cobrança bancária', () => {
-  it('CT-936 — a EXECUÇÃO exige NOVE variáveis, e as três novas estão entre elas', () => {
+  it('CT-936 — a EXECUÇÃO exige DEZ variáveis, e as três novas estão entre elas', () => {
     // O conjunto sai de EXECUTAR `lerAmbiente` — quais nomes ela consulta na fonte, e quais dessas
     // ela recusa quando faltam. Nenhuma linha desta derivação lê o texto do fonte, e é isso que a
     // torna cega à redação da recusa (ver o marcador `DECISÃO FECHADA` sobre
@@ -745,7 +752,7 @@ describe('CT-936 (T16 · CA-20) — a partida do processo de trabalho exige as t
     },
   );
 
-  it('CT-936 — NENHUMA das quinze recusas ecoa o valor recebido, inclusive a chave de cifra', () => {
+  it('CT-936 — NENHUMA das dezesseis recusas ecoa o valor recebido, inclusive a chave de cifra', () => {
     // A varredura sobre TODOS os eixos de recusa de uma vez, com as sentinelas afirmadas por
     // ausência. Ela é o que impede a disciplina de valer "para as que alguém lembrou de conferir".
     const recusas = [

@@ -162,6 +162,8 @@ import {
   estornarLiquidacao,
   expurgarNotificacoesVencidas,
   houveEfeitoDaLiquidacao,
+  type IdentidadeParaUso,
+  lerIdentidadeParaUso,
   lerNotificacaoBancaria,
   liquidarPeloProvedor,
   localizarCobranca,
@@ -444,7 +446,17 @@ async function tratarNotificacao(
     return;
   }
 
-  const divergencia = conferirNumeroDoTitulo(roteamento, classificada);
+  // As duas metades da RN-05/CA-08. A do cliente exige a identidade da empresa, lida sob o contexto
+  // do tenant que o roteamento resolveu — nunca do corpo recebido (ADR-0024, emenda de 2026-08-18).
+  const identidade = await contextoDeTenant.executarCom(
+    { empresaId: roteamento.empresaId },
+    async () =>
+      await banco.emUnidadeDeTrabalho(async (tx) => await lerIdentidadeParaUso(tx, chaveDeCifra)),
+  );
+
+  const divergencia =
+    conferirNumeroDoTitulo(roteamento, classificada) ??
+    (identidade === undefined ? undefined : conferirNumeroDoCliente(identidade, classificada));
 
   if (divergencia !== undefined) {
     await recusarPorDivergencia(banco, notificacaoId, roteamento, identificadores, divergencia);
@@ -522,18 +534,17 @@ function aindaPedeTratamento(desfecho: DesfechoDaLinhaCrua): desfecho is Desfech
  * gravado nulo levam ao mesmo lugar — a consulta —, e separá-los aqui obrigaria quem chama a decidir
  * de novo o que a RN-07 já decidiu.
  */
-// DÉBITO COM GATILHO — D17 · F4/T7 · registrado 2026-08-19
-// (NÃO é uma `DECISÃO FECHADA`: ele agenda uma conferência que falta, não protege o código abaixo.)
-// O QUÊ: a RN-05 e a CA-08 mandam conferir o número do título **e o identificador do cliente**. Só a
-//        primeira metade existe aqui: o produto não modela a identidade da empresa perante o
-//        provedor, e não há valor gravado contra o qual comparar a segunda.
-// QUANDO FECHA: quando o produto modelar a identidade da empresa perante o provedor (identificador
-//        da aplicação, endereço de autorização, dados da conta) — **o mesmo gatilho do
-//        D36 · F4/T10**, medido em 2026-08-15 e reafirmado em 2026-08-17.
-// POR QUE NÃO AGORA: trazê-la exige campo novo em `esquemaDoCertificadoNovo`, isto é, **superfície
-//        publicada**, às vésperas do congelamento da API — o que o próprio D36 mede como pior que
-//        adiar.
-// ÍNDICE: docs/specs/features/webhook-e-carne/v1/_run/run-report.md §2, D17
+// As DUAS metades da conferência da RN-05/CA-08, desde 2026-08-20 — o `D17 · F4/T7` era exatamente
+// a metade que faltava, e o gatilho dele (*"quando o produto modelar a identidade da empresa perante
+// o provedor"*) chegou com o fechamento do `D36 · F4/T10`.
+//
+// ⚠️ **Ausência não é divergência**, nas duas metades. O `null` do título é o par que `revogarBoleto`
+// produz de propósito; o `undefined` do cliente é o corpo que não traz o campo. Tratar qualquer um
+// dos dois como diferente faria notícia legítima virar anomalia.
+//
+// ⚠️ E conferir NÃO é confiar: o corpo do webhook segue sendo gatilho, e quem decide o efeito é a
+// consulta à API. O que estas comparações produzem é a detecção de que a notícia chegou com dado de
+// outro título ou de outra conta.
 function conferirNumeroDoTitulo(
   roteamento: RoteamentoDaNotificacao,
   aviso: AvisoDeRecebimento,
@@ -548,6 +559,25 @@ function conferirNumeroDoTitulo(
   }
 
   return aviso.numeroDoTituloNoProvedor;
+}
+
+/**
+ * A segunda metade: o número do cliente informado bate com o da identidade da empresa?
+ *
+ * Devolve o valor RECEBIDO quando diverge — a mesma forma da irmã acima, para que a anomalia
+ * registrada nomeie o que veio, e não o que se esperava.
+ */
+function conferirNumeroDoCliente(
+  identidade: IdentidadeParaUso,
+  aviso: AvisoDeRecebimento,
+): string | undefined {
+  const recebido = aviso.numeroDoClienteNoProvedor;
+
+  if (recebido === undefined || recebido === identidade.numeroDoCliente) {
+    return undefined;
+  }
+
+  return String(recebido);
 }
 
 /**
@@ -629,9 +659,10 @@ async function aplicarOQueOProvedorInformar(
   const { cobrancaId, codigo, empresaId } = trabalho.roteamento;
 
   return await contextoDeTenant.executarCom({ empresaId }, async () => {
-    const envelopeCifrado = await banco.emUnidadeDeTrabalho(
-      async (tx) => await obterEnvelopeCifradoDoVigente(tx),
-    );
+    const { envelopeCifrado, identidade } = await banco.emUnidadeDeTrabalho(async (tx) => ({
+      envelopeCifrado: await obterEnvelopeCifradoDoVigente(tx),
+      identidade: await lerIdentidadeParaUso(tx, chaveDeCifra),
+    }));
 
     if (envelopeCifrado === undefined) {
       // Levantar, e não concluir: sem certificado não há como consultar, e a consulta é quem decide
@@ -643,8 +674,20 @@ async function aplicarOQueOProvedorInformar(
       );
     }
 
+    // A identidade ausente levanta pelo mesmo caminho do certificado ausente, e **não** é desfecho
+    // silencioso: a notícia é um fato de terceiro que já chegou, e engoli-la faria o pagamento
+    // deixar de ser aplicado sem que nada acusasse. Levantar devolve a notícia à fila, e a
+    // configuração faltante aparece no diário.
+    if (identidade === undefined) {
+      throw new Error(
+        `a notícia ${notificacaoId} não pôde ser tratada: a empresa da cobrança ${codigo} não tem ` +
+          'identidade registrada no provedor para consultar a situação do título',
+      );
+    }
+
     const consultada = await adaptador.consultarSituacao({
       empresaId,
+      identidade,
       // A decifra acontece DENTRO da expressão que monta a consulta, e o claro não ganha nome
       // próprio no escopo — ver o cabeçalho de `./emissao-em-lote.ts` (ADR-0032).
       segredo: decifrarSegredo(envelopeCifrado, chaveDeCifra),

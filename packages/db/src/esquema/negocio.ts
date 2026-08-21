@@ -1996,3 +1996,80 @@ export const conferenciaBancaria = negocio
     ],
   )
   .enableRLS();
+
+/**
+ * A **identidade da empresa perante o provedor bancário** — o que falta ao certificado para que o
+ * produto consiga obter credencial de acesso.
+ *
+ * ---------------------------------------------------------------------------
+ * POR QUE ELA É UMA TABELA PRÓPRIA, e não colunas do certificado
+ * ---------------------------------------------------------------------------
+ *
+ * O `D36 · F4/T10` prescrevia pendurá-la no registro do certificado (*"dois campos novos em
+ * `esquemaDoCertificadoNovo`"*). **Esta implementação divergiu, em 2026-08-20, e a razão é o ciclo
+ * de vida**: o certificado vale um ano e é substituído inteiro a cada renovação; o identificador da
+ * aplicação e os dados da conta **não mudam** quando o material é trocado. No mesmo registro, cada
+ * renovação obrigaria a reinformar a identidade — e esquecê-la quebraria a obtenção de credencial
+ * em silêncio, meses depois, sem que nada acusasse.
+ *
+ * A separação também é o que permite renovar o certificado **sem tocar** nesta linha, que é o
+ * caminho que a operação vai percorrer já nos próximos dias.
+ *
+ * ---------------------------------------------------------------------------
+ * O QUE É SEGREDO AQUI, e o que não é
+ * ---------------------------------------------------------------------------
+ *
+ * O **identificador da aplicação** é segredo operável de terceiro: o produto precisa **usá-lo** para
+ * compor o pedido de credencial, e a ADR-0032 alcança exatamente esse caso — vai cifrado, e não
+ * retorna por superfície alguma. Os **dados da conta** (número do cliente, conta corrente e
+ * modalidade) não são segredo: identificam a conta perante o provedor, compõem a emissão e podem
+ * ser lidos por quem opera a empresa. O sistema antigo faz a mesma distinção.
+ */
+export const identidadeNoProvedor = negocio
+  .table(
+    'identidade_no_provedor',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      empresaId: uuid('empresa_id')
+        .notNull()
+        .references(() => empresa.id),
+      /** O CIFRADO, nunca o identificador. Nulo se e somente se substituída — ver a `CHECK`. */
+      identificadorDaAplicacaoCifrado: text('identificador_da_aplicacao_cifrado'),
+      /** Número do cliente perante o provedor — compõe a emissão. Não é segredo. */
+      numeroDoCliente: integer('numero_do_cliente').notNull(),
+      /** Conta corrente da cobrança. Não é segredo. */
+      numeroDaContaCorrente: integer('numero_da_conta_corrente').notNull(),
+      /** Modalidade da carteira de cobrança. Não é segredo. */
+      codigoDaModalidade: integer('codigo_da_modalidade').notNull(),
+      /** Quem registrou. Amarrado à empresa pela chave composta abaixo, nunca só pelo `id`. */
+      registradoPor: uuid('registrado_por').notNull(),
+      /** O instante do registro, pelo relógio do BANCO (ADR-0026) — nunca pelo do processo. */
+      criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+      /** Nulo **é** ser a vigente. Preenchê-lo é, pela `CHECK`, apagar o identificador no mesmo ato. */
+      substituidaEm: timestamp('substituida_em', { withTimezone: true }),
+    },
+    (tabela) => [
+      unique('identidade_no_provedor_id_empresa_key').on(tabela.id, tabela.empresaId),
+      // A chave estrangeira COMPOSTA da ADR-0008, pela mesma razão do certificado: sem ela, a
+      // identidade da empresa A poderia constar como registrada por alguém da empresa B, e a trilha
+      // atribuiria a instalação da credencial de uma imobiliária a outra.
+      foreignKey({
+        name: 'identidade_no_provedor_usuario_empresa_fkey',
+        columns: [tabela.registradoPor, tabela.empresaId],
+        foreignColumns: [usuario.id, usuario.empresaId],
+      }),
+      // Bicondicional, e não duas `CHECK` soltas: os dois estados que ela torna inexistentes são
+      // **identidade substituída que ainda guarda o segredo** e **identidade vigente sem segredo**.
+      // Escritas em separado, cada uma deixaria passar exatamente o caso que a outra pega.
+      check(
+        'identidade_no_provedor_segredo_chk',
+        sql`(${tabela.identificadorDaAplicacaoCifrado} IS NULL) = (${tabela.substituidaEm} IS NOT NULL)`,
+      ),
+      // Uma identidade vigente por empresa. O histórico permanece, como no certificado.
+      uniqueIndex('identidade_no_provedor_vigente_uidx')
+        .on(tabela.empresaId)
+        .where(sql`substituida_em IS NULL`),
+      index('identidade_no_provedor_historico_idx').on(tabela.empresaId, tabela.criadoEm.desc()),
+    ],
+  )
+  .enableRLS();
