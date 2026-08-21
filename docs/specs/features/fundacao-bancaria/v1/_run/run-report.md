@@ -495,6 +495,55 @@ O item 3 revelou um **defeito de processo, não de caso**: classe de erro nova n
 - ⚠️ **Por que isto é DÉBITO e não REGRA, e a distinção é o achado:** a curadoria de 2026-08-16 (`/agent-spec-curate-project-rules`) recebeu este cluster como candidato a regra de projeto e o **recusou** no teste de fricção. A regra que ele sugere — *"a suíte nova importa os acessórios em vez de redeclarar"* — mandaria importar de um lugar que **não existe**. Regra inaplicável no dia em que é escrita ensina o agente a ignorar `.claude/rules/`, que é um dano maior que o débito. O que se registrou como regra foi o **limiar de três** (`CLAUDE.md` §Convenções), que é cumprível hoje; a dívida concreta ficou aqui, com gatilho.
 
 
+### D64 · ALTO · error_handling · F4/fechamento · intervenção dirigida (2026-08-20) · ⚠️ **AGRAVADO em 2026-08-21** · 🔖 **DÉBITO COM GATILHO — marcador vivo no código**
+- **Onde:** `apps/api/src/integracoes-bancarias/certificado.controller.ts` (junto de `MENSAGEM_DO_MATERIAL_RECUSADO`)
+- **Problema:** o registro do certificado recusa com `422` e **a mesma mensagem** para duas causas distintas: senha que não abre o material, e material cuja **cifra o runtime não suporta**. A rota não as distingue porque `lerMaterial` só sabe que a abertura falhou.
+- **Impacto:** ⚠️ **medido em 2026-08-20, e custou uma rodada de diagnóstico ao operador.** O `.pfx` real do provedor vem embalado com `RC2-40-CBC`, que o OpenSSL 3 recusa por padrão; o Node 24 falha com `ERR_CRYPTO_UNSUPPORTED_OPERATION: Unsupported PKCS12 PFX data`. O produto respondeu *"a senha não abre o material"*, e o operador foi caçar uma senha errada que não existia. **O mesmo arquivo era lido sem cerimônia pelo backend Frappe** (Python sobre OpenSSL 1.1.x, onde RC2 é padrão) — é consequência da troca de stack, e ela não aparece em teste: as suítes geram material em execução, sempre com cifra moderna.
+- **O que fazer:** `lerMaterial` distinguir o código do erro do runtime (`ERR_CRYPTO_UNSUPPORTED_OPERATION`) e a rota devolver mensagem própria, apontando `deploy/scripts/cobranca-bancaria/preparar-material-do-certificado.sh` — que já existe, é idempotente e reembala preservando o par certificado/chave.
+- **Prova exigida:** caso que registre material de cifra legada e afirme que a recusa **nomeia a cifra**, e não a senha. ⚠️ Ele exige material legado gerado em execução — o `openssl` da suíte precisa emiti-lo com `-legacy`, o que é a parte cara e a razão de o débito não ter sido pago na mesma intervenção.
+- **Por que não agora:** a intervenção que o descobriu tinha escopo declarado (fechar o `D36`), e o operador já tem a ferramenta que contorna. Pagá-lo junto misturaria duas causas-raiz no mesmo diff.
+
+> ### ⚠️ AGRAVAMENTO medido em 2026-08-21 — o problema não é a mensagem, é a ACEITAÇÃO
+>
+> A renovação real chegou, e a **segunda emissão consecutiva** da mesma Autoridade Certificadora veio
+> outra vez em cifra legada (`RC2-40-CBC`) — julho/2025 e agosto/2026. **Não é exceção: é o padrão
+> daquela AC.**
+>
+> Isso muda a natureza do débito. O registro original dizia que a *mensagem* não distingue cifra
+> legada de senha errada; o fato é que **o produto não aceita o material que a AC entrega**. A rota
+> `POST /v1/integracoes-bancarias/certificados` recusa com `422`, e o Admin — que renova **pela tela**,
+> sem terminal e sem `sudo` — não tem como contornar. O
+> `deploy/scripts/cobranca-bancaria/preparar-material-do-certificado.sh` resolve, mas é ferramenta de
+> **servidor**: exige acesso à máquina, que o Admin de uma imobiliária não tem e não deve ter.
+>
+> **Consequência operacional:** hoje, toda renovação de certificado deste provedor exige intervenção
+> de quem opera o servidor. Num SaaS com N clientes, isso é inviável pela mesma razão que a ativação
+> do webhook era — e é o mesmo tipo de trabalho: **o que o Admin precisa fazer sozinho pela tela**.
+>
+> **O que fazer, e as três formas com o custo de cada uma:**
+>
+> | Forma | Custo | Risco |
+> |---|---|---|
+> | **Reembalar no servidor**, invocando o `openssl` a partir do produto | baixo — o binário já está no host, e o roteiro está provado | o produto passa a executar processo externo; precisa de guarda de caminho e de tratamento de término |
+> | **Carregar o provider legado do Node** (`--openssl-legacy-provider`) | baixíssimo — uma flag na unidade | ⚠️ habilita cifra fraca **no processo inteiro**, não só na leitura do material. Alarga superfície muito além do necessário |
+> | **Biblioteca de PKCS#12 em JS** (ex.: `node-forge`) | médio — dependência nova no manifesto | sem provider global e sem processo externo, mas traz código de criptografia de terceiro para o caminho do segredo |
+>
+> ⚠️ **A escolha é de arquitetura e não foi tomada.** Ela pertence à fatia que pagar o débito, e a
+> segunda forma é a que parece mais barata e é a que eu recusaria: ligar RC2 no processo que
+> manipula todo segredo operável do produto compra conveniência com superfície.
+>
+> **Prova exigida (ampliada):** além do caso da mensagem, um caso que **registre pela ROTA** um
+> material em cifra legada e afirme que ele é **aceito** — com o material gerado em execução pelo
+> `openssl` com `-legacy`, que é a parte cara e a razão de o débito seguir aberto.
+
+### D65 · BAIXO · project_pattern · F4/fechamento · intervenção dirigida (2026-08-20) · ⚠️ **sem gatilho concreto — fica só aqui, pela §3-B**
+- **Onde:** transversal — `packages/contracts/src/integracao-bancaria.ts`, `packages/cobranca-bancaria/src/leitura-do-material.ts`, e toda suíte que gera material.
+- **Problema:** **três premissas sobre o material do provedor foram medidas sobre material de TESTE, e as três estavam erradas** — descobertas no mesmo dia, ao tocar o `.pfx` real pela primeira vez: (i) a **cifra** (`RC2-40-CBC`, que o runtime recusa); (ii) o **tamanho** (8,7 KB reais contra *"cerca de 2,6 KB"* escritos no docblock); (iii) o **teto** de entrada, dimensionado com folga generosa sobre o número errado, que recusava o certificado de produção com `422`.
+- **Impacto:** é padrão, não incidente. O `Invariante 3` proíbe `.pfx` versionado — decisão correta —, e a consequência é que **nenhuma característica do material real é observável pela suíte**. Toda constante derivada dele nasce de estimativa e só é confrontada quando alguém registra o certificado de verdade.
+- **O que fazer:** não há correção pontual. O que reduz a classe é **declarar a medição junto da constante**, como `MAIOR_MATERIAL_REAL_OBSERVADO` passou a fazer — número medido, com data e origem, mais um caso que afirme a folga sobre ele. Quem escrever a próxima constante derivada do material real segue o mesmo molde.
+- **Por que fica só aqui:** não tem gatilho reconhecível (a §3-B manda que débito sem gatilho não ganhe marcador — *"ruído desarma os que importam"*).
+
+
 ## 3. Tasks Bloqueadas
 
 ✅ Nenhuma task bloqueada.

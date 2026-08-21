@@ -171,6 +171,22 @@ const CAMPO_DO_CORPO = 'corpo';
  * *"requisição inválida"* para toda recusa de campo, e este é o único ponto do produto em que a
  * mensagem precisa dizer ao Admin o que conferir sem dizer qual das duas coisas está errada.
  */
+// DÉBITO COM GATILHO — D64 · F4/fechamento · registrado 2026-08-20
+// (NÃO é uma `DECISÃO FECHADA`: ele agenda uma distinção que falta, não protege o texto abaixo.)
+// O QUÊ: esta mensagem responde por DUAS causas distintas — senha que não abre o material, e
+//        material cuja CIFRA o runtime não suporta. O operador que recebe a segunda vai caçar uma
+//        senha errada que não existe.
+// QUANDO FECHA: ⚠️ **JÁ DISPAROU em 2026-08-21**, e o débito foi AGRAVADO de MEDIO para ALTO. A AC
+//        entregou em cifra legada nas DUAS emissões consecutivas (julho/2025 e agosto/2026): não é
+//        exceção, é o padrão dela. O problema não é a mensagem, é a ACEITAÇÃO — o produto recusa o
+//        material que a AC entrega, e quem renova é o Admin, pela TELA, sem acesso ao servidor onde
+//        vive o script que converte. Pago pela frente B da fatia
+//        `integracao-bancaria-autonoma/v1` (F5).
+// POR QUE NÃO AGORA: a forma da conversão é decisão de ARQUITETURA e não está tomada — as três
+//        candidatas, com custo e risco, estão no `ÍNDICE` abaixo. ⚠️ A mais barata (ligar o provider
+//        legado do Node) é a que o registro recomenda RECUSAR: habilitaria cifra fraca no processo
+//        que manipula todo segredo operável do produto.
+// ÍNDICE: docs/specs/features/fundacao-bancaria/v1/_run/run-report.md §2, D64
 const MENSAGEM_DO_MATERIAL_RECUSADO =
   'o certificado não pôde ser lido com a senha apresentada — confira o arquivo e a senha';
 
