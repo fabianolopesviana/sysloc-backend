@@ -216,6 +216,21 @@ const CAMPO_DO_NUMERO_DO_TITULO = 'numeroDoTituloNoProvedor';
 const MOTIVO_NAO_IDENTIFICADO = 'NAO_IDENTIFICADO';
 
 /**
+ * Um identificador composto **só** de dígitos — a condição para que o preenchimento seja ignorável.
+ *
+ * Ver {@link mesmoIdentificador}: fora desta forma, a comparação continua estrita.
+ */
+const SO_DIGITOS = /^\d+$/;
+
+/**
+ * Os zeros que apenas preenchem largura à esquerda, e nunca o último dígito.
+ *
+ * O `(?=\d)` é o que impede `'0'` de virar cadeia vazia — e cadeia vazia colidiria com qualquer
+ * outra, que é o oposto do que esta conferência existe para fazer.
+ */
+const PREENCHIMENTO_A_ESQUERDA = /^0+(?=\d)/;
+
+/**
  * O estado da linha crua, **derivado** do registro que o banco devolve — nunca redigitado (ADR-0016).
  *
  * Um estado que mude de nome em `plataforma.notificacao_bancaria` reprova **aqui**, no ponto de
@@ -554,11 +569,58 @@ function conferirNumeroDoTitulo(
   // ⚠️ **Ausência NÃO é divergência.** O `null` é o par que `revogarBoleto` produz de propósito — ver
   // o cabeçalho deste arquivo. Trocar este `=== null` por uma comparação direta com o recebido é o
   // mutante de duas pernas que o `CT-1006` barra.
-  if (gravado === null || gravado === aviso.numeroDoTituloNoProvedor) {
+  if (gravado === null || mesmoIdentificador(gravado, aviso.numeroDoTituloNoProvedor)) {
     return undefined;
   }
 
   return aviso.numeroDoTituloNoProvedor;
+}
+
+/**
+ * Os dois identificadores designam o **mesmo** título, ignorando preenchimento à esquerda?
+ *
+ * DECISÃO FECHADA — W1 · conformidade com a documentação do provedor · 2026-08-22
+ * O QUÊ: a conferência do número do título compara por **identidade do identificador**, com o
+ *        preenchimento à esquerda normalizado nos dois lados — e não por igualdade de cadeia.
+ * POR QUÊ: os dois lados chegam por caminhos DIFERENTES do provedor, e cada caminho usa uma
+ *        representação. O gravado vem da emissão (`POST /boletos`), onde `nossoNumero` chega
+ *        **inteiro** e é coagido — `2443` vira `"2443"`. O recebido vem do **webhook**, onde a
+ *        documentação oficial o mostra como **cadeia de largura fixa** — `"0000002443"`. São o mesmo
+ *        título, e `"2443" === "0000002443"` é falso: **toda** notícia legítima de boleto cujo número
+ *        tenha qualquer zero à esquerda virava `DIVERGENTE`, e o pagamento não era aplicado. Como o
+ *        formato do provedor é de largura fixa, quase todos têm.
+ * POR QUE ISTO FECHA A CLASSE: a normalização é do **preenchimento**, e não de um par de valores
+ *        medido — alcança qualquer largura, nos dois sentidos, e continuaria valendo se o provedor
+ *        mudasse a largura. E ela vive no **ponto único** da comparação: nenhum outro caminho do
+ *        produto compara esses dois valores.
+ * ⚠️ POR QUE NÃO SE NORMALIZA NA ENTRADA NEM NA GRAVAÇÃO: aparar zeros ao receber destruiria o valor
+ *        **tal como o provedor o informou**, que a ADR-0034 exige preservar no cru e no diagnóstico.
+ *        A normalização é da COMPARAÇÃO, e só dela.
+ * ⚠️ POR QUE TEXTUAL, e não por `Number`: `numeroIdentificadorBaixa` já chega com **19 dígitos**,
+ *        acima de `MAX_SAFE_INTEGER`. Coagir para número aqui reintroduziria, na comparação, a
+ *        corrupção que `comoCadeiaDeInteiro` existe para impedir na leitura.
+ * REVERTER EXIGE: provar que os dois caminhos do provedor passaram a usar a MESMA representação —
+ *        o que exige medir o webhook real, e o `CA-20` nunca rodou.
+ *
+ * A normalização só se aplica quando **os dois** lados são cadeias de dígitos. Fora disso a
+ * comparação continua estrita: um valor que não é numérico não tem preenchimento a ignorar, e
+ * afrouxar ali abriria a conferência para além do que este defeito exige.
+ */
+function mesmoIdentificador(gravado: string, recebido: string): boolean {
+  return semPreenchimentoAEsquerda(gravado) === semPreenchimentoAEsquerda(recebido);
+}
+
+/**
+ * A forma canônica de um identificador só de dígitos — sem os zeros que só preenchem largura.
+ *
+ * O molde exige **ao menos um** dígito depois dos zeros (`(?=\d)`), de modo que `'0'` continua `'0'`
+ * e jamais vira cadeia vazia — que colidiria com qualquer outra cadeia vazia. O que não casa
+ * `^\d+$` volta intacto, e a comparação sobre ele permanece estrita.
+ */
+function semPreenchimentoAEsquerda(identificador: string): string {
+  return SO_DIGITOS.test(identificador)
+    ? identificador.replace(PREENCHIMENTO_A_ESQUERDA, '')
+    : identificador;
 }
 
 /**

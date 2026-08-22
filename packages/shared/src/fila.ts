@@ -46,10 +46,10 @@
  * ---------------------------------------------------------------------------
  *
  * O parágrafo acima descreve a **primeira** classe, e continua verdadeiro palavra por palavra para
- * cada uma das cargas que existiam antes desta fatia: {@link CargaDaRegua},
- * {@link CargaDaConfirmacao}, {@link CargaDaEmissaoEmLote} e {@link CargaDaConferenciaBancaria}
- * levam `empresaId` porque **quem enfileira já detinha direito a ele** — a sessão que atendeu o
- * pedido, ou a enumeração de tenants.
+ * cada uma das cargas que a habitam: {@link CargaDaRegua}, {@link CargaDaConfirmacao},
+ * {@link CargaDaEmissaoEmLote}, {@link CargaDaConferenciaBancaria} e
+ * {@link CargaDaReconferenciaDaEntrega} levam `empresaId` porque **quem enfileira já detinha direito
+ * a ele** — a sessão que atendeu o pedido, ou a enumeração de tenants.
  *
  * {@link CargaDaNotificacaoBancaria} é a **segunda** classe, e ela não tem empresa alguma. A borda
  * que a enfileira recebe um **fato produzido por um terceiro** que não é usuário do sistema e nunca
@@ -67,7 +67,7 @@
  * contrariá-la.
  *
  * ⚠️ **Acrescentar `empresaId` aqui não seria conformidade, seria violação.** É a armadilha mais
- * provável de quem editar este arquivo por analogia com as quatro cargas de cima.
+ * provável de quem editar este arquivo por analogia com as cinco cargas de cima.
  */
 
 /**
@@ -162,6 +162,22 @@ export const FILA_DA_CONFERENCIA_BANCARIA = 'conferencia-bancaria';
  * `RECEBIDO` sem que nada falhasse — e sem que ninguém a reenviasse.
  */
 export const FILA_DA_NOTIFICACAO_BANCARIA = 'notificacao-bancaria';
+
+/**
+ * Nome da fila da **reconferência da entrega da notícia** — a releitura do estado junto ao provedor.
+ *
+ * Quem enfileira é a borda HTTP (`apps/api`), logo depois de o Admin registrar um certificado novo:
+ * o material trocou, e o que o produto sabe sobre a entrega daquela empresa passou a descrever um
+ * aperto de mão que já não é o mesmo. Quem consome é o processo de trabalho, que reconsulta e grava
+ * **só quando o desfecho muda**.
+ *
+ * Vale aqui, palavra por palavra, a razão de {@link FILA_DA_REGUA}: um literal repetido dos dois
+ * lados é a divergência que nenhuma ferramenta apanha, porque o trabalho fica parado **sem erro
+ * nenhum**. O agravante próprio desta fila é o oposto do das irmãs bancárias — nada se perde de
+ * imediato quando ela não é escutada, e é justamente por isso que ela precisa do nome único: a
+ * ausência de efeito é indistinguível de *"nada mudou"*, que é o desfecho normal da reconferência.
+ */
+export const FILA_DA_RECONFERENCIA_DA_ENTREGA = 'reconferencia-da-entrega';
 
 /**
  * Opções aplicadas a toda tarefa enfileirada, por qualquer produtor.
@@ -321,4 +337,37 @@ export interface CargaDaNotificacaoBancaria {
    * `loteId` de {@link CargaDaEmissaoEmLote}.
    */
   readonly notificacaoId: string;
+}
+
+/**
+ * Carga útil da **reconferência da entrega da notícia** de uma empresa — **um** identificador.
+ *
+ * ---------------------------------------------------------------------------
+ * `empresaId` está presente, e isso é CONFORMIDADE — não a violação que a carga vizinha descreve
+ * ---------------------------------------------------------------------------
+ *
+ * Ela pertence à **primeira** classe do cabeçalho, e não à segunda: quem a enfileira é a borda que
+ * acabou de atender o registro do certificado, **sob a sessão do Admin daquela empresa** — de modo
+ * que o identificador é produzido por quem **já detinha direito a ele**, e não lido de nada que um
+ * terceiro tenha enviado. É literalmente o alcance que a **terceira emenda da ADR-0024**
+ * (2026-08-18) declara.
+ *
+ * ⚠️ **Não a leia por analogia com {@link CargaDaNotificacaoBancaria}**, que é a vizinha logo acima
+ * e a única do produto sem empresa. Lá a empresa é o **resultado** da travessia nominal e o campo
+ * não existe porque a borda não sabe — nem pode saber — de que empresa o fato é; aqui a borda sabe,
+ * porque foi ela quem atendeu a sessão. **Tirar o campo daqui não seria conformidade, seria reabrir
+ * o pior modo de falha da ADR-0008**: sem contexto, a política devolve vazio **em silêncio** e a
+ * reconferência *parece* ter rodado sobre uma empresa sem entrega configurada.
+ *
+ * Vale aqui, também, o cabeçalho de {@link CargaDaEmissaoEmLote}: **nada de segredo viaja**. O
+ * certificado e a identidade são resolvidos pelo banco, sob o contexto que esta carga estabelece, e
+ * decifrados com a chave do ambiente do processo de trabalho (ADR-0032). A ausência é o mecanismo.
+ */
+export interface CargaDaReconferenciaDaEntrega {
+  /**
+   * A empresa cuja entrega da notícia será reconferida junto ao provedor.
+   *
+   * Obrigatório por decisão da ADR-0024 — ver o cabeçalho desta interface e o do módulo.
+   */
+  readonly empresaId: string;
 }

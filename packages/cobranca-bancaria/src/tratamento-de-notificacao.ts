@@ -65,6 +65,13 @@
  * - **`tipoMovimento` e `idWebhook`.** São classificação do provedor, e lê-los faria vocabulário dele
  *   virar regra do produto (RN-18). O que decide é a forma do que veio, não o rótulo que ele deu.
  *
+ *   ⚠️ **E o mesmo conceito tem DOIS nomes, conforme o lado da conversa** (`W5`, 2026-08-22): no
+ *   cadastro e na consulta o campo se chama **`codigoTipoMovimento`**; no corpo **recebido** ele se
+ *   chama **`tipoMovimento`**. Hoje isso é inócuo, justamente porque nenhum dos dois é lido — mas
+ *   quem um dia for ler o tipo do movimento vai procurar o nome errado se conhecer só um dos lados.
+ *   A nota fica aqui, e não vira débito, porque não há o que fazer enquanto a decisão de não os ler
+ *   valer.
+ *
  * ---------------------------------------------------------------------------
  * Por que a coerção para cadeia é assimétrica entre os três campos
  * ---------------------------------------------------------------------------

@@ -33,7 +33,7 @@
  * |       |        | em caixa mista: as três respostas são profundamente iguais, e o `id` do corpo
  * |       |        | vem em minúsculas nas três. Identificador que não é UUID é recusado com
  * |       |        | `422 CAMPO_INVALIDO` nomeando o parâmetro, e a contagem da tabela não muda. |
- * | CA-16 | CT-327 | Para **cada uma** das 46 rotas, o esquema de resposta que o documento publicado
+ * | CA-16 | CT-327 | Para **cada uma** das 48 rotas, o esquema de resposta que o documento publicado
  * |       |        | descreve é **profundamente igual** ao derivado do esquema de `@sysloc/contracts`
  * |       |        | que a rota usa — nenhuma descrição escrita à mão em paralelo. Acrescentar um
  * |       |        | campo obrigatório ao esquema muda a descrição derivada, e a comparação passa a
@@ -59,7 +59,7 @@
  *
  * ⚠️ **O `CT-945` NÃO entra na tabela do `CT-327`, e a ausência não é omissão**: aquela tabela
  * compara corpo **derivado de esquema**, e esta rota devolve bytes — não há `esquemaPublicado` com
- * que comparar. `ROTAS_DESCRITAS` continua em **46** por essa razão, e o `CT-945` é justamente a
+ * que comparar. `ROTAS_DESCRITAS` não a conta por essa razão, e o `CT-945` é justamente a
  * prova que a ADR-0028 exige no lugar da comparação que não existe.
  *
  * ===========================================================================
@@ -80,7 +80,7 @@
  * A ADR-0016 é literal: *"o esquema declarado no pacote de contratos é a fonte única… Nenhuma
  * descrição de contrato é escrita à mão em paralelo ao esquema"*. As duas metades da prova:
  *
- *   1. **A comparação** (permanente, neste caso): para as 46 rotas, o esquema que o documento
+ *   1. **A comparação** (permanente, neste caso): para as 48 rotas, o esquema que o documento
  *      publica é profundamente igual ao que `esquemaPublicado(<esquema de @sysloc/contracts>)`
  *      produz. Uma descrição escrita à mão precisaria coincidir byte a byte com a saída de
  *      `z.toJSONSchema` — inclusive os padrões de UUID e de data — para passar aqui;
@@ -156,6 +156,8 @@ import {
   esquemaDoConjunto,
   esquemaDoConjuntoComImoveis,
   esquemaDoContrato,
+  esquemaDoDesfechoDoRegistroDeCertificado,
+  esquemaDoEstadoDaEntrega,
   esquemaDoImovel,
   esquemaDoLocatario,
   esquemaDoReenvioDeConfirmacao,
@@ -201,6 +203,10 @@ import {
   SEGMENTO_DA_VERIFICACAO,
   SEGMENTO_DO_REGISTRO,
 } from '../src/integracoes-bancarias/certificado.controller.ts';
+import {
+  SEGMENTO_DA_ATIVACAO,
+  SEGMENTO_DA_ENTREGA_DA_NOTICIA,
+} from '../src/integracoes-bancarias/entrega-da-noticia.controller.ts';
 import { CAMINHO_DO_DOCUMENTO, criarAplicacao } from '../src/main.ts';
 import { cpfValido } from './documento.ts';
 
@@ -307,7 +313,18 @@ const ROTAS_DE_SITUACAO_DE_LOCACAO = 1;
  * **cinco** partições passam a ser afirmadas separadamente — ver
  * {@link ROTAS_DA_FUNDACAO_BANCARIA}. Nenhuma linha anterior saiu, e nenhuma asserção foi afrouxada.
  */
-const ROTAS_DESCRITAS = 46;
+/**
+ * SUT_IS_CORRECT_BECAUSE: a **T7** da fatia `integracao-bancaria-autonoma` acrescentou **duas** rotas
+ * (46 → 48) — a ativação e a consulta da **entrega da notícia** —, e as duas publicam corpo derivado
+ * de `@sysloc/contracts` por `esquemaPublicado` (ADR-0016), do **mesmo** `esquemaDoEstadoDaEntrega`.
+ * Deixar a âncora em `46` faria o `CT-327` passar sobre uma tabela que ignora as rotas novas, que é
+ * exatamente o modo de falha silencioso que ela existe para fechar. O valor é `33 + 8 + 1 + 1 + 3 + 2`,
+ * e as **seis** partições passam a ser afirmadas separadamente — ver
+ * {@link ROTAS_DA_ENTREGA_DA_NOTICIA} para por que a sexta precisou nascer. Nenhuma linha anterior
+ * saiu, e nenhuma asserção foi afrouxada. **Esta é a última fatia que acrescenta rota antes do
+ * congelamento da superfície.**
+ */
+const ROTAS_DESCRITAS = 48;
 
 /**
  * Quantas rotas a fatia `fundacao-bancaria` publica com corpo derivado de esquema — as **três**.
@@ -320,6 +337,22 @@ const ROTAS_DESCRITAS = 46;
  * anteriores saiu.
  */
 const ROTAS_DA_FUNDACAO_BANCARIA = 3;
+
+/**
+ * Quantas rotas a T7 da fatia `integracao-bancaria-autonoma` publica com corpo derivado de esquema —
+ * as **duas** da entrega da notícia.
+ *
+ * Ela nasce como **sexta partição** pela mesma razão das anteriores: cada fatia responde pelo próprio
+ * crescimento, e ampliar {@link ROTAS_DA_FUNDACAO_BANCARIA} de três para cinco apagaria o retrato de
+ * uma fatia fechada para acomodar trabalho de outra época.
+ *
+ * ⚠️ **Ela é filtrada pelo SUFIXO, e não pelo prefixo**, apesar de viver sob
+ * `/v1/integracoes-bancarias`: é justamente o prefixo que a confundiria com as três da
+ * `fundacao-bancaria` — o mesmo motivo que obrigou a terceira e a quarta partições a filtrarem pelo
+ * fim do caminho. Os dois caminhos terminam em `/entrega-da-noticia` e `/entrega-da-noticia/ativacao`,
+ * e o filtro casa o segmento do recurso em qualquer das duas posições.
+ */
+const ROTAS_DA_ENTREGA_DA_NOTICIA = 2;
 
 /**
  * Quantas rotas a fatia `documentos-e-confirmacao` publica com corpo derivado de esquema — hoje
@@ -388,13 +421,23 @@ const CODIGOS_DE_ERRO_DA_ROTA_DE_BYTES: Readonly<Record<string, readonly string[
 };
 
 /**
- * Quantos códigos o enum fechado da ADR-0017 tem — **oito**, e ele não cresce.
+ * Quantos códigos o enum fechado da ADR-0017 tem — **onze**.
  *
  * Escrito à mão ao lado da leitura do enum, e é o par que discrimina: sem ele, a varredura de
  * pertinência abaixo aprovaria um código novo pelo simples fato de alguém o ter acrescentado ao
- * `CodigoErro`. Acrescentar código é decisão de contrato com efeito no handoff, e reprova aqui.
+ * `CodigoErro`. Acrescentar código é decisão de contrato com efeito no handoff, e **reprova aqui até
+ * que a decisão apareça nesta linha** — que é exatamente o papel dela.
+ *
+ * SUT_IS_CORRECT_BECAUSE: subiu de 8 para 11 porque a T2 da fatia `integracao-bancaria-autonoma`
+ * acrescentou **três** códigos ao enum, um por causa de recusa do registro do certificado
+ * (`MATERIAL_EM_FORMATO_NAO_SUPORTADO`, `SENHA_DO_MATERIAL_NAO_ABRE` e
+ * `CERTIFICADO_COM_VALIDADE_ENCERRADA`) — decisão de contrato aprovada no PRD da fatia (D4), que
+ * paga o `D64` tornando as três causas discrimináveis pelo `codigo`. A âncora **sobe**, nunca
+ * afrouxa: continua sendo comparação exata, e um código que suma do enum segue reprovando aqui.
+ * ⚠️ A frase anterior — *"e ele não cresce"* — saiu porque deixou de ser verdade: o enum cresce por
+ * decisão declarada, e é esta linha que obriga a decisão a aparecer.
  */
-const CODIGOS_DO_ENUM_FECHADO = 8;
+const CODIGOS_DO_ENUM_FECHADO = 11;
 
 /** A pessoa que age: Admin da empresa A, cuja matriz do perfil é o catálogo inteiro. */
 const QUEM_AGE = pessoaSemeada('admin.a@exemplo.com.br');
@@ -474,7 +517,7 @@ afterAll(async () => {
   }
 }, LIMITE_DE_MONTAGEM_MS);
 
-describe('o contrato publicado das 46 rotas do domínio (T11)', () => {
+describe('o contrato publicado das 48 rotas do domínio (T11)', () => {
   it(
     'CT-327 — o documento publicado é DERIVADO dos esquemas que validam a entrada',
     async () => {
@@ -507,8 +550,19 @@ describe('o contrato publicado das 46 rotas do domínio (T11)', () => {
 
       // A QUINTA partição: as três rotas da fatia `fundacao-bancaria`. Pelo PREFIXO, porque elas
       // vivem sob um caminho próprio — ver {@link ROTAS_DA_FUNDACAO_BANCARIA}.
-      const daFundacaoBancaria = tabela.filter((rota) =>
-        rota.caminho.startsWith(caminhoDoDocumento(CAMINHO_DAS_INTEGRACOES_BANCARIAS)),
+      //
+      // ⚠️ A SEXTA partição vive sob o MESMO prefixo, e por isso ela é **subtraída** aqui em vez de o
+      // filtro ser reescrito: `ROTAS_DA_FUNDACAO_BANCARIA` continua valendo `3`, que é o retrato
+      // daquela fatia, e o crescimento desta task é afirmado por si logo abaixo.
+      const daEntregaDaNoticia = tabela.filter((rota) =>
+        rota.caminho.includes(`/${SEGMENTO_DA_ENTREGA_DA_NOTICIA}`),
+      );
+      expect(daEntregaDaNoticia.length).toBe(ROTAS_DA_ENTREGA_DA_NOTICIA);
+
+      const daFundacaoBancaria = tabela.filter(
+        (rota) =>
+          rota.caminho.startsWith(caminhoDoDocumento(CAMINHO_DAS_INTEGRACOES_BANCARIAS)) &&
+          !rota.caminho.includes(`/${SEGMENTO_DA_ENTREGA_DA_NOTICIA}`),
       );
       expect(daFundacaoBancaria.length).toBe(ROTAS_DA_FUNDACAO_BANCARIA);
 
@@ -517,7 +571,8 @@ describe('o contrato publicado das 46 rotas do domínio (T11)', () => {
           doContrato.length -
           daSituacaoDeLocacao.length -
           daConfirmacao.length -
-          daFundacaoBancaria.length,
+          daFundacaoBancaria.length -
+          daEntregaDaNoticia.length,
       ).toBe(ROTAS_DA_FATIA);
 
       const conferidas: string[] = [];
@@ -830,7 +885,7 @@ describe('o contrato publicado das 46 rotas do domínio (T11)', () => {
 
       // E a rede: **todo** código declarado pertence ao enum fechado da ADR-0017. Sem ela, a
       // igualdade acima aprovaria um código inventado desde que alguém o escrevesse nos dois lados —
-      // que é exatamente o modo de falha de um esperado escrito à mão. A lista de oito é derivada do
+      // que é exatamente o modo de falha de um esperado escrito à mão. A lista de onze é derivada do
       // enum de `@sysloc/shared`, e a falha NOMEIA o intruso.
       const declarados = Object.values(codigosPorStatus).flatMap((codigos) => codigos ?? []);
       const fechado = new Set<string>(Object.values(CodigoErro));
@@ -846,7 +901,7 @@ describe('o contrato publicado das 46 rotas do domínio (T11)', () => {
 });
 
 // ---------------------------------------------------------------------------------------------
-// CT-327 — a tabela das 46 rotas, com o esquema de `@sysloc/contracts` que cada uma publica
+// CT-327 — a tabela das 48 rotas, com o esquema de `@sysloc/contracts` que cada uma publica
 // ---------------------------------------------------------------------------------------------
 
 /** Uma rota do domínio e o esquema de que a resposta dela deve derivar. */
@@ -877,10 +932,10 @@ function esquemasDeUmCadastro(dono: string, item: z.ZodType, lista: z.ZodType): 
 }
 
 /**
- * As **46** rotas, com o esquema de `@sysloc/contracts` de que cada resposta deriva.
+ * As **48** rotas, com o esquema de `@sysloc/contracts` de que cada resposta deriva.
  *
  * SUT_IS_CORRECT_BECAUSE: esta linha dizia "As **39** rotas" enquanto a tabela já tinha 40, depois
- * 41, 42, 43, e agora 46 — é o débito **D33 (F2/T7)**, fechado na T7 e mantido em dia desde então. O que mudou é **só a prosa**: a cardinalidade
+ * 41, 42, 43, 46, e agora 48 — é o débito **D33 (F2/T7)**, fechado na T7 e mantido em dia desde então. O que mudou é **só a prosa**: a cardinalidade
  * executável vive em {@link ROTAS_DESCRITAS}, e o `CT-327` a afirma antes de percorrer a tabela.
  * Corrigi-la é obrigatório mesmo assim, pela razão que o docblock de {@link ROTAS_DE_ESCRITA} escreve
  * por extenso: número desatualizado convida a próxima task a "corrigir" a âncora **para o valor
@@ -960,6 +1015,7 @@ const ESQUEMAS_POR_ROTA: readonly EsquemaDeRota[] = [
   ...esquemasDeUmCadastro(CAMINHO_DOS_FIADORES, esquemaDaPessoa, envelopeDeLista(esquemaDaPessoa)),
   ...esquemasDeCadastroDeContrato(),
   ...esquemasDoCertificadoDoProvedor(),
+  ...esquemasDaEntregaDaNoticia(),
 ];
 
 /**
@@ -975,12 +1031,21 @@ const ESQUEMAS_POR_ROTA: readonly EsquemaDeRota[] = [
  * os mesmos que `cobertura-de-autorizacao.e2e.spec.ts` usa para compor os pares — é essa coincidência
  * que liga a superfície descrita aqui à superfície auditada lá.
  *
- * As duas primeiras apontam para **`esquemaDoCertificado`** e a terceira para
- * **`esquemaDoResultadoDaVerificacao`**, e a distinção é o que a linha afirma: a verificação **não
- * devolve o certificado** — ela responde se a identidade foi aceita, e apontá-la para o esquema do
- * certificado faria a igualdade profunda reprovar, que é precisamente a prova de que o documento é
- * derivado e não escrito à mão. O `201` do registro e o `200` das outras duas convivem na mesma
- * tabela porque {@link esquemaDaResposta} busca a resposta de sucesso por **prefixo**.
+ * As três apontam para **esquemas distintos**, e a distinção é o que a linha afirma. A verificação
+ * **não devolve o certificado** — ela responde se a identidade foi aceita —, e apontá-la para o
+ * esquema do certificado faria a igualdade profunda reprovar, que é precisamente a prova de que o
+ * documento é derivado e não escrito à mão. O `201` do registro e o `200` das outras duas convivem na
+ * mesma tabela porque {@link esquemaDaResposta} busca a resposta de sucesso por **prefixo**.
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era esta tabela que descrevia a resposta
+ * do **registro** como sendo a projeção do certificado. A T2 da fatia `integracao-bancaria-autonoma`
+ * publicou `esquemaDoDesfechoDoRegistroDeCertificado` (§4.4 do tech spec) — que **não é**
+ * `esquemaDoCertificado`: ele o estende com `materialConvertido`, a declaração de que o material
+ * precisou ser convertido, que é propriedade do **ato** e não do certificado. É a mesma forma, e a
+ * mesma razão, de `esquemaDaAtivacaoDeContrato` logo abaixo. **A consulta continua apontando para
+ * `esquemaDoCertificado`**, e é essa assimetria que prova que o campo do ato não vazou para a
+ * projeção compartilhada: apontar as duas para o mesmo esquema faria uma das igualdades profundas
+ * reprovar. Nenhuma asserção foi afrouxada e nenhuma linha anterior saiu.
  *
  * O **corpo de entrada** do registro (`esquemaDoCertificadoNovo`) não aparece aqui, e a ausência não
  * é omissão: nenhum controlador desta base descreve corpo de requisição no documento — quem prova a
@@ -990,12 +1055,50 @@ function esquemasDoCertificadoDoProvedor(): EsquemaDeRota[] {
   const raiz = caminhoDoDocumento(CAMINHO_DAS_INTEGRACOES_BANCARIAS);
 
   return [
-    { caminho: `${raiz}/${SEGMENTO_DO_REGISTRO}`, metodo: 'post', esquema: esquemaDoCertificado },
+    {
+      caminho: `${raiz}/${SEGMENTO_DO_REGISTRO}`,
+      metodo: 'post',
+      esquema: esquemaDoDesfechoDoRegistroDeCertificado,
+    },
     { caminho: `${raiz}/${SEGMENTO_DA_CONSULTA}`, metodo: 'get', esquema: esquemaDoCertificado },
     {
       caminho: `${raiz}/${SEGMENTO_DA_CONSULTA}/${SEGMENTO_DA_VERIFICACAO}`,
       metodo: 'post',
       esquema: esquemaDoResultadoDaVerificacao,
+    },
+  ];
+}
+
+/**
+ * As **duas** rotas da entrega da notícia — a ativação e a consulta (T7 desta fatia).
+ *
+ * ⚠️ As duas apontam para o **mesmo** `esquemaDoEstadoDaEntrega`, e a coincidência é conteúdo: o que
+ * a ativação devolve é o estado resultante, e não um envelope de ato com campo próprio. É a assimetria
+ * declarada em relação ao registro do certificado, cuja resposta estende a projeção com
+ * `materialConvertido` — apontar esta ativação para um esquema estendido faria a igualdade profunda
+ * reprovar, e é isso que prova que o documento é **derivado** e não escrito à mão.
+ *
+ * O **corpo de entrada** da ativação (`esquemaDaAtivacaoDaEntrega`) não aparece aqui, e a ausência não
+ * é omissão: nenhum controlador desta base descreve corpo de requisição no documento — quem prova a
+ * recusa da chave desconhecida é o **`CT-1044`** de `packages/contracts/test/esquemas.spec.ts`
+ * (T5 desta fatia), no molde que a `.claude/rules/contrato-publicado.md` fixa — `code` valendo
+ * `'unrecognized_keys'` **mais** a lista `keys` nomeando a chave recusada. ⚠️ E **não** é
+ * `entrega-da-noticia.e2e.spec.ts`, como esta linha já disse: aquela suíte só emite corpo **vazio**
+ * na ativação, de modo que nenhuma requisição dela carrega chave desconhecida para ser recusada.
+ */
+function esquemasDaEntregaDaNoticia(): EsquemaDeRota[] {
+  const raiz = caminhoDoDocumento(CAMINHO_DAS_INTEGRACOES_BANCARIAS);
+
+  return [
+    {
+      caminho: `${raiz}/${SEGMENTO_DA_ENTREGA_DA_NOTICIA}/${SEGMENTO_DA_ATIVACAO}`,
+      metodo: 'post',
+      esquema: esquemaDoEstadoDaEntrega,
+    },
+    {
+      caminho: `${raiz}/${SEGMENTO_DA_ENTREGA_DA_NOTICIA}`,
+      metodo: 'get',
+      esquema: esquemaDoEstadoDaEntrega,
     },
   ];
 }

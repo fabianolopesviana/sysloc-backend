@@ -222,11 +222,59 @@
  * `SituacaoConsultada`: aqui o valor devolvido é **um só objeto** que a borda guarda antes de
  * ramificar, e não uma união que ela estreita no mesmo `switch` em que a recebe.
  *
+ * ---------------------------------------------------------------------------
+ * O que a CONVERSÃO DO MATERIAL (T1 da fatia `integracao-bancaria-autonoma`) acrescenta — cinco
+ * ---------------------------------------------------------------------------
+ *
+ * Saem daqui a operação `converterMaterialSeNecessario`, o desfecho dela (`MaterialPreparado`), a
+ * classe de erro `ErroDeFormatoDoMaterial` e **duas constantes** — `MOTIVO_DO_FORMATO_NAO_SUPORTADO`
+ * e `RADICAL_DE_SENHA_DO_CONVERSOR`. O consumidor tem nome e existe nesta fatia: a borda de registro
+ * do certificado (T2), que prepara o material antes de cifrá-lo e guardá-lo (ADR-0036).
+ *
+ * - **A classe de erro sai** pela mesma régua de `ErroDeMaterialIlegivel` e `ErroDeSenhaQueNaoAbre`:
+ *   é **desfecho de negócio** que a borda distingue **pelo tipo** para escolher o corpo da recusa.
+ *   Não é a régua de `ErroDeBoletoForaDaGuarda`, que é defeito de programação e ninguém trata.
+ * - **`MOTIVO_DO_FORMATO_NAO_SUPORTADO` sai** porque é o motivo interno que a borda registra no
+ *   diário estruturado, e que a verificação compara **por igualdade** contra o que o SUT exporta —
+ *   motivo privado obriga quem verifica a reescrever o literal, e a asserção passa a medir o teste em
+ *   vez do artefato. É a razão que `TETO_DO_APERTO_DE_MAO_MS` já escreve por extenso.
+ * - **`RADICAL_DE_SENHA_DO_CONVERSOR` sai pela MESMA régua, e a exceção é declarada.** O docblock do
+ *   barril adverte que a verificação **copia** os textos de desfecho em vez de importá-los, para não
+ *   aprovar qualquer texto; aqui o que se mede não é um texto apresentado a alguém, e sim o **efeito**
+ *   do radical sobre a classificação — o par CT-1015/CT-1022 exige que ele seja o do **executável**
+ *   (`mac verify`) e **não** o `SINAL_DE_SENHA_QUE_NAO_ABRE` da biblioteca, que é privado de
+ *   `leitura-do-material.ts` e assim permanece. Duas constantes com o mesmo nome de papel e redações
+ *   diferentes é precisamente o que a publicação torna verificável.
+ *
+ * ⚠️ **O teto da conversão NÃO sai**, e a assimetria com os dois limites da reemissão tem critério:
+ * ninguém mede o efeito dele — não há caso que exerça o estouro, e o débito que registra essa
+ * ausência vive no ponto do código. Publicá-lo convidaria quem chama a escolher outro, que é a
+ * segunda regra para o mesmo fato.
+ *
  * ⚠️ **`DesfechoDaNotificacaoBancaria` NÃO sai.** Ela é a união dos nove desfechos que o enum do
  * banco declara, e existe aqui apenas para dar tipo ao parâmetro do predicado: quem o chama passa o
  * valor que leu da camada de dados, sem precisar escrever este nome. Publicá-la ofereceria um segundo
  * lugar de onde declarar o mesmo conjunto — e a duplicação com o enum já é deliberada e amarrada pelo
  * ponto de consumo, como o docblock de `tratamento-de-notificacao.ts` registra.
+ *
+ * ---------------------------------------------------------------------------
+ * O que a ENTREGA DA NOTÍCIA (T5 da fatia `integracao-bancaria-autonoma`) acrescenta — quatro
+ * ---------------------------------------------------------------------------
+ *
+ * Sai daqui a porta irmã `PortaDeEntregaDaNoticia` — a das **duas** operações de configuração — mais
+ * o vocabulário que a atravessa: o que se cadastra (`EntregaParaCadastrar`), o desfecho
+ * (`ResultadoDaOperacaoDeEntrega`) e o motivo que ele carrega (`MotivoDaRecusaDoProvedor`). O
+ * consumidor de cada um tem nome e existe nesta fatia: o adaptador, que diz satisfazê-la (T6), e o
+ * serviço da entrega, que a recebe **por parâmetro** e compõe a projeção publicada (T7).
+ *
+ * ⚠️ **`MotivoDaRecusaDoProvedor` sai, embora nenhum ramo do produto leia dentro dele.** A régua é a
+ * mesma dos desfechos que já saem: ele é o que **atravessa a fronteira** do pacote — quem grava o
+ * estado precisa nomear o que recebeu para repassá-lo à camada de dados. Não lê-lo é propriedade do
+ * uso (D5), e não razão para o tipo ser inalcançável de fora.
+ *
+ * ⚠️ **A porta irmã é a segunda deste pacote, e o nome que a ADR-0001 reserva continua nomeando
+ * exatamente a porta de cobrança.** A régua que a admite aqui são as três condições cumulativas da
+ * emenda de 2026-08-15, escritas por extenso no cabeçalho de `porta-de-entrega-da-noticia.ts`.
  */
 
 export type { ConfiguracaoDoProvedorBancario } from './adaptador-sicoob.js';
@@ -245,6 +293,13 @@ export type {
   TrabalhoDaConferencia,
 } from './conferencia.js';
 export { conferirCobrancas } from './conferencia.js';
+export type { MaterialPreparado } from './conversao-do-material.js';
+export {
+  converterMaterialSeNecessario,
+  ErroDeFormatoDoMaterial,
+  MOTIVO_DO_FORMATO_NAO_SUPORTADO,
+  RADICAL_DE_SENHA_DO_CONVERSOR,
+} from './conversao-do-material.js';
 export type { DesfechoDoLote, TrabalhoDoLote } from './emissao-em-lote.js';
 export { executarEmissaoEmLote } from './emissao-em-lote.js';
 export type { GuardaDeBoletos } from './guarda-de-boletos.js';
@@ -262,15 +317,21 @@ export type {
   ConsultaDeSituacao,
   DesfechoDaOperacao,
   DetalheDaVerificacao,
+  EntregaParaCadastrar,
   IdentidadeDoProvedor,
   IdentidadeParaVerificar,
+  LeituraDaEntrega,
   LocatarioDaCobranca,
   MeioDeRecebimento,
+  MotivoDaRecusaDoProvedor,
   PedidoDeEmissao,
+  ReferenciaDoCadastroDaEntrega,
+  ResultadoDaOperacaoDeEntrega,
   ResultadoDaVerificacaoDeIdentidade,
   SituacaoConsultada,
 } from './modelo-canonico.js';
 export type { AdaptadorCobrancaBancaria } from './porta-de-cobranca.js';
+export type { PortaDeEntregaDaNoticia } from './porta-de-entrega-da-noticia.js';
 export type { PortaDeIdentidadeBancaria } from './porta-de-identidade.js';
 export type { DesfechoDaReemissao, TrabalhoDaReemissao } from './reemissao.js';
 export {

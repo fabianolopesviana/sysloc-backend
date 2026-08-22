@@ -162,6 +162,27 @@
       "when": 1787251125213,
       "tag": "0022_seguranca_identidade_no_provedor",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1787372791563,
+      "tag": "0023_dominio_entrega_da_noticia",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1787372791564,
+      "tag": "0024_seguranca_entrega_da_noticia",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1787372791565,
+      "tag": "0025_estado_ternario_da_entrega",
+      "breakpoints": true
     }
   ]
 }

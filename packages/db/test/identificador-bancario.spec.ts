@@ -22,7 +22,10 @@
  * |          |        | devolvido. A mensagem **não ecoa** o valor recusado. As demais entradas que
  * |          |        | produziriam forma inválida (negativo, fracionário, competência fora de
  * |          |        | `AAAAMM`) também são recusadas antes de compor, de modo que nenhuma cadeia
- * |          |        | fora de forma exista — nem como valor intermediário (RN-07). |
+ * |          |        | fora de forma exista — nem como valor intermediário (RN-07). ⚠️ Inclusive a
+ * |          |        | competência de **seis caracteres que não é `AAAAMM`** (`-20268`, `2026.5`),
+ * |          |        | que a conferência por comprimento aprovava — as duas pernas do `D21`,
+ * |          |        | acrescentadas na intervenção dirigida de 2026-08-22. |
  * | A7       | CT-814 | `plataforma.proximo_identificador_bancario` tem **zero parâmetros**,
  * | CA-10    |        | `prosecdef` verdadeiro e `search_path` fixado; `sysloc_app` tem `EXECUTE`
  * | CA-11    |        | sobre ela e **nenhum** dos três privilégios (`SELECT`, `UPDATE`, `USAGE`)
@@ -140,6 +143,16 @@ const COMPOSICOES_ESPERADAS: readonly (readonly [number, number, string])[] = [
 
 /** A largura do contador, por extenso — o valor que a decomposição `6 + 12` fixa. */
 const LARGURA_DO_CONTADOR_POR_EXTENSO = 12;
+
+/**
+ * A largura da competência, por extenso — a outra metade da mesma decomposição.
+ *
+ * Existe para as duas pernas do `D21`: elas precisam afirmar que `-20268` e `2026.5` têm
+ * **exatamente** este comprimento, porque é isso que os torna discriminantes. Um valor de cinco ou
+ * sete posições seria pego pela conferência de comprimento sozinha, e não separaria a guarda antiga
+ * da nova.
+ */
+const LARGURA_DA_COMPETENCIA_POR_EXTENSO = 6;
 
 /** Quantas posições o identificador inteiro tem, por extenso. */
 const LARGURA_DO_IDENTIFICADOR_POR_EXTENSO = 18;
@@ -391,7 +404,18 @@ describe('CT-805 — contador acima da largura é recusado ANTES de compor', () 
     expect(() => comporIdentificadorBancario(20268, 1)).toThrow(RangeError);
     expect(() => comporIdentificadorBancario(2026081, 1)).toThrow(RangeError);
 
-    // O controle positivo, sem o qual uma composição que recusasse TUDO passaria nas quatro acima.
+    // ⚠️ AS DUAS ASSERÇÕES QUE DISCRIMINAM O `D21` — e nenhuma das quatro acima as alcança. As
+    // quatro medem competência FORA da largura (5 ou 7 posições), que o comprimento do texto já
+    // pegava. Estas duas medem valores de EXATAMENTE seis caracteres que não são `AAAAMM`: uma
+    // guarda que confira só `String(competencia).length` aprova as duas e compõe 18 caracteres com
+    // sinal ou com ponto — os 18 que o `ESQUEMA_DO_IDENTIFICADOR_BANCARIO` (`^[0-9]{18}$`) recusa, e
+    // que a RN-07 proíbe de existir nem como intermediário.
+    expect(String(-20268)).toHaveLength(LARGURA_DA_COMPETENCIA_POR_EXTENSO);
+    expect(String(2026.5)).toHaveLength(LARGURA_DA_COMPETENCIA_POR_EXTENSO);
+    expect(() => comporIdentificadorBancario(-20268, 1)).toThrow(RangeError);
+    expect(() => comporIdentificadorBancario(2026.5, 1)).toThrow(RangeError);
+
+    // O controle positivo, sem o qual uma composição que recusasse TUDO passaria nas seis acima.
     expect(comporIdentificadorBancario(COMPETENCIA_DE_REFERENCIA, 0)).toBe('202608000000000000');
   });
 });

@@ -441,3 +441,232 @@ export type SituacaoConsultada =
   | SituacaoLiquidada
   | SituacaoRevogada
   | SituacaoEstornada;
+
+// ===========================================================================
+// O vocabulário da ENTREGA DA NOTÍCIA — o que atravessa a porta irmã
+// ===========================================================================
+
+/**
+ * O que o provedor respondeu ao recusar o cadastro da entrega — **diagnóstico, e nunca autoridade**.
+ *
+ * ---------------------------------------------------------------------------
+ * A tensão entre a RN-02 e a ADR-0001, e por que ela NÃO é conflito
+ * ---------------------------------------------------------------------------
+ *
+ * O PRD exige o motivo **íntegro** — código, mensagem e os campos que variam por recusa —, e a
+ * ADR-0001 proíbe *"campo, URL ou vocabulário específico de provedor"* de cruzar a porta. As duas se
+ * conciliam porque a cláusula é do **vocabulário**, e vocabulário é **nome**, não valor: é a mesma
+ * leitura que a emenda de 2026-08-17 aplica à credencial de acesso. A ancoragem direta é o
+ * `Consequences → Neutros` da ADR-0034 — *"o que o terceiro informou continua preservado como
+ * diagnóstico no evento que houve, inclusive quando o produto não reconhece o que ele disse"*.
+ *
+ * Por isso os **três nomes são do produto** e os **três valores são do provedor, verbatim**. O
+ * precedente de forma é o *recebido cru* do glossário, e o irmão executável é `motivo` de
+ * {@link DesfechoDaOperacao}: guardado como chegou, lido por ninguém.
+ *
+ * ---------------------------------------------------------------------------
+ * A consequência exigível, e é ela que fecha a classe: o motivo NÃO DECIDE NADA
+ * ---------------------------------------------------------------------------
+ *
+ * Nenhum ramo do produto lê **dentro** dele. O que decide habilitada/desabilitada é o desfecho
+ * canônico da porta ({@link ResultadoDaOperacaoDeEntrega.aceito}), e é por isso que um código de
+ * recusa que ninguém previu é inócuo: não há tabela que o traduza, nem `switch` que o consulte.
+ *
+ * ⚠️ **Ler a PRESENÇA do motivo não é ler dentro dele**, e a distinção é o que separa esta decisão
+ * de um contorno dela. Quem orquestra distingue *"o provedor recusou"* de *"o provedor não
+ * respondeu"* pela anulabilidade declarada em {@link ResultadoDaOperacaoDeEntrega}; o que
+ * permanece proibido é qualquer ramo que compare `codigo`, case `mensagem` ou alcance uma chave de
+ * `diagnostico`.
+ */
+export interface MotivoDaRecusaDoProvedor {
+  /** O código que o provedor devolveu, **íntegro**. Não se traduz, não se normaliza, não se compara. */
+  readonly codigo: string;
+  /** A mensagem que o provedor devolveu, **íntegra**. Idem. */
+  readonly mensagem: string;
+  /**
+   * Os campos que **variam por código de recusa**, guardados como chegaram — portador **opaco**.
+   *
+   * Ele é `Record<string, unknown>` porque a premissa do produto é que a forma varia, e declará-la
+   * seria a alternativa A2 do D5: publicar o objeto do provedor como tipo declarado, o que **viola**
+   * a cláusula de fecho da ADR-0001 e a varredura de vocabulário pega.
+   *
+   * ⚠️ **As chaves aqui dentro são do provedor em EXECUÇÃO, e isso não conflita com a varredura**,
+   * que é estática sobre o **texto do fonte** — nome de tipo, membro de tipo, símbolo declarado e
+   * literal de cadeia. Nenhuma dessas quatro posições existe para uma chave que só aparece em
+   * execução, e o eixo negativo do controle positivo do `CT-1032` é o que afirma a ausência de
+   * conflito em vez de prometê-la.
+   *
+   * ⚠️ **Ele é ANULÁVEL, e o nulo é conteúdo**: *"o provedor recusou e não mandou campo variável
+   * nenhum"*, **distinto de `{}`**. Variar inclui não haver nenhum — é o que
+   * `negocio.entrega_da_noticia.motivo_diagnostico` admite (`jsonb` anulável, com a `CHECK` da `0023`
+   * exigindo apenas `motivo_diagnostico IS NULL OR motivo_codigo IS NOT NULL`), é o que
+   * `MotivoDaRecusaDoProvedor` de `@sysloc/db` declara, e é o que o contrato publicado passou a
+   * declarar. **Quem compõe não escreve `?? {}`**: isso converteria *"não mandou campo nenhum"* em
+   * *"mandou objeto vazio"*, que é a mesma mentira sobre a origem que {@link
+   * ResultadoDaOperacaoDeEntrega} proíbe um nível acima.
+   *
+   * ---------------------------------------------------------------------------
+   * O NÚMERO do teto é do contrato publicado; a VIGÊNCIA dele é da camada que grava
+   * ---------------------------------------------------------------------------
+   *
+   * `MAIOR_DIAGNOSTICO_EM_CHAVES` e `MAIOR_DIAGNOSTICO_EM_CARACTERES` vivem em `@sysloc/contracts`
+   * porque são contrato publicado e o número mora num lugar só — mas **não é o esquema que os faz
+   * valer**: esquema de saída não é `parse`ado em execução, e os `.refine()` de lá não sobrevivem ao
+   * documento publicado. Quem aplica o teto é `limitarDiagnostico`, chamada por
+   * `gravarDesfechoDaEntrega` em `packages/db/src/entrega-da-noticia.ts` — o único ponto que escreve
+   * a coluna —, e lá ele **trunca**, nunca recusa.
+   *
+   * ⚠️ **Quem constrói este valor no adaptador não precisa clampar**, e não deve: um segundo ponto de
+   * aplicação seria a segunda declaração da mesma regra, livre para divergir da que grava.
+   */
+  readonly diagnostico: Record<string, unknown> | null;
+}
+
+/**
+ * O que a porta recebe para cadastrar — e para consultar — a entrega da notícia desta empresa.
+ *
+ * ---------------------------------------------------------------------------
+ * Ele estende o ato no provedor, e o acréscimo VAZIO é a decisão
+ * ---------------------------------------------------------------------------
+ *
+ * As duas operações precisam exatamente do que todo ato no provedor precisa: de quem é a identidade,
+ * o segredo que a habilita e os dados da conta que a entrega endereça. **Nada além disso atravessa**
+ * — nem endereço de destino, nem teto de tempo, nem cabeçalho, nem credencial de habilitação. Para
+ * onde o provedor entrega a notícia é propriedade de quem constrói o adaptador, lida do ambiente num
+ * ponto só; aceitá-la por aqui faria uma entrada de usuário decidir o destino do que se cadastra,
+ * que é a forma canônica do defeito de requisição forjada do lado do servidor.
+ *
+ * Ele é **tipo próprio**, e não `AtoNoProvedor` cru na assinatura, pela mesma razão registrada em
+ * {@link IdentidadeParaVerificar}: é este tipo que uma fatia futura alarga, e alargar o ato-base
+ * arrastaria junto a emissão, as duas revogações e a consulta de título, que não têm nada com a
+ * entrega.
+ *
+ * ⚠️ **O nome diz `ParaCadastrar` e `consultarEntrega` o recebe igual**, e a assimetria aparente é
+ * deliberada: o que este tipo carrega é **qual** entrega — a desta empresa, sob esta identidade —, e
+ * as duas operações agem sobre a mesma. Um segundo tipo idêntico para a consulta seria duas
+ * declarações do mesmo fato, livres para divergir, que é a forma exata do débito **D14**.
+ */
+export interface EntregaParaCadastrar extends AtoNoProvedor {}
+
+/**
+ * O desfecho de uma operação de entrega — **resolve sempre, e nunca rejeita**.
+ *
+ * ---------------------------------------------------------------------------
+ * A recusa do provedor é um DESFECHO, e a alternativa idiomática foi descartada
+ * ---------------------------------------------------------------------------
+ *
+ * É a mesma decisão, e a mesma razão, de {@link ResultadoDaVerificacaoDeIdentidade} e de
+ * {@link DesfechoDaOperacao}: levantar faria a borda traduzir *"a vaga já está ocupada"* em `500`, e
+ * o Admin leria *"o sistema falhou"* onde o fato é uma resposta à pergunta que ele fez — dois
+ * desfechos operacionais opostos (RN-06). Recusa pelo par, indisponibilidade e tempo esgotado são
+ * **respostas**, e chegam como este valor.
+ *
+ * A união é **discriminada por `aceito`**, e é ele — e só ele — que o produto lê para decidir o
+ * estado. É a consequência exigível do D5, e o que impede o vocabulário do provedor de virar regra:
+ * *"habilitada"* exige o cadastro **e** a consulta positivos (RN-01), e quem prevalece é a consulta.
+ *
+ * ---------------------------------------------------------------------------
+ * `motivo` é ANULÁVEL, e a anulabilidade carrega conteúdo
+ * ---------------------------------------------------------------------------
+ *
+ * Nulo significa *"não houve o que preservar íntegro"* — o provedor não chegou a responder
+ * (indisponibilidade, tempo esgotado). Preenchê-lo com texto do produto nesses casos faria os três
+ * campos mentirem sobre a própria origem, que é justamente o que preservá-los verbatim existe para
+ * garantir; e omitir a anulabilidade obrigaria o adaptador a inventar um código de recusa que
+ * provedor nenhum emitiu.
+ *
+ * É essa distinção que a fatia da borda lê para **preservar o estado anterior** quando o provedor
+ * está fora do ar, em vez de gravar uma desabilitação que ninguém decidiu — e ela é leitura da
+ * **presença**, nunca do conteúdo.
+ */
+export type ResultadoDaOperacaoDeEntrega =
+  | {
+      readonly aceito: true;
+      /**
+       * A referência ao cadastro, quando a operação a produziu — **só o cadastro produz**.
+       *
+       * É a única vez em que o produto obtém a referência de um ato de **escrita**, e é ela que, na
+       * tentativa seguinte, prova que a vaga é nossa quando o endereço tiver mudado. As demais
+       * operações devolvem `null`: elas agem sobre um cadastro cuja referência quem chamou já tinha.
+       */
+      readonly referencia: ReferenciaDoCadastroDaEntrega | null;
+    }
+  | { readonly aceito: false; readonly motivo: MotivoDaRecusaDoProvedor | null };
+
+/**
+ * A referência ao cadastro junto ao provedor — **opaca**, e a opacidade é a decisão.
+ *
+ * O produto não a interpreta, não a compara com nada e não decide por ela. Ela responde **uma**
+ * pergunta — *"a vaga é ocupada por um cadastro que este produto criou?"* — e é essa resposta que
+ * autoriza corrigir o endereço dele, ou reativá-lo, **sem tocar cadastro de terceiro**.
+ *
+ * ⚠️ **Ela não é vocabulário do provedor atravessando a porta** (ADR-0001): o que atravessa é um
+ * valor sem significado deste lado, cujo único uso é ser devolvido à mesma porta que o emitiu. O
+ * nome é do produto, e nenhum ramo do domínio, do serviço ou da tela lê dentro dele.
+ */
+export type ReferenciaDoCadastroDaEntrega = string;
+
+/**
+ * O que a consulta encontrou junto ao provedor — **o desfecho é ternário, e o quarto não é desfecho**.
+ *
+ * ===========================================================================
+ * Por que a consulta deixou de responder um booleano
+ * ===========================================================================
+ *
+ * `{ aceito: boolean }` respondia *"existe registro?"*, e a pergunta certa é *"existe registro
+ * **ativo**, do tipo de movimento certo, apontando para o **meu** endereço — e, se não, o que
+ * exatamente há lá?"*. As respostas são operacionalmente distintas e pedem **atos distintos**, e
+ * colapsá-las foi o que produziu os dois defeitos que este tipo existe para fechar: um webhook
+ * **inativado** contava como ativo (o produto afirmava saúde no exato cenário em que a entrega
+ * estava morta), e um cadastro apontando para **outro endereço** também.
+ *
+ * ===========================================================================
+ * `EM_VALIDACAO` é o estado NORMAL de saída de toda ação corretiva
+ * ===========================================================================
+ *
+ * A documentação do provedor declara que **três** atos levam à mesma situação — cadastrar, alterar
+ * a URL e reativar. Quem o tratar como caso de borda vai reescrevê-lo três vezes. Ele **não** é
+ * habilitada (a entrega ainda não entrega) nem desabilitada (ela vai entregar): é transitório, e
+ * quem o promove é a reconferência periódica, que já existe e já consulta.
+ *
+ * ===========================================================================
+ * `NAO_RESPONDEU` NÃO é um desfecho — é a ausência de leitura
+ * ===========================================================================
+ *
+ * Ele é o que o `D35` nomeava: *"o provedor não respondeu"* e *"o provedor respondeu e não há
+ * cadastro nosso"* chegavam iguais, e a borda gravava **desabilitada** para os dois — apagando o
+ * estado de uma entrega que podia estar de pé só porque a rede falhou. Nenhum ramo do produto pode
+ * gravar desabilitação a partir dele.
+ */
+export type LeituraDaEntrega =
+  /** O provedor não respondeu — indisponibilidade, tempo esgotado, ou recusa da concessão. */
+  | { readonly tipo: 'NAO_RESPONDEU'; readonly motivo: MotivoDaRecusaDoProvedor | null }
+  /** Ele respondeu, e **não há cadastro algum** no tipo de movimento que este produto usa. */
+  | { readonly tipo: 'SEM_CADASTRO' }
+  /** Cadastro nosso, validado e não inativado — a entrega **está de pé**. */
+  | { readonly tipo: 'ATIVA' }
+  /** Cadastro nosso, ainda aguardando a validação do endereço pelo provedor. */
+  | { readonly tipo: 'EM_VALIDACAO' }
+  /**
+   * Cadastro nosso, **inativado** pelo provedor — pede reativação, e traz a causa que ele deu.
+   *
+   * ⚠️ **O motivo é verbatim do provedor** (ADR-0034), e é o que torna esta leitura acionável: o
+   * exemplo oficial traz `"Erro ao enviar notificação"`, que diz ao Admin exatamente o que houve. É
+   * também o que permite à reconferência periódica **desabilitar com causa** quando encontra a
+   * entrega morta — sem ele, ela teria de escolher entre gravar desabilitação sem explicação e não
+   * gravar nada, e as duas são piores.
+   */
+  | {
+      readonly tipo: 'INATIVA';
+      readonly referencia: ReferenciaDoCadastroDaEntrega;
+      readonly motivo: MotivoDaRecusaDoProvedor | null;
+    }
+  /** Cadastro nosso, mas apontando para um endereço que não é o atual — pede correção. */
+  | { readonly tipo: 'ENDERECO_DIVERGENTE'; readonly referencia: ReferenciaDoCadastroDaEntrega }
+  /**
+   * A vaga está ocupada por cadastro que **não é nosso** — e nele o produto não toca.
+   *
+   * Sem referência, de propósito: não havendo prova de propriedade, não há ato autorizado, e
+   * carregar o identificador aqui convidaria alguém a usá-lo.
+   */
+  | { readonly tipo: 'DE_TERCEIRO' };

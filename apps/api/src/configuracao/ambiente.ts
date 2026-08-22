@@ -107,6 +107,116 @@ function ehChaveDeCifraAceitavel(valor: string): boolean {
 /** A exigência que a recusa do diretório dos boletos publica — nomeia a forma, jamais o valor. */
 const EXIGENCIA_DO_DIRETORIO_DOS_BOLETOS = 'deve ser o caminho absoluto de um diretório gravável';
 
+/** A porta que o provedor exige do endereço de entrega — ver {@link ehEnderecoDeEntregaAceitavel}. */
+const PORTA_EXIGIDA_PELO_PROVEDOR = '443';
+
+/** O esquema que o provedor exige do endereço de entrega — cifrado, e nada mais. */
+const ESQUEMA_EXIGIDO_PELO_PROVEDOR = 'https:';
+
+const EXIGENCIA_DO_ENDERECO_DA_ENTREGA = `deve ser uma URL absoluta ${ESQUEMA_EXIGIDO_PELO_PROVEDOR}//, com servidor nomeado e na porta ${PORTA_EXIGIDA_PELO_PROVEDOR}`;
+
+/**
+ * O endereço da entrega satisfaz o que o **provedor** exige dele?
+ *
+ * DECISÃO FECHADA — W3 · conformidade com a documentação do provedor · 2026-08-22
+ * O QUÊ: a partida confere a **forma** do endereço da entrega, e não apenas a presença dele.
+ * POR QUÊ: a documentação oficial é literal — *"`url` — Deve ser https. Porta: 443"* —, e a
+ *        conferência anterior era `z.string().min(1)`. Um `http://…`, uma porta `:8443` ou um caminho
+ *        relativo subiam sem reclamação, e a falha aparecia **tarde**: no cadastro junto ao provedor,
+ *        com a mensagem dele, ou — pior — o cadastro era aceito e o webhook **nunca validava**, que é
+ *        indistinguível de indisponibilidade para quem olha a tela.
+ * POR QUE ISTO FECHA A CLASSE: é a **única** barreira que existe. Diferente de
+ *        `ENDERECO_DO_PROVEDOR_BANCARIO`, cujo endereço é recusado pela construção do adaptador, este
+ *        valor não passa por nenhum outro ponto que o confira — ele é lido e enviado ao provedor.
+ *        Conferir a forma aqui alcança as três maneiras de errar de uma vez (esquema, servidor,
+ *        porta), e não apenas a medida.
+ * REVERTER EXIGE: provar que o provedor passou a aceitar endereço fora desta forma — o que exige a
+ *        documentação dele dizendo outra coisa, não a suposição de que a exigência afrouxou.
+ *
+ * É a mesma leitura do `DIRETORIO_DOS_BOLETOS` logo abaixo, e a assimetria que aquele docblock
+ * descreve é a que se aplica aqui: **não há segundo lugar** onde o defeito seja pego.
+ *
+ * ⚠️ **A porta implícita conta.** `https://borda.exemplo.com.br/caminho` fala 443 sem escrevê-lo, e
+ * `new URL` devolve `port === ''` nesse caso — recusar a forma implícita rejeitaria justamente o
+ * endereço mais comum e mais correto.
+ *
+ * ⚠️ **A recusa nomeia a variável e a exigência, JAMAIS o valor.** É por isso que o `TypeError` do
+ * `new URL` é capturado e descartado: ele carrega a cadeia recusada na propriedade `input`, e deixá-lo
+ * escapar poria o endereço na mensagem de partida. Mesma disciplina de {@link ehDiretorioGravavel} e
+ * o mesmo precedente de `resolverDestino`, no adaptador.
+ */
+const EXIGENCIA_DO_CONTATO_DA_ENTREGA =
+  'deve ser um endereço de e-mail com parte local e domínio, sem espaços';
+
+/**
+ * O contato do cadastro da entrega tem forma de endereço de e-mail?
+ *
+ * DECISÃO FECHADA — W2 · conformidade com a documentação do provedor · 2026-08-22
+ * O QUÊ: o processo exige um contato operacional para o cadastro da entrega, e confere a forma dele
+ *        na partida.
+ * POR QUÊ: a prosa oficial do provedor declara o contato **necessário** no cadastro — *"é necessário
+ *        informar o código do movimento, o código do período do movimento **e o e-mail**"* —, e o
+ *        produto não o enviava. Somado ao `numeroCliente` que ele enviava **e não existe** no
+ *        contrato, o corpo tinha um campo a mais e um a menos: as duas causas de `406` no mesmo
+ *        pedido. E é por este endereço que o provedor avisa quando **inativa** o webhook — sem ele, a
+ *        inativação é silenciosa.
+ * POR QUE DO PROCESSO, e não do cliente: as alternativas eram um contato da empresa já modelado (o
+ *        produto não tem nenhum), configuração do processo, ou pedir ao Admin na tela. A última foi
+ *        recusada porque a tela da ativação tem **um ato e nenhum campo**, por restrição declarada
+ *        pelo usuário; a primeira, porque inventar um valor faria o produto cadastrar um contato que
+ *        ninguém escolheu na conta do cliente.
+ * REVERTER EXIGE: documentação do provedor declarando o contato dispensável — não a leitura do
+ *        Swagger, que marca só o objeto `webhook` como obrigatório e por isso induziu ao erro.
+ *
+ * A conferência é **de forma, não de existência da caixa**: nada é enviado para validá-la, e não
+ * poderia ser — a partida não fala com o mundo. O que ela fecha é o valor que **nunca** poderia ser
+ * um endereço, que é o defeito barato de pegar aqui e caro de descobrir no cadastro real.
+ *
+ * ⚠️ A recusa nomeia a variável e a exigência, JAMAIS o valor — mesma disciplina de todas as demais.
+ */
+function ehContatoDeEntregaAceitavel(valor: string): boolean {
+  const partes = valor.split('@');
+
+  if (partes.length !== 2) {
+    return false;
+  }
+
+  const [local = '', dominio = ''] = partes;
+
+  // O domínio precisa de um ponto com rótulo dos dois lados: `a@b` é sintaticamente um endereço e
+  // nunca é um contato real, e aceitá-lo faria a conferência passar exatamente onde ela deveria pegar.
+  return (
+    local !== '' &&
+    dominio !== '' &&
+    !SEPARADOR_EM_BRANCO.test(valor) &&
+    DOMINIO_COM_ROTULO.test(dominio)
+  );
+}
+
+/** Qualquer espaço em branco — nenhum endereço legítimo o contém. */
+const SEPARADOR_EM_BRANCO = /\s/;
+
+/** Um domínio com ao menos um ponto, e rótulo não vazio dos dois lados dele. */
+const DOMINIO_COM_ROTULO = /^[^.\s@]+(?:\.[^.\s@]+)+$/;
+
+function ehEnderecoDeEntregaAceitavel(valor: string): boolean {
+  let endereco: URL;
+
+  try {
+    endereco = new URL(valor);
+  } catch {
+    // Caminho relativo, cadeia sem esquema, lixo — todos param aqui, e nada do valor viaja.
+    return false;
+  }
+
+  return (
+    endereco.protocol === ESQUEMA_EXIGIDO_PELO_PROVEDOR &&
+    endereco.hostname !== '' &&
+    // A vazia é a porta implícita do esquema, que para `https:` **é** a exigida.
+    (endereco.port === '' || endereco.port === PORTA_EXIGIDA_PELO_PROVEDOR)
+  );
+}
+
 /**
  * O caminho é absoluto **e** aponta para um diretório em que este processo consegue escrever?
  *
@@ -317,6 +427,63 @@ const ESQUEMA = z.object({
    * recusa do provedor em vez de recusa de partida. Aqui se falha fechado.
    */
   ENDERECO_DE_AUTORIZACAO_BANCARIA: z.string().min(1, 'deve ser declarada'),
+  /**
+   * Para **onde** o provedor entrega a notícia — o endereço público desta instalação.
+   *
+   * ---------------------------------------------------------------------------
+   * Por que ela é EXIGIDA aqui, e não opcional como o campo irmão do adaptador
+   * ---------------------------------------------------------------------------
+   *
+   * `ConfiguracaoDoProvedorBancario.enderecoDaEntregaDaNoticia` é **opcional** por um motivo que vale
+   * lá e não vale aqui: quem só usa a sonda de identidade ou as operações de cobrança não cadastra
+   * entrega alguma, e obrigá-lo quebraria quatro construtores que nada têm com a notícia. Mas a
+   * degradação que a opcionalidade produz é assimétrica em relação à do endereço de autorização, e a
+   * assimetria foi **medida** (`D29`, Gate 2 da T6): ausente o endereço de autorização, a concessão
+   * degrada **com sentido** — vai ao destino da API; ausente este, as duas operações da entrega
+   * resolvem `{ aceito: false, motivo: null }` **sem chamar** o provedor, e `motivo: null` é
+   * exatamente o valor que a porta reserva para *"o provedor não chegou a responder"*. Erro de
+   * configuração desta instalação e indisponibilidade do terceiro chegariam ao Admin com o **mesmo**
+   * valor, sem que nada na porta os distinguisse — e nenhum sinal chegaria ao par TLS, de modo que
+   * nem os registros do provedor nem os desta ponta mostrariam tentativa alguma.
+   *
+   * Exigi-la na partida é o que fecha a classe: o processo que compõe a porta de entrega **recusa
+   * subir** mal configurado, em vez de recusar cada operação em silêncio. É a mesma disciplina, e a
+   * mesma razão, do parágrafo *"EXIGIDA, e não opcional"* de {@link ENDERECO_DE_AUTORIZACAO_BANCARIA}:
+   * aqui se falha fechado.
+   *
+   * A **forma** não é conferida nesta leitura, e a ausência é a mesma decisão de
+   * `ENDERECO_DO_PROVEDOR_BANCARIO`: quem recusa o endereço que não serve é `resolverDestino`, em
+   * `@sysloc/cobranca-bancaria`, num lugar só, na **construção** do adaptador — e a recusa de lá
+   * nomeia o campo, jamais o valor. Uma segunda conferência de forma escrita nesta composição ficaria
+   * livre para divergir daquela. O piso de um caractere é a barreira que sobrevive a
+   * {@link selecionar}, que trata valor em branco como ausente.
+   *
+   * ⚠️ **Divergência de escopo declarada: este arquivo NÃO está na §5.1/§5.2 do card da T7**, nem no
+   * raio de impacto que ela declara — o raio de lá é derivado das **âncoras de superfície**, e esta é
+   * uma exigência de **composição do processo**, que aquela derivação não alcança. A razão de abri-lo
+   * é o fecho do **`D29`** (achado `architecture` do Gate 2 da T6), cujo *"o que fazer"* nomeia este
+   * arquivo por extenso: *"exigir `enderecoDaEntregaDaNoticia` na conferência de partida
+   * (`apps/api/src/configuracao/ambiente.ts`) sempre que o serviço de entrega for registrado"*. A T7 é
+   * a task que introduz o **primeiro consumidor** da porta, e sem esta linha uma instalação mal
+   * configurada responderia para sempre `{ aceito: false, motivo: null }` — indistinguível de
+   * indisponibilidade do provedor. Mesmo molde das anotações do `D26 (F2/T6)` que esta task deixou em
+   * `apps/api/test/contexto.e2e.spec.ts` e `apps/api/test/validacao.spec.ts`.
+   *
+   * ⚠️ Abrir este arquivo **disparou o gatilho do `D51 · F4/T16`** (*"a primeira task autorizada a
+   * abrir `apps/api/src/configuracao/ambiente.ts`"*): as duas conferências de forma da chave de cifra
+   * seguem com duas definições, aqui e em `apps/worker/src/main.ts`. Ele fica **adiado** — fechá-lo
+   * mexeria na partida do worker, que está fora desta task —, e o disparo está registrado no índice do
+   * `CLAUDE.md` para que a próxima task não releia o gatilho como futuro.
+   */
+  ENDERECO_DA_ENTREGA_DA_NOTICIA: z
+    .string()
+    .refine(ehEnderecoDeEntregaAceitavel, EXIGENCIA_DO_ENDERECO_DA_ENTREGA),
+  // O contato operacional que o provedor exige no cadastro da entrega, e por onde ele avisa quando
+  // inativa o webhook. Ver {@link ehContatoDeEntregaAceitavel} para por que ele é do PROCESSO e por
+  // que a partida confere a forma dele.
+  CONTATO_DA_ENTREGA_DA_NOTICIA: z
+    .string()
+    .refine(ehContatoDeEntregaAceitavel, EXIGENCIA_DO_CONTATO_DA_ENTREGA),
   // O diretório onde os bytes do boleto são guardados (T13 da fatia `emissao-e-conciliacao`).
   //
   // ⚠️ **Aqui o modo perigoso é o mesmo INVERSO da chave de cifra**, e por isso a partida é recusada
@@ -409,6 +576,18 @@ export interface Ambiente {
   readonly enderecoDoProvedorBancario: string;
   /** O endereço de autorização do provedor, de `ENDERECO_DE_AUTORIZACAO_BANCARIA`. */
   readonly enderecoDeAutorizacaoBancaria: string;
+  /**
+   * O endereço público **desta instalação** que o provedor passa a chamar, de
+   * `ENDERECO_DA_ENTREGA_DA_NOTICIA`.
+   *
+   * ⚠️ Ele é propriedade de **quem constrói o adaptador**, e jamais do ato: aceitá-lo por operação
+   * faria uma entrada de usuário decidir o destino do que se cadastra no provedor, que é a forma
+   * canônica da requisição forjada do lado do servidor. É uma URL só para todos os clientes — o
+   * roteamento da notícia recebida é pelo identificador que o próprio produto emitiu.
+   */
+  readonly enderecoDaEntregaDaNoticia: string;
+  /** O contato operacional que acompanha o cadastro da entrega — a outra metade do endereço acima. */
+  readonly contatoDaEntregaDaNoticia: string;
   /**
    * O diretório onde os bytes do boleto são guardados, de `DIRETORIO_DOS_BOLETOS`.
    *
@@ -625,6 +804,30 @@ export const TOKEN_GUARDA_DE_BOLETOS = Symbol('GuardaDeBoletos');
 export const TOKEN_PORTA_DE_MESCLAGEM = Symbol('PortaDeMesclagem');
 
 /**
+ * Token de injeção da **porta de entrega da notícia** (T7 da fatia `integracao-bancaria-autonoma`).
+ *
+ * Mora aqui, ao lado dos tokens irmãos, pelo mesmo motivo deles e com o mesmo agravante estrutural:
+ * declará-lo em `integracoes-bancarias/integracoes-bancarias.module.ts` fecharia importação circular,
+ * porque o módulo importa o controlador, o controlador importa o serviço, e é o **serviço** quem pede
+ * o token no construtor — avaliado enquanto o módulo ainda está sendo carregado. O que ele publica é
+ * a `PortaDeEntregaDaNoticia` que `@sysloc/cobranca-bancaria` declara (ADR-0025): quem monta o
+ * processo escolhe o adaptador, e o domínio segue sem saber que existe um provedor com endereço.
+ *
+ * ⚠️ **Ele é IRMÃO, e não substituto, de {@link TOKEN_PORTA_DE_IDENTIDADE_BANCARIA} nem de
+ * {@link TOKEN_PORTA_DE_COBRANCA_BANCARIA}.** As três portas não se fundem por decisão registrada no
+ * cabeçalho de `packages/cobranca-bancaria/src/porta-de-entrega-da-noticia.ts`: uma responde *"esta
+ * identidade serve?"*, outra pelos atos de **cobrança**, e esta **configura o canal** por onde a
+ * notícia chega. Que o mesmo adaptador satisfaça as três é escolha dele, não da fronteira.
+ *
+ * ⚠️ **Ele não abre um segundo caminho para escolher o adaptador**: não há bandeira de ambiente, não
+ * há `if (ehTeste)` e `criarAplicacao()` não ganha parâmetro — as três alternativas estão recusadas
+ * por escrito no cabeçalho de `packages/regua/src/adaptador-smtp.ts` e no docblock de
+ * {@link TOKEN_PORTA_DE_EMAIL}. A verificação troca o **provedor inteiro** de fora, pela mesma
+ * interface e pelo mesmo mecanismo (`overrideProvider`).
+ */
+export const TOKEN_PORTA_DE_ENTREGA_DA_NOTICIA = Symbol('PortaDeEntregaDaNoticia');
+
+/**
  * Lê e valida as variáveis de ambiente exigidas.
  *
  * @param fonte Registro de variáveis — `process.env` na partida, objeto montado na verificação.
@@ -657,6 +860,8 @@ export function carregarAmbiente(fonte: FonteDeVariaveis): Ambiente {
     chaveDeCifraDoCertificado: validado.CHAVE_DE_CIFRA_DO_CERTIFICADO,
     enderecoDoProvedorBancario: validado.ENDERECO_DO_PROVEDOR_BANCARIO,
     enderecoDeAutorizacaoBancaria: validado.ENDERECO_DE_AUTORIZACAO_BANCARIA,
+    enderecoDaEntregaDaNoticia: validado.ENDERECO_DA_ENTREGA_DA_NOTICIA,
+    contatoDaEntregaDaNoticia: validado.CONTATO_DA_ENTREGA_DA_NOTICIA,
     diretorioDosBoletos: validado.DIRETORIO_DOS_BOLETOS,
   };
 }

@@ -1943,10 +1943,51 @@ const PARES_DA_IDENTIDADE_NO_PROVEDOR: readonly string[] = [
   'GET /v1/integracoes-bancarias/identidade',
 ];
 
-const ROTAS_COM_EXIGENCIA: readonly string[] = [
+/**
+ * Os **dois** pares que a T7 da fatia `integracao-bancaria-autonoma` acrescenta ao eixo POSITIVO — a
+ * **entrega da notícia do provedor**.
+ *
+ * Eles ficam em conjunto PRÓPRIO, e não somados a {@link PARES_DA_FATIA_BANCARIA} nem a
+ * {@link PARES_DA_IDENTIDADE_NO_PROVEDOR}, pela razão que este arquivo já aplicou nove vezes: cada
+ * fatia responde pelo próprio crescimento, e ampliar o retrato de uma fatia fechada apagaria um
+ * registro histórico para acomodar trabalho de outra época.
+ *
+ * SUT_IS_CORRECT_BECAUSE: as duas rotas nascem com `@ExigeChaves` das **MESMAS** chaves do
+ * certificado e da identidade (`TELA:integracoes_bancarias` + `ACAO:configurar_integracao`) —
+ * importadas de `certificado.controller.ts`, e não redigitadas: habilitar a entrega e ler o motivo
+ * íntegro que o provedor emitiu sobre a conta da empresa é ato de configuração da integração, como o
+ * material e como a identidade. **Nenhuma chave nova nasceu no catálogo**, e o conjunto PÚBLICO não
+ * cresceu: nenhuma das duas dispensa sessão.
+ *
+ * ⚠️ **A justificativa da autorização apoia-se em ADR-0011 + ADR-0018**, e a ADR-0021 **não** é
+ * invocada — nem aqui, nem no docblock do controlador, nem na tabela de rastreabilidade. O marcador
+ * `DECISÃO FECHADA — T12` de `apps/api/src/integracoes-bancarias/certificado.controller.ts` fixa isso
+ * para toda rota desta superfície, o achado já voltou por caminho novo uma vez, e o `REVERTER EXIGE`
+ * dele é uma **emenda da própria 0021** — escalada ao usuário, nunca decisão de gate ou de executor.
+ *
+ * ⚠️ **Esta é a ÚLTIMA fatia que acrescenta rota antes do congelamento da superfície.**
+ */
+const PARES_DA_ENTREGA_DA_NOTICIA: readonly string[] = [
+  'POST /v1/integracoes-bancarias/entrega-da-noticia/ativacao',
+  'GET /v1/integracoes-bancarias/entrega-da-noticia',
+];
+
+/**
+ * O inventário de exigência **anterior à entrega da notícia** — as dez metades somadas.
+ *
+ * É contra ele que a igualdade do conjunto positivo compara o que sobra da superfície depois de tirar
+ * os dois pares desta task, e é ele que faz a prova *"nenhuma entrada anterior saiu"* continuar
+ * valendo com um inventário a mais em jogo.
+ */
+const EXIGENCIA_ANTERIOR_A_ENTREGA_DA_NOTICIA: readonly string[] = [
   ...EXIGENCIA_ANTERIOR_AO_CARNE,
   ...PARES_DA_FATIA_DO_CARNE,
   ...PARES_DA_IDENTIDADE_NO_PROVEDOR,
+].sort();
+
+const ROTAS_COM_EXIGENCIA: readonly string[] = [
+  ...EXIGENCIA_ANTERIOR_A_ENTREGA_DA_NOTICIA,
+  ...PARES_DA_ENTREGA_DA_NOTICIA,
 ].sort();
 
 /**
@@ -2316,7 +2357,18 @@ const ROTAS_COM_EXIGENCIA: readonly string[] = [
  *     identidade (`@All`), que sozinho reivindica os {@link METODOS_DO_ENCAMINHADOR} sete pares:
  *     `(86 - 1) + 7 + 9 = 101`, com os nove de {@link ROTAS_FORA_DO_ARCABOUCO}.
  */
-const ROTAS_PUBLICADAS_EM_PRODUCAO = 103;
+/**
+ * SUT_IS_CORRECT_BECAUSE: a **T7** da fatia `integracao-bancaria-autonoma` acrescentou **dois** pares
+ * (103 → 105) — `POST /v1/integracoes-bancarias/entrega-da-noticia/ativacao` e
+ * `GET /v1/integracoes-bancarias/entrega-da-noticia`, as duas rotas da entrega da notícia do provedor
+ * (ver {@link PARES_DA_ENTREGA_DA_NOTICIA}). **É a ÚLTIMA fatia que acrescenta rota antes do
+ * congelamento da superfície**, e por isso a âncora sobe **no mesmo diff** da publicação, como a
+ * `.claude/rules/ancoras-de-superficie.md` exige. Nenhum par anterior saiu, e o conjunto **público**
+ * não mudou: as duas exigem sessão. A contagem foi **refeita do zero**, por duas medições
+ * independentes que concordam, e a igualdade entre os eixos é afirmada **à parte** do valor esperado
+ * no `CT-1038`.
+ */
+const ROTAS_PUBLICADAS_EM_PRODUCAO = 105;
 
 /**
  * Quantos **manipuladores** de controlador a aplicação de produção monta — a âncora do `CT-355`.
@@ -2663,7 +2715,21 @@ const ROTAS_PUBLICADAS_EM_PRODUCAO = 103;
  * **é** a da classe. Não declarar nada é o oposto de declarar **menos**, e é por isso que ele não
  * aparece entre as violações daquele caso.
  */
-const MANIPULADORES_EXAMINADOS_EM_PRODUCAO = 88;
+/**
+ * SUT_IS_CORRECT_BECAUSE: a **T7** da fatia `integracao-bancaria-autonoma` acrescentou **dois
+ * manipuladores** (88 → 90) — `ativar` e `consultar`, de
+ * `integracoes-bancarias/entrega-da-noticia.controller.ts`, arquivo novo. A contagem foi **refeita do
+ * zero**, por varredura dos decoradores de rota em `apps/api/src`, e **não** derivada de
+ * {@link ROTAS_PUBLICADAS_EM_PRODUCAO}: as duas crescerem dois aqui é acidente da forma destas rotas
+ * — cada manipulador reivindica um par só, e nenhum deles é `@All`.
+ *
+ * ⚠️ **Eles importam para o `CT-355` pelo lado da PRESENÇA**: a classe do controlador novo **não
+ * declara nada**, e os dois métodos declaram a conjunção inteira
+ * (`@ExigeChaves(AREA…, ACAO…)`). Declaração de método que **contém** a da classe — aqui, a de uma
+ * classe que nada declara — é conforme; o que aquele caso reprova é a que **substitui**, e a forma
+ * escolhida a torna irrepresentável por construção nesta superfície.
+ */
+const MANIPULADORES_EXAMINADOS_EM_PRODUCAO = 90;
 
 /**
  * Quantos manipuladores da aplicação de produção atendem **todos** os verbos (`@All`) — hoje um só, o
@@ -2949,6 +3015,16 @@ const MANIPULADOR_DA_ENTREGA_DO_CARNE = 'ContratoController.carne';
 const PARES_PUBLICADOS_PELA_ENTREGA_DO_CARNE = 1;
 
 /**
+ * Quantos pares a T7 da fatia `integracao-bancaria-autonoma` publica — os **dois** da entrega.
+ *
+ * Constante à parte do inventário, e não `PARES_DA_ENTREGA_DA_NOTICIA.length`, pela razão de sempre
+ * neste arquivo: derivá-la do próprio inventário faria a asserção de sanidade concordar consigo mesma
+ * — um inventário truncado passaria por ela e a soma final continuaria batendo com a âncora do total,
+ * que é o modo de falha silencioso desta classe de prova.
+ */
+const PARES_PUBLICADOS_PELA_ENTREGA_DA_NOTICIA = 2;
+
+/**
  * A mensagem que {@link exigenciaEfetivaDoManipulador} levanta para um manipulador sem exigência
  * alguma.
  *
@@ -3108,6 +3184,69 @@ const INVENTARIO_DA_FATIA_BANCARIA: readonly EntradaDoInventario[] = [
     metodo: 'POST',
     caminho: '/v1/integracoes-bancarias/certificado/verificacao',
     controlador: CONTROLADOR_DA_FATIA_BANCARIA,
+  },
+];
+
+/**
+ * O retrato devido dos **dois** manipuladores da entrega da notícia — valor **e origem**.
+ *
+ * Os dois declaram a **conjunção inteira no MÉTODO**, e a classe do controlador **não declara nada**.
+ * A forma é a decisão, e ela fecha por construção o defeito que o `CT-355` persegue: `getAllAndOverride`
+ * é **override**, não união, de modo que uma classe que declarasse a área e um método que declarasse
+ * só a ação fariam o manipulador exigir **menos** que a classe dele, em silêncio. Com a classe vazia,
+ * não há o que substituir — e a conjunção que a guarda encontra é exatamente a que está escrita.
+ *
+ * ⚠️ A **ordem** dentro da conjunção é conteúdo: a recusa nomeia a **PRIMEIRA** chave ausente, e a
+ * área vem antes para que quem já a tem ouça o nome do que lhe falta (ADR-0018) — é o que o `CT-1037`
+ * afirma na borda, com `detalhes.exigido`.
+ *
+ * ⚠️ **A consulta declara a conjunção junto com a ativação**, e a simetria com o `GET` do certificado
+ * — que exige só a área — é assimétrica de propósito: o que esta rota devolve é o **motivo íntegro**
+ * que o provedor emitiu sobre a conta bancária daquela empresa, diagnóstico de terceiro sobre a
+ * configuração dela, e não um atributo de leitura comum. Quem administra a integração é quem lê o
+ * porquê de ela não ter subido.
+ *
+ * Ele é **um objeto**, e não duas asserções soltas: uma exigência que sumisse de um manipulador
+ * reprovaria com o rótulo dele nomeado, e uma que aparecesse a mais reprovaria pelo excedente.
+ */
+const RETRATO_DEVIDO_POR_MANIPULADOR_DA_ENTREGA: Readonly<Record<string, RetratoDaExigencia>> = {
+  'EntregaDaNoticiaController.ativar': {
+    metodo: [AREA_DAS_INTEGRACOES_BANCARIAS, ACAO_DE_CONFIGURACAO_DE_INTEGRACAO],
+  },
+  'EntregaDaNoticiaController.consultar': {
+    metodo: [AREA_DAS_INTEGRACOES_BANCARIAS, ACAO_DE_CONFIGURACAO_DE_INTEGRACAO],
+  },
+};
+
+/** Os dois manipuladores auditados, derivados do mapa acima — a ordem é a de inserção dele. */
+const MANIPULADORES_DA_ENTREGA_DA_NOTICIA: readonly string[] = Object.keys(
+  RETRATO_DEVIDO_POR_MANIPULADOR_DA_ENTREGA,
+);
+
+/** O controlador que publica as duas rotas desta task — o nome que a falha do `CT-1038` nomeia. */
+const CONTROLADOR_DA_ENTREGA_DA_NOTICIA = 'EntregaDaNoticiaController';
+
+/**
+ * O inventário desta task **por extenso** — duas entradas, cada uma com
+ * `{ metodo, caminho, controlador }`.
+ *
+ * É a primeira coisa que o `CT-1038` afirma, **antes** de qualquer comparação com o total, e a forma
+ * é a mesma de {@link INVENTARIO_DA_FATIA_BANCARIA}: é assim que quem lê a falha encontra o defeito.
+ *
+ * Ele é **escrito à mão**, e a redundância com {@link PARES_DA_ENTREGA_DA_NOTICIA} é a decisão: a
+ * igualdade entre os dois é afirmada no caso, e é ela que apanha o dia em que um segmento mudar sem
+ * que o inventário revisado acompanhe — derivar um do outro faria o caso concordar consigo mesmo.
+ */
+const INVENTARIO_DA_ENTREGA_DA_NOTICIA: readonly EntradaDoInventario[] = [
+  {
+    metodo: 'POST',
+    caminho: '/v1/integracoes-bancarias/entrega-da-noticia/ativacao',
+    controlador: CONTROLADOR_DA_ENTREGA_DA_NOTICIA,
+  },
+  {
+    metodo: 'GET',
+    caminho: '/v1/integracoes-bancarias/entrega-da-noticia',
+    controlador: CONTROLADOR_DA_ENTREGA_DA_NOTICIA,
   },
 ];
 
@@ -3460,7 +3599,16 @@ const RETRATO_DEVIDO_PELA_FATIA_DE_EMISSAO: Readonly<Record<string, RetratoDaExi
  * entra em {@link PUBLICAS_LEGITIMAS_NO_MUTANTE}: o carnê exige sessão, e o excedente que aquele
  * caso nomeia continua sendo só o do `ControladorPublicoIndevido`.
  */
-const ROTAS_PUBLICADAS_NO_MUTANTE = 97;
+/**
+ * SUT_IS_CORRECT_BECAUSE: a **T7** da fatia `integracao-bancaria-autonoma` publicou as **duas** rotas
+ * da entrega da notícia no módulo que esta montagem já carrega — ela importa o `AppModule` inteiro —,
+ * e os dois pares de `/v1/integracoes-bancarias/entrega-da-noticia` aparecem aqui pela mesma razão
+ * que aparecem no controle (97 → 99). A âncora continua sendo de contagem EXATA, e a diferença de
+ * nove para a superfície de produção continua sendo a mesma: os pares do contrato publicado, que esta
+ * montagem não registra. Elas **não** entram em {@link PUBLICAS_LEGITIMAS_NO_MUTANTE}: as duas exigem
+ * sessão, e o excedente que aquele caso nomeia continua sendo só o do `ControladorPublicoIndevido`.
+ */
+const ROTAS_PUBLICADAS_NO_MUTANTE = 99;
 
 /**
  * O que seria o inventário público da aplicação mutante **se o mutante não estivesse lá**.
@@ -3987,6 +4135,14 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
         // rota do documento logo acima. ⚠️ **A outra rota desta fatia não entra aqui**: a notícia
         // bancária é `@RotaPublica()`, e o lugar dela é {@link PUBLICAS_LEGITIMAS_NO_MUTANTE}.
         ...paresDaEntregaDoCarne(),
+        // SUT_IS_CORRECT_BECAUSE: os **dois** pares da entrega da notícia entram pela mesma razão de
+        // todos os acima — a **T7** da fatia `integracao-bancaria-autonoma` registrou o controlador
+        // novo no módulo que esta composição raiz já carrega. Nenhuma entrada anterior saiu, e a
+        // igualdade segue exata. Os dois caem no conjunto POSITIVO pela declaração do **MÉTODO** (a
+        // conjunção inteira, `TELA:integracoes_bancarias` + `ACAO:configurar_integracao`), sobre uma
+        // classe que **não declara nada** — e é justamente isso que este eixo mede: existência de
+        // declaração, não conteúdo dela. Quem examina o conteúdo e a **origem** é o `CT-1038`.
+        ...PARES_DA_ENTREGA_DA_NOTICIA,
       ].sort(),
     );
 
@@ -4076,7 +4232,14 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
           // pares da identidade no provedor — que são posteriores a esta fatia, e por isso saem da
           // comparação pela mesma razão do carnê acima. Nenhuma entrada anterior saiu, e a asserção
           // **não foi afrouxada**: continua igualdade exata contra o inventário revisado.
-          !PARES_DA_IDENTIDADE_NO_PROVEDOR.includes(par),
+          !PARES_DA_IDENTIDADE_NO_PROVEDOR.includes(par) &&
+          // SUT_IS_CORRECT_BECAUSE: a **T7** da fatia `integracao-bancaria-autonoma` publicou os dois
+          // pares da entrega da notícia — posteriores a esta fatia, e por isso subtraídos aqui pela
+          // mesma razão do carnê e da identidade acima. Sem a subtração eles cairiam dentro da
+          // metade "anterior", e a igualdade reprovaria sobre rotas legítimas. Nenhuma entrada
+          // anterior saiu, e a asserção **não foi afrouxada**: continua igualdade exata contra o
+          // inventário revisado.
+          !PARES_DA_ENTREGA_DA_NOTICIA.includes(par),
       ),
     ).toEqual([...EXIGENCIA_ANTERIOR_A_FATIA]);
 
@@ -4221,7 +4384,13 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
         // continua sendo `33` —, e é justamente essa imutabilidade que faz a asserção seguir pegando
         // o par antigo que sumisse enquanto um novo entrasse no lugar dele. A asserção **não foi
         // afrouxada**.
-        PARES_DA_IDENTIDADE_NO_PROVEDOR.length,
+        PARES_DA_IDENTIDADE_NO_PROVEDOR.length -
+        // SUT_IS_CORRECT_BECAUSE: e de novo para a **T7** da fatia `integracao-bancaria-autonoma`,
+        // que publicou os **dois** pares da entrega da notícia. O valor comparado **não muda** — ele
+        // continua sendo `33` —, e é justamente essa imutabilidade que faz a asserção seguir pegando
+        // o par antigo que sumisse enquanto um novo entrasse no lugar dele. A asserção **não foi
+        // afrouxada**.
+        PARES_DA_ENTREGA_DA_NOTICIA.length,
     ).toBe(ROTAS_PUBLICADAS_ANTES_DA_FATIA);
   });
 
@@ -5696,6 +5865,171 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     // A rota herda a área da classe e não exige ação alguma: nenhuma chave nasceu para ela. É a
     // asserção que reprova a rodada que "resolvesse" a autorização do carnê criando uma
     // `ACAO:baixar_carne` em vez de assumir que ler é leitura.
+    expect([...CHAVES_DE_TELA]).toEqual(AREAS_DE_TELA_DO_CATALOGO);
+    expect(CHAVES_DE_TELA.length + Object.keys(MAPA_ACAO_TELA).length).toBe(TOTAL_DE_CHAVES);
+  });
+
+  it('CT-1038 — as três âncoras da superfície vão a 105 / 90 / 20, com a entrega da notícia no eixo POSITIVO', () => {
+    const cobertura = verificarCoberturaDeAutorizacao(aplicacaoReal);
+
+    // ---------------------------------------------------------------------------------------
+    // SANIDADE: o inventário desta task tem DOIS pares, ANTES de qualquer comparação
+    // ---------------------------------------------------------------------------------------
+    //
+    // Sobre o próprio inventário, e não sobre a superfície: uma lista vazia faria as igualdades
+    // abaixo passarem sobre rota nenhuma, e a soma final continuaria batendo com a âncora do total —
+    // o modo de falha silencioso desta classe de prova. As DUAS listas são conferidas contra a mesma
+    // constante, e a igualdade entre elas vem logo em seguida: uma escrita à mão por extenso
+    // (`{ metodo, caminho, controlador }`) e a outra composta dos pares, de modo que um segmento que
+    // mudasse num lugar e não no outro reprova aqui em vez de reprovar como `404` num caso adiante.
+    expect(INVENTARIO_DA_ENTREGA_DA_NOTICIA.length).toBe(PARES_PUBLICADOS_PELA_ENTREGA_DA_NOTICIA);
+    expect(PARES_DA_ENTREGA_DA_NOTICIA.length).toBe(PARES_PUBLICADOS_PELA_ENTREGA_DA_NOTICIA);
+    expect(
+      INVENTARIO_DA_ENTREGA_DA_NOTICIA.map(
+        (entrada) => `${entrada.metodo} ${entrada.caminho}`,
+      ).sort(),
+      'o inventário por extenso divergiu dos pares compostos desta task',
+    ).toEqual([...PARES_DA_ENTREGA_DA_NOTICIA].sort());
+
+    // ---------------------------------------------------------------------------------------
+    // AS DUAS ROTAS ESTÃO NO EIXO POSITIVO — e não escaparam por nenhuma das duas portas laterais
+    // ---------------------------------------------------------------------------------------
+    //
+    // Igualdade de arranjo ordenado contra o inventário revisado, e nunca `toContain`: um par que
+    // sumisse do conjunto que declara exigência reprova como ausente, e um par cujo caminho mudasse
+    // no fonte sem passar por esta lista reprova como excedente.
+    expect(
+      cobertura.comExigencia.filter((par) => PARES_DA_ENTREGA_DA_NOTICIA.includes(par)).sort(),
+      'o inventário das rotas da entrega da notícia divergiu do conjunto que declara exigência',
+    ).toEqual([...PARES_DA_ENTREGA_DA_NOTICIA].sort());
+
+    // As duas escapatórias que a existência da declaração sozinha não fecha: a guarda retorna antes
+    // para rota pública, e `semDeclaracao` continuaria vazio nas duas.
+    expect(PARES_DA_ENTREGA_DA_NOTICIA.filter((par) => cobertura.publicas.includes(par))).toEqual(
+      [],
+    );
+    expect(
+      PARES_DA_ENTREGA_DA_NOTICIA.filter((par) => cobertura.foraDoArcabouco.includes(par)),
+    ).toEqual([]);
+
+    // E o eixo positivo INTEIRO, por igualdade contra o inventário revisado: sem esta linha, um par
+    // anterior que sumisse enquanto os dois desta task entrassem satisfaria os três filtros acima.
+    expect(cobertura.comExigencia).toEqual([...ROTAS_COM_EXIGENCIA]);
+
+    // ---------------------------------------------------------------------------------------
+    // O conjunto público NÃO cresceu — as duas exigem sessão
+    // ---------------------------------------------------------------------------------------
+    //
+    // O filtro acima diz que **estes** pares não estão no público; a contagem diz que **nenhum
+    // outro** entrou. Uma rota desta task marcada `@RotaPublica()` e retirada do inventário positivo
+    // satisfaria o filtro e reprovaria só aqui.
+    expect(PARES_PUBLICOS_ACEITOS.length).toBe(PARES_PUBLICOS_DA_SUPERFICIE);
+    expect(
+      cobertura.publicas,
+      'o conjunto de rotas que dispensam sessão mudou: cada entrada nele é uma rota fora da autorização',
+    ).toEqual([...PARES_PUBLICOS_ACEITOS]);
+
+    // ---------------------------------------------------------------------------------------
+    // A EXIGÊNCIA EFETIVA das duas é a CONJUNÇÃO INTEIRA, declarada no MÉTODO
+    // ---------------------------------------------------------------------------------------
+    //
+    // Duas asserções, e nenhuma implica a outra. A primeira lê a exigência pela MESMA chamada da
+    // guarda (`getAllAndOverride`) e a compara por igualdade de arranjo — a ORDEM é conteúdo, porque
+    // a recusa nomeia a **primeira** chave ausente (ADR-0018), e uma conjunção invertida passaria por
+    // um `toContain` e mudaria o que o cliente ouve. A segunda é o que discrimina a **origem**: o
+    // retrato traz `metodo` contra `classe`, que é justamente a diferença que `getAllAndOverride`
+    // torna invisível por comportamento — e é ela que acusaria uma classe que passasse a declarar a
+    // área com um método declarando só a ação, forma em que o manipulador exigiria **menos** que a
+    // classe dele.
+    for (const rotulo of MANIPULADORES_DA_ENTREGA_DA_NOTICIA) {
+      expect(
+        exigenciaEfetivaDoManipulador(aplicacaoReal, rotulo),
+        `a exigência efetiva de ${rotulo} divergiu da conjunção declarada`,
+      ).toEqual([AREA_DAS_INTEGRACOES_BANCARIAS, ACAO_DE_CONFIGURACAO_DE_INTEGRACAO]);
+    }
+
+    expect(
+      retratoDasExigenciasDe(aplicacaoReal, MANIPULADORES_DA_ENTREGA_DA_NOTICIA),
+      'a origem da exigência das rotas da entrega da notícia mudou de método para classe',
+    ).toEqual(RETRATO_DEVIDO_POR_MANIPULADOR_DA_ENTREGA);
+
+    // ---------------------------------------------------------------------------------------
+    // `semDeclaracao` VAZIO — com CONTROLE ANTIVÁCUO
+    // ---------------------------------------------------------------------------------------
+    //
+    // A igualdade de lista vem primeiro, e nunca `toHaveLength(0)`: a falha precisa nomear
+    // `{ metodo, caminho, controlador, manipulador }` de quem ficou sem declaração.
+    expect(cobertura.semDeclaracao).toEqual([]);
+
+    // O CONTROLE ANTIVÁCUO, na forma que a `.claude/rules/ancoras-de-superficie.md` exige: o total
+    // examinado é afirmado **contra as rotas enumeradas**, nunca contra zero. Os três conjuntos
+    // particionam a superfície (`foraDoArcabouco` é subconjunto de `publicas`, e por isso não entra
+    // na soma), de modo que esta identidade prova que **toda** rota caiu em algum balde — e portanto
+    // que `semDeclaracao` vazio significa *"nenhuma ficou de fora"*, e não *"nada foi examinado"*.
+    expect({
+      classificadas:
+        cobertura.comExigencia.length + cobertura.publicas.length + cobertura.semDeclaracao.length,
+      publicas: cobertura.publicas.length,
+    }).toEqual({
+      classificadas: cobertura.rotasEnumeradas,
+      publicas: PARES_PUBLICOS_DA_SUPERFICIE,
+    });
+
+    // ---------------------------------------------------------------------------------------
+    // AS TRÊS ÂNCORAS — 105 / 90 / 20, pelas DUAS medições independentes
+    // ---------------------------------------------------------------------------------------
+    //
+    // A primeira lê a **tabela do roteador** já montado; a segunda varre os **decoradores dos
+    // controladores** e compõe: cada manipulador reivindica um par, salvo o `@All`, que reivindica os
+    // sete verbos do caminho dele, mais os nove pares registrados direto no adaptador, que não têm
+    // manipulador. Nenhuma é derivada da outra.
+    //
+    // ⚠️ **Esta é a ÚLTIMA fatia que acrescenta rota antes do congelamento da superfície**, e a
+    // âncora sobe **no mesmo diff** da publicação — mais a contagem em prosa do `CLAUDE.md`, porque
+    // número narrativo que fica para trás convida a próxima task a "corrigir" a âncora executável
+    // para o valor errado.
+    const manipuladores = manipuladoresExaminados(aplicacaoReal);
+    const comTodosOsVerbos = manipuladoresQueAtendemTodosOsVerbos(aplicacaoReal);
+    const pelaComposicao =
+      manipuladores -
+      comTodosOsVerbos +
+      comTodosOsVerbos * METODOS_DO_ENCAMINHADOR.length +
+      ROTAS_FORA_DO_ARCABOUCO.length;
+
+    // A igualdade entre os dois eixos é afirmada **explicitamente**, e ANTES da comparação com a
+    // âncora: duas medições que concordassem com o valor esperado por acidente e discordassem entre
+    // si passariam pela comparação de baixo, e é a concordância delas que torna cada uma verificável
+    // pela outra.
+    expect(
+      pelaComposicao,
+      'as duas medições independentes da superfície publicada divergiram entre si: o errado é a âncora, nunca a medição',
+    ).toBe(cobertura.rotasEnumeradas);
+
+    // As quatro grandezas viajam numa comparação só de propósito: se alguma divergir, a falha
+    // **nomeia os números** lado a lado.
+    expect(
+      {
+        peloRoteador: cobertura.rotasEnumeradas,
+        pelaComposicao,
+        manipuladores,
+        comTodosOsVerbos,
+      },
+      'a superfície publicada mudou de tamanho: o inventário desta prova precisa ser revisado',
+    ).toEqual({
+      peloRoteador: ROTAS_PUBLICADAS_EM_PRODUCAO,
+      pelaComposicao: ROTAS_PUBLICADAS_EM_PRODUCAO,
+      manipuladores: MANIPULADORES_EXAMINADOS_EM_PRODUCAO,
+      comTodosOsVerbos: MANIPULADORES_QUE_ATENDEM_TODOS_OS_VERBOS,
+    });
+
+    // ---------------------------------------------------------------------------------------
+    // O catálogo fechado NÃO foi aberto por esta task — ele é 10 × 7, e não cresce
+    // ---------------------------------------------------------------------------------------
+    //
+    // As duas rotas reusam as chaves que já governam o certificado e a identidade: nenhuma nasceu
+    // para elas. É a asserção que reprova a rodada que "resolvesse" a autorização desta superfície
+    // criando uma `ACAO:habilitar_entrega` em vez de assumir que configurar a integração é
+    // configurar a integração.
     expect([...CHAVES_DE_TELA]).toEqual(AREAS_DE_TELA_DO_CATALOGO);
     expect(CHAVES_DE_TELA.length + Object.keys(MAPA_ACAO_TELA).length).toBe(TOTAL_DE_CHAVES);
   });

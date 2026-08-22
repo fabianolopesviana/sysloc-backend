@@ -23,7 +23,17 @@
  * |       |        | objetos de controle com os treze termos plantados canal a canal, encontra todos
  * |       |        | eles, com a lista afirmada por igualdade em cada canal. (ADR-0001, ADR-0034) |
  *
- * Rastreabilidade: `CA-20 → CT-934 (RN-15)` · `CA-21 → CT-992 (RN-18)`.
+ * | CA-04 | CT-1033 | O dialeto do provedor **entra inteiro** pela recusa do cadastro da entrega
+ * | CA-18 |         | da notícia — par TLS mútuo real, tradução real — e aparece **exclusivamente
+ * |       |         | dentro** de `motivo.diagnostico`. Varrido o corpo da consulta **COM** o
+ * |       |         | portador, o varredor devolve, por igualdade, a lista ordenada e **NÃO vazia**
+ * |       |         | dos termos que entraram; varrido o **mesmo** corpo **SEM** o portador, e
+ * |       |         | varridos o corpo da ativação sem ele, os cabeçalhos das duas respostas e as
+ * |       |         | **chaves** das duas rotas no documento publicado, ele devolve `[]`.
+ * |       |         | (ADR-0001, ADR-0034) |
+ *
+ * Rastreabilidade: `CA-20 → CT-934 (RN-15)` · `CA-21 → CT-992 (RN-18)` ·
+ * `CA-04/CA-18 → CT-1033 (RN-02)`.
  *
  * ===========================================================================
  * É a metade que o CT-933 NÃO alcança — e por que as duas precisam existir
@@ -52,6 +62,36 @@
  * obrigatório** — e ele NÃO é mutante: é parte da asserção. Sem ele, um varredor quebrado devolveria
  * `[]` para tudo e a prova inteira passaria por vacuidade, que é o modo de falha clássico desta
  * classe de caso.
+ *
+ * ===========================================================================
+ * O `CT-1033` é de POSIÇÃO, e é o par COM/SEM que o torna uma prova
+ * ===========================================================================
+ *
+ * O `CT-934` e o `CT-992` afirmam **ausência**: nenhum termo do provedor sai por rota alguma. O
+ * `CT-1033` afirma outra coisa, e a diferença é conteúdo: os termos **existem** na saída em execução
+ * — a ADR-0034 os quer ali, dentro do `diagnostico`, porque é ali que o que o terceiro informou é
+ * preservado íntegro (RN-02) —, e o que se prova é que eles **não escapam do portador**.
+ *
+ * Por isso a varredura roda **duas vezes sobre o mesmo corpo**:
+ *
+ *   * **com** o portador — a lista ordenada dos termos, afirmada por igualdade e **não vazia**. É
+ *     esta metade que prova que a varredura de fato olhou;
+ *   * **sem** o portador — `[]`, no corpo da consulta, no da ativação e nos cabeçalhos.
+ *
+ * Uma varredura que só afirmasse `[]` provaria tanto *"o dialeto morreu na fronteira"* quanto *"o
+ * dado nunca entrou"* e *"o varredor está cego"* — **e as três produzem o mesmo verde**.
+ *
+ * ⚠️ **Ele é compartimentado em relação ao `CT-1032`**, que é estático e varre **nomes** no fonte,
+ * com prova de falsificação obrigatória. Aqui a asserção é **comportamental**, sobre **valores** que
+ * saíram em execução, e nenhum dos dois implica o outro. Sendo comportamental, ele **não ganha
+ * mutante** (`.claude/rules/testing-stack.md`); a asserção que discrimina o defeito é a igualdade
+ * `termosEncontradosEm(textosDe(semOPortador(corpo))) → []`, que reprova nomeando o termo no instante
+ * em que qualquer um deles alcançar `codigo`, `mensagem`, cabeçalho ou chave publicada.
+ *
+ * ⚠️ **O dublê é o DESTINO, nunca a tradução.** A porta de entrega que a montagem recebe constrói o
+ * adaptador **de produção** apontado ao par TLS mútuo do caso, e é o par que devolve a recusa com o
+ * dialeto. Um dublê que devolvesse o motivo canônico já montado plantaria no teste exatamente o
+ * objeto cuja posição o caso existe para afirmar — o que o Gate 6 proíbe.
  *
  * ===========================================================================
  * Por que este caso mora em arquivo PRÓPRIO
@@ -110,16 +150,22 @@
  * processo é MONTADO a partir do que os helpers devolvem.
  */
 
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { type ChaveDoCatalogo, validarCoerenciaDeAjustes } from '@sysloc/auth';
 import type {
   AdaptadorCobrancaBancaria,
   BoletoEmitido,
   DesfechoDaOperacao,
+  EntregaParaCadastrar,
+  LeituraDaEntrega,
   PedidoDeEmissao,
+  PortaDeEntregaDaNoticia,
+  ResultadoDaOperacaoDeEntrega,
   SituacaoConsultada,
 } from '@sysloc/cobranca-bancaria';
+import { criarAdaptadorSicoob } from '@sysloc/cobranca-bancaria';
+import type { EstadoDaEntrega } from '@sysloc/contracts';
 import {
   type AcessoAoBanco,
   abrirAcessoAoBanco,
@@ -169,6 +215,7 @@ import {
   ENDERECO_DE_ESCUTA,
   PREFIXO_DE_VERSAO,
   TOKEN_PORTA_DE_COBRANCA_BANCARIA,
+  TOKEN_PORTA_DE_ENTREGA_DA_NOTICIA,
 } from '../src/configuracao/ambiente.ts';
 import { CAMINHO_DOS_CONTRATOS } from '../src/contratos/contrato.controller.ts';
 import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
@@ -177,12 +224,22 @@ import {
   CAMINHO_DAS_INTEGRACOES_BANCARIAS,
   SEGMENTO_DO_REGISTRO,
 } from '../src/integracoes-bancarias/certificado.controller.ts';
+import {
+  SEGMENTO_DA_ATIVACAO,
+  SEGMENTO_DA_ENTREGA_DA_NOTICIA,
+} from '../src/integracoes-bancarias/entrega-da-noticia.controller.ts';
 import { SEGMENTO_DA_IDENTIDADE } from '../src/integracoes-bancarias/identidade.controller.ts';
 import { CAMINHO_DO_DOCUMENTO, criarAplicacao } from '../src/main.ts';
 import { CAMINHO_DAS_NOTIFICACOES_BANCARIAS } from '../src/notificacoes-bancarias/notificacao-bancaria.controller.ts';
 import { pedirBytes } from './acessorios-de-borda.ts';
 import { montarAplicacaoInstrumentada } from './aplicacao-instrumentada.ts';
 import { cpfValido } from './documento.ts';
+import {
+  confiarEm,
+  corpoDeCadastroNaoEncontrado,
+  type ParInstrumentado,
+  subirParInstrumentado,
+} from './par-do-provedor.ts';
 
 /** Limite da montagem: banco migrado, semente, fila e as DUAS aplicações. */
 const LIMITE_DE_MONTAGEM_MS = 240_000;
@@ -211,6 +268,27 @@ const ROTA_DO_REGISTRO_DA_IDENTIDADE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTE
 /** A entrada da notícia do provedor — a primeira das duas rotas novas da fatia `webhook-e-carne`. */
 const ROTA_DA_NOTICIA = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_NOTIFICACOES_BANCARIAS}`;
 
+/** As duas rotas da **entrega da notícia**, compostas dos donos dos segmentos — nunca literais. */
+const ROTA_DO_ESTADO_DA_ENTREGA = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DA_ENTREGA_DA_NOTICIA}`;
+const ROTA_DA_ATIVACAO_DA_ENTREGA = `${ROTA_DO_ESTADO_DA_ENTREGA}/${SEGMENTO_DA_ATIVACAO}`;
+
+/**
+ * O endereço que o produto **declara** ao provedor como destino da notícia.
+ *
+ * Ele não é o destino do par de teste: o par é para onde o adaptador **conecta**, e este é o que o
+ * cadastro carrega no corpo. O valor acompanha o `ENDERECO_DA_ENTREGA_DA_NOTICIA` inerte de
+ * `apps/api/vitest.config.ts` — `.invalid`, o domínio que a RFC 6761 garante não resolver.
+ */
+const ENDERECO_DA_ENTREGA = 'https://notificacao.exemplo.invalid/v1/notificacoes-bancarias';
+
+/**
+ * O contato operacional que acompanha o cadastro da entrega — a outra metade do endereço acima.
+ *
+ * O provedor o declara **necessário** no cadastro (`W2`, 2026-08-22), e por isso o adaptador resolve
+ * negativo sem chamar quando ele falta. Domínio `.invalid`, reservado pela RFC 2606.
+ */
+const CONTATO_DA_ENTREGA = 'operacao@sysloc.exemplo.invalid';
+
 /**
  * O segmento do carnê, **escrito à mão**: o controlador o declara em constante privada, e o que se
  * afirma aqui é o caminho publicado, não o símbolo interno dele.
@@ -236,6 +314,19 @@ const SEGMENTO_DO_CARNE = 'carne';
  * de virar regra do produto. Eles alcançam o `CT-934` junto com o `CT-992`, e isso é deliberado: as
  * sete rotas da fatia anterior também não podem publicá-los.
  *
+ * ⚠️ **Os DOIS últimos entraram na T9 da fatia `integracao-bancaria-autonoma`**, e a lista continua
+ * só CRESCENDO. São os nomes que o cadastro da entrega da notícia leva à conta do provedor e que
+ * voltam pelo diagnóstico quando ele recusa — a conta a que a entrega se endereça e o período do
+ * movimento.
+ *
+ * ⚠️ **`codigoTipoMovimento` NÃO entra, e a ausência é MEDIDA, não esquecimento.** A varredura casa
+ * por **contenção**, e `tipoMovimento` — já na lista desde a T12 — o alcança inteiro: toda aparição
+ * de `codigoTipoMovimento` já reprova hoje. Acrescentá-lo faria o controle positivo achar **dois**
+ * termos no canal em que planta **um**, e a igualdade que prova a varredura viraria uma lista escrita
+ * para bater com o efeito colateral — que é exatamente a lição que o recorte hexadecimal de
+ * `./segredo-nao-escapa.e2e.spec.ts` registra no outro eixo. **Termo novo desta lista precisa ser
+ * mutuamente não-substring dos demais**, e é essa a régua que decidiu os dois que entraram.
+ *
  * ⚠️ `BOLETO` **não** entra, e a ausência é deliberada: ele é vocabulário do **produto** (RN-11),
  * publicado por `@sysloc/contracts`, e incluí-lo faria a varredura reprovar o próprio vocabulário
  * canônico que ela existe para proteger. `provedor` também não: é palavra do produto — o modelo
@@ -256,6 +347,8 @@ const TERMOS_DO_PROVEDOR = [
   'validacaoWebhook',
   'idWebhook',
   'tipoMovimento',
+  'numeroCliente',
+  'codigoPeriodoMovimento',
 ] as const;
 
 /**
@@ -272,9 +365,9 @@ const TERMOS_DO_PROVEDOR = [
  * termo esquecido na repartição nunca seria exercitado por canal algum.
  */
 const CONTROLE_POR_CANAL: Readonly<Record<string, readonly string[]>> = {
-  'chave de topo': ['sicoob', 'nossoNumero', 'numeroIdentificadorBaixa'],
+  'chave de topo': ['sicoob', 'nossoNumero', 'numeroIdentificadorBaixa', 'codigoPeriodoMovimento'],
   'campo aninhado': ['bancoob', 'seuNumero', 'validacaoWebhook'],
-  'item de lista': ['numeroContrato', 'codigoBeneficiario', 'idWebhook'],
+  'item de lista': ['numeroContrato', 'codigoBeneficiario', 'idWebhook', 'numeroCliente'],
   'valor de enum': ['client_id', 'scope', 'pagador', 'tipoMovimento'],
 };
 
@@ -367,6 +460,66 @@ const CORPOS_DAS_ROTAS_NOVAS = 5;
 
 /** Um recorte de competências **malformado** — o gatilho do `422` do carnê. */
 const COMPETENCIA_MALFORMADA = '2026-13';
+
+/**
+ * A recusa do provedor **com o dialeto inteiro** — o ORÁCULO da medição do `CT-1033`.
+ *
+ * ⚠️ Escrita por extenso aqui, e **nunca** importada do fonte do adaptador nem de
+ * `./par-do-provedor.ts`: derivá-la da mesma fonte que o SUT faria os dois lados da comparação
+ * mudarem juntos, e o dia em que o produto deixasse de conter o dialeto o oráculo deixaria de
+ * contê-lo também.
+ *
+ * `codigo` e `mensagem` são consumidos pela tradução e viram os dois campos de nome do produto; tudo
+ * o mais vira o portador `diagnostico`. Por isso **os dois são deliberadamente livres de termo do
+ * provedor**: eles saem para fora do portador por contrato (RN-02 os quer íntegros), e plantar
+ * dialeto neles mediria uma propriedade que o produto não promete.
+ *
+ * O que carrega o dialeto são os campos restantes — a conta, o tipo e o período do movimento, o
+ * beneficiário, o contrato, o identificador do aviso — mais um **valor de enum** com o nome do
+ * provedor, que é o canal em que o termo escapa como valor, e não como nome.
+ */
+const RECUSA_COM_O_DIALETO_INTEIRO = {
+  codigo: '10260',
+  mensagem: 'Não foi possível concluir o cadastro da entrega para esta conta',
+  numeroCliente: 33_065,
+  codigoTipoMovimento: 7,
+  codigoPeriodoMovimento: 1,
+  codigoBeneficiario: '4321987',
+  numeroContrato: '25896',
+  idWebhook: 990,
+  origemDoAviso: 'INTEGRACAO_SICOOB',
+} as const;
+
+/**
+ * Os termos que o oráculo acima faz entrar pelo `diagnostico` — **ordenados, escritos à mão**.
+ *
+ * É a lista que a varredura COM o portador tem de devolver por igualdade, e ela é o que separa *"o
+ * dialeto morreu na fronteira"* de *"a varredura não olhou"*: afirmá-la **não vazia** é o que impede
+ * o verde por vacuidade.
+ *
+ * ⚠️ `tipoMovimento` está aqui porque a varredura casa por **contenção** e o oráculo planta
+ * `codigoTipoMovimento`; `sicoob` está porque o valor de enum é `INTEGRACAO_SICOOB` e a comparação é
+ * insensível à caixa. As duas presenças são conteúdo, não acidente — elas provam que o varredor
+ * alcança o termo dentro de nome composto e dentro de valor.
+ */
+const TERMOS_QUE_ENTRAM_PELO_DIAGNOSTICO = [
+  'codigoBeneficiario',
+  'codigoPeriodoMovimento',
+  'idWebhook',
+  'numeroCliente',
+  'numeroContrato',
+  'sicoob',
+  'tipoMovimento',
+];
+
+/** O status com que o provedor recusa o cadastro no `CT-1033`. */
+const STATUS_DA_RECUSA_DO_PROVEDOR = 422;
+
+/** Quantos corpos o `CT-1033` coleta: o da ativação e o da consulta. */
+const CORPOS_DO_CT1033 = 2;
+
+/** Os status dos dois, por igualdade e na ordem — o ato é idempotente e nunca cria recurso. */
+const STATUS_DO_CT1033 = [200, 200];
 
 /** A pessoa que age: `USUARIO_EMPRESA` da empresa A, **da carga**. */
 const QUEM_AGE = pessoaSemeada('usuario.a@exemplo.com.br');
@@ -463,6 +616,67 @@ const portaDoProvedor: AdaptadorCobrancaBancaria = {
   }),
 };
 
+/**
+ * Para onde a porta de **entrega da notícia** conecta no caso corrente — sempre um par do laço local.
+ *
+ * Nasce indefinida, e a porta abaixo **recusa** quando ela continua assim: um destino ausente que
+ * degradasse em silêncio faria um caso medir outra coisa sem dizer.
+ */
+let destinoDaEntrega: string | undefined;
+
+/**
+ * A porta de entrega que a aplicação recebe — e ela **é o adaptador de produção**.
+ *
+ * O que a composição faz em produção é construir `criarAdaptadorSicoob` a partir dos endereços que a
+ * partida exigiu; o que este objeto faz é construir **o mesmo adaptador**, apontado ao par TLS mútuo
+ * que o caso corrente subiu. O que se substitui é o **destino**, nunca a lógica sob prova — e é isso
+ * que faz o dialeto atravessar a fronteira de tradução **real** antes de o `CT-1033` medir onde ele
+ * foi parar. Um dublê que devolvesse o motivo canônico já montado plantaria no teste exatamente o
+ * objeto cuja posição o caso existe para afirmar.
+ *
+ * ⚠️ **Este é o SEGUNDO uso do molde** — o primeiro é `./entrega-da-noticia.e2e.spec.ts`, que não
+ * pode ser importado porque importar um `.spec.ts` registraria os casos dele aqui dentro. O Limiar de
+ * Três do `CLAUDE.md` **não disparou**; ao terceiro, ele sobe para `./par-do-provedor.ts`, que já é a
+ * casa comum do par.
+ */
+const portaDaEntrega: PortaDeEntregaDaNoticia = {
+  async cadastrarEntrega(entrega: EntregaParaCadastrar): Promise<ResultadoDaOperacaoDeEntrega> {
+    return await adaptadorDaEntregaDoCaso().cadastrarEntrega(entrega);
+  },
+  async consultarEntrega(
+    entrega: EntregaParaCadastrar,
+    referenciaConhecida?: string,
+  ): Promise<LeituraDaEntrega> {
+    return await adaptadorDaEntregaDoCaso().consultarEntrega(entrega, referenciaConhecida);
+  },
+  async atualizarEnderecoDaEntrega(
+    entrega: EntregaParaCadastrar,
+    referencia: string,
+  ): Promise<ResultadoDaOperacaoDeEntrega> {
+    return await adaptadorDaEntregaDoCaso().atualizarEnderecoDaEntrega(entrega, referencia);
+  },
+  async reativarEntrega(
+    entrega: EntregaParaCadastrar,
+    referencia: string,
+  ): Promise<ResultadoDaOperacaoDeEntrega> {
+    return await adaptadorDaEntregaDoCaso().reativarEntrega(entrega, referencia);
+  },
+};
+
+/** Constrói o adaptador de produção apontado para o par do caso, ou recusa se não houver par. */
+function adaptadorDaEntregaDoCaso(): PortaDeEntregaDaNoticia {
+  if (destinoDaEntrega === undefined) {
+    throw new Error('nenhum par de teste foi apontado para a porta de entrega neste caso');
+  }
+
+  return criarAdaptadorSicoob({
+    enderecoDoProvedor: destinoDaEntrega,
+    enderecoDeAutorizacao: destinoDaEntrega,
+    enderecoDaEntregaDaNoticia: ENDERECO_DA_ENTREGA,
+    contatoDaEntregaDaNoticia: CONTATO_DA_ENTREGA,
+  });
+}
+
 beforeAll(async () => {
   identidade = await identidadeEfemera();
   fila = await redisEfemero();
@@ -483,8 +697,13 @@ beforeAll(async () => {
   // A montagem instrumentada tem casa única em `./aplicacao-instrumentada.ts` desde o fecho do
   // débito `D57 · F3/T12` — inclusive a ausência deliberada das exclusões da aplicação real, que
   // está documentada lá uma vez em vez de quatro.
+  // A porta de ENTREGA entra na T9 pelo mesmo mecanismo, e por isso a montagem recebe **duas**
+  // substituições: o `CT-1033` precisa de uma recusa do provedor carregando o dialeto inteiro, que a
+  // porta real só produziria contra o provedor de verdade. Acrescentá-la não altera o que o `CT-934`
+  // e o `CT-992` medem — nenhum dos dois toca a entrega da notícia.
   aplicacao = await montarAplicacaoInstrumentada(porta, [
     { token: TOKEN_PORTA_DE_COBRANCA_BANCARIA, valor: portaDoProvedor },
+    { token: TOKEN_PORTA_DE_ENTREGA_DA_NOTICIA, valor: portaDaEntrega },
   ]);
 
   // --- A aplicação REAL: só o documento publicado -----------------------------------------------
@@ -888,6 +1107,151 @@ describe('o vocabulário do provedor na saída real das DUAS rotas novas (T12)',
   );
 });
 
+describe('o dialeto do provedor na saída real da entrega da notícia (T9)', () => {
+  it(
+    'CT-1033 — o dialeto entra pela recusa e aparece EXCLUSIVAMENTE dentro do portador motivo.diagnostico',
+    async () => {
+      // ---------------------------------------------------------------------------------------
+      // 1. O CONTROLE POSITIVO, ANTES de tudo — o varredor acha os quinze, canal a canal
+      // ---------------------------------------------------------------------------------------
+      //
+      // Ele vem primeiro pela razão medida no `CT-934` e repetida no `CT-992`: as varreduras de baixo
+      // afirmam `[]`, e `[]` é também o que um varredor quebrado devolveria. A união dos canais é
+      // afirmada contra a lista inteira ANTES de exercitá-los — sem essa linha, um termo esquecido na
+      // repartição nunca seria plantado em canal algum.
+      const plantados = Object.values(CONTROLE_POR_CANAL).flat();
+
+      expect([...plantados].sort()).toEqual([...TERMOS_DO_PROVEDOR].sort());
+
+      // O eixo NEGATIVO do varredor, antes do laço, pela razão registrada no `CT-934`: com
+      // `termos: []` o campo `estado` é a cadeia vazia, e um varredor escrito na direção invertida
+      // (`agulha.includes(texto)`) casaria o vazio com os quinze e satisfaria as igualdades abaixo.
+      expect(termosEncontradosEm(textosDe(objetoDeControle('valor de enum', [])))).toEqual([]);
+
+      for (const [canal, termos] of Object.entries(CONTROLE_POR_CANAL)) {
+        const achados = termosEncontradosEm(textosDe(objetoDeControle(canal, termos)));
+
+        expect(achados, `a varredura ficou cega ao canal "${canal}"`).toEqual([...termos].sort());
+      }
+
+      // ---------------------------------------------------------------------------------------
+      // 2. O ARRANJO — par TLS mútuo real, certificado e identidade PELAS ROTAS
+      // ---------------------------------------------------------------------------------------
+      //
+      // Sem as duas pré-condições a ativação recusaria **antes** de alcançar o provedor, e o corpo
+      // varrido seria um envelope de recusa **do produto** — não o motivo **do provedor**, que é o
+      // único lugar por onde o dialeto entra.
+      const { autoridade, par } = await armarParDaEntrega('ct1033');
+      await registrarPreCondicoesDaEntrega(autoridade);
+
+      // ---------------------------------------------------------------------------------------
+      // 3. A ATIVAÇÃO recusada com o dialeto INTEIRO, e a consulta em seguida
+      // ---------------------------------------------------------------------------------------
+      //
+      // A consulta ao provedor devolve negativa de propósito: é ela que faz o desfecho ser
+      // `habilitada: false` **com motivo**, que é o corpo que se quer varrer. Com ela positiva, a
+      // confirmação prevaleceria e o motivo seria descartado (`CT-1035` da T7).
+      par.responderAoCadastro({
+        status: STATUS_DA_RECUSA_DO_PROVEDOR,
+        corpo: JSON.stringify(RECUSA_COM_O_DIALETO_INTEIRO),
+      });
+      par.responderAConsulta({ status: 200, corpo: corpoDeCadastroNaoEncontrado() });
+
+      const ativacao = await pedir(ROTA_DA_ATIVACAO_DA_ENTREGA, {
+        metodo: 'POST',
+        cookie,
+        corpo: {},
+      });
+      const consulta = await pedir(ROTA_DO_ESTADO_DA_ENTREGA, { cookie });
+
+      // ---------------------------------------------------------------------------------------
+      // 4. AS ÂNCORAS ANTIVÁCUO — sem elas a varredura correria sobre um corpo em que o dialeto
+      //    nunca esteve
+      // ---------------------------------------------------------------------------------------
+      const respostas = [ativacao, consulta];
+
+      expect(respostas.length).toBe(CORPOS_DO_CT1033);
+      expect(respostas.map((resposta) => resposta.status)).toEqual(STATUS_DO_CT1033);
+      expect(respostas.map((resposta) => resposta.texto.length === 0)).toEqual([false, false]);
+
+      const estado = consulta.corpo as EstadoDaEntrega;
+
+      // O desfecho pretendido, e não outro: recusado **com** motivo. Um `habilitada: true` faria
+      // `motivo` ser `null`, e a varredura de baixo devolveria `[]` por não haver o que ler.
+      expect(estado.habilitada).toBe(false);
+      expect(estado.motivo).not.toBeNull();
+      // O par de fato foi alcançado nas duas pontas — o cadastro recusou e a confirmação correu.
+      expect(par.chamadas.cadastro).toBe(1);
+      expect(par.chamadas.consulta).toBe(1);
+
+      // ---------------------------------------------------------------------------------------
+      // 5. A VARREDURA **COM** O PORTADOR — e é ela que prova que a varredura de fato OLHOU
+      // ---------------------------------------------------------------------------------------
+      //
+      // Igualdade contra a lista ordenada dos termos que o oráculo pôs no diagnóstico, **e** a
+      // afirmação de que ela não é vazia. Uma varredura que só afirmasse `[]` lá embaixo provaria
+      // tanto *"o dialeto morreu na fronteira"* quanto *"o dado nunca entrou"* e *"o varredor está
+      // cego"* — e as três produzem o mesmo verde.
+      const comOPortador = termosEncontradosEm(textosDe(consulta.corpo));
+
+      expect(comOPortador.length).toBeGreaterThan(0);
+      expect(comOPortador).toEqual([...TERMOS_QUE_ENTRAM_PELO_DIAGNOSTICO].sort());
+
+      // ---------------------------------------------------------------------------------------
+      // 6. A VARREDURA **SEM** O PORTADOR — o mesmo corpo, recortado, devolve zero
+      // ---------------------------------------------------------------------------------------
+      //
+      // É este par que dá conteúdo ao caso: o invariante é de **posição**, não de ausência. Os termos
+      // existem na saída em execução — o passo 5 acabou de nomeá-los —, e o que se prova aqui é que
+      // eles **não escapam** do portador. Os cabeçalhos entram porque *"o que saiu"* é a resposta
+      // inteira: um termo devolvido em cabeçalho próprio sairia pelo fio como sairia no corpo.
+      expect(
+        termosEncontradosEm(textosDe(semOPortador(consulta.corpo))),
+        'o dialeto escapou do portador no corpo da consulta',
+      ).toEqual([]);
+      expect(
+        termosEncontradosEm(textosDe(semOPortador(ativacao.corpo))),
+        'o dialeto escapou do portador no corpo da ativação',
+      ).toEqual([]);
+
+      for (const resposta of respostas) {
+        expect(
+          termosEncontradosEm(resposta.cabecalhos),
+          'um cabeçalho carregou vocabulário do provedor',
+        ).toEqual([]);
+      }
+
+      // ---------------------------------------------------------------------------------------
+      // 7. O DOCUMENTO PUBLICADO das duas rotas — a superfície que o frontend vai importar
+      // ---------------------------------------------------------------------------------------
+      //
+      // Só as **chaves**, pela mesma razão do `CT-934` e do `CT-992`: as descrições falam
+      // legitimamente do provedor em português, e é o **nome do campo** que atravessa para o tipo que
+      // o cliente gera. O `diagnostico` é portador **opaco** no contrato — ele não declara chave
+      // alguma —, e é por isso que a abertura dele em execução não abre a superfície publicada.
+      const documento = await documentoPublicado();
+      const rotas = (documento as { paths?: Record<string, unknown> }).paths ?? {};
+
+      for (const caminho of [ROTA_DA_ATIVACAO_DA_ENTREGA, ROTA_DO_ESTADO_DA_ENTREGA]) {
+        const recorte = rotas[caminho];
+
+        // Âncora antivácuo: um caminho que sumisse do documento produziria lista vazia de chaves, e
+        // lista vazia não contém termo algum — a varredura aprovaria a ausência da rota.
+        expect(recorte, `${caminho}: o documento publicado não descreve esta rota`).toBeDefined();
+
+        const chaves = chavesDoDocumento(recorte);
+
+        expect(chaves.length, `${caminho}: o recorte do documento veio vazio`).toBeGreaterThan(0);
+        expect(
+          termosEncontradosEm(chaves),
+          `${caminho} declara chave com vocabulário do provedor`,
+        ).toEqual([]);
+      }
+    },
+    LIMITE_CASO_MS,
+  );
+});
+
 // ---------------------------------------------------------------------------------------------
 // O varredor e o controle positivo
 // ---------------------------------------------------------------------------------------------
@@ -964,6 +1328,34 @@ function textosDe(valor: unknown): string[] {
   }
 
   return [];
+}
+
+/**
+ * O mesmo corpo, **sem** o portador `motivo.diagnostico` — o recorte do eixo negativo do `CT-1033`.
+ *
+ * ⚠️ Ele remove a **chave inteira**, e não apenas o conteúdo dela: substituir o objeto por `{}` ou
+ * por `null` deixaria o nome `diagnostico` no recorte, e um invariante sobre POSIÇÃO precisa que o
+ * recorte não contenha nada do portador. `diagnostico` não é termo do provedor, de modo que a escolha
+ * não altera o resultado hoje — ela existe para que o recorte continue significando *"tudo menos o
+ * portador"* se a lista de termos mudar.
+ *
+ * O corpo que não tem `motivo` objeto atravessa **intacto**: o caso já ancorou que ele tem, e
+ * silenciar aqui um corpo inesperado faria a varredura correr sobre outra coisa sem dizer.
+ */
+function semOPortador(corpo: unknown): unknown {
+  if (typeof corpo !== 'object' || corpo === null) {
+    return corpo;
+  }
+
+  const { motivo, ...resto } = corpo as { motivo?: unknown };
+
+  if (typeof motivo !== 'object' || motivo === null) {
+    return corpo;
+  }
+
+  const { diagnostico: _descartado, ...motivoSemPortador } = motivo as { diagnostico?: unknown };
+
+  return { ...resto, motivo: motivoSemPortador };
 }
 
 /** As chaves de um documento OpenAPI, em profundidade — os caminhos das rotas entre elas. */
@@ -1093,6 +1485,67 @@ function proximo(): number {
   sequencial += 1;
 
   return sequencial;
+}
+
+/**
+ * Sobe o par TLS mútuo do caso, instala a confiança na autoridade dele e aponta a porta de entrega.
+ *
+ * ⚠️ UMA autoridade só, e ela emite **os dois lados**: o certificado do par e o material que o
+ * cliente apresenta. Com autoridades distintas o aperto de mão cairia por cadeia divergente, e a
+ * recusa medida deixaria de ser a **decisão do par** — que é a única que faz o dialeto entrar.
+ */
+async function armarParDaEntrega(nome: string): Promise<{
+  readonly autoridade: AutoridadeDeTeste;
+  readonly par: ParInstrumentado;
+}> {
+  const autoridade = await gerarAutoridadeDeTeste(nome);
+  confiarEm(autoridade);
+
+  const par = await subirParInstrumentado(autoridade, ENDERECO_DA_ENTREGA);
+  destinoDaEntrega = par.endereco;
+
+  return { autoridade, par };
+}
+
+/**
+ * Registra, **pelas rotas reais**, as duas pré-condições do ato externo da entrega da notícia.
+ *
+ * Ela é distinta de {@link registrarCertificadoDaEmpresa} porque o material precisa sair da
+ * autoridade **do par** do caso: o certificado que a empresa registra é o que o adaptador apresenta
+ * no aperto de mão, e um emitido por outra autoridade seria recusado antes de qualquer recusa de
+ * negócio. O desfecho de cada um é afirmado antes de seguir.
+ */
+async function registrarPreCondicoesDaEntrega(autoridade: AutoridadeDeTeste): Promise<void> {
+  const material = await gerarMaterialDeTeste({ autoridade, senha: SENHA_DO_MATERIAL });
+
+  const certificado = await pedir(ROTA_DO_REGISTRO_DE_CERTIFICADO, {
+    metodo: 'POST',
+    cookie,
+    corpo: { material: material.material.toString('base64'), senha: material.senha },
+  });
+
+  if (certificado.status !== 201) {
+    throw new Error(
+      `o registro do certificado do par respondeu ${String(certificado.status)}: ${certificado.texto}`,
+    );
+  }
+
+  const identidadeRegistrada = await pedir(ROTA_DO_REGISTRO_DA_IDENTIDADE, {
+    metodo: 'POST',
+    cookie,
+    corpo: {
+      identificadorDaAplicacao: randomUUID(),
+      numeroDoCliente: RECUSA_COM_O_DIALETO_INTEIRO.numeroCliente,
+      numeroDaContaCorrente: 380_261,
+      codigoDaModalidade: 1,
+    },
+  });
+
+  if (identidadeRegistrada.status !== 201) {
+    throw new Error(
+      `o registro da identidade do par respondeu ${String(identidadeRegistrada.status)}: ${identidadeRegistrada.texto}`,
+    );
+  }
 }
 
 /** Registra o certificado vigente da empresa **pela rota real** — a precondição de toda emissão. */

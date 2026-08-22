@@ -92,6 +92,7 @@ import { processarConfirmacaoDeEmail } from './tarefas/confirmacao-de-email.js';
 import { processarEco } from './tarefas/eco.js';
 import { processarEmissaoEmLote } from './tarefas/emissao-em-lote.js';
 import { processarNotificacaoBancaria } from './tarefas/notificacao-bancaria.js';
+import { processarReconferenciaDaEntrega } from './tarefas/reconferencia-da-entrega.js';
 import { processarReguaDeCobranca } from './tarefas/regua.js';
 
 /** Sinais pelos quais o supervisor pede o encerramento. */
@@ -179,6 +180,36 @@ export interface Ambiente {
    * subiria e só quebraria na primeira emissão.
    */
   readonly enderecoDeAutorizacaoBancaria: string;
+  /**
+   * O endereço público **deste produto** para onde o banco entrega a notícia, de
+   * `ENDERECO_DA_ENTREGA_DA_NOTICIA`.
+   *
+   * ⚠️ **Ele não é endereço do provedor** — é o nosso, e é o destino que o cadastro da entrega
+   * declara junto a ele. Tem campo aqui desde a T8 da fatia `integracao-bancaria-autonoma`, quando
+   * este processo passou a **reconferir** o estado da entrega depois de um certificado novo: a porta
+   * de entrega **recusa falar** sem endereço declarado (`executarEntrega`, em
+   * `packages/cobranca-bancaria/src/adaptador-sicoob.ts`), e a recusa dela é indistinguível de *"o
+   * provedor não respondeu"*. Sem esta variável a fila nova ficaria de pé consumindo tarefa que
+   * **nunca** consegue reconferir — o modo de falha silencioso que a fila existe para evitar.
+   *
+   * A **forma** não é conferida na leitura, pela mesma razão das duas irmãs acima: quem recusa o
+   * endereço que não serve é `resolverDestino`, na **construção** do adaptador, num lugar só. O valor
+   * já chega neste processo pelo `EnvironmentFile` compartilhado — é lá que `provisionar-base.sh` o
+   * grava —, e o que faltava era consumo declarado.
+   */
+  readonly enderecoDaEntregaDaNoticia: string;
+  /**
+   * O contato operacional do cadastro da entrega, de `CONTATO_DA_ENTREGA_DA_NOTICIA`.
+   *
+   * A outra metade do endereço acima, e pela mesma razão de consumo: **este** processo constrói o
+   * adaptador da reconferência da entrega, e o cadastro que ele pode disparar leva o contato — o
+   * provedor o declara necessário. Ausente, as operações da entrega resolvem negativas sem chamar.
+   *
+   * A **forma** não é conferida aqui, pela mesma razão das irmãs: a conferência de forma vive na
+   * partida da `api` (`ehContatoDeEntregaAceitavel`), e uma segunda declaração dela neste processo
+   * ficaria livre para divergir daquela. O valor chega pelo `EnvironmentFile` compartilhado.
+   */
+  readonly contatoDaEntregaDaNoticia: string;
   /**
    * O diretório onde os bytes do boleto são guardados, de `DIRETORIO_DOS_BOLETOS`.
    *
@@ -342,12 +373,13 @@ function ehDiretorioGravavel(valor: string): boolean {
 /**
  * Lê e valida as variáveis que o processador exige.
  *
- * São **nove** desde a T16 da fatia `emissao-e-conciliacao`, e o crescimento é a natureza do
+ * São **onze** desde a T8 da fatia `integracao-bancaria-autonoma`, e o crescimento é a natureza do
  * processo mudando: ele deixou de ser um consumidor que só fala com a fila (T6), passou a falar com o
  * **banco** e com um **servidor de e-mail** (T8), passou a **montar um link** para o titular do dado
- * (T10), e agora **emite boleto e concilia pagamento junto ao provedor bancário** — o que exige a
- * chave que abre o envelope do certificado, o endereço do provedor e o diretório onde os bytes do
- * boleto são guardados.
+ * (T10), passou a **emitir boleto e conciliar pagamento junto ao provedor bancário** — o que exige a
+ * chave que abre o envelope do certificado, os dois endereços do provedor e o diretório onde os bytes
+ * do boleto são guardados — e agora **reconfere a entrega da notícia**, que exige o endereço público
+ * deste produto para onde o banco a entrega.
  * O conjunto continua PRÓPRIO deste processo (ele não escuta porta, e `PORT` não entra),
  * mas as **regras** das duas variáveis originais vêm do pacote compartilhado: os dois processos
  * sobem do mesmo `EnvironmentFile`, e duas definições independentes do que é uma severidade ou uma
@@ -355,12 +387,13 @@ function ehDiretorioGravavel(valor: string): boolean {
  * — no boot.
  *
  * O critério que separa *"exigir presença"* de *"exigir forma"* é **onde já se decide o mesmo
- * fato**, e ele vale para as nove sem exceção. Exigem só presença e não-vacuidade as que têm um
+ * fato**, e ele vale para as onze sem exceção. Exigem só presença e não-vacuidade as que têm um
  * segundo conferidor **na própria partida**: a `SMTP_URL`, recusada por esquema e por hospedeiro em
- * `coordenadasDoTransporte` (`@sysloc/regua`) quando o adaptador é construído, e a
- * `ENDERECO_DO_PROVEDOR_BANCARIO`, recusada por `resolverDestino` (`@sysloc/cobranca-bancaria`)
- * quando o adaptador do provedor é construído — as duas construções acontecem **antes** de qualquer
- * recurso ser aberto. Reimplementar aquelas conferências aqui criaria duas definições do mesmo fato,
+ * `coordenadasDoTransporte` (`@sysloc/regua`) quando o adaptador é construído, e os **três**
+ * endereços bancários — `ENDERECO_DO_PROVEDOR_BANCARIO`, `ENDERECO_DE_AUTORIZACAO_BANCARIA` e
+ * `ENDERECO_DA_ENTREGA_DA_NOTICIA` —, recusados por `resolverDestino`
+ * (`@sysloc/cobranca-bancaria`) quando o adaptador do provedor é construído — as construções
+ * acontecem **antes** de qualquer recurso ser aberto. Reimplementar aquelas conferências aqui criaria duas definições do mesmo fato,
  * e a segunda escaparia da primeira.
  *
  * Têm a **forma conferida aqui** as que não têm segundo conferidor: a `URL_BASE_DA_CONFIRMACAO` (ver
@@ -447,6 +480,16 @@ export function lerAmbiente(fonte: Readonly<Record<string, string | undefined>>)
     problemas.push('ENDERECO_DO_PROVEDOR_BANCARIO: ausente');
   }
 
+  const enderecoDaEntrega = fonte.ENDERECO_DA_ENTREGA_DA_NOTICIA?.trim() ?? '';
+  if (enderecoDaEntrega === '') {
+    problemas.push('ENDERECO_DA_ENTREGA_DA_NOTICIA: ausente');
+  }
+
+  const contatoDaEntrega = fonte.CONTATO_DA_ENTREGA_DA_NOTICIA?.trim() ?? '';
+  if (contatoDaEntrega === '') {
+    problemas.push('CONTATO_DA_ENTREGA_DA_NOTICIA: ausente');
+  }
+
   const diretorioDosBoletos = fonte.DIRETORIO_DOS_BOLETOS?.trim() ?? '';
   if (diretorioDosBoletos === '') {
     problemas.push('DIRETORIO_DOS_BOLETOS: ausente');
@@ -474,6 +517,8 @@ export function lerAmbiente(fonte: Readonly<Record<string, string | undefined>>)
     chaveDeCifraDoCertificado: Buffer.from(chaveDeCifra, 'base64'),
     enderecoDoProvedorBancario: enderecoDoProvedor,
     enderecoDeAutorizacaoBancaria: enderecoDeAutorizacao,
+    enderecoDaEntregaDaNoticia: enderecoDaEntrega,
+    contatoDaEntregaDaNoticia: contatoDaEntrega,
     diretorioDosBoletos,
   };
 }
@@ -606,6 +651,37 @@ async function principal(): Promise<void> {
     // passar `undefined` não é o mesmo que não passar, e é a segunda forma que preserva o padrão.
     enderecoDeAutorizacao: ambiente.enderecoDeAutorizacaoBancaria,
   });
+  // A porta da ENTREGA é construída à parte, e a separação é a mesma — com a mesma razão — que
+  // `apps/api/src/integracoes-bancarias/integracoes-bancarias.module.ts` faz na borda: que o mesmo
+  // adaptador satisfaça as duas é escolha dele, não da fronteira. Cada borda recebe a **sua**, e é
+  // isso que impede a tarefa da reconferência de alcançar operação de título. Construir duas vezes
+  // não custa conexão nenhuma — a construção resolve endereços e não abre soquete algum, e ela
+  // acontece aqui, no mesmo instante das irmãs, para que a recusa por endereço malformado preceda a
+  // reserva e a conexão.
+  // DÉBITO COM GATILHO — D38 · F5/T8 · registrado 2026-08-22
+  // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma prova que falta, e não protege o código abaixo.)
+  // O QUÊ: nenhuma asserção prova que ESTA composição passa `enderecoDaEntregaDaNoticia` ao
+  //        adaptador. O campo é OPCIONAL na configuração (`adaptador-sicoob.ts:658`), de modo que
+  //        remover a linha COMPILA e deixa a suíte verde — e toda tarefa da fila da reconferência
+  //        passa a levantar, porque `executarEntrega` resolve `{aceito:false, motivo:null}` sem
+  //        tocar a rede quando ele falta. Medido: nenhuma suíte importa este arquivo além de
+  //        `lerAmbiente`.
+  // QUANDO FECHA: o TERCEIRO ponto de fiação não provado de porta bancária — hoje são DOIS, este e
+  //        `criarPortaDeEntregaDaNoticia` em `apps/api/src/integracoes-bancarias/…module.ts:150`,
+  //        cujo docblock afirma que "aqui ele não pode faltar" sem que nada o prove —, ou a
+  //        primeira task autorizada a extrair a composição raiz deste processo em unidade que a
+  //        suíte possa montar.
+  // POR QUE NÃO AGORA: fechar exige topologia que atravessa os DOIS processos, e a perna da API
+  //        nasceu na T7 (fecho do `D29`), fora do escopo desta task. A garantia contra o modo de
+  //        falha real — faltar a variável — JÁ existe: `lerAmbiente` recusa a partida, e o
+  //        `CT-936` varre a recusa.
+  // ÍNDICE: docs/specs/features/integracao-bancaria-autonoma/v1/_run/run-report.md §2, D38
+  const entregaDaNoticia = criarAdaptadorSicoob({
+    enderecoDoProvedor: ambiente.enderecoDoProvedorBancario,
+    enderecoDeAutorizacao: ambiente.enderecoDeAutorizacaoBancaria,
+    enderecoDaEntregaDaNoticia: ambiente.enderecoDaEntregaDaNoticia,
+    contatoDaEntregaDaNoticia: ambiente.contatoDaEntregaDaNoticia,
+  });
   // A guarda **resolve** o diretório-base uma vez, aqui, e não o cria nem o confere: quem o confere
   // é a partida (ver {@link ehDiretorioGravavel}), num lugar só.
   const guarda = criarGuardaDeBoletos(ambiente.diretorioDosBoletos);
@@ -665,11 +741,40 @@ async function principal(): Promise<void> {
           chaveDeCifra: ambiente.chaveDeCifraDoCertificado,
         }),
     );
+    // A QUARTA borda bancária, e a única cujo gatilho é um ato de CONFIGURAÇÃO: o Admin registrou
+    // certificado novo, e o que o produto sabia sobre a entrega da notícia daquela empresa passou a
+    // descrever um aperto de mão que já não acontece. A porta é a **da entrega**, e não a de
+    // identidade nem a de cobrança — é a mesma separação que `integracoes-bancarias.module.ts` faz
+    // na borda HTTP, e ela é o que impede esta tarefa de alcançar operação de título.
+    fila.processar(
+      fila.reconferenciaDaEntrega,
+      async (tarefa, registrador) =>
+        await processarReconferenciaDaEntrega(tarefa, registrador, {
+          banco,
+          entrega: entregaDaNoticia,
+          chaveDeCifra: ambiente.chaveDeCifraDoCertificado,
+        }),
+    );
   } catch (erro) {
     // Devolver o que já foi aberto é o que permite ao processo terminar: uma conexão de pé
     // seguraria o laço de eventos e o processador ficaria vivo sem consumir nada. A falha da
     // devolução é registrada e não substitui a original — é a original que diz por que o processo
     // não subiu, e é ela que o ponto de entrada escreve na saída de erro.
+    //
+    // DECISÃO FECHADA — D34 · F0/T6 · fechado na intervenção dirigida de 2026-08-22
+    // O QUÊ: a devolução de recursos desta partida frustrada é aguardada sob `.catch`, e o `throw`
+    //        que a segue é o do erro ORIGINAL.
+    // POR QUÊ: sem o `.catch`, uma rejeição da limpeza — `fila.encerrar()` é exatamente a chamada
+    //        que trava contra servidor inalcançável — vencia a corrida e subia no lugar da causa.
+    //        O operador lia no `stderr` a descrição da limpeza, e não o motivo de o processo não ter
+    //        subido: o diagnóstico se perdia justo no caminho que existe para diagnosticar.
+    // REVERTER EXIGE: provar que `devolverRecursos` não rejeita por nenhum caminho — e ela chama
+    //        `fila.encerrar()` e `devolverReserva()`, as duas contra rede.
+    // RESSALVA DE PROVA (P4): a rede aqui é este marcador, e não um caso — `main.ts` é a composição
+    //        raiz e não tem unidade que a exercite. A rede EXECUTÁVEL está agendada pelo gatilho do
+    //        `D38 · F5/T8`, abaixo, que é quem extrai esta composição em unidade testável; quando
+    //        ele disparar, o caso desta garantia entra junto. Não se registra débito novo por isso:
+    //        seria uma segunda entrada para a mesma dívida que o D38 já carrega.
     await devolverRecursos(fila, banco, logger).catch((falha: unknown) => {
       logger.error({ erro: falha }, 'falha ao devolver os recursos de uma partida frustrada');
     });
@@ -686,6 +791,7 @@ async function principal(): Promise<void> {
         fila.emissaoEmLote.name,
         fila.conferenciaBancaria.name,
         fila.notificacaoBancaria.name,
+        fila.reconferenciaDaEntrega.name,
       ],
     },
     'processador de trabalho no ar',

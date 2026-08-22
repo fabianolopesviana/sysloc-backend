@@ -35,9 +35,27 @@
  * | CA-04 | CT-825 | O limiar de 30 dias é **fechado do lado `VENCENDO`**: `+31 → VIGENTE` com
  * |       |        | **31** dias. Um deslize de um dia reprova este caso **sozinho**, sem tocar o
  * |       |        | CT-824 — é a razão de ele existir separado. |
- * | CA-05 | CT-824 (b) | Senha que não abre e material ilegível produzem `422` com o corpo
- * |       |        | **idêntico byte a byte**, e o que os separa vive **só** no registro interno:
- * |       |        | `motivo` `SENHA_NAO_ABRE` contra `MATERIAL_ILEGIVEL`. Nada do vigente muda. |
+ * | CA-09 | CT-1020 | A **rota** aceita material em cifra LEGADA — a que a Autoridade
+ * | CA-20 |        | Certificadora entrega —, gerado em execução, e a identidade registrada
+ * |       |        | (titular, as duas datas, impressão digital) é **idêntica** à do MESMO
+ * |       |        | certificado em cifra moderna, por igualdade do objeto inteiro. Uma linha
+ * |       |        | nasce, o vigente é um só, e nada do material volta na resposta. **É o caso
+ * |       |        | que fecha o `D64`**, e nenhuma etapa dele exige acesso ao servidor. |
+ * | CA-10 | CT-1021 | ⚠️ **REESCRITA de `CT-824 (b)`.** As TRÊS causas produzem TRÊS códigos
+ * | CA-11 |        | distintos — `Set` de tamanho 3 —, com os três envelopes inteiros por
+ * | CA-12 |        | igualdade e `campo: 'corpo'` nas três. Os motivos internos saem, por
+ * |       |        | igualdade de arranjo ORDENADO, como `SENHA_NAO_ABRE`, `FORMATO_NAO_SUPORTADO`
+ * |       |        | e `JA_VENCIDO`, **antes** das comparações de corpo. Nada do vigente muda e
+ * |       |        | nenhuma linha nasce. |
+ * | CA-10 | CT-1022 | Senha errada sobre material **LEGADO** nomeia a SENHA e não o formato — a
+ * | CA-11 |        | asserção é dupla e cada metade reprova sozinha (`codigo` igual ao da senha e
+ * |       |        | **diferente** do de formato; motivo interno `['SENHA_NAO_ABRE']` e nunca o do
+ * |       |        | formato). É o eixo que só existe **dentro** do conversor. |
+ * | CA-13 | CT-1023 | O desfecho do registro declara a conversão como booleano **fechado nos dois
+ * | CA-14 |        | sentidos**: `true` para o legado e `false` para o moderno — presente e falso,
+ * |       |        | nunca ausente —, com o conjunto de chaves igual nos DOIS corpos. Nos dois
+ * |       |        | `GET`, o conjunto é o que `esquemaDoCertificado` publica, e a chave da
+ * |       |        | conversão **não** está nele. |
  * | CA-06 | CT-824 (c) | Material cuja validade já terminou é recusado **na entrada**, com `422`
  * |       |        | informando em `detalhes.validoAte` a data em que ela terminou, `motivo:
  * |       |        | JA_VENCIDO` no registro interno, e **nenhuma linha gravada**. |
@@ -47,8 +65,13 @@
  * |       |        | envelope da ADR-0017 nomeando `material` — e não pelo servidor HTTP. |
  *
  * Rastreabilidade: `CA-03 → CT-824 (RN-04)` · `CA-04 → CT-824, CT-825 (RN-04)` ·
- * `CA-05 → CT-824 (b) (RN-03)` · `CA-06 → CT-824 (c) (RN-03)` · `RN-01 → CT-824 (d)` ·
- * `CA-07 → CT-826, CT-827, CT-826 (b) (RN-06)` · `CA-08 → CT-828 (RN-01)`.
+ * `CA-06 → CT-824 (c) (RN-03)` · `RN-01 → CT-824 (d)` ·
+ * `CA-07 → CT-826, CT-827, CT-826 (b) (RN-06)` · `CA-08 → CT-828 (RN-01)` ·
+ * `CA-09 → CT-1020` · `CA-20 → CT-1020` · `CA-10, CA-11, CA-12 → CT-1021` ·
+ * `CA-10, CA-11 → CT-1022` · `CA-13, CA-14 → CT-1023`.
+ *
+ * ⚠️ **O `CA-05` saiu desta linha porque o requisito que ele nomeava foi SUBSTITUÍDO**, e não porque
+ * a prova dele tenha sumido — ver a seção da reversão, logo abaixo.
  *
  * ===========================================================================
  * O PAR DO PROVEDOR É REAL, e o que se substitui é o DESTINO (T12)
@@ -186,6 +209,35 @@
  *   * **reversão** — o fonte foi restaurado do backup, conferido idêntico por `diff -q`, e o controle
  *     voltou a `6 passed`.
  *
+ * ⚠️ **O M3 mede uma propriedade que NÃO existe mais, e o registro fica porque registro histórico não
+ * se reescreve.** Ele foi executado em 2026-08-15 contra a asserção de igualdade byte a byte dos dois
+ * corpos, que a T2 da fatia `integracao-bancaria-autonoma` removeu por decisão — ver a seção seguinte.
+ * Quem reexecutá-lo hoje encontrará o `CT-1021` reprovando **por outra razão** (o mutante colapsaria
+ * dois dos três códigos), o que é o desfecho certo pelo motivo certo. **Não o use como evidência de
+ * que a indistinguibilidade continua valendo.**
+ *
+ * ===========================================================================
+ * A INDISTINGUIBILIDADE FOI REMOVIDA POR DECISÃO — e a remoção se declara aqui (T2 da F5)
+ * ===========================================================================
+ *
+ * **O que esta mudança removeu**: a asserção `expect(comSenhaErrada.texto).toBe(comMaterialRuim.texto)`
+ * do antigo `CT-824 (b)`, e com ela a garantia de que senha errada e material ilegível respondiam
+ * corpo **idêntico byte a byte**. Também saiu a constante `MENSAGEM_DO_MATERIAL_RECUSADO`, que era a
+ * mensagem única das duas causas.
+ *
+ * **Por que a premissa envelheceu**: a doutrina da recusa indistinguível deste repositório existe
+ * contra **oráculo de existência** — é o caso de `CREDENCIAL_INVALIDA`, quatro causas num código só,
+ * porque distinguir confirmaria ao atacante que a conta existe. Aqui **não há atacante a informar**:
+ * quem pede está autenticado, detém `ACAO:configurar_integracao` e apresentou **as duas metades**. O
+ * custo do silêncio foi medido em 2026-08-20, quando o operador caçou uma senha errada que não
+ * existia. A mudança de requisito está aprovada no PRD da fatia (D4).
+ *
+ * **O bloco foi REESCRITO no lugar, nunca apagado e recriado ao lado** — apagar e recriar seria
+ * regressão de prova mesmo com a contagem constante. E o que substituiu a asserção removida é **mais
+ * forte, não mais fraco**: onde havia uma igualdade entre dois textos, há agora um `Set` de tamanho 3
+ * sobre os códigos **mais** os três envelopes inteiros por igualdade, cada um com a mensagem literal
+ * escrita à mão neste arquivo.
+ *
  * ===========================================================================
  * MUTANTES EXECUTADOS pela T12 (2026-08-15) — os três reprovaram, e cada um NOMEIA a garantia
  * ===========================================================================
@@ -252,7 +304,11 @@ import { getCACertificates, setDefaultCACertificates } from 'node:tls';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { criarAdaptadorSicoob, type PortaDeIdentidadeBancaria } from '@sysloc/cobranca-bancaria';
-import { LIMIAR_DE_VENCIMENTO_EM_DIAS, MAIOR_MATERIAL_CODIFICADO } from '@sysloc/contracts';
+import {
+  esquemaDoCertificado,
+  LIMIAR_DE_VENCIMENTO_EM_DIAS,
+  MAIOR_MATERIAL_CODIFICADO,
+} from '@sysloc/contracts';
 import {
   type AcessoAoBanco,
   abrirAcessoAoBanco,
@@ -261,7 +317,13 @@ import {
   EMPRESA_B,
   SENHA_DA_CARGA,
 } from '@sysloc/db';
-import { CodigoErro, criarLogger } from '@sysloc/shared';
+import {
+  type CargaDaReconferenciaDaEntrega,
+  CodigoErro,
+  criarLogger,
+  FILA_DA_RECONFERENCIA_DA_ENTREGA,
+} from '@sysloc/shared';
+import { Queue } from 'bullmq';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)
 // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o código abaixo.)
@@ -289,6 +351,11 @@ import {
   type MaterialDeTeste,
   type SujeitoDeTeste,
 } from '../../../packages/cobranca-bancaria/test/material-de-teste.ts';
+import {
+  agulhasDe,
+  controleComAsAgulhas,
+  ocorrenciasDeAgulhas,
+} from '../../../packages/cobranca-bancaria/test/varredura-de-agulhas.ts';
 import { reservarPorta } from '../../../packages/shared/test/efemero-comum.ts';
 import { type FilaEfemera, redisEfemero } from '../../../packages/shared/test/redis-efemero.ts';
 import { AppModule } from '../src/app.module.ts';
@@ -420,6 +487,35 @@ const ACAO_DE_CONFIGURACAO = 'ACAO:configurar_integracao';
  */
 const SENHA_DO_MATERIAL = 'senha-do-cofre-do-ct824';
 
+/**
+ * Os rótulos de nível, tal como o registrador do projeto os emite.
+ *
+ * `criarLogger` declara `level: (rotulo) => ({ nivel: rotulo })`, de modo que o evento carrega
+ * `nivel: 'warn'` e **não** o `level: 40` do padrão da biblioteca. Escritos à mão de propósito: lê-los
+ * do SUT faria a asserção concordar consigo mesma.
+ */
+const NIVEL_DE_AVISO = 'warn';
+const NIVEL_DE_ERRO = 'error';
+
+/**
+ * A frase da linha que o registro emite quando a reconferência não pôde ser enfileirada.
+ *
+ * Escrita à mão, e **não importada** do serviço: importá-la faria a asserção concordar consigo mesma,
+ * e uma frase trocada deixaria de reprovar caso algum.
+ */
+const TRILHA_DA_RECONFERENCIA_NAO_ENFILEIRADA =
+  'o certificado foi registrado e a reconferência da entrega não pôde ser enfileirada';
+
+/**
+ * A frase do ouvinte de conexão do produtor de fila — a **outra** linha de alerta esperada.
+ *
+ * Ela é declarada aqui porque derrubar o servidor de fila a produz, uma ou mais vezes, enquanto o
+ * cliente tenta reconectar: o número delas depende do tempo, e por isso o `CT-1039` afirma o
+ * **conjunto de frases** distintas em vez da contagem total. Uma frase inesperada em `warn` reprova
+ * — que é o que separa *"degradou como se decidiu"* de *"degradou e reclamou de outra coisa"*.
+ */
+const FALHA_DE_CONEXAO_DO_PRODUTOR = 'o produtor de fila reportou falha de conexão';
+
 /** A senha que **não** abre nenhum dos cofres — o gatilho de uma das duas causas indistinguíveis. */
 const SENHA_QUE_NAO_ABRE = 'esta-senha-nao-abre-cofre-nenhum';
 
@@ -442,13 +538,23 @@ const DIAS_DE_ATRASO_DO_VENCIDO = 1;
 const DIAS_DO_MATERIAL_VENCIDO = -1;
 
 /**
- * A mensagem canônica do `422`, escrita por extenso.
+ * As **duas** mensagens do `422` do material, escritas por extenso — uma por causa (F5, D4).
  *
- * Literal, e **não** lida do SUT: os casos comparam corpos inteiros por igualdade, e derivá-la da
- * mesma fonte que o produz faria a asserção concordar consigo mesma.
+ * ⚠️ **Elas SUBSTITUEM a mensagem única** *"o certificado não pôde ser lido com a senha apresentada
+ * — confira o arquivo e a senha"*, que respondia pelas duas causas ao mesmo tempo. A substituição é
+ * a mudança de requisito aprovada no PRD da fatia `integracao-bancaria-autonoma`, e não um efeito
+ * colateral: quem pede está autenticado e apresentou as duas metades, de modo que dizer-lhe qual
+ * delas não serve não revela nada que ele já não tenha — e o silêncio custou, em 2026-08-20, uma
+ * caçada a uma senha errada que não existia.
+ *
+ * Literais, e **não** lidas do SUT: os casos comparam corpos inteiros por igualdade, e derivá-las da
+ * mesma fonte que as produz faria a asserção concordar consigo mesma.
  */
-const MENSAGEM_DO_MATERIAL_RECUSADO =
-  'o certificado não pôde ser lido com a senha apresentada — confira o arquivo e a senha';
+const MENSAGEM_DA_SENHA_QUE_NAO_ABRE =
+  'a senha apresentada não abre o certificado enviado — confira a senha';
+
+const MENSAGEM_DO_FORMATO_NAO_SUPORTADO =
+  'o arquivo enviado não é um certificado que o produto consiga ler — confira o arquivo escolhido';
 
 /** A mensagem da recusa por validade encerrada — literal, pela mesma razão. */
 const MENSAGEM_DO_CERTIFICADO_VENCIDO = 'a validade do certificado apresentado já terminou';
@@ -456,12 +562,48 @@ const MENSAGEM_DO_CERTIFICADO_VENCIDO = 'a validade do certificado apresentado j
 /** A mensagem do `404` da RN-01 — literal, pela mesma razão. */
 const MENSAGEM_SEM_CERTIFICADO = 'esta empresa não tem certificado do provedor registrado';
 
-/** O campo que as duas recusas do material nomeiam — o do corpo, nunca `material` nem `senha`. */
+/** O campo que as TRÊS recusas do material nomeiam — o do corpo, nunca `material` nem `senha`. */
 const CAMPO_DO_CORPO = 'corpo';
 
-/** Os dois motivos internos que separam as causas indistinguíveis — literais, nunca importados. */
+/** O campo em que o desfecho do REGISTRO declara a conversão — literal, nunca lido do SUT. */
+const CAMPO_DA_CONVERSAO = 'materialConvertido';
+
+/**
+ * As **dez** chaves do desfecho do registro, em ordem — os nove do certificado mais o do ato.
+ *
+ * Escritas por extenso, e ordenadas, porque a comparação é de **arranjo ordenado**: derivá-las do
+ * esquema publicado faria o campo acrescentado à projeção entrar também na expectativa, e o
+ * alargamento passaria despercebido (AP-29). O eixo que amarra estas dez ao contrato é a comparação
+ * do `GET` contra `esquemaDoCertificado`, logo abaixo, somada à negativa literal sobre
+ * {@link CAMPO_DA_CONVERSAO}.
+ */
+const CHAVES_DO_DESFECHO_DO_REGISTRO = [
+  'diasParaVencer',
+  'estado',
+  'id',
+  'impressaoDigital',
+  'materialConvertido',
+  'registradoEm',
+  'registradoPor',
+  'titular',
+  'validoAte',
+  'validoDe',
+] as const;
+
+/**
+ * Os três motivos internos que o journal carrega — literais, nunca importados do SUT.
+ *
+ * ⚠️ **DIVERGÊNCIA DECLARADA da §6.3 da task**, que escreve `'MATERIAL_ILEGIVEL'` para a causa de
+ * formato. O motivo real é **`FORMATO_NAO_SUPORTADO`**, e o card está desatualizado em relação à
+ * própria T1 que ele manda consumir: desde que a borda passa por `converterMaterialSeNecessario`, o
+ * `ErroDeMaterialIlegivel` **não escapa mais** daquele módulo — quem chega aqui é
+ * `ErroDeFormatoDoMaterial`, cujo motivo é o que a T1 publicou no barril como
+ * `MOTIVO_DO_FORMATO_NAO_SUPORTADO` (e que a §1 da task lista entre os símbolos consumidos). Escrever
+ * `MATERIAL_ILEGIVEL` aqui exigiria **traduzir** o motivo na borda, criando um segundo vocabulário
+ * para o mesmo fato — o oposto do que o campo único existe para dar ao operador.
+ */
 const MOTIVO_DA_SENHA = 'SENHA_NAO_ABRE';
-const MOTIVO_DO_MATERIAL = 'MATERIAL_ILEGIVEL';
+const MOTIVO_DO_FORMATO = 'FORMATO_NAO_SUPORTADO';
 const MOTIVO_DO_VENCIDO = 'JA_VENCIDO';
 
 /**
@@ -755,13 +897,21 @@ describe('o certificado do provedor por empresa (T11)', () => {
   );
 
   it(
-    'CT-824 (b) — senha que não abre e material ilegível respondem o MESMO corpo, e só o journal os separa',
+    'CT-1021 — as três causas de recusa produzem três códigos DISTINTOS, e os três envelopes fecham por igualdade',
     async () => {
+      // ⚠️ REESCRITA IN LOCO do bloco que afirmava a mensagem ÚNICA (`CT-824 (b)`). O arranjo é o
+      // mesmo — vigente registrado pela rota real, marca no diário, contagens cruas —, e o que muda
+      // é **o que se afirma**: a asserção removida era `expect(comSenhaErrada.texto)
+      // .toBe(comMaterialRuim.texto)`, que fixava exatamente a indistinguibilidade que a fatia
+      // derruba por decisão do PRD (D4). O que a substitui é MAIS forte, não mais fraco: um `Set` de
+      // tamanho 3 sobre os códigos, mais os TRÊS envelopes inteiros por igualdade.
+      //
       // A autoridade descartável DESTE caso — ver `gerarMaterial`. Ela leva embora, no fim do
       // caso, a raiz temporária e todos os materiais que emitiu.
-      const autoridade = await gerarAutoridadeDeTeste('ct824b');
+      const autoridade = await gerarAutoridadeDeTeste('ct1021');
 
-      // A precondição: existe um vigente, e ele não pode mudar por causa de uma recusa.
+      // A precondição: existe um vigente, e ele não pode mudar por causa de recusa nenhuma. É contra
+      // um estado que não pode mudar que as três recusas são medidas.
       expect(
         (await registrarMaterial(await gerarMaterial(autoridade, DIAS_VIGENTE_FOLGADO))).status,
       ).toBe(201);
@@ -770,43 +920,86 @@ describe('o certificado do provedor por empresa (T11)', () => {
       const linhasAntes = await contarCertificados(EMPRESA_A.id);
       const desdeAqui = linhasDoJournal.length;
 
-      // Causa 1 — o material é bom, a senha não abre.
+      // Causa 1 — SENHA: o material é bom, e a senha não o abre.
       const bom = await gerarMaterial(autoridade, DIAS_VIGENTE_FOLGADO);
-      const comSenhaErrada = await pedir(ROTA_DO_REGISTRO, {
+      const porSenha = await pedir(ROTA_DO_REGISTRO, {
         metodo: 'POST',
         cookie,
         corpo: { material: bom.material.toString('base64'), senha: SENHA_QUE_NAO_ABRE },
       });
 
-      // Causa 2 — a senha é a de sempre, os bytes não são um PKCS#12.
-      const comMaterialRuim = await pedir(ROTA_DO_REGISTRO, {
+      // Causa 2 — FORMATO: a senha é a de sempre, e os bytes não são um PKCS#12 que se converta.
+      const porFormato = await pedir(ROTA_DO_REGISTRO, {
         metodo: 'POST',
         cookie,
         corpo: { material: randomBytes(512).toString('base64'), senha: SENHA_DO_MATERIAL },
       });
 
-      expect(comSenhaErrada.status).toBe(422);
-      expect(comMaterialRuim.status).toBe(422);
+      // Causa 3 — VALIDADE: o material abre com a senha certa, e a validade terminou ontem.
+      const vencido = await gerarMaterial(autoridade, DIAS_DO_MATERIAL_VENCIDO);
+      const porValidade = await registrarMaterial(vencido);
 
-      // ⚠️ A ASSERÇÃO QUE DISCRIMINA VEM ANTES DA IGUALDADE, e a ordem é conteúdo: os dois motivos
-      // internos precisam ser DIFERENTES, senão as duas requisições podem ter caído no mesmo caminho
-      // e a igualdade dos corpos seria verdadeira por trivialidade. Posta depois do `toEqual`, ela
-      // nunca poderia reprovar — o caso abortaria antes.
-      const motivos = motivosDesde(desdeAqui);
+      expect(porSenha.status).toBe(422);
+      expect(porFormato.status).toBe(422);
+      expect(porValidade.status).toBe(422);
 
-      expect(motivos).toEqual([MOTIVO_DA_SENHA, MOTIVO_DO_MATERIAL]);
+      // ⚠️ A ASSERÇÃO QUE DISCRIMINA VEM ANTES DAS COMPARAÇÕES DE CORPO, e a ordem é conteúdo — é a
+      // mesma razão pela qual o bloco reescrito já a ordenava assim: sem ela, três códigos poderiam
+      // coincidir com o esperado por as três requisições terem caído no MESMO caminho interno. Posta
+      // depois de um `toEqual`, ela nunca chegaria a executar num caso que reprovasse.
+      expect(motivosDesde(desdeAqui)).toEqual([
+        MOTIVO_DA_SENHA,
+        MOTIVO_DO_FORMATO,
+        MOTIVO_DO_VENCIDO,
+      ]);
 
-      // E agora a indistinguibilidade, comparada sobre o TEXTO CRU da resposta — byte a byte, e não
-      // campo a campo: um `detalhes` a mais numa delas escaparia de uma comparação por campo.
-      expect(comSenhaErrada.texto).toBe(comMaterialRuim.texto);
+      // A propriedade central da fatia, em uma linha: TRÊS causas, TRÊS códigos. Um colapso de
+      // quaisquer duas delas — que é a forma exata do defeito que o `D64` descrevia — derruba o
+      // tamanho do conjunto para 2 e reprova aqui.
+      const codigos = new Set([
+        (porSenha.corpo as { codigo: string }).codigo,
+        (porFormato.corpo as { codigo: string }).codigo,
+        (porValidade.corpo as { codigo: string }).codigo,
+      ]);
 
-      // O corpo é o envelope INTEIRO da ADR-0017, escrito à mão. Um `campo: 'senha'` numa delas — a
-      // forma mais provável de a distinção voltar — reprova aqui e na linha acima.
-      expect(comSenhaErrada.corpo).toEqual({
-        codigo: CodigoErro.CAMPO_INVALIDO,
-        mensagem: MENSAGEM_DO_MATERIAL_RECUSADO,
+      expect(codigos.size).toBe(3);
+
+      // E os TRÊS envelopes INTEIROS da ADR-0017, escritos à mão: só os `codigo` vêm das constantes
+      // do enum fechado de `@sysloc/shared`; as mensagens são literais deste arquivo, porque
+      // derivá-las da mesma fonte que as produz faria a asserção concordar consigo mesma.
+      //
+      // ⚠️ Nas TRÊS, `campo` vale exatamente `'corpo'` — nunca `'material'`, nunca `'senha'`. Nomear
+      // a metade culpada diria por outra via o que o `codigo` já diz, e o `campo` é o que o cliente
+      // usa para destacar entrada, não para diagnosticar.
+      expect(porSenha.corpo).toEqual({
+        codigo: CodigoErro.SENHA_DO_MATERIAL_NAO_ABRE,
+        mensagem: MENSAGEM_DA_SENHA_QUE_NAO_ABRE,
         campo: CAMPO_DO_CORPO,
       });
+
+      // **Sem `detalhes`**: a comparação é do objeto inteiro, de modo que um `detalhes` a mais aqui
+      // — o vetor pelo qual conteúdo do corpo voltaria à resposta — reprova sozinho.
+      expect(porFormato.corpo).toEqual({
+        codigo: CodigoErro.MATERIAL_EM_FORMATO_NAO_SUPORTADO,
+        mensagem: MENSAGEM_DO_FORMATO_NAO_SUPORTADO,
+        campo: CAMPO_DO_CORPO,
+      });
+
+      expect(porValidade.corpo).toEqual({
+        codigo: CodigoErro.CERTIFICADO_COM_VALIDADE_ENCERRADA,
+        mensagem: MENSAGEM_DO_CERTIFICADO_VENCIDO,
+        campo: CAMPO_DO_CORPO,
+        // A DATA EXATA em que a validade terminou: sem ela, o Admin não distingue "o arquivo é o
+        // errado" de "o arquivo é o certo e está velho".
+        detalhes: { validoAte: vencido.validoAte.toISOString() },
+      });
+
+      // E nenhuma das três ecoa o que chegou no corpo — nem a senha, nem os bytes do material.
+      for (const recusa of [porSenha, porFormato, porValidade]) {
+        expect(recusa.texto).not.toContain(SENHA_QUE_NAO_ABRE);
+        expect(recusa.texto).not.toContain(SENHA_DO_MATERIAL);
+        expect(recusa.texto).not.toContain(bom.material.toString('base64'));
+      }
 
       // Nada do vigente mudou: recusa nunca é escrita parcial.
       const depois = await pedir(ROTA_DA_CONSULTA, { cookie });
@@ -818,6 +1011,172 @@ describe('o certificado do provedor por empresa (T11)', () => {
       // nenhuma denunciaria.
       expect(await contarCertificados(EMPRESA_A.id)).toBe(linhasAntes);
       expect(await contarVigentes(EMPRESA_A.id)).toBe(1);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-1020 — a rota aceita material em cifra LEGADA gerado em execução, e a identidade registrada é idêntica',
+    async () => {
+      // ⚠️ **É o caso que fecha o `D64`.** A Autoridade Certificadora entrega o cofre embalado na
+      // cifra que o runtime não abre — duas emissões consecutivas medidas —, e até a F5 a rota
+      // recusava exatamente o arquivo que o Admin recebeu. Nenhuma etapa aqui exige acesso ao
+      // servidor: o único caminho exercitado é o HTTP (CA-20).
+      //
+      // A autoridade descartável DESTE caso — ver `gerarMaterial`. Ela leva embora, no fim do
+      // caso, a raiz temporária e todos os materiais que emitiu.
+      const autoridade = await gerarAutoridadeDeTeste('ct1020');
+
+      // O **MESMO** par chave/certificado em DUAS embalagens: a moderna, que o runtime abre direto, e
+      // a legada, que é a que o produto recusava. A moderna existe **só como referência de
+      // comparação** e não é registrada.
+      const material = await gerarMaterialComLegado(autoridade, DIAS_VIGENTE_FOLGADO);
+      const legado = exigirEmbalagemLegada(material);
+
+      // A âncora antivácuo do arranjo: as duas embalagens são conjuntos de bytes DIFERENTES. Sem ela,
+      // um acessório que devolvesse a moderna nas duas pontas faria este caso passar sem que material
+      // legado algum tivesse atravessado a rota.
+      expect(legado.equals(material.material)).toBe(false);
+
+      // A tripla publicável lida do material MODERNO, por caminho independente do SUT (o `openssl` do
+      // acessório) — é a referência contra a qual a identidade registrada é comparada. A impressão
+      // digital é o resumo do certificado inteiro em DER: ela **reprova qualquer substituição** que
+      // uma conversão defeituosa fizesse, inclusive a troca por um par novo.
+      const identidadeEsperada = {
+        titular: material.titular,
+        validoDe: material.validoDe.toISOString(),
+        validoAte: material.validoAte.toISOString(),
+        impressaoDigital: material.impressaoDigital,
+      };
+
+      const linhasAntes = await contarCertificados(EMPRESA_A.id);
+      const registro = await registrarBytes(legado, material.senha);
+
+      expect(registro.status).toBe(201);
+      // Igualdade do OBJETO INTEIRO, e não campo a campo escolhido: um campo que a conversão
+      // corrompesse e que este caso não tivesse listado passaria despercebido.
+      expect(identidadeDe(registro.corpo)).toEqual(identidadeEsperada);
+
+      // E a consulta devolve a mesma identidade — o que ficou GUARDADO é o convertido, e é ele que a
+      // leitura seguinte publica.
+      const consulta = await pedir(ROTA_DA_CONSULTA, { cookie });
+
+      expect(consulta.status).toBe(200);
+      expect(identidadeDe(consulta.corpo)).toEqual(identidadeEsperada);
+
+      // O material e a senha não voltam em resposta alguma, nem depois de terem passado pelo
+      // subprocesso de conversão — que é o caminho novo por onde eles poderiam ter escapado.
+      expect(registro.texto).not.toContain(material.senha);
+      expect(registro.texto).not.toContain(legado.toString('base64'));
+      expect(registro.texto).not.toContain(material.material.toString('base64'));
+
+      // As contagens CRUAS: exatamente UMA linha nasceu, e o vigente da empresa é um só.
+      expect(await contarCertificados(EMPRESA_A.id)).toBe(linhasAntes + 1);
+      expect(await contarVigentes(EMPRESA_A.id)).toBe(1);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-1022 — senha errada sobre material LEGADO nomeia a senha, e não o formato',
+    async () => {
+      // ⚠️ **É o caso que pega a armadilha declarada da T1**, e é a razão de ele existir separado do
+      // CT-1021: lá as três causas usam material que o runtime abre direto, e a distinção
+      // senha/formato **nunca atravessa o conversor**. Aqui a leitura direta falha **pela cifra**,
+      // antes de a etiqueta de autenticação ser conferida — de modo que a única fonte do sinal de
+      // senha é a saída do CONVERSOR casando o radical `mac verify`. Reusar o sinal da biblioteca
+      // faria este ramo nunca disparar, e todo desfecho de senha errada degradaria em silêncio para
+      // "formato" — que é o `D64` invertido.
+      //
+      // A autoridade descartável DESTE caso — ver `gerarMaterial`.
+      const autoridade = await gerarAutoridadeDeTeste('ct1022');
+      const material = await gerarMaterialComLegado(autoridade, DIAS_VIGENTE_FOLGADO);
+      const legado = exigirEmbalagemLegada(material);
+
+      const antes = await pedir(ROTA_DA_CONSULTA, { cookie });
+      const linhasAntes = await contarCertificados(EMPRESA_A.id);
+      const desdeAqui = linhasDoJournal.length;
+
+      const recusa = await registrarBytes(legado, SENHA_QUE_NAO_ABRE);
+
+      expect(recusa.status).toBe(422);
+
+      // ⚠️ A ASSERÇÃO QUE DISCRIMINA É DUPLA, e as duas metades reprovam SOZINHAS. A primeira: o
+      // código é o da SENHA e **não** o do formato — a degradação para o desfecho mais genérico é
+      // exatamente o defeito perseguido, e ela sairia com um `codigo` que a igualdade abaixo já
+      // pegaria, mas que esta linha NOMEIA.
+      expect((recusa.corpo as { codigo: string }).codigo).toBe(
+        CodigoErro.SENHA_DO_MATERIAL_NAO_ABRE,
+      );
+      expect((recusa.corpo as { codigo: string }).codigo).not.toBe(
+        CodigoErro.MATERIAL_EM_FORMATO_NAO_SUPORTADO,
+      );
+
+      // A segunda metade: o motivo interno é o da senha, e **nunca** o do formato. Ela vem do
+      // journal, que é onde a distinção vive para o operador.
+      expect(motivosDesde(desdeAqui)).toEqual([MOTIVO_DA_SENHA]);
+
+      // E o envelope INTEIRO, com a mensagem literal deste arquivo.
+      expect(recusa.corpo).toEqual({
+        codigo: CodigoErro.SENHA_DO_MATERIAL_NAO_ABRE,
+        mensagem: MENSAGEM_DA_SENHA_QUE_NAO_ABRE,
+        campo: CAMPO_DO_CORPO,
+      });
+
+      // O vigente da empresa não muda, e nenhuma linha nasce: recusa nunca é escrita parcial.
+      expect((await pedir(ROTA_DA_CONSULTA, { cookie })).corpo).toEqual(antes.corpo);
+      expect(await contarCertificados(EMPRESA_A.id)).toBe(linhasAntes);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-1023 — o desfecho do registro declara a conversão nos DOIS sentidos, e o campo não entra na projeção do certificado',
+    async () => {
+      // A autoridade descartável DESTE caso — ver `gerarMaterial`. As duas embalagens saem do MESMO
+      // par, de modo que o segundo registro substitui o primeiro pelo mesmo certificado — e o que
+      // muda entre as duas respostas é **só** o desfecho do ato.
+      const autoridade = await gerarAutoridadeDeTeste('ct1023');
+      const material = await gerarMaterialComLegado(autoridade, DIAS_VIGENTE_FOLGADO);
+      const legado = exigirEmbalagemLegada(material);
+
+      // ---------------------------------------------------------------------------------------
+      // Sentido VERDADEIRO — cifra legada, que o runtime não abre e o produto converte
+      // ---------------------------------------------------------------------------------------
+      const comConversao = await registrarBytes(legado, material.senha);
+
+      expect(comConversao.status).toBe(201);
+      // `toBe(true)`, e **nunca** `toBeTruthy`: o campo é booleano fechado, e um valor qualquer
+      // truthy — uma cadeia, um número — passaria pela forma frouxa.
+      expect((comConversao.corpo as { materialConvertido: unknown }).materialConvertido).toBe(true);
+      expect(chavesDe(comConversao.corpo)).toEqual(CHAVES_DO_DESFECHO_DO_REGISTRO);
+
+      // A consulta publica a projeção do CERTIFICADO, e ela não carrega o desfecho do ato.
+      const consultaApos = await pedir(ROTA_DA_CONSULTA, { cookie });
+
+      expect(consultaApos.status).toBe(200);
+      expect(chavesDe(consultaApos.corpo)).toEqual(chavesPublicadasDoCertificado());
+      expect(chavesDe(consultaApos.corpo)).not.toContain(CAMPO_DA_CONVERSAO);
+
+      // ---------------------------------------------------------------------------------------
+      // Sentido FALSO — cifra moderna, que o runtime abre sem conversão alguma
+      // ---------------------------------------------------------------------------------------
+      const semConversao = await registrarMaterial(material);
+
+      expect(semConversao.status).toBe(201);
+      // **Presente e falso, e não ausente**: um campo opcional faria "não precisou converter" e
+      // "esta versão não sabe responder" chegarem ao Admin com a mesma forma. É por isso que a
+      // igualdade de chaves abaixo vale nos DOIS corpos, e não só no de cima.
+      expect((semConversao.corpo as { materialConvertido: unknown }).materialConvertido).toBe(
+        false,
+      );
+      expect(chavesDe(semConversao.corpo)).toEqual(CHAVES_DO_DESFECHO_DO_REGISTRO);
+
+      const consultaFinal = await pedir(ROTA_DA_CONSULTA, { cookie });
+
+      expect(consultaFinal.status).toBe(200);
+      expect(chavesDe(consultaFinal.corpo)).toEqual(chavesPublicadasDoCertificado());
+      expect(chavesDe(consultaFinal.corpo)).not.toContain(CAMPO_DA_CONVERSAO);
     },
     LIMITE_CASO_MS,
   );
@@ -837,11 +1196,17 @@ describe('o certificado do provedor por empresa (T11)', () => {
 
       expect(recusa.status).toBe(422);
 
-      // A recusa é DISTINTA da do material ilegível — aqui o arquivo abriu, o titular é legível, e o
-      // produto sabe exatamente o que está errado. Dizer "confira o arquivo e a senha" mandaria o
+      // A recusa é DISTINTA da do material que não se deixa ler — aqui o arquivo abriu, o titular é
+      // legível, e o produto sabe exatamente o que está errado. Mandar "confira o arquivo" faria o
       // Admin procurar defeito onde não há.
+      //
+      // SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era este esperado que descrevia o
+      // contrato anterior, em que as três causas dividiam `CAMPO_INVALIDO`. A T2 da fatia
+      // `integracao-bancaria-autonoma` deu **um código por causa** (D4), e a validade encerrada é a
+      // terceira. A mensagem literal e o `detalhes` **não mudaram**, e a igualdade de corpo inteiro
+      // segue exata — nenhuma asserção foi afrouxada e nenhuma linha saiu.
       expect(recusa.corpo).toEqual({
-        codigo: CodigoErro.CAMPO_INVALIDO,
+        codigo: CodigoErro.CERTIFICADO_COM_VALIDADE_ENCERRADA,
         mensagem: MENSAGEM_DO_CERTIFICADO_VENCIDO,
         campo: CAMPO_DO_CORPO,
         // A DATA EXATA em que a validade terminou, que é o que a CA-06 manda informar: sem ela, o
@@ -923,6 +1288,144 @@ describe('o certificado do provedor por empresa (T11)', () => {
       expect(recusa.texto).not.toContain(excedente);
 
       expect(await contarCertificados(EMPRESA_A.id)).toBe(antesDaContagem);
+    },
+    LIMITE_CASO_MS,
+  );
+
+  it(
+    'CT-1039 — o registro enfileira a reconferência, degrada com a fila fora, e não chama o provedor',
+    async () => {
+      const autoridade = await gerarAutoridadeDeTeste('ct1039');
+      // O par existe para MEDIR a ausência de chamada, e não para ser chamado: é ele que dá conteúdo
+      // a *"zero chamadas ao provedor durante a requisição"*. Sem ele, a afirmação seria só a
+      // ausência de uma asserção.
+      const par = await subirParDoProvedor(autoridade, autoridade);
+      destinoDoProvedor = `https://${NOME_DO_PAR}:${String(par.porta)}`;
+
+      const endereco = new URL(fila.cadeiaConexao);
+      // A instância de fila é COMPARTILHADA por este arquivo, e este é o único caso que a derruba: a
+      // bandeira é o que faz o `finally` religá-la **só** quando ela de fato caiu — religar uma
+      // instância de pé levanta, e mascararia a causa de uma falha anterior à parada.
+      let filaDerrubada = false;
+      const sonda = new Queue<CargaDaReconferenciaDaEntrega, void>(
+        FILA_DA_RECONFERENCIA_DA_ENTREGA,
+        { connection: { host: endereco.hostname, port: Number.parseInt(endereco.port, 10) } },
+      );
+
+      try {
+        // -------------------------------------------------------------------------------------
+        // (a) ENFILEIRA — e o provedor não é chamado durante a requisição
+        // -------------------------------------------------------------------------------------
+        //
+        // A fila é drenada ANTES, e a ausência é AFIRMADA: os casos anteriores deste arquivo também
+        // registram certificado, e sem isto o `toBe(1)` abaixo mediria a pilha acumulada em vez da
+        // tarefa deste `POST`.
+        await sonda.drain(true);
+        expect(await tarefasDaReconferencia(sonda)).toHaveLength(0);
+
+        par.zerar();
+        const conexoesAntes = par.conexoes;
+        const invocacoesAntes = invocacoesDaPorta;
+
+        expect((await registrarMaterial(await materialDaEmpresa(autoridade))).status).toBe(201);
+
+        const enfileiradas = await tarefasDaReconferencia(sonda);
+
+        // Âncora antivácuo: sem tarefa alguma, as igualdades abaixo passariam sobre `undefined`.
+        expect(enfileiradas, 'o registro não enfileirou a reconferência').toHaveLength(1);
+
+        const tarefa = enfileiradas[0];
+
+        // O NOME DA FILA e o da tarefa, por igualdade: uma carga íntegra numa fila que ninguém
+        // escuta deixa o trabalho parado **sem erro nenhum**.
+        expect({ fila: tarefa?.queueName, nome: tarefa?.name }).toEqual({
+          fila: FILA_DA_RECONFERENCIA_DA_ENTREGA,
+          nome: FILA_DA_RECONFERENCIA_DA_ENTREGA,
+        });
+
+        // A CARGA, por igualdade de objeto: **um** campo, e nenhum a mais. `empresaId` presente aqui
+        // é CONFORMIDADE — quem enfileirou foi a borda que atendeu a sessão do Admin (ADR-0024,
+        // terceira emenda) —, e nenhum material, senha, envelope cifrado ou credencial acompanha.
+        expect(tarefa?.data).toEqual({ empresaId: EMPRESA_A.id });
+        // E as chaves, nomeadas: quando a igualdade acima reprovar, é esta que diz **qual** campo
+        // entrou a mais, em vez de exibir dois objetos para o leitor comparar.
+        expect(Object.keys(tarefa?.data ?? {})).toEqual(['empresaId']);
+
+        // ZERO chamadas ao provedor DURANTE a requisição, pelos dois eixos: a ligação de rede e a
+        // invocação da porta. O segundo pega o caminho que tentasse a porta e falhasse antes de
+        // abrir a ligação — desfecho em que o par não registraria conexão nenhuma.
+        expect(par.conexoes).toBe(conexoesAntes);
+        expect(invocacoesDaPorta).toBe(invocacoesAntes);
+
+        // -------------------------------------------------------------------------------------
+        // (b) DEGRADA — com o servidor de fila derrubado, o registro continua respondendo 201
+        // -------------------------------------------------------------------------------------
+        //
+        // ⚠️ **A degradação se produz derrubando o servidor REAL**, e nunca por dublê do produtor
+        // nem por símbolo *test-only* na produção. A parada preserva o diretório de dados, e o
+        // `religar()` do `finally` devolve a instância aos casos seguintes.
+        await sonda.close();
+        await fila.parar({ preservarDados: true });
+        filaDerrubada = true;
+
+        const desdeAqui = linhasDoJournal.length;
+        const materialNovo = await materialDaEmpresa(autoridade);
+        const registro = await registrarMaterial(materialNovo);
+
+        // ESTA é a asserção que discrimina a ordem: com o enfileiramento DENTRO da transação, a fila
+        // derrubada derrubaria o registro e o `201` viraria `503`.
+        expect(registro.status).toBe(201);
+
+        const publicado = registro.corpo as CertificadoPublicado;
+        expect(publicado.impressaoDigital).toBe(materialNovo.impressaoDigital);
+
+        // E o certificado novo é o que o `GET` traz — o ato foi concluído, não só respondido.
+        const consulta = await pedir(ROTA_DA_CONSULTA, { cookie });
+        expect(consulta.status).toBe(200);
+        expect((consulta.corpo as CertificadoPublicado).impressaoDigital).toBe(
+          materialNovo.impressaoDigital,
+        );
+
+        // Desde a marca: EXATAMENTE uma linha de alerta, com o motivo, e ZERO de erro.
+        const eventos = eventosDesde(desdeAqui);
+        const alertas = eventos.filter((evento) => evento.nivel === NIVEL_DE_AVISO);
+        const erros = eventos.filter((evento) => evento.nivel === NIVEL_DE_ERRO);
+
+        // As frases de alerta, por IGUALDADE DE CONJUNTO: derrubar o servidor faz o ouvinte de
+        // conexão do produtor reclamar um número de vezes que depende do relógio, e por isso o que
+        // se fixa é **quais** frases podem aparecer — uma frase inesperada aqui reprova.
+        expect([...new Set(alertas.map((evento) => evento.mensagem))].sort()).toEqual(
+          [FALHA_DE_CONEXAO_DO_PRODUTOR, TRILHA_DA_RECONFERENCIA_NAO_ENFILEIRADA].sort(),
+        );
+
+        // E a do registro é EXATAMENTE uma: o ato foi um, e o alerta que o descreve tem de ser um.
+        const daReconferencia = alertas.filter(
+          (evento) => evento.mensagem === TRILHA_DA_RECONFERENCIA_NAO_ENFILEIRADA,
+        );
+
+        expect(daReconferencia).toHaveLength(1);
+        // ZERO linhas de erro: a degradação é ato normal, e classificá-la como erro encheria o
+        // journal de alarme por uma resposta que saiu `201`.
+        expect(erros).toHaveLength(0);
+        // O par (empresa, certificado) — é com ele que o operador reconhece o que ficou para trás.
+        expect(daReconferencia[0]?.empresaId).toBe(EMPRESA_A.id);
+        expect(daReconferencia[0]?.certificadoId).toBe(publicado.id);
+
+        // A VARREDURA DE SEGREDO sobre as linhas que a degradação produziu, com CONTROLE POSITIVO:
+        // sem ele, uma varredura que nunca achasse nada aprovaria um produto vazando tudo (AP-29).
+        const agulhas = agulhasDe(materialNovo.material, [SENHA_DO_MATERIAL]);
+
+        expect(ocorrenciasDeAgulhas(eventos, agulhas)).toEqual([]);
+        expect(ocorrenciasDeAgulhas(controleComAsAgulhas(agulhas), agulhas)).toEqual(
+          agulhas.map((agulha) => agulha.rotulo),
+        );
+      } finally {
+        await sonda.close().catch(() => undefined);
+        if (filaDerrubada) {
+          await fila.religar();
+        }
+        destinoDoProvedor = undefined;
+      }
     },
     LIMITE_CASO_MS,
   );
@@ -1018,7 +1521,7 @@ describe('a verificação da identidade contra o provedor (T12)', () => {
 
       // A recusa nasce da **decisão do par**: o material é íntegro e abre com a senha, e o que o par
       // não reconhece é a autoridade que o emitiu. Bytes truncados provariam outra coisa — a recusa
-      // do registro, que é o CT-824 (b).
+      // do registro, que é o CT-1021.
       const par = await subirParDoProvedor(acDoPar, acDoPar);
       apontarProvedorPara(enderecoDoPar(par.porta));
 
@@ -1360,6 +1863,86 @@ async function registrarMaterial(material: MaterialDeTeste): Promise<Resposta> {
   });
 }
 
+/**
+ * Gera o material pedindo, na MESMA chamada, a segunda embalagem: a cifra legada que a AC entrega.
+ *
+ * As duas embalam o **mesmo** par chave/certificado — mesma série, mesma validade, mesma impressão
+ * digital —, e é essa igualdade que dá conteúdo à prova da conversão: um acessório que gerasse dois
+ * pares distintos faria o caso aprovar um conversor que emite chave nova.
+ */
+async function gerarMaterialComLegado(
+  autoridade: AutoridadeDeTeste,
+  diasDeValidade: number,
+): Promise<MaterialDeTeste> {
+  return await gerarMaterialDeTeste({
+    autoridade,
+    senha: SENHA_DO_MATERIAL,
+    diasDeValidade,
+    comEmbalagemLegada: true,
+  });
+}
+
+/**
+ * Exige a embalagem legada do material, e **levanta** quando ela não veio.
+ *
+ * O campo é opcional no acessório, e um `?? material.material` silencioso faria o caso registrar a
+ * embalagem MODERNA acreditando ter registrado a legada — passando verde sobre um produto que ainda
+ * recusasse o arquivo da AC.
+ */
+function exigirEmbalagemLegada(material: MaterialDeTeste): Buffer {
+  if (material.materialEmEmbalagemLegada === undefined) {
+    throw new Error('o material foi gerado sem a embalagem legada que este caso exige');
+  }
+
+  return material.materialEmEmbalagemLegada;
+}
+
+/** Registra bytes arbitrários pela rota real — o caminho de quem apresenta a embalagem legada. */
+async function registrarBytes(material: Buffer, senha: string): Promise<Resposta> {
+  return await pedir(ROTA_DO_REGISTRO, {
+    metodo: 'POST',
+    cookie,
+    corpo: { material: material.toString('base64'), senha },
+  });
+}
+
+/** As chaves do corpo, em arranjo ORDENADO — a forma em que os casos as comparam por igualdade. */
+function chavesDe(corpo: unknown): string[] {
+  return Object.keys(corpo as Record<string, unknown>).sort();
+}
+
+/**
+ * As chaves que `esquemaDoCertificado` publica, ordenadas — o que a CONSULTA deve devolver.
+ *
+ * Derivadas do esquema de propósito: o que este eixo afirma é que a **rota** não publica campo fora
+ * da fonte única do contrato (ADR-0016). A tautologia que a derivação abriria — alguém pôr o campo
+ * do ato dentro daquele esquema, fazendo os dois lados crescerem juntos — é fechada pela negativa
+ * literal sobre {@link CAMPO_DA_CONVERSAO}, que acompanha toda comparação, e pelo `CT-848 (c)` de
+ * `@sysloc/contracts`, que prende os nove campos por lista escrita à mão.
+ */
+function chavesPublicadasDoCertificado(): string[] {
+  return Object.keys(esquemaDoCertificado.shape).sort();
+}
+
+/**
+ * A identidade publicada — os quatro fatos que se leem do material, e que a conversão precisa
+ * preservar.
+ *
+ * Recorte nomeado, e não campos escolhidos na asserção: os casos comparam este objeto INTEIRO por
+ * igualdade, de modo que um campo corrompido pela conversão reprova sem que o caso precise
+ * enumerá-lo de novo.
+ */
+function identidadeDe(corpo: unknown): Record<string, unknown> {
+  const publicado = corpo as CertificadoPublicado & { readonly validoDe: string };
+
+  return {
+    titular: publicado.titular,
+    validoDe: publicado.validoDe,
+    validoAte: publicado.validoAte,
+    impressaoDigital: publicado.impressaoDigital,
+  };
+}
+
 /** Lê a vigência publicada pela rota real, e devolve só o par que os casos comparam. */
 async function consultarVigencia(
   credencial: string,
@@ -1682,6 +2265,38 @@ function nomeComumDe(nomeComum: string | readonly string[] | undefined): string 
  * ordem é a das requisições — é ela que faz a igualdade acima discriminar qual causa produziu qual
  * recusa, e não apenas que duas linhas saíram.
  */
+/** Um evento do diário, com os campos que o `CT-1039` lê. */
+interface EventoDoJournal {
+  readonly nivel?: string;
+  /**
+   * A mensagem do evento.
+   *
+   * ⚠️ A chave é `mensagem`, e **não** o `msg` do padrão da biblioteca: `criarLogger` declara
+   * `messageKey: 'mensagem'` para que o diário do produto fale português. Escrita à mão, pela mesma
+   * razão dos rótulos de nível.
+   */
+  readonly mensagem?: string;
+  readonly empresaId?: string;
+  readonly certificadoId?: string;
+}
+
+/**
+ * Os eventos do diário desde a marca — o objeto inteiro, e não só um campo.
+ *
+ * Ele é o que a varredura de segredo do `CT-1039` percorre: recortar campos antes de varrer faria a
+ * prova olhar só onde já se esperava não achar nada.
+ */
+function eventosDesde(posicao: number): readonly EventoDoJournal[] {
+  return linhasDoJournal.slice(posicao).map((linha) => JSON.parse(linha) as EventoDoJournal);
+}
+
+/** As tarefas que a fila da reconferência guarda, em qualquer estado que não seja terminal. */
+async function tarefasDaReconferencia(
+  sonda: Queue<CargaDaReconferenciaDaEntrega, void>,
+): Promise<readonly { queueName: string; name: string; data: CargaDaReconferenciaDaEntrega }[]> {
+  return await sonda.getJobs(['waiting', 'delayed', 'prioritized', 'active']);
+}
+
 function motivosDesde(posicao: number): readonly string[] {
   return linhasDoJournal
     .slice(posicao)

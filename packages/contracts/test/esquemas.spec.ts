@@ -3,8 +3,8 @@
  * fatia `contratos-de-locacao` acrescenta, CT-537 mais CT-540 a CT-545, que a fatia
  * `cobranca-e-mora` acrescenta, CT-604 e CT-605, que a fatia `regua-de-cobranca` acrescenta, e
  * CT-713 e CT-731, que a sub-fatia `documentos-e-confirmacao` acrescenta, CT-845 a CT-850, que a
- * fatia `fundacao-bancaria` acrescenta, e CT-942 e CT-953, que a fatia `emissao-e-conciliacao`
- * acrescenta. O
+ * fatia `fundacao-bancaria` acrescenta, CT-942 e CT-953, que a fatia `emissao-e-conciliacao`
+ * acrescenta, e CT-1044, que a fatia `integracao-bancaria-autonoma` acrescenta. O
  * **CT-537 substitui o CT-429** daquela fatia: ver o parágrafo dedicado abaixo, e a linha
  * `SUT_IS_CORRECT_BECAUSE:` no ponto do caso.
  *
@@ -159,6 +159,14 @@
  * |          |        | detrito de runtime, termo do provedor, redação plausível, ou o texto
  * |          |        | canônico com espaço à direita — é recusado com `invalid_value` nomeando o
  * |          |        | campo. É o fecho estrutural do débito **D27 · F4/T8** no lado publicado. |
+ * | CA-13    | CT-848 | `esquemaDoDesfechoDoRegistroDeCertificado` declara exatamente os DEZ campos —
+ * | CA-14    | (c)    | os nove do certificado, na ordem, mais `materialConvertido` ao fim —, e
+ * |          |        | `esquemaDoCertificado` **NÃO** ganhou o campo, que é a rede do alargamento da
+ * |          |        | projeção compartilhada por registrar e consultar. O booleano é fechado nos
+ * |          |        | dois sentidos e **obrigatório**: ausente e não booleano são recusados
+ * |          |        | nomeando o campo pelo `path`. A estritude atravessa o `extend` — chave
+ * |          |        | desconhecida sai com `unrecognized_keys` nomeando a chave —, e nenhuma
+ * |          |        | grafia de segredo é declarada, nem um nível abaixo. |
  * | CA-10    | CT-849 | `ESQUEMA_DO_IDENTIFICADOR_BANCARIO` aprova exatamente as cadeias de 18
  * |          |        | caracteres, todas dígitos, devolvendo a cadeia idêntica, e recusa 17, 19,
  * |          |        | não-dígito, espaço em volta e vazio com `invalid_format` — a largura é
@@ -171,6 +179,27 @@
  * |          |        | em `packages/contracts/src/integracao-bancaria.ts` e vale **30**; nenhum
  * |          |        | outro arquivo LIGA o nome, nem sem `export`; e nenhum diretório varrido está
  * |          |        | ausente fora da lista declarada de inexistentes. |
+ * | CA-18    | CT-1044| A **direção decide a estritude**: `esquemaDaAtivacaoDaEntrega` é
+ * |          |        | `strictObject` de corpo VAZIO e recusa `empresaId` com
+ * |          |        | `unrecognized_keys` nomeando a chave, enquanto `esquemaDoEstadoDaEntrega`
+ * |          |        | é `z.object` — aceita o campo que ainda não existe e o descarta —, e
+ * |          |        | `esquemaDoCertificado` permanece ESTRITO, de modo que a abertura desta
+ * |          |        | feature não se propaga por vizinhança. O estado declara exatamente
+ * |          |        | `['habilitada','verificadaEm','motivo']` e recusa o VALOR errado pelo
+ * |          |        | `path` do campo. O motivo declara exatamente
+ * |          |        | `['codigo','mensagem','diagnostico']`, é FECHADO, e nenhuma das chaves
+ * |          |        | dele fala o dialeto do provedor; o `diagnostico` é OPACO — aceita chave
+ * |          |        | do provedor em execução e não declara `shape` algum, DESEMBRULHADO o
+ * |          |        | anulável —, e os DOIS tetos anti-abuso recusam pelo `path`
+ * |          |        | `['motivo','diagnostico']`, cada um com o par que aceita no limite. O
+ * |          |        | `diagnostico` é ANULÁVEL e as três leituras se discriminam: `null`
+ * |          |        | atravessa como `null`, `{}` atravessa como `{}`, e a AUSÊNCIA do campo é
+ * |          |        | recusada com `invalid_type` no `path` dele — anulável não é opcional.
+ * |          |        | `ESTADOS_DA_ENTREGA` publica exatamente
+ * |          |        | `['HABILITADA','DESABILITADA']`, nesta ordem e congelado em execução.
+ * |          |        | ⚠️ E o eixo de tamanho é **TOTAL**: diagnóstico que não serializa (`BigInt`,
+ * |          |        | referência circular) é RECUSADO pelo mesmo `path`, em vez de derrubar o
+ * |          |        | chamador — a rede do `D17`, de 2026-08-22, com controle positivo. |
  *
  * Rastreabilidade: `CA-02 → CT-334, CT-335 (RN-10)` · `CA-14 → CT-337 (RN-01)` ·
  * `CA-15 → CT-338 (RN-06)` · `CA-16 → CT-336, CT-340, CT-341 (RN-11)` ·
@@ -185,7 +214,8 @@
  * `CA-07 → CT-713 (RN-01)` · `CA-14, CA-04 → CT-845 (RN-04, RN-11)` ·
  * `CA-§4.1.1 → CT-846 (RN-02, RN-03)` · `CA-02, CA-12 → CT-847, CT-848 (RN-02)` ·
  * `CA-10 → CT-849 (RN-07)` · `CA-04, CA-§4.2 → CT-850 (RN-04)` ·
- * `CA-15 → CT-942, CT-942 (b) (RN-13, RN-14, RN-15)` · `CA-13 → CT-953`.
+ * `CA-15 → CT-942, CT-942 (b) (RN-13, RN-14, RN-15)` · `CA-13 → CT-953` ·
+ * `CA-18 → CT-1044 (RN-01, RN-02)`.
  *
  * ---------------------------------------------------------------------------
  * Por que os casos vêm em pares, e por que nenhum deles sozinho serve
@@ -590,10 +620,12 @@ import {
   ESQUEMA_DO_IDENTIFICADOR_BANCARIO,
   ESTADOS_DA_COBRANCA,
   ESTADOS_DA_EMISSAO_EM_LOTE,
+  ESTADOS_DA_ENTREGA,
   ESTADOS_DO_CERTIFICADO,
   ESTADOS_DO_CONTRATO,
   ESTADOS_EM_ABERTO,
   esquemaDaApresentacaoDoPortador,
+  esquemaDaAtivacaoDaEntrega,
   esquemaDaAtivacaoDeContrato,
   esquemaDaCobranca,
   esquemaDaCompetencia,
@@ -613,11 +645,14 @@ import {
   esquemaDoCertificado,
   esquemaDoCertificadoNovo,
   esquemaDoContrato,
+  esquemaDoDesfechoDoRegistroDeCertificado,
   esquemaDoEnvioDeCobranca,
+  esquemaDoEstadoDaEntrega,
   esquemaDoEventoBancario,
   esquemaDoImovel,
   esquemaDoItemDoLote,
   esquemaDoLocatario,
+  esquemaDoMotivoDaRecusa,
   esquemaDoReenvioDeConfirmacao,
   esquemaDoResultadoDaVerificacao,
   formatarCodigoDeCobranca,
@@ -627,6 +662,8 @@ import {
   LARGURA_DO_SEQUENCIAL_DE_COBRANCA,
   LARGURA_DO_SEQUENCIAL_DE_CONTRATO,
   LIMIAR_DE_VENCIMENTO_EM_DIAS,
+  MAIOR_DIAGNOSTICO_EM_CARACTERES,
+  MAIOR_DIAGNOSTICO_EM_CHAVES,
   MAIOR_MATERIAL_CODIFICADO,
   MAIOR_MATERIAL_REAL_OBSERVADO,
   MAIOR_METRAGEM,
@@ -1031,9 +1068,19 @@ const PREFIXO_DE_ENTRADA_DE_ENTIDADE = 'esquemaDe';
  * `esquemaDe`; e ele é o corpo que decide **quais cobranças de qual mês** vão ao provedor, de modo que
  * um corpo aberto ali aceitaria `empresaId` e mandaria emitir boleto da empresa alheia. Nenhum alvo
  * sai daqui; o conjunto só cresce.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T5 da fatia `integracao-bancaria-autonoma` publicou
+ * `esquemaDaAtivacaoDaEntrega` — o corpo da ativação da entrega da notícia, e o **primeiro de corpo
+ * vazio** a entrar nesta lista. Pelo mesmo motivo dos parágrafos acima ele escaparia às duas
+ * varreduras, por começar com `esquemaDa` e não com `esquemaDe`; e é justamente nele que a afirmação
+ * *"`empresaId` não é declarado em nenhum esquema de entrada"* mais importa, porque a rota que ele
+ * governa dispara uma chamada ao provedor **em nome de uma empresa** — um corpo aberto ali aceitaria
+ * `empresaId` vindo do cliente, e o contexto de tenant tem de sair da sessão (ADR-0008/0009). Nenhum
+ * alvo sai daqui; o conjunto só cresce.
  */
 const NOMES_DAS_ENTRADAS_FORA_DO_PREFIXO = [
   'esquemaDaApresentacaoDoPortador',
+  'esquemaDaAtivacaoDaEntrega',
   'esquemaDaCompetencia',
   'esquemaDaConfiguracaoDeMoraNova',
   'esquemaDaJanela',
@@ -1106,11 +1153,29 @@ const NOMES_DAS_ENTRADAS_FORA_DO_PREFIXO = [
  * palavra, o parágrafo anterior: o literal é o que impede *"nenhum esquema violou"* de ser
  * indistinguível de *"nenhum esquema foi olhado"*, a âncora **sobe** e segue exata, e nenhum alvo
  * saiu.
+ *
+ * SUT_IS_CORRECT_BECAUSE: subiu de 17 para 18 porque a T5 da fatia `integracao-bancaria-autonoma`
+ * publicou `esquemaDaAtivacaoDaEntrega` — o corpo da ativação da entrega da notícia, que nasce nesta
+ * fonte única pela mesma ADR-0016. Ele entra pela lista de nomes fora do prefixo, logo acima. Vale
+ * aqui, palavra por palavra, o parágrafo anterior: o literal é o que impede *"nenhum esquema
+ * violou"* de ser indistinguível de *"nenhum esquema foi olhado"*, a âncora **sobe** e segue exata, e
+ * nenhum alvo saiu.
+ *
+ * ⚠️ **Ele é o primeiro esquema de entrada de corpo VAZIO do pacote, e entrar aqui é o que o prova
+ * fechado.** Um `strictObject({})` não tem campo que uma varredura por campo pudesse examinar — o
+ * que se examina nele é exatamente a recusa da chave desconhecida, que é o que o CT-336 e o CT-337
+ * fazem sobre a tabela inteira. Deixá-lo de fora faria *"todo esquema de entrada é `strictObject`"*
+ * passar a valer por omissão justamente onde ela é a única propriedade que resta.
  */
-const QUANTIDADE_DE_ESQUEMAS_DE_ENTRADA = 17;
+const QUANTIDADE_DE_ESQUEMAS_DE_ENTRADA = 18;
 
 /** Um corpo válido por esquema de entrada, indexado pelo nome exportado. */
 const CORPOS_VALIDOS = new Map<string, Record<string, unknown>>([
+  // O corpo é VAZIO por decisão do contrato: a empresa vem da sessão (ADR-0008/0009) e não sobra
+  // nada que o cliente escolha. Declará-lo aqui, e não deixá-lo faltar, é o que faz o esquema entrar
+  // nas duas varreduras — a construção da tabela LANÇA em quem chega sem corpo declarado, e um
+  // esquema pulado em silêncio é o que a âncora de contagem acima existe para impedir.
+  ['esquemaDaAtivacaoDaEntrega', {}],
   // O segredo vai declarado por extenso porque é o único campo deste esquema: um corpo que o
   // omitisse seria recusado antes de a varredura medir o que ela existe para medir.
   ['esquemaDaApresentacaoDoPortador', { segredo: SEGREDO_DO_PORTADOR }],
@@ -3841,6 +3906,125 @@ describe('CT-847 — as duas pontas de cada limite declarado, e a recusa que nã
   }
 });
 
+/**
+ * O desfecho do registro do certificado — o esquema **próprio** que a §4.4 da tech spec da fatia
+ * `integracao-bancaria-autonoma` decidiu, em vez de um campo a mais na projeção do certificado.
+ *
+ * ---------------------------------------------------------------------------
+ * INVARIANTES
+ * ---------------------------------------------------------------------------
+ *
+ * - o desfecho declara **dez** campos: os nove do certificado, na mesma ordem, mais
+ *   `materialConvertido` ao fim;
+ * - `esquemaDoCertificado` **não** ganhou o campo — é o companheiro negativo que pega o
+ *   alargamento da projeção compartilhada por registrar e consultar (AT-6);
+ * - o booleano é **fechado nos dois sentidos e obrigatório**: ausente é recusa, e a recusa nomeia
+ *   o campo pelo `path`;
+ * - a estritude é herdada: chave desconhecida é recusada por `unrecognized_keys`, nomeando a chave;
+ * - nenhuma das grafias de segredo é declarada, nem um nível abaixo.
+ *
+ * Rastreabilidade: `CA-13 → CT-848 (c)` · `CA-14 → CT-848 (c)`.
+ *
+ * ⚠️ O sufixo é **(c)**, e não (b): o `CT-848 (b)` já existe neste arquivo — é o da união fechada do
+ * `detalhe` da verificação (fecho do D27 · F4/T8). Reusá-lo poria duas coisas diferentes sob o mesmo
+ * identificador, que é o que a rastreabilidade existe para impedir.
+ */
+describe('CT-848 (c) — o desfecho do registro é esquema próprio, e não alarga a projeção do certificado', () => {
+  /**
+   * Os **dez** campos do desfecho, na ordem — escritos por extenso, pela mesma razão dos nove do
+   * CT-848: derivá-los do `shape`, ou de `esquemaDoCertificado`, faria o campo acrescentado ao
+   * esquema entrar também na expectativa, e a publicação de um segredo novo passaria despercebida
+   * (AP-29).
+   */
+  const CAMPOS_DO_DESFECHO = [
+    'id',
+    'titular',
+    'validoDe',
+    'validoAte',
+    'impressaoDigital',
+    'estado',
+    'diasParaVencer',
+    'registradoPor',
+    'registradoEm',
+    'materialConvertido',
+  ] as const;
+
+  /** O nome do campo que declara o desfecho do ato — literal, e nunca lido do esquema. */
+  const CAMPO_DA_CONVERSAO = 'materialConvertido';
+
+  it('declara exatamente os dez campos, na ordem, com o do ato por último', () => {
+    expect(Object.keys(esquemaDoDesfechoDoRegistroDeCertificado.shape)).toEqual([
+      ...CAMPOS_DO_DESFECHO,
+    ]);
+  });
+
+  it('NÃO põe o campo do ato na projeção do certificado — que segue com nove campos', () => {
+    // O companheiro negativo do caso acima, e a rede do AT-6: `esquemaDoCertificado` é compartilhado
+    // por registrar e **consultar**, de modo que o campo ali faria o `GET` publicar um fato que ele
+    // não tem. Sem esta linha, mover o campo para lá deixaria as duas asserções verdes.
+    expect(Object.keys(esquemaDoCertificado.shape)).not.toContain(CAMPO_DA_CONVERSAO);
+    expect(Object.keys(esquemaDoCertificado.shape)).toHaveLength(CAMPOS_DO_DESFECHO.length - 1);
+  });
+
+  for (const materialConvertido of [true, false]) {
+    it(`o desfecho com materialConvertido: ${String(materialConvertido)} é aprovado e devolvido verbatim`, () => {
+      const desfecho = { ...CERTIFICADO_PUBLICADO, materialConvertido };
+      const resultado = esquemaDoDesfechoDoRegistroDeCertificado.safeParse(desfecho);
+
+      expect(resultado.success).toBe(true);
+      expect(resultado.data).toEqual(desfecho);
+    });
+  }
+
+  it('recusa o desfecho SEM o campo do ato, nomeando-o pelo caminho', () => {
+    // O booleano é fechado nos dois sentidos: `false` é resposta, e não omissão. Um opcional faria
+    // *"não precisou converter"* e *"esta versão não sabe responder"* chegarem com a mesma forma.
+    const resultado = esquemaDoDesfechoDoRegistroDeCertificado.safeParse({
+      ...CERTIFICADO_PUBLICADO,
+    });
+
+    expect(resultado.success).toBe(false);
+    expect(resultado.error?.issues[0]?.path).toEqual([CAMPO_DA_CONVERSAO]);
+  });
+
+  it('recusa valor não booleano no campo do ato, nomeando-o pelo caminho', () => {
+    const resultado = esquemaDoDesfechoDoRegistroDeCertificado.safeParse({
+      ...CERTIFICADO_PUBLICADO,
+      [CAMPO_DA_CONVERSAO]: 'true',
+    });
+
+    expect(resultado.success).toBe(false);
+    expect(resultado.error?.issues[0]?.path).toEqual([CAMPO_DA_CONVERSAO]);
+  });
+
+  it('herda a estritude: chave desconhecida é recusada NOMEANDO a chave', () => {
+    // A salvaguarda de `esquemaDoCertificado` atravessa o `extend`, e é o que impede o segredo do
+    // provedor de entrar na resposta do registro por uma projeção montada errado. A recusa se afirma
+    // por `code` **e** pela lista `keys` — o booleano de insucesso sozinho aprovaria qualquer falha.
+    const resultado = esquemaDoDesfechoDoRegistroDeCertificado.safeParse({
+      ...CERTIFICADO_PUBLICADO,
+      [CAMPO_DA_CONVERSAO]: true,
+      segredoCifrado: 'v1.zzz',
+    });
+
+    expect(resultado.success).toBe(false);
+    expect(resultado.error?.issues[0]?.code).toBe('unrecognized_keys');
+    expect((resultado.error?.issues[0] as { keys?: readonly string[] } | undefined)?.keys).toEqual([
+      'segredoCifrado',
+    ]);
+  });
+
+  it('não declara chave de segredo — nem UM NÍVEL ABAIXO', () => {
+    const declaradas = (chaves: readonly string[]): string[] =>
+      CHAVES_PROIBIDAS.filter((proibida) => chaves.includes(proibida));
+
+    expect(declaradas(Object.keys(esquemaDoDesfechoDoRegistroDeCertificado.shape))).toEqual([]);
+    expect(
+      declaradas(Object.keys(esquemaDoDesfechoDoRegistroDeCertificado.shape.registradoPor.shape)),
+    ).toEqual([]);
+  });
+});
+
 describe('CT-848 — as duas projeções publicadas têm forma fechada, e nenhuma declara segredo', () => {
   /**
    * Os nove campos publicados, na ordem da §4.1.1 — escritos **por extenso**.
@@ -4710,5 +4894,401 @@ describe('CT-953 — o envelope do histórico bancário publica itens, e só ele
 
     expect(comTipoInventado.success).toBe(false);
     expect(comTipoInventado.error?.issues[0]?.path).toEqual(['itens', 0, 'tipo']);
+  });
+});
+
+// ===========================================================================
+// CT-1044 — a entrega da notícia: direção da estritude, enum congelado, portador opaco
+// ===========================================================================
+
+/**
+ * O contrato publicado da **entrega da notícia do provedor** (CA-18 · ADR-0001 · ADR-0016 ·
+ * ADR-0034).
+ *
+ * ⚠️ **A metade ESTRUTURAL deste caso é asserção estática** — as chaves do `shape`, o congelamento e
+ * a ordem do enum —, e por isso ela vem com **prova de falsificação executada e registrada** logo
+ * abaixo. A metade comportamental (o que cada esquema aceita e o que recusa) exercita o SUT e
+ * reprova naturalmente com o código antigo: ela não ganha mutante, e a asserção que discrimina cada
+ * defeito está nomeada no comentário do próprio caso.
+ *
+ * **PROVA DE FALSIFICAÇÃO, executada pelo script `test` do pacote** (`pnpm --filter
+ * @sysloc/contracts test`, nunca por invocação avulsa do executor — o pacote resolve `.` para
+ * `dist/`, e um mutante no fonte não alcançaria o que executa):
+ *
+ * 1. `esquemaDoEstadoDaEntrega` trocado de `z.object` para `z.strictObject`: o caso da **abertura**
+ *    reprovou (`expect(comCampoNovo.success).toBe(true)` recebeu `false`). Revertido.
+ * 2. `esquemaDaAtivacaoDaEntrega` trocado de `z.strictObject` para `z.object`: **três** casos
+ *    reprovaram — o do `unrecognized_keys` aqui, mais o do CT-336 e o do CT-337, que passaram a
+ *    alcançá-lo quando ele entrou na tabela de esquemas de entrada. Revertido.
+ *
+ * As duas metades são **simétricas**, e cada uma discrimina uma direção da estritude: a primeira
+ * pega o esquema de saída que recusaria o campo novo — derrubando a rota ao primeiro acréscimo da
+ * projeção —, e a segunda pega o esquema de entrada que deixaria a chave desconhecida passar em
+ * silêncio.
+ *
+ * ⚠️ `expect(resultado.success).toBe(false)` **sozinho é proibido** pela
+ * `.claude/rules/contrato-publicado.md`: ele aprova **qualquer** falha do esquema, inclusive uma que
+ * nada tem a ver com o campo sob teste. Toda recusa aqui é afirmada pelo `code` **mais** a lista
+ * `keys`, ou pelo `path` do campo.
+ *
+ * ===========================================================================
+ * O QUE OS DOIS CASOS DE TETO PROVAM — e o que eles NÃO provam
+ * ===========================================================================
+ *
+ * ⚠️ Eles provam que os **refinos do esquema publicado** recusam pelo eixo certo quando alguém chama
+ * `safeParse` — e **nada além disso**. Eles **não** provam que o produto está protegido contra
+ * diagnóstico abusivo: esquema de **saída não é `parse`ado em execução** nesta base, e `.refine()`
+ * não sobrevive ao `z.toJSONSchema` que publica o documento. A contenção real vigora em
+ * `limitarDiagnostico`, no ponto que **grava**, e quem a prova é o `CT-1049` de
+ * `packages/db/test/entrega-da-noticia.spec.ts`, que lê do banco o que a coluna de fato recebeu.
+ *
+ * Ler estes dois casos como prova de contenção foi o defeito da rodada 1 desta task, e é por isso
+ * que a fronteira está escrita aqui: os refinos ficam porque **usam as mesmas duas constantes** e,
+ * assim, o `CT-1049` pode afirmar do outro lado que *o que a camada de dados deixa passar satisfaz o
+ * esquema publicado*.
+ */
+describe('CT-1044 — a direção decide a estritude, o enum é congelado e o portador do motivo é opaco', () => {
+  /**
+   * Os termos do dialeto do provedor, escritos **por extenso** — nenhum deles pode nomear chave.
+   *
+   * Ela é a segunda cópia da lista que `packages/cobranca-bancaria/test/vocabulario-canonico.spec.ts`
+   * mantém (`TERMOS_DO_PROVEDOR` mais `TERMOS_DO_DIALETO_DA_NOTICIA`), e a duplicação é **deliberada
+   * e declarada**: aquela lista vive num `.spec.ts`, e importá-la daqui executaria a suíte inteira do
+   * pacote vizinho; o pacote de contratos é **folha** (CT-339), e abrir uma aresta nova até o domínio
+   * da cobrança para buscar uma lista de cadeias custaria mais do que a cópia. O precedente literal é
+   * o `CHAVES_DO_PROVEDOR` do CT-544, escrito por extenso neste mesmo arquivo pela mesma razão.
+   *
+   * Escrita à mão, e jamais derivada do `shape` sob prova: derivar poria o artefato nos dois lados da
+   * igualdade, e a asserção passaria a não poder falhar (AP-29).
+   */
+  const TERMOS_DO_DIALETO = [
+    'sicoob',
+    'bancoob',
+    'nossoNumero',
+    'seuNumero',
+    'numeroContrato',
+    'codigoBeneficiario',
+    'client_id',
+    'scope',
+    'pagador',
+    'numeroIdentificadorBaixa',
+    'validacaoWebhook',
+    'idWebhook',
+    'tipoMovimento',
+    'codigoTipoMovimento',
+    'codigoPeriodoMovimento',
+    'codigoSituacao',
+  ] as const;
+
+  /** Os dois estados da entrega, na ordem publicada — jamais derivados da constante sob prova. */
+  // SUT_IS_CORRECT_BECAUSE: a `0025` publica o **terceiro** estado, e ele é a decisão que este
+  // trabalho existe para instalar — `EM_VALIDACAO` é o estado em que TODA ação corretiva do produto
+  // desemboca (cadastrar, corrigir o endereço e reativar levam os três a ele), e sem ele a
+  // exigência de cadastro validado faria toda ativação nova terminar em falso negativo. A asserção
+  // **não foi afrouxada**: continua sendo igualdade de lista ordenada, agora com os três valores, e
+  // um valor que sumisse — ou que nascesse sem decisão — segue reprovando aqui.
+  const ESTADOS_DECLARADOS = ['HABILITADA', 'EM_VALIDACAO', 'DESABILITADA'] as const;
+
+  // SUT_IS_CORRECT_BECAUSE: `situacao` é campo NOVO da saída, e saída é **aberta** por decisão da
+  // `.claude/rules/contrato-publicado.md` — é exatamente para isto que ela é aberta. Nenhum campo
+  // saiu, nenhum mudou de tipo, e `habilitada` continua publicado com o significado de sempre.
+  /** As quatro chaves do estado publicado, na ordem declarada — escritas por extenso. */
+  const CAMPOS_DO_ESTADO = ['habilitada', 'situacao', 'verificadaEm', 'motivo'] as const;
+
+  /** As três chaves do motivo, na ordem da §4.2 — escritas por extenso. */
+  const CAMPOS_DO_MOTIVO = ['codigo', 'mensagem', 'diagnostico'] as const;
+
+  /**
+   * As ocorrências de cada termo dentro de cada nome, na forma `<termo> em <nome>`.
+   *
+   * Devolve **lista**, e não booleano, de propósito: a asserção é `toEqual([])`, e a reprovação
+   * nomeia o termo e a chave ofensora em vez de dizer apenas que algo está errado. É a mesma forma —
+   * e a mesma disciplina — de `ocorrenciasDeTermos` em `vocabulario-canonico.spec.ts`.
+   */
+  function ocorrenciasDeTermos(nomes: readonly string[], termos: readonly string[]): string[] {
+    const ocorrencias: string[] = [];
+    for (const termo of termos) {
+      const agulha = termo.toLowerCase();
+      for (const nome of nomes) {
+        if (nome.toLowerCase().includes(agulha)) {
+          ocorrencias.push(`${termo} em ${nome}`);
+        }
+      }
+    }
+    return ocorrencias;
+  }
+
+  /** O estado publicado de uma empresa cuja entrega foi recusada — o caso que exercita o motivo. */
+  const ESTADO_PUBLICADO = {
+    habilitada: false,
+    situacao: 'DESABILITADA',
+    verificadaEm: '2026-08-21T14:05:00.000Z',
+    motivo: {
+      codigo: '4001',
+      mensagem: 'a vaga já está ocupada',
+      diagnostico: { campoQueVariaPorRecusa: 'valor que o provedor devolveu' },
+    },
+  } as const;
+
+  /** Um registro com exatamente `chaves` entradas, cada uma com um valor curto e determinístico. */
+  function diagnosticoComChaves(chaves: number): Record<string, unknown> {
+    return Object.fromEntries(
+      Array.from({ length: chaves }, (_, indice) => [`campo${indice}`, indice]),
+    );
+  }
+
+  /** Um estado publicado cujo motivo carrega o diagnóstico dado — o resto vem do canônico. */
+  function estadoComDiagnostico(diagnostico: Record<string, unknown>): Record<string, unknown> {
+    return { ...ESTADO_PUBLICADO, motivo: { ...ESTADO_PUBLICADO.motivo, diagnostico } };
+  }
+
+  it('a entrada da ativação aprova o corpo VAZIO e o devolve verbatim', () => {
+    const resultado = esquemaDaAtivacaoDaEntrega.safeParse({});
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data).toEqual({});
+  });
+
+  it('a entrada da ativação RECUSA empresaId nomeando a chave — jamais só um booleano', () => {
+    const resultado = esquemaDaAtivacaoDaEntrega.safeParse({ empresaId: EMPRESA_ALHEIA });
+
+    // As duas linhas juntas são o que a `.claude/rules/contrato-publicado.md` exige, literalmente: o
+    // booleano sozinho aprovaria qualquer falha do esquema, e é a lista `keys` que diz QUAL chave foi
+    // recusada. É esta asserção que discrimina o `z.object` no lugar do `z.strictObject`.
+    expect(resultado.error?.issues[0]?.code).toBe('unrecognized_keys');
+    expect(resultado.error?.issues[0]).toMatchObject({ keys: ['empresaId'] });
+  });
+
+  it('o estado publicado declara exatamente os quatro campos, na ordem', () => {
+    // Igualdade de conjunto com controle antivácuo: a lista literal não é vazia, de modo que a
+    // comparação não passa comparando nada com nada. Um campo a mais reprova nomeando o excedente, e
+    // um campo que suma reprova nomeando a ausência.
+    // SUT_IS_CORRECT_BECAUSE: o `situacao` da `0025` é o quarto, e é campo NOVO em saída ABERTA.
+    expect(CAMPOS_DO_ESTADO.length).toBe(4);
+    expect(Object.keys(esquemaDoEstadoDaEntrega.shape)).toEqual([...CAMPOS_DO_ESTADO]);
+  });
+
+  it('o estado publicado é ABERTO: aceita o campo que ainda não existe, e o descarta', () => {
+    const resultado = esquemaDoEstadoDaEntrega.safeParse({
+      ...ESTADO_PUBLICADO,
+      campoQueAindaNaoExiste: 1,
+    });
+
+    // É a metade que prova a abertura, e a que reprova se alguém trocar `z.object` por
+    // `z.strictObject` copiando a exceção de `esquemaDoCertificado` por vizinhança.
+    expect(resultado.success).toBe(true);
+    // E o campo extra **não atravessa**: a saída aberta descarta o que não declarou, em vez de
+    // ecoá-lo ao consumidor. Sem esta linha, um `z.looseObject` passaria.
+    expect(resultado.data).toEqual(ESTADO_PUBLICADO);
+  });
+
+  it('o estado publicado recusa o VALOR errado nomeando o campo, e não a raiz', () => {
+    const resultado = esquemaDoEstadoDaEntrega.safeParse({
+      ...ESTADO_PUBLICADO,
+      habilitada: 'sim',
+    });
+
+    // O `path` é do CAMPO: um refino sem `path` próprio reportaria a raiz, e a recusa chegaria sem
+    // dizer o que corrigir. É a metade que a abertura acima **não** alcança — aberto não é frouxo.
+    expect(resultado.error?.issues[0]?.path).toEqual(['habilitada']);
+  });
+
+  it('a projeção do certificado permanece ESTRITA — a abertura desta feature não se propaga', () => {
+    // O par que discrimina a decisão de estritude por CLASSE, e não por vizinhança: a exceção de
+    // `esquemaDoCertificado` existe porque o campo a mais que pode aparecer ali é o segredo do
+    // provedor entrando na resposta. Sem esta linha, "afrouxei o certificado junto" atravessaria
+    // este caso sem uma recusa sequer.
+    const resultado = esquemaDoCertificado.safeParse({
+      ...CERTIFICADO_PUBLICADO,
+      campoQueAindaNaoExiste: 1,
+    });
+
+    expect(resultado.error?.issues[0]?.code).toBe('unrecognized_keys');
+    expect(resultado.error?.issues[0]).toMatchObject({ keys: ['campoQueAindaNaoExiste'] });
+  });
+
+  it('o motivo declara exatamente as três chaves, e nenhuma delas fala o dialeto do provedor', () => {
+    expect(Object.keys(esquemaDoMotivoDaRecusa.shape)).toEqual([...CAMPOS_DO_MOTIVO]);
+
+    // Controle positivo (AP-29): a MESMA varredura, sobre um nome sintético que carrega cada termo,
+    // acha **cada um deles**. Sem ele, a lista vazia abaixo seria indistinguível de uma varredura que
+    // não olhou para nada — que é a forma clássica de uma asserção aprovar tudo.
+    //
+    // ⚠️ A varredura é feita **termo a termo**, e não com a lista inteira de uma vez: quatro destes
+    // termos contêm outro como subcadeia (`tipoMovimento` está dentro de `codigoTipoMovimento`), de
+    // modo que a lista contra si mesma produziria cruzamentos e a igualdade mediria a colisão em vez
+    // do alcance. Um par por termo mede exatamente o que se quer — que **cada** agulha é achada.
+    expect(
+      TERMOS_DO_DIALETO.map((termo) => ocorrenciasDeTermos([`chaveDe_${termo}`], [termo])),
+    ).toEqual(TERMOS_DO_DIALETO.map((termo) => [`${termo} em chaveDe_${termo}`]));
+
+    expect(
+      ocorrenciasDeTermos(Object.keys(esquemaDoMotivoDaRecusa.shape), TERMOS_DO_DIALETO),
+    ).toEqual([]);
+    expect(ocorrenciasDeTermos([...CAMPOS_DO_ESTADO], TERMOS_DO_DIALETO)).toEqual([]);
+  });
+
+  it('o diagnóstico é OPACO: aceita chave do provedor em execução, e não a declara no shape', () => {
+    // A conciliação do D5 com a ADR-0001, exercida nas DUAS direções — e é o par que a torna
+    // verificável. Uma só das metades não distingue "o portador é aberto" de "o portador declara o
+    // dialeto": a primeira linha aprovaria um esquema que nomeasse a chave, e a segunda passaria por
+    // vacuidade num portador que recusasse tudo.
+    const comChaveDoProvedor = esquemaDoEstadoDaEntrega.safeParse(
+      estadoComDiagnostico({ codigoRetornoSicoob: '99' }),
+    );
+
+    expect(comChaveDoProvedor.success).toBe(true);
+    expect(comChaveDoProvedor.data?.motivo?.diagnostico).toEqual({ codigoRetornoSicoob: '99' });
+
+    // E o portador NÃO declara chave alguma — ele é um registro, e não um objeto de forma fixa, de
+    // modo que `shape` nele é `undefined`. É por construção que o dialeto não tem por onde virar nome
+    // publicado, e não por uma lista de proibidos que alguém precisasse manter. É a metade estática
+    // da mesma propriedade, e sem ela a linha acima aprovaria um `z.object` que tivesse declarado a
+    // chave do provedor e a devolvido intacta.
+    //
+    // ⚠️ **O `unwrap()` não é ornamento, e a asserção sem ele PERDEU A FORÇA** quando o campo passou
+    // a ser anulável: `ZodNullable` nunca tem `shape`, de modo que `'shape' in <o campo>` passaria a
+    // valer para qualquer coisa embrulhada — inclusive para um `z.object` que declarasse a chave do
+    // provedor. O `unwrap()` devolve o portador de verdade, que é o que este passo existe para medir.
+    // SUT_IS_CORRECT_BECAUSE: o produto está certo (o campo é anulável de propósito, para casar com a
+    // coluna `jsonb` anulável e com `MotivoDaRecusaDoProvedor` de `@sysloc/db`); o que a linha antiga
+    // mediria depois da mudança seria o embrulho, e não o portador.
+    expect('shape' in esquemaDoMotivoDaRecusa.shape.diagnostico.unwrap()).toBe(false);
+  });
+
+  it('o diagnóstico é ANULÁVEL, e o nulo é distinto do registro vazio e da ausência', () => {
+    // O nulo é o que a camada de dados admite: `motivo_diagnostico` é `jsonb` ANULÁVEL na `0023`, e a
+    // `CHECK` de coerência exige dele apenas `IS NULL OR motivo_codigo IS NOT NULL` — código sem
+    // diagnóstico é estado permitido por construção. Publicar o campo como não-anulável faria o
+    // artefato que o frontend importa jurar presença onde o banco permite ausência, e **nada
+    // detectaria a violação**, porque esquema de saída não é `parse`ado em execução.
+    const comNulo = esquemaDoEstadoDaEntrega.safeParse({
+      ...ESTADO_PUBLICADO,
+      motivo: { ...ESTADO_PUBLICADO.motivo, diagnostico: null },
+    });
+
+    expect(comNulo.success).toBe(true);
+    expect(comNulo.data?.motivo?.diagnostico).toBeNull();
+
+    // O registro VAZIO continua sendo outra coisa — e atravessa como `{}`, nunca virando nulo. Sem
+    // esta metade, um `.transform(() => null)` ou um `?? {}` em qualquer ponto da composição passaria
+    // sem que uma asserção sequer reprovasse.
+    const comVazio = esquemaDoEstadoDaEntrega.safeParse(estadoComDiagnostico({}));
+
+    expect(comVazio.success).toBe(true);
+    expect(comVazio.data?.motivo?.diagnostico).toEqual({});
+
+    // E ANULÁVEL não é OPCIONAL: o campo segue obrigatório, e a ausência é recusada NOMEANDO-O. Sem
+    // esta terceira perna, `.nullable()` seria indistinguível de `.optional()`, e o consumidor
+    // publicado perderia a garantia de que a chave existe sempre.
+    const semOCampo = esquemaDoEstadoDaEntrega.safeParse({
+      ...ESTADO_PUBLICADO,
+      motivo: { codigo: '4001', mensagem: 'a vaga já está ocupada' },
+    });
+
+    expect(semOCampo.error?.issues[0]?.path).toEqual(['motivo', 'diagnostico']);
+    expect(semOCampo.error?.issues[0]?.code).toBe('invalid_type');
+  });
+
+  it('o diagnóstico aceita o teto de chaves e RECUSA uma chave a mais, nomeando o campo', () => {
+    const noLimite = esquemaDoEstadoDaEntrega.safeParse(
+      estadoComDiagnostico(diagnosticoComChaves(MAIOR_DIAGNOSTICO_EM_CHAVES)),
+    );
+    const acimaDoTeto = esquemaDoEstadoDaEntrega.safeParse(
+      estadoComDiagnostico(diagnosticoComChaves(MAIOR_DIAGNOSTICO_EM_CHAVES + 1)),
+    );
+
+    // O par é o que discrimina o teto: sem a metade que aceita, um teto de zero passaria; sem a que
+    // recusa, um portador sem teto algum passaria.
+    expect(noLimite.success).toBe(true);
+    expect(acimaDoTeto.error?.issues[0]?.path).toEqual(['motivo', 'diagnostico']);
+  });
+
+  it('o diagnóstico aceita o teto de tamanho e RECUSA um caractere a mais, nomeando o campo', () => {
+    // O tamanho é medido sobre a serialização, que é a forma em que o registro viaja e em que ele é
+    // gravado. O envelope `{"campo":"…"}` é o que sobra do teto para o próprio texto.
+    const envelope = JSON.stringify({ campo: '' }).length;
+    const noLimite = esquemaDoEstadoDaEntrega.safeParse(
+      estadoComDiagnostico({ campo: 'x'.repeat(MAIOR_DIAGNOSTICO_EM_CARACTERES - envelope) }),
+    );
+    const acimaDoTeto = esquemaDoEstadoDaEntrega.safeParse(
+      estadoComDiagnostico({ campo: 'x'.repeat(MAIOR_DIAGNOSTICO_EM_CARACTERES - envelope + 1) }),
+    );
+
+    // O segundo eixo existe porque o primeiro não o cobre: trinta e duas chaves comportam um
+    // megabyte se uma delas carregar um texto imenso, e a recusa precisa vir do eixo certo.
+    expect(noLimite.success).toBe(true);
+    expect(acimaDoTeto.error?.issues[0]?.path).toEqual(['motivo', 'diagnostico']);
+  });
+
+  it('o diagnóstico que não serializa é RECUSADO pelo campo, e não derruba o chamador', () => {
+    // A rede do `D17`, fechado na intervenção dirigida de 2026-08-22. O eixo de tamanho mede a
+    // SERIALIZAÇÃO, e `z.record(z.string(), z.unknown())` admite valor que não serializa — de modo
+    // que o `JSON.stringify` do refino levantava DENTRO do refinamento. O Zod não captura exceção
+    // arbitrária de refino, e `safeParse` propagava em vez de devolver `{ success: false }`.
+    const circular: Record<string, unknown> = {};
+    circular.eu = circular;
+
+    for (const naoSerializavel of [{ contador: 1n }, circular]) {
+      // ⚠️ A PERNA QUE DISCRIMINA: com o refino de antes, esta chamada LANÇA `TypeError` e o
+      // `expect` nunca chega a ser avaliado. Medido contra o `dist/` de então:
+      // `Do not know how to serialize a BigInt` e `Converting circular structure to JSON`.
+      const resultado = esquemaDoEstadoDaEntrega.safeParse(estadoComDiagnostico(naoSerializavel));
+
+      // E a recusa é a do CAMPO, não a da raiz: o consumidor precisa saber o que corrigir, que é o
+      // que a `.claude/rules/contrato-publicado.md` cobra do `422 CAMPO_INVALIDO`.
+      expect(resultado.success).toBe(false);
+      expect(resultado.error?.issues[0]?.path).toEqual(['motivo', 'diagnostico']);
+    }
+
+    // O controle positivo, sem o qual um refino que recusasse TUDO passaria nas duas acima — e o
+    // teto deixaria de ser teto.
+    expect(esquemaDoEstadoDaEntrega.safeParse(estadoComDiagnostico({ campo: 'x' })).success).toBe(
+      true,
+    );
+  });
+
+  it('o motivo é FECHADO: a chave a mais nele é recusada nomeando-a', () => {
+    // A abertura é LOCAL — só o portador. Sem esta linha, "abri o objeto inteiro para não ter
+    // trabalho" atravessaria o caso da abertura acima sem uma recusa sequer.
+    const resultado = esquemaDoEstadoDaEntrega.safeParse({
+      ...ESTADO_PUBLICADO,
+      motivo: { ...ESTADO_PUBLICADO.motivo, campoQueAindaNaoExiste: 1 },
+    });
+
+    expect(resultado.error?.issues[0]?.code).toBe('unrecognized_keys');
+    expect(resultado.error?.issues[0]).toMatchObject({ keys: ['campoQueAindaNaoExiste'] });
+  });
+
+  it('a empresa que nunca tentou publica os dois nulos, e o estado é aceito', () => {
+    // CA-19: `verificadaEm: null` é o que separa "nunca tentou" de "tentou e foi recusada" — as duas
+    // têm `habilitada: false`, e sem a anulabilidade a projeção teria de inventar um instante.
+    // ⚠️ A situação acompanha: *"nunca tentou"* é DESABILITADA sem verificação — e não em validação,
+    // que exigiria um ato do produto que nunca aconteceu.
+    const nuncaTentou = {
+      habilitada: false,
+      situacao: 'DESABILITADA',
+      verificadaEm: null,
+      motivo: null,
+    };
+    const resultado = esquemaDoEstadoDaEntrega.safeParse(nuncaTentou);
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data).toEqual(nuncaTentou);
+  });
+
+  it('o enum dos estados publica exatamente os três declarados, na ordem', () => {
+    expect([...ESTADOS_DA_ENTREGA]).toEqual([...ESTADOS_DECLARADOS]);
+  });
+
+  it('o enum dos estados está congelado, e a mutação LANÇA sem alterar o conteúdo', () => {
+    // O `as const` fecha a união em COMPILAÇÃO e não sobrevive ao build: o consumidor que importa o
+    // pacote compilado recebe um arranjo comum. Só `Object.freeze` fecha o alargamento em EXECUÇÃO.
+    expect(Object.isFrozen(ESTADOS_DA_ENTREGA)).toBe(true);
+    expect(() => (ESTADOS_DA_ENTREGA as unknown as string[]).push('PENDENTE')).toThrow(TypeError);
+
+    // Reafirmar DEPOIS da tentativa: "lançou" e "não alterou" são propriedades diferentes, e um
+    // arranjo que lançasse na cópia e mutasse o original passaria pela asserção anterior.
+    expect([...ESTADOS_DA_ENTREGA]).toEqual([...ESTADOS_DECLARADOS]);
   });
 });

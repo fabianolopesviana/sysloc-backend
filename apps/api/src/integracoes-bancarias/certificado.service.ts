@@ -48,16 +48,18 @@
  *
  * O registro tem duas metades, e elas correm em lugares diferentes de propósito:
  *
- *   1. **fora** da unidade de trabalho — {@link CertificadoDoProvedorService.lerMaterial}, que abre
- *      o cofre PKCS#12 por aperto de mão em laço local. É I/O, e segurar conexão física do banco
- *      durante ele repetiria o achado da T7 da fatia `documentos-e-confirmacao` (renderização de
- *      ~0,5 s dentro do `sql.begin`), agora sobre uma reserva de conexões que atende todo o produto;
+ *   1. **fora** da unidade de trabalho — {@link CertificadoDoProvedorService.prepararMaterial}, que
+ *      converte o cofre PKCS#12 quando preciso e o abre por aperto de mão em laço local. É I/O — e,
+ *      desde a F5, I/O que pode incluir um subprocesso —, e segurar conexão física do banco durante
+ *      ele repetiria o achado da T7 da fatia `documentos-e-confirmacao` (renderização de ~0,5 s
+ *      dentro do `sql.begin`), agora sobre uma reserva de conexões que atende todo o produto;
  *   2. **dentro** — {@link CertificadoDoProvedorService.registrar}, que cifra e grava. A cifra é
  *      trabalho de CPU de microssegundos, e mantê-la aqui é o que garante que o envelope gravado e a
  *      substituição do anterior sejam o **mesmo** commit.
  *
- * É por isso que o material lido **atravessa** de um método para o outro como parâmetro, e não é
- * relido: reler dentro da transação desfaria a metade (1).
+ * É por isso que o material **preparado** atravessa de um método para o outro como parâmetro, e não
+ * é relido: reler dentro da transação desfaria a metade (1) — e, no caminho convertido, releria o
+ * recebido em vez do que se vai guardar.
  *
  * ⚠️ **A conferência de vigência acontece na PRIMEIRA instrução da transação, e não antes dela** —
  * divergência declarada em relação à §3.4 da task, que a descreve como passo prévio. A razão é o
@@ -80,18 +82,57 @@
  * não é tocada.**
  *
  * ===========================================================================
- * DUAS CAUSAS, UMA RESPOSTA — e a indistinguibilidade é construída AQUI
+ * TRÊS CAUSAS, TRÊS CÓDIGOS — e a distinção é construída AQUI (F5, D4)
  * ===========================================================================
  *
- * `ErroDeSenhaQueNaoAbre` e `ErroDeMaterialIlegivel` chegam **distintos** do adaptador, e é essa
- * distinção que o registro estruturado guarda (`motivo`, campo interno). O que sai para o Admin é
- * **uma** recusa: mesmo código, mesma mensagem, mesmo campo, mesmo corpo byte a byte. A distinção
- * nasce no adaptador e morre nesta linha.
+ * ⚠️ **Esta seção SUBSTITUI a que dizia *"DUAS CAUSAS, UMA RESPOSTA — e a indistinguibilidade é
+ * construída AQUI"*, e a substituição é a decisão, não um efeito colateral dela.** Docblock que
+ * sobrevive à decisão que ele explica é o vetor da regressão de decisão: a próxima rodada leria a
+ * distinção como defeito e a desfaria por "conformidade".
  *
- * O campo nomeado é o do **corpo**, e não `material` nem `senha`: nomear qualquer um dos dois seria
- * dizer ao cliente **qual metade** falhou, que é precisamente a informação que a
- * indistinguibilidade existe para não dar. É a mesma razão pela qual a mensagem é única — quem
- * separa as duas causas é o operador, lendo o journal, e não quem envia o corpo.
+ * **Por que a premissa envelheceu.** A doutrina da recusa indistinguível deste repositório existe
+ * contra **oráculo de existência** — é o caso de `CREDENCIAL_INVALIDA`, quatro causas num código só,
+ * porque distinguir *"confirmaria ao atacante que a conta existe"*. **Aqui não há atacante a
+ * informar**: quem pede está autenticado, detém `ACAO:configurar_integracao` e apresentou **as duas
+ * metades** — o arquivo e a senha. Dizer-lhe qual das duas não serve não revela nada que ele já não
+ * tenha. O custo do silêncio é medido: em 2026-08-20 o operador caçou uma senha errada que não
+ * existia, porque a única recusa possível descrevia as duas causas ao mesmo tempo. Era o `D64`.
+ *
+ * As três causas chegam **por tipo** e saem com **código próprio** (ADR-0017):
+ *
+ * | Causa | Chega como | Sai como |
+ * |---|---|---|
+ * | formato/embalagem que não se abre nem se converte | `ErroDeFormatoDoMaterial` | `MATERIAL_EM_FORMATO_NAO_SUPORTADO` |
+ * | senha que não abre o material | `ErroDeSenhaQueNaoAbre` | `SENHA_DO_MATERIAL_NAO_ABRE` |
+ * | validade já encerrada | `ErroDeCertificadoVencido` | `CERTIFICADO_COM_VALIDADE_ENCERRADA` |
+ *
+ * ⚠️ **A classificação é pelo TIPO da exceção, jamais por texto de mensagem.** É o que impede a
+ * distinção de se perder de novo por caminho novo: apagar um ramo `instanceof` aparece no diff,
+ * enquanto uma redação que deixa de casar degrada em silêncio.
+ *
+ * ⚠️ **O `campo` permanece `'corpo'` nas TRÊS.** Nomear `material` ou `senha` diria **qual metade**
+ * do corpo falhou por uma via que o `codigo` já cobre — e o `campo` é o que o cliente usa para
+ * destacar entrada, não para diagnosticar. A distinção que a fatia acrescenta é a do **código**, e
+ * só dela.
+ *
+ * ⚠️ **Nenhuma das três mensagens interpola valor vindo do corpo**, e elas têm **uma** declaração —
+ * `MENSAGEM_POR_CODIGO`, em `comum/filtro-excecao.ts`. Segredo interpolado em texto sobrevive em
+ * `mensagem` e `pilha` do evento, onde a redação do registrador não o alcança.
+ *
+ * ===========================================================================
+ * O MATERIAL É PREPARADO ANTES DE SER LIDO — e o que se guarda é o CONVERTIDO
+ * ===========================================================================
+ *
+ * A Autoridade Certificadora entrega o cofre em cifra que o runtime não abre (medido em duas
+ * emissões consecutivas), e o produto recusava exatamente o arquivo que o Admin recebeu. Desde a F5
+ * a borda chama {@link converterMaterialSeNecessario} em vez de `lerMaterial` direto: material
+ * moderno atravessa **byte a byte** e nenhum processo externo chega a ser criado; material legado é
+ * convertido, e o que se cifra e se guarda é o **convertido** (ADR-0036).
+ *
+ * Este serviço **orquestra e não converte**: ele não cria processo, não escreve arquivo e não conhece
+ * o binário. A tolerância à cifra fraca vive confinada no subprocesso de vida curta de
+ * `@sysloc/cobranca-bancaria`, e não no processo que decifra todo segredo operável do produto
+ * (ADR-0032).
  *
  * ===========================================================================
  * O ESTADO É DERIVADO, e o relógio é o do BANCO (ADR-0022, ADR-0023, ADR-0026)
@@ -115,10 +156,13 @@
 
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  converterMaterialSeNecessario,
+  ErroDeFormatoDoMaterial,
   ErroDeMaterialIlegivel,
   ErroDeSenhaQueNaoAbre,
   lerMaterial,
   type MaterialLido,
+  type MaterialPreparado,
   type PortaDeIdentidadeBancaria,
 } from '@sysloc/cobranca-bancaria';
 import {
@@ -137,14 +181,18 @@ import {
   type VigenciaObservada,
 } from '@sysloc/db';
 import {
+  type CargaDaReconferenciaDaEntrega,
   CodigoErro,
   cifrarSegredo,
+  criarSegredoOperavel,
   decifrarSegredo,
   ErroDeAplicacao,
   type Logger,
   type SegredoOperavel,
 } from '@sysloc/shared';
 import type { TransactionSql } from 'postgres';
+import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
+import { type ProdutorDeFila, TOKEN_PRODUTOR_DE_FILA } from '../comum/produtor-de-fila.js';
 import {
   type Ambiente,
   TOKEN_AMBIENTE,
@@ -161,60 +209,57 @@ import {
 const CAMPO_DO_CORPO = 'corpo';
 
 /**
- * A mensagem **única** das duas causas de recusa do material (CA-05, PRD §7.2).
- *
- * Ela descreve o desfecho e não nomeia a metade culpada: *"não abriu com a senha apresentada"* é
- * verdade tanto para a senha errada quanto para os bytes que não são um PKCS#12. Nenhum valor
- * recebido entra aqui — a mensagem alcança o journal, e o corpo carrega material e senha.
- *
- * Ela **não** vem de `MENSAGEM_POR_CODIGO` (`comum/filtro-excecao.ts`): aquela tabela publica
- * *"requisição inválida"* para toda recusa de campo, e este é o único ponto do produto em que a
- * mensagem precisa dizer ao Admin o que conferir sem dizer qual das duas coisas está errada.
- */
-// DÉBITO COM GATILHO — D64 · F4/fechamento · registrado 2026-08-20
-// (NÃO é uma `DECISÃO FECHADA`: ele agenda uma distinção que falta, não protege o texto abaixo.)
-// O QUÊ: esta mensagem responde por DUAS causas distintas — senha que não abre o material, e
-//        material cuja CIFRA o runtime não suporta. O operador que recebe a segunda vai caçar uma
-//        senha errada que não existe.
-// QUANDO FECHA: ⚠️ **JÁ DISPAROU em 2026-08-21**, e o débito foi AGRAVADO de MEDIO para ALTO. A AC
-//        entregou em cifra legada nas DUAS emissões consecutivas (julho/2025 e agosto/2026): não é
-//        exceção, é o padrão dela. O problema não é a mensagem, é a ACEITAÇÃO — o produto recusa o
-//        material que a AC entrega, e quem renova é o Admin, pela TELA, sem acesso ao servidor onde
-//        vive o script que converte. Pago pela frente B da fatia
-//        `integracao-bancaria-autonoma/v1` (F5).
-// POR QUE NÃO AGORA: a forma da conversão é decisão de ARQUITETURA e não está tomada — as três
-//        candidatas, com custo e risco, estão no `ÍNDICE` abaixo. ⚠️ A mais barata (ligar o provider
-//        legado do Node) é a que o registro recomenda RECUSAR: habilitaria cifra fraca no processo
-//        que manipula todo segredo operável do produto.
-// ÍNDICE: docs/specs/features/fundacao-bancaria/v1/_run/run-report.md §2, D64
-const MENSAGEM_DO_MATERIAL_RECUSADO =
-  'o certificado não pôde ser lido com a senha apresentada — confira o arquivo e a senha';
-
-/**
- * A mensagem da recusa por validade encerrada (RN-03/CA-06).
- *
- * Ela é **distinta** da mensagem acima de propósito: aqui o arquivo abriu, o titular é legível e o
- * produto sabe exatamente o que há de errado — dizer *"confira o arquivo e a senha"* mandaria o
- * Admin procurar defeito onde não há. O valor recebido não entra na mensagem; a data em que a
- * validade terminou vai em `detalhes`, que é campo estruturado do envelope.
- */
-const MENSAGEM_DO_CERTIFICADO_VENCIDO = 'a validade do certificado apresentado já terminou';
-
-/**
  * O motivo interno da recusa por vencimento — para o journal, **nunca** para o corpo da resposta.
  *
  * Ele é escrito aqui porque a exceção que o produz vem da camada de dados e não carrega motivo,
- * diferente das duas do adaptador de material. O vocabulário é o mesmo (`SENHA_NAO_ABRE`,
- * `MATERIAL_ILEGIVEL`, `JA_VENCIDO`), de modo que o operador filtra as três recusas do registro por
- * um campo só.
+ * diferente das duas do domínio do material — que trazem o próprio (`SENHA_NAO_ABRE` e
+ * `FORMATO_NAO_SUPORTADO`) e são repassadas sem tradução. Os três nomes ocupam o **mesmo campo**, de
+ * modo que o operador filtra as três recusas do registro por um só.
  */
 const MOTIVO_DO_VENCIDO = 'JA_VENCIDO';
 
-/** A mensagem do `404` da RN-01 — nomeia a empresa da sessão e a ausência, sem identificador. */
-const MENSAGEM_SEM_CERTIFICADO = 'esta empresa não tem certificado do provedor registrado';
+/** A frase que o journal carrega quando a recusa do material acontece — uma para as duas causas. */
+const TRILHA_DO_MATERIAL_RECUSADO = 'material de certificado recusado no registro';
 
-/** O nome do discriminador que a recusa por vencimento publica dentro de `detalhes`. */
-const DISCRIMINADOR_DA_VALIDADE = 'validoAte';
+/**
+ * A frase que o journal carrega quando a reconferência não pôde ser enfileirada.
+ *
+ * Constante nomeada porque é o que o operador filtra para achar as empresas cuja entrega da notícia
+ * ficou descrevendo o certificado anterior — e um literal no meio do `catch` diverge da consulta que
+ * alguém salvou.
+ */
+const TRILHA_DA_RECONFERENCIA_NAO_ENFILEIRADA =
+  'o certificado foi registrado e a reconferência da entrega não pôde ser enfileirada';
+
+/**
+ * A frase da trilha da conversão (§13 da tech spec) — `info`, e sem nada do que chegou no corpo.
+ *
+ * O único fato registrado é **que houve conversão**; nem tamanho, nem nome, nem bytes, nem a saída
+ * do processo externo, que a ADR-0036 mantém fora do diário.
+ */
+const TRILHA_DO_MATERIAL_CONVERTIDO = 'material de certificado convertido antes do registro';
+
+/**
+ * A mensagem do `404` da RN-01 — nomeia a empresa da sessão e a ausência, sem identificador.
+ *
+ * ⚠️ **Exportada a partir da T7 da fatia `integracao-bancaria-autonoma`**, e a exportação é o que
+ * impede a TERCEIRA cópia: a mesma frase já vive em `../cobrancas/boleto.service.ts`, que a publica
+ * como recusa de **pré-condição** do ato externo, e a ativação da entrega da notícia precisava dela
+ * pelo mesmo motivo. Ao terceiro consumidor o símbolo duplicado sobe para casa compartilhada em vez
+ * de ganhar mais uma cópia (Limiar de Três do `CLAUDE.md`), e esta é a casa: o certificado é desta
+ * área. O valor é **contrato publicado** — o cliente lê a frase —, e três literais soltos ficariam
+ * livres para divergir.
+ */
+export const MENSAGEM_SEM_CERTIFICADO = 'esta empresa não tem certificado do provedor registrado';
+
+/**
+ * O nome do discriminador que a recusa por vencimento publica dentro de `detalhes`.
+ *
+ * Exportado pela mesma razão da mensagem acima, e com o mesmo alcance: ele é o nome que o cliente
+ * procura em `detalhes` para saber que o que terminou foi a **validade**, e é o mesmo nas três
+ * recusas que o publicam.
+ */
+export const DISCRIMINADOR_DA_VALIDADE = 'validoAte';
 
 /** A entidade nomeada na linha de trilha do registro (§13.1). */
 const ENTIDADE_DA_TRILHA = 'certificado_do_provedor';
@@ -239,6 +284,21 @@ const FORMA_DO_DIA = /^(\d{4})-(\d{2})-(\d{2})$/;
 export interface IdentidadeGuardada {
   readonly certificadoId: string;
   readonly envelopeCifrado: string;
+}
+
+/**
+ * O que a preparação do material entrega ao registro — os três fatos que o ato precisa, e nada mais.
+ *
+ * `segredo` é o invólucro do que se vai **cifrar e guardar**: o convertido quando houve conversão
+ * (ADR-0036), e o invólucro que chegou, sem cópia nova, quando não houve. `lido` é a identidade que
+ * a projeção publica, aberta do **mesmo** material que será gravado — nunca do recebido, que num
+ * registro convertido é outro conjunto de bytes. `convertido` é o desfecho do ato, e é o único dos
+ * três que atravessa até a resposta.
+ */
+export interface MaterialDoRegistro {
+  readonly lido: MaterialLido;
+  readonly segredo: SegredoOperavel;
+  readonly convertido: boolean;
 }
 
 /** O que a derivação do estado responde — os dois campos que a projeção publica. */
@@ -335,40 +395,85 @@ export class CertificadoDoProvedorService {
     // decidir o destino da conexão, que é o que a escolha estrutural existe para impedir.
     @Inject(TOKEN_PORTA_DE_IDENTIDADE_BANCARIA)
     private readonly identidadeBancaria: PortaDeIdentidadeBancaria,
+    // O produtor de fila chega pelo token que `../comum/fila.module.js` provê — e o módulo desta
+    // área o alcança importando aquele módulo, nunca abrindo conexão própria. É a via que o
+    // cabeçalho de `comum/fila.module.ts` manda usar, e `apps/api/test/alcance-da-fila.spec.ts`
+    // afirma por igualdade de conjunto quem a usa.
+    @Inject(TOKEN_PRODUTOR_DE_FILA) private readonly produtor: ProdutorDeFila,
   ) {}
 
   /**
-   * Lê do material o que o produto publica — **fora de qualquer transação** (§7.4).
+   * Prepara o material e lê dele o que o produto publica — **fora de qualquer transação** (§7.4).
    *
-   * O parâmetro é o invólucro opaco da ADR-0032, e ele atravessa este método sem ser aberto: quem o
-   * abre é o adaptador, dentro da chamada, e o claro não existe fora dela.
+   * ===========================================================================
+   * ELE ORQUESTRA A CONVERSÃO, e não ganha a capacidade de executá-la (ADR-0036)
+   * ===========================================================================
    *
-   * As duas causas de recusa são traduzidas na **mesma** resposta e registradas com motivos
-   * **distintos**. O registro é `warn`, e não `error`: entrada recusada é ato normal do Admin, e
-   * classificá-la como erro do serviço encheria o journal de alarme para o que é conversa de
-   * cadastro. Nenhum campo do corpo entra na linha — nem o tamanho do material, que já seria um
-   * oráculo sobre o arquivo enviado.
+   * A única porta é {@link converterMaterialSeNecessario}: material que o runtime já abre atravessa
+   * **byte a byte**, sem que processo externo algum chegue a ser criado; material em cifra legada é
+   * convertido no subprocesso de vida curta daquele módulo. Este arquivo não cria processo, não
+   * escreve arquivo e não conhece o binário — a tolerância à cifra fraca fica confinada onde a
+   * ADR-0036 a pôs, e não no processo que decifra todo segredo operável do produto.
+   *
+   * O parâmetro é o invólucro opaco da ADR-0032. Quando houve conversão, o que segue para a cifra é
+   * um invólucro **novo**, montado com os bytes convertidos e a **mesma** senha — um segundo segredo
+   * daria ao produto duas metades livres para divergir na renovação. Quando não houve, o que segue é
+   * o invólucro que chegou, sem cópia nova: cópia do claro na heap é exatamente a superfície que a
+   * ADR-0032 existe para encurtar.
+   *
+   * ⚠️ **A leitura acontece sobre o material PREPARADO, e nunca sobre o recebido.** Num registro
+   * convertido os dois são conjuntos de bytes diferentes, e publicar a identidade lida do recebido
+   * descreveria um certificado que não é o que ficou guardado. (A conversão já conferiu que os dois
+   * são o mesmo certificado; ler o preparado é o que torna essa igualdade irrelevante para a
+   * correção desta borda em vez de pressuposto dela.)
+   *
+   * ===========================================================================
+   * O TETO DESTA ROTA é o da conversão, e a decisão é NÃO acrescentar um segundo
+   * ===========================================================================
+   *
+   * O pior caso é **limitado e conhecido**: 5 s da leitura direta, mais 30 s da decodificação, mais
+   * 5 s da leitura do convertido dentro da conversão, mais 30 s da reexportação, mais 5 s da leitura
+   * daqui — **75 s**, todos impostos por teto próprio de quem os gasta, e o processo externo é morto
+   * por sinal quando estoura. Fica abaixo do teto de requisição do runtime, de modo que nenhuma
+   * requisição fica pendurada e nenhuma é ceifada no meio da conversão.
+   *
+   * Um segundo teto **nesta borda** foi considerado e recusado: ele abortaria a requisição sem
+   * cancelar o subprocesso — que continuaria correndo, com o intermediário em claro vivo — e o Admin
+   * receberia uma recusa sobre um ato que ainda está acontecendo. O teto que governa é o de quem
+   * pode encerrar o que criou.
+   *
+   * ===========================================================================
+   * AS DUAS CAUSAS SÃO DISTINGUIDAS PELO TIPO, e cada uma tem código próprio
+   * ===========================================================================
+   *
+   * O registro é `warn`, e não `error`: entrada recusada é ato normal do Admin, e classificá-la como
+   * erro do serviço encheria o journal de alarme para o que é conversa de cadastro. Nenhum campo do
+   * corpo entra na linha — nem o tamanho do material, que já seria um oráculo sobre o arquivo
+   * enviado —, e o motivo interno é o que a própria exceção carrega, sem tradução.
    *
    * Toda outra falha atravessa intacta: traduzir em bloco atribuiria à entrada do cliente uma recusa
    * que ele não causou.
    */
-  async lerMaterial(segredo: SegredoOperavel): Promise<MaterialLido> {
-    try {
-      return await lerMaterial(segredo);
-    } catch (erro) {
-      if (erro instanceof ErroDeSenhaQueNaoAbre || erro instanceof ErroDeMaterialIlegivel) {
-        this.logger.warn(
-          { entidade: ENTIDADE_DA_TRILHA, motivo: erro.motivo },
-          'material de certificado recusado no registro',
-        );
+  async prepararMaterial(segredo: SegredoOperavel): Promise<MaterialDoRegistro> {
+    const preparado = await this.converter(segredo);
 
-        throw new ErroDeAplicacao(CodigoErro.CAMPO_INVALIDO, MENSAGEM_DO_MATERIAL_RECUSADO, {
-          campo: CAMPO_DO_CORPO,
-        });
-      }
+    // O invólucro do recebido é reaproveitado quando nada foi convertido — e é só na conversão que
+    // o claro precisa ser reembalado, porque só ali os bytes são outros. `abrir()` é chamado dentro
+    // da expressão: o par em claro não ganha nome próprio no escopo, que é o que um registro de
+    // diagnóstico futuro acharia à mão.
+    const paraGuardar = preparado.convertido
+      ? criarSegredoOperavel({ material: preparado.material, senha: segredo.abrir().senha })
+      : segredo;
 
-      throw erro;
+    if (preparado.convertido) {
+      this.logger.info({ entidade: ENTIDADE_DA_TRILHA }, TRILHA_DO_MATERIAL_CONVERTIDO);
     }
+
+    return {
+      lido: await this.ler(paraGuardar),
+      segredo: paraGuardar,
+      convertido: preparado.convertido,
+    };
   }
 
   /**
@@ -411,16 +516,76 @@ export class CertificadoDoProvedorService {
 
       this.logger.warn(
         { entidade: ENTIDADE_DA_TRILHA, motivo: MOTIVO_DO_VENCIDO },
-        'material de certificado recusado no registro',
+        TRILHA_DO_MATERIAL_RECUSADO,
       );
 
-      throw new ErroDeAplicacao(CodigoErro.CAMPO_INVALIDO, MENSAGEM_DO_CERTIFICADO_VENCIDO, {
-        campo: CAMPO_DO_CORPO,
-        detalhes: { [DISCRIMINADOR_DA_VALIDADE]: erro.validoAte.toISOString() },
-      });
+      throw new ErroDeAplicacao(
+        CodigoErro.CERTIFICADO_COM_VALIDADE_ENCERRADA,
+        MENSAGEM_POR_CODIGO[CodigoErro.CERTIFICADO_COM_VALIDADE_ENCERRADA],
+        {
+          campo: CAMPO_DO_CORPO,
+          detalhes: { [DISCRIMINADOR_DA_VALIDADE]: erro.validoAte.toISOString() },
+        },
+      );
     }
 
     return await this.publicar(tx, gravado);
+  }
+
+  /**
+   * Enfileira a **reconferência** da entrega da notícia — **fora** da unidade de trabalho, e em
+   * melhor-esforço.
+   *
+   * ===========================================================================
+   * Ele NÃO recebe `tx`, e não pode receber
+   * ===========================================================================
+   *
+   * A ordem é gravar e **só então** enfileirar, e o precedente está escrito por extenso em
+   * `../cobranca-bancaria/conferencia-bancaria.service.ts` e em
+   * `../notificacoes-bancarias/notificacao-bancaria.service.ts`: inverter enfileiraria um trabalho
+   * sobre um certificado que a transação ainda pode desfazer, e a tarefa correria contra uma linha
+   * que não existe. A falha oposta — enfileirar e o commit desfazer — é impossível por construção, e
+   * é o que dispensa uma tabela de *outbox*. **Um parâmetro `tx` aqui destruiria essa propriedade**,
+   * porque só se tem `tx` dentro da unidade.
+   *
+   * ===========================================================================
+   * MELHOR-ESFORÇO: a falha é registrada e NÃO propaga (RN-12)
+   * ===========================================================================
+   *
+   * ⚠️ **Engolir aqui é a decisão certa, e ela é o oposto do que a emissão em lote faz.** Propagar
+   * devolveria `503` a um Admin cujo pedido — *"registre este certificado"* — **já foi atendido e
+   * commitado**, e o efeito prático seria pior que o problema: ele reenviaria o material, criando um
+   * segundo registro do mesmo certificado, com a fila ainda fora do ar. A reconferência é efeito
+   * secundário cujo resultado não compõe a resposta (ADR-0029); o que não podia se perder já está
+   * gravado.
+   *
+   * O preço é declarado: a linha do estado da entrega continua descrevendo o certificado anterior até
+   * que alguém reative a entrega pela rota manual. É por isso que a linha do diário carrega a
+   * **empresa** e o **certificado**, que é o par com que o operador reconhece o que ficou para trás.
+   *
+   * O `erro` que chega já é **da aplicação** — construído pelo produtor, com a causa reduzida a texto
+   * (`DECISÃO FECHADA — T9 / Gate 2` de `../comum/produtor-de-fila.js`). Nenhum objeto de exceção da
+   * biblioteca de fila atravessa aquela fronteira, e é isso que permite registrá-lo aqui.
+   */
+  async enfileirarReconferencia(
+    carga: CargaDaReconferenciaDaEntrega,
+    certificadoId: string,
+  ): Promise<void> {
+    try {
+      await this.produtor.enfileirarReconferenciaDaEntrega(carga);
+    } catch (erro) {
+      // `warn`, e não `error`: o ato do Admin foi concluído e a resposta dele não muda. O que o
+      // operador precisa é do par (empresa, certificado) para reconferir a entrega à mão.
+      this.logger.warn(
+        {
+          erro,
+          empresaId: carga.empresaId,
+          entidade: ENTIDADE_DA_TRILHA,
+          certificadoId,
+        },
+        TRILHA_DA_RECONFERENCIA_NAO_ENFILEIRADA,
+      );
+    }
   }
 
   /**
@@ -506,6 +671,81 @@ export class CertificadoDoProvedorService {
       verificadoEm: desfecho.verificadoEm,
       detalhe: desfecho.detalhe,
     };
+  }
+
+  /**
+   * Corre a conversão condicional, traduzindo as recusas do domínio em recusas do contrato.
+   *
+   * O `try` cobre **só** a chamada da conversão, e o recorte é conteúdo: nenhuma outra falha do ato
+   * pode ser confundida com a recusa da entrada que este ramo traduz.
+   */
+  private async converter(segredo: SegredoOperavel): Promise<MaterialPreparado> {
+    try {
+      return await converterMaterialSeNecessario(segredo);
+    } catch (erro) {
+      throw this.recusarOMaterial(erro);
+    }
+  }
+
+  /**
+   * Abre o material **já preparado** — pelas mesmas duas causas, e pelos mesmos códigos.
+   *
+   * Uma recusa aqui é praticamente inalcançável: quem chegou a esta linha ou abriu na leitura direta
+   * da conversão, ou foi reaberto por ela na conferência de identidade. O ramo existe assim mesmo
+   * porque `lerMaterial` declara as duas recusas, e deixá-las escapar faria um defeito de **entrada
+   * do cliente** sair como falha do servidor.
+   */
+  private async ler(segredo: SegredoOperavel): Promise<MaterialLido> {
+    try {
+      return await lerMaterial(segredo);
+    } catch (erro) {
+      throw this.recusarOMaterial(erro);
+    }
+  }
+
+  /**
+   * O **ponto único** em que uma recusa do material vira recusa do contrato — três tipos, dois
+   * códigos.
+   *
+   * A classificação é pelo **tipo** da exceção, jamais por texto: apagar um dos ramos aparece no
+   * diff, enquanto uma redação que deixa de casar degradaria em silêncio — que é o `D64` invertido.
+   * O motivo interno é o que a própria exceção carrega, e vai **só** para o journal.
+   *
+   * Toda outra falha **atravessa intacta**: traduzi-la aqui atribuiria à entrada do cliente uma
+   * recusa que ele não causou. Por isso o retorno é o erro a levantar, e quem chama escreve
+   * `throw` — a função nunca decide sozinha engolir o que não reconhece.
+   *
+   * O motivo é lido **dentro** de cada ramo, e não depois deles, para que o estreitamento de tipo
+   * faça o trabalho: uma conversão escrita à mão aqui aceitaria em silêncio uma exceção futura sem
+   * `motivo`, e o journal registraria a recusa sem o campo que o operador filtra.
+   */
+  private recusarOMaterial(erro: unknown): unknown {
+    if (erro instanceof ErroDeSenhaQueNaoAbre) {
+      return this.recusaDoMaterial(CodigoErro.SENHA_DO_MATERIAL_NAO_ABRE, erro.motivo);
+    }
+
+    // As duas viram o **mesmo** código porque descrevem o mesmo desfecho para o Admin — o arquivo
+    // não se deixa ler. O que as separa é o motivo interno (`FORMATO_NAO_SUPORTADO` contra
+    // `MATERIAL_ILEGIVEL`), que é o que o operador filtra no journal.
+    if (erro instanceof ErroDeFormatoDoMaterial || erro instanceof ErroDeMaterialIlegivel) {
+      return this.recusaDoMaterial(CodigoErro.MATERIAL_EM_FORMATO_NAO_SUPORTADO, erro.motivo);
+    }
+
+    return erro;
+  }
+
+  /**
+   * Registra a recusa e compõe o envelope — `warn`, e com a mensagem da **fonte única** do código.
+   *
+   * O registro é `warn`, e não `error`: entrada recusada é ato normal do Admin, e classificá-la como
+   * erro do serviço encheria o journal de alarme para o que é conversa de cadastro. Nenhum campo do
+   * corpo entra na linha — nem o tamanho do material, que já seria um oráculo sobre o arquivo
+   * enviado.
+   */
+  private recusaDoMaterial(codigo: CodigoErro, motivo: string): ErroDeAplicacao {
+    this.logger.warn({ entidade: ENTIDADE_DA_TRILHA, motivo }, TRILHA_DO_MATERIAL_RECUSADO);
+
+    return new ErroDeAplicacao(codigo, MENSAGEM_POR_CODIGO[codigo], { campo: CAMPO_DO_CORPO });
   }
 
   /**

@@ -252,7 +252,22 @@ Status: **12/12 tasks concluídas** · suíte **1710 casos** verdes nos 9 pacote
 - **Impacto:** baixo e contido a `test/`. Nenhuma delas é código de produção, e as três montam o mesmo estado por portas de produção. O que se perde é o que o Limiar protege: endurecer uma (acrescentar coluna ao boleto, mudar a validade do certificado, trocar a natureza da cobrança) deixa as outras duas para trás, e a divergência só aparece quando um caso reprova por arranjo — longe da causa. As três já **divergem** de fato: a do worker devolve o par em claro do certificado (o `CT-990` precisa dele), a da API não registra certificado algum, e esta memoiza o registro por empresa porque o índice `certificado_do_provedor_vigente_uidx` admite um vigente por empresa.
 - **O que fazer:** subir o arranjo para casa compartilhada em **`packages/db/test/`** — o único diretório que `apps/api/test/` e `apps/worker/test/` já alcançam os dois (é de lá que vem `banco-efemero.ts`). A casa nova publica a semeadura completa parametrizada pelo que hoje diverge (devolver ou não o par em claro; registrar ou não o certificado), e as três suítes passam a importá-la. **Gatilho:** a primeira task autorizada a abrir as duas suítes irmãs por outra razão. **Não agora:** subir o arranjo obrigaria a reescrever duas suítes de fronteira real fora da lista da T9, com ~180 casos verdes dependendo delas.
 
-### D22 · baixo · error_handling · T9 · QA (rodada 4)
+### D22 · baixo · error_handling · T9 · QA (rodada 4) · ✅ **FECHADO na intervenção dirigida de 2026-08-22**
+
+> **Como fechou:** exatamente a forma que o bloco prescrevia — o `map` das esperas passou a
+> registrar o assentamento no ponto em que ele acontece (`assentadas.add(fila.name)` **depois**
+> do `await`, para que a espera que rejeita continue contando como não assentada), e o alerta
+> publica `filas` filtrado pelos pendentes mais o campo `pendentes` com a contagem. Sob marcador
+> `DECISÃO FECHADA`, cujo argumento é estrutural: `pendentes` é derivado da MESMA lista `filas`
+> que o fecho percorre, sem lista paralela que possa divergir.
+>
+> **Rede (P4):** o `CT-1007` ganhou a asserção de `pendentes` — campo que o alerta anterior
+> **não publicava**, de modo que um retorno a `filas.map(…)` o deixa `undefined` e reprova — e a
+> coerência entre a contagem e a lista. ⚠️ **Ressalva declarada no caso e aqui:** ele **não**
+> prova a filtragem em assentamento PARCIAL. O arranjo derruba o servidor antes de qualquer
+> conexão — é o que o torna determinístico — e nele nenhuma fila assenta, de modo que o conjunto
+> filtrado coincide com o completo. Assentamento parcial exigiria injetar fila por fila, que é
+> símbolo *test-only* na produção (Iron Law #6). `apps/api` segue em **374**.
 - **Onde:** `apps/api/src/comum/produtor-de-fila.ts:504`
 - **Problema:** o alerta do prazo abandonado nomeia **todas** as filas, e não as que não assentaram.
 - **Impacto:** a linha publica `{ limiteMs, filas: filas.map((fila) => fila.name) }` — a lista completa das quatro filas, idêntica em todo estouro. Ela responde *"quantas filas existem"*, não *"quantas ficaram para trás e qual"*. O comentário acima dela declara que a linha existe porque **uma garantia foi ABANDONADA**, e o operador que a ler num desligamento real não distingue "as quatro estavam pendentes" de "uma só travou". Não bloqueia: a linha não é ruído (o campo `limiteMs` e a mensagem já dizem o essencial) e o caminho é patológico por construção.

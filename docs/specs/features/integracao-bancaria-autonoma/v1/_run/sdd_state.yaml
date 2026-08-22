@@ -1,0 +1,26 @@
+feature: "integracao-bancaria-autonoma — F5, fatia (i): autonomia do Admin na integração bancária"
+current_step: execution
+variant: backend
+source: recommended
+source_note: "pre-refinement.md §15.2 recomendou SDD; o comando invocado foi /agent-spec-sdd-generate-prd. Aderente, sem override."
+steps:
+  prd:
+    status: completed
+    summary: "12 US, 21 CA, 15 RN (emendado em 2026-08-21: +CA-21, afirmacao da pre-condicao de ambiente). Tirar do terminal as duas operações da integração bancária que ainda exigem servidor: habilitar a entrega imediata da notícia do provedor por empresa e aceitar o material do certificado como a AC o entrega (fecha o D64)."
+  tech_alignment:
+    status: completed
+    summary: "7 decisoes tecnicas (D1-D7), 12 restricoes herdadas, 4 pontos tecnicos abertos; 12 medicoes (M1-M12) fecham a [DUVIDA] 3 e a hipotese do D2. Nenhuma candidata a ADR: a ADR-0036 ja cobre a conversao, e a leitura composta 0001(c)+0034(Neutros) resolve o motivo integro sem ADR nova."
+  tech_spec:
+    status: completed
+    variant: backend
+    summary: "Conversao do material por processo externo + porta irma de entrega da noticia. 2 rotas novas (superficie 103/88/20 -> 105/90/20), 1 tabela nova em negocio (par de migracoes dominio+seguranca), 3 codigos de erro novos, 1 tarefa de worker. 33 casos de teste (CT-1014..CT-1046), 21/21 CA cobertos. Fecha o D64."
+  validation:
+    status: completed
+    summary: "challenge-spec: 4 questoes, 4 ajustes inline (terminologia canonizada, pre-condicoes do ato externo corrigidas, estritude do esquema do certificado, esquema proprio do desfecho do registro). Glossario global: +2 termos. Candidatos a ADR: 0."
+  task_plan:
+    status: completed
+    summary: "10 tasks em 3 fases, 4 paralelizaveis (T1+T3 na Fase 1; T9+T10 na Fase 3) — a Fase 2 e integralmente sequencial por alta contencao (barril, composicao raiz, diretorio de migracoes). US cobertas: 12/12. 34 casos distribuidos, cada CT em exatamente 1 task: os 33 do tech_spec (CT-1014..CT-1046) detalhados de forma lossless por 4 invocacoes do qa-test-generator consolidadas por camada, mais o CT-1047 ACRESCENTADO — as tres recusas de pre-condicao do ato externo nao tinham caso no mapa da §19.5, embora as §§5.1/5.2/10 as declarem normativas e o challenge Q2 tenha corrigido a forma delas contra o codigo real. Divergencia declarada na §9.1 do task_plan e na §7 da T7; a contagem '33 casos' da §19 fica defasada em 1 e a correcao entra na escrituracao de fecho (T10). Todas as tasks em opus, por decisao do usuario. REAVALIACAO de 2026-08-21, posterior ao fecho do plano: o atrito A1 do tech_spec §19.7 foi REFUTADO por medicao — o CT-1045 NAO exige sudo (extrai a funcao por sed+eval, como o ct_647 ja faz no mesmo verificador), e a bateria completa NAO esta barrada pela ADR-0006 (medido com privilegio: /etc/sysloc/producao NAO existe e o guarda libera) — o que a torna inutil para a task e que ela reprova por 5 falhas pre-existentes ALHEIAS a fatia, escrituradas tres vezes na fundacao-stack-nativa. Nenhuma janela assistida e agendada e NENHUMA regra de sudoers e alterada — recusado com o usuario, porque os bloqueios permanecem. O RUN NAO EXIGE PRESENCA HUMANA. Detalhe na §9.4 do task_plan e na §3.3 da T3; a correcao da §19.7 e da contagem de casos da §19 entra na T10."
+  execution:
+    status: completed
+    tasks_total: 10
+    tasks_completed: 10

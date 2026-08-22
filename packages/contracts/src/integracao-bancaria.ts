@@ -394,6 +394,53 @@ export const esquemaDoCertificado = z.strictObject({
 export type Certificado = z.infer<typeof esquemaDoCertificado>;
 
 /**
+ * A resposta de `POST /v1/integracoes-bancarias/certificados` — o certificado **mais** o desfecho
+ * do ato de registrá-lo (§4.4 da tech spec da fatia `integracao-bancaria-autonoma`).
+ *
+ * ===========================================================================
+ * Ele é esquema PRÓPRIO, e `esquemaDoCertificado` NÃO ganhou campo
+ * ===========================================================================
+ *
+ * A razão é **de categoria**. Aquela projeção descreve **o certificado** — titular, validade,
+ * impressão digital, autoria. *"Foi convertido"* não é propriedade do certificado: é propriedade do
+ * **ato de registrá-lo**. Pô-la lá dentro teria dois custos, e os dois são concretos:
+ *
+ * 1. a **consulta** (`GET`) devolve a mesma projeção, e passaria a publicar um campo que ali ou é
+ *    mentira ou exige coluna nova numa tabela existente — migração que esta fatia não carrega, para
+ *    um fato que o PRD **não pede** na consulta;
+ * 2. `esquemaDoCertificado` é `z.strictObject` **de propósito**, como salvaguarda contra campo
+ *    inesperado na projeção do certificado — *"o campo a mais que pode aparecer aqui é o segredo do
+ *    provedor entrando na resposta"*. Alargá-lo por conveniência gastaria exatamente a salvaguarda.
+ *
+ * **Alternativa considerada e rejeitada** — persistir a conversão no certificado: custa coluna nova
+ * em tabela existente e mais uma migração, para responder a uma pergunta que o PRD só faz no
+ * instante do registro. Fica registrada: se a consulta vier a precisar do fato, é este o caminho, e
+ * ele **não** é reabrir esta decisão.
+ *
+ * ---------------------------------------------------------------------------
+ * A forma é a de `esquemaDaAtivacaoDeContrato`, e o precedente é o argumento
+ * ---------------------------------------------------------------------------
+ *
+ * `contrato.ts` já resolveu esta mesma pergunta: a resposta da ativação é o contrato **estendido**
+ * com a declaração de efeito (`efeitos`), e não um envelope novo em volta dele. Derivar por
+ * `extend` — em vez de redigitar os nove campos — é o que a ADR-0016 exige: a projeção do
+ * certificado tem **uma** definição, e quem a acompanha a importa. Um envelope aninhado teria a
+ * mesma expressividade e romperia a forma que a base já usa para "o recurso mais o efeito do ato".
+ *
+ * ⚠️ **O booleano é fechado nos DOIS sentidos, e nunca ausente**: `false` é resposta, e não omissão.
+ * Um campo opcional faria *"não precisou converter"* e *"esta versão não sabe responder"* chegarem
+ * ao Admin com a mesma forma.
+ */
+export const esquemaDoDesfechoDoRegistroDeCertificado = esquemaDoCertificado.extend({
+  materialConvertido: z.boolean(),
+});
+
+/** O desfecho do registro do certificado, como a API o devolve. */
+export type DesfechoDoRegistroDeCertificado = z.infer<
+  typeof esquemaDoDesfechoDoRegistroDeCertificado
+>;
+
+/**
  * Maior comprimento aceito para o identificador da aplicação perante o provedor — 256.
  *
  * Teto **anti-abuso**, e não regra de domínio: quem decide se o identificador está certo é o
@@ -491,3 +538,327 @@ export const esquemaDoResultadoDaVerificacao = z.strictObject({
 
 /** O desfecho da verificação da identidade no provedor. */
 export type ResultadoDaVerificacao = z.infer<typeof esquemaDoResultadoDaVerificacao>;
+
+// ===========================================================================
+// A ENTREGA DA NOTÍCIA DO PROVEDOR — o estado publicado e o motivo da recusa
+// ===========================================================================
+
+/**
+ * Os dois estados da entrega da notícia do provedor, na ordem publicada.
+ *
+ * ---------------------------------------------------------------------------
+ * São DOIS, e a lista existe para que o terceiro não nasça sem ninguém decidir
+ * ---------------------------------------------------------------------------
+ *
+ * O glossário canoniza o termo com exatamente estes dois: *habilitada* e *desabilitada*. Não existe
+ * um terceiro — e nomeadamente **não existe** um estado *pendente* ou *em verificação*, porque a
+ * ativação é síncrona e não há período em que o produto não saiba responder. Enquanto desabilitada,
+ * a conferência periódica continua produzindo o efeito: a ausência é **estado declarado**, nunca
+ * silêncio.
+ *
+ * ⚠️ **`habilitada` sai na projeção como BOOLEANO, e não como este rótulo** — ver
+ * {@link esquemaDoEstadoDaEntrega}. Esta lista é o **vocabulário**, e é ela que torna a decisão
+ * *"são dois, e só dois"* verificável: um terceiro estado obriga a editar este arquivo, e o esquema
+ * publicado a deixar de ser booleano. É a mesma régua de {@link MEIOS_DE_RECEBIMENTO}, que declara o
+ * pix sem operação para que a fatia que o implementar **não precise alargar vocabulário publicado**
+ * — que é mudança de contrato — e sim acrescentar a operação.
+ *
+ * `as const` fecha a união em **compilação**; `Object.freeze` fecha o arranjo em **execução**, e é a
+ * segunda metade que sobrevive ao build — sem ela, um consumidor alarga a lista com um `push` e o
+ * produto passa a falar de um estado que ninguém decidiu.
+ */
+export const ESTADOS_DA_ENTREGA = Object.freeze([
+  'HABILITADA',
+  'EM_VALIDACAO',
+  'DESABILITADA',
+] as const);
+
+/**
+ * O estado da entrega, como o produto o nomeia — **três**, e o do meio é o que faltava.
+ *
+ * ⚠️ **`EM_VALIDACAO` não é habilitada nem desabilitada.** É o estado em que **toda** ação corretiva
+ * do produto desemboca — cadastrar, corrigir o endereço e reativar levam os três a ele, e é a
+ * documentação do provedor que o diz —, porque a validação do endereço é assíncrona por construção.
+ * O booleano {@link esquemaDoEstadoDaEntrega} `habilitada` continua existindo e continua significando
+ * o que sempre significou; ele é `false` durante a validação, porque a entrega ainda não entrega.
+ *
+ * Quem lê a tela deve preferir este campo ao booleano: *"em validação"* e *"desabilitada"* pedem
+ * condutas opostas do Admin — a primeira é esperar, a segunda é agir.
+ */
+export type SituacaoDaEntregaPublicada = (typeof ESTADOS_DA_ENTREGA)[number];
+
+/**
+ * Quantas chaves o `diagnostico` da recusa admite — teto **anti-abuso**, e não regra de domínio.
+ *
+ * ---------------------------------------------------------------------------
+ * Ele é generoso DE PROPÓSITO, e a razão é a assimetria do erro
+ * ---------------------------------------------------------------------------
+ *
+ * O que se guarda vem de terceiro, e **não se limita por confiança**: sem teto, quem responde decide
+ * sozinho quanto o produto grava e publica. Mas recusar um diagnóstico legítimo é o defeito caro —
+ * perde-se exatamente a informação que a RN-02 manda preservar íntegra, e quem opera fica sem saber
+ * por que a entrega não subiu. Aceitar um diagnóstico grande custa bytes numa coluna.
+ *
+ * ⚠️ **O número NÃO é medido contra a recusa real do provedor, e a honestidade disso é a lição do
+ * `MAIOR_MATERIAL_CODIFICADO`**: aquele teto foi dimensionado com folga generosa sobre uma premissa
+ * que estava errada, e recusou o certificado de produção em 2026-08-20. Aqui não há medição a
+ * invocar — a recusa do cadastro nunca foi observada —, e por isso o critério declarado é **a folga
+ * larga sobre o plausível**, não a proporção sobre um valor. Uma resposta de erro com mais de três
+ * dezenas de campos distintos não é diagnóstico: é payload que ninguém desenhou para ser lido.
+ *
+ * ---------------------------------------------------------------------------
+ * QUEM APLICA o teto: a camada que GRAVA — este arquivo publica o número, e só
+ * ---------------------------------------------------------------------------
+ *
+ * O teto vigora em `limitarDiagnostico`, chamada por `gravarDesfechoDaEntrega` em
+ * `packages/db/src/entrega-da-noticia.ts` — o **único** ponto da árvore que escreve
+ * `motivo_diagnostico` —, e lá ele **trunca**, pela assimetria argumentada acima: perder parte do
+ * diagnóstico é barato, perder a recusa inteira não é.
+ *
+ * ⚠️ **Não leia esta constante como se o esquema publicado a fizesse valer.** Os dois `.refine()` de
+ * {@link esquemaDoMotivoDaRecusa} a repetem, mas esquema de **saída não é `parse`ado em execução**
+ * nesta base, e `.refine()` não sobrevive ao `z.toJSONSchema` que gera o documento — ver a nota
+ * daquele campo. O número mora aqui porque é contrato publicado; a **vigência** dele é da camada de
+ * dados.
+ */
+export const MAIOR_DIAGNOSTICO_EM_CHAVES = 32;
+
+/**
+ * Quantos caracteres o `diagnostico` da recusa admite ao todo — o segundo eixo do teto anti-abuso.
+ *
+ * Os dois eixos existem porque um sozinho não fecha: trinta e duas chaves comportam um megabyte se
+ * uma delas carregar um texto imenso, e um teto só de tamanho comporta milhares de chaves minúsculas
+ * — a primeira forma estoura a coluna, a segunda estoura quem percorre o objeto. Cada eixo recusa
+ * sozinho, nomeando o mesmo campo.
+ *
+ * A contagem é sobre a **serialização** do registro, que é a forma em que ele viaja e em que ele é
+ * gravado — contar sobre a estrutura obrigaria a percorrê-la para decidir se a aceita, o que é fazer
+ * trabalho sobre entrada não conferida. Vale aqui o parágrafo de {@link MAIOR_DIAGNOSTICO_EM_CHAVES}
+ * sobre a ausência de medição: 8 KiB é folga larga sobre qualquer corpo de erro plausível, e não
+ * proporção sobre um número observado.
+ */
+export const MAIOR_DIAGNOSTICO_EM_CARACTERES = 8192;
+
+/**
+ * O eixo de tamanho do teto, como **predicado total** — ele decide para todo registro, e não apenas
+ * para os que sabem virar texto.
+ *
+ * DECISÃO FECHADA — D17 · F5/T5 · fechado na intervenção dirigida de 2026-08-22
+ * O QUÊ: a serialização que mede o teto acontece dentro de `try/catch`, e o valor que não serializa
+ *        **reprova o refino** em vez de propagar a exceção.
+ * POR QUÊ: `z.record(z.string(), z.unknown())` admite qualquer valor, e `JSON.stringify` **lança**
+ *        para `BigInt` e para referência circular. O Zod não captura exceção arbitrária levantada
+ *        dentro de um refinamento, de modo que `safeParse` **propagava** em vez de devolver
+ *        `{ success: false }` — quebrando o contrato tácito de que `safeParse` não levanta, e
+ *        quebrando-o justo no guarda anti-abuso, cujo docblock declara que *"o que chega de terceiro
+ *        não se limita por confiança"*. Medido contra o `dist/` de então:
+ *        `Do not know how to serialize a BigInt` e `Converting circular structure to JSON`.
+ * POR QUE ASSIM, e não enumerando os valores ofensores: a proteção é sobre **o ato de serializar**,
+ *        e não sobre uma lista — de modo que ela alcança também o `toJSON` que lança e o `Proxy` que
+ *        lança na leitura, sem que ninguém precise prevê-los. Lista de valores proibidos nasceria
+ *        incompleta e envelheceria a cada runtime novo.
+ * REVERTER EXIGE: provar que nenhum valor não serializável alcança este esquema — o que a abertura
+ *        deliberada de `z.unknown()` torna impossível de afirmar.
+ *
+ * Recusar é a leitura **correta**, e não uma degradação: valor que não vira texto é, por definição,
+ * diagnóstico que o produto não pode gravar — a coluna é `jsonb`, e o caminho até ela é serialização.
+ */
+function cabeNoTetoDeCaracteres(registro: Record<string, unknown>): boolean {
+  try {
+    return JSON.stringify(registro).length <= MAIOR_DIAGNOSTICO_EM_CARACTERES;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * O motivo da recusa do provedor (§4.2) — **três campos de nome do produto, valores dele**.
+ *
+ * ===========================================================================
+ * A conciliação entre a RN-02 e a ADR-0001, exercida nas duas direções
+ * ===========================================================================
+ *
+ * O PRD exige o motivo íntegro; a ADR-0001 proíbe vocabulário de provedor de cruzar a porta. As duas
+ * valem juntas porque a cláusula é do **vocabulário**, e vocabulário é **nome**, não valor — a mesma
+ * leitura que a emenda de 2026-08-17 aplica à credencial de acesso, e a que o `Neutros` da ADR-0034
+ * ancora ao declarar que *"o que o terceiro informou continua preservado como diagnóstico"*.
+ *
+ * Por isso os três nomes aqui são do produto e nenhum deles nomeia chave alguma do provedor, o que é
+ * exigível por varredura sobre as chaves deste `shape`; e por isso o `diagnostico` é **aberto**, o
+ * que é exigível pela aceitação, em execução, de um registro cuja chave é do provedor.
+ *
+ * ---------------------------------------------------------------------------
+ * O objeto é FECHADO, e só o portador é aberto — a abertura é local
+ * ---------------------------------------------------------------------------
+ *
+ * `strictObject` aqui, num esquema de saída, é a mesma exceção deliberada de
+ * {@link esquemaDoCertificado} e de {@link esquemaDaIdentidade}, aplicada onde ela é barata: os três
+ * campos são todos os que existem, e um quarto que apareça nesta projeção é sinal de que quem a
+ * montou espalhou o objeto do provedor aqui dentro — que é precisamente a alternativa A2 que o D5
+ * rejeitou. O que **precisa** ser aberto é um campo só, e ele é aberto por natureza.
+ *
+ * ⚠️ **Nenhum ramo do produto lê dentro deste objeto.** Quem decide habilitada/desabilitada é o
+ * desfecho canônico da porta, e é isso que torna inócuo um código de recusa que ninguém previu — não
+ * há tabela que o traduza nem `switch` que o consulte.
+ */
+export const esquemaDoMotivoDaRecusa = z.strictObject({
+  /** O código que o provedor devolveu, íntegro. */
+  codigo: z.string(),
+  /** A mensagem que o provedor devolveu, íntegra. */
+  mensagem: z.string(),
+  /**
+   * Os campos que variam por código de recusa — **portador opaco**, sem esquema, e **anulável**.
+   *
+   * ---------------------------------------------------------------------------
+   * O nulo é CONTEÚDO, e ele existe porque a camada de dados o admite
+   * ---------------------------------------------------------------------------
+   *
+   * `null` significa *"o provedor recusou e não mandou campo variável nenhum"* — e é **distinto de
+   * `{}`**, que é *"mandou um registro, e ele está vazio (ou o teto o esvaziou)"*. A distinção não é
+   * teórica: `negocio.entrega_da_noticia.motivo_diagnostico` é `jsonb` **anulável**, e a `CHECK` de
+   * coerência da `0023` amarra a mensagem ao código mas exige do diagnóstico apenas
+   * `motivo_diagnostico IS NULL OR motivo_codigo IS NOT NULL` — *código sem diagnóstico é estado
+   * permitido por construção*, e `MotivoDaRecusaDoProvedor` de `@sysloc/db` já o declara
+   * `Record<string, unknown> | null`.
+   *
+   * ⚠️ **Publicar este campo como obrigatório seria o contrato mentindo sobre o dado gravado**, e a
+   * mentira não teria quem a acusasse: esquema de saída não é `parse`ado em execução. O consumidor
+   * leria `motivo.diagnostico` num tipo que o autorizou e receberia `null`. **Esta é a última janela
+   * antes do congelamento da superfície** — tornar campo de saída anulável depois quebra cliente
+   * publicado —, e por isso o lado que se move é o contrato, que é o único ainda móvel; a `0023` está
+   * aplicada e é imutável.
+   *
+   * ⚠️ **Quem compõe esta projeção NÃO converte o nulo em `{}`.** `?? {}` transformaria *"o provedor
+   * não mandou campo nenhum"* em *"mandou um objeto vazio"* — a mesma mentira sobre a origem que o
+   * docblock de `ResultadoDaOperacaoDeEntrega` proíbe um nível acima, ao recusar preencher `motivo`
+   * com texto do produto quando o provedor não respondeu.
+   *
+   * ---------------------------------------------------------------------------
+   * Os dois `.refine()` são CONFERÊNCIA DE LEITURA, e NÃO são o que faz o teto valer
+   * ---------------------------------------------------------------------------
+   *
+   * Eles são conferidos separadamente para que cada eixo recuse sozinho, e os dois reportam o `path`
+   * do **campo**: um refino sem `path` próprio nomearia a raiz, e a recusa chegaria sem dizer o que
+   * corrigir. Isso vale **quando alguém chama `parse`/`safeParse` sobre este esquema** — o que hoje
+   * nenhum ponto do produto faz, porque saída publicada só atravessa `esquemaPublicado(…, 'output')`,
+   * que chama `z.toJSONSchema` e **descarta refino**.
+   *
+   * ⚠️ **Portanto eles não são a guarda; a guarda é `limitarDiagnostico`**, em
+   * `packages/db/src/entrega-da-noticia.ts`, no ponto que grava. Ficam aqui porque **usam as mesmas
+   * duas constantes** e assim afirmam uma propriedade real e exigível: *tudo o que a camada de dados
+   * deixa passar satisfaz o esquema publicado*. Um teto que divergisse do outro reprovaria essa
+   * afirmação. Ler estes refinos como contenção de dado de terceiro é o defeito que a rodada 1 desta
+   * task cometeu, e por isso a natureza deles está escrita aqui.
+   */
+  diagnostico: z
+    .record(z.string(), z.unknown())
+    .refine((registro) => Object.keys(registro).length <= MAIOR_DIAGNOSTICO_EM_CHAVES, {
+      error: `o diagnóstico da recusa excede ${MAIOR_DIAGNOSTICO_EM_CHAVES} chaves`,
+    })
+    .refine((registro) => cabeNoTetoDeCaracteres(registro), {
+      error: `o diagnóstico da recusa excede ${MAIOR_DIAGNOSTICO_EM_CARACTERES} caracteres`,
+    })
+    .nullable(),
+});
+
+/** O motivo da recusa do provedor, como a API o devolve. */
+export type MotivoDaRecusa = z.infer<typeof esquemaDoMotivoDaRecusa>;
+
+/**
+ * O estado da entrega da notícia do provedor (§4.2) — **três** campos.
+ *
+ * ===========================================================================
+ * `z.object`, e a estritude de `esquemaDoCertificado` NÃO se afrouxa por isto
+ * ===========================================================================
+ *
+ * A `.claude/rules/contrato-publicado.md` fixa que a **direção decide a estritude**: saída é aberta,
+ * para que um campo novo possa nascer sem quebrar cliente já publicado. As duas exceções desta fatia
+ * — {@link esquemaDoCertificado} e {@link esquemaDaIdentidade} — são estritas por razão escrita e
+ * **específica**: *"o campo a mais que pode aparecer naquela projeção é o segredo do provedor
+ * entrando na resposta"*, e ali a queda da rota é preferível ao vazamento.
+ *
+ * **Aqui a classe é outra**: esta projeção não deriva de linha que contenha segredo — ela é composta
+ * das colunas do estado —, e a exceção não se propaga por vizinhança. O que permanece fechado é o
+ * objeto do motivo, e a abertura fica confinada ao portador que é aberto por natureza.
+ *
+ * ---------------------------------------------------------------------------
+ * A anulabilidade dos dois campos é conteúdo, e não conveniência
+ * ---------------------------------------------------------------------------
+ *
+ * `verificadaEm` é nulo quando **nunca houve tentativa** (CA-19) — é assim que a empresa recém-criada
+ * se distingue da que tentou e foi recusada, e as duas têm `habilitada: false`. `motivo` é nulo
+ * quando não há recusa a explicar: ou porque a entrega está habilitada, ou porque nunca se tentou, ou
+ * porque o provedor não chegou a responder e não houve o que preservar íntegro.
+ *
+ * ⚠️ **`habilitada` é booleano, e o vocabulário dos dois estados vive em {@link ESTADOS_DA_ENTREGA}.**
+ * O booleano é a forma exata de um domínio de dois valores; publicar o rótulo obrigaria o consumidor
+ * a comparar cadeia onde uma negação basta. A lista existe para que o terceiro estado não possa
+ * nascer sem que este arquivo mude.
+ */
+export const esquemaDoEstadoDaEntrega = z.object({
+  habilitada: z.boolean(),
+  /**
+   * O estado ternário — **o campo que o consumidor deve ler**, e o booleano acima é a projeção dele.
+   *
+   * ⚠️ **Campo NOVO numa saída ABERTA**, e é por isso que ele pode nascer sem quebrar cliente já
+   * publicado: a `.claude/rules/contrato-publicado.md` fixa que a direção decide a estritude, e
+   * saída é aberta exatamente para isto. Nenhum campo saiu, nenhum mudou de tipo, e `habilitada`
+   * continua valendo o que sempre valeu — a `CHECK` do banco amarra os dois desde a `0025`.
+   */
+  situacao: z.enum(ESTADOS_DA_ENTREGA),
+  verificadaEm: z.iso.datetime().nullable(),
+  motivo: esquemaDoMotivoDaRecusa.nullable(),
+});
+
+/** O estado da entrega da notícia, como a API o devolve. */
+export type EstadoDaEntrega = z.infer<typeof esquemaDoEstadoDaEntrega>;
+
+/**
+ * O corpo da ativação da entrega — **vazio, e FECHADO**.
+ *
+ * ---------------------------------------------------------------------------
+ * O corpo vazio é a decisão, e o `strictObject` é o que a torna exigível
+ * ---------------------------------------------------------------------------
+ *
+ * A empresa vem do **contexto da sessão** (ADR-0008/0009), e o que se cadastra é inteiramente
+ * determinado pela identidade já registrada: não sobra nada que o cliente escolha. Um corpo que
+ * aceitasse campo abriria caminho para o cliente influenciar o destino da chamada ao provedor, que é
+ * a forma canônica do defeito de requisição forjada do lado do servidor.
+ *
+ * ⚠️ **Ele NÃO é dispensável por ser vazio.** Sem esquema declarado, a rota não teria com o que
+ * recusar `{ empresaId: … }`, e a chave passaria em silêncio — a ausência de campos é o que se quer,
+ * e o `strictObject` é o que converte a tentativa de acrescentar um em recusa **nomeando a chave**,
+ * sem uma linha de verificação escrita à mão.
+ *
+ * ---------------------------------------------------------------------------
+ * ⚠️ A tensão com `ESQUEMA_DO_CORPO_VAZIO` da borda é REAL, e fica declarada
+ * ---------------------------------------------------------------------------
+ *
+ * `apps/api/src/comum/esquema-de-corpo-vazio.ts` publica `ESQUEMA_DO_CORPO_VAZIO`, que é
+ * `z.strictObject({})` — a mesma forma. Ele é o fecho do débito **D23**, que juntou **quatro** cópias
+ * byte a byte espalhadas por controladores, e o `CT-357` mantém a unificação por igualdade de
+ * conjunto. Declarar aqui uma segunda constante da mesma forma **parece** reabrir aquilo, e não
+ * reabre — por três razões, e as três são verificáveis:
+ *
+ * 1. **Os dois não são o mesmo fato.** Aquele é a forma **anônima** que a borda aplica a ato cujo
+ *    efeito o servidor decide inteiramente, e nenhuma das quatro rotas que o usam tem elemento de
+ *    contrato próprio. Este é elemento **nomeado** da superfície publicada: é dele que o documento
+ *    OpenAPI da rota deriva (ADR-0016), e é ele que `@sysloc/contracts` entrega ao frontend. É a
+ *    mesma distinção — e a mesma razão — que separa `ResultadoDaVerificacaoDeIdentidade`, do domínio,
+ *    de {@link esquemaDoResultadoDaVerificacao}, do contrato: dois fatos distintos que hoje têm a
+ *    mesma forma.
+ * 2. **A direção da dependência proíbe a alternativa.** Este pacote é **folha** e não importa nada do
+ *    produto; `apps/api` importa daqui. Reusar a constante da borda faria a fonte única do contrato
+ *    depender da aplicação, que é a aresta que a topologia do monorepo não admite.
+ * 3. **O risco que o D23 fechou não existe aqui.** O docblock daquele módulo o escreve por extenso:
+ *    *"um objeto estrito vazio não tem variação de comportamento possível, de modo que não havia
+ *    defeito ativo"* — o custo era de **superfície**, e ele foi pago juntando as cópias que viviam no
+ *    **mesmo** pacote e no mesmo papel. Esta declaração não é uma quinta cópia daquele papel.
+ *
+ * ⚠️ **Quem consumir esta rota importa ESTE esquema, e não a constante da borda.** Usar as duas para
+ * a mesma rota é que criaria o segundo caminho — e é isso, e não a coexistência, que se proíbe.
+ */
+export const esquemaDaAtivacaoDaEntrega = z.strictObject({});
+
+/** O corpo aceito na ativação da entrega da notícia. */
+export type AtivacaoDaEntrega = z.infer<typeof esquemaDaAtivacaoDaEntrega>;

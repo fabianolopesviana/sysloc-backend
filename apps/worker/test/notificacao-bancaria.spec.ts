@@ -342,6 +342,17 @@ const UMA_TENTATIVA = 1;
 const CAMPO_DIVERGENTE_ESPERADO = 'numeroDoTituloNoProvedor';
 
 /**
+ * O preenchimento à esquerda com que o **webhook** entrega o número do título — o eixo do `CT-1051`.
+ *
+ * Escrito por extenso, e jamais derivado do SUT que ele confere: derivá-lo poria o artefato sob prova
+ * nos dois lados da igualdade. O valor vem da documentação oficial do provedor, que mostra
+ * `"nossoNumero": "0000002443"` no corpo entregue — cadeia de largura fixa —, enquanto a **consulta**
+ * (`GET /boletos`) devolve o mesmo campo como inteiro. São dois caminhos do provedor com duas
+ * representações do mesmo título, e é essa diferença que o `W1` fechou.
+ */
+const PREENCHIMENTO_DO_PROVEDOR = '0000';
+
+/**
  * O número do cliente que a identidade do arranjo declara — o valor contra o qual a segunda metade
  * da RN-05 compara. Fixo, e igual ao que `registrarIdentidadeNoProvedor` semeia.
  */
@@ -1279,6 +1290,101 @@ describe('CT-1006 — título gravado NULO não é divergência', () => {
       // E o número que foi ao provedor é o **recebido**, porque não havia gravado — é o único caso em
       // que a notícia é a única fonte da chave do provedor.
       expect(adaptador.consultas[0]?.numeroDoTituloNoProvedor).toBe(cobranca.numeroDoTitulo);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});
+
+// ===========================================================================
+// CT-1051 — o preenchimento à esquerda do webhook NÃO é divergência (W1)
+// ===========================================================================
+
+describe('CT-1051 — o número do título com zeros à esquerda é o MESMO título', () => {
+  it(
+    'CT-1051 (a) — a notícia com o número preenchido à esquerda é aplicada, e não recusada',
+    async () => {
+      const cobranca = await semearCobranca(EMPRESA_A.id);
+      const adaptador = adaptadorQueLiquida();
+      const fila = montarConsumidor(adaptador.porta);
+
+      // ⚠️ O ARRANJO É O CASO: é assim que o número chega de verdade. O gravado veio da **emissão**
+      // (`POST /boletos`), onde o provedor devolve `nossoNumero` como INTEIRO e a fronteira o coage
+      // — sem zeros. O recebido vem do **webhook**, cuja documentação oficial o mostra como cadeia de
+      // largura fixa: `"0000002443"`. Mesmo título, duas representações, dois caminhos do provedor.
+      const preenchido = `${PREENCHIMENTO_DO_PROVEDOR}${cobranca.numeroDoTitulo}`;
+      expect(preenchido).not.toBe(cobranca.numeroDoTitulo);
+      expect(preenchido.length).toBeGreaterThan(cobranca.numeroDoTitulo.length);
+
+      const notificacaoId = await gravarCru(avisoDe(cobranca.identificador, preenchido));
+
+      expect(await (await executarTarefa(fila, { notificacaoId })).getState()).toBe('completed');
+
+      // ⚠️ A ASSERÇÃO QUE DISCRIMINA O `W1`: com a comparação por igualdade de cadeia — a de antes —
+      // `"2443" === "0000002443"` é falso, o desfecho sai `DIVERGENTE` e o pagamento NÃO é aplicado.
+      // Como o formato do provedor é de largura fixa, isso valia para quase toda notícia legítima.
+      expect((await lerCru(notificacaoId)).desfecho).not.toBe('DIVERGENTE');
+      expect((await lerCru(notificacaoId)).desfecho).toBe('APLICADO');
+
+      // E o efeito aconteceu de fato: a consulta correu e nenhuma anomalia foi publicada. Sem estas
+      // duas, "não é DIVERGENTE" seria compatível com uma notícia que morreu por outro caminho.
+      expect(adaptador.consultas.length).toBe(1);
+      expect((await lerTrilha(cobranca)).filter((e) => e.tipo === 'NOTICIA_RECUSADA')).toEqual([]);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-1051 (b) — ANTIVÁCUO: número DIFERENTE segue divergente, mesmo preenchido à esquerda',
+    async () => {
+      const cobranca = await semearCobranca(EMPRESA_A.id);
+      const adaptador = adaptadorQueResponde(() => {
+        throw new Error('a porta não pode ser alcançada por uma notícia divergente');
+      });
+      const fila = montarConsumidor(adaptador.porta);
+
+      // ⚠️ ESTA PERNA É INDIVISÍVEL DA (a), e é o que a torna prova. Uma "normalização" que devolvesse
+      // sempre `undefined` — isto é, que nunca divergisse — passaria na (a) e destruiria a RN-05
+      // inteira sem que nada acusasse. Aqui o número é OUTRO, e o preenchimento não pode salvá-lo.
+      const outroPreenchido = `${PREENCHIMENTO_DO_PROVEDOR}${comUmDigitoTrocado(cobranca.numeroDoTitulo)}`;
+      const notificacaoId = await gravarCru(avisoDe(cobranca.identificador, outroPreenchido));
+
+      expect(await (await executarTarefa(fila, { notificacaoId })).getState()).toBe('completed');
+
+      expect((await lerCru(notificacaoId)).desfecho).toBe('DIVERGENTE');
+      expect(adaptador.consultas).toEqual([]);
+
+      const recusas = (await lerTrilha(cobranca)).filter((e) => e.tipo === 'NOTICIA_RECUSADA');
+      expect(recusas.length).toBe(1);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-1051 (c) — o ramo do título AUSENTE sobreviveu à normalização',
+    async () => {
+      const cobranca = await semearCobranca(EMPRESA_A.id);
+
+      // A revogação pela via legítima, como no CT-1006 — é ela que produz o par
+      // *identificador vivo × título nulo*.
+      await emUnidade(EMPRESA_A.id, async (tx) => {
+        expect((await revogarBoleto(tx, cobranca.codigo)).desfecho).toBe('REVOGADO');
+      });
+      expect((await retratoDaCobranca(cobranca))?.numero_do_titulo_no_provedor).toBeNull();
+
+      const adaptador = adaptadorQueResponde(() => ({ situacao: 'EM_ABERTO', documento: null }));
+      const fila = montarConsumidor(adaptador.porta);
+
+      // ⚠️ Aqui o recebido vem PREENCHIDO, que é a forma real — e é o que faz esta perna acrescentar
+      // ao `CT-1006` em vez de repeti-lo: ela prova que a normalização não passou a normalizar o
+      // ramo da AUSÊNCIA. *Ausência não é divergência* continua valendo, e o `null` chega intocado.
+      const notificacaoId = await gravarCru(
+        avisoDe(cobranca.identificador, `${PREENCHIMENTO_DO_PROVEDOR}${cobranca.numeroDoTitulo}`),
+      );
+
+      expect(await (await executarTarefa(fila, { notificacaoId })).getState()).toBe('completed');
+
+      expect(adaptador.consultas.length).toBe(1);
+      expect((await lerTrilha(cobranca)).filter((e) => e.tipo === 'NOTICIA_RECUSADA')).toEqual([]);
     },
     LIMITE_DO_CASO_MS,
   );

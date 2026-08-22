@@ -320,6 +320,68 @@ describe('CT-003 (c) — o código de fecho da classificação entra no enum fec
   });
 });
 
+/**
+ * Os três códigos que a F5 acrescenta — as três causas de recusa do registro do certificado.
+ *
+ * Escritos como literais pela mesma razão de {@link CODIGOS_FIXADOS} e de
+ * {@link CODIGOS_DA_IDENTIDADE}: derivá-los do enum tornaria o caso incapaz de detectar renomeação,
+ * que é o que a ADR-0007 declara incompatível. Lista **separada**, e não acréscimo às de cima, para
+ * que a distinção entre o que cada fase fixou continue legível no dia em que uma delas mudar.
+ */
+const CODIGOS_DO_MATERIAL_DO_CERTIFICADO = [
+  'MATERIAL_EM_FORMATO_NAO_SUPORTADO',
+  'SENHA_DO_MATERIAL_NAO_ABRE',
+  'CERTIFICADO_COM_VALIDADE_ENCERRADA',
+] as const;
+
+describe('CT-003 (d) — os três códigos do material do certificado entram no enum fechado', () => {
+  // ⚠️ O sufixo é **(d)**: (b) é o dos três de identidade e (c) é o do código de fecho da
+  // classificação. Bloco NOVO — nenhum caso acima foi alterado, e a assimetria que o CT-003
+  // registra (superconjunto, nunca igualdade) é o que torna o acréscimo retrocompatível.
+  it.each(CODIGOS_DO_MATERIAL_DO_CERTIFICADO)('mantém %s com grafia idêntica', (fixado) => {
+    expect(Object.values(CodigoErro)).toContain(fixado);
+  });
+
+  it('tem os três em maiúsculo-com-sublinhado, com nome e valor coincidentes', () => {
+    const porNome = CodigoErro as Record<string, string | undefined>;
+
+    for (const nome of CODIGOS_DO_MATERIAL_DO_CERTIFICADO) {
+      // O nome vem da lista externa e o valor vem do SUT — é essa distância que discrimina a
+      // entrada cujo VALOR diverge do nome.
+      expect(porNome[nome], `código fora da convenção de grafia: ${nome}`).toMatch(GRAFIA_DO_ENUM);
+      expect(porNome[nome]).toBe(nome);
+    }
+  });
+
+  it('são TRÊS códigos distintos, e nenhum deles é CAMPO_INVALIDO', () => {
+    // Companheiro negativo, e o eixo que a fatia existe para fechar: um enum que apontasse os três
+    // nomes para `CAMPO_INVALIDO` passaria nas asserções de presença acima, e as três causas
+    // voltariam a ser indistinguíveis pelo `codigo` — que é exatamente o defeito do `D64`.
+    const doMaterial = CODIGOS_DO_MATERIAL_DO_CERTIFICADO.map(
+      (nome) => (CodigoErro as Record<string, string | undefined>)[nome],
+    );
+
+    expect(new Set(doMaterial).size).toBe(CODIGOS_DO_MATERIAL_DO_CERTIFICADO.length);
+    for (const codigo of doMaterial) {
+      expect(codigo).not.toBe(CodigoErro.CAMPO_INVALIDO);
+    }
+  });
+
+  it('os três saem em 422, como a recusa de entrada que eles são', () => {
+    // O status é o de `CAMPO_INVALIDO` de propósito: o que a fatia acrescenta é a distinção do
+    // CÓDIGO, e não uma natureza nova de desfecho. A comparação é contra o status daquele código, e
+    // não contra o literal, para que a relação entre os quatro fique amarrada num ponto só.
+    for (const nome of CODIGOS_DO_MATERIAL_DO_CERTIFICADO) {
+      const codigo = (CodigoErro as Record<string, string | undefined>)[nome] as TipoCodigoErro;
+
+      expect(new ErroDeAplicacao(codigo, 'mensagem fixa').status).toBe(422);
+      expect(new ErroDeAplicacao(codigo, 'mensagem fixa').status).toBe(
+        new ErroDeAplicacao(CodigoErro.CAMPO_INVALIDO, 'mensagem fixa').status,
+      );
+    }
+  });
+});
+
 describe('CT-005 — todo valor do enum tem status mapeado na faixa de erro', () => {
   it.each(Object.values(CodigoErro))('%s produz status inteiro entre 400 e 599', (codigo) => {
     const erro = new ErroDeAplicacao(codigo, 'mensagem fixa');

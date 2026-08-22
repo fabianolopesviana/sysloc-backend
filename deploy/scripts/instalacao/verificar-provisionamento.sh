@@ -3,7 +3,8 @@
 # Verificação do provisionamento dos serviços de base — T2 da fatia
 # `fundacao-stack-nativa`.
 #
-# Casos cobertos: CT-001, CT-002, CT-003, CT-004, CT-005 e CT-030.
+# Casos cobertos: CT-001, CT-002, CT-003, CT-004, CT-005, CT-030, CT-647 e
+# CT-1045.
 #
 # O que este script prova, em uma frase por caso:
 #
@@ -27,7 +28,12 @@
 #           capaz de contornar a política de linha, o da aplicação não pertence a
 #           nenhum dos outros três, a membership do migrador nos dois papéis de
 #           travessia nominal é `INHERIT FALSE`, e os schemas pertencem ao papel
-#           de migração com uso concedido ao papel da aplicação.
+#           de migração com uso concedido ao papel da aplicação;
+#   CT-1045 a pré-condição de ambiente da CONVERSÃO do material do certificado
+#           (ADR-0036) é afirmada — o binário de criptografia do host E o
+#           provider legado —, e a ausência de qualquer uma das duas metades
+#           REPROVA nomeando o recurso que falta, em vez de deixar a descoberta
+#           para a renovação que o Admin faz pela tela.
 #
 # ---------------------------------------------------------------------------
 # Como esta bateria é executada
@@ -187,6 +193,11 @@ falhas_totais=0
 falhas_caso=0
 casos_aprovados=0
 casos_executados=0
+# Degradação declarada: asserção que o host não permitiu medir. Não é falha —
+# não altera o código de saída —, mas o resumo final a repete, para que um
+# `AVISO` no meio de uma bateria longa não passe despercebido e vire verde
+# silencioso. Mesma conduta do irmão `verificar-preparacao-do-material.sh`.
+avisos_totais=0
 
 # --------------------------------------------------------------------------- #
 # Asserções — mesma convenção de `verificar-workspace.sh` e `verificar-golden.sh`.
@@ -205,7 +216,10 @@ falhar() {
 	printf '    FALHA %s\n' "$*" >&2
 }
 
-aviso() { printf '    AVISO %s\n' "$*" >&2; }
+aviso() {
+	avisos_totais=$((avisos_totais + 1))
+	printf '    AVISO %s\n' "$*" >&2
+}
 
 nota() { printf '    ..   %s\n' "$*"; }
 
@@ -2243,6 +2257,214 @@ ct_647() {
 	fechar_caso "CT-647"
 }
 
+# --------------------------------------------------------------------------- #
+# Pré-condição de ambiente da CONVERSÃO DO MATERIAL DO CERTIFICADO (ADR-0036).
+#
+# CAUSA-RAIZ de existir: a Autoridade Certificadora entrega o `.pfx` embalado em
+# cifra legada, e o produto passou a convertê-lo na borda de registro invocando
+# o binário de criptografia do HOST. A ADR-0036 registra a consequência entre os
+# `Cons`: *"o produto passa a depender de binário do host: presença, versão e
+# caminho viram pré-condição de operação, e precisam ser afirmados pelo
+# provisionamento"*. Sem esta afirmação, um host provisionado sem o recurso sai
+# VERDE, e a falta só aparece quando o Admin renova o certificado pela tela —
+# tarde, remoto, e com a mesma cara do defeito que o `D64` já tinha.
+#
+# POR QUE AS DUAS METADES, e não só a presença do binário: o modo de falha real
+# é o binário PRESENTE com o provider legado indisponível. Ele responde a tudo,
+# a instalação parece completa, e a conversão falha exatamente como falhava
+# antes. Um guarda que se contentasse com `command -v openssl` ficaria verde
+# justamente no host que quebra.
+#
+# POR QUE ELA É FUNÇÃO NOMEADA, AUTOCONTIDA E SEM ESTADO DA BATERIA: é o que
+# permite exercitá-la SEM privilégio, extraindo o corpo por `sed`+`eval` num
+# processo novo — o mesmo mecanismo do `ct_647` e do `executar_guarda_isolado`
+# do CT-005. Função que dependesse de variável montada pelo `main` só se provaria
+# como root, e o caso ficaria sem prova. Ela não chama `ok`, `falhar` nem `nota`
+# pela mesma razão: quem a extrai não carrega o esqueleto de asserções junto.
+#
+# POR QUE SÓ BUILTIN ALÉM DO PRÓPRIO `openssl`: `command -v`, `[[ =~ ]]` e
+# `printf` sobrevivem ao PATH recortado do mutante A, onde não há `grep` algum.
+# Depender de `grep` faria o caso reprovar por ferramenta ausente e não pelo
+# recurso ausente — a asserção passaria pelo motivo errado.
+#
+# NENHUM SEGREDO E NENHUM CAMINHO DE MATERIAL saem daqui: o que se imprime é o
+# nome do recurso que falta e a versão do binário, nada mais.
+#
+# Devolve 0 quando o host converte, 1 quando não converte — e a linha impressa
+# NOMEIA o recurso ausente, porque quem lê o vermelho precisa saber o que
+# instalar.
+# --------------------------------------------------------------------------- #
+criptografia_do_host_apta() {
+	local listagem="" versao=""
+
+	if ! command -v openssl >/dev/null 2>&1; then
+		printf 'FALTA o binario openssl no PATH deste host — a conversao do material do certificado (ADR-0036) o invoca; instale o pacote openssl do sistema\n'
+		return 1
+	fi
+
+	# A listagem é pedida COM o provider nomeado: no OpenSSL 3 o legado não
+	# aparece na listagem padrão nem quando está instalado — só quando carregado
+	# sob demanda, que é como a conversão o usa (`openssl pkcs12 -legacy`).
+	# Medir a listagem padrão reprovaria todo host apto.
+	#
+	# As DUAS pernas contam: o comando pode falhar (provider inexistente) ou
+	# suceder devolvendo apenas o padrão. O casamento exige a palavra delimitada
+	# por espaço em branco, de modo que o "Legacy" do nome descritivo — que sai
+	# com maiúscula — não sirva de verde por engano.
+	if ! listagem="$(openssl list -providers -provider legacy 2>/dev/null)" ||
+		[[ ! "${listagem}" =~ (^|[[:space:]])legacy([[:space:]]|$) ]]; then
+		printf 'FALTA o provider legacy no openssl deste host — sem ele o material que a AC entrega nao abre; instale o componente legacy do openssl\n'
+		return 1
+	fi
+
+	versao="$(openssl version 2>/dev/null)"
+	printf 'openssl apto: %s, com o provider legacy disponivel\n' "${versao}"
+	return 0
+}
+
+# --------------------------------------------------------------------------- #
+# CT-1045 — a pré-condição acima é afirmada, e a ausência REPROVA nomeando o
+# recurso. Controle e mutantes com desfechos OPOSTOS.
+#
+# Um verificador que nunca reprovasse aprovaria um host sem o binário; um que
+# reprovasse sempre reprovaria o host apto. Nenhum dos dois passa nos três
+# ambientes deste caso, e é o PAR que detecta — não a asserção isolada.
+#
+# O mutante é AMBIENTE, nunca código: `PATH` recortado e um stub executável
+# escrito na caixa de areia, removida pelo `trap limpar`. Nada é instalado,
+# desinstalado ou alterado no sistema operacional, e a árvore versionada não é
+# tocada. Por isso o caso roda SEM privilégio, ainda que a bateria exija root
+# para os outros.
+#
+# ⚠️ O caso NÃO deve virar asserção sobre o texto do script (`grep` no fonte
+# procurando a chamada a `openssl`): isso provaria a presença da linha, não que
+# a ausência do recurso reprova.
+# --------------------------------------------------------------------------- #
+ct_1045() {
+	caso "CT-1045" "a pré-condição de criptografia do host é afirmada, e a ausência REPROVA nomeando o recurso"
+
+	local caixa="${DIR_TEMPORARIO}/pre-condicao"
+	local vazio="${caixa}/vazio"
+	local stub="${caixa}/stub"
+	local saida="${caixa}/saida.txt"
+	local corpo=""
+
+	# A EXTRAÇÃO acontece AQUI FORA, antes de qualquer recorte de PATH: dentro do
+	# ambiente do mutante A não há `sed` para extrair coisa alguma. E extrair é o
+	# ponto — reimplementar o guarda dentro do verificador é o defeito nº 2
+	# registrado na `.claude/rules/testing-stack.md`, que aprovou 5/5 um SUT com
+	# o defeito de volta.
+	corpo="$(sed -n '/^criptografia_do_host_apta() {/,/^}/p' "${BASH_SOURCE[0]}")"
+	if [[ -z "${corpo}" ]]; then
+		falhar "a função sob prova não foi encontrada neste arquivo — nada pôde ser medido"
+		fechar_caso "CT-1045"
+		return
+	fi
+
+	install -d -m 0700 "${caixa}" "${vazio}" "${stub}"
+
+	# UMA função de invocação para os três ambientes. Duas funções parecidas
+	# provariam que duas invocações concordam, não que ESTA discrimina.
+	#
+	# Processo NOVO (`bash -c`), e não subshell `( )`, pelo motivo do
+	# `executar_guarda_isolado` do CT-005 mais um que é próprio daqui: o bash
+	# guarda em tabela o caminho já resolvido de cada comando executado, e o
+	# subshell a herda — `command -v openssl` responderia pelo cache mesmo com o
+	# PATH recortado, e o mutante A passaria pelo motivo errado. Processo novo
+	# nasce com a tabela vazia, e o PATH aplicado dentro dele não escapa para a
+	# variante seguinte.
+	desfecho_da_pre_condicao() { # $1 = PATH a aplicar
+		local codigo=0
+		bash -c '
+			PATH="$1"
+			export PATH
+			eval "$2"
+			[ "$(type -t criptografia_do_host_apta)" = "function" ] || exit 8
+			criptografia_do_host_apta
+		' _ "$1" "${corpo}" >"${saida}" 2>&1 || codigo=$?
+		printf '%s' "${codigo}"
+	}
+
+	# --- CONTROLE, e ele vem primeiro ------------------------------------- #
+	# Sem esta perna, uma pré-condição que reprovasse SEMPRE passaria nas duas
+	# seguintes — e o provisionamento reprovaria todo host, inclusive o apto.
+	local codigo_controle=""
+	codigo_controle="$(desfecho_da_pre_condicao "${PATH}")"
+	afirmar_igual "a pré-condição aprova o host provisionado" "0" "${codigo_controle}"
+	if [[ "${codigo_controle}" != "0" ]]; then
+		nota "$(cat "${saida}")"
+	fi
+	# Ancoradas na linha de APROVAÇÃO, pela mesma razão das do mutante A: os
+	# literais `openssl` e `legacy` aparecem também nas linhas de reprovação, e
+	# um `grep` solto ficaria verde sobre uma pré-condição que RECUSOU o host
+	# apto. Medido sobre o mutante que lê a listagem padrão de providers.
+	afirmar_igual "a linha de aprovação nomeia o binário conferido" "1" \
+		"$(grep -c '^openssl apto:' "${saida}" || true)"
+	afirmar_igual "a linha de aprovação nomeia o provider conferido" "1" \
+		"$(grep -c 'provider legacy disponivel' "${saida}" || true)"
+
+	# --- MUTANTE A — binário ausente -------------------------------------- #
+	local codigo_sem_binario=""
+	codigo_sem_binario="$(desfecho_da_pre_condicao "${vazio}")"
+	afirmar_igual "binário de criptografia ausente REPROVA" "1" "${codigo_sem_binario}"
+	# O padrão casa a linha de REPROVAÇÃO inteira, e não só o literal `openssl`:
+	# a linha de aprovação também nomeia o binário, de modo que um `grep` pelo
+	# literal solto ficaria verde sobre uma pré-condição que APROVOU — a asserção
+	# passaria sem poder falhar (AP-29). Medido: é o que acontecia sob o mutante
+	# que afirma só a presença do binário.
+	afirmar_igual "a reprovação nomeia o binário openssl" "1" \
+		"$(grep -c 'FALTA o binario openssl' "${saida}" || true)"
+	# A asserção que SEPARA as duas pernas: sem ela, uma mensagem única citando
+	# os dois recursos passaria em ambas, e o operador não saberia qual metade
+	# instalar.
+	afirmar_igual "a reprovação do binário não fala do provider" "0" \
+		"$(grep -c 'legacy' "${saida}" || true)"
+
+	# --- MUTANTE B — binário presente, provider legado ausente ------------- #
+	# É a perna que discrimina o modo de falha REAL: um caso que só medisse
+	# `command -v openssl` ficaria verde exatamente aqui.
+	cat >"${stub}/openssl" <<-'STUB'
+		#!/bin/bash
+		# Stub do MUTANTE B do CT-1045: o binário existe e responde, mas o
+		# provider legado NÃO está disponível.
+		if [ "${1:-}" = "version" ]; then
+		  printf 'OpenSSL 3.5.7 1 Jul 2025 (Library: OpenSSL 3.5.7 1 Jul 2025)\n'
+		  exit 0
+		fi
+		if [ "${1:-}" = "list" ]; then
+		  for argumento in "$@"; do
+		    if [ "${argumento}" = "legacy" ]; then
+		      printf 'openssl: Unknown provider "legacy"\n' >&2
+		      exit 1
+		    fi
+		  done
+		  printf 'Providers:\n  default\n    name: OpenSSL Default Provider\n    version: 3.5.7\n    status: active\n'
+		  exit 0
+		fi
+		exit 1
+	STUB
+	chmod +x "${stub}/openssl"
+
+	# Degradação DECLARADA, nunca silenciosa: caixa de areia montada `noexec`
+	# impediria o stub de rodar, e o caso diria que o mutante passou quando ele
+	# nem foi medido.
+	if ! "${stub}/openssl" version >/dev/null 2>&1; then
+		aviso "a caixa de areia não executa o stub — o mutante do provider legado NÃO foi medido"
+	else
+		local codigo_sem_provider=""
+		codigo_sem_provider="$(desfecho_da_pre_condicao "${stub}:${PATH}")"
+		afirmar_igual "provider legado ausente REPROVA" "1" "${codigo_sem_provider}"
+		# Mesma âncora do mutante A, e aqui ela é indispensável: a linha de
+		# aprovação nomeia o provider `legacy` com todas as letras.
+		afirmar_igual "a reprovação nomeia o provider legacy" "1" \
+			"$(grep -c 'FALTA o provider legacy' "${saida}" || true)"
+	fi
+
+	unset -f desfecho_da_pre_condicao
+
+	fechar_caso "CT-1045"
+}
+
 main() {
 	exigir_privilegio
 
@@ -2303,11 +2525,16 @@ main() {
 	ct_005
 	ct_030
 	ct_647
+	ct_1045
 
 	printf '\n'
 	if [[ "${falhas_totais}" -eq 0 ]]; then
-		printf 'verificar-provisionamento: %d/%d casos aprovados (CT-001 a CT-005 e CT-030)\n' \
+		printf 'verificar-provisionamento: %d/%d casos aprovados (CT-001 a CT-005, CT-030, CT-647 e CT-1045)\n' \
 			"${casos_aprovados}" "${casos_executados}"
+		if [[ "${avisos_totais}" -gt 0 ]]; then
+			printf 'verificar-provisionamento: %d degradação(ões) — há asserção NÃO MEDIDA neste host (ver as linhas AVISO acima)\n' \
+				"${avisos_totais}" >&2
+		fi
 		exit 0
 	fi
 	printf 'verificar-provisionamento: %d falha(s) em %d caso(s) — REPROVADO\n' \

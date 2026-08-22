@@ -40,10 +40,15 @@
  * comigo*. Interpretar o código seria justamente trazer o vocabulário do provedor para dentro do
  * desfecho, que é o que a ADR-0001 proíbe.
  *
- * ⚠️ **`client_credentials` NÃO é exercitado pela SONDA**, e a ausência continua sendo decisão
- * registrada — ver o `DÉBITO COM GATILHO` de {@link criarAdaptadorSicoob}, **emendado** nesta fatia
- * com o que a medição mostrou. As quatro operações de cobrança, essas sim, obtêm credencial de
- * acesso: o que a sonda não faz, e por quê, está escrito no marcador.
+ * ⚠️ **`client_credentials` NÃO é exercitado pela SONDA**, e a ausência continua sendo decisão: a
+ * sonda mede que o par **completou o TLS mútuo**, que é uma propriedade do certificado, e obter
+ * credencial de acesso não acrescentaria nada a essa medição — acrescentaria uma segunda causa de
+ * falha ao ato de conferir identidade. As quatro operações de cobrança, essas sim, obtêm credencial.
+ * ⚠️ Este parágrafo remetia a um marcador de débito com gatilho de `criarAdaptadorSicoob` que **não
+ * existe mais**; a remissão foi removida na intervenção dirigida de 2026-08-22 (`P7`), e a razão que
+ * morava nele está escrita aqui, que é onde quem lê a sonda a procura. (O nome literal do marcador
+ * não aparece nesta frase de propósito: o `CLAUDE.md` declara um `grep` por ele como **o oráculo** do
+ * índice de débitos, e prosa que o cite envenena a contagem.)
  *
  * ===========================================================================
  * O CLIENTE É `node:https` NATIVO, e `undici` NÃO entra
@@ -131,6 +136,28 @@
  * liberação de tudo, e nenhuma falha do runtime repassada. Operação nova não tem onde nascer com
  * transporte próprio — que é a mesma razão por que o SQL deste produto vive num pacote só.
  *
+ * ⚠️ **EMENDA da fatia `integracao-bancaria-autonoma`, 2026-08-22** — o parágrafo acima fica
+ * preservado, e o número **não é mais dois**: este arquivo satisfaz **três** portas, porque a entrega
+ * da notícia acrescentou a porta irmã de configuração (`./porta-de-entrega-da-noticia.ts`, duas
+ * operações). Nada mais dele muda: as operações novas passam pelo **mesmo** {@link falarComOProvedor}
+ * e pelo mesmo cache, e a única diferença é o **eixo** do cache — ver logo abaixo.
+ *
+ * ===========================================================================
+ * DUAS FAMÍLIAS DE ESCOPO, e a credencial de uma NÃO SERVE na outra (D6)
+ * ===========================================================================
+ *
+ * A concessão da família da entrega exige escopos próprios, e a credencial obtida com os escopos de
+ * boleto **obtém token e é recusada com `401`** na operação da outra família — medido contra a conta
+ * real. Por isso o escopo é composto **por família** ({@link PERMISSOES_POR_FAMILIA}) e o cache é
+ * chaveado por **empresa e família**: escopo pedido e credencial guardada saem sempre do mesmo eixo, e
+ * não há caminho que apresente uma credencial de boleto numa chamada de entrega. Sem essa composição,
+ * a recusa apareceria como falha do produto **intermitente e dependente de ordem** — a pior classe
+ * para depurar, e a razão de a mitigação ser estrutural, e não um teste a mais.
+ *
+ * A **família** é vocabulário do produto e vive fora daqui (`./credencial-de-acesso.ts`); os **escopos
+ * concretos** que ela resolve são dialeto do provedor e vivem **dentro** deste arquivo. A tradução
+ * acontece na fronteira, e só nela (ADR-0001).
+ *
  * A sonda é o caso degenerado dela: `HEAD` na raiz, sem corpo, sem credencial, e o código da resposta
  * **deliberadamente ignorado**. As quatro operações são o caso completo: leem o código, leem o corpo,
  * e traduzem.
@@ -178,15 +205,21 @@
  * dois não estão agendados em lugar nenhum.
  *
  * Cada um deles é composto **num ponto só** — {@link comporPedidoDeCredencial} e
- * {@link comporEmissao} —, de modo que a fatia que os trouxer edita uma função por dado. O
- * `DÉBITO COM GATILHO` de {@link criarAdaptadorSicoob} nomeia os três e o que os fecha.
+ * {@link comporEmissao} —, de modo que a fatia que os trouxer edita uma função por dado.
+ *
+ * ⚠️ **E o primeiro dos três já foi fechado**: o identificador da aplicação (`client_id`) **é**
+ * enviado desde o fecho do `D36 · F4/T10`, em 2026-08-20 — ver {@link comporPedidoDeCredencial}. O
+ * que segue ausente são os **dados da conta**. Este parágrafo remetia a um marcador de débito com
+ * gatilho de `criarAdaptadorSicoob` que **não existe mais** (saiu com o débito que ele agendava); a
+ * remissão foi removida na intervenção dirigida de 2026-08-22 (`P7`), e **nenhum marcador novo foi
+ * criado** para substituí-la — este docblock é o registro.
  */
 
 import type { ClientRequest, IncomingMessage } from 'node:http';
 import { Agent, request } from 'node:https';
 import { DETALHES_DA_VERIFICACAO } from '@sysloc/contracts';
 import type { SegredoOperavel } from '@sysloc/shared';
-import type { CredencialConcedida, FonteDeTempo } from './credencial-de-acesso.js';
+import type { CredencialConcedida, FamiliaDeEscopo, FonteDeTempo } from './credencial-de-acesso.js';
 import { criarCacheDeCredenciais } from './credencial-de-acesso.js';
 import type {
   AtoSobreBoleto,
@@ -195,14 +228,20 @@ import type {
   ConsultaDeSituacao,
   DesfechoDaOperacao,
   DetalheDaVerificacao,
+  EntregaParaCadastrar,
   IdentidadeDoProvedor,
   IdentidadeParaVerificar,
+  LeituraDaEntrega,
   LocatarioDaCobranca,
+  MotivoDaRecusaDoProvedor,
   PedidoDeEmissao,
+  ReferenciaDoCadastroDaEntrega,
+  ResultadoDaOperacaoDeEntrega,
   ResultadoDaVerificacaoDeIdentidade,
   SituacaoConsultada,
 } from './modelo-canonico.js';
 import type { AdaptadorCobrancaBancaria } from './porta-de-cobranca.js';
+import type { PortaDeEntregaDaNoticia } from './porta-de-entrega-da-noticia.js';
 import type { PortaDeIdentidadeBancaria } from './porta-de-identidade.js';
 
 /**
@@ -302,6 +341,15 @@ export const DETALHE_NAO_INICIADO = DETALHES_DA_VERIFICACAO.NAO_INICIADO;
 const VARIAVEL_DO_ENDERECO = 'ENDERECO_DO_PROVEDOR_BANCARIO';
 
 /**
+ * O que a recusa nomeia quando o endereço mal formado é o **da entrega da notícia**.
+ *
+ * Ele nomeia o **campo da configuração**, e não uma variável de ambiente: quem lê o ambiente é a
+ * conferência de partida, num ponto só, e este pacote não sabe sob que nome ela guarda o valor —
+ * inventar um nome de variável aqui seria afirmar o que este módulo não tem como saber.
+ */
+const CAMPO_DO_ENDERECO_DA_ENTREGA = 'enderecoDaEntregaDaNoticia';
+
+/**
  * O que a recusa por forma diz, com o nome da variável acrescentado ao fim.
  *
  * ⚠️ **A redação é decalcada da irmã**, `MOTIVO_DE_TRANSPORTE_INUTILIZAVEL` de
@@ -339,6 +387,8 @@ const CAMINHO_DA_SONDA = '/';
 /** Os dois verbos das operações — escrever no provedor e ler dele. */
 const METODO_DE_ENVIO = 'POST';
 const METODO_DE_LEITURA = 'GET';
+/** O verbo das duas operações de correção do cadastro da entrega — o que o contrato delas declara. */
+const METODO_DE_CORRECAO = 'PATCH';
 
 // ===========================================================================
 // O DIALETO DO PROVEDOR — os únicos nomes dele neste produto, e todos como VALOR
@@ -361,9 +411,88 @@ const SEGMENTO_DA_REVOGACAO = 'baixar';
  */
 const CAMINHO_DA_CREDENCIAL = '/auth/realms/cooperado/protocol/openid-connect/token';
 
-/** A concessão pedida ao provedor de identidade, e as permissões — **medidas** no sistema antigo. */
+/** O recurso da entrega da notícia, no mesmo produto e na mesma versão do recurso dos boletos. */
+const RECURSO_DAS_ENTREGAS = '/cobranca-bancaria/v3/webhooks';
+
+/** A concessão pedida ao provedor de identidade — **medida** no sistema antigo. */
 const CONCESSAO_PEDIDA = 'client_credentials';
-const PERMISSOES_PEDIDAS = 'boletos_inclusao boletos_consulta boletos_alteracao';
+
+/**
+ * As permissões pedidas **por família de escopo** — `Record` fechado, e o dialeto morre aqui.
+ *
+ * ---------------------------------------------------------------------------
+ * Duas famílias, escopos DISJUNTOS, e a disjunção é MEDIDA
+ * ---------------------------------------------------------------------------
+ *
+ * Medido contra a conta real: os escopos de boleto **obtêm token** e o gateway **recusa com `401`** a
+ * operação da outra família; e **não existe** escopo de exclusão de entrega, cuja concessão o provedor
+ * recusa nomeando o escopo inválido. Por isso o produto pede o escopo **daquela** família, e por isso
+ * o cache é chaveado por `(empresa, família)` — ver o cabeçalho de `./credencial-de-acesso.ts`.
+ *
+ * ⚠️ **`Record` fechado por {@link FamiliaDeEscopo}, e não um `switch` com ramo padrão**: família
+ * nova sem permissões declaradas **não compila**, que é a disciplina de {@link DETALHE_POR_DESFECHO}.
+ * O caminho de composição é **um só** ({@link comporPedidoDeCredencial}), de modo que escopo e chave
+ * do cache saem sempre do mesmo eixo — não há como pedir um escopo e guardar sob outra chave.
+ *
+ * ⚠️ O texto da família de cobrança é **byte a byte** o que sempre foi pedido, e o `CT-880` o afirma
+ * por igualdade: esta constante troca a casa dele, e não o valor.
+ */
+const PERMISSOES_POR_FAMILIA: Record<FamiliaDeEscopo, string> = {
+  COBRANCA: 'boletos_inclusao boletos_consulta boletos_alteracao',
+  ENTREGA_DA_NOTICIA: 'webhooks_inclusao webhooks_consulta webhooks_alteracao',
+};
+
+/**
+ * O que o produto cadastra como entrega — os **dois** códigos, medidos contra a conta real.
+ *
+ * O cadastro é único por **cliente, tipo de movimento e período** — o provedor recusa o segundo com
+ * código próprio —, e só existe **um** período válido para o tipo de movimento que interessa: todos os
+ * outros valores sondados foram recusados. Eles são nomeados porque são **contrato com o provedor**, e
+ * não número arbitrário; nenhum caminho os altera e nenhuma tela os expõe, exatamente como os valores
+ * fixos de {@link comporEmissao}.
+ */
+const TIPO_DE_MOVIMENTO_DA_ENTREGA = 7;
+const PERIODO_DE_MOVIMENTO_DA_ENTREGA = 1;
+
+/**
+ * O sufixo do recurso de reativação — **vocabulário do provedor**, e por isso constante nomeada.
+ *
+ * Ele vive aqui pela mesma razão de {@link RECURSO_DAS_ENTREGAS}: é dialeto, e dialeto não vaza pela
+ * porta. O que a porta publica é `reativarEntrega`, que é vocabulário do produto.
+ */
+const SUFIXO_DA_REATIVACAO = 'reativar';
+
+/** A chave em que a consulta publica o endereço cadastrado — o eixo do `D2`. */
+const CHAVE_DO_ENDERECO_DA_ENTREGA = 'url';
+
+/** A chave do identificador do cadastro, que a consulta e o cadastro devolvem. */
+const CHAVE_DA_REFERENCIA_DA_ENTREGA = 'idWebhook';
+
+/**
+ * A chave que, **preenchida**, diz que o provedor inativou o cadastro — o eixo do `D1`.
+ *
+ * O exemplo oficial a acompanha de `descricaoMotivoInativacao: "Erro ao enviar notificação"`, que é
+ * exatamente o cenário em que a confirmação anterior afirmava saúde.
+ */
+const CHAVE_DA_INATIVACAO_DA_ENTREGA = 'dataHoraInativacao';
+
+/** Onde a situação do cadastro é publicada. Lista, e não chave única, pela tolerância de sempre. */
+const CHAVES_DA_SITUACAO_DA_ENTREGA = ['codigoSituacao'] as const;
+
+/** A descrição que o provedor dá ao inativar — o exemplo oficial traz `"Erro ao enviar notificação"`. */
+const CHAVE_DO_MOTIVO_DA_INATIVACAO = 'descricaoMotivoInativacao';
+
+/**
+ * A situação que o provedor nomeia como **validada com sucesso** — o único valor que confirma.
+ *
+ * ⚠️ **A documentação nomeia DOIS valores** (`1 - Aguardando validação` e este) e **não enumera os
+ * demais**. Por isso só este confirma, e todo o resto — inclusive o que ninguém viu ainda — cai em
+ * *em validação*, que é a leitura conservadora: ela não afirma saúde e não afirma morte. Ver o `D43`.
+ */
+const SITUACAO_VALIDADA_DA_ENTREGA = 3;
+
+/** A barra final do caminho, que não é identidade de endereço. */
+const BARRA_FINAL = /\/+$/;
 
 /** A chave sob a qual o corpo útil viaja em toda resposta do provedor (§13-A.4) — o envelope. */
 const CHAVE_DO_ENVELOPE = 'resultado';
@@ -371,6 +500,25 @@ const CHAVE_DO_ENVELOPE = 'resultado';
 /** Onde a credencial concedida e o prazo dela aparecem na resposta do provedor de identidade. */
 const CHAVE_DA_CREDENCIAL = 'access_token';
 const CHAVE_DO_PRAZO = 'expires_in';
+
+/**
+ * Onde o provedor agrupa as recusas de uma resposta, e onde o código e a mensagem de cada uma moram.
+ *
+ * ---------------------------------------------------------------------------
+ * SÃO DOIS DIALETOS, e a ordem das chaves é a de preferência
+ * ---------------------------------------------------------------------------
+ *
+ * A API de cobrança recusa em português, agrupando as recusas numa lista; o provedor de identidade
+ * recusa a concessão no vocabulário da própria concessão. As duas formas chegam por este adaptador, e
+ * é ele que as traduz para os **três nomes do produto** (`codigo`, `mensagem`, `diagnostico`) — os
+ * **valores** seguem verbatim, sem tradução, sem normalização e sem interpretação (ADR-0034).
+ *
+ * ⚠️ Que os dois primeiros nomes coincidam com os do produto é **coincidência do idioma**, não
+ * identidade: a leitura continua sendo tradução de fronteira, e é por isso que ela mora aqui.
+ */
+const CHAVE_DAS_RECUSAS = 'mensagens';
+const CHAVES_DO_CODIGO_DA_RECUSA = ['codigo', 'error'] as const;
+const CHAVES_DA_MENSAGEM_DA_RECUSA = ['mensagem', 'error_description'] as const;
 
 /** Os campos do dialeto que a tradução lê de volta — nomes do banco, usados como **valor**. */
 const CHAVE_DO_NUMERO_DO_TITULO = 'nossoNumero';
@@ -476,6 +624,47 @@ const DETALHE_POR_DESFECHO: Record<DesfechoDoAperto, DetalheDaVerificacao> = {
   TEMPO_ESGOTADO: DETALHE_TEMPO_ESGOTADO,
 };
 
+/**
+ * O que a **obtenção da credencial** produziu — o desfecho canônico e, na recusa respondida, o motivo.
+ *
+ * Os dois campos existem porque o cache só entende o desfecho canônico (é dele que ele decide guardar
+ * ou não), enquanto a entrega da notícia precisa do motivo **íntegro** do provedor para mostrá-lo ao
+ * Admin. Reconstruir o segundo a partir do primeiro seria reparsear um texto já aparado e recortado —
+ * a informação que se quer preservar verbatim não sobrevive à ida e à volta.
+ *
+ * `recusa` é nula quando o provedor **não chegou a responder**, ou quando o que ele respondeu não
+ * trazia código e mensagem: em nenhum dos dois casos há o que preservar íntegro.
+ */
+interface ConcessaoTentada {
+  readonly desfecho: DesfechoDaOperacao<CredencialConcedida>;
+  readonly recusa: MotivoDaRecusaDoProvedor | null;
+}
+
+/**
+ * O que uma operação autenticada alcançou — ou a credencial faltou, ou o transporte falou.
+ *
+ * A partição é **estrutural** e existe para que as duas naturezas de operação — cobrança e entrega da
+ * notícia — traduzam o mesmo fato para vocabulários distintos, sem duplicar a política de credencial.
+ */
+type AtoAutenticado =
+  | {
+      readonly tipo: 'SEM_CREDENCIAL';
+      readonly falha: DesfechoDaOperacao<never>;
+      readonly recusaDaConcessao: MotivoDaRecusaDoProvedor | null;
+    }
+  | {
+      readonly tipo: 'FALOU';
+      readonly desfecho: DesfechoDoTransporte;
+      /**
+       * Os segredos que o pedido daquele ato apresentou ao provedor — ver {@link semOsSegredosDoAto}.
+       *
+       * É **lista**, e não a credencial sozinha, porque o ato carrega mais de um segredo operável e o
+       * ponto único de redação precisa recebê-los **todos**: segredo que o pedido leve e que não
+       * entre aqui é segredo que nenhum consumidor do texto recusado redige.
+       */
+      readonly segredosDoAto: readonly string[];
+    };
+
 /** O destino já resolvido e conferido, com as duas coordenadas escritas por extenso. */
 interface DestinoDoProvedor {
   readonly hospedeiro: string;
@@ -504,6 +693,46 @@ export interface ConfiguracaoDoProvedorBancario {
    */
   readonly enderecoDeAutorizacao?: string;
   /**
+   * Para **onde** o provedor entrega a notícia — o endereço público desta instalação.
+   *
+   * ⚠️ **Ele é propriedade de quem constrói o adaptador, e jamais do ato** (`EntregaParaCadastrar`
+   * deliberadamente não o carrega): aceitá-lo por operação faria uma entrada de usuário decidir o
+   * destino do que se cadastra no provedor, que é a forma canônica da requisição forjada do lado do
+   * servidor. É a mesma razão pela qual {@link enderecoDoProvedor} também não vem do ato.
+   *
+   * ⚠️ **A URL é UMA SÓ para todos os clientes** — o roteamento da notícia recebida é pelo
+   * identificador que o próprio produto emitiu, e a empresa é derivada da cobrança encontrada, nunca
+   * do corpo recebido. Por isso ele é configuração do processo, e não dado por empresa.
+   *
+   * Opcional para não quebrar quem só usa a sonda de identidade e as operações de cobrança, que não
+   * cadastram entrega alguma — a mesma assimetria declarada em {@link enderecoDeAutorizacao}.
+   * Declarado, a **forma é conferida na construção** e a recusa nomeia a variável; ausente, as duas
+   * operações da entrega resolvem **negativas sem chamar o provedor**: não há para onde apontar a
+   * entrega, e portanto não há o que o provedor tivesse dito.
+   */
+  readonly enderecoDaEntregaDaNoticia?: string;
+  /**
+   * **Quem** o provedor avisa sobre o cadastro da entrega — o contato operacional desta instalação.
+   *
+   * A prosa oficial do provedor declara o contato **necessário** no cadastro, e o exemplo de
+   * inativação da consulta traz `descricaoMotivoInativacao: "Erro ao enviar notificação"`: é por este
+   * endereço que ele avisa quando desativa o webhook. Sem informá-lo, **a inativação é silenciosa** —
+   * o produto descobre pela consulta, e só quando alguém olha.
+   *
+   * ⚠️ **Ele é do PROCESSO, e jamais do cliente nem do ato.** As três alternativas eram: um contato
+   * da empresa já modelado (o produto não tem), um endereço de configuração do processo, ou pedir ao
+   * Admin na tela. A última foi **recusada** porque a tela da ativação tem um ato só e nenhum campo
+   * — restrição declarada pelo usuário —, e a primeira porque inventar um contato faria o produto
+   * cadastrar, na conta do cliente, alguém que ninguém escolheu. Vale aqui, palavra por palavra, a
+   * razão de {@link enderecoDaEntregaDaNoticia} ser configuração: é **uma só** para todas as empresas.
+   *
+   * Opcional pela mesma assimetria dos dois endereços acima: quem só usa a sonda de identidade e as
+   * operações de cobrança não cadastra entrega alguma. Ausente, as operações da entrega resolvem
+   * **negativas sem chamar o provedor** — o pedido nasceria incompleto e o provedor o recusaria, e
+   * gastar cota para ouvir isso não acrescenta nada ao que já se sabe aqui.
+   */
+  readonly contatoDaEntregaDaNoticia?: string;
+  /**
    * O relógio do processo — **opcional**, e o padrão é o do runtime.
    *
    * A única decisão temporal deste adaptador é a validade da credencial de acesso, e ela precisa ser
@@ -528,8 +757,8 @@ export interface ConfiguracaoDoProvedorBancario {
  * degenerada em *recusa tudo*. Foi essa ausência de caso que o `D38 · F4/T10` registrava, e ela
  * deixou de existir na T12 da fatia `webhook-e-carne`.
  */
-function recusarPorForma(): never {
-  throw new Error(`${MOTIVO_DE_ENDERECO_INUTILIZAVEL}: ${VARIAVEL_DO_ENDERECO}`);
+function recusarPorForma(fonte: string = VARIAVEL_DO_ENDERECO): never {
+  throw new Error(`${MOTIVO_DE_ENDERECO_INUTILIZAVEL}: ${fonte}`);
 }
 
 /**
@@ -538,18 +767,27 @@ function recusarPorForma(): never {
  * A recusa acontece na **construção**, e não na primeira verificação: o processo não sobe com um
  * adaptador meio-pronto, e o Admin não descobre a configuração errada clicando em *"testar"*. É a
  * mesma barreira que falha fechado de `criarAdaptadorSmtp`.
+ *
+ * `fonte` é **o que a recusa nomeia** — a variável de ambiente, por padrão, e o campo da configuração
+ * quando o endereço não vem de variável própria (o da entrega da notícia). Ele existe para que haja
+ * **uma** regra de *"endereço seguro"* neste arquivo: uma segunda conferência escrita ao lado ficaria
+ * livre para divergir desta, e a que sobrasse mais frouxa seria a que decide para onde o produto
+ * conecta.
  */
-function resolverDestino(enderecoDoProvedor: string): DestinoDoProvedor {
+function resolverDestino(
+  enderecoDoProvedor: string,
+  fonte: string = VARIAVEL_DO_ENDERECO,
+): DestinoDoProvedor {
   let endereco: URL;
 
   try {
     endereco = new URL(enderecoDoProvedor);
   } catch {
-    return recusarPorForma();
+    return recusarPorForma(fonte);
   }
 
   if (endereco.protocol !== ESQUEMA_SEGURO || endereco.hostname === '') {
-    recusarPorForma();
+    recusarPorForma(fonte);
   }
 
   return {
@@ -844,6 +1082,26 @@ const MOTIVO_DE_SITUACAO_DESCONHECIDA =
 const MOTIVO_DE_LIQUIDACAO_INCOMPLETA =
   'a instituição informou o pagamento sem a data ou sem o valor, e ele não pode ser aplicado';
 
+/**
+ * O que se diz quando o campo **veio** e o produto não conseguiu lê-lo.
+ *
+ * DECISÃO FECHADA — D22 · F4/T8 · fechado na intervenção dirigida de 2026-08-22
+ * O QUÊ: a liquidação que não se aplica tem DOIS motivos, e não um — o campo ausente e o campo
+ *        presente em grafia que o molde recusa.
+ * POR QUÊ: o motivo único afirmava *"informou o pagamento sem a data ou sem o valor"* nos dois
+ *        casos. Quando o provedor manda `valorPago: "1.234"`, o valor **foi** informado — o produto é
+ *        que não o lê —, e o operador que recebesse aquele texto abriria a resposta, veria o valor
+ *        lá, e perseguiria a direção errada. É a classe que a separação entre
+ *        `MOTIVO_DE_SITUACAO_DESCONHECIDA` e `MOTIVO_DE_RESPOSTA_INESPERADA` já pratica neste mesmo
+ *        arquivo, deixada meio aberta neste ramo.
+ * ⚠️ A GRAFIA OFENSORA NÃO ENTRA NO TEXTO: é dado de terceiro, e este motivo é **persistido**. O que
+ *        o texto nomeia é a classe da falha e o que fazer — nunca o valor recebido.
+ * REVERTER EXIGE: provar que nenhum campo da liquidação pode chegar em grafia recusada — e o molde
+ *        `NUMERO_EM_TEXTO_INEQUIVOCO` existe justamente porque pode.
+ */
+const MOTIVO_DE_VALOR_ILEGIVEL =
+  'a instituição informou o pagamento em forma que o produto não conseguiu ler, e ele não pode ser aplicado';
+
 /** O que se diz quando a concessão da credencial volta sem credencial. */
 const MOTIVO_DE_CREDENCIAL_AUSENTE =
   'a instituição não concedeu credencial de acesso a esta empresa';
@@ -990,37 +1248,199 @@ function dataDeCalendario(texto: string | null): string | null {
   return achado === null ? null : `${achado[1]}-${achado[2]}-${achado[3]}`;
 }
 
-/** O que ocupa o lugar da credencial no motivo, quando o provedor ecoa o que ela portava. */
-const CREDENCIAL_REDIGIDA = '«credencial omitida»';
+/**
+ * O que ocupa o lugar de um segredo do ato no motivo, quando o provedor ecoa o que o pedido portou.
+ *
+ * ⚠️ **A sentinela é UMA SÓ para todos os segredos, e não nomeia qual deles saiu dali**: dizer ao
+ * leitor do motivo que aquele campo trazia o identificador da aplicação seria devolver, em prosa,
+ * parte do que a redação existe para não devolver. O texto fala de *credencial* no sentido do
+ * provedor — na concessão `client_credentials` o identificador da aplicação é parte da credencial do
+ * cliente —, e o valor é preservado byte a byte porque a suíte já o fixa (`CT-844`).
+ */
+const SEGREDO_REDIGIDO = '«credencial omitida»';
+
+/**
+ * A **redação dos segredos daquele ato** no que o provedor respondeu — e aqui é o ponto único.
+ *
+ * ---------------------------------------------------------------------------
+ * TODA leitura do texto recusado passa por aqui, e é isso que fecha a classe
+ * ---------------------------------------------------------------------------
+ *
+ * O texto recusado é gravado e exibido (RN-15), e nas operações autenticadas ele é o corpo cru de uma
+ * resposta a uma requisição que portou `authorization: <credencial>`. Provedor que ecoe o cabeçalho
+ * recebido — hábito comum em diagnóstico de erro — poria credencial **viva** numa superfície
+ * persistida e apresentada.
+ *
+ * ⚠️ **Ela recebe TODOS os segredos que o pedido apresentou ao provedor, e não a credencial apenas.**
+ * O parâmetro era opcional e singular, e a forma codificava *"este ato não tem credencial"* como
+ * *"este ato não tem segredo a redigir"* — duas coisas diferentes: a **concessão** sai sem cabeçalho
+ * de autorização e, ainda assim, leva o identificador da aplicação no corpo do formulário
+ * ({@link comporPedidoDeCredencial}), que é segredo operável pelo mesmo modelo do produto (ADR-0032).
+ * A lista é obrigatória exatamente para que nenhum consumidor possa omitir por esquecimento o que o
+ * pedido portou: quem chama declara o que estava em mão, e o compilador cobra a declaração.
+ *
+ * O critério do que entra é **o que o pedido apresenta ao provedor** — a credencial no cabeçalho e o
+ * identificador da aplicação no corpo. A senha do material e os bytes dele ficam de fora porque nunca
+ * são apresentados como texto (o material vive no aperto de mão TLS), e redigir cadeia curta e comum
+ * corromperia o motivo sem fechar vazamento algum.
+ *
+ * ⚠️ Ela foi **extraída** de {@link motivoDoTexto} quando a entrega da notícia trouxe o segundo
+ * consumidor do texto recusado ({@link lerMotivoDaRecusa}, que o desmonta em código, mensagem e
+ * diagnóstico). Instalar a redação por consumidor daria dois pontos livres para divergir, e o que
+ * sobrasse sem ela seria justamente o que vaza — é a mesma topologia de ponto único da montagem do
+ * cabeçalho em {@link cabecalhosDoPedido}, e pela mesma razão (ADR-0032).
+ *
+ * ⚠️ **Ela corre ANTES de qualquer recorte ou desmonte**, e a ordem é conteúdo: recortar primeiro
+ * deixaria passar o prefixo da credencial que coubesse no limite, e desmontar primeiro poria o eco
+ * dentro de um campo do diagnóstico, onde a redação por texto não o alcançaria.
+ *
+ * Lista vazia é declaração legítima e explícita — *"este ato não apresentou segredo textual algum"* —,
+ * e não o default de quem não pensou no assunto, que é o que a opcionalidade permitia.
+ */
+// DECISÃO FECHADA — T6 / Gate 2 · 2026-08-22
+// O QUÊ: a redação recebe a LISTA dos segredos que o pedido apresentou ao provedor, e o parâmetro é
+//        OBRIGATÓRIO — nunca a credencial sozinha, nunca opcional.
+// POR QUÊ: com o parâmetro opcional e singular, o ramo de recusa da concessão compôs motivo e
+//        diagnóstico sem redator algum, e o identificador da aplicação (`client_id`, segredo
+//        operável pela ADR-0032) atravessava para `negocio.entrega_da_noticia.motivo_*` e para a
+//        tela do Admin. A opcionalidade codificava *"não há credencial neste ato"* como *"não há
+//        segredo a redigir"*, que são coisas diferentes — foi achado ALTO/`security` do Gate 2.
+// REVERTER EXIGE: provar que nenhum pedido deste adaptador apresenta ao provedor segredo além da
+//        credencial do cabeçalho — medido sobre o que cada `comporPedido*` põe no corpo, e não por
+//        leitura de docblock.
+function semOsSegredosDoAto(texto: string, segredosDoAto: readonly string[]): string {
+  return segredosDoAto.reduce(
+    (redigido, segredo) =>
+      segredo === '' ? redigido : redigido.split(segredo).join(SEGREDO_REDIGIDO),
+    texto,
+  );
+}
 
 /**
  * O motivo que sai numa falha — texto **do provedor**, opaco, recortado por comprimento.
  *
- * ---------------------------------------------------------------------------
- * A CREDENCIAL DAQUELE ATO É REDIGIDA AQUI, e aqui é o ponto único
- * ---------------------------------------------------------------------------
- *
- * O motivo é gravado e exibido (RN-15), e nas operações de cobrança ele é o corpo cru de uma resposta
- * a uma requisição que portou `authorization: <credencial>`. Provedor que ecoe o cabeçalho recebido —
- * hábito comum em diagnóstico de erro — poria credencial **viva** numa superfície persistida e
- * apresentada. Como toda recusa respondida compõe o motivo por esta função, e apenas por ela, a
- * redação instalada aqui alcança todos os caminhos: é a mesma topologia de ponto único da montagem
- * do cabeçalho em {@link cabecalhosDoPedido}, e pela mesma razão (ADR-0032).
- *
- * ⚠️ **A redação vem ANTES do recorte**, e a ordem é conteúdo: recortar primeiro deixaria passar o
- * prefixo da credencial que coubesse nos {@link MAIOR_MOTIVO_CARACTERES} caracteres.
- *
- * `credencialDoAto` é opcional porque {@link obterCredencial} compõe motivo **antes** de haver
- * credencial alguma — ali não há o que redigir, e o parâmetro ausente diz exatamente isso.
+ * Os segredos do ato são redigidos por {@link semOsSegredosDoAto}, que é o ponto único, e a redação
+ * acontece **antes** do recorte por {@link MAIOR_MOTIVO_CARACTERES}.
  */
-function motivoDoTexto(texto: string, credencialDoAto?: string): string {
-  const semCredencial =
-    credencialDoAto === undefined || credencialDoAto === ''
-      ? texto
-      : texto.split(credencialDoAto).join(CREDENCIAL_REDIGIDA);
-  const limpo = semCredencial.trim();
+function motivoDoTexto(texto: string, segredosDoAto: readonly string[]): string {
+  const limpo = semOsSegredosDoAto(texto, segredosDoAto).trim();
 
   return limpo === '' ? MOTIVO_SEM_TEXTO : limpo.slice(0, MAIOR_MOTIVO_CARACTERES);
+}
+
+/**
+ * O objeto de recusa dentro do que o provedor respondeu — desenvelopado, e nada além disso.
+ *
+ * Ele tolera as três formas que os dois dialetos produzem: a lista sob {@link CHAVE_DAS_RECUSAS} (a
+ * **primeira** recusa é a que vale), o arranjo na raiz e o objeto na raiz — que é a forma da recusa da
+ * concessão. Corpo que não é JSON, ou que não é objeto por nenhum desses caminhos, sai `null`.
+ */
+function objetoDaRecusa(texto: string): Record<string, unknown> | null {
+  let bruto: unknown;
+
+  try {
+    bruto = JSON.parse(texto);
+  } catch {
+    // Corpo que não é JSON não tem código nem mensagem a preservar íntegros. Nada o interpreta.
+    return null;
+  }
+
+  const raiz = objetoDe(bruto);
+
+  if (raiz === null) {
+    return Array.isArray(bruto) ? objetoDe(bruto[0]) : null;
+  }
+
+  const agrupadas = raiz[CHAVE_DAS_RECUSAS];
+
+  return Array.isArray(agrupadas) ? objetoDe(agrupadas[0]) : raiz;
+}
+
+/**
+ * O primeiro valor **verbatim** entre as chaves dadas — cadeia como veio, número como cadeia.
+ *
+ * ⚠️ Ela **não apara, não normaliza e não recorta**, ao contrário de {@link cadeiaDo}: o que sai daqui
+ * vai para um campo que a ADR-0034 exige preservado como o provedor o informou. A única conversão é a
+ * do inteiro para cadeia — o código de recusa foi medido como número no JSON, e o produto o declara
+ * textual.
+ */
+function textoVerbatimDentre(
+  recusa: Record<string, unknown>,
+  chaves: readonly string[],
+): string | null {
+  for (const chave of chaves) {
+    const valor = recusa[chave];
+
+    if (typeof valor === 'string' && valor !== '') {
+      return valor;
+    }
+
+    if (typeof valor === 'number' && Number.isFinite(valor)) {
+      return String(valor);
+    }
+  }
+
+  return null;
+}
+
+/**
+ * A recusa do provedor traduzida no **motivo canônico** — os três nomes do produto, valores verbatim.
+ *
+ * ---------------------------------------------------------------------------
+ * NADA aqui interpreta o que o provedor disse, e é isso que o torna inócuo
+ * ---------------------------------------------------------------------------
+ *
+ * Não há tabela que traduza código, não há comparação que ramifique por ele e não há resumo da
+ * mensagem: os dois saem como chegaram, e **os campos restantes da recusa** vão inteiros para
+ * `diagnostico`, que é portador opaco. Um código de recusa que ninguém previu atravessa sem efeito —
+ * é exatamente essa a consequência exigível do desenho (ADR-0034, e o docblock de
+ * `MotivoDaRecusaDoProvedor`).
+ *
+ * ⚠️ **Nada é clampado aqui**, e a ausência é decisão registrada no modelo canônico: quem aplica o
+ * teto é o único ponto que grava a coluna, e um segundo ponto de aplicação seria a segunda declaração
+ * da mesma regra, livre para divergir da que grava.
+ *
+ * ⚠️ **`null` quando não há código E mensagem** — inventar um código que provedor nenhum emitiu seria
+ * a mentira sobre a origem que a anulabilidade de `ResultadoDaOperacaoDeEntrega` existe para evitar. E
+ * `diagnostico` é `null`, e não `{}`, quando não sobrou campo variável: *"não mandou campo nenhum"* é
+ * distinto de *"mandou objeto vazio"*.
+ */
+function lerMotivoDaRecusa(
+  texto: string,
+  segredosDoAto: readonly string[],
+): MotivoDaRecusaDoProvedor | null {
+  // A redação corre ANTES do desmonte — ver {@link semOsSegredosDoAto}: desmontar primeiro poria um
+  // eco de segredo dentro de um campo do diagnóstico, onde a redação por texto não o alcançaria. E
+  // `diagnostico` é o portador MAIS LARGO dos dois: ele leva os campos restantes da recusa inteiros,
+  // de modo que basta o provedor devolver o segredo como chave própria para ele atravessar.
+  const recusa = objetoDaRecusa(semOsSegredosDoAto(texto, segredosDoAto));
+
+  if (recusa === null) {
+    return null;
+  }
+
+  const codigo = textoVerbatimDentre(recusa, CHAVES_DO_CODIGO_DA_RECUSA);
+  const mensagem = textoVerbatimDentre(recusa, CHAVES_DA_MENSAGEM_DA_RECUSA);
+
+  if (codigo === null || mensagem === null) {
+    return null;
+  }
+
+  const consumidas = new Set<string>([
+    ...CHAVES_DO_CODIGO_DA_RECUSA,
+    ...CHAVES_DA_MENSAGEM_DA_RECUSA,
+  ]);
+  // Medição e escrita pela MESMA primitiva de propriedade própria (`entries`/`fromEntries`), e nunca
+  // atribuição indexada num acumulador: é a disciplina que a `DECISÃO FECHADA` de `limitarDiagnostico`
+  // fixou em `packages/db/src/entrega-da-noticia.ts`, e o corpo entra aqui exatamente do mesmo jeito
+  // — por `JSON.parse`, em que `__proto__` é chave **própria**.
+  const variaveis = Object.entries(recusa).filter(([chave]) => !consumidas.has(chave));
+
+  return {
+    codigo,
+    mensagem,
+    diagnostico: variaveis.length === 0 ? null : Object.fromEntries(variaveis),
+  };
 }
 
 /**
@@ -1053,23 +1473,367 @@ function falhaDoTransporte(tipo: DesfechoSemResposta): DesfechoDaOperacao<never>
 /**
  * O pedido de credencial de acesso, no formulário que o provedor de identidade espera.
  *
- * ⚠️ **Falta aqui o identificador da aplicação perante o provedor**, e a ausência é medida, não
- * esquecida: o produto não o modela em lugar nenhum — nem na tabela, nem no contrato, nem no envelope
- * cifrado —, e o tech spec §8 o agenda para o **que se cifra**, sem que nenhuma task desta fatia
- * alargue o envelope. Ele entra **nesta função**, numa linha, quando o envelope o carregar. Ver o
- * `DÉBITO COM GATILHO` de {@link criarAdaptadorSicoob}.
+ * ⚠️ **O identificador da aplicação perante o provedor É ENVIADO** — `client_id`, na linha que o
+ * corpo desta função compõe —, e ele chega por parâmetro. **A frase anterior deste docblock dizia o
+ * contrário**, e estava factualmente vencida: ela descrevia o estado anterior ao **fechamento do
+ * `D36 · F4/T10`, em 2026-08-20**, que é justamente o que instalou o campo. A remissão que ela fazia
+ * a um marcador de débito com gatilho de `criarAdaptadorSicoob` apontava para algo **que não
+ * existe** — ele saiu quando o débito fechou, e a remissão ficou. Corrigido na intervenção dirigida
+ * de 2026-08-22 (`P7`).
  */
-function comporPedidoDeCredencial(identificadorDaAplicacao: string): CorpoDoPedido {
+function comporPedidoDeCredencial(
+  identificadorDaAplicacao: string,
+  familia: FamiliaDeEscopo,
+): CorpoDoPedido {
   const formulario = new URLSearchParams({
     grant_type: CONCESSAO_PEDIDA,
     // ⚠️ O identificador da aplicação é OBRIGATÓRIO na concessão, e a ausência dele era o que
     // impedia o produto de obter credencial — fechamento do `D36 · F4/T10`, em 2026-08-20. O nome
     // do campo é do dialeto do provedor (`client_id`), como `nossoNumero` e `seuNumero`.
     client_id: identificadorDaAplicacao,
-    scope: PERMISSOES_PEDIDAS,
+    // O escopo é o DAQUELA família, e este é o único ponto que o compõe — ver
+    // {@link PERMISSOES_POR_FAMILIA}. A mesma família chaveia o cache, de modo que a credencial
+    // guardada e os escopos com que ela foi concedida saem sempre do mesmo eixo.
+    scope: PERMISSOES_POR_FAMILIA[familia],
   });
 
   return { tipoDeMidia: TIPO_DE_FORMULARIO, bytes: Buffer.from(formulario.toString(), 'utf8') };
+}
+
+/**
+ * O pedido de cadastro da entrega, no dialeto do provedor — **os quatro campos que ele documenta**.
+ *
+ * DECISÃO FECHADA — P1 · W2 · conformidade com a documentação do provedor · 2026-08-22
+ * O QUÊ: o corpo carrega exatamente `url`, `codigoTipoMovimento`, `codigoPeriodoMovimento` e
+ *        `email` — e **não** carrega `numeroCliente`.
+ * POR QUÊ: o contrato documentado do `POST /webhooks` tem **quatro** campos, e `numeroCliente` não é
+ *          um deles; ele era inferência, arrastada do corpo do boleto, onde de fato existe. E a prosa
+ *          oficial declara o contato **necessário** (*"é necessário informar o código do movimento, o
+ *          código do período do movimento e o e-mail"*). Somados, o corpo anterior tinha **um campo a
+ *          mais que não existe e um a menos que é exigido** — as duas causas de `406` no mesmo pedido,
+ *          e o `CA-20` (cadastro real) nunca rodou para revelá-lo.
+ * REVERTER EXIGE: documentação do provedor declarando `numeroCliente` no corpo deste endpoint — não
+ *          a suposição de que ele é aceito por ser ignorado.
+ *
+ * ---------------------------------------------------------------------------
+ * O cadastro é por CONTA, e não por cliente — e o desenho multi-empresa sobrevive
+ * ---------------------------------------------------------------------------
+ *
+ * ⚠️ **Este docblock afirmava o contrário, e a frase estava errada**: ela dizia que *"o **para quem**
+ * é do ato — o número do cliente que a entrega endereça"*. A ausência de `numeroCliente` no contrato
+ * mostra que o cadastro é escopado ao **cooperado autenticado** (mTLS + token), e não a um cliente
+ * dentro da conta.
+ *
+ * **Isso NÃO redesenha nada**, e o caso real de *"duas empresas do mesmo dono na mesma conta"*
+ * continua atendido, por três razões que se somam: (1) a URL de entrega é **do processo**, uma só
+ * para todas as empresas; (2) cadastro recusado por vaga ocupada **mais** consulta positiva ⟹
+ * habilitada, que é a RN-05 e já está implementada; (3) o roteamento da notícia recebida é pelo
+ * `seuNumero`, que é **nosso** e carrega a empresa — nunca pelo cadastro do webhook. A segunda
+ * empresa encontra o webhook da primeira com a **mesma URL**, confirma, e fica habilitada.
+ *
+ * O que muda é só a **explicação** — e explicação errada em docblock é o que produz a próxima
+ * regressão de decisão (R3).
+ *
+ * ⚠️ **O contato NÃO é inventado, e não é do cliente**: é operacional, **do processo**, e chega por
+ * configuração no mesmo molde do endereço da entrega. É por ele que o provedor avisa quando inativa
+ * o webhook (o `descricaoMotivoInativacao: "Erro ao enviar notificação"` da consulta) — sem ele, a
+ * inativação é silenciosa, que é exatamente o cenário do `D1`.
+ */
+// DÉBITO COM GATILHO — D43 · F5/fechamento · registrado 2026-08-22
+// (NÃO é uma `DECISÃO FECHADA`: ele agenda uma pergunta ao provedor, e não protege o código abaixo.)
+// O QUÊ: a tabela de `codigoSituacao` do provedor é desconhecida. A documentação nomeia DOIS valores
+//        — `1 - Aguardando validação` e `3 - Validado com sucesso` — e não enumera os demais.
+// QUANDO FECHA: a primeira resposta do provedor à pergunta, **ou** a primeira ocorrência real de um
+//        valor fora dos dois conhecidos.
+// ⚠️ EMENDADO em 2026-08-22, no mesmo dia em que foi registrado: o `D42` fechou, e com ele
+//        `codigoSituacao` **passou a ser lido** — `leituraDoNosso` o compara com
+//        {@link SITUACAO_VALIDADA_DA_ENTREGA}. O que muda é o peso, não a conduta: enquanto a tabela
+//        for desconhecida, só o valor validado confirma, e **todo o resto cai em *em validação***,
+//        que é a leitura conservadora — ela não afirma saúde nem afirma morte.
+// POR QUE NÃO AGORA: inventar taxonomia de terceiro é exatamente o erro que o `A1` desta mesma
+//        rodada corrigiu noutro ponto, e a conduta conservadora não depende de conhecê-la.
+// ÍNDICE: docs/specs/features/integracao-bancaria-autonoma/v1/_run/run-report.md §2, D43
+//
+function comporCadastroDaEntrega(
+  enderecoDaEntrega: string,
+  contatoDaEntrega: string,
+): CorpoDoPedido {
+  const corpo = {
+    url: enderecoDaEntrega,
+    codigoTipoMovimento: TIPO_DE_MOVIMENTO_DA_ENTREGA,
+    codigoPeriodoMovimento: PERIODO_DE_MOVIMENTO_DA_ENTREGA,
+    email: contatoDaEntrega,
+  };
+
+  return { tipoDeMidia: TIPO_DE_JSON, bytes: Buffer.from(JSON.stringify(corpo), 'utf8') };
+}
+
+/**
+ * O caminho de UM cadastro — o identificador vai no **caminho**, e não na query.
+ *
+ * É a forma que a correção do endereço e a reativação exigem, e ela difere da consulta de propósito:
+ * lá o identificador seria parâmetro; aqui ele é parte do recurso.
+ */
+function caminhoDoCadastroDaEntrega(referencia: ReferenciaDoCadastroDaEntrega): string {
+  return `${RECURSO_DAS_ENTREGAS}/${encodeURIComponent(referencia)}`;
+}
+
+/** O caminho da reativação — o do cadastro, mais o sufixo do dialeto do provedor. */
+function caminhoDaReativacaoDaEntrega(referencia: ReferenciaDoCadastroDaEntrega): string {
+  return `${caminhoDoCadastroDaEntrega(referencia)}/${SUFIXO_DA_REATIVACAO}`;
+}
+
+/**
+ * O pedido de correção do endereço — **só os dois campos que o contrato da correção aceita**.
+ *
+ * ⚠️ Ele **não** aceita `codigoTipoMovimento` nem `codigoPeriodoMovimento`, que o cadastro carrega:
+ * o tipo de movimento não se altera depois de criado, e mandá-lo aqui seria enviar campo fora do
+ * contrato — exatamente o defeito que o `numeroCliente` era.
+ */
+function comporCorrecaoDaEntrega(
+  enderecoDaEntrega: string,
+  contatoDaEntrega: string,
+): CorpoDoPedido {
+  const corpo = { url: enderecoDaEntrega, email: contatoDaEntrega };
+
+  return { tipoDeMidia: TIPO_DE_JSON, bytes: Buffer.from(JSON.stringify(corpo), 'utf8') };
+}
+
+/**
+ * Traduz o que a consulta devolveu na **leitura canônica** do produto — o coração do `D1` e do `D2`.
+ *
+ * DECISÃO FECHADA — D1 · D2 · conformidade com a documentação do provedor · 2026-08-22
+ * O QUÊ: a leitura procura, na LISTA inteira, o registro que aponta para o **nosso** endereço, e
+ *        classifica o estado dele pelos campos que o provedor publica — nunca pela mera existência
+ *        de um objeto na resposta.
+ * POR QUÊ: a confirmação anterior decidia por **presença de objeto**. Duas coisas passavam por ela e
+ *          são operacionalmente opostas ao que ela afirmava: (a) um cadastro que o provedor
+ *          **inativou** — o exemplo oficial traz `descricaoMotivoInativacao: "Erro ao enviar
+ *          notificação"` — contava como ativo, de modo que o produto afirmava saúde **precisamente**
+ *          no cenário em que a entrega estava morta; e (b) um cadastro apontando para **outro
+ *          endereço** contava como nosso.
+ * POR QUE ISTO FECHA A CLASSE: o discriminador deixou de ser *"veio algum objeto?"* e passou a ser a
+ *          conjunção dos três fatos que definem uma entrega de pé — **é nosso** (o endereço casa),
+ *          **está válido** (a situação é a que o provedor nomeia como validada) e **não foi
+ *          inativado**. Qualquer um dos três falhando produz uma leitura **distinta e nomeada**, com
+ *          o ato que ela pede. Nenhuma resposta do provedor cai num ramo que afirme mais do que ela
+ *          disse.
+ * ⚠️ REVERTER EXIGE: provar que a resposta da consulta não pode conter registro inativado nem
+ *          registro de outro endereço — o que a documentação refuta nos dois pontos.
+ *
+ * ---------------------------------------------------------------------------
+ * A busca é na LISTA, e não no primeiro elemento
+ * ---------------------------------------------------------------------------
+ *
+ * O envelope da consulta é **array** — é a forma documentada —, e o filtro pode devolver mais de um
+ * registro. Olhar só `[0]` faria a entrega desta instalação sumir atrás do cadastro de outro
+ * sistema, e o desfecho seria *"de terceiro"* com o nosso cadastro ativo bem ali. `corpoUtil` **não
+ * é usado aqui** de propósito: ele desenvelopa para UM objeto, e serve as outras cinco operações;
+ * mexer nele para atender esta seria mudar cinco caminhos para corrigir um.
+ *
+ * ---------------------------------------------------------------------------
+ * Como se prova que o cadastro é NOSSO — e por que a URL não basta sozinha
+ * ---------------------------------------------------------------------------
+ *
+ * O endereço é a prova quando ele **casa**. Quando não casa, a URL sozinha não separa *"o meu, com o
+ * endereço antigo"* de *"o de outro sistema"* — e o produto não pode tocar o segundo. É aí que entra
+ * a referência que o produto guardou ao criar o cadastro: se ela nomeia um dos registros, aquele
+ * cadastro é **comprovadamente nosso**, e corrigir o endereço dele é legítimo. Sem ela, a leitura é
+ * `DE_TERCEIRO`, e nenhuma escrita é autorizada.
+ */
+function lerRegistroDaEntrega(
+  texto: string,
+  enderecoDaEntrega: string,
+  referenciaConhecida: ReferenciaDoCadastroDaEntrega | undefined,
+): LeituraDaEntrega {
+  const registros = registrosDaEntrega(texto);
+
+  if (registros.length === 0) {
+    // Inclui o `204` sem corpo, que o contrato documenta como *"consulta com sucesso e sem
+    // registros"* — e que **não** é recusa: ninguém recusou nada, e não há o que preservar íntegro.
+    return { tipo: 'SEM_CADASTRO' };
+  }
+
+  const nosso = registros.find((registro) =>
+    mesmoEndereco(cadeiaDo(registro, CHAVE_DO_ENDERECO_DA_ENTREGA), enderecoDaEntrega),
+  );
+
+  if (nosso !== undefined) {
+    return leituraDoNosso(nosso);
+  }
+
+  // Não há registro no nosso endereço. Ou um deles é o nosso com endereço vencido — e só a
+  // referência guardada o prova —, ou a vaga é de terceiro e nada se toca.
+  const meuComOutroEndereco =
+    referenciaConhecida === undefined
+      ? undefined
+      : registros.find((registro) => referenciaDe(registro) === referenciaConhecida);
+
+  return meuComOutroEndereco === undefined
+    ? { tipo: 'DE_TERCEIRO' }
+    : {
+        tipo: 'ENDERECO_DIVERGENTE',
+        referencia: referenciaConhecida as ReferenciaDoCadastroDaEntrega,
+      };
+}
+
+/**
+ * O estado de um cadastro **que já se sabe nosso** — e a ordem das perguntas é conteúdo.
+ *
+ * A inativação vem **antes** da situação: um cadastro inativado pode ter ficado com a situação
+ * anterior gravada, e perguntar pela situação primeiro leria como válido algo que o provedor
+ * declarou morto. O que o produto faz com um inativado é reativá-lo, não celebrá-lo.
+ *
+ * ⚠️ **Situação desconhecida NÃO é ativa.** A documentação nomeia **dois** valores, e não enumera os
+ * demais; tratar qualquer outro como válido seria inventar taxonomia de terceiro — exatamente o erro
+ * que a premissa falsa da porta cometeu noutro ponto. Ver o `D43`.
+ */
+function leituraDoNosso(registro: Record<string, unknown>): LeituraDaEntrega {
+  const referencia = referenciaDe(registro);
+
+  const inativacao = cadeiaDo(registro, CHAVE_DA_INATIVACAO_DA_ENTREGA);
+
+  if (inativacao !== '') {
+    return referencia === null
+      ? // Inativado e sem identificador legível: não há como pedir a reativação, e afirmar que a
+        // entrega está de pé seria pior. É a vaga ocupada por algo que o produto não consegue
+        // endereçar.
+        { tipo: 'DE_TERCEIRO' }
+      : { tipo: 'INATIVA', referencia, motivo: motivoDaInativacao(registro, inativacao) };
+  }
+
+  const situacao = numeroDentre(registro, CHAVES_DA_SITUACAO_DA_ENTREGA);
+
+  if (situacao === SITUACAO_VALIDADA_DA_ENTREGA) {
+    return { tipo: 'ATIVA' };
+  }
+
+  // Aguardando validação **e qualquer outra situação desconhecida** caem aqui, e a fusão é
+  // deliberada: as duas são *"ainda não está entregando, e o produto não tem ato a executar"*. A
+  // reconferência periódica volta a olhar, e é ela que promove quando a situação virar a validada.
+  return { tipo: 'EM_VALIDACAO' };
+}
+
+/**
+ * A causa da inativação, **verbatim do provedor** — o que o Admin precisa ler para agir.
+ *
+ * Os três campos saem do que o provedor publicou, e nenhum é texto do produto: o código é o da
+ * situação em que ele deixou o cadastro, a mensagem é a descrição que ele deu, e o diagnóstico
+ * preserva o instante da inativação. É a mesma disciplina de `lerMotivoDaRecusa` — o que veio dele
+ * atravessa íntegro, e o que o produto acrescenta é **nada**.
+ *
+ * `null` quando ele inativou sem dizer por quê: inventar uma explicação seria pôr vocabulário do
+ * produto num campo que existe para preservar o dele (RN-02).
+ */
+function motivoDaInativacao(
+  registro: Record<string, unknown>,
+  inativacao: string,
+): MotivoDaRecusaDoProvedor | null {
+  const descricao = cadeiaDo(registro, CHAVE_DO_MOTIVO_DA_INATIVACAO);
+
+  if (descricao === '') {
+    return null;
+  }
+
+  return {
+    codigo: cadeiaDo(registro, CHAVES_DA_SITUACAO_DA_ENTREGA[0]),
+    mensagem: descricao,
+    diagnostico: { [CHAVE_DA_INATIVACAO_DA_ENTREGA]: inativacao },
+  };
+}
+
+/**
+ * Os registros da consulta, como LISTA — a forma documentada do envelope dela.
+ *
+ * Tolera as três formas que o dialeto produz (lista sob o envelope, arranjo na raiz, objeto único),
+ * pela mesma razão que `corpoUtil` as tolera: o que se recusa é o que não é objeto, e não a forma do
+ * invólucro. Corpo ausente, corpo que não é JSON e lista vazia saem todos como lista vazia.
+ */
+function registrosDaEntrega(texto: string): Record<string, unknown>[] {
+  let bruto: unknown;
+
+  try {
+    bruto = JSON.parse(texto);
+  } catch {
+    return [];
+  }
+
+  const raiz = objetoDe(bruto);
+  const envelopado = raiz === null ? bruto : raiz[CHAVE_DO_ENVELOPE];
+  const candidatos = Array.isArray(envelopado) ? envelopado : [envelopado ?? raiz];
+
+  return candidatos
+    .map((candidato) => objetoDe(candidato))
+    .filter((candidato): candidato is Record<string, unknown> => candidato !== null);
+}
+
+/**
+ * A referência que o **cadastro aceito** devolve — `null` quando o provedor não a informou.
+ *
+ * Ela sai do envelope de objeto único do cadastro, que é a forma que o contrato dele documenta —
+ * diferente da consulta, cujo envelope é lista. `corpoUtil` serve aqui porque é exatamente o
+ * desenvelopamento de UM objeto que ele faz, e é o mesmo que as outras cinco operações usam.
+ */
+function referenciaDoCadastro(texto: string): ReferenciaDoCadastroDaEntrega | null {
+  const corpo = corpoUtil(texto);
+
+  return corpo === null ? null : referenciaDe(corpo);
+}
+
+/** O identificador do cadastro, como cadeia — `null` quando o registro não o traz legível. */
+function referenciaDe(registro: Record<string, unknown>): ReferenciaDoCadastroDaEntrega | null {
+  const bruto = cadeiaDo(registro, CHAVE_DA_REFERENCIA_DA_ENTREGA);
+
+  return bruto === '' ? null : bruto;
+}
+
+/**
+ * Os dois endereços designam o **mesmo** destino?
+ *
+ * A comparação é robusta ao que **não é identidade** — caixa do servidor e barra final do caminho,
+ * que o provedor pode normalizar de um jeito e nós de outro —, e **estrita no resto**: servidor
+ * diferente, esquema diferente, porta diferente ou caminho diferente são endereços diferentes, e é
+ * disso que depende a distinção entre *"o meu cadastro"* e *"o de outro sistema"*. Afrouxar aqui
+ * reabriria o `D2` por baixo.
+ *
+ * Endereço que não se deixa interpretar reprova a comparação: o que não é URL não é o nosso destino.
+ */
+function mesmoEndereco(informado: string, nosso: string): boolean {
+  const canonico = (bruto: string): string | null => {
+    try {
+      const endereco = new URL(bruto);
+      const caminho = endereco.pathname.replace(BARRA_FINAL, '');
+
+      return `${endereco.protocol}//${endereco.host.toLowerCase()}${caminho}${endereco.search}`;
+    } catch {
+      return null;
+    }
+  };
+
+  const esquerda = canonico(informado);
+
+  return esquerda !== null && esquerda === canonico(nosso);
+}
+
+/**
+ * O caminho que lê a entrega desta conta, no tipo de movimento que o produto cadastra.
+ *
+ * DECISÃO FECHADA — D3 · conformidade com a documentação do provedor · 2026-08-22
+ * O QUÊ: a query leva **apenas** `codigoTipoMovimento`.
+ * POR QUÊ: o contrato documentado do `GET /webhooks` lista dois parâmetros — `idWebhook` e
+ *          `codigoTipoMovimento` —, e `numeroCliente` não é nenhum deles. Era a **outra ponta** do
+ *          mesmo defeito do corpo do cadastro. Dos dois desfechos possíveis, nenhum era bom: ou o
+ *          gateway o ignorava, e a consulta funcionava por acidente, ou respondia `406` e a
+ *          confirmação **nunca** era positiva — fazendo a tela mentir na direção contrária.
+ * REVERTER EXIGE: o mesmo do cadastro. O escopo do token mais o mTLS já limitam a resposta à conta
+ *          autenticada; não há filtro a recuperar.
+ */
+function caminhoDaConsultaDaEntrega(): string {
+  const parametros = new URLSearchParams({
+    codigoTipoMovimento: String(TIPO_DE_MOVIMENTO_DA_ENTREGA),
+  });
+
+  return `${RECURSO_DAS_ENTREGAS}?${parametros.toString()}`;
 }
 
 /**
@@ -1105,8 +1869,11 @@ function comporQuemPaga(locatario: LocatarioDaCobranca): Record<string, unknown>
  * produto consome criaria efeito no provedor sem consumidor aqui.
  *
  * ⚠️ **Faltam os dados da conta** — número do cliente, modalidade e conta corrente —, e a ausência é
- * medida: o modelo canônico não os carrega, e nenhuma tabela do produto os guarda. Ver o
- * `DÉBITO COM GATILHO` de {@link criarAdaptadorSicoob}.
+ * medida: o modelo canônico não os carrega, e nenhuma tabela do produto os guarda. ⚠️ **Não há
+ * marcador de débito para isto**: a remissão que este docblock fazia a um marcador de débito com
+ * gatilho de `criarAdaptadorSicoob` apontava para algo que já não existe, e foi removida na
+ * intervenção dirigida de 2026-08-22 (`P7`). O registro vivo do assunto é o docblock do módulo (topo do arquivo),
+ * que enumera os três dados ausentes.
  */
 function comporEmissao(pedido: PedidoDeEmissao): CorpoDoPedido {
   const corpo = {
@@ -1266,7 +2033,20 @@ function lerSituacao(
     const valorPago = numeroDentre(corpo, CHAVES_DO_VALOR_PAGO);
 
     if (pagoEm === null || valorPago === null) {
-      return { aceito: false, classe: 'DA_COBRANCA', motivo: MOTIVO_DE_LIQUIDACAO_INCOMPLETA };
+      // Qual dos dois motivos vale se decide pela ORIGEM do nulo, e não pelo nulo: `dataDeCalendario`
+      // e `numeroDentre` devolvem o mesmo `null` para o campo que não veio e para o que veio em
+      // grafia recusada. A pergunta que os separa é se alguma das chaves declaradas chegou com
+      // conteúdo — e ela vale para os dois campos porque os dois são lidos pelo mesmo par (chaves
+      // declaradas + molde), de modo que molde novo herda a separação sem código novo.
+      const algoVeio =
+        (pagoEm === null && cadeiaDentre(corpo, CHAVES_DA_DATA_DO_PAGAMENTO) !== null) ||
+        (valorPago === null && cadeiaDentre(corpo, CHAVES_DO_VALOR_PAGO) !== null);
+
+      return {
+        aceito: false,
+        classe: 'DA_COBRANCA',
+        motivo: algoVeio ? MOTIVO_DE_VALOR_ILEGIVEL : MOTIVO_DE_LIQUIDACAO_INCOMPLETA,
+      };
     }
 
     return { aceito: true, valor: { situacao, documento, pagoEm, valorPago } };
@@ -1289,22 +2069,25 @@ function lerSituacao(
  * ambiente em execução mude o destino de um processo já de pé.
  *
  * ---------------------------------------------------------------------------
- * UM adaptador satisfaz as DUAS portas, e isso é escolha dele — não da fronteira
+ * UM adaptador satisfaz as TRÊS portas, e isso é escolha dele — não da fronteira
  * ---------------------------------------------------------------------------
  *
  * A porta de identidade responde *"esta identidade serve?"*, que é ato de configuração; a de cobrança
- * responde pelos atos de cobrança. Elas não se fundem (ver `./porta-de-cobranca.ts`), e quem as
- * satisfaz aqui é o mesmo objeto porque o transporte, o destino e o cache de credencial são os
- * mesmos. Quem recebe continua recebendo **a porta que usa**, por parâmetro.
+ * responde pelos atos de cobrança; e a de entrega da notícia configura, junto ao provedor, por onde a
+ * notícia chega. Elas não se fundem (ver `./porta-de-cobranca.ts` e
+ * `./porta-de-entrega-da-noticia.ts`), e quem as satisfaz aqui é o mesmo objeto porque o transporte, o
+ * destino e o cache de credencial são os mesmos. Quem recebe continua recebendo **a porta que usa**,
+ * por parâmetro (ADR-0025).
  *
  * O cache da credencial nasce **por adaptador**, e portanto por processo: é o que faz um lote de 47
- * boletos custar uma obtenção em vez de 47 (D5), e é a chave por empresa dele que impede a credencial
- * de uma empresa de acompanhar a chamada de outra.
+ * boletos custar uma obtenção em vez de 47 (D5), e é a chave dele — **empresa e família de escopo** —
+ * que impede a credencial de uma empresa de acompanhar a chamada de outra, e a de uma família de ser
+ * apresentada em chamada da outra.
  *
  */
 export function criarAdaptadorSicoob(
   config: ConfiguracaoDoProvedorBancario,
-): PortaDeIdentidadeBancaria & AdaptadorCobrancaBancaria {
+): PortaDeIdentidadeBancaria & AdaptadorCobrancaBancaria & PortaDeEntregaDaNoticia {
   const destino = resolverDestino(config.enderecoDoProvedor);
   // Ausente o endereço próprio, a concessão continua indo ao destino da API — o comportamento de
   // antes de 2026-08-20, preservado para quem só usa a sonda.
@@ -1312,6 +2095,22 @@ export function criarAdaptadorSicoob(
     config.enderecoDeAutorizacao === undefined
       ? destino
       : resolverDestino(config.enderecoDeAutorizacao);
+  // A forma do endereço da entrega é conferida NA CONSTRUÇÃO, pela mesma guarda dos outros dois — o
+  // processo não sobe com um adaptador que só descobre a configuração errada quando o Admin clica. O
+  // que se guarda é a cadeia, e não o destino resolvido: ela não é para onde este processo conecta, é
+  // o que ele **declara ao provedor**. A recusa nomeia o campo, jamais o valor recusado.
+  const enderecoDaEntrega = config.enderecoDaEntregaDaNoticia;
+
+  if (enderecoDaEntrega !== undefined) {
+    resolverDestino(enderecoDaEntrega, CAMPO_DO_ENDERECO_DA_ENTREGA);
+  }
+
+  // O contato do cadastro acompanha o endereço: são as **duas metades da mesma capacidade**, e uma
+  // sem a outra produz um pedido que o provedor recusa. Ele não passa por `resolverDestino` — não é
+  // destino de conexão nenhuma, é um valor que este processo **declara** ao provedor —, e a forma
+  // dele é conferida na partida, junto das demais variáveis (`W2`, 2026-08-22).
+  const contatoDaEntrega = config.contatoDaEntregaDaNoticia;
+
   const agora = config.agora ?? Date.now;
   const credenciais = criarCacheDeCredenciais(agora);
 
@@ -1321,48 +2120,151 @@ export function criarAdaptadorSicoob(
    * Ela corre **dentro** do adaptador, e não como quinta operação da porta: credencial de acesso é
    * vocabulário do provedor, e pô-la na porta contrariaria a cláusula que a ADR-0001 declara ser
    * propriedade do vocabulário (§21.1(1) do tech spec, decidido pelo usuário em 2026-08-16).
+   *
+   * ⚠️ Ela devolve **duas coisas** — ver {@link ConcessaoTentada}: o desfecho canônico, que é o que o
+   * cache entende, e o motivo íntegro da recusa, que é o que a entrega da notícia mostra ao Admin.
    */
   const obterCredencial = async (
     material: Buffer,
     senha: string,
     identificadorDaAplicacao: string,
-  ): Promise<DesfechoDaOperacao<CredencialConcedida>> => {
+    familia: FamiliaDeEscopo,
+  ): Promise<ConcessaoTentada> => {
+    // O que este pedido apresenta ao provedor, e que a redação precisa alcançar: não há credencial
+    // — este é o ato que a produziria, e o pedido sai **sem** cabeçalho de autorização —, mas há o
+    // identificador da aplicação, que vai no corpo do formulário e é segredo operável (ADR-0032).
+    const segredosDoAto: readonly string[] = [identificadorDaAplicacao];
     const desfecho = await falarComOProvedor(destinoDaAutorizacao, material, senha, {
       metodo: METODO_DE_ENVIO,
       caminho: CAMINHO_DA_CREDENCIAL,
       consumirCorpo: true,
-      corpo: comporPedidoDeCredencial(identificadorDaAplicacao),
+      corpo: comporPedidoDeCredencial(identificadorDaAplicacao, familia),
     });
 
     if (desfecho.tipo !== 'RESPONDEU') {
-      return falhaDoTransporte(desfecho.tipo);
+      return { desfecho: falhaDoTransporte(desfecho.tipo), recusa: null };
     }
 
     if (desfecho.codigo >= MENOR_CODIGO_DE_RECUSA) {
       // Credencial recusada vale igual para a próxima cobrança — é sempre falha DA EMPRESA, e não
       // daquela cobrança, mesmo quando o provedor responde com código da faixa do cliente.
-      return { aceito: false, classe: 'DA_EMPRESA', motivo: motivoDoTexto(desfecho.texto) };
+      //
+      // ⚠️ **Os dois portadores do texto do provedor recebem os segredos do ato**, e este é o único
+      // ponto em que eles estão em mão neste caminho: `motivo` é a superfície *erro* e `diagnostico`
+      // é a superfície *diagnóstico* — as duas que a `Decision` da ADR-0032 nomeia por escrito.
+      return {
+        desfecho: {
+          aceito: false,
+          classe: 'DA_EMPRESA',
+          motivo: motivoDoTexto(desfecho.texto, segredosDoAto),
+        },
+        recusa: lerMotivoDaRecusa(desfecho.texto, segredosDoAto),
+      };
     }
 
     const corpo = corpoUtil(desfecho.texto);
     const credencial = corpo === null ? '' : cadeiaDo(corpo, CHAVE_DA_CREDENCIAL);
 
     if (corpo === null || credencial === '') {
-      return { aceito: false, classe: 'DA_EMPRESA', motivo: MOTIVO_DE_CREDENCIAL_AUSENTE };
+      return {
+        desfecho: { aceito: false, classe: 'DA_EMPRESA', motivo: MOTIVO_DE_CREDENCIAL_AUSENTE },
+        // O provedor aceitou e não concedeu: não há recusa dele a preservar íntegra, e inventar uma
+        // seria pôr texto do produto num campo que promete ser do terceiro.
+        recusa: null,
+      };
     }
 
     return {
-      aceito: true,
-      valor: { credencial, validaPorSegundos: numeroDentre(corpo, [CHAVE_DO_PRAZO]) },
+      desfecho: {
+        aceito: true,
+        valor: { credencial, validaPorSegundos: numeroDentre(corpo, [CHAVE_DO_PRAZO]) },
+      },
+      recusa: null,
     };
   };
 
   /**
-   * Executa uma operação de cobrança: abre o segredo, obtém a credencial e fala com o provedor.
+   * Fala com o provedor **em nome de uma empresa, sob os escopos de uma família** — o caminho único.
+   *
+   * ---------------------------------------------------------------------------
+   * TODA operação autenticada passa por aqui, e é isso que mantém a política única
+   * ---------------------------------------------------------------------------
+   *
+   * Ela abre o segredo, obtém a credencial **daquela empresa naquela família**, fala, e esquece a
+   * credencial guardada quando o provedor a declarou morta. As três coisas juntas são a política, e a
+   * política mora num ponto só: uma segunda montagem — escrita ao lado, para as operações da entrega —
+   * seria uma segunda chance de a credencial de uma família acompanhar a chamada da outra, e uma
+   * segunda regra de descarte livre para divergir desta.
+   *
+   * O que ela **não** faz é traduzir: quem sabe o que um código significa é quem perguntou, e as duas
+   * naturezas de operação traduzem para vocabulários distintos — a cobrança para
+   * {@link DesfechoDaOperacao}, a entrega para {@link ResultadoDaOperacaoDeEntrega}.
+   *
+   * O claro nasce aqui e morre com a chamada — não é copiado, não é mutado e não é retido (ADR-0032,
+   * D6-b).
+   */
+  const falarAutenticado = async (
+    ato: {
+      readonly empresaId: string;
+      readonly segredo: SegredoOperavel;
+      readonly identidade: IdentidadeDoProvedor;
+    },
+    familia: FamiliaDeEscopo,
+    pedido: () => Omit<PedidoAoProvedor, 'credencial' | 'consumirCorpo'>,
+  ): Promise<AtoAutenticado> => {
+    const { material, senha } = ato.segredo.abrir();
+    // O portador é objeto, e não uma variável solta, porque a obtenção só corre quando o cache não
+    // tem credencial viva — e o compilador não enxerga atribuição feita de dentro dessa passagem.
+    const concessao: { recusa: MotivoDaRecusaDoProvedor | null } = { recusa: null };
+    const credencial = await credenciais.credencialDaEmpresa(ato.empresaId, familia, async () => {
+      const tentada = await obterCredencial(
+        material,
+        senha,
+        ato.identidade.identificadorDaAplicacao,
+        familia,
+      );
+      concessao.recusa = tentada.recusa;
+
+      return tentada.desfecho;
+    });
+
+    if (!credencial.aceito) {
+      return { tipo: 'SEM_CREDENCIAL', falha: credencial, recusaDaConcessao: concessao.recusa };
+    }
+
+    const desfecho = await falarComOProvedor(destino, material, senha, {
+      ...pedido(),
+      consumirCorpo: true,
+      credencial: credencial.valor,
+    });
+
+    if (desfecho.tipo === 'RESPONDEU' && CODIGOS_DE_CREDENCIAL_MORTA.includes(desfecho.codigo)) {
+      // O prazo que o provedor declarou não é promessa: ele pode invalidar a credencial antes. Sem
+      // isto, a guardada seguiria sendo apresentada até o relógio local concordar, e **todas** as
+      // chamadas desta empresa falhariam até lá — as repetições da fila inclusive. Nada é repetido
+      // aqui: quem repete é a fila (§3.3), e o que se faz é não deixá-la achar a mesma credencial
+      // morta guardada.
+      //
+      // ⚠️ O esquecimento é **daquela família**, e não das duas: a credencial da outra segue viva e
+      // válida sob os próprios escopos, e derrubá-la custaria uma obtenção que ninguém pediu.
+      credenciais.esquecerCredencialDaEmpresa(ato.empresaId, familia);
+    }
+
+    // A credencial deste ato **e** o identificador da aplicação: o pedido apresentou a primeira no
+    // cabeçalho, e o segundo foi apresentado na concessão que a produziu. Os dois descem juntos para
+    // que o consumidor do texto recusado não escolha qual redigir — ver {@link semOsSegredosDoAto}.
+    return {
+      tipo: 'FALOU',
+      desfecho,
+      segredosDoAto: [credencial.valor, ato.identidade.identificadorDaAplicacao],
+    };
+  };
+
+  /**
+   * Executa uma operação de cobrança, e traduz o desfecho para o vocabulário do produto.
    *
    * ⚠️ **É o único caminho das quatro operações**, e a ordem é conteúdo: sem credencial viva não há
-   * chamada, e a credencial vem do cache **daquela empresa**. O claro nasce aqui e morre com a
-   * chamada — não é copiado, não é mutado e não é retido (ADR-0032, D6-b).
+   * chamada, e a credencial vem do cache **daquela empresa, na família de cobrança**.
    */
   const executar = async <T>(
     ato: {
@@ -1373,46 +2275,85 @@ export function criarAdaptadorSicoob(
     pedido: () => Omit<PedidoAoProvedor, 'credencial' | 'consumirCorpo'>,
     traduzir: (texto: string) => DesfechoDaOperacao<T>,
   ): Promise<DesfechoDaOperacao<T>> => {
-    const { material, senha } = ato.segredo.abrir();
-    const credencial = await credenciais.credencialDaEmpresa(ato.empresaId, () =>
-      obterCredencial(material, senha, ato.identidade.identificadorDaAplicacao),
-    );
+    const autenticado = await falarAutenticado(ato, 'COBRANCA', pedido);
 
-    if (!credencial.aceito) {
-      return credencial;
+    if (autenticado.tipo === 'SEM_CREDENCIAL') {
+      return autenticado.falha;
     }
 
-    const desfecho = await falarComOProvedor(destino, material, senha, {
-      ...pedido(),
-      consumirCorpo: true,
-      credencial: credencial.valor,
-    });
+    const { desfecho, segredosDoAto } = autenticado;
 
     if (desfecho.tipo !== 'RESPONDEU') {
       return falhaDoTransporte(desfecho.tipo);
     }
 
     if (desfecho.codigo >= MENOR_CODIGO_DE_RECUSA) {
-      if (CODIGOS_DE_CREDENCIAL_MORTA.includes(desfecho.codigo)) {
-        // O prazo que o provedor declarou não é promessa: ele pode invalidar a credencial antes. Sem
-        // isto, a guardada seguiria sendo apresentada até o relógio local concordar, e **todas** as
-        // chamadas desta empresa falhariam até lá — as repetições da fila inclusive. Nada é repetido
-        // aqui: quem repete é a fila (§3.3), e o que se faz é não deixá-la achar a mesma credencial
-        // morta guardada.
-        credenciais.esquecerCredencialDaEmpresa(ato.empresaId);
-      }
-
       return {
         aceito: false,
         classe: classeDoCodigo(desfecho.codigo),
-        // A credencial deste ato é redigida do texto do provedor — ver {@link motivoDoTexto}. Só
-        // aqui ela está em mão, e é o único caminho em que o texto recusado responde a uma
-        // requisição que a portou.
-        motivo: motivoDoTexto(desfecho.texto, credencial.valor),
+        // Os segredos deste ato são redigidos do texto do provedor — ver {@link motivoDoTexto}. Só
+        // aqui eles estão em mão, e é o único caminho em que o texto recusado responde a uma
+        // requisição que os portou.
+        motivo: motivoDoTexto(desfecho.texto, segredosDoAto),
       };
     }
 
     return traduzir(desfecho.texto);
+  };
+
+  /**
+   * Executa uma operação de **entrega da notícia**, e traduz o desfecho para o vocabulário da porta.
+   *
+   * ---------------------------------------------------------------------------
+   * Ela RESOLVE em todos os desfechos, e NUNCA rejeita
+   * ---------------------------------------------------------------------------
+   *
+   * Recusa pelo par, indisponibilidade, tempo esgotado e recusa respondida são **respostas** à
+   * pergunta que o Admin fez, e chegam distinguidas: a recusa respondida traz o motivo íntegro do
+   * provedor; as três em que ele não chegou a responder trazem `motivo: null`, porque não houve o que
+   * preservar verbatim. Levantar seria idiomático e está descartado por razão concreta — a borda
+   * traduziria a exceção em `500`, e o Admin leria *"o sistema falhou"* onde o fato é *"a vaga está
+   * ocupada"* (RN-06).
+   *
+   * ⚠️ **Sem endereço declarado não há chamada**: o produto não teria o que cadastrar como destino da
+   * entrega, e inventar um faria o cliente apontar a notícia dele para lugar nenhum.
+   */
+  const executarEntrega = async <T>(
+    entrega: EntregaParaCadastrar,
+    pedido: (
+      enderecoDaEntrega: string,
+      contatoDaEntrega: string,
+    ) => Omit<PedidoAoProvedor, 'credencial' | 'consumirCorpo'>,
+    confirmar: (texto: string, enderecoDaEntrega: string) => T,
+    recusar: (motivo: MotivoDaRecusaDoProvedor | null) => T,
+  ): Promise<T> => {
+    // ⚠️ As DUAS metades, e não só o endereço: o provedor declara o contato necessário no cadastro, de
+    // modo que sem ele o pedido nasceria incompleto. A recusa é a mesma — resolver negativo sem
+    // chamar — pela mesma razão escrita acima para o endereço.
+    if (enderecoDaEntrega === undefined || contatoDaEntrega === undefined) {
+      return recusar(null);
+    }
+
+    const autenticado = await falarAutenticado(entrega, 'ENTREGA_DA_NOTICIA', () =>
+      pedido(enderecoDaEntrega, contatoDaEntrega),
+    );
+
+    if (autenticado.tipo === 'SEM_CREDENCIAL') {
+      // A concessão foi recusada, e o provedor de identidade **respondeu** dizendo por quê: o motivo
+      // dele atravessa íntegro, e é ele que a tela do Admin mostra. Quando não houve resposta —
+      // indisponibilidade, tempo esgotado —, não há o que preservar verbatim, e o motivo é nulo.
+      return recusar(autenticado.recusaDaConcessao);
+    }
+
+    const { desfecho, segredosDoAto } = autenticado;
+
+    if (desfecho.tipo !== 'RESPONDEU') {
+      return recusar(null);
+    }
+
+    return desfecho.codigo >= MENOR_CODIGO_DE_RECUSA
+      ? recusar(lerMotivoDaRecusa(desfecho.texto, segredosDoAto))
+      : confirmar(desfecho.texto, enderecoDaEntrega);
   };
 
   return {
@@ -1510,6 +2451,77 @@ export function criarAdaptadorSicoob(
             ? { aceito: false, classe: 'DA_COBRANCA', motivo: MOTIVO_DE_RESPOSTA_INESPERADA }
             : lerSituacao(corpo, consulta.incluirDocumento);
         },
+      );
+    },
+
+    cadastrarEntrega(entrega: EntregaParaCadastrar): Promise<ResultadoDaOperacaoDeEntrega> {
+      return executarEntrega<ResultadoDaOperacaoDeEntrega>(
+        entrega,
+        (enderecoDaEntrega, contatoDaEntrega) => ({
+          metodo: METODO_DE_ENVIO,
+          caminho: RECURSO_DAS_ENTREGAS,
+          corpo: comporCadastroDaEntrega(enderecoDaEntrega, contatoDaEntrega),
+        }),
+        // ⚠️ **A referência é RETIDA, e isso NÃO é decidir pelo corpo.** A decisão do ponto continua
+        // valendo palavra por palavra: quem decide o estado da entrega é a consulta, e é ela que
+        // prevalece (RN-05). O que se lê aqui é um identificador **opaco**, que nada interpreta e
+        // que só existe para ser devolvido à mesma porta na tentativa seguinte — reter não é decidir.
+        (texto) => ({ aceito: true, referencia: referenciaDoCadastro(texto) }),
+        (motivo) => ({ aceito: false, motivo }),
+      );
+    },
+
+    consultarEntrega(
+      entrega: EntregaParaCadastrar,
+      referenciaConhecida?: ReferenciaDoCadastroDaEntrega,
+    ): Promise<LeituraDaEntrega> {
+      return executarEntrega<LeituraDaEntrega>(
+        entrega,
+        () => ({
+          metodo: METODO_DE_LEITURA,
+          caminho: caminhoDaConsultaDaEntrega(),
+        }),
+        (texto, enderecoDaEntrega) =>
+          lerRegistroDaEntrega(texto, enderecoDaEntrega, referenciaConhecida),
+        // ⚠️ **`NAO_RESPONDEU` não é desfecho, é ausência de leitura** — e é ele que impede a borda de
+        // gravar desabilitação porque a rede falhou. Ver {@link LeituraDaEntrega}.
+        (motivo) => ({ tipo: 'NAO_RESPONDEU', motivo }),
+      );
+    },
+
+    atualizarEnderecoDaEntrega(
+      entrega: EntregaParaCadastrar,
+      referencia: ReferenciaDoCadastroDaEntrega,
+    ): Promise<ResultadoDaOperacaoDeEntrega> {
+      return executarEntrega<ResultadoDaOperacaoDeEntrega>(
+        entrega,
+        (enderecoDaEntrega, contatoDaEntrega) => ({
+          metodo: METODO_DE_CORRECAO,
+          caminho: caminhoDoCadastroDaEntrega(referencia),
+          corpo: comporCorrecaoDaEntrega(enderecoDaEntrega, contatoDaEntrega),
+        }),
+        // O sucesso vem SEM CORPO (`204`), e o confirmador não o lê — não há o que ler, e a
+        // confirmação real vem da consulta seguinte, nunca desta resposta. Referência nula porque a
+        // correção não produz identificador: ela age sobre um que quem chamou já tinha.
+        () => ({ aceito: true, referencia: null }),
+        (motivo) => ({ aceito: false, motivo }),
+      );
+    },
+
+    reativarEntrega(
+      entrega: EntregaParaCadastrar,
+      referencia: ReferenciaDoCadastroDaEntrega,
+    ): Promise<ResultadoDaOperacaoDeEntrega> {
+      return executarEntrega<ResultadoDaOperacaoDeEntrega>(
+        entrega,
+        () => ({
+          metodo: METODO_DE_CORRECAO,
+          caminho: caminhoDaReativacaoDaEntrega(referencia),
+          // ⚠️ **Sem corpo, e a ausência é do contrato**: a reativação não aceita nenhum campo. Montar
+          // um corpo vazio aqui seria enviar `{}` onde o provedor não espera nada.
+        }),
+        () => ({ aceito: true, referencia: null }),
+        (motivo) => ({ aceito: false, motivo }),
       );
     },
   };

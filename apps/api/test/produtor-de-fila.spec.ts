@@ -132,6 +132,7 @@ import {
   FILA_DA_CONFIRMACAO,
   FILA_DA_EMISSAO_EM_LOTE,
   FILA_DA_NOTIFICACAO_BANCARIA,
+  FILA_DA_RECONFERENCIA_DA_ENTREGA,
   type Logger,
 } from '@sysloc/shared';
 import { Queue } from 'bullmq';
@@ -223,6 +224,15 @@ const FONTE_DO_PRODUTOR = fileURLToPath(
 
 /** A linha que o SUT emite quando abandona a espera de assentamento — o controle do `CT-1007`. */
 const MENSAGEM_DO_PRAZO_ABANDONADO = 'o assentamento das inicializações excedeu o limite';
+
+/**
+ * Quantas filas ficam pendentes no cenário do CT-1007 — **todas**, e o número é por extenso.
+ *
+ * Escrito à mão, e jamais derivado do evento sob prova nem da lista do SUT: derivar poria o
+ * artefato nos dois lados da igualdade e a asserção passaria a não poder falhar (AP-29). Ele
+ * acompanha a igualdade de lista logo acima, que é quem nomeia as cinco.
+ */
+const TODAS_AS_FILAS_PENDENTES = 5;
 
 /** A entrada única de saneamento do módulo, protegida pela `DECISÃO FECHADA — T9 / Gate 2`. */
 const SANEADOR_DA_CAUSA = 'semRastroDeComando';
@@ -589,7 +599,7 @@ describe('o desligamento do produtor com o servidor de fila ausente (T9)', () =>
       try {
         // O SERVIDOR CAI ANTES DE QUALQUER CONEXÃO — e é isso que produz o estado, de forma
         // determinística e sem depender de carga da máquina: o cliente falha a primeira conexão e
-        // entra em RECONEXÃO, com as quatro inicializações de fila pendentes. A promessa de aptidão
+        // entra em RECONEXÃO, com as inicializações de fila todas pendentes. A promessa de aptidão
         // da biblioteca só resolve em `ready`, `end` ou `error`, e o `disconnect()` de um cliente
         // já em reconexão não produz nenhum dos três.
         await instancia.parar();
@@ -628,18 +638,44 @@ describe('o desligamento do produtor com o servidor de fila ausente (T9)', () =>
         const evento = JSON.parse(linhas[0] ?? '') as {
           limiteMs?: number;
           filas?: readonly string[];
+          pendentes?: number;
         };
 
-        // As QUATRO filas, por igualdade e na ordem em que nascem — nunca "contém": o campo existe
+        // As CINCO filas, por igualdade e na ordem em que nascem — nunca "contém": o campo existe
         // para dizer o que ficou para trás, e uma lista que encolhesse em silêncio seria pior que
         // nenhuma.
+        //
+        // SUT_IS_CORRECT_BECAUSE: a T8 da fatia `integracao-bancaria-autonoma` acrescenta a QUINTA
+        // — a da reconferência da entrega da notícia (ADR-0029) —, nascida do mesmo `criarFila` e
+        // fechada pela mesma lista `filas`. A asserção **não foi afrouxada**: continua sendo
+        // igualdade de lista ordenada, agora com os cinco nomes, e uma fila que sumisse do fecho —
+        // ou que nascesse sem entrar nele — segue reprovando aqui.
         expect(evento.filas).toEqual([
           FILA_DA_CONFIRMACAO,
           FILA_DA_EMISSAO_EM_LOTE,
           FILA_DA_CONFERENCIA_BANCARIA,
           FILA_DA_NOTIFICACAO_BANCARIA,
+          FILA_DA_RECONFERENCIA_DA_ENTREGA,
         ]);
         expect(typeof evento.limiteMs).toBe('number');
+
+        // ⚠️ A PERNA QUE DISCRIMINA O `D22 · F4/T9`, fechado em 2026-08-22: o campo `pendentes`
+        // **não existia** no alerta anterior, que publicava a lista completa das filas declaradas e
+        // nada dizia sobre quantas ficaram para trás. Um SUT que voltasse a `filas.map(…)` deixa
+        // este campo `undefined` e reprova aqui.
+        expect(evento.pendentes).toBe(TODAS_AS_FILAS_PENDENTES);
+
+        // E os dois campos são COERENTES entre si: a contagem é a da lista publicada, e não um
+        // número escrito à parte que pudesse divergir dela.
+        expect(evento.filas).toHaveLength(evento.pendentes ?? -1);
+
+        // ⚠️ O QUE ESTE CASO NÃO PROVA, e a ressalva é deliberada: que a lista **filtre** quando
+        // apenas ALGUMAS filas assentam. O arranjo derruba o servidor antes de qualquer conexão —
+        // é o que o torna determinístico —, e nele nenhuma assenta, de modo que o conjunto filtrado
+        // coincide com o conjunto completo. Um assentamento parcial exigiria injetar fila por fila,
+        // que é símbolo *test-only* na produção (Iron Law #6). A propriedade fica declarada no
+        // `DECISÃO FECHADA` do SUT, cujo argumento é estrutural: `pendentes` é derivado da MESMA
+        // lista `filas` que o fecho percorre, e não há lista paralela que possa divergir.
       } finally {
         rmSync(diretorio, { recursive: true, force: true });
         await instancia.parar();

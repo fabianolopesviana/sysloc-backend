@@ -1,0 +1,1788 @@
+{
+  "framework": "sdd",
+  "feature": "integracao-bancaria-autonoma",
+  "version": "v1",
+  "variant": "backend",
+  "gerado_em": "2026-08-21",
+  "origem": "agent-spec-qa-test-generator, 4 invocacoes consolidadas por camada (infra, dominio, integracao, e2e), despachadas por agent-spec-sdd-generate-task-plan",
+  "nota": "Os IDs CT-1014..CT-1046 sao GLOBAIS da feature e foram FIXADOS pela §19 do tech_spec.md; esta fase os DETALHOU sem criar, remover ou remapear CA. O CT-1047 e ACRESCIMO desta fase: as tres recusas de pre-condicao do ato externo nao tinham caso no mapa da §19.5, embora as §§5.1, 5.2 e 10 as declarem normativas e o challenge Q2 as tenha corrigido contra o codigo real. A divergencia esta registrada na §7 da T7 e no task_plan.md. FLUXO FORWARD-ONLY: apos o destrinchamento, a task markdown (§6.6 de cada tasks/TN.md) e CANONICA — edicoes humanas acontecem la e NAO sao re-sincronizadas deste arquivo. Os gates leem a task, nunca este arquivo.",
+  "total_casos": 34,
+  "por_task": {
+    "T1": 6,
+    "T2": 4,
+    "T3": 1,
+    "T4": 1,
+    "T5": 2,
+    "T6": 1,
+    "T7": 12,
+    "T8": 3,
+    "T9": 2,
+    "T10": 2
+  },
+  "casos_teste": [
+    {
+      "task_id": "T1",
+      "id": "CT-1014",
+      "titulo": "A conversão preserva a identidade — a tripla do convertido é idêntica à do mesmo certificado em cifra moderna",
+      "tipo": "INTEGRACAO",
+      "categoria": "caminho_feliz",
+      "invariant": "A conversão preserva a identidade: a tripla é idêntica à do mesmo certificado em cifra moderna, com a impressão digital como discriminador",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/cobranca-bancaria/test/conversao-do-material.spec.ts (criar)",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-1015",
+        "input_invalido": "material em cifra legada apresentado com senha diferente da que o cofre carrega, e bytes aleatórios que não são PKCS#12",
+        "assertion_esperada": "a chamada REJEITA com a classe de erro da senha no primeiro caso e com a de formato no segundo; `expect(falha).toBeInstanceOf(<classe da senha>)` mais `expect(falha).not.toBeInstanceOf(<classe do formato>)`, e `expect(new <classeDaSenha>().motivo).not.toBe(new <classeDoFormato>().motivo)`"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "domínio — packages/cobranca-bancaria/src/conversao-do-material.ts",
+      "pre_condicoes": [
+        "Baseline do pacote medida antes de editar: 93 casos verdes (P1).",
+        "`material-de-teste.ts` ESTENDIDO — e não duplicado — para exportar o MESMO par em DUAS embalagens: a moderna e uma em cifra legada (`openssl pkcs12 -export -certpbe PBE-SHA1-RC2-40 -keypbe PBE-SHA1-RC2-40 -macalg sha1`). A senha continua indo por `-passout file:` sobre arquivo 0600, nunca por `argv`.",
+        "Nenhum byte de material versionado: tudo nasce em `mkdtemp` sob `tmpdir()` e é apagado por `onTestFinished`.",
+        "`openssl` presente no PATH do host."
+      ],
+      "dados_entrada": {
+        "descricao": "Um único par chave/certificado emitido por autoridade descartável, exportado duas vezes. A senha é a mesma sentinela nas duas.",
+        "valores": {
+          "titular": "C=BR, O=Imobiliaria de Teste Sysloc, CN=00000000000191",
+          "senha": "a sentinela do arquivo de teste, idêntica nas duas embalagens",
+          "materialLegado": "PKCS#12 com RC2-40-CBC — o runtime NÃO o abre",
+          "materialModerno": "PKCS#12 com cifra aceita — mesmo certificado, mesma série, mesma validade"
+        }
+      },
+      "passos": [
+        "Âncora antivácuo do arranjo: `lerMaterial(criarSegredoOperavel({ material: materialLegado, senha }))` REJEITA.",
+        "Ler a tripla de referência: `const referencia = await lerMaterial(criarSegredoOperavel({ material: materialModerno, senha }))`.",
+        "Converter: `const convertido = await converterMaterial(criarSegredoOperavel({ material: materialLegado, senha }))`.",
+        "Abrir o convertido pelo mesmo caminho de leitura.",
+        "Comparar as duas triplas por igualdade profunda e, à parte, a impressão digital como discriminador.",
+        "Comparar contra o fato lido por caminho INDEPENDENTE do SUT: `MaterialDeTeste.impressaoDigital`, `validoDe` e `validoAte`, extraídos por `openssl x509 -fingerprint -sha256 -dates -dateopt iso_8601`."
+      ],
+      "resultado_esperado": "`expect(lido).toEqual(referencia)` — os QUATRO campos de `MaterialLido` iguais. E, à parte, `expect(lido.impressaoDigital).toBe(gerado.impressaoDigital)` contra a impressão digital lida pelo `openssl` do acessório, mais `expect(lido.titular).toBe('C=BR, O=Imobiliaria de Teste Sysloc, CN=00000000000191')`. A âncora do arranjo é `await expect(lerMaterial(segredoLegado)).rejects.toBeInstanceOf(ErroDeMaterialIlegivel)` ANTES da conversão. Um conversor que gerasse par novo passaria em toda asserção de forma e reprovaria exatamente na igualdade da impressão digital — é ela o discriminador.",
+      "criterios_aceitacao_validados": [
+        "CA-09"
+      ],
+      "observacoes": "Arquivo NOVO porque nenhuma suíte do pacote cobre a invariante: `leitura-do-material.spec.ts` prova a ABERTURA e o SUT dele é `lerMaterial`; `guarda-de-boletos.spec.ts` prova permissão e árvore. Estender qualquer das duas misturaria dois SUTs num arquivo só. ⚠️ O acessório `material-de-teste.ts` é ESTENDIDO, nunca copiado."
+    },
+    {
+      "task_id": "T1",
+      "id": "CT-1015",
+      "titulo": "Senha e formato produzem motivos distintos, e nada da saída do conversor atravessa a fronteira",
+      "tipo": "INTEGRACAO",
+      "categoria": "tratamento_erro",
+      "invariant": "Senha e formato produzem `motivo` distintos; nada da saída do conversor atravessa a fronteira",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/cobranca-bancaria/test/conversao-do-material.spec.ts (criar)",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "este É o caso negativo — senha errada sobre material legado, e bytes aleatórios que não são PKCS#12",
+        "assertion_esperada": "dois motivos distintos por igualdade literal contra a constante importada do SUT, mais lista de agulhas vazia com controle positivo por igualdade"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "domínio — packages/cobranca-bancaria/src/conversao-do-material.ts",
+      "pre_condicoes": [
+        "As mesmas do CT-1014 quanto ao acessório e à geração em execução.",
+        "⚠️ O sinal do conversor é OUTRO, e reusar `SINAL_DE_SENHA_QUE_NAO_ABRE` faria o ramo da senha NUNCA disparar: o executável diz `Mac verify error: invalid password?` e a biblioteca diz `mac verify failure`. O radical comum é `mac verify` (D3, medido em 2026-08-21).",
+        "O molde de varredura já tem DUAS cópias no diretório — `leitura-do-material.spec.ts:254-282` e `adaptador-sicoob.spec.ts:1165-1180`. Esta suíte é a TERCEIRA: o Limiar de Três DISPARA, e o molde sobe para `packages/cobranca-bancaria/test/varredura-de-agulhas.ts`."
+      ],
+      "dados_entrada": {
+        "descricao": "Dois insumos inválidos por razões diferentes, e as agulhas que nenhum deles pode fazer atravessar.",
+        "valores": {
+          "eixoDaSenha": "materialLegado do CT-1014 com uma senha sentinela ERRADA",
+          "eixoDoFormato": "`randomBytes(200)` com a senha real",
+          "agulhas": "os bytes do material nas três serializações (utf8/latin1, hex, base64), a senha errada, a senha real, e os textos medidos da saída do conversor"
+        }
+      },
+      "passos": [
+        "Capturar a recusa do eixo da senha com `capturarRecusa`.",
+        "Afirmar a classe e a NÃO-classe da irmã — a segunda pega a implementação que faz uma classe herdar da outra.",
+        "Afirmar o motivo por igualdade literal contra a constante que o SUT exporta, e a distinção comparando os motivos NA ORIGEM — nunca por `not.toBe('<o outro literal>')` (DECISÃO FECHADA — T9 / Gate 1 · 2026-08-15).",
+        "Repetir para o eixo do formato, invertendo classe e não-classe.",
+        "Montar as agulhas e rodar o CONTROLE POSITIVO primeiro.",
+        "Rodar a varredura sobre as duas recusas reais."
+      ],
+      "resultado_esperado": "Eixo da senha: `toBeInstanceOf(<classe da senha>)`, `not.toBeInstanceOf(<classe do formato>)` e `expect(falha.motivo).toBe(<constante do SUT>)`. Eixo do formato: as três invertidas. Distinção na origem: `expect(new <classeDaSenha>().motivo).not.toBe(new <classeDoFormato>().motivo)`. Varredura, nas DUAS recusas: `expect(ocorrenciasDeAgulhas(falha, agulhas)).toEqual([])`, precedida do controle positivo `expect(ocorrenciasDeAgulhas(controleComAsAgulhas(agulhas), agulhas)).toEqual(agulhas.map((a) => a.rotulo))`. Sem o controle, a lista vazia é compatível com um detector cego (AP-29).",
+      "criterios_aceitacao_validados": [
+        "CA-10",
+        "CA-11",
+        "CA-16"
+      ],
+      "observacoes": "A degradação declarada do D3 é PARTE do invariante e não se testa como caso próprio: sinal que deixe de casar cai no desfecho mais genérico (formato) — perde precisão, nunca contenção. Um caso que fixasse a redação exata do OpenSSL amarraria a suíte à versão do host."
+    },
+    {
+      "task_id": "T1",
+      "id": "CT-1016",
+      "titulo": "O único artefato em claro é removido em todo desfecho — sucesso e os dois caminhos de erro",
+      "tipo": "INTEGRACAO",
+      "categoria": "seguranca",
+      "invariant": "O único artefato em claro é removido em todo desfecho — sucesso e os dois caminhos de erro",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/cobranca-bancaria/test/conversao-do-material.spec.ts (criar)",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "os DOIS caminhos de erro (senha que não abre e bytes que não são PKCS#12) são metade do caso — é neles que o `finally` do módulo é exercido",
+        "assertion_esperada": "depois de cada uma das três chamadas, `expect(entradasDoPrefixo(DIRETORIO_EM_MEMORIA)).toEqual([SENTINELA])`"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "domínio — packages/cobranca-bancaria/src/conversao-do-material.ts",
+      "pre_condicoes": [
+        "O diretório de memória compartilhada é observado DIRETAMENTE (`/dev/shm`, por `readdir`), e o prefixo é literal ESCRITO POR EXTENSO no teste — jamais derivado de símbolo de produção. ⚠️ Expor o caminho do artefato por símbolo de produção é proibido pelo atrito A2 e viola a Iron Law #6.",
+        "O caso planta um arquivo SENTINELA seu, removido em `onTestFinished`. Ele é o controle positivo do listador.",
+        "A varredura filtra pelo prefixo — `/dev/shm` é compartilhado com outros processos do host."
+      ],
+      "dados_entrada": {
+        "descricao": "Os três desfechos do módulo, exercidos na mesma suíte, mais o sentinela do controle.",
+        "valores": {
+          "desfecho1": "sucesso — materialLegado com a senha certa",
+          "desfecho2": "erro de senha — materialLegado com senha errada",
+          "desfecho3": "erro de formato — `randomBytes(200)`",
+          "sentinela": "arquivo criado pelo caso em `/dev/shm` com o mesmo prefixo, modo 0600"
+        }
+      },
+      "passos": [
+        "Plantar o sentinela e afirmar que o listador o encontra — controle positivo, ANTES de qualquer chamada ao SUT.",
+        "Executar a conversão bem-sucedida, afirmar o resultado, listar de novo.",
+        "Executar o caminho da senha errada, capturar a recusa, listar de novo.",
+        "Executar o caminho do formato, capturar a recusa, listar de novo.",
+        "Em cada listagem, comparar por IGUALDADE DE CONJUNTO com `diferencasDeConjunto` importado de `conjuntos.ts`."
+      ],
+      "resultado_esperado": "Nas três listagens: `expect(diferencasDeConjunto(entradasDoPrefixo(), [SENTINELA])).toEqual({ excedentes: [], ausentes: [] })`. `excedentes` não-vazio nomeia o artefato deixado para trás; `ausentes` não-vazio acusa que o listador parou de funcionar. A não-vacuidade vem do desfecho de SUCESSO: a reexportação exige entrada seekable de arquivo (M7), de modo que não existe conversão bem-sucedida sem que o intermediário tenha existido.",
+      "criterios_aceitacao_validados": [
+        "CA-16"
+      ],
+      "observacoes": "Precedente de forma: `guarda-de-boletos.spec.ts:307-318`. Este é o caso DETERMINÍSTICO do par; se o CT-1017 se mostrar instável, o atrito A2 manda registrar débito com gatilho e manter este — e nesse cenário a EXISTÊNCIA do artefato passa a ser sustentada só pela cadeia do sucesso. Registrar isso no débito."
+    },
+    {
+      "task_id": "T1",
+      "id": "CT-1017",
+      "titulo": "O artefato em claro nasce com permissão restrita mesmo com a máscara do processo aberta",
+      "tipo": "INTEGRACAO",
+      "categoria": "seguranca",
+      "invariant": "O artefato nasce com permissão restrita, mesmo com a máscara do processo aberta",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/cobranca-bancaria/test/conversao-do-material.spec.ts (criar)",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "a máscara do processo ABERTA (`0o000`) é o input adverso — com ela, um artefato criado por conveniência nasceria `0666` e o caso reprova nomeando os bits",
+        "assertion_esperada": "`expect(modoObservado & 0o077).toBe(0)` e `expect(modoObservado & 0o777).toBe(0o600)`; com a máscara aberta e um `mkstemp` de conveniência, o valor observado seria `0o666` e as duas linhas reprovam"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "A máscara de criação do processo precisa estar ABERTA durante a chamada — sem isso o caso mede a máscara do host, não o módulo.",
+        "caminho_legitimo": "Mecanismo nativo do runtime, sem tocar a produção: `const anterior = process.umask(0o000)` no início e `onTestFinished(() => { process.umask(anterior); })` para restaurar — o valor de restauração vem da PRÓPRIA chamada, nunca de um literal. ⚠️ Proibido acrescentar ao módulo qualquer parâmetro, variável de ambiente ou símbolo que informe o caminho do artefato ao teste. A sondagem tem limite de tempo em constante NOMEADA, nunca `sleep` fixo.",
+        "teste_analogo": "packages/cobranca-bancaria/test/guarda-de-boletos.spec.ts:307 — a asserção de permissão por `stat(...).mode & 0o007`. A abertura da máscara não tem precedente neste repositório."
+      },
+      "camada": "domínio — packages/cobranca-bancaria/src/conversao-do-material.ts",
+      "pre_condicoes": [
+        "Máscara do processo aberta pelo caminho descrito, restaurada em `onTestFinished`.",
+        "Sondagem com limite de tempo declarado em constante nomeada; a janela de observação é a duração do processo externo.",
+        "⚠️ ATRITO A2: se a sondagem NÃO for determinística, registrar `DÉBITO COM GATILHO` no módulo, com `ÍNDICE` para a §2 do run-report, e manter o CT-1016. É PROIBIDO afrouxar a asserção, aceitar a não-observação como verde, ou expor o caminho do artefato por símbolo de produção."
+      ],
+      "dados_entrada": {
+        "descricao": "Uma conversão bem-sucedida, executada com a máscara do processo aberta.",
+        "valores": {
+          "umaskDurante": "0o000",
+          "material": "materialLegado do CT-1014, com a senha certa",
+          "prefixoObservado": "literal escrito por extenso no arquivo de teste"
+        }
+      },
+      "passos": [
+        "Abrir a máscara e registrar a restauração.",
+        "Iniciar a conversão sem aguardá-la, guardando a promessa.",
+        "Sondar o diretório em laço, com o limite da constante nomeada, até encontrar UMA entrada com o prefixo que não seja o sentinela; ler o `mode` por `stat` no instante em que for encontrada.",
+        "Aguardar a promessa e afirmar que ela resolveu — sem isso, a não-observação e a falha do SUT ficariam indistinguíveis.",
+        "Afirmar os bits observados."
+      ],
+      "resultado_esperado": "`expect(modoObservado & 0o777).toBe(0o600)` — valor exato, e não apenas `& 0o007 === 0`: com a máscara aberta a asserção fraca aprovaria `0o660`. Acompanha `expect(observado).toBeDefined()` com mensagem nomeando o diretório sondado. A conversão precisa ter resolvido: `await expect(promessa).resolves.toBeInstanceOf(Buffer)`.",
+      "criterios_aceitacao_validados": [
+        "CA-16"
+      ],
+      "observacoes": "Este é o caso que o atrito A2 declara possivelmente instável, e a instabilidade tem causa nomeada. A conduta está em pre_condicoes e não admite a alternativa fácil. Ele NÃO substitui o CT-1016 nem é substituído por ele."
+    },
+    {
+      "task_id": "T1",
+      "id": "CT-1018",
+      "titulo": "A conversão só corre quando o runtime não abre, e o desfecho declara qual caminho correu",
+      "tipo": "INTEGRACAO",
+      "categoria": "fronteira",
+      "invariant": "A conversão só corre quando o runtime não abre; o desfecho declara qual caminho correu",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/cobranca-bancaria/test/conversao-do-material.spec.ts (criar)",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "material em cifra MODERNA — o insumo em que a conversão NÃO pode correr",
+        "assertion_esperada": "`expect(desfecho.convertido).toBe(false)` E `expect(desfecho.material).toEqual(materialModerno)` — igualdade de bytes com o recebido, prova de que nada foi reembalado"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "domínio — packages/cobranca-bancaria/src/conversao-do-material.ts",
+      "pre_condicoes": [
+        "As duas embalagens do MESMO par, do CT-1014.",
+        "O desfecho do módulo carrega o material resultante e um booleano FECHADO declarando se houve conversão — é o fato que a §4.4 do tech spec publica no desfecho do registro, e ele nasce aqui."
+      ],
+      "dados_entrada": {
+        "descricao": "Os dois sentidos do booleano, exercidos sobre o mesmo certificado em duas embalagens.",
+        "valores": {
+          "sentidoFalso": "materialModerno — o runtime abre; nada a converter",
+          "sentidoVerdadeiro": "materialLegado — o runtime não abre; converte"
+        }
+      },
+      "passos": [
+        "Chamar o módulo com o material moderno.",
+        "Afirmar o booleano em `false` e a IGUALDADE DE BYTES do material devolvido com o recebido.",
+        "Chamar o módulo com o material legado.",
+        "Afirmar o booleano em `true`, a DESIGUALDADE de bytes, e que o devolvido abre pelo caminho de leitura.",
+        "Fechar o booleano nos dois sentidos por igualdade de conjunto."
+      ],
+      "resultado_esperado": "Sentido falso: `expect(desfechoModerno.convertido).toBe(false)` e `expect(desfechoModerno.material).toEqual(materialModerno)` (Buffer idêntico byte a byte). Sentido verdadeiro: `expect(desfechoLegado.convertido).toBe(true)`, `expect(desfechoLegado.material).not.toEqual(materialLegado)` e `await expect(lerMaterial(...)).resolves.toBeDefined()`. E o booleano fechado nos dois sentidos, `[false, true]` por igualdade — nunca `toBeTruthy`.",
+      "criterios_aceitacao_validados": [
+        "CA-13",
+        "CA-14"
+      ],
+      "observacoes": "A igualdade de bytes no sentido falso é a asserção de maior valor do caso: ela é a única que reprova uma implementação que converte incondicionalmente e depois declara `convertido: false`."
+    },
+    {
+      "task_id": "T1",
+      "id": "CT-1019",
+      "titulo": "A superfície nova do processo externo não carrega material nem senha — inclusive spawnargs e o objeto de erro cru",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "A superfície nova do processo externo não carrega material nem senha — inclusive `spawnargs` e o objeto de erro cru",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/cobranca-bancaria/test/conversao-do-material.spec.ts (criar)",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "o CONTROLE POSITIVO é o próprio negativo: o caso invoca o mesmo binário com a senha em `argv` e captura a rejeição CRUA do runtime",
+        "assertion_esperada": "`expect(ocorrenciasDeAgulhas(rejeicaoCrua, agulhas)).toEqual(agulhas.map((a) => a.rotulo))` — a varredura ACHA a senha em `spawnargs` do erro cru; a mesma varredura sobre a recusa do módulo devolve `[]`"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "domínio — packages/cobranca-bancaria/src/conversao-do-material.ts",
+      "pre_condicoes": [
+        "Medição da SAÍDA REAL, nunca leitura do código (ADR-0032; a `testing-stack.md` grepa a violação do método).",
+        "A varredura percorre propriedades próprias E herdadas, a cadeia de `cause`, `JSON.stringify` e `util.inspect` do alvo.",
+        "O binário do conversor é invocado por CAMINHO ABSOLUTO e sem interpretador de comandos; a senha vai por DESCRITOR DE ARQUIVO."
+      ],
+      "dados_entrada": {
+        "descricao": "As três superfícies novas que o processo externo cria, e as agulhas que nenhuma delas pode carregar.",
+        "valores": {
+          "superficies": "a recusa levantada pelo módulo (própria + herdada + `cause`), a saída do processo, e qualquer objeto de `child_process` alcançável a partir da recusa (`spawnargs`, `cmd`, `path`, `args`)",
+          "agulhas": "bytes do material em utf8/latin1, hex e base64; a senha real; a senha errada",
+          "controlePositivo": "rejeição CRUA de uma invocação equivalente feita PELO CASO com a senha em `argv`"
+        }
+      },
+      "passos": [
+        "Montar as agulhas a partir do material e das senhas.",
+        "CONTROLE POSITIVO: o próprio teste invoca o binário com a senha em `argv`, deixa a chamada falhar, e captura a rejeição crua.",
+        "Aplicar a varredura à rejeição crua e afirmar que ela achou a senha — o achado vem de `spawnargs`.",
+        "Provocar as duas recusas do módulo e capturá-las.",
+        "Aplicar a MESMA varredura, com as MESMAS agulhas, às duas recusas do módulo.",
+        "Afirmar a ausência estrutural: `expect('spawnargs' in falha).toBe(false)` e `expect(falha.cause).toBeUndefined()`."
+      ],
+      "resultado_esperado": "Controle positivo: `expect(ocorrenciasDeAgulhas(rejeicaoCrua, agulhas)).toContain('senha')` — a lista NÃO é vazia. Nas duas recusas do módulo: `expect(ocorrenciasDeAgulhas(falha, agulhas)).toEqual([])`, mais `expect('spawnargs' in falha).toBe(false)` e `expect(falha.cause).toBeUndefined()`. A não-vacuidade é dupla.",
+      "criterios_aceitacao_validados": [
+        "CA-16"
+      ],
+      "observacoes": "O controle positivo aqui é mais forte que o do CT-807/CT-808 e a diferença é deliberada: lá o controle é um objeto sintético; aqui ele é a REJEIÇÃO REAL de um `spawn` com senha em `argv`. É o que separa 'a varredura enxerga objetos' de 'a varredura enxerga ESTA superfície'."
+    },
+    {
+      "task_id": "T2",
+      "id": "CT-1020",
+      "titulo": "a rota aceita material em cifra legada gerado em execução, e a identidade registrada é idêntica",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "a rota aceita material em cifra legada gerado em execução, e a identidade registrada é idêntica — o caso que fecha o `D64`",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/certificado-do-provedor.e2e.spec.ts (modificar — caso NOVO no `describe` existente)",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-1021",
+        "input_invalido": "material cujos bytes não são um PKCS#12 e que o conversor também não abre (512 bytes aleatórios), com a senha correta",
+        "assertion_esperada": "422 com o `codigo` da causa de FORMATO do enum fechado, `campo: 'corpo'`, e sem `detalhes` — envelope inteiro por igualdade"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessão viva de ADMIN_EMPRESA da empresa A carregando as DUAS chaves da conjunção, que a produção não expõe por símbolo algum",
+        "caminho_legitimo": "importar `entrar` e `conceder` de `apps/api/test/acessorios-de-borda.ts` e montar a sessão pela rota real de entrada; as duas chaves saem de `AREA_DAS_INTEGRACOES_BANCARIAS` e `ACAO_DE_CONFIGURACAO`, exportadas por `certificado.controller.ts` para este fim. Nunca exportar símbolo novo de produção, e nunca redeclarar `pedir`/`entrar` no topo da suíte.",
+        "teste_analogo": "apps/api/test/certificado-do-provedor.e2e.spec.ts — arranjo do CT-824 e o auxiliar `registrarMaterial`"
+      },
+      "camada": "borda",
+      "pre_condicoes": [
+        "banco efêmero migrado",
+        "servidor HTTP real da API em porta dinâmica",
+        "sessão da administradora da empresa A com a conjunção completa",
+        "autoridade descartável do caso, que leva embora a raiz temporária ao fim",
+        "o recurso de conversão presente no ambiente — a pré-condição que o CT-1045 afirma"
+      ],
+      "dados_entrada": {
+        "descricao": "o MESMO certificado emitido pela autoridade do caso, em duas embalagens: a moderna e a legada, que é a que o produto hoje recusa",
+        "valores": {
+          "materialLegado": "PKCS#12 em cifra legada, gerado em execução, em base64",
+          "materialModerno": "PKCS#12 do MESMO par em cifra moderna — só referência de comparação, não é registrado",
+          "senha": "a senha correta, idêntica nas duas embalagens",
+          "diasDeValidade": "folgados, fora da faixa de vencimento"
+        }
+      },
+      "passos": [
+        "gerar a autoridade descartável",
+        "emitir do MESMO par as duas embalagens",
+        "ler do material moderno a tripla publicável sem registrá-lo",
+        "`POST` no registro com o material LEGADO e a senha correta",
+        "`GET` na consulta",
+        "medir a contagem crua de linhas alcançada pelo contexto da empresa A"
+      ],
+      "resultado_esperado": "o `POST` responde `201`. O corpo traz `titular`, `validoDe`, `validoAte` e `impressaoDigital` idênticos aos do material moderno, por igualdade do objeto inteiro (`toEqual`), nunca campo a campo escolhido. O `GET` responde `200` com o mesmo objeto por igualdade profunda. `contarVigentes` vale 1 e `contarCertificados` cresceu em 1. Nenhuma etapa exigiu acesso ao servidor.",
+      "criterios_aceitacao_validados": [
+        "CA-09",
+        "CA-20"
+      ],
+      "observacoes": "É o caso que fecha o D64: no mesmo commit da correção o marcador sai de `certificado.service.ts` e a linha sai do índice do CLAUDE.md. ⚠️ Nenhum material versionado. A comparação com o material moderno é o discriminador que impede o caso de passar com uma conversão que troque o certificado por outro."
+    },
+    {
+      "task_id": "T2",
+      "id": "CT-1021",
+      "titulo": "as três causas de recusa produzem três códigos distintos, e os três envelopes fecham por igualdade",
+      "tipo": "E2E",
+      "categoria": "teste_negativo",
+      "invariant": "as três causas produzem três códigos distintos — `Set` de tamanho 3, mais os três envelopes por igualdade",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/certificado-do-provedor.e2e.spec.ts (modificar — REESCRITA IN LOCO do bloco `CT-824 (b)`, ≈ linha 757, e das constantes de mensagem ≈ linha 451)",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "as três entradas recusadas: senha que não abre, bytes que não são PKCS#12 nem convertíveis, e material com validade já encerrada",
+        "assertion_esperada": "três `codigo` mutuamente distintos, os três com status 422 e `campo: 'corpo'`"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessão com a conjunção completa, mais um certificado vigente já registrado (a recusa não pode alterá-lo)",
+        "caminho_legitimo": "importar `entrar`/`conceder` e montar o vigente pela rota real de registro, como o bloco em reescrita já faz — o arranjo permanece, muda o que se afirma",
+        "teste_analogo": "o próprio bloco em reescrita (CT-824 (b))"
+      },
+      "camada": "borda",
+      "pre_condicoes": [
+        "banco efêmero e servidor HTTP real",
+        "sessão da administradora da empresa A com a conjunção",
+        "um certificado vigente já registrado pela rota real",
+        "marca no diário (`desdeAqui`) tomada antes das três requisições"
+      ],
+      "dados_entrada": {
+        "descricao": "três corpos, um por causa, deliberadamente distintos entre si",
+        "valores": {
+          "causaSenha": "material íntegro e bom, com senha que não o abre",
+          "causaFormato": "512 bytes aleatórios, com a senha correta",
+          "causaValidade": "material íntegro, senha correta, validade terminada ontem no eixo da operação"
+        }
+      },
+      "passos": [
+        "tomar a marca do diário e as contagens cruas",
+        "`POST` com a causa SENHA",
+        "`POST` com a causa FORMATO",
+        "`POST` com a causa VALIDADE",
+        "ler os motivos internos desde a marca",
+        "comparar os três envelopes e as contagens"
+      ],
+      "resultado_esperado": "as três respostas saem `422`. Os motivos internos são iguais, por igualdade de arranjo ordenado, a `['SENHA_NAO_ABRE', 'MATERIAL_ILEGIVEL', 'JA_VENCIDO']` — e esta asserção vem ANTES das comparações de corpo. Em seguida, `new Set([...]).size` vale 3. E os três envelopes INTEIROS por igualdade, com os `codigo` das constantes de @sysloc/shared e as mensagens literais; na terceira, `detalhes: { validoAte }`. Nas TRÊS, `campo` vale `'corpo'`. As contagens cruas fecham por igualdade: `contarCertificados` inalterada e `contarVigentes` valendo 1.",
+      "criterios_aceitacao_validados": [
+        "CA-10",
+        "CA-11",
+        "CA-12"
+      ],
+      "observacoes": "⚠️⚠️ OBRIGAÇÃO DE ANTIRREGRESSÃO. É a REESCRITA do bloco que hoje afirma a mensagem ÚNICA, nunca um caso novo ao lado dele: o bloco permanece na posição, título e corpo reescritos, e a contagem do pacote api (354) não cai. A asserção REMOVIDA é a igualdade byte a byte dos dois corpos — a linha `O QUE ESTA MUDANÇA REMOVE` precisa dizê-lo. A constante `MENSAGEM_DO_MATERIAL_RECUSADO` do teste dá lugar às duas mensagens novas, escritas literalmente e nunca importadas do SUT. O docblock da fusão em `certificado.service.ts` é SUBSTITUÍDO."
+    },
+    {
+      "task_id": "T2",
+      "id": "CT-1022",
+      "titulo": "senha errada sobre material legado nomeia a senha, e não o formato",
+      "tipo": "E2E",
+      "categoria": "fronteira",
+      "invariant": "senha errada sobre material legado nomeia a senha, não o formato",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/certificado-do-provedor.e2e.spec.ts (modificar — caso NOVO ao lado do CT-1021 reescrito)",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-1020",
+        "input_invalido": "o MESMO material legado, agora com a senha correta",
+        "assertion_esperada": "201, e a identidade registrada idêntica à do mesmo certificado em cifra moderna — provando que o material legado é bom e que o 422 veio da senha"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessão de ADMIN_EMPRESA da empresa A com a conjunção completa",
+        "caminho_legitimo": "importar `entrar`/`conceder` de acessorios-de-borda.ts",
+        "teste_analogo": "arranjo de sessão do CT-824"
+      },
+      "camada": "borda",
+      "pre_condicoes": [
+        "banco efêmero e servidor HTTP real",
+        "sessão com a conjunção",
+        "autoridade descartável e material em cifra LEGADA gerados em execução",
+        "marca no diário tomada antes da requisição"
+      ],
+      "dados_entrada": {
+        "descricao": "material em cifra legada apresentado com uma senha que não o abre. É a combinação que discrimina: a leitura direta falha por cifra não suportada, e é o CONVERSOR quem descobre que a senha está errada",
+        "valores": {
+          "material": "PKCS#12 em cifra legada, em base64",
+          "senha": "senha que não abre o material"
+        }
+      },
+      "passos": [
+        "gerar a autoridade e o material legado",
+        "tomar a marca do diário",
+        "`POST` com o material legado e a senha ERRADA",
+        "ler os motivos internos desde a marca",
+        "comparar o envelope com o da causa SENHA e com o da causa FORMATO"
+      ],
+      "resultado_esperado": "a resposta sai `422` com o envelope da causa SENHA por igualdade do objeto inteiro. A asserção que discrimina é dupla: (a) `corpo.codigo` igual ao da SENHA e diferente do de FORMATO; (b) os motivos internos são iguais a `['SENHA_NAO_ABRE']`, e nunca `['MATERIAL_ILEGIVEL']`. O vigente da empresa não muda.",
+      "criterios_aceitacao_validados": [
+        "CA-10",
+        "CA-11"
+      ],
+      "observacoes": "É o caso que pega a armadilha: importar `SINAL_DE_SENHA_QUE_NAO_ABRE` para o conversor faria o ramo da senha nunca disparar — aqui a leitura direta falha por cifra não suportada, e a única fonte do sinal é a saída do conversor casando o radical `mac verify`. É a razão de existir separado do CT-1021."
+    },
+    {
+      "task_id": "T2",
+      "id": "CT-1023",
+      "titulo": "a resposta do registro declara a conversão como booleano fechado nos dois sentidos, e o campo não entra na projeção do certificado",
+      "tipo": "E2E",
+      "categoria": "caso_extremo",
+      "invariant": "a resposta declara a conversão como booleano fechado nos dois sentidos",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/certificado-do-provedor.e2e.spec.ts (modificar — caso NOVO)",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "material em cifra MODERNA, que o runtime abre sem conversão",
+        "assertion_esperada": "201 com o campo de conversão valendo exatamente `false` — presente e falso, nunca ausente e nunca `undefined`"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessão de ADMIN_EMPRESA da empresa A com a conjunção completa",
+        "caminho_legitimo": "importar `entrar`/`conceder` de acessorios-de-borda.ts",
+        "teste_analogo": "arranjo de sessão do CT-824"
+      },
+      "camada": "borda",
+      "pre_condicoes": [
+        "banco efêmero e servidor HTTP real",
+        "sessão com a conjunção",
+        "autoridade descartável emitindo as duas embalagens do MESMO certificado"
+      ],
+      "dados_entrada": {
+        "descricao": "os dois sentidos do booleano, registrados em sequência pela mesma sessão",
+        "valores": {
+          "sentidoVerdadeiro": "PKCS#12 em cifra legada, senha correta",
+          "sentidoFalso": "PKCS#12 em cifra moderna, senha correta"
+        }
+      },
+      "passos": [
+        "`POST` com o material em cifra LEGADA",
+        "ler o corpo e o conjunto de chaves",
+        "`GET` na consulta e ler o conjunto de chaves",
+        "`POST` com o material em cifra MODERNA",
+        "ler o corpo e o conjunto de chaves",
+        "`GET` de novo e ler o conjunto de chaves"
+      ],
+      "resultado_esperado": "os dois `POST` respondem `201`. No do legado, o campo vale `true` (`toBe(true)`, nunca `toBeTruthy`); no do moderno, `false` — presente e falso, e não ausente: a chave consta nos DOIS corpos, por igualdade de arranjo ordenado das chaves. Nos DOIS `GET`, o conjunto de chaves é igual ao que `esquemaDoCertificado` publica — e a chave da conversão NÃO está nele. Os dois `GET` respondem `200`.",
+      "criterios_aceitacao_validados": [
+        "CA-13",
+        "CA-14"
+      ],
+      "observacoes": "⚠️ O campo NÃO entra em `esquemaDoCertificado`: aquela projeção descreve o certificado, e 'foi convertido' é propriedade do ato. `esquemaDoCertificado` é `z.strictObject` de propósito e compartilhado por registrar e consultar. A comparação dos conjuntos de chaves do GET é a rede que pega o alargamento."
+    },
+    {
+      "task_id": "T3",
+      "id": "CT-1045",
+      "titulo": "A verificação de provisionamento reprova nomeando o recurso de criptografia ausente, e aprova quando ele está presente",
+      "tipo": "INTEGRACAO",
+      "categoria": "teste_negativo",
+      "invariant": "A verificação de provisionamento reprova nomeando o recurso ausente; controle e mutante com desfechos opostos.",
+      "owning_layer": "e2e",
+      "existing_suite": "deploy/scripts/instalacao/verificar-provisionamento.sh (MODIFICAR — acréscimo do bloco `ct_1045` ao verificador existente, chamado no `main` depois de `ct_647`; nenhum arquivo novo, e é isso que mantém o `D9 · F0/T2` intocado)",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "Dois mutantes, ambos montados numa caixa de areia `mktemp -d` e postos à frente do `PATH`: (A) `PATH` sem binário de criptografia algum — o recurso simplesmente não existe no host; (B) um stub executável chamado `openssl` que responde `OpenSSL 3.5.7` a `version` e sai `0`, mas cuja listagem de providers NÃO contém `legacy` (sai não-zero em `list -providers -provider legacy`) — o binário está lá e o provider legado não, que é o modo de falha real medido em 2026-08-21.",
+        "assertion_esperada": "Mutante (A): a função de pré-condição extraída do script sai com código `1` e imprime na saída de erro uma linha que contém literalmente `openssl`. Mutante (B): sai com código `1` e imprime uma linha que contém literalmente `legacy`. Nenhum dos dois sai `0`, e nenhuma das duas linhas é a mesma do controle — os desfechos são opostos aos do controle, afirmados por `afirmar_igual` contra os literais `1`, `1` e `0`."
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "O verificador de provisionamento chama `exigir_privilegio` na primeira linha do `main` e `recusar_bateria_em_producao` antes da bateria: ele só roda como root, e `sudo` neste host pede senha interativa. A pré-condição que o caso precisa — rodar a asserção nova sem ser root, e com um `PATH` adulterado — não é oferecida por caminho público nenhum do script.",
+        "caminho_legitimo": "(a) IMITAR O TESTE ANÁLOGO DO PRÓPRIO ARQUIVO: o `ct_647` já exercita função do script de provisionamento sem executar o `main` dele, extraindo o corpo por `eval \"$(sed -n '/^nome_da_funcao() {/,/^}/p' \"${SCRIPT_SOB_PROVA}\")\"` dentro de um subshell e chamando-a ali. A asserção nova nasce como função nomeada e autocontida no próprio verificador (ex.: `criptografia_do_host_apta`), de modo que o `ct_1045` a extrai e a exercita três vezes — uma por variante — sem privilégio algum. (b) O MUTANTE É AMBIENTE, NUNCA CÓDIGO: os dois cenários negativos se montam com `PATH` recortado e com um stub `openssl` escrito em `mktemp -d` e removido pelo `trap limpar EXIT INT TERM HUP` — nada é instalado, desinstalado ou alterado no sistema operacional, e a árvore versionada não é tocada. (c) A bateria COMPLETA, essa sim, é conduzida com o operador em janela assistida, e o gate audita a saída preservada, reportando `executou_testes: false` como reflexo do papel — não como suíte pulada. (d) Se a janela assistida inviabilizar a rodada, o MESMO bloco `ct_1045` é acrescentado ao irmão sem privilégio `deploy/scripts/cobranca-bancaria/verificar-preparacao-do-material.sh`, que já roda em caixa de areia e mede o mesmo recurso (ele gera material com `openssl pkcs12 -export -legacy`), declarando a divergência por escrito no cabeçalho do caso. ⚠️ PROIBIDO em qualquer variante: criar um 12º `verificar-*.sh`; acrescentar flag, variável de escape, subcomando ou qualquer símbolo ao `provisionar` ou ao verificador que exista só para o teste alcançar a função; e deixar a pré-condição do CA-21 sem afirmação alguma.",
+        "teste_analogo": "deploy/scripts/instalacao/verificar-provisionamento.sh → `ct_647`; deploy/scripts/cobranca-bancaria/verificar-preparacao-do-material.sh → `ct_1011` e `ct_1012`"
+      },
+      "camada": "Infraestrutura (shell) — verificador de provisionamento dos serviços de base",
+      "pre_condicoes": [
+        "O verificador de provisionamento já existe e é o alvo do acréscimo; o caso NÃO cria arquivo (a §16 do tech spec declara o acréscimo a verificador existente justamente para não agravar o `D9 · F0/T2`, hoje em 10 cópias divergentes do esqueleto).",
+        "A asserção nova mora numa função nomeada e autocontida do próprio verificador, que não depende de estado global da bateria — é o que a torna extraível por `sed`+`eval` sem rodar o `main`, e sem ela o caso exigiria root para existir.",
+        "`mktemp -d` gravável e removido por `trap limpar EXIT INT TERM HUP`; o `PATH` original é restaurado ao fim de cada variante, dentro do subshell.",
+        "ATRITO A1 EM VIGOR: a bateria completa exige `sudo` interativo e é inexecutável por subagente. A execução é conduzida com o operador e o gate audita a saída preservada.",
+        "Degradação declarada, nunca silenciosa: se o host não permitir sequer montar o stub, o caso emite `aviso` nomeando o que NÃO foi medido e o resumo final o repete."
+      ],
+      "dados_entrada": {
+        "descricao": "Três ambientes sintéticos aplicados à MESMA função sob prova — um controle e dois mutantes. Uma única função de invocação para os três.",
+        "valores": {
+          "controle": "`PATH` real do host, com o binário de criptografia instalado e o provider `legacy` disponível — o estado medido em 2026-08-21.",
+          "mutante_A_binario_ausente": "`PATH=${DIR_TEMPORARIO}/vazio` — diretório vazio, sem `openssl` algum.",
+          "mutante_B_provider_ausente": "`PATH=${DIR_TEMPORARIO}/stub:${PATH_ORIGINAL}` com `${DIR_TEMPORARIO}/stub/openssl` executável: `version` imprime `OpenSSL 3.5.7 …` e sai `0`; `list -providers …` imprime apenas o provider padrão e sai não-zero para `legacy`."
+        }
+      },
+      "passos": [
+        "1. Abrir o caso com o identificador literal: `caso \"CT-1045\" \"a pré-condição de criptografia do host é afirmada, e a ausência REPROVA nomeando o recurso\"`.",
+        "2. Criar a caixa de areia (`mktemp -d`) e montar dentro dela o diretório vazio do mutante A e o stub `openssl` do mutante B (`chmod +x`).",
+        "3. Declarar UMA função de invocação — `desfecho_da_pre_condicao <PATH>` — que roda, num subshell com o `PATH` recebido, o corpo extraído da função sob prova por `sed`+`eval`. Extrair, e não reimplementar.",
+        "4. CONTROLE (companheiro positivo, e ele vem primeiro): `afirmar_igual \"a pré-condição aprova o host provisionado\" \"0\" \"$(desfecho_da_pre_condicao \"${PATH_ORIGINAL}\")\"`.",
+        "5. MUTANTE A: `afirmar_igual \"binário de criptografia ausente REPROVA\" \"1\" ...`; e afirmar por `grep -q` que a linha contém literalmente `openssl`.",
+        "6. MUTANTE B: `afirmar_igual \"provider legado ausente REPROVA\" \"1\" ...`; e afirmar por `grep -q` que a linha contém literalmente `legacy`.",
+        "7. AFIRMAR QUE A REPROVAÇÃO É TERMINAL: o código devolvido nos dois mutantes é `1`, e é ele que entra em `falhas_totais` da bateria.",
+        "8. Fechar com `fechar_caso \"CT-1045\"` e conferir que o resumo continua saindo `0` se e somente se `falhas_totais == 0`.",
+        "9. Executar a bateria completa em janela assistida com o operador e preservar a saída integral como evidência."
+      ],
+      "resultado_esperado": "Controle: devolve `0` e a linha `OK` nomeia o recurso conferido. Mutante A: devolve `1`, com a linha de reprovação contendo literalmente `openssl`. Mutante B: devolve `1`, com a linha contendo literalmente `legacy`. As três comparações passam por `afirmar_igual` contra os literais `0`, `1` e `1`; `fechar_caso` imprime `-> CT-1045 aprovado` e a bateria termina em `exit 0` apenas com `falhas_totais == 0`. Se qualquer variante do host impedir a medição, sai `AVISO` nomeando o que ficou por medir — nunca verde silencioso.",
+      "criterios_aceitacao_validados": [
+        "CA-21"
+      ],
+      "observacoes": "Gate 2 satisfeito por ACRÉSCIMO. Gate 3: a fronteira é o sistema operacional e o filesystem reais. A prova de falsificação está EMBUTIDA: o par controle/mutante com desfechos opostos é a falsificação. O caso NÃO deve ser transformado em asserção sobre o texto do script."
+    },
+    {
+      "task_id": "T4",
+      "id": "CT-1027",
+      "titulo": "A tabela do estado da entrega da notícia nasce isolada pelo banco: RLS forçada, política única, restrição única e FK composta, com leitura cruzada vazia e gravação cruzada recusada",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "A relação nova tem RLS forçada, política única, restrição única e FK composta; o `SELECT` cruzado devolve zero e o `INSERT` cruzado sai `42501`.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/entrega-da-noticia.spec.ts (NO_SUITE_FOUND — criar)",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "Sob o contexto de tenant da empresa B: (i) `SELECT` na relação nova, que sob A tem uma linha semeada; (ii) `INSERT` de uma linha com `empresa_id` da empresa A — bem formada em tudo o mais; (iii) as duas combinações que a `CHECK` de coerência torna irrepresentáveis.",
+        "assertion_esperada": "(i) o `SELECT` devolve `[]` por igualdade, com o companheiro antivácuo mostrando que sob A a mesma leitura devolve o identificador semeado; (ii) o `INSERT` rejeita com `error.code === '42501'` e mensagem contendo `row-level security policy`, e a MESMA linha sob A grava 1 linha; (iii) as duas gravações incoerentes rejeitam com `error.code === '23514'`, enquanto os dois estados legítimos gravam."
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "(a) o contexto de tenant (`app.empresa_id`), que a Invariante 2 proíbe ler do request; (b) uma instância PostgreSQL migrada, conectada pelo papel CORRETO — superusuário e dono da tabela ignoram a política, e uma suíte conectada por qualquer um dos dois passaria integralmente contra um schema SEM isolamento algum.",
+        "caminho_legitimo": "(a) montar o contexto exclusivamente pela API pública do pacote — `contextoDeTenant.executarCom({ empresaId }, async () => acesso.emUnidadeDeTrabalho(async (tx) => …))` —, com `acesso` vindo de `abrirAcessoAoBanco({ cadeiaDeConexao: banco.cadeiaConexao, maximoDeConexoes: 1 })` sobre o `bancoEfemero()`. `conexaoDeMigracao` e `conexaoSuperusuaria` NÃO aparecem no arquivo, e a ausência é greppável. (b) empresas, usuários e vínculos vêm de `packages/db/src/semente.ts`, derivados da carga e não redigitados. (c) as linhas do arranjo nascem de SQL do próprio caso, sob o contexto da empresa DONA. ⚠️ NENHUM símbolo é acrescentado a `packages/db/src/**` nem às migrações para o caso existir.",
+        "teste_analogo": "packages/db/test/isolamento-bancario.spec.ts → `CT-940`; packages/db/test/identidade-no-provedor.spec.ts → `CT-864` e `CT-865`"
+      },
+      "camada": "Dados — migrações `0023_dominio_entrega_da_noticia.sql` / `0024_seguranca_entrega_da_noticia.sql`, esquema Drizzle e módulo `packages/db/src/entrega-da-noticia.ts`",
+      "pre_condicoes": [
+        "Instância efêmera migrada por `bancoEfemero()`, com `0023` e `0024` aplicadas na ordem domínio → segurança; limites de tempo como constantes nomeadas no topo.",
+        "Acesso ao banco aberto com `maximoDeConexoes: 1`, para que a sequência corra sobre a MESMA conexão física.",
+        "`EMPRESA_A` e `EMPRESA_B` da carga inicial, com um usuário de cada uma — o par `(usuario, empresa)` que a FK composta cobra.",
+        "`beforeEach` que apaga as linhas da relação sob o contexto de cada empresa.",
+        "A política âncora é LIDA do catálogo, nunca redigitada no teste."
+      ],
+      "dados_entrada": {
+        "descricao": "Uma linha semeada sob a empresa A, a linha cruzada que B tenta gravar, e as quatro combinações que exercitam a `CHECK`. Nenhum valor sai de material versionado.",
+        "valores": {
+          "linha_de_A": "{ empresa_id: EMPRESA_A.id, habilitada: false, verificada_em: <instante do BANCO>, motivo_codigo: 'RH01', motivo_mensagem: 'Cadastro recusado', motivo_diagnostico: { campo: 'contaCorrente' }, verificada_por: USUARIO_DE_A.id }",
+          "linha_cruzada": "a MESMA forma, com `empresa_id` de A e `verificada_por` de A, tentada sob o contexto de B",
+          "coerentes": "(1) habilitada true, verificada_em preenchido, motivo nulo; (2) habilitada false, verificada_em preenchido, motivo presente; (3) habilitada false, verificada_em nulo, motivo nulo",
+          "incoerentes": "(4) habilitada true COM motivo presente; (5) habilitada false COM verificada_em preenchido e motivo nulo",
+          "segunda_linha_da_mesma_empresa": "uma segunda linha com `empresa_id` de A"
+        }
+      },
+      "passos": [
+        "1. RLS HABILITADA E FORÇADA: `pg_class`/`pg_namespace` por `relrowsecurity` e `relforcerowsecurity`, objeto inteiro por igualdade.",
+        "2. EXATAMENTE UMA POLÍTICA, `FOR ALL`, com `USING` e `WITH CHECK` idênticos, ancorados em `negocio.cobranca`. Afirmar `typeof ancora?.usando === 'string'` ANTES das comparações.",
+        "3. A LISTA INTEIRA DE RESTRIÇÕES POR IGUALDADE (`contype IN ('f','u','c')`), com as colunas em ordem.",
+        "4. UNICIDADE POR EMPRESA, COMPORTAMENTAL: segunda linha da mesma empresa `23505`; a linha DE B sob B sucede.",
+        "5. `CHECK` DE COERÊNCIA, COMPORTAMENTAL: três legítimas gravam; duas incoerentes `23514`.",
+        "6. O INSTANTE É DO BANCO: `verificada_em` dentro da janela `[now() antes, now() depois]`, e o módulo NÃO recebe instante por parâmetro.",
+        "7. Comportamento cruzado — leitura: companheiro POSITIVO primeiro (sob A), depois `[]` sob B.",
+        "8. Comportamento cruzado — gravação: `42501` sob B, e a MESMA linha sob A grava 1; releitura sob B `[]`.",
+        "9. Leitura e gravação PELO MÓDULO, cujas assinaturas NÃO recebem `empresaId`."
+      ],
+      "resultado_esperado": "Passo 1: `[{ tabela, habilitada: true, forcada: true }]` por igualdade. Passo 2: exatamente 1 política `ALL`, `usando` e `comVerificacao` ambos string, iguais entre si e ao `qual` de `negocio.cobranca`. Passo 3: lista de restrições igual item a item — restrição única `(id, empresa_id)`, FK `(empresa_id) → empresa(id)`, FK composta `(verificada_por, empresa_id) → usuario(id, empresa_id)`, unicidade sobre `(empresa_id)` e a `CHECK` de coerência. Passo 4: `23505`; linha de B grava. Passo 5: três gravam, duas `23514`. Passo 6: instante na janela do banco. Passos 7-8: `[<id semeado>]` sob A, `[]` sob B, `42501` cruzado, 1 linha sob A, `[]` na releitura. Passo 9: idem pelo módulo.",
+      "criterios_aceitacao_validados": [
+        "CA-02"
+      ],
+      "observacoes": "GATE 2 — arquivo novo justificado: `isolamento-bancario.spec.ts` é dedicado às QUATRO tabelas da `0017` e afirma conjuntos por igualdade da lista inteira; acrescentar a quinta mudaria esperados de casos JÁ PROVADOS por acréscimo alheio. `identidade-no-provedor.spec.ts` é o PRECEDENTE. PROVA DE FALSIFICAÇÃO: os passos 1 a 3 são estáticos (catálogo) e exigem a prova — remover o `FORCE` da `0024`; trocar a FK composta pela simples — medida com `pnpm --filter @sysloc/db test`, NUNCA por `vitest run` avulso. Passos 4 a 9 são COMPORTAMENTAIS e não se executa mutante. MIGRAÇÃO É IMUTÁVEL depois de aplicada."
+    },
+    {
+      "task_id": "T5",
+      "id": "CT-1032",
+      "titulo": "Nenhum termo do dialeto em posição de símbolo publicado nos módulos novos, e a porta declara exatamente duas operações",
+      "tipo": "UNITARIO",
+      "categoria": "seguranca",
+      "invariant": "Nenhum termo do dialeto do provedor em posição de símbolo publicado nos módulos novos; a porta declara exatamente duas operações; a varredura, aplicada a um fonte de controle com os termos plantados, os encontra todos",
+      "owning_layer": "unit",
+      "existing_suite": "packages/cobranca-bancaria/test/vocabulario-canonico.spec.ts (modificar)",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "o fonte de CONTROLE com os termos do dialeto plantados nas quatro posições publicadas, mais os três plantados FORA de posição publicada",
+        "assertion_esperada": "`expect(achados).toEqual([...])` — a lista dos quatro plantados em posição publicada, por igualdade e em ordem; e `expect(achados.filter(... fronteira de tradução ...)).toEqual([])` para o eixo negativo"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "domínio — varredura estática sobre o TEXTO dos fontes novos",
+      "pre_condicoes": [
+        "Baseline do pacote antes de editar: 93 casos verdes.",
+        "⚠️ ASSERÇÃO ESTÁTICA — exige PROVA DE FALSIFICAÇÃO, e ela roda pelo SCRIPT `test` DO PACOTE, NUNCA por `vitest run` avulso: sete dos nove pacotes resolvem `.` para `dist/`.",
+        "O caso ESTENDE `MODULOS_DA_FATIA` e reusa `vocabularioPublicadoDe`, `ocorrenciasDeTermos`, `membrosDoCorpo`, `TERMOS_DO_DIALETO` e `FONTE_DE_CONTROLE_COM_DIALETO_PUBLICADO` do CT-991.",
+        "Os sete termos da família de entrega já estão em `TERMOS_DO_DIALETO_DA_NOTICIA` desde 2026-08-21, ANTES de existir a porta. A antecipação é deliberada e não se desfaz."
+      ],
+      "dados_entrada": {
+        "descricao": "Os módulos novos ou alterados por esta fatia, cada um com três símbolos do produto escritos à mão como âncora antivácuo, mais o fonte de controle.",
+        "valores": {
+          "modulos": "`../src/porta-de-entrega-da-noticia.ts`, `../src/conversao-do-material.ts`, `../src/modelo-canonico.ts` e `../../contracts/src/integracao-bancaria.ts`",
+          "operacoesDaPorta": "['cadastrarEntrega', 'consultarEntrega']",
+          "nomeReservado": "AdaptadorCobrancaBancaria — reservado para a fatia (ii); PROIBIDO nomear a porta nova",
+          "controle": "FONTE_DE_CONTROLE_COM_DIALETO_PUBLICADO, já existente"
+        }
+      },
+      "passos": [
+        "Reafirmar o controle positivo do CT-991 sem duplicá-lo: o bloco novo o INVOCA para o próprio conjunto de módulos.",
+        "Extrair os membros do corpo de `PortaDeEntregaDaNoticia` com `membrosDoCorpo`.",
+        "Afirmar as duas operações por igualdade e por contagem.",
+        "Para cada módulo: ler o TEXTO, afirmar que não é vazio, afirmar que o extrator alcançou os três símbolos do produto, e só então varrer.",
+        "Afirmar que o nome reservado NÃO nomeia nada do módulo da porta nova."
+      ],
+      "resultado_esperado": "Operações: `expect(membrosDoCorpo(corpoDaPorta)).toEqual(['cadastrarEntrega', 'consultarEntrega'])` e `expect(membros.length).toBe(2)`. Varredura, módulo a módulo: `expect(ocorrenciasDeTermos(vocabularioPublicadoDe(fonte), TERMOS_DO_DIALETO)).toEqual([])`. Âncora antivácuo por módulo. Controle positivo por igualdade: `expect(achados).toEqual(['idWebhook em idWebhook', 'numeroIdentificadorBaixa em numeroIdentificadorBaixa', 'sicoob em AvisoSicoob', 'validacaoWebhook em validacaoWebhook'])`. Nome reservado: `expect(citacoesDe('AdaptadorCobrancaBancaria', fontesDaPortaNova)).toEqual([])`.",
+      "criterios_aceitacao_validados": [
+        "CA-18"
+      ],
+      "observacoes": "PROVA DE FALSIFICAÇÃO a executar e registrar: reintroduza `codigoTipoMovimento` como MEMBRO do tipo canônico em `modelo-canonico.ts`, rode `pnpm --filter @sysloc/cobranca-bancaria test`, verifique que o caso reprova NOMEANDO o termo e o módulo, e reverta. ⚠️ A cláusula de fecho da ADR-0001 é do VOCABULÁRIO, isto é, de NOME — o portador `diagnostico` carrega chaves do provedor em EXECUÇÃO."
+    },
+    {
+      "task_id": "T5",
+      "id": "CT-1044",
+      "titulo": "Entrada fechada recusa chave desconhecida, saída aberta a aceita, e o portador do motivo é opaco sem nomear chave do provedor",
+      "tipo": "UNITARIO",
+      "categoria": "teste_negativo",
+      "invariant": "Entrada fechada recusa chave desconhecida, saída aberta a aceita; enum de estados congelado e ordenado; o portador do motivo é opaco e não nomeia chave alguma do provedor",
+      "owning_layer": "unit",
+      "existing_suite": "packages/contracts/test/esquemas.spec.ts (modificar)",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "corpo da ativação com `empresaId`; estado com `habilitada: 'sim'`; `diagnostico` com uma chave a mais que o teto e com tamanho total acima do teto",
+        "assertion_esperada": "`expect(erro.code).toBe('unrecognized_keys')` e `expect(erro.keys).toEqual(['empresaId'])`; `expect(resultado.error?.issues[0]?.path).toEqual(['habilitada'])`; `expect(resultado.error?.issues[0]?.path).toEqual(['motivo', 'diagnostico'])`"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "contrato — packages/contracts/src/integracao-bancaria.ts",
+      "pre_condicoes": [
+        "Baseline do pacote antes de editar: 399 casos verdes.",
+        "⚠️ A metade ESTRUTURAL é asserção ESTÁTICA e exige PROVA DE FALSIFICAÇÃO, rodada pelo SCRIPT `test` DO PACOTE e NUNCA por `vitest run` avulso.",
+        "⚠️ NÃO converter a âncora de `CodigoErro` em igualdade de conjunto. `packages/shared/test/erros.spec.ts` (CT-003) afirma SUPERCONJUNTO por decisão documentada, e a assimetria É a semântica de compatibilidade. Trocá-la seria regressão de decisão (R3).",
+        "A direção decide a estritude: entrada `z.strictObject`, saída `z.object`. A exceção vale só para `esquemaDoCertificado`."
+      ],
+      "dados_entrada": {
+        "descricao": "Os esquemas publicados por esta fatia, exercitados nos dois sentidos da estritude e nos tetos anti-abuso.",
+        "valores": {
+          "entradaDaAtivacao": "corpo vazio, `z.strictObject({})`",
+          "estadoDaEntrega": "`{ habilitada: boolean, verificadaEm: instante ISO-8601 anulável, motivo: objeto anulável }`, `z.object`",
+          "motivo": "`{ codigo: texto, mensagem: texto, diagnostico: registro sem esquema }`",
+          "tetos": "número máximo de chaves e tamanho total do `diagnostico`"
+        }
+      },
+      "passos": [
+        "Entrada — aceita o corpo vazio.",
+        "Entrada — recusa a chave desconhecida, afirmada por `code` E pela lista `keys`.",
+        "Saída — igualdade de conjunto sobre as chaves do `shape`.",
+        "Saída — aceita campo desconhecido.",
+        "Saída — recusa por VALOR afirmada pelo `path` do campo.",
+        "Motivo — igualdade de conjunto das três chaves, e nenhuma delas do dialeto.",
+        "Motivo — o `diagnostico` é OPACO: chave do provedor ACEITA em execução, e nenhuma no `shape`.",
+        "Motivo — os dois tetos, cada um com o par (aceita no limite, recusa acima dele), recusa pelo `path`.",
+        "Enum — congelado e ordenado; sobre `CodigoErro`, SUPERCONJUNTO com os três códigos novos."
+      ],
+      "resultado_esperado": "Entrada: `expect(vazio.success).toBe(true)`, `expect(vazio.data).toEqual({})`; `code === 'unrecognized_keys'` e `keys === ['empresaId']`. Saída: `expect(Object.keys(esquemaDoEstadoDaEntrega.shape)).toEqual(['habilitada', 'verificadaEm', 'motivo'])`; `comCampoNovo.success === true`; `path === ['habilitada']`. Motivo: `Object.keys(esquemaDoMotivo.shape)` igual a `['codigo', 'mensagem', 'diagnostico']`; `comChaveDoProvedor.success === true`; `path === ['motivo','diagnostico']` nos dois tetos, com `noLimite.success === true` em cada par. Enum: `Object.isFrozen` true e igualdade de array com ordem; sobre `CodigoErro`, `arrayContaining` — superconjunto, nunca igualdade.",
+      "criterios_aceitacao_validados": [
+        "CA-18"
+      ],
+      "observacoes": "PROVA DE FALSIFICAÇÃO: troque `z.object` por `z.strictObject` no estado, rode o script do pacote, veja o caso da abertura reprovar, reverta; depois troque `z.strictObject` por `z.object` na entrada, rode, veja o caso do `unrecognized_keys` reprovar, reverta. ⚠️ `expect(resultado.success).toBe(false)` sozinho é PROIBIDO pela `contrato-publicado.md`."
+    },
+    {
+      "task_id": "T6",
+      "id": "CT-1043",
+      "titulo": "Duas famílias de escopo obtêm duas credenciais; duas operações da mesma família obtêm uma",
+      "tipo": "INTEGRACAO",
+      "categoria": "integracao",
+      "invariant": "Duas famílias de escopo obtêm duas credenciais; duas operações da mesma família obtêm uma",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/cobranca-bancaria/test/adaptador-sicoob.spec.ts (modificar)",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "o par instrumentado responde `401` à concessão da família de entrega — e, num segundo eixo, recusa a operação de webhook a quem apresenta credencial da família de boleto",
+        "assertion_esperada": "`cadastrarEntrega` RESOLVE e não rejeita: `await expect(adaptador.cadastrarEntrega(...)).resolves.toEqual({ aceito: false, classe: 'DA_EMPRESA', motivo: expect.any(Object) })`"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "O relógio do ato precisa ser controlável para atravessar o prazo da credencial sem espera real, e o par TLS mútuo precisa confiar na autoridade descartável do caso.",
+        "caminho_legitimo": "A fonte de tempo já desce ao adaptador PELA ASSINATURA (`criarAdaptadorSicoob({ agora })`): o caso declara `let instante = INSTANTE_INICIAL_MS` e passa `() => instante` — nenhum relógio falso instalado no runtime, e `vi.useFakeTimers` permanece proibido. A confiança é montada por `confiarEm(autoridade)`. ⚠️ Nenhum símbolo novo de produção é criado: os avanços derivam de `PRAZO_PADRAO_DA_CREDENCIAL_S` IMPORTADA do artefato.",
+        "teste_analogo": "packages/cobranca-bancaria/test/adaptador-sicoob.spec.ts:1674 — `CT-943`"
+      },
+      "camada": "adaptador — adaptador-sicoob.ts e credencial-de-acesso.ts",
+      "pre_condicoes": [
+        "Baseline do pacote antes de editar: 93 casos verdes.",
+        "`credencialDaEmpresa`/`esquecerCredencialDaEmpresa` MUDAM DE ASSINATURA. Os dependentes mecanicamente forçados entram no escopo, e isso NÃO é desvio de escopo.",
+        "`subirProvedorInstrumentado` já registra `obtencoes`, `corposDeObtencao` e `chamadas` — é ele que se estende, e não um segundo par de mentira.",
+        "A FAMÍLIA é vocabulário do produto e vive FORA do adaptador; os escopos concretos são dialeto e vivem DENTRO dele. Os literais de escopo são escritos por extenso NESTE arquivo de teste."
+      ],
+      "dados_entrada": {
+        "descricao": "Uma empresa, um relógio parado, e quatro operações repartidas em duas famílias.",
+        "valores": {
+          "familiaDeCobranca": "duas emissões — escopos `boletos_inclusao boletos_consulta boletos_alteracao`",
+          "familiaDeEntrega": "`cadastrarEntrega` e `consultarEntrega` — escopos próprios, escritos por extenso",
+          "relogio": "parado em `INSTANTE_INICIAL_MS`",
+          "medicaoQueJustifica": "os escopos de boleto OBTÊM token mas o gateway RECUSA a operação de webhook"
+        }
+      },
+      "passos": [
+        "Subir o par instrumentado e construir o adaptador com o relógio do caso.",
+        "Executar DUAS emissões da mesma empresa com o relógio parado.",
+        "Afirmar `obtencoes.length` igual a 1.",
+        "Executar `cadastrarEntrega` e depois `consultarEntrega` da MESMA empresa, relógio parado.",
+        "Afirmar `obtencoes.length` igual a 2.",
+        "Afirmar os escopos pedidos, na ordem, por igualdade.",
+        "Afirmar que nenhuma credencial cruzou: conjuntos disjuntos, cada um de tamanho 1.",
+        "Âncora antivácuo: as quatro operações chegaram ao par.",
+        "Eixo do esquecimento seletivo: a obtenção sobe para 3, e não para 4.",
+        "Eixo NEGATIVO: com `401` na concessão da família de entrega, `cadastrarEntrega` RESOLVE."
+      ],
+      "resultado_esperado": "Contagens exatas: `toBe(1)` após as duas emissões; `toBe(2)` após as duas de entrega. Escopos por igualdade e em ordem sobre `corposDeObtencao`. Disjunção: cada conjunto de tamanho 1 e interseção `[]`. Âncora: `chamadas.length` `toBe(4)`. Esquecimento seletivo: `toBe(3)`. Eixo negativo: `resolves.toEqual({ aceito: false, classe: 'DA_EMPRESA', motivo: expect.any(Object) })` — `rejects` NUNCA é a forma aqui.",
+      "criterios_aceitacao_validados": [
+        "CA-01"
+      ],
+      "observacoes": "A asserção de disjunção é a que discrimina o defeito medido: com a chave indexada só por empresa, `obtencoes.length` seria 1 depois das quatro operações e a credencial de boleto apareceria na chamada de webhook. ⚠️ A operação da porta RESOLVE em todos os desfechos e nunca rejeita."
+    },
+    {
+      "task_id": "T7",
+      "id": "CT-1025",
+      "titulo": "habilitada só com os dois positivos, e com o par derrubado a consulta ainda responde",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "habilitada só com os dois positivos; e com o par derrubado a consulta ainda responde — prova que ela não fala com o provedor",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/entrega-da-noticia.e2e.spec.ts (criar)",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-1026",
+        "input_invalido": "par que recusa o cadastro por razão que NÃO é vaga já ocupada",
+        "assertion_esperada": "200 com `habilitada === false`, o motivo íntegro, e o contador de chamadas à CONSULTA valendo exatamente 0"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessão com a conjunção, mais as DUAS pré-condições do ato — certificado vigente e identidade pronta",
+        "caminho_legitimo": "`entrar`/`conceder` de acessorios-de-borda.ts; as duas pré-condições montadas pelas ROTAS reais, com material gerado em execução. Nunca exportar símbolo novo de produção nem escrever direto no banco o que a rota monta.",
+        "teste_analogo": "apps/api/test/certificado-do-provedor.e2e.spec.ts — arranjo do CT-826"
+      },
+      "camada": "borda",
+      "pre_condicoes": [
+        "banco efêmero migrado e servidor HTTP real em porta dinâmica",
+        "sessão da administradora da empresa A com a conjunção completa",
+        "certificado vigente e identidade registrados pelas rotas reais",
+        "par TLS mútuo do provedor em porta dinâmica, com contadores de conexão e de chamadas POR rota e método, aceitando o cadastro e respondendo consulta positiva"
+      ],
+      "dados_entrada": {
+        "descricao": "corpo VAZIO na ativação — a empresa vem do contexto de sessão",
+        "valores": {
+          "corpoDaAtivacao": "{}",
+          "cadastroNoProvedor": "aceito",
+          "consultaNoProvedor": "positiva"
+        }
+      },
+      "passos": [
+        "`POST` na ativação com corpo vazio",
+        "ler o corpo e o status",
+        "medir `par.conexoes` logo depois",
+        "derrubar o par (`close()`)",
+        "`GET` na consulta",
+        "medir `par.conexoes` de novo e comparar"
+      ],
+      "resultado_esperado": "a ativação responde 200 (e não 201) com `habilitada === true` e sem campo de motivo, pelo conjunto de chaves por igualdade de arranjo ordenado. Com o par derrubado, o `GET` responde 200 e o corpo é igual por igualdade profunda ao da ativação. O discriminador: `par.conexoes` depois do `GET` é igual (`toBe`) ao de antes — igualdade numérica exata, nunca `toBeLessThan`.",
+      "criterios_aceitacao_validados": [
+        "CA-01",
+        "CA-03"
+      ],
+      "observacoes": "A derrubada do par torna a asserção falsificável por construção. A igualdade dos contadores é a segunda metade — pega a consulta que fala com o provedor e degrada em silêncio. Arquivo NOVO justificado: engordar `certificado-do-provedor.e2e.spec.ts` misturaria dois recursos com ciclos de vida distintos."
+    },
+    {
+      "task_id": "T7",
+      "id": "CT-1026",
+      "titulo": "um positivo só não basta, e na recusa do cadastro a confirmação não chega a ser alcançada",
+      "tipo": "E2E",
+      "categoria": "teste_negativo",
+      "invariant": "um positivo só não basta; na recusa do cadastro a confirmação não chega a ser alcançada (contador por igualdade)",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/entrega-da-noticia.e2e.spec.ts (criar)",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-1025",
+        "input_invalido": "par que aceita o cadastro e responde consulta positiva",
+        "assertion_esperada": "200 com `habilitada === true`, sem motivo, e o contador da consulta valendo exatamente 1"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessão com a conjunção completa, certificado vigente e identidade prontos",
+        "caminho_legitimo": "mesmo caminho do CT-1025",
+        "teste_analogo": "arranjo do CT-827 (recusa vinda da decisão do par)"
+      },
+      "camada": "borda",
+      "pre_condicoes": [
+        "as mesmas do CT-1025",
+        "par instrumentado que recusa o cadastro por razão que não é vaga já ocupada, e cuja consulta responderia positivo se fosse alcançada"
+      ],
+      "dados_entrada": {
+        "descricao": "corpo vazio na ativação; o que varia é a resposta do par",
+        "valores": {
+          "corpoDaAtivacao": "{}",
+          "cadastroNoProvedor": "recusado, com corpo de motivo",
+          "consultaNoProvedor": "responderia positivo — e é o que não pode ser alcançado"
+        }
+      },
+      "passos": [
+        "zerar os contadores por rota e método",
+        "`POST` na ativação",
+        "ler o corpo e o status",
+        "ler os contadores do cadastro e da consulta",
+        "`GET` e conferir o estado persistido"
+      ],
+      "resultado_esperado": "a ativação responde 200 (a recusa não vira exceção) com `habilitada === false` e motivo presente. Contadores por igualdade numérica: `cadastro` 1 e `consulta` 0. O `GET` responde 200 com o mesmo corpo por igualdade profunda. Se a consulta positiva tivesse sido alcançada, `habilitada` sairia `true` e os dois contadores valeriam 1.",
+      "criterios_aceitacao_validados": [
+        "CA-01",
+        "CA-03",
+        "CA-04"
+      ],
+      "observacoes": "⚠️ O contador da consulta em zero separa este caso do CT-1035. Os dois, juntos, prendem a regra nos dois sentidos. A recusa do provedor não vira exceção: indisponibilidade e tempo esgotado seguem o mesmo destino, e nenhum dos três produz 5xx."
+    },
+    {
+      "task_id": "T7",
+      "id": "CT-1028",
+      "titulo": "duas empresas ativam independentemente, e o motivo de uma não aparece em resposta alguma da outra",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "duas empresas ativam independentemente; o motivo de uma não aparece em resposta alguma da outra",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/entrega-da-noticia.e2e.spec.ts (criar)",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "a sessão da empresa B pedindo a própria entrega enquanto o motivo da empresa A está persistido com agulhas únicas",
+        "assertion_esperada": "a varredura da saída real de B devolve `[]` por igualdade de lista, e a MESMA varredura sobre o controle com as agulhas plantadas canal a canal devolve a lista completa, também por igualdade"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "DUAS sessões vivas, uma por empresa, cada uma com a conjunção completa e com certificado e identidade próprios",
+        "caminho_legitimo": "importar `entrar`/`conceder` e montar as duas sessões pela rota real, com material gerado em execução por empresa; nenhuma comparação de empresa é escrita no teste — quem recorta é a política do banco (ADR-0008)",
+        "teste_analogo": "apps/api/test/certificado-do-provedor.e2e.spec.ts — CT-873"
+      },
+      "camada": "borda",
+      "pre_condicoes": [
+        "banco efêmero migrado, servidor HTTP real, duas empresas com sessões próprias",
+        "certificado e identidade registrados pelas rotas reais em CADA empresa",
+        "par instrumentado cuja recusa para A carrega agulhas únicas e improváveis (uma por canal) e cuja resposta para B é de sucesso",
+        "o molde de varredura com controle positivo, importado da casa compartilhada"
+      ],
+      "dados_entrada": {
+        "descricao": "duas ativações com desfechos deliberadamente diferentes para que o vazamento tenha o que vazar",
+        "valores": {
+          "empresaA": "ativação recusada, motivo com `AGULHA-MOTIVO-A`, `AGULHA-CODIGO-A` e `AGULHA-CAMPO-A`",
+          "empresaB": "ativação aceita, sem motivo"
+        }
+      },
+      "passos": [
+        "ativar pela empresa A e conferir que o motivo com as agulhas ficou persistido (âncora antivácuo)",
+        "ativar pela empresa B",
+        "`GET` da entrega pela sessão de B",
+        "varrer TODA a saída real de B procurando as três agulhas de A",
+        "aplicar a MESMA função de varredura a um objeto de controle com as três agulhas plantadas canal a canal"
+      ],
+      "resultado_esperado": "a saída real de B não contém nenhuma das agulhas: a varredura devolve `[]`, por igualdade de lista (`toEqual([])`) e nunca por `toHaveLength(0)`. O controle positivo é obrigatório e vem no mesmo caso: a mesma função sobre o objeto de controle devolve a lista completa das três agulhas, por igualdade. A âncora antivácuo: o `GET` de A contém as três agulhas. As duas ativações são independentes.",
+      "criterios_aceitacao_validados": [
+        "CA-02",
+        "CA-04"
+      ],
+      "observacoes": "ADR-0032 exige medição da saída real, nunca leitura do código. O molde de varredura com controle positivo é IMPORTADO da casa compartilhada (precedente: `apps/worker/test/varredura-de-segredo.ts`); se a casa da borda ainda não o publicar, ela é criada uma vez e importada."
+    },
+    {
+      "task_id": "T7",
+      "id": "CT-1029",
+      "titulo": "a consulta responde nos três estados, com o discriminador de nunca houve tentativa",
+      "tipo": "E2E",
+      "categoria": "fronteira",
+      "invariant": "a consulta responde nos três estados, com o discriminador de 'nunca houve tentativa'",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/entrega-da-noticia.e2e.spec.ts (criar)",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "empresa que NUNCA tentou ativar",
+        "assertion_esperada": "200 com `habilitada === false`, o discriminador presente e a chave do motivo AUSENTE do corpo (conjunto de chaves por igualdade), nunca 404 e nunca motivo vazio"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessão com a conjunção; e, para o primeiro estado, uma empresa em que nenhuma ativação jamais correu",
+        "caminho_legitimo": "usar uma TERCEIRA empresa da carga de teste, com sessão própria, em vez de apagar a linha da empresa A — apagar linha reproduziria um estado que a produção não alcança",
+        "teste_analogo": "CT-824 (d) — a empresa que nunca registrou"
+      },
+      "camada": "borda",
+      "pre_condicoes": [
+        "banco efêmero migrado e servidor HTTP real",
+        "três sessões: a da empresa que nunca tentou, e a da empresa que vai percorrer os dois desfechos",
+        "par instrumentado capaz de recusar e de aceitar, alternando entre os passos"
+      ],
+      "dados_entrada": {
+        "descricao": "os três estados percorridos em ordem",
+        "valores": {
+          "estado1": "nunca houve tentativa",
+          "estado2": "desabilitada com motivo",
+          "estado3": "habilitada"
+        }
+      },
+      "passos": [
+        "`GET` pela sessão da empresa que nunca tentou",
+        "ativar com o par recusando; `GET`",
+        "ativar de novo com o par aceitando; `GET`",
+        "comparar os três corpos e os três conjuntos de chaves"
+      ],
+      "resultado_esperado": "os três `GET` respondem 200 — nenhum é 404. (1) nunca tentou: `habilitada === false`, discriminador presente com o valor declarado, chave do motivo ausente (conjunto por igualdade); (2) desabilitada: motivo presente e íntegro; (3) habilitada: chave do motivo ausente. Os três corpos por igualdade profunda contra o objeto escrito à mão, nunca por presença de campo.",
+      "criterios_aceitacao_validados": [
+        "CA-03",
+        "CA-19"
+      ],
+      "observacoes": "Caso parametrizado sobre os três estados — 1 caso com 3 cenários mantém a comparação dos conjuntos de chaves lado a lado. A distinção entre `undefined` e omissão é conteúdo: `exactOptionalPropertyTypes` está ligado e opcional presente com valor indefinido não é conforme."
+    },
+    {
+      "task_id": "T7",
+      "id": "CT-1030",
+      "titulo": "o motivo é igual por igualdade profunda ao corpo que o provedor devolveu, e o conjunto de chaves coincide",
+      "tipo": "E2E",
+      "categoria": "integridade_dados",
+      "invariant": "o motivo é igual por igualdade profunda ao corpo que o provedor devolveu; conjunto de chaves coincide",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/entrega-da-noticia.e2e.spec.ts (criar)",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-1031",
+        "input_invalido": "motivos degenerados — corpo vazio, corpo que não é JSON, corpo profundamente aninhado e corpo com chaves de nome hostil",
+        "assertion_esperada": "nos quatro, status 200, `habilitada === false` e conjunto de chaves do corpo IDÊNTICO entre si"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessão com a conjunção completa, certificado vigente e identidade prontos",
+        "caminho_legitimo": "mesmo caminho do CT-1025",
+        "teste_analogo": "CT-827 — a recusa do provedor com `detalhe` próprio"
+      },
+      "camada": "borda",
+      "pre_condicoes": [
+        "banco efêmero migrado, servidor HTTP real e sessão com a conjunção",
+        "par instrumentado que recusa devolvendo um corpo de motivo rico e literal, declarado como constante no arquivo de teste: mensagem com acentuação, código do provedor, e ao menos um campo aninhado com arranjo dentro"
+      ],
+      "dados_entrada": {
+        "descricao": "o corpo de motivo que o par emite, escrito literalmente no teste — a fonte externa contra a qual a integridade é medida",
+        "valores": {
+          "motivoEmitido": "objeto com `mensagem` acentuada, `codigo` do dialeto, e um campo aninhado contendo arranjo de objetos"
+        }
+      },
+      "passos": [
+        "`POST` na ativação com o par recusando e emitindo o motivo literal",
+        "`GET` da entrega",
+        "comparar o `motivo` com o objeto emitido, por igualdade profunda",
+        "comparar os conjuntos de chaves dos dois, ordenados"
+      ],
+      "resultado_esperado": "o `GET` responde 200 e o `motivo` é igual por igualdade profunda (`toEqual`) ao emitido — mensagem, código e todos os campos aninhados, com a acentuação preservada, sem interpretação, tradução ou resumo. À parte: `Object.keys(motivo).sort()` igual a `Object.keys(motivoEmitido).sort()`. A resposta da ativação carrega o mesmo `motivo`.",
+      "criterios_aceitacao_validados": [
+        "CA-04"
+      ],
+      "observacoes": "Gate 6 — o valor esperado não é literal plantado num dublê e re-asserido: ele atravessa TRÊS fronteiras reais (TLS mútuo real → Postgres efêmero → projeção composta a partir das colunas). Uma implementação que devolvesse o objeto recebido em vez de reler a coluna passaria aqui e reprovaria no CT-1034."
+    },
+    {
+      "task_id": "T7",
+      "id": "CT-1031",
+      "titulo": "quatro motivos degenerados produzem status, estado e forma de corpo idênticos",
+      "tipo": "E2E",
+      "categoria": "caso_extremo",
+      "invariant": "quatro motivos degenerados produzem status, estado e forma de corpo idênticos — o motivo não decide nada",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/entrega-da-noticia.e2e.spec.ts (criar)",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "os quatro corpos degenerados que o provedor pode devolver",
+        "assertion_esperada": "nos quatro: status 200 (nunca 5xx), `habilitada === false`, e o conjunto de chaves do corpo idêntico entre os quatro por igualdade"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessão com a conjunção completa, certificado vigente e identidade prontos",
+        "caminho_legitimo": "mesmo caminho do CT-1025",
+        "teste_analogo": "CT-826 (b) — par mudo e endereço sem ouvinte degradam para 200, nunca para 500"
+      },
+      "camada": "borda",
+      "pre_condicoes": [
+        "banco efêmero migrado, servidor HTTP real e sessão com a conjunção",
+        "par instrumentado capaz de emitir, por cenário, cada um dos quatro corpos degenerados"
+      ],
+      "dados_entrada": {
+        "descricao": "quatro corpos degenerados, cada um atacando uma suposição diferente sobre a forma do motivo",
+        "valores": {
+          "degenerado1": "corpo vazio (`{}`)",
+          "degenerado2": "corpo que não é JSON, com o tipo de mídia declarado como JSON",
+          "degenerado3": "corpo profundamente aninhado, com arranjo grande dentro",
+          "degenerado4": "corpo com chaves de nome hostil — pontos, acentuação, `constructor` e `__proto__`"
+        }
+      },
+      "passos": [
+        "para cada cenário: apontar o par para o corpo do cenário",
+        "`POST` na ativação com corpo vazio",
+        "capturar status, `habilitada` e o conjunto de chaves ordenado",
+        "`GET` e capturar status",
+        "ao fim, comparar as quatro capturas entre si"
+      ],
+      "resultado_esperado": "nos QUATRO o `POST` responde exatamente 200 — nunca 5xx — e `habilitada` vale exatamente `false`. Os quatro conjuntos de chaves são idênticos entre si, por `toEqual` do primeiro contra cada um dos outros três; os quatro `GET` respondem 200. Controle contra poluição de protótipo (cenário 4): a chave plantada em `__proto__` não alcança o protótipo de objeto.",
+      "criterios_aceitacao_validados": [
+        "CA-04"
+      ],
+      "observacoes": "Caso parametrizado — quatro cenários num caso só, com a comparação final entre eles, que é onde a invariante mora. Quatro `it` separados provariam quatro fatos e deixariam a igualdade entre eles sem asserção nenhuma."
+    },
+    {
+      "task_id": "T7",
+      "id": "CT-1034",
+      "titulo": "o desfecho novo substitui o anterior, e o motivo antigo some do corpo por varredura com controle",
+      "tipo": "E2E",
+      "categoria": "integridade_dados",
+      "invariant": "o desfecho novo substitui o anterior; o motivo antigo some do corpo, por varredura com controle",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/entrega-da-noticia.e2e.spec.ts (criar)",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-1035",
+        "input_invalido": "segunda tentativa cujo cadastro é recusado por vaga já ocupada, com consulta positiva",
+        "assertion_esperada": "200 com `habilitada === true` — o desfecho novo substitui o anterior também quando ele vem da consulta"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessão com a conjunção completa, certificado vigente e identidade prontos",
+        "caminho_legitimo": "mesmo caminho do CT-1025",
+        "teste_analogo": "CT-872 — registrar de novo SUBSTITUI"
+      },
+      "camada": "borda",
+      "pre_condicoes": [
+        "banco efêmero migrado, servidor HTTP real e sessão com a conjunção",
+        "par que na primeira ativação recusa com motivo carregando a agulha `AGULHA-MOTIVO-ANTIGO` e na segunda aceita com consulta positiva",
+        "molde de varredura com controle positivo importado da casa compartilhada"
+      ],
+      "dados_entrada": {
+        "descricao": "duas ativações da MESMA empresa, com desfechos opostos",
+        "valores": {
+          "primeiraAtivacao": "recusada, motivo com `AGULHA-MOTIVO-ANTIGO`",
+          "segundaAtivacao": "aceita, consulta positiva"
+        }
+      },
+      "passos": [
+        "`POST` com o par recusando; `GET` conferindo que a agulha ESTÁ no corpo (âncora antivácuo)",
+        "medir a contagem crua de linhas do estado",
+        "trocar a resposta do par para aceitar",
+        "`POST` de novo",
+        "`GET`",
+        "varrer a saída real dos dois desfechos novos",
+        "aplicar a MESMA varredura a um controle com a agulha plantada",
+        "medir a contagem de linhas de novo"
+      ],
+      "resultado_esperado": "a segunda ativação responde 200 com `habilitada === true`. A varredura devolve `[]` por igualdade de lista. O controle positivo, no mesmo caso, devolve `['AGULHA-MOTIVO-ANTIGO']`, também por igualdade. A âncora antivácuo garante que havia o que sumir. A contagem crua de linhas é igual (`toBe`) à de antes: substituição, e não acúmulo.",
+      "criterios_aceitacao_validados": [
+        "CA-05"
+      ],
+      "observacoes": "As três metades reprovam sozinhas e nenhuma implica a outra: a varredura pega o motivo antigo que sobrevive, o controle positivo pega a varredura que não pode achar nada (AP-29), e a contagem de linhas pega a gravação que acrescenta em vez de substituir — esta última é a única que enxerga o estado preso."
+    },
+    {
+      "task_id": "T7",
+      "id": "CT-1035",
+      "titulo": "cadastro recusado por já existir mais consulta positiva resulta em habilitada",
+      "tipo": "E2E",
+      "categoria": "fronteira",
+      "invariant": "cadastro recusado por já existir + consulta positiva ⟹ habilitada",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/entrega-da-noticia.e2e.spec.ts (criar)",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-1026",
+        "input_invalido": "cadastro recusado por razão que NÃO é vaga já ocupada",
+        "assertion_esperada": "200 com `habilitada === false` e o contador da consulta valendo exatamente 0"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessão com a conjunção completa, certificado vigente e identidade prontos",
+        "caminho_legitimo": "mesmo caminho do CT-1025",
+        "teste_analogo": "arranjo do CT-826 com o par instrumentado"
+      },
+      "camada": "borda",
+      "pre_condicoes": [
+        "banco efêmero migrado, servidor HTTP real e sessão com a conjunção",
+        "par instrumentado que recusa o cadastro por vaga já ocupada, e cuja consulta responde positivo para o NOSSO destino"
+      ],
+      "dados_entrada": {
+        "descricao": "corpo vazio na ativação; o par recusa o cadastro por já existir e confirma na consulta que a entrega cadastrada é a nossa",
+        "valores": {
+          "corpoDaAtivacao": "{}",
+          "cadastroNoProvedor": "recusado por vaga já ocupada",
+          "consultaNoProvedor": "positiva, apontando para o nosso destino"
+        }
+      },
+      "passos": [
+        "zerar os contadores por rota",
+        "`POST` na ativação",
+        "ler status, corpo e conjunto de chaves",
+        "ler os contadores do cadastro e da consulta",
+        "`GET` e comparar com o corpo da ativação"
+      ],
+      "resultado_esperado": "a ativação responde 200 com `habilitada === true` — a consulta prevalece — e a chave do motivo está ausente (conjunto por igualdade). Contadores por igualdade: `cadastro` 1 e `consulta` 1 — a confirmação FOI alcançada, ao contrário do CT-1026. O `GET` responde 200 com o mesmo corpo por igualdade profunda.",
+      "criterios_aceitacao_validados": [
+        "CA-05"
+      ],
+      "observacoes": "O par CT-1026/CT-1035 prende a regra nos dois sentidos, e o contador da consulta é o eixo: 0 num, 1 no outro. Sem os dois, uma implementação que sempre consultasse (ou nunca) ficaria verde metade das vezes."
+    },
+    {
+      "task_id": "T7",
+      "id": "CT-1036",
+      "titulo": "vaga ocupada por sistema de terceiro: recusa informada e zero chamadas mutantes ao par",
+      "tipo": "E2E",
+      "categoria": "seguranca",
+      "invariant": "vaga de terceiro: recusa informada, e zero chamadas mutantes ao par",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/entrega-da-noticia.e2e.spec.ts (criar)",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-1035",
+        "input_invalido": "vaga já ocupada, mas pelo NOSSO destino",
+        "assertion_esperada": "200 com `habilitada === true` — a mesma recusa de cadastro leva a desfecho oposto quando a consulta reconhece o destino como nosso"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessão com a conjunção completa, certificado vigente e identidade prontos",
+        "caminho_legitimo": "mesmo caminho do CT-1025",
+        "teste_analogo": "CT-828 — contagem de invocações e de conexões como asserções irmãs"
+      },
+      "camada": "borda",
+      "pre_condicoes": [
+        "banco efêmero migrado, servidor HTTP real e sessão com a conjunção",
+        "par instrumentado que recusa por vaga já ocupada e cuja consulta devolve um cadastro que NÃO é o nosso",
+        "o par mantém o estado do cadastro de terceiro num objeto próprio, e conta as chamadas por método e por rota, com os métodos mutantes contados separadamente"
+      ],
+      "dados_entrada": {
+        "descricao": "corpo vazio; a vaga do provedor está ocupada por um sistema de terceiro",
+        "valores": {
+          "corpoDaAtivacao": "{}",
+          "cadastroExistenteNoProvedor": "destino de TERCEIRO, declarado como constante literal no teste"
+        }
+      },
+      "passos": [
+        "capturar o estado do cadastro de terceiro antes",
+        "zerar os contadores por método e rota",
+        "`POST` na ativação",
+        "ler status, corpo e motivo",
+        "ler os contadores dos métodos mutantes",
+        "capturar o estado do cadastro de terceiro depois",
+        "`GET`"
+      ],
+      "resultado_esperado": "a ativação responde 200 com `habilitada === false` e o motivo íntegro, por igualdade profunda. O par de asserções que prova a não-intervenção: (a) a comparação é feita sobre o mapa inteiro `{ put: 0, patch: 0, delete: 0, substituicao: 0 }` por `toEqual`, para que a falha nomeie QUAL método foi chamado; (b) o estado do cadastro de terceiro é igual por igualdade profunda ao de antes. O `GET` responde 200 com o mesmo corpo.",
+      "criterios_aceitacao_validados": [
+        "CA-07"
+      ],
+      "observacoes": "A asserção (b) sobrevive a uma implementação que alcance o cadastro alheio por caminho que o contador não enumere — ela mede o EFEITO. A (a) nomeia o culpado quando o efeito ainda não aconteceu mas a chamada saiu. Juntas fecham a classe."
+    },
+    {
+      "task_id": "T7",
+      "id": "CT-1037",
+      "titulo": "as duas rotas exigem a permissão que já existe; sem ela, envelope de recusa, zero efeito e catálogo inalterado",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "as duas rotas exigem a permissão que já existe; sem ela, envelope de recusa e zero efeito; catálogo inalterado",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/entrega-da-noticia.e2e.spec.ts (criar)",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "sessões sem a chave de ação, e sem a área, pedindo as duas rotas",
+        "assertion_esperada": "403 com `{ codigo: ACESSO_NEGADO, mensagem: <literal>, detalhes: { exigido: <a PRIMEIRA ausente na ordem declarada> } }`, zero conexões ao par e nenhuma linha nova no estado"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "DUAS sessões deficientes de propósito — uma sem a chave de ação (mas com a área) e outra sem a área — mais o par e o estado montados para que 'zero efeito' possa reprovar",
+        "caminho_legitimo": "montar as sessões por `entrar` e conceder as chaves seletivamente por `conceder`, omitindo a que o cenário testa. Nunca desligar a guarda, nunca instanciar a aplicação sem o arcabouço de autorização e nunca exportar símbolo de produção para forjar sessão.",
+        "teste_analogo": "apps/api/test/autorizacao.e2e.spec.ts e o arranjo de concessão seletiva de certificado-do-provedor.e2e.spec.ts"
+      },
+      "camada": "borda",
+      "pre_condicoes": [
+        "banco efêmero migrado, servidor HTTP real",
+        "sessão A: tem `TELA:integracoes_bancarias`, NÃO tem `ACAO:configurar_integracao`",
+        "sessão B: não tem nenhuma das duas",
+        "par do provedor de pé, com contador de conexões zerado",
+        "contagem crua de linhas do estado da entrega, medida antes"
+      ],
+      "dados_entrada": {
+        "descricao": "quatro requisições (duas rotas × duas sessões deficientes), parametrizadas",
+        "valores": {
+          "rotas": "POST /v1/integracoes-bancarias/entrega-da-noticia/ativacao (corpo vazio) e GET /v1/integracoes-bancarias/entrega-da-noticia",
+          "sessoes": "sem a ação (com a área) e sem nenhuma das duas"
+        }
+      },
+      "passos": [
+        "medir a contagem crua de linhas e o contador de conexões",
+        "para cada par (rota, sessão deficiente): emitir a requisição e capturar status e corpo",
+        "medir a contagem e o contador de novo",
+        "afirmar o catálogo fechado de chaves por igualdade"
+      ],
+      "resultado_esperado": "as QUATRO respondem 403 com o envelope INTEIRO por igualdade, com `<chave>` sendo a PRIMEIRA ausente na ordem declarada (ADR-0018). Zero efeito medido por duas grandezas independentes: contador de conexões exatamente 0 e contagem de linhas igual à de antes. Catálogo inalterado: nenhuma chave nasceu — asserção de igualdade contra o catálogo publicado.",
+      "criterios_aceitacao_validados": [
+        "CA-08"
+      ],
+      "observacoes": "⚠️ A justificativa da autorização apoia-se em ADR-0011 + ADR-0018. A ADR-0021 entra apenas como analogia de critério, e o marcador `DECISÃO FECHADA — T12` proíbe apoiar a autorização nela. Nem o docblock do controlador novo, nem o desta suíte, nem a tabela de rastreabilidade podem escrever `(ADR-0021)` ao fim de oração normativa. As âncoras de superfície vivem no CT-1038."
+    },
+    {
+      "task_id": "T7",
+      "id": "CT-1038",
+      "titulo": "as três âncoras da superfície vão a 105 / 90 / 20, por igualdade de conjunto e duas medições independentes",
+      "tipo": "INTEGRACAO",
+      "categoria": "integracao",
+      "invariant": "as três âncoras da superfície vão a 105 / 90 / 20, por igualdade de conjunto e duas medições independentes",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/cobertura-de-autorizacao.e2e.spec.ts (modificar — caso NOVO no molde exato do CT-1004, e as três constantes executáveis atualizadas no MESMO diff)",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "o controle antivácuo e o inventário próprio: lista de pares vazia, par que escapou para `publicas` ou `foraDoArcabouco`, e exigência declarada no MÉTODO em vez de herdada da classe",
+        "assertion_esperada": "sanidade do inventário (`length === 2`) ANTES de qualquer comparação; as duas listas filtradas iguais a `[]`; `classificadas === cobertura.rotasEnumeradas`; e a igualdade ENTRE os eixos afirmada antes da comparação com a âncora"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "borda",
+      "pre_condicoes": [
+        "a aplicação real montada por `criarAplicacao()` + `init()` no `beforeAll` já existente — `init()` basta, porque o que se lê é a tabela do roteador",
+        "o inventário desta task declarado como constante própria (`PARES_DA_FATIA_DA_ENTREGA_DA_NOTICIA`, com os DOIS pares) e a função de varredura, no molde de `paresDaEntregaDoCarne()`",
+        "as três constantes atualizadas no mesmo diff: 103→105, 88→90, 20→20"
+      ],
+      "dados_entrada": {
+        "descricao": "a superfície publicada da aplicação real, lida por dois eixos independentes",
+        "valores": {
+          "eixo1": "a tabela do roteador já montado (`cobertura.rotasEnumeradas`)",
+          "eixo2": "a varredura dos decoradores dos controladores, composta manipulador a manipulador mais os pares registrados direto no adaptador",
+          "paresNovos": "POST /v1/integracoes-bancarias/entrega-da-noticia/ativacao e GET /v1/integracoes-bancarias/entrega-da-noticia"
+        }
+      },
+      "passos": [
+        "rodar `verificarCoberturaDeAutorizacao(aplicacaoReal)`",
+        "afirmar a sanidade do inventário próprio ANTES de qualquer comparação",
+        "afirmar que os dois pares novos estão no eixo positivo e em nenhuma das duas portas laterais",
+        "afirmar o eixo positivo INTEIRO por igualdade contra o inventário revisado",
+        "afirmar a exigência efetiva dos dois manipuladores e o retrato com a ORIGEM da declaração",
+        "afirmar `semDeclaracao` vazio com o controle antivácuo",
+        "compor a segunda medição e afirmar a igualdade ENTRE os eixos, à parte",
+        "afirmar as três âncoras numa comparação só"
+      ],
+      "resultado_esperado": "(1) sanidade: os dois inventários valem exatamente 2, antes de qualquer comparação. (2) os dois pares no eixo positivo por igualdade de arranjo ordenado (nunca `toContain`), e as listas filtradas contra `publicas` e `foraDoArcabouco` iguais a `[]`. (3) `comExigencia` igual ao inventário revisado inteiro. (4) a exigência efetiva de cada manipulador igual a `[AREA_DAS_INTEGRACOES_BANCARIAS, ACAO_DE_CONFIGURACAO]`, com a ORIGEM (`metodo`, com a conjunção inteira). (5) `semDeclaracao` igual a `[]`, com controle antivácuo. (6) a igualdade entre os eixos afirmada À PARTE e ANTES da âncora: `expect(pelaComposicao).toBe(cobertura.rotasEnumeradas)`. (7) e então, numa comparação só: `{ peloRoteador, pelaComposicao, manipuladores }` igual a `{ 105, 105, 90 }`, com `publicas` igual a `[...PARES_PUBLICOS_ACEITOS]` e `length` 20.",
+      "criterios_aceitacao_validados": [
+        "CA-18"
+      ],
+      "observacoes": "⚠️ Obedece a `.claude/rules/ancoras-de-superficie.md` palavra por palavra. A contagem em PROSA do CLAUDE.md sobe no mesmo diff. Asserção estrutural: a prova de falsificação roda pelo script `test` do pacote, nunca por `vitest run` avulso. `real_execution_boundary: none` porque a suíte lê a tabela do roteador; a Iron Law #4 é satisfeita pelos dez casos irmãos. Última fatia que acrescenta rota antes do congelamento."
+    },
+    {
+      "task_id": "T7",
+      "id": "CT-1047",
+      "titulo": "as três recusas de pré-condição do ato externo são distintas, sem `campo`, e não são 404",
+      "tipo": "E2E",
+      "categoria": "teste_negativo",
+      "invariant": "certificado ausente, certificado com validade encerrada e identidade ausente produzem três recusas distintas, cada uma com o próprio discriminador em `detalhes` e sem nomear `campo`, todas antes de qualquer chamada externa e nenhuma delas 404",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/entrega-da-noticia.e2e.spec.ts (criar)",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-1025",
+        "input_invalido": "a empresa com as duas pré-condições satisfeitas",
+        "assertion_esperada": "a ativação corre até o fim e responde 200 com `habilitada === true`, provando que as três recusas vêm da ausência da pré-condição e não de defeito da rota"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "três empresas com sessões próprias e a conjunção completa — sem certificado; com certificado de validade encerrada; com certificado vigente e sem identidade",
+        "caminho_legitimo": "a pré-condição do certificado vencido se monta por `envelhecerOVigente` de `certificado-do-provedor.e2e.spec.ts`, que retroage a linha sob contexto de tenant, no eixo do banco — nunca por relógio falso",
+        "teste_analogo": "apps/api/test/certificado-do-provedor.e2e.spec.ts — `envelhecerOVigente` e o arranjo de concessão seletiva"
+      },
+      "camada": "borda",
+      "pre_condicoes": [
+        "banco efêmero migrado, servidor HTTP real",
+        "três empresas com sessões próprias e a conjunção completa",
+        "par de pé com contador de conexões zerado"
+      ],
+      "dados_entrada": {
+        "descricao": "três empresas, cada uma com uma pré-condição ausente, todas ativando com corpo vazio",
+        "valores": {
+          "empresa1": "sem certificado",
+          "empresa2": "certificado com validade encerrada",
+          "empresa3": "certificado vigente e sem identidade",
+          "corpoDaAtivacao": "{}"
+        }
+      },
+      "passos": [
+        "para cada uma das três empresas, `POST` na ativação com corpo vazio",
+        "capturar status, `codigo`, presença de `campo` e o conteúdo de `detalhes`",
+        "medir o contador de conexões do par",
+        "comparar as três capturas entre si"
+      ],
+      "resultado_esperado": "as três recusam antes de qualquer chamada externa — o contador de conexões vale exatamente 0 nas três. As três respondem o mesmo status (o de recusa de campo, e NÃO 404 — asserção explícita `expect(status).not.toBe(404)`), com `campo` AUSENTE do envelope nas três (afirmado pelo conjunto de chaves por igualdade, e não por `campo === undefined`), e com `detalhes` discriminante e MUTUAMENTE DISTINTO: `new Set(as três chaves discriminantes).size` vale exatamente 3. Nenhuma linha de estado nasce em empresa alguma.",
+      "criterios_aceitacao_validados": [
+        "CA-01"
+      ],
+      "observacoes": "⚠️ ACRÉSCIMO AO MAPA FIXADO DA §19.5 — o mapa CA→CT não previa caso para as três recusas de pré-condição, embora a §5.1, a §5.2 e a §10 as declarem como comportamento normativo e o challenge Q2 de 2026-08-21 tenha corrigido a forma delas contra o código real. A divergência está registrada na §7 da T7 e no task_plan.md. ⚠️ A ausência de `campo` é afirmada pelo CONJUNTO DE CHAVES, e não por `campo === undefined`: sob `exactOptionalPropertyTypes`, opcional presente com valor indefinido não é a mesma coisa que chave ausente."
+    },
+    {
+      "task_id": "T8",
+      "id": "CT-1039",
+      "titulo": "o registro do certificado enfileira a reconferência e degrada quando a fila não aceita, e o provedor recebe zero chamadas durante a requisição",
+      "tipo": "E2E",
+      "categoria": "integracao",
+      "invariant": "o registro enfileira e degrada; e o provedor recebe zero chamadas durante a requisição",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/certificado-do-provedor.e2e.spec.ts (modificar — caso NOVO no `describe` do certificado)",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "servidor de fila derrubado no instante do registro (`parar()` do acessório de fila efêmera)",
+        "assertion_esperada": "o registro continua respondendo 201 e o certificado consta no `GET`; exatamente uma linha de nível `warn` desde a marca, com o motivo; zero linhas de nível `error`; e a varredura de segredo sobre a linha devolve `[]`, com controle positivo"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "sessão de ADMIN_EMPRESA com a conjunção, mais um servidor de fila efêmero que possa ser derrubado e religado dentro do caso",
+        "caminho_legitimo": "sessão por `entrar`/`conceder`; fila por `redisEfemero` de `packages/shared/test/redis-efemero.ts` (importado), cujo `parar()` derruba o servidor preservando o diretório de dados. A degradação se produz derrubando o servidor real — nunca por dublê do produtor nem por símbolo test-only na produção.",
+        "teste_analogo": "apps/api/test/produtor-de-fila.spec.ts — o describe do desligamento com o servidor ausente; e apps/api/test/cobranca-bancaria.e2e.spec.ts"
+      },
+      "camada": "borda",
+      "pre_condicoes": [
+        "banco efêmero migrado e servidor HTTP real em porta dinâmica",
+        "servidor de fila efêmero próprio de pé, e uma sonda (`Queue` crua) apontada para a fila NOVA",
+        "sessão da administradora com a conjunção completa",
+        "autoridade descartável e material do caso, gerados em execução",
+        "par do provedor de pé com o contador de conexões zerado",
+        "marca no diário tomada antes de cada metade"
+      ],
+      "dados_entrada": {
+        "descricao": "o mesmo registro bem-sucedido, em duas condições de fila",
+        "valores": {
+          "corpoDoRegistro": "material PKCS#12 em base64 e a senha correta",
+          "condicao1": "servidor de fila de pé",
+          "condicao2": "servidor de fila derrubado por `parar()` imediatamente antes do `POST`"
+        }
+      },
+      "passos": [
+        "medir `par.conexoes` e tomar a marca do diário",
+        "`POST` no registro (fila de pé)",
+        "sondar a fila com limite de tempo em constante nomeada até a tarefa aparecer",
+        "ler o nome e a carga da tarefa",
+        "medir `par.conexoes` de novo e comparar",
+        "derrubar o servidor de fila e tomar nova marca",
+        "`POST` no registro de novo, com material novo",
+        "ler status, `GET` da consulta, e as linhas do diário desde a marca",
+        "aplicar a varredura de segredo sobre as linhas, e a mesma varredura sobre um controle com material e senha plantados"
+      ],
+      "resultado_esperado": "(a) enfileira: o `POST` responde 201; existe exatamente uma tarefa na fila (`toBe(1)`), com `nome` igual ao exportado por `packages/shared/src/fila.ts` e `data` igual por igualdade de objeto a `{ empresaId }` — nenhum campo a mais; e `par.conexoes` depois do `POST` é igual (`toBe`) ao de antes. (b) degrada: com a fila derrubada, o `POST` responde 201 mesmo assim e o `GET` traz o certificado novo; desde a marca há exatamente uma linha `warn` e zero linhas `error`; a varredura devolve `[]` por igualdade, e a mesma função sobre o controle devolve a lista completa.",
+      "criterios_aceitacao_validados": [
+        "CA-15"
+      ],
+      "observacoes": "⚠️ A ordem é gravar e só então enfileirar — precedente em `conferencia-bancaria.service.ts` (o método `enfileirar` não recebe `tx`) e em `notificacao-bancaria.service.ts`. A metade (b) é o que discrimina: com o enfileiramento dentro da transação, a fila derrubada derrubaria o registro e o 201 viraria 503. ⚠️ A carga leva `empresaId`, e isso é conformidade (ADR-0024, emenda de 2026-08-18) — o caso oposto é a entrada de fato de terceiro, em que o campo não existe."
+    },
+    {
+      "task_id": "T8",
+      "id": "CT-1040",
+      "titulo": "a reconferência atualiza a linha, e quando falha a linha permanece idêntica campo a campo",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "a reconferência atualiza a linha; quando falha, a linha permanece idêntica campo a campo",
+      "owning_layer": "service-integration",
+      "existing_suite": "apps/worker/test/reconferencia-da-entrega.spec.ts (criar)",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "reconsulta que falha — par do provedor derrubado no instante da execução da tarefa",
+        "assertion_esperada": "a linha lida depois é IGUAL por igualdade profunda à lida antes, incluindo o instante de atualização; nenhuma escrita parcial e nenhuma linha nova"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "contexto de tenant FORA de qualquer requisição — não há sessão, e o contexto tem de nascer da carga da própria tarefa (ADR-0024)",
+        "caminho_legitimo": "enfileirar a tarefa com a carga real (`{ empresaId }`) e deixar A BORDA DA TAREFA abrir o contexto, exatamente como a produção faz — a carga é conferida por `strictObject` antes de qualquer leitura e antes de abrir contexto. A semeadura e as leituras correm sob `contextoDeTenant.executarCom` pelas portas de dados reais, SEM `WHERE empresa_id` escrito no teste. Nunca exportar símbolo novo de produção para injetar contexto.",
+        "teste_analogo": "apps/worker/test/conferencia-bancaria.spec.ts — CT-948"
+      },
+      "camada": "trabalho",
+      "pre_condicoes": [
+        "banco efêmero migrado e servidor de fila efêmero próprio, abertos pelos acessórios compartilhados",
+        "certificado vigente e identidade da empresa semeados pelas portas de dados reais, sob contexto de tenant",
+        "estado da entrega já persistido como desabilitado com motivo",
+        "par TLS mútuo do provedor em porta dinâmica, capaz de responder consulta positiva e de ser derrubado"
+      ],
+      "dados_entrada": {
+        "descricao": "a mesma carga em dois cenários, com o par em condições opostas",
+        "valores": {
+          "carga": "{ empresaId: <empresa A> }",
+          "cenario1": "par respondendo consulta positiva",
+          "cenario2": "par derrubado — a reconsulta falha"
+        }
+      },
+      "passos": [
+        "cenário 1: semear o estado desabilitado com motivo; ler a linha INTEIRA antes; executar a tarefa pela fila real; ler a linha inteira depois",
+        "cenário 2: semear de novo (empresa própria); ler a linha inteira antes; derrubar o par; executar a tarefa; aguardar o desfecho; ler a linha inteira depois",
+        "comparar as leituras e as contagens de linhas dos vasos"
+      ],
+      "resultado_esperado": "Cenário 1: a linha passa a `habilitada = true`, o motivo deixa de existir na coluna, e o instante de atualização AVANÇA; a linha inteira é igual ao esperado escrito à mão, e a contagem de linhas permanece a mesma — atualização, nunca inserção. Cenário 2: a tarefa termina em falha declarada (a exceção sobe) e a linha lida depois é IGUAL por igualdade profunda (`toEqual`) à lida antes — o objeto INTEIRO, campo a campo, INCLUSIVE o instante. A contagem de linhas é igual à de antes.",
+      "criterios_aceitacao_validados": [
+        "CA-15"
+      ],
+      "observacoes": "Arquivo NOVO justificado: nenhuma suíte do processo de trabalho cobre esta tarefa, e a convenção viva do diretório é um arquivo por borda de tarefa. A comparação do OBJETO INTEIRO no cenário 2 discrimina a escrita parcial: uma implementação que gravasse o estado e só depois falhasse ao gravar o motivo passaria numa comparação de campos escolhidos e reprova aqui."
+    },
+    {
+      "task_id": "T8",
+      "id": "CT-1041",
+      "titulo": "cinco reconsultas deixam a linha idêntica, inclusive o instante, e nenhuma linha nova nasce em vaso algum",
+      "tipo": "E2E",
+      "categoria": "integridade_dados",
+      "invariant": "cinco reconsultas deixam a linha idêntica, inclusive o instante; nenhuma linha nova em vaso algum",
+      "owning_layer": "service-integration",
+      "existing_suite": "apps/worker/test/reconferencia-da-entrega.spec.ts (criar — mesmo arquivo do CT-1040)",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "uma SEXTA execução, com o par respondendo desfecho DIFERENTE do persistido",
+        "assertion_esperada": "a linha muda (o instante avança e o estado passa a desabilitada com motivo) e a contagem do vaso de efeito incrementa em exatamente 1 — o controle antivácuo que prova que as cinco igualdades anteriores podiam falhar"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "contexto de tenant fora de requisição, nascido da carga (ADR-0024), e um estado da entrega já habilitado sobre o qual as cinco reconsultas não devem produzir efeito",
+        "caminho_legitimo": "mesmo caminho do CT-1040 — enfileirar a carga real e deixar a borda da tarefa abrir o contexto; semear e conferir sob `contextoDeTenant.executarCom`, pelas portas de dados reais",
+        "teste_analogo": "apps/worker/test/conferencia-bancaria.spec.ts — CT-948 e CT-948 (d)"
+      },
+      "camada": "borda",
+      "pre_condicoes": [
+        "banco efêmero migrado e servidor de fila efêmero próprio (acessórios importados)",
+        "certificado vigente e identidade semeados; estado da entrega já persistido como habilitado",
+        "par respondendo, nas cinco primeiras execuções, o MESMO desfecho já persistido",
+        "sondagem por estado observável com limite de tempo em constante nomeada — nunca `sleep` fixo"
+      ],
+      "dados_entrada": {
+        "descricao": "a mesma carga executada seis vezes: cinco com desfecho idêntico ao persistido, e a sexta com desfecho diferente",
+        "valores": {
+          "carga": "{ empresaId: <empresa A> }",
+          "execucoes1a5": "par respondendo o MESMO desfecho já persistido (habilitada)",
+          "execucao6": "par respondendo desfecho DIFERENTE (recusa com motivo)"
+        }
+      },
+      "passos": [
+        "ler a linha INTEIRA e o mapa de contagens de TODOS os vasos alcançáveis (estado, evento/efeito e trilha), antes",
+        "executar a tarefa cinco vezes, aguardando o desfecho de cada uma",
+        "ler a linha inteira e o mapa de novo, e comparar",
+        "trocar a resposta do par para o desfecho diferente",
+        "executar a tarefa uma sexta vez",
+        "ler a linha inteira e o mapa mais uma vez"
+      ],
+      "resultado_esperado": "Depois das cinco execuções: a linha é IGUAL por igualdade profunda à lida antes — o objeto inteiro, INCLUSIVE o instante —, e o mapa `{ estado, efeito, trilha }` é igual por igualdade de objeto ao de antes (comparação do mapa inteiro numa asserção só, para que a falha NOMEIE qual vaso cresceu). O CONTROLE ANTIVÁCUO, no mesmo caso: depois da sexta execução a linha MUDA e o mapa mostra o vaso de efeito incrementado em exatamente 1.",
+      "criterios_aceitacao_validados": [
+        "CA-17"
+      ],
+      "observacoes": "`camada: borda` conforme o mapa fixado — e aqui 'borda' é a borda da TAREFA, não a borda HTTP. Sem o controle antivácuo da sexta execução, este caso seria a `tautological_assertion` (AP-29) na forma mais clássica. ⚠️ N3: o gatilho periódico está fora do escopo; o que se cobre aqui é a tarefa."
+    },
+    {
+      "task_id": "T9",
+      "id": "CT-1024",
+      "titulo": "nenhum dos seis desfechos das rotas tocadas carrega material ou senha, medidos na saída real: corpo, cabeçalho, diário e documento publicado",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Nenhum dos seis desfechos das rotas tocadas pela fatia carrega o material do certificado ou a senha dele em corpo de resposta, linha de cabeçalho, arquivo de diário do processo ou documento publicado; e a varredura que afirma essa ausência encontra todas as agulhas quando aplicada ao objeto de controle com elas plantadas canal a canal.",
+      "owning_layer": "e2e",
+      "existing_suite": "apps/api/test/segredo-nao-escapa.e2e.spec.ts (modificar — o caso NOVO entra no describe existente, e os seis casos que já vivem lá não são reescritos)",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "O objeto de controle montado por `controleComAsAgulhas(agulhas)`: a senha real enviada, o material real em base64 e o recorte hexadecimal do miolo do cofre, cada agulha plantada num canal diferente — mensagem interpolada, campo aninhado de objeto serializado, item de lista e Buffer cru inspecionado. É o eixo que reprova a varredura cega, não o produto.",
+        "assertion_esperada": "`expect(ocorrenciasDe(controleComAsAgulhas(agulhas), agulhas)).toEqual(rotulosDoControle(agulhas))` — igualdade de lista, um rótulo por agulha, na ordem declarada; a reprovação NOMEIA o canal. A asserção corre ANTES de qualquer afirmação de ausência, porque `toEqual` aborta o caso ao falhar."
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "(a) sessão autenticada com a conjunção exigida pelas quatro rotas; (b) um registrador cujo destino seja um arquivo; (c) uma empresa com identidade já registrada no provedor.",
+        "caminho_legitimo": "(a) `entrar(base, email, senha)` e `conceder(banco, usuarioId, empresaId, chaves)` de acessorios-de-borda.ts, AFIRMANDO o efetivo com `GET /v1/sessao` antes do primeiro ato. (b) Substituir SOMENTE `TOKEN_LOGGER` por `criarLogger({ nivel: 'info', destino: <arquivo temporário> })` via `overrideProvider` — é o mesmo parâmetro `destino` que a unidade systemd usa em operação. (c) Registrar a identidade pela ROTA real. Nunca forjar sessão, nunca gravar estado por SQL cru, nunca exportar símbolo de produção.",
+        "teste_analogo": "apps/api/test/segredo-nao-escapa.e2e.spec.ts (o próprio beforeAll) e apps/api/test/vocabulario-na-saida-real.e2e.spec.ts"
+      },
+      "camada": "borda HTTP da API, mais o arquivo de diário do processo e o documento publicado",
+      "pre_condicoes": [
+        "Instância efêmera própria de Postgres e de fila, com o ambiente MONTADO a partir do que os acessórios devolvem (ADR-0006).",
+        "`CHAVE_DE_CIFRA_DO_CERTIFICADO` sorteada antes de a composição correr.",
+        "Registrador com destino em arquivo temporário e nível `info` — nível `fatal` faria a varredura passar sobre arquivo vazio.",
+        "Sessão com a conjunção, efetivo AFIRMADO por `GET /v1/sessao`.",
+        "Identidade já registrada pela rota real — sem ela a ativação recusa e o desfecho varrido não é o pretendido.",
+        "Porta do provedor: destino inerte de `apps/api/vitest.config.ts`, OU a porta instrumentada — a escolha é declarada no caso, e o status esperado acompanha.",
+        "Nenhum material na árvore versionada: autoridade descartável e materiais gerados em execução, com limpeza registrada no ato da criação."
+      ],
+      "dados_entrada": {
+        "descricao": "Três materiais PKCS#12 gerados em execução pela mesma autoridade descartável, mais bytes aleatórios. As senhas são sentinelas de famílias textuais distintas — nenhuma é substring da outra.",
+        "valores": {
+          "material_aceito": "cofre em cifra legada, validade em aberto, senha `senha-sentinela-do-ct1024-aceito-nao-deve-sair`",
+          "material_vencido": "mesmo emissor, diasDeValidade -1, senha `chave-do-cofre-vencido-do-ct1024-nao-deve-sair` — é o único ramo de recusa POSTERIOR à abertura do cofre e à cifra do segredo",
+          "material_ilegivel": "randomBytes(512) em base64",
+          "senha_errada": "`senha-que-nao-abre-o-cofre-do-ct1024` sobre o material_aceito — é a recusa que atravessa o processo externo",
+          "agulhas_por_material": "senha real, material em base64 e recorte HEXADECIMAL de 16 bytes tirado da METADE do cofre",
+          "corpo_da_ativacao": "{}",
+          "chaves_proibidas": "chave, chaveDeCifra, envelope, envelopeCifrado, material, passphrase, password, pfx, segredo, segredoCifrado, segredo_cifrado, senha"
+        }
+      },
+      "passos": [
+        "1. Montar a aplicação com o registrador de destino em arquivo, entrar pela rota real e AFIRMAR o efetivo por `GET /v1/sessao`.",
+        "2. Gerar a autoridade e os três materiais; derivar as agulhas, rotuladas por cenário.",
+        "3. CONTROLE POSITIVO, antes de tudo.",
+        "4. Registrar a contagem de linhas do diário ANTES dos atos.",
+        "5. Registrar a identidade pela rota real, e afirmar que ela respondeu antes de seguir.",
+        "6. Exercer os SEIS desfechos, nesta ordem, só pela superfície HTTP.",
+        "7. ÂNCORAS ANTIVÁCUO antes das varreduras: seis respostas; status por igualdade na ordem; nenhum corpo vazio; e o registro aceito publicou a impressão digital do cofre enviado.",
+        "8. Varrer, desfecho a desfecho, as superfícies de `superficiesDaResposta`, com o rótulo na mensagem.",
+        "9. Esvaziar o registrador pelo mecanismo dele e varrer o arquivo de diário INTEIRO, uma superfície por linha.",
+        "10. Afirmar que a trilha existe: os motivos internos das três recusas aparecem no diário, na ordem das requisições.",
+        "11. Montar a segunda aplicação, a de produção, coletar o documento publicado e, com o controle positivo aplicado antes, afirmar que o recorte das rotas da fatia não declara nenhuma chave proibida."
+      ],
+      "resultado_esperado": "As seis respostas saem com os status `[201, 422, 422, 422, 200, 200]` na ordem, todas com corpo não vazio; `ocorrenciasDe(...)` devolve exatamente `[]` (igualdade, nunca contenção) para cada um dos seis conjuntos e para as linhas do diário; `proibidasEntre(chavesDeclaradasEm(...))` devolve `[]`; os três motivos internos constam do diário na ordem; e o controle devolve `rotulosDoControle(agulhas)`. Qualquer achado é reportado com o rótulo `<superfície>/<agulha>`.",
+      "criterios_aceitacao_validados": [
+        "CA-16",
+        "CA-18"
+      ],
+      "observacoes": "⚠️ ATENÇÃO AO D52 · F4/T16: o molde existe DUAS vezes — privado nesta suíte e exportado em `apps/worker/test/varredura-de-segredo.ts`. Se o CT-1024 exigir canal NOVO de busca, o gatilho DISPARA: feche o débito ou meça e reregistre, e não endureça um dos lados. A superfície nova é medida aqui NA BORDA; o módulo é coberto pelo CT-1019 — enumerar superfície não basta: o que fecha é enumerar CAMINHO. A suíte ainda declara `pedir` e `entrar` privados; o bloco NOVO importa da casa comum. O caso é COMPORTAMENTAL, logo não exige prova de falsificação — o controle positivo é a rede."
+    },
+    {
+      "task_id": "T9",
+      "id": "CT-1033",
+      "titulo": "na saída real, o dialeto do provedor aparece exclusivamente dentro do portador `diagnostico` do motivo",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Na saída real das rotas da entrega da notícia, todo termo do dialeto do provedor que entrou pela recusa dele aparece exclusivamente dentro do portador `motivo.diagnostico`: varrido o corpo COM o portador, a varredura encontra exatamente os termos que entraram; varrido o mesmo corpo SEM o portador — e varridos cabeçalhos e chaves do documento publicado —, ela encontra nenhum.",
+      "owning_layer": "e2e",
+      "existing_suite": "apps/api/test/vocabulario-na-saida-real.e2e.spec.ts (modificar — describe próprio da fatia, ao lado dos de T17 e T12)",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "Dois eixos negativos: (a) o eixo NEGATIVO do varredor — `termosEncontradosEm(textosDe(objetoDeControle('valor de enum', [])))`, que pega o varredor escrito na direção invertida; (b) o corpo real da consulta com o portador `motivo.diagnostico` REMOVIDO do recorte varrido.",
+        "assertion_esperada": "(a) `toEqual([])`; (b) `toEqual([])` — enquanto a varredura do MESMO corpo COM o portador devolve, por igualdade, a lista ordenada dos termos, e essa lista é afirmada NÃO vazia. É esse par que separa 'o dialeto morreu na fronteira' de 'a varredura não olhou'."
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "(a) sessão autenticada com a conjunção; (b) uma recusa do provedor carregando o DIALETO INTEIRO, que a porta real só produziria contra o provedor de verdade.",
+        "caminho_legitimo": "(a) `entrar` e `conceder` de acessorios-de-borda.ts, com o efetivo AFIRMADO por `GET /v1/sessao`. (b) Substituir a PORTA de entrega por implementação de teste via `overrideProvider` sobre o token que a composição já publica — nada em apps/api/src ganha bandeira, parâmetro ou ramo. O corpo de recusa é escrito POR EXTENSO no caso, como ORÁCULO, e nunca importado do fonte do adaptador: importá-lo faria os dois lados mudarem juntos. Certificado e identidade entram pelas ROTAS reais.",
+        "teste_analogo": "apps/api/test/vocabulario-na-saida-real.e2e.spec.ts — CT-934 e CT-992"
+      },
+      "camada": "borda HTTP (aplicação instrumentada para as rotas + aplicação de produção para o documento publicado)",
+      "pre_condicoes": [
+        "Instâncias efêmeras próprias de banco e de fila, cada aplicação com porta RESERVADA própria (trava atômica, nunca `port: 0`).",
+        "Sessão com a conjunção, efetivo afirmado por `GET /v1/sessao`.",
+        "Certificado vigente e identidade registrados PELAS ROTAS — sem eles a ativação recusa nas pré-condições e o corpo varrido seria um envelope do produto, não o motivo do provedor.",
+        "Porta de entrega instrumentada devolvendo recusa com o dialeto inteiro no diagnóstico; consulta negativa, para que o desfecho seja `habilitada: false` com motivo."
+      ],
+      "dados_entrada": {
+        "descricao": "O corpo de recusa do provedor, escrito por extenso como oráculo, mais a lista de termos e a repartição por canal do controle positivo.",
+        "valores": {
+          "recusa_do_provedor": "{ codigo: <código verbatim>, mensagem: <mensagem verbatim>, diagnostico: { idWebhook, tipoMovimento, codigoBeneficiario, numeroContrato, e um valor de enum carregando o nome do provedor } }",
+          "termos_varridos": "a lista TERMOS_DO_PROVEDOR já declarada no arquivo, acrescida dos termos que esta fatia faz entrar — declarada por extenso, nunca derivada do fonte do adaptador",
+          "canais_do_controle": "chave de topo · campo aninhado · item de lista · valor de enum, com a união dos quatro afirmada por igualdade antes do laço",
+          "corpos_coletados": "o desfecho da ativação (200) e o da consulta (200), mais os cabeçalhos, mais o recorte das duas rotas no documento publicado"
+        }
+      },
+      "passos": [
+        "1. CONTROLE POSITIVO, antes de tudo: união dos termos por canal igual à lista completa; eixo negativo do varredor; e canal a canal, com a mensagem nomeando o canal cego.",
+        "2. Arranjar a empresa pelas rotas reais, afirmando o desfecho de cada uma.",
+        "3. Ativar contra a porta instrumentada que recusa com o dialeto inteiro, e consultar o estado.",
+        "4. ÂNCORAS ANTIVÁCUO: os dois corpos existem e não são vazios; `[200, 200]`; e `habilitada: false` com `motivo` não nulo.",
+        "5. VARREDURA COM O PORTADOR: lista ordenada por igualdade, afirmada NÃO vazia.",
+        "6. VARREDURA SEM O PORTADOR: `[]` no corpo recortado, no corpo da ativação e nos cabeçalhos.",
+        "7. DOCUMENTO PUBLICADO: recortar as duas rotas (afirmando que o recorte existe e tem chaves) e afirmar que as CHAVES não carregam termo do dialeto — só as chaves, porque as descrições falam legitimamente do provedor em português."
+      ],
+      "resultado_esperado": "Com o portador presente, `termosEncontradosEm(textosDe(<corpo da consulta>))` devolve, por igualdade, a lista ordenada e NÃO vazia dos termos; removido o portador, `[]`; `[]` também no corpo da ativação, nos cabeçalhos e nas chaves do recorte do documento publicado; e o controle positivo devolve, canal a canal, exatamente os termos plantados, com o eixo negativo devolvendo `[]`.",
+      "criterios_aceitacao_validados": [
+        "CA-04",
+        "CA-18"
+      ],
+      "observacoes": "O par 'com e sem o portador' é o conteúdo do caso: uma varredura que só afirmasse `[]` provaria tanto 'o dialeto morreu na fronteira' quanto 'o dado nunca entrou' ou 'o varredor está cego'. O caso é compartimentado em relação ao CT-1032 (estático, sobre NOMES no fonte): aqui a asserção é comportamental, sobre VALORES em execução. Comparação insensível à caixa. O corpo de recusa é o oráculo e é escrito por extenso; derivá-lo do adaptador faria os dois lados mudarem juntos."
+    },
+    {
+      "task_id": "T10",
+      "id": "CT-1042",
+      "titulo": "com a entrega da notícia desabilitada, a conferência periódica liquida e estorna IGUAL: as duas execuções são idênticas",
+      "tipo": "INTEGRACAO",
+      "categoria": "integracao",
+      "invariant": "Com a entrega da notícia desabilitada, a conferência periódica liquida e estorna igual — as duas execuções produzem desfechos idênticos: mesmas contagens gravadas, mesmo conjunto de cobranças liquidadas e estornadas, e mesmo conjunto de títulos consultados no provedor.",
+      "owning_layer": "service-integration",
+      "existing_suite": "apps/worker/test/conferencia-bancaria.spec.ts (modificar — é a casa canônica do consumidor, com a fiação real de main.ts já montada)",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "O controle DISCRIMINANTE, no mesmo caso: uma terceira execução sobre um cenário que DEVE diferir — a empresa sem certificado vigente. Sem ele, a igualdade seria satisfeita por um consumidor que não faz nada em nenhuma das duas.",
+        "assertion_esperada": "`expect(await lerConferencia(<empresa sem certificado>, ...)).toEqual({ concluida: true, cobrancasConferidas: 0, efeitos: 0 })` e `expect(await cobrancasPagas(...)).toEqual([])` — desfecho DIFERENTE do `{ concluida: true, cobrancasConferidas: 2, efeitos: 2 }` afirmado nas execuções comparadas; e `expect(adaptador.consultas).toEqual([])`."
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "O estado da entrega por empresa — habilitado numa execução, desabilitado (e, no terceiro eixo, NUNCA TENTADO) na outra. É estado que a produção grava por dentro do serviço da ativação e que este processo não expõe.",
+        "caminho_legitimo": "Gravar e retirar o estado pela PORTA DE DADOS de produção (`packages/db/src/entrega-da-noticia.ts`), sob contexto de tenant e dentro da unidade de trabalho — o molde de `gravarCertificadoVigente`/`retirarCertificadoVigente` desta mesma suíte, que passam pela porta de produção e não por SQL cru. O estado é gravado ANTES e retirado depois quando o cenário exigir a ausência. NUNCA introduzir bandeira, parâmetro ou símbolo test-only em apps/worker/src nem em packages/db/src.",
+        "teste_analogo": "apps/worker/test/conferencia-bancaria.spec.ts — `gravarCertificadoVigente` (≈1144) / `retirarCertificadoVigente` (≈1204) e `semearCenario` com `comCertificado: false`"
+      },
+      "camada": "processador de fila (consumidor real, contra Postgres e Redis efêmeros próprios)",
+      "pre_condicoes": [
+        "Instância efêmera própria de Postgres e de fila; consumidor montado por `montarConsumidor`, com a MESMA fiação de apps/worker/src/main.ts, recebendo banco, adaptador, guarda e chave de cifra por parâmetro.",
+        "Dois cenários equivalentes por construção — mesmo número de cobranças, mesmos valores, mesmas datas derivadas de `negocio.data_corrente_da_operacao()`: o relógio nunca é falseado.",
+        "Certificado vigente gravado nos dois cenários pela porta de produção.",
+        "Estado da entrega: HABILITADA no primeiro, DESABILITADA no segundo — e a ausência total de linha exercida como terceiro eixo do mesmo caso.",
+        "Adaptador de teste que responde LIQUIDADO para o primeiro título e a situação que produz ESTORNO para o segundo, de modo que cada execução produza os DOIS efeitos."
+      ],
+      "dados_entrada": {
+        "descricao": "Dois cenários idênticos exceto o estado da entrega, mais um terceiro deliberadamente diferente que serve de controle discriminante.",
+        "valores": {
+          "cenario_A": "entrega HABILITADA · 2 cobranças · 1 a liquidar + 1 a estornar",
+          "cenario_B": "entrega DESABILITADA (linha presente, com motivo) · mesmas 2 cobranças",
+          "cenario_C": "entrega SEM LINHA ALGUMA (nunca tentou) · mesmas 2 cobranças",
+          "controle_discriminante": "empresa sem certificado vigente · mesmas 2 cobranças",
+          "carga_do_job": "{ empresaId, conferenciaId } — as duas chaves e nada mais"
+        }
+      },
+      "passos": [
+        "1. Semear os três cenários equivalentes e o controle; gravar o estado pela porta de produção em A e em B, e deixar C sem linha.",
+        "2. Ler as contagens de ANTES por empresa — nunca afirmá-las como zero; o que se mede é o DELTA.",
+        "3. Montar o consumidor e enfileirar o job de A; sondar até o estado terminal e afirmar `completed`.",
+        "4. Colher o desfecho de A: `lerConferencia`, `cobrancasPagas`, o conjunto de estornadas, e os títulos consultados (normalizados).",
+        "5. ÂNCORA ANTIVÁCUO antes de qualquer comparação: o desfecho de A é `{ concluida: true, cobrancasConferidas: 2, efeitos: 2 }` e exatamente uma paga e uma estornada.",
+        "6. Repetir 3 e 4 para B e para C.",
+        "7. AFIRMAR POR IGUALDADE que os três desfechos coincidem — registro gravado, forma da carteira e quantidade de títulos consultados. Não 'ambas funcionaram': `toEqual`.",
+        "8. CONTROLE DISCRIMINANTE: executar o job da empresa sem certificado e afirmar que o desfecho DIFERE."
+      ],
+      "resultado_esperado": "As três execuções devolvem, por igualdade profunda, o mesmo desfecho: `{ concluida: true, cobrancasConferidas: 2, efeitos: 2 }` nas três; exatamente uma liquidada e uma estornada em cada carteira; e o mesmo número de títulos consultados (2) nas três. O controle discriminante devolve `{ concluida: true, cobrancasConferidas: 0, efeitos: 0 }`, carteira inalterada e `adaptador.consultas` igual a `[]`. Nenhuma execução falha, e nenhuma consulta o estado da entrega para decidir o que fazer.",
+      "criterios_aceitacao_validados": [
+        "CA-06"
+      ],
+      "observacoes": "A comparação é por IGUALDADE, nunca por 'ambas concluíram': é isso que prova AUSÊNCIA DE ACOPLAMENTO. Um consumidor que passasse a consultar o estado e degradasse silenciosamente ficaria verde sob 'ambas funcionaram' e reprova sob igualdade. O terceiro eixo (linha AUSENTE) não é redundante com o segundo: são estados distintos no banco. O adaptador é dublê de FRONTEIRA; banco e fila são reais. O relógio não é falseado."
+    },
+    {
+      "task_id": "T10",
+      "id": "CT-1046",
+      "titulo": "o percurso do cliente novo se conclui inteiramente pela tela: material em cifra legada entra pela rota, o certificado é aceito com identidade idêntica, a ativação corre e o estado sai Habilitada",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "O percurso de um cliente novo — registrar o certificado no formato em que a AC o entrega (cifra legada) e habilitar a entrega da notícia — se conclui inteiramente pela superfície HTTP, sem nenhuma etapa que exija acesso ao servidor: o registro é aceito com titular, número de série e validade IDÊNTICOS aos do material apresentado, e a consulta final devolve o estado Habilitada.",
+      "owning_layer": "e2e",
+      "existing_suite": "NO_SUITE_FOUND — criar apps/api/test/percurso-do-cliente-novo.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-1022",
+        "input_invalido": "O MESMO material em cifra legada apresentado com a senha errada — input de outra natureza, não um caractere trocado: o cofre é o mesmo, o que muda é a credencial que o abre, e é justamente o par que o produto confundia.",
+        "assertion_esperada": "422 com o envelope da ADR-0017 por igualdade — `codigo` igual ao código da SENHA (e não ao de formato), `campo: 'corpo'`, e o estado da entrega permanecendo `habilitada: false`; nenhum certificado registrado. O CT-1022 é o dono dessa asserção; aqui ela é o eixo que impede o 201 do percurso de ser incondicional."
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "(a) sessão autenticada da empresa nova com a conjunção; (b) material PKCS#12 em CIFRA LEGADA gerado em execução, sem nada versionado; (c) uma porta do provedor que responda positivo ao cadastro e à consulta.",
+        "caminho_legitimo": "(a) `entrar` e `conceder` de acessorios-de-borda.ts, com o efetivo AFIRMADO por `GET /v1/sessao` — nenhuma sessão forjada. (b) Importar o gerador compartilhado de `packages/cobranca-bancaria/test/material-de-teste.ts` na variante de cifra legada que a T1 acrescenta a `OpcoesDoMaterial` — jamais redeclarar o gerador, jamais versionar material; a senha viaja por arquivo restrito, nunca por argv. (c) Substituir a PORTA por `overrideProvider` sobre o token que a composição já publica, importando a montagem de `./aplicacao-instrumentada.ts`.",
+        "teste_analogo": "apps/api/test/vocabulario-na-saida-real.e2e.spec.ts e apps/api/test/segredo-nao-escapa.e2e.spec.ts"
+      },
+      "camada": "borda HTTP da API — o percurso inteiro do Admin, ponta a ponta",
+      "pre_condicoes": [
+        "Instâncias efêmeras próprias de banco e de fila; ambiente MONTADO a partir do que os acessórios devolvem (ADR-0006), com `CHAVE_DE_CIFRA_DO_CERTIFICADO` sorteada.",
+        "Empresa NOVA — nenhum certificado, nenhuma identidade e nenhuma linha de estado antes do percurso; afirmado por leitura antes do primeiro ato.",
+        "Sessão do Admin com a conjunção, efetivo afirmado por `GET /v1/sessao`.",
+        "Porta do provedor instrumentada respondendo positivo ao cadastro e à consulta.",
+        "NENHUM material na árvore versionada: autoridade e cofre gerados em execução, apagados ao fim."
+      ],
+      "dados_entrada": {
+        "descricao": "Um único cofre PKCS#12 em cifra legada, gerado em execução, com os fatos dele lidos por caminho INDEPENDENTE do SUT.",
+        "valores": {
+          "material": "PKCS#12 em cifra legada, emitido por autoridade descartável própria, validade em aberto",
+          "senha": "`senha-do-percurso-do-cliente-novo` — sentinela, apresentada por corpo de requisição",
+          "tripla_de_identidade_esperada": "titular, impressão digital e validade devolvidos por `gerarMaterialDeTeste`, lidos do certificado e não da resposta",
+          "corpo_da_ativacao": "{}",
+          "atos_do_percurso": "POST /certificados → POST /identidade → POST /entrega-da-noticia/ativacao → GET /entrega-da-noticia"
+        }
+      },
+      "passos": [
+        "1. Subir a aplicação (porta do provedor instrumentada), entrar pela rota pública real e AFIRMAR o efetivo por `GET /v1/sessao`.",
+        "2. Afirmar o ponto de partida: consulta do certificado devolve a ausência esperada e consulta do estado devolve desabilitada com o discriminador de 'nunca houve tentativa'.",
+        "3. Gerar em execução a autoridade e o cofre em CIFRA LEGADA; guardar a tripla de identidade que o acessório devolve.",
+        "4. ATO 1 — POST /certificados. Afirmar 201 e a tripla POR IGUALDADE; afirmar que o desfecho declara que o material PRECISOU ser convertido.",
+        "5. ATO 2 — POST /identidade pela rota real, afirmando o desfecho antes de seguir.",
+        "6. ATO 3 — POST /entrega-da-noticia/ativacao com corpo vazio; afirmar 200.",
+        "7. ATO 4 — GET /entrega-da-noticia; afirmar 200, `habilitada: true`, `motivo: null` e `verificadaEm` não nulo.",
+        "8. AFIRMAR A FORMA DO PERCURSO POR IGUALDADE: a sequência de status é exatamente `[201, 201, 200, 200]`. É a asserção que hoje reprovaria com o D64 aberto.",
+        "9. Encerrar: autoridade e material removidos pela limpeza registrada no ato da criação."
+      ],
+      "resultado_esperado": "Os quatro atos devolvem, na ordem, os status `[201, 201, 200, 200]` por igualdade; o corpo do registro traz titular, impressão digital e validade IGUAIS (`toEqual`) aos do cofre gerado, e declara a conversão como verdadeira; a consulta final devolve `habilitada: true` com `motivo: null` e `verificadaEm` não nulo; e o percurso se conclui sem nenhuma invocação de roteiro de servidor no arranjo — o único processo externo é a ferramenta que GERA o insumo do cliente.",
+      "criterios_aceitacao_validados": [
+        "CA-20",
+        "CA-09",
+        "CA-01"
+      ],
+      "observacoes": "NO_SUITE_FOUND justificado pela unicidade da invariante: nenhuma suíte existente afirma o PERCURSO. A ausência de etapa de servidor é afirmada de forma COMPORTAMENTAL, não por inspeção do texto do caso. Este caso é a prova que fecha o D64 ao lado do CT-1020. O CT-1046 e o CT-1020 não são duplicata: aquele afirma a ROTA, este o PERCURSO. Acessórios importados, nunca redeclarados."
+    }
+  ]
+}

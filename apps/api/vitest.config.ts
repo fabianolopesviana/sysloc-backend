@@ -130,6 +130,24 @@ export default defineConfig({
       // exigi-la, e **todo** caso que sobe a aplicação real passa pela validação. Declará-la aqui é
       // o que evita editar dezenas de arquivos de verificação por causa desta exigência.
       ENDERECO_DE_AUTORIZACAO_BANCARIA: 'https://autorizacao.exemplo.invalid',
+      // `ENDERECO_DA_ENTREGA_DA_NOTICIA` entra na **T7** da fatia `integracao-bancaria-autonoma`
+      // (fechamento do `D29`) pela MESMA razão das anteriores, e o precedente vale palavra por
+      // palavra: a partida passa a exigi-la, e **todo** caso que sobe a aplicação real passa pela
+      // validação — inclusive `saude.e2e.spec.ts`, que não tem nada a ver com entrega de notícia.
+      //
+      // O valor é INERTE pelo critério de sempre: `.invalid` é o domínio que a RFC 6761 garante não
+      // resolver. Ele **não** enfraquece a exigência — quem prova que a variável é obrigatória é
+      // `test/ambiente.spec.ts`, que chama a validação com a fonte por PARÂMETRO e demonstra a
+      // recusa por ausência e por cadeia em branco. E o caminho acompanha o endereço de propósito:
+      // é ele que o produto declararia ao provedor, e escrevê-lo aqui mantém o valor da verificação
+      // com a **mesma forma** do de produção.
+      ENDERECO_DA_ENTREGA_DA_NOTICIA:
+        'https://notificacao.exemplo.invalid/v1/notificacoes-bancarias',
+      // `CONTATO_DA_ENTREGA_DA_NOTICIA` entra na intervenção dirigida de 2026-08-22 (`W2`), pela
+      // MESMA razão da irmã acima: a partida passa a exigi-la, e todo caso que sobe a aplicação real
+      // passa pela validação. O domínio é `.invalid` de propósito — reservado pela RFC 2606, e por
+      // isso incapaz de existir.
+      CONTATO_DA_ENTREGA_DA_NOTICIA: 'operacao@sysloc.exemplo.invalid',
       // `DIRETORIO_DOS_BOLETOS` entra na **T13** da fatia `emissao-e-conciliacao` pela MESMA razão das
       // seis acima, e o precedente vale palavra por palavra: a partida passa a exigi-la, e **todo**
       // caso que sobe a aplicação real passa pela validação — inclusive `saude.e2e.spec.ts`, que não

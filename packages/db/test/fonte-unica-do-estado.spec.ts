@@ -907,6 +907,19 @@ const BORDAS_QUE_ESCREVEM_CONTEXTO: readonly string[] = [
   // a função de banco não tem por onde recebê-la. Nada do recebido escolhe o tenant, que é a terceira
   // *Alternativa rejeitada* da ADR-0035.
   'apps/worker/src/tarefas/notificacao-bancaria.ts',
+  // A borda da RECONFERÊNCIA DA ENTREGA DA NOTÍCIA (T8 da fatia `integracao-bancaria-autonoma`).
+  //
+  // SUT_IS_CORRECT_BECAUSE: a lista enumera BORDAS, e esta é uma — a tarefa chega do servidor de
+  // fila, o `empresaId` vem da carga **já conferida por `strictObject` antes de qualquer leitura**, e
+  // o contexto é aberto UMA vez pelo mesmo escritor único (ADR-0024 / ADR-0029). Ela volta à classe
+  // das seis primeiras, e não à da vizinha imediatamente acima: aqui a empresa **vem da carga**,
+  // porque quem enfileirou foi a borda HTTP que atendeu a sessão do Admin ao registrar o certificado
+  // — é literalmente o alcance que a terceira emenda da ADR-0024 declara. O que ela NÃO é: um serviço
+  // abrindo contexto próprio — a porta de entrega (`@sysloc/cobranca-bancaria`) não conhece banco,
+  // não importa `@sysloc/db` e chega por parâmetro (ADR-0025). A asserção **não foi afrouxada**:
+  // continua sendo igualdade de conjunto, com `excedentes` e `ausentes` nomeados, e um nono chamador
+  // segue reprovando nominalmente.
+  'apps/worker/src/tarefas/reconferencia-da-entrega.ts',
 ].sort();
 
 /** A variável de sessão que as políticas de `negocio` consultam. */
@@ -1016,7 +1029,14 @@ describe('CT-624 — o escritor de contexto é único por borda, e as duas lista
       // tem dono-empresa (ADR-0031), e o roteamento, porque a empresa é o **resultado** dele. A
       // asserção **não foi afrouxada**: continua sendo contagem EXATA ao lado da igualdade de lista
       // acima, e um oitavo chamador reprova nominalmente.
-      expect(arquivosDe(varredura.ocorrencias)).toHaveLength(7);
+      //
+      // SUT_IS_CORRECT_BECAUSE: a **T8** da fatia `integracao-bancaria-autonoma` acrescenta a oitava
+      // — a reconferência da entrega da notícia. Ela volta à classe das seis primeiras: o
+      // `empresaId` **vem da carga**, porque quem enfileirou foi a borda HTTP que atendeu a sessão do
+      // Admin ao registrar o certificado (ADR-0024, terceira emenda). A razão está escrita em
+      // `BORDAS_QUE_ESCREVEM_CONTEXTO`. A asserção **não foi afrouxada**: continua sendo contagem
+      // EXATA ao lado da igualdade de lista acima, e um nono chamador reprova nominalmente.
+      expect(arquivosDe(varredura.ocorrencias)).toHaveLength(8);
     },
     LIMITE_DO_CASO_MS,
   );

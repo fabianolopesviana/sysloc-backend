@@ -474,7 +474,21 @@ Contagem por pacote ao fim da T5: `@sysloc/contracts` **389** (era 356) · `@sys
 - **O que fazer:** numa passagem futura por estes arquivos (**não abrir rodada só para isto**),
   acrescentar a menção à emenda de 2026-08-17, mantendo a remissão à §21.1(1).
 
-### D22 · BAIXO · error_handling · T8 · Tech Review
+### D22 · BAIXO · error_handling · T8 · Tech Review · ✅ **FECHADO na intervenção dirigida de 2026-08-22**
+
+> **Como fechou:** `MOTIVO_DE_VALOR_ILEGIVEL` declarado junto de
+> `MOTIVO_DE_LIQUIDACAO_INCOMPLETA`, e os dois ramos separados em `lerSituacao`. A separação é
+> feita pela **origem do nulo** — se alguma das chaves declaradas chegou com conteúdo —, e não
+> pelo nulo: como data e valor são lidos pelo mesmo par (chaves declaradas + molde), o mesmo
+> predicado cobre os dois, e molde novo herda a separação sem código novo. Sob marcador
+> `DECISÃO FECHADA`. ⚠️ **A grafia ofensora NÃO entrou no texto**, como o bloco exigia.
+>
+> **Rede (P4):** o `CT-950` ganhou a linha do **campo ausente** — que é o que torna os dois
+> motivos distinguíveis — e a asserção de desigualdade entre eles. As cinco grafias ambíguas
+> passaram a esperar o motivo novo, com a linha `SUT_IS_CORRECT_BECAUSE` declarada no ponto:
+> elas afirmavam o comportamento que este bloco registrou como defeito. **Nenhum caso removido,
+> nenhuma asserção afrouxada** — a tabela ganhou uma linha (`@sysloc/cobranca-bancaria` segue em
+> **106**, porque a tabela roda dentro de um `it` só).
 
 - **Onde:** `packages/cobranca-bancaria/src/adaptador-sicoob.ts:1238`
 - **Problema:** `MOTIVO_DE_LIQUIDACAO_INCOMPLETA` (*"a instituição informou o pagamento sem a data ou sem

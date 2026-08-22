@@ -760,6 +760,27 @@ const SIMBOLOS_ESPERADOS = [
   // Mesma leitura que a coluna `identificador_no_provedor` recebeu na fatia anterior.
   //
   // **Nenhuma entrada anterior sai.**
+  // T4 da fatia `integracao-bancaria-autonoma` — a tabela do estado da entrega da notícia, criada
+  // pela migração `0023`.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T4 publica UM símbolo novo no schema por decisão declarada na §1 da
+  // task (`Símbolos públicos criados`). Ele entra pelo mesmo critério de todos os anteriores: é
+  // **declaração de estrutura**, não caminho para dado — quem o tem em mãos ainda precisa de um
+  // executor para chegar ao banco, e o executor não sai do índice. O eixo das marcas de cliente
+  // continua valendo sobre ele.
+  //
+  // ⚠️ **O namespace é `esquemaNegocio`, e não `esquemaPlataforma`**: a tabela tem dono-empresa, e a
+  // ADR-0031 pela CONTRAPOSITIVA a manda para `negocio`. O roster de `plataforma` permanece com as
+  // mesmas entradas que a fatia anterior lhe deu.
+  //
+  // Os objetos que a migração autoral `0024` cria **não aparecem aqui**, pela razão de sempre: o
+  // `FORCE ROW LEVEL SECURITY` e a política são objetos e atributos do BANCO, não símbolos deste
+  // pacote. **Nenhum enum novo**: a tabela não tem coluna de união fechada — o estado é um booleano
+  // e o motivo é texto do provedor, verbatim.
+  //
+  // **Nenhuma entrada anterior sai.**
+  'esquemaNegocio.entregaDaNoticia',
   'esquemaPlataforma.desfechoDaNotificacao',
   'esquemaPlataforma.notificacaoBancaria',
   'esquemaPlataforma.plataforma',
@@ -1527,6 +1548,39 @@ const SIMBOLOS_ESPERADOS = [
   // tipos que a porta publica (`RecorteDeCompetencias`, `CobrancaDoRecorte`) **não** aparecem aqui
   // pela razão de sempre: tipo não existe em tempo de execução.
   'selecionarCobrancasDoRecorte',
+  // T4 da fatia `integracao-bancaria-autonoma` — as DUAS operações do estado da entrega da notícia,
+  // criadas em `../src/entrega-da-noticia.ts`.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T4 publica DOIS símbolos novos no índice por decisão declarada na §1
+  // e na §5.2 da task. Elas entram pelo critério de todas as portas anteriores: **recebem** o
+  // executor de quem já abriu a unidade, não abrem conexão, não reservam, não devolvem executor e —
+  // o que é a ADR-0008 aplicada à letra — **não recebem `empresaId`**.
+  //
+  // A razão própria desta porta é a **substituição sem corrida** (RN-04): `gravarDesfechoDaEntrega`
+  // é uma instrução só, com `ON CONFLICT` sobre a restrição única de `empresa_id`, e publicá-la é o
+  // que torna verificável a afirmação de que existe UM caminho para escrever o estado — um segundo
+  // apareceria aqui como excedente, e é justamente nele que a leitura-antes-de-gravar (e a corrida
+  // junto) reapareceria. O instante da verificação **não é parâmetro**: ele nasce de
+  // `pg_catalog.now()` dentro da mesma instrução (ADR-0026), e não há `new Date()` no caminho.
+  //
+  // O que **não** sai do pacote, e as ausências são deliberadas: `colunasDoEstado` e `comporEstado`
+  // — mecanismo interno da projeção e da tradução, pelo mesmo critério de `colunasDoCertificado` e
+  // de `eventoPublicado`.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o
+  // defeito que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia.
+  // **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida. Os três
+  // tipos que a porta publica (`DadosDoDesfechoDaEntrega`, `EstadoDaEntregaGravado`,
+  // `MotivoDaRecusaDoProvedor`) **não** aparecem aqui pela razão de sempre: tipo não existe em tempo
+  // de execução.
+  'gravarDesfechoDaEntrega',
+  'lerEstadoDaEntrega',
+  // ⚠️ A `0025` publica o vocabulário do terceiro estado da entrega, e a lista cresce **no mesmo
+  // diff** que o publica — é o que a `.claude/rules/ancoras-de-superficie.md` exige. `SituacaoDaEntrega`
+  // não entra pela razão de sempre: tipo não existe em tempo de execução. Nenhuma entrada saiu, e a
+  // igualdade (nunca contenção) segue sendo asserida.
+  'SITUACOES_DA_ENTREGA',
 ] as const;
 
 /** As propriedades que denunciam um cliente `postgres.js` — a marca do executor cru. */
@@ -1779,6 +1833,18 @@ const CHAMADORES_LEGITIMOS: readonly string[] = [
   // igualdade de conjunto, com `excedentes` e `ausentes` nomeados, e um oitavo chamador segue
   // reprovando nominalmente.
   join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/notificacao-bancaria.ts'),
+  // A borda da RECONFERÊNCIA DA ENTREGA DA NOTÍCIA (T8 da fatia `integracao-bancaria-autonoma`).
+  //
+  // SUT_IS_CORRECT_BECAUSE: a lista enumera BORDAS, e esta é uma — a tarefa chega do servidor de fila, o
+  // `empresaId` vem da carga **já conferida por `strictObject` antes de qualquer leitura**, e o contexto é aberto UMA vez pelo mesmo escritor único (ADR-0024 / ADR-0029).
+  // Ela volta à classe das bordas cuja empresa **vem da carga**, e não à da vizinha imediatamente
+  // acima: quem enfileirou foi a borda HTTP que atendeu a sessão do Admin ao registrar o certificado
+  // — é literalmente o alcance que a terceira emenda da ADR-0024 declara. O que ela NÃO é: um
+  // serviço abrindo contexto próprio — a porta de entrega (`@sysloc/cobranca-bancaria`) não conhece
+  // banco, não importa `@sysloc/db` e chega por parâmetro (ADR-0025). A asserção **não foi
+  // afrouxada**: continua sendo igualdade de conjunto, com `excedentes` e `ausentes` nomeados, e
+  // qualquer arquivo fora desta lista segue reprovando nominalmente.
+  join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/reconferencia-da-entrega.ts'),
 ].sort();
 
 /**
@@ -2054,6 +2120,19 @@ const ABRIDORES_LEGITIMOS: readonly string[] = [
   // igualdade de conjunto com `excedentes` e `ausentes` nomeados, e qualquer arquivo fora desta lista
   // reprova nominalmente.
   join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/notificacao-bancaria.ts'),
+  // A borda da RECONFERÊNCIA DA ENTREGA DA NOTÍCIA (T8 da fatia `integracao-bancaria-autonoma`).
+  //
+  // SUT_IS_CORRECT_BECAUSE: o elenco enumera **bordas**, e a decisão D1 é literalmente *"a unidade
+  // abre na BORDA, e o serviço recebe o executor"*. Ela abre **duas** unidades — a do preparo, que lê
+  // o estado guardado e as duas pré-condições juntas, e a da gravação —, e a consulta ao provedor é
+  // aguardada **entre** as duas, para não segurar a conexão física durante o aperto de mão. O que ela
+  // NÃO é: um serviço de domínio abrindo unidade própria — `packages/db/src/entrega-da-noticia.ts`
+  // **recebe** o `tx` nas duas operações e não conhece `AcessoAoBanco`, e a porta de entrega
+  // (`@sysloc/cobranca-bancaria`) chega por parâmetro e não importa `@sysloc/db` (ADR-0025). Ela
+  // **também** escreve contexto, e por isso entra nas DUAS listas — ver {@link CHAMADORES_LEGITIMOS}.
+  // A asserção **não foi afrouxada**: continua sendo igualdade de conjunto com `excedentes` e
+  // `ausentes` nomeados, e qualquer arquivo fora desta lista reprova nominalmente.
+  join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/reconferencia-da-entrega.ts'),
 ].sort();
 
 /**

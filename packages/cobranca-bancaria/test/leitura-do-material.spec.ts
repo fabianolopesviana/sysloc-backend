@@ -69,6 +69,12 @@
  * acessório a recebe por parâmetro e o caso a reusa como agulha. Procurar uma cadeia que nunca
  * entrou no ato é a variante oca desta prova.
  *
+ * ⚠️ **O molde da varredura saiu deste arquivo em 2026-08-21** e mora em `./varredura-de-agulhas.ts`,
+ * a casa compartilhada do diretório — o Limiar de Três disparou quando a suíte da conversão do
+ * material virou a terceira consumidora. As asserções daqui não mudaram; a varredura importada é
+ * **mais forte** que a cópia que havia aqui em dois eixos medidos (profundidade ilimitada e
+ * casamento insensível à caixa), e a razão está por extenso no cabeçalho de lá.
+ *
  * ---------------------------------------------------------------------------
  * O que este arquivo NÃO prova, e onde a propriedade vizinha mora
  * ---------------------------------------------------------------------------
@@ -138,7 +144,6 @@
 import { randomBytes } from 'node:crypto';
 import type { PeerCertificate } from 'node:tls';
 import { TLSSocket } from 'node:tls';
-import { inspect } from 'node:util';
 import type { SegredoOperavel } from '@sysloc/shared';
 import { criarSegredoOperavel } from '@sysloc/shared';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
@@ -148,6 +153,7 @@ import {
   lerMaterial,
 } from '../src/leitura-do-material.ts';
 import { gerarAutoridadeDeTeste, gerarMaterialDeTeste } from './material-de-teste.ts';
+import { agulhasDe, controleComAsAgulhas, ocorrenciasDeAgulhas } from './varredura-de-agulhas.ts';
 
 /**
  * Teto de um caso inteiro: gerar duas chaves RSA, emitir o material e completar o aperto de mão.
@@ -193,103 +199,6 @@ const SENHA_SENTINELA_ERRADA = 'senha-sentinela-que-nao-abre-4d2b8e';
 
 /** A impressão digital tal como o runtime a formata: 32 pares hexadecimais separados por `:`. */
 const FORMA_DA_IMPRESSAO_DIGITAL = /^(?:[0-9A-F]{2}:){31}[0-9A-F]{2}$/;
-
-/** Uma agulha e o rótulo pelo qual a reprovação a nomeia. */
-interface Agulha {
-  readonly rotulo: string;
-  readonly valor: string;
-}
-
-/**
- * Todas as superfícies de um valor por onde um segredo poderia sair.
- *
- * São quatro, e cada uma cobre um caminho medido: a **inspeção profunda** (o caminho de `console`, do
- * diagnóstico e do relatório de teste), a **mensagem** e a **pilha** (que a medição M4 achou serem o
- * ponto por onde segredo interpolado sobrevive, e onde a redação do registrador **não** o alcança), e
- * as **propriedades próprias** — nome e valor —, que é o que um serializador copiaria.
- */
-function superficiesDe(alvo: unknown): string[] {
-  const superficies: string[] = [
-    inspect(alvo, {
-      depth: 10,
-      showHidden: true,
-      maxStringLength: null,
-      maxArrayLength: null,
-      breakLength: Number.POSITIVE_INFINITY,
-    }),
-  ];
-
-  if (alvo instanceof Error) {
-    superficies.push(alvo.message, alvo.stack ?? '');
-  }
-
-  if (typeof alvo === 'object' && alvo !== null) {
-    for (const nome of Object.getOwnPropertyNames(alvo)) {
-      superficies.push(
-        nome,
-        inspect(Reflect.get(alvo, nome), {
-          depth: 10,
-          maxStringLength: null,
-          maxArrayLength: null,
-        }),
-      );
-    }
-  }
-
-  try {
-    superficies.push(JSON.stringify(alvo) ?? '');
-  } catch {
-    // Ciclo na estrutura: as outras três superfícies já a percorreram.
-  }
-
-  return superficies;
-}
-
-/**
- * Os rótulos das agulhas que aparecem em alguma superfície do alvo — **lista**, nunca booleano.
- *
- * Devolver a lista é o que faz a reprovação dizer *qual* segredo vazou; um booleano diria apenas que
- * a asserção caiu.
- */
-function ocorrenciasDeAgulhas(alvo: unknown, agulhas: readonly Agulha[]): string[] {
-  const superficies = superficiesDe(alvo);
-
-  return agulhas
-    .filter((agulha) => superficies.some((superficie) => superficie.includes(agulha.valor)))
-    .map((agulha) => agulha.rotulo);
-}
-
-/**
- * Um objeto que **contém** todas as agulhas, cada uma numa superfície diferente.
- *
- * É o controle positivo exigido pelo AP-29: a mesma varredura, sobre ele, tem de devolver a lista
- * inteira. As agulhas são distribuídas de propósito entre mensagem, pilha, propriedade própria e
- * objeto aninhado — se a varredura deixasse de percorrer qualquer uma dessas superfícies, o controle
- * reprovaria antes da asserção de ausência.
- */
-function controleComAsAgulhas(agulhas: readonly Agulha[]): Error {
-  const [primeira, segunda, ...demais] = agulhas;
-  const controle = new Error(`vazamento simulado: ${primeira?.valor ?? ''}`);
-  controle.stack = `${controle.stack ?? ''}\n    em rotina falsa (${segunda?.valor ?? ''})`;
-
-  return Object.assign(controle, {
-    propriedadePropria: demais.map((agulha) => agulha.valor).join(' '),
-    contexto: { certificado: { pfx: demais.map((agulha) => agulha.valor).join(' ') } },
-  });
-}
-
-/** As agulhas de um material: as duas senhas em jogo e os bytes, em base64 e em hexadecimal. */
-function agulhasDe(material: Buffer, senhas: readonly string[]): Agulha[] {
-  const base64 = material.toString('base64');
-  const hexadecimal = material.toString('hex');
-
-  return [
-    ...senhas.map((senha, indice) => ({ rotulo: `senha[${indice}]`, valor: senha })),
-    { rotulo: 'material em base64', valor: base64 },
-    { rotulo: 'início do material em base64', valor: base64.slice(0, 32) },
-    { rotulo: 'início do material em hexadecimal', valor: hexadecimal.slice(0, 32) },
-  ];
-}
 
 /**
  * Quantos soquetes o processo mantém vivos agora — o que discrimina recurso liberado de vazado.

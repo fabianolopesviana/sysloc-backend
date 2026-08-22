@@ -39,9 +39,12 @@
  * | CA-20    | CT-949 | Cadeia de terceiro que normalize para propriedade de `Object.prototype`
  * |          |        | **não vira estado do produto**: as sete recusam com o motivo da situação
  * |          |        | desconhecida, e a cadeia declarada continua atravessando. |
- * | CA-20    | CT-950 | Valor pago em grafia **ambígua** é recusado com o motivo da liquidação
- * |          |        | incompleta, nunca convertido em silêncio; a grafia inequívoca atravessa
- * |          |        | como o número que o provedor informou. |
+ * | CA-20    | CT-950 | Valor pago em grafia **ambígua** é recusado, nunca convertido em silêncio; a
+ * |          |        | grafia inequívoca atravessa como o número que o provedor informou. ⚠️ E as
+ * |          |        | DUAS causas se separam: grafia recusada devolve o motivo do valor
+ * |          |        | **ilegível**, campo ausente devolve o da liquidação **incompleta**, e a
+ * |          |        | desigualdade entre os dois é asserida — a rede do `D22 · F4/T8`, de
+ * |          |        | 2026-08-22. |
  * | RN-02    | CT-951 | A credencial do ato **não aparece** no motivo quando o provedor ecoa o
  * |          |        | cabeçalho que a portava — medido sobre a saída real, com controle
  * |          |        | positivo, e com o resto do texto do provedor preservado íntegro. |
@@ -51,13 +54,21 @@
  * |          |        | não-HTTPS e vazio —, sempre com a MESMA mensagem, que nomeia a
  * |          |        | **variável** e jamais ecoa o valor recusado. Sem fronteira de rede. |
  * | —        | CT-1009| E o endereço **bem formado** constrói: as três formas boas devolvem um
- * |          |        | objeto com **exatamente** as cinco capacidades da porta. É o companheiro
- * |          |        | que impede uma guarda degenerada em *recusa tudo* de satisfazer o
- * |          |        | CT-1008. |
+ * |          |        | objeto com **exatamente** as capacidades declaradas da porta. É o
+ * |          |        | companheiro que impede uma guarda degenerada em *recusa tudo* de
+ * |          |        | satisfazer o CT-1008. |
+ * | CA-01    | CT-1043| **Duas famílias de escopo obtêm duas credenciais; duas operações da mesma
+ * |          |        | família obtêm uma.** Os escopos pedidos são os daquela família, em ordem;
+ * |          |        | os conjuntos de credenciais apresentadas nas chamadas de cobrança e nas
+ * |          |        | de entrega são **disjuntos**, cada um de tamanho 1; o esquecimento por
+ * |          |        | invalidação alcança **só** a família invalidada; e a concessão recusada
+ * |          |        | faz a operação **RESOLVER** com o motivo íntegro do provedor — nunca
+ * |          |        | rejeitar. |
  *
  * Rastreabilidade: `CA-07 → CT-839, CT-840, CT-841, CT-863 (RN-06)` ·
  * `CA-13 → CT-840, CT-863 (RN-10)` · `RN-02 → CT-844, CT-863, CT-951` ·
- * `CA-20 → CT-943, CT-949, CT-950, CT-952 (RN-15)` · `D38 · F4/T10 → CT-1008, CT-1009`.
+ * `CA-20 → CT-943, CT-949, CT-950, CT-952 (RN-15)` · `D38 · F4/T10 → CT-1008, CT-1009` ·
+ * `CA-01 → CT-1043 (RN-06)`.
  *
  * ---------------------------------------------------------------------------
  * Os QUATRO casos da correção do Gate 2 — e por que eles nasceram fora da faixa
@@ -266,7 +277,6 @@ import type { Server as ServidorTcp } from 'node:net';
 import { createServer as criarParTcp } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { getCACertificates, setDefaultCACertificates } from 'node:tls';
-import { inspect } from 'node:util';
 import { criarSegredoOperavel } from '@sysloc/shared';
 import { describe, expect, it, onTestFinished } from 'vitest';
 import { criarAdaptadorSicoob, TETO_DO_APERTO_DE_MAO_MS } from '../src/adaptador-sicoob.ts';
@@ -278,11 +288,13 @@ import {
 import type {
   ConsultaDeSituacao,
   DesfechoDaOperacao,
+  EntregaParaCadastrar,
   PedidoDeEmissao,
   ResultadoDaVerificacaoDeIdentidade,
   SituacaoConsultada,
 } from '../src/modelo-canonico.ts';
 import type { AdaptadorCobrancaBancaria } from '../src/porta-de-cobranca.ts';
+import type { PortaDeEntregaDaNoticia } from '../src/porta-de-entrega-da-noticia.ts';
 import type { PortaDeIdentidadeBancaria } from '../src/porta-de-identidade.ts';
 import type { AutoridadeDeTeste } from './material-de-teste.ts';
 import {
@@ -291,6 +303,13 @@ import {
   gerarParDeServidorDeTeste,
   IDENTIDADE_DE_TESTE,
 } from './material-de-teste.ts';
+import type { Agulha } from './varredura-de-agulhas.ts';
+import {
+  agulhasDe,
+  controleComAsAgulhas,
+  ocorrenciasDeAgulhas,
+  superficiesDe,
+} from './varredura-de-agulhas.ts';
 
 /**
  * Teto de um caso inteiro: gerar as chaves RSA das autoridades, emitir os materiais e completar os
@@ -392,16 +411,29 @@ const ENDERECOS_ACEITOS = [
 ] as const;
 
 /**
- * As **cinco** capacidades que o adaptador construído publica — as quatro da porta de cobrança mais
- * a sonda de identidade.
+ * As **sete** capacidades que o adaptador construído publica — as quatro da porta de cobrança, a
+ * sonda de identidade e as **duas** da porta de entrega da notícia.
  *
  * Escritas por extenso, e jamais derivadas do objeto devolvido: derivar poria o artefato sob prova
  * nos dois lados da igualdade, e a asserção passaria a não poder falhar.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a lista de **cinco** era certa enquanto o adaptador satisfazia duas portas,
+ * e a T6 desta fatia manda-o satisfazer a terceira — a porta irmã de entrega da notícia, cujas duas
+ * operações a T5 publicou e cujo contrato o adaptador declara satisfazer no tipo de retorno da
+ * fábrica. A asserção **não foi afrouxada**: continua igualdade de conjunto, e reprova nas duas
+ * direções — capacidade a mais aparece como excedente, capacidade que suma reprova por ausência.
  */
 const CAPACIDADES_DO_ADAPTADOR = [
+  // SUT_IS_CORRECT_BECAUSE: a `0025` declara as duas operações de correção do cadastro da entrega, e
+  // elas são capacidades do adaptador como as outras sete. A lista continua ordenada e continua
+  // sendo afirmada por igualdade — uma capacidade que sumisse segue reprovando aqui.
+  'atualizarEnderecoDaEntrega',
+  'cadastrarEntrega',
   'confirmarRevogacaoDeBoleto',
+  'consultarEntrega',
   'consultarSituacao',
   'emitir',
+  'reativarEntrega',
   'solicitarRevogacaoDeBoleto',
   'verificarIdentidade',
 ] as const;
@@ -430,6 +462,123 @@ const EMPRESA_B = '7a9d6e13-2c85-4f7b-8d31-6b0e2a5c9f44';
 /** Quantas operações cada empresa executa no CT-943, e onde o relógio cruza o prazo. */
 const OPERACOES_POR_EMPRESA = 10;
 const OPERACOES_ANTES_DA_RENOVACAO = 5;
+
+// ===========================================================================
+// O DIALETO DA ENTREGA DA NOTÍCIA — CT-1043
+//
+// ⚠️ Os literais abaixo são do PROVEDOR, e é **aqui** que eles podem viver: este é o arquivo do
+// adaptador, que é a fronteira de tradução. Eles são escritos **por extenso** e jamais derivados do
+// fonte que eles conferem — derivar poria o artefato sob prova nos dois lados da igualdade, e a
+// asserção passaria a aprovar qualquer escopo, inclusive o de outra família. É a mesma disciplina
+// que o `CT-880` já pratica com `client_id` e `grant_type`.
+// ===========================================================================
+
+/** Para onde o provedor entrega a notícia — endereço do processo, e nunca do ato. */
+const ENDERECO_DA_ENTREGA = 'https://noticia-de-teste.sysloc.invalid/v1/notificacoes-bancarias';
+
+/**
+ * O contato operacional que acompanha o cadastro da entrega — a outra metade do endereço acima.
+ *
+ * O provedor o declara **necessário** no cadastro (`W2`, 2026-08-22), e por isso o adaptador resolve
+ * negativo sem chamar quando ele falta. Domínio `.invalid`, reservado pela RFC 2606.
+ */
+const CONTATO_DA_ENTREGA = 'operacao@sysloc.exemplo.invalid';
+
+/**
+ * Os dois códigos do dialeto da entrega, **por extenso** — e jamais importados do artefato.
+ *
+ * Importá-los poria o valor sob prova nos dois lados da igualdade, e a asserção passaria a aprovar
+ * qualquer número. Eles vêm da documentação oficial: `7 - Pagamento (Baixa operacional)` e
+ * `1 - Movimento atual (D0)`.
+ */
+const TIPO_DE_MOVIMENTO_POR_EXTENSO = 7;
+const PERIODO_DE_MOVIMENTO_POR_EXTENSO = 1;
+
+/** O código que o contrato documenta para o cadastro aceito — `201`, e não o `200` genérico. */
+const CODIGO_DO_CADASTRO_ACEITO = 201;
+
+/** O código que o contrato documenta para *"consulta com sucesso e SEM registros"* — sem corpo. */
+const CODIGO_DE_CONSULTA_SEM_REGISTROS = 204;
+
+/**
+ * A situação que o provedor nomeia como **validada com sucesso** — escrita por extenso.
+ *
+ * Jamais importada do artefato que ela confere: importá-la poria o valor sob prova nos dois lados da
+ * igualdade. Ela vem da documentação oficial (`3 - Validado com sucesso`).
+ */
+const SITUACAO_VALIDADA_POR_EXTENSO = 3;
+
+/** Os escopos de cada família, medidos contra a conta real e escritos por extenso. */
+const ESCOPOS_DA_COBRANCA = 'boletos_inclusao boletos_consulta boletos_alteracao';
+const ESCOPOS_DA_ENTREGA = 'webhooks_inclusao webhooks_consulta webhooks_alteracao';
+
+/** O prefixo pelo qual uma chamada de ENTREGA se distingue de uma de cobrança, no par. */
+const RECURSO_DA_ENTREGA_NO_PAR = '/cobranca-bancaria/v3/webhooks';
+
+/** O código com que o provedor diz *"esta credencial não vale"* — um dos dois que o produto trata. */
+const CODIGO_DE_CREDENCIAL_MORTA = 401;
+
+/**
+ * O corpo com que o provedor de identidade recusa a concessão — o dialeto **dele**, verbatim.
+ *
+ * Os campos são o que a recusa da concessão traz, e o caso os afirma **de volta** no motivo canônico:
+ * dois viram `codigo` e `mensagem`, e o que sobra vira `diagnostico` — íntegro, sem tradução e sem
+ * interpretação (ADR-0034).
+ *
+ * ⚠️ **Ela ECOA o identificador da aplicação, e é o eco que torna a prova falsificável.** O pedido de
+ * concessão apresenta esse identificador ao provedor no corpo do formulário (`client_id`), e ele é
+ * segredo operável pelo mesmo modelo do produto (ADR-0032). Sem o eco, a varredura devolveria lista
+ * vazia porque a fixture não traz a agulha, e **não** porque o produto a bloqueie — a asserção não
+ * teria estado algum em que reprovasse (AP-29).
+ *
+ * O eco entra nos **dois** portadores, que são distintos e têm larguras distintas: dentro da
+ * `error_description`, que vira `mensagem`, e como **chave própria** do JSON, que cai inteira em
+ * `diagnostico` — o portador mais largo, que leva os campos restantes sem aparar nem recortar. Um só
+ * dos dois deixaria metade do caminho sem prova.
+ */
+const RECUSA_DA_CONCESSAO = {
+  error: 'invalid_scope',
+  error_description: `o escopo pedido nao esta liberado para a aplicacao ${IDENTIDADE_DE_TESTE.identificadorDaAplicacao}`,
+  scope: ESCOPOS_DA_ENTREGA,
+  client_id: IDENTIDADE_DE_TESTE.identificadorDaAplicacao,
+} as const;
+
+/**
+ * O que o produto põe no lugar de um segredo do ato quando o provedor ecoa o que o pedido portou.
+ *
+ * Escrito **literal deste lado**, e nunca importado do artefato: importá-lo faria o esperado casar com
+ * qualquer sentinela que o produto adotasse — a cadeia vazia inclusive —, e a asserção mediria a si
+ * mesma. É a mesma disciplina que o CT-844 já usa ao escrevê-lo por extenso.
+ */
+const SEGREDO_REDIGIDO_NO_MOTIVO = '«credencial omitida»';
+
+/** O identificador que o par atribui à entrega cadastrada — dialeto, e nada que o produto leia. */
+const IDENTIFICADOR_DA_ENTREGA_NO_PAR = 990;
+
+/**
+ * A recusa que o par devolve na operação de entrega — a **outra** forma do dialeto: agrupada.
+ *
+ * O código medido é o da vaga já ocupada; a mensagem é do par. O campo que sobra é o que o caso
+ * espera reencontrar **inteiro** em `diagnostico`, e é ele que prova que o resto da recusa não se
+ * perde na tradução.
+ */
+const CODIGO_DA_RECUSA_DA_ENTREGA = 10260;
+const MENSAGEM_DA_RECUSA_DA_ENTREGA = 'ja existe cadastro para este cliente e tipo de movimento';
+const RECUSA_DA_ENTREGA = {
+  mensagens: [
+    {
+      codigo: CODIGO_DA_RECUSA_DA_ENTREGA,
+      mensagem: MENSAGEM_DA_RECUSA_DA_ENTREGA,
+      idWebhook: IDENTIFICADOR_DA_ENTREGA_NO_PAR,
+    },
+  ],
+} as const;
+
+/** Qual chamada de entrega o par invalida — a terceira, que é o eixo do esquecimento seletivo. */
+const CHAMADA_DE_ENTREGA_INVALIDADA = 3;
+
+/** Quantas operações as duas famílias somam antes do eixo do esquecimento — a âncora antivácuo. */
+const OPERACOES_DAS_DUAS_FAMILIAS = 4;
 
 /**
  * O número que o par instrumentado devolve como **inteiro** — o dialeto medido (§13-A.4).
@@ -480,6 +629,23 @@ const MOTIVO_DE_LIQUIDACAO_INCOMPLETA =
   'a instituição informou o pagamento sem a data ou sem o valor, e ele não pode ser aplicado';
 
 /**
+ * O terceiro motivo da tradução de volta — o campo que **veio** e que o produto não leu.
+ *
+ * SUT_IS_CORRECT_BECAUSE: as cinco grafias ambíguas desta tabela esperavam
+ * `MOTIVO_DE_LIQUIDACAO_INCOMPLETA`, e o comportamento que elas afirmavam é o **defeito** que o
+ * `D22 · F4/T8` registrou: em todas as cinco o valor **foi** informado — o produto é que não o lê —,
+ * e o texto antigo mandava o operador procurar um campo que está lá. O código de produção passou a
+ * separar as duas causas na intervenção dirigida de 2026-08-22; estas expectativas acompanham a
+ * separação, e nenhuma asserção foi afrouxada — a tabela ganhou **uma linha a mais**, a do campo
+ * ausente, que é justamente o que torna os dois motivos distinguíveis. Antes dela, um SUT que
+ * devolvesse `VALOR_ILEGIVEL` para tudo passaria.
+ *
+ * Copiado do artefato, jamais importado — mesma disciplina dos dois acima, e pela mesma razão.
+ */
+const MOTIVO_DE_VALOR_ILEGIVEL =
+  'a instituição informou o pagamento em forma que o produto não conseguiu ler, e ele não pode ser aplicado';
+
+/**
  * As cadeias que um objeto literal devolveria **sem ninguém as ter declarado** — o eixo do CT-949.
  *
  * `constructor` vem primeiro porque é a que **escapava**: ela já é minúscula e sem sublinhado, de
@@ -506,11 +672,20 @@ const DATA_DO_PAGAMENTO_DO_PAR = '2026-09-10';
  * As grafias de valor pago que o CT-950 submete, e o que cada uma **tem de** produzir.
  *
  * ⚠️ **As quatro primeiras são as inequívocas** — leem-se igual em qualquer convenção — e atravessam
- * como número. As cinco últimas são ambíguas ou exóticas, e **todas** caem na recusa que já existia:
- * `1.234` é a que importa, porque era a única que o `Number(valor.replace(',', '.'))` aceitava **e
- * lia errado**, gravando R$ 1,23 onde o provedor informou R$ 1.234,00.
+ * como número. As cinco seguintes são ambíguas ou exóticas, e **todas** caem em recusa: `1.234` é a
+ * que importa, porque era a única que o `Number(valor.replace(',', '.'))` aceitava **e lia errado**,
+ * gravando R$ 1,23 onde o provedor informou R$ 1.234,00.
+ *
+ * ⚠️ **A última linha é de outra natureza, e é ela que dá conteúdo às cinco**: o campo **ausente**.
+ * Ela é a rede do `D22 · F4/T8` — sem ela, um adaptador que devolvesse `VALOR_ILEGIVEL` para todo
+ * desfecho de liquidação passaria em todas as demais, e a separação entre *"não informou"* e *"veio
+ * e não foi lido"* seria afirmada sem nada que a falsificasse. As duas metades da tabela precisam
+ * produzir motivos **diferentes**, e é essa desigualdade que o caso mede.
  */
 const ROTULO_DO_MILHAR = 'milhar com ponto, sem centavos';
+
+/** O rótulo da linha do campo ausente — a que separa os dois motivos. */
+const ROTULO_DO_AUSENTE = 'campo ausente: o provedor não informou valor algum';
 
 const GRAFIAS_DO_VALOR_PAGO: readonly {
   readonly rotulo: string;
@@ -521,19 +696,21 @@ const GRAFIAS_DO_VALOR_PAGO: readonly {
   { rotulo: 'texto com vírgula decimal', bruto: '1234,56', esperado: 1234.56 },
   { rotulo: 'texto com ponto decimal', bruto: '1234.56', esperado: 1234.56 },
   { rotulo: 'texto inteiro', bruto: '1234', esperado: 1234 },
-  { rotulo: ROTULO_DO_MILHAR, bruto: '1.234', esperado: MOTIVO_DE_LIQUIDACAO_INCOMPLETA },
+  { rotulo: ROTULO_DO_MILHAR, bruto: '1.234', esperado: MOTIVO_DE_VALOR_ILEGIVEL },
   {
     rotulo: 'milhar com ponto e centavos',
     bruto: '1.234,56',
-    esperado: MOTIVO_DE_LIQUIDACAO_INCOMPLETA,
+    esperado: MOTIVO_DE_VALOR_ILEGIVEL,
   },
   {
     rotulo: 'milhão com dois pontos',
     bruto: '1.234.567,89',
-    esperado: MOTIVO_DE_LIQUIDACAO_INCOMPLETA,
+    esperado: MOTIVO_DE_VALOR_ILEGIVEL,
   },
-  { rotulo: 'milhar com vírgula', bruto: '1,234', esperado: MOTIVO_DE_LIQUIDACAO_INCOMPLETA },
-  { rotulo: 'notação científica', bruto: '1e3', esperado: MOTIVO_DE_LIQUIDACAO_INCOMPLETA },
+  { rotulo: 'milhar com vírgula', bruto: '1,234', esperado: MOTIVO_DE_VALOR_ILEGIVEL },
+  { rotulo: 'notação científica', bruto: '1e3', esperado: MOTIVO_DE_VALOR_ILEGIVEL },
+  // A chave sai do corpo por completo: `undefined` não sobrevive à serialização do par.
+  { rotulo: ROTULO_DO_AUSENTE, bruto: undefined, esperado: MOTIVO_DE_LIQUIDACAO_INCOMPLETA },
 ];
 
 /** O código com que o par recusa a operação no CT-951 — falha **daquela cobrança**, não da empresa. */
@@ -565,8 +742,9 @@ const DETALHE_NAO_INICIADO =
 /**
  * Bytes que **não** são PKCS#12 — a entrada que faz `https.request` lançar de forma síncrona.
  *
- * A cadeia é longa e improvável de propósito: ela vira as agulhas `material-base64` e `material-hex`
- * do CT-863, e uma cadeia curta poderia casar por acaso com algum trecho do espólio.
+ * A cadeia é longa e improvável de propósito: ela vira as agulhas `material-base64` e os dois
+ * recortes de início do CT-863, e uma cadeia curta poderia casar por acaso com algum trecho do
+ * espólio.
  */
 const MATERIAL_QUE_NAO_ABRE = Buffer.from('estes-bytes-nao-sao-um-pkcs12-8f3c1d97b2');
 
@@ -630,12 +808,6 @@ interface ParInstrumentado {
   abertas: number;
   readonly titularesApresentados: string[];
   readonly pedidos: PedidoObservado[];
-}
-
-/** Uma agulha e o rótulo pelo qual a reprovação a nomeia. */
-interface Agulha {
-  readonly rotulo: string;
-  readonly valor: string;
 }
 
 /**
@@ -847,6 +1019,11 @@ function respostaDaEmissao(): RespostaDoPar {
  * produz. Distinguir pelo caminho faria o par conhecer um detalhe interno do adaptador; distinguir
  * pela ausência da credencial mede, de quebra, que a obtenção não apresenta credencial nenhuma.
  *
+ * ⚠️ **A concessão também é do CASO desde o CT-1043**, e pelo mesmo motivo: recusar a concessão de
+ * **uma** família de escopo é o eixo negativo daquele caso, e um segundo par escrito ao lado seria a
+ * terceira cópia da maquinaria TLS deste arquivo, livre para divergir das duas primeiras. O padrão —
+ * `undefined` — mantém a concessão de sempre, de modo que nenhum caso anterior muda.
+ *
  * ⚠️ **O que o par responde às operações é do CASO, e o padrão continua sendo a emissão.** Os casos
  * da tradução de volta (CT-949, CT-950 e CT-951) precisam do par falando situações e recusas, e a
  * alternativa — um segundo par de teste — seria a terceira cópia da maquinaria TLS deste arquivo,
@@ -856,6 +1033,8 @@ function respostaDaEmissao(): RespostaDoPar {
 async function subirProvedorInstrumentado(
   autoridade: AutoridadeDeTeste,
   responderOperacao: (chamada: ChamadaObservada) => RespostaDoPar = respostaDaEmissao,
+  responderConcessao: (corpo: string, titular: string) => RespostaDoPar | undefined = () =>
+    undefined,
 ): Promise<ProvedorInstrumentado> {
   const parDoServidor = await gerarParDeServidorDeTeste(autoridade, NOME_DO_PAR);
   const titularPorSoquete = new Map<Duplex, string>();
@@ -886,8 +1065,20 @@ async function subirProvedorInstrumentado(
         const autorizacao = pedido.headers.authorization;
 
         if (autorizacao === undefined) {
+          const corpoDaObtencao = Buffer.concat(pedacos).toString('utf8');
           observado.obtencoes.push(titular);
-          observado.corposDeObtencao.push(Buffer.concat(pedacos).toString('utf8'));
+          observado.corposDeObtencao.push(corpoDaObtencao);
+
+          // O CASO pode recusar a concessão — e é por aqui que o eixo negativo do CT-1043 recusa
+          // **só** a família de escopo que ele quer, lendo o escopo pedido. `undefined` mantém a
+          // concessão padrão, de modo que nenhum caso anterior muda de comportamento.
+          const recusada = responderConcessao(corpoDaObtencao, titular);
+
+          if (recusada !== undefined) {
+            responderEmJson(resposta, recusada.corpo, recusada.codigo);
+            return;
+          }
+
           responderEmJson(resposta, {
             access_token: `credencial-${titular}-${observado.obtencoes.length}`,
             token_type: 'Bearer',
@@ -1031,6 +1222,51 @@ function adaptadorComRelogio(
   });
 }
 
+/**
+ * O adaptador do CT-1043 — com o relógio do caso **e** o endereço para onde a notícia é entregue.
+ *
+ * O endereço é do **processo**, e por isso chega na construção: `EntregaParaCadastrar` deliberadamente
+ * não o carrega, para que entrada de usuário nenhuma decida o destino do que se cadastra no provedor.
+ */
+function adaptadorComEntrega(
+  porta: number,
+  agora: FonteDeTempo,
+): PortaDeIdentidadeBancaria & AdaptadorCobrancaBancaria & PortaDeEntregaDaNoticia {
+  return criarAdaptadorSicoob({
+    enderecoDoProvedor: apontarEnderecoDoProvedor(enderecoDoPar(porta)),
+    enderecoDaEntregaDaNoticia: ENDERECO_DA_ENTREGA,
+    contatoDaEntregaDaNoticia: CONTATO_DA_ENTREGA,
+    agora,
+  });
+}
+
+/** O ato de entrega da notícia pelo caminho legítimo — vocabulário do produto, e nada do provedor. */
+function entregaParaCadastrar(empresaId: string, material: ParDeSegredo): EntregaParaCadastrar {
+  return {
+    empresaId,
+    segredo: criarSegredoOperavel({ material: material.material, senha: material.senha }),
+    identidade: IDENTIDADE_DE_TESTE,
+  };
+}
+
+/** O escopo pedido em cada concessão, na ordem — lido do corpo que o par de fato recebeu. */
+function escoposPedidos(provedor: ProvedorInstrumentado): (string | null)[] {
+  return provedor.corposDeObtencao.map((corpo) => new URLSearchParams(corpo).get('scope'));
+}
+
+/** As credenciais **distintas** apresentadas nas chamadas que casam com o filtro, na ordem. */
+function credenciaisApresentadas(
+  provedor: ProvedorInstrumentado,
+  aceitar: (chamada: ChamadaObservada) => boolean,
+): string[] {
+  return [...new Set(provedor.chamadas.filter(aceitar).map((chamada) => chamada.credencial))];
+}
+
+/** A chamada foi para o recurso da ENTREGA? É o discriminador entre as duas famílias, no par. */
+function ehChamadaDeEntrega(chamada: ChamadaObservada): boolean {
+  return chamada.caminho.startsWith(RECURSO_DA_ENTREGA_NO_PAR);
+}
+
 /** Um pedido de emissão pelo caminho legítimo — o vocabulário do produto, e nada do provedor. */
 function pedidoDeEmissao(
   empresaId: string,
@@ -1108,85 +1344,6 @@ async function aguardarConexoesEncerradas(par: ParInstrumentado): Promise<void> 
   }
 }
 
-/**
- * Todas as superfícies do desfecho por onde um segredo ou um termo do provedor poderia sair.
- *
- * O espólio é o que a §6.6 fixa: inspeção profunda e serialização do valor devolvido, mais —
- * quando o ato lança, o que aqui nunca deve acontecer — mensagem, pilha, inspeção do erro e cada
- * propriedade própria dele.
- */
-function espolioDe(alvo: unknown): string[] {
-  const espolio: string[] = [
-    inspect(alvo, {
-      depth: null,
-      showHidden: true,
-      maxStringLength: null,
-      maxArrayLength: null,
-      breakLength: Number.POSITIVE_INFINITY,
-    }),
-  ];
-
-  try {
-    espolio.push(JSON.stringify(alvo) ?? '');
-  } catch {
-    // Ciclo na estrutura: a inspeção profunda acima já percorreu o objeto inteiro.
-  }
-
-  if (alvo instanceof Error) {
-    espolio.push(alvo.message, alvo.stack ?? '');
-  }
-
-  if (typeof alvo === 'object' && alvo !== null) {
-    for (const nome of Object.getOwnPropertyNames(alvo)) {
-      espolio.push(nome, inspect(Reflect.get(alvo, nome), { depth: null, maxStringLength: null }));
-    }
-  }
-
-  return espolio;
-}
-
-/**
- * Os rótulos das agulhas que aparecem em alguma superfície do alvo — **lista**, nunca booleano.
- *
- * Devolver a lista é o que faz a reprovação dizer *qual* agulha vazou e por qual desfecho; um
- * booleano diria apenas que a asserção caiu.
- */
-function ocorrenciasDe(alvo: unknown, agulhas: readonly Agulha[], cenario: string): string[] {
-  const espolio = espolioDe(alvo).map((superficie) => superficie.toLowerCase());
-
-  return agulhas
-    .filter((agulha) =>
-      espolio.some((superficie) => superficie.includes(agulha.valor.toLowerCase())),
-    )
-    .map((agulha) => `${cenario}/${agulha.rotulo}`);
-}
-
-/** As três agulhas de um material: a senha real, o material inteiro em base64 e um recorte em hexa. */
-function agulhasDe(material: ParDeSegredo): Agulha[] {
-  return [
-    { rotulo: 'senha', valor: material.senha },
-    { rotulo: 'material-base64', valor: material.material.toString('base64') },
-    { rotulo: 'material-hex', valor: material.material.subarray(0, 32).toString('hex') },
-  ];
-}
-
-/**
- * Um objeto que **contém** todas as agulhas, cada uma numa superfície diferente.
- *
- * É o controle positivo exigido pelo AP-29. As agulhas são distribuídas de propósito entre mensagem,
- * pilha e objeto aninhado — se a varredura deixasse de percorrer qualquer uma dessas superfícies, o
- * controle reprovaria antes da asserção de ausência.
- */
-function controleComAsAgulhas(agulhas: readonly Agulha[]): Error {
-  const [primeira, segunda, terceira] = agulhas;
-  const controle = new Error(`vazamento simulado: ${primeira?.valor ?? ''}`);
-  controle.stack = `${controle.stack ?? ''}\n    em rotina falsa (${segunda?.valor ?? ''})`;
-
-  return Object.assign(controle, {
-    contexto: { certificado: { material: terceira?.valor ?? '' } },
-  });
-}
-
 /** Um objeto de controle que carrega **todos** os termos proibidos, cada um numa superfície. */
 function controleComOsTermos(): Error {
   const controle = new Error(`recusa crua: ${TERMOS_PROIBIDOS.slice(0, 4).join(' ')}`);
@@ -1199,7 +1356,7 @@ function controleComOsTermos(): Error {
 
 /** Os termos proibidos presentes no desfecho serializado — lista, para a reprovação nomear. */
 function termosProibidosEm(alvo: unknown): string[] {
-  const espolio = espolioDe(alvo).map((superficie) => superficie.toLowerCase());
+  const espolio = superficiesDe(alvo).map((superficie) => superficie.toLowerCase());
 
   return TERMOS_PROIBIDOS.filter((termo) =>
     espolio.some((superficie) => superficie.includes(termo)),
@@ -1555,27 +1712,32 @@ describe('adaptador do provedor por TLS mútuo', () => {
       const adaptador = criarAdaptadorSicoob({
         enderecoDoProvedor: enderecoDoPar(cenario.porta),
       });
-      const agulhas = agulhasDe(cenario.material);
+      const agulhas = agulhasDe(cenario.material.material, [cenario.material.senha]);
 
       try {
         const desfecho = await verificar(adaptador, cenario.material);
         aceitos.push(desfecho.aceito);
-        ocorrencias.push(...ocorrenciasDe(desfecho, agulhas, cenario.nome));
+        ocorrencias.push(...ocorrenciasDeAgulhas(desfecho, agulhas, cenario.nome));
       } catch (falha) {
         erros.push(cenario.nome);
-        ocorrencias.push(...ocorrenciasDe(falha, agulhas, cenario.nome));
+        ocorrencias.push(...ocorrenciasDeAgulhas(falha, agulhas, cenario.nome));
       }
     }
 
-    // Controle positivo (AP-29): a MESMA varredura, sobre um objeto que contém as três agulhas em
-    // superfícies diferentes, devolve as três — provando que ela acha o que existe.
+    // Controle positivo (AP-29): a MESMA varredura, sobre um objeto que contém as quatro agulhas em
+    // superfícies diferentes, devolve as quatro — provando que ela acha o que existe.
     expect(
-      ocorrenciasDe(
-        controleComAsAgulhas(agulhasDe(materialConfiavel)),
-        agulhasDe(materialConfiavel),
+      ocorrenciasDeAgulhas(
+        controleComAsAgulhas(agulhasDe(materialConfiavel.material, [materialConfiavel.senha])),
+        agulhasDe(materialConfiavel.material, [materialConfiavel.senha]),
         'controle',
       ),
-    ).toEqual(['controle/senha', 'controle/material-base64', 'controle/material-hex']);
+    ).toEqual([
+      'controle/senha[0]',
+      'controle/material-base64',
+      'controle/inicio-do-material-base64',
+      'controle/inicio-do-material-hex',
+    ]);
 
     // A7 — medido sobre a SAÍDA REAL, nos três desfechos, e nunca por leitura do fonte (ADR-0032).
     expect(ocorrencias).toEqual([]);
@@ -1615,7 +1777,9 @@ describe('adaptador do provedor por TLS mútuo', () => {
       // A rejeição é O defeito que este caso existe para fechar, e capturá-la — em vez de deixar o
       // caso morrer nela — é o que faz a reprovação NOMEAR o que atravessou a porta. Sob o código
       // anterior a esta correção, esta lista sai `['rejeitou/not-enough-data']`.
-      vazadoPelaRejeicao.push(...ocorrenciasDe(falha, AGULHAS_DO_RUNTIME_DE_MATERIAL, 'rejeitou'));
+      vazadoPelaRejeicao.push(
+        ...ocorrenciasDeAgulhas(falha, AGULHAS_DO_RUNTIME_DE_MATERIAL, 'rejeitou'),
+      );
     }
     const decorrido = Date.now() - antes;
 
@@ -1629,7 +1793,7 @@ describe('adaptador do provedor por TLS mútuo', () => {
     // superfícies diferentes, devolve os dois. Sem isto, a lista vazia abaixo seria compatível com
     // um detector cego — que é exatamente o que uma prova de ausência arrisca ser.
     expect(
-      ocorrenciasDe(
+      ocorrenciasDeAgulhas(
         controleComAsAgulhas(AGULHAS_DO_RUNTIME_DE_MATERIAL),
         AGULHAS_DO_RUNTIME_DE_MATERIAL,
         'controle',
@@ -1639,11 +1803,15 @@ describe('adaptador do provedor por TLS mútuo', () => {
     // A8 — o texto cru do OpenSSL não atravessa a porta por caminho nenhum. ⚠️ ANTES da igualdade,
     // pela `DECISÃO FECHADA` acima: `detalhe` é campo dela, e posta depois esta asserção não teria
     // estado em que reprovar.
-    expect(ocorrenciasDe(desfecho, AGULHAS_DO_RUNTIME_DE_MATERIAL, 'nao-iniciado')).toEqual([]);
+    expect(ocorrenciasDeAgulhas(desfecho, AGULHAS_DO_RUNTIME_DE_MATERIAL, 'nao-iniciado')).toEqual(
+      [],
+    );
     expect(termosProibidosEm(desfecho)).toEqual([]);
 
     // A7 — nem a senha nem os bytes do material saem no desfecho, como nos outros três cenários.
-    expect(ocorrenciasDe(desfecho, agulhasDe(segredo), 'nao-iniciado')).toEqual([]);
+    expect(
+      ocorrenciasDeAgulhas(desfecho, agulhasDe(segredo.material, [segredo.senha]), 'nao-iniciado'),
+    ).toEqual([]);
 
     // A3 — o quinto texto é distinto dos outros quatro. Reusar qualquer um deles seria mentir sobre
     // o que aconteceu, e a reprovação aqui **nomeia** os dois textos que se confundiram.
@@ -1796,14 +1964,15 @@ describe('adaptador do provedor por TLS mútuo', () => {
 
     // A7 — nem a senha nem os bytes do material saem em nada que o ato produza, **também** nas
     // operações de cobrança. O controle positivo é o do CT-844, aplicado à mesma varredura.
-    const agulhas = agulhasDe(materialDeA);
-    expect(ocorrenciasDe(controleComAsAgulhas(agulhas), agulhas, 'controle')).toEqual([
-      'controle/senha',
+    const agulhas = agulhasDe(materialDeA.material, [materialDeA.senha]);
+    expect(ocorrenciasDeAgulhas(controleComAsAgulhas(agulhas), agulhas, 'controle')).toEqual([
+      'controle/senha[0]',
       'controle/material-base64',
-      'controle/material-hex',
+      'controle/inicio-do-material-base64',
+      'controle/inicio-do-material-hex',
     ]);
-    expect(ocorrenciasDe(primeiro, agulhas, 'emitido')).toEqual([]);
-    expect(ocorrenciasDe(provedor.chamadas, agulhas, 'chamadas')).toEqual([]);
+    expect(ocorrenciasDeAgulhas(primeiro, agulhas, 'emitido')).toEqual([]);
+    expect(ocorrenciasDeAgulhas(provedor.chamadas, agulhas, 'chamadas')).toEqual([]);
   });
 
   it('CT-949 — cadeia herdada do protótipo não vira situação do produto', {
@@ -1940,8 +2109,20 @@ describe('adaptador do provedor por TLS mútuo', () => {
     ).toEqual({
       aceito: false,
       classe: 'DA_COBRANCA',
+      motivo: MOTIVO_DE_VALOR_ILEGIVEL,
+    });
+
+    // ⚠️ A ASSERÇÃO QUE DISCRIMINA O `D22`: o campo AUSENTE produz o outro motivo, e a desigualdade
+    // é afirmada aqui. Sob o adaptador de antes, os dois desfechos eram o MESMO texto, e a linha
+    // seguinte reprovaria — que é o que faz desta perna a rede, e não mais uma repetição da tabela.
+    expect(
+      desfechos[GRAFIAS_DO_VALOR_PAGO.findIndex((grafia) => grafia.rotulo === ROTULO_DO_AUSENTE)],
+    ).toEqual({
+      aceito: false,
+      classe: 'DA_COBRANCA',
       motivo: MOTIVO_DE_LIQUIDACAO_INCOMPLETA,
     });
+    expect(MOTIVO_DE_VALOR_ILEGIVEL).not.toBe(MOTIVO_DE_LIQUIDACAO_INCOMPLETA);
 
     // Âncora antivácuo: as nove consultas chegaram ao par.
     expect(provedor.chamadas.length).toBe(GRAFIAS_DO_VALOR_PAGO.length);
@@ -1977,14 +2158,18 @@ describe('adaptador do provedor por TLS mútuo', () => {
     // Controle positivo (AP-29): a MESMA varredura, sobre um objeto que contém a agulha, a devolve.
     // Sem ele, a lista vazia abaixo seria compatível com um detector cego.
     expect(
-      ocorrenciasDe(controleComAsAgulhas(agulhaDaCredencial), agulhaDaCredencial, 'controle'),
+      ocorrenciasDeAgulhas(
+        controleComAsAgulhas(agulhaDaCredencial),
+        agulhaDaCredencial,
+        'controle',
+      ),
     ).toEqual(['controle/credencial']);
 
     // A asserção que DISCRIMINA o defeito, medida sobre a SAÍDA REAL e nunca por leitura do fonte
     // (ADR-0032). Sem a redação, esta lista sai `['recusado/credencial']`.
     //
     // ⚠️ **ANTES da igualdade**, pela `DECISÃO FECHADA` deste arquivo: `motivo` é campo dela.
-    expect(ocorrenciasDe(desfecho, agulhaDaCredencial, 'recusado')).toEqual([]);
+    expect(ocorrenciasDeAgulhas(desfecho, agulhaDaCredencial, 'recusado')).toEqual([]);
 
     // Âncora antivácuo: a credencial de fato saiu do produto e voltou no corpo — sem isto, um ato
     // que falhasse antes da chamada varreria um desfecho onde a agulha nunca poderia estar.
@@ -2130,7 +2315,7 @@ describe('CT-1009 — o endereço bem formado constrói o adaptador, e a guarda 
       // objeto.
       expect(
         Object.keys(adaptador).sort(),
-        `o adaptador construído com ${endereco} não publica as cinco capacidades`,
+        `o adaptador construído com ${endereco} não publica as capacidades declaradas`,
       ).toEqual([...CAPACIDADES_DO_ADAPTADOR]);
 
       expect(
@@ -2237,6 +2422,427 @@ describe('identidade da empresa perante o provedor', () => {
       // mandasse tudo para o mesmo host passaria na metade de cima.
       expect(api.chamadas).toHaveLength(1);
       expect(autorizacao.chamadas).toHaveLength(0);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});
+
+// ===========================================================================
+// A FAMÍLIA DE ESCOPO — CA-01 → CT-1043 (RN-06)
+//
+// INVARIANTES
+// - duas operações da MESMA família custam UMA credencial; duas famílias custam DUAS;
+// - o escopo pedido em cada concessão é o DAQUELA família, na ordem em que as famílias foram
+//   exercidas — e jamais o da outra;
+// - o conjunto de credenciais apresentadas nas chamadas de cobrança e o das chamadas de entrega são
+//   DISJUNTOS, e cada um tem tamanho 1: nenhuma credencial cruzou;
+// - o esquecimento por invalidação alcança a credencial DAQUELA família, e não derruba a da outra;
+// - a recusa do provedor vira MOTIVO CANÔNICO com `codigo`, `mensagem` e `diagnostico` VERBATIM;
+// - as duas operações RESOLVEM em todos os desfechos, inclusive quando a concessão é recusada —
+//   nenhuma rejeita;
+// - nem a senha, nem os bytes do material, nem o identificador da aplicação, nem credencial alguma
+//   aparecem em desfecho, erro ou diagnóstico.
+//
+// Todas são COMPORTAMENTAIS: medem o que o produto de fato enviou ao par e o que ele devolveu a
+// quem chamou, e não a forma das funções que compõem o pedido.
+//
+// ⚠️ **O eixo do identificador da aplicação é exercitado, e não afirmado sobre fixture muda**: a
+// recusa da concessão deste caso **ecoa** o identificador nos DOIS portadores do texto do provedor —
+// dentro da mensagem e como chave própria do JSON, que é o portador mais largo —, de modo que a lista
+// vazia do passo 11 mede a redação do produto, e não a ausência da agulha na fixture (AP-29).
+//
+// ⚠️ **A asserção que DISCRIMINA o defeito medido é a da disjunção.** Com a chave do cache indexada
+// só por empresa, `obtencoes.length` seria **1** depois das quatro operações e a credencial de
+// boleto apareceria na chamada de entrega — passando em qualquer asserção de contagem frouxa. Por
+// isso as contagens são **igualdades exatas** (`> 1` aprovaria quatro obtenções, `< 4` aprovaria
+// duas) e a interseção é afirmada por **lista vazia**, para que a reprovação NOMEIE a credencial que
+// cruzou.
+// ===========================================================================
+// ===========================================================================
+// CT-1053 — o dialeto do cadastro e da consulta conferem com o CONTRATO do provedor
+//
+// INVARIANTES
+// - o corpo do cadastro tem EXATAMENTE as quatro chaves documentadas, por igualdade de conjunto —
+//   e portanto NÃO carrega `numeroCliente`, que não existe no contrato (`P1`);
+// - a query da consulta tem EXATAMENTE `codigoTipoMovimento`, e portanto também não carrega
+//   `numeroCliente`, que não é parâmetro documentado do `GET` (`D3`);
+// - o contato operacional VAI no corpo, porque o provedor o declara necessário (`W2`);
+// - o `201` com envelope-OBJETO — a forma documentada do cadastro — é aceito (`P5`, metade do `P6`);
+// - a fixture responde por OPERAÇÃO, e as duas formas do envelope são exercidas separadamente: o
+//   cadastro devolve objeto, a consulta devolve array (`P6`).
+//
+// Todas COMPORTAMENTAIS: medem o que o produto de fato ENVIOU ao par, e não a forma das funções que
+// compõem o pedido. Escritas por extenso e jamais derivadas do artefato sob prova.
+// ===========================================================================
+describe('CT-1053 — o cadastro e a consulta falam o contrato documentado do provedor', () => {
+  it(
+    'CT-1053 — o corpo do cadastro tem as quatro chaves do contrato, e a query da consulta uma só',
+    async () => {
+      const autoridade = await gerarAutoridadeDeTeste('Sysloc Confiavel');
+      confiarEm(autoridade);
+
+      const material = await gerarMaterialDeTeste({
+        autoridade,
+        senha: SENHA_SENTINELA,
+        titular: TITULAR_DA_EMPRESA,
+      });
+
+      // ⚠️ A FIXTURE RESPONDE POR OPERAÇÃO (`P6`), e a separação é o conteúdo desta parte: o
+      // contrato do provedor declara formas DIFERENTES de envelope em cada endpoint — objeto no
+      // `POST`, array no `GET` —, e uma fixture única que servisse as duas casaria com uma e não
+      // com a outra, ficando verde porque o desenvelopador aceita ambas.
+      const provedor = await subirProvedorInstrumentado(autoridade, (chamada) => {
+        if (!ehChamadaDeEntrega(chamada)) {
+          return respostaDaEmissao();
+        }
+
+        return chamada.caminho.includes('?')
+          ? {
+              codigo: 200,
+              corpo: {
+                resultado: [
+                  {
+                    idWebhook: IDENTIFICADOR_DA_ENTREGA_NO_PAR,
+                    url: ENDERECO_DA_ENTREGA,
+                    codigoSituacao: SITUACAO_VALIDADA_POR_EXTENSO,
+                  },
+                ],
+              },
+            }
+          : {
+              // O `201` é o código que o contrato documenta para o cadastro — e não o `200` que a
+              // fixture anterior respondia a tudo (`P5`). Os dois passam pela guarda de recusa, e é
+              // por isso que a diferença era invisível.
+              codigo: CODIGO_DO_CADASTRO_ACEITO,
+              corpo: { resultado: { idWebhook: IDENTIFICADOR_DA_ENTREGA_NO_PAR } },
+            };
+      });
+
+      const adaptador = adaptadorComEntrega(provedor.porta, () => INSTANTE_INICIAL_MS);
+      const entrega = entregaParaCadastrar(EMPRESA_A, material);
+
+      // O cadastro devolve a referência que o provedor atribuiu — é a única vez em que o produto a
+      // obtém de um ato de escrita, e é ela que prova a propriedade do cadastro depois.
+      await expect(adaptador.cadastrarEntrega(entrega)).resolves.toEqual({
+        aceito: true,
+        referencia: String(IDENTIFICADOR_DA_ENTREGA_NO_PAR),
+      });
+
+      // ⚠️ A consulta responde com um registro cuja `url` é a NOSSA e cuja situação é a validada —
+      // é o que a torna `ATIVA`. Sem os dois, ela cairia noutra leitura, e é essa discriminação que
+      // o `D1` e o `D2` instalaram.
+      await expect(adaptador.consultarEntrega(entrega)).resolves.toEqual({ tipo: 'ATIVA' });
+
+      const chamadasDeEntrega = provedor.chamadas.filter(ehChamadaDeEntrega);
+
+      // Âncora antivácuo: as duas operações de fato chegaram ao par. Sem ela, as asserções de
+      // conteúdo abaixo seriam satisfeitas por listas vazias.
+      expect(chamadasDeEntrega).toHaveLength(2);
+
+      const cadastro = chamadasDeEntrega.find((chamada) => !chamada.caminho.includes('?'));
+      const consulta = chamadasDeEntrega.find((chamada) => chamada.caminho.includes('?'));
+
+      expect(cadastro).toBeDefined();
+      expect(consulta).toBeDefined();
+
+      // ⚠️ A ASSERÇÃO QUE DISCRIMINA O `P1` E O `W2`, e ela é por IGUALDADE DE CONJUNTO — nunca por
+      // `not.toHaveProperty('numeroCliente')`. A igualdade pega as duas direções de uma vez: o campo
+      // a mais que não existe no contrato (`numeroCliente`, que o produto enviava) e o campo a menos
+      // que o provedor declara necessário (`email`, que o produto omitia). Eram as duas causas de
+      // `406` no mesmo pedido, e nenhuma asserção de presença as pegaria juntas.
+      const corpoDoCadastro = JSON.parse(cadastro?.corpo ?? '{}') as Record<string, unknown>;
+
+      expect(Object.keys(corpoDoCadastro).sort()).toEqual([
+        'codigoPeriodoMovimento',
+        'codigoTipoMovimento',
+        'email',
+        'url',
+      ]);
+
+      // E os valores são os que o contrato declara — a igualdade de chaves sozinha aprovaria um
+      // corpo com as quatro chaves certas e os valores trocados entre si.
+      expect(corpoDoCadastro).toEqual({
+        url: ENDERECO_DA_ENTREGA,
+        codigoTipoMovimento: TIPO_DE_MOVIMENTO_POR_EXTENSO,
+        codigoPeriodoMovimento: PERIODO_DE_MOVIMENTO_POR_EXTENSO,
+        email: CONTATO_DA_ENTREGA,
+      });
+
+      // ⚠️ A ASSERÇÃO QUE DISCRIMINA O `D3` — a outra ponta do mesmo defeito, e ela também é por
+      // igualdade de conjunto. O contrato do `GET` lista dois parâmetros (`idWebhook` e
+      // `codigoTipoMovimento`), e `numeroCliente` não é nenhum deles: ou o gateway o ignorava, e a
+      // consulta funcionava por acidente, ou respondia `406` e a confirmação NUNCA era positiva.
+      const query = new URLSearchParams((consulta?.caminho ?? '').split('?')[1] ?? '');
+
+      expect([...query.keys()].sort()).toEqual(['codigoTipoMovimento']);
+      expect(query.get('codigoTipoMovimento')).toBe(String(TIPO_DE_MOVIMENTO_POR_EXTENSO));
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-1053 (b) — o 204 da consulta é "não há registros", e NÃO confirma',
+    async () => {
+      const autoridade = await gerarAutoridadeDeTeste('Sysloc Confiavel');
+      confiarEm(autoridade);
+
+      const material = await gerarMaterialDeTeste({
+        autoridade,
+        senha: SENHA_SENTINELA,
+        titular: TITULAR_DA_EMPRESA,
+      });
+
+      // O `204` que o contrato documenta para *"consulta realizada com sucesso e SEM registros"*.
+      // ⚠️ Ele **não tem corpo**, e é aí que mora o `D6`: hoje o não-confirmar sai do caminho
+      // indireto de `JSON.parse('')` levantar dentro do desenvelopador. O comportamento está certo e
+      // **nunca foi exercitado** — uma refatoração inocente que passasse a tratar corpo vazio como
+      // `{}` o inverteria em silêncio, e a consulta passaria a confirmar onde não há cadastro algum.
+      const provedor = await subirProvedorInstrumentado(autoridade, (chamada) =>
+        ehChamadaDeEntrega(chamada)
+          ? { codigo: CODIGO_DE_CONSULTA_SEM_REGISTROS, corpo: undefined }
+          : respostaDaEmissao(),
+      );
+
+      const adaptador = adaptadorComEntrega(provedor.porta, () => INSTANTE_INICIAL_MS);
+      const entrega = entregaParaCadastrar(EMPRESA_A, material);
+
+      // A ASSERÇÃO QUE DISCRIMINA: `SEM_CADASTRO`, e **não** `NAO_RESPONDEU` — o provedor respondeu,
+      // e o que ele disse foi *"não há registros"*. Os dois chegavam iguais antes da `0025`, e é
+      // exatamente essa fusão que fazia a borda gravar desabilitação por indisponibilidade.
+      await expect(adaptador.consultarEntrega(entrega)).resolves.toEqual({ tipo: 'SEM_CADASTRO' });
+
+      // Âncora antivácuo: a consulta de fato chegou ao par. Sem ela, um adaptador que falhasse antes
+      // de chamar produziria o mesmo desfecho, e o caso mediria outra coisa.
+      expect(provedor.chamadas.filter(ehChamadaDeEntrega)).toHaveLength(1);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});
+
+describe('credencial por empresa e família de escopo', () => {
+  it(
+    'CT-1043 — duas famílias obtêm duas credenciais; duas operações da mesma família obtêm uma',
+    async () => {
+      // O prazo é afirmado sobre a constante IMPORTADA do artefato, como no CT-943: o relógio deste
+      // caso fica PARADO, e é isso que torna cada obtenção nova atribuível à família, e nunca à
+      // expiração.
+      expect(PRAZO_PADRAO_DA_CREDENCIAL_S).toBe(300);
+
+      const autoridade = await gerarAutoridadeDeTeste('Sysloc Confiavel');
+      confiarEm(autoridade);
+
+      const material = await gerarMaterialDeTeste({
+        autoridade,
+        senha: SENHA_SENTINELA,
+        titular: TITULAR_DA_EMPRESA,
+      });
+
+      // Passo 1 — o par instrumentado. A emissão responde o de sempre; a entrega responde o cadastro
+      // aceito e a consulta com o cadastro encontrado — salvo a TERCEIRA chamada de entrega, que sai
+      // com o código de credencial morta: é ela que dispara o esquecimento seletivo do passo 9, pelo
+      // caminho legítimo (o provedor invalidando a credencial antes do prazo que ele anunciou).
+      let chamadasDeEntrega = 0;
+      const provedor = await subirProvedorInstrumentado(autoridade, (chamada) => {
+        if (!ehChamadaDeEntrega(chamada)) {
+          return respostaDaEmissao();
+        }
+
+        chamadasDeEntrega += 1;
+
+        return chamadasDeEntrega === CHAMADA_DE_ENTREGA_INVALIDADA
+          ? { codigo: CODIGO_DE_CREDENCIAL_MORTA, corpo: RECUSA_DA_ENTREGA }
+          : {
+              codigo: 200,
+              corpo: {
+                resultado: {
+                  idWebhook: IDENTIFICADOR_DA_ENTREGA_NO_PAR,
+                  // A `url` e a situação entram porque a consulta passou a EXIGI-LAS para confirmar
+                  // (`D1` e `D2`): registro sem elas não é um cadastro nosso e validado, e a fixture
+                  // que as omitisse mediria outra leitura.
+                  url: ENDERECO_DA_ENTREGA,
+                  codigoSituacao: SITUACAO_VALIDADA_POR_EXTENSO,
+                },
+              },
+            };
+      });
+
+      // O relógio é do caso e desce ao adaptador pela assinatura. PARADO o tempo todo: nenhuma
+      // obtenção deste caso pode ser explicada por expiração.
+      const instante = INSTANTE_INICIAL_MS;
+      const adaptador = adaptadorComEntrega(provedor.porta, () => instante);
+      const entrega = entregaParaCadastrar(EMPRESA_A, material);
+
+      // Passo 2 — duas emissões da mesma empresa, na família de cobrança.
+      expect((await adaptador.emitir(pedidoDeEmissao(EMPRESA_A, material, 1))).aceito).toBe(true);
+      expect((await adaptador.emitir(pedidoDeEmissao(EMPRESA_A, material, 2))).aceito).toBe(true);
+
+      // Passo 3 — duas operações da MESMA família custam UMA credencial. `=== 1` exato: `> 0`
+      // aprovaria as duas obtenções, e `< 2` aprovaria zero.
+      expect(provedor.obtencoes.length).toBe(1);
+
+      // Passo 4 — as duas operações da OUTRA família, com o relógio ainda parado. Os desfechos
+      // acompanham a `0025`: o cadastro devolve a referência que o provedor atribuiu, e a consulta
+      // devolve a LEITURA ternária. O que este caso mede — o cache de credencial por família — não
+      // mudou, e as asserções abaixo continuam sendo igualdade do desfecho inteiro.
+      await expect(adaptador.cadastrarEntrega(entrega)).resolves.toEqual({
+        aceito: true,
+        referencia: String(IDENTIFICADOR_DA_ENTREGA_NO_PAR),
+      });
+      await expect(adaptador.consultarEntrega(entrega)).resolves.toEqual({ tipo: 'ATIVA' });
+
+      // Passo 5 — a segunda família obteve credencial PRÓPRIA, e as duas operações dela custaram uma
+      // só. `=== 2` exato: sem a família na chave seriam **1** (a de boleto reaproveitada na chamada
+      // de entrega, que é o defeito medido), e sem cache por família seriam 4.
+      expect(provedor.obtencoes.length).toBe(2);
+
+      // Passo 6 — os escopos pedidos, POR IGUALDADE e EM ORDEM. É esta asserção que separa "obteve
+      // duas credenciais" de "obteve duas credenciais com os escopos certos": duas obtenções com o
+      // escopo de boleto satisfariam o passo 5 e seriam recusadas pelo gateway na operação real.
+      expect(escoposPedidos(provedor)).toEqual([ESCOPOS_DA_COBRANCA, ESCOPOS_DA_ENTREGA]);
+
+      // Passo 7 — NENHUMA credencial cruzou. Cada família apresentou exatamente uma, e a interseção
+      // é vazia. A interseção é afirmada por lista, e não por booleano, para que a reprovação NOMEIE
+      // a credencial que cruzou.
+      const credenciaisDaCobranca = credenciaisApresentadas(
+        provedor,
+        (chamada) => !ehChamadaDeEntrega(chamada),
+      );
+      const credenciaisDaEntrega = credenciaisApresentadas(provedor, ehChamadaDeEntrega);
+
+      expect(credenciaisDaCobranca.length).toBe(1);
+      expect(credenciaisDaEntrega.length).toBe(1);
+      expect(
+        credenciaisDaEntrega.filter((credencial) => credenciaisDaCobranca.includes(credencial)),
+      ).toEqual([]);
+
+      // E cada lista é exatamente o que as obtenções produziram, na ordem em que foram concedidas.
+      expect(credenciaisDaCobranca).toEqual([
+        `Bearer credencial-${TITULAR_DA_EMPRESA.nomeComum}-1`,
+      ]);
+      expect(credenciaisDaEntrega).toEqual([`Bearer credencial-${TITULAR_DA_EMPRESA.nomeComum}-2`]);
+
+      // Passo 8 — âncora antivácuo: as quatro operações de fato chegaram ao par. Sem ela, um
+      // adaptador que falhasse antes de chamar produziria as mesmas listas vazias, e as contagens
+      // acima seriam compatíveis com nada ter acontecido.
+      expect(provedor.chamadas.length).toBe(OPERACOES_DAS_DUAS_FAMILIAS);
+
+      // Passo 9 — o esquecimento SELETIVO, pelo caminho legítimo: o par responde à terceira chamada
+      // de entrega com o código de credencial morta, e o adaptador esquece a credencial DAQUELA
+      // família. A recusa vira MOTIVO CANÔNICO, com os três valores verbatim — o código e a mensagem
+      // como o provedor os informou, e o que sobrou da recusa dele inteiro no diagnóstico.
+      // ⚠️ A leitura é `NAO_RESPONDEU`, e ela carrega o motivo íntegro: a recusa da **concessão** é o
+      // provedor de identidade dizendo por que a credencial não foi dada, e o produto não chegou a
+      // ler cadastro algum. É por isso que ela não é `SEM_CADASTRO` — não houve consulta que
+      // respondesse —, e é essa distinção que o terceiro desfecho instalou.
+      await expect(adaptador.consultarEntrega(entrega)).resolves.toEqual({
+        tipo: 'NAO_RESPONDEU',
+        motivo: {
+          codigo: String(CODIGO_DA_RECUSA_DA_ENTREGA),
+          mensagem: MENSAGEM_DA_RECUSA_DA_ENTREGA,
+          diagnostico: { idWebhook: IDENTIFICADOR_DA_ENTREGA_NO_PAR },
+        },
+      });
+
+      // A da OUTRA família continua viva: a emissão seguinte não custa obtenção alguma.
+      expect((await adaptador.emitir(pedidoDeEmissao(EMPRESA_A, material, 3))).aceito).toBe(true);
+      expect(provedor.obtencoes.length).toBe(2);
+
+      // E a da família invalidada foi de fato esquecida: a operação seguinte obtém uma nova.
+      await expect(adaptador.consultarEntrega(entrega)).resolves.toEqual({ tipo: 'ATIVA' });
+
+      // `=== 3`, e não 4: esquecer uma família NÃO derruba a outra. Quatro seria o cache derrubado
+      // por inteiro; duas seria o esquecimento que não aconteceu.
+      expect(provedor.obtencoes.length).toBe(3);
+      expect(escoposPedidos(provedor)).toEqual([
+        ESCOPOS_DA_COBRANCA,
+        ESCOPOS_DA_ENTREGA,
+        ESCOPOS_DA_ENTREGA,
+      ]);
+
+      // Passo 10 — o EIXO NEGATIVO, num par próprio: a concessão da família de ENTREGA é recusada, e
+      // a da família de cobrança não. A operação da porta **RESOLVE** com o motivo íntegro do
+      // provedor de identidade, e **nunca** rejeita — converter recusa em exceção faria a borda
+      // traduzi-la em `500`, e o Admin leria "o sistema falhou" onde o fato é "o escopo não está
+      // liberado" (RN-06).
+      const negado = await subirProvedorInstrumentado(
+        autoridade,
+        () => respostaDaEmissao(),
+        (corpo) =>
+          new URLSearchParams(corpo).get('scope') === ESCOPOS_DA_ENTREGA
+            ? { codigo: CODIGO_DE_CREDENCIAL_MORTA, corpo: RECUSA_DA_CONCESSAO }
+            : undefined,
+      );
+      const comConcessaoNegada = adaptadorComEntrega(negado.porta, () => instante);
+
+      const recusado = await comConcessaoNegada.cadastrarEntrega(
+        entregaParaCadastrar(EMPRESA_A, material),
+      );
+
+      // A asserção que DISTINGUE vem ANTES da igualdade que fixa o campo, pela `DECISÃO FECHADA`
+      // deste arquivo: sem ela, posta depois, o `toEqual` já teria abortado o caso e ela compararia
+      // dois literais sem participação alguma do SUT.
+      expect(recusado.aceito ? 'aceito' : typeof (recusado.motivo ?? 'nulo')).toBe('object');
+
+      // Passo 11 — nada do segredo sai em desfecho algum, também nas operações da porta nova. O
+      // controle positivo é o do CT-844, aplicado à MESMA varredura: sem ele, uma lista vazia seria
+      // indistinguível de um detector cego (AP-29).
+      //
+      // ⚠️ **Ele vem ANTES da igualdade abaixo**, pela mesma `DECISÃO FECHADA`: a varredura discrimina
+      // `mensagem` e `diagnostico`, que são campos daquele `toEqual` — posta depois, ela só executaria
+      // quando a igualdade já tivesse provado os dois, e nunca alcançaria o desfecho que vaza.
+      //
+      // ⚠️ E o que ela exercita é o MECANISMO, não a fixture: a recusa da concessão **ecoa** o
+      // identificador da aplicação nos dois portadores (ver {@link RECUSA_DA_CONCESSAO}), de modo que
+      // esta lista vazia é o produto tendo redigido o que o pedido portou. Com a redação ausente no
+      // ramo de recusa da concessão, ela sai `['recusado/identificador-da-aplicacao']`.
+      const agulhas = [
+        ...agulhasDe(material.material, [material.senha]),
+        {
+          rotulo: 'identificador-da-aplicacao',
+          valor: IDENTIDADE_DE_TESTE.identificadorDaAplicacao,
+        },
+        ...credenciaisDaEntrega.map((credencial, indice) => ({
+          rotulo: `credencial-da-entrega[${indice}]`,
+          valor: credencial,
+        })),
+      ];
+
+      expect(ocorrenciasDeAgulhas(controleComAsAgulhas(agulhas), agulhas, 'controle')).toEqual([
+        'controle/senha[0]',
+        'controle/material-base64',
+        'controle/inicio-do-material-base64',
+        'controle/inicio-do-material-hex',
+        'controle/identificador-da-aplicacao',
+        'controle/credencial-da-entrega[0]',
+      ]);
+      expect(ocorrenciasDeAgulhas(recusado, agulhas, 'recusado')).toEqual([]);
+
+      // Passo 12 — o motivo canônico por igualdade, com o segredo do ato JÁ redigido nos dois
+      // portadores: o restante do texto do provedor atravessa **íntegro**, e só o eco do
+      // identificador dá lugar à sentinela. Redigir o corpo todo — ou não redigir nada — reprova
+      // aqui, e o campo que a reprovação nomeia diz por qual dos dois portadores o segredo saiu.
+      expect(recusado).toEqual({
+        aceito: false,
+        motivo: {
+          codigo: RECUSA_DA_CONCESSAO.error,
+          mensagem: `o escopo pedido nao esta liberado para a aplicacao ${SEGREDO_REDIGIDO_NO_MOTIVO}`,
+          diagnostico: {
+            scope: RECUSA_DA_CONCESSAO.scope,
+            client_id: SEGREDO_REDIGIDO_NO_MOTIVO,
+          },
+        },
+      });
+
+      // A recusa foi da FAMÍLIA, e não da empresa: a cobrança continua obtendo credencial e emitindo
+      // no mesmo par. Sem esta metade, um adaptador que recusasse toda concessão passaria acima.
+      expect(
+        (await comConcessaoNegada.emitir(pedidoDeEmissao(EMPRESA_A, material, 4))).aceito,
+      ).toBe(true);
+      expect(escoposPedidos(negado)).toEqual([ESCOPOS_DA_ENTREGA, ESCOPOS_DA_COBRANCA]);
+
+      // E a recusa da concessão não produziu chamada de operação alguma: sem credencial não há
+      // chamada, e a única chamada do par negado é a emissão.
+      expect(negado.chamadas.length).toBe(1);
     },
     LIMITE_DO_CASO_MS,
   );

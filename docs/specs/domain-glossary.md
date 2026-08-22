@@ -28,6 +28,14 @@ _Evitar_: nosso número, nosso numero, número do boleto, identificador do bolet
 O fato que o **Provedor** envia por iniciativa dele, sem que o produto tenha perguntado, quando algo acontece com um boleto — tipicamente o recebimento. Ela **avisa onde olhar** e nunca decide: o efeito nasce da **consulta** que o produto faz em seguida pelo canal autenticado. Não confundir com a **Liquidação**, que é o ato que ela pode levar a registrar.
 _Evitar_: webhook, callback, notificação, aviso de baixa, evento do banco
 
+**Entrega da notícia do provedor**:
+O estado, por **Empresa**, do cadastro junto ao **Provedor** que faz a **Notícia do provedor** chegar — **habilitada** ou **desabilitada**. Enquanto desabilitada, o produto opera pela conferência periódica: a ausência é **estado declarado**, nunca silêncio. O produto cadastra a própria entrega e a confirma consultando o provedor, e só a declara habilitada com as duas coisas positivas; ele **não** altera, desativa nem substitui cadastro de terceiro, e **não** a desabilita — o provedor não oferece a operação, e o produto não simula o que não pode cumprir.
+_Evitar_: webhook, entrega imediata, assinatura, inscrição, subscription, cadastro do webhook, notificação ativa
+
+**Motivo da recusa do provedor**:
+O que o **Provedor** respondeu quando recusou o cadastro da **Entrega da notícia do provedor**, preservado **íntegro** — mensagem, código e os campos que variam por recusa —, em campos de nome do produto. Como o **Recebido cru**, é **diagnóstico e nunca fonte de autoridade**: nenhum ramo do produto lê dentro dele, e é o desfecho canônico da porta, não ele, que decide o estado.
+_Evitar_: erro do banco, payload de erro, resposta de erro, detalhe do provedor
+
 **Recebido cru**:
 O corpo de uma **Notícia do provedor**, gravado exatamente como chegou e **antes** de qualquer interpretação, com prazo de guarda próprio. É diagnóstico, nunca fonte de autoridade: nada que ele contenha escolhe **Empresa**, estado ou efeito.
 _Evitar_: payload, body, evento bruto, corpo da requisição
@@ -248,6 +256,8 @@ _Evitar_: exceção, desvio aceito, diff conhecido, waiver
 - A **Ativação de contrato** produz zero ou mais **Cobranças**; o **Cancelamento de contrato** cancela as que estiverem em aberto.
 - Todo boleto emitido consome exatamente um valor do **Contador sequencial**, e recebe um **Identificador perante o provedor** que o compõe com o prefixo de competência.
 - Todo boleto emitido tem **dois** identificadores, em sentidos opostos: o **Identificador perante o provedor**, que o produto compõe e envia, e o **Número do título no provedor**, que o provedor atribui e devolve. Ambos são guardados; só o segundo é publicado.
+- Uma **Empresa** tem exatamente uma **Entrega da notícia do provedor**, e enquanto ela não está habilitada **nenhuma Notícia do provedor chega** — a conferência periódica continua produzindo o efeito, e o produto opera correto e mais devagar.
+- Uma **Entrega da notícia do provedor** desabilitada guarda no máximo um **Motivo da recusa do provedor**, o da última tentativa; o desfecho novo substitui o anterior, e não há histórico.
 - Uma **Notícia do provedor** é sobre exatamente uma **Cobrança**, e é o **Identificador perante o provedor** — emitido por nós e devolvido por ele — que descobre qual, e com ela a **Empresa**.
 - Uma **Notícia do provedor** guarda exatamente um **Recebido cru**, com prazo; o efeito que ela leva a registrar não tem prazo.
 - Uma **Liquidação** descoberta por **Notícia do provedor** tem exatamente um **Identificador da liquidação**, e é ele que a torna única.
@@ -309,3 +319,5 @@ _Evitar_: exceção, desvio aceito, diff conhecido, waiver
 - "Excluir um contrato" era lido tanto como cancelá-lo quanto como tirá-lo das listagens. Resolvido: cancelar é transição de estado que libera o **Imóvel**; **Retirada de circulação** é visibilidade e não libera nada. Um rascunho abandonado se retira, não se cancela.
 - "Cobrança" era usado tanto para o **fato financeiro** quanto, coloquialmente, para a mensagem que o sistema envia ao inadimplente. Resolvido: são conceitos distintos — o fato é a **Cobrança**; a mensagem é o **Aviso**. ⚠️ A chave do catálogo `ACAO:enviar_cobranca_manual` preserva o nome histórico (o catálogo é fechado desde a F1 e persistido em `acesso_usuario_permissao` — não renomeável), e **não** redefine "cobrança": o que ela governa é o envio de um **Aviso**. Mesmo caso, e mesma resolução, de `ACAO:excluir_cadastro` acima.
 - "Régua" nomeava tanto a **configuração** quanto o **trabalho** que a aplica. Resolvido: o trabalho é a **Régua de cobrança**; a configuração que ele lê é a *política de aviso*, termo do glossário da feature `regua-de-cobranca`. O pacote `@sysloc/regua` e a fila `regua-de-cobranca` nomeiam o trabalho, coerentes com esta resolução.
+- **"Webhook" nomeava o transporte e passou a ser confundido com o que se HABILITA.** Resolvido no challenge de `integracao-bancaria-autonoma` (2026-08-21): o que **chega** é a **Notícia do provedor**; o **cadastro junto ao provedor que a faz chegar** é a **Entrega da notícia do provedor**, e é ele que tem estado habilitada/desabilitada. "Webhook" e "callback" continuam proibidos para os dois — são vocabulário de transporte (ADR-0001), e sobrevivem apenas como rótulo de botão no frontend, que não cruza a porta.
+- **"Entrega imediata" foi considerada e recusada como termo canônico.** Duas razões medidas: `reentrega` já ancora *"entrega"* como o ato de o provedor entregar a notícia (`ehReentregaDeEfeitoAplicado`), de modo que o substantivo é herdado e não inventado; e a conferência periódica **não produz notícia** — ela liquida direto —, de modo que **não existe entrega não-imediata** da qual o adjetivo distinguisse. Ele sugeria uma segunda modalidade inexistente.

@@ -102,6 +102,7 @@ import {
   FILA_DA_CONFIRMACAO,
   FILA_DA_EMISSAO_EM_LOTE,
   FILA_DA_NOTIFICACAO_BANCARIA,
+  FILA_DA_RECONFERENCIA_DA_ENTREGA,
   FILA_DA_REGUA,
   FILA_DO_ECO,
 } from '@sysloc/shared';
@@ -778,6 +779,15 @@ describe('processador de trabalho (T6)', () => {
       // cinco nomes o faria procurar na fila errada. A asserção **não foi afrouxada**: continua
       // sendo igualdade de lista ordenada, agora com os seis nomes — e uma fila que sumisse do
       // encerramento, ou que fosse acrescentada sem ser devolvida, segue reprovando.
+      //
+      // SUT_IS_CORRECT_BECAUSE: a T8 da fatia `integracao-bancaria-autonoma` acrescenta a SÉTIMA — a
+      // da reconferência da entrega da notícia —, construída e devolvida pelo mesmo `conectarFila`.
+      // Ela carrega tarefa de negócio vinda da borda HTTP (o registro de um certificado novo), e uma
+      // passada abandonada no desligamento deixa o estado da entrega descrevendo um aperto de mão
+      // que já não acontece — trabalho que o operador procuraria, e que uma lista com seis nomes o
+      // faria procurar na fila errada. A asserção **não foi afrouxada**: continua sendo igualdade de
+      // lista ordenada, agora com os sete nomes — e uma fila que sumisse do encerramento, ou que
+      // fosse acrescentada sem ser devolvida, segue reprovando.
       expect(doEstouro[0]?.filas).toEqual([
         FILA_DO_ECO,
         FILA_DA_REGUA,
@@ -785,6 +795,7 @@ describe('processador de trabalho (T6)', () => {
         FILA_DA_EMISSAO_EM_LOTE,
         FILA_DA_CONFERENCIA_BANCARIA,
         FILA_DA_NOTIFICACAO_BANCARIA,
+        FILA_DA_RECONFERENCIA_DA_ENTREGA,
       ]);
 
       // A conexão foi DEVOLVIDA, e não apenas deixada para trás. É o que distingue "o

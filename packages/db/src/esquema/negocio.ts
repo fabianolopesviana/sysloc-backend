@@ -16,7 +16,7 @@
  *      e não apenas verificada.
  *
  * Falta a quinta, que **não mora neste arquivo**: `FORCE ROW LEVEL SECURITY` e as políticas
- * `USING`/`WITH CHECK` vivem em migração de segurança escrita à mão. São **seis**, e quem
+ * `USING`/`WITH CHECK` vivem em migração de segurança escrita à mão. São **dez**, e quem
  * acrescentar tabela aqui precisa saber qual delas emendar — a resposta é sempre *nenhuma*, e a
  * lista existe para dizer onde cada tabela já protegida foi protegida:
  *
@@ -40,14 +40,18 @@
  *     (ADR-0031 e ADR-0033);
  *   * `migracoes/0018_seguranca_emissao_e_conciliacao.sql` — as quatro entidades da emissão e da
  *     conciliação (`evento_bancario`, `emissao_em_lote`, `item_da_emissao_em_lote` e
- *     `conferencia_bancaria`).
+ *     `conferencia_bancaria`);
+ *   * `migracoes/0022_seguranca_identidade_no_provedor.sql` — a identidade da empresa perante o
+ *     provedor (`identidade_no_provedor`);
+ *   * `migracoes/0024_seguranca_entrega_da_noticia.sql` — o estado da entrega da notícia
+ *     (`entrega_da_noticia`).
  *
- * São oito porque **gerado e autoral nunca convivem no mesmo arquivo** — uma regeração futura da
+ * São dez porque **gerado e autoral nunca convivem no mesmo arquivo** — uma regeração futura da
  * gerada sobrescreveria o trecho autoral em silêncio. O que **obriga** a parceira autoral não é a
  * predecessora ser gerada: é **nascer tabela em `negocio`**, porque o gerador não emite `FORCE` nem
  * política. Toda migração que criar tabela aqui leva junto uma parceira autoral própria — nunca um
- * acréscimo à `0001`, à `0006`, à `0008`, à `0010`, à `0012`, à `0014`, à `0016` ou à `0018`, que
- * descrevem schemas já aplicados e são, portanto, imutáveis. ⚠️ A `0010` tem, além disso, o
+ * acréscimo à `0001`, à `0006`, à `0008`, à `0010`, à `0012`, à `0014`, à `0016`, à `0018`, à
+ * `0022` ou à `0024`, que descrevem schemas já aplicados e são, portanto, imutáveis. ⚠️ A `0010` tem, além disso, o
  * `DÉBITO COM GATILHO — D20` no ponto da emenda que ela já sofreu: **leia-o antes de qualquer
  * tentativa de tocá-la**.
  *
@@ -55,8 +59,8 @@
  * `0002_campos_do_arcabouco.sql` e a `0003_autorizacao.sql` são **geradas e não têm parceira** —
  * nenhuma das duas cria tabela, elas só alteram o que já existia —, e a `0004_desfecho_de_recusa.sql`
  * é **autoral avulsa**, sem gerada a quem se parear. Só a `0000`, a `0005`, a `0007`, a `0009`, a
- * `0011`, a `0013`, a `0015` e a `0017` criam tabela em `negocio`, e são exatamente elas que têm
- * parceira. Ler o gatilho como "toda gerada ganha uma parceira" produziria uma migração de segurança
+ * `0011`, a `0013`, a `0015`, a `0017`, a `0021` e a `0023` criam tabela em `negocio`, e são
+ * exatamente elas que têm parceira. Ler o gatilho como "toda gerada ganha uma parceira" produziria uma migração de segurança
  * vazia, sem `FORCE` nem política a declarar.
  *
  * A `0013` é, além disso, a primeira **destrutiva** do produto: ela remove
@@ -137,6 +141,7 @@ import {
   foreignKey,
   index,
   integer,
+  jsonb,
   numeric,
   pgSchema,
   text,
@@ -2070,6 +2075,176 @@ export const identidadeNoProvedor = negocio
         .on(tabela.empresaId)
         .where(sql`substituida_em IS NULL`),
       index('identidade_no_provedor_historico_idx').on(tabela.empresaId, tabela.criadoEm.desc()),
+    ],
+  )
+  .enableRLS();
+
+/**
+ * O **estado da entrega da notícia do provedor**, por empresa — uma linha, substituída a cada
+ * tentativa.
+ *
+ * ---------------------------------------------------------------------------
+ * POR QUE ELA VIVE EM `negocio`, e não em `plataforma`
+ * ---------------------------------------------------------------------------
+ *
+ * Pela **contrapositiva da ADR-0031**: aquele schema é o do que **não** tem dono-empresa, e o
+ * estado da entrega tem — cada imobiliária habilita a sua, e a recusa que o provedor devolveu a uma
+ * não diz nada sobre a outra. O roster enumerado de `plataforma` permanece intocado.
+ *
+ * ⚠️ Não confunda com `plataforma.notificacao_bancaria`: aquela guarda o **fato recebido** na
+ * fronteira, antes de se saber de quem ele é (ADR-0035 — a empresa é o *resultado* da travessia
+ * nominal). Esta guarda a **configuração** de uma empresa que já se conhece.
+ *
+ * ---------------------------------------------------------------------------
+ * UMA LINHA POR EMPRESA — a substituição da RN-04 sem histórico e sem corrida
+ * ---------------------------------------------------------------------------
+ *
+ * `entrega_da_noticia_empresa_key` é restrição única sobre `empresa_id` **sozinha**, e não índice
+ * parcial como no certificado e na identidade: aqui **não há histórico a preservar**. A RN-04 pede o
+ * oposto da retenção — o desfecho novo *substitui* o anterior —, e a tabela de histórico de
+ * tentativas foi explicitamente rejeitada (D7). Uma linha só por empresa é o que torna a
+ * substituição representável **sem corrida**: quem grava faz `ON CONFLICT … DO UPDATE`, e o banco
+ * decide o desempate em vez de uma leitura-antes-de-gravar.
+ *
+ * A restrição única `(id, empresa_id)` continua existindo ao lado, e não é redundante: ela é o alvo
+ * que torna escrevível a chave estrangeira composta de quem vier a apontar para cá, e é o que a
+ * guarda de cobertura de `src/catalogo.ts` cobra de toda tabela deste schema.
+ *
+ * ---------------------------------------------------------------------------
+ * A `CHECK` DE COERÊNCIA — três cláusulas, e cada uma fecha um estado meio preenchido
+ * ---------------------------------------------------------------------------
+ *
+ * Os estados legítimos são exatamente **três**: habilitada e verificada, sem motivo; desabilitada e
+ * verificada, com motivo; e **a empresa que nunca tentou** — desabilitada, sem verificação e sem
+ * motivo (CA-19). Tudo o mais é meio preenchido, e o banco recusa:
+ *
+ *   * **(a)** habilitada **exige** verificação. Sem ela, a projeção publicada diria
+ *     `{ habilitada: true, verificadaEm: null }` — e `verificadaEm` nulo é, pelo contrato, *"nunca
+ *     houve tentativa"*, de modo que a linha se contradiria na própria superfície;
+ *   * **(b)** motivo presente **⟺** desabilitada **e** verificada. É a bicondicional que torna
+ *     irrepresentáveis, de uma vez, *habilitada com motivo* (a recusa que sobreviveu à habilitação)
+ *     e *desabilitada verificada sem motivo* (a recusa que perdeu o porquê, e que a tela do Admin
+ *     não teria como explicar). Escritas soltas, cada metade deixaria passar o que a outra pega;
+ *   * **(c)** o código e a mensagem do motivo **andam juntos**, e o diagnóstico só existe **dentro**
+ *     de um motivo. O diagnóstico é anulável mesmo com motivo presente: a premissa é que os campos
+ *     variam por código de recusa, e variar inclui não haver nenhum.
+ *
+ * É a mesma classe do `D13 · F4/T6` e do `D44 · F2/T10` — os dois adiaram para uma fatia futura o
+ * pareamento de colunas que só fazem sentido juntas. Aqui ela é **fechada no banco**, agora.
+ *
+ * ---------------------------------------------------------------------------
+ * O RELÓGIO É O DO BANCO (ADR-0026)
+ * ---------------------------------------------------------------------------
+ *
+ * `verificada_em` **não tem padrão**: ela é anulável, e o nulo é conteúdo (*"nunca houve
+ * tentativa"*). Quem grava um desfecho propõe `pg_catalog.now()` na própria instrução — o instante
+ * nasce do servidor, e não há `new Date()` no caminho. Um `defaultNow()` aqui destruiria o nulo
+ * justamente no estado que o CA-19 precisa distinguir.
+ */
+export const entregaDaNoticia = negocio
+  .table(
+    'entrega_da_noticia',
+    {
+      /**
+       * A chave é UUID, e não código legível: a entrega **não tem série declarada** (ADR-0017) — ela
+       * não é citada por número fora do sistema, e não há usuário que a pronuncie.
+       */
+      id: uuid('id').primaryKey().defaultRandom(),
+      empresaId: uuid('empresa_id')
+        .notNull()
+        .references(() => empresa.id),
+      /**
+       * Verdadeira só com os dois positivos: cadastro aceito **e** consulta confirmando (RN-01).
+       *
+       * ⚠️ **Desde a `0025` ela é DERIVADA de {@link situacao}**, e a `CHECK` de coerência amarra as
+       * duas: `habilitada = (situacao = 'HABILITADA')`. Ela permanece porque é o que o contrato
+       * publicado carrega — e a amarra é o que impede as duas de divergirem, que seria ter duas
+       * fontes de verdade para o mesmo fato.
+       */
+      habilitada: boolean('habilitada').notNull(),
+      /**
+       * O estado da entrega junto ao provedor — **três** valores, e o terceiro é o que faltava.
+       *
+       * `EM_VALIDACAO` não é *habilitada* nem *desabilitada*: é o estado em que **toda** ação
+       * corretiva do produto desemboca, porque a validação do endereço pelo provedor é assíncrona
+       * por construção. Cadastrar, corrigir a URL e reativar levam **os três** a ele — é a
+       * documentação oficial que o diz —, e classificá-lo como habilitada seria falso positivo,
+       * como desabilitada seria falso negativo em **toda ativação nova**.
+       *
+       * ⚠️ **Quem promove `EM_VALIDACAO` → `HABILITADA` é a reconferência periódica**, que já existe
+       * e já consulta. Nada sonda dentro da rota de ativação (ADR-0029).
+       */
+      situacao: text('situacao').notNull(),
+      /**
+       * A referência ao cadastro **junto ao provedor**, quando o produto sabe que o cadastro é seu.
+       *
+       * Ela é **opaca para o produto**: nada a interpreta, nada a compara com nada, nenhum ramo
+       * decide por ela. O que ela responde é uma pergunta só — *"o cadastro que ocupa a vaga foi
+       * criado por mim?"* —, e é essa resposta que autoriza corrigir o endereço dele ou reativá-lo
+       * sem tocar cadastro de terceiro.
+       *
+       * ⚠️ **Sem ela a pergunta não tem resposta.** A URL sozinha não separa *"meu cadastro com o
+       * endereço antigo"* de *"cadastro de outro sistema"* — e, como o produto não pode tocar o
+       * segundo, o primeiro ficaria sem conserto: o Admin clicaria em ativar para sempre, que é o
+       * impasse que a `0025` existe para fechar.
+       *
+       * Anulável: a empresa que nunca cadastrou não tem referência, e a que encontrou cadastro de
+       * terceiro também não.
+       */
+      referenciaNoProvedor: text('referencia_no_provedor'),
+      /** Nulo **é** nunca ter havido tentativa (CA-19). Sem padrão — ver o cabeçalho. */
+      verificadaEm: timestamp('verificada_em', { withTimezone: true }),
+      /** O código que o provedor devolveu, íntegro. Anda junto com a mensagem — ver a `CHECK`. */
+      motivoCodigo: text('motivo_codigo'),
+      /** A mensagem que o provedor devolveu, íntegra. */
+      motivoMensagem: text('motivo_mensagem'),
+      /**
+       * Os campos que variam por código de recusa — portador **sem esquema**, e a ausência de
+       * esquema é a decisão: o que se guarda vem de terceiro, e projetá-lo em colunas obrigaria a
+       * recusar o que ainda não se entende. Mesma razão do `recebido` de `plataforma`.
+       */
+      motivoDiagnostico: jsonb('motivo_diagnostico'),
+      /**
+       * Quem tentou por último. Anulável, como `conferencia_bancaria.solicitada_por`: a
+       * reconferência da RN-12 corre no processo de trabalho, sem usuário à frente, e a empresa que
+       * nunca tentou não tem autoria alguma. Amarrado à empresa pela chave composta abaixo.
+       */
+      verificadaPor: uuid('verificada_por'),
+    },
+    (tabela) => [
+      unique('entrega_da_noticia_id_empresa_key').on(tabela.id, tabela.empresaId),
+      // UMA linha por empresa — o que torna a substituição da RN-04 representável sem corrida.
+      unique('entrega_da_noticia_empresa_key').on(tabela.empresaId),
+      // A chave estrangeira COMPOSTA da ADR-0008. Sem ela, o estado da empresa A poderia constar
+      // como verificado por alguém da empresa B, e a autoria da habilitação de uma imobiliária
+      // seria atribuída a outra. `MATCH SIMPLE`: ela vale **quando há usuário**.
+      foreignKey({
+        name: 'entrega_da_noticia_usuario_empresa_fkey',
+        columns: [tabela.verificadaPor, tabela.empresaId],
+        foreignColumns: [usuario.id, usuario.empresaId],
+      }),
+      // UMA `CHECK`, três cláusulas — ver o cabeçalho para o que cada uma torna irrepresentável.
+      // ⚠️ **REESCRITA pela `0025`**, e o eixo do motivo mudou de `habilitada` para `situacao`.
+      // Antes ela exigia motivo sempre que a entrega não estivesse habilitada e já tivesse sido
+      // verificada — o que tornava `EM_VALIDACAO` **irrepresentável**: uma entrega em validação foi
+      // verificada, não está habilitada, e **não tem motivo**, porque ninguém recusou nada.
+      // O que cada cláusula continua tornando irrepresentável está no cabeçalho; o que mudou é só
+      // qual coluna responde por *"está desabilitada"*.
+      check(
+        'entrega_da_noticia_coerencia_chk',
+        sql`(${tabela.situacao} = 'DESABILITADA' OR ${tabela.verificadaEm} IS NOT NULL)
+            AND (${tabela.motivoCodigo} IS NOT NULL) = (${tabela.situacao} = 'DESABILITADA' AND ${tabela.verificadaEm} IS NOT NULL)
+            AND (${tabela.motivoMensagem} IS NULL) = (${tabela.motivoCodigo} IS NULL)
+            AND (${tabela.motivoDiagnostico} IS NULL OR ${tabela.motivoCodigo} IS NOT NULL)`,
+      ),
+      // A `CHECK` do terceiro estado, acrescentada pela `0025`. Ela fixa o domínio de `situacao` e
+      // **amarra `habilitada` a ele** — é o que impede as duas colunas de divergirem e o produto de
+      // passar a ter duas fontes de verdade para o mesmo fato.
+      check(
+        'entrega_da_noticia_situacao_chk',
+        sql`${tabela.situacao} IN ('HABILITADA', 'EM_VALIDACAO', 'DESABILITADA')
+            AND ${tabela.habilitada} = (${tabela.situacao} = 'HABILITADA')`,
+      ),
     ],
   )
   .enableRLS();

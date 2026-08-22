@@ -34,8 +34,16 @@
  * |          |        | carregam a senha, o material em base64 ou o recorte hexadecimal de
  * |          |        | **qualquer** segredo que este arquivo cifrou — enquanto o mesmo varredor
  * |          |        | acha todas as agulhas no controle positivo, canal a canal, por igualdade. |
+ * | CA-06    | CT-1042| Com a entrega da notícia **desabilitada**, a conferência periódica liquida e
+ * |          |        | estorna **IGUAL**: as três execuções — entrega habilitada, entrega
+ * |          |        | desabilitada com motivo e **linha ausente** — produzem desfechos idênticos
+ * |          |        | por igualdade profunda (contagens gravadas, forma da carteira antes e
+ * |          |        | depois, e títulos consultados), com âncora antivácuo de `{2, 2}` e uma
+ * |          |        | liquidada mais uma estornada em cada. O **controle discriminante** — a
+ * |          |        | empresa sem certificado vigente — difere em todos os componentes, o que é
+ * |          |        | o que prova que a igualdade é capaz de reprovar. |
  *
- * Rastreabilidade: `CA-15 → CT-948 (RN-11)` · `CA-20 → CT-948 (e)` (ADR-0032). Ele é o **espelho do CT-944** para a segunda borda, com
+ * Rastreabilidade: `CA-15 → CT-948 (RN-11)` · `CA-20 → CT-948 (e)` (ADR-0032) · `CA-06 → CT-1042 (RN-06)`. Ele é o **espelho do CT-944** para a segunda borda, com
  * o mesmo invariante e a mesma âncora antivácuo — ver o cabeçalho daquele arquivo para as razões que
  * valem palavra por palavra aqui: o caminho é o da operação (nada chama a borda direto), o contexto
  * **não** é fixado por fora, o certificado é resolvido **pelo banco** e a espera é por sondagem.
@@ -45,6 +53,21 @@
  * com o agravante de que a conferência é o caminho por onde o produto descobre pagamento feito fora
  * dele. As asserções sobre B, e o delta `0` depois de cada recusa, são o que discrimina *"apurou sob
  * o contexto de A"* de *"correu sem contexto e não achou nada"*.
+ *
+ * ===========================================================================
+ * O QUE O `CT-1042` MEDE — degradação declarada, provada por IGUALDADE (T10 da F5)
+ * ===========================================================================
+ *
+ * O produto declara ao Admin que **continua cobrando e baixando com a entrega da notícia
+ * desabilitada** (US-05, RN-06). O `CT-1042` é o que transforma essa declaração em prova, e o método
+ * é o conteúdo: as execuções são comparadas por **igualdade profunda de desfechos inteiros**, nunca
+ * por *"todas concluíram"*. A razão é medida — um consumidor que passasse a consultar
+ * `negocio.entrega_da_noticia` e degradasse em silêncio (deixando de estornar quando a entrega está
+ * desabilitada, por exemplo) **fica verde** sob *"todas funcionaram"* e **reprova** sob igualdade.
+ *
+ * ⚠️ **A conferência periódica não produz notícia** — ela liquida direto, e nenhum caminho dela
+ * escreve na relação da notícia (medido no challenge de 2026-08-21). É por isso que a invariante é
+ * de **ausência de acoplamento**, e não de propagação.
  *
  * ===========================================================================
  * O QUE O `CT-948 (e)` MEDE, e por que ele não podia faltar (ADR-0032)
@@ -90,8 +113,11 @@ import {
   garantirContadorDeCobranca,
   garantirContadorDeContrato,
   gravarBoletoDaCobranca,
+  gravarDesfechoDaEntrega,
   lerAnoDaSerieDeCobranca,
   lerAnoDaSerieDeContrato,
+  lerEstadoDaEntrega,
+  liquidarPeloProvedor,
   registrarCertificado,
   registrarIdentidadeNoProvedor,
   revogarBoleto,
@@ -214,6 +240,35 @@ const RECUSA_DO_FECHO = 'a conferência foi concluída e não foi alcançada';
 
 /** As contagens com que a borda fecha a conferência da empresa sem certificado vigente. */
 const CONFERENCIA_SEM_PASSADA = { concluida: true, cobrancasConferidas: 0, efeitos: 0 } as const;
+
+/**
+ * O motivo com que o cenário B declara a entrega da notícia **desabilitada**.
+ *
+ * Ele é texto do provedor, opaco por decisão (ADR-0034), e existe para que o cenário B seja o estado
+ * *"tentou e não conseguiu"* — e não um meio-termo. A `CHECK` `entrega_da_noticia_coerencia_chk`
+ * exige justamente isto: linha desabilitada **com** carimbo de verificação carrega motivo.
+ */
+const MOTIVO_DA_ENTREGA_DESABILITADA = {
+  codigo: '10404',
+  mensagem: 'a entrega da notícia não está ativa nesta conta',
+  diagnostico: null,
+} as const;
+
+/** As duas situações em que a forma da carteira é lida — vocabulário do caso, não do banco. */
+const COBRANCA_PAGA = 'PAGA';
+const COBRANCA_NAO_PAGA = 'NAO_PAGA';
+
+/**
+ * A forma da carteira **antes** de cada execução do `CT-1042`, por construção do arranjo.
+ *
+ * A primeira cobrança nasce em aberto e o provedor a informa **liquidada**; a segunda nasce **paga**
+ * pela porta de produção e o provedor a informa **estornada**. É esse arranjo que faz cada execução
+ * produzir os **dois** efeitos, e não só a liquidação.
+ */
+const CARTEIRA_ANTES_DA_DEGRADACAO = [COBRANCA_NAO_PAGA, COBRANCA_PAGA] as const;
+
+/** A forma da carteira **depois** de uma execução que liquidou a primeira e estornou a segunda. */
+const CARTEIRA_DEPOIS_DA_DEGRADACAO = [COBRANCA_PAGA, COBRANCA_NAO_PAGA] as const;
 
 /** Os termos do contrato de apoio — nada aqui participa do que está sob prova. */
 const TERMOS_DO_CONTRATO = {
@@ -651,6 +706,113 @@ describe('CT-948 (e) — o claro do certificado não alcança o diário nem o mo
       ];
 
       expect(ocorrenciasDe(superficies, agulhas)).toEqual([]);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});
+
+// ===========================================================================
+// CT-1042 — a degradação é PRIMEIRA CLASSE, e se prova por IGUALDADE
+// ===========================================================================
+
+describe('CT-1042 — com a entrega da notícia desabilitada, a conferência liquida e estorna IGUAL', () => {
+  it(
+    'CT-1042 — as três execuções (habilitada, desabilitada e sem linha) produzem desfechos idênticos, e a empresa sem certificado DIFERE',
+    async () => {
+      // O `CT-948 (e)` termina com a tarefa em FALHA e a conferência dele ABERTA — que é o desfecho
+      // correto daquele caso —, e o índice único parcial é por empresa. Sem esta liberação, o
+      // arranjo abaixo recusaria por uma presa que não é deste caso.
+      await liberarConferenciaEmAndamento(EMPRESA_A.id);
+
+      // --- CENÁRIO A: a entrega HABILITADA ---------------------------------------------------
+      const cenarioA = await semearCenario(EMPRESA_A.id);
+      await gravarEstadoDaEntrega(cenarioA.empresaId, true);
+
+      // O estado é DECLARADO, e a leitura o afirma antes de a execução correr: sem isto, um cenário
+      // que herdasse o estado do caso anterior faria a igualdade comparar duas execuções do mesmo
+      // eixo, e a prova de ausência de acoplamento seria vácuo.
+      expect(await entregaDeclaradaEm(cenarioA.empresaId)).toEqual({
+        habilitada: true,
+        motivo: null,
+      });
+
+      const desfechoA = await executarCenarioDaDegradacao(cenarioA);
+
+      // ⚠️ **ÂNCORA ANTIVÁCUO, antes de qualquer comparação.** Comparar duas execuções que nada
+      // fizeram passaria por vacuidade — a mesma que a `.claude/rules/ancoras-de-superficie.md`
+      // proíbe. O objeto INTEIRO por igualdade: as duas contagens gravadas, a forma da carteira
+      // antes e depois (uma liquidada **e** uma estornada) e quantos títulos foram perguntados.
+      expect(desfechoA).toEqual({
+        estadoDaTarefa: 'completed',
+        conferencia: {
+          concluida: true,
+          cobrancasConferidas: COBRANCAS_POR_EMPRESA,
+          efeitos: COBRANCAS_POR_EMPRESA,
+        },
+        carteiraAntes: [...CARTEIRA_ANTES_DA_DEGRADACAO],
+        carteiraDepois: [...CARTEIRA_DEPOIS_DA_DEGRADACAO],
+        titulosConsultados: COBRANCAS_POR_EMPRESA,
+      });
+
+      // A conferência não escreve no estado da entrega: ele continua exatamente o que o arranjo
+      // declarou. É a metade que a igualdade entre cenários não pega — uma apuração que **gravasse**
+      // ali produziria os mesmos desfechos e ainda assim estaria acoplada.
+      expect(await entregaDeclaradaEm(cenarioA.empresaId)).toEqual({
+        habilitada: true,
+        motivo: null,
+      });
+
+      // --- CENÁRIO B: a entrega DESABILITADA, com motivo — o primeiro modo de "sem entrega" ---
+      const cenarioB = await semearCenario(EMPRESA_A.id);
+      await gravarEstadoDaEntrega(cenarioB.empresaId, false);
+
+      // DECLARADA, e não omitida (RN-06): a linha existe, `habilitada` é falsa e o motivo está lá.
+      expect(await entregaDeclaradaEm(cenarioB.empresaId)).toEqual({
+        habilitada: false,
+        motivo: { ...MOTIVO_DA_ENTREGA_DESABILITADA },
+      });
+
+      const desfechoB = await executarCenarioDaDegradacao(cenarioB);
+
+      // --- CENÁRIO C: NENHUMA LINHA — o segundo modo de "sem entrega" (CA-19) ------------------
+      //
+      // ⚠️ Ele **não** é redundante com o B: são estados distintos no banco, e um consumidor
+      // acoplado poderia tratá-los de forma diferente. O estado é RETIRADO, e não apenas não
+      // gravado: a empresa é a mesma entre os cenários e herdaria o que o B deixou.
+      const cenarioC = await semearCenario(EMPRESA_A.id);
+      await retirarEstadoDaEntrega(cenarioC.empresaId);
+
+      expect(await entregaDeclaradaEm(cenarioC.empresaId)).toBeUndefined();
+
+      const desfechoC = await executarCenarioDaDegradacao(cenarioC);
+
+      // ⚠️ **A INVARIANTE, por IGUALDADE — nunca por *"as três concluíram"*.** Um consumidor que
+      // consultasse o estado da entrega e degradasse em silêncio (deixando de estornar quando ela
+      // está desabilitada, por exemplo) ficaria verde sob *"todas funcionaram"* e **reprova aqui**,
+      // nomeando o componente que divergiu.
+      expect(desfechoB).toEqual(desfechoA);
+      expect(desfechoC).toEqual(desfechoA);
+
+      // --- O CONTROLE DISCRIMINANTE: o desfecho que DEVE diferir -------------------------------
+      //
+      // Sem ele, a igualdade acima seria satisfeita por um consumidor que não faz nada em nenhum dos
+      // três cenários. A empresa sem certificado vigente é o caminho que a borda **interrompe antes
+      // da rede**, e o desfecho dela difere em todos os componentes comparados.
+      const controle = await semearCenario(EMPRESA_A.id, { comCertificado: false });
+      const desfechoDoControle = await executarCenarioDaDegradacao(controle);
+
+      expect(desfechoDoControle).toEqual({
+        estadoDaTarefa: 'completed',
+        conferencia: CONFERENCIA_SEM_PASSADA,
+        // A carteira fica INTOCADA: concluir com zero não é liquidar nem estornar em silêncio.
+        carteiraAntes: [...CARTEIRA_ANTES_DA_DEGRADACAO],
+        carteiraDepois: [...CARTEIRA_ANTES_DA_DEGRADACAO],
+        // Zero consultas: nada foi perguntado ao provedor.
+        titulosConsultados: 0,
+      });
+      // E a desigualdade dita por extenso — é ela que prova que a igualdade dos três é capaz de
+      // reprovar, e não uma tautologia sobre desfechos vazios.
+      expect(desfechoDoControle).not.toEqual(desfechoA);
     },
     LIMITE_DO_CASO_MS,
   );
@@ -1278,5 +1440,202 @@ async function cobrancasPagas(empresaId: string): Promise<string[]> {
     `;
 
     return linhas.map((linha) => linha.codigo);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Acessórios do CT-1042 — o eixo do estado da entrega e o desfecho comparável
+// ---------------------------------------------------------------------------
+
+/**
+ * O que uma execução inteira produziu — o objeto que as três comparações do `CT-1042` igualam.
+ *
+ * Ele é comparado **por inteiro**, e é por isso que cada componente é uma **forma** e não um
+ * identificador: os códigos das cobranças e os números dos títulos diferem entre cenários por
+ * construção (a série é única por empresa e ano), de modo que compará-los faria a igualdade reprovar
+ * por um fato que nada tem a ver com a degradação.
+ */
+interface DesfechoDaExecucao {
+  readonly estadoDaTarefa: string;
+  readonly conferencia: ConferenciaLida | undefined;
+  readonly carteiraAntes: readonly string[];
+  readonly carteiraDepois: readonly string[];
+  readonly titulosConsultados: number;
+}
+
+/**
+ * Monta o eixo dos **dois** efeitos, corre a tarefa e colhe o desfecho inteiro.
+ *
+ * A segunda cobrança é paga **pela porta de produção** (`liquidarPeloProvedor`, a mesma que a
+ * apuração usa) antes de a tarefa correr: é isso que dá ao provedor uma cobrança que ele possa
+ * informar **estornada** com efeito, em vez de um `NAO_ESTAVA_PAGA` que não contaria.
+ */
+async function executarCenarioDaDegradacao(cenario: Cenario): Promise<DesfechoDaExecucao> {
+  const [tituloALiquidar, tituloAEstornar] = cenario.titulos;
+  const codigoAEstornar = cenario.codigos[1];
+
+  if (
+    tituloALiquidar === undefined ||
+    tituloAEstornar === undefined ||
+    codigoAEstornar === undefined
+  ) {
+    throw new Error('o cenário do CT-1042 exige exatamente duas cobranças com boleto');
+  }
+
+  await emUnidade(cenario.empresaId, async (tx) => {
+    const desfecho = await liquidarPeloProvedor(tx, codigoAEstornar, {
+      pagoEm: DATA_DO_PAGAMENTO,
+      valorPago: VALOR_DA_COBRANCA.toFixed(2),
+      dataDoCredito: DATA_DO_PAGAMENTO,
+      valorCreditado: VALOR_DA_COBRANCA.toFixed(2),
+    });
+
+    // Levantar, e não seguir: um arranjo que não conseguisse pagar produziria um cenário sem o
+    // efeito de estorno, e a igualdade entre as três execuções passaria medindo só a liquidação.
+    if (desfecho !== 'LIQUIDADA') {
+      throw new Error(`o arranjo não conseguiu pagar a cobrança a estornar: ${desfecho}`);
+    }
+  });
+
+  const carteiraAntes = await formaDaCarteira(cenario);
+  const adaptador = adaptadorQueLiquidaEEstorna(tituloALiquidar, tituloAEstornar);
+  const fila = montarConsumidor(adaptador.porta);
+
+  const tarefa = await executarJob(fila, {
+    empresaId: cenario.empresaId,
+    conferenciaId: cenario.conferenciaId,
+  });
+
+  return {
+    estadoDaTarefa: await tarefa.getState(),
+    conferencia: await lerConferencia(cenario.empresaId, cenario.conferenciaId),
+    carteiraAntes,
+    carteiraDepois: await formaDaCarteira(cenario),
+    titulosConsultados: adaptador.consultas.length,
+  };
+}
+
+/**
+ * A **forma** da carteira do cenário — a situação de cada cobrança dele, na ordem em que nasceram.
+ *
+ * Ela recorta pelos códigos **deste** cenário de propósito: a empresa é reutilizada entre os casos
+ * deste arquivo, e {@link cobrancasPagas} devolveria também as pagas que casos anteriores deixaram.
+ */
+async function formaDaCarteira(cenario: Cenario): Promise<readonly string[]> {
+  const pagas = new Set(await cobrancasPagas(cenario.empresaId));
+
+  return cenario.codigos.map((codigo) => (pagas.has(codigo) ? COBRANCA_PAGA : COBRANCA_NAO_PAGA));
+}
+
+/**
+ * Um adaptador que responde **LIQUIDADO** para um título e **ESTORNADO** para o outro.
+ *
+ * O despacho é por **número do título**, e não por ordem de chegada: a ordem em que
+ * `selecionarCobrancasAConferir` devolve o conjunto não é contrato deste arquivo, e amarrar o
+ * arranjo a ela faria o caso medir a consulta do banco em vez da apuração.
+ *
+ * Título que não seja nenhum dos dois **levanta nomeando-se** — é asserção, e não zelo: uma seleção
+ * que alcançasse cobrança de outro cenário derrubaria o caso no ponto.
+ */
+function adaptadorQueLiquidaEEstorna(
+  tituloALiquidar: string,
+  tituloAEstornar: string,
+): AdaptadorDeTeste {
+  const consultas: ConsultaDeSituacao[] = [];
+
+  const porta: AdaptadorCobrancaBancaria = {
+    consultarSituacao: async (consulta) => {
+      consultas.push(consulta);
+
+      if (consulta.numeroDoTituloNoProvedor === tituloALiquidar) {
+        return {
+          aceito: true,
+          valor: {
+            situacao: 'LIQUIDADO',
+            pagoEm: DATA_DO_PAGAMENTO,
+            valorPago: VALOR_DA_COBRANCA,
+            documento: null,
+          },
+        };
+      }
+
+      if (consulta.numeroDoTituloNoProvedor === tituloAEstornar) {
+        return { aceito: true, valor: { situacao: 'ESTORNADO', documento: null } };
+      }
+
+      throw new Error(
+        `a apuração perguntou por um título que não é do cenário: ${consulta.numeroDoTituloNoProvedor}`,
+      );
+    },
+    emitir: operacaoNaoEsperada('emitir'),
+    solicitarRevogacaoDeBoleto: operacaoNaoEsperada('solicitarRevogacaoDeBoleto'),
+    confirmarRevogacaoDeBoleto: operacaoNaoEsperada('confirmarRevogacaoDeBoleto'),
+  };
+
+  return { porta, consultas };
+}
+
+/**
+ * Grava o estado da entrega da notícia da empresa **pela porta de dados de produção**.
+ *
+ * É o mesmo molde de {@link gravarCertificadoVigente}: o estado que a produção grava por dentro do
+ * serviço da ativação nasce aqui pela porta que aquele serviço usa (`gravarDesfechoDaEntrega`), e
+ * nunca por SQL cru nem por bandeira *test-only* em `apps/worker/src`.
+ *
+ * O motivo acompanha a linha desabilitada porque a `CHECK` do banco o exige — desabilitada **com**
+ * carimbo de verificação é, por definição, *"tentou e não conseguiu"*.
+ */
+async function gravarEstadoDaEntrega(empresaId: string, habilitada: boolean): Promise<void> {
+  await emUnidade(empresaId, async (tx) => {
+    await gravarDesfechoDaEntrega(tx, {
+      // A situação é DERIVADA do booleano do arranjo: esta suíte mede a conferência bancária, e não
+      // o ternário da entrega — quem o mede é o `CT-1054`, em `@sysloc/db`.
+      situacao: habilitada ? 'HABILITADA' : 'DESABILITADA',
+      motivo: habilitada ? null : { ...MOTIVO_DA_ENTREGA_DESABILITADA },
+      referenciaNoProvedor: null,
+      verificadaPor: exigirUsuarioDa(empresaId).id,
+    });
+  });
+}
+
+/**
+ * Retira a linha do estado da entrega — o modo *"nunca houve tentativa"* (CA-19).
+ *
+ * ⚠️ **É a mesma situação de {@link retirarCertificadoVigente}, e por isso a mesma forma**: nenhuma
+ * porta pública produz o estado *"empresa que nunca tentou"* a partir de uma que já tentou — a única
+ * escrita que existe é a que **substitui** o desfecho (RN-04). Sem `WHERE empresa_id`: quem recorta
+ * é a política (ADR-0008).
+ */
+async function retirarEstadoDaEntrega(empresaId: string): Promise<void> {
+  await emUnidade(empresaId, async (tx) => {
+    await tx`DELETE FROM negocio.entrega_da_noticia`;
+  });
+}
+
+/** O que a empresa DECLARA sobre a entrega hoje, ou `undefined` quando não há linha alguma. */
+async function entregaDeclaradaEm(
+  empresaId: string,
+): Promise<{ habilitada: boolean; motivo: unknown } | undefined> {
+  const estado = await emUnidade(empresaId, lerEstadoDaEntrega);
+
+  return estado === undefined
+    ? undefined
+    : { habilitada: estado.habilitada, motivo: estado.motivo };
+}
+
+/**
+ * Fecha, **pela porta de produção**, a conferência que um caso anterior deixou em andamento.
+ *
+ * A empresa é reutilizada entre os casos deste arquivo e o índice único é **parcial** sobre
+ * `(empresa_id) WHERE concluida_em IS NULL`: uma linha aberta que sobrou faz o `semearCenario`
+ * seguinte recusar. `abrirConferencia` devolve a linha **em curso** quando já existe uma
+ * (`iniciadaAgora: false`), e é por ela que a presa é identificada sem SQL cru — o fecho vale nos
+ * dois ramos, porque a linha que esta função eventualmente abrir também não pode ficar para trás.
+ */
+async function liberarConferenciaEmAndamento(empresaId: string): Promise<void> {
+  await emUnidade(empresaId, async (tx) => {
+    const emCurso = await abrirConferencia(tx, { solicitadaPor: exigirUsuarioDa(empresaId).id });
+
+    await concluirConferencia(tx, emCurso.id, { cobrancasConferidas: 0, efeitos: 0 });
   });
 }

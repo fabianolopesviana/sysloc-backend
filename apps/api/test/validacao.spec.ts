@@ -461,6 +461,23 @@ const IMPORTADORES_ESPERADOS = [
   // {@link ANALISADORES_ESPERADOS} não muda (os dois manipuladores novos chamam `validar`, e não
   // `safeParse`), e a igualdade (nunca contenção) segue sendo asserida nas três pontas.
   'integracoes-bancarias/certificado.controller.ts',
+  // SUT_IS_CORRECT_BECAUSE: o código de produção está certo, e é esta lista que descrevia o estado
+  // anterior. A **T7** da fatia `integracao-bancaria-autonoma` publica a borda das **duas rotas da
+  // entrega da notícia**, e ela **importa** a tradução única em vez de copiá-la, que é exatamente o
+  // desfecho que o `CT-343` existe para premiar.
+  //
+  // ⚠️ O corpo que ela recusa é o `esquemaDaAtivacaoDaEntrega` de `@sysloc/contracts` — e **não** o
+  // `ESQUEMA_DO_CORPO_VAZIO` da borda —, por decisão da ADR-0016: o esquema da rota vem do pacote de
+  // contratos, que é a fonte única e é folha. Por isso ela entra AQUI e **não** em
+  // {@link IMPORTADORES_DO_CORPO_VAZIO_ESPERADOS}, cujo conjunto permanece com os mesmos nove
+  // elementos — a distinção entre as duas listas é justamente o que torna esta ausência afirmável.
+  //
+  // **Este arquivo não está na §5.2 da T7 desta fatia** — divergência declarada, no mesmo molde das
+  // anotações acima, e descoberta por **execução da suíte**. Vale o resto do parágrafo do docblock: a
+  // ponta da DEFINIÇÃO permanece em um elemento, {@link ANALISADORES_ESPERADOS} não muda (os dois
+  // manipuladores novos chamam `validar`, e não `safeParse`), e a igualdade (nunca contenção) segue
+  // sendo asserida nas três pontas.
+  'integracoes-bancarias/entrega-da-noticia.controller.ts',
   'integracoes-bancarias/identidade.controller.ts',
   'master/empresa.controller.ts',
   // SUT_IS_CORRECT_BECAUSE: o código de produção está certo, e é esta lista que descrevia o estado

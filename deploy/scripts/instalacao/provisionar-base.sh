@@ -314,6 +314,29 @@ readonly ENDERECO_PADRAO_DO_PROVEDOR_BANCARIO="https://provedor.sysloc.invalid"
 # não resolve em lugar nenhum, e a instalação o troca pelo do banco real.
 readonly ENDERECO_PADRAO_DE_AUTORIZACAO_BANCARIA="https://autorizacao.sysloc.invalid"
 
+# Para ONDE o provedor entrega a notícia — o endereço público desta instalação.
+# Exigido na partida da `api` desde a T7 da fatia `integracao-bancaria-autonoma`
+# (fechamento do `D29`): sem ele, as duas operações da entrega resolvem negativas
+# SEM chamar o provedor, e o Admin lê "o provedor não respondeu" onde o fato é
+# "esta instalação não foi configurada". Nasce com substituto em domínio
+# reservado pela RFC 6761; o caminho é o da rota que recebe a notícia, e o
+# hostname é trocado pelo real quando o vhost da notificação for publicado.
+#
+# ⚠️ DIVERGÊNCIA DE ESCOPO DECLARADA: este arquivo NÃO está na §5.1/§5.2 do card
+# da T7, nem no raio de impacto que ela declara — aquele raio é derivado das
+# âncoras de superfície, e esta é uma consequência da conferência de PARTIDA da
+# `api`. A razão de abri-lo é o fecho do `D29` (achado `architecture` do Gate 2
+# da T6): a variável passou a ser EXIGIDA em `apps/api/src/configuracao/
+# ambiente.ts`, e um arquivo de ambiente sem a linha faria o serviço recusar
+# subir — este script é quem o semeia. Mesmo molde das anotações do
+# `D26 (F2/T6)` que esta task deixou em `apps/api/test/contexto.e2e.spec.ts` e
+# `apps/api/test/validacao.spec.ts`.
+readonly ENDERECO_PADRAO_DA_ENTREGA_DA_NOTICIA="https://notificacao.sysloc.invalid/v1/notificacoes-bancarias"
+# O contato operacional do cadastro da entrega — a outra metade do endereço acima,
+# e declarado NECESSÁRIO pelo provedor. Substituto em domínio reservado pela RFC
+# 2606, trocado pelo endereço real da operação quando o vhost for publicado.
+readonly CONTATO_PADRAO_DA_ENTREGA_DA_NOTICIA="operacao@sysloc.invalid"
+
 # Diretório onde os BYTES do boleto vivem — a oitava chave do arquivo de ambiente
 # e o único diretório de dados de negócio que este script provisiona.
 #
@@ -892,6 +915,28 @@ garantir_chaves_de_conteudo() {
 		acrescentar_linha_ao_ambiente "${arquivo}" \
 			"ENDERECO_DE_AUTORIZACAO_BANCARIA=${ENDERECO_PADRAO_DE_AUTORIZACAO_BANCARIA}"
 		CHAVES_SEMEADAS="${CHAVES_SEMEADAS:+${CHAVES_SEMEADAS}, }ENDERECO_DE_AUTORIZACAO_BANCARIA"
+	fi
+
+	# O endereço da ENTREGA DA NOTÍCIA, pelo MESMO critério das duas linhas acima:
+	# exigido na partida da `api` desde a T7 da fatia
+	# `integracao-bancaria-autonoma`, não é segredo, e um arquivo de instalação
+	# anterior à exigência nunca ganharia a linha. Também NÃO entra na conferência
+	# de coordenadas, pela razão das irmãs: é justamente o que o operador troca ao
+	# publicar o vhost real da notificação.
+	if ! grep -q '^ENDERECO_DA_ENTREGA_DA_NOTICIA=' "${arquivo}" 2>/dev/null; then
+		acrescentar_linha_ao_ambiente "${arquivo}" \
+			"ENDERECO_DA_ENTREGA_DA_NOTICIA=${ENDERECO_PADRAO_DA_ENTREGA_DA_NOTICIA}"
+		CHAVES_SEMEADAS="${CHAVES_SEMEADAS:+${CHAVES_SEMEADAS}, }ENDERECO_DA_ENTREGA_DA_NOTICIA"
+	fi
+
+	# A outra metade da capacidade acima, e pelo MESMO critério: o provedor declara o
+	# contato necessário no cadastro do webhook, e um arquivo de instalação anterior à
+	# exigência nunca ganharia a linha. Acrescentada na intervenção dirigida de
+	# 2026-08-22 (W2 da conformidade com a documentação do provedor).
+	if ! grep -q '^CONTATO_DA_ENTREGA_DA_NOTICIA=' "${arquivo}" 2>/dev/null; then
+		acrescentar_linha_ao_ambiente "${arquivo}" \
+			"CONTATO_DA_ENTREGA_DA_NOTICIA=${CONTATO_PADRAO_DA_ENTREGA_DA_NOTICIA}"
+		CHAVES_SEMEADAS="${CHAVES_SEMEADAS:+${CHAVES_SEMEADAS}, }CONTATO_DA_ENTREGA_DA_NOTICIA"
 	fi
 
 	# A quarta chave de conteúdo (F4/T9), pelo MESMO critério das três acima. Ela
@@ -1734,6 +1779,18 @@ passo_p06_arquivo_ambiente() {
 		printf '# um substituto em domínio reservado (.invalid) e é trocado pelo endereço\n'
 		printf '# real do provedor quando a instalação passar a cobrar de verdade.\n'
 		printf '#\n'
+		printf '# ENDERECO_DA_ENTREGA_DA_NOTICIA também NÃO é segredo, e a direção dele é a\n'
+		printf '# INVERSA das duas acima: ele é o endereço público DESTA instalação, que o\n'
+		printf '# provedor passa a chamar quando algo acontece com um título. Mesmo\n'
+		printf '# critério — substituto em .invalid, presença cobrada e conteúdo nunca —, e\n'
+		printf '# é trocado pelo hostname real quando o vhost da notificação for publicado.\n'
+		printf '#\n'
+		printf '# CONTATO_DA_ENTREGA_DA_NOTICIA é a outra metade da capacidade acima, e o\n'
+		printf '# provedor a declara NECESSÁRIA no cadastro do webhook. É por ele que o\n'
+		printf '# provedor avisa quando INATIVA a entrega. Mesmo critério das demais chaves\n'
+		printf '# de conteúdo: substituto em domínio reservado, presença cobrada, conteúdo\n'
+		printf '# nunca — e é trocado pelo endereço real da operação.\n'
+		printf '#\n'
 		printf '# DIRETORIO_DOS_BOLETOS também NÃO é segredo: é onde os bytes do boleto\n'
 		printf '# que o provedor devolveu ficam guardados. Diferente das três chaves de\n'
 		printf '# conteúdo acima, o valor semeado é o REAL — o mesmo diretório que este\n'
@@ -1751,6 +1808,8 @@ passo_p06_arquivo_ambiente() {
 		printf 'CHAVE_DE_CIFRA_DO_CERTIFICADO=%s\n' "${chave_de_cifra}"
 		printf 'ENDERECO_DO_PROVEDOR_BANCARIO=%s\n' "${ENDERECO_PADRAO_DO_PROVEDOR_BANCARIO}"
 		printf 'ENDERECO_DE_AUTORIZACAO_BANCARIA=%s\n' "${ENDERECO_PADRAO_DE_AUTORIZACAO_BANCARIA}"
+		printf 'ENDERECO_DA_ENTREGA_DA_NOTICIA=%s\n' "${ENDERECO_PADRAO_DA_ENTREGA_DA_NOTICIA}"
+		printf 'CONTATO_DA_ENTREGA_DA_NOTICIA=%s\n' "${CONTATO_PADRAO_DA_ENTREGA_DA_NOTICIA}"
 		printf 'DIRETORIO_DOS_BOLETOS=%s\n' "${DIR_BOLETOS}"
 	} >"${ARQ_AMBIENTE}"
 

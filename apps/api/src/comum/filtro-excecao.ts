@@ -113,6 +113,24 @@ export const MENSAGEM_POR_CODIGO: Readonly<Record<CodigoErro, string>> = {
   // afirmar ao cliente algo que não sabemos. O diagnóstico do que de fato aconteceu vai inteiro
   // para o registro estruturado, por campo nomeado, como o de qualquer outra recusa.
   [CodigoErro.REQUISICAO_RECUSADA]: 'requisição recusada',
+  // As três do material do certificado (F5). Elas nomeiam o **desfecho**, e jamais conteúdo: nem o
+  // material, nem a senha, nem o que o conversor respondeu. Segredo interpolado em texto sobrevive
+  // em `mensagem` e `pilha` do evento, onde a redação do registrador **não o alcança**.
+  //
+  // ⚠️ Elas moram AQUI, e não no serviço que as levanta, justamente porque agora **há um código por
+  // causa**: a razão pela qual `certificado.service.ts` mantinha literal próprio — *"aquela tabela
+  // publica 'requisição inválida' para toda recusa de campo"* — deixou de valer quando as três
+  // causas ganharam código próprio. Uma declaração só, e a coincidência entre o que se responde e o
+  // que se documenta passa a ser consequência.
+  [CodigoErro.MATERIAL_EM_FORMATO_NAO_SUPORTADO]:
+    'o arquivo enviado não é um certificado que o produto consiga ler — confira o arquivo escolhido',
+  [CodigoErro.SENHA_DO_MATERIAL_NAO_ABRE]:
+    'a senha apresentada não abre o certificado enviado — confira a senha',
+  // Distinta das duas acima de propósito: aqui o arquivo abriu, o titular é legível e o produto sabe
+  // exatamente o que há de errado. Dizer "confira o arquivo" mandaria o Admin procurar defeito onde
+  // não há.
+  [CodigoErro.CERTIFICADO_COM_VALIDADE_ENCERRADA]:
+    'a validade do certificado apresentado já terminou',
 };
 
 /** Menor status que caracteriza recusa do cliente. Abaixo dele nada é recusa. */

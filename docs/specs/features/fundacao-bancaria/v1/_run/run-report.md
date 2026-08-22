@@ -226,7 +226,18 @@ O item 3 revelou um **defeito de processo, não de caso**: classe de erro nova n
 - **Impacto:** a colisão **não é hipótese**: `LARGURA_DO_ANO_NO_CODIGO` já existe duas vezes no pacote (`contrato.ts:74` e `cobranca.ts:175`) e as duas só coexistem porque ambas são **privadas** — no instante em que uma precisar sair, o barril achatado força o sufixo. Esse instante chegou para o par bancário e o sufixo não foi aplicado. O produto tem três séries e a F4 acrescenta a emissão; uma segunda que precise publicar a largura do seu contador colide e força renomear símbolo **já publicado** — e `@sysloc/contracts` é o artefato que o React importa no marco de entrega. O custo é **assimétrico**: renomear agora é mecânico e sem consumidor externo; depois do congelamento da superfície, é caro. O próprio consumidor prova que o nome publicado é insuficiente — `packages/db/src/identificador-bancario.ts:105` reapelida na hora para `LARGURA_DO_CONTADOR_BANCARIO`, e o docblock ali escreve a razão. Nenhum impacto de comportamento hoje.
 - **O que fazer:** renomear para `LARGURA_DA_COMPETENCIA_BANCARIA` e `LARGURA_DO_CONTADOR_BANCARIO`, propagando para `contracts/src/index.ts`, para o import de `db/src/identificador-bancario.ts:77` e para os dois nomes importados em `contracts/test/esquemas.spec.ts:508-509`. Com o sufixo, `db/src/identificador-bancario.ts:105` deixa de precisar do reapelidamento e reexporta o símbolo importado direto — o conjunto de quatro entradas que o `CT-012` audita por igualdade **permanece idêntico**.
 
-### D21 · BAIXO · error_handling · T6 · Tech Review
+### D21 · BAIXO · error_handling · T6 · Tech Review · ✅ **FECHADO na intervenção dirigida de 2026-08-22**
+
+> **Como fechou:** a guarda da competência passou a conferir **valor** antes de comprimento —
+> `!Number.isInteger(competencia) || competencia < 0 || competenciaEmTexto.length !== …` —,
+> exatamente a forma que este bloco prescrevia e a mesma da guarda do contador logo abaixo. O
+> `RangeError` e a mensagem sem eco do valor foram preservados. Sob marcador `DECISÃO FECHADA`.
+>
+> **Rede (P4):** as duas pernas acrescentadas ao `CT-805`, comportamentais e **discriminantes**
+> — `-20268` e `2026.5`, os dois de **exatamente seis caracteres**, afirmado no próprio caso.
+> É o que separa a guarda nova da antiga: as quatro pernas que já existiam mediam competência
+> de 5 e 7 posições, que o comprimento sozinho já pegava. Contagem de `@sysloc/db` inalterada
+> em **235** — as asserções entraram num `it` existente, e nenhum caso foi removido.
 - **Onde:** `packages/db/src/identificador-bancario.ts:160`
 - **Problema:** a conferência da competência mede **comprimento**, não forma: `competenciaEmTexto.length !== LARGURA_DA_COMPETENCIA`. Para `competencia = -20268`, `String(-20268)` tem comprimento 6, passa a guarda, e produz `-20268` + 12 dígitos = **18 caracteres que não são 18 dígitos** — cadeia que o próprio `ESQUEMA_DO_IDENTIFICADOR_BANCARIO` (`^[0-9]{18}$`) recusaria. O docblock de `comporIdentificadorBancario` afirma que *"nenhuma cadeia fora de forma existe, nem como intermediária"*, e a afirmação é falsificável por esse caminho. O `CT-805` cobre 5 e 7 dígitos e **não cobre o sinal**.
 - **Impacto:** ⚠️ **NÃO é regressão da rodada 2** — a guarda é literalmente a mesma da rodada 1, e o próprio Gate 2 declarou o achado como *"lacuna da minha própria varredura da rodada 1"*. Hoje inalcançável em produto: o único produtor é `proximoIdentificadorBancario`, que lê `to_char(...)::integer` do banco, sempre positivo. O risco é da **fatia (ii)**: `comporIdentificadorBancario` sai pelo barril de `@sysloc/db`, e a emissão que decompuser e recompuser um identificador pode alcançar valor calculado. O defeito chegaria **longe da causa** — recusado pelo provedor, não pelo produto.
@@ -495,7 +506,7 @@ O item 3 revelou um **defeito de processo, não de caso**: classe de erro nova n
 - ⚠️ **Por que isto é DÉBITO e não REGRA, e a distinção é o achado:** a curadoria de 2026-08-16 (`/agent-spec-curate-project-rules`) recebeu este cluster como candidato a regra de projeto e o **recusou** no teste de fricção. A regra que ele sugere — *"a suíte nova importa os acessórios em vez de redeclarar"* — mandaria importar de um lugar que **não existe**. Regra inaplicável no dia em que é escrita ensina o agente a ignorar `.claude/rules/`, que é um dano maior que o débito. O que se registrou como regra foi o **limiar de três** (`CLAUDE.md` §Convenções), que é cumprível hoje; a dívida concreta ficou aqui, com gatilho.
 
 
-### D64 · ALTO · error_handling · F4/fechamento · intervenção dirigida (2026-08-20) · ⚠️ **AGRAVADO em 2026-08-21** · 🔖 **DÉBITO COM GATILHO — marcador vivo no código**
+### D64 · ALTO · error_handling · F4/fechamento · intervenção dirigida (2026-08-20) · ⚠️ **AGRAVADO em 2026-08-21** · ✅ **FECHADO em 2026-08-22 (F5, fatia `integracao-bancaria-autonoma/v1`, T2)**
 - **Onde:** `apps/api/src/integracoes-bancarias/certificado.controller.ts` (junto de `MENSAGEM_DO_MATERIAL_RECUSADO`)
 - **Problema:** o registro do certificado recusa com `422` e **a mesma mensagem** para duas causas distintas: senha que não abre o material, e material cuja **cifra o runtime não suporta**. A rota não as distingue porque `lerMaterial` só sabe que a abertura falhou.
 - **Impacto:** ⚠️ **medido em 2026-08-20, e custou uma rodada de diagnóstico ao operador.** O `.pfx` real do provedor vem embalado com `RC2-40-CBC`, que o OpenSSL 3 recusa por padrão; o Node 24 falha com `ERR_CRYPTO_UNSUPPORTED_OPERATION: Unsupported PKCS12 PFX data`. O produto respondeu *"a senha não abre o material"*, e o operador foi caçar uma senha errada que não existia. **O mesmo arquivo era lido sem cerimônia pelo backend Frappe** (Python sobre OpenSSL 1.1.x, onde RC2 é padrão) — é consequência da troca de stack, e ela não aparece em teste: as suítes geram material em execução, sempre com cifra moderna.
@@ -535,6 +546,40 @@ O item 3 revelou um **defeito de processo, não de caso**: classe de erro nova n
 > **Prova exigida (ampliada):** além do caso da mensagem, um caso que **registre pela ROTA** um
 > material em cifra legada e afirme que ele é **aceito** — com o material gerado em execução pelo
 > `openssl` com `-legacy`, que é a parte cara e a razão de o débito seguir aberto.
+
+> ### ✅ FECHO — 2026-08-22, pela T2 da fatia `integracao-bancaria-autonoma/v1`
+>
+> **Edição cirúrgica e aditiva**: nada acima foi alterado. O registro histórico permanece byte a
+> byte; o que se acrescenta é a marca de fecho, para onde o campo `ÍNDICE` do marcador apontava.
+>
+> **O que fechou, nas duas metades do débito:**
+>
+> - **A aceitação** (a metade do agravamento) — a borda de registro passa a chamar
+>   `converterMaterialSeNecessario` (`packages/cobranca-bancaria/src/conversao-do-material.ts`, T1)
+>   em vez de `lerMaterial` direto. Material em cifra legada é convertido **num subprocesso de vida
+>   curta**, e o que se cifra e se guarda é o **convertido** (ADR-0036). Adotou-se a **primeira** das
+>   três formas da tabela acima — reembalar invocando o `openssl` —, e a segunda segue **recusada**
+>   pela razão ali escrita: ligar RC2 no processo que manipula todo segredo operável compra
+>   conveniência com superfície. O Admin renova **pela tela**, sem terminal.
+> - **A mensagem** (o registro original) — as três causas ganharam **código próprio** no enum fechado
+>   da ADR-0017: `SENHA_DO_MATERIAL_NAO_ABRE`, `MATERIAL_EM_FORMATO_NAO_SUPORTADO` e
+>   `CERTIFICADO_COM_VALIDADE_ENCERRADA`, cada uma com mensagem própria em `MENSAGEM_POR_CODIGO`. A
+>   classificação é pelo **tipo** da exceção do domínio, jamais por texto.
+>
+> ⚠️ **A prova exigida (ampliada) foi entregue como pedida**: o `CT-1020` de
+> `apps/api/test/certificado-do-provedor.e2e.spec.ts` registra **pela rota** um material em cifra
+> legada gerado em execução e afirma que ele é **aceito**, com a identidade registrada idêntica à do
+> mesmo certificado em cifra moderna. A parte "cara" — emitir o legado com `-legacy` — mede-se em
+> **duas invocações** do binário, e a premissa de custo do registro original foi refutada por
+> medição em 2026-08-21.
+>
+> **As três pontas do fecho, no mesmo commit** (§3-B da `.claude/rules/nao-regressao.md`): o
+> marcador saiu de `apps/api/src/integracoes-bancarias/certificado.service.ts`, a linha saiu do
+> índice do `CLAUDE.md` (33 → 32) e esta marca entrou aqui.
+>
+> ⚠️ **O campo `Onde:` acima nomeia o controlador; o marcador vivia no SERVIÇO.** A divergência é do
+> registro original e não se corrige aqui — registro histórico não se reescreve —, mas fica anotada
+> para quem for auditar o fecho pelo caminho errado.
 
 ### D65 · BAIXO · project_pattern · F4/fechamento · intervenção dirigida (2026-08-20) · ⚠️ **sem gatilho concreto — fica só aqui, pela §3-B**
 - **Onde:** transversal — `packages/contracts/src/integracao-bancaria.ts`, `packages/cobranca-bancaria/src/leitura-do-material.ts`, e toda suíte que gera material.

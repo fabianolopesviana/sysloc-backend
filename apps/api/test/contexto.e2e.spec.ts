@@ -184,6 +184,10 @@ import {
   SEGMENTO_DA_VERIFICACAO,
   SEGMENTO_DO_REGISTRO,
 } from '../src/integracoes-bancarias/certificado.controller.ts';
+import {
+  SEGMENTO_DA_ATIVACAO,
+  SEGMENTO_DA_ENTREGA_DA_NOTICIA,
+} from '../src/integracoes-bancarias/entrega-da-noticia.controller.ts';
 import { SEGMENTO_DA_IDENTIDADE } from '../src/integracoes-bancarias/identidade.controller.ts';
 import {
   CAMINHO_DO_CONTRATO,
@@ -725,6 +729,25 @@ const ROTAS_PROTEGIDAS_ACEITAS: readonly string[] = [
   // débito **D26 (F2/T6)**: a §5.2 das tasks não conta as âncoras de inventário que a publicação de
   // rota obriga a tocar. A âncora **sobe**; ela não vira contenção.
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DA_CONSULTA}/${SEGMENTO_DA_VERIFICACAO}`,
+  // SUT_IS_CORRECT_BECAUSE: a **T7** da fatia `integracao-bancaria-autonoma` publicou as **duas rotas
+  // da entrega da notícia** — a consulta do estado e a ativação —, e as duas são **protegidas**: cada
+  // uma declara `@ExigeChaves('TELA:integracoes_bancarias', 'ACAO:configurar_integracao')` no método,
+  // nenhuma é marcada `@RotaPublica()`, e por isso a sonda sem cookie recebe `401 NAO_AUTENTICADO` da
+  // guarda. Pela classificação por **caminho** deste caso elas entram como **duas** entradas novas,
+  // porque cada uma atende um caminho próprio — o recurso singular e o ato pendurado nele —, e nenhum
+  // outro método os atende.
+  //
+  // **Nenhuma entrada anterior saiu**, o conjunto público continua inalterado — esta task **não**
+  // publica rota sem sessão —, e a igualdade segue exata nos dois sentidos: **nada foi afrouxado**, o
+  // `toEqual` continua sendo igualdade de conjunto contra um inventário escrito à mão.
+  //
+  // ⚠️ **Este arquivo não está na §5.2 da T7 desta fatia** — é a **décima quarta** anotação
+  // consecutiva do débito **D26 (F2/T6)**: a §5.2 das tasks não conta as âncoras de inventário que a
+  // publicação de rota obriga a tocar. Aqui a divergência foi descoberta por **execução da suíte**, e
+  // não por busca textual, que é o método que a §5.2 prescreve — mais um sinal de que o débito é da
+  // derivação da §5.2, e não do executor. A âncora **sobe**; ela não vira contenção.
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DA_ENTREGA_DA_NOTICIA}`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DA_ENTREGA_DA_NOTICIA}/${SEGMENTO_DA_ATIVACAO}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DO_REGISTRO}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DA_IDENTIDADE}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO}`,

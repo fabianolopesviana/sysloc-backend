@@ -183,7 +183,7 @@ const MODULO_DA_FILA = 'comum/fila.module.ts';
 const FRONTEIRA_DA_FILA = 'comum/produtor-de-fila.ts';
 
 /**
- * Os **quatro** módulos de área que alcançam a fila hoje — a expectativa REVISADA.
+ * Os **cinco** módulos de área que alcançam a fila hoje — a expectativa REVISADA.
  *
  * Escrita à mão de propósito: derivá-la da mesma varredura que o caso classifica faria a asserção
  * concordar consigo mesma, que é a forma canônica de âncora que não pode reprovar.
@@ -202,29 +202,38 @@ const FRONTEIRA_DA_FILA = 'comum/produtor-de-fila.ts';
  * enfileirar. Ele a alcança pela via que o cabeçalho de `comum/fila.module.ts` manda — `imports:
  * [FilaModule]`, sem segunda conexão —, e o acréscimo entra por decisão declarada na §5.2 da task,
  * no MESMO diff que a publica, que é o que a `.claude/rules/ancoras-de-superficie.md` cobra. O
- * **quinto** importador continua reprovando nominalmente, nenhum eixo foi afrouxado e nenhum
+ * importador **seguinte** continua reprovando nominalmente, nenhum eixo foi afrouxado e nenhum
  * importador anterior saiu.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T8** da fatia `integracao-bancaria-autonoma` acrescenta o **quinto** —
+ * `integracoes-bancarias/integracoes-bancarias.module.ts`. O registro de um certificado novo dispara
+ * a **reconferência** da entrega da notícia, cujo resultado não compõe a resposta do pedido e por
+ * isso sai por fila (ADR-0029). Ele a alcança pela mesma via dos quatro anteriores — `imports:
+ * [FilaModule]`, sem segunda conexão —, e o acréscimo entra por decisão declarada na §5.2 da task,
+ * no MESMO diff que a publica. O **sexto** importador continua reprovando nominalmente, nenhum eixo
+ * foi afrouxado e nenhum importador anterior saiu.
  */
 const IMPORTADORES_DO_MODULO_DA_FILA: readonly string[] = [
   'cadastros/cadastros.module.ts',
   'cobranca-bancaria/cobranca-bancaria.module.ts',
+  'integracoes-bancarias/integracoes-bancarias.module.ts',
   'master/master.module.ts',
   'notificacoes-bancarias/notificacoes-bancarias.module.ts',
 ];
 
-/** Quem nomeia `FilaModule`: os dois importadores mais o arquivo que declara a classe. */
+/** Quem nomeia `FilaModule`: os importadores acima mais o arquivo que declara a classe. */
 const ARQUIVOS_QUE_NOMEIAM_O_MODULO: readonly string[] = [
   ...IMPORTADORES_DO_MODULO_DA_FILA,
   MODULO_DA_FILA,
 ].sort();
 
 /**
- * Quem nomeia o token — a fronteira que o define, o dono que o provê e os **cinco** serviços que
+ * Quem nomeia o token — a fronteira que o define, o dono que o provê e os **seis** serviços que
  * enfileiram.
  *
  * O eixo é diferente do de cima, e não redundante: um serviço novo **dentro** de `cadastros/`, de
- * `cobranca-bancaria/` ou de `notificacoes-bancarias/` injeta o produtor sem que módulo algum ganhe
- * `imports: [FilaModule]`.
+ * `cobranca-bancaria/`, de `notificacoes-bancarias/` ou de `integracoes-bancarias/` injeta o
+ * produtor sem que módulo algum ganhe `imports: [FilaModule]`.
  *
  * SUT_IS_CORRECT_BECAUSE: a **T6** da fatia `webhook-e-carne` acrescentou
  * `NotificacaoBancariaService`, que enfileira o tratamento da notícia recebida — e o **módulo** dela
@@ -238,11 +247,19 @@ const ARQUIVOS_QUE_NOMEIAM_O_MODULO: readonly string[] = [
  * juntos outra vez, e pela mesma forma da T6: o serviço nasce numa área que **não** alcançava a fila,
  * de modo que o módulo dela também entra no eixo de cima. Nenhum arquivo anterior saiu, nenhuma
  * asserção foi afrouxada, e a igualdade segue exata nos dois sentidos.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T8** da fatia `integracao-bancaria-autonoma` acrescenta
+ * `integracoes-bancarias/certificado.service.ts`, que injeta o produtor para enfileirar a
+ * reconferência da entrega **depois do `COMMIT`** do certificado (ADR-0029). Os dois inventários
+ * crescem juntos pela terceira vez, e pela mesma forma: o serviço nasce numa área que **não**
+ * alcançava a fila, de modo que o módulo dela também entra no eixo de cima. Nenhum arquivo anterior
+ * saiu, nenhuma asserção foi afrouxada, e a igualdade segue exata nos dois sentidos.
  */
 const ARQUIVOS_QUE_NOMEIAM_O_TOKEN: readonly string[] = [
   'cadastros/confirmacao-de-email.service.ts',
   'cobranca-bancaria/conferencia-bancaria.service.ts',
   'cobranca-bancaria/emissao-em-lote.service.ts',
+  'integracoes-bancarias/certificado.service.ts',
   'master/empresa.service.ts',
   'notificacoes-bancarias/notificacao-bancaria.service.ts',
   MODULO_DA_FILA,
@@ -335,7 +352,7 @@ function linhasPorArquivo(varredura: VarreduraDeFontes): Map<string, string[]> {
 }
 
 describe('alcance da capacidade de enfileirar (T15)', () => {
-  it('apoio (T15) (a) — só o dono e TRÊS módulos de área nomeiam o FilaModule, e os três o importam', async () => {
+  it('apoio (T15) (a) — só o dono e CINCO módulos de área nomeiam o FilaModule, e os cinco o importam', async () => {
     const varredura = await varrerPor(NOME_DO_MODULO);
 
     // Âncora antivácuo: sem ela, uma varredura que não lesse arquivo algum produziria conjunto

@@ -101,10 +101,11 @@
  * ---------------------------------------------------------------------------
  *
  * É o controlador que a abre, e o serviço **recebe** o executor (decisão D1). A ordem do registro é
- * `validar → embrulhar → ler o material → abrir a transação → escrever`, e a posição da abertura é
- * decisão registrada: o aperto de mão que abre o PKCS#12 é I/O, e segurar conexão física durante ele
+ * `validar → embrulhar → preparar o material → abrir a transação → escrever`, e a posição da abertura
+ * é decisão registrada: o aperto de mão que abre o PKCS#12 é I/O — e a preparação pode acrescentar a
+ * ele um subprocesso de conversão, que é I/O bem maior. Segurar conexão física durante os dois
  * repetiria o achado da T7 da fatia `documentos-e-confirmacao` — a renderização de ~0,5 s dentro do
- * `sql.begin`.
+ * `sql.begin` — com uma espera de outra ordem de grandeza.
  *
  * Na **verificação** a mesma razão aparece com o dobro de força, e por isso a ordem dela é
  * `validar → abrir a transação → ler o vigente → FECHAR a transação → apertar a mão → registrar`. A
@@ -154,8 +155,10 @@ import {
 } from '@nestjs/swagger';
 import {
   type Certificado,
+  type DesfechoDoRegistroDeCertificado,
   esquemaDoCertificado,
   esquemaDoCertificadoNovo,
+  esquemaDoDesfechoDoRegistroDeCertificado,
   esquemaDoResultadoDaVerificacao,
   type ResultadoDaVerificacao,
 } from '@sysloc/contracts';
@@ -301,18 +304,37 @@ export class CertificadoDoProvedorController {
       'o certificado anterior continua consultável no histórico e o segredo dele deixa de existir ' +
       'no mesmo ato, de modo que a resposta é `201` e não `200`. **O material e a senha não voltam ' +
       'em resposta alguma** — o que sai é o que se lê do certificado: titular, validade, impressão ' +
-      'digital, autoria e desde quando. Senha que não abre o material e arquivo ilegível recusam ' +
-      'com `422` e a **mesma** mensagem; validade já encerrada recusa com `422` informando em ' +
-      '`detalhes.validoAte` a data em que ela terminou.',
+      'digital, autoria e desde quando, mais `materialConvertido`, que declara se o arquivo ' +
+      'enviado **precisou ser convertido** para ser aceito. Material embalado na cifra que a ' +
+      'Autoridade Certificadora entrega é convertido aqui, e o que se guarda é o **convertido**. ' +
+      'As **três** causas de recusa saem com `422` e **códigos distintos**: senha que não abre, ' +
+      'arquivo que não se deixa ler nem converter, e validade já encerrada — esta última ' +
+      'informando em `detalhes.validoAte` a data em que ela terminou.',
   })
   @ApiCreatedResponse({
-    description: 'O certificado registrado, com o estado da vigência derivado no ato.',
-    schema: esquemaPublicado(esquemaDoCertificado, 'output'),
+    description:
+      'O certificado registrado, com o estado da vigência derivado no ato e a declaração de que o ' +
+      'material precisou (ou não) ser convertido.',
+    schema: esquemaPublicado(esquemaDoDesfechoDoRegistroDeCertificado, 'output'),
   })
   @ApiUnauthorizedResponse({ schema: esquemaDoErro([CodigoErro.NAO_AUTENTICADO]) })
   @ApiForbiddenResponse({ schema: esquemaDoErro([CodigoErro.ACESSO_NEGADO]) })
-  @ApiUnprocessableEntityResponse({ schema: esquemaDoErro([CodigoErro.CAMPO_INVALIDO]) })
-  async registrar(@Body() corpo: unknown, @Req() requisicao: FastifyRequest): Promise<Certificado> {
+  // Os quatro códigos que esta rota pode responder com `422`, e a lista é conteúdo: o primeiro é a
+  // recusa do ESQUEMA (campo ausente, chave desconhecida, teto excedido), e os três seguintes são as
+  // causas do MATERIAL, cada uma com código próprio desde a F5. Declarar só `CAMPO_INVALIDO` faria o
+  // documento publicado prometer uma recusa que a rota não emite mais para as três.
+  @ApiUnprocessableEntityResponse({
+    schema: esquemaDoErro([
+      CodigoErro.CAMPO_INVALIDO,
+      CodigoErro.SENHA_DO_MATERIAL_NAO_ABRE,
+      CodigoErro.MATERIAL_EM_FORMATO_NAO_SUPORTADO,
+      CodigoErro.CERTIFICADO_COM_VALIDADE_ENCERRADA,
+    ]),
+  })
+  async registrar(
+    @Body() corpo: unknown,
+    @Req() requisicao: FastifyRequest,
+  ): Promise<DesfechoDoRegistroDeCertificado> {
     const entrada = validar(esquemaDoCertificadoNovo, corpo, CAMPO_DO_CORPO);
     // A CONTENÇÃO, na primeira instrução depois da validação (ADR-0032). Daqui para baixo não existe
     // uma linha que toque `entrada.material` ou `entrada.senha`: o que viaja é o invólucro opaco, e
@@ -325,27 +347,59 @@ export class CertificadoDoProvedorController {
     });
 
     // FORA da unidade de trabalho, e a posição é decisão: o aperto de mão em laço local que abre o
-    // cofre é I/O, e mantê-lo aqui é o que impede uma conexão física de ficar reservada durante ele.
-    const lido = await this.certificados.lerMaterial(segredo);
+    // cofre é I/O — e desde a F5 ele pode ser precedido de um subprocesso de conversão, que é I/O de
+    // ordem de grandeza maior. Mantê-los aqui é o que impede uma conexão física de ficar reservada
+    // durante os dois. O teto do ato inteiro é declarado em `prepararMaterial`.
+    const preparado = await this.certificados.prepararMaterial(segredo);
 
-    return await sobContextoDaSessao(this.banco, requisicao, async (tx, sessao) => {
-      const registrado = await this.certificados.registrar(tx, lido, segredo, sessao.usuarioId);
+    const { desfecho, empresaId } = await sobContextoDaSessao(
+      this.banco,
+      requisicao,
+      async (tx, sessao) => {
+        // O que se cifra e guarda é o material PREPARADO — o convertido, quando houve conversão
+        // (ADR-0036) —, e nunca o invólucro que chegou no corpo.
+        const registrado = await this.certificados.registrar(
+          tx,
+          preparado.lido,
+          preparado.segredo,
+          sessao.usuarioId,
+        );
 
-      // Os campos são os que a §13.1 nomeia para este evento. **Nada do corpo entra**: a impressão
-      // digital é o resumo público do material — o mesmo que a resposta publica —, e é ela que
-      // permite casar uma emissão futura com o certificado que a assinou.
-      this.logger.info(
-        {
+        // Os campos são os que a §13.1 nomeia para este evento. **Nada do corpo entra**: a impressão
+        // digital é o resumo público do material — o mesmo que a resposta publica —, e é ela que
+        // permite casar uma emissão futura com o certificado que a assinou.
+        this.logger.info(
+          {
+            empresaId: sessao.empresaId,
+            entidade: ENTIDADE_DA_TRILHA,
+            certificadoId: registrado.id,
+            impressaoDigital: registrado.impressaoDigital,
+          },
+          'certificado do provedor registrado',
+        );
+
+        // O desfecho do ATO acompanha a projeção do certificado, e não entra nela: `esquemaDoCertificado`
+        // descreve o certificado, e "foi convertido" é propriedade de tê-lo registrado. É o mesmo
+        // desenho, e a mesma razão, da resposta da ativação de contrato — ver o esquema em
+        // `@sysloc/contracts`.
+        return {
+          desfecho: { ...registrado, materialConvertido: preparado.convertido },
           empresaId: sessao.empresaId,
-          entidade: ENTIDADE_DA_TRILHA,
-          certificadoId: registrado.id,
-          impressaoDigital: registrado.impressaoDigital,
-        },
-        'certificado do provedor registrado',
-      );
+        };
+      },
+    );
 
-      return registrado;
-    });
+    // A PARTIR DAQUI O CERTIFICADO ESTÁ COMMITADO, e é por isso que o enfileiramento vem aqui e não
+    // lá dentro: a tarefa correria contra uma linha que a transação ainda podia desfazer. É a mesma
+    // ordem, com a mesma razão, de `../cobranca-bancaria/cobranca-bancaria.controller.ts`.
+    //
+    // ⚠️ **Ele NÃO derruba a resposta** (RN-12): a identidade com que a empresa se apresenta ao banco
+    // mudou, e o que a reconferência faz é atualizar o que o produto sabe sobre a entrega da notícia
+    // dela — efeito secundário cujo resultado não compõe esta resposta (ADR-0029). A falha ao
+    // enfileirar é registrada em `warn` dentro do serviço e o `201` permanece.
+    await this.certificados.enfileirarReconferencia({ empresaId }, desfecho.id);
+
+    return desfecho;
   }
 
   @Get(SEGMENTO_DA_CONSULTA)

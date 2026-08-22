@@ -56,6 +56,20 @@
  * desvio de escopo.
  *
  * ===========================================================================
+ * DUAS EMBALAGENS DO MESMO PAR, e é a igualdade entre elas que prova a conversão
+ * ===========================================================================
+ *
+ * `comEmbalagemLegada` pede, na **mesma** chamada, um segundo cofre com o **mesmo** par chave/
+ * certificado, embalado na cifra que a Autoridade Certificadora entrega (`RC2-40-CBC`) e que o
+ * runtime recusa. Ela é opcional porque custa uma invocação a mais, e só a suíte da conversão a usa.
+ *
+ * ⚠️ **A extensão é do gerador que já existe, e não um segundo gerador** (`CLAUDE.md`: *"acessório
+ * de suíte se importa, não se copia"*). Uma segunda função nasceria livre para divergir justamente
+ * onde a divergência é invisível — a senha por `argv` em vez de `-passout file:` —, e duas chamadas
+ * ao gerador atual produziriam **pares distintos**, o que faria a prova da conversão aprovar um
+ * conversor que emite chave nova. É o mesmo par ou não é prova.
+ *
+ * ===========================================================================
  * OS FATOS CONHECIDOS SAEM DE UM CAMINHO INDEPENDENTE DO SUT
  * ===========================================================================
  *
@@ -97,6 +111,29 @@ const DIAS_DE_VALIDADE_PADRAO = 300;
 
 /** O separador da forma textual do sujeito — o mesmo contrato de apresentação que o SUT publica. */
 const SEPARADOR_DO_SUJEITO = ', ';
+
+/**
+ * Os argumentos que embalam o **mesmo** par em cifra legada — a que a Autoridade Certificadora
+ * entrega, e que o runtime deste produto recusa.
+ *
+ * ⚠️ **Eles não são uma escolha de estilo: são a reprodução do material real.** Medido em duas
+ * emissões consecutivas da AC (`D64 · F4/fechamento`), o `.pfx` chega em `RC2-40-CBC`, que o
+ * OpenSSL 3 moveu para o provider `legacy` e o Node 24 recusa com `Unsupported PKCS12 PFX data`.
+ * Sem esta embalagem, toda suíte deste pacote continuaria exercitando material que **nasce moderno**
+ * — que é exatamente a razão de o defeito nunca ter aparecido em teste antes.
+ *
+ * O `-legacy` é obrigatório na **geração**: sem ele o provider que implementa a cifra não carrega e
+ * o `openssl` recusa produzi-la. O `-macalg sha1` acompanha porque é o que a AC entrega junto.
+ */
+const ARGUMENTOS_DA_EMBALAGEM_LEGADA = [
+  '-legacy',
+  '-certpbe',
+  'PBE-SHA1-RC2-40',
+  '-keypbe',
+  'PBE-SHA1-RC2-40',
+  '-macalg',
+  'sha1',
+] as const;
 
 /** O prefixo do diretório efêmero, para que resíduo eventual seja reconhecível no `/tmp`. */
 const PREFIXO_DA_RAIZ = 'sysloc-material-';
@@ -162,6 +199,13 @@ export interface OpcoesDoMaterial {
   readonly senha: string;
   readonly titular?: SujeitoDeTeste;
   readonly diasDeValidade?: number;
+  /**
+   * Pede a **segunda embalagem** do mesmo par: a cifra legada que a AC entrega.
+   *
+   * É opcional porque custa uma invocação a mais do `openssl` por material, e só a suíte da
+   * conversão precisa dela — as demais exercitam a leitura, que só alcança a embalagem moderna.
+   */
+  readonly comEmbalagemLegada?: boolean;
 }
 
 /** O material gerado, mais os fatos conhecidos dele — lidos por caminho independente do SUT. */
@@ -178,6 +222,14 @@ export interface MaterialDeTeste {
   /** O certificado da entidade em PEM, para quem precisar apresentá-lo fora do cofre. */
   readonly certificadoEmPem: string;
   readonly autoridade: AutoridadeDeTeste;
+  /**
+   * O **mesmo** par, embalado em cifra legada — presente só quando `comEmbalagemLegada` foi pedida.
+   *
+   * ⚠️ É o **mesmo certificado** de {@link MaterialDeTeste.material}: mesma série, mesma validade,
+   * mesma impressão digital. É essa igualdade que dá conteúdo à prova da conversão — um acessório
+   * que gerasse dois pares distintos faria o caso aprovar um conversor que emite chave nova.
+   */
+  readonly materialEmEmbalagemLegada?: Buffer;
 }
 
 /**
@@ -270,7 +322,7 @@ export async function gerarMaterialDeTeste(opcoes: OpcoesDoMaterial): Promise<Ma
     caminhoDoCertificado,
   ]);
 
-  await ferramenta([
+  const argumentosDoCofre = [
     'pkcs12',
     '-export',
     '-out',
@@ -283,12 +335,29 @@ export async function gerarMaterialDeTeste(opcoes: OpcoesDoMaterial): Promise<Ma
     autoridade.caminhoDoCertificado,
     '-passout',
     `file:${caminhoDaSenha}`,
-  ]);
+  ];
+
+  await ferramenta(argumentosDoCofre);
+
+  // A segunda embalagem sai do MESMO par: mesma chave, mesmo certificado, mesma senha — só o
+  // invólucro muda. Reemitir o par aqui produziria duas identidades e destruiria a prova.
+  const caminhoDoCofreLegado = join(pasta, 'material-legado.pfx');
+  if (opcoes.comEmbalagemLegada === true) {
+    await ferramenta([
+      ...argumentosDoCofre.map((argumento) =>
+        argumento === caminhoDoCofre ? caminhoDoCofreLegado : argumento,
+      ),
+      ...ARGUMENTOS_DA_EMBALAGEM_LEGADA,
+    ]);
+  }
 
   const { validoDe, validoAte } = await lerValidade(caminhoDoCertificado);
 
   return {
     material: await readFile(caminhoDoCofre),
+    ...(opcoes.comEmbalagemLegada === true
+      ? { materialEmEmbalagemLegada: await readFile(caminhoDoCofreLegado) }
+      : {}),
     senha,
     titular: formaTextual(titular),
     validoDe,

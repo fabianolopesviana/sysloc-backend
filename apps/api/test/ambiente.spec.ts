@@ -179,6 +179,55 @@ const DIRETORIO_DOS_BOLETOS_ACEITAVEL = mkdtempSync(join(tmpdir(), 'sysloc-bolet
  * acaso.
  */
 const DIRETORIO_DOS_BOLETOS_RELATIVO = 'boletos-relativos-do-ct933';
+
+/**
+ * Os endereços de entrega que a partida **tem de** recusar — o eixo negativo do `CT-1052` (`W3`).
+ *
+ * Escritos por extenso, e jamais derivados do esquema que eles conferem. Cada linha é uma forma
+ * distinta de errar, e a documentação oficial do provedor nomeia as três: esquema (*"Deve ser
+ * https"*), porta (*"Porta: 443"*) e endereço absoluto — sem servidor nomeado não há para onde
+ * entregar.
+ */
+const ENDERECOS_DA_ENTREGA_INACEITAVEIS = [
+  {
+    rotulo: 'esquema em claro',
+    valor: 'http://notificacao.exemplo.invalid/v1/notificacoes-bancarias',
+  },
+  {
+    rotulo: 'porta diferente de 443',
+    valor: 'https://notificacao.exemplo.invalid:8443/v1/notificacoes-bancarias',
+  },
+  { rotulo: 'caminho relativo, sem esquema', valor: '/v1/notificacoes-bancarias' },
+  { rotulo: 'cadeia que não é endereço', valor: 'notificacao.exemplo.invalid' },
+] as const;
+
+/**
+ * Os endereços que a partida **tem de** aceitar — o controle positivo do `CT-1052`.
+ *
+ * A porta **implícita** é o primeiro item de propósito: é a forma que o provisionamento gera e a mais
+ * comum em produção, e uma conferência que exigisse a porta escrita a recusaria.
+ */
+const CONTATO_DA_ENTREGA_ACEITAVEL = 'operacao@sysloc.exemplo.invalid';
+
+/**
+ * Os contatos que a partida **tem de** recusar — o eixo negativo do `W2`, escritos por extenso.
+ *
+ * O domínio **sem ponto** está aqui de propósito: `operacao@sysloc` é sintaticamente um endereço e
+ * nunca é um contato real, e uma conferência que só procurasse `@` o aprovaria — que é justamente
+ * onde ela deveria pegar.
+ */
+const CONTATOS_DA_ENTREGA_INACEITAVEIS = [
+  { rotulo: 'sem arroba', valor: 'operacao.sysloc.exemplo.invalid' },
+  { rotulo: 'duas arrobas', valor: 'operacao@sysloc@exemplo.invalid' },
+  { rotulo: 'parte local vazia', valor: '@sysloc.exemplo.invalid' },
+  { rotulo: 'domínio sem ponto', valor: 'operacao@sysloc' },
+  { rotulo: 'com espaço', valor: 'operacao sysloc@exemplo.invalid' },
+] as const;
+
+const ENDERECOS_DA_ENTREGA_ACEITAVEIS = [
+  'https://notificacao.exemplo.invalid/v1/notificacoes-bancarias',
+  'https://notificacao.exemplo.invalid:443/v1/notificacoes-bancarias',
+] as const;
 const DIRETORIO_DOS_BOLETOS_INEXISTENTE = '/opt/sysloc-boletos-que-nao-existem-ct933';
 const DIRETORIO_DOS_BOLETOS_QUE_E_ARQUIVO = criarArquivoComumDescartavel();
 
@@ -223,6 +272,17 @@ function ambienteCompleto(): Record<string, string> {
     CHAVE_DE_CIFRA_DO_CERTIFICADO: CHAVE_DE_CIFRA_SENTINELA,
     ENDERECO_DO_PROVEDOR_BANCARIO: 'https://provedor.exemplo.invalid',
     ENDERECO_DE_AUTORIZACAO_BANCARIA: 'https://autorizacao.exemplo.invalid',
+    // O endereço da entrega da notícia entra na T7 da fatia `integracao-bancaria-autonoma`. Ele
+    // **não** ganha caso próprio, e a ausência é a decisão: a tabela do `CT-007` percorre
+    // {@link VARIAVEIS_EXIGIDAS}, de modo que a recusa de partida por ausência e por cadeia em branco
+    // passa a ser exercitada **sem ninguém acrescentar caso nenhum** — e é essa tabela que satisfaz o
+    // *"com a asserção onde ela possa falhar"* que o `D29` cobra. Ele **não** é segredo, a direção
+    // dele é a INVERSA das duas
+    // acima (é para onde o BANCO conecta), e o valor é distinguível dos demais pela razão de sempre:
+    // um campo da configuração alimentado pela variável errada passaria despercebido com valores
+    // parecidos.
+    ENDERECO_DA_ENTREGA_DA_NOTICIA: 'https://notificacao.exemplo.invalid/v1/notificacoes-bancarias',
+    CONTATO_DA_ENTREGA_DA_NOTICIA: CONTATO_DA_ENTREGA_ACEITAVEL,
     // O diretório dos boletos entra na T13 da fatia `emissao-e-conciliacao` — ver o bloco do CT-933,
     // no fim do arquivo. Ele **não** é segredo, e é o único valor desta tabela que precisa existir de
     // verdade: a conferência de partida toca o disco. Ver {@link DIRETORIO_DOS_BOLETOS_ACEITAVEL}.
@@ -412,12 +472,22 @@ describe('carregarAmbiente (T5 · CA-15)', () => {
     // (ADR-0025). O código de produção está certo e o literal é que descrevia o processo anterior. A
     // asserção continua sendo igualdade exata sobre o conjunto inteiro — **nenhum elemento saiu** —,
     // e por isso ela segue reprovando campo que apareça sem ser declarado.
+    // SUT_IS_CORRECT_BECAUSE: a **T7** da fatia `integracao-bancaria-autonoma` acrescenta
+    // `enderecoDaEntregaDaNoticia`, e ele **tem consumidor nesta aplicação** — que é o critério que a
+    // T9 fixou ao recusar `urlBaseDaConfirmacao`: é a composição da área de integrações bancárias que
+    // constrói a porta de entrega a partir dele (`integracoes-bancarias.module.ts`), e o pacote de
+    // domínio não lê `process.env` (ADR-0025). O código de produção está certo e o literal é que
+    // descrevia o processo anterior. A asserção continua sendo igualdade exata sobre o conjunto
+    // inteiro — **nenhum elemento saiu** —, e por isso ela segue reprovando campo que apareça sem ser
+    // declarado.
     expect(Object.keys(ambiente).sort()).toEqual([
       'ambiente',
       'cadeiaConexaoBanco',
       'cadeiaConexaoFila',
       'chaveDeCifraDoCertificado',
+      'contatoDaEntregaDaNoticia',
       'diretorioDosBoletos',
+      'enderecoDaEntregaDaNoticia',
       'enderecoDeAutorizacaoBancaria',
       'enderecoDoProvedorBancario',
       'nivelDeLog',
@@ -467,6 +537,8 @@ function configuracaoEsperada(
     chaveDeCifraDoCertificado: Buffer.from(fonte.CHAVE_DE_CIFRA_DO_CERTIFICADO as string, 'base64'),
     enderecoDoProvedorBancario: fonte.ENDERECO_DO_PROVEDOR_BANCARIO as string,
     enderecoDeAutorizacaoBancaria: fonte.ENDERECO_DE_AUTORIZACAO_BANCARIA as string,
+    enderecoDaEntregaDaNoticia: fonte.ENDERECO_DA_ENTREGA_DA_NOTICIA as string,
+    contatoDaEntregaDaNoticia: fonte.CONTATO_DA_ENTREGA_DA_NOTICIA as string,
     // Ele viaja **como veio**, sem resolução: quem resolve o caminho-base, uma vez, é a guarda de
     // boletos. Uma resolução escrita aqui faria o esperado concordar com uma configuração que
     // normalizasse o valor, e a igualdade estrita deixaria de reprovar essa mudança.
@@ -922,12 +994,22 @@ describe('carregarAmbiente (T11 · CA-12) — a barreira de partida da integraç
     // chaves, e um campo a mais ou a menos reprova como sempre reprovou. **Nenhuma entrada anterior
     // saiu**, e o crescimento por dois que este caso afirma é o da T11 — o desta task é medido pelo
     // `CT-936 (api)`, no bloco abaixo.
+    // SUT_IS_CORRECT_BECAUSE: a **T7** da fatia `integracao-bancaria-autonoma` acrescenta
+    // `enderecoDaEntregaDaNoticia`, e ele **tem consumidor nesta aplicação** — que é o critério que a
+    // T9 fixou ao recusar `urlBaseDaConfirmacao`: é a composição da área de integrações bancárias que
+    // constrói a porta de entrega a partir dele (`integracoes-bancarias.module.ts`), e o pacote de
+    // domínio não lê `process.env` (ADR-0025). O código de produção está certo e o literal é que
+    // descrevia o processo anterior. A asserção continua sendo igualdade exata sobre o conjunto
+    // inteiro — **nenhum elemento saiu** —, e por isso ela segue reprovando campo que apareça sem ser
+    // declarado.
     expect(Object.keys(ambiente).sort()).toEqual([
       'ambiente',
       'cadeiaConexaoBanco',
       'cadeiaConexaoFila',
       'chaveDeCifraDoCertificado',
+      'contatoDaEntregaDaNoticia',
       'diretorioDosBoletos',
+      'enderecoDaEntregaDaNoticia',
       'enderecoDeAutorizacaoBancaria',
       'enderecoDoProvedorBancario',
       'nivelDeLog',
@@ -1029,6 +1111,58 @@ describe('carregarAmbiente (T13 · CA-20) — a barreira de partida do diretóri
     },
   );
 
+  it.each(ENDERECOS_DA_ENTREGA_INACEITAVEIS)(
+    'CT-1052 — endereço da entrega inaceitável ($rotulo) recusa nomeando a variável e a exigência',
+    ({ valor }) => {
+      // O par negativo do `W3`: até 2026-08-22 esta variável era conferida por PRESENÇA
+      // (`z.string().min(1)`), e a documentação oficial do provedor é literal — *"`url` — Deve ser
+      // https. Porta: 443"*. Sem estas linhas, o processo sobe com um endereço que o provedor recusa,
+      // e a falha aparece só no cadastro junto a ele — ou pior, o cadastro é aceito e o webhook nunca
+      // valida, que na tela é indistinguível de indisponibilidade.
+      const fonte = { ...ambienteCompleto(), ENDERECO_DA_ENTREGA_DA_NOTICIA: valor };
+
+      const falha = falhaDe(fonte);
+
+      expect(falha.message).toContain('ENDERECO_DA_ENTREGA_DA_NOTICIA');
+      // A EXIGÊNCIA, e não uma recusa genérica — mesma disciplina do `CT-936 (api)` acima.
+      expect(falha.message).toContain('deve ser uma URL absoluta https://');
+      // ⚠️ A NÃO-ECO É ASSERÇÃO PRÓPRIA, e não se presume: o `TypeError` do `new URL` carrega a cadeia
+      // recusada na propriedade `input`, e deixá-lo escapar poria o endereço na mensagem de partida.
+      expect(falha.message).not.toContain(valor);
+      // E distinguível de "ausente": a variável foi preenchida, só que com forma que não serve.
+      expect(falha.message).not.toContain('ENDERECO_DA_ENTREGA_DA_NOTICIA: ausente');
+    },
+  );
+
+  it.each(CONTATOS_DA_ENTREGA_INACEITAVEIS)(
+    'CT-1052 — contato da entrega inaceitável ($rotulo) recusa nomeando a variável e a exigência',
+    ({ valor }) => {
+      // O par negativo do `W2`: o provedor declara o contato **necessário** no cadastro, e é por ele
+      // que avisa quando INATIVA o webhook. Sem esta conferência, o processo sobe com um valor que
+      // nunca poderia ser um endereço, e o defeito só aparece no cadastro real — onde é caro.
+      const fonte = { ...ambienteCompleto(), CONTATO_DA_ENTREGA_DA_NOTICIA: valor };
+
+      const falha = falhaDe(fonte);
+
+      expect(falha.message).toContain('CONTATO_DA_ENTREGA_DA_NOTICIA');
+      expect(falha.message).toContain('deve ser um endereço de e-mail');
+      // A não-eco, asserida e não presumida — mesma disciplina de todas as demais variáveis.
+      expect(falha.message).not.toContain(valor);
+      expect(falha.message).not.toContain('CONTATO_DA_ENTREGA_DA_NOTICIA: ausente');
+    },
+  );
+
+  it('CT-1052 — o CONTROLE POSITIVO: as formas legítimas do endereço são aceitas', () => {
+    // Sem esta linha, as quatro acima seriam satisfeitas por um esquema que recusasse TODO endereço —
+    // e a variável ficaria impossível de declarar. A porta implícita entra de propósito: ela é a
+    // forma mais comum e mais correta, e `new URL` devolve `port === ''` para ela.
+    for (const aceitavel of ENDERECOS_DA_ENTREGA_ACEITAVEIS) {
+      const fonte = { ...ambienteCompleto(), ENDERECO_DA_ENTREGA_DA_NOTICIA: aceitavel };
+
+      expect(carregarAmbiente(fonte)).toStrictEqual(configuracaoEsperada(fonte));
+    }
+  });
+
   it('CT-936 (api) — com o diretório declarado, a partida é aceita e o ambiente cresce por exatamente um', () => {
     // O CONTROLE POSITIVO, sem o qual as cinco linhas acima seriam satisfeitas por uma validação que
     // recusasse todo ambiente.
@@ -1050,6 +1184,16 @@ describe('carregarAmbiente (T13 · CA-20) — a barreira de partida do diretóri
     // O crescimento por exatamente UM, medido sobre o mesmo objeto: sem esta contagem, um campo a
     // mais introduzido junto passaria — e a igualdade estrita acima aprovaria, porque
     // `configuracaoEsperada` também teria crescido.
-    expect(Object.keys(ambiente)).toHaveLength(12);
+    // SUT_IS_CORRECT_BECAUSE: a T7 da fatia `integracao-bancaria-autonoma` publica um campo novo por
+    // decisão declarada — `enderecoDaEntregaDaNoticia` —, e por isso a contagem passa de 12 a 13. O
+    // que ESTE caso afirma continua sendo o crescimento por exatamente um do diretório dos boletos,
+    // medido contra o total; o campo novo é coberto pela igualdade de conjunto acima, que o nomeia. O
+    // que a asserção mede não mudou e não foi afrouxado.
+    // SUT_IS_CORRECT_BECAUSE: a intervenção dirigida de 2026-08-22 publica um segundo campo pela
+    // mesma razão — `contatoDaEntregaDaNoticia`, que o provedor declara NECESSÁRIO no cadastro da
+    // entrega (`W2`) —, e a contagem passa de 13 a 14. Mesma leitura da linha acima: o que este caso
+    // mede segue sendo o crescimento por exatamente um do diretório dos boletos, e o campo novo é
+    // coberto pela igualdade de conjunto, que o nomeia. Nada foi afrouxado.
+    expect(Object.keys(ambiente)).toHaveLength(14);
   });
 });

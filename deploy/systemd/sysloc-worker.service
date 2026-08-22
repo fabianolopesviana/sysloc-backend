@@ -13,10 +13,11 @@
 # O conjunto de variáveis deste processo é PRÓPRIO — e ele CRESCEU
 # ---------------------------------------------------------------------------
 #
-# `apps/worker/src/main.ts` valida exatamente NOVE variáveis: `LOG_LEVEL`,
+# `apps/worker/src/main.ts` valida exatamente ONZE variáveis: `LOG_LEVEL`,
 # `REDIS_URL`, `DATABASE_URL`, `SMTP_URL`, `EMAIL_REMETENTE`,
 # `URL_BASE_DA_CONFIRMACAO`, `CHAVE_DE_CIFRA_DO_CERTIFICADO`,
-# `ENDERECO_DO_PROVEDOR_BANCARIO` e `DIRETORIO_DOS_BOLETOS`. Ele continua sem
+# `ENDERECO_DO_PROVEDOR_BANCARIO`, `ENDERECO_DE_AUTORIZACAO_BANCARIA`,
+# `ENDERECO_DA_ENTREGA_DA_NOTICIA` e `DIRETORIO_DOS_BOLETOS`. Ele continua sem
 # escutar porta, de modo que `PORT` não é exigida aqui — e declará-la como se
 # fosse produziria diagnóstico enganoso no dia em que ela faltasse.
 #
@@ -115,7 +116,8 @@ WorkingDirectory=/opt/sysloc-backend/apps/worker
 # Segredos: apenas aqui, e apenas por referência. É o mesmo arquivo que o
 # serviço de aplicação consome; deste processo são lidas `REDIS_URL`,
 # `DATABASE_URL`, `SMTP_URL`, `EMAIL_REMETENTE`, `URL_BASE_DA_CONFIRMACAO`,
-# `CHAVE_DE_CIFRA_DO_CERTIFICADO`, `ENDERECO_DO_PROVEDOR_BANCARIO` e
+# `CHAVE_DE_CIFRA_DO_CERTIFICADO`, `ENDERECO_DO_PROVEDOR_BANCARIO`,
+# `ENDERECO_DE_AUTORIZACAO_BANCARIA`, `ENDERECO_DA_ENTREGA_DA_NOTICIA` e
 # `DIRETORIO_DOS_BOLETOS`.
 #
 # ⚠️ A partir da T9 da fatia `documentos-e-confirmacao` o arquivo carrega também
@@ -132,6 +134,13 @@ WorkingDirectory=/opt/sysloc-backend/apps/worker
 # este processo passou a EXIGI-LAS na partida, e o arquivo compartilhado já as
 # entrega. É por isso que o `CT-643` de `apps/worker/test/ambiente.spec.ts` — que
 # cobra caminho de provisionamento para TODA variável exigida — continua verde.
+#
+# ⚠️ A da T8 da fatia `integracao-bancaria-autonoma` (`ENDERECO_DA_ENTREGA_DA_NOTICIA`)
+# repete exatamente esse arranjo: ela já era semeada por `provisionar-base.sh`
+# para o serviço de aplicação, e NENHUMA linha nova é necessária aqui. O que
+# mudou é que este processo passou a RECONFERIR a entrega da notícia, e a porta
+# de entrega recusa falar sem endereço declarado — sem a exigência, a fila nova
+# ficaria de pé consumindo tarefa que nunca consegue reconferir.
 EnvironmentFile=/etc/sysloc/backend.env
 
 # Coordenadas revisáveis — nenhuma delas é segredo. Sem `PORT`, ver o cabeçalho.

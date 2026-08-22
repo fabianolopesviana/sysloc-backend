@@ -354,6 +354,21 @@
  * desfecho que trava daria a quem chama a peça com que recompor o predicado por fora, que é
  * exatamente o que a ADR-0023 mantém no banco.
  *
+ * `./entrega-da-noticia.js` entra pela mesma pergunta, e com a mesma resposta: as **duas** operações
+ * do estado da entrega **recebem** o executor de quem já abriu a unidade, não abrem conexão nem
+ * transação e não devolvem executor. Elas repetem as razões das anteriores — enumerabilidade do
+ * alcance a `negocio`, um lugar único sob a política, **nenhum `empresaId` em assinatura alguma**
+ * (ADR-0008) — e acrescentam uma que é própria desta fatia: a substituição da RN-04 é uma instrução
+ * só, com `ON CONFLICT` sobre a unicidade por empresa. Um segundo caminho de escrita apareceria como
+ * símbolo a mais neste índice, que o `CT-012` compara por igualdade, e não como um `UPDATE` escondido
+ * no serviço que conversa com o provedor — e o segundo caminho é justamente onde a leitura-antes-de-
+ * gravar reapareceria, com a corrida junto.
+ *
+ * De lá **não** saem `colunasDoEstado` nem `comporEstado`, e as ausências são deliberadas: são o
+ * mecanismo interno da projeção e da tradução, pelo mesmo critério de `colunasDoCertificado` e de
+ * `eventoPublicado`. Publicar o fragmento das colunas daria a quem chama a peça com que montar por
+ * fora uma consulta à tabela.
+ *
  * `./evento-bancario.js` entra pela mesma pergunta, e com a mesma resposta: as **duas** operações da
  * trilha bancária **recebem** o executor de quem já abriu a unidade, não abrem conexão nem transação
  * e não devolvem executor. Elas repetem as razões das anteriores — enumerabilidade do alcance a
@@ -850,6 +865,15 @@ export {
   reativarEmpresa,
   suspenderEmpresa,
 } from './empresa.js';
+export {
+  type DadosDoDesfechoDaEntrega,
+  type EstadoDaEntregaGravado,
+  gravarDesfechoDaEntrega,
+  lerEstadoDaEntrega,
+  type MotivoDaRecusaDoProvedor,
+  SITUACOES_DA_ENTREGA,
+  type SituacaoDaEntrega,
+} from './entrega-da-noticia.js';
 export {
   contarEnviosDaCobranca,
   type JanelaDeEnvios,

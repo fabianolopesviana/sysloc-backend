@@ -1,6 +1,6 @@
 /**
- * O **cache da credencial de acesso ao provedor** — por processo, chaveado por empresa, renovado por
- * expiração.
+ * O **cache da credencial de acesso ao provedor** — por processo, chaveado por **empresa e família de
+ * escopo**, renovado por expiração.
  *
  * ===========================================================================
  * ELE NÃO SAI NO BARRIL, e a ausência é o mecanismo (D5 do tech-alignment)
@@ -21,6 +21,37 @@
  * credencial viva **daquela** empresa obtém uma nova. Um cache de um valor só — a forma ingênua —
  * apresentaria a credencial da empresa A na chamada da empresa B assim que um lote alternasse entre
  * duas, e o provedor emitiria o boleto da B na conta da A. O `CT-943` mede exatamente isso.
+ *
+ * ===========================================================================
+ * E A CHAVE PASSOU A COMPOR A FAMÍLIA DE ESCOPO (D6) — o segundo eixo é MEDIDO
+ * ===========================================================================
+ *
+ * A empresa sozinha deixou de bastar quando o produto ganhou a **segunda família de operação**: a
+ * concessão da família da entrega da notícia exige escopos próprios, e a credencial obtida com os
+ * escopos de boleto **obtém token e é recusada pelo gateway com `401`** na operação da outra família
+ * (medido contra a conta real). Com a chave inalterada, uma credencial de boleto viva seria
+ * apresentada numa chamada de entrega — e a recusa apareceria como falha do produto **intermitente**
+ * (só quando há credencial viva da outra família) e **dependente de ordem** (só quando a chamada da
+ * outra família veio antes). É a pior classe de defeito para depurar, e é a razão de a mitigação ser
+ * a chave, e não um teste a mais.
+ *
+ * ⚠️ **A separação é estrutural, e não um filtro que alguém possa esquecer**: cada família tem
+ * **tabela de associação própria**, e o registro que as reúne é fechado por {@link FamiliaDeEscopo} —
+ * família nova sem tabela própria **não compila**, que é a mesma disciplina do `Record` de desfechos
+ * do adaptador. Não existe caminho que leia a tabela de uma família com a chave de outra, porque não
+ * existe chave textual composta que se possa montar errado.
+ *
+ * **Duas alternativas foram rejeitadas, e por quê** (D6 do tech-alignment):
+ *
+ * - **Pedir a união dos escopos numa credencial só** — não medido contra a conta real; o provedor
+ *   pode recusar a união ou conceder escopo reduzido **em silêncio**, que é a forma cara do defeito.
+ *   E alargaria o alcance de toda credencial do produto.
+ * - **Obter credencial fresca a cada ato, sem cache** — criaria um **segundo caminho** de obtenção, e
+ *   este cache é declarado logo acima como *"a única forma de uma chamada obter credencial"*. O ganho
+ *   é nulo e o custo é a perda de um invariante.
+ *
+ * **Trade-off aceito**: o processo passa a reter **até duas** credenciais vivas por empresa. Custo
+ * desprezível, e o esquecimento por invalidação continua valendo para as duas — seletivamente.
  *
  * ===========================================================================
  * A FONTE DE TEMPO CHEGA POR PARÂMETRO — este módulo não chama `Date.now()`
@@ -98,6 +129,26 @@ const MILISSEGUNDOS_POR_SEGUNDO = 1_000;
 export type FonteDeTempo = () => number;
 
 /**
+ * A **família de escopo** de uma operação — vocabulário do **produto**, e o segundo eixo da chave.
+ *
+ * ---------------------------------------------------------------------------
+ * Ela vive AQUI, e os escopos concretos vivem no ADAPTADOR — a divisão é a ADR-0001
+ * ---------------------------------------------------------------------------
+ *
+ * O que este tipo nomeia é *"que natureza de ato o produto vai praticar"*: cobrar, ou configurar por
+ * onde a notícia do provedor chega. Os **escopos concretos** que cada família resolve são dialeto do
+ * provedor e vivem **dentro** do adaptador, junto das demais permissões pedidas — a tradução acontece
+ * na fronteira, e só nela. Trazer o nome de um escopo para cá poria vocabulário do provedor na chave
+ * de um cache que o domínio inteiro atravessa.
+ *
+ * ⚠️ **Ele NÃO sai no barril do pacote**, e a ausência segue a régua do próprio barril — publica-se o
+ * que tem consumidor nomeado fora daqui, e não há nenhum: quem escolhe a família é o adaptador, ao
+ * compor cada operação. É a mesma razão pela qual `CacheDeCredenciais`, que a §1 da task também nomeia
+ * entre os símbolos públicos, permanece superfície **de módulo** e não de pacote.
+ */
+export type FamiliaDeEscopo = 'COBRANCA' | 'ENTREGA_DA_NOTICIA';
+
+/**
  * O que uma obtenção bem-sucedida devolve ao cache — **o segredo e o prazo**, e nada mais.
  *
  * `validaPorSegundos` é anulável porque a resposta do provedor pode omitir o prazo, e omissão não é
@@ -123,30 +174,40 @@ export type ObtencaoDaCredencial = () => Promise<DesfechoDaOperacao<CredencialCo
  */
 export interface CacheDeCredenciais {
   /**
-   * Devolve a credencial viva da empresa, obtendo uma nova quando não há.
+   * Devolve a credencial viva **daquela empresa naquela família**, obtendo uma nova quando não há.
    *
    * A falha da obtenção **atravessa como está**: classe e motivo são do adaptador, que é quem leu a
    * resposta do provedor. Reclassificá-la aqui apagaria a distinção entre *"a identidade desta
    * empresa não serve"* (`DA_EMPRESA`, que interrompe o lote) e o resto.
+   *
+   * ⚠️ `familia` é **obrigatória**, e a obrigatoriedade é a rede: com ela na assinatura, nenhuma
+   * operação futura consegue ser escrita sem declarar sob que escopos a credencial vale — o
+   * compilador recusa o ato omisso, em vez de a recusa chegar do gateway como `401` intermitente.
    */
   credencialDaEmpresa(
     empresaId: string,
+    familia: FamiliaDeEscopo,
     obtencao: ObtencaoDaCredencial,
   ): Promise<DesfechoDaOperacao<string>>;
 
   /**
-   * Esquece a credencial viva da empresa — **o prazo declarado não é promessa**.
+   * Esquece a credencial viva da empresa **naquela família** — **o prazo declarado não é promessa**.
    *
    * O provedor pode invalidar uma credencial antes do prazo que ele mesmo anunciou (identidade
    * revogada, sessão derrubada do lado de lá), e sem isto o produto apresentaria a credencial morta
    * até o relógio local concordar — **todas** as chamadas daquela empresa falhariam até lá, e as
    * repetições da fila junto com elas.
    *
+   * ⚠️ O esquecimento é **seletivo por família**, e a seletividade é conteúdo: uma credencial de
+   * boleto que o provedor invalidou nada diz sobre a credencial de entrega da mesma empresa, e
+   * derrubar as duas custaria uma obtenção que ninguém pediu — no eixo em que a recusa de credencial
+   * **para o percurso do lote**.
+   *
    * ⚠️ Ela **não repete** a chamada, e a ausência de repetição é decisão: quem repete é a fila, pela
    * política de `@sysloc/shared` (§3.3). O que esta operação faz é impedir que a repetição encontre
    * a mesma credencial morta guardada.
    */
-  esquecerCredencialDaEmpresa(empresaId: string): void;
+  esquecerCredencialDaEmpresa(empresaId: string, familia: FamiliaDeEscopo): void;
 }
 
 /** Uma credencial viva e o instante em que ela deixa de valer. */
@@ -169,16 +230,26 @@ function prazoEmSegundos(declarado: number | null): number {
 }
 
 /**
- * Cria o cache do processo — uma tabela de associação por empresa, fechada no fecho.
+ * Cria o cache do processo — **uma tabela de associação por família**, todas fechadas no fecho.
+ *
+ * ⚠️ O registro é **fechado por {@link FamiliaDeEscopo}**, e não um `Map` de chave textual composta.
+ * A escolha é estrutural e substitui uma promessa por uma propriedade: com chave composta, separar as
+ * famílias dependeria de um separador que nenhuma das partes contivesse — boa-fé de quem monta a
+ * cadeia. Com uma tabela por família, colisão entre eixos é **irrepresentável**, e uma família nova
+ * sem tabela própria não compila.
  *
  * @param agora A fonte de tempo do adaptador. Ver o cabeçalho: ela chega pela assinatura.
  */
 export function criarCacheDeCredenciais(agora: FonteDeTempo): CacheDeCredenciais {
-  const vivas = new Map<string, CredencialViva>();
+  const vivas: Record<FamiliaDeEscopo, Map<string, CredencialViva>> = {
+    COBRANCA: new Map(),
+    ENTREGA_DA_NOTICIA: new Map(),
+  };
 
   return {
-    async credencialDaEmpresa(empresaId, obtencao) {
-      const viva = vivas.get(empresaId);
+    async credencialDaEmpresa(empresaId, familia, obtencao) {
+      const daFamilia = vivas[familia];
+      const viva = daFamilia.get(empresaId);
 
       // A margem entra na ÚNICA comparação que decide reaproveitar (ver
       // {@link MARGEM_DE_RENOVACAO_S}): nenhum caminho apresenta credencial cuja validade restante
@@ -191,7 +262,7 @@ export function criarCacheDeCredenciais(agora: FonteDeTempo): CacheDeCredenciais
 
       // A vencida sai ANTES da obtenção: se a obtenção falhar, o que fica na memória do processo é
       // nada, e não uma credencial que já não vale. Nenhum caminho apresenta credencial expirada.
-      vivas.delete(empresaId);
+      daFamilia.delete(empresaId);
 
       const desfecho = await obtencao();
 
@@ -200,7 +271,7 @@ export function criarCacheDeCredenciais(agora: FonteDeTempo): CacheDeCredenciais
       }
 
       const { credencial, validaPorSegundos } = desfecho.valor;
-      vivas.set(empresaId, {
+      daFamilia.set(empresaId, {
         credencial,
         validaAte: agora() + prazoEmSegundos(validaPorSegundos) * MILISSEGUNDOS_POR_SEGUNDO,
       });
@@ -208,8 +279,10 @@ export function criarCacheDeCredenciais(agora: FonteDeTempo): CacheDeCredenciais
       return { aceito: true, valor: credencial };
     },
 
-    esquecerCredencialDaEmpresa(empresaId) {
-      vivas.delete(empresaId);
+    esquecerCredencialDaEmpresa(empresaId, familia) {
+      // A tabela é a **daquela família**, e só ela: esquecer a credencial de uma família não derruba
+      // a da outra, que segue viva e válida sob os próprios escopos.
+      vivas[familia].delete(empresaId);
     },
   };
 }

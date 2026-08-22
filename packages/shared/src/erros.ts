@@ -85,6 +85,42 @@ export const CodigoErro = Object.freeze({
    * onde a decisão está registrada por extenso.
    */
   REQUISICAO_RECUSADA: 'REQUISICAO_RECUSADA',
+
+  // -------------------------------------------------------------------------
+  // Material do certificado do provedor (F5) — os três da §4.3 da tech spec da fatia
+  // `integracao-bancaria-autonoma`, um por causa
+  // -------------------------------------------------------------------------
+
+  /**
+   * O material apresentado não se deixa preparar: não é um PKCS#12 que o produto entenda, ou o
+   * preparo não pôde completar.
+   *
+   * ⚠️ **Ele é o oposto exato de {@link CodigoErro.CREDENCIAL_INVALIDA}, e a assimetria é
+   * deliberada.** Lá um código responde por quatro causas porque distinguir *"confirmaria ao
+   * atacante que a conta existe"*. Aqui **não há atacante a informar**: quem pede está autenticado,
+   * detém a ação sensível de configurar a integração e apresentou **as duas metades** — o arquivo e
+   * a senha. Dizer-lhe qual das duas não serve não revela nada que ele já não tenha, e o silêncio
+   * tem custo medido: em 2026-08-20 o operador caçou uma senha errada que não existia.
+   */
+  MATERIAL_EM_FORMATO_NAO_SUPORTADO: 'MATERIAL_EM_FORMATO_NAO_SUPORTADO',
+
+  /**
+   * A senha apresentada não abre o material — desfecho **distinto** do formato, e é essa distinção
+   * que a fatia acrescenta.
+   *
+   * ⚠️ A causa é escolhida pelo **tipo** da exceção do domínio, nunca por texto de mensagem: com
+   * material em cifra legada, a leitura direta falha **pela cifra** antes de a etiqueta de
+   * autenticação ser conferida, e quem descobre a senha errada é o conversor.
+   */
+  SENHA_DO_MATERIAL_NAO_ABRE: 'SENHA_DO_MATERIAL_NAO_ABRE',
+
+  /**
+   * O material abriu, o titular é legível — e a validade dele já terminou.
+   *
+   * É a única das três que acompanha `detalhes`, com o dia em que a validade acabou: sem ele o
+   * Admin não distingue *"o arquivo é o errado"* de *"o arquivo é o certo e está velho"*.
+   */
+  CERTIFICADO_COM_VALIDADE_ENCERRADA: 'CERTIFICADO_COM_VALIDADE_ENCERRADA',
 } as const);
 
 /** União fechada dos códigos acima. */
@@ -114,6 +150,12 @@ const STATUS_POR_CODIGO: Readonly<Record<CodigoErro, number>> = {
   // existir é não reclassificar a recusa alheia. Ver a decisão fechada em
   // `apps/api/src/comum/filtro-excecao.ts`.
   [CodigoErro.REQUISICAO_RECUSADA]: 400,
+  // Os três do material do certificado são `422` como `CAMPO_INVALIDO`, e pela mesma razão:
+  // continuam sendo recusa da ENTRADA do cliente. O que a fatia acrescenta é a distinção do
+  // **código**, e só dela — o status não muda, porque a natureza do desfecho não mudou.
+  [CodigoErro.MATERIAL_EM_FORMATO_NAO_SUPORTADO]: 422,
+  [CodigoErro.SENHA_DO_MATERIAL_NAO_ABRE]: 422,
+  [CodigoErro.CERTIFICADO_COM_VALIDADE_ENCERRADA]: 422,
 };
 
 /**

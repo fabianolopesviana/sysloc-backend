@@ -16,9 +16,11 @@
  *
  * O nome da fila, a forma da carga e as opções de repetição **não moram aqui**: vêm de
  * `@sysloc/shared` (`FILA_DA_CONFIRMACAO`, `FILA_DA_EMISSAO_EM_LOTE`,
- * `FILA_DA_CONFERENCIA_BANCARIA`, `FILA_DA_NOTIFICACAO_BANCARIA`, {@link CargaDaConfirmacao},
+ * `FILA_DA_CONFERENCIA_BANCARIA`, `FILA_DA_NOTIFICACAO_BANCARIA`,
+ * `FILA_DA_RECONFERENCIA_DA_ENTREGA`, {@link CargaDaConfirmacao},
  * {@link CargaDaEmissaoEmLote}, {@link CargaDaConferenciaBancaria},
- * {@link CargaDaNotificacaoBancaria} e {@link OPCOES_PADRAO_DA_TAREFA}), que é o fecho do
+ * {@link CargaDaNotificacaoBancaria}, {@link CargaDaReconferenciaDaEntrega} e
+ * {@link OPCOES_PADRAO_DA_TAREFA}), que é o fecho do
  * `D32 (F0/T6)`. Escrevê-los aqui à mão
  * reabriria exatamente o defeito daquele débito: `defaultJobOptions` vale **só para a instância que
  * as declara**, de modo que uma política escrita neste processo divergiria em silêncio da do
@@ -53,11 +55,13 @@
  * justamente *"execute isto"* e dizer `201` sem ter enfileirado seria mentir sobre o desfecho.
  *
  * ---------------------------------------------------------------------------
- * QUATRO FILAS, UM DESPACHO — e a unicidade é o que mantém a decisão fechada de pé
+ * CINCO FILAS, UM DESPACHO — e a unicidade é o que mantém a decisão fechada de pé
  * ---------------------------------------------------------------------------
  *
- * A T15 acrescentou a emissão em lote e a conferência bancária (ADR-0029), e a T6 da fatia
- * `webhook-e-carne` acrescentou a notícia bancária (ADR-0035). As quatro passam pelo **mesmo**
+ * A T15 acrescentou a emissão em lote e a conferência bancária (ADR-0029), a T6 da fatia
+ * `webhook-e-carne` acrescentou a notícia bancária (ADR-0035) e a T8 da fatia
+ * `integracao-bancaria-autonoma` acrescentou a reconferência da entrega (ADR-0029). As cinco passam
+ * pelo **mesmo**
  * {@link despachar}, e nenhuma tem corpo próprio: uma cópia por fila deixaria livre para divergir
  * exatamente o `catch` que a `DECISÃO FECHADA — T9 / Gate 2` instalou, e a cópia que nascesse sem
  * ele publicaria `err.command.args` no diário. É o **limiar de três** do `CLAUDE.md` chegando dentro
@@ -65,7 +69,9 @@
  *
  * ⚠️ **A quarta é a primeira cuja carga não carrega empresa**, e isso não muda nada deste módulo: o
  * despacho é genérico em `C`, e a decisão sobre a forma da carga é da ADR-0024 (terceira emenda) e
- * vive em `@sysloc/shared`, não aqui.
+ * vive em `@sysloc/shared`, não aqui. A **quinta volta a carregá-la**, pela mesma ADR e pela mesma
+ * razão — quem enfileira é a borda que atendeu a sessão do Admin —, e a alternância entre as duas
+ * classes é exatamente o que este módulo **não** decide.
  *
  * ---------------------------------------------------------------------------
  * O ouvinte de `error` não é ornamento
@@ -104,10 +110,12 @@ import {
   type CargaDaConfirmacao,
   type CargaDaEmissaoEmLote,
   type CargaDaNotificacaoBancaria,
+  type CargaDaReconferenciaDaEntrega,
   FILA_DA_CONFERENCIA_BANCARIA,
   FILA_DA_CONFIRMACAO,
   FILA_DA_EMISSAO_EM_LOTE,
   FILA_DA_NOTIFICACAO_BANCARIA,
+  FILA_DA_RECONFERENCIA_DA_ENTREGA,
   type Logger,
   OPCOES_PADRAO_DA_TAREFA,
 } from '@sysloc/shared';
@@ -209,7 +217,7 @@ type FilaDe<C> = Queue<C, void, string, C, void, string>;
  *
  * Ele existe para que a lista de filas seja declarada uma vez só, sem parâmetro de carga — as duas
  * pontas do ciclo (o assentamento das inicializações e {@link ProdutorDeFila.encerrar}) tratam as
- * quatro filas do mesmo jeito, e nenhuma delas olha a carga.
+ * cinco filas do mesmo jeito, e nenhuma delas olha a carga.
  */
 type FilaNoCicloDeVida = {
   readonly name: string;
@@ -290,6 +298,18 @@ export interface ProdutorDeFila {
    * `5xx` provocaria a reentrega que a idempotência existe para absorver, não para causar.
    */
   enfileirarNotificacaoBancaria(carga: CargaDaNotificacaoBancaria): Promise<void>;
+  /**
+   * Enfileira a **reconferência** da entrega da notícia de uma empresa, depois de o certificado dela
+   * ter sido substituído.
+   *
+   * A ordem é conteúdo, e vale aqui o que as irmãs registram: a unidade de trabalho commita o
+   * certificado e **só então** a borda enfileira. **Rejeita** como elas — e o que quem chama faz com
+   * a rejeição é o mesmo da notícia: **absorve** e registra em `warn`. A diferença é de produto: o
+   * pedido do Admin foi *"registre este certificado"*, e ele foi atendido; a reconferência é efeito
+   * secundário cujo resultado não compõe a resposta (ADR-0029), e derrubar o registro por causa dela
+   * desfaria o ato que o Admin pediu por causa do que ele não pediu.
+   */
+  enfileirarReconferenciaDaEntrega(carga: CargaDaReconferenciaDaEntrega): Promise<void>;
   /** Devolve o produtor e a conexão. Chamadas repetidas devolvem o mesmo encerramento. */
   encerrar(): Promise<void>;
 }
@@ -328,7 +348,7 @@ export function conectarProdutorDeFila(cadeiaConexao: string, logger: Logger): P
   /**
    * Cria uma fila desta conexão, já com o ouvinte de `error` instalado.
    *
-   * Ela existe para que **as três filas** nasçam do mesmo jeito. A alternativa — repetir as opções e
+   * Ela existe para que **as cinco filas** nasçam do mesmo jeito. A alternativa — repetir as opções e
    * o ouvinte por fila — é a que faz a política divergir em silêncio: a terceira cópia nasceria sem
    * `defaultJobOptions`, ou sem ouvinte, e nada acusaria. É o **limiar de três** do `CLAUDE.md`
    * aplicado dentro do módulo, e a razão vale ainda mais aqui do que num símbolo qualquer, porque o
@@ -358,6 +378,9 @@ export function conectarProdutorDeFila(cadeiaConexao: string, logger: Logger): P
   const emissaoEmLote = criarFila<CargaDaEmissaoEmLote>(FILA_DA_EMISSAO_EM_LOTE);
   const conferenciaBancaria = criarFila<CargaDaConferenciaBancaria>(FILA_DA_CONFERENCIA_BANCARIA);
   const notificacaoBancaria = criarFila<CargaDaNotificacaoBancaria>(FILA_DA_NOTIFICACAO_BANCARIA);
+  const reconferenciaDaEntrega = criarFila<CargaDaReconferenciaDaEntrega>(
+    FILA_DA_RECONFERENCIA_DA_ENTREGA,
+  );
 
   /**
    * As filas abertas por esta conexão, na ordem em que nasceram — a lista que o encerramento fecha.
@@ -377,14 +400,15 @@ export function conectarProdutorDeFila(cadeiaConexao: string, logger: Logger): P
     emissaoEmLote,
     conferenciaBancaria,
     notificacaoBancaria,
+    reconferenciaDaEntrega,
   ];
 
   /**
-   * O DESPACHO ÚNICO — o prazo, o saneamento e a corrida, escritos **uma vez** para as três filas.
+   * O DESPACHO ÚNICO — o prazo, o saneamento e a corrida, escritos **uma vez** para as cinco filas.
    *
-   * Ele é a razão de as quatro rotas de enfileiramento desta borda não terem corpo próprio. Uma
+   * Ele é a razão de as cinco rotas de enfileiramento desta borda não terem corpo próprio. Uma
    * cópia por fila deixaria livre para divergir exatamente o que a `DECISÃO FECHADA — T9 / Gate 2`
-   * fixou: o `catch` que embrulha a rejeição da biblioteca. A quinta fila que nascesse com um `add`
+   * fixou: o `catch` que embrulha a rejeição da biblioteca. A sexta fila que nascesse com um `add`
    * direto publicaria `err.command.args` no diário, e nada acusaria — é a mesma classe de defeito que
    * aquele marcador registra, chegando por caminho novo.
    *
@@ -463,7 +487,7 @@ export function conectarProdutorDeFila(cadeiaConexao: string, logger: Logger): P
    * ---------------------------------------------------------------------------
    *
    * A lista percorrida é `filas` — a MESMA que o encerramento fecha, e não um arranjo escrito aqui.
-   * É o que faz a quinta fila entrar **por construção**: as duas pontas do ciclo de vida saem da
+   * É o que faz a sexta fila entrar **por construção**: as duas pontas do ciclo de vida saem da
    * mesma declaração e não têm como discordar sobre quais filas existem.
    *
    * **Nunca rejeita**, e o que ela afirma é o **fim** da inicialização, não o sucesso dela: a falha
@@ -480,8 +504,10 @@ export function conectarProdutorDeFila(cadeiaConexao: string, logger: Logger): P
    *
    * Medido nesta base, com registro em arquivo (o `console` de encerramento é descartado pelo
    * arcabouço de verificação): a primeira aplicação de um arquivo de verificação fecha ~480 ms
-   * depois de conectar, com as **quatro** filas ainda em `initializing` e a conexão em `connect`, e
-   * o desfecho — sem a ordem do fecho e sem esta espera — é **quatro** rejeições não tratadas.
+   * depois de conectar, com as filas ainda em `initializing` e a conexão em `connect`, e o desfecho
+   * — sem a ordem do fecho e sem esta espera — é **uma rejeição não tratada por fila em voo**. ⚠️ A
+   * medição foi feita quando eram **quatro** filas, e o número dela é o daquele dia; a grandeza,
+   * porém, é *uma por fila*, e é ela que cresce junto com a lista.
    */
   async function assentarInicializacoes(): Promise<void> {
     let prazo: NodeJS.Timeout | undefined;
@@ -489,20 +515,49 @@ export function conectarProdutorDeFila(cadeiaConexao: string, logger: Logger): P
       prazo = setTimeout(() => resolver('PRAZO-ESTOURADO'), LIMITE_DO_ASSENTAMENTO_MS);
     });
 
+    // Quais filas efetivamente assentaram — preenchido NO PONTO em que cada uma assenta, que é o
+    // único lugar onde esse fato existe. Ver o alerta abaixo para por que ele é registrado.
+    const assentadas = new Set<string>();
+
     // `allSettled` NUNCA rejeita, e é o que dispensa aqui o ouvinte de rejeição tardia que o
     // despacho acima precisa ter: a espera abandonada pelo prazo não vira rejeição sem dono.
     const assentado = Promise.allSettled(
-      filas.map(async (fila) => await fila.waitUntilReady()),
+      filas.map(async (fila) => {
+        await fila.waitUntilReady();
+        // Depois do `await`, e nunca antes: a fila cuja espera REJEITA não passa por aqui, e é
+        // assim que a rejeição continua contando como "não assentou" sem ramo próprio.
+        assentadas.add(fila.name);
+      }),
     ).then((): 'ASSENTOU' => 'ASSENTOU');
 
     try {
       if ((await Promise.race([assentado, expirar])) === 'PRAZO-ESTOURADO') {
         // A única pista de que o fecho seguinte pode produzir rejeição órfã. Alerta, e não
         // diagnóstico como as demais linhas do desligamento: as outras dizem que algo já
-        // registrado falhou de novo, esta diz que uma garantia foi ABANDONADA. O campo é a lista
-        // das filas — as mesmas que o fecho percorre —, e não um nome escolhido a dedo.
+        // registrado falhou de novo, esta diz que uma garantia foi ABANDONADA.
+        //
+        // DECISÃO FECHADA — D22 · F4/T9 · fechado na intervenção dirigida de 2026-08-22
+        // O QUÊ: o campo `filas` nomeia as que **não assentaram**, e não todas as que existem.
+        // POR QUÊ: publicar `filas.map(f => f.name)` respondia *"quantas filas existem"* — a mesma
+        //          lista, idêntica em todo estouro —, quando a pergunta do operador é *"quantas
+        //          ficaram para trás, e qual"*. Ele não distinguia "as cinco estavam pendentes" de
+        //          "uma só travou", que é a diferença entre o servidor de fila fora do ar e uma
+        //          fila doente. Numa linha que existe para dizer que uma garantia foi abandonada, o
+        //          dado que falta é justamente o que a abandonou.
+        // REVERTER EXIGE: mostrar que o conjunto observado pode divergir do fecho — e ele não pode:
+        //          `pendentes` é derivado de `filas`, a MESMA lista que o encerramento percorre, de
+        //          modo que fila nova entra por construção e nenhuma lista paralela existe.
+        const pendentes = filas.filter((fila) => !assentadas.has(fila.name));
+
         logger.warn(
-          { limiteMs: LIMITE_DO_ASSENTAMENTO_MS, filas: filas.map((fila) => fila.name) },
+          {
+            limiteMs: LIMITE_DO_ASSENTAMENTO_MS,
+            filas: pendentes.map((fila) => fila.name),
+            // A contagem vai junto do nome porque ela é o que se lê primeiro num alerta, e porque
+            // ela sobrevive a um `filas` vazio — que é o desfecho em que todas assentaram no
+            // instante do prazo, e que sem ela seria indistinguível de campo perdido.
+            pendentes: pendentes.length,
+          },
           'o assentamento das inicializações excedeu o limite — seguindo com o desligamento',
         );
       }
@@ -529,6 +584,10 @@ export function conectarProdutorDeFila(cadeiaConexao: string, logger: Logger): P
 
     async enfileirarNotificacaoBancaria(carga: CargaDaNotificacaoBancaria): Promise<void> {
       await despachar(notificacaoBancaria, carga);
+    },
+
+    async enfileirarReconferenciaDaEntrega(carga: CargaDaReconferenciaDaEntrega): Promise<void> {
+      await despachar(reconferenciaDaEntrega, carga);
     },
 
     encerrar(): Promise<void> {

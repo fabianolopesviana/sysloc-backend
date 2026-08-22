@@ -38,16 +38,58 @@
 # ---------------------------------------------------------------------------
 #
 # A senha é lida do terminal com eco desligado e trafega por DESCRITOR DE
-# ARQUIVO — nunca por `argv`, nunca por variável exportada. A chave privada em
-# claro existe apenas num PIPE entre dois processos: nada em claro toca o
-# disco. O material novo nasce `0600` e usa a MESMA senha do original, para não
-# criar um segundo segredo a guardar.
+# ARQUIVO — nunca por `argv`, nunca por variável exportada. O material novo
+# nasce `0600` e usa a MESMA senha do original, para não criar um segundo
+# segredo a guardar.
+#
+# A chave privada em claro vive num arquivo `0600` em TMPFS (`/dev/shm`),
+# removido por `trap` em qualquer desfecho — inclusive erro e sinal. Ela NÃO
+# toca o disco: tmpfs é memória.
+#
+# ⚠️ DIFERENÇA DECLARADA, e ela é real: tmpfs PODE ser paginado para swap sob
+# pressão de memória. A garantia aqui é "não toca armazenamento persistente por
+# escrita do script", não "é fisicamente impossível chegar a um bloco". A
+# alternativa — manter o pipe — é o script NÃO FUNCIONAR (ver abaixo).
+#
+# ---------------------------------------------------------------------------
+# POR QUE O INTERMEDIÁRIO É ARQUIVO, e não o pipe que este script já teve
+# ---------------------------------------------------------------------------
+#
+# DECISÃO FECHADA — correção dirigida · 2026-08-21
+# O QUÊ: o PEM intermediário é um arquivo em tmpfs; NÃO se volta ao pipe.
+# POR QUÊ: `openssl pkcs12 -export` exige entrada SEEKABLE. Medido neste host
+#          (OpenSSL 3.0.13): com `-in <arquivo>` produz o PKCS#12; lendo de
+#          stdin, de pipe simples ou de `/dev/fd/N` (process substitution) ele
+#          falha com `Could not read any certificates from -in file`. O
+#          pipeline entre os dois `openssl` que este script teve até aqui
+#          NUNCA pôde ter reembalado material algum — todo caminho de geração
+#          terminava no erro "a reembalagem falhou".
+# REVERTER EXIGE: demonstrar, por execução, que o `openssl` do host produz um
+#          `.pfx` válido com o PEM chegando por descritor não-seekable.
 # ===========================================================================
 set -uo pipefail
 
 readonly ORIGINAL="${1:-/home/sysloc/certificado.pfx}"
 readonly PREPARADO="${2:-${ORIGINAL%.pfx}-moderno.pfx}"
 readonly PREFIXO="[preparar-material]"
+
+# Onde o PEM intermediário nasce. Sobrescritível só para a verificação, que
+# precisa medir o caminho de erro quando o diretório não serve.
+readonly DIR_EM_MEMORIA="${SYSLOC_DIR_EM_MEMORIA:-/dev/shm}"
+
+# Caminho do intermediário, preenchido só quando ele chega a existir. A limpeza
+# é por `trap` para valer também em erro e em sinal — não há caminho de saída
+# deste script que deixe chave privada em claro para trás.
+INTERMEDIARIO=""
+
+limpar() {
+	local codigo=$?
+	if [ -n "${INTERMEDIARIO}" ] && [ -e "${INTERMEDIARIO}" ]; then
+		rm -f "${INTERMEDIARIO}"
+	fi
+	exit "${codigo}"
+}
+trap limpar EXIT INT TERM HUP
 
 info() { printf '%s ..     %s\n' "${PREFIXO}" "$1"; }
 feito() { printf '%s FEITO  %s\n' "${PREFIXO}" "$1"; }
@@ -96,19 +138,72 @@ main() {
 
   if [ -e "${PREPARADO}" ]; then
     export SYSLOC_ARQ_DO_MATERIAL="${PREPARADO}"
-    if runtime_abre "${PREPARADO}"; then
-      feito "${PREPARADO} já existe e o runtime o abre — nada a fazer"
+    if ! runtime_abre "${PREPARADO}"; then
+      erro "${PREPARADO} já existe e o runtime NÃO o abre — remova-o e rode de novo"
       unset SENHA
-      exit 0
+      exit 1
     fi
-    erro "${PREPARADO} já existe e o runtime NÃO o abre — remova-o e rode de novo"
+
+    # ⚠️ ABRIR NÃO BASTA — e esta é a diferença entre idempotência e falso
+    # conforto.
+    #
+    # DECISÃO FECHADA — correção dirigida · 2026-08-21
+    # O QUÊ: o preparado que já existe é aceito só quando é O MESMO
+    #        CERTIFICADO do original de agora — titular, SÉRIE e validade.
+    # POR QUÊ: a pergunta "o runtime abre?" é satisfeita pelo preparado da
+    #        emissão ANTERIOR. Quando a AC entrega a renovação com o mesmo nome
+    #        de arquivo, o script respondia "nada a fazer" e o operador
+    #        registrava o certificado VELHO acreditando ter renovado. O ramo de
+    #        geração logo abaixo sempre comparou a identidade; este não, e a
+    #        assimetria é que abria a classe.
+    # REVERTER EXIGE: provar que nenhum caminho põe no lugar do original um
+    #        material diferente do que gerou o preparado.
+    local id_original id_preparado
+    id_original="$(identificacao "${ORIGINAL}" -legacy)"
+    id_preparado="$(identificacao "${PREPARADO}")"
+
+    if [ -z "${id_original}" ]; then
+      erro "não foi possível identificar ${ORIGINAL} — senha incorreta, ou material ilegível"
+      unset SENHA
+      exit 1
+    fi
+
+    if [ "${id_original}" != "${id_preparado}" ]; then
+      erro "${PREPARADO} existe, mas é OUTRO CERTIFICADO — provavelmente o da emissão anterior"
+      printf 'original (%s):\n%s\npreparado (%s):\n%s\n' \
+        "${ORIGINAL}" "${id_original}" "${PREPARADO}" "${id_preparado}" >&2
+      erro "remova ou renomeie ${PREPARADO} e rode de novo"
+      unset SENHA
+      exit 1
+    fi
+
+    feito "${PREPARADO} já existe, o runtime o abre e é o MESMO certificado — nada a fazer"
+    unset SENHA
+    exit 0
+  fi
+
+  umask 077
+
+  if [ ! -d "${DIR_EM_MEMORIA}" ] || [ ! -w "${DIR_EM_MEMORIA}" ]; then
+    erro "${DIR_EM_MEMORIA} não existe ou não é gravável — é onde a chave em claro precisa caber sem tocar o disco"
     unset SENHA
     exit 1
   fi
 
-  umask 077
-  if ! openssl pkcs12 -legacy -in "${ORIGINAL}" -passin fd:3 -nodes 3< <(printf '%s' "${SENHA}") |
-    openssl pkcs12 -export -out "${PREPARADO}" -passout fd:4 4< <(printf '%s' "${SENHA}"); then
+  # O intermediário: arquivo REAL (o `-export` exige seekable — ver o
+  # cabeçalho), em tmpfs, 0600 pelo umask, e removido pelo `trap` em qualquer
+  # desfecho.
+  INTERMEDIARIO="$(mktemp "${DIR_EM_MEMORIA}/material-do-certificado-XXXXXXXX.pem")"
+
+  if ! openssl pkcs12 -legacy -in "${ORIGINAL}" -passin fd:3 -nodes \
+    3< <(printf '%s' "${SENHA}") > "${INTERMEDIARIO}" 2>/dev/null; then
+    erro "não foi possível abrir ${ORIGINAL} nem com a cifra legada — senha incorreta, ou material ilegível"
+    unset SENHA
+    exit 1
+  fi
+
+  if ! openssl pkcs12 -export -in "${INTERMEDIARIO}" -out "${PREPARADO}" -passout fd:4 \
+    4< <(printf '%s' "${SENHA}"); then
     erro "a reembalagem falhou — o material continua intacto em ${ORIGINAL}"
     rm -f "${PREPARADO}"
     unset SENHA

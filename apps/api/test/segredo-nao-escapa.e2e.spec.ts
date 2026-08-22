@@ -47,14 +47,25 @@
  * |       |        | fila** — o objeto que a biblioteca levanta, e que carrega a carga serializada
  * |       |        | em `command.args` — devolve `[]` também, enquanto o mesmo varredor acha todas
  * |       |        | as agulhas no objeto de controle. |
- * | A6    | os seis | **Cada** varredura é aplicada antes a um objeto de controle onde as agulhas
+ * | A9    | CT-1024 | Nenhum dos **seis** desfechos das rotas tocadas pela fatia
+ * | CA-16 |         | `integracao-bancaria-autonoma` — registro **aceito com conversão**, as três
+ * | CA-18 |         | recusas dele (formato, senha e validade encerrada), a **ativação** da entrega
+ * |       |         | da notícia e a **consulta** do estado — carrega o material ou a senha em
+ * |       |         | corpo, linha de cabeçalho, arquivo de diário do processo ou documento
+ * |       |         | publicado. Os seis status conferem por igualdade **na ordem**
+ * |       |         | (`[201, 422, 422, 422, 200, 200]`), nenhum corpo é vazio, a impressão digital
+ * |       |         | publicada é a do cofre enviado, `materialConvertido` é **`true`** — de modo
+ * |       |         | que o **processo externo de fato correu** —, e os três motivos internos
+ * |       |         | constam do diário na ordem das requisições. |
+ * | A6    | os sete | **Cada** varredura é aplicada antes a um objeto de controle onde as agulhas
  * |       |        | foram plantadas canal a canal, e a lista de achados é afirmada por igualdade. |
- * | A7    | os seis | As agulhas são derivadas do dado **que de fato circulou**: a senha é a senha
+ * | A7    | os sete | As agulhas são derivadas do dado **que de fato circulou**: a senha é a senha
  * |       |        | real enviada, e os bytes são os bytes reais apresentados. |
  *
  * Rastreabilidade: `A1 → CT-823 (CA-02)` · `A2 → CT-830 (CA-12)` · `A3 → CT-831 (CA-12)` ·
  * `A4 → CT-832 (CA-02, CA-12)` · `A5 → CT-833 (CA-02, CA-12)` · `A8 → CT-935 (CA-20)` ·
- * `A6/A7 → CT-823, CT-830, CT-831, CT-832, CT-833, CT-935`.
+ * `A9 → CT-1024 (CA-16, CA-18)` ·
+ * `A6/A7 → CT-823, CT-830, CT-831, CT-832, CT-833, CT-935, CT-1024`.
  *
  * ===========================================================================
  * TODA VARREDURA CARREGA CONTROLE POSITIVO — e a razão é medida
@@ -181,10 +192,19 @@
  * quinto** entrou com a T16, quando o produto passou a ter um **segundo** processo capaz de abrir o
  * segredo:
  *
+ * ⚠️ **A T9 da fatia `integracao-bancaria-autonoma` acrescentou um EIXO à enumeração, e não um item:**
+ * dos caminhos 2 a 5, os que apresentam material em **cifra legada** atravessam agora um **processo
+ * externo** de conversão (ADR-0036), que é superfície nova de vazamento — o subprocesso recebe a
+ * senha por descritor de arquivo e devolve saída e objeto de erro. O `CT-1019` mede essa superfície
+ * **no nível do módulo** (`spawnargs` e a exceção crua, antes de qualquer tradução); o **CT-1024** a
+ * mede **na borda**, que é onde se observa o que efetivamente sai ao cliente e ao diário. As duas são
+ * necessárias, e nenhuma implica a outra. O CT-1024 acrescenta também os caminhos **16 e 17**, que
+ * são as duas rotas da entrega da notícia.
+ *
  *   1. registro · `422` do esquema, antes de `criarSegredoOperavel` — **medido** (CT-830, ato 1). O
  *      segredo **não entrou** no produto: o que existe é a cadeia crua que o esquema recusou;
  *   2. registro · `422` `SENHA_NAO_ABRE` — **medido** (CT-831, cenário 1: corpo e diário);
- *   3. registro · `422` `MATERIAL_ILEGIVEL` — **medido** (CT-831, cenário 2);
+ *   3. registro · `422` `FORMATO_NAO_SUPORTADO` — **medido** (CT-831, cenário 2);
  *   4. registro · `422` `JA_VENCIDO` — **medido** (CT-830 ato 2, no corpo, no `detalhes` **com
  *      conteúdo** e no cabeçalho; CT-831 cenário 3, no diário). É o único ramo de recusa **posterior**
  *      à abertura do cofre e à invocação de `cifrarSegredo`;
@@ -262,6 +282,16 @@
  *      ⚠️ **A medição mora lá, e não aqui, por razão estrutural**: este arquivo monta a aplicação HTTP,
  *      e o processo de trabalho é outro processo, com outra composição raiz e outro registrador.
  *      Reproduzi-lo aqui mediria uma fiação que a operação não tem.
+ *
+ *  16. **entrega da notícia · ativação (`200`)** — **medido** (CT-1024). ⚠️ Aqui o segredo operável
+ *      **ESTÁ em escopo**: o serviço decifra o envelope do certificado vigente e o entrega ao cliente
+ *      mTLS para falar com o provedor. O desfecho medido é o do **destino inerte** — a composição de
+ *      produção aponta para `.invalid` (`apps/api/vitest.config.ts`) —, de modo que o claro atravessa
+ *      exatamente o **caminho de falha** da biblioteca, que é onde o achado crítico da fase anterior
+ *      nasceu. Medir o desfecho feliz deixaria de fora justamente a classe que motivou a ADR-0032;
+ *  17. **entrega da notícia · consulta do estado (`200`)** — **medido** (CT-1024). Ela lê das
+ *      colunas e **não** fala com o provedor; o que se mede é que a projeção do estado, que carrega o
+ *      motivo da recusa, não traz junto nada do cofre da empresa.
  *
  * **O que continua fora do alcance destas seis superfícies, e por quê**: a saída padrão do processo
  * (aqui o registrador tem destino em arquivo, que é o outro destino previsto pela unidade systemd —
@@ -381,6 +411,39 @@
  *     reconstruído; o controle voltou a `277 passed`.
  *
  * ===========================================================================
+ * O `D52 · F4/T16` foi MEDIDO na T9, e o gatilho dele NÃO disparou
+ * ===========================================================================
+ *
+ * O marcador de `apps/worker/test/varredura-de-segredo.ts` declara que o gatilho é *"o terceiro
+ * consumidor do molde fora de `apps/worker/test/`, ou a primeira alteração das formas buscadas"*, e a
+ * recomendação da T9 mandava medir se o CT-1024 exigiria **canal novo de busca** para alcançar a
+ * saída e o objeto de erro do processo externo de conversão.
+ *
+ * **Não exigiu, e a razão é estrutural**: nada da saída do conversor atravessa a fronteira do módulo
+ * — ela é lida para classificar e **descartada** (`conversao-do-material.ts`, e o CT-1019 o mede no
+ * nível do módulo). Se atravessasse, chegaria ao cliente por **corpo** ou **cabeçalho** e ao operador
+ * pelo **arquivo de diário**, e os três já são canais desta suíte: {@link superficiesDaResposta} e
+ * {@link superficiesDoDiario}, aplicados pela mesma {@link ocorrenciasDe} de sempre. **Nenhuma forma
+ * buscada mudou** e nenhum canal nasceu — o CT-1024 consome o molde tal como ele já estava. O débito,
+ * portanto, **não se move**, e endurecer um dos lados deixando o outro para trás — que é exatamente a
+ * divergência que o marcador descreve — não chegou a ser tentado.
+ *
+ * ===========================================================================
+ * O CT-1024 é COMPORTAMENTAL, e por isso não ganha mutante
+ * ===========================================================================
+ *
+ * Ele envia segredo real pelas quatro rotas e observa o que saiu; a `.claude/rules/testing-stack.md`
+ * escopa a prova de falsificação por execução à asserção **estática**, e o P4 do Protocolo
+ * Antirregressão manda, para a comportamental, **declarar em uma linha qual asserção discrimina**.
+ *
+ * **A asserção que discrimina é `ocorrenciasDe(...) → []` sobre as superfícies de cada desfecho e
+ * sobre o arquivo de diário inteiro**, sustentada pelo controle positivo que a antecede: qualquer uma
+ * das nove agulhas que apareça em qualquer canal produz um rótulo `<superfície>/<agulha>` na lista, e
+ * a igualdade reprova nomeando o canal e a agulha. O par
+ * `impressaoDigital` + `materialConvertido: true` é o que impede o verde por vacuidade — o primeiro
+ * prova que o cofre circulou, o segundo que o **subprocesso correu**.
+ *
+ * ===========================================================================
  * De onde vêm o banco, a fila, a credencial, a chave e o MATERIAL (ADR-0006, invariante 3)
  * ===========================================================================
  *
@@ -392,7 +455,7 @@
  * entra na árvore versionada.
  */
 
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -461,7 +524,18 @@ import {
   SEGMENTO_DA_VERIFICACAO,
   SEGMENTO_DO_REGISTRO,
 } from '../src/integracoes-bancarias/certificado.controller.ts';
+import {
+  SEGMENTO_DA_ATIVACAO,
+  SEGMENTO_DA_ENTREGA_DA_NOTICIA,
+} from '../src/integracoes-bancarias/entrega-da-noticia.controller.ts';
+import { SEGMENTO_DA_IDENTIDADE } from '../src/integracoes-bancarias/identidade.controller.ts';
 import { CAMINHO_DO_DOCUMENTO, criarAplicacao } from '../src/main.ts';
+// O cliente HTTP da CASA COMUM do diretório, sob alias porque esta suíte ainda declara o seu
+// {@link pedir} privado, anterior a ela. **O bloco do CT-1024 usa este**, e nunca o privado: o
+// `CLAUDE.md` fixa que acessório de suíte se importa, e converter os seis casos anteriores é
+// refatoração fora do escopo da T9. O alias é o que permite as duas formas conviverem sem que a
+// conversão futura precise renomear as chamadas novas.
+import { pedir as pedirNaBorda, type Resposta as RespostaDaBorda } from './acessorios-de-borda.ts';
 
 /** Limite da montagem: banco migrado, semente com credencial, fila e a aplicação real. */
 const LIMITE_DE_MONTAGEM_MS = 240_000;
@@ -497,6 +571,47 @@ const ROTA_DAS_EMISSOES = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_COBRANCA_BANCARIA}
 
 /** Uma competência válida — primeiro dia do mês, que é o que o esquema de entrada exige. */
 const COMPETENCIA_DA_EMISSAO = '2026-08-01';
+
+/**
+ * As rotas da **entrega da notícia** e a da **identidade**, compostas dos donos dos segmentos.
+ *
+ * Elas entram neste arquivo com a T9 da fatia `integracao-bancaria-autonoma`: são duas das quatro
+ * rotas que a fatia tocou, e o CT-1024 mede o que sai delas. Compostas, e nunca escritas à mão —
+ * um caminho literal aqui deixaria de acompanhar o controlador que o publica.
+ */
+const ROTA_DO_ESTADO_DA_ENTREGA = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DA_ENTREGA_DA_NOTICIA}`;
+const ROTA_DA_ATIVACAO_DA_ENTREGA = `${ROTA_DO_ESTADO_DA_ENTREGA}/${SEGMENTO_DA_ATIVACAO}`;
+const ROTA_DA_IDENTIDADE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DA_IDENTIDADE}`;
+
+/**
+ * As três senhas sentinelas do CT-1024 — **famílias textuais distintas, e isso é conteúdo**.
+ *
+ * Nenhuma é substring de outra, e a propriedade não é estética: o controle positivo planta **uma**
+ * agulha por canal e afirma a lista de achados por igualdade. Duas senhas em que uma contivesse a
+ * outra fariam o canal de uma achar duas agulhas, e a igualdade que prova a varredura viraria uma
+ * lista escrita para bater com o efeito colateral. É a mesma medição que fixou o recorte hexadecimal
+ * em {@link BYTES_DO_RECORTE}, aplicada ao outro eixo.
+ */
+const SENHA_DO_ACEITO_DO_CT1024 = 'senha-sentinela-do-ct1024-aceito-nao-deve-sair';
+const SENHA_QUE_NAO_ABRE_DO_CT1024 = 'chave-alheia-que-nao-abre-o-cofre-do-ct1024';
+const SENHA_DO_VENCIDO_DO_CT1024 = 'palavra-do-cofre-vencido-do-ct1024-nao-deve-sair';
+
+/** Quantos desfechos o CT-1024 exerce — a âncora que pega a lista truncada antes da varredura. */
+const DESFECHOS_DO_CT1024 = 6;
+
+/**
+ * Os status dos seis desfechos, **na ordem em que o caso os exerce**.
+ *
+ * Afirmados por igualdade de arranjo, e não um a um: é a igualdade que pega o desfecho que trocou de
+ * lugar — um `422` onde se esperava o registro aceito faria toda varredura abaixo correr sobre um
+ * envelope de recusa, medindo outra coisa sem dizer.
+ */
+const STATUS_DOS_DESFECHOS_DO_CT1024 = [201, 422, 422, 422, 200, 200];
+
+/** A identidade que o arranjo do CT-1024 registra — valores quaisquer dentro do que o esquema exige. */
+const NUMERO_DO_CLIENTE_DO_CT1024 = 987_654;
+const NUMERO_DA_CONTA_DO_CT1024 = 12_345;
+const CODIGO_DA_MODALIDADE_DO_CT1024 = 1;
 
 /**
  * Teto de memória imposto ao servidor de fila durante a medição do corpo de erro, em bytes.
@@ -582,7 +697,17 @@ const DISCRIMINADOR_DA_VALIDADE = 'validoAte';
  * justamente o caminho em que o segredo esteve vivo.
  */
 const MOTIVO_DA_SENHA = 'SENHA_NAO_ABRE';
-const MOTIVO_DO_MATERIAL = 'MATERIAL_ILEGIVEL';
+/**
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era esta constante que descrevia o
+ * vocabulário anterior. Desde a T2 da fatia `integracao-bancaria-autonoma` a borda de registro passa
+ * por `converterMaterialSeNecessario`, e o `ErroDeMaterialIlegivel` **não escapa mais** daquele
+ * módulo: quem chega à borda é `ErroDeFormatoDoMaterial`, cujo motivo é `FORMATO_NAO_SUPORTADO` —
+ * publicado pela T1 no barril de `@sysloc/cobranca-bancaria`. Traduzi-lo de volta para
+ * `MATERIAL_ILEGIVEL` na borda criaria um segundo vocabulário para o mesmo fato, que é o oposto do
+ * que o campo único existe para dar ao operador. Nenhuma asserção foi afrouxada: a igualdade de
+ * arranjo ordenado dos três motivos segue exata.
+ */
+const MOTIVO_DO_FORMATO = 'FORMATO_NAO_SUPORTADO';
 const MOTIVO_DO_VENCIDO = 'JA_VENCIDO';
 
 /**
@@ -618,6 +743,13 @@ const CHAVES_ESPERADAS: readonly string[] = [
   'estado',
   'id',
   'impressaoDigital',
+  // SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era esta lista que descrevia a
+  // superfície anterior. A T2 da fatia `integracao-bancaria-autonoma` publicou
+  // `esquemaDoDesfechoDoRegistroDeCertificado` (§4.4 do tech spec), que estende a projeção do
+  // certificado com `materialConvertido` **só na resposta do registro** — declaração do ATO, e não
+  // do certificado. A âncora **sobe** e segue sendo igualdade de conjunto: um campo de segredo
+  // acrescentado ao contrato continua reprovando aqui, e nenhuma chave saiu.
+  'materialConvertido',
   'mensagem',
   'nome',
   'registradoEm',
@@ -924,8 +1056,12 @@ describe('o segredo operável não escapa por superfície alguma (T13, ADR-0032)
       });
       // O do vencimento carrega `detalhes` com a data em que a validade terminou (CA-06) — e a
       // igualdade de corpo inteiro é o que prova que **só** ela está ali.
+      // SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era este esperado que descrevia o
+      // contrato anterior. As três causas de recusa do registro ganharam código próprio na T2 da
+      // fatia `integracao-bancaria-autonoma` (D4), e a validade encerrada é a terceira delas. A
+      // mensagem literal **não mudou**, e a igualdade de corpo inteiro segue exata.
       expect(recusaDoVencido.corpo).toEqual({
-        codigo: CodigoErro.CAMPO_INVALIDO,
+        codigo: CodigoErro.CERTIFICADO_COM_VALIDADE_ENCERRADA,
         mensagem: MENSAGEM_DO_CERTIFICADO_VENCIDO,
         campo: CAMPO_DO_CORPO,
         detalhes: { [DISCRIMINADOR_DA_VALIDADE]: vencido.validoAte.toISOString() },
@@ -1000,17 +1136,18 @@ describe('o segredo operável não escapa por superfície alguma (T13, ADR-0032)
       // journal **tem** o que o operador precisa ler. Os **três** motivos internos, na ordem das
       // três requisições, é o que separa "três linhas saíram" de "cada causa saiu com o motivo
       // dela" — e é a igualdade que faz o vocabulário ser observado inteiro, e não pela metade.
-      expect(motivosEm(desdeAqui)).toEqual([
-        MOTIVO_DA_SENHA,
-        MOTIVO_DO_MATERIAL,
-        MOTIVO_DO_VENCIDO,
-      ]);
+      expect(motivosEm(desdeAqui)).toEqual([MOTIVO_DA_SENHA, MOTIVO_DO_FORMATO, MOTIVO_DO_VENCIDO]);
       // E as três recusas do filtro global, com o código e o status que o cliente recebeu — escritas
       // por extenso, uma por requisição.
+      // SUT_IS_CORRECT_BECAUSE: o código de produção está certo e era este esperado que descrevia o
+      // contrato anterior — três causas sob um código só. A T2 da fatia
+      // `integracao-bancaria-autonoma` deu **um código por causa** (D4), e a lista passa a nomear os
+      // três. Nenhuma asserção foi afrouxada: continua igualdade de arranjo ordenado, com o status
+      // de cada uma, e um colapso de duas causas num código só volta a reprovar aqui.
       expect(recusasEm(desdeAqui)).toEqual([
-        { codigo: CodigoErro.CAMPO_INVALIDO, status: 422 },
-        { codigo: CodigoErro.CAMPO_INVALIDO, status: 422 },
-        { codigo: CodigoErro.CAMPO_INVALIDO, status: 422 },
+        { codigo: CodigoErro.SENHA_DO_MATERIAL_NAO_ABRE, status: 422 },
+        { codigo: CodigoErro.MATERIAL_EM_FORMATO_NAO_SUPORTADO, status: 422 },
+        { codigo: CodigoErro.CERTIFICADO_COM_VALIDADE_ENCERRADA, status: 422 },
       ]);
 
       // A MEDIÇÃO: o arquivo **inteiro**, linha a linha — não apenas o trecho deste caso. Uma linha
@@ -1225,6 +1362,225 @@ describe('o segredo operável não escapa por superfície alguma (T13, ADR-0032)
     },
     LIMITE_CASO_MS,
   );
+
+  it(
+    'CT-1024 — nenhum dos seis desfechos das rotas da fatia carrega material ou senha em corpo, cabeçalho, diário ou documento publicado',
+    async () => {
+      // ---------------------------------------------------------------------------------------
+      // 1. A PRECONDIÇÃO DE PERMISSÃO, afirmada aqui e não só na montagem
+      // ---------------------------------------------------------------------------------------
+      //
+      // O `beforeAll` já a afirma, e reafirmá-la custa uma requisição: sem ela, um `403` nas quatro
+      // rotas seria indistinguível de defeito delas, e as varreduras abaixo correriam sobre quatro
+      // envelopes de recusa — em que não há segredo a vazar porque nada entrou.
+      const sessao = (await naBorda(CAMINHO_DA_SESSAO_CORRENTE, { cookie }))
+        .corpo as SessaoPublicada;
+
+      expect(sessao.telas).toContain(AREA_DAS_INTEGRACOES_BANCARIAS);
+      expect(sessao.acoes).toContain(ACAO_DE_CONFIGURACAO);
+
+      // ---------------------------------------------------------------------------------------
+      // 2. OS MATERIAIS, gerados em execução, e as agulhas do que DE FATO circula
+      // ---------------------------------------------------------------------------------------
+      //
+      // ⚠️ O material aceito é pedido **com a segunda embalagem**, e é a LEGADA que o caso apresenta:
+      // ela é a que o runtime não abre, e portanto a única que faz o registro atravessar o processo
+      // externo de conversão (ADR-0036). Registrar a moderna mediria o caminho em que nenhum
+      // subprocesso chega a ser criado — que é justamente a superfície nova desta fatia.
+      const autoridade = await gerarAutoridadeDeTeste('ct1024');
+      const aceito = await gerarMaterialComEmbalagemLegada(autoridade, SENHA_DO_ACEITO_DO_CT1024);
+      const legado = exigirEmbalagemLegada(aceito);
+      const vencido = await gerarMaterial(
+        autoridade,
+        SENHA_DO_VENCIDO_DO_CT1024,
+        DIAS_DE_VALIDADE_ENCERRADA,
+      );
+      const ilegivel = randomBytes(BYTES_DO_MATERIAL_ILEGIVEL);
+
+      // As nove agulhas, **rotuladas por cenário**: as do segundo material não sobrescrevem as do
+      // primeiro no mapa, e é o nome que a reprovação exibe que diz qual cofre escapou.
+      const agulhas: AgulhasDoCt1024 = {
+        senhaDoAceito: aceito.senha,
+        materialLegadoEmBase64: legado.toString('base64'),
+        recorteDoLegadoEmHexadecimal: recorteEmHexadecimalDe(legado),
+        senhaQueNaoAbre: SENHA_QUE_NAO_ABRE_DO_CT1024,
+        materialIlegivelEmBase64: ilegivel.toString('base64'),
+        recorteDoIlegivelEmHexadecimal: recorteEmHexadecimalDe(ilegivel),
+        senhaDoVencido: vencido.senha,
+        materialVencidoEmBase64: vencido.material.toString('base64'),
+        recorteDoVencidoEmHexadecimal: recorteEmHexadecimalDe(vencido.material),
+      };
+
+      // ---------------------------------------------------------------------------------------
+      // 3. O CONTROLE POSITIVO, ANTES de qualquer afirmação de ausência
+      // ---------------------------------------------------------------------------------------
+      //
+      // A MESMA função de varredura, sobre um objeto em que cada agulha está plantada num canal
+      // diferente — mensagem interpolada, campo aninhado, item de lista e `Buffer` cru inspecionado.
+      // Sem ele, uma varredura quebrada devolveria `[]` e este caso aprovaria um produto vazando
+      // tudo (AP-29). Ele vem primeiro porque `toEqual` aborta o caso ao falhar.
+      expect(ocorrenciasDe(controleComAsAgulhas(agulhas), agulhas)).toEqual(
+        rotulosDoControle(agulhas),
+      );
+
+      // ---------------------------------------------------------------------------------------
+      // 4. O MARCO do diário — a varredura do passo 9 corre sobre o arquivo INTEIRO
+      // ---------------------------------------------------------------------------------------
+      const linhasAntes = (await lerLinhasDoDiario()).length;
+
+      // ---------------------------------------------------------------------------------------
+      // 5. A IDENTIDADE da empresa, pela ROTA REAL — sem ela a ativação recusa antes do desfecho
+      // ---------------------------------------------------------------------------------------
+      //
+      // Afirmada antes de seguir: uma identidade não registrada faria a ativação responder `422` por
+      // pré-condição ausente, e o desfecho varrido não seria o pretendido.
+      const identidadeRegistrada = await naBorda(ROTA_DA_IDENTIDADE, {
+        metodo: 'POST',
+        cookie,
+        corpo: {
+          identificadorDaAplicacao: randomUUID(),
+          numeroDoCliente: NUMERO_DO_CLIENTE_DO_CT1024,
+          numeroDaContaCorrente: NUMERO_DA_CONTA_DO_CT1024,
+          codigoDaModalidade: CODIGO_DA_MODALIDADE_DO_CT1024,
+        },
+      });
+
+      expect(identidadeRegistrada.status).toBe(201);
+
+      // ---------------------------------------------------------------------------------------
+      // 6. OS SEIS DESFECHOS, nesta ordem, **só pela superfície HTTP**
+      // ---------------------------------------------------------------------------------------
+      //
+      // ⚠️ A ordem é conteúdo: o registro aceito é o primeiro porque é ele que dá à empresa o
+      // certificado vigente de que a ativação depende, e as três recusas vêm antes dela para que os
+      // três motivos internos apareçam no diário na ordem em que o passo 10 os afirma.
+      //
+      // ⚠️ O terceiro é **o caminho que atravessa o processo externo**: senha que não abre sobre o
+      // cofre em cifra legada. Com cifra moderna a recusa nasceria no runtime, sem subprocesso
+      // algum; com a legada, o runtime falha pela **cifra** antes de conferir a etiqueta, e a senha
+      // só se manifesta dentro da conversão — que é quem a apresenta ao conversor.
+      const registroAceito = await registrarBytes(legado, aceito.senha);
+      const recusaDeFormato = await registrarBytes(ilegivel, aceito.senha);
+      const recusaDeSenha = await registrarBytes(legado, SENHA_QUE_NAO_ABRE_DO_CT1024);
+      const recusaDeValidade = await registrarBytes(vencido.material, vencido.senha);
+      const ativacao = await naBorda(ROTA_DA_ATIVACAO_DA_ENTREGA, {
+        metodo: 'POST',
+        cookie,
+        corpo: {},
+      });
+      const consultaDaEntrega = await naBorda(ROTA_DO_ESTADO_DA_ENTREGA, { cookie });
+
+      const desfechos = [
+        { rotulo: `POST ${ROTA_DO_REGISTRO} (aceito, com conversão)`, resposta: registroAceito },
+        { rotulo: `POST ${ROTA_DO_REGISTRO} (formato)`, resposta: recusaDeFormato },
+        { rotulo: `POST ${ROTA_DO_REGISTRO} (senha, pelo conversor)`, resposta: recusaDeSenha },
+        { rotulo: `POST ${ROTA_DO_REGISTRO} (validade encerrada)`, resposta: recusaDeValidade },
+        { rotulo: `POST ${ROTA_DA_ATIVACAO_DA_ENTREGA}`, resposta: ativacao },
+        { rotulo: `GET ${ROTA_DO_ESTADO_DA_ENTREGA}`, resposta: consultaDaEntrega },
+      ];
+
+      // ---------------------------------------------------------------------------------------
+      // 7. AS ÂNCORAS ANTIVÁCUO — e cada uma pega o que as outras não pegam
+      // ---------------------------------------------------------------------------------------
+      //
+      // A **contagem** pega a lista truncada; a igualdade de **status na ordem** pega o desfecho que
+      // trocou de lugar; a **não-vacuidade** pega o corpo vazio, sobre o qual varrer não custa nada e
+      // não prova nada; a **impressão digital** prova que o material de fato circulou; e
+      // `materialConvertido` prova que o **processo externo correu** — sem ela, a medição de borda
+      // desta fatia poderia estar correndo sobre o caminho em que nenhum subprocesso é criado.
+      expect(desfechos.length).toBe(DESFECHOS_DO_CT1024);
+      expect(desfechos.map(({ resposta }) => resposta.status)).toEqual(
+        STATUS_DOS_DESFECHOS_DO_CT1024,
+      );
+      expect(
+        desfechos.filter(({ resposta }) => resposta.texto.length === 0).map(({ rotulo }) => rotulo),
+        'desfecho coletado sem corpo algum: varrer o vazio não prova nada',
+      ).toEqual([]);
+      expect((registroAceito.corpo as CertificadoPublicado).impressaoDigital).toBe(
+        aceito.impressaoDigital,
+      );
+      expect((registroAceito.corpo as DesfechoDoRegistroPublicado).materialConvertido).toBe(true);
+
+      // ---------------------------------------------------------------------------------------
+      // 8. A VARREDURA das respostas — desfecho a desfecho, e a falha NOMEIA o desfecho
+      // ---------------------------------------------------------------------------------------
+      //
+      // Desfecho a desfecho, e não sobre a união: uma varredura única diria *"algum corpo vazou"* sem
+      // dizer qual, e é o *onde* que separa o defeito do produto do defeito do arranjo. Cada desfecho
+      // entra em quatro superfícies — texto cru do fio, `JSON.stringify` e `util.inspect` do
+      // desserializado, e a **linha de cabeçalho**.
+      for (const { rotulo, resposta } of desfechos) {
+        expect(
+          ocorrenciasDe(superficiesDaResposta(rotulo, resposta), agulhas),
+          `${rotulo} publicou material ou senha`,
+        ).toEqual([]);
+      }
+
+      // ---------------------------------------------------------------------------------------
+      // 9. O DIÁRIO do processo real, o arquivo INTEIRO, uma superfície por linha
+      // ---------------------------------------------------------------------------------------
+      //
+      // É aqui que a saída e o objeto de erro **crus** do conversor chegariam se a redação não os
+      // alcançasse: o filtro global registra a exceção, e uma exceção que carregasse o que o
+      // subprocesso respondeu levaria junto o que o subprocesso recebeu. O esvaziamento é pelo
+      // mecanismo do próprio registrador — nunca por espera fixa.
+      await esvaziar(registrador);
+
+      const linhas = await lerLinhasDoDiario();
+
+      expect(ocorrenciasDe(superficiesDoDiario(linhas), agulhas)).toEqual([]);
+
+      // ---------------------------------------------------------------------------------------
+      // 10. A TRILHA EXISTE — sem esta linha, a ausência acima poderia ser ausência de LINHA
+      // ---------------------------------------------------------------------------------------
+      //
+      // Os três motivos internos, na ordem das requisições. É a igualdade que separa *"três linhas
+      // saíram"* de *"cada causa saiu com o motivo dela"*, e é ela que impede um registrador calado
+      // de aprovar toda varredura de ausência.
+      //
+      // ⚠️ **Ela é também a ÂNCORA DO CAMINHO DO PROCESSO EXTERNO**, e essa é a leitura que importa
+      // para o AT-3: o segundo motivo é `SENHA_NAO_ABRE` sobre um cofre em cifra **legada**, e esse
+      // par só é produzível **dentro** da conversão. O runtime falha naquele material pela cifra,
+      // antes de conferir a etiqueta de autenticação — se o conversor não tivesse corrido, o motivo
+      // registrado seria `FORMATO_NAO_SUPORTADO`, e esta igualdade reprovaria nomeando a troca. É
+      // por isso que ela não é redundante com o `CT-831`, que exerce o mesmo motivo por outro
+      // caminho.
+      expect(motivosEm(linhas.slice(linhasAntes))).toEqual([
+        MOTIVO_DO_FORMATO,
+        MOTIVO_DA_SENHA,
+        MOTIVO_DO_VENCIDO,
+      ]);
+
+      // ---------------------------------------------------------------------------------------
+      // 11. O DOCUMENTO PUBLICADO das três rotas da fatia tocadas por este caso
+      // ---------------------------------------------------------------------------------------
+      //
+      // O CONTROLE POSITIVO da coleta vem antes, e é o mesmo do CT-832: uma operação plausível que
+      // declara `senha` em `properties`, `material` num exemplo e `pfx` num exemplo dentro de lista.
+      // Sem ele, uma coleta que não descesse aos exemplos devolveria conjunto vazio, e conjunto vazio
+      // não contém chave proibida nenhuma — a varredura aprovaria a própria cegueira.
+      const doControle = chavesDeclaradasEm(OPERACAO_DE_CONTROLE);
+
+      expect(proibidasEntre(doControle)).toEqual(['material', 'pfx', 'senha']);
+
+      // O documento vem da aplicação de PRODUÇÃO — `criarAplicacao()` é quem publica o contrato —, e
+      // não de um `DocumentBuilder` escrito aqui, que descreveria a aplicação do teste (ADR-0016).
+      const documento = await documentoDaAplicacaoDeProducao();
+      const operacoes = [
+        operacaoDoDocumento(documento, ROTA_DO_REGISTRO, 'post'),
+        operacaoDoDocumento(documento, ROTA_DA_ATIVACAO_DA_ENTREGA, 'post'),
+        operacaoDoDocumento(documento, ROTA_DO_ESTADO_DA_ENTREGA, 'get'),
+      ];
+
+      const declaradas = chavesDeclaradasEm(operacoes);
+
+      // A âncora antivácuo do recorte: as três operações existem e declaram campo. `operacaoDoDocumento`
+      // já levanta quando a rota some, e esta linha pega o caso em que ela existe e nada declara.
+      expect(declaradas.size).toBeGreaterThan(0);
+      expect(proibidasEntre(declaradas)).toEqual([]);
+    },
+    LIMITE_CASO_MS,
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -1272,6 +1628,36 @@ function agulhasDo(material: MaterialDeTeste): AgulhasDoAto {
  * faz uma agulha nova do ato vencido precisar ser **nomeada aqui** para existir.
  */
 type AgulhasDoAtoVencido = {
+  readonly senhaDoVencido: string;
+  readonly materialVencidoEmBase64: string;
+  readonly recorteDoVencidoEmHexadecimal: string;
+};
+
+/**
+ * As **nove** agulhas do CT-1024, uma por forma e por cenário, todas nomeadas por extenso.
+ *
+ * Declarar o tipo, em vez de devolver `Record<string, string>`, é o que faz uma agulha nova precisar
+ * ser **nomeada aqui** para existir — a mesma razão de {@link AgulhasDoAto}. E os nomes são por
+ * cenário porque quatro materiais circulam no mesmo caso: é o nome da agulha que a reprovação exibe,
+ * e é ele que diz qual dos quatro escapou.
+ *
+ * ⚠️ **As nove são mutuamente não-substring**, e a propriedade é o que sustenta o controle positivo:
+ * as três senhas são de famílias textuais distintas, os três base64 são de cofres distintos, e os
+ * três recortes saem em **hexadecimal** da METADE de cada cofre — do começo eles seriam do emissor
+ * comum, e o controle reprovaria por excesso (ver {@link BYTES_DO_RECORTE}).
+ *
+ * ⚠️ **O material do primeiro cenário é o da embalagem LEGADA**, e não o moderno do mesmo par: é a
+ * legada que o corpo da requisição carregou, e a agulha tem de ser do dado que **de fato circulou**
+ * (A7). O convertido que o produto guarda é outro artefato, e este caso não o conhece — quem prova
+ * que o guardado é cifra é o CT-833.
+ */
+type AgulhasDoCt1024 = {
+  readonly senhaDoAceito: string;
+  readonly materialLegadoEmBase64: string;
+  readonly recorteDoLegadoEmHexadecimal: string;
+  readonly senhaQueNaoAbre: string;
+  readonly materialIlegivelEmBase64: string;
+  readonly recorteDoIlegivelEmHexadecimal: string;
   readonly senhaDoVencido: string;
   readonly materialVencidoEmBase64: string;
   readonly recorteDoVencidoEmHexadecimal: string;
@@ -1708,6 +2094,90 @@ async function registrarMaterial(material: MaterialDeTeste): Promise<Resposta> {
 }
 
 /**
+ * Gera o material pedindo, na MESMA chamada, a segunda embalagem: a cifra legada que a AC entrega.
+ *
+ * As duas embalam o **mesmo** par chave/certificado — mesma série, mesma validade, mesma impressão
+ * digital —, e é essa igualdade que dá conteúdo à âncora do CT-1024: a impressão digital publicada
+ * pelo registro da legada é a que o `openssl` declarou para o par.
+ */
+async function gerarMaterialComEmbalagemLegada(
+  autoridade: AutoridadeDeTeste,
+  senha: string,
+): Promise<MaterialDeTeste> {
+  return await gerarMaterialDeTeste({
+    autoridade,
+    senha,
+    diasDeValidade: DIAS_DE_VALIDADE,
+    comEmbalagemLegada: true,
+  });
+}
+
+/**
+ * Exige a embalagem legada do material, e **levanta** quando ela não veio.
+ *
+ * O campo é opcional no acessório, e um `?? material.material` silencioso faria o caso registrar a
+ * embalagem MODERNA acreditando ter registrado a legada — o registro passaria sem criar subprocesso
+ * algum, e a medição de borda da superfície nova desta fatia ficaria vácua sem que nada acusasse.
+ */
+function exigirEmbalagemLegada(material: MaterialDeTeste): Buffer {
+  if (material.materialEmEmbalagemLegada === undefined) {
+    throw new Error('o material foi gerado sem a embalagem legada que este caso exige');
+  }
+
+  return material.materialEmEmbalagemLegada;
+}
+
+/**
+ * Registra **bytes arbitrários** pela rota real — o caminho de quem apresenta o que quiser.
+ *
+ * Ela existe ao lado de {@link registrarMaterial} porque o CT-1024 apresenta, nas quatro requisições
+ * de registro, coisas que **não** são o campo `material` de um {@link MaterialDeTeste}: a embalagem
+ * legada, bytes que não são cofre algum, e o mesmo cofre com uma senha que não o abre.
+ */
+async function registrarBytes(bytes: Buffer, senha: string): Promise<Resposta> {
+  return await naBorda(ROTA_DO_REGISTRO, {
+    metodo: 'POST',
+    cookie,
+    corpo: { material: bytes.toString('base64'), senha },
+  });
+}
+
+/**
+ * Executa a requisição pelo cliente da **casa comum** e devolve a resposta na forma deste arquivo.
+ *
+ * Ela é adaptação, e não um segundo cliente: quem fala HTTP é {@link pedirNaBorda}, de
+ * `./acessorios-de-borda.ts`. O que muda é só a forma dos cabeçalhos — lá eles vêm como `Headers`,
+ * aqui como a lista de pares que {@link superficiesDaResposta} inspeciona —, e converter aqui é o
+ * que permite ao bloco novo usar o cliente compartilhado **sem** reescrever a varredura nem os seis
+ * casos anteriores, que continuam no {@link pedir} privado.
+ */
+// DÉBITO COM GATILHO — D40 · F5/T9 · registrado 2026-08-22
+// (NÃO é uma `DECISÃO FECHADA`: ele agenda uma convergência, não protege o código abaixo.)
+// O QUÊ: esta suíte tem DUAS formas de falar HTTP — o `pedirNaBorda` da casa comum
+//        (`./acessorios-de-borda.ts`), usado pelo `CT-1024` através desta adaptação, e o `pedir`
+//        PRIVADO do arquivo, que os seis casos anteriores ainda usam. Duas formas equivalentes sem
+//        critério escrito convidam a próxima task a copiar a privada — que é exatamente o mecanismo
+//        que fez o cliente HTTP nascer em quase toda suíte de borda (ver a convenção "acessório de
+//        suíte se importa, não se copia" do `CLAUDE.md`).
+// QUANDO FECHA: a primeira task autorizada a abrir este arquivo por outra razão converte os SEIS
+//        casos remanescentes para `pedirNaBorda` e remove o `pedir` privado. O alias já foi escolhido
+//        para que a conversão não precise renomear as chamadas novas.
+// POR QUE NÃO AGORA: a §5.2 do card da T9 não prevê a conversão, e reescrever seis casos de prova de
+//        segredo é superfície de regressão que ninguém pediu (§4.5 do Protocolo).
+// ÍNDICE: docs/specs/features/integracao-bancaria-autonoma/v1/_run/run-report.md §2, D40
+async function naBorda(alvo: string, opcoes: OpcoesDoPedido = {}): Promise<Resposta> {
+  const resposta: RespostaDaBorda = await pedirNaBorda(base, alvo, opcoes);
+
+  return {
+    status: resposta.status,
+    texto: resposta.texto,
+    corpo: resposta.corpo,
+    cookies: resposta.cookies,
+    cabecalhos: [...resposta.cabecalhos],
+  };
+}
+
+/**
  * Executa e devolve o par (o que voltou, o que foi levantado).
  *
  * Existe para que o CT-833 possa afirmar as **duas** metades do desfecho: que a exceção é a esperada
@@ -1733,6 +2203,18 @@ interface SessaoPublicada {
 interface CertificadoPublicado {
   readonly id: string;
   readonly impressaoDigital: string;
+}
+
+/**
+ * O desfecho do **registro**, no recorte que o CT-1024 lê dele.
+ *
+ * Ele é distinto de {@link CertificadoPublicado} porque `materialConvertido` é declaração do **ato**,
+ * e não do certificado: a consulta não o publica. Lê-lo é a âncora de que o processo externo de
+ * conversão de fato correu — sem ela, a medição de borda desta fatia poderia estar sobre o caminho
+ * em que nenhum subprocesso é criado.
+ */
+interface DesfechoDoRegistroPublicado {
+  readonly materialConvertido: boolean;
 }
 
 interface ResultadoPublicado {

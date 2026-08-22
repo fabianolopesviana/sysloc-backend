@@ -490,6 +490,9 @@ const produtorInstrumentado: ProdutorDeFila = {
   async enfileirarConferenciaBancaria(): Promise<void> {
     throw new Error('a suíte da notícia bancária não enfileira conferência bancária');
   },
+  async enfileirarReconferenciaDaEntrega(): Promise<void> {
+    throw new Error('a suíte da notícia bancária não enfileira reconferência da entrega');
+  },
   async enfileirarNotificacaoBancaria(carga: CargaDaNotificacaoBancaria): Promise<void> {
     // A carga é registrada ANTES da eventual falha: é ela que prova que a borda chegou a compor o
     // pedido de enfileiramento, e não que desistiu antes.

@@ -157,7 +157,24 @@ export class ErroDeContadorForaDaLargura extends Error {
 export function comporIdentificadorBancario(competencia: number, contador: number): string {
   const competenciaEmTexto = String(competencia);
 
-  if (competenciaEmTexto.length !== LARGURA_DA_COMPETENCIA) {
+  // DECISÃO FECHADA — D21 · F4/T6 · fechado na intervenção dirigida de 2026-08-22
+  // O QUÊ: a competência é conferida como VALOR — inteiro não-negativo — antes de o comprimento do
+  //        texto dela ser medido.
+  // POR QUÊ: conferir só `String(competencia).length` mede a representação, e não a forma. Três
+  //        classes de valor passavam com seis caracteres e compunham 18 caracteres que NÃO são 18
+  //        dígitos: o negativo (`-20268`), o fracionário (`2026.5`) e o exponencial. A cadeia
+  //        resultante é a que o `ESQUEMA_DO_IDENTIFICADOR_BANCARIO` (`^[0-9]{18}$`) recusaria — e o
+  //        docblock acima afirma que ela não existe nem como intermediária.
+  // REVERTER EXIGE: provar que nenhum produtor de competência alcança valor não-inteiro ou negativo
+  //        — hoje o único é `proximoIdentificadorBancario`, mas o símbolo sai pelo barril de
+  //        `@sysloc/db` e quem decompuser e recompuser um identificador alcança valor calculado.
+  // A forma é a MESMA da guarda do contador, logo abaixo: as duas mediam coisas diferentes, e a
+  // divergência é que deixava esta para trás.
+  if (
+    !Number.isInteger(competencia) ||
+    competencia < 0 ||
+    competenciaEmTexto.length !== LARGURA_DA_COMPETENCIA
+  ) {
     // Sem o valor na mensagem, de propósito: ela pode alcançar o registro estruturado.
     throw new RangeError('a competência do identificador perante o provedor não tem `AAAAMM`');
   }

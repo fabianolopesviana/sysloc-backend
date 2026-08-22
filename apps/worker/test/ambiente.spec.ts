@@ -159,6 +159,15 @@ import { controleComAsAgulhas, ocorrenciasDe, rotulosDoControle } from './varred
  * Nenhuma asserção foi afrouxada — as duas tabelas de caso percorrem a lista e passam a cobrar
  * **também** as três novas, o `CT-936` acrescenta o eixo de **forma** de duas delas, e a âncora
  * antivácuo do `CT-643` segue comparando este conjunto com o que a execução revela.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T8 da fatia `integracao-bancaria-autonoma` leva a exigência de **dez a
+ * onze**, e a razão é a mesma das anteriores — a natureza do processo mudou outra vez: ele passou a
+ * **reconferir a entrega da notícia** depois de um certificado novo, e a porta de entrega recusa
+ * falar sem `ENDERECO_DA_ENTREGA_DA_NOTICIA` declarado. Sem a variável, a fila nova ficaria de pé
+ * consumindo tarefa que nunca consegue reconferir. O valor já chegava fisicamente a este processo —
+ * o `EnvironmentFile` é compartilhado com o serviço de aplicação, que a exige desde a T7 —, e o que
+ * faltava era consumo declarado. Nenhuma asserção foi afrouxada, nenhuma variável saiu da lista, e a
+ * âncora antivácuo do `CT-643` segue comparando este conjunto com o que a execução revela.
  */
 const VARIAVEIS_EXIGIDAS = [
   'LOG_LEVEL',
@@ -170,6 +179,8 @@ const VARIAVEIS_EXIGIDAS = [
   'CHAVE_DE_CIFRA_DO_CERTIFICADO',
   'ENDERECO_DO_PROVEDOR_BANCARIO',
   'ENDERECO_DE_AUTORIZACAO_BANCARIA',
+  'ENDERECO_DA_ENTREGA_DA_NOTICIA',
+  'CONTATO_DA_ENTREGA_DA_NOTICIA',
   'DIRETORIO_DOS_BOLETOS',
 ] as const;
 
@@ -181,7 +192,12 @@ const VARIAVEIS_EXIGIDAS = [
  * *número escrito à mão* × *lista escrita à mão* que faz a mudança ser deliberada, e é o `CT-643`
  * que amarra os dois ao que a **execução** de `lerAmbiente` revela.
  */
-const QUANTIDADE_DE_VARIAVEIS_EXIGIDAS = 10;
+// SUT_IS_CORRECT_BECAUSE: a intervenção dirigida de 2026-08-22 acrescenta
+// `CONTATO_DA_ENTREGA_DA_NOTICIA` à partida dos DOIS processos — o provedor a declara necessária no
+// cadastro da entrega (`W2`) —, e o número passa de 11 a 12. O par *número à mão* × *lista à mão*
+// continua sendo o que torna a mudança deliberada, e o `CT-643` continua amarrando os dois à
+// execução real. Nada foi afrouxado.
+const QUANTIDADE_DE_VARIAVEIS_EXIGIDAS = 12;
 
 /** Senha embutida nas cadeias de conexão, para provar que a falha não a ecoa. */
 const SENHA_NA_CADEIA = 'segredoQueNaoPodeVazar';
@@ -199,6 +215,22 @@ const CHAVE_DE_CIFRA_SENTINELA = 'Y2hhdmUtZGUtY2lmcmEtZG8tY3Q5MzYtc2VudGluZSE=';
 const ENDERECO_DO_PROVEDOR = 'https://provedor.exemplo.invalid';
 /** O endereço de AUTORIZAÇÃO da sonda — máquina distinta da API, como no provedor real. */
 const ENDERECO_DE_AUTORIZACAO = 'https://autorizacao.exemplo.invalid';
+/**
+ * O endereço público **deste produto** para onde o banco entrega a notícia.
+ *
+ * Distinto dos dois acima de propósito: ele não é do provedor, e um valor igual faria a asserção de
+ * origem por campo passar mesmo se a leitura trocasse uma variável pela outra.
+ */
+const ENDERECO_DA_ENTREGA = 'https://app.exemplo.invalid/v1/notificacoes-bancarias';
+
+/**
+ * O contato operacional do cadastro da entrega — a outra metade do endereço acima.
+ *
+ * O provedor o declara **necessário** no cadastro do webhook (`W2`, 2026-08-22). A **forma** dele não
+ * é conferida neste processo, e sim na partida da `api`, num lugar só — aqui a exigência é de
+ * presença, como a das irmãs deste bloco.
+ */
+const CONTATO_DA_ENTREGA = 'operacao@sysloc.exemplo.invalid';
 
 /**
  * Um diretório **absoluto, existente e gravável** — o que a conferência de partida exige.
@@ -231,6 +263,12 @@ function ambienteCompleto(): Record<string, string> {
     CHAVE_DE_CIFRA_DO_CERTIFICADO: CHAVE_DE_CIFRA_SENTINELA,
     ENDERECO_DO_PROVEDOR_BANCARIO: ENDERECO_DO_PROVEDOR,
     ENDERECO_DE_AUTORIZACAO_BANCARIA: ENDERECO_DE_AUTORIZACAO,
+    // O endereço PÚBLICO DESTE PRODUTO, e não do provedor: é o destino que o cadastro da entrega
+    // declara junto ao banco. Ver {@link ENDERECO_DA_ENTREGA}.
+    ENDERECO_DA_ENTREGA_DA_NOTICIA: ENDERECO_DA_ENTREGA,
+    // A outra metade da mesma capacidade: o provedor declara o contato necessário no cadastro, e é
+    // por ele que avisa quando inativa o webhook. Ver {@link CONTATO_DA_ENTREGA}.
+    CONTATO_DA_ENTREGA_DA_NOTICIA: CONTATO_DA_ENTREGA,
     // Um diretório REAL, e não um caminho inventado: diferente de todas as demais, esta conferência
     // toca o disco. Ver {@link DIRETORIO_DOS_BOLETOS_ACEITAVEL}.
     DIRETORIO_DOS_BOLETOS: DIRETORIO_DOS_BOLETOS_ACEITAVEL,
@@ -363,12 +401,18 @@ describe('lerAmbiente (T6 · CA-15)', () => {
     );
     expect(ambiente.enderecoDoProvedorBancario).toBe(fonte.ENDERECO_DO_PROVEDOR_BANCARIO);
     expect(ambiente.enderecoDeAutorizacaoBancaria).toBe(fonte.ENDERECO_DE_AUTORIZACAO_BANCARIA);
+    // A da T8 desta fatia: o endereço da entrega chega como veio, e é DISTINTO dos dois do provedor
+    // — é essa distinção que faz a asserção reprovar se a leitura trocar uma variável pela outra.
+    expect(ambiente.enderecoDaEntregaDaNoticia).toBe(fonte.ENDERECO_DA_ENTREGA_DA_NOTICIA);
+    expect(ambiente.contatoDaEntregaDaNoticia).toBe(fonte.CONTATO_DA_ENTREGA_DA_NOTICIA);
     expect(ambiente.diretorioDosBoletos).toBe(fonte.DIRETORIO_DOS_BOLETOS);
     expect(Object.keys(ambiente).sort()).toEqual([
       'cadeiaConexaoBanco',
       'cadeiaConexaoFila',
       'chaveDeCifraDoCertificado',
+      'contatoDaEntregaDaNoticia',
       'diretorioDosBoletos',
+      'enderecoDaEntregaDaNoticia',
       'enderecoDeAutorizacaoBancaria',
       'enderecoDoProvedorBancario',
       'nivelDeLog',
@@ -501,6 +545,8 @@ function configuracaoEsperada(
     chaveDeCifraDoCertificado: Buffer.from(fonte.CHAVE_DE_CIFRA_DO_CERTIFICADO as string, 'base64'),
     enderecoDoProvedorBancario: fonte.ENDERECO_DO_PROVEDOR_BANCARIO,
     enderecoDeAutorizacaoBancaria: ENDERECO_DE_AUTORIZACAO,
+    enderecoDaEntregaDaNoticia: fonte.ENDERECO_DA_ENTREGA_DA_NOTICIA,
+    contatoDaEntregaDaNoticia: fonte.CONTATO_DA_ENTREGA_DA_NOTICIA,
     diretorioDosBoletos: fonte.DIRETORIO_DOS_BOLETOS,
   };
 }
@@ -660,14 +706,25 @@ const FORMAS_RECUSADAS_DO_DIRETORIO = [
 ] as const;
 
 /**
- * Quantas recusas a varredura do `CT-936` percorre — **quinze**, escritas por extenso.
+ * Quantas recusas a varredura do `CT-936` percorre — **dezoito**, escritas por extenso.
  *
- * Nove ausências, três formas recusadas da chave de cifra e três do diretório. O número não é
+ * Doze ausências, três formas recusadas da chave de cifra e três do diretório. O número não é
  * derivado das três constantes que constroem a lista: derivá-lo faria a asserção concordar consigo
  * mesma, que é o defeito que ela existe para não ter. Mesmo critério de
  * {@link QUANTIDADE_DE_VARIAVEIS_EXIGIDAS}.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a T8 da fatia `integracao-bancaria-autonoma` acrescenta a décima primeira
+ * variável exigida (`ENDERECO_DA_ENTREGA_DA_NOTICIA`), e a varredura percorre `VARIAVEIS_EXIGIDAS`
+ * — de modo que a recusa dela entra sozinha na lista e o número escrito à mão precisa acompanhar,
+ * no MESMO diff. Nenhuma asserção foi afrouxada: a varredura continua exigindo que nenhuma das
+ * recusas ecoe valor algum, agora sobre uma recusa a mais.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a intervenção dirigida de 2026-08-22 acrescenta a **décima segunda**
+ * variável exigida (`CONTATO_DA_ENTREGA_DA_NOTICIA`, o `W2`), pela mesma mecânica: a varredura
+ * percorre `VARIAVEIS_EXIGIDAS`, a recusa dela entra sozinha, e o número à mão acompanha no MESMO
+ * diff. De dezessete para dezoito. Nada foi afrouxado.
  */
-const QUANTIDADE_DE_RECUSAS_VARRIDAS = 16;
+const QUANTIDADE_DE_RECUSAS_VARRIDAS = 18;
 
 /** Cria um arquivo comum gravável e devolve o caminho dele — o negativo de "é diretório?". */
 function criarArquivoComumDescartavel(): string {
@@ -752,7 +809,7 @@ describe('CT-936 (T16 · CA-20) — a partida do processo de trabalho exige as t
     },
   );
 
-  it('CT-936 — NENHUMA das dezesseis recusas ecoa o valor recebido, inclusive a chave de cifra', () => {
+  it('CT-936 — NENHUMA das dezoito recusas ecoa o valor recebido, inclusive a chave de cifra', () => {
     // A varredura sobre TODOS os eixos de recusa de uma vez, com as sentinelas afirmadas por
     // ausência. Ela é o que impede a disciplina de valer "para as que alguém lembrou de conferir".
     const recusas = [

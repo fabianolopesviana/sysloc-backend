@@ -263,7 +263,19 @@ Status: **FATIA CONCLUÍDA** · 7/7 tasks aprovadas nos dois gates · bateria de
 - **Impacto:** quem abrir a T6 conclui que CT-005, CT-006 e CT-007 não existem — inclusive a T7, que precisa saber que o CA-15 já tem prova de unidade do lado do processador. Vale também para a colisão de identificador: a T7 declara um CT-006 próprio e a §5 da T6 não registra que o número já foi usado.
 - **O que fazer:** acrescentar à §5.5 as linhas `§4 (desligamento gracioso) → CT-005` e `CA-15 → CT-006, CT-007`, e um card curto por caso novo na §5.6 — adição pura, sem tocar nos quatro originais.
 
-### D34 · baixo · error_handling · T6 · Tech Review
+### D34 · baixo · error_handling · T6 · Tech Review · ✅ **FECHADO — pago em `d346a6f`, registrado na intervenção dirigida de 2026-08-22**
+
+> **Como fechou:** o código **já estava correto** desde o commit `d346a6f` (fatia
+> `regua-de-cobranca`), que introduziu `devolverRecursos(...).catch(...)` antes do `throw erro`
+> — exatamente a forma que este bloco prescrevia. O que faltava era a **escrituração**: o fecho
+> aconteceu noutra fatia e nunca voltou a esta §2. A intervenção de 2026-08-22 apenas mediu,
+> confirmou por `git log -S`, e instalou a rede que faltava.
+>
+> **Rede (P4):** marcador `DECISÃO FECHADA` no ponto (`apps/worker/src/main.ts`), e não um caso
+> — `main.ts` é a composição raiz e não tem unidade que a exercite. A rede **executável** fica
+> agendada pelo gatilho do **`D38 · F5/T8`**, que é quem extrai a composição em unidade
+> testável; o caso desta garantia entra junto quando ele disparar. Deliberadamente **não** se
+> abriu débito novo: seria segunda entrada para a dívida que o D38 já carrega.
 - **Onde:** `apps/worker/src/main.ts:169-173`
 - **Problema:** no caminho de falha de partida, `catch (erro) { await fila.encerrar(); throw erro; }` — se `fila.encerrar()` rejeitar, o `throw erro` **nunca executa** e o que sobe é a rejeição da limpeza. A mensagem que chega ao `stderr` passa a descrever a limpeza, não a causa. O cenário é real: neste ponto o cliente foi construído mas a conexão é assíncrona, e `close()` é exatamente a chamada que o P1 mostrou ser capaz de travar contra servidor inalcançável.
 - **Impacto:** diagnóstico perdido num caminho de partida, com o processo já saindo com código 1. Baixo por ser pouco frequentado — **mas é o caminho que a T7 vai exercitar quando a unidade subir antes da fila**.

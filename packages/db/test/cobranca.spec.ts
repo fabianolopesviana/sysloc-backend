@@ -523,7 +523,15 @@ const UNIDADES_DECLARADAS: readonly string[] = Object.freeze([
  * estado do legado **não existem** em `negocio.cobranca`, de modo que não há onde uma rotina
  * escrevesse estado publicado.
  *
- * A asserção **não afrouxa**: segue por igualdade sobre a lista inteira, de modo que uma sétima fila —
+ * SUT_IS_CORRECT_BECAUSE: a **T8** da fatia `integracao-bancaria-autonoma` declara
+ * `reconferencia-da-entrega`, e o código de produção está certo. Ela é a fila mais distante do que a
+ * ADR-0022 proíbe: **não toca a cobrança em ponto algum** — o que ela lê e grava é a linha de
+ * `negocio.entrega_da_noticia`, que descreve o canal de aviso do provedor —, e o disparo dela é
+ * **ato do Admin** numa rota que exige sessão (o registro de um certificado novo), nunca um relógio.
+ * O agendamento periódico dela está declarado fora do escopo desta fatia. O Passo 4 deste mesmo caso
+ * continua provando que as quatro colunas de estado do legado **não existem** em `negocio.cobranca`.
+ *
+ * A asserção **não afrouxa**: segue por igualdade sobre a lista inteira, de modo que uma oitava fila —
  * uma `cobranca-vencida`, que é a forma exata do defeito — reprova o caso nomeando-a.
  */
 const FILAS_DECLARADAS: readonly string[] = Object.freeze([
@@ -532,6 +540,7 @@ const FILAS_DECLARADAS: readonly string[] = Object.freeze([
   'eco',
   'emissao-em-lote',
   'notificacao-bancaria',
+  'reconferencia-da-entrega',
   'regua-de-cobranca',
 ]);
 

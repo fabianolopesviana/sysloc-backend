@@ -1,7 +1,7 @@
 /**
  * Verificação do **vocabulário canônico** publicado pelo domínio da cobrança bancária — CT-809,
- * CT-834 e CT-835 da fatia `fundacao-bancaria`, mais o CT-933 da fatia `emissao-e-conciliacao` e o
- * CT-991 da fatia `webhook-e-carne`.
+ * CT-834 e CT-835 da fatia `fundacao-bancaria`, mais o CT-933 da fatia `emissao-e-conciliacao`, o
+ * CT-991 da fatia `webhook-e-carne` e o CT-1032 da fatia `integracao-bancaria-autonoma`.
  *
  * ---------------------------------------------------------------------------
  * INVARIANTES
@@ -48,9 +48,19 @@
  * |          |        | varredura **não** alcança o acesso de propriedade sobre o corpo recebido,
  * |          |        | que é a fronteira de tradução — as duas metades são afirmadas por
  * |          |        | igualdade sobre um fonte de controle. (ADR-0001, ADR-0034) |
+ * | CA-18    |CT-1032 | `PortaDeEntregaDaNoticia` declara **exatamente duas** operações —
+ * |          |        | `cadastrarEntrega` e `consultarEntrega` —, e a implementação de referência
+ * |          |        | anotada com o tipo tem exatamente essas chaves. Nenhum termo do dialeto do
+ * |          |        | provedor aparece em **posição de símbolo publicado** nos **quatro** módulos
+ * |          |        | da fatia `integracao-bancaria-autonoma`, e o nome que a ADR-0001 reserva
+ * |          |        | **não nomeia nada** dos fontes dela — a porta irmã recebe nome próprio. A
+ * |          |        | varredura, aplicada ao fonte de controle, acha os quatro plantados em
+ * |          |        | posição publicada e **não** acusa os três da fronteira de tradução, que é o
+ * |          |        | que afirma a ausência de conflito entre o portador opaco do motivo e a
+ * |          |        | cláusula de vocabulário. (ADR-0001, ADR-0025, ADR-0034) |
  *
  * Rastreabilidade: `CA-13 → CT-809, CT-834 (RN-10)` · `CA-14 → CT-835 (RN-11)` ·
- * `CA-20 → CT-933 (RN-15)` · `CA-21 → CT-991 (RN-18)`.
+ * `CA-20 → CT-933 (RN-15)` · `CA-21 → CT-991 (RN-18)` · `CA-18 → CT-1032 (RN-01, RN-02)`.
  *
  * ---------------------------------------------------------------------------
  * Estes casos são ESTÁTICOS, e a razão é que interface não existe em execução
@@ -145,6 +155,7 @@ import {
 } from '@sysloc/contracts';
 import { describe, expect, it } from 'vitest';
 import type { AdaptadorCobrancaBancaria } from '../src/porta-de-cobranca.ts';
+import type { PortaDeEntregaDaNoticia } from '../src/porta-de-entrega-da-noticia.ts';
 import type { PortaDeIdentidadeBancaria } from '../src/porta-de-identidade.ts';
 // A comparação de conjuntos subiu para a casa única do diretório com a T10 — ver o cabeçalho de
 // `./conjuntos.ts` para o limiar de três que a fez sair daqui (débito **D29**).
@@ -196,6 +207,17 @@ const LITERAIS_DO_MODELO = [
   'LIQUIDADO',
   'REVOGADO',
   'ESTORNADO',
+  // ⚠️ Os SETE da leitura da entrega, que a `0025` acrescentou. Eles são o eixo desta asserção, e
+  // não a exceção dela: cada um é **vocabulário do produto**, em português, e nenhum nomeia campo,
+  // código ou recurso do provedor. É o que a ADR-0001 exige de tudo o que cruza a porta — e é
+  // justamente aqui que se prova, porque a leitura ternária é a superfície nova mais larga da fatia.
+  'NAO_RESPONDEU',
+  'SEM_CADASTRO',
+  'ATIVA',
+  'EM_VALIDACAO',
+  'INATIVA',
+  'ENDERECO_DIVERGENTE',
+  'DE_TERCEIRO',
 ] as const;
 
 /** Os meios de recebimento que o produto declara (RN-11), na ordem publicada. */
@@ -331,6 +353,87 @@ const MODULOS_DA_FATIA = [
 ] as const;
 
 /**
+ * Os **quatro módulos** sobre cujo TEXTO o CT-1032 incide — os que a fatia
+ * `integracao-bancaria-autonoma` criou ou alargou, mais o contrato que ela publica.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que uma constante NOVA, e não `MODULOS_DA_FATIA` estendida
+ * ---------------------------------------------------------------------------
+ *
+ * Aquela lista é declarada, por escrito, como *"os três módulos que a fatia `webhook-e-carne`
+ * acrescentou"*, e o CT-991 varre exatamente esses três. Acrescentar-lhe os quatro daqui teria dois
+ * custos concretos: o docblock dela passaria a mentir sobre o conjunto que nomeia — que é o vetor
+ * clássico da regressão de decisão —, e o laço do CT-991 varreria os mesmos quatro módulos que o
+ * laço abaixo já varre, o que é um caso semanticamente duplicado (AP-26). O que **se reusa** é a
+ * maquinaria — `vocabularioPublicadoDe`, `ocorrenciasDeTermos`, `TERMOS_DO_DIALETO` e o fonte de
+ * controle —, e é ela que a convenção manda importar em vez de copiar.
+ *
+ * Dois deles vivem no pacote irmão do contrato, e são alcançados por **leitura de arquivo** — nunca
+ * por `import`. A distinção importa: ler o texto não cria dependência de módulo alguma, e por isso
+ * este caso não abre a fronteira que o `CT-809 (d)` fecha.
+ *
+ * Cada entrada traz, escritos à mão, **três símbolos do produto** que aquele módulo publica. Eles são
+ * a âncora antivácuo do caso: *"nenhum termo do dialeto"* seria satisfeito por um extrator que
+ * devolvesse `[]`, e é essa a forma clássica de uma varredura aprovar tudo por não ter olhado
+ * (AP-29). Uma contagem mínima não bastaria — ela não diz de QUAL arquivo o vocabulário veio.
+ */
+const MODULOS_DA_ENTREGA = [
+  {
+    caminho: '../../contracts/src/integracao-bancaria.ts',
+    publica: ['ESTADOS_DA_ENTREGA', 'esquemaDoEstadoDaEntrega', 'esquemaDoMotivoDaRecusa'],
+  },
+  {
+    caminho: '../src/conversao-do-material.ts',
+    publica: [
+      'converterMaterialSeNecessario',
+      'MaterialPreparado',
+      'MOTIVO_DO_FORMATO_NAO_SUPORTADO',
+    ],
+  },
+  {
+    caminho: '../src/modelo-canonico.ts',
+    publica: [
+      'EntregaParaCadastrar',
+      'ResultadoDaOperacaoDeEntrega',
+      'MotivoDaRecusaDoProvedor',
+      'LeituraDaEntrega',
+      'ReferenciaDoCadastroDaEntrega',
+    ],
+  },
+  {
+    caminho: '../src/porta-de-entrega-da-noticia.ts',
+    publica: [
+      'PortaDeEntregaDaNoticia',
+      'cadastrarEntrega',
+      'consultarEntrega',
+      'atualizarEnderecoDaEntrega',
+      'reativarEntrega',
+    ],
+  },
+] as const;
+
+/**
+ * As **duas** operações da porta de entrega da notícia, na ordem em que a interface as declara.
+ *
+ * Escritas à mão, e jamais derivadas da própria interface — derivar poria o artefato sob prova nos
+ * dois lados da igualdade, e a asserção passaria a não poder falhar.
+ *
+ * ⚠️ **São duas, e não três.** Não existe `desabilitarEntrega`: o provedor não oferece a operação, e
+ * o produto não modela o que não pode cumprir. A igualdade de lista abaixo é justamente o que impede
+ * uma terceira assinatura de aparecer sem que ninguém decida.
+ */
+// SUT_IS_CORRECT_BECAUSE: a `0025` declara as DUAS operações que faltavam — corrigir o endereço e
+// reativar —, e elas são a saída do impasse que a comparação de endereço abriria sozinha. A asserção
+// **não foi afrouxada**: continua sendo igualdade de lista ordenada mais contagem exata, agora com
+// quatro, e a costura entre a ponta de tipo e a de texto segue valendo palavra por palavra.
+const OPERACOES_DA_PORTA_DE_ENTREGA = [
+  'cadastrarEntrega',
+  'consultarEntrega',
+  'atualizarEnderecoDaEntrega',
+  'reativarEntrega',
+] as const;
+
+/**
  * Um fonte sintético com o dialeto plantado nas **quatro posições de símbolo publicado** — e, junto,
  * nas três posições que NÃO são publicação.
  *
@@ -399,7 +502,7 @@ const carregar = async () => import('@sysloc/db');
 `;
 
 /**
- * O inventário **completo** da superfície publicada por `src/index.ts` — os 44 símbolos, escritos
+ * O inventário **completo** da superfície publicada por `src/index.ts` — os 49 símbolos, escritos
  * por extenso e jamais derivados do barril.
  *
  * ⚠️ **Eram 26 até a T9 da fatia (ii)**, que publicou a guarda de boletos: `criarGuardaDeBoletos` e
@@ -410,7 +513,13 @@ const carregar = async () => import('@sysloc/db');
  * `conferirCobrancas`, `TrabalhoDaConferencia`, `DesfechoDaConferencia` e `EfeitoDaConferencia`; e
  * **41 até a T4 da fatia (iii)**, que publicou o tratamento da notícia —
  * `classificarNotificacaoBancaria`, `ehReentregaDeEfeitoAplicado` e
- * `NotificacaoBancariaClassificada`. A contagem em prosa sobe **no mesmo diff** da constante, como
+ * `NotificacaoBancariaClassificada`; e **49 com a T1 da fatia `integracao-bancaria-autonoma`**, que
+ * publicou a conversão do material — `converterMaterialSeNecessario`, `MaterialPreparado`,
+ * `ErroDeFormatoDoMaterial`, `MOTIVO_DO_FORMATO_NAO_SUPORTADO` e `RADICAL_DE_SENHA_DO_CONVERSOR`;
+ * e **53 com a T5 da mesma fatia**, que publicou a entrega da notícia — a porta irmã
+ * `PortaDeEntregaDaNoticia` e os três tipos que a atravessam (`EntregaParaCadastrar`,
+ * `ResultadoDaOperacaoDeEntrega` e `MotivoDaRecusaDoProvedor`).
+ * A contagem em prosa sobe **no mesmo diff** da constante, como
  * a `.claude/rules/ancoras-de-superficie.md` exige — número narrativo que fica para trás convida a
  * próxima task a "corrigir" a âncora executável para o valor errado.
  *
@@ -440,6 +549,12 @@ const SIMBOLOS_PUBLICADOS = [
   'EfeitoDaConferencia',
   'TrabalhoDaConferencia',
   'conferirCobrancas',
+  // conversao-do-material.ts
+  'MaterialPreparado',
+  'converterMaterialSeNecessario',
+  'ErroDeFormatoDoMaterial',
+  'MOTIVO_DO_FORMATO_NAO_SUPORTADO',
+  'RADICAL_DE_SENHA_DO_CONVERSOR',
   // emissao-em-lote.ts
   'DesfechoDoLote',
   'TrabalhoDoLote',
@@ -459,15 +574,23 @@ const SIMBOLOS_PUBLICADOS = [
   'ConsultaDeSituacao',
   'DesfechoDaOperacao',
   'DetalheDaVerificacao',
+  'EntregaParaCadastrar',
   'IdentidadeDoProvedor',
   'IdentidadeParaVerificar',
   'LocatarioDaCobranca',
   'MeioDeRecebimento',
+  'MotivoDaRecusaDoProvedor',
   'PedidoDeEmissao',
+  // ⚠️ Os dois da `0025`: a leitura ternária e a referência opaca ao cadastro. A lista cresce **no
+  // mesmo diff** que os publica, e a igualdade de conjunto segue valendo nas duas direções.
+  'LeituraDaEntrega',
+  'ReferenciaDoCadastroDaEntrega',
+  'ResultadoDaOperacaoDeEntrega',
   'ResultadoDaVerificacaoDeIdentidade',
   'SituacaoConsultada',
-  // as duas portas
+  // as três portas
   'AdaptadorCobrancaBancaria',
+  'PortaDeEntregaDaNoticia',
   'PortaDeIdentidadeBancaria',
   // reemissao.ts
   'DesfechoDaReemissao',
@@ -1552,5 +1675,166 @@ describe('CT-991 — nenhum símbolo publicado dos módulos novos usa vocabulár
         `${modulo.caminho} publica vocabulário do provedor`,
       ).toEqual([]);
     }
+  });
+});
+
+// ===========================================================================
+// CT-1032 — a porta de entrega declara duas operações, e o dialeto não vira símbolo publicado
+// ===========================================================================
+
+/**
+ * A varredura **estática** do texto-fonte dos quatro módulos da fatia
+ * `integracao-bancaria-autonoma`, mais a forma da porta irmã que ela declara
+ * (CA-18 · ADR-0001 · ADR-0025 · ADR-0034).
+ *
+ * O invariante é o mesmo do CT-991, aplicado ao conjunto novo: nenhum nome, código ou desfecho do
+ * provedor vira símbolo publicado do produto. O que muda é a porta — esta fatia declara a **segunda
+ * porta irmã** do pacote, e a contagem de operações dela é afirmada, não descrita.
+ *
+ * ⚠️ **A cláusula de fecho da ADR-0001 é do VOCABULÁRIO, isto é, de NOME.** O portador `diagnostico`
+ * de {@link MotivoDaRecusaDoProvedor} carrega chaves do provedor **em execução**, e esta varredura é
+ * estática sobre o **texto** — nome de tipo, membro de tipo, símbolo declarado e literal de cadeia.
+ * Não há conflito, e quem o afirma é o **eixo negativo** do controle positivo: os três termos que o
+ * fonte de controle planta fora de posição publicada não são acusados, embora estejam escritos nele.
+ *
+ * ⚠️ **Asserção estática exige prova de falsificação por execução** (`.claude/rules/testing-stack.md`
+ * e o P4 do Protocolo Antirregressão), e ela roda pelo **script `test` do pacote** — nunca por
+ * invocação avulsa do executor de testes, porque o pacote resolve `.` para `dist/` e o mutante no
+ * fonte não alcançaria o que executa. Ela foi executada na T5: reintroduzido `codigoTipoMovimento`
+ * como **membro** de `MotivoDaRecusaDoProvedor` em `src/modelo-canonico.ts`, o caso abaixo reprovou
+ * nomeando o termo e o módulo; o defeito foi revertido em seguida, e o controle deste bloco continua
+ * passando limpo no mesmo harness.
+ */
+describe('CT-1032 — a porta de entrega declara duas operações, e nenhum módulo novo publica o dialeto', () => {
+  /**
+   * A implementação de referência da porta de entrega.
+   *
+   * Ela existe pela mesma razão dos literais do CT-809 e do CT-933, e com a mesma disciplina: amarra
+   * a asserção ao **tipo real**, e não apenas ao texto. Uma terceira operação **obrigatória** faz
+   * este literal deixar de satisfazer a anotação, e a verificação de tipos da suíte
+   * (`tsc -p tsconfig.test.json`, que o script `test` roda antes do Vitest) reprova nomeando o membro
+   * ausente; uma terceira operação **opcional**, que a verificação de tipos aceitaria, reprova na
+   * asserção sobre o texto.
+   *
+   * Os dois desfechos são escolhidos distintos de propósito — um positivo e um negativo com motivo
+   * nulo —, porque é a união discriminada que o compilador confere: um desfecho negativo sem o campo
+   * `motivo` não satisfaria a anotação, e é ele que carrega a decisão do D5.
+   *
+   * ⚠️ As chaves deste literal **só são asseridas contra o que o fonte declara**, nunca contra a
+   * lista escrita por extenso: as duas pontas seriam autoradas aqui, e a igualdade não poderia
+   * falhar (AP-29).
+   */
+  const portaDeEntregaDeReferencia: PortaDeEntregaDaNoticia = {
+    cadastrarEntrega: async () => ({ aceito: true, referencia: null }),
+    // ⚠️ A consulta devolve a LEITURA ternária desde a `0025`, e não mais um booleano — é a mudança
+    // que instalou o terceiro estado. O desfecho escolhido é o que a união discrimina por `tipo`, e
+    // ele continua sendo distinto do das operações de escrita, que é o que o caso mede.
+    consultarEntrega: async () => ({ tipo: 'NAO_RESPONDEU', motivo: null }),
+    atualizarEnderecoDaEntrega: async () => ({ aceito: false, motivo: null }),
+    reativarEntrega: async () => ({ aceito: false, motivo: null }),
+  };
+
+  it('a varredura acha o dialeto nas quatro posições publicadas, e ignora a fronteira de tradução', () => {
+    // Âncora do eixo NEGATIVO: os três termos que o controle planta fora de posição publicada estão
+    // mesmo escritos nele. Sem esta linha, "a varredura não os achou" seria indistinguível de "eles
+    // nunca estiveram lá", e o eixo negativo passaria por vacuidade.
+    for (const termo of TERMOS_NA_FRONTEIRA_DE_TRADUCAO) {
+      expect(FONTE_DE_CONTROLE_COM_DIALETO_PUBLICADO).toContain(termo);
+    }
+
+    const achados = [
+      ...new Set(
+        ocorrenciasDeTermos(
+          vocabularioPublicadoDe(FONTE_DE_CONTROLE_COM_DIALETO_PUBLICADO),
+          TERMOS_DO_DIALETO,
+        ),
+      ),
+    ].sort();
+
+    // Controle POSITIVO (AP-29), por igualdade: os quatro plantados em posição publicada, e apenas
+    // eles. Um extrator cego a qualquer das quatro posições reprova nomeando o que faltou; um
+    // extrator que sobre-case reprova nomeando o excedente. É o MESMO controle que o CT-991 exerce,
+    // reafirmado aqui para o conjunto de módulos deste caso — a maquinaria é reusada, e o veredito é
+    // o deste bloco.
+    expect(achados).toEqual([
+      'idWebhook em idWebhook',
+      'numeroIdentificadorBaixa em numeroIdentificadorBaixa',
+      'sicoob em AvisoSicoob',
+      'validacaoWebhook em validacaoWebhook',
+    ]);
+
+    // E o eixo NEGATIVO por extenso: nenhum dos três termos da fronteira de tradução foi acusado,
+    // embora os três estejam escritos no controle. É esta linha que separa *"o dialeto morreu na
+    // fronteira"* de *"a varredura não olhou"* — e é ela que afirma, em vez de prometer, que o
+    // portador opaco do motivo não colide com a cláusula de vocabulário da ADR-0001.
+    expect(
+      achados.filter((achado) =>
+        TERMOS_NA_FRONTEIRA_DE_TRADUCAO.some((termo) => achado.startsWith(`${termo} em `)),
+      ),
+    ).toEqual([]);
+  });
+
+  it('a porta de entrega declara exatamente QUATRO operações, na ordem escrita por extenso', async () => {
+    const fonteDaPorta = await fonteDoModuloDaFatia('../src/porta-de-entrega-da-noticia.ts');
+    const porta = tiposDeclarados(fonteDaPorta).find(
+      (tipo) => tipo.nome === 'PortaDeEntregaDaNoticia',
+    );
+
+    // Igualdade de lista E contagem: uma terceira operação reprova NOMEANDO o excedente, e uma
+    // operação renomeada reprova nomeando as duas pontas. Nunca `toContain` — a contenção aprova
+    // tanto o que sumiu quanto o que apareceu sem ninguém decidir.
+    expect(porta?.membros).toEqual([...OPERACOES_DA_PORTA_DE_ENTREGA]);
+    expect(porta?.membros.length).toBe(4);
+
+    // Costura entre a ponta de TIPO e a ponta de TEXTO: o lado esquerdo é o que a anotação
+    // `: PortaDeEntregaDaNoticia` obriga o literal a ter, e o lado direito é o que o fonte declara.
+    // Divergir os dois é o único jeito de a interface mudar sem que alguma das duas metades acuse —
+    // inclusive quando `OPERACOES_DA_PORTA_DE_ENTREGA` é afrouxada para calar a asserção acima,
+    // porque o literal está sob a anotação de tipo e não acompanha o afrouxamento.
+    expect(Object.keys(portaDeEntregaDeReferencia)).toEqual(porta?.membros);
+  });
+
+  it('os quatro módulos publicam vocabulário do produto, e nenhum termo do dialeto', async () => {
+    for (const modulo of MODULOS_DA_ENTREGA) {
+      const fonte = await fonteDoModuloDaFatia(modulo.caminho);
+
+      // Âncora antivácuo, arquivo a arquivo: ele existe, tem conteúdo, e o extrator alcançou nele os
+      // três símbolos do produto escritos à mão. Um arquivo vazio, um caminho errado ou um extrator
+      // quebrado reprovam AQUI, nomeando o módulo — e não passam por vacuidade na varredura abaixo.
+      expect(fonte.length, modulo.caminho).toBeGreaterThan(0);
+
+      const vocabulario = vocabularioPublicadoDe(fonte);
+
+      expect(
+        modulo.publica.filter((simbolo) => !vocabulario.includes(simbolo)),
+        `${modulo.caminho}: o extrator não alcançou símbolos que o módulo publica`,
+      ).toEqual([]);
+
+      // A varredura, módulo a módulo: a reprovação nomeia o termo, o portador e o arquivo.
+      expect(
+        ocorrenciasDeTermos(vocabulario, TERMOS_DO_DIALETO),
+        `${modulo.caminho} publica vocabulário do provedor`,
+      ).toEqual([]);
+    }
+  });
+
+  it('o nome que a ADR-0001 reserva não nomeia nada dos fontes da fatia', async () => {
+    const fontes = await fontesDoPacote();
+    const arquivosDaFatia = MODULOS_DA_ENTREGA.filter((modulo) =>
+      modulo.caminho.startsWith('../src/'),
+    ).map((modulo) => modulo.caminho.slice('../src/'.length));
+    const fontesDaFatia = fontes.filter((fonte) => arquivosDaFatia.includes(fonte.arquivo));
+
+    // Âncora antivácuo: os três fontes de `src/` deste conjunto foram efetivamente lidos. Sem ela,
+    // "o nome reservado não aparece" seria satisfeito por um filtro que não casou arquivo nenhum.
+    expect(fontesDaFatia.map((fonte) => fonte.arquivo).sort()).toEqual([...arquivosDaFatia].sort());
+
+    // O bloco do CT-834 já afirma que o nome reservado nomeia **exatamente** a porta de cobrança, e
+    // ele alcança os fontes novos por extensão do conjunto varrido — `fontesDoPacote()` lê `src/`
+    // inteiro. Esta linha é o eixo que aquele não tem: a porta NOVA recebe nome próprio, e nenhum
+    // símbolo dela usa o nome que a ADR-0001 reserva para a das cinco capacidades. A citação em
+    // comentário do cabeçalho não conta — `citacoesDe` ignora prosa, que é o que permite ao docblock
+    // registrar a reserva por escrito.
+    expect(citacoesDe(NOME_RESERVADO, fontesDaFatia)).toEqual([]);
   });
 });
