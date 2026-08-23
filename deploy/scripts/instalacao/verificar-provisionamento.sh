@@ -356,8 +356,14 @@ ler_credencial_db() {
 	# chave atribuída duas vezes, este leitor pegaria a primeira e o systemd a
 	# última, e a agulha do caso seria a credencial errada — que, sendo
 	# alfanumérica, atravessaria a validação de alfabeto sem ruído nenhum.
-	if printf '%s\n' "$(grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' "${arquivo}" 2>/dev/null |
-		sort | uniq -d)" | grep -q .; then
+	# A âncora tolera INDENTAÇÃO, como a de `extrair_credencial_db` no
+	# provisionamento — endurecida junto com ela na intervenção dirigida de
+	# 2026-08-23 (`D10 · F0/T2`). Esta é a segunda cópia do caminho de leitura
+	# que o `D9 · F0/T2` nomeia, e é justamente o caso dele: corrigir só uma
+	# deixaria a tabela (k) reprovando no leitor deste arquivo com o
+	# provisionamento já correto.
+	if printf '%s\n' "$(grep -oE '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=' "${arquivo}" 2>/dev/null |
+		tr -d ' \t' | sort | uniq -d)" | grep -q .; then
 		return 1
 	fi
 
@@ -1257,6 +1263,28 @@ ct_003() {
 		"(k) arquivo com REDIS_URL atribuída duas vezes é recusado (mesma causa)" \
 		"${arq_sonda}" "RECUSA"
 
+	# A duplicata INDENTADA — fechada na intervenção dirigida de 2026-08-23
+	# (`D10 · F0/T2`). O `EnvironmentFile=` do systemd tolera espaço à esquerda e
+	# lê `  DATABASE_URL=…` como atribuição; o guarda ancorava em `^[A-Za-z_]` e
+	# não a via. A ambiguidade que ele existe para recusar ficava exatamente no
+	# formato invisível a ele, e o script seguia com um valor enquanto os
+	# serviços subiam com outro. Este é o caso que discrimina: o de cima, sem
+	# indentação, já era recusado antes.
+	printf 'DATABASE_URL=postgresql://%s:SENHASINTETICAVELHA111@/%s?host=/var/run/postgresql&port=5432\nREDIS_URL=redis://127.0.0.1:%s\n  DATABASE_URL=postgresql://%s:SENHASINTETICANOVA999@/%s?host=/var/run/postgresql&port=5432\n' \
+		"${PAPEL_DB}" "${BANCO_DB}" "${PORTA_FILA}" "${PAPEL_DB}" "${BANCO_DB}" >"${arq_sonda}"
+	sondar_os_dois_leitores \
+		"(k) segunda DATABASE_URL INDENTADA também é recusada (o systemd a lê)" \
+		"${arq_sonda}" "RECUSA"
+
+	# Controle negativo: UMA linha indentada não é ambiguidade — não há duas
+	# atribuições. Sem esta asserção, um guarda que recusasse toda indentação
+	# passaria pela de cima e ninguém notaria a recusa indevida.
+	printf '  DATABASE_URL=postgresql://%s:%s@/%s?host=/var/run/postgresql&port=5432\nREDIS_URL=redis://127.0.0.1:%s\n' \
+		"${PAPEL_DB}" "${valor_ok}" "${BANCO_DB}" "${PORTA_FILA}" >"${arq_sonda}"
+	sondar_os_dois_leitores \
+		"(k) UMA DATABASE_URL indentada NÃO é ambiguidade (controle negativo)" \
+		"${arq_sonda}" "RECUSA"
+
 	printf 'REDIS_URL=redis://127.0.0.1:%s\n' "${PORTA_FILA}" >"${arq_sonda}"
 	sondar_os_dois_leitores \
 		"(k) arquivo sem DATABASE_URL é recusado" "${arq_sonda}" "RECUSA"
@@ -1338,6 +1366,23 @@ ct_003() {
 	# o detalhe e manteria o dano.
 	ambiente_completo "${destino_ok}" "redis://127.0.0.1:6379" ""
 	afirmar_igual "(l) com divergência E ausência ao mesmo tempo, a divergência tem precedência" \
+		"DIVERGE:REDIS_URL" "$(sonda_coordenadas_do_provisionador "${arq_sonda}" "${porta_pg_sonda}")"
+
+	# A chave PRESENTE e VAZIA — fechada na intervenção dirigida de 2026-08-23
+	# (`D39 · F3/T8`). O critério de ausência era o VALOR, de modo que um
+	# `REDIS_URL=` esvaziado pelo operador entrava em `CHAVES_AUSENTES`; o P06
+	# acrescentava uma SEGUNDA atribuição da mesma chave, e a execução seguinte
+	# abortava por ambiguidade no bloco (k) acima — o provisionador criando,
+	# sozinho, a condição que ele existe para recusar. O critério passou a ser a
+	# EXISTÊNCIA DA LINHA, alinhado ao que `garantir_chaves_de_conteudo` já
+	# adotava, e a linha vazia é DIVERGÊNCIA: o valor não é o provisionado.
+	#
+	# O par com a asserção de `FALTA:REDIS_URL` acima é o que discrimina — uma
+	# sozinha não separa "linha ausente" de "linha presente e vazia", que é
+	# justamente a distinção que o defeito apagava.
+	ambiente_completo "${destino_ok}" "" "smtp://127.0.0.1:${PORTA_SMTP_CAPTURADOR}"
+	printf 'REDIS_URL=\n' >>"${arq_sonda}"
+	afirmar_igual "(l) REDIS_URL presente e VAZIA é DIVERGÊNCIA, nunca chave a acrescentar" \
 		"DIVERGE:REDIS_URL" "$(sonda_coordenadas_do_provisionador "${arq_sonda}" "${porta_pg_sonda}")"
 
 	unset -f ambiente_completo

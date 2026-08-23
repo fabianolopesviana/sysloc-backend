@@ -711,8 +711,17 @@ extrair_credencial_db() {
 	# para o valor obsoleto reportando sucesso. A verificação é genérica porque a
 	# causa é do formato, não da chave: vale para REDIS_URL e SMTP_URL igual.
 	local repetidas
-	repetidas="$(grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' "${arquivo}" 2>/dev/null |
-		sort | uniq -d | tr -d '=' | tr '\n' ' ' || true)"
+	# A âncora tolera INDENTAÇÃO porque o `EnvironmentFile=` do systemd a tolera:
+	# `  REDIS_URL=outro` é atribuição válida para ele e era invisível para este
+	# guarda. O efeito era o pior possível — a divergência que o guarda existe
+	# para recusar ficava justamente no formato que ele não enxergava, e o script
+	# seguia com um valor enquanto os serviços subiam com outro.
+	#
+	# Corrigir AQUI, e não nas dezesseis leituras do arquivo, é o que fecha a
+	# classe: elas podem continuar ancoradas em `^CHAVE=`, porque nenhuma chega a
+	# rodar sobre um arquivo ambíguo — este guarda aborta antes.
+	repetidas="$(grep -oE '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=' "${arquivo}" 2>/dev/null |
+		tr -d ' \t' | sort | uniq -d | tr -d '=' | tr '\n' ' ' || true)"
 	if [[ -n "${repetidas// /}" ]]; then
 		CHAVES_REPETIDAS="${repetidas% }"
 		return 2
@@ -817,10 +826,23 @@ conferir_coordenadas_do_ambiente() {
 		REDIS_URL) esperado="redis://127.0.0.1:${PORTA_FILA}" ;;
 		SMTP_URL) esperado="smtp://127.0.0.1:${PORTA_SMTP_CAPTURADOR}" ;;
 		esac
-		encontrado="$(sed -n "s|^${chave}=||p" "${arquivo}" 2>/dev/null)"
-		if [[ -z "${encontrado}" ]]; then
+		# Ausência é decidida pela EXISTÊNCIA DA LINHA, nunca pelo valor — mesmo
+		# critério que `garantir_chaves_de_conteudo` já adota logo abaixo
+		# (`grep -q '^EMAIL_REMETENTE='`). Decidir pelo valor fazia um
+		# `REDIS_URL=` esvaziado pelo operador entrar em `CHAVES_AUSENTES`; o P06
+		# acrescentava uma SEGUNDA atribuição da mesma chave, e a execução
+		# seguinte abortava por ambiguidade em `extrair_credencial_db` — o
+		# provisionador criando, sozinho, a condição que ele existe para recusar.
+		#
+		# Com o critério certo, chave presente e vazia é DIVERGENTE (valor
+		# esperado contra valor vazio), aborta com diagnóstico legível, e nada é
+		# duplicado.
+		if ! grep -qE "^[[:space:]]*${chave}=" "${arquivo}" 2>/dev/null; then
 			ausentes="${ausentes}${chave} "
-		elif [[ "${encontrado}" != "${esperado}" ]]; then
+			continue
+		fi
+		encontrado="$(sed -n "s|^[[:space:]]*${chave}=||p" "${arquivo}" 2>/dev/null)"
+		if [[ "${encontrado}" != "${esperado}" ]]; then
 			divergentes="${divergentes}${chave}[esperado '${esperado}', encontrado '${encontrado}'] "
 		fi
 	done
@@ -2239,8 +2261,11 @@ extrair_credencial_migracao() {
 	fi
 
 	local repetidas
-	repetidas="$(grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' "${arquivo}" 2>/dev/null |
-		sort | uniq -d | tr -d '=' | tr '\n' ' ' || true)"
+	# Mesma âncora tolerante à indentação de `extrair_credencial_db`, e pela mesma
+	# razão medida: o systemd lê `  CHAVE=valor` como atribuição, e um guarda de
+	# ambiguidade que não a enxerga é cego exatamente onde o dano mora.
+	repetidas="$(grep -oE '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=' "${arquivo}" 2>/dev/null |
+		tr -d ' \t' | sort | uniq -d | tr -d '=' | tr '\n' ' ' || true)"
 	if [[ -n "${repetidas// /}" ]]; then
 		CHAVES_REPETIDAS_MIGRACAO="${repetidas% }"
 		return 2

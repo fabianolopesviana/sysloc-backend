@@ -491,6 +491,8 @@ ct_1005_b() {
 		renderizar_vhost vhost_diverge posicionar_vhost porta_da_api_na_unidade
 		hostname_bem_formado caminho_bem_formado restaurar_destino
 		vhost_declara_hostname conferir_precedencia_do_vhost
+		chaves_repetidas_no_ambiente valor_no_arquivo_de_ambiente
+		configuracao_inclui_diretorio servidor_ja_carregou modo_igual
 	)
 	for fn in "${funcoes_do_instalador[@]}"; do
 		if ! carregar_funcao_do_instalador "${fn}"; then
@@ -760,6 +762,124 @@ ct_1005_b() {
 	printf 'server {\n\tserver_name outro %s;\n}\n' "${alvo_da_disputa}" >"${sonda}/token2.conf"
 	afirmar_igual "'server_name outro X' DECLARA X (lista de nomes)" "0" \
 		"$(vhost_declara_hostname "${sonda}/token2.conf" "${alvo_da_disputa}" && echo 0 || echo 1)"
+
+	# ------------------------------------------------------------------- #
+	# As cinco propriedades fechadas na intervenção dirigida de 2026-08-23
+	# (débitos D34 a D38 da §2 desta fatia). Cada uma tinha modo de falha
+	# OPERACIONAL medido e NENHUMA tinha asserção — `restaurar_destino` era
+	# carregada aqui e nunca exercitada.
+	# ------------------------------------------------------------------- #
+
+	# D36 (a) — o guarda de marcador residual reconhece a FORMA, não o alfabeto.
+	# Sem dígito na classe, um marcador futuro atravessa e chega a /etc meio
+	# renderizado. O par é o que discrimina: o alfabético já era pego antes.
+	# O marcador com dígito é ACRESCENTADO ao gabarito, não trocado por um real:
+	# assim todos os marcadores legítimos continuam sendo substituídos e a recusa
+	# só pode vir do guarda de residual — que é o que se quer provar. O controle é
+	# o gabarito íntegro, renderizado com sucesso nas asserções acima.
+	local gabarito_com_digito="${sonda}/gabarito-com-digito.conf"
+	{
+		printf '# __PORTA_8080__\n'
+		cat "${GABARITO}"
+	} >"${gabarito_com_digito}"
+	afirmar_igual "marcador com DÍGITO não substituído é RECUSADO" "1" \
+		"$(renderizar_vhost "${gabarito_com_digito}" "${hostname_de_sonda}" "443" "80" \
+			"/etc/ssl/s.crt" "/etc/ssl/s.key" "127.0.0.1:3000" "${sonda}/acme" \
+			>/dev/null 2>&1 && echo 0 || echo 1)"
+
+	# D36 (b) — a comparação de modo é por VALOR em base 8, não por grafia.
+	# `0044` contra `44` do `stat` fazia o arquivo ser julgado divergente e
+	# reescrito em TODA execução, quebrando a idempotência em silêncio.
+	# `0044` é o par que discrimina, e o `44` é o que o `stat` devolve para ele.
+	# Com o recorte de texto anterior a comparação dava `044` != `44` e o arquivo
+	# era reescrito em toda execução. O último par é o controle negativo: modos
+	# realmente diferentes têm de continuar diferentes.
+	afirmar_igual "modo 0044 é igual ao 44 que o stat devolve" "0" \
+		"$(modo_igual "44" "0044" && echo 0 || echo 1)"
+	afirmar_igual "modo 0644 é igual ao 644 que o stat devolve" "0" \
+		"$(modo_igual "644" "0644" && echo 0 || echo 1)"
+	afirmar_igual "e 600 continua DIFERENTE de 0644 (controle negativo)" "1" \
+		"$(modo_igual "600" "0644" && echo 0 || echo 1)"
+
+	# D38 — atribuição repetida é AMBIGUIDADE e se recusa; o systemd resolve pela
+	# ÚLTIMA e um leitor ingênuo pela PRIMEIRA. O antivácuo vem primeiro: um
+	# detector que nunca acha nada aprovaria qualquer arquivo.
+	local ambiente_limpo="${sonda}/limpo.env" ambiente_duplo="${sonda}/duplo.env"
+	printf 'HOSTNAME_DA_NOTIFICACAO_BANCARIA=a.exemplo\nCERTIFICADO_DA_BORDA=/x.crt\n' >"${ambiente_limpo}"
+	printf 'HOSTNAME_DA_NOTIFICACAO_BANCARIA=primeiro\nCERTIFICADO_DA_BORDA=/x.crt\nHOSTNAME_DA_NOTIFICACAO_BANCARIA=ultimo\n' >"${ambiente_duplo}"
+	afirmar_igual "ambiente sem repetição NÃO acusa (antivácuo)" "1" \
+		"$(chaves_repetidas_no_ambiente "${ambiente_limpo}" >/dev/null && echo 0 || echo 1)"
+	afirmar_igual "ambiente com chave repetida ACUSA, nomeando a chave" "HOSTNAME_DA_NOTIFICACAO_BANCARIA" \
+		"$(chaves_repetidas_no_ambiente "${ambiente_duplo}" || true)"
+
+	# D38, segunda perna — fim de linha do Windows e espaço à direita não entram
+	# no valor, que vira caminho de certificado e diretiva do vhost.
+	local ambiente_crlf="${sonda}/crlf.env"
+	printf 'HOSTNAME_DA_NOTIFICACAO_BANCARIA=crlf.exemplo\r\nCERTIFICADO_DA_BORDA=/x.crt   \r\n' >"${ambiente_crlf}"
+	afirmar_igual "o valor lido não carrega CR" "crlf.exemplo" \
+		"$(valor_no_arquivo_de_ambiente "${ambiente_crlf}" HOSTNAME_DA_NOTIFICACAO_BANCARIA)"
+	afirmar_igual "nem espaço à direita" "/x.crt" \
+		"$(valor_no_arquivo_de_ambiente "${ambiente_crlf}" CERTIFICADO_DA_BORDA)"
+
+	# D35 — a restauração repõe CONTEÚDO e PERMISSÃO. Fixar 0644 devolvia um
+	# arquivo alheio que estava em 0600 com permissão frouxa, numa borda
+	# compartilhada com quem atende a operação hoje.
+	local dir_restauro="${sonda}/restauro"
+	mkdir -p "${dir_restauro}"
+	printf 'conteudo anterior de terceiro\n' >"${dir_restauro}/000-sysloc-notificacao-bancaria.conf"
+	chmod 0600 "${dir_restauro}/000-sysloc-notificacao-bancaria.conf"
+	(
+		DIR_DOS_VHOSTS="${dir_restauro}"
+		NOME_DO_VHOST="000-sysloc-notificacao-bancaria.conf"
+		MODO_DO_VHOST="0644"
+		BACKUP_DO_DESTINO="${sonda}/backup-anterior.conf"
+		MODO_ANTERIOR_DO_DESTINO="600"
+		DESTINO_TINHA_ARQUIVO="sim"
+		printf 'conteudo anterior de terceiro\n' >"${BACKUP_DO_DESTINO}"
+		printf 'vhost novo que sera desfeito\n' >"${DIR_DOS_VHOSTS}/${NOME_DO_VHOST}"
+		restaurar_destino
+	) >/dev/null 2>&1 || true
+	afirmar_igual "a restauração repõe o conteúdo anterior" "conteudo anterior de terceiro" \
+		"$(cat "${dir_restauro}/000-sysloc-notificacao-bancaria.conf")"
+	afirmar_igual "e repõe a PERMISSÃO anterior, não a do produto" "600" \
+		"$(stat -c '%a' "${dir_restauro}/000-sysloc-notificacao-bancaria.conf")"
+
+	# D37 — a conferência de `include` resolve um nível. O caso transitivo é o
+	# padrão do painel que administra a borda deste host, e sem ele o instalador
+	# abortava dizendo que o diretório não é incluído justamente onde ele é.
+	local arv="${sonda}/nginx"
+	mkdir -p "${arv}/vhosts" "${arv}/confd"
+	printf 'http {\n  include %s/*.conf;\n}\n' "${arv}/vhosts" >"${arv}/direto.conf"
+	printf 'http {\n  include %s/*.conf;\n}\n' "${arv}/vhosts" >"${arv}/confd/painel.conf"
+	printf 'http {\n  include %s/*.conf;\n}\n' "${arv}/confd" >"${arv}/transitivo.conf"
+	printf 'http {\n  include %s/outro/*.conf;\n}\n' "${arv}" >"${arv}/ausente.conf"
+	afirmar_igual "include DIRETO do diretório de vhosts é reconhecido" "0" \
+		"$(configuracao_inclui_diretorio "${arv}/direto.conf" "${arv}/vhosts" && echo 0 || echo $?)"
+	afirmar_igual "include TRANSITIVO (um nível) também é reconhecido" "0" \
+		"$(configuracao_inclui_diretorio "${arv}/transitivo.conf" "${arv}/vhosts" && echo 0 || echo $?)"
+	afirmar_igual "configuração que NÃO inclui o diretório reprova com 1" "1" \
+		"$(configuracao_inclui_diretorio "${arv}/ausente.conf" "${arv}/vhosts" && echo 0 || echo $?)"
+	afirmar_igual "configuração ILEGÍVEL devolve 2 — não decidir não é decidir que não" "2" \
+		"$(configuracao_inclui_diretorio "${arv}/nao-existe.conf" "${arv}/vhosts" && echo 0 || echo $?)"
+
+	# D34 — estado convergente no DISCO não é estado convergente no PROCESSO.
+	# O par discrimina: o arquivo antigo é anterior aos workers, o recém-criado
+	# não. Sem o segundo sinal, uma execução interrompida entre a escrita e a
+	# recarga deixava a borda sem atender e o script saía 0 dizendo `JA-OK`.
+	local antigo="${sonda}/antigo.conf" recente="${sonda}/recente.conf"
+	printf 'x\n' >"${antigo}"
+	touch -d '2020-01-01' "${antigo}"
+	printf 'x\n' >"${recente}"
+	if ps -C nginx -o args= 2>/dev/null | grep -q 'worker process'; then
+		afirmar_igual "arquivo ANTERIOR aos workers: o servidor já o carregou" "0" \
+			"$(servidor_ja_carregou "${antigo}" && echo 0 || echo $?)"
+		afirmar_igual "arquivo POSTERIOR aos workers: NÃO carregado — recarregar" "1" \
+			"$(servidor_ja_carregou "${recente}" && echo 0 || echo $?)"
+	else
+		aviso "não há worker de nginx neste host — as duas asserções do segundo sinal do P05 (D34) NÃO foram feitas"
+	fi
+	afirmar_igual "arquivo inexistente: NÃO se decide (2), nunca 'recarregue'" "2" \
+		"$(servidor_ja_carregou "${sonda}/nao-existe.conf" && echo 0 || echo $?)"
 
 	fechar_caso "CT-1005 (b)"
 }

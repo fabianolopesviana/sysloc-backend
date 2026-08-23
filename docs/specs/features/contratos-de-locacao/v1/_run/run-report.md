@@ -43,12 +43,52 @@ Status: **10/10 tasks concluídas — as três fases fechadas** · `pnpm test` *
 - **Impacto:** o manifesto afirma que `contrato-cancelamento.json` não grava data absoluta e que nenhuma data de `contrato-ativacao.json` deriva de `nowdate()`. O CT-005 — a máquina que prova isso deslocando o relógio em +37 dias — continua limitado a `golden_rotinas`, com os três artefatos originais. Verdadeiro hoje (verificado), risco prospectivo, num artefato que precisa sobreviver à desinstalação do Frappe.
 - **O que fazer:** (a) acrescentar `contrato-cancelamento.json` a `golden_rotinas` no CT-005; ou, melhor para durabilidade porque sobrevive à F7, (b) afirmar no CT-433 (offline) que `grep -cE '[0-9]{4}-[0-9]{2}-[0-9]{2}'` sobre `contrato-cancelamento.json` devolve 0.
 
-### D4 · baixo · security · T1 · QA
+### D4 · baixo · security · T1 · QA — ✅ **RESOLVIDO** na intervenção dirigida de 2026-08-23
 - **Onde:** `deploy/scripts/caracterizacao/verificar-golden.sh:397`
 - **Problema:** CT-013 reprova com 43 ocorrências e a lista nominal `PREEXISTENTES` (11 entradas) está vencida.
 - **Impacto:** **pré-existente e alheio à T1** — a varredura acusa `apps/api/test/*`, `packages/auth/{src,test}/*`, `packages/db/src/{pessoa,semente}.ts`, `docs/specs/domain-glossary.md` e artefatos da fatia `autorizacao-e-ciclo-de-acesso`, nenhum tocado por esta task; a baseline do script do HEAD sobre a mesma árvore já reprovava. Mas é um verificador de **segurança** vermelho: enquanto o estado for ambíguo, o sinal do CT-013 é ruído — o modo de falha que a varredura existe para evitar.
 - **O que fazer:** fora do escopo desta task. Decidir entre (a) rotacionar a credencial do `/opt/frappe` — a correção real, já apontada como pendência aberta no `CLAUDE.md`, e que também neutraliza a exposição que permanece no histórico do git; ou (b) reconciliar `PREEXISTENTES` com as 43 posições atuais, classificando cada uma como falso-positivo de palavra de dicionário ou como exposição. A opção (b) sozinha só recompra o verde e volta a envelhecer.
 
+- **Como foi fechado (2026-08-23):** acrescentado um **segundo discriminador** à varredura — o **CONTEXTO
+  SINTÁTICO** em que a agulha aparece. Reprova quando ela está onde uma credencial seria usada:
+  (a) valor de chave cujo nome anuncia segredo (`password:`, `senha=`, `secret:`, `pwd=`),
+  (b) credencial de URL de conexão (`://usuario:AGULHA@`), (c) argumento de opção (`-p`,
+  `--password`, `--password=`). Fora desses contextos, avisa.
+- ⚠️ **A premissa numérica do débito estava DEFASADA e foi remedida:** ele registra *"43 ocorrências
+  e lista de 11 vencida"*; a medição de 2026-08-23 dá **98 ocorrências em 47 arquivos**, contra as mesmas
+  11 catalogadas. **Nenhuma** das 98 está em contexto de credencial — não havia vazamento sendo
+  tolerado, e a lista nominal nunca teve como acompanhar: ela cresce a cada frase de documentação
+  nova que use a palavra.
+- ⚠️ **Catalogar a ocorrência nova foi AVALIADO e recusado.** Seria uma linha, e traria o verde
+  imediato — mas a taxa medida é de ocorrência nova a cada poucos dias, de modo que a bateria
+  voltaria ao vermelho antes da próxima fatia. É o mesmo movimento que já havia sido feito 11 vezes.
+- ⚠️ **A mudança ENDURECE e AFROUXA em direções diferentes, e as duas são deliberadas:**
+  **afrouxa** porque ocorrência nova em prosa passa a avisar em vez de reprovar; **endurece** porque
+  ocorrência em contexto de credencial passa a reprovar **mesmo estando catalogada** em
+  `PREEXISTENTES` — antes, editar uma das 11 linhas catalogadas para `password: <agulha>` seguiria
+  tolerada, porque a lista cataloga **posição**, e posição não diz nada sobre **natureza**.
+- ⚠️ **A lista `PREEXISTENTES` foi PRESERVADA**, embora o discriminador a torne redundante para o
+  veredito: ela é registro histórico das posições, e o aviso de *"catalogada não encontrada"*
+  continua sinalizando quando uma some. Remover guarda que não se introduziu é o que a §4 do
+  Protocolo Antirregressão proíbe.
+- **Por que isto era urgente, e não cosmético:** a bateria estava **vermelha de forma permanente**.
+  Verificador sempre vermelho tem poder de detecção **zero** — ninguém distingue *"o vermelho de
+  sempre"* de um vazamento novo. É literalmente o modo de falha que a `.claude/rules/testing-stack.md`
+  descreve ao justificar o código de saída 2 (*"a primeira reação a um vermelho recorrente é deixar
+  de lê-lo, levando junto o dia em que a asserção de verdade reprovar"*).
+- **Prova de falsificação (obrigatória — a asserção é ESTÁTICA):** a varredura foi extraída e
+  exercitada contra repositórios de sonda com a agulha plantada. **7 mutantes reprovam** (`password:`,
+  `senha=`, `MYSQL_ROOT_PASSWORD:`, URL de conexão, `--password=`, `-p `, `secret: "…"`) e
+  **3 controles passam** (a prosa que reprovava hoje, o identificador maior `--AGULHA-password` que o
+  casamento por token já rejeitava, e a árvore sem a agulha).
+- **Medido:** `verificar-golden.sh` saiu de **REPROVADO (98 reprovações)** para **11/11 casos
+  aprovados**, com 0 reprovações e um AVISO resumido. A saída do `CT-013` caiu de 115 para 66 linhas
+  — o resumo por arquivo substituiu a linha-por-ocorrência de propósito: saída que ninguém lê deixa
+  de proteger tanto quanto verificador que não reprova.
+- ⚠️ **O que NÃO foi resolvido, e continua aberto:** a credencial do MariaDB legado é uma palavra de
+  dicionário de 5 caracteres e **permanece no histórico do git** (a exclusão da `saas-multi-empresa`
+  foi por commit, sem reescrita). **Rotacionar a credencial segue sendo a única correção real**, como
+  o próprio cabeçalho da varredura já registrava, e segue como pendência no `CLAUDE.md`.
 ### D5 · baixo · tests · T1 · QA
 - **Onde:** `deploy/scripts/caracterizacao/verificar-captura.sh:223`
 - **Problema:** o script pressupõe que `capturar.py` já rodou contra o site corrente e não guarda a precondição.

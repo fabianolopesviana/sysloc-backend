@@ -445,7 +445,7 @@ escrever_registro_sintetico() {
 # a asserção reprova.
 carregar_funcoes_da_apuracao() {
 	local script="$1" fn trecho
-	local -a funcoes=(versao_numerica concluir_divergencia)
+	local -a funcoes=(versao_numerica concluir_divergencia decompor_url)
 
 	for fn in "${funcoes[@]}"; do
 		trecho="$(sed -n "/^${fn}() {/,/^}/p" "${script}")"
@@ -572,6 +572,48 @@ ct_007_forma_de_socket() {
 		falhar "forma de socket: o destino registrado [${destino_socket}] não é um caminho de socket — a leitura não percorreu o caminho que a execução privilegiada vai percorrer"
 	fi
 	afirmar_forma_e_procedencia "forma de socket" "${registro_socket}"
+}
+
+# --- a decomposição da cadeia precisa RECUSAR o que não sabe ler ---
+#
+# Fechada na intervenção dirigida de 2026-08-23 (`D24 · F0/T4`). Até a rodada 3 da T4 o `%` era
+# barrado por efeito colateral do guarda de alfabeto; removido ele, a codificação percentual —
+# forma CANÔNICA de URI, e o que `postgres.js` e a libpq decodificam — atravessava como literal, o
+# servidor recusava a autenticação e o `abortar` da consulta mandava conferir se a instância estava
+# de pé. Diagnóstico que culpa o servidor por defeito de configuração, que é o que o cabeçalho do
+# procedimento declara existir para não produzir.
+#
+# O par que discrimina são as duas primeiras linhas contra a terceira: o `%` recusa com código
+# PRÓPRIO (2), e a credencial crua segue aceita. As linhas de ':' e '@' crus são o controle de
+# não-regressão — eles atravessam inertes até o arquivo de senha, que o procedimento escapa, e
+# recusá-los seria fechar a porta certa no lugar errado.
+ct_007_tabela_de_decomposicao() {
+	if ! carregar_funcoes_da_apuracao "${SCRIPT_APURAR}"; then
+		falhar "não consegui carregar decompor_url de ${SCRIPT_APURAR} — sem ela a tabela de decomposição ficaria sem SUT"
+		return
+	fi
+
+	ok "função de decomposição carregada de ${SCRIPT_APURAR##*/}"
+	local url esperado codigo
+	while IFS='|' read -r url esperado rotulo; do
+		[[ -n "${url}" ]] || continue
+		URL_PAPEL=""
+		URL_SEGREDO=""
+		URL_HOSPEDEIRO=""
+		URL_PORTA=""
+		URL_BANCO=""
+		codigo=0
+		decompor_url "${url}" || codigo=$?
+		afirmar_igual "decomposição: ${rotulo}" "${esperado}" "${codigo}"
+	done <<-'TABELA'
+		postgresql://papel:p%3Ass@127.0.0.1:5432/sysloc|2|credencial percent-encoded (TCP) é RECUSADA com código próprio
+		postgresql://papel:p%3Ass@/sysloc?host=/tmp&port=5432|2|credencial percent-encoded (socket) é RECUSADA
+		postgresql://papel:segredo123@127.0.0.1:5432/sysloc|0|credencial crua é ACEITA (controle positivo)
+		postgresql://papel:se:gredo@127.0.0.1:5432/sysloc|0|':' cru na senha segue aceito (não-regressão)
+		postgresql://papel:se@gredo@127.0.0.1:5432/sysloc|0|'@' cru na senha segue aceito (não-regressão)
+		mysql://papel:x@127.0.0.1:3306/x|1|esquema alheio segue recusado com 1, não com 2
+		postgresql://semdoispontos@127.0.0.1:5432/x|1|cadeia sem credencial segue recusada com 1
+	TABELA
 }
 
 # --- a conclusão precisa DISCRIMINAR ---
@@ -852,6 +894,7 @@ ct_007() {
 		"1" "$(grep -cE '^(Sem divergência|Divergência)' "${registro}" || true)"
 
 	ct_007_forma_de_socket "${porta_operacao}" "${versao_direta_operacao}"
+	ct_007_tabela_de_decomposicao
 	ct_007_tabela_de_conclusao
 	ct_007_registro_versionado
 	ct_007_aviso_falsificavel

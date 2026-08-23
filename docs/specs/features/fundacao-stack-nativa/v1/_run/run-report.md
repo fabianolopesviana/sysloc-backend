@@ -111,12 +111,35 @@ Status: **FATIA CONCLUÍDA** · 7/7 tasks aprovadas nos dois gates · bateria de
 - **Impacto:** nenhum em execução. Foi um dos fatores que fez a lacuna do D1 passar por dois gates — a tabela `(l)` está a 60 linhas das constantes que deveria prender. Como precedente replicado 7 vezes, o custo é multiplicado.
 - **O que fazer:** **não refatorar agora** — o arquivo está provado por cinco execuções assistidas. Fixar o formato **antes da próxima fatia** escrever seu `verificar-*.sh`: quebrar cada bloco `(x)` numa função própria, com `ct_003` reduzido a orquestração. E extrair o esqueleto comum (asserções, `caso`/`fechar_caso`, `limpar`, contadores), hoje copiado entre quatro verificadores, para `deploy/scripts/lib/assercoes.sh`.
 
-### D10 · baixo · data_handling · T2 · QA
+### D10 · baixo · data_handling · T2 · QA — ✅ **RESOLVIDO** na intervenção dirigida de 2026-08-23
 - **Onde:** `deploy/scripts/instalacao/provisionar-base.sh:468`
 - **Problema:** espaço antes do `=` faz uma chave **divergente** ser lida como **ausente**, e a duplicata que o P06 acrescenta fica invisível ao guarda de ambiguidade.
 - **Impacto:** dano limitado — o `EnvironmentFile=` do systemd descarta espaço à esquerda e resolve repetição pela **última** atribuição, que é a acrescentada e correta —, mas a linha obsoleta fica no arquivo, e o guarda cuja razão de existir é "o script trabalha com um valor e os serviços com outro" não a enxerga. Valor entre aspas é recusado embora o systemd aceite: recusa indevida, porém segura.
 - **O que fazer:** `^[[:space:]]*REDIS_URL=` na extração e `^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=` na detecção de repetição, para que o script e o systemd enxerguem o mesmo conjunto de atribuições.
 
+- **Como foi fechado (2026-08-23):** a âncora do **guarda de ambiguidade** passou a tolerar indentação
+  (`^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=`, com `tr -d ' \t'` antes do `uniq -d`), nas **duas** cópias
+  do caminho de leitura — `extrair_credencial_db` e `extrair_credencial_migracao` em
+  `provisionar-base.sh`, e `ler_credencial_db` em `verificar-provisionamento.sh`. ⚠️ **A terceira era
+  o `D9 · F0/T2` acontecendo**: corrigir só o provisionamento deixaria a tabela (k) reprovando no
+  leitor do verificador com o SUT já correto.
+- ⚠️ **A correção NÃO foi aplicada às dezesseis leituras do arquivo de ambiente, e isso é
+  deliberado** — é o que fecha a classe pelo caminho certo. Elas podem continuar ancoradas em
+  `^CHAVE=`, porque nenhuma chega a rodar sobre um arquivo ambíguo: o guarda aborta antes. Espalhar a
+  tolerância por dezesseis pontos seria delta grande num script que provisiona o banco durável, com
+  dezesseis chances de errar em vez de uma.
+- ⚠️ **A recusa de valor entre aspas NÃO foi mexida** — o débito a classifica como *"recusa indevida,
+  porém segura"*, e afrouxá-la é o oposto do que esta intervenção faz.
+- **Rede:** duas asserções no bloco (k) de `verificar-provisionamento.sh` — a segunda
+  `DATABASE_URL` **indentada** é recusada (o caso que discrimina; a não indentada já era), mais o
+  **controle negativo** de que UMA linha indentada não é ambiguidade, sem o qual um guarda que
+  recusasse toda indentação passaria despercebido.
+- ⚠️ **A bateria NÃO foi executada:** `verificar-provisionamento.sh` exige privilégio administrativo
+  (*"lê /etc/sysloc/backend.env, reinicia redis-server@sysloc.service e monta sistema de arquivos
+  temporário"*) e o `sudo` deste host pede senha interativa. O comportamento foi provado exercitando
+  as funções **reais** pelo mesmo mecanismo que a bateria usa (`sed`+`eval` do arquivo real), em
+  quatro pernas, e os **valores esperados** das asserções novas foram conferidos nos **dois**
+  leitores antes de serem escritos. A execução da bateria fica para a próxima janela assistida.
 ### D11 · baixo · code_quality · T1 · QA
 - **Onde:** `deploy/scripts/instalacao/verificar-workspace.sh:470`
 - **Problema:** as cinco variáveis de ambiente são literais em **quatro** lugares do script, sem fonte única.
@@ -199,12 +222,33 @@ Status: **FATIA CONCLUÍDA** · 7/7 tasks aprovadas nos dois gates · bateria de
 - **Impacto:** custo de leitura, nenhum defeito funcional. O veredito do Gate 2 sobre a pergunta "virou colcha de retalhos?" foi explícito: **o código melhorou** (11 funções pequenas, `redigirValor` é escada linear de complexidade ~10) — *"ainda é coeso, mas está no limite"*. O que inchou foi a prosa, e o lugar da arqueologia é a mensagem de commit ou uma ADR, não o topo do módulo que toda fatia importa.
 - **O que fazer:** extrair `packages/shared/src/redacao.ts` (não exportado por `index.ts`) com `redigirRegistro`, `redigirValor`, `redigirObjeto`, `redigirErro`, `ehRegistroDeCampos`, `ehChaveSensivel`, `mascararCredencial`, `mascararMensagem` e as constantes. `log.ts` fica com ~80 linhas. Ganhos: a redação passa a ter arquivo de teste próprio, exercitável sem montar logger e arquivo; a lista de radicais cresce sem tocar a fábrica; a arqueologia fica confinada onde é pertinente. **O próprio Gate 2 recomendou não fazer agora** se implicar mais uma rodada.
 
-### D24 · baixo · error_handling · T4 · Tech Review
+### D24 · baixo · error_handling · T4 · Tech Review — ✅ **RESOLVIDO** na intervenção dirigida de 2026-08-23
 - **Onde:** `deploy/scripts/instalacao/apurar-versao-banco.sh:236-283` (`decompor_url`)
 - **Problema:** a remoção do guarda de alfabeto (que era o defeito ALTO da rodada 3) deixou a **codificação-percentual** sem defesa nem diagnóstico. `decompor_url` nunca decodificou `%XX`, e o guarda barrava o `%` por efeito colateral. Sem ele, `postgresql://papel:p%3Ass@host:5432/banco` — a **forma canônica de URI** para expressar `:` numa senha, e o que `postgres.js`/libpq decodificam — atravessa como o literal `p%3Ass`, o servidor recusa a autenticação, e o `abortar` diz "confirme que a instância daquele endereço e porta está de pé".
 - **Impacto:** é o diagnóstico que culpa o servidor por um defeito de configuração — exatamente o que o cabeçalho do arquivo declara existir para não produzir. A assimetria é o ponto: o procedimento hoje aceita `:` e `@` **crus** (fora do padrão de URI) e quebra em silêncio no `%` (dentro do padrão). **Sem alcance para T5/T6/T7 nem para o caminho privilegiado**: nem `provisionar-base.sh` (letras e números) nem `postgres-efemero.ts` (base64url) emitem `%`. O cenário é o arquivo de ambiente regravado à mão — que o próprio comentário do bloco de escape antecipa.
 - **O que fazer:** decodificar `%XX` nos campos de credencial antes de escapá-los (`printf '%b' "${valor//%/\\x}"` com validação prévia de `^([^%]|%[0-9A-Fa-f]{2})*$`), mais um caso na tabela do CT-007 com credencial percent-encoded. Alternativa mais barata: guarda que recusa `%` **nomeando a codificação-percentual como causa** e o valor cru como forma aceita.
 
+- **Como foi fechado (2026-08-23):** adotada a **segunda** saída que o próprio débito oferece — guarda que
+  recusa `%` na credencial **nomeando a codificação percentual como causa**, com código de retorno
+  PRÓPRIO (2) e mensagem que diz qual é a forma aceita. `decompor_url` não decodifica nada.
+- ⚠️ **A decodificação (`printf '%b'` com validação prévia) foi avaliada e RECUSADA**, e a razão é de
+  risco, não de esforço: ela introduziria um caminho novo de manipulação de credencial num script que
+  fala com o **banco durável**, para atender uma forma que **nenhum produtor deste repositório
+  emite** — `provisionar-base.sh` gera letras e números, `postgres-efemero.ts` gera base64url. O
+  cenário do débito é o arquivo de ambiente regravado à mão, e para ele o que faltava era o
+  **diagnóstico certo**, não a tolerância. O dano declarado era o diagnóstico que culpa o servidor;
+  é ele que a correção remove.
+- **Rede:** `ct_007_tabela_de_decomposicao` em `verificar-apuracao-versao.sh`, carregando
+  `decompor_url` do arquivo **real** pelo mesmo mecanismo das tabelas irmãs, com **7 linhas**: as
+  duas de percent-encoding (TCP e socket) contra a credencial crua — o par que discrimina —, mais os
+  controles de **não-regressão** de `:` e `@` crus (que atravessam inertes até o arquivo de senha, e
+  recusá-los seria fechar a porta certa no lugar errado) e os dois desfechos de código 1 preservados.
+- **Medido:** bateria `verificar-apuracao-versao.sh` **3/3 aprovados**, 83 asserções contra 75 da
+  baseline. ⚠️ **Ela reprovou na primeira redação**, e por um motivo que vale registrar: o comentário
+  do guarda montava uma cadeia de conexão completa com valor no lugar do segredo, e a **varredura de
+  credencial do `CT-009` a pegou** — a rede do repositório funcionando sobre a própria correção. O
+  exemplo foi reescrito sem cadeia completa, e o porquê ficou no comentário para o próximo que
+  editar o bloco.
 ### D25 · baixo · security · T5 · Tech Review — **tem dono e gatilho VINCULANTES: `log.ts` (T3), bloqueante da fatia de autenticação** — ✅ RESOLVIDO (ver `Status:`)
 - **Status:** ✅ **RESOLVIDO** — confirmado por auditoria de 2026-08-08 (higienização da lista). Fechado fora do pipeline, sem anotação na época: `packages/shared/src/log.ts` encadeia `redigirValorEmCadeiaDeConsulta` sobre o eixo de cadeia de conexão, com `RADICAIS_SENSIVEIS_EM_ENDERECO` (:220) e marcador `DECISÃO FECHADA` delimitando `callbackURL` como não-sensível.
 - **Onde:** `packages/shared/src/log.ts:284` (`mascararCredencial`) — sintoma observável em `apps/api/src/comum/filtro-excecao.ts:94`

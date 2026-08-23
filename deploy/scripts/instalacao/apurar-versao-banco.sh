@@ -261,6 +261,32 @@ decompor_url() {
 	URL_PAPEL="${credencial%%:*}"
 	URL_SEGREDO="${credencial#*:}"
 
+	# CODIFICAÇÃO PERCENTUAL — recusada com diagnóstico PRÓPRIO (código 2).
+	#
+	# Este procedimento nunca decodificou `%XX`, e até 2026-08-04 o `%` era barrado
+	# por efeito colateral do guarda de alfabeto que a rodada 3 removeu. Sem
+	# guarda, uma senha escrita na posição do SEGREDO como `p%3Ass` — a forma
+	# CANÔNICA de URI para expressar ':' numa senha, e o que `postgres.js` e a
+	# libpq decodificam — atravessa como o literal `p%3Ass`, o servidor recusa a
+	# autenticação, e o `abortar` da consulta manda conferir se a instância está de
+	# pé. É o diagnóstico que culpa o SERVIDOR por um defeito de configuração,
+	# exatamente o que o cabeçalho deste arquivo declara existir para não produzir.
+	#
+	# ⚠️ O exemplo acima NÃO monta uma cadeia de conexão completa, de propósito: a
+	# varredura de credencial do `CT-009` reprova este arquivo se ela aparecer com
+	# valor no lugar do segredo — e reprovou, na primeira redação deste bloco. O
+	# formato aceito já está no cabeçalho, com marcador.
+	#
+	# Recusar, e não decodificar: decodificar introduziria um caminho novo de
+	# manipulação de credencial num script que fala com o banco durável, para
+	# atender uma forma que NENHUM produtor deste repositório emite —
+	# `provisionar-base.sh` gera letras e números, `postgres-efemero.ts` gera
+	# base64url. O cenário é o arquivo de ambiente regravado à mão, e para ele o
+	# que falta é o diagnóstico certo, não a tolerância.
+	case "${credencial}" in
+	*%*) return 2 ;;
+	esac
+
 	if [[ "${destino}" == /* ]]; then
 		local caminho="${destino%%\?*}"
 		URL_BANCO="${caminho#/}"
@@ -397,10 +423,19 @@ ler_versao_do_lado() {
 		;;
 	esac
 
-	if ! decompor_url "${URL_LIDA}"; then
+	local desfecho_da_decomposicao=0
+	decompor_url "${URL_LIDA}" || desfecho_da_decomposicao=$?
+	case "${desfecho_da_decomposicao}" in
+	0) ;;
+	2)
+		abortar "a credencial do lado da ${rotulo}, lida de ${arquivo}, usa CODIFICAÇÃO PERCENTUAL ('%XX') — este procedimento não a decodifica" \
+			"grave o valor CRU no arquivo de ambiente: ':' e '@' na senha atravessam inertes até o arquivo de senha do cliente, que este procedimento escapa. Se o valor precisa mesmo de '%', ele não pode ser apurado por aqui — e seguir adiante faria a autenticação falhar e este script culpar o servidor"
+		;;
+	*)
 		abortar "a cadeia de conexão do lado da ${rotulo}, lida de ${arquivo}, está em formato irreconhecível" \
 			"use uma das duas formas aceitas: postgresql://PAPEL:SEGREDO@HOSPEDEIRO:PORTA/BANCO ou postgresql://PAPEL:SEGREDO@/BANCO?host=DIRETORIO&port=PORTA"
-	fi
+		;;
+	esac
 
 	DESTINO_LIDO="${URL_HOSPEDEIRO}:${URL_PORTA}"
 

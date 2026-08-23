@@ -363,37 +363,94 @@ Status: **12/12 tasks concluídas** · suíte **1710 casos** verdes nos 9 pacote
 - **Impacto:** qualquer reciclagem de worker do nginx de produção durante os ~40 s da bateria produz falha sem que nada da task tenha mudado. A asserção é **legítima e sem substituto óbvio** (é ela que separa *"não escrevi nada"* de *"não mexi em nada"*), e saiu verde nas duas rodadas.
 - **O que fazer:** (a) filtrar do retrato os processos cujo comando contenha `${DIR_TRABALHO}`, em vez de depender de o teardown ter terminado, e fazer o laço emitir `aviso` ao esgotar o limite; (b) restringir a comparação ao processo **mestre** do nginx e à contagem de workers, tolerando reciclagem alheia.
 
-### D34 · BAIXO · error_handling · T11 · QA (rodada 1)
+### D34 · BAIXO · error_handling · T11 · QA (rodada 1) — ✅ **RESOLVIDO** na intervenção dirigida de 2026-08-23
 - **Onde:** `deploy/scripts/borda/instalar-borda-de-notificacao.sh:481` (`passo_p05_recarregar`)
 - **Problema:** a idempotência é medida **no disco**, não no servidor em execução — `total_criado` deriva da comparação do arquivo.
 - **Impacto:** se o vhost já está correto em disco mas **nunca chegou a ser carregado** (execução anterior interrompida entre escrita e reload, ou arquivo posto à mão), o script reporta `JA-OK` e sai 0 **sem recarregar**, e a borda segue sem atender. Estado convergente no disco não é estado convergente no processo. A decisão de não recarregar à toa está **certa** (micro-indisponibilidade numa borda compartilhada); falta o segundo sinal.
 - **O que fazer:** antes de decidir o reload, conferir se o servidor em execução já atende o vhost — ex. comparando o instante de modificação do arquivo com o de início do processo mestre do nginx. Alternativa mais barata: declarar no resumo que a prova de que a borda atende é o `verificar-notificacao-bancaria.sh`, e registrar o caso como limitação conhecida.
 
-### D35 · BAIXO · error_handling · T11 · QA (rodada 1)
+- **Como foi fechado (2026-08-23):** `passo_p05_recarregar` ganhou o SEGUNDO sinal — `servidor_ja_carregou`,
+  função pura nova que compara o `mtime` do vhost com o instante de início do **worker mais antigo**
+  do nginx. ⚠️ O discriminador é o **worker**, nunca o mestre: `reload` substitui os workers e
+  **preserva** o mestre, de modo que o início do mestre não separa configuração carregada de
+  configuração nunca lida — a sugestão original do débito (*"instante de início do processo mestre"*)
+  **não funcionaria**, e a divergência foi medida antes de agir. A decisão de não recarregar à toa
+  fica intacta: com `total_criado == 0` e o servidor já tendo carregado, segue `JA-OK`; só recarrega
+  quando o disco está convergente e o **processo** não. O terceiro código (2, não deu para decidir)
+  mantém o comportamento antigo e **avisa** — na dúvida não se recarrega, porque errar para esse lado
+  custa uma execução do verificador e errar para o outro custa indisponibilidade.
+- **Rede:** `CT-1005 (b)`, três asserções — arquivo anterior aos workers (já carregado), posterior
+  (não carregado) e inexistente (não se decide). O par antigo/recente é o que discrimina; a perna dos
+  workers é pulada com `aviso` explícito num host sem nginx, nunca em silêncio.
+### D35 · BAIXO · error_handling · T11 · QA (rodada 1) — ✅ **RESOLVIDO** na intervenção dirigida de 2026-08-23
 - **Onde:** `deploy/scripts/borda/instalar-borda-de-notificacao.sh:458` (`restaurar_destino`)
 - **Problema:** o backup é guardado com `cp -p` (que **preserva** o modo) e reposto com `install -m "${MODO_DO_VHOST}"` (que **fixa** 0644); um destino que estava em 0600 volta com 644. E a mensagem de :475 (*"o estado anterior foi restaurado"*) afirma mais do que aconteceu.
 - **Impacto:** conteúdo certo, permissão alterada — numa borda compartilhada com produção.
 - **O que fazer:** capturar o modo original junto com o backup (`stat -c '%a'`) e usá-lo no `install -m`; ou trocar por `cp -p`, simétrico ao que criou o backup. E ajustar a frase para dizer o que de fato é garantido.
 
-### D36 · BAIXO · code_quality · T11 · QA (rodada 1)
+- **Como foi fechado (2026-08-23):** o modo do arquivo anterior passou a ser **capturado junto com o backup**
+  (`MODO_ANTERIOR_DO_DESTINO`, via `stat -c '%a'`, no mesmo ponto e instante do `cp -p`) e é ele que
+  `restaurar_destino` repõe — nunca mais `MODO_DO_VHOST`. A distinção é de propriedade: `MODO_DO_VHOST`
+  é a permissão que **este** produto dá ao vhost que ele instala; o arquivo restaurado é de quem
+  estava ali antes, numa borda compartilhada. A mensagem passou a nomear o que de fato se garante
+  (*"o conteúdo e a permissão anteriores … foram restaurados"*), e a frase do P04 idem.
+- **Rede:** `CT-1005 (b)`, duas asserções sobre `restaurar_destino` — que era carregada pela bateria e
+  **nunca exercitada**: repõe o conteúdo anterior, e repõe a permissão `0600` anterior em vez de 0644.
+### D36 · BAIXO · code_quality · T11 · QA (rodada 1) — ✅ **RESOLVIDO** na intervenção dirigida de 2026-08-23
 - **Onde:** `deploy/scripts/borda/instalar-borda-de-notificacao.sh:224` (e :249)
 - **Problema:** duas expressões estreitas, **latentes hoje**: (a) o guarda de marcador residual usa `'__[A-Z_]+__'`, que **não casa dígito** — um `__PORTA_8080__` futuro escaparia do guarda e entraria em produção; (b) `${modo#0}` remove **um** zero à esquerda, correto para `0644` mas errado para `0044`, que viraria `044` contra o `44` do `stat` e faria o arquivo ser julgado divergente e reescrito em toda execução, quebrando a idempotência em silêncio.
 - **Impacto:** nenhuma das duas está ativa — os seis marcadores atuais são alfabéticos e o modo é 0644.
 - **O que fazer:** (a) trocar por `'__[A-Z0-9_]+__'`; (b) normalizar os dois lados com aritmética de base 8 em vez de recorte de texto — `[[ "$(stat -c '%a' "${destino}")" == "$(printf '%o' "$((8#${modo}))")" ]]`.
 
-### D37 · BAIXO · error_handling · T11 · QA (rodada 1)
+- **Como foi fechado (2026-08-23):** (a) a classe do guarda de marcador residual passou a `'__[A-Z0-9_]+__'`
+  — o que define um marcador do gabarito é a **forma**, não o alfabeto do nome; (b) a comparação de
+  modo saiu do recorte de texto (`${modo#0}`) para **valor em base 8**, extraída na função pura
+  `modo_igual`. ⚠️ **A extração não é estilo, é PROVA**: o único par que discrimina o defeito é um modo
+  sem permissão para o dono (`0044` contra o `44` do `stat`), e um arquivo assim não pode ser lido
+  pelo usuário que roda a bateria — o `cmp` de `vhost_diverge` falharia por I/O **antes** da
+  comparação de modo, e a asserção estaria medindo outra coisa. Medido: a primeira versão da rede
+  reprovou exatamente assim.
+- **Rede:** `CT-1005 (b)` — o marcador com dígito é **acrescentado** ao gabarito (não trocado por um
+  real), para que a recusa só possa vir do guarda de residual; e três asserções sobre `modo_igual`,
+  incluindo o controle negativo (`600` continua diferente de `0644`).
+### D37 · BAIXO · error_handling · T11 · QA (rodada 1) — ✅ **RESOLVIDO** na intervenção dirigida de 2026-08-23
 - **Onde:** `deploy/scripts/borda/instalar-borda-de-notificacao.sh:396`
 - **Problema:** a conferência de `include` é de **um nível só**, e é **pulada em silêncio** quando a configuração do servidor não é legível (`[[ -r … ]] &&` sem `aviso`).
 - **Impacto:** instalação em que o `nginx.conf` inclui um arquivo que por sua vez inclui o diretório dos vhosts — **padrão do CloudPanel, que é o que atende `/opt/frappe` neste host** — faz o script abortar indevidamente; a falha é fechada e a mensagem é acionável, o que a torna suportável. O que **não** é suportável é o outro ramo: `/etc/nginx` é 0700 root nesta máquina, isto é, **o ramo silencioso é o que de fato vai correr**.
 - **O que fazer:** emitir `aviso` explícito nomeando a checagem não feita quando a configuração não for legível — a convenção da `testing-stack.md` (*"ferramenta ou estado ausente nunca faz o caso passar em silêncio"*) vale igualmente para pré-condição de instalador. E resolver `include` transitivamente (um nível de recursão) antes de decidir o aborto.
 
-### D38 · BAIXO · data_handling · T11 · QA (rodada 1)
+- **Como foi fechado (2026-08-23):** a conferência virou a função pura `configuracao_inclui_diretorio`, com
+  **três** códigos — inclui (0), não inclui (1) e **não deu para decidir** (2). O terceiro é o que
+  elimina o ramo mudo: *"não consegui ler"* e *"não inclui"* levam a condutas opostas, e fundi-las era
+  o defeito. O caso não-legível emite `info "⚠️ …"` nomeando a checagem que **não** foi feita, pela
+  convenção da `testing-stack.md` (*"ferramenta ou estado ausente nunca faz o caso passar em
+  silêncio"*). E o `include` passou a ser resolvido **transitivamente (um nível)**, que é o padrão do
+  painel que administra a borda deste host.
+- ⚠️ **Uma premissa do débito estava VENCIDA e foi refutada por medição:** *"o ramo silencioso é o que
+  de fato vai correr"* pressupõe leitura sem privilégio, mas o instalador **aborta com `EUID != 0`** e
+  root lê `0700 root`. Medido em 2026-08-23: `/etc/nginx` é `drwx------ root root`, e como root o
+  `nginx.conf` **é** legível. O ramo mudo corre quando a configuração está em **outro prefixo** — o
+  que continua plausível e é o que a correção cobre. A correção da resolução transitiva é
+  **independente do privilégio** e era a metade que mais mordia.
+- **Rede:** `CT-1005 (b)`, quatro asserções — direto, transitivo (era 1, agora 0), não inclui (1) e
+  ilegível (2).
+### D38 · BAIXO · data_handling · T11 · QA (rodada 1) — ✅ **RESOLVIDO** na intervenção dirigida de 2026-08-23
 - **Onde:** `deploy/scripts/borda/instalar-borda-de-notificacao.sh:286` (`valor_no_arquivo_de_ambiente`)
 - **Problema:** a leitura toma a **primeira** atribuição (`head -1`), enquanto o systemd (`EnvironmentFile=`) usa a **última** — resolução na direção **oposta**, sem nada acusar. Também não há tratamento de `
 ` (CRLF), aspas ou espaço à direita.
 - **Impacto:** as três chaves lidas aqui **não** são semeadas pelo provisionador e entram à mão, o que torna a duplicata plausível. ⚠️ O Tech Review considerou **elevar** e manteve em débito, por duas razões: não é evidência nova, e o arquivo é gravado pelo `provisionar-base.sh`, que já barra a duplicata a montante.
 - **O que fazer:** seguir o precedente do repositório — `provisionar-base.sh:1536` **aborta** diante de chave duplicada em vez de escolher em silêncio, e é essa a correção certa. ⚠️ **Não** troque `head -1` por `tail -1`: alinharia com o systemd mas mantém a escolha silenciosa. Acrescentar `tr -d '\r'` e recorte de espaço à direita.
 
+- **Como foi fechado (2026-08-23):** seguindo o precedente que o próprio débito nomeia
+  (`provisionar-base.sh`, `extrair_credencial_db`), a ambiguidade passou a ser **recusada** em vez de
+  resolvida em silêncio: `chaves_repetidas_no_ambiente` é conferida em `verificar_precondicoes`
+  **antes** de qualquer leitura, e o script aborta nomeando a chave repetida. ⚠️ O `head -1`
+  **permaneceu**, como o débito manda — trocá-lo por `tail -1` alinharia com o systemd e manteria a
+  escolha silenciosa. Ele agora é seguro **por pré-condição**, e o docblock diz isso. Acrescentados
+  `tr -d '\r'` e recorte de espaço à direita, porque o valor vira caminho de certificado e diretiva
+  do vhost.
+- **Rede:** `CT-1005 (b)`, quatro asserções — o antivácuo (arquivo sem repetição **não** acusa) antes
+  do positivo (acusa nomeando a chave), mais CR e espaço à direita fora do valor lido.
 ### D39 · BAIXO · documentation · T11 · QA (rodada 1)
 - **Onde:** `deploy/scripts/borda/instalar-borda-de-notificacao.sh:292`
 - **Problema:** o docblock de `validar_vhost_isolado` afirma que a validação acontece *"num prefixo efêmero e sem privilégio"*, mas `verificar_precondicoes` aborta quando `EUID != 0`, de modo que ela **sempre** roda como root.

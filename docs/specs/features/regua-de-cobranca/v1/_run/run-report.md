@@ -290,13 +290,27 @@ Bate exatamente com o número declarado no `task_plan.md`. Nenhum pacote encolhe
 - **Impacto:** a falha é **RUIDOSA** — o relay recusa remetente em domínio que não resolve, a tentativa nasce `FALHOU` em `negocio.envio_de_cobranca` e `houveFalha` sobe. É **atrito, não silêncio**. O comentário gravado no próprio arquivo instrui a troca, o que é a mitigação certa hoje.
 - **O que fazer:** quando a **F7** abrir, considerar um caso **do verificador** (não do provisionamento, que não deve abortar por conteúdo de negócio) cobrando a implicação: `SMTP_URL` divergente do capturador local ⇒ `EMAIL_REMETENTE` diferente do padrão.
 
-### D39 · BAIXO · logic · T8 · QA
+### D39 · BAIXO · logic · T8 · QA — ✅ **RESOLVIDO** na intervenção dirigida de 2026-08-23
 > ⚠️ **Este `D39` é da `regua-de-cobranca` e NÃO é o `D39 (F1/fechamento)` do índice do `CLAUDE.md`** — a sequência corre dentro da §2 da fatia (§3-B), e o identificador é o par. Ironicamente, os dois são sobre o **mesmo arquivo**.
 - **Onde:** `deploy/scripts/instalacao/provisionar-base.sh` (`conferir_coordenadas_do_ambiente`) — **PRÉ-EXISTENTE, fora do delta**
 - **Problema:** o laço decide ausência pelo **VALOR** (`sed -n "s|^${chave}=||p"`), de modo que um `SMTP_URL=` ou `REDIS_URL=` **esvaziado pelo operador** entra em `CHAVES_AUSENTES`, o passo P06 acrescenta uma **segunda** atribuição da mesma chave, e **a execução seguinte aborta por ambiguidade** em `extrair_credencial_db`.
 - **Impacto:** não é regressão da T8 — o `git diff --numstat` sobre o provisionador é **74/0**, todas em código novo. E a função nova `garantir_chaves_de_conteudo` faz o **contrário**, ancorando em `grep -q '^EMAIL_REMETENTE='` (existência da **linha**), o que o QA mediu no cenário (s4).
 - **O que fazer:** trocar o critério de ausência do laço para **existência de linha**, alinhando-o ao que a função nova já adota, e acrescentar ao bloco (l) de `verificar-provisionamento.sh` um cenário com **chave presente e vazia**. ⚠️ **Fora do escopo** — o conserto passa pela função que o bloco (l) do verificador **sonda por igualdade**.
 
+- **Como foi fechado (2026-08-23):** o critério de ausência do laço passou a ser a **existência da linha**
+  (`grep -qE "^[[:space:]]*${chave}="`), alinhado ao que `garantir_chaves_de_conteudo` já adotava —
+  que é exatamente o que o débito prescrevia. Chave presente e vazia deixou de entrar em
+  `CHAVES_AUSENTES` e passou a ser **divergência** (valor esperado contra valor vazio), que aborta com
+  diagnóstico legível em vez de fazer o P06 acrescentar uma segunda atribuição da mesma chave — o
+  provisionador criando, sozinho, a condição de ambiguidade que ele existe para recusar.
+- **Rede:** o cenário de **chave presente e vazia** foi acrescentado ao bloco (l) de
+  `verificar-provisionamento.sh`, como o débito pedia. Ele forma **par** com a asserção de
+  `FALTA:REDIS_URL` que já existia: uma sozinha não separa *"linha ausente"* de *"linha presente e
+  vazia"*, que é justamente a distinção que o defeito apagava.
+- ⚠️ **A bateria NÃO foi executada** — exige privilégio administrativo e o `sudo` deste host pede
+  senha interativa. O comportamento foi provado exercitando `conferir_coordenadas_do_ambiente` **real**
+  em três pernas (vazia → divergente; sem linha → ausente; completa → coerente), e o valor esperado da
+  asserção nova foi conferido pela mesma sonda que a bateria usa. Fica para a próxima janela assistida.
 ### D40 · BAIXO · error_handling · T8 · Tech Review — ✅ FECHADO
 - **Onde:** `deploy/scripts/instalacao/provisionar-base.sh:719-721` (`garantir_chaves_de_conteudo`) e, pela mesma classe, as linhas 1329-1330
 - **Problema:** a semeadura faz `printf 'EMAIL_REMETENTE=%s\n' … >>"${arquivo}"` **sem conferir se o arquivo preexistente termina em `\n`**. Se a última linha não tiver quebra final (arquivo editado à mão por editor que não a acrescenta), o acréscimo **se cola nela**: `SMTP_URL=smtp://127.0.0.1:1025EMAIL_REMETENTE=avisos@sysloc.invalid`.

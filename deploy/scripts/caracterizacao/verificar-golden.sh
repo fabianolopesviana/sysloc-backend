@@ -647,12 +647,51 @@ padrao = re.compile(
     r"(?:^|[^A-Za-z0-9_-])" + re.escape(agulha) + r"(?:[^A-Za-z0-9_-]|$)"
 )
 
+# SEGUNDO discriminador — o CONTEXTO, acrescentado na intervenção dirigida de
+# 2026-08-23 (`D4 · F2/T1`).
+#
+# CAUSA-RAIZ de ele existir: o token isolado não separa vazamento de PROSA. A
+# agulha é uma palavra de dicionário de 5 caracteres, e frases legítimas de
+# documentação a contêm ("exige permissão de X no repo", "o papel X do painel").
+# Cada uma delas reprovava, entrava na lista nominal, e a seguinte reprovava de
+# novo — a lista chegou a 11 entradas e a bateria ficou VERMELHA de forma
+# permanente. Verificador sempre vermelho tem poder de detecção ZERO: ninguém
+# distingue "o vermelho de sempre" de um vazamento novo, que é exatamente o modo
+# de falha que `.claude/rules/testing-stack.md` descreve ao justificar o código
+# de saída 2.
+#
+# O que caracteriza vazamento não é a palavra aparecer — é ela aparecer ONDE UMA
+# CREDENCIAL SERIA USADA. Isso independe de o valor ser comum ou raro, que é o
+# motivo de este discriminador não envelhecer junto com a agulha.
+#
+# ⚠️ A mudança endurece e afrouxa em direções DIFERENTES, e as duas são
+# deliberadas:
+#   - AFROUXA: ocorrência nova em prosa passa a AVISAR em vez de reprovar.
+#   - ENDURECE: ocorrência em contexto de credencial passa a REPROVAR mesmo se
+#     estiver catalogada em PREEXISTENTES. Antes, editar uma das 11 linhas
+#     catalogadas para `password: <agulha>` seguiria sendo tolerada — a lista é
+#     por posição, não por natureza.
+CONTEXTO_DE_CREDENCIAL = re.compile(
+    r"(?:"
+    # (a) valor de uma chave cujo nome anuncia segredo: `password: X`, `senha=X`
+    r"(?:pass(?:wd|word)?|senha|secret|segredo|credencial|pwd)"
+    r"[\"']?\s*[:=]\s*[\"']?" + re.escape(agulha) + r"\b"
+    r"|"
+    # (b) credencial de uma URL de conexão: `esquema://usuario:X@hospedeiro`
+    r"://[^\s:/@]+:" + re.escape(agulha) + r"@"
+    r"|"
+    # (c) argumento de linha de comando: `-p X`, `--password X`, `--password=X`
+    r"(?:^|\s)-{1,2}(?:p|pass(?:word)?)(?:[=\s]+|)" + re.escape(agulha) + r"\b"
+    r")",
+    re.IGNORECASE,
+)
+
 versionados = subprocess.run(
     ["git", "-C", str(raiz), "ls-files", "-z"],
     capture_output=True, check=True, text=True,
 ).stdout.split("\0")
 
-reprovacoes, avisos = [], []
+reprovacoes, avisos, em_prosa = [], [], []
 for relativo in versionados:
     if not relativo:
         continue
@@ -665,15 +704,37 @@ for relativo in versionados:
         if not padrao.search(linha):
             continue
         ocorrencia = f"{relativo}:{numero}"
-        alvo = avisos if ocorrencia in PREEXISTENTES else reprovacoes
-        alvo.append(ocorrencia)
+        if CONTEXTO_DE_CREDENCIAL.search(linha):
+            # Contexto de credencial reprova SEMPRE — catalogada ou não. A lista
+            # nominal cataloga posição, e posição não diz nada sobre natureza.
+            reprovacoes.append(ocorrencia)
+        elif ocorrencia in PREEXISTENTES:
+            avisos.append(ocorrencia)
+        else:
+            em_prosa.append(ocorrencia)
 
 for aviso in sorted(avisos):
     print(f"AVISO: ocorrência pré-existente e catalogada em {aviso}", file=sys.stderr)
+if em_prosa:
+    # RESUMO, e não uma linha por ocorrência: são dezenas, e listá-las uma a uma
+    # reintroduz por ruído o problema que o vermelho permanente causava — saída
+    # que ninguém lê deixa de proteger tanto quanto verificador que não reprova.
+    # O que precisa ser auditável é a CONTAGEM (se ela saltar, alguém acrescentou
+    # a palavra em massa) e os ARQUIVOS, que cabem na tela.
+    arquivos = sorted({ocorrencia.rsplit(":", 1)[0] for ocorrencia in em_prosa})
+    print(
+        f"AVISO: {len(em_prosa)} ocorrência(s) da agulha FORA de contexto de"
+        f" credencial, em {len(arquivos)} arquivo(s) — a agulha é palavra comum de"
+        " 5 caracteres e não se distingue de prosa legítima. Não é vazamento; o"
+        " que reprova é a agulha em posição de credencial.",
+        file=sys.stderr,
+    )
+    for arquivo in arquivos:
+        print(f"       fora de contexto: {arquivo}", file=sys.stderr)
 for reprovacao in sorted(reprovacoes):
-    print(f"credencial encontrada em {reprovacao}", file=sys.stderr)
+    print(f"credencial encontrada EM CONTEXTO DE CREDENCIAL em {reprovacao}", file=sys.stderr)
 
-nao_encontradas = sorted(PREEXISTENTES - set(avisos))
+nao_encontradas = sorted(PREEXISTENTES - set(avisos) - set(reprovacoes))
 if nao_encontradas:
     # A baseline deixou de bater: ou a ocorrência sumiu (ótimo, atualizar a lista)
     # ou mudou de linha (e a nova posição já reprovou acima).

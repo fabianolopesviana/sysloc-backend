@@ -183,6 +183,9 @@ readonly PORTA_HTTP_PADRAO="80"
 DIR_TEMPORARIO=""
 BACKUP_DO_DESTINO=""
 DESTINO_TINHA_ARQUIVO="nao"
+# Modo do arquivo que estava no destino ANTES desta execução. Capturado junto com
+# o backup, e usado para repor exatamente o que havia — ver `restaurar_destino`.
+MODO_ANTERIOR_DO_DESTINO=""
 
 # A JANELA em que o destino já foi escrito e a configuração INTEIRA ainda não
 # foi validada. Ligada no P03 logo após a escrita, desligada no P04 quando o
@@ -383,8 +386,13 @@ renderizar_vhost() {
 		esac
 	done
 
+	# A classe de caracteres inclui DÍGITO de propósito: o que define um marcador
+	# do gabarito é a FORMA (par de sublinhados duplos delimitando o nome), não o
+	# alfabeto do nome. Enumerar só letras deixaria um `__PORTA_8080__` futuro
+	# atravessar o guarda e chegar a /etc como diretiva meio renderizada, e o
+	# defeito nasceria mudo — o gabarito é quem escolhe os nomes, não este guarda.
 	local restantes
-	restantes="$(printf '%s\n' "${rendido}" | grep -oE '__[A-Z_]+__' | sort -u || true)"
+	restantes="$(printf '%s\n' "${rendido}" | grep -oE '__[A-Z0-9_]+__' | sort -u || true)"
 	if [[ -n "${restantes}" ]]; then
 		printf 'marcador não substituído no vhost renderizado: %s\n' \
 			"$(printf '%s' "${restantes}" | tr '\n' ' ')" >&2
@@ -392,6 +400,24 @@ renderizar_vhost() {
 	fi
 
 	printf '%s\n' "${rendido}"
+}
+
+# Compara dois modos de arquivo por VALOR em base 8, e não por grafia.
+#
+# Existe separada de `vhost_diverge` por uma razão de PROVA, e não de estilo: o
+# único par que discrimina o defeito é o de modo sem permissão para o dono
+# (`0044` contra o `44` do `stat`), e um arquivo assim não pode ser lido pelo
+# usuário que roda a bateria — o `cmp` de `vhost_diverge` falharia por I/O antes
+# de a comparação de modo acontecer, e a asserção estaria medindo outra coisa.
+# Em produção o instalador roda como root e o ponto não aparece; a verificação
+# roda sem privilégio, e é ela que precisa poder falhar.
+#
+# O recorte de texto anterior (`${modo#0}`) removia UM zero à esquerda: certo
+# para `0644`, errado para `0044`, que virava `044` contra `44` e fazia o arquivo
+# ser julgado divergente e reescrito em TODA execução — idempotência quebrada em
+# silêncio, com reload a cada corrida numa borda compartilhada.
+modo_igual() {
+	[[ "$(printf '%o' "$((8#$1))")" == "$(printf '%o' "$((8#$2))")" ]]
 }
 
 # Decide se o destino precisa ser (re)escrito a partir da origem.
@@ -409,7 +435,13 @@ vhost_diverge() {
 
 	[[ -f "${destino}" ]] || return 0
 	cmp -s "${origem}" "${destino}" || return 0
-	[[ "$(stat -c '%a' "${destino}")" == "${modo#0}" ]] || return 0
+	# Os dois lados são comparados por VALOR em base 8, não por grafia. O recorte
+	# de texto anterior (`${modo#0}`) removia UM zero à esquerda: certo para
+	# `0644`, errado para `0044`, que virava `044` contra o `44` do `stat` e fazia
+	# o arquivo ser julgado divergente e reescrito em TODA execução — a
+	# idempotência quebraria em silêncio, e o sintoma (reload a cada corrida numa
+	# borda compartilhada) fica longe da causa.
+	modo_igual "$(stat -c '%a' "${destino}")" "${modo}" || return 0
 	return 1
 }
 
@@ -443,10 +475,119 @@ porta_da_api_na_unidade() {
 # Lê uma chave do arquivo de configuração do produto, sem `source`: o arquivo
 # carrega segredo, e interpretá-lo como shell traria o conteúdo dele para dentro
 # deste processo sem necessidade nenhuma.
+# Decide se o servidor EM EXECUÇÃO já carregou o arquivo indicado.
+#
+#   0  já carregou   1  não carregou   2  não deu para decidir
+#
+# O discriminador é o WORKER mais antigo, nunca o mestre: `reload` substitui os
+# workers e PRESERVA o mestre, de modo que o instante de início do mestre não
+# distingue uma configuração carregada de uma que nunca foi lida. Arquivo mais
+# novo que o worker mais antigo é arquivo que aquele worker não viu.
+#
+# Existe porque estado convergente no DISCO não é estado convergente no
+# PROCESSO: uma execução anterior interrompida entre a escrita (P03) e a recarga
+# (P05), ou um arquivo posto à mão, deixa o vhost correto em disco e a borda sem
+# atender — e o P05, que decide por `total_criado`, reportava `JA-OK` e saía 0.
+servidor_ja_carregou() {
+	local arquivo="$1" mtime agora etimes args worker_mais_antigo="" inicio_do_worker
+	[[ -f "${arquivo}" ]] || return 2
+	command -v ps >/dev/null 2>&1 || return 2
+	mtime="$(stat -c '%Y' "${arquivo}" 2>/dev/null)" || return 2
+
+	while read -r etimes args; do
+		[[ "${etimes}" =~ ^[0-9]+$ ]] || continue
+		[[ "${args}" == *'worker process'* ]] || continue
+		if [[ -z "${worker_mais_antigo}" || "${etimes}" -gt "${worker_mais_antigo}" ]]; then
+			worker_mais_antigo="${etimes}"
+		fi
+	done < <(ps -C nginx -o etimes=,args= 2>/dev/null || true)
+
+	# Sem worker identificado não se decide nada — e não decidir é diferente de
+	# decidir que não carregou: o segundo mandaria recarregar às cegas.
+	[[ -n "${worker_mais_antigo}" ]] || return 2
+
+	agora="$(date +%s)"
+	inicio_do_worker=$((agora - worker_mais_antigo))
+	[[ "${mtime}" -le "${inicio_do_worker}" ]]
+}
+
+# Decide se a configuração do servidor inclui o diretório de vhosts, direta ou
+# TRANSITIVAMENTE (um nível).
+#
+#   0  inclui
+#   1  não inclui
+#   2  não deu para decidir (configuração ilegível) — que NÃO é o mesmo que 1
+#
+# O nível de recursão não é zelo: o padrão do painel que administra o servidor de
+# borda deste host é o `nginx.conf` incluir um ARQUIVO, e ser esse arquivo a
+# incluir o diretório dos vhosts. Com conferência de um nível só, o instalador
+# aborta dizendo que o diretório não é incluído justamente onde ele é — e a
+# mensagem manda o operador informar outro diretório, que é o conselho errado.
+#
+# O terceiro código existe porque "não consegui ler" e "não inclui" levam a
+# condutas OPOSTAS: a segunda aborta, a primeira avisa e segue. Fundi-las é o que
+# produzia o ramo mudo.
+configuracao_inclui_diretorio() {
+	local configuracao="$1" diretorio="$2" alvo incluido
+	[[ -r "${configuracao}" ]] || return 2
+
+	if grep -qE "^[[:space:]]*include[[:space:]]+${diretorio}/" "${configuracao}"; then
+		return 0
+	fi
+
+	while read -r alvo; do
+		[[ -n "${alvo}" ]] || continue
+		# Sem aspas de propósito: o alvo do `include` costuma ser um glob
+		# (`.../conf.d/*.conf`), e é o shell que o expande, como o nginx faz.
+		for incluido in ${alvo}; do
+			[[ -f "${incluido}" && -r "${incluido}" ]] || continue
+			if grep -qE "^[[:space:]]*include[[:space:]]+${diretorio}/" "${incluido}"; then
+				return 0
+			fi
+		done
+	done < <(sed -n 's|^[[:space:]]*include[[:space:]]\{1,\}\([^;]*\);.*|\1|p' "${configuracao}")
+
+	return 1
+}
+
+# Nomeia as chaves atribuídas MAIS DE UMA VEZ no arquivo de ambiente. Imprime as
+# repetidas (separadas por espaço) e devolve 0 quando há alguma; 1 quando não há.
+#
+# Atribuição repetida é AMBIGUIDADE, e ambiguidade se recusa — não se resolve
+# escolhendo um lado. É o mesmo desenho de `extrair_credencial_db` em
+# `provisionar-base.sh`, e pela mesma razão medida: o `EnvironmentFile=` do
+# systemd, que é como as unidades leem este arquivo, resolve repetição pela
+# ÚLTIMA ocorrência; um leitor ingênuo pega a PRIMEIRA. Escolher qualquer uma das
+# duas deixa a divergência silenciosa — a borda seria instalada apontando para um
+# certificado e o serviço subiria com outro, sem nada acusar.
+#
+# O guarda é genérico porque a causa é do FORMATO, não da chave: vale para as
+# três que este script lê e para qualquer outra que venha depois. É isso que
+# torna seguro o `head -1` de `valor_no_arquivo_de_ambiente` — depois deste
+# guarda existe no máximo uma linha por chave.
+chaves_repetidas_no_ambiente() {
+	local arquivo="$1" repetidas
+	[[ -r "${arquivo}" ]] || return 1
+	repetidas="$(tr -d '\r' <"${arquivo}" |
+		grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' |
+		sort | uniq -d | tr -d '=' | tr '\n' ' ' || true)"
+	[[ -n "${repetidas// /}" ]] || return 1
+	printf '%s' "${repetidas% }"
+}
+
 valor_no_arquivo_de_ambiente() {
 	local arquivo="$1" chave="$2" valor
 	[[ -r "${arquivo}" ]] || return 1
-	valor="$(sed -n "s|^${chave}=||p" "${arquivo}" | head -1)"
+	# O `head -1` é seguro por PRÉ-CONDIÇÃO, não por sorte: `verificar_precondicoes`
+	# aborta antes daqui se alguma chave estiver repetida (ver
+	# `chaves_repetidas_no_ambiente`). Trocá-lo por `tail -1` alinharia com o
+	# systemd e MANTERIA a escolha silenciosa — não é a correção.
+	#
+	# O `\r` sai porque um arquivo salvo com fim de linha do Windows faria o valor
+	# carregar um caractere invisível que vira parte do caminho do certificado ou
+	# do hostname interpolado no vhost; o espaço à direita, pela mesma razão.
+	valor="$(tr -d '\r' <"${arquivo}" | sed -n "s|^${chave}=||p" | head -1)"
+	valor="${valor%"${valor##*[![:space:]]}"}"
 	[[ -n "${valor}" ]] || return 1
 	printf '%s' "${valor}"
 }
@@ -593,6 +734,15 @@ verificar_precondicoes() {
 		"o gabarito do vhost não está legível em ${GABARITO}" \
 		"execute a partir de um clone íntegro do repositório"
 
+	# Antes de LER qualquer chave: o arquivo de ambiente não pode ser ambíguo.
+	# As três chaves desta borda não são semeadas pelo provisionador e entram à
+	# mão, o que torna a duplicata plausível.
+	local repetidas_no_ambiente
+	if repetidas_no_ambiente="$(chaves_repetidas_no_ambiente "${ARQ_AMBIENTE}")"; then
+		abortar "${ARQ_AMBIENTE} atribui a mesma chave mais de uma vez: ${repetidas_no_ambiente}" \
+			"deixe UMA atribuição por chave. O systemd resolve repetição pela ÚLTIMA e um leitor ingênuo pela PRIMEIRA, de modo que a borda seria instalada com um valor e o serviço subiria com outro, sem nada acusar"
+	fi
+
 	HOSTNAME_RESOLVIDO="$(resolver_hostname || true)"
 	if [[ -z "${HOSTNAME_RESOLVIDO}" ]]; then
 		abortar "não há hostname para a notícia bancária — nem em SYSLOC_HOSTNAME_DA_NOTIFICACAO nem na chave ${CHAVE_HOSTNAME} de ${ARQ_AMBIENTE}" \
@@ -650,11 +800,23 @@ verificar_precondicoes() {
 
 	# Vhost instalado num diretório que o servidor não lê existe e não atende —
 	# e o sintoma (o provedor não alcança o produto) fica longe da causa.
-	if [[ -r "${CONFIGURACAO_DO_SERVIDOR}" ]] &&
-		! grep -qE "^[[:space:]]*include[[:space:]]+${DIR_DOS_VHOSTS}/" "${CONFIGURACAO_DO_SERVIDOR}"; then
-		abortar "a configuração do servidor (${CONFIGURACAO_DO_SERVIDOR}) não inclui ${DIR_DOS_VHOSTS}/" \
+	local veredito_do_include=0
+	configuracao_inclui_diretorio "${CONFIGURACAO_DO_SERVIDOR}" "${DIR_DOS_VHOSTS}" ||
+		veredito_do_include=$?
+	case "${veredito_do_include}" in
+	0) ;;
+	1)
+		abortar "a configuração do servidor (${CONFIGURACAO_DO_SERVIDOR}) não inclui ${DIR_DOS_VHOSTS}/, nem direta nem indiretamente" \
 			"informe em SYSLOC_DIR_DOS_VHOSTS um dos diretórios que ela inclui: $(grep -E '^[[:space:]]*include[[:space:]]' "${CONFIGURACAO_DO_SERVIDOR}" | tr -s ' ' | tr '\n' ' ')"
-	fi
+		;;
+	*)
+		# Pré-condição não conferida NUNCA passa em silêncio — é a convenção de
+		# `.claude/rules/testing-stack.md` para ferramenta ausente, e ela vale
+		# igualmente para pré-condição de instalador: o que não foi medido tem de
+		# ser dito, sob pena de o resumo verde afirmar mais do que se sabe.
+		info "⚠️ não consegui ler ${CONFIGURACAO_DO_SERVIDOR} — NÃO foi conferido se ${DIR_DOS_VHOSTS}/ é incluído pelo servidor; se não for, o vhost será escrito e não atenderá. Prove com 'bash deploy/scripts/borda/verificar-notificacao-bancaria.sh' depois desta execução"
+		;;
+	esac
 
 	PORTA_DA_API="$(porta_da_api_na_unidade "${UNIDADE_DA_API}" || true)"
 	if [[ -z "${PORTA_DA_API}" ]]; then
@@ -700,6 +862,9 @@ passo_p03_posicionar() {
 	if [[ -f "${destino}" ]]; then
 		DESTINO_TINHA_ARQUIVO="sim"
 		BACKUP_DO_DESTINO="${DIR_TEMPORARIO}/anterior.conf"
+		# O MODO vai junto com o conteúdo, e no mesmo instante: é o arquivo de
+		# QUEM ESTAVA AQUI, e a permissão dele não é decisão deste produto.
+		MODO_ANTERIOR_DO_DESTINO="$(stat -c '%a' "${destino}")"
 		cp -p "${destino}" "${BACKUP_DO_DESTINO}"
 	fi
 
@@ -770,11 +935,19 @@ passo_p03b_conferir_precedencia() {
 	fi
 }
 
+# Repõe no destino o que havia antes desta execução — CONTEÚDO e PERMISSÃO.
+#
+# O modo reposto é o CAPTURADO no P03, nunca `MODO_DO_VHOST`. A distinção não é
+# cosmética: `MODO_DO_VHOST` é a permissão que ESTE produto dá ao vhost que ele
+# instala; o arquivo restaurado é de quem estava aqui antes, numa borda
+# compartilhada com quem atende a operação hoje. Fixá-lo em 0644 devolvia um
+# arquivo que estava em 0600 com permissão frouxa — conteúdo certo, estado
+# anterior NÃO restaurado, e a mensagem afirmando que fora.
 restaurar_destino() {
 	local destino="${DIR_DOS_VHOSTS}/${NOME_DO_VHOST}"
 	if [[ "${DESTINO_TINHA_ARQUIVO}" == "sim" && -f "${BACKUP_DO_DESTINO}" ]]; then
-		install -m "${MODO_DO_VHOST}" "${BACKUP_DO_DESTINO}" "${destino}"
-		erro "o conteúdo anterior de ${destino} foi restaurado"
+		install -m "${MODO_ANTERIOR_DO_DESTINO:-${MODO_DO_VHOST}}" "${BACKUP_DO_DESTINO}" "${destino}"
+		erro "o conteúdo e a permissão anteriores de ${destino} foram restaurados"
 	else
 		rm -f "${destino}"
 		erro "${destino} foi removido — o servidor volta ao estado anterior a esta execução"
@@ -795,15 +968,40 @@ passo_p04_validar_configuracao_inteira() {
 	# Desfeito por este caminho; `limpar` não deve desfazer de novo.
 	ESCRITA_PENDENTE="nao"
 	abortar "a configuração do servidor de borda não passa em 'nginx -t' com o vhost instalado" \
-		"leia a saída acima: conflito com outro vhost (mesmo hostname, mesma porta) é a causa mais comum; o servidor NÃO foi recarregado e o estado anterior foi restaurado"
+		"leia a saída acima: conflito com outro vhost (mesmo hostname, mesma porta) é a causa mais comum; o servidor NÃO foi recarregado, e o arquivo de destino voltou ao conteúdo e à permissão que tinha antes desta execução"
 }
 
 passo_p05_recarregar() {
+	local destino="${DIR_DOS_VHOSTS}/${NOME_DO_VHOST}"
+
 	# Recarregar sem necessidade é micro-indisponibilidade de graça numa borda
-	# compartilhada com quem atende a operação hoje.
+	# compartilhada com quem atende a operação hoje — a decisão de não recarregar
+	# à toa está certa e continua valendo. O que faltava era o SEGUNDO sinal:
+	# `total_criado` fala do disco, e o disco não responde requisição.
 	if [[ "${total_criado}" -eq 0 ]]; then
-		ja_ok "P05" "nada mudou — servidor de borda NÃO recarregado"
-		return 0
+		local veredito_do_carregamento=0
+		servidor_ja_carregou "${destino}" || veredito_do_carregamento=$?
+		case "${veredito_do_carregamento}" in
+		0)
+			ja_ok "P05" "nada mudou e o servidor de borda já atende este vhost — NÃO recarregado"
+			return 0
+			;;
+		1)
+			info "⚠️ o vhost já estava correto em disco, mas o servidor em execução é ANTERIOR a ele — recarregando"
+			systemctl reload nginx
+			criado "P05" "servidor de borda recarregado (disco já convergente, processo não)"
+			return 0
+			;;
+		*)
+			# Não conferido nunca passa em silêncio, e na dúvida NÃO se recarrega:
+			# o custo de errar para este lado é uma execução a mais do
+			# verificador; para o outro, é indisponibilidade numa borda que
+			# atende a operação.
+			ja_ok "P05" "nada mudou — servidor de borda NÃO recarregado"
+			info "⚠️ não consegui conferir se o servidor em execução já carregou ${destino}; prove com 'bash deploy/scripts/borda/verificar-notificacao-bancaria.sh'"
+			return 0
+			;;
+		esac
 	fi
 
 	systemctl reload nginx
