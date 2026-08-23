@@ -36,6 +36,17 @@ import type { z } from 'zod';
 // QUANDO FECHA: a primeira task autorizada a abrir `./regua.ts` ou `./confirmacao-de-email.ts` por
 //        outra razão — as duas estão declaradas como REFERÊNCIA (somente leitura) na §3.4 da
 //        `tech_spec.md` desta fatia, de modo que migrá-las agora seria alargamento de escopo.
+//        ⚠️ **O gatilho DISPAROU na T8 da fatia `automacoes-agendadas` (2026-08-23), e o débito NÃO
+//        foi fechado — por decisão declarada, não por descuido.** Aquela task abriu `./regua.ts`
+//        para gravar o registro de execução da rotina de aviso (RD-15). Medido no mesmo dia:
+//        `grep -rn "erro.issues.map" --include='*.ts' --exclude-dir=dist apps/worker/src` devolve
+//        DOIS pontos (`./regua.ts` e `./confirmacao-de-email.ts`), mais este — **as três cópias
+//        continuam de pé, e nenhuma quarta nasceu**. Migrar `./regua.ts` mudaria a **forma da razão
+//        da falha** que o `CT-623` afirma, e deixaria `./confirmacao-de-email.ts` para trás de
+//        qualquer jeito: aquele arquivo está fora da lista da T8. Nenhuma linha do diff daquela task
+//        serviria à causa-raiz dela (proibição 5 do Protocolo Antirregressão).
+//        O gatilho **permanece o mesmo** e vale para a próxima: ele fecha de uma cópia por vez,
+//        quando a task que abrir cada borda puder migrá-la sem alargar o próprio escopo.
 // POR QUE NÃO AGORA: as duas bordas antigas estão verdes e fora da lista de arquivos da T16; o que a
 //        T16 podia fazer sem alargar escopo era não criar a quarta cópia, e é o que ela fez.
 // ÍNDICE: docs/specs/features/emissao-e-conciliacao/v1/_run/run-report.md §2, D49

@@ -240,8 +240,19 @@ _Evitar_: token, link mágico, chave de confirmação, magic link
 A decisão, escrita **antes** da execução, sobre o que fazer com cada diferença medida entre o produto novo e o sistema antigo — quem vence, ou por que a diferença não é diferença.
 _Evitar_: exceção, desvio aceito, diff conhecido, waiver
 
+**Rotina agendada**:
+O trabalho que o sistema executa sem que ninguém o peça, disparado por relógio do sistema operacional, sempre no escopo de uma **Empresa** — a **Régua de cobrança** é uma delas.
+_Evitar_: job, cron, tarefa agendada, automação, batch, scheduler
+
+**Passagem**:
+Uma execução de uma **Rotina agendada** para uma **Empresa**, do disparo ao desfecho — a passagem que não encontrou trabalho não deixa registro.
+_Evitar_: run, ciclo, rodada, iteração, execução do job
+
 ## Relacionamentos
 
+- Uma **Rotina agendada** pertence a uma **Empresa**, e cada disparo dela produz uma **Passagem** por empresa.
+- A **Régua de cobrança** é uma **Rotina agendada**; a **Janela de horário** restringe o que ela entrega, nunca quando ela é disparada.
+- Uma **Passagem** só deixa registro quando produziu efeito.
 - Uma **Cobrança** pode originar um boleto junto a um **Provedor**.
 - Uma **Empresa** tem no máximo uma configuração da **Régua de cobrança**, e ela nasce desligada.
 - A **Régua de cobrança** é sempre de uma **Empresa** só — não existe percurso que atravesse empresas.

@@ -261,6 +261,59 @@ export async function reativarEmpresa(
 }
 
 /**
+ * Enumera as empresas **ativas** — a leitura legítima **#1** da ADR-0024, e a origem de todo
+ * `empresaId` que viaja em carga de rotina agendada.
+ *
+ * ---------------------------------------------------------------------------
+ * ELA CORRE SEM CONTEXTO DE TENANT, e a ausência é o mecanismo (ADR-0009 · ADR-0024)
+ * ---------------------------------------------------------------------------
+ *
+ * `identidade` **não tem política a aplicar** — ele existe para operar antes de haver empresa no
+ * contexto —, e é isso que torna esta leitura possível a partir de um processo que não atende
+ * requisição nenhuma. A ADR-0024 a declara nominalmente entre as duas leituras legítimas sem
+ * contexto, e o identificador que ela produz é o que a emenda de 2026-08-18 chama de *"produzido por
+ * quem já detinha direito a ele"*.
+ *
+ * ⚠️ **Nenhuma terceira travessia nominal nasce daqui.** A alternativa que responderia *"quais
+ * empresas têm candidata"* — uma função que atravessasse de `identidade` para `negocio` — foi
+ * **medida e rejeitada** (decisão D2 do tech-alignment da fatia `automacoes-agendadas`): seria um
+ * furo permanente no isolamento para poupar trabalho barato. Passagens sem trabalho **existem, e são
+ * o custo declarado** de não furar o isolamento.
+ *
+ * ---------------------------------------------------------------------------
+ * A ENUMERAÇÃO **É** O FILTRO — e a diferença é entre impossível e evitado (RN-09)
+ * ---------------------------------------------------------------------------
+ *
+ * `suspensa_em IS NULL` é predicado **desta consulta**, e não uma conferência que quem chama faça
+ * depois. A distinção é observável: um despachante que enumerasse todas e descartasse a suspensa
+ * dentro da tarefa enfileiraria trabalho para ela — e a tarefa correria sob o contexto de uma empresa
+ * cujo acesso está suspenso. Aqui ela **não é alcançada**, e o total enfileirado é o das ativas.
+ *
+ * ---------------------------------------------------------------------------
+ * A PROJEÇÃO É O IDENTIFICADOR, e nada além dele
+ * ---------------------------------------------------------------------------
+ *
+ * Mesma escassez de {@link localizarEmpresa}, e pela mesma razão: quem chama precisa de **para quem
+ * enfileirar**, e devolver a linha inteira convidaria o despachante a levar nome, documento ou
+ * instante de admissão na carga da tarefa — dado de empresa atravessando um servidor de fila que não
+ * tem política nenhuma a aplicar sobre ele.
+ *
+ * A ordem é `criada_em, id`, e o desempate importa pela razão de {@link listarEmpresas}: `criada_em`
+ * sozinha empata entre empresas admitidas no mesmo instante, e o empate faria a ordem do despacho
+ * depender do planejador.
+ */
+export async function listarEmpresasAtivas(tx: TransactionSql): Promise<readonly string[]> {
+  const linhas = await tx<{ id: string }[]>`
+    SELECT id
+      FROM identidade.empresa
+     WHERE suspensa_em IS NULL
+     ORDER BY criada_em, id
+  `;
+
+  return linhas.map((linha) => linha.id);
+}
+
+/**
  * A empresa está **suspensa**? — a leitura que o tratamento da notícia bancária consulta (RN-09).
  *
  * Ela existe para o passo B.6 da borda do processo de trabalho: a notícia cuja cobrança pertence a

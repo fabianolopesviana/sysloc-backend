@@ -47,16 +47,20 @@ import {
   type CargaDaConferenciaBancaria,
   type CargaDaConfirmacao,
   type CargaDaEmissaoEmLote,
+  type CargaDaManutencaoDoAcervo,
   type CargaDaNotificacaoBancaria,
   type CargaDaReconferenciaDaEntrega,
   type CargaDaRegua,
+  type CargaDaRotinaAgendada,
   type CargaDoEco,
   FILA_DA_CONFERENCIA_BANCARIA,
   FILA_DA_CONFIRMACAO,
   FILA_DA_EMISSAO_EM_LOTE,
+  FILA_DA_MANUTENCAO_DO_ACERVO,
   FILA_DA_NOTIFICACAO_BANCARIA,
   FILA_DA_RECONFERENCIA_DA_ENTREGA,
   FILA_DA_REGUA,
+  FILA_DA_ROTINA_AGENDADA,
   FILA_DO_ECO,
   type Logger,
   OPCOES_PADRAO_DA_TAREFA,
@@ -157,6 +161,41 @@ export type TarefaDaNotificacaoBancaria = Job<CargaDaNotificacaoBancaria, void>;
 export type TarefaDaReconferenciaDaEntrega = Job<CargaDaReconferenciaDaEntrega, void>;
 
 /**
+ * Uma tarefa de **rotina agendada por empresa**, como o processador a recebe.
+ *
+ * O resultado é `void` pela mesma razão das irmãs: o que a passagem produz fica **gravado** — a
+ * transição do contrato, a baixa da cobrança, a linha de `negocio.execucao_de_rotina` quando houve
+ * efeito —, e um valor devolvido ao servidor de fila seria um segundo retrato do mesmo fato, retido
+ * pela política de retenção e livre para divergir do que o banco guarda. Quem lê a prestação de
+ * contas é a leitura do Admin.
+ *
+ * ⚠️ **A carga LEVA empresa, e ela é obrigatória** (ADR-0024, primeira classe): quem enfileira é a
+ * enumeração de tenants do despachante, que já detinha direito ao identificador. Ver o cabeçalho de
+ * {@link CargaDaRotinaAgendada}, em `@sysloc/shared`, para por que um campo opcional aqui reabriria o
+ * pior modo de falha da ADR-0008 — a política devolvendo vazio em silêncio.
+ *
+ * ⚠️ **Uma fila para QUATRO rotinas, e não uma fila por rotina**: o que discrimina o trabalho é o
+ * campo `rotina` da carga, conferido na borda contra a união fechada. Ver o cabeçalho de
+ * `./tarefas/rotina-agendada.ts`.
+ */
+export type TarefaDaRotinaAgendada = Job<CargaDaRotinaAgendada, void>;
+
+/**
+ * Uma tarefa de **manutenção do acervo**, como o processador a recebe.
+ *
+ * O resultado é `void` pela mesma razão das irmãs: o que a passagem produz é **remoção** — linhas
+ * cruas e arquivos que deixam de existir —, e um valor devolvido ao servidor de fila seria um retrato
+ * retido pela política de retenção de um fato que ninguém pode reconferir. Quem lê o que aconteceu é
+ * o diário do processo.
+ *
+ * ⚠️ **A carga desta tarefa é a segunda do produto sem empresa**, e a razão dela é PRÓPRIA — diferente
+ * da irmã da notícia bancária, onde a empresa é o *resultado* de uma travessia. Aqui não há empresa
+ * alguma a resolver: os alvos são o schema da plataforma (ADR-0031) e o sistema de arquivos. Ver o
+ * cabeçalho de {@link CargaDaManutencaoDoAcervo}, em `@sysloc/shared`.
+ */
+export type TarefaDaManutencaoDoAcervo = Job<CargaDaManutencaoDoAcervo, void>;
+
+/**
  * Como o encerramento terminou.
  *
  * O desfecho é DEVOLVIDO a quem pediu, em vez de ficar guardado aqui, porque a decisão que ele
@@ -241,6 +280,23 @@ export interface Fila {
    */
   readonly reconferenciaDaEntrega: Queue<CargaDaReconferenciaDaEntrega, void>;
   /**
+   * Lado produtor da fila das rotinas agendadas por empresa. Mesma razão de {@link emissaoEmLote}.
+   *
+   * Em produção quem enfileira é o **despachante** — o processo efêmero que o relógio do sistema
+   * provoca —, e não a borda HTTP; o produtor nasce aqui pela regra que as irmãs já registram: **quem
+   * constrói é quem devolve**, e sem ele o consumidor ficaria sem o caminho tipado de
+   * {@link processar}.
+   */
+  readonly rotinaAgendada: Queue<CargaDaRotinaAgendada, void>;
+  /**
+   * Lado produtor da fila da manutenção do acervo. Mesma razão de {@link emissaoEmLote}.
+   *
+   * Em produção quem enfileira é o **despachante**, no mesmo disparo que provoca o expurgo do
+   * histórico; o produtor nasce aqui pela regra que as irmãs já registram: **quem constrói é quem
+   * devolve**, e sem ele o consumidor ficaria sem o caminho tipado de {@link processar}.
+   */
+  readonly manutencaoDoAcervo: Queue<CargaDaManutencaoDoAcervo, void>;
+  /**
    * Registra o processador de uma das filas **deste** módulo. Ele passa a consumir de imediato.
    *
    * O primeiro parâmetro é o **produtor**, e não o nome da fila, e a escolha é o mecanismo: dele
@@ -321,6 +377,14 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
     FILA_DA_RECONFERENCIA_DA_ENTREGA,
     { connection: conexao, defaultJobOptions: OPCOES_PADRAO_DA_TAREFA },
   );
+  const rotinaAgendada = new Queue<CargaDaRotinaAgendada, void>(FILA_DA_ROTINA_AGENDADA, {
+    connection: conexao,
+    defaultJobOptions: OPCOES_PADRAO_DA_TAREFA,
+  });
+  const manutencaoDoAcervo = new Queue<CargaDaManutencaoDoAcervo, void>(
+    FILA_DA_MANUTENCAO_DO_ACERVO,
+    { connection: conexao, defaultJobOptions: OPCOES_PADRAO_DA_TAREFA },
+  );
 
   // Nível de diagnóstico, e não de alerta: o que a fila emite aqui é o MESMO defeito de conexão
   // que o cliente acima já reportou uma vez, repassado adiante. O ouvinte existe para o evento
@@ -334,6 +398,8 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
     [FILA_DA_CONFERENCIA_BANCARIA, conferenciaBancaria],
     [FILA_DA_NOTIFICACAO_BANCARIA, notificacaoBancaria],
     [FILA_DA_RECONFERENCIA_DA_ENTREGA, reconferenciaDaEntrega],
+    [FILA_DA_ROTINA_AGENDADA, rotinaAgendada],
+    [FILA_DA_MANUTENCAO_DO_ACERVO, manutencaoDoAcervo],
   ] as const) {
     produtor.on('error', (erro: Error) => {
       logger.debug({ erro, origem: 'fila', fila: nome }, 'a fila repassou uma falha da conexão');
@@ -378,6 +444,8 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
     await conferenciaBancaria.close();
     await notificacaoBancaria.close();
     await reconferenciaDaEntrega.close();
+    await rotinaAgendada.close();
+    await manutencaoDoAcervo.close();
   };
 
   /** O encerramento já pedido, se houver. Ver {@link Fila.encerrar}. */
@@ -424,6 +492,8 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
               conferenciaBancaria.name,
               notificacaoBancaria.name,
               reconferenciaDaEntrega.name,
+              rotinaAgendada.name,
+              manutencaoDoAcervo.name,
             ],
           },
           'o encerramento excedeu o limite — devolvendo a conexão sem esperar o restante',
@@ -453,6 +523,8 @@ export function conectarFila(cadeiaConexao: string, logger: Logger): Fila {
     conferenciaBancaria,
     notificacaoBancaria,
     reconferenciaDaEntrega,
+    rotinaAgendada,
+    manutencaoDoAcervo,
 
     processar<Carga, Resultado>(
       produtor: Queue<Carga, Resultado>,

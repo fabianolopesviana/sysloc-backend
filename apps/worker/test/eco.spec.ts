@@ -101,9 +101,11 @@ import {
   FILA_DA_CONFERENCIA_BANCARIA,
   FILA_DA_CONFIRMACAO,
   FILA_DA_EMISSAO_EM_LOTE,
+  FILA_DA_MANUTENCAO_DO_ACERVO,
   FILA_DA_NOTIFICACAO_BANCARIA,
   FILA_DA_RECONFERENCIA_DA_ENTREGA,
   FILA_DA_REGUA,
+  FILA_DA_ROTINA_AGENDADA,
   FILA_DO_ECO,
 } from '@sysloc/shared';
 import { Queue } from 'bullmq';
@@ -788,6 +790,23 @@ describe('processador de trabalho (T6)', () => {
       // faria procurar na fila errada. A asserção **não foi afrouxada**: continua sendo igualdade de
       // lista ordenada, agora com os sete nomes — e uma fila que sumisse do encerramento, ou que
       // fosse acrescentada sem ser devolvida, segue reprovando.
+      //
+      // SUT_IS_CORRECT_BECAUSE: a T6 da fatia `automacoes-agendadas` acrescenta a OITAVA — a das
+      // quatro rotinas por empresa —, construída e devolvida pelo mesmo `conectarFila`. Ela carrega
+      // tarefa de negócio vinda do despachante que o relógio do sistema provoca, e uma passagem
+      // abandonada no desligamento deixa o contrato vencido sem encerrar e a liquidação sem
+      // descobrir — trabalho que o operador procuraria, e que uma lista com sete nomes o faria
+      // procurar na fila errada. A asserção **não foi afrouxada**: continua sendo igualdade de lista
+      // ordenada, agora com os oito nomes — e uma fila que sumisse do encerramento, ou que fosse
+      // acrescentada sem ser devolvida, segue reprovando.
+      //
+      // SUT_IS_CORRECT_BECAUSE: a T7 da mesma fatia acrescenta a NONA — a da manutenção do acervo —,
+      // construída e devolvida pelo mesmo `conectarFila`. Ela é a única fila do processo sem empresa
+      // alguma, e o que uma passagem abandonada no desligamento deixa para trás é o disco crescendo
+      // sem teto — o defeito de espaço que a fatia existe para fechar, e que uma lista com oito nomes
+      // faria o operador procurar na fila errada. A asserção **não foi afrouxada**: continua sendo
+      // igualdade de lista ordenada, agora com os nove nomes — e uma fila que sumisse do encerramento,
+      // ou que fosse acrescentada sem ser devolvida, segue reprovando.
       expect(doEstouro[0]?.filas).toEqual([
         FILA_DO_ECO,
         FILA_DA_REGUA,
@@ -796,6 +815,8 @@ describe('processador de trabalho (T6)', () => {
         FILA_DA_CONFERENCIA_BANCARIA,
         FILA_DA_NOTIFICACAO_BANCARIA,
         FILA_DA_RECONFERENCIA_DA_ENTREGA,
+        FILA_DA_ROTINA_AGENDADA,
+        FILA_DA_MANUTENCAO_DO_ACERVO,
       ]);
 
       // A conexão foi DEVOLVIDA, e não apenas deixada para trás. É o que distingue "o

@@ -44,13 +44,22 @@
  * |       |        | **quatro idiomas** diferentes, uma exigência que nem passa pela fonte, e
  * |       |        | cópias em memória do provisionador sem a emissão, com ela só em comentário e
  * |       |        | com ela gravada em OUTRO arquivo — todas reprovam nomeando a variável. |
+ * | CA-13 | CT-1062 | Os TRÊS fontes novos de `apps/worker` — `despachante.ts`,
+ * | CA-21 |         | `tarefas/rotina-agendada.ts` e `tarefas/manutencao-do-acervo.ts` — não contêm
+ * |       |         | `new Date(`, `Date.now(`, `getHours(` nem `getTime(` em posição executável
+ * |       |         | fora da **única** exceção declarada (a medição de `duracaoMs` do despacho),
+ * |       |         | e a lista de exceções aceitas é ela mesma afirmada **por igualdade**. O
+ * |       |         | controle positivo devolve as **quatro** agulhas, e a cópia defeituosa —
+ * |       |         | `manutencao-do-acervo.ts` com o corte de retenção derivado de `Date.now()` —
+ * |       |         | reprova com **uma** ocorrência, nomeando arquivo, linha e agulha. |
  * | CA-10 | CT-644 | A soma dos dois prazos de desligamento declarados no fonte (`fila.ts` +
  * |       |        | `main.ts`) é **menor** que o `TimeoutStopSec` das **duas** unidades — quem
  * |       |        | desiste primeiro é o processo, que sabe explicar no journal. **PROVA DE
  * |       |        | FALSIFICAÇÃO permanente**: prazos somando 31 s reprovam nomeando a unidade. |
  *
  * Rastreabilidade acrescida pela T8: `CA-17 → CT-625 (RD-15)`, `CA-17 → CT-643 (RD-15)` e
- * `CA-10 → CT-644`. Acrescida pela **T16** da fatia `emissao-e-conciliacao`: `CA-20 → CT-936`.
+ * `CA-10 → CT-644`. Acrescida pela **T16** da fatia `emissao-e-conciliacao`: `CA-20 → CT-936`. Acrescida pela **T8** da
+ * fatia `automacoes-agendadas`: `CA-13, CA-21 → CT-1062 (RD-21)`.
  *
  * ⚠️ **O CT-936 NÃO reafirma o conjunto exigido — quem o afirma é o `CT-643`**, comparando o que a
  * execução revela com {@link VARIAVEIS_EXIGIDAS}. O que o CT-936 acrescenta é o **número** contra a
@@ -1511,5 +1520,238 @@ describe('CT-644 (T8 · CA-10) — quem desiste primeiro é o processo, não o s
     expect(unidadesComPrazoInsuficiente(1_000, semDeclaracao)).toEqual([
       'unidade-sintetica.service',
     ]);
+  });
+});
+
+// ===========================================================================
+// CT-1062 — nenhum fonte novo deriva "hoje" do relógio DESTE processo
+// ===========================================================================
+
+/**
+ * ⚠️ **A única rede de um defeito que nenhum caso comportamental pega** — a mesma classe que fez o
+ * `CT-612` (`packages/db/test/fonte-unica-do-estado.spec.ts`) ser o caso mais importante da fatia da
+ * régua, aqui sobre os fontes que a F5 acrescenta.
+ *
+ * O que decide o que venceu, o que atrasou e o que expirou é o relógio do **banco** (ADR-0026). Uma
+ * decisão derivada de `new Date()` depende de `TZ`, que **nenhuma das unidades `systemd` declara**:
+ * hoje ela acertaria por acidente — o host está em `America/Sao_Paulo` — e sob UTC o corte de
+ * retenção, o vencimento e o limiar de atraso andariam três horas, **sem uma linha vermelha em lugar
+ * nenhum**. Nenhuma suíte comportamental discrimina isso: as duas leituras coincidem nesta máquina.
+ *
+ * ---------------------------------------------------------------------------
+ * A EXCEÇÃO É AFIRMADA POR IGUALDADE — sem isso a asserção degenera em AP-29
+ * ---------------------------------------------------------------------------
+ *
+ * O despachante **mede a duração do próprio despacho** para publicá-la no diário, e essa medição lê o
+ * relógio do processo — legitimamente: ela não decide nada. Uma varredura que apenas ignorasse
+ * ocorrências "de exceção" viraria porta de entrada, porque nada obrigaria a lista a permanecer do
+ * tamanho que é. Por isso o caso afirma **as duas metades**: as ocorrências fora da exceção são `[]`,
+ * **e** as ocorrências dentro dela são exatamente {@link EXCECOES_DE_RELOGIO_ACEITAS} — de modo que
+ * uma leitura acrescentada em qualquer outro ponto, ou até mesmo uma terceira leitura dentro do
+ * cronômetro, reprova nomeando arquivo e linha.
+ */
+const FONTES_SEM_RELOGIO_DE_PROCESSO = [
+  'apps/worker/src/despachante.ts',
+  'apps/worker/src/tarefas/rotina-agendada.ts',
+  'apps/worker/src/tarefas/manutencao-do-acervo.ts',
+] as const;
+
+/**
+ * As **quatro** formas de ler o relógio do processo, escritas por extenso.
+ *
+ * Literais, e não derivadas de nada: é esta lista que declara **o que** o caso proíbe, e o detector é
+ * composto a partir dela — a lista e o que se procura são o mesmo fato. `getTime(` entra no lugar do
+ * `getMinutes(` do `CT-612` porque o eixo aqui é a **data** (o corte de retenção, o vencimento), e
+ * `getTime()` é a forma canônica de fazer aritmética de dias em milissegundos.
+ */
+const LEITURAS_DO_RELOGIO_DO_PROCESSO = [
+  'new Date(',
+  'Date.now(',
+  'getHours(',
+  'getTime(',
+] as const;
+
+/**
+ * As ocorrências ACEITAS, uma a uma — a medição de duração do despacho, e **nada além dela**.
+ *
+ * Cada entrada é `<arquivo> · <linha executável, sem espaço em torno>`, e a lista é comparada por
+ * **igualdade** com o que a varredura de fato encontra dentro da exceção. Duas entradas porque o
+ * cronômetro lê o relógio duas vezes: o instante de partida e o de chegada.
+ *
+ * ⚠️ **Alterar esta lista é decisão, e ela aparece no diff.** É exatamente o que se quer: abrir uma
+ * exceção nova exige escrevê-la aqui, ao lado da razão pela qual ela não decide nada de negócio.
+ */
+const EXCECOES_DE_RELOGIO_ACEITAS = [
+  'apps/worker/src/despachante.ts · const inicio = Date.now();',
+  'apps/worker/src/despachante.ts · return () => Date.now() - inicio;',
+] as const;
+
+/** Uma ocorrência achada: onde ela está, o que ela é, e a linha que a reprovação exibe. */
+interface LeituraDeRelogio {
+  readonly arquivo: string;
+  readonly numeroDaLinha: number;
+  readonly agulha: string;
+  readonly rotulo: string;
+}
+
+/**
+ * Varre os fontes informados e devolve **toda** leitura de relógio em posição executável.
+ *
+ * As linhas de comentário são descartadas antes da busca: os três fontes **explicam por escrito** que
+ * não leem o relógio do processo, e uma varredura cega ao comentário reprovaria a documentação da
+ * própria decisão. É o mesmo recorte que `packages/db/test/varredura-de-fontes.ts` faz.
+ *
+ * A função é a MESMA para a árvore íntegra, para o controle positivo e para a cópia defeituosa — é o
+ * par que detecta, e não a asserção isolada.
+ */
+function leiturasDeRelogioEm(
+  fontes: readonly { readonly arquivo: string; readonly texto: string }[],
+): LeituraDeRelogio[] {
+  const achados: LeituraDeRelogio[] = [];
+
+  for (const fonte of fontes) {
+    for (const [indice, linha] of fonte.texto.split('\n').entries()) {
+      const executavel = linha.trim();
+      const ehComentario =
+        executavel.startsWith('//') ||
+        executavel.startsWith('*') ||
+        executavel.startsWith('/*') ||
+        executavel.startsWith('*/');
+
+      if (ehComentario) {
+        continue;
+      }
+
+      for (const agulha of LEITURAS_DO_RELOGIO_DO_PROCESSO) {
+        if (executavel.includes(agulha)) {
+          achados.push({
+            arquivo: fonte.arquivo,
+            numeroDaLinha: indice + 1,
+            agulha,
+            rotulo: `${fonte.arquivo} · ${executavel}`,
+          });
+        }
+      }
+    }
+  }
+
+  return achados;
+}
+
+/** A ocorrência está entre as exceções declaradas? A comparação é pelo rótulo inteiro. */
+function ehExcecaoAceita(leitura: LeituraDeRelogio): boolean {
+  return EXCECOES_DE_RELOGIO_ACEITAS.some((aceita) => aceita === leitura.rotulo);
+}
+
+/** O corte de retenção derivado do relógio do PROCESSO — o defeito literal da falsificação. */
+const CORTE_PELO_RELOGIO_DO_PROCESSO = '  const corte = Date.now() - 90 * 86400000;\n';
+
+describe('CT-1062 (T8 · CA-13/CA-21) — nenhum fonte novo deriva "hoje" do relógio do processo', () => {
+  const fontes = FONTES_SEM_RELOGIO_DE_PROCESSO.map((arquivo) => ({
+    arquivo,
+    texto: lerDoRepositorio(arquivo),
+  }));
+
+  it('CT-1062 — os TRÊS fontes foram efetivamente lidos, e nenhum veio vazio', () => {
+    // Âncora antivácuo: "nenhuma leitura de relógio" sobre zero arquivos, ou sobre arquivos vazios,
+    // é verdade vazia — e é assim que esta asserção apodreceria em silêncio quando um dos três for
+    // renomeado.
+    expect(fontes.map(({ arquivo }) => arquivo)).toEqual([...FONTES_SEM_RELOGIO_DE_PROCESSO]);
+    expect(fontes.every(({ texto }) => texto.length > 0)).toBe(true);
+  });
+
+  it('CT-1062 — fora da exceção declarada, as ocorrências são [] — e a exceção é EXATAMENTE a declarada', () => {
+    const leituras = leiturasDeRelogioEm(fontes);
+
+    // A metade que impede a lista de exceções de virar porta de entrada: o que está DENTRO dela é
+    // afirmado por igualdade, na ordem em que a varredura o encontra.
+    expect(leituras.filter(ehExcecaoAceita).map((leitura) => leitura.rotulo)).toEqual([
+      ...EXCECOES_DE_RELOGIO_ACEITAS,
+    ]);
+
+    // E a metade que pega o defeito: nenhuma leitura fora dela. A lista, e não um booleano — quando
+    // reprovar, ela nomeia o arquivo, a linha e a agulha.
+    expect(
+      leituras
+        .filter((leitura) => !ehExcecaoAceita(leitura))
+        .map(
+          (leitura) => `${leitura.arquivo}:${String(leitura.numeroDaLinha)} → ${leitura.agulha}`,
+        ),
+    ).toEqual([]);
+  });
+
+  it('CT-1062 — CONTROLE POSITIVO: a mesma varredura acha as QUATRO agulhas plantadas', () => {
+    // Sem esta linha, uma varredura quebrada — recorte de comentário errado, lista vazia, `includes`
+    // sobre a cadeia errada — devolveria `[]` e o caso ficaria verde num processo que decide tudo
+    // pelo relógio local. É o `AP-29` na sua forma exata.
+    const controle = [
+      {
+        arquivo: 'controle-sintetico.ts',
+        texto: LEITURAS_DO_RELOGIO_DO_PROCESSO.map((agulha) => `const valor = ${agulha});`).join(
+          '\n',
+        ),
+      },
+    ];
+
+    expect(leiturasDeRelogioEm(controle).map((leitura) => leitura.agulha)).toEqual([
+      ...LEITURAS_DO_RELOGIO_DO_PROCESSO,
+    ]);
+  });
+
+  it('CT-1062 (b) — PROVA DE FALSIFICAÇÃO: o corte de retenção pelo relógio do processo reprova', () => {
+    // A cópia vive em memória: escrever no disco durante a suíte deixaria o defeito no fonte se o
+    // processo morresse no meio. O defeito é a forma exata que um autor futuro escreveria por
+    // conveniência — ela é mais curta que a chamada ao banco, não precisa de `tx`, e produz o mesmo
+    // resultado nesta máquina.
+    const alvo = 'apps/worker/src/tarefas/manutencao-do-acervo.ts';
+    const integro = lerDoRepositorio(alvo);
+
+    // CONTROLE: o fonte como ele está na árvore, sem ocorrência alguma.
+    expect(leiturasDeRelogioEm([{ arquivo: alvo, texto: integro }])).toEqual([]);
+
+    const defeituoso = leiturasDeRelogioEm([
+      { arquivo: alvo, texto: `${integro}${CORTE_PELO_RELOGIO_DO_PROCESSO}` },
+    ]);
+
+    // UMA ocorrência, nomeando o arquivo, a linha e a agulha — e ela **não** é exceção aceita, de
+    // modo que a asserção principal a reprovaria.
+    expect(defeituoso).toHaveLength(1);
+    expect({
+      arquivo: defeituoso[0]?.arquivo,
+      numeroDaLinha: defeituoso[0]?.numeroDaLinha,
+      agulha: defeituoso[0]?.agulha,
+      aceita: defeituoso[0] === undefined ? undefined : ehExcecaoAceita(defeituoso[0]),
+    }).toEqual({
+      arquivo: alvo,
+      numeroDaLinha: integro.split('\n').length,
+      agulha: 'Date.now(',
+      aceita: false,
+    });
+  });
+
+  it('CT-1062 (c) — PROVA DE FALSIFICAÇÃO: a exceção é da LINHA, e não do arquivo', () => {
+    // A outra ponta da falsificação, e é ela que impede a lista de exceções de virar "o despachante
+    // pode ler o relógio": um `Date.now()` acrescentado **àquele mesmo arquivo**, fora das duas
+    // linhas do cronômetro, tem de reprovar. Sem este caso, a exceção seria efetivamente por
+    // ARQUIVO, e a decisão de negócio derivada do relógio entraria pela porta que a medição de
+    // duração abriu.
+    const alvo = 'apps/worker/src/despachante.ts';
+    const integro = lerDoRepositorio(alvo);
+
+    // CONTROLE: no fonte íntegro, tudo o que a varredura acha É exceção aceita.
+    expect(leiturasDeRelogioEm([{ arquivo: alvo, texto: integro }]).every(ehExcecaoAceita)).toBe(
+      true,
+    );
+
+    // MUTANTE: a folga da retomada calculada pelo relógio do processo — a forma exata que um autor
+    // futuro escreveria para "não pedir a hora ao banco só para isso".
+    const comDecisao = `${integro}\n  const corte = new Date(Date.now() - 600000);\n`;
+    const achados = leiturasDeRelogioEm([{ arquivo: alvo, texto: comDecisao }]);
+
+    // As DUAS agulhas da linha nova aparecem, e NENHUMA delas é aceita — de modo que a asserção
+    // principal reprovaria nomeando arquivo e linha.
+    expect(
+      achados.filter((leitura) => !ehExcecaoAceita(leitura)).map((leitura) => leitura.agulha),
+    ).toEqual(['new Date(', 'Date.now(']);
   });
 });

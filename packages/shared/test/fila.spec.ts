@@ -31,7 +31,28 @@
  * | §4.3  | apoio  | **T15** · Companheiro negativo do detector sobre os símbolos novos, pela mesma
  * | (T15) |        | razão da linha acima: cópia reconhecida, import e menção não. |
  *
- * Rastreabilidade: `CA-09 → apoio (RN-07)` · `CA-20 → apoio (T15)`.
+ * | CA-02 | CT-1089| **T2** · Os **cinco** símbolos das duas filas novas têm definição única no
+ * | CA-13 |        | mesmo arquivo e saem pelo barril; os dois nomes são `rotina-agendada` e
+ * |       |        | `manutencao-do-acervo`, e os **nove** nomes de fila do produto são distintos
+ * |       |        | entre si — nome repetido faria duas naturezas de trabalho caírem na mesma
+ * |       |        | fila. O conjunto de `FILA_*` publicado pelo barril é afirmado por
+ * |       |        | **igualdade**, de modo que fila publicada sem âncora reprova. |
+ * | CA-02 | CT-1089| **T2** · `CargaDaRotinaAgendada` declara no fonte exatamente
+ * |       |        | `{ empresaId, rotina }`, os dois **obrigatórios**, e `rotina` é a união
+ * |       |        | **fechada** das **quatro** rotinas por empresa — conjunto distinto dos dois de
+ * |       |        | `@sysloc/contracts`, e por isso afirmado por igualdade contra um
+ * |       |        | `Record<RotinaDeTrabalho, true>` **exaustivo**, que é a metade do compilador. |
+ * | CA-13 | CT-1089| **T2** · `CargaDaManutencaoDoAcervo` **não tem campo algum**, e a forma
+ * |       |        | declarada é `Record<string, never>` — não `interface {}`, que foi **medida** e
+ * |       |        | aceita `{ empresaId }` em silêncio. O compilador recusa o campo acrescentado
+ * |       |        | por analogia (`@ts-expect-error` auto-falsificante) e o texto do fonte fixa a
+ * |       |        | forma. É a segunda classe de carga da ADR-0024 (emenda de 2026-08-18). |
+ * | CA-02 | CT-1089| **T2** · Companheiro negativo dos detectores sobre os símbolos novos: cópia,
+ * | CA-13 |        | campo a mais e alternativa a mais são **vistos**; import, menção e comentário
+ * |       |        | **não** são; e tipo ausente é **erro**, nunca conjunto vazio. |
+ *
+ * Rastreabilidade: `CA-09 → apoio (RN-07)` · `CA-20 → apoio (T15)` · `CA-02 → CT-1089` ·
+ * `CA-13 → CT-1089`.
  *
  * ===========================================================================
  * Por que este arquivo existe ao lado do `CT-638`
@@ -87,11 +108,20 @@ import type {
   CargaDaConferenciaBancaria,
   CargaDaConfirmacao,
   CargaDaEmissaoEmLote,
+  CargaDaManutencaoDoAcervo,
+  CargaDaRotinaAgendada,
+  RotinaDeTrabalho,
 } from '../src/fila.js';
 import {
   FILA_DA_CONFERENCIA_BANCARIA,
   FILA_DA_CONFIRMACAO,
   FILA_DA_EMISSAO_EM_LOTE,
+  FILA_DA_MANUTENCAO_DO_ACERVO,
+  FILA_DA_NOTIFICACAO_BANCARIA,
+  FILA_DA_RECONFERENCIA_DA_ENTREGA,
+  FILA_DA_REGUA,
+  FILA_DA_ROTINA_AGENDADA,
+  FILA_DO_ECO,
 } from '../src/fila.js';
 
 /** Raiz do monorepo — dois níveis acima de `packages/shared/test`. */
@@ -155,6 +185,112 @@ const CAMPOS_DA_CARGA_DA_CONFERENCIA: ReadonlyArray<keyof CargaDaConferenciaBanc
   'conferenciaId',
   'empresaId',
 ];
+
+/**
+ * Os **cinco** símbolos das duas filas novas, publicados pela T2 da fatia do trabalho agendado.
+ *
+ * Vale para eles, palavra por palavra, a razão dos dois conjuntos acima. E há uma razão a mais, que
+ * é própria destas duas e não existia nas irmãs: **não há ninguém do outro lado esperando**. Nas
+ * filas de borda, um nome que ninguém escuta é notado porque o Admin abriu o lote e nada aconteceu;
+ * aqui quem enfileira é o relógio, e o desfecho de um desencontro é o produto **parecer** em dia por
+ * meses. `RotinaDeTrabalho` entra no conjunto pela mesma disciplina: uma segunda declaração da união
+ * ficaria livre para ganhar uma alternativa que nenhum consumidor trata.
+ */
+const SIMBOLOS_DAS_FILAS_AGENDADAS = [
+  'FILA_DA_ROTINA_AGENDADA',
+  'CargaDaRotinaAgendada',
+  'RotinaDeTrabalho',
+  'FILA_DA_MANUTENCAO_DO_ACERVO',
+  'CargaDaManutencaoDoAcervo',
+];
+
+/** Os nomes das duas filas da T2 — literais, pela mesma razão dos de cima. */
+const NOME_ESPERADO_DA_FILA_DA_ROTINA = 'rotina-agendada';
+const NOME_ESPERADO_DA_FILA_DA_MANUTENCAO = 'manutencao-do-acervo';
+
+/**
+ * Os símbolos de **nome de fila** que o barril publica, por extenso — e o barril é conferido contra
+ * esta lista por **igualdade de conjunto**.
+ *
+ * Sem a igualdade, uma fila nova publicada sem âncora entraria em silêncio, e a asserção de
+ * distinção logo abaixo continuaria comparando só as que alguém lembrou de listar aqui — que é
+ * exatamente o caso em que o nome colidente passa. A `.claude/rules/ancoras-de-superficie.md` é
+ * literal quanto a isso: símbolo novo no barril sai no mesmo diff que o acrescenta ao inventário
+ * asserido.
+ */
+const SIMBOLOS_DE_NOME_DE_FILA = [
+  'FILA_DA_CONFERENCIA_BANCARIA',
+  'FILA_DA_CONFIRMACAO',
+  'FILA_DA_EMISSAO_EM_LOTE',
+  'FILA_DA_MANUTENCAO_DO_ACERVO',
+  'FILA_DA_NOTIFICACAO_BANCARIA',
+  'FILA_DA_RECONFERENCIA_DA_ENTREGA',
+  'FILA_DA_REGUA',
+  'FILA_DA_ROTINA_AGENDADA',
+  'FILA_DO_ECO',
+];
+
+/** Os **valores** correspondentes, na mesma ordem — é a distinção entre eles que se afirma. */
+const NOMES_DE_FILA_DO_PRODUTO = [
+  FILA_DA_CONFERENCIA_BANCARIA,
+  FILA_DA_CONFIRMACAO,
+  FILA_DA_EMISSAO_EM_LOTE,
+  FILA_DA_MANUTENCAO_DO_ACERVO,
+  FILA_DA_NOTIFICACAO_BANCARIA,
+  FILA_DA_RECONFERENCIA_DA_ENTREGA,
+  FILA_DA_REGUA,
+  FILA_DA_ROTINA_AGENDADA,
+  FILA_DO_ECO,
+];
+
+/**
+ * Os campos que a carga da rotina agendada declara — por extenso, em ordem alfabética, e **nada
+ * além deles**. Mesma divisão de crédito dos dois conjuntos da T15: o `keyof` é a metade do
+ * compilador, e {@link camposDeclaradosEm} é a metade que enxerga o campo **acrescentado**.
+ */
+const CAMPOS_DA_CARGA_DA_ROTINA: ReadonlyArray<keyof CargaDaRotinaAgendada> = [
+  'empresaId',
+  'rotina',
+];
+
+/**
+ * A forma **inteira** do lado direito de `CargaDaManutencaoDoAcervo`, literal.
+ *
+ * Não é `[]` comparado com `[]`: a carga da manutenção não tem campo algum, e afirmar um conjunto
+ * vazio de campos é a vacuidade que a `.claude/rules/ancoras-de-superficie.md` proíbe. O que se
+ * afirma é a **forma declarada**, porque é ela que carrega a decisão — `Record<string, never>`
+ * recusa o campo acrescentado, e `interface … {}`, medida no compilador deste repositório, **não
+ * recusa**: `const c: Vazia = { empresaId: 'x' }` compila. Trocar uma pela outra deixaria o docblock
+ * dizendo a coisa certa sobre um tipo que aceita o contrário.
+ */
+const FORMA_DA_CARGA_DA_MANUTENCAO = 'Record<string, never>';
+
+/**
+ * As **quatro** rotinas que a fila transporta, com a exaustividade cobrada pelo **compilador**.
+ *
+ * `Record<RotinaDeTrabalho, true>` é o que faz esta lista não poder divergir da união: alternativa
+ * acrescentada à união deixa esta declaração incompleta e o `tsc --build` do script `test` reprova;
+ * alternativa removida ou renomeada torna a chave excedente e reprova pelo outro lado. É a mesma
+ * divisão de crédito do `keyof` acima — e é o que permite comparar o **texto do fonte** contra ela
+ * sem que a asserção concorde consigo mesma.
+ */
+const ROTINAS_DA_FILA: Record<RotinaDeTrabalho, true> = {
+  CONFERENCIA_DE_LIQUIDACAO: true,
+  ENCERRAMENTO_DE_CONTRATOS: true,
+  EXPURGO_DO_HISTORICO: true,
+  VIGILANCIA_DAS_ROTINAS: true,
+};
+
+/** O conjunto esperado, derivado da declaração exaustiva acima e nunca redigitado. */
+const ROTINAS_ESPERADAS = Object.keys(ROTINAS_DA_FILA).sort();
+
+/**
+ * Identificador de empresa de exemplo — preenche o campo obrigatório da carga da rotina, e nada mais.
+ *
+ * A procedência dele é disciplina de quem enfileira, e é provada onde a enumeração de tenants roda;
+ * aqui o que se afirma é a **forma** da carga, e o valor só existe para o literal compilar.
+ */
+const UUID_DE_EXEMPLO = '00000000-0000-4000-8000-000000000003';
 
 /**
  * Teto do caso que varre a árvore inteira — **declarado**, e não herdado do padrão de 5 s.
@@ -310,6 +446,73 @@ function camposDeclaradosEm(fonte: string, nomeDaInterface: string): string[] {
   }
 
   return campos.sort();
+}
+
+/**
+ * O **lado direito** de um apelido de tipo, sem comentário e com o espaço em branco colapsado.
+ *
+ * Existe porque duas das asserções da T2 são sobre a **forma declarada** de um tipo, e não sobre o
+ * conjunto de campos de uma interface — que é o que {@link camposDeclaradosEm} lê. `RotinaDeTrabalho`
+ * é uma união de literais e `CargaDaManutencaoDoAcervo` é `Record<string, never>`: nenhum dos dois
+ * tem corpo com campos, e aplicar o detector de campos a eles diria apenas "não encontrei".
+ *
+ * A declaração é lida do texto do SUT, e não reconstruída aqui, pela mesma razão que o detector de
+ * campos existe: um literal escrito no teste compara o teste consigo mesmo. E ela é cortada no
+ * primeiro `;` **fora de comentário**, para que o tipo declarado logo abaixo não vaze para dentro
+ * do que se afirma. Tipo não encontrado é **erro**, e não cadeia vazia — vazio comparado com vazio é
+ * a vacuidade que a `.claude/rules/ancoras-de-superficie.md` proíbe.
+ */
+function ladoDireitoDoTipo(fonte: string, nomeDoTipo: string): string {
+  const linhas = fonte.split('\n');
+  const abertura = new RegExp(`^\\s*(?:export\\s+)?type\\s+${nomeDoTipo}\\s*=`);
+  const inicio = linhas.findIndex((linha) => abertura.test(linha));
+
+  if (inicio < 0) {
+    throw new Error(`tipo ${nomeDoTipo} não encontrado no fonte lido`);
+  }
+
+  let declaracao = '';
+  let dentroDeBloco = false;
+
+  for (let i = inicio; i < linhas.length; i += 1) {
+    const { codigo, aberto } = semComentario(linhas[i] ?? '', dentroDeBloco);
+    dentroDeBloco = aberto;
+    declaracao += `${codigo}\n`;
+
+    const fim = declaracao.indexOf(';');
+    if (fim >= 0) {
+      declaracao = declaracao.slice(0, fim);
+      break;
+    }
+  }
+
+  return declaracao
+    .slice(declaracao.indexOf('=') + 1)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * As alternativas de uma união de literais, em ordem alfabética.
+ *
+ * ⚠️ **A alternativa ACRESCENTADA é a razão de esta função existir**, e ela é o espelho exato do
+ * campo opcional que {@link camposDeclaradosEm} persegue. O compilador cobra a união pela outra
+ * ponta — o `Record<RotinaDeTrabalho, true>` exaustivo deixa de compilar quando ela cresce —, mas só
+ * enquanto **alguém** declarar esse `Record`; a asserção aqui é a que reprova nomeando a alternativa
+ * intrusa, e a que sobrevive a quem "simplificar" a declaração exaustiva.
+ *
+ * Lado direito sem literal algum é **erro**, e não lista vazia: é a forma em que a união fechada
+ * viraria `string` largo, e ela precisa reprovar em vez de comparar nada com nada.
+ */
+function alternativasDeUniaoEm(fonte: string, nomeDoTipo: string): string[] {
+  const corpo = ladoDireitoDoTipo(fonte, nomeDoTipo);
+  const alternativas = [...corpo.matchAll(/'([^']*)'/g)].map((achado) => achado[1] ?? '');
+
+  if (alternativas.length === 0) {
+    throw new Error(`tipo ${nomeDoTipo} não declara união de literais: ${corpo}`);
+  }
+
+  return alternativas.sort();
 }
 
 /** Para cada símbolo, os arquivos que o **definem** — uma passada só sobre a árvore. */
@@ -587,5 +790,236 @@ describe('apoio (T15) — o contrato das duas filas da cobrança bancária tem d
     expect(() =>
       camposDeclaradosEm('export interface Outra {\n  readonly x: string;\n}', 'CargaDoEco'),
     ).toThrow(/CargaDoEco/);
+  });
+});
+
+describe('CT-1089 (T2) — as duas filas do trabalho agendado, e as DUAS classes de carga da ADR-0024', () => {
+  it(
+    'cada um dos cinco símbolos é definido em UM arquivo só, e é o do pacote compartilhado',
+    () => {
+      const definicoes = arquivosQueDefinem(SIMBOLOS_DAS_FILAS_AGENDADAS);
+
+      // Âncora antivácuo: uma varredura que não lesse arquivo algum produziria listas vazias, e as
+      // igualdades abaixo reprovariam por ausência, sem dizer por quê.
+      expect(
+        arquivosDeCodigo().length,
+        'a varredura não leu arquivo algum: a unicidade seria vácua por construção',
+      ).toBeGreaterThan(0);
+
+      for (const simbolo of SIMBOLOS_DAS_FILAS_AGENDADAS) {
+        // Igualdade, e não `toContain`: o que se persegue aqui é a SEGUNDA definição, e uma asserção
+        // de presença é justamente a que não a enxerga. O arquivo intruso aparece no diff da falha.
+        expect(definicoes.get(simbolo), `definições de ${simbolo}`).toEqual([
+          CASA_DO_CONTRATO_DA_FILA,
+        ]);
+      }
+    },
+    LIMITE_DA_VARREDURA_MS,
+  );
+
+  it('os cinco saem pelo barril, e os NOVE nomes de fila do produto são distintos entre si', () => {
+    const barril = readFileSync(join(RAIZ, BARRIL_DO_PACOTE), 'utf8');
+
+    // A definição única não basta: um símbolo definido e não publicado obriga o consumidor a
+    // redigitá-lo, que é exatamente a duplicação que o caso acima persegue pela outra ponta.
+    for (const simbolo of SIMBOLOS_DAS_FILAS_AGENDADAS) {
+      expect(barril, `${simbolo} não sai pelo barril do pacote`).toContain(simbolo);
+    }
+
+    // E os VALORES, por igualdade literal — escritos à mão aqui, e não derivados dos próprios
+    // símbolos: derivá-los faria a asserção concordar consigo mesma. São estes valores que o
+    // despachante grava e o processo de trabalho escuta, e ninguém está olhando quando eles
+    // desencontram.
+    expect(FILA_DA_ROTINA_AGENDADA).toBe(NOME_ESPERADO_DA_FILA_DA_ROTINA);
+    expect(FILA_DA_MANUTENCAO_DO_ACERVO).toBe(NOME_ESPERADO_DA_FILA_DA_MANUTENCAO);
+
+    // O CONJUNTO de filas publicadas, por igualdade — e não a distinção só entre as que alguém
+    // lembrou de listar. Sem esta linha, uma fila nova entraria no barril em silêncio e a asserção
+    // seguinte continuaria comparando as nove antigas, que é justamente o caso em que o nome
+    // colidente passa.
+    const publicadas = [...barril.matchAll(/^\s*(FILA_[A-Z_]+),$/gm)].map((achado) => achado[1]);
+    expect(
+      publicadas.length,
+      'nenhum símbolo de fila lido do barril: a igualdade seria vácua',
+    ).toBe(SIMBOLOS_DE_NOME_DE_FILA.length);
+    expect(publicadas.sort()).toEqual([...SIMBOLOS_DE_NOME_DE_FILA].sort());
+
+    // E os nove nomes são DIFERENTES entre si: um nome repetido faria duas naturezas de trabalho
+    // caírem na mesma fila, e o processador executaria a tarefa errada — com carga de outra forma.
+    expect(new Set(NOMES_DE_FILA_DO_PRODUTO).size).toBe(NOMES_DE_FILA_DO_PRODUTO.length);
+  });
+
+  it('a carga da rotina leva empresaId e a união fechada; a da manutenção NÃO leva campo algum', () => {
+    const fonteDoContrato = readFileSync(join(RAIZ, CASA_DO_CONTRATO_DA_FILA), 'utf8');
+
+    // (1) A PRIMEIRA classe da ADR-0024. Afirmada sobre o **texto do fonte** e não sobre um literal
+    // escrito aqui, pela razão do docblock deste arquivo: um literal tipado só conferiria o que o
+    // `tsc` já confere, e deixaria passar o campo **opcional**, que é a forma em que `empresaId`
+    // deixaria de ser obrigatório sem quebrar compilação alguma — o pior modo de falha da ADR-0008.
+    expect(camposDeclaradosEm(fonteDoContrato, 'CargaDaRotinaAgendada')).toEqual(
+      CAMPOS_DA_CARGA_DA_ROTINA,
+    );
+
+    // (2) A união FECHADA das quatro rotinas por empresa. O esperado é derivado de um
+    // `Record<RotinaDeTrabalho, true>` exaustivo — de modo que ele não pode divergir da união sem
+    // que o compilador reprove —, e o observado é lido do texto do SUT. A contagem é a âncora
+    // antivácuo, e é ela que diz que são **quatro**: este conjunto é distinto dos de
+    // `@sysloc/contracts` (seis cadências, três publicadas) e não se deriva de nenhum deles.
+    expect(ROTINAS_ESPERADAS.length).toBe(4);
+    expect(alternativasDeUniaoEm(fonteDoContrato, 'RotinaDeTrabalho')).toEqual(ROTINAS_ESPERADAS);
+
+    // (3) A SEGUNDA classe. A forma inteira, por igualdade literal: `Record<string, never>` é o que
+    // faz o compilador **recusar** o campo acrescentado por analogia com a carga de cima, e
+    // `interface … {}` — medida — o aceitaria em silêncio. Afirmar aqui um conjunto vazio de campos
+    // seria comparar nada com nada; o que carrega a decisão é a forma.
+    expect(ladoDireitoDoTipo(fonteDoContrato, 'CargaDaManutencaoDoAcervo')).toBe(
+      FORMA_DA_CARGA_DA_MANUTENCAO,
+    );
+
+    // (4) E a metade que o COMPILADOR cobra, aqui e agora. A carga vazia é aceita; a carga com
+    // `empresaId` **não** é — e a diretiva abaixo é auto-falsificante: se a recusa deixar de
+    // acontecer, o `tsc -p tsconfig.test.json` do script `test` reprova com
+    // "Unused '@ts-expect-error' directive". É a prova de falsificação embutida, e ela não depende
+    // de ninguém lembrar de a executar.
+    const daManutencao: CargaDaManutencaoDoAcervo = {};
+    // @ts-expect-error — acrescentar `empresaId` aqui é a violação que a emenda de 2026-08-18 da
+    // ADR-0024 nomeia: os alvos da manutenção não têm dono-empresa (ADR-0031), e inventar um seria
+    // atribuir dono a dado que não tem.
+    const comEmpresaInventada: CargaDaManutencaoDoAcervo = { empresaId: UUID_DE_EXEMPLO };
+    expect(Object.keys(daManutencao)).toEqual([]);
+    expect(Object.keys(comEmpresaInventada)).toEqual(['empresaId']);
+
+    // E o controle positivo da carga da rotina, pela mesma linha: os dois campos são obrigatórios,
+    // e omitir qualquer um não compila.
+    const daRotina: CargaDaRotinaAgendada = {
+      empresaId: UUID_DE_EXEMPLO,
+      rotina: 'ENCERRAMENTO_DE_CONTRATOS',
+    };
+    expect(Object.keys(daRotina).sort()).toEqual(['empresaId', 'rotina']);
+  });
+
+  it('PROVA DE FALSIFICAÇÃO: a segunda definição, o campo a mais e a alternativa a mais são vistos; o import, a menção e o comentário não', () => {
+    const padraoDoNome = definicaoDe('FILA_DA_MANUTENCAO_DO_ACERVO');
+    const padraoDaCarga = definicaoDe('CargaDaRotinaAgendada');
+
+    // As formas em que a SEGUNDA definição nasce por reflexo — inclusive sem `export`, que é a que
+    // um detector ancorado em `export const` deixaria passar.
+    for (const copia of [
+      "export const FILA_DA_MANUTENCAO_DO_ACERVO = 'manutencao-do-acervo';",
+      "const FILA_DA_MANUTENCAO_DO_ACERVO = 'manutencao-do-acervo';",
+      '  const FILA_DA_MANUTENCAO_DO_ACERVO: string = obterNome();',
+    ]) {
+      expect(padraoDoNome.test(copia), `cópia não detectada: ${copia}`).toBe(true);
+    }
+    for (const copia of [
+      'export interface CargaDaRotinaAgendada {',
+      'interface CargaDaRotinaAgendada {',
+      'export type CargaDaRotinaAgendada = { empresaId: string };',
+    ]) {
+      expect(padraoDaCarga.test(copia), `cópia não detectada: ${copia}`).toBe(true);
+    }
+
+    // E o outro lado, que é o que impede a asserção de reprovar a árvore CORRETA: consumo legítimo
+    // — import numa linha, item de lista de import de várias linhas, e menção no corpo — não conta
+    // como redefinição.
+    for (const consumo of [
+      "import { FILA_DA_MANUTENCAO_DO_ACERVO } from '@sysloc/shared';",
+      '  FILA_DA_MANUTENCAO_DO_ACERVO,',
+      '  const fila = new Queue(FILA_DA_MANUTENCAO_DO_ACERVO, opcoes);',
+    ]) {
+      expect(padraoDoNome.test(consumo), `consumo contado como definição: ${consumo}`).toBe(false);
+    }
+    for (const consumo of [
+      "import type { CargaDaRotinaAgendada } from '@sysloc/shared';",
+      '  type CargaDaRotinaAgendada,',
+      '  async enfileirar(carga: CargaDaRotinaAgendada): Promise<void> {',
+    ]) {
+      expect(padraoDaCarga.test(consumo), `consumo contado como definição: ${consumo}`).toBe(false);
+    }
+
+    // -----------------------------------------------------------------------
+    // O detector de CAMPOS sobre a carga da rotina — o `empresaId` tornado opcional é regressão da
+    // ADR-0024, e nenhuma asserção sobre `Object.keys` de um literal chegaria a vê-lo.
+    // -----------------------------------------------------------------------
+    expect(
+      camposDeclaradosEm(
+        [
+          'export interface CargaDaRotinaAgendada {',
+          '  readonly empresaId?: string;',
+          '  readonly rotina: RotinaDeTrabalho;',
+          '  /** "para o consumidor não precisar consultar o banco" */',
+          '  readonly competencia?: string;',
+          '}',
+        ].join('\n'),
+        'CargaDaRotinaAgendada',
+      ),
+    ).toEqual(['competencia?', 'empresaId?', 'rotina']);
+
+    // -----------------------------------------------------------------------
+    // E o detector de LADO DIREITO, que é o que mede a união fechada e a forma da carga sem campo.
+    // Ele é função pura sobre texto, então as cópias com o defeito de volta vivem em memória.
+    // -----------------------------------------------------------------------
+
+    // (1) A ALTERNATIVA A MAIS — a forma em que a fila passaria a transportar rotina que nenhum
+    // consumidor trata, e a que o `Record` exaustivo só pega enquanto alguém o declarar.
+    expect(
+      alternativasDeUniaoEm(
+        [
+          'export type RotinaDeTrabalho =',
+          "  | 'ENCERRAMENTO_DE_CONTRATOS'",
+          "  | 'CONFERENCIA_DE_LIQUIDACAO'",
+          "  | 'VIGILANCIA_DAS_ROTINAS'",
+          "  | 'EXPURGO_DO_HISTORICO'",
+          "  | 'MANUTENCAO_DO_ACERVO';",
+        ].join('\n'),
+        'RotinaDeTrabalho',
+      ),
+    ).toEqual([
+      'CONFERENCIA_DE_LIQUIDACAO',
+      'ENCERRAMENTO_DE_CONTRATOS',
+      'EXPURGO_DO_HISTORICO',
+      'MANUTENCAO_DO_ACERVO',
+      'VIGILANCIA_DAS_ROTINAS',
+    ]);
+
+    // (2) A ALTERNATIVA A MENOS, e o campo da carga sem campo — as duas direções do mesmo defeito.
+    expect(
+      alternativasDeUniaoEm(
+        "export type RotinaDeTrabalho = 'ENCERRAMENTO_DE_CONTRATOS';",
+        'RotinaDeTrabalho',
+      ),
+    ).toEqual(['ENCERRAMENTO_DE_CONTRATOS']);
+    expect(
+      ladoDireitoDoTipo(
+        'export type CargaDaManutencaoDoAcervo = { empresaId: string };',
+        'CargaDaManutencaoDoAcervo',
+      ),
+    ).toBe('{ empresaId: string }');
+
+    // (3) O outro lado: menção em docblock e o tipo declarado LOGO ABAIXO não vazam para dentro do
+    // que se afirma. Sem o corte no `;` fora de comentário, a união leria as alternativas da
+    // vizinha, e um tipo que perdesse metade das suas continuaria "completo".
+    expect(
+      alternativasDeUniaoEm(
+        [
+          '/**',
+          " * Não confunda com 'MANUTENCAO' nem com 'AVISO_DE_COBRANCA', que são da cadência.",
+          ' */',
+          "export type RotinaDeTrabalho = 'ENCERRAMENTO_DE_CONTRATOS' | 'EXPURGO_DO_HISTORICO'; // e 'OUTRA'",
+          "export type Vizinha = 'A' | 'B';",
+        ].join('\n'),
+        'RotinaDeTrabalho',
+      ),
+    ).toEqual(['ENCERRAMENTO_DE_CONTRATOS', 'EXPURGO_DO_HISTORICO']);
+
+    // (4) E as DUAS âncoras antivácuo do detector: tipo ausente é ERRO — renomear a carga faria a
+    // igualdade comparar vazio com vazio e passar por vacuidade —, e união sem literal algum
+    // também, porque é a forma em que `RotinaDeTrabalho` viraria `string` largo.
+    expect(() =>
+      ladoDireitoDoTipo("export type Outra = 'x';", 'CargaDaManutencaoDoAcervo'),
+    ).toThrow(/CargaDaManutencaoDoAcervo/);
+    expect(() =>
+      alternativasDeUniaoEm('export type RotinaDeTrabalho = string;', 'RotinaDeTrabalho'),
+    ).toThrow(/não declara união de literais/);
   });
 });

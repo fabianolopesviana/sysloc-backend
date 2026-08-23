@@ -1,5 +1,6 @@
 /**
- * Verificação da **guarda de boletos** — CT-947 da fatia `emissao-e-conciliacao`.
+ * Verificação da **guarda de boletos** — CT-947 da fatia `emissao-e-conciliacao`, e CT-1087 da
+ * fatia `automacoes-agendadas` (o expurgo do acervo, que fecha o `D26 · F4/T9`).
  *
  * ⚠️ **Este caso nasceu no challenge de 2026-08-16.** A §11.4 da tech spec promete que *"o caminho
  * resolvido é conferido contra o diretório-base antes de qualquer leitura ou escrita"*, e nenhum dos
@@ -38,7 +39,26 @@
  * |          |        | controle antivácuo (a base de fato sumiu, e o caso não passa por
  * |          |        | vacuidade) e a discriminante da ORDEM. |
  *
- * Rastreabilidade: `CA-08 → CT-947 (RN-08)`.
+ * | CA-21    | CT-1087 | `expurgarBoletosVencidos(90)` remove **exatamente** o que já completou
+ * |          |         | mais dias do que a retenção: o de `91d` sai, e o de `90d` exatos e o de
+ * |          |         | `89d` **permanecem** — conjunto remanescente afirmado por igualdade. A
+ * |          |         | chamada devolve `removidos === 1`, e a segunda devolve `0` sem levantar. |
+ * | CA-21    | CT-1087 | Base **inexistente** devolve `0` sem levantar (`ENOENT`-tolerante), e o pai
+ * |          | (b)     | não ganha entrada nenhuma — a base não é criada por conveniência. |
+ * | CA-21    | CT-1087 | Um **vínculo simbólico** sob a base, apontando para fora dela, é recusado com
+ * |          | (c)     | `ErroDeBoletoForaDaGuarda`; o arquivo de fora **continua existindo** com o
+ * |          |         | conteúdo original; e **nada** é removido — nem o boleto vencido que estava
+ * |          |         | na mesma passagem. É o par que discrimina a fase de reconhecimento. |
+ * | CA-21    | CT-1087 | O boleto gravado pela **porta legítima** é alcançado pelo expurgo quando
+ * |          | (d)     | vence, e a leitura dele passa a falhar com `ENOENT` do sistema. |
+ * | CA-21    | CT-1087 | Prazo inválido (`-1`) é recusado com `RangeError` e **nada** é removido — a
+ * |          | (e)     | contenção do modo de falha mais caro do módulo. |
+ * | CA-21    | CT-1087 | O reconhecimento decide por **idade, nunca por nome**: o intermediário
+ * |          | (f)     | `.parcial` órfão e **vencido** é removido (a contagem sobe para `2`), e o
+ * |          |         | `.parcial` **recente** permanece. É a propriedade sobre a qual o `D32 ·
+ * |          |         | F4/T9` foi fechado. |
+ *
+ * Rastreabilidade: `CA-08 → CT-947 (RN-08)` · `CA-21 → CT-1087 (RN-11)` · `CA-21 → CT-1087 (f) (RN-11)`.
  *
  * ---------------------------------------------------------------------------
  * Qual asserção DISCRIMINA o defeito (prova do P4, que aqui é de raciocínio)
@@ -72,6 +92,44 @@
  *    da guarda. Nenhuma ordem que consulte o disco antes satisfaz as duas ao mesmo tempo: ela
  *    inverteria as duas de uma vez.
  *
+ * ⚠️ **A travessia pura (`../fora`, caminho absoluto, separador embutido) NÃO ganha caso próprio no
+ * CT-1087, e a omissão é deliberada.** `expurgarBoletosVencidos` não recebe nome algum — ele descobre
+ * as entradas por `readdir`, que nunca devolve `..` nem separador —, de modo que um caso de travessia
+ * ali só poderia ser escrito contra as três operações que **recebem** código, e essas já são o
+ * `CT-947 (b)`/`(d)`, contra as mesmas três entradas hostis. Copiá-lo seria a duplicata semântica
+ * (AP-26) que o `D27` daquela fatia registra. O que o CT-1087 acrescenta é o **único** vetor de fora
+ * da base que a varredura pode de fato encontrar: a entrada que **parece** um boleto e é um vínculo —
+ * e o alvo dela é justamente `../fora.pdf`, de modo que o caso `(c)` cruza os dois eixos.
+ *
+ * **No CT-1087 a asserção que discrimina é o `(c)`**, e ela precisa dos **três** lados juntos: a
+ * recusa levantada, o arquivo de fora intacto **e** o boleto vencido ainda na base. Uma varredura
+ * que usasse `stat` no lugar de `lstat` decidiria pela idade do alvo **fora** da base e não
+ * levantaria; uma que apagasse enquanto examina levantaria, mas já teria removido o vencido — e é a
+ * terceira asserção, e só ela, que separa as duas. A borda de `90d` exatos, no caso principal,
+ * discrimina `>` de `>=` no corte.
+ *
+ * **No `(f)` quem discrimina é o par (i)+(ii)**, e ele fecha uma **classe**, não um filtro: instalar
+ * em `reconhecerVencidos` toda decisão por nome que **estreite o alcance** da varredura —
+ * `EXTENSAO_DO_BOLETO`, o prefixo `COB-`, o sufixo `.parcial` — reprova uma das duas pernas. Filtrar
+ * por extensão faz a contagem cair para `1` e deixa o órfão vencido na base; remover todo `.parcial`
+ * leva o órfão recente e reprova a igualdade de conjunto. O caso é **comportamental**, e por isso o P4
+ * o dispensa de mutante: ele já reprova contra a implementação que o `D32` temia.
+ *
+ * ⚠️ **O predicado é "estreitar o alcance", e não "qualquer decisão por nome" — a diferença foi
+ * MEDIDA.** Sobrevive uma só: a **lista branca `{.pdf, .parcial}` combinada com idade**, em que o
+ * órfão vencido entra na contagem e o recente sobrevive **por idade**. Ela é **benigna**, porque
+ * `gravar` só compõe essas duas formas: não é o filtro que o `D32` temia, e a rede **não** tem lacuna.
+ * A redação anterior quantificava universalmente sem medir — é a mesma classe de defeito que a
+ * **ADR-0015** sofreu nesta base (*"todo contador sequencial deste produto é único por empresa"*,
+ * falsificado pelo contador bancário e superseded pela **0033**). Achado do Gate 2 na rodada 2.
+ *
+ * ⚠️ **Ele existe porque a propriedade virou fundamento de fecho de débito.** O docblock de
+ * `guarda-de-boletos.ts` afirma que a varredura alcança o `.parcial` órfão *"e isso é ganho, não
+ * efeito colateral"*, e a §2 do `run-report.md` da fatia `emissao-e-conciliacao` fecha o `D32` sobre
+ * exatamente essa afirmação. Sem este caso, todas as asserções de conjunto do bloco usavam **só nomes
+ * `.pdf`** — e continuariam verdes com o filtro instalado, que é a regressão de prova (R2) que o
+ * débito previu, com o caminho invertido.
+ *
  * ---------------------------------------------------------------------------
  * O que este arquivo NÃO tenta discriminar, e por que a tentativa seria pior
  * ---------------------------------------------------------------------------
@@ -99,7 +157,17 @@
  * a ADR-0025 exige do pacote.
  */
 
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -466,5 +534,250 @@ describe('CT-947 — a guarda de boletos não escreve nem lê fora do diretório
       excedentes: [],
       ausentes: [],
     });
+  });
+});
+
+// ===========================================================================
+// CT-1087 — o expurgo do acervo por idade, com a contenção da base
+// ===========================================================================
+
+/**
+ * O prazo que o expurgo recebe nestes casos — o mesmo que a composição raiz declara em produção.
+ *
+ * Escrito à mão, e não importado da composição: o que o caso afirma é o **corte**, e derivá-lo da
+ * mesma constante que o SUT consome poria as duas pontas sob a mesma autoria.
+ */
+const DIAS_DE_RETENCAO = 90;
+
+/** Milissegundos de um dia — literal do caso, jamais importado do artefato sob prova. */
+const MS_POR_DIA = 24 * 60 * 60 * 1000;
+
+/**
+ * Os três arquivos do acervo, com a idade que decide o desfecho de cada um.
+ *
+ * `91` sai, `90` **exatos** permanecem e `89` permanece: é a trinca que discrimina `>` de `>=` no
+ * corte, e é por isso que o do meio existe.
+ */
+const ACERVO_COM_IDADES = [
+  { nome: 'boleto-91d.pdf', dias: 91 },
+  { nome: 'boleto-90d.pdf', dias: 90 },
+  { nome: 'boleto-89d.pdf', dias: 89 },
+] as const;
+
+/** Os que sobrevivem à passagem, escritos por extenso — nunca derivados da lista acima por filtro. */
+const ACERVO_APOS_O_EXPURGO = ['boleto-90d.pdf', 'boleto-89d.pdf'] as const;
+
+/** O acervo inteiro, escrito por extenso — o estado que o `(c)` e o `(e)` afirmam INTOCADO. */
+const ACERVO_INTEIRO = ['boleto-91d.pdf', 'boleto-90d.pdf', 'boleto-89d.pdf'] as const;
+
+/** Quantos arquivos a passagem principal deve remover. */
+const REMOVIDOS_NA_PRIMEIRA_PASSAGEM = 1;
+
+/** Quantos a segunda passagem deve remover — o acervo já está no prazo. */
+const REMOVIDOS_NA_SEGUNDA_PASSAGEM = 0;
+
+/**
+ * O nome do vínculo simbólico plantado sob a base — **legítimo à vista**, e é esse o ponto.
+ *
+ * Ele é indistinguível de um boleto guardado por qualquer conferência que olhe só o nome: o que o
+ * separa é a natureza da entrada, que só `lstat` revela.
+ */
+const NOME_DO_VINCULO = 'boleto-vinculado.pdf';
+
+/** O prazo inválido do `(e)` — negativo, que classificaria o acervo INTEIRO como vencido. */
+const RETENCAO_INVALIDA = -1;
+
+/**
+ * Os dois intermediários órfãos do `(f)`, na **forma real** que `gravar` compõe —
+ * `<codigo>.pdf.<uuid>.parcial`.
+ *
+ * ⚠️ **Escritos à mão, e jamais compostos com a regra do artefato.** Derivá-los de
+ * `EXTENSAO_DO_BOLETO` + `SUFIXO_PARCIAL` (que são privados do módulo, e por decisão) poria a
+ * expectativa e o código sob a mesma autoria — e o caso deixaria de reprovar quem mudasse a forma.
+ *
+ * ⚠️ **O que este caso persegue NÃO é a forma, é o CRITÉRIO.** O invariante é *"o reconhecimento
+ * decide por idade, e nenhuma decisão por nome ESTREITA o que ele alcança"*, e é por isso que os dois
+ * têm idades opostas: um filtro por extensão faria o vencido sobreviver, e uma remoção indiscriminada
+ * de `.parcial` levaria o recente. Nenhuma das duas satisfaz as duas asserções ao mesmo tempo.
+ *
+ * ⚠️ **Uma decisão por nome sobrevive, e está declarada de propósito**: a lista branca
+ * `{.pdf, .parcial}` **combinada com idade**. Ela é benigna — `gravar` não compõe outra forma —, e
+ * não é o filtro que o `D32` temia. Ver a seção de discriminação no topo do arquivo.
+ */
+const PARCIAL_ORFAO_VENCIDO = 'COB-2026-0000054.pdf.7c9f1f8e-3d2a-4b61-9c0e-5f18a2d47b30.parcial';
+const PARCIAL_ORFAO_RECENTE = 'COB-2026-0000055.pdf.1b4d6a02-8e77-4f13-a5cd-92e0c3418f6a.parcial';
+
+/** Quantos arquivos a passagem do `(f)` remove: o boleto de 91 dias e o órfão vencido. */
+const REMOVIDOS_COM_O_ORFAO = 2;
+
+/**
+ * O que sobra no `(f)`, escrito por extenso — os dois boletos no prazo **e** o órfão recente.
+ *
+ * A presença do órfão recente nesta lista é o controle que separa *"varre por idade"* de *"apaga todo
+ * `.parcial`"*: sem ele, uma limpeza que removesse todo intermediário passaria no caso.
+ */
+const ACERVO_APOS_O_EXPURGO_COM_ORFAO = [
+  'boleto-90d.pdf',
+  'boleto-89d.pdf',
+  PARCIAL_ORFAO_RECENTE,
+] as const;
+
+describe('CT-1087 — o expurgo remove o que venceu, e nunca alcança nada fora da base', () => {
+  let raiz = '';
+  let base = '';
+  let guarda: GuardaDeBoletos;
+
+  beforeEach(async () => {
+    // A mesma árvore descartável do CT-947 — base, pai observável e o vizinho plantado fora —, e o
+    // diretório-base chega à guarda por PARÂMETRO (ADR-0025).
+    raiz = await mkdtemp(join(tmpdir(), 'sysloc-expurgo-de-boletos-'));
+    base = join(raiz, NOME_DA_BASE);
+    await mkdir(base);
+    await writeFile(join(raiz, NOME_DO_VIZINHO), BYTES_DO_VIZINHO);
+
+    guarda = criarGuardaDeBoletos(base);
+  });
+
+  afterEach(async () => {
+    await rm(raiz, { recursive: true, force: true });
+  });
+
+  /**
+   * Cria os três arquivos do acervo com o `mtime` recuado — **pelo relógio do ARRANJO**.
+   *
+   * ⚠️ É o arranjo que lê o relógio, nunca o SUT: `utimes` fabrica a idade, e o corte que decide o
+   * desfecho continua sendo calculado inteiramente dentro da guarda.
+   */
+  async function semearAcervo(): Promise<void> {
+    for (const { nome, dias } of ACERVO_COM_IDADES) {
+      const caminho = join(base, nome);
+      await writeFile(caminho, BYTES_DO_BOLETO);
+
+      const carimbo = new Date(Date.now() - dias * MS_POR_DIA);
+      await utimes(caminho, carimbo, carimbo);
+    }
+  }
+
+  /** O conteúdo da base, comparado por igualdade de conjunto contra uma lista escrita à mão. */
+  async function afirmarAcervo(esperado: readonly string[]): Promise<void> {
+    expect(diferencasDeConjunto(await readdir(base), esperado)).toEqual({
+      excedentes: [],
+      ausentes: [],
+    });
+  }
+
+  it('remove só o que já completou mais dias do que a retenção, e a segunda passagem devolve 0', async () => {
+    await semearAcervo();
+
+    expect(await guarda.expurgarBoletosVencidos(DIAS_DE_RETENCAO)).toBe(
+      REMOVIDOS_NA_PRIMEIRA_PASSAGEM,
+    );
+
+    // O que sobrou, por igualdade de conjunto: o de 90 dias EXATOS permanece — é ele que separa o
+    // corte estrito (`>`) do frouxo (`>=`), e sem ele o caso aprovaria os dois.
+    await afirmarAcervo(ACERVO_APOS_O_EXPURGO);
+
+    // Nada nasceu nem sumiu fora da base, e o vizinho segue com o conteúdo original.
+    expect(diferencasDeConjunto(await readdir(raiz), PAI_INTACTO)).toEqual({
+      excedentes: [],
+      ausentes: [],
+    });
+    expect(await readFile(join(raiz, NOME_DO_VIZINHO))).toEqual(BYTES_DO_VIZINHO);
+
+    // `ENOENT`-tolerante: a segunda passagem sobre o acervo já expurgado não levanta e não conta.
+    expect(await guarda.expurgarBoletosVencidos(DIAS_DE_RETENCAO)).toBe(
+      REMOVIDOS_NA_SEGUNDA_PASSAGEM,
+    );
+    await afirmarAcervo(ACERVO_APOS_O_EXPURGO);
+  });
+
+  it('CT-1087 (b) — com o diretório-base ausente devolve 0, e não o recria', async () => {
+    await rm(base, { recursive: true, force: true });
+
+    expect(await guarda.expurgarBoletosVencidos(DIAS_DE_RETENCAO)).toBe(0);
+
+    // A base NÃO renasce por conveniência: um `mkdir` escondido no expurgo a faria nascer com o modo
+    // do `umask`, e mascararia a instalação incompleta que o verificador existe para pegar.
+    expect(diferencasDeConjunto(await readdir(raiz), PAI_SEM_A_BASE)).toEqual({
+      excedentes: [],
+      ausentes: [],
+    });
+  });
+
+  it('CT-1087 (c) — o vínculo simbólico para fora da base é recusado, o alvo sobrevive e NADA é removido', async () => {
+    await semearAcervo();
+
+    // Um vínculo com nome de boleto, apontando para o arquivo do diretório PAI. Ele é deixado
+    // RECENTE de propósito: a recusa não é sobre idade, é sobre a entrada não ser conferível — e uma
+    // implementação que examinasse a idade primeiro deixaria de levantar aqui.
+    await symlink(join(raiz, NOME_DO_VIZINHO), join(base, NOME_DO_VINCULO));
+
+    const bruta = await recusaDe(guarda.expurgarBoletosVencidos(DIAS_DE_RETENCAO));
+
+    // Nenhum código de sistema vazou: a recusa é da guarda, e não um erro do `fs` traduzido.
+    expect(codigoDeSistemaDe(bruta)).toBeUndefined();
+    expect(recusaDaGuarda(bruta).campo).toBe(CAMPO_ESPERADO);
+
+    // O alvo FORA da base continua existindo, com os bytes originais: `unlink` sobre um vínculo
+    // removeria o vínculo, mas a asserção fixa o efeito, e não a chamada.
+    await expect(stat(join(raiz, NOME_DO_VIZINHO))).resolves.toBeDefined();
+    expect(await readFile(join(raiz, NOME_DO_VIZINHO))).toEqual(BYTES_DO_VIZINHO);
+
+    // E a asserção que DISCRIMINA a fase de reconhecimento: o boleto de 91 dias — que a passagem
+    // teria removido — continua lá. Uma varredura que apagasse enquanto examina já o teria levado.
+    await afirmarAcervo([...ACERVO_INTEIRO, NOME_DO_VINCULO]);
+  });
+
+  it('CT-1087 (d) — o boleto gravado pela porta legítima é alcançado quando vence', async () => {
+    // Liga as duas pontas do módulo: o que `gravar` produz é exatamente o que o expurgo varre. Sem
+    // esta asserção, o expurgo poderia varrer um universo de nomes que a guarda nunca cria.
+    const nome = await guarda.gravar(CODIGO_LEGITIMO, BYTES_DO_BOLETO);
+    const vencido = new Date(Date.now() - (DIAS_DE_RETENCAO + 1) * MS_POR_DIA);
+    await utimes(join(base, nome), vencido, vencido);
+
+    expect(await guarda.expurgarBoletosVencidos(DIAS_DE_RETENCAO)).toBe(1);
+    await afirmarAcervo([]);
+
+    // E a leitura pela guarda passa a falhar no DISCO, e não com a recusa: o arquivo saiu do acervo,
+    // e o código continua sendo um código legítimo.
+    const falha = await recusaDe(guarda.ler(CODIGO_LEGITIMO));
+    expect(falha).not.toBeInstanceOf(ErroDeBoletoForaDaGuarda);
+    expect(codigoDeSistemaDe(falha)).toBe(CODIGO_DE_AUSENCIA);
+  });
+
+  it('CT-1087 (f) — o intermediário `.parcial` órfão e vencido é alcançado, e o recente permanece', async () => {
+    // A árvore que a morte do processo entre `writeFile` e `rename` deixa para trás: o intermediário
+    // de nome sorteado, que `ler` e `apagar` NÃO alcançam — os dois compõem `<codigo>.pdf`. Quem o
+    // alcança é o expurgo, e só porque ele decide por idade.
+    await semearAcervo();
+
+    const vencido = join(base, PARCIAL_ORFAO_VENCIDO);
+    await writeFile(vencido, BYTES_DO_BOLETO);
+    const carimbo = new Date(Date.now() - (DIAS_DE_RETENCAO + 1) * MS_POR_DIA);
+    await utimes(vencido, carimbo, carimbo);
+
+    // O órfão RECENTE — o de uma gravação que pode estar em curso agora. Ele é o controle.
+    await writeFile(join(base, PARCIAL_ORFAO_RECENTE), BYTES_DO_BOLETO);
+
+    // (i) A contagem SOBE de um: o órfão vencido saiu junto com o boleto de 91 dias. Um filtro por
+    // extensão em `reconhecerVencidos` devolveria `1` aqui, e é esta asserção que o discrimina.
+    expect(await guarda.expurgarBoletosVencidos(DIAS_DE_RETENCAO)).toBe(REMOVIDOS_COM_O_ORFAO);
+
+    // (ii) E o que ficou, por igualdade de conjunto: os dois boletos no prazo E o órfão recente. Uma
+    // limpeza que apagasse todo `.parcial` reprova aqui — é a outra metade do par.
+    await afirmarAcervo(ACERVO_APOS_O_EXPURGO_COM_ORFAO);
+  });
+
+  it('CT-1087 (e) — prazo inválido é recusado com RangeError, e o acervo fica intacto', async () => {
+    await semearAcervo();
+
+    const bruta = await recusaDe(guarda.expurgarBoletosVencidos(RETENCAO_INVALIDA));
+
+    // O tipo é afirmado: um prazo negativo classificaria TODO o acervo como vencido, e o modo de
+    // falha que a recusa contém é a remoção em massa.
+    expect(bruta).toBeInstanceOf(RangeError);
+
+    // O controle que separa "recusou" de "recusou antes de apagar": o acervo inteiro, os três.
+    await afirmarAcervo(ACERVO_INTEIRO);
   });
 });

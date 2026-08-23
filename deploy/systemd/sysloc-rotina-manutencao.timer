@@ -1,0 +1,50 @@
+# Relógio da rotina `manutencao` — T9 da fatia `automacoes-agendadas`.
+#
+# Esta é a FONTE VERSIONADA, posicionada por
+# `deploy/scripts/instalacao/instalar-unidades.sh` (ADR-0005). É ESTA unidade que
+# é habilitada no arranque, e não o `.service` que ela dispara.
+#
+# ---------------------------------------------------------------------------
+# O FUSO É DECLARADO
+# ---------------------------------------------------------------------------
+#
+# Sem o sufixo, o horário depende do fuso do SISTEMA, e hoje ele acerta POR
+# ACIDENTE — a máquina está em America/Sao_Paulo. Duas fontes de tempo para o
+# mesmo fato é o risco de maior probabilidade desta fatia: o dia em que o fuso
+# do host mudasse, a rotina passaria a correr em outra hora sem que nada
+# falhasse. O supervisor aceita o fuso no próprio `OnCalendar=` desde a 252;
+# medido nesta máquina: 255.4.
+#
+# ⚠️ O horário abaixo é o MESMO que `CADENCIA_DA_ROTINA` declara em
+# `@sysloc/contracts`, e `packages/shared/test/unidades-agendadas.spec.ts` amarra
+# as duas declarações: mudar aqui sem mudar lá (ou o contrário) REPROVA a suíte.
+# É deliberado — é o que impede o horário de existir em dois lugares livres para
+# andar separados.
+#
+# ---------------------------------------------------------------------------
+# A cadência é DIARIA às 03:30 — depois da conferência, para não competir com ela
+# ---------------------------------------------------------------------------
+
+[Unit]
+Description=Relógio da manutenção do acervo
+Documentation=file:/opt/sysloc-backend/docs/specs/features/automacoes-agendadas/v1/tech_spec.md
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 America/Sao_Paulo
+
+# A garantia da US-08: a máquina fora do ar na hora marcada NÃO custa a
+# execução. Ao voltar, o supervisor dispara UMA vez — não N — e a rotina corre
+# atrasada em vez de não correr.
+Persistent=true
+
+# Precisão DECLARADA. Sem ela vale o padrão do supervisor, que é 1 min: ele
+# agrupa despertares para poupar energia, e num relógio de alta frequência isso
+# faz o disparo andar dentro da janela. Este servidor está sempre ligado, de modo
+# que o agrupamento não compra nada — e o custo dele é o horário deixar de ser o
+# que está escrito acima.
+AccuracySec=1s
+
+Unit=sysloc-rotina-manutencao.service
+
+[Install]
+WantedBy=timers.target

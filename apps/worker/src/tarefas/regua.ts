@@ -72,18 +72,66 @@
  * tentativa `ENVIADA` dentro do intervalo mínimo — a idempotência vem do **predicado**, e não de
  * uma guarda escrita para ela. Uma guarda de idempotência aqui seria uma segunda regra, livre para
  * divergir da do predicado.
+ *
+ * ---------------------------------------------------------------------------
+ * A PASSAGEM DA RÉGUA DEIXA REGISTRO — e a ausência dele marcava a rotina como parada para sempre
+ * ---------------------------------------------------------------------------
+ *
+ * `AVISO_DE_COBRANCA` é uma das **três** `RotinaPublicada` do roster do Admin, com cadência
+ * `A_CADA_MINUTO` e limiar de atraso de 15 minutos (`LIMIAR_DE_ATRASO_POR_CADENCIA`). Quem deriva
+ * *"atrasada"* é a consulta de `lerEstadoDasRotinas`, comparando o silêncio desde a **última
+ * execução registrada** contra esse limiar — e até esta task **nada gravava** a execução desta
+ * rotina. O desfecho não era um número errado numa tela: era a vigilância da fila gritando `error`
+ * a cada quinze minutos, para sempre, sobre uma rotina que roda a cada minuto, e a leitura do Admin
+ * publicando-a como parada. A única passagem que produz o fato é esta, e é aqui que ele nasce.
+ *
+ * ⚠️ **O predicado é `enviadas + falhas + semDestinatario > 0`** (RD-15), e não `candidatas > 0`: o
+ * que conta como efeito é a **tentativa** — a mensagem entregue, a que falhou, a que não tinha para
+ * onde ir —, e cada uma delas deixa linha em `negocio.envio_de_cobranca`. A passagem que não tentou
+ * nada não produziu efeito, e registrá-la reintroduziria o **registro de passagem vazia**: o
+ * histórico de 12 MB por empresa do sistema antigo, sobre uma rotina de **minuto**, que é onde ele
+ * custa mais caro. A régua desligada e a passagem fora da janela caem exatamente aí — as três
+ * contagens são zero, e nada é gravado.
+ *
+ * ⚠️ **O resumo REUSA os campos de `ResultadoDaRegua`** — `candidatas`, `enviadas`, `falhas` e
+ * `semDestinatario` —, e não inventa `avisadas`/`recusadas`: um segundo vocabulário para o mesmo
+ * fato é o que a RN-19 proíbe, e o registro é `jsonb` aberto justamente para publicar as contagens
+ * **como a rotina as produziu**. `houveFalha` fica de fora porque é booleano, e o resumo é registro
+ * de números.
+ *
+ * ⚠️ **O registro corre em unidade PRÓPRIA, e não na do envio.** Aqui não existe unidade única da
+ * passagem a que ele pudesse pertencer: cada tentativa grava na sua, de propósito, para que a falha
+ * da décima não desfaça as nove anteriores. É a mesma situação — e a mesma consequência declarada —
+ * da conferência de liquidação em `./rotina-agendada.ts`: uma queda entre o fim da passagem e o
+ * registro deixa a passagem feita sem a linha que a conta, e a passagem seguinte, um minuto depois,
+ * repõe o registro sem duplicar aviso, porque a trava do intervalo já protegeu as caixas.
+ *
+ * ⚠️ **Ele corre DENTRO do contexto de tenant**, junto do resto da passagem:
+ * `registrarExecucaoDeRotina` não recebe `empresaId` — o `empresa_id` sai de `app.empresa_id`, e o
+ * `WITH CHECK` da política aceita ou recusa o valor proposto (ADR-0008/ADR-0024).
+ *
+ * ⚠️ **O disparo MANUAL de uma cobrança não passa por aqui, e não deve registrar**: ele é ato de uma
+ * pessoa sobre **uma** cobrança, e não passagem de rotina. Gravá-lo faria o botão do operador
+ * "consertar" o atraso de uma rotina automática que continua parada.
+ *
+ * ---------------------------------------------------------------------------
  */
 
-import { ESQUEMA_DO_IDENTIFICADOR } from '@sysloc/contracts';
+import { ESQUEMA_DO_IDENTIFICADOR, type RotinaPublicada } from '@sysloc/contracts';
 import {
   type AcessoAoBanco,
   contextoDeTenant,
   lerHoraCorrenteDaOperacao,
   lerPoliticaDeAviso,
   registrarEnvioDeCobranca,
+  registrarExecucaoDeRotina,
   selecionarCandidatasAoAviso,
 } from '@sysloc/db';
-import { executarReguaDaEmpresa, type PortaDeEnvioDeEmail } from '@sysloc/regua';
+import {
+  executarReguaDaEmpresa,
+  type PortaDeEnvioDeEmail,
+  type ResultadoDaRegua,
+} from '@sysloc/regua';
 import { FILA_DA_REGUA, type Logger } from '@sysloc/shared';
 import { z } from 'zod';
 import type { TarefaDaRegua } from '../fila.js';
@@ -120,6 +168,15 @@ const ESQUEMA_DA_CARGA = z.strictObject({ [CAMPO_DA_EMPRESA]: ESQUEMA_DO_IDENTIF
 const EXIGENCIA_DA_CARGA =
   `a carga da tarefa da régua exige o campo '${CAMPO_DA_EMPRESA}' com um identificador de ` +
   'empresa (UUID), e nada além dele';
+
+/**
+ * O nome desta rotina no roster publicado — tipado, e não literal solto.
+ *
+ * `RotinaPublicada` é derivado de `CADENCIA_DA_ROTINA` pelo campo `publicada`, de modo que um nome
+ * fora do roster **não compila** — e é a mesma união que `ExecucaoDeRotinaNova.rotina` exige. É o que
+ * torna impossível esta borda gravar registro de uma rotina que a leitura do Admin não publica.
+ */
+const ROTINA_DO_AVISO: RotinaPublicada = 'AVISO_DE_COBRANCA';
 
 /** O que a borda diz quando a passagem terminou com tentativa em falha. */
 const MOTIVO_DA_REPETICAO = 'a passagem da régua terminou com tentativa de envio em falha';
@@ -169,7 +226,7 @@ export async function processarReguaDeCobranca(
       agora: await lerHoraCorrenteDaOperacao(tx),
     }));
 
-    return await executarReguaDaEmpresa({
+    const passada = await executarReguaDaEmpresa({
       politica: passagem.politica,
       agora: passagem.agora,
       // A aplicação parcial acontece AQUI: é a borda que decide sob que contexto e em que unidade
@@ -185,6 +242,17 @@ export async function processarReguaDeCobranca(
         ),
       email,
     });
+
+    // O registro da PASSAGEM — o que faz `AVISO_DE_COBRANCA` deixar de ser publicada como parada
+    // (RD-15). Ele corre dentro do contexto já aberto, em unidade própria, e só quando o predicado
+    // de efeito da rotina é verdadeiro. Ver a seção homônima do cabeçalho.
+    if (houveEfeito(passada)) {
+      await banco.emUnidadeDeTrabalho(async (tx) => {
+        await registrarExecucaoDeRotina(tx, { rotina: ROTINA_DO_AVISO, resumo: resumoDa(passada) });
+      });
+    }
+
+    return passada;
   });
 
   // O término é REGISTRADO para ser observável de fora do processo. As contagens entram; nenhum
@@ -202,6 +270,47 @@ export async function processarReguaDeCobranca(
       `${MOTIVO_DA_REPETICAO}: ${String(resultado.falhas)} de ${String(resultado.candidatas)}`,
     );
   }
+}
+
+/**
+ * A passagem produziu **efeito**? — o predicado de efeito declarado desta rotina (RD-15).
+ *
+ * Ele é `enviadas + falhas + semDestinatario > 0`, e **não** `candidatas > 0`: o que conta é a
+ * tentativa, e não a seleção. A distinção é o que separa *"a régua rodou"* de *"a régua fez alguma
+ * coisa"* — e é ela que impede a rotina de **minuto** de gravar 1.440 linhas por empresa por dia
+ * numa imobiliária que não tem cobrança a avisar, que é o histórico de 12 MB do sistema antigo com
+ * outro nome.
+ *
+ * ⚠️ **`houveFalha` não entra**, e a ausência é conteúdo: ele já é `falhas > 0` derivado pelo
+ * domínio, e somá-lo aqui seria contar a mesma tentativa duas vezes na decisão.
+ *
+ * A função é **declarada nesta borda**, e não em `@sysloc/db`: o docblock de
+ * `registrarExecucaoDeRotina` diz por escrito que ela *"não decide se grava"*. Enfiar a decisão na
+ * camada de dados foi recusado por nome, e o risco tem nome — o registro de passagem vazia.
+ */
+function houveEfeito(passada: ResultadoDaRegua): boolean {
+  return passada.enviadas + passada.falhas + passada.semDestinatario > 0;
+}
+
+/**
+ * O resumo da passagem, no vocabulário que `@sysloc/regua` já publica (RN-19).
+ *
+ * As quatro contagens saem de `ResultadoDaRegua` **campo a campo**, e não por espalhamento: o
+ * espalhamento levaria `houveFalha` junto, e o resumo é registro de **números** — um booleano ali
+ * quebraria a forma que o contrato publica (`Record<string, number>`) e a leitura do Admin teria de
+ * decidir o que fazer com ele.
+ *
+ * ⚠️ **Nenhum nome novo é inventado.** `avisadas`/`recusadas` seriam o segundo vocabulário para o
+ * mesmo fato que a RN-19 proíbe — e o registro é `jsonb` aberto justamente para publicar as
+ * contagens como a rotina as produziu.
+ */
+function resumoDa(passada: ResultadoDaRegua): Record<string, number> {
+  return {
+    candidatas: passada.candidatas,
+    enviadas: passada.enviadas,
+    falhas: passada.falhas,
+    semDestinatario: passada.semDestinatario,
+  };
 }
 
 /**

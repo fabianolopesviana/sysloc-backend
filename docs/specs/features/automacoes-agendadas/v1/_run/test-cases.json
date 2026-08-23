@@ -1,0 +1,1981 @@
+{
+  "data": "2026-08-22",
+  "origem": "agent-spec-qa-test-generator, invocado por agent-spec-sdd-generate-tech-spec (FASE 4)",
+  "feature": "automacoes-agendadas",
+  "version": "v1",
+  "frente": "backend",
+  "stack_discovery": {
+    "fonte": "testing_stack_rule",
+    "stack": "Node 24.18.1 · TypeScript strict · NestJS 11 + Fastify 5 · Drizzle + postgres.js · PostgreSQL 18 · Zod 4 · BullMQ + Redis 7 · systemd 255 · Bash (frente de infraestrutura)",
+    "framework_teste": "Vitest 4.1.10 com embedded-postgres (instância efêmera própria), Redis efêmero próprio e servidor HTTP real em porta dinâmica; frente shell em bash com o vocabulário `caso`/`afirmar_igual`",
+    "comando_teste": "pnpm --filter @sysloc/<pacote> test (por pacote; `turbo run test` aborta os irmãos e a saída agregada não é confiável) · pnpm test para a suíte inteira",
+    "discovery_needed": false,
+    "lacunas": []
+  },
+  "erros_leitura": [],
+  "resumo": {
+    "total_casos_teste": 41,
+    "por_tipo": {
+      "unitario": 8,
+      "integracao": 27,
+      "componente": 0,
+      "e2e": 3,
+      "seguranca": 3,
+      "acessibilidade": 0
+    }
+  },
+  "casos_teste": [
+    {
+      "id": "CT-1057",
+      "task_id": "T9",
+      "titulo": "Todo OnCalendar= declara o fuso, e o horário é IGUAL à cadência declarada em @sysloc/contracts",
+      "tipo": "UNITARIO",
+      "categoria": "caso_extremo",
+      "invariant": "Cada um dos 6 `deploy/systemd/sysloc-rotina-*.timer` tem exatamente uma linha `OnCalendar=` terminada em `America/Sao_Paulo`, e o horário nela declarado é o mesmo que `CADENCIA_DA_ROTINA` de `@sysloc/contracts` declara para aquela unidade — as duas declarações nunca divergem. ⚠️ A cobertura é de conjunto NOS DOIS SENTIDOS: seis unidades, seis entradas no mapa.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "cópia do `.timer` em diretório temporário com o sufixo de fuso removido, e segunda cópia com a hora trocada para `01:02:00` divergindo de CADENCIA_DA_ROTINA",
+        "assertion_esperada": "a asserção reprova nomeando arquivo e linha, com `semFuso` igual a `['sysloc-rotina-encerramento-de-contratos.timer']` e `divergenciasDeHorario` igual a `[{ unidade: '…encerramento…', declaradoNaUnidade: '01:02', declaradoNoContrato: '00:02' }]`"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Infraestrutura + Contrato",
+      "arquivo_alvo": "packages/shared/test/unidades-agendadas.spec.ts",
+      "pre_condicoes": [
+        "Os 6 pares `.service`/`.timer` e a unidade-modelo existem em `deploy/systemd/`; `CADENCIA_DA_ROTINA` exportada pelo contrato"
+      ],
+      "dados_entrada": {
+        "descricao": "Os 6 `.timer` lidos por `fs` e o mapa de cadência importado do contrato",
+        "valores": {
+          "fuso_exigido": "America/Sao_Paulo",
+          "cadencias": "mapa de SEIS entradas: AVISO_DE_COBRANCA=A_CADA_MINUTO; ENCERRAMENTO_DE_CONTRATOS=DIARIA 00:02; CONFERENCIA_DE_LIQUIDACAO=DIARIA 03:00; VIGILANCIA_DAS_ROTINAS=A_CADA_15_MIN; MANUTENCAO=DIARIA 03:30; RETOMADA_DE_NOTICIAS=A_CADA_10_MIN"
+        }
+      },
+      "passos": [
+        "Listar os `.timer` e afirmar por IGUALDADE DE CONJUNTO os 6 nomes contra `Object.keys(CADENCIA_DA_ROTINA)`, nos dois sentidos (controle antivácuo)",
+        "Extrair as linhas `OnCalendar=` em posição executável, afirmar uma por arquivo, o sufixo literal do fuso, e comparar o horário com `CADENCIA_DA_ROTINA[rotina]`",
+        "PROVA DE FALSIFICAÇÃO sobre as duas cópias defeituosas, afirmando as listas de achados por igualdade"
+      ],
+      "resultado_esperado": "6 arquivos examinados; `Object.keys(CADENCIA_DA_ROTINA)` é igual como conjunto ao dos 6 `.timer`; `semFuso` é `[]`; `divergenciasDeHorario` é `[]`; e no harness de falsificação as duas cópias produzem `semFuso.length === 1` e `divergenciasDeHorario.length === 1`, nomeando o arquivo ofensor.",
+      "criterios_aceitacao_validados": [
+        "CA-01",
+        "CA-10"
+      ],
+      "observacoes": "Arquivo novo `packages/shared/test/unidades-agendadas.spec.ts`; nenhuma suíte lê `deploy/systemd/`. Asserção ESTÁTICA ⇒ prova de falsificação obrigatória, rodada pelo script `test` do pacote. Fecha a metade (i) do risco 'duas fontes de tempo'. ⚠️ CONCILIADO no challenge de 2026-08-22: a forma anterior comparava as 6 unidades contra um mapa que o CT-1090 exigia ter 3 entradas — os dois casos eram mutuamente inconsistentes."
+    },
+    {
+      "id": "CT-1058",
+      "task_id": "T9",
+      "titulo": "Persistent=true existe exatamente nas diárias e está AUSENTE na rotina de minuto",
+      "tipo": "UNITARIO",
+      "categoria": "fronteira",
+      "invariant": "O conjunto de `.timer` que declaram `Persistent=true` é exatamente o conjunto dos timers cuja cadência publicada é `DIARIA`; o timer da rotina `A_CADA_MINUTO` não declara `Persistent=` em posição executável.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "cópia do timer de minuto com `Persistent=true` acrescentado, e cópia do timer diário com a linha removida",
+        "assertion_esperada": "reprova nas duas direções: `persistentesIndevidos` igual a `['sysloc-rotina-aviso-de-cobranca.timer']` e `diariasSemPersistent` igual a `['sysloc-rotina-encerramento-de-contratos.timer']`"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Infraestrutura",
+      "arquivo_alvo": "packages/shared/test/unidades-agendadas.spec.ts",
+      "pre_condicoes": [
+        "Os 6 `.timer` existem e `CADENCIA_DA_ROTINA` classifica cada rotina em `A_CADA_MINUTO` ou `DIARIA`"
+      ],
+      "dados_entrada": {
+        "descricao": "Os 6 `.timer` e o mapa de cadência",
+        "valores": {
+          "com_persistent": "5 diárias",
+          "sem_persistent": "aviso-de-cobranca"
+        }
+      },
+      "passos": [
+        "Derivar do mapa de cadência o conjunto esperado de timers diários e extrair as linhas `Persistent=` em posição executável",
+        "Comparar os dois conjuntos por IGUALDADE nos dois sentidos, com controle antivácuo",
+        "PROVA DE FALSIFICAÇÃO sobre as duas cópias defeituosas"
+      ],
+      "resultado_esperado": "`persistentesIndevidos` é `[]` e `diariasSemPersistent` é `[]`; o conjunto medido de timers com `Persistent=true` é EXATAMENTE o das 5 cadências diárias. Na falsificação, cada cópia produz uma lista de tamanho 1 nomeando o arquivo.",
+      "criterios_aceitacao_validados": [
+        "CA-10"
+      ],
+      "observacoes": "A metade operacional de CA-10 (reboot real recuperando o disparo) é operação, não suíte — registrada em cenarios_nao_cobertos. Asserção ESTÁTICA ⇒ prova de falsificação obrigatória."
+    },
+    {
+      "id": "CT-1059",
+      "task_id": "T9",
+      "titulo": "Todo .service tem OnFailure= para a unidade-modelo que NOMEIA a rotina, e é oneshot sem Restart=",
+      "tipo": "UNITARIO",
+      "categoria": "tratamento_erro",
+      "invariant": "Cada um dos 6 `sysloc-rotina-*.service` declara `Type=oneshot`, `OnFailure=sysloc-alerta-de-rotina@%n.service` e nenhuma diretiva `Restart=`; e `sysloc-alerta-de-rotina@.service` interpola `%i` no `ExecStart=`, de modo que o alerta carrega o nome da unidade que falhou.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "cópia de um `.service` sem a linha `OnFailure=`; segunda com `Restart=always`; terceira da unidade-modelo com `%i` trocado por texto fixo",
+        "assertion_esperada": "as três reprovam com listas de tamanho 1 — `semOnFailure`, `comRestart` e `modeloQueNaoNomeiaARotina` —, cada uma nomeando o arquivo ofensor"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Infraestrutura",
+      "arquivo_alvo": "packages/shared/test/unidades-agendadas.spec.ts",
+      "pre_condicoes": [
+        "Os 6 `.service` e a unidade-modelo existem em `deploy/systemd/`"
+      ],
+      "dados_entrada": {
+        "descricao": "Os 7 arquivos de serviço lidos por `fs`",
+        "valores": {
+          "onfailure": "sysloc-alerta-de-rotina@%n.service",
+          "tipo": "oneshot",
+          "proibido": "Restart="
+        }
+      },
+      "passos": [
+        "Afirmar por igualdade de conjunto que existem 6 `sysloc-rotina-*.service` mais a unidade-modelo",
+        "Para cada `.service`: afirmar `Type=oneshot`, o `OnFailure=` literal e a AUSÊNCIA de `Restart=`; e afirmar `%i` no `ExecStart=` da unidade-modelo",
+        "PROVA DE FALSIFICAÇÃO sobre as três cópias defeituosas"
+      ],
+      "resultado_esperado": "`semOnFailure`, `comRestart` e `naoOneshot` são todos `[]`; o `ExecStart=` da unidade-modelo contém `%i`. Na falsificação, cada cópia produz exatamente um achado nomeando o arquivo.",
+      "criterios_aceitacao_validados": [
+        "CA-03"
+      ],
+      "observacoes": "Cobre a METADE 1 do CA-03 (a falha é nomeada); a metade 2 é o CT-1086 e nenhuma substitui a outra (decisão D5). A ausência de `Restart=` em oneshot é a §10.2 — reiniciar em laço multiplicaria o enfileiramento."
+    },
+    {
+      "id": "CT-1060",
+      "task_id": "T9",
+      "titulo": "O instalador cobre os 13 arquivos, habilita SÓ .timer, e nenhuma unidade carrega credencial",
+      "tipo": "UNITARIO",
+      "categoria": "seguranca",
+      "invariant": "O array `UNIDADES` de `instalar-unidades.sh` é IGUAL, como conjunto, ao conjunto de arquivos de `deploy/systemd/`; o laço só passa nome terminado em `.timer` ao `systemctl enable`; todo `.timer` declara `WantedBy=timers.target`; e nenhum dos 13 arquivos contém segredo, apenas `EnvironmentFile=`.",
+      "owning_layer": "unit",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "instalador com um nome retirado do array; instalador habilitando um `.service`; `.timer` sem `WantedBy=`; `.service` com `Environment=DATABASE_URL=postgres://u:senha@h/d`",
+        "assertion_esperada": "quatro achados de tamanho 1 — `naoInstalados`, `habilitaServiceIndevidamente`, `timersSemWantedBy` e `unidadesComCredencial` —, cada um nomeando o arquivo ofensor"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Infraestrutura (instalador + unidades)",
+      "arquivo_alvo": "packages/shared/test/unidades-agendadas.spec.ts",
+      "pre_condicoes": [
+        "`instalar-unidades.sh` atualizado com os 13 arquivos, e as 13 unidades existentes"
+      ],
+      "dados_entrada": {
+        "descricao": "O fonte do instalador e os 13 arquivos de unidade",
+        "valores": {
+          "total": 13,
+          "wanted_by": "timers.target",
+          "agulhas": "password, senha, PGPASSWORD, ://usuario:segredo@"
+        }
+      },
+      "passos": [
+        "Extrair o array `UNIDADES` e compará-lo por igualdade de conjunto com `fs.readdir('deploy/systemd')`, com controle antivácuo",
+        "Afirmar que o predicado do laço de habilitação casa `*.timer` e nunca `*.service`, e `WantedBy=timers.target` em todo `.timer`",
+        "Varrer os 13 arquivos pelas agulhas de credencial afirmando `[]`, com CONTROLE POSITIVO onde as agulhas foram plantadas, e rodar a PROVA DE FALSIFICAÇÃO sobre as quatro cópias defeituosas"
+      ],
+      "resultado_esperado": "`naoInstalados`, `habilitaServiceIndevidamente`, `timersSemWantedBy` e `unidadesComCredencial` são todos `[]`; o controle positivo devolve os 4 achados plantados, um por agulha; e cada cópia defeituosa produz exatamente um achado.",
+      "criterios_aceitacao_validados": [
+        "CA-04",
+        "CA-23"
+      ],
+      "observacoes": "CA-04 e CA-23 provados por asserção estática, por decisão (A1) da §16.1 — a execução privilegiada do instalador exige `sudo` interativo. O controle positivo da varredura é exigência da ADR-0032; sem ele a varredura é AP-29."
+    },
+    {
+      "id": "CT-1061",
+      "task_id": "T5",
+      "titulo": "Os fontes novos de @sysloc/db não leem o relógio do processo — o dia vem do banco",
+      "tipo": "UNITARIO",
+      "categoria": "caso_extremo",
+      "invariant": "`packages/db/src/encerramento-de-contratos.ts` e `execucao-de-rotina.ts` não contêm `new Date(`, `Date.now(`, `getHours(` nem `getTime(` em posição executável: o instante que decide o que é vencido, o corte de retenção e o limiar de atraso vêm do banco (ADR-0026).",
+      "owning_layer": "unit",
+      "existing_suite": "packages/db/test/fonte-unica-do-estado.spec.ts",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "cópia de `encerramento-de-contratos.ts` com o predicado de vencimento derivado de `new Date()` em vez de `negocio.data_corrente_da_operacao()`",
+        "assertion_esperada": "a varredura reprova nomeando arquivo e linha, com `ocorrencias.length === 1` e `ocorrencias[0].agulha === 'new Date('`"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Dados / domínio",
+      "arquivo_alvo": "packages/db/test/fonte-unica-do-estado.spec.ts",
+      "pre_condicoes": [
+        "Os dois fontes novos existem em `packages/db/src/`"
+      ],
+      "dados_entrada": {
+        "descricao": "Os dois fontes novos, sem comentários",
+        "valores": {
+          "agulhas": "new Date(, Date.now(, getHours(, getTime("
+        }
+      },
+      "passos": [
+        "Importar `semComentarios`/`varrerArquivos` de `packages/db/test/varredura-de-fontes.ts` (acessório da casa, não se copia)",
+        "Afirmar por igualdade que os dois fontes foram varridos e que `ocorrencias` é `[]`, e aplicar a varredura a um controle com as 4 agulhas plantadas",
+        "PROVA DE FALSIFICAÇÃO sobre a cópia com `new Date()` reintroduzido"
+      ],
+      "resultado_esperado": "`ocorrencias` é `[]` sobre os dois fontes reais; o controle positivo devolve exatamente 4 ocorrências, uma por agulha; e a cópia defeituosa produz 1 ocorrência nomeando o arquivo e a linha.",
+      "criterios_aceitacao_validados": [
+        "CA-05",
+        "CA-09",
+        "CA-13"
+      ],
+      "observacoes": "Estende a suíte que já é a casa desta classe de asserção (o CT-612 vive nela). Fecha a metade (ii) do risco 'duas fontes de tempo' do lado de `@sysloc/db`."
+    },
+    {
+      "id": "CT-1062",
+      "task_id": "T8",
+      "titulo": "Os fontes novos de apps/worker não leem o relógio do processo para decidir negócio",
+      "tipo": "UNITARIO",
+      "categoria": "caso_extremo",
+      "invariant": "`despachante.ts`, `tarefas/rotina-agendada.ts` e `tarefas/manutencao-do-acervo.ts` não contêm `new Date(`, `Date.now(`, `getHours(` nem `getTime(` em posição executável fora da medição de duração declarada — nenhuma decisão de negócio deriva 'hoje' do relógio do processo.",
+      "owning_layer": "unit",
+      "existing_suite": "apps/worker/test/ambiente.spec.ts",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "cópia de `manutencao-do-acervo.ts` calculando o corte de retenção com `Date.now() - 90 * 86400000`",
+        "assertion_esperada": "a varredura reprova com `ocorrencias.length === 1`, nomeando `manutencao-do-acervo.ts`, a linha e a agulha `Date.now(`"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Aplicação (worker) / Composição raiz",
+      "arquivo_alvo": "apps/worker/test/ambiente.spec.ts",
+      "pre_condicoes": [
+        "Os três fontes novos existem em `apps/worker/src/`"
+      ],
+      "dados_entrada": {
+        "descricao": "Os três fontes novos, sem comentários",
+        "valores": {
+          "agulhas": "new Date(, Date.now(, getHours(, getTime(",
+          "excecao": "medição de `duracaoMs` do despacho, se existir — a lista de exceções aceitas é ela mesma asserida"
+        }
+      },
+      "passos": [
+        "Reusar o molde de varredura que `apps/worker/test/ambiente.spec.ts` já instala (o do CT-612), sem redeclarar acessório",
+        "Afirmar que os três fontes foram varridos, que `ocorrencias` fora da exceção é `[]`, e que a lista de exceções aceitas é EXATAMENTE a declarada",
+        "Aplicar ao controle positivo com as agulhas plantadas e rodar a PROVA DE FALSIFICAÇÃO sobre a cópia com o corte derivado de `Date.now()`"
+      ],
+      "resultado_esperado": "`ocorrencias` fora da exceção é `[]`; a lista de exceções aceitas é igual à declarada no topo do caso; o controle positivo devolve 4 achados; a cópia defeituosa reprova nomeando `manutencao-do-acervo.ts`.",
+      "criterios_aceitacao_validados": [
+        "CA-13",
+        "CA-21"
+      ],
+      "observacoes": "Estende suíte existente. A exceção declarada é asserida por igualdade justamente para não virar porta de entrada — sem isso a asserção degeneraria em AP-29."
+    },
+    {
+      "id": "CT-1063",
+      "task_id": "T5",
+      "titulo": "Contrato vencido com imóvel: encerra e libera o imóvel no MESMO ato, contra o oráculo",
+      "tipo": "INTEGRACAO",
+      "categoria": "caminho_feliz",
+      "invariant": "Executado `encerrarContratosVencidos(tx)` sobre o cenário do golden transposto, o contrato com `status='ATIVO'` e `data_fim_locacao < negocio.data_corrente_da_operacao()` passa a `ENCERRADO` e o imóvel dele a `DISPONIVEL` na mesma transação, e as contagens devolvidas são `{ candidatos: 1, encerrados: 1, preservados: 0 }`.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-1064",
+        "input_invalido": "a liberação do imóvel falha dentro da unidade de trabalho",
+        "assertion_esperada": "o contrato permanece `ATIVO` e o imóvel `LOCADO` — a transação inteira é desfeita, e `count(*) FILTER (WHERE status='ENCERRADO')` é 0"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "As escritas exigem contexto de tenant (`SET LOCAL app.empresa_id`), que a produção não expõe como parâmetro de função.",
+        "caminho_legitimo": "Abrir a unidade de trabalho pelo escritor único de `@sysloc/db`, como `packages/db/test/contrato.spec.ts` já faz para semear e exercitar contrato/imóvel — nunca exportar símbolo novo nem executar `SET app.empresa_id` cru por fora.",
+        "teste_analogo": "packages/db/test/contrato.spec.ts"
+      },
+      "camada": "Dados / domínio",
+      "arquivo_alvo": "packages/db/test/encerramento-de-contratos.spec.ts",
+      "pre_condicoes": [
+        "Instância efêmera aberta por `bancoEfemero()` (acessório da casa — importar, não copiar), empresa semeada e golden carregado"
+      ],
+      "dados_entrada": {
+        "descricao": "Os 3 contratos REPRESENTÁVEIS do golden (o 4º, sem imóvel, é irrepresentável — CT-1066)",
+        "valores": {
+          "CTR-01": "-5 dias, ATIVO, imóvel LOCADO",
+          "CTR-03": "+20 dias, ATIVO, imóvel LOCADO",
+          "CTR-04": "-30 dias, ENCERRADO, imóvel LOCADO"
+        }
+      },
+      "passos": [
+        "Semear os 3 contratos e imóveis sob o contexto da empresa, com `data_fim_locacao = negocio.data_corrente_da_operacao() + offset`",
+        "Chamar `encerrarContratosVencidos(tx)` numa unidade de trabalho e reler os 3 pares por consulta crua",
+        "Comparar campo a campo com o `estado_resultante` do golden traduzido, e as contagens com o bloco `retorno`, declarando a divergência de RN-02"
+      ],
+      "resultado_esperado": "`CTR-01` é `ENCERRADO` e `IMOVEL-01` é `DISPONIVEL`; `CTR-03` é `ATIVO` e `IMOVEL-03` é `LOCADO`; `CTR-04` continua `ENCERRADO` e `IMOVEL-04` `LOCADO` (não retroage); o retorno é EXATAMENTE `{ candidatos: 1, encerrados: 1, preservados: 0 }`, com a divergência frente a `total_candidatos: 2`/`total_ignorados: 1` do golden afirmada e justificada pela §21.2.",
+      "criterios_aceitacao_validados": [
+        "CA-05",
+        "CA-07",
+        "CA-08"
+      ],
+      "observacoes": "Arquivo novo `packages/db/test/encerramento-de-contratos.spec.ts` — domínio NOVO, nenhuma suíte o cobre. Comparação campo a campo, NUNCA por snapshot: a tradução Frappe→produto novo não é literal e um snapshot esconderia a divergência de RN-02."
+    },
+    {
+      "id": "CT-1064",
+      "task_id": "T5",
+      "titulo": "Encerrar e liberar são UM ato: falha na liberação do imóvel desfaz o encerramento",
+      "tipo": "INTEGRACAO",
+      "categoria": "tratamento_erro",
+      "invariant": "Se a liberação do imóvel falhar dentro da unidade de trabalho, o `UPDATE` do contrato é desfeito junto: nenhum contrato fica `ENCERRADO` com o imóvel ainda `LOCADO` (RN-03/RD-03).",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "a segunda escrita da unidade é feita falhar por restrição do próprio banco sobre a linha do imóvel",
+        "assertion_esperada": "a chamada rejeita, e a releitura APÓS o `ROLLBACK`, em conexão nova, devolve `contrato.status === 'ATIVO'` e `imovel.status_locacao === 'LOCADO'`, com a contagem de contratos `ENCERRADO` igual a 0"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Provocar a falha da segunda escrita sem introduzir ramo de teste no código de produção.",
+        "caminho_legitimo": "Provocar a falha pelo BOUNDARY REAL — violar uma restrição do Postgres sobre a linha do imóvel, de modo que o erro nasça do banco. NUNCA acrescentar flag, parâmetro opcional ou ramo `se estiverTestando` (Iron Law #6).",
+        "teste_analogo": "packages/db/test/contrato.spec.ts"
+      },
+      "camada": "Dados / domínio",
+      "arquivo_alvo": "packages/db/test/encerramento-de-contratos.spec.ts",
+      "pre_condicoes": [
+        "Banco efêmero migrado, com um contrato vencido e imóvel sob contexto da empresa"
+      ],
+      "dados_entrada": {
+        "descricao": "Contrato ATIVO vencido cujo imóvel está em estado que a porta estreita recusa",
+        "valores": {
+          "offsetDias": -5,
+          "status": "ATIVO"
+        }
+      },
+      "passos": [
+        "Semear contrato vencido + imóvel, pondo o imóvel no estado que faz a segunda escrita ser recusada pelo banco",
+        "Chamar `encerrarContratosVencidos(tx)` e capturar a rejeição",
+        "Após o `ROLLBACK`, reler contrato e imóvel por conexão NOVA e afirmar que nenhuma das duas escritas sobreviveu"
+      ],
+      "resultado_esperado": "A chamada rejeita com erro cujo `code` é do Postgres (não sintético do teste); depois do rollback, `contrato.status === 'ATIVO'`, `imovel.status_locacao === 'LOCADO'`, e a contagem de contratos `ENCERRADO` na empresa é exatamente 0.",
+      "criterios_aceitacao_validados": [
+        "CA-05"
+      ],
+      "observacoes": "Companheiro negativo do CT-1063 e rede do RD-03. A asserção que DISCRIMINA é a releitura em conexão nova depois do rollback: sem ela o caso passaria mesmo com as duas escritas em transações separadas."
+    },
+    {
+      "id": "CT-1065",
+      "task_id": "T5",
+      "titulo": "Tabela dos NÃO-candidatos: data futura, data nula, já encerrado e cancelado não são tocados",
+      "tipo": "INTEGRACAO",
+      "categoria": "teste_negativo",
+      "invariant": "Nenhum contrato fora do predicado (`status='ATIVO'` E `data_fim_locacao < negocio.data_corrente_da_operacao()`) é alcançado: nem o contrato nem o `status_locacao` do imóvel mudam, e as contagens devolvidas são `{ candidatos: 0, encerrados: 0, preservados: 0 }`.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "4 linhas: `data_fim_locacao` +20 dias; `data_fim_locacao` NULA (rascunho); `ENCERRADO` com -30 dias; `CANCELADO` com -30 dias",
+        "assertion_esperada": "para cada linha, `candidatos === 0`, o `status` do contrato é IDÊNTICO ao semeado e o `status_locacao` do imóvel é IDÊNTICO ao semeado — igualdade literal, não 'não mudou muito'"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Semeadura sob contexto de tenant.",
+        "caminho_legitimo": "Unidade de trabalho do escritor único de `@sysloc/db`, como em `packages/db/test/contrato.spec.ts`.",
+        "teste_analogo": "packages/db/test/contrato.spec.ts"
+      },
+      "camada": "Dados / domínio",
+      "arquivo_alvo": "packages/db/test/encerramento-de-contratos.spec.ts",
+      "pre_condicoes": [
+        "Banco efêmero migrado, uma empresa e contexto aberto"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela `it.each` com 4 não-candidatos isolados, mais um controle positivo",
+        "valores": {
+          "CA-07": "data futura e data nula",
+          "CA-08": "já encerrado e cancelado",
+          "controle_positivo": "contrato vencido ativo"
+        }
+      },
+      "passos": [
+        "Para cada linha, semear UM contrato no estado da linha com o imóvel `LOCADO`",
+        "Chamar `encerrarContratosVencidos(tx)`, afirmar as contagens por igualdade com zeros, e reler contrato e imóvel afirmando igualdade LITERAL com o semeado",
+        "Rodar a 5ª linha (CONTROLE POSITIVO) e afirmar `{ candidatos: 1, encerrados: 1, preservados: 0 }`"
+      ],
+      "resultado_esperado": "As 4 linhas negativas devolvem `{ candidatos: 0, encerrados: 0, preservados: 0 }` com estado literalmente idêntico ao semeado; a 5ª devolve `{ candidatos: 1, encerrados: 1, preservados: 0 }` com `status='ENCERRADO'` e `status_locacao='DISPONIVEL'`.",
+      "criterios_aceitacao_validados": [
+        "CA-07",
+        "CA-08"
+      ],
+      "observacoes": "O controle positivo dentro da mesma tabela é o que impede o AP-29: uma implementação que nunca encontra candidato passaria nas 4 linhas negativas."
+    },
+    {
+      "id": "CT-1066",
+      "task_id": "T5",
+      "titulo": "Contrato sem imóvel é IRREPRESENTÁVEL — o banco recusa a inserção com 23502",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "Não existe instância de contrato com `imovel_id` nulo no produto novo: a inserção é recusada pelo Postgres com `code = '23502'` nomeando a coluna `imovel_id`, e por isso o motivo de descarte `contrato_sem_imovel` do oráculo não é alcançável.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "`INSERT` de contrato com `imovel_id = NULL` sob contexto de tenant válido, com todas as demais colunas preenchidas",
+        "assertion_esperada": "rejeita com `error.code === '23502'` e `error.column_name === 'imovel_id'`; e `SELECT count(*) FROM negocio.contrato WHERE imovel_id IS NULL` devolve `0`"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "A inserção precisa atravessar o contexto de tenant para que a recusa seja a da coluna NOT NULL, e não a da política de linha.",
+        "caminho_legitimo": "Abrir a unidade de trabalho com o `empresa_id` da empresa semeada e emitir o `INSERT` cru por ali, afirmando ANTES que o mesmo `INSERT` com `imovel_id` preenchido é ACEITO — é o discriminador que `packages/db/test/isolamento.spec.ts` documenta ('tirar do caminho toda restrição que não seja a que se mede').",
+        "teste_analogo": "packages/db/test/isolamento.spec.ts"
+      },
+      "camada": "Dados / domínio (esquema)",
+      "arquivo_alvo": "packages/db/test/encerramento-de-contratos.spec.ts",
+      "pre_condicoes": [
+        "Banco efêmero com as migrações aplicadas, uma empresa e um imóvel semeados"
+      ],
+      "dados_entrada": {
+        "descricao": "Dois INSERTs idênticos exceto por `imovel_id`",
+        "valores": {
+          "controle_positivo": "imovel_id = <uuid do imóvel>",
+          "caso": "imovel_id = NULL"
+        }
+      },
+      "passos": [
+        "Semear empresa e imóvel; abrir contexto",
+        "CONTROLE POSITIVO: emitir o INSERT com `imovel_id` preenchido e afirmar que insere 1 linha",
+        "Emitir o INSERT com `imovel_id = NULL`, afirmar `code` e `column_name` do erro, e afirmar que não existe linha alguma com `imovel_id IS NULL`"
+      ],
+      "resultado_esperado": "O controle positivo insere exatamente 1 linha; o caso rejeita com `code === '23502'` e `column_name === 'imovel_id'`; a contagem de contratos com `imovel_id IS NULL` é exatamente `0`.",
+      "criterios_aceitacao_validados": [
+        "CA-06"
+      ],
+      "observacoes": "⚠️ REDE ANTIRREGRESSÃO da §21.2: CA-06 NÃO deve ser provado montando o cenário `CTR-…-02` do golden, que não tem instância possível. Prova-se a irrepresentabilidade, para que a rodada seguinte não 'corrija a lacuna' tornando `imovel_id` anulável. Candidato a marcador `DECISÃO FECHADA` no docblock de `encerrarContratosVencidos`."
+    },
+    {
+      "id": "CT-1067",
+      "task_id": "T5",
+      "titulo": "Idempotência por predicado: a segunda passagem do mesmo dia não produz efeito nem registro",
+      "tipo": "INTEGRACAO",
+      "categoria": "integracao",
+      "invariant": "Executado `encerrarContratosVencidos(tx)` duas vezes no mesmo dia sobre o mesmo cenário, o estado final é idêntico ao da primeira passagem, a segunda devolve `{ candidatos: 0, encerrados: 0, preservados: 0 }`, e a contagem de linhas em `negocio.execucao_de_rotina` para a rotina permanece 1.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "a segunda passagem, cuja entrada é o estado já mutado pela primeira",
+        "assertion_esperada": "`{ candidatos: 0, encerrados: 0, preservados: 0 }` na segunda; `count(*) … WHERE rotina='ENCERRAMENTO_DE_CONTRATOS'` igual a `1`; e o `ocorrida_em` da única linha IGUAL ao capturado após a primeira"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Contexto de tenant para as duas passagens.",
+        "caminho_legitimo": "Duas unidades de trabalho sucessivas pelo escritor único, com o mesmo `empresaId`.",
+        "teste_analogo": "packages/db/test/contrato.spec.ts"
+      },
+      "camada": "Dados / domínio",
+      "arquivo_alvo": "packages/db/test/encerramento-de-contratos.spec.ts",
+      "pre_condicoes": [
+        "Banco efêmero migrado, com dois contratos vencidos ativos e imóveis LOCADO"
+      ],
+      "dados_entrada": {
+        "descricao": "Dois contratos vencidos (-5 e -9 dias)",
+        "valores": {
+          "contratos_vencidos": 2
+        }
+      },
+      "passos": [
+        "Semear 2 contratos vencidos; primeira passagem; capturar o estado completo e o `ocorrida_em` do registro",
+        "Segunda passagem no mesmo dia, na mesma empresa",
+        "Comparar o estado completo por igualdade profunda com o capturado, e afirmar as contagens da segunda e o número de linhas de registro"
+      ],
+      "resultado_esperado": "Primeira passagem `{ candidatos: 2, encerrados: 2, preservados: 0 }`; segunda `{ candidatos: 0, encerrados: 0, preservados: 0 }`; o estado dos 2 contratos e 2 imóveis é IGUAL, campo a campo, ao capturado; `negocio.execucao_de_rotina` tem exatamente `1` linha para a rotina, com `ocorrida_em` inalterado.",
+      "criterios_aceitacao_validados": [
+        "CA-09",
+        "CA-11"
+      ],
+      "observacoes": "A asserção sobre a CONTAGEM de registros liga CA-09 a CA-11: sem ela, uma implementação que gravasse registro em toda passagem passaria no teste de idempotência de estado e reintroduziria o crescimento de 12 MB do sistema antigo."
+    },
+    {
+      "id": "CT-1068",
+      "task_id": "T5",
+      "titulo": "Duas passagens CONCORRENTES: SKIP LOCKED impede efeito duplicado e segundo registro",
+      "tipo": "INTEGRACAO",
+      "categoria": "caso_extremo",
+      "invariant": "Com duas transações concorrentes chamando `encerrarContratosVencidos(tx)` para a MESMA empresa e sobrepostas no tempo, a soma de `encerrados` das duas é exatamente o número de candidatos (nenhum contrato encerrado duas vezes), e `negocio.execucao_de_rotina` recebe no máximo uma linha para a rotina.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "a segunda transação concorrente, disparada enquanto a primeira ainda segura as linhas",
+        "assertion_esperada": "`encerradosDaSegunda === 0`; `count(*) … WHERE rotina='ENCERRAMENTO_DE_CONTRATOS'` igual a `1`; e `GROUP BY contrato_id HAVING count(*) > 1` sobre o efeito não devolve nenhuma linha"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "As duas transações precisam estar COMPROVADAMENTE sobrepostas — caso contrário o teste vira dois sequenciais e não mede concorrência.",
+        "caminho_legitimo": "Reproduzir o molde do `CT-407`: duas conexões dedicadas, a segunda disparada só depois de a sobreposição ser VERIFICADA por sondagem de `pg_stat_activity` com limite declarado em constante nomeada no topo do arquivo. Nenhum símbolo novo de produção.",
+        "teste_analogo": "packages/db/test/contrato.spec.ts"
+      },
+      "camada": "Dados / domínio",
+      "arquivo_alvo": "packages/db/test/encerramento-de-contratos.spec.ts",
+      "pre_condicoes": [
+        "Banco efêmero migrado, duas conexões dedicadas e 4 contratos vencidos com imóvel"
+      ],
+      "dados_entrada": {
+        "descricao": "4 contratos vencidos, uma empresa, duas transações concorrentes",
+        "valores": {
+          "candidatos": 4,
+          "transacoes": 2
+        }
+      },
+      "passos": [
+        "Semear 4 contratos vencidos com imóveis LOCADO",
+        "Abrir a transação A com `FOR UPDATE … SKIP LOCKED` e SONDAR `pg_stat_activity` até CONFIRMAR a sobreposição, dentro do limite nomeado",
+        "Disparar a transação B, comitar as duas, reler por conexão nova e afirmar as contagens, o total, a ausência de duplicidade e o número de linhas de registro"
+      ],
+      "resultado_esperado": "`encerradosDeA + encerradosDeB === 4` e nenhum contrato aparece encerrado por ambas; os 4 contratos estão `ENCERRADO` e os 4 imóveis `DISPONIVEL`; `negocio.execucao_de_rotina` tem exatamente `1` linha para a rotina; a sobreposição das sessões foi AFIRMADA antes das contagens, não presumida.",
+      "criterios_aceitacao_validados": [
+        "CA-22"
+      ],
+      "observacoes": "⚠️ A leitura adotada de CA-22 é a da §21.1 P4 — 'nenhum efeito duplicado e nenhum registro', NÃO 'a segunda não é iniciada'. Nenhum mecanismo de trava novo é introduzido. Sem afirmar a sobreposição, o caso mediria dois sequenciais e passaria sem `SKIP LOCKED` nenhum."
+    },
+    {
+      "id": "CT-1069",
+      "task_id": "T5",
+      "titulo": "A liberação passa pela porta estreita, e não há janela de DISPONIVEL com contrato vigente",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "Durante e depois do encerramento em massa, não existe instante observável em que um imóvel esteja `DISPONIVEL` com um contrato `ATIVO` apontando para ele: a ordem contrato→imóvel libera a posição do `contrato_imovel_vigente_uidx` antes de tocar o imóvel, de modo que a ativação concorrente ou é recusada pelo índice ou ocorre depois.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "uma ativação de contrato NOVO sobre o mesmo imóvel, concorrente ao encerramento e sobreposta no tempo",
+        "assertion_esperada": "ou a ativação rejeita com `code === '23505'` nomeando `contrato_imovel_vigente_uidx`, ou sucede e o imóvel fica `LOCADO` com 1 contrato vigente — e a consulta de pares `imovel DISPONIVEL × contrato ATIVO` devolve `0` linhas nos dois desfechos"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Sobreposição temporal comprovada entre encerramento e ativação.",
+        "caminho_legitimo": "Mesmo molde do CT-1068: duas conexões dedicadas com sondagem de `pg_stat_activity` e limite nomeado; sem símbolo novo de produção.",
+        "teste_analogo": "packages/db/test/contrato.spec.ts"
+      },
+      "camada": "Dados / domínio",
+      "arquivo_alvo": "packages/db/test/encerramento-de-contratos.spec.ts",
+      "pre_condicoes": [
+        "Banco efêmero migrado, um contrato vencido ATIVO com imóvel LOCADO e um contrato novo em rascunho sobre o mesmo imóvel"
+      ],
+      "dados_entrada": {
+        "descricao": "Um encerramento e uma ativação disputando o mesmo imóvel",
+        "valores": {
+          "contratoVencido": "-5 dias, ATIVO",
+          "contratoNovo": "rascunho a ativar"
+        }
+      },
+      "passos": [
+        "Semear o par em disputa",
+        "Abrir a transação do encerramento, sondar até confirmar a sobreposição e disparar a ativação concorrente",
+        "Comitar (ou capturar a recusa) e afirmar, por conexão nova, que a consulta de pares inconsistentes devolve `0` linhas em TODOS os desfechos"
+      ],
+      "resultado_esperado": "A consulta de pares inconsistentes devolve `0` linhas em todos os desfechos; se a ativação foi recusada, o erro é `23505` nomeando `contrato_imovel_vigente_uidx`; se sucedeu, o imóvel está `LOCADO` com exatamente 1 contrato vigente.",
+      "criterios_aceitacao_validados": [
+        "CA-05"
+      ],
+      "observacoes": "⚠️ Mede o AGRAVAMENTO declarado do `D44 · F2/T10`: a fatia cria o TERCEIRO escritor do par contrato-vigente/situação-do-imóvel, e o débito NÃO fecha aqui. Este caso é a rede possível enquanto a restrição de banco não existir."
+    },
+    {
+      "id": "CT-1097",
+      "task_id": "T5",
+      "titulo": "Imóvel INDISPONIVEL: encerra o contrato e PRESERVA a situação de locação",
+      "tipo": "INTEGRACAO",
+      "categoria": "caso_extremo",
+      "invariant": "A liberação é condicional: `encerrarContratosVencidos(tx)` só converte `LOCADO → DISPONIVEL`. Um imóvel `INDISPONIVEL` cujo contrato venceu tem o contrato encerrado normalmente e a situação de locação PRESERVADA por igualdade literal — o par `INDISPONIVEL` + contrato `ATIVO` é estado legítimo do produto, e sobrescrevê-lo apagaria uma decisão deliberada do Admin (RD-20).",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "o contrato vencido cujo imóvel está `INDISPONIVEL` — o caso que a implementação óbvia (`SET status_locacao = 'DISPONIVEL'` incondicional) converteria por engano",
+        "assertion_esperada": "o contrato fica `ENCERRADO` E `imovel.status_locacao` continua **literalmente** `'INDISPONIVEL'`; o resumo devolve `preservados: 1`; e a consulta por imóveis que passaram de `INDISPONIVEL` a `DISPONIVEL` nesta passagem devolve `0` linhas"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "A situação `INDISPONIVEL` precisa ser posta pelo caminho real do produto, e não por `UPDATE` cru — senão o teste prova apenas que uma coluna que ele mesmo escreveu não mudou.",
+        "caminho_legitimo": "Pôr o imóvel em `INDISPONIVEL` por `ImovelService.definirSituacaoDeLocacao` ANTES de o contrato ser ativado (a rota recusa a mudança com contrato vigente, e a ordem é o que a torna alcançável), e ativar o contrato em seguida — que é a ordem em que o estado nasce em produção, porque `locar um imóvel INDISPONIVEL passa`. Nunca `UPDATE negocio.imovel SET status_locacao` direto.",
+        "teste_analogo": "packages/db/test/contrato.spec.ts"
+      },
+      "camada": "Dados / domínio",
+      "arquivo_alvo": "packages/db/test/encerramento-de-contratos.spec.ts",
+      "pre_condicoes": [
+        "Banco efêmero migrado; 3 contratos vencidos numa empresa, com imóveis em `LOCADO`, `INDISPONIVEL` e `LOCADO`"
+      ],
+      "dados_entrada": {
+        "descricao": "3 contratos vencidos cujos imóveis diferem só na situação de locação",
+        "valores": {
+          "contrato_A": "-5 dias, ATIVO, imóvel LOCADO",
+          "contrato_B": "-7 dias, ATIVO, imóvel INDISPONIVEL",
+          "contrato_C": "-9 dias, ATIVO, imóvel LOCADO"
+        }
+      },
+      "passos": [
+        "Semear os 3 pares, pondo o imóvel de B em `INDISPONIVEL` pelo caminho real antes da ativação do contrato",
+        "Chamar `encerrarContratosVencidos(tx)` numa unidade de trabalho e reler os 3 contratos e os 3 imóveis por consulta crua",
+        "Afirmar o estado de cada um por igualdade literal e o resumo devolvido por igualdade profunda"
+      ],
+      "resultado_esperado": "Os 3 contratos ficam `ENCERRADO`; os imóveis de A e C ficam `DISPONIVEL`; o imóvel de B continua **literalmente** `'INDISPONIVEL'`; o resumo é profundamente igual a `{ candidatos: 3, encerrados: 3, preservados: 1 }`.",
+      "criterios_aceitacao_validados": [],
+      "regras_dominio_validadas": [
+        "RD-20"
+      ],
+      "observacoes": "⚠️ NASCEU NO CHALLENGE de 2026-08-22 (Q4). Não tem CA de origem: a RN-02 do PRD e o golden só conhecem `LOCADO`, porque o legado não tem a situação `INDISPONIVEL`. O fundamento é o docblock de `ImovelService.definirSituacaoDeLocacao` (`apps/api/src/imoveis/imovel.service.ts:263`), que declara literalmente que *'locar um imóvel INDISPONIVEL passa — INDISPONIVEL significa não ofereça nas buscas, e não proibido de locar'*. A asserção que DISCRIMINA é a igualdade literal de `'INDISPONIVEL'`: uma implementação com `SET status_locacao = 'DISPONIVEL'` incondicional passa em todos os outros casos do encerramento e falha só neste."
+    },
+    {
+      "id": "CT-1070",
+      "task_id": "T4",
+      "titulo": "Passagem com efeito grava UM registro, com o resumo em vocabulário do produto preservado",
+      "tipo": "INTEGRACAO",
+      "categoria": "caminho_feliz",
+      "invariant": "`registrarExecucaoDeRotina(tx, rotina, resumo)` grava exatamente uma linha com o `empresa_id` do contexto corrente, `ocorrida_em` vindo do `now()` do banco, e `resumo` recuperável como o MESMO objeto gravado, com as chaves do vocabulário do produto (`encerrados`, `ignorados`, `preservados`, `candidatas`, `enviadas`, `falhas`, `semDestinatario`, `liquidacoesDescobertas`, `removidos`).",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-1071",
+        "input_invalido": "`resumo` que não é objeto JSON (array, número, string, `null`)",
+        "assertion_esperada": "recusa do banco com `code === '23514'` e o nome da restrição `execucao_de_rotina_resumo_chk` na mensagem"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "A gravação exige contexto de tenant, e o `empresa_id` gravado tem de vir do contexto, não de um parâmetro.",
+        "caminho_legitimo": "Abrir a unidade de trabalho com o `empresaId` da empresa semeada e chamar a função SEM lhe passar identificador de empresa; a asserção é que a linha nasceu com aquele `empresa_id`.",
+        "teste_analogo": "packages/db/test/envio-de-cobranca.spec.ts"
+      },
+      "camada": "Dados / domínio",
+      "arquivo_alvo": "packages/db/test/execucao-de-rotina.spec.ts",
+      "pre_condicoes": [
+        "Banco efêmero com as migrações 0026 e 0027 aplicadas, e duas empresas semeadas"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela `it.each` com um resumo por rotina do enum",
+        "valores": {
+          "ENCERRAMENTO_DE_CONTRATOS": "{candidatos:2, encerrados:2, preservados:0}",
+          "AVISO_DE_COBRANCA": "{candidatas:4, enviadas:3, falhas:0, semDestinatario:1}",
+          "CONFERENCIA_DE_LIQUIDACAO": "{liquidacoesDescobertas:4}"
+        }
+      },
+      "passos": [
+        "Abrir contexto da empresa A e chamar `registrarExecucaoDeRotina` para cada linha da tabela",
+        "Reler por consulta crua e afirmar 1 linha por rotina, com `resumo` PROFUNDAMENTE IGUAL ao gravado",
+        "Afirmar `empresa_id` igual ao de A, `ocorrida_em` entre o `now()` do BANCO lido antes e depois, e por `pg_enum` os 3 valores do enum"
+      ],
+      "resultado_esperado": "3 linhas gravadas, uma por rotina; cada `resumo` recuperado é PROFUNDAMENTE IGUAL ao gravado, com as mesmas chaves na mesma grafia; `empresa_id` é o de A em todas; `ocorrida_em` está no intervalo medido pelo relógio do BANCO; e o conjunto de valores de `negocio.rotina_agendada` é EXATAMENTE `{AVISO_DE_COBRANCA, ENCERRAMENTO_DE_CONTRATOS, CONFERENCIA_DE_LIQUIDACAO}`.",
+      "criterios_aceitacao_validados": [
+        "CA-12"
+      ],
+      "observacoes": "Arquivo novo `packages/db/test/execucao-de-rotina.spec.ts`. A igualdade de conjunto do enum (3 valores, sem vigilância nem expurgo) impede a reintrodução do defeito de 12 MB por rotina de manutenção que grava registro."
+    },
+    {
+      "id": "CT-1071",
+      "task_id": "T4",
+      "titulo": "O banco recusa resumo que não seja objeto JSON",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "A restrição `CHECK (jsonb_typeof(resumo) = 'object')` recusa toda gravação cujo `resumo` seja array, número, cadeia, booleano ou `null` JSON, com `code = '23514'`; a forma do registro não depende de disciplina da aplicação.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "tabela com `[]`, `[1,2]`, `42`, `\"texto\"`, `true` e `null` (JSON) como `resumo`",
+        "assertion_esperada": "as 6 linhas rejeitam com `code === '23514'` e a mensagem contendo `execucao_de_rotina_resumo_chk`; o controle positivo `{}` é ACEITO e insere 1 linha"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Contexto de tenant para que a recusa seja a da CHECK e não a da política.",
+        "caminho_legitimo": "Unidade de trabalho com o `empresaId` semeado; o controle positivo aceito na mesma conexão prova que a política não é a recusadora.",
+        "teste_analogo": "packages/db/test/isolamento.spec.ts"
+      },
+      "camada": "Dados / domínio (esquema)",
+      "arquivo_alvo": "packages/db/test/execucao-de-rotina.spec.ts",
+      "pre_condicoes": [
+        "Migração 0026 aplicada, empresa semeada e contexto aberto"
+      ],
+      "dados_entrada": {
+        "descricao": "6 valores JSON não-objeto + 1 controle positivo",
+        "valores": {
+          "recusados": "[] , [1,2], 42, \"texto\", true, null",
+          "aceito": "{}"
+        }
+      },
+      "passos": [
+        "Abrir contexto e emitir o INSERT de CONTROLE POSITIVO com `resumo = '{}'::jsonb`",
+        "Para cada valor recusado, emitir o INSERT e afirmar `code` e o nome da restrição",
+        "Afirmar que a contagem final da tabela é exatamente 1"
+      ],
+      "resultado_esperado": "O controle positivo insere 1 linha; as 6 tentativas rejeitam com `code === '23514'` e `constraint === 'execucao_de_rotina_resumo_chk'`; `count(*)` final é exatamente `1`.",
+      "criterios_aceitacao_validados": [
+        "CA-12"
+      ],
+      "observacoes": "Companheiro negativo do CT-1070. A asserção de contagem final é o discriminador: sem ela, uma CHECK ausente que só gerasse erro de tipo no driver passaria."
+    },
+    {
+      "id": "CT-1072",
+      "task_id": "T4",
+      "titulo": "Expurgo do histórico por 90 dias medidos contra o relógio do BANCO, com as duas bordas",
+      "tipo": "INTEGRACAO",
+      "categoria": "fronteira",
+      "invariant": "`expurgarExecucoesVencidas(tx)` remove exatamente as linhas com `ocorrida_em < now() - make_interval(days => 90)` da empresa do contexto, preservando as demais, e o corte é o `now()` do banco — não o relógio do processo.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "linhas nas bordas: 91 dias, exatamente 90 dias, 90 dias menos 1 segundo, 89 dias e 0 dias",
+        "assertion_esperada": "`removidos` é exatamente `1` (só a de 91 dias); o conjunto de `ocorrida_em` sobreviventes é IGUAL ao das 4 restantes; e a linha de 90 dias exatos PERMANECE (o corte é estritamente menor)"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "As datas semeadas precisam ser derivadas do relógio do banco, não do processo.",
+        "caminho_legitimo": "Semear com `now() - make_interval(days => N)` calculado NO SQL do arranjo; nunca compor `timestamptz` em JavaScript com `new Date()`, que é o defeito que o CT-1061 varre.",
+        "teste_analogo": "packages/db/test/notificacao-bancaria.spec.ts"
+      },
+      "camada": "Dados / domínio",
+      "arquivo_alvo": "packages/db/test/execucao-de-rotina.spec.ts",
+      "pre_condicoes": [
+        "Migrações 0026/0027 aplicadas e duas empresas semeadas"
+      ],
+      "dados_entrada": {
+        "descricao": "5 linhas em A com idades de borda, e 1 linha vencida (120 dias) em B",
+        "valores": {
+          "idades_em_A": "91, 90, 90-1s, 89, 0 dias",
+          "linha_em_B": "120 dias"
+        }
+      },
+      "passos": [
+        "Semear as 5 linhas em A e a vencida em B, com idades derivadas de `now()` do BANCO",
+        "Abrir contexto de A, chamar `expurgarExecucoesVencidas(tx)`, afirmar o número devolvido e o conjunto de sobreviventes por igualdade",
+        "Abrir contexto de B e afirmar que a linha vencida DELA ainda existe — o expurgo é por empresa"
+      ],
+      "resultado_esperado": "`removidos === 1`; o conjunto sobrevivente em A tem exatamente 4 elementos (90, 90-1s, 89 e 0 dias); a linha de 120 dias da empresa B PERMANECE (`count(*) === 1` sob o contexto de B), provando que o expurgo não atravessa tenant.",
+      "criterios_aceitacao_validados": [
+        "CA-13"
+      ],
+      "observacoes": "A borda de exatamente 90 dias discrimina `<` de `<=` — sem ela o teste passaria com qualquer um dos dois. A perna da empresa B impede um `DELETE` sem contexto de passar."
+    },
+    {
+      "id": "CT-1073",
+      "task_id": "T3",
+      "titulo": "O isolamento do histórico é da POLÍTICA do banco: B não alcança, não lê e não grava sobre A",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "Sob o contexto da empresa B, nenhuma linha de `negocio.execucao_de_rotina` da empresa A é legível, atualizável ou removível, e o `INSERT` com `empresa_id` de A é recusado pelo `WITH CHECK` com `42501` e a mensagem `row-level security policy` — a recusa é da política nominal, não de um `WHERE` da aplicação; e `relrowsecurity` E `relforcerowsecurity` são verdadeiros.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/isolamento.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "sob contexto de B: `SELECT`, `UPDATE`/`DELETE` sobre linha existente de A, `INSERT` com `empresa_id` de A; e uma leitura com `app.empresa_id` NULO",
+        "assertion_esperada": "`SELECT` devolve `0` linhas; `UPDATE` e `DELETE` afetam `0` linhas; `INSERT` rejeita com `code === '42501'` e mensagem contendo `row-level security policy`; com contexto nulo, `SELECT` devolve `0` linhas"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "As consultas cruas precisam correr sob o papel da aplicação — superusuário ignora RLS e o caso passaria vazio.",
+        "caminho_legitimo": "Usar a conexão da unidade de trabalho de `@sysloc/db` (papel `sysloc_app`) e não `conexaoSuperusuaria` de `banco-efemero.ts`, como `isolamento.spec.ts` já discrimina; o controle positivo é a mesma consulta sob o contexto de A devolvendo as linhas.",
+        "teste_analogo": "packages/db/test/isolamento.spec.ts"
+      },
+      "camada": "Dados (RLS)",
+      "arquivo_alvo": "packages/db/test/isolamento.spec.ts",
+      "pre_condicoes": [
+        "Migração 0027 (FORCE RLS + política nominal) aplicada, empresas A e B semeadas com 3 registros em A"
+      ],
+      "dados_entrada": {
+        "descricao": "3 registros de execução em A; nenhum em B",
+        "valores": {
+          "registros_em_A": 3,
+          "registros_em_B": 0
+        }
+      },
+      "passos": [
+        "Semear 3 registros sob A e afirmar, como CONTROLE POSITIVO, que a leitura sob A devolve as 3 linhas",
+        "Sob contexto de B: `SELECT`, `UPDATE`, `DELETE` e `INSERT` cruzados, capturando linhas afetadas e erro; e com `app.empresa_id` nulo, afirmar leitura vazia",
+        "Afirmar em `pg_class` `relrowsecurity` e `relforcerowsecurity`, e em `pg_policies` o nome `execucao_de_rotina_isolamento_empresa`"
+      ],
+      "resultado_esperado": "Controle positivo: 3 linhas sob A. Sob B: `SELECT` → 0 linhas; `UPDATE` → 0 afetadas; `DELETE` → 0 afetadas; `INSERT` cruzado → `42501` com `row-level security policy`. Contexto nulo → 0 linhas. `relrowsecurity === true` e `relforcerowsecurity === true`, com a política nominal existindo pelo nome exato.",
+      "criterios_aceitacao_validados": [
+        "CA-15"
+      ],
+      "observacoes": "Estende a suíte canônica de isolamento (Gate 2). O controle positivo sob A é obrigatório: sem ele, uma tabela inexistente produziria os mesmos zeros. É o invariante 1 do `CLAUDE.md` e a ADR-0008 aplicados à tabela nova."
+    },
+    {
+      "id": "CT-1074",
+      "task_id": "T4",
+      "titulo": "Atrasada e próxima esperada são derivadas NO BANCO, a partir da cadência publicada",
+      "tipo": "INTEGRACAO",
+      "categoria": "fronteira",
+      "invariant": "`lerEstadoDasRotinas(tx)` devolve `atrasada = (now() - ultimaExecucao) > LIMIAR_DE_ATRASO_POR_CADENCIA[cadencia]` calculado na mesma consulta que lê a última execução (`A_CADA_MINUTO → 15 min`, `DIARIA → 26 h`), e `proximaEsperada` é a próxima ocorrência da cadência declarada sobre o instante do banco; rotina sem execução só é `atrasada` quando a empresa existe há mais que o limiar.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "bordas: última execução há 14 min e há 16 min (A_CADA_MINUTO); há 25 h e há 27 h (DIARIA); empresa criada há 5 min sem execução alguma",
+        "assertion_esperada": "`atrasada` é exatamente `[false, true, false, true, false]` — igualdade booleana, nunca 'é verdadeiro-ish'"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "As idades de execução e de empresa precisam vir do relógio do banco.",
+        "caminho_legitimo": "Semear `ocorrida_em` e `criada_em` com `now() - make_interval(...)` no SQL do arranjo; nunca compor instantes em JavaScript.",
+        "teste_analogo": "packages/db/test/envio-de-cobranca.spec.ts"
+      },
+      "camada": "Dados / domínio",
+      "arquivo_alvo": "packages/db/test/execucao-de-rotina.spec.ts",
+      "pre_condicoes": [
+        "Migrações aplicadas, uma empresa por linha de cenário com idade controlada"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela `it.each` de 5 linhas cruzando cadência, idade da última execução e idade da empresa",
+        "valores": {
+          "linhas": "AVISO 14min=false; AVISO 16min=true; ENCERRAMENTO 25h=false; ENCERRAMENTO 27h=true; CONFERENCIA sem execução, empresa de 5min=false"
+        }
+      },
+      "passos": [
+        "Importar `LIMIAR_DE_ATRASO_POR_CADENCIA` e `CADENCIA_DA_ROTINA` de `@sysloc/contracts` — o valor esperado vem do CONTRATO, não é literal do teste",
+        "Semear cada cenário com idades derivadas de `now()` do banco e chamar `lerEstadoDasRotinas(tx)`, afirmando `atrasada` por igualdade booleana",
+        "Afirmar `proximaEsperada` contra a cadência declarada, e que o roster devolvido é IGUAL a `ROTINAS_PUBLICADAS` inclusive nas rotinas sem execução"
+      ],
+      "resultado_esperado": "Os 5 valores de `atrasada` são exatamente `[false, true, false, true, false]`; `proximaEsperada` da diária de 00:02 é o próximo `00:02` em `America/Sao_Paulo` expresso em ISO-8601 UTC, e a de minuto é `truncar(now(),'minute') + 1 minuto`; o conjunto de rotinas devolvido é IGUAL a `ROTINAS_PUBLICADAS`, com `ultimaExecucao: null` e `resumo: null` nas que nunca executaram.",
+      "criterios_aceitacao_validados": [
+        "CA-03",
+        "CA-14"
+      ],
+      "observacoes": "É a metade BANCO do CA-03 (RN-17) e a origem do `proximaEsperada` que a rota publica. Os esperados vêm de `@sysloc/contracts` (origem (b) do Gate 6): reescrevê-los como literal cegaria a asserção à divergência entre contrato e derivação."
+    },
+    {
+      "id": "CT-1075",
+      "task_id": "T8",
+      "titulo": "A enumeração é o filtro: empresa suspensa NÃO é enumerada e nenhuma tarefa nasce para ela",
+      "tipo": "INTEGRACAO",
+      "categoria": "teste_negativo",
+      "invariant": "Executado o despachante para qualquer rotina por empresa, o conjunto de `empresaId` presentes nas tarefas enfileiradas é IGUAL ao conjunto das empresas com `suspensa_em IS NULL` — a suspensa não aparece em tarefa nenhuma, porque o filtro é da consulta de enumeração e não uma conferência posterior.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "uma das três empresas com `suspensa_em` preenchido",
+        "assertion_esperada": "o conjunto de `empresaId` enfileirados é EXATAMENTE `{A, C}`; a interseção com `{B}` é vazia; e o total de tarefas na fila é exatamente `2`, não `3` com uma descartada depois"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "A enumeração corre SEM contexto de tenant (leitura legítima #1 da ADR-0024), o que a produção não expõe como caminho comum.",
+        "caminho_legitimo": "Executar `listarEmpresasAtivas(tx)` pelo mesmo caminho do despachante, sobre a unidade de trabalho aberta SEM `empresaId` — o schema `identidade` não tem RLS de tenant. Nunca fixar `app.empresa_id` por fora nem criar papel novo.",
+        "teste_analogo": "packages/db/test/roteamento-sem-contexto.spec.ts"
+      },
+      "camada": "Composição raiz (worker) + Dados",
+      "arquivo_alvo": "apps/worker/test/despachante.spec.ts",
+      "pre_condicoes": [
+        "Banco e Redis efêmeros abertos pelos acessórios da casa; três empresas — A ativa, B suspensa, C ativa"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela `it.each` sobre as 5 formas de despacho, para provar que o filtro vale em TODAS",
+        "valores": {
+          "formas": "aviso-de-cobranca → FILA_DA_REGUA {empresaId}; encerramento/conferencia/vigilancia → FILA_DA_ROTINA_AGENDADA {empresaId, rotina}; manutencao → FILA_DA_MANUTENCAO_DO_ACERVO {} + EXPURGO_DO_HISTORICO por empresa"
+        }
+      },
+      "passos": [
+        "Semear três empresas, uma delas com `suspensa_em` preenchido, e executar o despachante com cada `argv` da tabela",
+        "Ler as tarefas efetivamente publicadas e afirmar por IGUALDADE DE CONJUNTO os `empresaId`, com controle antivácuo",
+        "Na linha `manutencao`, afirmar 1 tarefa com carga profundamente igual a `{}`; afirmar o código de saída em todas"
+      ],
+      "resultado_esperado": "Em todas as linhas o conjunto de `empresaId` enfileirados é EXATAMENTE `{A, C}` com 1 tarefa por empresa; na linha `manutencao`, `FILA_DA_MANUTENCAO_DO_ACERVO` tem exatamente 1 tarefa com carga profundamente igual a `{}` e `FILA_DA_ROTINA_AGENDADA` tem 2 tarefas de `EXPURGO_DO_HISTORICO`; o despachante sai com código `0` em todas.",
+      "criterios_aceitacao_validados": [
+        "CA-17",
+        "CA-13"
+      ],
+      "observacoes": "Arquivo novo `apps/worker/test/despachante.spec.ts`. ⚠️ A asserção que DISCRIMINA é o TOTAL ser 2: um despachante que enfileirasse 3 e descartasse a suspensa dentro da tarefa passaria em qualquer asserção só sobre empresas processadas. A carga `{}` é conformidade com a emenda de 2026-08-18 da ADR-0024."
+    },
+    {
+      "id": "CT-1076",
+      "task_id": "T8",
+      "titulo": "Falha isolada: a tarefa de uma empresa falhar não impede as demais, e a falha nomeia a empresa",
+      "tipo": "INTEGRACAO",
+      "categoria": "tratamento_erro",
+      "invariant": "Como o despachante enfileira uma tarefa INDEPENDENTE por empresa, o esgotamento da política de repetição na tarefa da empresa B deixa as tarefas de A e C concluídas, e o registro estruturado da falha carrega `empresaId` igual ao de B.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "a empresa B posta em estado de domínio que faz o trabalho dela levantar, enquanto A e C estão íntegras",
+        "assertion_esperada": "o conjunto de tarefas CONCLUÍDAS é exatamente `{A, C}`, o de FALHADAS é exatamente `{B}`, a razão da falha contém o `empresaId` de B, e o efeito de domínio de A e C está presente no banco"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Provocar a falha de UMA empresa sem introduzir ramo de teste na produção.",
+        "caminho_legitimo": "Provocar a falha pelo ESTADO DE DOMÍNIO da empresa B (dado que a rotina legitimamente recusa), nunca por flag ou ramo condicional no consumidor. Aguardar o estado terminal por SONDAGEM no servidor de fila, com limite em constante nomeada.",
+        "teste_analogo": "apps/worker/test/regua.spec.ts"
+      },
+      "camada": "Composição raiz + Aplicação (worker)",
+      "arquivo_alvo": "apps/worker/test/despachante.spec.ts",
+      "pre_condicoes": [
+        "Banco e Redis efêmeros, três empresas ativas com B defeituosa, e o consumidor real registrado pela fiação de `main.ts`"
+      ],
+      "dados_entrada": {
+        "descricao": "Três empresas ativas; B com o estado defeituoso",
+        "valores": {
+          "empresas": "A, B-defeituosa, C",
+          "rotina": "ENCERRAMENTO_DE_CONTRATOS"
+        }
+      },
+      "passos": [
+        "Semear as três empresas e o estado defeituoso de B; executar o despachante e deixar o consumidor REAL consumir",
+        "Sondar até o estado terminal das três, com limite nomeado, e afirmar por igualdade os conjuntos de concluídas e falhadas",
+        "Afirmar o EFEITO DE DOMÍNIO de A e C no banco, a razão da falha de B e o número de tentativas lido de `OPCOES_PADRAO_DA_TAREFA`"
+      ],
+      "resultado_esperado": "Concluídas EXATAMENTE `{A, C}`; falhadas EXATAMENTE `{B}`; a razão registrada contém literalmente o `empresaId` de B; os contratos vencidos de A e C estão `ENCERRADO` com imóveis `DISPONIVEL`; e o número de tentativas de B é o de `OPCOES_PADRAO_DA_TAREFA` (3), lido da constante do SUT e não escrito como literal.",
+      "criterios_aceitacao_validados": [
+        "CA-02"
+      ],
+      "observacoes": "A asserção que discrimina é o EFEITO DE DOMÍNIO de A e C: sem ela, um despachante que abortasse tudo ao primeiro erro poderia passar olhando só o estado da fila."
+    },
+    {
+      "id": "CT-1077",
+      "task_id": "T8",
+      "titulo": "Partida recusada: variável ausente e rotina desconhecida terminam sem enfileirar NADA",
+      "tipo": "INTEGRACAO",
+      "categoria": "teste_negativo",
+      "invariant": "O despachante falha fechado: variável de ambiente ausente ou mal formada e nome de rotina fora do roster fazem o processo terminar com código diferente de zero, nomeando o que faltou, sem publicar uma única tarefa em fila nenhuma e sem imprimir o valor de nenhuma variável.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "tabela: `LOG_LEVEL` ausente; `DATABASE_URL` ausente; `REDIS_URL` ausente; `DATABASE_URL` mal formada; `argv[2]` inexistente; `argv[2]` ausente",
+        "assertion_esperada": "código de saída ≠ 0 (e igual a `2` na recusa por rotina desconhecida); a saída de erro contém o NOME da variável ou a lista dos valores aceitos; a contagem de tarefas em todas as filas é `0`; e a varredura de segredo sobre a saída devolve `[]`"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "É preciso observar o código de saída de um processo que a produção termina explicitamente, sem que o teste capture exceção in-process.",
+        "caminho_legitimo": "Executar o ponto de entrada como SUBPROCESSO real, pelo acessório da casa `packages/shared/test/cenario-subprocesso.ts` — importar, não recriar. Nenhuma flag de teste, nenhuma exportação nova de `despachante.ts` para tornar a validação chamável.",
+        "teste_analogo": "apps/worker/test/ambiente.spec.ts"
+      },
+      "camada": "Composição raiz",
+      "arquivo_alvo": "apps/worker/test/despachante.spec.ts",
+      "pre_condicoes": [
+        "Banco e Redis efêmeros de pé, e `dist/despachante.js` construído pelo script `test` do pacote"
+      ],
+      "dados_entrada": {
+        "descricao": "6 linhas de partida inválida + 1 controle positivo com ambiente completo e rotina válida",
+        "valores": {
+          "variaveis": "LOG_LEVEL, DATABASE_URL, REDIS_URL",
+          "codigo_rotina_desconhecida": 2
+        }
+      },
+      "passos": [
+        "Para cada linha, lançar o ponto de entrada como SUBPROCESSO com o ambiente/argv da linha, capturando código de saída e saídas",
+        "Afirmar o código de saída, a presença do nome da variável (ou dos valores aceitos) e que a contagem de tarefas em TODAS as filas é `0`",
+        "Varrer a saída com `apps/worker/test/varredura-de-segredo.ts` afirmando `[]`, com CONTROLE POSITIVO; e rodar o controle positivo da partida"
+      ],
+      "resultado_esperado": "As 6 linhas terminam com código ≠ 0 (a de rotina desconhecida com exatamente `2`), nomeando a variável ausente ou os valores aceitos; a contagem total de tarefas é `0` em cada uma; a varredura de segredo devolve `[]` e o controle positivo dela devolve todas as agulhas plantadas; o controle positivo da partida sai `0` e enfileira as tarefas.",
+      "criterios_aceitacao_validados": [
+        "CA-02"
+      ],
+      "observacoes": "Padrão 14 da doutrina (fail-fast testável) atendido por subprocesso, sem extrair ramo de teste. O controle positivo da varredura é exigência da ADR-0032 — sem ele a varredura é AP-29."
+    },
+    {
+      "id": "CT-1078",
+      "task_id": "T8",
+      "titulo": "Sem jobId determinístico: duas passagens consecutivas produzem DUAS tarefas",
+      "tipo": "INTEGRACAO",
+      "categoria": "caso_extremo",
+      "invariant": "Duas execuções consecutivas do despachante para a mesma rotina e a mesma empresa publicam duas tarefas distintas; nenhuma é recusada por identificador já presente no conjunto de retenção da `OPCOES_PADRAO_DA_TAREFA`.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "a segunda execução, idêntica à primeira, com a primeira tarefa JÁ CONCLUÍDA e ainda no conjunto de retenção por contagem",
+        "assertion_esperada": "o número de tarefas publicadas depois da segunda execução é exatamente `2` (não `1`), os dois identificadores são DIFERENTES, e o código de saída da segunda é `0` — a passagem não é recusada, nem em silêncio nem com erro"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "É preciso que a primeira tarefa esteja concluída e retida quando a segunda é publicada.",
+        "caminho_legitimo": "Consumir a primeira pela fila real e sondar até o estado terminal antes da segunda execução, com limite declarado; nunca manipular o conjunto de retenção diretamente.",
+        "teste_analogo": "apps/worker/test/regua.spec.ts"
+      },
+      "camada": "Composição raiz",
+      "arquivo_alvo": "apps/worker/test/despachante.spec.ts",
+      "pre_condicoes": [
+        "Banco e Redis efêmeros, com uma empresa ativa"
+      ],
+      "dados_entrada": {
+        "descricao": "Duas execuções idênticas do despachante",
+        "valores": {
+          "rotina": "ENCERRAMENTO_DE_CONTRATOS",
+          "empresas_ativas": 1
+        }
+      },
+      "passos": [
+        "Executar o despachante; consumir e sondar até o estado terminal da primeira tarefa",
+        "Executar de novo com exatamente os mesmos argumentos e ambiente, e afirmar a contagem e a DISTINÇÃO dos identificadores",
+        "Perna estática: afirmar `0` ocorrências de `jobId` em posição executável nos fontes novos, com PROVA DE FALSIFICAÇÃO sobre a cópia que o introduz"
+      ],
+      "resultado_esperado": "Após a segunda execução há exatamente `2` tarefas publicadas, com identificadores distintos, e a segunda sai com código `0`; a varredura do fonte devolve `[]` ocorrências de `jobId`, e a cópia defeituosa reprova nomeando arquivo e linha.",
+      "criterios_aceitacao_validados": [
+        "CA-02",
+        "CA-22"
+      ],
+      "observacoes": "⚠️ Rede do risco nomeado na §20 como 'o modo de falha mais caro desta fatia': um `jobId` fixo faria a rotina PARAR SEM QUE NADA FALHASSE. A perna estática exige prova de falsificação; a comportamental é a que discrimina."
+    },
+    {
+      "id": "CT-1079",
+      "task_id": "T8",
+      "titulo": "Retomada das notícias em RECEBIDO: reenfileira as vencidas, com a carga SEM empresa",
+      "tipo": "INTEGRACAO",
+      "categoria": "integracao",
+      "invariant": "A rotina `RETOMADA_DE_NOTICIAS` reenfileira, na fila existente da notícia bancária, exatamente as notícias com `desfecho = 'RECEBIDO'` e `recebido_em` mais antigo que a folga declarada, com carga `{ notificacaoId }` — sem campo de empresa —, e a notícia recente ou já tratada não é reenfileirada.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "uma `RECEBIDO` dentro da folga, uma `RETIDO` vencida e uma `APLICADO` vencida, junto de duas `RECEBIDO` vencidas",
+        "assertion_esperada": "o conjunto de `notificacaoId` enfileirados é EXATAMENTE o das duas `RECEBIDO` vencidas; a carga de cada tarefa é profundamente igual a `{ notificacaoId }`, sem chave `empresaId`"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "A leitura de `plataforma.notificacao_bancaria` corre sem contexto de tenant (schema sem noção de tenant, ADR-0031).",
+        "caminho_legitimo": "Chamar `listarNaoTratadas(tx, folgaEmMinutos)` pela unidade de trabalho SEM `empresaId`, exatamente como o despachante faz — o schema `plataforma` não tem política de tenant a atravessar.",
+        "teste_analogo": "packages/db/test/notificacao-bancaria.spec.ts"
+      },
+      "camada": "Composição raiz + Dados",
+      "arquivo_alvo": "apps/worker/test/despachante.spec.ts",
+      "pre_condicoes": [
+        "Banco e Redis efêmeros, com 5 notícias semeadas cruzando desfecho e idade"
+      ],
+      "dados_entrada": {
+        "descricao": "5 notícias cruzando desfecho e idade",
+        "valores": {
+          "reenfileiradas": "RECEBIDO 30min, RECEBIDO 2h",
+          "nao_reenfileiradas": "RECEBIDO 1min, RETIDO 2h, APLICADO 2h"
+        }
+      },
+      "passos": [
+        "Semear as 5 notícias com `recebido_em` derivado de `now()` do banco",
+        "Executar o despachante com `argv[2] = retomada-de-noticias` e afirmar por igualdade de conjunto os `notificacaoId` publicados",
+        "Afirmar `Object.keys(carga) === ['notificacaoId']` em cada tarefa — nenhuma chave de empresa — e o código de saída `0`"
+      ],
+      "resultado_esperado": "Exatamente `2` tarefas publicadas; o conjunto de `notificacaoId` é IGUAL ao das duas `RECEBIDO` vencidas; cada carga é profundamente igual a `{ notificacaoId: <uuid> }` com `Object.keys` exatamente `['notificacaoId']`; código de saída `0`.",
+      "criterios_aceitacao_validados": [
+        "CA-20"
+      ],
+      "observacoes": "Fecha, pelo mecanismo, o débito `D13 · F4/T6` da fatia `webhook-e-carne`. ⚠️ A asserção sobre `Object.keys` é conformidade com a emenda de 2026-08-18 da ADR-0024: na entrada de fato de terceiro a empresa é o RESULTADO da travessia nominal, e pôr `empresaId` na carga seria violação."
+    },
+    {
+      "id": "CT-1080",
+      "task_id": "T8",
+      "titulo": "Duas empresas com janelas distintas: dispara para as duas, entrega só a que está DENTRO",
+      "tipo": "INTEGRACAO",
+      "categoria": "caminho_feliz",
+      "invariant": "Num único disparo da rotina de aviso, o despachante enfileira uma tarefa para cada empresa ativa; a régua entrega Aviso apenas às cobranças da empresa cuja Janela de horário contém o instante do banco, e nenhuma entrega ocorre para a empresa fora da janela dela.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "a empresa B, com janela que NÃO contém o instante corrente do banco, mas com cobranças avisáveis idênticas às de A",
+        "assertion_esperada": "o conjunto de destinatários capturados é EXATAMENTE o dos locatários de A; a interseção com os de B é vazia; e a contagem crua de `envio_de_cobranca` sob B é IDÊNTICA à de antes do disparo"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "As duas janelas precisam ser posicionadas em relação à hora corrente da OPERAÇÃO, lida do banco.",
+        "caminho_legitimo": "Ler `lerHoraCorrenteDaOperacao` do banco no arranjo e derivar as duas janelas a partir dela (uma contendo, outra não), como `packages/db/test/janela.spec.ts` já faz. Nunca `vi.setSystemTime` nem `new Date()` no arranjo.",
+        "teste_analogo": "apps/worker/test/regua.spec.ts"
+      },
+      "camada": "Composição raiz + Aplicação (worker)",
+      "arquivo_alvo": "apps/worker/test/despachante.spec.ts",
+      "pre_condicoes": [
+        "Banco e Redis efêmeros; empresas A e B ativas com política ligada, janelas opostas, cobranças avisáveis equivalentes e a porta de envio injetada por parâmetro"
+      ],
+      "dados_entrada": {
+        "descricao": "Duas empresas ativas com janelas derivadas da hora corrente do banco",
+        "valores": {
+          "A": "janela contendo a hora corrente",
+          "B": "janela que não a contém"
+        }
+      },
+      "passos": [
+        "Ler a hora corrente da operação do BANCO, derivar as duas janelas e semear as duas empresas com cobranças avisáveis equivalentes",
+        "Executar o despachante com `argv[2] = aviso-de-cobranca` e afirmar que a fila recebeu 2 tarefas, uma por empresa",
+        "Consumir pelo consumidor real, sondar até o estado terminal, e afirmar o conjunto de destinatários e a contagem crua de `envio_de_cobranca` por empresa"
+      ],
+      "resultado_esperado": "2 tarefas enfileiradas, uma por empresa (o disparo NÃO discrimina); conjunto de destinatários capturados IGUAL ao dos locatários de A; interseção com os de B vazia; contagem de `envio_de_cobranca` sob B idêntica à de antes; e ambas as tarefas terminam CONCLUÍDAS — a de B conclui sem efeito, não falha.",
+      "criterios_aceitacao_validados": [
+        "CA-01"
+      ],
+      "observacoes": "Prova a COMPOSIÇÃO que a fatia cria: o timer provoca sempre e a Janela decide. O que este caso acrescenta sobre `regua.spec.ts` é a passagem pelo despachante com DUAS empresas de janelas opostas no mesmo disparo, que nenhuma suíte cobre."
+    },
+    {
+      "id": "CT-1081",
+      "task_id": "T8",
+      "titulo": "Reativação põe em dia numa única passagem, e nenhum Aviso do período suspenso é entregue",
+      "tipo": "INTEGRACAO",
+      "categoria": "caso_extremo",
+      "invariant": "Depois da reativação, a empresa volta a ser enumerada e a rotina de estado a põe em dia em UMA passagem; a rotina de aviso, na mesma passagem, não entrega Aviso algum referente ao período suspenso — a não retroatividade é do predicado da régua, e a reativação não a contorna.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "cobranças que se tornaram avisáveis DURANTE a suspensão, com a janela da empresa ABERTA no instante do disparo pós-reativação",
+        "assertion_esperada": "o conjunto de destinatários capturados para as cobranças do período suspenso é vazio; a contagem de `envio_de_cobranca` com `desfecho='ENVIADA'` referente a elas é `0`; e o contrato vencido durante a suspensão está `ENCERRADO` com o imóvel `DISPONIVEL` após UMA passagem"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "É preciso montar um período de suspensão e a reativação sem tocar a produção.",
+        "caminho_legitimo": "Usar `EmpresaService.reativar` (já entregue na F4) ou a mesma escrita de `suspensa_em` que ele faz, pela unidade de trabalho; as idades de cobrança e contrato vêm de `now()` do banco. Nenhum símbolo novo de produção.",
+        "teste_analogo": "apps/api/test/entrega-da-noticia.e2e.spec.ts"
+      },
+      "camada": "Composição raiz + Aplicação (worker)",
+      "arquivo_alvo": "apps/worker/test/despachante.spec.ts",
+      "pre_condicoes": [
+        "Banco e Redis efêmeros; empresa suspensa há 10 dias com contrato vencido no período, 3 cobranças que ficaram avisáveis nele e janela aberta no disparo"
+      ],
+      "dados_entrada": {
+        "descricao": "Uma empresa suspensa que é reativada entre dois disparos",
+        "valores": {
+          "suspensaHa": "10 dias",
+          "contratoVencidoDurante": true,
+          "cobrancasAvisaveisNoPeriodo": 3
+        }
+      },
+      "passos": [
+        "Disparo 1 com a empresa suspensa: afirmar `0` tarefas para ela; reativar pelo caminho já entregue",
+        "Disparo do encerramento: afirmar o efeito; repetir imediatamente e afirmar `{ candidatos: 0, encerrados: 0, preservados: 0 }` — uma vez, não N",
+        "Disparo do aviso com a JANELA ABERTA: afirmar `0` destinatários capturados para as cobranças do período suspenso"
+      ],
+      "resultado_esperado": "Disparo 1: `0` tarefas para a empresa. Após a reativação, o encerramento produz `{ candidatos: 1, encerrados: 1, preservados: 0 }` e o disparo seguinte produz `{ candidatos: 0, encerrados: 0, preservados: 0 }`. O disparo do aviso captura `0` destinatários para as 3 cobranças do período suspenso, e a contagem de `envio_de_cobranca` com `desfecho='ENVIADA'` referente a elas é `0`.",
+      "criterios_aceitacao_validados": [
+        "CA-18"
+      ],
+      "observacoes": "US-05 é a história mais cara de errar (remetente único de e-mail — reação de spam de um Locatário atinge todos os clientes). A asserção que discrimina é a contagem `0` de entregas retroativas COM a janela aberta: com a janela fechada o caso passaria por outro motivo."
+    },
+    {
+      "id": "CT-1082",
+      "task_id": "T6",
+      "titulo": "O contexto de tenant nasce da carga, uma vez, na borda — e o efeito não atravessa empresa",
+      "tipo": "INTEGRACAO",
+      "categoria": "seguranca",
+      "invariant": "Executada a tarefa com o `empresaId` da empresa B, o efeito de domínio ocorre EXCLUSIVAMENTE em B: os contratos vencidos de A permanecem `ATIVO`, o registro de execução nasce com o `empresa_id` de B, e o contexto é aberto uma única vez pela borda a partir da carga.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-1084",
+        "input_invalido": "carga sem `empresaId`, com `empresaId` que não é UUID, e com `rotina` fora da união fechada",
+        "assertion_esperada": "a tarefa termina em FALHA com razão contendo literalmente o nome do campo, não aparece entre as concluídas, e a contagem crua do efeito de domínio permanece a de antes"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "O teste NÃO pode fixar `app.empresa_id` por fora: se o fizesse, o caso passaria mesmo com a borda não abrindo contexto nenhum — que é o defeito que ele existe para pegar.",
+        "caminho_legitimo": "Semear sob o contexto de cada empresa pela unidade de trabalho e entregar à tarefa APENAS a carga; enfileirar pela fila REAL e deixar o consumidor registrado por `conectarFila().processar(…)` consumir — não chamar `processarRotinaAgendada` diretamente.",
+        "teste_analogo": "apps/worker/test/regua.spec.ts"
+      },
+      "camada": "Aplicação (worker)",
+      "arquivo_alvo": "apps/worker/test/rotina-agendada.spec.ts",
+      "pre_condicoes": [
+        "Banco e Redis efêmeros; empresas A e B com contrato vencido e imóvel LOCADO; consumidor registrado pela fiação de `main.ts`"
+      ],
+      "dados_entrada": {
+        "descricao": "Uma tarefa apenas, com o `empresaId` de B",
+        "valores": {
+          "carga": "{ empresaId: <B>, rotina: 'ENCERRAMENTO_DE_CONTRATOS' }"
+        }
+      },
+      "passos": [
+        "Semear A e B com contratos vencidos equivalentes e capturar as contagens cruas de antes",
+        "Publicar UMA tarefa na `FILA_DA_ROTINA_AGENDADA` com a carga de B, deixar o consumidor consumir e sondar até o estado terminal",
+        "Reler A e B sob cada contexto e afirmar o `empresa_id` da linha de `negocio.execucao_de_rotina`"
+      ],
+      "resultado_esperado": "O contrato vencido de B está `ENCERRADO` com o imóvel `DISPONIVEL`; o de A permanece `ATIVO` com o imóvel `LOCADO` e a contagem crua sob A é IDÊNTICA à de antes; existe exatamente `1` linha em `negocio.execucao_de_rotina`, com `empresa_id` igual ao de B; a tarefa termina CONCLUÍDA.",
+      "criterios_aceitacao_validados": [
+        "CA-12",
+        "CA-15"
+      ],
+      "observacoes": "Arquivo novo `apps/worker/test/rotina-agendada.spec.ts`. ⚠️ A entrada pela FILA REAL (e não a chamada direta da função) é o que faz o caso provar o CAMINHO, que é o que carrega a decisão da ADR-0024."
+    },
+    {
+      "id": "CT-1083",
+      "task_id": "T6",
+      "titulo": "Passagem sem trabalho não deixa registro — o predicado de efeito é declarado por rotina",
+      "tipo": "INTEGRACAO",
+      "categoria": "teste_negativo",
+      "invariant": "Para cada uma das quatro rotinas, uma passagem em que o predicado de efeito é falso (`candidatos = 0`, `enviadas+falhas+semDestinatario = 0`, `liquidacoesDescobertas = 0`, `removidos = 0`) termina CONCLUÍDA e não grava nenhuma linha em `negocio.execucao_de_rotina`.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "empresa sem contrato vencido, sem cobrança avisável, sem liquidação a descobrir e sem registro vencido a expurgar",
+        "assertion_esperada": "`count(*) FROM negocio.execucao_de_rotina` é exatamente `0` após as quatro passagens, e as quatro tarefas terminam CONCLUÍDAS (não falhadas)"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Contexto de tenant vindo da carga.",
+        "caminho_legitimo": "Mesmo caminho do CT-1082 — publicar na fila real e deixar a borda abrir o contexto.",
+        "teste_analogo": "apps/worker/test/regua.spec.ts"
+      },
+      "camada": "Aplicação (worker)",
+      "arquivo_alvo": "apps/worker/test/rotina-agendada.spec.ts",
+      "pre_condicoes": [
+        "Banco e Redis efêmeros, com uma empresa ativa SEM trabalho pendente de nenhuma das quatro rotinas"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela `it.each` com as 4 rotinas, mais controle positivo",
+        "valores": {
+          "rotinas": "ENCERRAMENTO_DE_CONTRATOS, CONFERENCIA_DE_LIQUIDACAO, VIGILANCIA_DAS_ROTINAS, EXPURGO_DO_HISTORICO",
+          "controle_positivo": "a mesma empresa COM um contrato vencido"
+        }
+      },
+      "passos": [
+        "Semear a empresa vazia de trabalho",
+        "Publicar uma tarefa por rotina, sondar até o estado terminal e afirmar que as quatro estão CONCLUÍDAS e que a contagem de registros é `0`",
+        "CONTROLE POSITIVO: semear um contrato vencido, repetir o encerramento e afirmar exatamente 1 linha"
+      ],
+      "resultado_esperado": "Após as 4 passagens vazias, `count(*) FROM negocio.execucao_de_rotina` é EXATAMENTE `0` e as 4 tarefas estão CONCLUÍDAS; após o controle positivo, a contagem é EXATAMENTE `1` com `rotina = 'ENCERRAMENTO_DE_CONTRATOS'`. Adicionalmente, `VIGILANCIA_DAS_ROTINAS` e `EXPURGO_DO_HISTORICO` nunca gravam registro, o que é afirmado pela ausência delas nos valores do enum `negocio.rotina_agendada`.",
+      "criterios_aceitacao_validados": [
+        "CA-11"
+      ],
+      "observacoes": "É a métrica de sucesso do PRD §10 ('registro gerado em passagem sem trabalho: zero linhas') e o que substitui o registro de 12 MB do sistema antigo. O controle positivo é obrigatório: sem ele, uma implementação que nunca grava nada passaria."
+    },
+    {
+      "id": "CT-1084",
+      "task_id": "T6",
+      "titulo": "Carga inválida termina em FALHA nomeando o campo, e nada é executado sem contexto",
+      "tipo": "INTEGRACAO",
+      "categoria": "teste_negativo",
+      "invariant": "Carga que não satisfaz `CargaDaRotinaAgendada` (sem `empresaId`, `empresaId` não-UUID, `rotina` fora da união fechada, campo desconhecido a mais) faz a tarefa terminar em FALHA com a razão contendo literalmente o nome do campo ofensor, sem que nenhum efeito de domínio ocorra e sem que o contexto de tenant seja aberto.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "`{}`; `{ rotina }` sem `empresaId`; `{ empresaId: 'nao-e-uuid', rotina }`; `{ empresaId, rotina: 'ROTINA_INEXISTENTE' }`; `{ empresaId, rotina, extra: 1 }`",
+        "assertion_esperada": "as 5 terminam em FALHA; a razão contém `empresaId` nas 3 primeiras, `rotina` na quarta e `extra` na quinta; nenhuma aparece entre as concluídas; e as contagens cruas de contrato, imóvel e `execucao_de_rotina` permanecem as de antes"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Precisa haver trabalho disponível, para que o 'nada aconteceu' seja informativo.",
+        "caminho_legitimo": "Semear um contrato vencido na empresa antes de publicar as cargas inválidas; o controle positivo com a carga VÁLIDA no fim da tabela conclui e produz o efeito.",
+        "teste_analogo": "apps/worker/test/regua.spec.ts"
+      },
+      "camada": "Aplicação (worker)",
+      "arquivo_alvo": "apps/worker/test/rotina-agendada.spec.ts",
+      "pre_condicoes": [
+        "Banco e Redis efêmeros, com uma empresa que tem trabalho pendente real"
+      ],
+      "dados_entrada": {
+        "descricao": "5 cargas inválidas + 1 controle positivo",
+        "valores": {
+          "invalidas": 5,
+          "controle_positivo": "{ empresaId: <A>, rotina: 'ENCERRAMENTO_DE_CONTRATOS' }"
+        }
+      },
+      "passos": [
+        "Semear a empresa com um contrato vencido e capturar as contagens cruas",
+        "Publicar as 5 cargas inválidas, sondar até o estado terminal e afirmar estado e razão de cada uma, e que as contagens cruas não mudaram",
+        "Publicar a carga VÁLIDA e afirmar que ela conclui e produz o efeito"
+      ],
+      "resultado_esperado": "As 5 cargas inválidas terminam FALHADAS com a razão contendo literalmente o campo ofensor; nenhuma consta entre as concluídas; `contrato.status` permanece `ATIVO`, `imovel.status_locacao` permanece `LOCADO` e a contagem de registros permanece `0`; o controle positivo CONCLUI, encerra o contrato e grava exatamente 1 registro.",
+      "criterios_aceitacao_validados": [
+        "CA-02"
+      ],
+      "observacoes": "Companheiro negativo do CT-1082. O controle positivo no fim da tabela impede a suíte de aprovar um consumidor que falha em tudo."
+    },
+    {
+      "id": "CT-1085",
+      "task_id": "T6",
+      "titulo": "Com a Entrega da notícia DESABILITADA, a conferência diária continua descobrindo Liquidação",
+      "tipo": "INTEGRACAO",
+      "categoria": "caso_extremo",
+      "invariant": "A rotina `CONFERENCIA_DE_LIQUIDACAO` descobre as liquidações do dia junto ao Provedor mesmo quando a Entrega da notícia está desabilitada para a empresa — a conferência não depende da entrega —, e o resumo gravado traz `liquidacoesDescobertas` igual ao número de cobranças liquidadas apuradas.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "a mesma empresa com a Entrega da notícia DESABILITADA — o estado que poderia, por engano, ser tratado como pré-requisito da conferência",
+        "assertion_esperada": "a tarefa CONCLUI (não falha, não é pulada), o número de cobranças que ganham o fato da liquidação (e passam a derivar `PAGA`) é exatamente o informado pelo adaptador, e o resumo gravado é profundamente igual a `{ liquidacoesDescobertas: 2 }`"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "A conferência fala com o Provedor por uma porta; o teste precisa da porta sem inventar bandeira de operação-versus-verificação.",
+        "caminho_legitimo": "Injetar a implementação da porta bancária pela COMPOSIÇÃO, por parâmetro (ADR-0025) — a mesma injeção que vale para operação e verificação, sem ramo que escolha entre elas. Nunca acrescentar flag ou `if (teste)` a `rotina-agendada.ts`.",
+        "teste_analogo": "apps/worker/test/regua.spec.ts"
+      },
+      "camada": "Aplicação (worker)",
+      "arquivo_alvo": "apps/worker/test/rotina-agendada.spec.ts",
+      "pre_condicoes": [
+        "Banco e Redis efêmeros; empresa com integração configurada, Entrega DESABILITADA e duas cobranças com boleto liquidadas no Provedor"
+      ],
+      "dados_entrada": {
+        "descricao": "Empresa com entrega desabilitada; porta bancária informando 2 liquidações",
+        "valores": {
+          "entregaDaNoticia": "DESABILITADA",
+          "liquidacoesNoProvedor": 2
+        }
+      },
+      "passos": [
+        "Semear a empresa com a entrega desabilitada e as duas cobranças com boleto, injetando a porta bancária por parâmetro na composição",
+        "Publicar a tarefa `CONFERENCIA_DE_LIQUIDACAO` na fila real e sondar até o estado terminal",
+        "Reler o estado das cobranças e o registro de execução, e afirmar que a Entrega permanece DESABILITADA"
+      ],
+      "resultado_esperado": "A tarefa termina CONCLUÍDA; as 2 cobranças ganham o **fato** da liquidação gravado (`pago_em`, `data_credito`, `valor_creditado`) e a derivação passa a publicá-las como `PAGA` — nunca uma coluna de estado movida (ADR-0022); existe exatamente 1 linha com `rotina='CONFERENCIA_DE_LIQUIDACAO'` e `resumo` profundamente igual a `{ liquidacoesDescobertas: 2 }`; e o estado da Entrega da notícia permanece DESABILITADA (a rotina não a religa).",
+      "criterios_aceitacao_validados": [
+        "CA-16"
+      ],
+      "observacoes": "A asserção sobre o efeito nas cobranças (e não só sobre o resumo) é o que discrimina: um resumo montado pelo próprio teste seria mock-driven confidence (Gate 6)."
+    },
+    {
+      "id": "CT-1086",
+      "task_id": "T6",
+      "titulo": "A vigilância emite alerta de rotina PARADA nomeando empresa e rotina, e cala sobre as em dia",
+      "tipo": "INTEGRACAO",
+      "categoria": "tratamento_erro",
+      "invariant": "A rotina `VIGILANCIA_DAS_ROTINAS` emite exatamente uma linha de registro em nível `error` por rotina `atrasada` da empresa, com `empresaId`, `rotina`, `ultimaExecucao` e `limiarMinutos`, e NENHUMA linha `error` para rotina dentro do limiar — o alerta não depende do e-mail funcionar.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "duas rotinas dentro do limiar (5 min para a de minuto, 2 h para a diária) e uma fora dele (40 min para a de minuto)",
+        "assertion_esperada": "o conjunto de `rotina` nas linhas `error` é EXATAMENTE `{AVISO_DE_COBRANCA}`; nenhuma linha `error` menciona as outras duas; e a vigilância NÃO grava registro de execução"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "É preciso capturar as linhas de registro estruturado sem substituir o registrador de produção por dublê.",
+        "caminho_legitimo": "Capturar o fluxo de saída do registrador Pino pela composição (destino de escrita passado por parâmetro na raiz do teste), como o produto já faz; nunca `vi.spyOn` sobre o módulo de registro nem exportar gancho novo de `@sysloc/shared`.",
+        "teste_analogo": "apps/worker/test/regua.spec.ts"
+      },
+      "camada": "Aplicação (worker)",
+      "arquivo_alvo": "apps/worker/test/rotina-agendada.spec.ts",
+      "pre_condicoes": [
+        "Banco e Redis efêmeros; uma empresa com 3 rotinas em estados distintos de atraso e captura da saída estruturada"
+      ],
+      "dados_entrada": {
+        "descricao": "Registros com idades que cruzam os dois limiares",
+        "valores": {
+          "AVISO_DE_COBRANCA": "última há 40 min, limiar 15 min → atrasada",
+          "ENCERRAMENTO_DE_CONTRATOS": "última há 2 h, limiar 26 h → em dia",
+          "CONFERENCIA_DE_LIQUIDACAO": "última há 5 h → em dia"
+        }
+      },
+      "passos": [
+        "Semear os 3 registros com idades derivadas de `now()` do banco",
+        "Publicar a tarefa `VIGILANCIA_DAS_ROTINAS` capturando o fluxo de saída do registrador, e filtrar as linhas de nível `error`",
+        "Afirmar por igualdade de conjunto quais rotinas aparecem, os campos de cada linha, e que `negocio.execucao_de_rotina` NÃO ganhou linha"
+      ],
+      "resultado_esperado": "Exatamente 1 linha de nível `error`, com `rotina === 'AVISO_DE_COBRANCA'`, `empresaId` da empresa, `ultimaExecucao` igual ao instante semeado e `limiarMinutos === 15` (valor lido de `LIMIAR_DE_ATRASO_POR_CADENCIA`, não literal do teste); o conjunto de rotinas em linhas `error` é IGUAL a `{AVISO_DE_COBRANCA}`; nenhuma linha nova em `negocio.execucao_de_rotina`.",
+      "criterios_aceitacao_validados": [
+        "CA-03"
+      ],
+      "observacoes": "É a METADE 2 do CA-03 (decisão D5): o `OnFailure=` do CT-1059 cobre a unidade que FALHOU; esta cobre a rotina que NÃO EXECUTOU, para a qual o supervisor não produz evento algum. A asserção sobre as rotinas em dia impede um alerta que dispara para tudo."
+    },
+    {
+      "id": "CT-1087",
+      "task_id": "T7",
+      "titulo": "Expurgo dos boletos guardados por idade, preservando o que está no prazo e barrando fora da base",
+      "tipo": "INTEGRACAO",
+      "categoria": "fronteira",
+      "invariant": "`expurgarBoletosVencidos(diasDeRetencao)` remove exatamente os arquivos sob o diretório-base cuja idade excede a retenção, preserva os demais, tolera arquivo já ausente, e nunca alcança caminho fora da base conferida — a comparação de caminho é por igualdade literal, como a guarda já faz.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/cobranca-bancaria/test/guarda-de-boletos.spec.ts",
+      "real_execution_boundary": "filesystem",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "arquivo com 91 dias, com exatamente 90 dias, com 89 dias, entrada por travessia (`../`) e ligação simbólica para fora da base",
+        "assertion_esperada": "o conjunto remanescente é IGUAL ao dos de 90 e 89 dias; a tentativa fora da base rejeita com `ErroDeBoletoForaDaGuarda`; e o arquivo alvo fora da base CONTINUA EXISTINDO após a chamada"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "As idades dos arquivos precisam ser controladas sem depender do relógio do processo dentro do SUT.",
+        "caminho_legitimo": "Ajustar o `mtime` no diretório temporário real com `fs.utimes` no ARRANJO (o arranjo pode ler o relógio; o SUT não), e passar o diretório-base por parâmetro a `criarGuardaDeBoletos`, como a produção já faz (ADR-0025).",
+        "teste_analogo": "packages/cobranca-bancaria/test/guarda-de-boletos.spec.ts"
+      },
+      "camada": "Dados / infraestrutura (sistema de arquivos)",
+      "arquivo_alvo": "packages/cobranca-bancaria/test/guarda-de-boletos.spec.ts",
+      "pre_condicoes": [
+        "Diretório temporário real como base da guarda, e um arquivo alvo criado FORA da base para o controle de contenção"
+      ],
+      "dados_entrada": {
+        "descricao": "5 entradas cruzando idade e localização",
+        "valores": {
+          "idades_em_dias": "91, 90, 89",
+          "fora_da_base": "../fora.pdf e ligação simbólica",
+          "diasDeRetencao": 90
+        }
+      },
+      "passos": [
+        "Criar o diretório-base temporário com os 3 arquivos de `mtime` ajustado, e o arquivo alvo FORA da base",
+        "Chamar `expurgarBoletosVencidos(90)` pela guarda construída com o diretório-base, e afirmar por igualdade de conjunto os remanescentes e que o arquivo fora da base CONTINUA EXISTINDO",
+        "Chamar de novo sobre a base já expurgada e afirmar `removidos === 0` sem levantar (`ENOENT`-tolerante)"
+      ],
+      "resultado_esperado": "A chamada devolve `removidos === 1`; o conjunto remanescente sob a base é EXATAMENTE `{boleto-90d.pdf, boleto-89d.pdf}`; o arquivo fora da base existe (`fs.stat` sucede); a tentativa por caminho fora da base rejeita com `ErroDeBoletoForaDaGuarda`; e a segunda chamada devolve `removidos === 0` sem levantar.",
+      "criterios_aceitacao_validados": [
+        "CA-21"
+      ],
+      "observacoes": "Estende a suíte canônica da guarda. ⚠️ Fecha o débito `D26 · F4/T9`, cujo gatilho literal é 'a F5, que traz o agendamento'. A borda de 90 dias exatos discrimina `<` de `<=`; a perna 'fora da base continua existindo' separa contenção real de exceção decorativa."
+    },
+    {
+      "id": "CT-1088",
+      "task_id": "T7",
+      "titulo": "A manutenção sem tenant expurga o recebido cru vencido reusando a operação existente",
+      "tipo": "INTEGRACAO",
+      "categoria": "integracao",
+      "invariant": "Executada a tarefa de `FILA_DA_MANUTENCAO_DO_ACERVO` com carga vazia, as notícias cruas de `plataforma.notificacao_bancaria` mais antigas que a retenção são removidas e as dentro do prazo permanecem — sem contexto de tenant, porque o schema não tem noção de empresa (ADR-0031) — e o expurgo deixa de depender do tráfego de notícias.",
+      "owning_layer": "service-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-1089",
+        "input_invalido": "carga `{ empresaId: <uuid> }` publicada na fila da manutenção",
+        "assertion_esperada": "`CargaDaManutencaoDoAcervo` (`strictObject({})`) recusa a carga; a tarefa termina em FALHA com a razão contendo literalmente `empresaId`; e nenhuma linha é expurgada"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "A operação corre SEM contexto de tenant, o que é o oposto do caminho comum do produto.",
+        "caminho_legitimo": "Deixar o consumidor abrir a unidade de trabalho sem `empresaId`, como a produção faz — `plataforma` não tem política de tenant a atravessar. Nunca fixar `app.empresa_id` no arranjo para 'facilitar', porque isso mascararia um consumidor que exigisse contexto indevidamente.",
+        "teste_analogo": "packages/db/test/notificacao-bancaria.spec.ts"
+      },
+      "camada": "Aplicação (worker) sem tenant",
+      "arquivo_alvo": "apps/worker/test/manutencao-do-acervo.spec.ts",
+      "pre_condicoes": [
+        "Banco e Redis efêmeros; notícias cruas com idades de borda e um diretório de boletos temporário com um arquivo vencido"
+      ],
+      "dados_entrada": {
+        "descricao": "Notícias com 91, 90 e 1 dia, mais um boleto vencido no diretório",
+        "valores": {
+          "noticias_em_dias": "91, 90, 1",
+          "boletos_vencidos": 1
+        }
+      },
+      "passos": [
+        "Semear as 3 notícias cruas com `recebido_em` derivado de `now()` do banco e o boleto vencido no diretório temporário",
+        "Publicar uma tarefa com carga `{}` na `FILA_DA_MANUTENCAO_DO_ACERVO`, sondar até o estado terminal e afirmar por igualdade de conjunto as notícias e os arquivos remanescentes",
+        "Perna estática: afirmar a chamada a `expurgarNotificacoesVencidas` e `0` reimplementações do corte em SQL próprio, com PROVA DE FALSIFICAÇÃO"
+      ],
+      "resultado_esperado": "A tarefa CONCLUI; a notícia de 91 dias foi removida e as de 90 e 1 dia permanecem (conjunto remanescente IGUAL a esses dois identificadores); o boleto vencido foi removido na MESMA passagem; a varredura estática encontra a chamada a `expurgarNotificacoesVencidas` e `0` ocorrências de `DELETE FROM plataforma.notificacao_bancaria` no fonte novo, e a cópia que reimplementa o corte reprova.",
+      "criterios_aceitacao_validados": [
+        "CA-13",
+        "CA-21"
+      ],
+      "observacoes": "Arquivo novo `apps/worker/test/manutencao-do-acervo.spec.ts`. É a resposta à decisão D8: o expurgo saiu de carona no processamento de notícia — com a Entrega desabilitada, nenhuma notícia chegava e o expurgo parava junto."
+    },
+    {
+      "id": "CT-1089",
+      "task_id": "T2",
+      "titulo": "As duas filas novas têm definição única, e a carga da manutenção RECUSA empresaId",
+      "tipo": "UNITARIO",
+      "categoria": "teste_negativo",
+      "invariant": "`FILA_DA_ROTINA_AGENDADA` e `FILA_DA_MANUTENCAO_DO_ACERVO` têm UMA definição cada em `packages/shared/src/fila.ts` e saem pelo barril; `CargaDaRotinaAgendada` exige `empresaId` UUID e `rotina` da união fechada; e `CargaDaManutencaoDoAcervo`, sendo `z.strictObject({})`, RECUSA `{ empresaId }` nomeando a chave desconhecida.",
+      "owning_layer": "unit",
+      "existing_suite": "packages/shared/test/fila.spec.ts",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "`{ empresaId: '<uuid>' }` contra a carga da manutenção; `{}`, `{ empresaId: 'x' }` e `{ empresaId: '<uuid>', rotina: 'INEXISTENTE' }` contra a da rotina",
+        "assertion_esperada": "a primeira falha com `unrecognized_keys` e `keys` igual a `['empresaId']`; as três seguintes falham com `path` `['empresaId']`, `['empresaId']` e `['rotina']`; e os controles positivos `{}` e `{ empresaId: <uuid>, rotina: 'ENCERRAMENTO_DE_CONTRATOS' }` são ACEITOS"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Contrato de fila",
+      "arquivo_alvo": "packages/shared/test/fila.spec.ts",
+      "pre_condicoes": [
+        "`packages/shared/src/fila.ts` com os quatro símbolos novos, exportados pelo barril"
+      ],
+      "dados_entrada": {
+        "descricao": "O fonte de `fila.ts` (definição única) e as cargas de teste",
+        "valores": {
+          "FILA_DA_ROTINA_AGENDADA": "rotina-agendada",
+          "FILA_DA_MANUTENCAO_DO_ACERVO": "manutencao-do-acervo"
+        }
+      },
+      "passos": [
+        "Reusar o molde de 'definição única' que a própria suíte já instala, contando as definições em posição executável (ignorando import, menção e comentário)",
+        "Afirmar que os quatro símbolos saem pelo barril, que os nomes de fila são os literais esperados, e exercitar as duas cargas com a tabela positiva e negativa afirmando `path` e `code`",
+        "PROVA DE FALSIFICAÇÃO da perna estática, no molde já presente no arquivo: a segunda definição e o campo a mais são VISTOS; o import, a menção e o comentário NÃO"
+      ],
+      "resultado_esperado": "Uma definição por símbolo (contagem exata `1`); `FILA_DA_ROTINA_AGENDADA === 'rotina-agendada'` e `FILA_DA_MANUTENCAO_DO_ACERVO === 'manutencao-do-acervo'`; `CargaDaManutencaoDoAcervo.safeParse({ empresaId })` devolve `success: false` com `issues[0].code === 'unrecognized_keys'` e `keys === ['empresaId']`, enquanto `safeParse({})` devolve `success: true`; as três cargas inválidas de rotina falham com os `path` exatos.",
+      "criterios_aceitacao_validados": [
+        "CA-02",
+        "CA-13"
+      ],
+      "observacoes": "Estende a suíte existente. ⚠️ A recusa de `{ empresaId }` na carga da manutenção é conformidade com a emenda de 2026-08-18 da ADR-0024 e a §4.3: os alvos são `plataforma.notificacao_bancaria` e o sistema de arquivos — inventar uma empresa ali seria atribuir dono a dado que não tem."
+    },
+    {
+      "id": "CT-1090",
+      "task_id": "T1",
+      "titulo": "Roster, cadência, limiar e impedimentos são conjuntos FECHADOS e mutuamente cobertos",
+      "tipo": "UNITARIO",
+      "categoria": "fronteira",
+      "invariant": "`CADENCIA_DA_ROTINA` tem exatamente 6 entradas, uma por unidade systemd, cada uma com `publicada: boolean`; `ROTINAS_PUBLICADAS` é DERIVADO dela pelo filtro `publicada` e tem exatamente 3; a diferença entre os dois é exatamente `{VIGILANCIA_DAS_ROTINAS, MANUTENCAO, RETOMADA_DE_NOTICIAS}`; `LIMIAR_DE_ATRASO_POR_CADENCIA` tem entrada para cada tipo de cadência usado; `CODIGOS_DE_IMPEDIMENTO` é união fechada de 3 códigos; e o esquema de saída é ABERTO (`z.object`).",
+      "owning_layer": "unit",
+      "existing_suite": "packages/contracts/test/esquemas.spec.ts",
+      "real_execution_boundary": "none",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "`impedimento.codigo = 'CODIGO_INVENTADO'`; `rotina = 'ROTINA_INEXISTENTE'`; e — no eixo oposto — uma saída com o campo extra `campoFuturo`",
+        "assertion_esperada": "os dois primeiros falham com `invalid_value` e `path` `['rotinas',0,'impedimento','codigo']` e `['rotinas',0,'rotina']`; o terceiro é ACEITO (saída aberta) e NUNCA causa erro"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Contrato",
+      "arquivo_alvo": "packages/contracts/test/esquemas.spec.ts",
+      "pre_condicoes": [
+        "`packages/contracts/src/rotina-agendada.ts` criado e exportado pelo barril"
+      ],
+      "dados_entrada": {
+        "descricao": "Os quatro conjuntos publicados e uma resposta de exemplo válida",
+        "valores": {
+          "ROTINAS_PUBLICADAS": "AVISO_DE_COBRANCA, ENCERRAMENTO_DE_CONTRATOS, CONFERENCIA_DE_LIQUIDACAO",
+          "LIMIARES": "A_CADA_MINUTO=15min, DIARIA=26h",
+          "IMPEDIMENTOS": "REGUA_DESLIGADA, AVISOS_RECUSADOS_PELO_PROVEDOR, INTEGRACAO_BANCARIA_PENDENTE",
+          "CADENCIA_DA_ROTINA": "6 entradas (as 3 publicadas + VIGILANCIA_DAS_ROTINAS, MANUTENCAO, RETOMADA_DE_NOTICIAS)"
+        }
+      },
+      "passos": [
+        "Afirmar por IGUALDADE DE CONJUNTO os três rosters, com controle antivácuo",
+        "Afirmar que `CADENCIA_DA_ROTINA` tem 6 entradas, que `ROTINAS_PUBLICADAS` é o subconjunto com `publicada: true` e tem 3, e que a DIFERENÇA entre os conjuntos é exatamente as 3 de manutenção — por igualdade, nos dois sentidos; e que cadência e limiar se cobrem mutuamente",
+        "Exercitar o esquema de saída com a resposta válida, com as entradas inválidas (afirmando `path` e `code`) e com campo desconhecido, que NÃO deve causar erro"
+      ],
+      "resultado_esperado": "6 e 3 exatos, não vazios; a diferença é EXATAMENTE `{VIGILANCIA_DAS_ROTINAS, MANUTENCAO, RETOMADA_DE_NOTICIAS}`; cada tipo de cadência tem limiar e cada limiar tem cadência que o use; a resposta de exemplo é ACEITA; `codigo` e `rotina` inventados falham com `invalid_value` no `path` exato; e o campo desconhecido na SAÍDA não causa erro.",
+      "criterios_aceitacao_validados": [
+        "CA-03",
+        "CA-14"
+      ],
+      "observacoes": "Estende a suíte existente. A cobertura MÚTUA impede rotina publicada sem cadência declarada, e a DIFERENÇA NOMEADA impede que uma rotina de manutenção vaze para a leitura do Admin por descuido. A perna do contrato ABERTO é o que torna reversível a decisão D3. ⚠️ CONCILIADO no challenge de 2026-08-22 com o CT-1057."
+    },
+    {
+      "id": "CT-1091",
+      "task_id": "T10",
+      "titulo": "GET /v1/automacao-de-cobranca/rotinas devolve as 3 rotinas, e quem não teve passagem recebe 200 com null",
+      "tipo": "E2E",
+      "categoria": "caminho_feliz",
+      "invariant": "Com sessão de Admin Empresa portando `TELA:automacao_de_cobranca`, a rota responde `200` com `rotinas` contendo uma entrada por rotina de `ROTINAS_PUBLICADAS`, cada uma com `rotina`, `cadencia`, `ultimaExecucao`, `resumo`, `proximaEsperada`, `atrasada`, `impedimento` e `historicoRecente`; empresa sem execução alguma recebe `200` com `ultimaExecucao: null` e `resumo: null` — nunca `404`, e nenhuma linha é criada pela leitura.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "CT-1094",
+        "input_invalido": "pedido sem cookie de sessão, e pedido com sessão sem a chave `TELA:automacao_de_cobranca`",
+        "assertion_esperada": "`401` com o envelope inteiro `{ codigo: 'NAO_AUTENTICADO', mensagem }`, e `403` com `{ codigo: 'ACESSO_NEGADO', mensagem, detalhes: { exigido: 'TELA:automacao_de_cobranca' } }`"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "A rota exige sessão autenticada com concessão de área — estado que a produção não expõe por atalho.",
+        "caminho_legitimo": "Montar a sessão por `entrar` e `conceder` de `apps/api/test/acessorios-de-borda.ts` e falar HTTP por `pedir` do mesmo arquivo — IMPORTAR, nunca redeclarar (o `D40 · F5/T9` existe porque uma suíte tem duas formas de falar HTTP). Nenhuma sessão sintética, nenhum bypass de guarda.",
+        "teste_analogo": "apps/api/test/automacao-de-cobranca.e2e.spec.ts"
+      },
+      "camada": "Borda HTTP",
+      "arquivo_alvo": "apps/api/test/rotinas-agendadas.e2e.spec.ts",
+      "pre_condicoes": [
+        "Aplicação instrumentada em porta dinâmica; empresa A com registros em 1 das 3 rotinas e empresa C recém-admitida sem nenhum"
+      ],
+      "dados_entrada": {
+        "descricao": "Duas sessões: Admin de A (com histórico) e Admin de C (sem nada)",
+        "valores": {
+          "A": "1 registro de ENCERRAMENTO + 2 de AVISO_DE_COBRANCA",
+          "C": "nenhum registro"
+        }
+      },
+      "passos": [
+        "Semear as duas empresas e os registros de A; entrar como Admin de A e pedir a rota",
+        "Afirmar `200`, que `rotinas.map(r => r.rotina)` é IGUAL a `ROTINAS_PUBLICADAS`, e campo a campo a entrada com histórico (resumo profundamente igual ao gravado, `historicoRecente` em ordem decrescente)",
+        "Repetir como Admin de C: afirmar `200`, os nulos, e que `count(*)` sob C continua `0` depois da leitura"
+      ],
+      "resultado_esperado": "`200` nas duas empresas, com `rotinas.map(r => r.rotina)` IGUAL a `ROTINAS_PUBLICADAS` em ambas; para A, `ultimaExecucao` em ISO-8601 UTC igual ao gravado, `resumo` profundamente igual e `historicoRecente` com 2 itens em ordem decrescente; para C, `ultimaExecucao === null`, `resumo === null`, `historicoRecente === []` e nenhum `404`; `count(*)` sob C permanece `0`.",
+      "criterios_aceitacao_validados": [
+        "CA-14"
+      ],
+      "observacoes": "Arquivo novo `apps/api/test/rotinas-agendadas.e2e.spec.ts`. A asserção de que a leitura NÃO CRIA linha é o molde de `lerPolitica` (§4.1.1). Resposta comparada campo a campo, NUNCA por snapshot."
+    },
+    {
+      "id": "CT-1092",
+      "task_id": "T10",
+      "titulo": "O Admin de outra empresa não alcança registro da primeira, e a rota não aceita empresaId de fora",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "A resposta ao Admin da empresa B contém exclusivamente dados de B: nenhum `ultimaExecucao`, `resumo` ou item de `historicoRecente` de A é alcançável, e nenhum parâmetro de consulta (`?empresaId=<A>`) muda a resposta — o alcance vem da sessão e da política de linha, nunca do pedido.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "sessão de B pedindo `GET …/rotinas?empresaId=<A>` e `?empresa_id=<A>`",
+        "assertion_esperada": "a resposta é IGUAL, por comparação profunda, à do mesmo pedido sem parâmetro; todos os `historicoRecente` são `[]`; e a interseção do conjunto de `ocorridaEm` devolvidos com o dos gravados em A é VAZIA"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Duas sessões de empresas distintas, e a garantia de que a recusa é da política e não de um filtro da aplicação.",
+        "caminho_legitimo": "Montar as duas sessões por `entrar`/`conceder` de `acessorios-de-borda.ts`. O discriminador 'é a política, não o WHERE' vem de cruzar esta perna de borda com o CT-1073, que mede a política diretamente — nunca inspecionando o fonte do serviço.",
+        "teste_analogo": "apps/api/test/entrega-da-noticia.e2e.spec.ts"
+      },
+      "camada": "Borda HTTP + Dados (RLS)",
+      "arquivo_alvo": "apps/api/test/rotinas-agendadas.e2e.spec.ts",
+      "pre_condicoes": [
+        "Aplicação instrumentada; empresa A com 3 registros, empresa B com nenhum, Admins distintos com a área concedida na própria empresa"
+      ],
+      "dados_entrada": {
+        "descricao": "3 registros em A, 0 em B; sessão de B",
+        "valores": {
+          "registros_em_A": 3,
+          "parametros_tentados": "?empresaId=<A>, ?empresa_id=<A>"
+        }
+      },
+      "passos": [
+        "Semear A com 3 registros e B com nenhum; CONTROLE POSITIVO: como Admin de A, afirmar que os 3 instantes aparecem no `historicoRecente`",
+        "Como Admin de B, pedir sem parâmetro e com cada parâmetro de consulta tentado, e comparar os corpos por igualdade profunda",
+        "Afirmar interseção VAZIA entre os `ocorridaEm` devolvidos a B e os gravados em A"
+      ],
+      "resultado_esperado": "Controle positivo (A): os 3 instantes aparecem. Para B: `200`; todos os `historicoRecente` são `[]`; todos os `ultimaExecucao` são `null`; os corpos com e sem parâmetro de consulta são IGUAIS; e a interseção com os instantes de A é VAZIA.",
+      "criterios_aceitacao_validados": [
+        "CA-15"
+      ],
+      "observacoes": "O controle positivo sob A é obrigatório: sem ele, uma rota quebrada que sempre devolve vazio passaria. A perna do parâmetro de consulta é conformidade com a ADR-0024 ('nenhuma rota aceita `empresaId` de fora')."
+    },
+    {
+      "id": "CT-1093",
+      "task_id": "T10",
+      "titulo": "Os três impedimentos são derivados de fato já gravado, e a ausência deles é null",
+      "tipo": "E2E",
+      "categoria": "estado_visual",
+      "invariant": "O campo `impedimento` traz `REGUA_DESLIGADA`, `AVISOS_RECUSADOS_PELO_PROVEDOR` ou `INTEGRACAO_BANCARIA_PENDENTE` conforme o fato já gravado que o origina (política de aviso desligada, recusas recentes em `envio_de_cobranca`, certificado ausente ou vencido), com `mensagem` em vocabulário do produto; e é `null` quando nada impede a rotina.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "empresa com política ligada, sem recusas recentes e com certificado vigente — a linha de controle em que NENHUM impedimento se aplica",
+        "assertion_esperada": "`impedimento === null` nas três rotinas, e o conjunto de códigos presentes na resposta é VAZIO"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "Cada impedimento exige montar um estado de configuração da empresa que a superfície não expõe inteiramente.",
+        "caminho_legitimo": "Montar cada estado pelo caminho de escrita já existente — `semearPoliticaDeAviso` de `banco-efemero.ts`, `par-do-provedor.ts` para o certificado, e a gravação real de `envio_de_cobranca` com desfecho de recusa. Nunca fabricar o impedimento diretamente nem exportar símbolo novo.",
+        "teste_analogo": "apps/api/test/vigencia-do-certificado.spec.ts"
+      },
+      "camada": "Borda HTTP + Dados (derivação)",
+      "arquivo_alvo": "apps/api/test/rotinas-agendadas.e2e.spec.ts",
+      "pre_condicoes": [
+        "Aplicação instrumentada; uma empresa por linha de cenário, com a sessão do Admin dela"
+      ],
+      "dados_entrada": {
+        "descricao": "Tabela `it.each` de 4 linhas",
+        "valores": {
+          "L1": "política `ativo=false` → REGUA_DESLIGADA",
+          "L2": "envios recusados por limite → AVISOS_RECUSADOS_PELO_PROVEDOR",
+          "L3": "sem certificado vigente → INTEGRACAO_BANCARIA_PENDENTE",
+          "L4": "tudo configurado → null"
+        }
+      },
+      "passos": [
+        "Para cada linha, montar o estado pela escrita REAL do produto e pedir `GET …/rotinas` como Admin da empresa da linha",
+        "Afirmar `impedimento.codigo` por igualdade literal, e que ele pertence a `CODIGOS_DE_IMPEDIMENTO` (valor vindo do CONTRATO)",
+        "Varrer `impedimento.mensagem` por vocabulário de processo/diagnóstico cru afirmando `[]`, com controle positivo; e na linha de controle afirmar `impedimento === null` nas três rotinas"
+      ],
+      "resultado_esperado": "Linha 1 `REGUA_DESLIGADA`; linha 2 `AVISOS_RECUSADOS_PELO_PROVEDOR`; linha 3 `INTEGRACAO_BANCARIA_PENDENTE`; linha 4 `impedimento === null` nas 3 rotinas com o conjunto de códigos vazio. Em todas, `mensagem` é não vazia e a varredura por vocabulário de processo devolve `[]`, com o controle positivo devolvendo as agulhas plantadas.",
+      "criterios_aceitacao_validados": [
+        "CA-19",
+        "CA-14"
+      ],
+      "observacoes": "US-02 e US-11. A linha de controle (`null`) impede um serviço que sempre devolve impedimento de passar. A varredura de vocabulário serve à RN-19/RD-19 e à ADR-0034 — o `mensagem` é lido pelo Admin Empresa, não pelo operador."
+    },
+    {
+      "id": "CT-1094",
+      "task_id": "T10",
+      "titulo": "Sem sessão é 401 e sem a área é 403, com o envelope inteiro da ADR-0017",
+      "tipo": "SEGURANCA",
+      "categoria": "seguranca",
+      "invariant": "`GET /v1/automacao-de-cobranca/rotinas` sem cookie responde `401` com corpo IGUAL a `{ codigo: 'NAO_AUTENTICADO', mensagem }`; com sessão válida sem a chave `TELA:automacao_de_cobranca`, responde `403` com corpo IGUAL a `{ codigo: 'ACESSO_NEGADO', mensagem, detalhes: { exigido: 'TELA:automacao_de_cobranca' } }`; e nenhuma das duas respostas vaza dado de empresa alguma.",
+      "owning_layer": "route-integration",
+      "existing_suite": "NO_SUITE_FOUND",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "pedido sem cookie; pedido com sessão válida cuja concessão NÃO inclui a área; pedido com cookie forjado",
+        "assertion_esperada": "`401`, `403` e `401` respectivamente, com o objeto de erro INTEIRO comparado por igualdade profunda (nunca por presença de campo), e `rotinas` ausente do corpo nas três"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "É preciso uma sessão VÁLIDA porém sem a concessão da área — estado que só existe se a concessão for omitida deliberadamente.",
+        "caminho_legitimo": "Usar `entrar` de `acessorios-de-borda.ts` e NÃO chamar `conceder` para essa área; a diferença entre 401 e 403 é o que prova que a sessão é real. Nunca desabilitar guarda nem montar cookie por caminho paralelo.",
+        "teste_analogo": "apps/api/test/automacao-de-cobranca.e2e.spec.ts"
+      },
+      "camada": "Borda HTTP (autenticação e autorização)",
+      "arquivo_alvo": "apps/api/test/rotinas-agendadas.e2e.spec.ts",
+      "pre_condicoes": [
+        "Aplicação instrumentada; um usuário com sessão válida sem a área e outro com a área concedida"
+      ],
+      "dados_entrada": {
+        "descricao": "3 pedidos negativos + 1 controle positivo",
+        "valores": {
+          "negativos": "sem cookie, sessão sem área, cookie forjado",
+          "controle_positivo": "sessão com TELA:automacao_de_cobranca"
+        }
+      },
+      "passos": [
+        "Pedir sem cookie e afirmar status e corpo INTEIRO por igualdade profunda",
+        "Entrar SEM conceder a área, pedir, e afirmar status e corpo inteiro; repetir com cookie forjado",
+        "CONTROLE POSITIVO: conceder a área e afirmar `200` com `rotinas`; afirmar que nenhum dos três corpos de erro contém identificador de empresa"
+      ],
+      "resultado_esperado": "`401` com corpo profundamente igual a `{ codigo: 'NAO_AUTENTICADO', mensagem }`; `403` com corpo profundamente igual a `{ codigo: 'ACESSO_NEGADO', mensagem, detalhes: { exigido: 'TELA:automacao_de_cobranca' } }`; cookie forjado → `401` com o mesmo envelope; controle positivo → `200` com `rotinas` de 3 entradas; e nenhum dos corpos de erro contém identificador de empresa.",
+      "criterios_aceitacao_validados": [
+        "CA-14",
+        "CA-15"
+      ],
+      "observacoes": "A comparação do OBJETO INTEIRO (não da presença de campos) é exigência literal da `testing-stack.md` para o envelope da ADR-0017. O controle positivo separa '403 porque falta a área' de '403 porque a rota está quebrada'."
+    },
+    {
+      "id": "CT-1095",
+      "task_id": "T10",
+      "titulo": "A âncora de superfície sobe a 106 rotas / 91 manipuladores, com públicas inalteradas em 20",
+      "tipo": "E2E",
+      "categoria": "integracao",
+      "invariant": "Após a publicação da rota, as duas medições independentes da superfície concordam entre si e valem `ROTAS_PUBLICADAS_EM_PRODUCAO = 106`, `MANIPULADORES_EXAMINADOS_EM_PRODUCAO = 91` e `PARES_PUBLICOS_DA_SUPERFICIE = 20`; a rota nova aparece no eixo NÃO-público, e o conjunto `publicas` é IGUAL, elemento a elemento, ao de antes da fatia.",
+      "owning_layer": "route-integration",
+      "existing_suite": "apps/api/test/cobertura-de-autorizacao.e2e.spec.ts",
+      "real_execution_boundary": "http",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "o eixo `publicas` — a rota nova exige sessão e NÃO pode aparecer nele; e o controle antivácuo, que reprova se qualquer medição devolver conjunto vazio",
+        "assertion_esperada": "`publicas` continua com exatamente 20 pares, IGUAIS como conjunto aos de antes; `GET /v1/automacao-de-cobranca/rotinas` NÃO consta em `publicas`; e as duas medições independentes são comparadas entre si ANTES de qualquer comparação com o número esperado"
+      },
+      "precondicao_privilegiada": {
+        "presente": false,
+        "descricao": "",
+        "caminho_legitimo": "",
+        "teste_analogo": ""
+      },
+      "camada": "Borda HTTP (âncora de superfície)",
+      "arquivo_alvo": "apps/api/test/cobertura-de-autorizacao.e2e.spec.ts",
+      "pre_condicoes": [
+        "Aplicação instrumentada com a rota nova registrada, e as três constantes atualizadas no MESMO diff da publicação"
+      ],
+      "dados_entrada": {
+        "descricao": "As duas medições independentes que o CT-1038 já instala",
+        "valores": {
+          "rotas": 106,
+          "manipuladores": 91,
+          "publicas": 20
+        }
+      },
+      "passos": [
+        "REFAZER a medição do zero pelas duas medições independentes do CT-1038 — não derivar um número do outro",
+        "Afirmar PRIMEIRO a igualdade entre os dois eixos, à parte do valor esperado, e depois as três constantes por igualdade",
+        "Afirmar que `publicas` é o MESMO conjunto de 20 pares de antes (com controle antivácuo) e que o par da rota nova consta no eixo NÃO-público"
+      ],
+      "resultado_esperado": "As duas medições independentes são iguais entre si; `ROTAS_PUBLICADAS_EM_PRODUCAO === 106`; `MANIPULADORES_EXAMINADOS_EM_PRODUCAO === 91`; `PARES_PUBLICOS_DA_SUPERFICIE === 20` com o conjunto IGUAL ao anterior; o par `GET /v1/automacao-de-cobranca/rotinas` consta no eixo não-público e NÃO em `publicas`; e nenhuma medição devolve conjunto vazio.",
+      "criterios_aceitacao_validados": [
+        "CA-14"
+      ],
+      "observacoes": "⚠️ `.claude/rules/ancoras-de-superficie.md`: a âncora sobe no MESMO diff da publicação. A elevação das constantes exige a linha `SUT_IS_CORRECT_BECAUSE:` (P5 do Protocolo Antirregressão) — sem ela é fraude de gate. Os números do tech spec são EXPECTATIVA; a fonte é a medição refeita do zero."
+    },
+    {
+      "id": "CT-1096",
+      "task_id": "T11",
+      "titulo": "Rede antirregressão da RN-14: a Cobrança fica VENCIDA sem que rotina alguma passe por ela",
+      "tipo": "INTEGRACAO",
+      "categoria": "integridade_dados",
+      "invariant": "Uma Cobrança cuja data de vencimento passou é lida como `VENCIDA` pela derivação de `negocio.cobranca_derivada` sem que nenhuma rotina agendada tenha executado — nenhuma coluna de estado é movida por rotina —, e nenhum fonte desta fatia escreve o estado da Cobrança nem a Mora.",
+      "owning_layer": "service-integration",
+      "existing_suite": "packages/db/test/derivacao-de-cobranca.spec.ts",
+      "real_execution_boundary": "db",
+      "negative_companion": {
+        "presente": true,
+        "ct_id": "self",
+        "input_invalido": "perna estática: cópias dos 5 fontes novos da fatia com um `UPDATE negocio.cobranca SET status = 'VENCIDA'` reintroduzido",
+        "assertion_esperada": "a varredura reprova nomeando arquivo e linha com `ocorrencias.length === 1`; e na perna comportamental, uma implementação que dependesse de rotina deixaria a cobrança `A_VENCER` — o que a asserção `estado === 'VENCIDA'` sem execução alguma discrimina"
+      },
+      "precondicao_privilegiada": {
+        "presente": true,
+        "descricao": "É preciso garantir que NENHUMA rotina passou — o cenário não pode ter consumidor de fila ativo nem passagem prévia.",
+        "caminho_legitimo": "Semear a cobrança e ler a derivação NA MESMA unidade de trabalho, sem publicar tarefa em fila alguma, e afirmar `count(*) FROM negocio.execucao_de_rotina` igual a `0` ANTES da leitura do estado — é essa asserção que torna o 'sem rotina' verificável em vez de presumido.",
+        "teste_analogo": "packages/db/test/fonte-unica-do-estado.spec.ts"
+      },
+      "camada": "Dados / domínio (derivação)",
+      "arquivo_alvo": "packages/db/test/derivacao-de-cobranca.spec.ts",
+      "pre_condicoes": [
+        "Banco efêmero migrado, uma cobrança com vencimento no passado em aberto, e nenhum consumidor de fila registrado"
+      ],
+      "dados_entrada": {
+        "descricao": "Uma cobrança vencida e uma a vencer, mais os 5 fontes novos para a perna estática",
+        "valores": {
+          "vencida": "data corrente do banco menos 1 dia",
+          "a_vencer": "data corrente do banco mais 5 dias"
+        }
+      },
+      "passos": [
+        "Semear as duas cobranças com datas derivadas de `negocio.data_corrente_da_operacao()` e afirmar que `count(*) FROM negocio.execucao_de_rotina` é `0` ANTES de ler o estado",
+        "Ler o estado das duas pela derivação e afirmar por igualdade literal; afirmar por `pg_enum` os 3 valores do enum",
+        "Perna estática: varrer os 5 fontes novos por escrita em estado de cobrança/mora afirmando `[]`, com controle positivo e PROVA DE FALSIFICAÇÃO"
+      ],
+      "resultado_esperado": "`count(*) FROM negocio.execucao_de_rotina === 0`; a cobrança vencida é lida como `VENCIDA` e a a vencer como `A_VENCER`, por igualdade literal de cadeia; `negocio.rotina_agendada` tem exatamente os 3 valores publicados; a varredura dos 5 fontes devolve `[]`, o controle positivo devolve as agulhas plantadas, e a cópia defeituosa reprova nomeando arquivo e linha.",
+      "criterios_aceitacao_validados": [
+        "CA-24"
+      ],
+      "observacoes": "⚠️ RISCO R3 DA §20, probabilidade ALTA: 'as duas rotinas mortas por desenho são convite permanente a corrigir a lacuna'. O ponto de produção recebe marcador `DECISÃO FECHADA` com `REVERTER EXIGE` citando a ADR-0022. Estende a suíte existente da derivação."
+    }
+  ],
+  "cenarios_nao_cobertos": [
+    {
+      "descricao": "CA-10 / CA-23, metade operacional: reiniciar a máquina de fato e observar os timers voltarem sozinhos e o disparo perdido acontecer uma vez.",
+      "motivo": "Exige `reboot` real e `sudo` interativo neste host; nenhum subagente o executa. A F0 já provou o molde (invariante 7 do `CLAUDE.md`), e as propriedades que o tornam verdadeiro são provadas por CT-1058 e CT-1060."
+    },
+    {
+      "descricao": "CA-04, metade operacional: executar `instalar-unidades.sh` duas vezes e auditar a saída `CRIADO`/`JA-OK` linha a linha.",
+      "motivo": "O instalador toca o SO e exige `sudo` com senha interativa. A decisão (A1) da §16.1 é NÃO escrever a 11ª cópia do esqueleto `verificar-*.sh` — agravaria o `D9 · F0/T2` e trocaria uma prova que roda na suíte por uma que exige privilégio. Quando um gate precisar dessa execução, ela é conduzida pelo orquestrador junto ao operador, com `executou_testes: false`."
+    },
+    {
+      "descricao": "`systemd-analyze verify` sem código de erro e sem aviso sobre as 13 unidades.",
+      "motivo": "Depende do binário do systemd do host e já é pré-condição executada pelo próprio instalador. Recomendado como passo do rollout, não como caso de suíte."
+    },
+    {
+      "descricao": "Carga e desempenho: p95 ≤ 120 ms e p99 ≤ 300 ms da rota; duração do despachante ≤ 2 s; pico da volta de indisponibilidade longa.",
+      "motivo": "Teste de carga está fora da stack deste projeto e não há coletor de métricas (§13.2). As metas da §12.1 ficam como observação de rollout."
+    },
+    {
+      "descricao": "Recursão da vigilância: detectar que a própria `VIGILANCIA_DAS_ROTINAS` parou.",
+      "motivo": "Trade-off DECLARADO da decisão D5 (§10.2): fechar a recursão exige observação de fora do produto, que é da F7. Não é lacuna de teste — é escopo declarado fora."
+    },
+    {
+      "descricao": "`D44 · F2/T10`: restrição no banco pareando `contrato.status='ATIVO'` com `imovel.status_locacao`.",
+      "motivo": "O gatilho literal é 'a fatia que criar NO BANCO a restrição', e criá-la não é requisito de nada que o PRD pede — exigiria o primeiro gatilho de banco do projeto, decisão transversal e candidata a ADR. O débito é AGRAVADO por esta fatia (terceiro escritor do par) e o agravamento vai para a §2 do run-report; o CT-1069 é a rede possível enquanto a restrição não existir."
+    }
+  ],
+  "recomendacoes": [
+    "⚠️ ORDEM DE EXECUÇÃO DA PROVA DE FALSIFICAÇÃO: as asserções ESTÁTICAS desta suíte (CT-1057, CT-1058, CT-1059, CT-1060, CT-1061, CT-1062, e as pernas estáticas de CT-1078, CT-1088, CT-1089 e CT-1096) exigem prova de falsificação por execução, e ela SÓ vale se rodada pelo script `test` do pacote (`pnpm --filter @sysloc/<pacote> test`). `vitest run` avulso produz FALSO NEGATIVO nos oito dos nove pacotes que consomem irmãos por `dist/` — o defeito reintroduzido no fonte nunca chega ao que executa, e a conclusão se INVERTE.",
+    "⚠️ NÃO executar mutante em asserção COMPORTAMENTAL. Mutation testing está fora da stack por decisão de 2026-08-16, e reintroduzir defeito 'para conferir' num caso comportamental é campanha de mutantes com outro nome (medição do run `emissao-e-conciliacao/v1`: mais de 20 execuções, nenhuma exigida). Para os comportamentais, o P4 pede a DECLARAÇÃO por escrito de qual asserção discrimina — registrada em `observacoes` de cada um.",
+    "Rastreabilidade obrigatória por arquivo: cada `.spec.ts` novo abre com a seção INVARIANTES no molde de `apps/worker/test/regua.spec.ts` (tabela `| Critério | Caso | Invariante |`) e a linha `CA-xx → CT-xxxx (RD-xx)` ao fim dela. É convenção herdada do backend antigo e o Gate 1 a audita.",
+    "Acessórios: importar, nunca redeclarar — `apps/api/test/acessorios-de-borda.ts` (`pedir`, `entrar`, `conceder`), `apps/api/test/aplicacao-instrumentada.ts`, `packages/db/test/banco-efemero.ts` (`bancoEfemero`, `semearPoliticaDeAviso`), `packages/db/test/conjuntos.ts` (`diferencasDeConjunto`), `packages/db/test/varredura-de-fontes.ts` (`semComentarios`, `varrerArquivos`), `packages/shared/test/{postgres,redis}-efemero.ts`, `packages/shared/test/cenario-subprocesso.ts`, `apps/worker/test/varredura-de-segredo.ts`. O `D40 · F5/T9` existe porque uma suíte já nasceu com duas formas de falar HTTP.",
+    "Os débitos `D26 · F4/T9` (boletos sem expurgo) e `D13 · F4/T6` (`webhook-e-carne`, notícia parada em RECEBIDO) DISPARAM e FECHAM nesta fatia (CT-1087 e CT-1079). Remover o marcador no MESMO commit da correção E a linha do índice do `CLAUDE.md` — marcador de débito já resolvido é pior que nenhum (`nao-regressao.md` §3-B).",
+    "Avaliar na task se `D26 · F3/T8` (aritmética de calendário), `D14 · F3/T5` (fuso da operação) e `D25 · F4/T7` são disparados pelo terceiro/quarto consumidor que a derivação de `proximaEsperada` e o corte de retenção podem criar. Se dispararem, fecham-se; se não, registra-se a contagem MEDIDA, não estimada.",
+    "Dois pontos de produção nascem candidatos a marcador `DECISÃO FECHADA`: (i) o docblock de `encerrarContratosVencidos`, declarando que o motivo `contrato_sem_imovel` do oráculo NÃO é alcançável, com `REVERTER EXIGE` citando a migração `0007` e a §21.2 (rede: CT-1066); (ii) o ponto que sustenta a RN-14, com `REVERTER EXIGE` citando a ADR-0022 (rede: CT-1096).",
+    "Espera SEMPRE por sondagem com limite declarado em constante nomeada no topo do arquivo — nunca pausa fixa. Vale para os casos que aguardam estado terminal de tarefa (CT-1076, CT-1078, CT-1080 a CT-1086, CT-1088) e para as sondagens de `pg_stat_activity` (CT-1068, CT-1069).",
+    "A contagem da suíte muda com esta fatia e deve subir no MESMO diff, medida POR PACOTE (`pnpm --filter @sysloc/<pacote> test`), nunca por `turbo run test` — a saída agregada aborta os irmãos e não é confiável. Número narrativo que fica para trás convida a próxima task a 'corrigir' para o valor errado.",
+    "Registrar em `docs/specs/domain-glossary.md` os dois termos cross-feature propostos na §21.6 (*Rotina agendada*, *Passagem*) antes que as suítes os usem nos nomes de caso."
+  ],
+  "mock_budget_observado": true,
+  "gates_aplicados": [
+    "invariant_first",
+    "owning_layer",
+    "real_execution",
+    "failure_means_fix_production",
+    "no_snapshot_without_contract",
+    "no_self_set_mock_assertion",
+    "negative_companion"
+  ],
+  "challenge": {
+    "data": "2026-08-22",
+    "skill": "agent-spec-challenge-spec",
+    "ajustes_aplicados": [
+      "Q1 — resumo da régua reusa ResultadoDaRegua (candidatas/enviadas/falhas/semDestinatario); avisadas e recusadas eliminados",
+      "Q2 — literais inexistentes corrigidos: EM_ABERTO→A_VENCER, PROCESSADO→APLICADO, LIQUIDADA→fato gravado com derivação PAGA",
+      "Q3 — CT-1057 e CT-1090 conciliados: CADENCIA_DA_ROTINA com 6 entradas e ROTINAS_PUBLICADAS derivado por filtro",
+      "Q4 — RD-20 (liberação condicional) e CT-1097 novo; o descarte do encerramento passou de `ignorados` a `preservados`",
+      "Q6 — nome da restrição: execucao_de_rotina_resumo_chk (convenção _chk do esquema)"
+    ],
+    "nota": "O markdown da §19 do tech_spec.md e este JSON estão em sincronia a partir desta correção."
+  },
+  "distribuicao_em_tasks": {
+    "data": "2026-08-22",
+    "origem": "agent-spec-sdd-generate-task-plan — FASE 4, redistribuicao (o generator NAO foi reinvocado: o JSON ja era lossless com mapeamento CA)",
+    "task_plan": "docs/specs/features/automacoes-agendadas/v1/task_plan.md",
+    "por_task": {
+      "T1": 1,
+      "T2": 1,
+      "T3": 1,
+      "T4": 4,
+      "T5": 9,
+      "T6": 5,
+      "T7": 2,
+      "T8": 8,
+      "T9": 4,
+      "T10": 5,
+      "T11": 1
+    },
+    "total": 41
+  }
+}

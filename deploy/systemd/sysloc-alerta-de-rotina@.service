@@ -1,0 +1,86 @@
+# Alerta de falha de rotina agendada — unidade-MODELO, T9 da fatia
+# `automacoes-agendadas`.
+#
+# Esta é a FONTE VERSIONADA, posicionada por
+# `deploy/scripts/instalacao/instalar-unidades.sh` (ADR-0005).
+#
+# ---------------------------------------------------------------------------
+# Ela é a metade 1 do CA-03, e o `%i` é o conteúdo
+# ---------------------------------------------------------------------------
+#
+# Cada `sysloc-rotina-*.service` declara `OnFailure=sysloc-alerta-de-rotina@%n.service`.
+# O `%n` do lado de lá é o nome da unidade que falhou; ele vira o NOME DA
+# INSTÂNCIA desta unidade-modelo, e `%i` o devolve aqui. Sem a interpolação, o
+# journal registraria que "uma rotina falhou" e o operador teria de descobrir
+# qual — que é precisamente o trabalho que o alerta existe para poupar.
+#
+# ⚠️ O alcance dela é o DESPACHO, nunca a execução da tarefa. O despachante
+# enfileira e sai com código 0; a tarefa que falhar depois, no processo que fica
+# de pé, não aciona nada aqui. A metade 2 do CA-03 — a rotina que NÃO EXECUTOU,
+# e que por isso não produz evento algum — é da rotina de vigilância, e uma não
+# substitui a outra.
+#
+# ---------------------------------------------------------------------------
+# Por que ela NÃO é habilitada, e por que isso não é esquecimento
+# ---------------------------------------------------------------------------
+#
+# Unidade-modelo não se habilita: ela não tem instância própria, e é o
+# `OnFailure=` que a instancia no momento da falha. Por isso ela não consta de
+# `UNIDADES_DO_ARRANQUE` no instalador — só é POSICIONADA.
+#
+# ---------------------------------------------------------------------------
+# Ela não lê o arquivo de ambiente
+# ---------------------------------------------------------------------------
+#
+# NENHUM `EnvironmentFile=` aqui, e a ausência é deliberada: o alerta não fala
+# com banco, fila nem provedor — ele escreve uma linha no journal. Um caminho de
+# alerta que carregasse a credencial do banco seria superfície nova para o
+# segredo, no exato momento em que algo já falhou (ADR-0032).
+
+[Unit]
+Description=Alerta de falha da rotina agendada %i
+Documentation=file:/opt/sysloc-backend/docs/specs/features/automacoes-agendadas/v1/tech_spec.md
+
+[Service]
+Type=oneshot
+User=sysloc
+Group=sysloc
+
+# A prioridade é DECLARADA: sem ela a linha entraria no journal como `info` e se
+# perderia entre as passagens que deram certo. `err` é o que faz
+# `journalctl -p err` mostrá-la.
+SyslogIdentifier=sysloc-alerta-de-rotina
+SyslogLevel=err
+
+# ⚠️ `%i` — o nome da unidade que falhou, interpolado pelo supervisor. A segunda
+# metade da linha é o comando que o operador roda em seguida; escrevê-lo aqui é o
+# que transforma "algo falhou" em "eis o que fazer agora".
+ExecStart=/usr/bin/echo "rotina agendada FALHOU — unidade: %i · diagnóstico: journalctl -u %i -n 50 --no-pager"
+
+# Restrições de execução — IDÊNTICAS às de `sysloc-worker.service`, linha a
+# linha. Ver o cabeçalho de `sysloc-api.service` para a razão de
+# `ProtectSystem=full`, `ProtectHome=read-only` e da presença de AF_NETLINK.
+#
+# Copiá-las em vez de as derivar é a única forma que o formato `.ini` do
+# supervisor oferece: ele não tem herança, e um `.d/` de sobreposição só
+# ACRESCENTA — não haveria como uma unidade nova nascer restrita por omissão.
+# O que impede as cópias de divergirem é a asserção estática de
+# `packages/shared/test/unidades-agendadas.spec.ts` somada ao
+# `systemd-analyze verify` que o instalador roda sobre todas elas.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+# ⚠️ SEM seção [Install]: unidade-modelo não se habilita, e a ausência recusa
+# `systemctl enable` em vez de o deixar passar em silêncio.

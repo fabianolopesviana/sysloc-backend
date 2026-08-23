@@ -100,7 +100,7 @@ Status: **12/12 tasks concluídas** · suíte **1710 casos** verdes nos 9 pacote
 - **Impacto:** repetição literal do D11. **As duas cópias são a razão de o achado vir em dois itens**: endurecer uma deixa a outra para trás, que é o Limiar de Três do `CLAUDE.md` em ação.
 - **O que fazer:** mesma correção do D11 — selecionar por `nome`. **Corrigir as duas no mesmo diff**; corrigir só uma reinstala a divergência que o Limiar de Três descreve.
 
-### D13 · BAIXO · project_pattern · T6 · Tech Spec §21.4
+### D13 · BAIXO · project_pattern · T6 · Tech Spec §21.4 — ✅ **RESOLVIDO** pela T8 da fatia `automacoes-agendadas` (2026-08-23)
 
 > **Débito COM GATILHO, nascido nesta task por prescrição do tech spec** (§21.4, tabela *"nascem
 > nesta fatia"*). Não é achado de gate: é dívida declarada antes da execução, e o marcador
@@ -126,6 +126,25 @@ Status: **12/12 tasks concluídas** · suíte **1710 casos** verdes nos 9 pacote
   idempotente pelas três camadas da §9.2, então a reentrega é segura por construção. **Não** criar um
   varredor próprio aqui: seria um segundo mecanismo de agendamento sem consumidor medido, e ele
   teria de ser desfeito quando o primeiro chegasse.
+- **✅ Fechado em 2026-08-23**, pela **T8** da fatia `automacoes-agendadas`, exatamente como este bloco
+  prescrevia. O gatilho literal — *"a **F5**, que traz o agendamento"* — disparou. O que fechou:
+  - `listarNaoTratadas(tx, folgaEmMinutos)`, em `packages/db/src/notificacao-bancaria.ts` — as
+    notícias com `desfecho = 'RECEBIDO'` e `recebido_em` mais antigo que a folga, com o corte saindo
+    de `now()` **do banco** (ADR-0026);
+  - a rotina `RETOMADA_DE_NOTICIAS` do despachante efêmero (`apps/worker/src/despachante.ts`), que
+    reenfileira cada uma pela **mesma** `FILA_DA_NOTIFICACAO_BANCARIA` que a borda HTTP alimenta, com
+    carga `{ notificacaoId }` — **sem campo de empresa**, porque na entrada de fato de terceiro a
+    empresa é o *resultado* da travessia nominal (ADR-0035 + emenda de 2026-08-18 da ADR-0024);
+  - a cadência é `A_CADA_10_MIN` (`CADENCIA_DA_ROTINA`), e a folga é de **uma cadência inteira** — a
+    notícia que acabou de chegar está sendo tratada agora, e retomá-la produziria duas passagens
+    concorrentes sobre o mesmo cru.
+  - **Nenhum varredor próprio nasceu no serviço de recepção**, como este bloco pedia: o `catch` que
+    absorve a falha do enfileiramento permanece **intacto**, e o docblock dele passou a apontar para
+    a rotina que faz o avanço.
+  - **Rede**: `CT-1079` (`apps/worker/test/despachante.spec.ts`) semeia **5** notícias cruzando
+    desfecho e idade e afirma, por igualdade de conjunto, que exatamente as **2** `RECEBIDO` vencidas
+    são reenfileiradas, com `Object.keys(carga)` igual a `['notificacaoId']`.
+  - O marcador saiu do código e a linha saiu do índice do `CLAUDE.md`, **no mesmo commit** (§3-B).
 
 ### D14 · BAIXO · project_pattern · T6 · Tech Review (rodada 2, P3)
 
@@ -251,6 +270,7 @@ Status: **12/12 tasks concluídas** · suíte **1710 casos** verdes nos 9 pacote
 - **Problema:** o arranjo *"cobrança com boleto vivo + certificado vigente da empresa"* passou a ter **três** cópias no repositório: `apps/worker/test/notificacao-bancaria.spec.ts` (`semearCobrancaSemCertificado` + `garantirCertificadoVigente`), `apps/api/test/notificacao-bancaria.e2e.spec.ts` (`semearCobrancaComBoleto`) e esta, criada pela T9. O **Limiar de Três** do `CLAUDE.md` disparou no ato — e ele disparou *nesta* cópia justamente pelo modo de falha que a nota *"Acessório de suíte se importa, não se copia"* descreve: quem escreve a suíte nova copia de **uma** vizinha, e para ele é sempre a segunda cópia.
 - **Impacto:** baixo e contido a `test/`. Nenhuma delas é código de produção, e as três montam o mesmo estado por portas de produção. O que se perde é o que o Limiar protege: endurecer uma (acrescentar coluna ao boleto, mudar a validade do certificado, trocar a natureza da cobrança) deixa as outras duas para trás, e a divergência só aparece quando um caso reprova por arranjo — longe da causa. As três já **divergem** de fato: a do worker devolve o par em claro do certificado (o `CT-990` precisa dele), a da API não registra certificado algum, e esta memoiza o registro por empresa porque o índice `certificado_do_provedor_vigente_uidx` admite um vigente por empresa.
 - **O que fazer:** subir o arranjo para casa compartilhada em **`packages/db/test/`** — o único diretório que `apps/api/test/` e `apps/worker/test/` já alcançam os dois (é de lá que vem `banco-efemero.ts`). A casa nova publica a semeadura completa parametrizada pelo que hoje diverge (devolver ou não o par em claro; registrar ou não o certificado), e as três suítes passam a importá-la. **Gatilho:** a primeira task autorizada a abrir as duas suítes irmãs por outra razão. **Não agora:** subir o arranjo obrigaria a reescrever duas suítes de fronteira real fora da lista da T9, com ~180 casos verdes dependendo delas.
+- **⚠️ Destino corrigido por medição em 2026-08-23** (T11 da fatia `automacoes-agendadas`; o marcador no código foi emendado no mesmo diff, com o texto original preservado byte a byte): **`packages/db/test/` NÃO serve como casa do arranjo**. Os acessórios de lá alcançam `contextoDeTenant` pelo **fonte** (`unidade-sob-contexto.ts` → `../src/contexto.ts`), enquanto `apps/*/test/` o alcançam pela fronteira publicada de `@sysloc/db`, que o `package.json` manda para `./dist/index.js` — são **dois `AsyncLocalStorage` distintos**, e como o arranjo é necessariamente sob contexto, toda escrita dele cairia em violação de política de linha. O destino viável é um pacote de teste que consuma `@sysloc/db` **pelo barril**; `packages/shared/test/` também não serve, porque `@sysloc/shared` não pode depender de `@sysloc/db` sem inverter o grafo. **O gatilho não muda.** É o corolário do `CLAUDE.md` outra vez: *a frase que explica onde algo deve ser feito envelhece antes do débito que ela justifica.*
 
 ### D22 · baixo · error_handling · T9 · QA (rodada 4) · ✅ **FECHADO na intervenção dirigida de 2026-08-22**
 

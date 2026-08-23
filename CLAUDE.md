@@ -69,31 +69,92 @@ SaaS multi-empresa de gestão de locação de imóveis. Backend em Node/NestJS/P
 > mão, e não duplique aqui o que ele já diz. O detalhe de cada fatia (débitos, achados, decisões) vive
 > na `_run/` dela. Aqui fica **só o que morde quem não abriu nenhum dos dois.**
 
-**F0 a F4 concluídas. Falta a F5** para o marco de entrega ficar ao alcance. ⚠️ Ela passou a ter
-**duas fatias** em 2026-08-21, nesta ordem: `integracao-bancaria-autonoma/v1` — a ativação do webhook **por tenant** e a
-aceitação do material do certificado como a AC o entrega, as duas coisas que hoje **exigem terminal**,
-e a **última fatia que acrescenta rota** antes do congelamento — e
-`automacoes-agendadas/v1`. A F4 fechou em
+**F0 a F5 concluídas.** A **F5 fechou em 2026-08-23**, com **21/21 tasks** nas duas fatias —
+(i) `integracao-bancaria-autonoma/v1` (10/10) e (ii) `automacoes-agendadas/v1` (11/11), esta última
+fechando com `GET /v1/automacao-de-cobranca/rotinas`. ⚠️ **Essa é a ÚLTIMA rota que este repositório
+publica**: com a F5 fechada, **nenhuma fase restante acrescenta, remove ou altera rota**, e o
+**congelamento da superfície** — segundo item do marco de entrega — está alcançado. ⚠️ **Se este texto
+voltar a dizer que a F5 falta, foi regressão de índice, não fase reaberta.** A F4 fechou em
 **2026-08-19**, com 43/43 tasks nas três fatias — (i) `fundacao-bancaria` em 2026-08-15 (14/14),
 (ii) `emissao-e-conciliacao` em 2026-08-18 (17/17) e (iii) `webhook-e-carne` em 2026-08-19 (12/12).
-São **126 tasks** aprovadas nos dois gates. ⚠️ **A (iii) É o carnê** — se este texto voltar a dizer
-que ela falta, foi regressão de índice, não fatia reaberta.
+São **147 tasks** aprovadas nos dois gates — as **126** do fecho da F4 mais as **21** da F5.
+⚠️ **A (iii) É o carnê** — se este texto voltar a dizer que ela falta, foi regressão de índice, não
+fatia reaberta.
 
-- **Superfície: 105 rotas / 90 manipuladores**, `semDeclaracao` vazio, `publicas` em **20**. Medido
-  na **T7 da fatia `integracao-bancaria-autonoma`**, em **2026-08-22**, pelo `CT-1038`, com as **duas medições independentes** cuja igualdade
-  entre os eixos é afirmada à parte do valor esperado. ⚠️ **As duas rotas novas são a entrega da
-  notícia** (`POST …/entrega-da-noticia/ativacao` e `GET …/entrega-da-noticia`), e as duas **exigem
-  sessão** — por isso `publicas` **não** mudou. ⚠️ **Não conte à mão: os três números são
+- **Superfície: 106 rotas / 91 manipuladores**, `semDeclaracao` vazio, `publicas` em **20**. Medido
+  na **T10 da fatia `automacoes-agendadas`**, em **2026-08-23**, pelo `CT-1095`, com as **duas medições independentes** cuja igualdade
+  entre os eixos é afirmada à parte do valor esperado. ⚠️ **A rota nova é a leitura do estado das
+  rotinas** (`GET /v1/automacao-de-cobranca/rotinas`), e ela **exige sessão** — por isso `publicas`
+  **não** mudou. ⚠️ **ELA É A ÚLTIMA ROTA QUE ESTE REPOSITÓRIO PUBLICA**: com ela a F5 fecha a
+  superfície, e o congelamento (item 2 do marco de entrega) está alcançado — nenhuma fatia posterior
+  acrescenta, remove ou altera rota. ⚠️ **Não conte à mão: os três números são
   constantes EXECUTÁVEIS** de `apps/api/test/cobertura-de-autorizacao.e2e.spec.ts` —
   `ROTAS_PUBLICADAS_EM_PRODUCAO`, `MANIPULADORES_EXAMINADOS_EM_PRODUCAO` e
-  `PARES_PUBLICOS_DA_SUPERFICIE` —, de modo que a suíte é a fonte e este texto é a cópia. ⚠️ Ela
-  **ainda cresce**, mas agora **só pela F5**: com a F4 fechada, é a última fase que publica rota, e o
-  congelamento é logo depois dela. **O número da F2 era 75, não 77** — não "corrija" para 77, a
+  `PARES_PUBLICOS_DA_SUPERFICIE` —, de modo que a suíte é a fonte e este texto é a cópia.
+  **O número da F2 era 75, não 77** — não "corrija" para 77, a
   premissa do `HEAD` duplicado foi refutada por medição. **E o 99/84 era o da (ii)** — não o
-  reponha; **o 103/88 era o do fecho da F4** (`CT-1004`), medido em 2026-08-20, e ele também não se
+  reponha; **o 103/88 era o do fecho da F4** (`CT-1004`), medido em 2026-08-20, e **o 105/90 era o da
+  T7 da fatia `integracao-bancaria-autonoma`** (`CT-1038`), medido em 2026-08-22 — nenhum dos três se
   repõe.
-- **Suíte: 1842 casos**, 9 pacotes — `contracts` **425** · `api` **389** · `shared` **263** · `db` **237** ·
-  `documentos` 159 · `worker` **142** · `auth` 89 · `cobranca-bancaria` **108** · `regua` 30. **Remedidos
+- **Suíte: 1943 casos**, 9 pacotes — `contracts` **438** · `api` **394** · `shared` **271** · `db` **268** ·
+  `worker` **180** · `documentos` 159 · `auth` 89 · `cobranca-bancaria` **114** · `regua` 30.
+  ⚠️ **A T11 da fatia `automacoes-agendadas` levou `db` de 265 a 268**, e o delta é **3**, todo do
+  `CT-1096` em `packages/db/test/cobranca.spec.ts` — a rede antirregressão da RN-14: a comportamental
+  (a Cobrança lida como `VENCIDA` com `negocio.execucao_de_rotina` medida em ZERO **antes** da
+  leitura), a perna estática sobre os **cinco** fontes da fatia, e a falsificação dela. ⚠️ **Ela NÃO
+  vive em `derivacao-de-cobranca.spec.ts`**, que a §5.2 da task declarava: aquela suíte é **pura por
+  decisão registrada** no próprio docblock (*"não há instância efêmera"*), e a perna comportamental
+  exige banco — a divergência foi declarada e medida. Os outros **oito pacotes foram remedidos um a
+  um em 2026-08-23, pelo script `test` de cada um, e NENHUM se moveu**, inclusive os três que
+  consomem os fontes que a task tocou (`api`, `worker`, `cobranca-bancaria`): as duas escriturações
+  de débito daquela task são **comentário**.
+  ⚠️ **A T10 da fatia `automacoes-agendadas` levou `api` de 389 a 394**, e o delta é **5**: os quatro
+  casos do arquivo novo `apps/api/test/rotinas-agendadas.e2e.spec.ts` (`CT-1091` a `CT-1094` — a
+  leitura, o isolamento entre empresas, os impedimentos e o envelope de erro) mais o **`CT-1095`**,
+  que é a **âncora de superfície** e vive em `apps/api/test/cobertura-de-autorizacao.e2e.spec.ts`.
+  ⚠️ **Os `shared` 267 → 271 NÃO são dela**: eles vêm da T9 da mesma fatia, que rodou em paralelo e
+  acrescentou um arquivo àquele pacote — as duas contagens foram medidas em 2026-08-23, uma a uma,
+  pelo script `test` de cada pacote. Os outros sete pacotes **não foram remedidos por esta task** e
+  nenhuma das duas a alcança.
+  ⚠️ **A T8 da mesma fatia levou `worker` de 159 a 180**, e o delta é **21**, todo dele: **16** casos
+  em `apps/worker/test/despachante.spec.ts` — o `CT-1075` em **5 pernas** (`it.each` sobre as cinco
+  formas de despacho, que é o que prova que o filtro da enumeração vale em TODAS), o `CT-1078` em
+  **3** (a comportamental, a perna estática e a falsificação dela), o **`CT-1079 (b)`** em **3** (os
+  três termos lidos, a amarra entre a folga da retomada e a cadência declarada do timer, e a
+  falsificação com os três mutantes), e um cada para `CT-1076`, `CT-1077`, `CT-1079`, `CT-1080` e
+  `CT-1081` — mais **5** do `CT-1062` em
+  `apps/worker/test/ambiente.spec.ts` (os três fontes lidos, a exceção afirmada por igualdade, o
+  controle positivo das quatro agulhas e as **duas** falsificações: a do arquivo sem exceção e a que
+  prova que a exceção é da **LINHA**, e não do arquivo). Os demais pacotes foram **remedidos um a um**
+  em 2026-08-23 e **nenhum se moveu** — o `db` acolheu os dois símbolos novos do barril e o
+  despachante em `ABRIDORES_LEGITIMOS` **sem** acrescentar caso, e o `api` não se moveu com a saída do
+  marcador `D13`. ⚠️ **Não "corrija" o `worker` para 176 nem para 177**: a primeira é a contagem antes
+  do `CT-1062 (c)` e a segunda é a de antes do `CT-1079 (b)`, os dois acrescentados na mesma task.
+  ⚠️ **E o fecho do `P1`/`P2` do Tech Review NÃO moveu a contagem** além desses 3: a linha que nomeia a
+  empresa na falha entrou como **asserção** no `CT-1076`, e a partida recusada por nome herdado do
+  protótipo entrou como **sétima linha** da tabela do `CT-1077` — as duas dentro de casos que já
+  existiam.
+  ⚠️ **A T7 da fatia `automacoes-agendadas` levou `worker` de 154 a 159 e `cobranca-bancaria` de 108 a
+  114**, e o segundo delta é **6, não 5**: os 5 casos do `CT-1087` (o expurgo por idade, a base
+  ausente, o vínculo simbólico, a porta legítima e o prazo inválido) mais o **`CT-1087 (f)`**, que
+  nasceu na **rodada 2 do Gate 2** — ele prova que o reconhecimento decide **por idade, nunca por
+  nome**, e é a rede da propriedade sobre a qual o `D32 · F4/T9` foi fechado. **Sem ele, um filtro por
+  extensão instalado no expurgo deixaria a suíte verde e os `.parcial` órfãos voltariam a acumular.**
+  Não o colapse no caso principal: os dois órfãos têm idades opostas de propósito, e é o par que
+  discrimina. O `db` **não** se moveu — a T7 estendeu a âncora do `CT-326` sem acrescentar caso.
+  ⚠️ **O `worker` foi de 142 a 154 na T6 da fatia `automacoes-agendadas`**, e o delta é **12**: os 6
+  casos do consumidor das quatro rotinas por empresa (`CT-1082` a `CT-1086`, o `CT-1083` em duas
+  pernas), as **4 pernas do `CT-1089 (T6)`** — a metade de `safeParse` que a §3 da T2 delegou a esta
+  task, porque `@sysloc/shared` não depende de `zod` e o `strictObject` nasce na borda — e o
+  **`CT-1085 (b)`** e o **`CT-1085 (c)`**, que nasceram nos ciclos dos gates e são as **duas pernas do
+  mesmo discriminador**: a repetição da tarefa refazendo a passada sobre a conferência que a ativação
+  anterior deixou aberta, e a primeira ativação que encontra apuração concorrente e **não** trabalha.
+  ⚠️ **Elas convivem por construção** — apagar o ramo do no-op deixava a suíte verde enquanto só a
+  primeira existia; não colapse as duas em uma. **Não procure o `CT-1089 (T6)` em
+  `packages/shared/test/fila.spec.ts`**: lá vivem as pernas estáticas do mesmo CT, e as duas metades
+  convivem por decisão registrada. ⚠️ **As escriturações das rodadas 1, 2 e 3 diziam `worker` 148/1893,
+  152/1897 e 153/1898, e as três estavam defasadas** — são anteriores aos ciclos de correção dos gates; não as
+  reponha. Medidos pelo script `test` do pacote. Os demais foram **remedidos
   um a um** na **segunda intervenção dirigida de 2026-08-22** (a da conformidade do adaptador com a
   documentação do provedor), pelo script `test` de cada pacote. ⚠️ **As DUAS intervenções daquele dia
   somaram 20 casos**, e é por isso que o total saltou de 1812: a primeira acrescentou o `CT-1050`
@@ -117,13 +178,44 @@ que ela falta, foi regressão de índice, não fatia reaberta.
   `CT-1042` (`worker` → 133) e o `CT-1046`, e a T9 os dois casos dela — juntas, `api` de 371 a 374.**
   O total acompanha **no mesmo diff**: número narrativo que fica para trás convida a próxima task a
   "corrigir" a contagem para o valor errado.
+  ⚠️ **A Fase 1 da fatia `automacoes-agendadas` (F5, fatia (ii)) somou 18, e os TRÊS deltas são
+  finais** — as três tasks estão concluídas e aprovadas nos dois gates. Remedidos um a um pelo script
+  `test` de cada pacote em 2026-08-23: `contracts` **425 → 438** (T1), `shared` **263 → 267** (T2) e
+  `db` **237 → 238** (T3). ⚠️ **O total é 1860, e ele foi CONFERIDO somando os nove pacotes** — não
+  1856: quem chegar a 1856 esqueceu os 4 do `shared`. ⚠️ **O delta do `db` é UM caso, o `CT-1073`**,
+  a perna de isolamento de `negocio.execucao_de_rotina` em `packages/db/test/isolamento.spec.ts`; as
+  três guardas de cobertura que a mesma task moveu (`catalogo`, `papel-de-conexao`,
+  `unidade-de-trabalho`) **cresceram em asserção, não em caso** — não procure casos novos nelas.
+  ⚠️ **A T4 da mesma fatia somou 12, todos no `db` (238 → 250), e o delta é FINAL** — medido pelo
+  script `test` do pacote em 2026-08-23, com as suítes de `api` (389), `worker` (142) e
+  `cobranca-bancaria` (108) remedidas **sem alteração** porque a task tocou fonte que elas consomem.
+  São o `CT-1070` (2 casos), o `CT-1071` (1) e o `CT-1072` (1), mais as **oito pernas do `CT-1074`**
+  — atraso, admissão, roster, próxima esperada, histórico recente, impedimento, recusa do provedor e
+  a janela de 24 h. ⚠️ **As duas últimas nasceram na rodada 3**, no ciclo de correção do Gate 2, e é
+  por isso que o `db` foi de 248 a 250: elas provam a derivação de `AVISOS_RECUSADOS_PELO_PROVEDOR`,
+  que a T6 consome antes de a T10 existir. As duas âncoras que a task elevou (`CT-012`, no barril, e
+  `CT-624 (b)`, no elenco que lê `identidade.empresa`) **cresceram em elenco, não em caso** — e a
+  perna da borda do dia do certificado e a da precedência dos impedimentos **cresceram em asserção**.
+  Não procure casos novos em nenhuma delas.
+  ⚠️ **A T5 da mesma fatia somou 15, também todos no `db` (250 → 265), e o delta é FINAL** — medido
+  pelo script do pacote em 2026-08-23. São **13** da suíte nova
+  `packages/db/test/encerramento-de-contratos.spec.ts` (os 9 CTs `CT-1061` e `CT-1063` a `CT-1069`,
+  mais o `CT-1097`, com as tabelas `it.each` produzindo as pernas restantes) e **2** do `CT-1061` em
+  `packages/db/test/fonte-unica-do-estado.spec.ts` — a varredura do relógio do processo nos dois
+  fontes novos do pacote e o controle que prova que ela pode falhar. **Não procure os 2 na suíte
+  nova**: eles moram na guarda que a mesma task elevou.
+  ⚠️ **A escrituração anterior dizia 1843 com `contracts` 425 e `shared` 263, e os três estavam
+  defasados** — ela foi escrita enquanto a T1 e a T2 ainda corriam; **não a reponha.**
   ⚠️ **A linha anterior dizia `api` 370 e `worker` 126, e as duas estavam defasadas** — a T8 já as
   havia movido e a escrituração não acompanhou; não as "corrija" de volta. ⚠️ **O `api` da linha
   anterior a essa dizia 354, e antes dela 1744/1801 no total** — todos defasados pela mesma razão.
   ⚠️ **Meça por pacote** (`pnpm --filter @sysloc/<p> test`): o `turbo run test` aborta os pacotes
   irmãos e a saída agregada não é confiável.
 - ⚠️ **ADRs emendadas — não cite a `Decision` sem ler a emenda**: a **0001** (a cláusula do *"apenas
-  uma porta"* não alcança a porta de identidade) e a **0017** (o contador é a **0033**, não a 0015).
+  uma porta"* não alcança a porta de identidade), a **0017** (o contador é a **0033**, não a 0015) e a
+  **0021** (emendada **duas vezes** — a de 2026-08-10 nomeia a entidade nas classes de ato; a de
+  **2026-08-22** declara o alcance de cada metade da `Decision` quando **não há requisição**: a
+  categórica vale sem exceção, a de governança pressupõe sessão e não tem sujeito sem ela).
   **Não cite como vigentes**: 0007, 0012, 0015 e 0019 — todas superseded.
 - ⚠️ **Precedente de método, confirmado cinco vezes**: *prescrição de gate é hipótese, não ordem* — o
   executor que divergiu **declarando e medindo** teve razão em todas. E o corolário que custou duas
@@ -361,14 +453,26 @@ Específicos deste domínio: **`node:https`** (o mTLS do Sicoob — ⚠️ o cli
 > grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 > ```
 
-São **38**, e a tabela abaixo é a lista viva — ela, e não este parágrafo, é a fonte.
+São **41**, e a tabela abaixo é a lista viva — ela, e não este parágrafo, é a fonte.
 
 ⚠️ **O identificador é o par `Dnn · F{n}/{origem}`, nunca o número sozinho** — a sequência corre
-dentro da §2 da fatia que registrou cada débito. Hoje convivem **dois `D3`**, **dois `D12`**, **dois
-`D13`**, **dois `D26`**, **dois `D27`**, **dois `D28`**, **dois `D37`** e **dois `D49`**, todos legítimos e todos débitos diferentes.
-⚠️ **Os dois `D13` repetem o par INTEIRO** (`D13 · F4/T6` nas fatias `emissao-e-conciliacao` e
-`webhook-e-carne`) — é o primeiro caso do repositório, e o que os separa é só o caminho do `ÍNDICE`,
-como a §3-B prevê. A regra completa está na §3-B
+dentro da §2 da fatia que registrou cada débito. Hoje convivem **dois `D3`**, **TRÊS `D12`**, **dois
+`D23`**, **dois `D27`**, **dois `D37`**, **dois `D43`** e **dois `D49`**, todos legítimos e todos débitos
+diferentes. ⚠️ **A lista acima foi REMEDIDA em 2026-08-23** contra a tabela abaixo, e a anterior estava
+defasada nos dois sentidos: ela citava `D28`, que tem uma entrada só desde sempre, e omitia `D23` e
+`D43`. **Não reponha o `D28`.**
+⚠️ **O `D26` deixou esta lista em 2026-08-23**, com o fecho do `D26 · F4/T9` pela T7 da fatia
+`automacoes-agendadas` — sobrou o `D26 · F3/T8` (`cobranca-e-mora`), sozinho. **Não o reponha.**
+⚠️ **O `D13` deixou esta lista em 2026-08-23**, com o fecho do `D13 · F4/T6` (`webhook-e-carne`) pela
+T8 da mesma fatia: a rotina `RETOMADA_DE_NOTICIAS` é quem reprocessa a notícia parada em `RECEBIDO`.
+Sobrou o `D13 · F4/T6` (`emissao-e-conciliacao`), sozinho — ele era a outra metade do **primeiro par
+INTEIRO repetido** do repositório, e o que os separava era só o caminho do `ÍNDICE`, como a §3-B
+prevê. **Não reponha o de `webhook-e-carne`.**
+⚠️ **O `D12` passou a TER TRÊS entradas em 2026-08-23**, com a emissão do `D12 · F5/T6`
+(`automacoes-agendadas`) pela T11: ele é a **metade (b)** do achado da T6 — a conferência bancária
+abandonada por esgotamento das repetições —, e nasceu como marcador porque a T11 **não** a
+implementou. **Não o confunda** com o `D12 · F3/T4` (`regua-de-cobranca`) nem com o `D12 · F3/T10`
+(`documentos-e-confirmacao`). A regra completa está na §3-B
 da `.claude/rules/nao-regressao.md`, que é permanente — este bloco é transitório e some quando o
 último marcador sair.
 
@@ -393,13 +497,11 @@ da `.claude/rules/nao-regressao.md`, que é permanente — este bloco é transit
 | **D20** (F3/T7, fatia `cobranca-e-mora`) | `packages/db/migracoes/0010_seguranca_cobranca.sql` (bloco da emenda) | **JÁ DISPAROU (2026-08-18)** — a `0010` foi aplicada ao banco durável; o arquivo é imutável e o marcador NÃO sai (removê-lo mudaria o `sha256sum` e abortaria a migração) |
 | **D3** (F3/T1, fatia `regua-de-cobranca`) | `deploy/scripts/caracterizacao/extrair-fonte-do-pdf.sh` (`consultar_o_legado`) | o **quarto consumidor** do caminho de leitura autenticada do legado, ou a **primeira alteração das garantias de transporte da credencial** — hoje são três cópias e endurecer uma deixa as outras para trás |
 | **D12** (F3/T4, fatia `regua-de-cobranca`) | `packages/regua/src/mensagem.ts` (a desestruturação de `ESTADOS_DA_COBRANCA`) | a **primeira task que abrir `packages/contracts/src/cobranca.ts`** por outra razão — ali nasce `ESTADOS_AVISAVEIS` como tupla `as const` e a escolha do molde deixa de depender de posição |
-| **D14** (F3/T5, fatia `regua-de-cobranca`) | `packages/db/src/envio-de-cobranca.ts` (`FUSO_DA_OPERACAO`) | a **primeira migração que redefinir `negocio.data_corrente_da_operacao()`** — o fuso tem duas declarações executáveis e nada as amarra |
+| **D14** (F3/T5, fatia `regua-de-cobranca`) | `packages/db/src/fuso-da-operacao.ts` (`FUSO_DA_OPERACAO`) | a **primeira migração que redefinir `negocio.data_corrente_da_operacao()`** — o fuso tem duas declarações executáveis e nada as amarra |
 | **D49** (F3/T10, fatia `regua-de-cobranca`) | `apps/worker/test/ambiente.spec.ts` (docblock do `CT-643`) | a **escalada que autorize mover o bloco sob `DECISÃO FECHADA — T8 / Gate 1 rodada 2`**, ou o **terceiro processo** que precisar da maquinaria — hoje o detector de exigência de ambiente tem duas cópias e endurecer uma deixa a outra para trás |
 | **D54** (F3/T11, fatia `regua-de-cobranca`) | `apps/api/test/equivalencia-com-o-oraculo.spec.ts` (`CODIGO_NO_ASSUNTO`) | o **quarto consumidor** do molde de extração do código de cobrança, ou a **primeira alteração da forma do código** — hoje são três cópias e elas já divergem na flag `u` |
 | **D12** (F3/T10, fatia `documentos-e-confirmacao`) | `packages/documentos/src/mensagem-de-confirmacao.ts` | a **terceira** mensagem de e-mail do produto (o boleto, na F4) — ali `MensagemDeEmail` e a porta de envio sobem para `@sysloc/shared` |
-| **D25** (F4/T7, fatia `fundacao-bancaria`) | `packages/db/src/certificado-do-provedor.ts` (`recusarCertificadoVencido`) | a criação de `negocio.dia_da_operacao(timestamptz)`, ou o **quarto consumidor** do fuso da operação no pacote — hoje são três declarações e nada as amarra |
 | **D13** (F4/T6, fatia `emissao-e-conciliacao`) | `packages/db/src/boleto-da-cobranca.ts` (junto de `ErroDeCobrancaNaoAlcancada`) | a fatia que criar no banco a **restrição pareando `linha_digitavel` com `nosso_numero`** — hoje a linha meio preenchida é representável. Mesma classe do D44 · F2/T10 |
-| **D26** (F4/T9, fatia `emissao-e-conciliacao`) | `packages/cobranca-bancaria/src/guarda-de-boletos.ts` (cabeçalho) | a **F5**, que traz o agendamento, ou a **primeira medição do diretório acima de 20 GB** — não há expurgo dos boletos guardados (~1,4 GB/mês projetados) |
 | **D34** (F4/T11, fatia `emissao-e-conciliacao`) | `packages/cobranca-bancaria/src/emissao-em-lote.ts` (junto de `guarda.gravar`) | ⚠️ **gatilho EMENDADO em 2026-08-19** (a metade da fatia (iii) venceu e foi refutada: dá observabilidade, não reconciliação) — vigente é **persistir o identificador enviado antes da chamada**, ou ampliar o modelo canônico |
 | **D49** (F4/T16, fatia `emissao-e-conciliacao`) | `apps/worker/src/tarefas/carga-da-tarefa.ts` (cabeçalho) | a **primeira task autorizada a abrir `regua.ts` ou `confirmacao-de-email.ts`** — a tradução de `ZodError` em nome de campo tem três cópias no processo |
 | **D50** (F4/T16, fatia `emissao-e-conciliacao`) | `apps/worker/src/tarefas/emissao-em-lote.ts` (junto de `dadosDaEmissao`) | o **terceiro consumidor** da projeção do pedido de emissão, ou a primeira alteração dos campos que ela leva ao provedor — hoje são duas cópias |
@@ -407,7 +509,6 @@ da `.claude/rules/nao-regressao.md`, que é permanente — este bloco é transit
 | **D52** (F4/T16, fatia `emissao-e-conciliacao`) | `apps/worker/test/varredura-de-segredo.ts` (cabeçalho) | o **terceiro consumidor** do molde de varredura com controle positivo fora de `apps/worker/test/`, ou a primeira alteração das formas buscadas — hoje são duas cópias |
 | **D53** (F4/T16, fatia `emissao-e-conciliacao`) | `packages/shared/src/log.ts` (junto de `redigirErro`) | a **próxima superfície que decifre o segredo operável**, ou a primeira exceção do produto que anexe campo próprio fora de `RADICAIS_SENSIVEIS` — o eixo por nome de chave não a alcança |
 | **D58** (F4/T16, fatia `emissao-e-conciliacao`) | `apps/worker/src/tarefas/emissao-em-lote.ts` (junto da assinatura de `comReentranciaBenigna`) | o **terceiro consumidor** do discriminador, ou a primeira alteração do contrato do sentinela — `<T>` é irrestrito e a reserva de `undefined` vive só no docblock |
-| **D13** (F4/T6, fatia `webhook-e-carne`) | `apps/api/src/notificacoes-bancarias/notificacao-bancaria.service.ts` (junto do `catch` do enfileiramento) | a **F5**, que traz o agendamento, ou o primeiro caso real de fila indisponível na recepção — notícia parada em `RECEBIDO` não tem quem a reprocesse |
 | **D21** (F4/T9, fatia `webhook-e-carne`) | `apps/api/test/retomada-de-retidas.spec.ts` (junto de `semearCobranca`) | a **primeira task autorizada a abrir as duas suítes irmãs** da notícia bancária — o arranjo da cobrança com boleto e certificado tem três cópias |
 | **D27** (F4/T11, fatia `webhook-e-carne`) | `deploy/nginx/sysloc-notificacao-bancaria.conf` (cabeçalho) | a **publicação da API inteira na F7** — o vhost publica um caminho para fora e não há limitador de abuso nele |
 | **D43** (F4/fechamento, fatia `webhook-e-carne`) | `deploy/scripts/borda/instalar-borda-de-notificacao.sh` (junto de `NOME_DO_VHOST`) | o produto receber notícia de um **segundo provedor bancário** — o nome do vhost é fixo e o segundo hostname sobrescreveria o primeiro |
@@ -418,6 +519,12 @@ da `.claude/rules/nao-regressao.md`, que é permanente — este bloco é transit
 | **D38** (F5/T8, fatia `integracao-bancaria-autonoma`) | `apps/worker/src/main.ts` (junto de `criarAdaptadorSicoob` da entrega) | o **terceiro** ponto de fiação não provado de porta bancária — hoje são dois —, ou a extração da composição raiz em unidade testável |
 | **D40** (F5/T9, fatia `integracao-bancaria-autonoma`) | `apps/api/test/segredo-nao-escapa.e2e.spec.ts` (junto de `naBorda`) | a **primeira task autorizada a abrir a suíte** — ela tem duas formas de falar HTTP, e a privada convida a ser copiada |
 | **D43** (F5/fechamento, fatia `integracao-bancaria-autonoma`) | `packages/cobranca-bancaria/src/adaptador-sicoob.ts` (junto de `comporCadastroDaEntrega`) | a resposta do provedor sobre a tabela de `codigoSituacao`, ou o primeiro valor fora dos **dois** documentados — ⚠️ **emendado**: o `D42` fechou e o campo passou a ser LIDO |
+| **D16** (F5/T8, fatia `automacoes-agendadas`) | `apps/worker/src/despachante.ts` (junto de `lerAmbienteDoDespacho`) | o fecho do `D51 · F4/T16`, ou o **terceiro** ponto de entrada que exigir `LOG_LEVEL`/`DATABASE_URL`/`REDIS_URL` — hoje são duas declarações no mesmo processo |
+| **D17** (F5/T8, fatia `automacoes-agendadas`) | `apps/worker/test/despachante.spec.ts` (junto de `executarDespachante`) | o **terceiro** consumidor do lançador de subprocesso com ambiente explícito — hoje são duas cópias privadas |
+| **D15** (F5/T7, fatia `automacoes-agendadas`) | `packages/cobranca-bancaria/src/guarda-de-boletos.ts` (junto de `MILISSEGUNDOS_POR_DIA`) | o **quarto consumidor de produção**, ou a primeira task autorizada a abrir `derivacao-de-contrato.ts` ou `certificado.service.ts` — hoje são 3 cópias, já com o nome alinhado |
+| **D12** (F5/T6, fatia `automacoes-agendadas`) | `packages/db/src/conferencia-bancaria.ts` (junto de `abrirConferencia`) | a fatia que fixar o **limiar de obsolescência** da conferência em andamento — é decisão de produto, e a forma viável é a varredura na `MANUTENCAO` |
+| **D11** (F5/T6, fatia `automacoes-agendadas`) | `apps/worker/test/acessorios-de-borda.ts` (cabeçalho) | a **primeira task autorizada a abrir uma das 6 suítes** de `apps/worker/test/` com `emUnidade` local — medido: 7 declarações, e a casa nasceu com 1 consumidor |
+| **D5** (F5/T3, fatia `automacoes-agendadas`) | `packages/db/drizzle.config.ts` (junto de `out`) | ⚠️ **RECORRENTE — o gatilho NÃO o extingue**: a próxima migração **autoral** que alterar estrutura declarada em `src/esquema/*.ts`, ou uma regeração **do zero**; a supressão é manual nos dois casos e volta na seguinte |
 
 ---
 

@@ -222,3 +222,19 @@ export {
   esquemaDoLocatario,
   TIPOS_DE_PESSOA,
 } from './pessoa.js';
+export type {
+  CadenciaDaRotina,
+  CodigoDeImpedimento,
+  EstadoDasRotinas,
+  EstadoDeRotina,
+  RotinaPublicada,
+} from './rotina-agendada.js';
+export {
+  CADENCIA_DA_ROTINA,
+  CODIGOS_DE_IMPEDIMENTO,
+  esquemaDoEstadoDasRotinas,
+  esquemaDoEstadoDeRotina,
+  esquemaDoImpedimento,
+  LIMIAR_DE_ATRASO_POR_CADENCIA,
+  ROTINAS_PUBLICADAS,
+} from './rotina-agendada.js';

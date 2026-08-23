@@ -145,6 +145,64 @@ export interface DependenciasDaConferenciaBancaria {
 }
 
 /**
+ * O que a execução da conferência precisa saber da **tarefa que a provocou** — e nada além.
+ *
+ * ---------------------------------------------------------------------------
+ * POR QUE UM TIPO ESTRUTURAL, E NÃO `TarefaDaConferenciaBancaria`
+ * ---------------------------------------------------------------------------
+ *
+ * {@link executarConferenciaDaEmpresa} tem **dois** provocadores, e eles chegam por filas diferentes:
+ * o pedido do Admin, pela fila da conferência, e o relógio, pela fila da rotina agendada
+ * (`./rotina-agendada.ts`). As duas tarefas são `Job<…>` de cargas distintas, e amarrar a execução a
+ * uma delas obrigaria a outra a converter — ou a copiar a fiação das oito portas, que é a segunda
+ * cópia que este tipo existe para não ter.
+ *
+ * Ele declara **exatamente** o que a execução lê: o par (fila, identificador) que vai ao diário e os
+ * dois contadores que {@link ehReentrada} consulta. Nada mais atravessa, e em particular **a carga
+ * não atravessa**: quem a confere é a borda de cada fila, antes de abrir contexto.
+ */
+export interface OrigemDaConferencia {
+  /**
+   * O nome da fila **de onde a tarefa veio** — declarado por quem provoca, nunca escrito aqui.
+   *
+   * ⚠️ **Ele é campo, e não literal, porque a execução tem DOIS provocadores.** Enquanto o único era
+   * o pedido do Admin, os três pontos de registro desta função escreviam
+   * `FILA_DA_CONFERENCIA_BANCARIA` direto, e isso era verdade. Com o relógio provocando pela fila
+   * `rotina-agendada`, o mesmo literal passou a publicar um par **factualmente falso**: `idTarefa` de
+   * uma fila ao lado do nome de outra — e o operador que investigasse a conferência diária pelo
+   * journal procuraria o identificador na fila errada, exatamente a classe que a âncora de
+   * `apps/worker/test/eco.spec.ts` descreve. Declarar é o que impede o **terceiro** provocador de
+   * herdar o nome do primeiro: não há mais nome escrito dentro da execução para ele herdar.
+   */
+  readonly fila: string;
+  /** O identificador da tarefa, como o servidor de fila o atribuiu — vai ao diário do processo. */
+  readonly id?: string | undefined;
+  /** Quantas tentativas desta tarefa **falharam** e foram redistribuídas pela política de repetição. */
+  readonly attemptsMade: number;
+  /** Quantas vezes a tarefa foi **movida para ativa**, o que inclui a redistribuição por *stall*. */
+  readonly attemptsStarted: number;
+}
+
+/**
+ * O que uma passada da conferência produziu, do ponto de vista de **quem a provocou**.
+ *
+ * `liquidacoesDescobertas` é contado **na porta que grava**, e apenas quando a unidade de trabalho
+ * dela commitou com o desfecho `LIQUIDADA` — nunca recomposto de `efeitos`, que soma também estorno e
+ * revogação. A distinção não é preciosismo: é ela que faz o resumo da rotina diária
+ * (`{ liquidacoesDescobertas }`, RN-19) dizer o que o nome dele promete, e é ela que o predicado de
+ * efeito da RN-15 lê para decidir se a passagem deixa registro.
+ */
+export interface PassadaDaConferencia {
+  /**
+   * O desfecho da apuração, ou `undefined` quando a recusa foi reconhecida como **reenvio benigno** —
+   * caso em que não há desfecho novo a relatar, porque a passada que de fato correu foi a anterior.
+   */
+  readonly desfecho: DesfechoDaConferencia | undefined;
+  /** Quantas cobranças ganharam o **fato** da liquidação gravado nesta passada. */
+  readonly liquidacoesDescobertas: number;
+}
+
+/**
  * Executa a conferência bancária de **uma** empresa, sob o contexto que a carga declara.
  *
  * @param tarefa       A tarefa, como o servidor de fila a entregou.
@@ -162,152 +220,213 @@ export async function processarConferenciaBancaria(
   // Primeiro a recusa, e só depois o contexto: é a ordem que impede a passada de correr sem contexto
   // válido e concluir a conferência como se ela tivesse acontecido.
   const carga = cargaConferida(ESQUEMA_DA_CARGA, EXIGENCIA_DA_CARGA, tarefa.data);
-  const { adaptador, banco, chaveDeCifra, guarda } = dependencias;
   const { conferenciaId, empresaId } = carga;
 
   await contextoDeTenant.executarCom({ empresaId }, async () => {
-    // A unidade 1 — o certificado e o conjunto a conferir, na MESMA unidade. Ela fecha aqui; a
-    // decifra e a rede correm fora dela, para não segurar a conexão física durante a passada.
-    const preparo = await banco.emUnidadeDeTrabalho(async (tx) => ({
-      envelopeCifrado: await obterEnvelopeCifradoDoVigente(tx),
-      identidade: await lerIdentidadeParaUso(tx, chaveDeCifra),
-      cobrancas: await selecionarCobrancasAConferir(tx),
-    }));
-
-    const { envelopeCifrado, identidade } = preparo;
-
-    if (envelopeCifrado === undefined || identidade === undefined) {
-      // A identidade ausente tem o mesmo efeito prático do certificado ausente — sem credencial
-      // nenhuma cobrança é consultável —, e a conferência conclui do mesmo modo: `0` conferidas e
-      // `0` efeitos, sem tentativa. A distinção entre as duas causas é da EMISSÃO, que interrompe o
-      // lote e precisa dizer ao Admin qual configuração falta; aqui a passada apenas não tem o que
-      // fazer, e um segundo desfecho não mudaria nada do que fica gravado.
-      await concluirSemCertificado(banco, conferenciaId, logger, tarefa, empresaId);
-
-      return;
-    }
-
-    const desfecho = await comReentranciaBenigna(
-      tarefa,
+    await executarConferenciaDaEmpresa({
+      // A origem é montada CAMPO A CAMPO, e não por espalhamento da tarefa: `fila` não existe em
+      // `Job`, e o espalhamento de um objeto da biblioteca de fila traria o que ela guarda por
+      // dentro — o oposto do que {@link OrigemDaConferencia} promete entregar.
+      tarefa: {
+        fila: FILA_DA_CONFERENCIA_BANCARIA,
+        id: tarefa.id,
+        attemptsMade: tarefa.attemptsMade,
+        attemptsStarted: tarefa.attemptsStarted,
+      },
       logger,
       empresaId,
       conferenciaId,
-      async () =>
-        conferirCobrancas({
-          empresaId,
-          identidade,
-          // A decifra acontece DENTRO da expressão que monta o trabalho, e o claro não ganha nome
-          // próprio no escopo — ver o cabeçalho de `./emissao-em-lote.ts`.
-          segredo: decifrarSegredo(envelopeCifrado, chaveDeCifra),
-          cobrancas: preparo.cobrancas.map(({ id, codigo, numeroDoTituloNoProvedor }) => ({
-            id,
-            codigo,
-            numeroDoTituloNoProvedor,
-          })),
-          adaptador,
-          guarda,
-          valorEsperado: async (cobranca) =>
-            await banco.emUnidadeDeTrabalho(async (tx) => {
-              const linha = await localizarCobranca(tx, cobranca.codigo);
-
-              if (linha === undefined) {
-                // Estado que o predicado do conjunto torna irrepresentável — a cobrança foi
-                // selecionada nesta mesma passada. O ramo existe porque a leitura é anulável.
-                throw new Error(`a cobrança ${cobranca.codigo} não foi alcançada na conferência`);
-              }
-
-              // `valorTotal` é o total DERIVADO pela visão (ADR-0022) — original mais a mora vigente —,
-              // e é ele que se esperava receber. Nada aqui calcula: a derivação é do banco.
-              return linha.valorTotal;
-            }),
-          // UMA unidade: a baixa, o evento da liquidação e — quando houve divergência — o segundo
-          // evento. Gravar a baixa sem o evento deixaria a trilha sem o fato que explica por que a
-          // cobrança está paga; gravar o evento sem a baixa anunciaria um pagamento que não existe.
-          gravarLiquidacao: async (cobranca, liquidacao) =>
-            await banco.emUnidadeDeTrabalho(async (tx) => {
-              const aplicada = await liquidarPeloProvedor(tx, cobranca.codigo, {
-                pagoEm: liquidacao.pagoEm,
-                valorPago: emCadeiaDeDinheiro(liquidacao.valorPago),
-                dataDoCredito: liquidacao.dataDoCredito,
-                valorCreditado: emCadeiaDeDinheiro(liquidacao.valorCreditado),
-              });
-
-              if (aplicada !== 'LIQUIDADA') {
-                // O desfecho benigno: o provedor confirmou o que já era verdade. Nada mudou, e por
-                // isso nenhum evento nasce (ADR-0034).
-                return aplicada;
-              }
-
-              await registrarEventoBancario(tx, {
-                cobrancaId: cobranca.id,
-                tipo: 'COBRANCA_LIQUIDADA',
-                origem: 'CONFERENCIA',
-              });
-
-              if (liquidacao.divergente) {
-                // A baixa NÃO é impedida pela divergência (CA-11): o que ela provoca é um segundo
-                // evento, nunca uma recusa.
-                await registrarEventoBancario(tx, {
-                  cobrancaId: cobranca.id,
-                  tipo: 'DIVERGENCIA_DE_VALOR',
-                  origem: 'CONFERENCIA',
-                  valorInformado: emCadeiaDeDinheiro(liquidacao.valorPago),
-                });
-              }
-
-              return aplicada;
-            }),
-          gravarEstorno: async (cobranca) =>
-            await banco.emUnidadeDeTrabalho(async (tx) => {
-              const aplicado = await estornarLiquidacao(tx, cobranca.codigo);
-
-              if (aplicado === 'ESTORNADA') {
-                await registrarEventoBancario(tx, {
-                  cobrancaId: cobranca.id,
-                  tipo: 'LIQUIDACAO_ESTORNADA',
-                  origem: 'CONFERENCIA',
-                });
-              }
-
-              return aplicado;
-            }),
-          gravarRevogacao: async (cobranca, motivo) =>
-            await banco.emUnidadeDeTrabalho(async (tx) => {
-              const aplicada = await revogarBoleto(tx, cobranca.codigo);
-
-              if (aplicada.desfecho === 'REVOGADO') {
-                await registrarEventoBancario(tx, {
-                  cobrancaId: cobranca.id,
-                  tipo: 'BOLETO_REVOGADO',
-                  origem: 'CONFERENCIA',
-                  // O motivo do provedor viaja INTACTO até a coluna de diagnóstico (RN-15).
-                  diagnostico: motivo,
-                });
-              }
-
-              return aplicada.desfecho;
-            }),
-          concluir: async (contagens) => {
-            await banco.emUnidadeDeTrabalho(async (tx) => {
-              await concluirConferencia(tx, conferenciaId, contagens);
-            });
-          },
-        }),
-    );
-
-    if (desfecho !== undefined) {
-      logger.info(
-        {
-          idTarefa: tarefa.id,
-          fila: FILA_DA_CONFERENCIA_BANCARIA,
-          empresaId,
-          conferenciaId,
-          ...desfecho,
-        },
-        'conferência bancária concluída',
-      );
-    }
+      dependencias,
+    });
   });
+}
+
+/**
+ * A **passada** da conferência de uma empresa, sob um contexto de tenant **já aberto**.
+ *
+ * ---------------------------------------------------------------------------
+ * ELA NÃO ABRE CONTEXTO, E A AUSÊNCIA É O MECANISMO (ADR-0024)
+ * ---------------------------------------------------------------------------
+ *
+ * O contexto nasce da carga, **uma vez, na borda que a recebe**, e nenhuma camada abaixo o reabre. Há
+ * duas bordas, e cada uma o abre para a sua carga: {@link processarConferenciaBancaria}, para o pedido
+ * do Admin, e `processarRotinaAgendada`, para o disparo do relógio. Esta função corre **dentro** do
+ * que uma delas abriu — não há `executarCom` aqui, e não pode haver.
+ *
+ * `empresaId` chega por parâmetro porque ele é o identificador do **ato no provedor**, e é ele que
+ * impede a credencial de uma empresa de ser apresentada em chamada de outra. Ele **não** recorta
+ * leitura nem escrita no banco: quem recorta é a política (ADR-0008).
+ *
+ * @returns As contagens da passada — ver {@link PassadaDaConferencia}.
+ * @throws {Error} Quando alguma porta de dados falha, ou quando o fecho não alcança a linha **na
+ * primeira ativação da tarefa**.
+ */
+export async function executarConferenciaDaEmpresa(parametros: {
+  readonly tarefa: OrigemDaConferencia;
+  readonly logger: Logger;
+  readonly empresaId: string;
+  readonly conferenciaId: string;
+  readonly dependencias: DependenciasDaConferenciaBancaria;
+}): Promise<PassadaDaConferencia> {
+  const { conferenciaId, empresaId, logger, tarefa } = parametros;
+  const { adaptador, banco, chaveDeCifra, guarda } = parametros.dependencias;
+
+  // A contagem das liquidações GRAVADAS nesta passada. Ela vive aqui, e não dentro da unidade de
+  // trabalho da porta, porque só conta o que commitou: incrementada lá dentro, uma unidade que
+  // falhasse depois deixaria o número maior que o fato.
+  let liquidacoesDescobertas = 0;
+
+  // A unidade 1 — o certificado e o conjunto a conferir, na MESMA unidade. Ela fecha aqui; a
+  // decifra e a rede correm fora dela, para não segurar a conexão física durante a passada.
+  const preparo = await banco.emUnidadeDeTrabalho(async (tx) => ({
+    envelopeCifrado: await obterEnvelopeCifradoDoVigente(tx),
+    identidade: await lerIdentidadeParaUso(tx, chaveDeCifra),
+    cobrancas: await selecionarCobrancasAConferir(tx),
+  }));
+
+  const { envelopeCifrado, identidade } = preparo;
+
+  if (envelopeCifrado === undefined || identidade === undefined) {
+    // A identidade ausente tem o mesmo efeito prático do certificado ausente — sem credencial
+    // nenhuma cobrança é consultável —, e a conferência conclui do mesmo modo: `0` conferidas e
+    // `0` efeitos, sem tentativa. A distinção entre as duas causas é da EMISSÃO, que interrompe o
+    // lote e precisa dizer ao Admin qual configuração falta; aqui a passada apenas não tem o que
+    // fazer, e um segundo desfecho não mudaria nada do que fica gravado.
+    await concluirSemCertificado(banco, conferenciaId, logger, tarefa, empresaId);
+
+    // A passada não percorreu nada, e por isso não descobriu liquidação alguma: o predicado de
+    // efeito de quem a provocou (RN-15) lê zero e não grava registro.
+    return { desfecho: undefined, liquidacoesDescobertas: 0 };
+  }
+
+  const desfecho = await comReentranciaBenigna(tarefa, logger, empresaId, conferenciaId, async () =>
+    conferirCobrancas({
+      empresaId,
+      identidade,
+      // A decifra acontece DENTRO da expressão que monta o trabalho, e o claro não ganha nome
+      // próprio no escopo — ver o cabeçalho de `./emissao-em-lote.ts`.
+      segredo: decifrarSegredo(envelopeCifrado, chaveDeCifra),
+      cobrancas: preparo.cobrancas.map(({ id, codigo, numeroDoTituloNoProvedor }) => ({
+        id,
+        codigo,
+        numeroDoTituloNoProvedor,
+      })),
+      adaptador,
+      guarda,
+      valorEsperado: async (cobranca) =>
+        await banco.emUnidadeDeTrabalho(async (tx) => {
+          const linha = await localizarCobranca(tx, cobranca.codigo);
+
+          if (linha === undefined) {
+            // Estado que o predicado do conjunto torna irrepresentável — a cobrança foi
+            // selecionada nesta mesma passada. O ramo existe porque a leitura é anulável.
+            throw new Error(`a cobrança ${cobranca.codigo} não foi alcançada na conferência`);
+          }
+
+          // `valorTotal` é o total DERIVADO pela visão (ADR-0022) — original mais a mora vigente —,
+          // e é ele que se esperava receber. Nada aqui calcula: a derivação é do banco.
+          return linha.valorTotal;
+        }),
+      // UMA unidade: a baixa, o evento da liquidação e — quando houve divergência — o segundo
+      // evento. Gravar a baixa sem o evento deixaria a trilha sem o fato que explica por que a
+      // cobrança está paga; gravar o evento sem a baixa anunciaria um pagamento que não existe.
+      gravarLiquidacao: async (cobranca, liquidacao) => {
+        const gravada = await banco.emUnidadeDeTrabalho(async (tx) => {
+          const aplicada = await liquidarPeloProvedor(tx, cobranca.codigo, {
+            pagoEm: liquidacao.pagoEm,
+            valorPago: emCadeiaDeDinheiro(liquidacao.valorPago),
+            dataDoCredito: liquidacao.dataDoCredito,
+            valorCreditado: emCadeiaDeDinheiro(liquidacao.valorCreditado),
+          });
+
+          if (aplicada !== 'LIQUIDADA') {
+            // O desfecho benigno: o provedor confirmou o que já era verdade. Nada mudou, e por
+            // isso nenhum evento nasce (ADR-0034).
+            return aplicada;
+          }
+
+          await registrarEventoBancario(tx, {
+            cobrancaId: cobranca.id,
+            tipo: 'COBRANCA_LIQUIDADA',
+            origem: 'CONFERENCIA',
+          });
+
+          if (liquidacao.divergente) {
+            // A baixa NÃO é impedida pela divergência (CA-11): o que ela provoca é um segundo
+            // evento, nunca uma recusa.
+            await registrarEventoBancario(tx, {
+              cobrancaId: cobranca.id,
+              tipo: 'DIVERGENCIA_DE_VALOR',
+              origem: 'CONFERENCIA',
+              valorInformado: emCadeiaDeDinheiro(liquidacao.valorPago),
+            });
+          }
+
+          return aplicada;
+        });
+
+        if (gravada === 'LIQUIDADA') {
+          // A contagem acontece DEPOIS de a unidade acima ter commitado, e só no desfecho que diz
+          // que a cobrança mudou de fato. O desfecho benigno — o provedor confirmando o que já era
+          // verdade — não é liquidação descoberta nesta passada, e contá-lo faria o resumo da
+          // rotina diária anunciar dinheiro que já estava anunciado.
+          liquidacoesDescobertas += 1;
+        }
+
+        return gravada;
+      },
+      gravarEstorno: async (cobranca) =>
+        await banco.emUnidadeDeTrabalho(async (tx) => {
+          const aplicado = await estornarLiquidacao(tx, cobranca.codigo);
+
+          if (aplicado === 'ESTORNADA') {
+            await registrarEventoBancario(tx, {
+              cobrancaId: cobranca.id,
+              tipo: 'LIQUIDACAO_ESTORNADA',
+              origem: 'CONFERENCIA',
+            });
+          }
+
+          return aplicado;
+        }),
+      gravarRevogacao: async (cobranca, motivo) =>
+        await banco.emUnidadeDeTrabalho(async (tx) => {
+          const aplicada = await revogarBoleto(tx, cobranca.codigo);
+
+          if (aplicada.desfecho === 'REVOGADO') {
+            await registrarEventoBancario(tx, {
+              cobrancaId: cobranca.id,
+              tipo: 'BOLETO_REVOGADO',
+              origem: 'CONFERENCIA',
+              // O motivo do provedor viaja INTACTO até a coluna de diagnóstico (RN-15).
+              diagnostico: motivo,
+            });
+          }
+
+          return aplicada.desfecho;
+        }),
+      concluir: async (contagens) => {
+        await banco.emUnidadeDeTrabalho(async (tx) => {
+          await concluirConferencia(tx, conferenciaId, contagens);
+        });
+      },
+    }),
+  );
+
+  if (desfecho !== undefined) {
+    logger.info(
+      {
+        idTarefa: tarefa.id,
+        fila: tarefa.fila,
+        empresaId,
+        conferenciaId,
+        ...desfecho,
+      },
+      'conferência bancária concluída',
+    );
+  }
+
+  return { desfecho, liquidacoesDescobertas };
 }
 
 /**
@@ -323,8 +442,20 @@ export async function processarConferenciaBancaria(
  *     reconhecimento, que é o percurso literal que o *at-least-once* nomeia.
  *
  * Na primeira ativação os dois valem, respectivamente, `0` e `1`.
+ *
+ * ---------------------------------------------------------------------------
+ * POR QUE ELE É PUBLICADO — e por que isso NÃO é um seam de teste
+ * ---------------------------------------------------------------------------
+ *
+ * O segundo chamador é **código de produção**: `conferirAsLiquidacoes`, em `./rotina-agendada.ts`,
+ * precisa do mesmo discriminador para separar *"outra passagem está trabalhando"* de *"sou eu, de
+ * novo, sobre a apuração que a minha ativação anterior deixou aberta"*. Nenhum arquivo de teste o
+ * consome, e a superfície pública não cresceu para que algo fosse **enxergado**: ela cresceu porque
+ * duas bordas fazem a mesma pergunta, e a resposta não pode ter duas definições — com duas cópias,
+ * endurecer uma (o dia em que a biblioteca de fila ganhar um terceiro contador) deixaria a outra
+ * para trás.
  */
-function ehReentrada(tarefa: TarefaDaConferenciaBancaria): boolean {
+export function ehReentrada(tarefa: OrigemDaConferencia): boolean {
   return tarefa.attemptsMade > 0 || tarefa.attemptsStarted > 1;
 }
 
@@ -338,7 +469,7 @@ function ehReentrada(tarefa: TarefaDaConferenciaBancaria): boolean {
  * seja a recusa de não-alcance.
  */
 async function comReentranciaBenigna(
-  tarefa: TarefaDaConferenciaBancaria,
+  tarefa: OrigemDaConferencia,
   logger: Logger,
   empresaId: string,
   conferenciaId: string,
@@ -356,7 +487,7 @@ async function comReentranciaBenigna(
     logger.info(
       {
         idTarefa: tarefa.id,
-        fila: FILA_DA_CONFERENCIA_BANCARIA,
+        fila: tarefa.fila,
         empresaId,
         conferenciaId,
         tentativa: tarefa.attemptsStarted,
@@ -379,7 +510,7 @@ async function concluirSemCertificado(
   banco: AcessoAoBanco,
   conferenciaId: string,
   logger: Logger,
-  tarefa: TarefaDaConferenciaBancaria,
+  tarefa: OrigemDaConferencia,
   empresaId: string,
 ): Promise<void> {
   try {
@@ -393,7 +524,7 @@ async function concluirSemCertificado(
   }
 
   logger.warn(
-    { idTarefa: tarefa.id, fila: FILA_DA_CONFERENCIA_BANCARIA, empresaId, conferenciaId },
+    { idTarefa: tarefa.id, fila: tarefa.fila, empresaId, conferenciaId },
     'conferência bancária concluída sem passada: a empresa não tem certificado vigente',
   );
 }

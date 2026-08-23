@@ -16,7 +16,7 @@
  *      e não apenas verificada.
  *
  * Falta a quinta, que **não mora neste arquivo**: `FORCE ROW LEVEL SECURITY` e as políticas
- * `USING`/`WITH CHECK` vivem em migração de segurança escrita à mão. São **dez**, e quem
+ * `USING`/`WITH CHECK` vivem em migração de segurança escrita à mão. São **onze**, e quem
  * acrescentar tabela aqui precisa saber qual delas emendar — a resposta é sempre *nenhuma*, e a
  * lista existe para dizer onde cada tabela já protegida foi protegida:
  *
@@ -44,14 +44,16 @@
  *   * `migracoes/0022_seguranca_identidade_no_provedor.sql` — a identidade da empresa perante o
  *     provedor (`identidade_no_provedor`);
  *   * `migracoes/0024_seguranca_entrega_da_noticia.sql` — o estado da entrega da notícia
- *     (`entrega_da_noticia`).
+ *     (`entrega_da_noticia`);
+ *   * `migracoes/0027_seguranca_execucao_de_rotina.sql` — o registro de execução das rotinas
+ *     agendadas (`execucao_de_rotina`).
  *
- * São dez porque **gerado e autoral nunca convivem no mesmo arquivo** — uma regeração futura da
+ * São onze porque **gerado e autoral nunca convivem no mesmo arquivo** — uma regeração futura da
  * gerada sobrescreveria o trecho autoral em silêncio. O que **obriga** a parceira autoral não é a
  * predecessora ser gerada: é **nascer tabela em `negocio`**, porque o gerador não emite `FORCE` nem
  * política. Toda migração que criar tabela aqui leva junto uma parceira autoral própria — nunca um
  * acréscimo à `0001`, à `0006`, à `0008`, à `0010`, à `0012`, à `0014`, à `0016`, à `0018`, à
- * `0022` ou à `0024`, que descrevem schemas já aplicados e são, portanto, imutáveis. ⚠️ A `0010` tem, além disso, o
+ * `0022`, à `0024` ou à `0027`, que descrevem schemas já aplicados e são, portanto, imutáveis. ⚠️ A `0010` tem, além disso, o
  * `DÉBITO COM GATILHO — D20` no ponto da emenda que ela já sofreu: **leia-o antes de qualquer
  * tentativa de tocá-la**.
  *
@@ -59,7 +61,7 @@
  * `0002_campos_do_arcabouco.sql` e a `0003_autorizacao.sql` são **geradas e não têm parceira** —
  * nenhuma das duas cria tabela, elas só alteram o que já existia —, e a `0004_desfecho_de_recusa.sql`
  * é **autoral avulsa**, sem gerada a quem se parear. Só a `0000`, a `0005`, a `0007`, a `0009`, a
- * `0011`, a `0013`, a `0015`, a `0017`, a `0021` e a `0023` criam tabela em `negocio`, e são
+ * `0011`, a `0013`, a `0015`, a `0017`, a `0021`, a `0023` e a `0026` criam tabela em `negocio`, e são
  * exatamente elas que têm parceira. Ler o gatilho como "toda gerada ganha uma parceira" produziria uma migração de segurança
  * vazia, sem `FORCE` nem política a declarar.
  *
@@ -2244,6 +2246,151 @@ export const entregaDaNoticia = negocio
         'entrega_da_noticia_situacao_chk',
         sql`${tabela.situacao} IN ('HABILITADA', 'EM_VALIDACAO', 'DESABILITADA')
             AND ${tabela.habilitada} = (${tabela.situacao} = 'HABILITADA')`,
+      ),
+    ],
+  )
+  .enableRLS();
+
+// ===========================================================================
+// O registro de execução das rotinas agendadas — o que já rodou, e com que efeito
+// ===========================================================================
+
+/**
+ * As rotinas agendadas que **geram registro** — três, e a contagem é conteúdo.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que só TRÊS, e não as cinco do agendador
+ * ---------------------------------------------------------------------------
+ *
+ * O agendador desta fatia dispara cinco passagens; duas delas — a vigilância e o expurgo — são
+ * **manutenção da própria maquinaria**, não ato sobre o dado do cliente. Gravá-las faria a tabela
+ * crescer por minuto de operação sem que a linha respondesse pergunta alguma de negócio, que é
+ * exatamente o defeito de 12 MB de histórico inútil medido no sistema antigo (§7.2 do tech spec).
+ *
+ * O enum é a rede: o valor que não estiver aqui **não é gravável**, e a decisão deixa de depender
+ * de quem escreve a chamada. Uma coluna `text` livre a devolveria para a aplicação, onde ela não
+ * tem como ser conferida.
+ *
+ * ---------------------------------------------------------------------------
+ * Os literais são declarados AQUI, e não importados de `@sysloc/contracts`
+ * ---------------------------------------------------------------------------
+ *
+ * Diferente de {@link tipoDeEventoBancario} e dos enums da régua, esta união **não é publicada pela
+ * API**: nenhuma rota a recebe e nenhuma a devolve — o histórico é lido pelo processo de trabalho e
+ * pelo expurgo. Um espelho no pacote de contratos seria uma segunda definição do mesmo fato sem
+ * consumidor que a obrigue a existir, e duas definições divergem (o débito D38/D40 é exatamente
+ * essa forma). Quando a superfície publicar o histórico, o literal sobe para lá e este enum passa a
+ * derivá-lo — nunca o contrário.
+ *
+ * ⚠️ **A âncora dos três rótulos é o `CT-1070`, da T4, e ela cobre o CONJUNTO — não a ordem.** O
+ * que aquele caso afirma contra `pg_enum` é *"o **conjunto** de valores de `negocio.rotina_agendada`
+ * é EXATAMENTE `{AVISO_DE_COBRANCA, ENCERRAMENTO_DE_CONTRATOS, CONFERENCIA_DE_LIQUIDACAO}`"*
+ * (`docs/specs/features/automacoes-agendadas/v1/tasks/T4.md`, §6.2 e §6.6) — **igualdade de
+ * conjunto, que é invariante sob reordenação**. Ela não vive na task que criou este enum por decisão
+ * declarada, e o vínculo fica escrito aqui para que a dependência seja auditável. Daí as duas
+ * cláusulas, e elas dizem coisas diferentes:
+ *
+ *   * **acrescentar ou remover rótulo REPROVA no `CT-1070`** — e obriga a movê-lo no mesmo diff, não
+ *     este docblock;
+ *   * **reordenar os rótulos não reprova em teste nenhum hoje.** E a ordem é conteúdo num enum do
+ *     PostgreSQL: `enumsortorder` decide comparação e `ORDER BY`, de modo que uma reordenação muda
+ *     semântica de consulta **com a suíte verde**. Quem reordenar precisa escrever a âncora que hoje
+ *     não existe — não confie neste vão sendo coberto.
+ */
+export const rotinaAgendada = negocio.enum('rotina_agendada', [
+  'AVISO_DE_COBRANCA',
+  'ENCERRAMENTO_DE_CONTRATOS',
+  'CONFERENCIA_DE_LIQUIDACAO',
+]);
+
+/**
+ * Uma linha por passagem que **teve o que fazer** — o histórico das automações agendadas.
+ *
+ * ---------------------------------------------------------------------------
+ * Não há `retirado_em`, e a ausência é a decisão (ADR-0014)
+ * ---------------------------------------------------------------------------
+ *
+ * O discriminador da ADR-0014 é **ser referenciável**, e o registro de execução não é: nada aponta
+ * para ele, nada o cita, e não há recirculação a tornar alcançável. Mesmo raciocínio já escrito por
+ * extenso para {@link envioDeCobranca}.
+ *
+ * ⚠️ **Diferente daquela, esta tabela TEM expurgo** — o PRD o exige (RN-16/CA-13), e é o índice
+ * abaixo que o serve. Expurgo é remoção de linha vencida, não marca de retirada: a linha some
+ * inteira, e por isso não há coluna a acrescentar.
+ *
+ * ---------------------------------------------------------------------------
+ * Não há `iniciada_em`/`concluida_em`, e a ausência também é decisão
+ * ---------------------------------------------------------------------------
+ *
+ * Uma linha aberta no início da passagem nasceria **antes de saber se há trabalho**, e a RN-15 diz
+ * o oposto: a passagem que não encontra nada a fazer não deixa registro. A trava de concorrência é
+ * a de cada rotina (RD-13), e não esta tabela — usá-la como trava faria a linha existir para
+ * responder duas perguntas incompatíveis.
+ *
+ * ---------------------------------------------------------------------------
+ * O RELÓGIO É O DO BANCO (ADR-0026)
+ * ---------------------------------------------------------------------------
+ *
+ * `ocorrida_em` é `timestamptz NOT NULL DEFAULT now()`, e nada compõe o instante na aplicação: o
+ * agendador corre no processo de trabalho, e um `new Date()` do processo faria o histórico ordenar
+ * por um relógio que ninguém confere. É `timestamptz` porque é **ato**, como
+ * `envio_de_cobranca.criado_em`.
+ *
+ * ---------------------------------------------------------------------------
+ * `resumo` é `jsonb` sem esquema, e a `CHECK` fixa só a ESPÉCIE
+ * ---------------------------------------------------------------------------
+ *
+ * O que cada rotina conta é próprio dela — quantos avisos saíram, quantos contratos encerraram,
+ * quantas liquidações conferiram —, e projetar isso em colunas obrigaria a tabela a mudar de forma
+ * a cada rotina nova. Mesma escolha, e mesma razão, de `entrega_da_noticia.motivo_diagnostico`.
+ *
+ * O que a `CHECK` recusa é a espécie errada: `jsonb` aceita `3`, `"texto"`, `true`, `null` e
+ * `[1,2]` como documentos válidos, e um leitor que fizesse `resumo->>'total'` sobre qualquer um
+ * deles receberia nulo em silêncio. `jsonb_typeof(resumo) = 'object'` torna os cinco
+ * irrepresentáveis. ⚠️ O sufixo é **`_chk`** — a convenção deste schema, medida em todas as demais
+ * restrições de verificação do arquivo; `_check` é o padrão do PostgreSQL para restrição anônima e
+ * não se usa aqui.
+ *
+ * ---------------------------------------------------------------------------
+ * UM índice, TRÊS usos
+ * ---------------------------------------------------------------------------
+ *
+ * `(empresa_id, rotina, ocorrida_em DESC)` serve à última execução de uma rotina (`LIMIT 1`), ao
+ * histórico recente dela (`LIMIT k`) **e** ao expurgo por idade — os três varrem o mesmo prefixo, e
+ * a ordem decrescente é conteúdo nas duas primeiras. É o molde que `envio_de_cobranca`,
+ * `certificado_do_provedor`, `emissao_em_lote`, `conferencia_bancaria` e `identidade_no_provedor` já
+ * usam. Um índice por uso seria três estruturas mantidas na escrita para responder ao mesmo prefixo.
+ */
+export const execucaoDeRotina = negocio
+  .table(
+    'execucao_de_rotina',
+    {
+      /**
+       * A chave é UUID, e não código legível: a execução **não tem série declarada** (ADR-0017) —
+       * ninguém a cita por número fora do sistema.
+       */
+      id: uuid('id').primaryKey().defaultRandom(),
+      empresaId: uuid('empresa_id')
+        .notNull()
+        .references(() => empresa.id),
+      /** Qual passagem produziu a linha. União fechada — ver {@link rotinaAgendada}. */
+      rotina: rotinaAgendada('rotina').notNull(),
+      /** O instante da passagem, pelo relógio do BANCO (ADR-0026) — ver o cabeçalho. */
+      ocorridaEm: timestamp('ocorrida_em', { withTimezone: true }).notNull().defaultNow(),
+      /** O que a passagem contou, na forma que a rotina escolher — objeto JSON, e nada além. */
+      resumo: jsonb('resumo').notNull(),
+    },
+    (tabela) => [
+      // O alvo da chave estrangeira composta de quem vier a apontar para o registro, e o que a
+      // guarda de cobertura de `src/catalogo.ts` cobra de toda tabela deste schema.
+      unique('execucao_de_rotina_id_empresa_key').on(tabela.id, tabela.empresaId),
+      // A espécie do documento, e só ela — ver o cabeçalho para os cinco valores que ela recusa.
+      check('execucao_de_rotina_resumo_chk', sql`jsonb_typeof(${tabela.resumo}) = 'object'`),
+      // A última execução, o histórico recente e o expurgo — um índice, três usos (ver o cabeçalho).
+      index('execucao_de_rotina_historico_idx').on(
+        tabela.empresaId,
+        tabela.rotina,
+        tabela.ocorridaEm.desc(),
       ),
     ],
   )

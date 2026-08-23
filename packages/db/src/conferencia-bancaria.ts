@@ -400,6 +400,24 @@ export async function lerConferenciaEmCurso(
  * índice recusou porque existe uma em andamento —, e ela levanta com nome, em vez de deixar a porta
  * devolver um corpo que ninguém apurou.
  */
+// DÉBITO COM GATILHO — D12 · F5/T6 · registrado 2026-08-23
+// (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege a função abaixo.)
+// O QUÊ: a conferência abandonada por **esgotamento das repetições** da tarefa fica irrecuperável.
+//        Quando não há mais ativação, não há reentrada: a linha fica `concluida_em IS NULL` para
+//        sempre, o índice único parcial recusa toda abertura seguinte, e nem a passagem diária nem o
+//        botão do Admin destravam — a recuperação exige intervenção direta no banco. A metade (a) do
+//        achado JÁ FECHOU na T6 (a reentrada refaz a passada); esta é a metade (b).
+// QUANDO FECHA: a fatia que decidir o **limiar de obsolescência** de uma conferência em andamento —
+//        é decisão de produto, não de implementação. Fecha por UM dos dois caminhos: janela de
+//        obsolescência aqui (recolher ou reabrir a que está aberta há mais que o limiar) **ou**
+//        varredura de recolhimento na rotina de manutenção (`MANUTENCAO`, que já corre por empresa).
+// POR QUE NÃO AGORA: as duas formas mudam comportamento de produção sem CA nem CT declarados, e a
+//        primeira toca o desenho que o cabeçalho deste arquivo registra por extenso — *"não há
+//        leitura antes da escrita"*, que existe porque a forma intuitiva perde a corrida. A T11, que
+//        recebeu o débito, é a task de **rede e escrituração** da fatia: a superfície da API congela
+//        nela, e improvisar limiar sem decisão registrada trocaria um estado travado raro por uma
+//        conferência recolhida no meio da passada.
+// ÍNDICE: docs/specs/features/automacoes-agendadas/v1/_run/run-report.md §2, D12
 export async function abrirConferencia(
   tx: TransactionSql,
   dados: ConferenciaNova,

@@ -1,0 +1,53 @@
+# Relógio da rotina `retomada-de-noticias` — T9 da fatia `automacoes-agendadas`.
+#
+# Esta é a FONTE VERSIONADA, posicionada por
+# `deploy/scripts/instalacao/instalar-unidades.sh` (ADR-0005). É ESTA unidade que
+# é habilitada no arranque, e não o `.service` que ela dispara.
+#
+# ---------------------------------------------------------------------------
+# O FUSO É DECLARADO
+# ---------------------------------------------------------------------------
+#
+# Sem o sufixo, o horário depende do fuso do SISTEMA, e hoje ele acerta POR
+# ACIDENTE — a máquina está em America/Sao_Paulo. Duas fontes de tempo para o
+# mesmo fato é o risco de maior probabilidade desta fatia: o dia em que o fuso
+# do host mudasse, a rotina passaria a correr em outra hora sem que nada
+# falhasse. O supervisor aceita o fuso no próprio `OnCalendar=` desde a 252;
+# medido nesta máquina: 255.4.
+#
+# ⚠️ O horário abaixo é o MESMO que `CADENCIA_DA_ROTINA` declara em
+# `@sysloc/contracts`, e `packages/shared/test/unidades-agendadas.spec.ts` amarra
+# as duas declarações: mudar aqui sem mudar lá (ou o contrário) REPROVA a suíte.
+# É deliberado — é o que impede o horário de existir em dois lugares livres para
+# andar separados.
+#
+# ---------------------------------------------------------------------------
+# A cadência é A_CADA_10_MIN — e a folga da retomada é derivada DELA, no contrato
+# ---------------------------------------------------------------------------
+
+[Unit]
+Description=Relógio da retomada de notícias bancárias
+Documentation=file:/opt/sysloc-backend/docs/specs/features/automacoes-agendadas/v1/tech_spec.md
+
+[Timer]
+OnCalendar=*-*-* *:00/10:00 America/Sao_Paulo
+
+# ⚠️ SEM `Persistent=`, e a ausência é a decisão (US-08).
+#
+# Recuperar um disparo de minuto não recupera nada: o próximo vem em seguida, e
+# a rotina é idempotente por predicado — o que ficou para trás é apanhado na
+# passagem seguinte. O que `Persistent=true` produziria aqui é uma ENXURRADA na
+# volta de uma indisponibilidade longa, disparando a rotina imediatamente para
+# cada janela perdida.
+
+# Precisão DECLARADA. Sem ela vale o padrão do supervisor, que é 1 min: ele
+# agrupa despertares para poupar energia, e num relógio de alta frequência isso
+# faz o disparo andar dentro da janela. Este servidor está sempre ligado, de modo
+# que o agrupamento não compra nada — e o custo dele é o horário deixar de ser o
+# que está escrito acima.
+AccuracySec=1s
+
+Unit=sysloc-rotina-retomada-de-noticias.service
+
+[Install]
+WantedBy=timers.target

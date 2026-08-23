@@ -92,6 +92,18 @@
  * |          |        | devolvendo as linhas. E as duas tabelas têm `relrowsecurity` E
  * |          |        | `relforcerowsecurity` verdadeiros. Nenhuma das consultas emitidas escreve
  * |          |        | filtro por `empresa_id`. |
+ * | CA-15    | CT-1073| Sob o contexto da empresa B, nenhuma linha de `negocio.execucao_de_rotina`
+ * |          |        | da empresa A é legível (contagem CRUA `0` e leitura vazia), atualizável ou
+ * |          |        | apagável (`rowCount` `0` nos dois comandos, e sem erro), e o `INSERT` com
+ * |          |        | `empresa_id` de A é recusado pelo `WITH CHECK` com `42501` e a mensagem da
+ * |          |        | política de linha — a recusa é da política NOMINAL, não de um `WHERE` da
+ * |          |        | aplicação. O CONTROLE POSITIVO sob A devolve as três execuções semeadas,
+ * |          |        | antes e depois das tentativas, campo a campo; sem contexto e com empresa
+ * |          |        | nula a leitura devolve vazio, sem erro. `relrowsecurity` E
+ * |          |        | `relforcerowsecurity` são verdadeiros, e existe EXATAMENTE UMA política,
+ * |          |        | chamada `execucao_de_rotina_isolamento_empresa`, `FOR ALL`, com `USING` e
+ * |          |        | `WITH CHECK` não nulos e iguais entre si. Nenhuma das consultas emitidas
+ * |          |        | escreve filtro por `empresa_id`. |
  *
  * ===========================================================================
  * Por que os predicados são funções, e não asserções soltas
@@ -2440,6 +2452,214 @@ async function lerEstadoDeRls(
 }
 
 // ===========================================================================
+// CT-1073 — o histórico das rotinas agendadas: `negocio.execucao_de_rotina`
+// ===========================================================================
+//
+// Ele não entra em `rodarBateria`, pela razão já registrada para o CT-207, para os CT-302/303/304,
+// para o CT-522 e para o CT-607: a bateria afirma o conjunto EXATO de predicados reprovados por
+// mutante do CT-007, e acrescentar predicados mudaria o esperado dos quatro mutantes — nenhum dos
+// quais tem relação com esta tabela.
+//
+// O que ele prova, e que nenhum caso anterior alcança, é a tabela da migração `0026`. O isolamento
+// desta suíte é auditado **por conjunto, e não por amostra**: relação de `negocio` sem entrada aqui
+// é relação sem prova comportamental de isolamento — a guarda de `catalogo.spec.ts` responde pela
+// presença das propriedades no catálogo, e este caso pelo COMPORTAMENTO delas sob dois contextos.
+//
+// A montagem não depende de cadastro nem de cobrança: a única referência da tabela é
+// `identidade.empresa`, e as duas empresas vêm da semente.
+
+/** As três execuções da empresa A — uma por rotina — e a que a tentativa cruzada usaria. */
+const EXECUCAO_DE_AVISO_EM_A = 'dddddddd-cccc-4000-8000-000000000001';
+const EXECUCAO_DE_ENCERRAMENTO_EM_A = 'dddddddd-cccc-4000-8000-000000000002';
+const EXECUCAO_DE_CONFERENCIA_EM_A = 'dddddddd-cccc-4000-8000-000000000003';
+const EXECUCAO_CRUZADA = 'dddddddd-cccc-4000-8000-000000000004';
+
+/**
+ * As três execuções da empresa A, uma por valor do enum `negocio.rotina_agendada`.
+ *
+ * As TRÊS estão presentes de propósito, e não uma só: o índice do histórico começa por
+ * `(empresa_id, rotina)`, e uma semeadura com um valor único deixaria sem exercício a leitura que
+ * separa uma rotina da outra dentro da mesma empresa — que é como o produto lê a tabela.
+ *
+ * Cada `resumo` traz uma chave DIFERENTE, e valores distintos entre si: com resumos iguais, o
+ * retrato do passo final ficaria verde também sobre uma linha que tivesse sido reescrita por uma
+ * escrita alheia com o conteúdo de outra. Mesma razão de `POLITICA_GRAVADA_EM_A` no CT-607.
+ */
+const EXECUCOES_DE_A = [
+  {
+    id: EXECUCAO_DE_AVISO_EM_A,
+    rotina: 'AVISO_DE_COBRANCA',
+    resumo: { avisadas: 7, semEndereco: 2 },
+  },
+  {
+    id: EXECUCAO_DE_ENCERRAMENTO_EM_A,
+    rotina: 'ENCERRAMENTO_DE_CONTRATOS',
+    resumo: { encerrados: 3 },
+  },
+  {
+    id: EXECUCAO_DE_CONFERENCIA_EM_A,
+    rotina: 'CONFERENCIA_DE_LIQUIDACAO',
+    resumo: { conferidas: 11, liquidadas: 5 },
+  },
+] as const;
+
+/**
+ * A leitura do histórico, **declarada como valor** para que a ausência de filtro por empresa seja
+ * CONFERIDA e não apenas prometida (ADR-0008) — mesmo mecanismo de {@link CONSULTAS_DE_NEGOCIO}, de
+ * {@link CONSULTA_DA_DERIVADA} e das duas consultas da régua.
+ */
+const CONSULTA_DAS_EXECUCOES =
+  'SELECT id, rotina::text AS rotina, resumo FROM negocio.execucao_de_rotina ORDER BY id';
+
+/** A contagem CRUA — `count(*)` sem projeção nenhuma, que é o que mede invisibilidade. */
+const CONTAGEM_DE_EXECUCOES = 'SELECT count(*)::integer AS total FROM negocio.execucao_de_rotina';
+
+/** Uma execução como o retrato a compara — a linha inteira, e não campo a campo. */
+interface LinhaDeExecucao {
+  readonly id: string;
+  readonly rotina: string;
+  readonly resumo: Record<string, number>;
+}
+
+/** Semeia, sob o contexto da PRÓPRIA empresa, as três execuções de A. */
+async function semearExecucoesDeA(acesso: AcessoAoBanco): Promise<void> {
+  await contextoDeTenant.executarCom(CONTEXTO_DE_A, async () => {
+    await acesso.emUnidadeDeTrabalho(async (tx) => {
+      for (const execucao of EXECUCOES_DE_A) {
+        // `ocorrida_em` fica FORA da instrução de propósito: o instante nasce do `DEFAULT now()` do
+        // banco (ADR-0026), e passá-lo daqui faria a semeadura compor pela aplicação exatamente o
+        // que o esquema tira dela.
+        await tx`
+          INSERT INTO negocio.execucao_de_rotina (id, empresa_id, rotina, resumo)
+          VALUES (${execucao.id}, ${EMPRESA_A.id},
+                  ${execucao.rotina}::negocio.rotina_agendada,
+                  ${tx.json(execucao.resumo)})
+        `;
+      }
+    });
+  });
+}
+
+/**
+ * Remove as linhas descartáveis do histórico, **pelo identificador** — nunca por `empresa_id`.
+ *
+ * Corre nos DOIS contextos, porque com o isolamento íntegro cada linha só é alcançável pelo contexto
+ * da própria empresa.
+ */
+async function limparExecucoes(cadeiaDeConexao: string): Promise<void> {
+  const acesso = abrir(cadeiaDeConexao);
+  try {
+    for (const contexto of [CONTEXTO_DE_A, CONTEXTO_DE_B]) {
+      await contextoDeTenant.executarCom(contexto, async () => {
+        await acesso.emUnidadeDeTrabalho(async (tx) => {
+          for (const id of [...EXECUCOES_DE_A.map((execucao) => execucao.id), EXECUCAO_CRUZADA]) {
+            await tx`DELETE FROM negocio.execucao_de_rotina WHERE id = ${id}`;
+          }
+        });
+      });
+    }
+  } finally {
+    await acesso.encerrar();
+  }
+}
+
+/** Lê o histórico sob o contexto dado, pela consulta DECLARADA acima. */
+async function lerExecucoes(
+  acesso: AcessoAoBanco,
+  contexto: Contexto | typeof SEM_CONTEXTO,
+): Promise<LinhaDeExecucao[]> {
+  return noContexto(contexto, async () =>
+    acesso.emUnidadeDeTrabalho(async (tx) => {
+      const linhas = await tx.unsafe<LinhaDeExecucao[]>(CONSULTA_DAS_EXECUCOES);
+      return linhas.map((linha) => ({ ...linha }));
+    }),
+  );
+}
+
+/** A contagem CRUA sob o contexto dado — o que mede invisibilidade sem passar por projeção. */
+async function contarExecucoes(
+  acesso: AcessoAoBanco,
+  contexto: Contexto | typeof SEM_CONTEXTO,
+): Promise<number> {
+  return noContexto(contexto, async () =>
+    acesso.emUnidadeDeTrabalho(async (tx) => {
+      const [total] = await tx.unsafe<{ total: number }[]>(CONTAGEM_DE_EXECUCOES);
+      return total?.total ?? -1;
+    }),
+  );
+}
+
+/**
+ * As duas escritas cruzadas que **alcançam linha existente da outra empresa** — e não devem alcançar
+ * nenhuma.
+ *
+ * São `UPDATE`/`DELETE` porque é o par que a política recusa **sem erro**: `USING` não casa a linha,
+ * o comando afeta zero linhas e o cliente não recebe exceção alguma. A ausência de exceção é
+ * conteúdo — um caso que só afirmasse "levantou" ficaria verde sobre um banco que recusasse tudo.
+ *
+ * O produto **não** atualiza esta tabela em lugar nenhum (a linha é fato consumado), mas **apaga**:
+ * o expurgo da RN-16 remove a execução vencida. A perna do `DELETE` é, portanto, a que descreve uma
+ * operação real do produto correndo sob o contexto errado — e é a que ficaria perigosa sem política:
+ * um expurgo sem contexto varreria o histórico de todas as empresas.
+ */
+const ESCRITAS_CRUZADAS_NO_HISTORICO: readonly { readonly nome: string; readonly sql: string }[] = [
+  {
+    nome: 'execucao/update',
+    sql:
+      `UPDATE negocio.execucao_de_rotina SET resumo = '{"avisadas": 0}'::jsonb ` +
+      `WHERE id = '${EXECUCAO_DE_AVISO_EM_A}'`,
+  },
+  {
+    nome: 'execucao/delete',
+    sql: `DELETE FROM negocio.execucao_de_rotina WHERE id = '${EXECUCAO_DE_AVISO_EM_A}'`,
+  },
+];
+
+/** O retrato do histórico de A, escrito por extenso — é ele que o passo final compara. */
+const HISTORICO_INTACTO_DE_A: readonly LinhaDeExecucao[] = EXECUCOES_DE_A.map((execucao) => ({
+  id: execucao.id,
+  rotina: execucao.rotina,
+  resumo: { ...execucao.resumo },
+}));
+
+/** O que o catálogo responde sobre UMA política de linha — o nome e as DUAS expressões. */
+interface PoliticaDeIsolamento {
+  readonly nome: string;
+  readonly comando: string;
+  readonly usando: string | null;
+  readonly comVerificacao: string | null;
+}
+
+/**
+ * Lê as políticas de uma tabela de `negocio`, pelo NOME com que elas existem no catálogo.
+ *
+ * O nome é afirmado por extenso, e não composto por interpolação a partir do nome da tabela:
+ * derivá-lo faria a asserção aceitar qualquer convenção que o autor da migração tivesse escolhido,
+ * e é o nome que aparece num `pg_policies` de diagnóstico. Mesmo desenho de
+ * `isolamento-bancario.spec.ts`.
+ */
+async function lerPoliticasDe(
+  acesso: AcessoAoBanco,
+  contexto: Contexto,
+  tabela: string,
+): Promise<PoliticaDeIsolamento[]> {
+  return contextoDeTenant.executarCom(contexto, () =>
+    acesso.emUnidadeDeTrabalho(async (tx) => {
+      const linhas = await tx<PoliticaDeIsolamento[]>`
+        SELECT policyname AS nome,
+               cmd        AS comando,
+               qual       AS usando,
+               with_check AS "comVerificacao"
+          FROM pg_catalog.pg_policies
+         WHERE schemaname = 'negocio' AND tablename = ${tabela}
+         ORDER BY policyname
+      `;
+      return linhas.map((linha) => ({ ...linha }));
+    }),
+  );
+}
+
+// ===========================================================================
 // A bateria — a MESMA função de conferência para o caso e para o mutante
 // ===========================================================================
 
@@ -4197,6 +4417,146 @@ describe('isolamento multi-tenant garantido pelo banco', () => {
         await limparRegua(banco.cadeiaConexao);
         await limparCobrancas(banco.cadeiaConexao);
         await limparCadastros(banco.cadeiaConexao);
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-1073 — o histórico de execuções de uma empresa é inalcançável sob o contexto da outra',
+    async () => {
+      await limparExecucoes(banco.cadeiaConexao);
+      const acesso = abrir(banco.cadeiaConexao);
+      let acessoVirgem: AcessoAoBanco | undefined;
+
+      try {
+        // A ausência de filtro por empresa é INVARIANTE (ADR-0008), e por isso é conferida no
+        // próprio texto das consultas que o caso emite — mesmo mecanismo do CT-003, do CT-302, do
+        // CT-522 e do CT-607. Quem escopa a leitura é a política da tabela, e nada mais.
+        for (const consulta of [CONSULTA_DAS_EXECUCOES, CONTAGEM_DE_EXECUCOES]) {
+          expect(consulta.toLowerCase()).not.toContain('empresa_id');
+          expect(consulta.toLowerCase()).not.toContain('where');
+        }
+
+        // --- Passo 1: A grava as PRÓPRIAS linhas, sob o próprio contexto --------------------
+        //
+        // Nunca por conexão privilegiada — `conexaoSuperusuaria` de `banco-efemero.ts` ignora RLS, e
+        // o caso inteiro passaria vazio — e nunca com `app.empresa_id` fixado por fora da barreira:
+        // o caminho é o real da porta, `executarCom` na borda e `SET LOCAL` por transação.
+        await semearExecucoesDeA(acesso);
+
+        // O CONTROLE POSITIVO vem AQUI, antes de qualquer zero: sem ele, uma tabela vazia — ou
+        // inexistente — produziria exatamente os mesmos zeros dos passos seguintes, e o caso ficaria
+        // verde sem provar isolamento nenhum.
+        expect(await lerExecucoes(acesso, CONTEXTO_DE_A)).toEqual(HISTORICO_INTACTO_DE_A);
+        expect(await contarExecucoes(acesso, CONTEXTO_DE_A)).toBe(EXECUCOES_DE_A.length);
+
+        // A reserva virgem é aberta DEPOIS do preparo, para que a conexão dela nunca tenha atendido
+        // outra unidade — padrão `acessoVirgem` do CT-005, do CT-302, do CT-522 e do CT-607.
+        acessoVirgem = abrir(banco.cadeiaConexao);
+
+        // --- Passo 2: sob B, a contagem CRUA é zero ------------------------------------------
+        //
+        // `count(*)` sem projeção nenhuma: é a forma que mede invisibilidade sem passar por coluna,
+        // e a que continuaria contando se a política deixasse de valer.
+        expect(await contarExecucoes(acesso, CONTEXTO_DE_B)).toBe(0);
+        expect(await lerExecucoes(acesso, CONTEXTO_DE_B)).toEqual([]);
+
+        // --- Passo 3: sob B, `UPDATE` e `DELETE` nas linhas de A afetam ZERO linhas -----------
+        //
+        // Sem erro: `USING` não casa a linha, e o comando simplesmente não a alcança. A ausência de
+        // exceção é conteúdo — um caso que só afirmasse "levantou" ficaria verde sobre um banco que
+        // recusasse tudo, inclusive o legítimo.
+        const efeitoDasEscritasCruzadas = await contextoDeTenant.executarCom(
+          CONTEXTO_DE_B,
+          async () =>
+            acesso.emUnidadeDeTrabalho(async (tx) => {
+              const linhas: string[] = [];
+              for (const escrita of ESCRITAS_CRUZADAS_NO_HISTORICO) {
+                const resultado = await tx.unsafe(escrita.sql);
+                linhas.push(`${escrita.nome}: ${resultado.count} linha(s)`);
+              }
+              return linhas;
+            }),
+        );
+        expect(efeitoDasEscritasCruzadas).toEqual([
+          'execucao/update: 0 linha(s)',
+          'execucao/delete: 0 linha(s)',
+        ]);
+
+        // --- Passo 4: sob B, `INSERT` com `empresa_id` de A é RECUSADO pelo banco -------------
+        //
+        // `42501` (`insufficient_privilege`) com a mensagem da política de linha: a recusa vem do
+        // `WITH CHECK`, e não de validação de aplicação nenhuma. A mensagem é afirmada junto do
+        // código porque `42501` sozinho também sai de uma concessão faltando — e a `0027` não emite
+        // `GRANT` algum, de modo que a confusão entre as duas causas seria fácil aqui.
+        const insercaoCruzada = await tentar(() =>
+          contextoDeTenant.executarCom(CONTEXTO_DE_B, () =>
+            acesso.emUnidadeDeTrabalho(
+              (tx) => tx`
+                INSERT INTO negocio.execucao_de_rotina (id, empresa_id, rotina, resumo)
+                VALUES (${EXECUCAO_CRUZADA}, ${EMPRESA_A.id},
+                        ${'AVISO_DE_COBRANCA'}::negocio.rotina_agendada,
+                        ${tx.json({ invasor: 1 })})
+              `,
+            ),
+          ),
+        );
+        expect(insercaoCruzada.ok).toBe(false);
+        expect(sqlstate(insercaoCruzada.ok ? undefined : insercaoCruzada.erro)).toBe('42501');
+        expect(mensagemDo(insercaoCruzada.ok ? undefined : insercaoCruzada.erro)).toContain(
+          'row-level security policy',
+        );
+
+        // --- Passo 5: sob A, TUDO permanece exatamente como foi gravado -----------------------
+        //
+        // O retrato inteiro por igualdade, e não campo a campo: é o objeto completo que discrimina
+        // uma escrita cruzada que tivesse alcançado a linha. Ele vem DEPOIS das tentativas — "zero
+        // linhas afetadas" não distingue "não alcançou" de "alcançou e o desfazimento apagou", e
+        // este passo é quem fecha essa terceira leitura.
+        expect(await lerExecucoes(acesso, CONTEXTO_DE_A)).toEqual(HISTORICO_INTACTO_DE_A);
+        expect(await contarExecucoes(acesso, CONTEXTO_DE_A)).toBe(EXECUCOES_DE_A.length);
+
+        // --- Passo 6: sem contexto e com empresa nula, VAZIO — e sem erro ---------------------
+        //
+        // O que impede o caso de ficar verde sobre uma tabela que ignorasse `empresa_id` e
+        // devolvesse tudo para todos: contexto ausente resulta em vazio, nunca em dado alheio.
+        expect(await contarExecucoes(acessoVirgem, SEM_CONTEXTO)).toBe(0);
+        expect(await contarExecucoes(acesso, CONTEXTO_SEM_EMPRESA)).toBe(0);
+
+        // O companheiro POSITIVO, lido DEPOIS dos vazios e na mesma reserva: sem ele, "vazio" não
+        // distingue isolamento de banco sem dado.
+        expect(await contarExecucoes(acesso, CONTEXTO_DE_A)).toBe(EXECUCOES_DE_A.length);
+
+        // --- Passo 7: RLS habilitada E FORÇADA -----------------------------------------------
+        //
+        // O comportamento acima ficaria verde sem `FORCE`, porque `sysloc_app` não é dono da tabela.
+        // É esta asserção que impede o isolamento de existir só para quem não é dono — ADR-0008,
+        // Cons: "suíte que conecte com o papel errado fica verde sem provar nada". As DUAS colunas,
+        // nunca só `relrowsecurity`.
+        expect(await lerEstadoDeRls(acesso, CONTEXTO_DE_A, ['execucao_de_rotina'])).toEqual([
+          { tabela: 'execucao_de_rotina', habilitada: true, forcada: true },
+        ]);
+
+        // --- Passo 8: a política existe pelo NOME EXATO, com `USING` e `WITH CHECK` -----------
+        //
+        // A contagem vem primeiro: duas políticas na mesma tabela seriam OU lógico entre elas, e a
+        // segunda poderia alargar o que a primeira restringe sem que a inspeção da primeira
+        // acusasse. E as duas expressões são afirmadas NÃO NULAS antes de comparadas — um
+        // `WITH CHECK` ausente é SUBSTITUÍDO pelo `USING` em silêncio, e `null === null` passaria
+        // por vacuidade.
+        const politicas = await lerPoliticasDe(acesso, CONTEXTO_DE_A, 'execucao_de_rotina');
+        expect(politicas).toHaveLength(1);
+        const politica = politicas[0];
+        expect(politica?.nome).toBe('execucao_de_rotina_isolamento_empresa');
+        expect(politica?.comando).toBe('ALL');
+        expect(typeof politica?.usando).toBe('string');
+        expect(typeof politica?.comVerificacao).toBe('string');
+        expect(politica?.usando).toBe(politica?.comVerificacao);
+      } finally {
+        await acessoVirgem?.encerrar();
+        await acesso.encerrar();
+        await limparExecucoes(banco.cadeiaConexao);
       }
     },
     LIMITE_DO_CASO_MS,

@@ -1,7 +1,8 @@
 /**
- * As **quatro rotas da automação de cobrança** — `GET` e `PUT /v1/automacao-de-cobranca`, para ler a
- * régua que a empresa configurou e definir a que passa a valer; e o `GET` e o `POST` de
- * `.../cobrancas/:codigo/avisos`, para ver o que já saiu e disparar um aviso agora.
+ * As **cinco rotas da automação de cobrança** — `GET` e `PUT /v1/automacao-de-cobranca`, para ler a
+ * régua que a empresa configurou e definir a que passa a valer; o `GET` e o `POST` de
+ * `.../cobrancas/:codigo/avisos`, para ver o que já saiu e disparar um aviso agora; e o
+ * `GET .../rotinas`, que publica ao Admin o **estado das rotinas agendadas** da empresa dele.
  *
  * ---------------------------------------------------------------------------
  * O CAMINHO sai da lista fixa de áreas de tela, e não de uma taxonomia inventada
@@ -17,7 +18,7 @@
  * que apagar, só o que definir.
  *
  * ---------------------------------------------------------------------------
- * AS QUATRO ROTAS MORAM NA MESMA CLASSE, e o disparo PRECISA morar aqui
+ * AS CINCO ROTAS MORAM NA MESMA CLASSE, e o disparo PRECISA morar aqui
  * ---------------------------------------------------------------------------
  *
  * Ela se chama `AutomacaoDeCobrancaController`, e não `PoliticaDeAvisoController`, porque o
@@ -34,13 +35,15 @@
  *
  * `@ExigeChave(AREA_DA_AUTOMACAO_DE_COBRANCA)` na classe vale para os manipuladores que não declaram
  * nada próprio — a guarda lê o metadado com `getAllAndOverride`, e a declaração da classe é o que ela
- * encontra. Três das quatro rotas são assim, e declarar quatro vezes o mesmo valor criaria quatro
- * lugares para esquecer um.
+ * encontra. **Quatro** das cinco rotas são assim, e declarar quatro vezes o mesmo valor criaria
+ * quatro lugares para esquecer um.
  *
- * **Três não exigem chave de ação, e a ausência é decisão registrada** (§11.2 da tech spec): ler e
- * definir a configuração da própria imobiliária são atos operacionais do cadastro, e **consultar o
+ * **Quatro não exigem chave de ação, e a ausência é decisão registrada** (§11.2 da tech spec): ler e
+ * definir a configuração da própria imobiliária são atos operacionais do cadastro, **consultar o
  * histórico não é ato sensível** (RN-12) — é leitura do que já aconteceu, e negá-la a quem tem a área
- * esconderia dele por que um aviso não saiu.
+ * esconderia dele por que um aviso não saiu — e **ler o estado das rotinas é leitura pela mesma
+ * régua**: ele diz por que um aviso não saiu, um degrau acima. Governá-lo por chave de ação exigiria
+ * uma chave nova, e o catálogo da ADR-0011 é **fechado** em 10 telas × 7 ações.
  *
  * O **disparo manual** é o único ato sensível da área, e ele declara
  * `@ExigeChaves(AREA_DA_AUTOMACAO_DE_COBRANCA, ACAO_DE_ENVIO_MANUAL)` — o decorador **plural**, com a
@@ -73,6 +76,39 @@
  * cliente foi criar — mesma escolha, e mesma razão, das transições de
  * {@link ../cobrancas/cobranca.controller.js}. E responde `200` **inclusive quando a entrega falhou**:
  * o desfecho viaja no corpo, e a razão está no serviço.
+ *
+ * ---------------------------------------------------------------------------
+ * A LEITURA DAS ROTINAS mora AQUI, e não sob `/saude` nem em caminho próprio
+ * ---------------------------------------------------------------------------
+ *
+ * `GET .../rotinas` é a **última rota que este repositório publica antes do congelamento da
+ * superfície**, e o lugar dela é decisão de três partes:
+ *
+ *   1. **Caminho próprio exigiria chave nova.** O catálogo da ADR-0011 é fechado — 10 telas e 7 ações
+ *      —, e nenhuma delas se chama "automações". Uma área nova é alteração de catálogo, que esta
+ *      fatia não tem mandato para fazer.
+ *   2. **`/saude` é de outra natureza.** `apps/api/src/saude/` existe, é `@RotaPublica()` e responde
+ *      a liveness/readiness de **infraestrutura**, ao supervisor do sistema operacional. O estado das
+ *      rotinas é dado de **negócio**, por empresa, sob sessão e sob política de linha. Mesma palavra,
+ *      naturezas opostas: pendurá-lo ali daria a quem não tem sessão o retrato operacional de toda
+ *      empresa do SaaS.
+ *   3. **É aqui que a régua já mora**, e a régua é a rotina de maior cadência do roster — quem
+ *      administra a automação de cobrança é exatamente quem precisa saber se ela passou.
+ *
+ * A resposta é `{ itens }` e **nunca `404`**: a empresa que ainda não teve passagem alguma recebe
+ * `200` com `ultimaExecucao: null`, `resumo: null` e `historicoRecente: []`, no mesmo molde da
+ * leitura da política — e a leitura **não cria linha alguma**. *"Ainda não rodou"* e *"não existe"*
+ * são a mesma coisa publicada.
+ *
+ * ⚠️ **Não há corpo, não há esquema de entrada e não há parâmetro de consulta**, e a tríplice ausência
+ * é conteúdo: a empresa vem da sessão, e **nunca** do pedido (ADR-0008/ADR-0024). Um `?empresaId=` na
+ * cadeia de consulta é simplesmente ignorado pelo roteador porque **esta rota não lê parâmetro
+ * nenhum** — não há por onde ele entrar, que é mais forte do que haver um ramo que o recuse.
+ *
+ * ⚠️ **A saída é contrato ABERTO** (`z.object`), e é isso que torna reversível a decisão D3 da fatia
+ * — publicar **uma** leitura em vez de duas. Campo novo no estado nasce sem quebrar cliente
+ * publicado; uma segunda rota publicada "por precaução" congelaria o que não se provou necessário, e
+ * essa direção **não** é reversível depois do congelamento.
  *
  * ---------------------------------------------------------------------------
  * A UNIDADE DE TRABALHO ABRE AQUI, na borda (decisão D1)
@@ -166,11 +202,13 @@ import {
 import {
   type EnvioDeCobranca,
   ESQUEMA_DO_CODIGO_DE_COBRANCA,
+  type EstadoDasRotinas,
   envelopeDeLista,
   esquemaDaJanela,
   esquemaDaPoliticaDeAviso,
   esquemaDaPoliticaDeAvisoNova,
   esquemaDoEnvioDeCobranca,
+  esquemaDoEstadoDasRotinas,
   type PoliticaDeAviso,
 } from '@sysloc/contracts';
 import type { AcessoAoBanco } from '@sysloc/db';
@@ -250,6 +288,20 @@ const ENTIDADE_DA_TRILHA_DO_AVISO = 'envio_de_cobranca';
  * que o disparo faz.
  */
 const SEGMENTO_DOS_AVISOS = 'cobrancas/:codigo/avisos';
+
+/**
+ * O segmento da leitura do estado das rotinas — escrito **uma vez**, e exportado.
+ *
+ * Ele é exportado, ao contrário de {@link SEGMENTO_DOS_AVISOS}, porque a **âncora de superfície** o
+ * consome: `apps/api/test/cobertura-de-autorizacao.e2e.spec.ts` compõe o par auditado a partir do dono
+ * do segmento, e não de uma cadeia crua — um segmento que mudasse aqui sem passar por lá faria a
+ * âncora procurar um caminho que a aplicação não publica, e reprovar dizendo *"a rota sumiu"* quando
+ * ela só mudou de nome. É a mesma escolha, e a mesma razão, de `SEGMENTO_DA_ENTREGA_DA_NOTICIA`.
+ *
+ * ⚠️ Ele **não colide** com `SEGMENTO_DOS_AVISOS` nem com o recurso singular da raiz: `rotinas` é
+ * literal, e o roteador do arcabouço casa literal antes de parâmetro.
+ */
+export const SEGMENTO_DAS_ROTINAS = 'rotinas';
 
 /** O envelope do histórico, derivado do esquema do item — nunca redigitado (ADR-0017). */
 const ESQUEMA_DA_PAGINA_DE_ENVIOS = envelopeDeLista(esquemaDoEnvioDeCobranca);
@@ -434,5 +486,41 @@ export class AutomacaoDeCobrancaController {
 
       return registrado;
     });
+  }
+
+  @Get(SEGMENTO_DAS_ROTINAS)
+  // NADA é declarado neste método, e a ausência é a decisão: ler o estado das rotinas é leitura pela
+  // mesma régua do histórico de avisos (RN-12), e a exigência da classe — a área — é o que a guarda
+  // encontra. ⚠️ Declarar aqui `@ExigeChave(...)` seria SUBSTITUIÇÃO, e não união
+  // (`getAllAndOverride`): com a área repetida, criaria um segundo lugar para esquecê-la; com uma
+  // ação, apagaria a área em silêncio e este manipulador exigiria MENOS que a classe dele. O catálogo
+  // é fechado (ADR-0011) e nenhuma chave nasce para esta rota.
+  @ApiOperation({
+    summary: 'Lê o estado das rotinas agendadas da empresa',
+    description:
+      'Devolve, em `itens`, **uma entrada por rotina publicada** — a régua de aviso, o encerramento ' +
+      'de contratos e a conferência de liquidação —, sempre as três e sempre na mesma ordem. Cada ' +
+      'entrada traz a `cadencia` declarada, a `ultimaExecucao` que produziu efeito, o `resumo` ' +
+      'daquela passagem, a `proximaEsperada`, se ela está `atrasada` e o `impedimento` corrente — o ' +
+      'que está na alçada do Admin e ele consegue resolver sozinho (régua desligada, avisos ' +
+      'recusados pelo provedor, integração bancária pendente), ou `null` quando nada impede. O ' +
+      '`historicoRecente` traz as últimas passagens daquela rotina, da mais recente para a mais ' +
+      'antiga. A empresa que ainda não teve passagem alguma recebe `200` com `ultimaExecucao` e ' +
+      '`resumo` nulos e `historicoRecente` vazio — **nunca `404`** —, e a leitura **não cria linha ' +
+      'alguma**. O alcance é a empresa **da sessão**: não há corpo, não há parâmetro de consulta e ' +
+      'a empresa nunca é aceita pelo pedido.',
+  })
+  @ApiOkResponse({
+    description: 'O estado corrente das rotinas publicadas, na ordem do roster.',
+    schema: esquemaPublicado(esquemaDoEstadoDasRotinas, 'output'),
+  })
+  @ApiUnauthorizedResponse({ schema: esquemaDoErro([CodigoErro.NAO_AUTENTICADO]) })
+  @ApiForbiddenResponse({ schema: esquemaDoErro([CodigoErro.ACESSO_NEGADO]) })
+  async lerRotinas(@Req() requisicao: FastifyRequest): Promise<EstadoDasRotinas> {
+    return await sobContextoDaSessao(
+      this.banco,
+      requisicao,
+      async (tx) => await this.automacao.lerEstadoDasRotinas(tx),
+    );
   }
 }

@@ -450,6 +450,9 @@ function montarAmbiente(arranjo: ArranjoDaReemissao): AmbienteDaReemissao {
       arquivos.delete(codigo);
       efeitos.push('ARQUIVO_APAGADO');
     },
+    // A reemissão apaga UM boleto, pelo código; o expurgo do acervo é rotina agendada e não tem o
+    // que fazer aqui. Levantar nomeando é o que faz uma passada que o chamasse reprovar no ponto.
+    expurgarBoletosVencidos: operacaoNaoEsperada('expurgarBoletosVencidos'),
   };
 
   const trabalho: TrabalhoDaReemissao = {

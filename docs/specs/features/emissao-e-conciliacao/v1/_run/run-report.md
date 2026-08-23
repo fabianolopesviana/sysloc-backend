@@ -544,7 +544,33 @@ Contagem por pacote ao fim da T5: `@sysloc/contracts` **389** (era 356) · `@sys
 - **O que fazer:** renomear um dos dois para o que ele de fato mede (o da leitura do material é o teto
   da **abertura do `.pfx`**, não de uma ida ao provedor). **Intervenção dirigida.**
 
-### D26 · baixo · project_pattern · T9 · executor
+### ~~D26~~ · baixo · project_pattern · T9 · executor — ✅ **FECHADO NA T7 da fatia `automacoes-agendadas`**
+
+> **Fechado em 2026-08-23**, pela T7 da fatia `automacoes-agendadas/v1`. O gatilho literal — *"a **F5**,
+> que traz o agendamento"* — disparou, e o marcador saiu do cabeçalho de
+> `packages/cobranca-bancaria/src/guarda-de-boletos.ts` **no mesmo commit**, junto com a linha do
+> índice do `CLAUDE.md` (§3-B, as duas pontas).
+>
+> **O que entrou**: `expurgarBoletosVencidos(diasDeRetencao)` na interface `GuardaDeBoletos` e no
+> adaptador, varrendo o diretório-base conferido **por idade do arquivo** — sem consultar banco e sem
+> receber código de cobrança (ADR-0025) —, e a rotina `MANUTENCAO_DO_ACERVO`
+> (`apps/worker/src/tarefas/manutencao-do-acervo.ts`), que a provoca **sem tenant** (ADR-0031). O
+> prazo é **90 dias** (decisão A1, §7.5 do tech spec daquela fatia), declarado por constante na
+> composição raiz e entregue por parâmetro.
+>
+> **Três divergências declaradas em relação ao "o que fazer" original**, todas medidas:
+> (i) o critério **não** é o estado da cobrança, e sim a idade do arquivo — ligar o expurgo ao estado
+> faria `@sysloc/cobranca-bancaria` consultar dado, contra a ADR-0025, e a perda é inofensiva porque o
+> boleto é fato recuperável junto ao provedor (a mesma razão que o próprio débito registra);
+> (ii) a **prova exigida** foi entregue em Vitest, e não em shell — o invariante é observável chamando
+> código sobre um diretório temporário real, e a `.claude/rules/testing-stack.md` põe esse caso na
+> frente TypeScript; o companheiro negativo que o débito pedia está lá, na forma do boleto no prazo que
+> **sobrevive** à passagem (`CT-1087`, e o `CT-1088` no percurso da fila);
+> (iii) a contenção ganhou um degrau que o débito não previa — **vínculo simbólico sob a base é
+> recusado** com `ErroDeBoletoForaDaGuarda`, e nada é removido nessa passagem —, porque o expurgo é a
+> primeira operação da guarda que **descobre** nomes em vez de derivá-los do código.
+
+O registro original segue abaixo, preservado.
 
 - **Onde:** `packages/cobranca-bancaria/src/guarda-de-boletos.ts` (cabeçalho, junto do docblock do
   módulo) — marcador `DÉBITO COM GATILHO — D26 · F4/T9`
@@ -666,7 +692,18 @@ Contagem por pacote ao fim da T5: `@sysloc/contracts` **389** (era 356) · `@sys
   inexistente** — sem essa última frase, a rodada seguinte gasta tempo "endurecendo" com `realpath` e
   quebra `gravar`.
 
-### D32 · BAIXO · project_pattern · T9 · Tech Review (escrituração de débito)
+### ~~D32~~ · BAIXO · project_pattern · T9 · Tech Review (escrituração de débito) — ✅ **FECHADO NA T7 da fatia `automacoes-agendadas`**
+
+> **Fechado em 2026-08-23**, junto do `D26` de que ele dependia — o `Onde` dele era o campo `O QUÊ`
+> daquele marcador, que saiu no mesmo commit.
+>
+> **O risco que ele nomeava não se materializou, e a razão é de desenho**: `expurgarBoletosVencidos`
+> varre **por idade**, sem filtro de nome, de modo que o intermediário `.parcial` órfão é alcançado
+> pela mesma passagem que alcança o boleto vencido — não há varredura de `COB-*.pdf` a corrigir. A
+> segunda ponta que ele pedia foi paga onde ela é lida: o comentário de `gravar` passou a dizer *"não
+> sobrevive à falha CAPTURADA"* e a nomear quem alcança o órfão da morte do processo.
+
+O registro original segue abaixo, preservado.
 
 - **Onde:** `packages/cobranca-bancaria/src/guarda-de-boletos.ts` — campo `O QUÊ` do marcador
   `DÉBITO COM GATILHO — D26 · F4/T9`, e a §2/D26 acima

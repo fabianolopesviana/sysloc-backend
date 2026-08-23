@@ -1,5 +1,5 @@
 /**
- * Módulo da automação de cobrança — as **quatro** rotas da área, e o dono da porta de saída de
+ * Módulo da automação de cobrança — as **cinco** rotas da área, e o dono da porta de saída de
  * e-mail deste processo.
  *
  * ---------------------------------------------------------------------------

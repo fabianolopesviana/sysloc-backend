@@ -101,8 +101,13 @@
  * quem chama a peça com que montar por fora uma consulta à tabela — e é a **ausência** da coluna do
  * segredo nesse fragmento que responde pela RN-02.
  *
- * `./empresa.js` entra pela mesma pergunta, e com a mesma resposta: as nove operações **recebem** o
- * executor de quem já abriu a unidade, não abrem conexão nem transação e não devolvem executor. Elas
+ * `./empresa.js` entra pela mesma pergunta, e com a mesma resposta: as **dez** operações **recebem**
+ * o executor de quem já abriu a unidade, não abrem conexão nem transação e não devolvem executor.
+ * A décima é `listarEmpresasAtivas`, e ela tem razão própria: é a **enumeração de tenants** que a
+ * ADR-0024 declara como leitura legítima **#1** sem contexto, e é dela que sai todo `empresaId` que
+ * viaja em carga de rotina agendada. Publicá-la é o que impede o despachante de compor por fora um
+ * `SELECT id FROM identidade.empresa` — o segundo caminho para o mesmo dado, com a própria ideia do
+ * que é *ativa*. Elas
  * existem por uma razão a mais, e ela é a que este índice serve: a contenção da §11.2 impede
  * `apps/api` de **importar** `esquemaIdentidade` e o construtor de consulta, mas — como o cabeçalho
  * de `./acesso-identidade.ts` declara no item 3 — não alcança **texto de SQL**. Um serviço de
@@ -394,6 +399,54 @@
  * que os três consumidores da camada de dados importam (o limiar de três do `CLAUDE.md` fechado no
  * terceiro), e publicá-lo aqui daria a `apps/api` um formato de instante para escolher.
  *
+ * `./execucao-de-rotina.js` entra pela mesma pergunta, e com a mesma resposta: as **quatro**
+ * operações do registro de execução **recebem** o executor de quem já abriu a unidade, não abrem
+ * conexão nem transação e não devolvem executor. Elas repetem as razões das anteriores —
+ * enumerabilidade do alcance a `negocio`, um lugar único sob a política, nenhum `empresaId` em
+ * assinatura alguma (ADR-0008) — e acrescentam **duas** que são próprias desta fatia.
+ *
+ * A primeira é a **RN-15**: `registrarExecucaoDeRotina` é o único caminho de escrita do histórico, e
+ * portanto o único ponto em que *"passagem sem trabalho não gera registro"* pode ser desrespeitado.
+ * Publicar a porta é o que torna **enumerável quem grava** — um segundo `INSERT` sobre
+ * `negocio.execucao_de_rotina` escrito fora do pacote apareceria como símbolo a mais neste índice,
+ * que o `CT-012` compara por igualdade. É essa unicidade que impede o retorno do registro de
+ * passagem vazia, o defeito de 12 MB por empresa do sistema antigo.
+ *
+ * A segunda é o **um lugar, dois consumidores** da decisão D5: `lerEstadoDasRotinas` é a mesma
+ * derivação que a rotina de vigilância (que **filtra** as atrasadas, ADR-0023) e a rota do Admin
+ * consomem. Ter o ponto com nome é o que torna verificável a afirmação de que `atrasada` e
+ * `proximaEsperada` são derivadas num lugar só — uma segunda derivação apareceria aqui, e não como
+ * uma comparação a mais escondida num serviço.
+ *
+ * De lá **não** saem `lerFatosDeImpedimento`, `MENSAGEM_POR_IMPEDIMENTO`, `IMPEDIMENTOS_POR_ROTINA`,
+ * `DIAS_DE_RETENCAO_DO_HISTORICO`, `HORAS_DA_RECUSA_RECENTE` nem `PASSAGENS_NO_HISTORICO_RECENTE`, e
+ * as ausências são deliberadas: são o mecanismo interno da derivação e do expurgo, pelo mesmo
+ * critério de `DIAS_DE_RETENCAO_DO_CRU` e de `empresaDoContexto`. A do limite do histórico tem razão
+ * extra — publicá-lo daria à borda um tamanho de página **para escolher**, e é justamente o limite
+ * por construção que dispensa a segunda superfície da decisão D3.
+ *
+ * `./encerramento-de-contratos.js` entra pela mesma pergunta, e com a mesma resposta:
+ * `encerrarContratosVencidos` **recebe** o executor de quem já abriu a unidade, não abre conexão nem
+ * transação e não devolve executor. Ela repete as razões das anteriores e acrescenta **duas** que são
+ * próprias dela.
+ *
+ * A primeira é a **atomicidade do par**. Encerrar o contrato e liberar o imóvel são **um ato**
+ * (RN-03), e o que os mantém num commit só é a unidade de trabalho aberta na borda — a passagem
+ * inteira corre sobre o executor recebido. Publicar a passagem como **uma** função é o que impede a
+ * composição por fora ("selecione lá, encerre aqui, libere depois"), em que a segunda escrita cairia
+ * noutra transação e um contrato ficaria `ENCERRADO` com o imóvel ainda `LOCADO`.
+ *
+ * A segunda é a **enumerabilidade de quem escreve `contrato.status`**. Com ela publicada, os
+ * produtores dos quatro estados do contrato são exatamente quatro símbolos deste índice —
+ * `criarContrato` (`RASCUNHO`), `ativarContrato` (`ATIVO`), `cancelarContrato` (`CANCELADO`) e esta
+ * (`ENCERRADO`) —, e um quinto apareceria aqui como excedente para o `CT-012`. É o que torna
+ * verificável a frase de que o `ENCERRADO` **só** nasce por vencimento.
+ *
+ * De lá **não** saem `selecionarCandidatos` nem `encerrarContrato`, e as ausências são deliberadas:
+ * são as duas metades internas do par, e publicá-las ofereceria justamente a composição por fora que
+ * o parágrafo acima fecha. Publicar `selecionarCandidatos` seria pior ainda — daria à borda uma
+ * leitura que **trava linha de contrato** e a devolve para alguém decidir o que fazer com ela.
+ *
  * `./emissao-em-lote.js` entra pela mesma pergunta, e com a mesma resposta: as **seis** operações do
  * lote **recebem** o executor de quem já abriu a unidade, não abrem conexão nem transação e não
  * devolvem executor. Elas repetem as razões das anteriores — enumerabilidade do alcance a `negocio`,
@@ -641,7 +694,7 @@
  * são importadas de lá, e `LARGURA_DO_CONTADOR_BANCARIO` é o nome com que este pacote publica a do
  * contador para quem for decompor o identificador.
  *
- * `./notificacao-bancaria.js` entra pela mesma pergunta, e com a mesma resposta: as **sete**
+ * `./notificacao-bancaria.js` entra pela mesma pergunta, e com a mesma resposta: as **oito**
  * operações da notícia crua **recebem** o executor de quem já abriu a unidade, não abrem conexão nem
  * transação e não devolvem executor. `rotearNotificacaoBancaria` não abre exceção ao que
  * `resolverPortador` e as funções de série já registram: ela invoca, pelo executor recebido, a função
@@ -651,7 +704,7 @@
  * e acrescentam **duas** que são próprias desta entidade.
  *
  * A primeira é a **ausência de dono**. `plataforma.notificacao_bancaria` não tem `empresa_id`, não
- * habilita RLS e nenhuma política a alcança (ADR-0031): seis das sete funções correm sem contexto de
+ * habilita RLS e nenhuma política a alcança (ADR-0031): sete das oito funções correm sem contexto de
  * tenant, e é justamente por isso que o alcance a ela precisa ser enumerável **por símbolo** — não há
  * política a recortar o que uma consulta escrita fora daqui veria. O `CT-012` compara este conjunto
  * por igualdade, de modo que um segundo caminho para o cru apareceria como símbolo excedente.
@@ -858,6 +911,7 @@ export {
   type JanelaDeEmpresas,
   lerAlvoDeReemissao,
   listarEmpresas,
+  listarEmpresasAtivas,
   localizarEmpresa,
   localizarPessoaPorEmail,
   type MarcaDeSuspensao,
@@ -865,6 +919,10 @@ export {
   reativarEmpresa,
   suspenderEmpresa,
 } from './empresa.js';
+export {
+  encerrarContratosVencidos,
+  type ResultadoDoEncerramento,
+} from './encerramento-de-contratos.js';
 export {
   type DadosDoDesfechoDaEntrega,
   type EstadoDaEntregaGravado,
@@ -895,6 +953,15 @@ export {
   lerTrilhaDaCobranca,
   registrarEventoBancario,
 } from './evento-bancario.js';
+export {
+  type ExecucaoDeRotinaNova,
+  expurgarExecucoesVencidas,
+  lerEstadoDasRotinas,
+  lerHistoricoRecenteDeRotinas,
+  type PassagemRegistrada,
+  type ResumoDaPassagem,
+  registrarExecucaoDeRotina,
+} from './execucao-de-rotina.js';
 export {
   type DadosDaIdentidade,
   type IdentidadeGravada,
@@ -932,6 +999,7 @@ export {
   expurgarNotificacoesVencidas,
   houveEfeitoDaLiquidacao,
   lerNotificacaoBancaria,
+  listarNaoTratadas,
   listarRetidas,
   marcarDesfecho,
   type NotificacaoBancariaPersistida,

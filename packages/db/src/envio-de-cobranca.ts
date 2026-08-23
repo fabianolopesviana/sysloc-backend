@@ -114,6 +114,12 @@ import type { Fragment, TransactionSql } from 'postgres';
 // e um segundo caminho para o mesmo recorte é o que a ADR-0008 rejeita. Ele existe para a
 // **escrita**, onde `empresa_id` é `NOT NULL` sem padrão.
 import { empresaDoContexto } from './contexto-de-escrita.js';
+// O fuso da operação tem **casa única** em `./fuso-da-operacao.ts` desde o fecho do `D25 · F4/T7`,
+// pela mesma razão e no mesmo molde dos dois imports vizinhos: a declaração local que vivia aqui era
+// uma das TRÊS cópias executáveis do literal no pacote, e o gatilho do débito — o quarto consumidor
+// — chegou com a derivação de `proximaEsperada` em `./execucao-de-rotina.ts`. Ele não entra em
+// `./index.ts`; ver o cabeçalho de lá.
+import { FUSO_DA_OPERACAO } from './fuso-da-operacao.js';
 // Os DOIS moldes têm **casa única** em `./moldes-de-formatacao.ts`, pela mesma razão e no mesmo
 // molde. O do instante desceu na T3 da fatia `emissao-e-conciliacao`: o `criadoEm` daqui, o
 // `canceladoEm` de `./cobranca.ts` e o `ocorridoEm` de `./evento-bancario.ts` são o MESMO carimbo, e
@@ -139,31 +145,6 @@ export interface JanelaDeEnvios {
 
 /** O molde `HH:MM` da hora do dia, o mesmo que a política publica — ver {@link ./politica-de-aviso.ts}. */
 const FORMATO_DA_HORA_DO_DIA = 'HH24:MI';
-
-/**
- * O fuso da **operação**, e não o do processo.
- *
- * É o mesmo que `negocio.data_corrente_da_operacao()` fixa no corpo dela (`migracoes/0010`), e a
- * coincidência é obrigatória: a janela de horário e a classificação da cobrança precisam concordar
- * sobre que dia e que hora são agora. Ele é escrito aqui, e não lido de configuração, porque um fuso
- * configurável seria um segundo eixo alcançável — exatamente o que a ADR-0026 fecha.
- */
-// DÉBITO COM GATILHO — D14 · F3/T5 · registrado 2026-08-11
-// O QUÊ: este literal é a SEGUNDA declaração executável do fuso da operação. A primeira vive no
-//        corpo de `negocio.data_corrente_da_operacao()` (`migracoes/0010_seguranca_cobranca.sql`),
-//        e NADA amarra as duas — o CT-612 (T8) varre `new Date(` em `packages/regua/src/**` e
-//        `apps/worker/src/tarefas/**`, não alcança `packages/db/src/**` e não compara literais.
-// QUANDO FECHA: a primeira migração que REDEFINIR `negocio.data_corrente_da_operacao()`. Ali as
-//        duas podem divergir em silêncio, e o fecho é uma asserção em
-//        `test/coerencia-de-migracoes.spec.ts` — ler `pg_get_functiondef` e afirmar que a
-//        definição contém o mesmo literal desta constante, com prova de falsificação (trocar o
-//        literal deixa o caso vermelho). É o molde que o CT-608 já usa para a projeção `HH24:MI`.
-// POR QUE NÃO AGORA: a `0010` está sob `DECISÃO FECHADA` mais o `DÉBITO COM GATILHO — D20` e vira
-//        imutável na primeira aplicação a banco durável, de modo que a divergência não tem por
-//        onde nascer nesta fatia. E a ADR-0026 registra nos próprios Cons que nenhum caso
-//        comportamental pega esta classe enquanto o host estiver no mesmo fuso da função.
-// ÍNDICE: docs/specs/features/regua-de-cobranca/v1/_run/run-report.md §2, D14
-const FUSO_DA_OPERACAO = 'America/Sao_Paulo';
 
 // DECISÃO FECHADA — T5 / fatia `regua-de-cobranca` · 2026-08-11
 // O QUÊ: a trava do intervalo mínimo conta APENAS a tentativa com desfecho `ENVIADA`. `FALHOU` e

@@ -56,6 +56,45 @@ já existente (`ACAO:ativar_contrato`, `ACAO:cancelar_contrato`, `ACAO:excluir_c
 > cancelamento de cobrança. Quem fechou o catálogo tinha as operações de cobrança à vista e concedeu
 > chave própria só às que falam com o banco.
 
+> **Emenda de 2026-08-22.** As duas metades acima foram redigidas para o ato que **entra pela
+> superfície**, e a fatia `automacoes-agendadas` (F5) trouxe o primeiro caso do repositório em que não
+> há superfície: o **encerramento de contrato vencido**, disparado por relógio — sem requisição, sem
+> sessão e sem ator. **A decisão não mudou**; muda o registro dela, que passa a declarar o alcance de
+> cada metade:
+>
+> - A metade **categórica** — *rota própria, nunca campo gravado por atualização parcial do recurso* —
+>   **vale sem exceção**, e aqui é cumprida **por construção**: não há recurso sendo editado, e
+>   `status` não existe em `esquemaDeContratoNovo` nem em `esquemaDeContratoAlterado`, de modo que o
+>   `strictObject` o recusa por chave desconhecida.
+> - A metade da **governança** — *exige a chave do catálogo, ou exige apenas a área* — **pressupõe uma
+>   sessão a autorizar**, e sem requisição ela não tem sujeito: a pergunta não fica sem resposta, fica
+>   sem antecedente. O que governa a transição sem ator é a **procedência da carga** (ADR-0024) — o
+>   identificador de empresa vem de quem já detinha direito a ele, a enumeração de empresas ativas do
+>   despachante — e a ausência de qualquer rota que aceite `empresaId` de fora.
+>
+> **O precedente não é novo, e é da própria F2**: `definirSituacaoDeLocacaoDoImovel` é porta estreita
+> cujos chamadores o docblock enumera como *"a ativação e o cancelamento de contrato … e a rota de
+> situação de locação"*. A transição `DISPONIVEL → LOCADO` **já ocorre sem passar pela rota própria
+> dela**, como efeito interno na mesma unidade de trabalho, e assim passou pelos dois gates. O que a
+> F5 acrescenta não é a ausência de rota — é a ausência de **ato de origem**: só o vencimento.
+>
+> **Instância declarada da terceira classe** — a que não tem governança a exigir porque não tem ator:
+>
+> - o **encerramento de contrato vencido** (`automacoes-agendadas`, v1), e o efeito que ele produz no
+>   imóvel pela mesma porta estreita, na mesma unidade de trabalho.
+>
+> ⚠️ **O alcance é do ato AUTOMÁTICO, e não do ato equivalente pela tela.** Um encerramento **manual**
+> transferiria direito — libera o imóvel para nova locação — e seria da **primeira** classe, sem chave
+> correspondente no catálogo fechado da ADR-0011: exatamente o dilema que esta ADR nasceu para
+> resolver. Publicá-lo exige decisão nova, e ela **não** está tomada aqui. Esta emenda não cria chave,
+> não autoriza rota e **não é fundamento para publicar transição sem exigência**.
+>
+> **Por que emenda, e não ADR nova**: a decisão é a mesma, e ADR nova com decisão igual é churn — o
+> critério do `CLAUDE.md`. **Por que registrar, em vez de conviver**: a **terceira** das *Alternatives*
+> abaixo rejeita a convivência porque *"um gate futuro leria violação onde houve decisão"* — e leu, no
+> Gate 2 da T7, que foi o que produziu a emenda de 2026-08-10. Deixar sem registro seria repetir a
+> escolha que já falhou uma vez nesta mesma ADR.
+
 ## Consequences
 
 **Pros:**

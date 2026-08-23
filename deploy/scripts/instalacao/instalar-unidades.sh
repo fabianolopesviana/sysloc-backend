@@ -3,11 +3,34 @@
 # Instalação das unidades de serviço do backend Sysloc — T7 da fatia
 # `fundacao-stack-nativa`.
 #
-# Posiciona no sistema, habilita no arranque e coloca no ar as duas unidades
+# Posiciona no sistema, habilita no arranque e coloca no ar as unidades
 # versionadas em `deploy/systemd/`:
 #
-#   sysloc-api.service      serviço de aplicação
-#   sysloc-worker.service   processador de trabalho em segundo plano
+#   sysloc-api.service                  serviço de aplicação
+#   sysloc-worker.service               processador de trabalho em segundo plano
+#   sysloc-rotina-<r>.timer     (6)     o relógio de cada rotina agendada
+#   sysloc-rotina-<r>.service   (6)     o despacho `oneshot` que o relógio dispara
+#   sysloc-alerta-de-rotina@.service    a unidade-modelo do alerta de falha
+#
+# ---------------------------------------------------------------------------
+# O relógio: HABILITA-SE O `.timer`, NUNCA O `.service` (T9 · `automacoes-agendadas`)
+# ---------------------------------------------------------------------------
+#
+# É a única diferença de tratamento frente às duas unidades permanentes, e ela é
+# EXPLÍCITA no dado, não no fluxo: `UNIDADES` é o que se posiciona (tudo), e
+# `UNIDADES_DO_ARRANQUE` é o que se ativa e habilita — e nenhum
+# `sysloc-rotina-*.service` consta da segunda. Habilitar o `Type=oneshot` o faria
+# correr NO BOOT, fora do horário declarado: uma passagem a mais, na hora errada,
+# toda vez que a máquina subisse. A segunda barreira está na própria unidade —
+# os seis despachos e a unidade-modelo NÃO têm seção `[Install]`, e sem ela
+# `systemctl enable` recusa em vez de passar em silêncio.
+#
+# A conformidade das unidades (fuso declarado no `OnCalendar=`, `Persistent=`
+# apenas nas diárias, `OnFailure=` que nomeia quem falhou, ausência de `Restart=`
+# no `oneshot`) é provada por `packages/shared/test/unidades-agendadas.spec.ts`,
+# que também afirma por IGUALDADE DE CONJUNTO que o array `UNIDADES` abaixo cobre
+# o diretório versionado inteiro. Acrescentar unidade sem a acrescentar aqui
+# reprova a suíte — e é assim que a lista não fica para trás.
 #
 # ADR-0005 — rotina operacional versionada no repositório e posicionada por
 # procedimento de instalação IDEMPOTENTE. Executar este script duas vezes
@@ -85,7 +108,58 @@ readonly ALVO_DE_ARRANQUE="multi-user.target"
 
 readonly UNIDADE_API="sysloc-api.service"
 readonly UNIDADE_WORKER="sysloc-worker.service"
-readonly UNIDADES=("${UNIDADE_API}" "${UNIDADE_WORKER}")
+readonly UNIDADE_DE_ALERTA="sysloc-alerta-de-rotina@.service"
+
+# Tudo o que é POSICIONADO em ${DIR_UNIDADES_INSTALADAS} — o roster completo do
+# diretório versionado, e a fonte única deste procedimento.
+#
+# ⚠️ Ele é afirmado por IGUALDADE DE CONJUNTO contra `deploy/systemd/` pelo
+# CT-1060: um arquivo de unidade que exista no repositório e falte aqui reprova a
+# suíte nomeando-o, e o contrário também. Sem essa amarra, uma unidade nova nasce
+# versionada e nunca instalada — o modo de falha mais silencioso desta classe.
+readonly UNIDADES=(
+	"${UNIDADE_API}"
+	"${UNIDADE_WORKER}"
+	"${UNIDADE_DE_ALERTA}"
+	"sysloc-rotina-aviso-de-cobranca.service"
+	"sysloc-rotina-aviso-de-cobranca.timer"
+	"sysloc-rotina-conferencia-de-liquidacao.service"
+	"sysloc-rotina-conferencia-de-liquidacao.timer"
+	"sysloc-rotina-encerramento-de-contratos.service"
+	"sysloc-rotina-encerramento-de-contratos.timer"
+	"sysloc-rotina-manutencao.service"
+	"sysloc-rotina-manutencao.timer"
+	"sysloc-rotina-retomada-de-noticias.service"
+	"sysloc-rotina-retomada-de-noticias.timer"
+	"sysloc-rotina-vigilancia-das-rotinas.service"
+	"sysloc-rotina-vigilancia-das-rotinas.timer"
+)
+
+# O que é ATIVADO e HABILITADO no arranque — subconjunto declarado de ${UNIDADES}.
+#
+# ⚠️ NENHUM `sysloc-rotina-*.service` entra aqui, e a ausência É o mecanismo:
+# habilitar o `Type=oneshot` o faria correr no boot, fora do horário marcado.
+# Quem sobe no arranque é o RELÓGIO; o despacho é iniciado por ele, na hora
+# declarada, pelo `Unit=` do timer.
+#
+# A unidade-modelo do alerta também não entra: unidade-modelo não tem instância
+# própria e não se habilita — quem a instancia é o `OnFailure=` de cada despacho,
+# no momento da falha.
+#
+# ⚠️ Os SEIS timers entram, e a cobertura é afirmada nos dois sentidos pelo
+# CT-1060: um `.timer` versionado que não constasse desta lista seria um relógio
+# instalado e nunca ligado — a rotina simplesmente não correria, sem que nada
+# falhasse.
+readonly UNIDADES_DO_ARRANQUE=(
+	"${UNIDADE_API}"
+	"${UNIDADE_WORKER}"
+	"sysloc-rotina-aviso-de-cobranca.timer"
+	"sysloc-rotina-conferencia-de-liquidacao.timer"
+	"sysloc-rotina-encerramento-de-contratos.timer"
+	"sysloc-rotina-manutencao.timer"
+	"sysloc-rotina-retomada-de-noticias.timer"
+	"sysloc-rotina-vigilancia-das-rotinas.timer"
+)
 
 # O artefato construído que o `ExecStart` de cada unidade invoca, relativo à raiz
 # do repositório. A lista é derivada do próprio `ExecStart` em tempo de execução
@@ -115,6 +189,15 @@ readonly LIMITE_CONFIRMACAO_PARTIDA_S=30
 DIR_TEMPORARIO=""
 total_criado=0
 total_ja_ok=0
+# O rótulo de cada passo, atribuído na ordem de execução. Ele passou a ser
+# CONTADO em vez de escrito à mão quando o roster cresceu de 2 para 15 unidades:
+# rótulo literal por passo obrigaria a renumerar todo o `main` a cada unidade
+# nova, e a renumeração esquecida é a forma como duas linhas do registro de
+# instalação passam a dizer o mesmo número.
+passo_corrente=0
+# Onde `proximo_passo` PUBLICA o rótulo. A publicação é por variável, e não por
+# stdout — ver o cabeçalho da função, que explica por que a forma importa.
+PASSO=""
 # Unidades cujo arquivo mudou nesta execução. Só elas são reiniciadas — é o que
 # separa idempotência real de um instalador que derruba serviço saudável.
 declare -A UNIDADE_MUDOU=()
@@ -124,6 +207,36 @@ declare -A UNIDADE_MUDOU=()
 # `provisionar-base.sh`.
 # --------------------------------------------------------------------------- #
 info() { printf '%s ..     %s\n' "${PREFIXO}" "$*"; }
+
+# Avança o contador e publica o rótulo do passo em ${PASSO}.
+#
+# DECISÃO FECHADA — T9 / Gate 2 · 2026-08-23
+# O QUÊ: `proximo_passo` publica o rótulo POR VARIÁVEL (${PASSO}), nunca por stdout, e nenhum
+#        ponto de chamada a envolve em substituição de comando, cano ou lista com `|`.
+# POR QUÊ: a forma idiomática — ecoar o rótulo e consumi-lo em `f "$(proximo_passo)"` — foi
+#          MEDIDA e está errada: substituição de comando roda em subshell, o incremento morre
+#          com ele, e as 32 linhas do registro de instalação saíam todas como `P01`. O defeito é
+#          invisível à suíte inteira da fatia (o instalador exige `sudo`, que a decisão A1 da
+#          §16.1 deixou fora), e só o Gate 2 o pegou.
+# REVERTER EXIGE: provar que nenhum ponto de chamada executa esta função num subshell — e a
+#                 prova roda no CT-1060, passo 4, que extrai daqui o fragmento real, o executa
+#                 sob `bash` repetindo cada ponto, e exige rótulos distintos e crescentes.
+#
+# É o mesmo "duas linhas dizendo o mesmo número" que o bloco de estado acima diz
+# querer evitar — e que o mecanismo anterior produzia em TODAS elas. Escrevendo
+# em ${PASSO}, a atribuição acontece no shell corrente por construção, e não
+# sobra motivo para envolver a chamada em `$( )`: envolvê-la passaria a capturar
+# string vazia, e o rótulo sumiria da linha em vez de se repetir em silêncio.
+#
+# A propriedade é provada por `packages/shared/test/unidades-agendadas.spec.ts`
+# (CT-1060, passo 4): a suíte extrai daqui esta função, a inicialização do
+# contador e os pontos de chamada, executa o fragmento sob `bash` repetindo cada
+# ponto, e exige rótulos DISTINTOS E CRESCENTES. Mecanismo que perca o incremento
+# entre chamadas reprova, qualquer que seja a forma escolhida.
+proximo_passo() {
+	passo_corrente=$((passo_corrente + 1))
+	printf -v PASSO 'P%02d' "${passo_corrente}"
+}
 
 criado() {
 	total_criado=$((total_criado + 1))
@@ -224,6 +337,30 @@ valor_de_ambiente_na_unidade() {
 	printf '%s' "${valor}"
 }
 
+# Decide se a unidade EXECUTA o runtime do repositório — e portanto se ela entra
+# nas conferências de versão do runtime e de artefato construído.
+#
+# Derivado por EXCLUSÃO NOMEADA, e não por lista paralela: é todo `.service`
+# MENOS a unidade-modelo do alerta, que invoca uma ferramenta do sistema e não o
+# runtime. O sentido da regra é fail-closed — um `.service` novo entra na
+# conferência sozinho, e esquecê-lo deixa de ser possível. O `.timer` cai fora
+# porque não tem `ExecStart=` nenhum.
+unidade_executa_o_runtime() {
+	[[ "$1" == *.service && "$1" != "${UNIDADE_DE_ALERTA}" ]]
+}
+
+# O alvo sob o qual a unidade é habilitada, LIDO da própria unidade.
+#
+# Os dois serviços permanentes declaram `multi-user.target`; os seis relógios
+# declaram `timers.target`. Uma constante única na mensagem diria `multi-user`
+# sobre a habilitação de um timer — texto falso no registro de instalação, que é
+# o artefato que o operador lê para conferir o que aconteceu.
+alvo_de_arranque_da_unidade() {
+	local valor
+	valor="$(sed -n 's|^WantedBy=\(.*\)$|\1|p' "${RAIZ_REPO}/${DIR_FONTE_UNIDADES}/$1" | head -1)"
+	printf '%s' "${valor:-${ALVO_DE_ARRANQUE}}"
+}
+
 # Versão do runtime que o `.mise.toml` declara como fonte única.
 versao_do_runtime_declarada() {
 	local arquivo="$1" valor
@@ -306,8 +443,10 @@ verificar_unidades_validas() {
 # esta conferência a unidade seria habilitada e falharia na partida — e, com
 # `Restart=always`, falharia em laço até o limite de tentativas.
 verificar_artefatos_construidos() {
-	local unidade origem artefato faltando=()
+	local unidade origem artefato faltando=() examinadas=0
 	for unidade in "${UNIDADES[@]}"; do
+		unidade_executa_o_runtime "${unidade}" || continue
+		examinadas=$((examinadas + 1))
 		origem="${RAIZ_REPO}/${DIR_FONTE_UNIDADES}/${unidade}"
 		if ! artefato="$(caminho_do_artefato_na_unidade "${origem}")"; then
 			abortar "não consegui interpretar o 'ExecStart=' de ${unidade}: esperava '<runtime> <artefato>'" \
@@ -320,7 +459,7 @@ verificar_artefatos_construidos() {
 		abortar "o artefato construído que as unidades invocam não existe: ${faltando[*]}" \
 			"execute '${COMANDO_DE_CONSTRUCAO}' na raiz do repositório (SEM privilégio, como o usuário de trabalho) e rode este script de novo. A construção não é feita aqui de propósito — ver o cabeçalho"
 	fi
-	info "artefatos construídos presentes para as ${#UNIDADES[@]} unidades"
+	info "artefatos construídos presentes para as ${examinadas} unidades que executam o runtime"
 }
 
 # O runtime é fixado por caminho absoluto nas unidades. A divergência entre ele e
@@ -335,6 +474,7 @@ verificar_runtime() {
 
 	local unidade origem runtime obtida
 	for unidade in "${UNIDADES[@]}"; do
+		unidade_executa_o_runtime "${unidade}" || continue
 		origem="${RAIZ_REPO}/${DIR_FONTE_UNIDADES}/${unidade}"
 		if ! runtime="$(caminho_do_runtime_na_unidade "${origem}")"; then
 			abortar "não consegui interpretar o runtime do 'ExecStart=' de ${unidade}" \
@@ -421,7 +561,7 @@ verificar_usuario_dos_servicos() {
 }
 
 # =========================================================================== #
-# P01/P02 — as unidades posicionadas em ${DIR_UNIDADES_INSTALADAS}.
+# As unidades posicionadas em ${DIR_UNIDADES_INSTALADAS} — uma por rótulo de passo.
 # =========================================================================== #
 posicionar_unidade() {
 	local passo="$1" unidade="$2"
@@ -441,27 +581,27 @@ posicionar_unidade() {
 }
 
 # =========================================================================== #
-# P03 — o supervisor relê as unidades. Só quando alguma mudou: `daemon-reload`
+# O supervisor relê as unidades. Só quando alguma mudou: `daemon-reload`
 # incondicional é barato, mas mascara a diferença entre "instalei" e "não havia o
 # que instalar", que é justamente o que a segunda execução precisa mostrar.
 # =========================================================================== #
-passo_p03_recarregar() {
-	local unidade mudou=0
+recarregar_definicoes() {
+	local passo="$1" unidade mudou=0
 	for unidade in "${UNIDADES[@]}"; do
 		[[ "${UNIDADE_MUDOU[${unidade}]}" -eq 0 ]] || mudou=1
 	done
 
 	if [[ "${mudou}" -eq 0 ]]; then
-		ja_ok "P03" "nenhuma unidade mudou — o supervisor não precisou reler as definições"
+		ja_ok "${passo}" "nenhuma unidade mudou — o supervisor não precisou reler as definições"
 		return
 	fi
 
 	systemctl daemon-reload
-	criado "P03" "definições relidas pelo supervisor (daemon-reload)"
+	criado "${passo}" "definições relidas pelo supervisor (daemon-reload)"
 }
 
 # =========================================================================== #
-# P04/P05 — os serviços no ar.
+# Os serviços e os relógios no ar.
 #
 # ---------------------------------------------------------------------------
 # Por que ATIVAR vem ANTES de HABILITAR
@@ -546,7 +686,7 @@ ativar_unidade() {
 }
 
 # =========================================================================== #
-# P06/P07 — habilitação no arranque.
+# Habilitação no arranque.
 #
 # `systemctl enable` cria o link simbólico sob ${ALVO_DE_ARRANQUE}.wants/, e é
 # ele que faz o serviço subir sozinho no boot (CA-9). Chamá-lo quando a unidade
@@ -556,14 +696,16 @@ ativar_unidade() {
 # =========================================================================== #
 habilitar_unidade() {
 	local passo="$1" unidade="$2"
+	local alvo
+	alvo="$(alvo_de_arranque_da_unidade "${unidade}")"
 
 	if unidade_habilitada "${unidade}"; then
-		ja_ok "${passo}" "${unidade} já habilitada no arranque (${ALVO_DE_ARRANQUE})"
+		ja_ok "${passo}" "${unidade} já habilitada no arranque (${alvo})"
 		return
 	fi
 
 	systemctl enable "${unidade}" >/dev/null
-	criado "${passo}" "${unidade} habilitada no arranque (${ALVO_DE_ARRANQUE})"
+	criado "${passo}" "${unidade} habilitada no arranque (${alvo})"
 }
 
 # =========================================================================== #
@@ -574,11 +716,17 @@ resumir() {
 	info "resumo: ${total_criado} passo(s) alterado(s), ${total_ja_ok} passo(s) já corretos"
 
 	local unidade
-	for unidade in "${UNIDADES[@]}"; do
-		printf '%s        %-22s ativa=%-8s habilitada=%s\n' "${PREFIXO}" "${unidade}" \
+	for unidade in "${UNIDADES_DO_ARRANQUE[@]}"; do
+		printf '%s        %-42s ativa=%-8s habilitada=%s\n' "${PREFIXO}" "${unidade}" \
 			"$(systemctl is-active "${unidade}" 2>/dev/null || true)" \
 			"$(systemctl is-enabled "${unidade}" 2>/dev/null || true)"
 	done
+
+	# As demais são POSICIONADAS e não habilitadas — os seis despachos `oneshot`,
+	# que o relógio inicia na hora marcada, e a unidade-modelo do alerta, que o
+	# `OnFailure=` instancia. Dizer isso por extenso é o que impede a leitura
+	# errada do resumo: "não está habilitada" aqui é conformidade, não pendência.
+	info "posicionadas e NÃO habilitadas (por decisão): $((${#UNIDADES[@]} - ${#UNIDADES_DO_ARRANQUE[@]})) unidades — os despachos 'oneshot' e a unidade-modelo do alerta"
 
 	info "segredos em ${ARQ_AMBIENTE} (${MODO_ARQ_AMBIENTE} ${DONO_ARQ_AMBIENTE}) — nenhuma credencial nas unidades"
 	info "instalação concluída"
@@ -595,15 +743,34 @@ main() {
 	verificar_arquivo_de_ambiente
 	verificar_porta_da_aplicacao
 
-	posicionar_unidade "P01" "${UNIDADE_API}"
-	posicionar_unidade "P02" "${UNIDADE_WORKER}"
-	passo_p03_recarregar
+	local unidade
+
+	# Posicionar TUDO — inclusive o que não é habilitado. O despacho `oneshot`
+	# precisa estar no sistema para o relógio poder iniciá-lo, e a unidade-modelo
+	# do alerta para o `OnFailure=` poder instanciá-la.
+	for unidade in "${UNIDADES[@]}"; do
+		proximo_passo
+		posicionar_unidade "${PASSO}" "${unidade}"
+	done
+
+	proximo_passo
+	recarregar_definicoes "${PASSO}"
+
 	# Ativar ANTES de habilitar: uma unidade que não sobe nunca chega a ser
 	# marcada para o arranque. Ver o cabeçalho de `ativar_unidade`.
-	ativar_unidade "P04" "${UNIDADE_API}"
-	ativar_unidade "P05" "${UNIDADE_WORKER}"
-	habilitar_unidade "P06" "${UNIDADE_API}"
-	habilitar_unidade "P07" "${UNIDADE_WORKER}"
+	#
+	# ⚠️ Os dois laços correm sobre ${UNIDADES_DO_ARRANQUE}, e é ELE que exclui os
+	# seis `sysloc-rotina-*.service`: nenhum despacho `oneshot` é iniciado nem
+	# habilitado aqui — quem o inicia é o relógio, na hora declarada.
+	for unidade in "${UNIDADES_DO_ARRANQUE[@]}"; do
+		proximo_passo
+		ativar_unidade "${PASSO}" "${unidade}"
+	done
+
+	for unidade in "${UNIDADES_DO_ARRANQUE[@]}"; do
+		proximo_passo
+		habilitar_unidade "${PASSO}" "${unidade}"
+	done
 
 	resumir
 }

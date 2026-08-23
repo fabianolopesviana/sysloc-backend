@@ -553,6 +553,9 @@ const guardaDoConsumidor: GuardaDeBoletos = {
   ler: () => {
     throw new Error('nenhum caso desta suíte lê bytes de boleto');
   },
+  expurgarBoletosVencidos: () => {
+    throw new Error('nenhum caso desta suíte expurga o acervo de boletos');
+  },
 };
 
 beforeAll(async () => {

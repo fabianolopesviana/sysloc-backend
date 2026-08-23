@@ -4,7 +4,8 @@
  * `cobranca-e-mora` acrescenta, CT-604 e CT-605, que a fatia `regua-de-cobranca` acrescenta, e
  * CT-713 e CT-731, que a sub-fatia `documentos-e-confirmacao` acrescenta, CT-845 a CT-850, que a
  * fatia `fundacao-bancaria` acrescenta, CT-942 e CT-953, que a fatia `emissao-e-conciliacao`
- * acrescenta, e CT-1044, que a fatia `integracao-bancaria-autonoma` acrescenta. O
+ * acrescenta, CT-1044, que a fatia `integracao-bancaria-autonoma` acrescenta, e CT-1090, que a
+ * fatia `automacoes-agendadas` acrescenta. O
  * **CT-537 substitui o CT-429** daquela fatia: ver o parágrafo dedicado abaixo, e a linha
  * `SUT_IS_CORRECT_BECAUSE:` no ponto do caso.
  *
@@ -200,6 +201,27 @@
  * |          |        | ⚠️ E o eixo de tamanho é **TOTAL**: diagnóstico que não serializa (`BigInt`,
  * |          |        | referência circular) é RECUSADO pelo mesmo `path`, em vez de derrubar o
  * |          |        | chamador — a rede do `D17`, de 2026-08-22, com controle positivo. |
+ * | CA-03    | CT-1090| `CADENCIA_DA_ROTINA` declara as **SEIS** unidades systemd, cada uma com
+ * | CA-14    |        | `publicada` BOOLEANO, e `ROTINAS_PUBLICADAS` é o subconjunto DERIVADO dela,
+ * |          |        | com exatamente TRÊS, na ordem em que a rota as devolve. A diferença entre
+ * |          |        | os dois é EXATAMENTE `{VIGILANCIA_DAS_ROTINAS, MANUTENCAO,
+ * |          |        | RETOMADA_DE_NOTICIAS}`, por igualdade de conjunto nos dois sentidos e com
+ * |          |        | controle antivácuo. A derivação é provada por VARREDURA do `src/`: cada
+ * |          |        | nome de rotina tem UMA única escrita, em `rotina-agendada.ts` — uma segunda
+ * |          |        | lista literal produz os mesmos valores e só esta asserção a pega.
+ * |          |        | `LIMIAR_DE_ATRASO_POR_CADENCIA` e as cadências publicadas se cobrem
+ * |          |        | MUTUAMENTE (`A_CADA_MINUTO` 15 min, `DIARIA` 1560 min), e os dois relógios
+ * |          |        | que só a infraestrutura usa NÃO têm limiar. `CODIGOS_DE_IMPEDIMENTO` é
+ * |          |        | união fechada de três, congelada em execução, e a cadência é congelada nos
+ * |          |        | DOIS níveis. A SAÍDA é ABERTA — campo desconhecido não causa erro, no item
+ * |          |        | e no envelope —, e o ENVELOPE publica exatamente `['itens']`: nem
+ * |          |        | `rotinas`, nem as três chaves de janela, com o item por IDENTIDADE.
+ * |          |        | `rotina` (inclusive `MANUTENCAO`) e
+ * |          |        | `impedimento.codigo` inventados são recusados com `invalid_value` no `path`
+ * |          |        | exato; os três anuláveis aceitam `null` e a AUSÊNCIA deles é recusada
+ * |          |        | nomeando o campo; a hora é `HH:MM` de 24 horas e OPCIONAL; e o resumo é
+ * |          |        | registro aberto de NÚMEROS, com a contagem não numérica recusada pela
+ * |          |        | chave. |
  *
  * Rastreabilidade: `CA-02 → CT-334, CT-335 (RN-10)` · `CA-14 → CT-337 (RN-01)` ·
  * `CA-15 → CT-338 (RN-06)` · `CA-16 → CT-336, CT-340, CT-341 (RN-11)` ·
@@ -215,7 +237,7 @@
  * `CA-§4.1.1 → CT-846 (RN-02, RN-03)` · `CA-02, CA-12 → CT-847, CT-848 (RN-02)` ·
  * `CA-10 → CT-849 (RN-07)` · `CA-04, CA-§4.2 → CT-850 (RN-04)` ·
  * `CA-15 → CT-942, CT-942 (b) (RN-13, RN-14, RN-15)` · `CA-13 → CT-953` ·
- * `CA-18 → CT-1044 (RN-01, RN-02)`.
+ * `CA-18 → CT-1044 (RN-01, RN-02)` · `CA-03, CA-14 → CT-1090 (RN-17, RN-18, RN-19)`.
  *
  * ---------------------------------------------------------------------------
  * Por que os casos vêm em pares, e por que nenhum deles sozinho serve
@@ -582,6 +604,13 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+// Mesmo débito `D28 · F0/T5` do import logo ABAIXO, e pelo mesmo caminho de arquivo: o acessório de
+// comparação de conjuntos é **importado, não recopiado**. Medido em 2026-08-22: ele tem quatro
+// consumidores em `packages/db/test/` e um em `packages/auth/test/`, de modo que uma cópia local
+// aqui seria a TERCEIRA declaração da função — exatamente o que o Limiar de Três do `CLAUDE.md`
+// manda evitar. Nenhum símbolo NOVO é pedido ao acessório: o débito ganha um consumidor e não ganha
+// superfície, e o marcador que o descreve é o de baixo, preservado onde estava.
+import { diferencasDeConjunto } from '../../db/test/conjuntos.ts';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)
 // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o código abaixo.)
 // O QUÊ: o import a seguir atravessa a fronteira de `@sysloc/db` por CAMINHO DE ARQUIVO, fora do
@@ -608,8 +637,10 @@ import {
 import { MAIOR_TEXTO_CURTO } from '../src/comum.ts';
 import * as contratos from '../src/index.ts';
 import {
+  CADENCIA_DA_ROTINA,
   CAMINHOS_DO_AVISO,
   CANAIS_DE_AVISO,
+  CODIGOS_DE_IMPEDIMENTO,
   DESFECHOS_DO_AVISO,
   DESFECHOS_DO_ITEM_DO_LOTE,
   DETALHES_DA_VERIFICACAO,
@@ -648,8 +679,11 @@ import {
   esquemaDoDesfechoDoRegistroDeCertificado,
   esquemaDoEnvioDeCobranca,
   esquemaDoEstadoDaEntrega,
+  esquemaDoEstadoDasRotinas,
+  esquemaDoEstadoDeRotina,
   esquemaDoEventoBancario,
   esquemaDoImovel,
+  esquemaDoImpedimento,
   esquemaDoItemDoLote,
   esquemaDoLocatario,
   esquemaDoMotivoDaRecusa,
@@ -661,6 +695,7 @@ import {
   LARGURA_DO_CONTADOR,
   LARGURA_DO_SEQUENCIAL_DE_COBRANCA,
   LARGURA_DO_SEQUENCIAL_DE_CONTRATO,
+  LIMIAR_DE_ATRASO_POR_CADENCIA,
   LIMIAR_DE_VENCIMENTO_EM_DIAS,
   MAIOR_DIAGNOSTICO_EM_CARACTERES,
   MAIOR_DIAGNOSTICO_EM_CHAVES,
@@ -677,6 +712,7 @@ import {
   PAGINA_PADRAO,
   PREFIXO_DO_CODIGO_DE_COBRANCA,
   PREFIXO_DO_CODIGO_DE_CONTRATO,
+  ROTINAS_PUBLICADAS,
   SITUACOES_INFORMAVEIS,
   TIPOS_DE_EVENTO_BANCARIO,
 } from '../src/index.ts';
@@ -5290,5 +5326,536 @@ describe('CT-1044 — a direção decide a estritude, o enum é congelado e o po
     // Reafirmar DEPOIS da tentativa: "lançou" e "não alterou" são propriedades diferentes, e um
     // arranjo que lançasse na cópia e mutasse o original passaria pela asserção anterior.
     expect([...ESTADOS_DA_ENTREGA]).toEqual([...ESTADOS_DECLARADOS]);
+  });
+});
+
+// ===========================================================================
+// CT-1090 — o roster das rotinas agendadas: conjuntos fechados e mutuamente cobertos
+// ===========================================================================
+
+/**
+ * O contrato publicado das **rotinas agendadas** (CA-03, CA-14 · ADR-0016 · ADR-0017).
+ *
+ * ⚠️ **Este bloco tem uma metade ESTÁTICA e uma COMPORTAMENTAL, e elas se provam de formas
+ * diferentes.** A estática inspeciona o *texto* do fonte — é o caso da derivação, que varre
+ * `src/**` contando cada nome de rotina — e por isso vem com **prova de falsificação executada e
+ * registrada** abaixo. A comportamental exercita os esquemas e reprova naturalmente com o código
+ * antigo; ela não ganha mutante (`.claude/rules/testing-stack.md`: mutation testing está fora da
+ * stack), e a asserção que discrimina cada defeito está nomeada no comentário do próprio caso.
+ *
+ * **PROVAS DE FALSIFICAÇÃO, executadas pelo script `test` do pacote** (`pnpm --filter
+ * @sysloc/contracts test`, nunca por invocação avulsa do executor — o pacote resolve `.` para
+ * `dist/`, e um mutante no fonte não alcançaria o que executa):
+ *
+ * 1. **Segunda lista literal.** Acrescentado a `src/rotina-agendada.ts` um
+ *    `const SEGUNDA_LISTA = ['AVISO_DE_COBRANCA', 'ENCERRAMENTO_DE_CONTRATOS',
+ *    'CONFERENCIA_DE_LIQUIDACAO'];` — a forma exata que a ADR-0016 proíbe e que nenhuma asserção de
+ *    valor pega, porque os valores continuam idênticos. O caso da derivação reprovou, nomeando as
+ *    três rotinas com contagem `2` no lugar de `1`. Revertido.
+ * 2. **`publicada` ligada numa rotina de infraestrutura.** `MANUTENCAO.publicada` trocada para
+ *    `true`: **quatro** casos reprovaram — o do mapa, o da diferença nomeada, o do congelamento (o
+ *    valor deixou de ser `false`) e o da recusa de `MANUTENCAO` como rotina publicada, que passou a
+ *    ser ACEITA. Revertido, `437 passed`.
+ *
+ * 3. **A chave do envelope de volta a `rotinas`** — a rede do achado `TR-P1` do Gate 2, rodada 1.
+ *    O script `test` **abortou antes do Vitest**, no `tsc -p tsconfig.test.json`, com
+ *    `TS2339: Property 'itens' does not exist` na asserção de identidade do item: o nome do envelope
+ *    passou a ser cobrado pelo compilador, e não só por igualdade em execução. Rodado o `vitest` à
+ *    parte para ver o veredito de execução, **sete** casos reprovaram, com o do envelope à frente
+ *    (`['rotinas'] ≠ ['itens']`). Revertido, `438 passed`.
+ *
+ * A primeira é a que importa entre as duas primeiras, e a única do bloco capaz de distinguir
+ * *"derivado por filtro"* de *"redigitado com os mesmos valores"*.
+ *
+ * ⚠️ `expect(resultado.success).toBe(false)` **sozinho é proibido** pela
+ * `.claude/rules/contrato-publicado.md`: ele aprova **qualquer** falha do esquema, inclusive uma que
+ * nada tem a ver com o campo sob teste. Toda recusa aqui é afirmada pelo `code` **mais** o `path`.
+ *
+ * ⚠️ **Nenhuma lista esperada é derivada do artefato sob prova.** As seis unidades, as três
+ * publicadas, as três de manutenção, os dois limiares e os três impedimentos estão escritos por
+ * extenso: derivar poria o artefato nos dois lados da igualdade, e a asserção passaria a não poder
+ * falhar (AP-29).
+ */
+describe('CT-1090 — o roster, a cadência, o limiar e os impedimentos são conjuntos fechados', () => {
+  const RAIZ_DO_PACOTE = dirname(import.meta.dirname);
+
+  /** O fonte que declara o roster — o alvo da metade estática. */
+  const FONTE_DO_ROSTER = 'src/rotina-agendada.ts';
+
+  /** As SEIS unidades systemd, escritas por extenso e na ordem de declaração. */
+  const UNIDADES_DECLARADAS = [
+    'AVISO_DE_COBRANCA',
+    'ENCERRAMENTO_DE_CONTRATOS',
+    'CONFERENCIA_DE_LIQUIDACAO',
+    'VIGILANCIA_DAS_ROTINAS',
+    'MANUTENCAO',
+    'RETOMADA_DE_NOTICIAS',
+  ] as const;
+
+  /** As TRÊS que a leitura do Admin devolve, na ordem em que a rota as devolve. */
+  const PUBLICADAS_DECLARADAS = [
+    'AVISO_DE_COBRANCA',
+    'ENCERRAMENTO_DE_CONTRATOS',
+    'CONFERENCIA_DE_LIQUIDACAO',
+  ] as const;
+
+  /** As TRÊS de infraestrutura, que existem no mapa e **não** podem vazar para a tela (RN-18). */
+  const DE_MANUTENCAO_DECLARADAS = [
+    'VIGILANCIA_DAS_ROTINAS',
+    'MANUTENCAO',
+    'RETOMADA_DE_NOTICIAS',
+  ] as const;
+
+  /** O valor de `publicada` de cada uma das seis — é ele que decide quem entra no roster. */
+  const PUBLICACAO_DECLARADA = {
+    AVISO_DE_COBRANCA: true,
+    ENCERRAMENTO_DE_CONTRATOS: true,
+    CONFERENCIA_DE_LIQUIDACAO: true,
+    VIGILANCIA_DAS_ROTINAS: false,
+    MANUTENCAO: false,
+    RETOMADA_DE_NOTICIAS: false,
+  } as const;
+
+  /** A cadência de cada unidade, como a §4.2 a declara — o que a T9 compara com o `OnCalendar=`. */
+  const CADENCIA_DECLARADA = {
+    AVISO_DE_COBRANCA: { tipo: 'A_CADA_MINUTO', publicada: true },
+    ENCERRAMENTO_DE_CONTRATOS: { tipo: 'DIARIA', hora: '00:02', publicada: true },
+    CONFERENCIA_DE_LIQUIDACAO: { tipo: 'DIARIA', hora: '03:00', publicada: true },
+    VIGILANCIA_DAS_ROTINAS: { tipo: 'A_CADA_15_MIN', publicada: false },
+    MANUTENCAO: { tipo: 'DIARIA', hora: '03:30', publicada: false },
+    RETOMADA_DE_NOTICIAS: { tipo: 'A_CADA_10_MIN', publicada: false },
+  } as const;
+
+  /** Os limiares da RD-17, em MINUTOS: quinze minutos e vinte e seis horas. */
+  const LIMIARES_DECLARADOS = { A_CADA_MINUTO: 15, DIARIA: 1560 } as const;
+
+  /** Os relógios que **só** a infraestrutura usa — e que por isso não têm limiar. */
+  const CADENCIAS_SO_DE_INFRAESTRUTURA = ['A_CADA_15_MIN', 'A_CADA_10_MIN'] as const;
+
+  /** Os três impedimentos que o Admin resolve sozinho, na ordem publicada. */
+  const IMPEDIMENTOS_DECLARADOS = [
+    'REGUA_DESLIGADA',
+    'AVISOS_RECUSADOS_PELO_PROVEDOR',
+    'INTEGRACAO_BANCARIA_PENDENTE',
+  ] as const;
+
+  /** O estado de uma rotina como a §4.1.1 o publica — a linha da régua, com histórico. */
+  const ESTADO_DA_ROTINA = {
+    rotina: 'AVISO_DE_COBRANCA',
+    cadencia: { tipo: 'A_CADA_MINUTO' },
+    ultimaExecucao: '2026-08-22T17:03:00.000Z',
+    resumo: { candidatas: 4, enviadas: 3, falhas: 0, semDestinatario: 1 },
+    proximaEsperada: '2026-08-22T17:04:00.000Z',
+    atrasada: false,
+    impedimento: null,
+    historicoRecente: [
+      {
+        ocorridaEm: '2026-08-22T17:03:00.000Z',
+        resumo: { candidatas: 4, enviadas: 3, falhas: 0, semDestinatario: 1 },
+      },
+    ],
+  } as const;
+
+  /** A resposta inteira, com a linha da régua trocada pelo recorte que o caso quiser. */
+  const respostaCom = (recorte: Record<string, unknown>): Record<string, unknown> => ({
+    itens: [{ ...ESTADO_DA_ROTINA, ...recorte }],
+  });
+
+  /** Quantas vezes o nome aparece no texto, como palavra inteira. */
+  const ocorrenciasDoNome = (texto: string, nome: string): number =>
+    (texto.match(new RegExp(`\\b${nome}\\b`, 'g')) ?? []).length;
+
+  /**
+   * Onde cada nome de rotina aparece em `src/`, e quantas vezes — sem comentários.
+   *
+   * A contagem é por **arquivo e por ocorrência**, e não por linha que casa: uma segunda lista
+   * literal cabe numa linha só dentro do limite de 100 colunas, e uma varredura por linha a deixaria
+   * passar.
+   */
+  const ocorrenciasNoPacote = async (nome: string): Promise<[string, number][]> => {
+    const fontes = await listarFontesTs(join(RAIZ_DO_PACOTE, 'src'));
+    const contagens = await Promise.all(
+      fontes.map(async (arquivo): Promise<[string, number]> => {
+        const fonte = semComentarios(await readFile(arquivo, 'utf8'));
+        return [relative(RAIZ_DO_PACOTE, arquivo), ocorrenciasDoNome(fonte, nome)];
+      }),
+    );
+
+    return contagens.filter(([, quantas]) => quantas > 0);
+  };
+
+  it('as SEIS unidades systemd estão declaradas, cada uma com `publicada` booleano', () => {
+    const declaradas = Object.keys(CADENCIA_DA_ROTINA);
+
+    // Igualdade de CONJUNTO nos dois sentidos, e não contenção: `toContain` aprovaria tanto a
+    // unidade que sumiu quanto a que apareceu sem ninguém decidir.
+    expect(diferencasDeConjunto(declaradas, [...UNIDADES_DECLARADAS])).toEqual({
+      excedentes: [],
+      ausentes: [],
+    });
+    // Controle antivácuo: sem ele, comparar dois conjuntos vazios passaria por vacuidade.
+    expect(declaradas.length).toBe(UNIDADES_DECLARADAS.length);
+    expect(declaradas.length).toBe(6);
+
+    // O mapa inteiro por igualdade profunda — tipo, hora e publicação de cada unidade. É o que a T9
+    // compara com o `OnCalendar=` de cada `.timer`: mudar horário aqui muda a unidade, e a suíte de
+    // `@sysloc/shared` reprova se as duas declarações divergirem.
+    expect({ ...CADENCIA_DA_ROTINA }).toEqual(CADENCIA_DECLARADA);
+
+    // E `publicada` é BOOLEANO nas seis: um `undefined` numa entrada faria o filtro devolver menos
+    // rotinas sem que nada acusasse, porque ausência de valor é falsa em JavaScript.
+    expect(Object.values(CADENCIA_DA_ROTINA).map((cadencia) => typeof cadencia.publicada)).toEqual(
+      UNIDADES_DECLARADAS.map(() => 'boolean'),
+    );
+  });
+
+  it('o roster publicado tem TRÊS, na ordem da leitura, e a diferença é a das três de manutenção', () => {
+    expect(diferencasDeConjunto([...ROTINAS_PUBLICADAS], [...PUBLICADAS_DECLARADAS])).toEqual({
+      excedentes: [],
+      ausentes: [],
+    });
+    expect(ROTINAS_PUBLICADAS.length).toBe(3);
+
+    // A ORDEM é conteúdo: é a ordem em que a rota devolve as rotinas, e ela sai da ordem de
+    // declaração do mapa. A igualdade de conjunto acima não a alcança.
+    expect([...ROTINAS_PUBLICADAS]).toEqual([...PUBLICADAS_DECLARADAS]);
+
+    // A DIFERENÇA NOMEADA, nos dois sentidos: é o que impede uma rotina de manutenção de vazar para
+    // a tela do Admin por descuido, e o que impede uma publicada de sumir dela em silêncio.
+    const foraDoRoster = Object.keys(CADENCIA_DA_ROTINA).filter(
+      (rotina) => !(ROTINAS_PUBLICADAS as readonly string[]).includes(rotina),
+    );
+
+    expect(diferencasDeConjunto(foraDoRoster, [...DE_MANUTENCAO_DECLARADAS])).toEqual({
+      excedentes: [],
+      ausentes: [],
+    });
+    expect(foraDoRoster.length).toBe(3);
+
+    // E o campo que DECIDE a partição, entrada a entrada. Sem esta linha, um roster correto obtido
+    // por qualquer outro critério — a ordem, a posição, um segundo literal — passaria igual.
+    expect(
+      Object.fromEntries(
+        Object.entries(CADENCIA_DA_ROTINA).map(([rotina, cadencia]) => [
+          rotina,
+          cadencia.publicada,
+        ]),
+      ),
+    ).toEqual(PUBLICACAO_DECLARADA);
+  });
+
+  it('o roster publicado é DERIVADO: nenhum nome de rotina tem segunda escrita no fonte', async () => {
+    // ⚠️ ESTA é a asserção que discrimina *derivado por filtro* de *redigitado com os mesmos
+    // valores* — e a única do bloco que exige a prova de falsificação registrada no docblock. Uma
+    // segunda lista literal produz exatamente os mesmos valores em execução, de modo que toda
+    // asserção de valor deste arquivo permaneceria verde com ela no lugar.
+    const observadas = Object.fromEntries(
+      await Promise.all(
+        UNIDADES_DECLARADAS.map(async (nome) => [nome, await ocorrenciasNoPacote(nome)] as const),
+      ),
+    );
+
+    expect(observadas).toEqual(
+      Object.fromEntries(UNIDADES_DECLARADAS.map((nome) => [nome, [[FONTE_DO_ROSTER, 1]]])),
+    );
+
+    // Controle positivo (AP-29): a MESMA contagem, sobre um texto onde a segunda lista foi plantada,
+    // ACHA as duplicatas. Sem ele, um contador que devolvesse sempre `1` — ou uma varredura que não
+    // lesse arquivo algum — passaria na linha acima aprovando um fonte com duas listas.
+    const comSegundaLista = `const SEGUNDA_LISTA = ['${PUBLICADAS_DECLARADAS.join("', '")}'];`;
+    const fonteDoRoster = semComentarios(
+      await readFile(join(RAIZ_DO_PACOTE, FONTE_DO_ROSTER), 'utf8'),
+    );
+
+    expect(
+      UNIDADES_DECLARADAS.map((nome) =>
+        ocorrenciasDoNome(`${fonteDoRoster}\n${comSegundaLista}`, nome),
+      ),
+    ).toEqual([2, 2, 2, 1, 1, 1]);
+  });
+
+  it('cadência e limiar se cobrem MUTUAMENTE, e o relógio de infraestrutura não tem limiar', () => {
+    const cadenciasPublicadas = [
+      ...new Set(ROTINAS_PUBLICADAS.map((rotina) => CADENCIA_DA_ROTINA[rotina].tipo)),
+    ];
+    const cadenciasComLimiar = Object.keys(LIMIAR_DE_ATRASO_POR_CADENCIA);
+
+    // A cobertura MÚTUA, numa asserção só: `ausentes` acusa a cadência publicada sem limiar (a
+    // rotina cujo atraso ninguém saberia derivar) e `excedentes` acusa o limiar sem cadência que o
+    // use (o número que sobrou de uma rotina que saiu do roster).
+    expect(diferencasDeConjunto(cadenciasComLimiar, cadenciasPublicadas)).toEqual({
+      excedentes: [],
+      ausentes: [],
+    });
+    expect(cadenciasComLimiar.length).toBe(2);
+
+    // Os VALORES, por igualdade literal e em minutos: sem eles, dois mapas de chaves certas e
+    // números trocados satisfariam a cobertura acima.
+    expect({ ...LIMIAR_DE_ATRASO_POR_CADENCIA }).toEqual(LIMIARES_DECLARADOS);
+
+    // A outra ponta da diferença nomeada, no eixo da cadência: os dois relógios que só a
+    // infraestrutura usa existem no mapa das seis e **não** têm limiar — eles não participam da
+    // leitura do Admin, e um limiar para eles seria número inventado que nenhuma RN declara.
+    const cadenciasDeInfraestrutura = [
+      ...new Set(DE_MANUTENCAO_DECLARADAS.map((rotina) => CADENCIA_DA_ROTINA[rotina].tipo)),
+    ].filter((tipo) => !(cadenciasPublicadas as readonly string[]).includes(tipo));
+
+    expect(
+      diferencasDeConjunto(cadenciasDeInfraestrutura, [...CADENCIAS_SO_DE_INFRAESTRUTURA]),
+    ).toEqual({ excedentes: [], ausentes: [] });
+    expect(
+      cadenciasComLimiar.filter((tipo) =>
+        (CADENCIAS_SO_DE_INFRAESTRUTURA as readonly string[]).includes(tipo),
+      ),
+    ).toEqual([]);
+  });
+
+  it('os TRÊS impedimentos são união fechada e congelada em execução', () => {
+    expect([...CODIGOS_DE_IMPEDIMENTO]).toEqual([...IMPEDIMENTOS_DECLARADOS]);
+
+    // `as const` fecha a união em COMPILAÇÃO e não sobrevive ao build: o consumidor que importa o
+    // pacote compilado recebe um arranjo comum. Só `Object.freeze` fecha o alargamento em EXECUÇÃO.
+    expect(Object.isFrozen(CODIGOS_DE_IMPEDIMENTO)).toBe(true);
+    expect(() =>
+      (CODIGOS_DE_IMPEDIMENTO as unknown as string[]).push('SERVIDOR_FORA_DO_AR'),
+    ).toThrow(TypeError);
+
+    // Reafirmar DEPOIS da tentativa: "lançou" e "não alterou" são propriedades diferentes, e um
+    // arranjo que lançasse na cópia e mutasse o original passaria pela asserção anterior.
+    expect([...CODIGOS_DE_IMPEDIMENTO]).toEqual([...IMPEDIMENTOS_DECLARADOS]);
+  });
+
+  it('a cadência declarada está congelada nos DOIS níveis, e o roster derivado também', () => {
+    // O nível de dentro não é ornamento: `CADENCIA_DA_ROTINA.MANUTENCAO.publicada = true` num mapa
+    // congelado só na raiz passaria em execução, e o consumidor compilado leria uma cadência
+    // adulterada enquanto `ROTINAS_PUBLICADAS`, já derivada na carga do módulo, diria outra coisa.
+    expect(Object.isFrozen(CADENCIA_DA_ROTINA)).toBe(true);
+    expect(Object.values(CADENCIA_DA_ROTINA).map(Object.isFrozen)).toEqual(
+      UNIDADES_DECLARADAS.map(() => true),
+    );
+    expect(() => {
+      (CADENCIA_DA_ROTINA.MANUTENCAO as unknown as { publicada: boolean }).publicada = true;
+    }).toThrow(TypeError);
+    expect(CADENCIA_DA_ROTINA.MANUTENCAO.publicada).toBe(false);
+
+    expect(Object.isFrozen(ROTINAS_PUBLICADAS)).toBe(true);
+    expect(() => (ROTINAS_PUBLICADAS as unknown as string[]).push('MANUTENCAO')).toThrow(TypeError);
+    expect([...ROTINAS_PUBLICADAS]).toEqual([...PUBLICADAS_DECLARADAS]);
+
+    expect(Object.isFrozen(LIMIAR_DE_ATRASO_POR_CADENCIA)).toBe(true);
+  });
+
+  it('o envelope publica exatamente `itens` — nem `rotinas`, nem as três chaves de janela', () => {
+    // ⚠️ A rede do achado `TR-P1` do Gate 2 (rodada 1), e ela mora aqui porque a chave do envelope é
+    // contrato com o consumidor publicado: a cláusula de lista da ADR-0017 tem DOIS eixos, e o nome
+    // `itens` não depende de haver janela. Batizar o corpo de topo com o nome do domínio o faria o
+    // primeiro do produto a abandonar o nome comum — e nada, fora esta linha, reprovaria por isso.
+    //
+    // A asserção é a MESMA do CT-953 sobre `esquemaDaTrilhaDaCobranca`, que é o precedente que este
+    // envelope copia: a igualdade de lista afirma o nome **e** a ausência das três de janela numa
+    // linha só. `toContain` aprovaria as duas violações.
+    expect(Object.keys(esquemaDoEstadoDasRotinas.shape)).toEqual(['itens']);
+
+    // E o item é `esquemaDoEstadoDeRotina` **por identidade**, nunca uma cópia dos oito campos: uma
+    // segunda declaração dos mesmos campos satisfaria a linha acima e ficaria livre para divergir do
+    // recurso — que é a duplicação que a ADR-0016 fecha.
+    expect(esquemaDoEstadoDasRotinas.shape.itens.element).toBe(esquemaDoEstadoDeRotina);
+  });
+
+  it('a resposta de exemplo da §4.1.1 é ACEITA, e atravessa verbatim', () => {
+    const resposta = {
+      itens: [
+        { ...ESTADO_DA_ROTINA },
+        {
+          rotina: 'ENCERRAMENTO_DE_CONTRATOS',
+          cadencia: { tipo: 'DIARIA', hora: '00:02' },
+          ultimaExecucao: '2026-08-22T03:02:00.000Z',
+          resumo: { candidatos: 2, encerrados: 2, preservados: 0 },
+          proximaEsperada: '2026-08-23T03:02:00.000Z',
+          atrasada: false,
+          impedimento: null,
+          historicoRecente: [],
+        },
+        {
+          rotina: 'CONFERENCIA_DE_LIQUIDACAO',
+          cadencia: { tipo: 'DIARIA', hora: '03:00' },
+          ultimaExecucao: null,
+          resumo: null,
+          proximaEsperada: '2026-08-23T06:00:00.000Z',
+          atrasada: true,
+          impedimento: {
+            codigo: 'INTEGRACAO_BANCARIA_PENDENTE',
+            mensagem: 'a empresa não tem certificado do provedor vigente',
+          },
+          historicoRecente: [],
+        },
+      ],
+    };
+
+    const resultado = esquemaDoEstadoDasRotinas.safeParse(resposta);
+
+    // O corpo INTEIRO por igualdade profunda, e não campo a campo: é o que pega o descarte silencioso
+    // de um campo que o esquema não declarou, e o resumo remodelado no caminho. As chaves do resumo
+    // da régua são as de `ResultadoDaRegua` (§21.7 Q1) e atravessam sem tradução.
+    expect(resultado.success).toBe(true);
+    expect(resultado.data).toEqual(resposta);
+  });
+
+  it('a SAÍDA é ABERTA: o campo que ainda não existe não causa erro', () => {
+    // A abertura é o que torna reversível a decisão D3 — ampliar esta leitura em vez de publicar uma
+    // segunda rota. Um `strictObject` aqui derrubaria a rota ao PRIMEIRO acréscimo da projeção, e
+    // esta é a última superfície antes do congelamento.
+    const comCampoNovo = esquemaDoEstadoDasRotinas.safeParse(respostaCom({ campoFuturo: 1 }));
+
+    expect(comCampoNovo.success).toBe(true);
+    // E o que já existia atravessa intacto: aceitar o campo desconhecido não pode custar os outros.
+    expect(comCampoNovo.data).toEqual({ itens: [{ ...ESTADO_DA_ROTINA }] });
+
+    // O envelope também é aberto — a mesma direção, um nível acima.
+    const comChaveNoEnvelope = esquemaDoEstadoDasRotinas.safeParse({
+      ...respostaCom({}),
+      geradoEm: '2026-08-22T17:05:00.000Z',
+    });
+
+    expect(comChaveNoEnvelope.success).toBe(true);
+  });
+
+  it('rotina e impedimento inventados são RECUSADOS, com `invalid_value` no `path` exato', () => {
+    const comRotinaInventada = esquemaDoEstadoDasRotinas.safeParse(
+      respostaCom({ rotina: 'ROTINA_INEXISTENTE' }),
+    );
+
+    // O `path` é o que o `422 CAMPO_INVALIDO` promete ao cliente: sem ele, `success === false`
+    // aprovaria qualquer falha do esquema, inclusive uma que nada tem a ver com o campo sob teste.
+    expect(comRotinaInventada.error?.issues[0]?.code).toBe('invalid_value');
+    expect(comRotinaInventada.error?.issues[0]?.path).toEqual(['itens', 0, 'rotina']);
+
+    // ⚠️ A rotina de MANUTENÇÃO é recusada pelo mesmo caminho, e é esta a perna que prova que o enum
+    // sai do roster PUBLICADO, e não do mapa das seis: um `z.enum(Object.keys(CADENCIA_DA_ROTINA))`
+    // aceitaria `MANUTENCAO` em silêncio e a tela do Admin ganharia uma linha de infraestrutura.
+    const comRotinaDeManutencao = esquemaDoEstadoDasRotinas.safeParse(
+      respostaCom({ rotina: 'MANUTENCAO' }),
+    );
+
+    expect(comRotinaDeManutencao.error?.issues[0]?.code).toBe('invalid_value');
+    expect(comRotinaDeManutencao.error?.issues[0]?.path).toEqual(['itens', 0, 'rotina']);
+
+    const comCodigoInventado = esquemaDoEstadoDasRotinas.safeParse(
+      respostaCom({ impedimento: { codigo: 'CODIGO_INVENTADO', mensagem: 'x' } }),
+    );
+
+    expect(comCodigoInventado.error?.issues[0]?.code).toBe('invalid_value');
+    expect(comCodigoInventado.error?.issues[0]?.path).toEqual([
+      'itens',
+      0,
+      'impedimento',
+      'codigo',
+    ]);
+
+    // Controle positivo do mesmo eixo: os TRÊS códigos declarados são aceitos. Sem ele, um esquema
+    // que recusasse tudo satisfaria as três recusas acima.
+    expect(
+      IMPEDIMENTOS_DECLARADOS.map(
+        (codigo) => esquemaDoImpedimento.safeParse({ codigo, mensagem: 'x' }).success,
+      ),
+    ).toEqual([true, true, true]);
+  });
+
+  it('a empresa recém-admitida publica os nulos, e ANULÁVEL não é OPCIONAL', () => {
+    // `ultimaExecucao: null` **não é erro** — é quem ainda não teve passagem com efeito. A leitura
+    // não cria linha nem responde `404` por isso, e o histórico vazio é a mesma ausência.
+    const recemAdmitida = respostaCom({
+      ultimaExecucao: null,
+      resumo: null,
+      impedimento: null,
+      historicoRecente: [],
+    });
+    const resultado = esquemaDoEstadoDasRotinas.safeParse(recemAdmitida);
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data).toEqual(recemAdmitida);
+
+    // E a AUSÊNCIA do campo é recusada NOMEANDO-O: sem esta perna, `.nullable()` seria
+    // indistinguível de `.optional()`, e o consumidor publicado perderia a garantia de que a chave
+    // existe sempre — a tela passaria a distinguir `null` de `undefined` sem contrato que a apoie.
+    const { ultimaExecucao: _ausente, ...semOCampo } = ESTADO_DA_ROTINA;
+    const semUltimaExecucao = esquemaDoEstadoDasRotinas.safeParse({ itens: [semOCampo] });
+
+    expect(semUltimaExecucao.error?.issues[0]?.code).toBe('invalid_type');
+    expect(semUltimaExecucao.error?.issues[0]?.path).toEqual(['itens', 0, 'ultimaExecucao']);
+  });
+
+  it('a hora publicada é `HH:MM` de vinte e quatro horas, e é OPCIONAL nas cadências de intervalo', () => {
+    // A cadência de intervalo não tem hora marcada, e o campo é ausente — nunca `null`, nunca `''`.
+    expect(esquemaDoEstadoDasRotinas.safeParse(respostaCom({})).success).toBe(true);
+
+    const comHora = esquemaDoEstadoDasRotinas.safeParse(
+      respostaCom({ cadencia: { tipo: 'DIARIA', hora: '00:02' } }),
+    );
+
+    expect(comHora.success).toBe(true);
+    expect(comHora.data).toEqual(respostaCom({ cadencia: { tipo: 'DIARIA', hora: '00:02' } }));
+
+    // As formas vizinhas são recusadas pela PRÓPRIA forma, e não por conferência posterior: `24:00`
+    // e `08:60` não são horários, `8:00` e `08:0` são larguras erradas, e `03:00:00` é o que o driver
+    // devolveria se a projeção não fosse `HH24:MI`. Todas nomeiam o campo.
+    for (const horaInvalida of ['24:00', '08:60', '8:00', '08:0', '03:00:00', '03:00:30.500']) {
+      const resultado = esquemaDoEstadoDasRotinas.safeParse(
+        respostaCom({ cadencia: { tipo: 'DIARIA', hora: horaInvalida } }),
+      );
+
+      expect(resultado.error?.issues[0]?.path).toEqual(['itens', 0, 'cadencia', 'hora']);
+    }
+
+    // E a DECLARAÇÃO obedece ao mesmo molde que o contrato publica: toda hora do roster é aceita
+    // pelo esquema. Sem esta ponte, o mapa poderia declarar `0:02` e a rota devolveria um valor que
+    // o próprio contrato recusa.
+    const horasDeclaradas = Object.values(CADENCIA_DA_ROTINA).flatMap((cadencia) =>
+      'hora' in cadencia ? [cadencia.hora] : [],
+    );
+
+    expect(horasDeclaradas).toEqual(['00:02', '03:00', '03:30']);
+    expect(
+      horasDeclaradas.map(
+        (hora) =>
+          esquemaDoEstadoDeRotina.safeParse({
+            ...ESTADO_DA_ROTINA,
+            cadencia: { tipo: 'DIARIA', hora },
+          }).success,
+      ),
+    ).toEqual([true, true, true]);
+  });
+
+  it('o resumo é registro ABERTO de números, e a contagem que não é número é recusada', () => {
+    // Cada rotina resume a própria passagem com as contagens que ela produz (decisão D4): o contrato
+    // publica o que o banco gravou, sem remodelagem e sem amarrar-se ao conjunto de rotinas de hoje.
+    const resumoDeOutraRotina = { candidatos: 2, encerrados: 2, preservados: 0 };
+    const aceito = esquemaDoEstadoDasRotinas.safeParse(
+      respostaCom({ resumo: resumoDeOutraRotina }),
+    );
+
+    expect(aceito.success).toBe(true);
+    expect(aceito.data).toEqual(respostaCom({ resumo: resumoDeOutraRotina }));
+
+    // ABERTO não é SEM CONFERÊNCIA: o valor que não é número é recusado nomeando a chave dentro do
+    // registro. Sem esta metade, `z.record(z.string(), z.unknown())` satisfaria a linha acima.
+    const comTexto = esquemaDoEstadoDasRotinas.safeParse(
+      respostaCom({ resumo: { enviadas: '3' } }),
+    );
+
+    expect(comTexto.error?.issues[0]?.path).toEqual(['itens', 0, 'resumo', 'enviadas']);
+
+    // E o mesmo vale dentro do histórico, que é onde a projeção repete a forma.
+    const historicoComTexto = esquemaDoEstadoDasRotinas.safeParse(
+      respostaCom({ historicoRecente: [{ ocorridaEm: '2026-08-22T17:03:00.000Z', resumo: null }] }),
+    );
+
+    expect(historicoComTexto.error?.issues[0]?.path).toEqual([
+      'itens',
+      0,
+      'historicoRecente',
+      0,
+      'resumo',
+    ]);
   });
 });

@@ -1,7 +1,7 @@
 /**
- * Automação de cobrança — a regra de aplicação das **quatro** rotas de `/v1/automacao-de-cobranca`:
- * ler a política de aviso da empresa, defini-la, disparar o aviso de uma cobrança e ler o histórico
- * de tentativas dela.
+ * Automação de cobrança — a regra de aplicação das **cinco** rotas de `/v1/automacao-de-cobranca`:
+ * ler a política de aviso da empresa, defini-la, disparar o aviso de uma cobrança, ler o histórico de
+ * tentativas dela e ler o **estado das rotinas agendadas** da empresa.
  *
  * ---------------------------------------------------------------------------
  * ELE NÃO DECIDE QUEM É AVISADO, e a ausência é o que o separa da régua
@@ -29,7 +29,7 @@
  * ELE RECEBE O EXECUTOR, E NÃO ABRE UNIDADE PRÓPRIA (decisão D1)
  * ---------------------------------------------------------------------------
  *
- * Os quatro métodos tomam o `tx` de quem já abriu a unidade de trabalho — o controlador. Nenhum deles
+ * Os cinco métodos tomam o `tx` de quem já abriu a unidade de trabalho — o controlador. Nenhum deles
  * chama `emUnidadeDeTrabalho`, e a **ausência de `AcessoAoBanco` no construtor** é o mecanismo: o
  * acesso ao banco não é injetado aqui, porque injetá-lo daria a este serviço exatamente a capacidade
  * que ele não pode ter. É a mesma decisão, com a mesma razão, de {@link ../mora/mora.service.js} e de
@@ -66,6 +66,27 @@
  * nomeado; os `CHECK` do banco são a rede para os caminhos de escrita que não passam pela rota.
  *
  * ---------------------------------------------------------------------------
+ * A LEITURA DAS ROTINAS É O **SEGUNDO** CONSUMIDOR DA MESMA DERIVAÇÃO (decisão D5)
+ * ---------------------------------------------------------------------------
+ *
+ * {@link AutomacaoDeCobrancaService.lerEstadoDasRotinas} **não calcula nada**: ela delega à função de
+ * domínio de mesmo nome em `@sysloc/db`, que é a **mesma** que a rotina de vigilância consome. O
+ * primeiro consumidor é o processo de trabalho; esta borda é o segundo, e a unicidade é o ponto —
+ * `atrasada` e `proximaEsperada` são derivados **no banco** (ADR-0023/ADR-0026), porque a vigilância
+ * *filtra* pelas atrasadas, e filtrar é literalmente a hipótese da ADR-0023.
+ *
+ * Um segundo cálculo escrito aqui — comparar o silêncio contra o limiar em JavaScript, compor a
+ * próxima passagem com `Date` — concordaria com o consumidor de hoje e divergiria na primeira emenda
+ * do relógio, e a divergência apareceria como a tela dizendo *"em dia"* enquanto o alerta do operador
+ * diz *"parada"*. É a mesma classe do REG-08 que o disparo manual fecha logo acima, num eixo
+ * diferente.
+ *
+ * O que este arquivo faz com o resultado é **envelopá-lo** em `{ itens }` — a forma canônica de
+ * coleção da ADR-0017 —, e nada além. Não há aqui recorte, reordenação nem tradução de rótulo: a
+ * ordem é a do roster publicado, fixada pela porta, e remodelá-la aqui criaria o segundo vocabulário
+ * que a RN-19 proíbe.
+ *
+ * ---------------------------------------------------------------------------
  * ELE ORQUESTRA — não escreve consulta, e não compara empresa
  * ---------------------------------------------------------------------------
  *
@@ -79,6 +100,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type {
   EnvelopeDeLista,
   EnvioDeCobranca,
+  EstadoDasRotinas,
   Janela,
   PoliticaDeAviso,
   PoliticaDeAvisoNova,
@@ -87,6 +109,7 @@ import {
   contarEnviosDaCobranca,
   gravarPoliticaDeAviso,
   lerEnviosDaCobranca,
+  lerEstadoDasRotinas,
   lerPoliticaDeAviso,
   localizarCandidataAoAviso,
   localizarCobranca,
@@ -268,5 +291,30 @@ export class AutomacaoDeCobrancaService {
     const total = await contarEnviosDaCobranca(tx, codigo);
 
     return { itens: [...itens], total, limite: janela.limite, deslocamento: janela.deslocamento };
+  }
+
+  /**
+   * Lê o estado das rotinas agendadas na empresa do contexto — o roster inteiro, sempre.
+   *
+   * Ela **delega**, e a ausência de cálculo é a decisão D5: quem deriva `atrasada` e
+   * `proximaEsperada` é a consulta de `@sysloc/db`, a **mesma** que a rotina de vigilância consome.
+   * Ver o cabeçalho deste arquivo para por que um segundo cálculo escrito aqui seria o REG-08 em
+   * outro eixo.
+   *
+   * ⚠️ **Não há `404`, e a ausência é conteúdo** (RD-03, molde de {@link lerPolitica}): a empresa que
+   * nunca teve passagem alguma recebe as três rotinas com `ultimaExecucao: null` e
+   * `historicoRecente: []`, porque *"ainda não rodou"* e *"não existe"* são a mesma coisa publicada —
+   * e a leitura **não cria linha alguma** para inventar estado. Um `404` obrigaria o cliente a tratar
+   * como erro o primeiro dia de toda empresa nova.
+   *
+   * O envelope é `{ itens }`, a forma canônica de coleção da ADR-0017, **sem** as três chaves de
+   * janela: o roster é fechado em três, e paginar coleção fechada é oferecer ao cliente um controle
+   * que não decide nada. A razão longa vive no esquema, em `@sysloc/contracts`.
+   */
+  async lerEstadoDasRotinas(tx: TransactionSql): Promise<EstadoDasRotinas> {
+    // A chamada é da função de domínio importada, e não deste método: membros de classe não entram no
+    // escopo léxico, de modo que os dois nomes coincidentes nunca se sombreiam. A coincidência é
+    // deliberada — a borda não renomeia o fato que a porta publica.
+    return { itens: await lerEstadoDasRotinas(tx) };
   }
 }

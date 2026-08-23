@@ -99,10 +99,14 @@
  * leste do fuso da operação e recusava o válido numa sessão a oeste. Num host cujo `initdb` já grava
  * `America/Sao_Paulo`, nada disso aparece: a suíte acertava por acidente do host.
  *
- * ⚠️ Este módulo **passa a declarar** o fuso da operação, e a declaração está sob
- * `DÉBITO COM GATILHO — D25`, no ponto do código. Ela é a **terceira** deste pacote: as outras duas
- * são o corpo de `negocio.data_corrente_da_operacao()` (`migracoes/0010_seguranca_cobranca.sql`) e a
- * constante privada `FUSO_DA_OPERACAO` de {@link ./envio-de-cobranca.ts}, que o `D14` já agenda.
+ * ⚠️ Este módulo **não declara** o fuso da operação: ele o **importa** de
+ * {@link ./fuso-da-operacao.ts}, que é a casa única dele no pacote desde o fecho do `D25 · F4/T7`
+ * (T4 da fatia `automacoes-agendadas`, 2026-08-23). Enquanto o literal vivia aqui, ele era a
+ * **terceira** declaração executável do mesmo fato — com o corpo de
+ * `negocio.data_corrente_da_operacao()` (`migracoes/0010_seguranca_cobranca.sql`) e a constante
+ * privada homônima de {@link ./envio-de-cobranca.ts} —, e nada amarrava as três. Restam **duas**: a
+ * do banco, imutável, e a do lar único; amarrá-las é o que o `D14` ainda agenda, no marcador que
+ * acompanhou o literal até lá.
  *
  * ===========================================================================
  * AS DATAS SAEM COMO `Date`, e não como texto ISO — a diferença tem causa
@@ -151,22 +155,12 @@ import type { Fragment, TransactionSql } from 'postgres';
 // caminho para o mesmo recorte é o que a ADR-0008 rejeita. Ele existe para a **escrita**, onde
 // `empresa_id` é `NOT NULL` sem padrão.
 import { empresaDoContexto } from './contexto-de-escrita.js';
-
-/**
- * O fuso da operação — declarado **uma vez neste módulo**, e consumido pelas duas instruções dele.
- *
- * Ele não é um quarto eixo: é a **mesma** declaração que o marcador `DÉBITO COM GATILHO — D25`
- * governa, promovida de literal embutido a constante quando a segunda instrução deste arquivo passou
- * a precisar dela ({@link lerVigenciaObservada}). Duas cópias do literal no mesmo arquivo seriam dois
- * fatos executáveis livres para divergir — e o divergir aqui muda **quem é recusado no registro** e
- * **qual estado é publicado na consulta**, em silêncio e em sentidos opostos.
- *
- * A contagem do débito, portanto, **não muda**: continuam três declarações no pacote — o corpo de
- * `negocio.data_corrente_da_operacao()` (`migracoes/0010_seguranca_cobranca.sql`), a constante
- * privada de {@link ./envio-de-cobranca.ts} e esta. O gatilho *"quarto consumidor do fuso no
- * pacote"* segue por disparar; ver o marcador em {@link recusarCertificadoVencido}.
- */
-const FUSO_DA_OPERACAO = 'America/Sao_Paulo';
+// O fuso da operação tem **casa única** em `./fuso-da-operacao.ts` desde o fecho do `D25 · F4/T7`,
+// e as duas instruções deste arquivo o leem de lá. A declaração local que vivia aqui era uma das
+// TRÊS cópias executáveis do literal no pacote; o gatilho do débito — o quarto consumidor —
+// chegou com a derivação de `proximaEsperada` em `./execucao-de-rotina.ts`. Ele não entra em
+// `./index.ts`; ver o cabeçalho de lá.
+import { FUSO_DA_OPERACAO } from './fuso-da-operacao.js';
 
 /**
  * O molde do **dia de calendário** que sai deste módulo para quem deriva a vigência.
@@ -482,7 +476,7 @@ export interface VigenciaObservada {
  * a derivação de apresentação viver na aplicação. Entre as duas sobra uma pergunta que só o banco
  * responde: **em que dia da operação** aquele instante cai. Devolver apenas a data corrente deixaria
  * essa redução para a borda, que precisaria declarar o fuso da operação **fora deste pacote** — um
- * quarto eixo, agora do outro lado da fronteira, e o que ele faria divergir é a coerência entre a
+ * eixo a mais, agora do outro lado da fronteira, e o que ele faria divergir é a coerência entre a
  * recusa do registro (RN-03, aqui ao lado) e o estado publicado na consulta (RN-04): o mesmo
  * certificado recusado por vencido numa rota e anunciado como `VENCENDO` na outra, no mesmo dia.
  *
@@ -541,24 +535,9 @@ export async function lerVigenciaObservada(
  * comparação inteira no banco não tem esse custo e não tem relógio a mais.
  */
 async function recusarCertificadoVencido(tx: TransactionSql, validoAte: Date): Promise<void> {
-  // DÉBITO COM GATILHO — D25 · F4/T7 · registrado 2026-08-15
-  // O QUÊ: a constante `FUSO_DA_OPERACAO` deste módulo — consumida por esta instrução e por
-  //        `lerVigenciaObservada` — é a TERCEIRA declaração executável do fuso da operação neste
-  //        pacote. As duas primeiras são o corpo de `negocio.data_corrente_da_operacao()`
-  //        (`migracoes/0010_seguranca_cobranca.sql`) e a constante privada homônima de
-  //        `src/envio-de-cobranca.ts` — que não é importável —, e NADA amarra as três: divergir
-  //        aqui muda quem é recusado, em silêncio.
-  //        (A promoção de literal a constante é da T11, quando a segunda instrução deste arquivo
-  //        passou a precisar do fuso; ela NÃO acrescenta declaração, e o gatilho segue por disparar.)
-  // QUANDO FECHA: a criação da companheira `negocio.dia_da_operacao(timestamptz) RETURNS date`,
-  //        vizinha de `data_corrente_da_operacao()` — que absorve este literal e é o caminho
-  //        preferido pelo Gate 2 —, OU o quarto consumidor do fuso no pacote.
-  // POR QUE NÃO AGORA: a companheira é migração aditiva nova (`0017`), e o `tech_spec` desta fatia
-  //        declara por escrito que as migrações dela são a `0015` e a `0016`; a nova arrastaria ainda
-  //        os quatro scripts de `deploy/scripts/instalacao/`, que exigem `sudo` interativo e que
-  //        NINGUÉM neste pipeline executa. O caminho mínimo é subconjunto estrito do preferido e não
-  //        o bloqueia; o inverso não vale.
-  // ÍNDICE: docs/specs/features/fundacao-bancaria/v1/_run/run-report.md §2, D25
+  // O fuso vem do lar único do pacote (`./fuso-da-operacao.ts`), e não de um literal escrito aqui:
+  // é o que o fecho do `D25 · F4/T7` estabeleceu, e é o que faz esta recusa e a vigência publicada
+  // por `lerVigenciaObservada` partirem do MESMO fato executável.
   const [vigencia] = await tx<{ vencido: boolean }[]>`
     SELECT (${validoAte}::timestamptz AT TIME ZONE ${FUSO_DA_OPERACAO})::date
              < negocio.data_corrente_da_operacao() AS vencido

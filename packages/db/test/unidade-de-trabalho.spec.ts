@@ -1581,6 +1581,124 @@ const SIMBOLOS_ESPERADOS = [
   // não entra pela razão de sempre: tipo não existe em tempo de execução. Nenhuma entrada saiu, e a
   // igualdade (nunca contenção) segue sendo asserida.
   'SITUACOES_DA_ENTREGA',
+  // T3 da fatia `automacoes-agendadas` — o enum e a tabela do registro de execução das rotinas
+  // agendadas, criados pela migração `0026` e forçados pela `0027`.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T3 publica DOIS símbolos novos no schema por decisão declarada na §1
+  // da task (`Símbolos públicos criados`). Eles entram pelo mesmo critério de todos os anteriores:
+  // são **declaração de estrutura**, não caminho para dado — quem os tem em mãos ainda precisa de
+  // um executor para chegar ao banco, e o executor não sai do índice. O eixo das marcas de cliente
+  // continua valendo sobre cada um deles.
+  //
+  // ⚠️ **O namespace é `esquemaNegocio`, e não `esquemaPlataforma`**: a tabela tem dono-empresa, e a
+  // ADR-0031 pela CONTRAPOSITIVA a manda para `negocio`. O roster de `plataforma` permanece com as
+  // mesmas entradas que a fatia do webhook lhe deu.
+  //
+  // Os objetos que a migração autoral `0027` cria **não aparecem aqui**, pela razão de sempre: o
+  // `FORCE ROW LEVEL SECURITY` e a política são objetos e atributos do BANCO, não símbolos deste
+  // pacote. E **nenhuma porta de domínio entra nesta task**: a T3 faz nascer a tabela, não o caminho
+  // para o dado dela.
+  //
+  // **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  'esquemaNegocio.execucaoDeRotina',
+  'esquemaNegocio.rotinaAgendada',
+  // T4 da fatia `automacoes-agendadas` — a PORTA do registro de execução: a gravação sob contexto, a
+  // leitura com a derivação corrida no banco, o histórico recente e o expurgo por idade.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T4 publica QUATRO símbolos novos no índice por decisão declarada na §1
+  // e na §5.2 da task (`Símbolos públicos criados`). O critério é o mesmo de todas as portas
+  // anteriores: as quatro **recebem** o executor de quem já abriu a unidade de trabalho, não abrem
+  // conexão, não reservam e não devolvem executor.
+  //
+  // Duas razões próprias desta entidade se somam. A primeira é que `lerEstadoDasRotinas` é a **mesma**
+  // derivação que os dois consumidores independentes consomem — a rotina de vigilância, que filtra as
+  // atrasadas, e a rota do Admin —, e ter o ponto com nome é o que torna verificável a afirmação de
+  // que existe UM lugar onde `atrasada` e `proximaEsperada` são derivadas: uma segunda derivação
+  // apareceria aqui como símbolo excedente, e não como um `CASE` a mais escondido no serviço.
+  //
+  // A segunda é que `registrarExecucaoDeRotina` é o **único** caminho de escrita do histórico, e por
+  // isso o único ponto em que a RN-15 pode ser desrespeitada. Publicar a porta é o que torna
+  // enumerável quem grava — e é o que faz um segundo `INSERT` sobre `negocio.execucao_de_rotina`,
+  // escrito fora do pacote, ser impossível sem que este conjunto mude.
+  //
+  // O que **não** sai do pacote, e a ausência é deliberada: `lerFatosDeImpedimento`,
+  // `MENSAGEM_POR_IMPEDIMENTO`, `IMPEDIMENTOS_POR_ROTINA`, `DIAS_DE_RETENCAO_DO_HISTORICO`,
+  // `PASSAGENS_NO_HISTORICO_RECENTE` e `HORAS_DA_RECUSA_RECENTE`, de `src/execucao-de-rotina.ts`.
+  // São o mecanismo interno da derivação e do expurgo, pelo mesmo critério de `empresaDoContexto` e
+  // de `DIAS_DE_RETENCAO_DO_CRU` — publicar o limite do histórico daria à borda um tamanho de página
+  // para escolher, e é justamente o limite POR CONSTRUÇÃO que dispensa a segunda rota da decisão D3.
+  //
+  // Os tipos que elas publicam (`ExecucaoDeRotinaNova`, `PassagemRegistrada`, `ResumoDaPassagem`) não
+  // aparecem aqui porque não existem em tempo de execução, e este caso observa o módulo carregado.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o defeito
+  // que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia. **Nenhuma
+  // entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  'expurgarExecucoesVencidas',
+  'lerEstadoDasRotinas',
+  'lerHistoricoRecenteDeRotinas',
+  'registrarExecucaoDeRotina',
+  // T5 da fatia `automacoes-agendadas` — a PASSAGEM do encerramento do contrato vencido: seleção
+  // sob `FOR UPDATE … SKIP LOCKED`, transição sob predicado e liberação condicional do imóvel pela
+  // porta estreita, tudo na unidade de trabalho que ela recebe.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T5 publica UM símbolo novo no índice por decisão declarada na §1 e na
+  // §5.2 da task (`Símbolos públicos criados`). O critério é o de todas as portas anteriores: ela
+  // **recebe** o executor de quem já abriu a unidade, não abre conexão, não reserva e não devolve
+  // executor.
+  //
+  // Duas razões próprias desta fatia se somam. A primeira é a **atomicidade do par**: encerrar o
+  // contrato e liberar o imóvel são um ato (RN-03), e publicar a passagem como UMA função é o que
+  // impede a composição por fora — "selecione lá, encerre aqui, libere depois" —, em que a segunda
+  // escrita cairia noutra transação e um contrato ficaria `ENCERRADO` com o imóvel ainda `LOCADO`.
+  //
+  // A segunda é a **enumerabilidade de quem escreve `contrato.status`**: com ela publicada, os
+  // produtores dos quatro estados do contrato são exatamente quatro símbolos deste conjunto —
+  // `criarContrato` (`RASCUNHO`), `ativarContrato` (`ATIVO`), `cancelarContrato` (`CANCELADO`) e
+  // esta (`ENCERRADO`) —, e um quinto apareceria aqui como excedente. É o que torna verificável a
+  // frase de que o `ENCERRADO` só nasce por vencimento.
+  //
+  // O que **não** sai do pacote, e as ausências são deliberadas: `selecionarCandidatos` e
+  // `encerrarContrato`, de `src/encerramento-de-contratos.ts`. São as duas metades internas do par,
+  // e publicá-las ofereceria justamente a composição por fora que o parágrafo acima fecha — a
+  // primeira, ainda por cima, **trava linha de contrato** e a devolveria para alguém decidir o que
+  // fazer com ela. O tipo que ela publica (`ResultadoDoEncerramento`) não aparece aqui porque não
+  // existe em tempo de execução, e este caso observa o módulo carregado.
+  //
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o defeito
+  // que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia. **Nenhuma
+  // entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  'encerrarContratosVencidos',
+  // T8 da fatia `automacoes-agendadas` — as DUAS leituras SEM CONTEXTO que o despachante efêmero
+  // consome: a enumeração de tenants e as notícias paradas em `RECEBIDO`.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T8 publica DOIS símbolos novos no índice por decisão declarada na §1
+  // e na §5.2 da task (`Símbolos públicos criados`). As duas entram pelo critério de todas as portas
+  // anteriores: **recebem** o executor de quem já abriu a unidade, não abrem conexão, não reservam e
+  // não devolvem executor. O caso reprovaria por `excedentes` não porque a superfície cresceu por
+  // descuido — que é o defeito que ele existe para pegar —, mas porque cresceu por decisão que ele
+  // ainda não conhecia. **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue
+  // sendo asserida.
+  //
+  // A razão própria das duas é a **assimetria de contexto**, e é ela que torna a publicação
+  // indispensável em vez de conveniente. `listarEmpresasAtivas` é a leitura legítima **#1** da
+  // ADR-0024 — a enumeração de tenants, em `identidade`, schema que nunca teve política (ADR-0009) —,
+  // e é dela que sai **todo** `empresaId` que viaja em carga de rotina agendada. `listarNaoTratadas`
+  // corre igualmente sem contexto, por razão diferente: `plataforma.notificacao_bancaria` não tem
+  // dono-empresa (ADR-0031). Publicá-las é o que impede o despachante de compor por fora um
+  // `SELECT id FROM identidade.empresa WHERE suspensa_em IS NULL` — um segundo caminho para o mesmo
+  // dado, com a própria ideia do que é *ativa* e do que é *não tratada*. Um segundo caminho
+  // apareceria aqui como símbolo excedente, e não como um `WHERE` escondido num ponto de entrada.
+  //
+  // O que **não** sai do pacote, e a ausência é deliberada: `DIAS_DE_RETENCAO_DO_CRU` segue interno,
+  // e a **folga** da retomada nem sequer mora neste pacote — ela é cadência da unidade `systemd`, e
+  // chega a `listarNaoTratadas` por parâmetro.
+  'listarEmpresasAtivas',
+  'listarNaoTratadas',
 ] as const;
 
 /** As propriedades que denunciam um cliente `postgres.js` — a marca do executor cru. */
@@ -1845,6 +1963,25 @@ const CHAMADORES_LEGITIMOS: readonly string[] = [
   // afrouxada**: continua sendo igualdade de conjunto, com `excedentes` e `ausentes` nomeados, e
   // qualquer arquivo fora desta lista segue reprovando nominalmente.
   join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/reconferencia-da-entrega.ts'),
+  // A borda das QUATRO ROTINAS POR EMPRESA (T6 da fatia `automacoes-agendadas`).
+  //
+  // SUT_IS_CORRECT_BECAUSE: a lista enumera BORDAS, e esta é uma — a tarefa chega do servidor de
+  // fila, o `empresaId` vem da carga **já conferida por `strictObject` antes de qualquer leitura**, e
+  // o contexto é aberto UMA vez pelo mesmo escritor único (ADR-0024 / ADR-0029). ⚠️ **A abertura é
+  // ÚNICA e acontece ANTES do despacho**: o `switch` das quatro rotinas corre inteiro dentro dela, e
+  // a passada da conferência que ela executa (`executarConferenciaDaEmpresa`) foi escrita para rodar
+  // sob contexto **já aberto**, sem `executarCom` próprio — é o que impede a sétima borda de virar a
+  // primeira que reabre contexto no meio do trabalho.
+  //
+  // O que é PRÓPRIO dela é **quem produziu o identificador**: a enumeração de tenants do despachante,
+  // que lê `identidade.empresa` sem noção de tenant — a primeira das duas origens legítimas que a
+  // `Decision` da ADR-0024 nomeia, e cujo alcance a emenda de 2026-08-18 declara. O que ela NÃO é: um
+  // serviço abrindo contexto próprio — `packages/db/src/encerramento-de-contratos.ts` e
+  // `packages/db/src/execucao-de-rotina.ts` **recebem** o `tx` e não conhecem `AcessoAoBanco`, e as
+  // portas bancárias chegam por parâmetro (ADR-0025). A asserção **não foi afrouxada**: continua
+  // sendo igualdade de conjunto, com `excedentes` e `ausentes` nomeados, e um décimo chamador segue
+  // reprovando nominalmente.
+  join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/rotina-agendada.ts'),
 ].sort();
 
 /**
@@ -2133,6 +2270,65 @@ const ABRIDORES_LEGITIMOS: readonly string[] = [
   // A asserção **não foi afrouxada**: continua sendo igualdade de conjunto com `excedentes` e
   // `ausentes` nomeados, e qualquer arquivo fora desta lista reprova nominalmente.
   join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/reconferencia-da-entrega.ts'),
+  // A borda das QUATRO ROTINAS POR EMPRESA (T6 da fatia `automacoes-agendadas`).
+  //
+  // SUT_IS_CORRECT_BECAUSE: o elenco enumera **bordas**, e a decisão D1 é literalmente *"a unidade
+  // abre na BORDA, e o serviço recebe o executor"*. Ela abre **uma unidade por rotina despachada** —
+  // e, no encerramento e no expurgo, o trabalho e o registro da passagem correm na **mesma**, porque
+  // o resumo devolvido não sobrevive ao desfazimento e não haveria o que registrar (RN-15). Na
+  // conferência a unidade única é impossível por desenho da F4 (uma por cobrança, para que a falha da
+  // trigésima não desfaça as vinte e nove anteriores), e por isso o registro dela corre em unidade
+  // própria, depois — consequência declarada no docblock daquele ramo.
+  //
+  // O que ela NÃO é: um serviço de domínio abrindo unidade própria —
+  // `packages/db/src/encerramento-de-contratos.ts`, `packages/db/src/execucao-de-rotina.ts` e
+  // `packages/db/src/conferencia-bancaria.ts` **recebem** o `tx` e não conhecem `AcessoAoBanco`, e
+  // `@sysloc/cobranca-bancaria` não importa `@sysloc/db` (ADR-0025). Ela **também** escreve contexto,
+  // e por isso entra nas DUAS listas — ver {@link CHAMADORES_LEGITIMOS}. A asserção **não foi
+  // afrouxada**: continua sendo igualdade de conjunto com `excedentes` e `ausentes` nomeados, e
+  // qualquer arquivo fora desta lista reprova nominalmente.
+  join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/rotina-agendada.ts'),
+  // A borda da MANUTENÇÃO DO ACERVO (T7 da mesma fatia) — a única do produto SEM empresa alguma.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o elenco enumera **bordas**, e a decisão D1 é literalmente *"a unidade
+  // abre na BORDA, e o serviço recebe o executor"*. Ela abre **uma** unidade, para o expurgo do
+  // recebido cru; o segundo alvo dela — o acervo de boletos — não é banco, é sistema de arquivos, e
+  // corre FORA de qualquer unidade, para não segurar a conexão física durante o `fs`.
+  //
+  // ⚠️ **Ela entra AQUI e NÃO em `BORDAS_QUE_ESCREVEM_CONTEXTO`** (`../fonte-unica-do-estado.spec.ts`),
+  // e a assimetria é a decisão: `plataforma.notificacao_bancaria` vive no schema sem noção de tenant,
+  // que não carrega `empresa_id`, não habilita RLS e não tem política que o alcance (ADR-0031) — não
+  // há contexto a estabelecer, e fixá-lo "para facilitar" daria à varredura a aparência de correr sob
+  // tenant. É o mesmo critério que põe o serviço de recepção da notícia só nesta lista, por razão
+  // vizinha: quem abre unidade sem escrever contexto pertence a uma lista, e não às duas.
+  //
+  // O que ela NÃO é: um serviço de domínio abrindo unidade própria —
+  // `packages/db/src/notificacao-bancaria.ts` **recebe** o `tx` e não conhece `AcessoAoBanco`, e a
+  // guarda do acervo (`@sysloc/cobranca-bancaria`) chega por parâmetro e não importa `@sysloc/db`
+  // (ADR-0025). A asserção **não foi afrouxada**: continua sendo igualdade de conjunto com
+  // `excedentes` e `ausentes` nomeados, e qualquer arquivo fora desta lista reprova nominalmente.
+  join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/tarefas/manutencao-do-acervo.ts'),
+  // O DESPACHANTE EFÊMERO (T8 da mesma fatia) — o segundo ponto de entrada de `apps/worker`.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o elenco enumera **bordas**, e a decisão D1 é literalmente *"a unidade
+  // abre na BORDA, e o serviço recebe o executor"*. Ele é composição raiz, e abre **uma** unidade por
+  // leitura: a da enumeração de empresas ativas e — na retomada — a das notícias paradas. As duas
+  // fecham antes de qualquer enfileiramento, e nenhuma envolve o servidor de fila: enfileirar dentro
+  // da unidade daria à tarefa um identificador que a transação ainda pode desfazer.
+  //
+  // ⚠️ **Ele entra AQUI e NÃO em `BORDAS_QUE_ESCREVEM_CONTEXTO`** (`../fonte-unica-do-estado.spec.ts`),
+  // e a assimetria é a decisão: as duas leituras dele correm **sem** contexto de tenant, porque
+  // `identidade.empresa` nunca teve política (ADR-0009) e `plataforma.notificacao_bancaria` não tem
+  // dono-empresa (ADR-0031). Fixar `app.empresa_id` ali daria à enumeração a aparência de correr sob
+  // tenant, e a primeira leitura tenantizada acrescentada depois encontraria o contexto já aberto com
+  // a empresa de ninguém — a política devolvendo vazio em silêncio. É o mesmo critério que põe a
+  // manutenção do acervo só nesta lista.
+  //
+  // O que ele NÃO é: um serviço de domínio abrindo unidade própria — `packages/db/src/empresa.ts` e
+  // `packages/db/src/notificacao-bancaria.ts` **recebem** o `tx` e não conhecem `AcessoAoBanco`. A
+  // asserção **não foi afrouxada**: continua sendo igualdade de conjunto com `excedentes` e
+  // `ausentes` nomeados, e qualquer arquivo fora desta lista reprova nominalmente.
+  join(RAIZ_DO_REPOSITORIO, 'apps/worker/src/despachante.ts'),
 ].sort();
 
 /**

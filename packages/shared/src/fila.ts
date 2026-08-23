@@ -68,6 +68,36 @@
  *
  * ⚠️ **Acrescentar `empresaId` aqui não seria conformidade, seria violação.** É a armadilha mais
  * provável de quem editar este arquivo por analogia com as cinco cargas de cima.
+ *
+ * ---------------------------------------------------------------------------
+ * AS DUAS CLASSES CONVIVEM — e a assimetria entre as duas cargas novas é conformidade
+ * ---------------------------------------------------------------------------
+ *
+ * O trabalho que roda sozinho publica **duas** filas de uma vez, uma em cada classe, e é a primeira
+ * vez que as duas nascem no mesmo diff. Quem editar por analogia vai errar em uma delas:
+ *
+ * - {@link CargaDaRotinaAgendada} é da **primeira** classe e leva `empresaId` obrigatório. Quem a
+ *   produz é a **enumeração de tenants** — literalmente uma das duas origens que a `Decision` nomeia
+ *   —, e ela *já detinha direito ao identificador*. Ela entra, portanto, na lista do parágrafo de
+ *   cima, ao lado de {@link CargaDaRegua} e das irmãs.
+ * - {@link CargaDaManutencaoDoAcervo} é da **segunda** e não tem campo algum — mas **não pela razão
+ *   de {@link CargaDaNotificacaoBancaria}**. Lá a empresa é o *resultado* de uma travessia nominal
+ *   ainda por fazer; aqui **não há empresa alguma a resolver**: os alvos são
+ *   `plataforma.notificacao_bancaria`, que vive no schema sem noção de tenant (ADR-0031), e o
+ *   diretório dos boletos, que é sistema de arquivos. Inventar um `empresaId` seria atribuir dono a
+ *   dado que não tem.
+ *
+ * A **terceira emenda da ADR-0024** (2026-08-18) autoriza a segunda pela mesma frase que autorizou a
+ * notícia bancária, e o que ela declara é mais largo do que aquele caso: a obrigatoriedade é **da
+ * procedência, não do campo** — *"o que nunca pode faltar é a resposta a 'quem tinha direito a este
+ * identificador' — e quando a resposta é 'ninguém ainda; ele é o resultado', o campo não existe"*.
+ * Aqui a resposta é *"ninguém, nunca"*, e o campo não existe pela mesma razão.
+ *
+ * ⚠️ **O expurgo do histórico de execução NÃO corre pela manutenção do acervo.** É a leitura errada
+ * mais provável daqui: `negocio.execucao_de_rotina` **é** tenantizada, tem RLS e dono, e por isso o
+ * expurgo dela viaja como `EXPURGO_DO_HISTORICO` em {@link CargaDaRotinaAgendada}, **sob contexto**.
+ * Mudá-lo para a fila sem tenant faria uma varredura sem `app.empresa_id` alcançar dado de empresa —
+ * que é o que a ADR-0008 tornou impossível pelo banco, e não algo a reabrir pela carga.
  */
 
 /**
@@ -178,6 +208,37 @@ export const FILA_DA_NOTIFICACAO_BANCARIA = 'notificacao-bancaria';
  * ausência de efeito é indistinguível de *"nada mudou"*, que é o desfecho normal da reconferência.
  */
 export const FILA_DA_RECONFERENCIA_DA_ENTREGA = 'reconferencia-da-entrega';
+
+/**
+ * Nome da fila da **rotina agendada** de uma empresa — o trabalho que o relógio dispara sozinho.
+ *
+ * Quem enfileira é o **despachante**, o processo efêmero que cada disparo do relógio acorda: ele
+ * enumera as empresas ativas, publica uma tarefa por empresa e termina. Quem consome é o processo de
+ * trabalho supervisionado. Vale aqui, palavra por palavra, a razão de {@link FILA_DA_REGUA}: um
+ * literal repetido dos dois lados é a divergência que nenhuma ferramenta apanha, porque o trabalho
+ * fica parado **sem erro nenhum**.
+ *
+ * O agravante próprio desta fila é o **silêncio do relógio**. Nas filas de borda há sempre alguém do
+ * outro lado esperando — o Admin que abriu o lote, o terceiro que já recebeu o `204`. Aqui não há
+ * ninguém: um nome que ninguém escuta faria contrato vencido continuar `ATIVO` e conferência nunca
+ * abrir, e o produto **pareceria** em dia. É por isso que a `VIGILANCIA_DAS_ROTINAS` viaja nesta
+ * mesma fila — e é também por isso que ela não pode ser a única rede.
+ */
+export const FILA_DA_ROTINA_AGENDADA = 'rotina-agendada';
+
+/**
+ * Nome da fila da **manutenção do acervo** — a limpeza do que não é dado de empresa alguma.
+ *
+ * Quem enfileira é o mesmo despachante, no disparo de manutenção; quem consome é o processo de
+ * trabalho, que descarta a notícia bancária crua vencida (`plataforma.notificacao_bancaria`) e o
+ * boleto guardado vencido (sistema de arquivos). Vale aqui, palavra por palavra, a razão de
+ * {@link FILA_DA_REGUA}.
+ *
+ * O agravante próprio é o mesmo silêncio da fila de cima, com um desfecho diferente: nada quebra
+ * quando ela não é escutada — o disco apenas cresce sem teto, que é exatamente o defeito de espaço
+ * que esta fatia existe para fechar, e ele só se manifesta meses depois.
+ */
+export const FILA_DA_MANUTENCAO_DO_ACERVO = 'manutencao-do-acervo';
 
 /**
  * Opções aplicadas a toda tarefa enfileirada, por qualquer produtor.
@@ -327,6 +388,17 @@ export interface CargaDaConferenciaBancaria {
  * Vale aqui, também, o cabeçalho de {@link CargaDaEmissaoEmLote}: **nada de segredo viaja**. O que
  * segue é um identificador de linha, e o recebido cru — que carrega dado pessoal do pagador —
  * permanece na coluna `jsonb` com prazo de guarda, alcançado pela tarefa a partir deste `id`.
+ *
+ * ---------------------------------------------------------------------------
+ * EMENDA (2026-08-22) — a palavra "única" acima envelheceu; a RAZÃO dela não
+ * ---------------------------------------------------------------------------
+ *
+ * O texto acima está preservado como foi escrito, e era verdadeiro na data: esta era a única carga
+ * do produto sem `empresaId`. {@link CargaDaManutencaoDoAcervo} nasceu depois, também sem campo
+ * algum, e **por motivo diferente** — ver o bloco "AS DUAS CLASSES CONVIVEM" no cabeçalho do módulo.
+ * A distinção importa e não é preciosismo: aqui a empresa **existe e é descoberta** pela travessia
+ * nominal, e o contexto nasce do registro resolvido; lá não há empresa alguma a descobrir. Quem
+ * "uniformizar" as duas — dando empresa a esta ou travessia àquela — reabre coisas distintas.
  */
 export interface CargaDaNotificacaoBancaria {
   /**
@@ -371,3 +443,115 @@ export interface CargaDaReconferenciaDaEntrega {
    */
   readonly empresaId: string;
 }
+
+/**
+ * As **quatro** rotinas por empresa que {@link FILA_DA_ROTINA_AGENDADA} transporta.
+ *
+ * ---------------------------------------------------------------------------
+ * Este conjunto é DISTINTO dos dois de `@sysloc/contracts`, e não se deriva deles
+ * ---------------------------------------------------------------------------
+ *
+ * Há três conjuntos de rotina no produto, e eles servem a propósitos diferentes — confundi-los é o
+ * erro que a união fechada existe para impedir:
+ *
+ * 1. **este**, com quatro nomes: o que a **fila** transporta, isto é, o trabalho que corre **por
+ *    empresa**, sob contexto de tenant;
+ * 2. a cadência publicada, com **seis** entradas — uma por unidade do relógio, incluindo as que não
+ *    são por empresa;
+ * 3. o roster que o Admin enxerga, com **três** — as que geram registro visível.
+ *
+ * Nenhum é subconjunto ordenado do outro: `EXPURGO_DO_HISTORICO` corre por empresa e **não** tem
+ * unidade própria (ele pega carona no disparo de manutenção), enquanto `AVISO_DE_COBRANCA` tem
+ * unidade e é publicado, mas viaja pela fila **que já existia**, {@link FILA_DA_REGUA}. Derivar um do
+ * outro faria a fila transportar rotina que ninguém trata, ou deixaria de transportar a que trata.
+ *
+ * A união é **fechada** por decisão: uma alternativa acrescentada aqui sem consumidor do outro lado
+ * produz tarefa que o processo de trabalho recusa na conferência da carga — o que é o desfecho certo,
+ * e é justamente o que um `string` largo transformaria em trabalho silenciosamente não feito.
+ *
+ * ⚠️ **Este módulo não depende de `zod`, e a ausência é parte da decisão** — ver o cabeçalho. A
+ * conferência em tempo de execução vive na **borda que recebe a carga**, com `strictObject`, e é lá
+ * que a recusa nomeia o campo. Aqui a união é o que o **compilador** cobra dos dois lados.
+ */
+export type RotinaDeTrabalho =
+  | 'ENCERRAMENTO_DE_CONTRATOS'
+  | 'CONFERENCIA_DE_LIQUIDACAO'
+  | 'VIGILANCIA_DAS_ROTINAS'
+  | 'EXPURGO_DO_HISTORICO';
+
+/**
+ * Carga útil de **uma** rotina agendada de **uma** empresa — um identificador e o que fazer.
+ *
+ * ---------------------------------------------------------------------------
+ * `empresaId` está presente, e isso é CONFORMIDADE — a PRIMEIRA classe da ADR-0024
+ * ---------------------------------------------------------------------------
+ *
+ * Quem a produz é a **enumeração de tenants**, que a `Decision` nomeia por extenso como uma das duas
+ * origens legítimas do identificador: ela lê o schema sem noção de tenant, e o valor que viaja aqui é,
+ * portanto, produzido por quem **já detinha direito a ele** — nunca lido de nada que uma origem
+ * externa tenha enviado. Um campo opcional reabriria o pior modo de falha da ADR-0008: sem contexto,
+ * a política devolve vazio **em silêncio** e o trabalho *parece* ter rodado — que numa rotina sem
+ * ninguém do outro lado significaria meses de nada acontecendo sem que nada falhasse.
+ *
+ * ⚠️ **Não a leia por analogia com {@link CargaDaManutencaoDoAcervo}**, que é a vizinha logo abaixo e
+ * nasceu no mesmo diff: lá não há empresa alguma porque os alvos não têm dono; aqui há, e tirar o
+ * campo seria a regressão descrita no parágrafo acima.
+ *
+ * Vale aqui, também, o cabeçalho de {@link CargaDaEmissaoEmLote}: **nada de segredo viaja**, e o que
+ * segue são um identificador e um nome de rotina. O que a tarefa precisa saber do domínio ela lê do
+ * banco, sob o contexto que esta carga estabelece.
+ */
+export interface CargaDaRotinaAgendada {
+  /**
+   * A empresa cuja passagem da rotina o trabalho vai executar.
+   *
+   * Obrigatório por decisão da ADR-0024 — ver o cabeçalho desta interface e o do módulo. A
+   * procedência **não é verificável pelo banco**: ela é disciplina de quem enfileira, provada por
+   * teste.
+   */
+  readonly empresaId: string;
+  /** Qual das quatro rotinas por empresa esta passagem executa. */
+  readonly rotina: RotinaDeTrabalho;
+}
+
+/**
+ * Carga útil da manutenção do acervo — **nenhum campo**, e a ausência é o mecanismo.
+ *
+ * ---------------------------------------------------------------------------
+ * A SEGUNDA classe da ADR-0024, por razão PRÓPRIA — ver "AS DUAS CLASSES CONVIVEM" no cabeçalho
+ * ---------------------------------------------------------------------------
+ *
+ * Os dois alvos desta tarefa não têm dono-empresa: `plataforma.notificacao_bancaria` vive no schema
+ * da plataforma, que por decisão **não carrega `empresa_id`** (ADR-0031), e o diretório dos boletos
+ * guardados é sistema de arquivos. **Não há empresa a levar**, e inventar uma seria atribuir dono a
+ * dado que não tem — além de fixar um contexto que a varredura não usaria para nada.
+ *
+ * ⚠️ **Acrescentar `empresaId` aqui não seria conformidade, seria violação** — a mesma armadilha que
+ * o cabeçalho já adverte para {@link CargaDaNotificacaoBancaria}, e por motivo **diferente do dela**.
+ * O campo que alguém acrescentasse por analogia com {@link CargaDaRotinaAgendada}, a vizinha logo
+ * acima, é recusado **nomeando a chave** pelo `strictObject` da borda que confere a carga, e a forma
+ * declarada aqui é afirmada sobre o texto deste arquivo pela suíte do pacote.
+ *
+ * ⚠️ **O expurgo do histórico de execução NÃO corre por aqui**: `negocio.execucao_de_rotina` é
+ * tenantizada, e o expurgo dela viaja como `EXPURGO_DO_HISTORICO` em {@link CargaDaRotinaAgendada},
+ * sob contexto. Trazê-lo para cá é a leitura errada mais provável desta interface.
+ *
+ * O tipo é declarado **sem campo** em vez de o trabalho ser enfileirado sem carga: o nome é o que faz
+ * produtor e consumidor concordarem sobre **o que** está sendo pedido, e é ele que a borda confere.
+ * Um `void` do lado do produtor não teria onde ser conferido.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que `Record<string, never>` e NÃO `interface … {}` — a diferença foi MEDIDA
+ * ---------------------------------------------------------------------------
+ *
+ * Esta é a única carga do módulo que não é `interface`, e a exceção não é estilo: uma interface vazia
+ * **não recusa campo algum**. Medido no compilador deste repositório, com `strict` e
+ * `exactOptionalPropertyTypes` ligados, `const c: Vazia = { empresaId: 'x' }` **compila** — tanto com
+ * o literal direto quanto por variável —, enquanto a forma acima falha nas duas com
+ * *"Type 'string' is not assignable to type 'never'"*. Ou seja: com `interface {}`, o produtor que
+ * acrescentasse `empresaId` por analogia com {@link CargaDaRotinaAgendada} passaria pelo `tsc` sem
+ * um ruído, e a decisão da ADR só existiria no docblock — que é exatamente o modo de falha que este
+ * arquivo inteiro existe para fechar. Aqui quem recusa é o **compilador**, na linha do produtor, e a
+ * recusa nomeando a chave no `strictObject` da borda é a segunda rede, não a única.
+ */
+export type CargaDaManutencaoDoAcervo = Record<string, never>;

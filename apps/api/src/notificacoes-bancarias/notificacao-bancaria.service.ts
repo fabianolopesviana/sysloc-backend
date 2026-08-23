@@ -88,17 +88,6 @@ export class NotificacaoBancariaService {
     await this.enfileirar({ notificacaoId });
   }
 
-  // DÉBITO COM GATILHO — D13 · F4/T6 · registrado 2026-08-19
-  // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma capacidade que falta, não protege o código abaixo.)
-  // O QUÊ: notícia que fica em `RECEBIDO` porque o enfileiramento falhou **não tem quem a
-  //        reprocesse**. O cru está gravado e é alcançável, mas nada o alcança sozinho — só a
-  //        reativação de empresa suspensa varre pendências, e ela só enxerga `RETIDO`.
-  // QUANDO FECHA: a **F5**, que traz o agendamento por temporizador do sistema, ou o primeiro caso
-  //        real de servidor de fila indisponível na recepção.
-  // POR QUE NÃO AGORA: a F5 traz o agendador, e pendurar aqui um varredor próprio seria um segundo
-  //        mecanismo de agendamento sem consumidor medido — que é o que teria de ser desfeito
-  //        quando o primeiro chegasse.
-  // ÍNDICE: docs/specs/features/webhook-e-carne/v1/_run/run-report.md §2, D13
   /**
    * Enfileira o tratamento — e **absorve** a falha, em vez de propagá-la.
    *
@@ -107,6 +96,13 @@ export class NotificacaoBancariaService {
    * que a resposta de erro *causaria* a reentrega que a idempotência da fatia existe para
    * **absorver**. O que não pode se perder já não se perdeu: o cru está gravado, e a notícia
    * permanece em `RECEBIDO`, consultável e reprocessável.
+   *
+   * ⚠️ **E quem a reprocessa tem nome desde a F5**: a rotina `RETOMADA_DE_NOTICIAS` do despachante
+   * (`apps/worker/src/despachante.ts`) varre, de dez em dez minutos, toda notícia parada em
+   * `RECEBIDO` além da folga e a reenfileira na **mesma** fila — pela porta `listarNaoTratadas` de
+   * `@sysloc/db`. É o fecho do `D13 · F4/T6`, que registrava justamente que absorver aqui deixava a
+   * notícia sem ninguém para alcançá-la sozinha. **Não pendure um varredor próprio neste serviço**:
+   * seria um segundo mecanismo de agendamento, e o primeiro já existe.
    *
    * A diferença para o lote é de produto, não de infraestrutura: lá o pedido do Admin foi *"execute
    * isto"*, e dizer `201` sem ter enfileirado seria mentir sobre o desfecho; aqui o pedido do

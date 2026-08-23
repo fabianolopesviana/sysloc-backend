@@ -14,6 +14,11 @@
  *   runtime — quem afirma a publicação delas é `fila.spec.ts`, sobre o texto do barril, e quem
  *   afirma o conteúdo é o compilador. A asserção aqui é de **presença**, como as demais deste caso,
  *   pela decisão registrada logo abaixo.
+ * - CT-009 (T2): a superfície publica também as **duas filas do trabalho agendado**,
+ *   `FILA_DA_ROTINA_AGENDADA` e `FILA_DA_MANUTENCAO_DO_ACERVO`. Mesma razão da linha acima, e as
+ *   cargas delas (`CargaDaRotinaAgendada`, `CargaDaManutencaoDoAcervo`) e a união `RotinaDeTrabalho`
+ *   também não existem em runtime — quem afirma a publicação delas é o `CT-1089` de `fila.spec.ts`,
+ *   sobre o texto do barril, e por **igualdade de conjunto** sobre os símbolos `FILA_*`.
  * - CT-645: a superfície pública NÃO expõe as quatro peças da política de repetição de tarefa —
  *   `OPCOES_PADRAO_DA_TAREFA` é o único caminho publicado. Acrescentado pela intervenção dirigida
  *   de 2026-08-12 que fechou o `D31 (F3/T7)`; é a rede que faltava para a decisão de não publicá-las.
@@ -113,6 +118,12 @@ describe('CT-009 — superfície pública resolve pelo especificador do pacote',
     // símbolo que virasse objeto de configuração quebraria os dois lados sem que a chave sumisse.
     expect(publico.tipos.FILA_DA_EMISSAO_EM_LOTE).toBe('string');
     expect(publico.tipos.FILA_DA_CONFERENCIA_BANCARIA).toBe('string');
+    // E as duas filas do trabalho agendado (T2), pela mesma razão e no mesmo diff que as publica. O
+    // agravante próprio delas é que **ninguém está do outro lado esperando**: quem enfileira é o
+    // relógio, e um símbolo que sumisse da fronteira ou virasse objeto de configuração faria o
+    // despachante e o processo de trabalho desencontrarem sem que nada falhasse por meses.
+    expect(publico.tipos.FILA_DA_ROTINA_AGENDADA).toBe('string');
+    expect(publico.tipos.FILA_DA_MANUTENCAO_DO_ACERVO).toBe('string');
   });
 
   it('CT-645 — a superfície NÃO publica as peças da política de repetição', async () => {

@@ -783,7 +783,12 @@ export async function definirCirculacaoDoImovel(
  *
  * Ela devolve `void` porque quem a chama já tem o imóvel em mãos: são a ativação e o cancelamento de
  * contrato, que acabaram de alcançá-lo pela chave estrangeira composta, e a rota de situação de
- * locação. A ausência de linha é, portanto, estado impossível — e ela levanta com nome, em vez de
+ * locação. A partir da F5 há um **quarto**, e ele é o único **sem ator**: o encerramento do contrato
+ * vencido, em {@link ./encerramento-de-contratos.ts}, que a alcança pelo imóvel lido na própria
+ * seleção dos candidatos. Ele é o chamador que **não** escreve a situação sempre — só converte
+ * `LOCADO → DISPONIVEL`, e preserva o `INDISPONIVEL` do Admin (RD-20); a condição é dele, e não
+ * desta porta, que segue escrevendo o que lhe mandarem.
+ * A ausência de linha é, portanto, estado impossível — e ela levanta com nome, em vez de
  * deixar a escrita não ter efeito em silêncio, que é o modo de falha desta operação: um imóvel que
  * ficasse `DISPONIVEL` com contrato vigente não acusaria nada até a segunda locação ser recusada.
  */

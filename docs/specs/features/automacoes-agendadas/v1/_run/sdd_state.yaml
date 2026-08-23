@@ -1,0 +1,88 @@
+feature: "Automações agendadas — F5, fatia (ii): o que roda sozinho"
+current_step: task_plan
+source: recommended
+source_note: "o pre-refinement.md §15.2 recomendou SDD e o usuário seguiu a recomendação; a divergência registrada é contra o plano-execucao.md §F5(ii), que indicava miniSpec — a razão está na §15.2/§15.3 do discovery"
+variant: backend
+steps:
+  prd:
+    status: completed
+    summary: "14 US, 24 CA, 19 RN. Dar ao produto o gatilho que ele nunca teve, com o encerramento de contrato vencido como domínio novo."
+  tech_alignment:
+    status: completed
+    summary: "8 decisões técnicas. Nenhuma candidata a ADR — as três de maior alcance apoiam-se em ADR vigente (0024, 0021 emendada, 0026). 5 pontos técnicos a critério do TECH_SPEC + 2 dependências de produto."
+  tech_spec:
+    status: completed
+    variant: backend
+    summary: >-
+      Componentes novos: despachante efêmero (2º ponto de entrada de apps/worker), consumidor único
+      das rotinas por empresa, consumidor da manutenção sem tenant, encerramento-de-contratos.ts,
+      execucao-de-rotina.ts e o roster publicado em @sysloc/contracts. 1 endpoint novo
+      (GET /v1/automacao-de-cobranca/rotinas — a ÚLTIMA rota antes do congelamento; superfície
+      105→106 rotas / 90→91 manipuladores, públicas inalteradas em 20). Tabelas: negocio.execucao_de_rotina
+      (+ enum negocio.rotina_agendada), migrações 0026 (gerada) e 0027 (autoral, FORCE RLS + política).
+      2 filas novas (rotina-agendada, manutencao-do-acervo) + o produtor que faltava para regua-de-cobranca.
+      13 unidades systemd (6 timers + 6 oneshot + 1 modelo de alerta). 40 casos de teste (CT-1057 a
+      CT-1096), 24/24 CAs cobertos. Nenhuma ADR nova; nenhuma dependência de pacote nova.
+    decisoes_a1:
+      - "variante = backend (Fronteira do CLAUDE.md; o PRD §4.2 exclui qualquer tela)"
+      - "P1 — despachante é o 2º ponto de entrada de apps/worker (dist/despachante.js <rotina>), não app novo"
+      - "P2 — registro com colunas fixas + resumo jsonb, não colunas por rotina"
+      - "P3 — derivação de 'atrasada' em packages/db/src/execucao-de-rotina.ts, comparação no banco (ADR-0023/0026)"
+      - "P4 — encerramento em uma unidade por passagem, FOR UPDATE … SKIP LOCKED; nenhum mecanismo de trava novo"
+      - "P5 — vigilância e manutenção são rotinas distintas (cadências opostas)"
+      - "retenção dos boletos guardados = 90 dias, uniforme com o histórico e a notícia (reversível por parâmetro)"
+      - "RN-02/CA-06 honrada vacuamente: contrato.imovel_id é NOT NULL desde a 0007; prova-se a irrepresentabilidade em vez de relaxar a coluna"
+      - "nenhum verificar-*.sh novo — a conformidade das unidades é asserção estática Vitest; evita disparar o D9 · F0/T2"
+      - "aprovação do tech_spec assumida como a recomendada (A1), sem pausar"
+    debitos:
+      fecham: ["D26 · F4/T9 (emissao-e-conciliacao)", "D13 · F4/T6 (webhook-e-carne)"]
+      agravam: ["D44 · F2/T10 — terceiro escritor do par contrato-vigente/situação-do-imóvel; não fecha aqui"]
+      avaliar_na_task: ["D26 · F3/T8", "D14 · F3/T5", "D25 · F4/T7"]
+  design:
+    status: not_applicable   # feature backend — não há frente web/mobile neste repositório (Fronteira do CLAUDE.md)
+  validation:
+    status: completed
+    summary: "challenge-spec: 8 questões, 8 ajustes inline (2 correções de vocabulário contra código real, 1 contradição executável entre CT-1057 e CT-1090, 1 edge case novo com RD-20 + CT-1097, 1 reuso confirmado, 1 convenção, 1 Limiar de Três evitado, 1 ambiguidade de alerta). 6 termos canonizados: 2 no glossário global, 4 no glossário-feature (criado). Nenhuma ADR nova. Casos: 40 → 41 (CT-1097). _run/test-cases.json corrigido em seguida e em sincronia com a §19."
+    data: "2026-08-22" 
+  task_plan:
+    status: completed
+    data: "2026-08-22"
+    summary: >-
+      11 tasks, 5 fases, 5 paralelizáveis (T1+T2+T3 na Fase 1; T9+T10 na Fase 4 — flag DERIVADO pelo
+      Invariante de Paralelismo, com a derivação par a par registrada na §4.2 do task_plan). US
+      cobertas: 14/14. Os 41 casos do _run/test-cases.json (CT-1057 a CT-1097) foram REDISTRIBUÍDOS
+      entre as tasks sem reinvocar o agent-spec-qa-test-generator — o JSON já era lossless com
+      mapeamento CA por caso, que é a pré-condição da FASE 4 da skill; cada caso recebeu task_id.
+      24/24 CAs cobertos, nenhum CT órfão, nenhum CT em duas tasks. As 11 tasks rodam em opus com
+      gates [qa, tech_review] — decisão do CLAUDE.md (projeto exclusivamente Opus) somada à
+      classificação por tipo: T3 é db_migrations, T8 toca secrets/config, T10 toca auth/security,
+      T7 toca sistema de arquivos com contenção de caminho.
+    decisoes_a1:
+      - "confirmação do nome e das macro-fases derivada do tech_spec §1 e do PRD §11, sem pausar (autonomia-do-run §A1)"
+      - "as 3 fases de PRODUTO do PRD §11 foram reordenadas em 5 fases TÉCNICAS por dependência (Regra 10a: o grafo de símbolos força contrato e tabela antes do domínio, e domínio antes do consumidor); mapeamento explícito nas §3 e §5 do task_plan"
+      - "CT-1089: @sysloc/shared NÃO ganha zod; as pernas estáticas ficam em packages/shared/test/fila.spec.ts (T2) e as pernas de safeParse vão para onde o strictObject nasce (T6 para a carga da rotina, T7 para a da manutenção). Divergência declarada frente à §19.1 do tech_spec, registrada em tasks/T2.md §3 e reversível"
+      - "aprovação do task_plan assumida como a recomendada (A1), sem pausar"
+    debitos:
+      fecham_nas_tasks:
+        - "D26 · F4/T9 (emissao-e-conciliacao) — em T7, marcador + linha do índice no mesmo commit"
+        - "D13 · F4/T6 (webhook-e-carne) — em T8, marcador + linha do índice no mesmo commit"
+      medir_na_task:
+        - "D26 · F3/T8, D14 · F3/T5, D25 · F4/T7 — em T4 (aritmética de calendário e fuso da operação)"
+        - "D51 · F4/T16 — em T8 (JÁ DISPAROU: o despachante é o terceiro processo a exigir as mesmas variáveis)"
+        - "D49 · F4/T16 — em T6, se a implementação editar regua.ts"
+        - "D26 · F3/T8 — em T11, ao abrir derivacao-de-cobranca.ts"
+        - "D32 · F5/T9 e D40 · F5/T9 — em T10, se a suíte nova precisar de entrarComSegundoFatorCumprido"
+      nao_disparam:
+        - "D9 · F0/T2 — nenhum verificar-*.sh novo é escrito (decisão A1 da §16.1 do tech_spec)"
+        - "D38 · F5/T8 — o despachante não compõe porta bancária alguma"
+      agravam:
+        - "D44 · F2/T10 — T5 cria o terceiro escritor do par contrato-vigente/situação-do-imóvel; NÃO fecha aqui, e o agravamento vai para a §2 do run-report com o CT-1069 nomeado como a rede possível"
+    artefatos:
+      - "docs/specs/features/automacoes-agendadas/v1/task_plan.md"
+      - "docs/specs/features/automacoes-agendadas/v1/tasks/T1.md … T11.md"
+      - "docs/specs/features/automacoes-agendadas/v1/_run/qa_context.md"
+      - "docs/specs/features/automacoes-agendadas/v1/_run/test-cases.json (task_id gravado nos 41 casos)"
+  execution:
+    status: completed
+    tasks_total: 11
+    tasks_completed: 11

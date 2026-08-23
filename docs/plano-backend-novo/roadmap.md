@@ -45,7 +45,7 @@ partir pelo mesmo motivo; quando isso acontecer, as fatias novas aparecem aqui.
 | **F2** | Domínio de locação | ✅ concluída | 21/21 tasks |
 | **F3** | Cobrança, mora e documentos | ✅ concluída | 35/35 tasks |
 | **F4** | Integração bancária (Sicoob) | ✅ concluída | 43/43 tasks |
-| **F5** | Integração bancária autônoma e automações | ⬜ não iniciada | — |
+| **F5** | Integração bancária autônoma e automações | ✅ concluída | 21/21 tasks |
 | **F6** | Frontend religado — só o handoff sai daqui | ⬜ não iniciada | — |
 | **F7** | Virada e desinstalação — partida em duas | ⬜ não iniciada | — |
 <!-- PAINEL:FIM -->
@@ -348,10 +348,10 @@ diária continua liquidando.
 rotina parada gera alerta · o instalador roda duas vezes sem duplicar entrada.
 
 <!-- ESTADO:F5:INICIO -->
-> ⬜ **não iniciada**
+> ✅ **concluída** — 21/21 tasks
 >
-> ⬜ `integracao-bancaria-autonoma/v1`
-> ⬜ `automacoes-agendadas/v1`
+> ✅ `integracao-bancaria-autonoma/v1` — 10/10 tasks
+> ✅ `automacoes-agendadas/v1` — 11/11 tasks
 <!-- ESTADO:F5:FIM -->
 
 ---

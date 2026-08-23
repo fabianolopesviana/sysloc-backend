@@ -1,7 +1,7 @@
 /**
  * A porta de dados da cobrança contra banco real, e a mora contra o oráculo — CT-512, CT-513,
  * CT-524, CT-525, CT-526, CT-528 e CT-536 (T4), mais CT-517, CT-527 e CT-532 (T7) e CT-521 (T10) da
- * fatia `cobranca-e-mora`.
+ * fatia `cobranca-e-mora`, e o **CT-1096** (T11) da fatia `automacoes-agendadas`.
  *
  * ===========================================================================
  * INVARIANTES
@@ -19,6 +19,19 @@
  * |          | (b)    | as duas `.service` e nenhum `.timer`, e **uma** fila BullMQ (`eco`, da F0) —
  * |          |        | nenhuma de negócio. A mesma asserção reprova sobre cópias com um timer novo
  * |          |        | e com uma fila nova. |
+ * | CA-24    |CT-1096 | A Cobrança cujo vencimento passou é lida como `VENCIDA` — e a que não venceu
+ * |          |        | como `A_VENCER`, por igualdade LITERAL de cadeia — com
+ * |          |        | `count(*) FROM negocio.execucao_de_rotina` medida em **ZERO** ANTES da
+ * |          |        | leitura, e ainda zero depois: as duas cobranças são semeadas e lidas na
+ * |          |        | **mesma** unidade de trabalho, sem publicar tarefa em fila alguma. É a
+ * |          |        | medição que substitui a premissa *"não há rotina no produto"*, que a fatia
+ * |          |        | `automacoes-agendadas` tornou falsa. (ADR-0022) |
+ * | CA-24    |CT-1096 | Nenhum dos **CINCO** fontes que aquela fatia acrescentou escreve estado de
+ * |          | (b, c) | cobrança nem mora: a varredura por `UPDATE negocio.cobranca`,
+ * |          |        | `UPDATE negocio.configuracao_de_mora` e as três colunas do legado devolve
+ * |          |        | `[]` sobre 5 arquivos lidos. O controle positivo devolve as 5 agulhas na
+ * |          |        | ordem, e a cópia com a rotina noturna ressuscitada REPROVA nomeando
+ * |          |        | **o arquivo e a linha**, com `ocorrencias.length === 1`. |
  * | CA-05    | CT-513 | A fronteira do vencimento é **estrita**: vencer ontem publica `VENCIDA` com
  * |          |        | `diasAtraso 1`, `20.00`/`0.33`/`1020.33`; vencer hoje e amanhã publicam
  * |          |        | `A_VENCER` com `diasAtraso 0` e `0.00`/`0.00`/`1000.00`. E
@@ -102,7 +115,8 @@
  * `CA-12 → CT-526 (RN-16)` · `CA-13 → CT-528 (RN-07)` · `CA-02 → CT-536 (RN-02)` ·
  * `CA-09 → CT-536 (RN-02)` · `CA-07 → CT-517 (RN-09)` · `CA-10 → CT-517 (RN-12)` ·
  * `CA-12 → CT-527 (RN-08)` · `CA-04 → CT-527 (RN-04)` · `CA-16 → CT-532 (RN-15)` ·
- * `CA-10 → CT-521 (RN-13)`.
+ * `CA-10 → CT-521 (RN-13)`. Acrescida pela T11 da fatia `automacoes-agendadas`:
+ * `CA-24 → CT-1096 (RN-14)` · `CA-24 → CT-1096 (b), CT-1096 (c) (RN-14)`.
  *
  * ===========================================================================
  * DUAS DIVERGÊNCIAS DECLARADAS CONTRA OS CARDS DA T7
@@ -300,6 +314,7 @@ import {
   type DesfechoDoPagamento,
   ErroDeCodigoDeCobrancaEmUso,
   emitirNumeroDeCobranca,
+  emitirNumerosDeCobranca,
   type FiltrosDaCarteira,
   garantirContadorDeCobranca,
   type LinhaDeCobranca,
@@ -322,6 +337,7 @@ import { criarImovel } from '../src/imovel.ts';
 import { EMPRESA_A, EMPRESA_B } from '../src/semente.ts';
 import { type AcessoAoBanco, abrirAcessoAoBanco } from '../src/unidade-de-trabalho.ts';
 import { type BancoMigrado, bancoEfemero, conexaoDeMigracao } from './banco-efemero.ts';
+import { type VarreduraDeFontes, varrerArquivos } from './varredura-de-fontes.ts';
 
 // ---------------------------------------------------------------------------
 // Limites de tempo — constantes nomeadas, nunca número mágico no meio do caso
@@ -459,18 +475,57 @@ const TERMOS_DO_CONTRATO = {
 } as const;
 
 /**
- * As unidades `systemd` que o repositório declara — **duas**, as duas `.service`, nenhum `.timer`.
+ * As unidades `systemd` que o repositório declara — **quinze**: os dois serviços permanentes, os
+ * seis pares `.timer`/`.service` das rotinas agendadas e a unidade-modelo do alerta de falha.
  *
- * A ausência de `.timer` é a asserção: a ADR-0022 recusa estado publicado movido por rotina, e um
- * agendamento novo seria a forma de reintroduzi-lo. Ver o CT-512 (b).
+ * ⚠️ **O discriminador NÃO é a existência do agendamento — é o que a rotina ESCREVE.** A frase que
+ * este docblock trazia até a T9 (*"um agendamento novo seria a forma de reintroduzi-lo"*) prescrevia
+ * um critério que a justificativa de `FILAS_DECLARADAS`, logo abaixo, **refuta** com todas as
+ * letras: *"a distinção tem de ser feita sobre o que cada uma **escreve** — nunca sobre quem a
+ * dispara"*. As duas conviviam sem contradizer fato algum enquanto não houvesse `.timer` no
+ * repositório; a T9 acabou com essa trégua, e o critério vigente é o segundo. É o `D3 · F5/T2`,
+ * registrado justamente para esta task fechá-lo.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T9** da fatia `automacoes-agendadas` acrescenta **treze** unidades — os
+ * seis relógios, os seis despachos `oneshot` que eles disparam e a unidade-modelo do alerta —, e o
+ * código de produção está certo. O que a ADR-0022 proíbe é a rotina ser **dona do estado publicado
+ * de um fato financeiro**, e nenhuma das seis o é: a lista `FILAS_DECLARADAS` abaixo já examina, uma
+ * a uma, o que cada rotina desta fatia escreve, e o **Passo 4 deste mesmo caso continua provando que
+ * as quatro colunas de estado do legado NÃO EXISTEM** em `negocio.cobranca` — não há onde rotina
+ * alguma escrever estado publicado. O que o relógio traz é a **descoberta de fato externo**, que
+ * derivação nenhuma poderia inventar, e não a publicação de um estado que o sistema já sabe — que
+ * era o que a rotina noturna do legado fazia, e o que fazia o sistema *"afirmar por um dia o que não
+ * é"*.
+ *
+ * A asserção **não afrouxa**: segue por **igualdade** sobre a lista inteira, de modo que uma décima
+ * sexta unidade — um `sysloc-cobranca-vencida.timer`, que é a forma exata do defeito — reprova o
+ * caso nomeando-a. A falsificação abaixo é literalmente essa, e continua valendo.
+ *
+ * ⚠️ **Aqui a asserção é sobre o CONJUNTO de nomes; o CONTEÚDO de cada unidade é asserido em
+ * `packages/shared/test/unidades-agendadas.spec.ts`** (CT-1057 a CT-1060: fuso declarado no
+ * `OnCalendar=`, `Persistent=` conforme a cadência, `OnFailure=` que nomeia quem falhou, e a
+ * varredura de credencial). As duas se complementam sem se sobrepor — não mova uma para a outra.
  */
 const UNIDADES_DECLARADAS: readonly string[] = Object.freeze([
+  'sysloc-alerta-de-rotina@.service',
   'sysloc-api.service',
+  'sysloc-rotina-aviso-de-cobranca.service',
+  'sysloc-rotina-aviso-de-cobranca.timer',
+  'sysloc-rotina-conferencia-de-liquidacao.service',
+  'sysloc-rotina-conferencia-de-liquidacao.timer',
+  'sysloc-rotina-encerramento-de-contratos.service',
+  'sysloc-rotina-encerramento-de-contratos.timer',
+  'sysloc-rotina-manutencao.service',
+  'sysloc-rotina-manutencao.timer',
+  'sysloc-rotina-retomada-de-noticias.service',
+  'sysloc-rotina-retomada-de-noticias.timer',
+  'sysloc-rotina-vigilancia-das-rotinas.service',
+  'sysloc-rotina-vigilancia-das-rotinas.timer',
   'sysloc-worker.service',
 ]);
 
 /**
- * As filas BullMQ que o repositório declara — **seis**, e nenhuma delas move estado publicado.
+ * As filas BullMQ que o repositório declara — **nove**, e nenhuma delas move estado publicado.
  *
  * O card pede *"a fila tem `0` tarefas enfileiradas"*. Contra uma fila real isso exigiria subir Redis
  * dentro da suíte da camada de dados, o que atravessaria uma fronteira que este pacote não tem; e a
@@ -531,7 +586,51 @@ const UNIDADES_DECLARADAS: readonly string[] = Object.freeze([
  * O agendamento periódico dela está declarado fora do escopo desta fatia. O Passo 4 deste mesmo caso
  * continua provando que as quatro colunas de estado do legado **não existem** em `negocio.cobranca`.
  *
- * A asserção **não afrouxa**: segue por igualdade sobre a lista inteira, de modo que uma oitava fila —
+ * SUT_IS_CORRECT_BECAUSE: a **T2** da fatia `automacoes-agendadas` declara **duas** filas —
+ * `rotina-agendada` e `manutencao-do-acervo` —, e o código de produção está certo. Elas são as
+ * primeiras desta lista **disparadas por relógio**, que é a forma de que a ADR-0022 fala, e por isso
+ * a distinção tem de ser feita sobre o que cada uma **escreve** — nunca sobre quem a dispara.
+ *
+ * A `manutencao-do-acervo` é a simples: ela **não alcança `negocio.cobranca`**. Os dois alvos dela
+ * são `plataforma.notificacao_bancaria` — o recebido cru, num schema que por decisão não tem noção
+ * de tenant (ADR-0031) — e o diretório dos boletos guardados, que é **sistema de arquivos**
+ * (`GuardaDeBoletos` não abre banco em ponto algum). ⚠️ E o que ela faz com o boleto vencido é
+ * **remover o arquivo**, sem tocar a coluna `negocio.cobranca.boleto_arquivo` que aponta para ele.
+ * Isso é deliberado — o boleto é **fato recebido de terceiro** e se re-obtém junto ao provedor
+ * (ADR-0030, cláusula de exclusão) — e é inofensivo para o que este caso guarda: a derivação de
+ * `negocio.cobranca_derivada` lê `data_vencimento`, `pago_em` e `cancelado_em`, e **nunca**
+ * `boleto_arquivo`.
+ *
+ * A `rotina-agendada` é o caso difícil, e a resposta é o que ela escreve em cada um dos **quatro**
+ * ramos da união `RotinaDeTrabalho`: `VIGILANCIA_DAS_ROTINAS` é **leitura pura** — lê o estado das
+ * rotinas e emite linha de journal; `EXPURGO_DO_HISTORICO` apaga `negocio.execucao_de_rotina`, que é
+ * registro de execução e não cobrança; `ENCERRAMENTO_DE_CONTRATOS` move `contrato.status` e
+ * `imovel.status_locacao`, que **não são fato financeiro** — a ADR-0022 governa *"o estado publicado
+ * de um **fato financeiro**"*, e o ciclo de vida do contrato é da ADR-0021, emendada em 2026-08-22
+ * exatamente para declarar o alcance dela quando não há requisição; e `CONFERENCIA_DE_LIQUIDACAO`
+ * abre a conferência e roda **o mesmo trabalho que a rota manual do Admin já executava** — o que ela
+ * grava são `pago_em` e `valor_pago`, o **fato** do pagamento que já se moveu fora do sistema, com o
+ * instante em que aconteceu. É palavra por palavra a razão que pôs `conferencia-bancaria` nesta lista
+ * com a T15, e ela não muda por o disparo passar do Admin para o relógio: o que a ADR-0022 proíbe é a
+ * rotina ser **dona do estado**, e o `Consequences → Neutros` dela autoriza este uso **por escrito** —
+ * *"a rotina agendada deixa de ser dona do estado e vira apenas gatilho de efeito (envio,
+ * notificação)"*.
+ *
+ * ⚠️ **O `AVISO_DE_COBRANCA` NÃO viaja nesta fila.** A união `RotinaDeTrabalho`, publicada pela mesma
+ * T2, tem quatro alternativas e nenhuma delas é ele: o aviso continua em `regua-de-cobranca`, que já
+ * está nesta lista desde a primeira justificativa acima. O que a fatia acrescenta ali é o **produtor**
+ * (o despachante), não uma fila, e o que a régua grava segue sendo apenas `negocio.envio_de_cobranca`.
+ * Quem "corrigir" esta nota para dizer que o aviso é um ramo da rotina agendada estará descrevendo um
+ * contrato que o fonte não tem.
+ *
+ * O discriminador que separa as duas do defeito do legado é o do Passo 4 deste mesmo caso, e ele
+ * continua valendo: as quatro colunas de estado do legado **não existem** em `negocio.cobranca`, de
+ * modo que não há onde rotina alguma escrever estado publicado. O que passa a depender de relógio é a
+ * **descoberta de fato externo**, que derivação nenhuma poderia inventar — não a publicação de um
+ * estado que o sistema já sabe, que era o que a rotina noturna do legado fazia e o que fazia o
+ * sistema *"afirmar por um dia o que não é"*.
+ *
+ * A asserção **não afrouxa**: segue por igualdade sobre a lista inteira, de modo que uma décima fila —
  * uma `cobranca-vencida`, que é a forma exata do defeito — reprova o caso nomeando-a.
  */
 const FILAS_DECLARADAS: readonly string[] = Object.freeze([
@@ -539,9 +638,11 @@ const FILAS_DECLARADAS: readonly string[] = Object.freeze([
   'confirmacao-de-email',
   'eco',
   'emissao-em-lote',
+  'manutencao-do-acervo',
   'notificacao-bancaria',
   'reconferencia-da-entrega',
   'regua-de-cobranca',
+  'rotina-agendada',
 ]);
 
 /** O agendamento que a falsificação do CT-512 (b) acrescenta à cópia — nunca à árvore versionada. */
@@ -651,7 +752,7 @@ describe('CT-512 — a cobrança consta VENCIDA sem escrita alguma na linha fís
   );
 
   it(
-    'CT-512 (b) — não há gatilho a rodar: nenhum timer no repositório e nenhuma fila de negócio',
+    'CT-512 (b) — nenhuma unidade e nenhuma fila movem estado publicado de cobrança',
     async () => {
       const raizTemporaria = await mkdtemp(join(tmpdir(), 'sysloc-gatilhos-'));
 
@@ -668,10 +769,13 @@ describe('CT-512 — a cobrança consta VENCIDA sem escrita alguma na linha fís
 
         expect(await lerUnidades(copiaIntegra)).toEqual([...UNIDADES_DECLARADAS]);
 
-        // --- Falsificação 1: um `.timer` acrescentado ---------------------------------------------
+        // --- Falsificação 1: um `.timer` DE COBRANÇA acrescentado ---------------------------------
         //
         // É a forma exata do defeito: a fatia que reintroduzisse a rotina noturna do legado
-        // acrescentaria um agendamento aqui, e a ADR-0022 o recusa por escrito.
+        // acrescentaria ESTE agendamento aqui — um que existe para mover o estado da cobrança —, e a
+        // ADR-0022 o recusa por escrito. ⚠️ Não é o `.timer` em si que reprova (o repositório tem
+        // seis desde a T9, e todos estão na lista acima): é o agendamento NÃO DECLARADO, qualquer
+        // que seja. O nome escolhido é o do defeito para que a reprovação seja legível.
         const comTimer = await copiarUnidades(raizTemporaria, [TIMER_FALSIFICADO]);
 
         expect(await lerUnidades(comTimer)).not.toEqual([...UNIDADES_DECLARADAS]);
@@ -696,6 +800,306 @@ describe('CT-512 — a cobrança consta VENCIDA sem escrita alguma na linha fís
         );
       } finally {
         await rm(raizTemporaria, { recursive: true, force: true });
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});
+
+// ===========================================================================
+// CT-1096 — a rede antirregressão da RN-14, pela OUTRA ponta
+// ===========================================================================
+
+/**
+ * ⚠️ **O que este caso acrescenta ao `CT-512`, e por que os dois existem.**
+ *
+ * O `CT-512` prova que a leitura não ESCREVE (o `xmin` não muda) e que as colunas do legado não
+ * existem, e o comentário do passo 2 apoia o *"nenhuma rotina correu"* numa premissa que era
+ * verdadeira quando ele foi escrito: *"não há rotina no produto"*. **A fatia `automacoes-agendadas`
+ * a tornou falsa** — o produto passou a ter **seis** rotinas agendadas, **seis** `.timer` (um por
+ * rotina, entre as quinze unidades que o `CT-512 (b)` enumera) e a tabela
+ * `negocio.execucao_de_rotina`, onde toda passagem registra que passou.
+ *
+ * O que este caso faz é converter a premissa em **medição**: `count(*) FROM
+ * negocio.execucao_de_rotina` é lido **antes** da derivação, e é ele que torna o *"sem rotina"*
+ * verificável em vez de presumido. Sem essa contagem, o caso continuaria verde num mundo em que
+ * uma rotina tivesse passado pela cobrança segundos antes — que é exatamente o mundo que a
+ * ADR-0022 recusa.
+ *
+ * ⚠️ **RISCO R3 DA §20 DO TECH SPEC, probabilidade ALTA.** As duas rotinas que o sistema antigo
+ * tinha para isto — `marcar_cobrancas_vencidas` e `atualizar_atrasos_cobrancas` — **não têm
+ * sucessora, e isso é desenho**. Quem comparar os dois sistemas vê uma lacuna e é convidado a
+ * "corrigi-la"; nem o compilador nem a suíte pegariam a volta, porque nada existe hoje que ela
+ * quebre. É regressão de DECISÃO (R3) pura, e por isso a rede tem **duas pontas**: o marcador
+ * `DECISÃO FECHADA` de `../src/derivacao-de-cobranca.ts`, que mora onde a tentação acontece, e este
+ * caso, que afirma pelo lado oposto.
+ *
+ * **A perna do `pg_enum` que o card do CT-1096 previa não é reproduzida aqui, por medição.** O
+ * `CT-1070 (b)` de `./execucao-de-rotina.spec.ts` já afirma os três rótulos de
+ * `negocio.rotina_agendada` por igualdade de conjunto, com controle antivácuo, **e** os amarra a
+ * `ROTINAS_PUBLICADAS` do contrato. Uma segunda cópia da mesma asserção é a duplicação semântica
+ * que o catálogo de antipadrões nomeia (AP-26): as duas podem divergir, e a que divergir passa a
+ * provar coisa diferente da que diz provar.
+ */
+
+/** Os CINCO fontes que a fatia `automacoes-agendadas` acrescentou ao produto. */
+const FONTES_NOVOS_DA_FATIA: readonly string[] = Object.freeze([
+  'packages/db/src/encerramento-de-contratos.ts',
+  'packages/db/src/execucao-de-rotina.ts',
+  'apps/worker/src/despachante.ts',
+  'apps/worker/src/tarefas/rotina-agendada.ts',
+  'apps/worker/src/tarefas/manutencao-do-acervo.ts',
+]);
+
+/**
+ * As CINCO formas de escrever estado de cobrança ou mora, escritas **por extenso**.
+ *
+ * Literais, e não derivadas de nada: é esta lista que declara **o que** o caso proíbe, e o detector
+ * é composto a partir dela — a lista e o que se procura são o mesmo fato. A ordem é a do controle
+ * positivo, e é ela que a asserção das agulhas compara.
+ *
+ * ⚠️ **O eixo é a ESCRITA, e não o rótulo de estado.** Os quatro rótulos (`VENCIDA` e companhia) já
+ * têm dono: o `CT-510` de `./fonte-unica-do-estado.spec.ts` varre `packages/db/src/**` e
+ * `apps/worker/src/**` inteiros por eles, e afirma a lista de arquivos que os carregam por
+ * igualdade. Repeti-los aqui seria a segunda cópia da mesma asserção; o que falta, e é o que este
+ * caso mede, é o **alvo da escrita**.
+ *
+ * ⚠️ **`INSERT INTO negocio.cobranca` NÃO está na lista, e a ausência é decisão.** A ADR-0022 proíbe
+ * *mover* o estado por rotina, não *criar* o fato: a geração automática de parcelas é ato legítimo
+ * do produto (RD-20), e uma rotina que um dia a executasse gravaria cobranças sem tocar em estado
+ * algum. Incluir o `INSERT` faria este caso reprovar código correto — e um caso que reprova o certo
+ * é desativado na primeira vez que atrapalha, o que custa a rede inteira.
+ */
+const ESCRITAS_DE_ESTADO_DE_COBRANCA: readonly string[] = Object.freeze([
+  'UPDATE negocio.cobranca',
+  'UPDATE negocio.configuracao_de_mora',
+  'pagamento_confirmado',
+  'data_inicio_atraso',
+  'data_ultima_atualizacao_atraso',
+]);
+
+/**
+ * O detector é `includes`, e não expressão regular — mesma razão do `CT-1061`.
+ *
+ * A agulha vira **dado**: a função devolve **qual** das cinco casou, que é o que a perna de
+ * falsificação afirma. E não há tabela de escape entre a lista e o que se procura, de modo que as
+ * duas não podem divergir.
+ */
+function escritaDeEstadoNaLinha(linha: string): string | undefined {
+  return ESCRITAS_DE_ESTADO_DE_COBRANCA.find((agulha) => linha.includes(agulha));
+}
+
+/** As agulhas que a varredura de fato casou, na ordem das ocorrências — o dado da falsificação. */
+function escritasDe(varredura: VarreduraDeFontes): string[] {
+  return varredura.linhas.map((linha) => escritaDeEstadoNaLinha(linha) ?? '<sem agulha>');
+}
+
+/**
+ * A ESCRITA ÍNTEGRA do encerramento, como ela está no fonte — a âncora da falsificação.
+ *
+ * Ela é procurada no fonte real **antes** de a cópia ser escrita, e é dela que sai a linha esperada.
+ * A independência importa: a posição do defeito é apurada por um texto que **não é agulha nenhuma**
+ * (o encerramento escreve o CONTRATO, que é o ato dele), de modo que a asserção sobre a linha não
+ * pode passar por acordo com o próprio detector.
+ */
+const ESCRITA_INTEGRA_DO_ENCERRAMENTO = 'UPDATE negocio.contrato';
+
+/**
+ * O defeito literal que a falsificação injeta: a rotina noturna do legado, ressuscitada.
+ *
+ * É a forma exata que um autor futuro escreveria ao "corrigir a lacuna" — a tradução direta de
+ * `marcar_cobrancas_vencidas` para dentro da rotina que já corre de madrugada.
+ */
+const ESCRITA_DE_ESTADO_RESSUSCITADA = "UPDATE negocio.cobranca SET status = 'VENCIDA'";
+
+/**
+ * O controle POSITIVO: as cinco agulhas, uma por linha, na ordem da lista.
+ *
+ * Sem ele, "nenhuma escrita de estado nos cinco fontes" ficaria verde também sobre um detector que
+ * nunca casa — que é o modo pelo qual esta classe de asserção apodrece em silêncio.
+ */
+const CONTROLE_COM_AS_CINCO_ESCRITAS = [
+  "await tx`UPDATE negocio.cobranca SET status = 'VENCIDA'`;",
+  'await tx`UPDATE negocio.configuracao_de_mora SET percentual_multa = 5`;',
+  'await tx`UPDATE alvo SET pagamento_confirmado = true`;',
+  'await tx`UPDATE alvo SET data_inicio_atraso = now()`;',
+  'await tx`UPDATE alvo SET data_ultima_atualizacao_atraso = now()`;',
+  '',
+].join('\n');
+
+/** Quantos dias no passado vence a cobrança que a derivação tem de publicar como `VENCIDA`. */
+const DIAS_DE_ATRASO_DO_CENARIO = -1;
+
+/** Quantos dias no futuro vence a que tem de continuar `A_VENCER`. */
+const DIAS_ATE_O_VENCIMENTO_DO_CENARIO = 5;
+
+describe('CT-1096 — a Cobrança fica VENCIDA sem que rotina alguma passe por ela', () => {
+  it(
+    'a derivação publica VENCIDA e A_VENCER com `negocio.execucao_de_rotina` medida em ZERO',
+    async () => {
+      const cenario = await cenarioDaPolitica(2, 1);
+      const ano = await lerAnoDaOperacao(cenario.contexto);
+
+      // O contador é garantido em unidade PRÓPRIA, que commita: é o protocolo das duas unidades
+      // sequenciais da série (ADR-0020/0033), e fundi-lo com a unidade do caso montaria o cenário
+      // por um caminho que a operação não tem.
+      await emUnidade(cenario.contexto, async (tx) => {
+        await garantirContadorDeCobranca(tx, ano);
+      });
+
+      const leitura = await emUnidade(cenario.contexto, async (tx) => {
+        // --- ANTES da leitura: nenhuma rotina passou por esta empresa ----------------------------
+        //
+        // É ESTA asserção que torna o "sem rotina" verificável em vez de presumido. Toda rotina
+        // desta fatia registra a passagem por `registrarExecucaoDeRotina` (CA-12), de modo que uma
+        // passagem prévia sobre este cenário apareceria aqui como linha.
+        const execucoesAntes = await contarExecucoesDeRotina(tx);
+
+        const [numeroDaVencida, numeroDaAVencer] = await emitirNumerosDeCobranca(tx, ano, 2);
+
+        if (numeroDaVencida === undefined || numeroDaAVencer === undefined) {
+          throw new Error('a série não devolveu os dois números do cenário');
+        }
+
+        // As duas datas saem do relógio do BANCO, na mesma unidade em que a visão as compara: o
+        // relógio nunca é falseado, o dado é que se move.
+        const vencida = await criarCobranca(
+          tx,
+          dadosDaCobranca(
+            cenario,
+            await dataNoBanco(tx, DIAS_DE_ATRASO_DO_CENARIO),
+            VALOR_DO_CENARIO_DA_REDE,
+          ),
+          numeroDaVencida,
+        );
+        const aVencer = await criarCobranca(
+          tx,
+          dadosDaCobranca(
+            cenario,
+            await dataNoBanco(tx, DIAS_ATE_O_VENCIMENTO_DO_CENARIO),
+            VALOR_DO_CENARIO_DA_REDE,
+          ),
+          numeroDaAVencer,
+        );
+
+        // A leitura corre na MESMA unidade que gravou, e nenhuma tarefa foi publicada em fila
+        // alguma entre uma coisa e outra: não há janela em que rotina pudesse ter corrido.
+        const estadoDaVencida = await localizarCobranca(tx, vencida.codigo);
+        const estadoDaAVencer = await localizarCobranca(tx, aVencer.codigo);
+
+        return {
+          execucoesAntes,
+          execucoesDepois: await contarExecucoesDeRotina(tx),
+          estadoDaVencida: estadoDaVencida?.status,
+          estadoDaAVencer: estadoDaAVencer?.status,
+          diasDeAtrasoDaVencida: estadoDaVencida?.diasAtraso,
+        };
+      });
+
+      // ZERO execuções ANTES — a medição que substitui a premissa.
+      expect(leitura.execucoesAntes).toBe(0);
+
+      // Igualdade LITERAL de cadeia, nas duas direções: a que venceu é `VENCIDA`, a que não venceu
+      // é `A_VENCER`. Sem a segunda, uma derivação que devolvesse `VENCIDA` para tudo passaria.
+      expect(leitura.estadoDaVencida).toBe('VENCIDA');
+      expect(leitura.estadoDaAVencer).toBe('A_VENCER');
+      // Um dia de atraso, e não "algum": é o que separa a derivação do vencimento de um carimbo.
+      expect(leitura.diasDeAtrasoDaVencida).toBe(1);
+
+      // E DEPOIS continua zero: ler a cobrança não fez rotina nenhuma nascer.
+      expect(leitura.execucoesDepois).toBe(0);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-1096 (b) — nenhum dos CINCO fontes da fatia escreve estado de cobrança ou mora',
+    async () => {
+      const fontes = FONTES_NOVOS_DA_FATIA.map((relativo) => join(RAIZ_DO_REPOSITORIO, relativo));
+
+      const varredura = await varrerArquivos(
+        fontes,
+        (linha) => escritaDeEstadoNaLinha(linha) !== undefined,
+      );
+
+      // Âncora de não-vacuidade em valor EXATO: "nenhuma escrita" sobre zero arquivos lidos é
+      // verdade vazia. `varrerArquivos` levanta em arquivo ausente, de modo que um fonte renomeado
+      // reprova aqui em vez de reduzir a cobertura em silêncio.
+      expect(varredura.arquivos).toBe(FONTES_NOVOS_DA_FATIA.length);
+      expect(varredura.arquivos).toBe(5);
+
+      expect(
+        varredura.ocorrencias.map((lugar) => lugar.slice(RAIZ_DO_REPOSITORIO.length)),
+        `escrita de estado de cobrança em rotina agendada (ADR-0022): ${varredura.linhas.join(' | ')}`,
+      ).toEqual([]);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-1096 (c) — a MESMA varredura acha as 5 agulhas no controle e REPROVA a cópia defeituosa',
+    async () => {
+      const caminhoDoIntegro = join(RAIZ_DO_REPOSITORIO, FONTES_NOVOS_DA_FATIA[0] ?? '');
+      const integro = await readFile(caminhoDoIntegro, 'utf8');
+
+      // A linha esperada sai do fonte ÍNTEGRO, por um texto que não é agulha nenhuma. É o que
+      // impede a asserção de concordar com o detector em vez de medi-lo.
+      const posicaoDaEscrita = integro
+        .split('\n')
+        .findIndex((linha) => linha.includes(ESCRITA_INTEGRA_DO_ENCERRAMENTO));
+
+      expect(
+        posicaoDaEscrita,
+        'a escrita do encerramento saiu do fonte — a falsificação perdeu a âncora',
+      ).toBeGreaterThanOrEqual(0);
+
+      // A cópia vive num diretório temporário PRÓPRIO, apagado no `finally`: escrever o defeito
+      // sobre o fonte real o deixaria na árvore se o processo morresse no meio.
+      const diretorio = await mkdtemp(join(tmpdir(), 'sysloc-ct1096-'));
+
+      try {
+        const caminhoDoControle = join(diretorio, 'controle-com-as-cinco-escritas.ts');
+        await writeFile(caminhoDoControle, CONTROLE_COM_AS_CINCO_ESCRITAS, 'utf8');
+
+        const doControle = await varrerArquivos(
+          [caminhoDoControle],
+          (linha) => escritaDeEstadoNaLinha(linha) !== undefined,
+        );
+
+        // CONTROLE POSITIVO: uma ocorrência por agulha, na ordem da lista, com a linha exata. Um
+        // detector que nunca casasse passaria no caso acima e reprovaria aqui.
+        expect(doControle.ocorrencias).toEqual([
+          `${caminhoDoControle}:1`,
+          `${caminhoDoControle}:2`,
+          `${caminhoDoControle}:3`,
+          `${caminhoDoControle}:4`,
+          `${caminhoDoControle}:5`,
+        ]);
+        expect(escritasDe(doControle)).toEqual([...ESCRITAS_DE_ESTADO_DE_COBRANCA]);
+
+        // MUTANTE: o MESMO fonte, com a rotina noturna do legado ressuscitada no lugar da escrita
+        // legítima do contrato.
+        const caminhoDaCopia = join(diretorio, 'encerramento-de-contratos.ts');
+        const defeituoso = integro.replace(
+          ESCRITA_INTEGRA_DO_ENCERRAMENTO,
+          ESCRITA_DE_ESTADO_RESSUSCITADA,
+        );
+
+        // A troca aconteceu: sem esta âncora, uma substituição que não casasse deixaria a perna
+        // abaixo reprovando pelo motivo errado — e um dia passaria a "provar" o fonte íntegro.
+        expect(defeituoso).not.toBe(integro);
+        await writeFile(caminhoDaCopia, defeituoso, 'utf8');
+
+        const daCopia = await varrerArquivos(
+          [caminhoDaCopia],
+          (linha) => escritaDeEstadoNaLinha(linha) !== undefined,
+        );
+
+        expect(daCopia.ocorrencias).toEqual([`${caminhoDaCopia}:${posicaoDaEscrita + 1}`]);
+        expect(daCopia.ocorrencias.length).toBe(1);
+        expect(escritasDe(daCopia)).toEqual(['UPDATE negocio.cobranca']);
+      } finally {
+        await rm(diretorio, { recursive: true, force: true });
       }
     },
     LIMITE_DO_CASO_MS,
@@ -2431,25 +2835,54 @@ async function dataDeslocada(
   dias: number,
   dono?: AcessoAoBanco,
 ): Promise<string> {
-  return await emUnidade(
-    contexto,
-    async (tx) => {
-      const [linha] = await tx<{ data: string }[]>`
-        SELECT to_char(
-                 negocio.data_corrente_da_operacao() + make_interval(days => ${dias}),
-                 'YYYY-MM-DD'
-               ) AS data
-      `;
-
-      if (linha === undefined) {
-        throw new Error('o relógio do banco não devolveu a data corrente da operação');
-      }
-
-      return linha.data;
-    },
-    dono,
-  );
+  return await emUnidade(contexto, async (tx) => await dataNoBanco(tx, dias), dono);
 }
+
+/**
+ * A mesma leitura, **dentro** de uma unidade já aberta.
+ *
+ * Ela existe porque o `CT-1096` precisa semear e ler na MESMA unidade de trabalho — abrir uma
+ * unidade só para perguntar a data deixaria uma janela entre o instante da pergunta e o da gravação,
+ * que é justamente o que aquele caso existe para não ter. {@link dataDeslocada} delega a ela em vez
+ * de repetir a consulta: duas cópias do mesmo `SELECT` podem divergir, e a que divergir passa a
+ * posicionar o cenário por um eixo diferente do que a visão consulta.
+ */
+async function dataNoBanco(tx: TransactionSql, dias: number): Promise<string> {
+  const [linha] = await tx<{ data: string }[]>`
+    SELECT to_char(
+             negocio.data_corrente_da_operacao() + make_interval(days => ${dias}),
+             'YYYY-MM-DD'
+           ) AS data
+  `;
+
+  if (linha === undefined) {
+    throw new Error('o relógio do banco não devolveu a data corrente da operação');
+  }
+
+  return linha.data;
+}
+
+/**
+ * Quantas passagens de rotina agendada esta empresa registrou — a medição que o `CT-1096` faz
+ * **antes** de ler o estado.
+ *
+ * Não há `WHERE empresa_id` aqui, e não pode haver: quem recorta é a política de linha (ADR-0008), e
+ * escrever o filtro no teste provaria a aplicação em vez do banco. Toda rotina desta fatia registra a
+ * passagem por `registrarExecucaoDeRotina` (CA-12), de modo que zero linhas é *"nenhuma rotina passou
+ * por esta empresa"* — medido, e não presumido.
+ */
+async function contarExecucoesDeRotina(tx: TransactionSql): Promise<number> {
+  const [linha] = await tx<{ total: string }[]>`
+    SELECT count(*) AS total FROM negocio.execucao_de_rotina
+  `;
+
+  // O `-1` do ramo ausente é deliberado: ele NUNCA satisfaz a asserção de zero, de modo que um
+  // arranjo vazio reprova em vez de passar por engano.
+  return Number(linha?.total ?? -1);
+}
+
+/** O valor de cada uma das duas cobranças do cenário do `CT-1096` — fora de qualquer recorte. */
+const VALOR_DO_CENARIO_DA_REDE = 1000;
 
 /** Os campos que todo lançamento deste arquivo compartilha, montados a partir do cenário. */
 function dadosDaCobranca(

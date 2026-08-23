@@ -9,8 +9,8 @@
  * Nada aqui interpreta o recebido, decide desfecho, fala com o provedor ou conhece a forma do corpo
  * que o terceiro envia. A interpretação é **pura** e vive em
  * `packages/cobranca-bancaria/src/tratamento-de-notificacao.ts`; a orquestração vive na tarefa do
- * processo de trabalho. O que este arquivo publica são as sete instruções que aquelas duas camadas
- * precisam, e nenhuma a mais.
+ * processo de trabalho. O que este arquivo publica são as **oito** instruções que aquelas duas
+ * camadas precisam, e nenhuma a mais.
  *
  * Pela razão que {@link ./cobranca.ts}, {@link ./boleto-da-cobranca.ts} e
  * {@link ./portador-de-confirmacao.ts} já registram, o SQL mora aqui e não no serviço que chama: a
@@ -19,7 +19,7 @@
  * nada de proibido, e o alcance à tabela deixa de ser enumerável.
  *
  * A pergunta que o índice do pacote força, e a resposta: **isto é um caminho para dado fora da
- * unidade de trabalho? NÃO.** As **sete** funções **recebem** o executor (`tx`) de quem já abriu a
+ * unidade de trabalho? NÃO.** As **oito** funções **recebem** o executor (`tx`) de quem já abriu a
  * unidade; nenhuma abre conexão, reserva ou transação, e nenhuma devolve executor.
  * {@link rotearNotificacaoBancaria} não abre exceção — ela invoca, pelo executor recebido, a função
  * `SECURITY DEFINER` que a migração `0020` criou.
@@ -29,10 +29,10 @@
  * ===========================================================================
  *
  * `plataforma.notificacao_bancaria` não carrega `empresa_id`, não habilita RLS e **nenhuma política a
- * alcança**. As **seis** funções que a tocam gravam e leem sem contexto de tenant algum, e essa
+ * alcança**. As **sete** funções que a tocam gravam e leem sem contexto de tenant algum, e essa
  * ausência é a decisão, não um descuido: a notícia é gravada **antes** do roteamento — inclusive
  * quando não casa com cobrança alguma, que é justamente o caso em que não há empresa derivável. A
- * sétima ({@link rotearNotificacaoBancaria}) também corre sem contexto, mas por outra razão e por
+ * oitava ({@link rotearNotificacaoBancaria}) também corre sem contexto, mas por outra razão e por
  * outro mecanismo: ela alcança `negocio.cobranca`, que **tem** dono e RLS forçada, e atravessa pela
  * travessia nominal da `0020`.
  *
@@ -394,6 +394,85 @@ export async function listarRetidas(tx: TransactionSql): Promise<readonly Notifi
      WHERE desfecho = 'RETIDO'
      ORDER BY recebido_em ASC
   `;
+}
+
+/**
+ * As notícias **não tratadas** e vencidas — as que ficaram em `RECEBIDO` além da folga declarada.
+ *
+ * ---------------------------------------------------------------------------
+ * POR QUE ELA EXISTE, e por que {@link listarRetidas} não serve
+ * ---------------------------------------------------------------------------
+ *
+ * Ela fecha o `D13 · F4/T6` da fatia `webhook-e-carne`, cujo gatilho literal é *"a **F5**, que traz o
+ * agendamento"*. O débito registrava que a notícia que fica em `RECEBIDO` porque o enfileiramento
+ * falhou **não tem quem a reprocesse**: o cru está gravado e é alcançável, mas nada o alcança
+ * sozinho. A única varredura que existia é a da reativação de empresa suspensa, e ela consulta
+ * {@link listarRetidas}, que só devolve `RETIDO` — outro desfecho, outra causa e outro momento.
+ *
+ * Os dois predicados são **disjuntos** de propósito, e não uma generalização de um deles: `RETIDO` é
+ * decisão do produto (a empresa está suspensa, e a notícia espera a reativação), enquanto `RECEBIDO`
+ * vencida é **ausência de decisão** — ninguém a tratou. Fundi-las num filtro por lista de desfechos
+ * faria a reativação reenfileirar o que nunca foi dela, e a retomada esperar por um evento que não
+ * vem.
+ *
+ * ---------------------------------------------------------------------------
+ * A FOLGA É PARÂMETRO, e o corte sai do relógio do BANCO (ADR-0026)
+ * ---------------------------------------------------------------------------
+ *
+ * O prazo chega de quem chama porque ele é **cadência**, não retenção: quem o conhece é o despachante,
+ * que sabe de quanto em quanto tempo o relógio do sistema o acorda. Escrevê-lo aqui o transformaria
+ * na terceira constante de prazo deste pacote, livre para divergir da unidade `systemd` que a governa.
+ *
+ * O corte é `now()` **avaliado pelo servidor**, e não um instante composto na aplicação: a notícia é
+ * gravada com `recebido_em` do banco, e comparar dois relógios faria a retomada disparar cedo ou
+ * tarde conforme a máquina que executou o despachante.
+ *
+ * O intervalo sai de `make_interval(mins => …::integer)` pela razão medida em
+ * {@link expurgarNotificacoesVencidas}: o `inferType` do driver devolve `0` para todo `number` de
+ * JavaScript, e `n * interval '1 minute'` deixaria o resolvedor escolher a multiplicação.
+ *
+ * ---------------------------------------------------------------------------
+ * A PROJEÇÃO É O IDENTIFICADOR, e nada além dele
+ * ---------------------------------------------------------------------------
+ *
+ * Ela devolve **só** o `id`, e a escassez é maior do que a de {@link listarRetidas} por uma razão
+ * concreta: lá o instante sai junto porque quem chama **publica** a ordem numa resposta e precisaria
+ * poder conferi-la; aqui quem chama apenas **reenfileira**, e a carga da tarefa é `{ notificacaoId }`
+ * — um campo. Devolver `recebido_em` seria transporte sem consumidor, pelo mesmo critério que dispensa
+ * o `RETURNING` do expurgo.
+ *
+ * ⚠️ **A carga reenfileirada não leva empresa, e a ausência é conformidade** (ADR-0035 + ADR-0024,
+ * emenda de 2026-08-18): na entrada de fato de terceiro a empresa é o **resultado** da travessia
+ * nominal, e o único valor disponível aqui viria do recebido. Esta função é justamente a que não tem
+ * empresa a devolver — como nenhuma outra deste módulo.
+ *
+ * A ordem é **crescente**, como a da irmã: a notícia mais antiga volta à fila primeiro, que é o que
+ * *retomar* quer dizer. O **desempate pelo `id`** existe pela razão que `listarEmpresas` e
+ * `listarEmpresasAtivas` já registram, e ela é transponível palavra por palavra: `recebido_em` empata
+ * com facilidade — o provedor entrega em rajada, e uma indisponibilidade da fila deixa dezenas de
+ * notícias com o mesmo instante —, e o empate faria a ordem do reenfileiramento depender do
+ * planejador. O `id` é único, de modo que ele desempata sempre.
+ *
+ * ⚠️ **Não há índice parcial sobre `RECEBIDO`, e a ausência é decisão medida.** `RECEBIDO` é estado
+ * **transitório** — toda notícia entra nele e sai —, de modo que um índice parcial sobre ele pagaria
+ * manutenção em **toda** gravação e em **todo** carimbo de desfecho para servir a uma varredura de dez
+ * em dez minutos. O que a consulta percorre é o cru dos 90 dias, que a RN-11 mantém pequeno, com a
+ * faixa de `recebido_em` já coberta por `notificacao_bancaria_expurgo_idx`. O par oposto —
+ * `notificacao_bancaria_retida_idx` — existe porque `RETIDO` é estado **estável** e raro.
+ */
+export async function listarNaoTratadas(
+  tx: TransactionSql,
+  folgaEmMinutos: number,
+): Promise<readonly string[]> {
+  const linhas = await tx<{ id: string }[]>`
+    SELECT id
+      FROM plataforma.notificacao_bancaria
+     WHERE desfecho = 'RECEBIDO'
+       AND recebido_em < now() - make_interval(mins => ${folgaEmMinutos}::integer)
+     ORDER BY recebido_em ASC, id
+  `;
+
+  return linhas.map((linha) => linha.id);
 }
 
 /**

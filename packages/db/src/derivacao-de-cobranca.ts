@@ -101,6 +101,32 @@
  * três tem caminho por aqui, e a ausência é o que mantém a derivação num lugar só.
  */
 
+// DECISÃO FECHADA — F5/T11 · fatia `automacoes-agendadas` · 2026-08-23
+// (Marcador que PROTEGE. O irmão oposto — o que AGENDA — está no fim deste arquivo, sobre
+//  `ultimoDiaDoMes`/`ehBissexto`, e os dois NÃO se sobrepõem: este alcança a AUSÊNCIA de estado,
+//  de mora e de código nesta derivação — a propriedade da ADR-0022 —, e NÃO alcança a aritmética
+//  de calendário, que o `D26 · F3/T8` agenda subir para módulo próprio no terceiro consumidor.
+//  Fechar o `D26` movendo aquelas duas funções NÃO contraria este marcador.)
+// O QUÊ: o estado da Cobrança e a Mora são DERIVADOS na leitura; nenhuma rotina agendada os move.
+//        As duas rotinas que o sistema antigo tinha para isso — `marcar_cobrancas_vencidas` e
+//        `atualizar_atrasos_cobrancas` — **não têm sucessora, e a ausência é desenho**. A fatia
+//        `automacoes-agendadas` declarou SEIS rotinas agendadas — três delas publicadas na leitura
+//        do Admin — e NENHUMA toca estado de cobrança: a lacuna que um leitor vê ao comparar os dois
+//        sistemas é a decisão, não um esquecimento.
+// POR QUÊ: reintroduzir a rotina traz de volta a SEGUNDA fonte do estado que a F3 pagou para
+//          eliminar — e o defeito é medido, não hipotético: no sistema antigo há três avaliações
+//          divergentes do mesmo estado, ao ponto de o envio manual cobrar por dívida cancelada
+//          (golden `regua-de-cobranca.json`, cenário `cobranca_cancelada_e_vencida`). Pior, um
+//          estado movido por rotina faz o sistema afirmar por um dia inteiro o que não é, toda vez
+//          que o agendamento falha. Nem o compilador nem a suíte pegariam a volta por este caminho:
+//          é regressão de DECISÃO (R3), e o que a fecha é a decisão morar onde a tentação acontece.
+// REVERTER EXIGE: superseder a ADR-0022, cuja `Decision` diz, por extenso, que *"o estado publicado
+//                 de um fato financeiro é derivado dos fatos gravados, nunca uma coluna movida por
+//                 rotina"*. Enquanto ela estiver `accepted`, a rede que reprova a volta é o
+//                 `CT-1096` de `../test/cobranca.spec.ts` — a Cobrança vencida é lida como
+//                 `VENCIDA` com `negocio.execucao_de_rotina` medida em ZERO registros, e nenhum
+//                 dos cinco fontes desta fatia escreve estado de cobrança ou mora.
+
 import type { NaturezaDeCobranca } from '@sysloc/contracts';
 
 /** Quantos meses há num ano — o divisor do avanço no par (ano, mês). */

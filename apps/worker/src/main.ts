@@ -91,9 +91,11 @@ import { processarConferenciaBancaria } from './tarefas/conferencia-bancaria.js'
 import { processarConfirmacaoDeEmail } from './tarefas/confirmacao-de-email.js';
 import { processarEco } from './tarefas/eco.js';
 import { processarEmissaoEmLote } from './tarefas/emissao-em-lote.js';
+import { processarManutencaoDoAcervo } from './tarefas/manutencao-do-acervo.js';
 import { processarNotificacaoBancaria } from './tarefas/notificacao-bancaria.js';
 import { processarReconferenciaDaEntrega } from './tarefas/reconferencia-da-entrega.js';
 import { processarReguaDeCobranca } from './tarefas/regua.js';
+import { processarRotinaAgendada } from './tarefas/rotina-agendada.js';
 
 /** Sinais pelos quais o supervisor pede o encerramento. */
 const SINAIS_DE_DESLIGAMENTO = ['SIGTERM', 'SIGINT'] as const;
@@ -320,6 +322,23 @@ function ehChaveDeCifraAceitavel(valor: string): boolean {
 
 /** A exigência que a recusa do diretório dos boletos publica — nomeia a forma, jamais o valor. */
 const EXIGENCIA_DO_DIRETORIO_DOS_BOLETOS = 'deve ser o caminho absoluto de um diretório gravável';
+
+/**
+ * Quantos dias inteiros um boleto guardado sobrevive no acervo — decisão A1 da §7.5 do tech spec.
+ *
+ * ⚠️ **Ele mora AQUI, e não na borda que o consome, e é isso que torna a reversão barata.** A decisão
+ * declara por escrito que *"o prazo é parâmetro do adaptador da guarda, não uma constante enterrada —
+ * trocá-lo é uma linha na composição raiz"*, e esta é a linha. Escrito dentro de
+ * `./tarefas/manutencao-do-acervo.ts`, ele seria configuração dentro de uma borda, invisível para
+ * quem monta a aplicação e impossível de exercitar com outro valor sem editar produção.
+ *
+ * **Noventa** e não outro número, por três razões: o produto já tem **um** prazo de retenção (o do
+ * recebido cru e o do histórico de execução), e três prazos divergentes é o que ninguém revisa
+ * depois; o boleto não é o único caminho para o documento — a reemissão junto ao provedor existe, e o
+ * carnê é composto sob demanda (ADR-0030); e a emissão é mensal com vencimento em ~30 dias, de modo
+ * que 90 dias cobrem com folga a vida útil do arquivo, deixando o acervo estacionário em ~4,2 GB.
+ */
+const DIAS_DE_RETENCAO_DOS_BOLETOS = 90;
 
 /**
  * O caminho é absoluto **e** aponta para um diretório em que este processo consegue escrever?
@@ -755,6 +774,35 @@ async function principal(): Promise<void> {
           chaveDeCifra: ambiente.chaveDeCifraDoCertificado,
         }),
     );
+    // As QUATRO rotinas por empresa, numa fila só: o que discrimina o trabalho é o campo `rotina` da
+    // carga, conferido na borda contra a união fechada de `@sysloc/shared`. As portas são as mesmas
+    // das irmãs bancárias — só a conferência de liquidação as usa —, e chegam pelo mesmo caminho:
+    // parâmetro, nunca ambiente lido lá dentro (ADR-0025/ADR-0032).
+    fila.processar(
+      fila.rotinaAgendada,
+      async (tarefa, registrador) =>
+        await processarRotinaAgendada(tarefa, registrador, {
+          banco,
+          adaptador: provedor,
+          guarda,
+          chaveDeCifra: ambiente.chaveDeCifraDoCertificado,
+        }),
+    );
+    // A manutenção do acervo — a ÚNICA borda deste processo sem empresa alguma: os alvos dela são o
+    // schema da plataforma, que não tem dono-empresa (ADR-0031), e o sistema de arquivos. Por isso o
+    // conjunto de portas é o menor de todos: nem adaptador do provedor, nem chave de cifra — uma
+    // rotina de limpeza não tem o que fazer com operação de título nem com segredo de terceiro.
+    fila.processar(
+      fila.manutencaoDoAcervo,
+      async (tarefa, registrador) =>
+        await processarManutencaoDoAcervo(tarefa, registrador, {
+          banco,
+          guarda,
+          // O prazo atravessa a borda por PARÂMETRO, como a chave e a base do link acima: o domínio
+          // não lê ambiente, e a reversão declarada na §7.5 é a troca desta constante.
+          diasDeRetencaoDosBoletos: DIAS_DE_RETENCAO_DOS_BOLETOS,
+        }),
+    );
   } catch (erro) {
     // Devolver o que já foi aberto é o que permite ao processo terminar: uma conexão de pé
     // seguraria o laço de eventos e o processador ficaria vivo sem consumir nada. A falha da
@@ -792,6 +840,8 @@ async function principal(): Promise<void> {
         fila.conferenciaBancaria.name,
         fila.notificacaoBancaria.name,
         fila.reconferenciaDaEntrega.name,
+        fila.rotinaAgendada.name,
+        fila.manutencaoDoAcervo.name,
       ],
     },
     'processador de trabalho no ar',

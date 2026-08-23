@@ -45,9 +45,18 @@
  * |       |        | `RENAME COLUMN` sobre a visão, que a T3 moveu para o **bloco 2** da parceira
  * |       |        | `0020_seguranca_webhook_e_carne.sql` — a rede vale onde quer que a instrução
  * |       |        | viva. (ADR-0001, `ancoras-de-superficie.md`) |
+ * | CA-05 | CT-1061| **Zero** leituras do relógio do PROCESSO (`new Date(`, `Date.now(`,
+ * | CA-09 |        | `getHours(`, `getTime(`) em posição executável nos DOIS fontes que a fatia
+ * | CA-13 |        | `automacoes-agendadas` acrescentou a `packages/db/src/` —
+ * |       |        | `encerramento-de-contratos.ts` e `execucao-de-rotina.ts`. O instante que decide
+ * |       |        | o que é vencido, o corte da retenção e o limiar de atraso vêm do **banco**
+ * |       |        | (ADR-0026). O controle positivo devolve exatamente **4** ocorrências, uma por
+ * |       |        | agulha, e a cópia com o predicado de vencimento derivado de `new Date()`
+ * |       |        | REPROVA nomeando **o arquivo e a linha**. |
  *
  * Rastreabilidade: `CA-04 → CT-510 (RD-04)`. Acrescida pela T8 da fatia `regua-de-cobranca`:
- * `CA-05 → CT-612 (RD-06)` · `CA-08, CA-09 → CT-612 (RD-01)` · `CA-12 → CT-624 (RD-10)`.
+ * `CA-05 → CT-612 (RD-06)` · `CA-08, CA-09 → CT-612 (RD-01)` · `CA-12 → CT-624 (RD-10)`. Acrescida
+ * pela T5 da fatia `automacoes-agendadas`: `CA-05, CA-09, CA-13 → CT-1061 (RD-01)`.
  *
  * ===========================================================================
  * Por que esta prova é ESTÁTICA, e por que ela é indispensável
@@ -138,8 +147,9 @@
  * do ambiente — a suíte nunca toca o banco que atende a operação.
  */
 
-import { readFile } from 'node:fs/promises';
-import { relative } from 'node:path';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { abrirConexao, type Sql } from '../src/conexao.ts';
@@ -920,6 +930,22 @@ const BORDAS_QUE_ESCREVEM_CONTEXTO: readonly string[] = [
   // continua sendo igualdade de conjunto, com `excedentes` e `ausentes` nomeados, e um nono chamador
   // segue reprovando nominalmente.
   'apps/worker/src/tarefas/reconferencia-da-entrega.ts',
+  // A borda das QUATRO ROTINAS POR EMPRESA (T6 da fatia `automacoes-agendadas`).
+  //
+  // SUT_IS_CORRECT_BECAUSE: a lista enumera BORDAS, e esta é uma — a tarefa chega do servidor de
+  // fila, o `empresaId` vem da carga **já conferida por `strictObject` antes de qualquer leitura**, e
+  // o contexto é aberto UMA vez, pelo mesmo escritor único, **antes** do despacho para as quatro
+  // rotinas (ADR-0024 / ADR-0029). Ela é da classe das bordas cuja empresa **vem da carga**, e o que
+  // é PRÓPRIO dela é **quem a produziu**: a enumeração de tenants do despachante, que lê
+  // `identidade.empresa` sem noção de tenant — a primeira das duas origens legítimas que a `Decision`
+  // da ADR-0024 nomeia por extenso, e cujo alcance a emenda de 2026-08-18 declara. Nenhuma das quatro
+  // rotinas reabre contexto no meio do trabalho, e a passada da conferência que ela executa corre
+  // **dentro** do que esta borda abriu. O que ela NÃO é: um serviço abrindo contexto próprio — o
+  // domínio que ela orquestra (`@sysloc/db` e `@sysloc/cobranca-bancaria`) recebe o executor e as
+  // portas por parâmetro (ADR-0025). A asserção **não foi afrouxada**: continua sendo igualdade de
+  // conjunto, com `excedentes` e `ausentes` nomeados, e um décimo chamador segue reprovando
+  // nominalmente.
+  'apps/worker/src/tarefas/rotina-agendada.ts',
 ].sort();
 
 /** A variável de sessão que as políticas de `negocio` consultam. */
@@ -950,13 +976,34 @@ const TABELA_DE_EMPRESAS = 'identidade.empresa';
 /**
  * Quem pode emitir SQL sobre `identidade.empresa` — elenco declarado, por igualdade.
  *
- * Os dois vivem em `@sysloc/db`, que é a porta única de acesso a dado: a leitura sem contexto de
+ * Os três vivem em `@sysloc/db`, que é a porta única de acesso a dado: a leitura sem contexto de
  * empresa fica confinada ao pacote que a publica, e nem a borda do job nem o domínio da régua
  * alcançam a tabela. É o que faz o `empresaId` **chegar** ao trabalho em vez de ser escolhido por
  * ele.
+ *
+ * ⚠️ **O que a igualdade protege é a ENUMERAÇÃO, e o terceiro membro não é uma.** A leitura de
+ * `execucao-de-rotina.ts` é `WHERE id = <empresa do contexto>`: ela não percorre empresas, não
+ * escolhe empresa alguma e não devolve identificador para ninguém — devolve a data de admissão da
+ * empresa que a unidade de trabalho já tinha fixado. A distinção é a mesma que
+ * `./contexto-de-escrita.ts` registra por extenso para `identidade.usuario`: num schema que por
+ * decisão da ADR-0009 nunca teve política, o recorte pela empresa do contexto **é** o caminho, e não
+ * o segundo caminho que a ADR-0008 recusa.
  */
 const FONTES_QUE_LEEM_EMPRESAS: readonly string[] = [
   'packages/db/src/empresa.ts',
+  // SUT_IS_CORRECT_BECAUSE: a **T4** da fatia `automacoes-agendadas` acrescenta a terceira, e o
+  // código de produção está certo — quem estava incompleto era este elenco, que ainda não conhecia
+  // a leitura. `lerEstadoDasRotinas` precisa da **data de admissão da empresa do contexto** para
+  // decidir a rotina que nunca executou: sem esse eixo, toda empresa nasceria com as três rotinas
+  // atrasadas no primeiro segundo de vida (aceite técnico da T4, RD-17). Não há outra fonte da
+  // admissão no produto, e a alternativa — derivá-la na aplicação — poria o eixo de tempo fora do
+  // banco, contra a ADR-0026.
+  //
+  // A asserção **não foi afrouxada**: continua sendo igualdade de conjunto, e um quarto arquivo
+  // reprova nominalmente. E o invariante que ela protege permanece intacto, porque a entrada nova
+  // não é enumeração: ver a advertência do docblock acima. `apps/worker/src/**` e
+  // `packages/regua/src/**` seguem sem alcançar a tabela.
+  'packages/db/src/execucao-de-rotina.ts',
   'packages/db/src/semente.ts',
 ].sort();
 
@@ -1036,7 +1083,17 @@ describe('CT-624 — o escritor de contexto é único por borda, e as duas lista
       // Admin ao registrar o certificado (ADR-0024, terceira emenda). A razão está escrita em
       // `BORDAS_QUE_ESCREVEM_CONTEXTO`. A asserção **não foi afrouxada**: continua sendo contagem
       // EXATA ao lado da igualdade de lista acima, e um nono chamador reprova nominalmente.
-      expect(arquivosDe(varredura.ocorrencias)).toHaveLength(8);
+      //
+      // SUT_IS_CORRECT_BECAUSE: a **T6** da fatia `automacoes-agendadas` acrescenta a nona — a borda
+      // das quatro rotinas por empresa. Ela é da classe das que recebem o `empresaId` **na carga**, e
+      // o que é próprio dela é quem o produziu: a enumeração de tenants do despachante, que lê
+      // `identidade.empresa` sem noção de tenant — a **primeira** das duas origens legítimas que a
+      // `Decision` da ADR-0024 nomeia. O contexto é aberto **uma vez, antes do despacho** para as
+      // quatro rotinas, e a passada da conferência que ela executa corre dentro dele, sem
+      // `executarCom` próprio. A razão está escrita em `BORDAS_QUE_ESCREVEM_CONTEXTO`. A asserção
+      // **não foi afrouxada**: continua sendo contagem EXATA ao lado da igualdade de lista acima, e
+      // um décimo chamador reprova nominalmente.
+      expect(arquivosDe(varredura.ocorrencias)).toHaveLength(9);
     },
     LIMITE_DO_CASO_MS,
   );
@@ -1121,3 +1178,206 @@ function linhasQueCasam(fonte: string, padrao: RegExp): string[] {
     .filter((linha) => padrao.test(linha))
     .map((linha) => linha.trim());
 }
+
+// ===========================================================================
+// CT-1061 — os fontes NOVOS de `@sysloc/db` não leem o relógio do processo
+// ===========================================================================
+
+/**
+ * ⚠️ **O que este caso acrescenta ao `CT-612`, e por que os dois existem.**
+ *
+ * O `CT-612` varre `packages/regua/src/**` e `apps/worker/src/tarefas/**` — os dois lugares onde a
+ * decisão de tempo da régua poderia ser tomada. Ele **não alcança `packages/db/src/**`**, e a
+ * lacuna está declarada por escrito no marcador `DÉBITO COM GATILHO — D14` de
+ * `src/fuso-da-operacao.ts`: *"o CT-612 (T8) varre `new Date(` … não alcança `packages/db/src/**`"*.
+ * A fatia `automacoes-agendadas` fecha a **metade do lado de `@sysloc/db`** dessa lacuna, sobre os
+ * dois fontes que ela mesma acrescentou.
+ *
+ * O modo de falha é o mesmo que tornou o `CT-612` o caso mais importante daquela fatia, e aqui ele é
+ * pior: **nenhum caso comportamental pega esta classe**. O host está em `America/Sao_Paulo`, que é o
+ * mesmo fuso que `negocio.data_corrente_da_operacao()` fixa no corpo dela, de modo que
+ * `new Date().toISOString().slice(0, 10)` e a função do banco coincidem **quase sempre** — divergem
+ * nas três primeiras horas de cada dia, e só então. Um encerramento derivado do relógio do processo
+ * passaria em toda a suíte de integração desta task e encerraria contrato um dia cedo, em produção,
+ * na janela em que a rotina de fato roda (madrugada). `TZ` **não é declarada por nenhuma das unidades
+ * systemd**, então sob UTC a divergência seria diária.
+ *
+ * As agulhas **não são as mesmas** do `CT-612`, e a diferença é conteúdo: lá o eixo é a **hora**
+ * (`getHours(`/`getMinutes(`), porque o que se decide é a janela de envio; aqui o eixo é o **dia** e
+ * a **idade** (`getHours(`/`getTime(`), porque o que se decide é o vencimento do contrato (RD-01), o
+ * corte da retenção de 90 dias (RN-16/CA-13) e o limiar de atraso de uma rotina (CA-09). Derivar uma
+ * lista da outra faria a próxima emenda de um eixo mover o outro sem que ninguém decidisse.
+ */
+
+/** Os DOIS fontes que a fatia `automacoes-agendadas` acrescentou a `packages/db/src/`. */
+const FONTES_NOVOS_DO_PACOTE_DE_DADOS: readonly string[] = [
+  'packages/db/src/encerramento-de-contratos.ts',
+  'packages/db/src/execucao-de-rotina.ts',
+];
+
+/**
+ * As quatro formas de ler o relógio do processo que este caso proíbe, escritas **por extenso**.
+ *
+ * Literais, e não derivadas de nada: é esta lista que declara **o que** o caso proíbe, e o detector
+ * abaixo é composto a partir dela — a lista e o que se procura são o mesmo fato. A ordem é a do
+ * controle positivo, e é ela que a asserção das agulhas compara.
+ */
+const LEITURAS_DO_RELOGIO_NO_PACOTE_DE_DADOS: readonly string[] = [
+  'new Date(',
+  'Date.now(',
+  'getHours(',
+  'getTime(',
+];
+
+/**
+ * O detector é `includes`, e não expressão regular, e a escolha tem duas razões.
+ *
+ * A primeira é que a agulha vira **dado**: `agulhaDaLinha` devolve **qual** das quatro casou, que é o
+ * que a perna de falsificação afirma. Uma alternância compilada devolveria o casamento, mas ao preço
+ * de escapar quatro literais — e a segunda razão é justamente essa: `new Date(` tem parêntese e ponto
+ * em `Date.now(`, de modo que a versão regular precisa de uma tabela de escape que pode divergir da
+ * lista sem que nada acuse. Aqui não há nada entre a lista e o que se procura.
+ */
+function agulhaDaLinha(linha: string): string | undefined {
+  return LEITURAS_DO_RELOGIO_NO_PACOTE_DE_DADOS.find((agulha) => linha.includes(agulha));
+}
+
+/** As agulhas que a varredura de fato casou, na ordem das ocorrências — o dado da falsificação. */
+function agulhasDe(varredura: VarreduraDeFontes): string[] {
+  return varredura.linhas.map((linha) => agulhaDaLinha(linha) ?? '<sem agulha>');
+}
+
+/**
+ * O predicado de vencimento **íntegro**, como ele está no fonte — a âncora da falsificação.
+ *
+ * Ele é procurado no fonte real **antes** de a cópia ser escrita, e é dele que sai a linha esperada.
+ * A independência importa: a posição do defeito é apurada por um texto que **não é agulha nenhuma**,
+ * de modo que a asserção sobre a linha não pode passar por acordo com o próprio detector.
+ */
+const PREDICADO_DE_VENCIMENTO_INTEGRO =
+  'AND contrato.data_fim_locacao < negocio.data_corrente_da_operacao()';
+
+/**
+ * A abertura da interpolação do driver, escrita à parte — e a razão é o linter, não o estilo.
+ *
+ * O defeito injetado abaixo é uma **interpolação de consulta**, e escrevê-la dentro de aspas simples
+ * dispara `noTemplateCurlyInString`, que existe justamente para pegar quem quis um literal de gabarito
+ * e escreveu um literal comum. Aqui o `${` é **dado**, e não código: ele é o texto que a cópia
+ * defeituosa precisa conter. Compondo-o assim, o aviso desaparece sem que o texto mude um caractere.
+ */
+const ABERTURA_DA_INTERPOLACAO = '${';
+
+/**
+ * O defeito literal que a falsificação injeta: o dia saindo do relógio do PROCESSO.
+ *
+ * É a forma exata que um autor futuro escreveria por conveniência — ela é mais curta que a função do
+ * banco, não depende de migração e produz o mesmo resultado nesta máquina em 21 das 24 horas.
+ */
+const PREDICADO_COM_RELOGIO_DO_PROCESSO = `AND contrato.data_fim_locacao < ${ABERTURA_DA_INTERPOLACAO}new Date().toISOString().slice(0, 10)}`;
+
+/**
+ * O controle POSITIVO: as quatro agulhas, uma por linha, na ordem da lista.
+ *
+ * Sem ele, "nenhuma ocorrência nos dois fontes" ficaria verde também sobre um detector que nunca casa
+ * — que é o modo pelo qual esta classe de asserção apodrece em silêncio.
+ */
+const CONTROLE_COM_AS_QUATRO_AGULHAS = [
+  'const instante = new Date();',
+  'const epoca = Date.now();',
+  'const hora = instante.getHours();',
+  'const milissegundos = instante.getTime();',
+  '',
+].join('\n');
+
+describe('CT-1061 — os fontes novos de `@sysloc/db` não leem o relógio do processo', () => {
+  it(
+    'CT-1061 — zero leituras do relógio do processo nos dois fontes novos do pacote',
+    async () => {
+      const fontes = FONTES_NOVOS_DO_PACOTE_DE_DADOS.map(
+        (relativo) => `${RAIZ_DO_REPOSITORIO}${relativo}`,
+      );
+
+      const varredura = await varrerArquivos(fontes, (linha) => agulhaDaLinha(linha) !== undefined);
+
+      // Âncora de não-vacuidade em valor EXATO: "nenhuma leitura de relógio" sobre zero arquivos
+      // lidos é verdade vazia. `varrerArquivos` levanta em arquivo ausente, de modo que um fonte
+      // renomeado reprova aqui em vez de reduzir a cobertura em silêncio.
+      expect(varredura.arquivos).toBe(FONTES_NOVOS_DO_PACOTE_DE_DADOS.length);
+      expect(varredura.arquivos).toBe(2);
+
+      expect(
+        varredura.ocorrencias.map((lugar) => relative(RAIZ_DO_REPOSITORIO, lugar)),
+        `leitura do relógio do processo onde o dia tem de vir do banco (ADR-0026): ${varredura.linhas.join(' | ')}`,
+      ).toEqual([]);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-1061 (b) — a MESMA varredura acha as 4 agulhas no controle e REPROVA a cópia defeituosa',
+    async () => {
+      const caminhoDoIntegro = `${RAIZ_DO_REPOSITORIO}${FONTES_NOVOS_DO_PACOTE_DE_DADOS[0] ?? ''}`;
+      const integro = await readFile(caminhoDoIntegro, 'utf8');
+
+      // A linha esperada sai do fonte ÍNTEGRO, por um texto que não é agulha nenhuma. É o que impede
+      // a asserção de concordar com o detector em vez de medi-lo.
+      const posicaoDoPredicado = integro
+        .split('\n')
+        .findIndex((linha) => linha.includes(PREDICADO_DE_VENCIMENTO_INTEGRO));
+
+      expect(
+        posicaoDoPredicado,
+        'o predicado de vencimento saiu do fonte — a falsificação perdeu a âncora',
+      ).toBeGreaterThanOrEqual(0);
+
+      // A cópia vive num diretório temporário PRÓPRIO, apagado no `finally`: escrever o defeito
+      // sobre o fonte real o deixaria na árvore se o processo morresse no meio, que é exatamente a
+      // razão pela qual o `CT-612 (b)` falsifica em memória. Aqui o disco é necessário porque o que
+      // se afirma é o `arquivo:linha` que a varredura relata, e ele só existe sobre arquivo.
+      const diretorio = await mkdtemp(join(tmpdir(), 'sysloc-ct1061-'));
+
+      try {
+        const caminhoDoControle = join(diretorio, 'controle-com-as-quatro-agulhas.ts');
+        await writeFile(caminhoDoControle, CONTROLE_COM_AS_QUATRO_AGULHAS, 'utf8');
+
+        const doControle = await varrerArquivos(
+          [caminhoDoControle],
+          (linha) => agulhaDaLinha(linha) !== undefined,
+        );
+
+        // CONTROLE POSITIVO: uma ocorrência por agulha, na ordem da lista, com a linha exata. Um
+        // detector que nunca casasse passaria no caso acima e reprovaria aqui.
+        expect(doControle.ocorrencias).toEqual([
+          `${caminhoDoControle}:1`,
+          `${caminhoDoControle}:2`,
+          `${caminhoDoControle}:3`,
+          `${caminhoDoControle}:4`,
+        ]);
+        expect(agulhasDe(doControle)).toEqual([...LEITURAS_DO_RELOGIO_NO_PACOTE_DE_DADOS]);
+
+        // MUTANTE: o MESMO fonte, com o predicado de vencimento derivado do relógio do processo.
+        const caminhoDaCopia = join(diretorio, 'encerramento-de-contratos.ts');
+        const defeituoso = integro.replace(
+          PREDICADO_DE_VENCIMENTO_INTEGRO,
+          PREDICADO_COM_RELOGIO_DO_PROCESSO,
+        );
+
+        // A troca aconteceu: sem esta âncora, uma substituição que não casasse deixaria a perna
+        // abaixo reprovando pelo motivo errado — e um dia passaria a "provar" o fonte íntegro.
+        expect(defeituoso).not.toBe(integro);
+        await writeFile(caminhoDaCopia, defeituoso, 'utf8');
+
+        const daCopia = await varrerArquivos(
+          [caminhoDaCopia],
+          (linha) => agulhaDaLinha(linha) !== undefined,
+        );
+
+        expect(daCopia.ocorrencias).toEqual([`${caminhoDaCopia}:${posicaoDoPredicado + 1}`]);
+        expect(agulhasDe(daCopia)).toEqual(['new Date(']);
+      } finally {
+        await rm(diretorio, { recursive: true, force: true });
+      }
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});

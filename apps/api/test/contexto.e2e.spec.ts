@@ -158,7 +158,10 @@ import {
 import { NaoExigePermissao } from '../src/autenticacao/exigencia.decorator.ts';
 import { CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO } from '../src/autenticacao/senha.controller.ts';
 import { CAMINHO_DA_SESSAO } from '../src/autenticacao/sessao.controller.ts';
-import { CAMINHO_DA_AUTOMACAO_DE_COBRANCA } from '../src/automacao/automacao.controller.ts';
+import {
+  CAMINHO_DA_AUTOMACAO_DE_COBRANCA,
+  SEGMENTO_DAS_ROTINAS,
+} from '../src/automacao/automacao.controller.ts';
 import { CAMINHO_DOS_FIADORES } from '../src/cadastros/fiador.controller.ts';
 import { CAMINHO_DOS_LOCADORES } from '../src/cadastros/locador.controller.ts';
 import { CAMINHO_DOS_LOCATARIOS } from '../src/cadastros/locatario.controller.ts';
@@ -686,6 +689,22 @@ const ROTAS_PROTEGIDAS_ACEITAS: readonly string[] = [
   // **D26 (F2/T6)**: a §5.2 da T10 também não declara este arquivo, e a divergência é registrada
   // aqui em vez de silenciada.
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_AUTOMACAO_DE_COBRANCA}/cobrancas/:codigo/avisos`,
+  // SUT_IS_CORRECT_BECAUSE: a **T10** da fatia `automacoes-agendadas` publicou
+  // `GET /v1/automacao-de-cobranca/rotinas` — a **ÚLTIMA rota deste repositório antes do
+  // congelamento da superfície** —, e ela é **protegida**: vale a exigência da classe,
+  // `@ExigeChave('TELA:automacao_de_cobranca')`, ela **não declara nada no método** (ADR-0018), não é
+  // marcada `@RotaPublica()`, e por isso a sonda sem cookie recebe `401 NAO_AUTENTICADO` da guarda.
+  // Pela classificação por **caminho** deste caso ela entra como **uma** entrada nova, porque nenhum
+  // outro método atende aquele caminho. **Nenhuma entrada anterior saiu**, o conjunto público
+  // continua inalterado — a rota exige sessão —, e a igualdade segue exata nos dois sentidos: uma
+  // rota nova que tivesse dispensado sessão apareceria no OUTRO conjunto e reprovaria como
+  // excedente. **Nada foi afrouxado.**
+  //
+  // ⚠️ **Este arquivo não está na §5.2 da T10** — é a **décima segunda** anotação consecutiva do
+  // débito **D26 (F2/T6)**: a §5.2 das tasks não conta as âncoras de inventário que a publicação de
+  // rota obriga a tocar. A divergência é registrada aqui em vez de silenciada, e é a última desta
+  // série: com o congelamento, nenhuma fatia posterior publica rota.
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_AUTOMACAO_DE_COBRANCA}/${SEGMENTO_DAS_ROTINAS}`,
   // SUT_IS_CORRECT_BECAUSE: a **T11** da fatia `fundacao-bancaria` publicou as **duas rotas do
   // certificado do provedor**, e as duas são **protegidas**: vale a exigência da classe,
   // `@ExigeChave('TELA:integracoes_bancarias')`, nenhuma é marcada `@RotaPublica()`, e por isso a

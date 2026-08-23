@@ -1133,6 +1133,18 @@ function exigirUsuarioDa(empresaId: string): UsuarioSemeado {
 //        `apps/api/test/` e `apps/worker/test/` já alcançam os dois.
 // POR QUE NÃO AGORA: subir o arranjo exigiria reescrever duas suítes de fronteira real que não
 //        estão na lista desta task, com ~180 casos verdes dependendo delas.
+// ⚠️ EMENDADO em 2026-08-23 pela T11 da fatia `automacoes-agendadas` (texto original preservado
+//        acima, byte a byte). O que muda é o DESTINO prescrito no `QUANDO FECHA`, e só ele: a
+//        medição da T6 daquela fatia **refutou** `packages/db/test/` como casa do arranjo. A razão é
+//        de resolução de módulo, e não de gosto: os acessórios de `packages/db/test/` alcançam
+//        `contextoDeTenant` pelo **fonte** (`unidade-sob-contexto.ts` → `../src/contexto.ts`),
+//        enquanto `apps/*/test/` o alcançam pela fronteira publicada de `@sysloc/db`, que o
+//        `package.json` manda para `./dist/index.js` — são **dois `AsyncLocalStorage` distintos**, e
+//        toda escrita do arranjo cai em violação de política de linha. O arranjo que este débito
+//        endereça é necessariamente **sob contexto**, logo o destino viável é um pacote de teste que
+//        consuma `@sysloc/db` **pelo barril**. ⚠️ `packages/shared/test/` **não serve**:
+//        `@sysloc/shared` não pode depender de `@sysloc/db` sem inverter o grafo. O gatilho — *a
+//        primeira task autorizada a abrir as duas suítes irmãs* — **não muda**.
 // ÍNDICE: docs/specs/features/webhook-e-carne/v1/_run/run-report.md §2, D21
 async function semearCobranca(empresaId: string): Promise<CobrancaSemeada> {
   await garantirCertificadoVigente(empresaId);

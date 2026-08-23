@@ -1,0 +1,140 @@
+# Despacho da rotina `aviso-de-cobranca` — T9 da fatia `automacoes-agendadas`.
+#
+# Esta é a FONTE VERSIONADA. A cópia instalada em /etc/systemd/system/ é
+# derivada dela por `deploy/scripts/instalacao/instalar-unidades.sh`, que é
+# idempotente (ADR-0005). Editar a cópia instalada é perder a alteração na
+# próxima instalação — edite AQUI.
+#
+# ADR-0005, condição de entrada: NENHUMA credencial entra neste arquivo. Ver o
+# cabeçalho de `sysloc-api.service` para o arranjo completo — ele é o mesmo.
+#
+# ---------------------------------------------------------------------------
+# Ela NÃO é habilitada no arranque — quem sobe no boot é o `.timer`
+# ---------------------------------------------------------------------------
+#
+# É a falha típica desta classe de unidade, e o instalador a fecha por dado:
+# `sysloc-rotina-aviso-de-cobranca.service` não consta de `UNIDADES_DO_ARRANQUE`.
+# Habilitá-la faria o `Type=oneshot` correr NO BOOT, fora do horário declarado —
+# uma passagem a mais, na hora errada, toda vez que a máquina subisse.
+#
+# ---------------------------------------------------------------------------
+# O que ele faz, e o que ele NÃO faz
+# ---------------------------------------------------------------------------
+#
+# Enfileira, para cada empresa ativa, a passagem da régua de cobrança na fila `regua-de-cobranca`.
+#
+# O despachante é PRODUTOR PURO: ele enfileira e termina. Quem consome é
+# `sysloc-worker.service`, o processo que fica de pé — e é lá, não aqui, que a
+# tarefa falha ou tem sucesso. Ver "o alcance do OnFailure=" logo abaixo.
+#
+# ---------------------------------------------------------------------------
+# ExecStart depende de artefato CONSTRUÍDO
+# ---------------------------------------------------------------------------
+#
+# `dist/despachante.js` é produzido por `pnpm build` e barrado pelo
+# `.gitignore`. A construção NÃO acontece aqui nem por `ExecStartPre`: quem
+# confere a presença do artefato é o INSTALADOR, uma vez, com um humano olhando.
+#
+# ⚠️ O argumento `aviso-de-cobranca` é o nome que
+# `ROTINAS_DE_DESPACHO` aceita, derivado de `CADENCIA_DA_ROTINA`
+# (`@sysloc/contracts`). Nome fora do roster termina o processo com código 2, e o
+# código é conteúdo: `2` manda olhar para esta linha, `1` manda olhar para banco,
+# fila e `EnvironmentFile`.
+
+[Unit]
+Description=Aviso de cobrança — despacho
+Documentation=file:/opt/sysloc-backend/docs/specs/features/automacoes-agendadas/v1/tech_spec.md
+
+# Ordem de arranque e de desligamento, pela mesma razão declarada em
+# `sysloc-worker.service`: o despacho lê o banco e escreve na fila, e `Wants=`
+# (não `Requires=`) evita que uma dependência lenta vire falha de dependência.
+After=network.target postgresql.service redis-server@sysloc.service
+Wants=postgresql.service redis-server@sysloc.service
+
+# A metade 1 do alerta (CA-03): quem falhou é NOMEADO. `%n` é o nome desta
+# unidade, e a unidade-modelo o interpola como `%i` na linha que grava no
+# journal — sem ele, o operador saberia que "uma rotina falhou" e teria de
+# descobrir qual.
+#
+# ⚠️ O alcance dele é o DESPACHO, nunca a execução da tarefa. O despachante
+# enfileira e sai com código 0; se a tarefa falhar depois, no processo que fica
+# de pé, esta unidade já terminou com sucesso e nada dispara aqui. É por isso
+# que a vigilância existe como rotina própria, e por que uma não substitui a
+# outra.
+OnFailure=sysloc-alerta-de-rotina@%n.service
+
+# Guarda contra laço de disparo — ver `sysloc-api.service` para a aritmética.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=oneshot
+
+# ⚠️ NÃO HÁ `Restart=` — a ausência é a decisão.
+#
+# A rotina que falha espera o PRÓXIMO DISPARO DO TIMER. Reiniciar um despacho em
+# laço multiplicaria o enfileiramento em vez de o corrigir: cada tentativa
+# enfileira de novo para as mesmas empresas, e a fila cresce enquanto a causa
+# (banco fora, fila fora) continua de pé. Perder uma passagem é barato — todas as
+# rotinas desta fatia são idempotentes por predicado.
+
+User=sysloc
+Group=sysloc
+WorkingDirectory=/opt/sysloc-backend/apps/worker
+
+# Segredos: apenas aqui, e apenas por referência. É o MESMO arquivo que as duas
+# unidades permanentes consomem; deste processo são lidas exatamente três —
+# `LOG_LEVEL`, `DATABASE_URL` e `REDIS_URL`.
+#
+# ⚠️ Ele NÃO exige `CHAVE_DE_CIFRA_DO_CERTIFICADO` nem `DIRETORIO_DOS_BOLETOS`,
+# e a ausência é conformidade com a ADR-0032, não esquecimento: o despachante não
+# compõe porta externa alguma, e a superfície capaz de abrir o segredo mais forte
+# do produto continua sendo só a de `dist/main.js`.
+EnvironmentFile=/etc/sysloc/backend.env
+
+# Coordenadas revisáveis — nenhuma delas é segredo.
+Environment=NODE_ENV=production
+Environment=LOG_LEVEL=info
+
+ExecStart=/home/sysloc/.local/share/mise/installs/node/24.18.1/bin/node /opt/sysloc-backend/apps/worker/dist/despachante.js aviso-de-cobranca
+
+# Teto do despacho, DECLARADO em vez de herdado.
+#
+# Sem ele vale o padrão da distribuição (90 s). O despacho é `O(empresas)` em
+# enfileiramentos e `O(1)` em consultas, de modo que 120 s é folga larga para as
+# 20–300 empresas que o produto dimensiona. O que o teto compra é o desfecho:
+# um banco pendurado leva a unidade a `failed` — e portanto ao `OnFailure=`
+# acima — em vez de a deixar presa consumindo os disparos seguintes em silêncio.
+TimeoutStartSec=120
+
+# Restrições de execução — IDÊNTICAS às de `sysloc-worker.service`, linha a
+# linha. Ver o cabeçalho de `sysloc-api.service` para a razão de
+# `ProtectSystem=full`, `ProtectHome=read-only` e da presença de AF_NETLINK.
+#
+# Copiá-las em vez de as derivar é a única forma que o formato `.ini` do
+# supervisor oferece: ele não tem herança, e um `.d/` de sobreposição só
+# ACRESCENTA — não haveria como uma unidade nova nascer restrita por omissão.
+# O que impede as cópias de divergirem é a asserção estática de
+# `packages/shared/test/unidades-agendadas.spec.ts` somada ao
+# `systemd-analyze verify` que o instalador roda sobre todas elas.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+# ⚠️ SEM seção [Install], e a ausência é o mecanismo.
+#
+# Unidade sem `[Install]` NÃO PODE ser habilitada: `systemctl enable` sobre ela
+# recusa. É a segunda barreira contra o despacho correr no boot — a primeira é a
+# lista `UNIDADES_DO_ARRANQUE` do instalador. Quem a inicia é
+# `sysloc-rotina-aviso-de-cobranca.timer`, pelo `Unit=` dele.

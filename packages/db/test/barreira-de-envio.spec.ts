@@ -444,6 +444,7 @@ const PODAS_TESTEMUNHAS: readonly string[] = ['node_modules'];
  * | `.sh`, `.py`, `.go`, `.mod`, `.awk` | fonte de outra linguagem, executada em processo próprio |
  * | `.sql` | dialeto do banco, consumido pelo servidor e não pelo carregador |
  * | `.service` | unidade do systemd |
+ * | `.timer` | relógio do systemd — dispara a `.service` par, e quem o lê é o supervisor |
  * | `.conf` | configuração de servidor de borda, consumida pelo nginx e não pelo carregador do Node |
  * | `.example` | amostra inerte de outro arquivo, e o sufixo é o que a declara inerte |
  * | `.gitignore`, `.gitattributes`, `.gitkeep` | configuração e sentinela do próprio git |
@@ -459,6 +460,17 @@ const PODAS_TESTEMUNHAS: readonly string[] = ['node_modules'];
  * filtrar o arquivo culpado, ou estreitar o caminhamento para o culpado sumir. Os três apagam a
  * âncora. Classe nova legítima é uma linha aqui **mais** a linha da tabela acima; classe que sumiu da
  * árvore é a remoção de uma linha, e as duas direções pedem a razão escrita.
+ *
+ * ⚠️ **`.timer` entrou na T9 da fatia `automacoes-agendadas`**, e é a primeira classe acrescentada
+ * desde que esta declaração nasceu: a árvore não tinha nenhum relógio versionado antes dela.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a âncora reprovou porque a **árvore** mudou, não porque a asserção
+ * estivesse errada — ela fez exatamente o trabalho que o cabeçalho lhe atribui, nomeando a classe
+ * versionada que ninguém declarara. O código de produção está certo: `.timer` é unidade do
+ * systemd, o carregador do Node/Vitest não a resolve como módulo, e ela **não** consta de
+ * `EXTENSOES_CARREGAVEIS` — de modo que a âncora 1-E (disjunção das duas declarações) segue
+ * satisfeita, conferida por leitura. A partição continua afirmada por **igualdade** sobre a lista
+ * inteira: nada foi filtrado, nada foi podado, e uma classe versionada nova volta a reprovar.
  */
 const CLASSES_NAO_CARREGAVEIS: readonly string[] = [
   '.awk',
@@ -474,6 +486,7 @@ const CLASSES_NAO_CARREGAVEIS: readonly string[] = [
   '.service',
   '.sh',
   '.sql',
+  '.timer',
   '.toml',
   '.txt',
   '.yaml',

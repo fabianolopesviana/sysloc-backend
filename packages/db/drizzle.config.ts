@@ -44,6 +44,47 @@
  * regeração seguinte, e o diff entre o arquivo versionado e a saída do gerador viraria ruído
  * permanente — o mesmo tipo de divergência silenciosa que a supressão manual dos `CREATE SCHEMA`,
  * logo abaixo, obriga a refazer de propósito e por escrito.
+ *
+ * ---------------------------------------------------------------------------
+ * A SEGUNDA classe de intervenção manual: o delta da migração AUTORAL reemitido
+ * ---------------------------------------------------------------------------
+ *
+ * `meta/` só ganha snapshot em migração **gerada**. Migração **autoral** que altere estrutura
+ * declarada em `src/esquema/*.ts` — coluna nova, `CHECK` reescrita, restrição trocada — muda o banco
+ * e **não** muda o snapshot. O gerador segue comparando o schema declarado contra o último snapshot,
+ * que é anterior a ela, e por isso **reemite o delta inteiro daquela autoral** dentro da gerada
+ * seguinte.
+ *
+ * Medido na T3 da fatia `automacoes-agendadas`: a `0025_estado_ternario_da_entrega.sql` é a primeira
+ * autoral do produto a alterar estrutura declarada (`situacao`, `referencia_no_provedor` e as duas
+ * `CHECK` de `entrega_da_noticia`), e a geração seguinte — a `0026` — trouxe as **cinco** instruções
+ * dela de volta. Elas foram removidas à mão, e **a remoção é obrigatória**: aplicadas em ordem sobre
+ * um banco vazio, a `0025` cria `situacao` e a `0026` tentaria criá-la de novo (`42701`, *column
+ * already exists*), derrubando `test/banco-efemero.ts` e a suíte inteira junto; sobre o banco
+ * durável, o mesmo, porque a `0025` já correu.
+ *
+ * ⚠️ **As duas correções intuitivas são erradas, e uma delas é DESTRUTIVA.** Diante da suíte
+ * vermelha o reflexo é **(a)** editar a `0025` para ela não conflitar — mas migração aplicada é
+ * IMUTÁVEL, o instalador a confere por `sha256sum` e a divergência **aborta a instalação sobre o
+ * banco durável** —, ou **(b)** regerar a `0026`, que reintroduz em silêncio o delta suprimido. A
+ * correta é a terceira: **suprimir na gerada as instruções que a autoral já aplicou, e NÃO tocar o
+ * snapshot dela**.
+ *
+ * ⚠️ **O snapshot da gerada não se toca, e é ELE que fecha o caminho incremental.** O
+ * `meta/0026_snapshot.json` registra o estado do schema **declarado**, já com `situacao`,
+ * `referencia_no_provedor` e as `CHECK` na forma que a `0025` deixou — medido: o `prevId` dele é o
+ * `id` de `meta/0023_snapshot.json`. Daí a separação, que é a mesma que o comentário do
+ * `schemaFilter` já faz para o `CREATE SCHEMA` e pela mesma razão — o que fecha o caminho
+ * incremental é o snapshot, e o que a geração do zero não tem é ele:
+ *
+ *   * **geração INCREMENTAL** (o caso normal, com `meta/` intacto): o assunto está fechado. O
+ *     gerador parte do snapshot e **não** reemite o delta suprimido; **nada há a refazer**;
+ *   * **geração DO ZERO** (`meta/` descartado, ou regeração da própria `0026`): a supressão volta a
+ *     ser **manual e obrigatória**, exatamente como a dos dois `CREATE SCHEMA` logo abaixo.
+ *
+ * O que **não** resolve: pôr o delta de volta na autoral, escrever snapshot à mão para a autoral, ou
+ * declarar a gerada como autoral. Os três desfazem a única propriedade que hoje segura o caminho
+ * incremental — o snapshot da gerada ser a saída fiel do gerador para o schema declarado.
  */
 
 import { defineConfig } from 'drizzle-kit';
@@ -51,6 +92,24 @@ import { defineConfig } from 'drizzle-kit';
 export default defineConfig({
   dialect: 'postgresql',
   schema: './src/esquema/*.ts',
+  // DÉBITO COM GATILHO — D5 · F5/T3 · registrado 2026-08-22
+  // O QUÊ: a saída do gerador tem DUAS classes de intervenção manual obrigatória, e nenhuma é
+  //        automatizada — a supressão dos dois `CREATE SCHEMA` e a supressão do delta de migração
+  //        AUTORAL que alterou estrutura declarada (a `0025`, reemitida dentro da `0026`). As duas
+  //        estão descritas por extenso no docblock acima, que é o que se lê antes de regerar.
+  // QUANDO FECHA: a próxima migração autoral que alterar estrutura declarada em `src/esquema/*.ts`,
+  //        ou uma regeração DO ZERO (`meta/` descartado) — nos dois casos a supressão é refeita à
+  //        mão, e o docblock acima é onde quem for regerar tem de passar antes.
+  // ⚠️ RECORRENTE: o gatilho NÃO extingue o débito. Refeita a supressão, a obrigação volta idêntica
+  //        na regeração seguinte, porque a causa é do `drizzle-kit` (snapshot só em migração
+  //        gerada) e não deste repositório. **Cumprir o gatilho não autoriza remover este marcador
+  //        nem a linha do índice do `CLAUDE.md`** — o que o gatilho pede é reler o docblock acima
+  //        antes de aceitar a saída do gerador. Mesma leitura que as linhas `D28 · F0/T5`,
+  //        `D20 · F3/T7` e `D51 · F4/T16` do índice já carregam, cada uma pela razão dela.
+  // POR QUE NÃO AGORA: automatizar exigiria o `drizzle-kit` aceitar snapshot escrito por migração
+  //        autoral, que é comportamento dele e não deste repositório; e o caminho incremental já
+  //        está fechado pelo `meta/0026_snapshot.json`, de modo que hoje não há o que refazer.
+  // ÍNDICE: docs/specs/features/automacoes-agendadas/v1/_run/run-report.md §2, D5
   out: './migracoes',
   // O que esta linha faz: restringe a `identidade` e `negocio` os schemas do PostgreSQL que o
   // drizzle-kit INTROSPECTA nos comandos `pull` e `push` — o padrão dele é considerar apenas
