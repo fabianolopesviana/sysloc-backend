@@ -134,12 +134,14 @@ Status: **FATIA CONCLUÍDA** · 7/7 tasks aprovadas nos dois gates · bateria de
   `DATABASE_URL` **indentada** é recusada (o caso que discrimina; a não indentada já era), mais o
   **controle negativo** de que UMA linha indentada não é ambiguidade, sem o qual um guarda que
   recusasse toda indentação passaria despercebido.
-- ⚠️ **A bateria NÃO foi executada:** `verificar-provisionamento.sh` exige privilégio administrativo
-  (*"lê /etc/sysloc/backend.env, reinicia redis-server@sysloc.service e monta sistema de arquivos
-  temporário"*) e o `sudo` deste host pede senha interativa. O comportamento foi provado exercitando
-  as funções **reais** pelo mesmo mecanismo que a bateria usa (`sed`+`eval` do arquivo real), em
-  quatro pernas, e os **valores esperados** das asserções novas foram conferidos nos **dois**
-  leitores antes de serem escritos. A execução da bateria fica para a próxima janela assistida.
+- ✅ **A bateria FOI executada em 2026-08-23**, em janela assistida pelo operador — ela exige privilégio
+  administrativo (*"lê /etc/sysloc/backend.env, reinicia redis-server@sysloc.service e monta sistema
+  de arquivos temporário"*) e o `sudo` deste host pede senha interativa. Resultado:
+  **8/8 casos aprovados**, com as duas asserções novas do bloco (k) passando nos **DOIS** leitores —
+  a segunda `DATABASE_URL` indentada recusada e o controle negativo de que UMA linha indentada não é
+  ambiguidade. Antes da execução o comportamento já havia sido provado exercitando as funções
+  **reais** pelo mesmo mecanismo da bateria (`sed`+`eval` do arquivo real), em quatro pernas, com os
+  valores esperados conferidos nos dois leitores; a execução confirmou os dois.
 ### D11 · baixo · code_quality · T1 · QA
 - **Onde:** `deploy/scripts/instalacao/verificar-workspace.sh:470`
 - **Problema:** as cinco variáveis de ambiente são literais em **quatro** lugares do script, sem fonte única.

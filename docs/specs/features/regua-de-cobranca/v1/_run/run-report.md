@@ -307,10 +307,13 @@ Bate exatamente com o número declarado no `task_plan.md`. Nenhum pacote encolhe
   `verificar-provisionamento.sh`, como o débito pedia. Ele forma **par** com a asserção de
   `FALTA:REDIS_URL` que já existia: uma sozinha não separa *"linha ausente"* de *"linha presente e
   vazia"*, que é justamente a distinção que o defeito apagava.
-- ⚠️ **A bateria NÃO foi executada** — exige privilégio administrativo e o `sudo` deste host pede
-  senha interativa. O comportamento foi provado exercitando `conferir_coordenadas_do_ambiente` **real**
-  em três pernas (vazia → divergente; sem linha → ausente; completa → coerente), e o valor esperado da
-  asserção nova foi conferido pela mesma sonda que a bateria usa. Fica para a próxima janela assistida.
+- ✅ **A bateria FOI executada em 2026-08-23**, em janela assistida pelo operador:
+  `verificar-provisionamento.sh` saiu **8/8 casos aprovados**, e a asserção nova
+  — *"(l) `REDIS_URL` presente e VAZIA é DIVERGÊNCIA, nunca chave a acrescentar"* — passou.
+  Antes da execução o comportamento já havia sido provado exercitando
+  `conferir_coordenadas_do_ambiente` **real** em três pernas (vazia → divergente; sem linha →
+  ausente; completa → coerente), e o valor esperado conferido pela mesma sonda que a bateria usa;
+  a execução confirmou os dois.
 ### D40 · BAIXO · error_handling · T8 · Tech Review — ✅ FECHADO
 - **Onde:** `deploy/scripts/instalacao/provisionar-base.sh:719-721` (`garantir_chaves_de_conteudo`) e, pela mesma classe, as linhas 1329-1330
 - **Problema:** a semeadura faz `printf 'EMAIL_REMETENTE=%s\n' … >>"${arquivo}"` **sem conferir se o arquivo preexistente termina em `\n`**. Se a última linha não tiver quebra final (arquivo editado à mão por editor que não a acrescenta), o acréscimo **se cola nela**: `SMTP_URL=smtp://127.0.0.1:1025EMAIL_REMETENTE=avisos@sysloc.invalid`.
@@ -346,6 +349,11 @@ Bate exatamente com o número declarado no `task_plan.md`. Nenhum pacote encolhe
   na mesma execução — `(k)` indentada recusada, `(k)` controle negativo, `(l)` `REDIS_URL` vazia como
   divergência —, e os demais 7 casos da bateria (`CT-001`, `CT-002`, `CT-003`, `CT-004`, `CT-005`,
   `CT-030`, `CT-1045`) saíram aprovados.
+  ✅ **Reexecutado com privilégio após a correção, na mesma janela: `verificar-provisionamento.sh`
+  saiu 8/8 casos aprovados**, e o `CT-647` verde nas **cinco** asserções — as três originais mais
+  *"nenhuma linha vazia nasce no arquivo semeado"* e a contagem em 8. ⚠️ **É a primeira vez que este
+  caso é provado por EXECUÇÃO** desde que nasceu em 2026-08-12; até aqui a prova era isolada, e foi
+  essa distância que deixou o arranjo quebrado por três fatias.
 
 ### D41 · BAIXO · project_pattern · T8 · Tech Review
 - **Onde:** `apps/worker/test/ambiente.spec.ts` (toda a maquinaria do `CT-643`, ~150 linhas) — **dono: T10**
