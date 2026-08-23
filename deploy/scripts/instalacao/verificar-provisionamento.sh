@@ -2232,6 +2232,34 @@ ct_030() {
 # vizinhos usam (`eval` do corpo extraído por `sed`) — o provisionador termina em
 # `main "$@"` e não pode ser lido por `source`.
 # --------------------------------------------------------------------------- #
+# Carrega, do PROVISIONADOR REAL, as constantes de valor padrão que a função
+# indicada referencia — e só elas.
+#
+# CAUSA-RAIZ de existir: o arranjo do `ct_647` mantinha uma CÓPIA MANUAL dessas
+# constantes, com o aviso escrito de que "a lista cresce com ela". A lista ficou
+# para trás TRÊS vezes — `ENDERECO_PADRAO_DE_AUTORIZACAO_BANCARIA` (`c45ef6c`,
+# `fundacao-bancaria`) e as duas da entrega da notícia (`52e2be1`) —, e sob
+# `set -u` a primeira faltante derruba o subshell ANTES de qualquer asserção: o
+# caso não reprova pelo defeito que persegue, reprova por arranjo incompleto. E
+# como esta bateria exige privilégio, ninguém viu por três fatias.
+#
+# POR QUE ISTO FECHA A CLASSE: a lista deixa de ser cópia. Os nomes saem do
+# corpo da própria função sob teste, e os valores saem da declaração real no
+# provisionador — uma chave nova passa a chegar aqui sozinha. Não há mais o que
+# esquecer de atualizar.
+#
+# O `readonly` é retirado de propósito: dentro do subshell estas são variáveis
+# comuns, e mantê-lo impediria um caso futuro de sobrepor um valor para arranjo.
+carregar_constantes_da_funcao() {
+	local fn="$1" nome linha
+	for nome in $(sed -n "/^${fn}() {/,/^}/p" "${SCRIPT_PROVISIONAR}" |
+		grep -oE '\$\{[A-Z_][A-Z0-9_]*\}' | tr -d '${}' | sort -u); do
+		linha="$(grep -m1 -E "^(readonly )?${nome}=" "${SCRIPT_PROVISIONAR}" || true)"
+		[[ -n "${linha}" ]] || continue
+		eval "${linha#readonly }"
+	done
+}
+
 ct_647() {
 	caso "CT-647" "Chave acrescentada nasce em linha própria mesmo sem quebra final, e não corrompe a anterior"
 
@@ -2241,17 +2269,12 @@ ct_647() {
 	# à mão por editor que não a acrescenta. Com `printf … >>` cru, o acréscimo cola.
 	printf 'DATABASE_URL=postgresql://a:b@127.0.0.1:5432/c\nSMTP_URL=smtp://127.0.0.1:1025' >"${arq}"
 
-	# ⚠️ As constantes de valor padrão são declaradas AQUI, uma por chave que
-	# `garantir_chaves_de_conteudo` semeia, e a lista cresce com ela: sob `set -u`,
-	# uma constante que ficasse para trás derrubaria o subshell e o `|| falhar`
-	# abaixo nomearia o desfecho. Foram duas na T9 de `documentos-e-confirmacao`,
-	# três desde a T11 de `fundacao-bancaria` (o endereço do provedor) e são quatro
-	# desde a T9 de `emissao-e-conciliacao` (o diretório dos boletos).
+	# ⚠️ As constantes de valor padrão NÃO são copiadas para cá — são CARREGADAS do
+	# provisionador real (ver `carregar_constantes_da_funcao` acima). A cópia manual
+	# derrubou este caso três vezes, sempre em `unbound variable` sob `set -u`, e
+	# sempre antes de qualquer asserção rodar.
 	(
-		REMETENTE_PADRAO_DO_AVISO="avisos@sysloc.invalid"
-		URL_BASE_PADRAO_DA_CONFIRMACAO="https://sysloc.invalid"
-		ENDERECO_PADRAO_DO_PROVEDOR_BANCARIO="https://provedor.sysloc.invalid"
-		DIR_BOLETOS="/var/lib/sysloc-boletos"
+		carregar_constantes_da_funcao garantir_chaves_de_conteudo
 		eval "$(sed -n '/^acrescentar_linha_ao_ambiente() {/,/^}/p' "${SCRIPT_PROVISIONAR}")"
 		eval "$(sed -n '/^garantir_chaves_de_conteudo() {/,/^}/p' "${SCRIPT_PROVISIONAR}")"
 		[[ "$(type -t acrescentar_linha_ao_ambiente)" == "function" ]] || exit 8
@@ -2281,23 +2304,29 @@ ct_647() {
 	local arq_ok="${DIR_TEMPORARIO}/ambiente-com-quebra.env"
 	printf 'SMTP_URL=smtp://127.0.0.1:1025\n' >"${arq_ok}"
 	(
-		REMETENTE_PADRAO_DO_AVISO="avisos@sysloc.invalid"
-		URL_BASE_PADRAO_DA_CONFIRMACAO="https://sysloc.invalid"
-		ENDERECO_PADRAO_DO_PROVEDOR_BANCARIO="https://provedor.sysloc.invalid"
-		DIR_BOLETOS="/var/lib/sysloc-boletos"
+		carregar_constantes_da_funcao garantir_chaves_de_conteudo
 		eval "$(sed -n '/^acrescentar_linha_ao_ambiente() {/,/^}/p' "${SCRIPT_PROVISIONAR}")"
 		eval "$(sed -n '/^garantir_chaves_de_conteudo() {/,/^}/p' "${SCRIPT_PROVISIONAR}")"
 		garantir_chaves_de_conteudo "${arq_ok}"
 	) || falhar "a semeadura abortou sobre o arquivo com quebra final"
 
-	# O esperado é a linha preexistente MAIS uma por chave de conteúdo semeada, e
-	# nada além: linha vazia entre elas apareceria aqui como contagem a mais. O
-	# valor é função de quantas `garantir_chaves_de_conteudo` semeia, e não uma
-	# constante do arranjo: 2 → 3 na T9 de `documentos-e-confirmacao` (a segunda
-	# chave), 3 → 4 na T11 de `fundacao-bancaria` (o endereço do provedor) e 4 → 5
-	# na T9 de `emissao-e-conciliacao` (o diretório dos boletos).
+	# O INVARIANTE do caso, afirmado direto: nenhuma linha vazia nasce. Esta
+	# asserção não depende de quantas chaves são semeadas e por isso NÃO envelhece
+	# — é ela que continua valendo quando a próxima chave de conteúdo entrar.
+	afirmar_igual "nenhuma linha vazia nasce no arquivo semeado" \
+		"0" "$(grep -c '^$' "${arq_ok}")"
+
+	# A contagem exata fica como companheira, porque ela pega o caso em que a
+	# semeadura simplesmente não escreve: o esperado é a linha preexistente MAIS
+	# uma por chave de conteúdo. O valor é função de quantas
+	# `garantir_chaves_de_conteudo` semeia — 2 → 3 na T9 de
+	# `documentos-e-confirmacao`, 3 → 4 na T11 de `fundacao-bancaria`, 4 → 5 na T9
+	# de `emissao-e-conciliacao`, e **5 → 8** na intervenção dirigida de
+	# 2026-08-23, que mediu as três chaves acrescentadas sem que este caso
+	# acompanhasse: o endereço de autorização (`c45ef6c`) e as duas da entrega da
+	# notícia (`52e2be1`).
 	afirmar_igual "arquivo já terminado em quebra não ganha linha vazia" \
-		"5" "$(grep -c . "${arq_ok}")"
+		"8" "$(grep -c . "${arq_ok}")"
 
 	fechar_caso "CT-647"
 }

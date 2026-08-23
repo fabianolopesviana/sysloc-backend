@@ -319,6 +319,34 @@ Bate exatamente com o número declarado no `task_plan.md`. Nenhum pacote encolhe
 
 - **✅ Fechado na intervenção dirigida de 2026-08-12:** fechado por **CLASSE**: nasceu `acrescentar_linha_ao_ambiente()` como entrada única, e os **três** pontos de acréscimo (a semeadura do remetente e as duas do P06) passam por ela. Nasceu o **CT-647** no `verificar-provisionamento.sh`. ⚠️ Aquele verificador exige `sudo` no `main`, então a lógica do caso foi provada **isolada**, por harness que extrai a função pelo mesmo idioma dos casos vizinhos: mutante (guarda removida) reprova nas **duas** asserções — a chave semeada some E a linha anterior é corrompida —, com o controle da quebra em dobro seguindo `OK`.
 
+- ⚠️ **O CT-647 QUEBROU depois, e ficou quebrado por três fatias — restaurado em 2026-08-23.**
+  Executado com `sudo` pela primeira vez desde que nasceu, ele **REPROVAVA** com 3 falhas:
+  `ENDERECO_PADRAO_DE_AUTORIZACAO_BANCARIA: unbound variable`. **Não é regressão da intervenção de
+  2026-08-23** — medido reproduzindo o caso contra o `provisionar-base.sh` de `c3fa927`, `6306e87`,
+  `52e2be1` e `9addeeb`: reprova nos **quatro**.
+  **CAUSA-RAIZ:** o arranjo mantinha uma **cópia manual** das constantes de valor padrão que
+  `garantir_chaves_de_conteudo` referencia, com o aviso escrito de que *"a lista cresce com ela"*. A
+  lista ficou para trás **três vezes** — o endereço de autorização (`c45ef6c`, `fundacao-bancaria`) e
+  os dois da entrega da notícia (`52e2be1`) —, e sob `set -u` a primeira faltante derruba o subshell
+  **antes de qualquer asserção**: o caso não reprovava pelo defeito que persegue, reprovava por
+  arranjo incompleto.
+  ⚠️ **A limitação registrada no parágrafo acima é a causa de ninguém ter visto**: *"aquele verificador
+  exige `sudo` no `main`, então a lógica do caso foi provada isolada"*. Prova isolada não é execução, e
+  o que a execução pega é exatamente isto.
+  **Fechado por CLASSE, não por ocorrência:** nasceu `carregar_constantes_da_funcao`, que deriva os
+  nomes do **corpo da própria função sob teste** e os valores da **declaração real** no provisionador.
+  A cópia deixou de existir; chave nova chega sozinha. Falsificado com um provisionador de sonda que
+  ganha uma oitava chave: a constante nova é carregada sem tocar no verificador, e a semeadura roda
+  sem `unbound variable` — com a cópia manual, morreria ali.
+  Acrescentada também a asserção **`nenhuma linha vazia nasce no arquivo semeado`**, que é o
+  invariante real do caso e **não envelhece** com a chave seguinte; a contagem exata (5 → **8**, as
+  três chaves acrescentadas sem que o caso acompanhasse) fica como companheira, porque ela pega o
+  caso em que a semeadura simplesmente não escreve.
+  **Medido:** as 4 asserções da intervenção de 2026-08-23 no `CT-003` passaram nos **dois** leitores
+  na mesma execução — `(k)` indentada recusada, `(k)` controle negativo, `(l)` `REDIS_URL` vazia como
+  divergência —, e os demais 7 casos da bateria (`CT-001`, `CT-002`, `CT-003`, `CT-004`, `CT-005`,
+  `CT-030`, `CT-1045`) saíram aprovados.
+
 ### D41 · BAIXO · project_pattern · T8 · Tech Review
 - **Onde:** `apps/worker/test/ambiente.spec.ts` (toda a maquinaria do `CT-643`, ~150 linhas) — **dono: T10**
 - **Problema:** `variaveisConsultadasPor`, `variaveisExigidasPor`, `chavesEmitidasPor`, `chavesDeclaradasNaUnidade`, `destinoDaEmissao` e `semCaminhoDeProvisionamento` vivem **dentro do arquivo de teste do worker** e derivam o conjunto exigido de **UMA** composição raiz. **A T10 fará `apps/api/src/configuracao/ambiente.ts` exigir `SMTP_URL` e `EMAIL_REMETENTE`**, e o teste da API **não alcança essa maquinaria** sem duplicá-la ou sem import relativo entre apps (**que é a forma do `D28`**).
