@@ -276,15 +276,30 @@ O marco está alcançado quando **todos** os sete itens forem verdadeiros:
       manipuladores**
 - [ ] **`@sysloc/contracts` publicado** no GitHub privado e versionado — é o artefato que o React
       importa para trocar tipos (Zod; ⚠️ **não** há cliente ts-rest — ver a nota da Stack)
-- [ ] **`handoff-frontend.md` gerado** por `/agent-spec-backend-contract-handoff`, carregando o
-      modelo de domínio camelCase, o envelope de erro da **ADR-0017**, a autenticação por sessão, o
-      objeto de sessão gorda com `versao_permissoes`, e o **mapa endpoint-a-endpoint** ligando cada
-      um dos 35 caminhos ERPNext antigos (`levantamento-frontend.md`) à rota nova.
-      ⚠️ **A §2 daquele arquivo NÃO basta**: ela descreve o mundo do ERPNext e foi escrita antes da
-      F1. A **§8**, acrescentada em 2026-08-21, enumera as **8 áreas sem correspondente no legado**
-      (Master, integrações bancárias, cobrança bancária, confirmação de e-mail, régua, mora, sessão,
-      notícia) e as **10 decisões que mudam comportamento de tela** sem acrescentar rota. Handoff
-      gerado só sobre a §2 nasce defasado **por construção**
+- [x] **`handoff-frontend.md` gerado** em 2026-08-24 — `docs/plano-backend-novo/handoff-frontend.md`,
+      **3755 linhas**, medido contra a superfície **já congelada**. Carrega o modelo de domínio
+      camelCase, o envelope de erro da **ADR-0017** com os **11 códigos**, a autenticação por sessão,
+      a sessão gorda com `versaoPermissoes`, o catálogo 10×7 que gera o menu, o contrato das **81
+      rotas de tela** uma a uma, seção dedicada ao **Habilitar webhook** e o **mapa
+      endpoint-a-endpoint** dos 35 caminhos ERPNext. Cobre a §2 **e a §8** de
+      `levantamento-frontend.md` — as 8 áreas sem correspondente no legado entraram com contrato
+      completo, e as 10 decisões de comportamento viraram seção própria.
+      ⚠️ **As §0 a §18 foram escritas à mão, por decisão expressa do usuário, SEM a skill
+      `/agent-spec-backend-contract-handoff`** — não existe `_run/` delas, e não é omissão.
+      ⚠️ **As §19 a §23 são de 2026-08-24 e SÃO da skill**, invocada pelo usuário sobre o documento
+      pronto: a matriz de estados de tela (§19), **90 fixtures** JSON (§20), 44 testes mínimos (§21),
+      as duas `[HIPÓTESE]` e as **quatro precisões** que a auditoria acrescentou (§22) e a procedência
+      da ampliação (§23). ⚠️ **A ampliação é ADITIVA — o diff não remove uma linha sequer**, e a única
+      alteração fora dela são 4 linhas novas no mapa de leitura da §0. **A auditoria de drift daquela
+      passagem não achou divergência alguma** entre o documento e o código: 91 manipuladores
+      extraídos dos decoradores, iguais à constante executável; 11 códigos de erro; catálogo 10×7;
+      `MAIOR_PAGINA`/`PAGINA_PADRAO` em 200/50. ⚠️ **As quatro precisões da §22.4 são de campo de
+      envelope, não de rota**: o `422` de ação sem área é `campo: "permissoes"` (não `"ajustes"`), o
+      de perfil com ajustes a perder é `campo: "perfil"`, o de auto-alvo é `campo: "id"`, e **429 não
+      existe em rota de negócio nem na rota pública** — só sob `/v1/auth` e em `POST /v1/sessao/senha`.
+      ⚠️ **O campo da sessão é `versaoPermissoes` (camelCase)**: esta linha escreveu
+      `versao_permissoes` até 2026-08-24, e o snake_case foi refutado por medição em
+      `apps/api/src/autenticacao/sessao.controller.ts`. Não o reponha
 - [x] **`handoff-master-frontend.md` gerado** em 2026-08-21 — o Painel Master é **aplicativo
       separado** (`syslocadmin.systera.com.br`, build próprio), o backend dele está **completo** (6
       rotas), e o handoff é autossuficiente. ⚠️ O handoff do Sysloc apenas **menciona** que ele
