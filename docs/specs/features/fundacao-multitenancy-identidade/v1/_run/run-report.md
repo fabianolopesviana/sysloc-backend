@@ -326,6 +326,37 @@ Status: ✅ **11/11 tasks concluídas** · suíte verde com **271 casos** · `pn
 
 ## 4. Notas para Revisão Humana
 
+### Banco durável cinco migrações atrás do repositório — achado e fechado em 2026-08-23
+
+**Como apareceu:** a bateria `verificar-migracao.sh` (que nasceu na T5 desta fatia) foi executada com
+privilégio em 2026-08-23, dentro de uma varredura de todas as baterias do repositório. O `CT-031 (b)`
+reprovou: as tabelas do banco da operação **não eram** as que o repositório declara. Faltavam
+`negocio.entrega_da_noticia` e `negocio.execucao_de_rotina`.
+
+**O que era:** o banco durável `sysloc` estava na migração **`0022`**, e o journal do drizzle declara
+**28**. Cinco migrações versionadas nunca haviam sido aplicadas — a `0023`, `0024` e `0025` (da fatia
+`integracao-bancaria-autonoma`) e a `0026` e `0027` (da `automacoes-agendadas`).
+
+**O que NÃO era**, e a distinção importa: não era defeito de código (as migrações estavam íntegras),
+não era defeito do migrador (o `CT-032` da mesma bateria passou aprovado, exercitando
+`migrar-banco.sh` duas vezes contra banco descartável) e **não era erro em produção** — quem atende a
+operação é o `/opt/frappe`, e o banco do backend novo não serve requisição de ninguém até a F7.
+
+**Por que ninguém tinha visto:** esta bateria exige privilégio administrativo, e o `sudo` deste host
+pede senha interativa. ⚠️ **É o mesmo padrão do `CT-647`**, descoberto no mesmo dia: o que só se prova
+com privilégio fica sem prova, e a defasagem acumula em silêncio. Duas descobertas independentes da
+mesma causa, na mesma varredura.
+
+**Fechado:** as cinco aplicadas por `migrar-banco.sh` em janela assistida, e a bateria passou a sair
+**2/2 casos aprovados (118 OK, 0 FALHA)** — antes 117 OK e 1 FALHA. Conferido antes de aplicar que a
+`0026` **não** reemite as seis `ALTER TABLE` da `0025`, isto é, que a supressão manual do
+`D5 · F5/T3` estava feita e a sequência não abortaria com `42701`.
+
+**Lição de método, e é a mesma que o `D4 · F2` produziu no mesmo dia:** *bateria que ninguém executa
+não é rede — é a aparência de uma*. Das três descobertas relevantes de 2026-08-23, nenhuma estava
+registrada como débito: as duas primeiras vieram de **executar** verificadores que dormiam, e a
+terceira de medir a premissa de um débito antes de agir sobre ela.
+
 **FECHAMENTO DA F1 — intervenção dirigida fora do pipeline (2026-08-02).** Por decisão do usuário,
 os débitos foram atacados **sem** `/agent-spec-debt-resolution` e sem gerar `v2-debits/`: a análise
 mostrou que dos 37 apenas 6 eram trabalho de código, 14 eram escrituração, 10 já tinham dono em

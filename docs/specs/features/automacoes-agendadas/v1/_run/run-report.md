@@ -118,8 +118,12 @@ linhas**, bijeção conferida nas duas direções pela T11 e refeita de forma in
 - **Impacto:** medido na T3 — a `0025_estado_ternario_da_entrega.sql` é a primeira autoral do produto
   a alterar estrutura declarada, e a `0026` reemitiu as **cinco** instruções dela. Mantê-las aborta a
   aplicação com `42701` (*column already exists*) e derruba a suíte inteira via `banco-efemero.ts`.
-  ⚠️ **As duas correções intuitivas são erradas, e uma é destrutiva**: editar a `0025` (aplicada,
-  conferida por `sha256sum` — a divergência **aborta a instalação** sobre o banco durável) ou regerar
+  ⚠️ **As duas correções intuitivas são erradas, e uma é destrutiva**: editar a `0025` — ⚠️ **a premissa de que ela estava APLICADA era falsa até 2026-08-23**, e foi refutada
+  pelo `CT-031` do `verificar-migracao`, que mediu o banco durável e não encontrou
+  `negocio.entrega_da_noticia`. O banco estava na `0022`, cinco migrações atrás do journal. As
+  cinco foram aplicadas em 2026-08-23 e a bateria passou a sair 2/2 (118 OK, 0 FALHA), de modo que a
+  frase virou verdadeira **depois** de ser escrita. A proibição de editar segue valendo, e agora
+  pela razão que ela alegava: a `0025` está registrada com `sha256` em `identidade.migracao_aplicada` ou regerar
   a `0026` clobberando a supressão. O **caminho incremental já está fechado** pelo
   `meta/0026_snapshot.json` (medido: `prevId` dele = `id` de `meta/0023_snapshot.json`, já com o
   estado pós-`0025`); o que continua aberto é a **geração DO ZERO**.
