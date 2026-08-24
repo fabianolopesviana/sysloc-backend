@@ -58,6 +58,12 @@ Este projeto testa em **duas linguagens, com propósitos disjuntos**. Confundi-l
 - **Subset**: `pnpm --filter @sysloc/<pacote> test`
 - **Um teste**: `pnpm --filter @sysloc/<pacote> test -- -t "<nome>"`
 - **Verificador shell**: `bash deploy/scripts/<área>/verificar-<alvo>.sh`
+- **TODAS as baterias de shell de uma vez**: `sudo bash deploy/scripts/verificacao/rodar-baterias.sh`
+  (aceita filtro por nome — `… rodar-baterias.sh isolamento` roda uma só). Executa cada bateria com o
+  privilégio que ela exige, e distingue **pré-condição de ambiente** de reprovação (saída 2 contra 1).
+  ⚠️ **Existe porque metade das baterias exige `sudo` e por isso ninguém as executava**: a primeira
+  varredura, em 2026-08-23, encontrou o `CT-647` quebrado havia três fatias e o banco durável cinco
+  migrações atrás do repositório — **nenhum dos dois constava de débito algum**.
 - **Análise estática da frente shell**: `pnpm lint:shell` (encadeado dentro de `pnpm lint`). É
   `shellcheck --severity=error` sobre `deploy/scripts/**/*.sh`, com o binário fixado em `.mise.toml`.
   **Existe porque `biome check` não processa shell e `turbo run lint` resolve para 0 tarefas ali** —
