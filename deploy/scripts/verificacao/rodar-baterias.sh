@@ -23,9 +23,17 @@
 #
 # Porque ele varre `verificar-*.sh` e se encontraria a si mesmo — cada execução
 # lançaria outra, sem fundo. O nome é a proteção, e renomeá-lo para o padrão das
-# baterias reintroduz a recursão. Ele também NÃO declara o esqueleto de asserção
-# (`caso`/`ok`/`falhar`/`afirmar_igual`) que o `D9 · F0/T2` já contabiliza em dez
-# cópias: aqui não se afirma nada, apenas se executa e se resume.
+# baterias reintroduz a recursão. Ele também NÃO carrega a casa comum do
+# vocabulário de asserção — a que vive em `deploy/scripts/verificacao/` e que,
+# desde a T5 da fatia `publicacao-e-backup`, TODA bateria consome por `source`.
+# A razão não é contagem, e por isso não envelhece: aqui não se afirma nada,
+# apenas se executa e se resume — quem não afirma não precisa do vocabulário de
+# afirmação.
+#
+# ⚠️ **E este arquivo não pode NOMEAR aquele, nem em comentário.** O `CT-1125` de
+# `verificar-backup.sh` afirma `grep -c` do nome dele AQUI igual a ZERO, e a
+# contagem é sobre o arquivo inteiro — não distingue comentário de `source`.
+# Medido em 2026-08-26: duas menções em prosa derrubaram o caso.
 #
 # ---------------------------------------------------------------------------
 # CADA BATERIA COM O PRIVILÉGIO CERTO — e por que isso não é detalhe
@@ -169,7 +177,12 @@ for bateria in "${BATERIAS[@]}"; do
 	# contagem sob pipefail — daí o `|| true` em cada uma.
 	ok=$(grep -c '^    OK ' "${log}" 2>/dev/null || true)
 	falhou=$(grep -c '^    FALHA' "${log}" 2>/dev/null || true)
-	avisos=$(grep -c '^    aviso' "${log}" 2>/dev/null || true)
+	# ⚠️ A agulha é MAIÚSCULA porque é a forma que o único emissor produz — a casa
+	# comum do vocabulário faz `printf '    AVISO %s\n'`. Em minúsculo, como esteve
+	# até 2026-08-26, esta coluna era ESTRUTURALMENTE zero e a degradação declarada
+	# de uma bateria ficava invisível no resumo. Medido: 1 aviso real na saída de
+	# `verificar-borda-do-app.sh`, 0 capturados.
+	avisos=$(grep -c '^    AVISO' "${log}" 2>/dev/null || true)
 	ultima=$(tail -1 "${log}" 2>/dev/null | cut -c1-70)
 
 	# Pré-condição de ambiente ausente NÃO é reprovação da bateria, e confundir as

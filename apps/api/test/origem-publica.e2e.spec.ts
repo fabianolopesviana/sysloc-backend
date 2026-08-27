@@ -71,6 +71,12 @@
  * cerca de trinta suítes de borda, e trocar uma pela outra reprovaria todas elas. É por isso que o
  * `CT-1166` afirma igualdade com a **união**, e não com a lista declarada.
  *
+ * ⚠️ **A união tem TRÊS fontes, e o `CT-1166` mede as duas primeiras porque a terceira não é
+ * emitida.** A terceira é `env.BETTER_AUTH_TRUSTED_ORIGINS`, lida pelo arcabouço direto do
+ * ambiente: este produto nunca a define, e nada na partida a recusa — é o canal do `D35 · F7/T7`.
+ * Registrado aqui para que quem estender este arquivo saiba que a igualdade afirmada vale sob a
+ * premissa de que a variável está ausente, e não porque o conjunto seja fechado por duas.
+ *
  * O `CT-1166` aplica `.claude/rules/ancoras-de-superficie.md` à superfície de **confiança**:
  * igualdade de conjunto com controle antivácuo, nunca contenção. É o que impede o fecho de virar
  * `trustedOrigins: ['*']` — que passaria o `CT-1164` e o `CT-1165` do modo mais silencioso possível.

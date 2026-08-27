@@ -91,7 +91,7 @@ Status: **11/11 tasks concluídas — FATIA FECHADA em 2026-08-26** · suíte Ty
 - **Impacto:** **nulo em execução** — as cinco `tr` são interpolação de diagnóstico dentro de `abortar`, cuja falha vira cadeia vazia num caminho que já está abortando. O total **28 está correto** e as anotações cobrem (1) a (28) sem furo. O custo é **de confiança**: quem confere a repartição encontra a diferença de 2 e passa a tratar o MAPA inteiro como aproximado — o oposto do que ele foi escrito para ser.
 - **O que fazer:** corrigir a repartição para 18/7/2/1 e numerar as cinco `tr` como (29)–(33) na categoria (d), ajustando o total. ⚠️ **Edição sob `DECISÃO FECHADA` — exige a escalada da §3.** Pague junto do **D9** numa única passagem autorizada.
 
-### D11 · baixo · testability · T2 · Tech Review
+### D11 · baixo · testability · T2 · Tech Review — ✅ **PAGO em 2026-08-26, na intervenção dirigida pós-fatia**
 - **Onde:** `deploy/scripts/backup/verificar-backup.sh:1730` (docblock do `CT-1103 (c)`)
 - **Problema:** a justificativa da ausência de perna própria para o ponto (10) apoia-se em premissa **mais forte do que o arranjo sustenta** — *"nenhum arranjo do sistema de arquivos faz uma falhar e a outra não"*.
 - **Impacto:** as duas travessias são **separadas no tempo** (correm `mktemp -d`, `chmod 700` e um `mkdir -m 700` entre elas) e escrevem em **canais diferentes** — uma é substituição de comando sem escrita em disco, a outra redireciona para arquivo. Uma falha de escrita atinge a segunda e não a primeira. ⚠️ **É a mesma classe de premissa não medida que já caiu duas vezes nesta task** (`TR-P4` e `QA-MED-004`). A cobertura **positiva** existe e é forte (igualdade de conjunto do conteúdo do pacote); o que não tem discriminador é a **captura de desfecho** isolada, e ela é inalcançável na prática porque a guarda anterior recusa antes. `smell: happy_path_only`
@@ -151,7 +151,7 @@ Status: **11/11 tasks concluídas — FATIA FECHADA em 2026-08-26** · suíte Ty
 - **Impacto:** são 4 cópias. A justificativa do executor é **verdadeira mas cobre só metade**: a de `verificar-captura.sh` tem **outra assinatura** (grepa um **arquivo**). As outras **três** têm assinatura idêntica e corpos iguais exceto pela cauda da mensagem — e **duas são byte a byte idênticas** (`md5sum bb293b69…`). É o padrão que o `CLAUDE.md` nomeia: *a terceira cópia já nasceu divergente*.
 - **O que fazer:** emitir `DÉBITO COM GATILHO` junto de `afirmar_contem`, com `QUANDO FECHA` = *"a primeira task autorizada a abrir `verificar-captura.sh`, ou o quarto consumidor do molde"*, mais a linha no índice do `CLAUDE.md`.
 
-### D21 · baixo · documentation · T5 · QA
+### D21 · baixo · documentation · T5 · QA — ✅ **PAGO em 2026-08-26, na intervenção dirigida pós-fatia**
 - **Onde:** `deploy/scripts/verificacao/rodar-baterias.sh:27`
 - **Problema:** prosa vencida — cita o `D9` **no presente** e conta **dez** cópias que já não existem.
 - **Impacto:** depois da T5 a frase está errada nas duas pontas: o `D9` está **fechado**, e as cópias são **uma só**. Arquivo **fora da §3.2**; não tocá-lo foi *menor delta* correto. É a classe de texto que o `CLAUDE.md` adverte que *"envelhece mais rápido que o débito que ela justifica"*.
@@ -163,7 +163,7 @@ Status: **11/11 tasks concluídas — FATIA FECHADA em 2026-08-26** · suíte Ty
 - **Impacto:** ⚠️ **Registro de resíduo, NÃO objeção ao fecho** — os dois gates validaram o fecho. `verificar-fundacao`, `verificar-migracao` e `verificar-provisionamento` **abortam na guarda de privilégio antes de abrir qualquer caso**, então nenhum corpo delas foi exercitado depois da extração. O risco é **pequeno e bem cercado** (diff de IDs vazio nas onze, `bash -n` nas doze) e o Gate 2 acrescentou que **essas três são exatamente aquelas cujo dialeto a unificação ADOTOU** — mas não é zero.
 - **O que fazer:** na janela assistida da **T11**, executar as três sob `sudo` e conferir código de saída e contagem contra a tabela `CASOS_DECLARADOS_POR_BATERIA`. **Não reabrir o débito nem repor o marcador.**
 
-### D23 · baixo · code_quality · T5 · Tech Review
+### D23 · baixo · code_quality · T5 · Tech Review — ✅ **PAGO em 2026-08-26, na intervenção dirigida pós-fatia**
 - **Onde:** `verificar-captura.sh:60`, `verificar-apuracao-versao.sh:113`, `verificar-fundacao.sh:237`, `verificar-backup.sh:457`
 - **Problema:** a justificativa de `afirmar_contem` foi **replicada em quatro arquivos**, e em **três** deles afirma uma distinção que **não se aplica àquelas cópias**.
 - **Impacto:** ⚠️ **É o mecanismo exato que criou o `D9`**: cada bateria nova nasce copiando a vizinha, e a vizinha carrega um comentário dizendo que a duplicação é legítima. O próximo agente que abrir `verificar-fundacao.sh` lê que aquela cópia é símbolo distinto — **não é** — e deixa de contar as cópias, que é o pressuposto do Limiar de Três.
@@ -175,13 +175,15 @@ Status: **11/11 tasks concluídas — FATIA FECHADA em 2026-08-26** · suíte Ty
 - **Impacto:** escapam `nome ()` com espaço, `function nome {`, e a definição indentada. A falsificação demonstra que a asserção **pode** falhar, mas **não exercita a fronteira do reconhecimento**. Baixo hoje (as 12 usam a mesma forma); o risco é de prazo — **a bateria nº 13 que redeclarasse com um espaço reabriria o `D9` com o caso verde**.
 - **O que fazer:** ampliar para `^[[:space:]]*(function[[:space:]]+)?<nome>[[:space:]]*\(\)` e acrescentar um **terceiro mutante** numa forma alternativa. Alternativa: `DÉBITO COM GATILHO` com gatilho *"a primeira bateria que declarar função fora do molde"*.
 
-### D25 · baixo · documentation · T5 · QA
+### D25 · baixo · documentation · T5 · QA — ⛔ **NÃO PAGO: escalada de `DECISÃO FECHADA` (2026-08-26)**
+- ⚠️ **Conflito reconhecido e resolvido pela via conservadora.** A frase que este débito manda corrigir vive DENTRO dos campos `O QUÊ`/`POR QUÊ` de um marcador `DECISÃO FECHADA` em `verificar-golden.sh`. A §3.2 do Protocolo proíbe reescrever o marcador sem que o `REVERTER EXIGE` esteja demonstrado, e a §3.3 manda PARAR e escalar. Sob a `autonomia-do-run.md` §A1 a espera cai, mas o rigor não: **a opção recomendada é sempre a conservadora — preservar o marcador e resolver por outro caminho.** Adotada. O texto do marcador fica INTACTO.
+- **Para pagar, é preciso**: autorização expressa do usuário para editar a prosa descritiva de um marcador `DECISÃO FECHADA`, OU demonstrar o `REVERTER EXIGE` dele. ⚠️ Note que o Gate 2 já mediu que o `REVERTER EXIGE` **permanece exato** — a imprecisão é de descrição do predicado (`afirmar_diferente` × `afirmar_igual`), não de alcance, e por isso o marcador **protege corretamente** mesmo com a frase imprecisa.
 - **Onde:** `deploy/scripts/caracterizacao/verificar-golden.sh:1637` (campo `POR QUÊ` do marcador)
 - **Problema:** o marcador atribui `afirmar_diferente` ao `CT-602` e ao `CT-640`, que usam `afirmar_igual` — e **nesses dois a direção da falha é a OPOSTA** da descrita.
 - **Impacto:** medido: só o `CT-701` usa `afirmar_diferente` (as seis). Nos outros dois a contaminação produz **falso NEGATIVO** (reprovar código íntegro), não falso positivo. ⚠️ O Gate 2 mediu que o **`REVERTER EXIGE` NÃO fica falsificável** por causa disso — a cláusula 2 é **agnóstica de direção** e permanece exata. A imprecisão é de **descrição do predicado**, não de alcance do contrato.
 - **O que fazer:** reescrever a frase nomeando **as duas direções** e o predicado certo de cada uma.
 
-### D26 · baixo · code_quality · T5 · Tech Review · **PRÉ-EXISTENTE, fora do escopo**
+### D26 · baixo · code_quality · T5 · Tech Review · **PRÉ-EXISTENTE, fora do escopo** — ✅ **PAGO em 2026-08-26, na intervenção dirigida pós-fatia**
 - **Onde:** `deploy/scripts/verificacao/rodar-baterias.sh:167`
 - **Problema:** o agregador conta degradações com `grep -c '^    aviso'` — **minúsculo** —, enquanto **toda** bateria emite `    AVISO ` em **maiúsculo**.
 - **Impacto:** ⚠️ **O quadro agregado reporta ZERO degradações SEMPRE.** A T5 **não introduziu** isso e **não tocou** o arquivo (não tocá-lo foi *menor delta* correto). Vale escriturar **junto do D21**, que é do mesmo arquivo e do mesmo tipo.
@@ -229,7 +231,7 @@ Status: **11/11 tasks concluídas — FATIA FECHADA em 2026-08-26** · suíte Ty
 - **Impacto:** o operador que errar por curinga (o erro plausível: tentar liberar subdomínios) lê uma mensagem cujas exigências o valor dele cumpre, e fica sem caminho para corrigir. O `.env.example` repete a lacuna. **Não é falha de segurança** — a partida falha fechada e nomeia a variável.
 - **O que fazer:** acrescentar "e sem curinga" ao texto, espelhando no `.env.example` e no `provisionar-base.sh`. ⚠️ **Não escreva `*`/`?` literalmente** sem antes conferir a asserção de não-eco do `CT-1161`.
 
-### D34 · médio · code_quality · T7 · Tech Review
+### D34 · médio · code_quality · T7 · Tech Review — ✅ **PAGO em 2026-08-26, na intervenção dirigida pós-fatia**
 - **Onde:** `packages/auth/src/autenticacao.ts:523`, `apps/api/src/autenticacao/autenticacao.module.ts:51`, `apps/api/test/origem-publica.e2e.spec.ts:65`
 - **Problema:** os três docblocks afirmam que o conjunto confiável é a **UNIÃO de DUAS** fontes. São **três** — a refutação está **duas linhas abaixo** do trecho do pacote que o executor citou como medição: `env.BETTER_AUTH_TRUSTED_ORIGINS`.
 - **Impacto:** a prosa está no ponto exato onde a próxima decisão sobre a barreira de origem será tomada. Quem a lê conclui que o conjunto é fechado por duas fontes declaradas e **não procura a terceira** — que é o canal não conferido do `D35`. Não muda comportamento hoje; **desarma quem vier depois**. É R3.
@@ -298,31 +300,31 @@ Status: **11/11 tasks concluídas — FATIA FECHADA em 2026-08-26** · suíte Ty
 - **Impacto:** **segundo nível de uma defesa em profundidade cujo primeiro nível está íntegro** — a asserção irmã fixa o **conjunto** de regex por igualdade e pegou o mutante. Mas essa defesa **cai no fluxo normal de manutenção**, quando quem acrescenta uma regex legítima atualiza a igualdade junto. Exige a conjunção de quatro condições, por isso baixo.
 - **O que fazer:** (a) avaliar com `grep -P` quando disponível, **degradando com `aviso` nomeado** — nunca aprovando em silêncio; ou (b) declarar no docblock que a perna é **secundária** e que a garantia primária é a igualdade de conjunto. Hoje o docblock apresenta as duas como equivalentes.
 
-### D45 · baixo · project_pattern · T9 · Tech Review
+### D45 · baixo · project_pattern · T9 · Tech Review — ✅ **PAGO em 2026-08-26, na intervenção dirigida pós-fatia**
 - **Onde:** `CLAUDE.md:588` (a linha do `D40` no índice)
 - **Problema:** a linha foi de 251 para **366 bytes** e passou a ser a **maior da tabela** (as 39 medem min 214 / mediana 276). O texto acrescentado — a marca da emenda e a razão dela — **já está por extenso na §2**, para onde o campo `ÍNDICE` aponta: o excedente é **cópia**, não ponteiro.
 - **Impacto:** nenhum sobre o código. O `CLAUDE.md` entra no contexto de **todo** agente em **toda** task, e é esse o custo que o teto de ~150 caracteres da §3-B existe para conter. ⚠️ **A tabela inteira já viola o teto desde antes desta task** — o que a T9 faz é **estender a deriva**.
 - **O que fazer:** encurtar a linha, deixando a justificativa da emenda apenas na §2, que já a carrega íntegra.
 
-### D46 · baixo · best_practices · T10 · Tech Review
+### D46 · baixo · best_practices · T10 · Tech Review — ✅ **PAGO em 2026-08-26, na intervenção dirigida pós-fatia**
 - **Onde:** `deploy/nginx/sysloc-notificacao-bancaria.conf:178`
 - **Problema:** o `limit_conn` não declara `limit_conn_status`, e o `503` que o comentário afirma como fixo é o **default** da diretiva — sobrescritível a partir do contexto `http` do servidor real, **fora deste arquivo**.
 - **Impacto:** baixo e remoto, mas silencioso na direção ruim. A rede que existe **não alcança** a sobrescrita: `subir_borda_efemera` monta o próprio `nginx.conf` com um `http {}` mínimo que só faz `include` do vhost, de modo que o `CT-1194` (que afirma o conjunto `204 503`) e o `CT-1191` (que afirma `0` respostas `429`) medem um `http` que não contém diretiva alguma vinda do host. Um `limit_conn_status 429;` posto no `nginx.conf` global da borda real — hoje **compartilhado** com quem atende a operação — faria a recusa por concorrência sair como `429` sem que **nenhuma** das quatro frentes ficasse vermelha. E `429` é precisamente o código que o `CT-1191` trata como sinal de teto de taxa e que a ADR-0037 quer que **não exista** nesta rota. A premissa que o código sustenta está registrada em `docs/specs/features/webhook-e-carne/v1/tech_spec.md:743`: *"o provedor reenvia por conta própria; a idempotência absorve"* — e é `5xx` que faz o provedor reenviar.
 - **O que fazer:** acrescentar `limit_conn_status 503;` junto do `limit_conn` no `location` da notícia, com uma linha dizendo que o valor é o mesmo do default e que está escrito **para não depender do `http` do host** — mesmo molde de `server_tokens off` e `client_max_body_size 64k`, que este vhost já declara em vez de herdar. Se valer o custo, estender o `CT-1193` para afirmar a presença da diretiva com o valor `503` em linha ativa: a `varrer_limitacao_declarada` já tem a forma pronta para mais um par medida/problema.
 
-### D47 · baixo · documentation · T11 · QA
+### D47 · baixo · documentation · T11 · QA — ✅ **PAGO em 2026-08-26, na intervenção dirigida pós-fatia**
 - **Onde:** `CLAUDE.md:39`
 - **Problema:** o `CLAUDE.md` aponta a barreira executável como `CT-501 a CT-510`; os casos reais são `CT-901 a CT-910`.
 - **Impacto:** **pré-existente ao `HEAD`** — não foi introduzido pela T11. O próprio cabeçalho do arquivo de teste explica a razão: *"a primeira versão deste arquivo nasceu em CT-501 e colidiu inteira com a fatia de cobrança"*, e a faixa foi movida para 9xx. O ponteiro do `CLAUDE.md` ficou na faixa morta. Nenhum caso da barreira o cobre — o `CT-903` afirma o ponteiro para a rule e os 4 itens do resumo, não a faixa de CT. ⚠️ **O erro se propaga**: o orquestrador o repetiu nos prompts dos gates desta task, tendo lido a linha errada como fonte.
 - **O que fazer:** trocar `(CT-501 a CT-510)` por `(CT-901 a CT-910)`, ou pela faixa medida acrescida dos casos que a barreira acolheu depois (`CT-638`, `CT-1196`, `CT-1198`). Opcionalmente estender o `CT-903` com uma perna que leia os `describe('CT-` do próprio arquivo e afirme que a faixa narrada os contém — mesma construção do `CT-1196`, aplicada ao **ponteiro** em vez de ao número.
 
-### D48 · baixo · documentation · T11 · QA
+### D48 · baixo · documentation · T11 · QA — ✅ **PAGO em 2026-08-26, na intervenção dirigida pós-fatia**
 - **Onde:** `_run/linha-de-base.md:417`
 - **Problema:** três pontos de índice ainda dizem `PENDENTE-T6` depois de a Dúvida 4 ter sido medida.
 - **Impacto:** o bullet canônico (linha ~348) foi corrigido para `produziu efeito` (938 passadas, zero falhas) e declara que a premissa do `sudo` caiu por medição — o fecho está certo. Mas as linhas 19, 246 e 417 seguem em `PENDENTE-T6`, e a 417 é a **tabela-resumo**, com o comando ainda escrito com `sudo`. Quem lê o índice em vez do corpo conclui que a medição não aconteceu. `linha-de-base.md` é arquivo de **referência** (§3.3) e está fora da §3.2 da T11, de modo que não tocá-lo é *menor delta* defensável.
 - **O que fazer:** substituir `PENDENTE-T6` por `produziu efeito` nas linhas 19, 246 e 417, e remover o `sudo` do comando das linhas 364 e 417 — a premissa que o exigia caiu por medição em 2026-08-26 e já está registrada na linha 350.
 
-### D49 · baixo · documentation · T11 · QA
+### D49 · baixo · documentation · T11 · QA — ✅ **PAGO em 2026-08-26, na intervenção dirigida pós-fatia**
 - **Onde:** `CLAUDE.md:276`
 - **Problema:** o par secundário `149 fechados / 476 abertos`, atribuído ao critério antigo de dívida, não é reproduzível pelo critério que a própria linha descreve.
 - **Impacto:** os números **primários** reproduzem exatamente com o comando que a linha escreve (625 blocos, 130 com `✅`, 495 abertos, 24 relatórios, 17 fatias — o gate mediu os quatro), e os deltas também. O que não reproduz é o par secundário: lido literalmente sobre o **cabeçalho**, dá `137 / 488`; o mais próximo que o gate reproduziu foi `150 / 475`, procurando `RESOLVIDO|FECHADO` no **bloco inteiro**, e ainda erra por um. Como a linha **declara abertamente** que 8 blocos não foram reconciliados um a um e escreve o comando do critério novo, é registro honesto — mas o par secundário fica sem comando que o gere, que é a condição que a própria linha se impõe.
@@ -333,6 +335,50 @@ Status: **11/11 tasks concluídas — FATIA FECHADA em 2026-08-26** · suíte Ty
 ✅ Nenhuma task bloqueada.
 
 ## 4. Notas para Revisão Humana
+
+### 🔴 A bateria do backup reprovava num checkout limpo — e o run inteiro mascarou isso
+
+**Achado da intervenção dirigida de 2026-08-26, e ele não era débito: era vermelho.** Descoberto pela
+própria baseline P1 da intervenção, logo depois de o `git-flow` commitar a fatia.
+
+O `CT-1124` (*"nenhuma asserção estática desta bateria escreve na árvore de trabalho"*) fotografa o
+estado da árvore com `git status --porcelain` e compara antes × depois. Ele tinha **duas** falhas que
+se compunham, e as duas só aparecem com a árvore **limpa**:
+
+1. **O antivácuo exigia sujeira.** `afirmar_diferente "há foto do estado inicial" "" "${FOTO}"`
+   confundia *"não consegui fotografar"* com *"não havia o que fotografar"*. Árvore limpa é o estado
+   **mais saudável possível**, e o caso a tratava como falha.
+2. **`printf '%s\n' ""` emite UMA LINHA EM BRANCO, não nada.** Com a foto vazia, as três comparações
+   de diferença mediam o **artefato do `printf`** em vez do estado da árvore.
+
+**Medido:** árvore suja → `408 OK / 0 FALHA / saída 2`. Árvore limpa → `404 OK / 4 FALHA / saída 1`.
+
+⚠️ **Por que o run não pegou**: durante as onze tasks **nada foi commitado** — a árvore esteve suja do
+início ao fim, com 75 caminhos. O defeito era invisível por construção. O primeiro commit da fatia foi
+também a primeira vez que a bateria viu uma árvore limpa, que é o estado de **todo clone novo e de
+toda execução de CI**.
+
+**Corrigido** com `linhas_do_estado()` (recorte que emite nada para vazio) e um antivácuo que afirma
+que **há repositório**, nunca que **há sujeira** — protegido por `DECISÃO FECHADA`. Depois: árvore
+limpa → `408 OK / 0 FALHA / saída 2`, **a mesma contagem** da árvore suja, logo nenhuma asserção se
+perdeu.
+
+**A lição generalizável, e ela vale para a próxima fatia**: uma suíte que lê o estado do `git` herda o
+estado do **desenvolvedor**, não o do **repositório**. Enquanto o fluxo do run for *"não commitar até o
+fecho"*, toda asserção desse tipo é medida num único regime — o sujo — e o outro regime só é exercitado
+depois, por quem clona. **Vale rodar as baterias uma vez com a árvore limpa antes de declarar a fatia
+fechada.**
+
+### Uma regressão que eu mesmo introduzi na intervenção, e que o P5 pegou
+
+Ao pagar o `D21` escrevi, em comentário de `rodar-baterias.sh`, o nome do arquivo do esqueleto. O
+`CT-1125` afirma `grep -c 'esqueleto-de-assercao'` **no agregador igual a ZERO**, e a contagem é sobre o
+arquivo inteiro — **não distingue comentário de `source`**. A bateria caiu de 408 para 406.
+
+Conduta pelo P5: **a asserção não foi tocada**; a redação é que mudou. E o motivo ficou escrito no
+próprio ponto, para que a próxima passagem não repita: *este arquivo não pode nomear aquele, nem em
+comentário*.
+
 
 ### T11 — o P5 executado, e as quatro divergências medidas contra a spec
 

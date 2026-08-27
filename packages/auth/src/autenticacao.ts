@@ -557,6 +557,12 @@ export interface OpcoesDeAutenticacao {
    * (`dist/context/helpers.mjs`): a origem derivada de `baseURL` é **sempre** empilhada primeiro, e
    * o que se declara aqui é empurrado depois. Trocar uma pela outra recusaria todo cliente que fala
    * com o endereço de escuta — o que inclui a superfície de verificação inteira.
+   *
+   * ⚠️ **E elas são TRÊS, não duas.** A terceira é `env.BETTER_AUTH_TRUSTED_ORIGINS`, que o próprio
+   * arcabouço lê do ambiente, duas linhas abaixo do trecho de `getTrustedOrigins` medido acima.
+   * Este produto **nunca a emite** — e nada na partida a recusa, que é o canal aberto registrado no
+   * `D35 · F7/T7`. A frase está aqui porque este é o ponto onde a próxima decisão sobre a barreira
+   * de origem será tomada, e quem ler "duas" não vai procurar a terceira.
    */
   readonly origensPublicas: readonly string[];
   /** Prefixo em que as rotas do arcabouço são montadas (§4.1: `/v1/auth`). */

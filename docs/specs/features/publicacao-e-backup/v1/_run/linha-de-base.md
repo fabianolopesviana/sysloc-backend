@@ -15,8 +15,10 @@
 > `EUID != 0` na linha 74 com `exit 1`. Não há caminho degradado, e **não se cria um**: o privilégio
 > é a pré-condição, não o obstáculo. A metade privilegiada foi conduzida pelo operador na janela
 > assistida de **2026-08-25, às 16:08:19**, e está **fundida neste documento** — nenhum valor deste
-> registro segue esperando privilégio. O único ainda descoberto é a **Dúvida 4**, marcada
-> `PENDENTE-T6`, e a razão dela **não é privilégio: é ordem de segurança** (§4).
+> registro segue esperando privilégio. A **Dúvida 4** nasceu marcada `PENDENTE-T6` — por **ordem de
+> segurança**, nunca por privilégio (§4) — e foi **medida na T6, em 2026-08-26**: `produziu efeito`,
+> 938 passadas em ~13h30, zero falhas. ⚠️ **Sem `sudo`**: a premissa que a prendia à janela assistida
+> caiu por medição, porque o `journalctl` responde à identidade `sysloc` neste host.
 >
 > **Conformidade com a ADR-0006.** Nenhuma medição desta passada executou contra o ambiente que
 > atende a operação. As nove suítes sobem instância efêmera própria (`embedded-postgres`); as
@@ -242,9 +244,10 @@ acima é que, desta vez, as 11 **foram executadas**.
 
 ## 4. As quatro dúvidas em aberto do discovery
 
-**Apuração afirmada antes de qualquer leitura: `4` dúvidas.** Três estão **medidas com valor
-concreto e o comando literal que o produziu**; a quarta é `PENDENTE-T6` por **ordem de segurança**,
-nunca por adiamento — a razão está escrita nela e o comando que a resolve está ao lado.
+**Apuração afirmada antes de qualquer leitura: `4` dúvidas.** As **quatro** estão **medidas com
+valor concreto e o comando literal que o produziu**. A quarta nasceu `PENDENTE-T6` por **ordem de
+segurança**, nunca por adiamento, e foi fechada **na T6, em 2026-08-26** — a razão da ordem
+permanece escrita nela, ao lado do valor.
 
 ### Dúvida 1 — coexistência com a preservação já existente do sistema antigo
 
@@ -357,11 +360,13 @@ a decisão de topologia acima — o registro fica aqui para que a task da borda 
   asserção do destino é ligar a Régua de cobrança sem saber para onde o Aviso sai.
 - **Forma exigida do valor quando ele for lido**: `produziu efeito` ou `não produziu efeito`, **com
   a contagem observada**.
-- **Comando que produz o valor** (executado depois da T6, sob privilégio, na janela):
+- **Comando que produz o valor** (executado depois do `CT-1152` da T6). ⚠️ **A redação anterior
+  dizia "sob privilégio, na janela" e isso foi REFUTADO POR MEDIÇÃO em 2026-08-26**: o `journalctl`
+  responde à identidade `sysloc` neste host, e a leitura não dependia da janela assistida:
 
 ```bash
-sudo systemctl list-timers 'sysloc-*' --all --no-pager        # próxima execução de cada Rotina
-sudo journalctl -u 'sysloc-rotina-*' --since '-1h' --no-pager # efeito da primeira passada
+systemctl list-timers 'sysloc-*' --all --no-pager         # próxima execução de cada Rotina
+journalctl -u 'sysloc-rotina-*' --since '-14h' --no-pager # efeito da primeira passada
 ```
 
 ---
@@ -414,7 +419,7 @@ fechar uma delas não fecha a outra.
 
 | Item | Marca | Comando que o resolve |
 |------|-------|----------------------|
-| Efeito da primeira passada das Rotinas (§4, Dúvida 4) | `PENDENTE-T6` | `sudo systemctl list-timers 'sysloc-*' --all --no-pager` e `sudo journalctl -u 'sysloc-rotina-*' --since '-1h' --no-pager`, **depois** do `CT-1152` |
+| Efeito da primeira passada das Rotinas (§4, Dúvida 4) | `produziu efeito` — 938 passadas, zero falhas (medido na T6, 2026-08-26) | `systemctl list-timers 'sysloc-*' --all --no-pager` e `journalctl -u 'sysloc-rotina-*' --since '-14h' --no-pager`, **depois** do `CT-1152`. ⚠️ **Sem `sudo`** — premissa refutada por medição |
 
 **Fechado na janela assistida de 2026-08-25, às 16:08:19** — nenhum destes três carrega marca de
 pendência neste documento:

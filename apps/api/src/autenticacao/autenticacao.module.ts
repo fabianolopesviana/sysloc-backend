@@ -40,7 +40,7 @@
  * dele.
  *
  * ---------------------------------------------------------------------------
- * A ORIGEM CONFIÁVEL tem DUAS fontes, e as duas são declaradas (T7 · fecha o `D23 · F1/T8`)
+ * A ORIGEM CONFIÁVEL tem TRÊS fontes; DUAS são declaradas aqui (T7 · fecha o `D23 · F1/T8`)
  * ---------------------------------------------------------------------------
  *
  * O arcabouço recusa, antes de qualquer manipulador, a requisição cujo cabeçalho `Origin` não
@@ -48,7 +48,11 @@
  * entrada**, porque `validateFormCsrf` força a conferência assim que qualquer cabeçalho
  * `Sec-Fetch-*` está presente, e um navegador sempre os envia.
  *
- * Esse conjunto é a **união** de duas coisas, e nenhuma delas substitui a outra:
+ * Esse conjunto é a **união** de TRÊS coisas, e nenhuma delas substitui a outra. ⚠️ **A terceira
+ * não é declarada por este arquivo, e é justamente por isso que ela é nomeada aqui**: o arcabouço
+ * lê `env.BETTER_AUTH_TRUSTED_ORIGINS` por conta própria, e este produto **nunca a emite** — mas
+ * nada na partida a recusa hoje (é o canal aberto que o `D35 · F7/T7` registra). Quem ler "duas" e
+ * parar de procurar não encontra o canal:
  *
  *   1. **a origem derivada do `enderecoBase`** — composta a partir do MESMO endereço e da MESMA
  *      porta em que o processo escuta, as duas vindas da configuração e não de literais repetidos.
@@ -146,8 +150,9 @@ export const PREFIXO_DAS_ROTAS_DE_IDENTIDADE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_
           segredoDeSessao: ambiente.segredoDeSessao,
           // O endereço de RETORNO em que o processo escuta. Dele o arcabouço deriva, sozinho, a
           // primeira metade da origem confiável — a que serve todo cliente do próprio hospedeiro.
-          // Ele **fica**: a segunda metade é a linha abaixo, e as duas se somam. Ver o parágrafo
-          // *"A ORIGEM CONFIÁVEL tem DUAS fontes"* no cabeçalho deste arquivo.
+          // Ele **fica**: a segunda metade é a linha abaixo, e as duas se somam. ⚠️ Há uma
+          // TERCEIRA, que não passa por aqui — `env.BETTER_AUTH_TRUSTED_ORIGINS`, lida pelo
+          // arcabouço. Ver o parágrafo *"A ORIGEM CONFIÁVEL tem TRÊS fontes"* no cabeçalho.
           enderecoBase: `http://${ENDERECO_DE_ESCUTA}:${String(ambiente.porta)}`,
           // A segunda metade: os hostnames públicos por onde o navegador chega, declarados no
           // ambiente e conferidos na partida. Sem eles o processo não sobe — e é isso que impede o

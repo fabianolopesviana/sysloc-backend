@@ -110,9 +110,13 @@ CA14_EM_ABERTO=0
 # shellcheck source=../verificacao/esqueleto-de-assercao.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../verificacao/esqueleto-de-assercao.sh"
 
-# Fora do esqueleto compartilhado de propósito — ver a razão medida no cabeçalho
-# de `deploy/scripts/verificacao/esqueleto-de-assercao.sh`: as quatro cópias desta
-# função no repositório NÃO são o mesmo símbolo (uma delas grepa um ARQUIVO).
+# Fora do esqueleto compartilhado — ver a razão medida no cabeçalho de
+# `deploy/scripts/verificacao/esqueleto-de-assercao.sh`. ⚠️ **Esta cópia É o mesmo
+# símbolo das outras duas de comparação de STRING**, e a unificação está ADIADA,
+# não descartada: o que a impede é o quarto homônimo, o de `verificar-captura.sh`,
+# que recebe um ARQUIVO e grepa. Conte as cópias ao abrir este ponto — são quatro,
+# três idênticas e uma divergente. Ler "não são o mesmo símbolo" e parar de contar
+# é exatamente o mecanismo que produziu o `D9 · F0/T2`.
 afirmar_contem() {
 	if [[ "$3" == *"$2"* ]]; then
 		ok "$1"

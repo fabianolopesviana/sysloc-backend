@@ -36,7 +36,8 @@ SaaS multi-empresa de gestão de locação de imóveis. Backend em Node/NestJS/P
 >    timeout, tratamento de erro ou redação de segredo que você não introduziu.
 >
 > **O protocolo tem barreira executável desde 2026-08-09**, e ela **inclui este arquivo**:
-> `packages/shared/test/protocolo-antirregressao.spec.ts` (CT-501 a CT-510) prova por `fs` o
+> `packages/shared/test/protocolo-antirregressao.spec.ts` (**CT-901 a CT-910**, mais `CT-638`,
+> `CT-1196` e `CT-1198`, que a barreira acolheu depois) prova por `fs` o
 > substrato de que o protocolo depende — o escopo universal da rule, o núcleo íntegro com **contagem
 > exata** (5 passos, 3 formas de regressão, 7 proibições), o resumo acima com **os 4 itens**, os
 > critérios instalados nos dois gates, a igualdade das 3 cópias do bloco do executor, e o índice de
@@ -273,14 +274,17 @@ fatia reaberta.
   executor que divergiu **declarando e medindo** teve razão em todas. E o corolário que custou duas
   fases: *a frase que explica por que algo não pode ser feito envelhece mais rápido que o débito que
   ela justifica* — meça a premissa antes de registrá-la.
-- **Dívida**: **495 débitos abertos em 17 fatias** — 625 blocos na §2, 130 já com marca de fecho.
+- **Dívida**: **488 débitos abertos em 17 fatias** — 628 blocos na §2, 140 já com marca de fecho.
   **Remedido na T11 da fatia `publicacao-e-backup`, em 2026-08-26**, varrendo os **24**
   `run-report.md` do repositório, com o critério e o comando escritos aqui para que a próxima
   medição seja reproduzível: bloco é `^### D`, e fechado é o cabeçalho que carrega `✅`.
   ⚠️ **O número anterior (407 em 14, sobre 544 blocos, 137 fechados) NÃO se repõe, e a diferença tem
   duas partes medidas**: (i) ele é de 2026-08-22 e não contempla `automacoes-agendadas` (**27**
   blocos) nem `publicacao-e-backup` (**46**); (ii) o critério dele era mais frouxo — aceitava
-  `RESOLVIDO`/`FECHADO` sem `✅`, que medido hoje dá **149** fechados e **476** abertos. Os 8 blocos
+  `RESOLVIDO`/`FECHADO` sem `✅` — medido pelo MESMO comando do critério novo, trocando só a
+  agulha (`grep -rh '^### D' docs/specs/features/*/*/_run/run-report.md | grep -cE '✅|RESOLVIDO|FECHADO'`),
+  dá **147** fechados e **481** abertos. ⚠️ **O par anterior dizia 149/476 e NÃO era reproduzível**
+  por comando nenhum — foi remedido em 2026-08-26. Os 8 blocos
   restantes da diferença são escrituração posterior nas demais fatias, **não reconciliada bloco a
   bloco** — quem quiser fechá-la roda o comando acima por fatia.
   ⚠️ **O número anterior (372 em 13, sobre 499 blocos) estava defasado por uma razão só**: é anterior
@@ -637,7 +641,7 @@ da `.claude/rules/nao-regressao.md`, que é permanente — este bloco é transit
 | **D15** (F5/T7, fatia `automacoes-agendadas`) | `packages/cobranca-bancaria/src/guarda-de-boletos.ts` (junto de `MILISSEGUNDOS_POR_DIA`) | o **quarto consumidor de produção**, ou a primeira task autorizada a abrir `derivacao-de-contrato.ts` ou `certificado.service.ts` — hoje são 3 cópias, já com o nome alinhado |
 | **D12** (F5/T6, fatia `automacoes-agendadas`) | `packages/db/src/conferencia-bancaria.ts` (junto de `abrirConferencia`) | a fatia que fixar o **limiar de obsolescência** da conferência em andamento — é decisão de produto, e a forma viável é a varredura na `MANUTENCAO` |
 | **D11** (F5/T6, fatia `automacoes-agendadas`) | `apps/worker/test/acessorios-de-borda.ts` (cabeçalho) | a **primeira task autorizada a abrir uma das 6 suítes** de `apps/worker/test/` com `emUnidade` local — medido: 7 declarações, e a casa nasceu com 1 consumidor |
-| **D40** (F7/T9, fatia `publicacao-e-backup`) | `deploy/scripts/borda/verificar-borda-do-app.sh` (junto de `subir_borda_efemera`) | ⚠️ **gatilho EMENDADO em 2026-08-26** (a redação anterior disparou pela razão errada) — a **terceira borda pública**, ou a primeira task autorizada a abrir `verificar-notificacao-bancaria.sh` **para mexer no acessório** |
+| **D40** (F7/T9, fatia `publicacao-e-backup`) | `deploy/scripts/borda/verificar-borda-do-app.sh` (junto de `subir_borda_efemera`) | a **terceira borda pública**, ou abrir `verificar-notificacao-bancaria.sh` **para mexer no acessório** — gatilho emendado 2×, razão na §2 |
 | **D41** (F7/T9, fatia `publicacao-e-backup`) | `deploy/scripts/borda/verificar-borda-do-app.sh` (junto de `DESTINO_DECLARADO_DO_EMAIL`) | a **troca do `SMTP_URL` para o destino real** — o `CT-1152` afirma o outro lado da mesma chave e o ponteiro entre os dois é de mão única |
 | **D5** (F5/T3, fatia `automacoes-agendadas`) | `packages/db/drizzle.config.ts` (junto de `out`) | ⚠️ **RECORRENTE — o gatilho NÃO o extingue**: a próxima migração **autoral** que alterar estrutura declarada em `src/esquema/*.ts`, ou uma regeração **do zero**; a supressão é manual nos dois casos e volta na seguinte |
 
