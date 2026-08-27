@@ -179,7 +179,7 @@ E na interface: `https://github.com/orgs/syslocbr/packages` deve listar `contrac
 No repositório do React, um `.npmrc` **fora do controle de versão**:
 
 ```
-@sysloc:registry=https://npm.pkg.github.com
+@syslocbr:registry=https://npm.pkg.github.com
 //npm.pkg.github.com/:_authToken=${TOKEN_DE_LEITURA}
 ```
 

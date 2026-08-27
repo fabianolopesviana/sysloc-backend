@@ -66,7 +66,7 @@ const RAIZ_DO_REPO = join(RAIZ_DO_PACOTE, '..', '..');
 /** O único destino aceitável. Escrito por extenso porque é ele que separa privado de público. */
 const REGISTRY_PRIVADO = 'https://npm.pkg.github.com';
 
-/** O dono sob o qual o escopo `@sysloc` é válido no GitHub Packages. */
+/** O dono sob o qual o escopo `@syslocbr` é válido no GitHub Packages. */
 const DONO_QUE_CASA_COM_O_ESCOPO = 'syslocbr';
 
 /**
