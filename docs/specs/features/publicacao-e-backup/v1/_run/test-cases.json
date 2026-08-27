@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "framework": "minispec",
+  "feature": "publicacao-e-backup",
+  "version": "v1",
+  "atualizado_em": "2026-08-25",
+  "procedencia": "Gerado por 4 invocacoes paralelas de agent-spec-qa-test-generator (Opus), consolidadas por camada. FLUXO FORWARD-ONLY: apos o destrinchamento na secao 5 de cada tasks/TN.md, a task markdown e CANONICA. Os gates leem a task, nunca este arquivo. Este envelope preserva o roster de IDs, a atribuicao por task e os campos de rastreabilidade; o detalhamento integral (pre_condicoes, passos, resultado_esperado, negative_companion, precondicao_privilegiada) vive na secao 5.6 de cada task.",
+  "stack_discovery": {
+    "stack": "Duas frentes: TypeScript 7 / Node 24.18.1 (Vitest 4.1.10 + embedded-postgres) para o que o processo observa; Bash para o que so e observavel inspecionando SO, rede, filesystem ou git",
+    "framework_teste": "Vitest 4.1.10 | convencao propria de bateria shell (caso/ok/falhar/afirmar_igual/afirmar_diferente/fechar_caso/aviso/nota)",
+    "comando_teste": "pnpm --filter @sysloc/<pacote> test (nunca turbo run test) | bash deploy/scripts/<area>/verificar-<alvo>.sh | sudo bash deploy/scripts/verificacao/rodar-baterias.sh",
+    "convencao_ids": "CT-NNNN globais e sequenciais no repositorio; o maior antes desta fatia era CT-1097"
+  },
+  "total_casos": 74,
+  "por_task": {
+    "T1": {
+      "faixa": "CT-1140 a CT-1145",
+      "total": 6,
+      "tipos": {
+        "integracao": 6
+      }
+    },
+    "T2": {
+      "faixa": "CT-1098 a CT-1106",
+      "total": 9,
+      "tipos": {
+        "integracao": 6,
+        "seguranca": 3
+      }
+    },
+    "T3": {
+      "faixa": "CT-1107 a CT-1113",
+      "total": 7,
+      "tipos": {
+        "integracao": 6,
+        "seguranca": 1
+      }
+    },
+    "T4": {
+      "faixa": "CT-1114 a CT-1118",
+      "total": 5,
+      "tipos": {
+        "integracao": 4,
+        "seguranca": 1
+      }
+    },
+    "T5": {
+      "faixa": "CT-1119 a CT-1126",
+      "total": 8,
+      "tipos": {
+        "integracao": 6,
+        "seguranca": 2
+      }
+    },
+    "T6": {
+      "faixa": "CT-1146 a CT-1154",
+      "total": 9,
+      "tipos": {
+        "integracao": 7,
+        "seguranca": 2
+      }
+    },
+    "T7": {
+      "faixa": "CT-1160 a CT-1166",
+      "total": 7,
+      "tipos": {
+        "unitario": 3,
+        "integracao": 1,
+        "e2e": 1,
+        "seguranca": 2
+      }
+    },
+    "T8": {
+      "faixa": "CT-1167 a CT-1170",
+      "total": 4,
+      "tipos": {
+        "integracao": 3,
+        "seguranca": 1
+      }
+    },
+    "T9": {
+      "faixa": "CT-1180 a CT-1190",
+      "total": 11,
+      "tipos": {
+        "unitario": 2,
+        "integracao": 1,
+        "e2e": 5,
+        "seguranca": 3
+      }
+    },
+    "T10": {
+      "faixa": "CT-1191 a CT-1194",
+      "total": 4,
+      "tipos": {
+        "unitario": 1,
+        "e2e": 2,
+        "seguranca": 1
+      }
+    },
+    "T11": {
+      "faixa": "CT-1196 a CT-1199",
+      "total": 4,
+      "tipos": {
+        "unitario": 2,
+        "integracao": 2
+      }
+    }
+  },
+  "achados_que_mudaram_o_desenho": [
+    {
+      "task": "T2",
+      "achado": "A bateria verificar-backup.sh precisa NASCER na T2, nao na T5: sem isso T2 e T3 fechariam sem rede permanente, contra o P4 do Protocolo Antirregressao. T3 estende, T5 completa e extrai o esqueleto."
+    },
+    {
+      "task": "T4",
+      "achado": "Os tres predicados de analisarInstalacao filtram por PREFIXO_DA_ROTINA e NAO alcancam sysloc-backup-*. Sem corrigi-los, um .service de backup habilitado no arranque passa verde. Correcao no acessorio de teste, nunca na producao."
+    },
+    {
+      "task": "T6",
+      "achado": "Acrescenta a bateria verificar-unidades-agendadas.sh (estado do host), que nenhuma suite alcanca. A fatia passa a acrescentar TRES baterias, e a contagem final e por descoberta, nunca por numero fixo."
+    },
+    {
+      "task": "T7",
+      "achado": "skipOriginCheck vale true sob isTest() e o Vitest fixa NODE_ENV=test: a conferencia de origem esta DESLIGADA em toda a suite. Sem declaracao explicita, o caso da recusa passa por vacuo e o D23 fecharia sem prova."
+    },
+    {
+      "task": "T7",
+      "achado": "enderecoBase NAO se move: a origem de baseURL e sempre empilhada e o acessorio envia origin: base em ~30 suites e2e. Substituir reprovaria todas. O fecho e ACRESCENTAR a lista declarada."
+    },
+    {
+      "task": "T9",
+      "achado": "Restringir /docs* na aplicacao derrubaria as 8 rotas das 106 e reprovaria verificar-fundacao.sh. O fecho do D24 e na BORDA."
+    },
+    {
+      "task": "T9",
+      "achado": "CT-1189 NASCE VERMELHO por construcao: o SMTP de producao aponta para capturador de desenvolvimento. Ajustar a constante para ficar verde e enfraquecer assercao e fraude de gate."
+    },
+    {
+      "task": "T10",
+      "achado": "Convivem DOIS D27 e sao debitos diferentes. Esta fatia fecha o D27 F1/T6 (T8) e o D27 F4/T11 (T10). Fechar por numero apagaria o marcador errado."
+    }
+  ],
+  "nota_de_contagem": "total = 74, obtido pela SOMA das 11 parcelas, nao estimado. A primeira escrita deste arquivo declarou 63 e a soma conferida acusou 74 — e o defeito e literalmente o que o CT-1199 desta fatia existe para pegar."
+}

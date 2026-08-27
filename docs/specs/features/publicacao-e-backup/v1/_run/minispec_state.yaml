@@ -1,0 +1,28 @@
+feature: "publicacao-e-backup"
+source: "recommended"
+source_note: "pre-refinement.md §15.2 recomendou miniSpec; a INTENT foi gerada pelo comando recomendado em §15.4"
+current_step: execution
+variant: backend
+steps:
+  intent:
+    status: completed
+    summary: "Tornar o produto alcancavel pelo aplicativo do cliente, recuperavel por copia com restauracao provada, e capaz de executar sozinho as Rotinas agendadas. Escopo: religacao do ponto de entrada publico do cliente; copia diaria do banco de dados e dos segredos com retencao por idade e restauracao provada em base vazia; instalacao do conjunto completo de Rotinas agendadas; aplicacao da ADR-0037 e fecho dos pontos de exposicao que aguardavam a publicacao. Fora: publicacao do pacote de contratos, roteiro da virada, execucao da virada e desinstalacao do sistema antigo, qualquer codigo de frontend."
+  tech_alignment:
+    status: skipped
+  design:
+    status: skipped
+  scope:
+    status: completed
+    variant: backend
+    summary: "22 arquivos (13 criar, 8 modificar, 4 referencia). Componentes novos: 4 scripts de backup (copiar/preservar-segredos/restaurar/verificar), 2 unidades systemd (service + timer), 1 gabarito de vhost do app + instalador + verificador de borda, 1 suite e2e de origem publica. 0 endpoints (superficie CONGELADA em 106/91/20 - nenhuma rota nasce, muda ou sai). 0 tabelas e 0 migracoes - a fatia preserva e restaura o banco, nao altera o esquema. Fecha 5 debitos: D9 F0/T2, D23 F1/T8, D24 F1/T5, D27 F1/T6, D27 F4/T11. ADRs aplicaveis: 0005, 0006, 0032, 0037 (conformidade literal confrontada); parciais: 0011, 0013, 0017, 0018, 0024, 0035. CONFLITO spec x ADR-0032 resolvido por conformacao (chave de cifra em pacote separado do dump). Premissa do insumo sobre o D23 refutada por medicao: a conferencia de origem passa hoje por paliativo de traducao na borda do Master, que sai no mesmo diff do fecho."
+  validation:
+    status: completed
+    summary: "challenge-spec: 6 questoes, 9 ajustes inline. Achado critico: SMTP de producao aponta para capturador de desenvolvimento e a trilha registraria entrega (secao 5.9) - escopo cresceu com CA-14. Corrigidos: bateria fora de deploy/scripts (invisivel ao agregador), fecho do D24 movido para a borda (na aplicacao derrubaria a ancora 106 e reprovaria verificar-fundacao.sh), origem publica passa a ser LISTA (dois apps na mesma API). Glossario nao tocado - nenhum termo canonizado. 3 candidatos a ADR parciais, nenhum confirmado."
+  task_plan:
+    status: completed
+    summary: "11 tasks em 6 fases, 0 paralelizaveis (derivado: T9xT10 passariam em 3 dos 4 testes do Invariante de Paralelismo e reprovam no quarto - ambas tocam o CLAUDE.md, arquivo de alta contencao, porque cada uma fecha um debito e a secao 3-B manda remover marcador e indice no mesmo movimento). 74 casos de teste gerados por 4 subagentes QA em Opus, consolidados por camada. Fecha 5 debitos: D9 F0/T2, D23 F1/T8, D24 F1/T5, D27 F1/T6, D27 F4/T11. Escopo cresceu em 3 pontos apos o QA: a bateria do backup nasce na T2 (nao na T5, senao T2 e T3 fechariam sem rede permanente); 3 predicados cegos ao prefixo de rotina precisam ser corrigidos antes de acrescentar as unidades ao roster; e a T6 ganha a bateria do estado do host. A fatia passa a acrescentar TRES baterias (11 -> 14), com a contagem por descoberta."
+  execution:
+    status: completed
+    tasks_total: 11
+    tasks_completed: 11
+    summary: "11/11 concluidas — FATIA FECHADA em 2026-08-26. As 11 tasks aprovadas nos gates declarados. Suite 1968 -> 1987 (shared 276 -> 295, os 9 pacotes medidos um a um, nenhum encolheu). 14 baterias por descoberta, 11 executadas com 0 FALHA e 1225 assercoes OK; as 3 privilegiadas degradaram declarando. Superficie INALTERADA em 106/91/20, e agora ANCORADA POR CASO (CT-1196), o que nao existia antes. SEIS debitos fechados nas duas pontas (D9 F0/T2, D23 F1/T8, D24 F1/T5, D27 F1/T6, D27 F4/T11, D39 F7/T8) e DOIS abertos (D40 e D41 F7/T9). Indice em 38 linhas, conferido nos dois sentidos por medicao independente do gate. 10 de 11 criterios de aceitacao atendidos; o unico em aberto sao as 2 unidades do backup e o reinicio, que exigem JANELA ASSISTIDA porque sudo -n falha neste host. NADA COMMITADO."
