@@ -189,95 +189,12 @@ CHAVE_PROVA=""
 CREDENCIAL_LIDA=""
 CHAVES_REPETIDAS=""
 
-falhas_totais=0
-falhas_caso=0
-casos_aprovados=0
-casos_executados=0
-# Degradação declarada: asserção que o host não permitiu medir. Não é falha —
-# não altera o código de saída —, mas o resumo final a repete, para que um
-# `AVISO` no meio de uma bateria longa não passe despercebido e vire verde
-# silencioso. Mesma conduta do irmão `verificar-preparacao-do-material.sh`.
-avisos_totais=0
-
 # --------------------------------------------------------------------------- #
-# Asserções — mesma convenção de `verificar-workspace.sh` e `verificar-golden.sh`.
+# Vocabulário de asserção — a casa comum, carregada e NUNCA redeclarada aqui.
+# Ver a razão em `deploy/scripts/verificacao/esqueleto-de-assercao.sh`.
 # --------------------------------------------------------------------------- #
-caso() {
-	printf '\n[%s] %s\n' "$1" "$2"
-	falhas_caso=0
-	casos_executados=$((casos_executados + 1))
-}
-
-ok() { printf '    OK   %s\n' "$*"; }
-
-falhar() {
-	falhas_caso=$((falhas_caso + 1))
-	falhas_totais=$((falhas_totais + 1))
-	printf '    FALHA %s\n' "$*" >&2
-}
-
-aviso() {
-	avisos_totais=$((avisos_totais + 1))
-	printf '    AVISO %s\n' "$*" >&2
-}
-
-nota() { printf '    ..   %s\n' "$*"; }
-
-# DÉBITO COM GATILHO — D9 · F0/T2 · registrado 2026-08-19
-# (NÃO é uma `DECISÃO FECHADA`: agenda uma mudança, não protege o esqueleto abaixo.)
-# O QUÊ: o esqueleto de asserções deste arquivo — `caso`, `fechar_caso`, `falhar`, `limpar`,
-#        `afirmar_igual`, `afirmar_diferente` — está COPIADO nos verificadores do repositório, e o
-#        débito pede promovê-lo a `deploy/scripts/lib/assercoes.sh`. Junto vem a segunda metade:
-#        `ct_003` acumula seis responsabilidades num corpo único e deve virar uma função por bloco.
-# ⚠️ MEDIÇÃO DE 2026-08-19 — o número envelheceu DUAS vezes, e o problema não é o que o
-#        enunciado diz. São **10** verificadores, não 4 (registro) nem 7 (higienização de
-#        2026-08-08): borda/notificacao-bancaria, caracterizacao/{captura,golden},
-#        cobranca-bancaria/guarda-de-boletos, documentos/isolamento-de-verificacao,
-#        instalacao/{apuracao-versao,fundacao,migracao,provisionamento,workspace}.
-#        E o achado que MUDA A NATUREZA do débito: as 10 cópias do núcleo são **10 formas
-#        DISTINTAS entre si** — de 35 a 63 linhas, nenhum md5 repetido. Não é "o mesmo esqueleto
-#        copiado 10 vezes"; são DEZ DIALETOS do mesmo esqueleto. O núcleo comum aos 10 é de 6
-#        funções (as listadas acima); `aviso` está em 7, `afirmar_contem` em 3, e as demais
-#        (`afirmar_desfecho_dos_caminhos`, `afirmar_copia_enxerga_migracoes`,
-#        `afirmar_forma_e_procedencia`, `afirmar_sem_bloqueio`, `afirmar_forma_do_fonte_do_pdf`)
-#        são de domínio e NÃO pertencem à casa comum.
-# QUANDO FECHA: **a próxima fatia que escrever um `verificar-*.sh`** — é o gatilho literal do
-#        débito (*"fixar o formato ANTES da próxima fatia escrever seu verificar-*.sh"*), e ele
-#        vale porque cada verificador novo nasce copiando um vizinho e vira o 11º dialeto.
-#        ⚠️ Quem fechar precisa de BASELINE, e ela é o obstáculo real: apenas 2 dos 10
-#        (`verificar-workspace.sh` e `verificar-golden.sh`) rodam sem privilégio — os outros 8
-#        exigem `sudo`/execução assistida, e converter sem poder executar viola o P1 e o P5 da
-#        `.claude/rules/nao-regressao.md`. Feche COM a janela de execução assistida agendada, não
-#        antes dela.
-# POR QUE NÃO AGORA: o débito diz literalmente *"não refatorar agora — o arquivo está provado por
-#        cinco execuções assistidas"*, e a intervenção dirigida de 2026-08-19 confirmou a razão
-#        por medição: sem baseline para 8 dos 10, a conversão trocaria duplicação conhecida por
-#        regressão invisível em scripts que provam a infraestrutura que opera.
-# ÍNDICE: docs/specs/features/fundacao-stack-nativa/v1/_run/run-report.md §2, D9
-afirmar_igual() {
-	if [[ "$2" == "$3" ]]; then
-		ok "$1"
-	else
-		falhar "$1 — esperado [$2], obtido [$3]"
-	fi
-}
-
-afirmar_diferente() {
-	if [[ "$2" != "$3" ]]; then
-		ok "$1"
-	else
-		falhar "$1 — obtido [$3], que deveria ser diferente de [$2]"
-	fi
-}
-
-fechar_caso() {
-	if [[ "${falhas_caso}" -eq 0 ]]; then
-		casos_aprovados=$((casos_aprovados + 1))
-		printf '    -> %s aprovado\n' "$1"
-	else
-		printf '    -> %s REPROVADO (%d falha(s))\n' "$1" "${falhas_caso}" >&2
-	fi
-}
+# shellcheck source=../verificacao/esqueleto-de-assercao.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../verificacao/esqueleto-de-assercao.sh"
 
 # --------------------------------------------------------------------------- #
 # Limpeza — armada ANTES de montar sistema de arquivos, criar clone ou plantar
@@ -2324,9 +2241,11 @@ ct_647() {
 	# de `emissao-e-conciliacao`, e **5 → 8** na intervenção dirigida de
 	# 2026-08-23, que mediu as três chaves acrescentadas sem que este caso
 	# acompanhasse: o endereço de autorização (`c45ef6c`) e as duas da entrega da
-	# notícia (`52e2be1`).
+	# notícia (`52e2be1`). **8 → 9** na T7 da fatia `publicacao-e-backup`, que
+	# acrescentou `ORIGENS_PUBLICAS` (fecho do `D23 · F1/T8`) — e o número sobe no
+	# MESMO diff da chave, que é o que este bloco existe para lembrar.
 	afirmar_igual "arquivo já terminado em quebra não ganha linha vazia" \
-		"8" "$(grep -c . "${arq_ok}")"
+		"9" "$(grep -c . "${arq_ok}")"
 
 	fechar_caso "CT-647"
 }

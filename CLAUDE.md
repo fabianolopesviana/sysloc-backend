@@ -91,13 +91,50 @@ fatia reaberta.
   constantes EXECUTÁVEIS** de `apps/api/test/cobertura-de-autorizacao.e2e.spec.ts` —
   `ROTAS_PUBLICADAS_EM_PRODUCAO`, `MANIPULADORES_EXAMINADOS_EM_PRODUCAO` e
   `PARES_PUBLICOS_DA_SUPERFICIE` —, de modo que a suíte é a fonte e este texto é a cópia.
+  ⚠️ **E desde 2026-08-26 a cópia não depende mais de disciplina**: o `CT-1196`
+  (`packages/shared/test/protocolo-antirregressao.spec.ts`, T11 da fatia `publicacao-e-backup`)
+  **lê** os três números desta linha e as três constantes, e afirma a igualdade eixo a eixo — a
+  próxima divergência fica **vermelha na suíte**, em vez de sobreviver a uma leitura desatenta.
+  As três foram reconferidas naquela data e **nenhuma se moveu**; a fatia não publica rota.
   **O número da F2 era 75, não 77** — não "corrija" para 77, a
   premissa do `HEAD` duplicado foi refutada por medição. **E o 99/84 era o da (ii)** — não o
   reponha; **o 103/88 era o do fecho da F4** (`CT-1004`), medido em 2026-08-20, e **o 105/90 era o da
   T7 da fatia `integracao-bancaria-autonoma`** (`CT-1038`), medido em 2026-08-22 — nenhum dos três se
   repõe.
-- **Suíte: 1943 casos**, 9 pacotes — `contracts` **438** · `api` **394** · `shared` **271** · `db` **268** ·
-  `worker` **180** · `documentos` 159 · `auth` 89 · `cobranca-bancaria` **114** · `regua` 30.
+- **Suíte: 1987 casos**, 9 pacotes — `contracts` **438** · `api` **410** · `shared` **295** · `db` **268** ·
+  `worker` **180** · `documentos` 159 · `auth` **93** · `cobranca-bancaria` **114** · `regua` 30.
+  ⚠️ **Os NOVE foram remedidos um a um em 2026-08-26, na T11 da fatia `publicacao-e-backup`** — o P5
+  do Protocolo, comparado **caso a caso** contra a linha de base da T1 (`_run/linha-de-base.md` §2).
+  **Nenhum pacote caiu**, os nove saíram com código `0`, e `skipped`/`todo` somam **zero** nos nove
+  diários. O quadro completo, com o delta de cada pacote atribuído aos CTs que o produziram, está em
+  `docs/specs/features/publicacao-e-backup/v1/_run/comparacao-final.md`.
+  ⚠️ **A T11 levou `shared` de 276 a 295**, e o delta é **19**, todo em
+  `packages/shared/test/protocolo-antirregressao.spec.ts`: **7** do `CT-1196` (a extração dos três
+  eixos, as 3 pernas de igualdade e as 3 falsificações, uma por eixo) e **12** do `CT-1198` (as **6**
+  pernas dos débitos fechados, as **2** dos homônimos, a contagem do índice com a prosa amarrada a
+  ela, e as 3 falsificações). ⚠️ **Os dois entraram como `describe` NOVOS**: alterar os existentes é
+  protegido pelo `CT-902`, que confere contagem exata. **Os outros oito não se moveram** — a T11 só
+  acrescentou casos ao `shared` e escriturou documento.
+  ⚠️ **A T8 da fatia `publicacao-e-backup` levou `auth` de 89 a 93**, e o delta é **4**, todo em
+  `packages/auth/test/bloqueio.spec.ts`: o `CT-1167`, o `CT-1168` e as **duas pernas** do `CT-1170`
+  — a declaração de `SALTOS_CONFIAVEIS` lida **na instância** e afirmada não vazia, e a perna que a
+  amarra ao endereço medido na borda. ⚠️ **O `CT-1169` NÃO é um quinto caso**: ele entrou como
+  **perna 4** do `CT-236 (c)`, que já existia, e perna nova em caso existente não move contagem.
+  ⚠️ **O `api` foi de 409 a 410 sem que esta task o movesse**: a divergência é **anterior** a ela —
+  vem da escrituração da T7 —, e os quatro arquivos de `apps/api/test/` que a T8 tocou mudaram só
+  comentário. Os três foram medidos em 2026-08-26 pelo script `test` de cada pacote; o `shared`
+  **não se moveu** (276).
+  ⚠️ **Os NOVE foram remedidos um a um em 2026-08-26**, pelo script `test` de cada pacote, na T7 da
+  fatia `publicacao-e-backup`. Dois números da linha anterior estavam defasados e **não se repõem**:
+  o `api` dizia **394** (é a contagem antes desta task) e o `shared` dizia **271** (é anterior à T5
+  da mesma fatia, que o levou a 276 e não escriturou). O total dizia 1943 pela soma dos dois.
+  ⚠️ **A T7 levou `api` de 394 a 409**, e o delta é **15**: os **9** do bloco novo de
+  `apps/api/test/ambiente.spec.ts` (o `CT-1160` em 2 pernas, o `CT-1161` em 5, o `CT-1162` e o
+  `CT-1163`), os **5** do arquivo novo `apps/api/test/origem-publica.e2e.spec.ts` (`CT-1164` e
+  `CT-1165` em 2 pernas cada, mais o `CT-1166`), e **1** que ninguém escreveu: a tabela do `CT-007`
+  percorre `VARIAVEIS_EXIGIDAS`, de modo que `ORIGENS_PUBLICAS` passou a ser exercitada por ela
+  sozinha. **Não procure o décimo quinto num arquivo novo.** Os outros oito pacotes foram remedidos
+  na mesma data e **nenhum se moveu**, inclusive `auth`, cuja fábrica mudou de assinatura.
   ⚠️ **A T11 da fatia `automacoes-agendadas` levou `db` de 265 a 268**, e o delta é **3**, todo do
   `CT-1096` em `packages/db/test/cobranca.spec.ts` — a rede antirregressão da RN-14: a comportamental
   (a Cobrança lida como `VENCIDA` com `negocio.execucao_de_rotina` medida em ZERO **antes** da
@@ -211,6 +248,21 @@ fatia reaberta.
   anterior a essa dizia 354, e antes dela 1744/1801 no total** — todos defasados pela mesma razão.
   ⚠️ **Meça por pacote** (`pnpm --filter @sysloc/<p> test`): o `turbo run test` aborta os pacotes
   irmãos e a saída agregada não é confiável.
+- **F7, item 1 — a fatia `publicacao-e-backup/v1` fechou em 2026-08-26, com 11/11 tasks.** Entrega
+  a cópia do banco (`pg_dump -Fc`), a preservação dos segredos em tar, a **restauração conferida em
+  base vazia**, as 2 unidades do relógio das **02:45** (deslocadas do `02:30` do legado por medição —
+  achado `A9` da T1), a borda pública do app e a proteção da entrada de terceiro (**ADR-0037**).
+  ⚠️ **DUAS janelas assistidas ficam pendentes, e as duas são do operador — nenhum agente as
+  executa** (`sudo -n` falha neste host): **(a)** posicionar as 2 unidades do backup
+  (`sudo bash deploy/scripts/instalacao/instalar-unidades.sh`), reexecutar
+  `verificar-unidades-agendadas.sh` (esperado 8/8), fechar o `CT-1153` e provar o **invariante 7**
+  com `sudo systemctl reboot` — **fora da faixa 02:30–03:15**, porque com `Persistent=true`
+  atravessar 02:45 reiniciando dispara a cópia ao voltar; e **(b)** acrescentar
+  `ORIGENS_PUBLICAS=…` a `/etc/sysloc/backend.env` (0600), implantar, **reiniciar a API** e **só
+  então** recarregar as bordas — ⚠️ **a ordem é irreversível**: invertê-la derruba o login do painel
+  na janela entre os passos. Roteiro literal em
+  `docs/specs/features/publicacao-e-backup/v1/_run/convergencia-do-host.md` §4, e o quadro de fecho
+  em `_run/comparacao-final.md`.
 - ⚠️ **ADRs emendadas — não cite a `Decision` sem ler a emenda**: a **0001** (a cláusula do *"apenas
   uma porta"* não alcança a porta de identidade), a **0017** (o contador é a **0033**, não a 0015) e a
   **0021** (emendada **duas vezes** — a de 2026-08-10 nomeia a entidade nas classes de ato; a de
@@ -221,8 +273,16 @@ fatia reaberta.
   executor que divergiu **declarando e medindo** teve razão em todas. E o corolário que custou duas
   fases: *a frase que explica por que algo não pode ser feito envelhece mais rápido que o débito que
   ela justifica* — meça a premissa antes de registrá-la.
-- **Dívida**: **407 débitos abertos em 14 fatias** — 544 blocos na §2, 137 já com marca de fecho.
-  **Remedido na intervenção dirigida de 2026-08-22**, varrendo os 22 `run-report.md` do repositório.
+- **Dívida**: **495 débitos abertos em 17 fatias** — 625 blocos na §2, 130 já com marca de fecho.
+  **Remedido na T11 da fatia `publicacao-e-backup`, em 2026-08-26**, varrendo os **24**
+  `run-report.md` do repositório, com o critério e o comando escritos aqui para que a próxima
+  medição seja reproduzível: bloco é `^### D`, e fechado é o cabeçalho que carrega `✅`.
+  ⚠️ **O número anterior (407 em 14, sobre 544 blocos, 137 fechados) NÃO se repõe, e a diferença tem
+  duas partes medidas**: (i) ele é de 2026-08-22 e não contempla `automacoes-agendadas` (**27**
+  blocos) nem `publicacao-e-backup` (**46**); (ii) o critério dele era mais frouxo — aceitava
+  `RESOLVIDO`/`FECHADO` sem `✅`, que medido hoje dá **149** fechados e **476** abertos. Os 8 blocos
+  restantes da diferença são escrituração posterior nas demais fatias, **não reconciliada bloco a
+  bloco** — quem quiser fechá-la roda o comando acima por fatia.
   ⚠️ **O número anterior (372 em 13, sobre 499 blocos) estava defasado por uma razão só**: é anterior
   à fatia `integracao-bancaria-autonoma`, que acrescentou 41 blocos. **Não o reponha.** E ⚠️ **o
   número anterior a esse (~280 em 10) estava defasado por outra**, medida em 2026-08-19: **39
@@ -305,7 +365,14 @@ O marco está alcançado quando **todos** os sete itens forem verdadeiros:
       rotas), e o handoff é autossuficiente. ⚠️ O handoff do Sysloc apenas **menciona** que ele
       existe e está pronto; não mistura as telas
 - [ ] **Backup e restauração entregues e provados** — item 1 da F7: `pg_dump -Fc`, segredos em tar,
-      `.pgpass` 0600, timer das 02:30, e **restauração conferida num banco vazio**
+      `.pgpass` 0600, timer, e **restauração conferida num banco vazio**. ⚠️ **O código está
+      entregue e provado** pela fatia `publicacao-e-backup/v1` (11/11 tasks, 2026-08-26): a
+      restauração que REPRODUZ a origem é o `CT-1107`, com o destino medido em ZERO antes, e a
+      bateria `verificar-backup.sh` fecha em **408 asserções / 24 casos**. ⚠️ **O horário é `02:45`, não `02:30`** — deslocado por medição do
+      achado `A9` (o legado ocupa `02:30` na `crontab` do root, mesmo volume). **O item segue
+      aberto por UMA razão só, e ela é de host**: as 2 unidades não estão posicionadas em
+      `/etc/systemd/system`, e posicioná-las exige a **janela assistida (a)** descrita no Estado
+      atual — nenhum agente digita senha neste host
 - [ ] **`deploy/scripts/virada.md` escrito**, com o gate de desinstalação de 5 itens
 - [ ] **`/opt/frappe` intacto e de pé** — a virada não acontece neste marco
 
@@ -341,7 +408,7 @@ pelo número, e sem os dois arquivos de `.claude/plans/` essas referências fica
 | 3 | `.claude/plans/plano-saas-decisoes.md` | As **40 decisões fechadas** — o plano de execução as cita por número |
 | 4 | `.claude/plans/plano-saas.md` | Arquitetura-alvo, os 3 perfis, as **10 telas × 7 ações sensíveis**, a especificação do webhook Sicoob |
 | 5 | `docs/plano-backend-novo/levantamento-frontend.md` | O frontend React: inventário dos **35 endpoints**, o **modelo de domínio que a API deve falar**, os acoplamentos a remover |
-| 6 | `docs/adr/` | ADRs. **36 registradas, 29 `accepted`** (medido em 2026-08-22, no fecho da fatia `integracao-bancaria-autonoma`; o número anterior — 35/28, de 2026-08-19 — é anterior à **0036**, que nasceu em 2026-08-21): 0001, 0005, 0006, 0008, 0009, 0010, 0011, 0013, 0014, 0016, 0017, 0018, 0020, 0021, 0022, 0023, 0024, 0025, 0026, 0027, 0028, 0029, 0030, 0031, 0032, 0033, **0034** (o que o provedor informou consta como diagnóstico, e a trilha registra efeito ou anomalia com vocabulário do produto), **0035** (o critério que autoriza uma rota de entrada de fato de terceiro sem sessão) e **0036** (material legado que o runtime recusa é convertido por processo externo na borda de registro, e é isso que torna o percurso do cliente novo possível pela tela). **Vinculantes para a F2**: 0006, 0008, 0009, 0011, 0013, 0014, 0016, 0017, 0018, 0020, 0021 e 0033. **Vinculantes para a sub-fatia 2b da F3**: 0008, 0011, 0016, 0017, 0018, 0021, 0022, 0023, 0024, 0025 e 0026, mais as **quatro que nasceram dela** — a **0027** (uma rota de negócio dispensa sessão só quando o ato é do titular do dado, e sempre com portador de segredo), a **0028** (a rota que devolve bytes permanece no contrato, declarando mídia, nome do arquivo e o mesmo envelope de erro), a **0029** (efeito externo cujo resultado não compõe a resposta sai por fila, nunca em linha na borda) e a **0030** (artefato derivado de dado gravado é composto sob demanda e nunca armazenado — com **cláusula de exclusão**: fato recebido de terceiro, como o boleto do provedor, não é derivado e está fora do alcance dela). As **0002, 0003 e 0004** morreram com o Frappe — `deprecated` desde 2026-08-04, porque nomeiam primitivas dele (DocType, fixture, `Custom DocPerm`, Server Script). Há **três cadeias de supersede**, e nas três só a última se cita: a forma canônica do contrato da API é **0007 → 0012 → 0017**, vigente a **0017** (três classes de chave exposta: código legível quando há série declarada, UUID quando não há); a transição de estado é **0019 → 0021**, vigente a **0021** (rota própria sempre; a chave de ação só quando o ato é sensível — atributo operacional do cadastro exige apenas a área); e a política de série sequencial é **0015 → 0033**, vigente a **0033** desde 2026-08-14 (**cada série declara o próprio escopo** — contrato e cobrança em `(empresa, ano)`, o identificador perante o provedor pelo **SaaS** —, com furo aceito e número nunca reusado). ⚠️ **A 0033 nasceu de um conflito que o challenge da `fundacao-bancaria` pegou ao abrir a `Decision`**: a 0015 abria com *"todo contador sequencial deste produto é único por empresa"*, quantificador universal que o contador bancário falsifica. **Não cite a 0015 como vigente, e não "corrija" o contador para ser por empresa.** A **0020** segue vigente e é complementar, não concorrente: a 0033 fixa o *escopo*, a 0020 o *mecanismo*. **Vinculantes para a fatia (i) da F4** (`fundacao-bancaria`): 0001, 0005, 0006, 0008, 0009, 0011, 0013, 0016, 0017, 0018, 0025, 0026 e 0029, mais as **três que nasceram dela** — a **0031** (tabela sem dono-empresa vive em schema próprio da plataforma, sem `empresa_id`), a **0032** (segredo operável de terceiro é cifrado de forma reversível, nunca retorna por superfície alguma, e a ausência de vazamento se prova **por medição da saída real**) e a **0033**. ⚠️ **A ADR-0001 foi EMENDADA em 2026-08-15** (texto original preservado byte a byte), porque a cláusula do *"apenas"* uma porta ficara incompleta diante da porta de **identidade** — que é ato de configuração, não de cobrança; a emenda ataca o **contorno por renomeação**, e não a contagem de portas. ⚠️ **E foi EMENDADA DE NOVO em 2026-08-17**, também com o texto original preservado: a porta que ela reserva nasce com **quatro** operações, e não cinco — a obtenção da credencial de acesso é `client_credentials`, **vocabulário do provedor**, e acontece **dentro** do adaptador (decisão do usuário de 2026-08-16, §21.1(1) do tech spec da fatia `emissao-e-conciliacao`). O **roster de cinco capacidades não encolheu**; o que se conta em quatro é a superfície da interface. **Não "corrija" a porta para cinco. Não cite a `Decision` dela sem ler as DUAS emendas.** ⚠️ **A ADR-0017 foi EMENDADA em 2026-08-16**, também com o texto original preservado: a `Decision` dela remetia o contador à **ADR-0015**, morta desde 2026-08-14 — leia ali `ADR-0033`. A substituição já constava do `Consequences → Neutros` da própria 0017, e a emenda existe porque **é a `Decision` que se abre ao citar**, de modo que a correção estava no lugar onde o leitor de uma citação não passa. **Não cite a `Decision` dela sem ler a emenda.** ⚠️ **A ADR-0024 foi EMENDADA DUAS VEZES** — em 2026-08-13 e em **2026-08-18** —, as duas com o texto original preservado byte a byte, e a de 2026-08-18 é a **terceira ocorrência desta classe no repositório** (depois da ADR-0021 e da própria 0024 em 2026-08-13): a de **2026-08-13** declara as **duas** leituras legítimas sem contexto de empresa e o discriminador que separa uma delas de um contorno do isolamento (função `SECURITY DEFINER` de papel `NOLOGIN` de propósito único, política nominal, `GRANT` mínimo, `EXECUTE` revogado de `PUBLIC` e a função **sem parâmetro de empresa**); a de **2026-08-18** declara o **alcance da cláusula da carga** — ela leva o identificador de empresa quando **quem enfileirou já detinha direito a ele** (toda fila anterior a ela, e nada nelas muda), e na **entrada de fato de terceiro** (ADR-0035) a empresa é o **resultado** da travessia nominal, de modo que o campo **não existe** na carga. Pôr `empresaId` na carga da entrada de terceiro seria **violação, não conformidade**: o único valor disponível na borda viria do recebido. **Não "corrija" a carga da fila do webhook para levar empresa. Não cite a `Decision` dela sem ler as DUAS emendas.** ⚠️ **Citar ADR exige abrir a `Decision`** — esta linha e o `INDEX.md` são paráfrases, e já divergiram do texto real |
+| 6 | `docs/adr/` | ADRs. **37 registradas, 30 `accepted`** (remedido em **2026-08-26**, na T11 da fatia `publicacao-e-backup`, contando o campo `status:` de cada arquivo — 3 `deprecated`, 4 `superseded`; o número anterior — 36/29, de 2026-08-22 — é anterior à **0037**, que nasceu na **T10 desta fatia** e é a política de limitação de abuso na borda pública): 0001, 0005, 0006, 0008, 0009, 0010, 0011, 0013, 0014, 0016, 0017, 0018, 0020, 0021, 0022, 0023, 0024, 0025, 0026, 0027, 0028, 0029, 0030, 0031, 0032, 0033, **0034** (o que o provedor informou consta como diagnóstico, e a trilha registra efeito ou anomalia com vocabulário do produto), **0035** (o critério que autoriza uma rota de entrada de fato de terceiro sem sessão) e **0036** (material legado que o runtime recusa é convertido por processo externo na borda de registro, e é isso que torna o percurso do cliente novo possível pela tela) e **0037** (a borda pública declara teto de concorrência por endereço de origem; o teto de **taxa** é decisão por vhost, e o da notícia bancária o dispensa por medição — o eixo de origem do provedor é um endereço só, e o mesmo teto que barra o abuso descartaria a rajada legítima). **Vinculantes para a F2**: 0006, 0008, 0009, 0011, 0013, 0014, 0016, 0017, 0018, 0020, 0021 e 0033. **Vinculantes para a sub-fatia 2b da F3**: 0008, 0011, 0016, 0017, 0018, 0021, 0022, 0023, 0024, 0025 e 0026, mais as **quatro que nasceram dela** — a **0027** (uma rota de negócio dispensa sessão só quando o ato é do titular do dado, e sempre com portador de segredo), a **0028** (a rota que devolve bytes permanece no contrato, declarando mídia, nome do arquivo e o mesmo envelope de erro), a **0029** (efeito externo cujo resultado não compõe a resposta sai por fila, nunca em linha na borda) e a **0030** (artefato derivado de dado gravado é composto sob demanda e nunca armazenado — com **cláusula de exclusão**: fato recebido de terceiro, como o boleto do provedor, não é derivado e está fora do alcance dela). As **0002, 0003 e 0004** morreram com o Frappe — `deprecated` desde 2026-08-04, porque nomeiam primitivas dele (DocType, fixture, `Custom DocPerm`, Server Script). Há **três cadeias de supersede**, e nas três só a última se cita: a forma canônica do contrato da API é **0007 → 0012 → 0017**, vigente a **0017** (três classes de chave exposta: código legível quando há série declarada, UUID quando não há); a transição de estado é **0019 → 0021**, vigente a **0021** (rota própria sempre; a chave de ação só quando o ato é sensível — atributo operacional do cadastro exige apenas a área); e a política de série sequencial é **0015 → 0033**, vigente a **0033** desde 2026-08-14 (**cada série declara o próprio escopo** — contrato e cobrança em `(empresa, ano)`, o identificador perante o provedor pelo **SaaS** —, com furo aceito e número nunca reusado). ⚠️ **A 0033 nasceu de um conflito que o challenge da `fundacao-bancaria` pegou ao abrir a `Decision`**: a 0015 abria com *"todo contador sequencial deste produto é único por empresa"*, quantificador universal que o contador bancário falsifica. **Não cite a 0015 como vigente, e não "corrija" o contador para ser por empresa.** A **0020** segue vigente e é complementar, não concorrente: a 0033 fixa o *escopo*, a 0020 o *mecanismo*. **Vinculantes para a fatia (i) da F4** (`fundacao-bancaria`): 0001, 0005, 0006, 0008, 0009, 0011, 0013, 0016, 0017, 0018, 0025, 0026 e 0029, mais as **três que nasceram dela** — a **0031** (tabela sem dono-empresa vive em schema próprio da plataforma, sem `empresa_id`), a **0032** (segredo operável de terceiro é cifrado de forma reversível, nunca retorna por superfície alguma, e a ausência de vazamento se prova **por medição da saída real**) e a **0033**. ⚠️ **A ADR-0001 foi EMENDADA em 2026-08-15** (texto original preservado byte a byte), porque a cláusula do *"apenas"* uma porta ficara incompleta diante da porta de **identidade** — que é ato de configuração, não de cobrança; a emenda ataca o **contorno por renomeação**, e não a contagem de portas. ⚠️ **E foi EMENDADA DE NOVO em 2026-08-17**, também com o texto original preservado: a porta que ela reserva nasce com **quatro** operações, e não cinco — a obtenção da credencial de acesso é `client_credentials`, **vocabulário do provedor**, e acontece **dentro** do adaptador (decisão do usuário de 2026-08-16, §21.1(1) do tech spec da fatia `emissao-e-conciliacao`). O **roster de cinco capacidades não encolheu**; o que se conta em quatro é a superfície da interface. **Não "corrija" a porta para cinco. Não cite a `Decision` dela sem ler as DUAS emendas.** ⚠️ **A ADR-0017 foi EMENDADA em 2026-08-16**, também com o texto original preservado: a `Decision` dela remetia o contador à **ADR-0015**, morta desde 2026-08-14 — leia ali `ADR-0033`. A substituição já constava do `Consequences → Neutros` da própria 0017, e a emenda existe porque **é a `Decision` que se abre ao citar**, de modo que a correção estava no lugar onde o leitor de uma citação não passa. **Não cite a `Decision` dela sem ler a emenda.** ⚠️ **A ADR-0024 foi EMENDADA DUAS VEZES** — em 2026-08-13 e em **2026-08-18** —, as duas com o texto original preservado byte a byte, e a de 2026-08-18 é a **terceira ocorrência desta classe no repositório** (depois da ADR-0021 e da própria 0024 em 2026-08-13): a de **2026-08-13** declara as **duas** leituras legítimas sem contexto de empresa e o discriminador que separa uma delas de um contorno do isolamento (função `SECURITY DEFINER` de papel `NOLOGIN` de propósito único, política nominal, `GRANT` mínimo, `EXECUTE` revogado de `PUBLIC` e a função **sem parâmetro de empresa**); a de **2026-08-18** declara o **alcance da cláusula da carga** — ela leva o identificador de empresa quando **quem enfileirou já detinha direito a ele** (toda fila anterior a ela, e nada nelas muda), e na **entrada de fato de terceiro** (ADR-0035) a empresa é o **resultado** da travessia nominal, de modo que o campo **não existe** na carga. Pôr `empresaId` na carga da entrada de terceiro seria **violação, não conformidade**: o único valor disponível na borda viria do recebido. **Não "corrija" a carga da fila do webhook para levar empresa. Não cite a `Decision` dela sem ler as DUAS emendas.** ⚠️ **Citar ADR exige abrir a `Decision`** — esta linha e o `INDEX.md` são paráfrases, e já divergiram do texto real |
 
 Por fase: a **F4** exige `docs/specs/features/integracao-bancaria-configuravel/`; a **F6** exige
 o levantamento do frontend (item 5).
@@ -468,14 +535,50 @@ Específicos deste domínio: **`node:https`** (o mTLS do Sicoob — ⚠️ o cli
 > grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 > ```
 
-São **41**, e a tabela abaixo é a lista viva — ela, e não este parágrafo, é a fonte.
+São **38**, e a tabela abaixo é a lista viva — ela, e não este parágrafo, é a fonte.
 
 ⚠️ **O identificador é o par `Dnn · F{n}/{origem}`, nunca o número sozinho** — a sequência corre
 dentro da §2 da fatia que registrou cada débito. Hoje convivem **dois `D3`**, **TRÊS `D12`**, **dois
-`D23`**, **dois `D27`**, **dois `D37`**, **dois `D43`** e **dois `D49`**, todos legítimos e todos débitos
+`D37`**, **dois `D40`**, **dois `D43`** e **dois `D49`**, todos legítimos e todos débitos
 diferentes. ⚠️ **A lista acima foi REMEDIDA em 2026-08-23** contra a tabela abaixo, e a anterior estava
 defasada nos dois sentidos: ela citava `D28`, que tem uma entrada só desde sempre, e omitia `D23` e
 `D43`. **Não reponha o `D28`.**
+⚠️ **Os DOIS `D27` deixaram esta lista em 2026-08-26, e nenhum dos dois se repõe.** O da F1/T6 saiu
+com a T8 da fatia `publicacao-e-backup`: `packages/auth/src/autenticacao.ts` passou a declarar
+`SALTOS_CONFIAVEIS` em `advanced.ipAddress` a partir do endereço **medido** na borda que já opera, e
+a chave do limitador deixou de ser uma só por caminho para o produto inteiro — a rede permanente é o
+`CT-1167`, o `CT-1168` e o `CT-1170`, mais a perna 4 do `CT-236 (c)` (`CT-1169`), todos em
+`packages/auth/test/bloqueio.spec.ts`. O da F4/T11 saiu com a **T10** da mesma fatia, aplicando a
+**ADR-0037** à borda da notícia bancária: `deploy/nginx/sysloc-notificacao-bancaria.conf` passou a
+declarar `limit_conn_zone`/`limit_conn` por endereço de origem, e **continua sem teto de taxa** —
+a ausência é decisão, não esquecimento, e virou asserção. ⚠️ **Não instale `limit_req` naquele
+vhost**: o eixo de origem do provedor é um endereço só, e o mesmo teto que barra o abuso descarta a
+rajada legítima. A rede permanente são o `CT-1191` (a rajada de 30 que atravessa inteira), o
+`CT-1192` (o par de fronteira 65 536 / 65 537), o `CT-1193` (a família `limit_req` com contagem
+ZERO, com prova de falsificação nos dois mutantes) e o `CT-1194` (o par simultâneo/sequencial),
+todos em `deploy/scripts/borda/verificar-notificacao-bancaria.sh`.
+⚠️ **O `D24 · F1/T5` e o `D39 · F7/T8` deixaram esta lista em 2026-08-26**, com o fecho pela T9 da
+fatia `publicacao-e-backup`. O primeiro fechou **NA BORDA**: `deploy/nginx/sysloc-app.conf` recusa
+`/docs`, `/docs/json` e `/docs-yaml` antes de qualquer repasse, e `apps/api/src/main.ts` **continua
+registrando os três** — restringir na aplicação derrubaria as 8 rotas `GET /docs*` das **106** da
+âncora de superfície e reprovaria `verificar-fundacao.sh`. O segundo fechou porque a borda que
+faltava passou a **apensar** `$proxy_add_x_forwarded_for`. **Não reponha nenhum dos dois**, e não
+"corrija" a restrição do contrato para a aplicação. A rede permanente são o `CT-1182`, o `CT-1183`,
+o `CT-1187` e o `CT-1188`, todos em `deploy/scripts/borda/verificar-borda-do-app.sh`.
+⚠️ **O `D23 · F1/T8` deixou esta lista em 2026-08-26**, com o fecho pela T7 da fatia
+`publicacao-e-backup`: `ORIGENS_PUBLICAS` passou a ser variável exigida na partida, e a origem
+confiável deixou de derivar só do endereço de escuta. Sobrou o `D23 · F0/T3`
+(`fundacao-stack-nativa`), sozinho — o par repetido acabou, e a lista de homônimos acima já não o
+cita. **Não o reponha.** O paliativo de tradução de origem saiu de
+`/opt/web/syslocadmin/nginx/default.conf` no mesmo passo.
+⚠️ **O `D9` deixou esta lista em 2026-08-26**, com o fecho do `D9 · F0/T2`
+(`fundacao-stack-nativa`) pela T5 da fatia `publicacao-e-backup`: as **12** baterias passaram a
+carregar `deploy/scripts/verificacao/esqueleto-de-assercao.sh` por `source`, e cada símbolo do
+vocabulário tem **uma** definição. ⚠️ **O `QUANDO FECHA` dele dizia que só 2 das 10 rodavam sem
+privilégio, e a medição de 2026-08-26 refutou os dois números**: são **12** baterias e **9** rodam sem
+privilégio — as 9 foram executadas antes e depois, uma a uma, com contagem idêntica. **Não reponha a
+linha.** A rede permanente é o `CT-1125` (a auditoria do esqueleto) mais o `CT-1126` (a tabela
+`bateria → casos` medida antes da extração), os dois em `deploy/scripts/backup/verificar-backup.sh`.
 ⚠️ **O `D26` deixou esta lista em 2026-08-23**, com o fecho do `D26 · F4/T9` pela T7 da fatia
 `automacoes-agendadas` — sobrou o `D26 · F3/T8` (`cobranca-e-mora`), sozinho. **Não o reponha.**
 ⚠️ **O `D13` deixou esta lista em 2026-08-23**, com o fecho do `D13 · F4/T6` (`webhook-e-carne`) pela
@@ -500,11 +603,7 @@ da `.claude/rules/nao-regressao.md`, que é permanente — este bloco é transit
 | Débito | Onde | Dispara quando |
 |---|---|---|
 | **D28** (F0/T5) | `grep -rln --exclude-dir=dist "D28 · F0/T5" apps packages deploy` — a contagem sai do comando, que não envelhece | **JÁ DISPAROU (F1/T2)** — consumidor novo de `packages/shared/test/` por caminho relativo profundo |
-| **D9** (F0/T2, fatia `fundacao-stack-nativa`) | `deploy/scripts/instalacao/verificar-provisionamento.sh` (junto de `afirmar_igual`) | a **próxima fatia que escrever um `verificar-*.sh`** — são **10** cópias do esqueleto e elas são **10 formas distintas**; só 2 rodam sem privilégio, então feche COM janela assistida |
 | **D23** (F0/T3, fatia `fundacao-stack-nativa`) | `packages/shared/src/log.ts` (cabeçalho) | ⚠️ **BLOQUEADO por protocolo, não por tempo** — extrair `redacao.ts` moveria código sob as duas `DECISÃO FECHADA` do arquivo; fecha só se elas caírem pelo próprio `REVERTER EXIGE`, ou por autorização expressa do usuário |
-| **D23** (F1/T8) | `apps/api/src/autenticacao/autenticacao.module.ts` | a **publicação atrás do servidor de borda na F7** — origem confiável derivada do endereço de retorno |
-| **D24** (F1/T5, fatia `autorizacao-e-ciclo-de-acesso`) | `apps/api/src/main.ts` | a **publicação atrás do servidor de borda na F7** — `/docs*` atende sem sessão por decisão registrada, que vale só enquanto a API é local |
-| **D27** (F1/T6, fatia `autorizacao-e-ciclo-de-acesso`) | `packages/auth/src/autenticacao.ts` | a **publicação atrás do servidor de borda na F7** — sem ela o limitador não tem eixo de origem |
 | **D37** (F1/T8, fatia `autorizacao-e-ciclo-de-acesso`) | `apps/api/src/master/empresa.controller.ts` | a **primeira comparação do `:id` do Master com identidade da sessão** — o esquema de lá não canoniza a caixa do UUID |
 | **D3** (F2/T1, fatia `cadastro-de-imoveis-e-pessoas`) | `packages/contracts/src/comum.ts` | a **primeira task que abrir `usuario.controller.ts` por outra razão** — `ESQUEMA_DO_IDENTIFICADOR` tem duas definições |
 | **D44** (F2/T10, fatia `contratos-de-locacao`) | `apps/api/src/imoveis/imovel.service.ts` (`definirSituacaoDeLocacao`) | a fatia que criar no banco a **restrição pareando `contrato.status='ATIVO'` com `imovel.status_locacao`** — hoje nada fecha a janela da guarda |
@@ -520,12 +619,11 @@ da `.claude/rules/nao-regressao.md`, que é permanente — este bloco é transit
 | **D34** (F4/T11, fatia `emissao-e-conciliacao`) | `packages/cobranca-bancaria/src/emissao-em-lote.ts` (junto de `guarda.gravar`) | ⚠️ **gatilho EMENDADO em 2026-08-19** (a metade da fatia (iii) venceu e foi refutada: dá observabilidade, não reconciliação) — vigente é **persistir o identificador enviado antes da chamada**, ou ampliar o modelo canônico |
 | **D49** (F4/T16, fatia `emissao-e-conciliacao`) | `apps/worker/src/tarefas/carga-da-tarefa.ts` (cabeçalho) | a **primeira task autorizada a abrir `regua.ts` ou `confirmacao-de-email.ts`** — a tradução de `ZodError` em nome de campo tem três cópias no processo |
 | **D50** (F4/T16, fatia `emissao-e-conciliacao`) | `apps/worker/src/tarefas/emissao-em-lote.ts` (junto de `dadosDaEmissao`) | o **terceiro consumidor** da projeção do pedido de emissão, ou a primeira alteração dos campos que ela leva ao provedor — hoje são duas cópias |
-| **D51** (F4/T16, fatia `emissao-e-conciliacao`) | `apps/worker/src/main.ts` (junto de `ehChaveDeCifraAceitavel`) | ⚠️ **JÁ DISPAROU (F5/T7)** — a **primeira task autorizada a abrir `apps/api/src/configuracao/ambiente.ts`**, ou o terceiro processo que exigir as mesmas variáveis — as duas conferências de forma têm duas definições |
+| **D51** (F4/T16, fatia `emissao-e-conciliacao`) | `apps/worker/src/main.ts` (junto de `ehChaveDeCifraAceitavel`) | ⚠️ **JÁ DISPAROU DUAS VEZES (F5/T7 e F7/T7)** — a **primeira task autorizada a abrir `apps/api/src/configuracao/ambiente.ts`**, ou o terceiro processo que exigir as mesmas variáveis — as duas conferências de forma têm duas definições |
 | **D52** (F4/T16, fatia `emissao-e-conciliacao`) | `apps/worker/test/varredura-de-segredo.ts` (cabeçalho) | o **terceiro consumidor** do molde de varredura com controle positivo fora de `apps/worker/test/`, ou a primeira alteração das formas buscadas — hoje são duas cópias |
 | **D53** (F4/T16, fatia `emissao-e-conciliacao`) | `packages/shared/src/log.ts` (junto de `redigirErro`) | a **próxima superfície que decifre o segredo operável**, ou a primeira exceção do produto que anexe campo próprio fora de `RADICAIS_SENSIVEIS` — o eixo por nome de chave não a alcança |
 | **D58** (F4/T16, fatia `emissao-e-conciliacao`) | `apps/worker/src/tarefas/emissao-em-lote.ts` (junto da assinatura de `comReentranciaBenigna`) | o **terceiro consumidor** do discriminador, ou a primeira alteração do contrato do sentinela — `<T>` é irrestrito e a reserva de `undefined` vive só no docblock |
 | **D21** (F4/T9, fatia `webhook-e-carne`) | `apps/api/test/retomada-de-retidas.spec.ts` (junto de `semearCobranca`) | a **primeira task autorizada a abrir as duas suítes irmãs** da notícia bancária — o arranjo da cobrança com boleto e certificado tem três cópias |
-| **D27** (F4/T11, fatia `webhook-e-carne`) | `deploy/nginx/sysloc-notificacao-bancaria.conf` (cabeçalho) | a **publicação da API inteira na F7** — o vhost publica um caminho para fora e não há limitador de abuso nele |
 | **D43** (F4/fechamento, fatia `webhook-e-carne`) | `deploy/scripts/borda/instalar-borda-de-notificacao.sh` (junto de `NOME_DO_VHOST`) | o produto receber notícia de um **segundo provedor bancário** — o nome do vhost é fixo e o segundo hostname sobrescreveria o primeiro |
 | **D1** (F5/T1, fatia `integracao-bancaria-autonoma`) | `packages/cobranca-bancaria/src/conversao-do-material.ts` (junto de `executarOConversor`) | o módulo ganhar ponto de injeção legítimo do binário ou do teto — o estouro do teto não tem prova |
 | **D31** (F5/T7, fatia `integracao-bancaria-autonoma`) | `apps/api/src/integracoes-bancarias/entrega-da-noticia.service.ts` (junto de `DISCRIMINADOR_DO_CERTIFICADO`) | a **primeira task autorizada a abrir `apps/api/src/cobrancas/boleto.service.ts`**, ou o terceiro consumidor — as 6 constantes de recusa de pré-condição têm duas cópias |
@@ -539,6 +637,8 @@ da `.claude/rules/nao-regressao.md`, que é permanente — este bloco é transit
 | **D15** (F5/T7, fatia `automacoes-agendadas`) | `packages/cobranca-bancaria/src/guarda-de-boletos.ts` (junto de `MILISSEGUNDOS_POR_DIA`) | o **quarto consumidor de produção**, ou a primeira task autorizada a abrir `derivacao-de-contrato.ts` ou `certificado.service.ts` — hoje são 3 cópias, já com o nome alinhado |
 | **D12** (F5/T6, fatia `automacoes-agendadas`) | `packages/db/src/conferencia-bancaria.ts` (junto de `abrirConferencia`) | a fatia que fixar o **limiar de obsolescência** da conferência em andamento — é decisão de produto, e a forma viável é a varredura na `MANUTENCAO` |
 | **D11** (F5/T6, fatia `automacoes-agendadas`) | `apps/worker/test/acessorios-de-borda.ts` (cabeçalho) | a **primeira task autorizada a abrir uma das 6 suítes** de `apps/worker/test/` com `emUnidade` local — medido: 7 declarações, e a casa nasceu com 1 consumidor |
+| **D40** (F7/T9, fatia `publicacao-e-backup`) | `deploy/scripts/borda/verificar-borda-do-app.sh` (junto de `subir_borda_efemera`) | ⚠️ **gatilho EMENDADO em 2026-08-26** (a redação anterior disparou pela razão errada) — a **terceira borda pública**, ou a primeira task autorizada a abrir `verificar-notificacao-bancaria.sh` **para mexer no acessório** |
+| **D41** (F7/T9, fatia `publicacao-e-backup`) | `deploy/scripts/borda/verificar-borda-do-app.sh` (junto de `DESTINO_DECLARADO_DO_EMAIL`) | a **troca do `SMTP_URL` para o destino real** — o `CT-1152` afirma o outro lado da mesma chave e o ponteiro entre os dois é de mão única |
 | **D5** (F5/T3, fatia `automacoes-agendadas`) | `packages/db/drizzle.config.ts` (junto de `out`) | ⚠️ **RECORRENTE — o gatilho NÃO o extingue**: a próxima migração **autoral** que alterar estrutura declarada em `src/esquema/*.ts`, ou uma regeração **do zero**; a supressão é manual nos dois casos e volta na seguinte |
 
 ---

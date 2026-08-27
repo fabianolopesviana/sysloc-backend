@@ -24,6 +24,10 @@
  * |        | aponta para arquivo existente. |
  * | CT-638 | O contrato da fila tem definição ÚNICA em `packages/shared/src/fila.ts`, é consumido
  * |        | pela fronteira do pacote, e o D32 saiu do código E do índice — as duas pontas. |
+ * | CT-1196| Os três números da superfície narrados no `CLAUDE.md` são iguais, um a um, às três
+ * |        | constantes executáveis da âncora — a suíte é a fonte, o texto é a cópia. |
+ * | CT-1198| Cada débito fechado na fatia `publicacao-e-backup/v1`, identificado pelo **par**, saiu
+ * |        | das duas pontas; e cada homônimo que ela não fecha continua vivo nas duas. |
  *
  * **Por que o CT-638 foge da faixa 9xx**: os casos acima nasceram com a barreira e provam o
  * substrato do pipeline; este prova o **fecho de um débito concreto** (o D32 · F0/T6) e teve o
@@ -694,5 +698,315 @@ describe('CT-910 — a comparação de contagem não mede replay de cache', () =
     // Se o runner reaproveitar resultado cacheado, a "contagem anterior" do CT-905/L2 é replay,
     // e a comparação passa a provar que o cache está íntegro — não que os testes estão.
     expect(tarefaDeTeste).toContain('"cache": false');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T11 da fatia `publicacao-e-backup` — o P5, escrito como asserção
+// ---------------------------------------------------------------------------
+//
+// Os dois casos abaixo nasceram do fecho da fatia, e fecham duas classes que o resto desta
+// barreira não alcançava:
+//
+//  - o CT-1196 amarra os números NARRADOS no `CLAUDE.md` às constantes EXECUTÁVEIS da âncora de
+//    superfície. Medido: nenhuma suíte fazia isso, e a linha já divergiu quatro vezes (75/77,
+//    99/84, 103/88, 105/90), mais uma quinta no nome de um campo. A suíte é a fonte, o texto é a
+//    cópia — e sem asserção a cópia envelhece no mesmo diff que a escreve.
+//  - o CT-1198 confere que os débitos fechados nesta fatia saíram das DUAS pontas **pelo par**, e
+//    que os homônimos que ela NÃO fecha continuam vivos. O CT-907 acima prova a coerência
+//    genérica e ficaria verde se a fatia tivesse apagado marcador e linha do débito ERRADO —
+//    fechando `D23` pelo número e levando junto o `D23 · F0/T3`, cujo código vive sob duas
+//    `DECISÃO FECHADA`.
+//
+// Toda função desta seção é PURA: recebe o texto e devolve o veredito. É o que permite falsificar
+// cada asserção com um mutante em memória, sem tocar a árvore de trabalho — a mesma construção do
+// controle de não-cegueira do CT-908.
+
+/** A âncora de superfície. Este arquivo apenas a LÊ — alterá-la não é escopo da T11. */
+const ANCORA_DA_SUPERFICIE = 'apps/api/test/cobertura-de-autorizacao.e2e.spec.ts';
+
+/**
+ * Os três eixos da superfície publicada.
+ *
+ * `constante` é o nome declarado na âncora; `narrado` é o molde que extrai o mesmo número da prosa
+ * do `CLAUDE.md`. **Nenhum valor é redigitado aqui**: os dois lados saem de leitura, e é a
+ * igualdade entre eles que o caso afirma. Escrever o número esperado nesta lista transformaria o
+ * caso numa terceira cópia — exatamente a divergência que ele existe para pegar.
+ *
+ * ⚠️ O molde dos manipuladores é ancorado na frase inteira (`Superfície: N rotas / M
+ * manipuladores`), e não em `(\d+) manipuladores`: o arquivo cita `103 rotas / 88 manipuladores`
+ * mais abaixo, no marco de entrega, e o molde curto casaria a menção histórica em vez da medição
+ * corrente.
+ */
+const EIXOS_DA_SUPERFICIE = [
+  {
+    eixo: 'rotas',
+    constante: 'ROTAS_PUBLICADAS_EM_PRODUCAO',
+    narrado: /\*\*Superfície: (\d+) rotas/,
+  },
+  {
+    eixo: 'manipuladores',
+    constante: 'MANIPULADORES_EXAMINADOS_EM_PRODUCAO',
+    narrado: /\*\*Superfície: \d+ rotas \/ (\d+) manipuladores\*\*/,
+  },
+  {
+    eixo: 'públicas',
+    constante: 'PARES_PUBLICOS_DA_SUPERFICIE',
+    narrado: /`publicas` em \*\*(\d+)\*\*/,
+  },
+] as const;
+
+interface EixoMedido {
+  eixo: string;
+  narrado: number;
+  executavel: number;
+}
+
+/**
+ * Extrai um inteiro por um molde de um grupo, **lançando** quando o molde não casa.
+ *
+ * Mesma decisão de construção do `recortarSecao`: devolver `undefined` (ou `0`) faria a asserção
+ * comparar ausência com ausência e ficar verde justamente quando a frase ou a constante sumisse.
+ */
+function inteiroPor(texto: string, molde: RegExp, oQue: string): number {
+  const achado = molde.exec(texto);
+  if (achado?.[1] === undefined) {
+    throw new Error(`não encontrei ${oQue} com o molde ${String(molde)}`);
+  }
+  return Number(achado[1]);
+}
+
+/** Os três eixos, cada um com o valor narrado e o valor da constante executável. */
+function medirSuperficie(instrucoes: string, ancora: string): EixoMedido[] {
+  return EIXOS_DA_SUPERFICIE.map(({ eixo, constante, narrado }) => ({
+    eixo,
+    narrado: inteiroPor(instrucoes, narrado, `o número narrado de ${eixo}`),
+    executavel: inteiroPor(
+      ancora,
+      new RegExp(`^const ${constante} = (\\d+);`, 'm'),
+      `a constante ${constante}`,
+    ),
+  }));
+}
+
+/** Os eixos em que o texto e a constante discordam — vazio é o estado saudável. */
+function divergenciasDaSuperficie(medidos: EixoMedido[]): EixoMedido[] {
+  return medidos.filter(({ narrado, executavel }) => narrado !== executavel);
+}
+
+/**
+ * Devolve o texto com o número narrado de um eixo trocado por outro — o mutante de falsificação.
+ *
+ * O valor mutado é derivado do próprio texto (`valor - 1`), nunca escrito à mão: um literal aqui
+ * apodreceria na primeira vez que a superfície mudasse, e o mutante deixaria de ser mutante.
+ */
+function comOEixoNarradoAlterado(instrucoes: string, eixo: string): string {
+  const alvo = EIXOS_DA_SUPERFICIE.find((candidato) => candidato.eixo === eixo);
+  if (alvo === undefined) throw new Error(`eixo desconhecido: ${eixo}`);
+
+  const achado = alvo.narrado.exec(instrucoes);
+  if (achado?.[1] === undefined) throw new Error(`molde de ${eixo} não casou`);
+
+  const trecho = achado[0];
+  const mutado = trecho.replace(achado[1], String(Number(achado[1]) - 1));
+  return instrucoes.replace(trecho, mutado);
+}
+
+describe('CT-1196 — a superfície narrada é cópia fiel das constantes executáveis', () => {
+  const instrucoes = ler(CAMINHO_DAS_INSTRUCOES);
+  const ancora = ler(ANCORA_DA_SUPERFICIE);
+
+  it('a extração devolve os TRÊS eixos, dos dois lados', () => {
+    const medidos = medirSuperficie(instrucoes, ancora);
+
+    // Antivácuo: uma extração que devolvesse lista vazia faria a comparação abaixo passar por
+    // vacuidade — comparar nada com nada é o modo silencioso desta classe de asserção falhar.
+    expect(medidos).toHaveLength(EIXOS_DA_SUPERFICIE.length);
+    expect(medidos.map(({ eixo }) => eixo)).toEqual(['rotas', 'manipuladores', 'públicas']);
+    for (const { eixo, narrado, executavel } of medidos) {
+      expect(Number.isInteger(narrado), `narrado de ${eixo}`).toBe(true);
+      expect(Number.isInteger(executavel), `executável de ${eixo}`).toBe(true);
+    }
+  });
+
+  it.each(EIXOS_DA_SUPERFICIE.map(({ eixo }) => eixo))(
+    'o eixo %s narrado é igual à constante executável',
+    (eixo) => {
+      const medido = medirSuperficie(instrucoes, ancora).find(
+        (candidato) => candidato.eixo === eixo,
+      );
+
+      // A mensagem nomeia o eixo e OS DOIS valores: quem lê a falha precisa saber qual lado
+      // corrigir, e a resposta é sempre a mesma — a suíte é a fonte, o texto é a cópia.
+      expect(
+        medido?.narrado,
+        `${eixo}: o texto diz ${medido?.narrado}, a constante executável diz ${medido?.executavel}`,
+      ).toBe(medido?.executavel);
+    },
+  );
+
+  it.each(EIXOS_DA_SUPERFICIE.map(({ eixo }) => eixo))(
+    'falsificação: um mutante no eixo %s reprova nomeando o eixo e os dois valores',
+    (eixo) => {
+      const mutante = comOEixoNarradoAlterado(instrucoes, eixo);
+      expect(mutante, 'o mutante não mudou nada — a falsificação seria decorativa').not.toBe(
+        instrucoes,
+      );
+
+      const divergencias = divergenciasDaSuperficie(medirSuperficie(mutante, ancora));
+      const executavel = inteiroPor(
+        ancora,
+        new RegExp(
+          `^const ${EIXOS_DA_SUPERFICIE.find((c) => c.eixo === eixo)?.constante} = (\\d+);`,
+          'm',
+        ),
+        `a constante do eixo ${eixo}`,
+      );
+
+      // Igualdade sobre a lista inteira, e não presença: o mutante mexe em UM eixo, e uma
+      // asserção de presença aprovaria uma comparação que acusasse os três de uma vez.
+      expect(divergencias).toEqual([{ eixo, narrado: executavel - 1, executavel }]);
+    },
+  );
+});
+
+/**
+ * Os débitos que a fatia `publicacao-e-backup/v1` fechou, pelo **par** `Dnn · F{n}/{origem}`.
+ *
+ * ⚠️ São **seis**, e a §5.6 da task declarava cinco: ela não contava o `D39 · F7/T8`, fechado pela
+ * mesma T9 que fechou o `D24 · F1/T5` (a borda passou a apensar `$proxy_add_x_forwarded_for`). A
+ * divergência foi medida antes de ser escrita — o par não tem marcador vivo nem linha no índice.
+ */
+const DEBITOS_FECHADOS_NA_FATIA = [
+  { par: 'D9 · F0/T2', porQuem: 'T5' },
+  { par: 'D23 · F1/T8', porQuem: 'T7' },
+  { par: 'D27 · F1/T6', porQuem: 'T8' },
+  { par: 'D24 · F1/T5', porQuem: 'T9' },
+  { par: 'D39 · F7/T8', porQuem: 'T9' },
+  { par: 'D27 · F4/T11', porQuem: 'T10' },
+] as const;
+
+/**
+ * Os homônimos que a fatia **não** fecha — e que um fecho por número levaria junto.
+ *
+ * `D23 · F0/T3` é o caso extremo: o código sob o marcador está protegido por duas `DECISÃO
+ * FECHADA`, e apagá-lo por confusão com o `D23 · F1/T8` seria violação crítica que nenhuma outra
+ * asserção desta barreira pegaria.
+ */
+const HOMONIMOS_QUE_SOBREVIVEM = ['D23 · F0/T3', 'D26 · F3/T8'] as const;
+
+/**
+ * Linhas do índice de débito do `CLAUDE.md` ao fim da fatia — **medido**, nunca derivado.
+ *
+ * ⚠️ A §5.6 da task prescrevia `36`, por aritmética de planejamento (`41 − 5`), e os dois números
+ * estão errados: a fatia fechou **seis** débitos e abriu **dois** (`D40 · F7/T9` e `D41 · F7/T9`).
+ * O valor abaixo saiu de `grep -cE '^\| \*\*(D[0-9]+)\*\* \((F[0-9]+/...'` sobre o arquivo real, e
+ * a conduta que o produziu é a que o próprio `Estado atual` documenta cinco vezes: **medir, nunca
+ * estimar**. Ajustar o índice para caber num número de spec seria apagar linha de débito vivo para
+ * fazer prosa fechar — a pior forma da regressão que esta barreira existe para pegar.
+ *
+ * **Quando um débito nascer ou fechar, este número muda no mesmo diff** — junto da prosa do bloco,
+ * que a asserção abaixo amarra a ele.
+ */
+const LINHAS_DO_INDICE_NO_FECHO_DA_FATIA = 38;
+
+/** O molde da prosa que anuncia o tamanho do índice, logo acima da tabela. */
+const PADRAO_DO_TOTAL_NARRADO = /São \*\*(\d+)\*\*, e a tabela abaixo é a lista viva/;
+
+/** Os pares que a tabela do índice declara, na ordem em que aparecem. */
+function paresDoIndice(instrucoes: string): string[] {
+  return [...instrucoes.matchAll(PADRAO_DE_LINHA_DE_INDICE)].map(
+    (achado) => `${achado[1]} · ${achado[2]}`,
+  );
+}
+
+/** O prefixo literal da linha de tabela de um par — usado para montar e desmontar mutantes. */
+function prefixoDaLinhaDoIndice(par: string): string {
+  const [numero, origem] = par.split(' · ');
+  return `| **${numero}** (${origem}`;
+}
+
+/**
+ * As duas pontas de um débito, contadas: quantos marcadores vivos e quantas linhas de índice.
+ *
+ * As duas na MESMA estrutura, de propósito (§3-B): fechar uma e esquecer a outra produz marcador
+ * órfão ou linha órfã, e o objeto da falha nomeia qual das duas ficou para trás.
+ */
+function asDuasPontasDe(
+  par: string,
+  marcadores: Iterable<string>,
+  pares: Iterable<string>,
+): { marcadores: number; linhasDoIndice: number } {
+  return {
+    marcadores: [...marcadores].filter((identificador) => identificador === par).length,
+    linhasDoIndice: [...pares].filter((identificador) => identificador === par).length,
+  };
+}
+
+describe('CT-1198 — os débitos fechados saíram das duas pontas, e os homônimos sobreviveram', () => {
+  const instrucoes = ler(CAMINHO_DAS_INSTRUCOES);
+
+  it.each(DEBITOS_FECHADOS_NA_FATIA)(
+    'o $par (fechado na $porQuem) não tem marcador nem linha',
+    ({ par }) => {
+      expect(asDuasPontasDe(par, marcadoresVivos(), paresDoIndice(instrucoes))).toEqual({
+        marcadores: 0,
+        linhasDoIndice: 0,
+      });
+    },
+  );
+
+  it.each(HOMONIMOS_QUE_SOBREVIVEM)('o homônimo %s continua vivo nas duas pontas', (par) => {
+    const pontas = asDuasPontasDe(par, marcadoresVivos(), paresDoIndice(instrucoes));
+
+    // É esta asserção que separa "fechou o débito certo" de "fechou pelo número": o par irmão
+    // some das duas pontas, e este permanece nas duas.
+    expect(pontas.linhasDoIndice, `linha do índice de ${par}`).toBe(1);
+    expect(pontas.marcadores, `marcadores vivos de ${par}`).toBeGreaterThanOrEqual(1);
+  });
+
+  it('a tabela do índice tem a contagem medida, e a prosa acima concorda com ela', () => {
+    expect(paresDoIndice(instrucoes)).toHaveLength(LINHAS_DO_INDICE_NO_FECHO_DA_FATIA);
+
+    // A terceira ponta, e ela não é ornamento: o número escrito em prosa é o que chega ao agente
+    // que não conta a tabela, e é justamente o que envelhece sem que nada acuse.
+    expect(inteiroPor(instrucoes, PADRAO_DO_TOTAL_NARRADO, 'o total narrado do índice')).toBe(
+      LINHAS_DO_INDICE_NO_FECHO_DA_FATIA,
+    );
+  });
+
+  it('falsificação 1: remover a linha do homônimo o expõe como marcador órfão', () => {
+    const [homonimo] = HOMONIMOS_QUE_SOBREVIVEM;
+    const prefixo = prefixoDaLinhaDoIndice(homonimo);
+    const mutante = instrucoes
+      .split('\n')
+      .filter((linha) => !linha.startsWith(prefixo))
+      .join('\n');
+    expect(mutante, 'o mutante não removeu linha alguma').not.toBe(instrucoes);
+
+    expect(asDuasPontasDe(homonimo, marcadoresVivos(), paresDoIndice(mutante))).toEqual({
+      marcadores: 1,
+      linhasDoIndice: 0,
+    });
+  });
+
+  it('falsificação 2: repor a linha de um fechado a expõe como linha órfã', () => {
+    const [{ par }] = DEBITOS_FECHADOS_NA_FATIA;
+    const mutante = `${instrucoes}\n${prefixoDaLinhaDoIndice(par)}, fatia inventada) | \`x.ts\` | nunca |\n`;
+
+    expect(asDuasPontasDe(par, marcadoresVivos(), paresDoIndice(mutante))).toEqual({
+      marcadores: 0,
+      linhasDoIndice: 1,
+    });
+  });
+
+  it('falsificação 3: repor o marcador de um fechado o expõe como marcador que deveria ter saído', () => {
+    const fechadoPelaUltimaTask = DEBITOS_FECHADOS_NA_FATIA.at(-1)?.par as string;
+    const mutante = new Set([...marcadoresVivos(), fechadoPelaUltimaTask]);
+
+    expect(asDuasPontasDe(fechadoPelaUltimaTask, mutante, paresDoIndice(instrucoes))).toEqual({
+      marcadores: 1,
+      linhasDoIndice: 0,
+    });
   });
 });

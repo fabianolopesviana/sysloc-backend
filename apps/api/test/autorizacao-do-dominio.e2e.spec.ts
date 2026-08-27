@@ -1788,10 +1788,13 @@ describe('as provas de segurança sobre as rotas do domínio (T11) e sobre as a�
       // ⚠️ **É a sessão que o `CT-319` já usa, e reusá-la é deliberado.** Este caso não escreve
       // ajuste algum para ela — só lê o efetivo dela —, de modo que a regra do arquivo (*"nenhuma
       // sessão é compartilhada entre casos que escrevem permissão"*) continua valendo. A razão de
-      // não criar mais uma pessoa é medida e está registrada no `DÉBITO COM GATILHO — D27 · F1/T6`
-      // de `packages/auth/src/autenticacao.ts`: enquanto a chave do limitador for
-      // `no-trusted-ip|/change-password`, a **décima primeira** troca de senha do mesmo minuto
-      // recebe `429` — e este arquivo já gasta nove trocas antes de chegar aqui.
+      // não criar mais uma pessoa é medida: os pedidos desta suíte não declaram `x-forwarded-for`,
+      // de modo que o limitador os conta todos no balde do endereço local — uma chave só para
+      // `/change-password` — e a **décima primeira** troca de senha do mesmo minuto recebe `429`.
+      // Este arquivo já gasta nove trocas antes de chegar aqui. (O ponteiro daqui era o débito
+      // `D27` de `packages/auth/src/autenticacao.ts`, FECHADO na T8 da fatia
+      // `publicacao-e-backup`; o teto continua valendo aqui porque a origem destes pedidos segue
+      // não sendo apurável, e não porque falte eixo.)
       const efetivoSemAArea = await efetivoDe(cookieSemArea);
 
       expect(efetivoSemAArea.telas).toEqual([AREA_DO_PISO_DO_USUARIO]);

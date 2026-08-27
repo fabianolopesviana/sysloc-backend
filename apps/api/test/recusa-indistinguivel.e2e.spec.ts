@@ -1335,10 +1335,13 @@ function rotaDoHistorico(codigo: string): string {
  * e toda rota de negócio responderia `403` da restrição — o `404` que o caso mede nunca aconteceria,
  * e a comparação cruzada compararia duas recusas de outra coisa.
  *
- * ⚠️ **Ela custa uma troca de senha por chamada, e o teto é dez por minuto** — é o
- * `DÉBITO COM GATILHO — D27 · F1/T6` de `packages/auth/src/autenticacao.ts`: enquanto a chave do
- * limitador for `no-trusted-ip|/change-password`, a décima primeira troca do mesmo minuto recebe
- * `429`. Este arquivo gasta **duas**, as do `CT-926`.
+ * ⚠️ **Ela custa uma troca de senha por chamada, e o teto é dez por minuto.** Os pedidos desta suíte
+ * não declaram `x-forwarded-for`, e o limitador então os conta todos no balde do endereço local —
+ * uma chave só para o caminho: a décima primeira troca do mesmo minuto recebe `429`. Este arquivo
+ * gasta **duas**, as do `CT-926`. (O ponteiro daqui era o débito `D27` de
+ * `packages/auth/src/autenticacao.ts`; ele FECHOU na T8 da fatia `publicacao-e-backup`, e o salto
+ * confiável passou a ser declarado. O teto continua valendo AQUI porque a origem destes pedidos
+ * segue não sendo apurável, e não porque falte eixo.)
  */
 async function administradorEmOperacao(cookieDoMaster: string, empresaId: string): Promise<string> {
   const admitido = await admitirAdministrador(

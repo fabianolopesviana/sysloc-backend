@@ -295,45 +295,12 @@ PY
 
 medida() { printf '%s\n' "${medidas_da_regua}" | sed -n "s/^$1=//p" | head -1; }
 
-falhas_totais=0
-falhas_caso=0
-
-caso() {
-	printf '\n[%s] %s\n' "$1" "$2"
-	falhas_caso=0
-}
-
-ok() { printf '    OK   %s\n' "$*"; }
-
-falhar() {
-	falhas_caso=$((falhas_caso + 1))
-	falhas_totais=$((falhas_totais + 1))
-	printf '    FALHA %s\n' "$*" >&2
-}
-
-afirmar_igual() {
-	if [[ "$2" == "$3" ]]; then
-		ok "$1"
-	else
-		falhar "$1 — esperado [$2], obtido [$3]"
-	fi
-}
-
-afirmar_diferente() {
-	if [[ "$2" != "$3" ]]; then
-		ok "$1"
-	else
-		falhar "$1 — obtido [$3], que não deveria ser [$2]"
-	fi
-}
-
-fechar_caso() {
-	if [[ "${falhas_caso}" -eq 0 ]]; then
-		printf '    -> %s aprovado\n' "$1"
-	else
-		printf '    -> %s REPROVADO (%d falha(s))\n' "$1" "${falhas_caso}" >&2
-	fi
-}
+# --------------------------------------------------------------------------- #
+# Vocabulário de asserção — a casa comum, carregada e NUNCA redeclarada aqui.
+# Ver a razão em `deploy/scripts/verificacao/esqueleto-de-assercao.sh`.
+# --------------------------------------------------------------------------- #
+# shellcheck source=../verificacao/esqueleto-de-assercao.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../verificacao/esqueleto-de-assercao.sh"
 
 # Caminhos de `golden/` conhecidos pelo git, um por linha e em ordem estável.
 # Extraída para função porque CT-010 e CT-433 afirmam propriedades diferentes do
@@ -1662,6 +1629,24 @@ ct_601() {
 # contagem do script: o subshell isola `falhas_totais`, o `stdout` vai para o vazio
 # e as linhas de FALHA ficam no arquivo, que é o que o CT-602 inspeciona.
 #
+# DECISÃO FECHADA — T5 / Gate 2 rodada 2 · 2026-08-26
+# O QUÊ: o reinício de `falhas_totais` e `falhas_caso` na primeira linha de CADA
+#        um dos dois subshells de sandbox deste arquivo.
+# POR QUÊ: o subshell HERDA o valor do escopo pai; sem o reinício, o
+#          `printf '%d' "${falhas_totais}"` devolve `falhas ambientes + falhas do
+#          mutante`, e as asserções que leem esse número — `afirmar_diferente …
+#          "0"` no CT-602, no CT-640 e nas seis do CT-701 — passam a sair `OK`
+#          para um mutante que SOBREVIVEU. É o reinício, e nada mais, que torna
+#          verdadeira a frase "o subshell isola `falhas_totais`" acima. A
+#          extração do vocabulário para `esqueleto-de-assercao.sh` o apagou junto
+#          com as declarações GLOBAIS homônimas, que são outra coisa: o esqueleto
+#          declara os contadores uma vez, mas não os reinicia por avaliação.
+#          Medido: com uma falha anterior forjada, um mutante íntegro devolvia 7
+#          e a asserção aprovava.
+# REVERTER EXIGE: provar que nenhum consumidor destas duas funções lê o número
+#                 devolvido comparando-o a `0`, ou que nenhuma delas pode ser
+#                 chamada depois de uma asserção anterior ter reprovado.
+#
 # O subshell isola TAMBÉM o global `medidas_do_fonte` — a atribuição feita aqui
 # dentro não atravessa a fronteira. Quem chamar esta função não precisa remedir o
 # artefato real depois, e uma remedição "por precaução" seria linha morta com
@@ -2162,6 +2147,9 @@ afirmar_desfecho_dos_caminhos() { # afirmar_desfecho_dos_caminhos <dir_golden> <
 # primeiros mutantes deformam a cópia do golden, e o M5 deforma o PRODUTOR. Sem
 # ele, `capturar.py` seria sempre lido do original e a classe "eixo removido dos
 # dois lados" ficaria sem mutante que a exercitasse.
+#
+# SEGUNDO SÍTIO da mesma decisão — os dois reinícios abaixo estão sob o marcador
+# `DECISÃO FECHADA — T5 / Gate 2 rodada 2` de `avaliar_forma_em_sandbox`. Não os remova.
 avaliar_caminhos_em_sandbox() { # avaliar_caminhos_em_sandbox <dir_golden> <falhas> [capturar.py]
 	(
 		falhas_totais=0

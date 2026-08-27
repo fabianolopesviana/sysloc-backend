@@ -217,6 +217,142 @@ function ehEnderecoDeEntregaAceitavel(valor: string): boolean {
   );
 }
 
+/** O que separa uma origem da seguinte na variável — uma lista, e nunca um valor só. */
+const SEPARADOR_DAS_ORIGENS_PUBLICAS = ',';
+
+/** Os únicos esquemas que um navegador usa para falar com este serviço. */
+const ESQUEMAS_DA_ORIGEM_PUBLICA: ReadonlySet<string> = new Set(['http:', 'https:']);
+
+/**
+ * Os caracteres que o arcabouço lê como **curinga** dentro de um padrão de origem confiável.
+ *
+ * Medido no pacote publicado (`dist/auth/trusted-origins.mjs`): `matchesOriginPattern` desvia para
+ * `wildcardMatch` assim que `pattern.includes('*') || pattern.includes('?')` — em **qualquer**
+ * posição do padrão —, e só cai na comparação literal `pattern === getOrigin(url)` quando nenhum
+ * dos dois aparece. São, portanto, a lista completa do que transforma um valor conferido em padrão
+ * interpretado; ver o marcador em {@link ehOrigemPublicaAceitavel}.
+ */
+const CURINGAS_DO_PADRAO_DE_ORIGEM: readonly string[] = ['*', '?'];
+
+/**
+ * A exigência que a recusa das origens públicas publica — nomeia a forma, jamais o valor.
+ *
+ * ⚠️ **O esquema é escrito por NOME (`http`, `https`), e não pela forma `http://`.** A escolha é
+ * conteúdo, não estilo: a recusa afirma, por asserção, que a mensagem **não ecoa o valor recebido**,
+ * e um valor curto e degenerado como `https://` — que é exatamente uma das formas que a conferência
+ * existe para pegar — seria substring do próprio texto da exigência. A asserção de não-eco ficaria
+ * impossível de satisfazer sem afrouxá-la, e afrouxá-la é o que abriria a porta para a mensagem
+ * passar a carregar o valor. Mesma razão pela qual a lista degenerada é exercitada como `,,,`.
+ */
+const EXIGENCIA_DAS_ORIGENS_PUBLICAS =
+  'deve ser uma lista de origens separadas por vírgula, cada uma absoluta de esquema http ou https, com servidor nomeado e sem caminho';
+
+/**
+ * Separa a lista de origens públicas, descartando espaço em volta e item vazio.
+ *
+ * ⚠️ **Ela é a MESMA função que confere e que transforma**, e a unicidade é conteúdo: se a
+ * conferência separasse por um critério e a transformação por outro, o processo subiria tendo
+ * validado um conjunto e entregado outro ao arcabouço — que é exatamente a divergência silenciosa
+ * que este arquivo evita em todas as demais variáveis.
+ *
+ * Item vazio é **descartado**, não recusado: `a,,b` e `a, b` são o mesmo par de origens, e a linha
+ * que um operador edita à mão costuma carregar espaço. O que a conferência recusa é a lista que
+ * separa em **zero** itens — ver {@link saoOrigensPublicasAceitaveis}.
+ */
+function separarOrigensPublicas(valor: string): readonly string[] {
+  return valor
+    .split(SEPARADOR_DAS_ORIGENS_PUBLICAS)
+    .map((parte) => parte.trim())
+    .filter((parte) => parte !== '');
+}
+
+/**
+ * A cadeia é uma **origem** que o arcabouço poderia casar?
+ *
+ * ---------------------------------------------------------------------------
+ * A conferência é de FORMA, e ela é a única barreira que existe
+ * ---------------------------------------------------------------------------
+ *
+ * É a mesma leitura de {@link ehEnderecoDeEntregaAceitavel} e de {@link ehDiretorioGravavel}, e a
+ * assimetria que aqueles docblocks descrevem é a que se aplica aqui: **não há segundo lugar** onde o
+ * defeito seja pego. Medido no pacote publicado (`dist/auth/trusted-origins.mjs`): sem curinga, a
+ * comparação é `pattern === getOrigin(url)`. Um valor com caminho, sem esquema ou com esquema
+ * estranho **nunca** casa origem alguma, e o efeito é o serviço inteiro inacessível ao navegador,
+ * entrada inclusive — literalmente o modo de falha que o `D23 · F1/T8` descrevia.
+ *
+ * Um esquema `z.string().min(1)` aceitaria `app.exemplo.com.br` e recusaria **100% do tráfego de
+ * navegador** em produção, com o processo `active` no supervisor.
+ *
+ * A igualdade com `endereco.origin` é o que fecha as três formas de errar de uma vez: ela recusa o
+ * caminho (`…/entrar`), a barra final, a consulta, a credencial embutida e o esquema que não produz
+ * origem (`ftp:` devolve a cadeia `'null'`). Compará-la é mais forte que enumerar o que não pode
+ * aparecer — **mas ela sozinha não basta**, e a afirmação de que *o que sobra é exatamente o que o
+ * arcabouço vai comparar* só passa a ser verdadeira **depois** da recusa do curinga: `new URL`
+ * aceita `*` como servidor (medido: `new URL('https://*').origin === 'https://*'`), de modo que
+ * `https://*` satisfaz esquema, servidor nomeado **e** a própria igualdade — e é justamente aí que o
+ * arcabouço deixa de comparar por igualdade e passa a **casar qualquer origem**. Ver o marcador
+ * abaixo.
+ *
+ * ⚠️ **A recusa nomeia a variável e a exigência, JAMAIS o valor.** É por isso que o `TypeError` do
+ * `new URL` é capturado e descartado: ele carrega a cadeia recusada na propriedade `input`. Mesma
+ * disciplina de todas as demais conferências deste arquivo.
+ */
+function ehOrigemPublicaAceitavel(valor: string): boolean {
+  // DECISÃO FECHADA — T7 / Gate 1 rodada 1 · 2026-08-26
+  // O QUÊ: o valor que contém `*` ou `?` é recusado ANTES de qualquer outra conferência, em vez de
+  //        se confiar na forma de URL para pegá-lo.
+  // POR QUÊ: `new URL` aceita os dois como servidor — medido, `new URL('https://*').origin` devolve
+  //          `'https://*'` —, de modo que `https://*` e `https://*.exemplo.com.br` satisfaziam
+  //          esquema, servidor nomeado E a igualdade com `endereco.origin`. Eles entravam inteiros
+  //          no conjunto confiável, e ali `matchesOriginPattern` os trata como PADRÃO: a conferência
+  //          de origem passava a aceitar qualquer origem, com o processo `active` no supervisor e
+  //          nada acusando — perda total e silenciosa da barreira que esta variável existe para
+  //          instalar. A recusa é do CONJUNTO DE CARACTERES que produz interpretação, e não do valor
+  //          `https://*`: é o único gatilho do desvio, e por isso todo valor que sobrevive a esta
+  //          linha cai obrigatoriamente na comparação literal. O `?` já era recusado por ACIDENTE (o
+  //          `origin` descarta a consulta, quebrando a igualdade) e passa a ser recusado por decisão
+  //          — apoiar metade da classe num efeito colateral de outra conferência é deixá-la aberta
+  //          na primeira vez que a outra mudar.
+  // REVERTER EXIGE: provar, no pacote publicado, que `matchesOriginPattern` NÃO desvia mais para
+  //                 `wildcardMatch` (hoje o desvio é `pattern.includes('*') || pattern.includes('?')`
+  //                 em `dist/auth/trusted-origins.mjs`), ou decisão expressa do usuário de que este
+  //                 produto passa a aceitar origem confiável declarada como PADRÃO com curinga — que
+  //                 é escolha de segurança do usuário, não de forma de validação.
+  if (CURINGAS_DO_PADRAO_DE_ORIGEM.some((curinga) => valor.includes(curinga))) {
+    return false;
+  }
+
+  let endereco: URL;
+
+  try {
+    endereco = new URL(valor);
+  } catch {
+    // Cadeia sem esquema, servidor ausente, lixo — todos param aqui, e nada do valor viaja.
+    return false;
+  }
+
+  return (
+    ESQUEMAS_DA_ORIGEM_PUBLICA.has(endereco.protocol) &&
+    endereco.hostname !== '' &&
+    // Origem é esquema + servidor (+ porta) e mais NADA: qualquer resto faz o padrão nunca casar.
+    valor === endereco.origin
+  );
+}
+
+/**
+ * A variável declara ao menos uma origem, e **todas** elas têm forma de origem?
+ *
+ * A lista que separa em zero itens (`,`, `  `, cadeia só de vírgulas) é recusada aqui, e não em
+ * {@link selecionar}: aquela normalização trata **cadeia em branco** como ausente, e `,` não é
+ * branco — sem esta linha o processo subiria com o conjunto vazio, isto é, com a origem confiável de
+ * volta ao endereço de escuta e sem que nada acusasse. É o estado exato que o `D23` descrevia.
+ */
+function saoOrigensPublicasAceitaveis(valor: string): boolean {
+  const origens = separarOrigensPublicas(valor);
+
+  return origens.length > 0 && origens.every(ehOrigemPublicaAceitavel);
+}
+
 /**
  * O caminho é absoluto **e** aponta para um diretório em que este processo consegue escrever?
  *
@@ -508,6 +644,44 @@ const ESQUEMA = z.object({
   // lugar — `criarGuardaDeBoletos` **resolve** o diretório-base e deliberadamente **não o cria nem o
   // confere** (ver o cabeçalho dela) —, de modo que esta é a única barreira que existe.
   DIRETORIO_DOS_BOLETOS: z.string().refine(ehDiretorioGravavel, EXIGENCIA_DO_DIRETORIO_DOS_BOLETOS),
+  /**
+   * As origens **públicas** de onde o navegador fala com este serviço — o fecho do `D23 · F1/T8`.
+   *
+   * ---------------------------------------------------------------------------
+   * Por que ela é uma LISTA, e nunca um valor só
+   * ---------------------------------------------------------------------------
+   *
+   * São **dois** aplicativos sobre a mesma API — o do cliente e o Painel Master —, cada um no seu
+   * hostname. Uma origem só faria um dos dois parar de entrar, e é justamente essa forma que o
+   * paliativo da borda do Master tinha: ele mapeava **uma** origem para o endereço de escuta. O
+   * arcabouço já aceita o plural (`trustedOrigins.some(...)`, sobre valor tratado com
+   * `Array.isArray`), de modo que o plural não custa nada e o singular custaria a segunda cópia do
+   * paliativo.
+   *
+   * ---------------------------------------------------------------------------
+   * ⚠️ Aqui o modo perigoso é o INVERSO do habitual — por isso a partida é recusada
+   * ---------------------------------------------------------------------------
+   *
+   * Sem ela, o processo sobe e atende normalmente **até o primeiro navegador**: o arcabouço deriva a
+   * origem confiável apenas do endereço em que o serviço escuta, e toda requisição com cookie — mais
+   * a **própria entrada** — é recusada com `403` antes de qualquer manipulador. Não é "requisição
+   * autenticada recusada": é o serviço inteiro inacessível a navegador. Recusar na partida põe o
+   * custo no operador, na instalação, onde ele é barato.
+   *
+   * A conferência é de **forma**, e não de presença, pela mesma razão de `DIRETORIO_DOS_BOLETOS` e
+   * de `ENDERECO_DA_ENTREGA_DA_NOTICIA`: **não há segundo lugar** onde o defeito seja pego — ver
+   * {@link ehOrigemPublicaAceitavel}. A recusa nomeia a **variável e a exigência**, e JAMAIS o valor
+   * recebido; a distinção entre "ausente" e "inaceitável" é preservada por {@link descrever}.
+   *
+   * A separação acontece **aqui**, e a posição é conteúdo: a conferência já separou a lista para
+   * validar cada item, e publicar o texto obrigaria a composição a separá-lo de novo — uma segunda
+   * declaração do separador, livre para divergir da que conferiu. Mesmo desenho de
+   * `CHAVE_DE_CIFRA_DO_CERTIFICADO`, que sai já decodificada.
+   */
+  ORIGENS_PUBLICAS: z
+    .string()
+    .refine(saoOrigensPublicasAceitaveis, EXIGENCIA_DAS_ORIGENS_PUBLICAS)
+    .transform(separarOrigensPublicas),
 });
 
 /**
@@ -601,6 +775,20 @@ export interface Ambiente {
    * divergir na primeira mudança de convenção de caminho.
    */
   readonly diretorioDosBoletos: string;
+  /**
+   * As origens públicas de onde o navegador fala com este serviço, de `ORIGENS_PUBLICAS`.
+   *
+   * Elas **não são segredo** — são o que qualquer pessoa digita no navegador —, e têm campo aqui
+   * (diferente de `URL_BASE_DA_CONFIRMACAO`) porque **este** processo as consome: é o módulo de
+   * identidade que as entrega ao arcabouço como origem confiável.
+   *
+   * Chegam **já separadas**, porque a conferência de partida precisou separá-las para validar cada
+   * item — uma segunda separação na composição seria uma segunda declaração do separador.
+   *
+   * ⚠️ Elas **acrescentam**, e não substituem: o arcabouço empilha sempre a origem derivada do
+   * endereço de escuta antes destas. Ver `autenticacao.module.ts`.
+   */
+  readonly origensPublicas: readonly string[];
   // ⚠️ `URL_BASE_DA_CONFIRMACAO` é EXIGIDA na partida e **não** tem campo aqui. A ausência é a
   // decisão, e a razão está no esquema, junto da linha que a exige: este processo confere a
   // completude do arquivo de ambiente compartilhado e NÃO compõe link nenhum — quem lê o valor é o
@@ -863,6 +1051,7 @@ export function carregarAmbiente(fonte: FonteDeVariaveis): Ambiente {
     enderecoDaEntregaDaNoticia: validado.ENDERECO_DA_ENTREGA_DA_NOTICIA,
     contatoDaEntregaDaNoticia: validado.CONTATO_DA_ENTREGA_DA_NOTICIA,
     diretorioDosBoletos: validado.DIRETORIO_DOS_BOLETOS,
+    origensPublicas: validado.ORIGENS_PUBLICAS,
   };
 }
 

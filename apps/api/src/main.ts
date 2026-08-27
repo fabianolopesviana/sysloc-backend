@@ -105,18 +105,28 @@ const ROTAS_FORA_DO_PREFIXO = ['saude', 'saude/pronto', CAMINHO_DO_CONTRATO, CAM
  *   3. o que o documento revela é a **forma** da superfície, não dado de negócio nem credencial —
  *      toda rota de produto segue exigindo sessão e declaração de exigência (ADR-0011).
  *
- * O que muda isso é a F7, quando `/docs*` deixa de ser endereço interno de conveniência. Ver o
- * marcador logo abaixo.
+ * ## O débito FECHOU em 2026-08-26 — e ele fechou NA BORDA, não aqui
+ *
+ * O gatilho do `D24` era literal: *"na F7, ao publicar atrás do servidor de borda"*. A borda passou
+ * a existir na T9 da fatia `publicacao-e-backup` (`deploy/nginx/sysloc-app.conf`), e é **ela** que
+ * recusa os três endereços — `/docs`, `/docs/json` e `/docs-yaml` — antes de qualquer repasse ao
+ * serviço. O efeito que o débito pedia está obtido: o contrato deixou de ser alcançável de fora.
+ *
+ * ⚠️ **A restrição NÃO se instala aqui, e não é omissão.** Fechá-lo no registro da aplicação seria
+ * regressão dupla, medida na §5.8 do scope daquela fatia:
+ *
+ *   1. as **8 rotas** `GET /docs*` **contam** nas 106 da âncora de superfície
+ *      (`apps/api/test/cobertura-de-autorizacao.e2e.spec.ts`), e removê-las do registro moveria a
+ *      superfície — que está **congelada** por item do marco de entrega do backend;
+ *   2. `deploy/scripts/instalacao/verificar-fundacao.sh` consulta `/docs` e `/docs/json` **nesses
+ *      endereços literais**, inclusive na sub-bateria de recuperação após reinício real, que é
+ *      critério de aceitação da F0.
+ *
+ * A rede desta decisão é o `CT-1183` de `deploy/scripts/borda/verificar-borda-do-app.sh`: ele afirma
+ * que o elenco acima continua com **quatro** entradas e que as duas constantes seguem exportadas com
+ * os mesmos valores — com dois mutantes provando que a asserção pode falhar. O `CT-1182`, da mesma
+ * bateria, prova por **medição de rede** que os três endereços morrem na borda, sem repasse.
  */
-// DÉBITO COM GATILHO — D24 · F1/T5 · registrado 2026-08-05
-// O QUÊ: a página e o documento do contrato atendem sem sessão, por decisão registrada no docblock
-//        acima — decisão que vale enquanto a API só é alcançável do próprio hospedeiro.
-// QUANDO FECHA: na **F7**, ao publicar atrás do servidor de borda. É lá que a premissa (2) da
-//        decisão deixa de valer, e é a mesma janela e o mesmo salto confiável que o `D23 · F1/T8` e
-//        o `D27 · F1/T6` esperam — o custo marginal de restringir `/docs*` ali é quase nulo.
-// POR QUE NÃO AGORA: não há borda onde restringir, e o contrato é insumo do handoff ao frontend, que
-//        acontece antes da F7.
-// ÍNDICE: docs/specs/features/autorizacao-e-ciclo-de-acesso/v1/_run/run-report.md §2, D24
 function publicarContrato(app: NestFastifyApplication): void {
   const documento = SwaggerModule.createDocument(
     app,

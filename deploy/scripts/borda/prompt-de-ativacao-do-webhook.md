@@ -51,7 +51,7 @@ foi o que impediu o run de confirmar o diretório de vhosts. Toda inspeção aba
 
 A **T11** entregou três artefatos versionados, aprovados nos dois gates:
 
-### 3.1 `deploy/nginx/sysloc-notificacao-bancaria.conf` — o vhost (149 linhas)
+### 3.1 `deploy/nginx/sysloc-notificacao-bancaria.conf` — o vhost (248 linhas)
 
 - `location =` **exato** para `/v1/notificacoes-bancarias` — igualdade, nunca prefixo.
 - **Tudo o mais responde `404`, pela própria borda**, sem repassar ao serviço.
@@ -62,7 +62,12 @@ A **T11** entregou três artefatos versionados, aprovados nos dois gates:
   material.
 - `server_tokens off` e `client_max_body_size 64k`, espelhando `MAIOR_CORPO_ACEITO` de
   `apps/api/src/main.ts`.
-- Carrega o marcador `DÉBITO COM GATILHO — D27 · F4/T11` (o vhost publica e **não há limitador**).
+- ✅ **Tem limitador de abuso desde 2026-08-26** (T10 da fatia `publicacao-e-backup`, aplicando a
+  **ADR-0037**): `limit_conn_zone`/`limit_conn` por endereço de origem, no `location` da notícia. O
+  débito que registrava a ausência foi pago, e o marcador saiu do arquivo e do índice.
+  ⚠️ **NÃO instale teto de taxa (`limit_req`) neste vhost** — o eixo de origem do provedor é um
+  endereço só, e o mesmo teto que barra o abuso descartaria a rajada legítima. A ausência é
+  asserção: o `CT-1193` conta ZERO diretivas da família em linha ativa do gabarito.
 
 Vetores que o Gate 2 confirmou fechados: `/v1/notificacoes-bancarias/extra`, a barra final, e
 `/v1/notificacoes-bancarias/../v1/auth` (que **normaliza antes** do casamento) — todos caem no 404
@@ -498,7 +503,7 @@ Não há *feature flag*: a reversibilidade é obtida **por infraestrutura**, e i
 | Item | O que é | Conduta |
 |---|---|---|
 | **Colisão de `server_name`** | CloudPanel gerando vhost para o mesmo nome (§A.2) | conferir com `grep server_name`; é o risco sério da trilha A |
-| **`D27 · F4/T11`** | o vhost publica e **não há limitador de abuso** | **deliberado**. Fecha na F7, quando o eixo de origem existir. Custo por notícia forjada: uma escrita pequena e **zero** consultas ao provedor |
+| **`D27 · F4/T11`** | ✅ **FECHADO em 2026-08-26** — o vhost passou a limitar por **concorrência por origem** (ADR-0037), e segue **sem teto de taxa**, que é decisão e não esquecimento | nada a fazer no rollout. As quatro frentes que o provam vivem em `verificar-notificacao-bancaria.sh` (`CT-1191` a `CT-1194`); o resíduo aceito é que a notícia forjada ainda custa uma escrita pequena no cru, expurgada por idade |
 | **`D30`** | a borda repassa `X-Forwarded-For` **acumulado**; `X-Real-IP` é o valor confiável | inofensivo hoje (ninguém consome); importa quando a F7 escrever o limitador |
 | **`D29`** | a borda **efêmera do teste** liga `0.0.0.0` em vez do laço local | só afeta a bateria; produz falso negativo, nunca falso positivo |
 | **`D31`** | janela residual de microssegundos entre a escrita e o estado `ESCRITA_PENDENTE` | correção sugerida: ligar o estado **antes** de chamar `posicionar_vhost` |

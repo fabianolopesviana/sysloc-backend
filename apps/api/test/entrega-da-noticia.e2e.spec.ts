@@ -1698,9 +1698,11 @@ interface EmpresaMontada {
 /**
  * Monta uma empresa nova com Admin operando, **pelas rotas reais do operador do SaaS**.
  *
- * ⚠️ Ela custa uma troca de senha por chamada, e o teto é dez por minuto — é o
- * `DÉBITO COM GATILHO — D27 · F1/T6` de `packages/auth/src/autenticacao.ts`. Este arquivo gasta
- * **quatro**: uma no `CT-1029` e três no `CT-1047`.
+ * ⚠️ Ela custa uma troca de senha por chamada, e o teto é dez por minuto: os pedidos desta suíte não
+ * declaram `x-forwarded-for`, e o limitador então os conta todos no balde do endereço local — uma
+ * chave só para o caminho. Este arquivo gasta **quatro**: uma no `CT-1029` e três no `CT-1047`.
+ * (O ponteiro daqui era o débito `D27` de `packages/auth/src/autenticacao.ts`, FECHADO na T8 da
+ * fatia `publicacao-e-backup`.)
  *
  * ⚠️ Ela é a **segunda** escrita desta forma (a primeira é privada de `./recusa-indistinguivel.e2e.spec.ts`,
  * de onde não pode ser importada sem registrar os casos daquela suíte aqui dentro). O Limiar de Três

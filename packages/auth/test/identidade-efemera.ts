@@ -46,6 +46,21 @@ const ENDERECO_BASE = 'http://127.0.0.1:0';
 /** O mesmo prefixo que a §4.1 da tech spec fixa para as rotas do arcabouço. */
 const PREFIXO_DAS_ROTAS = '/v1/auth';
 
+/**
+ * As origens públicas dos casos deste pacote — inertes, e declaradas porque a fábrica as **exige**.
+ *
+ * `criarAutenticacao` passou a receber a lista de origens públicas na T7 da fatia
+ * `publicacao-e-backup` (fecho do `D23 · F1/T8`), e ela não tem valor padrão de propósito: um padrão
+ * seria a adivinhação que aquele débito recusou. O domínio é `.invalid`, reservado pela RFC 2606 para
+ * nunca existir — nenhum caso deste pacote fala por estas origens, e o que eles exercitam é o
+ * endereço de escuta, que o arcabouço empilha por conta própria a partir de `baseURL`.
+ *
+ * ⚠️ **Quem prova que a lista é conferida na partida e que a origem estranha é recusada é
+ * `apps/api`** (`test/ambiente.spec.ts` e `test/origem-publica.e2e.spec.ts`): é lá que ela nasce, do
+ * ambiente do processo. Aqui ela é apenas arranjo.
+ */
+const ORIGENS_PUBLICAS = ['https://app.exemplo.invalid', 'https://painel.exemplo.invalid'] as const;
+
 /** Instância efêmera com identidade pronta para exercitar a entrada. */
 export interface IdentidadeEfemera {
   /** A instância do arcabouço, montada sobre o acesso restrito a `identidade`. */
@@ -78,6 +93,7 @@ export async function identidadeEfemera(): Promise<IdentidadeEfemera> {
         acesso,
         segredoDeSessao: randomBytes(32).toString('base64url'),
         enderecoBase: ENDERECO_BASE,
+        origensPublicas: ORIGENS_PUBLICAS,
         prefixoDasRotas: PREFIXO_DAS_ROTAS,
       }),
       acesso,

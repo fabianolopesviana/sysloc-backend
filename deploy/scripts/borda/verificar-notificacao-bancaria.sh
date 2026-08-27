@@ -19,6 +19,21 @@
 #                claro devolve `3xx`;
 #   CT-1005 (d)  a configuração que atende a operação não foi tocada.
 #
+# E a PROTEÇÃO CONTRA ABUSO desta borda (ADR-0037), acrescentada pela T10 da
+# fatia `publicacao-e-backup` ao fechar o débito que o gabarito registrava desde
+# 2026-08-19, em quatro frentes:
+#
+#   CT-1191  a RAJADA LEGÍTIMA do provedor atravessa inteira — trinta
+#            requisições consecutivas do MESMO endereço, todas `204`, nenhuma
+#            `503` e nenhuma `429`;
+#   CT-1192  o teto de TAMANHO DE CORPO barra na própria borda, e no byte certo:
+#            65 536 atravessa e é gravado, 65 537 é recusado sem repasse;
+#   CT-1193  a limitação declarada é por CONCORRÊNCIA, no VALOR que este
+#            verificador declara à parte, e a família `limit_req` tem contagem
+#            ZERO em linha ativa do gabarito;
+#   CT-1194  o teto de concorrência de fato barra o SIMULTÂNEO acima dele, e as
+#            MESMAS requisições em SEQUÊNCIA atravessam inteiras.
+#
 # ===========================================================================
 # INVARIANTES
 # ===========================================================================
@@ -35,6 +50,12 @@
 #       usuário, e continua aberta.
 #   I5  O que atende a operação (`/opt/frappe`) não é tocado — nem por escrita,
 #       nem por recarga do servidor.
+#   I6  A proteção contra abuso desta borda NÃO conta volume no tempo. Perder
+#       notícia do provedor é pior que o abuso que se quis evitar (ADR-0037), e
+#       o eixo de origem dele é um endereço só — de modo que o teto de taxa que
+#       barraria o abuso descartaria a rajada legítima. O que limita aqui é o
+#       tamanho do corpo e a CONCORRÊNCIA por origem, e a AUSÊNCIA do teto de
+#       taxa é asserção, não comentário.
 #
 # ===========================================================================
 # ONDE ISTO EXECUTA — e por que NÃO é a borda que atende a operação
@@ -79,6 +100,14 @@
 # As asserções do CT-1005 (b), (c) e (d) são COMPORTAMENTAIS (exercitam funções
 # reais, medem rede real, comparam estado real) e por decisão registrada não se
 # demonstram por reintrodução de defeito.
+#
+# ⚠️ O mesmo corte vale para as quatro frentes da proteção contra abuso: o
+# CT-1193 é a ÚNICA estática do conjunto — ele lê o TEXTO do gabarito — e por
+# isso é a única com prova de falsificação por execução, em TRÊS mutantes. O
+# CT-1191, o CT-1192 e o CT-1194 medem rede real; a asserção que discrimina cada
+# um está nomeada no comentário do caso, e reintroduzir defeito neles seria
+# campanha de mutantes com outro nome (mutation testing está fora da stack deste
+# projeto por decisão de 2026-08-16).
 #
 # ===========================================================================
 # Contrato de saída
@@ -156,6 +185,65 @@ readonly TETO_DE_CORPO_NO_SERVICO="64 * 1024"
 # nomeia ela não vê.
 readonly DOMINIOS_DE_TOPO="com|br|net|org|io|dev|app|cloud|info|co|me|tech|online|xyz|biz|site|store|link|host|systems|services|digital|solutions|com\\.br|net\\.br|org\\.br"
 
+# --------------------------------------------------------------------------- #
+# A PROTEÇÃO CONTRA ABUSO — ADR-0037. Constantes das quatro frentes da T10.
+# --------------------------------------------------------------------------- #
+
+# O nome da zona compartilhada do teto de concorrência. É a TERCEIRA declaração
+# dele: o gabarito a declara em `limit_conn_zone` e a consome em `limit_conn`, e
+# o CT-1193 confere que as duas são esta. Derivá-la do próprio gabarito poria o
+# artefato sob prova nos dois lados da comparação.
+readonly ZONA_DE_CONCORRENCIA="notificacao_bancaria"
+
+# Quantas conexões simultâneas por origem o gabarito autoriza em `limit_conn`.
+# É a TERCEIRA declaração do teto, pela mesma razão da zona acima e do teto de
+# corpo: as asserções de distribuição do CT-1194 leem o número do vhost
+# RENDERIZADO — que é o artefato sob prova —, e sem um lado independente da
+# comparação QUALQUER valor as satisfaz. Um teto rebaixado para `1` renderizaria
+# `total=3`, e o caso afirmaria "2 recusadas, 1 atendida" e aprovaria a borda
+# que descarta a rajada legítima do provedor — o dano que a ADR-0037 existe para
+# não ter, e que é PIOR que o abuso. Nem o CT-1193 (que casa `limit_conn ${ZONA}
+# [0-9]+;`, com qualquer inteiro) nem o CT-1191 (rajada SEQUENCIAL, que nunca põe
+# duas conexões em voo) alcançam o teto baixo demais.
+#
+# ⚠️ O CT-1194 continua LENDO o teto do vhost renderizado, e isso está certo: o
+# que ele afirma é a distribuição do teto que a borda de fato carrega. Esta
+# constante é a ÂNCORA DO VALOR, afirmada por igualdade no CT-1193 contra o
+# gabarito versionado.
+readonly TETO_DE_CONCORRENCIA_NA_BORDA=16
+
+# Quantas requisições consecutivas a rajada do CT-1191 dispara. É a forma do
+# provedor: muitas notícias, de um endereço só, em sequência imediata. O número
+# é generoso de propósito — qualquer teto de taxa plausível (`rate=5r/s` e
+# vizinhos) reprova com folga, e é isso que faz o caso discriminar.
+readonly REQUISICOES_DA_RAJADA=30
+
+# Quantas requisições simultâneas o CT-1194 dispara ALÉM do teto declarado. São
+# duas, e não uma: com uma só, uma corrida qualquer que perdesse a recusa
+# deixaria o caso verde por vacuidade.
+readonly EXCEDENTES_ALEM_DO_TETO=2
+
+# Sondagem da rodada simultânea — limite NOMEADO, nunca espera fixa de relógio.
+# Trinta sondagens de 0,1 s dão três segundos, que é folga enorme para trinta e
+# duas requisições no laço local. Ele é o MAIS CURTO dos quatro prazos que se
+# encaixam nesta rodada (ver a válvula do serviço, no `servico.mjs`): se o
+# serviço não segurar o teto neste prazo, o caso DEGRADA declarando, em vez de
+# reprovar por relógio.
+readonly LIMITE_DE_SONDAGENS_DA_CONCORRENCIA=30
+readonly INTERVALO_DA_SONDAGEM="0.1"
+
+# Os três tamanhos de corpo do CT-1192, em bytes.
+#
+# ⚠️ O teto NÃO é redigitado aqui: ele é a expansão aritmética de
+# `TETO_DE_CORPO_NO_SERVICO`, a mesma terceira declaração cuja igualdade com o
+# `MAIOR_CORPO_ACEITO` da composição raiz E com o `client_max_body_size` do
+# gabarito o CT-1005 (a) já afirma. Escrever `65536` aqui criaria uma quarta
+# declaração, livre para divergir das outras três — e a asserção do byte exato
+# passaria a medir a si mesma.
+readonly CORPO_NO_TETO=$((TETO_DE_CORPO_NO_SERVICO))
+readonly CORPO_ACIMA_DO_TETO=$((TETO_DE_CORPO_NO_SERVICO + 1))
+readonly CORPO_PEQUENO=64
+
 # Configuração do legado, LIDA para afirmar que não mudou. São os arquivos de
 # configuração de servidor do `/opt/frappe` legíveis sem privilégio.
 readonly DIR_DO_LEGADO="/opt/frappe"
@@ -171,13 +259,25 @@ RAIZ_DO_DESAFIO_EFEMERA=""
 TOKEN_DO_DESAFIO=""
 CONTEUDO_DO_DESAFIO=""
 
-falhas_totais=0
-falhas_caso=0
-# Degradações declaradas. NÃO governam o código de saída — quem o governa é
-# `falhas_totais`, e só ele. O contador existe porque o RESUMO é a linha que o
-# operador lê: anunciar "4/4 frentes aprovadas" quando uma delas não pôde ser
-# medida transforma medição parcial em aprovação lida como completa.
-avisos_totais=0
+# Os dois arquivos de controle da rodada simultânea do CT-1194. O serviço segura
+# a resposta enquanto o primeiro existir e o segundo não — nunca por relógio.
+ARQUIVO_DE_ESPERA=""
+ARQUIVO_DE_LIBERACAO=""
+
+# Solta o que o serviço estiver segurando.
+#
+# Chamada no fim do CT-1194 E na limpeza: uma reprovação no meio da rodada
+# simultânea não pode deixar trinta e duas requisições penduradas até o teto de
+# sondagens do próprio serviço. Ela é idempotente e nunca falha — a limpeza roda
+# sob `trap`, e um erro aqui trocaria o código de saída da bateria.
+liberar_requisicoes_seguras() {
+	if [[ -n "${ARQUIVO_DE_LIBERACAO}" ]]; then
+		: >"${ARQUIVO_DE_LIBERACAO}" 2>/dev/null || true
+	fi
+	if [[ -n "${ARQUIVO_DE_ESPERA}" ]]; then
+		rm -f "${ARQUIVO_DE_ESPERA}" 2>/dev/null || true
+	fi
+}
 
 encerrar_borda_efemera() {
 	if [[ -n "${PREFIXO_DA_BORDA}" && -f "${PREFIXO_DA_BORDA}/nginx.pid" ]]; then
@@ -192,6 +292,7 @@ encerrar_borda_efemera() {
 
 limpar() {
 	local codigo=$?
+	liberar_requisicoes_seguras
 	encerrar_borda_efemera
 	if [[ -n "${DIR_TRABALHO}" && -d "${DIR_TRABALHO}" ]]; then
 		rm -rf "${DIR_TRABALHO}"
@@ -200,51 +301,12 @@ limpar() {
 }
 trap limpar EXIT INT TERM HUP
 
-caso() {
-	printf '\n[%s] %s\n' "$1" "$2"
-	falhas_caso=0
-}
-
-ok() { printf '    OK   %s\n' "$*"; }
-
-falhar() {
-	falhas_caso=$((falhas_caso + 1))
-	falhas_totais=$((falhas_totais + 1))
-	printf '    FALHA %s\n' "$*" >&2
-}
-
-afirmar_igual() {
-	if [[ "$2" == "$3" ]]; then
-		ok "$1"
-	else
-		falhar "$1 — esperado [$2], obtido [$3]"
-	fi
-}
-
-afirmar_diferente() {
-	if [[ "$2" != "$3" ]]; then
-		ok "$1"
-	else
-		falhar "$1 — obtido [$3], que não deveria ser [$2]"
-	fi
-}
-
-# A entrada ÚNICA de degradação — é por ela contar aqui, e não em cada chamador,
-# que o resumo final não depende de ninguém lembrar de somar o aviso novo.
-aviso() {
-	avisos_totais=$((avisos_totais + 1))
-	printf '    AVISO %s\n' "$*"
-}
-
-nota() { printf '    nota  %s\n' "$*"; }
-
-fechar_caso() {
-	if [[ "${falhas_caso}" -eq 0 ]]; then
-		printf '    -> %s aprovado\n' "$1"
-	else
-		printf '    -> %s REPROVADO (%d falha(s))\n' "$1" "${falhas_caso}" >&2
-	fi
-}
+# --------------------------------------------------------------------------- #
+# Vocabulário de asserção — a casa comum, carregada e NUNCA redeclarada aqui.
+# Ver a razão em `deploy/scripts/verificacao/esqueleto-de-assercao.sh`.
+# --------------------------------------------------------------------------- #
+# shellcheck source=../verificacao/esqueleto-de-assercao.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../verificacao/esqueleto-de-assercao.sh"
 
 # =========================================================================== #
 # A varredura de formas proibidas — UMA função, usada pelo controle e pelo
@@ -315,35 +377,17 @@ contar_ocorrencias() {
 	fi
 }
 
-# Carrega uma função do INSTALADOR REAL, pelo texto do arquivo. É o mesmo
-# mecanismo de `verificar-fundacao.sh` com `unidade_diverge`: quem valida e quem
-# executa passam a ser o mesmo código, e uma reimplementação aqui aprovaria um
-# instalador com o defeito de volta.
-carregar_funcao_do_instalador() {
-	local nome="$1" trecho
-	trecho="$(sed -n "/^${nome}() {/,/^}/p" "${INSTALADOR}")"
-	[[ -n "${trecho}" ]] || return 1
-	eval "${trecho}"
-	declare -F "${nome}" >/dev/null
-}
-
-# Carrega uma função do instalador SOB OUTRO NOME.
+# ⚠️ `carregar_funcao_do_instalador` e `carregar_funcao_do_instalador_como` NÃO
+# moram mais aqui: as duas subiram para
+# `deploy/scripts/verificacao/esqueleto-de-assercao.sh`, que esta bateria já
+# carrega por `source`.
 #
-# Existe por uma colisão concreta: a função de limpeza do instalador se chama
-# `limpar`, e é esse o nome da função que ESTA bateria registra em `trap ... EXIT`.
-# Carregá-la pelo nome próprio substituiria a limpeza do verificador pelo SUT —
-# a bateria passaria a se limpar com o código que ela está medindo, e um defeito
-# na limpeza do instalador vazaria para o teardown daqui.
-#
-# O corte é do cabeçalho `nome() {` para diante; o corpo inteiro, chaves e todo o
-# resto, continua sendo o do arquivo real.
-carregar_funcao_do_instalador_como() {
-	local nome="$1" apelido="$2" trecho
-	trecho="$(sed -n "/^${nome}() {/,/^}/p" "${INSTALADOR}")"
-	[[ -n "${trecho}" ]] || return 1
-	eval "${apelido}() {${trecho#*\{}"
-	declare -F "${apelido}" >/dev/null
-}
+# O recorte de lá pula o corpo de cada heredoc, e a diferença NÃO é cosmética
+# aqui: `instalar-borda-de-notificacao.sh` tem uma `validar_vhost_isolado` que
+# escreve um `nginx.conf` por heredoc cuja chave de fecho do bloco `http {`
+# começa na COLUNA ZERO. O `sed -n "/^nome() {/,/^}/p"` que morava nestas linhas
+# a cortaria ao meio — a armadilha estava ARMADA e não disparada, porque aquela
+# função está fora do elenco que esta bateria carrega.
 
 # Uma porta livre no laço local, obtida do próprio sistema operacional.
 porta_livre() {
@@ -903,11 +947,22 @@ requisicoes_no_servico() {
 
 # Faz UMA requisição pela borda efêmera e imprime `codigo|origem|location`.
 # `000` é o que o curl reporta quando não houve resposta HTTP.
+#
+# O terceiro argumento é o CORPO, no idioma do próprio `curl`: um `@caminho` lê
+# do disco, e qualquer outra coisa vai literal. Ausente, vale o corpo mínimo de
+# sempre — as chamadas anteriores a esta parametrização seguem byte a byte iguais.
+#
+# ⚠️ O arquivo de cabeçalhos leva `BASHPID` no nome, e isso NÃO é zelo: a rodada
+# simultânea do CT-1194 chama esta função em trinta e duas subcamadas ao mesmo
+# tempo, e um nome fixo faria cada uma sobrescrever a leitura das outras — a
+# origem do serviço apareceria na resposta errada, e a distribuição medida seria
+# ficção. `$$` não serve: em subcamada ele continua sendo o do processo principal.
 requisitar() {
-	local metodo="$1" url="$2"
-	local cabecalhos="${DIR_TRABALHO}/cabecalhos.txt"
+	local metodo="$1" url="$2" corpo="${3:-}"
+	local cabecalhos="${DIR_TRABALHO}/cabecalhos-${BASHPID}.txt"
 	local codigo=""
 	: >"${cabecalhos}"
+	[[ -n "${corpo}" ]] || corpo='{"idempotencia":"verificacao"}'
 
 	local argumentos=(-sS --max-time 10 -o /dev/null -D "${cabecalhos}" -w '%{http_code}'
 		--cacert "${PREFIXO_DA_BORDA}/cert.pem"
@@ -915,7 +970,7 @@ requisitar() {
 		--resolve "${HOSTNAME_EFEMERO}:${PORTA_HTTP}:127.0.0.1"
 		-X "${metodo}")
 	if [[ "${metodo}" == "POST" ]]; then
-		argumentos+=(-H 'Content-Type: application/json' --data-binary '{"idempotencia":"verificacao"}')
+		argumentos+=(-H 'Content-Type: application/json' --data-binary "${corpo}")
 	fi
 
 	codigo="$(curl "${argumentos[@]}" "${url}" 2>>"${DIR_TRABALHO}/curl.err" || printf '000')"
@@ -962,16 +1017,53 @@ subir_borda_efemera() {
 	# O serviço de verificação que fica ATRÁS da borda. Ele não é a API: o que
 	# está sob prova aqui é o vhost, e o que se precisa do lado de dentro é uma
 	# trilha do que atravessou — que é justamente o que a API não daria.
+	ARQUIVO_DE_ESPERA="${PREFIXO_DA_BORDA}/segurar-a-resposta"
+	ARQUIVO_DE_LIBERACAO="${PREFIXO_DA_BORDA}/liberar-a-resposta"
+	rm -f "${ARQUIVO_DE_ESPERA}" "${ARQUIVO_DE_LIBERACAO}"
+
 	cat >"${PREFIXO_DA_BORDA}/servico.mjs" <<'SERVICO'
 import { createServer } from 'node:http';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, existsSync } from 'node:fs';
 
-const [, , porta, trilha, cabecalho, origem] = process.argv;
+const [, , porta, trilha, cabecalho, origem, arquivoDeEspera, arquivoDeLiberacao] = process.argv;
+
+// O modo de ESPERA existe para a rodada simultânea do CT-1194, e ele nunca é
+// governado por relógio: a resposta fica presa enquanto o arquivo de espera
+// existir e o de liberação não. Teste de concorrência que espera um tempo fixo é
+// instável por construção — ora mede, ora não, e o vermelho que ele produz não
+// diz nada sobre o código.
+//
+// O teto de sondagens é a VÁLVULA: ele impede que uma reprovação no meio da
+// rodada deixe requisição pendurada. Os quatro prazos se ENCAIXAM, do mais curto
+// ao mais longo, e a ordem é o que torna o desfecho previsível quando algo dá
+// errado: a sondagem da bateria (3 s) < esta válvula (5 s) < o teto do cliente
+// (`--max-time 10`) < o `proxy_read_timeout` da borda (15 s). Assim o desfecho
+// degradado é um `204` tardio — nunca um `504` nem um `000`, que confundiriam o
+// eixo do que se está medindo.
+const INTERVALO_DA_SONDAGEM_MS = 100;
+const LIMITE_DE_SONDAGENS = 50;
 
 createServer((requisicao, resposta) => {
   appendFileSync(trilha, `${requisicao.method} ${requisicao.url}\n`);
-  resposta.writeHead(204, { [cabecalho]: origem });
-  resposta.end();
+
+  const responder = () => {
+    resposta.writeHead(204, { [cabecalho]: origem });
+    resposta.end();
+  };
+
+  if (!existsSync(arquivoDeEspera)) {
+    responder();
+    return;
+  }
+
+  let sondagens = 0;
+  const relogio = setInterval(() => {
+    sondagens += 1;
+    if (existsSync(arquivoDeLiberacao) || sondagens >= LIMITE_DE_SONDAGENS) {
+      clearInterval(relogio);
+      responder();
+    }
+  }, INTERVALO_DA_SONDAGEM_MS);
 }).listen(Number(porta), '127.0.0.1');
 SERVICO
 
@@ -980,6 +1072,7 @@ SERVICO
 	: >"${PREFIXO_DA_BORDA}/trilha.log"
 	node "${PREFIXO_DA_BORDA}/servico.mjs" "${porta_do_servico}" \
 		"${PREFIXO_DA_BORDA}/trilha.log" "${CABECALHO_DO_SERVICO}" "${ORIGEM_DO_SERVICO}" \
+		"${ARQUIVO_DE_ESPERA}" "${ARQUIVO_DE_LIBERACAO}" \
 		>"${PREFIXO_DA_BORDA}/servico.log" 2>&1 &
 	PID_DO_SERVICO=$!
 
@@ -1178,6 +1271,531 @@ ct_1005_c() {
 }
 
 # =========================================================================== #
+# A PROTEÇÃO CONTRA ABUSO DA BORDA — ADR-0037, T10 da fatia
+# `publicacao-e-backup`, fechando o débito que este gabarito registrava desde
+# 2026-08-19.
+#
+# As quatro frentes medem os DOIS sentidos da decisão, e é o par que as torna
+# verdadeiras — uma metade sozinha aprova a proteção errada:
+#
+#   · o que TEM de passar — a rajada legítima (CT-1191) e o corpo no byte exato
+#     do teto (CT-1192);
+#   · o que TEM de ser barrado — o corpo acima do teto (CT-1192) e a
+#     concorrência acima do teto (CT-1194);
+#   · e a DECLARAÇÃO que sustenta as duas (CT-1193).
+#
+# Todas as três frentes de rede REAPROVEITAM a borda efêmera que o CT-1005 (c)
+# deixou de pé: remontá-la mediria outra borda, e pagaria de novo o certificado,
+# o servidor e o serviço de trilha.
+# =========================================================================== #
+
+# A borda efêmera do CT-1005 (c) segue de pé? Sem ela, as frentes de rede
+# DEGRADAM declarando — nunca passam em silêncio, que é o que uma medição contra
+# uma borda ausente faria.
+borda_efemera_disponivel() {
+	[[ -n "${PREFIXO_DA_BORDA}" && -s "${PREFIXO_DA_BORDA}/nginx.pid" ]] || return 1
+	[[ -n "${PID_DO_SERVICO}" ]] || return 1
+	kill -0 "${PID_DO_SERVICO}" 2>/dev/null
+}
+
+# Quantas das medidas recebidas carregam determinado código. A medida é
+# `codigo|origem|location`, e o que se conta é o primeiro campo.
+contar_com_codigo() {
+	local alvo="$1"
+	shift
+	local total=0 medida
+	for medida in "$@"; do
+		if [[ "${medida%%|*}" == "${alvo}" ]]; then
+			total=$((total + 1))
+		fi
+	done
+	printf '%s' "${total}"
+}
+
+# Os códigos DISTINTOS das medidas recebidas, em ordem e separados por espaço.
+codigos_distintos() {
+	local medida
+	for medida in "$@"; do
+		printf '%s\n' "${medida%%|*}"
+	done | LC_ALL=C sort -u | tr '\n' ' ' | sed 's| *$||'
+}
+
+# Um corpo de exatamente N bytes, gerado no diretório descartável. `/dev/zero`
+# dá o tamanho exato sem depender do que o sistema tenha de aleatório, e o `tr`
+# o torna legível num despejo de diagnóstico.
+gerar_corpo_de_bytes() {
+	local bytes="$1" destino="$2"
+	head -c "${bytes}" /dev/zero | tr '\0' 'a' >"${destino}"
+}
+
+# =========================================================================== #
+# CT-1191 — a RAJADA LEGÍTIMA do provedor atravessa inteira.
+#
+# ⚠️ É O CASO QUE DISCRIMINA A TASK INTEIRA. Sem ele, instalar um
+# `limit_req_zone` por origem deixaria esta bateria verde e a notícia se
+# perderia em produção — o dano que a fatia `webhook-e-carne` existe para não
+# ter, e a alternativa que a ADR-0037 rejeita NOMINALMENTE.
+#
+# A asserção que discrimina é o CONJUNTO dos códigos distintos: com um teto de
+# taxa de volta, ele deixa de ser `204` sozinho e passa a conter o `503` (ou o
+# `429`, conforme o `limit_req_status`) da recusa. Contar só o total de `204`
+# não bastaria — trinta requisições das quais vinte passassem ainda dariam
+# "houve 204".
+#
+# ⚠️ NÃO o colapse no CT-1194: rajada SEQUENCIAL nunca exercita concorrência, e
+# é justamente por ser sequencial que ela prova que o eixo do teto não é volume.
+# =========================================================================== #
+ct_1191() {
+	caso "CT-1191" "a rajada legítima do provedor atravessa a borda inteira, sem teto de taxa"
+
+	if ! borda_efemera_disponivel; then
+		aviso "a borda efêmera não está de pé — a TRAVESSIA DA RAJADA não foi medida (é a asserção central do CT-1191)"
+		fechar_caso "CT-1191"
+		return
+	fi
+
+	local antes depois indice
+	local -a medidas=()
+	antes="$(requisicoes_no_servico)"
+	for ((indice = 1; indice <= REQUISICOES_DA_RAJADA; indice++)); do
+		medidas+=("$(requisitar POST "https://${HOSTNAME_EFEMERO}:${PORTA_HTTPS}${CAMINHO_DA_NOTICIA}" \
+			"{\"idempotencia\":\"rajada-${indice}\"}")")
+	done
+	depois="$(requisicoes_no_servico)"
+
+	# ANTIVÁCUO: uma rajada de zero requisições teria conjunto de códigos vazio,
+	# nenhum `503` e nenhum `429` — e passaria em tudo o que vem abaixo.
+	afirmar_igual "a rajada disparou as ${REQUISICOES_DA_RAJADA} requisições" \
+		"${REQUISICOES_DA_RAJADA}" "${#medidas[@]}"
+
+	afirmar_igual "a rajada inteira tem UM único código distinto, e ele é o do serviço" \
+		"204" "$(codigos_distintos "${medidas[@]}")"
+	afirmar_igual "todas as ${REQUISICOES_DA_RAJADA} respostas vieram do serviço" \
+		"${REQUISICOES_DA_RAJADA}" "$(contar_com_codigo "204" "${medidas[@]}")"
+	afirmar_igual "nenhuma resposta foi recusada por concorrência (503)" \
+		"0" "$(contar_com_codigo "503" "${medidas[@]}")"
+	afirmar_igual "nenhuma resposta foi recusada por taxa (429)" \
+		"0" "$(contar_com_codigo "429" "${medidas[@]}")"
+	afirmar_igual "a trilha do serviço cresceu exatamente a rajada" \
+		"$((antes + REQUISICOES_DA_RAJADA))" "${depois}"
+
+	fechar_caso "CT-1191"
+}
+
+# =========================================================================== #
+# CT-1192 — o teto de TAMANHO DE CORPO barra na borda, e no byte certo.
+#
+# A perna de ${CORPO_NO_TETO} bytes é o que separa *"há um teto"* de *"há o teto
+# CERTO"*: o padrão histórico de reprovação que a `testing-stack.md` nomeia é
+# *"provou-se o que era fácil provar"*, e aqui o fácil é o `413` — o difícil é o
+# byte exato em que ele começa.
+#
+# A asserção que discrimina é o PAR de fronteira: um teto errado por um byte
+# para menos reprova a perna do teto (que viria `413`), e um teto errado para
+# mais reprova a perna de cima (que atravessaria e chegaria à trilha). Nenhuma
+# das duas sozinha pega os dois defeitos.
+# =========================================================================== #
+ct_1192() {
+	caso "CT-1192" "o teto de tamanho de corpo barra na própria borda, e no byte exato"
+
+	if ! borda_efemera_disponivel; then
+		aviso "a borda efêmera não está de pé — a FRONTEIRA DO CORPO não foi medida (é a asserção central do CT-1192)"
+		fechar_caso "CT-1192"
+		return
+	fi
+
+	local corpos="${DIR_TRABALHO}/corpos"
+	mkdir -p "${corpos}"
+
+	local antes depois medida bytes arquivo
+	for bytes in "${CORPO_PEQUENO}" "${CORPO_NO_TETO}" "${CORPO_ACIMA_DO_TETO}"; do
+		arquivo="${corpos}/corpo-${bytes}.json"
+		gerar_corpo_de_bytes "${bytes}" "${arquivo}"
+		# Sem esta conferência, um gerador que produzisse menos bytes faria a
+		# perna de cima do teto atravessar — e o caso aprovaria a borda errada.
+		afirmar_igual "o corpo de sonda tem exatamente ${bytes} byte(s)" \
+			"${bytes}" "$(wc -c <"${arquivo}")"
+	done
+
+	# --- controle: a borda de fato aceita alguma coisa ------------------- #
+	antes="$(requisicoes_no_servico)"
+	medida="$(requisitar POST "https://${HOSTNAME_EFEMERO}:${PORTA_HTTPS}${CAMINHO_DA_NOTICIA}" \
+		"@${corpos}/corpo-${CORPO_PEQUENO}.json")"
+	depois="$(requisicoes_no_servico)"
+	afirmar_igual "corpo de ${CORPO_PEQUENO} bytes atravessa (controle antivácuo)" \
+		"204|${ORIGEM_DO_SERVICO}|" "${medida}"
+	afirmar_igual "e o corpo de ${CORPO_PEQUENO} bytes chegou ao serviço" "$((antes + 1))" "${depois}"
+
+	# --- no teto: atravessa ---------------------------------------------- #
+	antes="$(requisicoes_no_servico)"
+	medida="$(requisitar POST "https://${HOSTNAME_EFEMERO}:${PORTA_HTTPS}${CAMINHO_DA_NOTICIA}" \
+		"@${corpos}/corpo-${CORPO_NO_TETO}.json")"
+	depois="$(requisicoes_no_servico)"
+	afirmar_igual "corpo de ${CORPO_NO_TETO} bytes — exatamente o teto — atravessa" \
+		"204|${ORIGEM_DO_SERVICO}|" "${medida}"
+	afirmar_igual "e o corpo no teto chegou ao serviço" "$((antes + 1))" "${depois}"
+
+	# --- um byte acima: recusado NA BORDA, sem repasse -------------------- #
+	antes="$(requisicoes_no_servico)"
+	medida="$(requisitar POST "https://${HOSTNAME_EFEMERO}:${PORTA_HTTPS}${CAMINHO_DA_NOTICIA}" \
+		"@${corpos}/corpo-${CORPO_ACIMA_DO_TETO}.json")"
+	depois="$(requisicoes_no_servico)"
+	afirmar_igual "corpo de ${CORPO_ACIMA_DO_TETO} bytes é recusado com 413, sem cabeçalho do serviço" \
+		"413||" "${medida}"
+	afirmar_igual "e o corpo acima do teto NÃO foi repassado ao serviço" "${antes}" "${depois}"
+
+	fechar_caso "CT-1192"
+}
+
+# =========================================================================== #
+# A varredura da LIMITAÇÃO DECLARADA — UMA função, usada pelo controle e pelos
+# dois mutantes (CT-1193).
+#
+# Imprime SEMPRE a medição, e uma linha por problema:
+#
+#   medida:<zonas>|<conexoes>|<taxa>
+#   problema:<o que está errado>
+#
+# Devolve 1 quando há problema. O status é parte do contrato, e não detalhe: uma
+# varredura que apenas imprimisse ficaria verde sobre os dois mutantes.
+#
+# ⚠️ Ela ignora LINHA DE COMENTÁRIO, e isso é o caso inteiro: o cabeçalho do
+# gabarito EXPLICA por que não há teto de taxa, e citar `limit_req` para
+# PROIBI-LO é conteúdo legítimo — a mesma distinção que a classe
+# `redirecionamento` de `varrer_formas_proibidas` já faz. Sem ela, a única saída
+# para ficar verde seria apagar a explicação, que é o que impede a próxima
+# rodada de reabrir a decisão por desconhecê-la.
+# =========================================================================== #
+varrer_limitacao_declarada() {
+	local arquivo="$1"
+	local ativas zonas conexoes taxa achados_de_taxa
+	local problemas=0
+
+	ativas="$(grep -vE '^[[:space:]]*#' "${arquivo}" || true)"
+
+	zonas="$(printf '%s\n' "${ativas}" |
+		grep -cE "^[[:space:]]*limit_conn_zone[[:space:]].*zone=${ZONA_DE_CONCORRENCIA}:" || true)"
+	conexoes="$(printf '%s\n' "${ativas}" |
+		awk -v caminho="${CAMINHO_DA_NOTICIA}" '
+			index($0, "location = " caminho " {") { dentro = 1; next }
+			dentro && $0 ~ /^[[:space:]]*\}/ { dentro = 0 }
+			dentro { print }
+		' |
+		grep -cE "^[[:space:]]*limit_conn[[:space:]]+${ZONA_DE_CONCORRENCIA}[[:space:]]+[0-9]+;" || true)"
+	taxa="$(printf '%s\n' "${ativas}" | grep -cE 'limit_req' || true)"
+	achados_de_taxa="$(printf '%s\n' "${ativas}" | grep -oE 'limit_req[a-z_]*' |
+		LC_ALL=C sort -u | tr '\n' ' ' | sed 's| *$||' || true)"
+
+	printf 'medida:%s|%s|%s\n' "${zonas}" "${conexoes}" "${taxa}"
+
+	if [[ "${zonas}" -ne 1 ]]; then
+		printf 'problema:zona de concorrencia declarada %s vez(es), e o esperado é uma\n' "${zonas}"
+		problemas=$((problemas + 1))
+	fi
+	if [[ "${conexoes}" -ne 1 ]]; then
+		printf 'problema:limit_conn ausente no location da notícia\n'
+		problemas=$((problemas + 1))
+	fi
+	if [[ "${taxa}" -ne 0 ]]; then
+		printf 'problema:teto de taxa declarado, o que a ADR-0037 proíbe nesta rota: %s\n' "${achados_de_taxa}"
+		problemas=$((problemas + 1))
+	fi
+
+	[[ "${problemas}" -eq 0 ]]
+}
+
+# Quantas linhas `problema:` a varredura devolveu.
+contar_problemas() {
+	printf '%s\n' "$1" | grep -c '^problema:' || true
+}
+
+# O teto de concorrência declarado em linha ATIVA de um arquivo de vhost — o
+# número do `limit_conn` da zona desta borda, ou vazio quando não há.
+#
+# Ela existe para a ÂNCORA DO VALOR do CT-1193, e é deliberadamente separada da
+# `varrer_limitacao_declarada`: aquela afirma que a limitação é da NATUREZA
+# certa (concorrência, e nunca taxa), esta afirma que ela está no VALOR certo.
+# São defeitos diferentes — um vhost com `limit_conn ... 1;` passa inteiro na
+# primeira e é justamente o que descarta a rajada legítima do provedor.
+#
+# O `exit` do `awk` é o que impede o SIGPIPE que um `head -1` traria sob
+# `pipefail`.
+ler_teto_de_concorrencia() {
+	local arquivo="$1"
+	grep -vE '^[[:space:]]*#' "${arquivo}" |
+		awk -v zona="${ZONA_DE_CONCORRENCIA}" '
+			$1 == "limit_conn" && $2 == zona {
+				valor = $3
+				sub(/;$/, "", valor)
+				print valor
+				exit
+			}
+		' || true
+}
+
+# =========================================================================== #
+# CT-1193 — a limitação declarada é por CONCORRÊNCIA, e não existe teto de taxa.
+#
+# ⚠️ É a ÚNICA asserção ESTÁTICA das quatro frentes — ela inspeciona o TEXTO do
+# gabarito —, e por isso a única que exige PROVA DE FALSIFICAÇÃO por execução: a
+# mesma varredura roda sobre dois mutantes, cada um com um defeito diferente
+# plantado, e precisa reprovar NOMEANDO a agulha. As duas pernas são
+# obrigatórias: sem a segunda, uma varredura que só procurasse `limit_req`
+# aprovaria um vhost sem proteção nenhuma.
+#
+# Ele carrega também a ÂNCORA DO VALOR do teto de concorrência, com a terceira
+# perna de falsificação: a natureza certa no valor errado — `limit_conn ... 1;` —
+# passa em tudo o que a bateria mede por rede (o CT-1194 deriva as expectativas
+# do próprio renderizado, e o CT-1191 é sequencial) e descarta a rajada legítima
+# do provedor em produção, que é o dano PIOR que o abuso.
+#
+# Os mutantes vivem no diretório descartável desta bateria, JAMAIS na árvore de
+# trabalho.
+# =========================================================================== #
+ct_1193() {
+	caso "CT-1193" "a limitação declarada no gabarito é por concorrência, e não há teto de taxa"
+
+	if [[ ! -r "${GABARITO}" ]]; then
+		falhar "gabarito ilegível: ${GABARITO}"
+		fechar_caso "CT-1193"
+		return
+	fi
+
+	local mutantes="${DIR_TRABALHO}/limitacao"
+	mkdir -p "${mutantes}"
+
+	# --- controle: o gabarito real ---------------------------------------- #
+	local codigo=0 saida
+	saida="$(varrer_limitacao_declarada "${GABARITO}")" || codigo=$?
+	afirmar_igual "o gabarito declara uma zona, um teto de concorrência e ZERO tetos de taxa" \
+		"medida:1|1|0" "$(printf '%s\n' "${saida}" | grep '^medida:' || true)"
+	afirmar_igual "a varredura APROVA o gabarito real" "0" "${codigo}"
+	afirmar_igual "e não acusa problema algum nele" "0" "$(contar_problemas "${saida}")"
+
+	# O cabeçalho do gabarito CITA a família proibida para proibi-la, e essa é a
+	# razão de a varredura ignorar comentário. Sem esta asserção, alguém poderia
+	# "consertar" o verde apagando a explicação — e a decisão voltaria a existir
+	# só na ADR, longe de quem edita o arquivo.
+	afirmar_diferente "o gabarito EXPLICA em comentário por que não há teto de taxa" \
+		"0" "$(grep -cE '^[[:space:]]*#.*limit_req' "${GABARITO}" || true)"
+
+	# ÂNCORA DO VALOR do teto de concorrência. Sem ela, o número não é afirmado
+	# em lugar NENHUM da bateria: o CT-1194 o lê do vhost renderizado (o próprio
+	# artefato sob prova) e deriva dele as expectativas, a varredura acima casa
+	# qualquer inteiro, e o CT-1191 é sequencial. A comparação por IGUALDADE com
+	# a terceira declaração é o único lado independente que existe.
+	afirmar_igual "o gabarito declara o teto de concorrência que este verificador conhece" \
+		"${TETO_DE_CONCORRENCIA_NA_BORDA}" "$(ler_teto_de_concorrencia "${GABARITO}")"
+
+	# --- falsificação 1: teto de TAXA plantado em linha ativa -------------- #
+	local mutante_com_taxa="${mutantes}/com-teto-de-taxa.conf"
+	{
+		cat "${GABARITO}"
+		printf 'limit_req_zone $binary_remote_addr zone=abuso:1m rate=5r/s;\n'
+	} >"${mutante_com_taxa}"
+
+	codigo=0
+	saida="$(varrer_limitacao_declarada "${mutante_com_taxa}")" || codigo=$?
+	afirmar_igual "o mutante COM teto de taxa REPROVA a varredura" "1" "${codigo}"
+	afirmar_igual "a medição do mutante 1 acusa a diretiva de taxa" \
+		"medida:1|1|1" "$(printf '%s\n' "${saida}" | grep '^medida:' || true)"
+	# A reprovação é fixada por IGUALDADE contra a agulha plantada, e não por
+	# "não-vazio": a agulha é conteúdo CONHECIDO, e afirmar só a presença
+	# aprovaria uma varredura que reprovasse pelo motivo errado.
+	afirmar_igual "e a reprovação NOMEIA a família proibida" \
+		"problema:teto de taxa declarado, o que a ADR-0037 proíbe nesta rota: limit_req_zone" \
+		"$(printf '%s\n' "${saida}" | grep '^problema:' || true)"
+
+	# --- falsificação 2: teto de CONCORRÊNCIA removido --------------------- #
+	local mutante_sem_conexao="${mutantes}/sem-teto-de-concorrencia.conf"
+	grep -vE "^[[:space:]]*limit_conn[[:space:]]+${ZONA_DE_CONCORRENCIA}[[:space:]]" \
+		"${GABARITO}" >"${mutante_sem_conexao}" || true
+	afirmar_igual "o mutante 2 perdeu exatamente uma linha do gabarito" "1" \
+		"$(($(grep -c '' "${GABARITO}") - $(grep -c '' "${mutante_sem_conexao}")))"
+
+	codigo=0
+	saida="$(varrer_limitacao_declarada "${mutante_sem_conexao}")" || codigo=$?
+	afirmar_igual "o mutante SEM teto de concorrência REPROVA a varredura" "1" "${codigo}"
+	afirmar_igual "a medição do mutante 2 acusa a ausência do teto" \
+		"medida:1|0|0" "$(printf '%s\n' "${saida}" | grep '^medida:' || true)"
+	afirmar_igual "e a reprovação NOMEIA o que faltou" \
+		"problema:limit_conn ausente no location da notícia" \
+		"$(printf '%s\n' "${saida}" | grep '^problema:' || true)"
+
+	# --- falsificação 3: o teto de concorrência TROCADO -------------------- #
+	#
+	# É a prova da âncora do valor, e ela é obrigatória pela mesma razão das
+	# duas acima: a asserção é ESTÁTICA. Sem esta perna, uma âncora escrita como
+	# "há um teto declarado" ficaria verde sobre um gabarito rebaixado para `1`
+	# — que é precisamente o defeito que ela existe para pegar, e o único que a
+	# medição de rede não alcança.
+	local mutante_com_outro_teto="${mutantes}/com-outro-teto.conf"
+	local teto_plantado=$((TETO_DE_CONCORRENCIA_NA_BORDA + 1))
+	sed -E "s|^([[:space:]]*limit_conn[[:space:]]+${ZONA_DE_CONCORRENCIA}[[:space:]]+)[0-9]+;|\\1${teto_plantado};|" \
+		"${GABARITO}" >"${mutante_com_outro_teto}"
+	afirmar_igual "o mutante 3 trocou UMA linha do gabarito, e nada mais" "1" \
+		"$(diff "${GABARITO}" "${mutante_com_outro_teto}" | grep -c '^>' || true)"
+	afirmar_igual "a leitura do mutante 3 devolve o teto PLANTADO" \
+		"${teto_plantado}" "$(ler_teto_de_concorrencia "${mutante_com_outro_teto}")"
+	afirmar_diferente "e por isso a ÂNCORA DO VALOR reprova sobre ele" \
+		"${TETO_DE_CONCORRENCIA_NA_BORDA}" "$(ler_teto_de_concorrencia "${mutante_com_outro_teto}")"
+	# A varredura de NATUREZA continua aprovando o mutante 3 — é o que prova que
+	# os dois defeitos são de classes diferentes, e que a âncora não é redundante
+	# com o que já existia.
+	codigo=0
+	saida="$(varrer_limitacao_declarada "${mutante_com_outro_teto}")" || codigo=$?
+	afirmar_igual "e o teto TROCADO passaria pela varredura de natureza — a âncora não é redundante" \
+		"0" "${codigo}"
+
+	fechar_caso "CT-1193"
+}
+
+# =========================================================================== #
+# CT-1194 — a concorrência acima do teto é recusada, e as MESMAS requisições em
+# sequência passam.
+#
+# É o par sequencial/simultâneo que prova que o eixo do teto é a CONCORRÊNCIA, e
+# não o volume: a rodada 2 dispara exatamente a mesma quantidade da rodada 1 e
+# atravessa inteira. A asserção que discrimina é a distribuição da rodada 1
+# contra a da rodada 2 — um teto de volume daria recusa nas duas, e nenhum teto
+# daria travessia nas duas.
+#
+# ⚠️ Ponto de flakiness declarado, e é por isso que NADA aqui espera relógio: as
+# respostas ficam presas por ARQUIVO DE CONTROLE, a sondagem tem limite nomeado,
+# e a liberação acontece também no `trap`, para que uma reprovação no meio da
+# rodada jamais deixe requisição pendurada. Se o serviço não segurar o teto no
+# prazo, o caso DEGRADA declarando a asserção não medida — jamais espera fixa,
+# jamais repetição, e jamais colapso no CT-1193, que é estático e não prova que
+# o teto declarado de fato barra.
+# =========================================================================== #
+ct_1194() {
+	caso "CT-1194" "a concorrência acima do teto é recusada, e as mesmas requisições em sequência passam"
+
+	if ! borda_efemera_disponivel; then
+		aviso "a borda efêmera não está de pé — o TETO DE CONCORRÊNCIA não foi medido (é a asserção central do CT-1194)"
+		fechar_caso "CT-1194"
+		return
+	fi
+
+	# O teto é LIDO do vhost renderizado, e não redigitado: o que se mede tem de
+	# ser o teto que a borda sob prova de fato carrega.
+	local aceitas
+	aceitas="$(grep -oE "^[[:space:]]*limit_conn[[:space:]]+${ZONA_DE_CONCORRENCIA}[[:space:]]+[0-9]+;" \
+		"${PREFIXO_DA_BORDA}/vhost.conf" | grep -oE '[0-9]+' | head -1 || true)"
+	if [[ -z "${aceitas}" || "${aceitas}" -lt 1 ]]; then
+		falhar "(CT-1194) não consegui ler o teto de concorrência do vhost renderizado — sem ele a rodada mediria um número inventado"
+		fechar_caso "CT-1194"
+		return
+	fi
+	ok "o teto de concorrência lido do vhost renderizado é ${aceitas}"
+
+	local total=$((aceitas + EXCEDENTES_ALEM_DO_TETO))
+	local respostas="${DIR_TRABALHO}/concorrencia"
+	rm -rf "${respostas}"
+	mkdir -p "${respostas}"
+
+	# --- rodada 1: SIMULTÂNEAS -------------------------------------------- #
+	rm -f "${ARQUIVO_DE_LIBERACAO}"
+	: >"${ARQUIVO_DE_ESPERA}"
+
+	local antes depois indice
+	local -a disparadas=()
+	antes="$(requisicoes_no_servico)"
+	for ((indice = 1; indice <= total; indice++)); do
+		requisitar POST "https://${HOSTNAME_EFEMERO}:${PORTA_HTTPS}${CAMINHO_DA_NOTICIA}" \
+			"{\"idempotencia\":\"simultanea-${indice}\"}" >"${respostas}/${indice}" 2>/dev/null &
+		disparadas+=("$!")
+	done
+
+	# Sondagem com limite NOMEADO até o serviço registrar que segura o teto.
+	local tentativa=0 chegadas=0
+	while [[ "${tentativa}" -lt "${LIMITE_DE_SONDAGENS_DA_CONCORRENCIA}" ]]; do
+		chegadas=$(($(requisicoes_no_servico) - antes))
+		if [[ "${chegadas}" -ge "${aceitas}" ]]; then
+			break
+		fi
+		tentativa=$((tentativa + 1))
+		sleep "${INTERVALO_DA_SONDAGEM}"
+	done
+
+	# A liberação vem ANTES da espera, senão a bateria espera pelo que ela mesma
+	# está segurando.
+	#
+	# ⚠️ A espera é pelos PIDs DISPARADOS AQUI, e nunca `wait` sem argumento: o
+	# servidor efêmero e o serviço de trilha também são trabalhos em segundo
+	# plano DESTA camada, e os dois só terminam na limpeza — um `wait` nu espera
+	# por eles e a bateria trava para sempre, depois de já ter medido tudo.
+	# Medido nesta task, e é o modo de falha mais caro que ela encontrou: o
+	# travamento acontece DEPOIS das asserções, então nada fica vermelho.
+	#
+	# O `|| true` é do mesmo tecido: `wait` devolve o status do último trabalho,
+	# e uma requisição que o `curl` não conseguiu fazer abortaria a bateria sob
+	# `set -e` em vez de virar a medida `000` que as asserções abaixo reprovam
+	# nomeando o desfecho.
+	liberar_requisicoes_seguras
+	wait "${disparadas[@]}" || true
+
+	local -a medidas=()
+	for ((indice = 1; indice <= total; indice++)); do
+		medidas+=("$(cat "${respostas}/${indice}" 2>/dev/null || printf '000||')")
+	done
+	depois="$(requisicoes_no_servico)"
+
+	# ⚠️ Os dois desfechos em que a sondagem NÃO bate com o teto têm naturezas
+	# OPOSTAS, e fundi-los num único ramo de degradação silenciava exatamente o
+	# defeito que este caso existe para pegar:
+	#
+	#   chegadas < aceitas   o serviço não conseguiu segurar o teto no prazo. É
+	#                        lentidão de ambiente, DEGRADA declarando — e é o
+	#                        único desfecho que a mensagem do aviso descreve.
+	#   chegadas > aceitas   com o teto FUNCIONANDO isto é impossível: o
+	#                        excedente recebe `503` da própria borda e nunca
+	#                        alcança o serviço de trilha. O único caminho que o
+	#                        produz é o teto NÃO ter barrado, e ele REPROVA.
+	#
+	# É o ramo `-gt` que discrimina o teto que não barra: elevar o `limit_conn`
+	# acima de ${total} numa afinação futura faria as simultâneas serem todas
+	# admitidas, a sondagem sairia do laço com mais chegadas que o teto, e as
+	# quatro asserções da distribuição ficariam SEM EXECUTAR — o caso fechava
+	# verde, com desfecho 0, sobre a borda desprotegida. Esta é a única prova
+	# comportamental do teto (o CT-1193 é estático e não prova que o teto
+	# declarado de fato barra), e ela não pode ser silenciada pelo próprio
+	# defeito que persegue.
+	if [[ "${chegadas}" -gt "${aceitas}" ]]; then
+		falhar "(CT-1194) o teto de concorrência NÃO barrou: ${chegadas} das ${total} requisições simultâneas alcançaram o serviço, e o teto declarado é ${aceitas}"
+	elif [[ "${chegadas}" -lt "${aceitas}" ]]; then
+		aviso "o serviço registrou ${chegadas} requisição(ões) presa(s) de ${aceitas} em ${LIMITE_DE_SONDAGENS_DA_CONCORRENCIA} sondagem(ns) — a DISTRIBUIÇÃO da rodada simultânea do CT-1194 NÃO foi medida"
+	else
+		afirmar_igual "exatamente ${EXCEDENTES_ALEM_DO_TETO} das ${total} simultâneas são recusadas pela borda, com 503" \
+			"${EXCEDENTES_ALEM_DO_TETO}" "$(contar_com_codigo "503" "${medidas[@]}")"
+		afirmar_igual "e exatamente ${aceitas} — o teto — são atendidas pelo serviço" \
+			"${aceitas}" "$(contar_com_codigo "204" "${medidas[@]}")"
+		afirmar_igual "a rodada simultânea tem só esses dois desfechos" \
+			"204 503" "$(codigos_distintos "${medidas[@]}")"
+		afirmar_igual "a trilha cresceu apenas o teto — o excedente NÃO foi repassado" \
+			"$((antes + aceitas))" "${depois}"
+	fi
+
+	# --- rodada 2: as MESMAS requisições, em SEQUÊNCIA --------------------- #
+	medidas=()
+	antes="$(requisicoes_no_servico)"
+	for ((indice = 1; indice <= total; indice++)); do
+		medidas+=("$(requisitar POST "https://${HOSTNAME_EFEMERO}:${PORTA_HTTPS}${CAMINHO_DA_NOTICIA}" \
+			"{\"idempotencia\":\"sequencial-${indice}\"}")")
+	done
+	depois="$(requisicoes_no_servico)"
+
+	afirmar_igual "as MESMAS ${total} requisições, em sequência, têm um único desfecho" \
+		"204" "$(codigos_distintos "${medidas[@]}")"
+	afirmar_igual "nenhuma das ${total} sequenciais é recusada por concorrência" \
+		"0" "$(contar_com_codigo "503" "${medidas[@]}")"
+	afirmar_igual "e a trilha cresceu as ${total} — o eixo do teto é concorrência, nunca volume" \
+		"$((antes + total))" "${depois}"
+
+	fechar_caso "CT-1194"
+}
+
+# =========================================================================== #
 # CT-1005 (d) — a configuração que atende a operação não foi tocada.
 # =========================================================================== #
 retrato_do_legado() {
@@ -1268,14 +1886,20 @@ main() {
 	ct_1005_a
 	ct_1005_b
 	ct_1005_c
+	# As quatro frentes de abuso REAPROVEITAM a borda que o (c) deixou de pé, e
+	# por isso vêm antes do (d) — que é quem a derruba para comparar processos.
+	ct_1191
+	ct_1192
+	ct_1193
+	ct_1194
 	ct_1005_d
 
 	printf '\n'
 	if [[ "${falhas_totais}" -eq 0 ]]; then
 		if [[ "${avisos_totais}" -eq 0 ]]; then
-			printf 'verificar-notificacao-bancaria: 4/4 frentes aprovadas (CT-1005 a, b, c, d)\n'
+			printf 'verificar-notificacao-bancaria: 8/8 frentes aprovadas (CT-1005 a, b, c, d e CT-1191 a CT-1194)\n'
 		else
-			printf 'verificar-notificacao-bancaria: 4/4 frentes sem falha, com %d degradação(ões) — há asserção NÃO MEDIDA neste host (ver as linhas AVISO acima)\n' \
+			printf 'verificar-notificacao-bancaria: 8/8 frentes sem falha, com %d degradação(ões) — há asserção NÃO MEDIDA neste host (ver as linhas AVISO acima)\n' \
 				"${avisos_totais}"
 		fi
 		exit 0

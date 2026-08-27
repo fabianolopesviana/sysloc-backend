@@ -40,20 +40,35 @@
  * dele.
  *
  * ---------------------------------------------------------------------------
- * O endereço base não é enfeite
+ * A ORIGEM CONFIÁVEL tem DUAS fontes, e as duas são declaradas (T7 · fecha o `D23 · F1/T8`)
  * ---------------------------------------------------------------------------
  *
- * O arcabouço deriva dele a **origem confiável** das requisições que carregam cookie: uma
- * requisição autenticada cujo cabeçalho `Origin` não bata com essa origem é recusada antes de
- * qualquer manipulador. Por isso ele é composto a partir do MESMO endereço e da MESMA porta em que
- * o processo escuta — as duas coisas vindas da configuração, e não de literais repetidos.
+ * O arcabouço recusa, antes de qualquer manipulador, a requisição cujo cabeçalho `Origin` não
+ * pertença ao conjunto confiável — e isso vale para toda requisição com cookie **e para a própria
+ * entrada**, porque `validateFormCsrf` força a conferência assim que qualquer cabeçalho
+ * `Sec-Fetch-*` está presente, e um navegador sempre os envia.
  *
- * **Limite declarado**: enquanto o serviço só atende no endereço de retorno, essa origem é a do
- * próprio processo. Quando a virada (F7) publicá-lo atrás do servidor de borda, a origem que o
- * navegador enviará é a do endereço público, e ela precisará entrar na configuração. Isso é
- * **débito com gatilho** — `D23`, no marcador junto do `enderecoBase` mais abaixo, que é onde a
- * varredura `grep -rl "DÉBITO COM GATILHO" apps packages deploy` o encontra e onde a fatia da
- * virada vai lê-lo. Este parágrafo não é o registro; o marcador é.
+ * Esse conjunto é a **união** de duas coisas, e nenhuma delas substitui a outra:
+ *
+ *   1. **a origem derivada do `enderecoBase`** — composta a partir do MESMO endereço e da MESMA
+ *      porta em que o processo escuta, as duas vindas da configuração e não de literais repetidos.
+ *      Ela é empilhada pelo próprio arcabouço (`getTrustedOrigins`), sempre, e é por ela que fala
+ *      todo cliente do próprio hospedeiro — inclusive o repasse de `POST /v1/sessao/senha`, que
+ *      declara `origin` a partir de `options.baseURL`;
+ *   2. **as origens PÚBLICAS declaradas em `ORIGENS_PUBLICAS`** — os hostnames por onde o navegador
+ *      de fato chega, depois que o serviço passa a atender atrás do servidor de borda. São
+ *      **duas**, porque são dois aplicativos sobre a mesma API, e a variável é conferida na partida
+ *      como as demais: sem ela o processo **não sobe**.
+ *
+ * ⚠️ **Retirar a de escuta não é opção**, e a razão é medida, não estilística: ela é a origem de
+ * todo cliente local, e trocá-la pela pública recusaria a superfície inteira de verificação. O
+ * fecho do débito foi **acrescentar** a lista, jamais mover a derivação.
+ *
+ * Enquanto a lista não existia, quem traduzia a origem pública para a de escuta era um paliativo no
+ * vhost do Painel Master — dois `map` mais dois cabeçalhos reescritos, cujo próprio comentário
+ * mandava removê-los quando este fecho existisse. Ele **saiu no mesmo diff**: deixá-lo duplicaria a
+ * tradução, e a origem pública viraria o endereço de escuta **antes** de esta composição compará-la
+ * com a origem pública que ela mesma declara.
  */
 
 import { Inject, Module, type OnApplicationShutdown } from '@nestjs/common';
@@ -129,31 +144,15 @@ export const PREFIXO_DAS_ROTAS_DE_IDENTIDADE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_
         criarAutenticacao({
           acesso,
           segredoDeSessao: ambiente.segredoDeSessao,
-          // DÉBITO COM GATILHO — D23 · F1/T8 · registrado 2026-08-02
-          // (Ele AGENDA, não protege: a linha abaixo VAI mudar, e editá-la é normal — o que não se
-          //  pode é editá-la sem ler isto, porque é aqui que a mudança da virada incide.)
-          // O QUÊ: deste valor o arcabouço deriva a ORIGEM CONFIÁVEL, e ele é o endereço de
-          //        RETORNO em que o processo escuta. Medido em `better-auth@1.6.25`
-          //        (`dist/api/middlewares/origin-check.mjs`): `Origin`/`Referer` são conferidos
-          //        contra `trustedOrigins`, derivado daqui, para todo método diferente de
-          //        GET/HEAD/OPTIONS que carregue cookie E TAMBÉM para a requisição SEM cookie —
-          //        `validateFormCsrf` chama `validateOrigin(ctx, true)` assim que qualquer
-          //        cabeçalho `Sec-Fetch-*` está presente, e um navegador SEMPRE os envia.
-          //        Consequência depois da F7, quando o `Origin` do navegador for o endereço
-          //        PÚBLICO e este valor continuar `http://127.0.0.1:<porta>`: recusa com
-          //        `FORBIDDEN / INVALID_ORIGIN` antes de qualquer manipulador em toda requisição
-          //        com cookie **e no PRÓPRIO LOGIN**. Não é "requisição autenticada recusada" — é
-          //        o serviço inteiro inacessível a navegador, entrada inclusive.
-          // QUANDO FECHA: a publicação atrás do servidor de borda na F7 (virada). Até lá o único
-          //        cliente é o próprio host, e a origem confiável coincide com a de escuta.
-          // POR QUE NÃO AGORA: o endereço público não existe ainda — nome e certificado são
-          //        decididos na virada. Fixar um literal hoje seria adivinhar, e um valor errado
-          //        aqui recusa o login inteiro sem que caso nenhum desta fatia o alcance (todos
-          //        falam com o endereço de retorno). Fechar exige variável de ambiente própria
-          //        para a origem pública, validada na partida como as demais, e essa configuração
-          //        pertence à fatia que publica o serviço.
-          // ÍNDICE: docs/specs/features/fundacao-multitenancy-identidade/v1/_run/run-report.md §2, D23
+          // O endereço de RETORNO em que o processo escuta. Dele o arcabouço deriva, sozinho, a
+          // primeira metade da origem confiável — a que serve todo cliente do próprio hospedeiro.
+          // Ele **fica**: a segunda metade é a linha abaixo, e as duas se somam. Ver o parágrafo
+          // *"A ORIGEM CONFIÁVEL tem DUAS fontes"* no cabeçalho deste arquivo.
           enderecoBase: `http://${ENDERECO_DE_ESCUTA}:${String(ambiente.porta)}`,
+          // A segunda metade: os hostnames públicos por onde o navegador chega, declarados no
+          // ambiente e conferidos na partida. Sem eles o processo não sobe — e é isso que impede o
+          // serviço de voltar, em silêncio, a confiar só no endereço de escuta.
+          origensPublicas: ambiente.origensPublicas,
           prefixoDasRotas: PREFIXO_DAS_ROTAS_DE_IDENTIDADE,
         }),
       inject: [TOKEN_AMBIENTE, TOKEN_ACESSO_A_IDENTIDADE],

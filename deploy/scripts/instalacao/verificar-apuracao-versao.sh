@@ -103,61 +103,21 @@ INSTANCIAS_ATIVAS=()
 # critério de saída da fatia está fechado.
 CA14_EM_ABERTO=0
 
-falhas_totais=0
-falhas_caso=0
+# --------------------------------------------------------------------------- #
+# Vocabulário de asserção — a casa comum, carregada e NUNCA redeclarada aqui.
+# Ver a razão em `deploy/scripts/verificacao/esqueleto-de-assercao.sh`.
+# --------------------------------------------------------------------------- #
+# shellcheck source=../verificacao/esqueleto-de-assercao.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../verificacao/esqueleto-de-assercao.sh"
 
-caso() {
-	printf '\n[%s] %s\n' "$1" "$2"
-	falhas_caso=0
-}
-
-ok() { printf '    OK   %s\n' "$*"; }
-
-falhar() {
-	falhas_caso=$((falhas_caso + 1))
-	falhas_totais=$((falhas_totais + 1))
-	printf '    FALHA %s\n' "$*" >&2
-}
-
-# Degradação declarada e diagnóstico rotineiro são coisas diferentes e saem por canais diferentes,
-# como no exemplar `verificar-provisionamento.sh`. Nenhuma das duas conta como falha; a diferença
-# está em quem precisa vê-las: `aviso` é o que ficou POR FAZER, e vai para a saída de erro — o
-# canal que um agregador (T7) reencaminha mesmo quando arquiva a saída padrão em log. `nota` é
-# observação de execução, e fica na saída padrão. Colapsar as duas na mesma função faria a
-# pendência da CA-14 sair indistinguível de "a instância reportou 18.4".
-aviso() { printf '    AVISO %s\n' "$*" >&2; }
-
-nota() { printf '    ..   %s\n' "$*"; }
-
-afirmar_igual() {
-	if [[ "$2" == "$3" ]]; then
-		ok "$1"
-	else
-		falhar "$1 — esperado [$2], obtido [$3]"
-	fi
-}
-
-afirmar_diferente() {
-	if [[ "$2" != "$3" ]]; then
-		ok "$1"
-	else
-		falhar "$1 — não deveria ser [$2]"
-	fi
-}
-
+# Fora do esqueleto compartilhado de propósito — ver a razão medida no cabeçalho
+# de `deploy/scripts/verificacao/esqueleto-de-assercao.sh`: as quatro cópias desta
+# função no repositório NÃO são o mesmo símbolo (uma delas grepa um ARQUIVO).
 afirmar_contem() {
 	if [[ "$3" == *"$2"* ]]; then
 		ok "$1"
 	else
 		falhar "$1 — não encontrei [$2] em: $3"
-	fi
-}
-
-fechar_caso() {
-	if [[ "${falhas_caso}" -eq 0 ]]; then
-		printf '    -> %s aprovado\n' "$1"
-	else
-		printf '    -> %s REPROVADO (%d falha(s))\n' "$1" "${falhas_caso}" >&2
 	fi
 }
 

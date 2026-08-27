@@ -265,9 +265,6 @@ PADRAO_LEGADO='docker[ -]compose|bench --site|/opt/frappe'
 FORMA_REAL_DO_SMTP="packages/regua/src/adaptador-smtp.ts"
 FORMA_REAL_DO_LEGADO="deploy/scripts/caracterizacao"
 
-falhas_totais=0
-falhas_caso=0
-
 # Os pacotes cujo vermelho é caso reprovado na suíte DESTE HOST, com a contagem — a
 # natureza que o contrato de saída do cabeçalho separa no código 2. Cada entrada
 # corresponde a EXATAMENTE uma falha contabilizada em `falhas_totais` (a asserção
@@ -275,46 +272,12 @@ falhas_caso=0
 # subtração em `main` uma classificação, e não uma estimativa.
 suites_vermelhas=()
 
-caso() {
-	printf '\n[%s] %s\n' "$1" "$2"
-	falhas_caso=0
-}
-
-ok() { printf '    OK   %s\n' "$*"; }
-
-falhar() {
-	falhas_caso=$((falhas_caso + 1))
-	falhas_totais=$((falhas_totais + 1))
-	printf '    FALHA %s\n' "$*" >&2
-}
-
-afirmar_igual() {
-	if [[ "$2" == "$3" ]]; then
-		ok "$1"
-	else
-		falhar "$1 — esperado [$2], obtido [$3]"
-	fi
-}
-
-afirmar_diferente() {
-	if [[ "$2" != "$3" ]]; then
-		ok "$1"
-	else
-		falhar "$1 — obtido [$3], que não deveria ser [$2]"
-	fi
-}
-
-aviso() { printf '    AVISO %s\n' "$*"; }
-
-nota() { printf '    nota  %s\n' "$*"; }
-
-fechar_caso() {
-	if [[ "${falhas_caso}" -eq 0 ]]; then
-		printf '    -> %s aprovado\n' "$1"
-	else
-		printf '    -> %s REPROVADO (%d falha(s))\n' "$1" "${falhas_caso}" >&2
-	fi
-}
+# --------------------------------------------------------------------------- #
+# Vocabulário de asserção — a casa comum, carregada e NUNCA redeclarada aqui.
+# Ver a razão em `deploy/scripts/verificacao/esqueleto-de-assercao.sh`.
+# --------------------------------------------------------------------------- #
+# shellcheck source=../verificacao/esqueleto-de-assercao.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../verificacao/esqueleto-de-assercao.sh"
 
 # --------------------------------------------------------------------------- #
 # A varredura — UMA função, usada pelo controle e pelo mutante

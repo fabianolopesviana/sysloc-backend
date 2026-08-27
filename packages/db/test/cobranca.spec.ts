@@ -475,8 +475,9 @@ const TERMOS_DO_CONTRATO = {
 } as const;
 
 /**
- * As unidades `systemd` que o repositório declara — **quinze**: os dois serviços permanentes, os
- * seis pares `.timer`/`.service` das rotinas agendadas e a unidade-modelo do alerta de falha.
+ * As unidades `systemd` que o repositório declara — **dezessete**: os dois serviços permanentes, os
+ * seis pares `.timer`/`.service` das rotinas agendadas, a unidade-modelo do alerta de falha e o par
+ * `.timer`/`.service` da cópia diária da base.
  *
  * ⚠️ **O discriminador NÃO é a existência do agendamento — é o que a rotina ESCREVE.** A frase que
  * este docblock trazia até a T9 (*"um agendamento novo seria a forma de reintroduzi-lo"*) prescrevia
@@ -497,18 +498,31 @@ const TERMOS_DO_CONTRATO = {
  * era o que a rotina noturna do legado fazia, e o que fazia o sistema *"afirmar por um dia o que não
  * é"*.
  *
- * A asserção **não afrouxa**: segue por **igualdade** sobre a lista inteira, de modo que uma décima
- * sexta unidade — um `sysloc-cobranca-vencida.timer`, que é a forma exata do defeito — reprova o
- * caso nomeando-a. A falsificação abaixo é literalmente essa, e continua valendo.
+ * A asserção **não afrouxa**: segue por **igualdade** sobre a lista inteira, de modo que uma unidade
+ * a mais — um `sysloc-cobranca-vencida.timer`, que é a forma exata do defeito — reprova o caso
+ * nomeando-a. A falsificação abaixo é literalmente essa, e continua valendo.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a **T4** da fatia `publicacao-e-backup` acrescenta **duas** unidades — o
+ * relógio da cópia diária da base e o despacho `oneshot` que ele dispara —, e o código de produção
+ * está certo. O critério vigente, declarado acima, é *o que a rotina ESCREVE*, e este par é o caso
+ * mais claro possível dele: `copiar-base.sh` invoca `pg_dump`, que **lê** a base inteira e escreve
+ * **fora** dela, em `/opt/backups/sysloc/daily`; `preservar-segredos.sh` sequer fala com o banco —
+ * ele empacota arquivos de `/etc/sysloc`. Nenhum dos dois executa `UPDATE` algum, e o **Passo 4
+ * deste mesmo caso continua provando que as quatro colunas de estado do legado NÃO EXISTEM** em
+ * `negocio.cobranca`: não há onde escrever estado publicado, nem por esta rotina nem por nenhuma.
+ * O conteúdo das duas unidades — incluindo o `ExecStart=` que nomeia esses dois scripts — é asserido
+ * pelos CT-1114 a CT-1118 da suíte irmã citada no fim deste docblock.
  *
  * ⚠️ **Aqui a asserção é sobre o CONJUNTO de nomes; o CONTEÚDO de cada unidade é asserido em
- * `packages/shared/test/unidades-agendadas.spec.ts`** (CT-1057 a CT-1060: fuso declarado no
- * `OnCalendar=`, `Persistent=` conforme a cadência, `OnFailure=` que nomeia quem falhou, e a
- * varredura de credencial). As duas se complementam sem se sobrepor — não mova uma para a outra.
+ * `packages/shared/test/unidades-agendadas.spec.ts`** (CT-1057 a CT-1060 e CT-1114 a CT-1118: fuso
+ * declarado no `OnCalendar=`, `Persistent=` conforme a cadência, `OnFailure=` que nomeia quem
+ * falhou, e a varredura de credencial). As duas se complementam sem se sobrepor — não mova uma para a outra.
  */
 const UNIDADES_DECLARADAS: readonly string[] = Object.freeze([
   'sysloc-alerta-de-rotina@.service',
   'sysloc-api.service',
+  'sysloc-backup-da-base.service',
+  'sysloc-backup-da-base.timer',
   'sysloc-rotina-aviso-de-cobranca.service',
   'sysloc-rotina-aviso-de-cobranca.timer',
   'sysloc-rotina-conferencia-de-liquidacao.service',

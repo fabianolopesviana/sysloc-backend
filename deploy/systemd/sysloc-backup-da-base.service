@@ -1,0 +1,223 @@
+# Cópia diária da base e preservação dos segredos — T4 da fatia
+# `publicacao-e-backup`.
+#
+# Esta é a FONTE VERSIONADA. A cópia instalada em /etc/systemd/system/ é
+# derivada dela por `deploy/scripts/instalacao/instalar-unidades.sh`, que é
+# idempotente (ADR-0005). Editar a cópia instalada é perder a alteração na
+# próxima instalação — edite AQUI.
+#
+# ---------------------------------------------------------------------------
+# Ela NÃO é habilitada no arranque — quem sobe no boot é o `.timer`
+# ---------------------------------------------------------------------------
+#
+# É a falha típica desta classe de unidade, e o instalador a fecha por dado:
+# `sysloc-backup-da-base.service` não consta de `UNIDADES_DO_ARRANQUE`.
+# Habilitá-la faria o `Type=oneshot` correr NO BOOT, fora da janela declarada —
+# uma cópia a mais, concorrendo com o arranque do servidor, toda vez que a
+# máquina subisse. A segunda barreira está nesta própria unidade: ela NÃO tem
+# seção `[Install]`, e sem ela `systemctl enable` recusa em vez de passar em
+# silêncio.
+#
+# ---------------------------------------------------------------------------
+# As duas travessias, e por que a ordem é esta
+# ---------------------------------------------------------------------------
+#
+# `Type=oneshot` executa os `ExecStart=` EM SEQUÊNCIA e para no primeiro que
+# reprovar. A ordem é, portanto, conteúdo:
+#
+#   1. `copiar-base.sh`        — a cópia do dia. É o artefato que NÃO VOLTA:
+#                                um defeito na borda se corrige, uma base
+#                                perdida não. Por isso ele é o primeiro, e não
+#                                depende de o pacote de segredos ter dado certo.
+#   2. `preservar-segredos.sh` — o pacote dos segredos de operação, mais a
+#                                chave de cifra em destino PRÓPRIO (ADR-0032).
+#
+# ⚠️ LIMITE CONHECIDO, e ele é a contrapartida da ordem: se (1) reprovar, (2)
+# NÃO corre naquele dia. É a troca deliberada — perder o pacote de segredos de
+# um dia é recuperável (eles mudam raramente e a preservação do dia seguinte os
+# alcança); perder a cópia da base não é. Um `ExecStart=-` que ignorasse o
+# código de saída de (1) faria as duas correrem sempre, ao preço de APAGAR o
+# sinal de falha da cópia, que é a única coisa que esta unidade existe para
+# vigiar.
+#
+# ---------------------------------------------------------------------------
+# ⚠️ `failed` AQUI NÃO SIGNIFICA "não há cópia do dia"
+# ---------------------------------------------------------------------------
+#
+# `copiar-base.sh` sai com 1 em DOIS desfechos diferentes, e um deles acontece
+# DEPOIS de a cópia estar publicada e conferida:
+#
+#   · a CÓPIA reprovou   — não há arquivo com o nome do dia e não há resíduo
+#                          `.parcial`. É o alarme verdadeiro.
+#   · o EXPURGO reprovou — a cópia do dia EXISTE e está íntegra; o que falhou
+#                          foi a remoção de uma cópia vencida, ou a leitura do
+#                          destino. A mensagem do script declara isso na própria
+#                          linha, dizendo que o publicado permanece.
+#
+# O alerta abaixo dispara nos dois casos, e é deliberado: um expurgo que não
+# termina é problema real (o disco enche em silêncio) e precisa ser atendido. O
+# que NÃO se pode é ler o alerta como "o backup falhou" sem olhar a linha que o
+# script escreveu. Quem for atender começa por:
+#
+#   journalctl -u sysloc-backup-da-base.service -n 60 --no-pager
+#   ls -l /opt/backups/sysloc/daily
+#
+# Tratar os dois desfechos como um só — silenciando o expurgo com
+# `SuccessExitStatus=`, por exemplo — resolveria o falso alarme criando um
+# alarme mudo, que é o negócio errado: o alarme que nunca grita é tão inútil
+# quanto o que grita sempre.
+#
+# ---------------------------------------------------------------------------
+# ADR-0005 — NENHUMA credencial nesta unidade, e a forma é MAIS restritiva que
+# o `EnvironmentFile=` das unidades irmãs. Isto é divergência DECLARADA.
+# ---------------------------------------------------------------------------
+#
+# As unidades permanentes e os despachos de rotina declaram
+# `EnvironmentFile=/etc/sysloc/backend.env` porque o processo Node LÊ as
+# variáveis do próprio ambiente. Estes dois scripts não: eles leem a cadeia de
+# conexão DO ARQUIVO apontado por `SYSLOC_ARQ_AMBIENTE`, e a entregam ao cliente
+# por um arquivo de senha temporário de modo 0600.
+#
+# O cabeçalho de `copiar-base.sh` diz por quê, e a razão vale contra o
+# `EnvironmentFile=`: a credencial não viaja "por variável de ambiente
+# exportada, que todo processo filho herdaria". Declarar `EnvironmentFile=` aqui
+# injetaria `DATABASE_URL` — e junto dela `CHAVE_DE_CIFRA_DO_CERTIFICADO`, o
+# segredo mais forte do produto (ADR-0032) — no ambiente desta unidade e no de
+# CADA filho dela: `pg_dump`, `tar`, `find`, `gzip`. Seria desfazer, na unidade,
+# a garantia que o script constrói.
+#
+# O que entra é a REFERÊNCIA AO CAMINHO. O arquivo continua sendo o mesmo
+# `/etc/sysloc/backend.env` de modo 0600 e dono root, gravado por
+# `provisionar-base.sh` fora da árvore versionada; o que muda é que o conteúdo
+# dele nunca entra no ambiente de processo nenhum.
+#
+# Pela mesma razão, o rastreio verboso de comandos do shell jamais é ligado por
+# esta unidade: ele ecoaria o valor no diário do sistema.
+#
+# ---------------------------------------------------------------------------
+# Restauração — o outro lado desta cópia
+# ---------------------------------------------------------------------------
+#
+# `deploy/scripts/backup/restaurar-base.sh` (T3) é o procedimento que consome o
+# que esta unidade produz. Ele NÃO é agendado e não tem unidade: restaurar é ato
+# do operador, sobre uma base de destino que ele nomeia, e agendá-lo seria
+# construir uma rotina cujo desfecho normal é destruir dado bom.
+
+[Unit]
+Description=Cópia diária da base do Sysloc e preservação dos segredos de operação
+Documentation=file:/opt/sysloc-backend/docs/specs/features/publicacao-e-backup/v1/scope.md
+
+# Ordem de arranque e de desligamento. A cópia lê o banco, e só ele: não há
+# fila, não há provedor externo, não há porta escutada. `Wants=` (não
+# `Requires=`) pela mesma razão declarada em `sysloc-worker.service` — uma
+# dependência lenta não deve virar falha de dependência.
+After=network.target postgresql.service
+Wants=postgresql.service
+
+# O alerta que NOMEIA quem falhou (CA-03). `%n` é o nome desta unidade, e a
+# unidade-modelo o devolve como `%i` na linha do journal.
+#
+# ⚠️ Ler junto com o bloco "`failed` AQUI NÃO SIGNIFICA 'não há cópia do dia'"
+# do cabeçalho: o alerta dispara também quando só o EXPURGO reprovou, com a
+# cópia publicada e íntegra.
+OnFailure=sysloc-alerta-de-rotina@%n.service
+
+[Service]
+Type=oneshot
+
+# ⚠️ NÃO HÁ `Restart=` — a ausência é a decisão, e é a mesma dos despachos de
+# rotina. A cópia que falha espera o PRÓXIMO DISPARO DO TIMER, em 24 h.
+# Reiniciar em laço repetiria contra o mesmo banco fora do ar, e cada tentativa
+# custaria uma travessia inteira de `pg_dump` sobre o volume que o servidor
+# compartilha com a operação.
+#
+# Pela mesma razão NÃO há `StartLimitIntervalSec=`/`StartLimitBurst=`: eles
+# existem nas unidades irmãs para conter laço de reinício e cadência de minuto,
+# e esta unidade não tem nem um nem outro.
+
+# ⚠️ Ela roda como ROOT, e a exigência é dos dois scripts, não conveniência:
+# `/etc/sysloc/backend.env` é 0600 root:root e `preservar-segredos.sh` lê
+# `/etc/sysloc` por inteiro — o próprio script recusa quando não consegue, e
+# manda executar com privilégio. É por isso que não há `User=sysloc` aqui, ao
+# contrário das unidades irmãs. As restrições de execução abaixo são o que
+# limita o alcance disso.
+User=root
+Group=root
+WorkingDirectory=/opt/sysloc-backend
+
+# As coordenadas de operação. NENHUMA delas é segredo — a única que fala de
+# credencial é o CAMINHO do arquivo que a guarda, e ver o cabeçalho para a razão
+# de ser referência de caminho em vez de `EnvironmentFile=`.
+#
+# DECISÃO FECHADA — T4 / Gate 1 rodada 2 · 2026-08-26
+# O QUÊ: a linha abaixo é `Environment=SYSLOC_ARQ_AMBIENTE=<caminho>`, e NÃO
+#        `EnvironmentFile=<caminho>`. A diretiva é o conteúdo, não o caminho.
+# POR QUÊ: `EnvironmentFile=` é a forma das SETE unidades irmãs e é o que a §4 da
+#          task prescrevia, de modo que trocá-la aqui se LÊ como conformidade —
+#          e despeja `DATABASE_URL` e `CHAVE_DE_CIFRA_DO_CERTIFICADO` (ADR-0032,
+#          o segredo operável que nunca se expõe) no ambiente desta unidade e no
+#          de CADA filho dela — `pg_dump`, `tar`, `find`, `gzip` —, todos como
+#          root, desfazendo na unidade a garantia que `copiar-base.sh` constrói.
+#          Nenhuma varredura de valor acusa a troca: o caminho continua o mesmo e
+#          não há credencial em texto aqui. Quem a pega é o `CT-1117` de
+#          `packages/shared/test/unidades-agendadas.spec.ts`, que afirma a FORMA
+#          em dois campos disjuntos — `arquivosDeAmbienteInjetados` vazio e
+#          `referenciaAoCaminho` com o caminho — mais o mutante que faz a troca.
+# REVERTER EXIGE: provar que nenhum filho desta unidade lê `environ` e que
+#                 `CHAVE_DE_CIFRA_DO_CERTIFICADO` não está no arquivo apontado.
+Environment=SYSLOC_ARQ_AMBIENTE=/etc/sysloc/backend.env
+
+# As duas travessias, na ordem que o cabeçalho justifica. Os alvos são scripts
+# VERSIONADOS — não artefato construído —, de modo que a existência deles vem
+# junto com a árvore, e não de `pnpm build`. Que eles existam e sejam
+# executáveis é afirmado pelo CT-1118 de
+# `packages/shared/test/unidades-agendadas.spec.ts`.
+ExecStart=/opt/sysloc-backend/deploy/scripts/backup/copiar-base.sh
+ExecStart=/opt/sysloc-backend/deploy/scripts/backup/preservar-segredos.sh
+
+# Teto da travessia, DECLARADO em vez de herdado.
+#
+# Sem ele vale o padrão da distribuição (90 s), que é curto demais para um
+# `pg_dump` de base que cresce — e um teto curto que mate a cópia legítima
+# custa exatamente o que esta unidade existe para evitar. 1800 s é ~40x a
+# duração medida do backup do sistema legado no MESMO volume (36 a 43 s, cinco
+# execuções, achado A9 da T1) e fica MUITO abaixo das 24 h que separam um
+# disparo do seguinte: o que o teto compra é o desfecho — um banco pendurado
+# leva a unidade a `failed`, e portanto ao `OnFailure=` acima, em vez de a
+# deixar presa consumindo os disparos seguintes em silêncio.
+TimeoutStartSec=1800
+
+# Restrições de execução — IDÊNTICAS às de `sysloc-worker.service`, linha a
+# linha. Ver o cabeçalho de `sysloc-api.service` para a razão de
+# `ProtectSystem=full`, `ProtectHome=read-only` e da presença de AF_NETLINK.
+#
+# ⚠️ Elas importam MAIS aqui do que nas unidades irmãs, porque esta roda como
+# root: `ProtectSystem=full` deixa /usr, /boot e /etc SOMENTE PARA LEITURA — o
+# que basta para ler `/etc/sysloc` e empacotá-lo — enquanto os três destinos
+# desta rotina (`/opt/backups/sysloc/daily`, `/opt/backups/sysloc/segredos` e
+# `/opt/salvaguarda-da-chave`) ficam sob /opt e permanecem graváveis.
+#
+# Copiá-las em vez de as derivar é a única forma que o formato `.ini` do
+# supervisor oferece: ele não tem herança, e um `.d/` de sobreposição só
+# ACRESCENTA — não haveria como uma unidade nova nascer restrita por omissão.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+# ⚠️ SEM seção [Install], e a ausência é o mecanismo.
+#
+# Unidade sem `[Install]` NÃO PODE ser habilitada: `systemctl enable` sobre ela
+# recusa. É a segunda barreira contra a cópia correr no boot — a primeira é a
+# lista `UNIDADES_DO_ARRANQUE` do instalador. Quem a inicia é
+# `sysloc-backup-da-base.timer`, pelo `Unit=` dele.

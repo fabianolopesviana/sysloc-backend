@@ -2,7 +2,8 @@
  * As unidades `systemd` das rotinas agendadas — asserção **estática** sobre `deploy/systemd/` e
  * sobre o fonte de `deploy/scripts/instalacao/instalar-unidades.sh`.
  *
- * Rastreabilidade: CA-01 · CA-03 · CA-04 · CA-10 · CA-23 → CT-1057 a CT-1060 (US-04, US-08, US-10).
+ * Rastreabilidade: CA-01 · CA-03 · CA-04 · CA-10 · CA-23 → CT-1057 a CT-1060 (US-04, US-08, US-10)
+ * · CA-03 · CA-07 → CT-1114 a CT-1118 (T4 da fatia `publicacao-e-backup`).
  *
  * INVARIANTES
  * - CT-1057: cada um dos seis `deploy/systemd/sysloc-rotina-*.timer` tem **exatamente uma** linha
@@ -23,6 +24,22 @@
  *   credencial em posição executável; e o rótulo de passo do instalador **avança** de uma chamada
  *   para a seguinte — esta última afirmada por **execução** do fragmento sob `bash`, e não por
  *   inspeção do texto.
+ * - CT-1114: o roster e `deploy/systemd/` são o **mesmo conjunto**, com a contagem afirmada por
+ *   soma declarada **parcela a parcela** — 2 permanentes + 13 de `automacoes-agendadas` + 2 de
+ *   `publicacao-e-backup`. Os dois sentidos são falsificados um a um.
+ * - CT-1115: o conjunto de arranque contém o `.timer` da cópia diária e **não** contém o
+ *   `.service` dela; e o detector alcança **todo** despacho de relógio, não apenas os de prefixo
+ *   de rotina.
+ * - CT-1116: o relógio da cópia declara o fuso no próprio `OnCalendar=`, `Persistent=true` e
+ *   `WantedBy=timers.target`, e dispara a unidade certa — com a perna de antirregressão que exige
+ *   os outros três analisadores **imóveis** em 6, 6 e 7.
+ * - CT-1117: nenhuma das **dezessete** unidades carrega credencial em posição executável, e a da
+ *   cópia **nomeia** o arquivo de modo restrito de onde ela vem (asserção positiva, ADR-0005) — com
+ *   a **forma** afirmada à parte do valor: zero `EnvironmentFile=` e um `Environment=` de
+ *   referência, porque a primeira despejaria `CHAVE_DE_CIFRA_DO_CERTIFICADO` (ADR-0032) no `environ`
+ *   de cada filho da unidade sem que agulha de credencial alguma acusasse.
+ * - CT-1118: o despacho da cópia é `oneshot`, **sem** `Restart=`, e cada `ExecStart=` aponta para
+ *   script que **existe e é executável** na árvore versionada.
  *
  * Fronteira real exercida: `filesystem` — e, no passo 4 do CT-1060, **`bash` de verdade**, num
  * subprocesso. Nenhum dublê: os arquivos lidos são os versionados, o fragmento executado é
@@ -82,13 +99,21 @@
  *
  * Asserção estática que ninguém falsificou é asserção que talvez não possa falhar. Cada caso abaixo
  * copia as unidades reais para um diretório temporário, reintroduz **um** defeito por cópia e afirma
- * a lista de achados **por igualdade** — nomeando o arquivo ofensor. O **controle**, que vem antes
+ * a lista de achados **por igualdade** — nomeando o arquivo ofensor.
+ *
+ * ⚠️ **Três predicados de `analisarInstalacao` eram CEGOS ao par da cópia diária**, e a cegueira foi
+ * medida antes de ser corrigida (T4 de `publicacao-e-backup`): eles filtravam por
+ * `PREFIXO_DA_ROTINA`, de modo que um `sysloc-backup-da-base.service` habilitado no arranque saía
+ * com `habilitaServiceIndevidamente == []` — verde, sobre um instalador que faria a cópia da base
+ * correr NO BOOT, concorrendo com o arranque do servidor. Hoje o alcance vem do **conteúdo**
+ * versionado — todo `.timer` é relógio; é despacho indevido quem for alvo do `Unit=` de um relógio
+ * ou `.service` sem `[Install]` —, e nenhum nome novo pode escapar por se chamar de outro jeito. O **controle**, que vem antes
  * das cópias defeituosas, é a perna que impede o desfecho oposto: sem ele, um leitor quebrado — que
  * reprovasse qualquer diretório — daria todas as reprovações abaixo sem provar coisa alguma.
  */
 
 import { execFile } from 'node:child_process';
-import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -143,6 +168,15 @@ const ONFAILURE_ESPERADO = 'sysloc-alerta-de-rotina@%n.service';
 /** O alvo sob o qual todo relógio é habilitado — sem ele, `systemctl enable` não tem onde ligá-lo. */
 const ALVO_DOS_RELOGIOS = 'timers.target';
 
+/**
+ * O cabeçalho da seção que torna uma unidade HABILITÁVEL.
+ *
+ * `systemctl enable` recusa unidade sem ela — é a segunda barreira que os despachos `oneshot` e a
+ * unidade-modelo usam, declarada no rodapé de cada um deles. Ler a ausência dela é o que permite
+ * detectar um `.service` indevido no arranque **sem depender do nome** que ele tenha.
+ */
+const SECAO_DE_INSTALACAO = '[Install]';
+
 /** A marca da instância na unidade-modelo — é ela que carrega o nome da rotina para o journal. */
 const MARCA_DA_INSTANCIA = '%i';
 
@@ -180,9 +214,30 @@ const UNIDADES_DA_FATIA: readonly string[] = Object.freeze([
   'sysloc-rotina-vigilancia-das-rotinas.timer',
 ]);
 
-/** Todo arquivo que `deploy/systemd/` deve conter — as duas antigas mais as treze desta fatia. */
+/** O despacho da cópia diária da base — T4 da fatia `publicacao-e-backup`. */
+const DESPACHO_DO_BACKUP = 'sysloc-backup-da-base.service';
+
+/** O relógio da cópia diária da base — o único do diretório fora do prefixo de rotina. */
+const RELOGIO_DO_BACKUP = 'sysloc-backup-da-base.timer';
+
+/**
+ * As **duas** unidades que a fatia `publicacao-e-backup` acrescenta — a TERCEIRA parcela.
+ *
+ * ⚠️ Ela entra como parcela **própria**, e não somando dois a `UNIDADES_ACRESCENTADAS`: aquele
+ * treze nomeia a fatia `automacoes-agendadas`, e sobrescrevê-lo apagaria a rastreabilidade de qual
+ * fatia trouxe o quê. A soma declarada continua sendo lida parcela a parcela.
+ *
+ * Escritas por extenso pela mesma razão das outras duas listas — derivá-las do diretório faria o
+ * caso concordar com qualquer conjunto que viesse a existir ali (AP-29).
+ */
+const UNIDADES_DO_BACKUP: readonly string[] = Object.freeze([
+  DESPACHO_DO_BACKUP,
+  RELOGIO_DO_BACKUP,
+]);
+
+/** Todo arquivo que `deploy/systemd/` deve conter — as duas antigas, as treze e as duas do backup. */
 const UNIDADES_ESPERADAS: readonly string[] = Object.freeze(
-  [...UNIDADES_PREEXISTENTES, ...UNIDADES_DA_FATIA].sort(),
+  [...UNIDADES_PREEXISTENTES, ...UNIDADES_DA_FATIA, ...UNIDADES_DO_BACKUP].sort(),
 );
 
 /** Quantas unidades esta fatia acrescenta — o `13` que a §5.1 da task enumera. */
@@ -190,6 +245,12 @@ const UNIDADES_ACRESCENTADAS = 13;
 
 /** Quantos relógios existem — uma por entrada de `CADENCIA_DA_ROTINA`, e o controle antivácuo. */
 const RELOGIOS = 6;
+
+/** Quantas unidades a fatia `publicacao-e-backup` acrescenta — o par relógio/despacho da cópia. */
+const UNIDADES_DO_BACKUP_ACRESCENTADAS = 2;
+
+/** Quantos relógios o backup traz — o `1` que fecha a soma do conjunto de arranque. */
+const RELOGIOS_DO_BACKUP = 1;
 
 /** Quantos arquivos de serviço o CT-1059 examina — os seis despachos mais a unidade-modelo. */
 const SERVICOS_EXAMINADOS = 7;
@@ -235,6 +296,43 @@ const AGULHAS_DE_CREDENCIAL: readonly { readonly nome: string; readonly padrao: 
 
 /** Quantas agulhas o controle positivo planta — uma por forma, cada uma em arquivo próprio. */
 const AGULHAS_PLANTADAS = AGULHAS_DE_CREDENCIAL.length;
+
+/**
+ * A raiz sob a qual as unidades declaram os caminhos absolutos que executam.
+ *
+ * As unidades escrevem `/opt/sysloc-backend/...` porque é onde o repositório vive no servidor. Esta
+ * suíte resolve o caminho declarado contra a **árvore corrente** ({@link RAIZ_DO_REPOSITORIO}) em
+ * vez de o consultar literalmente: o que se afirma é que o alvo existe **na fonte versionada**, e
+ * um caso que só passasse quando o checkout estivesse neste caminho provaria o host, não o texto.
+ * Que o caminho declarado esteja mesmo sob esta raiz é afirmado à parte, por igualdade.
+ */
+const RAIZ_INSTALADA = '/opt/sysloc-backend';
+
+/** O arquivo de modo restrito de onde a credencial do banco é lida — fora da árvore versionada. */
+const ARQUIVO_DE_AMBIENTE = '/etc/sysloc/backend.env';
+
+/**
+ * O `OnCalendar=` que o relógio da cópia diária declara, na forma **normalizada** pelo supervisor
+ * (medida com `systemd-analyze calendar` no systemd 255.4 desta máquina).
+ *
+ * ⚠️ Escrito **por extenso**, e é a decisão — derivá-lo do próprio arquivo faria o caso concordar
+ * com qualquer horário que a unidade viesse a declarar. E o valor não é livre: o achado **A9** da
+ * T1 mediu que o sistema legado ocupa `02:30` (`30 2 * * *` na `crontab` do root, 36 a 43 s no
+ * mesmo volume), de modo que `02:45` é a folga declarada sobre uma ocupação medida. Mudar o horário
+ * aqui sem mudar na unidade — ou o contrário — **reprova o CT-1116**, que é o que impede a folga de
+ * desaparecer em silêncio.
+ */
+const ONCALENDAR_DO_BACKUP = '*-*-* 02:45:00 America/Sao_Paulo';
+
+/** Quantos comandos o despacho da cópia executa — `copiar-base.sh` e `preservar-segredos.sh`. */
+const COMANDOS_DO_BACKUP = 2;
+
+/** O primeiro comando do despacho — a cópia da base, o artefato que não volta. */
+const CAMINHO_DA_COPIA_DA_BASE = '/opt/sysloc-backend/deploy/scripts/backup/copiar-base.sh';
+
+/** O segundo — o pacote dos segredos de operação e a chave em destino próprio (ADR-0032). */
+const CAMINHO_DA_PRESERVACAO_DOS_SEGREDOS =
+  '/opt/sysloc-backend/deploy/scripts/backup/preservar-segredos.sh';
 
 /** Teto por caso. Leitura de algumas dezenas de arquivos pequenos; folga larga sobre o medido. */
 const LIMITE_DO_CASO_MS = 30_000;
@@ -619,15 +717,48 @@ async function analisarInstalacao(
   const noDiretorio = new Set(unidadesNoDiretorio);
   const noArranque = new Set(unidadesDoArranque);
 
-  const relogios = unidadesNoDiretorio.filter(
-    (nome) => nome.startsWith(PREFIXO_DA_ROTINA) && nome.endsWith(SUFIXO_DE_RELOGIO),
-  );
+  // ⚠️ TODO `.timer` versionado, e não apenas os de prefixo de rotina.
+  //
+  // Filtrar por `PREFIXO_DA_ROTINA` aqui era CEGUEIRA MEDIDA: o prefixo é a grafia escolhida pela
+  // fatia que escreveu os seis relógios, não a propriedade. Com ele, o relógio da cópia diária
+  // (`sysloc-backup-da-base.timer`) ficava fora das três listas abaixo — e um `.service` de backup
+  // habilitado no arranque saía com `habilitaServiceIndevidamente == []`, isto é, passava verde.
+  // Medido no fonte de T4 antes da correção. Ver o CT-1115.
+  const relogios = unidadesNoDiretorio.filter((nome) => nome.endsWith(SUFIXO_DE_RELOGIO));
 
+  // O despacho que CADA relógio dispara, lido do `Unit=` dele — e não derivado de nome nenhum.
+  // Quando a diretiva está ausente, o supervisor assume o `.service` de mesmo nome-base, e é essa
+  // a regra reproduzida aqui: um relógio sem `Unit=` continua tendo despacho, e ele continua sendo
+  // indevido no arranque.
+  const despachosDeRelogio = new Set<string>();
   const timersSemWantedBy: string[] = [];
   for (const nome of relogios) {
     const conteudo = await readFile(join(diretorio, nome), 'utf8');
     if (!valoresDaDiretiva(conteudo, 'WantedBy').includes(ALVO_DOS_RELOGIOS)) {
       timersSemWantedBy.push(nome);
+    }
+    const declarados = valoresDaDiretiva(conteudo, 'Unit');
+    if (declarados.length === 0) {
+      despachosDeRelogio.add(`${nome.slice(0, -SUFIXO_DE_RELOGIO.length)}${SUFIXO_DE_SERVICO}`);
+      continue;
+    }
+    for (const declarado of declarados) {
+      despachosDeRelogio.add(declarado);
+    }
+  }
+
+  // O `.service` que o supervisor RECUSARIA habilitar, porque não declara seção `[Install]`. É o
+  // segundo eixo, e ele é independente do primeiro: um despacho que ganhasse `[Install]` ainda
+  // seria pego por `despachosDeRelogio`, e um `.service` órfão sem `[Install]` — que `systemctl
+  // enable` recusa — é pego aqui mesmo sem relógio algum apontando para ele.
+  const servicosSemInstalacao = new Set<string>();
+  for (const nome of unidadesNoDiretorio) {
+    if (!nome.endsWith(SUFIXO_DE_SERVICO)) {
+      continue;
+    }
+    const conteudo = await readFile(join(diretorio, nome), 'utf8');
+    if (!linhasExecutaveis(conteudo).includes(SECAO_DE_INSTALACAO)) {
+      servicosSemInstalacao.add(nome);
     }
   }
 
@@ -649,11 +780,21 @@ async function analisarInstalacao(
     naoInstalados: unidadesNoDiretorio.filter((nome) => !noInstalador.has(nome)),
     excedentesNoInstalador: unidadesNoInstalador.filter((nome) => !noDiretorio.has(nome)),
     // O despacho `oneshot` habilitado correria NO BOOT, fora do horário; a unidade-modelo não tem
-    // instância própria e `systemctl enable` sobre ela não faz sentido. As duas formas são o mesmo
+    // instância própria e `systemctl enable` sobre ela não faz sentido. As três formas são o mesmo
     // achado, e por isso saem na mesma lista.
+    //
+    // ⚠️ Os dois primeiros eixos SUBSTITUEM o filtro por `PREFIXO_DA_ROTINA` que vivia aqui, e o
+    // substituem por cima: todo `sysloc-rotina-*.service` é `Unit=` de um relógio E não declara
+    // `[Install]`, de modo que nada do que era detectado deixou de ser. O que muda é que o alcance
+    // passou a vir do CONTEÚDO versionado em vez da grafia do nome — nenhuma unidade agendada pode
+    // mais escapar por se chamar de outro jeito, que é exatamente o que acontecia com o par da
+    // cópia diária. A exclusão nominal da unidade-modelo fica escrita mesmo sendo hoje redundante
+    // com o segundo eixo: ela é o achado nomeado, e vale mesmo que o arquivo dela suma do
+    // diretório.
     habilitaServiceIndevidamente: unidadesDoArranque.filter(
       (nome) =>
-        (nome.startsWith(PREFIXO_DA_ROTINA) && nome.endsWith(SUFIXO_DE_SERVICO)) ||
+        despachosDeRelogio.has(nome) ||
+        servicosSemInstalacao.has(nome) ||
         nome === UNIDADE_DE_ALERTA,
     ),
     // O sentido contrário, e ele importa tanto quanto: relógio versionado, instalado e nunca
@@ -661,6 +802,139 @@ async function analisarInstalacao(
     relogiosForaDoArranque: relogios.filter((nome) => !noArranque.has(nome)),
     timersSemWantedBy,
     unidadesComCredencial,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// O par da cópia diária — lido à parte porque o prefixo dele é outro
+//
+// Ele não vive em `CADENCIA_DA_ROTINA`, e a ausência é conformidade: aquele
+// mapa é o roster das rotinas de negócio que o despachante aceita em `argv`, e
+// esta unidade não despacha rotina nenhuma — executa dois scripts de shell.
+// Por isso os três analisadores acima continuam medindo SEIS relógios e SETE
+// despachos, e é este retrato que responde pelo par novo.
+// ---------------------------------------------------------------------------
+
+/** Um `ExecStart=` cujo alvo não serve — o que só apareceria no primeiro disparo, de madrugada. */
+interface AlvoInvalido {
+  readonly unidade: string;
+  readonly caminho: string;
+  readonly motivo: 'inexistente' | 'sem bit de execução';
+}
+
+/** A chave que a unidade da cópia usa para NOMEAR o arquivo de onde a credencial é lida. */
+const CHAVE_DO_ARQUIVO_DE_AMBIENTE = 'SYSLOC_ARQ_AMBIENTE';
+
+interface RetratoDoBackup {
+  readonly unidadesEncontradas: string[];
+  readonly onCalendar: string[];
+  readonly persistente: boolean;
+  readonly alvoDeInstalacaoDoRelogio: string[];
+  readonly despachoDisparado: string[];
+  readonly tipoDoDespacho: string[];
+  readonly reinicios: string[];
+  /**
+   * Os arquivos que `EnvironmentFile=` DESPEJA no ambiente do processo — e o valor legítimo desta
+   * unidade é a lista **vazia**.
+   *
+   * ⚠️ Ele e {@link referenciaAoCaminho} são campos SEPARADOS de propósito, e a separação é o
+   * conteúdo da prova. Concatenados numa lista só — como esta suíte fazia até a rodada 2 do Gate 1
+   * da T4 —, o retrato conservava o *caminho* e descartava a **forma de injeção**: `EnvironmentFile=`
+   * e `Environment=SYSLOC_ARQ_AMBIENTE=` devolviam o mesmo `['/etc/sysloc/backend.env']`, e a única
+   * asserção da propriedade ficava verde nas DUAS. Ver a razão da divergência no cabeçalho de
+   * `deploy/systemd/sysloc-backup-da-base.service`.
+   */
+  readonly arquivosDeAmbienteInjetados: string[];
+  /**
+   * O caminho que a unidade apenas **NOMEIA**, por `Environment=SYSLOC_ARQ_AMBIENTE=` — sem que o
+   * conteúdo do arquivo entre no ambiente de processo algum.
+   */
+  readonly referenciaAoCaminho: string[];
+  readonly comandos: string[];
+  readonly comandosForaDaRaizInstalada: string[];
+  readonly alvosExaminados: number;
+  readonly alvosInvalidos: AlvoInvalido[];
+}
+
+/**
+ * O caminho declarado pela unidade, resolvido contra a árvore versionada corrente.
+ *
+ * Devolve `undefined` quando o caminho não está sob {@link RAIZ_INSTALADA} — e o caso trata isso
+ * como achado próprio (`comandosForaDaRaizInstalada`) em vez de o ignorar, que é o que impede um
+ * `ExecStart=` apontando para fora do repositório de sair da conferência sem ninguém notar.
+ */
+function resolverNaArvore(caminho: string): string | undefined {
+  const prefixo = `${RAIZ_INSTALADA}/`;
+  return caminho.startsWith(prefixo)
+    ? join(RAIZ_DO_REPOSITORIO, caminho.slice(prefixo.length))
+    : undefined;
+}
+
+async function analisarBackup(diretorio: string): Promise<RetratoDoBackup> {
+  const presentes = new Set(await readdir(diretorio));
+  const unidadesEncontradas = UNIDADES_DO_BACKUP.filter((nome) => presentes.has(nome));
+
+  const relogio = presentes.has(RELOGIO_DO_BACKUP)
+    ? await readFile(join(diretorio, RELOGIO_DO_BACKUP), 'utf8')
+    : '';
+  const despacho = presentes.has(DESPACHO_DO_BACKUP)
+    ? await readFile(join(diretorio, DESPACHO_DO_BACKUP), 'utf8')
+    : '';
+
+  const referenciaPorChave = valoresDaDiretiva(despacho, 'Environment')
+    .filter((valor) => valor.startsWith(`${CHAVE_DO_ARQUIVO_DE_AMBIENTE}=`))
+    .map((valor) => valor.slice(CHAVE_DO_ARQUIVO_DE_AMBIENTE.length + 1));
+
+  // O alvo de cada `ExecStart=` é o PRIMEIRO campo: a unidade invoca o script diretamente, pelo
+  // shebang dele, e não um interpretador com o script como argumento. É por isso que o bit de
+  // execução importa aqui e não importa nas unidades irmãs — sem ele o supervisor recusa a partida.
+  const comandos = valoresDaDiretiva(despacho, 'ExecStart');
+  const comandosForaDaRaizInstalada: string[] = [];
+  const alvosInvalidos: AlvoInvalido[] = [];
+  let alvosExaminados = 0;
+
+  for (const comando of comandos) {
+    const caminho = comando.split(/\s+/)[0] ?? '';
+    const naArvore = resolverNaArvore(caminho);
+    if (naArvore === undefined) {
+      comandosForaDaRaizInstalada.push(caminho);
+      continue;
+    }
+    alvosExaminados += 1;
+
+    const situacao = await stat(naArvore).catch(() => undefined);
+    if (situacao === undefined) {
+      alvosInvalidos.push({ unidade: DESPACHO_DO_BACKUP, caminho, motivo: 'inexistente' });
+      continue;
+    }
+    // Qualquer um dos três bits basta: o supervisor executa como root, e o que ele recusa é o
+    // arquivo sem bit de execução ALGUM.
+    if ((situacao.mode & 0o111) === 0) {
+      alvosInvalidos.push({
+        unidade: DESPACHO_DO_BACKUP,
+        caminho,
+        motivo: 'sem bit de execução',
+      });
+    }
+  }
+
+  return {
+    unidadesEncontradas,
+    onCalendar: valoresDaDiretiva(relogio, 'OnCalendar'),
+    persistente: valoresDaDiretiva(relogio, 'Persistent').includes('true'),
+    alvoDeInstalacaoDoRelogio: valoresDaDiretiva(relogio, 'WantedBy'),
+    despachoDisparado: valoresDaDiretiva(relogio, 'Unit'),
+    tipoDoDespacho: valoresDaDiretiva(despacho, 'Type'),
+    reinicios: valoresDaDiretiva(despacho, 'Restart'),
+    // As duas formas saem SEPARADAS, e nunca somadas: qual diretiva as produziu é o que decide se
+    // `DATABASE_URL` e `CHAVE_DE_CIFRA_DO_CERTIFICADO` entram no `environ` da unidade e no de cada
+    // filho dela. Somá-las apagaria exatamente a diferença que o CT-1117 existe para afirmar.
+    arquivosDeAmbienteInjetados: valoresDaDiretiva(despacho, 'EnvironmentFile'),
+    referenciaAoCaminho: referenciaPorChave,
+    comandos,
+    comandosForaDaRaizInstalada,
+    alvosExaminados,
+    alvosInvalidos,
   };
 }
 
@@ -1197,11 +1471,14 @@ describe('CT-1060 — o instalador cobre o diretório, habilita SÓ .timer, e ne
 
       // --- Passo 1: o array UNIDADES é igual, como conjunto, ao diretório ---------------------
       //
-      // A contagem é afirmada por SOMA DECLARADA: as duas unidades permanentes mais as treze que
-      // esta fatia acrescenta. Um número solto não diria qual parcela mudou.
+      // A contagem é afirmada por SOMA DECLARADA, PARCELA A PARCELA: as duas unidades permanentes,
+      // as treze da fatia `automacoes-agendadas` e as duas da `publicacao-e-backup`. Um número
+      // solto não diria qual parcela mudou — e somar as duas do backup ao treze apagaria de qual
+      // fatia veio o quê.
       expect(UNIDADES_DA_FATIA.length).toBe(UNIDADES_ACRESCENTADAS);
+      expect(UNIDADES_DO_BACKUP.length).toBe(UNIDADES_DO_BACKUP_ACRESCENTADAS);
       expect(retrato.unidadesNoDiretorio.length).toBe(
-        UNIDADES_PREEXISTENTES.length + UNIDADES_ACRESCENTADAS,
+        UNIDADES_PREEXISTENTES.length + UNIDADES_ACRESCENTADAS + UNIDADES_DO_BACKUP_ACRESCENTADAS,
       );
       expect(retrato.unidadesNoDiretorio).toEqual([...UNIDADES_ESPERADAS]);
 
@@ -1213,7 +1490,13 @@ describe('CT-1060 — o instalador cobre o diretório, habilita SÓ .timer, e ne
       expect(retrato.excedentesNoInstalador).toEqual([]);
 
       // --- Passo 2: habilita-se o relógio, NUNCA o despacho -----------------------------------
-      expect(retrato.unidadesDoArranque.length).toBe(UNIDADES_PREEXISTENTES.length + RELOGIOS);
+      //
+      // Soma declarada de novo: as duas permanentes, os seis relógios de rotina e o da cópia
+      // diária. O `RELOGIOS` continua sendo SEIS — ele nomeia as entradas de `CADENCIA_DA_ROTINA`,
+      // e o relógio do backup entra como parcela própria porque não é rotina de negócio.
+      expect(retrato.unidadesDoArranque.length).toBe(
+        UNIDADES_PREEXISTENTES.length + RELOGIOS + RELOGIOS_DO_BACKUP,
+      );
       expect(retrato.habilitaServiceIndevidamente).toEqual([]);
       // O sentido contrário: relógio instalado e nunca habilitado não corre, sem que nada falhe.
       expect(retrato.relogiosForaDoArranque).toEqual([]);
@@ -1375,6 +1658,444 @@ describe('CT-1060 — o instalador cobre o diretório, habilita SÓ .timer, e ne
             (_, posicao) => `P${String(posicao + 1).padStart(2, '0')}`,
           ),
         );
+      });
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});
+
+// ===========================================================================
+// CT-1114 — o roster cobre o diretório NOS DOIS SENTIDOS, agora com o backup
+// ===========================================================================
+
+describe('CT-1114 — o roster e o diretório versionado são o MESMO conjunto, com a terceira parcela', () => {
+  it(
+    'dezessete unidades, soma declarada parcela a parcela, e os dois sentidos falsificados um a um',
+    async () => {
+      const retrato = await analisarInstalacao(DIRETORIO_DE_UNIDADES, CAMINHO_DO_INSTALADOR);
+
+      // --- Passo 1: a soma, PARCELA A PARCELA ------------------------------------------------
+      //
+      // Cada parcela tem nome e dono: 2 permanentes + 13 de `automacoes-agendadas` + 2 desta
+      // fatia. Escrever `17` sozinho diria que a contagem mudou sem dizer de onde veio a mudança.
+      expect(UNIDADES_PREEXISTENTES.length).toBe(2);
+      expect(UNIDADES_DA_FATIA.length).toBe(UNIDADES_ACRESCENTADAS);
+      expect(UNIDADES_DO_BACKUP.length).toBe(UNIDADES_DO_BACKUP_ACRESCENTADAS);
+      expect(retrato.unidadesNoDiretorio.length).toBe(
+        UNIDADES_PREEXISTENTES.length + UNIDADES_ACRESCENTADAS + UNIDADES_DO_BACKUP_ACRESCENTADAS,
+      );
+      expect(retrato.unidadesNoDiretorio.length).toBe(17);
+
+      // --- Passo 2: as duas listas, por IGUALDADE contra o esperado POR EXTENSO ---------------
+      //
+      // `UNIDADES_ESPERADAS` é escrito à mão, e não derivado do diretório: derivá-lo faria o caso
+      // concordar com qualquer conjunto que viesse a existir ali (AP-29).
+      expect(retrato.unidadesNoDiretorio).toEqual([...UNIDADES_ESPERADAS]);
+      expect(retrato.unidadesNoInstalador).toEqual([...UNIDADES_ESPERADAS]);
+      expect(retrato.naoInstalados).toEqual([]);
+      expect(retrato.excedentesNoInstalador).toEqual([]);
+
+      // E o par novo, por VALOR — no mesmo molde do horário no CT-1057. As igualdades acima dizem
+      // que o roster e o diretório concordam; esta diz COM O QUÊ. Sem ela, uma renomeação feita
+      // nas duas pontas ao mesmo tempo passaria: o arquivo, o roster e a constante andariam
+      // juntos, e a unidade da cópia diária deixaria de se chamar o que a T4 publicou.
+      expect(UNIDADES_DO_BACKUP).toEqual([
+        'sysloc-backup-da-base.service',
+        'sysloc-backup-da-base.timer',
+      ]);
+
+      // --- Passo 3: PROVA DE FALSIFICAÇÃO, um sentido por cópia ------------------------------
+      await comRaizTemporaria(async (raiz) => {
+        // Falsificação 1 — SENTIDO A: a unidade existe versionada e sai do roster. Ela seria
+        // publicada no repositório e nunca posicionada no sistema; nada falharia, e a cópia
+        // diária simplesmente não existiria.
+        const semORelogio = await analisarInstalacao(
+          DIRETORIO_DE_UNIDADES,
+          await copiarInstalador(raiz, 'sem-o-relogio-do-backup', (fonte) =>
+            fonte.replace(`\t"${RELOGIO_DO_BACKUP}"\n`, ''),
+          ),
+        );
+        expect(semORelogio.naoInstalados).toEqual([RELOGIO_DO_BACKUP]);
+        // E só isso: o outro sentido permanece limpo. É o que separa "a asserção reprovou" de
+        // "a asserção reprovou pelo motivo certo".
+        expect(semORelogio.excedentesNoInstalador).toEqual([]);
+
+        // Falsificação 2 — SENTIDO B: um nome no roster sem arquivo correspondente. Na instalação
+        // real isto ABORTA (`verificar_precondicoes` exige o arquivo versionado), mas a instalação
+        // exige privilégio e não roda na suíte — esta é a asserção que o pega aqui.
+        const comNomeInventado = await analisarInstalacao(
+          DIRETORIO_DE_UNIDADES,
+          await copiarInstalador(raiz, 'com-nome-inventado', (fonte) =>
+            fonte.replace(
+              'readonly UNIDADES=(\n',
+              'readonly UNIDADES=(\n\t"sysloc-inexistente.service"\n',
+            ),
+          ),
+        );
+        expect(comNomeInventado.excedentesNoInstalador).toEqual(['sysloc-inexistente.service']);
+        expect(comNomeInventado.naoInstalados).toEqual([]);
+      });
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});
+
+// ===========================================================================
+// CT-1115 — habilita-se o RELÓGIO, nunca o DESPACHO, e o detector deixou de
+// ser cego ao prefixo
+// ===========================================================================
+
+describe('CT-1115 — o arranque leva o .timer da cópia e NUNCA o .service, com o predicado corrigido', () => {
+  it(
+    'nove no arranque por soma declarada, e os dois mutantes nomeados um a um',
+    async () => {
+      const retrato = await analisarInstalacao(DIRETORIO_DE_UNIDADES, CAMINHO_DO_INSTALADOR);
+
+      // --- Passo 1: o CONTROLE, com a soma declarada -----------------------------------------
+      expect(retrato.unidadesDoArranque.length).toBe(
+        UNIDADES_PREEXISTENTES.length + RELOGIOS + RELOGIOS_DO_BACKUP,
+      );
+      expect(retrato.unidadesDoArranque.length).toBe(9);
+      expect(retrato.unidadesDoArranque).toContain(RELOGIO_DO_BACKUP);
+      // A metade que a T4(b) cobra, e a que custa caro quando falha: o despacho habilitado
+      // correria NO BOOT, com a cópia da base concorrendo com o arranque do servidor.
+      expect(retrato.unidadesDoArranque).not.toContain(DESPACHO_DO_BACKUP);
+      expect(retrato.habilitaServiceIndevidamente).toEqual([]);
+      expect(retrato.relogiosForaDoArranque).toEqual([]);
+
+      await comRaizTemporaria(async (raiz) => {
+        // --- Passo 2: MUTANTE A — o despacho habilitado ---------------------------------------
+        //
+        // ⚠️ É ESTA a asserção que discrimina a cegueira, e a cegueira foi MEDIDA antes da
+        // correção: com o predicado filtrando por `PREFIXO_DA_ROTINA`, este mesmo mutante saía com
+        // `habilitaServiceIndevidamente == []` — verde, sobre um instalador que habilitaria a
+        // cópia da base no boot. A mutação é ancorada no CABEÇALHO do array de arranque porque
+        // cada nome aparece nos DOIS arrays.
+        const habilitandoODespacho = await analisarInstalacao(
+          DIRETORIO_DE_UNIDADES,
+          await copiarInstalador(raiz, 'habilitando-o-despacho-do-backup', (fonte) =>
+            fonte.replace(
+              'readonly UNIDADES_DO_ARRANQUE=(\n',
+              `readonly UNIDADES_DO_ARRANQUE=(\n\t"${DESPACHO_DO_BACKUP}"\n`,
+            ),
+          ),
+        );
+        expect(habilitandoODespacho.habilitaServiceIndevidamente).toEqual([DESPACHO_DO_BACKUP]);
+        // E só o array de arranque foi tocado: o de posicionamento continua cobrindo tudo.
+        expect(habilitandoODespacho.naoInstalados).toEqual([]);
+        expect(habilitandoODespacho.relogiosForaDoArranque).toEqual([]);
+
+        // --- Passo 3: MUTANTE B — o relógio fora do arranque -----------------------------------
+        //
+        // O sentido contrário, e ele importa tanto quanto: posicionado e nunca habilitado, o
+        // relógio não liga coisa alguma — a cópia deixa de acontecer sem que nada falhe. A
+        // mutação é aplicada SÓ ao trecho depois do cabeçalho do array de arranque, porque o mesmo
+        // literal aparece antes, em `UNIDADES`, e uma substituição livre mutaria o array errado.
+        const relogioForaDoArranque = await analisarInstalacao(
+          DIRETORIO_DE_UNIDADES,
+          await copiarInstalador(raiz, 'relogio-fora-do-arranque', (fonte) => {
+            const cabecalho = 'readonly UNIDADES_DO_ARRANQUE=(\n';
+            const corte = fonte.indexOf(cabecalho) + cabecalho.length;
+            return (
+              fonte.slice(0, corte) + fonte.slice(corte).replace(`\t"${RELOGIO_DO_BACKUP}"\n`, '')
+            );
+          }),
+        );
+        expect(relogioForaDoArranque.relogiosForaDoArranque).toEqual([RELOGIO_DO_BACKUP]);
+        // E o posicionamento intacto — de novo, a asserção que separa o motivo certo do acaso.
+        expect(relogioForaDoArranque.naoInstalados).toEqual([]);
+        expect(relogioForaDoArranque.habilitaServiceIndevidamente).toEqual([]);
+      });
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});
+
+// ===========================================================================
+// CT-1116 — o relógio é habilitável, declara o fuso e RECUPERA a janela perdida
+// ===========================================================================
+
+describe('CT-1116 — o relógio da cópia declara fuso, Persistent=true e WantedBy=timers.target', () => {
+  it(
+    'as três diretivas por valor, a perna de antirregressão dos outros analisadores, e dois mutantes',
+    async () => {
+      const retrato = await analisarBackup(DIRETORIO_DE_UNIDADES);
+
+      // Controle antivácuo: sem ele, um leitor que não achasse os arquivos devolveria listas
+      // vazias e as igualdades abaixo passariam por vacuidade.
+      expect(retrato.unidadesEncontradas).toEqual([...UNIDADES_DO_BACKUP]);
+
+      // --- Passo 1: o horário, por IGUALDADE LITERAL -----------------------------------------
+      //
+      // Uma linha só (duas fariam o supervisor usar as duas), e o valor exato — que carrega o
+      // fuso DECLARADO. Afirmar o valor inteiro é mais forte que afirmar o sufixo: um horário
+      // deslocado e um fuso removido reprovam pela mesma asserção, e ela diz contra o quê.
+      expect(retrato.onCalendar).toEqual([ONCALENDAR_DO_BACKUP]);
+      expect(ONCALENDAR_DO_BACKUP.endsWith(` ${FUSO_DA_OPERACAO}`)).toBe(true);
+
+      // --- Passo 2: as duas diretivas sem as quais o relógio não serve -----------------------
+      //
+      // Sem `Persistent=true`, a janela perdida por desligamento NUNCA é recuperada e o acervo
+      // ganha um furo — é o invariante 7 do projeto. Sem `WantedBy=`, `systemctl enable` não tem
+      // onde ligar o relógio.
+      expect(retrato.persistente).toBe(true);
+      expect(retrato.alvoDeInstalacaoDoRelogio).toEqual([ALVO_DOS_RELOGIOS]);
+      // E ele dispara a unidade certa — sem esta, o relógio poderia estar perfeito e acionar
+      // outra coisa.
+      expect(retrato.despachoDisparado).toEqual([DESPACHO_DO_BACKUP]);
+
+      // --- Passo 3: PERNA DE ANTIRREGRESSÃO --------------------------------------------------
+      //
+      // Os três predicados de `analisarInstalacao` foram alargados nesta task, e o risco da
+      // correção é vazar o alargamento para os analisadores das ROTINAS — que medem o conjunto do
+      // contrato, não o do diretório. Se qualquer um destes dois números se mover, o filtro foi
+      // alargado indevidamente e o CT-1057/CT-1058/CT-1059 passariam a examinar unidade que não é
+      // rotina de negócio.
+      expect((await analisarRelogios(DIRETORIO_DE_UNIDADES)).examinados).toBe(RELOGIOS);
+      expect((await analisarPersistencia(DIRETORIO_DE_UNIDADES)).examinados).toBe(RELOGIOS);
+      expect((await analisarDespachos(DIRETORIO_DE_UNIDADES)).examinados).toBe(SERVICOS_EXAMINADOS);
+
+      // --- Passo 4: PROVA DE FALSIFICAÇÃO ----------------------------------------------------
+      await comRaizTemporaria(async (raiz) => {
+        // Controle: a cópia íntegra passa limpa.
+        const integro = await analisarBackup(await copiarUnidades(raiz, []));
+        expect(integro.persistente).toBe(true);
+        expect(integro.onCalendar).toEqual([ONCALENDAR_DO_BACKUP]);
+
+        // Falsificação 1: a linha `Persistent=true` removida — a máquina fora do ar às 02:45
+        // passa a CUSTAR a cópia daquele dia.
+        const semPersistencia = await analisarBackup(
+          await copiarUnidades(raiz, [
+            {
+              unidade: RELOGIO_DO_BACKUP,
+              mutar: (conteudo) => conteudo.replace('\nPersistent=true\n', '\n'),
+            },
+          ]),
+        );
+        expect(semPersistencia.persistente).toBe(false);
+        // E só isso: o horário não foi tocado.
+        expect(semPersistencia.onCalendar).toEqual([ONCALENDAR_DO_BACKUP]);
+
+        // Falsificação 2: o `WantedBy=` removido. ⚠️ Ela é lida pelo predicado CORRIGIDO de
+        // `analisarInstalacao` — com o filtro por prefixo, este mutante saía com
+        // `timersSemWantedBy == []`, porque o relógio da cópia não casa `sysloc-rotina-`.
+        const semAlvoDeInstalacao = await analisarInstalacao(
+          await copiarUnidades(raiz, [
+            {
+              unidade: RELOGIO_DO_BACKUP,
+              mutar: (conteudo) => conteudo.replace(`WantedBy=${ALVO_DOS_RELOGIOS}\n`, ''),
+            },
+          ]),
+          CAMINHO_DO_INSTALADOR,
+        );
+        // UM elemento, e não sete: os seis relógios de rotina não foram tocados, e a igualdade da
+        // lista inteira é o que prova as duas coisas de uma vez.
+        expect(semAlvoDeInstalacao.timersSemWantedBy).toEqual([RELOGIO_DO_BACKUP]);
+        // E só o `WantedBy=` mudou — a varredura de credencial segue limpa na cópia mutada.
+        expect(semAlvoDeInstalacao.unidadesComCredencial).toEqual([]);
+      });
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});
+
+// ===========================================================================
+// CT-1117 — a credencial vem por REFERÊNCIA, nunca embutida na unidade
+// ===========================================================================
+
+describe('CT-1117 — nenhuma unidade carrega credencial, e a da cópia NOMEIA o arquivo restrito', () => {
+  it(
+    'as dezessete varridas sem achado, a referência afirmada por valor E por forma, e os dois mutantes',
+    async () => {
+      const retrato = await analisarInstalacao(DIRETORIO_DE_UNIDADES, CAMINHO_DO_INSTALADOR);
+
+      // Controle antivácuo da VARREDURA: são dezessete arquivos lidos, e não zero.
+      expect(retrato.unidadesNoDiretorio.length).toBe(17);
+      expect(retrato.unidadesComCredencial).toEqual([]);
+      // E o conjunto de agulhas não encolheu — o vazio acima só vale o que valem as formas
+      // procuradas. As quatro, e a ordem delas, são afirmadas pelo controle positivo do CT-1060.
+      expect(AGULHAS_DE_CREDENCIAL.length).toBe(AGULHAS_PLANTADAS);
+      expect(AGULHAS_DE_CREDENCIAL.map(({ nome }) => nome)).toEqual([
+        'PGPASSWORD',
+        'credencial embutida em URL',
+        'password',
+        'senha',
+      ]);
+
+      // --- A ASSERÇÃO POSITIVA (ADR-0005) -----------------------------------------------------
+      //
+      // Sem ela, o vazio acima seria satisfeito por uma unidade que não tem credencial **e também
+      // não funciona**. A cópia precisa dizer DE ONDE a credencial vem, e o que ela declara é o
+      // CAMINHO do arquivo de modo 0600 que vive fora da árvore versionada — nunca o valor.
+      const backup = await analisarBackup(DIRETORIO_DE_UNIDADES);
+
+      // ⚠️ A FORMA é afirmada, e não apenas o valor — são DUAS asserções porque uma só não
+      // discrimina. `EnvironmentFile=/etc/sysloc/backend.env` é a forma das SETE unidades irmãs, é
+      // o que a §4 da task prescrevia, e por isso é exatamente o que a próxima edição desta unidade
+      // vai parecer conformidade. Ela DESPEJA o arquivo no ambiente: `DATABASE_URL` e
+      // `CHAVE_DE_CIFRA_DO_CERTIFICADO` — o segredo operável que a `Decision` da ADR-0032 manda
+      // nunca expor — entrariam no `environ` desta unidade e no de CADA filho dela (`pg_dump`,
+      // `tar`, `find`, `gzip`), todos como root. A lista vazia é, portanto, asserção de segurança.
+      expect(backup.arquivosDeAmbienteInjetados).toEqual([]);
+      // E a forma legítima: a unidade NOMEIA o caminho, e o conteúdo do arquivo não entra em
+      // ambiente de processo nenhum. Os dois campos juntos são o discriminador — trocar a forma
+      // move o valor de um para o outro e reprova aqui.
+      expect(backup.referenciaAoCaminho).toEqual([ARQUIVO_DE_AMBIENTE]);
+
+      // --- PROVA DE FALSIFICAÇÃO --------------------------------------------------------------
+      await comRaizTemporaria(async (raiz) => {
+        // A cadeia de conexão com senha embutida, na unidade da cópia — a forma em que a
+        // credencial realmente apareceria se alguém "resolvesse" a leitura do arquivo.
+        const comCredencial = await analisarInstalacao(
+          await copiarUnidades(raiz, [
+            {
+              unidade: DESPACHO_DO_BACKUP,
+              mutar: (conteudo) =>
+                conteudo.replace(
+                  `Environment=${CHAVE_DO_ARQUIVO_DE_AMBIENTE}=${ARQUIVO_DE_AMBIENTE}`,
+                  'Environment=DATABASE_URL=postgres://usuario:segredo@maquina/banco',
+                ),
+            },
+          ]),
+          CAMINHO_DO_INSTALADOR,
+        );
+        expect(comCredencial.unidadesComCredencial).toEqual([
+          { unidade: DESPACHO_DO_BACKUP, agulha: 'credencial embutida em URL' },
+        ]);
+        // Um achado, e só um: as outras dezesseis unidades seguem limpas.
+        expect(comCredencial.unidadesComCredencial.length).toBe(1);
+
+        // --- Falsificação da FORMA -------------------------------------------------------------
+        //
+        // ⚠️ Este é o mutante que discrimina, e ele NÃO planta credencial nenhuma: o caminho segue
+        // sendo o mesmo `/etc/sysloc/backend.env`, e a varredura de agulhas continua limpa. O que
+        // muda é só a diretiva — `Environment=SYSLOC_ARQ_AMBIENTE=` vira `EnvironmentFile=`, que é
+        // a forma das sete unidades irmãs e a que a próxima edição vai LER COMO CONFORMIDADE.
+        //
+        // Com o campo único que esta suíte publicava até a rodada 2 do Gate 1 da T4, este mutante
+        // saía com o MESMO `['/etc/sysloc/backend.env']` da unidade íntegra e a suíte inteira ficava
+        // verde enquanto o vazamento voltava. Com os dois campos, o valor migra de um para o outro
+        // e as duas asserções acima reprovam — a de segurança primeiro.
+        const comInjecaoDeAmbiente = await analisarBackup(
+          await copiarUnidades(raiz, [
+            {
+              unidade: DESPACHO_DO_BACKUP,
+              mutar: (conteudo) =>
+                conteudo.replace(
+                  `Environment=${CHAVE_DO_ARQUIVO_DE_AMBIENTE}=${ARQUIVO_DE_AMBIENTE}`,
+                  `EnvironmentFile=${ARQUIVO_DE_AMBIENTE}`,
+                ),
+            },
+          ]),
+        );
+        // Os dois campos INVERTIDOS em relação à unidade íntegra: é o que prova que a asserção de
+        // cima pode falhar, e que ela falha por MUDANÇA DE FORMA, não por mudança de caminho.
+        expect(comInjecaoDeAmbiente.arquivosDeAmbienteInjetados).toEqual([ARQUIVO_DE_AMBIENTE]);
+        expect(comInjecaoDeAmbiente.referenciaAoCaminho).toEqual([]);
+        // E o controle que impede a leitura errada do mutante: nenhuma agulha de credencial nasceu
+        // dele. A varredura de valor NÃO alcança este defeito — é exatamente por isso que ele
+        // precisa das duas asserções de forma acima.
+        const varreduraDoMutante = await analisarInstalacao(
+          await copiarUnidades(raiz, [
+            {
+              unidade: DESPACHO_DO_BACKUP,
+              mutar: (conteudo) =>
+                conteudo.replace(
+                  `Environment=${CHAVE_DO_ARQUIVO_DE_AMBIENTE}=${ARQUIVO_DE_AMBIENTE}`,
+                  `EnvironmentFile=${ARQUIVO_DE_AMBIENTE}`,
+                ),
+            },
+          ]),
+          CAMINHO_DO_INSTALADOR,
+        );
+        expect(varreduraDoMutante.unidadesComCredencial).toEqual([]);
+      });
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});
+
+// ===========================================================================
+// CT-1118 — o ExecStart aponta para script que EXISTE e é EXECUTÁVEL
+// ===========================================================================
+
+describe('CT-1118 — a cópia é oneshot, sem Restart=, e cada ExecStart= tem alvo real e executável', () => {
+  it(
+    'os dois comandos por valor, os alvos conferidos no filesystem, e o mutante com o caminho no plural',
+    async () => {
+      const retrato = await analisarBackup(DIRETORIO_DE_UNIDADES);
+
+      // --- Passo 1: a forma do despacho -------------------------------------------------------
+      expect(retrato.tipoDoDespacho).toEqual(['oneshot']);
+      // A AUSÊNCIA de `Restart=` é a decisão, a mesma dos despachos de rotina: a cópia que falha
+      // espera o próximo disparo, em 24 h. Reiniciar em laço repetiria `pg_dump` inteiro contra o
+      // mesmo banco fora do ar, no volume que o servidor compartilha com a operação.
+      expect(retrato.reinicios).toEqual([]);
+
+      // --- Passo 2: os comandos, por VALOR ----------------------------------------------------
+      //
+      // A ordem é conteúdo: `oneshot` executa em sequência e PARA no primeiro que reprova, e a
+      // cópia da base vem primeiro porque é o artefato que não volta.
+      expect(retrato.comandos).toEqual([
+        CAMINHO_DA_COPIA_DA_BASE,
+        CAMINHO_DA_PRESERVACAO_DOS_SEGREDOS,
+      ]);
+      expect(retrato.comandosForaDaRaizInstalada).toEqual([]);
+
+      // --- Passo 3: os alvos, CONFERIDOS NO FILESYSTEM ----------------------------------------
+      //
+      // Controle antivácuo antes da lista vazia: dois alvos foram de fato examinados.
+      expect(retrato.alvosExaminados).toBe(COMANDOS_DO_BACKUP);
+      expect(retrato.alvosInvalidos).toEqual([]);
+
+      // --- Passo 4: PROVA DE FALSIFICAÇÃO -----------------------------------------------------
+      //
+      // ⚠️ O modo de falha que esta perna fecha só apareceria às 02:45, sem ninguém olhando: o
+      // supervisor recusa a partida e a unidade vai a `failed` com a cópia daquele dia perdida. O
+      // instalador aborta ANTES disso, mas só na instalação — que exige privilégio e não roda na
+      // suíte —, e ele nem sequer alcança esta unidade: ela está nomeadamente fora de
+      // `unidade_executa_o_runtime`, porque invoca script versionado em vez de artefato
+      // construído. ESTA é a asserção que a pega.
+      await comRaizTemporaria(async (raiz) => {
+        // Controle: a cópia íntegra passa limpa.
+        const integro = await analisarBackup(await copiarUnidades(raiz, []));
+        expect(integro.alvosExaminados).toBe(COMANDOS_DO_BACKUP);
+        expect(integro.alvosInvalidos).toEqual([]);
+
+        // Falsificação: o diretório no plural — o erro de digitação que atravessa
+        // `systemd-analyze verify` sem uma palavra, porque o supervisor não confere caminho.
+        const caminhoNoPlural = await analisarBackup(
+          await copiarUnidades(raiz, [
+            {
+              unidade: DESPACHO_DO_BACKUP,
+              // ⚠️ A mutação é ancorada na LINHA `ExecStart=` e atinge SÓ a primeira delas — um
+              // defeito por cópia. Mutar o texto do arquivo alcançaria a prosa do cabeçalho, que
+              // `linhasExecutaveis` descarta, e o achado não nasceria.
+              mutar: (conteudo) =>
+                conteudo
+                  .split('\n')
+                  .map((linha) =>
+                    linha === `ExecStart=${CAMINHO_DA_COPIA_DA_BASE}`
+                      ? linha.replace('/scripts/backup/', '/scripts/backups/')
+                      : linha,
+                  )
+                  .join('\n'),
+            },
+          ]),
+        );
+        expect(caminhoNoPlural.alvosInvalidos).toEqual([
+          {
+            unidade: DESPACHO_DO_BACKUP,
+            caminho: '/opt/sysloc-backend/deploy/scripts/backups/copiar-base.sh',
+            motivo: 'inexistente',
+          },
+        ]);
+        // UMA entrada, e só uma: o segundo comando não foi tocado e continua válido.
+        expect(caminhoNoPlural.alvosInvalidos.length).toBe(1);
+        // E os alvos continuaram sendo examinados — a lista não ficou cheia por o leitor ter
+        // desistido de resolver os caminhos.
+        expect(caminhoNoPlural.alvosExaminados).toBe(COMANDOS_DO_BACKUP);
+        expect(caminhoNoPlural.comandosForaDaRaizInstalada).toEqual([]);
       });
     },
     LIMITE_DO_CASO_MS,

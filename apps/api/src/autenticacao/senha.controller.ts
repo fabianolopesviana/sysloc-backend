@@ -331,9 +331,14 @@ export class SenhaController {
    *
    * Os cabeçalhos do cliente são **copiados**, e não sintetizados: é deles que saem o cookie de
    * sessão (sem o qual `changePassword` não resolve a pessoa) e o `x-forwarded-for` que o limitador
-   * usa como eixo de origem — o eixo que o `D27` de `packages/auth/src/autenticacao.ts` registra
-   * como ausente hoje e que a F7 instala. A cópia é sobre um `Headers` NOVO porque o original segue
-   * em uso no encerramento das demais sessões, mais abaixo.
+   * usa como eixo de origem — eixo que **já existe**, e é por isso que a cópia importa: sem o
+   * cabeçalho, o pedido montado aqui chegaria ao arcabouço sem origem alguma, e toda troca de senha
+   * do produto compartilharia um balde único. (Este trecho dizia que o eixo era *"ausente hoje"* e
+   * que *"a F7 instala"*, citando o `D27 · F1/T6`. As duas afirmações morreram na T8 da fatia
+   * `publicacao-e-backup`, que fechou aquele débito declarando `SALTOS_CONFIAVEIS` em
+   * `advanced.ipAddress` — ver `packages/auth/src/autenticacao.ts`. Ficar de pé era pior aqui do que
+   * em qualquer outro lugar: esta é a rota de produto que o limitador alcança.) A cópia é sobre um
+   * `Headers` NOVO porque o original segue em uso no encerramento das demais sessões, mais abaixo.
    *
    * Três ajustes, e cada um tem razão própria:
    *

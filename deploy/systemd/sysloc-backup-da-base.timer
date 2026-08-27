@@ -1,0 +1,102 @@
+# Relógio da cópia diária da base — T4 da fatia `publicacao-e-backup`.
+#
+# Esta é a FONTE VERSIONADA, posicionada por
+# `deploy/scripts/instalacao/instalar-unidades.sh` (ADR-0005). É ESTA unidade
+# que é habilitada no arranque, e não o `.service` que ela dispara.
+#
+# ---------------------------------------------------------------------------
+# 🔴 O HORÁRIO É 02:45, E ELE NÃO FOI ESCOLHIDO POR PREFERÊNCIA
+# ---------------------------------------------------------------------------
+#
+# O plano da fatia escrevia 02:30 (`plano-execucao.md` §F7, linha 560), e a
+# `[HIPÓTESE]` do pré-refinamento dizia que "a janela das 02:30 comporta os dois
+# backups sem contenção de E/S". Ela CAIU POR MEDIÇÃO na janela assistida da T1
+# — é o achado A9, o mais consequente daquela task:
+#
+#   · o sistema legado dispara a preservação DELE por entrada na `crontab` do
+#     root — `30 2 * * *`, medido com `sudo crontab -l`. Não é timer do systemd
+#     e não é `/etc/cron.d`, e é por isso que nenhuma leitura sem privilégio a
+#     encontrava;
+#   · ele ocupa o disco de 02:30:01 a 02:30:44 — 36 a 43 s em cinco execuções
+#     consecutivas;
+#   · é o MESMO volume (`/dev/mapper/ubuntu--vg-ubuntu--lv`), e os destinos são
+#     IRMÃOS sob `/opt/backups` (achado A7, a mesma vizinhança pelo eixo do
+#     espaço);
+#   · `/opt/frappe` segue DE PÉ e atendendo a operação até a F7. Ele não é
+#     legado desligado: é produção alheia rodando ao lado.
+#
+# Partir às 02:30 poria `pg_dump` a ler o volume exatamente enquanto o legado
+# escreve o dump dele — as duas rotinas disputando E/S, cada uma tornando a
+# outra mais lenta, num servidor compartilhado.
+#
+# 02:45 dá 15 min de folga sobre uma ocupação medida em 43 s — folga de ~20x
+# sobre o pior caso observado, e não sobre uma estimativa. Antes de 02:30 seria
+# a escolha ERRADA pelo mesmo raciocínio invertido: a duração desta cópia é a
+# que vai crescer com a base, de modo que partir antes do legado a faria
+# alcançá-lo por cima com o tempo, enquanto partir depois deixa o crescimento
+# correr para uma faixa vazia.
+#
+# A faixa é vazia, e isso também foi medido:
+#
+#   02:30  preservação do sistema legado (`crontab` do root)      ~43 s
+#   02:45  ESTA unidade                                            ← livre
+#   03:00  `sysloc-rotina-conferencia-de-liquidacao.timer`         despacho leve
+#   03:15  backup do painel de hospedagem (`/etc/cron.d/clp`)
+#   03:30  `sysloc-rotina-manutencao.timer`                        despacho leve
+#
+# Os dois despachos de rotina que caem na faixa ENFILEIRAM e terminam — eles não
+# leem o volume em massa —, de modo que o único trabalho pesado de disco entre
+# 02:30 e 03:15 é esta cópia.
+#
+# ⚠️ Dispersão aleatória (`RandomizedDelaySec=`) foi DESCARTADA: ela existe para
+# desconcentrar muitas máquinas no mesmo minuto, e aqui produziria o oposto do
+# que se quer — um horário que anda dentro da faixa e que, no limite superior,
+# reencontra o backup do painel às 03:15. Com um único servidor, o horário
+# determinístico é o que torna a colisão RACIOCINÁVEL.
+#
+# ---------------------------------------------------------------------------
+# O FUSO É DECLARADO
+# ---------------------------------------------------------------------------
+#
+# Sem o sufixo, o horário depende do fuso do SISTEMA, e hoje ele acerta POR
+# ACIDENTE — a máquina está em America/Sao_Paulo. O dia em que o fuso do host
+# mudasse, a cópia passaria a correr em outra hora sem que nada falhasse — e a
+# folga de 15 min sobre a janela do legado, que é o motivo de este horário
+# existir, deixaria de valer em silêncio. O supervisor aceita o fuso no próprio
+# `OnCalendar=` desde a 252; medido nesta máquina: 255.4.
+#
+# ⚠️ O horário desta unidade NÃO vive em `CADENCIA_DA_ROTINA`, e a ausência é
+# conformidade: aquele mapa é o roster das ROTINAS DE NEGÓCIO que o despachante
+# do processo de trabalho aceita em `argv`, e esta unidade não despacha rotina
+# nenhuma — ela executa dois scripts de shell. Acrescentá-la lá criaria uma
+# sétima entrada que nenhum despachante reconhece, e o `CT-1059` reprovaria por
+# argumento inexistente. Quem amarra o horário daqui é o CT-1116, por igualdade
+# literal do `OnCalendar=`.
+
+[Unit]
+Description=Relógio da cópia diária da base do Sysloc
+Documentation=file:/opt/sysloc-backend/docs/specs/features/publicacao-e-backup/v1/scope.md
+
+[Timer]
+OnCalendar=*-*-* 02:45:00 America/Sao_Paulo
+
+# A garantia do invariante 7 do projeto: a máquina fora do ar na hora marcada
+# NÃO custa a cópia daquele dia. Ao voltar, o supervisor dispara UMA vez — não N
+# — e a cópia é feita atrasada em vez de não ser feita.
+#
+# ⚠️ Sem esta linha, um reinício que atravessasse 02:45 produziria um FURO no
+# acervo, e o furo só apareceria no dia em que aquela data fosse a única que
+# restasse.
+Persistent=true
+
+# Precisão DECLARADA. Sem ela vale o padrão do supervisor, que é 1 min: ele
+# agrupa despertares para poupar energia, e o agrupamento faria o disparo andar
+# dentro da janela — justamente o que a folga de 15 min sobre o legado existe
+# para impedir. Este servidor está sempre ligado, de modo que o agrupamento não
+# compra coisa alguma.
+AccuracySec=1s
+
+Unit=sysloc-backup-da-base.service
+
+[Install]
+WantedBy=timers.target

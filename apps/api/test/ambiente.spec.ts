@@ -49,9 +49,28 @@
  * |       |        | positivo sem o qual as cinco linhas negativas seriam satisfeitas por uma
  * |       |        | validação que recusasse todo ambiente. |
  *
+ * | CA-02 | CT-1160 | A barreira FALHA FECHADO também para as origens públicas: ausente ou em
+ * |       |         | branco, `carregarAmbiente` recusa a partida com a cadeia EXATA
+ * |       |         | `ORIGENS_PUBLICAS: ausente` e NUNCA devolve configuração. |
+ * | CA-02 | CT-1161 | Valor **presente e inaceitável** — sem esquema, com caminho, esquema fora
+ * |       |         | de http/https, sem servidor nomeado, **com curinga no servidor** e lista
+ * |       |         | que separa em ZERO itens — recusa nomeando a variável **e a exigência**,
+ * |       |         | jamais o valor recebido, e de forma DISTINGUÍVEL de *"ausente"*. |
+ * | CA-02 | CT-1162 | Com as duas origens declaradas a partida é ACEITA: o ambiente sai inteiro
+ * |       |         | por igualdade estrita, o campo é a **lista na ordem declarada**,
+ * |       |         | `VARIAVEIS_EXIGIDAS` passa a contê-la e o conjunto de campos cresce por
+ * |       |         | **exatamente um**. É o controle positivo sem o qual CT-1160 e CT-1161
+ * |       |         | seriam satisfeitos por uma validação que recusasse todo ambiente. |
+ * | CA-12 | CT-1163 | Acrescentar a variável ao conjunto exigido **não** deixa exigida alguma sem
+ * |       |         | caminho de provisionamento: o conjunto sem provisionamento continua
+ * |       |         | VAZIO, e a nova aparece nomeada na fonte que a emite e no exemplo que a
+ * |       |         | documenta. |
+ *
  * Rastreabilidade acrescida pela T10: `CA-17 → CT-639 (RD-15)`.
  * Rastreabilidade acrescida pela T11 da fatia `fundacao-bancaria`: `CA-12 → CT-851, CT-852, CT-853`.
  * Rastreabilidade acrescida pela T13 da fatia `emissao-e-conciliacao`: `CA-20 → CT-936 (api)`.
+ * Rastreabilidade acrescida pela T7 da fatia `publicacao-e-backup`: `CA-02 → CT-1160, CT-1161,
+ * CT-1162` e `CA-12 → CT-1163`.
  *
  * A fonte de variáveis é PARÂMETRO da função (Padrão 14: fail-fast testável). Um único caso planta
  * valor em `process.env` — o que PROVA que o ambiente do processo não prevalece sobre a fonte — e
@@ -228,6 +247,67 @@ const ENDERECOS_DA_ENTREGA_ACEITAVEIS = [
   'https://notificacao.exemplo.invalid/v1/notificacoes-bancarias',
   'https://notificacao.exemplo.invalid:443/v1/notificacoes-bancarias',
 ] as const;
+/**
+ * As DUAS origens públicas do controle positivo — o app do cliente e o Painel Master.
+ *
+ * São duas porque a variável é **plural por decisão** (§5.7 do scope da fatia
+ * `publicacao-e-backup`): dois aplicativos falam com o mesmo processo, e uma origem só faria um dos
+ * dois parar de entrar. A **ordem** importa e é asserida no `CT-1162`: o arcabouço empilha a lista
+ * na ordem recebida, e uma leitura que a reordenasse mudaria o conjunto que a instância publica.
+ *
+ * Distinguíveis das demais variáveis desta tabela pela razão de sempre — com valores parecidos, um
+ * campo alimentado pela variável errada passaria despercebido.
+ */
+const ORIGEM_PUBLICA_DO_APP = 'https://app.exemplo.com.br';
+const ORIGEM_PUBLICA_DO_PAINEL = 'https://painel.exemplo.com.br';
+const ORIGENS_PUBLICAS_ACEITAVEIS = `${ORIGEM_PUBLICA_DO_APP},${ORIGEM_PUBLICA_DO_PAINEL}`;
+
+/**
+ * Os seis valores **presentes e inaceitáveis** do `CT-1161`, e o que cada um discrimina.
+ *
+ * Cinco deles são formas distintas de escrever algo que **nunca casaria origem alguma**; o sexto — o
+ * curinga — é o inverso, e casaria TODAS. Os dois fatos são medidos no pacote publicado
+ * (`dist/auth/trusted-origins.mjs`): sem curinga, a comparação é `pattern === getOrigin(url)`, e um
+ * valor sem esquema, com caminho ou com esquema estranho não casa nada — o efeito é o serviço
+ * inteiro inacessível ao navegador, entrada inclusive.
+ *
+ * ⚠️ **Divergência declarada da letra do card, medida.** O card do `CT-1161` escreve a última linha
+ * como `,` (uma vírgula). O texto da exigência **contém uma vírgula**, de modo que a asserção de
+ * não-eco (`not.toContain(valor)`) seria impossível de satisfazer para esse valor — e afrouxá-la só
+ * nessa linha esvaziaria justamente a asserção que o card pede. `,,,` separa em zero itens
+ * exatamente pelo mesmo caminho, é distinguível, e mantém a não-eco significativa. Pela **mesma**
+ * razão, a exigência do SUT escreve o esquema por nome (`http`/`https`) em vez da forma `http://`:
+ * o valor `https://` seria substring dela. As duas são a mesma decisão, e o docblock de
+ * `EXIGENCIA_DAS_ORIGENS_PUBLICAS` a registra do lado do código.
+ *
+ * ⚠️ **A cadeia só de vírgulas NÃO é cadeia em branco**, e por isso ela não é engolida por
+ * `selecionar` como *"ausente"*: sem a conferência que a recusa, o processo subiria com o conjunto
+ * VAZIO — isto é, com a origem confiável de volta ao endereço de escuta, e sem que nada acusasse.
+ *
+ * ⚠️ **A linha do CURINGA é a que discrimina o modo de falha INVERSO**, e é a única da tabela que
+ * atravessava a conferência inteira: `new URL('https://*.exemplo.com.br').origin` devolve a mesma
+ * cadeia (medido), de modo que esquema, servidor nomeado e a igualdade com `endereco.origin` eram
+ * todos satisfeitos — e `matchesOriginPattern` desvia para `wildcardMatch` assim que o padrão
+ * contém `*`, fazendo a conferência de origem **aceitar qualquer origem**. As outras cinco recusam
+ * origem legítima demais; esta recusa origem de menos, que é o lado caro.
+ *
+ * ⚠️ **O `?` não ganha linha própria, e a ausência é decisão medida**: `origin` descarta a consulta,
+ * então nenhum valor que o contenha satisfaz `valor === endereco.origin` — uma perna para ele não
+ * poderia falhar em rodada alguma, hoje ou antes da correção. A recusa dele **existe no SUT** (na
+ * mesma conjunção, pela `CURINGAS_DO_PADRAO_DE_ORIGEM`) justamente para não depender desse acidente,
+ * e o que a sustenta é o marcador `DECISÃO FECHADA` no ponto do código — que é a rede possível para
+ * o que nenhuma asserção consegue discriminar (§3 do Protocolo Antirregressão), e não uma perna
+ * tautológica aqui.
+ */
+const ORIGENS_PUBLICAS_INACEITAVEIS = [
+  { rotulo: 'sem esquema', valor: 'app.exemplo.com.br' },
+  { rotulo: 'com caminho', valor: 'https://app.exemplo.com.br/entrar' },
+  { rotulo: 'esquema fora de http/https', valor: 'ftp://app.exemplo.com.br' },
+  { rotulo: 'sem servidor nomeado', valor: 'https://' },
+  { rotulo: 'curinga no servidor', valor: 'https://*.exemplo.com.br' },
+  { rotulo: 'lista que separa em zero itens', valor: ',,,' },
+] as const;
+
 const DIRETORIO_DOS_BOLETOS_INEXISTENTE = '/opt/sysloc-boletos-que-nao-existem-ct933';
 const DIRETORIO_DOS_BOLETOS_QUE_E_ARQUIVO = criarArquivoComumDescartavel();
 
@@ -287,6 +367,10 @@ function ambienteCompleto(): Record<string, string> {
     // no fim do arquivo. Ele **não** é segredo, e é o único valor desta tabela que precisa existir de
     // verdade: a conferência de partida toca o disco. Ver {@link DIRETORIO_DOS_BOLETOS_ACEITAVEL}.
     DIRETORIO_DOS_BOLETOS: DIRETORIO_DOS_BOLETOS_ACEITAVEL,
+    // As origens públicas entram na T7 da fatia `publicacao-e-backup` — ver o bloco do CT-1160, no
+    // fim do arquivo. Elas **não** são segredo (são o que qualquer pessoa digita no navegador), são
+    // DUAS por decisão de escopo, e o valor é distinguível dos demais pela razão de sempre.
+    ORIGENS_PUBLICAS: ORIGENS_PUBLICAS_ACEITAVEIS,
   };
 }
 
@@ -480,6 +564,13 @@ describe('carregarAmbiente (T5 · CA-15)', () => {
     // descrevia o processo anterior. A asserção continua sendo igualdade exata sobre o conjunto
     // inteiro — **nenhum elemento saiu** —, e por isso ela segue reprovando campo que apareça sem ser
     // declarado.
+    // SUT_IS_CORRECT_BECAUSE: a **T7** da fatia `publicacao-e-backup` acrescenta `origensPublicas`,
+    // e ele **tem consumidor nesta aplicação** — que é o critério que a T9 fixou ao recusar
+    // `urlBaseDaConfirmacao`: é o módulo de identidade que entrega a lista ao arcabouço como origem
+    // confiável (`autenticacao.module.ts`), fechando o `D23 · F1/T8`. O código de produção está certo
+    // e o literal é que descrevia o processo anterior. A asserção continua sendo igualdade exata
+    // sobre o conjunto inteiro — **nenhum elemento saiu** —, e por isso ela segue reprovando campo
+    // que apareça sem ser declarado.
     expect(Object.keys(ambiente).sort()).toEqual([
       'ambiente',
       'cadeiaConexaoBanco',
@@ -491,6 +582,7 @@ describe('carregarAmbiente (T5 · CA-15)', () => {
       'enderecoDeAutorizacaoBancaria',
       'enderecoDoProvedorBancario',
       'nivelDeLog',
+      'origensPublicas',
       'porta',
       'remetenteDoAviso',
       'segredoDeSessao',
@@ -521,7 +613,7 @@ const LINHAS_DO_TRANSPORTE = [
 /** O ambiente completo, já traduzido para os campos que a configuração publica. */
 function configuracaoEsperada(
   fonte: Record<string, string>,
-): Record<string, string | number | Buffer> {
+): Record<string, string | number | Buffer | readonly string[]> {
   return {
     ambiente: fonte.NODE_ENV as string,
     porta: Number(fonte.PORT),
@@ -543,6 +635,13 @@ function configuracaoEsperada(
     // boletos. Uma resolução escrita aqui faria o esperado concordar com uma configuração que
     // normalizasse o valor, e a igualdade estrita deixaria de reprovar essa mudança.
     diretorioDosBoletos: fonte.DIRETORIO_DOS_BOLETOS as string,
+    // Derivadas da FONTE, e não de `carregarAmbiente`: o esperado separa o mesmo texto que a fonte
+    // declara, de modo que uma leitura que devolvesse a lista de outra variável — ou o texto em vez
+    // da lista, ou os itens fora da ordem declarada — reprova na igualdade estrita.
+    origensPublicas: (fonte.ORIGENS_PUBLICAS as string)
+      .split(',')
+      .map((parte) => parte.trim())
+      .filter((parte) => parte !== ''),
     // `URL_BASE_DA_CONFIRMACAO` NÃO entra: ela é exigida na partida e não vira campo — ver o
     // `SUT_IS_CORRECT_BECAUSE:` do CT-008.
   };
@@ -1002,6 +1101,13 @@ describe('carregarAmbiente (T11 · CA-12) — a barreira de partida da integraç
     // descrevia o processo anterior. A asserção continua sendo igualdade exata sobre o conjunto
     // inteiro — **nenhum elemento saiu** —, e por isso ela segue reprovando campo que apareça sem ser
     // declarado.
+    // SUT_IS_CORRECT_BECAUSE: a **T7** da fatia `publicacao-e-backup` acrescenta `origensPublicas`,
+    // e ele **tem consumidor nesta aplicação** — que é o critério que a T9 fixou ao recusar
+    // `urlBaseDaConfirmacao`: é o módulo de identidade que entrega a lista ao arcabouço como origem
+    // confiável (`autenticacao.module.ts`), fechando o `D23 · F1/T8`. O código de produção está certo
+    // e o literal é que descrevia o processo anterior. A asserção continua sendo igualdade exata
+    // sobre o conjunto inteiro — **nenhum elemento saiu** —, e por isso ela segue reprovando campo
+    // que apareça sem ser declarado.
     expect(Object.keys(ambiente).sort()).toEqual([
       'ambiente',
       'cadeiaConexaoBanco',
@@ -1013,6 +1119,7 @@ describe('carregarAmbiente (T11 · CA-12) — a barreira de partida da integraç
       'enderecoDeAutorizacaoBancaria',
       'enderecoDoProvedorBancario',
       'nivelDeLog',
+      'origensPublicas',
       'porta',
       'remetenteDoAviso',
       'segredoDeSessao',
@@ -1194,6 +1301,155 @@ describe('carregarAmbiente (T13 · CA-20) — a barreira de partida do diretóri
     // entrega (`W2`) —, e a contagem passa de 13 a 14. Mesma leitura da linha acima: o que este caso
     // mede segue sendo o crescimento por exatamente um do diretório dos boletos, e o campo novo é
     // coberto pela igualdade de conjunto, que o nomeia. Nada foi afrouxado.
-    expect(Object.keys(ambiente)).toHaveLength(14);
+    // SUT_IS_CORRECT_BECAUSE: a T7 da fatia `publicacao-e-backup` publica um terceiro campo pela
+    // mesma razão — `origensPublicas`, que o módulo de identidade entrega ao arcabouço como origem
+    // confiável (fecho do `D23 · F1/T8`) —, e a contagem passa de 14 a 15. Mesma leitura das duas
+    // linhas acima: o que este caso mede segue sendo o crescimento por exatamente um do diretório
+    // dos boletos, e o campo novo é coberto pela igualdade de conjunto, que o nomeia. Nada foi
+    // afrouxado.
+    expect(Object.keys(ambiente)).toHaveLength(15);
+  });
+});
+
+// ===========================================================================
+// CT-1160 a CT-1163 — a barreira de partida das ORIGENS PÚBLICAS (T7 · CA-02, CA-12)
+// ===========================================================================
+
+/**
+ * As duas linhas de **ausência** da variável das origens públicas, com o que cada uma produz.
+ *
+ * Declaradas ANTES do caso e nomeando o resultado esperado — elas **não** são derivadas da execução.
+ * A primeira é a ausência; a segunda é a cadeia em branco, que é o que um `EnvironmentFile` copiado
+ * do `.env.example` sem preenchimento entrega, e que uma validação ingênua
+ * (`fonte.ORIGENS_PUBLICAS !== undefined`) aceitaria.
+ *
+ * ⚠️ **Aqui o modo perigoso é o INVERSO do habitual**, e é por isso que a barreira existe: um
+ * processo que subisse sem a lista atenderia normalmente até o **primeiro navegador** — o arcabouço
+ * de identidade derivaria a origem confiável só do endereço em que o serviço escuta, e recusaria com
+ * `403`, antes de qualquer manipulador, toda requisição com cookie **e a própria entrada**. Não é
+ * "sessão recusada": é o serviço inteiro inacessível pela tela.
+ */
+const LINHAS_DAS_ORIGENS_PUBLICAS = [
+  { cenario: 'sem ORIGENS_PUBLICAS', embranco: undefined },
+  { cenario: 'ORIGENS_PUBLICAS em branco', embranco: 'ORIGENS_PUBLICAS' },
+] as const;
+
+describe('carregarAmbiente (T7 · CA-02) — a barreira de partida das origens públicas', () => {
+  it.each(LINHAS_DAS_ORIGENS_PUBLICAS)(
+    'CT-1160 — $cenario: a partida é recusada nomeando a variável, sem devolver ambiente parcial',
+    ({ embranco }) => {
+      const fonte =
+        embranco === undefined
+          ? ambienteSem('ORIGENS_PUBLICAS')
+          : { ...ambienteCompleto(), [embranco]: '   ' };
+
+      // `falhaDe` REPROVA quando a chamada devolve configuração — é assim que "nunca sobe pela
+      // metade" fica asserido, e não apenas afirmado no docblock. Um `carregarAmbiente` que
+      // devolvesse `{ …, origensPublicas: [] }` cairia ali, e o serviço publicado recusaria o login
+      // de todo mundo com o processo `active` no supervisor.
+      const falha = falhaDe(fonte);
+
+      // A cadeia EXATA da variável faltante, e não "a mensagem não está vazia".
+      expect(falha.message).toContain('ORIGENS_PUBLICAS: ausente');
+      // E nenhuma credencial atravessa para o journal, nesta recusa como em todas as outras.
+      expect(falha.message).not.toContain(SENHA_NA_CADEIA);
+      expect(falha.message).not.toContain(SEGREDO_DE_SESSAO);
+      expect(falha.message).not.toContain(CHAVE_DE_CIFRA_SENTINELA);
+    },
+  );
+
+  it.each(ORIGENS_PUBLICAS_INACEITAVEIS)(
+    'CT-1161 — origem pública inaceitável ($rotulo) recusa nomeando a variável e a exigência',
+    ({ valor }) => {
+      // O par positivo/negativo desta variável: a ausência está acima, e o que falta é o valor
+      // PRESENTE e inaceitável. Sem estas cinco linhas, um esquema `z.string().min(1)` aceitaria
+      // `app.exemplo.com.br` — e o serviço subiria recusando **100% do tráfego de navegador**, pela
+      // razão medida em `dist/auth/trusted-origins.mjs`: sem curinga, a comparação é
+      // `pattern === getOrigin(url)`, e um valor sem esquema, com caminho ou com esquema estranho
+      // nunca casa origem alguma. Como em `ENDERECO_DA_ENTREGA`, **não há segundo lugar** onde o
+      // defeito seja pego.
+      const fonte = { ...ambienteCompleto(), ORIGENS_PUBLICAS: valor };
+
+      const falha = falhaDe(fonte);
+
+      expect(falha.message).toContain('ORIGENS_PUBLICAS');
+      // A EXIGÊNCIA, e não uma recusa genérica: sem ela o operador não sabe o que corrigir.
+      expect(falha.message).toContain('deve ser uma lista de origens separadas por vírgula');
+      // ⚠️ A NÃO-ECO É ASSERÇÃO PRÓPRIA, e não se presume: o `TypeError` do `new URL` carrega a
+      // cadeia recusada na propriedade `input`, e deixá-lo escapar poria o valor na mensagem de
+      // partida — que vai para o journal. A disciplina é a de todas as variáveis, e vale mesmo para
+      // o que não é segredo: abri-la "só para esta" cria a exceção que a próxima herda.
+      expect(falha.message).not.toContain(valor);
+      // E a recusa é DISTINGUÍVEL de "ausente": a variável foi preenchida, só que com forma que não
+      // serve — quem lê "ausente" procura no lugar errado e perde a instalação inteira.
+      expect(falha.message).not.toContain('ORIGENS_PUBLICAS: ausente');
+    },
+  );
+
+  it('CT-1162 — com as duas origens declaradas, a partida é aceita e o ambiente cresce por exatamente um', () => {
+    // O CONTROLE POSITIVO, sem o qual o CT-1160 e o CT-1161 seriam satisfeitos por uma validação que
+    // recusasse todo ambiente. O objeto inteiro por igualdade ESTRITA, e não campo a campo: é ela
+    // que faz um campo a mais — ou um campo com o valor de outra variável — reprovar aqui.
+    const fonte = ambienteCompleto();
+
+    expect(carregarAmbiente(fonte)).toStrictEqual(configuracaoEsperada(fonte));
+
+    // A lista é o que a seleção e a mensagem de falha consomem, e é ela que a tabela do CT-007
+    // percorre: uma variável no esquema e fora dela deixaria de ser exercitada por aquela tabela.
+    expect(VARIAVEIS_EXIGIDAS).toContain('ORIGENS_PUBLICAS');
+
+    const ambiente = carregarAmbiente(fonte);
+
+    // A LISTA, na ORDEM DECLARADA — e não um conjunto nem o texto cru. A ordem é asserida porque o
+    // arcabouço empilha a lista na ordem recebida (`getTrustedOrigins`, `dist/context/helpers.mjs`),
+    // e uma leitura que a reordenasse mudaria o conjunto que a instância publica. São DUAS porque a
+    // variável é plural por decisão: dois aplicativos falam com o mesmo processo.
+    // A igualdade acima já recusa a leitura que devolvesse o texto cru num item só — não há
+    // negativa própria para isso, e a que existia foi retirada por ser implicada por ela.
+    expect(ambiente.origensPublicas).toEqual([ORIGEM_PUBLICA_DO_APP, ORIGEM_PUBLICA_DO_PAINEL]);
+
+    // O crescimento por exatamente UM, medido sobre o mesmo objeto: sem esta contagem, um campo a
+    // mais introduzido junto passaria — e a igualdade estrita acima aprovaria, porque
+    // `configuracaoEsperada` também teria crescido.
+    expect(Object.keys(ambiente)).toHaveLength(15);
+  });
+});
+
+describe('CT-1163 (T7 · CA-12) — a origem pública tem caminho de provisionamento', () => {
+  const fonteDoProvisionador = lerDoRepositorio(CAMINHO_DO_PROVISIONADOR);
+  const fonteDaUnidade = lerDoRepositorio(CAMINHO_DA_UNIDADE_DESTE_PROCESSO);
+  const fonteDoExemplo = lerDoRepositorio(CAMINHO_DO_EXEMPLO);
+  // O conjunto sai de EXECUTAR a validação — quais nomes ela consulta na fonte, e quais dessas ela
+  // recusa quando faltam. Nenhuma linha desta derivação lê o texto de `ambiente.ts`, e nenhuma lê a
+  // mensagem de recusa.
+  const exigidas = variaveisExigidasPor(carregarAmbiente, ambienteCompleto());
+
+  it('CT-1163 — acrescentá-la ao conjunto exigido não deixa exigida alguma sem provisionamento', () => {
+    // ⚠️ Esta é a rede do P4 desta task, e o modo de falha que ela fecha é o pior que a variável
+    // tem: sem caminho de provisionamento, ela entraria no conjunto exigido e a API **deixaria de
+    // subir numa instalação de máquina nova**, sem que nada acusasse até a janela de virada.
+    //
+    // A âncora antivácuo do lado da exigência: uma variável acrescentada ao esquema e esquecida na
+    // lista ficaria fora da tabela de casos deste arquivo sem que nada acusasse.
+    expect(exigidas).toEqual([...VARIAVEIS_EXIGIDAS].sort());
+
+    // A lista das culpadas, e não um booleano: quando reprovar, a mensagem nomeia a variável. O
+    // valor esperado é o conjunto VAZIO desde o fecho do `D39`, e o que impede isso de virar
+    // tautologia são as testemunhas positivas logo abaixo. Ver `EXIGIDAS_SEM_PROVISIONAMENTO`.
+    expect(
+      semCaminhoDeProvisionamento(exigidas, fonteDoProvisionador, fonteDaUnidade, fonteDoExemplo),
+    ).toEqual(EXIGIDAS_SEM_PROVISIONAMENTO);
+
+    // As TESTEMUNHAS POSITIVAS desta task, nomeando a variável nova nas duas fontes que ela precisa
+    // atravessar: o script que CRIA o arquivo de ambiente numa instalação do zero, e o `.env.example`
+    // que a mensagem de recusa de partida manda o operador consultar. Sem elas, a igualdade acima
+    // seria satisfeita por um detector que respondesse "provisionada" para tudo.
+    expect(chavesEmitidasPor(fonteDoProvisionador)).toContain('ORIGENS_PUBLICAS');
+    expect(chavesDeclaradasPor(fonteDoExemplo)).toContain('ORIGENS_PUBLICAS');
+
+    // ⚠️ **As provas de falsificação deste detector já existem e são PERMANENTES** — as três pernas
+    // do `CT-639 (b)`, acima, varrem os idiomas pelos quais uma exigência nova pode chegar e a
+    // remoção da emissão do provisionador. Refazê-las aqui seria campanha de mutantes com outro
+    // nome, e mutation testing está fora da stack deste projeto.
   });
 });

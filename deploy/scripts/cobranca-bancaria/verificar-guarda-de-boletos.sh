@@ -105,60 +105,12 @@ PADRAO_DO_BOLETO='COB-[0-9]{4}-[0-9]{7}\.pdf'
 # satisfaz o padrão acima, e que portanto a varredura tem de achar.
 BOLETO_DO_MUTANTE="COB-2026-0000054.pdf"
 
-falhas_totais=0
-falhas_caso=0
-
-# Degradações declaradas. NÃO governam o código de saída — quem o governa é
-# `falhas_totais`, e só ele. O contador existe porque o RESUMO é a linha que o
-# operador lê: anunciar "3/3 frentes aprovadas" quando uma delas não pôde ser
-# medida transforma medição parcial em aprovação lida como completa.
-avisos_totais=0
-
-caso() {
-	printf '\n[%s] %s\n' "$1" "$2"
-	falhas_caso=0
-}
-
-ok() { printf '    OK   %s\n' "$*"; }
-
-falhar() {
-	falhas_caso=$((falhas_caso + 1))
-	falhas_totais=$((falhas_totais + 1))
-	printf '    FALHA %s\n' "$*" >&2
-}
-
-afirmar_igual() {
-	if [[ "$2" == "$3" ]]; then
-		ok "$1"
-	else
-		falhar "$1 — esperado [$2], obtido [$3]"
-	fi
-}
-
-afirmar_diferente() {
-	if [[ "$2" != "$3" ]]; then
-		ok "$1"
-	else
-		falhar "$1 — obtido [$3], que não deveria ser [$2]"
-	fi
-}
-
-# A entrada ÚNICA de degradação — é por ela contar aqui, e não em cada chamador,
-# que o resumo final não depende de ninguém lembrar de somar o aviso novo.
-aviso() {
-	avisos_totais=$((avisos_totais + 1))
-	printf '    AVISO %s\n' "$*"
-}
-
-nota() { printf '    nota  %s\n' "$*"; }
-
-fechar_caso() {
-	if [[ "${falhas_caso}" -eq 0 ]]; then
-		printf '    -> %s aprovado\n' "$1"
-	else
-		printf '    -> %s REPROVADO (%d falha(s))\n' "$1" "${falhas_caso}" >&2
-	fi
-}
+# --------------------------------------------------------------------------- #
+# Vocabulário de asserção — a casa comum, carregada e NUNCA redeclarada aqui.
+# Ver a razão em `deploy/scripts/verificacao/esqueleto-de-assercao.sh`.
+# --------------------------------------------------------------------------- #
+# shellcheck source=../verificacao/esqueleto-de-assercao.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../verificacao/esqueleto-de-assercao.sh"
 
 # --------------------------------------------------------------------------- #
 # A varredura de boletos versionados — UMA função, usada pelo controle e pelo

@@ -810,7 +810,37 @@ interface OpcoesDeRequisicao {
   readonly cookie?: string;
 }
 
-/** Uma requisição HTTP real contra o servidor em porta dinâmica. */
+/**
+ * Uma requisição HTTP real contra o servidor em porta dinâmica.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que ela declara `Origin` — arranjo, e não asserção (T7 · fatia `publicacao-e-backup`)
+ * ---------------------------------------------------------------------------
+ *
+ * ⚠️ **Nenhuma asserção deste arquivo mudou.** O que mudou é o pedido: ele passou a carregar o
+ * cabeçalho que um cliente real carrega.
+ *
+ * A T7 daquela fatia **declara** o estado da conferência de origem nas opções do arcabouço
+ * (`advanced.disableOriginCheck: false`), fechando a herança de `NODE_ENV` que a mantinha desligada
+ * em toda a verificação. Com ela ligada, este arranjo passou a montar uma requisição que **nenhum
+ * cliente real produz**: o `fetch` do Node envia `sec-fetch-mode: cors` (medido), e
+ * `validateFormCsrf` (`dist/api/middlewares/origin-check.mjs`) força a conferência de origem assim
+ * que qualquer `Sec-Fetch-*` está presente — enquanto um navegador que envia `Sec-Fetch-*` envia
+ * `Origin` **junto**. Sem o cabeçalho, a recusa vinha como `403 MISSING_OR_NULL_ORIGIN` antes do
+ * manipulador, e os casos deixariam de medir a barreira de admissão que são donos de medir.
+ *
+ * A origem é **derivada** de `options.baseURL` da própria instância, nunca escrita à mão: é a mesma
+ * fonte, e o mesmo idioma, que `apps/api/src/autenticacao/senha.controller.ts` usa em produção
+ * (`cabecalhos.set('origin', new URL(baseURL).origin)`). Um literal aqui ficaria livre para divergir
+ * do endereço que a instância declara.
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção passou a declarar `advanced.disableOriginCheck:
+ * false`, que é o estado que a barreira exige e que o `NODE_ENV` da verificação vinha desligando por
+ * herança; quem estava errado era o **arranjo** deste arquivo, que montava um pedido sem `Origin` —
+ * combinação que nenhum cliente real produz, porque o `fetch` do Node envia `sec-fetch-mode: cors`
+ * (medido) e um navegador que envia `Sec-Fetch-*` envia `Origin` junto. Nenhuma asserção foi
+ * alterada, afrouxada ou removida: mudou só o cabeçalho do pedido, e a suíte segue em 89/89.
+ */
 async function requisitar(
   metodo: string,
   caminho: string,
@@ -819,6 +849,7 @@ async function requisitar(
   const cabecalhos = new Headers({
     'x-forwarded-for': ORIGEM,
     'user-agent': AGENTE,
+    origin: new URL(identidade.autenticacao.options.baseURL ?? '').origin,
   });
 
   if (opcoes.corpo !== undefined) {

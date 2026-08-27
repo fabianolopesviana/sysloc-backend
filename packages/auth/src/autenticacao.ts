@@ -132,6 +132,86 @@ export const RENOVACAO_DA_SESSAO_EM_SEGUNDOS = 0;
 const CAMINHO_DE_ENTRADA = '/sign-in/email';
 
 /**
+ * O cabeçalho de onde o endereço do cliente é lido.
+ *
+ * É o mesmo que o arcabouço leria por omissão, e está **declarado** pela razão que este arquivo já
+ * aplica a `enabled`, a `disableOriginCheck` e à tranca do segundo fator: padrão de biblioteca não
+ * declarado muda no próximo bump sem que nada acuse — e aqui o que mudaria em silêncio é o eixo do
+ * qual toda a política de limitação depende.
+ */
+const CABECALHO_DE_ORIGEM = 'x-forwarded-for';
+
+/**
+ * Os saltos confiáveis imediatamente à frente desta API — o fecho do `D27 · F1/T6` (ADR-0037).
+ *
+ * ---------------------------------------------------------------------------
+ * O endereço é MEDIDO, e medir era a coisa que faltava
+ * ---------------------------------------------------------------------------
+ *
+ * O débito recusou por duas fases declarar um salto **suposto**, e a razão está escrita nele:
+ * `trustedProxies` errado transforma cabeçalho forjado em origem aceita, **com aparência de
+ * correção**. O que o fecha, portanto, não é a coragem de declarar — é o endereço existir para ser
+ * lido. Ele existe, e é `127.0.0.1`, medido na borda que já opera:
+ * `/opt/web/syslocadmin/nginx/default.conf` declara `set_real_ip_from 127.0.0.1` com a razão por
+ * extenso (*"o CloudPanel é o único salto à frente e fala de 127.0.0.1"*), e repassa para
+ * `http://127.0.0.1:3000`, que é onde este processo escuta.
+ *
+ *   navegador --443--> CloudPanel --127.0.0.1--> nginx local --127.0.0.1:3000--> esta API
+ *
+ * ---------------------------------------------------------------------------
+ * Por que UM endereço, e por que este
+ * ---------------------------------------------------------------------------
+ *
+ * O que entra aqui **não** é "quem pode falar com a API" — é **quem, na cadeia de encaminhamento,
+ * tem permissão de dizer quem é o cliente**. `getIPFromHeader` (medido em
+ * `@better-auth/core@1.6.25`, `dist/utils/ip.mjs`) percorre a cadeia **da direita para a esquerda**,
+ * pula todo termo que casa com esta lista, e adota como eixo o **primeiro termo não confiável**.
+ * Todo termo à esquerda dele — inclusive o que o cliente escreveu antes de o primeiro salto tocar a
+ * requisição — é descartado por construção. É isso que torna a rotação do cabeçalho forjado inócua,
+ * e é a mitigação que a ADR-0037 nomeia nos `Cons`.
+ *
+ * Segue-se que a lista é o **complemento** do endereço do cliente, e não um catálogo de permissões:
+ * acrescentar aqui um endereço que não seja salto de infraestrutura desta máquina **apagaria** esse
+ * endereço do eixo, entregando o balde a quem estiver atrás dele. `::1` fica de fora pela mesma
+ * razão, e não por descuido: nenhum salto da topologia medida se anuncia assim na cadeia — o
+ * CloudPanel fala de `127.0.0.1` e o nginx local repassa por IPv4. Declarar um termo que a cadeia
+ * real nunca traz é adivinhação, que é justamente o que o débito recusou.
+ *
+ * ⚠️ **Entrada inválida é descartada com um AVISO, e não com recusa de partida** (`create-context`,
+ * `findInvalidTrustedProxies`). Se todas fossem inválidas a lista viraria vazia e o comportamento
+ * voltaria ao regime que este fecho encerra — em silêncio para a suíte. É por isso que o `CT-1170`
+ * lê a declaração **na instância** e a afirma **não vazia**, em vez de conferir o texto do fonte.
+ *
+ * **Exportada para ser ancorável**, pelo mesmo critério de {@link JANELA_DO_LIMITADOR_EM_SEGUNDOS}.
+ * Não sai no índice do pacote — nenhum consumidor de fora lê a configuração da instância.
+ *
+ * ---------------------------------------------------------------------------
+ * ⚠️ O QUE SUSTENTA ESTE EIXO NÃO É A DECLARAÇÃO DAQUI — é a borda APENSAR
+ * ---------------------------------------------------------------------------
+ *
+ * Toda borda que alcance `/v1/auth/*` ou `POST /v1/sessao/senha` tem de **apensar** o endereço
+ * observado (`$proxy_add_x_forwarded_for`), e **nenhuma** pode repassar o `X-Forwarded-For` do
+ * cliente sem apensar. Uma borda que repassasse faria do termo mais à direita um valor **escolhido
+ * por quem chama**, e `getIPFromHeader` o adotaria como eixo: o teto viraria evadível por rotação de
+ * cabeçalho — **pior** que o regime anterior a este fecho, em que a cadeia resolvia para `null` e
+ * todos caíam num balde único, compartilhado mas não evadível. É o `Con` que a ADR-0037 nomeia.
+ *
+ * Era o `D39 · F7/T8`, e ele **fechou em 2026-08-26**, na T9 da fatia `publicacao-e-backup`, que é o
+ * gatilho que o marcador nomeava: a borda que faltava passou a existir
+ * (`deploy/nginx/sysloc-app.conf`) e apensa. As três bordas do produto estão conformes, e as duas
+ * anteriores já haviam sido medidas — o vhost do Master e o da notícia bancária.
+ *
+ * A propriedade deixou de depender de quem escreve o vhost, e passou a ter rede em duas frentes, as
+ * duas em `deploy/scripts/borda/verificar-borda-do-app.sh`:
+ *
+ *   * `CT-1187` mede **por rede**, com cabeçalho FORJADO, que o salto real chega **sobrescrito** pelo
+ *     endereço observado e que a cadeia chega **apensada**, com o observado à direita;
+ *   * `CT-1188` fixa a **forma** no gabarito versionado — a diretiva que apensa presente, a que
+ *     repassaria ausente, e nenhuma reescrita de origem de rede —, que é o que a próxima borda copia.
+ */
+export const SALTOS_CONFIAVEIS = ['127.0.0.1'] as const;
+
+/**
  * Janela do limitador de taxa nativo, em segundos (§11.5, `P-T6-2`).
  *
  * Um minuto, e a mesma janela para as duas regras: o que distingue o caminho de entrada dos demais
@@ -151,13 +231,14 @@ export const JANELA_DO_LIMITADOR_EM_SEGUNDOS = 60;
 /**
  * Quantas tentativas de ENTRADA uma mesma origem obtém por janela.
  *
- * **A CONDIÇÃO EM QUE ESTE NÚMERO É "POR ORIGEM", E ELA NÃO VALE HOJE.** O eixo de identidade do
- * limitador é o endereço que `getIp` apura a partir de cabeçalho declarado — e, sem um salto
- * confiável declarado em `advanced.ipAddress`, ele não existe: em produção `getIp` devolve nulo e a
- * chave vira uma só por caminho, de modo que este teto passa a ser o do PRODUTO INTEIRO naquele
- * caminho. O dimensionamento abaixo é o do regime COM eixo, que é o regime em que ele vale; o
- * regime de hoje, a razão de ele ser assim e quando isso fecha estão no `DÉBITO COM GATILHO` ao
- * lado de `rateLimit`, e o estado corrente é fixado por asserção no CT-236 (c).
+ * **A CONDIÇÃO EM QUE ESTE NÚMERO É "POR ORIGEM", E ELA VALE DESDE 2026-08-26.** O eixo de
+ * identidade do limitador é o endereço que `getIp` apura a partir do cabeçalho declarado, e ele
+ * depende de um salto confiável estar declarado em `advanced.ipAddress`. Enquanto não estava, em
+ * produção `getIp` devolvia nulo, a chave virava uma só por caminho e este teto era o do PRODUTO
+ * INTEIRO ali — era o `D27 · F1/T6`. {@link SALTOS_CONFIAVEIS} o declara a partir de endereço
+ * medido, e o dimensionamento abaixo passou a ser o regime em vigor, não o regime pretendido. O
+ * `CT-1167` e o `CT-1170` (`test/bloqueio.spec.ts`) são a rede disso, e o `CT-236 (c)` fixa o que
+ * sobrou do balde compartilhado: ele é agora o do pedido cuja origem NÃO se apura.
  *
  * O teto é por origem e por caminho, e precisa caber o pior caso legítimo: uma imobiliária inteira
  * atrás de um endereço só, abrindo o expediente ao mesmo tempo (decisão 2 — 20 a 300 empresas com
@@ -177,7 +258,7 @@ export const TETO_DE_ENTRADAS_POR_JANELA = 30;
  * credencial fora do fluxo de entrada.
  *
  * «Por origem» aqui vale sob a MESMA condição declarada em {@link TETO_DE_ENTRADAS_POR_JANELA}, e
- * ela não vale hoje.
+ * ela vale desde que {@link SALTOS_CONFIAVEIS} declarou o eixo.
  *
  * O grupo é `/sign-in/*` (as variantes que não são a entrada), `/sign-up/*`, `/change-password` e
  * `/change-email`. O que eles têm em comum não é a rota: é **não existir contador por conta ali**.
@@ -218,7 +299,7 @@ export const TETO_DE_CREDENCIAL_POR_JANELA = 10;
  * endereço informado no próprio pedido.
  *
  * «Por origem» aqui vale sob a MESMA condição declarada em {@link TETO_DE_ENTRADAS_POR_JANELA}, e
- * ela não vale hoje.
+ * ela vale desde que {@link SALTOS_CONFIAVEIS} declarou o eixo.
  *
  * O grupo é `/request-password-reset`, `/send-verification-email` e a família
  * `/forget-password/**`. O teto mais estreito dos três é deste grupo porque o custo de cada pedido
@@ -247,7 +328,8 @@ export const TETO_DE_EMISSAO_DE_EMAIL_POR_JANELA = 5;
 
 /**
  * O teto de toda a demais superfície de identidade, por origem e por caminho — «por origem» sob a
- * MESMA condição declarada em {@link TETO_DE_ENTRADAS_POR_JANELA}, que não vale hoje.
+ * MESMA condição declarada em {@link TETO_DE_ENTRADAS_POR_JANELA}, que {@link SALTOS_CONFIAVEIS}
+ * satisfaz.
  *
  * Mais folgado que o da entrada porque os caminhos daqui pressupõem sessão ou token já emitido —
  * quem os alcança já passou por alguma barreira —, e porque uma sessão legítima ativa faz muito
@@ -450,6 +532,33 @@ export interface OpcoesDeAutenticacao {
   readonly segredoDeSessao: string;
   /** Endereço base público do serviço, usado na montagem dos endereços do arcabouço. */
   readonly enderecoBase: string;
+  /**
+   * As origens **públicas** que o navegador de fato envia — a lista, nunca um valor só.
+   *
+   * ---------------------------------------------------------------------------
+   * Por que ela entra por parâmetro, e por que é OBRIGATÓRIA
+   * ---------------------------------------------------------------------------
+   *
+   * O arcabouço deriva a origem confiável de {@link enderecoBase}, que é o endereço em que o
+   * processo **escuta**. Enquanto o único cliente era o próprio hospedeiro, as duas coincidiam;
+   * publicado atrás do servidor de borda, o `Origin` que o navegador envia é o do **hostname
+   * público**, e nada na instância o conhecia — toda requisição com cookie, e a própria entrada,
+   * seriam recusadas com `FORBIDDEN / INVALID_ORIGIN` antes de qualquer manipulador. Era o
+   * `D23 · F1/T8`, e esta lista é o fecho dele.
+   *
+   * Ela é **obrigatória** de propósito: opcional, um ponto de composição futuro a esqueceria e o
+   * serviço voltaria, em silêncio, a confiar só no endereço de escuta. Sem valor padrão pela mesma
+   * razão — um padrão seria a adivinhação que o débito recusou por dois anos de fatia.
+   *
+   * ⚠️ **É uma LISTA porque são dois aplicativos sobre a mesma API** — o app do cliente e o Painel
+   * Master, cada um no seu hostname. Uma origem só faria um dos dois parar de entrar.
+   *
+   * ⚠️ **Ela ACRESCENTA, e não substitui.** Medido em `getTrustedOrigins`
+   * (`dist/context/helpers.mjs`): a origem derivada de `baseURL` é **sempre** empilhada primeiro, e
+   * o que se declara aqui é empurrado depois. Trocar uma pela outra recusaria todo cliente que fala
+   * com o endereço de escuta — o que inclui a superfície de verificação inteira.
+   */
+  readonly origensPublicas: readonly string[];
   /** Prefixo em que as rotas do arcabouço são montadas (§4.1: `/v1/auth`). */
   readonly prefixoDasRotas: string;
 }
@@ -488,6 +597,15 @@ export function criarAutenticacao(opcoes: OpcoesDeAutenticacao) {
     basePath: opcoes.prefixoDasRotas,
     secret: opcoes.segredoDeSessao,
 
+    // As origens PÚBLICAS declaradas pela composição — o fecho do `D23 · F1/T8`.
+    //
+    // A cópia é deliberada: a opção do arcabouço é mutável por tipo (`string[]`), e entregar a
+    // lista de quem compõe daria à instância uma referência que um chamador poderia alterar depois
+    // de a instância existir. `getTrustedOrigins` a empilha **depois** da origem derivada de
+    // `baseURL`, de modo que o conjunto efetivo é a UNIÃO das duas — ver o docblock de
+    // {@link OpcoesDeAutenticacao.origensPublicas} para por que retirar a de escuta não é opção.
+    trustedOrigins: [...opcoes.origensPublicas],
+
     // O limitador nativo fica LIGADO, e com a política inteira escrita aqui (P-T6-2, T6 da fatia
     // `autorizacao-e-ciclo-de-acesso`).
     //
@@ -499,20 +617,22 @@ export function criarAutenticacao(opcoes: OpcoesDeAutenticacao) {
     // atende a operação era diferente da que a suíte exercita. `enabled: true` fecha essa
     // assimetria pelo lado certo: o mesmo ESTADO em todo ambiente, e agora exercitado.
     //
-    // **A assimetria do ESTADO é a que `enabled: true` fecha; a do EIXO não é ela.** O endereço do
-    // cliente que serve de chave vem de `getIp`, que só o apura a partir de cabeçalho — e devolve
-    // `127.0.0.1` sob `isTest()`/`isDevelopment()` e `null` em produção quando cabeçalho nenhum
-    // chega. A suíte, portanto, exercita um eixo que a operação hoje não tem. Isso está registrado
-    // como débito com gatilho logo abaixo, e o estado corrente é fixado por asserção no CT-236 (c).
+    // **A assimetria do ESTADO é a que `enabled: true` fecha; a do EIXO era outra, e fechou depois.**
+    // O endereço do cliente que serve de chave vem de `getIp`, que só o apura a partir de cabeçalho
+    // — e devolve `127.0.0.1` sob `isTest()`/`isDevelopment()` e `null` em produção quando
+    // cabeçalho nenhum chega. Enquanto nenhum salto confiável estivesse declarado, a suíte
+    // exercitava um eixo que a operação não tinha; `advanced.ipAddress` o declara desde 2026-08-26
+    // (ver {@link SALTOS_CONFIAVEIS}), e o que resta do balde compartilhado — o pedido cuja origem
+    // NÃO se apura — é fixado por asserção no CT-236 (c).
     //
     // ELE É CAMADA ADICIONAL, NÃO SUBSTITUTO do bloqueio por conta (§11.5 da tech spec, RN-06), e
     // as duas cobrem coisas diferentes: o bloqueio conta falhas POR CONTA, e não enxerga a
     // pulverização de credencial que tenta uma senha em cada uma de muitas contas a partir da
     // mesma origem — nenhuma conta chega a cinco falhas. O limitador conta por CHAVE E CAMINHO
-    // (`getIp(req) + path`), e essa chave **é** a origem exatamente sob a condição do débito
-    // abaixo — enquanto ela não valer, o eixo que falta continua faltando, e quem cobre a entrada é
-    // o bloqueio por conta. O CT-236 afirma as duas camadas na mesma execução, para que ligar uma
-    // não possa mascarar a remoção da outra.
+    // (`getIp(req) + path`), e essa chave **é** a origem porque o salto confiável está declarado em
+    // `advanced.ipAddress`. Removê-lo devolveria o eixo ao nada — não é ajuste de configuração, é
+    // desfazer o fecho do `D27 · F1/T6`. O CT-236 afirma as duas camadas na mesma execução, para
+    // que ligar uma não possa mascarar a remoção da outra.
     //
     // A REGRA GERAL É EXPLÍCITA, E A REGRA-CURINGA TAMBÉM — o arcabouço traz regras especiais
     // próprias que se aplicam ANTES de `customRules`, e que `customRules` **substitui**: o bloco de
@@ -567,38 +687,14 @@ export function criarAutenticacao(opcoes: OpcoesDeAutenticacao) {
     // `'/forget-password/**'`, e não `'/sign-in*'`, que não casaria caminho algum. Mover a curinga
     // para cima reprova a perna de `/change-password` do CT-236, que é o que amarra a ordem ao
     // comportamento em vez de a um comentário.
-    // DÉBITO COM GATILHO — D27 · F1/T6 · registrado 2026-08-05
-    // (Fatia `autorizacao-e-ciclo-de-acesso`; o `ÍNDICE` abaixo é o que o separa do `D7 · F1/T6`,
-    //  que nasceu na fatia anterior e vive noutro relatório. Ele não protege nada e não alcança
-    //  marcador algum deste arquivo: as `DECISÃO FECHADA` seguem intocáveis.)
-    // O QUÊ: a política acima é dimensionada POR ORIGEM, e a configuração que atende a operação não
-    //        fornece o eixo de origem. `advanced.ipAddress` não é declarado, e `getIp` só apura o
-    //        endereço a partir de cabeçalho: sem `trustedProxies`, um cabeçalho de valor único é
-    //        aceito COMO O CLIENTE O ENVIOU (rotacioná-lo dá um balde novo por pedido); e sem
-    //        cabeçalho algum — que é o estado de hoje, porque nada publica esta API: ela escuta em
-    //        `127.0.0.1` e `deploy/nginx/` está vazio — `getIp` devolve `null` fora de teste e
-    //        desenvolvimento, a chave vira `no-trusted-ip|<caminho>` e o teto passa a ser UM BALDE
-    //        ÚNICO POR CAMINHO para o produto inteiro. O próprio pacote adverte
-    //        (`dist/api/rate-limiter/index.mjs`, `logger.warn`) mandando declarar
-    //        `ipAddressHeaders` ou `trustedProxies`.
-    // QUANDO FECHA: na **publicação atrás do servidor de borda, na F7** — o mesmo gatilho e o mesmo
-    //        arquivo de decisão do `D23 · F1/T8` (`apps/api/src/autenticacao/autenticacao.module.ts`),
-    //        porque é o mesmo fato que falta: qual é o salto confiável. Fechar é declarar
-    //        `advanced.ipAddress` com `ipAddressHeaders` e `trustedProxies` daquele salto, e então
-    //        rever o CT-236 (c), que hoje FIXA o estado compartilhado. **Até lá, o balde de
-    //        `'/change-password'` governa um fluxo do PRODUTO**: `POST /v1/sessao/senha` (T9) grava
-    //        pelo manipulador e cai sob esta política, e a fatia entrega o onboarding por senha
-    //        provisória com troca obrigatória — de modo que a décima primeira troca de qualquer
-    //        empresa no mesmo minuto recebe `429` enquanto a chave for `no-trusted-ip|<caminho>`.
-    //        Isso não é regressão (a rota nativa corria sob o mesmo balde) e não pede teto novo:
-    //        pede o eixo de origem, que é justamente o que este débito agenda.
-    // POR QUE NÃO AGORA: o endereço do salto confiável não existe para ser declarado, e declarar um
-    //        salto suposto é pior que não declarar — `trustedProxies` errado transforma cabeçalho
-    //        forjado em origem aceita, que é a falha que o débito descreve, com aparência de
-    //        correção. O mesmo fato que impede a declaração limita hoje a exposição: a API escuta em
-    //        `127.0.0.1` e não é alcançável de fora do hospedeiro. A camada que cobre a ENTRADA
-    //        enquanto isso é o bloqueio POR CONTA da RN-06, que não depende de eixo de origem.
-    // ÍNDICE: docs/specs/features/autorizacao-e-ciclo-de-acesso/v1/_run/run-report.md §2, D27
+    //
+    // (O `D27 · F1/T6` vivia aqui e FOI FECHADO pela T8 da fatia `publicacao-e-backup`. O que ele
+    //  registrava — que esta política é dimensionada POR ORIGEM e que o eixo de origem não existia,
+    //  de modo que a chave degenerava em `no-trusted-ip|<caminho>` e o teto passava a ser o do
+    //  produto inteiro naquele caminho — deixou de ser verdadeiro: `advanced.ipAddress` declara o
+    //  salto medido logo abaixo, e o eixo passou a ser apurado. Nenhum teto mudou no fecho, porque
+    //  o que faltava era o eixo, e não o número. O `CT-236 (c)` foi revisto na mesma passada, como
+    //  o marcador prescrevia, e o `CT-1167`, o `CT-1168` e o `CT-1170` são a rede do regime novo.)
     rateLimit: {
       enabled: true,
       window: JANELA_DO_LIMITADOR_EM_SEGUNDOS,
@@ -660,6 +756,44 @@ export function criarAutenticacao(opcoes: OpcoesDeAutenticacao) {
     }),
 
     advanced: {
+      // A CONFERÊNCIA DE ORIGEM FICA LIGADA, e o estado é DECLARADO — o mesmo molde, e a mesma
+      // razão, do `enabled: true` do bloco `rateLimit` acima.
+      //
+      // A herança que ele desfaz, medida em `better-auth@1.6.25`
+      // (`dist/context/create-context.mjs`): `skipOriginCheck` é
+      // `options.advanced?.disableOriginCheck !== undefined ? … : isTest() ? true : false`, e
+      // `isTest()` lê `NODE_ENV`. Omitir a opção **desligava a conferência em toda a verificação**,
+      // que roda com `NODE_ENV=test` — a configuração que atende a operação era diferente da que a
+      // suíte exercita, e o caso que prova a recusa de origem estranha passaria por vácuo. Declarar
+      // `false` fecha a assimetria pelo lado certo: o mesmo ESTADO em todo ambiente, e agora
+      // exercitado (`CT-1164`/`CT-1165`, em `apps/api/test/origem-publica.e2e.spec.ts`).
+      //
+      // ⚠️ O valor `true` também desligaria o CSRF por compatibilidade retroativa
+      // (`shouldSkipCSRFForBackwardCompat`, em `dist/api/middlewares/origin-check.mjs`) — de modo
+      // que a herança silenciosa alcançava duas proteções, e não uma.
+      disableOriginCheck: false,
+      // O EIXO DE ORIGEM — o fecho do `D27 · F1/T6`, e a aplicação da ADR-0037 do lado da
+      // aplicação (a borda dá o eixo; a política, que é o bloco `rateLimit` acima, fica aqui).
+      //
+      // Sem esta declaração o arcabouço não apura endereço algum a partir de uma CADEIA de
+      // encaminhamento: `getIPFromHeader` só aceita cabeçalho de valor único e devolve `null` para
+      // toda cadeia — e `null` vira a chave `no-trusted-ip|<caminho>`, isto é, UM BALDE ÚNICO POR
+      // CAMINHO para o produto inteiro. Com ela, a cadeia é percorrida da direita para a esquerda,
+      // os saltos declarados são pulados, e o primeiro termo não confiável é o eixo.
+      //
+      // ⚠️ O que o cliente escreve fica SEMPRE à esquerda do que o primeiro salto apensa, e por
+      // isso é descartado. Rotacionar o termo forjado não move o balde — é o que o `CT-1168` mede.
+      //
+      // Os dois campos são declarados, e nenhum herdado: ver {@link SALTOS_CONFIAVEIS} para o
+      // endereço medido e {@link CABECALHO_DE_ORIGEM} para o critério de declarar o que o padrão
+      // já faria.
+      ipAddress: {
+        ipAddressHeaders: [CABECALHO_DE_ORIGEM],
+        // A cópia é deliberada, pela mesma razão de `trustedOrigins` acima: a opção do arcabouço é
+        // mutável por tipo, e entregar a constante daria à instância uma referência que um chamador
+        // poderia alterar depois de a instância existir.
+        trustedProxies: [...SALTOS_CONFIAVEIS],
+      },
       // O arcabouço gera identificador em formato próprio (cadeia alfanumérica de 32 caracteres),
       // que o tipo `uuid` das chaves primárias recusa. `false` entrega a geração ao banco, onde o
       // `DEFAULT gen_random_uuid()` de cada tabela já está declarado — a mesma origem que a carga

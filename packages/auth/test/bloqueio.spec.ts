@@ -24,17 +24,29 @@
  * |          | (b)    | protegia mais: `/change-password` — que confere `currentPassword` e onde
  * |          |        | NÃO há contador por conta — e a emissão de e-mail recusam acima de tetos
  * |          |        | PRÓPRIOS, mais estreitos que o geral, por origem e por caminho. (P-T6-2) |
- * | —        | CT-236 | **A contagem só é por origem quando há origem.** Sem o cabeçalho que a
- * |          | (c)    | apura, pedidos que só se distinguiriam pela origem real caem num contador
- * |          |        | ÚNICO por caminho — o teto vira o do produto inteiro ali —, enquanto um
- * |          |        | pedido com origem declarada, ao mesmo caminho, segue atendido. É o estado
- * |          |        | corrente, e o débito `D27` de `autenticacao.ts` é quem o fecha. (P-T6-2) |
+ * | —        | CT-236 | **A contagem só é por origem quando a origem se apura.** Sem o cabeçalho
+ * |          | (c) /  | que a apura, pedidos indistinguíveis caem num contador ÚNICO por caminho —
+ * |          | CT-1169| o teto vira o do produto inteiro ali —, enquanto o pedido com origem
+ * |          |        | declarada, e o pedido cuja CADEIA de encaminhamento resolve, têm cada um
+ * |          |        | o seu balde no MESMO caminho e na MESMA janela. (P-T6-2) |
+ * | CA-09    |CT-1167 | **Duas origens distintas consomem baldes distintos.** Com o salto confiável
+ * |          |        | declarado, uma cadeia de dois termos resolve o endereço do cliente:
+ * |          |        | esgotado o teto pela cadeia da origem A, a cadeia da origem B — mesmo
+ * |          |        | caminho, mesma janela — continua sendo atendida. (T8(a)) |
+ * | CA-09    |CT-1168 | **O teto não é evadível por rotação do termo forjado.** Duas cadeias que
+ * |          |        | diferem apenas no termo mais à esquerda — o único que um cliente escreve —
+ * |          |        | e coincidem no restante somam num balde ÚNICO; trocar o termo do CLIENTE,
+ * |          |        | e só ele, é que dá balde novo. (T8(b)) |
+ * | CA-09    |CT-1170 | **O salto declarado é RECONHECIDO, e não apenas declarado.** A lista que a
+ * |          |        | instância carrega é não vazia e igual à constante exportada; e numa cadeia
+ * |          |        | terminada no salto o eixo é o termo à esquerda do trecho confiável.
+ * |          |        | (T8(a), T8(b)) |
  * | —        | CT-236 | A tranca POR CONTA de `/two-factor/*` está DECLARADA nas opções do plugin
  * |          | (b)    | e chega à instância — não é padrão de biblioteca implícito. É ela que
  * |          |        | sustenta a decisão de deixar aquele caminho no teto geral. (P-T6-2) |
  *
- * Rastreabilidade: `CA-08 → CT-015 (RN-06)`, `CA-08 → T6 §3 (RN-06)`, `CA-08 → T6 §3-d (RN-06)` e
- * `P-T6-2 → CT-236 (RN-06)`.
+ * Rastreabilidade: `CA-08 → CT-015 (RN-06)`, `CA-08 → T6 §3 (RN-06)`, `CA-08 → T6 §3-d (RN-06)`,
+ * `P-T6-2 → CT-236 (RN-06)` e `CA-09 → CT-1167 · CT-1168 · CT-1169 · CT-1170 (RN-06)`.
  *
  * ---------------------------------------------------------------------------
  * Por que contra banco real, e por que a fronteira é em 4
@@ -182,25 +194,68 @@
  * ---------------------------------------------------------------------------
  *
  * As pernas do (a) e do (b) mandam `x-forwarded-for` em toda requisição, e é isso que lhes dá
- * baldes distintos. A configuração que atende a operação **não tem esse cabeçalho**: nada publica
- * esta API ainda, `advanced.ipAddress` não é declarado, e `getIp` só apura endereço a partir de
- * cabeçalho. O efeito é o oposto do que a política afirma — uma chave só por caminho —, e nenhum
- * dos dois casos acima consegue vê-lo, porque os dois sempre declaram a origem.
+ * baldes distintos. Este caso é o **companheiro negativo** que amarra a política ao comportamento
+ * pelo outro lado: ele emite os pedidos **sem** o cabeçalho e afirma que eles se somam num contador
+ * único, ao passo que um pedido com origem própria, no MESMO caminho e na MESMA janela, continua
+ * atendido. Sem ele, a linha *"o teto é por origem"* seria prosa.
  *
- * Este caso é o **companheiro negativo** que amarra a decisão ao comportamento: ele emite os pedidos
- * SEM o cabeçalho e afirma que eles se somam num contador único, ao passo que um pedido com origem
- * própria, no MESMO caminho, continua atendido. Sem ele, a linha *"o teto é por origem"* seria
- * prosa, e o débito `D27` de `autenticacao.ts` seria um recado sem prova.
+ * **O que ele fixava até 2026-08-26, e por que deixou de fixar.** Enquanto `advanced.ipAddress` não
+ * declarava salto confiável algum, o balde compartilhado não era o do pedido **sem** cabeçalho: era
+ * o de **todo mundo**. `getIp` só apurava endereço de um cabeçalho de valor único, e devolvia `null`
+ * para qualquer cadeia de encaminhamento — que é a forma que um servidor de borda real produz. Em
+ * produção, portanto, a chave era `no-trusted-ip|<caminho>` para o produto inteiro, e este caso era
+ * a asserção que fixava esse estado. Era o `D27 · F1/T6`, e o `QUANDO FECHA` dele mandava, com
+ * todas as letras, **rever este caso** ao fechá-lo.
  *
- * **O que ele afirma é o estado de HOJE, e é para isso que ele serve.** Fechar o débito — declarar
- * `advanced.ipAddress` com o salto confiável da F7 — muda o que este caso descreve, e a revisão
- * dele faz parte do fechamento; está escrito no `QUANDO FECHA` do marcador.
+ * `SUT_IS_CORRECT_BECAUSE:` o código de produção passou a estar CERTO — `packages/auth/src/
+ * autenticacao.ts` declara `SALTOS_CONFIAVEIS` a partir do endereço MEDIDO na borda que já opera, e
+ * com isso a cadeia de encaminhamento resolve o endereço do cliente. O que este caso afirmava não
+ * era um defeito: era o regime antigo, fixado de propósito e por decisão registrada. As três pernas
+ * que ele já tinha **continuam verdadeiras e não foram tocadas** — o pedido cuja origem não se apura
+ * segue caindo num balde único —; o que entrou foi a **perna 4**, que é a metade que o regime novo
+ * acrescenta e que **contra o código antigo sairia `429`**: a cadeia resolvida tem balde PRÓPRIO, e
+ * não o compartilhado. Sem ela, o caso continuaria compatível com o estado degradado.
  *
  * A chave compartilhada tem dois nomes possíveis, e o caso é cego à diferença **de propósito**:
  * `getIp` devolve `127.0.0.1` sob `isTest()`/`isDevelopment()` e `null` em produção, e o limitador
- * converte o nulo em `no-trusted-ip`. Os dois produzem a MESMA forma — uma chave para todo cliente
- * —, que é a propriedade observada; asserir qual dos dois nomes está em uso seria prender o caso ao
- * ambiente em que ele roda, e não ao defeito.
+ * converte o nulo em `no-trusted-ip`. Os dois produzem a MESMA forma — uma chave para todo pedido
+ * sem origem apurável —, que é a propriedade observada; asserir qual dos dois nomes está em uso
+ * seria prender o caso ao ambiente em que ele roda, e não ao defeito.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que o CT-1167, o CT-1168 e o CT-1170 — o eixo de origem, agora que ele existe
+ * ---------------------------------------------------------------------------
+ *
+ * Os três nascem com o fecho do `D27 · F1/T6` (T8 da fatia `publicacao-e-backup`, ADR-0037) e são a
+ * rede do regime novo. Eles **não são variações do CT-236 (b)**: aquele injeta um cabeçalho de
+ * **valor único**, forma que já resolvia sem salto declarado; estes usam a forma de **cadeia**, que
+ * é a que um servidor de borda real produz e a que o código antigo **não** resolvia.
+ *
+ *   * **CT-1167** é o discriminador do fecho: duas cadeias de dois termos, com clientes distintos e
+ *     o mesmo salto, consomem baldes distintos. Contra o código antigo as duas caíam no balde
+ *     compartilhado e a última perna sairia `429` — é isso que faz dele um caso que reprova o
+ *     regime anterior, e não um caso que apenas descreve o novo.
+ *   * **CT-1168** é o par de segurança dele, e é obrigatório: provar só a separação aprovaria
+ *     também um eixo que o ATACANTE escolhe. Ele fixa que o termo mais à esquerda — o único que um
+ *     cliente escreve antes de o primeiro salto tocar a requisição — não move o balde, e que trocar
+ *     o termo do cliente, e só ele, é que dá balde novo. É a mitigação que a ADR-0037 nomeia nos
+ *     `Cons`: *"`trustedProxies` errado transforma cabeçalho forjado em origem aceita, com aparência
+ *     de correção"*.
+ *   * **CT-1170** amarra a declaração ao comportamento. A âncora sozinha não bastaria: entrada de
+ *     salto inválida passa por igualdade aqui e é **descartada com um aviso** em tempo de execução
+ *     (`findInvalidTrustedProxies`, medido no pacote publicado), e se todas fossem inválidas a lista
+ *     viraria vazia e o regime voltaria ao antigo, em silêncio. A perna comportamental sozinha não
+ *     nomearia a causa quando reprovasse. As duas juntas discriminam entre *declarado* e *declarado
+ *     **e** reconhecido* — e a declaração é lida **na instância**, pela mesma via que o arcabouço usa
+ *     em tempo de execução, nunca do texto do fonte.
+ *
+ * **Por que o CT-1170 não é o CT-1167 outra vez.** A cadeia dele tem o salto **repetido**
+ * (`cliente, salto, salto`), e não um só: é a forma de dois saltos locais em sequência, e o que ela
+ * exercita é a **travessia percorrer o trecho confiável inteiro** em vez de descartar apenas o
+ * último termo. Um eixo que olhasse só o penúltimo termo passaria o CT-1167 e reprovaria aqui.
+ *
+ * **Cada perna usa endereços exclusivos**, pela mesma razão dos casos acima: o contador é por
+ * `origem + caminho`, e reaproveitar um endereço faria uma perna consumir o teto da outra.
  */
 
 import { esquemaIdentidade, SENHA_DA_CARGA } from '@sysloc/db';
@@ -211,6 +266,7 @@ import {
   DURACAO_DA_SESSAO_EM_SEGUNDOS,
   FALHAS_DE_SEGUNDO_FATOR_ANTES_DA_TRANCA,
   JANELA_DO_LIMITADOR_EM_SEGUNDOS,
+  SALTOS_CONFIAVEIS,
   TETO_DE_CREDENCIAL_POR_JANELA,
   TETO_DE_EMISSAO_DE_EMAIL_POR_JANELA,
   TETO_DE_ENTRADAS_POR_JANELA,
@@ -442,8 +498,56 @@ const CAMINHO_DO_BALDE_COMPARTILHADO = CAMINHO_DA_TROCA_DE_SENHA;
 /** A origem declarada da perna 3 — inédita no arquivo, pela razão das demais. */
 const ORIGEM_QUE_SE_DECLARA = '203.0.113.37';
 
+/**
+ * O cliente da perna 4 — a que passou a fixar o regime COM eixo, e é inédita pela razão das demais.
+ *
+ * Ele chega numa CADEIA, e não como valor único: é a forma que um servidor de borda real produz, e
+ * é a que o código anterior ao fecho do `D27 · F1/T6` **não** resolvia — ela caía no mesmo balde
+ * compartilhado que as pernas 1 e 2 acabam de esgotar, e sairia `429`.
+ */
+const CLIENTE_DA_CADEIA_RESOLVIDA = '203.0.113.47';
+
 /** Limite do caso (c): ele emite 12 requisições, todas recusadas antes de qualquer derivação. */
 const LIMITE_DO_CASO_DO_BALDE_MS = 60_000;
+
+// ---------------------------------------------------------------------------------------------
+// CT-1167 · CT-1168 · CT-1170 — o eixo de origem, depois do fecho do `D27 · F1/T6`
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * O salto confiável, **por extenso** — mesmo critério dos tetos e das falhas deste arquivo.
+ *
+ * Escrevê-lo derivado de {@link SALTOS_CONFIAVEIS} tornaria as pernas abaixo tautológicas: trocar a
+ * declaração do SUT por outro endereço mudaria as cadeias junto, e elas seguiriam verdes sobre um
+ * salto que a topologia real não tem. A amarra com a constante do SUT é feita **uma vez**, em
+ * asserção própria, no CT-1170.
+ */
+const SALTO_POR_EXTENSO = '127.0.0.1';
+
+/**
+ * Os endereços de cliente das pernas do eixo — todos na faixa de documentação (RFC 5737) e todos
+ * exclusivos deste arquivo, pela mesma razão das origens do CT-236: o contador é por
+ * `origem + caminho`, e reaproveitar um endereço faria uma perna consumir o teto da outra.
+ */
+const CLIENTE_QUE_ESGOTA = '203.0.113.41';
+const CLIENTE_VIZINHO = '203.0.113.42';
+const CLIENTE_ATRAS_DO_SALTO = '203.0.113.43';
+const CLIENTE_INEDITO_DA_ROTACAO = '203.0.113.44';
+const CLIENTE_DO_SALTO_REPETIDO = '203.0.113.45';
+const CLIENTE_DISTINTO_DO_SALTO_REPETIDO = '203.0.113.46';
+
+/**
+ * O termo que o CLIENTE escreve, e a rotação dele.
+ *
+ * Outra faixa de documentação (RFC 5737, TEST-NET-2) de propósito: ela torna óbvio, na leitura da
+ * cadeia, qual termo é o forjado e qual é o que o salto apensou. Se algum destes dois virasse o
+ * eixo, o teto seria evadível trocando um cabeçalho — que é exatamente o que o CT-1168 reprova.
+ */
+const TERMO_FORJADO = '198.51.100.11';
+const TERMO_FORJADO_ROTACIONADO = '198.51.100.99';
+
+/** Limite dos casos do eixo: cada um emite 12 requisições, todas recusadas antes de derivação. */
+const LIMITE_DOS_CASOS_DO_EIXO_MS = 60_000;
 
 let identidade: IdentidadeEfemera;
 
@@ -844,9 +948,21 @@ describe('CT-236 (b) — a política explícita não afrouxa o que o padrão do 
   );
 });
 
-describe('CT-236 (c) — sem cabeçalho de origem, a contagem não é por origem', () => {
+// ---------------------------------------------------------------------------------------------
+// SUT_IS_CORRECT_BECAUSE: o código de produção está CERTO e este caso fixava o regime ANTIGO.
+// `packages/auth/src/autenticacao.ts` passou a declarar `SALTOS_CONFIAVEIS` a partir do endereço
+// MEDIDO na borda que já opera, e com isso a CADEIA de encaminhamento resolve o endereço do
+// cliente — o que fecha o `D27 · F1/T6`, cujo `QUANDO FECHA` mandava rever este caso ao fazê-lo.
+// O que ele afirmava não era defeito: era o regime degradado, fixado de propósito.
+//
+// A alteração é ADITIVA, e é o que as proibições 1 e 2 da §4 do Protocolo Antirregressão exigem:
+// **nenhuma das três pernas existentes foi removida, movida ou afrouxada** — as três continuam
+// verdadeiras, porque o pedido cuja origem não se apura segue caindo num balde único. Entrou a
+// perna 4, que contra o código antigo sairia `429`.
+// ---------------------------------------------------------------------------------------------
+describe('CT-236 (c) / CT-1169 — o balde compartilhado é o do pedido cuja origem não se apura', () => {
   it(
-    'os pedidos sem origem declarada somam num balde único, e um com origem declarada não',
+    'os pedidos sem origem declarada somam num balde único; um com origem declarada e um com cadeia resolvida, não',
     async () => {
       // ------------------------------------------------------------------------------------
       // Perna 1 — as N requisições SEM o cabeçalho de origem. Elas vêm, do ponto de vista do
@@ -890,8 +1006,232 @@ describe('CT-236 (c) — sem cabeçalho de origem, a contagem não é por origem
 
       expect(comOrigem.status).toBe(STATUS_DE_RECUSA_SEM_SESSAO);
       expect(comOrigem.cabecalhos.get(CABECALHO_DE_ESPERA)).toBeNull();
+
+      // ------------------------------------------------------------------------------------
+      // Perna 4 — CT-1169. MESMO caminho, MESMA janela, agora com uma CADEIA de encaminhamento
+      // terminada no salto declarado: ela também tem balde PRÓPRIO. **É esta a asserção que
+      // discrimina o regime novo do antigo** — sem o salto declarado, `getIp` devolveria `null`
+      // para uma cadeia, o pedido cairia no balde compartilhado que as pernas 1 e 2 acabaram de
+      // esgotar, e o desfecho aqui seria `429` com o cabeçalho do limitador.
+      //
+      // Ela é o que impede este caso de continuar compatível com o estado degradado: as pernas 1
+      // a 3 sozinhas passam nos DOIS regimes.
+      // ------------------------------------------------------------------------------------
+      const daCadeiaResolvida = await requisitarComOrigem(
+        CAMINHO_DO_BALDE_COMPARTILHADO,
+        cadeiaDeEncaminhamento(CLIENTE_DA_CADEIA_RESOLVIDA, SALTO_POR_EXTENSO),
+        { corpo: CORPO_DA_TROCA_DE_SENHA },
+      );
+
+      expect(daCadeiaResolvida.status).toBe(STATUS_DE_RECUSA_SEM_SESSAO);
+      expect(daCadeiaResolvida.cabecalhos.get(CABECALHO_DE_ESPERA)).toBeNull();
     },
     LIMITE_DO_CASO_DO_BALDE_MS,
+  );
+});
+
+describe('CT-1167 — duas origens distintas consomem baldes distintos', () => {
+  it(
+    'esgotado o teto pela cadeia de uma origem, a cadeia de outra continua sendo atendida',
+    async () => {
+      const cadeiaDeA = cadeiaDeEncaminhamento(CLIENTE_QUE_ESGOTA, SALTO_POR_EXTENSO);
+      const cadeiaDeB = cadeiaDeEncaminhamento(CLIENTE_VIZINHO, SALTO_POR_EXTENSO);
+
+      // ------------------------------------------------------------------------------------
+      // Perna 1 — as N requisições DENTRO do teto, pela cadeia da origem A. Companheiro negativo
+      // do caso: se o limitador recusasse cedo, ou recusasse tudo, a lista não seria só de `401`.
+      // ------------------------------------------------------------------------------------
+      const dentroDoTeto: number[] = [];
+      for (let pedido = 0; pedido < TETO_DE_CREDENCIAL_POR_EXTENSO; pedido += 1) {
+        const resposta = await requisitarComOrigem(CAMINHO_DA_TROCA_DE_SENHA, cadeiaDeA, {
+          corpo: CORPO_DA_TROCA_DE_SENHA,
+        });
+        dentroDoTeto.push(resposta.status);
+      }
+
+      expect(dentroDoTeto).toEqual(
+        Array.from({ length: TETO_DE_CREDENCIAL_POR_EXTENSO }, () => STATUS_DE_RECUSA_SEM_SESSAO),
+      );
+
+      // ------------------------------------------------------------------------------------
+      // Perna 2 — a N+1 da MESMA cadeia. Ela prova que a cadeia é apurada e conta: se ela não
+      // resolvesse, cada pedido teria caído no balde compartilhado — que os casos vizinhos deste
+      // arquivo alimentam — e o teto seria alcançado por outra razão, ou não seria alcançado.
+      // ------------------------------------------------------------------------------------
+      const acimaDoTeto = await requisitarComOrigem(CAMINHO_DA_TROCA_DE_SENHA, cadeiaDeA, {
+        corpo: CORPO_DA_TROCA_DE_SENHA,
+      });
+
+      expect(acimaDoTeto.status).toBe(STATUS_DO_LIMITADOR);
+
+      // A autoria é dita pelo cabeçalho que só o limitador escreve, e não deduzida do status.
+      const esperaAnunciada = Number(acimaDoTeto.cabecalhos.get(CABECALHO_DE_ESPERA));
+      expect(Number.isInteger(esperaAnunciada)).toBe(true);
+      expect(esperaAnunciada).toBeGreaterThan(0);
+      expect(esperaAnunciada).toBeLessThanOrEqual(JANELA_POR_EXTENSO_EM_SEGUNDOS);
+
+      // ------------------------------------------------------------------------------------
+      // Perna 3 — **É ESTA A ASSERÇÃO QUE DISCRIMINA O REGIME NOVO DO ANTIGO.** Mesmo caminho,
+      // mesma janela, mesmo salto: só o termo do CLIENTE muda. Sem o salto declarado, `getIp`
+      // devolveria `null` para as duas cadeias, as duas cairiam no mesmo balde — já esgotado pela
+      // perna 1 — e este pedido sairia `429`.
+      // ------------------------------------------------------------------------------------
+      const daOutraOrigem = await requisitarComOrigem(CAMINHO_DA_TROCA_DE_SENHA, cadeiaDeB, {
+        corpo: CORPO_DA_TROCA_DE_SENHA,
+      });
+
+      expect(daOutraOrigem.status).toBe(STATUS_DE_RECUSA_SEM_SESSAO);
+      expect(daOutraOrigem.cabecalhos.get(CABECALHO_DE_ESPERA)).toBeNull();
+    },
+    LIMITE_DOS_CASOS_DO_EIXO_MS,
+  );
+});
+
+describe('CT-1168 — o termo que o cliente forja não é o eixo', () => {
+  it(
+    'rotacionar o termo mais à esquerda não dá balde novo; trocar o termo do cliente dá',
+    async () => {
+      const forma1 = cadeiaDeEncaminhamento(
+        TERMO_FORJADO,
+        CLIENTE_ATRAS_DO_SALTO,
+        SALTO_POR_EXTENSO,
+      );
+      const formaRotacionada = cadeiaDeEncaminhamento(
+        TERMO_FORJADO_ROTACIONADO,
+        CLIENTE_ATRAS_DO_SALTO,
+        SALTO_POR_EXTENSO,
+      );
+      const formaDeOutroCliente = cadeiaDeEncaminhamento(
+        TERMO_FORJADO,
+        CLIENTE_INEDITO_DA_ROTACAO,
+        SALTO_POR_EXTENSO,
+      );
+
+      // ------------------------------------------------------------------------------------
+      // Perna 1 — as N requisições DENTRO do teto, pela forma 1.
+      // ------------------------------------------------------------------------------------
+      const dentroDoTeto: number[] = [];
+      for (let pedido = 0; pedido < TETO_DE_CREDENCIAL_POR_EXTENSO; pedido += 1) {
+        const resposta = await requisitarComOrigem(CAMINHO_DA_TROCA_DE_SENHA, forma1, {
+          corpo: CORPO_DA_TROCA_DE_SENHA,
+        });
+        dentroDoTeto.push(resposta.status);
+      }
+
+      expect(dentroDoTeto).toEqual(
+        Array.from({ length: TETO_DE_CREDENCIAL_POR_EXTENSO }, () => STATUS_DE_RECUSA_SEM_SESSAO),
+      );
+
+      // ------------------------------------------------------------------------------------
+      // Perna 2 — **A ASSERÇÃO DE SEGURANÇA DESTE CASO.** A cadeia difere da anterior APENAS no
+      // termo mais à esquerda — o único que um cliente escreve antes de o primeiro salto tocar a
+      // requisição. Ela cai no MESMO balde, e por isso é recusada pelo limitador. Se o eixo fosse
+      // o termo forjado, este pedido abriria um balde novo e sairia `401`: o teto seria evadível
+      // trocando um cabeçalho, que é a falha nomeada nos `Cons` da ADR-0037.
+      // ------------------------------------------------------------------------------------
+      const comOTermoRotacionado = await requisitarComOrigem(
+        CAMINHO_DA_TROCA_DE_SENHA,
+        formaRotacionada,
+        { corpo: CORPO_DA_TROCA_DE_SENHA },
+      );
+
+      expect(comOTermoRotacionado.status).toBe(STATUS_DO_LIMITADOR);
+      expect(comOTermoRotacionado.status).not.toBe(STATUS_DE_RECUSA_SEM_SESSAO);
+
+      const esperaAnunciada = Number(comOTermoRotacionado.cabecalhos.get(CABECALHO_DE_ESPERA));
+      expect(Number.isInteger(esperaAnunciada)).toBe(true);
+      expect(esperaAnunciada).toBeGreaterThan(0);
+      expect(esperaAnunciada).toBeLessThanOrEqual(JANELA_POR_EXTENSO_EM_SEGUNDOS);
+
+      // ------------------------------------------------------------------------------------
+      // Perna 3 — **o companheiro positivo, e ele é obrigatório.** Sem ele, um limitador que
+      // simplesmente recusasse tudo naquele caminho passaria as duas pernas acima, e o caso
+      // afirmaria "balde único" sobre outra coisa. Aqui o termo forjado é o MESMO da forma 1 e o
+      // que muda é o termo do CLIENTE: o balde é outro, e o pedido é atendido. É o par que
+      // demonstra qual termo é, de fato, o eixo.
+      // ------------------------------------------------------------------------------------
+      const deOutroCliente = await requisitarComOrigem(
+        CAMINHO_DA_TROCA_DE_SENHA,
+        formaDeOutroCliente,
+        { corpo: CORPO_DA_TROCA_DE_SENHA },
+      );
+
+      expect(deOutroCliente.status).toBe(STATUS_DE_RECUSA_SEM_SESSAO);
+      expect(deOutroCliente.cabecalhos.get(CABECALHO_DE_ESPERA)).toBeNull();
+    },
+    LIMITE_DOS_CASOS_DO_EIXO_MS,
+  );
+});
+
+describe('CT-1170 — o salto declarado é reconhecido, e não apenas declarado', () => {
+  it('a lista que a instância carrega é não vazia e é a constante do SUT', () => {
+    const declarados = saltosDaInstancia();
+
+    // **Não vazia.** É a asserção que a nota de `SALTOS_CONFIAVEIS` exige: entrada de salto que não
+    // seja endereço ou faixa válida é descartada com apenas um aviso, e se todas fossem inválidas a
+    // lista viraria vazia e o comportamento voltaria ao regime anterior ao fecho do `D27 · F1/T6` —
+    // em silêncio para a suíte.
+    expect(declarados).not.toBeUndefined();
+    expect(declarados?.length ?? 0).toBeGreaterThan(0);
+
+    // A declaração CHEGOU à instância, e é a do SUT — molde do CT-236 (b), que lê pela mesma via
+    // que o arcabouço usa em tempo de execução. Apagar `advanced.ipAddress` devolve `undefined`
+    // aqui, e declarar outro endereço reprova contra o valor por extenso da linha seguinte.
+    expect(declarados).toEqual([...SALTOS_CONFIAVEIS]);
+
+    // E a constante do SUT é o endereço MEDIDO na borda — a amarra que impede
+    // `SALTO_POR_EXTENSO` de virar literal órfão do outro lado.
+    expect([...SALTOS_CONFIAVEIS]).toEqual([SALTO_POR_EXTENSO]);
+  });
+
+  it(
+    'numa cadeia terminada no salto, o eixo é o termo à esquerda do trecho confiável',
+    async () => {
+      // O salto aparece REPETIDO de propósito: é a forma de dois saltos locais em sequência, e o
+      // que ela exercita é a travessia percorrer o trecho confiável INTEIRO. Um eixo que olhasse
+      // apenas o penúltimo termo passaria o CT-1167 e reprovaria aqui.
+      const cadeia = cadeiaDeEncaminhamento(
+        CLIENTE_DO_SALTO_REPETIDO,
+        SALTO_POR_EXTENSO,
+        SALTO_POR_EXTENSO,
+      );
+      const cadeiaDoOutroCliente = cadeiaDeEncaminhamento(
+        CLIENTE_DISTINTO_DO_SALTO_REPETIDO,
+        SALTO_POR_EXTENSO,
+        SALTO_POR_EXTENSO,
+      );
+
+      const dentroDoTeto: number[] = [];
+      for (let pedido = 0; pedido < TETO_DE_CREDENCIAL_POR_EXTENSO; pedido += 1) {
+        const resposta = await requisitarComOrigem(CAMINHO_DA_TROCA_DE_SENHA, cadeia, {
+          corpo: CORPO_DA_TROCA_DE_SENHA,
+        });
+        dentroDoTeto.push(resposta.status);
+      }
+
+      expect(dentroDoTeto).toEqual(
+        Array.from({ length: TETO_DE_CREDENCIAL_POR_EXTENSO }, () => STATUS_DE_RECUSA_SEM_SESSAO),
+      );
+
+      const acimaDoTeto = await requisitarComOrigem(CAMINHO_DA_TROCA_DE_SENHA, cadeia, {
+        corpo: CORPO_DA_TROCA_DE_SENHA,
+      });
+
+      expect(acimaDoTeto.status).toBe(STATUS_DO_LIMITADOR);
+      expect(Number(acimaDoTeto.cabecalhos.get(CABECALHO_DE_ESPERA))).toBeGreaterThan(0);
+
+      // O companheiro positivo: mesmo trecho confiável, cliente distinto — balde próprio. Sem ele
+      // as duas pernas acima passariam sob um limitador que recusasse tudo naquele caminho.
+      const deOutroCliente = await requisitarComOrigem(
+        CAMINHO_DA_TROCA_DE_SENHA,
+        cadeiaDoOutroCliente,
+        { corpo: CORPO_DA_TROCA_DE_SENHA },
+      );
+
+      expect(deOutroCliente.status).toBe(STATUS_DE_RECUSA_SEM_SESSAO);
+      expect(deOutroCliente.cabecalhos.get(CABECALHO_DE_ESPERA)).toBeNull();
+    },
+    LIMITE_DOS_CASOS_DO_EIXO_MS,
   );
 });
 
@@ -1020,6 +1360,32 @@ function trancaDeSegundoFatorDaInstancia(): unknown {
   ) as { readonly options?: { readonly accountLockout?: unknown } } | undefined;
 
   return doisFatores?.options?.accountLockout;
+}
+
+/**
+ * Monta o valor de `x-forwarded-for` de uma cadeia de encaminhamento.
+ *
+ * A vírgula seguida de espaço é a forma que um servidor de borda produz (`$proxy_add_x_forwarded_for`
+ * no nginx da borda que já opera), e o arcabouço apara cada termo antes de compará-lo. O helper
+ * existe para que as cadeias das pernas sejam lidas **da esquerda para a direita, na ordem em que os
+ * saltos as escreveram** — a travessia que apura o eixo corre no sentido inverso, e escrever a
+ * cadeia à mão em cada perna convidaria a inverter a ordem sem que nada acusasse.
+ */
+function cadeiaDeEncaminhamento(...termos: readonly string[]): string {
+  return termos.join(', ');
+}
+
+/**
+ * Os saltos confiáveis que a instância carrega.
+ *
+ * Lidos da instância pela MESMA via que o arcabouço usa em tempo de execução
+ * (`options.advanced?.ipAddress?.trustedProxies`, medido em `@better-auth/core@1.6.25`,
+ * `dist/utils/ip.mjs`), e não do fonte: é o que torna a asserção sensível à declaração ter chegado
+ * às opções, e não à existência de um comentário. Mesmo molde de
+ * {@link trancaDeSegundoFatorDaInstancia}.
+ */
+function saltosDaInstancia(): readonly string[] | undefined {
+  return identidade.autenticacao.options.advanced?.ipAddress?.trustedProxies;
 }
 
 /** Executa a entrada da pessoa do CT-015 e classifica o desfecho observável. */

@@ -337,6 +337,17 @@ readonly ENDERECO_PADRAO_DA_ENTREGA_DA_NOTICIA="https://notificacao.sysloc.inval
 # 2606, trocado pelo endereço real da operação quando o vhost for publicado.
 readonly CONTATO_PADRAO_DA_ENTREGA_DA_NOTICIA="operacao@sysloc.invalid"
 
+# As ORIGENS PÚBLICAS de onde o navegador fala com a API — lista separada por
+# vírgula, e nunca um valor só: são DOIS aplicativos sobre o mesmo processo (o do
+# cliente e o Painel Master), cada um no seu hostname.
+#
+# Ela É exigida na partida do serviço de aplicação desde a T7 da fatia
+# `publicacao-e-backup` (fecho do `D23 · F1/T8`), e um arquivo de ambiente sem a
+# linha faria o serviço recusar subir. Substitutos em domínio reservado pela RFC
+# 6761, trocados pelos hostnames reais quando os vhosts forem publicados —
+# presença cobrada, conteúdo nunca.
+readonly ORIGENS_PUBLICAS_PADRAO="https://app.sysloc.invalid,https://painel.sysloc.invalid"
+
 # Diretório onde os BYTES do boleto vivem — a oitava chave do arquivo de ambiente
 # e o único diretório de dados de negócio que este script provisiona.
 #
@@ -978,6 +989,18 @@ garantir_chaves_de_conteudo() {
 		acrescentar_linha_ao_ambiente "${arquivo}" \
 			"DIRETORIO_DOS_BOLETOS=${DIR_BOLETOS}"
 		CHAVES_SEMEADAS="${CHAVES_SEMEADAS:+${CHAVES_SEMEADAS}, }DIRETORIO_DOS_BOLETOS"
+	fi
+
+	# As ORIGENS PÚBLICAS (T7 da fatia `publicacao-e-backup`), pelo MESMO critério
+	# das demais chaves de conteúdo: exigidas na partida do serviço de aplicação, e
+	# um arquivo de instalação anterior à exigência nunca ganharia a linha — a
+	# unidade recusaria a partida nomeando a variável, o supervisor tentaria cinco
+	# vezes e desistiria. Também NÃO entram na conferência de coordenadas, pela
+	# razão das irmãs: são justamente o que o operador troca ao publicar os vhosts.
+	if ! grep -q '^ORIGENS_PUBLICAS=' "${arquivo}" 2>/dev/null; then
+		acrescentar_linha_ao_ambiente "${arquivo}" \
+			"ORIGENS_PUBLICAS=${ORIGENS_PUBLICAS_PADRAO}"
+		CHAVES_SEMEADAS="${CHAVES_SEMEADAS:+${CHAVES_SEMEADAS}, }ORIGENS_PUBLICAS"
 	fi
 }
 
@@ -1820,6 +1843,14 @@ passo_p06_arquivo_ambiente() {
 			"${DONO_DIR_BOLETOS}" "${MODO_DIR_BOLETOS}"
 		printf '# arquivos e a aplicar dono e modo no destino; o verificador\n'
 		printf '# deploy/scripts/cobranca-bancaria/verificar-guarda-de-boletos.sh confere.\n'
+		printf '#\n'
+		printf '# ORIGENS_PUBLICAS também NÃO é segredo: é a LISTA de origens de onde o\n'
+		printf '# navegador fala com a API, separada por vírgula. Ela é PLURAL porque são\n'
+		printf '# dois aplicativos sobre o mesmo processo, cada um no seu hostname, e o\n'
+		printf '# arcabouço de identidade recusa toda requisição cujo Origin não esteja\n'
+		printf '# no conjunto — a ENTRADA inclusive. Mesmo critério das demais chaves de\n'
+		printf '# conteúdo: substitutos em domínio reservado, presença cobrada, conteúdo\n'
+		printf '# nunca — e são trocadas pelos hostnames reais ao publicar os vhosts.\n'
 		printf '\n'
 		printf 'DATABASE_URL=%s\n' "$(montar_url_do_banco "${senha_db}" "${porta_banco}")"
 		printf 'REDIS_URL=redis://127.0.0.1:%s\n' "${PORTA_FILA}"
@@ -1833,6 +1864,7 @@ passo_p06_arquivo_ambiente() {
 		printf 'ENDERECO_DA_ENTREGA_DA_NOTICIA=%s\n' "${ENDERECO_PADRAO_DA_ENTREGA_DA_NOTICIA}"
 		printf 'CONTATO_DA_ENTREGA_DA_NOTICIA=%s\n' "${CONTATO_PADRAO_DA_ENTREGA_DA_NOTICIA}"
 		printf 'DIRETORIO_DOS_BOLETOS=%s\n' "${DIR_BOLETOS}"
+		printf 'ORIGENS_PUBLICAS=%s\n' "${ORIGENS_PUBLICAS_PADRAO}"
 	} >"${ARQ_AMBIENTE}"
 
 	criado "P06" "arquivo de ambiente ${ARQ_AMBIENTE} criado (0600 ${DONO_ARQ_AMBIENTE}, credencial gerada em tempo de execução)"

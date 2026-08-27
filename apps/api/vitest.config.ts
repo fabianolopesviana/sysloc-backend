@@ -159,6 +159,25 @@ export default defineConfig({
       // que um `.invalid` derrubaria a montagem de toda aplicação real. O que o substitui é um
       // diretório **descartável**, fora da árvore versionada.
       DIRETORIO_DOS_BOLETOS: DIRETORIO_DOS_BOLETOS_DA_VERIFICACAO,
+      // `ORIGENS_PUBLICAS` entra na **T7** da fatia `publicacao-e-backup` (fecho do
+      // `D23 · F1/T8`) pela MESMA razão das oito acima, e o precedente vale palavra por palavra: a
+      // partida passa a exigi-la, e **todo** caso que sobe a aplicação real passa pela validação —
+      // inclusive `saude.e2e.spec.ts`, que não tem nada a ver com origem de navegador. Declará-la
+      // aqui é o que evita editar trinta e cinco arquivos de verificação por causa desta task.
+      //
+      // Os valores são INERTES pelo critério de sempre — `.invalid` é o domínio que a RFC 6761
+      // garante não resolver —, e são **dois** porque a variável é plural por decisão (§5.7 do
+      // scope): são dois aplicativos sobre a mesma API.
+      //
+      // ⚠️ **Isto NÃO enfraquece a conferência de origem, e a razão é topológica**: o conjunto
+      // confiável é a UNIÃO destas com a origem derivada do endereço de escuta, e é por essa
+      // segunda que fala `pedir()` de `test/acessorios-de-borda.ts` — nenhum caso da suíte entra
+      // por estas duas. Quem prova que a variável é obrigatória, que a forma é conferida e que
+      // origem estranha é RECUSADA é `test/ambiente.spec.ts` (CT-1160 a CT-1163) e
+      // `test/origem-publica.e2e.spec.ts` (CT-1164 a CT-1166), que declaram as próprias origens
+      // antes de compor a aplicação. E não fere a ADR-0006: nada é lido do ambiente, e os valores
+      // são fixados.
+      ORIGENS_PUBLICAS: 'https://app.exemplo.invalid,https://painel.exemplo.invalid',
     },
   },
 });

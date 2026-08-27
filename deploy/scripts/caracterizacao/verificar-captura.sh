@@ -44,8 +44,6 @@ DIR_TRABALHO="$(mktemp -d)"
 DIR_SHIM_NO_CONTAINER="/tmp/caracterizacao-shim-relogio"
 shim_instalado=0
 
-falhas_totais=0
-falhas_caso=0
 ultimo_codigo=0
 
 limpar() {
@@ -60,52 +58,21 @@ limpar() {
 }
 trap limpar EXIT
 
-caso() {
-	printf '\n[%s] %s\n' "$1" "$2"
-	falhas_caso=0
-}
+# --------------------------------------------------------------------------- #
+# Vocabulário de asserção — a casa comum, carregada e NUNCA redeclarada aqui.
+# Ver a razão em `deploy/scripts/verificacao/esqueleto-de-assercao.sh`.
+# --------------------------------------------------------------------------- #
+# shellcheck source=../verificacao/esqueleto-de-assercao.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../verificacao/esqueleto-de-assercao.sh"
 
-ok() { printf '    OK   %s\n' "$*"; }
-
-falhar() {
-	falhas_caso=$((falhas_caso + 1))
-	falhas_totais=$((falhas_totais + 1))
-	printf '    FALHA %s\n' "$*" >&2
-}
-
-afirmar_igual() {
-	if [[ "$2" == "$3" ]]; then
-		ok "$1"
-	else
-		falhar "$1 — esperado [$2], obtido [$3]"
-	fi
-}
-
-# Réplica literal da do `verificar-golden.sh`. Faz parte do vocabulário canônico da
-# frente shell (`.claude/rules/testing-stack.md`) e faltava aqui: sem ela, um caso
-# que precise da negativa cai em `command not found`, e sob `set -e` isso ABORTA a
-# suíte no meio em vez de reprovar um caso.
-afirmar_diferente() { # afirmar_diferente <descricao> <nao_esperado> <obtido>
-	if [[ "$2" != "$3" ]]; then
-		ok "$1"
-	else
-		falhar "$1 — obtido [$3], que não deveria ser [$2]"
-	fi
-}
-
+# Fora do esqueleto compartilhado de propósito — ver a razão medida no cabeçalho
+# de `deploy/scripts/verificacao/esqueleto-de-assercao.sh`: as quatro cópias desta
+# função no repositório NÃO são o mesmo símbolo (uma delas grepa um ARQUIVO).
 afirmar_contem() { # afirmar_contem <descricao> <arquivo> <agulha>
 	if grep -qF -- "$3" "$2"; then
 		ok "$1"
 	else
 		falhar "$1 — a substring [$3] não aparece em $(basename "$2")"
-	fi
-}
-
-fechar_caso() {
-	if [[ "${falhas_caso}" -eq 0 ]]; then
-		printf '    -> %s aprovado\n' "$1"
-	else
-		printf '    -> %s REPROVADO (%d falha(s))\n' "$1" "${falhas_caso}" >&2
 	fi
 }
 

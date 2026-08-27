@@ -11,6 +11,8 @@
 #   sysloc-rotina-<r>.timer     (6)     o relógio de cada rotina agendada
 #   sysloc-rotina-<r>.service   (6)     o despacho `oneshot` que o relógio dispara
 #   sysloc-alerta-de-rotina@.service    a unidade-modelo do alerta de falha
+#   sysloc-backup-da-base.timer         o relógio da cópia diária da base
+#   sysloc-backup-da-base.service       a cópia e a preservação dos segredos
 #
 # ---------------------------------------------------------------------------
 # O relógio: HABILITA-SE O `.timer`, NUNCA O `.service` (T9 · `automacoes-agendadas`)
@@ -24,6 +26,13 @@
 # toda vez que a máquina subisse. A segunda barreira está na própria unidade —
 # os seis despachos e a unidade-modelo NÃO têm seção `[Install]`, e sem ela
 # `systemctl enable` recusa em vez de passar em silêncio.
+#
+# ⚠️ A regra vale para TODA unidade disparada por relógio, e não só para as de
+# prefixo `sysloc-rotina-`: `${UNIDADE_DE_BACKUP}` (T4 · `publicacao-e-backup`)
+# obedece às duas barreiras pela mesma razão — habilitada, ela correria no boot,
+# fora da janela noturna, com a cópia da base concorrendo com o arranque do
+# servidor. O predicado que a suíte usa para detectar a violação foi corrigido na
+# mesma task: ele filtrava por PREFIXO, e por isso era cego a esta unidade.
 #
 # A conformidade das unidades (fuso declarado no `OnCalendar=`, `Persistent=`
 # apenas nas diárias, `OnFailure=` que nomeia quem falhou, ausência de `Restart=`
@@ -109,6 +118,7 @@ readonly ALVO_DE_ARRANQUE="multi-user.target"
 readonly UNIDADE_API="sysloc-api.service"
 readonly UNIDADE_WORKER="sysloc-worker.service"
 readonly UNIDADE_DE_ALERTA="sysloc-alerta-de-rotina@.service"
+readonly UNIDADE_DE_BACKUP="sysloc-backup-da-base.service"
 
 # Tudo o que é POSICIONADO em ${DIR_UNIDADES_INSTALADAS} — o roster completo do
 # diretório versionado, e a fonte única deste procedimento.
@@ -133,6 +143,10 @@ readonly UNIDADES=(
 	"sysloc-rotina-retomada-de-noticias.timer"
 	"sysloc-rotina-vigilancia-das-rotinas.service"
 	"sysloc-rotina-vigilancia-das-rotinas.timer"
+	# A cópia diária da base — fatia `publicacao-e-backup`. Ela não despacha
+	# rotina de negócio: executa os dois scripts de `deploy/scripts/backup/`.
+	"${UNIDADE_DE_BACKUP}"
+	"sysloc-backup-da-base.timer"
 )
 
 # O que é ATIVADO e HABILITADO no arranque — subconjunto declarado de ${UNIDADES}.
@@ -159,6 +173,9 @@ readonly UNIDADES_DO_ARRANQUE=(
 	"sysloc-rotina-manutencao.timer"
 	"sysloc-rotina-retomada-de-noticias.timer"
 	"sysloc-rotina-vigilancia-das-rotinas.timer"
+	# O relógio da cópia diária — e SÓ ele. `${UNIDADE_DE_BACKUP}` fica de fora
+	# pela mesma razão dos seis despachos acima.
+	"sysloc-backup-da-base.timer"
 )
 
 # O artefato construído que o `ExecStart` de cada unidade invoca, relativo à raiz
@@ -341,12 +358,29 @@ valor_de_ambiente_na_unidade() {
 # nas conferências de versão do runtime e de artefato construído.
 #
 # Derivado por EXCLUSÃO NOMEADA, e não por lista paralela: é todo `.service`
-# MENOS a unidade-modelo do alerta, que invoca uma ferramenta do sistema e não o
-# runtime. O sentido da regra é fail-closed — um `.service` novo entra na
-# conferência sozinho, e esquecê-lo deixa de ser possível. O `.timer` cai fora
-# porque não tem `ExecStart=` nenhum.
+# MENOS as duas que invocam outra coisa. O sentido da regra é fail-closed — um
+# `.service` novo entra na conferência sozinho, e esquecê-lo deixa de ser
+# possível. O `.timer` cai fora porque não tem `ExecStart=` nenhum.
+#
+# As duas exceções, e por que cada uma é nomeada:
+#
+#   · ${UNIDADE_DE_ALERTA} invoca uma ferramenta do sistema (`/usr/bin/echo`);
+#   · ${UNIDADE_DE_BACKUP} invoca os SCRIPTS VERSIONADOS de
+#     `deploy/scripts/backup/`, e não `node` com artefato de `dist/`. As duas
+#     conferências que esta função governa não teriam o que afirmar sobre ela:
+#     `verificar_artefatos_construidos` leria o segundo campo de um `ExecStart=`
+#     que só tem um, e `verificar_runtime` compararia a versão do `bash` contra
+#     a que o `.mise.toml` declara para o Node — o procedimento abortaria em
+#     TODA execução, sem defeito algum no sistema.
+#
+# ⚠️ A exceção não deixa o alvo sem prova: que os dois scripts existam e sejam
+# executáveis é afirmado pelo CT-1118 de
+# `packages/shared/test/unidades-agendadas.spec.ts`, que roda na suíte, sem
+# privilégio — e a diferença de fundo é que eles são VERSIONADOS, de modo que
+# chegam junto com a árvore, enquanto o artefato de `dist/` depende de
+# `${COMANDO_DE_CONSTRUCAO}` ter rodado.
 unidade_executa_o_runtime() {
-	[[ "$1" == *.service && "$1" != "${UNIDADE_DE_ALERTA}" ]]
+	[[ "$1" == *.service && "$1" != "${UNIDADE_DE_ALERTA}" && "$1" != "${UNIDADE_DE_BACKUP}" ]]
 }
 
 # O alvo sob o qual a unidade é habilitada, LIDO da própria unidade.

@@ -139,7 +139,8 @@
  *    terceira empresa; montá-la exige o percurso do operador do SaaS (criar empresa → admitir Admin →
  *    trocar a senha provisória), que custa uma **sétima** escrita de `entrarComSegundoFatorCumprido`
  *    — o `D32 · F5/T7`, cujo Limiar de Três já disparou e cujo gatilho **esta task não aciona** — e
- *    uma troca de senha contra o teto de dez por minuto (`D27 · F1/T6`). A empresa `B` da carga
+ *    uma troca de senha contra o teto de dez por minuto — que aqui vale por balde único, porque os
+ *    pedidos desta suíte não declaram origem apurável. A empresa `B` da carga
  *    satisfaz a invariante **integralmente**: ela é admitida na montagem desta suíte, e **não tem
  *    passagem alguma** de rotina. O que o caso mede — *`200` com nulos, nunca `404`, e a leitura não
  *    cria linha* — não depende de a empresa ser a terceira.
