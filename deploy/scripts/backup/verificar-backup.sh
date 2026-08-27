@@ -423,7 +423,11 @@ readonly COMANDO_QUE_MEDIRIA_O_AMBIENTE_REAL="setfacl -m u:\$(id -un):r <arquivo
 
 # O estado da árvore versionada no início da bateria — o CT-1124 compara contra
 # ele. Comparar contra VAZIO reprovaria toda execução feita com trabalho em curso,
-# que é o estado normal de quem desenvolve.
+# que é o estado normal de quem desenvolve. ⚠️ E o simétrico também vale, e custou
+# uma reprovação real: a árvore LIMPA é o estado de todo clone novo e de toda
+# execução logo após um commit, e ela torna esta global a string vazia — por isso
+# a comparação passa por `linhas_do_estado`, e o antivácuo do caso afirma que HÁ
+# repositório, nunca que HÁ sujeira.
 ESTADO_GIT_INICIAL=""
 
 # O arquivo que o controle positivo do CT-1124 planta na árvore de trabalho.
@@ -479,9 +483,13 @@ SUBDIRETORIO_DAS_COPIAS_DO_ALVO=""
 # shellcheck source=../verificacao/esqueleto-de-assercao.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../verificacao/esqueleto-de-assercao.sh"
 
-# Fora do esqueleto compartilhado de propósito — ver a razão medida no cabeçalho
-# de `deploy/scripts/verificacao/esqueleto-de-assercao.sh`: as quatro cópias desta
-# função no repositório NÃO são o mesmo símbolo (uma delas grepa um ARQUIVO).
+# Fora do esqueleto compartilhado — ver a razão medida no cabeçalho de
+# `deploy/scripts/verificacao/esqueleto-de-assercao.sh`. ⚠️ **Esta cópia É o mesmo
+# símbolo das outras duas de comparação de STRING**, e a unificação está ADIADA,
+# não descartada: o que a impede é o quarto homônimo, o de `verificar-captura.sh`,
+# que recebe um ARQUIVO e grepa. Conte as cópias ao abrir este ponto — são quatro,
+# três idênticas e uma divergente. Ler "não são o mesmo símbolo" e parar de contar
+# é exatamente o mecanismo que produziu o `D9 · F0/T2`.
 afirmar_contem() {
 	if [[ "$3" == *"$2"* ]]; then
 		ok "$1"
@@ -2219,11 +2227,16 @@ ct_1103_destinos_que_se_contem() {
 # listagem que perdesse a subárvore reprovaria aqui.
 #
 # ⚠️ POR QUE NÃO HÁ PERNA PRÓPRIA PARA A ENUMERAÇÃO DOS MEMBROS. As duas
-# travessias percorrem a MESMA árvore com a mesma descida, e nenhum arranjo do
-# sistema de arquivos faz uma falhar e a outra não — quem recusa primeiro é
-# sempre a guarda de entrada inesperada. As duas são fechadas pela mesma decisão
-# e enumeradas uma a uma no MAPA DE DESFECHOS de `preservar-segredos.sh`: a
-# discriminação da segunda é por ENUMERAÇÃO da superfície, e não por caso.
+# travessias percorrem a MESMA árvore com a mesma descida, e o que se MEDIU é
+# isto: o mutante com apenas o ponto (10) revertido sai INDISTINGUÍVEL do código
+# íntegro, porque a guarda de entrada inesperada recusa ANTES de a enumeração ser
+# alcançada. ⚠️ Note o que esta frase NÃO diz: ela não afirma que nenhum arranjo
+# do sistema de arquivos separe as duas — isso não foi provado, e a redação
+# anterior o afirmava no absoluto a partir de um mutante só. O que sustenta a
+# ausência de perna própria é outra coisa, e ela é verificável: as duas são
+# fechadas pela mesma decisão e enumeradas uma a uma no MAPA DE DESFECHOS de
+# `preservar-segredos.sh`, de modo que a discriminação da segunda é por
+# ENUMERAÇÃO da superfície mais a perna positiva do conjunto — nunca por caso.
 #
 # O modo é restaurado ANTES das asserções, como o `CT-1100 (c)` faz: sem isso o
 # `rm -rf` do diretório de trabalho não alcança a subárvore.
@@ -3909,15 +3922,38 @@ estado_git_da_arvore() {
 	git -C "${RAIZ_REPO}" status --porcelain 2>/dev/null | LC_ALL=C sort
 }
 
+# Escreve um estado como LINHAS, e escreve NADA quando o estado é vazio.
+#
+# DECISÃO FECHADA — intervenção dirigida · 2026-08-26
+# O QUÊ: a comparação do CT-1124 passa por aqui, e nunca por `printf '%s\n'` direto.
+# POR QUÊ: `printf '%s\n' ""` emite UMA LINHA EM BRANCO, não nada. Com a árvore
+#          LIMPA — que é o estado de todo clone novo e de toda execução logo após
+#          um commit — os dois lados viravam "uma linha em branco" contra "uma
+#          linha real", e as TRÊS asserções de diferença do caso mediam o
+#          artefato do `printf` em vez do estado da árvore. Medido em 2026-08-26:
+#          árvore suja 408 OK / saída 2; árvore limpa 404 OK / 4 FALHA / saída 1.
+# REVERTER EXIGE: provar que a bateria fica verde com a árvore LIMPA sem este
+#          recorte — isto é, rodá-la logo após um commit, com `git status
+#          --porcelain` devolvendo vazio.
+linhas_do_estado() {
+	[[ -n "$1" ]] && printf '%s\n' "$1"
+	return 0
+}
+
 ct_1124() {
 	caso "CT-1124" "nenhuma asserção estática desta bateria escreve na árvore de trabalho"
 
 	local agora
 	agora="$(estado_git_da_arvore)"
-	afirmar_diferente "há foto do estado inicial para comparar" "" "${ESTADO_GIT_INICIAL}"
+	# Antivácuo. NÃO se afirma que a foto é não-vazia: árvore limpa é o estado mais
+	# saudável possível, e exigir sujeira aqui reprovava todo clone novo. O que
+	# discrimina "não consegui fotografar" de "não havia o que fotografar" é o
+	# repositório responder — e a detecção quem prova é o controle positivo abaixo.
+	afirmar_igual "há repositório para fotografar" \
+		"true" "$(git -C "${RAIZ_REPO}" rev-parse --is-inside-work-tree 2>/dev/null || true)"
 	afirmar_igual "depois de todos os mutantes, o estado da árvore é o mesmo do início" \
-		"0" "$(contar_achados "$(diff <(printf '%s\n' "${ESTADO_GIT_INICIAL}") \
-			<(printf '%s\n' "${agora}") | grep -E '^[<>]' || true)")"
+		"0" "$(contar_achados "$(diff <(linhas_do_estado "${ESTADO_GIT_INICIAL}") \
+			<(linhas_do_estado "${agora}") | grep -E '^[<>]' || true)")"
 
 	# Controle positivo: um arquivo plantado FORA da caixa de areia tem de
 	# aparecer, e aparecer como UMA linha.
@@ -3926,16 +3962,16 @@ ct_1124() {
 	local sujo
 	sujo="$(estado_git_da_arvore)"
 	afirmar_igual "(controle) plantar na raiz acusa EXATAMENTE uma linha de diferença" \
-		"1" "$(contar_achados "$(diff <(printf '%s\n' "${ESTADO_GIT_INICIAL}") \
-			<(printf '%s\n' "${sujo}") | grep -E '^[<>]' || true)")"
+		"1" "$(contar_achados "$(diff <(linhas_do_estado "${ESTADO_GIT_INICIAL}") \
+			<(linhas_do_estado "${sujo}") | grep -E '^[<>]' || true)")"
 	afirmar_igual "(controle) e a linha nomeia o arquivo plantado" \
 		"1" "$(printf '%s\n' "${sujo}" | grep -c "$(basename "${ARQUIVO_PLANTADO_NA_ARVORE}")" || true)"
 
 	rm -f "${ARQUIVO_PLANTADO_NA_ARVORE}"
 	ARQUIVO_PLANTADO_NA_ARVORE=""
 	afirmar_igual "(controle) removido, a árvore volta ao estado inicial" \
-		"0" "$(contar_achados "$(diff <(printf '%s\n' "${ESTADO_GIT_INICIAL}") \
-			<(estado_git_da_arvore) | grep -E '^[<>]' || true)")"
+		"0" "$(contar_achados "$(diff <(linhas_do_estado "${ESTADO_GIT_INICIAL}") \
+			<(linhas_do_estado "$(estado_git_da_arvore)") | grep -E '^[<>]' || true)")"
 
 	fechar_caso "CT-1124"
 }
