@@ -1,6 +1,6 @@
 # Architecture Decision Records — INDEX
 
-> Ultima atualizacao: 2026-08-21 (36 ADRs)
+> Ultima atualizacao: 2026-08-25 (37 ADRs)
 
 <!-- ADR-INDEX-START -->
 | ID | Titulo | Status | Tags | Problema (1-linha) | Decisao (1-linha) |
@@ -41,4 +41,5 @@
 | 0034 | Trilha de integração com terceiro registra efeito, não tentativa | accepted | architecture, data, cross-cutting | Integração com terceiro conversa muito e muda pouco. Medido no sistema antigo: 1.837 dos 1.864 | A trilha que o produto publica sobre a conversa com um terceiro registra o efeito — mudança |
 | 0035 | Critério para uma rota de entrada de fato de terceiro sem sessão, e o que ela carrega em troca | accepted | security, http, architecture | O retorno da integração bancária chega por uma URL única, sem sessão e sem portador de segredo: o | Uma rota de entrada dispensa sessão apenas quando recebe um fato produzido por um terceiro que não |
 | 0036 | Material criptográfico legado é convertido por processo externo na borda de registro | accepted | security, architecture | A Autoridade Certificadora entrega o material do certificado embalado em cifra legada | Material criptográfico de terceiro que o runtime não abre é convertido na borda de registro, por |
+| 0037 | Política de limitação de abuso na borda pública | accepted | security, http, architecture | Publicar a API expõe uma superfície que hoje só é alcançável do próprio hospedeiro, e as duas | A borda pública fornece o eixo de origem e não a política: ela declara o salto confiável e |
 <!-- ADR-INDEX-END -->
