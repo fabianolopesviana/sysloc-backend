@@ -261,15 +261,26 @@ fatia reaberta.
   a cópia do banco (`pg_dump -Fc`), a preservação dos segredos em tar, a **restauração conferida em
   base vazia**, as 2 unidades do relógio das **02:45** (deslocadas do `02:30` do legado por medição —
   achado `A9` da T1), a borda pública do app e a proteção da entrada de terceiro (**ADR-0037**).
-  ⚠️ **DUAS janelas assistidas ficam pendentes, e as duas são do operador — nenhum agente as
-  executa** (`sudo -n` falha neste host): **(a)** posicionar as 2 unidades do backup
-  (`sudo bash deploy/scripts/instalacao/instalar-unidades.sh`), reexecutar
+  ⚠️ **A janela assistida (b) FOI EXECUTADA em 2026-08-27, pelo operador, e NÃO se repõe como
+  pendente.** `ORIGENS_PUBLICAS=https://sysloc.systera.com.br,https://syslocadmin.systera.com.br`
+  está em `/etc/sysloc/backend.env` (linha 24, arquivo 600 root), e a API foi reiniciada às
+  **15:34:38** — passando a executar o `dist/` de 14:25:57, que é o primeiro a **exigir** a variável.
+  O worker foi reiniciado às 15:38:00 pela mesma razão. ⚠️ **Havia um descompasso latente e ele era
+  grave**: o `dist/` no disco já exigia a variável enquanto os processos em memória eram de
+  2026-08-25, de modo que o próximo `restart` — ou o `reboot` da janela (a) — **derrubaria a API sem
+  volta**, violando o invariante 7. A conferência de origem foi medida depois, e ela **discrimina**:
+  as duas origens públicas e a derivada da escuta atravessam, `http://localhost:5173` e
+  `https://evil.example.com` recebem `ACESSO_NEGADO`, e requisição **sem** `Origin` atravessa — é o
+  que faz teste de integração em node funcionar por túnel sem configuração.
+  ⚠️ **UMA janela assistida segue pendente, e ela é do operador — nenhum agente a executa**
+  (`sudo -n` falha neste host): **(a)** posicionar as 2 unidades do backup
+  (`sudo bash deploy/scripts/instalacao/instalar-unidades.sh` — medido em 2026-08-27: **zero**
+  unidades `sysloc-backup*` no supervisor), reexecutar
   `verificar-unidades-agendadas.sh` (esperado 8/8), fechar o `CT-1153` e provar o **invariante 7**
   com `sudo systemctl reboot` — **fora da faixa 02:30–03:15**, porque com `Persistent=true`
-  atravessar 02:45 reiniciando dispara a cópia ao voltar; e **(b)** acrescentar
-  `ORIGENS_PUBLICAS=…` a `/etc/sysloc/backend.env` (0600), implantar, **reiniciar a API** e **só
-  então** recarregar as bordas — ⚠️ **a ordem é irreversível**: invertê-la derruba o login do painel
-  na janela entre os passos. Roteiro literal em
+  atravessar 02:45 reiniciando dispara a cópia ao voltar. ⚠️ **Aproveite essa janela para o `D50`**:
+  as 12 unidades de `deploy/systemd/` ainda citam `@sysloc/contracts` em comentário, e trocá-las
+  exige reinstalar no mesmo passo (o `cmp -s` da bateria é byte a byte). Roteiro literal em
   `docs/specs/features/publicacao-e-backup/v1/_run/convergencia-do-host.md` §4, e o quadro de fecho
   em `_run/comparacao-final.md`.
 - ⚠️ **ADRs emendadas — não cite a `Decision` sem ler a emenda**: a **0001** (a cláusula do *"apenas
