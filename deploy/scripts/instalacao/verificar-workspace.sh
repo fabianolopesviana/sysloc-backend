@@ -114,6 +114,24 @@ MEMBROS_DO_WORKSPACE=(
 	"@sysloc/worker:/apps/worker"
 )
 
+# O ÚNICO membro que sai deste repositório. Declarado aqui, e não inferido da ausência da marca,
+# porque a ausência é exatamente o que um `private` removido por acidente produziria.
+readonly MEMBRO_PUBLICAVEL="@sysloc/contracts"
+
+# O ÚNICO ponto onde a expressão que reconhece uma linha do `pnpm list` é composta.
+#
+# DECISÃO FECHADA — intervenção dirigida / Gate 2 (P1) · 2026-08-27
+# O QUÊ: a asserção do laço e a prova de falsificação chamam esta função; nenhuma das duas
+#        reescreve a expressão.
+# POR QUÊ: com duas escritas, mutar o ramo publicável deixava a falsificação VERDE — ela media
+#          uma cópia que ninguém mutara. Medido: o defeito ALTO-001 voltava por edição de UMA
+#          linha e a bateria seguia 74 OK / saída 0.
+# REVERTER EXIGE: provar que a falsificação reprova quando o ramo publicável volta a fechar com
+#        `([[:space:]]|$)` em vez de `[[:space:]]*$`.
+montar_regex_de_membro() {
+	printf '^%s@[^[:space:]]+[[:space:]]+%s%s%s' "$1" "${DIR_CLONE}" "$2" "$3"
+}
+
 # Quantos pacotes cada diretório de membro hospeda. Contagem EXATA, pelo mesmo
 # motivo da lista acima.
 declare -A PACOTES_POR_DIRETORIO=(
@@ -340,14 +358,71 @@ ct_001() {
 	afirmar_igual "o workspace lista exatamente ${#MEMBROS_DO_WORKSPACE[@]} pacotes" \
 		"${#MEMBROS_DO_WORKSPACE[@]}" "${entradas}"
 
-	local membro nome sufixo
+	local membro nome sufixo marca rotulo sufixo_publicavel marca_publicavel
 	for membro in "${MEMBROS_DO_WORKSPACE[@]}"; do
 		nome="${membro%%:*}"
 		sufixo="${membro#*:}"
-		afirmar_igual "o membro ${nome} está registrado exatamente uma vez, em ${sufixo:-a raiz}" "1" \
-			"$(grep -cE "^${nome}@[^[:space:]]+[[:space:]]+${DIR_CLONE}${sufixo}[[:space:]]+\(PRIVATE\)" \
+
+		# SUT_IS_CORRECT_BECAUSE: o manifesto SEM `private` é o código certo — é ele que torna o
+		# @sysloc/contracts publicável (item 3 do marco de entrega, decisão do usuário de
+		# 2026-08-26). A asserção estava certa para o regime em que TODO membro era interno, e
+		# esse regime acabou para exatamente um pacote.
+		#
+		# ⚠️ A marca `(PRIVATE)` é declarada POR MEMBRO, e não presumida de todos.
+		# O `@sysloc/contracts` é publicado no GitHub Packages desde 2026-08-26 (item 3 do
+		# marco de entrega), logo o `pnpm list` NÃO o marca — e exigir a marca dele
+		# reprovaria o estado correto. Os demais continuam internos, e para eles a marca é
+		# obrigatória: é ela que pega o acidente real, que é `private` sumir de um pacote
+		# que nunca deveria sair daqui.
+		# ⚠️ Cada ramo ancora o FIM DA LINHA, e isso não é estilo. Com um separador
+		# livre no fim (`([[:space:]]|$)`), o ramo publicável casava o espaço que
+		# ANTECEDE `(PRIVATE)` e virava superconjunto do outro — medido em 2026-08-27:
+		# 1 ocorrência na lista limpa E 1 na lista com a marca, isto é, não
+		# discriminava nada enquanto o rótulo anunciava que sim.
+		if [[ "${nome}" == "${MEMBRO_PUBLICAVEL}" ]]; then
+			marca="[[:space:]]*$"
+			rotulo="registrado exatamente uma vez e PUBLICÁVEL (sem a marca de privado)"
+			# Capturados para a PROVA DE FALSIFICAÇÃO lá embaixo exercitar exatamente o que
+			# este ramo produziu — e não uma segunda escrita da mesma expressão.
+			sufixo_publicavel="${sufixo}"
+			marca_publicavel="${marca}"
+		else
+			marca="[[:space:]]+\\(PRIVATE\\)[[:space:]]*$"
+			rotulo="registrado exatamente uma vez, e INTERNO"
+		fi
+
+		afirmar_igual "o membro ${nome} está ${rotulo}, em ${sufixo:-a raiz}" "1" \
+			"$(grep -cE "$(montar_regex_de_membro "${nome}" "${sufixo}" "${marca}")" \
 				"${DIR_SAIDAS}/pnpm-list.log" || true)"
 	done
+
+	# Antivácuo do discriminador acima: sem esta linha, trocar `MEMBRO_PUBLICAVEL` por um nome
+	# inexistente faria TODOS caírem no ramo do privado e o par publicável/interno deixaria de
+	# ser exercitado — o caso seguiria verde provando menos do que promete.
+	afirmar_igual "o membro publicável declarado existe na lista de membros" "1" \
+		"$(printf '%s\n' "${MEMBROS_DO_WORKSPACE[@]}" | grep -c "^${MEMBRO_PUBLICAVEL}:" || true)"
+
+	# PROVA DE FALSIFICAÇÃO — obrigatória, porque a asserção acima é ESTÁTICA: ela inspeciona o
+	# TEXTO de `pnpm-list.log`. O antivácuo sozinho não bastou, e isto é medido: a versão anterior
+	# desta asserção passava nos DOIS estados e o antivácuo seguia verde. Os dois mutantes vivem em
+	# `${DIR_SAIDAS}`, que é descartável — nunca na árvore de trabalho (CT-1124).
+	# ⚠️ A expressão vem de `montar_regex_de_membro`, com o `sufixo` e o `marca` que o RAMO
+	# PUBLICÁVEL produziu no laço acima — nunca reescrita aqui. Foi essa reescrita que a primeira
+	# versão desta prova cometeu: mutar o ramo deixava a falsificação VERDE, porque ela media uma
+	# cópia que ninguém mutara. Agora os dois lados se movem juntos.
+	local caminho_publicavel="${DIR_CLONE}${sufixo_publicavel}"
+	local regex_publicavel
+	regex_publicavel="$(montar_regex_de_membro "${MEMBRO_PUBLICAVEL}" "${sufixo_publicavel}" "${marca_publicavel}")"
+
+	printf '%s@1.0.0 %s\n' "${MEMBRO_PUBLICAVEL}" "${caminho_publicavel}" \
+		>"${DIR_SAIDAS}/mutante-lista-limpa.log"
+	printf '%s@1.0.0 %s (PRIVATE)\n' "${MEMBRO_PUBLICAVEL}" "${caminho_publicavel}" \
+		>"${DIR_SAIDAS}/mutante-lista-com-marca.log"
+
+	afirmar_igual "(controle) a asserção do publicável ACEITA a linha sem a marca" "1" \
+		"$(grep -cE "${regex_publicavel}" "${DIR_SAIDAS}/mutante-lista-limpa.log" || true)"
+	afirmar_igual "(falsificação) e RECUSA a mesma linha com (PRIVATE) reposta" "0" \
+		"$(grep -cE "${regex_publicavel}" "${DIR_SAIDAS}/mutante-lista-com-marca.log" || true)"
 
 	# --- passo 4: pnpm build ------------------------------------------------- #
 	local codigo_build=0

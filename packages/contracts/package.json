@@ -1,8 +1,11 @@
 {
   "name": "@sysloc/contracts",
-  "version": "0.0.0",
-  "private": true,
+  "version": "1.0.0",
   "description": "Fonte única do contrato da API do backend Sysloc — os esquemas que validam a entrada, tipam a resposta e de onde o documento publicado deriva (ADR-0016)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sysloc/contracts.git"
+  },
   "license": "UNLICENSED",
   "type": "module",
   "exports": {
@@ -15,6 +18,7 @@
     "dist"
   ],
   "scripts": {
+    "prepack": "tsc --build",
     "build": "tsc --build",
     "test": "tsc --build && tsc -p tsconfig.test.json && vitest run"
   },
@@ -25,5 +29,9 @@
     "@types/node": "24.13.3",
     "typescript": "7.0.2",
     "vitest": "4.1.10"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
   }
 }
