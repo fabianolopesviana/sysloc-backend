@@ -258,10 +258,21 @@ sleep 300
 curl -sS 'http://127.0.0.1:8025/api/v1/messages?limit=1' | head -c 400
 
 # (d) as Tentativas gravadas no intervalo, do banco durável
-sudo -u postgres psql -d sysloc -Atc \
-  "SELECT count(*) FROM negocio.tentativa_de_envio
-    WHERE desfecho = 'entregue' AND criado_em >= '${INICIO}'::timestamptz;"
+sudo <node> /opt/sysloc-backend/deploy/scripts/publicacao/contar-envios-do-intervalo.mjs "${INICIO}"
 ```
+
+⚠️ **As duas formas anteriores deste bloco estavam ERRADAS, e foram corrigidas em 2026-08-27, na
+execução da janela** — nenhuma das duas teria rodado:
+
+| O que o roteiro dizia | O que existe de fato |
+|---|---|
+| tabela `negocio.tentativa_de_envio` | **`negocio.envio_de_cobranca`** — a única tabela com "tentativa" no produto é `identidade.tentativa_login`, que é de acesso, não de e-mail |
+| `desfecho = 'entregue'` | o enum `negocio.desfecho_do_aviso` tem **`ENVIADA`**, `FALHOU` e `SEM_DESTINATARIO` — não há `entregue` |
+
+⚠️ E a leitura passou a ser por **script que lê a cadeia de conexão do EnvironmentFile dentro do
+processo**, em vez de `sudo -u postgres psql`: a forma antiga presumia um banco chamado `sysloc`
+alcançável pelo papel `postgres`, o que este host não garante, e a ADR-0005 desencoraja credencial em
+linha de comando.
 
 Reprova com `entregues=<n> capturadas=<m>` e, por Tentativa órfã, o identificador e o destinatário
 **redigido ao domínio**. **Zero em ambos também aprova**, e nesse caso o registro declara
