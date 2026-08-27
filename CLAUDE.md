@@ -356,12 +356,16 @@ operacional dela — não uma meta aproximada.
 
 O marco está alcançado quando **todos** os sete itens forem verdadeiros:
 
-- [ ] **F1 a F5 concluídas** — todas as tasks aprovadas nos dois gates, suíte verde, critérios de
-      aceitação verificados. Estado por fase: `docs/plano-backend-novo/roadmap.md`
-- [ ] **Superfície da API congelada** — nenhuma fatia posterior acrescenta, remove ou altera rota;
-      é o que torna o handoff confiável. **Sem condição pendente**, e com a F4 fechada resta **só a
-      F5** publicando rota: o congelamento é logo depois dela. A F4 fechou em 101/86, e o fechamento do `D36` levou a **103 rotas / 88
-      manipuladores**
+- [x] **F1 a F5 concluídas** — **147 tasks** aprovadas nos dois gates, suíte verde (2004 casos),
+      critérios de aceitação verificados. A F5 fechou em **2026-08-23**; o checkbox só foi marcado em
+      **2026-08-27**, e a defasagem era de escrituração, não de fase. Estado por fase:
+      `docs/plano-backend-novo/roadmap.md`
+- [x] **Superfície da API congelada** desde **2026-08-23**, em **106 rotas / 91 manipuladores / 20
+      públicas** — a última publicada foi `GET /v1/automacao-de-cobranca/rotinas`, na T10 da fatia
+      `automacoes-agendadas`. Nenhuma fatia posterior acrescenta, remove ou altera rota, e é isso que
+      torna o handoff confiável. ⚠️ **Os três números são constantes EXECUTÁVEIS** de
+      `apps/api/test/cobertura-de-autorizacao.e2e.spec.ts`, e o `CT-1196` afirma a igualdade entre
+      elas e o texto do `Estado atual` — a divergência fica vermelha na suíte
 - [x] **`@syslocbr/contracts` publicado** em **2026-08-27**, `1.0.0`, no GitHub Packages da
       organização `syslocbr` — **privado**, confirmado por `npm view` e pela API do GitHub
       (`"visibility": "private"`). É o artefato que o React importa para trocar tipos (Zod;
@@ -411,8 +415,13 @@ O marco está alcançado quando **todos** os sete itens forem verdadeiros:
       `verificar-unidades-agendadas.sh` saiu **8/8 casos, ZERO degradação, código 0**.
       ⚠️ **O horário é `02:45`, não `02:30`** — deslocado por medição do achado `A9` (o legado ocupa
       `02:30` na `crontab` do root, mesmo volume)
-- [ ] **`deploy/scripts/virada.md` escrito**, com o gate de desinstalação de 5 itens
-- [ ] **`/opt/frappe` intacto e de pé** — a virada não acontece neste marco
+- [x] **`deploy/scripts/virada.md` escrito** em **2026-08-27** (commit `5709c5f`, **195 linhas**),
+      com o gate de desinstalação de 5 itens, o inventário medido do legado, a ordem dos passos da
+      virada e as armadilhas de `docker` medidas neste host. ⚠️ **Escrever é deste marco; EXECUTAR
+      não** — a virada é sessão operacional futura, e depende do frontend pronto
+- [x] **`/opt/frappe` intacto e de pé** — medido em 2026-08-27: diretório presente e 6 contêineres
+      ativos. ⚠️ **É condição preservada, não tarefa cumprida**: o item está marcado porque nada
+      deste marco o tocou, e a virada não acontece aqui
 
 ### O que **não** se faz aqui, em nenhuma hipótese
 
