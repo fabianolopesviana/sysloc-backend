@@ -568,7 +568,7 @@ Específicos deste domínio: **`node:https`** (o mTLS do Sicoob — ⚠️ o cli
 > grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 > ```
 
-São **39**, e a tabela abaixo é a lista viva — ela, e não este parágrafo, é a fonte.
+São **38**, e a tabela abaixo é a lista viva — ela, e não este parágrafo, é a fonte.
 
 ⚠️ **O identificador é o par `Dnn · F{n}/{origem}`, nunca o número sozinho** — a sequência corre
 dentro da §2 da fatia que registrou cada débito. Hoje convivem **dois `D3`**, **TRÊS `D12`**, **dois
@@ -673,7 +673,6 @@ da `.claude/rules/nao-regressao.md`, que é permanente — este bloco é transit
 | **D40** (F7/T9, fatia `publicacao-e-backup`) | `deploy/scripts/borda/verificar-borda-do-app.sh` (junto de `subir_borda_efemera`) | a **terceira borda pública**, ou abrir `verificar-notificacao-bancaria.sh` **para mexer no acessório** — gatilho emendado 2×, razão na §2 |
 | **D41** (F7/T9, fatia `publicacao-e-backup`) | `deploy/scripts/borda/verificar-borda-do-app.sh` (junto de `DESTINO_DECLARADO_DO_EMAIL`) | a **troca do `SMTP_URL` para o destino real** — o `CT-1152` afirma o outro lado da mesma chave e o ponteiro entre os dois é de mão única |
 | **D5** (F5/T3, fatia `automacoes-agendadas`) | `packages/db/drizzle.config.ts` (junto de `out`) | ⚠️ **RECORRENTE — o gatilho NÃO o extingue**: a próxima migração **autoral** que alterar estrutura declarada em `src/esquema/*.ts`, ou uma regeração **do zero**; a supressão é manual nos dois casos e volta na seguinte |
-| **D50** (F6/fechamento, fatia `publicacao-e-backup`) | `deploy/scripts/instalacao/instalar-unidades.sh` (junto de `DIR_FONTE_UNIDADES`) | a **próxima execução com `sudo`** — a janela assistida (a); as 12 unidades de `deploy/systemd/` ainda citam o nome antigo do pacote em comentário |
 
 ---
 

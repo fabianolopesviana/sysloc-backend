@@ -16,7 +16,7 @@
 # medido nesta máquina: 255.4.
 #
 # ⚠️ O horário abaixo é o MESMO que `CADENCIA_DA_ROTINA` declara em
-# `@sysloc/contracts`, e `packages/shared/test/unidades-agendadas.spec.ts` amarra
+# `@syslocbr/contracts`, e `packages/shared/test/unidades-agendadas.spec.ts` amarra
 # as duas declarações: mudar aqui sem mudar lá (ou o contrário) REPROVA a suíte.
 # É deliberado — é o que impede o horário de existir em dois lugares livres para
 # andar separados.

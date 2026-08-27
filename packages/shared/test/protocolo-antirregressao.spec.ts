@@ -908,13 +908,15 @@ const HOMONIMOS_QUE_SOBREVIVEM = ['D23 · F0/T3', 'D26 · F3/T8'] as const;
  * **Quando um débito nascer ou fechar, este número muda no mesmo diff** — junto da prosa do bloco,
  * que a asserção abaixo amarra a ele.
  *
- * ⚠️ **38 → 39 em 2026-08-27**, com o nascimento do `D50 · F6/fechamento`: as 12 unidades de
- * `deploy/systemd/` seguem citando `@sysloc/contracts` em comentário depois de o pacote passar a
- * `@syslocbr/contracts`, e corrigi-las agora reprovaria o `cmp -s` byte a byte de
- * `verificar-unidades-agendadas.sh` até uma reinstalação com `sudo`. O número saiu do mesmo `grep`
- * que o docblock descreve, sobre o arquivo real — não de aritmética.
+ * ⚠️ **38 → 39 → 38, tudo em 2026-08-27.** O `D50 · F6/fechamento` nasceu e fechou no mesmo dia: ele
+ * registrava que as 12 unidades de `deploy/systemd/` ainda citavam `@sysloc/contracts` depois do
+ * rename do pacote, e o gatilho dele — *a próxima execução do instalador com privilégio* — chegou
+ * horas depois, na janela assistida que posicionou as 2 unidades do backup. As 12 foram corrigidas
+ * e reinstaladas no mesmo passo, que é o que o `cmp -s` byte a byte de
+ * `verificar-unidades-agendadas.sh` exige. O número saiu do mesmo `grep` que o docblock descreve,
+ * sobre o arquivo real — não de aritmética.
  */
-const LINHAS_DO_INDICE_NO_FECHO_DA_FATIA = 39;
+const LINHAS_DO_INDICE_NO_FECHO_DA_FATIA = 38;
 
 /** O molde da prosa que anuncia o tamanho do índice, logo acima da tabela. */
 const PADRAO_DO_TOTAL_NARRADO = /São \*\*(\d+)\*\*, e a tabela abaixo é a lista viva/;

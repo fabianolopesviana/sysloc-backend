@@ -37,7 +37,7 @@
 #
 # ⚠️ O argumento `vigilancia-das-rotinas` é o nome que
 # `ROTINAS_DE_DESPACHO` aceita, derivado de `CADENCIA_DA_ROTINA`
-# (`@sysloc/contracts`). Nome fora do roster termina o processo com código 2, e o
+# (`@syslocbr/contracts`). Nome fora do roster termina o processo com código 2, e o
 # código é conteúdo: `2` manda olhar para esta linha, `1` manda olhar para banco,
 # fila e `EnvironmentFile`.
 
