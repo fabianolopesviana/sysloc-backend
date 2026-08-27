@@ -11,11 +11,25 @@
  * ⚠️ A tabela é `negocio.envio_de_cobranca` e o desfecho é `ENVIADA`. O roteiro da fatia nomeava
  * `negocio.tentativa_de_envio` e `'entregue'`, e NENHUM dos dois existe — medido em 2026-08-27.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import postgres from '/opt/sysloc-backend/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js';
 
-const inicio = process.argv[2];
-if (!inicio) { console.error('uso: contar-envios-do-intervalo.mjs <carimbo ISO-8601>'); process.exit(2); }
+/**
+ * O carimbo vem do argumento OU do arquivo que a janela gravou.
+ *
+ * ⚠️ O padrão por arquivo não é conveniência: o comando com o carimbo colado no fim perdeu o espaço
+ * separador numa colagem real, em 2026-08-27, e o `node` tentou abrir um módulo cujo nome era o
+ * caminho concatenado com a data. Sem argumento, não há separador para perder.
+ */
+const ARQUIVO_DO_CARIMBO = '/opt/sysloc-backend/.ct1153-inicio';
+const inicio = (process.argv[2] ?? (existsSync(ARQUIVO_DO_CARIMBO)
+  ? readFileSync(ARQUIVO_DO_CARIMBO, 'utf8').trim()
+  : '')).trim();
+if (!inicio) {
+  console.error(`uso: contar-envios-do-intervalo.mjs [carimbo ISO-8601]`);
+  console.error(`     sem argumento, lê de ${ARQUIVO_DO_CARIMBO}`);
+  process.exit(2);
+}
 
 const cadeia = /^DATABASE_URL=(.*)$/m.exec(readFileSync('/etc/sysloc/backend.env', 'utf8'))?.[1]?.trim();
 if (!cadeia) { console.error('DATABASE_URL ausente'); process.exit(2); }

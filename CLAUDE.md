@@ -272,17 +272,22 @@ fatia reaberta.
   as duas origens públicas e a derivada da escuta atravessam, `http://localhost:5173` e
   `https://evil.example.com` recebem `ACESSO_NEGADO`, e requisição **sem** `Origin` atravessa — é o
   que faz teste de integração em node funcionar por túnel sem configuração.
-  ⚠️ **UMA janela assistida segue pendente, e ela é do operador — nenhum agente a executa**
-  (`sudo -n` falha neste host): **(a)** posicionar as 2 unidades do backup
-  (`sudo bash deploy/scripts/instalacao/instalar-unidades.sh` — medido em 2026-08-27: **zero**
-  unidades `sysloc-backup*` no supervisor), reexecutar
-  `verificar-unidades-agendadas.sh` (esperado 8/8), fechar o `CT-1153` e provar o **invariante 7**
-  com `sudo systemctl reboot` — **fora da faixa 02:30–03:15**, porque com `Persistent=true`
-  atravessar 02:45 reiniciando dispara a cópia ao voltar. ⚠️ **Aproveite essa janela para o `D50`**:
-  as 12 unidades de `deploy/systemd/` ainda citam `@sysloc/contracts` em comentário, e trocá-las
-  exige reinstalar no mesmo passo (o `cmp -s` da bateria é byte a byte). Roteiro literal em
-  `docs/specs/features/publicacao-e-backup/v1/_run/convergencia-do-host.md` §4, e o quadro de fecho
-  em `_run/comparacao-final.md`.
+  ⚠️ **A janela assistida (a) FOI EXECUTADA em 2026-08-27, pelo operador. NÃO sobra janela
+  alguma.** As 2 unidades do backup foram posicionadas, as 12 unidades das rotinas foram
+  reinstaladas com o nome novo do pacote (fecho do `D50`), e o servidor foi reiniciado às
+  **16:28:56** — depois disso `verificar-unidades-agendadas.sh` saiu **8/8 casos, ZERO degradação,
+  código 0**, com a asserção que só o reboot produz: *"o conjunto de pé é POSTERIOR ao último
+  arranque — ele sobe sozinho"*. ⚠️ **É o invariante 7 provado com reboot REAL**, e não por
+  argumento: API, worker, capturador e o relógio do backup subiram sozinhos às 16:29:18–22, sem
+  comando manual. O `CT-1153` fechou no mesmo passo, com **0 envios e 0 mensagens** no intervalo
+  declarado — e o total de envios de todos os tempos, medido junto, também é **0**, que é o controle
+  que torna o zero conclusivo em vez de janela quieta por acaso.
+  ⚠️ **A consulta do `CT-1153` estava ERRADA no roteiro e foi corrigida na execução**: ela nomeava
+  `negocio.tentativa_de_envio` e `desfecho = 'entregue'`, e **nenhum dos dois existe** — a tabela é
+  `negocio.envio_de_cobranca` e o enum tem `ENVIADA`/`FALHOU`/`SEM_DESTINATARIO`. Quem a rodasse
+  receberia `relation does not exist` com a janela já aberta. A leitura agora é
+  `deploy/scripts/publicacao/contar-envios-do-intervalo.mjs`, que lê a cadeia de conexão do
+  EnvironmentFile dentro do processo. Quadro de fecho em `_run/comparacao-final.md`.
 - ⚠️ **ADRs emendadas — não cite a `Decision` sem ler a emenda**: a **0001** (a cláusula do *"apenas
   uma porta"* não alcança a porta de identidade), a **0017** (o contador é a **0033**, não a 0015) e a
   **0021** (emendada **duas vezes** — a de 2026-08-10 nomeia a entidade nas classes de ato; a de
@@ -397,15 +402,15 @@ O marco está alcançado quando **todos** os sete itens forem verdadeiros:
       separado** (`syslocadmin.systera.com.br`, build próprio), o backend dele está **completo** (6
       rotas), e o handoff é autossuficiente. ⚠️ O handoff do Sysloc apenas **menciona** que ele
       existe e está pronto; não mistura as telas
-- [ ] **Backup e restauração entregues e provados** — item 1 da F7: `pg_dump -Fc`, segredos em tar,
-      `.pgpass` 0600, timer, e **restauração conferida num banco vazio**. ⚠️ **O código está
-      entregue e provado** pela fatia `publicacao-e-backup/v1` (11/11 tasks, 2026-08-26): a
-      restauração que REPRODUZ a origem é o `CT-1107`, com o destino medido em ZERO antes, e a
-      bateria `verificar-backup.sh` fecha em **408 asserções / 24 casos**. ⚠️ **O horário é `02:45`, não `02:30`** — deslocado por medição do
-      achado `A9` (o legado ocupa `02:30` na `crontab` do root, mesmo volume). **O item segue
-      aberto por UMA razão só, e ela é de host**: as 2 unidades não estão posicionadas em
-      `/etc/systemd/system`, e posicioná-las exige a **janela assistida (a)** descrita no Estado
-      atual — nenhum agente digita senha neste host
+- [x] **Backup e restauração entregues e provados** — item 1 da F7, **fechado em 2026-08-27** na
+      janela assistida (a), executada pelo operador. O código já estava entregue e provado pela
+      fatia `publicacao-e-backup/v1` (11/11 tasks, 2026-08-26): a restauração que REPRODUZ a origem
+      é o `CT-1107`, com o destino medido em ZERO antes, e a bateria `verificar-backup.sh` fecha em
+      **408 asserções / 24 casos**. O que faltava era de host, e caiu:
+      `sysloc-backup-da-base.service` (`static`) e `.timer` (`enabled`) estão posicionadas, e
+      `verificar-unidades-agendadas.sh` saiu **8/8 casos, ZERO degradação, código 0**.
+      ⚠️ **O horário é `02:45`, não `02:30`** — deslocado por medição do achado `A9` (o legado ocupa
+      `02:30` na `crontab` do root, mesmo volume)
 - [ ] **`deploy/scripts/virada.md` escrito**, com o gate de desinstalação de 5 itens
 - [ ] **`/opt/frappe` intacto e de pé** — a virada não acontece neste marco
 

@@ -81,3 +81,4 @@ docs/specs/.rule-mining/
 
 # Marcador de run ativo — transitório, criado e removido pela skill de execução (guarda de Stop).
 docs/specs/**/_run/.run-ativo
+.ct1153-inicio
