@@ -68,14 +68,6 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import type {
-  EnvelopeDeLista,
-  Imovel,
-  ImovelAlterado,
-  ImovelNovo,
-  Janela,
-  SituacaoInformavel,
-} from '@sysloc/contracts';
 import {
   alterarImovel,
   criarImovel,
@@ -89,6 +81,14 @@ import {
   type OpcoesDeCirculacao,
 } from '@sysloc/db';
 import { CodigoErro, ErroDeAplicacao } from '@sysloc/shared';
+import type {
+  EnvelopeDeLista,
+  Imovel,
+  ImovelAlterado,
+  ImovelNovo,
+  Janela,
+  SituacaoInformavel,
+} from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
 
@@ -407,7 +407,7 @@ export function publicar(imovel: ImovelPersistido): Imovel {
     comodos: [...imovel.comodos],
     metragemTotal: imovel.metragemTotal,
     // O objeto vem da porta já na forma que o contrato publica — `ContratoVigenteDoImovel` é o tipo
-    // de `@sysloc/contracts`, e não uma projeção própria da camada de dados —, de modo que não há
+    // de `@syslocbr/contracts`, e não uma projeção própria da camada de dados —, de modo que não há
     // tradução a fazer aqui. Copiar o campo é o que mantém esta função **enumerando** o corpo
     // publicado: um espalhamento traria junto qualquer coluna que a projeção da porta venha a ganhar.
     contratoVigente: imovel.contratoVigente,

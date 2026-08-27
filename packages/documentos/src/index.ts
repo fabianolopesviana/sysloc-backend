@@ -17,7 +17,7 @@
  * exige o PDF lido de volta do disco, e `test/mesclador-pdf.spec.ts` em memória, porque o que ela
  * prova é o conteúdo das páginas copiadas.
  *
- * A única dependência de **workspace** é `@sysloc/contracts`, o pacote folha; `@react-pdf/renderer`
+ * A única dependência de **workspace** é `@syslocbr/contracts`, o pacote folha; `@react-pdf/renderer`
  * e `react` entraram com o adaptador, e a razão de eles não violarem a Fronteira do projeto está
  * escrita no manifesto. A ausência de `@sysloc/db` é a decisão, não uma omissão: é a camada de dados
  * que traduz linha de banco no agregado que este pacote declara. A aresta de volta fecha um ciclo e
@@ -27,7 +27,7 @@
  * A superfície é declarada símbolo a símbolo, e não por `export *`
  * ---------------------------------------------------------------------------
  *
- * Mesma decisão, e mesma razão, de `@sysloc/contracts` e `@sysloc/regua`: um `export *` publicaria
+ * Mesma decisão, e mesma razão, de `@syslocbr/contracts` e `@sysloc/regua`: um `export *` publicaria
  * por descuido toda composição interna que um arquivo de `src/` exporte para o vizinho, e retirar
  * depois o que se publicou sem querer é mudança incompatível. Listar é o que mantém a decisão de
  * publicar explícita.

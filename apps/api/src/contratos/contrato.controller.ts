@@ -136,7 +136,7 @@
  * ---------------------------------------------------------------------------
  *
  * O contrato tem **série declarada**, e por isso a chave exposta é o código legível — nunca o UUID
- * interno (ADR-0017). `ESQUEMA_DO_CODIGO_DE_CONTRATO`, de `@sysloc/contracts`, valida a **forma** e
+ * interno (ADR-0017). `ESQUEMA_DO_CODIGO_DE_CONTRATO`, de `@syslocbr/contracts`, valida a **forma** e
  * canoniza a caixa (`trim` → maiúsculas). A validação acontece antes de a unidade de trabalho abrir:
  * um valor malformado é recusado com `422` sem tocar o banco, em vez de virar `404` depois de uma ida
  * inútil — e sem que a forma do identificador se torne um oráculo de existência. **O esquema é
@@ -220,6 +220,8 @@ import {
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
+import type { AcessoAoBanco } from '@sysloc/db';
+import { CodigoErro, type Logger } from '@sysloc/shared';
 import {
   type AtivacaoDeContrato,
   type Contrato,
@@ -230,9 +232,7 @@ import {
   esquemaDeContratoNovo,
   esquemaDoContrato,
   esquemaDoRecorteDoCarne,
-} from '@sysloc/contracts';
-import type { AcessoAoBanco } from '@sysloc/db';
-import { CodigoErro, type Logger } from '@sysloc/shared';
+} from '@syslocbr/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ExigeChave, ExigeChaves } from '../autenticacao/exigencia.decorator.js';
 import { CarneService } from '../cobrancas/carne.service.js';
@@ -465,7 +465,7 @@ export class ContratoController {
     @Query() consulta: unknown,
     @Req() requisicao: FastifyRequest,
   ): Promise<PaginaDeContratos> {
-    // O esquema vem **inteiro** de `@sysloc/contracts`, que a ADR-0016 declara fonte única. A razão de
+    // O esquema vem **inteiro** de `@syslocbr/contracts`, que a ADR-0016 declara fonte única. A razão de
     // `incluirRetirados` ser união fechada de dois literais, e não `z.coerce.boolean()`, está por
     // extenso no docblock de `esquemaDaJanelaComCirculacao`.
     const { incluirRetirados, ...janela } = validar(

@@ -86,7 +86,6 @@ import {
   type DesfechoDaConferencia,
   type GuardaDeBoletos,
 } from '@sysloc/cobranca-bancaria';
-import { ESQUEMA_DO_IDENTIFICADOR } from '@sysloc/contracts';
 import {
   type AcessoAoBanco,
   concluirConferencia,
@@ -102,6 +101,7 @@ import {
   selecionarCobrancasAConferir,
 } from '@sysloc/db';
 import { decifrarSegredo, FILA_DA_CONFERENCIA_BANCARIA, type Logger } from '@sysloc/shared';
+import { ESQUEMA_DO_IDENTIFICADOR } from '@syslocbr/contracts';
 import { z } from 'zod';
 import type { TarefaDaConferenciaBancaria } from '../fila.js';
 import { cargaConferida } from './carga-da-tarefa.js';

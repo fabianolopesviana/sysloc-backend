@@ -101,7 +101,6 @@
  * (ADR-0008).
  */
 
-import type { EnvioDeCobranca, PoliticaDeAviso, PoliticaDeAvisoNova } from '@sysloc/contracts';
 import {
   type CandidataAoAviso,
   type CapturadorDeEmail,
@@ -114,6 +113,7 @@ import {
   type PortaDeRegistro,
   type ResultadoDaRegua,
 } from '@sysloc/regua';
+import type { EnvioDeCobranca, PoliticaDeAviso, PoliticaDeAvisoNova } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { criarPessoa, type DadosDaPessoa, localizarPessoa } from '../src/cadastro-de-pessoa.ts';

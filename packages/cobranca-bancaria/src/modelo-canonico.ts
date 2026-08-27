@@ -19,7 +19,7 @@
  * O ENUM É IMPORTADO, e a ausência de uma segunda declaração é a decisão
  * ===========================================================================
  *
- * `MEIOS_DE_RECEBIMENTO` tem **definição única** em `@sysloc/contracts` (ADR-0016), e este módulo o
+ * `MEIOS_DE_RECEBIMENTO` tem **definição única** em `@syslocbr/contracts` (ADR-0016), e este módulo o
  * importa para derivar a união — não o redeclara. Duas declarações do mesmo fato é a forma exata do
  * débito **D14** que a fase anterior deixou aberta sobre o fuso da operação: dois fatos executáveis
  * dizendo a mesma coisa, livres para divergir, com nada que acuse quando divergirem.
@@ -37,20 +37,20 @@
  * CT-835 afirma essa ausência por lista vazia, que é o que separa uma coisa da outra.
  */
 
-import type { DETALHES_DA_VERIFICACAO, MEIOS_DE_RECEBIMENTO } from '@sysloc/contracts';
 import type { SegredoOperavel } from '@sysloc/shared';
+import type { DETALHES_DA_VERIFICACAO, MEIOS_DE_RECEBIMENTO } from '@syslocbr/contracts';
 
 /**
  * Os meios pelos quais o produto recebe, como união fechada — derivada da fonte única do contrato.
  *
  * Quem precisar do arranjo (para percorrer, para conferir em execução) importa
- * `MEIOS_DE_RECEBIMENTO` de `@sysloc/contracts`, que é onde ele mora congelado. Este pacote publica
+ * `MEIOS_DE_RECEBIMENTO` de `@syslocbr/contracts`, que é onde ele mora congelado. Este pacote publica
  * o **tipo** porque é o tipo que o domínio manipula; republicar o valor daria ao produto dois
  * caminhos para o mesmo arranjo, e o segundo escaparia do `Object.freeze` da origem se algum dia
  * alguém o copiasse em vez de reexportá-lo.
  *
  * ⚠️ **A derivação por `typeof` NÃO é intercambiável com `export type { MeioDeRecebimento } from
- * '@sysloc/contracts'`, e a diferença foi MEDIDA — não argumentada.** O reexport publica o mesmo
+ * '@syslocbr/contracts'`, e a diferença foi MEDIDA — não argumentada.** O reexport publica o mesmo
  * nome com uma definição só, e o argumento acima (que é sobre o *valor*) de fato não o desautoriza:
  * tipo não existe em execução e não há `Object.freeze` a escapar. O que o desautoriza é o efeito
  * sobre a prova. Com o reexport, este pacote deixa de citar `MEIOS_DE_RECEBIMENTO` no vocabulário
@@ -69,7 +69,7 @@ export type MeioDeRecebimento = (typeof MEIOS_DE_RECEBIMENTO)[number];
  * A união é DERIVADA da fonte única, e a derivação é o que fecha o D27
  * ---------------------------------------------------------------------------
  *
- * Os textos têm declaração única em `@sysloc/contracts` (ADR-0016), pela mesma razão escrita no
+ * Os textos têm declaração única em `@syslocbr/contracts` (ADR-0016), pela mesma razão escrita no
  * docblock de {@link MeioDeRecebimento}: duas declarações do mesmo fato divergem sem que nada
  * acuse. A derivação por `typeof` **não** é uma segunda declaração — ela não escolhe texto nenhum, e
  * um desfecho novo declarado lá alarga esta união sozinho.
@@ -128,7 +128,7 @@ export interface IdentidadeParaVerificar {
  * separa.
  *
  * ---------------------------------------------------------------------------
- * Ele NÃO é um alias de `ResultadoDaVerificacao` de `@sysloc/contracts`
+ * Ele NÃO é um alias de `ResultadoDaVerificacao` de `@syslocbr/contracts`
  * ---------------------------------------------------------------------------
  *
  * Os dois coincidem hoje, campo a campo, e a coincidência é **contingente**. Este é o que atravessa
@@ -144,7 +144,7 @@ export interface IdentidadeParaVerificar {
  */
 // DECISÃO FECHADA — T8 / Gate 2 · 2026-08-15
 // O QUÊ: `ResultadoDaVerificacaoDeIdentidade` é declarado aqui, e NÃO é alias, `Pick` nem
-//        reexportação de `ResultadoDaVerificacao` de `@sysloc/contracts`.
+//        reexportação de `ResultadoDaVerificacao` de `@syslocbr/contracts`.
 // POR QUÊ: a alternativa idiomática — um alias, já que as formas coincidem — foi descartada por
 //          razão concreta: este tipo atravessa a PORTA e pertence ao domínio (ADR-0025); aquele é o
 //          que a API PUBLICA e pertence ao contrato (ADR-0016). Amarrá-los faria uma mudança da
@@ -180,7 +180,7 @@ export interface ResultadoDaVerificacaoDeIdentidade {
    * ⚠️ **Nenhum detrito do runtime de transporte entra aqui** — nem código de erro de biblioteca,
    * nem texto de OpenSSL, nem nome de recurso do provedor. Isso deixou de depender de boa-fé quando
    * o tipo subiu de `string` para {@link DetalheDaVerificacao}: quem escolhe o texto é o adaptador,
-   * e só pode escolhê-lo do conjunto fechado que `@sysloc/contracts` declara. Foi o que fechou o
+   * e só pode escolhê-lo do conjunto fechado que `@syslocbr/contracts` declara. Foi o que fechou o
    * **D27 · F4/T8**, cuja saída estrutural o `CT-834` não alcançava por varrer **nomes**, e nunca
    * valores em execução.
    */
@@ -509,7 +509,7 @@ export interface MotivoDaRecusaDoProvedor {
    * O NÚMERO do teto é do contrato publicado; a VIGÊNCIA dele é da camada que grava
    * ---------------------------------------------------------------------------
    *
-   * `MAIOR_DIAGNOSTICO_EM_CHAVES` e `MAIOR_DIAGNOSTICO_EM_CARACTERES` vivem em `@sysloc/contracts`
+   * `MAIOR_DIAGNOSTICO_EM_CHAVES` e `MAIOR_DIAGNOSTICO_EM_CARACTERES` vivem em `@syslocbr/contracts`
    * porque são contrato publicado e o número mora num lugar só — mas **não é o esquema que os faz
    * valer**: esquema de saída não é `parse`ado em execução, e os `.refine()` de lá não sobrevivem ao
    * documento publicado. Quem aplica o teto é `limitarDiagnostico`, chamada por

@@ -137,8 +137,6 @@ import {
   reemitirBoleto,
   TETO_DA_CONFIRMACAO_DA_REVOGACAO_MS,
 } from '@sysloc/cobranca-bancaria';
-import type { Cobranca, EstadoDaCobranca, TrilhaDaCobranca } from '@sysloc/contracts';
-import { ESTADOS_EM_ABERTO } from '@sysloc/contracts';
 import {
   gravarBoletoDaCobranca,
   type IdentidadeParaUso,
@@ -157,6 +155,8 @@ import {
   revogarBoleto,
 } from '@sysloc/db';
 import { CodigoErro, decifrarSegredo, ErroDeAplicacao, type Logger } from '@sysloc/shared';
+import type { Cobranca, EstadoDaCobranca, TrilhaDaCobranca } from '@syslocbr/contracts';
+import { ESTADOS_EM_ABERTO } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import type { SessaoComEmpresa } from '../comum/contexto-da-sessao.js';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
@@ -233,7 +233,7 @@ const REVOGACAO_NAO_CONFIRMADA = 'PEDIDA_NAO_CONFIRMADA';
  * é a mesma razão, palavra por palavra, pela qual `revogarBoleto` não recebe predicado de estado.
  *
  * O rótulo não é escrito por extenso: {@link ESTADOS_EM_ABERTO} é a partição publicada por
- * `@sysloc/contracts`, e o `CT-510` varre `apps/api/src/**` acusando literal de
+ * `@syslocbr/contracts`, e o `CT-510` varre `apps/api/src/**` acusando literal de
  * `negocio.status_cobranca` em posição executável.
  */
 const ESTADOS_EMITIVEIS: readonly EstadoDaCobranca[] = ESTADOS_EM_ABERTO;
@@ -851,7 +851,7 @@ export class BoletoService {
    * O envelope de retorno vem do PACOTE, e não é declarado aqui
    * ===========================================================================
    *
-   * `TrilhaDaCobranca` é `z.infer<typeof esquemaDaTrilhaDaCobranca>`, de `@sysloc/contracts`. Ele já
+   * `TrilhaDaCobranca` é `z.infer<typeof esquemaDaTrilhaDaCobranca>`, de `@syslocbr/contracts`. Ele já
    * foi uma `interface` deste arquivo, e a forma do corpo passou a existir em **duas** declarações
    * desligadas — esta e o `z.object` que alimenta o OpenAPI na borda —, contra a ADR-0016. Não
    * redeclare a forma aqui: o esquema do pacote é a única origem das duas pontas, e é o que o

@@ -15,7 +15,7 @@
  * | F6       | CT-1202 | Nenhuma credencial de registry pode ser versionada: o `.gitignore` ignora
  * |          |         | `.npmrc`, e não existe `.npmrc` na raiz nem no pacote. |
  *
- * Rastreabilidade: `marco de entrega, item 3 (@sysloc/contracts publicado) → CT-1200..CT-1202`.
+ * Rastreabilidade: `marco de entrega, item 3 (@syslocbr/contracts publicado) → CT-1200..CT-1202`.
  *
  * ---------------------------------------------------------------------------
  * Por que estes invariantes merecem casos
@@ -30,12 +30,23 @@
  * removida de propósito e substituída por `publishConfig.registry`, que é mais forte porque barra o
  * destino **errado**: sem `--registry` na linha de comando, `pnpm publish` usa o que o manifesto diz.
  *
- * ⚠️ **A colisão que motivou a org.** O GitHub Packages exige que o escopo do pacote case com o dono
- * do repositório. O monorepo vive em `fabianolopesviana/sysloc-backend` e o escopo é `@sysloc` — não
- * casam. Renomear o escopo custaria 191 arquivos importadores e trocaria a identidade do produto por
- * uma limitação de registry; por isso o pacote é publicado sob a organização `sysloc`, e é ela que o
- * campo `repository` nomeia. Se alguém "corrigir" esse campo para o monorepo, a publicação passa a
- * apontar para um repositório cujo dono não casa com o escopo — e o CT-1200 reprova.
+ * ⚠️ **A colisão que motivou a org, e por que o escopo NÃO é `@sysloc`.** O GitHub Packages exige que
+ * o escopo do pacote case com o **login do dono**. O monorepo vive em
+ * `fabianolopesviana/sysloc-backend`, e o escopo nasceu `@sysloc` — não casam.
+ *
+ * A saída planejada era criar a organização `sysloc`. **Ela foi REFUTADA POR MEDIÇÃO em 2026-08-27**:
+ * `https://api.github.com/users/sysloc` responde **200**, e o login pertence a uma conta pessoal de
+ * terceiro criada em **2019-08-01**, sem relação alguma com este produto. No GitHub, login de usuário
+ * e de organização dividem o mesmo espaço de nomes — com `sysloc` ocupado, **não existe organização
+ * `sysloc` a criar**, e `@sysloc/*` não tem dono possível no registry.
+ *
+ * Por isso o escopo do pacote publicado é **`@syslocbr`**, sob a organização `syslocbr`, criada em
+ * 2026-08-27 pela conta que já é dona do monorepo. ⚠️ **O rename alcançou SÓ este pacote**: os demais
+ * membros do workspace (`@sysloc/db`, `@sysloc/auth`, `@sysloc/shared`…) nunca vão a registry algum —
+ * são resolvidos por `workspace:*` — e seguem com a identidade `@sysloc`. Não os "corrija".
+ *
+ * Se alguém apontar o campo `repository` para o monorepo, a publicação passa a nomear um repositório
+ * cujo dono não casa com o escopo — e o `CT-1200` reprova.
  *
  * As asserções são ESTÁTICAS (inspecionam o manifesto e o `.gitignore`), e por isso a prova de
  * falsificação é OBRIGATÓRIA (`.claude/rules/testing-stack.md`). Ela é feita **em processo**, sobre
@@ -56,7 +67,7 @@ const RAIZ_DO_REPO = join(RAIZ_DO_PACOTE, '..', '..');
 const REGISTRY_PRIVADO = 'https://npm.pkg.github.com';
 
 /** O dono sob o qual o escopo `@sysloc` é válido no GitHub Packages. */
-const DONO_QUE_CASA_COM_O_ESCOPO = 'sysloc';
+const DONO_QUE_CASA_COM_O_ESCOPO = 'syslocbr';
 
 /**
  * A versão de `zod` que o consumidor de fora TEM de usar.

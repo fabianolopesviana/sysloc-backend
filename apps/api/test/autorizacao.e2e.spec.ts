@@ -50,7 +50,7 @@
  * Três razões, na ordem em que pesam:
  *
  *   1. **Criar 17 rotas de produção seria violação séria.** A superfície da API **congela no marco
- *      de entrega** e é o que o `@sysloc/contracts` publica ao frontend; rotas de negócio vazias
+ *      de entrega** e é o que o `@syslocbr/contracts` publica ao frontend; rotas de negócio vazias
  *      criadas agora poluiriam o contrato para sempre.
  *   2. **Não viola a Lei do seam.** Nenhum símbolo de produção nasce para teste: o módulo sintético
  *      vive em `apps/api/test/`, fora de `apps/api/src/`, e nada em `src` o conhece.

@@ -51,7 +51,7 @@
  * ===========================================================================
  *
  * `ROTINAS_PUBLICADAS`, `CADENCIA_DA_ROTINA` e `LIMIAR_DE_ATRASO_POR_CADENCIA` são importados de
- * `@sysloc/contracts`, e as idades de borda do CT-1074 são **derivadas do limiar**, não digitadas:
+ * `@syslocbr/contracts`, e as idades de borda do CT-1074 são **derivadas do limiar**, não digitadas:
  * `limiar − margem` e `limiar + margem`. Reescrevê-las como números soltos cegaria o caso à
  * divergência entre o contrato e a derivação — que é exatamente o que ele existe para pegar. Pelo
  * mesmo motivo, o fuso da operação é **lido do banco** (`./relogio-da-operacao.ts`), e não copiado.
@@ -90,7 +90,7 @@ import {
   LIMIAR_DE_ATRASO_POR_CADENCIA,
   ROTINAS_PUBLICADAS,
   type RotinaPublicada,
-} from '@sysloc/contracts';
+} from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { registrarCertificado } from '../src/certificado-do-provedor.ts';

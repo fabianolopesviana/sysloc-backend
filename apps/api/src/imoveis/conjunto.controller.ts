@@ -84,7 +84,7 @@
  * O `:id` é validado e CANONIZADO antes de qualquer consulta
  * ---------------------------------------------------------------------------
  *
- * `ESQUEMA_DO_IDENTIFICADOR`, de `@sysloc/contracts`, valida a **forma** e canoniza a caixa. A
+ * `ESQUEMA_DO_IDENTIFICADOR`, de `@syslocbr/contracts`, valida a **forma** e canoniza a caixa. A
  * validação acontece antes de a unidade de trabalho abrir: um valor malformado é recusado com `422`
  * sem tocar o banco, em vez de virar `404` depois de uma ida inútil — e sem que a forma do
  * identificador se torne um oráculo de existência.
@@ -140,6 +140,8 @@ import {
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
+import type { AcessoAoBanco } from '@sysloc/db';
+import { CodigoErro, type Logger } from '@sysloc/shared';
 import {
   type Conjunto,
   ESQUEMA_DO_IDENTIFICADOR,
@@ -149,9 +151,7 @@ import {
   esquemaDeConjuntoNovo,
   esquemaDoConjunto,
   esquemaDoConjuntoComImoveis,
-} from '@sysloc/contracts';
-import type { AcessoAoBanco } from '@sysloc/db';
-import { CodigoErro, type Logger } from '@sysloc/shared';
+} from '@syslocbr/contracts';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { ExigeChave, ExigeChaves } from '../autenticacao/exigencia.decorator.js';
@@ -206,7 +206,7 @@ const ESQUEMA_DA_PAGINA = envelopeDeLista(esquemaDoConjunto);
  * A rota é uma só e devolve uma das duas formas conforme `expandir`, e por isso o documento publicado
  * declara a **união** delas: descrever apenas a simples faria o documento mentir sobre a resposta
  * expandida, e descrever apenas a expandida prometeria ao cliente uma chave que a resposta padrão não
- * traz. As duas derivam dos esquemas de `@sysloc/contracts`, e nenhuma é escrita à mão (ADR-0016).
+ * traz. As duas derivam dos esquemas de `@syslocbr/contracts`, e nenhuma é escrita à mão (ADR-0016).
  */
 const ESQUEMA_DA_PAGINA_OU_CARTEIRA = z.union([
   ESQUEMA_DA_PAGINA,
@@ -278,7 +278,7 @@ export class ConjuntoController {
     @Query() consulta: unknown,
     @Req() requisicao: FastifyRequest,
   ): Promise<PaginaDeConjuntos | PaginaDaCarteira> {
-    // O esquema vem **inteiro** de `@sysloc/contracts` e não é composto aqui. Ele nasceu declarado
+    // O esquema vem **inteiro** de `@syslocbr/contracts` e não é composto aqui. Ele nasceu declarado
     // neste arquivo e foi copiado byte a byte para `imovel.controller.ts`; os três controladores de
     // pessoa seriam a terceira, a quarta e a quinta cópias **de uma vez**, e a ADR-0016 fixa o
     // esquema como fonte única do contrato. A razão de `incluirRetirados` ser união fechada de dois
@@ -292,7 +292,7 @@ export class ConjuntoController {
     // modo que um valor inventado é recusado com `422` nomeando o parâmetro — o Zod reporta o
     // caminho `['expandir']`, e é ele que `validar()` publica em `campo`.
     //
-    // A comparação abaixo é contra `EXPANSAO_DE_IMOVEIS`, **importado** de `@sysloc/contracts` e
+    // A comparação abaixo é contra `EXPANSAO_DE_IMOVEIS`, **importado** de `@syslocbr/contracts` e
     // nunca redigitado nem lido por posição do arranjo: um literal escrito aqui ficaria livre para
     // divergir do que o esquema aceita, e a divergência seria muda — o esquema aprovaria
     // `expandir=imoveis` e o manipulador devolveria a lista simples. O arranjo publicado deriva

@@ -19,7 +19,7 @@
     "@nestjs/swagger": "11.4.6",
     "@sysloc/auth": "workspace:*",
     "@sysloc/cobranca-bancaria": "workspace:*",
-    "@sysloc/contracts": "workspace:*",
+    "@syslocbr/contracts": "workspace:*",
     "@sysloc/db": "workspace:*",
     "@sysloc/documentos": "workspace:*",
     "@sysloc/regua": "workspace:*",

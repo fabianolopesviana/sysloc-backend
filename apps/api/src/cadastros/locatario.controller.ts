@@ -110,6 +110,8 @@ import {
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
+import { type AcessoAoBanco, PAPEIS_DE_PESSOA } from '@sysloc/db';
+import { CodigoErro, type Logger } from '@sysloc/shared';
 import {
   ESQUEMA_DO_IDENTIFICADOR,
   envelopeDeLista,
@@ -117,9 +119,7 @@ import {
   esquemaDoReenvioDeConfirmacao,
   type Pessoa,
   type ReenvioDeConfirmacao,
-} from '@sysloc/contracts';
-import { type AcessoAoBanco, PAPEIS_DE_PESSOA } from '@sysloc/db';
-import { CodigoErro, type Logger } from '@sysloc/shared';
+} from '@syslocbr/contracts';
 import type { FastifyRequest } from 'fastify';
 import { ExigeChave, ExigeChaves } from '../autenticacao/exigencia.decorator.js';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';

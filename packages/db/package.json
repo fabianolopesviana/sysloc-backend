@@ -21,7 +21,7 @@
     "gerar-migracao": "drizzle-kit generate"
   },
   "dependencies": {
-    "@sysloc/contracts": "workspace:*",
+    "@syslocbr/contracts": "workspace:*",
     "@sysloc/documentos": "workspace:*",
     "@sysloc/regua": "workspace:*",
     "@sysloc/shared": "workspace:*",

@@ -111,15 +111,6 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import type {
-  Cobranca,
-  CobrancaNova,
-  EnvelopeDeLista,
-  EstadoDaCobranca,
-  JanelaDeCobrancas,
-  PagamentoDeCobranca,
-} from '@sysloc/contracts';
-import { ESTADOS_EM_ABERTO } from '@sysloc/contracts';
 import {
   acusarPagamentoDeCobranca,
   cancelarCobranca,
@@ -135,6 +126,15 @@ import {
   localizarContrato,
 } from '@sysloc/db';
 import { CodigoErro, ErroDeAplicacao } from '@sysloc/shared';
+import type {
+  Cobranca,
+  CobrancaNova,
+  EnvelopeDeLista,
+  EstadoDaCobranca,
+  JanelaDeCobrancas,
+  PagamentoDeCobranca,
+} from '@syslocbr/contracts';
+import { ESTADOS_EM_ABERTO } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
 
@@ -186,7 +186,7 @@ const CONFLITO_DE_CODIGO = 'CODIGO_EM_USO';
  * junto com a primeira, em silêncio, num campo que o cliente lê.
  *
  * **A diferença em relação ao precedente é que aqui os rótulos NÃO são escritos por extenso**, e a
- * assimetria é obrigatória: {@link ESTADOS_EM_ABERTO} é a partição publicada por `@sysloc/contracts` ao
+ * assimetria é obrigatória: {@link ESTADOS_EM_ABERTO} é a partição publicada por `@syslocbr/contracts` ao
  * lado do enum que a governa, e o `CT-510` varre `apps/api/src/**` acusando qualquer literal de
  * `negocio.status_cobranca` em posição executável — é justamente a ausência dele que torna verificável
  * a decisão de haver **uma só** derivação do estado. Duas constantes que apontam para o mesmo nome
@@ -205,7 +205,7 @@ const CANCELAMENTO = 'CANCELAMENTO';
  *
  * Ela existe pela razão que o débito **D34 (F2/T7)** deixou registrada em
  * {@link ../contratos/contrato.service.js}: `estadoAtual` já tem o compilador atrás dele (é
- * `EstadoDaCobranca`, união fechada de `@sysloc/contracts`), e um `transicaoPedida: string` solto
+ * `EstadoDaCobranca`, união fechada de `@syslocbr/contracts`), e um `transicaoPedida: string` solto
  * deixaria um `'CANCELAMETO'` compilar, passar o lint e chegar publicado ao cliente dentro do mesmo
  * `detalhes`. `typeof <constante>` em vez de literais redigitados: a união e as constantes são o mesmo
  * fato.

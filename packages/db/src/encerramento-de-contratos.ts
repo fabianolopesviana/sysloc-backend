@@ -146,7 +146,7 @@
  * por empresa do sistema antigo.
  */
 
-import type { EstadoDoContrato, SituacaoDeLocacao } from '@sysloc/contracts';
+import type { EstadoDoContrato, SituacaoDeLocacao } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 // A porta estreita da situação de locação — **o único caminho que grava a coluna**. O docblock dela
 // registra por que ela é estreita, e por que ela levanta quando não alcança exatamente uma linha.
@@ -184,7 +184,7 @@ interface CandidatoAoEncerramento {
 /**
  * Os três estados que esta rotina **lê ou escreve**, nomeados uma vez cada.
  *
- * A anotação é `EstadoDoContrato` de propósito: literal fora da união fechada de `@sysloc/contracts`
+ * A anotação é `EstadoDoContrato` de propósito: literal fora da união fechada de `@syslocbr/contracts`
  * **não compila**, e é isso que impede um estado inventado de chegar ao enum do banco. Mesmo
  * mecanismo, e mesma razão, de `ESTADO_VIGENTE` em {@link ./contrato.ts}.
  */

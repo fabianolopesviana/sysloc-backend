@@ -249,7 +249,7 @@ const SUPERFICIE_DECLARADA = [
  * a cada bump.
  *
  * **GATILHO DE REVISÃO** (não é decisão fechada — isto vence): a decisão vale **até o congelamento
- * da superfície da API**, imediatamente antes de publicar `@sysloc/contracts` e gerar o
+ * da superfície da API**, imediatamente antes de publicar `@syslocbr/contracts` e gerar o
  * `handoff-frontend.md`. Ali cada uma volta à mesa com a pergunta *"o cliente React chama isto?"*,
  * e a resposta esperada, para as 35, é não. Quem congelar reavalia; quem só passar por aqui, não
  * precisa.

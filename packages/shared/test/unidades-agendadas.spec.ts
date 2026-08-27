@@ -8,7 +8,7 @@
  * INVARIANTES
  * - CT-1057: cada um dos seis `deploy/systemd/sysloc-rotina-*.timer` tem **exatamente uma** linha
  *   `OnCalendar=` em posição executável, terminada em `America/Sao_Paulo`, e o horário nela
- *   declarado é o **mesmo** que `CADENCIA_DA_ROTINA` de `@sysloc/contracts` declara para aquela
+ *   declarado é o **mesmo** que `CADENCIA_DA_ROTINA` de `@syslocbr/contracts` declara para aquela
  *   unidade. A cobertura é de conjunto **nos dois sentidos**: seis unidades, seis entradas no mapa.
  * - CT-1058: o conjunto de `.timer` que declaram `Persistent=true` é **exatamente** o conjunto dos
  *   timers cuja cadência publicada é `DIARIA`; os de intervalo não declaram `Persistent=` em
@@ -59,7 +59,7 @@
  *
  * Ela mora em `packages/shared/test/` porque este pacote é a **raiz do grafo de importe**: ele não
  * depende de pacote nenhum do produto, de modo que uma suíte sobre artefato de `deploy/` não
- * arrasta banco, fila nem contrato de negócio para dentro dela. `@sysloc/contracts` entra em
+ * arrasta banco, fila nem contrato de negócio para dentro dela. `@syslocbr/contracts` entra em
  * **`devDependencies`**, e a distinção é conteúdo: o `src/` deste pacote continua sem dependência
  * de execução alguma — é o que o docblock de `../src/fila.ts` declara, e vale para o fonte, não
  * para a suíte.
@@ -118,7 +118,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { CADENCIA_DA_ROTINA, type CadenciaDaRotina } from '@sysloc/contracts';
+import { CADENCIA_DA_ROTINA, type CadenciaDaRotina } from '@syslocbr/contracts';
 import { describe, expect, it } from 'vitest';
 
 // ---------------------------------------------------------------------------

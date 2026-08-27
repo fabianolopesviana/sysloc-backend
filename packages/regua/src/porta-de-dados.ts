@@ -37,7 +37,7 @@
  * ligada e dentro da janela), e a consulta nem chega a acontecer quando não vai agir.
  */
 
-import type { EnvioDeCobranca, EstadoDaCobranca } from '@sysloc/contracts';
+import type { EnvioDeCobranca, EstadoDaCobranca } from '@syslocbr/contracts';
 
 /**
  * A projeção que sobe da camada de dados para o domínio — os **oito** campos da §5.1-B′.
@@ -57,7 +57,7 @@ import type { EnvioDeCobranca, EstadoDaCobranca } from '@sysloc/contracts';
  * ---------------------------------------------------------------------------
  *
  * O estado é derivado dos fatos gravados, num lugar só — a view (ADR-0022). Aqui ele apenas
- * **chega**, com o tipo que `@sysloc/contracts` publica. Uma segunda derivação escrita na régua
+ * **chega**, com o tipo que `@syslocbr/contracts` publica. Uma segunda derivação escrita na régua
  * coincidiria com a da view na quase totalidade dos casos e atravessaria a suíte comportamental sem
  * uma recusa; é o defeito de origem do legado, em que `core.py` e `emailer.py` decidem o mesmo fato
  * e discordam.
@@ -111,7 +111,7 @@ export type PortaDeCandidatas = () => Promise<readonly CandidataAoAviso[]>;
  * repetição do job: a cobrança já avisada cai fora do predicado na passagem seguinte, sem estado
  * novo a reconciliar. Um desfecho que não fosse registrado reabriria o envio duplicado.
  *
- * `caminho` e `desfecho` são derivados de `EnvioDeCobranca`, o recurso que `@sysloc/contracts`
+ * `caminho` e `desfecho` são derivados de `EnvioDeCobranca`, o recurso que `@syslocbr/contracts`
  * publica, e não redigitados: é a forma que aquele pacote declara no próprio cabeçalho para quem
  * precisa do tipo de um rótulo, e redigitar os literais aqui criaria a segunda fonte do mesmo fato
  * que a ADR-0016 elimina.

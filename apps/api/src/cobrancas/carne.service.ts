@@ -67,10 +67,10 @@
  */
 
 import { Inject, Injectable } from '@nestjs/common';
-import type { RecorteDoCarne } from '@sysloc/contracts';
 import { localizarContrato, selecionarCobrancasDoRecorte } from '@sysloc/db';
 import type { PortaDeMesclagem } from '@sysloc/documentos';
 import { CodigoErro, ErroDeAplicacao } from '@sysloc/shared';
+import type { RecorteDoCarne } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
 import { TOKEN_PORTA_DE_MESCLAGEM } from '../configuracao/ambiente.js';

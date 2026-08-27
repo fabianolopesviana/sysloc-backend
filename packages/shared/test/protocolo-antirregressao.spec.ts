@@ -907,8 +907,14 @@ const HOMONIMOS_QUE_SOBREVIVEM = ['D23 · F0/T3', 'D26 · F3/T8'] as const;
  *
  * **Quando um débito nascer ou fechar, este número muda no mesmo diff** — junto da prosa do bloco,
  * que a asserção abaixo amarra a ele.
+ *
+ * ⚠️ **38 → 39 em 2026-08-27**, com o nascimento do `D50 · F6/fechamento`: as 12 unidades de
+ * `deploy/systemd/` seguem citando `@sysloc/contracts` em comentário depois de o pacote passar a
+ * `@syslocbr/contracts`, e corrigi-las agora reprovaria o `cmp -s` byte a byte de
+ * `verificar-unidades-agendadas.sh` até uma reinstalação com `sudo`. O número saiu do mesmo `grep`
+ * que o docblock descreve, sobre o arquivo real — não de aritmética.
  */
-const LINHAS_DO_INDICE_NO_FECHO_DA_FATIA = 38;
+const LINHAS_DO_INDICE_NO_FECHO_DA_FATIA = 39;
 
 /** O molde da prosa que anuncia o tamanho do índice, logo acima da tabela. */
 const PADRAO_DO_TOTAL_NARRADO = /São \*\*(\d+)\*\*, e a tabela abaixo é a lista viva/;

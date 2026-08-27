@@ -101,7 +101,7 @@
  * acrescentado a `packages/db/src/**` para que estas provas existam** (Iron Law #6, ADR-0006,
  * ADR-0008).
  *
- * A entrada de cômodo é montada por `esquemaDeComodoNovo`, de `@sysloc/contracts`, e **não** por um
+ * A entrada de cômodo é montada por `esquemaDeComodoNovo`, de `@syslocbr/contracts`, e **não** por um
  * objeto literal: é ele que aplica a RN-02 (*metragem ausente vale zero*) na borda, e é o caminho
  * real do produto. O `CT-306` depende disso para que "sem metragem informada" signifique aqui o que
  * significa numa requisição.
@@ -185,7 +185,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { esquemaDeComodoNovo } from '@sysloc/contracts';
+import { esquemaDeComodoNovo } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {

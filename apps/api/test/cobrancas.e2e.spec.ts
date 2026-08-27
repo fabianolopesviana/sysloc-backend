@@ -491,7 +491,7 @@ const ACAO_DE_CIRCULACAO: ChaveDoCatalogo = 'ACAO:excluir_cadastro';
 /**
  * A forma do código legível da cobrança — `COB-{ano}-{7 dígitos}` (RD-02).
  *
- * Escrita por extenso, e **não** importada de `@sysloc/contracts`: derivá-la da mesma expressão que o
+ * Escrita por extenso, e **não** importada de `@syslocbr/contracts`: derivá-la da mesma expressão que o
  * SUT usa para validar faria a asserção concordar consigo mesma, e a largura de sete dígitos — que
  * carrega marcador `DECISÃO FECHADA` no pacote, e que **diverge** deliberadamente da largura 5 do
  * contrato — deixaria de ser afirmada por este lado.
@@ -2176,7 +2176,7 @@ async function capturar(trabalho: () => Promise<unknown>): Promise<unknown> {
 /**
  * Uma cobrança como a API a publica.
  *
- * Declarada aqui, e não importada de `@sysloc/contracts`: o conjunto de chaves é o que os casos
+ * Declarada aqui, e não importada de `@syslocbr/contracts`: o conjunto de chaves é o que os casos
  * asserem por igualdade, e derivá-lo do tipo do SUT faria a asserção concordar consigo mesma. **Não
  * há `id`**, e a ausência é a ADR-0017 — a chave exposta é o `codigo`.
  */

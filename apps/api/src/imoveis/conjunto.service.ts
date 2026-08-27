@@ -37,19 +37,12 @@
  * ---------------------------------------------------------------------------
  *
  * O driver entrega `timestamptz` como `Date`; o contrato publica cadeia ISO-8601 (`esquemaDoConjunto`
- * de `@sysloc/contracts`). A tradução é {@link publicar}, e ela é uma só para as cinco operações:
+ * de `@syslocbr/contracts`). A tradução é {@link publicar}, e ela é uma só para as cinco operações:
  * cinco conversões ficariam livres para divergir no formato, e o formato da marca é contrato — o
  * `CT-346` compara o `retiradoEm` da retirada com o da leitura seguinte **caractere a caractere**.
  */
 
 import { Injectable } from '@nestjs/common';
-import type {
-  Conjunto,
-  ConjuntoComImoveis,
-  ConjuntoNovo,
-  EnvelopeDeLista,
-  Janela,
-} from '@sysloc/contracts';
 import {
   alterarConjunto,
   type ConjuntoComImoveisPersistido,
@@ -62,6 +55,13 @@ import {
   type OpcoesDeCirculacao,
 } from '@sysloc/db';
 import { CodigoErro, ErroDeAplicacao } from '@sysloc/shared';
+import type {
+  Conjunto,
+  ConjuntoComImoveis,
+  ConjuntoNovo,
+  EnvelopeDeLista,
+  Janela,
+} from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
 // A tradução do imóvel persistido no corpo publicado tem **lar único**, e é o serviço do imóvel. Uma

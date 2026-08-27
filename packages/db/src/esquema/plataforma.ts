@@ -49,7 +49,7 @@
  * medição registrada lá mostra que aquela lista governa `pull`/`push`, nunca a saída de `generate`.
  *
  * ===========================================================================
- * Os literais do enum nascem AQUI, e não em `@sysloc/contracts` — e por quê
+ * Os literais do enum nascem AQUI, e não em `@syslocbr/contracts` — e por quê
  * ===========================================================================
  *
  * Os nove enums de negócio deste produto derivam do pacote de contratos, porque a ADR-0016 fixa o

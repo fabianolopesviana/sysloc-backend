@@ -84,7 +84,6 @@
  */
 
 import type { LeituraDaEntrega, PortaDeEntregaDaNoticia } from '@sysloc/cobranca-bancaria';
-import { ESQUEMA_DO_IDENTIFICADOR } from '@sysloc/contracts';
 import {
   type AcessoAoBanco,
   contextoDeTenant,
@@ -98,6 +97,7 @@ import {
   type SituacaoDaEntrega,
 } from '@sysloc/db';
 import { decifrarSegredo, FILA_DA_RECONFERENCIA_DA_ENTREGA, type Logger } from '@sysloc/shared';
+import { ESQUEMA_DO_IDENTIFICADOR } from '@syslocbr/contracts';
 import { z } from 'zod';
 import type { TarefaDaReconferenciaDaEntrega } from '../fila.js';
 import { cargaConferida } from './carga-da-tarefa.js';

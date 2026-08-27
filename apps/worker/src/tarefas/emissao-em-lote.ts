@@ -25,7 +25,7 @@
  * e o lote *parece* ter rodado. Nenhum alarme, nenhuma linha vermelha, e a imobiliária descobre pelo
  * locatário que não recebeu boleto.
  *
- * A conferência é do **esquema**, e o identificador vem de `@sysloc/contracts` (ADR-0016): ele valida
+ * A conferência é do **esquema**, e o identificador vem de `@syslocbr/contracts` (ADR-0016): ele valida
  * a forma **e canoniza a caixa do UUID** (ADR-0017), que já foi vetor de escalada. A canonização não é
  * ornamento — é este valor que a unidade de trabalho compõe no `SET LOCAL`. A razão da falha nomeia o
  * **campo**, nunca o valor recebido: ela fica gravada no servidor de fila e chega ao journal, e valor
@@ -130,7 +130,6 @@ import {
   executarEmissaoEmLote,
   type GuardaDeBoletos,
 } from '@sysloc/cobranca-bancaria';
-import { ESQUEMA_DO_IDENTIFICADOR } from '@sysloc/contracts';
 import {
   type AcessoAoBanco,
   concluirLote,
@@ -149,6 +148,7 @@ import {
   selecionarCobrancasSemBoleto,
 } from '@sysloc/db';
 import { decifrarSegredo, FILA_DA_EMISSAO_EM_LOTE, type Logger } from '@sysloc/shared';
+import { ESQUEMA_DO_IDENTIFICADOR } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { z } from 'zod';
 import type { TarefaDaEmissaoEmLote } from '../fila.js';

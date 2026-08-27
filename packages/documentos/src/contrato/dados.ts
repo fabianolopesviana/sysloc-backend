@@ -16,7 +16,7 @@
  * Os campos DERIVAM do contrato publicado, e não são redigitados
  * ===========================================================================
  *
- * ADR-0016: o esquema de `@sysloc/contracts` é a fonte única. Cada bloco abaixo é um `Pick` sobre o
+ * ADR-0016: o esquema de `@syslocbr/contracts` é a fonte única. Cada bloco abaixo é um `Pick` sobre o
  * tipo publicado, de modo que renomear um campo lá **quebra a compilação aqui** — que é exatamente o
  * efeito desejado. Redigitar `{ nome: string; cep: string; … }` produziria uma segunda declaração do
  * mesmo fato, livre para divergir na primeira emenda (foi a causa dos débitos D38 e D40).
@@ -37,7 +37,7 @@
  * da entrada, que é a propriedade que a T5 existe para instalar.
  */
 
-import type { Contrato, Imovel, Pessoa } from '@sysloc/contracts';
+import type { Contrato, Imovel, Pessoa } from '@syslocbr/contracts';
 
 /**
  * Uma parte do contrato — locador, locatário ou fiador — como o documento a qualifica.
@@ -94,7 +94,7 @@ export type ImovelDoContrato = Pick<
  * prazo_meses)` em `numeric` — decimal exato, num lugar só. Este pacote não tem como refazê-la: o
  * `null` não passa pelo tipo, e é essa impossibilidade que substitui a disciplina.
  *
- * A sobreposição sobre o `Pick<>` de `@sysloc/contracts` **não redigita** o tipo do campo: ele
+ * A sobreposição sobre o `Pick<>` de `@syslocbr/contracts` **não redigita** o tipo do campo: ele
  * continua derivado do publicado por `NonNullable<…>`, de modo que trocar `number` por outra coisa
  * lá quebra a compilação aqui (ADR-0016). O que a sobreposição retira é a nulidade, e só ela.
  */

@@ -69,7 +69,7 @@
  * O TIPO PUBLICADO É O DO CONTRATO, e não um gêmeo declarado aqui (ADR-0016)
  * ---------------------------------------------------------------------------
  *
- * `PoliticaDeAviso` e `PoliticaDeAvisoNova` são **importados** de `@sysloc/contracts`, e não
+ * `PoliticaDeAviso` e `PoliticaDeAvisoNova` são **importados** de `@syslocbr/contracts`, e não
  * redeclarados no molde de `ConfiguracaoDeMoraPersistida`. A assimetria com a porta irmã é
  * deliberada e tem causa concreta: lá a projeção converte `numeric` em `number`, de modo que o que a
  * porta entrega **não é** a forma do esquema (a linha crua traz texto), e o tipo próprio nomeia essa
@@ -104,7 +104,7 @@
  * isso não entra no predicado.
  */
 
-import type { PoliticaDeAviso, PoliticaDeAvisoNova } from '@sysloc/contracts';
+import type { PoliticaDeAviso, PoliticaDeAvisoNova } from '@syslocbr/contracts';
 import type { Fragment, TransactionSql } from 'postgres';
 import { empresaDoContexto } from './contexto-de-escrita.js';
 

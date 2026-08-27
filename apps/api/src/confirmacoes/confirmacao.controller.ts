@@ -38,7 +38,7 @@
  * razão pela qual o link do e-mail leva o segredo no **fragmento**
  * (`packages/documentos/src/mensagem-de-confirmacao.ts`), que não é transmitido ao servidor.
  *
- * O molde é **fechado no esquema** (`esquemaDaApresentacaoDoPortador`, de `@sysloc/contracts`):
+ * O molde é **fechado no esquema** (`esquemaDaApresentacaoDoPortador`, de `@syslocbr/contracts`):
  * segredo malformado morre como `422` do arcabouço e **nunca vira consulta ao banco**, sem uma linha
  * de verificação escrita aqui. O `strictObject` fecha o outro lado: um `empresaId` proposto pelo
  * corpo é **recusado por chave desconhecida**, em vez de ignorado — o contexto de tenant não tem
@@ -70,12 +70,12 @@ import {
   ApiTags,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
+import { CodigoErro } from '@sysloc/shared';
 import {
   type Confirmacao,
   esquemaDaApresentacaoDoPortador,
   esquemaDaConfirmacao,
-} from '@sysloc/contracts';
-import { CodigoErro } from '@sysloc/shared';
+} from '@syslocbr/contracts';
 import { RotaPublica } from '../autenticacao/rota-publica.decorator.js';
 import { esquemaDoErro } from '../comum/esquema-de-erro.js';
 import { esquemaPublicado } from '../comum/esquema-publicado.js';

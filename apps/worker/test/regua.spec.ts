@@ -81,7 +81,6 @@
  * (ADR-0008).
  */
 
-import type { PoliticaDeAvisoNova } from '@sysloc/contracts';
 import {
   type AcessoAoBanco,
   abrirAcessoAoBanco,
@@ -113,6 +112,7 @@ import {
   type PortaDeEnvioDeEmail,
 } from '@sysloc/regua';
 import { type CargaDaRegua, criarLogger, FILA_DA_REGUA } from '@sysloc/shared';
+import type { PoliticaDeAvisoNova } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { type BancoMigrado, bancoEfemero } from '../../../packages/db/test/banco-efemero.ts';

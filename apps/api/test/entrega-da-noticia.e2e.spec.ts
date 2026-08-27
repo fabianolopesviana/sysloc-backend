@@ -110,7 +110,6 @@ import {
   type PortaDeEntregaDaNoticia,
   type ResultadoDaOperacaoDeEntrega,
 } from '@sysloc/cobranca-bancaria';
-import type { EstadoDaEntrega } from '@sysloc/contracts';
 import {
   type AcessoAoBanco,
   abrirAcessoAoBanco,
@@ -120,6 +119,7 @@ import {
   SENHA_DA_CARGA,
 } from '@sysloc/db';
 import { CodigoErro } from '@sysloc/shared';
+import type { EstadoDaEntrega } from '@syslocbr/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   type IdentidadeEfemera,

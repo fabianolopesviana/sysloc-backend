@@ -97,14 +97,6 @@
  */
 
 import { Inject, Injectable } from '@nestjs/common';
-import type {
-  EnvelopeDeLista,
-  EnvioDeCobranca,
-  EstadoDasRotinas,
-  Janela,
-  PoliticaDeAviso,
-  PoliticaDeAvisoNova,
-} from '@sysloc/contracts';
 import {
   contarEnviosDaCobranca,
   gravarPoliticaDeAviso,
@@ -122,6 +114,14 @@ import {
   type PortaDeEnvioDeEmail,
 } from '@sysloc/regua';
 import { CodigoErro, ErroDeAplicacao } from '@sysloc/shared';
+import type {
+  EnvelopeDeLista,
+  EnvioDeCobranca,
+  EstadoDasRotinas,
+  Janela,
+  PoliticaDeAviso,
+  PoliticaDeAvisoNova,
+} from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
 import { TOKEN_PORTA_DE_EMAIL } from '../configuracao/ambiente.js';
@@ -309,7 +309,7 @@ export class AutomacaoDeCobrancaService {
    *
    * O envelope é `{ itens }`, a forma canônica de coleção da ADR-0017, **sem** as três chaves de
    * janela: o roster é fechado em três, e paginar coleção fechada é oferecer ao cliente um controle
-   * que não decide nada. A razão longa vive no esquema, em `@sysloc/contracts`.
+   * que não decide nada. A razão longa vive no esquema, em `@syslocbr/contracts`.
    */
   async lerEstadoDasRotinas(tx: TransactionSql): Promise<EstadoDasRotinas> {
     // A chamada é da função de domínio importada, e não deste método: membros de classe não entram no

@@ -112,7 +112,7 @@ import {
   esquemaDoMotivoDaRecusa,
   MAIOR_DIAGNOSTICO_EM_CARACTERES,
   MAIOR_DIAGNOSTICO_EM_CHAVES,
-} from '@sysloc/contracts';
+} from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { abrirConexao } from '../src/conexao.ts';
@@ -923,7 +923,7 @@ describe('estado da entrega da notícia (T4)', () => {
  * O teto do `diagnostico` **vigorando** — e não apenas declarado (CA-18 · RN-02 · ADR-0016).
  *
  * ===========================================================================
- * Por que este caso existe, e por que ele NÃO podia viver em `@sysloc/contracts`
+ * Por que este caso existe, e por que ele NÃO podia viver em `@syslocbr/contracts`
  * ===========================================================================
  *
  * Os dois tetos nasceram como `.refine()` de `esquemaDoMotivoDaRecusa`, e a suíte de contratos os
@@ -952,7 +952,7 @@ describe('estado da entrega da notícia (T4)', () => {
  * inserção. O que discrimina o truncamento *na ordem em que o provedor mandou* é **quais** chaves
  * sobreviveram — `campo0..campo31` é um conjunto distinto de qualquer outro recorte de 32.
  *
- * ⚠️ **Todo teto vem IMPORTADO de `@sysloc/contracts`**, jamais redigitado: o número mora num lugar
+ * ⚠️ **Todo teto vem IMPORTADO de `@syslocbr/contracts`**, jamais redigitado: o número mora num lugar
  * só, e é essa mesma constante que a camada de escrita consome — redigitá-la aqui faria o caso
  * aprovar um clamp que divergisse do contrato publicado.
  */

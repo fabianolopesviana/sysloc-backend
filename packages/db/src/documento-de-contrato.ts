@@ -25,7 +25,7 @@
  * `DadosDoContratoParaDocumento` é declarado por `@sysloc/documentos`, e não aqui: quem **exige** o
  * dado declara a forma dele (ADR-0025), e esta camada importa daquele pacote para dizer que a
  * satisfaz. A aresta é `@sysloc/db → @sysloc/documentos`, e ela **não** fecha ciclo — aquele pacote
- * referencia só `@sysloc/contracts`, e o cabeçalho do `tsconfig.json` dele registra que a aresta de
+ * referencia só `@syslocbr/contracts`, e o cabeçalho do `tsconfig.json` dele registra que a aresta de
  * volta abortaria o build inteiro do Turborepo.
  *
  * O tipo é importado **como tipo**: nada de `@sysloc/documentos` é executado por este módulo.
@@ -89,12 +89,12 @@
  * conexão, reserva ou transação, e não devolve executor.
  */
 
-import type { EstadoDoContrato } from '@sysloc/contracts';
 import type {
   DadosDoContratoParaDocumento,
   ImovelDoContrato,
   ParteDoContrato,
 } from '@sysloc/documentos';
+import type { EstadoDoContrato } from '@syslocbr/contracts';
 import type { Fragment, TransactionSql } from 'postgres';
 // O formato das colunas `date` tem **casa única** em `./moldes-de-formatacao.ts` desde o fecho do
 // débito `D7 · F4/T3`, e é dela que ele atravessa daqui — antes vinha por exportação lateral de

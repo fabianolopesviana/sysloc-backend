@@ -243,13 +243,13 @@ import { readFile } from 'node:fs/promises';
 import { extname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import type { PoliticaDeAvisoNova } from '@sysloc/contracts';
 import {
   type CapturadorDeEmail,
   criarCapturadorDeEmail,
   executarReguaDaEmpresa,
   type ResultadoDaRegua,
 } from '@sysloc/regua';
+import type { PoliticaDeAvisoNova } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { criarPessoa, type DadosDaPessoa } from '../src/cadastro-de-pessoa.ts';

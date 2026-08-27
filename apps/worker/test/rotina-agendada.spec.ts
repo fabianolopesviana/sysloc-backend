@@ -122,11 +122,6 @@ import {
   type GuardaDeBoletos,
 } from '@sysloc/cobranca-bancaria';
 import {
-  LIMIAR_DE_ATRASO_POR_CADENCIA,
-  type RotinaPublicada,
-  type SituacaoDeLocacao,
-} from '@sysloc/contracts';
-import {
   type AcessoAoBanco,
   abrirAcessoAoBanco,
   abrirConferencia,
@@ -165,6 +160,11 @@ import {
   criarSegredoOperavel,
   FILA_DA_ROTINA_AGENDADA,
 } from '@sysloc/shared';
+import {
+  LIMIAR_DE_ATRASO_POR_CADENCIA,
+  type RotinaPublicada,
+  type SituacaoDeLocacao,
+} from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { type BancoMigrado, bancoEfemero } from '../../../packages/db/test/banco-efemero.ts';

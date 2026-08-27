@@ -47,9 +47,6 @@ importers:
       '@sysloc/cobranca-bancaria':
         specifier: workspace:*
         version: link:../../packages/cobranca-bancaria
-      '@sysloc/contracts':
-        specifier: workspace:*
-        version: link:../../packages/contracts
       '@sysloc/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -62,6 +59,9 @@ importers:
       '@sysloc/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@syslocbr/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       bullmq:
         specifier: 5.81.3
         version: 5.81.3(supports-color@7.2.0)
@@ -108,9 +108,6 @@ importers:
       '@sysloc/cobranca-bancaria':
         specifier: workspace:*
         version: link:../../packages/cobranca-bancaria
-      '@sysloc/contracts':
-        specifier: workspace:*
-        version: link:../../packages/contracts
       '@sysloc/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -123,6 +120,9 @@ importers:
       '@sysloc/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@syslocbr/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       bullmq:
         specifier: 5.81.3
         version: 5.81.3(supports-color@7.2.0)
@@ -176,12 +176,12 @@ importers:
 
   packages/cobranca-bancaria:
     dependencies:
-      '@sysloc/contracts':
-        specifier: workspace:*
-        version: link:../contracts
       '@sysloc/shared':
         specifier: workspace:*
         version: link:../shared
+      '@syslocbr/contracts':
+        specifier: workspace:*
+        version: link:../contracts
     devDependencies:
       '@sysloc/db':
         specifier: workspace:*
@@ -217,9 +217,6 @@ importers:
 
   packages/db:
     dependencies:
-      '@sysloc/contracts':
-        specifier: workspace:*
-        version: link:../contracts
       '@sysloc/documentos':
         specifier: workspace:*
         version: link:../documentos
@@ -229,6 +226,9 @@ importers:
       '@sysloc/shared':
         specifier: workspace:*
         version: link:../shared
+      '@syslocbr/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       drizzle-orm:
         specifier: 0.45.2
         version: 0.45.2(kysely@0.29.4)(pg@8.22.0)(postgres@3.4.9)
@@ -257,7 +257,7 @@ importers:
       '@react-pdf/renderer':
         specifier: 4.6.0
         version: 4.6.0(react@19.2.8)
-      '@sysloc/contracts':
+      '@syslocbr/contracts':
         specifier: workspace:*
         version: link:../contracts
       pdf-lib:
@@ -285,7 +285,7 @@ importers:
 
   packages/regua:
     dependencies:
-      '@sysloc/contracts':
+      '@syslocbr/contracts':
         specifier: workspace:*
         version: link:../contracts
       nodemailer:
@@ -311,7 +311,7 @@ importers:
         specifier: 10.3.1
         version: 10.3.1
     devDependencies:
-      '@sysloc/contracts':
+      '@syslocbr/contracts':
         specifier: workspace:*
         version: link:../contracts
       '@types/node':

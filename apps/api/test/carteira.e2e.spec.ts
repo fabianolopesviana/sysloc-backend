@@ -117,7 +117,7 @@
  * A `.claude/rules/testing-stack.md` e o P4 de `.claude/rules/nao-regressao.md` exigem demonstrar que
  * a prova **reprova** com o defeito reintroduzido. Aplicados ao fonte de produção, com a suíte
  * invocada pelo **script do pacote** (`pnpm --filter @sysloc/api test`), nunca por `vitest run`
- * avulso — este arquivo carrega `@sysloc/auth`, `@sysloc/db` e `@sysloc/contracts` pela fronteira do
+ * avulso — este arquivo carrega `@sysloc/auth`, `@sysloc/db` e `@syslocbr/contracts` pela fronteira do
  * pacote, e um `vitest run` leria o `dist/` da compilação anterior.
  *
  *   * **controle** — árvore íntegra: `18 arquivos, 121 casos, 0 falhas`;
@@ -1336,7 +1336,7 @@ interface ComodoEnviado {
 /**
  * O envelope de lista da ADR-0017.
  *
- * Declarado aqui, e não importado de `@sysloc/contracts`: derivá-lo do tipo do SUT faria a asserção
+ * Declarado aqui, e não importado de `@syslocbr/contracts`: derivá-lo do tipo do SUT faria a asserção
  * concordar consigo mesma.
  */
 interface PaginaPublicada<T> {
@@ -1361,7 +1361,7 @@ interface ConjuntoComImoveisPublicado extends ConjuntoPublicado {
 /**
  * O contrato vigente que ocupa o imóvel, como a API o publica.
  *
- * Declarado aqui, e não importado de `@sysloc/contracts`, pela razão de {@link ImovelPublicado}:
+ * Declarado aqui, e não importado de `@syslocbr/contracts`, pela razão de {@link ImovelPublicado}:
  * derivá-lo do tipo do SUT faria a asserção concordar consigo mesma. As **duas classes de chave** da
  * ADR-0017 convivem nele — `codigo` para o contrato, que tem série declarada, e `id` para o
  * locatário, que não tem — e é exatamente isso que o `CT-419` afirma por igualdade.

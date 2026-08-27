@@ -346,7 +346,7 @@ export type EventoBancario = z.infer<typeof esquemaDoEventoBancario>;
  * a chave antiga. Declarado aqui, o esquema é a **única** origem das duas pontas, e a chave existe
  * num lugar só.
  *
- * A segunda razão é o **handoff**: `@sysloc/contracts` é o artefato que o React importa para trocar
+ * A segunda razão é o **handoff**: `@syslocbr/contracts` é o artefato que o React importa para trocar
  * tipos. Esta era a única resposta da superfície do produto cujo consumidor teria de redigitar a
  * forma do corpo.
  *

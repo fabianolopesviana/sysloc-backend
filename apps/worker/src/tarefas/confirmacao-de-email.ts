@@ -27,7 +27,7 @@
  * mandou.
  *
  * A conferência é do **esquema**, e ele monta as três exigências a partir do que já existe: o
- * identificador vem de `@sysloc/contracts` (ADR-0016), que valida a forma **e canoniza a caixa do
+ * identificador vem de `@syslocbr/contracts` (ADR-0016), que valida a forma **e canoniza a caixa do
  * UUID** (ADR-0017), e o molde do segredo vem do **mesmo** esquema que a rota pública usa para
  * recusar segredo malformado. Redigitar qualquer um dos dois criaria uma segunda definição do mesmo
  * fato, livre para divergir.
@@ -72,7 +72,6 @@
  * precisa, e a transação fecha antes de a mensagem sair.
  */
 
-import { ESQUEMA_DO_IDENTIFICADOR, esquemaDaApresentacaoDoPortador } from '@sysloc/contracts';
 import {
   type AcessoAoBanco,
   contextoDeTenant,
@@ -82,6 +81,7 @@ import {
 import { comporMensagemDeConfirmacao } from '@sysloc/documentos';
 import type { PortaDeEnvioDeEmail } from '@sysloc/regua';
 import { FILA_DA_CONFIRMACAO, type Logger } from '@sysloc/shared';
+import { ESQUEMA_DO_IDENTIFICADOR, esquemaDaApresentacaoDoPortador } from '@syslocbr/contracts';
 import { z } from 'zod';
 import type { TarefaDaConfirmacao } from '../fila.js';
 

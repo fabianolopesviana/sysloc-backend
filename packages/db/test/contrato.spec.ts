@@ -156,7 +156,7 @@
  * como tal daria por provado o que só a asserção prova.
  */
 
-import { formatarCodigoDeContrato } from '@sysloc/contracts';
+import { formatarCodigoDeContrato } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { criarPessoa, type DadosDaPessoa } from '../src/cadastro-de-pessoa.ts';

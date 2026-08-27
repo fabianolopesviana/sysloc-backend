@@ -11,7 +11,7 @@
  * controlador anterior e não havia lugar de onde importar.
  *
  * As três concordavam. O risco era de congelamento: a superfície da API fecha no marco de entrega e
- * o `@sysloc/contracts` nasce dela, de modo que a partir dali cada ajuste no envelope teria cinco
+ * o `@syslocbr/contracts` nasce dela, de modo que a partir dali cada ajuste no envelope teria cinco
  * pontos para acertar e **nenhum mecanismo que acusasse a divergência** — e o que diverge primeiro
  * neste molde é o campo padrão e a escolha entre `issues[0].path` e o caminho completo, isto é, a
  * forma da recusa que o cliente vê. É o débito **D40** da §2 do run-report da fatia

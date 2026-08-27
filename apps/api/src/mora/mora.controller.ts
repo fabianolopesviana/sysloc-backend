@@ -93,13 +93,13 @@ import {
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
+import type { AcessoAoBanco } from '@sysloc/db';
+import { CodigoErro, type Logger } from '@sysloc/shared';
 import {
   type ConfiguracaoDeMora,
   esquemaDaConfiguracaoDeMora,
   esquemaDaConfiguracaoDeMoraNova,
-} from '@sysloc/contracts';
-import type { AcessoAoBanco } from '@sysloc/db';
-import { CodigoErro, type Logger } from '@sysloc/shared';
+} from '@syslocbr/contracts';
 import type { FastifyRequest } from 'fastify';
 import { ExigeChave } from '../autenticacao/exigencia.decorator.js';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';

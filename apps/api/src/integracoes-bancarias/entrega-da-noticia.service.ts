@@ -87,7 +87,7 @@
  *
  * ⚠️ **`?? {}` não aparece em lugar nenhum deste arquivo**: `diagnostico` nulo é *"o provedor não
  * mandou campo variável nenhum"*, distinto de `{}`, e converter um no outro seria a mentira sobre a
- * origem que os docblocks de `@sysloc/contracts` e de `@sysloc/cobranca-bancaria` proíbem nos dois
+ * origem que os docblocks de `@syslocbr/contracts` e de `@sysloc/cobranca-bancaria` proíbem nos dois
  * níveis acima deste.
  *
  * ---------------------------------------------------------------------------
@@ -105,7 +105,6 @@ import type {
   PortaDeEntregaDaNoticia,
   ResultadoDaOperacaoDeEntrega,
 } from '@sysloc/cobranca-bancaria';
-import type { EstadoDaEntrega } from '@sysloc/contracts';
 import {
   type EstadoDaEntregaGravado,
   gravarDesfechoDaEntrega,
@@ -119,6 +118,7 @@ import {
   type SituacaoDaEntrega,
 } from '@sysloc/db';
 import { CodigoErro, decifrarSegredo, ErroDeAplicacao } from '@sysloc/shared';
+import type { EstadoDaEntrega } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import type { SessaoComEmpresa } from '../comum/contexto-da-sessao.js';
 import {

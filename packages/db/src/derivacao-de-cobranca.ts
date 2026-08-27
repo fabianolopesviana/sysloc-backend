@@ -127,7 +127,7 @@
 //                 `VENCIDA` com `negocio.execucao_de_rotina` medida em ZERO registros, e nenhum
 //                 dos cinco fontes desta fatia escreve estado de cobrança ou mora.
 
-import type { NaturezaDeCobranca } from '@sysloc/contracts';
+import type { NaturezaDeCobranca } from '@syslocbr/contracts';
 
 /** Quantos meses há num ano — o divisor do avanço no par (ano, mês). */
 const MESES_POR_ANO = 12;

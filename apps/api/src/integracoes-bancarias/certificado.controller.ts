@@ -153,6 +153,8 @@ import {
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
+import type { AcessoAoBanco } from '@sysloc/db';
+import { CodigoErro, criarSegredoOperavel, type Logger } from '@sysloc/shared';
 import {
   type Certificado,
   type DesfechoDoRegistroDeCertificado,
@@ -161,9 +163,7 @@ import {
   esquemaDoDesfechoDoRegistroDeCertificado,
   esquemaDoResultadoDaVerificacao,
   type ResultadoDaVerificacao,
-} from '@sysloc/contracts';
-import type { AcessoAoBanco } from '@sysloc/db';
-import { CodigoErro, criarSegredoOperavel, type Logger } from '@sysloc/shared';
+} from '@syslocbr/contracts';
 import type { FastifyRequest } from 'fastify';
 import { ExigeChave, ExigeChaves } from '../autenticacao/exigencia.decorator.js';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
@@ -381,7 +381,7 @@ export class CertificadoDoProvedorController {
         // O desfecho do ATO acompanha a projeção do certificado, e não entra nela: `esquemaDoCertificado`
         // descreve o certificado, e "foi convertido" é propriedade de tê-lo registrado. É o mesmo
         // desenho, e a mesma razão, da resposta da ativação de contrato — ver o esquema em
-        // `@sysloc/contracts`.
+        // `@syslocbr/contracts`.
         return {
           desfecho: { ...registrado, materialConvertido: preparado.convertido },
           empresaId: sessao.empresaId,

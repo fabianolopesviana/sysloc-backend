@@ -52,7 +52,7 @@
  * **Real execution boundary**: `none`. Nenhum mock — não há colaborador a dublar numa função pura.
  */
 
-import { TIPOS_DE_PESSOA } from '@sysloc/contracts';
+import { TIPOS_DE_PESSOA } from '@syslocbr/contracts';
 import { describe, expect, it } from 'vitest';
 import { comporDocumentoDoContrato } from '../src/contrato/composicao.ts';
 import type { DadosDoContratoParaDocumento, ParteDoContrato } from '../src/contrato/dados.ts';

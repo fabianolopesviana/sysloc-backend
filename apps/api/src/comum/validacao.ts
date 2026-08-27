@@ -12,7 +12,7 @@
  * O ponto único já existia; o que não existia era **um** ponto. As três bordas nascidas em T7, T8 e
  * T9 escreveram, cada uma, uma cópia byte a byte desta função, porque cada executor partiu do
  * controlador anterior e não havia lugar de onde importar. As três concordavam, e o risco era de
- * congelamento: a superfície da API fecha no marco de entrega e o `@sysloc/contracts` nasce dela, de
+ * congelamento: a superfície da API fecha no marco de entrega e o `@syslocbr/contracts` nasce dela, de
  * modo que a partir dali cada ajuste teria três pontos para acertar e **nenhum mecanismo que
  * acusasse a divergência** — e o que diverge primeiro neste molde é justamente o campo padrão e a
  * escolha entre `issues[0].path` e o caminho completo, isto é, a forma da recusa que o cliente vê.

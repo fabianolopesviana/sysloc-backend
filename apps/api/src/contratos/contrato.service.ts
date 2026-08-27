@@ -294,15 +294,6 @@
  */
 
 import { Inject, Injectable } from '@nestjs/common';
-import type {
-  AtivacaoDeContrato,
-  Contrato,
-  ContratoNovo,
-  EnvelopeDeLista,
-  EstadoDoContrato,
-  Janela,
-  SituacaoDeLocacao,
-} from '@sysloc/contracts';
 import {
   type AgregadoDoDocumentoDoContrato,
   alterarContrato,
@@ -336,6 +327,15 @@ import {
 } from '@sysloc/db';
 import { comporDocumentoDoContrato, type PortaDeRenderizacao } from '@sysloc/documentos';
 import { CodigoErro, ErroDeAplicacao } from '@sysloc/shared';
+import type {
+  AtivacaoDeContrato,
+  Contrato,
+  ContratoNovo,
+  EnvelopeDeLista,
+  EstadoDoContrato,
+  Janela,
+  SituacaoDeLocacao,
+} from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
 import { TOKEN_PORTA_DE_RENDERIZACAO } from '../configuracao/ambiente.js';
@@ -348,7 +348,7 @@ export type PaginaDeContratos = EnvelopeDeLista<Contrato>;
  * alcançou.
  *
  * ---------------------------------------------------------------------------
- * ELE NÃO É TIPO PUBLICADO, e a ausência em `@sysloc/contracts` é a decisão
+ * ELE NÃO É TIPO PUBLICADO, e a ausência em `@syslocbr/contracts` é a decisão
  * ---------------------------------------------------------------------------
  *
  * Ele mora aqui, e **não** ao lado de `esquemaDaAtivacaoDeContrato`, porque não é contrato de API: a
@@ -442,7 +442,7 @@ const CHAVE_DO_CONTRATO_VIGENTE = 'contratoVigente';
  * identidade: aceitar alteração num estado a mais não autorizaria ativar a partir dele. Uma constante
  * só faria a segunda regra mudar junto com a primeira, em silêncio, num campo que o cliente lê.
  * `ESTADO_CANCELAVEL` é a evidência de que a coincidência era mesmo acidental — ele parte de `ATIVO`.
- * A anotação é `EstadoDoContrato` porque literal fora da união fechada de `@sysloc/contracts` **não
+ * A anotação é `EstadoDoContrato` porque literal fora da união fechada de `@syslocbr/contracts` **não
  * compila**.
  *
  * O nome do ato viaja em `detalhes.transicaoPedida`, e é o que separa as recusas entre si: as quatro
@@ -474,7 +474,7 @@ const CANCELAMENTO = 'CANCELAMENTO';
  *
  * **Ela existe porque o irmão de `transicaoPedida` dentro do MESMO `detalhes` já tinha o compilador
  * atrás dele, e ele não tinha.** `estadoAtual` é `EstadoDoContrato`, união fechada de
- * `@sysloc/contracts`; `transicaoPedida` era `string` solto, e os dois viajam no mesmo objeto da
+ * `@syslocbr/contracts`; `transicaoPedida` era `string` solto, e os dois viajam no mesmo objeto da
  * mesma recusa, os dois publicados ao cliente. Um `'CANCELAMETO'` compilava, passava `pnpm build` e
  * `pnpm lint`, e só era pego pelo caso E2E — rede real, mas tardia, e dependente de o executor não
  * copiar o erro de digitação do produto para o teste. É o débito **D34 (F2/T7)**, fechado aqui: a
@@ -565,7 +565,7 @@ function efeitosDaAtivacao(cobrancasGeradas: number): AtivacaoDeContrato['efeito
  * implementador escreveu primeiro.
  *
  * Os dois limites do dia de vencimento são escritos aqui, e **não** importados de
- * `@sysloc/contracts`: eles são privados daquele módulo, e a fonte declarada desta conferência é o
+ * `@syslocbr/contracts`: eles são privados daquele módulo, e a fonte declarada desta conferência é o
  * oráculo (`dia_vencimento < 1 or dia_vencimento > 28`), não o esquema da borda. Os dois valores
  * coincidem porque **derivam do mesmo lugar**, e o `check` do banco é a terceira materialização.
  */

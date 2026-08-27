@@ -235,7 +235,7 @@ const CAMINHO_DA_PAGINA_DE_CONFIRMACAO = '/confirmar-email';
 /**
  * O corpo — e **apenas** ele — que o sucesso do ato do titular publica.
  *
- * Literal, e não importado de `@sysloc/contracts`: derivá-lo do mesmo esquema que o SUT publica faria
+ * Literal, e não importado de `@syslocbr/contracts`: derivá-lo do mesmo esquema que o SUT publica faria
  * a asserção concordar com ele, e uma troca do contrato deixaria de reprovar caso algum.
  */
 const CORPO_DA_CONFIRMACAO = { confirmado: true } as const;

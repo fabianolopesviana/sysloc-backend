@@ -153,7 +153,7 @@ import type {
   EmissaoEmLote,
   EstadoDaEmissaoEmLote,
   ItemDoLote,
-} from '@sysloc/contracts';
+} from '@syslocbr/contracts';
 import type { Fragment, TransactionSql } from 'postgres';
 // O fragmento da empresa do contexto tem lar único em `./contexto-de-escrita.ts`; ele **não é filtro**
 // (nenhuma leitura deste arquivo o aplica, porque as duas tabelas já têm política), e existe só para a
@@ -352,7 +352,7 @@ const VIOLACAO_DE_UNICIDADE = '23505';
  * Os três estados que esta porta **publica**, nomeados uma vez cada.
  *
  * A anotação é `EstadoDaEmissaoEmLote` de propósito: literal fora da união fechada de
- * `@sysloc/contracts` **não compila** (ADR-0016), e é isso que impede um estado inventado de chegar ao
+ * `@syslocbr/contracts` **não compila** (ADR-0016), e é isso que impede um estado inventado de chegar ao
  * recurso publicado. Eles não têm enum no banco, e não devem ter — ver o cabeçalho.
  */
 const ESTADO_EM_ANDAMENTO: EstadoDaEmissaoEmLote = 'EM_ANDAMENTO';

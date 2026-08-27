@@ -241,7 +241,7 @@ Entidades: `Conjunto`, `Imovel`, `Comodo`, `Locador`, `Locatario`, `Fiador`, `Co
 4. Regras portadas: **metragem** (Server Script `Cálculo metragem imóvel`), **ativação de
    contrato** (`contrato_ativacao`, 340 LOC), **cancelamento em cascata**
    (`contrato_cancelamento`, 174 LOC).
-5. `@sysloc/contracts`: primeiros contratos ts-rest + Zod, no modelo de domínio camelCase que o
+5. `@syslocbr/contracts`: primeiros contratos ts-rest + Zod, no modelo de domínio camelCase que o
    frontend já usa internamente.
 
 **Aceitação**: a caracterização de metragem passa contra a implementação nova · criar `Contrato`
@@ -492,7 +492,7 @@ B · rotina parada gera alerta · instalador roda duas vezes sem duplicar entrad
 > local do usuário (decisão 4). Não há como rodar `/agent-spec-*-run-tasks` sobre ele daqui.
 >
 > Esta fatia **não tem execução aqui**. Ela entrega: o **handoff de contrato**
-> (`/agent-spec-backend-contract-handoff`), o **`@sysloc/contracts` publicado** e uma
+> (`/agent-spec-backend-contract-handoff`), o **`@syslocbr/contracts` publicado** e uma
 > **especificação executável por arquivo** — mudanças descritas com trechos prontos e lista de
 > verificação. A execução acontece na máquina local. Reavaliar depois do handoff se vale virar um
 > projeto agent-spec próprio no repositório do React.
@@ -516,7 +516,7 @@ B · rotina parada gera alerta · instalador roda duas vezes sem duplicar entrad
 Dimensionado pelo relatório do frontend: **~24 arquivos de religação mecânica + ~12 de refatoração
 de vazamento + 10 fluxos redesenhados + 67 arquivos de teste com fixtures novas**.
 
-1. **`@sysloc/contracts` publicado** no GitHub privado. O React importa tipos e cliente ts-rest —
+1. **`@syslocbr/contracts` publicado** no GitHub privado. O React importa tipos e cliente ts-rest —
    `apiEndpointContracts.test.ts` (que trava 35 paths ERPNext) fica desnecessário.
 2. Camada de dados religada; **os ~36 mapeadores são deletados**.
 3. Vazamento removido: `docstatus` sai dos tipos de domínio e da regra de status; `putDoctype` e

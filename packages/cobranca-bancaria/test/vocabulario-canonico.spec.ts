@@ -21,7 +21,7 @@
  * | CA-13    | CT-809 | Nenhum fonte de `src/` alcança a camada de dados — nem por `@sysloc/db` (ou
  * |          | (d)    | subpath dele), nem por caminho relativo que resolva dentro de
  * |          |        | `packages/db` —, e os pacotes do monorepo que o domínio importa são
- * |          |        | **exatamente** `@sysloc/contracts` e `@sysloc/shared` (ADR-0025). |
+ * |          |        | **exatamente** `@syslocbr/contracts` e `@sysloc/shared` (ADR-0025). |
  * | CA-13    | CT-834 | Nenhum termo do provedor entra no vocabulário publicado — nem nas chaves dos
  * |          |        | tipos declarados por este pacote, nem nas chaves dos esquemas de
  * |          |        | `packages/contracts/src/integracao-bancaria.ts`, nem nos literais dos dois
@@ -35,7 +35,7 @@
  * |          |        | tem exatamente essas chaves, e nenhum nome de tipo, membro ou literal de
  * |          |        | união que atravessa a porta contém termo do provedor. |
  * | CA-14    | CT-835 | `MEIOS_DE_RECEBIMENTO` publica exatamente `['BOLETO','PIX']`, nesta ordem, e
- * |          |        | é **importado** de `@sysloc/contracts` — nunca redeclarado aqui, o que é
+ * |          |        | é **importado** de `@syslocbr/contracts` — nunca redeclarado aqui, o que é
  * |          |        | provado por varredura de **ligação local** sobre o texto de `src/`. |
  * | CA-14    | CT-835 | O conjunto de operações sobre `PIX` é **vazio**: nenhum símbolo declarado ou
  * |          | (b)    | publicado por este pacote opera sobre ele. Pix é declarado, não
@@ -131,7 +131,7 @@
  *
  * O campo por onde texto arbitrário atravessava a porta — `ResultadoDaVerificacaoDeIdentidade.detalhe`
  * — **deixou de ser `string`**: ele é a união fechada `DetalheDaVerificacao`, derivada da declaração
- * única de `@sysloc/contracts`, e quem cobra a restrição é o compilador, não mais a prosa. Era o
+ * única de `@syslocbr/contracts`, e quem cobra a restrição é o compilador, não mais a prosa. Era o
  * débito **D27 · F4/T8**, fechado nesta fatia. O que continua fora de alcance, e por
  * decisão, é o `motivo` que o provedor informa: ele é **texto opaco** por exigência da RN-15, e nada
  * o interpreta — é justamente isso que torna um motivo desconhecido inócuo.
@@ -152,7 +152,7 @@ import {
   esquemaDoCertificadoNovo,
   esquemaDoResultadoDaVerificacao,
   MEIOS_DE_RECEBIMENTO,
-} from '@sysloc/contracts';
+} from '@syslocbr/contracts';
 import { describe, expect, it } from 'vitest';
 import type { AdaptadorCobrancaBancaria } from '../src/porta-de-cobranca.ts';
 import type { PortaDeEntregaDaNoticia } from '../src/porta-de-entrega-da-noticia.ts';
@@ -227,7 +227,7 @@ const MEIOS_DECLARADOS = ['BOLETO', 'PIX'] as const;
  * O nome do enum que este pacote **consome e não redeclara** (ADR-0016).
  *
  * A igualdade do enum contra `MEIOS_DECLARADOS` prova o **conteúdo**, e ela não alcança a metade que
- * importa aqui: ela assere o objeto **importado** de `@sysloc/contracts` e, por construção, ficaria
+ * importa aqui: ela assere o objeto **importado** de `@syslocbr/contracts` e, por construção, ficaria
  * verde ao lado de uma redeclaração local que sombreasse o símbolo em `src/`. Quem prova a segunda
  * metade é a varredura de ligação local sobre o texto dos fontes — a única das duas que **só este
  * pacote** pode fazer.
@@ -260,7 +260,7 @@ const NOME_DO_ENUM_IMPORTADO = 'MEIOS_DE_RECEBIMENTO';
  * da task dizem *décimo*, e é o que a contagem confirma.
  *
  * ⚠️ `BOLETO` **não** entra nesta lista, e a ausência é deliberada: ele é vocabulário do produto
- * (RN-11), publicado por `@sysloc/contracts`, e incluí-lo faria a varredura reprovar o próprio
+ * (RN-11), publicado por `@syslocbr/contracts`, e incluí-lo faria a varredura reprovar o próprio
  * vocabulário canônico que ela existe para proteger.
  */
 const TERMOS_DO_PROVEDOR = [
@@ -480,8 +480,14 @@ const DIRETORIO_DA_CAMADA_DE_DADOS = '/packages/db/';
  * lados da igualdade. É a metade **positiva** da barreira que a T10 precisou repor — a varredura
  * abaixo nomeia a camada de dados quando ela aparece, e esta lista reprova **qualquer** pacote novo,
  * inclusive um que alcance o dado por outro nome.
+ *
+ * ⚠️ **A ordem é LEXICOGRÁFICA, não estética nem semântica.** `pacotesDoMonorepoImportados` devolve
+ * `.sort()`, e a comparação é `toEqual`, que é sensível à ordem. Desde o rename de 2026-08-27 os
+ * dois escopos divergem no 8º caractere — `'/'` (0x2F) em `@sysloc/shared` contra `'b'` (0x62) em
+ * `@syslocbr/contracts` —, de modo que **`@sysloc/shared` vem PRIMEIRO**. Enquanto o pacote se
+ * chamava `@sysloc/contracts`, a ordem era a inversa. Não a "corrija" de volta.
  */
-const PACOTES_DO_DOMINIO = ['@sysloc/contracts', '@sysloc/shared'] as const;
+const PACOTES_DO_DOMINIO = ['@sysloc/shared', '@syslocbr/contracts'] as const;
 
 /**
  * Um fonte sintético que alcança a camada de dados pelas duas maneiras — o defeito que o CT-809 (d)
@@ -492,7 +498,7 @@ const PACOTES_DO_DOMINIO = ['@sysloc/contracts', '@sysloc/shared'] as const;
  * do próprio pacote. O que reprova é o especificador de módulo, não a menção ao nome.
  */
 const FONTE_DE_CONTROLE_COM_ALCANCE_AOS_DADOS = `
-import { esquemaDoCertificado } from '@sysloc/contracts';
+import { esquemaDoCertificado } from '@syslocbr/contracts';
 /** Um comentário que cita @sysloc/db e ../../db/src/cobranca.js sem importar nada. */
 import type { TrabalhoDoLote } from './emissao-em-lote.js';
 import { abrirEmissaoEmLote } from '@sysloc/db';
@@ -764,7 +770,7 @@ export * as tres from './tres.js';
  * confundiria com a redeclaração: o que reprova é a **ligação**, não a citação do nome.
  */
 const FONTE_DE_CONTROLE_COM_REDECLARACAO = `
-import { MEIOS_DE_RECEBIMENTO } from '@sysloc/contracts';
+import { MEIOS_DE_RECEBIMENTO } from '@syslocbr/contracts';
 /** Um comentário que cita const MEIOS_DE_RECEBIMENTO sem declarar nada. */
 const MEIOS_DE_RECEBIMENTO = ['BOLETO', 'PIX', 'DINHEIRO'] as const;
 `;
@@ -1015,11 +1021,29 @@ function alcancesDaCamadaDeDados(fontes: readonly FonteDoPacote[]): string[] {
   );
 }
 
+/**
+ * Os escopos npm sob os quais um membro deste monorepo pode se chamar.
+ *
+ * ⚠️ **São DOIS, e não um.** O workspace nasceu inteiro sob `@sysloc`, e em 2026-08-27 o pacote de
+ * contratos passou a `@syslocbr/contracts` — o GitHub Packages exige que o escopo case com o login
+ * do dono, e o login `sysloc` pertence a terceiro desde 2019 (medido por API). Os demais membros
+ * nunca vão a registry algum (são resolvidos por `workspace:*`) e seguem em `@sysloc`.
+ *
+ * DECISÃO FECHADA — intervenção dirigida · 2026-08-27
+ * O QUÊ: o reconhecimento de "membro do monorepo" sai deste roster, e de nenhum outro ponto.
+ * POR QUÊ: o filtro anterior era o literal `'@sysloc/'` embutido na função. Ele deixou de enxergar
+ *          `@syslocbr/contracts` no instante do rename, e a asserção passou a comparar uma lista
+ *          de UM contra a esperada de DOIS — cegueira silenciosa, não medição errada.
+ * REVERTER EXIGE: provar que o monorepo voltou a ter escopo único, isto é, que nenhum membro é
+ *                 publicado sob dono distinto do dos demais.
+ */
+const ESCOPOS_DO_MONOREPO = ['@sysloc/', '@syslocbr/'] as const;
+
 /** Os pacotes do monorepo que os fontes dados importam, sem repetição e em ordem determinística. */
 function pacotesDoMonorepoImportados(fontes: readonly FonteDoPacote[]): string[] {
   const especificadores = fontes.flatMap((fonte) => especificadoresDeModulo(fonte.texto));
   const pacotes = especificadores
-    .filter((especificador) => especificador.startsWith('@sysloc/'))
+    .filter((especificador) => ESCOPOS_DO_MONOREPO.some((e) => especificador.startsWith(e)))
     .map((especificador) => especificador.split('/').slice(0, 2).join('/'));
   return [...new Set(pacotes)].sort();
 }
@@ -1534,7 +1558,7 @@ describe('CT-933 — a porta de cobrança declara quatro operações, e nenhuma 
 describe('CT-835 — o meio de recebimento é declarado, e o pix não tem operação', () => {
   it('o enum publica exatamente os meios declarados, na ordem publicada', () => {
     // Igualdade de conjunto E de ordem, contra a lista escrita por extenso: o enum é importado de
-    // `@sysloc/contracts`, que é a fonte única (ADR-0016), e nunca redeclarado neste pacote.
+    // `@syslocbr/contracts`, que é a fonte única (ADR-0016), e nunca redeclarado neste pacote.
     expect([...MEIOS_DE_RECEBIMENTO]).toEqual([...MEIOS_DECLARADOS]);
   });
 

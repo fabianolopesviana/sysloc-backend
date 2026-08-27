@@ -36,7 +36,7 @@
  * |          |             | `negocio.cobranca['id','empresa_id']` —; as duas restrições
  * |          |             | `UNIQUE` da política são `(id, empresa_id)` e `(empresa_id)`; os
  * |          |             | três enums têm rótulos e ORDEM estritamente iguais aos arranjos
- * |          |             | congelados de `@sysloc/contracts`; o índice da trava é PARCIAL em
+ * |          |             | congelados de `@syslocbr/contracts`; o índice da trava é PARCIAL em
  * |          |             | `desfecho = 'ENVIADA'` e o do histórico não é, os dois com
  * |          |             | `criado_em DESC`; os padrões de coluna são `false`, `0`, `1`,
  * |          |             | `00:00`, `23:59` e `EMAIL`; `sysloc_app` tem `USAGE` nos três
@@ -149,7 +149,7 @@ import {
   CANAIS_DE_AVISO,
   DESFECHOS_DO_AVISO,
   esquemaDaPoliticaDeAviso,
-} from '@sysloc/contracts';
+} from '@syslocbr/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { abrirConexao } from '../src/conexao.ts';
 import { type BancoMigrado, bancoEfemero } from './banco-efemero.ts';
@@ -1254,7 +1254,7 @@ describe('CT-608 — as tabelas da régua nascem isoladas, e o catálogo é quem
 
         // --- 5. Os três enums, com rótulos e ORDEM vindos do CONTRATO ----------------------
         //
-        // O esperado é o arranjo congelado de `@sysloc/contracts` — nunca uma lista redigitada aqui.
+        // O esperado é o arranjo congelado de `@syslocbr/contracts` — nunca uma lista redigitada aqui.
         // É o que fecha a ADR-0016 nas duas pontas: o schema Drizzle deriva do contrato e a
         // asserção confere contra a MESMA fonte, de modo que um rótulo acrescentado só no banco (ou
         // só no contrato) reprova. A ORDEM é conteúdo: um enum do PostgreSQL a guarda, e é ela que

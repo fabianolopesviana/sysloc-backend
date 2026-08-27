@@ -623,7 +623,7 @@
  * De lá **não** sai constante alguma — nem os 32 bytes do sorteio, nem o prazo de validade —, e a
  * ausência é deliberada: são o mecanismo interno da emissão, pelo mesmo critério de
  * `empresaDoContexto` e de `colunasDaCobranca`. O que a borda precisa saber sobre a forma do segredo
- * já é contrato publicado, e vive em `@sysloc/contracts`.
+ * já é contrato publicado, e vive em `@syslocbr/contracts`.
  *
  * `./derivacao-de-contrato.js` entra pelo MESMO critério de `somarMetragem`, e não pelo das portas:
  * as duas funções são **puras** sobre valor já em mãos — não recebem executor, não tocam o banco,
@@ -690,7 +690,7 @@
  * De lá **não** sai `FORMATO_DA_COMPETENCIA`, e a ausência é deliberada: ele é o molde de `to_char`
  * com que aquele módulo pergunta a competência ao banco — mecanismo interno da composição, pelo mesmo
  * critério de `empresaDoContexto` e de `colunasDaCobranca`. O que se pode saber de fora sobre a
- * **forma** do identificador já é contrato publicado, e vive em `@sysloc/contracts`: as duas larguras
+ * **forma** do identificador já é contrato publicado, e vive em `@syslocbr/contracts`: as duas larguras
  * são importadas de lá, e `LARGURA_DO_CONTADOR_BANCARIO` é o nome com que este pacote publica a do
  * contador para quem for decompor o identificador.
  *

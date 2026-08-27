@@ -653,7 +653,7 @@
  *
  * Todos aplicados ao fonte de produção e invocados pelo **script do pacote**
  * (`pnpm --filter @sysloc/api test`), nunca por `vitest run` avulso — este arquivo carrega
- * `@sysloc/auth`, `@sysloc/db` e `@sysloc/contracts` pela fronteira do pacote. **Controle**:
+ * `@sysloc/auth`, `@sysloc/db` e `@syslocbr/contracts` pela fronteira do pacote. **Controle**:
  * `21 arquivos, 151 casos, 0 falhas`.
  *
  *   * **MT8-1 · a SEGUNDA escrita some** (`definirSituacaoDeLocacaoDoImovel` neutralizada em
@@ -703,7 +703,7 @@
  *
  * Todos aplicados ao fonte de produção e invocados pelo **script do pacote**
  * (`pnpm --filter @sysloc/api test`), nunca por `vitest run` avulso — este arquivo carrega
- * `@sysloc/auth`, `@sysloc/db` e `@sysloc/contracts` pela fronteira do pacote. **Controle**:
+ * `@sysloc/auth`, `@sysloc/db` e `@syslocbr/contracts` pela fronteira do pacote. **Controle**:
  * `21 arquivos, 146 casos, 0 falhas`.
  *
  *   * **MT7-1 · o serviço INLINA a multiplicação** (`derivarValorTotal(…)` →
@@ -749,7 +749,7 @@
  * A `.claude/rules/testing-stack.md` e o P4 de `.claude/rules/nao-regressao.md` exigem demonstrar que
  * a prova **reprova** com o defeito reintroduzido. Aplicados ao fonte de produção, com a suíte
  * invocada pelo **script do pacote** (`pnpm --filter @sysloc/api test`), nunca por `vitest run`
- * avulso — este arquivo carrega `@sysloc/auth`, `@sysloc/db` e `@sysloc/contracts` pela fronteira do
+ * avulso — este arquivo carrega `@sysloc/auth`, `@sysloc/db` e `@syslocbr/contracts` pela fronteira do
  * pacote, e um `vitest run` leria o `dist/` da compilação anterior.
  *
  *   * **controle** — árvore íntegra: `21 arquivos, 138 casos, 0 falhas`;
@@ -1021,7 +1021,7 @@ const ACAO_DE_CANCELAMENTO: ChaveDoCatalogo = 'ACAO:cancelar_contrato';
 /**
  * A forma do código legível — `CTR-{ano}-{5 dígitos}` (RN-04).
  *
- * Escrita por extenso, e **não** importada de `@sysloc/contracts`: derivá-la da mesma expressão que o
+ * Escrita por extenso, e **não** importada de `@syslocbr/contracts`: derivá-la da mesma expressão que o
  * SUT usa para validar faria a asserção concordar consigo mesma, e a largura de cinco dígitos — que
  * carrega marcador `DECISÃO FECHADA` no pacote — deixaria de ser afirmada por este lado.
  */
@@ -4441,7 +4441,7 @@ async function conceder(
 /**
  * Um contrato como a API o publica.
  *
- * Declarado aqui, e não importado de `@sysloc/contracts`: o conjunto de chaves é o que os casos
+ * Declarado aqui, e não importado de `@syslocbr/contracts`: o conjunto de chaves é o que os casos
  * asserem por igualdade, e derivá-lo do tipo do SUT faria a asserção concordar consigo mesma. **Não
  * há `id`**, e a ausência é a ADR-0017 — a chave exposta é o `codigo`.
  */
@@ -4465,7 +4465,7 @@ interface ContratoPublicado {
 /**
  * A resposta da ativação: o contrato no root **mais** a declaração de efeito.
  *
- * Declarada aqui, e não importada de `@sysloc/contracts`, pela razão de {@link ContratoPublicado}: o
+ * Declarada aqui, e não importada de `@syslocbr/contracts`, pela razão de {@link ContratoPublicado}: o
  * conjunto de chaves é o que os casos asserem por igualdade, e derivá-lo do tipo do SUT faria a
  * asserção concordar consigo mesma.
  */
@@ -4489,7 +4489,7 @@ interface ParcelaGravada {
 /**
  * Uma cobrança como a API a publica — **dezoito campos**.
  *
- * Declarada aqui, e não importada de `@sysloc/contracts`, pela razão de {@link ContratoPublicado}: é o
+ * Declarada aqui, e não importada de `@syslocbr/contracts`, pela razão de {@link ContratoPublicado}: é o
  * conjunto de chaves que o `CT-530` compara por igualdade de objeto, e derivá-lo do tipo do SUT faria a
  * asserção concordar consigo mesma. **Não há `id`**, e a ausência é a ADR-0017 — a chave exposta é o
  * `codigo`, porque a cobrança tem série declarada.
@@ -4534,7 +4534,7 @@ interface AtivacaoPublicada extends ContratoPublicado {
 /**
  * Um imóvel como a API o publica — o corpo que o `CT-434` compara por igualdade.
  *
- * Declarado aqui, e não importado de `@sysloc/contracts`, pela razão de {@link ContratoPublicado}: o
+ * Declarado aqui, e não importado de `@syslocbr/contracts`, pela razão de {@link ContratoPublicado}: o
  * conjunto de chaves é o que o caso afirma, e derivá-lo do tipo do SUT faria a asserção concordar
  * consigo mesma. Os campos derivados entram como `unknown` porque o que este arquivo faz com eles é
  * **carregá-los intactos** de uma comparação a outra — quem os afirma campo a campo é

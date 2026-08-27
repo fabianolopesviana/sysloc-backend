@@ -36,7 +36,6 @@
  */
 
 import { Inject, Injectable } from '@nestjs/common';
-import type { ConferenciaBancaria } from '@sysloc/contracts';
 import { abrirConferencia } from '@sysloc/db';
 import {
   type CargaDaConferenciaBancaria,
@@ -44,6 +43,7 @@ import {
   ErroDeAplicacao,
   type Logger,
 } from '@sysloc/shared';
+import type { ConferenciaBancaria } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { type ProdutorDeFila, TOKEN_PRODUTOR_DE_FILA } from '../comum/produtor-de-fila.js';
 import { TOKEN_LOGGER } from '../configuracao/ambiente.js';

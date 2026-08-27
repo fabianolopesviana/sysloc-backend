@@ -66,7 +66,7 @@
  * o mesmo par que a guarda e o controlador usam em operação.
  */
 
-import { esquemaDaPoliticaDeAviso, type PoliticaDeAvisoNova } from '@sysloc/contracts';
+import { esquemaDaPoliticaDeAviso, type PoliticaDeAvisoNova } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as contextoDeTenant from '../src/contexto.ts';

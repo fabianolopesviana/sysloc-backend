@@ -170,7 +170,7 @@ mostrando a próxima execução, log no journald e `OnFailure=` disparando alert
 │   └── worker/       @sysloc/worker   — BullMQ: régua de cobrança, sync, PDFs, e-mail
 ├── packages/
 │   ├── db/           @sysloc/db       — schema Drizzle, migrations, políticas RLS, seed
-│   ├── contracts/    @sysloc/contracts— ts-rest + Zod (o pacote que o React consome)
+│   ├── contracts/    @syslocbr/contracts— ts-rest + Zod (o pacote que o React consome)
 │   ├── domain/       @sysloc/domain   — regras puras: mora, metragem, vencimento, seu_numero
 │   ├── banking/      @sysloc/banking  — porta AdaptadorCobranca + adapter Sicoob (ADR-0001)
 │   ├── auth/         @sysloc/auth     — better-auth, contexto de empresa, RBAC 10×7
@@ -206,7 +206,7 @@ Três formas de atender o requisito 4:
    (`FinanceiroFaturaItem`, `ContratoListItem`, `ImovelGeralItem`) — os ~36 mapeadores **somem**.
 3. **Joins vão para o servidor** — a tela Financeiro deixa de fazer 5 a 9 round-trips.
 4. **`docstatus` sai**; `status` passa a ter uma fonte só.
-5. **`@sysloc/contracts` publicado** no GitHub privado (GitHub Packages) — o React importa tipos
+5. **`@syslocbr/contracts` publicado** no GitHub privado (GitHub Packages) — o React importa tipos
    e cliente ts-rest. O `apiEndpointContracts.test.ts` (que trava 35 paths ERPNext) fica
    desnecessário: o compilador garante.
 

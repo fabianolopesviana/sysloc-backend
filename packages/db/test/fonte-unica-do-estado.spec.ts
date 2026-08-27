@@ -225,7 +225,7 @@ const FONTES_COM_ROTULO_ESPERADAS: readonly string[] = ['packages/contracts/src/
  * As seis últimas são os campos de conciliação bancária, que nascem nulos e **só a F4** publica.
  *
  * A vigésima terceira, `identificador_no_provedor`, entrou pela migração `0017` (T2 da fatia
- * `emissao-e-conciliacao`) e é INTERNA: nenhum esquema de `@sysloc/contracts` a publica, e ela não é
+ * `emissao-e-conciliacao`) e é INTERNA: nenhum esquema de `@syslocbr/contracts` a publica, e ela não é
  * coluna de estado — é a chave com que o SaaS se apresenta ao provedor, única GLOBALMENTE
  * (ADR-0033). Ela entra aqui porque a lista é comparada por igualdade contra o catálogo, e o
  * `ADD COLUMN` a põe no fim.

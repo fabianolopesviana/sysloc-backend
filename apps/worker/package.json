@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@sysloc/cobranca-bancaria": "workspace:*",
-    "@sysloc/contracts": "workspace:*",
+    "@syslocbr/contracts": "workspace:*",
     "@sysloc/db": "workspace:*",
     "@sysloc/documentos": "workspace:*",
     "@sysloc/regua": "workspace:*",

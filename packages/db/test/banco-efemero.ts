@@ -40,7 +40,7 @@
 
 import { randomBytes } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
-import type { PoliticaDeAvisoNova } from '@sysloc/contracts';
+import type { PoliticaDeAvisoNova } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho DISPARADO nesta task (2026-08-02)
 // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o código abaixo.)

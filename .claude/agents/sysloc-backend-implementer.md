@@ -36,7 +36,7 @@ a ordem é: **ADR ativa > Protocolo Antirregressão > este documento > seu insti
 ```
 apps/api      @sysloc/api      NestJS 11 + Fastify 5 · controladores, serviços, guardas, filtro global
 apps/worker   @sysloc/worker   BullMQ 5 · consumidor da fila persistente
-packages/contracts  @sysloc/contracts  Zod 4 puro — fonte única do contrato (ADR-0016). ZERO deps do produto
+packages/contracts  @syslocbr/contracts  Zod 4 puro — fonte única do contrato (ADR-0016). ZERO deps do produto
 packages/db         @sysloc/db         Drizzle 0.45 + postgres.js 3.4 · os dois schemas, migrações, funções de domínio
 packages/auth       @sysloc/auth       better-auth 1.6 · admissão de sessão, senha, bloqueio, matriz de perfil
 packages/shared     @sysloc/shared     pino 10 · `ErroDeAplicacao`, `CodigoErro`, logger, ambiente

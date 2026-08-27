@@ -385,7 +385,7 @@ async function exigirCobrancaAlcancavel(
  * `identificador_no_provedor` é gravado **aqui**, junto dos demais, e não numa escrita anterior ou
  * posterior: ele é a chave por onde a fatia (iii) casa a notificação recebida com a empresa dona da
  * cobrança, e uma segunda instrução deixaria a janela em que o boleto existe e a chave de correlação
- * não. Ele é **interno** e não é publicado por esquema algum de `@sysloc/contracts` — ver
+ * não. Ele é **interno** e não é publicado por esquema algum de `@syslocbr/contracts` — ver
  * {@link BoletoEmitido}.
  *
  * A unicidade dele é **global** (`cobranca_identificador_no_provedor_key`, sem `empresa_id`, ADR-0033),

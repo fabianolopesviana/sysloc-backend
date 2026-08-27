@@ -1244,7 +1244,7 @@ interface SessaoPublicada {
 /**
  * Uma linha da trilha como a rota a publica — as **cinco** chaves, escritas à mão.
  *
- * Ele descreve o corpo observado, e não é importado de `@sysloc/contracts`: o caso o assere por
+ * Ele descreve o corpo observado, e não é importado de `@syslocbr/contracts`: o caso o assere por
  * igualdade, e derivá-lo do tipo do SUT faria a asserção concordar consigo mesma.
  */
 interface EventoPublicado {

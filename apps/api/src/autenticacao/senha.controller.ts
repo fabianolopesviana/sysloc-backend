@@ -277,7 +277,7 @@ export class SenhaController {
   // caminho de ACEITAÇÃO. O `x-retry-after` que o limitador escreve existe na INSTÂNCIA do arcabouço
   // (é o que `packages/auth/test/bloqueio.spec.ts` observa) e morre nessa travessia; anunciá-lo aqui
   // descreveria uma resposta que o cliente não recebe, e este texto vira o documento OpenAPI, o
-  // `@sysloc/contracts` e o handoff do frontend. A ADR-0012 fixa o envelope no CORPO e não fala de
+  // `@syslocbr/contracts` e o handoff do frontend. A ADR-0012 fixa o envelope no CORPO e não fala de
   // cabeçalhos — nada se perde.
   @ApiTooManyRequestsResponse({
     description:

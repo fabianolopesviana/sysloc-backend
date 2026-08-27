@@ -64,8 +64,8 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import type { ConfiguracaoDeMora, ConfiguracaoDeMoraNova } from '@sysloc/contracts';
 import { gravarConfiguracaoDeMora, lerConfiguracaoDeMora } from '@sysloc/db';
+import type { ConfiguracaoDeMora, ConfiguracaoDeMoraNova } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 
 @Injectable()

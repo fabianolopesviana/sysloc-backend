@@ -134,7 +134,7 @@ import {
   TIPOS_DE_EVENTO_BANCARIO,
   TIPOS_DE_IMOVEL,
   TIPOS_DE_PESSOA,
-} from '@sysloc/contracts';
+} from '@syslocbr/contracts';
 import { sql } from 'drizzle-orm';
 import {
   boolean,
@@ -298,7 +298,7 @@ export const acessoUsuarioPermissao = negocio
 // O domínio de locação — as seis entidades de cadastro da fatia
 // ===========================================================================
 //
-// Os três enums abaixo derivam dos literais de `@sysloc/contracts`, e a direção da dependência é
+// Os três enums abaixo derivam dos literais de `@syslocbr/contracts`, e a direção da dependência é
 // deliberada: o contrato é **folha** (ADR-0016), e é ele que o frontend importa no marco de entrega
 // do backend. Declarados aqui e importados de lá, o contrato precisaria conhecer `@sysloc/db` — e o
 // React arrastaria `drizzle-orm` e `postgres` para saber o tipo de um imóvel. Declarados lá e
@@ -356,7 +356,7 @@ export const tipoPessoa = negocio.enum('tipo_pessoa', TIPOS_DE_PESSOA);
  * É uma **função** que devolve as colunas, e não uma constante compartilhada, porque cada tabela
  * precisa das **próprias** instâncias de construtor de coluna — uma instância partilhada seria
  * atribuída a duas tabelas e a segunda sobrescreveria a primeira. É a mesma forma, e pela mesma
- * razão de fonte única, que `camposDeEndereco()` de `@sysloc/contracts` adota do lado do contrato.
+ * razão de fonte única, que `camposDeEndereco()` de `@syslocbr/contracts` adota do lado do contrato.
  *
  * `complemento` é o único anulável, exatamente como no contrato.
  */
@@ -531,7 +531,7 @@ export const comodo = negocio
  * As três tabelas têm a **mesma forma**: o que as separa é a rota e o papel, não o corpo (a mesma
  * pessoa do mundo pode existir nos três papéis, e o documento é único **por papel** dentro da
  * empresa). Escrever quinze colunas três vezes criaria três fontes do mesmo fato, e a primeira
- * emenda a uma delas já as faria divergir — é a razão pela qual `@sysloc/contracts` tem **um**
+ * emenda a uma delas já as faria divergir — é a razão pela qual `@syslocbr/contracts` tem **um**
  * `esquemaDePessoaNova` para os três.
  *
  * As restrições ficam de fora desta função, e não é descuido: cada tabela nomeia as suas com o
@@ -854,7 +854,7 @@ export const contratoFiador = negocio
 // A cobrança — o fato financeiro, e a segunda entidade com série declarada
 // ===========================================================================
 //
-// Os dois enums abaixo derivam dos literais de `@sysloc/contracts`, pela mesma razão e na mesma
+// Os dois enums abaixo derivam dos literais de `@syslocbr/contracts`, pela mesma razão e na mesma
 // direção dos quatro anteriores (ADR-0016): o contrato é **folha**, e é ele que o frontend importa
 // no marco de entrega. A ORDEM dos rótulos é conteúdo — um enum do PostgreSQL guarda a ordem, e é
 // ela que governa comparação e ordenação do tipo.
@@ -903,7 +903,7 @@ export const statusCobranca = negocio.enum('status_cobranca', ESTADOS_DA_COBRANC
  *
  * Os seis campos de conciliação bancária (`numero_do_titulo_no_provedor`, `linha_digitavel`,
  * `codigo_barras`, `data_credito`, `valor_creditado`, `boleto_arquivo`) nascem **nulos e sem
- * produtor**: nenhuma rota desta fatia os escreve, e nenhum esquema de `@sysloc/contracts` os
+ * produtor**: nenhuma rota desta fatia os escreve, e nenhum esquema de `@syslocbr/contracts` os
  * publica. É a F4 que os preenche, e tê-los aqui desde já é o que evita uma migração de coluna
  * sobre tabela com dado.
  */
@@ -1013,7 +1013,7 @@ export const cobranca = negocio
        * emitida"*, e o PostgreSQL não compara nulos entre si numa restrição única — as não emitidas
        * não disputam a unicidade umas com as outras.
        *
-       * **Nenhum esquema de `@sysloc/contracts` a publica**, e a ausência é a decisão: ela é chave de
+       * **Nenhum esquema de `@syslocbr/contracts` a publica**, e a ausência é a decisão: ela é chave de
        * casamento interno, não campo de domínio. `esquemaDaCobranca` continua com os campos que a T1
        * publicou.
        */
@@ -1165,7 +1165,7 @@ export const configuracaoDeMora = negocio
 // A régua de cobrança — a política que ela obedece, e o registro de toda tentativa
 // ===========================================================================
 //
-// Os três enums abaixo derivam dos literais de `@sysloc/contracts`, pela mesma razão e na mesma
+// Os três enums abaixo derivam dos literais de `@syslocbr/contracts`, pela mesma razão e na mesma
 // direção dos seis anteriores (ADR-0016): o contrato é **folha**, e é ele que o frontend importa no
 // marco de entrega. Declará-los aqui obrigaria o contrato a importar `@sysloc/db` para falar de
 // canal, de caminho e de desfecho. A ORDEM dos rótulos é conteúdo — um enum do PostgreSQL guarda a
@@ -1629,7 +1629,7 @@ export const certificadoDoProvedor = negocio
 // A emissão e a conciliação — a trilha do efeito, o lote e a conferência
 // ===========================================================================
 //
-// Os três enums abaixo derivam dos literais de `@sysloc/contracts`, pela mesma razão e na mesma
+// Os três enums abaixo derivam dos literais de `@syslocbr/contracts`, pela mesma razão e na mesma
 // direção dos nove anteriores (ADR-0016): o contrato é **folha**, e é ele que o frontend importa no
 // marco de entrega. A ORDEM dos rótulos é conteúdo — um enum do PostgreSQL a guarda, e é ela que
 // governa comparação e ordenação do tipo.
@@ -2272,7 +2272,7 @@ export const entregaDaNoticia = negocio
  * tem como ser conferida.
  *
  * ---------------------------------------------------------------------------
- * Os literais são declarados AQUI, e não importados de `@sysloc/contracts`
+ * Os literais são declarados AQUI, e não importados de `@syslocbr/contracts`
  * ---------------------------------------------------------------------------
  *
  * Diferente de {@link tipoDeEventoBancario} e dos enums da régua, esta união **não é publicada pela

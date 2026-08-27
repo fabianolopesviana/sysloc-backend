@@ -15,7 +15,7 @@
     "sourceMap": true,
     "types": ["node"]
   },
-  // `src/esquema/negocio.ts` importa os literais dos enums de `@sysloc/contracts` pelo
+  // `src/esquema/negocio.ts` importa os literais dos enums de `@syslocbr/contracts` pelo
   // especificador público, e o `exports` daquele manifesto resolve só para `dist/` — que o
   // `.gitignore` barra. Declarar a referência é o que faz o `tsc --build` deste pacote CONSTRUIR o
   // contrato antes de compilar aqui, inclusive sob `pnpm --filter @sysloc/db test`, que não

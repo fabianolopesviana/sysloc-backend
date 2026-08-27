@@ -40,7 +40,7 @@
  * | CA-02 | CT-1089| **T2** · `CargaDaRotinaAgendada` declara no fonte exatamente
  * |       |        | `{ empresaId, rotina }`, os dois **obrigatórios**, e `rotina` é a união
  * |       |        | **fechada** das **quatro** rotinas por empresa — conjunto distinto dos dois de
- * |       |        | `@sysloc/contracts`, e por isso afirmado por igualdade contra um
+ * |       |        | `@syslocbr/contracts`, e por isso afirmado por igualdade contra um
  * |       |        | `Record<RotinaDeTrabalho, true>` **exaustivo**, que é a metade do compilador. |
  * | CA-13 | CT-1089| **T2** · `CargaDaManutencaoDoAcervo` **não tem campo algum**, e a forma
  * |       |        | declarada é `Record<string, never>` — não `interface {}`, que foi **medida** e
@@ -864,7 +864,7 @@ describe('CT-1089 (T2) — as duas filas do trabalho agendado, e as DUAS classes
     // `Record<RotinaDeTrabalho, true>` exaustivo — de modo que ele não pode divergir da união sem
     // que o compilador reprove —, e o observado é lido do texto do SUT. A contagem é a âncora
     // antivácuo, e é ela que diz que são **quatro**: este conjunto é distinto dos de
-    // `@sysloc/contracts` (seis cadências, três publicadas) e não se deriva de nenhum deles.
+    // `@syslocbr/contracts` (seis cadências, três publicadas) e não se deriva de nenhum deles.
     expect(ROTINAS_ESPERADAS.length).toBe(4);
     expect(alternativasDeUniaoEm(fonteDoContrato, 'RotinaDeTrabalho')).toEqual(ROTINAS_ESPERADAS);
 

@@ -17,7 +17,7 @@
  * composição de cada processo que escolhe qual das duas implementações injetar. A verificação nunca
  * escolhe a de produção, e o CT-626 afirma isso por varredura.
  *
- * A dependência é uma só — `@sysloc/contracts`, o pacote folha —, e a ausência de `@sysloc/db` é a
+ * A dependência é uma só — `@syslocbr/contracts`, o pacote folha —, e a ausência de `@sysloc/db` é a
  * decisão, não uma omissão: é `@sysloc/db` que importa **daqui** os tipos de porta que ele satisfaz.
  * A aresta de volta fecha um ciclo e o Turborepo aborta antes de compilar qualquer coisa. Ver o
  * cabeçalho de `./porta-de-dados.ts`.
@@ -26,7 +26,7 @@
  * A superfície é declarada símbolo a símbolo, e não por `export *`
  * ---------------------------------------------------------------------------
  *
- * Mesma decisão, e mesma razão, de `@sysloc/contracts`: um `export *` publicaria por descuido toda
+ * Mesma decisão, e mesma razão, de `@syslocbr/contracts`: um `export *` publicaria por descuido toda
  * composição interna que um arquivo de `src/` exporte para o vizinho, e retirar depois o que se
  * publicou sem querer é mudança incompatível. Listar é o que mantém a decisão de publicar explícita.
  */

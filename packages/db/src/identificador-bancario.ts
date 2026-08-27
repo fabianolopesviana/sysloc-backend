@@ -56,7 +56,7 @@
  * A largura sai do CONTRATO — IMPORTADA, nem redigitada nem medida
  * ===========================================================================
  *
- * `@sysloc/contracts` é a fonte única da forma (ADR-0016), e as duas larguras que a compõem —
+ * `@syslocbr/contracts` é a fonte única da forma (ADR-0016), e as duas larguras que a compõem —
  * `LARGURA_DA_COMPETENCIA` e `LARGURA_DO_CONTADOR` — chegam aqui **pelo nome que aquele módulo
  * publica**. Redigitar `12` neste arquivo criaria a **segunda declaração executável do mesmo
  * formato**, que é a forma exata do débito `D14` que a fase anterior deixou aberta sobre o fuso:
@@ -69,12 +69,12 @@
  * dependência sobre um fato privado **sem interface declarada**, de modo que o dono do contrato não
  * tinha como saber que tinha um consumidor, nem como protegê-lo por caso do lado dele. Publicar as
  * duas larguras cumpriu, literalmente, a condição de saída que o marcador daquela rodada escreveu —
- * *"provar que `@sysloc/contracts` publica a largura como símbolo importável"* —, e por isso o
+ * *"provar que `@syslocbr/contracts` publica a largura como símbolo importável"* —, e por isso o
  * marcador saiu junto com a maquinaria que ele protegia. **Hoje a largura é importada: nada aqui a
  * redigita, e nada aqui a mede.**
  */
 
-import { LARGURA_DA_COMPETENCIA, LARGURA_DO_CONTADOR } from '@sysloc/contracts';
+import { LARGURA_DA_COMPETENCIA, LARGURA_DO_CONTADOR } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 
 /**
@@ -142,7 +142,7 @@ export class ErroDeContadorForaDaLargura extends Error {
  * pronta para ser registrada, transportada ou devolvida por um ramo de erro futuro. O formato é
  * imposto pelo provedor, e um identificador com uma posição a mais é recusado longe da causa.
  *
- * É a assimetria deliberada em relação a `formatarCodigoDeCobranca` de `@sysloc/contracts`, que
+ * É a assimetria deliberada em relação a `formatarCodigoDeCobranca` de `@syslocbr/contracts`, que
  * **deixa crescer** o sequencial: lá o excesso produziria colisão dentro do produto, que a restrição
  * de unicidade recusa na hora; aqui ele produziria um número que só o provedor rejeitaria.
  *

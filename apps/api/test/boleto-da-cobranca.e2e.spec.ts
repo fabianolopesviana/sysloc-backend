@@ -2486,7 +2486,7 @@ async function ajustar(
 /**
  * A cobrança como a rota a publica — os **vinte e três** campos, escritos à mão.
  *
- * Ele descreve o corpo observado, e não é importado de `@sysloc/contracts`: os casos o asserem por
+ * Ele descreve o corpo observado, e não é importado de `@syslocbr/contracts`: os casos o asserem por
  * igualdade, e derivá-lo do tipo do SUT faria a asserção concordar consigo mesma.
  */
 interface CobrancaPublicada {

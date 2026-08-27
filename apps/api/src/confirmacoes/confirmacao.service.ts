@@ -94,7 +94,6 @@
  */
 
 import { Inject, Injectable } from '@nestjs/common';
-import type { Confirmacao } from '@sysloc/contracts';
 import {
   type AcessoAoBanco,
   consumirPortador,
@@ -103,6 +102,7 @@ import {
   resolverPortador,
 } from '@sysloc/db';
 import { CodigoErro, ErroDeAplicacao, type Logger } from '@sysloc/shared';
+import type { Confirmacao } from '@syslocbr/contracts';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
 import { TOKEN_ACESSO_AO_NEGOCIO, TOKEN_LOGGER } from '../configuracao/ambiente.js';
 

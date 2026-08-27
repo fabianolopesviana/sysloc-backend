@@ -170,7 +170,7 @@
  * A `.claude/rules/testing-stack.md` e o P4 de `.claude/rules/nao-regressao.md` exigem demonstrar que
  * a prova **reprova** com o defeito reintroduzido. Aplicados ao fonte de produção, com a suíte
  * invocada pelo **script do pacote** (`pnpm --filter @sysloc/api test`), nunca por `vitest run`
- * avulso — este arquivo carrega `@sysloc/auth`, `@sysloc/db` e `@sysloc/contracts` pela fronteira do
+ * avulso — este arquivo carrega `@sysloc/auth`, `@sysloc/db` e `@syslocbr/contracts` pela fronteira do
  * pacote, e um `vitest run` leria o `dist/` da compilação anterior.
  *
  *   * **controle** — árvore íntegra: `16 arquivos, 102 casos, 0 falhas`;
@@ -1519,7 +1519,7 @@ async function conceder(
 /**
  * Um conjunto como a API o publica.
  *
- * Declarado aqui, e não importado de `@sysloc/contracts`: o conjunto de chaves é o que os casos
+ * Declarado aqui, e não importado de `@syslocbr/contracts`: o conjunto de chaves é o que os casos
  * asserem por igualdade, e derivá-lo do tipo do SUT faria a asserção concordar consigo mesma.
  */
 interface ConjuntoPublicado {
@@ -1531,7 +1531,7 @@ interface ConjuntoPublicado {
 /**
  * Um imóvel como a API o publica.
  *
- * Declarado aqui, e não importado de `@sysloc/contracts`, pela mesma razão de
+ * Declarado aqui, e não importado de `@syslocbr/contracts`, pela mesma razão de
  * {@link ConjuntoPublicado}: o conjunto de chaves é o que o `CT-310` assere por igualdade, e derivá-lo
  * do tipo do SUT faria a asserção concordar consigo mesma. As duas derivadas — `comodos` e
  * `metragemTotal` — entram porque são contrato publicado desde já, e é a T7 que passa a povoá-las.
@@ -1563,7 +1563,7 @@ interface ImovelPublicado {
 /**
  * Um cômodo como a API o publica — sempre embutido no imóvel.
  *
- * Declarado aqui, e não importado de `@sysloc/contracts`, pela mesma razão de
+ * Declarado aqui, e não importado de `@syslocbr/contracts`, pela mesma razão de
  * {@link ConjuntoPublicado}: o conjunto de chaves é o que o `CT-308` assere por igualdade, e
  * derivá-lo do tipo do SUT faria a asserção concordar consigo mesma. **Não existe `retiradoEm`**, e a
  * ausência é a ADR-0014: o cômodo é removido de fato.

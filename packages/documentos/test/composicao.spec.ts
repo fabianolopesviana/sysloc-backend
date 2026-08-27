@@ -91,7 +91,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ESTADOS_DO_CONTRATO } from '@sysloc/contracts';
+import { ESTADOS_DO_CONTRATO } from '@syslocbr/contracts';
 import { describe, expect, it } from 'vitest';
 import { ErroDeInterpolacaoIncompleta, interpolar } from '../src/contrato/clausulas.ts';
 import {
@@ -528,7 +528,7 @@ describe('CT-706 — a marca de cancelamento é parâmetro da composição, e s�
   const TEXTO_ESPERADO_DA_MARCA = 'CONTRATO CANCELADO';
 
   it('CT-706 (a) — os quatro estados do contrato são exatamente os declarados no contrato publicado', () => {
-    // Sem esta linha, um quinto estado criado em `@sysloc/contracts` entraria no caso parametrizado
+    // Sem esta linha, um quinto estado criado em `@syslocbr/contracts` entraria no caso parametrizado
     // abaixo sem que ninguém decidisse se ele marca ou não marca o documento.
     expect([...ESTADOS_DO_CONTRATO]).toEqual(['RASCUNHO', 'ATIVO', 'CANCELADO', 'ENCERRADO']);
     // A constante publicada e o texto esperado coincidem — é o que liga a asserção literal ao SUT.

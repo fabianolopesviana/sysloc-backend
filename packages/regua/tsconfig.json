@@ -23,7 +23,7 @@
   //
   //     x Cyclic dependency detected: @sysloc/db#build, @sysloc/regua#build
   //
-  // Foi medido neste repositório com um par equivalente (`@sysloc/contracts` recebendo
+  // Foi medido neste repositório com um par equivalente (`@syslocbr/contracts` recebendo
   // `@sysloc/db`). A consequência prática está na §4.3 do `task_plan.md` da fatia: os casos que
   // precisam de banco moram em `packages/db/test/`, onde o encontro já é legítimo.
   "references": [{ "path": "../contracts" }],

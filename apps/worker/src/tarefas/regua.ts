@@ -28,7 +28,7 @@
  * nada, e a régua *parece* ter rodado. Nenhum alarme, nenhuma linha vermelha, e a imobiliária
  * descobre pelo inadimplente que ninguém avisou.
  *
- * A conferência é do **esquema**, e o esquema é o de `@sysloc/contracts` (ADR-0016): ele valida a
+ * A conferência é do **esquema**, e o esquema é o de `@syslocbr/contracts` (ADR-0016): ele valida a
  * forma **e canoniza a caixa do UUID** (ADR-0017), que já foi vetor de escalada. A razão da falha
  * nomeia o **campo**, nunca o valor recebido — ela fica gravada no servidor de fila e chega ao
  * journal, e valor de campo pode ser dado de outra empresa.
@@ -117,7 +117,6 @@
  * ---------------------------------------------------------------------------
  */
 
-import { ESQUEMA_DO_IDENTIFICADOR, type RotinaPublicada } from '@sysloc/contracts';
 import {
   type AcessoAoBanco,
   contextoDeTenant,
@@ -133,6 +132,7 @@ import {
   type ResultadoDaRegua,
 } from '@sysloc/regua';
 import { FILA_DA_REGUA, type Logger } from '@sysloc/shared';
+import { ESQUEMA_DO_IDENTIFICADOR, type RotinaPublicada } from '@syslocbr/contracts';
 import { z } from 'zod';
 import type { TarefaDaRegua } from '../fila.js';
 
@@ -152,7 +152,7 @@ const CAMPO_DA_EMPRESA = 'empresaId';
  * a origem do contexto de tenant, e ignorar o que veio a mais é o começo de ela virar "o novo
  * request" — o `Cons` que a ADR-0024 registra e a alternativa que ela rejeita por nome.
  *
- * O identificador vem de `@sysloc/contracts` (ADR-0016) e não é redigitado: ele confere a forma e
+ * O identificador vem de `@syslocbr/contracts` (ADR-0016) e não é redigitado: ele confere a forma e
  * **canoniza a caixa do UUID** (ADR-0017). A canonização importa aqui e não é ornamento — é este
  * valor que a unidade de trabalho compõe no `SET LOCAL`.
  */

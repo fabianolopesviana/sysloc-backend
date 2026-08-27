@@ -24,7 +24,7 @@
  * O boleto não é segredo, e por isso fica em claro:
  *
  * - ele é **documento destinado a ser entregue ao locatário**, por e-mail e por carnê;
- * - a **linha digitável** que ele carrega já é publicada pela API, em `@sysloc/contracts`;
+ * - a **linha digitável** que ele carrega já é publicada pela API, em `@syslocbr/contracts`;
  * - cifrá-lo protegeria contra um adversário que já tem leitura no filesystem do host — e esse
  *   adversário também teria a `EnvironmentFile` 0600, onde a chave de cifra vive.
  *
@@ -149,7 +149,7 @@
 import { randomUUID } from 'node:crypto';
 import { lstat, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
-import { ESQUEMA_DO_CODIGO_DE_COBRANCA } from '@sysloc/contracts';
+import { ESQUEMA_DO_CODIGO_DE_COBRANCA } from '@syslocbr/contracts';
 
 /**
  * A extensão do arquivo guardado.

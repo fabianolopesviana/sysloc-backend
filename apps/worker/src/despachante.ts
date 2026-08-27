@@ -122,7 +122,6 @@
 // ÍNDICE: docs/specs/features/automacoes-agendadas/v1/_run/run-report.md §2, D16
 
 import { pathToFileURL } from 'node:url';
-import { CADENCIA_DA_ROTINA } from '@sysloc/contracts';
 import {
   type AcessoAoBanco,
   abrirAcessoAoBanco,
@@ -138,6 +137,7 @@ import {
   type NivelDeLog,
   type RotinaDeTrabalho,
 } from '@sysloc/shared';
+import { CADENCIA_DA_ROTINA } from '@syslocbr/contracts';
 import { conectarFila, type Fila } from './fila.js';
 
 // ---------------------------------------------------------------------------
@@ -167,7 +167,7 @@ const CODIGO_DE_ROTINA_DESCONHECIDA = 2;
 /**
  * Uma rotina que **tem unidade `systemd` própria** — derivada da declaração única do relógio.
  *
- * ⚠️ **`keyof typeof CADENCIA_DA_ROTINA`, e não um segundo alfabeto de nomes.** `@sysloc/contracts`
+ * ⚠️ **`keyof typeof CADENCIA_DA_ROTINA`, e não um segundo alfabeto de nomes.** `@syslocbr/contracts`
  * publica o mesmo conjunto sob o nome `RotinaAgendada`, mas **não o exporta pelo barril** — e o
  * caminho barato de contorno seria redigitar aqui a união das seis. Derivar do mesmo mapa é o que
  * torna as duas declarações o **mesmo fato**: uma rotina acrescentada a `CADENCIA_DA_ROTINA` entra

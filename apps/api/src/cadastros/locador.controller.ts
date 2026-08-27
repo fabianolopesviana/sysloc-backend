@@ -86,9 +86,9 @@ import {
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
-import { esquemaDaPessoa, type Pessoa } from '@sysloc/contracts';
 import { type AcessoAoBanco, PAPEIS_DE_PESSOA } from '@sysloc/db';
 import { CodigoErro, type Logger } from '@sysloc/shared';
+import { esquemaDaPessoa, type Pessoa } from '@syslocbr/contracts';
 import type { FastifyRequest } from 'fastify';
 import { ExigeChave, ExigeChaves } from '../autenticacao/exigencia.decorator.js';
 import { esquemaDoErro } from '../comum/esquema-de-erro.js';

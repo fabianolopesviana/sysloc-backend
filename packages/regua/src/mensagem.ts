@@ -38,19 +38,19 @@
  * Por que NENHUM rótulo de estado é escrito neste arquivo
  * ===========================================================================
  *
- * Os rótulos do estado da cobrança existem num lugar só — `@sysloc/contracts` —, e a asserção
+ * Os rótulos do estado da cobrança existem num lugar só — `@syslocbr/contracts` —, e a asserção
  * estática do CT-612 varre `packages/regua/src/**` justamente para que a segunda cópia não nasça
  * aqui. Os dois moldes, portanto, se decidem sobre **valores importados**, obtidos por
  * desestruturação posicional da união fechada.
  *
- * A ordem da união é **conteúdo, não estética** — o próprio `@sysloc/contracts` a declara assim, e
+ * A ordem da união é **conteúdo, não estética** — o próprio `@syslocbr/contracts` a declara assim, e
  * `packages/db` deriva dela a ordem do enum do PostgreSQL, que a migração já gravou. Ainda assim, a
  * rede contra uma reordenação silenciosa não é a prosa: é o **CT-614**, que afirma o assunto de cada
  * molde por igualdade de cadeia inteira — trocar a ordem da união troca os dois moldes de lugar e
  * reprova o caso.
  */
 
-import { ESTADOS_DA_COBRANCA } from '@sysloc/contracts';
+import { ESTADOS_DA_COBRANCA } from '@syslocbr/contracts';
 import type { CandidataAoAviso } from './porta-de-dados.js';
 
 /**

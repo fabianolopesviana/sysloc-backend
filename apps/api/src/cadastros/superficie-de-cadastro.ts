@@ -38,16 +38,16 @@
  * metadados de rota e de exigência num lugar diferente de onde eles são lidos.
  */
 
-import type { Janela, Pessoa } from '@sysloc/contracts';
+import type { AcessoAoBanco, PapelDePessoa } from '@sysloc/db';
+import type { Logger } from '@sysloc/shared';
+import type { Janela, Pessoa } from '@syslocbr/contracts';
 import {
   ESQUEMA_DO_IDENTIFICADOR,
   envelopeDeLista,
   esquemaDaJanelaComCirculacao,
   esquemaDaPessoa,
   esquemaDePessoaNova,
-} from '@sysloc/contracts';
-import type { AcessoAoBanco, PapelDePessoa } from '@sysloc/db';
-import type { Logger } from '@sysloc/shared';
+} from '@syslocbr/contracts';
 import type { FastifyRequest } from 'fastify';
 import type { TransactionSql } from 'postgres';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
@@ -239,7 +239,7 @@ export class SuperficieDeCadastro {
 
   /** `GET` da coleção. */
   async listar(consulta: unknown, requisicao: FastifyRequest): Promise<PaginaDePessoas> {
-    // O esquema vem **inteiro** de `@sysloc/contracts`, que a ADR-0016 declara fonte única. A razão
+    // O esquema vem **inteiro** de `@syslocbr/contracts`, que a ADR-0016 declara fonte única. A razão
     // de `incluirRetirados` ser união fechada de dois literais, e não `z.coerce.boolean()`, está por
     // extenso no docblock de `esquemaDaJanelaComCirculacao`.
     const { incluirRetirados, ...janela } = validar(

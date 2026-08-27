@@ -152,7 +152,6 @@ import {
   type NotificacaoBancariaClassificada,
   type SituacaoConsultada,
 } from '@sysloc/cobranca-bancaria';
-import { ESQUEMA_DO_IDENTIFICADOR } from '@sysloc/contracts';
 import {
   type AcessoAoBanco,
   type AjustesDoDesfecho,
@@ -176,6 +175,7 @@ import {
   rotearNotificacaoBancaria,
 } from '@sysloc/db';
 import { decifrarSegredo, FILA_DA_NOTIFICACAO_BANCARIA, type Logger } from '@sysloc/shared';
+import { ESQUEMA_DO_IDENTIFICADOR } from '@syslocbr/contracts';
 import { z } from 'zod';
 import type { TarefaDaNotificacaoBancaria } from '../fila.js';
 import { cargaConferida } from './carga-da-tarefa.js';

@@ -46,7 +46,7 @@
  *    fonte capturado e conclui, com a melhor das intenções, que falta fidelidade ali.
  */
 
-import { TIPOS_DE_PESSOA } from '@sysloc/contracts';
+import { TIPOS_DE_PESSOA } from '@syslocbr/contracts';
 import type { ImovelDoContrato, ParteDoContrato } from './dados.js';
 
 /** Quantos dígitos tem um CPF. */
@@ -88,7 +88,7 @@ const NAO_DIGITO = /\D/gu;
 export const RESERVA_DE_CAMPO_VAZIO = '-';
 
 /**
- * A recusa de um tipo de pessoa fora da união fechada de `@sysloc/contracts`.
+ * A recusa de um tipo de pessoa fora da união fechada de `@syslocbr/contracts`.
  *
  * O valor recusado viaja em **campo**, e não recortado da mensagem: quem trata a recusa precisa do
  * mesmo valor que ela viu, e extraí-lo da cadeia é análise sintática que falha em silêncio. É o
@@ -271,7 +271,7 @@ export function qualificarParte(parte: ParteDoContrato): string {
 /**
  * Traduz o tipo publicado no eixo que o documento usa, **recusando** o que não está na união.
  *
- * A comparação é contra {@link TIPOS_DE_PESSOA}, importado de `@sysloc/contracts` (ADR-0016): a
+ * A comparação é contra {@link TIPOS_DE_PESSOA}, importado de `@syslocbr/contracts` (ADR-0016): a
  * lista dos dois valores não é redigitada aqui, de modo que um terceiro tipo criado lá chega a este
  * ponto pela compilação, e não por acaso.
  */

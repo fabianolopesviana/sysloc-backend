@@ -149,7 +149,7 @@
  * publica. Um `Number(…)` sobre eles seria conversão de uma coisa que já é a outra.
  */
 
-import type { ConferenciaBancaria } from '@sysloc/contracts';
+import type { ConferenciaBancaria } from '@syslocbr/contracts';
 import type { Fragment, TransactionSql } from 'postgres';
 // O fragmento da empresa do contexto tem lar único em `./contexto-de-escrita.ts`; ele **não é filtro**
 // (nenhuma leitura deste arquivo o aplica, porque a tabela já tem política), e existe só para a

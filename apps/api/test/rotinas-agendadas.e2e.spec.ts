@@ -167,16 +167,6 @@
 import { randomBytes } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import {
-  CADENCIA_DA_ROTINA,
-  CODIGOS_DE_IMPEDIMENTO,
-  type EstadoDasRotinas,
-  type EstadoDeRotina,
-  LIMIAR_DE_ATRASO_POR_CADENCIA,
-  type PoliticaDeAvisoNova,
-  ROTINAS_PUBLICADAS,
-  type RotinaPublicada,
-} from '@sysloc/contracts';
-import {
   type AcessoAoBanco,
   abrirAcessoAoBanco,
   contextoDeTenant,
@@ -188,6 +178,16 @@ import {
   SENHA_DA_CARGA,
 } from '@sysloc/db';
 import { CodigoErro } from '@sysloc/shared';
+import {
+  CADENCIA_DA_ROTINA,
+  CODIGOS_DE_IMPEDIMENTO,
+  type EstadoDasRotinas,
+  type EstadoDeRotina,
+  LIMIAR_DE_ATRASO_POR_CADENCIA,
+  type PoliticaDeAvisoNova,
+  ROTINAS_PUBLICADAS,
+  type RotinaPublicada,
+} from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {

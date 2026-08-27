@@ -15,7 +15,7 @@
  * |          |        | `202608000000000042` e `202608999999999999` — por **igualdade literal**,
  * |          |        | jamais por comprimento, que aprovaria um preenchimento à direita. As três
  * |          |        | saídas satisfazem `ESQUEMA_DO_IDENTIFICADOR_BANCARIO`, importado de
- * |          |        | `@sysloc/contracts`, e `LARGURA_DO_CONTADOR_BANCARIO` vale **12** — o valor
+ * |          |        | `@syslocbr/contracts`, e `LARGURA_DO_CONTADOR_BANCARIO` vale **12** — o valor
  * |          |        | por extenso, que é a decisão, e não um número que o caso descubra do SUT. |
  * | A2       | CT-805 | A composição é **total**: `(202608, 1_000_000_000_000)` — um a mais que o
  * |          |        | teto da sequência — levanta `ErroDeContadorForaDaLargura` e **nada** é
@@ -90,7 +90,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { ESQUEMA_DO_IDENTIFICADOR_BANCARIO } from '@sysloc/contracts';
+import { ESQUEMA_DO_IDENTIFICADOR_BANCARIO } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { abrirConexao } from '../src/conexao.ts';

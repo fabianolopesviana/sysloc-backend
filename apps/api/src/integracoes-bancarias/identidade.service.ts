@@ -20,7 +20,6 @@
  */
 
 import { Inject, Injectable } from '@nestjs/common';
-import type { Identidade, IdentidadeNova } from '@sysloc/contracts';
 import {
   type DadosDaIdentidade,
   type IdentidadeGravada,
@@ -28,6 +27,7 @@ import {
   registrarIdentidadeNoProvedor,
 } from '@sysloc/db';
 import { CodigoErro, cifrarValorOperavel, ErroDeAplicacao } from '@sysloc/shared';
+import type { Identidade, IdentidadeNova } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { type Ambiente, TOKEN_AMBIENTE } from '../configuracao/ambiente.js';
 

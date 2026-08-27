@@ -35,7 +35,7 @@
  * Estas rotas ENTRAM na superfície que congela no marco de entrega
  * ---------------------------------------------------------------------------
  *
- * Ao contrário das do operador do SaaS, elas são a superfície que o `@sysloc/contracts` entrega ao
+ * Ao contrário das do operador do SaaS, elas são a superfície que o `@syslocbr/contracts` entrega ao
  * frontend da imobiliária: é a partir delas que a tela de usuários é religada. Acrescentar, remover
  * ou alterar rota aqui depois do congelamento quebra o handoff.
  *

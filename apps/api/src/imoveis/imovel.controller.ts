@@ -88,7 +88,7 @@
  * O `:id` é validado e CANONIZADO antes de qualquer consulta
  * ---------------------------------------------------------------------------
  *
- * `ESQUEMA_DO_IDENTIFICADOR`, de `@sysloc/contracts`, valida a **forma** e canoniza a caixa. A
+ * `ESQUEMA_DO_IDENTIFICADOR`, de `@syslocbr/contracts`, valida a **forma** e canoniza a caixa. A
  * validação acontece antes de a unidade de trabalho abrir: um valor malformado é recusado com `422`
  * sem tocar o banco, em vez de virar `404` depois de uma ida inútil — e sem que a forma do
  * identificador se torne um oráculo de existência. **O esquema é importado, nunca redigitado**:
@@ -124,6 +124,8 @@ import {
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
+import type { AcessoAoBanco } from '@sysloc/db';
+import { CodigoErro, type Logger } from '@sysloc/shared';
 import {
   ESQUEMA_DO_IDENTIFICADOR,
   envelopeDeLista,
@@ -133,9 +135,7 @@ import {
   esquemaDeImovelNovo,
   esquemaDoImovel,
   type Imovel,
-} from '@sysloc/contracts';
-import type { AcessoAoBanco } from '@sysloc/db';
-import { CodigoErro, type Logger } from '@sysloc/shared';
+} from '@syslocbr/contracts';
 import type { FastifyRequest } from 'fastify';
 import { ExigeChave, ExigeChaves } from '../autenticacao/exigencia.decorator.js';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
@@ -245,7 +245,7 @@ export class ImovelController {
     @Query() consulta: unknown,
     @Req() requisicao: FastifyRequest,
   ): Promise<PaginaDeImoveis> {
-    // O esquema vem **inteiro** de `@sysloc/contracts`. Ele estava aqui em cópia byte a byte da que
+    // O esquema vem **inteiro** de `@syslocbr/contracts`. Ele estava aqui em cópia byte a byte da que
     // vivia em `conjunto.controller.ts`, e o docblock desta linha reconhecia a duplicação e a
     // reagendava; a T8 a fechou promovendo a composição ao pacote que a ADR-0016 declara fonte
     // única. A razão de `incluirRetirados` ser união fechada de dois literais, e não

@@ -133,7 +133,7 @@
  *
  * A cobrança tem **série declarada**, e por isso a chave exposta é o código legível — nunca o UUID
  * interno, que sequer sai da porta (ADR-0017). `ESQUEMA_DO_CODIGO_DE_COBRANCA`, de
- * `@sysloc/contracts`, valida a **forma** e canoniza a caixa (`trim` → maiúsculas). A validação
+ * `@syslocbr/contracts`, valida a **forma** e canoniza a caixa (`trim` → maiúsculas). A validação
  * acontece antes de a unidade de trabalho abrir: um valor malformado é recusado com `422` sem tocar o
  * banco, em vez de virar `404` depois de uma ida inútil — e sem que a forma do identificador se torne
  * um oráculo de existência. **O esquema é importado, nunca redigitado**: normalizar em dois pontos
@@ -191,6 +191,8 @@ import {
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
+import type { AcessoAoBanco } from '@sysloc/db';
+import { CodigoErro, type Logger } from '@sysloc/shared';
 import {
   type Cobranca,
   ESQUEMA_DO_CODIGO_DE_COBRANCA,
@@ -201,9 +203,7 @@ import {
   esquemaDeCobrancaNova,
   esquemaDoPagamentoDeCobranca,
   type TrilhaDaCobranca,
-} from '@sysloc/contracts';
-import type { AcessoAoBanco } from '@sysloc/db';
-import { CodigoErro, type Logger } from '@sysloc/shared';
+} from '@syslocbr/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ExigeChave, ExigeChaves } from '../autenticacao/exigencia.decorator.js';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
@@ -422,7 +422,7 @@ export class CobrancaController {
     @Query() consulta: unknown,
     @Req() requisicao: FastifyRequest,
   ): Promise<PaginaDeCobrancas> {
-    // O esquema vem **inteiro** de `@sysloc/contracts`, que a ADR-0016 declara fonte única: a janela
+    // O esquema vem **inteiro** de `@syslocbr/contracts`, que a ADR-0016 declara fonte única: a janela
     // comum mais os três filtros da carteira. Nenhuma conferência de recorte é escrita aqui.
     const janela = validar(esquemaDaJanelaDeCobrancas, consulta, CAMPO_DA_CONSULTA);
 

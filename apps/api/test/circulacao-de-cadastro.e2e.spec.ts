@@ -79,7 +79,7 @@
  *
  * Aplicado ao fonte de produção e invocado pelo **script do pacote**
  * (`pnpm --filter @sysloc/api test`), nunca por `vitest run` avulso — este arquivo carrega
- * `@sysloc/auth`, `@sysloc/db` e `@sysloc/contracts` pela fronteira do pacote.
+ * `@sysloc/auth`, `@sysloc/db` e `@syslocbr/contracts` pela fronteira do pacote.
  *
  *   * **controle** — árvore íntegra: `21 arquivos, 151 casos, 0 falhas`;
  *   * **MT8-6 · a recusa por vínculo inventada** — `ImovelService.definirCirculacao` passa a ler o
@@ -166,7 +166,7 @@
  * a prova **reprova** com o defeito reintroduzido. Aplicados ao fonte de produção
  * (`packages/db/src/conjunto.ts`), com a suíte invocada pelo **script do pacote**
  * (`pnpm --filter @sysloc/api test`), nunca por `vitest run` avulso — este arquivo carrega
- * `@sysloc/auth`, `@sysloc/db` e `@sysloc/contracts` pela fronteira do pacote, e um `vitest run`
+ * `@sysloc/auth`, `@sysloc/db` e `@syslocbr/contracts` pela fronteira do pacote, e um `vitest run`
  * leria o `dist/` da compilação anterior.
  *
  *   * **controle** — árvore íntegra: `16 arquivos, 102 casos, 0 falhas`;
@@ -1450,7 +1450,7 @@ interface PessoaEmOperacao {
 /**
  * Um conjunto como a API o publica.
  *
- * Declarado aqui, e não importado de `@sysloc/contracts`: o conjunto de chaves é o que os casos
+ * Declarado aqui, e não importado de `@syslocbr/contracts`: o conjunto de chaves é o que os casos
  * asserem por igualdade, e derivá-lo do tipo do SUT faria a asserção concordar consigo mesma.
  */
 interface ConjuntoPublicado {
@@ -1462,7 +1462,7 @@ interface ConjuntoPublicado {
 /**
  * Um registro de qualquer das cinco entidades, no que a prova transversal observa dele.
  *
- * Declarado aqui, e não importado de `@sysloc/contracts`: o que os casos asserem é o identificador e
+ * Declarado aqui, e não importado de `@syslocbr/contracts`: o que os casos asserem é o identificador e
  * a marca de circulação, e derivá-los do tipo do SUT faria a asserção concordar consigo mesma. As
  * cinco entidades compartilham estes dois campos, que é o que torna a tabela possível.
  */
@@ -1482,7 +1482,7 @@ interface PaginaPublicada {
  * Os campos nomeados são os **dois** que o caso afirma por extenso; o restante do corpo é comparado
  * por igualdade de objeto inteiro, sem que este tipo precise enumerá-lo — é o que faz a comparação
  * alcançar também um campo que o esquema venha a ganhar (a T9 lhe acrescenta `contratoVigente`).
- * Declarado aqui, e não importado de `@sysloc/contracts`, pela razão de {@link CadastroPublicado}.
+ * Declarado aqui, e não importado de `@syslocbr/contracts`, pela razão de {@link CadastroPublicado}.
  */
 interface ImovelPublicado {
   readonly id: string;

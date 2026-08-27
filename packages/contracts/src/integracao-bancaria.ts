@@ -7,7 +7,7 @@
  * ===========================================================================
  *
  * A ADR-0016 fixa que a conferência de entrada, o tipo da resposta e o documento publicado derivam do
- * **mesmo** esquema. Somando-se a isso o fato de que `@sysloc/contracts` é o artefato que o React
+ * **mesmo** esquema. Somando-se a isso o fato de que `@syslocbr/contracts` é o artefato que o React
  * importa no marco de entrega (tech spec §15.3), a consequência é literal: **todo campo declarado
  * aqui chega ao consumidor, e todo campo não declarado não existe para ele**. Publicar é ato
  * deliberado, e por isso a projeção de saída abaixo é enumerada campo a campo em vez de derivada da
@@ -843,7 +843,7 @@ export type EstadoDaEntrega = z.infer<typeof esquemaDoEstadoDaEntrega>;
  * 1. **Os dois não são o mesmo fato.** Aquele é a forma **anônima** que a borda aplica a ato cujo
  *    efeito o servidor decide inteiramente, e nenhuma das quatro rotas que o usam tem elemento de
  *    contrato próprio. Este é elemento **nomeado** da superfície publicada: é dele que o documento
- *    OpenAPI da rota deriva (ADR-0016), e é ele que `@sysloc/contracts` entrega ao frontend. É a
+ *    OpenAPI da rota deriva (ADR-0016), e é ele que `@syslocbr/contracts` entrega ao frontend. É a
  *    mesma distinção — e a mesma razão — que separa `ResultadoDaVerificacaoDeIdentidade`, do domínio,
  *    de {@link esquemaDoResultadoDaVerificacao}, do contrato: dois fatos distintos que hoje têm a
  *    mesma forma.

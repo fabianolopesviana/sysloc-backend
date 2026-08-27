@@ -171,7 +171,6 @@
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { TIPOS_DE_EVENTO_BANCARIO } from '@sysloc/contracts';
 import {
   type AcessoAoBanco,
   abrirAcessoAoBanco,
@@ -192,6 +191,7 @@ import {
   type UsuarioSemeado,
 } from '@sysloc/db';
 import { criarSegredoOperavel } from '@sysloc/shared';
+import { TIPOS_DE_EVENTO_BANCARIO } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)

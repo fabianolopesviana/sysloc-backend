@@ -45,7 +45,7 @@
  * OS DOIS identificadores são validados e CANONIZADOS antes de qualquer consulta
  * ---------------------------------------------------------------------------
  *
- * `ESQUEMA_DO_IDENTIFICADOR`, de `@sysloc/contracts`, valida a **forma** e canoniza a caixa dos
+ * `ESQUEMA_DO_IDENTIFICADOR`, de `@syslocbr/contracts`, valida a **forma** e canoniza a caixa dos
  * dois: o do imóvel e o do cômodo. A validação acontece antes de a unidade de trabalho abrir — um
  * valor malformado é recusado com `422` sem tocar o banco, em vez de virar `404` depois de uma ida
  * inútil, e sem que a forma do identificador se torne um oráculo de existência. **O esquema é
@@ -71,14 +71,14 @@ import {
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
+import type { AcessoAoBanco } from '@sysloc/db';
+import { CodigoErro, type Logger } from '@sysloc/shared';
 import {
   ESQUEMA_DO_IDENTIFICADOR,
   esquemaDeComodoNovo,
   esquemaDoImovel,
   type Imovel,
-} from '@sysloc/contracts';
-import type { AcessoAoBanco } from '@sysloc/db';
-import { CodigoErro, type Logger } from '@sysloc/shared';
+} from '@syslocbr/contracts';
 import type { FastifyRequest } from 'fastify';
 import { ExigeChave } from '../autenticacao/exigencia.decorator.js';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';

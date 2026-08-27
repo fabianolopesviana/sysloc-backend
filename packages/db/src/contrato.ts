@@ -59,7 +59,7 @@
  * de um ano e o código anunciaria o outro, que é um código que o contador daquele ano ainda vai
  * emitir. Recebendo o par, a discordância deixa de ser representável.
  *
- * O código sai de `formatarCodigoDeContrato`, **importado** de `@sysloc/contracts` — a forma
+ * O código sai de `formatarCodigoDeContrato`, **importado** de `@syslocbr/contracts` — a forma
  * `CTR-{ano}-{5 dígitos}` tem lá o marcador `DECISÃO FECHADA` que fixa a largura, e redigitá-la aqui
  * criaria a segunda fonte do mesmo fato (ADR-0016).
  *
@@ -164,7 +164,7 @@ import {
   type ContratoVigenteDoImovel,
   type EstadoDoContrato,
   formatarCodigoDeContrato,
-} from '@sysloc/contracts';
+} from '@syslocbr/contracts';
 import type { Fragment, TransactionSql } from 'postgres';
 // O tipo é da **decisão**, e não da entidade: `{ incluirRetirados }` é o parâmetro nomeado que a
 // ADR-0014 obriga toda porta de leitura a expor, e ele já nasceu publicado pelo pacote. Declarar um
@@ -387,7 +387,7 @@ const VIOLACAO_DE_UNICIDADE = '23505';
  * `ENCERRADO` não aparece porque não tem produtor nesta fatia (a rotina agendada é da F5), e
  * inventar-lhe uma escrita aqui seria oferecer uma transição que ninguém declarou.
  *
- * A anotação é `EstadoDoContrato` de propósito: literal fora da união fechada de `@sysloc/contracts`
+ * A anotação é `EstadoDoContrato` de propósito: literal fora da união fechada de `@syslocbr/contracts`
  * **não compila**, e é isso que impede um estado inventado de chegar ao enum do banco.
  */
 const ESTADO_INICIAL: EstadoDoContrato = 'RASCUNHO';

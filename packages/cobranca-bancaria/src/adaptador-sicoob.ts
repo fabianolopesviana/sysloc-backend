@@ -217,8 +217,8 @@
 
 import type { ClientRequest, IncomingMessage } from 'node:http';
 import { Agent, request } from 'node:https';
-import { DETALHES_DA_VERIFICACAO } from '@sysloc/contracts';
 import type { SegredoOperavel } from '@sysloc/shared';
+import { DETALHES_DA_VERIFICACAO } from '@syslocbr/contracts';
 import type { CredencialConcedida, FamiliaDeEscopo, FonteDeTempo } from './credencial-de-acesso.js';
 import { criarCacheDeCredenciais } from './credencial-de-acesso.js';
 import type {
@@ -297,7 +297,7 @@ export const TETO_DO_APERTO_DE_MAO_MS = TETO_DA_OPERACAO_MS;
  * A restrição *"o texto sai de um conjunto fechado"* valia por prosa enquanto os textos moravam
  * neste arquivo: o campo era `string` no domínio, e o esquema publicado, `z.string()`. Fechá-la
  * estruturalmente exige **uma** declaração alcançável pelos dois lados, e a direção da dependência
- * decide qual é o lado — o domínio não pode importar do adaptador (ADR-0025), e `@sysloc/contracts`
+ * decide qual é o lado — o domínio não pode importar do adaptador (ADR-0025), e `@syslocbr/contracts`
  * é o pacote folha que os dois alcançam. Os textos passaram para
  * {@link DETALHES_DA_VERIFICACAO}, e o que sobrou aqui são os **nomes**, com o mesmo texto byte a
  * byte, porque é por eles que a superfície deste pacote já publica os desfechos.

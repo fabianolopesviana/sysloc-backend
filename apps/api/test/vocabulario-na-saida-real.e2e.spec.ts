@@ -165,7 +165,6 @@ import type {
   SituacaoConsultada,
 } from '@sysloc/cobranca-bancaria';
 import { criarAdaptadorSicoob } from '@sysloc/cobranca-bancaria';
-import type { EstadoDaEntrega } from '@sysloc/contracts';
 import {
   type AcessoAoBanco,
   abrirAcessoAoBanco,
@@ -175,6 +174,7 @@ import {
   SENHA_DA_CARGA,
 } from '@sysloc/db';
 import { criarRenderizadorPdf } from '@sysloc/documentos';
+import type { EstadoDaEntrega } from '@syslocbr/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)
 // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o código abaixo.)
@@ -328,7 +328,7 @@ const SEGMENTO_DO_CARNE = 'carne';
  * mutuamente não-substring dos demais**, e é essa a régua que decidiu os dois que entraram.
  *
  * ⚠️ `BOLETO` **não** entra, e a ausência é deliberada: ele é vocabulário do **produto** (RN-11),
- * publicado por `@sysloc/contracts`, e incluí-lo faria a varredura reprovar o próprio vocabulário
+ * publicado por `@syslocbr/contracts`, e incluí-lo faria a varredura reprovar o próprio vocabulário
  * canônico que ela existe para proteger. `provedor` também não: é palavra do produto — o modelo
  * canônico da ADR-0001 nomeia *"o provedor"* justamente para não nomear qual. E `webhook` sozinho
  * também não: é o nome da própria fatia, citado em prosa por toda a base.

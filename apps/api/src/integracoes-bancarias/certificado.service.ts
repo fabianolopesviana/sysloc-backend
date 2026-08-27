@@ -166,12 +166,6 @@ import {
   type PortaDeIdentidadeBancaria,
 } from '@sysloc/cobranca-bancaria';
 import {
-  type Certificado,
-  type EstadoDoCertificado,
-  LIMIAR_DE_VENCIMENTO_EM_DIAS,
-  type ResultadoDaVerificacao,
-} from '@sysloc/contracts';
-import {
   type CertificadoGravado,
   ErroDeCertificadoVencido,
   lerCertificadoVigente,
@@ -190,6 +184,12 @@ import {
   type Logger,
   type SegredoOperavel,
 } from '@sysloc/shared';
+import {
+  type Certificado,
+  type EstadoDoCertificado,
+  LIMIAR_DE_VENCIMENTO_EM_DIAS,
+  type ResultadoDaVerificacao,
+} from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
 import { type ProdutorDeFila, TOKEN_PRODUTOR_DE_FILA } from '../comum/produtor-de-fila.js';
@@ -333,7 +333,7 @@ export interface VigenciaDerivada {
  * eixo a mais — o que ele faria divergir é a coerência entre a recusa do registro (RN-03, no banco) e
  * o estado publicado na consulta, sobre o mesmo certificado e no mesmo dia.
  *
- * O limiar vem de {@link LIMIAR_DE_VENCIMENTO_EM_DIAS}, importado de `@sysloc/contracts` e **nunca**
+ * O limiar vem de {@link LIMIAR_DE_VENCIMENTO_EM_DIAS}, importado de `@syslocbr/contracts` e **nunca**
  * redigitado: ele governa as três respostas do produto sobre vencimento, e uma segunda declaração
  * ficaria livre para divergir sem que nada acusasse.
  *

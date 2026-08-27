@@ -48,7 +48,7 @@
  * ---------------------------------------------------------------------------
  *
  * A RN-04 exige que CPF e CNPJ sejam conferidos, e {@link conferirDocumento} (de `@sysloc/shared`) é
- * quem confere. Ela **não** mora no esquema de entrada de `@sysloc/contracts` por decisão declarada
+ * quem confere. Ela **não** mora no esquema de entrada de `@syslocbr/contracts` por decisão declarada
  * no cabeçalho daquele pacote: ele é folha, e o frontend o importa sozinho — trazer a aritmética
  * para lá custaria a propriedade que o define.
  *
@@ -89,7 +89,6 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import type { EnvelopeDeLista, Janela, Locatario, Pessoa, PessoaNova } from '@sysloc/contracts';
 import {
   alterarPessoa,
   criarPessoa,
@@ -103,6 +102,7 @@ import {
   type PessoaCadastrada,
 } from '@sysloc/db';
 import { CodigoErro, conferirDocumento, ErroDeAplicacao } from '@sysloc/shared';
+import type { EnvelopeDeLista, Janela, Locatario, Pessoa, PessoaNova } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
 

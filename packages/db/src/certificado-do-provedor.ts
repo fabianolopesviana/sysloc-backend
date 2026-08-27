@@ -203,7 +203,7 @@ export interface DadosDoCertificado {
  * O conjunto é enumerado campo a campo, e não derivado da linha do banco: `segredo_cifrado` está a
  * uma coluna de distância, e uma projeção montada por `SELECT *` o carregaria para dentro de toda
  * resposta na primeira vez que alguém acrescentasse um campo. Publicar é ato deliberado — a mesma
- * razão pela qual `esquemaDoCertificado`, em `@sysloc/contracts`, enumera os dele.
+ * razão pela qual `esquemaDoCertificado`, em `@syslocbr/contracts`, enumera os dele.
  *
  * `estado` e `diasParaVencer` **não** estão aqui, e a ausência é a ADR-0022: eles são derivados da
  * validade contra a data corrente, no instante da leitura, e gravá-los ou projetá-los daqui criaria

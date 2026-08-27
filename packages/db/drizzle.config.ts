@@ -22,7 +22,7 @@
  * Antes de regerar: `pnpm build` é PRÉ-CONDIÇÃO (desde a T2 da fatia de cadastro)
  * ---------------------------------------------------------------------------
  *
- * `src/esquema/negocio.ts` importa os literais dos enums de `@sysloc/contracts`, cujo `exports`
+ * `src/esquema/negocio.ts` importa os literais dos enums de `@syslocbr/contracts`, cujo `exports`
  * resolve para `dist/` — que o `.gitignore` barra. Em árvore limpa,
  * `pnpm --filter @sysloc/db gerar-migracao` **falha na resolução do módulo**.
  *

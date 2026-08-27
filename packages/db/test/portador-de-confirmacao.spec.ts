@@ -174,7 +174,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { esquemaDaApresentacaoDoPortador } from '@sysloc/contracts';
+import { esquemaDaApresentacaoDoPortador } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { criarPessoa, type DadosDaPessoa } from '../src/cadastro-de-pessoa.ts';

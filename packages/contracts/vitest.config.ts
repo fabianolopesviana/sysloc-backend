@@ -2,7 +2,7 @@
  * Configuração de teste do pacote de contratos.
  *
  * Este arquivo é o projeto que a configuração da raiz agrega pelo padrão
- * `packages/*​/vitest.config.ts`, e é também o que `pnpm --filter @sysloc/contracts test` usa
+ * `packages/*​/vitest.config.ts`, e é também o que `pnpm --filter @syslocbr/contracts test` usa
  * diretamente. Por isso ele declara o ambiente de execução do pacote INTEIRO, e não apenas a
  * diferença — as duas formas de invocar a verificação precisam produzir o mesmo resultado.
  *
@@ -17,7 +17,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    name: '@sysloc/contracts',
+    name: '@syslocbr/contracts',
     environment: 'node',
     include: ['test/**/*.spec.ts'],
   },

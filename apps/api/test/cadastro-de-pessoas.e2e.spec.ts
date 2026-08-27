@@ -103,7 +103,7 @@
  * A `.claude/rules/testing-stack.md` e o P4 de `.claude/rules/nao-regressao.md` exigem demonstrar que
  * a prova **reprova** com o defeito reintroduzido. Aplicados ao fonte de produção, com a suíte
  * invocada pelo **script do pacote** (`pnpm --filter @sysloc/api test`), nunca por `vitest run`
- * avulso — este arquivo carrega `@sysloc/auth`, `@sysloc/db` e `@sysloc/contracts` pela fronteira do
+ * avulso — este arquivo carrega `@sysloc/auth`, `@sysloc/db` e `@syslocbr/contracts` pela fronteira do
  * pacote, e um `vitest run` leria o `dist/` da compilação anterior. A âncora de cada um é
  * **simbólica**, nunca número de linha.
  *
@@ -1123,7 +1123,7 @@ async function conceder(
 /**
  * Um cadastro de pessoa como a API o publica.
  *
- * Declarado aqui, e não importado de `@sysloc/contracts`: o conjunto de chaves é o que os casos
+ * Declarado aqui, e não importado de `@syslocbr/contracts`: o conjunto de chaves é o que os casos
  * asserem, e derivá-lo do tipo do SUT faria a asserção concordar consigo mesma.
  */
 interface PessoaPublicada {

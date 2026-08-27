@@ -340,7 +340,7 @@ export type { SegredoOperavel };
  *
  * A borda a chama na primeira instrução depois da validação e não volta a tocar as cadeias cruas
  * que chegaram no corpo. Não há conferência de forma aqui, e a ausência é deliberada: quem confere
- * material e senha é o esquema publicado em `@sysloc/contracts` (ADR-0016), e uma segunda
+ * material e senha é o esquema publicado em `@syslocbr/contracts` (ADR-0016), e uma segunda
  * conferência escrita à mão seria uma segunda declaração da mesma regra, livre para divergir.
  */
 export function criarSegredoOperavel(segredo: SegredoEmClaro): SegredoOperavel {

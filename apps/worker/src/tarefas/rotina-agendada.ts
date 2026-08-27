@@ -27,7 +27,7 @@
  * meses de nada acontecendo sem que nada falhe.
  *
  * A conferência é do **esquema**, pela entrada única de `./carga-da-tarefa.ts`, e o identificador vem
- * de `@sysloc/contracts` (ADR-0016): ele confere a forma **e canoniza a caixa do UUID** (ADR-0017),
+ * de `@syslocbr/contracts` (ADR-0016): ele confere a forma **e canoniza a caixa do UUID** (ADR-0017),
  * que já foi vetor de escalada. A razão da falha nomeia o **campo**, nunca o valor recebido — ela fica
  * gravada no servidor de fila e alcança o journal, e valor de campo pode ser dado de outra empresa.
  *
@@ -131,7 +131,6 @@
  * conferência, e a natureza de `DELETE` e de leitura no expurgo e na vigilância.
  */
 
-import { ESQUEMA_DO_IDENTIFICADOR, LIMIAR_DE_ATRASO_POR_CADENCIA } from '@sysloc/contracts';
 import {
   abrirConferencia,
   contextoDeTenant,
@@ -142,6 +141,7 @@ import {
   registrarExecucaoDeRotina,
 } from '@sysloc/db';
 import { FILA_DA_ROTINA_AGENDADA, type Logger, type RotinaDeTrabalho } from '@sysloc/shared';
+import { ESQUEMA_DO_IDENTIFICADOR, LIMIAR_DE_ATRASO_POR_CADENCIA } from '@syslocbr/contracts';
 import { z } from 'zod';
 import type { TarefaDaRotinaAgendada } from '../fila.js';
 import { cargaConferida } from './carga-da-tarefa.js';

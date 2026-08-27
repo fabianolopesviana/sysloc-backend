@@ -46,9 +46,9 @@
  */
 
 import { Inject, Injectable } from '@nestjs/common';
-import type { ComodoNovo, Imovel } from '@sysloc/contracts';
 import { acrescentarComodo, alterarComodo, type ComodoPersistido, removerComodo } from '@sysloc/db';
 import { CodigoErro, ErroDeAplicacao } from '@sysloc/shared';
+import type { ComodoNovo, Imovel } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
 import { ImovelService } from './imovel.service.js';

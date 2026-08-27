@@ -718,7 +718,7 @@ const SIMBOLOS_ESPERADOS = [
   // anterior: são **declaração de estrutura**, não caminho para dado — quem os tem em mãos ainda
   // precisa de um executor para chegar ao banco, e o executor não sai do índice.
   //
-  // O QUARTO arranjo que a T1 publicou em `@sysloc/contracts` — `ESTADOS_DA_EMISSAO_EM_LOTE` — **não
+  // O QUARTO arranjo que a T1 publicou em `@syslocbr/contracts` — `ESTADOS_DA_EMISSAO_EM_LOTE` — **não
   // tem símbolo aqui**, e a ausência é a decisão, não esquecimento: o estado do lote é DERIVADO dos
   // dois instantes de desfecho (ADR-0022), de modo que não há tipo enumerado no banco a declarar. É
   // a mesma assimetria de `statusCobranca`, na direção oposta: lá o tipo existe sem coluna de tabela
@@ -1169,7 +1169,7 @@ const SIMBOLOS_ESPERADOS = [
   // pelo critério de `empresaDoContexto` e dos acessórios de calendário — e publicá-los daria à borda
   // as peças com que recompor o sorteio e o prazo por fora, que é justamente o que a porta mantém
   // dentro. O que a borda precisa saber sobre a **forma** do segredo já é contrato publicado, e vive
-  // em `@sysloc/contracts`.
+  // em `@syslocbr/contracts`.
   //
   // Os tipos que elas publicam (`ConsumoDoPortador`, `PortadorEmitido`, `PortadorResolvido`) não
   // aparecem aqui porque não existem em tempo de execução, e este caso observa o módulo carregado —
@@ -1260,7 +1260,7 @@ const SIMBOLOS_ESPERADOS = [
   //
   // `FORMATO_DA_COMPETENCIA` **não** é publicado, e a ausência é deliberada: ele é o mecanismo
   // interno da composição — o cabeçalho de `../src/index.ts` registra por quê. As larguras vêm
-  // importadas de `@sysloc/contracts`, e por isso não há símbolo de largura a mais para publicar aqui
+  // importadas de `@syslocbr/contracts`, e por isso não há símbolo de largura a mais para publicar aqui
   // além de `LARGURA_DO_CONTADOR_BANCARIO`. O conjunto abaixo é o MESMO da rodada 1 — quatro entradas,
   // nenhuma acrescentada e nenhuma retirada.
   'ErroDeContadorForaDaLargura',

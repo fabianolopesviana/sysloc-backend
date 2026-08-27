@@ -34,7 +34,7 @@
  * |       |        | vem em minúsculas nas três. Identificador que não é UUID é recusado com
  * |       |        | `422 CAMPO_INVALIDO` nomeando o parâmetro, e a contagem da tabela não muda. |
  * | CA-16 | CT-327 | Para **cada uma** das 48 rotas, o esquema de resposta que o documento publicado
- * |       |        | descreve é **profundamente igual** ao derivado do esquema de `@sysloc/contracts`
+ * |       |        | descreve é **profundamente igual** ao derivado do esquema de `@syslocbr/contracts`
  * |       |        | que a rota usa — nenhuma descrição escrita à mão em paralelo. Acrescentar um
  * |       |        | campo obrigatório ao esquema muda a descrição derivada, e a comparação passa a
  * |       |        | reprovar. (ADR-0016) |
@@ -81,7 +81,7 @@
  * descrição de contrato é escrita à mão em paralelo ao esquema"*. As duas metades da prova:
  *
  *   1. **A comparação** (permanente, neste caso): para as 48 rotas, o esquema que o documento
- *      publica é profundamente igual ao que `esquemaPublicado(<esquema de @sysloc/contracts>)`
+ *      publica é profundamente igual ao que `esquemaPublicado(<esquema de @syslocbr/contracts>)`
  *      produz. Uma descrição escrita à mão precisaria coincidir byte a byte com a saída de
  *      `z.toJSONSchema` — inclusive os padrões de UUID e de data — para passar aqui;
  *   2. **A sensibilidade** (permanente, na segunda metade do caso): o MESMO esquema com **um** campo
@@ -96,7 +96,7 @@
  * ---------------------------------------------------------------------------
  *
  * Os dois foram invocados pelo **script do pacote consumidor** (`pnpm --filter @sysloc/api test`),
- * nunca por `vitest run` avulso: `apps/api` alcança `@sysloc/contracts` pela fronteira do pacote e
+ * nunca por `vitest run` avulso: `apps/api` alcança `@syslocbr/contracts` pela fronteira do pacote e
  * leria o `dist/` da compilação anterior.
  *
  *   * **controle** — árvore íntegra: `129 passed`, os `4` deste arquivo entre eles;
@@ -148,6 +148,8 @@
 
 import { randomBytes } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { SENHA_DA_CARGA } from '@sysloc/db';
+import { CodigoErro } from '@sysloc/shared';
 import {
   envelopeDeLista,
   esquemaDaAtivacaoDeContrato,
@@ -165,9 +167,7 @@ import {
   SITUACOES_DE_LOCACAO,
   TIPOS_DE_IMOVEL,
   TIPOS_DE_PESSOA,
-} from '@sysloc/contracts';
-import { SENHA_DA_CARGA } from '@sysloc/db';
-import { CodigoErro } from '@sysloc/shared';
+} from '@syslocbr/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)
@@ -307,7 +307,7 @@ const ROTAS_DE_SITUACAO_DE_LOCACAO = 1;
  *
  * SUT_IS_CORRECT_BECAUSE: a fatia `fundacao-bancaria` acrescentou **três** rotas (43 → 46) — o
  * registro e a consulta do certificado do provedor (T11) e a verificação da identidade (T12) —, e as
- * três publicam corpo derivado de `@sysloc/contracts` por `esquemaPublicado` (ADR-0016). Deixar a
+ * três publicam corpo derivado de `@syslocbr/contracts` por `esquemaPublicado` (ADR-0016). Deixar a
  * âncora em `43` faria o `CT-327` passar sobre uma tabela que ignora as rotas novas, que é exatamente
  * o modo de falha silencioso que ela existe para fechar. O valor é `33 + 8 + 1 + 1 + 3`, e as
  * **cinco** partições passam a ser afirmadas separadamente — ver
@@ -316,7 +316,7 @@ const ROTAS_DE_SITUACAO_DE_LOCACAO = 1;
 /**
  * SUT_IS_CORRECT_BECAUSE: a **T7** da fatia `integracao-bancaria-autonoma` acrescentou **duas** rotas
  * (46 → 48) — a ativação e a consulta da **entrega da notícia** —, e as duas publicam corpo derivado
- * de `@sysloc/contracts` por `esquemaPublicado` (ADR-0016), do **mesmo** `esquemaDoEstadoDaEntrega`.
+ * de `@syslocbr/contracts` por `esquemaPublicado` (ADR-0016), do **mesmo** `esquemaDoEstadoDaEntrega`.
  * Deixar a âncora em `46` faria o `CT-327` passar sobre uma tabela que ignora as rotas novas, que é
  * exatamente o modo de falha silencioso que ela existe para fechar. O valor é `33 + 8 + 1 + 1 + 3 + 2`,
  * e as **seis** partições passam a ser afirmadas separadamente — ver
@@ -901,7 +901,7 @@ describe('o contrato publicado das 48 rotas do domínio (T11)', () => {
 });
 
 // ---------------------------------------------------------------------------------------------
-// CT-327 — a tabela das 48 rotas, com o esquema de `@sysloc/contracts` que cada uma publica
+// CT-327 — a tabela das 48 rotas, com o esquema de `@syslocbr/contracts` que cada uma publica
 // ---------------------------------------------------------------------------------------------
 
 /** Uma rota do domínio e o esquema de que a resposta dela deve derivar. */
@@ -932,7 +932,7 @@ function esquemasDeUmCadastro(dono: string, item: z.ZodType, lista: z.ZodType): 
 }
 
 /**
- * As **48** rotas, com o esquema de `@sysloc/contracts` de que cada resposta deriva.
+ * As **48** rotas, com o esquema de `@syslocbr/contracts` de que cada resposta deriva.
  *
  * SUT_IS_CORRECT_BECAUSE: esta linha dizia "As **39** rotas" enquanto a tabela já tinha 40, depois
  * 41, 42, 43, 46, e agora 48 — é o débito **D33 (F2/T7)**, fechado na T7 e mantido em dia desde então. O que mudou é **só a prosa**: a cardinalidade

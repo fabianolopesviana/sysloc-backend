@@ -119,7 +119,7 @@ import {
   type EstadoDaCobranca,
   formatarCodigoDeCobranca,
   type NaturezaDeCobranca,
-} from '@sysloc/contracts';
+} from '@syslocbr/contracts';
 import type { Fragment, TransactionSql } from 'postgres';
 // O fragmento da empresa do contexto tem **lar único** em `./contexto-de-escrita.ts`. Ele **não é
 // filtro** sobre as duas tabelas — nenhuma leitura deste arquivo o aplica, porque elas já têm
@@ -153,7 +153,7 @@ import { FORMATO_ISO_DA_DATA, FORMATO_ISO_DO_INSTANTE } from './moldes-de-format
  * A janela pedida da carteira, já validada na borda.
  *
  * O nome diverge do padrão `JanelaDe<Entidade>` das portas irmãs de propósito: `JanelaDeCobrancas` já
- * é **nome publicado** por `@sysloc/contracts` (o esquema da janela com os três filtros), e dois
+ * é **nome publicado** por `@syslocbr/contracts` (o esquema da janela com os três filtros), e dois
  * símbolos homônimos vindos de pacotes diferentes se encontrariam no mesmo `import` da borda.
  */
 export interface JanelaDaCarteira {
@@ -243,7 +243,7 @@ export interface DesfechoDoPagamento {
  *
  * ⚠️ **`identificadorNoProvedor` NÃO está aqui, e a ausência é a decisão.** A coluna existe desde a
  * `0017`, é única no SaaS (ADR-0033) e é **interna**: ela é a chave por onde a fatia do carnê casa a
- * notificação recebida com a empresa dona da cobrança, e esquema nenhum de `@sysloc/contracts` a
+ * notificação recebida com a empresa dona da cobrança, e esquema nenhum de `@syslocbr/contracts` a
  * publica. Publicá-la aqui a levaria ao JSON pela porta dos fundos, já que o recurso é composto por
  * espalhamento da linha na borda.
  *
@@ -482,7 +482,7 @@ function colunasDaCobranca(tx: TransactionSql): Fragment {
  * estado nesta camada, que é o que a ADR-0023 proíbe.
  *
  * **Quais estados recebem o par não se decide aqui**: a partição vem de `ESTADOS_EM_ABERTO`,
- * publicada por `@sysloc/contracts` ao lado do enum que a governa. Esta camada consome o nome e não
+ * publicada por `@syslocbr/contracts` ao lado do enum que a governa. Esta camada consome o nome e não
  * conhece os rótulos — é o que impede um literal de estado de existir em posição executável neste
  * pacote, e o que faz um estado novo em aberto alcançar o recorte pelo contrato, e não por uma
  * segunda lista livre para divergir. A implicação de que o par depende — *estado em aberto ⇒ os dois
@@ -729,7 +729,7 @@ export async function emitirNumerosDeCobranca(
  * A {@link NumeroDaSerie} chega **pronta**: o ano e o número obtidos pela borda e **entregues
  * juntos**. Esta função **não relê o ano** — a razão está no cabeçalho, e ela é o que impede o código
  * de anunciar um contador que não emitiu aquele número. O código sai de `formatarCodigoDeCobranca`,
- * importado de `@sysloc/contracts`: a forma `COB-{ano}-{7 dígitos}` tem lá o marcador
+ * importado de `@syslocbr/contracts`: a forma `COB-{ano}-{7 dígitos}` tem lá o marcador
  * `DECISÃO FECHADA` que fixa a largura, e redigitá-la aqui criaria a segunda fonte do mesmo fato
  * (ADR-0016).
  *

@@ -57,7 +57,7 @@
  * de envio não toca o fato financeiro (RD-09/ADR-0022), e a ausência é o mecanismo.
  */
 
-import type { EnvioDeCobranca, PoliticaDeAviso } from '@sysloc/contracts';
+import type { EnvioDeCobranca, PoliticaDeAviso } from '@syslocbr/contracts';
 import { dentroDaJanela } from './janela.js';
 import { comporAvisoDeCobranca, type MensagemDeAviso } from './mensagem.js';
 import type { CandidataAoAviso, PortaDeCandidatas, PortaDeRegistro } from './porta-de-dados.js';
@@ -153,7 +153,7 @@ const NADA_APURADO: OportunidadeDoAviso = Object.freeze({
 // ---------------------------------------------------------------------------
 
 /**
- * Os dois caminhos e os três desfechos, cada um preso ao tipo que `@sysloc/contracts` publica.
+ * Os dois caminhos e os três desfechos, cada um preso ao tipo que `@syslocbr/contracts` publica.
  *
  * Mesma forma, e mesma razão, de `DESFECHO_QUE_TRAVA` em `packages/db/src/envio-de-cobranca.ts`: um
  * rótulo que deixasse de existir no contrato **não compila** aqui, em vez de virar uma cadeia que o

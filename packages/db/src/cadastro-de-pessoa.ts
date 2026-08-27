@@ -80,7 +80,7 @@
  * operador digitou: `529.982.247-25` e `52998224725` são o mesmo documento, e duas linhas com as
  * duas grafias derrotariam a restrição sem que validação alguma acusasse.
  *
- * A normalização mora **aqui**, e não apenas no esquema de entrada de `@sysloc/contracts`, porque o
+ * A normalização mora **aqui**, e não apenas no esquema de entrada de `@syslocbr/contracts`, porque o
  * invariante é da **coluna**, não do formulário: esta porta é o único caminho de escrita para as
  * três tabelas (é a decisão de enumerabilidade do primeiro bloco), de modo que garanti-la neste
  * ponto a torna verdadeira para todo chamador — inclusive uma carga futura que não passe por HTTP.
@@ -139,8 +139,8 @@
  * das políticas, avaliada dentro da própria instrução.
  */
 
-import type { TipoDePessoa } from '@sysloc/contracts';
 import { somenteDigitos } from '@sysloc/shared';
+import type { TipoDePessoa } from '@syslocbr/contracts';
 import type { Fragment, TransactionSql } from 'postgres';
 // O tipo é da **decisão**, e não da entidade: `{ incluirRetirados }` é o parâmetro nomeado que a
 // ADR-0014 obriga toda porta de leitura a expor, e ele já nasceu publicado pelo pacote. Declarar um

@@ -11,7 +11,7 @@ out/
 
 # Segredos — NADA aqui pode ser versionado
 .env
-# Credencial de registry. A publicação do `@sysloc/contracts` no GitHub Packages exige um PAT,
+# Credencial de registry. A publicação do `@syslocbr/contracts` no GitHub Packages exige um PAT,
 # e `npm`/`pnpm` o gravam aqui — invariante 3: nenhum segredo versionado. Asserido pelo CT-1202.
 .npmrc
 .env.*

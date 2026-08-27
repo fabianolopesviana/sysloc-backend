@@ -244,7 +244,7 @@
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { esquemaDaCobranca } from '@sysloc/contracts';
+import { esquemaDaCobranca } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {

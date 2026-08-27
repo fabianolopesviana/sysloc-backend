@@ -1,5 +1,5 @@
 ---
-description: Convenções do contrato publicado em @sysloc/contracts — a direção do dado decide a estritude do esquema, e como cada recusa é provada — por chave desconhecida e por valor inválido. Carregada ao escrever ou revisar esquema do pacote de contratos, e ao gerar spec que defina a entrada ou a saída de uma rota.
+description: Convenções do contrato publicado em @syslocbr/contracts — a direção do dado decide a estritude do esquema, e como cada recusa é provada — por chave desconhecida e por valor inválido. Carregada ao escrever ou revisar esquema do pacote de contratos, e ao gerar spec que defina a entrada ou a saída de uma rota.
 paths:
   - "packages/contracts/**"
   - "docs/specs/**"

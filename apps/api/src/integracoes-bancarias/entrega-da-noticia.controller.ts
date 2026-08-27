@@ -91,7 +91,7 @@
  * O corpo da ativação é VAZIO e FECHADO, e o esquema vem do PACOTE DE CONTRATOS
  * ---------------------------------------------------------------------------
  *
- * `esquemaDaAtivacaoDaEntrega`, de `@sysloc/contracts`, e **não** o `ESQUEMA_DO_CORPO_VAZIO` da
+ * `esquemaDaAtivacaoDaEntrega`, de `@syslocbr/contracts`, e **não** o `ESQUEMA_DO_CORPO_VAZIO` da
  * borda. A forma é a mesma, e a razão de não reusar aquele está escrita no docblock deste: aquele é a
  * forma **anônima** que a borda aplica a ato sem elemento de contrato próprio; este é elemento
  * **nomeado** da superfície publicada, e é dele que o documento OpenAPI da rota deriva (ADR-0016). O
@@ -130,13 +130,13 @@ import {
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
+import type { AcessoAoBanco } from '@sysloc/db';
+import { CodigoErro, type Logger } from '@sysloc/shared';
 import {
   type EstadoDaEntrega,
   esquemaDaAtivacaoDaEntrega,
   esquemaDoEstadoDaEntrega,
-} from '@sysloc/contracts';
-import type { AcessoAoBanco } from '@sysloc/db';
-import { CodigoErro, type Logger } from '@sysloc/shared';
+} from '@syslocbr/contracts';
 import type { FastifyRequest } from 'fastify';
 import { ExigeChaves } from '../autenticacao/exigencia.decorator.js';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';

@@ -133,11 +133,6 @@ import {
   type GuardaDeBoletos,
 } from '@sysloc/cobranca-bancaria';
 import {
-  CADENCIA_DA_ROTINA,
-  type PoliticaDeAvisoNova,
-  type SituacaoDeLocacao,
-} from '@sysloc/contracts';
-import {
   type AcessoAoBanco,
   abrirAcessoAoBanco,
   admitirEmpresa,
@@ -165,6 +160,11 @@ import {
 } from '@sysloc/db';
 import { criarCapturadorDeEmail, dentroDaJanela, type PortaDeEnvioDeEmail } from '@sysloc/regua';
 import { criarLogger, FILA_DA_ROTINA_AGENDADA, OPCOES_PADRAO_DA_TAREFA } from '@sysloc/shared';
+import {
+  CADENCIA_DA_ROTINA,
+  type PoliticaDeAvisoNova,
+  type SituacaoDeLocacao,
+} from '@syslocbr/contracts';
 import type { Job, Queue } from 'bullmq';
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
@@ -907,7 +907,7 @@ describe('CT-1079 (b) — a folga da retomada e a cadência do timer são o MESM
   });
 
   it('CT-1079 (b) — a folga é EXATAMENTE uma cadência inteira do timer da retomada', () => {
-    // A amarra: os dois números passam a ser o mesmo fato. Mudar a cadência em `@sysloc/contracts`
+    // A amarra: os dois números passam a ser o mesmo fato. Mudar a cadência em `@syslocbr/contracts`
     // sem revisar a folga reprova AQUI, no instante em que a premissa deixa de valer — e não em
     // produção, meses depois, com duas passagens concorrentes sobre o mesmo cru.
     expect(folga).toBe(minutosDaCadencia(cadencia));

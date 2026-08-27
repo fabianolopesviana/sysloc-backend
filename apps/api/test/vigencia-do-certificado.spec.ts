@@ -71,7 +71,7 @@
 import { readFile } from 'node:fs/promises';
 import { relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { LIMIAR_DE_VENCIMENTO_EM_DIAS } from '@sysloc/contracts';
+import { LIMIAR_DE_VENCIMENTO_EM_DIAS } from '@syslocbr/contracts';
 import { describe, expect, it } from 'vitest';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)
 // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma mudança, não protege o código abaixo.)
@@ -251,7 +251,7 @@ describe('CT-864 — a vigência é derivada de dois dias de calendário, sem re
   });
 
   it('CT-864 — as duas bordas da tabela são o limiar PUBLICADO, e não um número escolhido aqui', () => {
-    // A âncora que liga a tabela ao contrato: sem ela, mudar o limiar em `@sysloc/contracts` deixaria
+    // A âncora que liga a tabela ao contrato: sem ela, mudar o limiar em `@syslocbr/contracts` deixaria
     // as linhas 2 e 3 medindo uma fronteira que não existe mais, e as duas continuariam verdes
     // porque o SUT teria mudado junto.
     const naBordaVencendo = LINHAS[2];

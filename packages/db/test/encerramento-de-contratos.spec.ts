@@ -144,7 +144,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import type { EstadoDoContrato, RotinaPublicada, SituacaoDeLocacao } from '@sysloc/contracts';
+import type { EstadoDoContrato, RotinaPublicada, SituacaoDeLocacao } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {

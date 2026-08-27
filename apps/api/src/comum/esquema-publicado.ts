@@ -1,5 +1,5 @@
 /**
- * A tradução de um esquema de `@sysloc/contracts` na descrição publicada — **ponto único da borda**.
+ * A tradução de um esquema de `@syslocbr/contracts` na descrição publicada — **ponto único da borda**.
  *
  * ## Por que existe
  *
@@ -38,7 +38,7 @@ export type LadoDoContrato = 'input' | 'output';
 /**
  * Deriva a descrição publicada de um esquema.
  *
- * @param esquema O esquema de `@sysloc/contracts` — a fonte única (ADR-0016).
+ * @param esquema O esquema de `@syslocbr/contracts` — a fonte única (ADR-0016).
  * @param lado    `'input'` para corpo e parâmetro de entrada; `'output'` para resposta.
  *
  * O `$schema` sai do resultado de propósito: ele é metadado do dialeto JSON Schema e não pertence ao

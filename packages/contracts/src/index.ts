@@ -1,5 +1,5 @@
 /**
- * `@sysloc/contracts` — a **fonte única do contrato** da API (ADR-0016).
+ * `@syslocbr/contracts` — a **fonte única do contrato** da API (ADR-0016).
  *
  * O mesmo esquema confere a entrada, tipa a resposta e é de onde o documento publicado deriva.
  * Nenhuma descrição de contrato é escrita à mão em paralelo a ele: duas escritas do mesmo fato são

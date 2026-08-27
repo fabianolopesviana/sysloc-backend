@@ -21,7 +21,7 @@
  * ---------------------------------------------------------------------------
  *
  * `.claude/rules/contrato-publicado.md` manda *"entrada fechada"*, e ela **não alcança** o corpo da
- * notícia. O sujeito daquela regra é o esquema publicado por `@sysloc/contracts`, e a justificativa
+ * notícia. O sujeito daquela regra é o esquema publicado por `@syslocbr/contracts`, e a justificativa
  * dela é *"chave desconhecida na entrada é erro do cliente"*. Aqui não há nem uma coisa nem outra: o
  * provedor **não é cliente nosso** — ele não pode corrigir o payload —, e este corpo não tem esquema
  * publicado (tech spec §21.2). Recusar por chave desconhecida seria **perder a notícia**, que é
@@ -101,7 +101,7 @@
  * recebimento — é o mesmo raciocínio com que a spec justifica o expurgo do retido (§7.5).
  *
  * ---------------------------------------------------------------------------
- * Zod entra por `@sysloc/contracts`, e o pacote segue com ZERO dependência externa
+ * Zod entra por `@syslocbr/contracts`, e o pacote segue com ZERO dependência externa
  * ---------------------------------------------------------------------------
  *
  * A forma do identificador é conferida por {@link ESQUEMA_DO_IDENTIFICADOR_BANCARIO}, que é a **fonte
@@ -112,7 +112,7 @@
  * guardas de tipo, porque é pouco e porque nada além da forma do identificador é contrato.
  */
 
-import { ESQUEMA_DO_IDENTIFICADOR_BANCARIO } from '@sysloc/contracts';
+import { ESQUEMA_DO_IDENTIFICADOR_BANCARIO } from '@syslocbr/contracts';
 
 /**
  * As três categorias em que todo corpo recebido cai — **exaustivas e mutuamente exclusivas**.
@@ -261,7 +261,7 @@ export function classificarNotificacaoBancaria(recebido: unknown): NotificacaoBa
   // O QUÊ: a leitura abaixo é TOLERANTE — olha só as chaves de que precisa e ignora todas as
   //        outras. Nada aqui é `z.strictObject`, e nenhuma chave desconhecida desclassifica.
   // POR QUÊ: `.claude/rules/contrato-publicado.md` manda entrada fechada, e não alcança este corpo:
-  //          ela governa o esquema publicado por `@sysloc/contracts` e se justifica por "chave
+  //          ela governa o esquema publicado por `@syslocbr/contracts` e se justifica por "chave
   //          desconhecida na entrada é erro do cliente". O provedor não é cliente nosso e não pode
   //          corrigir o payload; fechar a leitura faria toda notícia com campo novo dele virar
   //          `ILEGIVEL`, que é perder a notícia — o defeito que esta fatia existe para não ter

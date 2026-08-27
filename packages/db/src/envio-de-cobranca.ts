@@ -54,7 +54,7 @@
  * NENHUM LITERAL DE ESTADO DA COBRANÇA EXISTE AQUI (ADR-0022)
  * ---------------------------------------------------------------------------
  *
- * O recorte de estado sai de `ESTADOS_EM_ABERTO`, publicado por `@sysloc/contracts` ao lado do enum
+ * O recorte de estado sai de `ESTADOS_EM_ABERTO`, publicado por `@syslocbr/contracts` ao lado do enum
  * que o governa. Esta camada consome o **nome** e não conhece os rótulos, pela mesma razão que
  * {@link ./cobranca.ts} registra: é o que impede um literal de `negocio.status_cobranca` de existir
  * em posição executável num fonte deste pacote — o que o `CT-510` afirma por varredura, com a lista
@@ -99,15 +99,15 @@
  * `envio_de_cobranca_cobranca_empresa_fkey` recusa o par que não existe.
  */
 
-// `ESTADOS_EM_ABERTO` é importado pela mesma razão de `./cobranca.ts`: a classificação *"quais
-// estados estão em aberto"* é fato do contrato, e tem lar único ao lado do enum que o declara.
-// `EnvioDeCobranca` é o recurso publicado, e dele se derivam os tipos dos dois rótulos — a forma que
-// `@sysloc/contracts` declara no próprio cabeçalho para quem precisa do tipo de um rótulo.
-import type { EnvioDeCobranca, PoliticaDeAviso } from '@sysloc/contracts';
-import { ESTADOS_EM_ABERTO } from '@sysloc/contracts';
 // A seta `db → regua` é a ADR-0025 — ver o cabeçalho deste arquivo. O que se importa é o **tipo**:
 // `@sysloc/regua` é domínio puro, não conhece banco, e nada de valor atravessa esta fronteira.
 import type { CandidataAoAviso, TentativaDeEnvio } from '@sysloc/regua';
+// `ESTADOS_EM_ABERTO` é importado pela mesma razão de `./cobranca.ts`: a classificação *"quais
+// estados estão em aberto"* é fato do contrato, e tem lar único ao lado do enum que o declara.
+// `EnvioDeCobranca` é o recurso publicado, e dele se derivam os tipos dos dois rótulos — a forma que
+// `@syslocbr/contracts` declara no próprio cabeçalho para quem precisa do tipo de um rótulo.
+import type { EnvioDeCobranca, PoliticaDeAviso } from '@syslocbr/contracts';
+import { ESTADOS_EM_ABERTO } from '@syslocbr/contracts';
 import type { Fragment, TransactionSql } from 'postgres';
 // O fragmento da empresa do contexto tem **lar único** em `./contexto-de-escrita.ts`. Ele **não é
 // filtro** sobre relação alguma — nenhuma leitura deste arquivo o aplica, porque elas já têm política

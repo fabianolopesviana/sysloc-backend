@@ -1,5 +1,5 @@
 /**
- * Os esquemas de `@sysloc/contracts` — CT-334 a CT-338, CT-340, CT-341, mais CT-424 e CT-428, que a
+ * Os esquemas de `@syslocbr/contracts` — CT-334 a CT-338, CT-340, CT-341, mais CT-424 e CT-428, que a
  * fatia `contratos-de-locacao` acrescenta, CT-537 mais CT-540 a CT-545, que a fatia
  * `cobranca-e-mora` acrescenta, CT-604 e CT-605, que a fatia `regua-de-cobranca` acrescenta, e
  * CT-713 e CT-731, que a sub-fatia `documentos-e-confirmacao` acrescenta, CT-845 a CT-850, que a
@@ -286,7 +286,7 @@
  *
  * **MUTANTE EXECUTADO — MT-T9-A (2026-08-10).** Aplicado ao fonte de produção
  * (`packages/contracts/src/contrato.ts`) e invocado pelo **script do pacote**
- * (`pnpm --filter @sysloc/contracts test`), nunca por `vitest run` avulso. O mutante é justamente a
+ * (`pnpm --filter @syslocbr/contracts test`), nunca por `vitest run` avulso. O mutante é justamente a
  * "correção compatível" descrita acima — `z.number().int().nonnegative()` trocado por
  * `z.union([z.literal(false), z.number()])` —, e o resultado é `3 failed | 224 passed`: reprovam os
  * três casos do eixo RECUSADO (`expected true to be false`), um por cláusula perdida — o `false` que a
@@ -328,7 +328,7 @@
  * **comportamentais** e por isso não exigiriam a prova (`.claude/rules/testing-stack.md`); os
  * mutantes foram medidos assim mesmo, porque cada um deles é uma decisão registrada por extenso no
  * cabeçalho de `src/automacao-de-cobranca.ts`, e decisão sem rede é o que a rodada seguinte reabre.
- * Os três rodaram pelo **script do pacote** (`pnpm --filter @sysloc/contracts test`), nunca por
+ * Os três rodaram pelo **script do pacote** (`pnpm --filter @syslocbr/contracts test`), nunca por
  * `vitest run` avulso, e os três foram revertidos com `sha256sum` idêntico ao estado pré-mutante,
  * com o controle de volta a `267 passed`.
  *
@@ -373,7 +373,7 @@
  * mutantes foram medidos assim mesmo, porque cada um deles é uma decisão registrada por extenso nos
  * cabeçalhos de `src/confirmacao-de-email.ts` e de `src/pessoa.ts`, e decisão sem rede é o que a
  * rodada seguinte reabre. Os quatro rodaram pelo **script do pacote**
- * (`pnpm --filter @sysloc/contracts test`), nunca por `vitest run` avulso, e os quatro foram
+ * (`pnpm --filter @syslocbr/contracts test`), nunca por `vitest run` avulso, e os quatro foram
  * revertidos com `sha256sum` idêntico ao estado pré-mutante, com o controle de volta a `293 passed`.
  *
  * - **MT-T2b-A — a entrega pela forma errada**: `emailConfirmadoEm` acrescentado diretamente a
@@ -401,7 +401,7 @@
  *
  * Ele inspeciona o **texto** do fonte, e por isso a prova é OBRIGATÓRIA
  * (`.claude/rules/testing-stack.md`). Os dois mutantes foram aplicados ao fonte, medidos e
- * revertidos, e os dois rodaram pelo SCRIPT do pacote — `pnpm --filter @sysloc/contracts test` —, e
+ * revertidos, e os dois rodaram pelo SCRIPT do pacote — `pnpm --filter @syslocbr/contracts test` —, e
  * não por `vitest run` avulso.
  *
  * - **Mutante 1 — a segunda definição do mesmo fato**: `export const ESCALA_MONETARIA = 0.01;`
@@ -425,7 +425,7 @@
  * do caso: o dono das duas constantes passou a ser `src/comum.ts`, e os consumidores passaram a ser
  * **dois** (`cobranca.ts` e `contrato.ts`), importando de `'./comum.js'`. Uma asserção estática que
  * muda de forma precisa de prova nova — a antiga provava o alvo antigo. Os dois mutantes rodaram pelo
- * SCRIPT do pacote (`pnpm --filter @sysloc/contracts test`), e a reversão foi conferida por
+ * SCRIPT do pacote (`pnpm --filter @syslocbr/contracts test`), e a reversão foi conferida por
  * `sha256sum` idêntico ao estado pré-mutante, com o controle de volta a `389 passed`.
  *
  * - **Mutante 1' — a segunda definição exportada**: `export const ESCALA_MONETARIA = 0.01;`
@@ -498,7 +498,7 @@
  *
  * Ele inspeciona o **texto** do fonte, e por isso a prova é OBRIGATÓRIA
  * (`.claude/rules/testing-stack.md`). Os dois mutantes foram aplicados ao fonte de produção, medidos
- * e revertidos, e os dois rodaram pelo SCRIPT do pacote — `pnpm --filter @sysloc/contracts test` —, e
+ * e revertidos, e os dois rodaram pelo SCRIPT do pacote — `pnpm --filter @syslocbr/contracts test` —, e
  * não por `vitest run` avulso. O controle antes e depois é `356 passed`, e a reversão foi conferida
  * por `sha256sum` idêntico ao estado pré-mutante.
  *
@@ -622,7 +622,7 @@ import { diferencasDeConjunto } from '../../db/test/conjuntos.ts';
 // QUANDO FECHA: o gatilho já disparou e o fechamento segue pendente; ele é o mesmo de sempre —
 //        declarar o subpath `"./test"` nos manifestos e importar por `@sysloc/<pacote>/test`, ou
 //        extrair um `@sysloc/test-utils`. Para ESTE pacote, só a segunda saída serve: a primeira
-//        criaria a aresta `@sysloc/contracts` → `@sysloc/db` que o CT-339 proíbe.
+//        criaria a aresta `@syslocbr/contracts` → `@sysloc/db` que o CT-339 proíbe.
 // POR QUE NÃO AGORA: extrair o pacote de acessórios é trabalho de todos os consumidores, alheio a
 //        esta task, e o Protocolo Antirregressão veda refactor fora do escopo.
 // ÍNDICE: docs/specs/features/fundacao-stack-nativa/v1/_run/run-report.md §2, D28
@@ -4860,7 +4860,7 @@ describe('CT-942 (b) — os quatro enums da fatia publicam exatamente os rótulo
  * Por que a âncora fica AQUI, e não sobre o corpo observado no E2E
  * ---------------------------------------------------------------------------
  *
- * Depois que a forma do envelope passou a viver em `@sysloc/contracts`, ela tem **uma** declaração, e
+ * Depois que a forma do envelope passou a viver em `@syslocbr/contracts`, ela tem **uma** declaração, e
  * dela derivam as duas pontas: o documento OpenAPI, por `esquemaPublicado(...)`, e o tipo de retorno
  * do manipulador, por `z.infer`. Uma segunda âncora — sobre `Object.keys(corpo)` no E2E da rota —
  * seria a segunda cópia da mesma lista de chaves, livre para divergir desta: exatamente o defeito que
@@ -4948,7 +4948,7 @@ describe('CT-953 — o envelope do histórico bancário publica itens, e só ele
  * defeito está nomeada no comentário do próprio caso.
  *
  * **PROVA DE FALSIFICAÇÃO, executada pelo script `test` do pacote** (`pnpm --filter
- * @sysloc/contracts test`, nunca por invocação avulsa do executor — o pacote resolve `.` para
+ * @syslocbr/contracts test`, nunca por invocação avulsa do executor — o pacote resolve `.` para
  * `dist/`, e um mutante no fonte não alcançaria o que executa):
  *
  * 1. `esquemaDoEstadoDaEntrega` trocado de `z.object` para `z.strictObject`: o caso da **abertura**
@@ -5344,7 +5344,7 @@ describe('CT-1044 — a direção decide a estritude, o enum é congelado e o po
  * stack), e a asserção que discrimina cada defeito está nomeada no comentário do próprio caso.
  *
  * **PROVAS DE FALSIFICAÇÃO, executadas pelo script `test` do pacote** (`pnpm --filter
- * @sysloc/contracts test`, nunca por invocação avulsa do executor — o pacote resolve `.` para
+ * @syslocbr/contracts test`, nunca por invocação avulsa do executor — o pacote resolve `.` para
  * `dist/`, e um mutante no fonte não alcançaria o que executa):
  *
  * 1. **Segunda lista literal.** Acrescentado a `src/rotina-agendada.ts` um

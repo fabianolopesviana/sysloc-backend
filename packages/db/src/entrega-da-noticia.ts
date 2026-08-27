@@ -62,7 +62,7 @@
  * {@link gravarDesfechoDaEntrega} — **este módulo, e nenhum outro**.
  *
  * ⚠️ **A alternativa idiomática foi medida e descartada**: os dois `.refine()` de
- * `esquemaDoMotivoDaRecusa`, em `@sysloc/contracts`, expressam o mesmo teto num esquema de **saída**
+ * `esquemaDoMotivoDaRecusa`, em `@syslocbr/contracts`, expressam o mesmo teto num esquema de **saída**
  * — e esquema de saída **nunca é `parse`ado em execução** nesta base (o único `parse` da borda é o de
  * entrada, em `apps/api/src/comum/validacao.ts`), nem sobrevive ao `z.toJSONSchema` que publica o
  * documento. Declarado só ali, o teto ficava inoperante enquanto **parecia** uma guarda, e a coluna
@@ -74,7 +74,7 @@
  * nem para o processo de trabalho —, de modo que esquecer de limitar deixa de ser possível.
  */
 
-import { MAIOR_DIAGNOSTICO_EM_CARACTERES, MAIOR_DIAGNOSTICO_EM_CHAVES } from '@sysloc/contracts';
+import { MAIOR_DIAGNOSTICO_EM_CARACTERES, MAIOR_DIAGNOSTICO_EM_CHAVES } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { empresaDoContexto } from './contexto-de-escrita.js';
 
@@ -264,7 +264,7 @@ export async function lerEstadoDaEntrega(
  * A assimetria decide o verbo: perder parte do diagnóstico é barato; perder a recusa, não
  * ---------------------------------------------------------------------------
  *
- * É o mesmo argumento que o docblock de `MAIOR_DIAGNOSTICO_EM_CHAVES` já faz em `@sysloc/contracts`,
+ * É o mesmo argumento que o docblock de `MAIOR_DIAGNOSTICO_EM_CHAVES` já faz em `@syslocbr/contracts`,
  * levado à sua consequência. Recusar a gravação por excesso de diagnóstico apagaria **o fato inteiro**
  * — `codigo` e `mensagem` junto —, e o Admin ficaria sem saber por que a entrega não subiu, que é
  * exatamente o que a RN-02 manda preservar. Truncar perde o excedente e mantém a recusa.

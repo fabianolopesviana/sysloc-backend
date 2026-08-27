@@ -144,7 +144,7 @@ contrato → teste), o que rebate o corte por camada que a F1 já havia descarta
 
 Conjunto, imóvel, cômodos e os três papéis de pessoa, com **metragem derivada na leitura** provada
 contra o golden, exclusão lógica (nada é apagado, exceto cômodo, que é detalhe de composição) e
-unicidade por empresa de documento e identificador municipal. Nasce aqui o **`@sysloc/contracts`**.
+unicidade por empresa de documento e identificador municipal. Nasce aqui o **`@syslocbr/contracts`**.
 
 ### Fatia 2 — `contratos-de-locacao`
 
@@ -165,7 +165,7 @@ ativação e do cancelamento.
    golden: ativação (340 linhas) e cancelamento (174 linhas) **atravessam F3 e F4** — geram cobrança,
    emitem boleto, exigem PDF e pedem baixa bancária. A F2 porta o **núcleo local** delas (validações,
    transição de status, efeito no imóvel) e declara os pontos de extensão como débito com gatilho.
-5. **`@sysloc/contracts`** — nasce **interno**, com esquema compartilhado como fonte única do contrato
+5. **`@syslocbr/contracts`** — nasce **interno**, com esquema compartilhado como fonte única do contrato
    e documento derivado dele (ADR-0016). A publicação acontece no marco; `ts-rest`, que a stack
    declara, fica para quando a superfície congelar.
 
@@ -363,7 +363,7 @@ rotina parada gera alerta · o instalador roda duas vezes sem duplicar entrada.
 **O fonte do React não está neste servidor** — ele vive na máquina local. Nenhum agente daqui escreve
 uma linha dele. O que este repositório entrega é o **contrato e o mapa**:
 
-- **`@sysloc/contracts` publicado** no GitHub privado e versionado — é o que o React importa;
+- **`@syslocbr/contracts` publicado** no GitHub privado e versionado — é o que o React importa;
 - **`handoff-frontend.md`**, com o modelo de domínio camelCase, o envelope de erro, a autenticação
   por sessão e o **mapa endpoint-a-endpoint** ligando cada um dos **35 caminhos ERPNext antigos** à
   rota nova.
@@ -414,7 +414,7 @@ nela se corrige como correção; **não reabre a construção do backend**.
 ## Onde a construção deste repositório termina
 
 O **marco de entrega do backend** não é a F7 inteira — é a F1–F5 concluídas, mais a superfície da API
-congelada, o `@sysloc/contracts` publicado, o `handoff-frontend.md` gerado, o backup/restore provado
+congelada, o `@syslocbr/contracts` publicado, o `handoff-frontend.md` gerado, o backup/restore provado
 e o runbook da virada escrito. A lista fechada, com as caixas de verificação, está no `CLAUDE.md`.
 
 **Fora do escopo daqui, em qualquer hipótese:** código React, arquivos na máquina local, os specs

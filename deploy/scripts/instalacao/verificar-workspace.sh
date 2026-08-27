@@ -86,7 +86,7 @@ LIMITE_CICLO_CT001=600
 # que esta nota registra é o atraso, não a lista.
 #
 # A regra acima ("quem acrescenta membro acrescenta a linha aqui, no mesmo
-# commit") foi DESCUMPRIDA quatro vezes: `@sysloc/contracts` (F2),
+# commit") foi DESCUMPRIDA quatro vezes: `@syslocbr/contracts` (F2),
 # `@sysloc/documentos` e `@sysloc/regua` (F3) e `@sysloc/cobranca-bancaria` (F4)
 # entraram no workspace sem a linha correspondente. O espelho reprovou em todas —
 # ele estava certo o tempo inteiro —, e a reprovação foi lida como ruído de
@@ -106,7 +106,7 @@ MEMBROS_DO_WORKSPACE=(
 	"@sysloc/shared:/packages/shared"
 	"@sysloc/db:/packages/db"
 	"@sysloc/auth:/packages/auth"
-	"@sysloc/contracts:/packages/contracts"
+	"@syslocbr/contracts:/packages/contracts"
 	"@sysloc/documentos:/packages/documentos"
 	"@sysloc/regua:/packages/regua"
 	"@sysloc/cobranca-bancaria:/packages/cobranca-bancaria"
@@ -116,7 +116,7 @@ MEMBROS_DO_WORKSPACE=(
 
 # O ÚNICO membro que sai deste repositório. Declarado aqui, e não inferido da ausência da marca,
 # porque a ausência é exatamente o que um `private` removido por acidente produziria.
-readonly MEMBRO_PUBLICAVEL="@sysloc/contracts"
+readonly MEMBRO_PUBLICAVEL="@syslocbr/contracts"
 
 # O ÚNICO ponto onde a expressão que reconhece uma linha do `pnpm list` é composta.
 #
@@ -364,12 +364,12 @@ ct_001() {
 		sufixo="${membro#*:}"
 
 		# SUT_IS_CORRECT_BECAUSE: o manifesto SEM `private` é o código certo — é ele que torna o
-		# @sysloc/contracts publicável (item 3 do marco de entrega, decisão do usuário de
+		# @syslocbr/contracts publicável (item 3 do marco de entrega, decisão do usuário de
 		# 2026-08-26). A asserção estava certa para o regime em que TODO membro era interno, e
 		# esse regime acabou para exatamente um pacote.
 		#
 		# ⚠️ A marca `(PRIVATE)` é declarada POR MEMBRO, e não presumida de todos.
-		# O `@sysloc/contracts` é publicado no GitHub Packages desde 2026-08-26 (item 3 do
+		# O `@syslocbr/contracts` é publicado no GitHub Packages desde 2026-08-26 (item 3 do
 		# marco de entrega), logo o `pnpm list` NÃO o marca — e exigir a marca dele
 		# reprovaria o estado correto. Os demais continuam internos, e para eles a marca é
 		# obrigatória: é ela que pega o acidente real, que é `private` sumir de um pacote

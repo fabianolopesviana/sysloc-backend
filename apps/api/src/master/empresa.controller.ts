@@ -24,7 +24,7 @@
  * ---------------------------------------------------------------------------
  *
  * Decisão registrada da fatia: o painel do operador, pós-F7, pode acrescentar rotas sob
- * `/v1/master` sem violar o congelamento — o que congela é a superfície que o `@sysloc/contracts`
+ * `/v1/master` sem violar o congelamento — o que congela é a superfície que o `@syslocbr/contracts`
  * entrega ao frontend da imobiliária, e o operador do SaaS não é aquele cliente.
  *
  * ---------------------------------------------------------------------------

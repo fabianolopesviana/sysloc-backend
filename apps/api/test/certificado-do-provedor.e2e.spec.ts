@@ -305,11 +305,6 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { Test } from '@nestjs/testing';
 import { criarAdaptadorSicoob, type PortaDeIdentidadeBancaria } from '@sysloc/cobranca-bancaria';
 import {
-  esquemaDoCertificado,
-  LIMIAR_DE_VENCIMENTO_EM_DIAS,
-  MAIOR_MATERIAL_CODIFICADO,
-} from '@sysloc/contracts';
-import {
   type AcessoAoBanco,
   abrirAcessoAoBanco,
   contextoDeTenant,
@@ -323,6 +318,11 @@ import {
   criarLogger,
   FILA_DA_RECONFERENCIA_DA_ENTREGA,
 } from '@sysloc/shared';
+import {
+  esquemaDoCertificado,
+  LIMIAR_DE_VENCIMENTO_EM_DIAS,
+  MAIOR_MATERIAL_CODIFICADO,
+} from '@syslocbr/contracts';
 import { Queue } from 'bullmq';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 // DÉBITO COM GATILHO — D28 · F0/T5 · gatilho JÁ DISPARADO (F1/T2, 2026-08-02)
@@ -1918,7 +1918,7 @@ function chavesDe(corpo: unknown): string[] {
  * da fonte única do contrato (ADR-0016). A tautologia que a derivação abriria — alguém pôr o campo
  * do ato dentro daquele esquema, fazendo os dois lados crescerem juntos — é fechada pela negativa
  * literal sobre {@link CAMPO_DA_CONVERSAO}, que acompanha toda comparação, e pelo `CT-848 (c)` de
- * `@sysloc/contracts`, que prende os nove campos por lista escrita à mão.
+ * `@syslocbr/contracts`, que prende os nove campos por lista escrita à mão.
  */
 function chavesPublicadasDoCertificado(): string[] {
   return Object.keys(esquemaDoCertificado.shape).sort();

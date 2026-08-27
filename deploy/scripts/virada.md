@@ -3,7 +3,7 @@
 > **Item do marco de entrega**: *"`deploy/scripts/virada.md` escrito, com o gate de desinstalação de
 > 5 itens"*. **Escrever é construção; executar não é.**
 >
-> ⚠️ **Não confunda com o item do `@sysloc/contracts` publicado**, que é outro e vive em
+> ⚠️ **Não confunda com o item do `@syslocbr/contracts` publicado**, que é outro e vive em
 > `deploy/scripts/publicacao/publicar-contracts.md`. Os dois nasceram na mesma intervenção dirigida
 > de 2026-08-27, e numerar este como "item 3" — como a primeira versão fez — fazia os dois
 > reivindicarem o mesmo número do checklist.

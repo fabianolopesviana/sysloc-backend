@@ -124,7 +124,7 @@ import type {
   EventoBancario,
   OrigemDoEventoBancario,
   TipoDeEventoBancario,
-} from '@sysloc/contracts';
+} from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 // O fragmento da empresa do contexto tem lar único em `./contexto-de-escrita.ts`; ele **não é
 // filtro** (nenhuma leitura deste arquivo o aplica, porque a tabela já tem política), e existe só para

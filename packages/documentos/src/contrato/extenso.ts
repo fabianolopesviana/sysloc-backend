@@ -136,7 +136,7 @@ interface EscalaDeGrupo {
  * ⚠️ **A profundidade desta lista é o alcance do vocabulário** — quatro escalas nomeiam até
  * `999.999.999.999.999` —, e ela é **uma** das duas metades de {@link MAIOR_VALOR_REPRESENTAVEL}: a
  * outra é a aritmética, que estrangula antes. **Nenhuma das duas importa a constante monetária de
- * `@sysloc/contracts`**, e a ausência é deliberada: o limite aqui é do que esta função sabe nomear e
+ * `@syslocbr/contracts`**, e a ausência é deliberada: o limite aqui é do que esta função sabe nomear e
  * somar, não da coluna que guarda o dinheiro. Ver a conferência do débito **D1 (F3/T2)** no relatório
  * desta task; o marcador dele vive em `packages/contracts/src/cobranca.ts`, e não aqui.
  */
@@ -159,7 +159,7 @@ const MAIOR_INTEIRO_NOMEAVEL = 10 ** (ESCALAS.length * DIGITOS_POR_GRUPO) - 1;
  * possível para dinheiro num documento assinado. O teto do vocabulário (10¹⁵) é maior que este, e é
  * por isso que o limite efetivo é o menor dos dois: a aritmética estrangula antes da língua.
  *
- * Folga medida contra o produto: `MAIOR_VALOR_MONETARIO` de `@sysloc/contracts` vale
+ * Folga medida contra o produto: `MAIOR_VALOR_MONETARIO` de `@syslocbr/contracts` vale
  * 9.999.999.999.999,99 — uma ordem de grandeza **abaixo** deste teto. A constante de lá **não é
  * importada** de propósito; ver a conferência do débito **D1 (F3/T2)** no relatório da T5 — o
  * marcador dele vive em `packages/contracts/src/cobranca.ts` — e o caso de apoio que afirma que um

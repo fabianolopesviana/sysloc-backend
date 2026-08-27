@@ -88,7 +88,7 @@
  * ---------------------------------------------------------------------------
  *
  * `metragem` chega aqui como **número**, nunca `undefined`: quem aplica a RN-02 (*metragem ausente
- * vale zero*) é `esquemaDeComodoNovo`, em `@sysloc/contracts`, e o docblock dele declara a razão —
+ * vale zero*) é `esquemaDeComodoNovo`, em `@syslocbr/contracts`, e o docblock dele declara a razão —
  * *"um cômodo que chegasse à camada de dados com `undefined` obrigaria aquele ponto a decidir de
  * novo o que fazer com a ausência"*. A coluna é `NOT NULL DEFAULT 0` e tem
  * `check(metragem >= 0)`, de modo que a normalização é **verificável no banco**, e não uma promessa
@@ -100,7 +100,7 @@
  * `typeof`.
  */
 
-import type { Comodo } from '@sysloc/contracts';
+import type { Comodo } from '@syslocbr/contracts';
 import type { Fragment, TransactionSql } from 'postgres';
 import { empresaDoContexto } from './contexto-de-escrita.js';
 

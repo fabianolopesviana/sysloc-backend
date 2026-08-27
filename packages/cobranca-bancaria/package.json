@@ -55,7 +55,7 @@
     "test": "tsc --build && tsc -p tsconfig.test.json && vitest run"
   },
   "dependencies": {
-    "@sysloc/contracts": "workspace:*",
+    "@syslocbr/contracts": "workspace:*",
     "@sysloc/shared": "workspace:*"
   },
   "devDependencies": {

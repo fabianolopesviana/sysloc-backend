@@ -115,12 +115,12 @@
  * ausência.
  *
  * A ausência, porém, é **pendência com dono**, e não decisão fechada: o marco de entrega do
- * `CLAUDE.md` faz o `handoff-frontend.md` e o `@sysloc/contracts` dependerem justamente deste
+ * `CLAUDE.md` faz o `handoff-frontend.md` e o `@syslocbr/contracts` dependerem justamente deste
  * documento, e as rotas que a §4.1 declara sob este prefixo precisam estar nele — **cinco desde a
  * T9**, que desligou a sexta. Fechar exige declará-las à mão, uma anotação por rota, escrita a
  * partir do inventário que o `CT-018 (d)` fixa.
  *
- * **Dono, precisado no fechamento da F1**: a **publicação do `@sysloc/contracts`**, e não uma task
+ * **Dono, precisado no fechamento da F1**: a **publicação do `@syslocbr/contracts`**, e não uma task
  * genérica de fechamento. Declará-las agora produziria um documento que o congelamento
  * reescreveria dias depois, e as anotações envelheceriam sem consumidor — o gerador de cliente só
  * existe a partir daquele pacote. O que o fechamento da F1 fez foi tirar a pendência do limbo:

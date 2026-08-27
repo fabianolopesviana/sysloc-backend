@@ -448,7 +448,7 @@ export interface CargaDaReconferenciaDaEntrega {
  * As **quatro** rotinas por empresa que {@link FILA_DA_ROTINA_AGENDADA} transporta.
  *
  * ---------------------------------------------------------------------------
- * Este conjunto é DISTINTO dos dois de `@sysloc/contracts`, e não se deriva deles
+ * Este conjunto é DISTINTO dos dois de `@syslocbr/contracts`, e não se deriva deles
  * ---------------------------------------------------------------------------
  *
  * Há três conjuntos de rotina no produto, e eles servem a propósitos diferentes — confundi-los é o

@@ -157,7 +157,7 @@ const CONTEXTO_DE_B = { empresaId: EMPRESA_B.id } as const;
 /**
  * Os **sete** tipos de evento, na ordem em que o enum do banco os declara.
  *
- * Escritos à mão, e jamais importados de `@sysloc/contracts`: o enum do banco **deriva** daquele
+ * Escritos à mão, e jamais importados de `@syslocbr/contracts`: o enum do banco **deriva** daquele
  * arranjo (ADR-0016), e comparar um contra o outro seria pôr o artefato sob prova nos dois lados da
  * igualdade — um rótulo novo mudaria as duas pontas ao mesmo tempo. Ver o cabeçalho.
  *

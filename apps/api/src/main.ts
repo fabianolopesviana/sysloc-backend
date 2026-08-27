@@ -98,7 +98,7 @@ const ROTAS_FORA_DO_PREFIXO = ['saude', 'saude/pronto', CAMINHO_DO_CONTRATO, CAM
  * três razões, na ordem em que pesam:
  *
  *   1. o contrato é **insumo declarado** do handoff ao frontend — o `CLAUDE.md` o lista no marco de
- *      entrega do backend, e o `@sysloc/contracts` nasce dele. Fechá-lo agora encareceria o trabalho
+ *      entrega do backend, e o `@syslocbr/contracts` nasce dele. Fechá-lo agora encareceria o trabalho
  *      que ele existe para servir;
  *   2. **hoje não há a quem vazar**: a API escuta em `127.0.0.1` (`configuracao/ambiente.ts`) e
  *      `deploy/nginx/` está vazio, então o alcance é o próprio hospedeiro;

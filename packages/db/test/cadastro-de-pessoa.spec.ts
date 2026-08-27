@@ -174,7 +174,7 @@
  *     `diff -q`, e o controle voltou a `59 passed`.
  */
 
-import type { TipoDePessoa } from '@sysloc/contracts';
+import type { TipoDePessoa } from '@syslocbr/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   alterarPessoa,

@@ -466,7 +466,7 @@ const IMPORTADORES_ESPERADOS = [
   // entrega da notícia**, e ela **importa** a tradução única em vez de copiá-la, que é exatamente o
   // desfecho que o `CT-343` existe para premiar.
   //
-  // ⚠️ O corpo que ela recusa é o `esquemaDaAtivacaoDaEntrega` de `@sysloc/contracts` — e **não** o
+  // ⚠️ O corpo que ela recusa é o `esquemaDaAtivacaoDaEntrega` de `@syslocbr/contracts` — e **não** o
   // `ESQUEMA_DO_CORPO_VAZIO` da borda —, por decisão da ADR-0016: o esquema da rota vem do pacote de
   // contratos, que é a fonte única e é folha. Por isso ela entra AQUI e **não** em
   // {@link IMPORTADORES_DO_CORPO_VAZIO_ESPERADOS}, cujo conjunto permanece com os mesmos nove

@@ -11,7 +11,7 @@
  * tradução do dialeto do banco —, e a porta continua chegando a quem a usa **por parâmetro**
  * (ADR-0025).
  *
- * As dependências de workspace são `@sysloc/contracts`, o pacote folha de onde vem a fonte única do
+ * As dependências de workspace são `@syslocbr/contracts`, o pacote folha de onde vem a fonte única do
  * vocabulário publicado (ADR-0016), e `@sysloc/shared`, de onde vem o invólucro opaco do segredo
  * (ADR-0032). A ausência de `@sysloc/db` é a decisão, não uma omissão: é a camada de dados que
  * guarda o **envelope cifrado**, sem saber o que há dentro dele. A aresta de volta fecha um ciclo e
@@ -31,7 +31,7 @@
  * A superfície é declarada símbolo a símbolo, e não por `export *`
  * ---------------------------------------------------------------------------
  *
- * Mesma decisão, e mesma razão, de `@sysloc/contracts`, `@sysloc/regua` e `@sysloc/documentos`: um
+ * Mesma decisão, e mesma razão, de `@syslocbr/contracts`, `@sysloc/regua` e `@sysloc/documentos`: um
  * `export *` publicaria por descuido toda composição interna que um arquivo de `src/` exporte para o
  * vizinho, e retirar depois o que se publicou sem querer é mudança incompatível. Listar é o que
  * mantém a decisão de publicar explícita.
@@ -89,7 +89,7 @@
  * superfície sem consumidor que a peça — a mesma régua pela qual os cinco textos de desfecho saem.
  *
  * ⚠️ **`DetalheDaVerificacao` sai como tipo, e os textos dele continuam saindo pelos cinco nomes do
- * adaptador.** O tipo é derivado da fonte única de `@sysloc/contracts`, que é onde os textos passaram
+ * adaptador.** O tipo é derivado da fonte única de `@syslocbr/contracts`, que é onde os textos passaram
  * a morar quando o débito **D27 · F4/T8** foi fechado — publicar aqui uma segunda cópia do arranjo
  * daria ao produto dois caminhos para o mesmo vocabulário.
  *

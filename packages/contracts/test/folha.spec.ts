@@ -34,7 +34,7 @@
  * (`…/src/comum.ts:17`) e `declaradas` começando por `@sysloc/db`. Revertido, o controle voltou a
  * `31 passed`.
  *
- * A prova rodou pelo SCRIPT do pacote — `pnpm --filter @sysloc/contracts test` —, e não por
+ * A prova rodou pelo SCRIPT do pacote — `pnpm --filter @syslocbr/contracts test` —, e não por
  * `vitest run` avulso: a regra vale mesmo aqui, onde a suíte lê o fonte por caminho relativo, porque
  * *sempre pelo script* é o que dispensa apurar a cadeia de acessórios.
  *
@@ -54,7 +54,7 @@
 // QUANDO FECHA: o gatilho já disparou e o fechamento segue pendente; ele é o mesmo de sempre —
 //        declarar o subpath `"./test"` nos manifestos e importar por `@sysloc/<pacote>/test`, ou
 //        extrair um `@sysloc/test-utils`. Para ESTE consumidor, só a segunda saída serve: a
-//        primeira criaria a aresta `@sysloc/contracts` → `@sysloc/db` que o caso proíbe.
+//        primeira criaria a aresta `@syslocbr/contracts` → `@sysloc/db` que o caso proíbe.
 // POR QUE NÃO AGORA: extrair o pacote de acessórios é trabalho de sete consumidores, alheio a esta
 //        task, e o Protocolo Antirregressão veda refactor fora do escopo.
 // ÍNDICE: docs/specs/features/fundacao-stack-nativa/v1/_run/run-report.md §2, D28

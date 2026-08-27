@@ -155,7 +155,7 @@
  * ---------------------------------------------------------------------------
  *
  * A cobrança tem série declarada, e por isso a chave exposta é o código legível — nunca o UUID
- * interno. `ESQUEMA_DO_CODIGO_DE_COBRANCA`, de `@sysloc/contracts`, valida a **forma** e canoniza a
+ * interno. `ESQUEMA_DO_CODIGO_DE_COBRANCA`, de `@syslocbr/contracts`, valida a **forma** e canoniza a
  * caixa (`trim` → maiúsculas), e é **importado, nunca redigitado**. A validação acontece **antes** de
  * a unidade de trabalho abrir: valor malformado é `422` sem tocar o banco, em vez de virar `404`
  * depois de uma ida inútil — e sem que a forma do identificador vire um oráculo de existência.
@@ -199,6 +199,8 @@ import {
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
+import type { AcessoAoBanco } from '@sysloc/db';
+import { CodigoErro, type Logger } from '@sysloc/shared';
 import {
   type EnvioDeCobranca,
   ESQUEMA_DO_CODIGO_DE_COBRANCA,
@@ -210,9 +212,7 @@ import {
   esquemaDoEnvioDeCobranca,
   esquemaDoEstadoDasRotinas,
   type PoliticaDeAviso,
-} from '@sysloc/contracts';
-import type { AcessoAoBanco } from '@sysloc/db';
-import { CodigoErro, type Logger } from '@sysloc/shared';
+} from '@syslocbr/contracts';
 import type { FastifyRequest } from 'fastify';
 import { ExigeChave, ExigeChaves } from '../autenticacao/exigencia.decorator.js';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
@@ -414,7 +414,7 @@ export class AutomacaoDeCobrancaController {
     @Req() requisicao: FastifyRequest,
   ): Promise<PaginaDeEnvios> {
     const codigo = validar(ESQUEMA_DO_CODIGO_DE_COBRANCA, identificador, CAMPO_DO_CODIGO);
-    // A janela vem INTEIRA de `@sysloc/contracts` (ADR-0016): o teto que recusa em vez de truncar e o
+    // A janela vem INTEIRA de `@syslocbr/contracts` (ADR-0016): o teto que recusa em vez de truncar e o
     // padrão da página são fatos do contrato, e nenhum esquema de paginação nasce nesta superfície.
     const janela = validar(esquemaDaJanela, consulta, CAMPO_DA_CONSULTA);
 

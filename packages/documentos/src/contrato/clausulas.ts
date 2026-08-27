@@ -69,7 +69,7 @@ const CABECALHO_VIGESIMA_PRIMEIRA = 'CLÁUSULA VIGÉSIMA PRIMEIRA:';
  *
  * É o que o CT-708 (T6) percorre sobre o PDF renderizado, e o mutante que omite a
  * `CLÁUSULA DÉCIMA QUARTA` reprova por aqui. A congelação (`Object.freeze`) é a mesma prática de
- * `TIPOS_DE_PESSOA` e `ESTADOS_DO_CONTRATO` em `@sysloc/contracts`: lista publicada que alguém possa
+ * `TIPOS_DE_PESSOA` e `ESTADOS_DO_CONTRATO` em `@syslocbr/contracts`: lista publicada que alguém possa
  * alterar em tempo de execução é um segundo caminho para o mesmo fato.
  */
 export const CABECALHOS_DAS_CLAUSULAS = Object.freeze([

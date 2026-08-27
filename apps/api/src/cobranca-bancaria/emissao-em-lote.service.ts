@@ -44,7 +44,6 @@
  */
 
 import { Inject, Injectable } from '@nestjs/common';
-import type { EmissaoEmLote } from '@sysloc/contracts';
 import { abrirEmissaoEmLote, ErroDeLoteEmCurso, lerLote } from '@sysloc/db';
 import {
   type CargaDaEmissaoEmLote,
@@ -52,6 +51,7 @@ import {
   ErroDeAplicacao,
   type Logger,
 } from '@sysloc/shared';
+import type { EmissaoEmLote } from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
 import { type ProdutorDeFila, TOKEN_PRODUTOR_DE_FILA } from '../comum/produtor-de-fila.js';

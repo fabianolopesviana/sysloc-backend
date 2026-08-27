@@ -76,7 +76,7 @@
  * ---------------------------------------------------------------------------
  *
  * `ROTINAS_PUBLICADAS`, `CADENCIA_DA_ROTINA` e `LIMIAR_DE_ATRASO_POR_CADENCIA` são **importados** de
- * `@sysloc/contracts`, nunca redigitados: o roster que esta leitura devolve é o mesmo que a rota
+ * `@syslocbr/contracts`, nunca redigitados: o roster que esta leitura devolve é o mesmo que a rota
  * publica, e o limiar que o banco compara é o mesmo que o alerta da vigilância anuncia. Um número
  * escrito aqui seria a segunda declaração do mesmo fato, livre para divergir na primeira emenda do
  * relógio — que é a classe dos débitos `D38`/`D40`.
@@ -87,14 +87,14 @@
  * `rotinaAgendada`, em `./esquema/negocio.ts`, nomeia por escrito.
  */
 
-import type { EnvioDeCobranca, EstadoDeRotina } from '@sysloc/contracts';
+import type { EnvioDeCobranca, EstadoDeRotina } from '@syslocbr/contracts';
 import {
   CADENCIA_DA_ROTINA,
   type CodigoDeImpedimento,
   LIMIAR_DE_ATRASO_POR_CADENCIA,
   ROTINAS_PUBLICADAS,
   type RotinaPublicada,
-} from '@sysloc/contracts';
+} from '@syslocbr/contracts';
 import type { TransactionSql } from 'postgres';
 // O fragmento da empresa do contexto tem **lar único** em `./contexto-de-escrita.ts`. Ele **não é
 // filtro** sobre relação de `negocio` — nenhuma leitura deste arquivo o aplica ali, porque a tabela

@@ -95,7 +95,7 @@ import type {
   SituacaoDeLocacao,
   SituacaoInformavel,
   TipoDeImovel,
-} from '@sysloc/contracts';
+} from '@syslocbr/contracts';
 import type { Fragment, TransactionSql } from 'postgres';
 // A leitura de `negocio.comodo` mora no módulo dono daquela tabela, e não aqui: é lá que vive toda
 // instrução sobre ela, pela mesma razão de enumerabilidade que este cabeçalho registra. O que este
@@ -137,7 +137,7 @@ const SO_EM_CIRCULACAO: OpcoesDeCirculacao = Object.freeze({ incluirRetirados: f
  *
  * `statusLocacao` é {@link SituacaoInformavel}, e **não** {@link SituacaoDeLocacao}: `LOCADO` é
  * produzido pela ativação de contrato, que é fatia seguinte, e não pode entrar por aqui. A restrição
- * já existe no esquema de entrada de `@sysloc/contracts` (RN-10); repeti-la **no tipo desta porta**
+ * já existe no esquema de entrada de `@syslocbr/contracts` (RN-10); repeti-la **no tipo desta porta**
  * é o que torna impossível um caminho futuro atravessar a borda com o valor recusado — a
  * consequência que a RN-10 compra para a fatia de contratos é o invariante *"`LOCADO` implica
  * contrato ativo"* já válido.
@@ -164,7 +164,7 @@ export interface DadosDoImovel {
  *
  * Derivado por `Omit`, e não redigitado: uma segunda lista de doze campos seria a segunda fonte do
  * mesmo fato, e as duas divergiriam no primeiro campo que o cadastro ganhasse. É o espelho, nesta
- * camada, do `omit` que produz `esquemaDeImovelAlterado` em `@sysloc/contracts`.
+ * camada, do `omit` que produz `esquemaDeImovelAlterado` em `@syslocbr/contracts`.
  *
  * **A ausência de `statusLocacao` no tipo é o mecanismo**, e não uma conferência escrita em
  * {@link alterarImovel}: o campo não chega, então não há o que ignorar nem o que decidir ignorar.

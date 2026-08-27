@@ -36,9 +36,9 @@ import {
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
-import { esquemaDaIdentidade, esquemaDaIdentidadeNova, type Identidade } from '@sysloc/contracts';
 import type { AcessoAoBanco } from '@sysloc/db';
 import { CodigoErro } from '@sysloc/shared';
+import { esquemaDaIdentidade, esquemaDaIdentidadeNova, type Identidade } from '@syslocbr/contracts';
 import type { FastifyRequest } from 'fastify';
 import { ExigeChaves } from '../autenticacao/exigencia.decorator.js';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';

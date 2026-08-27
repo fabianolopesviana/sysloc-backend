@@ -1,4 +1,4 @@
-# Publicar o `@sysloc/contracts` — roteiro literal
+# Publicar o `@syslocbr/contracts` — roteiro literal
 
 > **Item 3 do marco de entrega**, e entregável da **F6** que cabe neste repositório. O outro
 > entregável da F6 daqui — o `handoff-frontend.md` — já está feito desde 2026-08-24.
@@ -9,33 +9,54 @@
 
 ---
 
-## 0. Por que existe uma organização no meio disto
+## 0. Por que existe uma organização no meio disto — e por que ela NÃO se chama `sysloc`
 
-O GitHub Packages exige que o **escopo do pacote case com o dono do repositório**. O monorepo vive em
-`fabianolopesviana/sysloc-backend` e o escopo é `@sysloc` — **não casam**, e publicar assim é recusado.
+O GitHub Packages exige que o **escopo do pacote case com o login do dono**. O monorepo vive em
+`fabianolopesviana/sysloc-backend` e o escopo nasceu `@sysloc` — **não casam**, e publicar assim é
+recusado.
 
 As alternativas foram medidas antes da decisão:
 
 | Saída | Custo medido | Veredito |
 |---|---|---|
-| Renomear o escopo para `@fabianolopesviana/*` | **191 arquivos** importam `@sysloc/contracts`, mais os 12 pacotes do monorepo | recusada — troca a identidade do produto por uma limitação de registry |
 | Consumir por tag git | exige repo espelho com `dist/` commitado e um passo de sincronização por versão | recusada — abandona a decisão de `decisao-e-stack.md` §209 |
 | Tarball em Release | em repositório privado o download exige token na URL | recusada — frágil no CI do frontend |
-| **Organização `sysloc`** | criar org + repo (ação no navegador) | **adotada** — decisão do usuário, 2026-08-26 |
+| npmjs.com com org privada `@sysloc` | zero arquivo tocado; ~US$ 7/mês de assinatura | recusada — decisão do usuário, 2026-08-27 |
+| Publicar sob a conta `fabianolopesviana` | mesmo rename; nada a criar no navegador | recusada — escopo pessoal, e quem lê o pacote precisaria de acesso ao monorepo |
+| **Organização `syslocbr`** | criar org + repo, e renomear o escopo deste pacote | **adotada** — decisão do usuário, 2026-08-27 |
 
-⚠️ **O monorepo NÃO muda de lugar nem de remote.** A org existe para dar ao escopo um dono válido.
+⚠️ **A organização `sysloc` era o plano, e foi REFUTADA POR MEDIÇÃO em 2026-08-27.**
+`https://api.github.com/users/sysloc` responde **200**: o login pertence a uma **conta pessoal de
+terceiro**, criada em **2019-08-01**, sem relação alguma com este produto. No GitHub, login de
+usuário e de organização dividem o mesmo espaço de nomes — com `sysloc` ocupado, **não existe
+organização `sysloc` a criar**. Não tente; o formulário recusa.
+
+⚠️ **O rename alcançou SÓ este pacote.** `@sysloc/db`, `@sysloc/auth`, `@sysloc/shared` e os demais
+membros do workspace nunca vão a registry algum — são resolvidos por `workspace:*` — e seguem com a
+identidade `@sysloc`. Renomeá-los seria churn sem contrapartida.
+
+⚠️ **O monorepo NÃO muda de lugar nem de remote.** Ele continua em
+`fabianolopesviana/sysloc-backend`; a org existe para dar ao escopo um dono válido.
 
 ---
 
 ## 1. Criar a organização e o repositório — no navegador
 
-1. `https://github.com/organizations/plan` → criar a organização **`sysloc`** (plano gratuito serve;
-   pacote privado em org gratuita é permitido).
-2. Dentro dela, criar o repositório **`sysloc/contracts`**, **privado**, vazio.
+> ✅ **Feito em 2026-08-27.** A org `syslocbr` existe (`type: Organization`, id `321860267`), criada
+> pela conta `fabianolopesviana`, que segue sendo a dona do monorepo. Esta seção fica como registro
+> do que foi feito, e do que refazer se a org for perdida.
+
+1. `https://github.com/organizations/plan` → criar a organização **`syslocbr`** (plano gratuito
+   serve; pacote privado em org gratuita é permitido). O campo *Organization account name* é o que
+   vira o escopo; o *display name* pode continuar `Sysloc`.
+2. Dentro dela, criar o repositório **`syslocbr/contracts`**, **privado**, vazio.
+
+⚠️ **Estar logado na conta pessoal é o esperado, não um problema**: uma organização é criada *por*
+uma conta pessoal, que vira sua owner. Não há segundo login nem segundo e-mail.
 
 ⚠️ **O nome do repositório importa**: é ele que o campo `repository` do manifesto nomeia, e é por ele
 que o GitHub Packages associa o pacote. O `CT-1200` reprova se esse campo deixar de apontar para um
-caminho sob `/sysloc/`.
+caminho sob `/syslocbr/`.
 
 ---
 
@@ -96,7 +117,7 @@ git -C /opt/sysloc-backend status --porcelain | grep npmrc && echo 'PARE — há
 cd /opt/sysloc-backend
 
 # A rede executável ANTES da ação irreversível.
-pnpm --filter @sysloc/contracts test        # esperado: 453 passed (CT-1200..CT-1202 verdes)
+pnpm --filter @syslocbr/contracts test        # esperado: 455 passed (CT-1200..CT-1202 verdes)
 
 # (a) O que exatamente vai no tarball — 61 arquivos, ~150 kB, só `dist/`.
 cd packages/contracts && npm pack --dry-run | tail -5
@@ -122,10 +143,10 @@ pnpm publish --no-git-checks
 ## 5. Conferir que publicou
 
 ```bash
-npm view @sysloc/contracts --registry https://npm.pkg.github.com version   # esperado: 1.0.0
+npm view @syslocbr/contracts --registry https://npm.pkg.github.com version   # esperado: 1.0.0
 ```
 
-E na interface: `https://github.com/orgs/sysloc/packages` deve listar `contracts`, marcado
+E na interface: `https://github.com/orgs/syslocbr/packages` deve listar `contracts`, marcado
 **Private**.
 
 ---
@@ -143,11 +164,11 @@ E então:
 
 ```bash
 pnpm add zod@4.4.3            # ⚠️ EXATAMENTE esta versão — ver abaixo
-pnpm add @sysloc/contracts@1.0.0
+pnpm add @syslocbr/contracts@1.0.0
 ```
 
 ⚠️ **O consumidor DEVE usar `zod@4.4.3`, a mesma que o monorepo declara nos seus quatro pacotes.**
-`zod` é dependência **normal e fixada** do `@sysloc/contracts` — com qualquer outra versão do lado do
+`zod` é dependência **normal e fixada** do `@syslocbr/contracts` — com qualquer outra versão do lado do
 React, o gerenciador instala uma **segunda cópia aninhada**, e as duas não se conhecem: `instanceof
 ZodError` passa a ser falso entre um esquema do pacote e um `z` local, e o bundle carrega `zod` duas
 vezes. O sintoma aparece **só no frontend**, do outro lado da Fronteira, onde nenhum agente deste

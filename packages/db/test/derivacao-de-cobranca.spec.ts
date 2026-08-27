@@ -128,7 +128,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { esquemaDeContratoNovo } from '@sysloc/contracts';
+import { esquemaDeContratoNovo } from '@syslocbr/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   type ContratoParaParcelas,

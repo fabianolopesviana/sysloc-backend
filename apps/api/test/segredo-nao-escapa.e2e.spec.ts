@@ -341,7 +341,7 @@
  * O **CT-832 é diferente**: ele inspeciona uma **descrição** (o documento publicado), e é asserção
  * dessa natureza que a regra obriga a falsificar. A suíte foi invocada pelo **script do pacote**
  * (`pnpm --filter @sysloc/api test`), nunca por `vitest run` avulso — `apps/api` alcança
- * `@sysloc/contracts` pela fronteira do pacote e leria o `dist/` da compilação anterior.
+ * `@syslocbr/contracts` pela fronteira do pacote e leria o `dist/` da compilação anterior.
  *
  *   * **controle** — árvore íntegra: `277 passed` (`32` arquivos);
  *   * **M7 · o esquema de saída volta a declarar o segredo** — `senha: z.string().optional()`
@@ -462,7 +462,6 @@ import { join } from 'node:path';
 import { inspect } from 'node:util';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
-import { MAIOR_MATERIAL_CODIFICADO } from '@sysloc/contracts';
 import { EMPRESA_A, SENHA_DA_CARGA } from '@sysloc/db';
 import {
   type CargaDaEmissaoEmLote,
@@ -473,6 +472,7 @@ import {
   FILA_DA_EMISSAO_EM_LOTE,
   type Logger,
 } from '@sysloc/shared';
+import { MAIOR_MATERIAL_CODIFICADO } from '@syslocbr/contracts';
 import { Queue } from 'bullmq';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';

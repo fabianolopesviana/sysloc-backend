@@ -163,7 +163,7 @@ describe('CT-709 (apoio) — o valor monetário do documento sai em pt-BR (DV-01
   );
 
   it('CT-709 (apoio e) — o maior valor que o contrato admite ainda é nomeável', () => {
-    // `MAIOR_VALOR_MONETARIO` de `@sysloc/contracts` vale 9.999.999.999.999,99. Ele NÃO é importado
+    // `MAIOR_VALOR_MONETARIO` de `@syslocbr/contracts` vale 9.999.999.999.999,99. Ele NÃO é importado
     // aqui de propósito — ver a conferência do débito **D1 (F3/T2)** no relatório da T5, cujo
     // marcador vive em `packages/contracts/src/cobranca.ts`: o alcance desta função é o do
     // vocabulário que ela sabe nomear, não o da coluna que guarda o dinheiro. O que este caso afirma
