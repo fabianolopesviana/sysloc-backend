@@ -75,39 +75,43 @@ na máquina que só lê é superfície de ataque sem contrapartida.
 ## 3. Autenticar sem versionar segredo
 
 ```bash
-# ⚠️ Fora da árvore: no HOME, nunca no repositório.
-#    O `.gitignore` já barra `.npmrc`, e o CT-1202 afirma isso — mas a barreira certa é o HOME.
-#
-# ⚠️ O token entra por LEITURA SILENCIOSA, nunca por atribuição colada. `SEU_PAT=ghp_…` grava o
-#    segredo em claro no histórico do shell e o deixa no ambiente pelo resto da sessão.
-read -rs -p 'PAT (write:packages): ' SEU_PAT; echo
-
-# ⚠️ O arquivo NASCE 0600, e não vira 0600 depois. A umask deste host é 0002: um `>>` num
-#    arquivo inexistente o cria em 0664, e o token viveria legível pelo grupo até o `chmod`
-#    seguinte. O subshell com `umask 077` fecha essa janela, e o `[ -e ]` preserva intacto um
-#    arquivo que já exista.
-#    ⚠️ `install -m 600 /dev/null ~/.npmrc` foi tentado e RECUSADO: ele TRUNCA o arquivo
-#    existente. Não o reponha.
-( umask 077; [ -e ~/.npmrc ] || : > ~/.npmrc )
-chmod 600 ~/.npmrc                              # estreita o que já existia com modo frouxo
-
-# Substituição idempotente: sem isto, reexecutar com um PAT novo EMPILHA duas linhas de token.
-# ⚠️ Sem temporário: `printf` de uma substituição TRUNCA o original e por isso PRESERVA o modo
-#    0600. A forma com `> ~/.npmrc.novo` foi recusada — o temporário nasceria sob a umask
-#    ambiente (0664) carregando tokens de OUTROS registries, e sobreviveria a uma interrupção.
-printf '%s\n' "$(grep -v '^//npm.pkg.github.com/:_authToken=' ~/.npmrc)" > ~/.npmrc
-printf '//npm.pkg.github.com/:_authToken=%s\n' "$SEU_PAT" >> ~/.npmrc
-unset SEU_PAT                                   # o segredo não sobrevive ao bloco
-
-stat -c '%a %n' ~/.npmrc                        # esperado: 600
-grep -c '_authToken' ~/.npmrc                   # esperado: 1 — nunca acumula
+bash deploy/scripts/publicacao/autenticar-registry.sh
 ```
+
+Ele pede o PAT, com a digitação oculta, e grava `~/.npmrc` — **0600 desde a criação**, com
+substituição idempotente da linha do token e **recusa** de entrada vazia ou sem forma de PAT.
+
+⚠️ **NÃO digite a linha do `read` à mão.** Ela existia aqui até 2026-08-27 e é uma armadilha: o
+último argumento de `read` é o **nome da variável**, e colar o segredo naquela posição é
+sintaticamente válido — não dá erro, cria uma variável com o nome do token e grava um
+`_authToken=` **vazio**. Aconteceu, e custou a queima de um PAT com `write:packages` + `repo`.
+O script existe para que essa linha não precise ser digitada por ninguém.
+
+⚠️ **Rode num terminal SSH direto**, não pelo `!` do Claude Code — a leitura silenciosa depende de
+um terminal de verdade.
+
+⚠️ **Fora da árvore: no `HOME`, nunca no repositório.** O `.gitignore` já barra `.npmrc` e o
+`CT-1202` afirma isso, mas a barreira certa é o `HOME`.
 
 Confira que nada vazou para dentro do repositório:
 
 ```bash
 git -C /opt/sysloc-backend status --porcelain | grep npmrc && echo 'PARE — há .npmrc na árvore'
 ```
+
+E que o repositório privado existe de fato — ele responde `404` sem token, indistinguível de
+"não existe", e é melhor descobrir agora do que na hora de publicar:
+
+```bash
+curl -s -H "Authorization: Bearer $(sed -n 's|^//npm.pkg.github.com/:_authToken=||p' ~/.npmrc)" \
+  https://api.github.com/repos/syslocbr/contracts | grep -E '"(full_name|private)"'
+#   ESPERADO: "full_name": "syslocbr/contracts"  /  "private": true
+```
+
+### Se um PAT for exposto
+
+Revogue-o em `https://github.com/settings/tokens` **antes de qualquer outra coisa**, e gere outro.
+Limpar o histórico do shell não substitui a revogação — o segredo já saiu.
 
 ---
 
