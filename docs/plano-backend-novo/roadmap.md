@@ -47,7 +47,7 @@ partir pelo mesmo motivo; quando isso acontecer, as fatias novas aparecem aqui.
 | **F4** | Integração bancária (Sicoob) | ✅ concluída | 43/43 tasks |
 | **F5** | Integração bancária autônoma e automações | ✅ concluída | 21/21 tasks |
 | **F6** | Frontend religado — só o handoff sai daqui | ⬜ não iniciada | — |
-| **F7** | Virada e desinstalação — partida em duas | ⬜ não iniciada | — |
+| **F7** | Virada e desinstalação — partida em duas | 🔄 em andamento | 1 de 2 fatias · 11/11 tasks |
 <!-- PAINEL:FIM -->
 
 <!-- RODAPE:INICIO -->
@@ -403,8 +403,9 @@ CloudPanel existem. Essa sessão é **operação, não construção**: horas, n�
 nela se corrige como correção; **não reabre a construção do backend**.
 
 <!-- ESTADO:F7:INICIO -->
-> ⬜ **não iniciada**
+> 🔄 **em andamento** — 1 de 2 fatias · 11/11 tasks
 >
+> ✅ `publicacao-e-backup/v1` — 11/11 tasks
 > ⬜ `virada-e-desinstalacao/v1`
 <!-- ESTADO:F7:FIM -->
 

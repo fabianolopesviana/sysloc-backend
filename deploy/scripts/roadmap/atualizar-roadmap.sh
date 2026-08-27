@@ -51,7 +51,7 @@ declare -A FATIAS_DA_FASE=(
   [F4]='fundacao-bancaria/v1;emissao-e-conciliacao/v1;webhook-e-carne/v1'
   [F5]='integracao-bancaria-autonoma/v1;automacoes-agendadas/v1'
   [F6]='frontend-religado/v1'
-  [F7]='virada-e-desinstalacao/v1'
+  [F7]='publicacao-e-backup/v1;virada-e-desinstalacao/v1'
 )
 
 FASES=(F0 F1 F2 F3 F4 F5 F6 F7)
