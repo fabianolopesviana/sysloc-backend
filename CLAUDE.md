@@ -102,8 +102,16 @@ fatia reaberta.
   reponha; **o 103/88 era o do fecho da F4** (`CT-1004`), medido em 2026-08-20, e **o 105/90 era o da
   T7 da fatia `integracao-bancaria-autonoma`** (`CT-1038`), medido em 2026-08-22 — nenhum dos três se
   repõe.
-- **Suíte: 1987 casos**, 9 pacotes — `contracts` **438** · `api` **410** · `shared` **295** · `db` **268** ·
+- **Suíte: 2004 casos**, 9 pacotes — `contracts` **455** · `api` **410** · `shared` **295** · `db` **268** ·
   `worker` **180** · `documentos` 159 · `auth` **93** · `cobranca-bancaria` **114** · `regua` 30.
+  ⚠️ **O `contracts` foi de 438 a 455, e o delta é 17** — todo em
+  `packages/contracts/test/publicacao.spec.ts`, o arquivo NOVO que o commit `acba8bb` acrescentou ao
+  preparar o pacote para o GitHub Packages (`CT-1200` a `CT-1202`, com as tabelas `it.each`
+  produzindo as pernas restantes). ⚠️ **Aquele commit NÃO escriturou a contagem**, e por isso esta
+  linha dizia 1987 com `contracts` 438 até 2026-08-27 — **não reponha nenhum dos dois**.
+  ⚠️ **O rename do escopo para `@syslocbr/contracts`, em 2026-08-27, NÃO moveu contagem alguma**: os
+  nove pacotes foram remedidos um a um, antes e depois, pelo script `test` de cada um, e os nove
+  saíram idênticos caso a caso, com código `0` e `skipped`/`todo` em zero. A troca é nominal.
   ⚠️ **Os NOVE foram remedidos um a um em 2026-08-26, na T11 da fatia `publicacao-e-backup`** — o P5
   do Protocolo, comparado **caso a caso** contra a linha de base da T1 (`_run/linha-de-base.md` §2).
   **Nenhum pacote caiu**, os nove saíram com código `0`, e `skipped`/`todo` somam **zero** nos nove
@@ -338,7 +346,7 @@ O marco está alcançado quando **todos** os sete itens forem verdadeiros:
       é o que torna o handoff confiável. **Sem condição pendente**, e com a F4 fechada resta **só a
       F5** publicando rota: o congelamento é logo depois dela. A F4 fechou em 101/86, e o fechamento do `D36` levou a **103 rotas / 88
       manipuladores**
-- [ ] **`@sysloc/contracts` publicado** no GitHub privado e versionado — é o artefato que o React
+- [ ] **`@syslocbr/contracts` publicado** no GitHub privado e versionado — é o artefato que o React
       importa para trocar tipos (Zod; ⚠️ **não** há cliente ts-rest — ver a nota da Stack)
 - [x] **`handoff-frontend.md` gerado** em 2026-08-24 — `docs/plano-backend-novo/handoff-frontend.md`,
       **3755 linhas**, medido contra a superfície **já congelada**. Carrega o modelo de domínio
@@ -447,7 +455,7 @@ Específicos deste domínio: **`node:https`** (o mTLS do Sicoob — ⚠️ o cli
 > ⚠️ **A stack acima é a MEDIDA, e diverge da planejada.** `decisao-e-stack.md` §4 ainda lista
 > **ts-rest**, **OpenTelemetry**, **tsup**, **pdf-lib** e **undici** — nenhum deles existe hoje nos
 > manifests, no `.mise.toml` ou em `import` de `src/`. Não os cite como se estivessem instalados, e
-> não os introduza sem decisão: o pacote de contratos é Zod puro, e o `@sysloc/contracts` que o
+> não os introduza sem decisão: o pacote de contratos é Zod puro, e o `@syslocbr/contracts` que o
 > frontend importa **não** publica cliente ts-rest.
 
 ---
@@ -539,7 +547,7 @@ Específicos deste domínio: **`node:https`** (o mTLS do Sicoob — ⚠️ o cli
 > grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 > ```
 
-São **38**, e a tabela abaixo é a lista viva — ela, e não este parágrafo, é a fonte.
+São **39**, e a tabela abaixo é a lista viva — ela, e não este parágrafo, é a fonte.
 
 ⚠️ **O identificador é o par `Dnn · F{n}/{origem}`, nunca o número sozinho** — a sequência corre
 dentro da §2 da fatia que registrou cada débito. Hoje convivem **dois `D3`**, **TRÊS `D12`**, **dois
@@ -644,6 +652,7 @@ da `.claude/rules/nao-regressao.md`, que é permanente — este bloco é transit
 | **D40** (F7/T9, fatia `publicacao-e-backup`) | `deploy/scripts/borda/verificar-borda-do-app.sh` (junto de `subir_borda_efemera`) | a **terceira borda pública**, ou abrir `verificar-notificacao-bancaria.sh` **para mexer no acessório** — gatilho emendado 2×, razão na §2 |
 | **D41** (F7/T9, fatia `publicacao-e-backup`) | `deploy/scripts/borda/verificar-borda-do-app.sh` (junto de `DESTINO_DECLARADO_DO_EMAIL`) | a **troca do `SMTP_URL` para o destino real** — o `CT-1152` afirma o outro lado da mesma chave e o ponteiro entre os dois é de mão única |
 | **D5** (F5/T3, fatia `automacoes-agendadas`) | `packages/db/drizzle.config.ts` (junto de `out`) | ⚠️ **RECORRENTE — o gatilho NÃO o extingue**: a próxima migração **autoral** que alterar estrutura declarada em `src/esquema/*.ts`, ou uma regeração **do zero**; a supressão é manual nos dois casos e volta na seguinte |
+| **D50** (F6/fechamento, fatia `publicacao-e-backup`) | `deploy/scripts/instalacao/instalar-unidades.sh` (junto de `DIR_FONTE_UNIDADES`) | a **próxima execução com `sudo`** — a janela assistida (a); as 12 unidades de `deploy/systemd/` ainda citam o nome antigo do pacote em comentário |
 
 ---
 

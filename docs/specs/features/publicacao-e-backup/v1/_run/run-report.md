@@ -330,6 +330,16 @@ Status: **11/11 tasks concluídas — FATIA FECHADA em 2026-08-26** · suíte Ty
 - **Impacto:** os números **primários** reproduzem exatamente com o comando que a linha escreve (625 blocos, 130 com `✅`, 495 abertos, 24 relatórios, 17 fatias — o gate mediu os quatro), e os deltas também. O que não reproduz é o par secundário: lido literalmente sobre o **cabeçalho**, dá `137 / 488`; o mais próximo que o gate reproduziu foi `150 / 475`, procurando `RESOLVIDO|FECHADO` no **bloco inteiro**, e ainda erra por um. Como a linha **declara abertamente** que 8 blocos não foram reconciliados um a um e escreve o comando do critério novo, é registro honesto — mas o par secundário fica sem comando que o gere, que é a condição que a própria linha se impõe.
 - **O que fazer:** escrever, junto do par `149/476`, o comando exato que o produz; ou substituí-lo pelo par medido com o critério literalmente descrito (`137 / 488`). O critério novo já é reproduzível e não precisa de mudança.
 
+### D50 · baixo · documentation · F6/fechamento · intervenção dirigida
+- **Onde:** `deploy/systemd/` — as 6 rotinas `.service` e os 6 `.timer` correspondentes (12 arquivos); marcador em `deploy/scripts/instalacao/instalar-unidades.sh`, junto de `DIR_FONTE_UNIDADES`.
+- **Problema:** os 12 arquivos citam `@sysloc/contracts` em **comentário**. O pacote passou a se chamar `@syslocbr/contracts` em 2026-08-27, quando o escopo foi renomeado para casar com o dono no GitHub Packages — o login `sysloc` pertence a terceiro desde 2019, medido por API, e a organização planejada não podia existir.
+- **Impacto:** nenhum em comportamento. As unidades não resolvem pacote algum: elas invocam o despachante, e o roster que o comentário descreve (`CADENCIA_DA_ROTINA`) é lido em tempo de execução. O custo é de leitura — quem abrir uma unidade vê um nome de pacote que não existe mais no repositório.
+- **Por que não foi pago junto com o rename:** `deploy/scripts/instalacao/verificar-unidades-agendadas.sh:991` compara a unidade **instalada** com a **versionada** por `cmp -s`, byte a byte. Editar o comentário sem reinstalar reprova essa bateria, e reinstalar exige `sudo`, que neste host pede senha interativa — nenhum agente a digita. Foi decisão declarada, não esquecimento: o rename alcançou **163 arquivos** e parou exatamente nesta fronteira.
+- **O que fazer:** na janela assistida **(a)** já pendente (posicionar as 2 unidades do backup — `convergencia-do-host.md` §4), trocar `@sysloc/contracts` por `@syslocbr/contracts` nos 12 arquivos e reinstalar no mesmo passo, com `sudo bash deploy/scripts/instalacao/instalar-unidades.sh`. Em seguida `verificar-unidades-agendadas.sh` deve voltar a passar o `cmp` byte a byte, e o marcador sai de `instalar-unidades.sh` no mesmo commit.
+- **Prova exigida:** `verificar-unidades-agendadas.sh` verde depois da reinstalação, e `grep -rl '@sysloc/contracts' deploy/systemd` vazio.
+
+⚠️ **A numeração corre na §2 desta fatia, mas o débito é da F6** — ele nasceu da publicação do `@syslocbr/contracts` (item 3 do marco de entrega), fora do pipeline. Ele mora aqui porque é aqui que a janela assistida que o fecha está documentada, e é para cá que o campo `ÍNDICE` do marcador aponta.
+
 ## 3. Tasks Bloqueadas
 
 ✅ Nenhuma task bloqueada.

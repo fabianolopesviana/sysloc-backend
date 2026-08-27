@@ -111,6 +111,22 @@ readonly PREFIXO="[instalar-unidades]"
 # declarados aqui nesta forma literal — mudá-los sem atualizar o verificador
 # reprova a bateria, que é exatamente a proteção contra divergência silenciosa.
 # --------------------------------------------------------------------------- #
+# DÉBITO COM GATILHO — D50 · F6/fechamento · registrado 2026-08-27
+# O QUÊ: 12 unidades de ${DIR_FONTE_UNIDADES} ainda citam `@sysloc/contracts` em COMENTÁRIO —
+#        as 6 rotinas `.service` e os 6 `.timer` correspondentes. O pacote passou a se chamar
+#        `@syslocbr/contracts` em 2026-08-27, e nenhuma outra parte do repositório usa o nome
+#        antigo fora de registro histórico. É erro factual, não de comportamento: as unidades
+#        não resolvem pacote nenhum — elas invocam o despachante, e o roster que o comentário
+#        descreve é lido em tempo de execução.
+# QUANDO FECHA: a PRÓXIMA execução deste script com privilégio — a janela assistida (a) que já
+#        está pendente para posicionar as 2 unidades do backup. Trocar o nome nos 12 arquivos e
+#        reinstalar no mesmo passo fecha o débito sem custo adicional.
+# POR QUE NÃO AGORA: `verificar-unidades-agendadas.sh` compara a unidade instalada com a
+#        versionada por `cmp -s`, byte a byte. Editar o comentário AGORA, sem reinstalar,
+#        REPROVA essa bateria — e reinstalar exige `sudo`, que neste host pede senha
+#        interativa e nenhum agente digita. Adiar mantém a bateria verde e junta o conserto à
+#        janela que já existe.
+# ÍNDICE: docs/specs/features/publicacao-e-backup/v1/_run/run-report.md §2, D50
 readonly DIR_FONTE_UNIDADES="deploy/systemd"
 readonly DIR_UNIDADES_INSTALADAS="/etc/systemd/system"
 readonly ALVO_DE_ARRANQUE="multi-user.target"
