@@ -243,7 +243,32 @@ teste que apague em massa.
 
 ---
 
-## 8. O que **não** existe, e não adianta procurar
+## 8. Como o build será servido — o que o handoff não diz
+
+⚠️ **O `handoff-frontend.md` não tem seção de publicação** (o do Painel Master tem; o seu não). Estas
+são as exigências da borda que já está versionada em `deploy/nginx/sysloc-app.conf`, e elas decidem
+escolhas de arquitetura que custam caro para desfazer depois:
+
+- **Página única estática.** O vhost declara `root <raiz do aplicativo>` e `index index.html`, e
+  serve arquivos do disco. **Não há Node servindo o frontend** — nada de SSR, nada de framework que
+  exija processo próprio em produção. O build tem de produzir HTML/CSS/JS estáticos.
+- **Fallback de SPA:** `try_files $uri $uri/ /index.html`. Roteamento no cliente funciona, e
+  recarregar uma rota profunda devolve o `index.html`. Você **não** precisa de hash router.
+- **A aplicação vive na RAIZ (`/`)**, não em subpath. Não configure `base` do Vite para um prefixo.
+- ⚠️ **`/v1` é reservado para a API** e é encaminhado antes do fallback. **Nenhuma rota de interface
+  pode começar com `/v1`** — ela seria engolida pelo proxy e nunca chegaria ao seu roteador.
+- ⚠️ **`/docs`, `/docs/json` e `/docs-yaml` são recusados na borda**, por decisão de segurança: o
+  contrato OpenAPI não é público. Não conte com eles em produção — use os esquemas do pacote.
+- Em produção, **frontend e API dividem a origem**, e é por isso que caminho relativo (`/v1/...`)
+  funciona sem CORS e sem configuração alguma.
+
+⚠️ **Quando o app for publicado, ele assume `sysloc.systera.com.br`** — o mesmo hostname que hoje
+serve o sistema antigo. A troca é feita pelo operador, num procedimento próprio, e **não é trabalho
+seu**. O que cabe a você é entregar um build que satisfaça a lista acima.
+
+---
+
+## 9. O que **não** existe, e não adianta procurar
 
 - **Cliente ts-rest** — avaliado e recusado; o pacote é Zod puro.
 - **Tela de auto-registro** — cadastro público desligado por decisão.
@@ -254,7 +279,7 @@ teste que apague em massa.
 
 ---
 
-## 9. Se algo não funcionar, verifique nesta ordem
+## 10. Se algo não funcionar, verifique nesta ordem
 
 1. **O túnel está aberto?** `curl -s http://127.0.0.1:3000/v1/sessao` deve responder JSON.
 2. **A resposta é `ACESSO_NEGADO` (403)?** É a reescrita de `Origin` faltando no proxy (§3.2).

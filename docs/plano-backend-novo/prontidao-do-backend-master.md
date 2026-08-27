@@ -24,6 +24,27 @@
 
 ---
 
+## 1-B. ⚠️ Três trechos do seu handoff VENCERAM — não os siga
+
+O `handoff-master-frontend.md` foi gerado em 2026-08-21 e cita, em **três** lugares (o cabeçalho, a
+§2 e a §8), o débito **`D23 · F1/T8`** como pendência aberta do servidor — dizendo que *"a API ainda
+não publica CORS nem confia em `Origin` de fora"* e que isso *"só fecha na F7"*.
+
+**Esse débito FECHOU.** A variável `ORIGENS_PUBLICAS` passou a ser exigida na partida da API, e foi
+publicada no ambiente do servidor em **2026-08-27**. A API **confia** na origem
+`https://syslocadmin.systera.com.br` — medido, e a tabela da §4 mostra a medição ao lado dos
+controles negativos.
+
+O que **continua verdadeiro** daquele texto, e por outra razão: **não há CORS publicado**, e o
+arranjo correto continua sendo **mesma origem** (em produção) ou **proxy do dev server** (em
+desenvolvimento). Ou seja, a *conduta* que o handoff recomenda segue certa; o *motivo* que ele dá
+está vencido, e a data que ele promete ("F7") já passou.
+
+⚠️ Onde este documento e o `handoff-master-frontend.md` divergirem, **vale este** — ele é de
+2026-08-27 e cada afirmação foi medida no servidor.
+
+---
+
 ## 2. As 6 rotas do Master
 
 Todas sob o prefixo `/v1/master`, todas exigindo sessão de perfil **`SYSLOC_MASTER`**:
