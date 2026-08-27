@@ -346,8 +346,18 @@ O marco está alcançado quando **todos** os sete itens forem verdadeiros:
       é o que torna o handoff confiável. **Sem condição pendente**, e com a F4 fechada resta **só a
       F5** publicando rota: o congelamento é logo depois dela. A F4 fechou em 101/86, e o fechamento do `D36` levou a **103 rotas / 88
       manipuladores**
-- [ ] **`@syslocbr/contracts` publicado** no GitHub privado e versionado — é o artefato que o React
-      importa para trocar tipos (Zod; ⚠️ **não** há cliente ts-rest — ver a nota da Stack)
+- [x] **`@syslocbr/contracts` publicado** em **2026-08-27**, `1.0.0`, no GitHub Packages da
+      organização `syslocbr` — **privado**, confirmado por `npm view` e pela API do GitHub
+      (`"visibility": "private"`). É o artefato que o React importa para trocar tipos (Zod;
+      ⚠️ **não** há cliente ts-rest — ver a nota da Stack).
+      ⚠️ **O escopo é `@syslocbr`, e NÃO `@sysloc`** — o GitHub Packages exige que o escopo case com
+      o login do dono, e `sysloc` pertence a **conta pessoal de terceiro criada em 2019**, medido por
+      API em 2026-08-27 (`api.github.com/users/sysloc` → 200). Não existe organização `sysloc` a
+      criar; a saída planejada foi **refutada por medição**, e o rename alcançou **164 arquivos**.
+      ⚠️ **Só ESTE pacote mudou de escopo.** `@sysloc/db`, `@sysloc/auth`, `@sysloc/shared` e os
+      demais membros nunca vão a registry algum — são resolvidos por `workspace:*` — e seguem em
+      `@sysloc`. **Não os "corrija".** O roteiro literal, com a tabela das saídas medidas e o que
+      refazer se a org for perdida, está em `deploy/scripts/publicacao/publicar-contracts.md`
 - [x] **`handoff-frontend.md` gerado** em 2026-08-24 — `docs/plano-backend-novo/handoff-frontend.md`,
       **3755 linhas**, medido contra a superfície **já congelada**. Carrega o modelo de domínio
       camelCase, o envelope de erro da **ADR-0017** com os **11 códigos**, a autenticação por sessão,

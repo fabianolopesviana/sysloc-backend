@@ -146,8 +146,27 @@ pnpm publish --no-git-checks
 
 ## 5. Conferir que publicou
 
+> ✅ **Publicado em 2026-08-27**, `@syslocbr/contracts@1.0.0`, privado. As três conferências abaixo
+> foram executadas e passaram.
+
 ```bash
 npm view @syslocbr/contracts --registry https://npm.pkg.github.com version   # esperado: 1.0.0
+```
+
+⚠️ **A mensagem `✅ Published` do `pnpm` não é conferência** — ela diz que o comando terminou, não
+que o pacote está lá e privado. As duas afirmações que importam vêm da API, e a segunda é a que
+separa "publicou" de "publicou no lugar certo":
+
+```bash
+PAT=$(sed -n 's|^//npm.pkg.github.com/:_authToken=||p' ~/.npmrc | tr -d '\n')
+
+curl -s -H "Authorization: Bearer $PAT" \
+  'https://api.github.com/orgs/syslocbr/packages?package_type=npm' | grep -E '"(name|visibility)"'
+#   ESPERADO: "name": "contracts"  /  "visibility": "private"
+
+curl -s -H "Authorization: Bearer $PAT" \
+  'https://api.github.com/orgs/syslocbr/packages/npm/contracts/versions' | grep '"name"'
+#   ESPERADO: "name": "1.0.0"
 ```
 
 E na interface: `https://github.com/orgs/syslocbr/packages` deve listar `contracts`, marcado
