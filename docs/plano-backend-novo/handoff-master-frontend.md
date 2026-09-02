@@ -8,17 +8,29 @@
 > **Escopo: SÓ o Master.** O aplicativo do Sysloc (locação) tem handoff próprio, e os dois **não se
 > misturam** — nem no build, nem no domínio, nem na sessão.
 >
-> **Estado do backend: as seis rotas estão TODAS implementadas e verificadas** — publicadas,
-> cobertas por testes automatizados e em execução. ⚠️ **Uma pendência do servidor permanece, e ela
-> alcança o frontend**: a API ainda não publica CORS nem confia em `Origin` de fora, de modo que o
-> painel só funciona servido na **mesma origem** da API até a F7. Está detalhado na §2, e é o débito
-> `D23 · F1/T8`.
+> **Estado do backend: as treze rotas estão TODAS implementadas e verificadas** — publicadas,
+> cobertas por testes automatizados e em execução.
+>
+> ⚠️ **Sete delas são novas** e chegaram depois da primeira geração deste documento: o ciclo de vida
+> do **Admin Empresa** visto pelo operador — listar por empresa, suspender, reativar, corrigir o
+> cadastro e **remover em definitivo** — mais a **correção cadastral** e a **remoção definitiva** de
+> empresa. Elas estão na §4, da §4.7 à §4.13. **Três coisas que a versão anterior deste documento
+> dizia não existir passaram a existir**: excluir empresa, editar nome/documento de empresa e listar
+> os usuários de uma empresa.
+>
+> ⚠️ **A pendência de origem do servidor CAIU.** O débito `D23 · F1/T8` foi **fechado em
+> 2026-08-26**, e desde **2026-08-27** a origem `https://syslocadmin.systera.com.br` é aceita pela
+> barreira de origem da API. O que permanece **não** é pendência, é o arranjo de publicação: a API
+> não fala CORS, e o painel conversa com ela pelo **próprio domínio**, com `/v1/*` encaminhado pelo
+> servidor de borda. Detalhado na §2 e na §8.
 >
 > Gerado em **2026-08-21**, a partir do código em execução, e **conferido linha a linha contra o
 > código em 2026-08-21** — a conferência corrigiu a tabela de erros (faltava `CREDENCIAL_INVALIDA`),
 > a política de senha (são quatro regras, não duas), as recusas da reemissão de senha (§4.6) e a
-> semântica da validade da sessão. As referências `<!-- fonte: … -->` apontam o arquivo e a linha de
-> onde cada afirmação saiu.
+> semântica da validade da sessão. **Revisado e ampliado em 2026-09-02**, contra o código publicado
+> pelas rotas novas: as §4.7 a §4.13 nasceram aí, e a §2, a §4.2, a §4.6, a §5, a §6, a §7 e a §8
+> foram acertadas no que a publicação tornou falso. As referências `<!-- fonte: … -->` apontam o
+> arquivo e a linha de onde cada afirmação saiu.
 
 ---
 
@@ -59,27 +71,34 @@ requisição**. Quem usa o app sem parar não cai na oitava hora; quem para 8 ho
 envia o cookie sozinho; o frontend **não** lê nem guarda token.
 <!-- fonte: packages/auth/src/autenticacao.ts:117,129,801-804 (`DURACAO_DA_SESSAO_EM_SEGUNDOS = 8*60*60`, `RENOVACAO_DA_SESSAO_EM_SEGUNDOS = 0`) -->
 
-> ### ⚠️ Antes da primeira chamada: hoje a API ainda NÃO aceita este app de outra origem
+> ### ⚠️ Antes da primeira chamada: como este app fala com a API
 >
-> O servidor **não publica CORS** — não há `@fastify/cors`, `enableCors` nem cabeçalho
-> `Access-Control-*` em lugar nenhum de `apps/api/src` (verificado por varredura) —, e a lista de
-> origens confiáveis do arcabouço de identidade é só o endereço de escuta local
-> (`http://127.0.0.1:<porta>`). Duas consequências, nesta ordem:
+> **A API não publica CORS** — não há `@fastify/cors`, `enableCors` nem cabeçalho `Access-Control-*`
+> em lugar nenhum de `apps/api/src`, verificado por varredura em **2026-09-02**. E isso **não é
+> pendência**: é o arranjo de publicação. O painel é servido no domínio dele, e o servidor de borda
+> encaminha `/v1/*` para a API no **mesmo host**. Para o navegador é sempre **mesma origem**, e
+> pré-checagem nenhuma acontece.
 >
-> 1. o navegador barra a chamada de `https://syslocadmin.systera.com.br` na pré-checagem, por
->    ausência de `Access-Control-Allow-Origin` / `Allow-Credentials`;
-> 2. e, ainda que passasse, `/v1/auth/*` recusa o `Origin` que não está na lista.
+> **O que mudou desde a primeira versão deste documento.** A lista de origens confiáveis do
+> arcabouço de identidade era só o endereço de escuta local (`http://127.0.0.1:<porta>`), e por isso
+> `/v1/auth/*` recusava o `Origin` do painel que o proxy repassa — era o débito `D23 · F1/T8`. Ele
+> foi **fechado em 2026-08-26**: as origens públicas passaram a ser declaradas no ambiente do
+> servidor (`ORIGENS_PUBLICAS`), o processo **não sobe** sem elas, e
+> `https://syslocadmin.systera.com.br` está entre as declaradas desde **2026-08-27**. O paliativo que
+> reescrevia o `Origin` no proxy do painel foi removido no mesmo passo — **não** o reintroduza.
 >
-> **É pendência conhecida do backend, com dono e data**: o débito `D23 · F1/T8`, cujo gatilho é a
-> publicação atrás do servidor de borda (F7). Enquanto ela não fecha, o app só funciona servido na
-> **mesma origem** da API — proxy reverso no próprio domínio do painel, ou proxy do servidor de
-> desenvolvimento. `credentials: 'include'` continua obrigatório em qualquer arranjo cuja origem
-> difira.
+> ⚠️ **Origem não declarada é recusada, e a recusa é do servidor, não do navegador.** A entrada em
+> `/v1/auth/*` com um `Origin` fora da lista responde **`403`** com corpo exatamente
+> `{ "codigo": "ACESSO_NEGADO", "mensagem": "acesso negado para esta sessão" }` e **sem** emitir
+> cookie. Isso alcança o desenvolvimento: `http://localhost:5173` **não** atravessa. Rode o servidor
+> de desenvolvimento com **proxy** de `/v1/*` para a API — o mesmo arranjo da produção — em vez de
+> apontar o app direto para a API. Requisição **sem** cabeçalho `Origin` (ferramenta de linha de
+> comando) atravessa.
 >
-> ⚠️ **`SameSite=Lax` aperta mais um grau**: mesmo com CORS liberado, o cookie **não** viaja para
-> outro *site*. Painel e API precisam ficar sob o mesmo domínio registrável (`*.systera.com.br`),
-> ou o cookie terá de virar `SameSite=None` — o que é mudança **no servidor**, não no frontend.
-> <!-- fonte: packages/auth/src/autenticacao.ts:672 · apps/api/src/autenticacao/autenticacao.module.ts:156 -->
+> ⚠️ **`SameSite=Lax` é a segunda razão para o mesmo arranjo**: o cookie **não** viaja para outro
+> *site*. Painel e API precisam ficar sob o mesmo domínio registrável (`*.systera.com.br`), ou o
+> cookie terá de virar `SameSite=None` — o que é mudança **no servidor**, não no frontend.
+> <!-- fonte: packages/auth/src/autenticacao.ts:613,812 · apps/api/src/autenticacao/autenticacao.module.ts:160 · apps/api/src/configuracao/ambiente.ts:681 · apps/api/test/origem-publica.e2e.spec.ts:10-23 -->
 
 ### Envelope de erro — idêntico em toda recusa
 
@@ -93,6 +112,17 @@ envia o cookie sozinho; o frontend **não** lê nem guarda token.
 ```
 
 `codigo` e `mensagem` são **sempre** presentes; `campo` e `detalhes` são opcionais.
+
+⚠️ **Como ler o `campo` — ele nomeia o culpado quando há um a nomear, e só então.** A recusa de uma
+**propriedade ou parâmetro conhecido** traz **o nome dele** (`"deslocamento"`, `"nome"`, `"email"`,
+`"documento"`), e é essa a que a tela pode rotear para o controle correspondente. A recusa que
+**não tem o que nomear** — a **chave desconhecida** em corpo ou consulta fechados — cai no **campo
+padrão daquela rota**, que é **declarado por rota** e não é universal: `"corpo"` em **toda** rota
+do Master que leva corpo, `"limite"` nas **duas** listagens (§4.2 e §4.9) e `"senha"` na troca de
+senha (§3.3). Aí o `campo` **não** é a chave que você enviou, e destacar um input por ele
+destacaria o **controle errado** — trate esse caso como erro do formulário inteiro. O identificador
+do caminho é sempre `"id"`.
+<!-- fonte: apps/api/src/comum/validacao.ts:50-63 -->
 
 ⚠️ **Classifique pelo `codigo`, nunca pela `mensagem`.** O texto é para exibir; a lógica é do código.
 
@@ -300,9 +330,13 @@ separa erro de digitação de código errado:
 
 | Entrada | Resposta |
 |---|---|
-| fora de `^[0-9]{6}$` | `422 CAMPO_INVALIDO`, com `campo: "code"` → *"o código tem 6 dígitos"* |
+| fora de `^[0-9]{6}$` | `422 CAMPO_INVALIDO`, com `campo: "codigo"` → *"o código tem 6 dígitos"* |
 | 6 dígitos, mas errado | recusa do arcabouço → *"código inválido"* |
 | **10** falhas de verificação | conta trancada por **15 min** |
+
+⚠️ **O `campo` da recusa é `"codigo"`, com a chave do corpo sendo `code`** — o envelope fala o
+vocabulário do produto (pt-BR), o corpo fala o do arcabouço. Não é erro de digitação deste
+documento: uma tela que case `campo` com o `name` do input pelo nome enviado não acharia o controle.
 
 ⚠️ **`verify-totp` emite credencial de sessão NOVA e apaga a anterior.** Com
 `credentials: 'include'` isso é transparente (o `Set-Cookie` chega junto), mas qualquer código que
@@ -333,10 +367,46 @@ POST /v1/auth/sign-out
 
 ---
 
-## 4. As seis rotas do Master
+## 4. As treze rotas do Master
 
 Todas exigem sessão de perfil `SYSLOC_MASTER`, sem restrição pendente. Todas respondem
 `NAO_AUTENTICADO` (401) sem sessão e `ACESSO_NEGADO` (403) para qualquer outro perfil.
+
+**O quadro completo**, com o método e o caminho exatos — os treze são medidos nos dois controladores
+do servidor, e não somados de cabeça:
+
+| § | Método e caminho | O que faz |
+|---|---|---|
+| 4.1 | `POST /v1/master/empresas` | cria empresa |
+| 4.2 | `GET /v1/master/empresas` | lista empresas, com a prévia de exclusão de cada uma |
+| 4.3 | `POST /v1/master/empresas/{id}/admin` | admite administrador, com Senha provisória |
+| 4.4 | `POST /v1/master/empresas/{id}/suspensao` | suspende empresa |
+| 4.5 | `POST /v1/master/empresas/{id}/reativacao` | reativa empresa |
+| 4.6 | `POST /v1/master/usuarios/{id}/senha-provisoria` | reemite Senha provisória |
+| 4.7 | `PUT /v1/master/empresas/{id}` | corrige nome e documento da empresa |
+| 4.8 | `DELETE /v1/master/empresas/{id}` | **remove a empresa em definitivo**, com as pessoas dela |
+| 4.9 | `GET /v1/master/empresas/{id}/administradores` | lista os Admin Empresa da empresa |
+| 4.10 | `POST /v1/master/usuarios/{id}/suspensao` | suspende um Admin Empresa |
+| 4.11 | `POST /v1/master/usuarios/{id}/reativacao` | reativa um Admin Empresa |
+| 4.12 | `PUT /v1/master/usuarios/{id}` | corrige nome e e-mail do Admin Empresa |
+| 4.13 | `DELETE /v1/master/usuarios/{id}` | **remove o Admin Empresa em definitivo** |
+
+⚠️ **As §4.1 a §4.6 são as seis originais e a numeração delas NÃO mudou** — as sete novas entram no
+fim, de 4.7 a 4.13, para que toda referência já escrita (§4.3, §4.6) continue apontando para o mesmo
+lugar. A ordem da tabela é a da publicação, não a da navegação: a §5 sugere as telas.
+
+<!-- fonte: apps/api/src/master/empresa.controller.ts:386,401,416,468,501,535,555,574 · apps/api/src/master/administrador.controller.ts:158,189,226,258,318 -->
+
+> ### ⚠️ Duas operações desta lista são IRREVERSÍVEIS
+>
+> As §4.8 e §4.13 **apagam** — não retiram de circulação, não marcam como inativo: apagam. Não há
+> desfazer, não há lixeira e não há campo de "excluído em" a consultar depois. O resto do produto
+> **não** funciona assim: no domínio de locação (imóvel, contrato, pessoa) a exclusão é sempre
+> lógica, e o registro continua legível. Estas duas são a exceção declarada, e valem **só** para
+> empresa e para a pessoa do Admin Empresa.
+>
+> A tela precisa: pedir confirmação com o nome escrito, dizer que é definitivo, e **ler a prévia
+> `exclusao`** que a listagem já entrega por item antes de sequer oferecer o botão (§4.2 e §4.9).
 
 ### 4.1 Criar empresa
 
@@ -390,7 +460,16 @@ GET /v1/master/empresas?limite=50&deslocamento=0
 
 ```json
 {
-  "itens": [ { "id": "uuid", "nome": "...", "documento": "...", "estado": "ATIVA", "criadaEm": "..." } ],
+  "itens": [
+    {
+      "id": "uuid",
+      "nome": "...",
+      "documento": "...",
+      "estado": "ATIVA",
+      "criadaEm": "...",
+      "exclusao": { "disponivel": true, "impedimentos": [] }
+    }
+  ],
   "total": 137,
   "limite": 50,
   "deslocamento": 0
@@ -400,6 +479,35 @@ GET /v1/master/empresas?limite=50&deslocamento=0
 `estado` é **`ATIVA`** ou **`SUSPENSA`**, e é o rótulo de situação. `total` é o total geral, para
 montar a paginação.
 
+⚠️ **`exclusao` é a prévia da remoção definitiva da §4.8**, e ela existe por item desde que aquela
+rota foi publicada. Quando a exclusão está indisponível vêm mais dois campos:
+
+```json
+{
+  "disponivel": false,
+  "motivo": "EXCLUSAO_IMPEDIDA_POR_REGISTROS",
+  "impedimentos": ["REGISTROS_DE_NEGOCIO"],
+  "alternativa": "SUSPENSAO"
+}
+```
+
+`motivo` e `alternativa` **só aparecem quando `disponivel` é `false`** — a ausência deles já diz que
+a exclusão está disponível, e a tela não precisa lê-los para decidir. O vocabulário de
+`impedimentos` é **fechado**, e está descrito na §4.8. Use a prévia para **habilitar ou desabilitar
+o botão de excluir**, e mostre `alternativa` como o caminho que resta.
+
+⚠️ **`impedimentos` traz exatamente UMA classe** — a da primeira restrição que o banco recusou, não
+a lista completa dos motivos. Resolver essa e tentar de novo pode revelar outra. Não escreva a tela
+como se ela recebesse um inventário.
+
+⚠️ **A prévia é do instante da leitura, não uma promessa.** Ela é obtida executando o próprio ato em
+ensaio e desfazendo-o; entre a listagem e o clique, um registro novo pode ter nascido. Trate um
+`422` na §4.8 como resultado normal, não como defeito da tela.
+
+⚠️ **A criação (§4.1) NÃO devolve `exclusao`** — uma empresa recém-criada é elegível por
+construção, e a assimetria é deliberada. Não escreva um leitor que exija o campo nas duas respostas.
+<!-- fonte: apps/api/src/master/empresa.controller.ts:272-310 · apps/api/src/master/empresa.service.ts:420-440 -->
+
 ⚠️ **A consulta é FECHADA, como os corpos.** `limite` e `deslocamento` são os **únicos** parâmetros
 aceitos: qualquer outro — `?estado=ATIVA`, `?busca=`, um `?_t=` de cache-busting — responde
 **`422 CAMPO_INVALIDO`**. **Não existe filtro nem busca no servidor**; ordenação, busca e filtro por
@@ -407,6 +515,11 @@ estado são do cliente, sobre a página recebida.
 
 ⚠️ **`limite` acima de 200 RECUSA — não trunca.** Truncar em silêncio faria o operador acreditar que
 viu tudo.
+
+⚠️ **E as três recusas da consulta nomeiam campos DIFERENTES**, pela regra da §3: `limite` fora de
+faixa traz `campo: "limite"`; `deslocamento` negativo traz `campo: "deslocamento"`; o **parâmetro
+desconhecido** traz `campo: "limite"`, que é o padrão da rota e **não** a chave que foi enviada. É
+idêntico na §4.9. <!-- fonte: apps/api/src/master/empresa.controller.ts:218-225,413 -->
 
 **A ordem é fixa e crescente: `criada_em`, e `id` como desempate** — a empresa **mais antiga vem
 primeiro**. O servidor não aceita declarar outra. Se a tela quiser "mais recentes primeiro", ela
@@ -521,17 +634,383 @@ ato**, e quem a tentar recebe a recusa indistinguível de credencial incorreta.
 | usuário não existe | `404 RECURSO_NAO_ENCONTRADO` |
 | alvo não é `ADMIN_EMPRESA` | `422 CAMPO_INVALIDO`, `campo: "id"`, com `detalhes: { "perfilExigido": "ADMIN_EMPRESA", "perfilDoAlvo": "SYSLOC_MASTER" }` |
 
-Consequência para a tela: **como não há rota para listar os usuários de uma empresa** (§7), o painel
-não tem de onde tirar o `{id}` a não ser da resposta da §4.3. Guarde o `usuarioId` devolvido na
-admissão — **ele, não a senha** — para que a reemissão tenha alvo.
+De onde sai o `{id}`: da **listagem de administradores da empresa** (§4.9), que devolve o
+`usuarioId` de cada pessoa. ⚠️ **Não é mais preciso guardar o `usuarioId` da admissão** — a versão
+anterior deste documento mandava guardá-lo porque a listagem não existia; ela existe desde 2026-09-02
+e é o caminho normal para alcançar qualquer pessoa da empresa.
 
 <!-- fonte: apps/api/src/master/empresa.controller.ts:198-216 · apps/api/src/master/empresa.service.ts:570-600 -->
+
+### 4.7 Corrigir o cadastro da empresa
+
+```
+PUT /v1/master/empresas/{id}
+{ "nome": "TECHTEL TECNOLOGIA LTDA", "documento": "07.719.758/0001-23" }
+```
+
+| Campo | Regra |
+|---|---|
+| `nome` | **obrigatório**, 1–200 caracteres |
+| `documento` | **obrigatório**, 1–64 caracteres |
+
+⚠️ **É `PUT` com corpo COMPLETO — não é atualização parcial.** Os dois campos são obrigatórios;
+omitir `documento` para "não mexer nele" responde `422`. Preencha o formulário com os valores atuais
+vindos da listagem e mande os dois de volta.
+
+⚠️ **Corpo fechado, e o que ele recusa é conteúdo**: `estado`, `suspensaEm` e `empresaId` **não
+existem** no esquema, e enviá-los responde `422 CAMPO_INVALIDO` com `campo: "corpo"`. Não há como
+suspender ou reativar por aqui — transição de estado tem rota própria (§4.4 e §4.5). Corrigir uma
+empresa suspensa a **mantém suspensa**, com exatamente o mesmo `suspensaEm`.
+
+**`200`** — a **linha inteira da listagem**, prévia de exclusão inclusive, no mesmo formato da §4.2:
+
+```json
+{
+  "id": "uuid",
+  "nome": "...",
+  "documento": "...",
+  "estado": "SUSPENSA",
+  "criadaEm": "...",
+  "exclusao": { "disponivel": true, "impedimentos": [] }
+}
+```
+
+Isso é deliberado: a tela **substitui a linha que ela já tem**, em vez de remontar o item a partir de
+duas formas diferentes do mesmo fato.
+
+**As recusas:**
+
+| Situação | Resposta |
+|---|---|
+| `{id}` não é UUID bem formado | `422 CAMPO_INVALIDO`, `campo: "id"` — recusado **antes** de tocar o banco |
+| empresa não existe | `404 RECURSO_NAO_ENCONTRADO` |
+| campo do corpo inválido (nome vazio, documento longo demais) | `422 CAMPO_INVALIDO`, `campo` com o nome do campo (`"nome"` / `"documento"`) |
+| chave desconhecida no corpo | `422 CAMPO_INVALIDO`, `campo: "corpo"` |
+| documento já registrado por **outra** empresa | `422 CAMPO_INVALIDO`, `campo: "documento"`, `detalhes.motivo: "DOCUMENTO_JA_REGISTRADO"` |
+
+⚠️ **A recusa por documento repetido não deixa efeito nenhum** — nem o `nome` válido que viajou no
+mesmo corpo fica gravado. A tela pode reapresentar o formulário como o usuário o preencheu.
+
+⚠️ **O documento continua sendo comparado como veio**, sem normalização de pontuação no servidor
+(§4.1). `07.719.758/0001-23` e `07719758000123` são dois documentos distintos para a unicidade.
+
+<!-- fonte: apps/api/src/master/empresa.controller.ts:416-467 · apps/api/src/master/empresa.service.ts:469-505 -->
+
+### 4.8 Excluir empresa — **em definitivo**
+
+```
+DELETE /v1/master/empresas/{id}
+```
+
+Sem corpo. **Não mande `{}`** — não é preciso, e nada é lido dele.
+
+**`200`:**
+
+```json
+{ "id": "uuid", "removida": true }
+```
+
+> ### ⚠️ Isto apaga o tenant inteiro, e não há desfazer
+>
+> A empresa **e as pessoas dela** somem num único commit — junto com credencial, segundo fator e
+> sessões de cada uma, por cascata. Não é retirada de circulação, não é `estado: "EXCLUIDA"`, não
+> volta. Esta e a §4.13 são as **duas únicas** operações de apagar que este painel oferece, e elas
+> existem porque são o único mecanismo de eliminação de dado pessoal que o produto tem.
+>
+> A tela deve exigir confirmação com o **nome da empresa digitado**, e nunca oferecê-la quando a
+> prévia `exclusao.disponivel` da §4.2 for `false`.
+
+⚠️ **O campo chama-se `removida`** — com **a**. O corpo irmão da §4.13 publica `removido`, com
+**o**: a concordância acompanha o substantivo (empresa / administrador). Não escreva um leitor único
+para os dois campos.
+
+**As recusas:**
+
+| Situação | Resposta |
+|---|---|
+| `{id}` não é UUID bem formado | `422 CAMPO_INVALIDO`, `campo: "id"` |
+| empresa não existe | `404 RECURSO_NAO_ENCONTRADO` |
+| há registro apontando para a empresa, ou para uma pessoa dela | `422 CAMPO_INVALIDO`, `campo: "id"`, com `detalhes` — abaixo |
+
+```json
+{
+  "codigo": "CAMPO_INVALIDO",
+  "mensagem": "requisição inválida",
+  "campo": "id",
+  "detalhes": {
+    "motivo": "EXCLUSAO_IMPEDIDA_POR_REGISTROS",
+    "impedimentos": ["REGISTROS_DE_NEGOCIO"],
+    "alternativa": "SUSPENSAO"
+  }
+}
+```
+
+`impedimentos` fala um vocabulário **fechado** de cinco classes, o mesmo das prévias da §4.2 e da
+§4.9 — mas **cada rota só usa a parte que é dela**:
+
+| Classe | O que ela diz | Onde aparece |
+|---|---|---|
+| `REGISTROS_DE_NEGOCIO` | há dado de locação (imóvel, contrato, cobrança…) apontando para a empresa | empresa (§4.2, §4.8) |
+| `ADMINISTRADORES_NAO_ELEGIVEIS` | ao menos uma pessoa da empresa é ela própria inelegível | empresa (§4.2, §4.8) |
+| `TENTATIVA_DE_ENTRADA` | há trilha de tentativa de entrada da pessoa — auditoria **nunca** é destruída | pessoa (§4.9, §4.13) |
+| `AUTORIA_EM_REGISTRO` | a pessoa consta como autora de algum registro | pessoa (§4.9, §4.13) |
+| `VINCULO_DE_ACESSO` | há vínculo ou concessão de acesso apontando para a pessoa | pessoa (§4.9, §4.13) |
+
+⚠️ **A recusa da empresa NUNCA nomeia a classe fina de uma pessoa.** Quando o impedimento vem de um
+administrador, o que chega é `ADMINISTRADORES_NAO_ELEGIVEIS` — atribuir `TENTATIVA_DE_ENTRADA` à
+*empresa* seria imputar a ela um fato que é de alguém. O operador desce ao detalhe pela §4.9, onde
+cada pessoa traz a **própria** prévia. É o desenho, e a tela deve conduzir exatamente esse caminho:
+recusa da empresa → listagem dos administradores → prévia de cada um.
+
+⚠️ **`impedimentos` traz exatamente UMA classe**, a da primeira restrição que o banco recusou — não
+o inventário dos motivos.
+
+⚠️ **Nunca virá a entidade nem a quantidade.** Não espere `"3 contratos"` nem o código de um
+contrato: a resposta nomeia a **classe** e a **alternativa**, e o painel não alcança dado de negócio
+(§1). O que a tela deve exibir é a classe traduzida e o caminho que sobra — `alternativa:
+"SUSPENSAO"` é a rota da §4.4.
+
+⚠️ **A recusa não deixa efeito.** Nada é removido quando ela acontece.
+
+<!-- fonte: apps/api/src/master/empresa.controller.ts:468-500 · apps/api/src/master/empresa.service.ts:539-568,939-993 -->
+
+### 4.9 Listar os administradores de uma empresa
+
+```
+GET /v1/master/empresas/{id}/administradores?limite=25&deslocamento=0
+```
+
+| Parâmetro | Padrão | Limites |
+|---|---|---|
+| `limite` | **25** | 1 a **50** |
+| `deslocamento` | **0** | ≥ 0 |
+
+⚠️ **O teto aqui é 50, e NÃO os 200 da listagem de empresas.** O número saiu de medição: cada item
+carrega a prévia de exclusão, que custa ~3,4 ms porque é o próprio ato executado em ensaio e
+desfeito. Não copie a paginação da §4.2 — `?limite=200` responde `422`.
+
+**`200`:**
+
+```json
+{
+  "itens": [
+    {
+      "usuarioId": "uuid",
+      "nome": "Fulano de Tal",
+      "email": "fulano@exemplo.com",
+      "estado": "ATIVO",
+      "criadoEm": "2026-09-01T12:00:00.000Z",
+      "exclusao": { "disponivel": true, "impedimentos": [] }
+    }
+  ],
+  "total": 3,
+  "limite": 25,
+  "deslocamento": 0
+}
+```
+
+| Campo | O que é |
+|---|---|
+| `usuarioId` | o `{id}` que as §4.6 e §4.10 a §4.13 consomem — **nada precisa ter sido anotado antes** |
+| `estado` | **`ATIVO`** ou **`SUSPENSO`** (masculino: é pessoa, não empresa) |
+| `criadoEm` | quando a pessoa foi admitida |
+| `exclusao` | a prévia da remoção da §4.13, na mesma forma da §4.2 |
+
+⚠️ **Só o perfil `ADMIN_EMPRESA` aparece.** O Usuário Empresa e o próprio operador **não** entram na
+lista — não é filtro do cliente, é recorte do servidor. Uma tela que prometesse "todos os usuários da
+empresa" mentiria.
+
+⚠️ **Nenhum dado de negócio vem junto** — nem contagem de imóveis, nem de contratos. Por desenho.
+
+⚠️ **A ordem é fixa: `nome`, com `id` como desempate.** O servidor não aceita declarar outra. Se a
+tela quiser outra ordenação, ela ordena a página recebida — e, se inverter, **inverta também o
+cálculo do `deslocamento`**.
+
+⚠️ **A consulta é FECHADA**, como as demais: `limite` e `deslocamento` são os únicos parâmetros
+aceitos, e qualquer outro (`?estado=`, `?busca=`, um `?_t=` de cache-busting) responde
+`422 CAMPO_INVALIDO` com `campo: "limite"`.
+
+**As recusas:**
+
+| Situação | Resposta |
+|---|---|
+| `{id}` não é UUID bem formado | `422 CAMPO_INVALIDO`, `campo: "id"` |
+| **empresa não existe** | `404 RECURSO_NAO_ENCONTRADO` — e **não** uma página vazia |
+| `limite` acima de 50, abaixo de 1, ou não inteiro | `422 CAMPO_INVALIDO`, `campo: "limite"` |
+| `deslocamento` negativo, ou não inteiro | `422 CAMPO_INVALIDO`, **`campo: "deslocamento"`** — o campo culpado, não `"limite"` |
+| parâmetro desconhecido (`?estado=`, `?busca=`, `?_t=`) | `422 CAMPO_INVALIDO`, `campo: "limite"` — o **padrão da rota** (§3), pois a chave desconhecida não tem o que nomear |
+
+⚠️ **Página vazia e empresa inexistente são coisas diferentes, e o servidor as distingue.** `itens:
+[]` com `200` significa *"a empresa existe e não tem administrador"* — é o estado em que cabe
+oferecer a admissão da §4.3.
+
+<!-- fonte: apps/api/src/master/administrador.controller.ts:158-187 · apps/api/src/master/administrador.contrato.ts:114,117,130,215,237 · apps/api/src/master/administrador.service.ts:184-217 · packages/db/src/administrador-do-master.ts:511 -->
+
+### 4.10 Suspender um administrador
+
+```
+POST /v1/master/usuarios/{id}/suspensao
+```
+
+Sem corpo.
+
+**`200`:**
+
+```json
+{ "usuarioId": "uuid", "estado": "SUSPENSO", "sessoesEncerradas": 2 }
+```
+
+⚠️ **A suspensão encerra as sessões da pessoa NA HORA** — não no próximo login. `sessoesEncerradas`
+diz quantas caíram, e vale mostrar ao operador. **É ação de efeito imediato sobre alguém
+trabalhando: peça confirmação explícita**, com o nome da pessoa escrito.
+
+⚠️ **O alcance é por PESSOA, não por empresa.** A colega ativa da mesma empresa continua operando no
+mesmo instante — não confunda com a §4.4, que derruba a empresa inteira.
+
+**É idempotente.** Repetir sobre quem já está suspenso devolve o mesmo corpo, com
+`sessoesEncerradas: 0`. Um duplo clique é inofensivo.
+
+⚠️ **O corpo é vazio e FECHADO.** Se o app mandar `{"estado":"ATIVO"}` por engano, a resposta é
+`422 CAMPO_INVALIDO` com `campo: "corpo"` — nunca um `200` que descarta o que foi enviado em
+silêncio.
+
+**As recusas:**
+
+| Situação | Resposta |
+|---|---|
+| `{id}` não é UUID bem formado | `422 CAMPO_INVALIDO`, `campo: "id"` |
+| usuário não existe | `404 RECURSO_NAO_ENCONTRADO` |
+| alvo não é `ADMIN_EMPRESA` | `422 CAMPO_INVALIDO`, `campo: "id"`, `detalhes: { "perfilExigido": "ADMIN_EMPRESA", "perfilDoAlvo": "SYSLOC_MASTER" }` — e **nenhuma sessão é encerrada** |
+| corpo com qualquer campo | `422 CAMPO_INVALIDO`, `campo: "corpo"` |
+
+<!-- fonte: apps/api/src/master/administrador.controller.ts:189-224 · apps/api/src/master/administrador.service.ts:232-256,570-579 -->
+
+### 4.11 Reativar um administrador
+
+```
+POST /v1/master/usuarios/{id}/reativacao
+```
+
+Sem corpo. **`200`:** `{ "usuarioId": "uuid", "estado": "ATIVO" }`
+
+⚠️ **Reativar devolve a capacidade de entrar, e NÃO as sessões que a suspensão encerrou.** Os
+cookies anteriores seguem inválidos: a pessoa entra de novo. Diga isso na tela.
+
+⚠️ **Não há `sessoesEncerradas` aqui, e a ausência é conteúdo** — publicá-lo com zero sugeriria que
+houve algum encerramento medido. Não escreva um leitor que exija o campo nas duas respostas.
+
+**É idempotente**: repetir sobre quem já está ativo devolve o mesmo corpo.
+
+⚠️ **Reativar a pessoa não reativa a empresa.** Se a empresa dela estiver suspensa, ela continua sem
+entrar — são dois estados independentes, e a rota de empresa é a §4.5.
+
+Mesmas recusas da §4.10, com o mesmo corpo vazio e fechado.
+
+<!-- fonte: apps/api/src/master/administrador.controller.ts:226-256 · apps/api/src/master/administrador.service.ts:268-280 -->
+
+### 4.12 Corrigir o cadastro de um administrador
+
+```
+PUT /v1/master/usuarios/{id}
+{ "nome": "Fulana de Tal", "email": "fulana@exemplo.com" }
+```
+
+| Campo | Regra |
+|---|---|
+| `nome` | **obrigatório**, 1–200 caracteres |
+| `email` | **obrigatório**, endereço válido; normalizado para minúsculas pelo servidor |
+
+⚠️ **É `PUT` com corpo COMPLETO**, como a §4.7: os dois campos são obrigatórios.
+
+⚠️ **Corpo fechado**: `estado`, `ativo`, `perfil` e `empresaId` **não existem** no esquema, e
+enviá-los responde `422 CAMPO_INVALIDO` com `campo: "corpo"`. Não se muda estado por aqui (§4.10 e
+§4.11), não se muda perfil, e não se muda a pessoa de empresa. Editar quem está suspenso o **mantém
+suspenso**.
+
+**`200`** — a **linha inteira da listagem** da §4.9, prévia de exclusão inclusive:
+
+```json
+{
+  "usuarioId": "uuid",
+  "nome": "Fulana de Tal",
+  "email": "fulana@exemplo.com",
+  "estado": "SUSPENSO",
+  "criadoEm": "...",
+  "exclusao": { "disponivel": true, "impedimentos": [] }
+}
+```
+
+⚠️ **A Senha provisória sobrevive à troca de e-mail.** A credencial ancora no `usuarioId`, não no
+endereço: quem recebeu a senha antes da correção entra com ela depois. Mas **a entrada passa a ser
+pelo endereço novo** — é por ele que a admissão de sessão procura a pessoa. Diga isso na tela: o
+e-mail de entrada mudou, a senha não.
+
+**As recusas:**
+
+| Situação | Resposta |
+|---|---|
+| `{id}` não é UUID bem formado | `422 CAMPO_INVALIDO`, `campo: "id"` — conferido **antes** do corpo |
+| usuário não existe | `404 RECURSO_NAO_ENCONTRADO` |
+| alvo não é `ADMIN_EMPRESA` | `422 CAMPO_INVALIDO`, `campo: "id"`, com `detalhes.perfilExigido` / `detalhes.perfilDoAlvo` — **antes de qualquer escrita** |
+| campo do corpo inválido | `422 CAMPO_INVALIDO`, `campo: "nome"` ou `campo: "email"` |
+| chave desconhecida no corpo | `422 CAMPO_INVALIDO`, `campo: "corpo"` |
+| e-mail já registrado por outra pessoa | `422 CAMPO_INVALIDO`, `campo: "email"`, `detalhes.motivo: "EMAIL_JA_REGISTRADO"` |
+
+⚠️ **A recusa por e-mail em uso não grava nada** — nem o `nome` válido do mesmo corpo. E o endereço
+da outra pessoa **não** aparece na resposta: o e-mail é único no sistema inteiro (§4.3), e confirmar
+qual conta o ocupa seria dizer o que a persona não alcança.
+
+<!-- fonte: apps/api/src/master/administrador.controller.ts:258-294 · apps/api/src/master/administrador.contrato.ts:316-325 · apps/api/src/master/administrador.service.ts:306-353,505-511 -->
+
+### 4.13 Remover um administrador — **em definitivo**
+
+```
+DELETE /v1/master/usuarios/{id}
+```
+
+Sem corpo. **`200`:**
+
+```json
+{ "usuarioId": "uuid", "removido": true }
+```
+
+> ### ⚠️ Isto apaga a pessoa, e não há desfazer
+>
+> A pessoa some de verdade — credencial, segundo fator e sessões vão junto, por cascata. **Não
+> existe contrapartida lógica**: não há "administrador removido" a listar depois, não há reativação
+> e não há campo de retirada a consultar. Quem quiser algo reversível usa a **suspensão** (§4.10),
+> que é justamente a `alternativa` que a recusa oferece.
+>
+> A tela deve exigir confirmação, e nunca oferecer o botão quando `exclusao.disponivel` da §4.9 for
+> `false`.
+
+⚠️ **O campo chama-se `removido`** — com **o**; a §4.8 publica `removida`, com **a**.
+
+**As recusas:**
+
+| Situação | Resposta |
+|---|---|
+| `{id}` não é UUID bem formado | `422 CAMPO_INVALIDO`, `campo: "id"` |
+| usuário não existe | `404 RECURSO_NAO_ENCONTRADO` |
+| alvo não é `ADMIN_EMPRESA` | `422 CAMPO_INVALIDO`, `campo: "id"`, com `detalhes.perfilExigido` / `detalhes.perfilDoAlvo` — e **nada é removido** |
+| há registro apontando para a pessoa | `422 CAMPO_INVALIDO`, `campo: "id"`, com `detalhes.motivo` / `detalhes.impedimentos` / `detalhes.alternativa` |
+
+O corpo da recusa por impedimento tem a **mesma forma** da §4.8 e a mesma
+`alternativa: "SUSPENSAO"` — e, pela mesma razão, **nunca** a entidade nem a quantidade. As classes
+que aparecem aqui são as **três de pessoa**: `TENTATIVA_DE_ENTRADA`, `AUTORIA_EM_REGISTRO` e
+`VINCULO_DE_ACESSO` (tabela da §4.8), sempre **uma** por resposta.
+
+⚠️ **A trilha de tentativas de entrada impede a remoção, e isso é desenho**: a auditoria não é
+destruída por esta rota. Na prática, uma pessoa que já tentou entrar alguma vez **não é mais
+removível** — a janela é curta na vida real, e a saída é a suspensão.
+
+<!-- fonte: apps/api/src/master/administrador.controller.ts:318-353 · apps/api/src/master/administrador.contrato.ts:344-347 · apps/api/src/master/administrador.service.ts:380-410,525-546 -->
 
 ---
 
 ## 5. Telas sugeridas
 
-O backend não impõe navegação. Estas são as telas que as seis rotas sustentam:
+O backend não impõe navegação. Estas são as telas que as treze rotas sustentam:
 
 1. **Entrada** — e-mail/senha → segundo fator (com a alternativa do código de recuperação, §3.4) →
    (se preciso) troca de senha → (se preciso) configuração do TOTP. É um **fluxo condicional guiado
@@ -542,6 +1021,14 @@ O backend não impõe navegação. Estas são as telas que as seis rotas sustent
 4. **Admitir administrador** — dentro da empresa; termina no diálogo da senha provisória.
 5. **Confirmação de suspensão** — diálogo com o nome da empresa digitado ou botão destacado, e o
    resultado mostrando `sessoesEncerradas`.
+6. **Editar empresa** — o mesmo formulário de dois campos da tela 3, preenchido com os valores
+   atuais e mandando os dois de volta (§4.7). O erro de documento repetido volta no campo.
+7. **Administradores da empresa** — tabela dentro da empresa, com nome, e-mail, estado e as ações
+   por linha: suspender/reativar (§4.10, §4.11), editar (§4.12), reemitir senha (§4.6) e excluir
+   (§4.13). A ação de excluir sai da prévia `exclusao` de cada linha, não de uma regra do cliente.
+8. **Confirmação de exclusão definitiva** — uma para empresa (§4.8) e outra para pessoa (§4.13),
+   com o nome digitado e a advertência de que não há desfazer. Quando a recusa vier, a tela traduz
+   as classes de `impedimentos` e oferece a `alternativa` (suspender).
 
 ---
 
@@ -560,7 +1047,13 @@ O backend não impõe navegação. Estas são as telas que as seis rotas sustent
 6. **Senha provisória é efêmera**: exibir uma vez, copiar, nunca persistir.
 7. **Suspensão é destrutiva de sessão**: confirmação explícita.
 8. **Corpos e consultas são fechados**: campo ou parâmetro a mais é `422`, não é ignorado (§4.1, §4.2).
-9. **Guarde o `usuarioId` da admissão** — é o único alvo possível da reemissão (§4.6).
+9. **O `usuarioId` vem da listagem de administradores** (§4.9) — é dela que saem os alvos da
+   reemissão, da suspensão, da correção e da remoção. Não é preciso guardar o da admissão.
+10. **Exclusão definitiva é irreversível, e a decisão de oferecê-la é do servidor**: leia
+    `exclusao.disponivel` de cada item (§4.2, §4.9) antes de habilitar o botão, e trate um `422` no
+    clique como resultado normal — a prévia é do instante da leitura, não uma promessa.
+11. **Não confunda os dois eixos de suspensão**: a da empresa (§4.4) derruba todo mundo dela; a da
+    pessoa (§4.10) derruba uma só. E reativar a pessoa **não** reativa a empresa.
 
 ---
 
@@ -569,14 +1062,22 @@ O backend não impõe navegação. Estas são as telas que as seis rotas sustent
 - **Cadastro público / auto-registro** — desligado. Pessoas nascem por ato do Master ou do Admin.
 - **Recuperação de senha por e-mail para o Master** — o caminho é a reemissão pelo próprio Master
   (§4.6); para o primeiro Master, existe um script de instalação no servidor.
-- **Excluir empresa** — não há. O ciclo é suspender/reativar.
-- **Editar nome ou documento de empresa** — não há rota.
-- **Listar usuários de uma empresa pelo Master** — não há; ele admite administrador e reemite senha
-  por id, nada além. ⚠️ **Guarde o `usuarioId` da admissão** (§4.3): sem ele, a reemissão da §4.6
-  fica sem alvo.
-- **Filtro ou busca no servidor** — a listagem aceita `limite` e `deslocamento`, e nada mais (§4.2).
-- **Ordenação declarável** — a ordem é fixa: mais antiga primeiro (§4.2).
+- **Filtro ou busca no servidor** — as duas listagens aceitam `limite` e `deslocamento`, e nada
+  mais (§4.2, §4.9).
+- **Ordenação declarável** — a ordem é fixa: empresa mais antiga primeiro (§4.2); administrador por
+  nome (§4.9).
+- **Listar os Usuários Empresa** — a listagem da §4.9 alcança **só** o perfil `ADMIN_EMPRESA`. O
+  usuário comum da imobiliária é governado pelo Admin Empresa dela, no outro aplicativo.
+- **Desfazer uma exclusão definitiva** — não há. As §4.8 e §4.13 apagam, e não existe lixeira,
+  reativação nem registro do que foi apagado.
+- **Atualização parcial** — não há `PATCH` em rota alguma; as duas correções (§4.7, §4.12) são `PUT`
+  com o corpo completo.
 - **Qualquer leitura de negócio** — por desenho.
+
+⚠️ **Três itens saíram desta lista em 2026-09-02, porque deixaram de ser verdade**: *excluir
+empresa*, *editar nome ou documento de empresa* e *listar usuários de uma empresa pelo Master*. As
+três operações existem — §4.8, §4.7 e §4.9. Se você estiver lendo uma cópia antiga deste documento
+que ainda as nega, é a cópia que está velha.
 
 ---
 
@@ -585,10 +1086,15 @@ O backend não impõe navegação. Estas são as telas que as seis rotas sustent
 - O app é servido **só** em `syslocadmin.systera.com.br`, com certificado próprio.
 - A API é a mesma do Sysloc — o que separa os dois aplicativos é o **domínio e o build**, não a base
   de dados nem o servidor.
-- ⚠️ Enquanto a API não estiver publicada para fora, o app precisa falar com ela por um destino que
-  o operador configura. Não fixe endereço no código: leia de configuração de build.
-- ⚠️ **E o destino tem de ser da MESMA origem do painel** enquanto o débito `D23 · F1/T8` não fechar
-  — o servidor não publica CORS e não confia em `Origin` de fora (§2). Na prática: proxy reverso no
-  vhost de `syslocadmin.systera.com.br` encaminhando `/v1/*` para a API, ou proxy do servidor de
-  desenvolvimento. **Chamada direta de origem cruzada não funciona hoje**, e isso é do servidor, não
-  do app.
+- ⚠️ O destino da API é **configuração de build**, e o operador é quem o define. Não fixe endereço
+  no código.
+- ⚠️ **E o destino é da MESMA origem do painel**, por arranjo de publicação e não por pendência: a
+  API não fala CORS (§2). Na prática, o vhost de `syslocadmin.systera.com.br` encaminha `/v1/*` para
+  a API, e o servidor de desenvolvimento faz o mesmo por proxy. **Não aponte o app direto para a
+  API** — chamada de origem cruzada esbarra na ausência de CORS e, em `/v1/auth/*`, na barreira de
+  origem.
+- ✅ **O débito `D23 · F1/T8` está FECHADO desde 2026-08-26**, e a origem
+  `https://syslocadmin.systera.com.br` é aceita pelo servidor desde **2026-08-27**. A frase da versão
+  anterior deste documento — *"chamada direta de origem cruzada não funciona hoje … é o débito
+  `D23`"* — **não vale mais**, e nenhum contorno de origem é necessário: o paliativo que reescrevia
+  `Origin` no proxy do painel foi removido no mesmo passo. **Não o reintroduza.**
