@@ -1,6 +1,6 @@
 /**
  * Os **acessórios de arranjo das suítes de borda** — casa única de `pedir`, `pedirBytes`, `entrar`,
- * `entrarComSegundoFatorCumprido`, `conceder` e `credencialDeSessao`.
+ * `entrarComSegundoFatorCumprido`, `conceder`, `credencialDeSessao` e `contarSessoesDaPessoa`.
  *
  * ---------------------------------------------------------------------------
  * Por que existe: o fecho do débito D63 (F4/fechamento)
@@ -39,6 +39,13 @@
  * gatilho — *a primeira task autorizada a abrir uma das seis*. A conversão foi o **objeto** daquela
  * task, com baseline comparada arquivo a arquivo, e não carona num diff que publicava rota.
  *
+ * ⚠️ **`contarSessoesDaPessoa` chegou em 2026-09-02**, na triagem de débito da mesma fatia (fecho do
+ * `D9 · F7/T4`), e a direção dela é a mesma da anterior: **converte três suítes existentes de uma
+ * vez**. A exceção é medida — as três declarações eram **byte a byte idênticas**
+ * (`./master-administradores`, `./administracao-de-pessoas`, `./ciclo-de-acesso`), o Limiar de Três
+ * já havia disparado, e o débito nomeava exatamente esta promoção. ⚠️ **O débito dizia "duas"**; a
+ * medição desta passada achou **três**, e a conversão alcançou as três.
+ *
  * Esta task **cria a casa** e a consome nas suítes que ela própria escreve. Converter as ~30 suítes
  * existentes num diff só é refatoração cruzada que ninguém pediu (`.claude/rules/nao-regressao.md`
  * §4.5), e o risco dela é desproporcional ao ganho: 30 arquivos de prova tocados de uma vez, sem
@@ -62,7 +69,14 @@
  */
 
 import { type Autenticacao, type ChaveDoCatalogo, validarCoerenciaDeAjustes } from '@sysloc/auth';
-import { type AcessoAoBanco, contextoDeTenant, escreverAjustes } from '@sysloc/db';
+import {
+  type AcessoAIdentidade,
+  type AcessoAoBanco,
+  contextoDeTenant,
+  escreverAjustes,
+  esquemaIdentidade,
+} from '@sysloc/db';
+import { eq } from 'drizzle-orm';
 import { PREFIXO_DAS_ROTAS_DE_IDENTIDADE } from '../src/autenticacao/autenticacao.module.ts';
 import { decodificarBase32 } from './base32.ts';
 
@@ -379,8 +393,18 @@ async function codigoDoSegundoFator(autenticacao: Autenticacao, totpURI: string)
  * anterior) e a reconhecer o cookie por substring do texto bruto, em vez do **nome** por sufixo.
  * Subiu a estrita porque a tolerante **remove** o levantamento diagnóstico das outras cinco — e
  * afrouxar cinco suítes para acomodar um ramo que o arcabouço nunca produz é a regressão que a
- * §4.3 do Protocolo Antirregressão proíbe. Que aquele ramo era inalcançável foi **medido**, não
- * argumentado: a contagem daquela suíte não se moveu na baseline caso a caso da T3.
+ * §4.3 do Protocolo Antirregressão proíbe.
+ *
+ * ⚠️ **O que prova que aquele ramo era inalcançável é a suíte sair VERDE — não a contagem.**
+ * {@link credencialDeSessao} **levanta** quando a credencial não vem, e é chamada dentro do
+ * `beforeAll` de `./entrega-da-noticia.e2e.spec.ts`: um ramo alcançável reprovaria os **15** casos
+ * daquela suíte **sem mover a contagem deles**. Os 15 saíram verdes na T3, e de novo na conferência
+ * de 2026-09-02. A afirmação de que *"a contagem daquela suíte não se moveu na baseline caso a caso
+ * da T3"* **permanece verdadeira e continua valendo** — mas ela prova que **nenhum caso sumiu**, e
+ * não que o ramo era morto. **Não a reponha como prova de inalcançabilidade** (débito `D4` da §2 da
+ * fatia `painel-master-administradores`, corrigido em 2026-09-02): registrar instrumento fraco num
+ * docblock permanente é o que a `.claude/rules/testing-stack.md` adverte — *"prova inconclusiva é
+ * pior que prova ausente, ela consta como feita"*.
  *
  * @param base Origem da aplicação sob teste. Parâmetro, e não variável de módulo, pela mesma razão
  *   de {@link pedir}: a porta é dinâmica e cada suíte tem a sua — e há suíte com **duas** montagens,
@@ -456,4 +480,49 @@ export async function conceder(
       });
     });
   });
+}
+
+/**
+ * Quantas linhas de sessão a pessoa tem, **cruas** — contadas no banco, não deduzidas da borda.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que ela mora aqui: o fecho do débito `D9 · F7/T4`
+ * ---------------------------------------------------------------------------
+ *
+ * Ela existia em **TRÊS** escritas privadas de `apps/api/test/`, **byte a byte idênticas** —
+ * `./master-administradores.e2e.spec.ts`, `./administracao-de-pessoas.e2e.spec.ts` e
+ * `./ciclo-de-acesso.e2e.spec.ts` (medido em 2026-09-02). O Limiar de Três **já havia disparado**;
+ * o débito que a registrou dizia *"duas"*, e a medição desta passada o corrigiu para três.
+ *
+ * O custo da duplicação não era estético: endurecer uma delas — filtrar por expiração, acrescentar
+ * uma coluna ao `select` — deixaria as outras duas para trás **em silêncio**, e nenhuma asserção
+ * acusaria, porque cada suíte seguiria verde medindo uma contagem ligeiramente diferente da que as
+ * outras medem. É a mesma classe que este arquivo fechou para `pedir`, `entrar` e `conceder`.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que a contagem é CRUA, e não a resposta de uma rota
+ * ---------------------------------------------------------------------------
+ *
+ * É ela que discrimina *"sessão encerrada"* de *"pessoa marcada e recusada na guarda"*. Um `401` na
+ * operação seguinte passa nas duas implementações; a contagem indo a zero passa só na primeira, e é
+ * a RN-03 que exige a primeira. Trocá-la por qualquer leitura mediada pela borda devolve ao caso a
+ * ambiguidade que ele existe para remover.
+ *
+ * @param acesso O acesso restrito a `identidade` da suíte (`identidade.acesso`). Parâmetro, e não
+ *   variável de módulo, pela mesma razão do `banco` em {@link conceder}: cada suíte abre o seu
+ *   contra a instância efêmera dela.
+ * @param usuarioId A pessoa cujas sessões se contam.
+ */
+export async function contarSessoesDaPessoa(
+  acesso: AcessoAIdentidade,
+  usuarioId: string,
+): Promise<number> {
+  const { sessao } = esquemaIdentidade;
+
+  const linhas = await acesso.identidade
+    .select({ id: sessao.id })
+    .from(sessao)
+    .where(eq(sessao.usuarioId, usuarioId));
+
+  return linhas.length;
 }

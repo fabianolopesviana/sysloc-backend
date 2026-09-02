@@ -307,7 +307,7 @@ import {
   MAIOR_PAGINA_DE_PESSOAS,
   PAGINA_PADRAO_DE_PESSOAS,
 } from '../src/usuarios/usuario.service.ts';
-import { entrarComSegundoFatorCumprido } from './acessorios-de-borda.ts';
+import { contarSessoesDaPessoa, entrarComSegundoFatorCumprido } from './acessorios-de-borda.ts';
 
 /** Limite da montagem: banco migrado, semente com credencial, fila e a aplicação real. */
 const LIMITE_DE_MONTAGEM_MS = 240_000;
@@ -576,8 +576,8 @@ describe('administração das pessoas da empresa pelas rotas do Admin (T8)', () 
       // não reemitir a credencial de sessão, e fixar o número aqui amarraria o caso a um detalhe do
       // arcabouço em vez de à propriedade que ele persegue. O que discrimina é o par — o alvo vai à
       // contagem medida e depois a zero; a colega não se move.
-      const sessoesDoAlvoAntes = await contarSessoesDaPessoa(alvo.usuarioId);
-      const sessoesDaColegaAntes = await contarSessoesDaPessoa(colega.usuarioId);
+      const sessoesDoAlvoAntes = await contarSessoesDaPessoa(identidade.acesso, alvo.usuarioId);
+      const sessoesDaColegaAntes = await contarSessoesDaPessoa(identidade.acesso, colega.usuarioId);
       expect(sessoesDoAlvoAntes).toBeGreaterThan(0);
       expect(sessoesDaColegaAntes).toBeGreaterThan(0);
 
@@ -603,7 +603,7 @@ describe('administração das pessoas da empresa pelas rotas do Admin (T8)', () 
         codigo: CodigoErro.NAO_AUTENTICADO,
         mensagem: MENSAGEM_SEM_SESSAO,
       });
-      expect(await contarSessoesDaPessoa(alvo.usuarioId)).toBe(0);
+      expect(await contarSessoesDaPessoa(identidade.acesso, alvo.usuarioId)).toBe(0);
 
       // --- A COLEGA SEGUE OPERANDO: é esta perna que separa "por pessoa" de "por empresa" -------
       //
@@ -611,7 +611,9 @@ describe('administração das pessoas da empresa pelas rotas do Admin (T8)', () 
       // asserções acima.
       const daColega = await pedir(CAMINHO_DA_SESSAO_CORRENTE, { cookie: colega.cookie });
       expect(daColega.status).toBe(200);
-      expect(await contarSessoesDaPessoa(colega.usuarioId)).toBe(sessoesDaColegaAntes);
+      expect(await contarSessoesDaPessoa(identidade.acesso, colega.usuarioId)).toBe(
+        sessoesDaColegaAntes,
+      );
       // E a do próprio Admin também — o encerramento não alcança quem administrou.
       expect((await pedir(CAMINHO_DA_SESSAO_CORRENTE, { cookie: cookieDoAdmin })).status).toBe(200);
 
@@ -623,7 +625,7 @@ describe('administração das pessoas da empresa pelas rotas do Admin (T8)', () 
         mensagem: 'credencial inválida',
       });
       expect(novaEntrada.cookies.filter(ehCookieDeSessao)).toEqual([]);
-      expect(await contarSessoesDaPessoa(alvo.usuarioId)).toBe(0);
+      expect(await contarSessoesDaPessoa(identidade.acesso, alvo.usuarioId)).toBe(0);
 
       // Repetir a desativação devolve o mesmo corpo, com zero encerradas — o par (medido → 0) é o
       // que torna a asserção discriminante: uma implementação que devolvesse `0` sempre reprova
@@ -691,7 +693,7 @@ describe('administração das pessoas da empresa pelas rotas do Admin (T8)', () 
         codigo: CodigoErro.NAO_AUTENTICADO,
         mensagem: MENSAGEM_SEM_SESSAO,
       });
-      expect(await contarSessoesDaPessoa(pessoa.usuarioId)).toBe(0);
+      expect(await contarSessoesDaPessoa(identidade.acesso, pessoa.usuarioId)).toBe(0);
 
       // --- Mas devolve o EFETIVO, com os ajustes individuais -------------------------------------
       const cookieNovo = await entrar(pessoa.email, pessoa.senha);
@@ -1441,22 +1443,12 @@ function grafiasDoIdentificador(usuarioId: string) {
   ] as const;
 }
 
-/**
- * Quantos registros de sessão existem para uma pessoa.
- *
- * **É esta leitura que distingue "encerrada" de "marcada"** (CT-228), e é ela que carrega a metade
- * do caso que separa "por pessoa" de "por empresa": a contagem da colega é lida no mesmo instante.
- */
-async function contarSessoesDaPessoa(usuarioId: string): Promise<number> {
-  const { sessao } = esquemaIdentidade;
-
-  const linhas = await identidade.acesso.identidade
-    .select({ id: sessao.id })
-    .from(sessao)
-    .where(eq(sessao.usuarioId, usuarioId));
-
-  return linhas.length;
-}
+// `contarSessoesDaPessoa` — **importada** de `./acessorios-de-borda.ts` desde 2026-09-02 (fecho do
+// débito `D9 · F7/T4`). Ela era declarada aqui, byte a byte igual às de
+// `./master-administradores.e2e.spec.ts` e `./ciclo-de-acesso.e2e.spec.ts` — três cópias, com o
+// Limiar de Três já disparado. **É esta leitura que distingue "encerrada" de "marcada"** (CT-228), e
+// é ela que carrega a metade do caso que separa "por pessoa" de "por empresa": a contagem da colega
+// é lida no mesmo instante. Não a redeclare.
 
 // ---------------------------------------------------------------------------------------------
 // Arranjo do cenário, pelas rotas reais

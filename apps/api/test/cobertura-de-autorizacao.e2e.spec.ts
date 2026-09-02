@@ -5261,28 +5261,10 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     // falha **nomeia os dois números** lado a lado, e o errado é a âncora, nunca a medição. É a
     // conferência FINAL da fatia — as âncoras já foram subidas por T5, T6 e T7, e aqui elas são
     // apenas conferidas.
-    const manipuladores = manipuladoresExaminados(aplicacaoReal);
-    const comTodosOsVerbos = manipuladoresQueAtendemTodosOsVerbos(aplicacaoReal);
-    const pelaComposicao =
-      manipuladores -
-      comTodosOsVerbos +
-      comTodosOsVerbos * METODOS_DO_ENCAMINHADOR.length +
-      ROTAS_FORA_DO_ARCABOUCO.length;
-
-    expect(
-      {
-        peloRoteador: cobertura.rotasEnumeradas,
-        pelaComposicao,
-        manipuladores,
-        comTodosOsVerbos,
-      },
-      'as duas medições da superfície publicada precisam concordar: se divergirem, o errado é a âncora e não a medição',
-    ).toEqual({
-      peloRoteador: ROTAS_PUBLICADAS_EM_PRODUCAO,
-      pelaComposicao: ROTAS_PUBLICADAS_EM_PRODUCAO,
-      manipuladores: MANIPULADORES_EXAMINADOS_EM_PRODUCAO,
-      comTodosOsVerbos: MANIPULADORES_QUE_ATENDEM_TODOS_OS_VERBOS,
-    });
+    // ⚠️ Este caso NÃO tinha a perna de igualdade entre os eixos até 2026-09-02 — ele fundia as
+    // duas conferências na comparação de baixo. A promoção ao acessório
+    // {@link afirmarAsTresAncoras} lha DEU: a asserção aqui ficou mais forte, não mais fraca.
+    afirmarAsTresAncoras(aplicacaoReal, cobertura.rotasEnumeradas);
 
     // ---------------------------------------------------------------------------------------
     // O catálogo fechado NÃO foi aberto por esta fatia
@@ -5392,39 +5374,7 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     // É a conferência FINAL da fatia: as âncoras já foram subidas por T9 (82 → 84) e T10 (84 → 86), e
     // aqui elas são **conferidas**, nunca acrescentadas — é isso que impede a superfície de ser
     // derivada de si mesma.
-    const manipuladores = manipuladoresExaminados(aplicacaoReal);
-    const comTodosOsVerbos = manipuladoresQueAtendemTodosOsVerbos(aplicacaoReal);
-    const pelaComposicao =
-      manipuladores -
-      comTodosOsVerbos +
-      comTodosOsVerbos * METODOS_DO_ENCAMINHADOR.length +
-      ROTAS_FORA_DO_ARCABOUCO.length;
-
-    // A igualdade entre as duas medições é afirmada **explicitamente**, e não só por elas baterem no
-    // mesmo número esperado: duas medições que concordassem com a âncora por acidente e discordassem
-    // entre si passariam pela comparação de baixo, e é a concordância delas que torna cada uma
-    // verificável pela outra.
-    expect(
-      pelaComposicao,
-      'as duas medições independentes da superfície publicada divergiram entre si: o errado é a âncora, nunca a medição',
-    ).toBe(cobertura.rotasEnumeradas);
-
-    // As quatro grandezas viajam numa comparação só de propósito: se alguma divergir, a falha
-    // **nomeia os números** lado a lado.
-    expect(
-      {
-        peloRoteador: cobertura.rotasEnumeradas,
-        pelaComposicao,
-        manipuladores,
-        comTodosOsVerbos,
-      },
-      'a superfície publicada mudou de tamanho: o inventário desta prova precisa ser revisado',
-    ).toEqual({
-      peloRoteador: ROTAS_PUBLICADAS_EM_PRODUCAO,
-      pelaComposicao: ROTAS_PUBLICADAS_EM_PRODUCAO,
-      manipuladores: MANIPULADORES_EXAMINADOS_EM_PRODUCAO,
-      comTodosOsVerbos: MANIPULADORES_QUE_ATENDEM_TODOS_OS_VERBOS,
-    });
+    afirmarAsTresAncoras(aplicacaoReal, cobertura.rotasEnumeradas);
 
     // ---------------------------------------------------------------------------------------
     // O catálogo fechado NÃO foi aberto por esta fatia
@@ -5608,39 +5558,9 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     // É a conferência FINAL da sub-fatia: as âncoras já foram subidas por T7 (86 → 87), T9 (87 → 88)
     // e T11 (88 → 89), e aqui elas são **conferidas**, nunca acrescentadas — é isso que impede a
     // superfície de ser derivada de si mesma.
-    const manipuladores = manipuladoresExaminados(aplicacaoReal);
-    const comTodosOsVerbos = manipuladoresQueAtendemTodosOsVerbos(aplicacaoReal);
-    const pelaComposicao =
-      manipuladores -
-      comTodosOsVerbos +
-      comTodosOsVerbos * METODOS_DO_ENCAMINHADOR.length +
-      ROTAS_FORA_DO_ARCABOUCO.length;
-
-    // A igualdade entre os dois eixos é afirmada **explicitamente**, e ANTES da comparação com a
-    // âncora: duas medições que concordassem com o valor esperado por acidente e discordassem entre
-    // si passariam pela comparação de baixo, e é a concordância delas que torna cada uma verificável
-    // pela outra. Foi a ausência desta linha que a sub-fatia irmã corrigiu ao fechar o `CT-635`.
-    expect(
-      pelaComposicao,
-      'as duas medições independentes da superfície publicada divergiram entre si: o errado é a âncora, nunca a medição',
-    ).toBe(cobertura.rotasEnumeradas);
-
-    // As quatro grandezas viajam numa comparação só de propósito: se alguma divergir, a falha
-    // **nomeia os números** lado a lado.
-    expect(
-      {
-        peloRoteador: cobertura.rotasEnumeradas,
-        pelaComposicao,
-        manipuladores,
-        comTodosOsVerbos,
-      },
-      'a superfície publicada mudou de tamanho: o inventário desta prova precisa ser revisado',
-    ).toEqual({
-      peloRoteador: ROTAS_PUBLICADAS_EM_PRODUCAO,
-      pelaComposicao: ROTAS_PUBLICADAS_EM_PRODUCAO,
-      manipuladores: MANIPULADORES_EXAMINADOS_EM_PRODUCAO,
-      comTodosOsVerbos: MANIPULADORES_QUE_ATENDEM_TODOS_OS_VERBOS,
-    });
+    // ⚠️ A perna de igualdade entre os eixos nasceu aqui: foi a AUSÊNCIA dela que a sub-fatia
+    // irmã corrigiu ao fechar o `CT-635`. Ela vive hoje em {@link afirmarAsTresAncoras}.
+    afirmarAsTresAncoras(aplicacaoReal, cobertura.rotasEnumeradas);
 
     // ---------------------------------------------------------------------------------------
     // O catálogo fechado NÃO foi aberto por esta sub-fatia
@@ -5789,39 +5709,7 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     // É a conferência FINAL da fatia, e o **fecho do número da F4**: as âncoras já foram subidas por
     // T11 (89 → 91) e T12 (91 → 92), e aqui elas são **conferidas**, nunca acrescentadas — é isso que
     // impede a superfície de ser derivada de si mesma.
-    const manipuladores = manipuladoresExaminados(aplicacaoReal);
-    const comTodosOsVerbos = manipuladoresQueAtendemTodosOsVerbos(aplicacaoReal);
-    const pelaComposicao =
-      manipuladores -
-      comTodosOsVerbos +
-      comTodosOsVerbos * METODOS_DO_ENCAMINHADOR.length +
-      ROTAS_FORA_DO_ARCABOUCO.length;
-
-    // A igualdade entre os dois eixos é afirmada **explicitamente**, e ANTES da comparação com a
-    // âncora: duas medições que concordassem com o valor esperado por acidente e discordassem entre
-    // si passariam pela comparação de baixo, e é a concordância delas que torna cada uma verificável
-    // pela outra.
-    expect(
-      pelaComposicao,
-      'as duas medições independentes da superfície publicada divergiram entre si: o errado é a âncora, nunca a medição',
-    ).toBe(cobertura.rotasEnumeradas);
-
-    // As quatro grandezas viajam numa comparação só de propósito: se alguma divergir, a falha
-    // **nomeia os números** lado a lado.
-    expect(
-      {
-        peloRoteador: cobertura.rotasEnumeradas,
-        pelaComposicao,
-        manipuladores,
-        comTodosOsVerbos,
-      },
-      'a superfície publicada mudou de tamanho: o inventário desta prova precisa ser revisado',
-    ).toEqual({
-      peloRoteador: ROTAS_PUBLICADAS_EM_PRODUCAO,
-      pelaComposicao: ROTAS_PUBLICADAS_EM_PRODUCAO,
-      manipuladores: MANIPULADORES_EXAMINADOS_EM_PRODUCAO,
-      comTodosOsVerbos: MANIPULADORES_QUE_ATENDEM_TODOS_OS_VERBOS,
-    });
+    afirmarAsTresAncoras(aplicacaoReal, cobertura.rotasEnumeradas);
 
     // ---------------------------------------------------------------------------------------
     // O catálogo fechado NÃO foi aberto por esta fatia
@@ -6162,39 +6050,7 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     // ⚠️ É a conferência **FINAL** da fatia: as âncoras já foram subidas por T13 (92 → 94), T14
     // (94 → 96) e T15 (96 → 99), e aqui elas são **conferidas**, nunca acrescentadas — é isso que
     // impede a superfície de ser derivada de si mesma.
-    const manipuladores = manipuladoresExaminados(aplicacaoReal);
-    const comTodosOsVerbos = manipuladoresQueAtendemTodosOsVerbos(aplicacaoReal);
-    const pelaComposicao =
-      manipuladores -
-      comTodosOsVerbos +
-      comTodosOsVerbos * METODOS_DO_ENCAMINHADOR.length +
-      ROTAS_FORA_DO_ARCABOUCO.length;
-
-    // A igualdade entre os dois eixos é afirmada **explicitamente**, e ANTES da comparação com a
-    // âncora: duas medições que concordassem com o valor esperado por acidente e discordassem entre
-    // si passariam pela comparação de baixo, e é a concordância delas que torna cada uma verificável
-    // pela outra.
-    expect(
-      pelaComposicao,
-      'as duas medições independentes da superfície publicada divergiram entre si: o errado é a âncora, nunca a medição',
-    ).toBe(cobertura.rotasEnumeradas);
-
-    // As quatro grandezas viajam numa comparação só de propósito: se alguma divergir, a falha
-    // **nomeia os números** lado a lado.
-    expect(
-      {
-        peloRoteador: cobertura.rotasEnumeradas,
-        pelaComposicao,
-        manipuladores,
-        comTodosOsVerbos,
-      },
-      'a superfície publicada mudou de tamanho: o inventário desta prova precisa ser revisado',
-    ).toEqual({
-      peloRoteador: ROTAS_PUBLICADAS_EM_PRODUCAO,
-      pelaComposicao: ROTAS_PUBLICADAS_EM_PRODUCAO,
-      manipuladores: MANIPULADORES_EXAMINADOS_EM_PRODUCAO,
-      comTodosOsVerbos: MANIPULADORES_QUE_ATENDEM_TODOS_OS_VERBOS,
-    });
+    afirmarAsTresAncoras(aplicacaoReal, cobertura.rotasEnumeradas);
 
     // ---------------------------------------------------------------------------------------
     // O catálogo fechado NÃO foi aberto por fatia alguma — ele é 10 × 7, e não cresce
@@ -6292,42 +6148,11 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     // controladores** e compõe: cada manipulador reivindica um par, salvo o `@All`, que reivindica
     // os sete verbos do caminho dele, mais os nove pares registrados direto no adaptador, que não
     // têm manipulador. Nenhuma é derivada da outra.
-    const manipuladores = manipuladoresExaminados(aplicacaoReal);
-    const comTodosOsVerbos = manipuladoresQueAtendemTodosOsVerbos(aplicacaoReal);
-    const pelaComposicao =
-      manipuladores -
-      comTodosOsVerbos +
-      comTodosOsVerbos * METODOS_DO_ENCAMINHADOR.length +
-      ROTAS_FORA_DO_ARCABOUCO.length;
-
-    // A igualdade entre os dois eixos é afirmada **explicitamente**, e ANTES da comparação com a
-    // âncora: duas medições que concordassem com o valor esperado por acidente e discordassem entre
-    // si passariam pela comparação de baixo, e é a concordância delas que torna cada uma verificável
-    // pela outra.
-    expect(
-      pelaComposicao,
-      'as duas medições independentes da superfície publicada divergiram entre si: o errado é a âncora, nunca a medição',
-    ).toBe(cobertura.rotasEnumeradas);
-
-    // ⚠️ As quatro grandezas numa comparação só, de propósito: se alguma divergir, a falha **nomeia
-    // os números** lado a lado. E o valor conferido é o **desta task** — `100/85` —, não o `101/86`
-    // em que a fatia fecha: o par que falta é o do carnê, na T10, e é lá que nasce o `CT-1004`.
-    // Antecipar o número final aqui faria a asserção reprovar sobre uma superfície legítima, e
+    // ⚠️ O valor conferido é o **desta task** — `100/85` —, e não o `101/86` em que a fatia
+    // fecha: o par que falta é o do carnê, na T10, e é lá que nasce o `CT-1004`. Antecipar o
+    // número final aqui faria a asserção reprovar sobre uma superfície legítima, e
     // "corrigi-la" para passar seria fraude de gate.
-    expect(
-      {
-        peloRoteador: cobertura.rotasEnumeradas,
-        pelaComposicao,
-        manipuladores,
-        comTodosOsVerbos,
-      },
-      'a superfície publicada mudou de tamanho: o inventário desta prova precisa ser revisado',
-    ).toEqual({
-      peloRoteador: ROTAS_PUBLICADAS_EM_PRODUCAO,
-      pelaComposicao: ROTAS_PUBLICADAS_EM_PRODUCAO,
-      manipuladores: MANIPULADORES_EXAMINADOS_EM_PRODUCAO,
-      comTodosOsVerbos: MANIPULADORES_QUE_ATENDEM_TODOS_OS_VERBOS,
-    });
+    afirmarAsTresAncoras(aplicacaoReal, cobertura.rotasEnumeradas);
 
     // ---------------------------------------------------------------------------------------
     // O catálogo fechado NÃO foi aberto por esta task — ela não governa nada por chave
@@ -6446,39 +6271,7 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     // ⚠️ É a conferência **FINAL** da fatia: a âncora subiu por T6 (99 → 100) e por esta task
     // (100 → 101), e o `101/86` da §4.1 do tech spec é o número em que a superfície publicada do
     // produto fica até o congelamento.
-    const manipuladores = manipuladoresExaminados(aplicacaoReal);
-    const comTodosOsVerbos = manipuladoresQueAtendemTodosOsVerbos(aplicacaoReal);
-    const pelaComposicao =
-      manipuladores -
-      comTodosOsVerbos +
-      comTodosOsVerbos * METODOS_DO_ENCAMINHADOR.length +
-      ROTAS_FORA_DO_ARCABOUCO.length;
-
-    // A igualdade entre os dois eixos é afirmada **explicitamente**, e ANTES da comparação com a
-    // âncora: duas medições que concordassem com o valor esperado por acidente e discordassem entre
-    // si passariam pela comparação de baixo, e é a concordância delas que torna cada uma verificável
-    // pela outra.
-    expect(
-      pelaComposicao,
-      'as duas medições independentes da superfície publicada divergiram entre si: o errado é a âncora, nunca a medição',
-    ).toBe(cobertura.rotasEnumeradas);
-
-    // As quatro grandezas viajam numa comparação só de propósito: se alguma divergir, a falha
-    // **nomeia os números** lado a lado.
-    expect(
-      {
-        peloRoteador: cobertura.rotasEnumeradas,
-        pelaComposicao,
-        manipuladores,
-        comTodosOsVerbos,
-      },
-      'a superfície publicada mudou de tamanho: o inventário desta prova precisa ser revisado',
-    ).toEqual({
-      peloRoteador: ROTAS_PUBLICADAS_EM_PRODUCAO,
-      pelaComposicao: ROTAS_PUBLICADAS_EM_PRODUCAO,
-      manipuladores: MANIPULADORES_EXAMINADOS_EM_PRODUCAO,
-      comTodosOsVerbos: MANIPULADORES_QUE_ATENDEM_TODOS_OS_VERBOS,
-    });
+    afirmarAsTresAncoras(aplicacaoReal, cobertura.rotasEnumeradas);
 
     // ---------------------------------------------------------------------------------------
     // O catálogo fechado NÃO foi aberto por esta task — ele é 10 × 7, e não cresce
@@ -6610,39 +6403,7 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     // âncora sobe **no mesmo diff** da publicação — mais a contagem em prosa do `CLAUDE.md`, porque
     // número narrativo que fica para trás convida a próxima task a "corrigir" a âncora executável
     // para o valor errado.
-    const manipuladores = manipuladoresExaminados(aplicacaoReal);
-    const comTodosOsVerbos = manipuladoresQueAtendemTodosOsVerbos(aplicacaoReal);
-    const pelaComposicao =
-      manipuladores -
-      comTodosOsVerbos +
-      comTodosOsVerbos * METODOS_DO_ENCAMINHADOR.length +
-      ROTAS_FORA_DO_ARCABOUCO.length;
-
-    // A igualdade entre os dois eixos é afirmada **explicitamente**, e ANTES da comparação com a
-    // âncora: duas medições que concordassem com o valor esperado por acidente e discordassem entre
-    // si passariam pela comparação de baixo, e é a concordância delas que torna cada uma verificável
-    // pela outra.
-    expect(
-      pelaComposicao,
-      'as duas medições independentes da superfície publicada divergiram entre si: o errado é a âncora, nunca a medição',
-    ).toBe(cobertura.rotasEnumeradas);
-
-    // As quatro grandezas viajam numa comparação só de propósito: se alguma divergir, a falha
-    // **nomeia os números** lado a lado.
-    expect(
-      {
-        peloRoteador: cobertura.rotasEnumeradas,
-        pelaComposicao,
-        manipuladores,
-        comTodosOsVerbos,
-      },
-      'a superfície publicada mudou de tamanho: o inventário desta prova precisa ser revisado',
-    ).toEqual({
-      peloRoteador: ROTAS_PUBLICADAS_EM_PRODUCAO,
-      pelaComposicao: ROTAS_PUBLICADAS_EM_PRODUCAO,
-      manipuladores: MANIPULADORES_EXAMINADOS_EM_PRODUCAO,
-      comTodosOsVerbos: MANIPULADORES_QUE_ATENDEM_TODOS_OS_VERBOS,
-    });
+    afirmarAsTresAncoras(aplicacaoReal, cobertura.rotasEnumeradas);
 
     // ---------------------------------------------------------------------------------------
     // O catálogo fechado NÃO foi aberto por esta task — ele é 10 × 7, e não cresce
@@ -6775,39 +6536,7 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     // a âncora sobe **no mesmo diff** da publicação — mais a contagem em prosa do `CLAUDE.md`, porque
     // número narrativo que fica para trás convida a próxima task a "corrigir" a âncora executável
     // para o valor errado.
-    const manipuladores = manipuladoresExaminados(aplicacaoReal);
-    const comTodosOsVerbos = manipuladoresQueAtendemTodosOsVerbos(aplicacaoReal);
-    const pelaComposicao =
-      manipuladores -
-      comTodosOsVerbos +
-      comTodosOsVerbos * METODOS_DO_ENCAMINHADOR.length +
-      ROTAS_FORA_DO_ARCABOUCO.length;
-
-    // A igualdade entre os dois eixos é afirmada **explicitamente**, e ANTES da comparação com a
-    // âncora: duas medições que concordassem com o valor esperado por acidente e discordassem entre
-    // si passariam pela comparação de baixo, e é a concordância delas que torna cada uma verificável
-    // pela outra.
-    expect(
-      pelaComposicao,
-      'as duas medições independentes da superfície publicada divergiram entre si: o errado é a âncora, nunca a medição',
-    ).toBe(cobertura.rotasEnumeradas);
-
-    // As quatro grandezas viajam numa comparação só de propósito: se alguma divergir, a falha
-    // **nomeia os números** lado a lado.
-    expect(
-      {
-        peloRoteador: cobertura.rotasEnumeradas,
-        pelaComposicao,
-        manipuladores,
-        comTodosOsVerbos,
-      },
-      'a superfície publicada mudou de tamanho: o inventário desta prova precisa ser revisado',
-    ).toEqual({
-      peloRoteador: ROTAS_PUBLICADAS_EM_PRODUCAO,
-      pelaComposicao: ROTAS_PUBLICADAS_EM_PRODUCAO,
-      manipuladores: MANIPULADORES_EXAMINADOS_EM_PRODUCAO,
-      comTodosOsVerbos: MANIPULADORES_QUE_ATENDEM_TODOS_OS_VERBOS,
-    });
+    afirmarAsTresAncoras(aplicacaoReal, cobertura.rotasEnumeradas);
 
     // ---------------------------------------------------------------------------------------
     // O catálogo fechado NÃO foi aberto por esta task — ele é 10 × 7, e não cresce
@@ -6961,40 +6690,9 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     // tocada aqui —, e que a do operador do SaaS fica fora dele. Estas âncoras contam as **duas**, e
     // por isso *"se movem mesmo quando só o painel do operador cresce"*. A prosa do `CLAUDE.md` sobe
     // no MESMO diff destas constantes, e o `CT-1196` afirma a igualdade entre as duas pontas.
-    const manipuladores = manipuladoresExaminados(aplicacaoReal);
-    const comTodosOsVerbos = manipuladoresQueAtendemTodosOsVerbos(aplicacaoReal);
-    const pelaComposicao =
-      manipuladores -
-      comTodosOsVerbos +
-      comTodosOsVerbos * METODOS_DO_ENCAMINHADOR.length +
-      ROTAS_FORA_DO_ARCABOUCO.length;
-
-    // A igualdade entre os dois eixos é afirmada **explicitamente**, e ANTES da comparação com a
-    // âncora: duas medições que concordassem com o valor esperado por acidente e discordassem entre
-    // si passariam pela comparação de baixo, e é a concordância delas que torna cada uma verificável
-    // pela outra. ⚠️ Os dois eixos são INDEPENDENTES, e a coincidência de as duas primeiras âncoras
+    // ⚠️ Os dois eixos são INDEPENDENTES, e a coincidência de as duas primeiras âncoras
     // crescerem sete aqui é acidente da forma destas rotas — nenhuma é derivada da outra.
-    expect(
-      pelaComposicao,
-      'as duas medições independentes da superfície publicada divergiram entre si: o errado é a âncora, nunca a medição',
-    ).toBe(cobertura.rotasEnumeradas);
-
-    // As quatro grandezas viajam numa comparação só de propósito: se alguma divergir, a falha
-    // **nomeia os números** lado a lado.
-    expect(
-      {
-        peloRoteador: cobertura.rotasEnumeradas,
-        pelaComposicao,
-        manipuladores,
-        comTodosOsVerbos,
-      },
-      'a superfície publicada mudou de tamanho: o inventário desta prova precisa ser revisado',
-    ).toEqual({
-      peloRoteador: ROTAS_PUBLICADAS_EM_PRODUCAO,
-      pelaComposicao: ROTAS_PUBLICADAS_EM_PRODUCAO,
-      manipuladores: MANIPULADORES_EXAMINADOS_EM_PRODUCAO,
-      comTodosOsVerbos: MANIPULADORES_QUE_ATENDEM_TODOS_OS_VERBOS,
-    });
+    afirmarAsTresAncoras(aplicacaoReal, cobertura.rotasEnumeradas);
 
     // ---------------------------------------------------------------------------------------
     // O catálogo fechado NÃO foi aberto por esta fatia — ele é 10 × 7, e não cresce
@@ -7634,6 +7332,79 @@ function manipuladoresQueAtendemTodosOsVerbos(aplicacao: NestFastifyApplication)
   }
 
   return total;
+}
+
+/**
+ * O fecho de âncora de superfície de **toda** fatia — as duas medições independentes, a igualdade
+ * entre elas, e a comparação das quatro grandezas contra as constantes executáveis.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que ele existe: o fecho do débito `D28 · F7/T7`
+ * ---------------------------------------------------------------------------
+ *
+ * Este bloco estava repetido em **10** casos deste arquivo (medido em 2026-09-02) — um por fatia que
+ * publicou rota. ⚠️ **O débito dizia 14**, e 14 é a contagem de **CTs listados**, não de cópias: os
+ * 14 CTs existem, e 10 deles carregam o bloco. Nove eram **byte a byte idênticas**; a décima — a mais
+ * antiga, do fecho da F2 — **não tinha a perna de igualdade entre os eixos**, e comparava as quatro
+ * grandezas com uma mensagem própria. Isto é: a divergência que a duplicação convida **já havia
+ * acontecido**, e é ela que justifica a casa única. A promoção **fortaleceu** aquele caso, dando-lhe
+ * a perna que os outros nove tinham; nenhuma asserção foi removida de nenhum.
+ *
+ * ⚠️ **Os casos NÃO foram colapsados num só, e não devem ser.** Cada um é a âncora **datada** da sua
+ * fatia, e a falha precisa nomear qual fatia moveu a superfície. O que se compartilha é o fecho; o
+ * que cada caso mantém é a partição dele, o comentário que registra o que aquela fatia mediu, e as
+ * asserções próprias.
+ *
+ * ---------------------------------------------------------------------------
+ * As duas medições, e por que a igualdade entre elas é afirmada À PARTE
+ * ---------------------------------------------------------------------------
+ *
+ * A primeira lê a **tabela do roteador** já montado (`cobertura.rotasEnumeradas`, que chega por
+ * parâmetro porque cada caso compõe a sua). A segunda varre os **decoradores dos controladores** e
+ * compõe: cada manipulador reivindica um par, salvo o `@All`, que reivindica os sete verbos do
+ * caminho dele, mais os pares registrados direto no adaptador, que não têm manipulador. **Nenhuma é
+ * derivada da outra** — é essa independência que mediu `75` onde a §11.2 de uma fatia estimava `77`,
+ * e localizou o erro na soma em vez de no escopo entregue.
+ *
+ * A igualdade entre os dois eixos é afirmada **explicitamente, e ANTES** da comparação com a âncora:
+ * duas medições que concordassem com o valor esperado por acidente e discordassem **entre si**
+ * passariam pela comparação de baixo, e é a concordância delas que torna cada uma verificável pela
+ * outra. **Não funda as duas asserções numa só** — foi exatamente essa fusão que deixou o caso mais
+ * antigo sem a perna, e desfazê-la é o que esta casa entrega.
+ *
+ * @param aplicacao A aplicação real montada pela suíte.
+ * @param rotasPeloRoteador O total lido da tabela do roteador — `cobertura.rotasEnumeradas` do caso.
+ */
+function afirmarAsTresAncoras(aplicacao: NestFastifyApplication, rotasPeloRoteador: number): void {
+  const manipuladores = manipuladoresExaminados(aplicacao);
+  const comTodosOsVerbos = manipuladoresQueAtendemTodosOsVerbos(aplicacao);
+  const pelaComposicao =
+    manipuladores -
+    comTodosOsVerbos +
+    comTodosOsVerbos * METODOS_DO_ENCAMINHADOR.length +
+    ROTAS_FORA_DO_ARCABOUCO.length;
+
+  expect(
+    pelaComposicao,
+    'as duas medições independentes da superfície publicada divergiram entre si: o errado é a âncora, nunca a medição',
+  ).toBe(rotasPeloRoteador);
+
+  // As quatro grandezas viajam numa comparação só de propósito: se alguma divergir, a falha
+  // **nomeia os números** lado a lado.
+  expect(
+    {
+      peloRoteador: rotasPeloRoteador,
+      pelaComposicao,
+      manipuladores,
+      comTodosOsVerbos,
+    },
+    'a superfície publicada mudou de tamanho: o inventário desta prova precisa ser revisado',
+  ).toEqual({
+    peloRoteador: ROTAS_PUBLICADAS_EM_PRODUCAO,
+    pelaComposicao: ROTAS_PUBLICADAS_EM_PRODUCAO,
+    manipuladores: MANIPULADORES_EXAMINADOS_EM_PRODUCAO,
+    comTodosOsVerbos: MANIPULADORES_QUE_ATENDEM_TODOS_OS_VERBOS,
+  });
 }
 
 /**

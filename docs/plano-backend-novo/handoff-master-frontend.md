@@ -516,8 +516,9 @@ estado são do cliente, sobre a página recebida.
 ⚠️ **`limite` acima de 200 RECUSA — não trunca.** Truncar em silêncio faria o operador acreditar que
 viu tudo.
 
-⚠️ **E as três recusas da consulta nomeiam campos DIFERENTES**, pela regra da §3: `limite` fora de
-faixa traz `campo: "limite"`; `deslocamento` negativo traz `campo: "deslocamento"`; o **parâmetro
+⚠️ **E as três recusas da consulta nomeiam campos DIFERENTES**, pela regra do *Envelope de erro*
+(§2): `limite` fora de faixa traz `campo: "limite"`; `deslocamento` negativo traz
+`campo: "deslocamento"`; o **parâmetro
 desconhecido** traz `campo: "limite"`, que é o padrão da rota e **não** a chave que foi enviada. É
 idêntico na §4.9. <!-- fonte: apps/api/src/master/empresa.controller.ts:218-225,413 -->
 
@@ -838,7 +839,7 @@ aceitos, e qualquer outro (`?estado=`, `?busca=`, um `?_t=` de cache-busting) re
 | **empresa não existe** | `404 RECURSO_NAO_ENCONTRADO` — e **não** uma página vazia |
 | `limite` acima de 50, abaixo de 1, ou não inteiro | `422 CAMPO_INVALIDO`, `campo: "limite"` |
 | `deslocamento` negativo, ou não inteiro | `422 CAMPO_INVALIDO`, **`campo: "deslocamento"`** — o campo culpado, não `"limite"` |
-| parâmetro desconhecido (`?estado=`, `?busca=`, `?_t=`) | `422 CAMPO_INVALIDO`, `campo: "limite"` — o **padrão da rota** (§3), pois a chave desconhecida não tem o que nomear |
+| parâmetro desconhecido (`?estado=`, `?busca=`, `?_t=`) | `422 CAMPO_INVALIDO`, `campo: "limite"` — o **padrão da rota** (*Envelope de erro*, §2), pois a chave desconhecida não tem o que nomear |
 
 ⚠️ **Página vazia e empresa inexistente são coisas diferentes, e o servidor as distingue.** `itens:
 []` com `200` significa *"a empresa existe e não tem administrador"* — é o estado em que cabe

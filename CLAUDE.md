@@ -455,13 +455,32 @@ fatia reaberta.
   uma porta"* não alcança a porta de identidade), a **0017** (o contador é a **0033**, não a 0015) e a
   **0021** (emendada **duas vezes** — a de 2026-08-10 nomeia a entidade nas classes de ato; a de
   **2026-08-22** declara o alcance de cada metade da `Decision` quando **não há requisição**: a
-  categórica vale sem exceção, a de governança pressupõe sessão e não tem sujeito sem ela).
+  categórica vale sem exceção, a de governança pressupõe sessão e não tem sujeito sem ela) e a
+  **0038** (emendada em **2026-09-02**, no 2º `Cons`: o retorno ao ponto de salvamento **não** libera
+  os bloqueios de **relação**, mas **libera** os de **linha** — a entrada de um administrador da
+  própria página atravessa em **8 ms** com a unidade aberta, medido na T4 da fatia
+  `painel-master-administradores`, com controle positivo de `55P03` após 5 014 ms contra um `DELETE`
+  vivo. ⚠️ **Não reponha a frase larga**: ela superestima o custo da sonda-em-savepoint, e as duas
+  outras pontas dela — o docblock de `ensaiarExclusao` em `packages/db` e o de `listar` em
+  `apps/api/src/master/administrador.service.ts` — foram precisadas na mesma passada).
+  ⚠️ **A 0024 também está emendada duas vezes** — ver a linha dela na tabela de leitura obrigatória.
   **Não cite como vigentes**: 0007, 0012, 0015 e 0019 — todas superseded.
 - ⚠️ **Precedente de método, confirmado cinco vezes**: *prescrição de gate é hipótese, não ordem* — o
   executor que divergiu **declarando e medindo** teve razão em todas. E o corolário que custou duas
   fases: *a frase que explica por que algo não pode ser feito envelhece mais rápido que o débito que
   ela justifica* — meça a premissa antes de registrá-la.
-- **Dívida**: **488 débitos abertos em 17 fatias** — 628 blocos na §2, 140 já com marca de fecho.
+- **Dívida**: **499 débitos abertos** — **656** blocos na §2 dos **25** `run-report.md` do
+  repositório, **157** já com marca de fecho, e **23** fatias com ao menos um aberto.
+  **Remedido em 2026-09-02**, na triagem de débito da fatia `painel-master-administradores`, pelo
+  mesmo critério de sempre: bloco é `^### D`, fechado é o cabeçalho que carrega `✅`.
+  ⚠️ **O número anterior (488 em 17 fatias, sobre 628 blocos, 140 fechados) NÃO se repõe**, e a
+  diferença é **medida e integralmente explicada**: (i) ele é de 2026-08-26 e varria **24**
+  relatórios, sem o desta fatia; (ii) os **+17 fechados** são exatamente os que a triagem de
+  2026-09-02 fechou (`D2`, `D3`, `D4`, `D5`, `D9`, `D13`, `D15`, `D16`, `D17`, `D19`, `D20`, `D21`,
+  `D26`, `D27`, `D28`, `D29`, `D30`). ⚠️ **O "17 fatias" do número antigo não é comparável ao "23"
+  deste**: aquele não declarava critério de contagem de fatia, e este conta **fatia cujo relatório
+  tem ao menos um bloco sem `✅`** — reproduza com
+  `for f in docs/specs/features/*/*/_run/run-report.md; do grep '^### D' $f | grep -vc '✅'; done`.
   **Remedido na T11 da fatia `publicacao-e-backup`, em 2026-08-26**, varrendo os **24**
   `run-report.md` do repositório, com o critério e o comando escritos aqui para que a próxima
   medição seja reproduzível: bloco é `^### D`, e fechado é o cabeçalho que carrega `✅`.
@@ -527,7 +546,7 @@ O marco está alcançado quando **todos** os sete itens forem verdadeiros:
       20 públicas** — a última publicada **na superfície da imobiliária** foi
       `GET /v1/automacao-de-cobranca/rotinas`, na T10 da fatia `automacoes-agendadas`. Nenhuma fatia
       posterior acrescenta, remove ou altera rota **dela**, e é isso que torna o handoff confiável.
-      ⚠️ **EMENDA de 2026-09-02 (ADR-0039), com o texto original preservado**: o congelamento alcança
+      ⚠️ **EMENDA de 2026-09-02 (ADR-0039), com o valor anterior registrado**: o congelamento alcança
       a superfície que o `@syslocbr/contracts` entrega à imobiliária; a do **operador do SaaS** fica
       **fora** dele, e acrescentar operação ali **não reabre o marco**. As **7** rotas da fatia
       `painel-master-administradores` são todas do painel do operador, e por isso os três números
@@ -757,12 +776,15 @@ Específicos deste domínio: **`node:https`** (o mTLS do Sicoob — ⚠️ o cli
 > grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 > ```
 
-São **42**, e a tabela abaixo é a lista viva — ela, e não este parágrafo, é a fonte.
+São **44**, e a tabela abaixo é a lista viva — ela, e não este parágrafo, é a fonte.
 
 ⚠️ **O identificador é o par `Dnn · F{n}/{origem}`, nunca o número sozinho** — a sequência corre
-dentro da §2 da fatia que registrou cada débito. Hoje convivem **dois `D1`**, **dois `D3`**, **QUATRO
+dentro da §2 da fatia que registrou cada débito. Hoje convivem **dois `D1`**, **TRÊS `D3`**, **QUATRO
 `D12`**, **dois `D37`**, **dois `D40`**, **dois `D43`** e **dois `D49`**, todos legítimos e todos
-débitos diferentes. ⚠️ **O quarto `D12` nasceu em 2026-09-02**, na rodada 2 da T4 da fatia
+débitos diferentes. ⚠️ **O terceiro `D3` nasceu em 2026-09-02**, na triagem de débito da fatia
+`painel-master-administradores` (origem **T2**) — não o confunda com o `D3 · F2/T1`
+(`cadastro-de-imoveis-e-pessoas`) nem com o `D3 · F3/T1` (`regua-de-cobranca`). ⚠️ **O quarto `D12`
+nasceu em 2026-09-02**, na rodada 2 da T4 da fatia
 `painel-master-administradores` — não o confunda com o `D12 · F3/T4` (`regua-de-cobranca`), o
 `D12 · F3/T10` (`documentos-e-confirmacao`) nem o `D12 · F5/T6` (`automacoes-agendadas`). ⚠️ **O par de `D1` nasceu em 2026-09-01**, com a T1 da fatia
 `painel-master-administradores`: as duas fatias que o carregam são de fases diferentes (`F5` e
@@ -881,6 +903,8 @@ Limiar de Três ainda por disparar, e um fecho por número as levaria junto. Por
 | **D8** (F7/T4, fatia `painel-master-administradores`) | `apps/api/src/master/administrador.service.ts` (junto de `recusaPorPerfil`) | a **terceira** cópia do envelope de recusa por perfil — hoje são duas, com `empresa.service.ts` |
 | **D12** (F7/T4, fatia `painel-master-administradores`) | `apps/api/src/master/administrador.contrato.ts` (junto de `MAIOR_PAGINA_DE_ADMINISTRADORES`) | ⚠️ **JÁ DISPAROU (F7/T6)** — a T6 abriu `empresa.controller.ts`; adiado por §A1, razão na §2. Volta a disparar na **terceira** declaração da FORMA da janela em `apps/api/src/master/` |
 | **D22** (F7/T6, fatia `painel-master-administradores`) | `apps/api/src/master/empresa.controller.ts` (junto de `ESQUEMA_DA_EMPRESA`) | a primeira task autorizada a abrir este arquivo **para reformar a publicação do contrato** — as 6 descrições à mão viram `esquemaPublicado(...)`, usado por 15 dos 22 controladores |
+| **D19** (F7/T5, fatia `painel-master-administradores`) | **2 marcadores** — `apps/api/src/master/administrador.service.ts` (`MOTIVO_DO_EMAIL_EM_USO`) e `administrador.contrato.ts` (`MAIOR_NOME_DE_PESSOA`) | ⚠️ **o Limiar de Três JÁ DISPAROU nos dois (3 cópias cada, medido)** — abrir `usuarios/usuario.service.ts` (o literal) ou `usuarios/usuario.controller.ts` (o teto) por outra razão; adiado por escopo, razão na §2 |
+| **D3** (F7/T2, fatia `painel-master-administradores`) | `packages/db/test/catalogo.spec.ts` (junto de `tabelasQueAlcancamAEmpresaEmUmSalto`) | o **terceiro** consumidor do predicado de ligação obrigatória, ou a primeira alteração do que *"obrigatória"* significa — hoje são 2 cópias e a sincronia vive só em prosa |
 | **D5** (F5/T3, fatia `automacoes-agendadas`) | `packages/db/drizzle.config.ts` (junto de `out`) | ⚠️ **RECORRENTE — o gatilho NÃO o extingue**: a próxima migração **autoral** que alterar estrutura declarada em `src/esquema/*.ts`, ou uma regeração **do zero**; a supressão é manual nos dois casos e volta na seguinte |
 
 ---

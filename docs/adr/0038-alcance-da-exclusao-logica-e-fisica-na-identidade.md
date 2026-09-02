@@ -45,6 +45,34 @@ exclusão é recusada. Esta decisão **nunca destrói auditoria**, e não afroux
   transação.
 - O operador ganha verbo destrutivo cuja contenção é a chave estrangeira, não a autorização.
 
+> **Emenda de 2026-09-02.** O segundo `Cons` acima permanece como foi escrito, e a **espécie** de
+> bloqueio que ele deixou implícita foi **medida** depois — na T4 da fatia
+> `painel-master-administradores`, a mesma que aplica esta ADR. Lido ao pé da letra, ele diz que
+> **nenhum** bloqueio é liberado antes do fim da transação, e nessa leitura *overstates* o custo da
+> sonda: quem abrir este campo para decidir se replica a sonda-em-savepoint noutra superfície
+> concluiria que a disponibilidade de acesso do cliente final fica retida enquanto a unidade viver.
+> **A decisão não mudou** — mudou o que se sabe sobre o custo dela:
+>
+> - **O bloqueio de LINHA é liberado pelo retorno ao ponto de salvamento.** Com a unidade da listagem
+>   **aberta** e 203 bloqueios de relação retidos, a entrada de um administrador da própria página —
+>   `INSERT` em `identidade.sessao`, que toma `FOR KEY SHARE` na linha — **atravessou em 8 ms**.
+> - **O que fica até o commit são os de RELAÇÃO**, e eles **não conflitam com DML**.
+> - **O controle positivo discrimina**, e é ele que torna os 8 ms conclusivos em vez de janela quieta
+>   por acaso: contra um `DELETE` **vivo** na mesma linha, o mesmo `INSERT` esperou o teto inteiro e
+>   foi recusado com `55P03` após **5 014 ms**.
+>
+> Leia, portanto, o segundo `Cons` como *"toma bloqueios de **relação** que o retorno ao ponto de
+> salvamento não libera antes do fim da transação"*. O código de produção já não propaga a frase
+> larga: `apps/api/src/master/administrador.service.ts` registra a medição no ponto de uso, e o
+> docblock de `ensaiarExclusao` (`packages/db/src/administrador-do-master.ts`) foi precisado no mesmo
+> passo desta emenda — as duas pontas da mesma frase, fechadas juntas.
+>
+> **Por que a emenda foi necessária, se a medição já estava no código**: estava — em dois docblocks,
+> que é onde quem **implementa** passa. A convenção deste repositório é que **citar ADR exige abrir a
+> `Decision`**, e quem chega por citação abre esta ADR, não `administrador.service.ts`. É o mesmo vão
+> que a emenda de 2026-08-15 da **ADR-0001** e a de 2026-08-16 da **ADR-0017** fecharam: lá a
+> justificativa morava no tech spec e num docblock; aqui, numa medição que nunca subiu ao registro.
+
 **Neutros:**
 - Não altera a 0014 no domínio: lá a exclusão segue lógica, sem exceção.
 - Como a recusa se apresenta é decisão de cada fatia; aqui se fixa só que ela nomeia a **classe**, e

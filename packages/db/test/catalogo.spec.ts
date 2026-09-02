@@ -2212,6 +2212,22 @@ const TRANSITIVAS_ATE_A_EMPRESA: readonly string[] = [
  * não alcança a empresa em salto nenhum, e contá-la aqui inflaria o conjunto de um salto com
  * ligações que não implicam a linha pai.
  */
+// DÉBITO COM GATILHO — D3 · F7/T2 · registrado 2026-09-02
+// (NÃO é uma `DECISÃO FECHADA`: ele agenda uma convergência, não protege o código abaixo.)
+// O QUÊ: o predicado de LIGAÇÃO OBRIGATÓRIA — `COALESCE((SELECT bool_and(a.attnotnull) …), false)` —
+//        aparece **idêntico** aqui e em {@link verificarCoberturaDoCriterioDeExclusao}. O docblock
+//        acima declara a obrigação de sincronia (*"e tem de ser"*) e **não instala mecanismo nenhum**
+//        que a sustente: ela vive só em prosa.
+// QUANDO FECHA: o **terceiro** consumidor do predicado, ou a primeira alteração do que "obrigatória"
+//        significa. Aí ele sobe para uma constante de string SQL deste arquivo, consumida pelas duas
+//        consultas — o que **não** reintroduz a circularidade que a rodada 2 desfez, porque o que
+//        precisa continuar independente é a **travessia** (ponto fixo × salto único), não a
+//        definição de aresta.
+// POR QUE NÃO AGORA: são duas cópias, e a direção da falha é **segura** — se esta perder a
+//        conferência de `attnotnull`, o conjunto de um salto cresce, as sete transitivas caem abaixo
+//        de sete e o `CT-1242` fica **vermelho**. Não há vetor silencioso; o que se perde sem este
+//        marcador é a rastreabilidade da obrigação depois que a fatia fechar.
+// ÍNDICE: docs/specs/features/painel-master-administradores/v1/_run/run-report.md §2, D3
 async function tabelasQueAlcancamAEmpresaEmUmSalto(cadeia: string): Promise<readonly string[]> {
   const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
 
@@ -2291,6 +2307,34 @@ const VARIANTES_SEM_CAMINHO: readonly VarianteSemCaminho[] = [
   },
 ];
 
+/**
+ * ⚠️ **Por que esta guarda mora no arquivo de TESTE, e a irmã dela mora em produção.**
+ *
+ * {@link verificarCoberturaDoCriterioDeExclusao} é gêmea estrutural de `verificarCoberturaDeIsolamento`
+ * — mesmo par `examinadas`/`excecoes`, mesma forma — e as duas têm **domicílios opostos**: a irmã
+ * vive em `packages/db/src/catalogo.ts`, é exportada pelo barril e é consumida **fora da suíte** por
+ * `deploy/scripts/instalacao/verificar-migracao.sh`, que a importa do `dist/` e a roda contra o
+ * banco real depois da migração. A assimetria é **deliberada**, e o discriminador é o **modelo de
+ * ameaça de cada uma**:
+ *
+ * - A irmã existe contra a **deriva do banco implantado** — um `ALTER`/`CREATE` aplicado fora do
+ *   repositório, que só se descobre olhando o banco que opera. Por isso ela precisa rodar lá, e por
+ *   isso paga o preço de ser superfície publicada.
+ * - Esta existe contra **uma fatia futura em `negocio`** — isto é, contra uma **migração deste
+ *   repositório**, que a instância efêmera aplica integralmente. O banco implantado **não** é vetor
+ *   aqui: nada chega a ele que não tenha passado antes por esta suíte.
+ *
+ * Promovê-la a `src/` "por simetria" alargaria a superfície publicada do pacote **sem consumidor**;
+ * duplicá-la lá criaria a segunda definição do mesmo critério, livre para divergir. As duas são as
+ * saídas erradas, e esta nota existe para que o próximo agente não escolha nenhuma delas por não
+ * achar a razão escrita (débito `D2` da §2 da fatia `painel-master-administradores`, 2026-09-02).
+ *
+ * **QUANDO ISSO MUDA**: no dia em que `verificar-migracao.sh` precisar conferir a cobertura do
+ * critério de **exclusão** contra o banco real — aí o modelo de ameaça passa a ser o da irmã, a
+ * função sobe para `src/catalogo.ts` e entra no barril, com a âncora de símbolos (`CT-012`) subindo
+ * no mesmo diff. **ADRs**: 0009 (fronteira identidade/negócio por schema), 0038 (o critério de
+ * admissibilidade da exclusão é a integridade referencial do banco).
+ */
 describe('guarda de cobertura do critério de exclusão — toda tabela de negócio chega à empresa', () => {
   let banco: BancoMigrado;
   let doMigrador: string;

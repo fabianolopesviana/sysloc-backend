@@ -217,7 +217,7 @@ import {
   PAGINA_PADRAO_DE_EMPRESAS,
 } from '../src/master/empresa.service.ts';
 import { CAMINHO_DOS_USUARIOS } from '../src/usuarios/usuario.controller.ts';
-import { entrarComSegundoFatorCumprido } from './acessorios-de-borda.ts';
+import { contarSessoesDaPessoa, entrarComSegundoFatorCumprido } from './acessorios-de-borda.ts';
 
 /** Limite da montagem: banco migrado, semente com credencial, fila e a aplicação real. */
 const LIMITE_DE_MONTAGEM_MS = 240_000;
@@ -1123,7 +1123,7 @@ describe('ciclo de vida da empresa pelas rotas do Master (T7)', () => {
       //
       // O número devolvido é comparado com o que EXISTIA um instante antes, e não com um literal:
       // é isso que distingue "encerrada" de "marcada", e a contagem em zero depois fecha o par.
-      const sessoesDoPrimeiro = await contarSessoesDaPessoa(primeiro.usuarioId);
+      const sessoesDoPrimeiro = await contarSessoesDaPessoa(identidade.acesso, primeiro.usuarioId);
       expect(sessoesDoPrimeiro).toBeGreaterThan(0);
 
       const revogado = await pedir(
@@ -1136,7 +1136,7 @@ describe('ciclo de vida da empresa pelas rotas do Master (T7)', () => {
         ativo: false,
         sessoesEncerradas: sessoesDoPrimeiro,
       });
-      expect(await contarSessoesDaPessoa(primeiro.usuarioId)).toBe(0);
+      expect(await contarSessoesDaPessoa(identidade.acesso, primeiro.usuarioId)).toBe(0);
       expect((await entrarCom(primeiro.email, primeiro.senhaProvisoria)).status).toBe(401);
     },
     LIMITE_CASO_MS,
@@ -1166,23 +1166,15 @@ async function contarSessoesDaEmpresa(empresaId: string): Promise<number> {
   return linhas.length;
 }
 
-/**
- * Quantos registros de sessão existem para **uma** pessoa.
- *
- * Irmã de {@link contarSessoesDaEmpresa}, e separada dela porque o eixo é outro: a desativação de
- * pessoa encerra as sessões **dela**, e comparar o número devolvido pela rota com o que existia um
- * instante antes é o que distingue "encerrada" de "marcada".
- */
-async function contarSessoesDaPessoa(usuarioId: string): Promise<number> {
-  const { sessao } = esquemaIdentidade;
-
-  const linhas = await identidade.acesso.identidade
-    .select({ id: sessao.id })
-    .from(sessao)
-    .where(eq(sessao.usuarioId, usuarioId));
-
-  return linhas.length;
-}
+// `contarSessoesDaPessoa` — **importada** de `./acessorios-de-borda.ts` desde 2026-09-02 (fecho do
+// débito `D9 · F7/T4`). Ela era declarada aqui, byte a byte igual às de
+// `./master-administradores.e2e.spec.ts` e `./administracao-de-pessoas.e2e.spec.ts` — três cópias,
+// com o Limiar de Três já disparado.
+// ⚠️ Ela **continua sendo irmã de {@link contarSessoesDaEmpresa}, e separada dela**, porque o eixo é
+// outro: a desativação de pessoa encerra as sessões **dela**, e comparar o número devolvido pela
+// rota com o que existia um instante antes é o que distingue "encerrada" de "marcada". A da empresa
+// permanece **privada desta suíte** — ela não tem terceira cópia, e promovê-la de carona seria a
+// refatoração fora da causa-raiz que a §4.5 do Protocolo proíbe.
 
 /**
  * Quantos vínculos de acesso existem para a pessoa, **visíveis sob o contexto de uma empresa**.

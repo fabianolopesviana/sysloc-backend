@@ -1683,6 +1683,15 @@ async function registrarIdentidade(cookie: string): Promise<void> {
 //        cópia**, e não reabra esta metade: a prova é a baseline do pacote `api`, comparada arquivo
 //        a arquivo, com as seis suítes saindo idênticas (410 → 410). O marcador PERMANECE porque as
 //        outras duas metades abaixo continuam abertas — apagá-lo por número levaria as duas junto.
+// ⚠️ RESSALVA MEDIDA (2026-09-02, débito `D5` da §2 desta fatia): o *"hoje tem UMA"* acima é verdade
+//        pelo **nome** e incompleto pelo **comportamento**. Resta **uma sétima cópia semântica sob
+//        outro nome** — `entrarComoOperadorDoSaaS`, em `./campos-fechados.e2e.spec.ts:1057` —, com o
+//        **mesmo fluxo** (entrar → `two-factor/enable` → `generateTOTP` → `two-factor/verify-totp`).
+//        Não tê-la tocado na T3 foi **correto**: aquela suíte está fora da §5.2 daquela task, e abrir
+//        suíte alheia não declarada é o que a §4.5 do Protocolo proíbe. Ela converte quando a
+//        primeira task autorizada a abrir `campos-fechados.e2e.spec.ts` chegar. Isto **não** reabre a
+//        metade paga — o que fechou foi a convergência pelo NOME, e esta linha é o que impede o
+//        próximo leitor de concluir que não sobrou nada a converter.
 // O QUÊ: dois acessórios de arranjo ainda têm mais de uma escrita, e as contagens são MEDIDAS —
 //        `grep -rln --exclude-dir=dist "function <nome>" apps packages`, em 2026-08-22.
 //        {@link envelhecerOVigente} existe em **duas** — esta e

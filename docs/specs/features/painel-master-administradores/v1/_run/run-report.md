@@ -52,28 +52,58 @@ moveu. ⚠️ Uma **quarta** âncora acompanhou: `ROTAS_PUBLICADAS_NO_MUTANTE` 1
 - **Gatilho:** o terceiro leitor. Marcador `DÉBITO COM GATILHO — D1 · F7/T1` no ponto do código,
   linha correspondente no índice do `CLAUDE.md`.
 
-### D2 · baixo · code_quality · T2 · Tech Review
+### D2 · baixo · code_quality · T2 · Tech Review — ✅ **RESOLVIDO na triagem de 2026-09-02**
+
+> O cabeçalho do `describe` em `packages/db/test/catalogo.spec.ts` ganhou a razão da assimetria: o
+> **discriminador é o modelo de ameaça** — a irmã (`verificarCoberturaDeIsolamento`, em `src/`) existe
+> contra a **deriva do banco implantado**, e por isso paga o preço de ser superfície publicada; esta
+> existe contra **uma migração deste repositório**, que a instância efêmera aplica integralmente. As
+> duas saídas erradas (promover "por simetria", duplicar em `src/`) estão nomeadas, e o gatilho que
+> mudaria a decisão está escrito: o dia em que `verificar-migracao.sh` precisar conferir a cobertura
+> do critério de exclusão contra o banco real.
 
 - **Onde:** `packages/db/test/catalogo.spec.ts:2098` (`verificarCoberturaDoCriterioDeExclusao`)
 - **Problema:** a guarda de cobertura nasce no arquivo de **teste** sem registrar por que não vive em `src/catalogo.ts`, como a sua irmã. Ela é gêmea estrutural de `verificarCoberturaDeIsolamento` — mesmo par `examinadas`/`excecoes`, mesmo motivo fechado, e o próprio docblock declara *"Mesmo desenho de `CoberturaDeIsolamento`, e pela mesma razão"*. A irmã vive em **produção** (`packages/db/src/catalogo.ts:281`), é exportada pelo barril e é consumida fora da suíte pelo verificador de infraestrutura, que a importa do `dist` e a roda contra o banco real após a migração (`deploy/scripts/instalacao/verificar-migracao.sh:437`).
 - **Impacto:** baixo, de manutenção. O próximo agente encontra duas guardas de catálogo idênticas em forma e opostas em domicílio, sem nada que decida a questão — e resolve a assimetria de um dos dois jeitos errados: promove a guarda para `src/` "por simetria", ampliando superfície publicada sem consumidor, ou a duplica lá quando alguém quiser conferir a cobertura contra o banco de produção.
 - **O que fazer:** acrescentar ao cabeçalho do `describe` duas ou três linhas com a razão — o modelo de ameaça que a própria guarda declara é *"uma fatia futura em `negocio`"*, isto é, uma **migração deste repositório**, e a instância efêmera aplica todas elas; a deriva do banco implantado, que motiva a irmã a viver em produção, não é o vetor aqui. Registrar o gatilho que mudaria isso: o dia em que `verificar-migracao.sh` precisar conferir a cobertura do critério de exclusão contra o banco real, a função sobe para `src/catalogo.ts` e entra no barril. **ADRs referenciadas:** 0009, 0038.
 
-### D3 · baixo · project_pattern · T2 · Tech Review
+### D3 · baixo · project_pattern · T2 · Tech Review — ✅ **RESOLVIDO na triagem de 2026-09-02**
+
+> Marcador `DÉBITO COM GATILHO — D3 · F7/T2` emitido junto de `tabelasQueAlcancamAEmpresaEmUmSalto`,
+> em `packages/db/test/catalogo.spec.ts`, com `QUANDO FECHA` no terceiro consumidor do predicado ou na
+> primeira alteração do que *"obrigatória"* significa, e o `ÍNDICE` apontando para cá. Linha
+> correspondente no índice do `CLAUDE.md`, com as três pontas em **44**. ⚠️ **A extração do predicado
+> — a "alternativa igualmente aceitável" — NÃO foi feita**, e a escolha é deliberada: ela tocaria as
+> duas consultas que o `CT-1242` mede, sem defeito que a motive. Ela segue disponível, e o marcador a
+> nomeia. ⚠️ **Este é o TERCEIRO `D3` do repositório** — o parágrafo de homônimos do `CLAUDE.md` foi
+> atualizado de *"dois"* para **"TRÊS"**.
 
 - **Onde:** `packages/db/test/catalogo.spec.ts:2122` e `:2231` (as duas cópias do predicado de ligação obrigatória)
 - **Problema:** a subconsulta `COALESCE((SELECT bool_and(a.attnotnull) …), false)` aparece **idêntica** na travessia por ponto fixo e na consulta de um salto. O docblock da segunda é explícito — *"A conferência de obrigatoriedade é a mesma da guarda, **e tem de ser**"* — declara a obrigação de sincronia e **não instala mecanismo nenhum** que a sustente.
 - **Impacto:** baixo, e a direção da falha é **segura**: se a cópia do salto único perder a conferência de `attnotnull`, o conjunto de um salto cresce, as sete transitivas caem a menos de sete e o `CT-1242` fica **vermelho**. Nenhum vetor silencioso. O custo é de rastreabilidade — a obrigação de sincronia vive só em prosa e some do radar assim que a fatia fechar.
 - **O que fazer:** emitir marcador `DÉBITO COM GATILHO` junto de `tabelasQueAlcancamAEmpresaEmUmSalto`, com `QUANDO FECHA` = *o terceiro consumidor do predicado de ligação obrigatória, ou a primeira alteração do que "obrigatória" significa*, `POR QUE NÃO AGORA` = *extrair um fragmento SQL compartilhado hoje acoplaria as duas consultas que a rodada 2 separou de propósito, e são duas cópias*, e o `ÍNDICE` apontando para esta §2; mais a linha no bloco de débitos do `CLAUDE.md`. **Alternativa igualmente aceitável**: extrair o predicado para uma constante de string SQL do arquivo — ela **não** reintroduz circularidade, porque o que a rodada 2 precisou manter independente é a **travessia** (ponto fixo × salto único), não a definição de aresta.
 
-### D4 · baixo · documentation · T3 · QA
+### D4 · baixo · documentation · T3 · QA — ✅ **RESOLVIDO na triagem de 2026-09-02**
+
+> O docblock de `entrarComSegundoFatorCumprido` passou a nomear o instrumento que **discrimina**: a
+> suíte sair **verde**. `credencialDeSessao` levanta quando a credencial não vem e é chamada no
+> `beforeAll` de `entrega-da-noticia`, de modo que um ramo alcançável reprovaria os **15** casos
+> daquela suíte **sem mover a contagem deles** — os 15 foram medidos nesta passada (`it(` = 15,
+> `it.each` = 0, e o pacote `api` saiu verde). ⚠️ **A afirmação sobre a baseline PERMANECE**, agora no
+> papel que ela de fato cumpre: prova que nenhum caso sumiu, não que o ramo era morto.
 
 - **Onde:** `apps/api/test/acessorios-de-borda.ts:380` (docblock de `entrarComSegundoFatorCumprido`)
 - **Problema:** o docblock declara a **prova errada** da inalcançabilidade do ramo tolerante que a promoção removeu — *"foi MEDIDO, não argumentado: a contagem daquela suíte não se moveu na baseline caso a caso da T3"*. A **conclusão está certa**, mas o instrumento citado não a sustenta: contagem idêntica prova apenas que nenhum caso sumiu.
 - **Impacto:** o que discrimina é a suíte sair **verde** — `credencialDeSessao(ativacao)` levanta quando a credencial não vem, e é chamada dentro do `beforeAll` de `entrega-da-noticia`, de modo que um ramo alcançável reprovaria os 15 casos **sem mover a contagem deles**. Medido na validação: 15 casos, **15 PASSED**. Registrar o instrumento fraco num docblock permanente é o que a `.claude/rules/testing-stack.md` adverte — *"prova inconclusiva é pior que prova ausente, ela consta como feita"*.
 - **O que fazer:** trocar a frase por *"os 15 casos daquela suíte saíram VERDES — o levantamento de `credencialDeSessao` acontece no `beforeAll`, e um ramo alcançável os reprovaria todos sem mover a contagem"*. A afirmação sobre a baseline permanece, mas como prova de que nada sumiu, não de que o ramo era morto.
 
-### D5 · baixo · documentation · T3 · QA
+### D5 · baixo · documentation · T3 · QA — ✅ **RESOLVIDO na triagem de 2026-09-02**
+
+> O bloco `⚠️ PAGO` do marcador `D32 · F5/T7` em `apps/api/test/entrega-da-noticia.e2e.spec.ts`
+> ganhou a ressalva: resta **uma sétima cópia semântica sob outro nome** —
+> `entrarComoOperadorDoSaaS`, em `./campos-fechados.e2e.spec.ts:1057` (conferido nesta passada) —, com
+> o mesmo fluxo. O texto registra que não tê-la tocado na T3 foi **correto** (fora da §5.2) e nomeia o
+> gatilho de conversão. **O marcador permanece**, e as outras duas metades dele seguem abertas.
 
 - **Onde:** `apps/api/test/entrega-da-noticia.e2e.spec.ts:1677` (o marcador `D32 · F5/T7` reduzido)
 - **Problema:** a **sétima cópia semântica** do acessório não está registrada. `apps/api/test/campos-fechados.e2e.spec.ts:1057` declara `entrarComoOperadorDoSaaS` — **mesmo fluxo** (entrar → `two-factor/enable` → `generateTOTP` → `two-factor/verify-totp`), outro nome. Não tocá-la foi **correto** (fora da §5.2; abrir suíte alheia não declarada é o que a §4.5 do Protocolo proíbe). O que falta é o registro: o marcador diz que o acessório *"tinha SEIS escritas privadas e hoje tem UMA"*, verdade pelo **nome** e falso pelo **comportamento**.
@@ -102,7 +132,16 @@ moveu. ⚠️ Uma **quarta** âncora acompanhou: `ROTAS_PUBLICADAS_NO_MUTANTE` 1
 - **O que fazer:** ao aparecer a **terceira** cópia, subir o envelope para casa única do módulo `master/`. **Por que não agora:** o **Limiar de Três** do `CLAUDE.md` não disparou — são duas.
 - **Gatilho:** a terceira cópia. Marcador `DÉBITO COM GATILHO — D8 · F7/T4` no ponto do código, linha correspondente no índice do `CLAUDE.md` (39 → **40** pares), e `LINHAS_DO_INDICE_NO_FECHO_DA_FATIA` em **40** no mesmo diff — as três pontas conferidas pelo orquestrador.
 
-### D9 · medio · code_quality · T4 · QA
+### D9 · medio · code_quality · T4 · QA — ✅ **RESOLVIDO na triagem de 2026-09-02**
+
+> `contarSessoesDaPessoa` foi **promovida** para `apps/api/test/acessorios-de-borda.ts`, recebendo o
+> acesso a `identidade` por parâmetro (molde de `conceder`, que recebe `banco`), e as suítes passaram
+> a importá-la. ⚠️ **Eram TRÊS cópias, não duas** — `master-administradores.e2e.spec.ts`,
+> `administracao-de-pessoas.e2e.spec.ts` e **`ciclo-de-acesso.e2e.spec.ts`**, byte a byte idênticas
+> (medido). O Limiar de Três **já havia disparado**, e a conversão alcançou as três: 26 sítios de
+> chamada convertidos (18 + 6 + 2). ⚠️ **`contarSessoesDaEmpresa` continua privada de
+> `ciclo-de-acesso`** — ela não tem terceira cópia, e promovê-la de carona seria refatoração fora da
+> causa-raiz. **Verificado**: `api` **455 passed**, exit 0 — mesma contagem da baseline P1.
 
 - **Onde:** `apps/api/test/master-administradores.e2e.spec.ts:868` (`contarSessoesDaPessoa`)
 - **Problema:** o corpo é **idêntico linha a linha** ao de `apps/api/test/administracao-de-pessoas.e2e.spec.ts:1450` — só o docblock difere. A convenção *"Acessório de suíte se importa, não se copia"* do `CLAUDE.md` é literal sobre exatamente esta situação, e a casa compartilhada **existe** (`apps/api/test/acessorios-de-borda.ts`): o executor a usou corretamente para `pedir`, `entrar`, `entrarComSegundoFatorCumprido`, `conceder` e `credencialDeSessao` — este é o **único** acessório que ele copiou em vez de promover.
@@ -120,12 +159,32 @@ moveu. ⚠️ Uma **quarta** âncora acompanhou: `ROTAS_PUBLICADAS_NO_MUTANTE` 1
 
 > ⚠️ **Este bloco PERMANECE, e mudou de natureza na rodada 2.** Ele deixou de ser "anotável a pagar" e passou a ser o **destino do campo `ÍNDICE`** do marcador `DÉBITO COM GATILHO — D12 · F7/T4`, que o executor emitiu junto de `MAIOR_PAGINA_DE_ADMINISTRADORES`. Removê-lo deixaria o marcador órfão — a §3-B da `nao-regressao.md` chama isso de mentira. As três pontas concordam: índice do `CLAUDE.md` com **41** pares, prosa *"São **41**"*, e `LINHAS_DO_INDICE_NO_FECHO_DA_FATIA = 41`.
 
+> ⚠️ **A triagem de 2026-09-02 examinou este bloco e NÃO o marcou como fechado — a distinção é o
+> ponto.** O que a rodada 2 fechou foi o **achado** (a escrituração omitida): o marcador existe hoje
+> em `apps/api/src/master/administrador.contrato.ts`, conferido. O **débito** que ele indexa — as
+> duas declarações byte a byte da janela em `apps/api/src/master/`, livres para divergir — segue
+> **aberto**, com o gatilho por chegar, exatamente como o `D1`, o `D8` e o `D22` desta mesma §2. Pôr
+> `✅` no cabeçalho o contaria como pago na triagem por comando (`grep '^### D' … | grep '✅'`)
+> enquanto o marcador segue vivo, que é a mesma mentira da §3-B na direção contrária. **Não o feche
+> pelo cabeçalho**; ele sai quando o gatilho chegar e o marcador sair junto.
+
 - **Onde:** `apps/api/src/master/administrador.service.ts:92,95` (`MAIOR_PAGINA_DE_ADMINISTRADORES` / `PAGINA_PADRAO_DE_ADMINISTRADORES`) e `apps/api/src/master/administrador.controller.ts:117-127` (`ESQUEMA_DA_JANELA`)
 - **Problema:** a janela e o par de constantes nascem como **segunda cópia byte a byte** dentro de `apps/api/src/master/` — a primeira é `empresa.controller.ts:143-151` com `MAIOR_PAGINA_DE_EMPRESAS`/`PAGINA_PADRAO_DE_EMPRESAS` (`empresa.service.ts:134,137`), **mesmos valores 200/50**. Dois nomes livres para divergir.
 - **Impacto:** registro, não defeito — é **exatamente** a situação que o executor reconheceu e escriturou para o envelope de recusa por perfil (`D8 · F7/T4`): duas cópias, Limiar de Três não disparado, terceira prevista para T5/T6. A escrituração foi feita para uma e **omitida para a outra, no mesmo arquivo e no mesmo diff**. O custo é a próxima task não saber que a duplicação existe e criar a terceira sem que o gatilho dispare.
 - **O que fazer:** marcador `DÉBITO COM GATILHO` junto de `MAIOR_PAGINA_DE_ADMINISTRADORES`, no molde do `D8` logo abaixo. **Gatilho:** a terceira declaração da mesma forma, ou a primeira task autorizada a abrir `empresa.controller.ts` por outra razão. ⚠️ Isso move `LINHAS_DO_INDICE_NO_FECHO_DA_FATIA` de 40 para **41**, a linha do índice e a prosa *"São **41**"* — as três pontas no mesmo diff, que o `shared` já verifica.
 
-### D13 · baixo · documentation · T4 · executor (medido na rodada 2)
+### D13 · baixo · documentation · T4 · executor (medido na rodada 2) — ✅ **RESOLVIDO na triagem de 2026-09-02**
+
+> **Fechado junto com o `D21`, que é a outra ponta da mesma frase** — e é literalmente o que aquele
+> bloco previa (*"Se a emenda for feita, o `D13` fecha no mesmo passo"*). O cabeçalho do bloco em
+> `packages/db/src/administrador-do-master.ts` passou de *"`ROLLBACK TO SAVEPOINT` **NÃO libera
+> bloqueios**"* para *"não libera os bloqueios de **RELAÇÃO**; os de **LINHA** são liberados"*, com a
+> medição da rodada 2 da T4 (203 bloqueios de relação retidos, `INSERT` em `identidade.sessao`
+> atravessando em **8 ms**) e o controle positivo (`55P03` após **5 014 ms** contra um `DELETE` vivo)
+> escritos ao lado. ⚠️ **A consequência operacional NÃO foi afrouxada**: a página de 200 continua
+> declarada como retendo os bloqueios de **relação** durante a composição inteira — só a **espécie**
+> foi corrigida. O gatilho (*"a primeira task autorizada a abrir `packages/db/…`"*) foi satisfeito
+> pela autorização expressa do usuário para esta triagem.
 
 - **Onde:** `packages/db/src/administrador-do-master.ts` (docblock de `ensaiarExclusao`)
 - **Problema:** a frase *"`ROLLBACK TO SAVEPOINT` não libera bloqueios"* é **mais larga do que a medição sustenta**. A medição da rodada 2 da T4 (instância efêmera migrada, 200 Admin Empresa elegíveis, com a unidade da listagem **ainda aberta** e 203 bloqueios de relação retidos) mostrou que a entrada de um administrador da própria página — `INSERT` em `identidade.sessao`, que toma `FOR KEY SHARE` na linha — **atravessou em 8 ms**. O controle positivo discrimina: contra um `DELETE` **vivo** na mesma linha, o mesmo `INSERT` esperou o teto inteiro e foi recusado com `55P03` após **5 014 ms**.
@@ -139,21 +198,44 @@ moveu. ⚠️ Uma **quarta** âncora acompanhou: `ROTAS_PUBLICADAS_NO_MUTANTE` 1
 - **Impacto:** nenhum funcional. O custo é de leitura: quem grepa pelo número no nome do caso não o encontra na constante.
 - **O que fazer:** trocar o número no nome do `it` para o valor lido da constante, em vez de literal. **Por que não na T4:** tocá-lo perturbaria a comparação **nome a nome** da baseline, que é o instrumento do P5 do Protocolo naquela rodada. **Gatilho:** a primeira task que abrir `validacao.spec.ts` por outra razão.
 
-### D15 · baixo · documentation · T4 · QA
+### D15 · baixo · documentation · T4 · QA — ✅ **RESOLVIDO na triagem de 2026-09-02**
+
+> A `T4.md` ganhou os **três cards** que faltavam na §6.6 — `CT-1220 (b)`, `CT-1244` e `CT-1245` —,
+> as três linhas correspondentes na tabela da §6.3, e o checklist da §8 subiu de *"6 cards"* para
+> **9**. A contagem foi conferida por comando (`grep -c '^#### CT-'` = **9**). Cada card registra a
+> procedência: o `CT-1220 (b)` nasceu na rodada 1 cobrindo a §6.4 sem CT nomeado, e os outros dois na
+> rodada 2, exigidos pelo `TR-P3`.
 
 - **Onde:** `docs/specs/features/painel-master-administradores/v1/tasks/T4.md`, §6.6 (e a tabela da §6.3)
 - **Problema:** o **Detalhamento dos Casos de Teste** segue com os **6 cards** originais enquanto a suíte tem **9 casos** — a rodada 1 acrescentou `CT-1220 (b)` (cobrindo a §6.4, que a spec descrevia sem nomear CT) e a rodada 2 acrescentou `CT-1244` e `CT-1245` (exigidos pelo `TR-P3`).
 - **Impacto:** não há contradição — a §4 e a §5.1 os declaram —, há **lacuna**: o card é a especificação canônica contra a qual um gate confere `Invariant` e `Resultado esperado`, e para esses três CTs a conferência teve de partir do docblock da suíte em vez do card. Não afeta comportamento; é escrituração de spec.
 - **O que fazer:** acrescentar à §6.6 os cards de `CT-1244` (a janela declarada **chega ao banco** — as duas páginas de um conjunto de 3, com identidade do item da segunda) e `CT-1245` (a fronteira do teto **recusa** em vez de truncar, mais a cadeia de consulta fechada), e incluir os três casos na tabela da §6.3. O checklist da §8 (*"§6.6 — 6 cards"*) sobe para **9** no mesmo diff.
 
-### D16 · baixo · code_quality · T4 · Tech Review
+### D16 · baixo · code_quality · T4 · Tech Review — ✅ **RESOLVIDO na triagem de 2026-09-02**
+
+> O cabeçalho de `administrador.contrato.ts` passou a registrar que o `Readonly<>` é **raso por
+> construção** e que os campos aninhados de `exclusao` e os elementos de `itens` deixaram de ser
+> `readonly` na troca pelo `z.infer` (ADR-0016), com a consequência declarada — perda de **rede
+> estática**, zero efeito em execução. ⚠️ **Nada foi refatorado**: o texto proíbe expressamente o
+> `DeepReadonly`, que não existe nesta base. ⚠️ **A contagem medida é 7, não 6** —
+> `grep -c 'Readonly<z.infer'` = 7 no módulo local e **0** em `packages/contracts/src/`, o que
+> confirma a nota de escala do débito: o módulo local é mais estrito que o molde canônico.
 
 - **Onde:** `apps/api/src/master/administrador.contrato.ts:182,205,225,236,250`
 - **Problema:** o `Readonly<>` dos seis tipos derivados é **raso** — congela apenas o primeiro nível —, e o que ele substituiu era **profundo**. As interfaces que a rodada 2 removeu declaravam `readonly` em **todos** os níveis: `ExclusaoDoAdministrador` tinha `readonly disponivel`/`motivo`/`alternativa`, e `PaginaDeAdministradores` tinha `readonly itens: readonly AdministradorDoContrato[]` com o elemento ele próprio inteiramente readonly. Hoje `AdministradorDoContrato['exclusao']` tem os três campos **mutáveis**, e `itens` é array readonly de objetos mutáveis. ⚠️ A declaração `Garantias removidas` do executor cita a consequência de `exactOptionalPropertyTypes` em `motivo`/`alternativa`, mas **não cita esta** — são efeitos **distintos** da mesma troca.
 - **Impacto:** **nenhum em execução** — a serialização é idêntica e `paraContratoDoAdministrador` constrói o objeto literal de uma vez, sem mutar a prévia depois. O custo é de **compilação**: uma escrita acidental em `contrato.exclusao.disponivel` na T5/T6 deixa de ser erro de tipo, exatamente na superfície que ganhará `PUT` parcial e exclusão. É perda de **rede estática**, não de comportamento.
 - **O que fazer:** ⚠️ **não refatore para um `DeepReadonly`** — ele não existe nesta base, criá-lo é abstração antecipada, e o Protocolo proíbe refatorar fora da causa-raiz. O suficiente é **escriturar**: acrescentar ao parágrafo *"As duas grandezas de readonly são deliberadas"* (linhas 43-51) que o `Readonly<>` é **raso por construção**, que os campos aninhados de `exclusao` e os elementos de `itens` deixaram de ser `readonly` na troca pelo `z.infer` (ADR-0016), e que a alternativa — redigitar os modificadores à mão — é justamente o que a ADR **proíbe**. Nota: `@syslocbr/contracts` **não** usa o wrapper (`packages/contracts/src/imovel.ts:263`), de modo que o módulo local já é **mais estrito** que o molde canônico.
 
-### D17 · baixo · documentation · T5 · QA
+### D17 · baixo · documentation · T5 · QA — ✅ **RESOLVIDO pela própria T6 (2026-09-02)**
+
+> ⚠️ **Fechado na triagem de débito de 2026-09-02, por MEDIÇÃO — não houve edição de código.** A
+> lacuna que este bloco descreve **não existe**: o `CT-1247` foi implementado na T6 e o card dele
+> está na `T6.md` em **12 ocorrências** — card completo na §6.6 (linha 366), linha da §6.3 (135),
+> rastreabilidade `CA-09 → CT-1247` (197), tabela de cenários de erro (164), arquivo → CTs (91) e
+> checklist (69, 73). A perna de contrato afirma `code:'unrecognized_keys'` com `keys:[<chave>]` e a
+> de borda afirma o `422` com a linha crua inalterada, exatamente no molde que este débito pedia,
+> para as **três** chaves proibidas (`estado`, `suspensaEm`, `empresaId`). O bloco abaixo permanece
+> como escrito, por registro histórico do que o Gate 1 da T5 mediu **antes** de a T6 rodar.
 
 - **Onde:** `docs/specs/features/painel-master-administradores/v1/tasks/T6.md`, §6 (o critério vive na §4, linha 69)
 - **Problema:** as **2 chaves de Empresa** do caso de corpo fechado ficaram **sem dono**. O `CT-1230` da T5 tinha, na §6.6, a descrição sobre `PUT /v1/master/empresas/:id` — rota da **T6** —, e o executor da T5 corretamente implementou apenas as **4 chaves de usuário**, porque a §5.2 da T5 não lista `empresa.controller.ts`. Mas a **§6 da T6 não tem CT de corpo fechado**: ela traz `CT-1229`, `CT-1231`, `CT-1232`, `CT-1233`, `CT-1234`, `CT-1235`, `CT-1238` e `CT-1239`, e **nenhuma menção** a `strictObject`, `unrecognized_keys` ou chave proibida.
@@ -166,7 +248,19 @@ moveu. ⚠️ Uma **quarta** âncora acompanhou: `ROTAS_PUBLICADAS_NO_MUTANTE` 1
 - **Problema:** a **segunda agulha** da varredura da RN-15 é o literal `'usuario_email_unique'`, escrito **à mão** no teste. ⚠️ **O valor está CORRETO hoje** — conferido pelo gate contra `RESTRICAO_DO_EMAIL` em `packages/db/src/administrador-do-master.ts:204`, e são idênticos. O que **não existe** é amarra. `smell: magic_strings` (AP-19).
 - **Impacto:** se a restrição for renomeada em produção, o eixo do **nome da restrição** deixa de ser agulha de vazamento e **nada acusa** — o controle positivo continua verde, porque ele **planta o mesmo literal que a lista busca**, de modo que ele prova a **varredura**, não a **atualidade da agulha**. ⚠️ A **primeira** agulha (o e-mail do ocupante) é derivada de dado **real** e não sofre disso, e é ela que carrega o risco material — por isso o achado é `BAIXO`. O docblock **declara** a escolha e a razão (importar a constante exigiria publicá-la só para o teste, o que seria seam — Iron Law #6): é débito **declarado**, não descuido.
 - **O que fazer:** quando alguma task for autorizada a abrir `packages/db/src/administrador-do-master.ts` por outra razão, avaliar publicar `RESTRICAO_DO_EMAIL` no barril de `@sysloc/db` (ela já é discriminante de **produção**, não símbolo de teste) e importá-la aqui; **ou**, mantendo o literal, acrescentar uma perna que leia o nome da restrição do próprio `information_schema` da instância efêmera e o compare com a constante do teste. **Nenhuma das duas é exigível na T5** — o custo hoje seria alargar superfície de pacote fora do escopo.
-### D19 · medio · project_pattern · T5 · Tech Review
+### D19 · medio · project_pattern · T5 · Tech Review — ✅ **RESOLVIDO na triagem de 2026-09-02**
+
+> **As duas contagens falsas foram corrigidas pela medida, e os dois marcadores foram emitidos** —
+> exatamente os dois passos que este bloco prescreve, e **nada foi extraído**. Medido nesta passada:
+> `EMAIL_JA_REGISTRADO` em **3** pontos de produção (`master/empresa.service.ts:626`,
+> `usuarios/usuario.service.ts:380`, `master/administrador.service.ts:112`); o teto `200` sobre
+> `identidade.usuario.nome` em **3** (`usuarios/usuario.controller.ts:111`,
+> `master/empresa.controller.ts:115`, `master/administrador.contrato.ts:286`). Os dois docblocks agora
+> dizem que o Limiar de Três **disparou** e que a extração está adiada **por escopo**, e cada um
+> carrega `DÉBITO COM GATILHO — D19 · F7/T5` com o `ÍNDICE` apontando para cá. O índice do `CLAUDE.md`
+> ganhou **uma** linha (a convenção é uma por débito, não por marcador — não há par repetido no
+> índice, conferido), e as três pontas subiram juntas: tabela, prosa *"São **44**"* e
+> `LINHAS_DO_INDICE_NO_FECHO_DA_FATIA`.
 
 - **Onde:** `apps/api/src/master/administrador.service.ts:112` e `:495` (`MOTIVO_DO_EMAIL_EM_USO`) · `apps/api/src/master/administrador.contrato.ts:259` e `:266` (`MAIOR_NOME_DE_PESSOA`)
 - **Problema:** o **Limiar de Três disparou nos dois símbolos, e os dois docblocks registram uma contagem FALSA como justificativa para não subi-los**.
@@ -175,14 +269,41 @@ moveu. ⚠️ Uma **quarta** âncora acompanhou: `ROTAS_PUBLICADAS_NO_MUTANTE` 1
 - **Impacto:** duplo, e o segundo é o que **perpetua**. (a) Três literais de contrato e três tetos de coluna livres para divergir — e o de `email` é valor sobre o qual **o cliente ramifica em três rotas**. (b) ⚠️ **A contagem falsa está escrita no código como justificativa**, de modo que o próximo agente que abrir qualquer um dos dois docblocks lerá *"são duas, o limiar não disparou"* e criará a **quarta** cópia com a mesma convicção. É a classe que o `CLAUDE.md` já registra: *"a frase que explica por que algo não pode ser feito envelhece mais rápido que o débito que ela justifica — meça a premissa antes de registrá-la"*. ⚠️ **O executor contou a vizinha de quem copiou, não o conjunto** — literalmente o modo de falha que a convenção descreve ao se enunciar.
 - **O que fazer:** ⚠️ **NÃO extraia nada agora** — subir os símbolos hoje obrigaria a editar `usuario.service.ts`, `usuario.controller.ts` e `empresa.controller.ts`, que publicam rotas entregues **sem defeito que o motive**, e o Protocolo proíbe refatorar fora da causa-raiz. **O que se corrige é o registro, em dois passos:** (1) corrigir as duas frases para a contagem **medida**, dizendo que o limiar **disparou** e que a extração está adiada por escopo; (2) emitir `DÉBITO COM GATILHO` em cada ponto, no molde do `D8`/`D12`, com `QUANDO FECHA` = a primeira task autorizada a abrir `usuarios/usuario.service.ts` (para o literal) ou `usuarios/usuario.controller.ts` (para o teto) por outra razão.
 
-### D20 · baixo · scope_deviation · T5 · Tech Review
+### D20 · baixo · scope_deviation · T5 · Tech Review — ✅ **RESOLVIDO NA ORIGEM em 2026-09-02**
+
+> **Os três gabaritos ganharam o prompt, na seção "Arquivos a Modificar" de cada um** —
+> `agent-spec-sdd-generate-task-plan/assets/task_template.md` (§5.2),
+> `agent-spec-minispec-generate-tasks/assets/task_template.md` (§3.2) e
+> `agent-spec-taskcard-generate/assets/template.md` (§5.3). ⚠️ **O texto é AGNÓSTICO de projeto, e a
+> divergência em relação ao que este bloco sugeria é deliberada**: escrever `contexto.e2e.spec.ts`,
+> `cobertura-de-autorizacao.e2e.spec.ts` e `CLAUDE.md` dentro de um gabarito do framework vazaria
+> caminho deste repositório para um asset que serve qualquer projeto. O comentário `LLM-ONLY` nomeia
+> as **três classes** (âncora de inventário, âncora de tamanho, índice narrado), manda **derivá-las
+> por busca antes de a spec fechar** — não pela suíte vermelha — e remete à rule de âncora de
+> superfície do projeto, que aqui é `.claude/rules/ancoras-de-superficie.md` e já mandava a §5.2
+> declará-las: o que faltava era o gabarito **perguntar**.
+>
+> ⚠️ **Isto ataca também o `D26 · F2/T6`, do qual este bloco é a 13ª anotação consecutiva** — mas o
+> bloco daquela fatia **não foi tocado aqui**, porque relatório de fatia fechada é registro e a
+> triagem desta passada tem escopo declarado nesta §2. Quem quiser fechá-lo confere a origem e marca
+> lá.
 
 - **Onde:** a §5.2 do gabarito de task (SDD/miniSpec/TaskCard) — a ocorrência é `apps/api/test/contexto.e2e.spec.ts:798` e `CLAUDE.md`
 - **Problema:** publicar rota **obriga** a tocar arquivos que a §5.2 **nunca lista** — as âncoras de conjunto (`contexto.e2e.spec.ts`), a de tamanho (`cobertura-de-autorizacao.e2e.spec.ts`) e a contagem do `CLAUDE.md`. É a **13ª ocorrência consecutiva** do `D26 · F2/T6`.
 - **Impacto:** **nenhum risco técnico nesta task** — a conduta do executor foi correta em todos os pontos: a âncora **sobe** em vez de virar contenção, a igualdade segue exata nos dois sentidos, o conjunto público não se moveu, nenhuma entrada saiu, e a divergência foi declarada com `SUT_IS_CORRECT_BECAUSE` completo. **O achado não é sobre ele.** O custo é de processo e **cumulativo**: 13 tasks consecutivas gastaram parágrafo de justificativa para a mesma omissão estrutural, e cada gate precisa **reconfirmar** que a mudança fora de escopo é legítima em vez de a §5.2 tê-la previsto.
 - **O que fazer:** nada nesta task. O alvo é o **gabarito**: acrescentar à §5.2 a linha condicional *"toda task que publica, remove ou altera rota lista aqui as âncoras de inventário (`contexto.e2e.spec.ts`, `cobertura-de-autorizacao.e2e.spec.ts`) e o índice de contagem do `CLAUDE.md`"*, fechando o `D26 · F2/T6` **na origem** em vez de na décima quarta anotação.
 
-### D21 · baixo · adr_compliance · T5 · Tech Review
+### D21 · baixo · adr_compliance · T5 · Tech Review — ✅ **RESOLVIDO na triagem de 2026-09-02**
+
+> **A emenda foi feita, por decisão expressa do usuário** (que é o que este bloco exigia — *"gate não
+> emenda ADR"*). `docs/adr/0038-…md` ganhou o blockquote **Emenda de 2026-09-02** apensado ao
+> `Consequences → Cons`, com o texto original **preservado byte a byte**, na forma canônica das
+> emendas da 0001, 0017, 0021 e 0024. Ela declara a espécie: **relação** retém até o commit,
+> **linha** é liberado pelo retorno ao ponto, com os 8 ms e o controle positivo de `55P03` /
+> 5 014 ms ao lado. ⚠️ **O `D13` fechou no mesmo passo**, como este bloco previa, e uma **terceira**
+> ponta apareceu na conferência e foi fechada junto: o docblock de `listar`
+> (`apps/api/src/master/administrador.service.ts`) declarava a divergência como aberta e agora
+> registra o fecho. O `CLAUDE.md` passou a listar a **0038** entre as ADRs emendadas.
 
 - **Onde:** `docs/adr/0038-alcance-da-exclusao-logica-e-fisica-na-identidade.md`, o **2º `Cons`**
 - **Problema:** o `Cons` diz *"a verificação prévia toma bloqueios que o retorno ao ponto de salvamento não libera antes do fim da transação"*, e a **medição desta mesma fatia refuta a leitura universal**: com a unidade da listagem **aberta** e 203 bloqueios de **relação** retidos, o `INSERT` em `identidade.sessao` (que toma `FOR KEY SHARE` na linha) atravessou em **8 ms**; o controle positivo discrimina — contra um `DELETE` **vivo**, o mesmo `INSERT` esperou o teto e caiu em `55P03` após **5 014 ms**. O `ROLLBACK TO SAVEPOINT` **libera** o bloqueio de **linha** — que é o que decidiria a disponibilidade de acesso do cliente final — e retém só os de **relação**, que não conflitam com DML.
@@ -203,33 +324,74 @@ moveu. ⚠️ Uma **quarta** âncora acompanhou: `ROTAS_PUBLICADAS_NO_MUTANTE` 1
 - **Impacto:** a latência é do próprio operador e escolhida por ele, mas a **retenção de bloqueio não é** — a listagem corre numa transação só e cada sonda toma bloqueio de linha em `identidade.empresa` **e** `identidade.usuario` do tenant sondado, até **200 tenants numa página**. A medição da T4 que fundamenta o *"benigno"* (~3,4 ms/item, entrada concorrente em 8 ms) foi feita sobre a listagem de **administradores**, com teto **50** e **uma** instrução por item; a de empresa executa **duas**, e o próprio executor registra que o número é **piso, não teto**. **É analogia, não medição.** `BAIXO` porque a §3.4 da task manda expressamente *"a medição já foi feita — não a repita"*, e o executor cumpriu a outra metade: **registrou a divergência**.
 - **O que fazer:** **gatilho** — a primeira task autorizada a mexer na janela de `GET /v1/master/empresas`, **ou** o primeiro relato de contenção em `identidade.usuario`, mede a página de 200 com uma entrada concorrente em curso (reaproveitando o arranjo já usado na T4 para medir os 8 ms), e só então decide entre manter o teto, reduzir o **padrão** (que **não** é contrato, ao contrário do teto) ou compor a prévia **por lote**. **Nada a mudar em código.**
 
-### D26 · medio · code_quality · T6 · QA (rodada 3)
+### D26 · medio · code_quality · T6 · QA (rodada 3) — ✅ **RESOLVIDO na triagem de 2026-09-02**
+
+> **As duas pontas fecharam.** No docblock do `CT-1249` e no card da `T6.md` (§6.3 Observações), o
+> "bônus" falso foi substituído pelo que é **medido**: `CODIGO_POR_STATUS[404]` é
+> `CodigoErro.RECURSO_NAO_ENCONTRADO` (`apps/api/src/comum/filtro-excecao.ts`, conferido), de modo que
+> o `404` de rota inexistente sai no **mesmo** envelope e esta igualdade **não** distingue *"rota
+> ausente"* de *"recurso ausente"*. O texto aponta o leitor para a **âncora de superfície**, que é
+> quem prova a existência das rotas. ⚠️ **Nenhuma asserção mudou** — os três mutantes do `TR-P1`
+> seguem reprovados.
 
 - **Onde:** ⚠️ **DUAS pontas** — `apps/api/test/master-administradores.e2e.spec.ts:2450` (o docblock do `CT-1249`) **e** `docs/specs/features/painel-master-administradores/v1/tasks/T6.md`, §6.3, campo **Observações** do `CT-1249` (*"A mesma igualdade também reprova o `404` do arcabouço, cujo corpo é `{message, error, statusCode}`"*, medido no diff da rodada 3, linha `+186`). **A segunda ponta foi achada pelo Tech Review**, que a acrescentou ao mesmo débito em vez de abrir um `Dnn` novo — um número a mais para o mesmo defeito polui o índice. ⚠️ **Corrigir só o docblock do teste deixa o CARD afirmando a discriminação inexistente — e o card é o artefato que uma fatia futura lê para derivar CTs.**
 - **Problema:** o **"bônus" declarado é FALSO**, e o gate o refutou lendo o fonte. O comentário afirma: *"a igualdade também discrimina o `404` do arcabouço — se a rota não existisse, o corpo seria `{message, error, statusCode}` e este caso ficaria verde por motivo errado"*. **O produto refuta**: rota não casada levanta `NotFoundException`, que é `HttpException`; `FiltroExcecaoGlobal.traduzir` a encaminha a `recusaDeOutrem(404)`; `CODIGO_POR_STATUS[404] = CodigoErro.RECURSO_NAO_ENCONTRADO` (`apps/api/src/comum/filtro-excecao.ts:79`) e `doNossoCodigo` monta o corpo com `MENSAGEM_POR_CODIGO`, **sem `campo` e sem `detalhes`** — isto é, **exatamente** o objeto que o `toEqual` do caso espera. A prova independente está no mesmo pacote (`contexto.e2e.spec.ts:1613-1622`).
 - **Impacto:** **removida ou renomeada qualquer das duas rotas, o `CT-1249` permanece VERDE**. ⚠️ **Isto NÃO invalida o caso** para o que o Gate 2 pediu — os três mutantes do `TR-P1` seguem reprovados, e a **existência** da rota é coberta por outro mecanismo (a âncora de superfície). **O defeito é a frase, não a asserção**: ela informa ao próximo leitor uma discriminação que o caso **não tem**. É o corolário que o `CLAUDE.md` já registra cinco vezes — *"a frase que explica por que algo não pode ser feito envelhece mais rápido que o débito que ela justifica: meça a premissa antes de registrá-la"*.
 - **O que fazer:** substituir o parágrafo do "bônus" pelo que é **medido**: o `404` de rota inexistente sai por `CODIGO_POR_STATUS[404]` no **mesmo** envelope, de modo que esta igualdade **não distingue** *"rota ausente"* de *"recurso ausente"* — quem prova a existência das duas rotas é a **âncora de superfície**, e é para lá que o leitor deve ser apontado. **Nada precisa mudar na asserção.** Precedente de forma e severidade: o `TR-P3` desta mesma task, que o Gate 2 classificou como **registro**, não como defeito de prova.
 
-### D27 · baixo · code_quality · T6 · Tech Review (rodada 3)
+### D27 · baixo · code_quality · T6 · Tech Review (rodada 3) — ✅ **RESOLVIDO na triagem de 2026-09-02**
+
+> **As duas afirmações foram separadas**, na mesma passagem que fechou o `D26` e também no checklist
+> da §4 da `T6.md` (linha 74): a **ADR-0017** responde pela **forma** do envelope, que é o que o
+> `toEqual` mede; a **indistinguibilidade** é doutrina do produto — **53 ocorrências em 29 arquivos**
+> de `apps/api/src`, medido —, ancorada aqui na exigência do tech spec de validar `:id` antes de tocar
+> o banco (*"evita oráculo de existência"*). O `grep -cE 'indistin|existência|oráculo|enumera'` no
+> arquivo da 0017 volta **0**, e isso está escrito no docblock. ⚠️ **`empresa.service.ts:984` NÃO foi
+> tocado**, como este bloco manda — está fora do delta e é rota entregue.
 
 - **Onde:** `apps/api/test/master-administradores.e2e.spec.ts` (docblock do `CT-1249`, ~:2450, e a tabela de CTs, :165) e `docs/specs/.../tasks/T6.md` (§6.3 e checklist)
 - **Problema:** a frase *"É a indistinguibilidade que a **ADR-0017** exige"* **atribui à `Decision` dela algo que o texto não diz**. O gate abriu a `Decision` e a emenda de 2026-08-16: ela fixa a **forma** — *"o erro é status HTTP semântico mais `{ codigo, mensagem, campo?, detalhes? }`, com `codigo` de enum fechado"* — e **`campo?` é opcional e PERMITIDO**. Um `404` com `campo:'id'` seria **conforme** à forma canônica. `grep -n 'indistin|existência|oráculo|enumera'` no arquivo inteiro da 0017 volta **vazio**.
 - **Impacto:** **nenhum** sobre comportamento ou cobertura — o código cumpre a 0017 na forma **e** cumpre a doutrina. ⚠️ A doutrina da recusa indistinguível **existe e é forte** neste produto (20+ pontos em `apps/api/src`), mas está ancorada em **RN e em decisões locais de cada fatia**, não na 0017. O custo é o **vão de citação** que as próprias emendas da 0017 e da 0001 existem para fechar: quem seguir a regra do repositório (*"citar ADR exige abrir a `Decision`"*) abre a 0017, **não acha a exigência**, e fica sem saber se pode acrescentar `campo` a um `404` — ou **"corrige" a ADR**.
 - **O que fazer:** na mesma passagem que fechar o `D26`, **separar as duas afirmações**: a 0017 responde pela **forma** do envelope (é o que o `toEqual` mede); a **indistinguibilidade** é doutrina do produto, e o parágrafo deve nomear a **RN/decisão que a fixa** em vez da 0017. ⚠️ **NÃO tocar `empresa.service.ts:984`**, que carrega a mesma atribuição — está **fora do delta**, é rota **entregue** e aprovada em rodadas anteriores; **anotar, não editar** (§4.5 do Protocolo).
 
-### D28 · baixo · tests · T7 · QA
+### D28 · baixo · tests · T7 · QA — ✅ **RESOLVIDO na triagem de 2026-09-02**
+
+> O bloco de fecho foi extraído para `afirmarAsTresAncoras(aplicacao, rotasPeloRoteador)`, acessório
+> local do próprio arquivo, e os **10** pontos passaram a chamá-lo. ⚠️ **Eram 10 cópias, não 14** — 14
+> é a contagem de **CTs listados** neste bloco; os 14 CTs existem, e 10 carregam o bloco (medido).
+> ⚠️ **E as 10 NÃO eram idênticas**: nove eram byte a byte iguais e a décima — a mais antiga, do fecho
+> da F2 — **não tinha a perna de igualdade entre os eixos**, fundindo as duas conferências na
+> comparação de baixo. Isto é, a divergência que a duplicação convida **já havia acontecido**, e é a
+> prova viva da razão do débito. A promoção **deu** a perna àquele caso: fortalece, não afrouxa.
+> ⚠️ **Nenhum caso foi colapsado**, como este bloco manda — os 10 seguem sendo a âncora datada da sua
+> fatia, e os comentários próprios de três deles (a origem da perna no `CT-635`, o `100/85` que não
+> antecipa o `101/86`, e a independência dos eixos) foram **preservados** acima da chamada.
+> ⚠️ **A assinatura tem DOIS parâmetros**, e não o `afirmarAsTresAncoras(aplicacaoReal)` que este
+> bloco sugeria: o total pelo roteador vem de `cobertura.rotasEnumeradas`, que cada caso compõe.
 - **Onde:** `apps/api/test/cobertura-de-autorizacao.e2e.spec.ts:6950`
 - **Problema:** o bloco «AS TRÊS ÂNCORAS — duas medições independentes» é repetido **verbatim em 14 casos** do mesmo arquivo (`CT-213`, `CT-318`, `CT-355`, `CT-427`, `CT-533`, `CT-635`, `CT-732`, `CT-836`, `CT-937`, `CT-972`, `CT-1004`, `CT-1038`, `CT-1095` e agora `CT-1240`). `smell: semantically_duplicated_test` (AP-26).
 - **Impacto:** desde que todas as âncoras passaram a apontar para as MESMAS constantes, as 14 cópias afirmam exatamente o mesmo sobre a superfície corrente — o que cada caso ainda tem de próprio é apenas a partição da sua fatia. Pela tupla do AP-26 coincidem 3 dos 4 campos; só o nome difere. ⚠️ **NÃO é duplicata de teste inteiro** — o `CT-1240` acrescenta a partição nova, a disjunção entre as partições e o `paresDoMaster()` intocado, que nenhum outro caso afirma —, e é convenção **pré-existente** imposta por `.claude/rules/ancoras-de-superficie.md`, não defeito introduzido pela T7. Fica anotado porque a próxima fatia que publicar rota acrescenta a **15ª** cópia, e cada uma é superfície livre para divergir.
 - **O que fazer:** extrair o bloco de fecho para um acessório local do arquivo — `afirmarAsTresAncoras(aplicacaoReal)` — que faça as duas medições, afirme a igualdade entre os eixos e compare as quatro grandezas contra as constantes. Cada CT de fatia passa a chamá-lo e a manter apenas as asserções da **própria** partição. ⚠️ **Não colapsar os 14 casos num só**: cada um é a âncora datada da sua fatia, e a falha precisa nomear qual fatia moveu a superfície.
 
-### D29 · BAIXO · project_pattern · T7 · Tech Review
+### D29 · BAIXO · project_pattern · T7 · Tech Review — ✅ **RESOLVIDO na triagem de 2026-09-02**
+
+> No item 2 do marco de entrega do `CLAUDE.md`, *"com o texto original preservado"* virou **"com o
+> valor anterior registrado"**. ⚠️ **Nenhuma asserção mudou**, como este bloco previa: o molde
+> `marco.rotas` do `CT-1196` ancora em `congelada** desde **<data>**, hoje em **`, e nenhuma das
+> palavras trocadas o toca — o `shared` saiu **309 passed** depois da troca.
 - **Onde:** `CLAUDE.md:526` (item 2 do marco de entrega)
 - **Problema:** a fórmula «⚠️ **EMENDA de 2026-09-02 (ADR-0039), com o texto original preservado**» é usada sobre uma frase que **foi de fato editada** no mesmo diff — `em **106 rotas / 91 manipuladores**` → `hoje em **113 rotas / 98 manipuladores**`, «a última publicada» → «a última publicada **na superfície da imobiliária**», «altera rota» → «altera rota **dela**». No **mesmo diff**, a ocorrência da prosa da F5 aplica a fórmula corretamente: o período original fica intacto e a emenda vem depois dele.
 - **Impacto:** baixo e documental — o registro substantivo **não** se perdeu (o `106 / 91 / 20` está preservado duas linhas abaixo, e a qualificação da ADR-0039 está correta). O risco é o do **idioma deste repositório**: a fórmula tem sentido preciso e praticado (nove ADRs a usam como blockquote apensado ao texto conservado, e o próprio `CLAUDE.md` a qualifica como «byte a byte»), de modo que um agente futuro pode concluir que aquele período é congelado e evitar movê-lo na próxima fatia que publique rota — quando movê-lo é **obrigatório**: o molde `marco.rotas` do `CT-1196` exige literalmente `hoje em **N rotas` naquela sentença.
 - **O que fazer:** trocar, no item 2 do marco de entrega, «com o texto original preservado» por «com o valor anterior registrado» (ou equivalente). A frase já entrega isso; é só o rótulo que promete demais. ⚠️ **Nenhuma asserção muda** — o molde do `CT-1196` ancora em `congelada** desde **<data>**, hoje em **`, e nenhuma das palavras propostas o toca.
 
-### D30 · medio · documentation · T8 · QA (rodada 2)
+### D30 · medio · documentation · T8 · QA (rodada 2) — ✅ **RESOLVIDO na triagem de 2026-09-02**
+
+> Os **três** pontos foram corrigidos, pela **alternativa mais robusta** que este bloco declara —
+> citar o subtítulo além do número: `handoff-master-frontend.md` linhas 519 e 842 e `T8.md` linha 110
+> passaram a dizer *"pela regra do **Envelope de erro** (§2)"*. A numeração foi conferida no fonte:
+> `### Envelope de erro — idêntico em toda recusa` está na linha **103**, sob `## 2. Base da API e
+> formato geral` (linha 62); a `## 3` (linha 158) é `Fluxo de sessão`. Isso alinha as três remissões
+> novas às duas anteriores (linhas 186 e 1092), que já citavam a §2.
 - **Onde:** `docs/plano-backend-novo/handoff-master-frontend.md:519` (e `:841`, e `docs/specs/features/painel-master-administradores/v1/tasks/T8.md:110`)
 - **Problema:** as **duas referências cruzadas novas** apontam para a **§3**, e a regra do `campo` foi escrita na **§2**. O discriminador entrou em `### Envelope de erro — idêntico em toda recusa` (linha 116), que está sob `## 2. Base da API e formato geral` (linha 62); a `## 3` do documento (linha 158) é `Fluxo de sessão`.
 - **Impacto:** de **navegação**, não de conteúdo — a regra em si está correta e foi conferida no fonte, e o texto local de cada ocorrência é autossuficiente (a §4.2 enumera as três recusas ali mesmo; a §4.9 explica na própria célula *"pois a chave desconhecida não tem o que nomear"*). ⚠️ O próprio documento já fixou a convenção contrária em duas passagens anteriores, que citam a **§2** para exatamente este bloco (linhas 186 e 1092) — é drift interno de citação. Como este handoff é lido por outro agente, em outra máquina, uma remissão que leva à seção errada custa uma busca a cada leitura.
@@ -240,6 +402,47 @@ moveu. ⚠️ Uma **quarta** âncora acompanhou: `ROTAS_PUBLICADAS_NO_MUTANTE` 1
 ✅ Nenhuma task bloqueada.
 
 ## 4. Notas para Revisão Humana
+
+- ⚠️ **TRIAGEM DE DÉBITO DE 2026-09-02 — 17 dos 27 blocos desta §2 foram fechados por INTERVENÇÃO
+  DIRIGIDA, sem `/agent-spec-debt-resolution`.** A decisão de não rodar a skill foi tomada sobre
+  medição, e as razões estão no parecer que a precedeu; as quatro que mais pesaram: **(i)** 14 dos 27
+  blocos gerariam task que não deveria existir — 10 com gatilho não chegado ou que mandam
+  expressamente não agir, 2 já pagos (`D12`, `D17`) e 2 fora do alcance da skill (`D20`, `D21`);
+  **(ii)** o default `gates: [qa]` desligaria o Tech Review, e **nenhum** dos 8 prefixos-alvo desta
+  fatia casa Critical Path em inglês, enquanto os arquivos tocados carregam **25** marcadores
+  `DECISÃO FECHADA` — e o Gate 2 é o único cujo contrato os protege; **(iii)** `D3`, `D19` e `D29`
+  editam todos o `CLAUDE.md` e dois deles a mesma constante do `shared`, com os `arquivo` declarados
+  **disjuntos**, de modo que o guard de paralelismo os poria no mesmo lote; **(iv)** a §A1 da
+  `autonomia-do-run.md` anula a curadoria humana da FASE 3, e a FASE 2 da skill invoca o
+  classificador em `sonnet`, proibido neste projeto.
+- **A triagem mediu seis divergências entre o que os blocos afirmavam e o código**, todas declaradas
+  no fecho de cada um. Elas são o argumento mais forte do parecer, porque cada uma teria virado uma
+  task errada: o `D9` dizia **2** cópias e são **3**; o `D28` dizia **14** e são **10** — das quais
+  **uma não era idêntica**, e é a prova viva da razão do débito; o `D16` dizia **6** tipos e são
+  **7**; o `D17` estava **pago** desde a T6; o `D12` está **aberto** e o `✅` nele seria a mentira da
+  §3-B na direção contrária; e o `D20` prescrevia caminhos deste repositório dentro de um gabarito do
+  framework, que serve qualquer projeto.
+- **Baseline P1/P5 comparada caso a caso, nos 9 pacotes, sem uma única regressão**: `contracts` 455 ·
+  `api` **455** · `shared` 309 · `db` 296 · `worker` 180 · `documentos` 159 · `auth` 95 ·
+  `cobranca-bancaria` 114 · `regua` 30 — total **2093**, `skipped`/`todo` em **zero** nos nove,
+  `pnpm build` e `pnpm lint` com código 0. ⚠️ **O `api` NÃO se moveu apesar do `D9` e do `D28`**, e é
+  isso que se espera: a promoção de `contarSessoesDaPessoa` e a extração de `afirmarAsTresAncoras`
+  são conversões — nenhum caso nasce, nenhum sai, e nenhuma asserção foi removida.
+  ⚠️ **Uma medição da própria triagem saiu errada e foi corrigida**: `pnpm --filter @sysloc/contracts
+  test` devolve *"No projects matched"* com **exit 0** — o pacote é **`@syslocbr/contracts`**. Um
+  verde falso. Quem medir baseline por pacote use o nome do escopo certo.
+- **Os 10 blocos que permanecem abertos são exatamente a classe do gatilho não chegado** — `D1`,
+  `D6`, `D7`, `D8`, `D10`, `D12`, `D14`, `D18`, `D22` e `D25`. Nenhum foi tocado, e a razão de cada um
+  está escrita no próprio bloco. ⚠️ **O `D14` é o único barato entre eles** (trocar um número literal
+  no nome de um `it` por leitura da constante) e ficou de fora por escolha declarada: o gatilho dele é
+  *"a primeira task que abrir `validacao.spec.ts` **por outra razão**"*, e uma passada de débito abre
+  o arquivo **por esta** razão — que é precisamente o caso que o gatilho exclui.
+- ⚠️ **O índice do `CLAUDE.md` foi de 39 para 44 nesta passada**, e as três pontas subiram juntas: a
+  tabela (**44** linhas, conferido por comando), a prosa *"São **44**"* e
+  `LINHAS_DO_INDICE_NO_FECHO_DA_FATIA`. Os marcadores novos são **três** — dois do `D19` e um do
+  `D3` — e o índice ganhou **duas** linhas, porque a convenção deste repositório é **uma linha por
+  débito, não por marcador**: não havia par repetido no índice antes desta passada (medido com
+  `uniq -d`), e os dois marcadores do `D19` são o mesmo débito em dois lugares.
 
 - **A base de `SIMBOLOS_ESPERADOS` era 216 e foi conferida, não presumida** (`CT-012`,
   `packages/db/test/unidade-de-trabalho.spec.ts`): a T1 publica 12 símbolos de runtime e a âncora

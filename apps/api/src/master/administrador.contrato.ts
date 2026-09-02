@@ -54,6 +54,27 @@
  * `z.infer` produzir `readonly T[]`, preservando byte a byte a garantia que os tipos escritos à mão
  * tinham. A consequência no documento publicado é a palavra `readOnly: true` no campo, que é
  * verdadeira — nenhuma das duas viaja no sentido cliente → servidor.
+ *
+ * ⚠️ **O `Readonly<>` dos tipos derivados é RASO, e o que ele substituiu era PROFUNDO.** As **7**
+ * declarações `Readonly<z.infer<…>>` deste módulo (medido em 2026-09-02) congelam apenas o
+ * **primeiro nível**; as interfaces que a rodada 2 removeu declaravam `readonly` em **todos**:
+ * `ExclusaoDoAdministrador` tinha `readonly disponivel`/`motivo`/`alternativa`, e
+ * `PaginaDeAdministradores` tinha `readonly itens: readonly AdministradorDoContrato[]` com o
+ * elemento ele próprio inteiramente readonly. Hoje `AdministradorDoContrato['exclusao']` tem os três
+ * campos **mutáveis**, e `itens` é array readonly de objetos mutáveis.
+ *
+ * **Isto NÃO tem efeito em execução** — a serialização é idêntica, e `paraContratoDoAdministrador`
+ * constrói o objeto literal de uma vez, sem mutar a prévia depois. O que se perdeu é **rede
+ * estática**: uma escrita acidental em `contrato.exclusao.disponivel` deixou de ser erro de tipo,
+ * justamente na superfície que ganhou `PUT` parcial e exclusão. ⚠️ **NÃO refatore para um
+ * `DeepReadonly`**: ele não existe nesta base, criá-lo é abstração antecipada, e redigitar os
+ * modificadores à mão é exatamente o que a **ADR-0016** proíbe — o esquema é a fonte única, e o tipo
+ * **deriva** dele. A perda é o preço declarado dessa derivação, e o registro é a correção
+ * proporcional (débito `D16` da §2 da fatia `painel-master-administradores`).
+ *
+ * Nota de escala: `@syslocbr/contracts` **não** usa o invólucro — `Readonly<z.infer` aparece **0**
+ * vez em `packages/contracts/src/` (medido) —, de modo que este módulo local já é **mais estrito**
+ * que o molde canônico, e não menos.
  */
 
 import type { ClasseDeImpedimento } from '@sysloc/db';
@@ -276,13 +297,28 @@ export type ReativacaoDoAdministrador = Readonly<z.infer<typeof ESQUEMA_DA_REATI
 /**
  * Maior comprimento aceito para o nome da pessoa.
  *
- * É a **segunda** declaração do mesmo teto — `empresa.controller.ts` tem `MAIOR_NOME`, privado, que
- * a admissão de administrador já aplica ao mesmo campo da mesma coluna. Duas, e não três: o Limiar
- * de Três do `CLAUDE.md` não disparou, e subir o teto para casa comum hoje obrigaria a editar um
- * controlador que publica rota entregue sem defeito que o motive. O valor é o mesmo de propósito —
- * a admissão e a correção escrevem em `identidade.usuario.nome`, e um teto maior aqui deixaria a
- * borda aceitar o que a outra recusa, sobre a mesma coluna.
+ * ⚠️ **É a TERCEIRA declaração do mesmo teto sobre a mesma coluna, e o Limiar de Três JÁ DISPAROU.**
+ * Medido em 2026-09-02: `usuarios/usuario.controller.ts:111` (`MAIOR_NOME = 200`),
+ * `master/empresa.controller.ts:115` (`MAIOR_NOME = 200`) e esta — as três aplicadas a
+ * `identidade.usuario.nome`. Este docblock afirmava *"É a **segunda** declaração … Duas, e não
+ * três"* até 2026-09-02, citando só `empresa.controller.ts`, e a frase era **falsa** — o executor
+ * contou a vizinha de quem copiou, não o conjunto. **Não reponha a contagem antiga**: é ela que
+ * faria a quarta cópia nascer com a mesma convicção.
+ *
+ * O valor é o mesmo de propósito — a admissão e a correção escrevem na **mesma coluna**, e um teto
+ * maior aqui deixaria a borda aceitar o que a outra recusa. A extração segue adiada, e agora **por
+ * escopo, não por limiar** — ver o marcador logo abaixo.
  */
+// DÉBITO COM GATILHO — D19 · F7/T5 · registrado 2026-09-02
+// (NÃO é uma `DECISÃO FECHADA`: ele agenda uma convergência, não protege o código abaixo.)
+// O QUÊ: o teto `200` do nome da pessoa tem TRÊS declarações sobre `identidade.usuario.nome` —
+//        `usuarios/usuario.controller.ts`, `master/empresa.controller.ts` e esta. Três nomes livres
+//        para divergir sobre uma coluna só; divergir significa uma borda aceitar o que a outra recusa.
+// QUANDO FECHA: a primeira task autorizada a abrir `apps/api/src/usuarios/usuario.controller.ts` por
+//        outra razão. Aí o teto sobe para casa comum e os três pontos passam a importá-lo.
+// POR QUE NÃO AGORA: subi-lo hoje obrigaria a editar dois controladores que publicam rotas
+//        **entregues**, sem defeito que o motive — o que a §4.5 do Protocolo proíbe.
+// ÍNDICE: docs/specs/features/painel-master-administradores/v1/_run/run-report.md §2, D19
 const MAIOR_NOME_DE_PESSOA = 200;
 
 /**

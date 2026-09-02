@@ -460,6 +460,7 @@ import {
 import { MAIOR_PAGINA_DE_EMPRESAS } from '../src/master/empresa.service.ts';
 import {
   conceder,
+  contarSessoesDaPessoa,
   credencialDeSessao,
   entrar,
   entrarComSegundoFatorCumprido,
@@ -921,7 +922,7 @@ describe('ciclo de vida do Admin Empresa pelas rotas do Master (T4)', () => {
       // A recusa nomeia o perfil exigido e o do alvo — e a sessão do alvo **continua servindo**,
       // que é o que reprova uma implementação que encerrasse sessões e só então recusasse.
       const cookieDoUsuario = await entrar(base, USUARIO_DA_CARGA_DE_A_EMAIL, SENHA_DA_CARGA);
-      const sessoesAntes = await contarSessoesDaPessoa(USUARIO_DA_CARGA_DE_A);
+      const sessoesAntes = await contarSessoesDaPessoa(identidade.acesso, USUARIO_DA_CARGA_DE_A);
 
       for (const transicao of ['suspensao', 'reativacao']) {
         const recusada = await pedir(
@@ -939,7 +940,9 @@ describe('ciclo de vida do Admin Empresa pelas rotas do Master (T4)', () => {
         });
       }
 
-      expect(await contarSessoesDaPessoa(USUARIO_DA_CARGA_DE_A)).toBe(sessoesAntes);
+      expect(await contarSessoesDaPessoa(identidade.acesso, USUARIO_DA_CARGA_DE_A)).toBe(
+        sessoesAntes,
+      );
       expect(
         (await pedir(base, CAMINHO_DA_SESSAO_CORRENTE, { cookie: cookieDoUsuario })).status,
       ).toBe(200);
@@ -1133,7 +1136,7 @@ describe('ciclo de vida do Admin Empresa pelas rotas do Master (T4)', () => {
 
       // A contagem crua ANTES do ato. Ela é a precondição do caso, e não um detalhe: sem ela, "foi
       // de 2 a 0" seria uma afirmação sobre um número que ninguém mediu.
-      expect(await contarSessoesDaPessoa(alvo.usuarioId)).toBe(2);
+      expect(await contarSessoesDaPessoa(identidade.acesso, alvo.usuarioId)).toBe(2);
 
       // As duas sessões OPERAM antes da suspensão — é o que torna o `401` posterior observável.
       for (const cookie of [alvo.cookie, segundoCookie]) {
@@ -1156,7 +1159,7 @@ describe('ciclo de vida do Admin Empresa pelas rotas do Master (T4)', () => {
 
       // A CONTAGEM distingue *encerrada* de *marcada*. O `401` abaixo, sozinho, não discrimina —
       // uma implementação que apenas marcasse a pessoa e recusasse na guarda passaria nele.
-      expect(await contarSessoesDaPessoa(alvo.usuarioId)).toBe(0);
+      expect(await contarSessoesDaPessoa(identidade.acesso, alvo.usuarioId)).toBe(0);
 
       for (const cookie of [alvo.cookie, segundoCookie]) {
         const depois = await pedir(base, ROTA_DA_IMOBILIARIA, { cookie });
@@ -1170,7 +1173,7 @@ describe('ciclo de vida do Admin Empresa pelas rotas do Master (T4)', () => {
       // E ninguém entra de novo enquanto durar a suspensão.
       const entradaNova = await tentarEntrar(alvo.email, SENHA_TROCADA);
       expect(entradaNova.status).not.toBe(200);
-      expect(await contarSessoesDaPessoa(alvo.usuarioId)).toBe(0);
+      expect(await contarSessoesDaPessoa(identidade.acesso, alvo.usuarioId)).toBe(0);
     },
     LIMITE_CASO_MS,
   );
@@ -1182,7 +1185,7 @@ describe('ciclo de vida do Admin Empresa pelas rotas do Master (T4)', () => {
       const alvo = await prepararAdministrador(empresaId, 'Célia Cardoso');
       const colega = await prepararAdministrador(empresaId, 'Dora Duarte');
 
-      const sessoesDaColegaAntes = await contarSessoesDaPessoa(colega.usuarioId);
+      const sessoesDaColegaAntes = await contarSessoesDaPessoa(identidade.acesso, colega.usuarioId);
       expect(sessoesDaColegaAntes).toBe(1);
 
       const suspensao = await pedir(
@@ -1200,11 +1203,13 @@ describe('ciclo de vida do Admin Empresa pelas rotas do Master (T4)', () => {
       // A metade que reprova um encerramento por EMPRESA em vez de por pessoa: a colega opera no
       // mesmo instante, e a contagem dela não se moveu.
       expect((await pedir(base, ROTA_DA_IMOBILIARIA, { cookie: colega.cookie })).status).toBe(200);
-      expect(await contarSessoesDaPessoa(colega.usuarioId)).toBe(sessoesDaColegaAntes);
+      expect(await contarSessoesDaPessoa(identidade.acesso, colega.usuarioId)).toBe(
+        sessoesDaColegaAntes,
+      );
 
       // O contraste, na mesma empresa e no mesmo instante: a suspensa não opera e está em zero.
       expect((await pedir(base, ROTA_DA_IMOBILIARIA, { cookie: alvo.cookie })).status).toBe(401);
-      expect(await contarSessoesDaPessoa(alvo.usuarioId)).toBe(0);
+      expect(await contarSessoesDaPessoa(identidade.acesso, alvo.usuarioId)).toBe(0);
     },
     LIMITE_CASO_MS,
   );
@@ -1251,7 +1256,7 @@ describe('ciclo de vida do Admin Empresa pelas rotas do Master (T4)', () => {
       const alvo = await prepararAdministrador(empresaId, 'Vera Vasques');
       const segundoCookie = await entrar(base, alvo.email, SENHA_TROCADA);
 
-      expect(await contarSessoesDaPessoa(alvo.usuarioId)).toBe(2);
+      expect(await contarSessoesDaPessoa(identidade.acesso, alvo.usuarioId)).toBe(2);
 
       const suspensao = await pedir(
         base,
@@ -1264,7 +1269,7 @@ describe('ciclo de vida do Admin Empresa pelas rotas do Master (T4)', () => {
         estado: 'SUSPENSO',
         sessoesEncerradas: 2,
       });
-      expect(await contarSessoesDaPessoa(alvo.usuarioId)).toBe(0);
+      expect(await contarSessoesDaPessoa(identidade.acesso, alvo.usuarioId)).toBe(0);
 
       // --- A reativação -------------------------------------------------------------------------
       const reativacao = await pedir(
@@ -1280,7 +1285,7 @@ describe('ciclo de vida do Admin Empresa pelas rotas do Master (T4)', () => {
       // A contagem CONTINUA em zero. É a asserção que reprova uma implementação que guardasse as
       // sessões para restaurá-las (RN-04) — sem ela, "reativou" e "devolveu o que estava aberto"
       // seriam indistinguíveis.
-      expect(await contarSessoesDaPessoa(alvo.usuarioId)).toBe(0);
+      expect(await contarSessoesDaPessoa(identidade.acesso, alvo.usuarioId)).toBe(0);
 
       for (const cookie of [alvo.cookie, segundoCookie]) {
         expect((await pedir(base, ROTA_DA_IMOBILIARIA, { cookie })).status).toBe(401);
@@ -1288,7 +1293,7 @@ describe('ciclo de vida do Admin Empresa pelas rotas do Master (T4)', () => {
 
       // Só a entrada NOVA restabelece — e é a capacidade de entrar que a reativação devolveu.
       const cookieNovo = await entrar(base, alvo.email, SENHA_TROCADA);
-      expect(await contarSessoesDaPessoa(alvo.usuarioId)).toBe(1);
+      expect(await contarSessoesDaPessoa(identidade.acesso, alvo.usuarioId)).toBe(1);
       expect((await pedir(base, ROTA_DA_IMOBILIARIA, { cookie: cookieNovo })).status).toBe(200);
     },
     LIMITE_CASO_MS,
@@ -1318,7 +1323,7 @@ describe('correção cadastral e remoção definitiva do Admin Empresa (T5)', ()
         // estado que ninguém mediu.
         const antes = await lerPessoaCrua(USUARIO_DA_CARGA_DE_A);
         expect(antes, 'a carga não trouxe o Usuário Empresa da empresa A').toBeDefined();
-        const sessoesAntes = await contarSessoesDaPessoa(USUARIO_DA_CARGA_DE_A);
+        const sessoesAntes = await contarSessoesDaPessoa(identidade.acesso, USUARIO_DA_CARGA_DE_A);
 
         const recusada = await pedir(
           base,
@@ -1347,7 +1352,9 @@ describe('correção cadastral e remoção definitiva do Admin Empresa (T5)', ()
         // devolver nada); a contagem de sessões inalterada reprova a suspensão que encerrasse
         // antes de conferir; e o cookie que ainda opera reprova as duas juntas do lado do cliente.
         expect(await lerPessoaCrua(USUARIO_DA_CARGA_DE_A)).toEqual(antes);
-        expect(await contarSessoesDaPessoa(USUARIO_DA_CARGA_DE_A)).toBe(sessoesAntes);
+        expect(await contarSessoesDaPessoa(identidade.acesso, USUARIO_DA_CARGA_DE_A)).toBe(
+          sessoesAntes,
+        );
         expect(
           (await pedir(base, CAMINHO_DA_SESSAO_CORRENTE, { cookie: cookieDoUsuarioDeEmpresa }))
             .status,
@@ -1429,7 +1436,7 @@ describe('correção cadastral e remoção definitiva do Admin Empresa (T5)', ()
       // edição que reativasse em silêncio passaria a deixar esta entrada `200`.
       const entrada = await tentarEntrar(emailCorrigido, alvo.senhaProvisoria);
       expect(entrada.status).not.toBe(200);
-      expect(await contarSessoesDaPessoa(alvo.usuarioId)).toBe(0);
+      expect(await contarSessoesDaPessoa(identidade.acesso, alvo.usuarioId)).toBe(0);
     },
     LIMITE_CASO_MS,
   );
@@ -1444,7 +1451,7 @@ describe('correção cadastral e remoção definitiva do Admin Empresa (T5)', ()
       const alvo = await admitirAdministrador(empresaId, 'Ana Ribeiro');
       const emailAntigo = alvo.email;
       const senhaDaAdmissao = alvo.senhaProvisoria;
-      expect(await contarSessoesDaPessoa(alvo.usuarioId)).toBe(0);
+      expect(await contarSessoesDaPessoa(identidade.acesso, alvo.usuarioId)).toBe(0);
 
       // O endereço novo chega em caixa MISTA de propósito: a coluna guarda minúsculas, e uma borda
       // que não normalizasse gravaria `Ana.…@…` — a pessoa deixaria de entrar com o endereço que o
@@ -1468,7 +1475,7 @@ describe('correção cadastral e remoção definitiva do Admin Empresa (T5)', ()
       // aqui — é a admissão da sessão que prova que a âncora é o `usuarioId`.
       const comOEnderecoNovo = await tentarEntrar(emailNovo, senhaDaAdmissao);
       expect(comOEnderecoNovo.status).toBe(200);
-      expect(await contarSessoesDaPessoa(alvo.usuarioId)).toBe(1);
+      expect(await contarSessoesDaPessoa(identidade.acesso, alvo.usuarioId)).toBe(1);
 
       // --- Companheiro negativo: o endereço ANTIGO deixou de existir ---------------------------
       //
@@ -1486,7 +1493,7 @@ describe('correção cadastral e remoção definitiva do Admin Empresa (T5)', ()
       expect(comOEnderecoAntigo.texto).toBe(comEnderecoInexistente.texto);
 
       // E a recusa não abriu sessão: a contagem continua em 1, a que a entrada legítima criou.
-      expect(await contarSessoesDaPessoa(alvo.usuarioId)).toBe(1);
+      expect(await contarSessoesDaPessoa(identidade.acesso, alvo.usuarioId)).toBe(1);
     },
     LIMITE_CASO_MS,
   );
@@ -2443,12 +2450,34 @@ describe('correção cadastral e remoção definitiva da Empresa (T6)', () => {
           //    diferença entre `404` e um `{removida:true}` é a diferença entre o operador saber
           //    que errou o alvo e acreditar que apagou alguma coisa;
           // 3. o corpo é **exatamente** `{codigo, mensagem}` — **sem** `campo` e **sem**
-          //    `detalhes`. É a indistinguibilidade que a ADR-0017 exige: um `campo:'id'`
-          //    acrescentado só nesta recusa daria ao cliente um traço que a ausência por
-          //    inexistência não tem, e `toMatchObject` o aprovaria em silêncio.
+          //    `detalhes`: um `campo:'id'` acrescentado só nesta recusa daria ao cliente um traço
+          //    que a ausência por inexistência não tem, e `toMatchObject` o aprovaria em silêncio.
           //
-          // A igualdade também discrimina o `404` do arcabouço — se a rota não existisse, o corpo
-          // seria `{message, error, statusCode}` e este caso ficaria verde por motivo errado.
+          // ⚠️ DUAS FONTES, e elas são DIFERENTES — não as funda numa só.
+          //    A **ADR-0017** responde pela FORMA do envelope (`{codigo, mensagem, campo?,
+          //    detalhes?}`, `codigo` de enum fechado), e é isso que o `toEqual` mede. Ela **não**
+          //    exige indistinguibilidade: `campo?` é opcional e PERMITIDO, e um `404` com
+          //    `campo:'id'` seria conforme à forma dela — `grep -cE 'indistin|existência|oráculo|
+          //    enumera'` no arquivo inteiro da 0017 volta **0**, medido.
+          //    A **indistinguibilidade** é doutrina deste produto (53 ocorrências em 29 arquivos de
+          //    `apps/api/src`, medido), ancorada em RN e em decisão local de cada fatia — aqui, na
+          //    exigência do tech spec de validar `:id` como `z.uuid()` **antes de tocar o banco**,
+          //    *"malformado é `422`, nunca `404` (evita oráculo de existência)"*. Atribuí-la à 0017
+          //    manda o leitor abrir uma `Decision` onde ela não está.
+          //
+          // ⚠️ O QUE ESTA IGUALDADE **NÃO** DISCRIMINA: o `404` do arcabouço.
+          //    O comentário anterior afirmava que sim — *"se a rota não existisse, o corpo seria
+          //    `{message, error, statusCode}`"* — e o produto REFUTA: rota não casada levanta
+          //    `NotFoundException`, que é `HttpException`; `FiltroExcecaoGlobal.traduzir` a
+          //    encaminha a `recusaDeOutrem(404)`, e `CODIGO_POR_STATUS[404]` é
+          //    `CodigoErro.RECURSO_NAO_ENCONTRADO` (`apps/api/src/comum/filtro-excecao.ts`), de modo
+          //    que `doNossoCodigo` monta **exatamente** o objeto que este `toEqual` espera — sem
+          //    `campo` e sem `detalhes`. Removida ou renomeada qualquer das duas rotas, este caso
+          //    permanece VERDE. A prova independente está em `./contexto.e2e.spec.ts`.
+          //    Quem prova que as duas rotas EXISTEM é a **âncora de superfície**
+          //    (`./cobertura-de-autorizacao.e2e.spec.ts`), e é para lá que este leitor deve ir.
+          //    **Não reponha o "bônus"**: ele não invalida o caso — os três mutantes do `TR-P1`
+          //    seguem reprovados —, mas anuncia uma discriminação que a asserção não tem.
           expect(ausente.status, `${rota.nome} não respondeu 404`).toBe(404);
           expect(ausente.corpo, rota.nome).toEqual({
             codigo: CodigoErro.RECURSO_NAO_ENCONTRADO,
@@ -2713,23 +2742,11 @@ async function tentarEntrar(email: string, senha: string): Promise<Resposta> {
 // Observação do estado persistido
 // ---------------------------------------------------------------------------------------------
 
-/**
- * Quantos registros de sessão existem para **uma** pessoa.
- *
- * **É esta leitura que distingue "encerrada" de "marcada"** (CT-1222). Ela é observação de estado
- * persistido pelo acesso restrito a `identidade` — a mesma via pela qual as suítes da fatia anterior
- * já afirmam precondição —, e nada foi acrescentado à produção para que ela existisse.
- */
-async function contarSessoesDaPessoa(usuarioId: string): Promise<number> {
-  const { sessao } = esquemaIdentidade;
-
-  const linhas = await identidade.acesso.identidade
-    .select({ id: sessao.id })
-    .from(sessao)
-    .where(eq(sessao.usuarioId, usuarioId));
-
-  return linhas.length;
-}
+// `contarSessoesDaPessoa` — **importada** de `./acessorios-de-borda.ts` desde 2026-09-02 (fecho do
+// débito `D9 · F7/T4`). Ela era declarada aqui, byte a byte igual às de
+// `./administracao-de-pessoas.e2e.spec.ts` e `./ciclo-de-acesso.e2e.spec.ts` — três cópias, com o
+// Limiar de Três já disparado. **É esta leitura que distingue "encerrada" de "marcada"** (CT-1222),
+// e a razão de ela ser crua está no docblock da casa compartilhada. Não a redeclare.
 
 /**
  * A linha crua de `identidade.usuario`, inteira, ou `undefined` quando a pessoa não existe.

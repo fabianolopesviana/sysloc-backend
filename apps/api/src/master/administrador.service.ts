@@ -109,6 +109,17 @@ const CAMPO_DO_EMAIL = 'email';
  * Constante nomeada porque é contrato: o cliente ramifica sobre este valor. Ver
  * {@link recusaDeEmailEmUso} para por que o literal é o mesmo da admissão.
  */
+// DÉBITO COM GATILHO — D19 · F7/T5 · registrado 2026-09-02
+// (NÃO é uma `DECISÃO FECHADA`: ele agenda uma convergência, não protege o código abaixo.)
+// O QUÊ: o literal `EMAIL_JA_REGISTRADO` tem TRÊS declarações de produção — `master/empresa.service.ts`,
+//        `usuarios/usuario.service.ts` e esta —, todas no mesmo envelope
+//        `{campo:'email', detalhes:{motivo:…}}`. É valor de CONTRATO: o cliente ramifica sobre ele em
+//        três rotas, e três cópias são três chances de divergir.
+// QUANDO FECHA: a primeira task autorizada a abrir `apps/api/src/usuarios/usuario.service.ts` por
+//        outra razão. Aí o literal sobe para casa única e os três pontos passam a importá-lo.
+// POR QUE NÃO AGORA: subi-lo hoje obrigaria a editar dois serviços que publicam rotas **entregues**,
+//        sem defeito que o motive — a refatoração fora da causa-raiz que a §4.5 do Protocolo proíbe.
+// ÍNDICE: docs/specs/features/painel-master-administradores/v1/_run/run-report.md §2, D19
 const MOTIVO_DO_EMAIL_EM_USO = 'EMAIL_JA_REGISTRADO';
 
 // ---------------------------------------------------------------------------------------------
@@ -171,11 +182,13 @@ export class AdministradorService {
    *    bloqueio de LINHA que o ensaio tomou, e o que fica retido até o commit são os de **relação**,
    *    que não conflitam com a entrada.
    *
-   * ⚠️ **A frase de `ensaiarExclusao`, em `@sysloc/db` — *"`ROLLBACK TO SAVEPOINT` não libera
-   * bloqueios"* — é mais larga do que a medição sustenta**, e este docblock não a repete. Ela vale
-   * para bloqueio de relação e **não** vale para o de linha, que é justamente o que decidiria a
-   * disponibilidade de acesso do cliente final. Corrigi-la exige abrir `packages/db`, fora do escopo
-   * desta task; a divergência está declarada no relatório da fatia.
+   * ✅ **A divergência que este parágrafo declarava FOI FECHADA em 2026-09-02, nas duas pontas.** A
+   * frase larga de `ensaiarExclusao` (*"`ROLLBACK TO SAVEPOINT` não libera bloqueios"*) foi precisada
+   * em `packages/db/src/administrador-do-master.ts` para nomear a espécie — **relação** retém,
+   * **linha** é liberado —, e o 2º `Cons` da **ADR-0038**, que carregava a mesma frase, ganhou emenda
+   * na mesma passada, com o texto original preservado. **Não reponha a declaração de divergência**:
+   * ela não tem mais objeto, e mantê-la faria o próximo leitor procurar em `@sysloc/db` uma frase que
+   * já não está lá. A medição dos itens 1 e 2 acima é a fonte das três.
    *
    * As sondas correm **em sequência**, e não em lote paralelo: são pontos de salvamento aninhados na
    * **mesma** transação, e o driver serializa uma conexão — despachá-las juntas embaralharia os
@@ -492,9 +505,17 @@ const ALTERNATIVA_A_EXCLUSAO = 'SUSPENSAO';
  *
  * O motivo é o **mesmo vocabulário** que a admissão já publica (`empresa.service.ts`,
  * `admitirAdministrador`), e a coincidência é deliberada: é o mesmo fato — *"este endereço já está
- * registrado"* — visto por duas rotas, e o cliente ramifica sobre o valor. São **duas** declarações
- * do literal, e o Limiar de Três do `CLAUDE.md` não disparou; subi-lo hoje obrigaria a editar um
- * serviço que publica rota entregue sem defeito que o motive.
+ * registrado"* — visto por rotas diferentes, e o cliente ramifica sobre o valor.
+ *
+ * ⚠️ **São TRÊS declarações do literal, e o Limiar de Três JÁ DISPAROU.** Medido em 2026-09-02
+ * (`grep -rn "EMAIL_JA_REGISTRADO" apps/api/src`): `master/empresa.service.ts:626`,
+ * `usuarios/usuario.service.ts:380` e esta — as três no mesmo envelope
+ * `{campo:'email', detalhes:{motivo:'EMAIL_JA_REGISTRADO'}}`. Este docblock dizia *"são **duas**, e o
+ * Limiar de Três não disparou"* até 2026-09-02, e a frase era **falsa**: o executor contou a vizinha
+ * de quem copiou, não o conjunto — literalmente o modo de falha que a convenção do `CLAUDE.md`
+ * descreve ao se enunciar. **Não reponha a contagem antiga**; ela é o que faria a **quarta** cópia
+ * nascer com a mesma convicção. A extração segue adiada, e agora **por escopo, não por limiar** —
+ * ver o marcador logo abaixo.
  *
  * ⚠️ **Nada do erro do driver entra aqui.** O `detail` do PostgreSQL carrega o **valor** da chave
  * recusada — isto é, o endereço da outra pessoa —, e ele não é lido, não é copiado e não é

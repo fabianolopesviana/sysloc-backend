@@ -1075,7 +1075,7 @@ const HOMONIMOS_QUE_SOBREVIVEM = ['D23 · F0/T3', 'D26 · F3/T8'] as const;
  * aceite algum o peça. O número saiu do mesmo `grep` que o docblock descreve, sobre o arquivo real,
  * e subiu **no mesmo diff** do marcador e da linha do índice.
  */
-const LINHAS_DO_INDICE_NO_FECHO_DA_FATIA = 42;
+const LINHAS_DO_INDICE_NO_FECHO_DA_FATIA = 44;
 
 /** O molde da prosa que anuncia o tamanho do índice, logo acima da tabela. */
 const PADRAO_DO_TOTAL_NARRADO = /São \*\*(\d+)\*\*, e a tabela abaixo é a lista viva/;

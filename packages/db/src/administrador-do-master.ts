@@ -421,16 +421,31 @@ class EnsaioConcluido extends Error {
  * sentinela com a outra, e nada que venha do driver pode se fazer passar por ela.
  *
  * ---------------------------------------------------------------------------
- * ⚠️ `ROLLBACK TO SAVEPOINT` **NÃO libera bloqueios**
+ * ⚠️ `ROLLBACK TO SAVEPOINT` **não libera os bloqueios de RELAÇÃO; os de LINHA são liberados**
  * ---------------------------------------------------------------------------
  *
- * Os bloqueios que o `DELETE` do ensaio tomou — `FOR KEY SHARE` nas linhas referenciadas, e o
- * exclusivo nas visitadas — permanecem até o fim da **transação** de leitura, não até o retorno ao
- * ponto. Consequência operacional, declarada e não escondida: uma listagem que sonda item a item
- * sob o teto de página (`MAIOR_PAGINA_DE_EMPRESAS` = 200) segura esses bloqueios durante a
- * composição inteira da página. É aceitável na escala declarada da persona (operador único, dezenas
- * a poucas centenas de empresas), e a alternativa — não publicar a prévia — é o que a ADR-0014
- * rejeitou ao recusar a *"recusa muda"*.
+ * Os bloqueios de **relação** que o ensaio tomou permanecem até o fim da **transação** de leitura,
+ * não até o retorno ao ponto. Os de **linha** — `FOR KEY SHARE` nas referenciadas, e o exclusivo nas
+ * visitadas — **são liberados** pelo retorno, porque morrem com a subtransação que os tomou.
+ *
+ * ⚠️ **A distinção foi MEDIDA, e é ela que dimensiona o custo real.** Rodada 2 da T4 desta fatia,
+ * instância efêmera migrada, 200 Admin Empresa elegíveis, com a unidade da listagem **ainda aberta**
+ * e **203** bloqueios de relação retidos: a entrada de um administrador da própria página — `INSERT`
+ * em `identidade.sessao`, que toma exatamente `FOR KEY SHARE` na linha — **atravessou em 8 ms**. O
+ * controle positivo é o que torna esse número conclusivo em vez de janela quieta por acaso: contra
+ * um `DELETE` **vivo** na mesma linha, o mesmo `INSERT` esperou o teto inteiro e foi recusado com
+ * `55P03` após **5 014 ms**.
+ *
+ * **Não reponha a frase larga** (*"`ROLLBACK TO SAVEPOINT` não libera bloqueios"*): ela é anterior à
+ * medição, foi ela que sustentou o impacto declarado no `P2` do Tech Review da T4 — refutado —, e a
+ * **ADR-0038** teve o 2º `Cons` emendado em 2026-09-02 pela mesma razão. As duas pontas foram
+ * precisadas no mesmo passo; corrigir uma e deixar a outra é o vão que o débito registrou.
+ *
+ * Consequência operacional, declarada e não escondida e **inalterada por esta precisão**: uma
+ * listagem que sonda item a item sob o teto de página (`MAIOR_PAGINA_DE_EMPRESAS` = 200) segura os
+ * bloqueios de **relação** durante a composição inteira da página. É aceitável na escala declarada
+ * da persona (operador único, dezenas a poucas centenas de empresas), e a alternativa — não publicar
+ * a prévia — é o que a ADR-0014 rejeitou ao recusar a *"recusa muda"*.
  */
 export async function ensaiarExclusao(
   tx: TransactionSql,
