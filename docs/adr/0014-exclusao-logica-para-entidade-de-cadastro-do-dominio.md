@@ -37,6 +37,28 @@ Duas classes ficam **fora** do alcance, por razões distintas:
 O discriminador é **ser referenciável**, não ser cadastrável: o que outro registro pode apontar não
 some; o que só existe dentro do seu agregado, sim.
 
+> **Emenda de 2026-09-02.** A `Decision` acima diz *"entidade de **cadastro do domínio**"*, e o
+> `Context` a escreveu para o domínio de locação que nasce na F2 — mas ela **não nomeia o schema** que
+> a delimita. Lida sem esse recorte, ela alcançaria também `identidade.empresa` e
+> `identidade.usuario`, que o painel do operador do SaaS remove **de fato** (as duas rotas de remoção
+> definitiva da fatia `painel-master-administradores`). **A decisão não mudou**: muda o registro dela,
+> que passa a declarar **onde** ela vale.
+>
+> O alcance desta ADR é o **cadastro do domínio — o schema `negocio`**, e lá a exclusão segue lógica
+> **sem exceção**, com o discriminador acima intacto. Fora dele quem decide é a **ADR-0038**:
+> `identidade.empresa` e `identidade.usuario` admitem **exclusão física**, e o critério de
+> admissibilidade é a **integridade referencial do banco**, nunca uma contagem escrita na aplicação.
+> As duas não se contradizem, e é a própria 0038 que o escreve em `Consequences → Neutros`: *"Não
+> altera a 0014 no domínio: lá a exclusão segue lógica, sem exceção."* A trilha de auditoria segue
+> sendo impedimento — a remoção lá **nunca destrói auditoria**, e a mitigação da ADR-0013 não é
+> afrouxada.
+>
+> A emenda mora **dentro da `Decision`** porque é ela que se abre ao citar — a mesma razão da emenda
+> de 2026-08-16 da ADR-0017, cuja correção estava escrita no `Consequences` e não alcançava quem
+> chegava pela citação. E ela existe porque a alternativa tem custo medido, que o `Context` da 0038
+> registra: *"Sem registro do alcance, cada revisão futura lê violação onde há decisão"* — foi o que
+> obrigou a ADR-0021 a **duas** emendas.
+
 ## Consequences
 
 **Pros:**

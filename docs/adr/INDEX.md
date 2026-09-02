@@ -1,6 +1,6 @@
 # Architecture Decision Records — INDEX
 
-> Ultima atualizacao: 2026-08-25 (37 ADRs)
+> Ultima atualizacao: 2026-09-01 (39 ADRs)
 
 <!-- ADR-INDEX-START -->
 | ID | Titulo | Status | Tags | Problema (1-linha) | Decisao (1-linha) |
@@ -42,4 +42,6 @@
 | 0035 | Critério para uma rota de entrada de fato de terceiro sem sessão, e o que ela carrega em troca | accepted | security, http, architecture | O retorno da integração bancária chega por uma URL única, sem sessão e sem portador de segredo: o | Uma rota de entrada dispensa sessão apenas quando recebe um fato produzido por um terceiro que não |
 | 0036 | Material criptográfico legado é convertido por processo externo na borda de registro | accepted | security, architecture | A Autoridade Certificadora entrega o material do certificado embalado em cifra legada | Material criptográfico de terceiro que o runtime não abre é convertido na borda de registro, por |
 | 0037 | Política de limitação de abuso na borda pública | accepted | security, http, architecture | Publicar a API expõe uma superfície que hoje só é alcançável do próprio hospedeiro, e as duas | A borda pública fornece o eixo de origem e não a política: ela declara o salto confiável e |
+| 0038 | Alcance da exclusão lógica e da exclusão física na identidade | accepted | data, architecture | A ADR-0014 decidiu que entidade referenciável nunca é removida fisicamente, e foi escrita para o | O alcance da ADR-0014 é o cadastro do domínio (schema negocio). identidade.empresa e |
+| 0039 | Alcance do congelamento da superfície publicada | accepted | architecture, http | O marco de entrega declarou a superfície da API congelada, com o tamanho fixado por asserção | O congelamento alcança a superfície que o pacote de contratos entrega à aplicação da imobiliária. |
 <!-- ADR-INDEX-END -->
