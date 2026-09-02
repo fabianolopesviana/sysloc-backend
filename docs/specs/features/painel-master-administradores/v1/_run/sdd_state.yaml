@@ -1,0 +1,29 @@
+feature: Painel Master — ciclo de vida de Empresas e Admin Empresa
+current_step: execution
+source: recommended
+source_note: o pre-refinement.md §15.2 recomendou SDD; o comando invocado foi SDD
+variant: backend
+steps:
+  prd:
+    status: completed
+    summary: 10 US, 20 CA, 16 RN. Dar ao Sysloc Master o ciclo de vida completo da Empresa e do Admin Empresa — listar, corrigir, suspender, reativar e excluir em definitivo quando não houver registro algum.
+  tech_alignment:
+    status: completed
+    summary: 6 decisões (D1-D6). Critério de exclusão pela integridade referencial; prévia por ensaio do próprio ato; caminho de acesso próprio para a persona; dois escritores protegidos; vocabulário de
+      impedimentos conferido por igualdade; partição nomeada nova na superfície. 1 candidata a ADR (D6). 4 pontos técnicos abertos + 3 dependências de produto.
+  tech_spec:
+    status: completed
+    variant: backend
+    summary: AdministradorController/Service novos + empresa.* estendidos; administrador-do-master.ts novo em @sysloc/db; 7 endpoints; NENHUMA tabela e NENHUMA migracao; 40 casos de teste CT-1204..CT-1243;
+      ancoras 106->113 / 91->98 / 20 (nas 4 ocorrencias normativas do CLAUDE.md).
+  validation:
+    status: completed
+    summary: "challenge-spec: 4 questoes de alto impacto processadas, 3 achados resolvidos por medicao, 14 ajustes inline; glossario da feature criado (4 termos); nenhuma ADR nova (1 candidata parcial 2/5)"
+  task_plan:
+    status: completed
+    summary: "8 tasks, 3 fases, 2 paralelizaveis (T7+T8). US cobertas: 10/10. 40 CTs redistribuidos de _run/test-cases.json sem reinvocar o generator."
+  execution:
+    status: completed
+    tasks_total: 8
+    tasks_completed: 8
+    summary: "8/8 tasks concluidas, nenhuma bloqueada. 7 rotas novas sob /v1/master; superficie em 113/98/20 pelos dois eixos independentes. Suite verde nos 9 pacotes: 2093 casos (P1 2070), skipped/todo em zero. 46 CTs (CT-1204 a CT-1249). Nenhuma migracao. 27 debitos anotados na §2 do run-report."

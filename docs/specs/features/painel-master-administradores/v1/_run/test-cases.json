@@ -1,0 +1,1920 @@
+{
+ "schema_version": 1,
+ "framework": "sdd",
+ "feature": "painel-master-administradores",
+ "version": "v1",
+ "atualizado_em": "2026-09-01",
+ "stack_discovery": {
+  "fonte": "testing_stack_rule",
+  "stack": "TypeScript 7.0.2 · Node 24.18.1 · NestJS 11 + Fastify 5 · Drizzle + postgres.js · PostgreSQL 18 com RLS FORCE · Zod 4 · better-auth · pnpm 11 + Turborepo (monorepo de 9 pacotes)",
+  "framework_teste": "Vitest 4.1.10 — unitário e integração com embedded-postgres (instância efêmera própria, Postgres REAL) e E2E exercitando HTTP real em porta dinâmica; mock evitado por decisão",
+  "comando_teste": "pnpm --filter @sysloc/db test · pnpm --filter @sysloc/api test (SEMPRE pelo script test do pacote — vitest run avulso lê o dist/ anterior nos 7 pacotes com exports e INVERTE a conclusão de qualquer prova de falsificação)",
+  "discovery_needed": false,
+  "lacunas": []
+ },
+ "erros_leitura": [],
+ "resumo": {
+  "total_casos_teste": 38,
+  "por_tipo": {
+   "unitario": 0,
+   "integracao": 16,
+   "componente": 0,
+   "e2e": 20,
+   "seguranca": 2,
+   "acessibilidade": 0
+  },
+  "total_casos": 40
+ },
+ "casos_teste": [
+  {
+   "id": "CT-1204",
+   "titulo": "A armadilha A1 — numa empresa CHEIA a sonda de elegibilidade RECUSA enquanto a contagem ingênua no mesmo contexto devolve ZERO",
+   "tipo": "INTEGRACAO",
+   "categoria": "seguranca",
+   "invariant": "Sob app.empresa_id vazio (o do Sysloc Master), a sonda de elegibilidade de uma empresa que possui contrato registrado recusa com o código 23503 do PostgreSQL, e a contagem SELECT count(*) FROM negocio.contrato WHERE empresa_id = <A> medida na MESMA unidade de trabalho devolve exatamente 0 — o par prova que o critério NÃO é a contagem",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1205",
+    "input_invalido": "empresa VAZIA (nenhuma linha em negocio), onde a mesma contagem também devolve 0 mas a sonda ACEITA",
+    "assertion_esperada": "a sonda devolve { elegivel: true, impedimentos: [] } e a mesma contagem ingênua devolve 0 — os dois zeros com desfechos opostos são o que discrimina"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "a unidade de trabalho precisa correr SEM contexto de empresa (empresaId: null), que é como a requisição do Sysloc Master corre",
+    "caminho_legitimo": "abrir o acesso pelo caminho real do boundary — abrirAcessoAoBanco() sobre a instância de banco-efemero.ts e emUnidadeDeTrabalho com o contexto { empresaId: null }, que é o mesmo valor que a guarda publica para o Master. NUNCA exportar símbolo de produção nem parametrizar a política para obter o alcance",
+    "teste_analogo": "packages/db/test/isolamento.spec.ts — o CT-005 já monta a unidade sem empresa no contexto e afirma que nenhuma política casa"
+   },
+   "camada": "packages/db/src/empresa.ts (estendido) — a sonda de elegibilidade da Exclusão definitiva",
+   "pre_condicoes": [
+    "instância efêmera migrada, com as políticas de 0001_seguranca.sql aplicadas",
+    "empresa A em identidade.empresa, com um contrato em negocio.contrato — semeado SOB o contexto de A",
+    "a unidade de trabalho da medição corre com empresaId: null"
+   ],
+   "dados_entrada": {
+    "descricao": "a empresa cheia, sondada a partir do contexto do Master",
+    "valores": {
+     "empresaId": "<uuid da empresa A>",
+     "contextoDaSonda": "{ empresaId: null }",
+     "registrosDeNegocio": "1 contrato semeado sob o contexto de A"
+    }
+   },
+   "passos": [
+    "semear a empresa A e, sob o contexto de A, um contrato",
+    "abrir UMA unidade de trabalho com empresaId: null",
+    "dentro dela, medir a contagem ingênua e guardá-la",
+    "dentro da MESMA unidade, executar a sonda de elegibilidade",
+    "afirmar a contagem e o desfecho da sonda"
+   ],
+   "resultado_esperado": "a contagem ingênua é exatamente 0 (número, não string) E a sonda devolve { elegivel: false, impedimentos: ['REGISTROS_DE_NEGOCIO'] } — nenhuma linha de identidade.empresa foi removida, conferido após o commit",
+   "criterios_aceitacao_validados": [
+    "CA-13",
+    "CA-19"
+   ],
+   "observacoes": "É o CASO CENTRAL da feature e o par é indivisível — sem a contagem medida no mesmo contexto, um implementador leria a recusa como confirmação de que a contagem funciona. Arquivo novo packages/db/test/administrador-do-master.spec.ts: isolamento.spec.ts é o SUT do isolamento e permissao.spec.ts prova o alcance PELO vínculo, que é o oposto do alcance desta feature.",
+   "task_id": "T1"
+  },
+  {
+   "id": "CT-1205",
+   "titulo": "A empresa VAZIA é elegível — a sonda ACEITA com a mesma contagem zero do caso anterior",
+   "tipo": "INTEGRACAO",
+   "categoria": "caminho_feliz",
+   "invariant": "Sob app.empresa_id vazio, a sonda de uma empresa sem nenhuma linha em negocio devolve { elegivel: true, impedimentos: [] }, enquanto a contagem ingênua devolve o mesmo 0 do CT-1204",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1204",
+    "input_invalido": "empresa com contrato registrado",
+    "assertion_esperada": "{ elegivel: false, impedimentos: ['REGISTROS_DE_NEGOCIO'] } com a contagem ingênua em 0"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "a unidade de trabalho precisa correr SEM contexto de empresa (empresaId: null), que é como a requisição do Sysloc Master corre",
+    "caminho_legitimo": "abrir o acesso pelo caminho real do boundary — abrirAcessoAoBanco() sobre a instância de banco-efemero.ts e emUnidadeDeTrabalho com o contexto { empresaId: null }, que é o mesmo valor que a guarda publica para o Master. NUNCA exportar símbolo de produção nem parametrizar a política para obter o alcance",
+    "teste_analogo": "packages/db/test/isolamento.spec.ts — o CT-005 já monta a unidade sem empresa no contexto e afirma que nenhuma política casa"
+   },
+   "camada": "packages/db/src/empresa.ts (estendido)",
+   "pre_condicoes": [
+    "empresa B em identidade.empresa, sem nenhuma linha de negócio",
+    "nenhum administrador vinculado a B"
+   ],
+   "dados_entrada": {
+    "descricao": "a empresa vazia",
+    "valores": {
+     "empresaId": "<uuid da empresa B>",
+     "contextoDaSonda": "{ empresaId: null }"
+    }
+   },
+   "passos": [
+    "semear a empresa B sem registro de negócio",
+    "abrir a unidade com empresaId: null",
+    "medir a contagem ingênua e executar a sonda"
+   ],
+   "resultado_esperado": "a contagem ingênua é 0 E a sonda devolve { elegivel: true, impedimentos: [] } — o array é afirmado por igualdade com [], nunca por length === 0 sozinho",
+   "criterios_aceitacao_validados": [
+    "CA-15"
+   ],
+   "observacoes": "Companheiro obrigatório do CT-1204: sem ele, uma sonda que recusasse SEMPRE passaria naquele caso.",
+   "task_id": "T1"
+  },
+  {
+   "id": "CT-1206",
+   "titulo": "A armadilha A2 — sob contexto vazio a função nova encerra 2 sessões enquanto encerrarSessoesDaPessoa devolve 0 sobre a MESMA pessoa",
+   "tipo": "INTEGRACAO",
+   "categoria": "seguranca",
+   "invariant": "Com app.empresa_id vazio, o encerramento do Master alcança a pessoa direto em identidade.sessao e devolve 2, enquanto encerrarSessoesDaPessoa (que alcança PELO vínculo sob RLS) devolve 0 sobre a mesma pessoa e no mesmo contexto",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "a função ANTIGA executada no mesmo contexto vazio é o companheiro negativo embutido",
+    "assertion_esperada": "encerrarSessoesDaPessoa devolve exatamente 0 e a contagem de identidade.sessao continua 2 depois dela — a falha é SILENCIOSA e é isso que a asserção nomeia"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "duas sessões abertas para a pessoa E uma unidade sem contexto de empresa",
+    "caminho_legitimo": "as sessões nascem por INSERT direto em identidade.sessao no arranjo (a suíte de packages/db não tem borda HTTP); o contexto vazio vem de emUnidadeDeTrabalho com { empresaId: null }. O vínculo em negocio.acesso_usuario_app é semeado SOB o contexto da empresa, para que a função antiga tenha por onde alcançar caso o contexto existisse — sem ele o 0 seria trivial",
+    "teste_analogo": "packages/db/test/isolamento.spec.ts (CT-209)"
+   },
+   "camada": "packages/db/src/administrador-do-master.ts (novo) contra packages/db/src/pessoa.ts (existente)",
+   "pre_condicoes": [
+    "empresa A com um ADMIN_EMPRESA",
+    "vínculo em negocio.acesso_usuario_app semeado SOB o contexto de A",
+    "2 linhas em identidade.sessao para essa pessoa"
+   ],
+   "dados_entrada": {
+    "descricao": "a mesma pessoa, as duas funções, o mesmo contexto vazio",
+    "valores": {
+     "usuarioId": "<uuid do admin>",
+     "contexto": "{ empresaId: null }",
+     "sessoesAbertas": 2
+    }
+   },
+   "passos": [
+    "arranjar empresa, admin, vínculo (sob contexto de A) e 2 sessões",
+    "abrir unidade com empresaId: null",
+    "chamar encerrarSessoesDaPessoa e guardar o retorno",
+    "medir a contagem crua",
+    "chamar a função NOVA no mesmo tx",
+    "medir de novo"
+   ],
+   "resultado_esperado": "encerrarSessoesDaPessoa devolve 0 e a contagem permanece 2; a função nova devolve 2 e a contagem passa a 0. Os quatro números são afirmados um a um — trocar a nova pela antiga reprova em duas asserções",
+   "criterios_aceitacao_validados": [
+    "CA-04"
+   ],
+   "observacoes": "É o par que impede a simplificação do D4-b: um default errado devolveria suspensão silenciosamente inócua, e QUALQUER asserção que só verifique a marcação a aprovaria.",
+   "task_id": "T1"
+  },
+  {
+   "id": "CT-1207",
+   "titulo": "A armadilha A2, metade da MARCAÇÃO — a função nova marca ativo=false enquanto definirAtivoDaPessoa devolve undefined no mesmo contexto",
+   "tipo": "INTEGRACAO",
+   "categoria": "seguranca",
+   "invariant": "Com app.empresa_id vazio, a marcação do Master escreve identidade.usuario.ativo = false e devolve false, enquanto definirAtivoDaPessoa devolve undefined (zero linhas afetadas) sobre a mesma pessoa — e a coluna, lida cruamente, comprova qual das duas escreveu",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "definirAtivoDaPessoa no contexto vazio",
+    "assertion_esperada": "retorno estritamente undefined e identidade.usuario.ativo ainda true na leitura crua imediatamente depois"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "unidade sem contexto de empresa, com vínculo semeado sob o contexto da empresa",
+    "caminho_legitimo": "mesmo do CT-1206 — o vínculo nasce sob o contexto de A pelo caminho real, e a medição corre sob { empresaId: null }",
+    "teste_analogo": "packages/db/test/isolamento.spec.ts (CT-209)"
+   },
+   "camada": "packages/db/src/administrador-do-master.ts (novo) contra packages/db/src/pessoa.ts",
+   "pre_condicoes": [
+    "empresa A com um ADMIN_EMPRESA ativo",
+    "vínculo semeado sob o contexto de A"
+   ],
+   "dados_entrada": {
+    "descricao": "a mesma pessoa, as duas escritas, o mesmo contexto vazio",
+    "valores": {
+     "usuarioId": "<uuid do admin>",
+     "ativoDesejado": false,
+     "contexto": "{ empresaId: null }"
+    }
+   },
+   "passos": [
+    "chamar definirAtivoDaPessoa sob contexto vazio e guardar o retorno",
+    "ler cruamente SELECT ativo FROM identidade.usuario",
+    "chamar a função nova no mesmo tx",
+    "ler cruamente de novo"
+   ],
+   "resultado_esperado": "definirAtivoDaPessoa devolve undefined com ativo ainda true; a função nova devolve false com ativo gravado false. As duas leituras cruas são a prova de estado, não o valor de retorno",
+   "criterios_aceitacao_validados": [
+    "CA-04"
+   ],
+   "observacoes": "Separado do CT-1206 de propósito: são DUAS instruções distintas e reuni-las faria uma metade correta esconder a outra quebrada.",
+   "task_id": "T1"
+  },
+  {
+   "id": "CT-1208",
+   "titulo": "RN-13 — a prévia executa o próprio DELETE em tx.savepoint e NÃO deixa efeito, inclusive depois do commit",
+   "tipo": "INTEGRACAO",
+   "categoria": "integridade_dados",
+   "invariant": "A sonda que RECUSA deixa identidade.empresa e identidade.usuario com contagens idênticas às medidas antes, e a igualdade persiste depois do commit da transação externa",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1209",
+    "input_invalido": "a sonda que ACEITA — o caminho em que o DELETE do ensaio removeria linhas se o savepoint não o desfizesse",
+    "assertion_esperada": "após a sonda que aceita e o commit, a empresa continua com count 1 e a pessoa continua existindo"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "unidade sem contexto de empresa e capaz de commitar",
+    "caminho_legitimo": "emUnidadeDeTrabalho com { empresaId: null } deixando a unidade fechar; a medição de depois abre unidade NOVA — medir dentro da mesma transação não distingue rollback de savepoint de rollback da transação inteira",
+    "teste_analogo": "packages/db/test/unidade-de-trabalho.spec.ts"
+   },
+   "camada": "packages/db/src/empresa.ts (estendido) — a prévia sobre a mesma instrução do ato",
+   "pre_condicoes": [
+    "empresa A cheia (com contrato) e empresa B vazia, ambas com 1 admin"
+   ],
+   "dados_entrada": {
+    "descricao": "as duas empresas, sondadas em sequência",
+    "valores": {
+     "empresaCheia": "<uuid A>",
+     "empresaVazia": "<uuid B>"
+    }
+   },
+   "passos": [
+    "medir, em unidade própria, count de identidade.empresa e de identidade.usuario",
+    "abrir unidade nova e sondar a empresa A (recusa)",
+    "deixar a unidade COMITAR",
+    "abrir unidade nova e remedir"
+   ],
+   "resultado_esperado": "as duas contagens de depois são iguais, número a número, às de antes (afirmadas por igualdade com os valores capturados, nunca por > 0), e a empresa A continua legível com suspensa_em nulo",
+   "criterios_aceitacao_validados": [
+    "CA-12",
+    "CA-19"
+   ],
+   "observacoes": "É o caso que prova o D2-b. Uma implementação sem o savepoint removeria a empresa VAZIA no CT-1209 — este caso sozinho não a pegaria. O par é obrigatório.",
+   "task_id": "T1"
+  },
+  {
+   "id": "CT-1209",
+   "titulo": "RN-13 — a sonda que ACEITA também não remove: só o ato remove",
+   "tipo": "INTEGRACAO",
+   "categoria": "integridade_dados",
+   "invariant": "Depois de a sonda declarar a empresa vazia elegível e a transação comitar, a empresa e o administrador continuam existindo; e só a execução da operação de exclusão os remove",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "este é o caso que discrimina o savepoint ausente — sem ele, a sonda removeria a empresa",
+    "assertion_esperada": "após a sonda e o commit, count de identidade.empresa WHERE id = <B> é exatamente 1; após o ato, exatamente 0"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "unidade sem contexto que comite, com as medições em unidades separadas",
+    "caminho_legitimo": "idêntico ao CT-1208",
+    "teste_analogo": "packages/db/test/unidade-de-trabalho.spec.ts"
+   },
+   "camada": "packages/db/src/empresa.ts (estendido)",
+   "pre_condicoes": [
+    "empresa B vazia com 1 admin virgem"
+   ],
+   "dados_entrada": {
+    "descricao": "a empresa elegível",
+    "valores": {
+     "empresaId": "<uuid B>"
+    }
+   },
+   "passos": [
+    "sondar B numa unidade que comita e afirmar elegivel: true",
+    "em unidade nova, medir count de B e do admin",
+    "executar a exclusão de verdade em unidade nova",
+    "em unidade nova, remedir"
+   ],
+   "resultado_esperado": "após a sonda: empresa 1, admin 1. Após o ato: empresa 0, admin 0. Os quatro números afirmados por igualdade",
+   "criterios_aceitacao_validados": [
+    "CA-15"
+   ],
+   "observacoes": "É o companheiro que dá poder de detecção ao CT-1208 — o savepoint esquecido só é observável no caminho em que o DELETE teria sucesso.",
+   "task_id": "T1"
+  },
+  {
+   "id": "CT-1210",
+   "titulo": "RN-11 — as 7 origens de impedimento do administrador, uma a uma, com a classe correta (it.each)",
+   "tipo": "INTEGRACAO",
+   "categoria": "fronteira",
+   "invariant": "Cada uma das 7 origens — tentativa_login, vínculo de acesso, e autoria em certificado_do_provedor, emissao_em_lote, conferencia_bancaria, identidade_no_provedor e entrega_da_noticia — presente SOZINHA torna o administrador inelegível, com a classe exata do vocabulário fechado",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1211",
+    "input_invalido": "administrador virgem — nenhuma das 7 origens presente",
+    "assertion_esperada": "{ elegivel: true, impedimentos: [] } e o DELETE remove exatamente 1 linha de identidade.usuario"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "cada linha de autoria vive em negocio, sob RLS FORCE — semeá-la exige contexto de empresa, mas a sonda corre sem contexto",
+    "caminho_legitimo": "o ARRANJO abre uma unidade SOB o contexto da empresa A e semeia a linha pelo caminho real; a MEDIÇÃO abre outra unidade com { empresaId: null }. Nunca desabilitar RLS nem usar papel privilegiado para semear",
+    "teste_analogo": "packages/db/test/isolamento.spec.ts (CT-302/CT-303)"
+   },
+   "camada": "packages/db/src/administrador-do-master.ts (novo)",
+   "pre_condicoes": [
+    "empresa A com um ADMIN_EMPRESA por linha da tabela (arranjo isolado por caso)",
+    "para as 5 colunas de autoria, a linha de negócio semeada sob o contexto de A apontando o admin"
+   ],
+   "dados_entrada": {
+    "descricao": "tabela de 7 linhas: origem semeada -> classe esperada",
+    "valores": {
+     "identidade.tentativa_login": "TENTATIVA_DE_ENTRADA",
+     "negocio.acesso_usuario_app": "VINCULO_DE_ACESSO",
+     "certificado_do_provedor.registrado_por": "AUTORIA_EM_REGISTRO",
+     "emissao_em_lote.solicitado_por": "AUTORIA_EM_REGISTRO",
+     "conferencia_bancaria.solicitada_por": "AUTORIA_EM_REGISTRO",
+     "identidade_no_provedor.registrado_por": "AUTORIA_EM_REGISTRO",
+     "entrega_da_noticia.verificada_por": "AUTORIA_EM_REGISTRO"
+    }
+   },
+   "passos": [
+    "para cada linha: criar admin próprio, semear SÓ aquela origem sob o contexto da empresa",
+    "sondar sob { empresaId: null }",
+    "afirmar elegivel e a lista impedimentos por igualdade",
+    "afirmar que a pessoa continua existindo"
+   ],
+   "resultado_esperado": "nas 7, elegivel é false e impedimentos é EXATAMENTE o array de uma classe esperada na linha (igualdade de array, nunca toContain); e a pessoa continua existindo em todas",
+   "criterios_aceitacao_validados": [
+    "CA-17"
+   ],
+   "observacoes": "Table-driven: 7 cenários num caso parametrizado. Isolar cada origem é o que discrimina — um arranjo com as 7 juntas passaria com uma implementação que só reconhece a primeira.",
+   "task_id": "T1"
+  },
+  {
+   "id": "CT-1211",
+   "titulo": "RN-11 positivo — o administrador virgem é removido, e conta/dois_fatores/sessão somem por CASCADE",
+   "tipo": "INTEGRACAO",
+   "categoria": "caminho_feliz",
+   "invariant": "Removido um ADMIN_EMPRESA sem nenhuma das 7 origens, identidade.usuario perde exatamente 1 linha e as linhas dele em conta, dois_fatores e sessao deixam de existir sem que a operação as apague explicitamente",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1210",
+    "input_invalido": "administrador com qualquer das 7 origens presente",
+    "assertion_esperada": "elegivel: false com a classe nomeada e a pessoa preservada"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "a pessoa precisa ter conta local, dois fatores e sessão",
+    "caminho_legitimo": "semear as três por INSERT direto nas tabelas de identidade no arranjo; a asserção é sobre a REMOÇÃO delas, não sobre como nasceram",
+    "teste_analogo": "packages/db/test/cadastro-de-pessoa.spec.ts"
+   },
+   "camada": "packages/db/src/administrador-do-master.ts (novo)",
+   "pre_condicoes": [
+    "admin virgem em empresa A, com 1 linha em cada uma de conta, dois_fatores e sessao",
+    "outro admin na mesma empresa, para provar que a remoção para no alvo"
+   ],
+   "dados_entrada": {
+    "descricao": "o admin virgem",
+    "valores": {
+     "usuarioId": "<uuid do admin virgem>"
+    }
+   },
+   "passos": [
+    "medir count das 4 tabelas antes",
+    "executar a exclusão",
+    "remedir as 4 tabelas"
+   ],
+   "resultado_esperado": "identidade.usuario cai de 2 para 1 (o colega permanece, afirmado pelo id); conta, dois_fatores e sessao do alvo vão de 1 para 0; as do colega permanecem em 1 — o colega impede um DELETE sem cláusula de passar",
+   "criterios_aceitacao_validados": [
+    "CA-18"
+   ],
+   "observacoes": "O colega é o controle indispensável: sem ele, DELETE FROM identidade.usuario sem WHERE passaria em todas as demais asserções.",
+   "task_id": "T1"
+  },
+  {
+   "id": "CT-1212",
+   "titulo": "RN-16 — a recusa da exclusão NUNCA destrói a trilha de tentativas de entrada",
+   "tipo": "INTEGRACAO",
+   "categoria": "integridade_dados",
+   "invariant": "Depois de a exclusão de um administrador ser recusada por TENTATIVA_DE_ENTRADA, a contagem de identidade.tentativa_login daquele usuario_id é idêntica à medida antes, e o id da linha é o mesmo",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "este é o caso negativo — a exclusão recusada",
+    "assertion_esperada": "contagem de tentativa_login idêntica antes e depois, e o id da linha preservado — nenhuma implementação que limpasse a trilha para poder excluir sobrevive"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "linha em identidade.tentativa_login vinculada ao administrador",
+    "caminho_legitimo": "INSERT direto em identidade.tentativa_login no arranjo (schema sem RLS, ADR-0009), com desfecho de valor do enum real",
+    "teste_analogo": "NENHUM — o caminho_legitimo acima é a receita completa"
+   },
+   "camada": "packages/db/src/administrador-do-master.ts (novo)",
+   "pre_condicoes": [
+    "admin com 1 linha em identidade.tentativa_login (desfecho CREDENCIAL_INCORRETA)"
+   ],
+   "dados_entrada": {
+    "descricao": "o admin que já tentou entrar",
+    "valores": {
+     "usuarioId": "<uuid>",
+     "desfecho": "CREDENCIAL_INCORRETA"
+    }
+   },
+   "passos": [
+    "capturar o id e a contagem da trilha",
+    "tentar a exclusão e afirmar a recusa",
+    "remedir a trilha"
+   ],
+   "resultado_esperado": "a exclusão recusa com impedimentos: ['TENTATIVA_DE_ENTRADA']; a contagem da trilha é a mesma e o id da linha é literalmente o capturado antes",
+   "criterios_aceitacao_validados": [
+    "CA-17"
+   ],
+   "observacoes": "A ADR-0013 declara a trilha como a mitigação do poder desta persona (sem isso, ela não existe) — nenhuma decisão da feature pode consumi-la como custo.",
+   "task_id": "T1"
+  },
+  {
+   "id": "CT-1213",
+   "titulo": "RN-12 — empresa com 2 administradores, 1 inelegível: a operação INTEIRA recusa e nada é removido",
+   "tipo": "INTEGRACAO",
+   "categoria": "integridade_dados",
+   "invariant": "A exclusão de uma empresa sem registros cujos 2 administradores incluem um que já tentou entrar recusa por ADMINISTRADORES_NAO_ELEGIVEIS, e as 3 linhas continuam existindo — nem o administrador elegível é removido",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1214",
+    "input_invalido": "empresa vazia cujos administradores são todos virgens",
+    "assertion_esperada": "a empresa e os administradores deixam de existir na mesma transação, com count de ambos em 0"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "unidade sem contexto que comite, para provar que a atomicidade é da transação e não do rollback do teste",
+    "caminho_legitimo": "emUnidadeDeTrabalho com { empresaId: null } deixando a unidade fechar; as contagens de depois medidas em unidade NOVA",
+    "teste_analogo": "packages/db/test/unidade-de-trabalho.spec.ts"
+   },
+   "camada": "packages/db/src/empresa.ts (estendido)",
+   "pre_condicoes": [
+    "empresa C sem registros de negócio",
+    "admin virgem e admin com linha em identidade.tentativa_login, ambos de C"
+   ],
+   "dados_entrada": {
+    "descricao": "os dois administradores da mesma empresa",
+    "valores": {
+     "empresaId": "<uuid C>",
+     "adminVirgem": "<uuid>",
+     "adminComTentativa": "<uuid>"
+    }
+   },
+   "passos": [
+    "tentar excluir a empresa C",
+    "afirmar a recusa e a classe",
+    "em unidade nova, ler as 3 linhas"
+   ],
+   "resultado_esperado": "recusa com impedimentos: ['ADMINISTRADORES_NAO_ELEGIVEIS']; a empresa continua com count 1 e identidade.usuario WHERE empresa_id = <C> é 2 — o admin VIRGEM sobreviver é a asserção que discrimina uma implementação que remove em laço até topar no primeiro impedido",
+   "criterios_aceitacao_validados": [
+    "CA-16"
+   ],
+   "observacoes": "A sobrevivência do administrador ELEGÍVEL é o eixo; sem ela o caso passaria com uma remoção não atômica.",
+   "task_id": "T1"
+  },
+  {
+   "id": "CT-1214",
+   "titulo": "RN-12 positivo — empresa vazia com administrador virgem: os dois deixam de existir na mesma transação",
+   "tipo": "INTEGRACAO",
+   "categoria": "caminho_feliz",
+   "invariant": "A exclusão de uma empresa sem registros cujo único administrador é virgem remove identidade.usuario WHERE empresa_id e identidade.empresa num único commit, e nenhuma linha de outra empresa é tocada",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1213",
+    "input_invalido": "um dos administradores já tentou entrar",
+    "assertion_esperada": "recusa ADMINISTRADORES_NAO_ELEGIVEIS com as 3 linhas preservadas"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "unidade sem contexto de empresa",
+    "caminho_legitimo": "emUnidadeDeTrabalho com { empresaId: null }; a empresa de CONTROLE, com o próprio admin, é semeada e medida antes e depois",
+    "teste_analogo": "packages/db/test/isolamento.spec.ts (CT-005)"
+   },
+   "camada": "packages/db/src/empresa.ts (estendido)",
+   "pre_condicoes": [
+    "empresa B vazia com 1 admin virgem",
+    "empresa D de controle, com 1 admin, intocada"
+   ],
+   "dados_entrada": {
+    "descricao": "a empresa elegível e a de controle",
+    "valores": {
+     "alvo": "<uuid B>",
+     "controle": "<uuid D>"
+    }
+   },
+   "passos": [
+    "excluir a empresa B",
+    "medir em unidade nova as 4 contagens (B, admin de B, D, admin de D)"
+   ],
+   "resultado_esperado": "B -> 0, admin de B -> 0, D -> 1, admin de D -> 1. A empresa de controle impede um DELETE FROM identidade.empresa sem cláusula de passar",
+   "criterios_aceitacao_validados": [
+    "CA-15"
+   ],
+   "observacoes": "",
+   "task_id": "T1"
+  },
+  {
+   "id": "CT-1215",
+   "titulo": "D5 — o vocabulário fechado de classes é IGUAL ao conjunto das dependências que o catálogo do banco pode opor à remoção",
+   "tipo": "INTEGRACAO",
+   "categoria": "integridade_dados",
+   "invariant": "O conjunto das restrições de pg_constraint do tipo chave estrangeira com confdeltype = 'a' (no action) que referenciam identidade.empresa ou identidade.usuario é IGUAL, por diferença de conjunto vazia nas duas direções, ao conjunto classificado no vocabulário publicado — e o conjunto lido é não vazio",
+   "owning_layer": "service-integration",
+   "existing_suite": "packages/db/test/catalogo.spec.ts",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1216",
+    "input_invalido": "uma dependência nova criada na instância efêmera sem classe correspondente no vocabulário",
+    "assertion_esperada": "a comparação devolve { excedentes: ['<nome da restrição nova>'], ausentes: [] } — nomeando a restrição, não apenas sinalizando divergência"
+   },
+   "precondicao_privilegiada": {
+    "presente": false,
+    "descricao": "",
+    "caminho_legitimo": "",
+    "teste_analogo": ""
+   },
+   "camada": "packages/db/src/administrador-do-master.ts (novo) — a leitura do catálogo e o vocabulário publicado",
+   "pre_condicoes": [
+    "instância efêmera migrada com todas as migrações aplicadas"
+   ],
+   "dados_entrada": {
+    "descricao": "o catálogo real do banco contra a constante publicada",
+    "valores": {
+     "vocabulario": [
+      "REGISTROS_DE_NEGOCIO",
+      "ADMINISTRADORES_NAO_ELEGIVEIS",
+      "TENTATIVA_DE_ENTRADA",
+      "VINCULO_DE_ACESSO",
+      "AUTORIA_EM_REGISTRO"
+     ]
+    }
+   },
+   "passos": [
+    "ler de pg_constraint as restrições que referenciam identidade.empresa e identidade.usuario",
+    "afirmar o CONTROLE ANTIVÁCUO: o conjunto lido tem comprimento maior que zero",
+    "comparar por diferença de conjunto contra o classificado no vocabulário"
+   ],
+   "resultado_esperado": "observadas.length é maior que 0 (controle antivácuo, afirmado antes de tudo) E diferencasDeConjunto(observadas, CLASSIFICADAS) é exatamente { excedentes: [], ausentes: [] } — nunca toContain",
+   "criterios_aceitacao_validados": [
+    "CA-20"
+   ],
+   "observacoes": "Asserção COMPORTAMENTAL — lê o catálogo do banco real em execução, não o texto de um arquivo. Por isso NÃO exige prova de falsificação por execução; o poder de detecção vem do CT-1216. Mora em catalogo.spec.ts porque é ali que as auditorias de catálogo já vivem.",
+   "task_id": "T2"
+  },
+  {
+   "id": "CT-1216",
+   "titulo": "D5 negativo — uma dependência NOVA sem classe correspondente é acusada por nome",
+   "tipo": "INTEGRACAO",
+   "categoria": "teste_negativo",
+   "invariant": "Criada na instância efêmera uma tabela de negócio com chave estrangeira ON DELETE NO ACTION para identidade.empresa, a comparação do CT-1215 devolve essa restrição em excedentes, nomeando-a — e volta ao conjunto vazio quando a tabela é removida",
+   "owning_layer": "service-integration",
+   "existing_suite": "packages/db/test/catalogo.spec.ts",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "dependência nova sem classe no vocabulário",
+    "assertion_esperada": "{ excedentes: ['<nome exato da restrição>'], ausentes: [] }, e após o DROP volta a { excedentes: [], ausentes: [] }"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "criar e remover DDL na instância efêmera exige papel com privilégio de criação no schema",
+    "caminho_legitimo": "usar a conexão de migração já publicada pelo acessório (conexaoDeMigracao(banco) de packages/db/test/banco-efemero.ts); desfazer com DROP TABLE no mesmo caso, para preservar a independência entre casos",
+    "teste_analogo": "packages/db/test/isolamento.spec.ts (CT-523)"
+   },
+   "camada": "packages/db/src/administrador-do-master.ts (novo) — a leitura do catálogo",
+   "pre_condicoes": [
+    "instância efêmera migrada",
+    "a comparação do CT-1215 verde antes de começar"
+   ],
+   "dados_entrada": {
+    "descricao": "uma tabela descartável com FK para a empresa",
+    "valores": {
+     "tabela": "negocio.dependencia_descartavel",
+     "restricao": "dependencia_descartavel_empresa_fk",
+     "onDelete": "NO ACTION"
+    }
+   },
+   "passos": [
+    "afirmar que a comparação está limpa",
+    "criar a tabela descartável pelo papel de migração",
+    "reexecutar a comparação",
+    "remover a tabela",
+    "reexecutar a comparação"
+   ],
+   "resultado_esperado": "na segunda execução, excedentes é exatamente ['dependencia_descartavel_empresa_fk'] e ausentes é []; na terceira, os dois voltam a []. É esta perna que impede a comparação de ser tautológica (AP-29)",
+   "criterios_aceitacao_validados": [
+    "CA-20"
+   ],
+   "observacoes": "É a falsificação COMPORTAMENTAL do D5 — obtida movendo o mundo, não o código de produção; não é campanha de mutantes.",
+   "task_id": "T2"
+  },
+  {
+   "id": "CT-1217",
+   "titulo": "CA-01 na camada de acesso — a listagem alcança só os ADMIN_EMPRESA daquela empresa, por igualdade de conjunto",
+   "tipo": "INTEGRACAO",
+   "categoria": "caminho_feliz",
+   "invariant": "Sob app.empresa_id vazio, a listagem de administradores da empresa A devolve o conjunto EXATO dos identificadores dos 2 ADMIN_EMPRESA de A — sem o USUARIO_EMPRESA de A e sem o ADMIN_EMPRESA da empresa B",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "o USUARIO_EMPRESA de A e o ADMIN_EMPRESA de B, presentes no arranjo e ausentes do resultado",
+    "assertion_esperada": "os dois identificadores NÃO aparecem no conjunto devolvido, afirmado pela igualdade de conjunto — não por not.toContain isolado"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "a unidade de trabalho precisa correr SEM contexto de empresa (empresaId: null), que é como a requisição do Sysloc Master corre",
+    "caminho_legitimo": "abrir o acesso pelo caminho real do boundary — abrirAcessoAoBanco() sobre a instância de banco-efemero.ts e emUnidadeDeTrabalho com o contexto { empresaId: null }, que é o mesmo valor que a guarda publica para o Master. NUNCA exportar símbolo de produção nem parametrizar a política para obter o alcance",
+    "teste_analogo": "packages/db/test/isolamento.spec.ts — o CT-005 já monta a unidade sem empresa no contexto e afirma que nenhuma política casa"
+   },
+   "camada": "packages/db/src/administrador-do-master.ts (novo)",
+   "pre_condicoes": [
+    "empresa A com 2 ADMIN_EMPRESA e 1 USUARIO_EMPRESA",
+    "empresa B com 1 ADMIN_EMPRESA"
+   ],
+   "dados_entrada": {
+    "descricao": "as duas empresas e os quatro usuários",
+    "valores": {
+     "empresaConsultada": "<uuid A>",
+     "janela": {
+      "limite": 50,
+      "deslocamento": 0
+     }
+    }
+   },
+   "passos": [
+    "arranjar as duas empresas e os quatro usuários",
+    "listar os administradores de A sob contexto vazio",
+    "extrair os identificadores e comparar por diferença de conjunto contra os 2 esperados"
+   ],
+   "resultado_esperado": "itens.length é 2 E a diferença de conjunto contra os 2 esperados é { excedentes: [], ausentes: [] }; o total é 2 (número, não string — o count volta como bigint)",
+   "criterios_aceitacao_validados": [
+    "CA-01"
+   ],
+   "observacoes": "O USUARIO_EMPRESA e o admin de B são os dois controles que fazem o caso discriminar: sem eles, uma listagem sem cláusula alguma passaria.",
+   "task_id": "T1"
+  },
+  {
+   "id": "CT-1218",
+   "titulo": "RN-09 — e-mail já em uso recusa a edição do administrador e NADA é gravado",
+   "tipo": "INTEGRACAO",
+   "categoria": "teste_negativo",
+   "invariant": "A edição de um administrador com o e-mail de outra pessoa é recusada pela restrição de unicidade do banco, e a linha do alvo continua com nome e e-mail bit a bit iguais aos anteriores — inclusive o nome, que o corpo também trazia",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "e-mail de uma pessoa já existente, junto com um nome NOVO no mesmo corpo",
+    "assertion_esperada": "a recusa é atribuível ao campo email (restrição usuario_email_unique) e o nome do alvo permanece o antigo — o nome novo discrimina uma atualização parcial"
+   },
+   "precondicao_privilegiada": {
+    "presente": false,
+    "descricao": "",
+    "caminho_legitimo": "",
+    "teste_analogo": ""
+   },
+   "camada": "packages/db/src/administrador-do-master.ts (novo)",
+   "pre_condicoes": [
+    "dois usuários com e-mails distintos"
+   ],
+   "dados_entrada": {
+    "descricao": "o alvo, com o e-mail do outro e um nome novo",
+    "valores": {
+     "usuarioId": "<uuid do alvo>",
+     "nome": "Nome Novo",
+     "email": "<email do outro>"
+    }
+   },
+   "passos": [
+    "capturar nome e e-mail do alvo",
+    "tentar a edição com o e-mail do outro e nome diferente",
+    "reler a linha do alvo e a do outro"
+   ],
+   "resultado_esperado": "a operação sinaliza colisão atribuída a email (não uma falha genérica), e a releitura devolve nome e e-mail literalmente iguais aos capturados; a linha do outro também está intacta",
+   "criterios_aceitacao_validados": [
+    "CA-11"
+   ],
+   "observacoes": "O nome novo no mesmo corpo é deliberado — é ele que reprova uma implementação que grave os campos um a um.",
+   "task_id": "T1"
+  },
+  {
+   "id": "CT-1219",
+   "titulo": "RN-09 — documento já em uso recusa a edição da empresa e NENHUMA das duas é alterada",
+   "tipo": "INTEGRACAO",
+   "categoria": "teste_negativo",
+   "invariant": "A edição da empresa A atribuindo o documento da empresa B é recusada pela restrição empresa_documento_unique, e as duas linhas continuam com nome e documento bit a bit iguais aos anteriores",
+   "owning_layer": "service-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "documento da empresa B com nome novo no mesmo corpo",
+    "assertion_esperada": "colisão atribuída ao campo documento, e o nome de A permanece o antigo"
+   },
+   "precondicao_privilegiada": {
+    "presente": false,
+    "descricao": "",
+    "caminho_legitimo": "",
+    "teste_analogo": ""
+   },
+   "camada": "packages/db/src/empresa.ts (estendido)",
+   "pre_condicoes": [
+    "duas empresas com documentos distintos"
+   ],
+   "dados_entrada": {
+    "descricao": "a empresa A recebendo o documento de B",
+    "valores": {
+     "empresaId": "<uuid A>",
+     "nome": "Nome Novo",
+     "documento": "<documento de B>"
+    }
+   },
+   "passos": [
+    "capturar as duas linhas",
+    "tentar a edição",
+    "reler as duas linhas"
+   ],
+   "resultado_esperado": "colisão atribuída a documento (restrição NOMEADA, no molde de admitirEmpresa), e as duas linhas relidas são idênticas às capturadas campo a campo",
+   "criterios_aceitacao_validados": [
+    "CA-11"
+   ],
+   "observacoes": "Segue o molde provado de admitirEmpresa: a duplicidade é decidida PELO BANCO com a restrição NOMEADA — sem alvo, o ON CONFLICT absorveria qualquer unicidade futura.",
+   "task_id": "T1"
+  },
+  {
+   "id": "CT-1220",
+   "titulo": "CA-01/CA-02 — a listagem publica o envelope e EXATAMENTE as chaves do contrato, sem nenhum dado de negócio",
+   "tipo": "E2E",
+   "categoria": "caminho_feliz",
+   "invariant": "GET /v1/master/empresas/:id/administradores responde 200 com o envelope {itens,total,limite,deslocamento} e cada item com o conjunto FECHADO {usuarioId,nome,email,estado,criadoEm,exclusao} — e nenhum identificador de contrato, imóvel, vínculo ou chave de permissão aparece na serialização, com esses dados semeados e afirmados presentes antes da chamada",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1226",
+    "input_invalido": "sessão de ADMIN_EMPRESA na mesma rota",
+    "assertion_esperada": "403 nomeando PERFIL:SYSLOC_MASTER, sem corpo de listagem"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "a sessão do Sysloc Master é RESTRITA até o segundo fator ser cumprido, e sessão restrita não alcança as rotas do Master (o 403 viria da restrição, não da autorização)",
+    "caminho_legitimo": "cumprir o segundo fator pela VIA REAL do arcabouço, uma vez na montagem, e AFIRMAR a precondição no primeiro caso. Importar o acessório da casa compartilhada (apps/api/test/acessorios-de-borda.ts) em vez de redeclará-lo. NUNCA criar rota, flag ou símbolo de produção para pular o segundo fator",
+    "teste_analogo": "apps/api/test/ciclo-de-acesso.e2e.spec.ts — entrarComSegundoFatorCumprido (linha 1389). Já tem SEIS cópias; o DEBITO COM GATILHO D32 · F5/T7 declara o Limiar de Três disparado"
+   },
+   "camada": "apps/api/src/master/administrador.controller.ts (novo)",
+   "pre_condicoes": [
+    "empresa A com 2 ADMIN_EMPRESA, 1 USUARIO_EMPRESA e 1 contrato + vínculo + chave de permissão semeados",
+    "sessão do Master com segundo fator cumprido"
+   ],
+   "dados_entrada": {
+    "descricao": "a empresa cheia, consultada pelo Master",
+    "valores": {
+     "rota": "GET /v1/master/empresas/<A>/administradores"
+    }
+   },
+   "passos": [
+    "afirmar, por leitura direta do banco, que o contrato, o vínculo e a chave existem",
+    "chamar a rota",
+    "comparar por igualdade de conjunto as chaves do envelope e de cada item",
+    "varrer a serialização do corpo em busca dos identificadores semeados"
+   ],
+   "resultado_esperado": "200; Object.keys(corpo) igual por conjunto a ['itens','total','limite','deslocamento']; Object.keys(item) igual por conjunto a ['usuarioId','nome','email','estado','criadoEm','exclusao'] nos dois itens; e JSON.stringify(corpo) não contém o identificador do contrato, o do vínculo nem a chave de permissão — com a mesma varredura aplicada a um corpo com essas agulhas plantadas acusando as três (CONTROLE POSITIVO)",
+   "criterios_aceitacao_validados": [
+    "CA-01",
+    "CA-02"
+   ],
+   "observacoes": "Arquivo novo apps/api/test/master-administradores.e2e.spec.ts: ciclo-de-acesso.e2e.spec.ts é a suíte da fatia FECHADA, com 12 mutantes escriturados e contagem protegida — acrescentar 19 casos ali arrisca a R3 e a §5.2. O controle positivo é exigência do método da ADR-0032 (AP-29).",
+   "task_id": "T4"
+  },
+  {
+   "id": "CT-1221",
+   "titulo": "CA-03 — a reemissão da Senha provisória parte da PRÓPRIA LINHA, sem identificador anotado",
+   "tipo": "E2E",
+   "categoria": "caminho_feliz",
+   "invariant": "O usuarioId devolvido pela listagem é aceito por POST /v1/master/usuarios/:id/senha-provisoria, e a senha reemitida entra — sem que o teste tenha guardado o identificador devolvido pela admissão",
+   "owning_layer": "e2e",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1226",
+    "input_invalido": "alvo de perfil USUARIO_EMPRESA na mesma rota",
+    "assertion_esperada": "422 CAMPO_INVALIDO com campo:'id' e detalhes:{perfilExigido:'ADMIN_EMPRESA', perfilDoAlvo:'USUARIO_EMPRESA'}"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "a sessão do Sysloc Master é RESTRITA até o segundo fator ser cumprido, e sessão restrita não alcança as rotas do Master (o 403 viria da restrição, não da autorização)",
+    "caminho_legitimo": "cumprir o segundo fator pela VIA REAL do arcabouço, uma vez na montagem, e AFIRMAR a precondição no primeiro caso. Importar o acessório da casa compartilhada (apps/api/test/acessorios-de-borda.ts) em vez de redeclará-lo. NUNCA criar rota, flag ou símbolo de produção para pular o segundo fator",
+    "teste_analogo": "apps/api/test/ciclo-de-acesso.e2e.spec.ts — entrarComSegundoFatorCumprido (linha 1389). Já tem SEIS cópias; o DEBITO COM GATILHO D32 · F5/T7 declara o Limiar de Três disparado"
+   },
+   "camada": "apps/api/src/master/administrador.controller.ts (novo) + empresa.service.ts (reemitirSenha, existente)",
+   "pre_condicoes": [
+    "empresa com 1 ADMIN_EMPRESA admitido pelo Master"
+   ],
+   "dados_entrada": {
+    "descricao": "o identificador vem da listagem, nunca da admissão",
+    "valores": {
+     "origemDoIdentificador": "corpo da listagem"
+    }
+   },
+   "passos": [
+    "admitir o administrador e DESCARTAR o usuarioId da resposta",
+    "listar os administradores e extrair o usuarioId da linha",
+    "reemitir a senha com esse identificador",
+    "entrar com o e-mail e a senha reemitida"
+   ],
+   "resultado_esperado": "a reemissão responde 200 com {usuarioId, senhaProvisoria} e o usuarioId é literalmente igual ao lido da listagem; a entrada com a senha reemitida responde 200 e a entrada com a senha ANTERIOR recebe recusa indistinguível de credencial incorreta",
+   "criterios_aceitacao_validados": [
+    "CA-03"
+   ],
+   "observacoes": "A métrica do PRD é 100% de reemissões originadas da listagem — o descarte deliberado do identificador da admissão é o que torna o caso uma prova disso, e não uma repetição do CT-223 (b).",
+   "task_id": "T4"
+  },
+  {
+   "id": "CT-1222",
+   "titulo": "CA-04 — suspender encerra as 2 sessões no ato, informa 2, e o acesso seguinte é recusado",
+   "tipo": "E2E",
+   "categoria": "caminho_feliz",
+   "invariant": "POST /v1/master/usuarios/:id/suspensao sobre um ADMIN_EMPRESA com 2 sessões responde {usuarioId, estado:'SUSPENSO', sessoesEncerradas: 2}, a contagem de identidade.sessao vai de 2 a 0, e tanto uma requisição com o cookie anterior quanto uma entrada nova são recusadas",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1224",
+    "input_invalido": "suspender quem já está suspenso",
+    "assertion_esperada": "200 com sessoesEncerradas: 0 e o mesmo corpo da primeira chamada, sem erro"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "duas sessões REAIS do administrador antes do ato, e a sessão do Master com segundo fator",
+    "caminho_legitimo": "as duas sessões nascem por duas entradas de verdade pela rota pública (acessório entrar da casa compartilhada), não por INSERT — é o que faz o 401 posterior ser observável",
+    "teste_analogo": "apps/api/test/ciclo-de-acesso.e2e.spec.ts (CT-224) — o molde da suspensão de EMPRESA"
+   },
+   "camada": "apps/api/src/master/administrador.controller.ts + administrador.service.ts (novos)",
+   "pre_condicoes": [
+    "ADMIN_EMPRESA com senha já trocada, entrado duas vezes",
+    "contagem crua de sessões afirmada em 2 ANTES do ato"
+   ],
+   "dados_entrada": {
+    "descricao": "o administrador com dois acessos abertos",
+    "valores": {
+     "sessoesAbertas": 2
+    }
+   },
+   "passos": [
+    "entrar duas vezes e guardar os dois cookies",
+    "afirmar a contagem crua igual a 2",
+    "suspender pelo Master",
+    "remedir",
+    "usar cada cookie numa rota da imobiliária",
+    "tentar entrar de novo"
+   ],
+   "resultado_esperado": "corpo exatamente {usuarioId, estado:'SUSPENSO', sessoesEncerradas:2} (objeto inteiro, por igualdade); contagem crua de 2 a 0; os dois cookies respondem 401 NAO_AUTENTICADO no envelope da ADR-0017; e a entrada nova é recusada. A CONTAGEM distingue encerrada de marcada — o 401 sozinho não discrimina",
+   "criterios_aceitacao_validados": [
+    "CA-04"
+   ],
+   "observacoes": "Molde herdado do CT-224: sem a contagem, a suíte passaria com uma implementação que apenas marca a pessoa e recusa na guarda.",
+   "task_id": "T4"
+  },
+  {
+   "id": "CT-1223",
+   "titulo": "CA-05 — a colega ATIVA da mesma empresa segue operando no mesmo instante",
+   "tipo": "E2E",
+   "categoria": "fronteira",
+   "invariant": "Suspenso um ADMIN_EMPRESA, a sessão de uma colega ativa da MESMA empresa sobrevive — a requisição dela responde 2xx e a contagem crua de sessões dela permanece a mesma",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1222",
+    "input_invalido": "a própria pessoa suspensa",
+    "assertion_esperada": "401 NAO_AUTENTICADO com contagem de sessões em 0"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "duas pessoas da mesma empresa com sessões reais simultâneas",
+    "caminho_legitimo": "duas entradas reais pelo acessório entrar da casa compartilhada; nenhuma escrita direta em identidade.sessao",
+    "teste_analogo": "apps/api/test/ciclo-de-acesso.e2e.spec.ts (CT-224) — a metade das sessões que SOBREVIVEM"
+   },
+   "camada": "apps/api/src/master/administrador.service.ts (novo)",
+   "pre_condicoes": [
+    "dois ADMIN_EMPRESA da mesma empresa, ambos com sessão aberta"
+   ],
+   "dados_entrada": {
+    "descricao": "o suspenso e a colega",
+    "valores": {
+     "alvo": "<uuid do suspenso>",
+     "colega": "<uuid da colega>"
+    }
+   },
+   "passos": [
+    "abrir sessão para os dois",
+    "suspender apenas o alvo",
+    "usar o cookie da colega numa rota da imobiliária",
+    "medir a contagem crua de sessões da colega"
+   ],
+   "resultado_esperado": "a requisição da colega responde 2xx e a contagem de sessões dela é exatamente a mesma de antes (1) — é a asserção que reprova um encerramento por EMPRESA em vez de por pessoa",
+   "criterios_aceitacao_validados": [
+    "CA-05"
+   ],
+   "observacoes": "É o discriminador direto do defeito que a armadilha A2 esconde no outro sentido: a função nova, se alcançasse por empresa, passaria em todo o CT-1222 e reprovaria só aqui.",
+   "task_id": "T4"
+  },
+  {
+   "id": "CT-1224",
+   "titulo": "CA-06 — suspender quem já está suspenso confirma sem erro e informa 0 encerradas",
+   "tipo": "E2E",
+   "categoria": "fronteira",
+   "invariant": "A segunda suspensão do mesmo administrador responde 200 com sessoesEncerradas: 0 e corpo idêntico ao da primeira, sem levantar erro",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "repetição do ato sobre estado já alcançado",
+    "assertion_esperada": "200 com sessoesEncerradas: 0 — nunca 409, nunca 422, nunca corpo divergente da primeira chamada"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "a sessão do Sysloc Master é RESTRITA até o segundo fator ser cumprido, e sessão restrita não alcança as rotas do Master (o 403 viria da restrição, não da autorização)",
+    "caminho_legitimo": "cumprir o segundo fator pela VIA REAL do arcabouço, uma vez na montagem, e AFIRMAR a precondição no primeiro caso. Importar o acessório da casa compartilhada (apps/api/test/acessorios-de-borda.ts) em vez de redeclará-lo. NUNCA criar rota, flag ou símbolo de produção para pular o segundo fator",
+    "teste_analogo": "apps/api/test/ciclo-de-acesso.e2e.spec.ts — entrarComSegundoFatorCumprido (linha 1389). Já tem SEIS cópias; o DEBITO COM GATILHO D32 · F5/T7 declara o Limiar de Três disparado"
+   },
+   "camada": "apps/api/src/master/administrador.service.ts (novo)",
+   "pre_condicoes": [
+    "administrador já suspenso"
+   ],
+   "dados_entrada": {
+    "descricao": "a mesma rota, duas vezes",
+    "valores": {
+     "chamadas": 2
+    }
+   },
+   "passos": [
+    "suspender",
+    "guardar o corpo",
+    "suspender de novo",
+    "comparar os dois corpos"
+   ],
+   "resultado_esperado": "a segunda resposta é 200 e o corpo é {usuarioId, estado:'SUSPENSO', sessoesEncerradas:0}; comparado ao primeiro, difere APENAS em sessoesEncerradas",
+   "criterios_aceitacao_validados": [
+    "CA-06"
+   ],
+   "observacoes": "Segue a forma provada de suspenderEmpresa (coalesce(suspensa_em, now())): idempotência SEM ramo condicional.",
+   "task_id": "T4"
+  },
+  {
+   "id": "CT-1225",
+   "titulo": "CA-07 — reativar devolve a capacidade de entrar, e não as sessões encerradas",
+   "tipo": "E2E",
+   "categoria": "caminho_feliz",
+   "invariant": "POST /v1/master/usuarios/:id/reativacao responde {usuarioId, estado:'ATIVO'}, a contagem de sessões CONTINUA em 0, os cookies anteriores seguem em 401, e só depois de uma entrada nova ela volta a operar",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1222",
+    "input_invalido": "a suspensão que a precede",
+    "assertion_esperada": "sessoesEncerradas: 2 e 401 no cookie anterior"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "pessoa suspensa com cookies anteriores em mãos",
+    "caminho_legitimo": "encadear a partir do arranjo do CT-1222 usando entradas reais",
+    "teste_analogo": "apps/api/test/ciclo-de-acesso.e2e.spec.ts (CT-225) — o molde da reativação de EMPRESA"
+   },
+   "camada": "apps/api/src/master/administrador.service.ts (novo)",
+   "pre_condicoes": [
+    "administrador suspenso, com 0 sessões e 2 cookies antigos guardados"
+   ],
+   "dados_entrada": {
+    "descricao": "o administrador suspenso",
+    "valores": {
+     "rota": "POST /v1/master/usuarios/<id>/reativacao"
+    }
+   },
+   "passos": [
+    "reativar",
+    "medir a contagem crua de sessões",
+    "usar os cookies antigos",
+    "entrar de novo e operar"
+   ],
+   "resultado_esperado": "corpo exatamente {usuarioId, estado:'ATIVO'}; contagem permanece 0; os dois cookies antigos respondem 401; a entrada nova responde 200 e a operação seguinte 2xx",
+   "criterios_aceitacao_validados": [
+    "CA-07"
+   ],
+   "observacoes": "A contagem continuar em 0 impede uma implementação que guardasse as sessões para restaurá-las — RN-04.",
+   "task_id": "T4"
+  },
+  {
+   "id": "CT-1226",
+   "titulo": "CA-08 — alvo USUARIO_EMPRESA recusado nas CINCO operações de :id, com a pessoa inalterada (it.each)",
+   "tipo": "E2E",
+   "categoria": "teste_negativo",
+   "invariant": "Cada uma das 5 operações sobre :id de usuário (suspensão, reativação, edição, exclusão, reemissão) apontada a um USUARIO_EMPRESA responde 422 CAMPO_INVALIDO com campo:'id' e detalhes:{perfilExigido:'ADMIN_EMPRESA', perfilDoAlvo:'USUARIO_EMPRESA'}, e a linha da pessoa permanece campo a campo idêntica",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "alvo de perfil USUARIO_EMPRESA nas 5 rotas",
+    "assertion_esperada": "o envelope de erro INTEIRO da ADR-0017 por igualdade de objeto, e a pessoa lida em seguida idêntica campo a campo — nome, email, perfil, ativo e a contagem de sessões dela"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "sessão do Master com segundo fator; USUARIO_EMPRESA com sessão aberta para provar que a recusa não a derruba",
+    "caminho_legitimo": "via real do arcabouço para o Master; a sessão do alvo por entrada real",
+    "teste_analogo": "apps/api/test/ciclo-de-acesso.e2e.spec.ts (CT-223 (b)) — o molde da contenção de perfil"
+   },
+   "camada": "apps/api/src/master/administrador.service.ts (novo) — molde de reemitirSenha (empresa.service.ts:584-593)",
+   "pre_condicoes": [
+    "empresa com 1 USUARIO_EMPRESA ativo, com sessão aberta"
+   ],
+   "dados_entrada": {
+    "descricao": "tabela de 5 linhas — uma por rota",
+    "valores": {
+     "rotas": [
+      "POST /v1/master/usuarios/<id>/suspensao",
+      "POST /v1/master/usuarios/<id>/reativacao",
+      "PUT /v1/master/usuarios/<id>",
+      "DELETE /v1/master/usuarios/<id>",
+      "POST /v1/master/usuarios/<id>/senha-provisoria"
+     ],
+     "perfilDoAlvo": "USUARIO_EMPRESA"
+    }
+   },
+   "passos": [
+    "capturar a linha e a contagem de sessões",
+    "para cada rota, chamar com o alvo",
+    "afirmar o envelope inteiro",
+    "reler a linha e a contagem"
+   ],
+   "resultado_esperado": "nas 5, 422 e corpo igual, por objeto, a {codigo:'CAMPO_INVALIDO', mensagem:<canônica>, campo:'id', detalhes:{perfilExigido:'ADMIN_EMPRESA', perfilDoAlvo:'USUARIO_EMPRESA'}}; e depois das 5 a pessoa é idêntica campo a campo e a sessão dela ainda serve (2xx)",
+   "criterios_aceitacao_validados": [
+    "CA-08"
+   ],
+   "observacoes": "A sessão do alvo continuar servindo reprova uma implementação que recuse DEPOIS de já ter encerrado as sessões — operação recusada não deixa efeito colateral é propriedade da ordem, não do acaso.",
+   "task_id": "T5"
+  },
+  {
+   "id": "CT-1227",
+   "titulo": "CA-09 — editar uma empresa SUSPENSA muda o nome e ela continua suspensa",
+   "tipo": "E2E",
+   "categoria": "fronteira",
+   "invariant": "PUT /v1/master/empresas/:id sobre empresa suspensa altera nome e devolve estado:'SUSPENSA', e a coluna suspensa_em lida cruamente é o MESMO instante de antes da edição",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1230",
+    "input_invalido": "corpo carregando estado (ou ativo/perfil/empresaId)",
+    "assertion_esperada": "422 nomeando a chave desconhecida, e nada gravado"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "empresa em estado SUSPENSA, produzida pelo ato real",
+    "caminho_legitimo": "suspender pela própria rota POST /v1/master/empresas/:id/suspensao, não por UPDATE direto — o instante gravado precisa ser o que a produção grava",
+    "teste_analogo": "apps/api/test/ciclo-de-acesso.e2e.spec.ts (CT-224)"
+   },
+   "camada": "apps/api/src/master/empresa.controller.ts / empresa.service.ts (estendidos)",
+   "pre_condicoes": [
+    "empresa suspensa pela rota, com suspensa_em capturado"
+   ],
+   "dados_entrada": {
+    "descricao": "corpo COMPLETO de edição, sem campo de estado",
+    "valores": {
+     "nome": "Imobiliária Corrigida",
+     "documento": "<o mesmo documento>"
+    }
+   },
+   "passos": [
+    "suspender pela rota",
+    "capturar suspensa_em cruamente",
+    "editar o nome",
+    "afirmar o corpo",
+    "reler suspensa_em"
+   ],
+   "resultado_esperado": "200 com nome alterado e estado:'SUSPENSA'; suspensa_em relido é literalmente igual ao capturado (comparação de instante, não de nulidade); e a listagem continua trazendo estado:'SUSPENSA'",
+   "criterios_aceitacao_validados": [
+    "CA-09"
+   ],
+   "observacoes": "RN-07 e ADR-0021, metade categórica. A igualdade do INSTANTE — e não apenas estado === 'SUSPENSA' — é o que reprova uma edição que re-suspendesse por conta própria.",
+   "task_id": "T5"
+  },
+  {
+   "id": "CT-1228",
+   "titulo": "CA-10 — corrigido o e-mail, a pessoa entra com a Senha provisória que JÁ havia recebido",
+   "tipo": "E2E",
+   "categoria": "caminho_feliz",
+   "invariant": "Alterado o e-mail por PUT /v1/master/usuarios/:id, a entrada com o e-mail NOVO e a senha provisória emitida ANTES da correção responde 200 — a credencial ancora no usuarioId, não no e-mail; e a entrada com o e-mail antigo passa a ser recusada",
+   "owning_layer": "e2e",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "entrada com o e-mail ANTIGO após a correção",
+    "assertion_esperada": "recusa indistinguível de credencial incorreta (o mesmo corpo que um e-mail inexistente produz), e nenhuma sessão criada"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "a senha provisória precisa ser a EMITIDA pela admissão, guardada antes da correção",
+    "caminho_legitimo": "admitir pela rota real POST /v1/master/empresas/:id/admin e guardar a senhaProvisoria do corpo — é a única superfície que a devolve; nunca derivar senha nem escrever em identidade.conta",
+    "teste_analogo": "apps/api/test/recusa-indistinguivel.e2e.spec.ts"
+   },
+   "camada": "apps/api/src/master/administrador.service.ts (novo) + packages/auth/src/onboarding.ts",
+   "pre_condicoes": [
+    "administrador admitido com e-mail errado, que NUNCA entrou",
+    "senha provisória guardada"
+   ],
+   "dados_entrada": {
+    "descricao": "corpo completo com o e-mail corrigido",
+    "valores": {
+     "email": "ana@exemplo.com (corrigido de ana@exmeplo.com)"
+    }
+   },
+   "passos": [
+    "admitir com o e-mail errado e guardar a senha",
+    "corrigir o e-mail pela rota",
+    "entrar com o e-mail NOVO e a senha guardada",
+    "tentar entrar com o e-mail ANTIGO"
+   ],
+   "resultado_esperado": "a entrada com o e-mail novo responde 200 e produz sessão (contagem crua vai a 1); a entrada com o e-mail antigo é recusada com o mesmo corpo que um e-mail inexistente produz e a contagem NÃO sobe",
+   "criterios_aceitacao_validados": [
+    "CA-10"
+   ],
+   "observacoes": "RN-08. A entrada real é o único jeito de provar que a credencial não foi invalidada — uma asserção sobre a coluna senha_derivada seria detalhe de implementação e passaria com uma conta que ancorasse no e-mail e por acaso não tivesse sido tocada.",
+   "task_id": "T5"
+  },
+  {
+   "id": "CT-1229",
+   "titulo": "CA-11 — documento duplicado na borda recusa nomeando o campo, e NENHUMA das duas empresas muda",
+   "tipo": "E2E",
+   "categoria": "teste_negativo",
+   "invariant": "PUT /v1/master/empresas/:id atribuindo à empresa A o documento da B responde 422 CAMPO_INVALIDO com campo:'documento', e as duas empresas lidas em seguida pela listagem são campo a campo idênticas às de antes",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "documento já em uso, acompanhado de um NOME novo no mesmo corpo",
+    "assertion_esperada": "envelope inteiro {codigo:'CAMPO_INVALIDO', mensagem:<canônica>, campo:'documento'} e o nome de A ainda o antigo"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "a sessão do Sysloc Master é RESTRITA até o segundo fator ser cumprido, e sessão restrita não alcança as rotas do Master (o 403 viria da restrição, não da autorização)",
+    "caminho_legitimo": "cumprir o segundo fator pela VIA REAL do arcabouço, uma vez na montagem, e AFIRMAR a precondição no primeiro caso. Importar o acessório da casa compartilhada (apps/api/test/acessorios-de-borda.ts) em vez de redeclará-lo. NUNCA criar rota, flag ou símbolo de produção para pular o segundo fator",
+    "teste_analogo": "apps/api/test/ciclo-de-acesso.e2e.spec.ts — entrarComSegundoFatorCumprido (linha 1389). Já tem SEIS cópias; o DEBITO COM GATILHO D32 · F5/T7 declara o Limiar de Três disparado"
+   },
+   "camada": "apps/api/src/master/empresa.controller.ts / empresa.service.ts (estendidos)",
+   "pre_condicoes": [
+    "duas empresas com documentos distintos, criadas pela rota"
+   ],
+   "dados_entrada": {
+    "descricao": "A recebendo o documento de B, com nome novo",
+    "valores": {
+     "nome": "Nome Novo",
+     "documento": "<documento de B>"
+    }
+   },
+   "passos": [
+    "listar e capturar as duas empresas",
+    "editar A com o documento de B",
+    "listar de novo e comparar"
+   ],
+   "resultado_esperado": "422 com o envelope inteiro por igualdade de objeto; as duas linhas idênticas campo a campo às capturadas — inclusive nome, documento, estado e criadaEm",
+   "criterios_aceitacao_validados": [
+    "CA-11"
+   ],
+   "observacoes": "Companheiro de borda do CT-1219: aqui o eixo é o CAMPO nomeado no envelope da ADR-0017, que a camada de acesso deliberadamente não decide.",
+   "task_id": "T6"
+  },
+  {
+   "id": "CT-1230",
+   "titulo": "RN-07 — estado, ativo, perfil e empresaId no corpo da edição RECUSAM a requisição (it.each)",
+   "tipo": "E2E",
+   "categoria": "teste_negativo",
+   "invariant": "O corpo das duas rotas de edição é z.strictObject: cada uma das 4 chaves proibidas, enviada junto do corpo válido, produz 422 nomeando a chave desconhecida, e nenhuma linha é gravada",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "corpo válido acrescido de estado, ativo, perfil ou empresaId",
+    "assertion_esperada": "422 CAMPO_INVALIDO cujo campo (ou detalhes.keys) nomeia a chave excedente — nunca recusa genérica, nunca 200 com a chave ignorada em silêncio"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "a sessão do Sysloc Master é RESTRITA até o segundo fator ser cumprido, e sessão restrita não alcança as rotas do Master (o 403 viria da restrição, não da autorização)",
+    "caminho_legitimo": "cumprir o segundo fator pela VIA REAL do arcabouço, uma vez na montagem, e AFIRMAR a precondição no primeiro caso. Importar o acessório da casa compartilhada (apps/api/test/acessorios-de-borda.ts) em vez de redeclará-lo. NUNCA criar rota, flag ou símbolo de produção para pular o segundo fator",
+    "teste_analogo": "apps/api/test/ciclo-de-acesso.e2e.spec.ts — entrarComSegundoFatorCumprido (linha 1389). Já tem SEIS cópias; o DEBITO COM GATILHO D32 · F5/T7 declara o Limiar de Três disparado"
+   },
+   "camada": "apps/api/src/master/empresa.controller.ts e administrador.controller.ts — os esquemas strictObject",
+   "pre_condicoes": [
+    "empresa ativa e ADMIN_EMPRESA ativo, ambos com estado capturado"
+   ],
+   "dados_entrada": {
+    "descricao": "tabela — rota × chave proibida",
+    "valores": {
+     "PUT /v1/master/empresas/:id": [
+      "estado",
+      "empresaId"
+     ],
+     "PUT /v1/master/usuarios/:id": [
+      "estado",
+      "ativo",
+      "perfil",
+      "empresaId"
+     ]
+    }
+   },
+   "passos": [
+    "capturar as duas linhas",
+    "para cada par rota × chave, enviar o corpo válido acrescido da chave proibida",
+    "afirmar o 422 e a chave nomeada",
+    "reler as duas linhas"
+   ],
+   "resultado_esperado": "todas as combinações respondem 422 nomeando a chave excedente, e as duas linhas relidas são campo a campo idênticas — inclusive ativo, perfil, empresa_id e suspensa_em",
+   "criterios_aceitacao_validados": [
+    "CA-09"
+   ],
+   "observacoes": "É como a RN-07 é cumprida POR CONSTRUÇÃO e como a rule contrato-publicado.md manda: recusa por chave desconhecida afirmada pela CHAVE, não pelo booleano. Um z.object no lugar do strictObject responderia 200 ignorando a chave.",
+   "task_id": "T5"
+  },
+  {
+   "id": "CT-1231",
+   "titulo": "CA-12 — na empresa com contrato, exclusao vem indisponível com a classe e a alternativa; na vazia, disponível",
+   "tipo": "E2E",
+   "categoria": "estado_visual",
+   "invariant": "Na listagem de uma empresa com contrato, cada item traz exclusao com {disponivel:false, motivo:'EXCLUSAO_IMPEDIDA_POR_REGISTROS', impedimentos:[...], alternativa:'SUSPENSAO'}; na empresa vazia com administrador virgem, disponivel é true e impedimentos é []",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "empresa com contrato registrado — o par com a empresa vazia é o que discrimina",
+    "assertion_esperada": "os dois corpos afirmados por igualdade de objeto, com impedimentos comparado por igualdade de array contra classes do vocabulário fechado"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "o contrato vive em negocio, sob RLS FORCE, e a consulta do Master corre sem contexto",
+    "caminho_legitimo": "semear o contrato pela rota REAL da aplicação da imobiliária, com sessão de ADMIN_EMPRESA daquela empresa (o contexto vem da sessão, nunca da requisição do Master)",
+    "teste_analogo": "apps/api/test/ciclo-de-acesso.e2e.spec.ts (CT-226)"
+   },
+   "camada": "apps/api/src/master/administrador.controller.ts + administrador.service.ts (novos)",
+   "pre_condicoes": [
+    "empresa A com contrato e 1 admin",
+    "empresa B vazia com 1 admin virgem"
+   ],
+   "dados_entrada": {
+    "descricao": "as duas listagens",
+    "valores": {
+     "empresaCheia": "<uuid A>",
+     "empresaVazia": "<uuid B>"
+    }
+   },
+   "passos": [
+    "semear o contrato em A pela rota da imobiliária",
+    "listar administradores de A",
+    "listar administradores de B",
+    "afirmar os dois exclusao"
+   ],
+   "resultado_esperado": "em A: exclusao igual a {disponivel:false, motivo:'EXCLUSAO_IMPEDIDA_POR_REGISTROS', impedimentos:['REGISTROS_DE_NEGOCIO'], alternativa:'SUSPENSAO'}; em B: {disponivel:true, impedimentos:[]}. Os dois por igualdade de objeto",
+   "criterios_aceitacao_validados": [
+    "CA-12"
+   ],
+   "observacoes": "É a US-07 e o consumo da prévia do D2-b. O par cheia/vazia é obrigatório: uma prévia que respondesse sempre false passaria só com a primeira metade.",
+   "task_id": "T6"
+  },
+  {
+   "id": "CT-1232",
+   "titulo": "CA-13 — DELETE na empresa com contrato recusa, e ela continua existindo e ATIVA",
+   "tipo": "E2E",
+   "categoria": "teste_negativo",
+   "invariant": "DELETE /v1/master/empresas/:id sobre empresa com contrato responde 422 CAMPO_INVALIDO com campo:'id' e detalhes:{motivo:'EXCLUSAO_IMPEDIDA_POR_REGISTROS', impedimentos:['REGISTROS_DE_NEGOCIO'], alternativa:'SUSPENSAO'}, e a empresa segue na listagem com estado:'ATIVA'",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1234",
+    "input_invalido": "empresa vazia com administrador virgem",
+    "assertion_esperada": "a exclusão é aceita e a empresa some da listagem (igualdade de conjunto dos ids antes e depois)"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "contrato semeado sob o contexto da empresa",
+    "caminho_legitimo": "pela rota real da imobiliária com sessão de ADMIN_EMPRESA daquela empresa",
+    "teste_analogo": "apps/api/test/ciclo-de-acesso.e2e.spec.ts (CT-226)"
+   },
+   "camada": "apps/api/src/master/empresa.controller.ts / empresa.service.ts (estendidos)",
+   "pre_condicoes": [
+    "empresa com contrato registrado, ativa"
+   ],
+   "dados_entrada": {
+    "descricao": "a empresa cheia",
+    "valores": {
+     "rota": "DELETE /v1/master/empresas/<A>"
+    }
+   },
+   "passos": [
+    "tentar excluir",
+    "afirmar o envelope inteiro",
+    "listar empresas e localizar A"
+   ],
+   "resultado_esperado": "422 com o envelope da ADR-0017 por igualdade de objeto; a listagem ainda traz A com estado:'ATIVA'; e as contagens cruas de identidade.empresa e negocio.contrato inalteradas",
+   "criterios_aceitacao_validados": [
+    "CA-13"
+   ],
+   "observacoes": "É o consumo do critério do D1-b na borda: a recusa vem da integridade referencial (23503) traduzida, nunca de uma contagem — o CT-1204 prova que a contagem seria zero aqui.",
+   "task_id": "T6"
+  },
+  {
+   "id": "CT-1233",
+   "titulo": "CA-14 — a alternativa anunciada pela recusa (suspensão) é aceita em seguida",
+   "tipo": "E2E",
+   "categoria": "caminho_feliz",
+   "invariant": "Recebida a recusa com alternativa:'SUSPENSAO', POST /v1/master/empresas/:id/suspensao sobre a mesma empresa responde 200 e ela passa a estado:'SUSPENSA'",
+   "owning_layer": "e2e",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1232",
+    "input_invalido": "a exclusão que foi recusada",
+    "assertion_esperada": "422 com alternativa:'SUSPENSAO' no envelope"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "a recusa precisa vir do ato real, não de um literal do teste",
+    "caminho_legitimo": "encadear a partir do CT-1232: a alternativa usada para escolher a rota seguinte é LIDA do corpo da recusa, não escrita no teste — é o que faz a asserção ser sobre o anúncio",
+    "teste_analogo": "apps/api/test/ciclo-de-acesso.e2e.spec.ts (CT-224)"
+   },
+   "camada": "apps/api/src/master/empresa.controller.ts (existente + estendido)",
+   "pre_condicoes": [
+    "empresa que acabou de receber a recusa do CT-1232"
+   ],
+   "dados_entrada": {
+    "descricao": "a alternativa lida do corpo da recusa",
+    "valores": {
+     "alternativaLida": "corpo.detalhes.alternativa"
+    }
+   },
+   "passos": [
+    "tentar excluir e capturar detalhes.alternativa",
+    "afirmar que o valor lido é 'SUSPENSAO'",
+    "chamar a rota de suspensão a partir desse valor",
+    "listar e conferir o estado"
+   ],
+   "resultado_esperado": "a suspensão responde 200 com estado:'SUSPENSA' e a listagem confirma; a empresa continua existindo — a alternativa é executável, não decorativa",
+   "criterios_aceitacao_validados": [
+    "CA-14"
+   ],
+   "observacoes": "Ler a alternativa do corpo impede o caso de passar com um alternativa anunciado que não corresponda a rota alguma.",
+   "task_id": "T6"
+  },
+  {
+   "id": "CT-1234",
+   "titulo": "CA-15 — empresa vazia com administrador virgem: os dois deixam de existir e ela some da listagem",
+   "tipo": "E2E",
+   "categoria": "caminho_feliz",
+   "invariant": "DELETE /v1/master/empresas/:id sobre empresa sem registros com administrador virgem responde sucesso; a empresa desaparece da listagem (diferença de conjunto exatamente {excedentes:[], ausentes:['<A>']}) e a pessoa deixa de entrar",
+   "owning_layer": "e2e",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1232",
+    "input_invalido": "empresa com contrato",
+    "assertion_esperada": "422 e a empresa preservada e ativa"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "o administrador precisa ter senha provisória para que a impossibilidade de entrar seja observável",
+    "caminho_legitimo": "admitir pela rota real e guardar a senha; a asserção final é uma entrada real recusada",
+    "teste_analogo": "apps/api/test/recusa-indistinguivel.e2e.spec.ts"
+   },
+   "camada": "apps/api/src/master/empresa.service.ts (estendido)",
+   "pre_condicoes": [
+    "empresa vazia com 1 admin virgem",
+    "outra empresa de controle na listagem"
+   ],
+   "dados_entrada": {
+    "descricao": "a empresa elegível",
+    "valores": {
+     "rota": "DELETE /v1/master/empresas/<A>"
+    }
+   },
+   "passos": [
+    "listar e capturar o conjunto de identificadores",
+    "excluir",
+    "listar e comparar por diferença de conjunto",
+    "tentar entrar com o administrador"
+   ],
+   "resultado_esperado": "a diferença de conjunto é exatamente {excedentes:[], ausentes:['<A>']} — a empresa de controle continua lá; e a entrada do administrador é recusada com o mesmo corpo que um e-mail inexistente produz",
+   "criterios_aceitacao_validados": [
+    "CA-15"
+   ],
+   "observacoes": "Igualdade de conjunto conforme ancoras-de-superficie.md — not.toContain aprovaria uma listagem que perdesse também a empresa de controle.",
+   "task_id": "T6"
+  },
+  {
+   "id": "CT-1235",
+   "titulo": "CA-16 — empresa com 2 administradores, 1 já entrou: recusa e NADA é removido",
+   "tipo": "E2E",
+   "categoria": "teste_negativo",
+   "invariant": "DELETE /v1/master/empresas/:id sobre empresa sem registros cujos 2 administradores incluem um que já tentou entrar responde 422 com impedimentos:['ADMINISTRADORES_NAO_ELEGIVEIS'], e a empresa e os DOIS administradores continuam existindo",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1234",
+    "input_invalido": "os dois administradores virgens",
+    "assertion_esperada": "a exclusão é aceita e as 3 linhas somem"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "um dos administradores precisa ter tentado entrar de verdade, para que a trilha nasça pelo caminho real",
+    "caminho_legitimo": "uma entrada REAL pela rota pública do arcabouço — mesmo malsucedida, ela grava a trilha; não inserir a linha à mão quando o caminho real está disponível na borda",
+    "teste_analogo": "apps/api/test/recusa-indistinguivel.e2e.spec.ts"
+   },
+   "camada": "apps/api/src/master/empresa.service.ts (estendido)",
+   "pre_condicoes": [
+    "empresa vazia com 2 admins; um deles fez uma tentativa de entrada real"
+   ],
+   "dados_entrada": {
+    "descricao": "os dois administradores",
+    "valores": {
+     "adminVirgem": "<uuid>",
+     "adminQueTentou": "<uuid>"
+    }
+   },
+   "passos": [
+    "provocar a tentativa de entrada",
+    "tentar excluir a empresa",
+    "afirmar o envelope",
+    "listar empresas e ler as duas pessoas cruamente"
+   ],
+   "resultado_esperado": "422 com o envelope inteiro; a empresa segue na listagem; identidade.usuario WHERE empresa_id = <A> é exatamente 2 — o administrador VIRGEM sobreviver reprova uma remoção em laço não atômica",
+   "criterios_aceitacao_validados": [
+    "CA-16"
+   ],
+   "observacoes": "Companheiro de borda do CT-1213 — aqui o eixo é o envelope publicado; lá, a atomicidade da transação.",
+   "task_id": "T6"
+  },
+  {
+   "id": "CT-1236",
+   "titulo": "CA-17 — administrador que já tentou entrar: recusa com TENTATIVA_DE_ENTRADA e a pessoa permanece",
+   "tipo": "E2E",
+   "categoria": "teste_negativo",
+   "invariant": "DELETE /v1/master/usuarios/:id sobre um ADMIN_EMPRESA com trilha responde 422 CAMPO_INVALIDO, campo:'id', detalhes:{motivo:'EXCLUSAO_IMPEDIDA_POR_REGISTROS', impedimentos:['TENTATIVA_DE_ENTRADA'], alternativa:'SUSPENSAO'}, e a pessoa continua na listagem",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1237",
+    "input_invalido": "administrador virgem",
+    "assertion_esperada": "a exclusão é aceita e ele some da listagem"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "trilha de tentativa produzida pelo caminho real",
+    "caminho_legitimo": "uma entrada real (mesmo malsucedida) pela rota pública do arcabouço",
+    "teste_analogo": "apps/api/test/recusa-indistinguivel.e2e.spec.ts"
+   },
+   "camada": "apps/api/src/master/administrador.service.ts (novo)",
+   "pre_condicoes": [
+    "ADMIN_EMPRESA com 1 tentativa de entrada real"
+   ],
+   "dados_entrada": {
+    "descricao": "o administrador que já tentou",
+    "valores": {
+     "rota": "DELETE /v1/master/usuarios/<id>"
+    }
+   },
+   "passos": [
+    "provocar a tentativa",
+    "tentar excluir",
+    "afirmar o envelope inteiro",
+    "listar administradores da empresa"
+   ],
+   "resultado_esperado": "422 com o envelope por igualdade de objeto e a classe TENTATIVA_DE_ENTRADA — e não REGISTROS_DE_NEGOCIO nem uma classe genérica; a listagem ainda traz a pessoa",
+   "criterios_aceitacao_validados": [
+    "CA-17"
+   ],
+   "observacoes": "É o caso que o D5-c (classe única genérica) perde por escrito — a classe específica é a razão de o vocabulário ser fechado e não único.",
+   "task_id": "T5"
+  },
+  {
+   "id": "CT-1237",
+   "titulo": "CA-18 — administrador virgem é excluído e some da listagem",
+   "tipo": "E2E",
+   "categoria": "caminho_feliz",
+   "invariant": "DELETE /v1/master/usuarios/:id sobre um ADMIN_EMPRESA que nunca tentou entrar responde sucesso, e a listagem perde exatamente aquele identificador — o colega permanece",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1236",
+    "input_invalido": "administrador com trilha de tentativa",
+    "assertion_esperada": "422 com impedimentos:['TENTATIVA_DE_ENTRADA'] e a pessoa preservada"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "a sessão do Sysloc Master é RESTRITA até o segundo fator ser cumprido, e sessão restrita não alcança as rotas do Master (o 403 viria da restrição, não da autorização)",
+    "caminho_legitimo": "cumprir o segundo fator pela VIA REAL do arcabouço, uma vez na montagem, e AFIRMAR a precondição no primeiro caso. Importar o acessório da casa compartilhada (apps/api/test/acessorios-de-borda.ts) em vez de redeclará-lo. NUNCA criar rota, flag ou símbolo de produção para pular o segundo fator",
+    "teste_analogo": "apps/api/test/ciclo-de-acesso.e2e.spec.ts — entrarComSegundoFatorCumprido (linha 1389). Já tem SEIS cópias; o DEBITO COM GATILHO D32 · F5/T7 declara o Limiar de Três disparado"
+   },
+   "camada": "apps/api/src/master/administrador.service.ts (novo)",
+   "pre_condicoes": [
+    "empresa com 2 ADMIN_EMPRESA, os dois virgens"
+   ],
+   "dados_entrada": {
+    "descricao": "um dos dois",
+    "valores": {
+     "alvo": "<uuid do virgem>",
+     "colega": "<uuid do colega>"
+    }
+   },
+   "passos": [
+    "listar e capturar o conjunto dos identificadores",
+    "excluir o alvo",
+    "listar e comparar por diferença de conjunto",
+    "tentar entrar com a credencial do alvo"
+   ],
+   "resultado_esperado": "a diferença de conjunto é exatamente {excedentes:[], ausentes:['<alvo>']} — o colega segue na lista; total cai de 2 para 1; e a entrada com a credencial do alvo é recusada",
+   "criterios_aceitacao_validados": [
+    "CA-18"
+   ],
+   "observacoes": "O colega é o controle: um DELETE sem cláusula passaria em ausentes e reprovaria em excedentes — é a igualdade de conjunto, e não a contenção, que pega as duas direções.",
+   "task_id": "T5"
+  },
+  {
+   "id": "CT-1238",
+   "titulo": "CA-19 (TOCTOU) — registro nasce entre a consulta e a ação: recusa e nada é removido",
+   "tipo": "E2E",
+   "categoria": "caso_extremo",
+   "invariant": "Listada uma empresa com exclusao.disponivel:true, e registrado um contrato nela ANTES de o DELETE ser chamado, a exclusão responde 422 com impedimentos:['REGISTROS_DE_NEGOCIO'] e nem a empresa nem os administradores são removidos",
+   "owning_layer": "e2e",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1234",
+    "input_invalido": "nenhum registro nasce entre a consulta e a ação",
+    "assertion_esperada": "a exclusão é aceita e a empresa some da listagem"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "o registro precisa nascer DEPOIS da leitura e ANTES do ato, sob o contexto da empresa",
+    "caminho_legitimo": "sequenciar no próprio caso: (1) listar pela sessão do Master e afirmar disponivel:true; (2) criar o contrato pela rota real da imobiliária com sessão de ADMIN_EMPRESA; (3) chamar o DELETE pela sessão do Master. Nenhum relógio falso, nenhuma pausa fixa — a ordem é a do caso, não do tempo",
+    "teste_analogo": "apps/api/test/ciclo-de-acesso.e2e.spec.ts (CT-227)"
+   },
+   "camada": "apps/api/src/master/empresa.service.ts (estendido) — a auto-verificação do ato",
+   "pre_condicoes": [
+    "empresa vazia com 1 admin virgem e 1 ADMIN_EMPRESA capaz de criar contrato"
+   ],
+   "dados_entrada": {
+    "descricao": "a janela entre a leitura e o ato",
+    "valores": {
+     "leitura": "exclusao.disponivel = true",
+     "eventoIntermediario": "POST de contrato pela imobiliária"
+    }
+   },
+   "passos": [
+    "listar e afirmar disponivel: true",
+    "criar o contrato pela rota da imobiliária",
+    "chamar o DELETE pelo Master",
+    "listar de novo e ler as linhas cruamente"
+   ],
+   "resultado_esperado": "422 com impedimentos:['REGISTROS_DE_NEGOCIO']; a empresa continua na listagem e identidade.usuario WHERE empresa_id inalterada — a informação exibida é a do instante do ATO",
+   "criterios_aceitacao_validados": [
+    "CA-19"
+   ],
+   "observacoes": "É a nota de fronteira do D2-b: a divergência entre a leitura e o clique não é eliminável, e o desenho garante que o pior caso é uma recusa que nomeia o motivo. Este caso é a prova disso.",
+   "task_id": "T6"
+  },
+  {
+   "id": "CT-1239",
+   "titulo": "CA-20 — nenhuma recusa de exclusão nomeia entidade ou quantidade (varredura com CONTROLE POSITIVO)",
+   "tipo": "SEGURANCA",
+   "categoria": "seguranca",
+   "invariant": "Aplicada a mesma varredura aos corpos das quatro recusas de exclusão, ela não acha nome de tabela, identificador de entidade, nome de locatário/contrato nem numeral algum de contagem — enquanto a MESMA varredura, aplicada a um corpo com essas agulhas plantadas uma a uma, acusa TODAS por igualdade de lista",
+   "owning_layer": "route-integration",
+   "existing_suite": "NO_SUITE_FOUND",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "o corpo de controle, com as agulhas plantadas canal a canal",
+    "assertion_esperada": "a lista de achados do controle é IGUAL, por igualdade de conjunto, à lista das agulhas plantadas — sem isso, uma varredura que nunca acha nada aprovaria um produto vazando tudo (AP-29)"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "os quatro corpos precisam ser os da resposta REAL, não literais escritos no teste",
+    "caminho_legitimo": "capturar os quatro corpos das quatro chamadas de verdade (reaproveitando os arranjos dos CT-1232, CT-1235, CT-1236 e um admin com autoria) e varrê-los; a mensagem crua do banco NUNCA deve estar entre eles, e é isso que a varredura mede",
+    "teste_analogo": "apps/api/test/segredo-nao-escapa.e2e.spec.ts — a forma canônica do método da ADR-0032"
+   },
+   "camada": "apps/api/src/master/administrador.service.ts e empresa.service.ts — a tradução da recusa do armazenamento",
+   "pre_condicoes": [
+    "os quatro arranjos de recusa montados",
+    "as agulhas do controle positivo declaradas como constante do caso"
+   ],
+   "dados_entrada": {
+    "descricao": "os quatro corpos reais e o corpo de controle",
+    "valores": {
+     "agulhas": [
+      "negocio.contrato",
+      "<uuid do contrato>",
+      "<nome do locatário>",
+      "1",
+      "identidade.tentativa_login"
+     ]
+    }
+   },
+   "passos": [
+    "capturar os quatro corpos de recusa",
+    "aplicar a varredura a cada um e afirmar lista de achados vazia",
+    "plantar as agulhas num corpo de controle e aplicar a MESMA função",
+    "comparar por igualdade de conjunto"
+   ],
+   "resultado_esperado": "nos quatro corpos reais os achados são []; no controle, os achados são iguais por conjunto às agulhas plantadas. Além disso, cada corpo real é afirmado por igualdade de objeto contra o envelope canônico — a ausência de vazamento e a presença da classe são provadas juntas",
+   "criterios_aceitacao_validados": [
+    "CA-20"
+   ],
+   "observacoes": "RN-15 e restrições 4/5 do tech-alignment: a mensagem crua do armazenamento carrega valores de chave e não pode escapar. Método da ADR-0032 — medição da SAÍDA REAL, nunca leitura do código.",
+   "task_id": "T6"
+  },
+  {
+   "id": "CT-1240",
+   "titulo": "Âncora de superfície — 113 rotas / 98 manipuladores / 20 pares públicos, com o crescimento em partição NOVA e paresDoMaster() intocado",
+   "tipo": "E2E",
+   "categoria": "integracao",
+   "invariant": "Publicadas as 7 rotas, ROTAS_PUBLICADAS_EM_PRODUCAO é 113 e MANIPULADORES_EXAMINADOS_EM_PRODUCAO é 98 (medidos pelos dois eixos independentes, com a igualdade entre eles afirmada à parte do valor esperado); PARES_PUBLICOS_DA_SUPERFICIE permanece 20; e o inventário histórico paresDoMaster() é IGUAL, por diferença de conjunto vazia, ao que era antes desta fatia",
+   "owning_layer": "route-integration",
+   "existing_suite": "apps/api/test/cobertura-de-autorizacao.e2e.spec.ts",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "o controle antivácuo — o conjunto medido de rotas é não vazio antes de qualquer comparação",
+    "assertion_esperada": "observadas.length > 0 afirmado ANTES, e diferencasDeConjunto igual a {excedentes:[], ausentes:[]} — as duas direções reprovam"
+   },
+   "precondicao_privilegiada": {
+    "presente": false,
+    "descricao": "",
+    "caminho_legitimo": "",
+    "teste_analogo": ""
+   },
+   "camada": "apps/api/src — os decoradores de rota, varridos",
+   "pre_condicoes": [
+    "as 7 rotas publicadas no mesmo diff da âncora"
+   ],
+   "dados_entrada": {
+    "descricao": "os três eixos e a partição nova",
+    "valores": {
+     "ROTAS_PUBLICADAS_EM_PRODUCAO": "106 -> 113",
+     "MANIPULADORES_EXAMINADOS_EM_PRODUCAO": "91 -> 98",
+     "PARES_PUBLICOS_DA_SUPERFICIE": "20 (inalterado)",
+     "particaoNova": "paresDoCicloDeVidaDoMaster() — as 7 rotas desta fatia"
+    }
+   },
+   "passos": [
+    "varrer os decoradores e medir os dois eixos independentes",
+    "afirmar o controle antivácuo",
+    "afirmar cada eixo contra a constante",
+    "afirmar por igualdade de conjunto que paresDoMaster() não cresceu",
+    "afirmar que a partição nova contém exatamente as 7 rotas"
+   ],
+   "resultado_esperado": "os dois eixos batem em 113 e 98; PARES_PUBLICOS_DA_SUPERFICIE continua 20; paresDoMaster() devolve {excedentes:[], ausentes:[]}; e a partição nova comparada às 7 rotas idem",
+   "criterios_aceitacao_validados": [],
+   "observacoes": "Decisão D6-b e §5.2 da rule de âncoras — a âncora nasce NO MESMO DIFF da publicação. Crescer paresDoMaster() reprovaria o CT-318 sobre superfície LEGÍTIMA de uma fatia fechada. Este caso obriga também a emenda do Estado atual do CLAUDE.md: o CT-1196 afirma a igualdade entre o texto e as três constantes, e sem a emenda ele fica VERMELHO.",
+   "task_id": "T7"
+  },
+  {
+   "id": "CT-1241",
+   "titulo": "As 7 rotas novas exigem SYSLOC_MASTER — sessão de ADMIN_EMPRESA recebe 403 sem efeito (it.each)",
+   "tipo": "SEGURANCA",
+   "categoria": "seguranca",
+   "invariant": "Cada uma das 7 rotas novas, chamada com sessão de ADMIN_EMPRESA, responde 403 nomeando PERFIL:SYSLOC_MASTER no envelope canônico, e nenhuma linha de identidade.empresa, identidade.usuario ou identidade.sessao muda",
+   "owning_layer": "route-integration",
+   "existing_suite": "apps/api/test/cobertura-de-autorizacao.e2e.spec.ts",
+   "real_execution_boundary": "http",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "sessão de ADMIN_EMPRESA e, na segunda perna, requisição sem sessão",
+    "assertion_esperada": "403 com PERFIL:SYSLOC_MASTER e 401 NAO_AUTENTICADO — os dois envelopes por igualdade de objeto, e as três contagens de estado inalteradas"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "sessão de ADMIN_EMPRESA de uma empresa REAL, para que a recusa venha da dimensão de perfil e não de sessão restrita",
+    "caminho_legitimo": "entrada real com senha já trocada (sessão plena) — sessão restrita produziria 403 da RESTRIÇÃO e o diagnóstico apontaria para o lugar errado",
+    "teste_analogo": "apps/api/test/ciclo-de-acesso.e2e.spec.ts (CT-221)"
+   },
+   "camada": "apps/api/src/master/administrador.controller.ts e empresa.controller.ts — @ExigePerfil('SYSLOC_MASTER') na classe",
+   "pre_condicoes": [
+    "ADMIN_EMPRESA com sessão plena",
+    "arranjo de empresa e administradores capturado antes"
+   ],
+   "dados_entrada": {
+    "descricao": "tabela de 7 linhas — uma por rota nova",
+    "valores": {
+     "rotas": [
+      "GET /v1/master/empresas/:id/administradores",
+      "POST /v1/master/usuarios/:id/suspensao",
+      "POST /v1/master/usuarios/:id/reativacao",
+      "PUT /v1/master/usuarios/:id",
+      "DELETE /v1/master/usuarios/:id",
+      "PUT /v1/master/empresas/:id",
+      "DELETE /v1/master/empresas/:id"
+     ]
+    }
+   },
+   "passos": [
+    "capturar as três contagens de estado",
+    "para cada rota, chamar com a sessão de ADMIN_EMPRESA",
+    "para cada rota, chamar sem sessão",
+    "afirmar os envelopes e remedir"
+   ],
+   "resultado_esperado": "as 7 respondem 403 com o envelope nomeando PERFIL:SYSLOC_MASTER, e sem sessão respondem 401 NAO_AUTENTICADO; as três contagens são idênticas às capturadas",
+   "criterios_aceitacao_validados": [],
+   "observacoes": "A dimensão é de PERFIL, nunca chave do catálogo: a ADR-0011 rejeita por escrito inflar o catálogo com chaves sintéticas. Este caso afirma O QUE a rota declara; o CT-213 afirma apenas QUE ela declara.",
+   "task_id": "T7"
+  },
+  {
+   "id": "CT-1242",
+   "titulo": "Cobertura do critério — toda tabela de `negocio` tem caminho bloqueante até `identidade.empresa`",
+   "tipo": "INTEGRACAO",
+   "categoria": "seguranca",
+   "invariant": "Para as 23 tabelas de negocio, existe caminho de chave estrangeira ate identidade.empresa por colunas NOT NULL; a lista de examinadas e igual as 23 por igualdade de array e a lista de excecoes e igual a []",
+   "owning_layer": "service-integration",
+   "existing_suite": "packages/db/test/catalogo.spec.ts",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "CT-1243",
+    "input_invalido": "tabela criada em negocio com empresa_id e SEM caminho ate a empresa",
+    "assertion_esperada": "excecoes nomeia exatamente aquela tabela com SEM_CAMINHO_ATE_EMPRESA, e volta a [] apos o DROP"
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "a leitura do catalogo (pg_constraint/pg_attribute) exige papel com privilegio de migracao",
+    "caminho_legitimo": "conexaoDeMigracao(banco) de packages/db/test/banco-efemero.ts, o mesmo acessorio e a mesma origem de privilegio do CT-007",
+    "teste_analogo": "packages/db/test/catalogo.spec.ts (CT-300) — a guarda de cobertura de RLS, mesmo molde de examinadas + excecoes"
+   },
+   "camada": "packages/db/test/catalogo.spec.ts (describe novo, instancia dedicada)",
+   "pre_condicoes": [
+    "instancia efemera migrada ate a ultima migracao",
+    "describe proprio com beforeAll/afterAll dedicados — nao reutilizar a instancia das guardas de RLS"
+   ],
+   "dados_entrada": {
+    "descricao": "o schema migrado, sem alteracao",
+    "valores": {
+     "tabelas_de_negocio": 23
+    }
+   },
+   "passos": [
+    "ler do catalogo todas as tabelas de negocio",
+    "para cada uma, derivar o caminho de FK ate identidade.empresa considerando SO colunas NOT NULL",
+    "afirmar examinadas igual as 23 por igualdade de array (controle antivacuo)",
+    "afirmar excecoes igual a []"
+   ],
+   "resultado_esperado": "examinadas com as 23 tabelas por igualdade de array (posicao inclusive) e excecoes igual a [] — as duas metades importam: sem a primeira, 'nenhuma excecao' e 'nada foi olhado' seriam indistinguiveis",
+   "criterios_aceitacao_validados": [],
+   "observacoes": "Nasceu no challenge de 2026-09-01. Medido: das 23 tabelas, 16 tem FK direta a identidade.empresa e 7 (imovel, comodo, contrato, contrato_fiador, cobranca, acesso_usuario_permissao, item_da_emissao_em_lote) so chegam la transitivamente — a corrente so barra porque toda coluna de ligacao e hoje NOT NULL. Fonte: 19.2 do tech_spec (challenge), anexado a este JSON na geracao do task plan.",
+   "task_id": "T2"
+  },
+  {
+   "id": "CT-1243",
+   "titulo": "A guarda do CT-1242 pode falhar — prova de falsificação",
+   "tipo": "INTEGRACAO",
+   "categoria": "seguranca",
+   "invariant": "Criada em negocio uma tabela com empresa_id e sem caminho bloqueante, a MESMA assercao do CT-1242 reprova nomeando exatamente aquela tabela com motivo SEM_CAMINHO_ATE_EMPRESA; removida a tabela, a lista volta a vazia",
+   "owning_layer": "service-integration",
+   "existing_suite": "packages/db/test/catalogo.spec.ts",
+   "real_execution_boundary": "db",
+   "negative_companion": {
+    "presente": true,
+    "ct_id": "self",
+    "input_invalido": "",
+    "assertion_esperada": ""
+   },
+   "precondicao_privilegiada": {
+    "presente": true,
+    "descricao": "CREATE/DROP em negocio exige papel de migracao",
+    "caminho_legitimo": "conexaoDeMigracao(banco), com CREATE e DROP no MESMO caso e instancia DEDICADA — e o molde literal do CT-301 e do CT-421",
+    "teste_analogo": "packages/db/test/catalogo.spec.ts (CT-301) — retira o FORCE numa instancia dedicada e restaura no mesmo caso"
+   },
+   "camada": "packages/db/test/catalogo.spec.ts (mesmo describe do CT-1242)",
+   "pre_condicoes": [
+    "instancia efemera DEDICADA — o CREATE nao pode vazar para as guardas de RLS do mesmo arquivo"
+   ],
+   "dados_entrada": {
+    "descricao": "tabela avulsa em negocio",
+    "valores": {
+     "colunas": "id uuid primary key, empresa_id uuid NOT NULL",
+     "chaves_estrangeiras": "nenhuma"
+    }
+   },
+   "passos": [
+    "afirmar excecoes igual a [] antes (controle)",
+    "CREATE TABLE negocio.<avulsa> com empresa_id NOT NULL e sem FK",
+    "reexecutar a mesma assercao do CT-1242",
+    "afirmar excecoes com exatamente uma entrada, nomeando a tabela e SEM_CAMINHO_ATE_EMPRESA",
+    "DROP TABLE",
+    "afirmar excecoes de volta a []"
+   ],
+   "resultado_esperado": "exatamente uma entrada em excecoes, nomeando a tabela criada com SEM_CAMINHO_ATE_EMPRESA — nunca 'ao menos uma'; e [] depois do DROP. Sem este caso, uma guarda quebrada devolveria excecoes: [] sobre qualquer schema e passaria por vacuidade",
+   "criterios_aceitacao_validados": [],
+   "observacoes": "Prova de falsificacao obrigatoria da assercao ESTATICA do CT-1242 (testing-stack.md + P4 do Protocolo Antirregressao). Nasceu no challenge de 2026-09-01; a fonte e a 19.2 do tech_spec.",
+   "task_id": "T2"
+  }
+ ],
+ "cenarios_nao_cobertos": [
+  {
+   "descricao": "Corrida real entre a prévia e o ato, com duas conexões concorrentes disputando o mesmo savepoint",
+   "motivo": "O tech-alignment declara que a divergência TOCTOU não é eliminável e que o desenho não pretende eliminá-la; o que se prova é que o ato é auto-verificado (CT-1238). Um caso de concorrência real mediria o SGBD, não o produto."
+  },
+  {
+   "descricao": "Custo e retenção de bloqueios da prévia sobre uma página cheia (200 itens)",
+   "motivo": "Teste de carga/desempenho — fora da geração de casos por decisão do projeto. Vira recomendação."
+  },
+  {
+   "descricao": "Filtro por estado na listagem, e se a Empresa pode ser removida enquanto suspensa",
+   "motivo": "Pontos em aberto 5 e 6 da §5 do tech-alignment — dependências de produto não resolvidas. Gerar caso agora fixaria comportamento que ninguém decidiu."
+  },
+  {
+   "descricao": "Registro de autoria da edição no diário",
+   "motivo": "Ponto em aberto 7 da §5 do tech-alignment. Sem decisão, um caso afirmaria uma forma arbitrária."
+  },
+  {
+   "descricao": "Comportamento das 7 rotas sob sessão RESTRITA do Master",
+   "motivo": "Já coberto por invariante transversal da fatia anterior — sessao-restrita.spec.ts é o dono desse eixo. Repetir seria duplicação cross-layer (AP-26)."
+  }
+ ],
+ "recomendacoes": [
+  "BLOQUEANTE DE SUÍTE: o CT-1240 cresce as âncoras, e o CT-1196 de packages/shared/test/protocolo-antirregressao.spec.ts LÊ os três números do bloco Estado atual do CLAUDE.md e os afirma contra as constantes. A emenda (106->113, 91->98, 20 inalterado) tem de sair NO MESMO DIFF, ou a suíte do shared fica vermelha por escrituração.",
+  "Segunda emenda obrigatória no CLAUDE.md (PRD §9 e D6): o Estado atual afirma o congelamento SEM qualificar o público. A qualificação vive hoje só na tech spec de autorizacao-e-ciclo-de-acesso e no docblock de empresa.controller.ts. Sem a emenda, a implementação para por conflito aparente com o marco.",
+  "A §5.2 da task declara os arquivos-âncora derivados por busca ANTES de a spec fechar: apps/api/test/cobertura-de-autorizacao.e2e.spec.ts (três eixos + partição nova), packages/db/test/catalogo.spec.ts (a cobertura do D5) e o CLAUDE.md.",
+  "Os dois arquivos NOVOS de teste devem IMPORTAR os acessórios da casa compartilhada: apps/api/test/acessorios-de-borda.ts e packages/db/test/banco-efemero.ts. entrarComSegundoFatorCumprido já tem SEIS cópias e o DEBITO COM GATILHO D32 · F5/T7 declara o Limiar de Três disparado — a suíte nova é a sétima e deve fechar o débito subindo o acessório para a casa.",
+  "Dois marcadores DECISAO FECHADA (restrição 10 do tech-alignment) nascem com a implementação: (i) nos pontos de escrita do fato de acesso, declarando a fusão PROIBIDA e nomeando CT-1206 e CT-1207 como a rede; (ii) no critério de elegibilidade, declarando que nenhuma contagem sobre negocio decide a exclusão e nomeando o CT-1204.",
+  "Toda prova de falsificação e baseline roda pelo script do pacote. vitest run avulso é INVALIDO: apps/api/test/ carrega @sysloc/db e @sysloc/auth pela fronteira do pacote e leria o dist/ anterior — o modo de falha é silencioso e INVERTE a conclusão.",
+  "Desempenho da prévia: medir uma vez a latência da listagem no teto de página e registrar no run-report. Não converter em asserção — o ponto em aberto 4 do tech-alignment depende desse número.",
+  "Nenhum caso usa dublê. Os 38 atravessam db ou http real — o Gate 3 está satisfeito com folga e o Gate 6 é vacuamente cumprido."
+ ],
+ "mock_budget_observado": true,
+ "gates_aplicados": [
+  "invariant_first",
+  "owning_layer",
+  "real_execution",
+  "failure_means_fix_production",
+  "no_snapshot_without_contract",
+  "no_self_set_mock_assertion",
+  "negative_companion"
+ ]
+}
