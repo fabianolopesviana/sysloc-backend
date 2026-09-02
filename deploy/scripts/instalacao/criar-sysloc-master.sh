@@ -32,17 +32,26 @@ valor_de() { printf '%s\n' "${AMBIENTE}" | sed -n "s/^$1=//p" | head -1 | sed 's
 
 CADEIA="$(valor_de DATABASE_URL)"
 SEGREDO="$(valor_de BETTER_AUTH_SECRET)"
+# `origensPublicas` é campo OBRIGATÓRIO de `criarAutenticacao` desde a T7 da fatia
+# `publicacao-e-backup` — sem valor padrão, de propósito (`autenticacao.ts`, o docblock de
+# `OpcoesDeAutenticacao.origensPublicas`). Ela NÃO carrega segredo, mas é lida do mesmo arquivo
+# porque é lá que a instalação a declara.
+ORIGENS="$(valor_de ORIGENS_PUBLICAS)"
 [ -n "${CADEIA}" ] || { echo "${PREFIXO} DATABASE_URL ausente em ${ARQ_AMBIENTE}" >&2; exit 1; }
 [ -n "${SEGREDO}" ] || { echo "${PREFIXO} BETTER_AUTH_SECRET ausente em ${ARQ_AMBIENTE}" >&2; exit 1; }
+[ -n "${ORIGENS}" ] || { echo "${PREFIXO} ORIGENS_PUBLICAS ausente em ${ARQ_AMBIENTE}" >&2; exit 1; }
 
 cd "${RAIZ_REPO}" || exit 1
 # JSON montado com aspas escapadas pelo `json.dumps` — a cadeia e o segredo podem
 # conter qualquer byte, e concatenar à mão produziria JSON inválido no melhor caso
 # e injeção no pior.
-CONFIG="$(printf '{"cadeiaDeConexao":%s,"segredoDeSessao":%s,"enderecoBase":"http://127.0.0.1:3000","prefixoDasRotas":"/v1/auth"}' \
+# A lista sai do MESMO `json.dumps`, e a separação por vírgula é a de `apps/api/src/configuracao/
+# ambiente.ts` — declarar aqui uma segunda forma de separar deixaria as duas livres para divergir.
+CONFIG="$(printf '{"cadeiaDeConexao":%s,"segredoDeSessao":%s,"enderecoBase":"http://127.0.0.1:3000","prefixoDasRotas":"/v1/auth","origensPublicas":%s}' \
   "$(printf '%s' "${CADEIA}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" \
-  "$(printf '%s' "${SEGREDO}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')")"
-unset AMBIENTE CADEIA SEGREDO
+  "$(printf '%s' "${SEGREDO}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" \
+  "$(printf '%s' "${ORIGENS}" | python3 -c 'import json,sys; print(json.dumps([p.strip() for p in sys.stdin.read().split(",") if p.strip()]))')")"
+unset AMBIENTE CADEIA SEGREDO ORIGENS
 
 printf '%s' "${CONFIG}" | node deploy/scripts/instalacao/criar-sysloc-master.mjs "${NOME}" "${EMAIL}"
 codigo=$?

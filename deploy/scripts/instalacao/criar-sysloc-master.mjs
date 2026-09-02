@@ -34,7 +34,18 @@ if (!nome || !email) {
 
 let entrada = '';
 for await (const parte of process.stdin) entrada += parte;
-const { cadeiaDeConexao, segredoDeSessao, enderecoBase, prefixoDasRotas } = JSON.parse(entrada);
+const { cadeiaDeConexao, segredoDeSessao, enderecoBase, prefixoDasRotas, origensPublicas } =
+  JSON.parse(entrada);
+
+// `origensPublicas` é campo OBRIGATÓRIO de `criarAutenticacao` desde a T7 da fatia
+// `publicacao-e-backup`, e ele NÃO tem valor padrão por decisão registrada. Este arquivo é `.mjs`
+// e não passa pelo `tsc`, de modo que o campo faltando não aparece na construção — some só na hora
+// do uso, com `opcoes.origensPublicas is not iterable`, e a hora do uso é justamente a recuperação
+// de uma base nova. A guarda troca isso por uma recusa que se lê.
+if (!Array.isArray(origensPublicas) || origensPublicas.length === 0) {
+  console.error('config sem `origensPublicas` — rode este script pelo `criar-sysloc-master.sh`');
+  process.exit(2);
+}
 
 const acesso = abrirAcessoAIdentidade({ cadeiaDeConexao });
 
@@ -54,6 +65,7 @@ const autenticacao = criarAutenticacao({
   segredoDeSessao,
   enderecoBase,
   prefixoDasRotas,
+  origensPublicas,
 });
 
 const criada = await criarPessoa(autenticacao, acesso.identidade, {
