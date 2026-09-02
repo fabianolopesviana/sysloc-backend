@@ -82,6 +82,23 @@ Arquivos que o executor DEVE ler antes de começar. Evita scans desnecessários 
 - `path/to/new1` — [descrição do que será criado]
 
 ### 5.3 Arquivos a Modificar
+
+<!-- LLM-ONLY: OBRIGATÓRIO quando esta TaskCard PUBLICA, REMOVE ou ALTERA uma operação da superfície
+  (rota HTTP, símbolo de barril, entrada de catálogo, qualquer lista fechada que alguém asserte).
+  Liste AQUI, além do código, os arquivos que a publicação OBRIGA a mover — e que ninguém declara
+  porque não são "o que a task quer mudar", e sim "o que mudar aquilo torna obrigatório":
+    1. as ÂNCORAS DE INVENTÁRIO — as suítes que afirmam o conjunto publicado por igualdade;
+    2. as ÂNCORAS DE TAMANHO — as constantes executáveis que fixam a cardinalidade da superfície;
+    3. o ÍNDICE NARRADO — a contagem escrita em prosa no arquivo de instruções do projeto, quando
+       alguma asserção a amarra à constante.
+  Derive-os por BUSCA antes de fechar o card (grepe o nome de uma operação vizinha já publicada);
+  não os descubra pela suíte vermelha durante a execução. Se o projeto tem rule de âncora de
+  superfície, ela é a fonte do que entra aqui. Declare o delta esperado ao lado do arquivo — ex.:
+  `<suíte de inventário> (rotas: 92 → 93)`.
+  POR QUE: sem esta linha o executor toca esses arquivos por necessidade, os declara como desvio de
+  escopo, e os dois gates gastam uma passagem decidindo se o desvio foi legítimo — repetidamente, a
+  cada card que publica. -->
+
 - `path/to/modify1` — [o que será alterado]
 
 ---
