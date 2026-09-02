@@ -735,6 +735,38 @@ export {
   type BancoDeIdentidade,
   type TabelasDeIdentidade,
 } from './acesso-identidade.js';
+// A camada de acesso do **operador do SaaS** à pessoa — a fatia `painel-master-administradores`.
+//
+// Elas entram pelo mesmo critério das oito de `empresa.js` e das quatro de `permissao.js`:
+// **recebem** o executor de quem já abriu a unidade de trabalho, não abrem conexão, não reservam e
+// não devolvem executor. `IMPEDIMENTOS_DE_EXCLUSAO` entra por ser **vocabulário**, e não caminho
+// para dado: é o mapa que traduz a recusa que o banco já deu, e é ele que a borda consulta para
+// compor `detalhes.motivo`.
+//
+// ⚠️ **`RecusaDeExclusao`, `classeDoImpedimento`, `ensaiarExclusao` e `semDeixarEfeitoNaRecusa`
+// NÃO saem daqui, e a ausência é decisão.** Eles são a mecânica que `empresa.ts` reusa dentro do
+// pacote; publicá-los convidaria a borda a `catch`ar a exceção interna em vez de ler o
+// `DesfechoDaExclusao`, e a criar um segundo lugar onde o ensaio é montado — que é exatamente a
+// segunda definição do critério que a decisão D2-b existe para impedir.
+export {
+  type AdministradorPersistido,
+  type AlvoDoMaster,
+  alterarAdministrador,
+  type ClasseDeImpedimento,
+  type DadosDoAdministradorAlterado,
+  type DesfechoDaAlteracaoDoAdministrador,
+  type DesfechoDaExclusao,
+  definirAtivoDoAdministrador,
+  type ElegibilidadeDeExclusao,
+  elegibilidadeDeExclusaoDoAdministrador,
+  encerrarSessoesDoAdministrador,
+  excluirAdministrador,
+  IMPEDIMENTOS_DE_EXCLUSAO,
+  type JanelaDeAdministradores,
+  lerAdministrador,
+  listarAdministradoresDaEmpresa,
+  type PaginaDeAdministradoresPersistidos,
+} from './administrador-do-master.js';
 export {
   type AlvoDoBoleto,
   type AtoSobreOBoleto,
@@ -901,13 +933,21 @@ export {
   registrarItemDoLote,
   selecionarCobrancasSemBoleto,
 } from './emissao-em-lote.js';
+// As QUATRO da fatia `painel-master-administradores` entram no mesmo bloco, pelo mesmo critério das
+// oito anteriores: a correção cadastral, a remoção definitiva, a prévia de elegibilidade e a classe
+// de erro de domínio da colisão de documento — que entra como `ErroDePessoaForaDoContexto` e
+// `ErroDeUnidadeAninhada` entraram, por ser classe de erro e não caminho para dado.
 export {
   type AlvoDeReemissao,
   admitirEmpresa,
+  alterarEmpresa,
   type EmpresaNova,
   type EmpresaPersistida,
+  ErroDeDocumentoDeEmpresaEmUso,
+  elegibilidadeDeExclusaoDaEmpresa,
   empresaSuspensa,
   encerrarSessoesDaEmpresa,
+  excluirEmpresa,
   type JanelaDeEmpresas,
   lerAlvoDeReemissao,
   listarEmpresas,

@@ -180,6 +180,68 @@
  * |       |         | `TELA:automacao_de_cobranca`. (ADR-0008, ADR-0011, ADR-0016, ADR-0017,
  * |       |         | ADR-0018) |
  *
+ * | —     | CT-1240 | Publicadas as **7 rotas** do ciclo de vida do Master (fatia
+ * |       |         | `painel-master-administradores`, T4/T5/T6), as três âncoras vão a **113**
+ * |       |         | pares, **98** manipuladores e **20** públicas, por **duas medições
+ * |       |         | independentes REFEITAS DO ZERO cuja igualdade entre os eixos é afirmada
+ * |       |         | explicitamente**, à parte do valor esperado — e **medidas**, nunca derivadas
+ * |       |         | da aritmética `106 + 7`; o inventário desta fatia é afirmado em **sete**
+ * |       |         | ANTES de qualquer comparação, por extenso e por composição, com os **dois**
+ * |       |         | controladores nomeados; o inventário **HISTÓRICO** `paresDoMaster()` está
+ * |       |         | **INTOCADO**, por diferença de conjunto vazia nas duas direções e com
+ * |       |         | controle antivácuo sobre a cardinalidade, e as duas partições do Master são
+ * |       |         | **disjuntas**; os sete constam do conjunto POSITIVO por igualdade de arranjo
+ * |       |         | e **não** são públicos nem caem fora do arcabouço; o conjunto público é o
+ * |       |         | **MESMO** de antes, elemento a elemento — as sete exigem sessão;
+ * |       |         | `semDeclaracao` é vazio com **controle antivácuo**; e o catálogo fechado
+ * |       |         | segue com as **mesmas 10 áreas** e as **17** chaves. ⚠️ O congelamento
+ * |       |         | **não** foi violado: ele alcança a superfície da imobiliária, e a do
+ * |       |         | operador do SaaS fica fora dele (ADR-0039). (ADR-0011, ADR-0018, ADR-0039) |
+ *
+ * | —     | CT-1241 | Cada uma das **7 rotas novas**, chamada com sessão **plena** de
+ * |       |         | `ADMIN_EMPRESA` — plenitude AFIRMADA por `GET /v1/sessao` —, responde
+ * |       |         | **`403 ACESSO_NEGADO`** com o envelope canônico INTEIRO e
+ * |       |         | `detalhes.exigido` igual a `PERFIL:SYSLOC_MASTER`; **sem** sessão, responde
+ * |       |         | **`401 NAO_AUTENTICADO`** sem `detalhes`; e as **três** contagens cruas de
+ * |       |         | `identidade` — `empresa`, `usuario` e `sessao` — são idênticas antes e
+ * |       |         | depois, sobre alvos **reais e de outra empresa**. As sete exigem
+ * |       |         | `PERFIL:SYSLOC_MASTER` pela **CLASSE**, afirmado por retrato com a origem
+ * |       |         | junto, e o átomo exigido **não** é nenhuma das 17 chaves do catálogo. É a
+ * |       |         | cobertura por **CONTEÚDO** da ADR-0018 — o `CT-213` afirma apenas **QUE** a
+ * |       |         | rota declara. Cobre os **dois** cenários da §6.4 da task. (ADR-0011,
+ * |       |         | ADR-0017, ADR-0018) |
+ *
+ * ---------------------------------------------------------------------------
+ * QUAL ASSERÇÃO DISCRIMINA no `CT-1240` e no `CT-1241` — e por que NÃO há mutante aqui
+ * ---------------------------------------------------------------------------
+ *
+ * Os blocos `MT*` abaixo são **registro histórico**, e não convenção a reproduzir: a
+ * `.claude/rules/testing-stack.md` põe mutation testing **fora da stack** deste projeto desde
+ * 2026-08-16, e a prova de falsificação por execução é escopada a asserção que inspeciona o **texto**
+ * do código. Nenhum dos dois casos novos faz isso — o `CT-1240` lê a **tabela do roteador de uma
+ * aplicação montada** e o metadado dela, e o `CT-1241` atravessa HTTP real.
+ *
+ * O que os discrimina, declarado em vez de encenado:
+ *
+ *   * **`CT-1240`, e isto foi MEDIDO, não argumentado.** A linha de base desta task — a árvore com as
+ *     7 rotas publicadas e as âncoras ainda em `106 / 91` — deixou **14** casos deste arquivo
+ *     vermelhos, e cada um nomeou o número: `expected 113 to be 106` nas duas medições, `expected 98
+ *     to be 91` nos manipuladores, `expected 107 to be 100` na montagem mutante, e a igualdade do
+ *     `CT-318` acusando **por nome** os sete pares novos (`+ "DELETE /v1/master/empresas/:id"`, …).
+ *     É a falsificação com o defeito **real**, e não com um sintético: as mesmas asserções que o
+ *     `CT-1240` carrega estavam reprovando quando a superfície e a âncora divergiam;
+ *   * **`CT-1240`, a metade que a linha de base NÃO cobriu** — *"`paresDoMaster()` está intocado"* —
+ *     é discriminada pela diferença de conjunto contra {@link PARES_DO_MASTER_ANTES_DESTA_FATIA},
+ *     que é literal escrito à mão: acrescentar os sete pares desta fatia àquela função (a saída curta
+ *     que a intuição manda) os faz aparecer em `excedentes`, nomeados. É a **única** razão de aquele
+ *     inventário ser cadeia crua neste arquivo — compô-lo do mesmo `CAMINHO_DO_MASTER` faria a
+ *     comparação concordar consigo mesma;
+ *   * **`CT-1241`** é comportamental: a asserção que discrimina é o **corpo inteiro por igualdade**
+ *     com `detalhes.exigido` igual a `PERFIL:SYSLOC_MASTER`. Trocar o perfil declarado, ou trocar
+ *     `@ExigePerfil` por uma chave do catálogo, muda esse corpo e a perna daquela rota reprova
+ *     nomeando o par método+caminho. O `CT-213` fica **verde** nos dois casos — ele afirma que a rota
+ *     declara, não o que ela declara —, e é essa diferença que justifica os dois conviverem.
+ *
  * **PROVA DE FALSIFICAÇÃO DO `CT-1004`** (2026-08-19, T10 da fatia `webhook-e-carne`), pelo script
  * do pacote (`pnpm --filter @sysloc/api test -- cobertura-de-autorizacao`), porque a asserção é de
  * **contagem sobre a tabela do roteador e sobre a composição** e não pode ser aceita sem que se
@@ -225,6 +287,10 @@
  * Acrescida pela T6 da fatia `webhook-e-carne`: `CA-20 → CT-972 (RN-20)`.
  * Acrescida pela T10 da mesma fatia: `CA-20 → CT-1004 (RN-17)`.
  * Acrescida pela T10 da fatia `automacoes-agendadas`: `CA-14 → CT-1095 (RN-14)`.
+ * Acrescida pela T7 da fatia `painel-master-administradores`: `CT-1240` e `CT-1241` — os dois são
+ * **invariante do repositório** e não mapeiam CA da fatia, e é por isso que a coluna `Critério`
+ * deles é `—`. O `CT-1241` cobre os dois cenários da §6.4 daquela task (*"perfil errado"* e *"sem
+ * sessão"*), que a §6.3 não nomeava.
  *
  * ⚠️ **O sufixo `(f)` não é estilo, e sim a única forma disponível**: a faixa `CT-911`…`CT-948`
  * está inteiramente reservada pelos cards das tasks daquela fatia, e reusar um identificador
@@ -715,6 +781,8 @@ import {
   type AcessoAoBanco,
   abrirAcessoAoBanco,
   contextoDeTenant,
+  EMPRESA_B,
+  esquemaIdentidade,
   SENHA_DA_CARGA,
   USUARIO_MASTER,
 } from '@sysloc/db';
@@ -786,7 +854,7 @@ import { CAMINHO_DO_MASTER } from '../src/master/empresa.controller.ts';
 import { CAMINHO_DE_MULTA_E_JUROS } from '../src/mora/mora.controller.ts';
 import { CAMINHO_DAS_NOTIFICACOES_BANCARIAS } from '../src/notificacoes-bancarias/notificacao-bancaria.controller.ts';
 import { CAMINHO_DOS_USUARIOS } from '../src/usuarios/usuario.controller.ts';
-import { decodificarBase32 } from './base32.ts';
+import { entrarComSegundoFatorCumprido } from './acessorios-de-borda.ts';
 
 /** Limite da montagem: banco migrado, semente, fila e DUAS aplicações. */
 const LIMITE_DE_MONTAGEM_MS = 240_000;
@@ -911,6 +979,57 @@ function paresDoMaster(): readonly string[] {
     `POST ${empresas}/:id/suspensao`,
     `POST ${empresas}/:id/reativacao`,
     `POST ${usuarios}/:id/senha-provisoria`,
+  ];
+}
+
+/**
+ * Os dois caminhos, relativos à raiz, que o painel do operador do SaaS governa.
+ *
+ * Compostos do dono do segmento (`CAMINHO_DO_MASTER`), e não escritos como cadeia crua: eles são a
+ * fonte única de {@link paresDoCicloDeVidaDoMaster} **e** de
+ * {@link CHAMADAS_DO_CICLO_DE_VIDA_DO_MASTER}, de modo que a auditoria estática e as chamadas de
+ * borda do `CT-1241` percorrem o mesmo caminho. Escrevê-lo duas vezes faria a divergência aparecer
+ * como `404` num caso que deveria medir autorização.
+ */
+const CAMINHO_DAS_EMPRESAS_DO_MASTER = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas`;
+const CAMINHO_DOS_USUARIOS_DO_MASTER = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/usuarios`;
+
+/**
+ * Os **sete pares** que o **ciclo de vida do Master** publica — as rotas da fatia
+ * `painel-master-administradores` (T4, T5 e T6). É a partição do `CT-1240`.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que uma partição NOVA, e não sete linhas em {@link paresDoMaster}
+ * ---------------------------------------------------------------------------
+ *
+ * O inventário acima é **histórico**: o docblock dele diz "os **seis** pares que as rotas do
+ * operador do SaaS publicam (T7)", e aquele `T7` é o da fatia `autorizacao-e-ciclo-de-acesso` —
+ * fatia fechada, cujo `CT-318` afirma **por igualdade** que a metade anterior à fatia
+ * `cadastro-de-imoveis-e-pessoas` está **intacta**. Engordá-lo com estes sete faria aquela
+ * igualdade reprovar sobre superfície **legítima**, e quem lesse a falha leria *"a metade anterior
+ * mudou"* onde nada anterior mudou. A partição nova é o que mantém as duas afirmações verdadeiras
+ * ao mesmo tempo — é a mesma escolha, e a mesma razão, de {@link PARES_DA_FATIA_DO_CARNE} e de
+ * {@link PARES_DA_ENTREGA_DA_NOTICIA}.
+ *
+ * Compostos a partir do dono do segmento (`CAMINHO_DO_MASTER`), como o inventário histórico e pela
+ * mesma razão: escrever `/v1/master` por extenso deixaria os dois divergirem na primeira mudança de
+ * segmento. Os `HEAD` que o adaptador derivaria de `GET` **não** entram — nenhum é entrada própria,
+ * e o módulo verificado já os descarta.
+ *
+ * ⚠️ **A superfície da IMOBILIÁRIA não é tocada por nenhum deles** (ADR-0039): o congelamento do
+ * marco de entrega alcança o que o `@syslocbr/contracts` entrega ao app do cliente, e a do operador
+ * do SaaS fica **fora** dele. O que se move aqui são as âncoras, que contam as **duas** superfícies
+ * — a `Cons` literal daquela ADR, e não violação do marco.
+ */
+function paresDoCicloDeVidaDoMaster(): readonly string[] {
+  return [
+    `GET ${CAMINHO_DAS_EMPRESAS_DO_MASTER}/:id/administradores`,
+    `PUT ${CAMINHO_DAS_EMPRESAS_DO_MASTER}/:id`,
+    `DELETE ${CAMINHO_DAS_EMPRESAS_DO_MASTER}/:id`,
+    `POST ${CAMINHO_DOS_USUARIOS_DO_MASTER}/:id/suspensao`,
+    `POST ${CAMINHO_DOS_USUARIOS_DO_MASTER}/:id/reativacao`,
+    `PUT ${CAMINHO_DOS_USUARIOS_DO_MASTER}/:id`,
+    `DELETE ${CAMINHO_DOS_USUARIOS_DO_MASTER}/:id`,
   ];
 }
 
@@ -2042,9 +2161,59 @@ const EXIGENCIA_ANTERIOR_AS_ROTINAS: readonly string[] = [
   ...PARES_DA_ENTREGA_DA_NOTICIA,
 ].sort();
 
-const ROTAS_COM_EXIGENCIA: readonly string[] = [
+/**
+ * Os **sete pares** do ciclo de vida do Master, ordenados — a partição que o `CT-1240` afirma.
+ *
+ * Ela é composta de {@link paresDoCicloDeVidaDoMaster}, e **não** somada a {@link paresDoMaster}:
+ * a razão está no docblock daquela função, e ela é o que impede o `CT-318` de reprovar sobre
+ * superfície legítima.
+ */
+const PARES_DO_CICLO_DE_VIDA_DO_MASTER: readonly string[] = [
+  ...paresDoCicloDeVidaDoMaster(),
+].sort();
+
+/**
+ * Os **seis** pares que {@link paresDoMaster} publicava **antes** desta fatia, escritos por extenso.
+ *
+ * ---------------------------------------------------------------------------
+ * Ele é a rede do *"`paresDoMaster()` fica INTOCADO"*, e por isso é literal
+ * ---------------------------------------------------------------------------
+ *
+ * É a única cadeia crua de `/v1/master` deste arquivo, e a exceção é a decisão: compor este
+ * inventário do mesmo `CAMINHO_DO_MASTER` de que o inventário auditado se compõe faria a comparação
+ * concordar consigo mesma, e a saída curta que esta asserção existe para pegar — acrescentar os sete
+ * pares desta fatia dentro de {@link paresDoMaster}, que é o que a intuição manda — passaria
+ * despercebida. A diferença de conjunto é afirmada nas **duas** direções, com controle antivácuo
+ * sobre a cardinalidade: um inventário histórico esvaziado tornaria a comparação vácua.
+ *
+ * ⚠️ Crescer {@link paresDoMaster} reprovaria o `CT-318` **sobre superfície legítima** — ele afirma
+ * por igualdade que a metade anterior à fatia `cadastro-de-imoveis-e-pessoas` está intacta —, e quem
+ * lesse a falha leria *"a metade anterior mudou"* onde nada anterior mudou.
+ */
+const PARES_DO_MASTER_ANTES_DESTA_FATIA: readonly string[] = [
+  'POST /v1/master/empresas',
+  'GET /v1/master/empresas',
+  'POST /v1/master/empresas/:id/admin',
+  'POST /v1/master/empresas/:id/suspensao',
+  'POST /v1/master/empresas/:id/reativacao',
+  'POST /v1/master/usuarios/:id/senha-provisoria',
+];
+
+/**
+ * O inventário de exigência **anterior ao ciclo de vida do Master** — as doze metades somadas.
+ *
+ * É contra ele que a igualdade do conjunto positivo compara o que sobra da superfície depois de
+ * tirar os sete pares desta task, e é ele que faz a prova *"nenhuma entrada anterior saiu"*
+ * continuar valendo com um inventário a mais em jogo.
+ */
+const EXIGENCIA_ANTERIOR_AO_CICLO_DE_VIDA_DO_MASTER: readonly string[] = [
   ...EXIGENCIA_ANTERIOR_AS_ROTINAS,
   ...PARES_DAS_ROTINAS_AGENDADAS,
+].sort();
+
+const ROTAS_COM_EXIGENCIA: readonly string[] = [
+  ...EXIGENCIA_ANTERIOR_AO_CICLO_DE_VIDA_DO_MASTER,
+  ...PARES_DO_CICLO_DE_VIDA_DO_MASTER,
 ].sort();
 
 /**
@@ -2435,7 +2604,28 @@ const ROTAS_COM_EXIGENCIA: readonly string[] = [
  * sobre o **roteador cru**, não sobre este eixo. ⚠️ **Esta é a última rota antes do congelamento da
  * superfície**, e a prosa do `CLAUDE.md` sobe no MESMO diff desta constante.
  */
-const ROTAS_PUBLICADAS_EM_PRODUCAO = 106;
+/**
+ * SUT_IS_CORRECT_BECAUSE: a fatia `painel-master-administradores` acrescentou **sete** pares
+ * (106 → 113) — os cinco do ciclo de vida do Admin Empresa (T4 e T5) e os dois do ciclo de vida da
+ * Empresa (T6), todos sob `/v1/master` (ver {@link paresDoCicloDeVidaDoMaster}). Nenhum par anterior
+ * saiu, e a igualdade de conjunto do `CT-1240` nomeia quais são os novos. O conjunto **público** não
+ * mudou: os sete exigem sessão, e a dimensão que os governa é a de **perfil**.
+ *
+ * ⚠️ **O congelamento da superfície NÃO foi violado, e a ADR-0039 é quem diz por quê**: ele alcança
+ * a superfície que o `@syslocbr/contracts` entrega à aplicação da imobiliária, e **nenhuma rota dela
+ * é tocada** — a do operador do SaaS fica fora dele. Esta constante conta as **duas**, e por isso
+ * *"as asserções que fixam o tamanho da superfície … se movem mesmo quando só o painel do operador
+ * cresce"* (a `Cons` literal daquela ADR). Quem lê `106` no `CLAUDE.md` e conclui violação está
+ * lendo o registro geral sem a qualificação que a ADR instalou.
+ *
+ * A contagem foi **REFEITA DO ZERO** pelas duas medições independentes, que concordam em **113**: a
+ * enumeração do módulo de cobertura sobre a aplicação real devolveu `113`, e a composição por
+ * varredura dos decoradores devolveu o mesmo — **medição, nunca a aritmética `106 + 7`**. São
+ * **sete** e não catorze: o `HEAD` que o roteador deriva de cada `GET` **não entra no eixo medido**.
+ * A igualdade entre os eixos é afirmada **explicitamente** no `CT-1240`, e à parte do valor
+ * esperado.
+ */
+const ROTAS_PUBLICADAS_EM_PRODUCAO = 113;
 
 /**
  * Quantos **manipuladores** de controlador a aplicação de produção monta — a âncora do `CT-355`.
@@ -2805,7 +2995,22 @@ const ROTAS_PUBLICADAS_EM_PRODUCAO = 106;
  * sem `@All` —, não uma identidade entre os eixos. A igualdade entre as duas medições é afirmada
  * **explicitamente** no `CT-1095`, e à parte do valor esperado.
  */
-const MANIPULADORES_EXAMINADOS_EM_PRODUCAO = 91;
+/**
+ * SUT_IS_CORRECT_BECAUSE: a fatia `painel-master-administradores` acrescentou **sete
+ * manipuladores** (91 → 98) — os **cinco** de `master/administrador.controller.ts`, arquivo novo
+ * (`listar`, `suspender`, `reativar`, `alterar`, `remover`), e os **dois** que a T6 acrescentou a
+ * `master/empresa.controller.ts` (`alterar` e `excluir`). A contagem é **observada**, por varredura
+ * dos decoradores de rota em `apps/api/src`, e **não** derivada de
+ * {@link ROTAS_PUBLICADAS_EM_PRODUCAO}: as duas âncoras crescerem sete aqui é acidente da forma
+ * destas rotas — cada manipulador reivindica um par só, e nenhum é `@All`. A igualdade entre as duas
+ * medições é afirmada **explicitamente** no `CT-1240`, e à parte do valor esperado.
+ *
+ * ⚠️ **Eles importam para o `CT-355` pelo lado da AUSÊNCIA**: os sete não declaram nada no método, e
+ * as duas classes declaram `@ExigePerfil('SYSLOC_MASTER')` — de modo que a exigência efetiva de cada
+ * um **é** a da classe. Não declarar nada é o oposto de declarar **menos**, e é por isso que nenhum
+ * aparece entre as violações daquele caso. Quem afirma o **conteúdo** e a **origem** é o `CT-1241`.
+ */
+const MANIPULADORES_EXAMINADOS_EM_PRODUCAO = 98;
 
 /**
  * Quantos manipuladores da aplicação de produção atendem **todos** os verbos (`@All`) — hoje um só, o
@@ -3377,6 +3582,115 @@ const INVENTARIO_DAS_ROTINAS_AGENDADAS: readonly EntradaDoInventario[] = [
   },
 ];
 
+/** Quantos pares a fatia `painel-master-administradores` publica — cinco de usuário e dois de empresa. */
+const PARES_PUBLICADOS_PELO_CICLO_DE_VIDA_DO_MASTER = 7;
+
+/** Os dois controladores que publicam os sete pares — os nomes que a falha do `CT-1240` nomeia. */
+const CONTROLADOR_DOS_ADMINISTRADORES_DO_MASTER = 'AdministradorController';
+const CONTROLADOR_DAS_EMPRESAS_DO_MASTER = 'EmpresaController';
+
+/**
+ * O inventário desta fatia **por extenso** — sete entradas, cada uma com
+ * `{ metodo, caminho, controlador }`.
+ *
+ * É a primeira coisa que o `CT-1240` afirma, **antes** de qualquer comparação com o total, e a forma
+ * é a mesma de {@link INVENTARIO_DAS_ROTINAS_AGENDADAS}: é assim que quem lê a falha encontra o
+ * defeito.
+ *
+ * Ele é **escrito à mão**, e a redundância com {@link PARES_DO_CICLO_DE_VIDA_DO_MASTER} é a decisão:
+ * a igualdade entre os dois é afirmada no caso, e é ela que apanha o dia em que o segmento mudar sem
+ * que o inventário revisado acompanhe — derivar um do outro faria o caso concordar consigo mesmo.
+ * A ordem é a do inventário ordenado, para que a igualdade seja sobre o conjunto e não sobre a
+ * ordem em que alguém digitou.
+ */
+const INVENTARIO_DO_CICLO_DE_VIDA_DO_MASTER: readonly EntradaDoInventario[] = [
+  {
+    metodo: 'DELETE',
+    caminho: '/v1/master/empresas/:id',
+    controlador: CONTROLADOR_DAS_EMPRESAS_DO_MASTER,
+  },
+  {
+    metodo: 'DELETE',
+    caminho: '/v1/master/usuarios/:id',
+    controlador: CONTROLADOR_DOS_ADMINISTRADORES_DO_MASTER,
+  },
+  {
+    metodo: 'GET',
+    caminho: '/v1/master/empresas/:id/administradores',
+    controlador: CONTROLADOR_DOS_ADMINISTRADORES_DO_MASTER,
+  },
+  {
+    metodo: 'POST',
+    caminho: '/v1/master/usuarios/:id/reativacao',
+    controlador: CONTROLADOR_DOS_ADMINISTRADORES_DO_MASTER,
+  },
+  {
+    metodo: 'POST',
+    caminho: '/v1/master/usuarios/:id/suspensao',
+    controlador: CONTROLADOR_DOS_ADMINISTRADORES_DO_MASTER,
+  },
+  {
+    metodo: 'PUT',
+    caminho: '/v1/master/empresas/:id',
+    controlador: CONTROLADOR_DAS_EMPRESAS_DO_MASTER,
+  },
+  {
+    metodo: 'PUT',
+    caminho: '/v1/master/usuarios/:id',
+    controlador: CONTROLADOR_DOS_ADMINISTRADORES_DO_MASTER,
+  },
+];
+
+/**
+ * O átomo de exigência que governa a superfície do operador do SaaS, na forma textual que
+ * `detalhes.exigido` publica.
+ *
+ * Literal escrito à mão, e **não** derivado de `Perfil` nem do decorador: derivá-lo da mesma fonte
+ * que o SUT usa para declarar faria a asserção do `CT-1241` concordar consigo mesma — trocar o perfil
+ * no controlador deixaria de reprovar caso algum. É a mesma escolha, e a mesma razão, de
+ * {@link AREA_DO_FINANCEIRO} e de {@link AREA_DAS_INTEGRACOES_BANCARIAS}.
+ *
+ * ⚠️ **A dimensão é de PERFIL, nunca chave do catálogo.** A ADR-0011 rejeita por escrito inflar o
+ * catálogo com chaves sintéticas — *"o catálogo deixaria de ser a matriz do produto e viraria um
+ * índice de rotas"* —, e é por isso que o `CT-1241` afirma este átomo e o catálogo fechado segue com
+ * as mesmas 10 áreas e 17 chaves.
+ */
+const PERFIL_EXIGIDO_PELO_MASTER = 'PERFIL:SYSLOC_MASTER';
+
+/**
+ * O retrato devido dos **sete** manipuladores do ciclo de vida do Master — valor **e origem**.
+ *
+ * A origem é `classe` nos sete, e é ela que carrega a decisão: `AdministradorController` e
+ * `EmpresaController` declaram `@ExigePerfil('SYSLOC_MASTER')`, e **nenhum** dos sete métodos
+ * declara coisa alguma. Com o método vazio, `getAllAndOverride` não tem o que substituir, e nenhum
+ * manipulador pode exigir menos que a classe dele.
+ *
+ * ⚠️ **É a asserção que reprova a saída curta.** Uma rodada que "governasse" a remoção definitiva
+ * declarando `@ExigeChave('ACAO:excluir_cadastro')` no método apagaria o perfil em silêncio — a rota
+ * do operador do SaaS passaria a atender quem administra cadastros de pessoa numa imobiliária —, e
+ * uma que redeclarasse o perfil criaria o segundo lugar para esquecê-lo. Nos dois casos a origem
+ * passa de `classe` para `metodo`, e é essa diferença — invisível para uma igualdade de átomos — que
+ * este retrato torna conteúdo (ADR-0018).
+ *
+ * A ordem das chaves é a dos dois controladores, e o `CT-1240` afirma a cardinalidade dela contra
+ * {@link PARES_PUBLICADOS_PELO_CICLO_DE_VIDA_DO_MASTER} antes de comparar qualquer coisa: um mapa
+ * truncado faria as igualdades passarem sobre menos manipuladores do que a fatia publica.
+ */
+const RETRATO_DEVIDO_POR_MANIPULADOR_DO_MASTER: Readonly<Record<string, RetratoDaExigencia>> = {
+  'AdministradorController.listar': { classe: [PERFIL_EXIGIDO_PELO_MASTER] },
+  'AdministradorController.suspender': { classe: [PERFIL_EXIGIDO_PELO_MASTER] },
+  'AdministradorController.reativar': { classe: [PERFIL_EXIGIDO_PELO_MASTER] },
+  'AdministradorController.alterar': { classe: [PERFIL_EXIGIDO_PELO_MASTER] },
+  'AdministradorController.remover': { classe: [PERFIL_EXIGIDO_PELO_MASTER] },
+  'EmpresaController.alterar': { classe: [PERFIL_EXIGIDO_PELO_MASTER] },
+  'EmpresaController.excluir': { classe: [PERFIL_EXIGIDO_PELO_MASTER] },
+};
+
+/** Os sete manipuladores auditados, derivados do mapa acima — a ordem é a de inserção dele. */
+const MANIPULADORES_DO_CICLO_DE_VIDA_DO_MASTER: readonly string[] = Object.keys(
+  RETRATO_DEVIDO_POR_MANIPULADOR_DO_MASTER,
+);
+
 /**
  * A única ação sensível que o catálogo fechado enumera dentro de `TELA:integracoes_bancarias`.
  *
@@ -3744,7 +4058,17 @@ const RETRATO_DEVIDO_PELA_FATIA_DE_EMISSAO: Readonly<Record<string, RetratoDaExi
  * {@link PUBLICAS_LEGITIMAS_NO_MUTANTE}: a rota exige sessão, e o excedente que aquele caso nomeia
  * continua sendo só o do `ControladorPublicoIndevido`.
  */
-const ROTAS_PUBLICADAS_NO_MUTANTE = 100;
+/**
+ * SUT_IS_CORRECT_BECAUSE: a fatia `painel-master-administradores` publicou **sete** pares sob
+ * `/v1/master` na composição raiz que esta montagem já carrega — ela importa o `AppModule` inteiro
+ * —, e eles aparecem aqui pela mesma razão que aparecem no controle (100 → 107). A âncora continua
+ * sendo de contagem EXATA, e a diferença de nove para a superfície de produção continua sendo a
+ * mesma: os pares do contrato publicado, que esta montagem não registra. Nenhum deles entra em
+ * {@link PUBLICAS_LEGITIMAS_NO_MUTANTE} — os sete exigem sessão, e o excedente que aquele caso
+ * nomeia continua sendo só o do `ControladorPublicoIndevido`. **Medido**, e não derivado de
+ * {@link ROTAS_PUBLICADAS_EM_PRODUCAO}: a enumeração sobre a montagem mutante devolveu `107`.
+ */
+const ROTAS_PUBLICADAS_NO_MUTANTE = 107;
 
 /**
  * O que seria o inventário público da aplicação mutante **se o mutante não estivesse lá**.
@@ -3771,6 +4095,30 @@ const PUBLICAS_LEGITIMAS_NO_MUTANTE: readonly string[] = [
 
 /** Sujeito do eixo "sessão de maior alcance" — o operador do SaaS, sem restrição pendente. */
 const MASTER = USUARIO_MASTER;
+
+/**
+ * CT-1241 · o **alvo** das sete chamadas do ciclo de vida do Master.
+ *
+ * É um `ADMIN_EMPRESA` da carga, e da empresa **B** — isto é, existente e alheio a quem chama. As
+ * duas propriedades são conteúdo: existente para que a remedição distinga *"recusou"* de *"recusou
+ * depois de agir"*, e alheio para que uma guarda que falhasse produzisse, além da escalada de perfil,
+ * um alcance cruzado entre empresas.
+ */
+const ALVO_DO_MASTER = pessoaSemeada('admin.b@exemplo.com.br');
+
+/**
+ * Os corpos **válidos** que as duas correções cadastrais do `CT-1241` levam.
+ *
+ * Válidos de propósito, pela mesma razão do `CT-1226`: se a barreira de perfil falhasse, a empresa e
+ * a pessoa seriam de fato renomeadas — e é isso que a remedição do estado mede. Um corpo inválido
+ * faria a rota recusar por **outro** motivo, e o caso deixaria de exercitar a guarda.
+ *
+ * O documento e o endereço são sintéticos e de ninguém: se algum deles pertencesse a outra linha da
+ * carga, a recusa poderia vir da restrição de unicidade em vez da guarda.
+ */
+const NOME_QUE_A_RECUSA_NUNCA_GRAVA = 'Nome Que A Guarda Recusa Antes De Ler';
+const DOCUMENTO_QUE_A_RECUSA_NUNCA_GRAVA = '99.999.999/0001-99';
+const EMAIL_QUE_A_RECUSA_NUNCA_GRAVA = 'escalada.de.perfil@exemplo.com.br';
 
 /** Sujeito do segundo eixo do CT-212: o Admin, cuja matriz é o catálogo inteiro. */
 const ADMIN_DE_A = pessoaSemeada('admin.a@exemplo.com.br');
@@ -3866,6 +4214,68 @@ const CHAMADAS_DA_FATIA_BANCARIA: readonly ChamadaDaFatiaBancaria[] = [
     metodo: 'POST',
     caminho: `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DA_CONSULTA}/${SEGMENTO_DA_VERIFICACAO}`,
     corpo: {},
+  },
+];
+
+/**
+ * As **sete** chamadas do ciclo de vida do Master — o arranjo que o `CT-1241` percorre.
+ *
+ * ---------------------------------------------------------------------------
+ * Os alvos são REAIS, e é isso que dá sentido a "não deixou efeito"
+ * ---------------------------------------------------------------------------
+ *
+ * O identificador de empresa é o da **empresa B** da carga, e o de pessoa é o do **Admin Empresa
+ * dela** — os dois existentes, e nenhum deles da empresa de quem chama. Alvos inventados tornariam
+ * as três remedições vacuamente verdadeiras: a guarda recusaria, mas o manipulador que corresse
+ * também não acharia o que mudar, e o caso deixaria de distinguir *"recusou"* de *"recusou depois de
+ * agir"*. Com alvos reais, a guarda que falhasse produziria uma suspensão, uma renomeação ou uma
+ * remoção **observável** nas contagens do caso.
+ *
+ * O `rotulo` é o par método+caminho **com `:id`**, na mesma forma de
+ * {@link PARES_DO_CICLO_DE_VIDA_DO_MASTER}: é ele que o `CT-1241` compara, por igualdade de conjunto,
+ * contra o inventário revisado — de modo que uma rota nova sob `/v1/master` que nascesse sem linha
+ * aqui reprova como ausente, em vez de escapar da prova de perfil.
+ *
+ * Os corpos são **válidos** de propósito, pela mesma razão do `CT-1226`: se a barreira de perfil
+ * falhasse, a empresa e a pessoa seriam de fato renomeadas — e é isso que a remedição mede.
+ */
+const CHAMADAS_DO_CICLO_DE_VIDA_DO_MASTER: readonly ChamadaDaFatiaBancaria[] = [
+  {
+    rotulo: `GET ${CAMINHO_DAS_EMPRESAS_DO_MASTER}/:id/administradores`,
+    metodo: 'GET',
+    caminho: `${CAMINHO_DAS_EMPRESAS_DO_MASTER}/${EMPRESA_B.id}/administradores`,
+  },
+  {
+    rotulo: `PUT ${CAMINHO_DAS_EMPRESAS_DO_MASTER}/:id`,
+    metodo: 'PUT',
+    caminho: `${CAMINHO_DAS_EMPRESAS_DO_MASTER}/${EMPRESA_B.id}`,
+    corpo: { nome: NOME_QUE_A_RECUSA_NUNCA_GRAVA, documento: DOCUMENTO_QUE_A_RECUSA_NUNCA_GRAVA },
+  },
+  {
+    rotulo: `DELETE ${CAMINHO_DAS_EMPRESAS_DO_MASTER}/:id`,
+    metodo: 'DELETE',
+    caminho: `${CAMINHO_DAS_EMPRESAS_DO_MASTER}/${EMPRESA_B.id}`,
+  },
+  {
+    rotulo: `POST ${CAMINHO_DOS_USUARIOS_DO_MASTER}/:id/suspensao`,
+    metodo: 'POST',
+    caminho: `${CAMINHO_DOS_USUARIOS_DO_MASTER}/${ALVO_DO_MASTER.id}/suspensao`,
+  },
+  {
+    rotulo: `POST ${CAMINHO_DOS_USUARIOS_DO_MASTER}/:id/reativacao`,
+    metodo: 'POST',
+    caminho: `${CAMINHO_DOS_USUARIOS_DO_MASTER}/${ALVO_DO_MASTER.id}/reativacao`,
+  },
+  {
+    rotulo: `PUT ${CAMINHO_DOS_USUARIOS_DO_MASTER}/:id`,
+    metodo: 'PUT',
+    caminho: `${CAMINHO_DOS_USUARIOS_DO_MASTER}/${ALVO_DO_MASTER.id}`,
+    corpo: { nome: NOME_QUE_A_RECUSA_NUNCA_GRAVA, email: EMAIL_QUE_A_RECUSA_NUNCA_GRAVA },
+  },
+  {
+    rotulo: `DELETE ${CAMINHO_DOS_USUARIOS_DO_MASTER}/:id`,
+    metodo: 'DELETE',
+    caminho: `${CAMINHO_DOS_USUARIOS_DO_MASTER}/${ALVO_DO_MASTER.id}`,
   },
 ];
 
@@ -3998,7 +4408,12 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
       // A sessão de MAIOR ALCANCE do sistema: o operador do SaaS, com o segundo fator já cumprido
       // pelo caminho público real. Sem cumpri-lo a sessão nasce restrita (RN-08), e o `403` viria da
       // restrição — não da ausência de declaração, que é o eixo do caso.
-      const cookieDoMaster = await entrarComSegundoFatorCumprido(MASTER.email);
+      const cookieDoMaster = await entrarComSegundoFatorCumprido(
+        baseMutante,
+        MASTER.email,
+        SENHA_DA_CARGA,
+        identidade.autenticacao,
+      );
 
       try {
         // Precondição AFIRMADA, e não suposta: é ela que dá sentido a "maior alcance".
@@ -4290,6 +4705,18 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
         // **origem** é o `CT-1095`. ⚠️ É a **última** entrada que esta lista recebe: a superfície
         // congela depois desta fatia.
         ...PARES_DAS_ROTINAS_AGENDADAS,
+        // SUT_IS_CORRECT_BECAUSE: os **sete** pares do ciclo de vida do Master entram pela mesma
+        // razão de todos os acima — a T4, a T5 e a T6 da fatia `painel-master-administradores`
+        // registraram um controlador novo (`AdministradorController`) e dois manipuladores a mais no
+        // já registrado (`EmpresaController`), no módulo que esta composição raiz carrega inteiro.
+        // Nenhuma entrada anterior saiu, e a igualdade segue exata. Os sete caem no conjunto
+        // POSITIVO pela declaração da **CLASSE** (`@ExigePerfil('SYSLOC_MASTER')`) — nenhum declara
+        // nada no método, e este eixo mede **existência** de declaração, não conteúdo dela. Quem
+        // examina o conteúdo e a **origem** é o `CT-1241`. ⚠️ **A frase acima sobre a superfície
+        // congelar não foi desfeita**: a ADR-0039 declara que o congelamento alcança a superfície da
+        // **imobiliária**, e nenhuma rota dela é tocada — a do operador do SaaS fica fora dele, e as
+        // âncoras contam as duas.
+        ...PARES_DO_CICLO_DE_VIDA_DO_MASTER,
       ].sort(),
     );
 
@@ -4394,9 +4821,26 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
           // `/v1/automacao-de-cobranca`, o mesmo prefixo dos quatro pares da fatia
           // `regua-de-cobranca`. Nenhuma entrada anterior saiu, e a asserção **não foi afrouxada**:
           // continua igualdade exata contra o inventário revisado.
-          !PARES_DAS_ROTINAS_AGENDADAS.includes(par),
+          !PARES_DAS_ROTINAS_AGENDADAS.includes(par) &&
+          // SUT_IS_CORRECT_BECAUSE: a fatia `painel-master-administradores` publicou os **sete**
+          // pares do ciclo de vida do Master — posteriores a esta fatia, e por isso subtraídos aqui
+          // pela mesma razão do carnê, da identidade, da entrega e das rotinas acima. ⚠️ Sem a
+          // subtração eles cairiam dentro da metade "anterior" com facilidade **especial**: o
+          // caminho dos sete começa por `/v1/master`, o mesmo prefixo dos seis pares que
+          // {@link paresDoMaster} lista e que de fato SÃO anteriores a esta fatia — e é justamente
+          // por isso que eles vivem numa partição própria em vez de engordar aquele inventário.
+          // Nenhuma entrada anterior saiu, e a asserção **não foi afrouxada**: continua igualdade
+          // exata contra o inventário revisado.
+          !PARES_DO_CICLO_DE_VIDA_DO_MASTER.includes(par),
       ),
     ).toEqual([...EXIGENCIA_ANTERIOR_A_FATIA]);
+
+    // A décima terceira metade, afirmada por si — pelo mesmo motivo de todas as anteriores: sem esta
+    // linha, a subtração acima esconderia um par do ciclo de vida do Master que sumisse, porque ele
+    // sairia do filtro sem que nada afirmasse que ele está publicado e declarado.
+    expect(
+      cobertura.comExigencia.filter((par) => PARES_DO_CICLO_DE_VIDA_DO_MASTER.includes(par)),
+    ).toEqual([...PARES_DO_CICLO_DE_VIDA_DO_MASTER]);
 
     // A décima segunda metade, afirmada por si — pelo mesmo motivo de todas as anteriores: sem esta
     // linha, a subtração acima esconderia o par desta task se ele sumisse, porque ele sairia do
@@ -4557,9 +5001,18 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
         // publicou **um** par — a leitura das rotinas, a ÚLTIMA rota deste repositório antes do
         // congelamento da superfície. O valor comparado **não muda** — ele continua sendo `33` —, e é
         // justamente essa imutabilidade que faz a asserção seguir pegando o par antigo que sumisse
-        // enquanto um novo entrasse no lugar dele. A asserção **não foi afrouxada**. ⚠️ É a **última**
-        // subtração que esta conta recebe.
-        PARES_DAS_ROTINAS_AGENDADAS.length,
+        // enquanto um novo entrasse no lugar dele. A asserção **não foi afrouxada**.
+        PARES_DAS_ROTINAS_AGENDADAS.length -
+        // SUT_IS_CORRECT_BECAUSE: e de novo para a fatia `painel-master-administradores`, que
+        // publicou **sete** pares no painel do operador do SaaS — superfície que a **ADR-0039** põe
+        // fora do congelamento, e que estas âncoras contam junto com a da imobiliária. O valor
+        // comparado **não muda** — ele continua sendo `33` —, e é justamente essa imutabilidade que
+        // faz a asserção seguir pegando o par antigo que sumisse enquanto um novo entrasse no lugar
+        // dele. A asserção **não foi afrouxada**. ⚠️ A frase anterior dizia que a subtração das
+        // rotinas era a **última**: ela o era sob a leitura do congelamento **sem** a qualificação
+        // da ADR-0039, aceita em 2026-09-01. O que fica: nenhuma subtração nova virá da superfície
+        // da imobiliária.
+        PARES_DO_CICLO_DE_VIDA_DO_MASTER.length,
     ).toBe(ROTAS_PUBLICADAS_ANTES_DA_FATIA);
   });
 
@@ -6368,6 +6821,346 @@ describe('cobertura de autorização sobre a superfície publicada (T5)', () => 
     expect(ACOES_SENSIVEIS_DA_AUTOMACAO).toEqual([ACAO_DE_ENVIO_MANUAL]);
   });
 
+  it('CT-1240 — as três âncoras vão a 113 / 98 / 20, com o crescimento em partição NOVA e `paresDoMaster()` intocado', () => {
+    const cobertura = verificarCoberturaDeAutorizacao(aplicacaoReal);
+
+    // ---------------------------------------------------------------------------------------
+    // SANIDADE: o inventário desta fatia tem SETE pares, ANTES de qualquer comparação
+    // ---------------------------------------------------------------------------------------
+    //
+    // Sobre o próprio inventário, e não sobre a superfície: uma lista truncada faria as igualdades
+    // abaixo passarem sobre menos rotas do que a fatia publica, e a soma final continuaria batendo
+    // com a âncora do total — o modo de falha silencioso desta classe de prova. As DUAS listas são
+    // conferidas contra a mesma constante, e a igualdade entre elas vem logo em seguida: uma escrita
+    // à mão por extenso (`{ metodo, caminho, controlador }`) e a outra composta dos donos dos
+    // segmentos, de modo que um segmento que mudasse num lugar e não no outro reprova aqui em vez de
+    // reprovar como `404` num caso adiante.
+    expect(INVENTARIO_DO_CICLO_DE_VIDA_DO_MASTER.length).toBe(
+      PARES_PUBLICADOS_PELO_CICLO_DE_VIDA_DO_MASTER,
+    );
+    expect(PARES_DO_CICLO_DE_VIDA_DO_MASTER.length).toBe(
+      PARES_PUBLICADOS_PELO_CICLO_DE_VIDA_DO_MASTER,
+    );
+    expect(
+      INVENTARIO_DO_CICLO_DE_VIDA_DO_MASTER.map(
+        (entrada) => `${entrada.metodo} ${entrada.caminho}`,
+      ),
+      'o inventário por extenso divergiu dos pares compostos desta fatia',
+    ).toEqual([...PARES_DO_CICLO_DE_VIDA_DO_MASTER]);
+
+    // Os DOIS controladores, nomeados: um par que migrasse de um para o outro manteria o inventário
+    // de caminhos intacto e mudaria de classe — e com ele mudaria a exigência efetiva, porque a
+    // declaração vive na CLASSE. É o eixo que o inventário de pares sozinho não vê.
+    expect(
+      [
+        ...new Set(INVENTARIO_DO_CICLO_DE_VIDA_DO_MASTER.map((entrada) => entrada.controlador)),
+      ].sort(),
+    ).toEqual(
+      [CONTROLADOR_DOS_ADMINISTRADORES_DO_MASTER, CONTROLADOR_DAS_EMPRESAS_DO_MASTER].sort(),
+    );
+
+    // ---------------------------------------------------------------------------------------
+    // `paresDoMaster()` está INTOCADO — diferença de conjunto vazia nas DUAS direções
+    // ---------------------------------------------------------------------------------------
+    //
+    // A cardinalidade primeiro, contra fonte independente da comparação: dois inventários vazios
+    // teriam diferença vazia, e a asserção passaria por vacuidade. Depois a diferença nas duas
+    // direções, cada uma nomeando o par: excedente é par acrescentado ao inventário HISTÓRICO (a
+    // saída curta que esta asserção existe para pegar), e ausente é par que sumiu dele.
+    expect(paresDoMaster().length).toBe(PARES_DO_MASTER_ANTES_DESTA_FATIA.length);
+    expect(PARES_DO_MASTER_ANTES_DESTA_FATIA.length).toBe(6);
+    expect(
+      {
+        excedentes: paresDoMaster().filter(
+          (par) => !PARES_DO_MASTER_ANTES_DESTA_FATIA.includes(par),
+        ),
+        ausentes: PARES_DO_MASTER_ANTES_DESTA_FATIA.filter((par) => !paresDoMaster().includes(par)),
+      },
+      'o inventário HISTÓRICO do operador do SaaS mudou: o crescimento desta fatia vive em partição própria',
+    ).toEqual({ excedentes: [], ausentes: [] });
+
+    // E as duas partições são DISJUNTAS: um par escrito nas duas passaria as duas igualdades acima e
+    // seria contado duas vezes na soma do eixo positivo.
+    expect(
+      PARES_DO_CICLO_DE_VIDA_DO_MASTER.filter((par) => paresDoMaster().includes(par)),
+      'um par vive nas duas partições do Master ao mesmo tempo',
+    ).toEqual([]);
+
+    // ---------------------------------------------------------------------------------------
+    // AS SETE ESTÃO NO EIXO POSITIVO — e não escaparam por nenhuma das duas portas laterais
+    // ---------------------------------------------------------------------------------------
+    //
+    // Igualdade de arranjo ordenado contra o inventário revisado, e nunca `toContain`: um par que
+    // sumisse do conjunto que declara exigência reprova como ausente, e um par cujo caminho mudasse
+    // no fonte sem passar por esta lista reprova como excedente.
+    expect(
+      cobertura.comExigencia.filter((par) => PARES_DO_CICLO_DE_VIDA_DO_MASTER.includes(par)),
+      'o inventário do ciclo de vida do Master divergiu do conjunto que declara exigência',
+    ).toEqual([...PARES_DO_CICLO_DE_VIDA_DO_MASTER]);
+
+    // As duas escapatórias que a existência da declaração sozinha não fecha: a guarda retorna antes
+    // para rota pública, e `semDeclaracao` continuaria vazio nas duas.
+    expect(
+      PARES_DO_CICLO_DE_VIDA_DO_MASTER.filter((par) => cobertura.publicas.includes(par)),
+    ).toEqual([]);
+    expect(
+      PARES_DO_CICLO_DE_VIDA_DO_MASTER.filter((par) => cobertura.foraDoArcabouco.includes(par)),
+    ).toEqual([]);
+
+    // E o eixo positivo INTEIRO, por igualdade contra o inventário revisado: sem esta linha, um par
+    // anterior que sumisse enquanto um dos sete entrasse satisfaria os três filtros acima.
+    expect(cobertura.comExigencia).toEqual([...ROTAS_COM_EXIGENCIA]);
+
+    // ---------------------------------------------------------------------------------------
+    // O conjunto público NÃO cresceu — as sete exigem sessão
+    // ---------------------------------------------------------------------------------------
+    //
+    // O filtro acima diz que **estes** pares não estão no público; a igualdade abaixo diz que
+    // **nenhum outro** entrou, e que nenhum dos vinte de antes saiu. `PARES_PUBLICOS_ACEITOS` **não
+    // foi tocado por esta task**, e é por isso que ele é literalmente *"o conjunto de antes"*: uma
+    // rota marcada `@RotaPublica()` e retirada do inventário positivo satisfaria o filtro acima e
+    // reprovaria só aqui.
+    expect(PARES_PUBLICOS_ACEITOS.length).toBe(PARES_PUBLICOS_DA_SUPERFICIE);
+    expect(
+      cobertura.publicas,
+      'o conjunto de rotas que dispensam sessão mudou: cada entrada nele é uma rota fora da autorização',
+    ).toEqual([...PARES_PUBLICOS_ACEITOS]);
+
+    // ---------------------------------------------------------------------------------------
+    // `semDeclaracao` VAZIO — com CONTROLE ANTIVÁCUO
+    // ---------------------------------------------------------------------------------------
+    //
+    // A igualdade de lista vem primeiro, e nunca `toHaveLength(0)`: a falha precisa nomear
+    // `{ metodo, caminho, controlador, manipulador }` de quem ficou sem declaração.
+    expect(cobertura.semDeclaracao).toEqual([]);
+
+    // O CONTROLE ANTIVÁCUO, na forma que a `.claude/rules/ancoras-de-superficie.md` exige: o total
+    // examinado é afirmado **contra as rotas enumeradas**, nunca contra zero. Os três conjuntos
+    // particionam a superfície (`foraDoArcabouco` é subconjunto de `publicas`, e por isso não entra
+    // na soma), de modo que esta identidade prova que **toda** rota caiu em algum balde.
+    expect({
+      classificadas:
+        cobertura.comExigencia.length + cobertura.publicas.length + cobertura.semDeclaracao.length,
+      publicas: cobertura.publicas.length,
+    }).toEqual({
+      classificadas: cobertura.rotasEnumeradas,
+      publicas: PARES_PUBLICOS_DA_SUPERFICIE,
+    });
+
+    // ---------------------------------------------------------------------------------------
+    // AS TRÊS ÂNCORAS — 113 / 98 / 20, pelas DUAS medições independentes REFEITAS DO ZERO
+    // ---------------------------------------------------------------------------------------
+    //
+    // A primeira lê a **tabela do roteador** já montado; a segunda varre os **decoradores dos
+    // controladores** e compõe: cada manipulador reivindica um par, salvo o `@All`, que reivindica os
+    // sete verbos do caminho dele, mais os nove pares registrados direto no adaptador, que não têm
+    // manipulador. Nenhuma é derivada da outra, e **nenhuma é a aritmética `106 + 7`**.
+    //
+    // ⚠️ **O congelamento da superfície NÃO foi violado**: a ADR-0039 declara que ele alcança a
+    // superfície que o `@syslocbr/contracts` entrega à aplicação da imobiliária — nenhuma rota dela é
+    // tocada aqui —, e que a do operador do SaaS fica fora dele. Estas âncoras contam as **duas**, e
+    // por isso *"se movem mesmo quando só o painel do operador cresce"*. A prosa do `CLAUDE.md` sobe
+    // no MESMO diff destas constantes, e o `CT-1196` afirma a igualdade entre as duas pontas.
+    const manipuladores = manipuladoresExaminados(aplicacaoReal);
+    const comTodosOsVerbos = manipuladoresQueAtendemTodosOsVerbos(aplicacaoReal);
+    const pelaComposicao =
+      manipuladores -
+      comTodosOsVerbos +
+      comTodosOsVerbos * METODOS_DO_ENCAMINHADOR.length +
+      ROTAS_FORA_DO_ARCABOUCO.length;
+
+    // A igualdade entre os dois eixos é afirmada **explicitamente**, e ANTES da comparação com a
+    // âncora: duas medições que concordassem com o valor esperado por acidente e discordassem entre
+    // si passariam pela comparação de baixo, e é a concordância delas que torna cada uma verificável
+    // pela outra. ⚠️ Os dois eixos são INDEPENDENTES, e a coincidência de as duas primeiras âncoras
+    // crescerem sete aqui é acidente da forma destas rotas — nenhuma é derivada da outra.
+    expect(
+      pelaComposicao,
+      'as duas medições independentes da superfície publicada divergiram entre si: o errado é a âncora, nunca a medição',
+    ).toBe(cobertura.rotasEnumeradas);
+
+    // As quatro grandezas viajam numa comparação só de propósito: se alguma divergir, a falha
+    // **nomeia os números** lado a lado.
+    expect(
+      {
+        peloRoteador: cobertura.rotasEnumeradas,
+        pelaComposicao,
+        manipuladores,
+        comTodosOsVerbos,
+      },
+      'a superfície publicada mudou de tamanho: o inventário desta prova precisa ser revisado',
+    ).toEqual({
+      peloRoteador: ROTAS_PUBLICADAS_EM_PRODUCAO,
+      pelaComposicao: ROTAS_PUBLICADAS_EM_PRODUCAO,
+      manipuladores: MANIPULADORES_EXAMINADOS_EM_PRODUCAO,
+      comTodosOsVerbos: MANIPULADORES_QUE_ATENDEM_TODOS_OS_VERBOS,
+    });
+
+    // ---------------------------------------------------------------------------------------
+    // O catálogo fechado NÃO foi aberto por esta fatia — ele é 10 × 7, e não cresce
+    // ---------------------------------------------------------------------------------------
+    //
+    // As sete rotas são governadas pela dimensão de **PERFIL**, e nenhuma chave nasceu para elas. É a
+    // asserção que reprova a rodada que "resolvesse" a autorização do painel do operador criando uma
+    // `TELA:master` ou uma `ACAO:remover_empresa` — a saída que a ADR-0011 rejeita por escrito.
+    expect([...CHAVES_DE_TELA]).toEqual(AREAS_DE_TELA_DO_CATALOGO);
+    expect(CHAVES_DE_TELA.length + Object.keys(MAPA_ACAO_TELA).length).toBe(TOTAL_DE_CHAVES);
+  });
+
+  describe('CT-1241 — as 7 rotas do ciclo de vida do Master exigem PERFIL:SYSLOC_MASTER, e a recusa não deixa efeito', () => {
+    /**
+     * O cookie do `ADMIN_EMPRESA`, aberto **uma vez**.
+     *
+     * ---------------------------------------------------------------------------
+     * A sessão é PLENA, e a plenitude é AFIRMADA — não suposta
+     * ---------------------------------------------------------------------------
+     *
+     * Sessão restrita produziria `403` da **restrição** (RN-08/RN-09), e o diagnóstico apontaria para
+     * o lugar errado — o caso mediria a barreira de sessão em vez da dimensão de perfil. Por isso a
+     * primeira asserção de cada perna lê `GET /v1/sessao` e afirma `senhaProvisoria: false` e
+     * `segundoFatorPendente: false`, que é a forma do análogo nomeado pela task
+     * (`ciclo-de-acesso.e2e.spec.ts`, CT-221).
+     *
+     * ⚠️ **A entrada é a simples, e a divergência em relação ao card da task é declarada e medida**:
+     * `entrarComSegundoFatorCumprido` existe porque *"o Sysloc Master nasce da carga sem segundo
+     * fator configurado"* — a exigência é declarada sobre o **perfil** `SYSLOC_MASTER`
+     * (`segundoFatorExigido`, em `@sysloc/auth`), e não alcança `ADMIN_EMPRESA`. Aplicá-la aqui
+     * **ativaria** o segundo fator numa pessoa da carga compartilhada, mudando o estado que as demais
+     * suítes leem, para obter uma sessão que a entrada simples já dá plena. É a mesma forma que o
+     * `CT-212` e o `CT-837` deste arquivo usam para as pessoas não-Master.
+     */
+    let cookieDoAdmin: string;
+
+    beforeAll(async () => {
+      cookieDoAdmin = await entrar(ADMIN_DE_A.email, baseReal);
+    }, LIMITE_CASO_MS);
+
+    it('as SETE chamadas são as sete rotas publicadas, e as sete exigem PERFIL:SYSLOC_MASTER pela CLASSE', () => {
+      // Sanidade do arranjo, no molde do `CT-838` e pela mesma razão: as pernas abaixo percorrem
+      // este arranjo, e um arranjo truncado exercitaria menos rotas do que a fatia publica sem que
+      // nada acusasse. As duas âncoras comparam contra fontes **independentes** dele: a
+      // cardinalidade contra a constante da fatia, e a identidade contra o inventário de pares já
+      // revisado — que é composto dos donos dos segmentos.
+      expect(CHAMADAS_DO_CICLO_DE_VIDA_DO_MASTER.length).toBe(
+        PARES_PUBLICADOS_PELO_CICLO_DE_VIDA_DO_MASTER,
+      );
+      expect(
+        CHAMADAS_DO_CICLO_DE_VIDA_DO_MASTER.map((chamada) => chamada.rotulo).sort(),
+        'o arranjo de chamadas divergiu do inventário revisado desta fatia',
+      ).toEqual([...PARES_DO_CICLO_DE_VIDA_DO_MASTER]);
+
+      // ---------------------------------------------------------------------------------------
+      // O QUE cada rota exige — a cobertura POR CONTEÚDO da ADR-0018
+      // ---------------------------------------------------------------------------------------
+      //
+      // Duas asserções, e nenhuma implica a outra. A primeira lê a exigência pela MESMA chamada da
+      // guarda (`getAllAndOverride`) e a compara por igualdade de arranjo: nenhuma chave do catálogo
+      // governa estas rotas, e uma que aparecesse reprova como excedente. A segunda é o que
+      // discrimina a **origem** — `classe` contra `metodo`, justamente a diferença que
+      // `getAllAndOverride` torna invisível por comportamento. É ela que acusaria o método que
+      // passasse a declarar qualquer coisa, forma em que o manipulador exigiria **menos** que a
+      // classe e o perfil sumiria em silêncio.
+      //
+      // ⚠️ É o eixo que separa este caso do `CT-213`: aquele afirma **QUE** a rota declara; este
+      // afirma **O QUE** ela declara. Uma troca de `@ExigePerfil('SYSLOC_MASTER')` por
+      // `@ExigePerfil('ADMIN_EMPRESA')` deixaria o `CT-213` inteiramente verde.
+      expect(MANIPULADORES_DO_CICLO_DE_VIDA_DO_MASTER.length).toBe(
+        PARES_PUBLICADOS_PELO_CICLO_DE_VIDA_DO_MASTER,
+      );
+
+      for (const rotulo of MANIPULADORES_DO_CICLO_DE_VIDA_DO_MASTER) {
+        expect(
+          exigenciaEfetivaDoManipulador(aplicacaoReal, rotulo),
+          `a exigência efetiva de ${rotulo} divergiu do perfil declarado na classe`,
+        ).toEqual([PERFIL_EXIGIDO_PELO_MASTER]);
+      }
+
+      expect(
+        retratoDasExigenciasDe(aplicacaoReal, MANIPULADORES_DO_CICLO_DE_VIDA_DO_MASTER),
+        'a origem da exigência de alguma rota do Master mudou de classe para método',
+      ).toEqual(RETRATO_DEVIDO_POR_MANIPULADOR_DO_MASTER);
+
+      // E a dimensão é de PERFIL, **nunca** chave do catálogo: o átomo exigido não é nenhuma das 17.
+      // A ADR-0011 rejeita por escrito inflar o catálogo com chaves sintéticas, e sem esta linha uma
+      // `TELA:master` acrescentada satisfaria as igualdades acima trocando só o literal.
+      expect(
+        [...CHAVES_DE_TELA, ...Object.keys(MAPA_ACAO_TELA)].includes(PERFIL_EXIGIDO_PELO_MASTER),
+        'o átomo que governa o painel do operador virou chave do catálogo fechado',
+      ).toBe(false);
+    });
+
+    it.each(CHAMADAS_DO_CICLO_DE_VIDA_DO_MASTER)(
+      '$rotulo recusa a sessão de ADMIN_EMPRESA com 403 nomeando o PERFIL, recusa a ausência de sessão com 401, e não deixa efeito',
+      async (chamada) => {
+        // Precondição AFIRMADA, e não suposta: a sessão é PLENA. Sem esta linha, um `403` abaixo
+        // seria indistinguível de um `403` vindo da restrição de sessão.
+        const sessao = await pedir(CAMINHO_DA_SESSAO_CORRENTE, {
+          cookie: cookieDoAdmin,
+          base: baseReal,
+        });
+        expect(sessao.status).toBe(200);
+        expect(sessao.corpo).toMatchObject({
+          perfil: 'ADMIN_EMPRESA',
+          senhaProvisoria: false,
+          segundoFatorPendente: false,
+        });
+
+        // As TRÊS contagens ANTES do ato. Sem elas, "nada mudou" seria afirmação sobre um estado que
+        // ninguém mediu — ver {@link contarEstadoDaIdentidade} para o que cada uma discrimina.
+        const antes = await contarEstadoDaIdentidade();
+
+        // ---------------------------------------------------------------------------------------
+        // Perfil errado — `403 ACESSO_NEGADO` nomeando a DIMENSÃO (§6.4, cenário 1)
+        // ---------------------------------------------------------------------------------------
+        //
+        // Corpo INTEIRO por igualdade: a recusa nomeia a dimensão de perfil (RN-14), e não uma
+        // exigência genérica que um cliente não saberia como satisfazer. Um `detalhes` a mais, ou um
+        // campo trocado, reprova aqui.
+        const recusada = await chamar(chamada, cookieDoAdmin);
+
+        expect(recusada.status, `${chamada.rotulo} não recusou a sessão de ADMIN_EMPRESA`).toBe(
+          403,
+        );
+        expect(recusada.corpo).toEqual({
+          codigo: CodigoErro.ACESSO_NEGADO,
+          mensagem: MENSAGEM_DE_ACESSO_NEGADO,
+          detalhes: { exigido: PERFIL_EXIGIDO_PELO_MASTER },
+        });
+
+        // ---------------------------------------------------------------------------------------
+        // Sem sessão — `401 NAO_AUTENTICADO`, **sem `detalhes`** (§6.4, cenário 2)
+        // ---------------------------------------------------------------------------------------
+        //
+        // Não há exigência a nomear para quem não tem sessão, e nomeá-la diria ao anônimo qual
+        // perfil libera a rota. O código é `NAO_AUTENTICADO`, e não `RECURSO_NAO_ENCONTRADO` nem
+        // `CAMPO_INVALIDO` — os desfechos que o manipulador produziria se tivesse corrido —, e é
+        // essa diferença que afirma que a recusa vem **antes** dele.
+        const semSessao = await chamar(chamada);
+
+        expect(semSessao.status, `${chamada.rotulo} não recusou a ausência de sessão`).toBe(401);
+        expect(semSessao.corpo).toEqual({
+          codigo: CodigoErro.NAO_AUTENTICADO,
+          mensagem: MENSAGEM_SEM_SESSAO,
+        });
+
+        // ---------------------------------------------------------------------------------------
+        // A recusa aconteceu ANTES de qualquer efeito
+        // ---------------------------------------------------------------------------------------
+        //
+        // As três contagens de uma vez, por igualdade de objeto: a falha nomeia os três números lado
+        // a lado. Os alvos são REAIS e de outra empresa (ver
+        // {@link CHAMADAS_DO_CICLO_DE_VIDA_DO_MASTER}), de modo que uma guarda que decidisse depois
+        // do manipulador teria removido uma empresa, removido uma pessoa ou encerrado as sessões
+        // dela — e cada uma dessas três aparece numa contagem diferente.
+        expect(
+          await contarEstadoDaIdentidade(),
+          `${chamada.rotulo} deixou efeito apesar de ter recusado`,
+        ).toEqual(antes);
+      },
+      LIMITE_CASO_MS,
+    );
+  });
+
   it(
     'CT-837 — a sessão que não alcança a área recebe 403 nas três rotas, nomeando a PRIMEIRA exigência ausente, e nada é gravado',
     async () => {
@@ -7072,7 +7865,8 @@ function caminho(rota: string): string {
 }
 
 /**
- * Executa uma das três chamadas da fatia bancária contra a aplicação de **produção**.
+ * Executa uma chamada tabelada contra a aplicação de **produção** — as três da fatia bancária
+ * (`CT-837`/`CT-838`) e as sete do ciclo de vida do Master (`CT-1241`), que compartilham a forma.
  *
  * O cookie é opcional, e a ausência dele é o que separa o `CT-838` do `CT-837`: as duas provas
  * percorrem o MESMO arranjo de chamadas, e o único parâmetro que muda entre elas é a sessão. Escrever
@@ -7106,6 +7900,39 @@ async function contarCertificados(empresaId: string): Promise<number> {
       return Number(linha?.total ?? 0);
     });
   });
+}
+
+/**
+ * As **três** contagens cruas de `identidade` que o `CT-1241` captura antes e remede depois.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que TRÊS, e por que as três juntas
+ * ---------------------------------------------------------------------------
+ *
+ * Cada uma pega uma das rotas pela mão, e nenhuma implica as outras: `empresa` reprova o `DELETE` e
+ * o `PUT` de empresa que agissem antes de a guarda decidir; `usuario` reprova a correção e a remoção
+ * definitiva do Admin Empresa; e `sessao` reprova a suspensão que encerrasse sessão antes de conferir
+ * o perfil — efeito que **não** aparece em nenhuma das outras duas, porque suspender não cria nem
+ * apaga linha de pessoa. Uma contagem só deixaria três das sete rotas sem rede.
+ *
+ * Elas viajam num objeto único de propósito: a igualdade é afirmada de uma vez, e a falha **nomeia os
+ * três números** lado a lado, em vez de dizer que "alguma coisa mudou".
+ *
+ * Observação de estado persistido pelo **acesso restrito a `identidade`** — a mesma via que as
+ * demais suítes desta fatia já usam para afirmar precondição. Nada foi acrescentado à produção para
+ * que ela existisse (Lei do seam).
+ */
+async function contarEstadoDaIdentidade(): Promise<Record<string, number>> {
+  const { empresa, usuario, sessao } = esquemaIdentidade;
+  const acesso = identidade.acesso.identidade;
+
+  const [empresas, pessoas, sessoes] = await Promise.all([
+    acesso.select({ id: empresa.id }).from(empresa),
+    acesso.select({ id: usuario.id }).from(usuario),
+    acesso.select({ id: sessao.id }).from(sessao),
+  ]);
+
+  return { empresas: empresas.length, pessoas: pessoas.length, sessoes: sessoes.length };
 }
 
 interface Resposta {
@@ -7189,49 +8016,6 @@ async function entrar(email: string, base?: string): Promise<string> {
   return credencialDeSessao(entrada);
 }
 
-/**
- * Entra e **cumpre a exigência de segundo fator**, pelo caminho público real.
- *
- * O Master nasce da carga sem segundo fator configurado, e a sessão dele é restrita até que ele o
- * configure (RN-08). Nada é forjado: o segredo sai do endereço que a própria resposta do preparo
- * devolveu, e o código é derivado pela função de geração **do arcabouço**. A verificação emite
- * credencial de sessão nova e apaga a anterior, e é a nova que sai daqui.
- */
-async function entrarComSegundoFatorCumprido(email: string): Promise<string> {
-  const cookie = await entrar(email);
-
-  const preparo = await pedir(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/enable`, {
-    metodo: 'POST',
-    cookie,
-    corpo: { password: SENHA_DA_CARGA },
-  });
-
-  if (preparo.status !== 200) {
-    throw new Error(
-      `o preparo do segundo fator respondeu ${String(preparo.status)}: ${preparo.texto}`,
-    );
-  }
-
-  const totpURI = (preparo.corpo as { totpURI?: unknown }).totpURI;
-  if (typeof totpURI !== 'string') {
-    throw new Error('o preparo do segundo fator não devolveu o endereço de configuração');
-  }
-
-  const ativacao = await pedir(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/verify-totp`, {
-    metodo: 'POST',
-    cookie,
-    corpo: { code: await codigoDoSegundoFator(totpURI) },
-  });
-
-  if (ativacao.status !== 200) {
-    throw new Error(
-      `a ativação do segundo fator respondeu ${String(ativacao.status)}: ${ativacao.texto}`,
-    );
-  }
-
-  return credencialDeSessao(ativacao);
-}
-
 /** Desfaz o segundo fator pela rota pública, devolvendo a pessoa ao estado da carga. */
 async function desfazerSegundoFator(cookie: string): Promise<void> {
   const desfeito = await pedir(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/disable`, {
@@ -7245,28 +8029,6 @@ async function desfazerSegundoFator(cookie: string): Promise<void> {
       `a desativação do segundo fator respondeu ${String(desfeito.status)}: ${desfeito.texto}`,
     );
   }
-}
-
-/**
- * Deriva o código do segundo fator a partir do endereço de configuração.
- *
- * A derivação é a **do próprio arcabouço** (`api.generateTOTP`), e não uma reimplementação: uma
- * cópia do algoritmo provaria que duas implementações concordam, não que a nossa confere o código
- * que o arcabouço espera. Só a decodificação de transporte (base32 do endereço) é local, porque o
- * decodificador do arcabouço vive num pacote transitivo que `apps/api` não resolve.
- */
-async function codigoDoSegundoFator(totpURI: string): Promise<string> {
-  const codificado = new URL(totpURI).searchParams.get('secret');
-
-  if (codificado === null) {
-    throw new Error(`o endereço de configuração do segundo fator não trouxe segredo: ${totpURI}`);
-  }
-
-  const { code } = await identidade.autenticacao.api.generateTOTP({
-    body: { secret: decodificarBase32(codificado) },
-  });
-
-  return code;
 }
 
 /** O par `nome=valor` do cookie de sessão, no formato em que o cliente o reenvia. */

@@ -1,5 +1,7 @@
 /**
- * Módulo do operador do SaaS — as seis rotas de `/v1/master`.
+ * Módulo do operador do SaaS — as rotas de `/v1/master`: as **seis** do ciclo de vida da empresa e
+ * da admissão de administradores, mais as **três** do ciclo de vida do Admin Empresa que a fatia
+ * `painel-master-administradores` acrescenta (listagem, suspensão e reativação).
  *
  * ---------------------------------------------------------------------------
  * Ele IMPORTA o módulo de identidade em vez de abrir acesso próprio
@@ -37,12 +39,19 @@
 import { Module } from '@nestjs/common';
 import { AutenticacaoModule } from '../autenticacao/autenticacao.module.js';
 import { FilaModule } from '../comum/fila.module.js';
+import { AdministradorController } from './administrador.controller.js';
+import { AdministradorService } from './administrador.service.js';
 import { EmpresaController } from './empresa.controller.js';
 import { EmpresaService } from './empresa.service.js';
 
 @Module({
+  // ⚠️ `imports` NÃO muda com a chegada do ciclo de vida do Admin Empresa, e a estabilidade é
+  // conteúdo: `apps/api/test/alcance-da-fila.spec.ts` fixa por igualdade de conjunto a lista de
+  // módulos que declaram `FilaModule`, e `MasterModule` já está nela por causa da retomada de
+  // notícias retidas da reativação de EMPRESA. `AdministradorService` **não enfileira nada** — a
+  // reativação de pessoa não tem trabalho retido a retomar —, e ele nem sequer recebe o produtor.
   imports: [AutenticacaoModule, FilaModule],
-  controllers: [EmpresaController],
-  providers: [EmpresaService],
+  controllers: [EmpresaController, AdministradorController],
+  providers: [EmpresaService, AdministradorService],
 })
 export class MasterModule {}

@@ -479,6 +479,26 @@ const IMPORTADORES_ESPERADOS = [
   // sendo asserida nas três pontas.
   'integracoes-bancarias/entrega-da-noticia.controller.ts',
   'integracoes-bancarias/identidade.controller.ts',
+  // SUT_IS_CORRECT_BECAUSE: o código de produção está certo, e é esta lista que descrevia o estado
+  // anterior. A **T4** da fatia `painel-master-administradores` publica a borda das **três** rotas
+  // do ciclo de vida do Admin Empresa (`GET /v1/master/empresas/:id/administradores` e as duas
+  // transições de estado), num controlador **novo**, e ela **importa** a tradução única em vez de
+  // copiá-la — que é exatamente o desfecho que o `CT-343` existe para premiar.
+  //
+  // ⚠️ Ela entra como linha própria ao lado de `master/empresa.controller.ts`, e a distinção é
+  // conteúdo: são dois controladores no mesmo prefixo `/v1/master`, com serviços distintos e
+  // recursos distintos. Não é a cópia de comportamento que a linha de
+  // `cadastros/superficie-de-cadastro.ts` existe para impedir.
+  //
+  // Vale o resto do parágrafo do docblock: a ponta da DEFINIÇÃO permanece em um elemento,
+  // {@link ANALISADORES_ESPERADOS} não muda (os três manipuladores novos chamam `validar`, e não
+  // `safeParse`), e a igualdade (nunca contenção) segue sendo asserida nas três pontas.
+  //
+  // ⚠️ **A rodada 1 escreveu aqui que {@link IMPORTADORES_DO_CORPO_VAZIO_ESPERADOS} "também não
+  // muda", e isso deixou de valer na rodada 2**: o `P4` do Gate 2 mediu que as duas transições
+  // aceitavam e **descartavam em silêncio** qualquer JSON, e elas passaram a conferir o corpo pelo
+  // ponto único — a linha correspondente entrou naquela lista, no mesmo diff.
+  'master/administrador.controller.ts',
   'master/empresa.controller.ts',
   // SUT_IS_CORRECT_BECAUSE: o código de produção está certo, e é esta lista que descrevia o estado
   // anterior. A T6 da fatia `cobranca-e-mora` publica a **décima** borda — as duas rotas de
@@ -605,6 +625,22 @@ const IMPORTADORES_DO_CORPO_VAZIO_ESPERADOS = [
   'imoveis/conjunto.controller.ts',
   'imoveis/imovel.controller.ts',
   'integracoes-bancarias/certificado.controller.ts',
+  // SUT_IS_CORRECT_BECAUSE: o código de produção está certo, e é esta lista que descrevia o estado
+  // anterior. As duas transições de estado do Admin Empresa (`POST /v1/master/usuarios/:id/suspensao`
+  // e `.../reativacao`) **não recebem campo algum** — o estado novo é decidido pelo servidor —, e até
+  // a rodada 1 da T4 elas nem sequer liam o corpo: um cliente que enviasse `{"estado":"ATIVO"}`
+  // recebia `200` e o corpo era descartado em silêncio. A rodada 2 fecha a entrada pelo mesmo ponto
+  // único que as outras nove bordas importam, que é exatamente o comportamento que este caso existe
+  // para premiar. O que ele reprova é a **segunda definição**, e essa ponta
+  // ({@link DEFINIDOR_DO_CORPO_VAZIO_ESPERADO}) **não mudou**: o conjunto dos definidores continua
+  // com um elemento. A asserção NÃO foi afrouxada — segue sendo igualdade exata sobre o conjunto
+  // inteiro, com um consumidor a mais, e **nenhuma entrada anterior saiu**.
+  //
+  // **Este arquivo não está na §5.2 da T4** — divergência declarada, e é a mesma que a T15, a T12, a
+  // T10 e a T9 registraram acima: a âncora afirma por igualdade de conjunto, e uma borda nova que
+  // passe a importar a definição única a faz reprovar, que é exatamente o que ela existe para fazer.
+  // A âncora **sobe**; ela não vira contenção.
+  'master/administrador.controller.ts',
 ];
 
 /**

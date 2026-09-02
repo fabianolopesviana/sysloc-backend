@@ -307,7 +307,7 @@ import {
   MAIOR_PAGINA_DE_PESSOAS,
   PAGINA_PADRAO_DE_PESSOAS,
 } from '../src/usuarios/usuario.service.ts';
-import { decodificarBase32 } from './base32.ts';
+import { entrarComSegundoFatorCumprido } from './acessorios-de-borda.ts';
 
 /** Limite da montagem: banco migrado, semente com credencial, fila e a aplicação real. */
 const LIMITE_DE_MONTAGEM_MS = 240_000;
@@ -454,7 +454,12 @@ beforeAll(async () => {
   aplicacao = await criarAplicacao();
   await aplicacao.listen({ port: porta, host: ENDERECO_DE_ESCUTA });
 
-  cookieDoMaster = await entrarComSegundoFatorCumprido();
+  cookieDoMaster = await entrarComSegundoFatorCumprido(
+    base,
+    USUARIO_MASTER.email,
+    SENHA_DA_CARGA,
+    identidade.autenticacao,
+  );
   cookieDoAdminDeA = await entrar(ADMIN_DE_A.email, SENHA_DA_CARGA);
   cookieDoAdminDeB = await entrar(ADMIN_DE_B.email, SENHA_DA_CARGA);
 }, LIMITE_DE_MONTAGEM_MS);
@@ -1772,60 +1777,6 @@ async function cumprirTrocaObrigatoria(cookie: string, senhaAtual: string): Prom
   }
 
   return troca.cookies.some(ehCookieDeSessao) ? credencialDeSessao(troca) : cookie;
-}
-
-/**
- * Entra como Sysloc Master e **cumpre a exigência de segundo fator**, pelo caminho público real.
- *
- * O Master nasce da carga sem segundo fator configurado, e a sessão dele é restrita até que ele o
- * configure (RN-08). Nada é forjado: o segredo sai do endereço que a própria resposta do preparo
- * devolveu, e o código é derivado pela função de geração **do arcabouço**.
- */
-async function entrarComSegundoFatorCumprido(): Promise<string> {
-  const cookie = await entrar(USUARIO_MASTER.email, SENHA_DA_CARGA);
-
-  const preparo = await pedir(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/enable`, {
-    metodo: 'POST',
-    cookie,
-    corpo: { password: SENHA_DA_CARGA },
-  });
-
-  if (preparo.status !== 200) {
-    throw new Error(
-      `o preparo do segundo fator respondeu ${String(preparo.status)}: ${preparo.texto}`,
-    );
-  }
-
-  const totpURI = (preparo.corpo as { totpURI?: unknown }).totpURI;
-  if (typeof totpURI !== 'string') {
-    throw new Error('o preparo do segundo fator não devolveu o endereço de configuração');
-  }
-
-  const codificado = new URL(totpURI).searchParams.get('secret');
-  if (codificado === null) {
-    throw new Error(`o endereço de configuração do segundo fator não trouxe segredo: ${totpURI}`);
-  }
-
-  // A derivação é a **do próprio arcabouço** (`api.generateTOTP`), e não uma reimplementação: uma
-  // cópia do algoritmo provaria que duas implementações concordam, não que a nossa confere o código
-  // que o arcabouço espera.
-  const { code } = await identidade.autenticacao.api.generateTOTP({
-    body: { secret: decodificarBase32(codificado) },
-  });
-
-  const ativacao = await pedir(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/verify-totp`, {
-    metodo: 'POST',
-    cookie,
-    corpo: { code },
-  });
-
-  if (ativacao.status !== 200) {
-    throw new Error(
-      `a ativação do segundo fator respondeu ${String(ativacao.status)}: ${ativacao.texto}`,
-    );
-  }
-
-  return credencialDeSessao(ativacao);
 }
 
 /** O cabeçalho `Set-Cookie` carrega a credencial de sessão do arcabouço. */

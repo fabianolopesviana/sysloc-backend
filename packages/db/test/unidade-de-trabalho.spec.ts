@@ -1699,6 +1699,41 @@ const SIMBOLOS_ESPERADOS = [
   // chega a `listarNaoTratadas` por parâmetro.
   'listarEmpresasAtivas',
   'listarNaoTratadas',
+  // T1 da fatia `painel-master-administradores` — as DOZE da camada de acesso do operador do SaaS:
+  // as sete de `administrador-do-master.js`, o vocabulário `IMPEDIMENTOS_DE_EXCLUSAO`, e as quatro
+  // de `empresa.js` (correção cadastral, remoção definitiva, prévia de elegibilidade e a classe de
+  // erro de domínio da colisão de documento).
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito (ver o comentário de
+  // `SIMBOLOS_ESPERADOS`), e a T1 publica DOZE símbolos novos no índice por decisão declarada na §1
+  // e na §5.2 da task (`Símbolos públicos criados`, e a base **216 → 228** medida em 2026-09-01).
+  // As onze funções entram pelo critério de todas as portas anteriores: **recebem** o executor de
+  // quem já abriu a unidade, não abrem conexão, não reservam e não devolvem executor.
+  // `IMPEDIMENTOS_DE_EXCLUSAO` entra por ser **vocabulário** — o mapa que traduz a recusa que o
+  // banco já deu —, e `ErroDeDocumentoDeEmpresaEmUso` pelo mesmo critério de
+  // `ErroDePessoaForaDoContexto` e `ErroDeUnidadeAninhada`: é classe de erro, não caminho para dado.
+  // O caso reprovaria por `excedentes` não porque a superfície cresceu por descuido — que é o
+  // defeito que ele existe para pegar —, mas porque cresceu por decisão que ele ainda não conhecia.
+  // **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
+  //
+  // ⚠️ **A mecânica compartilhada da exclusão NÃO entra**, e a ausência é decisão registrada no
+  // índice: `RecusaDeExclusao`, `classeDoImpedimento`, `ensaiarExclusao` e
+  // `semDeixarEfeitoNaRecusa` são exportados por `administrador-do-master.ts` apenas para que
+  // `empresa.ts` os reuse **dentro** do pacote, e o barril não os republica — publicá-los criaria um
+  // segundo lugar onde o ensaio de exclusão pode ser montado, que é a segunda definição do critério
+  // que a decisão D2-b existe para impedir. Se algum deles aparecer aqui, foi o barril que cresceu.
+  'IMPEDIMENTOS_DE_EXCLUSAO',
+  'alterarAdministrador',
+  'alterarEmpresa',
+  'definirAtivoDoAdministrador',
+  'elegibilidadeDeExclusaoDaEmpresa',
+  'elegibilidadeDeExclusaoDoAdministrador',
+  'encerrarSessoesDoAdministrador',
+  'ErroDeDocumentoDeEmpresaEmUso',
+  'excluirAdministrador',
+  'excluirEmpresa',
+  'lerAdministrador',
+  'listarAdministradoresDaEmpresa',
 ] as const;
 
 /** As propriedades que denunciam um cliente `postgres.js` — a marca do executor cru. */
@@ -2166,6 +2201,28 @@ const ABRIDORES_LEGITIMOS: readonly string[] = [
   // serviço porque as rotas do Master e do Admin nasceram assim, e nenhuma delas compõe dois
   // serviços — a decisão D1 governa a superfície do domínio de locação, e não os reescreve.
   join(RAIZ_DO_REPOSITORIO, 'apps/api/src/master/empresa.service.ts'),
+  // O TERCEIRO chamador da mesma superfície — o ciclo de vida do Admin Empresa (T4 da fatia
+  // `painel-master-administradores`).
+  //
+  // SUT_IS_CORRECT_BECAUSE: ele é o irmão direto de `master/empresa.service.ts`, uma linha acima, e
+  // a exceção que aquela entrada declara é **nominal e da superfície do Master** — *"as rotas do
+  // Master e do Admin nasceram assim, e nenhuma delas compõe dois serviços; a decisão D1 governa a
+  // superfície do domínio de locação"*. Este serviço está do mesmo lado dessa fronteira, e por uma
+  // razão de mecanismo: as rotas do operador correm **sem contexto de tenant** (`empresaId: null`),
+  // de modo que `sobContextoDaSessao` — o ponto único que abre a unidade para o domínio de locação —
+  // não tem o que fixar aqui. A §5.1 da tech spec daquela fatia o prescreve literalmente: *"Serviço
+  // abre `emUnidadeDeTrabalho` (sem contexto de tenant)"*. Ele também não compõe serviço nenhum: as
+  // três operações abrem **uma** unidade cada, e nenhuma delas chama outro serviço.
+  //
+  // A asserção **não foi afrouxada**: continua sendo igualdade de conjunto com `excedentes` e
+  // `ausentes` nomeados, nenhuma entrada anterior saiu, e qualquer arquivo fora desta lista reprova
+  // — inclusive um serviço do domínio de locação que abrisse a sua, que é o defeito que este caso
+  // existe para pegar.
+  //
+  // ⚠️ **Este arquivo não está na §5.2 da T4** — divergência declarada: a âncora afirma por
+  // igualdade de conjunto, e uma borda nova a faz reprovar, que é exatamente o que ela existe para
+  // fazer. A âncora **sobe**; ela não vira contenção.
+  join(RAIZ_DO_REPOSITORIO, 'apps/api/src/master/administrador.service.ts'),
   join(RAIZ_DO_REPOSITORIO, 'apps/api/src/usuarios/usuario.service.ts'),
   // A borda do TRABALHO ENFILEIRADO (T8 da fatia `regua-de-cobranca`).
   //

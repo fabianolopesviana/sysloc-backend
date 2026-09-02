@@ -229,7 +229,7 @@ import { CAMINHO_DOS_CONJUNTOS } from '../src/imoveis/conjunto.controller.ts';
 import { CAMINHO_DOS_IMOVEIS } from '../src/imoveis/imovel.controller.ts';
 import { criarAplicacao } from '../src/main.ts';
 import { CAMINHO_DO_MASTER } from '../src/master/empresa.controller.ts';
-import { decodificarBase32 } from './base32.ts';
+import { entrarComSegundoFatorCumprido } from './acessorios-de-borda.ts';
 import { cpfValido } from './documento.ts';
 
 /** Limite da montagem: banco migrado, semente com credencial, fila e a aplicação real. */
@@ -713,7 +713,12 @@ describe('recusas indistinguíveis de admissão (T11)', () => {
       // O Master entra RESTRITO por segundo fator (RN-08), e sessão restrita não alcança as rotas
       // dele: sem cumpri-lo pela via real, a reemissão responderia `403` da restrição e o
       // diagnóstico apontaria para o lugar errado.
-      const cookieDoMaster = await entrarComSegundoFatorCumprido(MASTER.email);
+      const cookieDoMaster = await entrarComSegundoFatorCumprido(
+        base,
+        MASTER.email,
+        SENHA_DA_CARGA,
+        identidade.autenticacao,
+      );
 
       try {
         // --- Arranjo, pelas rotas reais da T7: empresa nova e Admin novo ----------------------
@@ -792,7 +797,12 @@ describe('recusas indistinguíveis de admissão (T11)', () => {
   it(
     'CT-926 — histórico, boleto e emissão de uma cobrança de OUTRA empresa respondem como inexistentes',
     async () => {
-      const cookieDoMaster = await entrarComSegundoFatorCumprido(MASTER.email);
+      const cookieDoMaster = await entrarComSegundoFatorCumprido(
+        base,
+        MASTER.email,
+        SENHA_DA_CARGA,
+        identidade.autenticacao,
+      );
       let empresaQueLanca = '';
 
       try {
@@ -1147,64 +1157,6 @@ function credencialDeSessao(resposta: Resposta): string {
 // ---------------------------------------------------------------------------------------------
 // O arranjo do CT-223 — tudo pelas rotas reais
 // ---------------------------------------------------------------------------------------------
-
-/**
- * Entra e **cumpre a exigência de segundo fator**, pelo caminho público real.
- *
- * O Master nasce da carga sem segundo fator configurado, e a sessão dele é restrita até que ele o
- * configure (RN-08). Nada é forjado: o segredo sai do endereço que a própria resposta do preparo
- * devolveu, e o código é derivado pela função de geração **do arcabouço** — uma cópia do algoritmo
- * provaria que duas implementações concordam, não que a nossa confere o código que ele espera.
- */
-async function entrarComSegundoFatorCumprido(email: string): Promise<string> {
-  const entrada = await entrar(email, SENHA_DA_CARGA);
-
-  if (entrada.status !== 200) {
-    throw new Error(`a entrada de ${email} respondeu ${String(entrada.status)}: ${entrada.texto}`);
-  }
-
-  const cookie = credencialDeSessao(entrada);
-
-  const preparo = await pedir(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/enable`, {
-    metodo: 'POST',
-    cookie,
-    corpo: { password: SENHA_DA_CARGA },
-  });
-
-  if (preparo.status !== 200) {
-    throw new Error(
-      `o preparo do segundo fator respondeu ${String(preparo.status)}: ${preparo.texto}`,
-    );
-  }
-
-  const totpURI = (preparo.corpo as { totpURI?: unknown }).totpURI;
-  if (typeof totpURI !== 'string') {
-    throw new Error('o preparo do segundo fator não devolveu o endereço de configuração');
-  }
-
-  const codificado = new URL(totpURI).searchParams.get('secret');
-  if (codificado === null) {
-    throw new Error('o endereço de configuração do segundo fator não trouxe segredo');
-  }
-
-  const { code } = await identidade.autenticacao.api.generateTOTP({
-    body: { secret: decodificarBase32(codificado) },
-  });
-
-  const ativacao = await pedir(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/verify-totp`, {
-    metodo: 'POST',
-    cookie,
-    corpo: { code },
-  });
-
-  if (ativacao.status !== 200) {
-    throw new Error(
-      `a ativação do segundo fator respondeu ${String(ativacao.status)}: ${ativacao.texto}`,
-    );
-  }
-
-  return credencialDeSessao(ativacao);
-}
 
 /** Desfaz o segundo fator pela rota pública, devolvendo a pessoa ao estado da carga. */
 async function desfazerSegundoFator(cookie: string): Promise<void> {

@@ -101,8 +101,14 @@ import {
   type AcessoAIdentidade,
   type AcessoAoBanco,
   admitirEmpresa,
+  alterarEmpresa,
+  type ClasseDeImpedimento,
+  type ElegibilidadeDeExclusao,
   type EmpresaPersistida,
+  ErroDeDocumentoDeEmpresaEmUso,
+  elegibilidadeDeExclusaoDaEmpresa,
   encerrarSessoesDaEmpresa,
+  excluirEmpresa,
   lerAlvoDeReemissao,
   listarEmpresas,
   listarRetidas,
@@ -129,6 +135,45 @@ import {
  * dois lados livres para divergir.
  */
 const PERFIL_ADMITIDO_PELO_MASTER = 'ADMIN_EMPRESA';
+
+/** Nome de campo que a recusa por documento repetido nomeia — o que o cliente precisa corrigir. */
+const CAMPO_DO_DOCUMENTO = 'documento';
+
+/** Nome de campo que a recusa por perfil e a da exclusão impedida nomeiam — o `:id` da rota. */
+const CAMPO_DO_IDENTIFICADOR = 'id';
+
+/**
+ * O motivo publicado quando o documento já pertence a **outra** empresa (CA-11).
+ *
+ * Constante nomeada, e não literal repetido: ela é publicada pela **admissão** e pela **correção
+ * cadastral**, que são o mesmo fato — *"este documento já está registrado"* — visto por duas rotas,
+ * e o cliente ramifica sobre o valor. Duas grafias no mesmo arquivo ficariam livres para divergir.
+ */
+const MOTIVO_DO_DOCUMENTO_EM_USO = 'DOCUMENTO_JA_REGISTRADO';
+
+/**
+ * O motivo publicado quando a remoção física está indisponível (US-10, §4.1.1).
+ *
+ * Ele nomeia a **classe do desfecho**, e o detalhe fica em `impedimentos`. Constante nomeada porque
+ * é contrato: o cliente ramifica sobre este valor.
+ *
+ * ⚠️ **É a segunda declaração do literal**, ao lado de `./administrador.service.ts` — as duas
+ * superfícies do Master publicam a mesma tripla, e por decisão: o operador que lê a prévia de uma
+ * empresa e a recusa de um administrador precisa ler o mesmo vocabulário. São **duas**, e o Limiar
+ * de Três do `CLAUDE.md` não disparou; subi-la para casa comum hoje obrigaria a editar um serviço
+ * que publica rota entregue sem defeito que o motive. É o mesmo critério, e o mesmo precedente, de
+ * `MOTIVO_DO_EMAIL_EM_USO` naquele arquivo.
+ */
+const MOTIVO_DA_EXCLUSAO_IMPEDIDA = 'EXCLUSAO_IMPEDIDA_POR_REGISTROS';
+
+/**
+ * A saída que o produto oferece quando a exclusão está impedida (US-10, CA-14).
+ *
+ * Ela é **executável**: `SUSPENSAO` nomeia a rota que este mesmo serviço publica
+ * (`POST /v1/master/empresas/:id/suspensao`), e é isso que separa uma recusa útil de uma recusa
+ * muda. Ver {@link MOTIVO_DA_EXCLUSAO_IMPEDIDA} para por que são duas declarações.
+ */
+const ALTERNATIVA_A_EXCLUSAO = 'SUSPENSAO';
 
 /** Maior página que a listagem devolve. Pedido acima disso é recusado, nunca truncado em silêncio. */
 export const MAIOR_PAGINA_DE_EMPRESAS = 200;
@@ -164,12 +209,58 @@ export interface EmpresaDoContrato {
   readonly criadaEm: string;
 }
 
+/**
+ * A **prévia de exclusão** publicada por item da listagem (US-07, ADR-0030).
+ *
+ * `motivo` e `alternativa` são opcionais porque **só existem quando a exclusão está indisponível**:
+ * publicá-los sempre obrigaria a inventar um motivo para quem não tem impedimento algum, e o cliente
+ * teria de olhar `disponivel` para saber se deve ler os outros dois. A ausência já diz isso — e o
+ * `exactOptionalPropertyTypes` do projeto obriga a compor por ramo, nunca a atribuir `undefined`.
+ *
+ * `impedimentos` carrega **classes** do vocabulário fechado da RN-15 — nunca o nome da entidade,
+ * nunca a quantidade, nunca o `detail` do driver: a ADR-0013 restringe o alcance desta persona ao
+ * que é dela, e *"existem 42 cobranças"* já é dado de negócio. O tipo é o do domínio
+ * (`ClasseDeImpedimento`, de `@sysloc/db`), e é ele que amarra o enum publicado no controlador.
+ */
+export interface ExclusaoDaEmpresa {
+  readonly disponivel: boolean;
+  readonly motivo?: string;
+  readonly impedimentos: readonly ClasseDeImpedimento[];
+  readonly alternativa?: string;
+}
+
+/**
+ * A empresa **como a listagem e a correção cadastral a publicam** — o contrato acima, mais a prévia.
+ *
+ * ⚠️ **A criação continua devolvendo {@link EmpresaDoContrato}, sem `exclusao`**, e a assimetria é
+ * decisão: uma empresa que acabou de nascer é elegível por construção, e compor a prévia ali
+ * custaria a sonda — que é o próprio ato em ensaio desfeito — para responder uma pergunta cuja
+ * resposta é conhecida.
+ */
+export interface EmpresaListada extends EmpresaDoContrato {
+  readonly exclusao: ExclusaoDaEmpresa;
+}
+
 /** A página de empresas, na forma canônica de lista da ADR-0012. */
 export interface PaginaDeEmpresas {
-  readonly itens: readonly EmpresaDoContrato[];
+  readonly itens: readonly EmpresaListada[];
   readonly total: number;
   readonly limite: number;
   readonly deslocamento: number;
+}
+
+/**
+ * O que a **remoção definitiva** devolve (US-09, ADR-0038).
+ *
+ * `removida` é `true` literal pela mesma razão que `estado` é literal nos dois corpos de transição:
+ * o desfecho é único — a recusa sai pelo envelope de erro, nunca por um `removida: false`. A
+ * concordância de gênero segue a convenção medida desta superfície (`criadaEm`/`suspensaEm` para a
+ * empresa, `criadoEm` para a pessoa); o corpo irmão de `DELETE /v1/master/usuarios/:id` publica
+ * `removido`.
+ */
+export interface RemocaoDaEmpresa {
+  readonly id: string;
+  readonly removida: true;
 }
 
 /** O que a suspensão devolve — o estado novo mais a **prova** do encerramento. */
@@ -257,7 +348,7 @@ export class EmpresaService {
       throw new ErroDeAplicacao(
         CodigoErro.CAMPO_INVALIDO,
         MENSAGEM_POR_CODIGO[CodigoErro.CAMPO_INVALIDO],
-        { campo: 'documento', detalhes: { motivo: 'DOCUMENTO_JA_REGISTRADO' } },
+        { campo: CAMPO_DO_DOCUMENTO, detalhes: { motivo: MOTIVO_DO_DOCUMENTO_EM_USO } },
       );
     }
 
@@ -267,25 +358,207 @@ export class EmpresaService {
   }
 
   /**
-   * Lista as empresas com o estado corrente de cada uma (US-06).
+   * Lista as empresas com o estado corrente e a **prévia de exclusão** de cada uma (US-06, US-07).
    *
-   * A página e o total saem da **mesma transação** — e a projeção é a das cinco chaves do contrato,
-   * e nada mais (RN-13). As duas propriedades são da consulta, e vivem com ela em `@sysloc/db`.
+   * A página e o total saem da **mesma transação** — e a projeção é a das cinco chaves do contrato
+   * mais a prévia, e nada mais (RN-13). As duas propriedades são da consulta, e vivem com ela em
+   * `@sysloc/db`.
    *
    * O que é desta camada é o **envelope**: a janela devolvida é a que foi de fato servida, e não um
    * eco do que o cliente pediu — os dois valores são os mesmos que a consulta recebeu.
+   *
+   * ---------------------------------------------------------------------------
+   * A prévia é O PRÓPRIO ATO, em ensaio desfeito — e nunca uma contagem
+   * ---------------------------------------------------------------------------
+   *
+   * `elegibilidadeDeExclusaoDaEmpresa` executa o `DELETE` dentro de um ponto de salvamento e o
+   * desfaz **sempre** (ADR-0030), de modo que ela **exige** o executor desta transação — e é por
+   * isso que tudo corre numa unidade só. Não há saída por leitura: a **ADR-0038** fixa que o
+   * critério é a integridade referencial e *"nunca uma contagem"*, e o marcador `DECISÃO FECHADA`
+   * de `IMPEDIMENTOS_DE_EXCLUSAO` (`@sysloc/db`) mede por quê — sob a política `FORCE` e com
+   * `empresaId: null`, `count(*)` sobre `negocio` devolve **zero para uma empresa cheia**
+   * (`CT-1204`). Trocar a prévia por contagem declararia excluível um tenant inteiro em produção,
+   * sem erro nenhum.
+   *
+   * As sondas correm **em sequência**, e não em lote paralelo: são pontos de salvamento aninhados na
+   * **mesma** transação, e o driver serializa uma conexão — despachá-las juntas embaralharia os
+   * pontos de salvamento de sondas diferentes.
+   *
+   * ---------------------------------------------------------------------------
+   * O TETO desta listagem permanece em 200/50 — e a divergência com o irmão é deliberada
+   * ---------------------------------------------------------------------------
+   *
+   * A T4 mediu a sonda em **~3,4 ms por item** (a tabela completa está no docblock de
+   * {@link ./administrador.contrato.js#MAIOR_PAGINA_DE_ADMINISTRADORES}) e por isso **nasceu** com o
+   * teto da listagem de administradores em 50/25. Aqui o teto **não** desce, e são duas razões:
+   *
+   * 1. `GET /v1/master/empresas` é rota **entregue**, e `MAIOR_PAGINA_DE_EMPRESAS` é contrato dela:
+   *    um cliente que hoje pede `?limite=200` recebe `200`, e baixar o teto passaria a recusá-lo com
+   *    `422`. Isso é mudança de comportamento em superfície publicada, que nenhum critério de aceite
+   *    desta task pede — e o Protocolo Antirregressão proíbe fora da causa-raiz. O teto do irmão
+   *    nasceu junto com a rota; reduzi-lo não tirou nada de ninguém.
+   * 2. O custo é **do próprio operador e escolhido por ele**: o padrão continua em 50 (~0,17 s), e os
+   *    ~0,7 s do teto só acontecem para quem pedir `?limite=200` explicitamente. O efeito sobre
+   *    terceiros foi **medido** na T4 e é benigno — o desfazimento do ponto de salvamento libera o
+   *    bloqueio de LINHA que o ensaio tomou, e a entrada de um usuário atravessou em 8 ms com a
+   *    unidade da listagem ainda aberta.
+   *
+   * ⚠️ **A medição NÃO foi repetida aqui** (§3.4 da task: *"a medição já foi feita na T5 — não a
+   * repita"*). O que se registra é que a sonda de empresa executa **duas** instruções por item, e não
+   * uma, de modo que o número por item é um piso, não um teto.
+   *
+   * ⚠️ **E a ressalva vale igual para TERCEIROS, não só para a latência.** O terceiro medido na T4
+   * foi uma **entrada de usuário** durante a listagem de **administradores** — caminho com metade
+   * das instruções por item, teto quatro vezes menor e sem tocar `negocio`; a sonda de empresa
+   * aciona, por item, as **16** chaves estrangeiras de `negocio` que apontam para
+   * `identidade.empresa`, superfície que aquela medição não alcançou. E o `Cons` da **ADR-0038**
+   * registra que *"a verificação prévia toma bloqueios que o retorno ao ponto de salvamento não
+   * libera antes do fim da transação"*. Logo o *"benigno"* acima é do caminho medido, e **não** um
+   * fato geral desta listagem — o assunto é o `D25` (§2 do relatório da fatia), cujo gatilho é a
+   * primeira task autorizada a mexer nesta janela ou o primeiro relato de contenção.
    */
   async listarEmpresas(janela: JanelaDaListagem): Promise<PaginaDeEmpresas> {
-    const { empresas, total } = await this.banco.emUnidadeDeTrabalho(
-      async (tx) => await listarEmpresas(tx, janela),
-    );
+    const { pagina, total } = await this.banco.emUnidadeDeTrabalho(async (tx) => {
+      const { empresas, total } = await listarEmpresas(tx, janela);
+
+      const pagina: EmpresaListada[] = [];
+      for (const empresa of empresas) {
+        pagina.push(
+          paraItemDaListagem(empresa, await elegibilidadeDeExclusaoDaEmpresa(tx, empresa.id)),
+        );
+      }
+
+      return { pagina, total };
+    });
 
     return {
-      itens: empresas.map(paraContrato),
+      itens: pagina,
       total,
       limite: janela.limite,
       deslocamento: janela.deslocamento,
     };
+  }
+
+  /**
+   * Corrige o cadastro da empresa — **nome e documento, e nada além** (US-05, RN-07).
+   *
+   * ---------------------------------------------------------------------------
+   * Ela alcança CADASTRO, nunca ESTADO
+   * ---------------------------------------------------------------------------
+   *
+   * `estado`, `suspensaEm` e `empresaId` não chegam aqui porque não existem no esquema de entrada
+   * (ADR-0021, metade categórica) — a razão por extenso está no docblock de
+   * {@link ./empresa.controller.js#ESQUEMA_DA_EMPRESA_ALTERADA}. A consequência observável é que
+   * corrigir uma empresa suspensa **não** a reativa, e o instante da suspensão continua sendo
+   * exatamente o mesmo: `alterarEmpresa` escreve só as duas colunas cadastrais, e o `estado` do
+   * corpo devolvido é derivado de `suspensa_em` no ponto único de tradução.
+   *
+   * A duplicidade de documento é decidida **pelo banco**, e nunca por uma leitura prévia: entre o
+   * `SELECT` que não achasse e o `UPDATE`, outra transação grava. `alterarEmpresa` executa sob ponto
+   * de salvamento e levanta `ErroDeDocumentoDeEmpresaEmUso`; aqui isso vira `422` nomeando o campo,
+   * **sem** que o `detail` do driver — que carrega valores de chave — chegue perto da resposta.
+   *
+   * ⚠️ **A recusa não deixa efeito**, e a garantia é da transação inteira: a exceção sobe de dentro
+   * da unidade, que é desfeita — nem o `nome` válido que viajou no mesmo corpo fica gravado.
+   *
+   * A prévia de exclusão é composta na **mesma unidade**, depois da escrita, e é o que faz a
+   * resposta ser a linha inteira da listagem: o cliente substitui a linha que ele tem, em vez de
+   * recompor um item a partir de duas formas diferentes do mesmo fato. A sonda desfaz o próprio
+   * ensaio (ADR-0030); o `UPDATE` acima é anterior ao ponto de salvamento dela e permanece.
+   */
+  async alterar(empresaId: string, dados: EmpresaDaAdmissao): Promise<EmpresaListada> {
+    let item: EmpresaListada | undefined;
+
+    try {
+      item = await this.banco.emUnidadeDeTrabalho(async (tx) => {
+        const alterada = await alterarEmpresa(tx, empresaId, dados);
+
+        if (alterada === undefined) {
+          return undefined;
+        }
+
+        return paraItemDaListagem(
+          alterada,
+          await elegibilidadeDeExclusaoDaEmpresa(tx, alterada.id),
+        );
+      });
+    } catch (erro) {
+      // O erro de DOMÍNIO é traduzido aqui, e num ponto só; qualquer outro sobe intacto, porque
+      // absorver `23505` em bloco esconderia um defeito atrás de um `422` plausível.
+      if (erro instanceof ErroDeDocumentoDeEmpresaEmUso) {
+        throw recusaDeDocumentoEmUso();
+      }
+
+      throw erro;
+    }
+
+    if (item === undefined) {
+      throw naoEncontrado();
+    }
+
+    this.logger.info({ empresaId: item.id }, 'cadastro de empresa corrigido pelo operador do SaaS');
+
+    return item;
+  }
+
+  /**
+   * Remove a empresa **em definitivo**, com as pessoas dela (US-09, RN-12, ADR-0038).
+   *
+   * ---------------------------------------------------------------------------
+   * A recusa nomeia a CLASSE — nunca a entidade, nunca a quantidade (RN-15, CA-20)
+   * ---------------------------------------------------------------------------
+   *
+   * O impedimento chega aqui já traduzido em `ClasseDeImpedimento` por `@sysloc/db`, que o deriva do
+   * par (`code`, `constraint_name`) do servidor. O `detail` do erro do driver — que carrega os
+   * **valores** da chave recusada — não é lido, não é copiado e não é registrado: dizer *"3
+   * contratos"* ou *"o contrato CTR-2026-00001"* seria dado de negócio numa persona que a ADR-0013
+   * restringe ao que é dela, e o operador não precisa de nenhum dos dois para decidir. O que ele
+   * precisa é da classe e da saída, e a saída é **executável**: `SUSPENSAO` nomeia a rota que este
+   * mesmo serviço publica.
+   *
+   * ⚠️ **Falha fechada**: uma restrição que o vocabulário não classifique não vira "removida" nem
+   * "elegível" — `@sysloc/db` repassa o erro intacto e a operação vira falha.
+   *
+   * ---------------------------------------------------------------------------
+   * As DUAS instruções são UM commit, e a recusa é da operação inteira
+   * ---------------------------------------------------------------------------
+   *
+   * `excluirEmpresa` remove as pessoas da empresa e a empresa na **mesma** unidade (RN-12). Cada
+   * administrador permanece sujeito ao **seu próprio** critério: se um só for inelegível, a operação
+   * inteira é recusada e nada sai — e a classe publicada é `ADMINISTRADORES_NAO_ELEGIVEIS`, nunca a
+   * classe fina da dependência daquela pessoa, que descreveria um fato que é dela e não da empresa.
+   *
+   * ---------------------------------------------------------------------------
+   * O desfecho é VALOR, e a tradução acontece FORA da unidade
+   * ---------------------------------------------------------------------------
+   *
+   * `excluirEmpresa` desfaz a recusa no próprio ponto de salvamento, de modo que a unidade segue
+   * utilizável e comita **sem ter gravado nada**. O que a borda precisa decidir — qual código HTTP —
+   * não é assunto de dentro da transação.
+   */
+  async excluir(empresaId: string): Promise<RemocaoDaEmpresa> {
+    const desfecho = await this.banco.emUnidadeDeTrabalho(
+      async (tx) => await excluirEmpresa(tx, empresaId),
+    );
+
+    if (desfecho.desfecho === 'IMPEDIDO') {
+      // A linha de trilha leva a CLASSE e o alvo, e nada além (§13.1, RN-15): o `detail` do driver
+      // não passa por aqui, e o registro estruturado é justamente onde ele escaparia sem ninguém ver.
+      this.logger.info(
+        { empresaId, impedimentos: desfecho.impedimentos },
+        'a remoção definitiva da empresa foi recusada pela integridade referencial',
+      );
+
+      throw recusaDeExclusao(desfecho.impedimentos);
+    }
+
+    if (desfecho.desfecho === 'NAO_ALCANCADO') {
+      throw naoEncontrado();
+    }
+
+    this.logger.info({ empresaId }, 'empresa removida em definitivo pelo operador do SaaS');
+
+    return { id: empresaId, removida: true };
   }
 
   /**
@@ -619,4 +892,102 @@ function paraContrato(linha: EmpresaPersistida): EmpresaDoContrato {
     estado: linha.suspensaEm === null ? 'ATIVA' : 'SUSPENSA',
     criadaEm: linha.criadaEm.toISOString(),
   };
+}
+
+/**
+ * Traduz a linha na forma que a **listagem** e a **correção cadastral** publicam — o contrato mais a
+ * prévia.
+ *
+ * Ela compõe sobre {@link paraContrato}, e não redigita as cinco chaves: a derivação de `estado`
+ * continua tendo um ponto só, e um campo acrescentado lá aparece aqui sem que ninguém precise
+ * lembrar.
+ *
+ * A elegibilidade entra por **parâmetro**, e não é lida aqui: esta função é pura, e a sonda precisa
+ * de um executor de transação. Separá-las é o que permite compor o item sem banco.
+ *
+ * ⚠️ **A tripla `motivo`/`impedimentos`/`alternativa` da indisponibilidade é composta AQUI, e num
+ * lugar só** — é a mesma que {@link recusaDeExclusao} publica, pelas mesmas duas constantes. Duas
+ * triplas ficariam livres para divergir, e o operador leria na prévia um motivo que a recusa não
+ * confirma.
+ */
+function paraItemDaListagem(
+  linha: EmpresaPersistida,
+  elegibilidade: ElegibilidadeDeExclusao,
+): EmpresaListada {
+  return {
+    ...paraContrato(linha),
+    exclusao: elegibilidade.elegivel
+      ? { disponivel: true, impedimentos: [] }
+      : {
+          disponivel: false,
+          motivo: MOTIVO_DA_EXCLUSAO_IMPEDIDA,
+          impedimentos: elegibilidade.impedimentos,
+          alternativa: ALTERNATIVA_A_EXCLUSAO,
+        },
+  };
+}
+
+/**
+ * A recusa da correção cadastral cujo documento já pertence a outra empresa (CA-11, RN-15).
+ *
+ * ⚠️ **Nada do erro do driver entra aqui.** O `detail` do PostgreSQL carrega o **valor** da chave
+ * recusada — isto é, o documento da outra empresa —, e ele não é lido, não é copiado e não é
+ * registrado: quem decide o desfecho é `@sysloc/db`, pelo par (`code`, `constraint_name`), e o que
+ * chega até aqui é um discriminante sem dado. O campo nomeado é o que o cliente precisa para
+ * corrigir.
+ */
+function recusaDeDocumentoEmUso(): ErroDeAplicacao {
+  return new ErroDeAplicacao(
+    CodigoErro.CAMPO_INVALIDO,
+    MENSAGEM_POR_CODIGO[CodigoErro.CAMPO_INVALIDO],
+    { campo: CAMPO_DO_DOCUMENTO, detalhes: { motivo: MOTIVO_DO_DOCUMENTO_EM_USO } },
+  );
+}
+
+/**
+ * A recusa da remoção definitiva impedida pela integridade referencial (US-10, CA-13, RN-15).
+ *
+ * Ela nomeia **a classe, a lista de classes e a alternativa** — e é a MESMA tripla que a prévia da
+ * listagem publica por item, composta pelas mesmas duas constantes.
+ *
+ * ⚠️ **Nunca a entidade, nunca a quantidade.** `impedimentos` carrega classes do vocabulário fechado
+ * da RN-15; *"3 contratos"* ou *"o contrato CTR-2026-00001"* seriam dado de negócio numa persona que
+ * a ADR-0013 restringe ao que é dela, e nada disso ajuda a decidir — o que decide é a classe, e a
+ * saída é `alternativa`.
+ */
+function recusaDeExclusao(impedimentos: readonly ClasseDeImpedimento[]): ErroDeAplicacao {
+  return new ErroDeAplicacao(
+    CodigoErro.CAMPO_INVALIDO,
+    MENSAGEM_POR_CODIGO[CodigoErro.CAMPO_INVALIDO],
+    {
+      campo: CAMPO_DO_IDENTIFICADOR,
+      detalhes: {
+        motivo: MOTIVO_DA_EXCLUSAO_IMPEDIDA,
+        impedimentos,
+        alternativa: ALTERNATIVA_A_EXCLUSAO,
+      },
+    },
+  );
+}
+
+/**
+ * A recusa por ausência — a mesma para inexistente e para alcance nenhum, byte a byte.
+ *
+ * ⚠️ **É a quinta declaração do mesmo envelope no arquivo, e as outras quatro seguem inline** — na
+ * admissão do administrador, na suspensão, na reativação e na reemissão da Senha provisória.
+ * Convertê-las agora reescreveria o caminho de recusa de **quatro rotas entregues**, sem defeito que
+ * o motive e sem critério de aceite que o peça: é exatamente o *"aproveitar que estou aqui"* que a
+ * §4.5 do Protocolo Antirregressão proíbe, e o `PUT`/`DELETE` desta task não tocam nenhuma delas.
+ *
+ * E a classe de risco que a duplicação costuma carregar **não existe aqui**: este envelope não tem
+ * campo próprio — nem `campo`, nem `detalhes` —, de modo que as cinco cópias não têm em que
+ * divergir. A indistinguibilidade que a ADR-0017 exige está em `CodigoErro` e em
+ * `MENSAGEM_POR_CODIGO`, que já têm ponto único; o que se ganharia é forma, não garantia. Mesmo
+ * critério, e mesmo precedente, de {@link MOTIVO_DA_EXCLUSAO_IMPEDIDA}.
+ */
+function naoEncontrado(): ErroDeAplicacao {
+  return new ErroDeAplicacao(
+    CodigoErro.RECURSO_NAO_ENCONTRADO,
+    MENSAGEM_POR_CODIGO[CodigoErro.RECURSO_NAO_ENCONTRADO],
+  );
 }

@@ -49,6 +49,24 @@
  */
 
 import type { Fragment, TransactionSql } from 'postgres';
+// A maquinaria da exclusão definitiva mora em `./administrador-do-master.js`, e o sentido da
+// importação é deliberado: `IMPEDIMENTOS_DE_EXCLUSAO` é o vocabulário do impedimento, e ele nasce
+// junto do módulo cujo alcance o produziu. Uma terceira casa só para hospedá-lo criaria um módulo
+// sem sujeito; duplicar a mecânica do ponto de salvamento daria duas definições do mesmo critério —
+// exatamente o que a decisão D2-b existe para impedir. `administrador-do-master.ts` não importa
+// nada daqui, de modo que o grafo continua acíclico.
+//
+// `RecusaDeExclusao`, `classeDoImpedimento`, `ensaiarExclusao` e `semDeixarEfeitoNaRecusa` são
+// internos ao pacote — o índice não os reexporta, e a fronteira que o produto conhece segue sendo
+// o `DesfechoDaExclusao`.
+import {
+  classeDoImpedimento,
+  type DesfechoDaExclusao,
+  type ElegibilidadeDeExclusao,
+  ensaiarExclusao,
+  RecusaDeExclusao,
+  semDeixarEfeitoNaRecusa,
+} from './administrador-do-master.js';
 // A ORIGEM do tipo, e não a reexportação de `./permissao.js` — ver o D35 da T7: o perfil é
 // vocabulário do domínio de identidade, e este módulo o consome para `lerAlvoDeReemissao`, que não
 // tem relação alguma com ajuste de permissão.
@@ -400,4 +418,199 @@ export async function lerAlvoDeReemissao(
   `;
 
   return pessoa;
+}
+
+// ===========================================================================
+// Correção cadastral e remoção definitiva — a fatia `painel-master-administradores`
+// ===========================================================================
+
+/**
+ * O documento já pertence a **outra** empresa.
+ *
+ * É erro de **domínio**, e não de transporte: esta camada não conhece HTTP nem código de erro de
+ * API. Quem o traduz no envelope da ADR-0017 — `422 CAMPO_INVALIDO` com `campo: 'documento'` — é
+ * `apps/api/src/master/empresa.service.ts`, num ponto único.
+ *
+ * **A mensagem não carrega o documento recusado**, e a omissão é a decisão — mesma razão registrada
+ * em `ErroDeIdentificadorMunicipalEmUso` ({@link ./imovel.ts}) e em `ErroDeDocumentoEmUso`
+ * ({@link ./cadastro-de-pessoa.ts}): ela chega ao registro estruturado, e a recusa é a resposta a um
+ * pedido que ainda não provou nada. O que o operador precisa saber — qual campo — viaja em campo
+ * nomeado.
+ *
+ * Ela **não** carrega discriminante de conflito, diferente das duas irmãs: `identidade.empresa` não
+ * tem exclusão lógica (ADR-0038), de modo que a linha em conflito só pode estar em circulação — não
+ * existe o segundo estado que lá precisava ser informado.
+ */
+export class ErroDeDocumentoDeEmpresaEmUso extends Error {
+  override readonly name: string = 'ErroDeDocumentoDeEmpresaEmUso';
+
+  constructor() {
+    super('o documento já pertence a outra empresa');
+  }
+}
+
+/**
+ * A restrição que impõe a unicidade do documento, como o servidor a reporta.
+ *
+ * É a **mesma** que {@link admitirEmpresa} nomeia no `ON CONFLICT`, e nomeá-la aqui é o que torna a
+ * recusa atribuível ao documento: sem alvo, um `catch` genérico de `23505` absorveria qualquer
+ * unicidade acrescentada a `identidade.empresa` no futuro, e a borda reportaria *"documento já
+ * registrado"* para uma colisão que não é de documento — uma recusa que mente sobre a própria causa.
+ */
+const RESTRICAO_DO_DOCUMENTO_DA_EMPRESA = 'empresa_documento_unique';
+
+/** `unique_violation` — o `SQLSTATE` com que o servidor recusa a restrição acima. */
+const VIOLACAO_DE_UNICIDADE_DA_EMPRESA = '23505';
+
+/**
+ * Corrige nome e documento da empresa, e devolve a linha nova. `undefined` quando ela não existe.
+ *
+ * **Ela escreve só as duas colunas cadastrais.** `suspensa_em` e `criada_em` ficam de fora, e a
+ * ausência é o mecanismo da CA-09: corrigir o cadastro de uma empresa suspensa **não** a reativa, e
+ * o instante da suspensão continua sendo exatamente o mesmo — não um instante novo que por acaso
+ * também é não nulo. Quem move `suspensa_em` são {@link suspenderEmpresa} e {@link reativarEmpresa},
+ * que são rota própria (ADR-0021): estado não é campo de edição cadastral.
+ *
+ * Os dois campos são gravados **na mesma instrução**: uma implementação que gravasse campo a campo
+ * deixaria o nome novo persistido quando o documento colidisse.
+ *
+ * A duplicidade é decidida **pelo banco**, e não por uma leitura prévia — mesma razão de
+ * {@link admitirEmpresa}: entre o `SELECT` que não achou e o `UPDATE`, outra transação grava.
+ *
+ * A escrita corre dentro de um **ponto de salvamento** porque a violação `23505` aborta a transação,
+ * e sem o retorno ao ponto a unidade de quem chama ficaria inutilizável (`25P02`) — é a mecânica de
+ * `gravarSobRestricaoDeUnicidade`, em {@link ./imovel.ts}. Toda violação que **não** seja a da
+ * restrição nomeada é repassada intacta.
+ */
+export async function alterarEmpresa(
+  tx: TransactionSql,
+  empresaId: string,
+  dados: EmpresaNova,
+): Promise<EmpresaPersistida | undefined> {
+  try {
+    return await tx.savepoint(async (escrita) => {
+      const [alterada] = await escrita<EmpresaPersistida[]>`
+        UPDATE identidade.empresa
+           SET nome = ${dados.nome},
+               documento = ${dados.documento}
+         WHERE id = ${empresaId}
+        RETURNING ${colunasDaEmpresa(escrita)}
+      `;
+
+      return alterada;
+    });
+  } catch (erro) {
+    if (!ehColisaoDeDocumentoDaEmpresa(erro)) {
+      throw erro;
+    }
+
+    throw new ErroDeDocumentoDeEmpresaEmUso();
+  }
+}
+
+/** Reconhece a recusa da restrição de unicidade do documento — por forma, nunca por texto. */
+function ehColisaoDeDocumentoDaEmpresa(erro: unknown): boolean {
+  const falha = erro as { code?: unknown; constraint_name?: unknown } | null;
+
+  return (
+    falha?.code === VIOLACAO_DE_UNICIDADE_DA_EMPRESA &&
+    falha.constraint_name === RESTRICAO_DO_DOCUMENTO_DA_EMPRESA
+  );
+}
+
+/**
+ * Remove a empresa em definitivo — as **duas** instruções, num único commit (RN-12, ADR-0038).
+ *
+ * ---------------------------------------------------------------------------
+ * POR QUE DUAS INSTRUÇÕES, E POR QUE NA MESMA UNIDADE
+ * ---------------------------------------------------------------------------
+ *
+ * (a) remove as pessoas da empresa — é o que o requisito chama de *"além do próprio cadastro feito
+ * no Master"* — e (b) remove a empresa. Elas são **uma** operação: entre um commit e outro existiria
+ * um estado em que a empresa perdeu as pessoas e continuou de pé, e uma falha em (b) o deixaria
+ * gravado. Aqui, recusa em qualquer das duas desfaz tudo, e é o `CT-1213` que o mede — a
+ * sobrevivência do administrador **elegível** é a asserção que reprova uma remoção em laço.
+ *
+ * ---------------------------------------------------------------------------
+ * A CLASSE PUBLICADA DEPENDE DE QUAL PASSO RECUSOU — e a distinção é da RN-15
+ * ---------------------------------------------------------------------------
+ *
+ * O passo (a) só pode ser recusado por uma dependência **da pessoa** (trilha, vínculo, autoria), e a
+ * classe fina dessas dependências descreve o impedimento *do administrador*, não o *da empresa*. O
+ * que a empresa publica é `ADMINISTRADORES_NAO_ELEGIVEIS`, e o operador desce ao detalhe pela
+ * listagem de administradores, onde cada item traz a própria prévia. Publicar `TENTATIVA_DE_ENTRADA`
+ * na recusa da **empresa** atribuiria a ela um fato que é de uma pessoa — e a RN-15 manda a recusa
+ * nomear a classe, nunca a entidade.
+ *
+ * ⚠️ **A restrição continua sendo classificada antes**, e a substituição não afrouxa nada: uma
+ * restrição `23503` que o mapa não conheça segue **falhando fechada** (o erro é repassado intacto),
+ * em vez de virar `ADMINISTRADORES_NAO_ELEGIVEIS` por omissão.
+ *
+ * O passo (b) é classificado pelo mapa direto: as 16 chaves de `negocio` dão
+ * `REGISTROS_DE_NEGOCIO`, e `usuario_empresa_id_empresa_id_fk` dá `ADMINISTRADORES_NAO_ELEGIVEIS`.
+ *
+ * `conta`, `dois_fatores` e `sessao` de cada pessoa somem por `ON DELETE cascade` do schema — esta
+ * função não as apaga.
+ */
+export async function excluirEmpresa(
+  tx: TransactionSql,
+  empresaId: string,
+): Promise<DesfechoDaExclusao> {
+  return await semDeixarEfeitoNaRecusa(tx, async (escrita) => {
+    await removerPessoasDaEmpresa(escrita, empresaId);
+
+    const [removida] = await escrita<{ id: string }[]>`
+      DELETE FROM identidade.empresa
+       WHERE id = ${empresaId}
+      RETURNING id
+    `;
+
+    return removida === undefined ? { desfecho: 'NAO_ALCANCADO' } : { desfecho: 'REMOVIDO' };
+  });
+}
+
+/**
+ * O passo (a) de {@link excluirEmpresa} — as pessoas da empresa, de qualquer perfil.
+ *
+ * Sem recorte por perfil, e é deliberado: o que se remove é **a empresa inteira**, e um Usuário
+ * Empresa deixado para trás faria o passo (b) recusar por `usuario_empresa_id_empresa_id_fk` com a
+ * mesma classe — pelo caminho mais longo e com um estado intermediário a mais.
+ *
+ * A tradução da recusa acontece **aqui**, e não no envoltório, porque é aqui que se sabe que a
+ * dependência é de uma pessoa. A `RecusaDeExclusao` levantada é interna ao pacote; quem a converte
+ * em desfecho é {@link semDeixarEfeitoNaRecusa}, que também desfaz o que este passo escreveu.
+ */
+async function removerPessoasDaEmpresa(escrita: TransactionSql, empresaId: string): Promise<void> {
+  try {
+    await escrita`
+      DELETE FROM identidade.usuario
+       WHERE empresa_id = ${empresaId}
+    `;
+  } catch (erro) {
+    // Classifica **antes** de substituir: restrição desconhecida sobe intacta (falha fechada), em
+    // vez de virar uma classe plausível que ninguém apurou.
+    if (classeDoImpedimento(erro) === undefined) {
+      throw erro;
+    }
+
+    throw new RecusaDeExclusao(['ADMINISTRADORES_NAO_ELEGIVEIS']);
+  }
+}
+
+/**
+ * A prévia de elegibilidade da remoção da empresa — o próprio ato, em ensaio desfeito.
+ *
+ * Ver {@link ./administrador-do-master.ts}.`ensaiarExclusao` para o mecanismo, a razão de o
+ * desfazimento ser incondicional e a retenção de bloqueios que o retorno ao ponto **não** libera.
+ *
+ * ⚠️ **Ela executa `DELETE`, e é isso que a torna correta.** Uma leitura que contasse registros de
+ * `negocio` a partir desta persona devolveria **zero para uma empresa cheia** — ver o marcador
+ * `DECISÃO FECHADA` de `IMPEDIMENTOS_DE_EXCLUSAO`, em {@link ./administrador-do-master.ts}, e a
+ * rede que o guarda (`CT-1204` mede a contagem e a sonda **na mesma unidade de trabalho**).
+ */
+export async function elegibilidadeDeExclusaoDaEmpresa(
+  tx: TransactionSql,
+  empresaId: string,
+): Promise<ElegibilidadeDeExclusao> {
+  return await ensaiarExclusao(tx, async (ensaio) => await excluirEmpresa(ensaio, empresaId));
 }

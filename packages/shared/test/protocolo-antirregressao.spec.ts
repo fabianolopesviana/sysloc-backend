@@ -24,8 +24,14 @@
  * |        | aponta para arquivo existente. |
  * | CT-638 | O contrato da fila tem definição ÚNICA em `packages/shared/src/fila.ts`, é consumido
  * |        | pela fronteira do pacote, e o D32 saiu do código E do índice — as duas pontas. |
- * | CT-1196| Os três números da superfície narrados no `CLAUDE.md` são iguais, um a um, às três
- * |        | constantes executáveis da âncora — a suíte é a fonte, o texto é a cópia. |
+ * | CT-1196| Os números da superfície narrados nas **QUATRO** ocorrências normativas do `CLAUDE.md`
+ * |        | — a prosa da F5, o bullet `Superfície`, o item 2 do marco de entrega e a menção das
+ * |        | rotas `GET /docs*` no bloco de débitos — são iguais, par a par, às três constantes
+ * |        | executáveis da âncora: **10** pares (ocorrência, eixo), cada um com perna de igualdade
+ * |        | e perna de falsificação próprias, sobre **controle antivácuo** que afirma a
+ * |        | cardinalidade e o elenco das quatro. A suíte é a fonte, o texto é a cópia. ⚠️ A menção
+ * |        | HISTÓRICA da auditoria de drift do handoff (2026-08-24) **não** entra — ela é registro
+ * |        | datado, e não afirmação sobre a superfície corrente. |
  * | CT-1198| Cada débito fechado na fatia `publicacao-e-backup/v1`, identificado pelo **par**, saiu
  * |        | das duas pontas; e cada homônimo que ela não fecha continua vivo nas duas. |
  *
@@ -712,6 +718,12 @@ describe('CT-910 — a comparação de contagem não mede replay de cache', () =
 //    superfície. Medido: nenhuma suíte fazia isso, e a linha já divergiu quatro vezes (75/77,
 //    99/84, 103/88, 105/90), mais uma quinta no nome de um campo. A suíte é a fonte, o texto é a
 //    cópia — e sem asserção a cópia envelhece no mesmo diff que a escreve.
+//    ⚠️ **Estendido em 2026-09-02 (T7 da fatia `painel-master-administradores`) de UMA ocorrência
+//    para as QUATRO normativas**, pela mesma medição que o justificou: ele lia só o bullet
+//    `Superfície`, e as outras três — a prosa da F5, o item 2 do marco de entrega e a menção das
+//    rotas `GET /docs*` — divergiram em silêncio quando a superfície foi a `113 / 98 / 20`. Ler uma
+//    das quatro e chamá-lo de rede contra divergência era o próprio defeito que ele existe para
+//    pegar, escrito dentro dele.
 //  - o CT-1198 confere que os débitos fechados nesta fatia saíram das DUAS pontas **pelo par**, e
 //    que os homônimos que ela NÃO fecha continuam vivos. O CT-907 acima prova a coerência
 //    genérica e ficaria verde se a fatia tivesse apagado marcador e linha do débito ERRADO —
@@ -726,37 +738,129 @@ describe('CT-910 — a comparação de contagem não mede replay de cache', () =
 const ANCORA_DA_SUPERFICIE = 'apps/api/test/cobertura-de-autorizacao.e2e.spec.ts';
 
 /**
- * Os três eixos da superfície publicada.
+ * Os três eixos da superfície publicada, e a constante executável que declara cada um.
  *
- * `constante` é o nome declarado na âncora; `narrado` é o molde que extrai o mesmo número da prosa
- * do `CLAUDE.md`. **Nenhum valor é redigitado aqui**: os dois lados saem de leitura, e é a
- * igualdade entre eles que o caso afirma. Escrever o número esperado nesta lista transformaria o
- * caso numa terceira cópia — exatamente a divergência que ele existe para pegar.
- *
- * ⚠️ O molde dos manipuladores é ancorado na frase inteira (`Superfície: N rotas / M
- * manipuladores`), e não em `(\d+) manipuladores`: o arquivo cita `103 rotas / 88 manipuladores`
- * mais abaixo, no marco de entrega, e o molde curto casaria a menção histórica em vez da medição
- * corrente.
+ * **Nenhum valor é redigitado aqui**: os dois lados saem de leitura, e é a igualdade entre eles que
+ * o caso afirma. Escrever o número esperado nesta lista transformaria o caso numa terceira cópia —
+ * exatamente a divergência que ele existe para pegar.
  */
 const EIXOS_DA_SUPERFICIE = [
-  {
-    eixo: 'rotas',
-    constante: 'ROTAS_PUBLICADAS_EM_PRODUCAO',
-    narrado: /\*\*Superfície: (\d+) rotas/,
-  },
-  {
-    eixo: 'manipuladores',
-    constante: 'MANIPULADORES_EXAMINADOS_EM_PRODUCAO',
-    narrado: /\*\*Superfície: \d+ rotas \/ (\d+) manipuladores\*\*/,
-  },
-  {
-    eixo: 'públicas',
-    constante: 'PARES_PUBLICOS_DA_SUPERFICIE',
-    narrado: /`publicas` em \*\*(\d+)\*\*/,
-  },
+  { eixo: 'rotas', constante: 'ROTAS_PUBLICADAS_EM_PRODUCAO' },
+  { eixo: 'manipuladores', constante: 'MANIPULADORES_EXAMINADOS_EM_PRODUCAO' },
+  { eixo: 'públicas', constante: 'PARES_PUBLICOS_DA_SUPERFICIE' },
 ] as const;
 
+/**
+ * As **QUATRO** ocorrências NORMATIVAS dos números da superfície no `CLAUDE.md`, e o molde que
+ * extrai cada eixo de cada uma.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que quatro, e não a do bullet sozinha
+ * ---------------------------------------------------------------------------
+ *
+ * Até 2026-09-02 este caso lia **uma** ocorrência — o bullet `Superfície` do `Estado atual` — e
+ * deixava as outras três divergirem em silêncio, que é **exatamente** o defeito que ele nasceu para
+ * pegar. A T7 da fatia `painel-master-administradores` mediu a divergência: com a superfície em
+ * `113 / 98 / 20`, a prosa da F5, o item 2 do marco de entrega e a menção das rotas `GET /docs*` no
+ * bloco de débitos seguiam dizendo `106 / 91`, e nada reprovava. Agora cada par (ocorrência, eixo)
+ * tem perna de igualdade e perna de falsificação próprias.
+ *
+ * ---------------------------------------------------------------------------
+ * O que NÃO entra: a menção HISTÓRICA
+ * ---------------------------------------------------------------------------
+ *
+ * A auditoria de drift do handoff (*"91 manipuladores extraídos dos decoradores"*) é **registro
+ * datado de 2026-08-24**, e não afirmação sobre a superfície corrente. Incluí-la aqui obrigaria a
+ * reescrevê-la a cada fatia, apagando o registro de que documento e código coincidiam naquela data —
+ * e é por isso que cada molde é ancorado na **frase inteira** que o cerca, em vez de num
+ * `(\d+) manipuladores` solto que casaria a menção errada.
+ *
+ * ---------------------------------------------------------------------------
+ * Nem toda ocorrência carrega os três eixos
+ * ---------------------------------------------------------------------------
+ *
+ * A do bloco de débitos narra só o total de rotas (*"as 8 rotas `GET /docs*` das **113**"*), e por
+ * isso declara um molde só. `moldes` é parcial de propósito: exigir os três de todas obrigaria a
+ * inventar prosa para satisfazer a estrutura do teste, que é a cauda balançando o cachorro.
+ *
+ * ⚠️ **Os moldes carregam a marca `d`** (`hasIndices`), e ela é conteúdo: a falsificação substitui o
+ * grupo capturado **pela posição exata** dele. Sem isso a substituição seria por texto, e o primeiro
+ * `20` do trecho *"desde **2026-08-23**, hoje em … / 20 públicas"* está dentro de `2026` — o mutante
+ * corromperia a data em vez do número, e a falsificação deixaria de falsificar o que promete.
+ */
+const OCORRENCIAS_NORMATIVAS = [
+  {
+    ocorrencia: 'prosa da F5',
+    moldes: {
+      rotas: /medem hoje \*\*(\d+) rotas/d,
+      manipuladores: /medem hoje \*\*\d+ rotas \/ (\d+) manipuladores/d,
+      públicas: /medem hoje \*\*\d+ rotas \/ \d+ manipuladores \/ (\d+) públicas\*\*/d,
+    },
+  },
+  {
+    ocorrencia: 'bullet Superfície',
+    moldes: {
+      rotas: /\*\*Superfície: (\d+) rotas/d,
+      manipuladores: /\*\*Superfície: \d+ rotas \/ (\d+) manipuladores\*\*/d,
+      públicas: /`publicas` em \*\*(\d+)\*\*/d,
+    },
+  },
+  {
+    ocorrencia: 'marco de entrega',
+    moldes: {
+      rotas: /congelada\*\* desde \*\*[\d-]+\*\*, hoje em \*\*(\d+) rotas/d,
+      manipuladores:
+        /congelada\*\* desde \*\*[\d-]+\*\*, hoje em \*\*\d+ rotas \/ (\d+) manipuladores/d,
+      públicas:
+        /congelada\*\* desde \*\*[\d-]+\*\*, hoje em \*\*\d+ rotas \/ \d+ manipuladores \/\s+(\d+) públicas\*\*/d,
+    },
+  },
+  {
+    ocorrencia: 'bloco de débitos',
+    moldes: {
+      rotas: /as 8 rotas `GET \/docs\*` das \*\*(\d+)\*\* da/d,
+    },
+  },
+] as const satisfies readonly {
+  readonly ocorrencia: string;
+  readonly moldes: Readonly<Partial<Record<string, RegExp>>>;
+}[];
+
+interface MedicaoDeclarada {
+  readonly ocorrencia: string;
+  readonly eixo: string;
+  readonly constante: string;
+  readonly narrado: RegExp;
+}
+
+/**
+ * O produto (ocorrência × eixo declarado) — a lista plana que as pernas percorrem.
+ *
+ * Derivada, e não escrita à mão: a cardinalidade dela é afirmada contra
+ * {@link MEDICOES_NORMATIVAS_DA_SUPERFICIE}, que é o **controle antivácuo** desta classe de asserção
+ * — uma declaração esvaziada faria as pernas sumirem em vez de reprovarem, e uma suíte com zero
+ * pernas é verde.
+ */
+const MEDICOES_DECLARADAS: readonly MedicaoDeclarada[] = OCORRENCIAS_NORMATIVAS.flatMap(
+  ({ ocorrencia, moldes }) =>
+    EIXOS_DA_SUPERFICIE.flatMap(({ eixo, constante }) => {
+      const narrado = (moldes as Readonly<Partial<Record<string, RegExp>>>)[eixo];
+
+      return narrado === undefined ? [] : [{ ocorrencia, eixo, constante, narrado }];
+    }),
+);
+
+/**
+ * Quantos pares (ocorrência, eixo) o `CLAUDE.md` narra — **medido**, e afirmado por si.
+ *
+ * Três ocorrências carregam os três eixos e a do bloco de débitos carrega só o total de rotas:
+ * `3 × 3 + 1 = 10`. É o antivácuo: sem esta âncora, apagar uma ocorrência da declaração acima
+ * deixaria a suíte **verde com menos pernas**, que é o modo silencioso de esta prova apodrecer.
+ */
+const MEDICOES_NORMATIVAS_DA_SUPERFICIE = 10;
+
 interface EixoMedido {
+  ocorrencia: string;
   eixo: string;
   narrado: number;
   executavel: number;
@@ -776,96 +880,119 @@ function inteiroPor(texto: string, molde: RegExp, oQue: string): number {
   return Number(achado[1]);
 }
 
-/** Os três eixos, cada um com o valor narrado e o valor da constante executável. */
+/** O valor da constante executável de um eixo, lido da âncora. */
+function constanteExecutavel(ancora: string, constante: string): number {
+  return inteiroPor(
+    ancora,
+    new RegExp(`^const ${constante} = (\\d+);`, 'm'),
+    `a constante ${constante}`,
+  );
+}
+
+/** Cada par (ocorrência, eixo), com o valor narrado e o valor da constante executável. */
 function medirSuperficie(instrucoes: string, ancora: string): EixoMedido[] {
-  return EIXOS_DA_SUPERFICIE.map(({ eixo, constante, narrado }) => ({
+  return MEDICOES_DECLARADAS.map(({ ocorrencia, eixo, constante, narrado }) => ({
+    ocorrencia,
     eixo,
-    narrado: inteiroPor(instrucoes, narrado, `o número narrado de ${eixo}`),
-    executavel: inteiroPor(
-      ancora,
-      new RegExp(`^const ${constante} = (\\d+);`, 'm'),
-      `a constante ${constante}`,
-    ),
+    narrado: inteiroPor(instrucoes, narrado, `o número narrado de ${eixo} em ${ocorrencia}`),
+    executavel: constanteExecutavel(ancora, constante),
   }));
 }
 
-/** Os eixos em que o texto e a constante discordam — vazio é o estado saudável. */
+/** Os pares em que o texto e a constante discordam — vazio é o estado saudável. */
 function divergenciasDaSuperficie(medidos: EixoMedido[]): EixoMedido[] {
   return medidos.filter(({ narrado, executavel }) => narrado !== executavel);
 }
 
 /**
- * Devolve o texto com o número narrado de um eixo trocado por outro — o mutante de falsificação.
+ * Devolve o texto com o número narrado de UM par (ocorrência, eixo) trocado por outro — o mutante de
+ * falsificação.
  *
  * O valor mutado é derivado do próprio texto (`valor - 1`), nunca escrito à mão: um literal aqui
  * apodreceria na primeira vez que a superfície mudasse, e o mutante deixaria de ser mutante.
+ *
+ * A substituição é feita **pela posição exata do grupo capturado** (`indices`, marca `d`), e não por
+ * busca textual: o trecho casado pode conter o mesmo dígito antes do grupo — o `20` de `2026` é o
+ * caso real deste arquivo —, e uma substituição por texto corromperia a data em vez do número, com o
+ * mutante ficando verde por mexer no lugar errado.
  */
-function comOEixoNarradoAlterado(instrucoes: string, eixo: string): string {
-  const alvo = EIXOS_DA_SUPERFICIE.find((candidato) => candidato.eixo === eixo);
-  if (alvo === undefined) throw new Error(`eixo desconhecido: ${eixo}`);
+function comOEixoNarradoAlterado(instrucoes: string, ocorrencia: string, eixo: string): string {
+  const alvo = MEDICOES_DECLARADAS.find(
+    (candidato) => candidato.ocorrencia === ocorrencia && candidato.eixo === eixo,
+  );
+  if (alvo === undefined) throw new Error(`par desconhecido: ${ocorrencia} · ${eixo}`);
 
   const achado = alvo.narrado.exec(instrucoes);
-  if (achado?.[1] === undefined) throw new Error(`molde de ${eixo} não casou`);
+  const posicao = achado?.indices?.[1];
+  if (achado?.[1] === undefined || posicao === undefined) {
+    throw new Error(`molde de ${eixo} em ${ocorrencia} não casou`);
+  }
 
-  const trecho = achado[0];
-  const mutado = trecho.replace(achado[1], String(Number(achado[1]) - 1));
-  return instrucoes.replace(trecho, mutado);
+  const [inicio, fim] = posicao;
+
+  return instrucoes.slice(0, inicio) + String(Number(achado[1]) - 1) + instrucoes.slice(fim);
 }
 
 describe('CT-1196 — a superfície narrada é cópia fiel das constantes executáveis', () => {
   const instrucoes = ler(CAMINHO_DAS_INSTRUCOES);
   const ancora = ler(ANCORA_DA_SUPERFICIE);
 
-  it('a extração devolve os TRÊS eixos, dos dois lados', () => {
+  it('a extração devolve as QUATRO ocorrências normativas e os TRÊS eixos, dos dois lados', () => {
     const medidos = medirSuperficie(instrucoes, ancora);
 
-    // Antivácuo: uma extração que devolvesse lista vazia faria a comparação abaixo passar por
-    // vacuidade — comparar nada com nada é o modo silencioso desta classe de asserção falhar.
-    expect(medidos).toHaveLength(EIXOS_DA_SUPERFICIE.length);
-    expect(medidos.map(({ eixo }) => eixo)).toEqual(['rotas', 'manipuladores', 'públicas']);
-    for (const { eixo, narrado, executavel } of medidos) {
-      expect(Number.isInteger(narrado), `narrado de ${eixo}`).toBe(true);
-      expect(Number.isInteger(executavel), `executável de ${eixo}`).toBe(true);
+    // Antivácuo, em três direções. Uma extração que devolvesse lista vazia — ou que perdesse uma
+    // ocorrência inteira — faria as pernas abaixo sumirem em vez de reprovarem, e suíte com zero
+    // pernas é verde: comparar nada com nada é o modo silencioso desta classe de asserção falhar.
+    expect(medidos).toHaveLength(MEDICOES_NORMATIVAS_DA_SUPERFICIE);
+    expect(
+      [...new Set(medidos.map(({ ocorrencia }) => ocorrencia))],
+      'uma ocorrência normativa do CLAUDE.md sumiu da declaração',
+    ).toEqual(['prosa da F5', 'bullet Superfície', 'marco de entrega', 'bloco de débitos']);
+    expect([...new Set(medidos.map(({ eixo }) => eixo))]).toEqual([
+      'rotas',
+      'manipuladores',
+      'públicas',
+    ]);
+
+    for (const { ocorrencia, eixo, narrado, executavel } of medidos) {
+      expect(Number.isInteger(narrado), `narrado de ${eixo} em ${ocorrencia}`).toBe(true);
+      expect(Number.isInteger(executavel), `executável de ${eixo} em ${ocorrencia}`).toBe(true);
     }
   });
 
-  it.each(EIXOS_DA_SUPERFICIE.map(({ eixo }) => eixo))(
-    'o eixo %s narrado é igual à constante executável',
-    (eixo) => {
+  it.each(MEDICOES_DECLARADAS)(
+    'o eixo $eixo narrado em «$ocorrencia» é igual à constante executável',
+    ({ ocorrencia, eixo }) => {
       const medido = medirSuperficie(instrucoes, ancora).find(
-        (candidato) => candidato.eixo === eixo,
+        (candidato) => candidato.ocorrencia === ocorrencia && candidato.eixo === eixo,
       );
 
-      // A mensagem nomeia o eixo e OS DOIS valores: quem lê a falha precisa saber qual lado
-      // corrigir, e a resposta é sempre a mesma — a suíte é a fonte, o texto é a cópia.
+      // A mensagem nomeia a ocorrência, o eixo e OS DOIS valores: quem lê a falha precisa saber
+      // **qual** das quatro ocorrências corrigir, e a resposta de qual lado é sempre a mesma — a
+      // suíte é a fonte, o texto é a cópia.
       expect(
         medido?.narrado,
-        `${eixo}: o texto diz ${medido?.narrado}, a constante executável diz ${medido?.executavel}`,
+        `${ocorrencia} · ${eixo}: o texto diz ${medido?.narrado}, a constante executável diz ${medido?.executavel}`,
       ).toBe(medido?.executavel);
     },
   );
 
-  it.each(EIXOS_DA_SUPERFICIE.map(({ eixo }) => eixo))(
-    'falsificação: um mutante no eixo %s reprova nomeando o eixo e os dois valores',
-    (eixo) => {
-      const mutante = comOEixoNarradoAlterado(instrucoes, eixo);
+  it.each(MEDICOES_DECLARADAS)(
+    'falsificação: um mutante no eixo $eixo de «$ocorrencia» reprova nomeando a ocorrência e os dois valores',
+    ({ ocorrencia, eixo, constante }) => {
+      const mutante = comOEixoNarradoAlterado(instrucoes, ocorrencia, eixo);
       expect(mutante, 'o mutante não mudou nada — a falsificação seria decorativa').not.toBe(
         instrucoes,
       );
 
       const divergencias = divergenciasDaSuperficie(medirSuperficie(mutante, ancora));
-      const executavel = inteiroPor(
-        ancora,
-        new RegExp(
-          `^const ${EIXOS_DA_SUPERFICIE.find((c) => c.eixo === eixo)?.constante} = (\\d+);`,
-          'm',
-        ),
-        `a constante do eixo ${eixo}`,
-      );
+      const executavel = constanteExecutavel(ancora, constante);
 
-      // Igualdade sobre a lista inteira, e não presença: o mutante mexe em UM eixo, e uma
-      // asserção de presença aprovaria uma comparação que acusasse os três de uma vez.
-      expect(divergencias).toEqual([{ eixo, narrado: executavel - 1, executavel }]);
+      // Igualdade sobre a lista inteira, e não presença: o mutante mexe em UM par, e uma asserção
+      // de presença aprovaria uma comparação que acusasse os dez de uma vez. É também o que prova
+      // que os moldes das quatro ocorrências são **disjuntos** — se dois casassem o mesmo trecho, a
+      // mutação de um apareceria como divergência de dois, e esta igualdade reprovaria.
+      expect(divergencias).toEqual([{ ocorrencia, eixo, narrado: executavel - 1, executavel }]);
     },
   );
 });
@@ -908,6 +1035,12 @@ const HOMONIMOS_QUE_SOBREVIVEM = ['D23 · F0/T3', 'D26 · F3/T8'] as const;
  * **Quando um débito nascer ou fechar, este número muda no mesmo diff** — junto da prosa do bloco,
  * que a asserção abaixo amarra a ele.
  *
+ * ⚠️ **38 → 39 em 2026-09-01.** A T1 da fatia `painel-master-administradores` emitiu o
+ * `D1 · F7/T1` — dois leitores da mesma linha de `identidade.usuario` (`lerAdministrador` e
+ * `lerAlvoDeReemissao`), com o Limiar de Três ainda não disparado. O número saiu do mesmo `grep`
+ * que o docblock descreve, sobre o arquivo real, e subiu **no mesmo diff** do marcador e da linha
+ * do índice — que é exatamente o que o parágrafo acima manda.
+ *
  * ⚠️ **38 → 39 → 38, tudo em 2026-08-27.** O `D50 · F6/fechamento` nasceu e fechou no mesmo dia: ele
  * registrava que as 12 unidades de `deploy/systemd/` ainda citavam `@sysloc/contracts` depois do
  * rename do pacote, e o gatilho dele — *a próxima execução do instalador com privilégio* — chegou
@@ -915,8 +1048,34 @@ const HOMONIMOS_QUE_SOBREVIVEM = ['D23 · F0/T3', 'D26 · F3/T8'] as const;
  * e reinstaladas no mesmo passo, que é o que o `cmp -s` byte a byte de
  * `verificar-unidades-agendadas.sh` exige. O número saiu do mesmo `grep` que o docblock descreve,
  * sobre o arquivo real — não de aritmética.
+ *
+ * ⚠️ **39 → 40 em 2026-09-02.** A T4 da fatia `painel-master-administradores` emitiu o
+ * `D8 · F7/T4` — a segunda cópia do envelope de recusa por perfil, em
+ * `apps/api/src/master/administrador.service.ts` ao lado de `master/empresa.service.ts`, com o
+ * Limiar de Três ainda não disparado. O número saiu do mesmo `grep` que o docblock descreve, sobre
+ * o arquivo real, e subiu **no mesmo diff** do marcador e da linha do índice — que é exatamente o
+ * que o parágrafo acima manda.
+ *
+ * ⚠️ **40 → 41 em 2026-09-02**, na **rodada 2** da mesma task. O `P5` do Gate 2 mediu que a
+ * escrituração fora feita para o envelope de recusa por perfil (`D8 · F7/T4`) e **omitida para a
+ * janela**, que é a segunda declaração da mesma forma dentro de `apps/api/src/master/` — mesmo
+ * arquivo, mesmo diff, mesma classe. O `D12 · F7/T4` fecha a omissão, e o marcador vive junto de
+ * `MAIOR_PAGINA_DE_ADMINISTRADORES`, em `apps/api/src/master/administrador.contrato.ts`. Ele é o
+ * **quarto** `D12` vivo do repositório, e os outros três seguem intactos. O número saiu do mesmo
+ * `grep` que o docblock descreve, sobre o arquivo real.
+ *
+ * ⚠️ **41 → 42 em 2026-09-02.** A T6 da fatia `painel-master-administradores` emitiu o
+ * `D22 · F7/T6` — as **seis** descrições de contrato escritas à mão em
+ * `apps/api/src/master/empresa.controller.ts`, contra a metade categórica da `Decision` da
+ * ADR-0016. Ele é o débito que a §7 daquela task manda registrar, e o gatilho dele é a primeira task
+ * autorizada a abrir aquele arquivo **para reformar a publicação do contrato**. ⚠️ **A T6 abriu o
+ * arquivo, e isso NÃO dispara o gatilho**: ela o abriu para publicar duas rotas, e as três descrições
+ * que acrescentou seguem a forma local justamente para que a divergência não cresça para arquivo
+ * novo — converter as seis reescreveria a publicação de seis rotas entregues sem que critério de
+ * aceite algum o peça. O número saiu do mesmo `grep` que o docblock descreve, sobre o arquivo real,
+ * e subiu **no mesmo diff** do marcador e da linha do índice.
  */
-const LINHAS_DO_INDICE_NO_FECHO_DA_FATIA = 38;
+const LINHAS_DO_INDICE_NO_FECHO_DA_FATIA = 42;
 
 /** O molde da prosa que anuncia o tamanho do índice, logo acima da tabela. */
 const PADRAO_DO_TOTAL_NARRADO = /São \*\*(\d+)\*\*, e a tabela abaixo é a lista viva/;

@@ -1,6 +1,6 @@
 /**
  * Os **acessórios de arranjo das suítes de borda** — casa única de `pedir`, `pedirBytes`, `entrar`,
- * `conceder` e `credencialDeSessao`.
+ * `entrarComSegundoFatorCumprido`, `conceder` e `credencialDeSessao`.
  *
  * ---------------------------------------------------------------------------
  * Por que existe: o fecho do débito D63 (F4/fechamento)
@@ -31,6 +31,14 @@
  * nascer; converter a daquela suíte é conversão de suíte existente, e vale para ela o limite
  * declarado logo abaixo.
  *
+ * ⚠️ **`entrarComSegundoFatorCumprido` chegou na T3 da fatia `painel-master-administradores`**, e a
+ * direção dela é a **oposta** à do limite declarado logo abaixo — ela **converte seis suítes
+ * existentes de uma vez**, em vez de esperar a próxima. A exceção é medida e está escrita no
+ * docblock dela: o Limiar de Três já havia disparado (eram **seis** escritas, não duas), a sétima
+ * nasceria na task seguinte desta mesma fatia, e o débito `D32 · F5/T7` declarava exatamente este
+ * gatilho — *a primeira task autorizada a abrir uma das seis*. A conversão foi o **objeto** daquela
+ * task, com baseline comparada arquivo a arquivo, e não carona num diff que publicava rota.
+ *
  * Esta task **cria a casa** e a consome nas suítes que ela própria escreve. Converter as ~30 suítes
  * existentes num diff só é refatoração cruzada que ninguém pediu (`.claude/rules/nao-regressao.md`
  * §4.5), e o risco dela é desproporcional ao ganho: 30 arquivos de prova tocados de uma vez, sem
@@ -53,9 +61,10 @@
  * ATRAVESSANDO a fronteira do pacote; nada disso acontece aqui.
  */
 
-import { type ChaveDoCatalogo, validarCoerenciaDeAjustes } from '@sysloc/auth';
+import { type Autenticacao, type ChaveDoCatalogo, validarCoerenciaDeAjustes } from '@sysloc/auth';
 import { type AcessoAoBanco, contextoDeTenant, escreverAjustes } from '@sysloc/db';
 import { PREFIXO_DAS_ROTAS_DE_IDENTIDADE } from '../src/autenticacao/autenticacao.module.ts';
+import { decodificarBase32 } from './base32.ts';
 
 /**
  * Sufixo do nome do cookie de sessão do arcabouço — o prefixo vem da configuração.
@@ -304,6 +313,121 @@ export async function entrar(base: string, email: string, senha: string): Promis
   }
 
   return credencialDeSessao(entrada);
+}
+
+/**
+ * As duas rotas do segundo fator do arcabouço, compostas a partir do prefixo real.
+ *
+ * Constantes nomeadas, e não literais no corpo: o par `enable`/`verify-totp` é contrato do
+ * arcabouço, e literal repetido em duas chamadas fica livre para divergir de uma delas.
+ */
+const ROTA_DE_PREPARO_DO_SEGUNDO_FATOR = `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/enable`;
+const ROTA_DE_VERIFICACAO_DO_SEGUNDO_FATOR = `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/verify-totp`;
+
+/**
+ * Deriva o código do segundo fator a partir do endereço de configuração devolvido pelo preparo.
+ *
+ * A derivação é a **do próprio arcabouço** (`api.generateTOTP`), e não uma reimplementação: uma
+ * cópia do algoritmo provaria que duas implementações concordam, não que a nossa confere o código
+ * que o arcabouço espera. Só a decodificação de transporte (base32 do endereço) é local, porque o
+ * decodificador do arcabouço vive num pacote transitivo que `apps/api` não resolve.
+ *
+ * Privada de propósito: nenhuma das seis suítes convertidas a chamava fora de
+ * {@link entrarComSegundoFatorCumprido}, e publicar o que ninguém consome é superfície de graça.
+ */
+async function codigoDoSegundoFator(autenticacao: Autenticacao, totpURI: string): Promise<string> {
+  const codificado = new URL(totpURI).searchParams.get('secret');
+
+  if (codificado === null) {
+    throw new Error(`o endereço de configuração do segundo fator não trouxe segredo: ${totpURI}`);
+  }
+
+  const { code } = await autenticacao.api.generateTOTP({
+    body: { secret: decodificarBase32(codificado) },
+  });
+
+  return code;
+}
+
+/**
+ * Entra e **cumpre a exigência de segundo fator**, pelo caminho público real.
+ *
+ * O Sysloc Master nasce da carga sem segundo fator configurado, e a sessão dele é restrita até que
+ * ele o configure (RN-08): sem cumpri-lo, toda rota de negócio responderia `403` da **restrição de
+ * sessão**, e o diagnóstico apontaria para a autorização, que não é onde o defeito estaria. Nada é
+ * forjado — o segredo sai do endereço que a própria resposta do preparo devolveu, e o código é
+ * derivado pela função de geração do arcabouço (ver {@link codigoDoSegundoFator}).
+ *
+ * ---------------------------------------------------------------------------
+ * Por que ela mora aqui: o fecho da metade do débito `D32 · F5/T7`
+ * ---------------------------------------------------------------------------
+ *
+ * Ela existia em **SEIS** escritas privadas de `apps/api/test/` — `administracao-de-pessoas`,
+ * `ciclo-de-acesso`, `cobertura-de-autorizacao`, `contexto`, `entrega-da-noticia` e
+ * `recusa-indistinguivel` —, e nenhuma podia importar as outras: importar de um arquivo `.spec.ts`
+ * **executa o módulo dele** e registra os casos daquela suíte dentro da importadora. Era a razão
+ * mecânica de o Limiar de Três ser inexequível para este acessório, e é o que esta casa resolve —
+ * ela não é `.spec.ts`.
+ *
+ * ---------------------------------------------------------------------------
+ * A forma que subiu é a de CINCO das seis, e a sexta divergia
+ * ---------------------------------------------------------------------------
+ *
+ * A verificação emite credencial de sessão **nova** e apaga a anterior, e é a nova que sai daqui,
+ * por {@link credencialDeSessao} — que **levanta** quando ela não vem. A cópia de
+ * `./entrega-da-noticia.e2e.spec.ts` era a única a tolerar a ausência (devolvia a credencial
+ * anterior) e a reconhecer o cookie por substring do texto bruto, em vez do **nome** por sufixo.
+ * Subiu a estrita porque a tolerante **remove** o levantamento diagnóstico das outras cinco — e
+ * afrouxar cinco suítes para acomodar um ramo que o arcabouço nunca produz é a regressão que a
+ * §4.3 do Protocolo Antirregressão proíbe. Que aquele ramo era inalcançável foi **medido**, não
+ * argumentado: a contagem daquela suíte não se moveu na baseline caso a caso da T3.
+ *
+ * @param base Origem da aplicação sob teste. Parâmetro, e não variável de módulo, pela mesma razão
+ *   de {@link pedir}: a porta é dinâmica e cada suíte tem a sua — e há suíte com **duas** montagens,
+ *   caso em que a origem que emite a credencial tem de ser a mesma que a requisição seguinte usa.
+ * @param senha A senha da carga daquela pessoa. Ela viaja **duas vezes**: na entrada e na
+ *   confirmação que o preparo do segundo fator exige.
+ * @param autenticacao A instância do arcabouço da suíte (`identidade.autenticacao`). Parâmetro pela
+ *   mesma razão da `base`: cada suíte monta a sua sobre a instância efêmera dela.
+ */
+export async function entrarComSegundoFatorCumprido(
+  base: string,
+  email: string,
+  senha: string,
+  autenticacao: Autenticacao,
+): Promise<string> {
+  const cookie = await entrar(base, email, senha);
+
+  const preparo = await pedir(base, ROTA_DE_PREPARO_DO_SEGUNDO_FATOR, {
+    metodo: 'POST',
+    cookie,
+    corpo: { password: senha },
+  });
+
+  if (preparo.status !== 200) {
+    throw new Error(
+      `o preparo do segundo fator respondeu ${String(preparo.status)}: ${preparo.texto}`,
+    );
+  }
+
+  const totpURI = (preparo.corpo as { totpURI?: unknown }).totpURI;
+  if (typeof totpURI !== 'string') {
+    throw new Error('o preparo do segundo fator não devolveu o endereço de configuração');
+  }
+
+  const ativacao = await pedir(base, ROTA_DE_VERIFICACAO_DO_SEGUNDO_FATOR, {
+    metodo: 'POST',
+    cookie,
+    corpo: { code: await codigoDoSegundoFator(autenticacao, totpURI) },
+  });
+
+  if (ativacao.status !== 200) {
+    throw new Error(
+      `a ativação do segundo fator respondeu ${String(ativacao.status)}: ${ativacao.texto}`,
+    );
+  }
+
+  return credencialDeSessao(ativacao);
 }
 
 /**

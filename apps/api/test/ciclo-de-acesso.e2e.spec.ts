@@ -217,7 +217,7 @@ import {
   PAGINA_PADRAO_DE_EMPRESAS,
 } from '../src/master/empresa.service.ts';
 import { CAMINHO_DOS_USUARIOS } from '../src/usuarios/usuario.controller.ts';
-import { decodificarBase32 } from './base32.ts';
+import { entrarComSegundoFatorCumprido } from './acessorios-de-borda.ts';
 
 /** Limite da montagem: banco migrado, semente com credencial, fila e a aplicação real. */
 const LIMITE_DE_MONTAGEM_MS = 240_000;
@@ -275,8 +275,43 @@ const EXIGIDO_DE_PERFIL = 'PERFIL:SYSLOC_MASTER';
 const MENSAGEM_DE_SESSAO_RESTRITA =
   'acesso negado: esta sessão está restrita até a troca da senha provisória';
 
-/** As cinco chaves que um item da listagem pode ter — o conjunto FECHADO da RN-13. */
+/**
+ * As cinco chaves que o corpo da **criação** de empresa pode ter — o conjunto FECHADO da RN-13.
+ *
+ * SUT_IS_CORRECT_BECAUSE: o código de produção está certo, e é este inventário que descrevia o
+ * estado anterior. A **T6** da fatia `painel-master-administradores` acrescenta `exclusao` — a
+ * prévia de elegibilidade da US-07 — ao item da **listagem**, por critério de aceite explícito
+ * (*"`exclusao` por item na listagem de empresas, vindo da sonda"*), e **não** ao corpo do `POST`.
+ * A assimetria é decisão declarada no docblock de `ESQUEMA_DA_EMPRESA_LISTADA`
+ * (`apps/api/src/master/empresa.controller.ts`): uma empresa que acabou de nascer é elegível por
+ * construção, e compor a prévia ali custaria a sonda — que é o próprio ato em ensaio desfeito
+ * (ADR-0030) — para responder uma pergunta cuja resposta é conhecida.
+ *
+ * ⚠️ **A constante foi PARTIDA EM DUAS, e não afrouxada.** Esta continua com as **cinco** chaves e
+ * segue afirmando a criação por igualdade; {@link CHAVES_DO_ITEM_DA_LISTAGEM} tem **seis** e afirma
+ * a listagem. Manter uma só obrigaria a escolher entre deixar de conferir uma das duas rotas e
+ * aceitar `exclusao` onde ele não deve existir — e é exatamente a assimetria que as duas constantes
+ * passam a tornar **afirmada** em vez de acidental: um `exclusao` que vazasse pela criação reprova
+ * aqui.
+ */
 const CHAVES_DA_EMPRESA_PUBLICADA = ['criadaEm', 'documento', 'estado', 'id', 'nome'];
+
+/**
+ * As **seis** chaves de um item da listagem de empresas — as cinco acima mais a prévia da US-07.
+ *
+ * Composta a partir da de cima, e não redigitada: as cinco têm uma declaração só, e um campo
+ * acrescentado lá aparece aqui sem que ninguém precise lembrar.
+ */
+const CHAVES_DO_ITEM_DA_LISTAGEM = [...CHAVES_DA_EMPRESA_PUBLICADA, 'exclusao'].sort();
+
+/**
+ * A prévia que uma empresa **elegível** publica (US-07, ADR-0030).
+ *
+ * Escrita por extenso, e não derivada do que a resposta trouxe: derivá-la faria a asserção concordar
+ * consigo mesma. `impedimentos: []` e a **ausência** de `motivo` e `alternativa` são conteúdo — o
+ * cliente que vê `disponivel: true` não deve receber um motivo inventado.
+ */
+const EXCLUSAO_DISPONIVEL = { disponivel: true, impedimentos: [] };
 
 /**
  * A política da janela da listagem, escrita **por extenso**.
@@ -357,7 +392,12 @@ beforeAll(async () => {
   aplicacao = await criarAplicacao();
   await aplicacao.listen({ port: porta, host: ENDERECO_DE_ESCUTA });
 
-  cookieDoMaster = await entrarComSegundoFatorCumprido(MASTER.email);
+  cookieDoMaster = await entrarComSegundoFatorCumprido(
+    base,
+    MASTER.email,
+    SENHA_DA_CARGA,
+    identidade.autenticacao,
+  );
 }, LIMITE_DE_MONTAGEM_MS);
 
 afterAll(async () => {
@@ -418,7 +458,12 @@ describe('ciclo de vida da empresa pelas rotas do Master (T7)', () => {
       const naListagem = listagem.itens.find((item) => item.id === empresa.id);
 
       expect(naListagem, 'a empresa criada não apareceu na listagem').toBeDefined();
-      expect(naListagem).toEqual(empresa);
+      // SUT_IS_CORRECT_BECAUSE: ver {@link CHAVES_DA_EMPRESA_PUBLICADA}. O item da listagem é o
+      // corpo da criação **mais** a prévia de exclusão que a T6 acrescentou; a igualdade continua
+      // sendo de objeto INTEIRO, e ganhou uma asserção — a empresa recém-criada é elegível, com
+      // `impedimentos` vazio. Nada foi afrouxado: um campo a mais em qualquer dos dois lados
+      // reprova aqui.
+      expect(naListagem).toEqual({ ...empresa, exclusao: EXCLUSAO_DISPONIVEL });
 
       const totalDepoisDaCriacao = listagem.total;
 
@@ -741,9 +786,23 @@ describe('ciclo de vida da empresa pelas rotas do Master (T7)', () => {
       // Igualdade profunda sobre o conjunto de chaves de CADA item, e não do primeiro: um campo
       // acrescentado a um ramo condicional (por exemplo, só para empresa suspensa) escaparia de uma
       // amostra.
+      // SUT_IS_CORRECT_BECAUSE: ver {@link CHAVES_DA_EMPRESA_PUBLICADA}. O inventário do item da
+      // listagem passou a ser {@link CHAVES_DO_ITEM_DA_LISTAGEM}, com `exclusao`; a asserção segue
+      // sendo igualdade profunda item a item, e **nenhuma chave anterior saiu**.
       expect(pagina.itens.map((item) => Object.keys(item).sort())).toEqual(
-        pagina.itens.map(() => CHAVES_DA_EMPRESA_PUBLICADA),
+        pagina.itens.map(() => CHAVES_DO_ITEM_DA_LISTAGEM),
       );
+
+      // E a prévia da empresa A — que a carga povoa com vínculos e permissões — vem INDISPONÍVEL,
+      // enquanto o campo existe em todos os itens. Sem esta linha, `exclusao` poderia ser um objeto
+      // constante em toda a página e a asserção de chaves acima não distinguiria.
+      expect(daA).toMatchObject({
+        exclusao: {
+          disponivel: false,
+          motivo: 'EXCLUSAO_IMPEDIDA_POR_REGISTROS',
+          alternativa: 'SUSPENSAO',
+        },
+      });
 
       // --- E nada de negócio na SERIALIZAÇÃO do corpo -------------------------------------------
       //
@@ -1376,71 +1435,6 @@ async function entrar(email: string): Promise<string> {
   }
 
   return credencialDeSessao(entrada);
-}
-
-/**
- * Entra e **cumpre a exigência de segundo fator**, pelo caminho público real.
- *
- * O Master nasce da carga sem segundo fator configurado, e a sessão dele é restrita até que ele o
- * configure (RN-08). Nada é forjado: o segredo sai do endereço que a própria resposta do preparo
- * devolveu, e o código é derivado pela função de geração **do arcabouço**. A verificação emite
- * credencial de sessão nova e apaga a anterior, e é a nova que sai daqui.
- */
-async function entrarComSegundoFatorCumprido(email: string): Promise<string> {
-  const cookie = await entrar(email);
-
-  const preparo = await pedir(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/enable`, {
-    metodo: 'POST',
-    cookie,
-    corpo: { password: SENHA_DA_CARGA },
-  });
-
-  if (preparo.status !== 200) {
-    throw new Error(
-      `o preparo do segundo fator respondeu ${String(preparo.status)}: ${preparo.texto}`,
-    );
-  }
-
-  const totpURI = (preparo.corpo as { totpURI?: unknown }).totpURI;
-  if (typeof totpURI !== 'string') {
-    throw new Error('o preparo do segundo fator não devolveu o endereço de configuração');
-  }
-
-  const ativacao = await pedir(`${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/verify-totp`, {
-    metodo: 'POST',
-    cookie,
-    corpo: { code: await codigoDoSegundoFator(totpURI) },
-  });
-
-  if (ativacao.status !== 200) {
-    throw new Error(
-      `a ativação do segundo fator respondeu ${String(ativacao.status)}: ${ativacao.texto}`,
-    );
-  }
-
-  return credencialDeSessao(ativacao);
-}
-
-/**
- * Deriva o código do segundo fator a partir do endereço de configuração.
- *
- * A derivação é a **do próprio arcabouço** (`api.generateTOTP`), e não uma reimplementação: uma
- * cópia do algoritmo provaria que duas implementações concordam, não que a nossa confere o código
- * que o arcabouço espera. Só a decodificação de transporte (base32 do endereço) é local, porque o
- * decodificador do arcabouço vive num pacote transitivo que `apps/api` não resolve.
- */
-async function codigoDoSegundoFator(totpURI: string): Promise<string> {
-  const codificado = new URL(totpURI).searchParams.get('secret');
-
-  if (codificado === null) {
-    throw new Error(`o endereço de configuração do segundo fator não trouxe segredo: ${totpURI}`);
-  }
-
-  const { code } = await identidade.autenticacao.api.generateTOTP({
-    body: { secret: decodificarBase32(codificado) },
-  });
-
-  return code;
 }
 
 /** O cabeçalho `Set-Cookie` carrega a credencial de sessão do arcabouço. */

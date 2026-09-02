@@ -202,7 +202,7 @@ import { CAMINHO_DO_MASTER } from '../src/master/empresa.controller.ts';
 import { CAMINHO_DE_MULTA_E_JUROS } from '../src/mora/mora.controller.ts';
 import { CAMINHO_DAS_NOTIFICACOES_BANCARIAS } from '../src/notificacoes-bancarias/notificacao-bancaria.controller.ts';
 import { CAMINHO_DOS_USUARIOS } from '../src/usuarios/usuario.controller.ts';
-import { decodificarBase32 } from './base32.ts';
+import { entrarComSegundoFatorCumprido } from './acessorios-de-borda.ts';
 
 /** Limite da montagem: banco migrado, semente, fila e DUAS aplicações reais. */
 const LIMITE_DE_MONTAGEM_MS = 240_000;
@@ -771,10 +771,69 @@ const ROTAS_PROTEGIDAS_ACEITAS: readonly string[] = [
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DAS_INTEGRACOES_BANCARIAS}/${SEGMENTO_DA_IDENTIDADE}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_TROCA_DE_SENHA_DO_PRODUTO}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas`,
+  // SUT_IS_CORRECT_BECAUSE: a **T6** da fatia `painel-master-administradores` publicou as **duas
+  // rotas restantes da Empresa** — a correção cadastral (`PUT`) e a **remoção definitiva**
+  // (`DELETE`) —, e as duas são **protegidas**: vale a exigência da classe,
+  // `@ExigePerfil('SYSLOC_MASTER')`, nenhuma declara nada no método (ADR-0018), nenhuma é marcada
+  // `@RotaPublica()`, e por isso a sonda sem cookie recebe `401 NAO_AUTENTICADO` da guarda antes de
+  // a dimensão de perfil ser avaliada. Pela classificação por **caminho** deste caso elas entram
+  // como **uma** entrada só, porque `PUT` e `DELETE` atendem o mesmo caminho — exatamente como as
+  // duas irmãs de `/v1/master/usuarios/:id`; a classificação por par método+caminho, que é a de
+  // `cobertura-de-autorizacao.e2e.spec.ts`, conta as duas separadamente e sobe na T7.
+  // **Nenhuma entrada anterior saiu**, o conjunto **público** continua inalterado — esta fatia não
+  // publica rota sem sessão —, e a igualdade segue exata nos dois sentidos: uma das duas que
+  // tivesse dispensado sessão apareceria no OUTRO conjunto e reprovaria como excedente.
+  //
+  // ⚠️ **Este arquivo não está na §5.2 da T6** — é a **décima quarta** anotação consecutiva do
+  // débito **D26 (F2/T6)**: a §5.2 das tasks não conta as âncoras de inventário que a publicação de
+  // rota obriga a tocar. A divergência é registrada aqui em vez de silenciada, e a âncora **sobe**;
+  // ela não vira contenção.
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas/:id`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas/:id/admin`,
+  // SUT_IS_CORRECT_BECAUSE: a **T4** da fatia `painel-master-administradores` publicou as **três
+  // rotas do ciclo de vida do Admin Empresa** — a listagem por empresa e as duas transições de
+  // estado —, e as três são **protegidas**: vale a exigência da classe,
+  // `@ExigePerfil('SYSLOC_MASTER')`, nenhuma declara nada no método (ADR-0018), nenhuma é marcada
+  // `@RotaPublica()`, e por isso a sonda sem cookie recebe `401 NAO_AUTENTICADO` da guarda antes de
+  // a dimensão de perfil ser avaliada. Pela classificação por **caminho** deste caso elas entram
+  // como **três** entradas, porque cada uma atende um caminho próprio e nenhum outro método os
+  // atende. **Nenhuma entrada anterior saiu**, o conjunto **público** continua inalterado — esta
+  // fatia não publica rota sem sessão —, e a igualdade segue exata nos dois sentidos: uma das três
+  // que tivesse dispensado sessão apareceria no OUTRO conjunto e reprovaria como excedente.
+  //
+  // ⚠️ Que as três fiquem **fora do congelamento** da superfície publicada é a **ADR-0039**: ele
+  // alcança a superfície que o `@syslocbr/contracts` entrega à aplicação da imobiliária, e o
+  // operador do SaaS não é aquele cliente. As âncoras de **tamanho** contam as duas superfícies e
+  // sobem na T7 da mesma fatia; esta, que é de **conjunto de caminhos protegidos**, sobe aqui.
+  //
+  // ⚠️ **Este arquivo não está na §5.2 da T4, nem na da T7** — é a **décima segunda** anotação
+  // consecutiva do débito **D26 (F2/T6)**: a §5.2 das tasks não conta as âncoras de inventário que a
+  // publicação de rota obriga a tocar. A divergência é registrada aqui em vez de silenciada, e a
+  // âncora **sobe**; ela não vira contenção.
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas/:id/administradores`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas/:id/reativacao`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/empresas/:id/suspensao`,
+  // SUT_IS_CORRECT_BECAUSE: a **T5** da fatia `painel-master-administradores` publicou as **duas
+  // rotas restantes do Admin Empresa** — a correção cadastral (`PUT`) e a **remoção definitiva**
+  // (`DELETE`) —, e as duas são **protegidas**: vale a exigência da classe,
+  // `@ExigePerfil('SYSLOC_MASTER')`, nenhuma declara nada no método (ADR-0018), nenhuma é marcada
+  // `@RotaPublica()`, e por isso a sonda sem cookie recebe `401 NAO_AUTENTICADO` da guarda antes de
+  // a dimensão de perfil ser avaliada. Pela classificação por **caminho** deste caso elas entram
+  // como **uma** entrada só, porque `PUT` e `DELETE` atendem o mesmo caminho — exatamente como o
+  // `GET` e o `PUT` de `/v1/multa-e-juros`; a classificação por par método+caminho, que é a de
+  // `cobertura-de-autorizacao.e2e.spec.ts`, conta as duas separadamente e sobe na T7.
+  // **Nenhuma entrada anterior saiu**, o conjunto **público** continua inalterado — esta fatia não
+  // publica rota sem sessão —, e a igualdade segue exata nos dois sentidos: uma das duas que
+  // tivesse dispensado sessão apareceria no OUTRO conjunto e reprovaria como excedente.
+  //
+  // ⚠️ **Este arquivo não está na §5.2 da T5** — é a **décima terceira** anotação consecutiva do
+  // débito **D26 (F2/T6)**: a §5.2 das tasks não conta as âncoras de inventário que a publicação de
+  // rota obriga a tocar. A divergência é registrada aqui em vez de silenciada, e a âncora **sobe**;
+  // ela não vira contenção.
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/usuarios/:id`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/usuarios/:id/reativacao`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/usuarios/:id/senha-provisoria`,
+  `/${PREFIXO_DE_VERSAO}/${CAMINHO_DO_MASTER}/usuarios/:id/suspensao`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_USUARIOS}`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_USUARIOS}/:id/desativacao`,
   `/${PREFIXO_DE_VERSAO}/${CAMINHO_DOS_USUARIOS}/:id/perfil`,
@@ -1106,6 +1165,8 @@ describe('guarda de contexto, rotas públicas e sessão corrente (T9)', () => {
       const cookieDoMaster = await entrarComSegundoFatorCumprido(
         baseInstrumentada,
         USUARIO_MASTER.email,
+        SENHA_DA_CARGA,
+        identidade.autenticacao,
       );
 
       try {
@@ -1978,53 +2039,6 @@ async function entrar(base: string, email: string): Promise<string> {
   return credencialDeSessao(entrada);
 }
 
-/**
- * Entra e **cumpre a exigência de segundo fator**, pelo caminho público real.
- *
- * O Master nasce da carga sem segundo fator configurado, e a sessão dele é restrita até que ele o
- * configure (RN-08). Este helper percorre a sequência que o CT-019 da T10 prova — entrar, preparar
- * (`two-factor/enable`) e verificar (`two-factor/verify-totp`) —, e existe aqui porque o CT-020 (b)
- * precisa de uma sessão de Master **plena** para exercitar o contexto na unidade de trabalho.
- *
- * Nada é forjado: o segredo sai do endereço que a própria resposta do preparo devolveu, e o código
- * é derivado pela função de geração **do arcabouço**. A verificação emite credencial de sessão nova
- * e apaga a anterior, e é a nova que sai daqui.
- */
-async function entrarComSegundoFatorCumprido(base: string, email: string): Promise<string> {
-  const cookie = await entrar(base, email);
-
-  const preparo = await pedir(base, `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/enable`, {
-    metodo: 'POST',
-    cookie,
-    corpo: { password: SENHA_DA_CARGA },
-  });
-
-  if (preparo.status !== 200) {
-    throw new Error(
-      `o preparo do segundo fator respondeu ${String(preparo.status)}: ${preparo.texto}`,
-    );
-  }
-
-  const totpURI = (preparo.corpo as { totpURI?: unknown }).totpURI;
-  if (typeof totpURI !== 'string') {
-    throw new Error('o preparo do segundo fator não devolveu o endereço de configuração');
-  }
-
-  const ativacao = await pedir(base, `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/verify-totp`, {
-    metodo: 'POST',
-    cookie,
-    corpo: { code: await codigoDoSegundoFator(totpURI) },
-  });
-
-  if (ativacao.status !== 200) {
-    throw new Error(
-      `a ativação do segundo fator respondeu ${String(ativacao.status)}: ${ativacao.texto}`,
-    );
-  }
-
-  return credencialDeSessao(ativacao);
-}
-
 /** Desfaz o segundo fator pela rota pública, devolvendo a pessoa ao estado da carga. */
 async function desfazerSegundoFator(base: string, cookie: string): Promise<void> {
   const desfeito = await pedir(base, `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/disable`, {
@@ -2038,28 +2052,6 @@ async function desfazerSegundoFator(base: string, cookie: string): Promise<void>
       `a desativação do segundo fator respondeu ${String(desfeito.status)}: ${desfeito.texto}`,
     );
   }
-}
-
-/**
- * Deriva o código do segundo fator a partir do endereço de configuração.
- *
- * A derivação é a **do próprio arcabouço** (`api.generateTOTP`), e não uma reimplementação: uma
- * cópia do algoritmo provaria que duas implementações concordam, não que a nossa confere o código
- * que o arcabouço espera. Só a decodificação de transporte (base32 do endereço) é local, porque o
- * decodificador do arcabouço vive num pacote transitivo que `apps/api` não resolve.
- */
-async function codigoDoSegundoFator(totpURI: string): Promise<string> {
-  const codificado = new URL(totpURI).searchParams.get('secret');
-
-  if (codificado === null) {
-    throw new Error(`o endereço de configuração do segundo fator não trouxe segredo: ${totpURI}`);
-  }
-
-  const { code } = await identidade.autenticacao.api.generateTOTP({
-    body: { secret: decodificarBase32(codificado) },
-  });
-
-  return code;
 }
 
 /** O par `nome=valor` do cookie de sessão, no formato em que o cliente o reenvia. */

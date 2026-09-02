@@ -85,6 +85,50 @@
  * |                |                 | privilégio sobre a sequência (`USAGE`, `SELECT` e `UPDATE`
  * |                |                 | falsos), de modo que o `nextval` direto levanta `42501`
  * |                |                 | enquanto o mesmo `nextval` pelo papel dono sucede. |
+ * | CA-20          | CT-1215         | O conjunto das restrições de chave estrangeira que o
+ * |                |                 | catálogo pode OPOR à remoção de `identidade.empresa` ou de
+ * |                |                 | `identidade.usuario` — as que recusam, e não as que
+ * |                |                 | cascateiam — é IGUAL, por diferença de conjunto vazia nas
+ * |                |                 | duas direções, ao conjunto classificado em
+ * |                |                 | `IMPEDIMENTOS_DE_EXCLUSAO`, e o conjunto lido é NÃO VAZIO.
+ * |                |                 | O controle positivo do eixo do modo de remoção são as TRÊS
+ * |                |                 | restrições `cascade` sobre `identidade.usuario` (conta,
+ * |                |                 | dois fatores e sessão): elas existem, são colaterais da
+ * |                |                 | remoção e por isso ficam FORA do vocabulário. |
+ * | CA-20          | CT-1216         | Criada na instância uma dependência NOVA sem classe, a
+ * |                |                 | MESMA comparação do CT-1215 devolve `excedentes` com
+ * |                |                 | EXATAMENTE aquele nome de restrição e `ausentes` vazio; e
+ * |                |                 | os dois voltam a vazio quando a tabela é removida. É a
+ * |                |                 | perna que impede o CT-1215 de ser tautológico (AP-29). |
+ * | —              | CT-1242         | Para TODA tabela de `negocio` que guarda linha própria,
+ * |                |                 | existe caminho de chave estrangeira até `identidade.empresa`
+ * |                |                 | por colunas de ligação NÃO NULAS — a lista de EXAMINADAS é
+ * |                |                 | igual às VINTE E TRÊS por igualdade de array (controle
+ * |                |                 | antivácuo) e a de exceções é igual a `[]`. É a guarda que a
+ * |                |                 | ADR-0038 pressupõe: o critério de admissibilidade é a
+ * |                |                 | integridade referencial do banco, e ele só vale enquanto
+ * |                |                 | ela for COMPLETA. A visão `negocio.cobranca_derivada`
+ * |                |                 | EXISTE (afirmado no caso) e fica de fora: ela não guarda
+ * |                |                 | linha própria, e por isso não pode deixar órfão. E as SETE
+ * |                |                 | que só alcançam a empresa por CORRENTE são medidas à parte,
+ * |                |                 | pela consulta de UM SALTO que a travessia descartou: é a
+ * |                |                 | medida que obriga o alcance a ser derivado por ponto fixo,
+ * |                |                 | e ela reprova sozinha — com `examinadas` e `excecoes`
+ * |                |                 | intactas — se uma das sete ganhar ligação direta, ou se uma
+ * |                |                 | das dezesseis diretas passar a chegar por corrente. |
+ * | —              | CT-1243         | Criada em `negocio` uma tabela com `empresa_id` e SEM
+ * |                |                 | caminho até a empresa, a MESMA asserção do CT-1242 reprova
+ * |                |                 | nomeando EXATAMENTE aquela tabela com
+ * |                |                 | `SEM_CAMINHO_ATE_EMPRESA`; removida a tabela, a lista volta
+ * |                |                 | a vazia. Sem ela, uma guarda quebrada devolveria
+ * |                |                 | `excecoes: []` sobre qualquer schema e passaria por
+ * |                |                 | vacuidade. São DUAS variantes, e a segunda é a que
+ * |                |                 | falsifica a exigência de LIGAÇÃO OBRIGATÓRIA: ela **tem** a
+ * |                |                 | chave estrangeira para a empresa, e não barra nada porque
+ * |                |                 | `empresa_id` é anulável — o `MATCH SIMPLE` só aplica a
+ * |                |                 | referência quando nenhuma coluna referenciadora é nula.
+ * |                |                 | Sem ela, apagar a conferência de `attnotnull` da travessia
+ * |                |                 | deixaria a suíte inteira verde. |
  *
  * O aceite 5 da §4 da task — *"a guarda é exportada por `@sysloc/db` e consumível fora do
  * pacote"* — é provado pelo **CT-012**, em `unidade-de-trabalho.spec.ts`: ele resolve o
@@ -119,6 +163,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { IMPEDIMENTOS_DE_EXCLUSAO } from '../src/administrador-do-master.ts';
 import {
   type CoberturaDeIsolamento,
   type MotivoDeExcecao,
@@ -127,6 +172,7 @@ import {
 import { abrirConexao } from '../src/conexao.ts';
 import { EMPRESA_A } from '../src/semente.ts';
 import { type BancoMigrado, bancoEfemero, conexaoDeMigracao } from './banco-efemero.ts';
+import { diferencasDeConjunto } from './conjuntos.ts';
 
 // ---------------------------------------------------------------------------
 // Limites de tempo — constantes nomeadas, nunca número mágico no meio do caso
@@ -1723,4 +1769,649 @@ describe('CT-535 — a série da cobrança não aceita empresa, guarda o ano e n
     },
     LIMITE_COM_INSTANCIA_PROPRIA_MS,
   );
+});
+
+// ===========================================================================
+// CT-1215 / CT-1216 — o vocabulário de impedimentos é IGUAL ao que o catálogo pode opor
+// ===========================================================================
+//
+// A ADR-0038 decide que o critério de admissibilidade da exclusão de `identidade.empresa` e de
+// `identidade.usuario` é a **integridade referencial do banco**, nunca uma contagem escrita na
+// aplicação. `IMPEDIMENTOS_DE_EXCLUSAO` é a outra metade dessa decisão: ele traduz a restrição que o
+// servidor nomeou no `23503` na **classe** que a superfície publica (RN-15).
+//
+// O mapa é FECHADO, e é exatamente por isso que ele apodrece em silêncio. Uma fatia futura que
+// acrescente uma chave estrangeira para a empresa ou para a pessoa — e esqueça a entrada aqui — não
+// quebra nada: a exclusão continua sendo recusada pelo banco, e a recusa é que **degrada** para erro
+// genérico. Nada no código acusa, porque `classeDoImpedimento` devolve `undefined` e o erro é
+// repassado intacto, que é o comportamento correto para restrição desconhecida.
+//
+// A guarda pergunta ao CATÁLOGO, e não ao esquema Drizzle nem ao texto das migrações: ela existe
+// para pegar o que a próxima migração criar, e derivá-la da declaração faria a asserção concordar
+// com o mesmo lugar onde a dependência nova seria escrita.
+//
+// ---------------------------------------------------------------------------
+// Por que o filtro é "recusa a remoção", e não literalmente `no action`
+// ---------------------------------------------------------------------------
+//
+// O que o vocabulário precisa cobrir é o conjunto das dependências que o catálogo **pode opor à
+// remoção**, e o PostgreSQL tem DOIS modos que a opõem: `no action` (`a`) e `restrict` (`r`). Os dois
+// recusam com `23503` e chegam à borda pelo mesmo caminho. Medido em 2026-09-01, o schema tem
+// **zero** restrições `restrict`, de modo que o conjunto lido é idêntico às 25 `no action` que a §4
+// da task declara — mas enumerar só `a` deixaria uma `restrict` futura recusar em produção **sem
+// classe**, que é literalmente o defeito que esta guarda existe para impedir. É a mesma razão pela
+// qual o exame de `src/catalogo.ts` define o conjunto por exclusão: a enumeração aprova em silêncio
+// o que ela esquece.
+
+/** A empresa — o primeiro alvo da exclusão do Master, e a raiz da cobertura do CT-1242. */
+const RAIZ_DA_EMPRESA = 'identidade.empresa';
+
+/** A pessoa — o segundo alvo. `excluirEmpresa` remove as duas no mesmo commit. */
+const RAIZ_DO_USUARIO = 'identidade.usuario';
+
+/**
+ * Os modos de `ON DELETE` que **recusam** a remoção da linha referenciada, pela letra com que
+ * `pg_constraint.confdeltype` os guarda.
+ *
+ * `c` (cascade), `n` (set null) e `d` (set default) ficam de fora porque nenhum deles recusa nada —
+ * eles deixam a remoção acontecer, e por isso não têm classe de impedimento a traduzir.
+ */
+const MODOS_QUE_RECUSAM_A_REMOCAO: readonly string[] = ['a', 'r'];
+
+/**
+ * As TRÊS restrições `cascade` sobre `identidade.usuario`, na ordem em que o nome as coloca.
+ *
+ * Elas são o controle POSITIVO do eixo do modo de remoção: existem no catálogo, alcançam uma das
+ * raízes, e mesmo assim **não** entram no vocabulário — porque a remoção da pessoa as leva junto, e
+ * o que elas produzem é colateral, nunca impedimento (é o que o `CT-1211` mede pelo outro lado).
+ *
+ * Sem esta lista, "as que recusam" e "todas as que apontam para a raiz" seriam indistinguíveis sobre
+ * um schema em que as duas coincidissem — e o filtro de `confdeltype` passaria a ser decorativo.
+ */
+const COLATERAIS_DA_REMOCAO_DA_PESSOA: readonly string[] = [
+  'conta_usuario_id_usuario_id_fk',
+  'dois_fatores_usuario_id_usuario_id_fk',
+  'sessao_usuario_id_usuario_id_fk',
+];
+
+/** Uma restrição do catálogo que alcança uma das duas raízes, com o modo de remoção dela. */
+interface DependenciaDaRaiz {
+  readonly restricao: string;
+  readonly modoDeRemocao: string;
+}
+
+/**
+ * Toda chave estrangeira do banco que referencia `identidade.empresa` ou `identidade.usuario`, com o
+ * modo de `ON DELETE` de cada uma — **sem** filtrar por modo.
+ *
+ * O filtro fica em TypeScript de propósito: é o que permite ao CT-1215 afirmar, na mesma leitura, o
+ * conjunto que a guarda cobra **e** as três que ela deliberadamente deixa de fora.
+ */
+async function dependenciasDasRaizes(cadeia: string): Promise<DependenciaDaRaiz[]> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+  try {
+    const linhas = await sql<DependenciaDaRaiz[]>`
+      SELECT k.conname AS "restricao",
+             k.confdeltype::text AS "modoDeRemocao"
+        FROM pg_catalog.pg_constraint k
+        JOIN pg_catalog.pg_class alvo ON alvo.oid = k.confrelid
+        JOIN pg_catalog.pg_namespace ns ON ns.oid = alvo.relnamespace
+       WHERE k.contype = 'f'
+         AND ns.nspname || '.' || alvo.relname IN (${RAIZ_DA_EMPRESA}, ${RAIZ_DO_USUARIO})
+       ORDER BY k.conname
+    `;
+    return [...linhas];
+  } finally {
+    await sql.end();
+  }
+}
+
+/** As restrições que o catálogo pode OPOR à remoção de uma das duas raízes, ordenadas pelo nome. */
+function asQueRecusam(dependencias: readonly DependenciaDaRaiz[]): string[] {
+  return dependencias
+    .filter((dependencia) => MODOS_QUE_RECUSAM_A_REMOCAO.includes(dependencia.modoDeRemocao))
+    .map((dependencia) => dependencia.restricao);
+}
+
+/** A tabela descartável do CT-1216, e a restrição pela qual ela aparece em `excedentes`. */
+const TABELA_DESCARTAVEL = 'negocio.dependencia_descartavel';
+const RESTRICAO_DESCARTAVEL = 'dependencia_descartavel_empresa_fk';
+
+/**
+ * As VINTE E CINCO dependências que o catálogo pode opor à remoção, medidas em 2026-09-01.
+ *
+ * É a cópia **executável** do número que o docblock de `IMPEDIMENTOS_DE_EXCLUSAO` escreve em prosa
+ * (*"São as **25** restrições…"*) e que a §4 da task declara. A igualdade de conjunto abaixo já
+ * amarra as duas listas uma à outra; o que esta constante acrescenta é amarrá-las ao **texto** —
+ * sem ela, a fatia que acrescentar uma dependência legítima atualiza o mapa, vê a suíte verde, e
+ * deixa a prosa dizendo 25 para sempre. É a mesma disciplina das âncoras de superfície do
+ * `CLAUDE.md`, e o preço dela é uma linha por fatia que mexa no vocabulário.
+ */
+const DEPENDENCIAS_QUE_RECUSAM_A_REMOCAO = 25;
+
+describe('guarda de vocabulário — as dependências que o catálogo pode opor à remoção', () => {
+  let banco: BancoMigrado;
+  let doMigrador: string;
+
+  // Instância DEDICADA, no molde do describe do CT-009: o `CREATE TABLE` do CT-1216 vazaria para o
+  // CT-300 e para o CT-009, cuja asserção é `tabelasExaminadas` por igualdade de array.
+  beforeAll(async () => {
+    banco = await bancoEfemero();
+    doMigrador = conexaoDeMigracao(banco);
+  }, LIMITE_SUBIDA_MS);
+
+  afterAll(async () => {
+    await banco?.parar();
+  }, LIMITE_SUBIDA_MS);
+
+  it(
+    'CT-1215 — o vocabulário fechado de classes é IGUAL ao conjunto que o catálogo pode opor à remoção',
+    async () => {
+      const dependencias = await dependenciasDasRaizes(banco.cadeiaConexao);
+      const observadas = asQueRecusam(dependencias);
+      const classificadas = Object.keys(IMPEDIMENTOS_DE_EXCLUSAO);
+
+      // --- Controle ANTIVÁCUO, antes de tudo -------------------------------------------------
+      //
+      // Sem ele, comparar dois conjuntos vazios passa por vacuidade: uma consulta apontada para o
+      // schema errado, ou com o nome da raiz escrito errado, devolveria `[]` e a igualdade abaixo
+      // ficaria verde comparando nada com nada.
+      expect(observadas.length).toBeGreaterThan(0);
+
+      // --- A igualdade de conjunto, nas DUAS direções ------------------------------------------
+      //
+      // `excedentes` pega a dependência que a migração criou e ninguém classificou — a recusa que
+      // degradaria para erro genérico em produção. `ausentes` pega a entrada que sobreviveu à
+      // remoção da restrição — vocabulário que traduz uma recusa que o banco não dá mais.
+      // `toContain` aprovaria as duas.
+      expect(diferencasDeConjunto(observadas, classificadas)).toEqual({
+        excedentes: [],
+        ausentes: [],
+      });
+
+      // A contagem, além da igualdade: ela é o que pega o nome de restrição REPETIDO. `conname` é
+      // único por tabela, e não no banco inteiro — duas restrições homônimas em tabelas diferentes
+      // colapsariam num conjunto só, e a diferença acima continuaria vazia.
+      expect(observadas).toHaveLength(classificadas.length);
+
+      // E o número LITERAL, que amarra as duas listas à prosa que as descreve — ver o docblock de
+      // `DEPENDENCIAS_QUE_RECUSAM_A_REMOCAO`.
+      expect(observadas).toHaveLength(DEPENDENCIAS_QUE_RECUSAM_A_REMOCAO);
+
+      // --- O controle POSITIVO do eixo do MODO de remoção --------------------------------------
+      //
+      // As três `cascade` sobre a pessoa existem, alcançam a raiz e ficam de fora do vocabulário.
+      // Sem esta asserção, apagar o filtro de `confdeltype` seria detectado apenas por
+      // `excedentes` — e nada diria que a exclusão delas é DECISÃO (a remoção as leva junto), e não
+      // esquecimento.
+      const cascateiam = dependencias
+        .filter((dependencia) => dependencia.modoDeRemocao === 'c')
+        .map((dependencia) => dependencia.restricao);
+      expect(cascateiam).toEqual([...COLATERAIS_DA_REMOCAO_DA_PESSOA]);
+      expect(diferencasDeConjunto(cascateiam, classificadas)).toEqual({
+        excedentes: [...COLATERAIS_DA_REMOCAO_DA_PESSOA],
+        ausentes: [...classificadas].sort(),
+      });
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-1216 — uma dependência NOVA sem classe é acusada por nome, e some com o `DROP`',
+    async () => {
+      // --- Passo 1: o controle ANTES -------------------------------------------------------------
+      //
+      // Sem ele, "reprovou com a dependência nova" não distingue a comparação que discrimina
+      // daquela que reprova qualquer coisa.
+      const antes = asQueRecusam(await dependenciasDasRaizes(banco.cadeiaConexao));
+      expect(diferencasDeConjunto(antes, Object.keys(IMPEDIMENTOS_DE_EXCLUSAO))).toEqual({
+        excedentes: [],
+        ausentes: [],
+      });
+
+      // --- Passo 2: a dependência nova, escrita como um autor futuro a escreveria -----------------
+      //
+      // Nenhuma bandeira, semente condicional ou ramo de produção participa: é DDL do próprio caso,
+      // pela cadeia de `conexaoDeMigracao()` — o mesmo acessório e a mesma origem de privilégio do
+      // CT-009. O `ON DELETE NO ACTION` é o padrão que o gerador do Drizzle emite, e é o que faz a
+      // restrição opor-se à remoção da empresa sem ter classe que a traduza.
+      await executarPrivilegiado(doMigrador, [
+        `CREATE TABLE ${TABELA_DESCARTAVEL} (` +
+          'id uuid PRIMARY KEY DEFAULT gen_random_uuid(), ' +
+          'empresa_id uuid NOT NULL, ' +
+          `CONSTRAINT ${RESTRICAO_DESCARTAVEL} FOREIGN KEY (empresa_id) ` +
+          `REFERENCES ${RAIZ_DA_EMPRESA}(id) ON DELETE NO ACTION)`,
+      ]);
+
+      try {
+        const comDependenciaNova = asQueRecusam(await dependenciasDasRaizes(banco.cadeiaConexao));
+
+        // Exatamente UM excedente, NOMEADO — não "alguma divergência". A igualdade de array é o que
+        // impede a comparação de acusar o vocabulário inteiro e ainda assim passar aqui.
+        expect(
+          diferencasDeConjunto(comDependenciaNova, Object.keys(IMPEDIMENTOS_DE_EXCLUSAO)),
+        ).toEqual({
+          excedentes: [RESTRICAO_DESCARTAVEL],
+          ausentes: [],
+        });
+      } finally {
+        await executarPrivilegiado(doMigrador, [`DROP TABLE ${TABELA_DESCARTAVEL}`]);
+      }
+
+      // --- Passo 3: o controle DEPOIS ------------------------------------------------------------
+      //
+      // Removida a tabela, os dois lados voltam a vazio. É a terceira perna do par
+      // controle→mutante→controle, e sem ela "acusou" poderia ser estado residual.
+      const depois = asQueRecusam(await dependenciasDasRaizes(banco.cadeiaConexao));
+      expect(diferencasDeConjunto(depois, Object.keys(IMPEDIMENTOS_DE_EXCLUSAO))).toEqual({
+        excedentes: [],
+        ausentes: [],
+      });
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});
+
+// ===========================================================================
+// CT-1242 / CT-1243 — a COBERTURA do critério: toda tabela chega à empresa, e a corrente barra
+// ===========================================================================
+//
+// Esta guarda é ORTOGONAL à de cima, e nenhuma implica a outra: um schema pode ter todas as
+// restrições classificadas — CT-1215 verde — **e** uma tabela que guarde linha de uma empresa sem
+// opor nada à remoção dela. O vocabulário responde *"toda restrição que pode recusar tem classe?"*;
+// esta responde *"toda tabela que pode guardar dado de uma empresa consegue recusar?"*.
+//
+// O risco que ela fecha é o pior desta fatia. Uma tabela futura em `negocio` com `empresa_id`
+// **anulável**, ou sem chave estrangeira nenhuma, tornaria uma empresa CHEIA elegível à exclusão: o
+// `MATCH SIMPLE` do PostgreSQL — que é o padrão — só aplica a referência composta quando **nenhuma**
+// coluna referenciadora é nula, de modo que a linha com `empresa_id` nulo não opõe nada. A empresa
+// seria removida, e as linhas ficariam para trás como órfãs que a política de isolamento torna
+// **invisíveis** para toda consulta da aplicação. Nada quebraria; nada apareceria.
+//
+// Medido em 2026-09-01: das 23 tabelas de `negocio`, 16 têm chave estrangeira DIRETA para
+// `identidade.empresa` e 7 — `imovel`, `comodo`, `contrato`, `contrato_fiador`, `cobranca`,
+// `acesso_usuario_permissao` e `item_da_emissao_em_lote` — só chegam lá **transitivamente**. É por
+// isso que a travessia é por ponto fixo e não por uma consulta de um salto: metade da cobertura de
+// hoje tem comprimento maior que um, e uma guarda de salto único acusaria as sete legítimas.
+//
+// ---------------------------------------------------------------------------
+// O que a exigência de coluna NÃO NULA garante — e por que ela basta
+// ---------------------------------------------------------------------------
+//
+// Com toda coluna da corrente declarada `NOT NULL`, a existência da linha filha IMPLICA a existência
+// da linha pai. Daí seguem os dois únicos desfechos possíveis para o `DELETE` da empresa, e nenhum
+// deles deixa órfão: ou alguma aresta da corrente recusa (e a empresa não é removida), ou todas
+// cascateiam (e a linha filha some junto). É por isso que a guarda cobra a obrigatoriedade da
+// LIGAÇÃO, e não o modo de remoção de cada aresta: o modo é o eixo do CT-1215, e cobrá-lo aqui
+// reprovaria um `cascade` que é seguro.
+//
+// ---------------------------------------------------------------------------
+// O conjunto examinado é definido por EXCLUSÃO, como o de `src/catalogo.ts`
+// ---------------------------------------------------------------------------
+//
+// Ficam de fora os `relkind` que não guardam linha PRÓPRIA — índice (`i`, `I`), sequência (`S`),
+// tipo composto (`c`), tabela TOAST (`t`) e **visão (`v`)** —, e todo o resto é examinado. A visão é
+// a única diferença em relação à lista de `src/catalogo.ts`, e a razão é que as duas perguntas são
+// diferentes: aquela examina a visão porque ela pode DEVOLVER linha de outra empresa; esta a dispensa
+// porque ela não pode GUARDAR uma — removida a origem, não resta nada nela, e órfão é impossível.
+// Uma visão MATERIALIZADA (`m`), que guarda linha fisicamente, continua dentro do exame — como
+// continua uma espécie que ninguém previu, que é o que a forma por exclusão compra.
+
+/** O único motivo que esta guarda emite. Fechado: a cobertura é uma propriedade só. */
+type MotivoDeCoberturaDoCriterio = 'SEM_CAMINHO_ATE_EMPRESA';
+
+interface ExcecaoDeCobertura {
+  readonly tabela: string;
+  readonly motivo: MotivoDeCoberturaDoCriterio;
+}
+
+/**
+ * O que a guarda respondeu: o que ela OLHOU e o que ela reprovou.
+ *
+ * As duas listas importam, e a primeira é o controle antivácuo: sem ela, *"nenhuma exceção"* e
+ * *"nada foi olhado"* seriam indistinguíveis, e um schema vazio passaria por verde. Mesmo desenho de
+ * {@link CoberturaDeIsolamento}, e pela mesma razão.
+ */
+interface CoberturaDoCriterioDeExclusao {
+  readonly examinadas: readonly string[];
+  readonly excecoes: readonly ExcecaoDeCobertura[];
+}
+
+/** Uma aresta do grafo de dependências: quem referencia quem, e se a ligação é obrigatória. */
+interface ArestaDeDependencia {
+  readonly origem: string;
+  readonly destino: string;
+  readonly ligacaoObrigatoria: boolean;
+}
+
+/**
+ * Deriva, do catálogo do banco em execução, quais tabelas de `negocio` alcançam `identidade.empresa`
+ * por uma corrente de chaves estrangeiras cujas colunas de ligação são todas NÃO NULAS.
+ *
+ * A travessia é um ponto fixo sobre o grafo inteiro — não uma consulta de um salto, nem uma lista de
+ * caminhos escrita à mão. As duas alternativas foram descartadas pela mesma razão: sete das tabelas
+ * de hoje chegam à empresa em dois ou três saltos, e uma corrente futura pode ser mais longa.
+ *
+ * Ela é invocada pela cadeia SEM privilégio, como a guarda de isolamento: responder pela cobertura
+ * não exige ser dono de nada.
+ */
+async function verificarCoberturaDoCriterioDeExclusao(
+  cadeia: string,
+): Promise<CoberturaDoCriterioDeExclusao> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+
+  try {
+    const objetos = await sql<{ tabela: string }[]>`
+      SELECT n.nspname || '.' || c.relname AS "tabela"
+        FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'negocio'
+         AND c.relkind NOT IN ('i', 'I', 'S', 'c', 't', 'v')
+       ORDER BY c.relname
+    `;
+
+    const arestas = await sql<ArestaDeDependencia[]>`
+      SELECT origem_ns.nspname || '.' || origem.relname AS "origem",
+             alvo_ns.nspname || '.' || alvo.relname AS "destino",
+             -- Obrigatória significa: TODA coluna referenciadora e NAO NULA. O quantificador
+             -- universal e o conteudo -- com uma coluna anulavel o MATCH SIMPLE nao aplica a
+             -- referencia, e a linha filha deixa de implicar a linha pai.
+             -- (Sem crase e sem acento neste comentario: ele vive dentro de um template literal.)
+             COALESCE(
+               (
+                 SELECT bool_and(a.attnotnull)
+                   FROM pg_catalog.pg_attribute a
+                  WHERE a.attrelid = k.conrelid
+                    AND a.attnum = ANY (k.conkey)
+               ),
+               false
+             ) AS "ligacaoObrigatoria"
+        FROM pg_catalog.pg_constraint k
+        JOIN pg_catalog.pg_class origem ON origem.oid = k.conrelid
+        JOIN pg_catalog.pg_namespace origem_ns ON origem_ns.oid = origem.relnamespace
+        JOIN pg_catalog.pg_class alvo ON alvo.oid = k.confrelid
+        JOIN pg_catalog.pg_namespace alvo_ns ON alvo_ns.oid = alvo.relnamespace
+       WHERE k.contype = 'f'
+    `;
+
+    const alcancamAEmpresa = new Set<string>([RAIZ_DA_EMPRESA]);
+    let cresceu = true;
+    while (cresceu) {
+      cresceu = false;
+      for (const aresta of arestas) {
+        if (aresta.ligacaoObrigatoria !== true) {
+          continue;
+        }
+        if (!alcancamAEmpresa.has(aresta.destino) || alcancamAEmpresa.has(aresta.origem)) {
+          continue;
+        }
+        alcancamAEmpresa.add(aresta.origem);
+        cresceu = true;
+      }
+    }
+
+    const examinadas = objetos.map((objeto) => objeto.tabela);
+
+    return {
+      examinadas,
+      excecoes: examinadas
+        .filter((tabela) => !alcancamAEmpresa.has(tabela))
+        .map((tabela) => ({ tabela, motivo: 'SEM_CAMINHO_ATE_EMPRESA' as const })),
+    };
+  } finally {
+    await sql.end();
+  }
+}
+
+/**
+ * As VINTE E TRÊS tabelas de `negocio` que guardam linha própria, na ordem em que o nome as coloca.
+ *
+ * São os mesmos objetos de {@link TABELAS_LEGITIMAS} **menos a visão**, e a subtração é declarada
+ * aqui em vez de a lista ser copiada: a única diferença entre os dois exames é a visão, e escrevê-la
+ * como uma terceira cópia dos nomes deixaria as duas livres para divergir sem que nada acusasse
+ * (Limiar de Três do `CLAUDE.md`). O que o CT-1242 afirma à parte, e o que dá conteúdo à subtração,
+ * é que a visão **existe** no schema — sem isso, "ela não está na lista" seria trivialmente verdade.
+ */
+const TABELAS_COM_LINHA_PROPRIA: readonly string[] = TABELAS_LEGITIMAS.filter(
+  (objeto) => objeto !== VISAO_DA_COBRANCA_DERIVADA,
+);
+
+/**
+ * As SETE tabelas de `negocio` que só chegam a `identidade.empresa` por CORRENTE — nunca em um
+ * salto —, na ordem em que o nome as coloca.
+ *
+ * Elas são a medida que a §3.1 da task levantou, e a razão de a travessia de
+ * {@link verificarCoberturaDoCriterioDeExclusao} ser um ponto fixo em vez de uma consulta de um
+ * salto: com sete das vinte e três a mais de um salto de distância, a alternativa simples acusaria
+ * as sete legítimas e o schema correto ficaria vermelho.
+ *
+ * A lista é **declarada**, não derivada, de propósito: o CT-1242 confronta esta declaração com o
+ * que o catálogo do banco em execução diz, e é o confronto que envelhece quando o schema muda.
+ * Derivá-la da mesma consulta que a afirma seria comparar a medida consigo mesma.
+ */
+const TRANSITIVAS_ATE_A_EMPRESA: readonly string[] = [
+  TABELA_DE_PERMISSAO,
+  TABELA_DE_COBRANCA,
+  TABELA_DE_COMODO,
+  TABELA_DE_CONTRATO,
+  TABELA_DE_CONTRATO_FIADOR,
+  TABELA_DE_IMOVEL,
+  TABELA_DE_ITEM_DA_EMISSAO_EM_LOTE,
+];
+
+/**
+ * Quais tabelas de `negocio` alcançam `identidade.empresa` em UM SALTO, com ligação obrigatória.
+ *
+ * É deliberadamente **a alternativa que a guarda descartou** — a consulta de salto único que alguém
+ * escreveria no lugar do ponto fixo —, e não uma segunda implementação dela: não há fechamento
+ * transitivo nenhum aqui, e é justamente a ausência dele que a torna útil. O CT-1242 a usa para
+ * medir a DISTÂNCIA entre as duas formas; medida essa distância, as sete transitivas deixam de ser
+ * uma afirmação sobre a lista já fixada e passam a ser uma afirmação sobre o schema.
+ *
+ * A conferência de obrigatoriedade é a mesma da guarda, e tem de ser: uma aresta por coluna anulável
+ * não alcança a empresa em salto nenhum, e contá-la aqui inflaria o conjunto de um salto com
+ * ligações que não implicam a linha pai.
+ */
+async function tabelasQueAlcancamAEmpresaEmUmSalto(cadeia: string): Promise<readonly string[]> {
+  const sql = abrirConexao(cadeia, { maximoDeConexoes: 1 });
+
+  try {
+    const linhas = await sql<{ tabela: string }[]>`
+      SELECT DISTINCT origem_ns.nspname || '.' || origem.relname AS "tabela"
+        FROM pg_catalog.pg_constraint k
+        JOIN pg_catalog.pg_class origem ON origem.oid = k.conrelid
+        JOIN pg_catalog.pg_namespace origem_ns ON origem_ns.oid = origem.relnamespace
+        JOIN pg_catalog.pg_class alvo ON alvo.oid = k.confrelid
+        JOIN pg_catalog.pg_namespace alvo_ns ON alvo_ns.oid = alvo.relnamespace
+       WHERE k.contype = 'f'
+         AND origem_ns.nspname = 'negocio'
+         AND alvo_ns.nspname || '.' || alvo.relname = ${RAIZ_DA_EMPRESA}
+         AND COALESCE(
+               (
+                 SELECT bool_and(a.attnotnull)
+                   FROM pg_catalog.pg_attribute a
+                  WHERE a.attrelid = k.conrelid
+                    AND a.attnum = ANY (k.conkey)
+               ),
+               false
+             )
+       ORDER BY 1
+    `;
+
+    return linhas.map((linha) => linha.tabela);
+  } finally {
+    await sql.end();
+  }
+}
+
+/**
+ * As DUAS formas de nascer sem caminho bloqueante, e por que nenhuma delas basta sozinha.
+ *
+ * Elas exercitam **eixos diferentes** da guarda, e é o par que a torna falsificável por inteiro:
+ *
+ *   * a **primeira** não tem chave estrangeira nenhuma. É o defeito mais barato de cometer — uma
+ *     fatia futura declara `empresa_id` porque a guarda de isolamento a cobra, esquece a referência,
+ *     e o schema fica com uma tabela cheia que não opõe nada à remoção da empresa;
+ *   * a **segunda** TEM a chave estrangeira para `identidade.empresa`, e mesmo assim não barra:
+ *     `empresa_id` é **anulável**, e o `MATCH SIMPLE` do PostgreSQL — que é o padrão — só aplica a
+ *     referência quando nenhuma coluna referenciadora é nula. É o vetor que a §3.2 da task nomeia, e
+ *     ele é **o único que falsifica a exigência de ligação obrigatória**: sem esta variante, apagar
+ *     a conferência de `attnotnull` da travessia deixaria a suíte inteira verde, e uma tabela com
+ *     ligação anulável passaria pela guarda exatamente como passa hoje pela sua ausência.
+ *
+ * Os dois nomes ordenam DEPOIS das vinte e três, de modo que a lista de examinadas com a defeituosa
+ * é a lista legítima mais uma posição no fim — a prova da ORDEM já vive na variante `aaa_` do
+ * CT-009, e repeti-la aqui não acrescentaria eixo nenhum.
+ */
+interface VarianteSemCaminho {
+  /** Entra no nome do caso, depois do ID literal. */
+  readonly descricao: string;
+  readonly tabela: string;
+  readonly criar: string;
+}
+
+const VARIANTES_SEM_CAMINHO: readonly VarianteSemCaminho[] = [
+  {
+    descricao: 'sem chave estrangeira nenhuma',
+    tabela: 'negocio.sem_caminho_ate_empresa',
+    criar:
+      'CREATE TABLE negocio.sem_caminho_ate_empresa (' +
+      'id uuid PRIMARY KEY DEFAULT gen_random_uuid(), ' +
+      'empresa_id uuid NOT NULL)',
+  },
+  {
+    descricao: 'com chave estrangeira para a empresa, mas por coluna ANULÁVEL',
+    tabela: 'negocio.sem_ligacao_obrigatoria',
+    criar:
+      'CREATE TABLE negocio.sem_ligacao_obrigatoria (' +
+      'id uuid PRIMARY KEY DEFAULT gen_random_uuid(), ' +
+      'empresa_id uuid, ' +
+      'CONSTRAINT sem_ligacao_obrigatoria_empresa_fk FOREIGN KEY (empresa_id) ' +
+      `REFERENCES ${RAIZ_DA_EMPRESA}(id) ON DELETE NO ACTION)`,
+  },
+];
+
+describe('guarda de cobertura do critério de exclusão — toda tabela de negócio chega à empresa', () => {
+  let banco: BancoMigrado;
+  let doMigrador: string;
+
+  // Instância DEDICADA, e o aviso da §3.4 da task é literal: reutilizar a das guardas de RLS faria o
+  // `CREATE TABLE` do CT-1243 aparecer em `tabelasExaminadas` do CT-300 e do CT-009, cuja asserção é
+  // igualdade de array.
+  beforeAll(async () => {
+    banco = await bancoEfemero();
+    doMigrador = conexaoDeMigracao(banco);
+  }, LIMITE_SUBIDA_MS);
+
+  afterAll(async () => {
+    await banco?.parar();
+  }, LIMITE_SUBIDA_MS);
+
+  it(
+    'CT-1242 — as vinte e três tabelas de `negocio` têm caminho obrigatório até `identidade.empresa`',
+    async () => {
+      // A subtração da visão é uma afirmação sobre o schema, e ela é fixada aqui: se a fatia que
+      // criar a 24ª tabela esquecer de a acrescentar, é esta linha que reprova primeiro.
+      expect(TABELAS_COM_LINHA_PROPRIA).toHaveLength(23);
+
+      const cobertura = await verificarCoberturaDoCriterioDeExclusao(banco.cadeiaConexao);
+
+      // Igualdade nas DUAS listas, numa asserção só: nenhuma exceção **e** as vinte e três
+      // examinadas, nem mais nem menos. "Exceções vazias" sozinho ficaria verde contra uma consulta
+      // que não alcançou tabela nenhuma; "vinte e três examinadas" sozinho não diria que todas
+      // passaram.
+      expect(cobertura).toEqual({
+        examinadas: TABELAS_COM_LINHA_PROPRIA,
+        excecoes: [],
+      } satisfies CoberturaDoCriterioDeExclusao);
+
+      // --- A visão EXISTE, e mesmo assim fica fora do exame ------------------------------------
+      //
+      // Sem a primeira metade, "não foi examinada" também seria verdade sobre um objeto que ninguém
+      // criou — e a exclusão de `v` do filtro deixaria de ser falsificável. Mesmo desenho da âncora
+      // da sequência no CT-421.
+      expect(await verificarCoberturaDeIsolamento(banco.cadeiaConexao)).toEqual({
+        excecoes: [],
+        tabelasExaminadas: TABELAS_LEGITIMAS,
+      } satisfies CoberturaDeIsolamento);
+      expect(TABELAS_LEGITIMAS).toContain(VISAO_DA_COBRANCA_DERIVADA);
+      expect(cobertura.examinadas).not.toContain(VISAO_DA_COBRANCA_DERIVADA);
+
+      // --- As SETE transitivas: a MEDIDA que obriga a travessia a ser por ponto fixo -------------
+      //
+      // O que se afirma aqui NÃO é que elas passem na guarda — isso é `excecoes: []` acima, e
+      // repeti-lo seria decorativo. É a medida que **justifica** o ponto fixo: quais das vinte e
+      // três não alcançam `identidade.empresa` em um salto. O lado direito é a declaração da §3.1
+      // da task; o lado esquerdo é o que o catálogo do banco em execução responde, pela consulta de
+      // salto único que a guarda descartou.
+      //
+      // Em que estado ela reprova SOZINHA, com tudo acima verde: quando uma das sete ganha chave
+      // estrangeira direta e obrigatória para a empresa (o conjunto medido cai a seis), e quando uma
+      // das dezesseis diretas passa a chegar por corrente (sobe a oito). Nos dois casos `examinadas`
+      // não se move — ela vem de `pg_class`, não da travessia — e `excecoes` continua vazia, porque
+      // o ponto fixo segue alcançando as vinte e três. Nenhuma asserção anterior tem como acusar.
+      //
+      // Ela é o próprio controle antivácuo, nas duas direções: uma consulta de um salto que não
+      // achasse nada devolveria as vinte e três à esquerda, e uma que achasse tudo devolveria a
+      // lista vazia — nem uma nem outra é `TRANSITIVAS_ATE_A_EMPRESA`.
+      const emUmSalto = await tabelasQueAlcancamAEmpresaEmUmSalto(banco.cadeiaConexao);
+      expect(TABELAS_COM_LINHA_PROPRIA.filter((tabela) => !emUmSalto.includes(tabela))).toEqual(
+        TRANSITIVAS_ATE_A_EMPRESA,
+      );
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  for (const variante of VARIANTES_SEM_CAMINHO) {
+    it(
+      `CT-1243 — tabela ${variante.descricao} é acusada por nome, e some com o \`DROP\``,
+      async () => {
+        // --- Passo 1: o controle ANTES -----------------------------------------------------------
+        //
+        // Sem ele, "reprovou com a tabela de pé" não distingue a guarda que discrimina daquela que
+        // reprova qualquer coisa.
+        const antes = await verificarCoberturaDoCriterioDeExclusao(banco.cadeiaConexao);
+        expect(antes).toEqual({
+          examinadas: TABELAS_COM_LINHA_PROPRIA,
+          excecoes: [],
+        } satisfies CoberturaDoCriterioDeExclusao);
+
+        // --- Passo 2: a tabela defeituosa --------------------------------------------------------
+        //
+        // Nenhuma bandeira, semente condicional ou ramo de produção participa: é DDL do próprio
+        // caso, pela cadeia de `conexaoDeMigracao()` — o mesmo acessório e a mesma origem de
+        // privilégio do CT-009. As duas variantes têm a coluna `empresa_id` de propósito: uma guarda
+        // que decidisse pela PRESENÇA da coluna, e não pelo caminho, ficaria verde nas duas.
+        await executarPrivilegiado(doMigrador, [variante.criar]);
+
+        try {
+          const comDefeito = await verificarCoberturaDoCriterioDeExclusao(banco.cadeiaConexao);
+
+          // Exatamente UMA entrada, com a tabela e o motivo exatos — nunca "ao menos uma". A
+          // igualdade de array é o que impede a guarda de reprovar as vinte e quatro em bloco e
+          // ainda assim passar aqui.
+          expect(comDefeito.excecoes).toEqual([
+            { tabela: variante.tabela, motivo: 'SEM_CAMINHO_ATE_EMPRESA' },
+          ]);
+
+          // As vinte e três continuam EXAMINADAS, e a defeituosa entra na lista: sem esta metade,
+          // uma guarda que tivesse perdido de vista as legítimas reportaria a mesma exceção única e
+          // passaria.
+          expect(comDefeito.examinadas).toEqual([...TABELAS_COM_LINHA_PROPRIA, variante.tabela]);
+        } finally {
+          await executarPrivilegiado(doMigrador, [`DROP TABLE ${variante.tabela}`]);
+        }
+
+        // --- Passo 3: o controle DEPOIS ----------------------------------------------------------
+        //
+        // Removida a tabela, a guarda volta ao vazio. É a terceira perna do par
+        // controle→mutante→controle, e sem ela "reprovou" poderia ser estado residual.
+        expect(await verificarCoberturaDoCriterioDeExclusao(banco.cadeiaConexao)).toEqual({
+          examinadas: TABELAS_COM_LINHA_PROPRIA,
+          excecoes: [],
+        } satisfies CoberturaDoCriterioDeExclusao);
+      },
+      LIMITE_DO_CASO_MS,
+    );
+  }
 });

@@ -149,8 +149,13 @@ import {
 } from '../src/integracoes-bancarias/entrega-da-noticia.controller.ts';
 import { SEGMENTO_DA_IDENTIDADE } from '../src/integracoes-bancarias/identidade.controller.ts';
 import { CAMINHO_DO_MASTER } from '../src/master/empresa.controller.ts';
-import { conceder, credencialDeSessao, entrar, pedir } from './acessorios-de-borda.ts';
-import { decodificarBase32 } from './base32.ts';
+import {
+  conceder,
+  credencialDeSessao,
+  entrar,
+  entrarComSegundoFatorCumprido,
+  pedir,
+} from './acessorios-de-borda.ts';
 import {
   confiarEm,
   corpoDeCadastroDeOutroEndereco,
@@ -375,7 +380,12 @@ beforeAll(async () => {
 
   cookieDeA = await entrar(base, ADMIN_DE_A, SENHA_DA_CARGA);
   cookieDeB = await entrar(base, ADMIN_DE_B, SENHA_DA_CARGA);
-  cookieDoMaster = await entrarComSegundoFatorCumprido(MASTER);
+  cookieDoMaster = await entrarComSegundoFatorCumprido(
+    base,
+    MASTER,
+    SENHA_DA_CARGA,
+    identidade.autenticacao,
+  );
 }, LIMITE_DE_MONTAGEM_MS);
 
 afterAll(async () => {
@@ -1664,29 +1674,31 @@ async function registrarIdentidade(cookie: string): Promise<void> {
   }
 }
 
-// DÉBITO COM GATILHO — D32 · F5/T7 · registrado 2026-08-22
+// DÉBITO COM GATILHO — D32 · F5/T7 · registrado 2026-08-22 · metade PAGA em 2026-09-01
 // (NÃO é uma `DECISÃO FECHADA`: ele agenda uma convergência, não protege o código abaixo.)
-// O QUÊ: três acessórios de arranjo têm mais de uma escrita, e as contagens abaixo são MEDIDAS —
+// ⚠️ PAGO: {@link entrarComSegundoFatorCumprido} tinha SEIS escritas privadas e hoje tem UMA, em
+//        `./acessorios-de-borda.ts`, de onde esta suíte e as outras cinco a IMPORTAM. Fechou na T3
+//        da fatia `painel-master-administradores`, que é literalmente o gatilho que este marcador
+//        declarava — *a primeira task autorizada a abrir qualquer uma das seis*. **Não reponha a
+//        cópia**, e não reabra esta metade: a prova é a baseline do pacote `api`, comparada arquivo
+//        a arquivo, com as seis suítes saindo idênticas (410 → 410). O marcador PERMANECE porque as
+//        outras duas metades abaixo continuam abertas — apagá-lo por número levaria as duas junto.
+// O QUÊ: dois acessórios de arranjo ainda têm mais de uma escrita, e as contagens são MEDIDAS —
 //        `grep -rln --exclude-dir=dist "function <nome>" apps packages`, em 2026-08-22.
-//        {@link entrarComSegundoFatorCumprido} existe em **SEIS** arquivos de `apps/api/test/`:
-//        `administracao-de-pessoas`, `ciclo-de-acesso`, `cobertura-de-autorizacao`, `contexto`,
-//        `recusa-indistinguivel` e este. {@link envelhecerOVigente} existe em **duas** — esta e
+//        {@link envelhecerOVigente} existe em **duas** — esta e
 //        `./certificado-do-provedor.e2e.spec.ts`. {@link montarEmpresaComAdmin} existe em **duas**
 //        formas — esta e, partida em `criarEmpresa`/`admitirAdministrador`/`administradorEmOperacao`,
 //        `./recusa-indistinguivel.e2e.spec.ts`. Nenhuma pode ser importada de onde está: importar de
 //        um arquivo `.spec.ts` executa o módulo dele e registra os casos daquela suíte DENTRO da
-//        importadora.
-// QUANDO FECHA: ⚠️ para {@link entrarComSegundoFatorCumprido} o **Limiar de Três do `CLAUDE.md` JÁ
-//        DISPAROU** — são seis escritas, e a rule adverte que a essa altura elas já divergiram —, de
-//        modo que o gatilho dela não é mais *"a terceira suíte"*: é a **primeira task autorizada a
-//        abrir qualquer uma das seis**, que a faz subir para `./acessorios-de-borda.ts` e converte as
-//        demais. Para as outras duas o gatilho continua sendo o Limiar: a **terceira** suíte que
+//        importadora — e é por isso que a casa compartilhada, que não é `.spec.ts`, é o destino das
+//        duas quando o gatilho chegar.
+// QUANDO FECHA: para as duas restantes o gatilho é o Limiar de Três: a **terceira** suíte que
 //        precisar de empresa nova ou de retroagir a vigência, ou a primeira task autorizada a abrir a
 //        suíte doadora por outra razão.
-// POR QUE NÃO AGORA: convergir a de seis escritas exige abrir **cinco suítes alheias** — e
-//        `./certificado-do-provedor.e2e.spec.ts` é declarado **somente leitura** pela T7 —, o que num
-//        diff que publica duas rotas (e, na rodada de correção, num diff de correção de gate) é
-//        exatamente a superfície de regressão que a `.claude/rules/nao-regressao.md` §4.5 proíbe.
+// POR QUE NÃO AGORA: `./certificado-do-provedor.e2e.spec.ts` está fora da lista de arquivos da T3, e
+//        abrir suíte alheia que a task não declarou é exatamente a superfície de regressão que a
+//        `.claude/rules/nao-regressao.md` §4.5 proíbe — a T3 converteu as seis do primeiro acessório
+//        porque elas ERAM o objeto declarado dela, não por estarem a caminho.
 // ÍNDICE: docs/specs/features/integracao-bancaria-autonoma/v1/_run/run-report.md §2, D32
 
 /** Uma empresa nova com o Admin dela **operando** — senha trocada e sessão plena. */
@@ -1766,68 +1778,6 @@ async function montarEmpresaComAdmin(): Promise<EmpresaMontada> {
     empresaId,
     cookie: reemitido === undefined ? cookie : (reemitido.split(';')[0] ?? cookie),
   };
-}
-
-/**
- * Entra como o operador do SaaS e **cumpre o segundo fator** pela via real.
- *
- * O Master entra RESTRITO por segundo fator (RN-08), e sessão restrita não alcança as rotas dele: sem
- * cumpri-lo, a criação de empresa responderia `403` da restrição e o diagnóstico apontaria para o
- * lugar errado.
- */
-async function entrarComSegundoFatorCumprido(email: string): Promise<string> {
-  const entrada = await pedir(base, ROTA_DE_ENTRADA, {
-    metodo: 'POST',
-    corpo: { email, password: SENHA_DA_CARGA },
-  });
-
-  if (entrada.status !== STATUS_OK) {
-    throw new Error(`a entrada de ${email} respondeu ${String(entrada.status)}: ${entrada.texto}`);
-  }
-
-  const cookie = credencialDeSessao(entrada);
-
-  const preparo = await pedir(base, `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/enable`, {
-    metodo: 'POST',
-    cookie,
-    corpo: { password: SENHA_DA_CARGA },
-  });
-
-  if (preparo.status !== STATUS_OK) {
-    throw new Error(
-      `o preparo do segundo fator respondeu ${String(preparo.status)}: ${preparo.texto}`,
-    );
-  }
-
-  const { totpURI } = preparo.corpo as { totpURI?: unknown };
-  if (typeof totpURI !== 'string') {
-    throw new Error('o preparo do segundo fator não devolveu o endereço de configuração');
-  }
-
-  const codificado = new URL(totpURI).searchParams.get('secret');
-  if (codificado === null) {
-    throw new Error('o endereço de configuração do segundo fator não trouxe segredo');
-  }
-
-  const { code } = await identidade.autenticacao.api.generateTOTP({
-    body: { secret: decodificarBase32(codificado) },
-  });
-
-  const ativacao = await pedir(base, `${PREFIXO_DAS_ROTAS_DE_IDENTIDADE}/two-factor/verify-totp`, {
-    metodo: 'POST',
-    cookie,
-    corpo: { code },
-  });
-
-  if (ativacao.status !== STATUS_OK) {
-    throw new Error(
-      `a verificação do segundo fator respondeu ${String(ativacao.status)}: ${ativacao.texto}`,
-    );
-  }
-
-  const reemitido = ativacao.cookies.find((bruto) => bruto.includes('session_token'));
-
-  return reemitido === undefined ? cookie : (reemitido.split(';')[0] ?? cookie);
 }
 
 /**
