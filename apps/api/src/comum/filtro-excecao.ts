@@ -159,7 +159,7 @@ export class FiltroExcecaoGlobal implements ExceptionFilter {
     const contexto = host.switchToHttp();
     const requisicao = contexto.getRequest<FastifyRequest>();
     const resposta = contexto.getResponse<FastifyReply>();
-    const erro = traduzir(excecao);
+    const erro = traduzir(excecao, requisicao);
 
     // O identificador de correlação é o que o adaptador HTTP já atribui a cada requisição: é ele
     // que liga esta linha do journal à requisição que o cliente fez. A exceção de origem vai por
@@ -224,21 +224,27 @@ function caminhoSemConsulta(requisicao: FastifyRequest): string {
  * Três origens, e só três, porque a função é **total** — nenhum ramo cai fora:
  *
  *   1. `ErroDeAplicacao` — a decisão já está tomada por quem levantou: o código é dele e o status
- *      é o que o código implica (T3). Nada a inferir.
- *   2. `HttpException` — a recusa nasceu FORA deste vocabulário. É o caminho de
- *      {@link recusaDeOutrem}.
+ *      é o que o código implica (T3). Nada a inferir. **É por aqui que passa TODO `404` de
+ *      negócio deste produto**, e é o que mantém o item 2 abaixo livre para não falar de negócio.
+ *   2. `HttpException` — a recusa nasceu FORA deste vocabulário, e ela se parte em duas conforme
+ *      **tenha ou não casado rota** ({@link nenhumaRotaCasou}): com rota casada, quem recusou é um
+ *      componente montado sob a API, e o caminho é {@link recusaDeOutrem}; sem rota casada, quem
+ *      recusou é o **roteador**, e o caminho é {@link recusaSemNomeNoVocabulario} — porque não há
+ *      recurso de negócio algum a não encontrar.
  *   3. Qualquer outra coisa — exceção que ninguém previu é, por definição, falha do serviço.
  *
  * A exceção de origem viaja como `causa` — ela não entra no corpo da resposta (`paraCorpo()` monta
  * os quatro campos da ADR-0007 e nada mais), mas fica disponível para o registro estruturado.
  */
-function traduzir(excecao: unknown): RespostaDeErro {
+function traduzir(excecao: unknown, requisicao: FastifyRequest): RespostaDeErro {
   if (excecao instanceof ErroDeAplicacao) {
     return { status: excecao.status, corpo: excecao.paraCorpo() };
   }
 
   if (excecao instanceof HttpException) {
-    return recusaDeOutrem(excecao.getStatus(), excecao);
+    return nenhumaRotaCasou(requisicao)
+      ? recusaSemNomeNoVocabulario(excecao.getStatus(), excecao)
+      : recusaDeOutrem(excecao.getStatus(), excecao);
   }
 
   return doNossoCodigo(CodigoErro.ERRO_INTERNO, excecao);
@@ -250,11 +256,61 @@ function doNossoCodigo(codigo: CodigoErro, causa: unknown): RespostaDeErro {
   return { status: erro.status, corpo: erro.paraCorpo() };
 }
 
+// DECISÃO FECHADA — correção dirigida PROD-2026-09-03-01 · 2026-09-03
+// O QUÊ: a recusa levantada quando NENHUMA rota casou não passa por `CODIGO_POR_STATUS`. Ela sai
+//        por {@link recusaSemNomeNoVocabulario} — `REQUISICAO_RECUSADA`, com o status de origem
+//        preservado —, e o discriminador é a ausência de rota casada, nunca o texto da exceção
+//        nem uma lista de caminhos.
+// POR QUÊ: a tabela classifica por status, e o `404` tem DUAS origens que o status não separa: o
+//          roteador, que não conhece o caminho ou o método, e um componente montado sob uma rota
+//          que existe. As duas saíam com `RECURSO_NAO_ENCONTRADO`, que no contrato afirma um fato
+//          de NEGÓCIO — *"a entidade que você pediu não existe"*. O custo medido não é teórico: as
+//          7 rotas do Painel Master ficaram fora do artefato publicado (o processo em memória era
+//          anterior ao `dist/`), e o `404` do roteador chegou à tela do operador como *"Esta
+//          empresa não existe mais"* — sobre uma empresa que existe e estava aberta na tela. O
+//          cliente classificou CERTO um corpo que afirmava algo FALSO, e nenhum consumidor tinha
+//          como distinguir: os corpos eram idênticos byte a byte.
+// REVERTER EXIGE: provar que o cliente consegue distinguir "caminho não roteado" de "recurso de
+//                 negócio inexistente" por outro eixo do par (status, corpo) — não basta que a
+//                 aplicação saiba a diferença, é o CONSUMIDOR que precisa poder decidir.
+//
+// (Adjacente, e declarado.) O relatório PROD-2026-09-03-01 §7.3 prescrevia corpo **sem** a chave
+// `codigo`. Esta correção DIVERGE, e mede a razão: a ADR-0007/0017 fixa que todo erro sai como
+// `{ codigo, mensagem, campo?, detalhes? }` com `codigo` de enum fechado, e um corpo sem `codigo`
+// a contraria — o tipo `CorpoErro` a impõe, e `CHAVES_DO_ERRO` a confere na suíte. O efeito que o
+// relatório pede é alcançado inteiro por `REQUISICAO_RECUSADA`: o próprio §6 dele declara que o
+// painel já roteia esse código para a faixa de indisponibilidade, que é a mesma superfície de
+// *"Falha de comunicação"* que a forma prescrita produziria. Mesma tela, sem violar a ADR e sem
+// acrescentar código ao vocabulário fechado — que é o que o §7.3 também exige.
+/**
+ * A requisição não casou rota alguma?
+ *
+ * O padrão da rota (`routeOptions.url`) é preenchido pelo adaptador HTTP **no despacho**: ele é o
+ * `/v1/master/empresas/:id` que casou, e não o caminho concreto. Requisição que não casou nada não
+ * tem padrão — é a mesma propriedade de que {@link caminhoSemConsulta} já depende para escolher o
+ * alvo bruto no journal, e ela está **medida** no incidente: o `caminho` das 7 rotas ausentes saiu
+ * como caminho concreto, que é o terceiro fallback daquela função e só é alcançado quando este
+ * valor é `undefined`.
+ *
+ * É propriedade **estrutural**, e é isso que fecha a classe: caminho novo, verbo novo ou rota
+ * futura caem do lado certo sozinhos, sem ninguém acrescentar entrada em tabela alguma. As duas
+ * alternativas foram descartadas por serem enumeração disfarçada — casar o texto `Cannot GET …` da
+ * exceção depende de literal do arcabouço, e listar caminhos conhecidos reabre a lista a cada rota.
+ */
+function nenhumaRotaCasou(requisicao: FastifyRequest): boolean {
+  return requisicao.routeOptions?.url === undefined;
+}
+
 /**
  * Traduz a recusa levantada por um componente que não é deste vocabulário.
  *
  * O status conhecido segue pela tabela, que é a via precisa. O resto é
  * {@link recusaSemNomeNoVocabulario}.
+ *
+ * ⚠️ **Só chega aqui quem casou rota** — ver {@link nenhumaRotaCasou}. É o que mantém a tabela
+ * exata: ela nomeia a recusa de um componente montado sob a API, e componente algum recusa antes
+ * de uma rota casar. O `404` dela é, portanto, o do encaminhador de `/v1/auth` — que casa o
+ * curinga e responde por conta própria —, nunca o do roteador.
  */
 function recusaDeOutrem(statusDeOrigem: number, excecao: HttpException): RespostaDeErro {
   const codigo = CODIGO_POR_STATUS[statusDeOrigem];

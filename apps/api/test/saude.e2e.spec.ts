@@ -21,6 +21,11 @@
  * |       |        | declara as rotas que a aplicação de fato expõe. |
  * | CA-13 | CT-005 | Exceção do próprio arcabouço (rota inexistente) sai no envelope da ADR-0007,
  * |       |        | e não no formato padrão (`statusCode`/`error` AUSENTES). |
+ * | —     | CT-1250 | O `404` do **roteador** (caminho sem correspondência, e método sem
+ * |       |         | correspondência em caminho vivo) responde `REQUISICAO_RECUSADA`, e o `404`
+ * |       |         | de **negócio** continua respondendo `RECURSO_NAO_ENCONTRADO` — os dois na
+ * |       |         | mesma aplicação, com os corpos afirmados DIFERENTES entre si. Correção
+ * |       |         | dirigida do incidente `PROD-2026-09-03-01`. (ADR-0007, ADR-0017) |
  * | CA-13 | CT-006 | Exceção não prevista vira `500` com `ERRO_INTERNO`, sem vazar mensagem
  * |       |        | interna nem rastreamento de pilha. |
  * | CA-13 | CT-006 | Rede da guarda de redação: o `caminho` que o filtro grava no journal é o
@@ -107,7 +112,7 @@ import { fileURLToPath } from 'node:url';
 import { Controller, Get } from '@nestjs/common';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
-import { CodigoErro, criarLogger } from '@sysloc/shared';
+import { CodigoErro, criarLogger, ErroDeAplicacao } from '@sysloc/shared';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 // DÉBITO COM GATILHO — D28 · F0/T5 · registrado 2026-08-01
 // (NÃO é uma `DECISÃO FECHADA`: as duas deste arquivo, mais abaixo, protegem código; esta agenda.)
@@ -175,6 +180,24 @@ const PORTA_PADRAO_DA_FILA = 6379;
 
 /** Caminho da rota que o controlador-fixture de CT-006 expõe. */
 const CAMINHO_DO_GATILHO = 'gatilho-de-falha-ct006';
+
+/** Prefixo da rota VIVA cujo recurso de negócio não existe — a metade de negócio do CT-1250. */
+const CAMINHO_DO_RECURSO_AUSENTE = 'recurso-de-negocio-ausente-ct1250';
+
+/** Caminho que NINGUÉM publica — a metade do roteador do CT-1250. */
+const CAMINHO_QUE_NINGUEM_PUBLICA = 'caminho-que-ninguem-publica-ct1250';
+
+/**
+ * A mensagem canônica de `RECURSO_NAO_ENCONTRADO`, por extenso.
+ *
+ * Escrita à mão, e não lida de `MENSAGEM_POR_CODIGO`: importar a tabela faria o caso comparar o
+ * filtro consigo mesmo, e uma troca de mensagem passaria despercebida nos dois lados ao mesmo
+ * tempo. Mesma convenção de `recusa-indistinguivel.e2e.spec.ts`.
+ */
+const MENSAGEM_CANONICA_DE_RECURSO_NAO_ENCONTRADO = 'recurso não encontrado';
+
+/** A mensagem canônica de `REQUISICAO_RECUSADA`, pela mesma razão da de cima. */
+const MENSAGEM_CANONICA_DE_REQUISICAO_RECUSADA = 'requisição recusada';
 
 /** Texto sensível plantado na exceção do fixture — nada dele pode sair na resposta. */
 const CADEIA_SENSIVEL = 'postgres://usuario:senha@127.0.0.1:5432/operacao';
@@ -373,6 +396,29 @@ async function subirAplicacaoComFixtureDeFalha(
   return app.getUrl();
 }
 
+/**
+ * Sobe a aplicação acrescentando o controlador-fixture cujo recurso de negócio não existe (CT-1250).
+ *
+ * Helper próprio, e não um controlador a mais em {@link subirAplicacaoComFixtureDeFalha}: aquele
+ * monta a aplicação do CT-006, e acrescentar rota a ela mudaria o cenário de um caso que já existe
+ * sem que este precise disso.
+ */
+async function subirAplicacaoComFixtureDeRecursoAusente(
+  banco: BancoEfemero,
+  fila: FilaEfemera,
+): Promise<string> {
+  apontarAmbienteParaEfemeras(banco, fila);
+
+  const modulo = await Test.createTestingModule({
+    imports: [AppModule],
+    controllers: [ControladorDeRecursoAusente],
+  }).compile();
+  const app = modulo.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+  onTestFinished(() => app.close());
+  await app.listen({ port: 0, host: '127.0.0.1' });
+  return app.getUrl();
+}
+
 /** O journal desta aplicação: as linhas cruas e os eventos já desserializados, em ordem. */
 interface JournalObservavel {
   /** As linhas exatamente como o registrador as escreve — é o que o operador lê. */
@@ -473,8 +519,14 @@ async function subirAplicacaoComEspiaoDeDependencias(
   return { base: await app.getUrl(), espiao };
 }
 
-async function pedir(base: string, caminho: string): Promise<Resposta> {
+/**
+ * @param metodo verbo HTTP. O padrão é `GET`; o CT-1250 precisa declará-lo para provar que o
+ *   **método** sem correspondência cai na mesma classe do caminho sem correspondência — foi assim
+ *   que o incidente PROD-2026-09-03-01 mediu `DELETE /v1/sessao` respondendo `404` de negócio.
+ */
+async function pedir(base: string, caminho: string, metodo = 'GET'): Promise<Resposta> {
   const resposta = await fetch(new URL(caminho, base), {
+    method: metodo,
     headers: { connection: 'close' },
   });
   return {
@@ -758,8 +810,16 @@ describe('serviço de aplicação (T5)', () => {
         const corpo = comoObjeto(resposta);
 
         expect(resposta.status).toBe(404);
-        // O valor esperado vem do enum exportado pelo pacote compartilhado, nunca de um literal.
-        expect(corpo.codigo).toBe(CodigoErro.RECURSO_NAO_ENCONTRADO);
+        // SUT_IS_CORRECT_BECAUSE: este caso existe para provar que o envelope da ADR-0007
+        // SUBSTITUI o formato padrão do arcabouço — e essa é a metade dele que discrimina, logo
+        // abaixo (`statusCode` e `error` ausentes, chaves dentro de `CHAVES_DO_ERRO`). O código
+        // esperado era instrumental, e o valor que ele fixava estava ERRADO desde sempre: o
+        // roteador não tem recurso de negócio algum a não encontrar, e afirmar
+        // `RECURSO_NAO_ENCONTRADO` aqui é o defeito que o incidente PROD-2026-09-03-01 mediu na
+        // tela do operador. O propósito do caso é preservado inteiro; o que muda é o valor exato,
+        // que continua exato — nenhuma asserção foi afrouxada, e a contagem deste arquivo não cai.
+        // O par que fixa a distinção é o CT-1250.
+        expect(corpo.codigo).toBe(CodigoErro.REQUISICAO_RECUSADA);
         expect(typeof corpo.mensagem).toBe('string');
         expect(String(corpo.mensagem).length).toBeGreaterThan(0);
         // A ausência destas duas chaves é o que prova a substituição do formato padrão — sem ela,
@@ -859,6 +919,76 @@ describe('serviço de aplicação (T5)', () => {
       },
       LIMITE_CASO_MS,
     );
+
+    it(
+      'CT-1250 — o 404 do roteador e o 404 de negócio são DISTINGUÍVEIS pelo cliente',
+      async () => {
+        const base = await subirAplicacaoComFixtureDeRecursoAusente(banco, fila);
+
+        // As três na MESMA aplicação: é a comparação entre elas que é o caso, e duas aplicações
+        // diferentes não a sustentariam.
+        const semRota = await pedir(base, `/${CAMINHO_QUE_NINGUEM_PUBLICA}`);
+        const semMetodo = await pedir(base, `/${CAMINHO_DO_RECURSO_AUSENTE}`, 'DELETE');
+        const semRecurso = await pedir(base, `/${CAMINHO_DO_RECURSO_AUSENTE}`);
+
+        // --- 1. O 404 do ROTEADOR não fala o vocabulário de negócio -----------------------------
+        //
+        // O status permanece `404` — ele é a informação precisa e vem de quem recusou —, e o código
+        // passa a ser o de fecho do filtro: "isto é recusa, e este vocabulário não nomeia a causa".
+        expect(semRota.status).toBe(404);
+        expect(comoObjeto(semRota)).toEqual({
+          codigo: CodigoErro.REQUISICAO_RECUSADA,
+          mensagem: MENSAGEM_CANONICA_DE_REQUISICAO_RECUSADA,
+        });
+
+        // --- 2. O MÉTODO sem correspondência cai na mesma classe --------------------------------
+        //
+        // Perna própria porque o caminho existe e só o verbo não: um discriminador que olhasse o
+        // caminho conhecido — a saída curta que a intuição sugere — daria `RECURSO_NAO_ENCONTRADO`
+        // aqui, e é exatamente o que o incidente mediu em `DELETE /v1/sessao`.
+        expect(semMetodo.status).toBe(404);
+        expect(comoObjeto(semMetodo)).toEqual({
+          codigo: CodigoErro.REQUISICAO_RECUSADA,
+          mensagem: MENSAGEM_CANONICA_DE_REQUISICAO_RECUSADA,
+        });
+
+        // --- 3. O 404 de NEGÓCIO continua intocado ----------------------------------------------
+        //
+        // A outra metade do par, e a que impede a correção de virar regressão: se o discriminador
+        // alcançasse a rota casada, esta asserção reprovaria nomeando o código trocado.
+        expect(semRecurso.status).toBe(404);
+        expect(comoObjeto(semRecurso)).toEqual({
+          codigo: CodigoErro.RECURSO_NAO_ENCONTRADO,
+          mensagem: MENSAGEM_CANONICA_DE_RECURSO_NAO_ENCONTRADO,
+        });
+
+        // --- 4. A ASSERÇÃO QUE DISCRIMINA -------------------------------------------------------
+        //
+        // As três acima fixam valores; esta fixa a PROPRIEDADE, e é ela que fecha a classe. O
+        // defeito do incidente era precisamente que os dois corpos eram idênticos byte a byte, de
+        // modo que nenhum cliente conseguia decidir entre "o servidor não tem essa rota" e "a
+        // empresa não existe" — e o painel do Master, classificando certo, exibiu ao operador
+        // "Esta empresa não existe mais" sobre uma empresa aberta na tela.
+        //
+        // Reverter o discriminador de `filtro-excecao.ts` volta os dois textos a coincidir e
+        // reprova AQUI, mesmo que alguém tenha atualizado os valores esperados acima em conjunto.
+        expect(semRota.texto).not.toBe(semRecurso.texto);
+        expect(semMetodo.texto).not.toBe(semRecurso.texto);
+
+        // O envelope da ADR-0007 permanece nos três — a correção muda QUAL código sai, nunca a
+        // forma do corpo. É o que separa esta solução da prescrição literal do relatório, que
+        // pedia um corpo sem a chave `codigo`.
+        for (const resposta of [semRota, semMetodo, semRecurso]) {
+          const corpo = comoObjeto(resposta);
+          expect(Object.keys(corpo)).not.toContain('statusCode');
+          expect(Object.keys(corpo)).not.toContain('error');
+          for (const chave of Object.keys(corpo)) {
+            expect(CHAVES_DO_ERRO).toContain(chave);
+          }
+        }
+      },
+      LIMITE_CASO_MS,
+    );
   });
 });
 
@@ -882,5 +1012,33 @@ class ControladorQueFalha {
   @Get()
   falhar(): never {
     throw new Error(`conexão ${CADEIA_SENSIVEL} recusada`);
+  }
+}
+
+/**
+ * Fixture do CT-1250: uma rota que **existe** e cujo recurso de negócio **não existe**.
+ *
+ * Ela é a metade indispensável do par. O caso precisa comparar as duas respostas na MESMA
+ * aplicação, e a outra metade — o `404` do roteador — só se obtém pedindo um caminho que ninguém
+ * publicou. Sem uma rota viva que recuse por ausência de recurso, o caso não teria contra o que
+ * comparar, e a colisão que ele existe para impedir voltaria sem ninguém notar.
+ *
+ * A recusa nasce de `ErroDeAplicacao`, que é como **todo** `404` de negócio deste produto nasce —
+ * medido em 2026-09-03: uma varredura por `NotFoundException` sobre o fonte de `apps/api` e o dos
+ * pacotes não tem uma ocorrência. O fixture é, portanto, fiel à forma real, e não uma encenação
+ * conveniente.
+ *
+ * `@RotaPublica()` pela mesma razão declarada no fixture acima: sem a marca, a guarda de contexto
+ * recusaria com `401` e o caso deixaria de exercitar o filtro.
+ */
+@RotaPublica()
+@Controller(CAMINHO_DO_RECURSO_AUSENTE)
+class ControladorDeRecursoAusente {
+  @Get()
+  ausente(): never {
+    throw new ErroDeAplicacao(
+      CodigoErro.RECURSO_NAO_ENCONTRADO,
+      MENSAGEM_CANONICA_DE_RECURSO_NAO_ENCONTRADO,
+    );
   }
 }

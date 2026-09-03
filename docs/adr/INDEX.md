@@ -1,6 +1,6 @@
 # Architecture Decision Records — INDEX
 
-> Ultima atualizacao: 2026-09-01 (39 ADRs)
+> Ultima atualizacao: 2026-09-03 (40 ADRs)
 
 <!-- ADR-INDEX-START -->
 | ID | Titulo | Status | Tags | Problema (1-linha) | Decisao (1-linha) |
@@ -44,4 +44,5 @@
 | 0037 | Política de limitação de abuso na borda pública | accepted | security, http, architecture | Publicar a API expõe uma superfície que hoje só é alcançável do próprio hospedeiro, e as duas | A borda pública fornece o eixo de origem e não a política: ela declara o salto confiável e |
 | 0038 | Alcance da exclusão lógica e da exclusão física na identidade | accepted | data, architecture | A ADR-0014 decidiu que entidade referenciável nunca é removida fisicamente, e foi escrita para o | O alcance da ADR-0014 é o cadastro do domínio (schema negocio). identidade.empresa e |
 | 0039 | Alcance do congelamento da superfície publicada | accepted | architecture, http | O marco de entrega declarou a superfície da API congelada, com o tamanho fixado por asserção | O congelamento alcança a superfície que o pacote de contratos entrega à aplicação da imobiliária. |
+| 0040 | O erro do roteador não fala o vocabulário de negócio | accepted | http, error-handling, architecture | A ADR-0017 fixa que todo erro sai como status HTTP semântico mais { codigo, mensagem, campo?, | nenhuma rota casa, a resposta preserva o status de origem e sai com REQUISICAORECUSADA — o código |
 <!-- ADR-INDEX-END -->
