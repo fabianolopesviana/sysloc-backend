@@ -122,8 +122,36 @@ fatia reaberta.
   reponha; **o 103/88 era o do fecho da F4** (`CT-1004`), medido em 2026-08-20, e **o 105/90 era o da
   T7 da fatia `integracao-bancaria-autonoma`** (`CT-1038`), medido em 2026-08-22 — nenhum dos três se
   repõe.
-- **Suíte: 2094 casos**, 9 pacotes — `contracts` **455** · `api` **456** · `shared` **309** · `db` **296** ·
+- **Suíte: 2138 casos**, 9 pacotes — `contracts` **487** · `api` **463** · `shared` **309** · `db` **301** ·
   `worker` **180** · `documentos` 159 · `auth` **95** · `cobranca-bancaria` **114** · `regua` 30.
+  ⚠️ **Os três primeiros se moveram na intervenção dirigida dos RECORTES DE LISTAGEM**, em
+  2026-09-05, e os deltas são **+32** (`contracts`), **+5** (`db`) e **+7** (`api`). Ela atende ao
+  pedido da equipe de frontend e é autorizada pela `Decision` da **ADR-0039** — *"dentro do
+  congelamento, acrescentar operação ou campo é permitido"* —, entregando **cinco** parâmetros novos
+  em rotas que já existiam (`?status=`, `?fimDe=`/`?fimAte=` em `GET /v1/contratos`;
+  `?statusLocacao=` em `GET /v1/imoveis`; `?vencimentoDe=`/`?vencimentoAte=` em `GET /v1/cobrancas`)
+  e **três campos** no item da carteira de contratos (`nomeImovel`, `nomeLocador`, `nomeLocatario`).
+  ⚠️ **NENHUMA rota foi publicada, removida ou renomeada, e as três âncoras de superfície NÃO se
+  moveram** — seguem em `113 / 98 / 20`. Quem procurar aqui um quarto número de âncora não vai
+  achar: a diferença entre *acrescentar campo* e *acrescentar operação* é o que a ADR-0039 declara.
+  ⚠️ **Os 32 do `contracts` são `CT-1256` a `CT-1259`** em `packages/contracts/test/esquemas.spec.ts`
+  (as tabelas `it.each` produzem as pernas restantes), e a âncora
+  `QUANTIDADE_DE_ESQUEMAS_DE_ENTRADA` subiu de **18 para 20** — mover o valor de uma constante que
+  um caso já afirmava **não** acrescenta caso. Os **5** do `db` são `CT-1260` a `CT-1264`, no arquivo
+  NOVO `packages/db/test/recortes-de-listagem.spec.ts`; os **7** do `api` são `CT-1265` a `CT-1271`,
+  no arquivo NOVO `apps/api/test/recortes-de-listagem.e2e.spec.ts`.
+  ⚠️ **Três casos EXISTENTES do `api` mudaram de valor esperado e NÃO são casos novos**: o `CT-327`
+  (`contrato-publicado.e2e.spec.ts`, cuja tabela passou a apontar a **listagem** para
+  `esquemaDoContratoNaCarteira`, mantendo as outras sete rotas em `esquemaDoContrato`) e o `CT-418`
+  e o `CT-415` (`contratos.e2e.spec.ts`, cujas igualdades de corpo inteiro acolheram os três nomes).
+  Os três carregam a linha `SUT_IS_CORRECT_BECAUSE` no ponto, **nenhuma asserção foi afrouxada** e
+  nenhuma chave saiu — a do `CT-415` ficou **mais forte**, porque passou a afirmar a assimetria
+  entre a listagem e a leitura por código. **Não os reponha.**
+  ⚠️ **Os seis pacotes restantes foram remedidos um a um na mesma data e NENHUM se moveu**,
+  inclusive os quatro que consomem o barril do `db` e o `shared`, cuja barreira do protocolo lê esta
+  linha. ⚠️ **A medição do `cobranca-bancaria` na linha de base ANTES foi contaminada** por uma
+  edição em voo (o `tsc --build` dele reprovou sobre um tipo pela metade); a referência é o **114**
+  escriturado, e a medição DEPOIS bate com ele.
   ⚠️ **O `api` foi de 455 a 456 na correção dirigida do incidente `PROD-2026-09-03-01`**, em
   2026-09-03, e o delta é **1**: o **`CT-1250`**, em `apps/api/test/saude.e2e.spec.ts` — o `404` do
   **roteador** e o `404` de **negócio** medidos na mesma aplicação, com os corpos afirmados
@@ -593,10 +621,22 @@ O marco está alcançado quando **todos** os sete itens forem verdadeiros:
       constantes EXECUTÁVEIS** de `apps/api/test/cobertura-de-autorizacao.e2e.spec.ts`, e o `CT-1196`
       afirma a igualdade entre elas e as **quatro** ocorrências normativas deste arquivo — a
       divergência fica vermelha na suíte
-- [x] **`@syslocbr/contracts` publicado** em **2026-08-27**, `1.0.0`, no GitHub Packages da
-      organização `syslocbr` — **privado**, confirmado por `npm view` e pela API do GitHub
+- [x] **`@syslocbr/contracts` publicado** — hoje na **`1.1.0`**, no GitHub Packages da organização
+      `syslocbr`, **privado**, confirmado por `npm view` e pela API do GitHub
       (`"visibility": "private"`). É o artefato que o React importa para trocar tipos (Zod;
       ⚠️ **não** há cliente ts-rest — ver a nota da Stack).
+      ⚠️ **A `1.0.0` é de 2026-08-27 e a `1.1.0` de 2026-09-05**, esta última na intervenção dos
+      **recortes de listagem**: as duas convivem no registry, e o acréscimo é **aditivo** — três
+      símbolos novos (`esquemaDoContratoNaCarteira`, `esquemaDaJanelaDeContratos`,
+      `esquemaDaJanelaDeImoveis`) e dois campos opcionais em `JanelaDeCobrancas`. Nenhum símbolo foi
+      renomeado ou removido, e `Contrato` continua sendo o que as outras sete rotas de contrato
+      devolvem. ⚠️ **Publicar não é construir**: a paridade entre o registry e a árvore só valeu
+      depois do `pnpm build` **e** do `systemctl restart sysloc-api` daquela data — o processo em
+      memória era de **2026-09-03 10:45:16** e o `dist/` de **2026-09-05 15:52:20**, e o documento
+      servido por ele ainda descrevia o item da carteira com **14** campos. Medido antes e depois no
+      mesmo processo (14 → **17** campos, e as três descrições passando a nomear os seis parâmetros),
+      com o reinício às **15:53:57**, `Result=success`, `NRestarts=0`, e
+      `verificar-rotas-publicadas.sh` em **5/5 casos, zero falhas**.
       ⚠️ **O escopo é `@syslocbr`, e NÃO `@sysloc`** — o GitHub Packages exige que o escopo case com
       o login do dono, e `sysloc` pertence a **conta pessoal de terceiro criada em 2019**, medido por
       API em 2026-08-27 (`api.github.com/users/sysloc` → 200). Não existe organização `sysloc` a

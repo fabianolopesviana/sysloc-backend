@@ -13,6 +13,23 @@
 > **Idioma e vocabulário.** A API fala **português, camelCase**. A única exceção são as rotas de
 > identidade sob `/v1/auth`, que preservam o vocabulário em inglês do arcabouço — e estão nomeadas
 > uma a uma na §4.
+>
+> ⚠️ **EMENDA de 2026-09-05, aditiva — este documento NÃO foi reescrito.** A intervenção dos
+> **recortes de listagem** acrescentou **cinco parâmetros de consulta** a rotas já descritas aqui
+> (`?status=`, `?fimDe=`/`?fimAte=` em `GET /v1/contratos`; `?statusLocacao=` em `GET /v1/imoveis`;
+> `?vencimentoDe=`/`?vencimentoAte=` em `GET /v1/cobrancas`) e **três campos** ao item da carteira
+> de contratos (`nomeImovel`, `nomeLocador`, `nomeLocatario`, **só na listagem**). Nada do que está
+> escrito abaixo deixou de valer, e **nenhuma rota** foi criada, removida ou renomeada — a
+> superfície segue congelada em `113 / 98 / 20`, e o acréscimo é o que a `Decision` da **ADR-0039**
+> autoriza. O contrato desses seis acréscimos, com semântica, erros e receitas de indicador, está em
+> **`handoff-recortes-de-listagem.md`**, ao lado deste arquivo.
+>
+> ⚠️ **A ÚNICA fixture deste documento que a emenda alterou é a `listar-contratos/pagina-cheia` da
+> §20.2**, que ganhou os três nomes — e a exceção é declarada aqui porque *"nada deixou de valer"*
+> seria falso sem ela: um teste de igualdade de corpo escrito contra a fixture antiga passaria no
+> mock e **reprovaria contra a API real**. As fixtures de **criação** e de **ativação** de contrato,
+> na mesma §20, continuam **sem** os três nomes, e isso é correto: a assimetria entre a listagem e
+> as outras sete rotas é decisão publicada, não esquecimento.
 
 ---
 
@@ -2826,7 +2843,9 @@ traz o texto para provar que ele existe, não para virar comparação no código
           "fiadores": [ { "id": "44444444-4444-4444-8444-444444444444", "nome": "Ana Prado" } ],
           "dataInicioLocacao": "2026-03-01", "prazoMeses": 30, "valorMensal": 2500.00,
           "diaVencimento": 10, "dataFimLocacao": "2028-08-31", "valorTotalContrato": 75000.00,
-          "gerarCobrancasAutomaticamente": true, "retiradoEm": null }
+          "gerarCobrancasAutomaticamente": true, "retiradoEm": null,
+          "nomeImovel": "Apartamento 101", "nomeLocador": "Alice Locadora",
+          "nomeLocatario": "Bruno Locatário" }
       ],
       "total": 137, "limite": 50, "deslocamento": 0 } } },
 
