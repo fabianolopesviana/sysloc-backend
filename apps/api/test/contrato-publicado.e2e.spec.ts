@@ -158,6 +158,7 @@ import {
   esquemaDoConjunto,
   esquemaDoConjuntoComImoveis,
   esquemaDoContrato,
+  esquemaDoContratoNaCarteira,
   esquemaDoDesfechoDoRegistroDeCertificado,
   esquemaDoEstadoDaEntrega,
   esquemaDoImovel,
@@ -1127,10 +1128,20 @@ function esquemasDaEntregaDaNoticia(): EsquemaDeRota[] {
  * afirma, e apontá-la para o esquema estendido faria a igualdade profunda reprovar. Sem a linha, o
  * `CT-327` passaria sobre uma superfície incompleta. Nenhuma asserção foi afrouxada e nenhuma linha
  * anterior saiu.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a intervenção dos **recortes de listagem** (2026-09-05, ADR-0039) fez a
+ * **listagem** publicar `esquemaDoContratoNaCarteira` — o contrato **mais** `nomeImovel`,
+ * `nomeLocador` e `nomeLocatario` —, e o `lista` daqui passou a derivar dele. As demais sete linhas
+ * **continuam** apontando para `esquemaDoContrato`, e a distinção é exatamente o que esta tabela
+ * existe para afirmar: a assimetria entre a listagem e as outras rotas é decisão publicada, e
+ * apontar todas para o mesmo esquema faria a igualdade profunda reprovar num dos dois lados. O
+ * código de produção está certo — o documento é derivado do esquema que a rota de fato publica —, e
+ * era esta tabela que descrevia a listagem de antes. Nenhuma asserção foi afrouxada e nenhuma linha
+ * saiu.
  */
 function esquemasDeCadastroDeContrato(): EsquemaDeRota[] {
   const raiz = caminhoDoDocumento(CAMINHO_DOS_CONTRATOS);
-  const lista = envelopeDeLista(esquemaDoContrato);
+  const lista = envelopeDeLista(esquemaDoContratoNaCarteira);
 
   return [
     { caminho: raiz, metodo: 'post', esquema: esquemaDoContrato },

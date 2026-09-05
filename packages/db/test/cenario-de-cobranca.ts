@@ -102,6 +102,12 @@ export interface CobrancaSemeada {
   readonly cobrancaCodigo: string;
   /** O endereço do locatário, que é o destinatário natural de um aviso. */
   readonly destinatarioDoLocatario: string;
+  /** O identificador do imóvel, para quem precise recortá-lo, renomeá-lo ou retirá-lo. */
+  readonly imovelId: string;
+  /** Os três nomes de exibição, como o cadastro os gravou — o que a carteira de contratos publica. */
+  readonly nomeImovel: string;
+  readonly nomeLocador: string;
+  readonly nomeLocatario: string;
 }
 
 /** Um cadastro de pessoa mínimo — a conferência de dígito verificador é do contrato, não da porta. */
@@ -161,20 +167,27 @@ export async function semearCobrancaDoZero(
   const sufixo = `${marca}-${String(sequenciaDoCenario)}`;
   const destinatarioDoLocatario = `locatario-${sufixo}@exemplo.invalid`;
 
+  // Os três nomes são compostos **uma vez** e usados nas duas pontas — na gravação e no que o
+  // arranjo devolve. Redigitá-los no consumidor faria a suíte afirmar contra uma segunda escrita do
+  // mesmo literal, e a igualdade passaria mesmo se a gravação mudasse de nome.
+  const nomeImovel = `Imóvel ${sufixo}`;
+  const nomeLocador = `Locador ${sufixo}`;
+  const nomeLocatario = `Locatário ${sufixo}`;
+
   const cadastros = await emUnidadeSobContexto(acesso, contexto, async (tx) => {
     const conjunto = await criarConjunto(tx, { nome: `Conjunto ${sufixo}` });
 
-    const imovel = await criarImovelDoCenario(tx, conjunto.id, sufixo);
+    const imovel = await criarImovelDoCenario(tx, conjunto.id, nomeImovel, sufixo);
 
     const locador = await criarPessoa(
       tx,
       'locador',
-      pessoaDe(`Locador ${sufixo}`, documentoDaSequencia('7'), `locador-${sufixo}@exemplo.invalid`),
+      pessoaDe(nomeLocador, documentoDaSequencia('7'), `locador-${sufixo}@exemplo.invalid`),
     );
     const locatario = await criarPessoa(
       tx,
       'locatario',
-      pessoaDe(`Locatário ${sufixo}`, documentoDaSequencia('8'), destinatarioDoLocatario),
+      pessoaDe(nomeLocatario, documentoDaSequencia('8'), destinatarioDoLocatario),
     );
 
     return { imovelId: imovel.id, locadorId: locador.id, locatarioId: locatario.id };
@@ -232,6 +245,10 @@ export async function semearCobrancaDoZero(
     contratoCodigo: contrato.codigo,
     cobrancaCodigo: cobranca.codigo,
     destinatarioDoLocatario,
+    imovelId: cadastros.imovelId,
+    nomeImovel,
+    nomeLocador,
+    nomeLocatario,
   };
 }
 
@@ -244,11 +261,12 @@ function documentoDaSequencia(prefixo: string): string {
 async function criarImovelDoCenario(
   tx: TransactionSql,
   conjuntoId: string,
+  nomeImovel: string,
   sufixo: string,
 ): Promise<{ readonly id: string }> {
   return await criarImovel(tx, {
     conjuntoId,
-    nomeImovel: `Imóvel ${sufixo}`,
+    nomeImovel,
     identificadorMunicipal: `IPTU-${sufixo}`,
     tipoImovel: 'RESIDENCIAL',
     logradouro: 'Rua das Acácias',

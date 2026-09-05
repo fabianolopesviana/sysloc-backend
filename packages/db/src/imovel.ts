@@ -123,6 +123,23 @@ export interface JanelaDeImoveis {
 }
 
 /**
+ * Os recortes que a carteira de imóveis aceita — **opcional**, e ausência quer dizer *sem filtro*.
+ *
+ * `statusLocacao` chega **já conferido** pela borda (`esquemaDaJanelaDeImoveis`, em
+ * `@syslocbr/contracts`): ele pertence à união fechada das **três** situações, e não às duas
+ * informáveis. A distinção é o ponto do recorte — `LOCADO` é produzido pela fatia de contratos e é
+ * justamente o estado que a tela quer contar —, e ela é declarada uma vez só, no esquema; reconferir
+ * aqui seria a segunda fonte da mesma regra, que a ADR-0016 elimina.
+ *
+ * Ele é irmão de {@link ../contrato.js FiltrosDeContratos} e de `FiltrosDaCarteira`
+ * ({@link ./cobranca.js}), e nasceu com a mesma forma de propósito: a borda monta os três pelo mesmo
+ * espalhamento condicional, e o predicado de cada um mora ao lado da consulta que ele recorta.
+ */
+export interface FiltrosDeImoveis {
+  readonly statusLocacao?: SituacaoDeLocacao;
+}
+
+/**
  * O padrão da porta: **só o que circula**.
  *
  * Ele é o valor omitido de {@link listarImoveis}, e é o que faz o esquecimento produzir a listagem
@@ -292,6 +309,30 @@ function colunasDoImovel(tx: TransactionSql): Fragment {
  */
 function predicadoDeCirculacao(tx: TransactionSql, opcoes: OpcoesDeCirculacao): Fragment {
   return opcoes.incluirRetirados ? tx`TRUE` : tx`retirado_em IS NULL`;
+}
+
+/**
+ * O recorte da carteira, como fragmento — **um só** para a página e para o total.
+ *
+ * A unicidade é a razão de ele ser função e não texto repetido nas duas consultas: duas escritas do
+ * mesmo recorte fariam a contagem descrever um conjunto do qual a página já não faz parte, e o
+ * cliente que pagina veria um `total` que nenhuma sequência de páginas alcança. Mesmo desenho, e
+ * mesma razão, de {@link predicadoDeCirculacao} logo acima.
+ *
+ * O valor entra como **parâmetro do driver**, nunca interpolado, e a conversão para
+ * `negocio.status_locacao` é explícita: a coluna é do tipo enumerado, e a comparação com texto solto
+ * dependeria de coerção implícita que o planejador não usa para escolher índice.
+ */
+// ⚠️ NÃO HÁ ÍNDICE DE APOIO PARA ESTE RECORTE — `negocio.imovel` tem `imovel_empresa_conjunto_idx` e
+// `imovel_empresa_retirado_idx`, e nenhum alcança `status_locacao`. A razão do adiamento, e a
+// condição que o encerra, estão por extenso no comentário homônimo de {@link ./contrato.ts} — e
+// **só lá**, de propósito: justificativa copiada apodrece, porque a original é corrigida e a cópia
+// não. A janela de vencimento da cobrança é o caso oposto e não precisa de nota: ela cai sobre
+// `cobranca_empresa_vencimento_idx`, que já existe.
+function predicadoDaCarteira(tx: TransactionSql, filtros: FiltrosDeImoveis): Fragment {
+  return filtros.statusLocacao === undefined
+    ? tx``
+    : tx`AND status_locacao = ${filtros.statusLocacao}::negocio.status_locacao`;
 }
 
 /**
@@ -503,16 +544,32 @@ export async function criarImovel(
  * aparecer em duas páginas, ou em nenhuma.
  *
  * **O predicado de circulação é aplicado por padrão**, e o `opcoes` omitido é o caminho correto.
+ *
+ * ---------------------------------------------------------------------------
+ * O RECORTE é predicado SQL, e o total é contado sob o MESMO predicado
+ * ---------------------------------------------------------------------------
+ *
+ * {@link FiltrosDeImoveis} entra em {@link predicadoDaCarteira}, que compõe as duas consultas — e é
+ * por isso que `total` é a contagem **do recorte**, e não da carteira inteira. É o que faz o
+ * consumidor ler *"quantos imóveis estão vagos"* de um envelope de uma linha só, em vez de varrer a
+ * carteira para contar no cliente. Recortar em memória depois de ler a página traria linhas que o
+ * recorte descarta (a janela deixaria de ser janela) e ainda deixaria o total descrevendo outro
+ * conjunto.
+ *
+ * O recorte é **ortogonal à circulação**: `statusLocacao=DISPONIVEL` continua sem devolver o imóvel
+ * retirado, e `incluirRetirados=true` continua alcançando os dois. São dois eixos, e cada um tem o
+ * seu predicado.
  */
 export async function listarImoveis(
   tx: TransactionSql,
   janela: JanelaDeImoveis,
   opcoes: OpcoesDeCirculacao = SO_EM_CIRCULACAO,
+  filtros: FiltrosDeImoveis = {},
 ): Promise<PaginaDeImoveisPersistidos> {
   const linhas = await tx<LinhaDoImovel[]>`
     SELECT ${colunasDoImovel(tx)}
       FROM negocio.imovel
-     WHERE ${predicadoDeCirculacao(tx, opcoes)}
+     WHERE ${predicadoDeCirculacao(tx, opcoes)} ${predicadoDaCarteira(tx, filtros)}
      ORDER BY nome_imovel, id
      LIMIT ${janela.limite}
     OFFSET ${janela.deslocamento}
@@ -521,7 +578,7 @@ export async function listarImoveis(
   const [contagem] = await tx<{ total: string }[]>`
     SELECT count(*) AS total
       FROM negocio.imovel
-     WHERE ${predicadoDeCirculacao(tx, opcoes)}
+     WHERE ${predicadoDeCirculacao(tx, opcoes)} ${predicadoDaCarteira(tx, filtros)}
   `;
 
   // `count(*)` volta como `bigint`, que o driver entrega em cadeia de caracteres. A conversão

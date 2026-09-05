@@ -44,6 +44,7 @@ import { esquemaDoComodo } from './comodo.js';
 import {
   camposDeEndereco,
   ESQUEMA_DO_IDENTIFICADOR,
+  esquemaDaJanelaComCirculacao,
   MAIOR_TEXTO_CURTO,
   MAIOR_TEXTO_LIVRE,
 } from './comum.js';
@@ -261,3 +262,39 @@ export const esquemaDoImovel = z.object({
 
 /** O imóvel como a API o devolve. */
 export type Imovel = z.infer<typeof esquemaDoImovel>;
+
+/**
+ * A janela de `GET /v1/imoveis` — a de circulação **mais** o recorte por situação de locação.
+ *
+ * Ela estende {@link esquemaDaJanelaComCirculacao} em vez de redeclarar os três parâmetros, de modo
+ * que o teto que recusa, o padrão da página e a união fechada de `incluirRetirados` continuam tendo
+ * **um** lugar (ADR-0016).
+ *
+ * ---------------------------------------------------------------------------
+ * Ele lê o enum COMPLETO, e não {@link SITUACOES_INFORMAVEIS}
+ * ---------------------------------------------------------------------------
+ *
+ * A assimetria entre entrada e saída deste arquivo é sobre **quem escreve** a situação: o usuário
+ * informa `DISPONIVEL` ou `INDISPONIVEL`, e `LOCADO` é produzido pela fatia de contratos. Um
+ * **filtro** não escreve nada — ele recorta o que já está gravado —, e `LOCADO` é justamente o
+ * estado que a tela mais quer contar. Ler {@link SITUACOES_INFORMAVEIS} aqui tornaria inalcançável
+ * por recorte o único valor que o produto deriva sozinho.
+ *
+ * É o mesmo critério, e a mesma direção, de `esquemaDoImovel.statusLocacao` logo acima: quem publica
+ * ou recorta lê os três; quem aceita do cliente lê os dois.
+ *
+ * O filtro nasce **no esquema**, e não numa conferência escrita no controlador: é o que faz
+ * `?statusLocacao=VAGO` (rótulo que não existe) responder `422` **nomeando o parâmetro**, em vez de
+ * devolver a página vazia de uma situação inventada. Ele aceita **um** valor por requisição, e a
+ * ausência é *sem filtro* — a carteira inteira.
+ *
+ * ⚠️ **`JanelaDeImoveis` é homônimo de um tipo de `@sysloc/db`**, que é a janela **da porta** —
+ * limite e deslocamento, sem filtro nenhum. Os dois convivem como `JanelaDaCarteira` já convive, e
+ * nunca se encontram no mesmo `import`: a borda traduz um no outro.
+ */
+export const esquemaDaJanelaDeImoveis = esquemaDaJanelaComCirculacao.extend({
+  statusLocacao: z.enum(SITUACOES_DE_LOCACAO).optional(),
+});
+
+/** A janela da carteira de imóveis, com os padrões já aplicados. */
+export type JanelaDeImoveis = z.infer<typeof esquemaDaJanelaDeImoveis>;

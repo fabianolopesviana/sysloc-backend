@@ -220,7 +220,7 @@ import {
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
-import type { AcessoAoBanco } from '@sysloc/db';
+import type { AcessoAoBanco, FiltrosDeContratos } from '@sysloc/db';
 import { CodigoErro, type Logger } from '@sysloc/shared';
 import {
   type AtivacaoDeContrato,
@@ -228,9 +228,10 @@ import {
   ESQUEMA_DO_CODIGO_DE_CONTRATO,
   envelopeDeLista,
   esquemaDaAtivacaoDeContrato,
-  esquemaDaJanelaComCirculacao,
+  esquemaDaJanelaDeContratos,
   esquemaDeContratoNovo,
   esquemaDoContrato,
+  esquemaDoContratoNaCarteira,
   esquemaDoRecorteDoCarne,
 } from '@syslocbr/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -371,8 +372,14 @@ function nomeDoArquivoDoCarne(codigo: string, de: string, ate: string): string {
 // o estado são decididos pelo servidor, e nenhum campo é aceito; a razão por extenso, e por que a
 // definição é única, estão no docblock daquele módulo (débito D23).
 
-/** O envelope de lista de contratos, derivado do esquema do item — nunca redigitado (ADR-0017). */
-const ESQUEMA_DA_PAGINA = envelopeDeLista(esquemaDoContrato);
+/**
+ * O envelope de lista de contratos, derivado do esquema do item — nunca redigitado (ADR-0017).
+ *
+ * O item é {@link esquemaDoContratoNaCarteira}, e **não** `esquemaDoContrato`: a listagem publica os
+ * três nomes de exibição a mais, e o documento publicado deriva do mesmo esquema que tipa a resposta.
+ * A razão da assimetria com as demais rotas está no docblock daquele esquema.
+ */
+const ESQUEMA_DA_PAGINA = envelopeDeLista(esquemaDoContratoNaCarteira);
 
 @ApiTags('contratos')
 @Controller(CAMINHO_DOS_CONTRATOS)
@@ -449,10 +456,14 @@ export class ContratoController {
   @ApiOperation({
     summary: 'Lista a carteira de contratos da empresa',
     description:
-      'Cada item traz código, partes, termos e estado — sem segunda consulta. Devolve apenas os ' +
-      'contratos **em circulação**; `incluirRetirados=true` alcança também os que foram retirados ' +
-      '(ADR-0014). A janela é declarável por `limite` e `deslocamento`, e pedido acima do teto ' +
-      '**recusa** em vez de truncar em silêncio.',
+      'Cada item traz código, partes, termos, estado **e os nomes de exibição** do imóvel, do ' +
+      'locador e do locatário — sem segunda consulta. Devolve apenas os contratos **em ' +
+      'circulação**; `incluirRetirados=true` alcança também os que foram retirados (ADR-0014). A ' +
+      'janela é declarável por `limite` e `deslocamento`, e pedido acima do teto **recusa** em vez ' +
+      'de truncar em silêncio. Aceita ainda `status` (um dos quatro estados, **um por ' +
+      'requisição**) e a janela `fimDe`/`fimAte` sobre `dataFimLocacao` (`YYYY-MM-DD`, **pontas ' +
+      'inclusive**, cada uma válida sozinha) — `total` é a contagem **sob o recorte**. Rótulo fora ' +
+      'da união, data malformada e janela invertida respondem `422` nomeando o parâmetro.',
   })
   @ApiOkResponse({
     description: 'A página pedida.',
@@ -467,17 +478,28 @@ export class ContratoController {
   ): Promise<PaginaDeContratos> {
     // O esquema vem **inteiro** de `@syslocbr/contracts`, que a ADR-0016 declara fonte única. A razão de
     // `incluirRetirados` ser união fechada de dois literais, e não `z.coerce.boolean()`, está por
-    // extenso no docblock de `esquemaDaJanelaComCirculacao`.
-    const { incluirRetirados, ...janela } = validar(
-      esquemaDaJanelaComCirculacao,
+    // extenso no docblock de `esquemaDaJanelaComCirculacao`; a dos três recortes, no de
+    // `esquemaDaJanelaDeContratos`.
+    const { incluirRetirados, status, fimDe, fimAte, ...janela } = validar(
+      esquemaDaJanelaDeContratos,
       consulta,
       CAMPO_DA_CONSULTA,
     );
 
+    // Cada recorte é espalhado **condicionalmente**, e não atribuído como `undefined`: com
+    // `exactOptionalPropertyTypes`, ausente e presente-com-`undefined` são coisas diferentes, e a
+    // porta declara os três como opcionais em que ausência quer dizer *sem filtro*. Mesma forma, e
+    // mesma razão, de `CobrancaController.listar`.
+    const filtros: FiltrosDeContratos = {
+      ...(status === undefined ? {} : { status }),
+      ...(fimDe === undefined ? {} : { fimDe }),
+      ...(fimAte === undefined ? {} : { fimAte }),
+    };
+
     return await sobContextoDaSessao(
       this.banco,
       requisicao,
-      async (tx) => await this.contratos.listar(tx, janela, { incluirRetirados }),
+      async (tx) => await this.contratos.listar(tx, janela, { incluirRetirados }, filtros),
     );
   }
 

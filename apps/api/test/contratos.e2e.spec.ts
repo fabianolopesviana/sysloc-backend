@@ -1931,6 +1931,15 @@ describe('cadastro de contratos de locação (T6)', () => {
         valorTotalContrato: null,
         gerarCobrancasAutomaticamente: true,
         retiradoEm: null,
+        // SUT_IS_CORRECT_BECAUSE: a intervenção dos **recortes de listagem** (2026-09-05, ADR-0039)
+        // fez o item da carteira publicar os três nomes de exibição, para que o cartão da tela não
+        // precise de três pedidos por linha. O código de produção está certo — a listagem publica
+        // `esquemaDoContratoNaCarteira`, o contrato MAIS os três —, e era esta expectativa que
+        // descrevia o item de antes. Ela **cresce**: nenhuma chave saiu, e a igualdade continua
+        // sendo do item INTEIRO, de modo que um campo a mais ou a menos segue reprovando.
+        nomeImovel: doRascunho.nomeImovel,
+        nomeLocador: doRascunho.nomeLocador,
+        nomeLocatario: doRascunho.nomeLocatario,
       });
 
       expect(itemDe(pagina, ativo.codigo)).toEqual({
@@ -1948,6 +1957,11 @@ describe('cadastro de contratos de locação (T6)', () => {
         valorTotalContrato: VALOR_TOTAL_DA_ATIVACAO,
         gerarCobrancasAutomaticamente: true,
         retiradoEm: null,
+        // Pela mesma razão do item acima, e com os nomes deste contrato: eles saem do arranjo, e
+        // não da resposta.
+        nomeImovel: doAtivo.nomeImovel,
+        nomeLocador: doAtivo.nomeLocador,
+        nomeLocatario: doAtivo.nomeLocatario,
       });
 
       expect(itemDe(pagina, cancelado.codigo)?.status).toBe('CANCELADO');
@@ -2830,7 +2844,20 @@ describe('cancelamento do contrato — a segunda transição governada (T8)', ()
       expect(carteira.status, carteira.texto).toBe(200);
 
       const naCarteira = itemDe(carteira.corpo as PaginaPublicada, contrato.codigo);
-      expect(naCarteira).toEqual(cancelado);
+
+      // SUT_IS_CORRECT_BECAUSE: a igualdade era contra o detalhe **cru**, e a intervenção dos
+      // recortes de listagem (2026-09-05, ADR-0039) fez o item da carteira publicar os três nomes
+      // de exibição — que a leitura por código, **por decisão**, não traz. O código de produção
+      // está certo, e a expectativa é que descrevia o item de antes. A asserção fica **mais
+      // forte**, não mais fraca: ela continua sendo igualdade de corpo inteiro e passou a afirmar,
+      // de quebra, a assimetria publicada entre a listagem e a leitura por código — apagar os três
+      // nomes do item, ou acrescentá-los ao detalhe, reprova aqui.
+      expect(naCarteira).toEqual({
+        ...cancelado,
+        nomeImovel: partes.nomeImovel,
+        nomeLocador: partes.nomeLocador,
+        nomeLocatario: partes.nomeLocatario,
+      });
       expect(naCarteira?.status).toBe('CANCELADO');
     },
     LIMITE_CASO_MS,
@@ -3609,6 +3636,17 @@ interface Partes {
   readonly locadorId: string;
   readonly locatarioId: string;
   readonly fiadores: readonly { readonly id: string; readonly nome: string }[];
+  /**
+   * Os três nomes de exibição, como a criação os gravou.
+   *
+   * Eles existem desde a intervenção dos **recortes de listagem** (2026-09-05, ADR-0039), que fez a
+   * **listagem** publicar `nomeImovel`, `nomeLocador` e `nomeLocatario`. O arranjo os devolve para
+   * que a asserção compare contra o que ele **escreveu**: relê-los da própria resposta faria a
+   * igualdade concordar com qualquer nome que a rota inventasse.
+   */
+  readonly nomeImovel: string;
+  readonly nomeLocador: string;
+  readonly nomeLocatario: string;
 }
 
 /**
@@ -3647,14 +3685,14 @@ async function montarPartes(
     await criarPor(credencial, CAMINHO_DOS_CONJUNTOS, { nome: `Edifício ${String(proximo())}` })
   ).id;
 
-  const imovelId = (
-    await criarPor(credencial, CAMINHO_DOS_IMOVEIS, {
-      ...corpoDeImovel(conjuntoId),
-      ...ajustesDoImovel,
-    })
-  ).id;
-  const locadorId = (await criarPor(credencial, CAMINHO_DOS_LOCADORES, corpoDePessoa())).id;
-  const locatarioId = (await criarPor(credencial, CAMINHO_DOS_LOCATARIOS, corpoDePessoa())).id;
+  const imovel = { ...corpoDeImovel(conjuntoId), ...ajustesDoImovel };
+  const imovelId = (await criarPor(credencial, CAMINHO_DOS_IMOVEIS, imovel)).id;
+
+  const locador = corpoDePessoa();
+  const locadorId = (await criarPor(credencial, CAMINHO_DOS_LOCADORES, locador)).id;
+
+  const locatario = corpoDePessoa();
+  const locatarioId = (await criarPor(credencial, CAMINHO_DOS_LOCATARIOS, locatario)).id;
 
   const fiadores: { id: string; nome: string }[] = [];
   for (let indice = 0; indice < quantosFiadores; indice += 1) {
@@ -3664,7 +3702,16 @@ async function montarPartes(
     fiadores.push({ id: criado.id, nome: corpo.nome as string });
   }
 
-  return { conjuntoId, imovelId, locadorId, locatarioId, fiadores };
+  return {
+    conjuntoId,
+    imovelId,
+    locadorId,
+    locatarioId,
+    fiadores,
+    nomeImovel: imovel['nomeImovel'] as string,
+    nomeLocador: locador['nome'] as string,
+    nomeLocatario: locatario['nome'] as string,
+  };
 }
 
 /** Cria um cadastro pela rota real e devolve o identificador dele. A falha levanta. */

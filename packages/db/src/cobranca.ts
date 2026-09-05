@@ -175,6 +175,10 @@ export interface FiltrosDaCarteira {
   readonly contratoCodigo?: string;
   readonly status?: EstadoDaCobranca;
   readonly natureza?: NaturezaDeCobranca;
+  /** Ponta inicial da janela de vencimento, **inclusiva** — `YYYY-MM-DD`. */
+  readonly vencimentoDe?: string;
+  /** Ponta final da janela de vencimento, **inclusiva** — `YYYY-MM-DD`. */
+  readonly vencimentoAte?: string;
 }
 
 /**
@@ -493,6 +497,20 @@ function colunasDaCobranca(tx: TransactionSql): Fragment {
  * `security_invoker` justamente para que ela seja avaliada com os direitos de quem consulta.
  *
  * ---------------------------------------------------------------------------
+ * A JANELA DE VENCIMENTO recorta a COLUNA, e não o estado derivado
+ * ---------------------------------------------------------------------------
+ *
+ * `vencimentoDe` e `vencimentoAte` comparam `data_vencimento`, que é coluna gravada e é o eixo do
+ * índice `cobranca_empresa_vencimento_idx` — o mesmo par `(empresa_id, data_vencimento)` que a
+ * medição da T3 registra logo acima. Elas são **independentes** do recorte por `status`, e a
+ * composição das duas é o que responde à pergunta que nenhum dos dois responde sozinho: *"o que
+ * vence hoje"* é `vencimentoDe = vencimentoAte = hoje`, e **não** `status=VENCIDA` — pela definição
+ * da visão, a cobrança que vence hoje ainda é `A_VENCER`.
+ *
+ * As duas pontas são **inclusivas** (`>=` e `<=`), e a conversão `::date` é explícita porque a
+ * coluna é `date`: sem ela, a comparação dependeria de coerção implícita em algum caminho do driver.
+ *
+ * ---------------------------------------------------------------------------
  * Ele devolve conjunções, e quem o hospeda abre com `WHERE TRUE`
  * ---------------------------------------------------------------------------
  *
@@ -512,6 +530,8 @@ function predicadoDaCarteira(tx: TransactionSql, filtros: FiltrosDaCarteira): Fr
     ${filtros.status === undefined ? tx`` : tx`AND status = ${filtros.status}::negocio.status_cobranca`}
     ${emAberto}
     ${filtros.natureza === undefined ? tx`` : tx`AND natureza = ${filtros.natureza}::negocio.natureza_cobranca`}
+    ${filtros.vencimentoDe === undefined ? tx`` : tx`AND data_vencimento >= ${filtros.vencimentoDe}::date`}
+    ${filtros.vencimentoAte === undefined ? tx`` : tx`AND data_vencimento <= ${filtros.vencimentoAte}::date`}
   `;
 }
 

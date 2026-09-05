@@ -194,6 +194,32 @@ export interface JanelaDeContratos {
 }
 
 /**
+ * Os recortes que a carteira aceita — **todos opcionais**, e ausência quer dizer *sem filtro*.
+ *
+ * Eles chegam **já conferidos** pela borda (`esquemaDaJanelaDeContratos`, em `@syslocbr/contracts`):
+ * `status` pertence à união fechada dos quatro estados, as duas datas são `YYYY-MM-DD` bem formadas,
+ * e a ordem entre elas já foi verificada. Esta camada **não reconfere nada disso** — reconferir aqui
+ * seria a segunda fonte da mesma regra, que a ADR-0016 elimina, e ela divergiria da primeira no dia
+ * em que um estado nascer.
+ *
+ * As duas pontas da janela são **inclusivas** e **independentes**: só `fimDe` é *daqui para a
+ * frente*, só `fimAte` é *até esta data*. Elas recortam `data_fim_locacao`, que é **nula** enquanto
+ * o contrato é rascunho (RD-10) — e comparação com nulo não é verdadeira, de modo que o rascunho
+ * fica fora de qualquer janela **pelo próprio SQL**, sem cláusula escrita para isso.
+ *
+ * Ele é irmão de {@link ../cobranca.js FiltrosDaCarteira} e nasceu com a mesma forma de propósito: a
+ * borda monta os dois pelo mesmo espalhamento condicional, e o predicado de cada um mora ao lado da
+ * consulta que ele recorta.
+ */
+export interface FiltrosDeContratos {
+  readonly status?: EstadoDoContrato;
+  /** Ponta inicial da janela de término, **inclusiva** — `YYYY-MM-DD`. */
+  readonly fimDe?: string;
+  /** Ponta final da janela de término, **inclusiva** — `YYYY-MM-DD`. */
+  readonly fimAte?: string;
+}
+
+/**
  * O padrão da porta: **só o que circula**.
  *
  * Ele é o valor omitido de {@link listarContratos}, e é o que faz o esquecimento produzir a listagem
@@ -314,9 +340,34 @@ interface LinhaDoContrato
   readonly valorTotalContrato: string | null;
 }
 
+/**
+ * Os **nomes de exibição** das três partes, lidos do cadastro corrente de cada uma.
+ *
+ * Eles não são coluna de `negocio.contrato` — são a leitura em lote de
+ * {@link lerNomesDasPartesDeContratos} —, e por isso a consequência é a que
+ * `esquemaDoContratoNaCarteira` registra: renomeado o cadastro, **toda** a carteira passa a exibir o
+ * nome novo. Guardar o nome de então seria gravar uma cópia, e cópia de fato cadastral é a segunda
+ * fonte que diverge da primeira sem que nada acuse.
+ */
+export interface PartesDoContrato {
+  readonly nomeImovel: string;
+  readonly nomeLocador: string;
+  readonly nomeLocatario: string;
+}
+
+/**
+ * O contrato **como a carteira o lista** — o persistido mais os três nomes.
+ *
+ * Ele existe só na **listagem**: as leituras por identificador e os cinco atos de escrita devolvem
+ * {@link ContratoPersistido}, sem a junção. A assimetria é deliberada e está escrita por extenso no
+ * docblock de `esquemaDoContratoNaCarteira`, em `@syslocbr/contracts` — quem a quiser desfazer paga
+ * a junção em todo ato de escrita, e nenhuma tela pediu isso.
+ */
+export interface ContratoDaCarteiraPersistido extends ContratoPersistido, PartesDoContrato {}
+
 /** A página lida, com o total do conjunto inteiro — os dois da MESMA transação. */
 export interface PaginaDeContratosPersistidos {
-  readonly contratos: readonly ContratoPersistido[];
+  readonly contratos: readonly ContratoDaCarteiraPersistido[];
   readonly total: number;
 }
 
@@ -443,6 +494,42 @@ function predicadoDeCirculacao(tx: TransactionSql, opcoes: OpcoesDeCirculacao): 
 }
 
 /**
+ * Os recortes da carteira, como fragmento — **um só** para a página e para o total.
+ *
+ * A unicidade é a razão de ele ser função e não texto repetido nas duas consultas: duas escritas do
+ * mesmo recorte fariam a contagem descrever um conjunto do qual a página já não faz parte, e o
+ * cliente que pagina veria um `total` que nenhuma sequência de páginas alcança. É o mesmo desenho, e
+ * a mesma razão, de {@link predicadoDeCirculacao} e de `predicadoDaCarteira` em {@link ./cobranca.js}.
+ *
+ * Cada valor entra como **parâmetro do driver**, nunca interpolado, e as duas datas são convertidas
+ * com `::date` explícito: a coluna é `date`, e deixar a comparação para a inferência do driver faria
+ * o texto ser comparado como texto em algum caminho.
+ *
+ * `>=` e `<=` — e não `>` e `<` — são as pontas **inclusivas** que o contrato publica. Trocar um
+ * deles por estrito perderia, em silêncio, exatamente o contrato que termina no dia da ponta, que é
+ * o caso que o consumidor mais pergunta (*"vencem em 30 dias"*).
+ */
+// ⚠️ NÃO HÁ ÍNDICE DE APOIO PARA ESTES DOIS RECORTES, e a ausência é decisão medida — não descuido.
+// `negocio.contrato` tem `contrato_empresa_retirado_idx` e `contrato_empresa_imovel_idx`, e **nenhum**
+// alcança `status` nem `data_fim_locacao`. Criá-los é migração de esquema, que a regra 5 do
+// `CLAUDE.md` condiciona a confirmação prévia do usuário, e esta intervenção não a pediu.
+// O que torna o adiamento defensável: o predicado **não degrada plano algum** — a listagem já varria
+// a tabela e ordenava por `codigo` sem índice de ordenação, e a condição extra apenas reduz o
+// conjunto antes do sort. Quem criar a próxima migração autoral sobre esta tabela, ou medir uma
+// carteira grande o bastante para o sort doer, cria os dois índices aqui.
+// ⚠️ Isto NÃO é um marcador `DÉBITO COM GATILHO` de propósito: a §3-B da `.claude/rules/nao-regressao.md`
+// exige o campo `ÍNDICE` apontando para a §2 de um `run-report.md`, e esta intervenção é dirigida —
+// não tem `_run/`. Marcador com ponteiro pendurado é o "marcador órfão" que aquela seção declara
+// **pior que nenhum**.
+function predicadoDaCarteira(tx: TransactionSql, filtros: FiltrosDeContratos): Fragment {
+  return tx`
+    ${filtros.status === undefined ? tx`` : tx`AND status = ${filtros.status}::negocio.status_contrato`}
+    ${filtros.fimDe === undefined ? tx`` : tx`AND data_fim_locacao >= ${filtros.fimDe}::date`}
+    ${filtros.fimAte === undefined ? tx`` : tx`AND data_fim_locacao <= ${filtros.fimAte}::date`}
+  `;
+}
+
+/**
  * A linha crua no contrato que a porta entrega — **o ponto único** da conversão de `numeric`.
  *
  * `Number(…)` sobre o texto do driver é o que faz as duas grandezas monetárias chegarem ao consumidor
@@ -502,22 +589,39 @@ async function comAgregado(
 }
 
 /**
- * Monta o agregado de uma página inteira com **uma** consulta de fiadores, qualquer que seja o
- * tamanho dela (§12.2).
+ * Monta o agregado de uma página inteira com **uma** consulta de fiadores e **uma** de nomes,
+ * qualquer que seja o tamanho dela (§12.2).
  *
- * O contrato sem fiador nenhum não aparece no mapa — a consulta devolve linha só para quem tem —, e
- * `SEM_FIADORES` é o resultado verdadeiro dela, não um padrão que substitui a leitura.
+ * O contrato sem fiador nenhum não aparece no mapa de fiadores — a consulta devolve linha só para
+ * quem tem —, e `SEM_FIADORES` é o resultado verdadeiro dela, não um padrão que substitui a leitura.
+ *
+ * ⚠️ **O mapa de NOMES não admite ausência, e por isso ele não tem valor de reserva.** As três
+ * junções de {@link lerNomesDasPartesDeContratos} são internas sobre chaves estrangeiras `NOT NULL`
+ * e compostas: toda linha desta página tem entrada, e a falta de uma seria violação de invariante do
+ * banco, nunca um contrato legítimo sem partes. A guarda existe para que essa violação apareça como
+ * **falha**, e não como cartão publicado com nome vazio — que é a forma silenciosa do mesmo defeito.
  */
 async function comAgregadoEmLote(
   tx: TransactionSql,
   linhas: readonly LinhaDoContrato[],
-): Promise<ContratoPersistido[]> {
-  const porContrato = await lerFiadoresDeContratos(
-    tx,
-    linhas.map((linha) => linha.id),
-  );
+): Promise<ContratoDaCarteiraPersistido[]> {
+  const identificadores = linhas.map((linha) => linha.id);
 
-  return linhas.map((linha) => contratoPublicado(linha, porContrato.get(linha.id) ?? SEM_FIADORES));
+  const porContrato = await lerFiadoresDeContratos(tx, identificadores);
+  const partesPorContrato = await lerNomesDasPartesDeContratos(tx, identificadores);
+
+  return linhas.map((linha) => {
+    const partes = partesPorContrato.get(linha.id);
+
+    if (partes === undefined) {
+      throw new Error(`contrato ${linha.codigo} sem as três partes alcançáveis`);
+    }
+
+    return {
+      ...contratoPublicado(linha, porContrato.get(linha.id) ?? SEM_FIADORES),
+      ...partes,
+    };
+  });
 }
 
 /**
@@ -564,6 +668,80 @@ async function lerFiadoresDeContratos(
     const doContrato = porContrato.get(linha.contratoId) ?? [];
     doContrato.push({ id: linha.id, nome: linha.nome });
     porContrato.set(linha.contratoId, doContrato);
+  }
+
+  return porContrato;
+}
+
+/**
+ * Lê os **nomes das três partes** de N contratos, agrupados pelo contrato de cada um — **uma**
+ * consulta para a página inteira, qualquer que seja o tamanho dela (§12.2).
+ *
+ * ---------------------------------------------------------------------------
+ * Ela recebe A LISTA, e é isso que a distingue de uma leitura por contrato
+ * ---------------------------------------------------------------------------
+ *
+ * É o mesmo desenho, e a mesma razão, de {@link lerFiadoresDeContratos} e de
+ * {@link lerContratosVigentesDeImoveis}: chamada em laço, a listagem emitiria uma consulta por linha
+ * da página — o padrão N+1 que a §12.2 nomeia com todas as letras. Recebendo a lista, o custo da
+ * carteira inteira é **uma** consulta a mais, e a página de 200 custa o mesmo que a de 1.
+ *
+ * As três junções são **internas**, e a escolha é do banco, não de cautela: `imovel_id`, `locador_id`
+ * e `locatario_id` são `NOT NULL` e cada uma tem chave estrangeira **composta** com a empresa, de
+ * modo que a linha alvo existe sempre e é sempre da mesma empresa. Uma junção externa publicaria
+ * `null` num campo que o contrato declara `string`, e o cliente veria um cartão sem nome em vez de
+ * uma falha.
+ *
+ * ---------------------------------------------------------------------------
+ * A JUNÇÃO NÃO REPETE O RECORTE DA POLÍTICA (ADR-0008)
+ * ---------------------------------------------------------------------------
+ *
+ * Não há `WHERE empresa_id` aqui, e as junções **não** carregam `AND parte.empresa_id =
+ * contrato.empresa_id`: as quatro tabelas têm RLS forçada, a política recorta as quatro, e um segundo
+ * caminho para o mesmo recorte é a defesa em profundidade que a `Decision` da ADR-0008 rejeita por
+ * escrito. A coerência de cada par é da chave estrangeira composta. É a mesma decisão, escrita pela
+ * mesma razão, de {@link lerContratosVigentesDeImoveis} logo abaixo.
+ *
+ * ---------------------------------------------------------------------------
+ * O cadastro RETIRADO DE CIRCULAÇÃO continua nomeando o contrato que o cita
+ * ---------------------------------------------------------------------------
+ *
+ * Não há predicado de circulação nas três junções, e a ausência é decisão (ADR-0014): retirar um
+ * imóvel de circulação é ato de **visibilidade da carteira daquela entidade**, e não apagamento — o
+ * contrato que o cita continua existindo, continua sendo listado e continua precisando exibir de que
+ * imóvel ele fala. Um predicado aqui faria o contrato perder o nome no instante em que alguém
+ * arquivasse o cadastro, que é o defeito silencioso que a ADR nomeia entre os próprios *Cons*.
+ */
+async function lerNomesDasPartesDeContratos(
+  tx: TransactionSql,
+  contratosIds: readonly string[],
+): Promise<Map<string, PartesDoContrato>> {
+  const porContrato = new Map<string, PartesDoContrato>();
+
+  if (contratosIds.length === 0) {
+    return porContrato;
+  }
+
+  const linhas = await tx<
+    { contratoId: string; nomeImovel: string; nomeLocador: string; nomeLocatario: string }[]
+  >`
+    SELECT contrato.id AS "contratoId",
+           imovel.nome_imovel AS "nomeImovel",
+           locador.nome AS "nomeLocador",
+           locatario.nome AS "nomeLocatario"
+      FROM negocio.contrato AS contrato
+      JOIN negocio.imovel AS imovel ON imovel.id = contrato.imovel_id
+      JOIN negocio.locador AS locador ON locador.id = contrato.locador_id
+      JOIN negocio.locatario AS locatario ON locatario.id = contrato.locatario_id
+     WHERE contrato.id = ANY(${[...contratosIds]}::uuid[])
+  `;
+
+  for (const linha of linhas) {
+    porContrato.set(linha.contratoId, {
+      nomeImovel: linha.nomeImovel,
+      nomeLocador: linha.nomeLocador,
+      nomeLocatario: linha.nomeLocatario,
+    });
   }
 
   return porContrato;
@@ -796,16 +974,41 @@ export async function criarContrato(
  * ordem que o usuário reconhece, porque o código é o título do contrato nas telas.
  *
  * **O predicado de circulação é aplicado por padrão**, e o `opcoes` omitido é o caminho correto.
+ *
+ * ---------------------------------------------------------------------------
+ * Os RECORTES são predicado SQL, e o total é contado sob o MESMO predicado
+ * ---------------------------------------------------------------------------
+ *
+ * {@link FiltrosDeContratos} entra em {@link predicadoDaCarteira}, que compõe as duas consultas — e
+ * é por isso que `total` é a contagem **do recorte**, e não da carteira inteira. É o que faz o
+ * consumidor ler *"quantos contratos ativos existem"* de um envelope de uma linha só, em vez de
+ * varrer a carteira para contar no cliente; e é a mesma propriedade, pela mesma razão, de
+ * `listarCobrancas` em {@link ./cobranca.js}.
+ *
+ * Recortar em memória depois de ler a página seria a alternativa errada por duas razões
+ * independentes: a página traria linhas que o recorte descarta (a janela deixaria de ser janela) e o
+ * total continuaria descrevendo outro conjunto.
+ *
+ * ---------------------------------------------------------------------------
+ * E ela é a ÚNICA leitura desta porta que devolve os NOMES das partes
+ * ---------------------------------------------------------------------------
+ *
+ * O item da carteira é {@link ContratoDaCarteiraPersistido} — o contrato mais `nomeImovel`,
+ * `nomeLocador` e `nomeLocatario`, lidos em **uma** consulta para a página inteira por
+ * {@link lerNomesDasPartesDeContratos}. {@link localizarContrato} e os cinco atos de escrita seguem
+ * devolvendo {@link ContratoPersistido}, sem a junção: a assimetria é deliberada, e a razão está no
+ * docblock de `esquemaDoContratoNaCarteira`, em `@syslocbr/contracts`.
  */
 export async function listarContratos(
   tx: TransactionSql,
   janela: JanelaDeContratos,
   opcoes: OpcoesDeCirculacao = SO_EM_CIRCULACAO,
+  filtros: FiltrosDeContratos = {},
 ): Promise<PaginaDeContratosPersistidos> {
   const linhas = await tx<LinhaDoContrato[]>`
     SELECT ${colunasDoContrato(tx)}
       FROM negocio.contrato
-     WHERE ${predicadoDeCirculacao(tx, opcoes)}
+     WHERE ${predicadoDeCirculacao(tx, opcoes)} ${predicadoDaCarteira(tx, filtros)}
      ORDER BY codigo
      LIMIT ${janela.limite}
     OFFSET ${janela.deslocamento}
@@ -814,7 +1017,7 @@ export async function listarContratos(
   const [contagem] = await tx<{ total: string }[]>`
     SELECT count(*) AS total
       FROM negocio.contrato
-     WHERE ${predicadoDeCirculacao(tx, opcoes)}
+     WHERE ${predicadoDeCirculacao(tx, opcoes)} ${predicadoDaCarteira(tx, filtros)}
   `;
 
   // `count(*)` volta como `bigint`, que o driver entrega em cadeia de caracteres. A conversão

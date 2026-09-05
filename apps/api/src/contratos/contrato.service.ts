@@ -298,6 +298,7 @@ import {
   type AgregadoDoDocumentoDoContrato,
   alterarContrato,
   ativarContrato,
+  type ContratoDaCarteiraPersistido,
   type ContratoPersistido,
   cancelarCobrancasDoContrato,
   cancelarContrato,
@@ -314,6 +315,7 @@ import {
   ErroDeImovelComContratoVigente,
   emitirNumeroDeContrato,
   emitirNumerosDeCobranca,
+  type FiltrosDeContratos,
   garantirContadorDeContrato,
   lerAgregadoDoContrato,
   lerAnoDaSerieDeContrato,
@@ -330,6 +332,7 @@ import { CodigoErro, ErroDeAplicacao } from '@sysloc/shared';
 import type {
   AtivacaoDeContrato,
   Contrato,
+  ContratoNaCarteira,
   ContratoNovo,
   EnvelopeDeLista,
   EstadoDoContrato,
@@ -341,7 +344,7 @@ import { MENSAGEM_POR_CODIGO } from '../comum/filtro-excecao.js';
 import { TOKEN_PORTA_DE_RENDERIZACAO } from '../configuracao/ambiente.js';
 
 /** A página de contratos, na forma canônica de lista da ADR-0017. */
-export type PaginaDeContratos = EnvelopeDeLista<Contrato>;
+export type PaginaDeContratos = EnvelopeDeLista<ContratoNaCarteira>;
 
 /**
  * O que o cancelamento devolve à borda: o contrato como ele ficou **e** quantas cobranças a cascata
@@ -680,22 +683,29 @@ export class ContratoService {
    * Lê a página pedida.
    *
    * O envelope é montado aqui, e a janela devolvida é a que foi **de fato servida** — não um eco do
-   * que o cliente pediu. `total` é a contagem na empresa inteira, e é ela que permite ao cliente saber
-   * que existe uma página seguinte sem pedi-la (ADR-0017).
+   * que o cliente pediu. `total` é a contagem na empresa **sob o recorte pedido**, e é ela que
+   * permite ao cliente saber que existe uma página seguinte sem pedi-la (ADR-0017) — e que responde
+   * *"quantos contratos ativos existem"* sem varrer a carteira.
    *
    * As opções de circulação **atravessam** este serviço sem serem interpretadas: quem decide o que a
    * leitura enxerga é a porta, e reimplementar o predicado aqui é precisamente o defeito que a fatia
    * anterior fixou.
+   *
+   * **E o mesmo vale para os três recortes**: o que acontece aqui é repasse, não interpretação. Quem
+   * os transforma em predicado é `predicadoDaCarteira`, do lado do banco — recortar por estado nesta
+   * camada exigiria trazer a carteira inteira para a memória antes de filtrar, e a janela deixaria de
+   * ser janela. Mesmo desenho, e mesma razão, de `CobrancaService.listar`.
    */
   async listar(
     tx: TransactionSql,
     janela: Janela,
     opcoes: OpcoesDeCirculacao,
+    filtros: FiltrosDeContratos = {},
   ): Promise<PaginaDeContratos> {
-    const { contratos, total } = await listarContratos(tx, janela, opcoes);
+    const { contratos, total } = await listarContratos(tx, janela, opcoes, filtros);
 
     return {
-      itens: contratos.map(publicarContrato),
+      itens: contratos.map(publicarContratoDaCarteira),
       total,
       limite: janela.limite,
       deslocamento: janela.deslocamento,
@@ -1355,5 +1365,29 @@ export function publicarContrato(contrato: ContratoPersistido): Contrato {
     valorTotalContrato: contrato.valorTotalContrato,
     gerarCobrancasAutomaticamente: contrato.gerarCobrancasAutomaticamente,
     retiradoEm: contrato.retiradoEm === null ? null : contrato.retiradoEm.toISOString(),
+  };
+}
+
+/**
+ * Traduz o item da **carteira** — o contrato publicado **mais** os três nomes de exibição.
+ *
+ * Ela **compõe** {@link publicarContrato} em vez de reescrever os catorze campos, e a composição é a
+ * decisão: a tradução do recurso continua tendo um lugar só, e o que esta função acrescenta é
+ * exatamente o que a listagem tem a mais. Uma segunda enumeração dos campos divergiria da primeira no
+ * primeiro campo que o contrato ganhar — e o que diverge primeiro neste molde é justamente o formato
+ * de `retiradoEm` e a lista de campos copiados, isto é, o corpo que o cliente vê.
+ *
+ * Os três nomes são copiados um a um, e não por espalhamento do persistido: o espalhamento publicaria
+ * qualquer coluna que a projeção da porta venha a ganhar, inclusive o `id` interno, que a ADR-0017
+ * mantém fora do corpo.
+ */
+export function publicarContratoDaCarteira(
+  contrato: ContratoDaCarteiraPersistido,
+): ContratoNaCarteira {
+  return {
+    ...publicarContrato(contrato),
+    nomeImovel: contrato.nomeImovel,
+    nomeLocador: contrato.nomeLocador,
+    nomeLocatario: contrato.nomeLocatario,
   };
 }

@@ -403,11 +403,17 @@ export class CobrancaController {
     summary: 'Lista a carteira de cobranças da empresa',
     description:
       'Cada item traz o código, o contrato, o locatário, os termos e os cinco campos derivados — ' +
-      'sem segunda consulta. A ordem é por vencimento, com o código desempatando. Os três ' +
+      'sem segunda consulta. A ordem é por vencimento, com o código desempatando. Os cinco ' +
       'recortes são opcionais e independentes: `contrato` pelo código legível dele, `status` na ' +
-      'união fechada `{A_VENCER, VENCIDA, PAGA, CANCELADA}` e `natureza` na união fechada ' +
-      '`{ALUGUEL, AGUA, CONDOMINIO, ENERGIA, OUTRO}`; ausência quer dizer **sem filtro**, e um ' +
-      'rótulo fora da união é `422`. A janela é declarável por `limite` e `deslocamento`, e ' +
+      'união fechada `{A_VENCER, VENCIDA, PAGA, CANCELADA}`, `natureza` na união fechada ' +
+      '`{ALUGUEL, AGUA, CONDOMINIO, ENERGIA, OUTRO}` e a janela `vencimentoDe`/`vencimentoAte` ' +
+      'sobre `dataVencimento` (`YYYY-MM-DD`, **pontas inclusive**, cada uma válida sozinha); ' +
+      'ausência quer dizer **sem filtro**, e rótulo fora da união, data malformada ou janela ' +
+      'invertida são `422` nomeando o parâmetro. ⚠️ A janela recorta a **data gravada**, e não o ' +
+      'estado derivado: a cobrança que vence **hoje** ainda **não** está vencida, de modo que ' +
+      '"vencem hoje" é `vencimentoDe=vencimentoAte=hoje`, e não um recorte por estado. A janela ' +
+      'de página é declarável ' +
+      'por `limite` e `deslocamento`, e ' +
       'pedido acima do teto **recusa** em vez de truncar em silêncio. O `total` é o da empresa ' +
       'inteira sob o recorte pedido, e não o tamanho da página.',
   })

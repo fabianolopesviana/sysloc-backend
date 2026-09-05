@@ -288,23 +288,33 @@ export class CobrancaService {
    * que o cliente pediu. `total` é a contagem na empresa inteira sob o recorte, e é ela que permite ao
    * cliente saber que existe uma página seguinte sem pedi-la (ADR-0017).
    *
-   * **Os três filtros atravessam este serviço sem serem interpretados**: o que acontece aqui é a
+   * **Os cinco filtros atravessam este serviço sem serem interpretados**: o que acontece aqui é a
    * tradução de nome — `contrato`, como a cadeia de consulta o chama, é `contratoCodigo` para a porta
    * —, e quem os transforma em predicado é `predicadoDaCarteira`, do lado do banco. Reimplementar o
    * recorte por estado aqui seria a segunda derivação que o `CT-510` proíbe, e o recorte por natureza
    * em memória faria a janela deixar de ser janela.
    *
+   * ⚠️ **A janela de vencimento é a razão pela qual esse repasse importa mais do que parece.**
+   * `vencimentoDe`/`vencimentoAte` recortam a **coluna** `data_vencimento`, enquanto `status`
+   * recorta o estado **derivado** pela visão. São dois eixos, e a diferença é visível ao cliente: a
+   * cobrança que vence hoje é `A_VENCER`, e não `VENCIDA` — de modo que *"vencem hoje"* é a janela
+   * de um dia, e não um estado. Traduzir uma coisa na outra aqui seria a segunda derivação que a
+   * ADR-0023 fecha.
+   *
    * Cada filtro é espalhado **condicionalmente**, e não atribuído como `undefined`: com
    * `exactOptionalPropertyTypes`, ausente e presente-com-`undefined` são coisas diferentes, e a porta
-   * declara os três como opcionais em que ausência quer dizer *sem filtro*.
+   * declara os cinco como opcionais em que ausência quer dizer *sem filtro*.
    */
   async listar(tx: TransactionSql, janela: JanelaDeCobrancas): Promise<PaginaDeCobrancas> {
-    const { limite, deslocamento, contrato, status, natureza } = janela;
+    const { limite, deslocamento, contrato, status, natureza, vencimentoDe, vencimentoAte } =
+      janela;
 
     const filtros: FiltrosDaCarteira = {
       ...(contrato === undefined ? {} : { contratoCodigo: contrato }),
       ...(status === undefined ? {} : { status }),
       ...(natureza === undefined ? {} : { natureza }),
+      ...(vencimentoDe === undefined ? {} : { vencimentoDe }),
+      ...(vencimentoAte === undefined ? {} : { vencimentoAte }),
     };
 
     const { cobrancas, total } = await listarCobrancas(tx, { limite, deslocamento }, filtros);

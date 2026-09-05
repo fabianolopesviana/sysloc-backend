@@ -890,6 +890,7 @@ export * as contextoDeTenant from './contexto.js';
 export {
   alterarContrato,
   ativarContrato,
+  type ContratoDaCarteiraPersistido,
   type ContratoPersistido,
   cancelarContrato,
   criarContrato,
@@ -900,6 +901,7 @@ export {
   ErroDeImovelComContratoVigente,
   emitirNumeroDeContrato,
   type FiadorDoContrato,
+  type FiltrosDeContratos,
   garantirContadorDeContrato,
   type JanelaDeContratos,
   lerAnoDaSerieDeContrato,
@@ -907,6 +909,7 @@ export {
   localizarContrato,
   type NumeroDaSerie,
   type PaginaDeContratosPersistidos,
+  type PartesDoContrato,
   substituirFiadoresDoContrato,
 } from './contrato.js';
 export {
@@ -1026,6 +1029,7 @@ export {
   definirCirculacaoDoImovel,
   definirSituacaoDeLocacaoDoImovel,
   ErroDeIdentificadorMunicipalEmUso,
+  type FiltrosDeImoveis,
   type ImovelPersistido,
   type JanelaDeImoveis,
   listarImoveis,

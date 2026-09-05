@@ -46,7 +46,12 @@ import { z } from 'zod';
 // fatia `emissao-e-conciliacao`, ao chegar o terceiro consumidor monetário do pacote — é o gatilho
 // que o débito `D1 · F3/T2` escrevera, e o limiar de três do `CLAUDE.md`. A definição segue **única**
 // (CT-545 a afirma por igualdade de lista); o que mudou foi o arquivo, e quem as quer as importa.
-import { ESCALA_MONETARIA, ESQUEMA_DO_IDENTIFICADOR, MAIOR_VALOR_MONETARIO } from './comum.js';
+import {
+  ESCALA_MONETARIA,
+  ESQUEMA_DO_IDENTIFICADOR,
+  esquemaDaJanelaComCirculacao,
+  MAIOR_VALOR_MONETARIO,
+} from './comum.js';
 
 /**
  * Os quatro estados do contrato (RD-02), na ordem em que o enum do banco os declara.
@@ -316,6 +321,115 @@ export const esquemaDoContrato = z.object({
 
 /** O contrato como a API o devolve. */
 export type Contrato = z.infer<typeof esquemaDoContrato>;
+
+/**
+ * O contrato **como a carteira o lista** — o recurso inteiro mais os **três nomes de exibição**.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que ele ESTENDE {@link esquemaDoContrato}, em vez de ser um segundo esquema
+ * ---------------------------------------------------------------------------
+ *
+ * Os catorze campos do contrato existem **num lugar só** (ADR-0016): esta forma é a de cima mais
+ * três, e não uma segunda escrita da mesma coisa. Redigitá-los criaria duas fontes livres para
+ * divergir no dia em que o contrato ganhar um campo — e a que divergiria primeiro é justamente a
+ * lista de campos que o cliente vê. Mesmo desenho, e mesma razão, de `esquemaDoConjuntoComImoveis`
+ * em {@link ./conjunto.js} e de {@link esquemaDaAtivacaoDeContrato} logo abaixo.
+ *
+ * ---------------------------------------------------------------------------
+ * Por que os três nomes existem, e por que eles NÃO substituem os identificadores
+ * ---------------------------------------------------------------------------
+ *
+ * O item da carteira é um **cartão**: quem lê a lista precisa do nome do imóvel e das duas partes
+ * para reconhecer o contrato, e sem eles o cliente teria de pedir três recursos por linha da
+ * página — o padrão N+1 do lado de fora, que a paginação existe para impedir.
+ *
+ * `imovelId`, `locadorId` e `locatarioId` **continuam** no corpo, e a coexistência é a decisão: o
+ * identificador é o que se usa para **navegar** (é ele que as rotas aceitam), e o nome é o que se
+ * usa para **exibir**. Trocar um pelo outro faria o cartão deixar de ter para onde clicar.
+ *
+ * ---------------------------------------------------------------------------
+ * Os nomes são do CADASTRO CORRENTE, e não uma cópia gravada no contrato
+ * ---------------------------------------------------------------------------
+ *
+ * Eles são lidos das três tabelas de cadastro no instante da consulta, e não gravados na linha do
+ * contrato. A consequência é conteúdo e o consumidor precisa dela: renomeado o imóvel, **toda** a
+ * carteira passa a exibir o nome novo, inclusive nos contratos encerrados. Guardar o nome de então
+ * seria outra decisão — a de registrar o cadastro *como estava* —, que ninguém tomou e que a
+ * ADR-0014 não pede: o cadastro retirado de circulação continua alcançável e continua nomeando o
+ * contrato que o cita.
+ *
+ * ⚠️ **Eles vivem SÓ na listagem.** `GET /v1/contratos/:codigo` e as respostas dos atos
+ * (`POST`, `PUT`, ativação, cancelamento, circulação) devolvem {@link esquemaDoContrato}, sem os
+ * três — a tela que lê um contrato por vez já tem os identificadores e pode pedir os cadastros que
+ * for exibir. Levá-los às outras sete rotas é acréscimo (permitido pela ADR-0039), não correção:
+ * quem o fizer paga a junção em **todo** ato de escrita, e nenhuma tela pediu isso.
+ */
+export const esquemaDoContratoNaCarteira = esquemaDoContrato.extend({
+  /** O nome do imóvel locado, de `negocio.imovel.nome_imovel`. */
+  nomeImovel: z.string(),
+  /** O nome do locador, de `negocio.locador.nome`. */
+  nomeLocador: z.string(),
+  /** O nome do locatário, de `negocio.locatario.nome`. */
+  nomeLocatario: z.string(),
+});
+
+/** O contrato como a **listagem** o devolve — o recurso mais os três nomes de exibição. */
+export type ContratoNaCarteira = z.infer<typeof esquemaDoContratoNaCarteira>;
+
+/**
+ * A janela de `GET /v1/contratos` — a de circulação **mais** os recortes da carteira.
+ *
+ * Ela estende {@link esquemaDaJanelaComCirculacao} em vez de redeclarar os três parâmetros, de modo
+ * que o teto que recusa, o padrão da página e a união fechada de `incluirRetirados` continuam tendo
+ * **um** lugar (ADR-0016). Mesma forma, e mesma razão, de `esquemaDaJanelaDaCarteira` em
+ * {@link ./conjunto.js}.
+ *
+ * ---------------------------------------------------------------------------
+ * `status` é a união fechada dos QUATRO estados — um valor por requisição
+ * ---------------------------------------------------------------------------
+ *
+ * O filtro nasce **no esquema**, e não numa conferência escrita no controlador: é o que faz
+ * `?status=VIGENTE` (rótulo que não existe) responder `422` **nomeando o parâmetro**, em vez de
+ * devolver a página vazia de um estado inventado — resposta que o cliente leria como *"não há
+ * contrato ativo"*.
+ *
+ * Ele aceita **um** valor, e não uma lista: `?status=ATIVO&status=RASCUNHO` chega ao Zod como
+ * arranjo e é recusado pela união. Lista múltipla é outro contrato — a forma de separador, a
+ * duplicata e o conjunto vazio teriam de ser decididos —, e nenhuma tela pediu.
+ *
+ * ---------------------------------------------------------------------------
+ * `fimDe` / `fimAte` recortam `dataFimLocacao`, e as duas pontas são INCLUSIVAS
+ * ---------------------------------------------------------------------------
+ *
+ * O consumidor é *"quais contratos vencem nos próximos 30 dias"* — a pergunta da renovação. O eixo
+ * é `data_fim_locacao`, que é **derivada na ativação** (RD-10) e **nula** enquanto o contrato é
+ * rascunho: por isso o rascunho **não entra** em janela alguma, e a ausência não é omissão do
+ * filtro, é a ausência do fato. Cada ponta vale sozinha, como na carteira de cobranças.
+ *
+ * A ordem é conferida aqui, e não no banco, pela razão que {@link ./cobranca.js} registra por
+ * extenso: a janela invertida devolveria página vazia, indistinguível de *"não há contrato nesse
+ * intervalo"*.
+ *
+ * ⚠️ **`JanelaDeContratos` é homônimo de um tipo de `@sysloc/db`**, que é a janela **da porta** —
+ * limite e deslocamento, sem filtro nenhum. Os dois convivem como `JanelaDaCarteira` já convive
+ * (`./conjunto.js` e a porta dos conjuntos), e nunca se encontram no mesmo `import`: a borda traduz
+ * um no outro, e é ela a única que conhece os dois.
+ */
+export const esquemaDaJanelaDeContratos = esquemaDaJanelaComCirculacao
+  .extend({
+    status: z.enum(ESTADOS_DO_CONTRATO).optional(),
+    fimDe: z.iso.date().optional(),
+    fimAte: z.iso.date().optional(),
+  })
+  // Lexicográfica sobre o texto, e correta por construção: `YYYY-MM-DD` com largura fixa e zeros à
+  // esquerda ordena como a data ordena.
+  .refine(({ fimDe, fimAte }) => fimDe === undefined || fimAte === undefined || fimDe <= fimAte, {
+    path: ['fimDe'],
+    message: 'o início da janela de término não pode ser posterior ao fim',
+  });
+
+/** A janela da carteira de contratos, com os padrões já aplicados. */
+export type JanelaDeContratos = z.infer<typeof esquemaDaJanelaDeContratos>;
 
 /**
  * A resposta de `POST /v1/contratos/:codigo/ativacao` — o contrato **mais** a declaração de efeito.

@@ -664,6 +664,9 @@ import {
   esquemaDaConfirmacao,
   esquemaDaEmissaoEmLote,
   esquemaDaJanela,
+  esquemaDaJanelaDeCobrancas,
+  esquemaDaJanelaDeContratos,
+  esquemaDaJanelaDeImoveis,
   esquemaDaPessoa,
   esquemaDaPoliticaDeAviso,
   esquemaDaPoliticaDeAvisoNova,
@@ -676,6 +679,7 @@ import {
   esquemaDoCertificado,
   esquemaDoCertificadoNovo,
   esquemaDoContrato,
+  esquemaDoContratoNaCarteira,
   esquemaDoDesfechoDoRegistroDeCertificado,
   esquemaDoEnvioDeCobranca,
   esquemaDoEstadoDaEntrega,
@@ -713,6 +717,7 @@ import {
   PREFIXO_DO_CODIGO_DE_COBRANCA,
   PREFIXO_DO_CODIGO_DE_CONTRATO,
   ROTINAS_PUBLICADAS,
+  SITUACOES_DE_LOCACAO,
   SITUACOES_INFORMAVEIS,
   TIPOS_DE_EVENTO_BANCARIO,
 } from '../src/index.ts';
@@ -1113,6 +1118,15 @@ const PREFIXO_DE_ENTRADA_DE_ENTIDADE = 'esquemaDe';
  * governa dispara uma chamada ao provedor **em nome de uma empresa** — um corpo aberto ali aceitaria
  * `empresaId` vindo do cliente, e o contexto de tenant tem de sair da sessão (ADR-0008/0009). Nenhum
  * alvo sai daqui; o conjunto só cresce.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a intervenção dos **recortes de listagem** (2026-09-05) publicou
+ * `esquemaDaJanelaDeContratos` e `esquemaDaJanelaDeImoveis` — as janelas das duas carteiras
+ * estendidas com os recortes que o frontend pediu. Pelo mesmo motivo dos parágrafos acima os dois
+ * escapariam às duas varreduras, por começarem com `esquemaDa` e não com `esquemaDe`; e eles são
+ * exatamente os esquemas em que *"`empresaId` não é declarado"* mais importa depois desta mudança,
+ * porque são as duas entradas novas que o cliente monta como cadeia de consulta — o lugar em que um
+ * parâmetro a mais é mais fácil de acrescentar sem que ninguém decida. Nenhum alvo sai daqui; o
+ * conjunto só cresce.
  */
 const NOMES_DAS_ENTRADAS_FORA_DO_PREFIXO = [
   'esquemaDaApresentacaoDoPortador',
@@ -1123,6 +1137,8 @@ const NOMES_DAS_ENTRADAS_FORA_DO_PREFIXO = [
   'esquemaDaJanelaComCirculacao',
   'esquemaDaJanelaDaCarteira',
   'esquemaDaJanelaDeCobrancas',
+  'esquemaDaJanelaDeContratos',
+  'esquemaDaJanelaDeImoveis',
   'esquemaDaPoliticaDeAvisoNova',
   'esquemaDaSituacaoDeLocacao',
   'esquemaDoPagamentoDeCobranca',
@@ -1202,8 +1218,15 @@ const NOMES_DAS_ENTRADAS_FORA_DO_PREFIXO = [
  * que se examina nele é exatamente a recusa da chave desconhecida, que é o que o CT-336 e o CT-337
  * fazem sobre a tabela inteira. Deixá-lo de fora faria *"todo esquema de entrada é `strictObject`"*
  * passar a valer por omissão justamente onde ela é a única propriedade que resta.
+ *
+ * SUT_IS_CORRECT_BECAUSE: subiu de 18 para 20 porque a intervenção dos **recortes de listagem**
+ * (2026-09-05) publicou `esquemaDaJanelaDeContratos` e `esquemaDaJanelaDeImoveis` — as janelas das
+ * duas carteiras estendidas com os recortes, que nascem nesta fonte única pela mesma ADR-0016. Os
+ * dois entram pela lista de nomes fora do prefixo, logo acima. Vale aqui, palavra por palavra, o
+ * parágrafo anterior: o literal é o que impede *"nenhum esquema violou"* de ser indistinguível de
+ * *"nenhum esquema foi olhado"*, a âncora **sobe** e segue exata, e nenhum alvo saiu.
  */
-const QUANTIDADE_DE_ESQUEMAS_DE_ENTRADA = 18;
+const QUANTIDADE_DE_ESQUEMAS_DE_ENTRADA = 20;
 
 /** Um corpo válido por esquema de entrada, indexado pelo nome exportado. */
 const CORPOS_VALIDOS = new Map<string, Record<string, unknown>>([
@@ -1263,7 +1286,32 @@ const CORPOS_VALIDOS = new Map<string, Record<string, unknown>>([
       contrato: CORPO_DE_COBRANCA.contratoCodigo,
       status: 'A_VENCER',
       natureza: 'AGUA',
+      vencimentoDe: '2026-03-01',
+      vencimentoAte: '2026-03-31',
     },
+  ],
+  // Os três recortes vão declarados **por extenso**, pela mesma razão das linhas acima: são o que
+  // este esquema acrescenta à janela com circulação, e um corpo que os omitisse deixaria a varredura
+  // provando apenas o que `esquemaDaJanelaComCirculacao` já prova. A janela vai **ordenada** porque
+  // o esquema recusa a invertida, e um corpo recusado seria descartado antes de a varredura medir o
+  // que ela existe para medir.
+  [
+    'esquemaDaJanelaDeContratos',
+    {
+      limite: 10,
+      deslocamento: 0,
+      incluirRetirados: 'false',
+      status: 'ATIVO',
+      fimDe: '2026-01-01',
+      fimAte: '2026-12-31',
+    },
+  ],
+  // O recorte vai declarado **por extenso**, pela mesma razão da linha acima, e o valor é `LOCADO`
+  // de propósito: é o único dos três que a entrada de imóvel **não** aceita, e exercitá-lo aqui é o
+  // que distingue esta janela de uma que lesse `SITUACOES_INFORMAVEIS`.
+  [
+    'esquemaDaJanelaDeImoveis',
+    { limite: 10, deslocamento: 0, incluirRetirados: 'false', statusLocacao: 'LOCADO' },
   ],
 ]);
 
@@ -5857,5 +5905,291 @@ describe('CT-1090 — o roster, a cadência, o limiar e os impedimentos são con
       0,
       'resumo',
     ]);
+  });
+});
+
+// ===========================================================================
+// Os RECORTES DE LISTAGEM — CT-1256 a CT-1259
+//
+// Intervenção dirigida de 2026-09-05, pedida pela equipe de frontend e autorizada pela `Decision`
+// da ADR-0039 (*"dentro do congelamento, acrescentar operação ou campo é permitido; renomear e
+// remover, não"*). O que estes quatro casos provam é o que a borda **não** pode provar sozinha: que
+// o recorte nasce no esquema, e não numa conferência escrita no controlador (ADR-0016) — é isso que
+// faz um rótulo fora da união ser `422` nomeando o parâmetro, em vez de uma consulta que devolve a
+// página vazia de um estado que não existe.
+//
+// | Critério | CT      | Invariante |
+// |----------|---------|------------|
+// | ADR-0039 | CT-1256 | A janela de contratos aceita os QUATRO estados **lidos do enum publicado**,
+// |          |         | devolvendo cada um verbatim, e recusa `VIGENTE` nomeando `status`. As duas
+// |          |         | pontas de `fimDe`/`fimAte` valem **sozinhas**, o par ordenado passa, o par
+// |          |         | de pontas IGUAIS passa (a janela de um dia), a invertida é recusada
+// |          |         | nomeando `fimDe` e a data malformada é recusada nomeando a própria ponta. |
+// | ADR-0039 | CT-1257 | A janela de imóveis aceita as TRÊS situações, **inclusive `LOCADO`** — que o
+// |          |         | esquema de ENTRADA de imóvel recusa no mesmo caso, e é esse par que
+// |          |         | discrimina "lê o enum completo" de "lê as informáveis" —, e recusa `VAGO`
+// |          |         | nomeando `statusLocacao`. |
+// | ADR-0039 | CT-1258 | A janela de cobranças ganhou `vencimentoDe`/`vencimentoAte` com as mesmas
+// |          |         | cinco propriedades da de contratos, e os TRÊS filtros anteriores continuam
+// |          |         | aceitos no mesmo corpo — a extensão não os removeu. |
+// | ADR-0039 | CT-1259 | O item da carteira é `esquemaDoContrato` **mais três chaves**, por igualdade
+// |          |         | de conjunto com controle antivácuo; e o esquema base **não** as ganhou —
+// |          |         | é o par que distingue *estendeu* de *alterou a base*. |
+//
+// Rastreabilidade: `ADR-0039 §Decision → CT-1256` · `ADR-0039 §Decision → CT-1257` ·
+// `ADR-0039 §Decision → CT-1258` · `ADR-0039 §Decision → CT-1259`.
+//
+// ⚠️ O par NÃO leva `(RN-xx)`, e a ausência é decisão: a numeração é escopada por fatia, esta
+// intervenção não tem fatia, e o `(RN-13)` que estava aqui colidia, NESTE MESMO ARQUIVO, com o
+// `(RN-13)` da linha do `CA-15 → CT-604, CT-605`, que designa outra regra. A razão por extenso está
+// no cabeçalho de `packages/db/test/recortes-de-listagem.spec.ts`.
+// ===========================================================================
+
+/** A janela mínima que todo corpo destes casos carrega — o recorte é o que se acrescenta a ela. */
+const JANELA_MINIMA = { limite: 10, deslocamento: 0 } as const;
+
+/** Uma data bem formada, e a mesma nos dois lados quando o caso pede pontas iguais. */
+const DIA_DA_JANELA = '2026-03-15';
+
+/** A ponta inicial e a final de uma janela **ordenada** — `de <= ate`, que é o caso legítimo. */
+const INICIO_DA_JANELA = '2026-03-01';
+const FIM_DA_JANELA = '2026-03-31';
+
+/** Uma data que **não existe** no calendário: `z.iso.date()` a recusa, e um `regex` ingênuo não. */
+const DATA_MALFORMADA = '2026-02-30';
+
+describe('CT-1256 — a janela de contratos recorta por estado e por janela de término', () => {
+  /**
+   * Os quatro estados saem de `ESTADOS_DO_CONTRATO`, e não de uma lista redigitada.
+   *
+   * É o que faz o caso acompanhar o enum publicado: um estado novo entra aqui sozinho, e um estado
+   * que o filtro deixe de aceitar reprova. A lista literal do enum já é afirmada pelo `CT-424`, e
+   * repeti-la aqui criaria a segunda fonte que a ADR-0016 elimina.
+   */
+  it.each([...ESTADOS_DO_CONTRATO])('aceita o estado %s devolvendo-o verbatim', (estado) => {
+    const resultado = esquemaDaJanelaDeContratos.safeParse({ ...JANELA_MINIMA, status: estado });
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data?.status).toBe(estado);
+  });
+
+  it('recusa rótulo fora da união fechada NOMEANDO o parâmetro', () => {
+    // `VIGENTE` é o rótulo que um cliente escreveria por analogia com a linguagem do produto, e é
+    // exatamente o caso em que a página vazia mentiria: ela seria lida como "não há contrato ativo".
+    const resultado = esquemaDaJanelaDeContratos.safeParse({ ...JANELA_MINIMA, status: 'VIGENTE' });
+
+    expect(resultado.success).toBe(false);
+    expect(resultado.error?.issues[0]?.path).toEqual(['status']);
+  });
+
+  const JANELAS_ACEITAS: readonly {
+    readonly rotulo: string;
+    readonly recorte: Record<string, unknown>;
+  }[] = [
+    { rotulo: 'só a ponta inicial', recorte: { fimDe: INICIO_DA_JANELA } },
+    { rotulo: 'só a ponta final', recorte: { fimAte: FIM_DA_JANELA } },
+    { rotulo: 'o par ordenado', recorte: { fimDe: INICIO_DA_JANELA, fimAte: FIM_DA_JANELA } },
+    // A janela de UM DIA é a fronteira, e ela é o consumidor real: "termina hoje" é `de === ate`.
+    // Um `<` no lugar do `<=` da conferência a recusaria, e nenhum outro caso desta tabela pegaria.
+    { rotulo: 'as duas pontas iguais', recorte: { fimDe: DIA_DA_JANELA, fimAte: DIA_DA_JANELA } },
+  ];
+
+  for (const { rotulo, recorte } of JANELAS_ACEITAS) {
+    it(`aceita ${rotulo} devolvendo as pontas verbatim`, () => {
+      const resultado = esquemaDaJanelaDeContratos.safeParse({ ...JANELA_MINIMA, ...recorte });
+
+      expect(resultado.success).toBe(true);
+      expect({ fimDe: resultado.data?.fimDe, fimAte: resultado.data?.fimAte }).toEqual({
+        fimDe: recorte['fimDe'],
+        fimAte: recorte['fimAte'],
+      });
+    });
+  }
+
+  it('recusa a janela INVERTIDA nomeando fimDe, em vez de devolver página vazia', () => {
+    const resultado = esquemaDaJanelaDeContratos.safeParse({
+      ...JANELA_MINIMA,
+      fimDe: FIM_DA_JANELA,
+      fimAte: INICIO_DA_JANELA,
+    });
+
+    expect(resultado.success).toBe(false);
+    expect(resultado.error?.issues[0]?.path).toEqual(['fimDe']);
+  });
+
+  it.each([
+    ['fimDe', { fimDe: DATA_MALFORMADA }],
+    ['fimAte', { fimAte: DATA_MALFORMADA }],
+  ] as const)('recusa data inexistente em %s nomeando a própria ponta', (campo, recorte) => {
+    const resultado = esquemaDaJanelaDeContratos.safeParse({ ...JANELA_MINIMA, ...recorte });
+
+    expect(resultado.success).toBe(false);
+    expect(resultado.error?.issues[0]?.path).toEqual([campo]);
+  });
+});
+
+describe('CT-1257 — a janela de imóveis recorta pelas TRÊS situações, e não pelas informáveis', () => {
+  it.each([...SITUACOES_DE_LOCACAO])('aceita a situação %s devolvendo-a verbatim', (situacao) => {
+    const resultado = esquemaDaJanelaDeImoveis.safeParse({
+      ...JANELA_MINIMA,
+      statusLocacao: situacao,
+    });
+
+    expect(resultado.success).toBe(true);
+    expect(resultado.data?.statusLocacao).toBe(situacao);
+  });
+
+  it('aceita LOCADO no FILTRO enquanto a ENTRADA de imóvel o recusa — o par é o discriminador', () => {
+    // Sozinha, a primeira metade seria satisfeita por um filtro que lesse `SITUACOES_INFORMAVEIS` se
+    // `LOCADO` estivesse lá; sozinha, a segunda é o que o `CT-335` já prova. É a **coexistência** que
+    // fixa a assimetria: quem recorta lê os três, quem escreve lê os dois.
+    const noFiltro = esquemaDaJanelaDeImoveis.safeParse({
+      ...JANELA_MINIMA,
+      statusLocacao: 'LOCADO',
+    });
+    expect(noFiltro.success).toBe(true);
+
+    const naEntrada = esquemaDeImovelNovo.safeParse({
+      ...CORPO_DE_IMOVEL,
+      statusLocacao: 'LOCADO',
+    });
+    expect(naEntrada.success).toBe(false);
+    expect(naEntrada.error?.issues[0]?.path).toEqual(['statusLocacao']);
+
+    // E a união do filtro é a do enum publicado, não uma terceira lista escrita aqui.
+    expect([...SITUACOES_DE_LOCACAO].length).toBeGreaterThan([...SITUACOES_INFORMAVEIS].length);
+  });
+
+  it('recusa situação fora da união fechada NOMEANDO o parâmetro', () => {
+    const resultado = esquemaDaJanelaDeImoveis.safeParse({
+      ...JANELA_MINIMA,
+      statusLocacao: 'VAGO',
+    });
+
+    expect(resultado.success).toBe(false);
+    expect(resultado.error?.issues[0]?.path).toEqual(['statusLocacao']);
+  });
+});
+
+describe('CT-1258 — a janela de cobranças ganhou o recorte por vencimento, sem perder os três', () => {
+  const JANELAS_ACEITAS: readonly {
+    readonly rotulo: string;
+    readonly recorte: Record<string, unknown>;
+  }[] = [
+    { rotulo: 'só a ponta inicial', recorte: { vencimentoDe: INICIO_DA_JANELA } },
+    { rotulo: 'só a ponta final', recorte: { vencimentoAte: FIM_DA_JANELA } },
+    {
+      rotulo: 'o par ordenado',
+      recorte: { vencimentoDe: INICIO_DA_JANELA, vencimentoAte: FIM_DA_JANELA },
+    },
+    // "Vencem hoje" é `de === ate`, e é o indicador que motivou o pedido: a fronteira é o caso de uso.
+    {
+      rotulo: 'as duas pontas iguais',
+      recorte: { vencimentoDe: DIA_DA_JANELA, vencimentoAte: DIA_DA_JANELA },
+    },
+  ];
+
+  for (const { rotulo, recorte } of JANELAS_ACEITAS) {
+    it(`aceita ${rotulo} devolvendo as pontas verbatim`, () => {
+      const resultado = esquemaDaJanelaDeCobrancas.safeParse({ ...JANELA_MINIMA, ...recorte });
+
+      expect(resultado.success).toBe(true);
+      expect({
+        vencimentoDe: resultado.data?.vencimentoDe,
+        vencimentoAte: resultado.data?.vencimentoAte,
+      }).toEqual({
+        vencimentoDe: recorte['vencimentoDe'],
+        vencimentoAte: recorte['vencimentoAte'],
+      });
+    });
+  }
+
+  it('recusa a janela INVERTIDA nomeando vencimentoDe', () => {
+    const resultado = esquemaDaJanelaDeCobrancas.safeParse({
+      ...JANELA_MINIMA,
+      vencimentoDe: FIM_DA_JANELA,
+      vencimentoAte: INICIO_DA_JANELA,
+    });
+
+    expect(resultado.success).toBe(false);
+    expect(resultado.error?.issues[0]?.path).toEqual(['vencimentoDe']);
+  });
+
+  it.each([
+    ['vencimentoDe', { vencimentoDe: DATA_MALFORMADA }],
+    ['vencimentoAte', { vencimentoAte: DATA_MALFORMADA }],
+  ] as const)('recusa data inexistente em %s nomeando a própria ponta', (campo, recorte) => {
+    const resultado = esquemaDaJanelaDeCobrancas.safeParse({ ...JANELA_MINIMA, ...recorte });
+
+    expect(resultado.success).toBe(false);
+    expect(resultado.error?.issues[0]?.path).toEqual([campo]);
+  });
+
+  it('os TRÊS filtros anteriores continuam aceitos ao lado da janela nova', () => {
+    // A rede antirregressão da extensão: `.extend` sobre um esquema já estendido, seguido de
+    // `.refine`, é exatamente o ponto em que um campo se perde sem que nada acuse.
+    const resultado = esquemaDaJanelaDeCobrancas.safeParse({
+      ...JANELA_MINIMA,
+      contrato: 'CTR-2026-00001',
+      status: 'A_VENCER',
+      natureza: 'ALUGUEL',
+      vencimentoDe: INICIO_DA_JANELA,
+      vencimentoAte: FIM_DA_JANELA,
+    });
+
+    expect(resultado.success).toBe(true);
+    expect({
+      contrato: resultado.data?.contrato,
+      status: resultado.data?.status,
+      natureza: resultado.data?.natureza,
+    }).toEqual({ contrato: 'CTR-2026-00001', status: 'A_VENCER', natureza: 'ALUGUEL' });
+  });
+});
+
+describe('CT-1259 — o item da carteira é o contrato MAIS três nomes, e a base fica intacta', () => {
+  /** Os três nomes de exibição que a listagem acrescenta — e **só** eles. */
+  const NOMES_DE_EXIBICAO = ['nomeImovel', 'nomeLocador', 'nomeLocatario'] as const;
+
+  it('as chaves do item são exatamente as do contrato mais as três, por igualdade de conjunto', () => {
+    const doContrato = Object.keys(esquemaDoContrato.shape);
+    const daCarteira = Object.keys(esquemaDoContratoNaCarteira.shape);
+
+    // Controle antivácuo: comparar dois conjuntos vazios passa por vacuidade.
+    expect(doContrato.length).toBeGreaterThan(0);
+    expect(daCarteira.length).toBe(doContrato.length + NOMES_DE_EXIBICAO.length);
+
+    expect(diferencasDeConjunto(daCarteira, [...doContrato, ...NOMES_DE_EXIBICAO])).toEqual({
+      excedentes: [],
+      ausentes: [],
+    });
+  });
+
+  it('o esquema BASE não ganhou os três — é o par que distingue estender de alterar', () => {
+    // Sem esta metade, acrescentar os nomes diretamente em `esquemaDoContrato` deixaria o caso acima
+    // verde: a igualdade de conjunto continuaria valendo, e as outras sete rotas passariam a
+    // prometer três campos que a porta delas não lê.
+    for (const nome of NOMES_DE_EXIBICAO) {
+      expect(Object.keys(esquemaDoContrato.shape)).not.toContain(nome);
+    }
+  });
+
+  it('o item ACEITA os três nomes e RECUSA a ausência de qualquer um deles', () => {
+    const item = {
+      ...CONTRATO_PUBLICADO,
+      nomeImovel: 'Apartamento 101',
+      nomeLocador: 'Alice Locadora',
+      nomeLocatario: 'Bruno Locatário',
+    };
+
+    const completo = esquemaDoContratoNaCarteira.safeParse(item);
+    expect(completo.success).toBe(true);
+
+    for (const nome of NOMES_DE_EXIBICAO) {
+      const { [nome]: _removido, ...semUm } = item;
+      const resultado = esquemaDoContratoNaCarteira.safeParse(semUm);
+
+      expect(resultado.success).toBe(false);
+      expect(resultado.error?.issues[0]?.path).toEqual([nome]);
+    }
   });
 });

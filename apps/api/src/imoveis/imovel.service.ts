@@ -74,6 +74,7 @@ import {
   definirCirculacaoDoImovel,
   definirSituacaoDeLocacaoDoImovel,
   ErroDeIdentificadorMunicipalEmUso,
+  type FiltrosDeImoveis,
   type ImovelPersistido,
   listarImoveis,
   localizarConjunto,
@@ -168,8 +169,9 @@ export class ImovelService {
     tx: TransactionSql,
     janela: Janela,
     opcoes: OpcoesDeCirculacao,
+    filtros: FiltrosDeImoveis = {},
   ): Promise<PaginaDeImoveis> {
-    const { imoveis, total } = await listarImoveis(tx, janela, opcoes);
+    const { imoveis, total } = await listarImoveis(tx, janela, opcoes, filtros);
 
     return {
       itens: imoveis.map(publicar),

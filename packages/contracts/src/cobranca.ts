@@ -316,22 +316,67 @@ export const esquemaDoPagamentoDeCobranca = z.strictObject({
 export type PagamentoDeCobranca = z.infer<typeof esquemaDoPagamentoDeCobranca>;
 
 /**
- * A janela de `GET /v1/cobrancas` — a janela comum **mais** os três filtros da carteira.
+ * A janela de `GET /v1/cobrancas` — a janela comum **mais** os **cinco** filtros da carteira.
  *
  * Ela é derivada de {@link esquemaDaJanela} e nunca redigitada (ADR-0016): o teto que recusa em vez
- * de truncar, e o padrão da página, são fatos do contrato que existem num lugar só. Os três filtros
+ * de truncar, e o padrão da página, são fatos do contrato que existem num lugar só. Os filtros
  * nascem **no esquema**, e não numa conferência escrita no controlador, pela mesma ADR — é o que faz
  * `status` e `natureza` fora da união fechada serem `422` na borda, e não uma consulta que devolve
  * lista vazia sobre um rótulo que não existe.
  *
- * Os três são opcionais porque a carteira inteira é a leitura padrão; ausência é *sem filtro*, e não
+ * Todos são opcionais porque a carteira inteira é a leitura padrão; ausência é *sem filtro*, e não
  * um valor implícito.
+ *
+ * ---------------------------------------------------------------------------
+ * A JANELA DE VENCIMENTO — as duas pontas são INCLUSIVAS, e são independentes entre si
+ * ---------------------------------------------------------------------------
+ *
+ * `vencimentoDe` e `vencimentoAte` recortam **`data_vencimento`**, que é coluna gravada — nunca o
+ * estado derivado. A distinção é conteúdo, e o consumidor precisa dela: `status=VENCIDA` é
+ * `data_vencimento < negocio.data_corrente_da_operacao()` (a visão `cobranca_derivada`), de modo que
+ * **a cobrança que vence HOJE é `A_VENCER`, e não `VENCIDA`**. O indicador *"vencem hoje"* é, por
+ * isso, a janela `vencimentoDe = vencimentoAte = hoje` — e não um recorte por estado.
+ *
+ * As duas pontas entram no conjunto (`BETWEEN` do lado do banco), que é o que quem pede *"de 1 a 31
+ * de março"* lê na frase. É a mesma decisão, e a mesma forma, do recorte de competências do carnê
+ * ({@link ./carne.js}), e ela é declarada aqui porque o cliente não tem como observá-la de fora sem
+ * um caso de fronteira.
+ *
+ * Cada ponta vale **sozinha**: só `vencimentoDe` é *"daqui para a frente"*, e só `vencimentoAte` é
+ * *"até esta data"*. Exigir o par transformaria *"a vencer nos próximos 7 dias"* em duas decisões
+ * quando ele é uma.
+ *
+ * A ordem entre elas é conferida **aqui**, e não no banco: uma janela invertida devolveria página
+ * vazia — resposta indistinguível de *"não há cobrança nesse intervalo"* —, e o cliente não teria
+ * como saber que o engano foi dele. O `path` é `['vencimentoDe']` por escolha, e não por sorteio: é
+ * a ponta que o cliente move ao corrigir o intervalo.
+ *
+ * ⚠️ **`competencia` NÃO é filtro desta rota, e a ausência é decisão.** O recorte por competência já
+ * existe no produto, no carnê, e lá ele é do **contrato**; publicá-lo também aqui daria dois eixos
+ * de tempo à mesma listagem, com dois significados (*o mês a que a cobrança se refere* × *o dia em
+ * que ela vence*) que o consumidor teria de distinguir a cada chamada. O eixo desta carteira é o
+ * vencimento — é por ele que a porta **ordena** (`ORDER BY data_vencimento, codigo`), e é ele que a
+ * tela do Financeiro mostra.
  */
-export const esquemaDaJanelaDeCobrancas = esquemaDaJanela.extend({
-  contrato: ESQUEMA_DO_CODIGO_DE_CONTRATO.optional(),
-  status: z.enum(ESTADOS_DA_COBRANCA).optional(),
-  natureza: z.enum(NATUREZAS_DE_COBRANCA).optional(),
-});
+export const esquemaDaJanelaDeCobrancas = esquemaDaJanela
+  .extend({
+    contrato: ESQUEMA_DO_CODIGO_DE_CONTRATO.optional(),
+    status: z.enum(ESTADOS_DA_COBRANCA).optional(),
+    natureza: z.enum(NATUREZAS_DE_COBRANCA).optional(),
+    vencimentoDe: z.iso.date().optional(),
+    vencimentoAte: z.iso.date().optional(),
+  })
+  // A comparação é **lexicográfica sobre o texto**, e ela é correta por construção: `YYYY-MM-DD` com
+  // largura fixa e zeros à esquerda ordena como a data ordena. Mesma razão, e mesma forma, de
+  // `esquemaDoRecorteDoCarne`.
+  .refine(
+    ({ vencimentoDe, vencimentoAte }) =>
+      vencimentoDe === undefined || vencimentoAte === undefined || vencimentoDe <= vencimentoAte,
+    {
+      path: ['vencimentoDe'],
+      message: 'o início da janela de vencimento não pode ser posterior ao fim',
+    },
+  );
 
 /** A janela da carteira de cobranças, com os padrões já aplicados. */
 export type JanelaDeCobrancas = z.infer<typeof esquemaDaJanelaDeCobrancas>;

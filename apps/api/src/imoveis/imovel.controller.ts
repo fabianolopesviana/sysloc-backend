@@ -124,12 +124,12 @@ import {
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
-import type { AcessoAoBanco } from '@sysloc/db';
+import type { AcessoAoBanco, FiltrosDeImoveis } from '@sysloc/db';
 import { CodigoErro, type Logger } from '@sysloc/shared';
 import {
   ESQUEMA_DO_IDENTIFICADOR,
   envelopeDeLista,
-  esquemaDaJanelaComCirculacao,
+  esquemaDaJanelaDeImoveis,
   esquemaDaSituacaoDeLocacao,
   esquemaDeImovelAlterado,
   esquemaDeImovelNovo,
@@ -232,7 +232,11 @@ export class ImovelController {
     description:
       'Devolve apenas os imóveis **em circulação**; `incluirRetirados=true` alcança também os ' +
       'que foram retirados (ADR-0014). A janela é declarável por `limite` e `deslocamento`, e ' +
-      'pedido acima do teto **recusa** em vez de truncar em silêncio.',
+      'pedido acima do teto **recusa** em vez de truncar em silêncio. Aceita ainda ' +
+      '`statusLocacao` — uma das **três** situações (`DISPONIVEL`, `LOCADO`, `INDISPONIVEL`), uma ' +
+      'por requisição —, e `total` passa a ser a contagem **sob o recorte**: é dele que sai ' +
+      '"quantos imóveis estão vagos" sem varrer a carteira. Situação fora da união responde `422` ' +
+      'nomeando o parâmetro; o recorte é **ortogonal** ao de circulação.',
   })
   @ApiOkResponse({
     description: 'A página pedida.',
@@ -250,16 +254,23 @@ export class ImovelController {
     // reagendava; a T8 a fechou promovendo a composição ao pacote que a ADR-0016 declara fonte
     // única. A razão de `incluirRetirados` ser união fechada de dois literais, e não
     // `z.coerce.boolean()`, está por extenso no docblock de `esquemaDaJanelaComCirculacao`.
-    const { incluirRetirados, ...janela } = validar(
-      esquemaDaJanelaComCirculacao,
+    const { incluirRetirados, statusLocacao, ...janela } = validar(
+      esquemaDaJanelaDeImoveis,
       consulta,
       CAMPO_DA_CONSULTA,
     );
 
+    // Espalhamento **condicional**, e não atribuição de `undefined`: com `exactOptionalPropertyTypes`
+    // ausente e presente-com-`undefined` são coisas diferentes, e a porta declara o filtro como
+    // opcional em que ausência quer dizer *sem filtro*.
+    const filtros: FiltrosDeImoveis = {
+      ...(statusLocacao === undefined ? {} : { statusLocacao }),
+    };
+
     return await sobContextoDaSessao(
       this.banco,
       requisicao,
-      async (tx) => await this.imoveis.listar(tx, janela, { incluirRetirados }),
+      async (tx) => await this.imoveis.listar(tx, janela, { incluirRetirados }, filtros),
     );
   }
 
