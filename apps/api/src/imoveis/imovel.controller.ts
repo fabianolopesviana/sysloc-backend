@@ -142,7 +142,7 @@ import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
 import { ESQUEMA_DO_CORPO_VAZIO } from '../comum/esquema-de-corpo-vazio.js';
 import { esquemaDoErro } from '../comum/esquema-de-erro.js';
 import { esquemaPublicado } from '../comum/esquema-publicado.js';
-import { validar } from '../comum/validacao.js';
+import { validar, validarConsulta } from '../comum/validacao.js';
 import { TOKEN_ACESSO_AO_NEGOCIO, TOKEN_LOGGER } from '../configuracao/ambiente.js';
 import { ImovelService, type PaginaDeImoveis } from './imovel.service.js';
 
@@ -167,9 +167,6 @@ const CAMPO_DO_IDENTIFICADOR = 'id';
 
 /** Nome de campo usado quando a recusa é do corpo e o Zod não tem caminho a nomear. */
 const CAMPO_DO_CORPO = 'corpo';
-
-/** Nome de campo usado quando a recusa é da cadeia de consulta. */
-const CAMPO_DA_CONSULTA = 'limite';
 
 // O corpo das duas rotas de circulação — **vazio e fechado** (§4.1.1) — é
 // `ESQUEMA_DO_CORPO_VAZIO`, importado de `comum/esquema-de-corpo-vazio.js`. A marca de retirada é
@@ -254,10 +251,9 @@ export class ImovelController {
     // reagendava; a T8 a fechou promovendo a composição ao pacote que a ADR-0016 declara fonte
     // única. A razão de `incluirRetirados` ser união fechada de dois literais, e não
     // `z.coerce.boolean()`, está por extenso no docblock de `esquemaDaJanelaComCirculacao`.
-    const { incluirRetirados, statusLocacao, ...janela } = validar(
+    const { incluirRetirados, statusLocacao, ...janela } = validarConsulta(
       esquemaDaJanelaDeImoveis,
       consulta,
-      CAMPO_DA_CONSULTA,
     );
 
     // Espalhamento **condicional**, e não atribuição de `undefined`: com `exactOptionalPropertyTypes`

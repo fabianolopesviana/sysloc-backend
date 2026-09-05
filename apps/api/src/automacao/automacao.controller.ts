@@ -219,7 +219,7 @@ import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
 import { ESQUEMA_DO_CORPO_VAZIO } from '../comum/esquema-de-corpo-vazio.js';
 import { esquemaDoErro } from '../comum/esquema-de-erro.js';
 import { esquemaPublicado } from '../comum/esquema-publicado.js';
-import { validar } from '../comum/validacao.js';
+import { validar, validarConsulta } from '../comum/validacao.js';
 import { TOKEN_ACESSO_AO_NEGOCIO, TOKEN_LOGGER } from '../configuracao/ambiente.js';
 import { AutomacaoDeCobrancaService, type PaginaDeEnvios } from './automacao.service.js';
 
@@ -263,9 +263,6 @@ const CAMPO_DO_CORPO = 'corpo';
 
 /** Nome de campo usado quando a recusa é do identificador da rota. */
 const CAMPO_DO_CODIGO = 'codigo';
-
-/** Nome de campo usado quando a recusa é da cadeia de consulta — o mesmo de toda janela. */
-const CAMPO_DA_CONSULTA = 'limite';
 
 /** A entidade nomeada na linha de trilha da política — escrita uma vez (§13.1). */
 const ENTIDADE_DA_TRILHA = 'politica_de_aviso';
@@ -416,7 +413,7 @@ export class AutomacaoDeCobrancaController {
     const codigo = validar(ESQUEMA_DO_CODIGO_DE_COBRANCA, identificador, CAMPO_DO_CODIGO);
     // A janela vem INTEIRA de `@syslocbr/contracts` (ADR-0016): o teto que recusa em vez de truncar e o
     // padrão da página são fatos do contrato, e nenhum esquema de paginação nasce nesta superfície.
-    const janela = validar(esquemaDaJanela, consulta, CAMPO_DA_CONSULTA);
+    const janela = validarConsulta(esquemaDaJanela, consulta);
 
     return await sobContextoDaSessao(
       this.banco,

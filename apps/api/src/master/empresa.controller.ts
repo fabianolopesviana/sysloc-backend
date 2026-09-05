@@ -92,7 +92,7 @@ import { z } from 'zod';
 import { sessaoDaRequisicao } from '../autenticacao/contexto.guard.js';
 import { ExigePerfil } from '../autenticacao/exigencia.decorator.js';
 import { esquemaDoErro } from '../comum/esquema-de-erro.js';
-import { validar } from '../comum/validacao.js';
+import { validar, validarConsulta } from '../comum/validacao.js';
 import { CLASSES_DE_IMPEDIMENTO } from './administrador.contrato.js';
 import {
   type AdministradorAdmitido,
@@ -410,7 +410,7 @@ export class EmpresaController {
   @ApiForbiddenResponse({ schema: esquemaDoErro([CodigoErro.ACESSO_NEGADO]) })
   @ApiUnprocessableEntityResponse({ schema: esquemaDoErro([CodigoErro.CAMPO_INVALIDO]) })
   async listarEmpresas(@Query() consulta: unknown): Promise<PaginaDeEmpresas> {
-    return await this.empresas.listarEmpresas(validar(ESQUEMA_DA_JANELA, consulta, 'limite'));
+    return await this.empresas.listarEmpresas(validarConsulta(ESQUEMA_DA_JANELA, consulta));
   }
 
   @Put('empresas/:id')

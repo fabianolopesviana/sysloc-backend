@@ -104,7 +104,7 @@ import { ExigePerfil } from '../autenticacao/exigencia.decorator.js';
 import { ESQUEMA_DO_CORPO_VAZIO } from '../comum/esquema-de-corpo-vazio.js';
 import { esquemaDoErro } from '../comum/esquema-de-erro.js';
 import { esquemaPublicado } from '../comum/esquema-publicado.js';
-import { validar } from '../comum/validacao.js';
+import { validar, validarConsulta } from '../comum/validacao.js';
 import {
   type AdministradorDoContrato,
   ESQUEMA_DA_JANELA,
@@ -127,9 +127,6 @@ const CAMPO_DO_IDENTIFICADOR = 'id';
 
 /** Nome de campo usado quando a recusa é do corpo e o Zod não tem caminho a nomear. */
 const CAMPO_DO_CORPO = 'corpo';
-
-/** Nome de campo usado quando a recusa é da cadeia de consulta. */
-const CAMPO_DA_CONSULTA = 'limite';
 
 /**
  * O identificador que chega no caminho — validado antes de qualquer consulta.
@@ -182,7 +179,7 @@ export class AdministradorController {
 
     return await this.administradores.listar(
       empresaId,
-      validar(ESQUEMA_DA_JANELA, consulta, CAMPO_DA_CONSULTA),
+      validarConsulta(ESQUEMA_DA_JANELA, consulta),
     );
   }
 

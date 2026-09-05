@@ -30,8 +30,8 @@
  * |          |         | ainda não está vencida. |
  * | ADR-0039 | CT-1270 | As **seis** recusas respondem `422` com o corpo **inteiro por igualdade**
  * |          |         | (`{codigo, mensagem, campo}`), nomeando o parâmetro culpado; e a chave
- * |          |         | desconhecida na cadeia de consulta continua nomeando o campo padrão do
- * |          |         | ponto de chamada. |
+ * |          |         | desconhecida na cadeia de consulta é recusada **nomeando a própria
+ * |          |         | chave** (§6.2 do handoff). |
  * | ADR-0039 | CT-1271 | Com os recortes ligados, a sessão de **B** recebe `200` com `itens: []` e
  * |          |         | `total: 0` nos mesmos pedidos em que a de **A** recebe conjunto não vazio —
  * |          |         | o filtro novo não abre caminho para dado de outra empresa (ADR-0008). |
@@ -609,10 +609,17 @@ describe('os recortes de listagem na borda (intervenção de 2026-09-05)', () =>
         });
       }
 
-      // A chave desconhecida continua recusada, e continua nomeando o **campo padrão** do ponto de
-      // chamada: o Zod reporta `unrecognized_keys` com caminho vazio, e é o `campoPadrao` que a
-      // batiza. A asserção existe para que a próxima leitura do envelope não interprete `limite`
-      // como o culpado — o nome da chave inventada não viaja no corpo.
+      // A chave desconhecida é recusada **nomeando a própria chave**, que é o que a §6.2 do
+      // `handoff-frontend.md` publica (*"`limite=50&ordenar=nome` é `422`, com `campo: \"ordenar\"`"*).
+      // É o par que separa *"o parâmetro que você inventou não existe"* de *"o seu `limite` está
+      // errado"* — os dois são `422 CAMPO_INVALIDO`, e sem o nome da chave o cliente não tem como
+      // distinguir os diagnósticos.
+      //
+      // SUT_IS_CORRECT_BECAUSE: esta expectativa nasceu, em 2026-09-05, fixando `campo: 'limite'` —
+      // o campo padrão do ponto de chamada. Ela descrevia o comportamento **medido**, e o
+      // comportamento é que divergia do contrato publicado em cinco lugares (§6.1, §6.2, as duas
+      // fixtures da §20 e o teste mínimo 15 da §21). O conserto é de produção, em
+      // `comum/validacao.ts`; nenhuma asserção foi afrouxada, e o corpo segue comparado INTEIRO.
       const desconhecida = await pedir(base, `${COLECAO_DE_CONTRATOS}?statusDoContrato=ATIVO`, {
         cookie: cookieDeA,
       });
@@ -621,7 +628,7 @@ describe('os recortes de listagem na borda (intervenção de 2026-09-05)', () =>
       expect(desconhecida.corpo).toEqual({
         codigo: CodigoErro.CAMPO_INVALIDO,
         mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
-        campo: 'limite',
+        campo: 'statusDoContrato',
       });
     },
     LIMITE_CASO_MS,

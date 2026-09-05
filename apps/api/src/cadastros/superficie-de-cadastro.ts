@@ -52,7 +52,7 @@ import type { FastifyRequest } from 'fastify';
 import type { TransactionSql } from 'postgres';
 import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
 import { ESQUEMA_DO_CORPO_VAZIO } from '../comum/esquema-de-corpo-vazio.js';
-import { validar } from '../comum/validacao.js';
+import { validar, validarConsulta } from '../comum/validacao.js';
 import type { CadastroDePessoaService, PaginaDePessoas } from './cadastro-de-pessoa.service.js';
 
 /**
@@ -86,9 +86,6 @@ const CAMPO_DO_IDENTIFICADOR = 'id';
 
 /** Nome de campo usado quando a recusa é do corpo e o Zod não tem caminho a nomear. */
 const CAMPO_DO_CORPO = 'corpo';
-
-/** Nome de campo usado quando a recusa é da cadeia de consulta. */
-const CAMPO_DA_CONSULTA = 'limite';
 
 // O corpo das rotas de circulação — **vazio e fechado** (§4.1.1) — é `ESQUEMA_DO_CORPO_VAZIO`,
 // importado de `comum/esquema-de-corpo-vazio.js`. A marca de retirada é decidida pelo servidor e
@@ -242,11 +239,7 @@ export class SuperficieDeCadastro {
     // O esquema vem **inteiro** de `@syslocbr/contracts`, que a ADR-0016 declara fonte única. A razão
     // de `incluirRetirados` ser união fechada de dois literais, e não `z.coerce.boolean()`, está por
     // extenso no docblock de `esquemaDaJanelaComCirculacao`.
-    const { incluirRetirados, ...janela } = validar(
-      esquemaDaJanelaComCirculacao,
-      consulta,
-      CAMPO_DA_CONSULTA,
-    );
+    const { incluirRetirados, ...janela } = validarConsulta(esquemaDaJanelaComCirculacao, consulta);
 
     return await sobContextoDaSessao(
       this.banco,

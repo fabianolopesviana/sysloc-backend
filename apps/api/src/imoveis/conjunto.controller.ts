@@ -159,7 +159,7 @@ import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
 import { ESQUEMA_DO_CORPO_VAZIO } from '../comum/esquema-de-corpo-vazio.js';
 import { esquemaDoErro } from '../comum/esquema-de-erro.js';
 import { esquemaPublicado } from '../comum/esquema-publicado.js';
-import { validar } from '../comum/validacao.js';
+import { validar, validarConsulta } from '../comum/validacao.js';
 import { TOKEN_ACESSO_AO_NEGOCIO, TOKEN_LOGGER } from '../configuracao/ambiente.js';
 import {
   ConjuntoService,
@@ -188,9 +188,6 @@ const CAMPO_DO_IDENTIFICADOR = 'id';
 
 /** Nome de campo usado quando a recusa é do corpo e o Zod não tem caminho a nomear. */
 const CAMPO_DO_CORPO = 'corpo';
-
-/** Nome de campo usado quando a recusa é da cadeia de consulta. */
-const CAMPO_DA_CONSULTA = 'limite';
 
 // O corpo das duas rotas de circulação — **vazio e fechado** (§4.1.1) — é
 // `ESQUEMA_DO_CORPO_VAZIO`, importado de `comum/esquema-de-corpo-vazio.js`. A marca de retirada é
@@ -297,10 +294,9 @@ export class ConjuntoController {
     // divergir do que o esquema aceita, e a divergência seria muda — o esquema aprovaria
     // `expandir=imoveis` e o manipulador devolveria a lista simples. O arranjo publicado deriva
     // daquela constante, e por isso acrescentar uma expansão nova não move o valor comparado.
-    const { incluirRetirados, expandir, ...janela } = validar(
+    const { incluirRetirados, expandir, ...janela } = validarConsulta(
       esquemaDaJanelaDaCarteira,
       consulta,
-      CAMPO_DA_CONSULTA,
     );
 
     return await sobContextoDaSessao(this.banco, requisicao, async (tx) =>

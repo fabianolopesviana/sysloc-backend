@@ -242,7 +242,7 @@ import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
 import { ESQUEMA_DO_CORPO_VAZIO } from '../comum/esquema-de-corpo-vazio.js';
 import { esquemaDoErro } from '../comum/esquema-de-erro.js';
 import { esquemaPublicado } from '../comum/esquema-publicado.js';
-import { validar } from '../comum/validacao.js';
+import { validar, validarConsulta } from '../comum/validacao.js';
 import { TOKEN_ACESSO_AO_NEGOCIO, TOKEN_LOGGER } from '../configuracao/ambiente.js';
 import { ContratoService, type PaginaDeContratos } from './contrato.service.js';
 
@@ -290,17 +290,22 @@ const CAMPO_DO_CODIGO = 'codigo';
 /** Nome de campo usado quando a recusa é do corpo e o Zod não tem caminho a nomear. */
 const CAMPO_DO_CORPO = 'corpo';
 
-/** Nome de campo usado quando a recusa é da cadeia de consulta. */
-const CAMPO_DA_CONSULTA = 'limite';
-
 /**
  * Nome de campo usado quando a recusa do **recorte do carnê** não tem caminho a nomear.
  *
  * Ele é `recorte`, e não `de`: o caso sem caminho é a **chave desconhecida** na cadeia de consulta,
  * que o objeto estrito reporta com caminho vazio — e ali o que está errado não é `de` nem `ate`, é o
  * conjunto. Nomear uma das duas pontas mandaria quem recebe a recusa corrigir um campo que está
- * certo. Não se reusa {@link CAMPO_DA_CONSULTA} pela mesma razão ao contrário: `limite` é campo da
- * janela da carteira, e esta rota não tem janela.
+ * certo.
+ *
+ * ⚠️ **Esta rota NÃO passou a `validarConsulta` na correção de 2026-09-05, e a exclusão é decisão.**
+ * Aquela correção fez a chave desconhecida das **listagens** ser nomeada por extenso, cumprindo a
+ * §6.2 do handoff publicado — e o raciocínio dela é o mesmo que este docblock já fazia desde a T3
+ * da fatia `webhook-e-carne`, um ano de fatias antes: *não nomeie um campo que está certo*. Trocar
+ * aqui melhoraria a recusa por chave desconhecida (ela passaria a nomear a chave) e **perderia** o
+ * `'recorte'` no caso sem caminho, que é a decisão registrada acima. O carnê não foi pedido, e
+ * `.claude/rules/nao-regressao.md` P3 não autoriza desfazer decisão alheia de passagem. Quem for
+ * revisitar: a troca é de uma linha, e o que ela custa está escrito neste parágrafo.
  */
 const CAMPO_DO_RECORTE = 'recorte';
 
@@ -480,10 +485,9 @@ export class ContratoController {
     // `incluirRetirados` ser união fechada de dois literais, e não `z.coerce.boolean()`, está por
     // extenso no docblock de `esquemaDaJanelaComCirculacao`; a dos três recortes, no de
     // `esquemaDaJanelaDeContratos`.
-    const { incluirRetirados, status, fimDe, fimAte, ...janela } = validar(
+    const { incluirRetirados, status, fimDe, fimAte, ...janela } = validarConsulta(
       esquemaDaJanelaDeContratos,
       consulta,
-      CAMPO_DA_CONSULTA,
     );
 
     // Cada recorte é espalhado **condicionalmente**, e não atribuído como `undefined`: com

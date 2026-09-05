@@ -210,7 +210,7 @@ import { sobContextoDaSessao } from '../comum/contexto-da-sessao.js';
 import { ESQUEMA_DO_CORPO_VAZIO } from '../comum/esquema-de-corpo-vazio.js';
 import { esquemaDoErro } from '../comum/esquema-de-erro.js';
 import { esquemaPublicado } from '../comum/esquema-publicado.js';
-import { validar } from '../comum/validacao.js';
+import { validar, validarConsulta } from '../comum/validacao.js';
 import { TOKEN_ACESSO_AO_NEGOCIO, TOKEN_LOGGER } from '../configuracao/ambiente.js';
 import { ATO_DE_EMISSAO, ATO_DE_REVOGACAO, BoletoService } from './boleto.service.js';
 import { CobrancaService, type PaginaDeCobrancas } from './cobranca.service.js';
@@ -232,9 +232,6 @@ const CAMPO_DO_CODIGO = 'codigo';
 
 /** Nome de campo usado quando a recusa é do corpo e o Zod não tem caminho a nomear. */
 const CAMPO_DO_CORPO = 'corpo';
-
-/** Nome de campo usado quando a recusa é da cadeia de consulta. */
-const CAMPO_DA_CONSULTA = 'limite';
 
 /** A entidade nomeada na linha de trilha desta superfície — escrita uma vez (§13.1). */
 const ENTIDADE_DA_TRILHA = 'cobranca';
@@ -430,7 +427,7 @@ export class CobrancaController {
   ): Promise<PaginaDeCobrancas> {
     // O esquema vem **inteiro** de `@syslocbr/contracts`, que a ADR-0016 declara fonte única: a janela
     // comum mais os três filtros da carteira. Nenhuma conferência de recorte é escrita aqui.
-    const janela = validar(esquemaDaJanelaDeCobrancas, consulta, CAMPO_DA_CONSULTA);
+    const janela = validarConsulta(esquemaDaJanelaDeCobrancas, consulta);
 
     return await sobContextoDaSessao(
       this.banco,

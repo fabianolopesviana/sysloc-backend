@@ -49,8 +49,8 @@
  * | CA-01 | CT-1245 | A FRONTEIRA da janela, lida da constante: o teto exato responde `200` e o
  * |       |         | teto **mais um** responde `422 CAMPO_INVALIDO` em `campo:'limite'` — recusa,
  * |       |         | nunca truncamento. `deslocamento` negativo recusa nomeando `deslocamento`, e
- * |       |         | chave desconhecida na cadeia de consulta recusa no campo padrão do ponto de
- * |       |         | chamada (`strictObject`). |
+ * |       |         | chave desconhecida na cadeia de consulta recusa **nomeando a própria chave**
+ * |       |         | (`strictObject`). |
  *
  * | CA-08 | CT-1226 | Cada uma das **cinco** operações sobre `:id` de usuário — suspensão,
  * |       |         | reativação, **correção cadastral**, **remoção definitiva** e reemissão —
@@ -1062,10 +1062,18 @@ describe('ciclo de vida do Admin Empresa pelas rotas do Master (T4)', () => {
 
       // --- Chave desconhecida: a entrada é FECHADA (`strictObject`) ----------------------------
       //
-      // ⚠️ O campo nomeado é `limite`, e não `pagina`: o zod reporta chave desconhecida com caminho
-      // VAZIO, e a recusa cai no campo padrão do ponto de chamada. O que o caso fixa é que a chave
+      // O campo nomeado é **`pagina`** — a própria chave recusada. O que o caso fixa é que a chave
       // inventada é **recusada** — com `z.object` ela seria ignorada em silêncio, e a resposta
-      // descreveria uma janela que ninguém pediu.
+      // descreveria uma janela que ninguém pediu — **e** que a recusa diz qual chave corrigir.
+      //
+      // SUT_IS_CORRECT_BECAUSE: até 2026-09-05 esta expectativa era `campo: 'limite'`, e o
+      // comentário acima registrava a estranheza (*"o campo nomeado é `limite`, e não `pagina`"*).
+      // O código de produção é que estava errado, e a medição é do contrato **publicado**: a §6.2 do
+      // `handoff-frontend.md` promete, com todas as letras, que `limite=50&ordenar=nome` responde
+      // `campo: "ordenar"`, e a fixture `listar-contratos/parametro-desconhecido` da §20.2 publica o
+      // mesmo. `validarConsulta` (`comum/validacao.ts`) passou a nomear a chave, e a expectativa
+      // acompanha o contrato. **Nenhuma asserção foi afrouxada**: o corpo continua comparado
+      // INTEIRO por igualdade, e o `campo` ficou mais específico, não menos.
       const chaveInventada = await pedir(base, `${listagemDe(empresaId)}?pagina=2`, {
         cookie: cookieDoMaster,
       });
@@ -1073,7 +1081,7 @@ describe('ciclo de vida do Admin Empresa pelas rotas do Master (T4)', () => {
       expect(chaveInventada.corpo).toEqual({
         codigo: CodigoErro.CAMPO_INVALIDO,
         mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
-        campo: 'limite',
+        campo: 'pagina',
       });
     },
     LIMITE_CASO_MS,
