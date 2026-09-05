@@ -918,7 +918,7 @@ const RECUSAS_DE_ENTRADA: readonly RecusaDeEntrada[] = [
     alvo: (colecao) => colecao,
     corpo: corpoDePessoa(DOCUMENTO_DO_CONTROLE_DE_ENTRADA, { empresaId: UUID_INEXISTENTE }),
     status: 422,
-    esperado: campoInvalido('corpo'),
+    esperado: campoInvalido('empresaId'),
   },
   {
     rotulo: 'id_malformado',

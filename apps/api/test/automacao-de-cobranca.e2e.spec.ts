@@ -730,14 +730,14 @@ describe('a política de aviso por empresa (T9)', () => {
         },
         {
           rotulo: 'chave desconhecida no corpo',
-          campo: 'corpo',
+          campo: 'remetente',
           corpo: { ...POLITICA_DE_REFERENCIA, remetente: 'cobranca@exemplo.com.br' },
         },
         {
           // A prova executável da ADR-0008 nesta superfície: a empresa NUNCA vem do corpo, e quem a
           // recusa é o `strictObject`, sem uma linha de verificação escrita à mão.
           rotulo: 'empresa proposta pelo corpo',
-          campo: 'corpo',
+          campo: 'empresaId',
           corpo: { ...POLITICA_DE_REFERENCIA, empresaId: EMPRESA_B.id },
         },
       ];

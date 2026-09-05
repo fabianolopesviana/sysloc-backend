@@ -844,7 +844,7 @@ describe('lançamento e leitura da carteira de cobranças (T5)', () => {
         },
         {
           rotulo: 'chave desconhecida no corpo',
-          campo: 'corpo',
+          campo: 'status',
           corpo: { ...corpoValido, status: 'PAGA' },
         },
       ];
@@ -1587,7 +1587,7 @@ describe('as duas transições da cobrança (T7)', () => {
       expect(comChaveDesconhecida.corpo).toEqual({
         codigo: CodigoErro.CAMPO_INVALIDO,
         mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
-        campo: 'corpo',
+        campo: 'status',
       });
 
       // O CONTROLE POSITIVO das duas recusas de corpo: a cobrança segue em aberto e pagável.

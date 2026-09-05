@@ -43,7 +43,9 @@
  * |       |        | que fecha o `D64`**, e nenhuma etapa dele exige acesso ao servidor. |
  * | CA-10 | CT-1021 | ⚠️ **REESCRITA de `CT-824 (b)`.** As TRÊS causas produzem TRÊS códigos
  * | CA-11 |        | distintos — `Set` de tamanho 3 —, com os três envelopes inteiros por
- * | CA-12 |        | igualdade e `campo: 'corpo'` nas três. Os motivos internos saem, por
+ * | CA-12 |        | igualdade e `campo: 'corpo'` nas três — elas são montadas pelo serviço, e
+ * |       |        | não por `validar()`, de modo que a correção do campo culpado de 2026-09-05
+ * |       |        | não as alcança. Os motivos internos saem, por
  * |       |        | igualdade de arranjo ORDENADO, como `SENHA_NAO_ABRE`, `FORMATO_NAO_SUPORTADO`
  * |       |        | e `JA_VENCIDO`, **antes** das comparações de corpo. Nada do vigente muda e
  * |       |        | nenhuma linha nasce. |
@@ -1749,11 +1751,17 @@ describe('a verificação da identidade contra o provedor (T12)', () => {
       expect(par.conexoes).toBe(0);
       expect(invocacoesDaPorta - invocacoesAntes).toBe(0);
 
-      // O envelope INTEIRO da ADR-0017, nomeando o campo do corpo — e não o nome da chave enviada.
+      // O envelope INTEIRO da ADR-0017, nomeando **a chave enviada**.
+      //
+      // SUT_IS_CORRECT_BECAUSE: esta linha dizia *"nomeando o campo do corpo — e não o nome da chave
+      // enviada"*, e a segunda metade deixou de valer em 2026-09-05: a §6.1 do `handoff-frontend.md`
+      // promete o nome da chave desde 2026-08-24, e era o servidor que não cumpria. Note que as TRÊS
+      // recusas do material (senha, formato, validade) continuam em `CAMPO_DO_CORPO` — elas são
+      // montadas por `certificado.service.ts`, não por `validar()`, e não foram tocadas.
       expect(recusa.corpo).toEqual({
         codigo: CodigoErro.CAMPO_INVALIDO,
         mensagem: MENSAGEM_DE_REQUISICAO_INVALIDA,
-        campo: CAMPO_DO_CORPO,
+        campo: 'algo',
       });
 
       // O CONTROLE POSITIVO da rota, com o corpo vazio que ela aceita: sem ele, o `422` acima seria

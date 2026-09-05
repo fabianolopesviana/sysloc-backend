@@ -449,7 +449,7 @@ describe('a borda da cobrança bancária — lote e conferência (T15)', () => {
       expect(comChaveDesconhecida.corpo).toEqual({
         codigo: CodigoErro.CAMPO_INVALIDO,
         mensagem: MENSAGEM_DE_REQUISICAO_INVALIDA,
-        campo: CAMPO_DO_CORPO,
+        campo: CHAVE_DESCONHECIDA,
       });
       // E o valor recusado NÃO viajou: `empresaId` é o identificador de outra empresa, e vê-lo na
       // saída seria vazamento além de eco.
@@ -693,9 +693,6 @@ const MENSAGEM_DE_REQUISICAO_INVALIDA = 'requisição inválida';
 
 /** A mensagem canônica do `404` — literal, pela mesma razão. */
 const MENSAGEM_DE_RECURSO_NAO_ENCONTRADO = 'recurso não encontrado';
-
-/** Nome de campo que a recusa do corpo nomeia quando o Zod não tem caminho a dar. */
-const CAMPO_DO_CORPO = 'corpo';
 
 interface SessaoPublicada {
   readonly telas: readonly string[];

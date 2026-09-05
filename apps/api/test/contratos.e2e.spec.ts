@@ -89,7 +89,7 @@
  * |       |        | `CANCELADO`, **não transitam estado algum** e **não liberam o imóvel** (o do
  * |       |        | contrato ativo permanece `LOCADO`). A repetição devolve corpo **profundamente
  * |       |        | igual** — idempotência —, a recirculação zera a marca, e corpo não vazio é
- * |       |        | `422` com `campo: 'corpo'` e a marca **intocada**. |
+ * |       |        | `422` com `campo: 'qualquerCampo'` — a chave enviada — e a marca **intocada**. |
  * | CA-13 | CT-418 | `GET /v1/contratos` devolve, para cada contrato, código, partes, termos e estado
  * |       |        | num envelope `{ itens, total, limite, deslocamento }` (ADR-0017) — sem segunda
  * |       |        | consulta. O contrato **retirado não aparece** por padrão e aparece com
@@ -105,7 +105,7 @@
  * |       |        | imóvel passa a `LOCADO`, e a releitura do contrato é igual ao corpo da ativação
  * |       |        | **menos `efeitos`**. Sub-casos: o imóvel `INDISPONIVEL` **é ativável** e passa
  * |       |        | a `LOCADO`; `500.03 × 13` devolve **`6500.39` exato**, e não o produto ingênuo
- * |       |        | `6500.389999999999`; corpo não vazio é `422` `campo: 'corpo'` e o contrato
+ * |       |        | `6500.389999999999`; corpo não vazio é `422` `campo: 'status'` e o contrato
  * |       |        | segue `RASCUNHO`. |
  * | CA-05 | CT-413 | As DUAS escritas da ativação — o estado do contrato e a situação do imóvel —
  * |       | (b)    | correm na **mesma unidade de trabalho**: uma falha depois de ambas deixa o
@@ -1840,10 +1840,14 @@ describe('cadastro de contratos de locação (T6)', () => {
         });
 
         expect(comCorpo.status, alvo.rotulo).toBe(422);
+        // SUT_IS_CORRECT_BECAUSE: a expectativa era `'corpo'`, o campo padrão do ponto de chamada.
+        // O código de produção é que divergia do contrato publicado: a §6.1 do `handoff-frontend.md`
+        // promete `campo` **nomeando a chave** desde 2026-08-24. Nenhuma asserção foi afrouxada — o
+        // corpo segue comparado INTEIRO por igualdade, e o campo ficou mais específico.
         expect(comCorpo.corpo, alvo.rotulo).toEqual({
           codigo: CodigoErro.CAMPO_INVALIDO,
           mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
-          campo: 'corpo',
+          campo: 'qualquerCampo',
         });
         expect(await lerContrato(cookie, alvo.codigo), alvo.rotulo).toEqual(retirado);
 
@@ -2112,7 +2116,7 @@ describe('ativação do contrato — a primeira transição de estado governada 
       expect(comCorpo.corpo).toEqual({
         codigo: CodigoErro.CAMPO_INVALIDO,
         mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
-        campo: 'corpo',
+        campo: 'status',
       });
       expect(await lerContrato(cookie, contrato.codigo)).toEqual(contrato);
 
@@ -3340,10 +3344,13 @@ describe('a situação de locação sai do corpo do PUT e ganha rota própria (T
       });
 
       expect(comOCampo.status, comOCampo.texto).toBe(422);
+      // ⚠️ O campo nomeado é `statusLocacao`, e é **exatamente** o que a fixture
+      // `alterar-imovel/status-de-locacao-e-chave-desconhecida` da §20 do `handoff-frontend.md`
+      // publica desde 2026-08-24. A correção do campo culpado tornou a fixture verdadeira.
       expect(comOCampo.corpo).toEqual({
         codigo: CodigoErro.CAMPO_INVALIDO,
         mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
-        campo: 'corpo',
+        campo: 'statusLocacao',
       });
 
       // E a recusa não gravou metade: o imóvel byte a byte como estava. Sem esta linha, o `422`
@@ -3428,7 +3435,7 @@ describe('a situação de locação sai do corpo do PUT e ganha rota própria (T
       expect(comChaveExtra.corpo).toEqual({
         codigo: CodigoErro.CAMPO_INVALIDO,
         mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
-        campo: 'corpo',
+        campo: 'retiradoEm',
       });
 
       // E nenhuma das duas recusas de entrada tocou o imóvel: a igualdade é sobre o corpo inteiro.

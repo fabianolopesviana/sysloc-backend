@@ -872,7 +872,7 @@ describe('CT-342 — a extração de `validar()` não mudou o contrato de erro d
         { rotulo: 'usuarios_corpo', resposta: usuariosCorpo, campo: 'nome' },
         { rotulo: 'usuarios_id', resposta: usuariosId, campo: 'id' },
         { rotulo: 'master_janela', resposta: masterJanela, campo: 'limite' },
-        { rotulo: 'usuarios_chave_extra', resposta: usuariosChaveExtra, campo: 'corpo' },
+        { rotulo: 'usuarios_chave_extra', resposta: usuariosChaveExtra, campo: 'empresaId' },
       ] as const;
 
       for (const { rotulo, resposta, campo } of recusas) {
@@ -964,7 +964,7 @@ describe('CT-323 — `empresaId` no corpo é recusado, e a empresa gravada sai d
       expect(vetor.corpo).toEqual({
         codigo: CodigoErro.CAMPO_INVALIDO,
         mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
-        campo: 'corpo',
+        campo: 'empresaId',
       });
       expect(vetor.texto).not.toContain(EMPRESA_B.id);
 

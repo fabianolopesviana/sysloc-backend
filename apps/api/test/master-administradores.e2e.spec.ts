@@ -1546,7 +1546,9 @@ describe('correção cadastral e remoção definitiva do Admin Empresa (T5)', ()
         expect(recusada.corpo).toEqual({
           codigo: CodigoErro.CAMPO_INVALIDO,
           mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
-          campo: 'corpo',
+          // A perna de esquema, oito linhas acima, já afirma `keys` igual a `[chave]`; esta faz a
+          // BORDA concordar com ela. Antes eram duas metades dizendo coisas diferentes.
+          campo: chave,
         });
 
         // Nada foi gravado — nem os campos VÁLIDOS que vieram junto. Um `z.object` no lugar do
@@ -1935,7 +1937,9 @@ describe('correção cadastral e remoção definitiva da Empresa (T6)', () => {
         expect(recusada.corpo).toEqual({
           codigo: CodigoErro.CAMPO_INVALIDO,
           mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
-          campo: 'corpo',
+          // A perna de esquema, oito linhas acima, já afirma `keys` igual a `[chave]`; esta faz a
+          // BORDA concordar com ela. Antes eram duas metades dizendo coisas diferentes.
+          campo: chave,
         });
 
         // Nada foi gravado — nem os campos VÁLIDOS que vieram junto. Um `z.object` no lugar do

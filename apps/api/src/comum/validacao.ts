@@ -43,9 +43,9 @@ import { MENSAGEM_POR_CODIGO } from './filtro-excecao.js';
  *                 esquema (caixa do UUID, minúscula do endereço) só existe porque este retorno a
  *                 carrega.
  * @param valor    O que chegou do cliente, sem confiança nenhuma.
- * @param campoPadrao Nome de campo usado quando a recusa **não tem caminho a nomear** — o caso do
- *                 escalar de rota (`id`) e o da chave desconhecida em objeto estrito, que o Zod
- *                 reporta com caminho vazio.
+ * @param campoPadrao Nome de campo usado quando a recusa **não tem nada a nomear** — hoje só o
+ *                 escalar de rota (`id`, `codigo`), porque a chave desconhecida passou a nomear a
+ *                 si mesma. Ver {@link campoDoProblema}.
  */
 export function validar<T>(esquema: ZodType<T>, valor: unknown, campoPadrao: string): T {
   const resultado = esquema.safeParse(valor);
@@ -54,76 +54,100 @@ export function validar<T>(esquema: ZodType<T>, valor: unknown, campoPadrao: str
     return resultado.data;
   }
 
-  const caminho = resultado.error.issues[0]?.path ?? [];
-
-  throw recusaDeCampo(caminho.length > 0 ? caminho.join('.') : campoPadrao, resultado.error);
+  throw recusaDeCampo(campoDoProblema(resultado.error, campoPadrao), resultado.error);
 }
 
 /**
- * O campo que nomeia a recusa da **cadeia de consulta** quando não há chave a nomear.
+ * O campo culpado, na ordem de precisão: a **chave desconhecida**, depois o **caminho**, depois o
+ * campo padrão do ponto de chamada.
  *
- * É o análogo exato do `'corpo'` que as bordas passam a {@link validar} para o corpo: quando o
- * problema não tem caminho e não é chave desconhecida, o culpado é a consulta **como um todo**.
+ * ---------------------------------------------------------------------------
+ * A chave desconhecida nomeia A SI MESMA — e isso é o CONTRATO, não uma melhoria
+ * ---------------------------------------------------------------------------
  *
- * ⚠️ **Ele NÃO é `'limite'`, e a diferença é a razão desta função existir.** Até 2026-09-05 as sete
- * bordas de listagem declaravam, cada uma, `const CAMPO_DA_CONSULTA = 'limite'`, com o docblock
- * dizendo *"nome de campo usado quando a recusa é da cadeia de consulta"* — o docblock descrevia o
- * papel e o valor nomeava **um parâmetro**. Enquanto `limite` era o único parâmetro de consulta do
- * produto, a divergência não tinha consequência; com nove, ela passou a produzir diagnóstico errado.
+ * O `handoff-frontend.md` promete exatamente isto, em cinco lugares e desde 2026-08-24: a **§6.1**
+ * (*"chave desconhecida é `422 CAMPO_INVALIDO`, com `campo` nomeando a chave"*), a **§6.2**
+ * (*"`limite=50&ordenar=nome` é `422`, com `campo: "ordenar"`"*), as fixtures
+ * `listar-contratos/parametro-desconhecido` e `alterar-imovel/status-de-locacao-e-chave-desconhecida`
+ * da §20 e o teste mínimo 15 da §21.
+ *
+ * ⚠️ **O produto respondia o `campoPadrao` — `'corpo'` ou `'limite'` —, e a divergência era
+ * CONHECIDA e estava declarada por escrito** no cabeçalho de
+ * `apps/api/test/circulacao-de-cadastro.e2e.spec.ts`: o cartão do `CT-347` previa
+ * `campo: 'retiradoEm'`, e o executor registrou que publicá-lo exigiria *"mudar `validar()` para ler
+ * `keys`, o que a §3 da T4 proíbe literalmente (**esta é uma extração, não uma melhoria**)"*. Aquela
+ * proibição era **escopo daquela task**, não decisão permanente — a task fechou, e o que sobrou foi
+ * um contrato publicado que o servidor não cumpria. É essa dívida que esta função paga.
+ *
+ * O gatilho de fato foi uma medição da equipe do frontend, em 2026-09-05: `campo: "limite"` para um
+ * parâmetro inventado é **indistinguível** da recusa de um `limite` de verdade inválido, de modo que
+ * nenhum cliente conseguia classificar as duas. O corpo tem a mesma forma do defeito, e entrou junto
+ * pela razão que eles próprios deram — *documento que promete o que o servidor não faz é a classe de
+ * defeito que já custou este ciclo*.
+ *
+ * ---------------------------------------------------------------------------
+ * O caminho é PREFIXO da chave, e não alternativa a ela
+ * ---------------------------------------------------------------------------
+ *
+ * O Zod reporta `unrecognized_keys` com o caminho do **objeto que hospeda** a chave, e o nome dela em
+ * `keys`. No topo o caminho é vazio e o campo é a chave nua (`empresaId`); aninhado, os dois se
+ * compõem (`ajustes.0.chaveInventada`). Publicar só o caminho mandaria o cliente corrigir o objeto
+ * inteiro; publicar só a chave esconderia **onde** ela está, num corpo que aninha.
+ *
+ * ---------------------------------------------------------------------------
+ * Sai o NOME, nunca o VALOR
+ * ---------------------------------------------------------------------------
+ *
+ * `keys` carrega o nome da chave recusada; o valor continua sem sair, como o cabeçalho deste módulo
+ * exige. Para a consulta isso é o que mantém intacta a decisão de `caminhoSemConsulta`
+ * (`comum/filtro-excecao.ts`), que trunca a cadeia antes do `?` no diário: o que ela guarda é o
+ * **valor** que viaja na consulta — credencial, endereço de retorno —, e um nome de chave não é ele.
+ *
+ * Nomeia-se a **primeira**, e não todas: mesma disciplina do `issues[0]` e do `detalhes.exigido` da
+ * guarda de autorização, que nomeia a primeira permissão ausente. O cliente corrige uma e volta.
+ */
+function campoDoProblema(erro: ZodError, campoPadrao: string): string {
+  const problema = erro.issues[0];
+  const caminho = problema?.path ?? [];
+
+  if (problema?.code === 'unrecognized_keys') {
+    const chave = problema.keys[0];
+
+    // O `undefined` cobre o arranjo vazio, que o tipo admite e o Zod não produz. Sem a guarda, um
+    // `keys` vazio sairia como `campo: ''` — pior que o campo padrão, porque parece um nome.
+    if (chave !== undefined) {
+      return [...caminho, chave].join('.');
+    }
+  }
+
+  return caminho.length > 0 ? caminho.join('.') : campoPadrao;
+}
+
+/**
+ * O campo que nomeia a recusa da **cadeia de consulta** quando não há nada mais preciso a nomear.
+ *
+ * É o análogo exato do `'corpo'` que as bordas passam a {@link validar}: o culpado é a consulta
+ * **como um todo**. Hoje ele é inalcançável na prática — todo problema de consulta ou tem caminho ou
+ * é chave desconhecida —, e existe porque o padrão é obrigatório e um valor honesto é melhor que um
+ * inalcançável mentiroso.
+ *
+ * ⚠️ **Ele NÃO é `'limite'`.** Até 2026-09-05 as sete bordas de listagem declaravam, cada uma,
+ * `const CAMPO_DA_CONSULTA = 'limite'`, com o docblock dizendo *"nome de campo usado quando a recusa
+ * é da cadeia de consulta"* — o docblock descrevia o papel e o valor nomeava **um parâmetro**.
+ * Enquanto `limite` era o único parâmetro de consulta do produto a divergência não tinha
+ * consequência; com nove, ela passou a produzir diagnóstico errado no cliente.
  */
 const CAMPO_DA_CONSULTA = 'consulta';
 
 /**
- * Valida a **cadeia de consulta** e traduz a recusa nomeando a **chave culpada**.
+ * Valida a **cadeia de consulta**.
  *
- * ---------------------------------------------------------------------------
- * Por que ela existe, em vez de um `campoPadrao` a mais em {@link validar}
- * ---------------------------------------------------------------------------
- *
- * A cadeia de consulta é **plana**: não há aninhamento, e toda chave dela é um campo do contrato.
- * Por isso a chave desconhecida **tem** o que nomear — e é isso que a §6.2 do handoff publicado
- * promete, com todas as letras: *"`limite=50&ordenar=nome` é `422`, com `campo: "ordenar"`"*. O
- * corpo é outra coisa: ele aninha, e a decisão vigente ali é nomear `'corpo'`.
- *
- * Ela é função própria, e não um parâmetro booleano de `validar`, porque quem chama declara **o que
- * está validando** — e não uma opção de formatação. O ponto único do envelope continua sendo um só
- * ({@link recusaDeCampo}), que é o que o débito **D38** fechou e o `CT-343` protege.
- *
- * ---------------------------------------------------------------------------
- * A chave é o NOME, nunca o valor — e é o que a mantém fora do alcance do vazamento
- * ---------------------------------------------------------------------------
- *
- * O que sai é `keys[0]`, o **nome** da chave recusada. O valor recusado continua sem sair, como o
- * cabeçalho deste módulo exige, e `caminhoSemConsulta` (`comum/filtro-excecao.ts`) segue truncando a
- * cadeia antes do `?` para o diário — a decisão registrada lá guarda o **valor** que viaja na
- * consulta (credencial, endereço de retorno), e um nome de chave não é esse valor.
- *
- * Nomeia-se a **primeira**, e não todas: é a mesma disciplina do `issues[0]` de {@link validar} e do
- * `detalhes.exigido` da guarda de autorização, que nomeia a primeira chave ausente. O cliente
- * corrige uma e volta.
+ * Ela delega a {@link validar} e existe por **um** motivo: carregar o campo padrão certo, para que
+ * as oito bordas de listagem não voltem a declarar um literal cada. A regra do campo culpado é uma
+ * só, e vive em {@link campoDoProblema} — corpo e consulta a compartilham.
  */
 export function validarConsulta<T>(esquema: ZodType<T>, valor: unknown): T {
-  const resultado = esquema.safeParse(valor);
-
-  if (resultado.success) {
-    return resultado.data;
-  }
-
-  const problema = resultado.error.issues[0];
-  const caminho = problema?.path ?? [];
-
-  if (caminho.length > 0) {
-    throw recusaDeCampo(caminho.join('.'), resultado.error);
-  }
-
-  // O Zod reporta a chave desconhecida com caminho VAZIO e o nome dela em `keys` — é o único
-  // problema de consulta sem caminho que o produto pode produzir hoje, e é justamente o que a
-  // §6.2 do handoff manda nomear. O `??` cobre o arranjo vazio, que o tipo admite e o Zod não
-  // produz: sem ele, a recusa sairia com `campo: undefined` e o envelope perderia a chave.
-  const chaveDesconhecida =
-    problema?.code === 'unrecognized_keys' ? (problema.keys[0] ?? CAMPO_DA_CONSULTA) : undefined;
-
-  throw recusaDeCampo(chaveDesconhecida ?? CAMPO_DA_CONSULTA, resultado.error);
+  return validar(esquema, valor, CAMPO_DA_CONSULTA);
 }
 
 /**

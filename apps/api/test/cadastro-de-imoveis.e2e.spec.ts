@@ -107,7 +107,7 @@
  * naquele contexto.
  *
  * **A linha `id_malformado` é a que discrimina o argumento `campoPadrao`.** O `:id` é um escalar sem
- * caminho a nomear, e ele recusa com `campo: 'id'`; a linha `chave_extra` recusa com `campo: 'corpo'`
+ * caminho a nomear, e ele recusa com `campo: 'id'`; a linha `chave_extra` recusa nomeando a chave
  * pelo mesmo mecanismo e com outro valor. Uma borda que fixasse um literal no lugar do parâmetro
  * reprovaria numa das duas.
  *
@@ -1331,7 +1331,7 @@ const RECUSAS: readonly Recusa[] = [
     alvo: () => CAMINHO_DA_COLECAO,
     corpo: { nome: 'Edifício Recusado', empresaId: UUID_INEXISTENTE },
     status: 422,
-    esperado: campoInvalido('corpo'),
+    esperado: campoInvalido('empresaId'),
   },
   {
     rotulo: 'id_malformado',

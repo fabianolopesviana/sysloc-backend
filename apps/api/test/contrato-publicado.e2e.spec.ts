@@ -229,9 +229,6 @@ const CAMINHO_DA_SESSAO_CORRENTE = `/${PREFIXO_DE_VERSAO}/${CAMINHO_DA_SESSAO}`;
 /** As mensagens canônicas — literais, e não importadas do SUT. */
 const MENSAGEM_DE_CAMPO_INVALIDO = 'requisição inválida';
 
-/** O nome de campo que a borda publica quando a recusa é do corpo e o Zod não tem caminho. */
-const CAMPO_DO_CORPO = 'corpo';
-
 /** O nome de campo que a borda publica quando a recusa é do identificador de rota. */
 const CAMPO_DO_IDENTIFICADOR = 'id';
 
@@ -726,7 +723,7 @@ describe('o contrato publicado das 48 rotas do domínio (T11)', () => {
         expect(recusada.corpo, `a recusa de ${rota.rotulo} mudou de forma`).toEqual({
           codigo: CodigoErro.CAMPO_INVALIDO,
           mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
-          campo: CAMPO_DO_CORPO,
+          campo: CHAVE_EXTRA,
         });
 
         // A contagem só se moveu na tentativa ACEITA — o `422` não gravou linha nenhuma.

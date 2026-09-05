@@ -222,6 +222,19 @@ const STATUS_DE_CAMPO_INVALIDO = 422;
 /** Campo padrão de quem valida um CORPO — o que as bordas passam nas rotas de escrita. */
 const CAMPO_PADRAO_DO_CORPO = 'corpo';
 
+/**
+ * O campo que a recusa por chave desconhecida nomeia — **a própria chave**, nunca o campo padrão.
+ *
+ * SUT_IS_CORRECT_BECAUSE: a linha da tabela esperava `CAMPO_PADRAO_DO_CORPO`. O código de produção é
+ * que estava errado contra o contrato publicado: a §6.1 do `handoff-frontend.md` promete `campo`
+ * nomeando a chave desde 2026-08-24, e a divergência estava declarada por escrito no cabeçalho de
+ * `circulacao-de-cadastro.e2e.spec.ts` — o cartão do CT-347 previa `retiradoEm` e o executor
+ * registrou que publicá-lo exigiria "mudar `validar()` para ler `keys`, o que a §3 da T4 proíbe".
+ * Aquela proibição era escopo de task, e a task fechou. Nenhuma asserção foi afrouxada: a tabela
+ * segue comparando o corpo inteiro, e o campo esperado ficou mais específico.
+ */
+const CAMPO_DA_CHAVE_DESCONHECIDA = 'empresaId';
+
 /** Campo padrão de quem valida o IDENTIFICADOR de rota — um escalar, sem caminho a nomear. */
 const CAMPO_PADRAO_DO_IDENTIFICADOR = 'id';
 
@@ -292,7 +305,7 @@ const RECUSADAS: readonly LinhaRecusada[] = [
   },
   {
     rotulo: 'chave_desconhecida',
-    campo: CAMPO_PADRAO_DO_CORPO,
+    campo: CAMPO_DA_CHAVE_DESCONHECIDA,
     chamar: () =>
       validar(ESQUEMA_DE_UM_NIVEL, { nome: 'Fulana', empresaId: 'alheia' }, CAMPO_PADRAO_DO_CORPO),
   },

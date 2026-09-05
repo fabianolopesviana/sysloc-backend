@@ -455,7 +455,7 @@ describe('a política de multa e juros por empresa (T6)', () => {
         },
         {
           rotulo: 'chave desconhecida no corpo',
-          campo: 'corpo',
+          campo: 'moraPercentual',
           corpo: { multaPercentual: 2, jurosPercentual: 1, moraPercentual: 3 },
         },
         { rotulo: 'corpo vazio', campo: 'multaPercentual', corpo: {} },

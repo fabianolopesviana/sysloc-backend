@@ -249,8 +249,15 @@ const MENSAGEM_DE_REQUISICAO_INVALIDA = 'requisição inválida';
 /** O campo que a recusa do segredo malformado nomeia. */
 const CAMPO_DO_SEGREDO = 'segredo';
 
-/** O campo que a recusa por chave desconhecida nomeia — o Zod reporta caminho vazio nela. */
-const CAMPO_DO_CORPO = 'corpo';
+/**
+ * O campo que a recusa por chave desconhecida nomeia — **a própria chave**.
+ *
+ * SUT_IS_CORRECT_BECAUSE: ele valia `'corpo'`, e o comentário dizia *"o Zod reporta caminho vazio
+ * nela"* — verdade sobre o Zod, e conclusão errada sobre o contrato. A §6.1 do `handoff-frontend.md`
+ * promete o nome da chave desde 2026-08-24; o servidor é que não cumpria. Aqui a chave é
+ * `empresaId`, e nomeá-la é o que torna a recusa acionável para quem monta o formulário.
+ */
+const CAMPO_DA_EMPRESA_INJETADA = 'empresaId';
 
 /** Comprimento do segredo em claro: 32 bytes em base64url, sem enchimento. */
 const CARACTERES_DO_SEGREDO = 43;
@@ -1149,7 +1156,7 @@ describe('o ato do titular — a rota sem sessão (T11)', () => {
         corpo: {
           codigo: CodigoErro.CAMPO_INVALIDO,
           mensagem: MENSAGEM_DE_REQUISICAO_INVALIDA,
-          campo: CAMPO_DO_CORPO,
+          campo: CAMPO_DA_EMPRESA_INJETADA,
         },
       });
 

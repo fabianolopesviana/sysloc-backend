@@ -139,7 +139,7 @@
  * "gravou uma segunda linha e devolveu a primeira".
  *
  * ---------------------------------------------------------------------------
- * DIVERGÊNCIA DECLARADA — o corpo não vazio recusa nomeando `corpo`, e não `retiradoEm`
+ * DIVERGÊNCIA FECHADA em 2026-09-05 — o corpo não vazio passou a recusar nomeando `retiradoEm`
  * ---------------------------------------------------------------------------
  *
  * O cartão do `CT-347` prevê `campo: 'retiradoEm'` na variante de corpo não vazio. O corpo das rotas
@@ -153,10 +153,22 @@
  *     documento derivado (ADR-0016) como campo do corpo — anunciando ao cliente exatamente o campo
  *     que ele não pode enviar.
  *
- * O campo publicado é, portanto, o `campoPadrao` daquele ponto de chamada: `'corpo'`. É a mesma
- * medição, e a mesma conclusão, que a T4 registrou em `test/validacao.spec.ts` e em
- * `test/campos-fechados.e2e.spec.ts`. **O que o cartão pede de fato — que o corpo não vazio seja
- * recusado e a marca fique intacta — é asserido inteiro.**
+ * ⚠️ **A primeira das duas deixou de estar vedada, e o cartão foi cumprido.** A proibição citada
+ * acima é a §3 da **T4** — escopo daquela task, não decisão permanente —, e a T4 fechou. O que
+ * sobrou dela foi um contrato publicado que o servidor não cumpria: a §6.1 do `handoff-frontend.md`
+ * promete, desde 2026-08-24, que a chave desconhecida é recusada *"com `campo` nomeando a chave"*.
+ * Em 2026-09-05, depois de a equipe de frontend medir o gêmeo deste defeito na cadeia de consulta
+ * (`campo: "limite"`, indistinguível da recusa de um `limite` de fato inválido), `validar()` passou
+ * a ler `keys` — e este caso passou a publicar `'retiradoEm'`, exatamente o que o cartão previa.
+ *
+ * A **segunda** saída continua vedada, e não foi usada: `retiradoEm` **não** entrou no esquema de
+ * entrada. Declará-lo só para recusá-lo o publicaria no documento derivado (ADR-0016), anunciando ao
+ * cliente o campo que ele não pode enviar. É a chave recusada que se nomeia, nunca um campo
+ * declarado para ser negado.
+ *
+ * O `CT-343` continua protegendo o ponto único de `validar()` — ele afirma **uma** definição e o
+ * conjunto de importadores, e nenhum dos dois se moveu. **O que o cartão pede de fato — que o corpo
+ * não vazio seja recusado e a marca fique intacta — segue asserido inteiro.**
  *
  * ===========================================================================
  * MUTANTES EXECUTADOS — os três reprovam, cada um numa asserção diferente
@@ -606,7 +618,8 @@ describe('circulação de cadastro pelas rotas de conjunto (T5)', () => {
 
       // --- Corpo NÃO VAZIO: recusado, e a marca fica intacta -------------------------------------
       //
-      // Ver a divergência declarada no cabeçalho para por que o campo nomeado é `corpo`.
+      // O campo nomeado é `retiradoEm` — o que o cartão do CT-347 pedia desde o início. Ver o
+      // cabeçalho: a divergência que impedia isso FECHOU em 2026-09-05.
       const comCorpo = await pedir(`${CAMINHO_DA_COLECAO}/${conjunto.id}/retirada`, {
         metodo: 'POST',
         cookie,
@@ -616,7 +629,7 @@ describe('circulação de cadastro pelas rotas de conjunto (T5)', () => {
       expect(comCorpo.corpo).toEqual({
         codigo: CodigoErro.CAMPO_INVALIDO,
         mensagem: MENSAGEM_DE_CAMPO_INVALIDO,
-        campo: 'corpo',
+        campo: 'retiradoEm',
       });
       // A marca é a mesma de antes da tentativa — a recusa não datou a exclusão pelo cliente.
       const aposRecusa = await pedir(`${CAMINHO_DA_COLECAO}/${conjunto.id}`, { cookie });
