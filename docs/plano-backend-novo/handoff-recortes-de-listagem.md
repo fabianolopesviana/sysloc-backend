@@ -265,11 +265,19 @@ O que mudou, exatamente:
 - **Nada mais mudou.** `limite=0`, `limite=201` e `deslocamento=-1` continuam nomeando `limite` e
   `deslocamento` — a recusa real do `limite` é exatamente a que vocês precisavam distinguir, e ela
   não se mexeu.
-- **O corpo (`POST`/`PUT`) NÃO mudou nesta correção**: chave desconhecida no corpo continua trazendo
-  `campo: "corpo"`. ⚠️ Isso **também** diverge da §6.1, que promete o nome da chave ali. Está medido
-  e registrado do nosso lado; não o corrigimos junto porque vocês não o pediram e a mudança alcança
-  19 asserções de outras telas. **Se a mesma classificação valer para os formulários de vocês,
-  digam** — é o mesmo conserto, no mesmo ponto único.
+- **O corpo (`POST`/`PUT`) entrou junto**, na segunda passada do mesmo dia, depois de vocês
+  responderem. Chave desconhecida em `POST`/`PUT` também nomeia a chave: o `PUT` de imóvel com
+  `statusLocacao` responde `campo: "statusLocacao"`, e a rota de retirada com corpo não vazio
+  responde `campo: "retiradoEm"` — que é **exatamente** o que as fixtures da §20 do
+  `handoff-frontend.md` publicam. A §6.1 deixou de ser promessa não cumprida.
+  ⚠️ **Aninhado, o caminho e a chave se compõem**: uma chave inventada dentro de `comodos[0]` sai
+  como `campo: "comodos.0.chaveInventada"`, e não como `comodos.0`. A allowlist de vocês continua
+  batendo pelo nome simples nos casos de topo, que são todos os que um formulário produz.
+  ⚠️ **Três recusas NÃO mudaram, e não são desta classe**: as do material do certificado
+  (`SENHA_DO_MATERIAL_NAO_ABRE`, `MATERIAL_EM_FORMATO_NAO_SUPORTADO`,
+  `CERTIFICADO_COM_VALIDADE_ENCERRADA`) seguem em `campo: "corpo"` — elas são montadas pelo serviço,
+  não pela validação de esquema, e nomear `material` ou `senha` diria por outra via o que o `codigo`
+  já diz.
 - **Um valor por requisição continua sendo a regra.** O `campo` traz uma chave, não uma lista.
 
 ---

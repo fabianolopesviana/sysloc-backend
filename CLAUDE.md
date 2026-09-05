@@ -160,10 +160,25 @@ fatia reaberta.
   valor esperado e NÃO são casos novos** — o `CT-1245` (`master-administradores.e2e.spec.ts`, agora
   `campo: 'pagina'`) e o `CT-1270` (`recortes-de-listagem.e2e.spec.ts`, agora
   `campo: 'statusDoContrato'`) —, os dois com `SUT_IS_CORRECT_BECAUSE` no ponto e com o corpo ainda
-  comparado INTEIRO por igualdade. **Não os reponha.** ⚠️ **O CORPO não foi tocado**: chave
-  desconhecida em `POST`/`PUT` continua nomeando `'corpo'`, e isso **diverge da §6.1** do mesmo
-  handoff — divergência **medida, declarada e em aberto** (19 asserções em 10 suítes), fora do
-  escopo do que a equipe pediu. ⚠️ **O carnê (`CAMPO_DO_RECORTE = 'recorte'`) também ficou fora, por
+  comparado INTEIRO por igualdade. **Não os reponha.** ⚠️ **O CORPO entrou na SEGUNDA passada do mesmo dia**, depois de a
+  equipe responder que a §6.1 vale para os formulários dela — e o argumento que pesou foi o **deles**,
+  não o de haver consumidor: *documento que promete o que o servidor não faz é a classe de defeito
+  que já custou este ciclo*. A regra ficou **uma só**, em `campoDoProblema`: a chave desconhecida
+  nomeia a si mesma (composta com o caminho, quando aninhada), depois o caminho, depois o campo
+  padrão — e `validarConsulta` passou a **delegar** a `validar`, de modo que a duplicação que a
+  primeira passada introduzira durou uma hora. ⚠️ **A divergência do corpo estava DECLARADA POR
+  ESCRITO desde a T4 da fatia `cadastro-de-imoveis-e-pessoas`**, no cabeçalho de
+  `apps/api/test/circulacao-de-cadastro.e2e.spec.ts`: o cartão do `CT-347` previa
+  `campo: 'retiradoEm'` e o executor registrou que publicá-lo exigiria *"mudar `validar()` para ler
+  `keys`, o que a §3 da T4 proíbe (**esta é uma extração, não uma melhoria**)"*. Aquela proibição era
+  **escopo de task**, não decisão permanente; a task fechou e a dívida sobreviveu a ela. O cabeçalho
+  hoje diz `DIVERGÊNCIA FECHADA`, e a segunda saída que ele veta — declarar o campo no esquema só
+  para recusá-lo — **continua vetada e não foi usada**. ⚠️ **25 casos mudaram de valor esperado e
+  NENHUM é caso novo** (`api` 463 antes e depois), em 12 suítes, cada um com
+  `SUT_IS_CORRECT_BECAUSE` no ponto e o corpo ainda comparado INTEIRO por igualdade — vários deles
+  ficaram **mais fortes**, porque a perna de esquema (`keys`) e a de borda (`campo`) passaram a
+  afirmar a mesma coisa. **Não os reponha.** ⚠️ **As TRÊS recusas do material do certificado seguem
+  em `'corpo'`**: são montadas por `certificado.service.ts`, não por `validar()`. ⚠️ **O carnê (`CAMPO_DO_RECORTE = 'recorte'`) também ficou fora, por
   decisão registrada** no docblock dele — a razão e o custo da troca estão escritos lá.
   ⚠️ **Os seis pacotes restantes foram remedidos um a um na mesma data e NENHUM se moveu**,
   inclusive os quatro que consomem o barril do `db` e o `shared`, cuja barreira do protocolo lê esta

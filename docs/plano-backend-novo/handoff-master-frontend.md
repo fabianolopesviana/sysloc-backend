@@ -526,9 +526,18 @@ viu tudo.
 aquela data o parâmetro desconhecido trazia `campo: "limite"`, o padrão do ponto de chamada, e este
 documento o descrevia corretamente. Era defeito: `campo: "limite"` é **indistinguível** da recusa de
 um `limite` de fato inválido, de modo que nenhum cliente conseguia classificar as duas — foi a
-equipe do app da imobiliária que o mediu. O conserto está em `comum/validacao.ts`
-(`validarConsulta`), alcança as **duas** listagens do Master pelo mesmo ponto, e nenhuma outra
-recusa mudou. **Não reponha a redação antiga.**
+equipe do app da imobiliária que o mediu. O conserto está em `comum/validacao.ts`, alcança as
+**duas** listagens do Master pelo mesmo ponto, e nenhuma outra recusa mudou. **Não reponha a
+redação antiga.**
+
+⚠️ **E vale para o CORPO também, pela mesma correção e no mesmo dia.** A chave desconhecida em
+`POST`/`PUT` trazia `campo: "corpo"` e passou a trazer **a chave enviada** — o que este documento
+descreve em §4.6, §4.8 e §4.10. A regra é uma só, em `campoDoProblema`: o campo culpado é a chave
+desconhecida quando há uma, depois o caminho, depois o padrão do ponto de chamada. Aninhado, os dois
+se compõem (`ajustes.0.chaveInventada`). ⚠️ **As três recusas do material do certificado**
+(`SENHA_DO_MATERIAL_NAO_ABRE`, `MATERIAL_EM_FORMATO_NAO_SUPORTADO`,
+`CERTIFICADO_COM_VALIDADE_ENCERRADA`) **continuam em `campo: "corpo"`**: elas são montadas pelo
+serviço, não pela validação de esquema, e a correção não as alcança.
 
 **A ordem é fixa e crescente: `criada_em`, e `id` como desempate** — a empresa **mais antiga vem
 primeiro**. O servidor não aceita declarar outra. Se a tela quiser "mais recentes primeiro", ela
@@ -667,7 +676,8 @@ omitir `documento` para "não mexer nele" responde `422`. Preencha o formulário
 vindos da listagem e mande os dois de volta.
 
 ⚠️ **Corpo fechado, e o que ele recusa é conteúdo**: `estado`, `suspensaEm` e `empresaId` **não
-existem** no esquema, e enviá-los responde `422 CAMPO_INVALIDO` com `campo: "corpo"`. Não há como
+existem** no esquema, e enviá-los responde `422 CAMPO_INVALIDO` com `campo` trazendo **a chave
+enviada** (ver a correção de 2026-09-05 na §2). Não há como
 suspender ou reativar por aqui — transição de estado tem rota própria (§4.4 e §4.5). Corrigir uma
 empresa suspensa a **mantém suspensa**, com exatamente o mesmo `suspensaEm`.
 
@@ -694,7 +704,7 @@ duas formas diferentes do mesmo fato.
 | `{id}` não é UUID bem formado | `422 CAMPO_INVALIDO`, `campo: "id"` — recusado **antes** de tocar o banco |
 | empresa não existe | `404 RECURSO_NAO_ENCONTRADO` |
 | campo do corpo inválido (nome vazio, documento longo demais) | `422 CAMPO_INVALIDO`, `campo` com o nome do campo (`"nome"` / `"documento"`) |
-| chave desconhecida no corpo | `422 CAMPO_INVALIDO`, `campo: "corpo"` |
+| chave desconhecida no corpo | `422 CAMPO_INVALIDO`, `campo` com **a chave enviada** |
 | documento já registrado por **outra** empresa | `422 CAMPO_INVALIDO`, `campo: "documento"`, `detalhes.motivo: "DOCUMENTO_JA_REGISTRADO"` |
 
 ⚠️ **A recusa por documento repetido não deixa efeito nenhum** — nem o `nome` válido que viajou no
@@ -881,7 +891,7 @@ mesmo instante — não confunda com a §4.4, que derruba a empresa inteira.
 `sessoesEncerradas: 0`. Um duplo clique é inofensivo.
 
 ⚠️ **O corpo é vazio e FECHADO.** Se o app mandar `{"estado":"ATIVO"}` por engano, a resposta é
-`422 CAMPO_INVALIDO` com `campo: "corpo"` — nunca um `200` que descarta o que foi enviado em
+`422 CAMPO_INVALIDO` com `campo` trazendo **a chave enviada** — nunca um `200` que descarta o que foi enviado em
 silêncio.
 
 **As recusas:**
@@ -891,7 +901,7 @@ silêncio.
 | `{id}` não é UUID bem formado | `422 CAMPO_INVALIDO`, `campo: "id"` |
 | usuário não existe | `404 RECURSO_NAO_ENCONTRADO` |
 | alvo não é `ADMIN_EMPRESA` | `422 CAMPO_INVALIDO`, `campo: "id"`, `detalhes: { "perfilExigido": "ADMIN_EMPRESA", "perfilDoAlvo": "SYSLOC_MASTER" }` — e **nenhuma sessão é encerrada** |
-| corpo com qualquer campo | `422 CAMPO_INVALIDO`, `campo: "corpo"` |
+| corpo com qualquer campo | `422 CAMPO_INVALIDO`, `campo` com **a chave enviada** |
 
 <!-- fonte: apps/api/src/master/administrador.controller.ts:189-224 · apps/api/src/master/administrador.service.ts:232-256,570-579 -->
 
@@ -933,7 +943,7 @@ PUT /v1/master/usuarios/{id}
 ⚠️ **É `PUT` com corpo COMPLETO**, como a §4.7: os dois campos são obrigatórios.
 
 ⚠️ **Corpo fechado**: `estado`, `ativo`, `perfil` e `empresaId` **não existem** no esquema, e
-enviá-los responde `422 CAMPO_INVALIDO` com `campo: "corpo"`. Não se muda estado por aqui (§4.10 e
+enviá-los responde `422 CAMPO_INVALIDO` com `campo` trazendo **a chave enviada**. Não se muda estado por aqui (§4.10 e
 §4.11), não se muda perfil, e não se muda a pessoa de empresa. Editar quem está suspenso o **mantém
 suspenso**.
 
@@ -963,7 +973,7 @@ e-mail de entrada mudou, a senha não.
 | usuário não existe | `404 RECURSO_NAO_ENCONTRADO` |
 | alvo não é `ADMIN_EMPRESA` | `422 CAMPO_INVALIDO`, `campo: "id"`, com `detalhes.perfilExigido` / `detalhes.perfilDoAlvo` — **antes de qualquer escrita** |
 | campo do corpo inválido | `422 CAMPO_INVALIDO`, `campo: "nome"` ou `campo: "email"` |
-| chave desconhecida no corpo | `422 CAMPO_INVALIDO`, `campo: "corpo"` |
+| chave desconhecida no corpo | `422 CAMPO_INVALIDO`, `campo` com **a chave enviada** |
 | e-mail já registrado por outra pessoa | `422 CAMPO_INVALIDO`, `campo: "email"`, `detalhes.motivo: "EMAIL_JA_REGISTRADO"` |
 
 ⚠️ **A recusa por e-mail em uso não grava nada** — nem o `nome` válido do mesmo corpo. E o endereço
