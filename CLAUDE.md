@@ -147,6 +147,24 @@ fatia reaberta.
   Os três carregam a linha `SUT_IS_CORRECT_BECAUSE` no ponto, **nenhuma asserção foi afrouxada** e
   nenhuma chave saiu — a do `CT-415` ficou **mais forte**, porque passou a afirmar a assimetria
   entre a listagem e a leitura por código. **Não os reponha.**
+  ⚠️ **A correção do CAMPO DA CHAVE DESCONHECIDA, no mesmo dia, NÃO moveu contagem alguma** — o
+  `api` saiu 463 antes e depois. Ela nasceu de uma medição da equipe de frontend e o defeito era de
+  **conformidade com o contrato publicado**: a chave desconhecida na cadeia de consulta era recusada
+  nomeando o `campoPadrao` do ponto de chamada (`'limite'`), enquanto a **§6.2 do
+  `handoff-frontend.md`** promete desde 2026-08-24 que ela nomeia **a própria chave**, e a fixture
+  `listar-contratos/parametro-desconhecido` da §20.2 publica o mesmo. `campo: "limite"` é
+  indistinguível da recusa de um `limite` de fato inválido, de modo que **nenhum** cliente conseguia
+  classificar as duas. O conserto é `validarConsulta`, em `apps/api/src/comum/validacao.ts`, e as
+  **oito** bordas de listagem passaram a chamá-la; as sete constantes `CAMPO_DA_CONSULTA = 'limite'`
+  e o literal inline de `master/empresa.controller.ts` sumiram. ⚠️ **Dois casos EXISTENTES mudaram de
+  valor esperado e NÃO são casos novos** — o `CT-1245` (`master-administradores.e2e.spec.ts`, agora
+  `campo: 'pagina'`) e o `CT-1270` (`recortes-de-listagem.e2e.spec.ts`, agora
+  `campo: 'statusDoContrato'`) —, os dois com `SUT_IS_CORRECT_BECAUSE` no ponto e com o corpo ainda
+  comparado INTEIRO por igualdade. **Não os reponha.** ⚠️ **O CORPO não foi tocado**: chave
+  desconhecida em `POST`/`PUT` continua nomeando `'corpo'`, e isso **diverge da §6.1** do mesmo
+  handoff — divergência **medida, declarada e em aberto** (19 asserções em 10 suítes), fora do
+  escopo do que a equipe pediu. ⚠️ **O carnê (`CAMPO_DO_RECORTE = 'recorte'`) também ficou fora, por
+  decisão registrada** no docblock dele — a razão e o custo da troca estão escritos lá.
   ⚠️ **Os seis pacotes restantes foram remedidos um a um na mesma data e NENHUM se moveu**,
   inclusive os quatro que consomem o barril do `db` e o `shared`, cuja barreira do protocolo lê esta
   linha. ⚠️ **A medição do `cobranca-bancaria` na linha de base ANTES foi contaminada** por uma

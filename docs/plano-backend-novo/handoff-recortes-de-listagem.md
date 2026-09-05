@@ -243,13 +243,34 @@ Todas as recusas novas são `422` com o envelope da ADR-0017, **sem código de e
 | `?vencimentoDe=2026-12-31&vencimentoAte=2026-01-01` | `"vencimentoDe"` |
 | `?vencimentoDe=2026-02-30` | `"vencimentoDe"` |
 | `limite=0` ou `limite=201` | `"limite"` |
-| **parâmetro desconhecido** (`?statusDoContrato=ATIVO`) | `"limite"` ⚠️ |
+| **parâmetro desconhecido** (`?statusDoContrato=ATIVO`) | `"statusDoContrato"` — a própria chave |
 
-⚠️ **A última linha é a pegadinha, e ela já era assim antes desta mudança.** Parâmetro que não existe
-é recusado com `422`, mas o `campo` traz `"limite"` — o campo padrão do ponto de chamada —, e **o
-nome da chave inventada não viaja no corpo**. Não leiam `campo: "limite"` como *"o limite está
-errado"*: pode ser um parâmetro que vocês digitaram errado. Se isso atrapalhar o diagnóstico de
-vocês, é conserto pequeno; digam.
+✅ **A última linha foi CORRIGIDA em 2026-09-05**, depois de vocês apontarem. Ela dizia `"limite"`, e
+o defeito era nosso: `campo: "limite"` para um parâmetro inventado é **indistinguível** da recusa de
+um `limite` de fato inválido, de modo que classificar pelo par `campo` + `detalhes` — que é o que
+vocês fazem — produzia o diagnóstico errado, sem nenhuma forma de perceber.
+
+Não foi favor nem mudança de contrato: era o **contrato publicado** que estava sendo descumprido. A
+§6.2 do `handoff-frontend.md` promete, desde 2026-08-24, que *"`limite=50&ordenar=nome` é `422`, com
+`campo: "ordenar"`"*, a §6.1 diz o mesmo do corpo, e a fixture `listar-contratos/parametro-desconhecido`
+da §20.2 publica `campo: "ordenar"`. O servidor respondia o **padrão do ponto de chamada**. Vocês
+codificaram contra o documento; o documento estava certo.
+
+O que mudou, exatamente:
+
+- **A chave recusada é nomeada** em `campo`, na cadeia de consulta de **todas** as listagens — as
+  três desta entrega, as seis de cadastro, a de cobranças, a de automação e as duas do Painel Master.
+  Nomeia-se a **primeira** chave desconhecida, como o `detalhes.exigido` da guarda já nomeia a
+  primeira permissão ausente: corrijam uma e voltem.
+- **Nada mais mudou.** `limite=0`, `limite=201` e `deslocamento=-1` continuam nomeando `limite` e
+  `deslocamento` — a recusa real do `limite` é exatamente a que vocês precisavam distinguir, e ela
+  não se mexeu.
+- **O corpo (`POST`/`PUT`) NÃO mudou nesta correção**: chave desconhecida no corpo continua trazendo
+  `campo: "corpo"`. ⚠️ Isso **também** diverge da §6.1, que promete o nome da chave ali. Está medido
+  e registrado do nosso lado; não o corrigimos junto porque vocês não o pediram e a mudança alcança
+  19 asserções de outras telas. **Se a mesma classificação valer para os formulários de vocês,
+  digam** — é o mesmo conserto, no mesmo ponto único.
+- **Um valor por requisição continua sendo a regra.** O `campo` traz uma chave, não uma lista.
 
 ---
 
