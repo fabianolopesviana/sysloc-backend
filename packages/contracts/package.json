@@ -1,6 +1,6 @@
 {
   "name": "@syslocbr/contracts",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Fonte única do contrato da API do backend Sysloc — os esquemas que validam a entrada, tipam a resposta e de onde o documento publicado deriva (ADR-0016)",
   "repository": {
     "type": "git",
