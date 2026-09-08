@@ -75,6 +75,7 @@
 import {
   type AcessoAoBanco,
   contextoDeTenant,
+  lerIdentidadeDaEmpresaDoContexto,
   localizarPessoa,
   PAPEIS_DE_PESSOA,
 } from '@sysloc/db';
@@ -149,6 +150,16 @@ const EXIGENCIA_DA_CARGA =
 const MOTIVO_DE_LOCATARIO_AUSENTE =
   'o locatário da tarefa de confirmação não foi alcançado sob o contexto da carga';
 
+/**
+ * O que a falha diz quando a empresa da carga não existe mais.
+ *
+ * Mesma disciplina da irmã acima: constante nomeada porque é conferida por asserção, e **sem
+ * identificador na cadeia** — quem liga a falha ao trabalho é o registro da tarefa, com `idTarefa`
+ * e `empresaId` nos campos estruturados, e não o texto da mensagem.
+ */
+const MOTIVO_DE_EMPRESA_AUSENTE =
+  'a empresa da tarefa de confirmação não foi alcançada sob o contexto da carga';
+
 /** As portas que a composição raiz do processo entrega à borda. */
 export interface DependenciasDaConfirmacao {
   /**
@@ -195,13 +206,26 @@ export async function processarConfirmacaoDeEmail(
   const carga = cargaConferida(tarefa.data);
   const { banco, email, urlBaseDaConfirmacao } = dependencias;
 
-  const locatario = await contextoDeTenant.executarCom(
+  // As DUAS leituras correm sob o mesmo contexto e na MESMA unidade de trabalho: o locatário a quem
+  // a mensagem vai, e a identidade da empresa em nome de quem ela sai. Lê-las em unidades separadas
+  // deixaria o nome vir de uma transação e o cadastro de outra.
+  const alvo = await contextoDeTenant.executarCom(
     { empresaId: carga.empresaId },
     async () =>
-      await banco.emUnidadeDeTrabalho(
-        async (tx) => await localizarPessoa(tx, PAPEL_DO_TITULAR, carga.locatarioId),
-      ),
+      await banco.emUnidadeDeTrabalho(async (tx) => ({
+        locatario: await localizarPessoa(tx, PAPEL_DO_TITULAR, carga.locatarioId),
+        empresa: await lerIdentidadeDaEmpresaDoContexto(tx),
+      })),
   );
+
+  const { locatario, empresa } = alvo;
+
+  if (empresa === undefined) {
+    // Mesma decisão do locatário ausente, logo abaixo, e pela mesma razão: a empresa pode ter sido
+    // removida entre o disparo e a entrega. Sem identidade, a mensagem que PEDE UMA AÇÃO chegaria
+    // sem dizer quem a pede — e o locatário a trataria como golpe, corretamente.
+    throw new Error(MOTIVO_DE_EMPRESA_AUSENTE);
+  }
 
   if (locatario === undefined) {
     // Levantar, e não concluir em silêncio: a tarefa fica retida como falha, com a razão gravada, em
@@ -214,6 +238,8 @@ export async function processarConfirmacaoDeEmail(
     nome: locatario.nome,
     segredo: carga.segredo,
     urlBase: urlBaseDaConfirmacao,
+    nomeDaEmpresa: empresa.nome,
+    emailDaEmpresa: empresa.emailContato,
   });
 
   // Os campos do registro são os da §13.1 da tech spec, e a lista é fechada: `idTarefa`, `fila` e os

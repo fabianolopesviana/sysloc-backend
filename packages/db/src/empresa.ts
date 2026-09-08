@@ -70,6 +70,7 @@ import {
 // A ORIGEM do tipo, e não a reexportação de `./permissao.js` — ver o D35 da T7: o perfil é
 // vocabulário do domínio de identidade, e este módulo o consome para `lerAlvoDeReemissao`, que não
 // tem relação alguma com ajuste de permissão.
+import { empresaDoContexto } from './contexto-de-escrita.js';
 import type { PerfilDaPessoa } from './esquema/identidade.js';
 
 /**
@@ -83,6 +84,13 @@ export interface EmpresaPersistida {
   readonly nome: string;
   readonly documento: string;
   readonly suspensaEm: Date | null;
+  /**
+   * O endereço de resposta da imobiliária — `null` quando ela não declarou nenhum (migração `0028`).
+   *
+   * Ele é o `Reply-To` do que o produto envia em nome dela, e **não** o remetente: desde a virada da
+   * F7 o remetente é único para todo o SaaS. Ver o docblock da coluna em `src/esquema/identidade.ts`.
+   */
+  readonly emailContato: string | null;
   readonly criadaEm: Date;
 }
 
@@ -90,6 +98,14 @@ export interface EmpresaPersistida {
 export interface EmpresaNova {
   readonly nome: string;
   readonly documento: string;
+  /**
+   * O endereço de resposta, ou `null` para não declarar nenhum.
+   *
+   * `null` e não opcional: quem escreve **decide** entre declarar um endereço e não ter endereço, e
+   * um campo omissível deixaria a terceira leitura — *"não mexer no que já está lá"* — parecer
+   * disponível numa operação que grava a linha inteira. `alterarEmpresa` grava as três colunas.
+   */
+  readonly emailContato: string | null;
 }
 
 /** A janela pedida da listagem, já validada na borda. */
@@ -135,6 +151,7 @@ function colunasDaEmpresa(tx: TransactionSql): Fragment {
             nome,
             documento,
             suspensa_em AS "suspensaEm",
+            email_contato AS "emailContato",
             criada_em AS "criadaEm"`;
 }
 
@@ -156,8 +173,8 @@ export async function admitirEmpresa(
   entrada: EmpresaNova,
 ): Promise<EmpresaPersistida | undefined> {
   const [criada] = await tx<EmpresaPersistida[]>`
-    INSERT INTO identidade.empresa (nome, documento)
-    VALUES (${entrada.nome}, ${entrada.documento})
+    INSERT INTO identidade.empresa (nome, documento, email_contato)
+    VALUES (${entrada.nome}, ${entrada.documento}, ${entrada.emailContato})
     ON CONFLICT ON CONSTRAINT empresa_documento_unique DO NOTHING
     RETURNING ${colunasDaEmpresa(tx)}
   `;
@@ -193,6 +210,48 @@ export async function listarEmpresas(
   // `count(*)` volta como `bigint`, que o driver entrega em cadeia de caracteres. A conversão
   // explícita é o que impede o total de viajar como texto no JSON.
   return { empresas, total: Number(contagem?.total ?? 0) };
+}
+
+/**
+ * A identidade da empresa do contexto, para o que o produto envia **em nome dela**.
+ *
+ * ---------------------------------------------------------------------------
+ * POR QUE ELA NÃO RECEBE `empresaId`
+ * ---------------------------------------------------------------------------
+ *
+ * O invariante 2 do produto é literal: *"o contexto de tenant nunca é lido do request"*. Um
+ * parâmetro aqui seria exatamente esse caminho — a empresa passaria a ser **escolhida** por quem
+ * chama, e a escolha aconteceria acima desta linha, onde nada a confere. O identificador sai de
+ * `app.empresa_id`, que é o mesmo valor que as políticas de `negocio` avaliam, e é fixado por
+ * `SET LOCAL` na abertura da unidade de trabalho.
+ *
+ * ⚠️ **O `WHERE` é o caminho, e não um filtro redundante** — ver a precisão de 2026-09-08 em
+ * {@link ./contexto-de-escrita.ts}. `identidade.empresa` **não tem política** (ADR-0009): sem esta
+ * cláusula, a consulta varreria as empresas de TODOS os inquilinos do SaaS.
+ *
+ * ---------------------------------------------------------------------------
+ * `undefined` e `emailContato: null` são fatos DIFERENTES
+ * ---------------------------------------------------------------------------
+ *
+ * `undefined` diz *"não há empresa no contexto"* — que é defeito de quem montou a chamada, e o
+ * consumidor o trata como tal. `emailContato: null` diz *"a empresa existe e não declarou endereço
+ * de resposta"*, que é estado normal de cadastro e faz o compositor **omitir** o `Reply-To`.
+ * Colapsar os dois num só faria o segundo, que é comum, ser lido como o primeiro, que é falha.
+ */
+export async function lerIdentidadeDaEmpresaDoContexto(
+  tx: TransactionSql,
+): Promise<{ readonly nome: string; readonly emailContato: string | null } | undefined> {
+  const [empresa] = await tx<{ nome: string; email_contato: string | null }[]>`
+    SELECT nome, email_contato
+      FROM identidade.empresa
+     WHERE id = ${empresaDoContexto(tx)}
+  `;
+
+  if (empresa === undefined) {
+    return undefined;
+  }
+
+  return { nome: empresa.nome, emailContato: empresa.email_contato };
 }
 
 /**
@@ -492,7 +551,8 @@ export async function alterarEmpresa(
       const [alterada] = await escrita<EmpresaPersistida[]>`
         UPDATE identidade.empresa
            SET nome = ${dados.nome},
-               documento = ${dados.documento}
+               documento = ${dados.documento},
+               email_contato = ${dados.emailContato}
          WHERE id = ${empresaId}
         RETURNING ${colunasDaEmpresa(escrita)}
       `;

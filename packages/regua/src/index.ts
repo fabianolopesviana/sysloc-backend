@@ -34,7 +34,7 @@
 export type { ConfiguracaoDeSmtp } from './adaptador-smtp.js';
 export { criarAdaptadorSmtp } from './adaptador-smtp.js';
 export { dentroDaJanela } from './janela.js';
-export type { MensagemDeAviso } from './mensagem.js';
+export type { IdentidadeDaEmpresaNoAviso, MensagemDeAviso } from './mensagem.js';
 export { comporAvisoDeCobranca, ErroDeEstadoNaoAvisavel } from './mensagem.js';
 export type {
   CandidataAoAviso,

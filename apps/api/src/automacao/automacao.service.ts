@@ -102,6 +102,7 @@ import {
   gravarPoliticaDeAviso,
   lerEnviosDaCobranca,
   lerEstadoDasRotinas,
+  lerIdentidadeDaEmpresaDoContexto,
   lerPoliticaDeAviso,
   localizarCandidataAoAviso,
   localizarCobranca,
@@ -231,9 +232,28 @@ export class AutomacaoDeCobrancaService {
       );
     }
 
+    // A identidade sai da MESMA unidade em que a candidata foi localizada, e sob o mesmo contexto:
+    // ela não recebe `empresaId`, porque o identificador vem de `app.empresa_id` — invariante 2.
+    const empresa = await lerIdentidadeDaEmpresaDoContexto(tx);
+
+    // Condição impossível por construção: a sessão que chegou até aqui declara uma empresa, e o
+    // contexto foi fixado a partir dela. O ramo existe porque o tipo o admite, e porque compor um
+    // aviso sem identidade produziria um assunto sem nome — mensagem defeituosa na caixa de uma
+    // pessoa real é pior que uma falha visível ao operador.
+    if (empresa === undefined) {
+      throw new ErroDeAplicacao(
+        CodigoErro.RECURSO_NAO_ENCONTRADO,
+        MENSAGEM_POR_CODIGO[CodigoErro.RECURSO_NAO_ENCONTRADO],
+      );
+    }
+
     try {
       return await enviarAvisoDeCobranca({
         candidata,
+        // O nome que o assunto imprime e o endereço para onde a resposta do locatário vai. Desde a
+        // virada da F7 o remetente é único para todo o SaaS, e é este campo que diz de quem a
+        // cobrança é (decisão 10 do plano).
+        empresa,
         // A dispensa é o objeto congelado que o domínio publica, e não um literal montado aqui: uma
         // segunda montagem seria livre para dispensar um eixo a mais, e nenhum dos três alcança o
         // ESTADO — que é o que nenhum caminho dispensa (RD-02).

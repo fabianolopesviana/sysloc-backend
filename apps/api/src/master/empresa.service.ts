@@ -205,6 +205,14 @@ export interface EmpresaDoContrato {
   readonly nome: string;
   readonly documento: string;
   readonly estado: EstadoDaEmpresa;
+  /**
+   * O endereço de resposta da imobiliária — `null` quando ela não declarou nenhum.
+   *
+   * ⚠️ **Ele não é o remetente.** Desde a virada da F7 o remetente do que o produto envia é único
+   * para todo o SaaS (`sysloc@systera.com.br`); este campo é para onde a resposta do locatário vai.
+   * É a decisão 10 do `plano-saas-decisoes.md`.
+   */
+  readonly emailContato: string | null;
   /** Instante da criação, em ISO-8601. */
   readonly criadaEm: string;
 }
@@ -298,6 +306,8 @@ export interface SenhaProvisoriaReemitida {
 export interface EmpresaDaAdmissao {
   readonly nome: string;
   readonly documento: string;
+  /** O endereço de resposta, ou `null` — a borda resolve a ausência para `null` (§ do esquema). */
+  readonly emailContato: string | null;
 }
 
 /** Os campos que o corpo da admissão de administrador carrega, já validados na borda. */
@@ -890,6 +900,7 @@ function paraContrato(linha: EmpresaPersistida): EmpresaDoContrato {
     nome: linha.nome,
     documento: linha.documento,
     estado: linha.suspensaEm === null ? 'ATIVA' : 'SUSPENSA',
+    emailContato: linha.emailContato,
     criadaEm: linha.criadaEm.toISOString(),
   };
 }

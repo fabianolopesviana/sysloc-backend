@@ -207,7 +207,11 @@ async function admitirEmpresaNova(marca: string): Promise<Contexto> {
   const criada = await emUnidade(
     CONTEXTO_DE_A,
     async (tx) =>
-      await admitirEmpresa(tx, { nome: `Imobiliária ${marca}`, documento: `9900000000${marca}` }),
+      await admitirEmpresa(tx, {
+        nome: `Imobiliária ${marca}`,
+        documento: `9900000000${marca}`,
+        emailContato: null,
+      }),
   );
 
   if (criada === undefined) {

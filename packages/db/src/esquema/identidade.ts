@@ -132,6 +132,22 @@ export const empresa = identidade.table('empresa', {
   documento: text('documento').notNull().unique(),
   /** Instante da suspensão. Nulo é o estado normal; preenchido, ninguém da empresa entra (RN-10). */
   suspensaEm: timestamp('suspensa_em', { withTimezone: true }),
+  /**
+   * O endereço de resposta da imobiliária — o `Reply-To` do que o produto envia em nome dela
+   * (migração `0028`).
+   *
+   * ⚠️ **Ele NÃO é o remetente.** Desde a virada da F7 o remetente é único para todo o SaaS
+   * (`sysloc@systera.com.br`), porque a entrega sai por relay autenticado e o envelope pertence ao
+   * produto. Esta coluna é o que devolve a resposta do locatário a quem pode atendê-la, e é a
+   * decisão 10 do `plano-saas-decisoes.md`.
+   *
+   * **Anulável, e a anulabilidade é a decisão**: empresa cadastrada antes desta coluna não tem
+   * endereço a declarar, e não há valor honesto a inventar. Nulo faz o compositor OMITIR o
+   * cabeçalho — o cliente de e-mail então responde ao remetente, cuja caixa o próprio corpo da
+   * mensagem declara não monitorada. Um padrão qualquer aqui daria a um endereço morto a aparência
+   * de endereço válido, que é pior que a ausência.
+   */
+  emailContato: text('email_contato'),
   criadaEm: timestamp('criada_em', { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -121,6 +121,7 @@ import {
   type AcessoAoBanco,
   contextoDeTenant,
   lerHoraCorrenteDaOperacao,
+  lerIdentidadeDaEmpresaDoContexto,
   lerPoliticaDeAviso,
   registrarEnvioDeCobranca,
   registrarExecucaoDeRotina,
@@ -181,6 +182,15 @@ const ROTINA_DO_AVISO: RotinaPublicada = 'AVISO_DE_COBRANCA';
 /** O que a borda diz quando a passagem terminou com tentativa em falha. */
 const MOTIVO_DA_REPETICAO = 'a passagem da régua terminou com tentativa de envio em falha';
 
+/**
+ * O que a falha diz quando a empresa da carga não existe mais.
+ *
+ * Constante nomeada, e não literal no `throw`: a mensagem é conferida por asserção, e ter nome
+ * é o que impede duas escritas do mesmo dizer. Ela nomeia o identificador da empresa, que é
+ * dado da CARGA — nunca valor de campo de negócio, que poderia ser de outra empresa.
+ */
+const MOTIVO_DE_EMPRESA_AUSENTE = 'a empresa da carga não existe mais e o aviso não é composto';
+
 /** As portas que a composição raiz do processo entrega à borda. */
 export interface DependenciasDaRegua {
   /**
@@ -224,7 +234,19 @@ export async function processarReguaDeCobranca(
     const passagem = await banco.emUnidadeDeTrabalho(async (tx) => ({
       politica: await lerPoliticaDeAviso(tx),
       agora: await lerHoraCorrenteDaOperacao(tx),
+      // A identidade entra na MESMA unidade das outras duas, e pela mesma razão do cabeçalho: as
+      // três descrevem a passagem, e lê-las em unidades diferentes deixaria a política de uma
+      // transação conviver com o nome lido em outra.
+      empresa: await lerIdentidadeDaEmpresaDoContexto(tx),
     }));
+
+    // A empresa da carga pode ter sido removida entre o enfileiramento e o processamento — a fila
+    // é assíncrona por construção. Sem identidade não se compõe aviso: o assunto sairia com o nome
+    // vazio e o locatário receberia uma cobrança que não diz de quem é. Falha ALTO, para o job
+    // repetir e o operador ver, em vez de entregar mensagem defeituosa a uma pessoa real.
+    if (passagem.empresa === undefined) {
+      throw new Error(`${MOTIVO_DE_EMPRESA_AUSENTE}: ${empresaId}`);
+    }
 
     const passada = await executarReguaDaEmpresa({
       politica: passagem.politica,
@@ -241,6 +263,7 @@ export async function processarReguaDeCobranca(
           async (tx) => await registrarEnvioDeCobranca(tx, tentativa),
         ),
       email,
+      empresa: passagem.empresa,
     });
 
     // O registro da PASSAGEM — o que faz `AVISO_DE_COBRANCA` deixar de ser publicada como parada

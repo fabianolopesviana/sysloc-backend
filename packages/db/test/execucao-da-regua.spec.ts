@@ -109,6 +109,7 @@ import {
   ErroDeEstadoNaoAvisavel,
   enviarAvisoDeCobranca,
   executarReguaDaEmpresa,
+  type IdentidadeDaEmpresaNoAviso,
   type PortaDeCandidatas,
   type PortaDeRegistro,
   type ResultadoDaRegua,
@@ -136,7 +137,7 @@ import {
   lerAnoDaSerieDeContrato,
 } from '../src/contrato.ts';
 import { derivarTerminoDaLocacao, derivarValorTotal } from '../src/derivacao-de-contrato.ts';
-import { admitirEmpresa } from '../src/empresa.ts';
+import { admitirEmpresa, lerIdentidadeDaEmpresaDoContexto } from '../src/empresa.ts';
 import {
   lerEnviosDaCobranca,
   registrarEnvioDeCobranca,
@@ -991,7 +992,24 @@ async function passar(
     candidatas: portaDeCandidatas(contexto, politica),
     registrar: portaDeRegistro(contexto),
     email,
+    empresa: await identidadeDoContexto(contexto),
   });
+}
+
+/**
+ * A identidade da empresa semeada, lida do BANCO sob o contexto do caso.
+ *
+ * Um literal aqui faria os casos passarem com a leitura de `identidade.empresa` quebrada — e é
+ * justamente essa leitura que a borda de produção percorre antes de compor cada aviso.
+ */
+async function identidadeDoContexto(contexto: Contexto): Promise<IdentidadeDaEmpresaNoAviso> {
+  const empresa = await emUnidade(contexto, lerIdentidadeDaEmpresaDoContexto);
+
+  if (empresa === undefined) {
+    throw new Error('arranjo: não há empresa no contexto');
+  }
+
+  return empresa;
 }
 
 /** Um disparo manual, com as dispensas que o produto publica para esse caminho. */
@@ -1005,6 +1023,7 @@ async function disparar(
     dispensas: DISPENSAS_DO_DISPARO_MANUAL,
     registrar: portaDeRegistro(contexto),
     email,
+    empresa: await identidadeDoContexto(contexto),
   });
 }
 
@@ -1245,6 +1264,7 @@ async function admitirEmpresaNova(marcaBase: string): Promise<Contexto> {
       await admitirEmpresa(tx, {
         nome: `Imobiliária ${marcaBase}-${String(sequenciaDoCenario)}`,
         documento: `${String(Date.now()).slice(-8)}${String(sequenciaDoCenario).padStart(6, '0')}`,
+        emailContato: null,
       }),
   );
 

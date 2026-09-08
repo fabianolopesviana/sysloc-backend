@@ -1519,6 +1519,7 @@ async function cenarioComPolitica(marca: string): Promise<Cenario> {
           await admitirEmpresa(tx, {
             nome: `Imobiliária ${sufixo}`,
             documento: `${String(Date.now()).slice(-8)}${String(sequenciaDoCenario).padStart(6, '0')}`,
+            emailContato: null,
           }),
       ),
   );

@@ -394,6 +394,7 @@ async function admitirEmpresaNova(marcaBase: string): Promise<Contexto> {
       await admitirEmpresa(tx, {
         nome: `Imobiliária ${marcaBase}-${String(sequenciaDoCenario)}`,
         documento: `${String(Date.now()).slice(-8)}${String(sequenciaDoCenario).padStart(6, '0')}`,
+        emailContato: null,
       }),
   );
 

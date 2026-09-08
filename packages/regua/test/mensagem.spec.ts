@@ -42,7 +42,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { comporAvisoDeCobranca, ErroDeEstadoNaoAvisavel } from '../src/mensagem.ts';
+import {
+  comporAvisoDeCobranca,
+  ErroDeEstadoNaoAvisavel,
+  type IdentidadeDaEmpresaNoAviso,
+} from '../src/mensagem.ts';
 import type { CandidataAoAviso } from '../src/porta-de-dados.ts';
 
 /**
@@ -74,9 +78,39 @@ const CANDIDATA_VENCIDA: CandidataAoAviso = {
   conjunto: 'Conjunto Caracterizacao',
 };
 
-/** Os assuntos, por extenso — a forma do oráculo, com o código da cobrança no fim. */
-const ASSUNTO_A_VENCER = 'Aviso de vencimento - Fatura de aluguel COB-2026-0000001';
-const ASSUNTO_VENCIDA = 'Pendencia financeira - Fatura de aluguel vencida COB-2026-0000003';
+/**
+ * A empresa em nome de quem os avisos saem — com endereço de resposta declarado.
+ *
+ * O nome carrega ACENTO de propósito: o resto do corpo é sem acentuação, por fidelidade ao oráculo,
+ * e o nome da empresa é a exceção declarada em `src/mensagem.ts` — ele é nome próprio de uma empresa
+ * real. Um acessório sem acento deixaria a exceção sem prova.
+ */
+const EMPRESA: IdentidadeDaEmpresaNoAviso = {
+  nome: 'Imobiliária Fibron',
+  emailContato: 'financeiro@fibron.test',
+};
+
+/** A mesma empresa sem endereço declarado — o estado de quem foi cadastrada antes da coluna existir. */
+const EMPRESA_SEM_CONTATO: IdentidadeDaEmpresaNoAviso = {
+  nome: 'Imobiliária Fibron',
+  emailContato: null,
+};
+
+/**
+ * Os assuntos, por extenso — com o nome da empresa à frente do que o oráculo registrou.
+ *
+ * SUT_IS_CORRECT_BECAUSE: o prefixo `[<empresa>]` é mudança DELIBERADA de 2026-09-08, decidida pelo
+ * usuário na virada da F7, e o valor antigo é que passou a estar errado. Até a virada cada
+ * imobiliária enviava pela conta de e-mail dela, e o remetente identificava a origem; desde ela,
+ * TODAS as empresas do SaaS enviam por `sysloc@systera.com.br`, e sem o prefixo dois locatários de
+ * imobiliárias diferentes receberiam mensagens indistinguíveis na caixa. A estrutura que este caso
+ * protege — assunto exato por igualdade de cadeia inteira, com o código no fim — está PRESERVADA, e
+ * nenhuma asserção foi afrouxada: o que mudou foi o valor esperado, não a força da comparação.
+ */
+const ASSUNTO_A_VENCER =
+  '[Imobiliária Fibron] Aviso de vencimento - Fatura de aluguel COB-2026-0000001';
+const ASSUNTO_VENCIDA =
+  '[Imobiliária Fibron] Pendencia financeira - Fatura de aluguel vencida COB-2026-0000003';
 
 /** Os dois estados terminais, e o que a recusa precisa dizer sobre cada um. */
 const ESTADOS_TERMINAIS: readonly CandidataAoAviso['status'][] = ['PAGA', 'CANCELADA'];
@@ -91,7 +125,7 @@ const ESTADOS_TERMINAIS: readonly CandidataAoAviso['status'][] = ['PAGA', 'CANCE
  */
 function recusaDe(candidata: CandidataAoAviso): ErroDeEstadoNaoAvisavel {
   try {
-    comporAvisoDeCobranca(candidata);
+    comporAvisoDeCobranca(candidata, EMPRESA);
   } catch (erro) {
     if (erro instanceof ErroDeEstadoNaoAvisavel) {
       return erro;
@@ -105,7 +139,7 @@ function recusaDe(candidata: CandidataAoAviso): ErroDeEstadoNaoAvisavel {
 
 describe('CT-614 — a mensagem é composta em dois moldes, com assunto, código, valor e nome exatos', () => {
   it('o molde a vencer traz o assunto exato, o código, o valor em pt-BR e o nome do locatário', () => {
-    const aviso = comporAvisoDeCobranca(CANDIDATA_A_VENCER);
+    const aviso = comporAvisoDeCobranca(CANDIDATA_A_VENCER, EMPRESA);
 
     expect(aviso.assunto).toBe(ASSUNTO_A_VENCER);
     expect(aviso.corpo).toContain('COB-2026-0000001');
@@ -116,7 +150,7 @@ describe('CT-614 — a mensagem é composta em dois moldes, com assunto, código
   });
 
   it('o molde vencido traz o assunto exato, o código, o valor em pt-BR e o nome do locatário', () => {
-    const aviso = comporAvisoDeCobranca(CANDIDATA_VENCIDA);
+    const aviso = comporAvisoDeCobranca(CANDIDATA_VENCIDA, EMPRESA);
 
     expect(aviso.assunto).toBe(ASSUNTO_VENCIDA);
     expect(aviso.corpo).toContain('COB-2026-0000003');
@@ -127,8 +161,8 @@ describe('CT-614 — a mensagem é composta em dois moldes, com assunto, código
   });
 
   it('CT-614 (a) — os dois assuntos, e os dois corpos, são diferentes entre si', () => {
-    const aVencer = comporAvisoDeCobranca(CANDIDATA_A_VENCER);
-    const vencida = comporAvisoDeCobranca(CANDIDATA_VENCIDA);
+    const aVencer = comporAvisoDeCobranca(CANDIDATA_A_VENCER, EMPRESA);
+    const vencida = comporAvisoDeCobranca(CANDIDATA_VENCIDA, EMPRESA);
 
     // A desigualdade é a asserção que DISCRIMINA: sem ela, um compositor de molde único — que
     // ignorasse o estado e sempre escrevesse o mesmo texto — passaria em todas as demais.
@@ -143,8 +177,8 @@ describe('CT-614 — a mensagem é composta em dois moldes, com assunto, código
   });
 
   it('CT-614 (c) — o corpo sai em texto puro: nenhum `<br>` do legado sobrevive', () => {
-    const aVencer = comporAvisoDeCobranca(CANDIDATA_A_VENCER);
-    const vencida = comporAvisoDeCobranca(CANDIDATA_VENCIDA);
+    const aVencer = comporAvisoDeCobranca(CANDIDATA_A_VENCER, EMPRESA);
+    const vencida = comporAvisoDeCobranca(CANDIDATA_VENCIDA, EMPRESA);
 
     expect(aVencer.corpo).not.toContain('<br>');
     expect(vencida.corpo).not.toContain('<br>');
@@ -165,12 +199,104 @@ describe('CT-614 — a mensagem é composta em dois moldes, com assunto, código
       // por isso reprovava a classe nova pelo `name` e pelo campo `estado`, e não pela mensagem, que
       // continua idêntica byte a byte. As três asserções abaixo são estritamente MAIS FORTES do que
       // a que substituem: afirmam o tipo, a mensagem inteira por igualdade e o estado publicado.
-      expect(() => comporAvisoDeCobranca(terminal)).toThrowError(ErroDeEstadoNaoAvisavel);
+      expect(() => comporAvisoDeCobranca(terminal, EMPRESA)).toThrowError(ErroDeEstadoNaoAvisavel);
 
       const recusa = recusaDe(terminal);
 
       expect(recusa.message).toBe(`estado não avisável: ${status}`);
       expect(recusa.estado).toBe(status);
+    });
+  });
+
+  /**
+   * A rede da virada F7 — o remetente único e o que ele obriga o texto a dizer.
+   *
+   * ⚠️ **Ela existe porque a mudança de 2026-09-08 removeu a única coisa que distinguia as empresas
+   * na caixa do locatário**: o remetente. Antes, cada imobiliária enviava pela conta dela; desde a
+   * virada, todas enviam por `sysloc@systera.com.br`. Sem estes casos, apagar o nome do assunto, da
+   * abertura ou da assinatura deixaria a suíte verde — e dois locatários de imobiliárias diferentes
+   * receberiam cobranças indistinguíveis.
+   */
+  describe('CT-1272 — a empresa é nomeada nos TRÊS pontos, nos dois moldes', () => {
+    it.each([
+      { molde: 'a vencer', candidata: CANDIDATA_A_VENCER },
+      { molde: 'vencida', candidata: CANDIDATA_VENCIDA },
+    ])(
+      'o molde $molde nomeia a empresa no assunto, na abertura e na assinatura',
+      ({ candidata }) => {
+        const aviso = comporAvisoDeCobranca(candidata, EMPRESA);
+        const linhas = aviso.corpo.split('\n');
+
+        // O assunto COMEÇA com o prefixo — `toContain` aprovaria o nome em qualquer posição,
+        // inclusive no fim, onde ele não cumpre a função de identificar antes de a pessoa abrir.
+        expect(aviso.assunto.startsWith(`[${EMPRESA.nome}] `)).toBe(true);
+
+        // A abertura é a PRIMEIRA linha, e a asserção é por igualdade de cadeia inteira: uma
+        // comparação por conteúdo aprovaria a linha certa em posição errada.
+        expect(linhas[0]).toBe(
+          `Mensagem automatica de ${EMPRESA.nome}, enviada pelo Sistema de Locacao de Imoveis.`,
+        );
+
+        // A assinatura é a ÚLTIMA linha, pela mesma razão.
+        expect(linhas.at(-1)).toBe(`Equipe Financeira - ${EMPRESA.nome}`);
+      },
+    );
+  });
+
+  /**
+   * O discriminador que prova que o nome vem do PARÂMETRO, e não de uma constante do módulo.
+   *
+   * ⚠️ **Sem ele, o `CT-1272` passaria com o nome escrito à mão dentro do compositor.** As duas
+   * empresas recebem a MESMA candidata: tudo o que difere entre as duas saídas é atribuível à
+   * identidade, e nada mais.
+   */
+  describe('CT-1273 — empresas diferentes produzem assunto e corpo diferentes para a MESMA cobrança', () => {
+    it('o nome atravessa do parâmetro até as três posições', () => {
+      const outra: IdentidadeDaEmpresaNoAviso = { nome: 'Locadora Vale', emailContato: null };
+
+      const daFibron = comporAvisoDeCobranca(CANDIDATA_A_VENCER, EMPRESA);
+      const daVale = comporAvisoDeCobranca(CANDIDATA_A_VENCER, outra);
+
+      expect(daFibron.assunto).not.toBe(daVale.assunto);
+      expect(daFibron.corpo).not.toBe(daVale.corpo);
+
+      expect(daVale.assunto).toContain('Locadora Vale');
+      expect(daVale.corpo).toContain('Mensagem automatica de Locadora Vale,');
+      expect(daVale.corpo).toContain('Equipe Financeira - Locadora Vale');
+
+      // E o nome da OUTRA não aparece: um compositor que concatenasse as duas identidades passaria
+      // em todas as asserções acima.
+      expect(daVale.assunto).not.toContain(EMPRESA.nome);
+      expect(daVale.corpo).not.toContain(EMPRESA.nome);
+    });
+  });
+
+  /**
+   * O endereço de resposta — as duas pernas, e a segunda é a que discrimina.
+   *
+   * ⚠️ **A perna da OMISSÃO não é redundante.** `responderPara: undefined` e a chave AUSENTE são
+   * indistinguíveis por `toBe(undefined)`, e só a segunda faz o adaptador não emitir o cabeçalho —
+   * ver o comentário do espalhamento condicional em `src/mensagem.ts`. A asserção é sobre as CHAVES
+   * do objeto, que é a única forma de separar as duas.
+   */
+  describe('CT-1274 — o endereço de resposta vem do cadastro, e é OMITIDO quando não há', () => {
+    it('a empresa com endereço declarado produz o campo com o valor dela', () => {
+      const aviso = comporAvisoDeCobranca(CANDIDATA_A_VENCER, EMPRESA);
+
+      expect(aviso.responderPara).toBe(EMPRESA.emailContato);
+      expect(Object.keys(aviso)).toContain('responderPara');
+    });
+
+    it('a empresa SEM endereço não declara a chave — e não a declara vazia', () => {
+      const aviso = comporAvisoDeCobranca(CANDIDATA_A_VENCER, EMPRESA_SEM_CONTATO);
+
+      // A chave AUSENTE, e não presente-com-`undefined`: `expect(aviso.responderPara).toBe(undefined)`
+      // passaria nos dois casos, e é o mutante que esta asserção existe para pegar.
+      expect(Object.keys(aviso)).not.toContain('responderPara');
+      expect(Object.hasOwn(aviso, 'responderPara')).toBe(false);
+
+      // E o endereço não vaza para o corpo por outro caminho.
+      expect(aviso.corpo).not.toContain('@');
     });
   });
 });

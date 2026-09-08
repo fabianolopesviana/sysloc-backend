@@ -1,0 +1,62 @@
+-- O ENDEREÇO DE CONTATO DA EMPRESA — arquivo AUTORAL, e a autoria é a decisão.
+--
+-- ⚠️ **Autoral e gerado nunca convivem**, e por isso esta migração NÃO saiu de `drizzle-kit
+-- generate`: ela acrescenta UMA coluna a uma tabela que a `0001` criou, e o gerador emitiria o
+-- diff inteiro do snapshot. O esquema em `src/esquema/identidade.ts` acompanha, e é ele que uma
+-- regeração futura consulta.
+--
+-- ⚠️ **A `0001` NÃO é tocada.** Ela já foi aplicada, o verificador confere cada arquivo por
+-- `sha256sum` e **aborta a instalação** em divergência.
+--
+-- ===========================================================================
+-- POR QUE ESTA COLUNA EXISTE — a virada F7 criou a necessidade
+-- ===========================================================================
+--
+-- Até 2026-09-08 cada imobiliária enviava pela conta de e-mail dela, no sistema antigo. Com a
+-- virada, TODAS as empresas do SaaS passam a enviar por um remetente ÚNICO —
+-- `sysloc@systera.com.br` —, porque a entrega sai por um relay autenticado e o envelope pertence
+-- ao produto, não ao cliente. Duas consequências, e as duas exigem esta coluna:
+--
+--   * o locatário que responder a mensagem responderia ao PRODUTO, e não a quem cobra. Esta
+--     coluna é o `Reply-To` que devolve a resposta a quem pode atendê-la;
+--   * o aviso precisa dizer de QUEM ele veio, e o `nome` sozinho não dá a quem responder.
+--
+-- É a decisão 10 do `plano-saas-decisoes.md` — *"remetente único do SaaS com o nome da empresa,
+-- `reply_to` = e-mail da empresa"* — que só agora tem onde morar.
+--
+-- ===========================================================================
+-- POR QUE ANULÁVEL, e por que isso NÃO é frouxidão
+-- ===========================================================================
+--
+-- Há empresas cadastradas ANTES desta coluna existir, e não há valor honesto a inventar para
+-- elas: um padrão como `''` ou o próprio remetente do produto faria o `Reply-To` apontar para uma
+-- caixa não monitorada com aparência de endereço válido — pior que a ausência, porque o locatário
+-- responderia e ninguém receberia.
+--
+-- `NULL` diz *"esta empresa não declarou endereço de resposta"*, e o compositor da mensagem
+-- OMITE o cabeçalho `Reply-To` nesse caso — que é o comportamento correto: sem `Reply-To`, o
+-- cliente de e-mail responde ao `From`, e o corpo já avisa que a conta não é monitorada.
+--
+-- ⚠️ NÃO acrescente `DEFAULT` a esta coluna numa migração futura sem ler o parágrafo acima.
+--
+-- ===========================================================================
+-- SEM POLÍTICA NOVA DE RLS, e a ausência é medida
+-- ===========================================================================
+--
+-- `identidade.empresa` é a tabela do próprio inquilino, e não uma tabela de negócio com
+-- `empresa_id`: o invariante 1 (`empresa_id` + RLS + FK composta) alcança `negocio.*`, e esta
+-- coluna não muda o regime de acesso da linha. Quem já podia ler a empresa passa a ler mais um
+-- campo dela; quem não podia, continua não podendo. Nenhuma política é criada, alterada ou
+-- removida aqui.
+--
+-- ===========================================================================
+-- O TAMANHO É CONFERIDO PELA BORDA, e não por `varchar(n)`
+-- ===========================================================================
+--
+-- `text`, como `identidade.usuario.email` e como toda coluna de texto deste produto. O limite de
+-- comprimento e a forma do endereço são conferidos pelo esquema de entrada (Zod) na borda, num
+-- ponto só. Um `varchar(n)` aqui criaria uma segunda declaração do mesmo limite, livre para
+-- divergir da primeira — e a divergência apareceria como `22001` cru no lugar de um `422` que
+-- nomeia o campo.
+
+ALTER TABLE "identidade"."empresa" ADD COLUMN "email_contato" text;

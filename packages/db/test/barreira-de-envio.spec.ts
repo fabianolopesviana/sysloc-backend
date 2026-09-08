@@ -269,7 +269,7 @@ import {
   lerAnoDaSerieDeContrato,
 } from '../src/contrato.ts';
 import { derivarTerminoDaLocacao, derivarValorTotal } from '../src/derivacao-de-contrato.ts';
-import { admitirEmpresa } from '../src/empresa.ts';
+import { admitirEmpresa, lerIdentidadeDaEmpresaDoContexto } from '../src/empresa.ts';
 import { registrarEnvioDeCobranca, selecionarCandidatasAoAviso } from '../src/envio-de-cobranca.ts';
 import { criarImovel } from '../src/imovel.ts';
 import { gravarPoliticaDeAviso, lerPoliticaDeAviso } from '../src/politica-de-aviso.ts';
@@ -1439,10 +1439,18 @@ async function emUnidade<T>(
 /** Uma passagem da régua pelo caminho da borda: política lida pela porta real, portas injetadas. */
 async function passar(contexto: Contexto, email: CapturadorDeEmail): Promise<ResultadoDaRegua> {
   const politica = await emUnidade(contexto, lerPoliticaDeAviso);
+  // A identidade sai do BANCO, e não de um literal: é o que faz este acessório exercitar a mesma
+  // cadeia que a borda de produção percorre — a leitura sob contexto, sem parâmetro de empresa.
+  const empresa = await emUnidade(contexto, lerIdentidadeDaEmpresaDoContexto);
+
+  if (empresa === undefined) {
+    throw new Error('arranjo: não há empresa no contexto');
+  }
 
   return await executarReguaDaEmpresa({
     politica,
     agora: AGORA,
+    empresa,
     candidatas: async () =>
       await emUnidade(contexto, async (tx) => await selecionarCandidatasAoAviso(tx, politica)),
     registrar: async (tentativa) =>
@@ -1477,6 +1485,7 @@ async function admitirEmpresaNova(): Promise<Contexto> {
       await admitirEmpresa(tx, {
         nome: `Imobiliária barreira-${String(sequencia)}`,
         documento: `${String(Date.now()).slice(-8)}${String(sequencia).padStart(6, '0')}`,
+        emailContato: null,
       }),
   );
 

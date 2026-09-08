@@ -153,6 +153,12 @@ export function criarAdaptadorSmtp(config: ConfiguracaoDeSmtp): PortaDeEnvioDeEm
           to: destinatario,
           subject: mensagem.assunto,
           text: mensagem.corpo,
+          // O cabeçalho de resposta entra por espalhamento CONDICIONAL, e não como
+          // `replyTo: mensagem.responderPara`: passar `undefined` faria a biblioteca receber a
+          // chave presente com valor vazio, e o comportamento dos clientes de e-mail diante de um
+          // `Reply-To:` vazio é inconsistente — uns respondem ao remetente, outros abrem a resposta
+          // sem destinatário. Omitir a chave tem comportamento único e definido.
+          ...(mensagem.responderPara === undefined ? {} : { replyTo: mensagem.responderPara }),
         });
 
         recusados = entrega.rejected;

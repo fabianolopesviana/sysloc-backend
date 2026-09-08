@@ -117,6 +117,14 @@ const MAIOR_NOME = 200;
 /** Maior comprimento aceito para o documento da empresa. */
 const MAIOR_DOCUMENTO = 64;
 
+/**
+ * O teto do endereço de resposta.
+ *
+ * 254 é o limite de um endereço de e-mail pela RFC 5321 (§4.5.3.1.3), e não um número escolhido: a
+ * coluna é `text` e quem confere comprimento é a borda, num ponto só.
+ */
+const MAIOR_EMAIL = 254;
+
 /** Nome de campo usado quando a recusa não tem caminho a nomear — o identificador da rota. */
 const CAMPO_DO_IDENTIFICADOR = 'id';
 
@@ -146,6 +154,20 @@ const ESQUEMA_DO_IDENTIFICADOR = z.uuid();
 const ESQUEMA_DA_EMPRESA_NOVA = z.strictObject({
   nome: z.string().trim().min(1).max(MAIOR_NOME),
   documento: z.string().trim().min(1).max(MAIOR_DOCUMENTO),
+  /**
+   * O endereço de resposta da imobiliária (migração `0028`, virada F7).
+   *
+   * ⚠️ **`.nullable().default(null)`, e as três formas são deliberadas.** A entrada é fechada
+   * (`strictObject`), e um campo OBRIGATÓRIO aqui quebraria o Painel Master que já está em
+   * produção — ele não envia esta chave, e passaria a receber `422` em toda criação de empresa.
+   * As três entradas aceitas são: chave ausente (`null`), `null` explícito (a empresa declara que
+   * não tem endereço) e um endereço válido. Chave desconhecida continua recusada.
+   *
+   * `z.email()` e não `z.string()`: este valor vira o cabeçalho `Reply-To` de uma mensagem real, e
+   * um endereço malformado só apareceria como falha de entrega meses depois, na caixa de um
+   * locatário — longe de quem o digitou.
+   */
+  emailContato: z.email().trim().max(MAIOR_EMAIL).nullable().default(null),
 });
 
 /**
@@ -243,12 +265,18 @@ const ESQUEMA_DA_JANELA = z.strictObject({
 // ÍNDICE: docs/specs/features/painel-master-administradores/v1/_run/run-report.md §2, D22
 const ESQUEMA_DA_EMPRESA = {
   type: 'object',
-  required: ['id', 'nome', 'documento', 'estado', 'criadaEm'],
+  // `emailContato` entra em `required` porque a chave está SEMPRE presente na saída — o que varia
+  // é o valor, que é `null` quando a empresa não declarou endereço. Deixá-la fora de `required`
+  // diria ao cliente que ela pode faltar, e ele teria de tratar dois casos onde há um.
+  required: ['id', 'nome', 'documento', 'estado', 'emailContato', 'criadaEm'],
   properties: {
     id: { type: 'string', format: 'uuid' },
     nome: { type: 'string' },
     documento: { type: 'string' },
     estado: { type: 'string', enum: ['ATIVA', 'SUSPENSA'] },
+    // `nullable: true`, e não `type: ['string','null']`: o documento publicado é OpenAPI 3.0,
+    // cujo `type` é escalar — a forma do 3.1 não compila contra o tipo do arcabouço.
+    emailContato: { type: 'string', format: 'email', nullable: true },
     criadaEm: { type: 'string', format: 'date-time' },
   },
 };

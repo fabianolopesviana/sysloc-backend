@@ -54,6 +54,24 @@ import type { Fragment, TransactionSql } from 'postgres';
  * Usado **apenas** na cláusula de valores de um `INSERT`, para propor o `empresa_id` que o
  * `WITH CHECK` da política vai aceitar ou recusar. Ver o cabeçalho deste arquivo para por que ele
  * nunca aparece num `WHERE`.
+ *
+ * ---------------------------------------------------------------------------
+ * PRECISÃO de 2026-09-08 — o alcance de *"nunca aparece num `WHERE`"*
+ * ---------------------------------------------------------------------------
+ *
+ * A frase acima está preservada e continua valendo **onde ela nasceu**: nas tabelas de `negocio`,
+ * que têm RLS forçada. Ali o `WHERE` seria o segundo caminho para o mesmo recorte, que é o que a
+ * `Decision` da ADR-0008 rejeita por escrito.
+ *
+ * Ela **não alcança `identidade`**, e o cabeçalho deste arquivo já dizia por quê antes desta
+ * precisão existir: naquele schema, que por decisão da ADR-0009 **nunca teve política**, o
+ * fragmento *"não duplica coisa alguma: ali ele **é** o caminho"*. Uma leitura de
+ * `identidade.empresa` que omitisse o `WHERE` não seria mais segura — seria uma varredura de
+ * TODAS as empresas do SaaS, que é precisamente a consequência que o cabeçalho de
+ * `src/esquema/identidade.ts` declara e manda conter na aplicação.
+ *
+ * O primeiro consumidor nessa posição é {@link ./empresa.ts}, em
+ * `lerIdentidadeDaEmpresaDoContexto`. **Não "corrija" aquele `WHERE` para remover o fragmento.**
  */
 export function empresaDoContexto(tx: TransactionSql): Fragment {
   return tx`nullif(current_setting('app.empresa_id', true), '')::uuid`;

@@ -2436,6 +2436,7 @@ async function admitirEmpresaNova(marca: string): Promise<string> {
       await admitirEmpresa(tx, {
         nome: `Imobiliária ${marca}`,
         documento: `${String(Date.now()).slice(-8)}${String(proximo()).padStart(6, '0')}`,
+        emailContato: null,
       }),
   );
 

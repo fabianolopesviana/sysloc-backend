@@ -280,6 +280,17 @@ describe('CT-621 — o job da empresa B não alcança nada da empresa A', () => 
       expect(capturados).toEqual(esperadosDeB);
       expect(capturados.filter((endereco) => enderecosDeA.includes(endereco))).toEqual([]);
 
+      // ⚠️ A IDENTIDADE veio do banco, sob o contexto da CARGA — e não de um literal do processo.
+      // Sem estas três asserções, a borda que passasse uma identidade fixa ao domínio compilaria e
+      // atravessaria toda a suíte: o campo é obrigatório no tipo, mas nada obriga o VALOR a ser o
+      // da empresa da carga. O assunto de cada mensagem entregue nomeia a empresa B, nenhum nomeia
+      // a A, e as duas existem neste caso justamente para que a segunda possa reprovar.
+      const assuntos = capturador.capturas.map((captura) => captura.mensagem.assunto);
+
+      expect(assuntos).toHaveLength(deB.length);
+      expect(assuntos.every((assunto) => assunto.startsWith(`[${empresaB.nome}] `))).toBe(true);
+      expect(assuntos.filter((assunto) => assunto.includes(empresaA.nome))).toEqual([]);
+
       // O que foi GRAVADO: B cresce pelo número de candidatas dela; A permanece onde estava.
       expect(await contarEnviosDeCobranca(empresaB)).toBe(enviosDeBAntes + deB.length);
       expect(await contarEnviosDeCobranca(empresaA)).toBe(enviosDeAAntes);
@@ -615,7 +626,9 @@ let sequenciaDoCenario = 0;
  * `identidade.empresa` não tem política (ADR-0009), de modo que a admissão corre sob qualquer
  * contexto válido — e ela é a porta pública do pacote, a mesma que o Master usa.
  */
-async function admitirEmpresaNova(marcaBase: string): Promise<Contexto> {
+async function admitirEmpresaNova(
+  marcaBase: string,
+): Promise<Contexto & { readonly nome: string }> {
   sequenciaDoCenario += 1;
 
   const criada = await emUnidade(
@@ -624,6 +637,7 @@ async function admitirEmpresaNova(marcaBase: string): Promise<Contexto> {
       await admitirEmpresa(tx, {
         nome: `Imobiliária ${marcaBase}-${String(sequenciaDoCenario)}`,
         documento: `${String(Date.now()).slice(-8)}${String(sequenciaDoCenario).padStart(6, '0')}`,
+        emailContato: null,
       }),
   );
 
@@ -631,7 +645,10 @@ async function admitirEmpresaNova(marcaBase: string): Promise<Contexto> {
     throw new Error(`o arranjo não conseguiu admitir a empresa ${marcaBase}`);
   }
 
-  return { empresaId: criada.id };
+  // O NOME viaja junto do contexto desde 2026-09-08: com o remetente único da virada F7, é o
+  // assunto da mensagem que diz de qual imobiliária a cobrança é, e sem o nome aqui o caso de
+  // isolamento não teria como afirmar que ele veio da empresa CERTA.
+  return { empresaId: criada.id, nome: criada.nome };
 }
 
 /** Grava a política pela porta de produção — o mesmo caminho que a rota usa por dentro. */

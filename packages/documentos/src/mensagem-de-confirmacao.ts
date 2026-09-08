@@ -79,6 +79,15 @@ export interface MensagemDeEmail {
   readonly assunto: string;
   /** O corpo em texto puro, com quebras de linha reais. */
   readonly corpo: string;
+  /**
+   * Para onde a resposta vai — o `Reply-To`, ausente quando a empresa não declarou endereço.
+   *
+   * Espelha `MensagemDeAviso.responderPara`, de `packages/regua/src/mensagem.ts`, e a repetição é
+   * conhecida: é a **terceira** forma do mesmo fato, e o `D12 · F3/T10` já agenda a subida de
+   * `MensagemDeEmail` e da porta de envio para `@sysloc/shared`. Unificá-las aqui alargaria esta
+   * mudança para dois pacotes e uma migração de import em todo consumidor.
+   */
+  readonly responderPara?: string;
 }
 
 /** O que a composição precisa saber para escrever a mensagem. */
@@ -89,6 +98,22 @@ export interface DadosDaConfirmacao {
   readonly segredo: string;
   /** O endereço público do aplicativo, sem o caminho da página. Vem do ambiente do processo. */
   readonly urlBase: string;
+  /**
+   * O nome cadastrado da imobiliária que registrou este locatário.
+   *
+   * Desde a virada da F7 todas as empresas do SaaS enviam pelo MESMO remetente, e sem este campo o
+   * locatário receberia um pedido de confirmação de endereço — que pede uma ação — sem saber quem o
+   * está pedindo. É o vetor clássico de desconfiança, e a mensagem seria descartada como golpe.
+   */
+  readonly nomeDaEmpresa: string;
+  /**
+   * O endereço de resposta da imobiliária, ou `null` quando ela não declarou nenhum.
+   *
+   * Campos separados, e não o tipo `IdentidadeDaEmpresaNoAviso` de `@sysloc/regua`: importá-lo aqui
+   * criaria dependência de `@sysloc/documentos` sobre a régua para carregar dois campos de texto.
+   * A casa comum dos dois é `@sysloc/shared`, e a mudança está agendada pelo `D12 · F3/T10`.
+   */
+  readonly emailDaEmpresa: string | null;
 }
 
 /**
@@ -100,6 +125,23 @@ export interface DadosDaConfirmacao {
  * constante nomeada, e não literal no ponto da composição, porque é conferido por asserção.
  */
 const ASSUNTO = 'Confirmação do seu endereço de e-mail';
+
+/**
+ * Compõe o assunto com o nome da imobiliária à frente.
+ *
+ * ⚠️ **Isto NÃO contraria a decisão do {@link ASSUNTO} acima, e a distinção é o ponto.** O que
+ * aquele docblock proíbe no assunto é dado **do titular** — o segredo (que abriria a confirmação a
+ * quem só espia a lista), o nome e o endereço de quem recebe. O nome da imobiliária não é nenhum
+ * dos três: é a identidade de **quem envia**, que em toda mensagem legítima aparece no remetente.
+ *
+ * Ele só passou a ser necessário porque o remetente deixou de dizê-lo: desde a virada da F7 as
+ * empresas do SaaS compartilham `sysloc@systera.com.br`. Sem o nome no assunto, a mensagem que pede
+ * uma ação ao locatário chega de um endereço que ele não reconhece — e ele a trata como golpe, que é
+ * a leitura correta da parte dele.
+ */
+function assuntoDe(nomeDaEmpresa: string): string {
+  return `[${nomeDaEmpresa}] ${ASSUNTO}`;
+}
 
 /** O caminho da página que recebe o link. Ela é da **F6** e não existe neste repositório. */
 const CAMINHO_DA_PAGINA = '/confirmar-email';
@@ -121,19 +163,23 @@ const BARRAS_FINAIS = /\/+$/;
  * assina estas mensagens não tem quem leia resposta, e quem responde a uma delas fica sem retorno
  * sem saber por quê.
  */
-const ABERTURA: readonly string[] = [
-  'Mensagem automática do Sistema de Locação de Imóveis.',
-  'NÃO RESPONDA ESSA MENSAGEM! CONTA DE E-MAIL NÃO MONITORADA.',
-  '',
-];
+function aberturaDe(nomeDaEmpresa: string): readonly string[] {
+  return [
+    `Mensagem automática de ${nomeDaEmpresa}, enviada pelo Sistema de Locação de Imóveis.`,
+    'NÃO RESPONDA ESSA MENSAGEM! CONTA DE E-MAIL NÃO MONITORADA.',
+    '',
+  ];
+}
 
 /** O fecho, comum a toda mensagem desta composição. */
-const FECHO: readonly string[] = [
-  'Se você não reconhece este cadastro, ignore esta mensagem.',
-  '',
-  'Atenciosamente,',
-  'Equipe de Cadastro',
-];
+function fechoDe(nomeDaEmpresa: string): readonly string[] {
+  return [
+    'Se você não reconhece este cadastro, ignore esta mensagem.',
+    '',
+    'Atenciosamente,',
+    `Equipe de Cadastro - ${nomeDaEmpresa}`,
+  ];
+}
 
 /**
  * Compõe a mensagem de confirmação do endereço de e-mail do locatário.
@@ -151,14 +197,17 @@ export function comporMensagemDeConfirmacao(dados: DadosDaConfirmacao): Mensagem
   const link = `${dados.urlBase.replace(BARRAS_FINAIS, '')}${CAMINHO_DA_PAGINA}#${dados.segredo}`;
 
   return {
-    assunto: ASSUNTO,
+    assunto: assuntoDe(dados.nomeDaEmpresa),
     corpo: [
-      ...ABERTURA,
+      ...aberturaDe(dados.nomeDaEmpresa),
       `Prezado(a) ${dados.nome},`,
       'Recebemos este endereço de e-mail no seu cadastro. Para confirmá-lo, abra o endereço abaixo:',
       link,
       'O link é de uso único e tem prazo de validade. Depois de usá-lo, nada mais precisa ser feito.',
-      ...FECHO,
+      ...fechoDe(dados.nomeDaEmpresa),
     ].join('\n'),
+    // Espalhamento condicional, e nunca `?? undefined`: sob `exactOptionalPropertyTypes`, atribuir
+    // `undefined` não é o mesmo que omitir, e só a omissão faz o adaptador não emitir o cabeçalho.
+    ...(dados.emailDaEmpresa === null ? {} : { responderPara: dados.emailDaEmpresa }),
   };
 }

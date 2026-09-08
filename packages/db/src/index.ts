@@ -953,6 +953,7 @@ export {
   excluirEmpresa,
   type JanelaDeEmpresas,
   lerAlvoDeReemissao,
+  lerIdentidadeDaEmpresaDoContexto,
   listarEmpresas,
   listarEmpresasAtivas,
   localizarEmpresa,

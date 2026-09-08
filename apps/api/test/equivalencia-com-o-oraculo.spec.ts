@@ -128,6 +128,7 @@ import {
   type DadosDaPessoa,
   EMPRESA_A,
   lerHoraCorrenteDaOperacao,
+  lerIdentidadeDaEmpresaDoContexto,
   lerPoliticaDeAviso,
   registrarEnvioDeCobranca,
   SENHA_DA_CARGA,
@@ -1187,10 +1188,18 @@ async function emUnidade<T>(trabalho: (tx: TransactionSql) => Promise<T>): Promi
 async function passarAReguaDaEmpresa(email: CapturadorDeEmail): Promise<ResultadoDaRegua> {
   const politica = await emUnidade(lerPoliticaDeAviso);
   const agora = await emUnidade(lerHoraCorrenteDaOperacao);
+  // Pela mesma razão das outras duas leituras: a identidade sai do BANCO, sob contexto, e não de um
+  // literal — é a cadeia que a borda de produção percorre antes de compor cada aviso.
+  const empresa = await emUnidade(lerIdentidadeDaEmpresaDoContexto);
+
+  if (empresa === undefined) {
+    throw new Error('arranjo: não há empresa no contexto');
+  }
 
   return await executarReguaDaEmpresa({
     politica,
     agora,
+    empresa,
     candidatas: async () =>
       await emUnidade(async (tx) => await selecionarCandidatasAoAviso(tx, politica)),
     registrar: async (tentativa) =>

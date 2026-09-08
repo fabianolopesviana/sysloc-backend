@@ -335,6 +335,7 @@ const SIMBOLOS_ESPERADOS = [
   'admitirEmpresa',
   'encerrarSessoesDaEmpresa',
   'lerAlvoDeReemissao',
+  'lerIdentidadeDaEmpresaDoContexto',
   'listarEmpresas',
   'localizarEmpresa',
   'localizarPessoaPorEmail',

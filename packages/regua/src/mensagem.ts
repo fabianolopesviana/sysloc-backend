@@ -65,6 +65,52 @@ export interface MensagemDeAviso {
   readonly assunto: string;
   /** O corpo em texto puro, com quebras de linha reais. */
   readonly corpo: string;
+  /**
+   * Para onde a resposta do locatário deve ir — o `Reply-To`, ausente quando não há.
+   *
+   * ⚠️ **Ele é da MENSAGEM, e não do envio** — diferente do destinatário, que a porta recebe à
+   * parte. A distinção é a mesma que o cabeçalho desta interface já fazia: o destinatário é *"para
+   * quem esta entrega vai"*, e muda a cada locatário; o endereço de resposta é *"em nome de quem
+   * esta mensagem foi escrita"*, e é o mesmo para todas as candidatas de uma passagem.
+   *
+   * **Opcional, e a opcionalidade é conteúdo**: a empresa que não declarou endereço de contato faz
+   * o cabeçalho ser OMITIDO, e não emitido vazio. `Reply-To:` vazio é tratado de forma inconsistente
+   * pelos clientes de e-mail — alguns respondem ao remetente, outros abrem a resposta sem
+   * destinatário. A omissão tem comportamento único e definido: responde-se ao remetente.
+   */
+  readonly responderPara?: string;
+}
+
+/**
+ * A empresa em nome de quem o aviso sai — o que a virada da F7 tornou necessário.
+ *
+ * ---------------------------------------------------------------------------
+ * POR QUE ESTE TIPO EXISTE
+ * ---------------------------------------------------------------------------
+ *
+ * Até a virada, cada imobiliária enviava pela conta de e-mail dela, e o remetente já dizia de quem
+ * a mensagem era. Desde 2026-09-08 **todas** as empresas do SaaS enviam por um remetente ÚNICO
+ * (`sysloc@systera.com.br`), porque a entrega sai por relay autenticado e o envelope pertence ao
+ * produto. Sem este tipo, o locatário de duas imobiliárias diferentes receberia mensagens
+ * indistinguíveis — do mesmo endereço, com o mesmo texto.
+ *
+ * É a decisão 10 do `plano-saas-decisoes.md` — *"remetente único do SaaS com o nome da empresa,
+ * `reply_to` = e-mail da empresa"* — finalmente com onde morar.
+ *
+ * ---------------------------------------------------------------------------
+ * ELE É PARÂMETRO, e não campo de `CandidataAoAviso`
+ * ---------------------------------------------------------------------------
+ *
+ * A empresa é a MESMA para todas as candidatas de uma passagem — a régua roda por empresa, e o
+ * disparo manual roda sob o contexto de uma. Repeti-la em cada linha da consulta seria carregar N
+ * cópias do mesmo fato, livres para divergir se alguma vier de outro caminho, e faria a porta de
+ * dados responder por algo que ela não lê.
+ */
+export interface IdentidadeDaEmpresaNoAviso {
+  /** O nome cadastrado da imobiliária, como o assunto e o corpo o imprimem. */
+  readonly nome: string;
+  /** O endereço de resposta, ou `null` quando a empresa não declarou nenhum. */
+  readonly emailContato: string | null;
 }
 
 /**
@@ -162,19 +208,45 @@ const POSICAO_DO_SEPARADOR_DE_MILHAR = /\B(?=(\d{3})+(?!\d))/g;
  * Declaradas uma vez e compartilhadas pelos dois moldes: o oráculo mede as duas idênticas nos dez
  * cenários, e duas cópias ficariam livres para divergir na primeira emenda de texto.
  */
-const ABERTURA: readonly string[] = [
-  'Mensagem automatica do Sistema de Locacao de Imoveis.',
-  'NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.',
-  '',
-];
+/**
+ * A abertura, comum aos dois moldes — agora NOMEANDO a empresa.
+ *
+ * ⚠️ **O texto mudou em 2026-09-08, e a mudança é deliberada.** Antes ele dizia *"Mensagem
+ * automatica do Sistema de Locacao de Imoveis"*, que era fiel ao oráculo do legado porque lá o
+ * remetente já identificava a imobiliária. Com o remetente único da virada, essa frase deixou de
+ * dizer ao locatário de quem a cobrança é — e a linha seguinte, que manda não responder, ficaria
+ * sem par: não responder A QUEM?
+ *
+ * ⚠️ **O nome vai como está CADASTRADO, com acentuação se houver.** O resto deste corpo é sem
+ * acentos por fidelidade ao oráculo, e o nome é a exceção: ele é nome próprio de uma empresa real,
+ * e removê-lo os acentos escreveria errado o nome de quem cobra. O corpo trafega em UTF-8, de modo
+ * que não há restrição técnica — a ausência de acento no resto é escolha de fidelidade, não limite.
+ */
+function aberturaDe(nomeDaEmpresa: string): readonly string[] {
+  return [
+    `Mensagem automatica de ${nomeDaEmpresa}, enviada pelo Sistema de Locacao de Imoveis.`,
+    'NAO RESPONDA ESSA MENSAGEM! CONTA DE EMAIL NAO MONITORADA.',
+    '',
+  ];
+}
 
 /** O fecho, igualmente comum aos dois moldes. */
-const FECHO: readonly string[] = [
-  'Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.',
-  'Permanecemos a disposicao para esclarecimentos.',
-  'Atenciosamente,',
-  'Equipe Financeira',
-];
+/**
+ * O fecho, igualmente comum aos dois moldes — a assinatura nomeia a empresa.
+ *
+ * A assinatura é o SEGUNDO ponto em que o nome aparece, e os dois são necessários por razões
+ * distintas: a abertura diz de quem a mensagem é para quem a lê de cima; a assinatura diz para
+ * quem chega ao fim e vai decidir o que fazer. O terceiro ponto é o assunto, que é o único que a
+ * pessoa vê ANTES de abrir.
+ */
+function fechoDe(nomeDaEmpresa: string): readonly string[] {
+  return [
+    'Caso o pagamento ja tenha sido efetuado, favor desconsiderar este comunicado.',
+    'Permanecemos a disposicao para esclarecimentos.',
+    'Atenciosamente,',
+    `Equipe Financeira - ${nomeDaEmpresa}`,
+  ];
+}
 
 /**
  * O que ocupa o lugar do endereço do boleto enquanto a emissão bancária não existe (F4).
@@ -232,37 +304,48 @@ function formatarDataDeVencimento(data: string): string {
  * mesmo estado e **discordam**, ao ponto de o envio manual cobrar por dívida cancelada. Um compositor
  * que aceitasse qualquer estado transformaria uma discordância futura em mensagem entregue.
  */
-export function comporAvisoDeCobranca(candidata: CandidataAoAviso): MensagemDeAviso {
+export function comporAvisoDeCobranca(
+  candidata: CandidataAoAviso,
+  empresa: IdentidadeDaEmpresaNoAviso,
+): MensagemDeAviso {
   const valor = formatarValorEmReais(candidata.valorTotal);
   const vencimento = formatarDataDeVencimento(candidata.dataVencimento);
   const saudacao = `Prezado(a) ${candidata.nomeDoLocatario},`;
   const dadosDoImovel = `Dados do imovel: ${candidata.imovel} (${candidata.conjunto}).`;
+  const abertura = aberturaDe(empresa.nome);
+  const fecho = fechoDe(empresa.nome);
+  // O cabeçalho de resposta entra por espalhamento condicional, e NUNCA como
+  // `responderPara: empresa.emailContato ?? undefined`: sob `exactOptionalPropertyTypes`, atribuir
+  // `undefined` não é o mesmo que não atribuir, e a segunda forma é a que de fato OMITE a chave.
+  const resposta = empresa.emailContato === null ? {} : { responderPara: empresa.emailContato };
 
   if (candidata.status === ESTADO_AVISAVEL_ANTES_DO_VENCIMENTO) {
     return {
-      assunto: `Aviso de vencimento - Fatura de aluguel ${candidata.codigo}`,
+      assunto: `[${empresa.nome}] Aviso de vencimento - Fatura de aluguel ${candidata.codigo}`,
       corpo: [
-        ...ABERTURA,
+        ...abertura,
         saudacao,
         `Informamos que a fatura do aluguel referente a ${candidata.codigo} vencera em ${vencimento}, no valor de ${valor}.`,
         dadosDoImovel,
         `Para pagamento, utilize o boleto disponivel em: ${BOLETO_INDISPONIVEL}.`,
-        ...FECHO,
+        ...fecho,
       ].join('\n'),
+      ...resposta,
     };
   }
 
   if (candidata.status === ESTADO_AVISAVEL_APOS_O_VENCIMENTO) {
     return {
-      assunto: `Pendencia financeira - Fatura de aluguel vencida ${candidata.codigo}`,
+      assunto: `[${empresa.nome}] Pendencia financeira - Fatura de aluguel vencida ${candidata.codigo}`,
       corpo: [
-        ...ABERTURA,
+        ...abertura,
         saudacao,
         `Identificamos pendencia de pagamento da fatura do aluguel referente a ${candidata.codigo}, com vencimento em ${vencimento}, no valor de ${valor}.`,
         dadosDoImovel,
         `Para regularizacao, acesse o boleto: ${BOLETO_INDISPONIVEL}.`,
-        ...FECHO,
+        ...fecho,
       ].join('\n'),
+      ...resposta,
     };
   }
 

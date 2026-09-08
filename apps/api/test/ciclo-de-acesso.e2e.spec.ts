@@ -294,7 +294,20 @@ const MENSAGEM_DE_SESSAO_RESTRITA =
  * passam a tornar **afirmada** em vez de acidental: um `exclusao` que vazasse pela criação reprova
  * aqui.
  */
-const CHAVES_DA_EMPRESA_PUBLICADA = ['criadaEm', 'documento', 'estado', 'id', 'nome'];
+// SUT_IS_CORRECT_BECAUSE: `emailContato` é campo NOVO da superfície do operador, acrescentado na
+// virada da F7 (migração `0028`) para que a resposta do locatário chegue à imobiliária, e o valor
+// antigo desta constante é que passou a estar incompleto. A ADR-0039 autoriza acrescentar campo à
+// superfície do operador sem reabrir o marco. ⚠️ A asserção NÃO foi afrouxada: continua sendo
+// igualdade de CONJUNTO sobre as chaves publicadas, e a assimetria com {@link CHAVES_DO_ITEM_DA_LISTAGEM}
+// — que a constante existe para afirmar — segue intacta. São SEIS chaves agora, e não cinco.
+const CHAVES_DA_EMPRESA_PUBLICADA = [
+  'criadaEm',
+  'documento',
+  'emailContato',
+  'estado',
+  'id',
+  'nome',
+];
 
 /**
  * As **seis** chaves de um item da listagem de empresas — as cinco acima mais a prévia da US-07.
@@ -450,6 +463,9 @@ describe('ciclo de vida da empresa pelas rotas do Master (T7)', () => {
         nome,
         documento,
         estado: 'ATIVA',
+        // `null`, e não ausente: a criação que não declara endereço publica a chave com valor nulo —
+        // é o que o `required` do esquema publicado promete, e o cliente lê um caso só.
+        emailContato: null,
         criadaEm: expect.any(String),
       });
 

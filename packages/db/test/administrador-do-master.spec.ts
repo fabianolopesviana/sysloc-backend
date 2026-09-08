@@ -180,7 +180,11 @@ async function semearEmpresa(nome: string): Promise<EmpresaPersistida> {
   const marca = proximaMarca();
   const criada = await emUnidadeDoMaster(
     async (tx) =>
-      await admitirEmpresa(tx, { nome: `${nome} ${marca}`, documento: documentoDaMarca(marca) }),
+      await admitirEmpresa(tx, {
+        nome: `${nome} ${marca}`,
+        documento: documentoDaMarca(marca),
+        emailContato: null,
+      }),
   );
 
   if (criada === undefined) {
@@ -1036,7 +1040,11 @@ describe('CT-1219 — documento já em uso recusa a edição e NENHUMA das duas 
       // A classe específica, nunca "ocorreu um erro": um `catch` genérico de `23505` seria aprovado
       // por uma asserção mais frouxa.
       await expect(
-        alterarEmpresa(tx, alvo.id, { nome: 'Nome Novo', documento: outra.documento }),
+        alterarEmpresa(tx, alvo.id, {
+          nome: 'Nome Novo',
+          documento: outra.documento,
+          emailContato: null,
+        }),
       ).rejects.toBeInstanceOf(ErroDeDocumentoDeEmpresaEmUso);
     });
 

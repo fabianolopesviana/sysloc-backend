@@ -59,7 +59,11 @@
 
 import type { EnvioDeCobranca, PoliticaDeAviso } from '@syslocbr/contracts';
 import { dentroDaJanela } from './janela.js';
-import { comporAvisoDeCobranca, type MensagemDeAviso } from './mensagem.js';
+import {
+  comporAvisoDeCobranca,
+  type IdentidadeDaEmpresaNoAviso,
+  type MensagemDeAviso,
+} from './mensagem.js';
 import type { CandidataAoAviso, PortaDeCandidatas, PortaDeRegistro } from './porta-de-dados.js';
 import type { PortaDeEnvioDeEmail } from './porta-de-email.js';
 
@@ -212,6 +216,16 @@ export interface TrabalhoDaRegua {
   readonly registrar: PortaDeRegistro;
   /** A porta de saída — o adaptador de produção ou o de captura, indistintos daqui. */
   readonly email: PortaDeEnvioDeEmail;
+  /**
+   * A empresa em nome de quem os avisos saem — o nome que o assunto e o corpo imprimem, e o
+   * endereço para onde a resposta do locatário vai.
+   *
+   * ⚠️ **Ela não é lida por porta, e a diferença é deliberada.** As portas deste tipo entregam o que
+   * VARIA dentro da passagem — as candidatas, o registro de cada tentativa, a entrega. A empresa é
+   * constante da passagem inteira, e recebê-la já resolvida é o que impede o domínio de consultar
+   * banco por conta própria a cada candidata.
+   */
+  readonly empresa: IdentidadeDaEmpresaNoAviso;
 }
 
 /**
@@ -273,6 +287,16 @@ export interface DisparoManual {
   readonly registrar: PortaDeRegistro;
   /** A porta de saída. */
   readonly email: PortaDeEnvioDeEmail;
+  /**
+   * A empresa em nome de quem os avisos saem — o nome que o assunto e o corpo imprimem, e o
+   * endereço para onde a resposta do locatário vai.
+   *
+   * ⚠️ **Ela não é lida por porta, e a diferença é deliberada.** As portas deste tipo entregam o que
+   * VARIA dentro da passagem — as candidatas, o registro de cada tentativa, a entrega. A empresa é
+   * constante da passagem inteira, e recebê-la já resolvida é o que impede o domínio de consultar
+   * banco por conta própria a cada candidata.
+   */
+  readonly empresa: IdentidadeDaEmpresaNoAviso;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +320,7 @@ function admitirAviso(
   candidata: CandidataAoAviso,
   oportunidade: OportunidadeDoAviso,
   dispensas: DispensasDoManual,
+  empresa: IdentidadeDaEmpresaNoAviso,
 ): MensagemDeAviso {
   for (const eixo of EIXOS_DE_OPORTUNIDADE) {
     if (!dispensas[eixo] && !oportunidade[eixo]) {
@@ -303,7 +328,7 @@ function admitirAviso(
     }
   }
 
-  return comporAvisoDeCobranca(candidata);
+  return comporAvisoDeCobranca(candidata, empresa);
 }
 
 /**
@@ -440,7 +465,7 @@ export async function executarReguaDaEmpresa(trabalho: TrabalhoDaRegua): Promise
   let semDestinatario = 0;
 
   for (const candidata of conjunto) {
-    const mensagem = admitirAviso(candidata, oportunidade, SEM_DISPENSA);
+    const mensagem = admitirAviso(candidata, oportunidade, SEM_DISPENSA, trabalho.empresa);
     const registro = await tentarAvisar(candidata, CAMINHO_AUTOMATICO, mensagem, registrar, email);
 
     // As contagens saem do desfecho **gravado**, e não do que a régua pretendia gravar: é o que faz
@@ -478,7 +503,7 @@ export async function executarReguaDaEmpresa(trabalho: TrabalhoDaRegua): Promise
  */
 export async function enviarAvisoDeCobranca(disparo: DisparoManual): Promise<EnvioDeCobranca> {
   const { candidata, dispensas, registrar, email } = disparo;
-  const mensagem = admitirAviso(candidata, NADA_APURADO, dispensas);
+  const mensagem = admitirAviso(candidata, NADA_APURADO, dispensas, disparo.empresa);
 
   return await tentarAvisar(candidata, CAMINHO_MANUAL, mensagem, registrar, email);
 }
