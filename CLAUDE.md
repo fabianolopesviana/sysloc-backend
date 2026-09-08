@@ -883,10 +883,26 @@ O marco está alcançado quando **todos** os sete itens forem verdadeiros:
       retentada para sempre em vez de acusada — o `CT-1287` tem os dois controles negativos (o 403
       de permissão e a divergência de conteúdo) e **carrega a função do próprio alvo**, de modo que
       quem valida e quem executa são o mesmo código.
-      ⚠️ **A bateria foi de 24 para 32 casos** (`CT-1280` a `CT-1287`), e `CASOS_DECLARADOS_NO_TOTAL`
-      de **116 para 124** — os dois no mesmo diff que publica os casos. **Não reponha o 24 nem o
-      116**, e não reponha o par intermediário `31 / 123`: ele é da primeira passada do mesmo dia,
-      anterior ao `CT-1287`. Nenhum deles toca a rede: o destino é um remote `alias` do próprio `rclone` apontado
+      ⚠️ **O KIT DE RECUPERAÇÃO sobe junto, e ele resolve um ponto único de falha**: o runbook e os
+      scripts vivem no GitHub, e a chave SSH que dá acesso a ele vive **na máquina que o runbook
+      supõe perdida**. `kit-de-recuperacao/` leva um `git bundle --all` do repositório inteiro —
+      clonável **sem rede, sem GitHub e sem credencial** — mais o runbook, o `virada.md` e os quatro
+      scripts de backup **em claro**, para quem precisa LER o roteiro antes de conseguir restaurar
+      qualquer coisa. Nomes fixos, sem data (o `copy` sobrescreve e o kit não acumula), e **sem
+      poda**. ⚠️ **A perna que importa é a do CLONE**: um `.bundle` truncado tem nome, tem tamanho,
+      é copiado com sucesso e satisfaz qualquer conferência de transporte — revelando o defeito só
+      no dia da recuperação. O `CT-1288` clona o pacote que subiu, compara a contagem de commits com
+      a da árvore, e tem o pacote truncado como falsificação. O alvo também roda
+      `git bundle verify` **antes** de enviar.
+      ⚠️ **A bateria foi de 24 para 33 casos** (`CT-1280` a `CT-1288`), e `CASOS_DECLARADOS_NO_TOTAL`
+      de **116 para 125** — os dois no mesmo diff que publica os casos. **Não reponha o 24 nem o
+      116**, e não reponha os pares intermediários `31 / 123` e `32 / 124`: são das duas passadas
+      anteriores do mesmo dia, antes do `CT-1287` e do `CT-1288`.
+      ⚠️ **`conteudo_do_destino` da bateria passou a receber RECORTE explícito** (`acervo boletos`
+      nos casos do acervo, `kit-de-recuperacao` no do kit), e as quatro igualdades seguem sendo de
+      conjunto INTEIRO do recorte declarado, com `SUT_IS_CORRECT_BECAUSE` no ponto. **Não instale
+      filtro implícito** que esconda parte do destino: um caso passaria por ignorar exatamente a
+      pasta em que o defeito estaria. Nenhum deles toca a rede: o destino é um remote `alias` do próprio `rclone` apontado
       para a caixa de areia, de modo que `rclone`, sistema de arquivos e comportamento do alvo são
       reais e o Google não é dependência. A `ambiente-real` de `FRENTES_PRIVILEGIADAS` foi de **2
       para 3** linhas de degradação, com o ponto novo do `CT-1283`; o teto é EXATO, e uma quarta

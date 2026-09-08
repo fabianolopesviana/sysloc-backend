@@ -144,9 +144,37 @@ readonly PREFIXO_NA_NUVEM_PADRAO="sysloc-backups"
 readonly PRAZO_DE_GUARDA_EM_DIAS=14
 readonly DIR_DOS_BOLETOS_PADRAO="/var/lib/sysloc-boletos"
 
-# Os dois regimes, e é o par de nomes que a poda usa para não se enganar.
+# Os regimes, e é o conjunto de nomes que a poda usa para não se enganar.
+# ⚠️ SÓ `${SUBDIR_DO_ACERVO}` é podado. Os outros dois guardam artefato que não
+# se regenera (o boleto) ou que precisa estar lá justamente no dia em que tudo
+# mais falhou (o kit).
 readonly SUBDIR_DO_ACERVO="acervo"
 readonly SUBDIR_DOS_BOLETOS="boletos"
+readonly SUBDIR_DO_KIT="kit-de-recuperacao"
+
+# ---------------------------------------------------------------------------
+# O KIT DE RECUPERAÇÃO — as instruções moram onde o insumo mora
+# ---------------------------------------------------------------------------
+#
+# Uma cópia de segurança sem o roteiro de como restaurá-la é um arquivo binário
+# de origem esquecida. O runbook e os scripts vivem no repositório do GitHub, o
+# que basta enquanto se tem acesso a ele — e a chave SSH que dá esse acesso vive
+# NESTA máquina, que é exatamente a que se supõe perdida.
+#
+# Por isso o kit sobe junto, em dois formatos deliberadamente diferentes:
+#
+#   (1) `${NOME_DO_PACOTE_DO_REPO}` — o repositório INTEIRO, com todo o
+#       histórico, num arquivo só. Recupera-se com um `git clone <arquivo>`, sem
+#       rede, sem GitHub e sem credencial nenhuma;
+#   (2) os arquivos em claro sob `${SUBDIR_DO_KIT}/` — o runbook e os quatro
+#       scripts de backup, legíveis em qualquer editor por quem não tem `git` à
+#       mão, ou que precise LER o roteiro antes de conseguir restaurar qualquer
+#       coisa. É a redundância que importa: o formato (1) é melhor, e o (2) é o
+#       que funciona quando o (1) não abre.
+#
+# Nomes FIXOS, sem data: o `rclone copy` sobrescreve pelo mesmo nome, e o kit
+# não acumula. E ele NÃO é podado — ver o bloco dos regimes acima.
+readonly NOME_DO_PACOTE_DO_REPO="sysloc-backend.bundle"
 
 readonly CHAVE_DO_DIR_DOS_BOLETOS="DIRETORIO_DOS_BOLETOS"
 
@@ -193,6 +221,35 @@ readonly ESPERA_INICIAL_ENTRE_TENTATIVAS_S=20
 
 ENSAIO=0
 FALHAS=0
+AREA_DO_KIT=""
+
+# A raiz do repositório, derivada da posição DESTE arquivo — nunca de um literal,
+# que divergiria no dia em que a árvore mudasse de lugar.
+RAIZ_DO_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+readonly RAIZ_DO_REPO
+
+# O `git` recusa operar em árvore de outro dono desde a CVE-2022-24765, e esta
+# rotina roda como root sobre um repositório do usuário `sysloc`. A exceção é
+# NOMINAL e vale só para esta invocação: ela não toca a configuração global.
+readonly GIT_DESTA_ARVORE=(git -c "safe.directory=${RAIZ_DO_REPO}" -C "${RAIZ_DO_REPO}")
+
+# Os arquivos em claro do kit — o roteiro e o que ele manda executar.
+readonly ARQUIVOS_DO_KIT=(
+	"deploy/scripts/recuperacao-em-maquina-nova.md"
+	"deploy/scripts/virada.md"
+	"deploy/scripts/backup/copiar-base.sh"
+	"deploy/scripts/backup/preservar-segredos.sh"
+	"deploy/scripts/backup/restaurar-base.sh"
+	"deploy/scripts/backup/enviar-para-a-nuvem.sh"
+)
+
+# A área de preparo do kit é temporária e some SEMPRE — inclusive quando a
+# rotina aborta no meio, que é quando um resíduo passaria despercebido.
+limpar() {
+	[ -n "${AREA_DO_KIT}" ] && [ -d "${AREA_DO_KIT}" ] && rm -rf "${AREA_DO_KIT}"
+	return 0
+}
+trap limpar EXIT INT TERM HUP
 
 # --------------------------------------------------------------------------- #
 # Diagnóstico
@@ -383,6 +440,7 @@ readonly DIR_DOS_BOLETOS ORIGEM_DO_DIR_DOS_BOLETOS
 readonly BASE_REMOTA="${REMOTE}:${PREFIXO_NA_NUVEM}/${MARCA_DO_HOST}"
 readonly DESTINO_DO_ACERVO="${BASE_REMOTA}/${SUBDIR_DO_ACERVO}"
 readonly DESTINO_DOS_BOLETOS="${BASE_REMOTA}/${SUBDIR_DOS_BOLETOS}"
+readonly DESTINO_DO_KIT="${BASE_REMOTA}/${SUBDIR_DO_KIT}"
 
 info "início — destino ${BASE_REMOTA}"
 [ "${ENSAIO}" -eq 1 ] && nota "MODO ENSAIO: nada será escrito no destino"
@@ -433,6 +491,55 @@ else
 fi
 
 # --------------------------------------------------------------------------- #
+# 2b. O kit de recuperação — o roteiro viaja com o insumo
+# --------------------------------------------------------------------------- #
+
+montar_o_kit() {
+	AREA_DO_KIT="$(mktemp -d)"
+	chmod 700 "${AREA_DO_KIT}"
+
+	# ⚠️ `--all` leva TODAS as referências, e não só a corrente: um bundle da
+	# `HEAD` sozinha recuperaria a árvore e perderia o histórico, que é onde
+	# moram as razões de cada decisão deste produto — e é o histórico que o P2 do
+	# Protocolo Antirregressão manda ler antes de editar qualquer coisa.
+	"${GIT_DESTA_ARVORE[@]}" bundle create "${AREA_DO_KIT}/${NOME_DO_PACOTE_DO_REPO}" --all >/dev/null 2>&1 ||
+		return 1
+
+	# E o bundle é CONFERIDO antes de subir. Um arquivo corrompido que o `rclone`
+	# copia com sucesso satisfaria a conferência de integridade do transporte e
+	# só revelaria o defeito no dia da recuperação, que é o pior dia possível.
+	"${GIT_DESTA_ARVORE[@]}" bundle verify "${AREA_DO_KIT}/${NOME_DO_PACOTE_DO_REPO}" >/dev/null 2>&1 ||
+		return 2
+
+	local relativo
+	for relativo in "${ARQUIVOS_DO_KIT[@]}"; do
+		[ -f "${RAIZ_DO_REPO}/${relativo}" ] || return 3
+		install -m 0644 "${RAIZ_DO_REPO}/${relativo}" "${AREA_DO_KIT}/$(basename "${relativo}")" || return 4
+	done
+	return 0
+}
+
+info "montando o kit de recuperação (repositório + roteiro em claro)"
+CODIGO_DA_ETAPA=0
+montar_o_kit || CODIGO_DA_ETAPA=$?
+case "${CODIGO_DA_ETAPA}" in
+0)
+	info "enviando o kit: ${DESTINO_DO_KIT}"
+	CODIGO_DA_ETAPA=0
+	operar_com_paciencia "kit" copy "${AREA_DO_KIT}" "${DESTINO_DO_KIT}" || CODIGO_DA_ETAPA=$?
+	case "${CODIGO_DA_ETAPA}" in
+	0) ok "kit de recuperação enviado ($((${#ARQUIVOS_DO_KIT[@]} + 1)) arquivo(s))" ;;
+	2) erro "o envio do kit NÃO ACONTECEU: o provedor recusou por limite de taxa ou transporte" ;;
+	*) erro "o envio do kit falhou" ;;
+	esac
+	;;
+1) erro "não consegui empacotar o repositório — sem o kit, a cópia sobe sem o roteiro de como restaurá-la" ;;
+2) erro "o pacote do repositório saiu CORROMPIDO (git bundle verify reprovou) — nada foi enviado no lugar dele" ;;
+3) erro "um dos arquivos do kit não existe na árvore — o roteiro está incompleto" ;;
+*) erro "não consegui preparar a área do kit" ;;
+esac
+
+# --------------------------------------------------------------------------- #
 # 3. A conferência — é ela que separa "o comando saiu 0" de "os bytes estão lá"
 #
 # `--one-way` porque o destino tem, por construção, MAIS do que a origem: o
@@ -459,6 +566,17 @@ else
 		;;
 	*) erro "a conferência do acervo REPROVOU: há arquivo da origem ausente ou diferente no destino" ;;
 	esac
+
+	if [ -n "${AREA_DO_KIT}" ] && [ -d "${AREA_DO_KIT}" ]; then
+		CODIGO_DA_ETAPA=0
+		operar_com_paciencia "conferência do kit" check "${AREA_DO_KIT}" "${DESTINO_DO_KIT}" --one-way ||
+			CODIGO_DA_ETAPA=$?
+		case "${CODIGO_DA_ETAPA}" in
+		0) ok "kit conferido" ;;
+		2) erro "NÃO FOI POSSÍVEL CONFERIR o kit: o provedor recusou por limite de taxa ou transporte. ⚠️ Isto NÃO afirma que falta arquivo no destino" ;;
+		*) erro "a conferência do kit REPROVOU: há arquivo do kit ausente ou diferente no destino" ;;
+		esac
+	fi
 
 	if [ -d "${DIR_DOS_BOLETOS}" ]; then
 		CODIGO_DA_ETAPA=0
@@ -506,7 +624,7 @@ fi
 # --------------------------------------------------------------------------- #
 
 if [ "${FALHAS}" -eq 0 ]; then
-	info "fim — ${BASE_REMOTA} está em dia (acervo com guarda de ${PRAZO} dia(s); boletos sem poda)"
+	info "fim — ${BASE_REMOTA} está em dia (acervo com guarda de ${PRAZO} dia(s); boletos e kit sem poda)"
 	exit 0
 fi
 

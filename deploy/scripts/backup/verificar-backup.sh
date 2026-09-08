@@ -103,7 +103,9 @@
 #   CT-1286  a unidade diária encadeia os TRÊS passos, com o envio por último;
 #   CT-1287  "o provedor não respondeu" NÃO é "o conteúdo diverge" — o
 #            discriminador é CARREGADO do alvo, com o 403 de permissão e a
-#            divergência de conteúdo como controles negativos.
+#            divergência de conteúdo como controles negativos;
+#   CT-1288  o kit de recuperação sobe com o roteiro em claro, e o repositório
+#            empacotado é CLONÁVEL — com o pacote truncado como falsificação.
 #
 # ===========================================================================
 # O VOCABULÁRIO DE ASSERÇÃO NÃO MORA MAIS AQUI
@@ -381,7 +383,7 @@ readonly BATERIAS_DECLARADAS=(
 # 107.**
 # --------------------------------------------------------------------------- #
 readonly CASOS_DECLARADOS_POR_BATERIA=(
-	"backup/verificar-backup.sh|32|CT-1098;CT-1099;CT-1100;CT-1101;CT-1102;CT-1103;CT-1104;CT-1105;CT-1106;CT-1107;CT-1108;CT-1109;CT-1110;CT-1111;CT-1112;CT-1113;CT-1119;CT-1120;CT-1121;CT-1122;CT-1123;CT-1124;CT-1125;CT-1126;CT-1280;CT-1281;CT-1282;CT-1283;CT-1284;CT-1285;CT-1286;CT-1287"
+	"backup/verificar-backup.sh|33|CT-1098;CT-1099;CT-1100;CT-1101;CT-1102;CT-1103;CT-1104;CT-1105;CT-1106;CT-1107;CT-1108;CT-1109;CT-1110;CT-1111;CT-1112;CT-1113;CT-1119;CT-1120;CT-1121;CT-1122;CT-1123;CT-1124;CT-1125;CT-1126;CT-1280;CT-1281;CT-1282;CT-1283;CT-1284;CT-1285;CT-1286;CT-1287;CT-1288"
 	"borda/verificar-borda-do-app.sh|12|CT-1180;CT-1181;CT-1182;CT-1183;CT-1184;CT-1185;CT-1186;CT-1187;CT-1188;CT-1188 (b);CT-1189;CT-1190"
 	"borda/verificar-notificacao-bancaria.sh|8|CT-1005 (a);CT-1005 (b);CT-1005 (c);CT-1005 (d);CT-1191;CT-1192;CT-1193;CT-1194"
 	"caracterizacao/verificar-captura.sh|13|CT-001;CT-002;CT-003;CT-004;CT-005;CT-006;CT-007;CT-008;CT-009;CT-012;CT-013;CT-502;CT-603"
@@ -408,7 +410,7 @@ readonly CASOS_DECLARADOS_POR_BATERIA=(
 # entram aqui no mesmo diff que os publica — número narrativo que fica para trás
 # convida a próxima task a "corrigir" a âncora executável para o valor errado.
 # **Não reponha o 24 nem o 116.**
-readonly CASOS_DECLARADOS_NO_TOTAL=124
+readonly CASOS_DECLARADOS_NO_TOTAL=125
 
 # --------------------------------------------------------------------------- #
 # O teto de frescor da cópia do dia — CT-1122.
@@ -4232,7 +4234,7 @@ desfecho_da_bateria() {
 			exit 2
 		fi
 		if [[ "${avisos_totais}" -eq 0 ]]; then
-			printf 'verificar-backup: %d/%d casos aprovados (CT-1098 a CT-1113, CT-1119 a CT-1126 e CT-1280 a CT-1287)\n' \
+			printf 'verificar-backup: %d/%d casos aprovados (CT-1098 a CT-1113, CT-1119 a CT-1126 e CT-1280 a CT-1288)\n' \
 				"${casos_aprovados}" "${casos_executados}"
 		else
 			printf 'verificar-backup: %d/%d casos sem falha, com %d degradação(ões) — há asserção NÃO MEDIDA neste host (ver as linhas AVISO acima)\n' \
@@ -4342,12 +4344,35 @@ executar_envio() {
 }
 
 # O que existe no destino, um caminho por linha, relativo à pasta do host.
+#
+# O segundo argumento é o RECORTE — a lista de subdiretórios a olhar, separada
+# por espaço. Ausente, olha tudo.
+#
+# ⚠️ O recorte é EXPLÍCITO de propósito, e nunca um filtro embutido que esconda
+# parte do destino: cada caso declara o que está afirmando. Um filtro implícito
+# faria um caso passar por ignorar exatamente a pasta em que o defeito estaria.
 conteudo_do_destino() {
-	local base="$1"
+	local base="$1" recorte="${2:-}"
 	local raiz="${base}/nuvem/sysloc-backups/caixa-de-areia"
 	[ -d "${raiz}" ] || return 0
-	(cd "${raiz}" && find . -type f | sed 's|^\./||' | sort)
+	if [[ -z "${recorte}" ]]; then
+		(cd "${raiz}" && find . -type f | sed 's|^\./||' | sort)
+		return 0
+	fi
+	local -a alvos=()
+	local sub
+	for sub in ${recorte}; do
+		[[ -d "${raiz}/${sub}" ]] && alvos+=("${sub}")
+	done
+	[[ "${#alvos[@]}" -eq 0 ]] && return 0
+	(cd "${raiz}" && find "${alvos[@]}" -type f | sort)
 }
+
+# O recorte que os casos do acervo e dos boletos usam. O kit fica de fora deles
+# porque tem caso próprio (CT-1288) — e porque o `.bundle` muda a cada commit,
+# de modo que afirmá-lo por igualdade nos outros casos os tornaria dependentes
+# do estado do repositório.
+readonly RECORTE_SEM_O_KIT="acervo boletos"
 
 # --------------------------------------------------------------------------- #
 # CT-1280 — o acervo E os boletos chegam ao destino, e a conferência confirma.
@@ -4369,11 +4394,14 @@ ct_1280() {
 	# IGUALDADE DE CONJUNTO, e não contenção: as duas direções precisam reprovar.
 	# Um alvo que enviasse o acervo e esquecesse os boletos passaria por
 	# contenção, e é exatamente o defeito que este caso existe para pegar.
+	# SUT_IS_CORRECT_BECAUSE: o kit de recuperação entrou em 2026-09-08 e sobe
+	# na mesma passada. A igualdade continua sendo de conjunto INTEIRO — do
+	# recorte que este caso declara olhar —, e o kit tem caso próprio.
 	afirmar_igual "o destino tem EXATAMENTE os três artefatos da origem" \
 		"acervo/daily/base-2026-09-08.dump
 acervo/segredos/segredos-2026-09-08.tar.gz
 boletos/CBR-2026-00001.pdf" \
-		"$(conteudo_do_destino "${base}")"
+		"$(conteudo_do_destino "${base}" "${RECORTE_SEM_O_KIT}")"
 
 	# O CONTEÚDO, e não só o nome: um alvo que criasse arquivos vazios com os
 	# nomes certos satisfaria a perna acima.
@@ -4438,7 +4466,7 @@ ct_1281() {
 		"acervo/daily/base-2026-09-08.dump
 acervo/segredos/segredos-2026-09-08.tar.gz
 boletos/CBR-2026-00001.pdf" \
-		"$(conteudo_do_destino "${base}")"
+		"$(conteudo_do_destino "${base}" "${RECORTE_SEM_O_KIT}")"
 
 	# PROVA ESTÁTICA IRMÃ, e ela não é redundante: a perna acima prova o
 	# comportamento de HOJE; esta veta a troca que o reintroduziria. `rclone sync`
@@ -4487,7 +4515,7 @@ acervo/daily/base-2026-09-08.dump
 acervo/segredos/segredos-2026-09-08.tar.gz
 boletos/CBR-2026-00000.pdf
 boletos/CBR-2026-00001.pdf" \
-		"$(conteudo_do_destino "${base}")"
+		"$(conteudo_do_destino "${base}" "${RECORTE_SEM_O_KIT}")"
 
 	codigo=0
 	executar_envio "${base}" >/dev/null || codigo=$?
@@ -4501,7 +4529,7 @@ boletos/CBR-2026-00001.pdf" \
 acervo/segredos/segredos-2026-09-08.tar.gz
 boletos/CBR-2026-00000.pdf
 boletos/CBR-2026-00001.pdf" \
-		"$(conteudo_do_destino "${base}")"
+		"$(conteudo_do_destino "${base}" "${RECORTE_SEM_O_KIT}")"
 
 	# PROVA ESTÁTICA IRMÃ: nenhuma remoção aponta para a base nem para a pasta
 	# dos boletos. A perna comportamental acima cobre o alvo de hoje; esta veta a
@@ -4835,6 +4863,94 @@ ct_1287() {
 }
 
 
+# --------------------------------------------------------------------------- #
+# CT-1288 — o kit de recuperação sobe, e o repositório empacotado é CLONÁVEL.
+#
+# Uma cópia de segurança sem o roteiro de como restaurá-la é um arquivo binário
+# de origem esquecida. O runbook e os scripts vivem no GitHub — e a chave que dá
+# acesso a ele vive NA MÁQUINA que este runbook supõe perdida.
+#
+# ⚠️ A perna que importa é a do CLONE, e ela não é redundante com a presença do
+# arquivo: um `.bundle` truncado tem nome, tem tamanho, é copiado com sucesso
+# pelo `rclone` e satisfaz qualquer conferência de transporte — revelando o
+# defeito só no dia da recuperação, que é o pior dia possível.
+# --------------------------------------------------------------------------- #
+ct_1288() {
+	caso "CT-1288" "o kit sobe com o roteiro em claro, e o repositório empacotado é clonável"
+
+	local base codigo raiz_do_kit
+	base="$(preparar_caixa_do_envio "1288")"
+
+	# ANTIVÁCUO: o kit não existe no destino antes.
+	afirmar_igual "o kit está AUSENTE do destino antes do envio" \
+		"" "$(conteudo_do_destino "${base}" "kit-de-recuperacao")"
+
+	codigo=0
+	executar_envio "${base}" >/dev/null || codigo=$?
+	afirmar_igual "o envio termina com desfecho 0" "0" "${codigo}"
+
+	# Os arquivos do kit saem do PRÓPRIO ALVO, e não de uma lista repetida aqui:
+	# uma segunda declaração divergiria no dia em que o roteiro ganhasse um
+	# arquivo, e o caso aprovaria um kit incompleto.
+	local pacote esperados
+	pacote="$(ler_constante_do_alvo "${SCRIPT_ENVIAR}" NOME_DO_PACOTE_DO_REPO)"
+	afirmar_diferente "o nome do pacote foi lido do alvo" "" "${pacote}"
+
+	esperados="$( {
+		printf '%s\n' "${pacote}"
+		sed -n '/^readonly ARQUIVOS_DO_KIT=(/,/^)/p' "${SCRIPT_ENVIAR}" |
+			sed -n 's|^\t"\(.*\)"$|\1|p' | xargs -r -n1 basename
+	} | sort | sed 's|^|kit-de-recuperacao/|')"
+	afirmar_diferente "a lista de arquivos do kit foi lida do alvo" "" "${esperados}"
+
+	afirmar_igual "o destino tem EXATAMENTE os arquivos que o alvo declara" \
+		"${esperados}" "$(conteudo_do_destino "${base}" "kit-de-recuperacao")"
+
+	raiz_do_kit="${base}/nuvem/sysloc-backups/caixa-de-areia/kit-de-recuperacao"
+
+	# O runbook precisa estar LEGÍVEL, e não só presente: é o formato que serve a
+	# quem ainda não conseguiu restaurar nada e precisa LER o que fazer.
+	if grep -q 'Recuperação do backend Sysloc em máquina nova' "${raiz_do_kit}/recuperacao-em-maquina-nova.md"; then
+		ok "o runbook no destino é o documento certo, em texto legível"
+	else
+		falhar "o runbook no destino não é legível ou não é o documento esperado"
+	fi
+
+	# A PERNA QUE IMPORTA: o pacote CLONA, com o histórico inteiro.
+	local destino_do_clone commits_no_clone commits_na_arvore
+	destino_do_clone="${DIR_TRABALHO}/clone-do-kit-1288"
+	if git clone --quiet "${raiz_do_kit}/${pacote}" "${destino_do_clone}" >/dev/null 2>&1; then
+		ok "o pacote enviado CLONA — o repositório se recupera sem rede e sem GitHub"
+		commits_no_clone="$(git -C "${destino_do_clone}" log --oneline --all 2>/dev/null | wc -l)"
+		commits_na_arvore="$(git -C "${RAIZ_REPO}" log --oneline --all 2>/dev/null | wc -l)"
+		afirmar_igual "e o clone traz o histórico INTEIRO, e não só a árvore corrente" \
+			"${commits_na_arvore}" "${commits_no_clone}"
+	else
+		falhar "o pacote enviado NÃO clona — o kit sobe corrompido e o defeito só apareceria no dia da recuperação"
+	fi
+
+	# PROVA DE FALSIFICAÇÃO da perna do clone: um pacote truncado é copiado com
+	# sucesso pelo `rclone` e REPROVA aqui. Sem esta perna, a asserção acima
+	# poderia estar aprovando qualquer arquivo com o nome certo.
+	local truncado="${DIR_TRABALHO}/pacote-truncado.bundle"
+	head -c 512 "${raiz_do_kit}/${pacote}" >"${truncado}"
+	if git clone --quiet "${truncado}" "${DIR_TRABALHO}/clone-do-truncado" >/dev/null 2>&1; then
+		falhar "(controle) um pacote TRUNCADO clonou — a asserção do clone não pode falhar"
+	else
+		ok "(controle) o pacote truncado NÃO clona — a asserção discrimina"
+	fi
+	rm -rf "${DIR_TRABALHO}/clone-do-truncado" "${truncado}" "${destino_do_clone}"
+
+	# O kit NÃO é podado: ele é a última coisa que se quer perder, e some do
+	# destino no dia em que o envio parar por mais de duas semanas.
+	local podas_do_kit
+	podas_do_kit="$(grep -cE '^[^#]*(delete|purge|sync).*DESTINO_DO_KIT' "${SCRIPT_ENVIAR}" || true)"
+	afirmar_igual "nenhuma remoção do alvo aponta para o kit" "0" "${podas_do_kit}"
+
+	fechar_caso "CT-1288"
+}
+
+
 main() {
 	printf 'Verificação da preservação — %s\n' "${RAIZ_REPO}"
 
@@ -4933,6 +5049,7 @@ main() {
 	ct_1285
 	ct_1286
 	ct_1287
+	ct_1288
 
 	# ⚠️ A ORDEM DESTES TRÊS É CONTEÚDO. O CT-1124 compara o estado da árvore
 	# versionada contra a foto do início, e por isso vem DEPOIS de todo caso que
