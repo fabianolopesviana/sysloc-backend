@@ -293,22 +293,28 @@ readonly CHAVE_DO_DESTINO_DO_EMAIL="SMTP_URL"
 readonly CHAVE_DO_AMBIENTE_DE_EXECUCAO="NODE_ENV"
 readonly AMBIENTE_DE_EXECUCAO_DECLARADO="production"
 #
-# DÉBITO COM GATILHO — D41 · F7/T9 · registrado 2026-08-26
-# (NÃO é uma `DECISÃO FECHADA`: ele agenda o fecho de um ponteiro, e não protege
-#  a constante abaixo — que É decisão registrada e não se rebaixa.)
-# O QUÊ: o ponteiro da consequência acima é de MÃO ÚNICA. Quem abre esta bateria
-#        é avisado de que o `CT-1152` afirma o OUTRO lado da mesma chave; quem
-#        abre `deploy/scripts/instalacao/verificar-unidades-agendadas.sh` NÃO é —
-#        e é esse o lado que reprova quando o operador trocar o destino.
-# QUANDO FECHA: a troca do `SMTP_URL` para o destino real. Não existe valor que
-#        satisfaça as duas asserções ao mesmo tempo, e quem fizer a troca move as
-#        duas NO MESMO MOVIMENTO — aí o ponteiro recíproco entra lá e este
-#        marcador sai daqui.
-# POR QUE NÃO AGORA: acrescentá-lo exigiria editar aquela bateria, que está FORA
-#        da lista de arquivos declarada desta task, e a asserção do `CT-1152` foi
-#        aprovada antes e NÃO se altera.
-# ÍNDICE: docs/specs/features/publicacao-e-backup/v1/_run/run-report.md §2, D41
-readonly DESTINO_DECLARADO_DO_EMAIL="smtp.systera.com.br:587"
+# O DESTINO REAL — trocado em 2026-09-08, no fecho do `D41 · F7/T9`.
+#
+# ⚠️ O valor anterior era `smtp.systera.com.br:587`, e ele NÃO se repõe: era a
+# hipótese de agosto — *"o domínio que já atende o produto na borda pública"* —, e
+# a medição de 2026-09-08 a REFUTOU. `smtp.systera.com.br` não existe no DNS, e
+# nunca existiu; o produto entrega por RELAY AUTENTICADO, decisão do usuário, e o
+# PTR deste host (`clt-home-...fibron.com.br`) é faixa de cliente, que Gmail e
+# Outlook punem com força. O envio direto era tecnicamente possível e
+# operacionalmente ruim.
+#
+# ⚠️ PONTEIRO RECÍPROCO — instalado no mesmo commit, e é ele que fecha o débito:
+# `deploy/scripts/instalacao/verificar-unidades-agendadas.sh` declara o MESMO
+# destino na constante homônima, e o `CT-1152` de lá o afirma sobre o ambiente
+# que o processador EFETIVAMENTE carrega. **Trocar o destino do e-mail move as
+# DUAS constantes no mesmo commit** — e agora quem abrir qualquer uma das duas
+# baterias é avisado da outra, que era exatamente a mão única que o `D41`
+# registrava.
+#
+# ⚠️ E o `CT-1152` foi INVERTIDO: até a virada ele exigia o laço local (a trava
+# contra envio real a partir de dados de ensaio); hoje ele exige o destino
+# declarado, e o laço local virou o mutante mais importante dele.
+readonly DESTINO_DECLARADO_DO_EMAIL="smtp-relay.brevo.com:465"
 
 # A frase que TODA degradação carrega, para que o operador nunca fique sem
 # saída. Sem o comando, o aviso diz que algo não foi medido e deixa o leitor sem

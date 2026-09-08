@@ -19,9 +19,11 @@
 #            carregou;
 #   CT-1151  falsificação da dependência — `After=` e `Wants=` são conferidas em
 #            separado, e a ausência de uma só é acusada sozinha;
-#   CT-1152  o destino do e-mail é o laço local, afirmado por host E porta, sobre
+#   CT-1152  o destino do e-mail é o DECLARADO, afirmado por host E porta, sobre
 #            o ambiente que o processador EFETIVAMENTE carrega — com a varredura
-#            da própria saída desta bateria provando que a URL crua não escapa;
+#            da própria saída desta bateria provando que a URL crua não escapa.
+#            ⚠️ Invertido em 2026-09-08 (fecho do `D41 · F7/T9`): até a virada ele
+#            exigia o LAÇO LOCAL, e hoje o laço local é o mutante;
 #   CT-1154  o conjunto está de pé, nenhum relógio está habilitado porém morto, e
 #            nenhuma unidade do roster está em falha.
 #
@@ -166,11 +168,34 @@ readonly DIRETIVAS_DA_DEPENDENCIA=(After Wants)
 # ⚠️ O conjunto é literal de propósito. Derivá-lo do valor medido faria a
 # asserção concordar com qualquer host que o ambiente viesse a declarar, que é a
 # asserção tautológica.
-readonly HOSTS_DO_LACO_LOCAL=(
-	"127.0.0.1"
-	"localhost"
-	"::1"
-)
+# ---------------------------------------------------------------------------
+# O DESTINO DECLARADO — invertido em 2026-09-08 com o fecho do `D41 · F7/T9`
+# ---------------------------------------------------------------------------
+#
+# Até a virada, este caso exigia que o destino estivesse no LAÇO LOCAL: era a
+# trava que impedia um aviso de ensaio de alcançar a caixa de uma pessoa real,
+# com as Rotinas já correndo sob `NODE_ENV=production`.
+#
+# ⚠️ A virada aconteceu em 2026-09-08, e a trava PERDEU O OBJETO: o produto passou
+# a entregar de verdade, por relay autenticado, e um destino no laço local passou
+# a significar o contrário do que significava — os avisos NÃO SAEM, e a Tentativa
+# de envio registra `ENVIADA` porque o capturador aceita tudo. O modo de falhar
+# continua silencioso; o que mudou foi o lado.
+#
+# ⚠️ A asserção nova é ESTRITAMENTE MAIS FORTE que a que substitui: ela exige o
+# destino EXATO (host e porta), enquanto a anterior aceitava qualquer porta em
+# qualquer nome do laço local.
+#
+# ⚠️ ESTE VALOR TEM UM PONTEIRO RECÍPROCO, e mover um lado sem o outro reabre o
+# `D41`: `deploy/scripts/borda/verificar-borda-do-app.sh` declara o MESMO destino
+# em `DESTINO_DECLARADO_DO_EMAIL`, e o `CT-1189` de lá o afirma. **Trocar o destino
+# do e-mail move as DUAS constantes no mesmo commit.**
+readonly DESTINO_DECLARADO_DO_EMAIL="smtp-relay.brevo.com:465"
+
+# O capturador de desenvolvimento — aqui apenas como MUTANTE. Ele é o destino que
+# valia antes da virada, e é o mais importante dos três: sem ele, um retrocesso
+# ao capturador passaria despercebido e o produto pararia de avisar em silêncio.
+readonly HOST_DO_CAPTURADOR="127.0.0.1"
 readonly PORTA_DO_CAPTURADOR="1025"
 readonly NOME_DA_CHAVE_DO_DESTINO="SMTP_URL"
 
@@ -610,7 +635,7 @@ ocorrencias_na_saida() { grep -cF -- "$1" "${DIARIO_DA_EXECUCAO}" 2>/dev/null ||
 # `smtp://usuario:senha@host` — que é a forma que a biblioteca aceita.
 # --------------------------------------------------------------------------- #
 diagnostico_do_destino() {
-	local url="$1" sem_esquema host porta candidato
+	local url="$1" sem_esquema host porta
 	if [[ -z "${url}" ]]; then
 		printf '%s ausente\n' "${NOME_DA_CHAVE_DO_DESTINO}"
 		return 0
@@ -624,13 +649,13 @@ diagnostico_do_destino() {
 		printf '%s sem host e porta discerníveis\n' "${NOME_DA_CHAVE_DO_DESTINO}"
 		return 0
 	fi
-	local no_laco=0
-	for candidato in "${HOSTS_DO_LACO_LOCAL[@]}"; do
-		[[ "${host}" == "${candidato}" ]] && no_laco=1
-	done
-	[[ "${no_laco}" -eq 1 ]] || printf 'host fora do laço local: %s:%s\n' "${host}" "${porta}"
-	[[ "${porta}" == "${PORTA_DO_CAPTURADOR}" ]] ||
-		printf 'porta fora do capturador: %s:%s\n' "${host}" "${porta}"
+	# UMA comparação, e não duas: o destino é o par host:porta, e afirmá-lo inteiro
+	# é o que impede um acerto parcial (host certo, porta errada) de passar por meio
+	# diagnóstico. O declarado sai na mensagem para que a divergência seja legível
+	# sem abrir o script.
+	[[ "${host}:${porta}" == "${DESTINO_DECLARADO_DO_EMAIL}" ]] ||
+		printf 'destino divergente: %s:%s (declarado: %s)\n' \
+			"${host}" "${porta}" "${DESTINO_DECLARADO_DO_EMAIL}"
 }
 
 # O valor de uma chave no ambiente que o processador de trabalho EFETIVAMENTE
@@ -1154,14 +1179,20 @@ ct_1154() {
 }
 
 # =========================================================================== #
-# CT-1152 — o destino do e-mail é o laço local, afirmado por host E porta.
+# CT-1152 — o destino do e-mail é o DECLARADO, afirmado por host E porta.
 #
-# INVARIANTE: o `SMTP_URL` que o processador de trabalho EFETIVAMENTE carrega tem
-# host no laço local e porta `1025`. Sob `NODE_ENV=production` e com as Rotinas
-# instaladas, um host fora do laço alcançaria a caixa de uma pessoa real na
-# primeira passada da Régua de cobrança — e o modo de falhar é SILENCIOSO: a
-# Tentativa de envio registra desfecho `entregue` porque o servidor aceitou a
-# mensagem (scope §5.9).
+# INVARIANTE: o `SMTP_URL` que o processador de trabalho EFETIVAMENTE carrega é
+# exatamente {@link DESTINO_DECLARADO_DO_EMAIL}.
+#
+# ⚠️ ESTE CASO FOI INVERTIDO em 2026-09-08, com o fecho do `D41 · F7/T9`, e o
+# texto anterior fica registrado aqui porque a razão dele ainda ensina: até a
+# virada o invariante era *"host no laço local e porta 1025"*, porque um host
+# fora do laço alcançaria a caixa de uma pessoa real a partir de dados de ensaio.
+#
+# A virada ligou a entrega real, e o perigo TROCOU DE LADO: hoje é o laço local
+# que faz o produto parar de avisar. O modo de falhar continua SILENCIOSO nos
+# dois sentidos — a Tentativa de envio grava `ENVIADA` porque o capturador
+# aceita tudo, exatamente como um relay alheio aceitaria.
 #
 # ⚠️ O valor é lido do `environ` do PROCESSO EM EXECUÇÃO, e não do arquivo de
 # ambiente. São coisas diferentes: o arquivo descreve a PRÓXIMA partida, e o
@@ -1180,23 +1211,39 @@ ct_1154() {
 # já foi impresso, e um caso posterior ficaria fora dela.
 # =========================================================================== #
 ct_1152() {
-	caso "CT-1152" "o destino do e-mail é o laço local, por host e porta, e a URL crua não escapa"
+	caso "CT-1152" "o destino do e-mail é o declarado, por host e porta, e a URL crua não escapa"
 
 	# (i) A falsificação vem PRIMEIRO, e sem depender do host: ela prova que o
 	# analisador pode reprovar. Rodando depois da asserção real, um analisador
 	# que devolvesse sempre a cadeia vazia deixaria as duas verdes.
-	local sintetica_local sintetica_externa sintetica_porta
-	sintetica_local="$(printf '%s://%s:%s' 'smtp' '127.0.0.1' "${PORTA_DO_CAPTURADOR}")"
-	sintetica_externa="$(printf '%s://%s:%s' 'smtp' 'smtp.exemplo.invalid' "${PORTA_DO_CAPTURADOR}")"
-	sintetica_porta="$(printf '%s://%s:%s' 'smtp' '127.0.0.1' '587')"
+	local host_declarado porta_declarada
+	host_declarado="${DESTINO_DECLARADO_DO_EMAIL%:*}"
+	porta_declarada="${DESTINO_DECLARADO_DO_EMAIL##*:}"
 
-	afirmar_igual "(controle) um destino no laço local não produz diagnóstico" "" \
-		"$(diagnostico_do_destino "${sintetica_local}")"
-	afirmar_igual "(mutante) host externo reprova NOMEANDO host e porta" \
-		"host fora do laço local: smtp.exemplo.invalid:${PORTA_DO_CAPTURADOR}" \
-		"$(diagnostico_do_destino "${sintetica_externa}")"
-	afirmar_igual "(mutante) porta fora do capturador reprova NOMEANDO host e porta" \
-		"porta fora do capturador: 127.0.0.1:587" \
+	local sintetica_conforme sintetica_capturador sintetica_alheia sintetica_porta
+	# O controle usa `smtps` E carrega credencial — é a forma REAL do valor em
+	# operação. Um controle com `smtp://host:porta` limpo deixaria sem prova o
+	# descarte do `usuario:senha@`, que é justamente onde a credencial vazaria.
+	sintetica_conforme="$(printf '%s://%s:%s@%s:%s' 'smtps' 'usuario' 'segredo' \
+		"${host_declarado}" "${porta_declarada}")"
+	sintetica_capturador="$(printf '%s://%s:%s' 'smtp' "${HOST_DO_CAPTURADOR}" "${PORTA_DO_CAPTURADOR}")"
+	sintetica_alheia="$(printf '%s://%s:%s' 'smtp' 'smtp.exemplo.invalid' "${porta_declarada}")"
+	sintetica_porta="$(printf '%s://%s:%s' 'smtps' "${host_declarado}" '2525')"
+
+	afirmar_igual "(controle) o destino declarado não produz diagnóstico" "" \
+		"$(diagnostico_do_destino "${sintetica_conforme}")"
+	# ⚠️ O MUTANTE QUE MAIS IMPORTA desde a virada: um retrocesso ao capturador faz
+	# o produto parar de avisar EM SILÊNCIO — o capturador aceita tudo, e a
+	# Tentativa de envio grava `ENVIADA` sem que mensagem alguma saia.
+	afirmar_igual "(mutante) o CAPTURADOR reprova — o produto entrega de verdade desde a virada" \
+		"destino divergente: ${HOST_DO_CAPTURADOR}:${PORTA_DO_CAPTURADOR} (declarado: ${DESTINO_DECLARADO_DO_EMAIL})" \
+		"$(diagnostico_do_destino "${sintetica_capturador}")"
+	afirmar_igual "(mutante) host alheio reprova NOMEANDO host e porta" \
+		"destino divergente: smtp.exemplo.invalid:${porta_declarada} (declarado: ${DESTINO_DECLARADO_DO_EMAIL})" \
+		"$(diagnostico_do_destino "${sintetica_alheia}")"
+	# O host CERTO com a porta errada: sem esta perna, um acerto parcial passaria.
+	afirmar_igual "(mutante) porta divergente no host certo reprova" \
+		"destino divergente: ${host_declarado}:2525 (declarado: ${DESTINO_DECLARADO_DO_EMAIL})" \
 		"$(diagnostico_do_destino "${sintetica_porta}")"
 	afirmar_igual "(mutante) a AUSÊNCIA falha fechado, e não cai no padrão da biblioteca" \
 		"${NOME_DA_CHAVE_DO_DESTINO} ausente" "$(diagnostico_do_destino "")"
@@ -1205,7 +1252,7 @@ ct_1152() {
 	local valor=""
 	if precondicao_privilegiada_disponivel ambiente-do-processador; then
 		valor="$(valor_no_ambiente_do_processador "${NOME_DA_CHAVE_DO_DESTINO}")" || valor=""
-		afirmar_igual "o destino que o processador carrega está no laço local, na porta do capturador" \
+		afirmar_igual "o destino que o processador carrega é o declarado, por host e porta" \
 			"" "$(diagnostico_do_destino "${valor}")"
 		# Só host e porta saem impressos — nunca a linha crua, nunca uma vizinha.
 		local sem_esquema="${valor#*://}"
