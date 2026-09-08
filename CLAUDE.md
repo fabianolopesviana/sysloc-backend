@@ -840,6 +840,21 @@ O marco está alcançado quando **todos** os sete itens forem verdadeiros:
       `verificar-unidades-agendadas.sh` saiu **8/8 casos, ZERO degradação, código 0**.
       ⚠️ **O horário é `02:45`, não `02:30`** — deslocado por medição do achado `A9` (o legado ocupa
       `02:30` na `crontab` do root, mesmo volume)
+      ⚠️ **RESTAURAR NUMA MÁQUINA NOVA NÃO É RODAR O RESTAURADOR NUMA STACK EM BRANCO**, e o roteiro
+      é `deploy/scripts/recuperacao-em-maquina-nova.md` (2026-09-08). Três razões medidas: os
+      **papéis do agrupamento não estão no dump** (`pg_dump` de uma base não os inclui, e o dump
+      apenas os referencia nos `OWNER TO`); os **privilégios de nível de base** também não (a cópia
+      é `--format=custom` **sem `--create`**); e a guarda da ADR-0006 **recusa** escrever na base que
+      o `backend.env` declara — de propósito, sem bandeira que a desligue. A ordem que funciona tem
+      o passo que quase todo mundo inverte: **os segredos voltam ANTES do provisionamento**, porque
+      `provisionar-base.sh` só preserva a credencial quando o arquivo já existe (P06) e ressincroniza
+      o banco com ela (P09). ⚠️ **E a lacuna maior não é do roteiro, é do acervo**: as cópias vivem
+      em `/opt/backups/sysloc` **no mesmo host**, e **nada em `deploy/` as envia para fora** — medido,
+      zero ocorrências de `rclone`/`rsync`/`scp`/`aws s3` na árvore inteira. Perdida a máquina,
+      perde-se o insumo. ⚠️ **Os PDFs de boleto NÃO são copiados** (`grep -c BOLETO` dá 0 nos dois
+      scripts) e a ADR-0030 os exclui de *"derivado"*: é **perda**, não recuperação lenta.
+      ⚠️ **O runbook nunca foi executado numa máquina nova** — o que foi provado é a restauração no
+      **mesmo agrupamento**, onde os papéis já existiam. Até o ensaio, ele é plano, não garantia.
 - [x] **`deploy/scripts/virada.md` escrito** em **2026-08-27** (commit `5709c5f`, **195 linhas**),
       com o gate de desinstalação de 5 itens, o inventário medido do legado, a ordem dos passos da
       virada e as armadilhas de `docker` medidas neste host. ⚠️ **Escrever é deste marco; EXECUTAR
