@@ -276,11 +276,29 @@ Status: **11/11 tasks concluídas — FATIA FECHADA em 2026-08-26** · suíte Ty
 - **⚠️ GATILHO EMENDADO DE NOVO em 2026-08-26 (rodada 2 do Gate 1 da T10), e os DOIS textos anteriores ficam registrados.** Ele **disparou, agora pela razão certa**: a T10 mexeu **no acessório de borda efêmera** da outra bateria — `subir_borda_efemera` de `verificar-notificacao-bancaria.sh` ganhou `ARQUIVO_DE_ESPERA` e `ARQUIVO_DE_LIBERACAO`, e o heredoc `servico.mjs` foi reescrito com o modo de espera e dois argumentos novos —, e o `servico.mjs` é item **nominal** do enunciado acima (*"serviço de trilha atrás"*), medido presente nas **duas** baterias. **Ele NÃO foi fechado**, e a razão é medida: os dois serviços de trilha **já divergiram** (só o da notícia tem o modo de espera, que não tem contraparte na borda sem `limit_conn`), e a extração continua sendo mover ~200 linhas de arranjo de rede **dentro de um ciclo de correção de gate** — o mesmo `POR QUE NÃO AGORA` de sempre, agora com **segunda ocorrência escriturada**. **Gatilho vigente: inalterado.** A próxima task que abrir o acessório herda o débito com **dois disparos registrados**, e não redecide do zero.
 - **O que NÃO se confunde com ele:** o `carregar_funcao_do_instalador` era outro débito e **foi fechado** nesta rodada — eram **três** declarações locais em duas baterias, elas **já haviam divergido** (o `sed` ingênuo cortava ao meio uma função com heredoc), e a casa comum já era carregada pelas duas. Ali o Limiar de Três disparou de fato; aqui continuam sendo **duas** cópias.
 
-### D41 · médio · tests · T9 · QA — ⚠️ **DÉBITO COM GATILHO ATIVO**
+### D41 · médio · tests · T9 · QA — ✅ **FECHADO em 2026-09-08, na virada da F7**
 - **Onde:** `deploy/scripts/borda/verificar-borda-do-app.sh` (junto de `DESTINO_DECLARADO_DO_EMAIL`)
 - **Problema:** o `CT-1189` e o `CT-1152` afirmam a **mesma chave** `SMTP_URL` com valores **inconciliáveis** — este declara `smtp.systera.com.br:587` (o destino real, decisão operacional do usuário) e o `CT-1152` de `deploy/scripts/instalacao/verificar-unidades-agendadas.sh` declara o **laço local**, porta 1025 (o que impede envio real a partir de dados de ensaio). Não existe valor que satisfaça os dois. O ponteiro entre eles é de **mão única**: quem abre a bateria da borda é avisado; quem abre a das unidades agendadas, não.
 - **Impacto:** quem fizer a troca do destino move **uma** ponta e a outra reprova sem que o texto daquele lado explique por quê. ⚠️ **A constante do `CT-1189` NÃO cede** — rebaixá-la para o endereço do capturador é o que a §5.6 do caso nomeia como **fraude de gate**.
 - **O que fazer:** ao trocar o `SMTP_URL` para o destino real, mover **as duas** asserções no mesmo movimento e acrescentar o ponteiro recíproco em `verificar-unidades-agendadas.sh`. ⚠️ **Deliberadamente NÃO feito na T9**: aquela bateria está **fora da lista de arquivos declarada** da task (§3) e a asserção do `CT-1152` foi aprovada antes e não se altera. **Gatilho: a troca do `SMTP_URL` para o destino real.**
+- **✅ FECHADO em 2026-09-08.** O gatilho chegou: o `SMTP_URL` passou a apontar para
+  `smtps://…@smtp-relay.brevo.com:465`, e o envio real foi provado ponta a ponta (mensagem entregue
+  na caixa do destinatário, pelo adaptador de produção). **As duas asserções se moveram no mesmo
+  commit**, como este débito exigia:
+  - `verificar-borda-do-app.sh` — `DESTINO_DECLARADO_DO_EMAIL` foi de `smtp.systera.com.br:587` para
+    `smtp-relay.brevo.com:465`. ⚠️ **O valor antigo não se repõe**: ele era a hipótese de agosto, e a
+    medição de 2026-09-08 a refutou — `smtp.systera.com.br` **não existe no DNS**, e o PTR deste host
+    (`clt-home-…fibron.com.br`) é faixa de cliente, que Gmail e Outlook punem. A entrega passou a
+    sair por relay autenticado, por decisão do usuário.
+  - `verificar-unidades-agendadas.sh` — o `CT-1152` foi **INVERTIDO**: ele exigia o laço local (a
+    trava contra envio real a partir de dados de ensaio) e passou a exigir o destino declarado. O
+    laço local virou o **mutante mais importante** dele, porque um retrocesso ao capturador faria o
+    produto parar de avisar em silêncio — o capturador aceita tudo e a Tentativa grava `ENVIADA`.
+  - **O ponteiro recíproco entrou**, que era o objeto do débito: cada bateria agora nomeia a outra, e
+    a próxima troca de destino não consegue mover um lado só.
+  ⚠️ A asserção nova é **estritamente mais forte** que a substituída: exige o par host:porta exato,
+  enquanto a anterior aceitava qualquer porta em qualquer nome do laço local. O marcador saiu do
+  código e a linha saiu do índice do `CLAUDE.md` no mesmo commit.
 
 ### D42 · médio · architecture · T9 · Tech Review — ⚠️ **CONVERGIDO na rodada 3**
 - **Onde:** `deploy/scripts/borda/instalar-borda-do-app.sh:400-407` (`publicar_atomicamente`)

@@ -89,6 +89,37 @@ São **147 tasks** aprovadas nos dois gates — as **126** do fecho da F4 mais a
 ⚠️ **A (iii) É o carnê** — se este texto voltar a dizer que ela falta, foi regressão de índice, não
 fatia reaberta.
 
+- ⚠️ **A VIRADA DA F7 FOI EXECUTADA em 2026-09-08, e o Frappe/ERPNext está DESATIVADO.** É a
+  sessão operacional que o `plano-execucao.md` classificava como *"operação, não construção"*, e ela
+  aconteceu. Quatro coisas mudaram no host, todas medidas, e os quatro scripts que as fizeram estão
+  versionados em `deploy/scripts/virada/` (idempotentes, com desfazimento):
+  1. **A borda do aplicativo foi religada.** `https://sysloc.systera.com.br/v1/sessao` responde
+     `401 application/json` — respondia `200 text/html`, porque o fallback da página única engolia o
+     prefixo da API. ⚠️ **A causa NÃO era a ordem das `location`**: o contêiner `sysloc-react-1`
+     rodava em rede `bridge`, e a API escuta **só em `127.0.0.1:3000`** — de uma rede bridge ela é
+     inalcançável por caminho nenhum, nem por `host.docker.internal`. Ele foi recriado em
+     `--network host`, no molde do `syslocadmin-painel`, que sempre funcionou por essa razão. Efeito
+     colateral desejado: a porta 8300 deixou de ser pública (`0.0.0.0` → `127.0.0.1`).
+  2. **O legado foi calado.** Os 11 contêineres parados com `restart=no` (não voltam no reboot), a
+     porta 8200 muda, **6 entradas de cron do root desarmadas** e um dump de 11 MB preservado em
+     `/opt/backups/legado-frappe/`. ⚠️ **Nada foi REMOVIDO** — volumes, imagens e `/opt/frappe`
+     seguem no disco, e a reativação é `02-desativar-legado.sh --reativar`. A desinstalação continua
+     sendo a §5 do runbook, atrás do gate de 5 itens.
+  3. **O produto passou a entregar e-mail de verdade.** `SMTP_URL` aponta para
+     `smtps://…@smtp-relay.brevo.com:465` e `EMAIL_REMETENTE` é `sysloc@systera.com.br`. Prova de
+     entrega ponta a ponta feita pelo **adaptador de produção**, com mensagem recebida na caixa do
+     destinatário. O domínio está autenticado no Brevo (SPF, 2 DKIM e DMARC publicados no
+     Registro.br e medidos no autoritativo).
+  4. **A migração `0028` foi aplicada ao banco durável**, e o processo em memória já a serve —
+     conferido pelo catálogo do banco E pelo documento que a aplicação publica, que é o
+     discriminador do incidente `PROD-2026-09-03-01`.
+  ⚠️ **DUAS premissas do `deploy/scripts/virada.md` venceram e foram REVOGADAS no mesmo dia**, com o
+  texto original preservado: a **§3.3**, que mandava parar o `sysloc-react-1` chamando-o de *"o app
+  ANTIGO"* — executá-la hoje **tira o aplicativo do ar**, porque o deploy de 2026-09-07 publicou o
+  build da F6 no diretório que ele serve —, e a **§3.2**, que mandava instalar
+  `deploy/nginx/sysloc-app.conf`. Aquele vhost foi escrito para ser a borda **mais externa** (termina
+  o próprio TLS), e neste host quem ocupa 80/443 é o **CloudPanel**, que repassa para
+  `127.0.0.1:8300`. Ele **não foi removido**: é o caminho para o dia em que o CloudPanel sair.
 - **Superfície: 113 rotas / 98 manipuladores**, `semDeclaracao` vazio, `publicas` em **20**. Medido
   na **T7 da fatia `painel-master-administradores`**, em **2026-09-02**, pelo `CT-1240`, com as **duas
   medições independentes** cuja igualdade entre os eixos é afirmada à parte do valor esperado — e
@@ -122,8 +153,43 @@ fatia reaberta.
   reponha; **o 103/88 era o do fecho da F4** (`CT-1004`), medido em 2026-08-20, e **o 105/90 era o da
   T7 da fatia `integracao-bancaria-autonoma`** (`CT-1038`), medido em 2026-08-22 — nenhum dos três se
   repõe.
-- **Suíte: 2138 casos**, 9 pacotes — `contracts` **487** · `api` **463** · `shared` **309** · `db` **301** ·
-  `worker` **180** · `documentos` 159 · `auth` **95** · `cobranca-bancaria` **114** · `regua` 30.
+- **Suíte: 2151 casos**, 9 pacotes — `contracts` **487** · `api` **463** · `shared` **309** · `db` **305** ·
+  `worker` **180** · `documentos` **163** · `auth` **95** · `cobranca-bancaria` **114** · `regua` **35**.
+  ⚠️ **Três pacotes se moveram na VIRADA DA F7**, em 2026-09-08, e os deltas são **+4** (`db`),
+  **+4** (`documentos`) e **+5** (`regua`) — total **+13**, de 2138. Ela é a execução da virada:
+  o aplicativo do cliente passou a falar com o backend novo, o Frappe foi **desativado por
+  completo**, o produto passou a **entregar e-mail de verdade** por relay autenticado, e o aviso
+  passou a **identificar a empresa** que o envia.
+  ⚠️ **Os 5 do `regua` são `CT-1272`, `CT-1273` e `CT-1274`** em `packages/regua/test/mensagem.spec.ts`
+  (o `CT-1272` é `it.each` sobre os dois moldes, e cada linha conta como caso). Os **4** do
+  `documentos` são o `CT-1275` (2 pernas) e o `CT-1276` (2), em
+  `packages/documentos/test/mensagem-de-confirmacao.spec.ts`. Os **4** do `db` são `CT-1277` (2
+  pernas), `CT-1278` e `CT-1279`, no arquivo NOVO
+  `packages/db/test/identidade-da-empresa.spec.ts`.
+  ⚠️ **O `CT-1278` é o caso que importa, e não é redundante com o `CT-1277`**: `identidade.empresa`
+  **não tem política de RLS** (ADR-0009), de modo que o recorte de `lerIdentidadeDaEmpresaDoContexto`
+  é a cláusula `WHERE` da própria consulta — e não o banco. É a única leitura do produto nessa
+  condição cujo resultado entra numa mensagem entregue a uma pessoa real. Sem ele, remover o `WHERE`
+  deixaria a suíte verde e o aviso da Imobiliária Beta sairia assinado «Imobiliária Alfa», com o
+  `Reply-To` da Alfa, para o locatário da Beta.
+  ⚠️ **DUAS constantes de valor esperado mudaram, e NENHUMA é caso novo**: os dois assuntos do
+  `CT-614` (`packages/regua/test/mensagem.spec.ts`) e o `ASSUNTO_ESPERADO` de
+  `packages/documentos/test/mensagem-de-confirmacao.spec.ts`, que ganharam o prefixo
+  `[<nome da empresa>]`. As duas carregam a linha `SUT_IS_CORRECT_BECAUSE` no ponto, e **nenhuma
+  asserção foi afrouxada** — as duas seguem sendo igualdade de cadeia INTEIRA. ⚠️ As **três**
+  asserções que provam que o assunto da confirmação **não carrega dado do TITULAR** (o segredo, o
+  endereço e o nome de quem recebe) seguem intactas: o que entrou no assunto é a identidade de quem
+  **envia**, que é outra coisa — e que só passou a ser necessária porque o remetente deixou de
+  dizê-la. **Não as reponha.**
+  ⚠️ **A `CHAVES_DA_EMPRESA_PUBLICADA` de `apps/api/test/ciclo-de-acesso.e2e.spec.ts` foi de CINCO
+  para SEIS chaves**, com `emailContato`, e o `api` **não cresceu** — é âncora de superfície que muda
+  de valor, não caso novo. A ADR-0039 autoriza: o campo é da superfície do **operador**, e
+  acrescentar campo ali não reabre o marco. As três âncoras de rota seguem em **113 / 98 / 20**.
+  ⚠️ **Os três pacotes que consomem o barril do `db` foram remedidos na mesma data e NENHUM se
+  moveu** (`api` 463, `auth` 95, `cobranca-bancaria` 114), assim como `contracts` (487), `shared`
+  (309) e `worker` (180) — este último **cresceu em asserção, não em caso**: o `CT-1077` de
+  `apps/worker/test/regua.spec.ts` ganhou as três asserções que provam que a identidade veio do
+  BANCO, sob o contexto da carga, e não de um literal do processo.
   ⚠️ **Os três primeiros se moveram na intervenção dirigida dos RECORTES DE LISTAGEM**, em
   2026-09-05, e os deltas são **+32** (`contracts`), **+5** (`db`) e **+7** (`api`). Ela atende ao
   pedido da equipe de frontend e é autorizada pela `Decision` da **ADR-0039** — *"dentro do
@@ -568,10 +634,13 @@ fatia reaberta.
   executor que divergiu **declarando e medindo** teve razão em todas. E o corolário que custou duas
   fases: *a frase que explica por que algo não pode ser feito envelhece mais rápido que o débito que
   ela justifica* — meça a premissa antes de registrá-la.
-- **Dívida**: **499 débitos abertos** — **656** blocos na §2 dos **25** `run-report.md` do
-  repositório, **157** já com marca de fecho, e **23** fatias com ao menos um aberto.
-  **Remedido em 2026-09-02**, na triagem de débito da fatia `painel-master-administradores`, pelo
-  mesmo critério de sempre: bloco é `^### D`, fechado é o cabeçalho que carrega `✅`.
+- **Dívida**: **498 débitos abertos** — **656** blocos na §2 dos **25** `run-report.md` do
+  repositório, **158** já com marca de fecho, e **23** fatias com ao menos um aberto.
+  **Remedido em 2026-09-08**, na virada da F7, pelo mesmo critério de sempre: bloco é `^### D`,
+  fechado é o cabeçalho que carrega `✅`. ⚠️ **A diferença para o número anterior (499 abertos, 157
+  fechados) é de UM, e é o `D41 · F7/T9`** — nenhum bloco novo foi aberto pela virada. O total de
+  blocos e o número de fatias com aberto **não se moveram**, e é isso que separa *"fechei um débito"*
+  de *"reescrevi o índice"*.
   ⚠️ **O número anterior (488 em 17 fatias, sobre 628 blocos, 140 fechados) NÃO se repõe**, e a
   diferença é **medida e integralmente explicada**: (i) ele é de 2026-08-26 e varria **24**
   relatórios, sem o desta fatia; (ii) os **+17 fechados** são exatamente os que a triagem de
@@ -712,7 +781,58 @@ O marco está alcançado quando **todos** os sete itens forem verdadeiros:
       rotas), e o handoff é autossuficiente. ⚠️ O handoff do Sysloc apenas **menciona** que ele
       existe e está pronto; não mistura as telas
 - [x] **Backup e restauração entregues e provados** — item 1 da F7, **fechado em 2026-08-27** na
-      janela assistida (a), executada pelo operador. O código já estava entregue e provado pela
+      janela assistida (a), executada pelo operador.
+      ⚠️ **ACHADO DE 2026-09-08: o código estava provado e a EXECUÇÃO em produção nunca funcionou.**
+      `sysloc-backup-da-base.service` falhou **todos os dias entre 2026-08-28 e 2026-09-08** — doze
+      execuções, doze falhas, **nenhuma cópia** —, sempre com
+      `pg_dump: permission denied for table migracao_aplicada`. O checkbox media o que a suíte prova
+      (a árvore), e o defeito era do **ambiente**: é a mesma classe do incidente
+      `PROD-2026-09-03-01`, e é a segunda vez que ela morde.
+      ⚠️ **HAVIA UM SEGUNDO DEFEITO ATRÁS DO PRIMEIRO, e ele é pior**: o `pg_dump` conectava com o
+      papel da APLICAÇÃO, que tem `FORCE ROW LEVEL SECURITY`, nasce `NOBYPASSRLS` e não fixa
+      `app.empresa_id`. **Conceder o `SELECT` que faltava teria sido a correção errada** — o dump
+      passaria e sairia **sem uma linha de negócio**, com tamanho, com `pg_restore --list`
+      funcionando e com a unidade em `0`. A falha ruidosa do primeiro defeito foi o que impediu doze
+      arquivos vazios de serem produzidos e confiados.
+      ⚠️ **Corrigido em 2026-09-08**: a cópia passou a ser feita pelo **superusuário do agrupamento**,
+      pelo soquete local com autenticação por par (`deploy/scripts/backup/copiar-base.sh`,
+      `PAPEL_DA_COPIA`). Nenhum papel do produto ganhou poder, **nenhum papel novo foi criado** e
+      nenhuma política foi afrouxada — o superusuário ignora RLS por natureza, e não por concessão
+      revogável. A rotina deixou de transportar credencial, o que a aproxima da ADR-0005 em vez de
+      afastá-la. ⚠️ **A asserção da bateria foi INVERTIDA e endurecida**: ela exigia que
+      `copiar-base.sh` referenciasse `PGPASSFILE`, e passou a exigir **zero** referências em linha
+      **executável** — a contagem antiga somava comentário, e teria aprovado o script pela própria
+      prova do contrário. A prova de que a cópia carrega os dados é
+      `deploy/scripts/virada/05-provar-backup.sh`, que compara linha a linha o banco e o dump em
+      **quatro tabelas de negócio** (as que sairiam vazias), com controle antivácuo.
+      ⚠️ **E A RESTAURAÇÃO ESTAVA QUEBRADA PELA MESMA CAUSA — descoberto no mesmo dia, e é o
+      achado que fecha o par.** `restaurar-base.sh` também conectava com o papel da APLICAÇÃO.
+      MEDIDO em 2026-09-08, restaurando a cópia real numa base vazia:
+      `pg_restore: error: permission denied for database …  Command was: CREATE SCHEMA identidade`
+      — **relações origem=35, destino=0. Nada era restaurado.** Um backup que não se restaura não
+      é backup, e as duas metades estiveram quebradas os mesmos doze dias.
+      ⚠️ **A assimetria que permitiu consertar metade do par era da PRÓPRIA bateria**, e nasceu
+      horas antes: a asserção da manhã exigia que a cópia **não** transportasse credencial e que o
+      restaurador **transportasse**. Hoje ela é **uma só** e vale para os dois — nenhum transporta,
+      e os dois declaram o superusuário por nome (`PAPEL_DA_COPIA`, `PAPEL_DA_RESTAURACAO`).
+      ⚠️ **Foram QUATRO impedimentos independentes no restaurador**, e cada um só apareceu depois
+      que o anterior caiu: o papel (não podia `CREATE SCHEMA` nem definir os três donos que o dump
+      declara), o acesso ao arquivo (`0600 root`, resolvido por cópia intermediária de dono
+      `postgres` que o `trap` remove — **o acervo NÃO teve permissão afrouxada**), e um defeito de
+      CATEGORIA na conferência: o extrator de relações excluía `TABLE DATA` mas **não**
+      `SEQUENCE SET`, lendo-a como uma relação fantasma `SET.<esquema>` — o que reprovava toda
+      restauração de base que tivesse sequência. A quarta era do `NoNewPrivileges` da unidade, e
+      está registrada no próprio arquivo dela.
+      ⚠️ **A restauração está PROVADA contra o esquema real** desde 2026-09-08, por
+      `deploy/scripts/virada/08-provar-restauracao.sh`: **34 relações e 164 linhas** restauradas
+      numa base descartável medida em ZERO antes, com os 3 schemas, as 22 políticas de RLS e os 3
+      donos distintos. Ela **não toca a produção** — o destino é gerado com prefixo próprio,
+      conferido contra o nome da base da operação, e removido por `trap` em `EXIT INT TERM HUP`.
+      ⚠️ **O `CT-1107` continua válido e continua INSUFICIENTE**: ele prova a mecânica contra
+      instância efêmera criada com `initdb -U verificacao` — onde o papel do teste é
+      **superusuário** — e sobre tabelas `CREATE TABLE alfa(i int)`, **sem RLS e sem os schemas do
+      produto**. Foi essa lacuna que deixou as duas metades quebradas com a suíte verde. Não o
+      remova: o que faltava era a prova de AMBIENTE, e ela agora existe ao lado dele. O código já estava entregue e provado pela
       fatia `publicacao-e-backup/v1` (11/11 tasks, 2026-08-26): a restauração que REPRODUZ a origem
       é o `CT-1107`, com o destino medido em ZERO antes, e a bateria `verificar-backup.sh` fecha em
       **408 asserções / 24 casos**. O que faltava era de host, e caiu:
@@ -737,13 +857,23 @@ e escrever sobre código que não se pode ler é adivinhação com aparência de
 
 ### O que fica para depois do marco
 
-A **execução** da virada e a **desinstalação** do Frappe. As duas só podem acontecer neste servidor
-— é onde o `/opt/frappe` e o CloudPanel existem —, e as duas exigem o frontend já funcionando, pois
-o primeiro critério de aceitação da F7 é *"app funcionando integralmente contra o backend novo"*.
+⚠️ **A execução da virada ACONTECEU em 2026-09-08**, e esta seção fica como registro do que ela
+previa. O detalhe medido está no bullet da virada, no `Estado atual`; o que ela previu se cumpriu
+como escrito — foi sessão operacional neste servidor, de horas e não dias, e **não reabriu a
+construção do backend**. Os defeitos encontrados nela (a rede do contêiner do app, a premissa
+vencida da §3.3 do runbook, a entrada de cron que a primeira varredura não pegou) foram corrigidos
+**como correção**, e não como fatia nova — que é exatamente o que este parágrafo mandava.
 
-Serão uma **sessão operacional futura** neste servidor, conduzida pelo runbook, nos moldes da janela
-de reinício da F0: horas, não dias; operação, não construção. **Isso não reabre a construção do
-backend** — defeito encontrado na virada se corrige como correção, não como fatia nova.
+**Sobra a desinstalação do Frappe**, e só ela. Ela continua atrás do **gate de 5 itens** da §4 de
+`deploy/scripts/virada.md`, que **não** está satisfeito. ⚠️ **Desativar não é desinstalar**: os 11
+contêineres estão parados e impedidos de voltar no reboot, mas volumes, imagens e `/opt/frappe`
+seguem no disco, e a reativação é um comando. É essa reversibilidade que torna seguro ter feito a
+virada antes do gate.
+
+⚠️ **Ao desinstalar, leia a §3.3 e a §5 do runbook ANTES**: as duas foram REVOGADAS em 2026-09-08 na
+parte que manda remover o `sysloc-react-1`. Ele deixou de ser o app antigo e passou a ser a **borda
+do aplicativo novo** — removê-lo tira o produto do ar. `nginx:1.27-alpine` tem hoje **dois**
+contêineres dependendo dela, e não um.
 
 ---
 
@@ -887,7 +1017,7 @@ Específicos deste domínio: **`node:https`** (o mTLS do Sicoob — ⚠️ o cli
 > grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 > ```
 
-São **44**, e a tabela abaixo é a lista viva — ela, e não este parágrafo, é a fonte.
+São **43**, e a tabela abaixo é a lista viva — ela, e não este parágrafo, é a fonte.
 
 ⚠️ **O identificador é o par `Dnn · F{n}/{origem}`, nunca o número sozinho** — a sequência corre
 dentro da §2 da fatia que registrou cada débito. Hoje convivem **dois `D1`**, **TRÊS `D3`**, **QUATRO
@@ -1009,7 +1139,6 @@ Limiar de Três ainda por disparar, e um fecho por número as levaria junto. Por
 | **D12** (F5/T6, fatia `automacoes-agendadas`) | `packages/db/src/conferencia-bancaria.ts` (junto de `abrirConferencia`) | a fatia que fixar o **limiar de obsolescência** da conferência em andamento — é decisão de produto, e a forma viável é a varredura na `MANUTENCAO` |
 | **D11** (F5/T6, fatia `automacoes-agendadas`) | `apps/worker/test/acessorios-de-borda.ts` (cabeçalho) | a **primeira task autorizada a abrir uma das 6 suítes** de `apps/worker/test/` com `emUnidade` local — medido: 7 declarações, e a casa nasceu com 1 consumidor |
 | **D40** (F7/T9, fatia `publicacao-e-backup`) | `deploy/scripts/borda/verificar-borda-do-app.sh` (junto de `subir_borda_efemera`) | a **terceira borda pública**, ou abrir `verificar-notificacao-bancaria.sh` **para mexer no acessório** — gatilho emendado 2×, razão na §2 |
-| **D41** (F7/T9, fatia `publicacao-e-backup`) | `deploy/scripts/borda/verificar-borda-do-app.sh` (junto de `DESTINO_DECLARADO_DO_EMAIL`) | a **troca do `SMTP_URL` para o destino real** — o `CT-1152` afirma o outro lado da mesma chave e o ponteiro entre os dois é de mão única |
 | **D1** (F7/T1, fatia `painel-master-administradores`) | `packages/db/src/administrador-do-master.ts` (junto de `lerAdministrador`) | o **terceiro** leitor da linha de `identidade.usuario` — hoje são duas projeções, com `lerAlvoDeReemissao` |
 | **D8** (F7/T4, fatia `painel-master-administradores`) | `apps/api/src/master/administrador.service.ts` (junto de `recusaPorPerfil`) | a **terceira** cópia do envelope de recusa por perfil — hoje são duas, com `empresa.service.ts` |
 | **D12** (F7/T4, fatia `painel-master-administradores`) | `apps/api/src/master/administrador.contrato.ts` (junto de `MAIOR_PAGINA_DE_ADMINISTRADORES`) | ⚠️ **JÁ DISPAROU (F7/T6)** — a T6 abriu `empresa.controller.ts`; adiado por §A1, razão na §2. Volta a disparar na **terceira** declaração da FORMA da janela em `apps/api/src/master/` |
@@ -1041,13 +1170,36 @@ exige (`.claude/rules/nao-regressao.md`, P1 e P5).
 
 ## Contexto do backend antigo
 
-`/opt/frappe` ainda está **de pé e operando** — só é desligado na F7. Consultá-lo é legítimo
-(`docker compose exec -T backend bench --site frontend ...`), mas:
+⚠️ **`/opt/frappe` está DESATIVADO desde 2026-09-08** — os 11 contêineres parados, com
+`restart=no`, e a porta 8200 muda. **Não é mais produção, e não atende mais ninguém.** O texto
+anterior desta seção dizia *"ainda está de pé e operando — só é desligado na F7"*, e a F7 aconteceu.
 
-- O site `frontend` é **produção**. Nada destrutivo.
+**Consultá-lo exige LIGÁ-LO ANTES**, e isso é decisão do operador, não passo de rotina:
+
+```bash
+cd /opt/frappe && docker compose start db backend   # e PARE-OS ao terminar
+```
+
+⚠️ **Ligar o `scheduler`, o `queue-short` ou o `queue-long` é outra coisa, e não se faz**: são eles
+que disparam cobrança, e-mail e boleto a partir da base antiga. Com o produto novo operando sobre a
+base nova, os dois sistemas agiriam sobre o mesmo cliente — que é precisamente a janela que a ordem
+da virada existiu para não abrir.
+
+- O site `frontend` **era** produção e hoje é registro histórico. Continua valendo: **nada
+  destrutivo** — o dump de 11 MB em `/opt/backups/legado-frappe/` é cópia, não substituto, e o gate
+  de desinstalação ainda não foi satisfeito.
 - A **caracterização das regras de negócio** já rodou, e os **10 artefatos golden** estão versionados:
   os 6 da captura original, os 2 de contrato (fatia `contratos-de-locacao`) e o
   `regua-de-cobranca.json`, capturado pela **T1 da fatia `cobranca-e-mora`** em 2026-08-10. **Não há
   mais captura pendente.**
-- A credencial de API do ERPNext segue **exposta em texto claro** no bundle público da porta
-  8300 enquanto ele existir. Pendência aberta.
+- ⚠️ **A exposição da credencial de API do ERPNext FECHOU em 2026-09-08, e por DOIS caminhos
+  independentes** — o texto anterior a registrava como *"pendência aberta"*, e ela não é mais.
+  Primeiro, o pacote publicado deixou de carregá-la: o deploy de 2026-09-07 subiu o build da F6, que
+  autentica por **cookie de sessão** e não embute segredo algum (a guarda do próprio script de
+  deploy reprovou a publicação até que as variáveis `REACT_APP_ERPNEXT_*` saíssem do `.env.local`).
+  Segundo, a porta 8300 deixou de ser alcançável de fora: o contêiner passou a `--network host`
+  escutando `127.0.0.1:8300`. ⚠️ **Isso NÃO desvaza o que já foi servido**: o par esteve publicamente
+  legível e deve ser considerado comprometido. **Revogá-lo no ERPNext continua pendente** — a cópia
+  de referência está em `/opt/frappe/secrets/servico-app-credenciais.txt`, e a revogação exige ligar
+  o legado. Com ele desativado o risco é contido, não eliminado: quem tiver o par o usa no instante
+  em que alguém o religar.

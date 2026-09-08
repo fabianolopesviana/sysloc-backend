@@ -1,0 +1,26 @@
+feature: "virada-e-desinstalacao"
+source: "operacao"
+source_note: "⚠️ Esta fatia NAO passou pelo pipeline SDD/miniSpec, e a ausencia e a decisao — nao omissao. O `deploy/scripts/virada.md` a classifica como sessao OPERACIONAL, conduzida pelo operador neste servidor: 'operacao, nao construcao; horas, nao dias'. Nao ha intent, scope, validation nem task_plan porque nao houve — o que existe e o runbook, escrito na fatia `publicacao-e-backup`, e os oito scripts versionados em `deploy/scripts/virada/`. Este arquivo existe para que o painel gerado reflita o estado REAL da fase, e nao para simular um pipeline que nao ocorreu."
+current_step: execution
+variant: backend
+steps:
+  intent:
+    status: skipped
+    summary: "Nao se aplica: a intencao desta fatia esta no runbook `deploy/scripts/virada.md`, entregue pela fatia `publicacao-e-backup/v1` como item do marco de entrega."
+  tech_alignment:
+    status: skipped
+  design:
+    status: skipped
+  scope:
+    status: skipped
+    summary: "Nao se aplica: o escopo e a §3 (a virada) e a §5 (a desinstalacao) do runbook, atras do gate de 5 itens da §4."
+  validation:
+    status: skipped
+  task_plan:
+    status: skipped
+    summary: "Nao se aplica. As DUAS metades da fatia sao as do proprio runbook, e e por elas que o progresso se conta: (1) a virada e (2) a desinstalacao."
+  execution:
+    status: in_progress
+    tasks_total: 2
+    tasks_completed: 1
+    summary: "1/2 — a VIRADA foi executada em 2026-09-08; a DESINSTALACAO nao, e nao tem data. O que a virada entregou, tudo medido: (a) borda do aplicativo religada — `GET /v1/sessao` em sysloc.systera.com.br passou de `200 text/html` para `401 application/json`, com o conteiner `sysloc-react-1` recriado em --network host porque a API escuta so em 127.0.0.1:3000 e rede bridge nao a alcanca; (b) Frappe/ERPNext DESATIVADO por completo — 11 conteineres com restart=no, porta 8200 muda, 6 entradas de cron do root desarmadas, dump de 11 MB preservado fora do Docker; NADA removido, e `02-desativar-legado.sh --reativar` desfaz; (c) envio de e-mail REAL por relay autenticado, com o dominio autenticado no provedor e mensagem entregue pelo adaptador de producao; (d) identificacao da empresa no assunto, na abertura, na assinatura e no Reply-To das duas mensagens do produto (migracao 0028, coluna email_contato); (e) suite de 2138 para 2151 casos, 9 pacotes, todos verdes. ⚠️ ACHADO MAIOR DA SESSAO, e ele nao era da virada: o BACKUP do banco nunca funcionara em producao — falhou todos os dias entre 2026-08-28 e 2026-09-08, e a RESTAURACAO estava quebrada pela mesma causa (papel da aplicacao usado onde e preciso um papel que enxergue e escreva sob RLS forcada). Conceder o GRANT que faltava teria sido a correcao ERRADA: o dump passaria e sairia sem uma linha de negocio. Os dois foram corrigidos e PROVADOS contra o esquema real (34 relacoes, 164 linhas, 3 schemas, 22 politicas de RLS, 3 donos distintos) por `deploy/scripts/virada/08-provar-restauracao.sh`. ⚠️ DUAS premissas do runbook venceram e foram REVOGADAS no mesmo dia, com o texto original preservado: a §3.3 (mandava parar o `sysloc-react-1` chamando-o de app ANTIGO — hoje ele serve o app NOVO, e para-lo tira o produto do ar) e a §3.2 (mandava instalar `sysloc-app.conf`, que foi escrito para ser a borda MAIS EXTERNA e conflita com o CloudPanel, que termina o TLS neste host). ⚠️ O GATE DE DESINSTALACAO DA §4 ESTA FECHADO — 5 de 5, com quatro deles caindo em 2026-09-08: golden files (12), dump da base antiga preservado, checklist de virada executado e conferido, backup do banco novo restaurado em base vazia, e /etc/sysloc/producao criado pelo operador as 14:04. A desinstalacao esta AUTORIZADA e DELIBERADAMENTE NAO EXECUTADA: ela e irreversivel (leva volumes, imagens e a base antiga), enquanto hoje o legado esta desativado e reversivel em dois comandos. O ganho de remove-lo agora sao ~3 GB num volume com 100 GB livres."
