@@ -894,8 +894,27 @@ O marco está alcançado quando **todos** os sete itens forem verdadeiros:
       no dia da recuperação. O `CT-1288` clona o pacote que subiu, compara a contagem de commits com
       a da árvore, e tem o pacote truncado como falsificação. O alvo também roda
       `git bundle verify` **antes** de enviar.
-      ⚠️ **A bateria foi de 24 para 33 casos** (`CT-1280` a `CT-1288`), e `CASOS_DECLARADOS_NO_TOTAL`
-      de **116 para 125** — os dois no mesmo diff que publica os casos. **Não reponha o 24 nem o
+      ⚠️ **A CHAVE DE CIFRA passou a subir, e até 2026-09-08 ela NUNCA saía deste host** — era a
+      lacuna que fazia a recuperação em máquina nova falhar tarde e em silêncio.
+      `preservar-segredos.sh` a retira do `backend.env` e a grava em `/opt/salvaguarda-da-chave`,
+      **fora** da raiz do acervo (é a ADR-0032), e o envio mandava só a raiz do acervo: o material
+      cifrado tinha cópia fora da máquina e a chave que o abre não tinha. Sem ela o produto sobe,
+      autentica, cobra e **falha na primeira emissão de boleto**. Ela vai agora para
+      `chave-de-cifra/`, prefixo **irmão** de `acervo/` e nunca dentro dele — *"fora do mesmo
+      PACOTE em que o material cifrado é salvaguardado"*, que é a cláusula literal. ⚠️ **Que os dois
+      prefixos vivam no MESMO destino é decisão do usuário**, de 2026-09-08, tomada com o custo
+      apresentado (quem obtiver o Drive obtém os dois) contra as alternativas de guardá-la fora de
+      qualquer nuvem ou numa segunda conta; a troca foi por recuperação 100% automática, e a razão
+      está no ponto do código. **Não a "corrija" para dentro de `acervo/`** — ali a violação seria
+      da letra. ⚠️ **Salvaguarda VAZIA é FALHA, e a assimetria com os boletos é deliberada**: boleto
+      que não existe é cobrança que ninguém emitiu; chave que não existe é `preservar-segredos.sh`
+      não tendo rodado — e ele é o passo ANTERIOR da mesma unidade.
+      ⚠️ **O vhost do Painel Master foi versionado no mesmo dia** — `deploy/nginx/syslocadmin-painel.conf`,
+      corpo **byte a byte** igual a `/opt/web/syslocadmin/nginx/default.conf`, com só um cabeçalho
+      acrescentado. Ele era o **único** vhost do produto ausente da árvore, e são 163 linhas que
+      teriam de ser reescritas à mão numa máquina nova. **Ao alterá-lo, altere os DOIS.**
+      ⚠️ **A bateria foi de 24 para 34 casos** (`CT-1280` a `CT-1289`), e `CASOS_DECLARADOS_NO_TOTAL`
+      de **116 para 126** — os dois no mesmo diff que publica os casos. **Não reponha o 24 nem o
       116**, e não reponha os pares intermediários `31 / 123` e `32 / 124`: são das duas passadas
       anteriores do mesmo dia, antes do `CT-1287` e do `CT-1288`.
       ⚠️ **`conteudo_do_destino` da bateria passou a receber RECORTE explícito** (`acervo boletos`
@@ -1091,7 +1110,7 @@ Específicos deste domínio: **`node:https`** (o mTLS do Sicoob — ⚠️ o cli
 > grep -rl --exclude-dir=dist "DÉBITO COM GATILHO" apps packages deploy
 > ```
 
-São **43**, e a tabela abaixo é a lista viva — ela, e não este parágrafo, é a fonte.
+São **44**, e a tabela abaixo é a lista viva — ela, e não este parágrafo, é a fonte.
 
 ⚠️ **O identificador é o par `Dnn · F{n}/{origem}`, nunca o número sozinho** — a sequência corre
 dentro da §2 da fatia que registrou cada débito. Hoje convivem **dois `D1`**, **TRÊS `D3`**, **QUATRO
@@ -1103,7 +1122,10 @@ nasceu em 2026-09-02**, na rodada 2 da T4 da fatia
 `painel-master-administradores` — não o confunda com o `D12 · F3/T4` (`regua-de-cobranca`), o
 `D12 · F3/T10` (`documentos-e-confirmacao`) nem o `D12 · F5/T6` (`automacoes-agendadas`). ⚠️ **O par de `D1` nasceu em 2026-09-01**, com a T1 da fatia
 `painel-master-administradores`: as duas fatias que o carregam são de fases diferentes (`F5` e
-`F7`), e é a origem — nunca o número — que as separa.
+`F7`), e é a origem — nunca o número — que as separa. ⚠️ **E ele virou TRIO em 2026-09-08**, com o
+`D1 · F7/fechamento` (`virada-e-desinstalacao`): os dois da `F7` têm a mesma fase e se separam pela
+**origem** — `T1` contra `fechamento` —, que é exatamente o caso que a §3-B da rule prevê ao exigir
+o par completo em vez do número sozinho.
 ⚠️ **A lista acima foi REMEDIDA em 2026-08-23** contra a tabela abaixo, e a anterior estava
 defasada nos dois sentidos: ela citava `D28`, que tem uma entrada só desde sempre, e omitia `D23` e
 `D43`. **Não reponha o `D28`.**
@@ -1219,6 +1241,7 @@ Limiar de Três ainda por disparar, e um fecho por número as levaria junto. Por
 | **D22** (F7/T6, fatia `painel-master-administradores`) | `apps/api/src/master/empresa.controller.ts` (junto de `ESQUEMA_DA_EMPRESA`) | a primeira task autorizada a abrir este arquivo **para reformar a publicação do contrato** — as 6 descrições à mão viram `esquemaPublicado(...)`, usado por 15 dos 22 controladores |
 | **D19** (F7/T5, fatia `painel-master-administradores`) | **2 marcadores** — `apps/api/src/master/administrador.service.ts` (`MOTIVO_DO_EMAIL_EM_USO`) e `administrador.contrato.ts` (`MAIOR_NOME_DE_PESSOA`) | ⚠️ **o Limiar de Três JÁ DISPAROU nos dois (3 cópias cada, medido)** — abrir `usuarios/usuario.service.ts` (o literal) ou `usuarios/usuario.controller.ts` (o teto) por outra razão; adiado por escopo, razão na §2 |
 | **D3** (F7/T2, fatia `painel-master-administradores`) | `packages/db/test/catalogo.spec.ts` (junto de `tabelasQueAlcancamAEmpresaEmUmSalto`) | o **terceiro** consumidor do predicado de ligação obrigatória, ou a primeira alteração do que *"obrigatória"* significa — hoje são 2 cópias e a sincronia vive só em prosa |
+| **D1** (F7/fechamento, fatia `virada-e-desinstalacao`) | `deploy/scripts/backup/enviar-para-a-nuvem.sh` (junto de `RAIZ_DO_BACKUP_PADRAO`) | a primeira alteração da raiz do acervo, ou a primeira task autorizada a abrir os três scripts de backup — hoje as coordenadas têm 3 declarações e a da chave, 2 |
 | **D5** (F5/T3, fatia `automacoes-agendadas`) | `packages/db/drizzle.config.ts` (junto de `out`) | ⚠️ **RECORRENTE — o gatilho NÃO o extingue**: a próxima migração **autoral** que alterar estrutura declarada em `src/esquema/*.ts`, ou uma regeração **do zero**; a supressão é manual nos dois casos e volta na seguinte |
 
 ---

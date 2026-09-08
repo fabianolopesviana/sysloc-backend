@@ -55,7 +55,7 @@ Três arquivos, do **mesmo dia**, e um repositório:
 |---|---|---|---|
 | 1 | `base-<AAAA-MM-DD>.dump` | `/opt/backups/sysloc/daily/` | `pg_restore --list <arq> \| head` responde sem erro |
 | 2 | `segredos-<AAAA-MM-DD>.tar.gz` | `/opt/backups/sysloc/segredos/` | `tar -tzf <arq>` lista `backend.env` |
-| 3 | `chave-de-cifra-<AAAA-MM-DD>.env` | `/opt/salvaguarda-da-chave/` | contém a linha `CHAVE_DE_CIFRA_DO_CERTIFICADO=` |
+| 3 | `chave-de-cifra-<AAAA-MM-DD>.env` | `offsite:sysloc-backups/<host>/chave-de-cifra/` (e, no host vivo, `/opt/salvaguarda-da-chave/`) | contém a linha `CHAVE_DE_CIFRA_DO_CERTIFICADO=` |
 | 4 | os PDFs de boleto | `offsite:sysloc-backups/<host>/boletos/` | `rclone ls` lista o que existe |
 | 5 | o repositório | `git clone git@…:fabianolopesviana/sysloc-backend.git` | — |
 
@@ -63,9 +63,27 @@ Três arquivos, do **mesmo dia**, e um repositório:
 > Baixe com um `rclone` autorizado em qualquer máquina:
 >
 > ```bash
-> rclone copy offsite:sysloc-backups/<host>/acervo  ./acervo-recuperado
-> rclone copy offsite:sysloc-backups/<host>/boletos ./boletos-recuperados
+> rclone copy offsite:sysloc-backups/<host>/acervo            ./acervo-recuperado
+> rclone copy offsite:sysloc-backups/<host>/boletos           ./boletos-recuperados
+> rclone copy offsite:sysloc-backups/<host>/chave-de-cifra    ./chave-recuperada
+> rclone copy offsite:sysloc-backups/<host>/kit-de-recuperacao ./kit
 > ```
+>
+> ⚠️ **A chave de cifra vive em prefixo PRÓPRIO, irmão de `acervo/` e nunca dentro dele.** É a
+> cláusula da ADR-0032 — *"fora do mesmo pacote em que o material cifrado é salvaguardado"* —, e o
+> material cifrado (o certificado do provedor) viaja dentro do dump. Baixar só o `acervo/` e
+> esquecer este prefixo é o erro que faz o produto subir, autenticar, cobrar e **falhar na primeira
+> emissão de boleto**, meses depois.
+>
+> ⚠️ **Que os dois prefixos vivam no MESMO destino é decisão do usuário**, de 2026-09-08, tomada com
+> o custo apresentado: quem obtiver acesso ao Drive obtém o certificado cifrado **e** a chave. A
+> troca foi por recuperação 100% automática, e está registrada no ponto do código.
+>
+> **`kit-de-recuperacao/` é o seguro contra o pior caso**: ele traz `sysloc-backend.bundle` — o
+> repositório INTEIRO, com todo o histórico, que se recupera com `git clone <arquivo>`, sem rede,
+> sem GitHub e sem credencial — mais este runbook e os quatro scripts de backup em texto legível.
+> Ele existe porque a chave SSH que dá acesso ao GitHub vive **na máquina que este runbook supõe
+> perdida**.
 >
 > O `<host>` é o `hostname` da máquina perdida (`brutus`, hoje) — o envio usa esse nome como
 > namespace, de modo que duas máquinas nunca escrevem uma sobre a outra.
@@ -307,7 +325,12 @@ docker run -d --name sysloc-react-1 --network host --restart unless-stopped \
   nginx:1.27-alpine
 
 # painel do operador — syslocadmin.systera.com.br, escuta 127.0.0.1:8400
-#   a config dele NÃO está versionada aqui; preserve-a à parte ou reescreva-a no mesmo molde
+mkdir -p /opt/web/syslocadmin/nginx /opt/web/syslocadmin/html
+cp /opt/sysloc-backend/deploy/nginx/syslocadmin-painel.conf /opt/web/syslocadmin/nginx/default.conf
+docker run -d --name syslocadmin-painel --network host --restart unless-stopped \
+  -v /opt/web/syslocadmin/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro \
+  -v /opt/web/syslocadmin/html:/usr/share/nginx/html:ro \
+  nginx:1.27-alpine
 ```
 
 O TLS **não** é destes contêineres: quem ocupa 80/443 neste host é o **CloudPanel**, que termina o
@@ -418,6 +441,12 @@ Fora do alcance deste repositório. O que o backend precisa que seja verdade, e 
 conferir depois de reerguê-los: o `443` do hostname público encaminha para `127.0.0.1:8300`
 (app) e `127.0.0.1:8400` (painel), e `ORIGENS_PUBLICAS` no `backend.env` lista os dois hostnames —
 sem isso a conferência de origem recusa o navegador com `ACESSO_NEGADO`.
+
+⚠️ **Os vhosts dos DOIS contêineres estão versionados desde 2026-09-08.** O do Painel Master era o
+único do produto que não estava — ele foi copiado para `deploy/nginx/syslocadmin-painel.conf`, com o
+corpo **byte a byte** igual ao arquivo em uso e só um cabeçalho acrescentado. O texto anterior desta
+seção mandava preservá-lo à parte ou reescrevê-lo no mesmo molde, e **não se repõe**: eram 163
+linhas de configuração para reconstruir à mão, sob pressão, no dia em que o servidor caiu.
 
 O DNS do e-mail é do domínio, não do host: SPF, os dois DKIM e o DMARC do Brevo continuam válidos
 numa máquina nova, porque a entrega sai por **relay autenticado** e não pelo IP deste servidor —

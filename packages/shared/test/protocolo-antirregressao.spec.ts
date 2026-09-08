@@ -1075,7 +1075,11 @@ const HOMONIMOS_QUE_SOBREVIVEM = ['D23 · F0/T3', 'D26 · F3/T8'] as const;
  * aceite algum o peça. O número saiu do mesmo `grep` que o docblock descreve, sobre o arquivo real,
  * e subiu **no mesmo diff** do marcador e da linha do índice.
  */
-const LINHAS_DO_INDICE_NO_FECHO_DA_FATIA = 43;
+// SUT_IS_CORRECT_BECAUSE: o índice cresceu com o `D1 · F7/fechamento`, registrado em 2026-09-08
+// quando o envio para fora do host levou `RAIZ_DO_BACKUP_PADRAO` à terceira cópia e o Limiar de
+// Três disparou. O marcador, a linha da tabela e a §2 do relatório entraram no MESMO diff que este
+// valor. ⚠️ O 43 é de antes dele e não se repõe.
+const LINHAS_DO_INDICE_NO_FECHO_DA_FATIA = 44;
 
 /** O molde da prosa que anuncia o tamanho do índice, logo acima da tabela. */
 const PADRAO_DO_TOTAL_NARRADO = /São \*\*(\d+)\*\*, e a tabela abaixo é a lista viva/;

@@ -105,7 +105,9 @@
 #            discriminador é CARREGADO do alvo, com o 403 de permissão e a
 #            divergência de conteúdo como controles negativos;
 #   CT-1288  o kit de recuperação sobe com o roteiro em claro, e o repositório
-#            empacotado é CLONÁVEL — com o pacote truncado como falsificação.
+#            empacotado é CLONÁVEL — com o pacote truncado como falsificação;
+#   CT-1289  a chave de cifra sobe em prefixo PRÓPRIO e nunca dentro de
+#            `acervo/`, que é onde o material cifrado viaja (ADR-0032).
 #
 # ===========================================================================
 # O VOCABULÁRIO DE ASSERÇÃO NÃO MORA MAIS AQUI
@@ -383,7 +385,7 @@ readonly BATERIAS_DECLARADAS=(
 # 107.**
 # --------------------------------------------------------------------------- #
 readonly CASOS_DECLARADOS_POR_BATERIA=(
-	"backup/verificar-backup.sh|33|CT-1098;CT-1099;CT-1100;CT-1101;CT-1102;CT-1103;CT-1104;CT-1105;CT-1106;CT-1107;CT-1108;CT-1109;CT-1110;CT-1111;CT-1112;CT-1113;CT-1119;CT-1120;CT-1121;CT-1122;CT-1123;CT-1124;CT-1125;CT-1126;CT-1280;CT-1281;CT-1282;CT-1283;CT-1284;CT-1285;CT-1286;CT-1287;CT-1288"
+	"backup/verificar-backup.sh|34|CT-1098;CT-1099;CT-1100;CT-1101;CT-1102;CT-1103;CT-1104;CT-1105;CT-1106;CT-1107;CT-1108;CT-1109;CT-1110;CT-1111;CT-1112;CT-1113;CT-1119;CT-1120;CT-1121;CT-1122;CT-1123;CT-1124;CT-1125;CT-1126;CT-1280;CT-1281;CT-1282;CT-1283;CT-1284;CT-1285;CT-1286;CT-1287;CT-1288;CT-1289"
 	"borda/verificar-borda-do-app.sh|12|CT-1180;CT-1181;CT-1182;CT-1183;CT-1184;CT-1185;CT-1186;CT-1187;CT-1188;CT-1188 (b);CT-1189;CT-1190"
 	"borda/verificar-notificacao-bancaria.sh|8|CT-1005 (a);CT-1005 (b);CT-1005 (c);CT-1005 (d);CT-1191;CT-1192;CT-1193;CT-1194"
 	"caracterizacao/verificar-captura.sh|13|CT-001;CT-002;CT-003;CT-004;CT-005;CT-006;CT-007;CT-008;CT-009;CT-012;CT-013;CT-502;CT-603"
@@ -410,7 +412,7 @@ readonly CASOS_DECLARADOS_POR_BATERIA=(
 # entram aqui no mesmo diff que os publica — número narrativo que fica para trás
 # convida a próxima task a "corrigir" a âncora executável para o valor errado.
 # **Não reponha o 24 nem o 116.**
-readonly CASOS_DECLARADOS_NO_TOTAL=125
+readonly CASOS_DECLARADOS_NO_TOTAL=126
 
 # --------------------------------------------------------------------------- #
 # O teto de frescor da cópia do dia — CT-1122.
@@ -4234,7 +4236,7 @@ desfecho_da_bateria() {
 			exit 2
 		fi
 		if [[ "${avisos_totais}" -eq 0 ]]; then
-			printf 'verificar-backup: %d/%d casos aprovados (CT-1098 a CT-1113, CT-1119 a CT-1126 e CT-1280 a CT-1288)\n' \
+			printf 'verificar-backup: %d/%d casos aprovados (CT-1098 a CT-1113, CT-1119 a CT-1126 e CT-1280 a CT-1289)\n' \
 				"${casos_aprovados}" "${casos_executados}"
 		else
 			printf 'verificar-backup: %d/%d casos sem falha, com %d degradação(ões) — há asserção NÃO MEDIDA neste host (ver as linhas AVISO acima)\n' \
@@ -4318,6 +4320,8 @@ preparar_caixa_do_envio() {
 	printf 'conteudo-da-copia-%s\n' "$1" >"${base}/acervo/daily/base-2026-09-08.dump"
 	printf 'conteudo-dos-segredos-%s\n' "$1" >"${base}/acervo/segredos/segredos-2026-09-08.tar.gz"
 	printf '%%PDF-1.4 boleto %s\n' "$1" >"${base}/boletos/CBR-2026-00001.pdf"
+	mkdir -p "${base}/salvaguarda"
+	printf 'CHAVE_DE_CIFRA_DO_CERTIFICADO=%s\n' "${CHAVE_SENTINELA}" >"${base}/salvaguarda/chave-de-cifra-2026-09-08.env"
 	{
 		printf '[offsite]\n'
 		printf 'type = alias\n'
@@ -4338,6 +4342,7 @@ executar_envio() {
 	shift
 	SYSLOC_RAIZ_DO_BACKUP="${base}/acervo" \
 		SYSLOC_DIR_DOS_BOLETOS="${base}/boletos" \
+		SYSLOC_DESTINO_DA_CHAVE="${base}/salvaguarda" \
 		SYSLOC_CONFIG_DO_RCLONE="${base}/rclone.conf" \
 		SYSLOC_MARCA_DO_HOST="caixa-de-areia" \
 		bash "${SCRIPT_ENVIAR}" "$@" 2>&1
@@ -4650,6 +4655,7 @@ ct_1285() {
 	# (a) configuração ausente.
 	codigo=0
 	saida="$(SYSLOC_RAIZ_DO_BACKUP="${base}/acervo" SYSLOC_DIR_DOS_BOLETOS="${base}/boletos" \
+		SYSLOC_DESTINO_DA_CHAVE="${base}/salvaguarda" \
 		SYSLOC_CONFIG_DO_RCLONE="${base}/nao-existe.conf" SYSLOC_MARCA_DO_HOST="caixa-de-areia" \
 		bash "${SCRIPT_ENVIAR}" 2>&1)" || codigo=$?
 	afirmar_igual "configuração ausente sai 2" "2" "${codigo}"
@@ -4672,6 +4678,7 @@ ct_1285() {
 	chmod 600 "${conf_sem_remote}"
 	codigo=0
 	saida="$(SYSLOC_RAIZ_DO_BACKUP="${base}/acervo" SYSLOC_DIR_DOS_BOLETOS="${base}/boletos" \
+		SYSLOC_DESTINO_DA_CHAVE="${base}/salvaguarda" \
 		SYSLOC_CONFIG_DO_RCLONE="${conf_sem_remote}" SYSLOC_MARCA_DO_HOST="caixa-de-areia" \
 		bash "${SCRIPT_ENVIAR}" 2>&1)" || codigo=$?
 	afirmar_igual "remote não declarado na configuração sai 2" "2" "${codigo}"
@@ -4685,6 +4692,7 @@ ct_1285() {
 	# (c) acervo ausente.
 	codigo=0
 	saida="$(SYSLOC_RAIZ_DO_BACKUP="${base}/acervo-que-nao-existe" SYSLOC_DIR_DOS_BOLETOS="${base}/boletos" \
+		SYSLOC_DESTINO_DA_CHAVE="${base}/salvaguarda" \
 		SYSLOC_CONFIG_DO_RCLONE="${base}/rclone.conf" SYSLOC_MARCA_DO_HOST="caixa-de-areia" \
 		bash "${SCRIPT_ENVIAR}" 2>&1)" || codigo=$?
 	afirmar_igual "acervo ausente sai 2" "2" "${codigo}"
@@ -4951,6 +4959,74 @@ ct_1288() {
 }
 
 
+# --------------------------------------------------------------------------- #
+# CT-1289 — a chave de cifra sobe, em prefixo PRÓPRIO, e nunca dentro do acervo.
+#
+# ⚠️ Até 2026-09-08 a chave nunca saía do host: `preservar-segredos.sh` a grava
+# fora da raiz do acervo (é a cláusula da ADR-0032), e o envio manda a raiz do
+# acervo. O material cifrado tinha cópia fora da máquina e a chave que o abre não
+# tinha — modo de falha silencioso e tardio, que só apareceria na PRIMEIRA
+# emissão de boleto numa máquina nova.
+#
+# A `Decision` da ADR-0032 exige a chave *"fora do MESMO PACOTE em que o material
+# cifrado é salvaguardado"*. O material cifrado é o certificado, que viaja dentro
+# do dump, em `acervo/`. Este caso afirma as DUAS pernas: que ela sobe, e que ela
+# **não sobe para dentro de `acervo/`** — a segunda é a que representa a ADR.
+# --------------------------------------------------------------------------- #
+ct_1289() {
+	caso "CT-1289" "a chave de cifra sobe em prefixo próprio, fora do pacote do material cifrado"
+
+	local base codigo
+	base="$(preparar_caixa_do_envio "1289")"
+
+	afirmar_igual "a chave está AUSENTE do destino antes do envio" \
+		"" "$(conteudo_do_destino "${base}" "chave-de-cifra")"
+
+	codigo=0
+	executar_envio "${base}" >/dev/null || codigo=$?
+	afirmar_igual "o envio termina com desfecho 0" "0" "${codigo}"
+
+	afirmar_igual "a chave está no prefixo próprio do destino" \
+		"chave-de-cifra/chave-de-cifra-2026-09-08.env" \
+		"$(conteudo_do_destino "${base}" "chave-de-cifra")"
+
+	# A PERNA DA ADR-0032, e ela é a razão do caso: nenhum arquivo de chave
+	# dentro do prefixo do acervo, que é onde o material cifrado viaja.
+	local chaves_dentro_do_acervo
+	chaves_dentro_do_acervo="$(conteudo_do_destino "${base}" "${RECORTE_SEM_O_KIT}" | grep -c 'chave' || true)"
+	afirmar_igual "e NENHUM arquivo de chave viajou dentro de acervo/" "0" "${chaves_dentro_do_acervo}"
+
+	# CONTROLE POSITIVO do discriminador acima: ele precisa saber acusar. Sem
+	# isto, um `grep` quebrado aprovaria uma chave gravada dentro do acervo.
+	local plantada
+	plantada="$(printf 'acervo/daily/base.dump\nacervo/chave-de-cifra-plantada.env\n' | grep -c 'chave' || true)"
+	afirmar_igual "(controle) o discriminador ACUSA uma chave plantada no acervo" "1" "${plantada}"
+
+	# A chave NÃO é podada — mesma razão dos boletos: ela não se regenera, e
+	# perdê-la transforma o certificado do provedor em bytes inúteis.
+	local podas_da_chave
+	podas_da_chave="$(grep -cE '^[^#]*(delete|purge|sync).*DESTINO_DA_CHAVE' "${SCRIPT_ENVIAR}" || true)"
+	afirmar_igual "nenhuma remoção do alvo aponta para a chave" "0" "${podas_da_chave}"
+
+	# SALVAGUARDA VAZIA É FALHA, e não silêncio: o passo anterior da MESMA
+	# unidade é `preservar-segredos.sh`, de modo que a ausência da chave significa
+	# que ele não rodou. ⚠️ A assimetria com os boletos (cuja origem vazia é
+	# apenas uma nota) é deliberada.
+	rm -f "${base}/salvaguarda/"*
+	codigo=0
+	local saida
+	saida="$(executar_envio "${base}")" || codigo=$?
+	afirmar_igual "salvaguarda vazia REPROVA" "1" "${codigo}"
+	if grep -q 'salvaguarda da chave está VAZIA' <<<"${saida}"; then
+		ok "e a falha nomeia a causa — preservar-segredos.sh não produziu a chave"
+	else
+		falhar "a falha não nomeia a causa; o operador não saberia que o passo anterior é o culpado"
+	fi
+
+	fechar_caso "CT-1289"
+}
+
+
 main() {
 	printf 'Verificação da preservação — %s\n' "${RAIZ_REPO}"
 
@@ -5050,6 +5126,7 @@ main() {
 	ct_1286
 	ct_1287
 	ct_1288
+	ct_1289
 
 	# ⚠️ A ORDEM DESTES TRÊS É CONTEÚDO. O CT-1124 compara o estado da árvore
 	# versionada contra a foto do início, e por isso vem DEPOIS de todo caso que

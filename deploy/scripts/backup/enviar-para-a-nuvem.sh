@@ -98,6 +98,11 @@
 #   SYSLOC_RAIZ_DO_BACKUP          Raiz do acervo local a enviar.
 #                                  Padrão: /opt/backups/sysloc
 #
+#   SYSLOC_DESTINO_DA_CHAVE        Onde `preservar-segredos.sh` guarda a chave de
+#                                  cifra. Mesmo nome da variável daquele script,
+#                                  de propósito.
+#                                  Padrão: /opt/salvaguarda-da-chave
+#
 #   SYSLOC_DIR_DOS_BOLETOS         Sobrescreve o diretório dos boletos, em vez de
 #                                  lê-lo do arquivo de ambiente. Existe para a
 #                                  bateria; a operação NÃO a informa.
@@ -137,6 +142,20 @@ umask 077
 readonly PREFIXO="[enviar-para-a-nuvem]"
 
 readonly ARQ_AMBIENTE_PADRAO="/etc/sysloc/backend.env"
+
+# DÉBITO COM GATILHO — D1 · F7/fechamento · registrado 2026-09-08
+# O QUÊ: as coordenadas do acervo local têm TRÊS declarações independentes
+#        (`RAIZ_DO_BACKUP_PADRAO` aqui, em `copiar-base.sh` e em
+#        `preservar-segredos.sh`), e `DESTINO_DA_CHAVE_PADRAO` tem duas. O
+#        Limiar de Três disparou com esta terceira.
+# QUANDO FECHA: a primeira alteração da raiz do acervo, ou a primeira task
+#        autorizada a abrir os três scripts de backup por outra razão. Elas
+#        sobem para casa comum carregada por `source`, no molde de
+#        `deploy/scripts/verificacao/esqueleto-de-assercao.sh`.
+# POR QUE NÃO AGORA: pagá-lo edita os três no mesmo dia em que dois foram
+#        corrigidos e o terceiro nasceu — e a §5 do Protocolo é literal:
+#        "um bloqueante, uma mudança".
+# ÍNDICE: docs/specs/features/virada-e-desinstalacao/v1/_run/run-report.md §2, D1
 readonly RAIZ_DO_BACKUP_PADRAO="/opt/backups/sysloc"
 readonly CONFIG_PADRAO="/etc/sysloc-offsite/rclone.conf"
 readonly REMOTE_PADRAO="offsite"
@@ -151,6 +170,36 @@ readonly DIR_DOS_BOLETOS_PADRAO="/var/lib/sysloc-boletos"
 readonly SUBDIR_DO_ACERVO="acervo"
 readonly SUBDIR_DOS_BOLETOS="boletos"
 readonly SUBDIR_DO_KIT="kit-de-recuperacao"
+readonly SUBDIR_DA_CHAVE="chave-de-cifra"
+
+# ---------------------------------------------------------------------------
+# A CHAVE DE CIFRA — pasta PRÓPRIA, e a razão de não ser a mesma do acervo
+# ---------------------------------------------------------------------------
+#
+# `preservar-segredos.sh` retira a `CHAVE_DE_CIFRA_DO_CERTIFICADO` do arquivo de
+# ambiente antes de empacotá-lo e a grava em ${DESTINO_DA_CHAVE_PADRAO}, que fica
+# FORA da raiz do acervo. Até 2026-09-08 ela, por isso, nunca saía desta máquina:
+# o material cifrado (o certificado do provedor, dentro do dump) tinha cópia fora
+# do host e a chave que o abre não tinha.
+#
+# O modo de falha é silencioso e tardio: numa máquina nova o produto sobe,
+# autentica, cobra — e falha na PRIMEIRA emissão de boleto, porque o certificado
+# não se decifra.
+#
+# ⚠️ A `Decision` da ADR-0032 exige a chave *"fora da árvore versionada e fora do
+# MESMO PACOTE em que o material cifrado é salvaguardado"*. Ela sobe para um
+# prefixo próprio, irmão de `${SUBDIR_DO_ACERVO}` e nunca dentro dele — pacotes
+# distintos, que é o que a cláusula nomeia.
+#
+# ⚠️ E o que a cláusula NÃO cobre fica registrado aqui, porque foi decisão
+# expressa do usuário em 2026-09-08, tomada com o custo apresentado: os dois
+# prefixos vivem no MESMO destino, de modo que quem obtiver acesso a ele obtém o
+# certificado cifrado E a chave. As alternativas oferecidas eram guardá-la fora
+# de qualquer nuvem (dependendo de disciplina humana) ou numa segunda conta
+# (mais um OAuth a administrar); a escolhida troca essa margem por recuperação
+# 100% automática. **Não a "corrija" para dentro de `${SUBDIR_DO_ACERVO}`** — ali
+# a violação seria da letra, e não só do espírito.
+readonly DESTINO_DA_CHAVE_PADRAO="/opt/salvaguarda-da-chave"
 
 # ---------------------------------------------------------------------------
 # O KIT DE RECUPERAÇÃO — as instruções moram onde o insumo mora
@@ -376,12 +425,13 @@ esac
 
 ARQ_AMBIENTE="${SYSLOC_ARQ_AMBIENTE:-${ARQ_AMBIENTE_PADRAO}}"
 RAIZ_DO_BACKUP="${SYSLOC_RAIZ_DO_BACKUP:-${RAIZ_DO_BACKUP_PADRAO}}"
+RAIZ_DA_CHAVE="${SYSLOC_DESTINO_DA_CHAVE:-${DESTINO_DA_CHAVE_PADRAO}}"
 CONFIG_DO_RCLONE="${SYSLOC_CONFIG_DO_RCLONE:-${CONFIG_PADRAO}}"
 REMOTE="${SYSLOC_REMOTE_DA_NUVEM:-${REMOTE_PADRAO}}"
 PREFIXO_NA_NUVEM="${SYSLOC_PREFIXO_NA_NUVEM:-${PREFIXO_NA_NUVEM_PADRAO}}"
 MARCA_DO_HOST="${SYSLOC_MARCA_DO_HOST:-$(hostname)}"
 PRAZO="${SYSLOC_PRAZO_DE_GUARDA_EM_DIAS:-${PRAZO_DE_GUARDA_EM_DIAS}}"
-readonly ARQ_AMBIENTE RAIZ_DO_BACKUP CONFIG_DO_RCLONE REMOTE PREFIXO_NA_NUVEM MARCA_DO_HOST
+readonly ARQ_AMBIENTE RAIZ_DO_BACKUP RAIZ_DA_CHAVE CONFIG_DO_RCLONE REMOTE PREFIXO_NA_NUVEM MARCA_DO_HOST
 
 [[ "${PRAZO}" =~ ^[1-9][0-9]*$ ]] ||
 	recusar "prazo de guarda inválido: ${PRAZO}" \
@@ -441,6 +491,7 @@ readonly BASE_REMOTA="${REMOTE}:${PREFIXO_NA_NUVEM}/${MARCA_DO_HOST}"
 readonly DESTINO_DO_ACERVO="${BASE_REMOTA}/${SUBDIR_DO_ACERVO}"
 readonly DESTINO_DOS_BOLETOS="${BASE_REMOTA}/${SUBDIR_DOS_BOLETOS}"
 readonly DESTINO_DO_KIT="${BASE_REMOTA}/${SUBDIR_DO_KIT}"
+readonly DESTINO_DA_CHAVE="${BASE_REMOTA}/${SUBDIR_DA_CHAVE}"
 
 info "início — destino ${BASE_REMOTA}"
 [ "${ENSAIO}" -eq 1 ] && nota "MODO ENSAIO: nada será escrito no destino"
@@ -457,6 +508,35 @@ case "${CODIGO_DA_ETAPA}" in
 2) erro "o envio do acervo NÃO ACONTECEU: o provedor recusou por limite de taxa ou transporte, esgotadas as ${TENTATIVAS_POR_OPERACAO} tentativas — o acervo LOCAL segue íntegro em ${RAIZ_DO_BACKUP}" ;;
 *) erro "o envio do acervo falhou — o acervo LOCAL segue íntegro em ${RAIZ_DO_BACKUP}" ;;
 esac
+
+# --------------------------------------------------------------------------- #
+# 1b. A chave de cifra — prefixo próprio, e SEM poda
+#
+# Sem poda pela mesma razão dos boletos: a chave não se regenera. Perdê-la
+# transforma o certificado do provedor, que está no dump, em bytes inúteis.
+# --------------------------------------------------------------------------- #
+
+if [ ! -d "${RAIZ_DA_CHAVE}" ]; then
+	erro "a salvaguarda da chave de cifra não existe: ${RAIZ_DA_CHAVE} — sem ela o certificado do provedor não se decifra numa máquina nova"
+else
+	QUANTAS_CHAVES="$(find "${RAIZ_DA_CHAVE}" -type f | wc -l)"
+	info "enviando a chave de cifra: ${RAIZ_DA_CHAVE} -> ${DESTINO_DA_CHAVE} (${QUANTAS_CHAVES} arquivo(s) na origem)"
+	if [ "${QUANTAS_CHAVES}" -eq 0 ]; then
+		# ⚠️ Origem vazia aqui É falha, e a assimetria com os boletos é
+		# deliberada: boleto que não existe é uma cobrança que ninguém emitiu,
+		# enquanto chave que não existe é `preservar-segredos.sh` não tendo
+		# rodado — e o passo anterior desta MESMA unidade é ele.
+		erro "a salvaguarda da chave está VAZIA — preservar-segredos.sh não produziu a chave nesta execução"
+	else
+		CODIGO_DA_ETAPA=0
+		operar_com_paciencia "chave de cifra" copy "${RAIZ_DA_CHAVE}" "${DESTINO_DA_CHAVE}" || CODIGO_DA_ETAPA=$?
+		case "${CODIGO_DA_ETAPA}" in
+		0) ok "chave de cifra salvaguardada em prefixo próprio" ;;
+		2) erro "o envio da chave de cifra NÃO ACONTECEU: o provedor recusou por limite de taxa ou transporte" ;;
+		*) erro "o envio da chave de cifra falhou" ;;
+		esac
+	fi
+fi
 
 # --------------------------------------------------------------------------- #
 # 2. Os boletos — `copy` também, e por uma razão MAIS forte
@@ -567,6 +647,17 @@ else
 	*) erro "a conferência do acervo REPROVOU: há arquivo da origem ausente ou diferente no destino" ;;
 	esac
 
+	if [ -d "${RAIZ_DA_CHAVE}" ]; then
+		CODIGO_DA_ETAPA=0
+		operar_com_paciencia "conferência da chave" check "${RAIZ_DA_CHAVE}" "${DESTINO_DA_CHAVE}" --one-way ||
+			CODIGO_DA_ETAPA=$?
+		case "${CODIGO_DA_ETAPA}" in
+		0) ok "chave de cifra conferida" ;;
+		2) erro "NÃO FOI POSSÍVEL CONFERIR a chave de cifra: o provedor recusou por limite de taxa ou transporte. ⚠️ Isto NÃO afirma que ela falta no destino" ;;
+		*) erro "a conferência da chave de cifra REPROVOU: há arquivo da origem ausente ou diferente no destino" ;;
+		esac
+	fi
+
 	if [ -n "${AREA_DO_KIT}" ] && [ -d "${AREA_DO_KIT}" ]; then
 		CODIGO_DA_ETAPA=0
 		operar_com_paciencia "conferência do kit" check "${AREA_DO_KIT}" "${DESTINO_DO_KIT}" --one-way ||
@@ -624,7 +715,7 @@ fi
 # --------------------------------------------------------------------------- #
 
 if [ "${FALHAS}" -eq 0 ]; then
-	info "fim — ${BASE_REMOTA} está em dia (acervo com guarda de ${PRAZO} dia(s); boletos e kit sem poda)"
+	info "fim — ${BASE_REMOTA} está em dia (acervo com guarda de ${PRAZO} dia(s); boletos, chave e kit sem poda)"
 	exit 0
 fi
 
