@@ -85,6 +85,23 @@
 #   CT-1126  a extração NÃO ENGOLIU caso algum, contra a tabela `bateria → casos`
 #            medida uma vez, ANTES dela.
 #
+# Casos acrescentados em 2026-09-08 — o ENVIO PARA FORA DO HOST:
+#
+#   CT-1280  o acervo E os boletos chegam ao destino, com o conteúdo conferido,
+#            e o ensaio percorre tudo sem escrever nada;
+#   CT-1281  é CÓPIA, não espelho: o que saiu da origem permanece no destino —
+#            com a perna estática que veta a troca por `sync`;
+#   CT-1282  a poda por idade alcança o ACERVO e NUNCA os boletos, afirmado pelo
+#            EFEITO sobre um par de artefatos de 30 dias, um em cada regime;
+#   CT-1283  a credencial do destino vive FORA da raiz que é empacotada e
+#            enviada — a ADR-0032 aplicada ao par (credencial, destino);
+#   CT-1284  o alvo do envio não carrega credencial em `argv` nem liga rastreio
+#            de shell, com prova de falsificação;
+#   CT-1285  cada pré-condição ausente recusa com desfecho 2 e NADA sobe —
+#            inclusive o remote inexistente, que sem guarda viraria um diretório
+#            local de nome parecido e terminaria em 0 sem sair do host;
+#   CT-1286  a unidade diária encadeia os TRÊS passos, com o envio por último.
+#
 # ===========================================================================
 # O VOCABULÁRIO DE ASSERÇÃO NÃO MORA MAIS AQUI
 # ===========================================================================
@@ -175,6 +192,14 @@ readonly RAIZ_REPO
 readonly SCRIPT_COPIAR="${RAIZ_REPO}/deploy/scripts/backup/copiar-base.sh"
 readonly SCRIPT_SEGREDOS="${RAIZ_REPO}/deploy/scripts/backup/preservar-segredos.sh"
 readonly SCRIPT_RESTAURAR="${RAIZ_REPO}/deploy/scripts/backup/restaurar-base.sh"
+readonly SCRIPT_ENVIAR="${RAIZ_REPO}/deploy/scripts/backup/enviar-para-a-nuvem.sh"
+
+# A unidade que encadeia os TRÊS passos da rotina diária — CT-1286.
+readonly UNIDADE_DO_BACKUP="sysloc-backup-da-base.service"
+
+# A casa da credencial do destino. Ela fica FORA de ${RAIZ_REAL_DOS_SEGREDOS}
+# por decisão, e o CT-1283 é quem prova que ela continua fora.
+readonly CASA_DA_CREDENCIAL_DA_NUVEM="/etc/sysloc-offsite"
 
 # A raiz REAL dos segredos de operação — a frente (b) do CT-1102.
 readonly RAIZ_REAL_DOS_SEGREDOS="/etc/sysloc"
@@ -353,7 +378,7 @@ readonly BATERIAS_DECLARADAS=(
 # 107.**
 # --------------------------------------------------------------------------- #
 readonly CASOS_DECLARADOS_POR_BATERIA=(
-	"backup/verificar-backup.sh|24|CT-1098;CT-1099;CT-1100;CT-1101;CT-1102;CT-1103;CT-1104;CT-1105;CT-1106;CT-1107;CT-1108;CT-1109;CT-1110;CT-1111;CT-1112;CT-1113;CT-1119;CT-1120;CT-1121;CT-1122;CT-1123;CT-1124;CT-1125;CT-1126"
+	"backup/verificar-backup.sh|31|CT-1098;CT-1099;CT-1100;CT-1101;CT-1102;CT-1103;CT-1104;CT-1105;CT-1106;CT-1107;CT-1108;CT-1109;CT-1110;CT-1111;CT-1112;CT-1113;CT-1119;CT-1120;CT-1121;CT-1122;CT-1123;CT-1124;CT-1125;CT-1126;CT-1280;CT-1281;CT-1282;CT-1283;CT-1284;CT-1285;CT-1286"
 	"borda/verificar-borda-do-app.sh|12|CT-1180;CT-1181;CT-1182;CT-1183;CT-1184;CT-1185;CT-1186;CT-1187;CT-1188;CT-1188 (b);CT-1189;CT-1190"
 	"borda/verificar-notificacao-bancaria.sh|8|CT-1005 (a);CT-1005 (b);CT-1005 (c);CT-1005 (d);CT-1191;CT-1192;CT-1193;CT-1194"
 	"caracterizacao/verificar-captura.sh|13|CT-001;CT-002;CT-003;CT-004;CT-005;CT-006;CT-007;CT-008;CT-009;CT-012;CT-013;CT-502;CT-603"
@@ -375,7 +400,12 @@ readonly CASOS_DECLARADOS_POR_BATERIA=(
 # de divergências ficaria vazia por vacuidade — igual à de uma árvore íntegra.
 # ⚠️ 111 → 116 em 2026-09-08, com os 5 casos de
 # `publicacao/verificar-rotas-publicadas.sh` entrando na tabela acima.
-readonly CASOS_DECLARADOS_NO_TOTAL=116
+# ⚠️ 116 → 123 no MESMO DIA, e a linha que se moveu foi a DESTA bateria (24 →
+# 31): são os sete casos do envio para fora do host, CT-1280 a CT-1286. Eles
+# entram aqui no mesmo diff que os publica — número narrativo que fica para trás
+# convida a próxima task a "corrigir" a âncora executável para o valor errado.
+# **Não reponha o 24 nem o 116.**
+readonly CASOS_DECLARADOS_NO_TOTAL=123
 
 # --------------------------------------------------------------------------- #
 # O teto de frescor da cópia do dia — CT-1122.
@@ -414,8 +444,13 @@ readonly UNIDADE_DO_RELOGIO="sysloc-backup-da-base.timer"
 # LINHAS. Afirmar a tabela, e não o total, é o que torna o caso verdadeiro nos
 # dois hosts: onde a pré-condição existir, a frente é medida e a linha não sai.
 # --------------------------------------------------------------------------- #
+# ⚠️ `ambiente-real` foi de 2 para 3 em 2026-09-08, e o valor antigo não se
+# repõe: o CT-1283 acrescentou um terceiro ponto de degradação nessa frente — a
+# ausência da credencial do Drive na raiz REAL dos segredos, que só se mede com
+# privilégio. O teto é EXATO, e não um piso: uma quarta linha nascer sem passar
+# por aqui continua reprovando o CT-1121, que é a razão de a tabela existir.
 readonly FRENTES_PRIVILEGIADAS=(
-	"ambiente-real|2"
+	"ambiente-real|3"
 	"acervo-real|1"
 	"relogio-no-supervisor|1"
 )
@@ -4194,7 +4229,7 @@ desfecho_da_bateria() {
 			exit 2
 		fi
 		if [[ "${avisos_totais}" -eq 0 ]]; then
-			printf 'verificar-backup: %d/%d casos aprovados (CT-1098 a CT-1113 e CT-1119 a CT-1126)\n' \
+			printf 'verificar-backup: %d/%d casos aprovados (CT-1098 a CT-1113, CT-1119 a CT-1126 e CT-1280 a CT-1286)\n' \
 				"${casos_aprovados}" "${casos_executados}"
 		else
 			printf 'verificar-backup: %d/%d casos sem falha, com %d degradação(ões) — há asserção NÃO MEDIDA neste host (ver as linhas AVISO acima)\n' \
@@ -4251,6 +4286,444 @@ auditar_o_fecho_da_bateria() {
 
 	afirmar_igual "nada reprovou nesta execução — a falta de privilégio não vira falha" \
 		"0" "${falhas_totais}"
+}
+
+# =========================================================================== #
+# O ENVIO PARA FORA DO HOST — CT-1280 a CT-1286
+#
+# Acrescentados em 2026-09-08. Eles nascem de um achado, e não de uma feature:
+# até aquela data o acervo vivia SÓ neste host, e um runbook de recuperação em
+# máquina nova pressupunha um insumo que a perda da máquina levaria junto.
+#
+# ⚠️ NENHUM destes casos toca a rede. O destino é um remote `alias` do próprio
+# `rclone`, apontado para um diretório desta caixa de areia — ferramenta real,
+# sistema de arquivos real, e zero dependência do Google. A fronteira que
+# importa aqui é o COMPORTAMENTO do alvo (o que ele copia, o que ele confere, o
+# que ele poda), e essa fronteira é atravessada por inteiro sem sair da máquina.
+# =========================================================================== #
+
+# Monta uma caixa de areia completa: acervo, boletos, e um remote que resolve
+# para um diretório local. Ecoa a raiz dela.
+#
+# O `rclone.conf` sintético nasce 0600 porque o ALVO exige — e essa exigência é
+# ela própria uma asserção do CT-1285.
+preparar_caixa_do_envio() {
+	local base="${DIR_TRABALHO}/envio-$1"
+	mkdir -p "${base}/nuvem" "${base}/acervo/daily" "${base}/acervo/segredos" "${base}/boletos"
+	printf 'conteudo-da-copia-%s\n' "$1" >"${base}/acervo/daily/base-2026-09-08.dump"
+	printf 'conteudo-dos-segredos-%s\n' "$1" >"${base}/acervo/segredos/segredos-2026-09-08.tar.gz"
+	printf '%%PDF-1.4 boleto %s\n' "$1" >"${base}/boletos/CBR-2026-00001.pdf"
+	{
+		printf '[offsite]\n'
+		printf 'type = alias\n'
+		printf 'remote = %s/nuvem\n' "${base}"
+	} >"${base}/rclone.conf"
+	chmod 600 "${base}/rclone.conf"
+	printf '%s' "${base}"
+}
+
+# Executa o alvo contra uma caixa de areia. Ecoa a saída e devolve o código.
+#
+# ⚠️ `SYSLOC_DIR_DOS_BOLETOS` existe para ESTA função. Na operação o caminho sai
+# do arquivo de ambiente, que é a mesma fonte que o processador do produto lê —
+# uma segunda declaração dele divergiria em silêncio, e o que ficaria para trás
+# seria justamente o artefato que não se regenera.
+executar_envio() {
+	local base="$1"
+	shift
+	SYSLOC_RAIZ_DO_BACKUP="${base}/acervo" \
+		SYSLOC_DIR_DOS_BOLETOS="${base}/boletos" \
+		SYSLOC_CONFIG_DO_RCLONE="${base}/rclone.conf" \
+		SYSLOC_MARCA_DO_HOST="caixa-de-areia" \
+		bash "${SCRIPT_ENVIAR}" "$@" 2>&1
+}
+
+# O que existe no destino, um caminho por linha, relativo à pasta do host.
+conteudo_do_destino() {
+	local base="$1"
+	local raiz="${base}/nuvem/sysloc-backups/caixa-de-areia"
+	[ -d "${raiz}" ] || return 0
+	(cd "${raiz}" && find . -type f | sed 's|^\./||' | sort)
+}
+
+# --------------------------------------------------------------------------- #
+# CT-1280 — o acervo E os boletos chegam ao destino, e a conferência confirma.
+# --------------------------------------------------------------------------- #
+ct_1280() {
+	caso "CT-1280" "o envio leva o acervo e os boletos ao destino, e o que subiu é conferido"
+
+	local base saida codigo
+	base="$(preparar_caixa_do_envio "1280")"
+
+	# ANTIVÁCUO. Sem esta perna, um alvo que não fizesse nada passaria: comparar
+	# um destino vazio com outro destino vazio é comparar nada com nada.
+	afirmar_igual "o destino está VAZIO antes do envio" "" "$(conteudo_do_destino "${base}")"
+
+	codigo=0
+	saida="$(executar_envio "${base}")" || codigo=$?
+	afirmar_igual "o envio termina com desfecho 0" "0" "${codigo}"
+
+	# IGUALDADE DE CONJUNTO, e não contenção: as duas direções precisam reprovar.
+	# Um alvo que enviasse o acervo e esquecesse os boletos passaria por
+	# contenção, e é exatamente o defeito que este caso existe para pegar.
+	afirmar_igual "o destino tem EXATAMENTE os três artefatos da origem" \
+		"acervo/daily/base-2026-09-08.dump
+acervo/segredos/segredos-2026-09-08.tar.gz
+boletos/CBR-2026-00001.pdf" \
+		"$(conteudo_do_destino "${base}")"
+
+	# O CONTEÚDO, e não só o nome: um alvo que criasse arquivos vazios com os
+	# nomes certos satisfaria a perna acima.
+	afirmar_igual "o dump no destino tem o conteúdo da origem" \
+		"$(cat "${base}/acervo/daily/base-2026-09-08.dump")" \
+		"$(cat "${base}/nuvem/sysloc-backups/caixa-de-areia/acervo/daily/base-2026-09-08.dump")"
+	afirmar_igual "o boleto no destino tem o conteúdo da origem" \
+		"$(cat "${base}/boletos/CBR-2026-00001.pdf")" \
+		"$(cat "${base}/nuvem/sysloc-backups/caixa-de-areia/boletos/CBR-2026-00001.pdf")"
+
+	# A conferência precisa ter ACONTECIDO, e não apenas o envio.
+	if grep -q 'acervo conferido' <<<"${saida}"; then
+		ok "a saída registra a conferência do acervo"
+	else
+		falhar "a saída NÃO registra conferência do acervo — 'o comando saiu 0' não é 'os bytes estão lá'"
+	fi
+	if grep -q 'boletos conferidos' <<<"${saida}"; then
+		ok "a saída registra a conferência dos boletos"
+	else
+		falhar "a saída NÃO registra conferência dos boletos"
+	fi
+
+	# O ENSAIO não escreve. É a perna que permite ao operador exercitar o
+	# caminho inteiro contra o destino real sem tocá-lo.
+	local base_ensaio
+	base_ensaio="$(preparar_caixa_do_envio "1280-ensaio")"
+	codigo=0
+	executar_envio "${base_ensaio}" --ensaio >/dev/null || codigo=$?
+	afirmar_igual "o ensaio termina com desfecho 0" "0" "${codigo}"
+	afirmar_igual "e o ensaio NÃO escreveu no destino" "" "$(conteudo_do_destino "${base_ensaio}")"
+
+	fechar_caso "CT-1280"
+}
+
+# --------------------------------------------------------------------------- #
+# CT-1281 — `copy`, nunca `sync`: o que saiu da origem PERMANECE no destino.
+#
+# É a propriedade que separa uma cópia de segurança de um espelho. Um `sync`
+# apagaria no destino tudo o que a origem já não tem — e a origem PERDE coisas o
+# tempo todo: a poda local descarta o acervo velho, e o expurgo de manutenção
+# mexe no diretório dos boletos.
+# --------------------------------------------------------------------------- #
+ct_1281() {
+	caso "CT-1281" "o que saiu da origem permanece no destino — é cópia, não espelho"
+
+	local base codigo
+	base="$(preparar_caixa_do_envio "1281")"
+
+	codigo=0
+	executar_envio "${base}" >/dev/null || codigo=$?
+	afirmar_igual "a primeira rodada termina com desfecho 0" "0" "${codigo}"
+
+	# A origem perde os dois artefatos — exatamente o que a vida real faz com
+	# ela: a poda local descarta o dump velho, e o boleto pode ser movido.
+	rm -f "${base}/acervo/daily/base-2026-09-08.dump" "${base}/boletos/CBR-2026-00001.pdf"
+
+	codigo=0
+	executar_envio "${base}" >/dev/null || codigo=$?
+	afirmar_igual "a segunda rodada termina com desfecho 0" "0" "${codigo}"
+
+	afirmar_igual "e o destino conserva OS DOIS artefatos que saíram da origem" \
+		"acervo/daily/base-2026-09-08.dump
+acervo/segredos/segredos-2026-09-08.tar.gz
+boletos/CBR-2026-00001.pdf" \
+		"$(conteudo_do_destino "${base}")"
+
+	# PROVA ESTÁTICA IRMÃ, e ela não é redundante: a perna acima prova o
+	# comportamento de HOJE; esta veta a troca que o reintroduziria. `rclone sync`
+	# em qualquer ponto deste alvo apagaria no destino, e é uma palavra de
+	# diferença.
+	local usos_de_sync
+	usos_de_sync="$(grep -cE '^[^#]*\brclone[[:space:]]+sync\b|executar_rclone[[:space:]]+sync\b' "${SCRIPT_ENVIAR}" || true)"
+	afirmar_igual "o alvo não invoca 'sync' em linha executável alguma" "0" "${usos_de_sync}"
+
+	fechar_caso "CT-1281"
+}
+
+# --------------------------------------------------------------------------- #
+# CT-1282 — a poda alcança o ACERVO e NÃO alcança os BOLETOS.
+#
+# ⚠️ ESTE É O CASO QUE IMPORTA, e ele não é redundante com o CT-1281. Aquele
+# prova que o alvo não apaga o que saiu da ORIGEM; este prova que ele apaga por
+# IDADE num destino e não no outro. São duas causas distintas de remoção, e um
+# alvo que podasse a base inteira passaria no CT-1281 inteiro.
+#
+# Pela ADR-0030 o boleto é fato recebido de terceiro e está fora de "derivado":
+# ele não se recompõe a partir do banco. Podá-lo por idade é perda programada.
+# --------------------------------------------------------------------------- #
+ct_1282() {
+	caso "CT-1282" "a poda por idade alcança o acervo e NUNCA os boletos"
+
+	local base raiz codigo
+	base="$(preparar_caixa_do_envio "1282")"
+	codigo=0
+	executar_envio "${base}" >/dev/null || codigo=$?
+	afirmar_igual "a rodada de semeadura termina com desfecho 0" "0" "${codigo}"
+
+	raiz="${base}/nuvem/sysloc-backups/caixa-de-areia"
+
+	# Dois artefatos VELHOS que já não existem na origem — o estado real do
+	# destino depois de algumas semanas. Um em cada regime.
+	printf 'copia-antiga\n' >"${raiz}/acervo/daily/base-2026-08-01.dump"
+	printf '%%PDF-1.4 boleto antigo\n' >"${raiz}/boletos/CBR-2026-00000.pdf"
+	touch -d '30 days ago' "${raiz}/acervo/daily/base-2026-08-01.dump" "${raiz}/boletos/CBR-2026-00000.pdf"
+
+	# ANTIVÁCUO da poda: os dois precisam ESTAR lá antes, senão o caso aprovaria
+	# uma poda que nunca rodou.
+	afirmar_igual "os dois artefatos velhos estão no destino antes da poda" \
+		"acervo/daily/base-2026-08-01.dump
+acervo/daily/base-2026-09-08.dump
+acervo/segredos/segredos-2026-09-08.tar.gz
+boletos/CBR-2026-00000.pdf
+boletos/CBR-2026-00001.pdf" \
+		"$(conteudo_do_destino "${base}")"
+
+	codigo=0
+	executar_envio "${base}" >/dev/null || codigo=$?
+	afirmar_igual "a rodada com poda termina com desfecho 0" "0" "${codigo}"
+
+	# O PAR é o discriminador, e por isso as duas pernas são afirmadas juntas,
+	# por igualdade do conjunto inteiro: a cópia de 30 dias SAIU, o boleto de 30
+	# dias FICOU.
+	afirmar_igual "a cópia velha foi podada e o BOLETO velho continua lá" \
+		"acervo/daily/base-2026-09-08.dump
+acervo/segredos/segredos-2026-09-08.tar.gz
+boletos/CBR-2026-00000.pdf
+boletos/CBR-2026-00001.pdf" \
+		"$(conteudo_do_destino "${base}")"
+
+	# PROVA ESTÁTICA IRMÃ: nenhuma remoção aponta para a base nem para a pasta
+	# dos boletos. A perna comportamental acima cobre o alvo de hoje; esta veta a
+	# forma que o quebraria — trocar `${DESTINO_DO_ACERVO}` por `${BASE_REMOTA}`
+	# numa das chamadas é uma palavra, e apagaria boleto por idade.
+	local podas_perigosas
+	podas_perigosas="$(grep -cE '^[^#]*(delete|purge|rmdirs).*(BASE_REMOTA|DESTINO_DOS_BOLETOS)' "${SCRIPT_ENVIAR}" || true)"
+	afirmar_igual "nenhuma remoção do alvo aponta para a base ou para os boletos" "0" "${podas_perigosas}"
+
+	fechar_caso "CT-1282"
+}
+
+# --------------------------------------------------------------------------- #
+# CT-1283 — a credencial do destino não viaja para dentro do destino.
+#
+# É a cláusula da ADR-0032 aplicada ao par (credencial, destino). O
+# `preservar-segredos.sh` empacota ${RAIZ_REAL_DOS_SEGREDOS} POR INTEIRO, e o
+# alvo deste caso envia esse pacote para a nuvem. Um `rclone.conf` guardado ali
+# poria o token de EXCLUSÃO do acervo dentro do próprio acervo.
+# --------------------------------------------------------------------------- #
+ct_1283() {
+	caso "CT-1283" "a credencial do destino vive FORA da raiz que é empacotada e enviada"
+
+	local casa
+	casa="$(ler_constante_do_alvo "${SCRIPT_ENVIAR}" CONFIG_PADRAO)"
+	afirmar_diferente "o alvo declara uma casa para a credencial" "" "${casa}"
+
+	# A asserção é sobre o PREFIXO, e não sobre igualdade de caminho: o defeito
+	# que ela veta é a credencial cair em QUALQUER lugar sob a raiz dos segredos,
+	# e não só na raiz dela.
+	case "${casa}" in
+	"${RAIZ_REAL_DOS_SEGREDOS}"/*)
+		falhar "a credencial do destino (${casa}) está DENTRO de ${RAIZ_REAL_DOS_SEGREDOS} — preservar-segredos.sh a empacotaria, e este alvo a enviaria para o próprio destino que ela abre"
+		;;
+	*)
+		ok "a credencial do destino (${casa}) está fora de ${RAIZ_REAL_DOS_SEGREDOS}"
+		;;
+	esac
+
+	afirmar_igual "e ela está na casa declarada por esta bateria" \
+		"${CASA_DA_CREDENCIAL_DA_NUVEM}" "$(dirname "${casa}")"
+
+	# CONTROLE POSITIVO do próprio discriminador: o mesmo `case` aplicado a um
+	# caminho sabidamente dentro da raiz precisa acusar. Sem ele, um `case`
+	# quebrado aprovaria qualquer coisa em silêncio.
+	local caminho_plantado="${RAIZ_REAL_DOS_SEGREDOS}/rclone.conf"
+	case "${caminho_plantado}" in
+	"${RAIZ_REAL_DOS_SEGREDOS}"/*) ok "(controle) o discriminador ACUSA um caminho plantado dentro da raiz" ;;
+	*) falhar "(controle) o discriminador não acusa nem um caminho plantado dentro da raiz — ele não pode falhar" ;;
+	esac
+
+	# E a raiz REAL não tem o arquivo hoje. Frente privilegiada: sem poder ler
+	# ${RAIZ_REAL_DOS_SEGREDOS}, a ausência não se mede — e degrada declarando,
+	# em vez de passar em silêncio.
+	if precondicao_privilegiada_disponivel "ambiente-real"; then
+		local achados
+		achados="$(find "${RAIZ_REAL_DOS_SEGREDOS}" -maxdepth 1 -name 'rclone*' -printf '%P ' 2>/dev/null || true)"
+		afirmar_igual "a raiz real dos segredos não guarda configuração de rclone" "" "${achados}"
+	else
+		aviso "[ambiente-real] ${RAIZ_REAL_DOS_SEGREDOS} não é legível por este usuário — a ausência da credencial na raiz REAL não foi medida; ${MARCA_DO_COMANDO_QUE_MEDIRIA} sudo find ${RAIZ_REAL_DOS_SEGREDOS} -maxdepth 1 -name 'rclone*'"
+	fi
+
+	fechar_caso "CT-1283"
+}
+
+# --------------------------------------------------------------------------- #
+# CT-1284 — ADR-0005 no alvo do envio: nada em `argv`, nenhum rastreio.
+# --------------------------------------------------------------------------- #
+ct_1284() {
+	caso "CT-1284" "o alvo do envio não carrega credencial em linha de comando nem liga rastreio"
+
+	local codigo achados
+	codigo=0
+	achados="$(auditar_credencial_em_argv "${SCRIPT_ENVIAR}")" || codigo=$?
+	afirmar_igual "a auditoria não acha nada" "" "${achados}"
+	afirmar_igual "a auditoria não acusa" "0" "${codigo}"
+
+	# O que viaja em `--config` é o CAMINHO, e caminho não é credencial. A
+	# asserção que importa é a de que o segredo NUNCA é lido para dentro deste
+	# processo: quem o lê é o `rclone`, do arquivo 0600.
+	local leituras_do_segredo
+	leituras_do_segredo="$(grep -cE '^[^#]*(cat|source|\.)[[:space:]]+"?\$\{?CONFIG_DO_RCLONE' "${SCRIPT_ENVIAR}" || true)"
+	afirmar_igual "o alvo nunca lê o conteúdo da configuração para dentro do processo" "0" "${leituras_do_segredo}"
+
+	# PROVA DE FALSIFICAÇÃO. As linhas defeituosas são montadas em pedaços de
+	# propósito: escritas inteiras, o texto desta bateria casaria com os próprios
+	# padrões que ela procura.
+	local mutante="${DIR_TRABALHO}/mutante-enviar.sh"
+	cp "${SCRIPT_ENVIAR}" "${mutante}"
+
+	codigo=0
+	achados="$(auditar_credencial_em_argv "${mutante}")" || codigo=$?
+	afirmar_igual "(controle) a cópia íntegra passa limpa no mesmo arreio" "0" "${codigo}"
+
+	printf 'set %s\n' '-x' >>"${mutante}"
+	codigo=0
+	achados="$(auditar_credencial_em_argv "${mutante}")" || codigo=$?
+	afirmar_diferente "o mutante com rastreio de shell é ACUSADO" "0" "${codigo}"
+
+	rm -f "${mutante}"
+	fechar_caso "CT-1284"
+}
+
+# --------------------------------------------------------------------------- #
+# CT-1285 — as pré-condições recusam com desfecho 2, e NADA sobe.
+#
+# A distinção entre `1` e `2` não é cosmética: um host sem `rclone` configurado
+# não é um envio que reprovou, é um envio que não pôde acontecer. Fundir os dois
+# faz a rotina ficar vermelha por motivo administrativo, e a primeira reação a um
+# vermelho recorrente é deixar de lê-lo.
+# --------------------------------------------------------------------------- #
+ct_1285() {
+	caso "CT-1285" "cada pré-condição ausente recusa com desfecho 2, e nada é enviado"
+
+	local base codigo saida
+	base="$(preparar_caixa_do_envio "1285")"
+
+	# (a) configuração ausente.
+	codigo=0
+	saida="$(SYSLOC_RAIZ_DO_BACKUP="${base}/acervo" SYSLOC_DIR_DOS_BOLETOS="${base}/boletos" \
+		SYSLOC_CONFIG_DO_RCLONE="${base}/nao-existe.conf" SYSLOC_MARCA_DO_HOST="caixa-de-areia" \
+		bash "${SCRIPT_ENVIAR}" 2>&1)" || codigo=$?
+	afirmar_igual "configuração ausente sai 2" "2" "${codigo}"
+	if grep -q 'rclone config' <<<"${saida}"; then
+		ok "e a recusa diz o comando que resolve"
+	else
+		falhar "a recusa não nomeia o comando que resolve — o operador fica sem saída"
+	fi
+
+	# (b) O REMOTE INEXISTENTE — a guarda que o script do legado nunca teve.
+	# Sem ela, `offsite:sysloc-backups` vira um caminho RELATIVO do sistema de
+	# arquivos local, o `rclone` copia o acervo para um diretório com esse nome
+	# AQUI, e a rotina termina com código 0 sem nada ter saído do host.
+	local conf_sem_remote="${base}/sem-remote.conf"
+	{
+		printf '[outro-nome]\n'
+		printf 'type = alias\n'
+		printf 'remote = %s/nuvem\n' "${base}"
+	} >"${conf_sem_remote}"
+	chmod 600 "${conf_sem_remote}"
+	codigo=0
+	saida="$(SYSLOC_RAIZ_DO_BACKUP="${base}/acervo" SYSLOC_DIR_DOS_BOLETOS="${base}/boletos" \
+		SYSLOC_CONFIG_DO_RCLONE="${conf_sem_remote}" SYSLOC_MARCA_DO_HOST="caixa-de-areia" \
+		bash "${SCRIPT_ENVIAR}" 2>&1)" || codigo=$?
+	afirmar_igual "remote não declarado na configuração sai 2" "2" "${codigo}"
+	afirmar_igual "e NADA foi enviado" "" "$(conteudo_do_destino "${base}")"
+
+	# ⚠️ E nada foi escrito num diretório de nome parecido AQUI, que é o modo de
+	# falha silencioso que esta guarda existe para fechar.
+	afirmar_igual "e nenhum diretório com o nome do remote nasceu no sistema de arquivos" \
+		"" "$(find "${base}" -maxdepth 1 -name 'offsite:*' -printf '%P ' 2>/dev/null || true)"
+
+	# (c) acervo ausente.
+	codigo=0
+	saida="$(SYSLOC_RAIZ_DO_BACKUP="${base}/acervo-que-nao-existe" SYSLOC_DIR_DOS_BOLETOS="${base}/boletos" \
+		SYSLOC_CONFIG_DO_RCLONE="${base}/rclone.conf" SYSLOC_MARCA_DO_HOST="caixa-de-areia" \
+		bash "${SCRIPT_ENVIAR}" 2>&1)" || codigo=$?
+	afirmar_igual "acervo ausente sai 2" "2" "${codigo}"
+
+	# (d) ANTIVÁCUO das três acima: a mesma caixa, íntegra, precisa sair 0. Sem
+	# esta perna, um alvo que recusasse SEMPRE passaria nas três anteriores.
+	codigo=0
+	executar_envio "${base}" >/dev/null || codigo=$?
+	afirmar_igual "(antivácuo) a mesma caixa íntegra sai 0" "0" "${codigo}"
+
+	# (e) o diretório dos boletos ausente é FALHA (1), e não pré-condição: o
+	# acervo subiu, e o que ficou para trás é o artefato não regenerável.
+	rm -rf "${base}/boletos"
+	codigo=0
+	saida="$(executar_envio "${base}")" || codigo=$?
+	afirmar_igual "diretório de boletos ausente REPROVA (1), e não degrada" "1" "${codigo}"
+	if grep -q 'acervo LOCAL' <<<"${saida}"; then
+		ok "e o fecho diz que o acervo local não foi tocado"
+	else
+		falhar "o fecho não distingue 'a nuvem falhou' de 'o backup se perdeu'"
+	fi
+
+	fechar_caso "CT-1285"
+}
+
+# --------------------------------------------------------------------------- #
+# CT-1286 — a unidade diária encadeia os TRÊS passos, e o envio é o último.
+#
+# Sem este caso o alvo existiria e ninguém o chamaria — que é a forma mais cara
+# de defeito deste repositório, medida duas vezes: o incidente
+# `PROD-2026-09-03-01` (código na árvore, ausente do processo) e as doze falhas
+# silenciosas do backup. A ORDEM também é conteúdo: enviar antes de produzir
+# mandaria para a nuvem a cópia de ontem.
+# --------------------------------------------------------------------------- #
+ct_1286() {
+	caso "CT-1286" "a unidade diária executa os três passos, com o envio por último"
+
+	local unidade="${RAIZ_REPO}/deploy/systemd/${UNIDADE_DO_BACKUP}"
+	if [[ ! -f "${unidade}" ]]; then
+		falhar "a unidade versionada não existe em ${unidade}"
+		fechar_caso "CT-1286"
+		return 0
+	fi
+
+	local passos
+	passos="$(grep -E '^ExecStart=' "${unidade}" | sed -E 's|^ExecStart=.*/||')"
+
+	afirmar_igual "os três passos estão declarados, nesta ordem" \
+		"copiar-base.sh
+preservar-segredos.sh
+enviar-para-a-nuvem.sh" \
+		"${passos}"
+
+	# O alvo precisa ser EXECUTÁVEL: uma unidade `ExecStart=` apontando para
+	# arquivo sem bit de execução falha na partida, todo dia, às 02:45.
+	if [[ -x "${SCRIPT_ENVIAR}" ]]; then
+		ok "o alvo do envio é executável"
+	else
+		falhar "o alvo do envio NÃO é executável — a unidade falharia na partida"
+	fi
+
+	# E o alerta continua ligado: é ele que transforma a falha do envio em
+	# notícia, já que não há mais `frappe.sendmail` neste host.
+	if grep -qE '^OnFailure=' "${unidade}"; then
+		ok "a unidade declara OnFailure — a falha do envio vira alerta"
+	else
+		falhar "a unidade não declara OnFailure — uma falha de envio passaria em silêncio"
+	fi
+
+	fechar_caso "CT-1286"
 }
 
 main() {
@@ -4339,6 +4812,17 @@ main() {
 
 	ct_1122
 	ct_1123
+
+	# O ENVIO PARA FORA DO HOST. Vem depois dos casos de banco porque não
+	# depende de nenhum deles, e ANTES dos três finais porque planta mutante
+	# (CT-1284) e o CT-1124 precisa vir depois de todo caso que o faça.
+	ct_1280
+	ct_1281
+	ct_1282
+	ct_1283
+	ct_1284
+	ct_1285
+	ct_1286
 
 	# ⚠️ A ORDEM DESTES TRÊS É CONTEÚDO. O CT-1124 compara o estado da árvore
 	# versionada contra a foto do início, e por isso vem DEPOIS de todo caso que

@@ -167,13 +167,26 @@ WorkingDirectory=/opt/sysloc-backend
 #                 `CHAVE_DE_CIFRA_DO_CERTIFICADO` não está no arquivo apontado.
 Environment=SYSLOC_ARQ_AMBIENTE=/etc/sysloc/backend.env
 
-# As duas travessias, na ordem que o cabeçalho justifica. Os alvos são scripts
+# As TRÊS travessias, na ordem que o cabeçalho justifica. Os alvos são scripts
 # VERSIONADOS — não artefato construído —, de modo que a existência deles vem
 # junto com a árvore, e não de `pnpm build`. Que eles existam e sejam
 # executáveis é afirmado pelo CT-1118 de
 # `packages/shared/test/unidades-agendadas.spec.ts`.
+#
+# ⚠️ A TERCEIRA entrou em 2026-09-08, e a ORDEM dela é conteúdo: `oneshot`
+# executa em sequência, e enviar ANTES de produzir mandaria para a nuvem a cópia
+# de ONTEM. Ela nasce de um achado — até aquela data o acervo vivia só neste
+# host, medido, e a perda da máquina levaria junto o insumo do runbook de
+# recuperação. Ela também é o passo que leva os PDFs de boleto para fora daqui,
+# que nenhum dos dois anteriores faz (`grep -c BOLETO` neles dá 0 e 0).
+#
+# ⚠️ Falha dela NÃO é backup perdido, e o diagnóstico do alvo diz isso em toda
+# saída: os dois passos anteriores já terminaram, e o acervo local está íntegro.
+# O que se perdeu foi a cópia FORA do host daquele dia — que volta no ciclo
+# seguinte, porque `rclone copy` é incremental e nada no destino é apagado.
 ExecStart=/opt/sysloc-backend/deploy/scripts/backup/copiar-base.sh
 ExecStart=/opt/sysloc-backend/deploy/scripts/backup/preservar-segredos.sh
+ExecStart=/opt/sysloc-backend/deploy/scripts/backup/enviar-para-a-nuvem.sh
 
 # Teto da travessia, DECLARADO em vez de herdado.
 #

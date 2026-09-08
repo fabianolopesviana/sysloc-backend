@@ -20,22 +20,30 @@ um caminho de recuperação próprio, declarado na §7:
 |---|---|---|
 | **Os papéis do agrupamento** (`sysloc_app`, `sysloc_migracao`, `sysloc_resolucao`, `sysloc_roteamento`) | `pg_dump` de uma base **não inclui papéis** — eles são objetos do agrupamento. O dump apenas os **referencia** nos `OWNER TO`, e falha se não existirem | §3, passo 3 (`provisionar-base.sh`) |
 | **Os privilégios de nível de BASE** (`OWNER`, `REVOKE … FROM PUBLIC`, `GRANT CONNECT`) | a cópia é `pg_dump --format=custom` **sem `--create`** — medido em `copiar-base.sh` | §3, passo 5 (o `CREATE DATABASE` traz os quatro comandos) |
-| **Os PDFs de boleto** (`DIRETORIO_DOS_BOLETOS`) | `grep -c BOLETO` em `copiar-base.sh` e `preservar-segredos.sh` dá **0 e 0**. E a **ADR-0030** os exclui de *"derivado"*: boleto do provedor é **fato de terceiro**, não se regenera | §7.1 — **não há recuperação; é perda** |
+| **Os PDFs de boleto** (`DIRETORIO_DOS_BOLETOS`) | ⚠️ **RESOLVIDO em 2026-09-08**: eles são espelhados na nuvem por `enviar-para-a-nuvem.sh`, **sem retenção** — a ADR-0030 os declara fato de terceiro, e podar por idade o que não se regenera seria perda programada. Nenhum dos dois scripts locais os copia, e isso segue verdade | §7.1 — baixe-os do Drive |
 | **A fila (Redis/AOF)** | `/var/lib/redis/sysloc` não entra em cópia nenhuma | §7.2 — as rotinas re-executam pelo relógio |
 | **Os builds do React** (`/opt/react/sysloc/html`, `/opt/web/syslocadmin/html`) | são artefato de outro repositório, construído na máquina do time de frontend | §7.3 — redeploy |
 | **TLS, CloudPanel e os vhosts que ele gera** | o CloudPanel termina o TLS neste host e tem estado próprio | §7.4 |
 
-> ### ⚠️ E a lacuna que torna tudo isto teórico: **o acervo vive no MESMO host**
+> ### ✅ A lacuna que tornava tudo isto teórico FOI FECHADA em 2026-09-08
 >
-> As cópias ficam em `/opt/backups/sysloc` (`0700 root`), e **nada em `deploy/` as envia para fora
-> da máquina** — medido: zero ocorrências de `rclone`, `rsync`, `scp` ou `aws s3` na árvore de
-> deploy inteira. O `rclone` está instalado no host, mas é herança do Frappe e **não** serve ao
-> backend novo.
+> **O texto anterior desta seção dizia que o acervo vivia só neste host, e que perdida a máquina
+> este runbook ficaria sem insumo.** Era verdade, e era medido: zero ocorrências de `rclone`,
+> `rsync`, `scp` ou `aws s3` em toda a árvore de `deploy/`. Deixou de ser.
 >
-> **Consequência literal: se esta máquina for perdida, o acervo é perdido com ela, e este runbook
-> não tem insumo.** Ele pressupõe que você tenha em mãos os três arquivos da §1 — e hoje a única
-> forma de tê-los é ter copiado à mão. **Fechar isso é a próxima providência de infraestrutura, e
-> ela é mais urgente que a desinstalação do Frappe.**
+> `deploy/scripts/backup/enviar-para-a-nuvem.sh` é o terceiro `ExecStart=` de
+> `sysloc-backup-da-base.service` e envia, todo dia às 02:45, **o acervo e os boletos** para o
+> Google Drive por `rclone` — sucedendo o `/opt/frappe/backup-offsite-upload.sh` do legado, que
+> fazia isso desde 2026-07-23 e morre com a desinstalação. Destino:
+> `offsite:sysloc-backups/<host>`, com `acervo/` (guarda de 14 dias, espelhando a local) e
+> `boletos/` (**sem poda alguma**).
+>
+> ⚠️ **A credencial do Drive NÃO está no acervo, e isso é deliberado.** Ela vive em
+> `/etc/sysloc-offsite/rclone.conf`, fora de `/etc/sysloc` — que é a raiz que
+> `preservar-segredos.sh` empacota por inteiro e que este envio manda para a nuvem. É a cláusula da
+> ADR-0032 aplicada ao par (credencial, destino): guardada lá dentro, o token de **exclusão** do
+> acervo viajaria para dentro do próprio acervo. **Consequência para este runbook: numa máquina
+> nova você REAUTORIZA o Drive — passo 0 da §3 —, em vez de restaurar um token antigo.**
 
 ---
 
@@ -48,7 +56,19 @@ Três arquivos, do **mesmo dia**, e um repositório:
 | 1 | `base-<AAAA-MM-DD>.dump` | `/opt/backups/sysloc/daily/` | `pg_restore --list <arq> \| head` responde sem erro |
 | 2 | `segredos-<AAAA-MM-DD>.tar.gz` | `/opt/backups/sysloc/segredos/` | `tar -tzf <arq>` lista `backend.env` |
 | 3 | `chave-de-cifra-<AAAA-MM-DD>.env` | `/opt/salvaguarda-da-chave/` | contém a linha `CHAVE_DE_CIFRA_DO_CERTIFICADO=` |
-| 4 | o repositório | `git clone git@…:fabianolopesviana/sysloc-backend.git` | — |
+| 4 | os PDFs de boleto | `offsite:sysloc-backups/<host>/boletos/` | `rclone ls` lista o que existe |
+| 5 | o repositório | `git clone git@…:fabianolopesviana/sysloc-backend.git` | — |
+
+> **De onde eles vêm numa máquina nova**: do Google Drive, não deste host — que não existe mais.
+> Baixe com um `rclone` autorizado em qualquer máquina:
+>
+> ```bash
+> rclone copy offsite:sysloc-backups/<host>/acervo  ./acervo-recuperado
+> rclone copy offsite:sysloc-backups/<host>/boletos ./boletos-recuperados
+> ```
+>
+> O `<host>` é o `hostname` da máquina perdida (`brutus`, hoje) — o envio usa esse nome como
+> namespace, de modo que duas máquinas nunca escrevem uma sobre a outra.
 
 > **Por que (2) e (3) são arquivos separados, e por que você precisa dos DOIS**: a **ADR-0032** manda
 > a chave de cifra viver **fora do mesmo pacote** em que o material cifrado é salvaguardado, e
@@ -100,6 +120,22 @@ contorna a guarda: no momento da restauração o destino é de fato outra base.
 ## 3. Passo a passo
 
 Tudo abaixo roda **como root** (`sudo`), no host novo. Substitua `<AAAA-MM-DD>` pela data da cópia.
+
+### Passo 0 — reautorizar o Drive (só se você for baixar os insumos aqui)
+
+Se os três arquivos da §1 já estão em mãos, pule. Se você vai buscá-los na nuvem a partir da máquina
+nova, o `rclone` dela precisa de autorização própria — o token antigo **não** está no acervo, por
+decisão (§0):
+
+```bash
+sudo mkdir -p /etc/sysloc-offsite && sudo chmod 700 /etc/sysloc-offsite
+sudo rclone config --config /etc/sysloc-offsite/rclone.conf     # crie o remote com o nome exato: offsite
+sudo chmod 600 /etc/sysloc-offsite/rclone.conf
+sudo rclone --config /etc/sysloc-offsite/rclone.conf ls offsite:sysloc-backups | head
+```
+
+O mesmo arquivo é o que a rotina diária vai usar depois do passo 9 — deixá-lo pronto agora poupa uma
+volta.
 
 ### Passo 1 — sistema e repositório
 
@@ -244,6 +280,18 @@ São 17 unidades: `sysloc-api.service`, `sysloc-worker.service`, os 6 pares
 medição). O instalador **habilita apenas os `.timer` e as duas unidades permanentes**: habilitar um
 `.service` de `Type=oneshot` o faria correr **no boot**, fora do horário declarado.
 
+> ⚠️ **`sysloc-backup-da-base.service` tem TRÊS passos, e o terceiro exige o passo 0.** Ele é
+> `enviar-para-a-nuvem.sh`, e sem `/etc/sysloc-offsite/rclone.conf` a rotina recusa com desfecho
+> **2** — pré-condição, não reprovação —, e o `OnFailure=` alerta todo dia às 02:45. Os dois
+> primeiros passos (a cópia e os segredos) terminam normalmente antes dele: **o acervo local fica
+> íntegro**, e o que falta é só a cópia fora do host. Confira com:
+>
+> ```bash
+> sudo bash deploy/scripts/backup/enviar-para-a-nuvem.sh --ensaio
+> ```
+>
+> O ensaio percorre o caminho inteiro — guardas, remote, origem — e **não escreve nada** no destino.
+
 ### Passo 10 — as duas bordas nginx
 
 O produto é servido por **dois** contêineres `nginx:1.27-alpine`, ambos em `--network host` — que é
@@ -328,15 +376,27 @@ só.
 
 ## 7. Os itens fora da cópia, um a um
 
-### 7.1 — Os PDFs de boleto: **perda, não recuperação**
+### 7.1 — Os PDFs de boleto: baixe-os do Drive
 
-Não há caminho. O boleto do provedor é **fato de terceiro** (ADR-0030, cláusula de exclusão): ele
-não é derivado de dado gravado e **não se recompõe** a partir do banco. O que sobrevive à
-restauração é o **registro** da cobrança, com `linha_digitavel` e `nosso_numero` — o suficiente para
-o locatário pagar, e insuficiente para reemitir o arquivo.
+⚠️ **Esta seção dizia "perda, não recuperação" até 2026-09-08, e o texto ficava certo pela razão
+errada**: o boleto do provedor continua sendo **fato de terceiro** (ADR-0030, cláusula de exclusão)
+e continua **não se recompondo** a partir do banco — o que mudou é que agora existe cópia dele fora
+do host. O que sobrevive à restauração do banco segue sendo o **registro** da cobrança, com
+`linha_digitavel` e `nosso_numero`: suficiente para o locatário pagar, insuficiente para reemitir o
+arquivo. É por isso que a cópia importa.
 
-O diretório é o que `DIRETORIO_DOS_BOLETOS` declara no `backend.env`. **Copiá-lo junto do banco é a
-segunda providência de infraestrutura**, depois de tirar o acervo do host.
+```bash
+# o destino é o que DIRETORIO_DOS_BOLETOS declara no backend.env já restaurado
+DIR="$(sudo sed -nE 's/^DIRETORIO_DOS_BOLETOS=//p' /etc/sysloc/backend.env | tail -n1)"
+sudo install -d -o sysloc -g sysloc -m 750 "$DIR"
+sudo rclone --config /etc/sysloc-offsite/rclone.conf copy \
+  "offsite:sysloc-backups/<host>/boletos" "$DIR"
+sudo chown -R sysloc:sysloc "$DIR"
+```
+
+⚠️ **O espelho na nuvem NUNCA é podado**, e é por isso que ele pode trazer de volta PDFs que já não
+existiam no host perdido. A propriedade tem rede permanente: o `CT-1282` de `verificar-backup.sh`
+afirma, pelo EFEITO, que a poda de 14 dias alcança o acervo e **não** os boletos.
 
 ### 7.2 — A fila (Redis/AOF)
 

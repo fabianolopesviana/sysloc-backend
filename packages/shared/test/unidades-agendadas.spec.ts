@@ -324,8 +324,16 @@ const ARQUIVO_DE_AMBIENTE = '/etc/sysloc/backend.env';
  */
 const ONCALENDAR_DO_BACKUP = '*-*-* 02:45:00 America/Sao_Paulo';
 
-/** Quantos comandos o despacho da cópia executa — `copiar-base.sh` e `preservar-segredos.sh`. */
-const COMANDOS_DO_BACKUP = 2;
+/**
+ * Quantos comandos o despacho da cópia executa — `copiar-base.sh`,
+ * `preservar-segredos.sh` e `enviar-para-a-nuvem.sh`.
+ *
+ * ⚠️ **Foi 2 até 2026-09-08, e o valor antigo não se repõe.** O terceiro passo leva o acervo e os
+ * PDFs de boleto para FORA deste host, e ele nasceu de uma medição: até aquela data nada em
+ * `deploy/` enviava coisa alguma para fora, de modo que a perda da máquina levaria junto o único
+ * acervo existente. Mover o valor de uma constante que um caso já afirmava **não** acrescenta caso.
+ */
+const COMANDOS_DO_BACKUP = 3;
 
 /** O primeiro comando do despacho — a cópia da base, o artefato que não volta. */
 const CAMINHO_DA_COPIA_DA_BASE = '/opt/sysloc-backend/deploy/scripts/backup/copiar-base.sh';
@@ -333,6 +341,10 @@ const CAMINHO_DA_COPIA_DA_BASE = '/opt/sysloc-backend/deploy/scripts/backup/copi
 /** O segundo — o pacote dos segredos de operação e a chave em destino próprio (ADR-0032). */
 const CAMINHO_DA_PRESERVACAO_DOS_SEGREDOS =
   '/opt/sysloc-backend/deploy/scripts/backup/preservar-segredos.sh';
+
+/** O terceiro — o envio do acervo e dos boletos para fora do host (`rclone`, Google Drive). */
+const CAMINHO_DO_ENVIO_PARA_A_NUVEM =
+  '/opt/sysloc-backend/deploy/scripts/backup/enviar-para-a-nuvem.sh';
 
 /** Teto por caso. Leitura de algumas dezenas de arquivos pequenos; folga larga sobre o medido. */
 const LIMITE_DO_CASO_MS = 30_000;
@@ -2021,7 +2033,7 @@ describe('CT-1117 — nenhuma unidade carrega credencial, e a da cópia NOMEIA o
 
 describe('CT-1118 — a cópia é oneshot, sem Restart=, e cada ExecStart= tem alvo real e executável', () => {
   it(
-    'os dois comandos por valor, os alvos conferidos no filesystem, e o mutante com o caminho no plural',
+    'os três comandos por valor, os alvos conferidos no filesystem, e o mutante com o caminho no plural',
     async () => {
       const retrato = await analisarBackup(DIRETORIO_DE_UNIDADES);
 
@@ -2036,15 +2048,19 @@ describe('CT-1118 — a cópia é oneshot, sem Restart=, e cada ExecStart= tem a
       //
       // A ordem é conteúdo: `oneshot` executa em sequência e PARA no primeiro que reprova, e a
       // cópia da base vem primeiro porque é o artefato que não volta.
+      // SUT_IS_CORRECT_BECAUSE: o terceiro passo entrou em 2026-09-08 e a unidade está certa. A
+      // igualdade continua sendo de LISTA INTEIRA, e a ordem segue sendo conteúdo — enviar antes
+      // de produzir mandaria para a nuvem a cópia de ontem.
       expect(retrato.comandos).toEqual([
         CAMINHO_DA_COPIA_DA_BASE,
         CAMINHO_DA_PRESERVACAO_DOS_SEGREDOS,
+        CAMINHO_DO_ENVIO_PARA_A_NUVEM,
       ]);
       expect(retrato.comandosForaDaRaizInstalada).toEqual([]);
 
       // --- Passo 3: os alvos, CONFERIDOS NO FILESYSTEM ----------------------------------------
       //
-      // Controle antivácuo antes da lista vazia: dois alvos foram de fato examinados.
+      // Controle antivácuo antes da lista vazia: os três alvos foram de fato examinados.
       expect(retrato.alvosExaminados).toBe(COMANDOS_DO_BACKUP);
       expect(retrato.alvosInvalidos).toEqual([]);
 

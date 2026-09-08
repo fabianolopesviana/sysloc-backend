@@ -848,11 +848,38 @@ O marco está alcançado quando **todos** os sete itens forem verdadeiros:
       o `backend.env` declara — de propósito, sem bandeira que a desligue. A ordem que funciona tem
       o passo que quase todo mundo inverte: **os segredos voltam ANTES do provisionamento**, porque
       `provisionar-base.sh` só preserva a credencial quando o arquivo já existe (P06) e ressincroniza
-      o banco com ela (P09). ⚠️ **E a lacuna maior não é do roteiro, é do acervo**: as cópias vivem
-      em `/opt/backups/sysloc` **no mesmo host**, e **nada em `deploy/` as envia para fora** — medido,
-      zero ocorrências de `rclone`/`rsync`/`scp`/`aws s3` na árvore inteira. Perdida a máquina,
-      perde-se o insumo. ⚠️ **Os PDFs de boleto NÃO são copiados** (`grep -c BOLETO` dá 0 nos dois
-      scripts) e a ADR-0030 os exclui de *"derivado"*: é **perda**, não recuperação lenta.
+      o banco com ela (P09).
+      ⚠️ **AS DUAS LACUNAS QUE O RUNBOOK DECLARAVA FORAM FECHADAS no mesmo dia**, e o texto anterior
+      — *"nada em `deploy/` as envia para fora"* e *"os PDFs de boleto são **perda**"* — era medido e
+      **não se repõe**. `deploy/scripts/backup/enviar-para-a-nuvem.sh` é o **terceiro** `ExecStart=`
+      de `sysloc-backup-da-base.service` e manda, às 02:45, o acervo **e os boletos** para o Google
+      Drive por `rclone`, sucedendo o `/opt/frappe/backup-offsite-upload.sh` do legado — que fazia
+      isso desde 2026-07-23 e morre com a desinstalação. Destino `offsite:sysloc-backups/<host>`,
+      com `acervo/` sob guarda de **14 dias** (espelhando a local) e `boletos/` **sem poda alguma**.
+      ⚠️ **Os dois regimes são a decisão, e não um descuido**: a cópia da base é regenerável — a de
+      amanhã substitui a de hoje —, enquanto o boleto é **fato de terceiro** pela cláusula de
+      exclusão da ADR-0030 e não se recompõe do banco; podá-lo por idade seria perda programada.
+      **Não "unifique" os dois**, e não aponte `delete`/`purge`/`sync` para a base remota nem para
+      `boletos/` — o `CT-1282` afirma pelo EFEITO que a poda de 14 dias alcança o acervo e não os
+      PDFs, sobre um par de artefatos de 30 dias, um em cada regime.
+      ⚠️ **A credencial do Drive vive em `/etc/sysloc-offsite/rclone.conf`, FORA de `/etc/sysloc`**,
+      e a razão é a ADR-0032 aplicada ao par (credencial, destino): `preservar-segredos.sh` empacota
+      aquela raiz **por inteiro**, e o envio manda o pacote para a nuvem — guardado lá dentro, o
+      token de **exclusão** do acervo viajaria para dentro do próprio acervo. O `CT-1283` prova que
+      ela continua fora, com controle positivo do discriminador. **Consequência: máquina nova
+      REAUTORIZA o Drive (`rclone config`), em vez de restaurar token antigo.**
+      ⚠️ **A bateria foi de 24 para 31 casos** (`CT-1280` a `CT-1286`), e `CASOS_DECLARADOS_NO_TOTAL`
+      de **116 para 123** — os dois no mesmo diff que publica os casos. **Não reponha o 24 nem o
+      116.** Nenhum deles toca a rede: o destino é um remote `alias` do próprio `rclone` apontado
+      para a caixa de areia, de modo que `rclone`, sistema de arquivos e comportamento do alvo são
+      reais e o Google não é dependência. A `ambiente-real` de `FRENTES_PRIVILEGIADAS` foi de **2
+      para 3** linhas de degradação, com o ponto novo do `CT-1283`; o teto é EXATO, e uma quarta
+      linha sem declaração continua reprovando o `CT-1121`.
+      ⚠️ **`COMANDOS_DO_BACKUP` de `packages/shared/test/unidades-agendadas.spec.ts` foi de 2 para
+      3**, e o `shared` **não cresceu** (309 antes e depois) — é âncora de superfície que muda de
+      valor, não caso novo. A igualdade do `CT-1118` segue sendo de LISTA INTEIRA, com a linha
+      `SUT_IS_CORRECT_BECAUSE` no ponto, e a ORDEM continua sendo conteúdo: enviar antes de produzir
+      mandaria para a nuvem a cópia de **ontem**.
       ⚠️ **O runbook nunca foi executado numa máquina nova** — o que foi provado é a restauração no
       **mesmo agrupamento**, onde os papéis já existiam. Até o ensaio, ele é plano, não garantia.
 - [x] **`deploy/scripts/virada.md` escrito** em **2026-08-27** (commit `5709c5f`, **195 linhas**),
