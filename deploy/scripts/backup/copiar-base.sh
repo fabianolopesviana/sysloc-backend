@@ -245,6 +245,13 @@ readonly MODO_DO_ARQUIVO="600"
 # travada em vez de falhar.
 readonly LIMITE_CONEXAO_S=10
 
+# O papel que GERA a cópia — o superusuário do agrupamento, e não o da aplicação.
+# A razão inteira está na função `copiar`, junto da chamada do `pg_dump`: o papel
+# da aplicação tem RLS FORÇADA e nasce `NOBYPASSRLS`, de modo que um dump feito
+# por ele sairia sem linha alguma de negócio. Constante nomeada porque aparece em
+# três pontos — a mensagem, a chamada e a guarda de base local.
+readonly PAPEL_DA_COPIA="postgres"
+
 # Os dois modos aceitos no argumento posicional. Ver o cabeçalho: o relógio do
 # sistema dispara o padrão, sem argumento.
 readonly MODOS_ACEITOS="copiar expurgar"
@@ -444,9 +451,14 @@ decompor_url() {
 # Isto é uma FUNÇÃO do shell, não um programa externo: o valor viaja como
 # parâmetro posicional do próprio processo, sem linha de comando nova para a
 # tabela de processos mostrar.
+#
+# ⚠️ Ela é consumida APENAS no caminho sem privilégio da função `copiar` — ver os
+# dois caminhos declarados lá. No caminho de produção, que roda como root, a
+# conexão é pelo soquete local e nenhuma credencial trafega.
 # --------------------------------------------------------------------------- #
 escapar_para_arquivo_de_senha() {
-	local valor="${1//\\/\\\\}"
+	local valor="$1"
+	valor="${valor//\\/\\\\}"
 	printf '%s' "${valor//:/\\:}"
 }
 
@@ -723,6 +735,37 @@ copiar() {
 	DIR_TEMPORARIO="$(mktemp -d)"
 	chmod 700 "${DIR_TEMPORARIO}"
 
+	# ---------------------------------------------------------------------
+	# A CÓPIA É FEITA PELO SUPERUSUÁRIO DO AGRUPAMENTO — corrigido 2026-09-08
+	# ---------------------------------------------------------------------
+	#
+	# Até esta data o `pg_dump` conectava com o papel da APLICAÇÃO, lido do
+	# `DATABASE_URL`. Estava errado por DUAS razões independentes, e a segunda é
+	# muito pior que a primeira:
+	#
+	#   1. `sysloc_app` não tem `SELECT` em `identidade.migracao_aplicada`, e o
+	#      `pg_dump` bloqueia TODAS as tabelas de uma vez. MEDIDO: a unidade
+	#      falhou TODOS OS DIAS entre 2026-08-28 e 2026-09-08, sempre com
+	#      `permission denied for table migracao_aplicada`, e nenhuma cópia
+	#      chegou a existir;
+	#   2. ⚠️ **e conceder aquele `SELECT` teria sido a correção ERRADA.** As
+	#      tabelas de `negocio` têm `FORCE ROW LEVEL SECURITY`, o papel da
+	#      aplicação nasce `NOBYPASSRLS` e esta rotina não fixa `app.empresa_id`
+	#      — sem contexto, a política resolve `empresa_id = NULL` e não casa
+	#      linha alguma. O dump teria passado, teria tamanho, `pg_restore
+	#      --list` teria funcionado, a unidade teria saído `0` — e o arquivo
+	#      estaria VAZIO de dados de negócio. A falha ruidosa da razão 1 foi o
+	#      que impediu 12 arquivos assim de serem produzidos e confiados.
+	#
+	# O superusuário do agrupamento ignora RLS **por natureza**, e não por
+	# concessão que alguém possa revogar. Nenhum papel do produto ganha poder,
+	# nenhum papel novo passa a existir e nenhuma política é afrouxada: o
+	# isolamento que a ADR-0008 impõe à aplicação fica exatamente como estava.
+	#
+	# ⚠️ O arquivo de senha é montado SEMPRE, mas só é CONSUMIDO no caminho sem
+	# privilégio — ver os dois caminhos, logo abaixo. No caminho de produção a
+	# conexão é pelo soquete local, com autenticação por par, e nenhuma
+	# credencial trafega.
 	local arq_senha="${DIR_TEMPORARIO}/senha"
 	install -m 0600 /dev/null "${arq_senha}"
 	printf '%s:%s:%s:%s:%s\n' \
@@ -731,13 +774,64 @@ copiar() {
 		"$(escapar_para_arquivo_de_senha "${URL_BANCO}")" \
 		"$(escapar_para_arquivo_de_senha "${URL_PAPEL}")" \
 		"$(escapar_para_arquivo_de_senha "${URL_SEGREDO}")" >"${arq_senha}"
+	# ---------------------------------------------------------------------
+	# OS DOIS CAMINHOS, e o discriminador é MEDIDO — nunca uma bandeira
+	# ---------------------------------------------------------------------
+	#
+	# O que a cópia exige é UMA coisa só: ser feita por um papel que enxergue
+	# todas as linhas, inclusive as que estão sob `FORCE ROW LEVEL SECURITY`.
+	# Como se chega a esse papel depende de quem executa, e isso é observável:
+	#
+	#   · COMO ROOT (a unidade systemd, em produção) — troca para o superusuário
+	#     do agrupamento pelo soquete local. Nenhuma credencial trafega.
+	#   · SEM PRIVILÉGIO (a suíte de verificação, contra instância efêmera
+	#     própria) — `runuser` não é possível, e o papel do `DATABASE_URL` é
+	#     usado. ⚠️ **Só quando ele for SUPERUSUÁRIO**, e isso é CONFERIDO por
+	#     consulta ao catálogo, jamais suposto.
+	#
+	# ⚠️ A conferência é o que fecha o buraco. Sem ela, rodar esta rotina sem
+	# privilégio em PRODUÇÃO usaria o papel da aplicação e produziria um dump sem
+	# uma linha de negócio — o defeito exato que a correção de 2026-09-08 fechou.
+	# Com ela, aquele caminho RECUSA: `sysloc_app` não é superusuário.
+	#
+	# ⚠️ E não há bandeira de ambiente que escolha o caminho. Uma variável seria
+	# exatamente o que alguém definiria "só para destravar", reabrindo o defeito.
+	COPIA_COMO_ROOT=0
+	if [[ "$(id -u)" -eq 0 ]]; then
+		COPIA_COMO_ROOT=1
+	fi
+
+	if [[ "${COPIA_COMO_ROOT}" -eq 1 ]]; then
+		if ! [[ "${URL_HOSPEDEIRO}" =~ ^(127\.0\.0\.1|localhost|::1)$ ]]; then
+			abortar "a base declarada em ${ARQ_AMBIENTE} não é local (${URL_HOSPEDEIRO})" \
+				"esta rotina copia pelo soquete local como '${PAPEL_DA_COPIA}'; base remota exigiria um papel com BYPASSRLS, que este produto deliberadamente não tem"
+		fi
+	else
+		# A conferência do atributo, contra o próprio agrupamento declarado.
+		local ehSuper=""
+		ehSuper="$(PGPASSFILE="${arq_senha}" PGCONNECT_TIMEOUT="${LIMITE_CONEXAO_S}" \
+			psql -X -A -t -q -w --no-psqlrc \
+			--host="${URL_HOSPEDEIRO}" --port="${URL_PORTA}" \
+			--username="${URL_PAPEL}" --dbname="${URL_BANCO}" \
+			--command="SELECT rolsuper FROM pg_roles WHERE rolname = current_user" 2>/dev/null || true)"
+		if [[ "${ehSuper}" != "t" ]]; then
+			abortar \
+				"esta rotina não está sendo executada com privilégio, e o papel '${URL_PAPEL}' declarado em ${ARQ_AMBIENTE} NÃO é superusuário do agrupamento (obtido: '${ehSuper:-sem resposta}')" \
+				"execute-a com privilégio, para que a cópia seja feita pelo superusuário — sem isso o dump sairia SEM as linhas que estão sob RLS forçada"
+		fi
+		info "sem privilégio, e '${URL_PAPEL}' é superusuário do agrupamento — a cópia pode prosseguir"
+	fi
 
 	local data
 	data="$(date +%F)"
 	local destino="${DIR_DAS_COPIAS}/${PREFIXO_DA_COPIA}${data}${SUFIXO_DA_COPIA}"
 	ARQUIVO_PARCIAL="${destino}${SUFIXO_PARCIAL}"
 
-	info "copiando ${URL_BANCO} de ${URL_HOSPEDEIRO}:${URL_PORTA} como ${URL_PAPEL}"
+	if [[ "${COPIA_COMO_ROOT}" -eq 1 ]]; then
+		info "copiando ${URL_BANCO} pelo soquete local como ${PAPEL_DA_COPIA}"
+	else
+		info "copiando ${URL_BANCO} de ${URL_HOSPEDEIRO}:${URL_PORTA} como ${URL_PAPEL} (superusuário conferido)"
+	fi
 
 	# A geração pode falhar, e a falha NÃO aborta aqui: a conferência abaixo roda
 	# de qualquer maneira, e é ela que nomeia, numa frase só, por que o arquivo
@@ -746,11 +840,27 @@ copiar() {
 	local codigo_da_geracao=0
 	(
 		umask 077
-		PGPASSFILE="${arq_senha}" PGCONNECT_TIMEOUT="${LIMITE_CONEXAO_S}" \
-			pg_dump --format=custom --no-password \
-			--host="${URL_HOSPEDEIRO}" --port="${URL_PORTA}" \
-			--username="${URL_PAPEL}" --dbname="${URL_BANCO}" \
-			--file="${ARQUIVO_PARCIAL}"
+		# ⚠️ O `pg_dump` escreve em SAÍDA PADRÃO e quem cria o arquivo é ESTE
+		# shell, que roda como root. Um `--file` seria escrito pelo processo do
+		# superusuário do banco, que não tem permissão no diretório das cópias —
+		# e a raiz é `0700 root` por decisão, protegida pela `DECISÃO FECHADA`
+		# de `afirmar_propriedade_da_raiz`. Redirecionar preserva as duas coisas:
+		# o dono do arquivo e o `umask` acima.
+		if [[ "${COPIA_COMO_ROOT}" -eq 1 ]]; then
+			runuser -u "${PAPEL_DA_COPIA}" -- \
+				env PGCONNECT_TIMEOUT="${LIMITE_CONEXAO_S}" \
+				pg_dump --format=custom --no-password --dbname="${URL_BANCO}" \
+				>"${ARQUIVO_PARCIAL}"
+		else
+			# Caminho sem privilégio: o papel do `DATABASE_URL` JÁ foi conferido
+			# como superusuário, acima. Sem aquela conferência esta linha seria o
+			# defeito de volta.
+			PGPASSFILE="${arq_senha}" PGCONNECT_TIMEOUT="${LIMITE_CONEXAO_S}" \
+				pg_dump --format=custom --no-password \
+				--host="${URL_HOSPEDEIRO}" --port="${URL_PORTA}" \
+				--username="${URL_PAPEL}" --dbname="${URL_BANCO}" \
+				>"${ARQUIVO_PARCIAL}"
+		fi
 	) || codigo_da_geracao=$?
 
 	if [[ "${codigo_da_geracao}" -ne 0 ]]; then

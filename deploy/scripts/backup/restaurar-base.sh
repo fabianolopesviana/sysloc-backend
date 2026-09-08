@@ -199,6 +199,37 @@ readonly PREFIXO="[restaurar-base]"
 # --------------------------------------------------------------------------- #
 readonly TOKEN_DE_CONFIRMACAO="RESTAURAR"
 
+# ---------------------------------------------------------------------------
+# O PAPEL QUE RESTAURA — o superusuário do agrupamento, corrigido 2026-09-08
+# ---------------------------------------------------------------------------
+#
+# Até esta data o restaurador conectava com o papel do `DATABASE_URL`, que é o
+# da APLICAÇÃO. MEDIDO em 2026-09-08, restaurando a cópia real numa base vazia:
+#
+#   pg_restore: error: permission denied for database <destino>
+#   Command was: CREATE SCHEMA identidade;
+#   a restauração está INCOMPLETA: relações origem=35 destino=0
+#
+# ⚠️ NADA foi restaurado. E o defeito é o MESMO, no mesmo eixo, que fazia a
+# CÓPIA falhar todos os dias — ver o bloco homônimo em `./copiar-base.sh`. As
+# duas são as pontas do mesmo par, e as duas precisam do papel que enxerga e
+# escreve tudo.
+#
+# São TRÊS impedimentos independentes, e nenhum se resolve com `GRANT`:
+#
+#   1. o papel da aplicação não tem `CREATE` na base de destino — morre no
+#      primeiro `CREATE SCHEMA`;
+#   2. o dump declara donos que ele não pode assumir (`sysloc_migracao`,
+#      `sysloc_resolucao`, `sysloc_roteamento`): definir dono exige ser membro
+#      do papel de destino, ou superusuário;
+#   3. ainda que os dois primeiros caíssem, a CONFERÊNCIA final contaria as
+#      linhas de `negocio.*` sob `FORCE ROW LEVEL SECURITY` e leria ZERO —
+#      aprovando uma restauração vazia, que é pior que reprovar.
+#
+# O superusuário resolve os três POR NATUREZA, e não por concessão que alguém
+# possa revogar. Nenhum papel do produto ganha poder e nenhum papel novo nasce.
+readonly PAPEL_DA_RESTAURACAO="postgres"
+
 readonly ARQ_AMBIENTE_PADRAO="/etc/sysloc/backend.env"
 
 # Os cinco primeiros bytes do formato próprio de restauração seletiva — a mesma
@@ -231,7 +262,13 @@ MODO="${2:-restaurar}"
 # todo processo filho.
 # --------------------------------------------------------------------------- #
 DIR_TEMPORARIO=""
+
 ARQ_SENHA=""
+RESTAURA_COMO_ROOT=0
+
+# Diretório onde a cópia é posta ao alcance do superusuário, pelo tempo da
+# restauração. Ver {@link preparar_copia_legivel}. É removido pela limpeza.
+DIR_DA_LEITURA=""
 URL_LIDA=""
 CHAVES_REPETIDAS=""
 URL_PAPEL=""
@@ -267,6 +304,12 @@ limpar() {
 	local codigo=$?
 	if [[ -n "${DIR_TEMPORARIO}" && -d "${DIR_TEMPORARIO}" ]]; then
 		rm -rf "${DIR_TEMPORARIO}"
+	fi
+	# A cópia intermediária some junto, e no MESMO trap: ela carrega o conteúdo
+	# inteiro da base, e deixá-la para trás seria publicar em /tmp o que o acervo
+	# guarda em 0600.
+	if [[ -n "${DIR_DA_LEITURA}" && -d "${DIR_DA_LEITURA}" ]]; then
+		rm -rf "${DIR_DA_LEITURA}"
 	fi
 	return "${codigo}"
 }
@@ -415,16 +458,15 @@ decompor_url() {
 # Escape de um campo do arquivo de senha do cliente.
 #
 # O formato separa os campos por ':' e prevê escape com '\' para EXATAMENTE dois
-# caracteres: o próprio ':' e o próprio '\'. A ordem das substituições importa —
-# a barra invertida é dobrada ANTES de a barra de escape ser introduzida; na
-# ordem inversa, a barra recém-introduzida seria dobrada também.
+# caracteres: o próprio ':' e o próprio '\'.
 #
-# Isto é uma FUNÇÃO do shell, não um programa externo: o valor viaja como
-# parâmetro posicional do próprio processo, sem linha de comando nova para a
-# tabela de processos mostrar.
+# ⚠️ Consumida APENAS no caminho SEM PRIVILÉGIO — ver os dois caminhos em
+# {@link PAPEL_DA_RESTAURACAO}. Como root, a conexão é pelo soquete local e
+# nenhuma credencial trafega.
 # --------------------------------------------------------------------------- #
 escapar_para_arquivo_de_senha() {
-	local valor="${1//\\/\\\\}"
+	local valor="$1"
+	valor="${valor//\\/\\\\}"
 	printf '%s' "${valor//:/\\:}"
 }
 
@@ -571,6 +613,16 @@ recusar_destino_da_operacao() {
 			"informe SYSLOC_BANCO_DE_DESTINO com o nome de uma base VAZIA do mesmo agrupamento; esta guarda não tem bandeira que a desligue"
 	fi
 
+	# A restauração corre pelo soquete LOCAL, como o superusuário do agrupamento
+	# — ver o bloco de {@link PAPEL_DA_RESTAURACAO}. Agrupamento remoto não tem
+	# soquete local a usar, e a recusa é explícita em vez de virar um erro de
+	# conexão que não explica a causa.
+	if ! [[ "${URL_HOSPEDEIRO}" =~ ^(127\.0\.0\.1|localhost|::1)$ ]]; then
+		abortar \
+			"o agrupamento declarado em ${ARQ_AMBIENTE} não é local (${URL_HOSPEDEIRO}) — NADA foi lido nem escrito" \
+			"esta rotina restaura pelo soquete local como '${PAPEL_DA_RESTAURACAO}'; um agrupamento remoto exigiria um papel com BYPASSRLS e direito de definir dono, que este produto deliberadamente não tem"
+	fi
+
 	case "${codigo}" in
 	0) ;;
 	1) abortar \
@@ -592,11 +644,22 @@ preparar_credencial() {
 	DIR_TEMPORARIO="$(mktemp -d)"
 	chmod 700 "${DIR_TEMPORARIO}"
 
+	# ⚠️ OS DOIS CAMINHOS — o mesmo desenho, e a mesma razão, de `./copiar-base.sh`.
+	# Como root (o operador, em produção) a troca para o superusuário é possível e
+	# a credencial não trafega. Sem privilégio (a suíte, contra instância efêmera
+	# própria) o papel do `DATABASE_URL` é usado, e **só** quando ele for
+	# superusuário — conferido por consulta ao catálogo, logo abaixo.
+	RESTAURA_COMO_ROOT=0
+	if [[ "$(id -u)" -eq 0 ]]; then
+		RESTAURA_COMO_ROOT=1
+	fi
+
 	ARQ_SENHA="${DIR_TEMPORARIO}/senha"
 	install -m 0600 /dev/null "${ARQ_SENHA}"
-	printf '%s:%s:*:%s:%s\n' \
+	printf '%s:%s:%s:%s:%s\n' \
 		"$(escapar_para_arquivo_de_senha "${URL_HOSPEDEIRO}")" \
 		"${URL_PORTA}" \
+		"*" \
 		"$(escapar_para_arquivo_de_senha "${URL_PAPEL}")" \
 		"$(escapar_para_arquivo_de_senha "${URL_SEGREDO}")" >"${ARQ_SENHA}"
 }
@@ -611,13 +674,27 @@ consultar_destino() {
 	local comando="$1"
 	local codigo=0
 	RESULTADO_DA_CONSULTA=""
-	RESULTADO_DA_CONSULTA="$(
-		PGPASSFILE="${ARQ_SENHA}" PGCONNECT_TIMEOUT="${LIMITE_CONEXAO_S}" \
-			psql -X -q -A -t -w --no-psqlrc \
-			--host="${URL_HOSPEDEIRO}" --port="${URL_PORTA}" \
-			--username="${URL_PAPEL}" --dbname="${BANCO_DE_DESTINO}" \
-			--command="${comando}" 2>"${DIR_TEMPORARIO}/psql.erro"
-	)" || codigo=$?
+	# Pelo soquete local, como o superusuário — ver o bloco de
+	# {@link PAPEL_DA_RESTAURACAO}. A conferência precisa contar linhas de
+	# `negocio.*`, que estão sob RLS forçada: com o papel da aplicação ela leria
+	# ZERO e aprovaria uma restauração vazia.
+	if [[ "${RESTAURA_COMO_ROOT}" -eq 1 ]]; then
+		RESULTADO_DA_CONSULTA="$(
+			runuser -u "${PAPEL_DA_RESTAURACAO}" -- \
+				env PGCONNECT_TIMEOUT="${LIMITE_CONEXAO_S}" \
+				psql -X -q -A -t -w --no-psqlrc \
+				--dbname="${BANCO_DE_DESTINO}" \
+				--command="${comando}" 2>"${DIR_TEMPORARIO}/psql.erro"
+		)" || codigo=$?
+	else
+		RESULTADO_DA_CONSULTA="$(
+			PGPASSFILE="${ARQ_SENHA}" PGCONNECT_TIMEOUT="${LIMITE_CONEXAO_S}" \
+				psql -X -q -A -t -w --no-psqlrc \
+				--host="${URL_HOSPEDEIRO}" --port="${URL_PORTA}" \
+				--username="${URL_PAPEL}" --dbname="${BANCO_DE_DESTINO}" \
+				--command="${comando}" 2>"${DIR_TEMPORARIO}/psql.erro"
+		)" || codigo=$?
+	fi
 	return "${codigo}"
 }
 
@@ -733,15 +810,29 @@ listar_conteudo_da_copia() {
 	info "conteúdo de ${ARQUIVO_DA_COPIA} — ${ENTRADAS_DO_CONTEUDO} entrada(s):"
 	sed 's/^/       /' "${listagem}"
 
-	# As relações que a cópia declara: `TABLE DATA` é excluída ANTES porque ela
-	# começa por `TABLE ` e a extração a leria como uma relação chamada `DATA`.
+	# As relações que a cópia declara. DUAS entradas são excluídas ANTES, e pela
+	# MESMA razão: as duas trazem um segundo termo depois do tipo, e a extração o
+	# leria como se fosse o nome do esquema.
+	#
+	#   · `TABLE DATA …`   viraria uma relação chamada `DATA`;
+	#   · `SEQUENCE SET …` viraria uma relação chamada `SET.<esquema>`.
+	#
+	# ⚠️ A segunda exclusão entrou em 2026-09-08, e a ausência dela reprovava
+	# TODA restauração de base que tivesse sequência. MEDIDO: uma restauração
+	# íntegra — 34 relações no destino, `pg_restore` sem um único erro — foi
+	# declarada INCOMPLETA porque a origem contava 35, e a trigésima quinta era o
+	# fantasma `SET.plataforma`.
+	#
+	# `SEQUENCE SET` é o `setval()` de uma sequência que JÁ EXISTE: ela não cria
+	# objeto, e por isso não pode aparecer no catálogo do destino. A sequência de
+	# verdade continua contada — pela entrada `SEQUENCE` dela, que é outra linha.
 	#
 	# O desfecho é decidido pela FAIXA do código: `grep` sem correspondência
 	# devolve 1, que aqui significa conjunto vazio e é desfecho NORMAL; acima de 1
 	# é o arquivo que não pôde ser lido, e esse se recusa.
 	ARQ_RELACOES_DA_ORIGEM="${DIR_TEMPORARIO}/relacoes-da-origem"
 	local codigo_da_extracao=0
-	grep -vE '^[0-9]+; [0-9]+ [0-9]+ TABLE DATA ' "${listagem}" |
+	grep -vE '^[0-9]+; [0-9]+ [0-9]+ (TABLE DATA|SEQUENCE SET) ' "${listagem}" |
 		sed -nE 's/^[0-9]+; [0-9]+ [0-9]+ (TABLE|SEQUENCE|VIEW|MATERIALIZED VIEW) ([^ ]+) ([^ ]+).*/\2.\3/p' |
 		LC_ALL=C sort -u >"${ARQ_RELACOES_DA_ORIGEM}" || codigo_da_extracao=$?
 	if [[ "${codigo_da_extracao}" -gt 1 ]]; then
@@ -808,15 +899,68 @@ exigir_confirmacao() {
 # conferência abaixo, que mede o DESTINO. Abortar aqui esconderia em que estado
 # o destino ficou, que é a única informação que interessa a quem restaura.
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# Põe a cópia ao alcance do superusuário, pelo tempo da restauração.
+#
+# ⚠️ POR QUE UMA CÓPIA, e não um `chmod` no acervo. O `pg_restore` passou a rodar
+# como o superusuário do agrupamento — é o único papel que cria os schemas e
+# define os três donos que o dump declara —, e as cópias do acervo são `0600
+# root` por decisão da rotina que as publica. MEDIDO em 2026-09-08:
+#
+#   pg_restore: error: could not open input file "...": Permission denied
+#
+# Afrouxar a permissão do ACERVO resolveria a necessidade de um instante criando
+# uma exposição permanente: as cópias carregam a base inteira — credenciais
+# derivadas, material de certificado, dado de locatário —, e ficariam legíveis
+# por um papel de serviço para sempre. O intermediário vive o tempo da
+# restauração e some no `trap`, junto com o resto.
+#
+# ⚠️ O conteúdo é escrito ANTES da troca de dono: em diretório de dono alheio o
+# kernel recusa a escrita, mesmo para root, quando `fs.protected_regular` está
+# ligado — é o padrão deste host, e foi medido em 2026-09-08 noutro script desta
+# mesma virada.
+# --------------------------------------------------------------------------- #
+preparar_copia_legivel() {
+	DIR_DA_LEITURA="$(mktemp -d)"
+	chmod 700 "${DIR_DA_LEITURA}"
+
+	local destino="${DIR_DA_LEITURA}/$(basename "${ARQUIVO_DA_COPIA}")"
+	cp -- "${ARQUIVO_DA_COPIA}" "${destino}" || abortar \
+		"não consegui preparar a cópia para leitura em ${DIR_DA_LEITURA} — NADA foi escrito no destino" \
+		"confira o espaço livre em /tmp e a permissão de leitura sobre ${ARQUIVO_DA_COPIA}"
+	chmod 600 "${destino}"
+	chown -R "${PAPEL_DA_RESTAURACAO}" "${DIR_DA_LEITURA}" || abortar \
+		"não consegui entregar a cópia intermediária a '${PAPEL_DA_RESTAURACAO}' — NADA foi escrito no destino" \
+		"confira se o papel de sistema '${PAPEL_DA_RESTAURACAO}' existe neste host"
+
+	printf '%s' "${destino}"
+}
+
 restaurar() {
-	info "restaurando ${ARQUIVO_DA_COPIA} em [${BANCO_DE_DESTINO}] como ${URL_PAPEL}"
+	info "restaurando ${ARQUIVO_DA_COPIA} em [${BANCO_DE_DESTINO}] como ${PAPEL_DA_RESTAURACAO}"
+
+	local copia_legivel="${ARQUIVO_DA_COPIA}"
+	if [[ "${RESTAURA_COMO_ROOT}" -eq 1 ]]; then
+		copia_legivel="$(preparar_copia_legivel)"
+	fi
 
 	local codigo=0
-	PGPASSFILE="${ARQ_SENHA}" PGCONNECT_TIMEOUT="${LIMITE_CONEXAO_S}" \
-		pg_restore --no-password --single-transaction --exit-on-error \
-		--host="${URL_HOSPEDEIRO}" --port="${URL_PORTA}" \
-		--username="${URL_PAPEL}" --dbname="${BANCO_DE_DESTINO}" \
-		-- "${ARQUIVO_DA_COPIA}" || codigo=$?
+	# ⚠️ `--single-transaction --exit-on-error` PERMANECEM: é o que faz uma
+	# restauração parcial não existir — ou tudo entra, ou o destino fica como
+	# estava. Nenhuma das duas sai com esta correção.
+	if [[ "${RESTAURA_COMO_ROOT}" -eq 1 ]]; then
+		runuser -u "${PAPEL_DA_RESTAURACAO}" -- \
+			env PGCONNECT_TIMEOUT="${LIMITE_CONEXAO_S}" \
+			pg_restore --no-password --single-transaction --exit-on-error \
+			--dbname="${BANCO_DE_DESTINO}" \
+			-- "${copia_legivel}" || codigo=$?
+	else
+		PGPASSFILE="${ARQ_SENHA}" PGCONNECT_TIMEOUT="${LIMITE_CONEXAO_S}" \
+			pg_restore --no-password --single-transaction --exit-on-error \
+			--host="${URL_HOSPEDEIRO}" --port="${URL_PORTA}" \
+			--username="${URL_PAPEL}" --dbname="${BANCO_DE_DESTINO}" \
+			-- "${copia_legivel}" || codigo=$?
+	fi
 
 	# O código é NOMEADO na saída e morre aqui, de propósito: guardá-lo para a
 	# conferência ler convidaria a decidir por ele, que é exatamente o defeito que

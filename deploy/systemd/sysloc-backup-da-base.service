@@ -200,7 +200,37 @@ TimeoutStartSec=1800
 # Copiá-las em vez de as derivar é a única forma que o formato `.ini` do
 # supervisor oferece: ele não tem herança, e um `.d/` de sobreposição só
 # ACRESCENTA — não haveria como uma unidade nova nascer restrita por omissão.
-NoNewPrivileges=yes
+#
+# ---------------------------------------------------------------------------
+# ⚠️ `NoNewPrivileges=yes` SAIU desta unidade em 2026-09-08 — e SÓ desta
+# ---------------------------------------------------------------------------
+#
+# A ausência é DECISÃO, tomada pelo usuário sobre medição, e não esquecimento.
+# As outras doze diretivas de contenção continuam aqui, intactas.
+#
+# O QUE ELA IMPEDIA: a troca para o superusuário do agrupamento, que é o único
+# papel capaz de ler as tabelas sob `FORCE ROW LEVEL SECURITY`. Com ela, o
+# `pg_dump` de `copiar-base.sh` morria em `setresuid failed: Operation not
+# permitted`, e a unidade falhou TODOS OS DIAS entre 2026-08-28 e 2026-09-08 —
+# doze execuções, nenhuma cópia.
+#
+# COMO SE SOUBE QUE ERA ELA, e não outra: bissecção com os dois controles, em
+# `deploy/scripts/virada/07-bisseccao-do-bloqueio.sh`. Sem restrição alguma a
+# troca atravessa; com as catorze, bloqueia; e das catorze **apenas** a saída
+# desta faz a troca voltar a atravessar. As outras doze seguem bloqueando
+# quando removidas isoladamente, ou seja, nenhuma contribui.
+#
+# POR QUE REMOVER É DEFENSÁVEL AQUI, e não seria numa unidade irmã: esta
+# declara `User=root`. `NoNewPrivileges` existe para impedir que um processo
+# **ganhe** privilégio que ainda não tem — tipicamente por binário `setuid` —, e
+# acima de root não há o que ganhar. Nas unidades que rodam sem privilégio a
+# diretiva tem alvo real e **permanece**.
+#
+# ⚠️ NÃO a acrescente de volta sem antes ler o que ela custa: o backup do banco
+# volta a não existir, e o modo de falhar é diário e silencioso para quem não
+# lê o diário do supervisor. As duas alternativas consideradas e recusadas, com
+# o custo de cada uma, estão no relatório da virada.
+# ---------------------------------------------------------------------------
 PrivateTmp=yes
 PrivateDevices=yes
 ProtectSystem=full

@@ -290,9 +290,15 @@ readonly SIMBOLOS_DO_ESQUELETO=(
 # A superfície das baterias de shell, por extenso — o conjunto que o CT-1119
 # afirma por IGUALDADE contra o que o agregador descobre.
 #
-# ⚠️ São QUATORZE desde a T9, e o índice do `CLAUDE.md` dizia dez: aquele número
-# é de 2026-08-19 e não conhece `verificar-preparacao-do-material.sh`, esta
-# bateria, `verificar-unidades-agendadas.sh` nem `verificar-borda-do-app.sh`.
+# ⚠️ São QUINZE desde 2026-09-08, e o índice do `CLAUDE.md` dizia dez: aquele
+# número é de 2026-08-19 e não conhece `verificar-preparacao-do-material.sh`,
+# esta bateria, `verificar-unidades-agendadas.sh` nem `verificar-borda-do-app.sh`.
+#
+# ⚠️ A DÉCIMA QUINTA é `publicacao/verificar-rotas-publicadas.sh`, e ela ficou
+# FORA desta cancela por cinco dias: nasceu em 2026-09-03, na correção do
+# incidente `PROD-2026-09-03-01`, sem entrar nas três constantes desta seção. O
+# `CT-1119` reprovou desde então, e o defeito é exatamente o que a cancela existe
+# para pegar — só que ninguém rodava a bateria. Fechado em 2026-09-08.
 #
 # ⚠️ ESTA LISTA É A CANCELA DA SUPERFÍCIE DE BATERIAS. O CT-1119 a compara por
 # IGUALDADE contra o que o agregador descobre por `find`, e é por isso que ela é
@@ -314,6 +320,7 @@ readonly BATERIAS_DECLARADAS=(
 	instalacao/verificar-provisionamento.sh
 	instalacao/verificar-unidades-agendadas.sh
 	instalacao/verificar-workspace.sh
+	publicacao/verificar-rotas-publicadas.sh
 )
 
 # --------------------------------------------------------------------------- #
@@ -360,12 +367,15 @@ readonly CASOS_DECLARADOS_POR_BATERIA=(
 	"instalacao/verificar-provisionamento.sh|8|CT-001;CT-002;CT-003;CT-004;CT-005;CT-030;CT-647;CT-1045"
 	"instalacao/verificar-unidades-agendadas.sh|8|CT-1146;CT-1147;CT-1148;CT-1149;CT-1150;CT-1151;CT-1152;CT-1154"
 	"instalacao/verificar-workspace.sh|4|CT-001;CT-002;CT-003;CT-004"
+	"publicacao/verificar-rotas-publicadas.sh|5|CT-1251;CT-1252;CT-1253;CT-1254;CT-1255"
 )
 
 # A soma das quantidades acima. Escrita à parte porque é o CONTROLE ANTIVÁCUO do
 # CT-1126: um extrator quebrado devolveria zero para todas as baterias, e a lista
 # de divergências ficaria vazia por vacuidade — igual à de uma árvore íntegra.
-readonly CASOS_DECLARADOS_NO_TOTAL=111
+# ⚠️ 111 → 116 em 2026-09-08, com os 5 casos de
+# `publicacao/verificar-rotas-publicadas.sh` entrando na tabela acima.
+readonly CASOS_DECLARADOS_NO_TOTAL=116
 
 # --------------------------------------------------------------------------- #
 # O teto de frescor da cópia do dia — CT-1122.
@@ -833,6 +843,7 @@ auditar_credencial_em_argv() {
 contar_referencias_ao_arquivo_de_credencial() {
 	grep -cF "${REFERENCIA_AO_ARQUIVO_DE_CREDENCIAL}" "$1" || true
 }
+
 
 contar_ocorrencias() {
 	if [[ -z "$1" ]]; then
@@ -2411,14 +2422,47 @@ ct_1105() {
 		afirmar_igual "$(basename "${script}"): a auditoria não acusa" "0" "${codigo}"
 	done
 
-	# A referência é exigida de quem FALA COM O BANCO: sem ela, o script não
-	# estaria entregando o segredo por arquivo de modo restrito.
-	local referencias
-	referencias="$(contar_referencias_ao_arquivo_de_credencial "${SCRIPT_COPIAR}")"
-	if [[ "${referencias}" -ge 1 ]]; then
-		ok "copiar-base.sh referencia ${REFERENCIA_AO_ARQUIVO_DE_CREDENCIAL} ${referencias} vez(es) — o segredo vem de arquivo"
+	# ⚠️ A asserção sobre TRANSPORTE de credencial saiu daqui em 2026-09-08, e a
+	# ausência é a decisão. Ela existiu em duas formas neste mesmo dia — primeiro
+	# exigindo `PGPASSFILE`, depois exigindo a ausência dele — e as duas erravam
+	# no mesmo ponto: afirmavam o MECANISMO, que muda conforme quem executa, em
+	# vez da PROPRIEDADE, que não muda. A forma vigente está logo abaixo.
+
+	# SUT_IS_CORRECT_BECAUSE (terceira e última forma do mesmo dia). As duas
+	# anteriores erraram por afirmar sobre o TRANSPORTE de credencial:
+	#
+	#   · a da manhã exigia `PGPASSFILE` no restaurador e a ausência dele na
+	#     cópia — assimetria que deixou metade do par quebrada;
+	#   · a da tarde exigia ZERO nos dois, e caiu quando se mediu que a suíte
+	#     roda SEM PRIVILÉGIO contra instância efêmera própria (esta bateria tem
+	#     `recusar_privilegio`), onde `runuser` é impossível e a credencial do
+	#     `DATABASE_URL` é o único caminho.
+	#
+	# ⚠️ O que importa nunca foi o transporte: é que a cópia e a restauração
+	# sejam feitas por um papel que enxergue e escreva TUDO, inclusive sob
+	# `FORCE ROW LEVEL SECURITY`. Os dois scripts chegam lá por caminhos
+	# diferentes conforme QUEM executa, e o discriminador é medido (`id -u`).
+	#
+	# Estas asserções afirmam as DUAS pernas do desenho, que é o que de fato
+	# fecha o defeito:
+	local declaracao
+	for declaracao in "${SCRIPT_COPIAR}|PAPEL_DA_COPIA" "${SCRIPT_RESTAURAR}|PAPEL_DA_RESTAURACAO"; do
+		if grep -qE "^[[:space:]]*readonly ${declaracao#*|}=\"postgres\"" "${declaracao%|*}"; then
+			ok "$(basename "${declaracao%|*}") declara ${declaracao#*|}=postgres para o caminho privilegiado"
+		else
+			falhar "$(basename "${declaracao%|*}") não declara ${declaracao#*|}=postgres — a operação privilegiada pode estar sujeita a RLS"
+		fi
+	done
+
+	# ⚠️ A PERNA QUE FECHA O BURACO: sem privilégio, o script só pode prosseguir
+	# se o papel do `DATABASE_URL` for SUPERUSUÁRIO — e isso é conferido por
+	# consulta ao catálogo. Sem esta conferência, rodar a cópia sem privilégio em
+	# PRODUÇÃO usaria o papel da aplicação e produziria um dump sem uma linha de
+	# negócio, que é exatamente o defeito de 2026-08-28 a 2026-09-08.
+	if grep -q 'rolsuper' "${SCRIPT_COPIAR}"; then
+		ok "copiar-base.sh confere rolsuper antes de copiar sem privilégio"
 	else
-		falhar "copiar-base.sh não referencia ${REFERENCIA_AO_ARQUIVO_DE_CREDENCIAL} — o segredo não estaria vindo de arquivo de modo restrito"
+		falhar "copiar-base.sh não confere rolsuper — sem privilégio ele aceitaria o papel da aplicação e o dump sairia SEM as linhas sob RLS"
 	fi
 
 	# PROVA DE FALSIFICAÇÃO. As linhas defeituosas são montadas em pedaços de
@@ -3426,15 +3470,17 @@ auditar_casos_em() {
 			printf 'contagem:%s:ausente:%s\n' "${relativo}" "${esperado}"
 			continue
 		fi
-		medido="$(grep -cE '^[[:space:]]*caso "' "${arquivo}" || true)"
+		# As DUAS formas de aspa — a mesma razão do extrator do total, e o mesmo
+		# defeito se só uma fosse vista: a bateria de aspas simples mediria ZERO.
+		medido="$(grep -cE "^[[:space:]]*caso [\"']" "${arquivo}" || true)"
 		[[ "${medido}" == "${esperado}" ]] ||
 			printf 'contagem:%s:%s:%s\n' "${relativo}" "${medido}" "${esperado}"
 
 		# ⚠️ Os identificadores da tabela são separados por `;`, e não por espaço:
 		# há IDs com espaço no meio (`CT-1005 (a)`), e separar por espaço os
 		# partiria em pedaços que nunca casariam com o medido.
-		ids_medidos="$(grep -oE '^[[:space:]]*caso "[^"]+"' "${arquivo}" |
-			sed 's/.*caso "//; s/"$//' | LC_ALL=C sort)"
+		ids_medidos="$(grep -oE "^[[:space:]]*caso [\"'][^\"']+[\"']" "${arquivo}" |
+			sed -E "s/.*caso [\"']//; s/[\"']\$//" | LC_ALL=C sort)"
 		while IFS= read -r id; do
 			[[ -n "${id}" ]] || continue
 			printf '%s\n' "${ids_medidos}" | grep -qxF "${id}" ||
@@ -4064,10 +4110,16 @@ ct_1126() {
 	afirmar_igual "a tabela cobre as ${#BATERIAS_DECLARADAS[@]} baterias declaradas" \
 		"${#BATERIAS_DECLARADAS[@]}" "${#CASOS_DECLARADOS_POR_BATERIA[@]}"
 
+	# ⚠️ AS DUAS FORMAS DE ASPA, e não só a dupla. A convenção deste repositório é
+	# `caso "…"`, mas `publicacao/verificar-rotas-publicadas.sh` usa `caso '…'` —
+	# e um extrator que só visse a dupla mediria ZERO casos nela, fazendo uma
+	# bateria de cinco casos aparecer como vazia. Ele mede o FATO (quantos casos a
+	# bateria abre), nunca a convenção de escrita. MEDIDO em 2026-09-08: o
+	# alargamento não altera a contagem de nenhuma das quatorze anteriores.
 	local medido_no_total=0 bateria
 	for bateria in "${BATERIAS_DECLARADAS[@]}"; do
 		medido_no_total=$((medido_no_total +
-			$(grep -cE '^[[:space:]]*caso "' "${RAIZ_REPO}/deploy/scripts/${bateria}" || true)))
+			$(grep -cE "^[[:space:]]*caso [\"']" "${RAIZ_REPO}/deploy/scripts/${bateria}" || true)))
 	done
 	# Controle antivácuo: um extrator quebrado devolveria zero em toda bateria, e a
 	# lista de divergências ficaria vazia por vacuidade.
