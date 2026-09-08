@@ -42,7 +42,7 @@ Tudo abaixo foi medido neste host, não estimado.
 | Contêiner | Projeto compose | `restart` | Destino |
 |---|---|---|---|
 | `frappe-*` (os 11) | `frappe` | `unless-stopped` | **param e são removidos** |
-| `sysloc-react-1` | **vazio** (subido avulso) | `unless-stopped` | **para e é removido** — é o app ANTIGO |
+| `sysloc-react-1` | **vazio** (subido avulso) | `unless-stopped` | ⚠️ **SOBREVIVE desde 2026-09-08** — passou a ser a borda do aplicativo NOVO. Ver a §3.3 |
 | `syslocadmin-painel` | **vazio** (subido avulso) | `unless-stopped` | ⚠️ **SOBREVIVE** — é o Painel Master do produto NOVO |
 
 Consequências, e as duas mordem:
@@ -83,6 +83,26 @@ agem sobre o mesmo cliente.
 
 ### 3.2 Apontar a borda do cliente para o app novo
 
+> ⚠️ **EMENDA de 2026-09-08 — o caminho abaixo NÃO foi o executado, e o motivo é de topologia.**
+>
+> `deploy/nginx/sysloc-app.conf` foi escrito para ser a borda **mais externa**: ela termina o
+> próprio TLS e fala direto com o cliente. Neste host, quem ocupa as portas 80 e 443 é o **nginx do
+> CloudPanel** (`/home/clp/services/nginx/nginx.conf`), que termina o TLS de `sysloc.systera.com.br`
+> e repassa para `127.0.0.1:8300` — medido em 2026-09-08 em
+> `/etc/nginx/sites-enabled/sysloc.systera.com.br.conf`. Instalar aquele vhost exigiria **remover o
+> site do CloudPanel** e passar a gerir o certificado fora dele, na mesma janela da virada.
+>
+> O caminho executado foi o **gêmeo do Painel Master**, que já operava: `sysloc-react-1` recriado em
+> `--network host` com `deploy/nginx/sysloc-app-interno.conf`, por
+> `deploy/scripts/virada/01-religar-borda.sh`. Ele carrega os mesmos invariantes do
+> `sysloc-app.conf` — `/v1/` como prefixo literal antes do fallback, `/docs*` recusado na borda
+> (fecho do `D24`), `X-Forwarded-For` apensado, nenhuma tradução de origem —, com **uma diferença
+> deliberada**: ele declara `set_real_ip_from 127.0.0.1`, porque aqui **há** um salto à frente
+> conhecido, e a borda mais externa não tem.
+>
+> **`sysloc-app.conf` continua válido e não foi removido**: ele é o caminho para o dia em que o
+> CloudPanel deixar de terminar o TLS deste hostname.
+
 O vhost já existe versionado — `deploy/nginx/sysloc-app.conf`, entregue e provado pela fatia
 `publicacao-e-backup` (bateria `verificar-borda-do-app.sh`, 12 casos / 194 asserções).
 
@@ -98,12 +118,25 @@ virada trocou um app que funcionava por um diretório vazio.
 escrita em `docs/specs/features/publicacao-e-backup/v1/_run/convergencia-do-host.md` §4. Invertê-la
 derruba o login do painel na janela entre os passos.
 
-### 3.3 Parar o app antigo — o passo que o `compose down` não faz
+### 3.3 ~~Parar o app antigo~~ — ⚠️ **REVOGADO em 2026-09-08. NÃO EXECUTE.**
 
-```bash
-docker update --restart=no sysloc-react-1   # senão o reboot o traz de volta
-docker stop sysloc-react-1
-```
+> **A premissa desta seção venceu, e executá-la hoje TIRA O APLICATIVO DO AR.**
+>
+> Ela foi escrita em 2026-08-27, quando `/opt/react/sysloc/html` continha o pacote do app que falava
+> ERPNext. Em **2026-09-07 19:39** a equipe de frontend publicou ali o build da F6
+> (`main.0a8603df.js`), e desde **2026-09-08** o contêiner `sysloc-react-1` é a **borda do
+> aplicativo NOVO** — recriado em `--network host`, escutando `127.0.0.1:8300`, com o vhost
+> `deploy/nginx/sysloc-app-interno.conf`.
+>
+> O que de fato precisava acontecer com ele não era parar: era **religar**. Está em
+> `deploy/scripts/virada/01-religar-borda.sh`, executado e conferido em 2026-09-08 (7 conferências,
+> 0 falhas). ⚠️ A §1 deste runbook continua correta no que importa — `sysloc-react-1` **não**
+> pertence ao projeto compose `frappe` e um `docker compose down` não o alcança —, mas a coluna
+> «Destino» daquela tabela deve ser lida como **SOBREVIVE**, e não «para e é removido».
+>
+> ⚠️ **Consequência para a §5 (desinstalação)**: a linha `docker rm -f sysloc-react-1` daquela seção
+> está **igualmente revogada**, e `nginx:1.27-alpine` — que a §5 já preservava por causa do
+> `syslocadmin-painel` — agora tem **dois** contêineres dependendo dela.
 
 ### 3.4 Conferir a travessia
 
@@ -142,7 +175,8 @@ o corpo errado — a raiz devolvendo `text/html` do app e `/v1/*` devolvendo `ap
 ```bash
 cd /opt/frappe
 docker compose down --volumes --remove-orphans     # os 11 contêineres e os 6 volumes
-docker rm -f sysloc-react-1 2>/dev/null || true    # se a §3.3 não o removeu
+# ⚠️ REVOGADO em 2026-09-08 — `sysloc-react-1` é a borda do aplicativo NOVO. Ver a §3.3.
+# docker rm -f sysloc-react-1 2>/dev/null || true
 
 # ⚠️ As QUATRO imagens do inventário da §0, e as quatro ficam órfãs: o produto novo é NATIVO,
 #    sem Docker, e nenhum contêiner não-Frappe as usa (medido em 2026-08-27).
