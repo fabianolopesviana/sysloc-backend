@@ -159,6 +159,38 @@ readonly LIMITE_DE_TRANSPORTE="600s"
 readonly REPETICOES=3
 readonly REPETICOES_DE_BAIXO_NIVEL=5
 
+# ---------------------------------------------------------------------------
+# "O PROVEDOR NÃO RESPONDEU" NÃO É "O CONTEÚDO DIVERGE"
+# ---------------------------------------------------------------------------
+#
+# Medido em 2026-09-08, na primeira execução real: as três operações posteriores
+# ao envio falharam com `RATE_LIMIT_EXCEEDED` na quota do projeto do `rclone`, e
+# esta rotina relatou *"a conferência REPROVOU: há arquivo da origem ausente ou
+# diferente no destino"*. A frase era **falsa** — o `rclone` sequer chegou a
+# olhar o destino, e o acervo tinha subido segundos antes.
+#
+# ⚠️ É a mesma classe do incidente `PROD-2026-09-03-01`, onde `502` foi lido como
+# `404`: *"a aplicação não respondeu; isto NÃO é rota ausente"*. Aqui o
+# discriminador é o MOTIVO da saída não-zero, e ele decide duas coisas — se vale
+# a pena tentar de novo, e o que se pode afirmar ao operador.
+#
+# O padrão enumera as recusas de TRANSPORTE e de LIMITE, e nenhuma delas fala do
+# conteúdo. ⚠️ `Error 403` **não** entra: o Drive o usa tanto para limite de taxa
+# quanto para permissão insuficiente, e casá-lo faria uma credencial sem
+# permissão ser retentada para sempre em vez de acusada. O que entra são os
+# motivos NOMEADOS pelo provedor.
+readonly PADRAO_DE_FALHA_TRANSITORIA='rateLimitExceeded|userRateLimitExceeded|RATE_LIMIT_EXCEEDED|Quota exceeded|quotaExceeded|backendError|internalError|Error 429|Error 50[0-9]|i/o timeout|connection reset|connection refused|no such host|TLS handshake|context deadline exceeded|unexpected EOF'
+
+# Quantas vezes uma operação é tentada quando o motivo é transitório, e a espera
+# inicial entre elas — que DOBRA a cada tentativa.
+#
+# 3 tentativas com espera de 20s e 40s dão ~60s por operação no pior caso. São 6
+# operações, logo ~360s de folga máxima, MUITO abaixo do `TimeoutStartSec=1800`
+# declarado na unidade. A quota que produziu o achado é por MINUTO, de modo que
+# esperar um minuto é exatamente o que a torna irrelevante.
+readonly TENTATIVAS_POR_OPERACAO=3
+readonly ESPERA_INICIAL_ENTRE_TENTATIVAS_S=20
+
 ENSAIO=0
 FALHAS=0
 
@@ -223,6 +255,56 @@ executar_rclone() {
 	)
 	[ "${ENSAIO}" -eq 1 ] && comuns+=(--dry-run)
 	"${RCLONE_BIN}" "${operacao}" "${comuns[@]}" "$@"
+}
+
+# --------------------------------------------------------------------------- #
+# O discriminador. Recebe a saída do `rclone` e responde se o motivo da recusa é
+# transitório — limite de taxa, indisponibilidade do provedor, transporte.
+#
+# Ele é uma função própria, e não um `grep` inline, por duas razões: a bateria a
+# CARREGA do próprio arquivo para exercitá-la (o `CT-1287`), de modo que quem
+# valida e quem executa são o mesmo código; e a classificação acontece em quatro
+# pontos, que divergiriam um a um se cada um tivesse a sua cópia.
+# --------------------------------------------------------------------------- #
+desfecho_transitorio() {
+	printf '%s' "$1" | grep -qE "${PADRAO_DE_FALHA_TRANSITORIA}"
+}
+
+# --------------------------------------------------------------------------- #
+# Uma operação do `rclone` com retentativa quando — e SOMENTE quando — o motivo
+# é transitório.
+#
+# Ecoa a saída do alvo, e devolve:
+#   0  a operação terminou bem
+#   1  ela falhou por motivo REAL (o conteúdo, o caminho, a permissão)
+#   2  ela falhou por motivo TRANSITÓRIO, esgotadas as tentativas
+#
+# ⚠️ Falha real NÃO é retentada: repetir uma operação que reprovou por
+# divergência de conteúdo só atrasa o diagnóstico e multiplica a chamada ao
+# provedor, que é justamente o recurso escasso aqui.
+# --------------------------------------------------------------------------- #
+operar_com_paciencia() {
+	local rotulo="$1" operacao="$2"
+	shift 2
+	local tentativa=1 espera="${ESPERA_INICIAL_ENTRE_TENTATIVAS_S}" saida codigo
+
+	while :; do
+		codigo=0
+		saida="$(executar_rclone "${operacao}" "$@" 2>&1)" || codigo=$?
+		[ -n "${saida}" ] && printf '%s\n' "${saida}"
+
+		[ "${codigo}" -eq 0 ] && return 0
+		desfecho_transitorio "${saida}" || return 1
+
+		if [ "${tentativa}" -ge "${TENTATIVAS_POR_OPERACAO}" ]; then
+			return 2
+		fi
+
+		nota "${rotulo}: o provedor recusou por limite de taxa ou transporte (tentativa ${tentativa} de ${TENTATIVAS_POR_OPERACAO}) — nova tentativa em ${espera}s"
+		sleep "${espera}"
+		tentativa=$((tentativa + 1))
+		espera=$((espera * 2))
+	done
 }
 
 # --------------------------------------------------------------------------- #
@@ -310,11 +392,13 @@ info "início — destino ${BASE_REMOTA}"
 # --------------------------------------------------------------------------- #
 
 info "enviando o acervo: ${RAIZ_DO_BACKUP} -> ${DESTINO_DO_ACERVO}"
-if executar_rclone copy "${RAIZ_DO_BACKUP}" "${DESTINO_DO_ACERVO}"; then
-	ok "acervo enviado"
-else
-	erro "o envio do acervo terminou com código não-zero — o acervo LOCAL segue íntegro em ${RAIZ_DO_BACKUP}"
-fi
+CODIGO_DA_ETAPA=0
+operar_com_paciencia "acervo" copy "${RAIZ_DO_BACKUP}" "${DESTINO_DO_ACERVO}" || CODIGO_DA_ETAPA=$?
+case "${CODIGO_DA_ETAPA}" in
+0) ok "acervo enviado" ;;
+2) erro "o envio do acervo NÃO ACONTECEU: o provedor recusou por limite de taxa ou transporte, esgotadas as ${TENTATIVAS_POR_OPERACAO} tentativas — o acervo LOCAL segue íntegro em ${RAIZ_DO_BACKUP}" ;;
+*) erro "o envio do acervo falhou — o acervo LOCAL segue íntegro em ${RAIZ_DO_BACKUP}" ;;
+esac
 
 # --------------------------------------------------------------------------- #
 # 2. Os boletos — `copy` também, e por uma razão MAIS forte
@@ -329,7 +413,9 @@ if [ ! -d "${DIR_DOS_BOLETOS}" ]; then
 else
 	QUANTOS_BOLETOS="$(find "${DIR_DOS_BOLETOS}" -type f | wc -l)"
 	info "enviando os boletos: ${DIR_DOS_BOLETOS} -> ${DESTINO_DOS_BOLETOS} (${QUANTOS_BOLETOS} arquivo(s) na origem)"
-	if executar_rclone copy "${DIR_DOS_BOLETOS}" "${DESTINO_DOS_BOLETOS}"; then
+	CODIGO_DA_ETAPA=0
+	operar_com_paciencia "boletos" copy "${DIR_DOS_BOLETOS}" "${DESTINO_DOS_BOLETOS}" || CODIGO_DA_ETAPA=$?
+	if [ "${CODIGO_DA_ETAPA}" -eq 0 ]; then
 		if [ "${QUANTOS_BOLETOS}" -eq 0 ]; then
 			# ⚠️ A origem vazia NÃO autoriza concluir que nada foi emitido: o
 			# espelho é acumulativo, e o destino pode guardar PDFs que a origem
@@ -339,8 +425,10 @@ else
 		else
 			ok "boletos espelhados"
 		fi
+	elif [ "${CODIGO_DA_ETAPA}" -eq 2 ]; then
+		erro "o espelho dos boletos NÃO ACONTECEU: o provedor recusou por limite de taxa ou transporte, esgotadas as ${TENTATIVAS_POR_OPERACAO} tentativas — os PDFs seguem em ${DIR_DOS_BOLETOS}"
 	else
-		erro "o espelho dos boletos terminou com código não-zero — os PDFs seguem em ${DIR_DOS_BOLETOS}"
+		erro "o espelho dos boletos falhou — os PDFs seguem em ${DIR_DOS_BOLETOS}"
 	fi
 fi
 
@@ -357,18 +445,30 @@ if [ "${ENSAIO}" -eq 1 ]; then
 	nota "ensaio: a conferência de integridade não se aplica (nada foi escrito)"
 else
 	info "conferindo a integridade do que subiu"
-	if executar_rclone check "${RAIZ_DO_BACKUP}" "${DESTINO_DO_ACERVO}" --one-way; then
-		ok "acervo conferido — todo arquivo da origem está no destino, com o mesmo conteúdo"
-	else
-		erro "a conferência do acervo REPROVOU: há arquivo da origem ausente ou diferente no destino"
-	fi
+	CODIGO_DA_ETAPA=0
+	operar_com_paciencia "conferência do acervo" check "${RAIZ_DO_BACKUP}" "${DESTINO_DO_ACERVO}" --one-way ||
+		CODIGO_DA_ETAPA=$?
+	case "${CODIGO_DA_ETAPA}" in
+	0) ok "acervo conferido — todo arquivo da origem está no destino, com o mesmo conteúdo" ;;
+	2)
+		# ⚠️ A REDAÇÃO É A CORREÇÃO. Dizer "REPROVOU: há arquivo ausente" aqui
+		# seria afirmar sobre um destino que ninguém olhou — e foi exatamente o
+		# que esta rotina fez em 2026-09-08, segundos depois de enviar o acervo
+		# com sucesso. O que se pode afirmar é só o que se mediu.
+		erro "NÃO FOI POSSÍVEL CONFERIR o acervo: o provedor recusou por limite de taxa ou transporte, esgotadas as ${TENTATIVAS_POR_OPERACAO} tentativas. ⚠️ Isto NÃO afirma que falta arquivo no destino — a conferência não chegou a olhar. O envio acima diz o que foi enviado"
+		;;
+	*) erro "a conferência do acervo REPROVOU: há arquivo da origem ausente ou diferente no destino" ;;
+	esac
 
 	if [ -d "${DIR_DOS_BOLETOS}" ]; then
-		if executar_rclone check "${DIR_DOS_BOLETOS}" "${DESTINO_DOS_BOLETOS}" --one-way; then
-			ok "boletos conferidos"
-		else
-			erro "a conferência dos boletos REPROVOU: há PDF da origem ausente ou diferente no destino"
-		fi
+		CODIGO_DA_ETAPA=0
+		operar_com_paciencia "conferência dos boletos" check "${DIR_DOS_BOLETOS}" "${DESTINO_DOS_BOLETOS}" --one-way ||
+			CODIGO_DA_ETAPA=$?
+		case "${CODIGO_DA_ETAPA}" in
+		0) ok "boletos conferidos" ;;
+		2) erro "NÃO FOI POSSÍVEL CONFERIR os boletos: o provedor recusou por limite de taxa ou transporte. ⚠️ Isto NÃO afirma que falta PDF no destino" ;;
+		*) erro "a conferência dos boletos REPROVOU: há PDF da origem ausente ou diferente no destino" ;;
+		esac
 	fi
 fi
 
@@ -391,10 +491,12 @@ if [ "${ENSAIO}" -eq 1 ]; then
 	nota "ensaio: a poda remota não se aplica"
 else
 	info "podando no destino o acervo com mais de ${PRAZO} dia(s) — os boletos NÃO são podados"
+	# A poda NÃO usa paciência: ela é o único passo cuja falha não reprova, e
+	# gastar tentativas com o provedor já saturado atrasaria o fecho sem ganho.
 	if executar_rclone delete "${DESTINO_DO_ACERVO}" --min-age "${PRAZO}d" --drive-use-trash=false; then
 		ok "poda concluída"
 	else
-		nota "a poda remota falhou — o que importava já subiu e já foi conferido; ela se repete amanhã"
+		nota "a poda remota falhou — o que importava já subiu; ela se repete amanhã"
 	fi
 	"${RCLONE_BIN}" --config "${CONFIG_DO_RCLONE}" rmdirs "${DESTINO_DO_ACERVO}" --leave-root >/dev/null 2>&1 || true
 fi

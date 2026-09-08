@@ -868,9 +868,25 @@ O marco está alcançado quando **todos** os sete itens forem verdadeiros:
       token de **exclusão** do acervo viajaria para dentro do próprio acervo. O `CT-1283` prova que
       ela continua fora, com controle positivo do discriminador. **Consequência: máquina nova
       REAUTORIZA o Drive (`rclone config`), em vez de restaurar token antigo.**
-      ⚠️ **A bateria foi de 24 para 31 casos** (`CT-1280` a `CT-1286`), e `CASOS_DECLARADOS_NO_TOTAL`
-      de **116 para 123** — os dois no mesmo diff que publica os casos. **Não reponha o 24 nem o
-      116.** Nenhum deles toca a rede: o destino é um remote `alias` do próprio `rclone` apontado
+      ⚠️ **ACHADO DA PRIMEIRA EXECUÇÃO EM PRODUÇÃO, no mesmo dia, e ele é de REDAÇÃO, não de
+      transporte**: o envio do acervo FUNCIONOU (três arquivos no Drive, conferidos por `rclone ls`),
+      e as três operações seguintes falharam com `RATE_LIMIT_EXCEEDED` na quota do projeto
+      `202264815644` — o **client_id compartilhado** que o `rclone` usa quando nenhum é informado.
+      A rotina então relatou *"a conferência REPROVOU: há arquivo da origem ausente ou diferente no
+      destino"*, **frase falsa**: o `rclone` não chegou a olhar o destino. ⚠️ **É a mesma classe do
+      `PROD-2026-09-03-01`**, em que `502` foi lido como `404` — *"a aplicação não respondeu; isto
+      NÃO é rota ausente"* —, e é a segunda vez que ela morde. O conserto é o discriminador
+      `desfecho_transitorio` mais `operar_com_paciencia` (3 tentativas, espera de 20s que dobra):
+      motivo transitório retenta e, esgotado, diz **"NÃO FOI POSSÍVEL CONFERIR"**; motivo real
+      **não** é retentado e segue dizendo que reprovou. ⚠️ **`Error 403` NÃO entra no padrão**: o
+      Drive o usa para limite **e** para permissão, e casá-lo faria uma credencial errada ser
+      retentada para sempre em vez de acusada — o `CT-1287` tem os dois controles negativos (o 403
+      de permissão e a divergência de conteúdo) e **carrega a função do próprio alvo**, de modo que
+      quem valida e quem executa são o mesmo código.
+      ⚠️ **A bateria foi de 24 para 32 casos** (`CT-1280` a `CT-1287`), e `CASOS_DECLARADOS_NO_TOTAL`
+      de **116 para 124** — os dois no mesmo diff que publica os casos. **Não reponha o 24 nem o
+      116**, e não reponha o par intermediário `31 / 123`: ele é da primeira passada do mesmo dia,
+      anterior ao `CT-1287`. Nenhum deles toca a rede: o destino é um remote `alias` do próprio `rclone` apontado
       para a caixa de areia, de modo que `rclone`, sistema de arquivos e comportamento do alvo são
       reais e o Google não é dependência. A `ambiente-real` de `FRENTES_PRIVILEGIADAS` foi de **2
       para 3** linhas de degradação, com o ponto novo do `CT-1283`; o teto é EXATO, e uma quarta

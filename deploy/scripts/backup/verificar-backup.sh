@@ -100,7 +100,10 @@
 #   CT-1285  cada pré-condição ausente recusa com desfecho 2 e NADA sobe —
 #            inclusive o remote inexistente, que sem guarda viraria um diretório
 #            local de nome parecido e terminaria em 0 sem sair do host;
-#   CT-1286  a unidade diária encadeia os TRÊS passos, com o envio por último.
+#   CT-1286  a unidade diária encadeia os TRÊS passos, com o envio por último;
+#   CT-1287  "o provedor não respondeu" NÃO é "o conteúdo diverge" — o
+#            discriminador é CARREGADO do alvo, com o 403 de permissão e a
+#            divergência de conteúdo como controles negativos.
 #
 # ===========================================================================
 # O VOCABULÁRIO DE ASSERÇÃO NÃO MORA MAIS AQUI
@@ -378,7 +381,7 @@ readonly BATERIAS_DECLARADAS=(
 # 107.**
 # --------------------------------------------------------------------------- #
 readonly CASOS_DECLARADOS_POR_BATERIA=(
-	"backup/verificar-backup.sh|31|CT-1098;CT-1099;CT-1100;CT-1101;CT-1102;CT-1103;CT-1104;CT-1105;CT-1106;CT-1107;CT-1108;CT-1109;CT-1110;CT-1111;CT-1112;CT-1113;CT-1119;CT-1120;CT-1121;CT-1122;CT-1123;CT-1124;CT-1125;CT-1126;CT-1280;CT-1281;CT-1282;CT-1283;CT-1284;CT-1285;CT-1286"
+	"backup/verificar-backup.sh|32|CT-1098;CT-1099;CT-1100;CT-1101;CT-1102;CT-1103;CT-1104;CT-1105;CT-1106;CT-1107;CT-1108;CT-1109;CT-1110;CT-1111;CT-1112;CT-1113;CT-1119;CT-1120;CT-1121;CT-1122;CT-1123;CT-1124;CT-1125;CT-1126;CT-1280;CT-1281;CT-1282;CT-1283;CT-1284;CT-1285;CT-1286;CT-1287"
 	"borda/verificar-borda-do-app.sh|12|CT-1180;CT-1181;CT-1182;CT-1183;CT-1184;CT-1185;CT-1186;CT-1187;CT-1188;CT-1188 (b);CT-1189;CT-1190"
 	"borda/verificar-notificacao-bancaria.sh|8|CT-1005 (a);CT-1005 (b);CT-1005 (c);CT-1005 (d);CT-1191;CT-1192;CT-1193;CT-1194"
 	"caracterizacao/verificar-captura.sh|13|CT-001;CT-002;CT-003;CT-004;CT-005;CT-006;CT-007;CT-008;CT-009;CT-012;CT-013;CT-502;CT-603"
@@ -405,7 +408,7 @@ readonly CASOS_DECLARADOS_POR_BATERIA=(
 # entram aqui no mesmo diff que os publica — número narrativo que fica para trás
 # convida a próxima task a "corrigir" a âncora executável para o valor errado.
 # **Não reponha o 24 nem o 116.**
-readonly CASOS_DECLARADOS_NO_TOTAL=123
+readonly CASOS_DECLARADOS_NO_TOTAL=124
 
 # --------------------------------------------------------------------------- #
 # O teto de frescor da cópia do dia — CT-1122.
@@ -4229,7 +4232,7 @@ desfecho_da_bateria() {
 			exit 2
 		fi
 		if [[ "${avisos_totais}" -eq 0 ]]; then
-			printf 'verificar-backup: %d/%d casos aprovados (CT-1098 a CT-1113, CT-1119 a CT-1126 e CT-1280 a CT-1286)\n' \
+			printf 'verificar-backup: %d/%d casos aprovados (CT-1098 a CT-1113, CT-1119 a CT-1126 e CT-1280 a CT-1287)\n' \
 				"${casos_aprovados}" "${casos_executados}"
 		else
 			printf 'verificar-backup: %d/%d casos sem falha, com %d degradação(ões) — há asserção NÃO MEDIDA neste host (ver as linhas AVISO acima)\n' \
@@ -4726,6 +4729,112 @@ enviar-para-a-nuvem.sh" \
 	fechar_caso "CT-1286"
 }
 
+# --------------------------------------------------------------------------- #
+# CT-1287 — "o provedor não respondeu" NÃO é "o conteúdo diverge".
+#
+# ⚠️ ESTE CASO NASCEU DE UM DEFEITO REAL, medido em 2026-09-08 na primeira
+# execução do alvo em produção: as três operações posteriores ao envio falharam
+# com `RATE_LIMIT_EXCEEDED`, e a rotina relatou *"a conferência REPROVOU: há
+# arquivo da origem ausente ou diferente no destino"* — segundos depois de ter
+# enviado o acervo COM SUCESSO. A frase era falsa: o `rclone` não chegou a olhar
+# o destino.
+#
+# É a mesma classe do incidente `PROD-2026-09-03-01`, em que `502` foi lido como
+# `404`. O discriminador é o MOTIVO da recusa, e ele decide duas coisas: se vale
+# retentar, e o que se pode AFIRMAR ao operador.
+#
+# A função é CARREGADA do alvo, e não reimplementada aqui: uma segunda cópia do
+# padrão aprovaria um alvo com o defeito de volta.
+# --------------------------------------------------------------------------- #
+ct_1287() {
+	caso "CT-1287" "o alvo distingue recusa do provedor de divergência de conteúdo"
+
+	# shellcheck disable=SC2034  # lido por `texto_da_funcao_do_instalador`
+	INSTALADOR="${SCRIPT_ENVIAR}"
+	if ! carregar_funcao_do_instalador_como "desfecho_transitorio" "classificar_do_alvo"; then
+		falhar "não consegui carregar 'desfecho_transitorio' de ${SCRIPT_ENVIAR} — o discriminador não existe ou mudou de forma"
+		fechar_caso "CT-1287"
+		return 0
+	fi
+	# O padrão vem do alvo pela mesma razão que a função: duas declarações dele
+	# divergiriam sem que nada acusasse.
+	PADRAO_DE_FALHA_TRANSITORIA="$(ler_constante_do_alvo "${SCRIPT_ENVIAR}" PADRAO_DE_FALHA_TRANSITORIA)"
+	PADRAO_DE_FALHA_TRANSITORIA="${PADRAO_DE_FALHA_TRANSITORIA#\'}"
+	PADRAO_DE_FALHA_TRANSITORIA="${PADRAO_DE_FALHA_TRANSITORIA%\'}"
+	afirmar_diferente "o padrão do discriminador foi lido do alvo" "" "${PADRAO_DE_FALHA_TRANSITORIA}"
+
+	# (a) A MENSAGEM REAL do journal de 2026-09-08 — o caso que originou tudo.
+	local recusa_medida
+	recusa_medida='Failed to create file system for "offsite:sysloc-backups/brutus/acervo": couldn'"'"'t find root directory ID: googleapi: Error 403: Quota exceeded for quota metric '"'"'Queries'"'"' and limit '"'"'Previous quota: Requests per minute'"'"' of service '"'"'drive.googleapis.com'"'"', rateLimitExceeded'
+	if classificar_do_alvo "${recusa_medida}"; then
+		ok "a recusa por limite de taxa MEDIDA em produção é classificada como transitória"
+	else
+		falhar "a recusa por limite de taxa medida em produção NÃO é reconhecida — a rotina voltaria a afirmar divergência sobre um destino que ninguém olhou"
+	fi
+
+	# (b) CONTROLE NEGATIVO — a divergência de conteúdo, que é o motivo REAL e
+	# não pode ser retentada nem descrita como problema do provedor.
+	local divergencia
+	divergencia='2026/09/08 15:00:00 ERROR : daily/base-2026-09-08.dump: file not in Google drive root
+2026/09/08 15:00:00 NOTICE: Google drive root: 1 differences found
+2026/09/08 15:00:00 NOTICE: Google drive root: 1 errors while checking'
+	if classificar_do_alvo "${divergencia}"; then
+		falhar "uma DIVERGÊNCIA DE CONTEÚDO foi classificada como transitória — ela seria retentada e depois relatada como problema do provedor"
+	else
+		ok "(controle) a divergência de conteúdo NÃO é transitória"
+	fi
+
+	# (c) O 403 DE PERMISSÃO — o par que impede o discriminador de casar `Error
+	# 403` genericamente. O Drive usa esse status para limite E para permissão, e
+	# tratar permissão como transitória a faria ser retentada para sempre em vez
+	# de acusada ao operador.
+	local permissao
+	permissao='googleapi: Error 403: Request had insufficient authentication scopes., insufficientPermissions'
+	if classificar_do_alvo "${permissao}"; then
+		falhar "o 403 de PERMISSÃO foi classificado como transitório — a credencial errada seria retentada para sempre em vez de acusada"
+	else
+		ok "(controle) o 403 de permissão insuficiente NÃO é transitório"
+	fi
+
+	# (d) A tabela do transporte: cada família precisa ser reconhecida sozinha.
+	local amostra
+	for amostra in \
+		'dial tcp: lookup drive.googleapis.com: no such host' \
+		'read tcp 10.0.0.1:443: connection reset by peer' \
+		'net/http: TLS handshake timeout' \
+		'googleapi: Error 500: Internal Error, internalError' \
+		'googleapi: Error 429: Too Many Requests'; do
+		if classificar_do_alvo "${amostra}"; then
+			ok "reconhecida como transitória: ${amostra:0:48}…"
+		else
+			falhar "NÃO reconhecida como transitória: ${amostra}"
+		fi
+	done
+
+	# (e) ANTIVÁCUO do discriminador: uma saída silenciosa e uma saída comum não
+	# podem ser transitórias, senão a função diria "sim" para tudo.
+	if classificar_do_alvo ""; then
+		falhar "a saída VAZIA foi classificada como transitória — o discriminador diz sim para tudo"
+	else
+		ok "(antivácuo) a saída vazia não é transitória"
+	fi
+
+	# (f) A rotina precisa USAR o discriminador, e não apenas declará-lo. Sem
+	# esta perna, a função poderia existir sem ponto de chamada e o defeito
+	# voltaria inteiro com a suíte verde.
+	local usos
+	usos="$(grep -cE '^[^#]*(desfecho_transitorio|operar_com_paciencia)[[:space:]]' "${SCRIPT_ENVIAR}" || true)"
+	if [[ "${usos}" -ge 5 ]]; then
+		ok "o alvo invoca o discriminador nas etapas (${usos} pontos em linha executável)"
+	else
+		falhar "o alvo declara o discriminador mas quase não o usa (${usos} ponto(s)) — a classificação não alcança as etapas"
+	fi
+
+	unset -f classificar_do_alvo
+	fechar_caso "CT-1287"
+}
+
+
 main() {
 	printf 'Verificação da preservação — %s\n' "${RAIZ_REPO}"
 
@@ -4823,6 +4932,7 @@ main() {
 	ct_1284
 	ct_1285
 	ct_1286
+	ct_1287
 
 	# ⚠️ A ORDEM DESTES TRÊS É CONTEÚDO. O CT-1124 compara o estado da árvore
 	# versionada contra a foto do início, e por isso vem DEPOIS de todo caso que
