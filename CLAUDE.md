@@ -89,6 +89,65 @@ São **147 tasks** aprovadas nos dois gates — as **126** do fecho da F4 mais a
 ⚠️ **A (iii) É o carnê** — se este texto voltar a dizer que ela falta, foi regressão de índice, não
 fatia reaberta.
 
+- ⚠️ **A CONSTRUÇÃO SEGUIU ALÉM DO MARCO, por decisão do usuário de 2026-09-09**: entra a
+  **integração Pix**, primeira coisa construída aqui depois de o marco fechar em 7/7. O
+  pré-refinamento está em `docs/specs/features/cobranca-pagavel-por-pix/v1/pre-refinement.md` e
+  converge para **duas fatias independentes** — `boleto-hibrido-e-comprovante/v1` (Fase A, ~7 tasks,
+  vai a produção sozinha) e `cobranca-pix/v1` (Fase B, ~16 tasks). ⚠️ **Nenhuma das duas existe no
+  disco ainda**: são nomes declarados na **trilha Pix** do roadmap, e sobem de ⬜ sozinhas no primeiro
+  `_run/*state.yaml` que o pipeline escrever.
+  ⚠️ **O ACHADO QUE PRECEDE TUDO, e ele é perda EM PRODUÇÃO**: `codigoCadastrarPIX` **não aparece em
+  nenhum `.ts`** de `apps/` ou `packages/` — medido —, de modo que **o boleto que este backend emite
+  não tem QR Pix**. O legado o enviava (`codigoCadastrarPIX: 1`), e a desativação do Frappe em
+  2026-09-08 tirou de operação a única coisa que o fazia. A ausência estava registrada como
+  divergência consciente no `workflow-report` da fatia `emissao-e-conciliacao`, mas **nunca foi
+  escriturada como perda** — e é ela que a Fase A restaura.
+  ⚠️ **TRÊS decisões do usuário governam o desenho e não se renegociam**: (i) implementam-se **as
+  duas** fatias; (ii) o pagamento pelo QR do boleto híbrido tem meio **`BOLETO`**, porque o
+  discriminador é o **instrumento liquidado**, não o app que o pagador usou; (iii) o comprovante
+  carrega o banco **RECEBEDOR**, nunca o pagador, *"porque teremos integrações com outros bancos
+  posteriormente"* — o que torna o modelo multi-provedor desde já em vez de retrofit. ⚠️ **A (ii) tem
+  consequência boa e não óbvia**: o híbrido cai no ramo do boleto por construção, e por isso a **Fase
+  A não precisa de nada** na derivação do meio.
+  ⚠️ **A Fase B exige EMENDA à ADR-0001, e não ADR nova** — a decisão de fundo não muda, e ADR
+  paralela deixaria a `Decision` dela dizendo *"apenas"* sem qualificação, que é o custo literal
+  registrado na emenda de 2026-08-15. **Não use `/agent-spec-adr-create` para ela**; o repositório já
+  emendou cinco vezes à mão, preservando o texto original.
+  ⚠️ **O `CT-835 (b)` terá de ser REESCRITO no mesmo diff**: ele afirma hoje que *"o conjunto de
+  operações sobre `PIX` é **vazio**"*, casando o termo por `toLowerCase()` sobre **todos** os fontes
+  de `packages/cobranca-bancaria/src/` — declarar qualquer símbolo com «pix» no nome ali **reprova a
+  suíte**. A saída é trocar *"vazio"* pela lista exata, com falsificação executada; batizar tudo de
+  `CobrancaInstantanea` para o caso seguir verde é **evasão de nome**, e a §4 do Protocolo a trata
+  como regressão de prova. ⚠️ **O `CT-933` fica INTOCADO**: ele assere as operações de
+  `AdaptadorCobrancaBancaria` por igualdade de lista ordenada, e alargá-la obrigaria todo dublê de
+  boleto a implementar operação Pix. O PIX ganha **porta de nome próprio**.
+  ⚠️ **As três âncoras de superfície NÃO se moveram** — nenhuma rota foi publicada por esta decisão.
+  Elas sobem na task do comprovante da Fase A, e a escrituração das **quatro** ocorrências normativas
+  deste arquivo acompanha **no mesmo diff**, senão o `CT-1196` fica vermelho.
+  ⚠️ **Três pré-requisitos NÃO são código, e sem eles nem a Fase A sai do lugar**: `.pfx` renovado (o
+  conhecido venceu em 2026-08-22), ao menos uma empresa cadastrada na base de produção (hoje vazia por
+  decisão) e a **chave Pix** da empresa registrada — que hoje não tem coluna, contrato nem tela.
+- ⚠️ **O ROADMAP OMITIA FATIA EM SILÊNCIO, e o defeito foi fechado em 2026-09-09.** O mapa
+  `FATIAS_DA_FASE` de `deploy/scripts/roadmap/atualizar-roadmap.sh` é enumeração fechada em F0–F7, e
+  o gerador só reportava o que estava nela: o gancho disparava, o script saía com **sucesso** e o
+  painel não mencionava a fatia. Medido — **`painel-master-administradores/v1` estava concluída, com
+  7 tasks, e nunca havia aparecido.** A história do arquivo traz **três** commits de correção pela
+  mesma causa, cada um porque alguém reparou tarde.
+  ⚠️ **A correção é por DIFERENÇA sobre o disco, nunca por segunda lista**: toda fatia que não está na
+  enumeração entra no bloco `FORA-DAS-FASES`, e esquecer de enumerar uma deixa de **escondê-la** e
+  passa a **exibi-la**. Entra também a **trilha** — grupo declarado para trabalho fora das oito fases,
+  hoje só o Pix —, porque descoberta **não alcança o que ainda não existe** no disco;
+  `fatias_enumeradas` varre os dois grupos, e por isso não há dupla contagem.
+  ⚠️ **A enumeração e o docblock que explica por que diretório de pré-refinamento NÃO é fatia ficam
+  INTACTOS**, e o painel mais os oito blocos de fase saem **byte a byte iguais** — medido por
+  `md5sum` antes e depois.
+  ⚠️ **A rede é `deploy/scripts/roadmap/verificar-roadmap.sh`** — `CT-1292` a `CT-1298`, **7 casos**,
+  sem privilégio e sem rede, contra raiz sintética descartável, exercitando o script **real**. Ela
+  **reprovou de primeira e pegou dois defeitos desta própria mudança**.
+  ⚠️ **Ela é a 16ª bateria, e as TRÊS constantes de `verificar-backup.sh` subiram no mesmo passo** —
+  `BATERIAS_DECLARADAS` (15 → 16), a tabela do `CT-1126` e `CASOS_DECLARADOS_NO_TOTAL`
+  (**126 → 133**). **Não reponha o 126.** Bateria nova que não entre lá reprova a suíte no diff em
+  que nasce, e é isso que a torna impossível de ficar invisível ao agregador.
 - ⚠️ **A VIRADA DA F7 FOI EXECUTADA em 2026-09-08, e o Frappe/ERPNext está DESATIVADO.** É a
   sessão operacional que o `plano-execucao.md` classificava como *"operação, não construção"*, e ela
   aconteceu. Quatro coisas mudaram no host, todas medidas, e os quatro scripts que as fizeram estão
@@ -799,6 +858,20 @@ fatia reaberta.
 aqui**. É a materialização da **Fronteira** declarada no topo, e a lista abaixo é a definição
 operacional dela — não uma meta aproximada.
 
+⚠️ **EMENDA de 2026-09-09, com o texto acima preservado byte a byte.** O marco foi alcançado (7/7) e
+o handoff foi gerado — as duas coisas que a frase promete. O que **não** se cumpriu é o *"encerra-se
+a construção aqui"*: em 2026-09-09 o usuário decidiu construir a **integração Pix**, e a decisão é
+dele. A frase original vale como o que sempre foi — a **condição de parada por omissão**: alcançado
+o marco, nada mais se constrói **até que o usuário mande**. Construção posterior não reabre o marco,
+não recontagem as fases e **não vira F8**: ela entra como **trilha** no roadmap, com nome próprio,
+que é a forma de dizer que o plano de migração fechou e o produto seguiu.
+⚠️ **A Fronteira do topo NÃO é emendada e continua sem exceção**: nada de código React aqui, e task
+que peça implementação de frontend continua sendo **gatilho de parada**. As telas de Pix são
+handoff. ⚠️ **E o congelamento da superfície da imobiliária também não é revogado** — a Fase A
+publica uma rota nova naquela superfície (o comprovante), e isso é **acréscimo**, que a `Decision` da
+ADR-0039 permite por escrito: *"dentro do congelamento, acrescentar operação ou campo é permitido;
+renomear e remover, não."*
+
 O marco está alcançado quando **todos** os sete itens forem verdadeiros:
 
 - [x] **F1 a F5 concluídas** — **147 tasks** aprovadas nos dois gates, suíte verde (2004 casos),
@@ -1052,7 +1125,11 @@ construção do backend**. Os defeitos encontrados nela (a rede do contêiner do
 vencida da §3.3 do runbook, a entrada de cron que a primeira varredura não pegou) foram corrigidos
 **como correção**, e não como fatia nova — que é exatamente o que este parágrafo mandava.
 
-**Sobra a desinstalação do Frappe**, e só ela. Ela continua atrás do **gate de 5 itens** da §4 de
+**Sobra a desinstalação do Frappe** — ⚠️ **e desde 2026-09-09 ela não é mais a única coisa**: a
+frase *"e só ela"*, preservada aqui, valeu até aquela data e foi superada pela decisão da
+**integração Pix** (ver o primeiro bullet do `Estado atual`). As duas não se cruzam: a desinstalação
+é sessão **operacional** neste servidor, e a trilha Pix é **construção**, com pipeline, gates e
+fatias próprias. A desinstalação segue exatamente onde estava. Ela continua atrás do **gate de 5 itens** da §4 de
 `deploy/scripts/virada.md`, que **não** está satisfeito. ⚠️ **Desativar não é desinstalar**: os 11
 contêineres estão parados e impedidos de voltar no reboot, mas volumes, imagens e `/opt/frappe`
 seguem no disco, e a reativação é um comando. É essa reversibilidade que torna seguro ter feito a
