@@ -2395,3 +2395,84 @@ export const execucaoDeRotina = negocio
     ],
   )
   .enableRLS();
+
+/**
+ * O **batimento** de cada rotina publicada — uma linha por `(empresa, rotina)`, atualizada a cada
+ * passagem, com ou sem efeito.
+ *
+ * ===========================================================================
+ * POR QUE ELA EXISTE, E POR QUE NÃO É `execucao_de_rotina` COM OUTRO NOME
+ * ===========================================================================
+ *
+ * As duas tabelas respondem a perguntas **diferentes**, e tratá-las como uma só foi o defeito
+ * medido em produção em 2026-09-08:
+ *
+ *   · `execucao_de_rotina` responde *"a rotina produziu efeito?"* — e por decisão (RD-15) só recebe
+ *     linha quando o predicado de efeito da rotina é verdadeiro. É o **histórico** que o Admin lê;
+ *   · esta responde *"a rotina executou?"* — e recebe batimento em **toda** passagem.
+ *
+ * A vigilância (RN-18) pergunta a segunda e, até esta tabela existir, recebia a resposta da
+ * primeira. Consequência medida no journal deste host: `AVISO_DE_COBRANCA`,
+ * `ENCERRAMENTO_DE_CONTRATOS` e `CONFERENCIA_DE_LIQUIDACAO` publicadas como *"rotina agendada
+ * parada"* a cada 15 minutos, com os relógios disparando pontualmente — porque não havia cobrança a
+ * avisar, contrato a encerrar nem liquidação a descobrir.
+ *
+ * ⚠️ **Não é problema de base vazia.** Uma imobiliária em operação passa a maior parte do dia sem
+ * cobrança na janela de aviso, e qualquer dia sem contrato vencendo ou sem pagamento reproduz o
+ * mesmo alarme. E ele **não fica no journal**: `atrasada` é campo do contrato publicado, entregue
+ * ao Admin por `GET /v1/automacao-de-cobranca/rotinas`.
+ *
+ * ===========================================================================
+ * UMA LINHA POR PAR, E É ISSO QUE PRESERVA A RD-15
+ * ===========================================================================
+ *
+ * A alternativa óbvia — gravar toda passagem em `execucao_de_rotina` — é a que a RD-15 recusa **por
+ * nome**: seriam 1.440 linhas por empresa por dia só no aviso de minuto, ~525 mil por ano por
+ * empresa, que é *"o histórico de 12 MB do sistema antigo com outro nome"*.
+ *
+ * Aqui a escrita é **`UPDATE` disfarçado de `INSERT`**: a restrição única `(empresa_id, rotina)` faz
+ * o `ON CONFLICT` transformar cada passagem numa atualização de instante. O acervo é de **três
+ * linhas por empresa** — uma por rotina publicada —, e não cresce com o tempo.
+ *
+ * ⚠️ **Só as rotinas PUBLICADAS batem aqui**, e a coluna reusa `negocio.rotina_agendada`, cuja
+ * união fechada tem exatamente essas três. As não publicadas (`VIGILANCIA_DAS_ROTINAS`,
+ * `MANUTENCAO`, `RETOMADA_DE_NOTICIAS`) não são vigiadas, de modo que um batimento delas seria
+ * escrita sem leitor — e não compilaria, o que é a rede.
+ *
+ * ===========================================================================
+ * O QUE ESTA TABELA NÃO FAZ
+ * ===========================================================================
+ *
+ * Ela **não** guarda resumo, e a ausência é a decisão: resumo é o que a passagem *fez*, e o que ela
+ * fez continua sendo assunto de `execucao_de_rotina`. Guardá-lo aqui criaria a segunda cópia de um
+ * dado cuja primeira já tem dono — e o par `(instante, resumo)` do histórico deixaria de ser
+ * coerente entre si, porque o instante daqui é o da última passagem e o resumo é o do último efeito.
+ *
+ * Pela mesma razão, `lerEstadoDasRotinas` continua lendo `ultimaExecucao` e `resumo` do
+ * **histórico**: o que muda de fonte é **só** `atrasada`.
+ */
+export const passagemDeRotina = negocio
+  .table(
+    'passagem_de_rotina',
+    {
+      /** Chave própria — o que torna o par `(id, empresa_id)` único e a tabela referenciável. */
+      id: uuid('id').primaryKey().defaultRandom(),
+      empresaId: uuid('empresa_id')
+        .notNull()
+        .references(() => empresa.id),
+      /** Qual rotina bateu. União fechada — ver {@link rotinaAgendada}. */
+      rotina: rotinaAgendada('rotina').notNull(),
+      /** O instante da última passagem, pelo relógio do BANCO (ADR-0026). */
+      ocorridaEm: timestamp('ocorrida_em', { withTimezone: true }).notNull().defaultNow(),
+    },
+    (tabela) => [
+      // O alvo da chave estrangeira composta, e o que a guarda de cobertura de `src/catalogo.ts`
+      // cobra de toda tabela deste schema.
+      unique('passagem_de_rotina_id_empresa_key').on(tabela.id, tabela.empresaId),
+      // ⚠️ ESTA é a restrição que faz a tabela não crescer: ela é o alvo do `ON CONFLICT` do
+      // batimento, e sem ela cada passagem acrescentaria uma linha — reintroduzindo, com outro
+      // nome, exatamente o acervo que a RD-15 recusa.
+      unique('passagem_de_rotina_empresa_rotina_key').on(tabela.empresaId, tabela.rotina),
+    ],
+  )
+  .enableRLS();

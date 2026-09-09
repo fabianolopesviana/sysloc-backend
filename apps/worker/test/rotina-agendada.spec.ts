@@ -146,6 +146,7 @@ import {
   lerAnoDaSerieDeCobranca,
   lerAnoDaSerieDeContrato,
   lerEstadoDaEntrega,
+  lerEstadoDasRotinas,
   registrarCertificado,
   registrarIdentidadeNoProvedor,
   revogarBoleto,
@@ -951,6 +952,94 @@ describe('CT-1085 — com a Entrega DESABILITADA, a conferência diária continu
 // CT-1086 — a vigilância grita pela rotina parada, e cala pelas em dia
 // ===========================================================================
 
+// ===========================================================================
+// CT-1291 — o WORKER bate o relógio, e a passagem sem efeito deixa a rotina em dia
+// ===========================================================================
+
+/**
+ * A rede do caminho REAL, e ela não é redundante com o `CT-1290` de `@sysloc/db`.
+ *
+ * Aquele prova a **camada de dados**: dado o batimento gravado, `atrasada` fica `false`. Este prova
+ * que **alguém grava** — que a passagem do worker de fato chama `registrarPassagemDeRotina`. Sem
+ * ele, a função poderia existir, ser testada, e nenhum ponto de produção invocá-la: é exatamente a
+ * forma de defeito que o incidente `PROD-2026-09-03-01` mediu (código na árvore, ausente do
+ * processo) e que as doze falhas silenciosas do backup repetiram.
+ *
+ * ⚠️ **O cenário é a passagem SEM EFEITO**, que é o desfecho normal da maior parte dos disparos: a
+ * diária que não achou contrato vencido. É nele, e só nele, que o defeito de 2026-09-08 aparecia.
+ */
+describe('CT-1291 — a passagem do worker bate o relógio da rotina publicada', () => {
+  it(
+    'CT-1291 — sem trabalho a fazer: o batimento nasce, o histórico NÃO, e a rotina fica em dia',
+    async () => {
+      const empresa = await admitirEmpresaNova('ct1291');
+      // Além de qualquer limiar: sem isso o eixo de `atrasada` seria a admissão, e o caso passaria
+      // por uma razão que não é a que ele mede.
+      await envelhecerEmpresa(empresa, IDADE_DA_EMPRESA_VELHA);
+
+      // ANTIVÁCUO das duas contagens. Sem ele, um SUT que não gravasse nada satisfaria a asserção
+      // do histórico abaixo por já estar em zero.
+      expect(await contarBatimentos(empresa)).toBe(0);
+      expect(await contarRegistros(empresa)).toBe(0);
+
+      // A rotina está atrasada ANTES — é o estado que o defeito tornava permanente.
+      const antes = await emUnidade(empresa, lerEstadoDasRotinas);
+      expect(estadoDe(antes, ROTINA_DO_ENCERRAMENTO).atrasada).toBe(true);
+
+      const montagem = montarConsumidor(adaptadorQueLiquida());
+
+      // A empresa não tem contrato algum, de modo que a passagem percorre e NÃO produz efeito.
+      const tarefa = await executarTarefa(montagem.fila, {
+        empresaId: empresa.empresaId,
+        rotina: ROTINA_DO_ENCERRAMENTO,
+      });
+      expect(await tarefa.getState()).toBe('completed');
+
+      // (1) O BATIMENTO nasceu — é a metade que faltava.
+      expect(await contarBatimentos(empresa)).toBe(1);
+
+      // (2) O HISTÓRICO continua vazio — a RD-15 NÃO foi afrouxada para conseguir a (1). Sem esta
+      // asserção, a correção poderia ter sido "gravar tudo", que é o acervo de ~525 mil linhas por
+      // ano por empresa que aquela decisão recusa por nome.
+      expect(await contarRegistros(empresa)).toBe(0);
+
+      // (3) E o efeito observável: a rotina deixou de ser publicada como parada.
+      const depois = await emUnidade(empresa, lerEstadoDasRotinas);
+      expect(estadoDe(depois, ROTINA_DO_ENCERRAMENTO).atrasada).toBe(false);
+
+      // ⚠️ E o par (instante, resumo) do HISTÓRICO segue coerente entre si: sem execução com
+      // efeito, `ultimaExecucao` continua nulo. É o que impede a correção de ter contrabandeado o
+      // instante do batimento para o campo que o Admin lê como "a última vez que ela fez algo".
+      expect(estadoDe(depois, ROTINA_DO_ENCERRAMENTO).ultimaExecucao).toBeNull();
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-1291 (b) — a passagem NÃO bate o relógio de rotina não publicada',
+    async () => {
+      const empresa = await admitirEmpresaNova('ct1291-nao-publicada');
+      await envelhecerEmpresa(empresa, IDADE_DA_EMPRESA_VELHA);
+
+      const montagem = montarConsumidor(adaptadorQueLiquida());
+
+      // `VIGILANCIA_DAS_ROTINAS` chega por esta fila e **não** é publicada: ela não é vigiada, e a
+      // enum do banco não a aceita. Um batimento aqui seria escrita sem leitor.
+      const tarefa = await executarTarefa(montagem.fila, {
+        empresaId: empresa.empresaId,
+        rotina: 'VIGILANCIA_DAS_ROTINAS',
+      });
+      expect(await tarefa.getState()).toBe('completed');
+
+      // ⚠️ É o CONTROLE do caso anterior: sem ele, um SUT que batesse para TODA rotina passaria
+      // naquele — e falharia na primeira passagem, porque a enum recusaria o rótulo. O zero aqui,
+      // com o um lá, é o par que discrimina.
+      expect(await contarBatimentos(empresa)).toBe(0);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});
+
 describe('CT-1086 — a vigilância nomeia a rotina parada e cala sobre as que estão em dia', () => {
   it(
     'CT-1086 — exatamente 1 linha `error`, com o limiar LIDO do contrato, e nenhum registro novo',
@@ -961,13 +1050,21 @@ describe('CT-1086 — a vigilância nomeia a rotina parada e cala sobre as que e
       // mede.
       await envelhecerEmpresa(empresa, IDADE_DA_EMPRESA_VELHA);
 
+      // SUT_IS_CORRECT_BECAUSE: desde 2026-09-08 o HISTÓRICO e o BATIMENTO são tabelas distintas —
+      // aquele publica `ultimaExecucao` na linha de alerta, este decide `atrasada`. O caso afirma as
+      // DUAS coisas, e por isso o arranjo semeia as duas, com as MESMAS idades de antes. Nenhuma
+      // asserção foi afrouxada; o que mudou é que o cenário agora é montável, porque antes a
+      // "rotina em dia sem histórico" era representável apenas por acaso.
       const ultimaDaAtrasada = await semearExecucaoEm(
         empresa,
         ROTINA_ATRASADA,
         MINUTOS_DA_ROTINA_ATRASADA,
       );
+      await semearBatimentoEm(empresa, ROTINA_ATRASADA, MINUTOS_DA_ROTINA_ATRASADA);
       await semearExecucaoEm(empresa, ROTINA_DO_ENCERRAMENTO, MINUTOS_DA_DIARIA_EM_DIA);
+      await semearBatimentoEm(empresa, ROTINA_DO_ENCERRAMENTO, MINUTOS_DA_DIARIA_EM_DIA);
       await semearExecucaoEm(empresa, ROTINA_DA_CONFERENCIA, MINUTOS_DA_SEGUNDA_DIARIA_EM_DIA);
+      await semearBatimentoEm(empresa, ROTINA_DA_CONFERENCIA, MINUTOS_DA_SEGUNDA_DIARIA_EM_DIA);
 
       const registrosAntes = await contarRegistros(empresa);
       expect(registrosAntes).toBe(3);
@@ -1494,6 +1591,32 @@ async function envelhecerEmpresa(contexto: Contexto, minutos: number): Promise<v
  * O instante devolvido sai do próprio `RETURNING`, no molde publicado: comparar a linha de alerta
  * contra um instante composto no processo mediria a diferença entre dois relógios.
  */
+/**
+ * Semeia o **batimento** da rotina — a fonte de `atrasada` desde a correção de 2026-09-08.
+ *
+ * ⚠️ É o par de {@link semearExecucaoEm}, e as duas semeiam tabelas DIFERENTES de propósito: aquela
+ * o HISTÓRICO (que a linha de alerta publica como `ultimaExecucao`), esta o BATIMENTO (que decide
+ * se a rotina está atrasada). Este caso precisa das duas porque afirma as duas coisas.
+ */
+async function semearBatimentoEm(
+  contexto: Contexto,
+  rotina: RotinaPublicada,
+  minutosAtras: number,
+): Promise<void> {
+  await emUnidade(
+    contexto,
+    async (tx) =>
+      await tx`
+        INSERT INTO negocio.passagem_de_rotina (empresa_id, rotina, ocorrida_em)
+        VALUES (nullif(current_setting('app.empresa_id', true), '')::uuid,
+                ${rotina}::negocio.rotina_agendada,
+                now() - make_interval(mins => ${minutosAtras}::integer))
+        ON CONFLICT ON CONSTRAINT passagem_de_rotina_empresa_rotina_key
+        DO UPDATE SET ocorrida_em = EXCLUDED.ocorrida_em
+      `,
+  );
+}
+
 async function semearExecucaoEm(
   contexto: Contexto,
   rotina: RotinaPublicada,
@@ -1701,6 +1824,49 @@ async function lerEstadoDoPar(
 }
 
 /** Quantas linhas de `negocio.execucao_de_rotina` o contexto corrente alcança. */
+/**
+ * Quantos BATIMENTOS a empresa tem — a contagem crua, sem passar pelo produto.
+ *
+ * Ela é o par de {@link contarRegistros}, e existe para afirmar as duas metades da correção de
+ * 2026-09-08 no mesmo caso: o batimento cresceu E o histórico não. Sem a segunda, "gravar tudo"
+ * satisfaria a primeira — e seria a reintrodução do acervo que a RD-15 recusa.
+ */
+/**
+ * O estado de UMA rotina, extraído da leitura que o produto publica.
+ *
+ * ⚠️ Ele é local a esta suíte, e não importado do homônimo de
+ * `packages/db/test/execucao-de-rotina.spec.ts`: arquivo de teste de outro PACOTE não é alcançável
+ * daqui, e publicá-lo no barril para servir a um teste inverteria a direção da dependência. A casa
+ * comum desta pasta (`acessorios-de-borda.ts`) é onde ele sobe se um terceiro consumidor aparecer —
+ * é o Limiar de Três, e hoje são dois em pacotes distintos.
+ */
+function estadoDe(
+  estados: Awaited<ReturnType<typeof lerEstadoDasRotinas>>,
+  rotina: RotinaPublicada,
+): (typeof estados)[number] {
+  const achado = estados.find((estado) => estado.rotina === rotina);
+
+  if (achado === undefined) {
+    throw new Error(`a leitura do estado não devolveu a rotina ${rotina}`);
+  }
+
+  return achado;
+}
+
+async function contarBatimentos(contexto: Contexto): Promise<number> {
+  return await emUnidade(contexto, async (tx) => {
+    const [linha] = await tx<{ total: number }[]>`
+      SELECT count(*)::integer AS total FROM negocio.passagem_de_rotina
+    `;
+
+    if (linha === undefined) {
+      throw new Error('a contagem crua de passagem_de_rotina não devolveu linha');
+    }
+
+    return linha.total;
+  });
+}
+
 async function contarRegistros(contexto: Contexto): Promise<number> {
   return await emUnidade(contexto, async (tx) => {
     const [linha] = await tx<{ total: number }[]>`

@@ -153,8 +153,76 @@ fatia reaberta.
   reponha; **o 103/88 era o do fecho da F4** (`CT-1004`), medido em 2026-08-20, e **o 105/90 era o da
   T7 da fatia `integracao-bancaria-autonoma`** (`CT-1038`), medido em 2026-08-22 — nenhum dos três se
   repõe.
-- **Suíte: 2151 casos**, 9 pacotes — `contracts` **487** · `api` **463** · `shared` **309** · `db` **305** ·
-  `worker` **180** · `documentos` **163** · `auth` **95** · `cobranca-bancaria` **114** · `regua` **35**.
+- **Suíte: 2157 casos**, 9 pacotes — `contracts` **487** · `api` **463** · `shared` **309** · `db` **309** ·
+  `worker` **182** · `documentos` **163** · `auth` **95** · `cobranca-bancaria` **114** · `regua` **35**.
+  ⚠️ **DOIS pacotes se moveram na correção do FALSO ALARME DE ROTINA PARADA**, em 2026-09-09, e os
+  deltas são **+4** (`db`) e **+2** (`worker`) — total **+6**, de 2151. ⚠️ **O `db` 305 e o `worker`
+  180 são de antes dela e não se repõem.** Os outros cinco alcançados foram remedidos um a um na
+  mesma data e **NENHUM se moveu** (`api` 463, `shared` 309, `contracts` 487, `auth` 95,
+  `cobranca-bancaria` 114); `documentos` e `regua` **não são alcançados** — nenhum dos dois consome
+  `@sysloc/db`, medido no `package.json` de cada um.
+  ⚠️ **A CAUSA-RAIZ era de COMPOSIÇÃO, e as duas decisões que colidiam estavam certas isoladamente**:
+  `negocio.execucao_de_rotina` só recebe linha quando a passagem produziu efeito (é a **RD-15**,
+  literal: *"passagem sem trabalho não gera registro"*), e `atrasada` era derivado dela. A
+  vigilância (**RN-18**) pergunta *"a rotina executou?"* e recebia a resposta de *"a rotina produziu
+  efeito?"* — de modo que rotina pontual sem trabalho era **indistinguível** de rotina parada.
+  Medido no journal deste host: as **três** rotinas publicadas anunciadas como *"rotina agendada
+  parada"* a cada 15 minutos, com os relógios disparando pontualmente.
+  ⚠️ **NÃO era problema de base vazia**, e é isso que fazia dele um defeito e não um incômodo: com
+  dados reais, qualquer 15 minutos sem cobrança na janela de aviso (a maior parte do dia), qualquer
+  dia sem contrato vencendo e qualquer dia sem pagamento reproduzem o alarme. ⚠️ **E ele não ficava
+  no journal**: `atrasada` é campo do contrato publicado, entregue ao Admin da imobiliária por
+  `GET /v1/automacao-de-cobranca/rotinas`.
+  ⚠️ **A T8 da fatia `automacoes-agendadas` JÁ HAVIA VISTO A CLASSE em 2026-08-23** — o `tech_spec.md`
+  dela registra que `AVISO_DE_COBRANCA` *"nada gravava"* e seria marcada atrasada permanentemente —
+  e corrigiu fazendo a régua gravar **sob o predicado da RD-15**. O defeito não sumiu: mudou de
+  *sempre atrasada* para *atrasada sempre que não houver trabalho*. É a assinatura do laço longo da
+  §5 do Protocolo — corrigiu-se a ocorrência, não a topologia.
+  ⚠️ **A correção separa as duas perguntas em duas FONTES**: nasce `negocio.passagem_de_rotina`
+  (migrações **0029** gerada + **0030** parceira autoral), com **uma linha por `(empresa, rotina)`**
+  e `ON CONFLICT` sobre a única `(empresa_id, rotina)` — cada passagem **atualiza** o instante em
+  vez de acrescentar linha, e o acervo fica em **três linhas por empresa**, sem crescer.
+  `registrarPassagemDeRotina` é o par de `registrarExecucaoDeRotina`, e **unificar as duas É o
+  defeito** — ele reaparece com aparência de simplificação. ⚠️ **A RD-15 ficou INTACTA**: o
+  histórico continua governado por ela, e `ultimaExecucao`/`resumo` continuam vindo dele, coerentes
+  entre si. O que trocou de fonte foi **só** o `atrasada`.
+  ⚠️ **A alternativa óbvia é a que a RD-15 recusa por nome**: gravar toda passagem seriam 1.440
+  linhas por empresa por dia só no aviso — ~525 mil por ano por empresa, *"o histórico de 12 MB do
+  sistema antigo com outro nome"*. **Não a reintroduza** removendo o `ON CONFLICT`.
+  ⚠️ **O BATIMENTO É GRAVADO DEPOIS DA PASSAGEM, NUNCA ANTES**, e a ordem é conteúdo: bater antes
+  faria uma passagem que **levantou** contar como execução, e a rotina que falha toda vez apareceria
+  em dia para sempre — o mesmo defeito com o sinal trocado. São **dois** pontos, não seis:
+  `sobContextoNomeandoAEmpresa` (cinco rotinas, sob o contexto já aberto — `processarRotinaAgendada`
+  declara que *"nada abaixo desta linha o reabre"*) e `regua.ts`, que tem fila própria.
+  ⚠️ **Só as PUBLICADAS batem**, e o tipo é a rede: `RotinaDeTrabalhoPublicada` é
+  `Extract<RotinaDeTrabalho, RotinaPublicada>` — derivado dos dois lados, nunca uma terceira lista.
+  O compilador **recusou** o predicado escrito com `RotinaPublicada`, porque ela inclui
+  `AVISO_DE_COBRANCA`, que é publicada e **não** chega por aquela fila.
+  ⚠️ **Os 4 do `db` são o `CT-1290` (a-d)** em `packages/db/test/execucao-de-rotina.spec.ts`, e os
+  **2** do `worker` são o `CT-1291` (a-b) em `apps/worker/test/rotina-agendada.spec.ts`. **Os dois
+  convivem e não são redundantes**: aquele prova a camada de dados (dado o batimento, `atrasada` é
+  `false`); este prova que **alguém grava** — que a passagem do worker de fato o chama. Sem o
+  segundo, a função existiria, seria testada, e nenhum ponto de produção a invocaria, que é a forma
+  de defeito do `PROD-2026-09-03-01` e das doze falhas do backup. ⚠️ **O `CT-1291 (b)` é o controle
+  do (a)**: um SUT que batesse para TODA rotina passaria no primeiro — e a enum do banco recusaria o
+  rótulo na primeira passagem de rotina não publicada.
+  ⚠️ **O `CT-1215` acusou um efeito que NÃO era ajuste de teste**: a chave estrangeira da tabela nova
+  é uma **dependência** que `IMPEDIMENTOS_DE_EXCLUSAO` não conhecia, e sem a entrada a exclusão de
+  empresa falharia com erro cru em vez de recusa nomeada. O mapa foi de **16 para 17** chaves de
+  `negocio`, e o vocabulário é fechado por decisão — a completude não é hipótese.
+  ⚠️ **ONZE âncoras de elenco e contagem mudaram de VALOR e NENHUMA é caso novo**, cada uma com
+  `SUT_IS_CORRECT_BECAUSE` no ponto: as tabelas com linha própria (**23 → 24**), os objetos legítimos
+  do catálogo (**24 → 25**, incluindo a prosa por extenso), as dependências que recusam a remoção
+  (**25 → 26**), as duas listas do `papel-de-conexao` mais a contagem (**23 → 24**) e a linha de
+  reprovação que nomeia as tabelas, o namespace do barril (`esquemaNegocio.passagemDeRotina`) e o
+  símbolo novo no elenco do `CT-012`.
+  ⚠️ **O `CT-1074` e o `CT-1086` mudaram de ARRANJO, e não de asserção**: os dois passaram a semear o
+  **batimento** onde semeavam só o histórico, porque é ele que governa `atrasada` desde esta data.
+  As idades, os eixos e os valores esperados são os mesmos, e **nenhuma asserção foi afrouxada**.
+  ⚠️ **O `D5 · F5/T3` DISPAROU como previsto** — a `0028` é autoral e alterou estrutura declarada, de
+  modo que o gerador reemitiu o delta dela dentro da `0029`. A supressão foi feita e documentada no
+  cabeçalho, no molde da `0026`; **o débito NÃO se extingue com o gatilho**, e volta idêntico na
+  próxima regeração.
   ⚠️ **Três pacotes se moveram na VIRADA DA F7**, em 2026-09-08, e os deltas são **+4** (`db`),
   **+4** (`documentos`) e **+5** (`regua`) — total **+13**, de 2138. Ela é a execução da virada:
   o aplicativo do cliente passou a falar com o backend novo, o Frappe foi **desativado por

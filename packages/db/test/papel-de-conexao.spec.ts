@@ -144,6 +144,7 @@ const TABELAS_DE_NEGOCIO_ESPERADAS = [
   'item_da_emissao_em_lote',
   'locador',
   'locatario',
+  'passagem_de_rotina',
   'politica_de_aviso',
   'portador_de_confirmacao',
 ] as const;
@@ -337,7 +338,10 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
 
       // A contagem é afirmada ANTES da propriedade, e é deliberada: sem ela, um schema `negocio`
       // vazio faria a asserção seguinte passar sem examinar tabela alguma.
-      expect(observado.tabelasDeNegocio).toHaveLength(23);
+      // SUT_IS_CORRECT_BECAUSE: a correção de 2026-09-08 acrescentou `negocio.passagem_de_rotina`.
+      // ⚠️ O 23 é de antes dela e não se repõe. O antivácuo continua sendo este: contagem primeiro,
+      // propriedade depois.
+      expect(observado.tabelasDeNegocio).toHaveLength(24);
       expect(observado.tabelasDeNegocio.map((linha) => linha.tabela)).toEqual([
         'acesso_usuario_app',
         'acesso_usuario_permissao',
@@ -360,13 +364,16 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
         'item_da_emissao_em_lote',
         'locador',
         'locatario',
+        'passagem_de_rotina',
         'politica_de_aviso',
         'portador_de_confirmacao',
       ]);
-      // As vinte e três escritas por extenso, e não `map(() => …)`: a propriedade é afirmada POR TABELA,
+      // SUT_IS_CORRECT_BECAUSE: são vinte e QUATRO desde 2026-09-08, com `passagem_de_rotina`.
+      // As vinte e quatro escritas por extenso, e não `map(() => …)`: a propriedade é afirmada POR TABELA,
       // de modo que uma delas que nascesse com outro dono apareça pela posição. Derivar a lista do
       // tamanho da anterior faria a contagem responder no lugar da propriedade.
       expect(observado.tabelasDeNegocio.map((linha) => linha.dono)).toEqual([
+        'sysloc_migracao',
         'sysloc_migracao',
         'sysloc_migracao',
         'sysloc_migracao',
@@ -414,7 +421,7 @@ describe('papel da conexão sobre a qual o isolamento é provado', () => {
           'conferencia_bancaria, configuracao_de_mora, conjunto, contrato, contrato_fiador, ' +
           'emissao_em_lote, entrega_da_noticia, envio_de_cobranca, evento_bancario, ' +
           'execucao_de_rotina, fiador, identidade_no_provedor, imovel, ' +
-          'item_da_emissao_em_lote, locador, locatario, politica_de_aviso, portador_de_confirmacao',
+          'item_da_emissao_em_lote, locador, locatario, passagem_de_rotina, politica_de_aviso, portador_de_confirmacao',
       ]);
 
       const superusuario = await conferirPapelDaConexao(conexaoSuperusuaria(banco));

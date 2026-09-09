@@ -332,6 +332,40 @@ export async function registrarExecucaoDeRotina(
             ${JSON.stringify(dados.resumo)}::text::jsonb)
   `;
 }
+/**
+ * Registra o **batimento** de uma rotina publicada — a passagem, com ou sem efeito.
+ *
+ * ⚠️ **Ela é o oposto de {@link registrarExecucaoDeRotina}, e as duas convivem por desenho.** Aquela
+ * grava o HISTÓRICO e é governada pela RD-15 (*"passagem sem trabalho não gera registro"*); esta
+ * grava o BATIMENTO e é chamada em toda passagem. Uma responde *"o que a rotina fez?"*; a outra,
+ * *"a rotina executou?"*.
+ *
+ * Confundir as duas foi o defeito medido em produção em 2026-09-08: a vigilância perguntava a
+ * segunda e recebia a resposta da primeira, publicando como paradas três rotinas que estavam
+ * disparando pontualmente. **Não "unifique" as duas funções** — a unificação é precisamente o
+ * defeito, e ela reaparece com aparência de simplificação.
+ *
+ * O `ON CONFLICT` é o que mantém o acervo em **três linhas por empresa**: cada passagem atualiza o
+ * instante em vez de acrescentar linha. Sem ele, esta tabela reintroduziria o acervo de ~525 mil
+ * linhas por ano por empresa que a RD-15 recusa por nome.
+ *
+ * ⚠️ **`ocorrida_em` é `now()` do BANCO** (ADR-0026), e nunca um instante vindo do processo: dois
+ * hosts com relógios diferentes fariam a mesma rotina parecer em dia num e atrasada noutro, sem uma
+ * linha vermelha em lugar nenhum. É a mesma razão que o docblock de `atrasada` já fixa.
+ *
+ * Não recebe `empresaId`: o identificador sai de `app.empresa_id`, como toda escrita deste módulo.
+ */
+export async function registrarPassagemDeRotina(
+  tx: TransactionSql,
+  rotina: RotinaPublicada,
+): Promise<void> {
+  await tx`
+    INSERT INTO negocio.passagem_de_rotina (empresa_id, rotina)
+    VALUES (${empresaDoContexto(tx)}, ${rotina}::negocio.rotina_agendada)
+    ON CONFLICT ON CONSTRAINT passagem_de_rotina_empresa_rotina_key
+    DO UPDATE SET ocorrida_em = now()
+  `;
+}
 
 /**
  * O histórico recente de **todas** as rotinas do roster, em ordem decrescente dentro de cada uma.
@@ -483,6 +517,19 @@ export async function lerEstadoDasRotinas(tx: TransactionSql): Promise<EstadoDeR
         FROM negocio.execucao_de_rotina
        ORDER BY rotina, ocorrida_em DESC
     ),
+    -- O BATIMENTO — a fonte de "atrasada", e SÓ dela.
+    --
+    -- Sem DISTINCT ON, e a ausência é conteúdo: a restrição única
+    -- passagem_de_rotina_empresa_rotina_key garante uma linha por par. Um DISTINCT ON aqui
+    -- ESCONDERIA a violação dessa unicidade, se ela viesse a existir, transformando um defeito de
+    -- escrita num silêncio.
+    --
+    -- (Comentário sem crases de propósito: este SQL vive dentro de um template literal de
+    --  TypeScript, e uma crase aqui o fecharia no meio da consulta.)
+    batimento AS (
+      SELECT rotina::text AS rotina, ocorrida_em
+        FROM negocio.passagem_de_rotina
+    ),
     admissao AS (
       SELECT criada_em
         FROM identidade.empresa
@@ -505,13 +552,14 @@ export async function lerEstadoDasRotinas(tx: TransactionSql): Promise<EstadoDeR
              END AT TIME ZONE 'UTC',
              ${FORMATO_ISO_DO_INSTANTE}
            ) AS "proximaEsperada",
-           relogio.agora - COALESCE(ultima.ocorrida_em, admissao.criada_em)
+           relogio.agora - COALESCE(batimento.ocorrida_em, admissao.criada_em)
              > make_interval(mins => roster.limiar_minutos) AS atrasada
       FROM unnest(${rotinas}::text[], ${limiares}::integer[], ${horas}::text[])
              AS roster(rotina, limiar_minutos, hora)
       CROSS JOIN relogio
       CROSS JOIN admissao
       LEFT JOIN ultima ON ultima.rotina = roster.rotina
+      LEFT JOIN batimento ON batimento.rotina = roster.rotina
   `;
 
   const porRotina = new Map(linhas.map((linha) => [linha.rotina, linha]));

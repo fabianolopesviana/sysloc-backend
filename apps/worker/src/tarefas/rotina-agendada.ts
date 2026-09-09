@@ -139,9 +139,15 @@ import {
   lerEstadoDasRotinas,
   type ResumoDaPassagem,
   registrarExecucaoDeRotina,
+  registrarPassagemDeRotina,
 } from '@sysloc/db';
 import { FILA_DA_ROTINA_AGENDADA, type Logger, type RotinaDeTrabalho } from '@sysloc/shared';
-import { ESQUEMA_DO_IDENTIFICADOR, LIMIAR_DE_ATRASO_POR_CADENCIA } from '@syslocbr/contracts';
+import {
+  ESQUEMA_DO_IDENTIFICADOR,
+  LIMIAR_DE_ATRASO_POR_CADENCIA,
+  ROTINAS_PUBLICADAS,
+  type RotinaPublicada,
+} from '@syslocbr/contracts';
 import { z } from 'zod';
 import type { TarefaDaRotinaAgendada } from '../fila.js';
 import { cargaConferida } from './carga-da-tarefa.js';
@@ -307,10 +313,14 @@ async function sobContextoNomeandoAEmpresa(
   dependencias: DependenciasDaRotinaAgendada,
 ): Promise<DesfechoDaPassagem> {
   try {
-    return await contextoDeTenant.executarCom(
-      { empresaId },
-      async () => await executarRotina(rotina, tarefa, logger, empresaId, dependencias),
-    );
+    return await contextoDeTenant.executarCom({ empresaId }, async () => {
+      const desfecho = await executarRotina(rotina, tarefa, logger, empresaId, dependencias);
+
+      // O BATIMENTO — toda passagem, com ou sem efeito. Ver {@link baterORelogioDaRotina}.
+      await baterORelogioDaRotina(rotina, dependencias);
+
+      return desfecho;
+    });
   } catch (erro) {
     logger.error(
       { idTarefa: tarefa.id, fila: FILA_DA_ROTINA_AGENDADA, empresaId, rotina, erro },
@@ -319,6 +329,73 @@ async function sobContextoNomeandoAEmpresa(
 
     throw erro;
   }
+}
+
+/**
+ * Registra o **batimento** da rotina, quando ela é publicada — a metade que faltava da RN-18.
+ *
+ * ===========================================================================
+ * POR QUE AQUI, E NÃO EM `processarRotinaAgendada`
+ * ===========================================================================
+ *
+ * O batimento é escrita **tenantizada**: a tabela tem `FORCE ROW LEVEL SECURITY`, e sem
+ * `app.empresa_id` fixado a política recusa a linha. O contexto é aberto uma vez, em
+ * {@link sobContextoNomeandoAEmpresa}, e o comentário de `processarRotinaAgendada` é literal —
+ * *"Nada abaixo desta linha o reabre"*. Chamar daqui respeita a decisão em vez de contorná-la.
+ *
+ * ===========================================================================
+ * POR QUE DEPOIS DA PASSAGEM, E NUNCA ANTES
+ * ===========================================================================
+ *
+ * Bater antes faria uma passagem que **levantou** contar como execução, e a rotina que falha toda
+ * vez apareceria em dia para sempre — o mesmo defeito com o sinal trocado. Chamada depois, ela só
+ * é alcançada quando `executarRotina` retornou: a exceção sobe pelo `catch` do chamador e o
+ * batimento não acontece, que é o comportamento correto.
+ *
+ * ===========================================================================
+ * SÓ AS PUBLICADAS
+ * ===========================================================================
+ *
+ * A vigilância alcança apenas `ROTINAS_PUBLICADAS`, e a coluna reusa a enum
+ * `negocio.rotina_agendada`, cuja união fechada tem exatamente essas três. Bater por uma não
+ * publicada seria escrita sem leitor — e **não compila**, porque `registrarPassagemDeRotina` exige
+ * `RotinaPublicada`. É a rede que o tipo dá de graça.
+ */
+async function baterORelogioDaRotina(
+  rotina: RotinaDeTrabalho,
+  dependencias: DependenciasDaRotinaAgendada,
+): Promise<void> {
+  if (!ehRotinaPublicada(rotina)) {
+    return;
+  }
+
+  await dependencias.banco.emUnidadeDeTrabalho(async (tx) => {
+    await registrarPassagemDeRotina(tx, rotina);
+  });
+}
+
+/**
+ * As rotinas que são **publicadas E chegam por esta fila** — a interseção, derivada dos dois tipos.
+ *
+ * ⚠️ Ela não é `RotinaPublicada`, e a diferença é conteúdo: aquela inclui `AVISO_DE_COBRANCA`, que
+ * é publicada mas **não** chega aqui — a régua tem fila própria, e é lá que ela bate. O compilador
+ * recusou o predicado escrito com `RotinaPublicada` por exatamente essa razão, o que é a rede do
+ * tipo funcionando: um roster que divergisse não compilaria.
+ *
+ * `Extract` a **deriva** dos dois lados em vez de repetir os nomes. Publicar uma rotina nova, ou
+ * mover uma de fila, ajusta este tipo sozinho.
+ */
+type RotinaDeTrabalhoPublicada = Extract<RotinaDeTrabalho, RotinaPublicada>;
+
+/**
+ * A rotina é uma das **publicadas** — as que a vigilância alcança e a enum do banco aceita.
+ *
+ * O predicado lê `ROTINAS_PUBLICADAS` do contrato, e não uma lista repetida aqui: uma segunda
+ * declaração do roster divergiria da primeira no dia em que uma rotina fosse publicada, e o
+ * batimento dela não aconteceria — sem que nada acusasse.
+ */
+function ehRotinaPublicada(rotina: RotinaDeTrabalho): rotina is RotinaDeTrabalhoPublicada {
+  return (ROTINAS_PUBLICADAS as readonly string[]).includes(rotina);
 }
 
 /**

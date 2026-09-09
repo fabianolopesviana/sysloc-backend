@@ -1603,6 +1603,8 @@ const SIMBOLOS_ESPERADOS = [
   //
   // **Nenhuma entrada anterior sai**, e a igualdade (nunca contenção) segue sendo asserida.
   'esquemaNegocio.execucaoDeRotina',
+  // Correção de 2026-09-08 — a tabela do BATIMENTO. Ver `registrarPassagemDeRotina` acima.
+  'esquemaNegocio.passagemDeRotina',
   'esquemaNegocio.rotinaAgendada',
   // T4 da fatia `automacoes-agendadas` — a PORTA do registro de execução: a gravação sob contexto, a
   // leitura com a derivação corrida no banco, o histórico recente e o expurgo por idade.
@@ -1641,6 +1643,14 @@ const SIMBOLOS_ESPERADOS = [
   'lerEstadoDasRotinas',
   'lerHistoricoRecenteDeRotinas',
   'registrarExecucaoDeRotina',
+  // Correção dirigida de 2026-09-08 — o BATIMENTO das rotinas publicadas.
+  //
+  // SUT_IS_CORRECT_BECAUSE: o conjunto é EXATO de propósito, e a correção publica UM símbolo novo.
+  // Ele é o par de `registrarExecucaoDeRotina` e existe porque as duas tabelas respondem a
+  // perguntas diferentes: aquela grava o HISTÓRICO sob a RD-15 (só com efeito); esta grava a
+  // PASSAGEM, sempre. Confundi-las publicava três rotinas como paradas com os relógios disparando
+  // pontualmente — medido no journal deste host.
+  'registrarPassagemDeRotina',
   // T5 da fatia `automacoes-agendadas` — a PASSAGEM do encerramento do contrato vencido: seleção
   // sob `FOR UPDATE … SKIP LOCKED`, transição sob predicado e liberação condicional do imóvel pela
   // porta estreita, tudo na unidade de trabalho que ela recebe.

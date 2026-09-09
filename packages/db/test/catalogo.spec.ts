@@ -25,7 +25,7 @@
  * |                |                 | numa instância DEDICADA, a MESMA asserção do CT-300 reprova
  * |                |                 | nomeando aquela tabela com motivo `RLS_NAO_FORCADA` —
  * |                |                 | exatamente uma entrada, não mais —, a lista de examinadas
- * |                |                 | continua com os vinte e quatro, e o controle volta ao verde quando o
+ * |                |                 | continua com os vinte e cinco, e o controle volta ao verde quando o
  * |                |                 | `FORCE` é restaurado. É o par que impede o CT-300 de passar
  * |                |                 | por vacuidade: sem ele, uma guarda quebrada devolveria
  * |                |                 | `excecoes: []` sobre qualquer schema. |
@@ -56,7 +56,7 @@
  * |                |                 | o `FORCE` de `negocio.contrato` numa instância DEDICADA, a
  * |                |                 | MESMA asserção reprova nomeando aquela tabela com motivo
  * |                |                 | `RLS_NAO_FORCADA` — exatamente uma entrada —, a lista de
- * |                |                 | examinadas continua com os vinte e quatro, e o controle volta ao verde
+ * |                |                 | examinadas continua com os vinte e cinco, e o controle volta ao verde
  * |                |                 | quando o `FORCE` é restaurado. No mesmo caso, e sobre o
  * |                |                 | mesmo schema íntegro, `contrato_imovel_vigente_uidx` é
  * |                |                 | ÍNDICE ÚNICO PARCIAL em `status = 'ATIVO'` — afirmado pela
@@ -103,7 +103,7 @@
  * | —              | CT-1242         | Para TODA tabela de `negocio` que guarda linha própria,
  * |                |                 | existe caminho de chave estrangeira até `identidade.empresa`
  * |                |                 | por colunas de ligação NÃO NULAS — a lista de EXAMINADAS é
- * |                |                 | igual às VINTE E TRÊS por igualdade de array (controle
+ * |                |                 | igual às VINTE E QUATRO por igualdade de array (controle
  * |                |                 | antivácuo) e a de exceções é igual a `[]`. É a guarda que a
  * |                |                 | ADR-0038 pressupõe: o critério de admissibilidade é a
  * |                |                 | integridade referencial do banco, e ele só vale enquanto
@@ -231,6 +231,9 @@ const VISAO_DA_COBRANCA_DERIVADA = 'negocio.cobranca_derivada';
 // cobra de ninguém: a política é singular por empresa, e o registro de envio é FATO, nunca cadastro
 // (ADR-0014) — o discriminador dela é *ser referenciável*, e o registro não é.
 const TABELA_DE_ENVIO_DE_COBRANCA = 'negocio.envio_de_cobranca';
+/** O batimento das rotinas publicadas — correção dirigida de 2026-09-08. */
+const TABELA_DE_PASSAGEM_DE_ROTINA = 'negocio.passagem_de_rotina';
+
 const TABELA_DE_POLITICA_DE_AVISO = 'negocio.politica_de_aviso';
 
 // A tabela da confirmação de endereço, criada pela migração `0013` (T3 da fatia
@@ -291,7 +294,7 @@ const TABELA_DE_EVENTO_BANCARIO = 'negocio.evento_bancario';
 const TABELA_DE_ITEM_DA_EMISSAO_EM_LOTE = 'negocio.item_da_emissao_em_lote';
 
 /**
- * Os vinte e quatro, na ordem em que a guarda promete devolvê-los (nome do objeto, intercalação `C`).
+ * Os vinte e cinco, na ordem em que a guarda promete devolvê-los (nome do objeto, intercalação `C`).
  *
  * Este conjunto é do CASO, não da guarda: é aqui que o nome de tabela pode ser escrito à mão, e é
  * exatamente por escrevê-lo aqui — e nunca em `src/catalogo.ts` — que a comparação tem valor. Uma
@@ -334,6 +337,9 @@ const TABELAS_LEGITIMAS: readonly string[] = [
   TABELA_DE_ITEM_DA_EMISSAO_EM_LOTE,
   TABELA_DE_LOCADOR,
   TABELA_DE_LOCATARIO,
+  // SUT_IS_CORRECT_BECAUSE: a correção de 2026-09-08 acrescentou o batimento das rotinas, e ele é
+  // tabela legítima de `negocio` como as demais — com `empresa_id`, RLS forçada e o par único.
+  TABELA_DE_PASSAGEM_DE_ROTINA,
   TABELA_DE_POLITICA_DE_AVISO,
   TABELA_DE_PORTADOR_DE_CONFIRMACAO,
 ];
@@ -412,7 +418,7 @@ interface VarianteDefeituosa {
    * F0 (o verificador que reimplementava o leitor e aprovava 5/5 um alvo defeituoso).
    *
    * **O que a proibição alcança é a ORDENAÇÃO, não o reúso do nome.** Espalhar
-   * `...TABELAS_LEGITIMAS` é escrever os vinte e quatro legítimos na ordem em que eles já estão escritos
+   * `...TABELAS_LEGITIMAS` é escrever os vinte e cinco legítimos na ordem em que eles já estão escritos
    * acima — nenhuma ordenação acontece, e a posição do objeto DEFEITUOSO, que é o que discrimina,
    * segue declarada à mão em cada variante. Onde ele não cai no fim da lista, a variante escreve as
    * vinte e cinco posições por extenso.
@@ -464,7 +470,7 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
     ],
     remover: ['DROP TABLE negocio.aaa_sem_empresa'],
     // As vinte e cinco posições por extenso: esta é a variante da ORDEM, e espalhar a lista legítima
-    // esconderia justamente o que ela discrimina — a defeituosa vindo ANTES dos vinte e quatro.
+    // esconderia justamente o que ela discrimina — a defeituosa vindo ANTES dos vinte e cinco.
     examinadasEsperadas: [
       'negocio.aaa_sem_empresa',
       TABELA_DE_ACESSO,
@@ -489,6 +495,7 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
       TABELA_DE_ITEM_DA_EMISSAO_EM_LOTE,
       TABELA_DE_LOCADOR,
       TABELA_DE_LOCATARIO,
+      TABELA_DE_PASSAGEM_DE_ROTINA,
       TABELA_DE_POLITICA_DE_AVISO,
       TABELA_DE_PORTADOR_DE_CONFIRMACAO,
     ],
@@ -641,6 +648,7 @@ const VARIANTES: readonly VarianteDefeituosa[] = [
       TABELA_DE_ITEM_DA_EMISSAO_EM_LOTE,
       TABELA_DE_LOCADOR,
       TABELA_DE_LOCATARIO,
+      TABELA_DE_PASSAGEM_DE_ROTINA,
       TABELA_DE_POLITICA_DE_AVISO,
       TABELA_DE_PORTADOR_DE_CONFIRMACAO,
     ],
@@ -846,9 +854,9 @@ describe('guarda de cobertura de isolamento — schema íntegro', () => {
     async () => {
       const cobertura = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
 
-      // Igualdade nas DUAS listas, numa asserção só: nenhuma exceção **e** os vinte e quatro objetos
+      // Igualdade nas DUAS listas, numa asserção só: nenhuma exceção **e** os vinte e cinco objetos
       // examinadas, nem mais nem menos. É o par que detecta — "exceções vazias" sozinho ficaria
-      // verde contra um banco em que a consulta não alcançou tabela nenhuma, e "vinte e quatro examinados"
+      // verde contra um banco em que a consulta não alcançou tabela nenhuma, e "vinte e cinco examinados"
       // sozinho não diria que todas passaram.
       expect(cobertura).toEqual({
         excecoes: [],
@@ -1028,6 +1036,7 @@ describe('guarda de cobertura de isolamento — tabela nascida sem isolamento', 
             TABELA_DE_ITEM_DA_EMISSAO_EM_LOTE,
             TABELA_DE_LOCADOR,
             TABELA_DE_LOCATARIO,
+            TABELA_DE_PASSAGEM_DE_ROTINA,
             TABELA_DE_POLITICA_DE_AVISO,
             TABELA_DE_PORTADOR_DE_CONFIRMACAO,
           ],
@@ -1100,7 +1109,7 @@ describe('guarda de cobertura de isolamento — tabela nascida sem isolamento', 
 // enxergar `FORCE`, o CT-300 ficaria verde sobre um schema sem isolamento, e é esse o par que falta.
 //
 // Um único mutante, sobre uma única tabela nova, basta: o mecanismo da guarda é o mesmo para as
-// vinte e quatro, e o CT-009 já cobre as demais variantes de defeito (sem coluna, sem única composta, objeto
+// vinte e cinco, e o CT-009 já cobre as demais variantes de defeito (sem coluna, sem única composta, objeto
 // sem isolamento possível).
 //
 // A instância é DEDICADA e descartada ao fim — nunca a compartilhada pelos demais casos, que
@@ -1140,13 +1149,13 @@ describe('CT-301 — entidade nova sem RLS forçada é nomeada pela guarda', () 
           const comMutante = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
 
           // Exatamente UMA entrada, com a tabela e o motivo exatos — não "alguma exceção". A
-          // igualdade de array é o que impede a guarda de reprovar os vinte e quatro em bloco e ainda assim
+          // igualdade de array é o que impede a guarda de reprovar os vinte e cinco em bloco e ainda assim
           // passar aqui.
           expect(comMutante.excecoes).toEqual([
             { tabela: TABELA_MUTANTE, motivo: 'RLS_NAO_FORCADA' },
           ]);
 
-          // Os vinte e quatro continuam EXAMINADOS: sem esta metade, uma guarda que tivesse perdido de vista
+          // Os vinte e cinco continuam EXAMINADOS: sem esta metade, uma guarda que tivesse perdido de vista
           // os doze irmãos reportaria a mesma exceção única e passaria.
           expect(comMutante.tabelasExaminadas).toEqual(TABELAS_LEGITIMAS);
 
@@ -1216,7 +1225,7 @@ describe('CT-421 — o contrato nasce isolado, e a sequência do contador não �
         // --- Passo 1: o schema íntegro ---------------------------------------------------------
         //
         // Controle ANTES: sem ele, "reprovou com o mutante" não distingue a guarda que discrimina
-        // daquela que reprova qualquer coisa. A igualdade cobre as DUAS listas de uma vez — os vinte e quatro
+        // daquela que reprova qualquer coisa. A igualdade cobre as DUAS listas de uma vez — os vinte e cinco
         // objetos examinados incluem `negocio.contrato` e `negocio.contrato_fiador`, nas posições
         // que a ordem prometida lhes dá, e nenhum deles rende exceção.
         const controle = await verificarCoberturaDeIsolamento(banco.cadeiaConexao);
@@ -1340,7 +1349,7 @@ describe('CT-421 — o contrato nasce isolado, e a sequência do contador não �
             { tabela: TABELA_MUTANTE_DO_CONTRATO, motivo: 'RLS_NAO_FORCADA' },
           ]);
 
-          // Os vinte e quatro continuam EXAMINADOS: sem esta metade, uma guarda que tivesse perdido de vista
+          // Os vinte e cinco continuam EXAMINADOS: sem esta metade, uma guarda que tivesse perdido de vista
           // os doze irmãos reportaria a mesma exceção única e passaria.
           expect(comMutante.tabelasExaminadas).toEqual(TABELAS_LEGITIMAS);
 
@@ -1887,7 +1896,10 @@ const RESTRICAO_DESCARTAVEL = 'dependencia_descartavel_empresa_fk';
  * deixa a prosa dizendo 25 para sempre. É a mesma disciplina das âncoras de superfície do
  * `CLAUDE.md`, e o preço dela é uma linha por fatia que mexa no vocabulário.
  */
-const DEPENDENCIAS_QUE_RECUSAM_A_REMOCAO = 25;
+// SUT_IS_CORRECT_BECAUSE: a correção de 2026-09-08 acrescentou a chave estrangeira de
+// `negocio.passagem_de_rotina` para `identidade.empresa`, e ela é dependência legítima como as
+// demais. ⚠️ O 25 é de antes dela e não se repõe.
+const DEPENDENCIAS_QUE_RECUSAM_A_REMOCAO = 26;
 
 describe('guarda de vocabulário — as dependências que o catálogo pode opor à remoção', () => {
   let banco: BancoMigrado;
@@ -2028,7 +2040,7 @@ describe('guarda de vocabulário — as dependências que o catálogo pode opor 
 // seria removida, e as linhas ficariam para trás como órfãs que a política de isolamento torna
 // **invisíveis** para toda consulta da aplicação. Nada quebraria; nada apareceria.
 //
-// Medido em 2026-09-01: das 23 tabelas de `negocio`, 16 têm chave estrangeira DIRETA para
+// Medido em 2026-09-01: das 24 tabelas de `negocio`, 16 têm chave estrangeira DIRETA para
 // `identidade.empresa` e 7 — `imovel`, `comodo`, `contrato`, `contrato_fiador`, `cobranca`,
 // `acesso_usuario_permissao` e `item_da_emissao_em_lote` — só chegam lá **transitivamente**. É por
 // isso que a travessia é por ponto fixo e não por uma consulta de um salto: metade da cobertura de
@@ -2164,7 +2176,7 @@ async function verificarCoberturaDoCriterioDeExclusao(
 }
 
 /**
- * As VINTE E TRÊS tabelas de `negocio` que guardam linha própria, na ordem em que o nome as coloca.
+ * As VINTE E QUATRO tabelas de `negocio` que guardam linha própria, na ordem em que o nome as coloca.
  *
  * São os mesmos objetos de {@link TABELAS_LEGITIMAS} **menos a visão**, e a subtração é declarada
  * aqui em vez de a lista ser copiada: a única diferença entre os dois exames é a visão, e escrevê-la
@@ -2356,7 +2368,9 @@ describe('guarda de cobertura do critério de exclusão — toda tabela de negó
     async () => {
       // A subtração da visão é uma afirmação sobre o schema, e ela é fixada aqui: se a fatia que
       // criar a 24ª tabela esquecer de a acrescentar, é esta linha que reprova primeiro.
-      expect(TABELAS_COM_LINHA_PROPRIA).toHaveLength(23);
+      // SUT_IS_CORRECT_BECAUSE: a correção de 2026-09-08 acrescentou `negocio.passagem_de_rotina`,
+      // e ela guarda linha própria como as demais. ⚠️ O 23 é de antes dela e não se repõe.
+      expect(TABELAS_COM_LINHA_PROPRIA).toHaveLength(24);
 
       const cobertura = await verificarCoberturaDoCriterioDeExclusao(banco.cadeiaConexao);
 
@@ -2432,7 +2446,7 @@ describe('guarda de cobertura do critério de exclusão — toda tabela de negó
           const comDefeito = await verificarCoberturaDoCriterioDeExclusao(banco.cadeiaConexao);
 
           // Exatamente UMA entrada, com a tabela e o motivo exatos — nunca "ao menos uma". A
-          // igualdade de array é o que impede a guarda de reprovar as vinte e quatro em bloco e
+          // igualdade de array é o que impede a guarda de reprovar as vinte e cinco em bloco e
           // ainda assim passar aqui.
           expect(comDefeito.excecoes).toEqual([
             { tabela: variante.tabela, motivo: 'SEM_CAMINHO_ATE_EMPRESA' },

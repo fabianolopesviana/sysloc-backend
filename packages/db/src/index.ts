@@ -1005,6 +1005,7 @@ export {
   type PassagemRegistrada,
   type ResumoDaPassagem,
   registrarExecucaoDeRotina,
+  registrarPassagemDeRotina,
 } from './execucao-de-rotina.js';
 export {
   type DadosDaIdentidade,

@@ -125,6 +125,7 @@ import {
   lerPoliticaDeAviso,
   registrarEnvioDeCobranca,
   registrarExecucaoDeRotina,
+  registrarPassagemDeRotina,
   selecionarCandidatasAoAviso,
 } from '@sysloc/db';
 import {
@@ -266,9 +267,23 @@ export async function processarReguaDeCobranca(
       empresa: passagem.empresa,
     });
 
-    // O registro da PASSAGEM — o que faz `AVISO_DE_COBRANCA` deixar de ser publicada como parada
-    // (RD-15). Ele corre dentro do contexto já aberto, em unidade própria, e só quando o predicado
-    // de efeito da rotina é verdadeiro. Ver a seção homônima do cabeçalho.
+    // O BATIMENTO — toda passagem, com ou sem efeito, dentro do contexto já aberto.
+    //
+    // ⚠️ Ele vem ANTES do registro condicional de propósito, e não depois: assim ele NÃO está sob o
+    // `if` abaixo, e quem vier editar aquele predicado não o alcança por descuido. Numa passagem
+    // com efeito os dois ocorrem, em unidades próprias.
+    //
+    // É a metade que faltava da RN-18. Até 2026-09-08 a vigilância lia o HISTÓRICO — que a RD-15
+    // só deixa crescer quando houve efeito — e publicava esta rotina como parada em todo intervalo
+    // sem cobrança na janela de aviso, com o relógio disparando a cada minuto. Ver o docblock de
+    // `passagemDeRotina`, em `packages/db/src/esquema/negocio.ts`.
+    await banco.emUnidadeDeTrabalho(async (tx) => {
+      await registrarPassagemDeRotina(tx, ROTINA_DO_AVISO);
+    });
+
+    // O registro do EFEITO — governado pela RD-15, e por isso condicional. Ele corre dentro do
+    // contexto já aberto, em unidade própria, e só quando o predicado de efeito da rotina é
+    // verdadeiro. Ver a seção homônima do cabeçalho.
     if (houveEfeito(passada)) {
       await banco.emUnidadeDeTrabalho(async (tx) => {
         await registrarExecucaoDeRotina(tx, { rotina: ROTINA_DO_AVISO, resumo: resumoDa(passada) });

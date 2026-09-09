@@ -101,6 +101,7 @@ import {
   lerEstadoDasRotinas,
   type ResumoDaPassagem,
   registrarExecucaoDeRotina,
+  registrarPassagemDeRotina,
 } from '../src/execucao-de-rotina.ts';
 import { gravarPoliticaDeAviso } from '../src/politica-de-aviso.ts';
 import { ACESSOS_DA_EMPRESA_A, EMPRESA_A, EMPRESA_B } from '../src/semente.ts';
@@ -342,6 +343,37 @@ async function envelhecerEmpresa(contexto: Contexto, minutos: number): Promise<v
  * Por isso o arranjo emite o `INSERT` direto, com a **mesma** expressão de empresa que as políticas
  * avaliam: nada aqui compara `empresa_id` com valor escrito na aplicação.
  */
+/**
+ * Semeia o **batimento** da rotina, com a idade pedida.
+ *
+ * ⚠️ É o par de {@link semearExecucaoEm}, e as duas semeiam tabelas DIFERENTES de propósito: aquela
+ * o HISTÓRICO (que alimenta `ultimaExecucao` e `resumo`), esta o BATIMENTO (que alimenta
+ * `atrasada`). Ter as duas é o que permite montar o cenário que discrimina — passagem sem efeito —,
+ * em que o batimento existe e o histórico não.
+ */
+async function semearBatimentoEm(
+  contexto: Contexto,
+  rotina: RotinaPublicada,
+  minutosAtras: number,
+): Promise<void> {
+  const alcancadas = await emUnidade(contexto, async (tx) => {
+    const resultado = await tx`
+      INSERT INTO negocio.passagem_de_rotina (empresa_id, rotina, ocorrida_em)
+      VALUES (nullif(current_setting('app.empresa_id', true), '')::uuid,
+              ${rotina}::negocio.rotina_agendada,
+              now() - make_interval(mins => ${minutosAtras}::integer))
+      ON CONFLICT ON CONSTRAINT passagem_de_rotina_empresa_rotina_key
+      DO UPDATE SET ocorrida_em = EXCLUDED.ocorrida_em
+    `;
+
+    return resultado.count;
+  });
+
+  if (alcancadas !== 1) {
+    throw new Error(`o arranjo não conseguiu semear o batimento de ${rotina}`);
+  }
+}
+
 async function semearExecucaoEm(
   contexto: Contexto,
   rotina: RotinaPublicada,
@@ -853,6 +885,145 @@ describe('CT-1072 — o expurgo do histórico por idade', () => {
 });
 
 // ===========================================================================
+// CT-1290 — passagem SEM EFEITO mantém a rotina em dia, e a parada continua acusada
+// ===========================================================================
+
+/**
+ * A rede do defeito medido em produção em 2026-09-08.
+ *
+ * ⚠️ **O QUE ELE DISCRIMINA, e por que nenhum caso anterior o alcançava**: até aquela data
+ * `atrasada` era derivado de `negocio.execucao_de_rotina`, que a **RD-15** só deixa crescer quando
+ * a passagem produziu efeito. Rotina que dispara pontualmente e não acha trabalho ficava
+ * indistinguível de rotina que parou — e as três publicadas eram anunciadas como paradas, no
+ * journal e na tela do Admin, com os relógios em dia.
+ *
+ * O `CT-1074` não pegava isso e continua não pegando: ele semeia o registro e mede a comparação
+ * com o limiar. O que faltava era o cenário em que a rotina **executou e não gravou histórico** —
+ * exatamente o desfecho normal da maior parte dos disparos.
+ *
+ * ⚠️ **As DUAS pernas convivem por construção.** Só a primeira aprovaria um SUT que devolvesse
+ * `atrasada: false` sempre — e a rotina de fato parada jamais alertaria, que é o defeito com o
+ * sinal trocado e é pior que o original. É o par que discrimina.
+ */
+describe('CT-1290 — o batimento separa "não executou" de "executou sem trabalho"', () => {
+  /** Bem além do maior limiar publicado — o eixo em jogo é o batimento, nunca a admissão. */
+  const IDADE_DA_EMPRESA = 2 * MINUTOS_POR_DIA;
+
+  it(
+    'CT-1290 — passagem sem efeito deixa a rotina EM DIA, e o histórico segue vazio',
+    async () => {
+      const contexto = await admitirEmpresaNova('batimento-sem-efeito');
+      await envelhecerEmpresa(contexto, IDADE_DA_EMPRESA);
+
+      // A passagem que o produto faz quando não há trabalho: bate o relógio e NÃO grava histórico.
+      // É literalmente o que `regua.ts` executa com `candidatas: 0`.
+      await emUnidade(contexto, async (tx) => {
+        await registrarPassagemDeRotina(tx, 'AVISO_DE_COBRANCA');
+      });
+
+      const estado = estadoDe(await emUnidade(contexto, lerEstadoDasRotinas), 'AVISO_DE_COBRANCA');
+
+      expect(estado.atrasada).toBe(false);
+
+      // E o histórico continua VAZIO — a RD-15 não foi afrouxada para conseguir isto. Sem esta
+      // asserção, a correção poderia ter sido "gravar tudo", que é o acervo de ~525 mil linhas por
+      // ano por empresa que aquela decisão recusa por nome.
+      expect(estado.ultimaExecucao).toBeNull();
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-1290 (b) — rotina de fato parada CONTINUA acusada',
+    async () => {
+      const contexto = await admitirEmpresaNova('batimento-parado');
+      await envelhecerEmpresa(contexto, IDADE_DA_EMPRESA);
+
+      // O batimento existe, mas é ANTIGO — a rotina rodou um dia e parou. É o caso que a
+      // vigilância existe para pegar, e o que a correção não pode ter apagado.
+      await semearBatimentoEm(
+        contexto,
+        'AVISO_DE_COBRANCA',
+        limiarDe('AVISO_DE_COBRANCA') + margemDe('AVISO_DE_COBRANCA'),
+      );
+
+      const estado = estadoDe(await emUnidade(contexto, lerEstadoDasRotinas), 'AVISO_DE_COBRANCA');
+
+      expect(estado.atrasada).toBe(true);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-1290 (c) — o batimento é UPSERT: passar de novo atualiza, e não acumula linha',
+    async () => {
+      const contexto = await admitirEmpresaNova('batimento-upsert');
+      await envelhecerEmpresa(contexto, IDADE_DA_EMPRESA);
+
+      // Um batimento velho o bastante para a rotina estar atrasada.
+      await semearBatimentoEm(
+        contexto,
+        'AVISO_DE_COBRANCA',
+        limiarDe('AVISO_DE_COBRANCA') + margemDe('AVISO_DE_COBRANCA'),
+      );
+      const antes = estadoDe(await emUnidade(contexto, lerEstadoDasRotinas), 'AVISO_DE_COBRANCA');
+
+      // ANTIVÁCUO: sem esta perna, um SUT que devolvesse `false` sempre passaria na perna seguinte.
+      expect(antes.atrasada).toBe(true);
+
+      // A passagem seguinte, pelo caminho REAL do produto.
+      await emUnidade(contexto, async (tx) => {
+        await registrarPassagemDeRotina(tx, 'AVISO_DE_COBRANCA');
+      });
+
+      const depois = estadoDe(await emUnidade(contexto, lerEstadoDasRotinas), 'AVISO_DE_COBRANCA');
+
+      expect(depois.atrasada).toBe(false);
+
+      // ⚠️ A PERNA QUE PROTEGE A RD-15: uma linha por par, e não duas. Sem ela, remover o
+      // `ON CONFLICT` deixaria as duas asserções acima verdes enquanto a tabela crescesse uma
+      // linha por minuto por empresa — o acervo que a correção existe para NÃO reintroduzir.
+      const linhas = await emUnidade(contexto, async (tx) => {
+        const [contagem] = await tx<{ total: string }[]>`
+          SELECT count(*)::text AS total
+            FROM negocio.passagem_de_rotina
+           WHERE rotina = 'AVISO_DE_COBRANCA'::negocio.rotina_agendada
+        `;
+
+        return contagem?.total;
+      });
+
+      expect(linhas).toBe('1');
+    },
+    LIMITE_DO_CASO_MS,
+  );
+
+  it(
+    'CT-1290 (d) — o batimento de uma empresa NÃO alcança a outra',
+    async () => {
+      const alfa = await admitirEmpresaNova('batimento-alfa');
+      const beta = await admitirEmpresaNova('batimento-beta');
+      await envelhecerEmpresa(alfa, IDADE_DA_EMPRESA);
+      await envelhecerEmpresa(beta, IDADE_DA_EMPRESA);
+
+      // Só a Alfa passa.
+      await emUnidade(alfa, async (tx) => {
+        await registrarPassagemDeRotina(tx, 'AVISO_DE_COBRANCA');
+      });
+
+      const naAlfa = estadoDe(await emUnidade(alfa, lerEstadoDasRotinas), 'AVISO_DE_COBRANCA');
+      const naBeta = estadoDe(await emUnidade(beta, lerEstadoDasRotinas), 'AVISO_DE_COBRANCA');
+
+      // O par, e não só a segunda perna: a Beta atrasada sozinha não distingue isolamento de um
+      // SUT que responde `true` sempre.
+      expect(naAlfa.atrasada).toBe(false);
+      expect(naBeta.atrasada).toBe(true);
+    },
+    LIMITE_DO_CASO_MS,
+  );
+});
+
+// ===========================================================================
 // CT-1074 — `atrasada` e `proximaEsperada` derivadas NO BANCO, a partir da cadência publicada
 // ===========================================================================
 
@@ -893,9 +1064,14 @@ describe('CT-1074 — a derivação do atraso e da próxima passagem esperada', 
 
         if (cenario.comExecucao) {
           await envelhecerEmpresa(contexto, IDADE_DA_EMPRESA_VELHA);
+          // SUT_IS_CORRECT_BECAUSE: desde a correção de 2026-09-08 quem governa `atrasada` é o
+          // BATIMENTO, e não o histórico — a troca de fonte é a correção, e este arranjo a
+          // acompanha. O eixo do caso (a comparação com o limiar do contrato) é o mesmo, os
+          // valores esperados são os mesmos, e nenhuma asserção foi afrouxada.
+          //
           // A idade sai de `limiar ± margem`, com o limiar vindo do CONTRATO — 14 e 16 min para a
           // cadência de minuto, 25 h e 27 h para a diária.
-          await semearExecucaoEm(
+          await semearBatimentoEm(
             contexto,
             cenario.rotina,
             limiarDe(cenario.rotina) + cenario.passos * margemDe(cenario.rotina),

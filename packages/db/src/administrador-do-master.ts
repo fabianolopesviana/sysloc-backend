@@ -265,7 +265,13 @@ const RESTRICAO_DO_EMAIL = 'usuario_email_unique';
 export const IMPEDIMENTOS_DE_EXCLUSAO: Readonly<Record<string, ClasseDeImpedimento>> =
   Object.freeze({
     // ---------------------------------------------------------------------
-    // As 16 chaves de `negocio` que apontam para `identidade.empresa`.
+    // As 17 chaves de `negocio` que apontam para `identidade.empresa`.
+    //
+    // ⚠️ Eram 16 até 2026-09-08. A décima sétima é `passagem_de_rotina`, e ela entrou junto com a
+    // tabela na correção do falso alarme de rotina parada — o mapa é **fechado**, e uma dependência
+    // que ele não conhece faz a exclusão de empresa falhar com erro cru em vez de recusa nomeada.
+    // Quem cobra a completude é o `CT-1215`, por igualdade de conjunto nas duas direções: foi ele
+    // que acusou a ausência desta linha no mesmo minuto em que a tabela nasceu.
     // ---------------------------------------------------------------------
     acesso_usuario_app_empresa_id_empresa_id_fk: 'REGISTROS_DE_NEGOCIO',
     certificado_do_provedor_empresa_id_empresa_id_fk: 'REGISTROS_DE_NEGOCIO',
@@ -281,6 +287,7 @@ export const IMPEDIMENTOS_DE_EXCLUSAO: Readonly<Record<string, ClasseDeImpedimen
     identidade_no_provedor_empresa_id_empresa_id_fk: 'REGISTROS_DE_NEGOCIO',
     locador_empresa_id_empresa_id_fk: 'REGISTROS_DE_NEGOCIO',
     locatario_empresa_id_empresa_id_fk: 'REGISTROS_DE_NEGOCIO',
+    passagem_de_rotina_empresa_id_empresa_id_fk: 'REGISTROS_DE_NEGOCIO',
     politica_de_aviso_empresa_id_empresa_id_fk: 'REGISTROS_DE_NEGOCIO',
     portador_de_confirmacao_empresa_id_empresa_id_fk: 'REGISTROS_DE_NEGOCIO',
     // ---------------------------------------------------------------------
